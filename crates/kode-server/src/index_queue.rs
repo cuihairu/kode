@@ -30,6 +30,8 @@ use kode_scheduler::{
 use kode_vfs::store::{DocumentKey, RootId};
 use kode_vfs::uri::CanonicalUri;
 
+use kode_index::ChangeCategory;
+
 use crate::hover::HoverEngine;
 
 /// 有界队列上限(CORE-006)。语料量级(千级 def 文件)远低于此;超限拒新
@@ -82,6 +84,34 @@ pub struct IndexQueueSnapshot {
     pub storm_deadline_flushes: u64,
     /// RUST-082:缓冲超限强制落批次数。
     pub storm_forced_flushes: u64,
+    /// RUST-120-W:ingest 判类 identical(指纹命中,索引态零变异)。
+    pub ingest_identical: u64,
+    /// RUST-120-W:ingest 判类 body-only(注册事实全等,视图零写不 bump)。
+    pub ingest_body_only: u64,
+    /// RUST-120-W:ingest 判类 signature(重灌视图 + bump)。
+    pub ingest_signature: u64,
+    /// RUST-120-W:执行时刻真相逐出(盘上无文件)。
+    pub ingest_removed: u64,
+}
+
+/// RUST-120-W:分类失效计数(执行体在执行时刻记账;队列持有原件,闭包
+/// 持有克隆;单线程 Rc/RefCell 世界,done_log 同模式)。字段由
+/// [`record_ingest`] 记账,读经 [`IndexQueue::snapshot`]。
+#[derive(Debug, Default)]
+pub struct IngestCounts {
+    identical: u64,
+    body_only: u64,
+    signature: u64,
+    removed: u64,
+}
+
+fn record_ingest(counts: &Rc<RefCell<IngestCounts>>, change: ChangeCategory) {
+    let mut c = counts.borrow_mut();
+    match change {
+        ChangeCategory::Identical => c.identical += 1,
+        ChangeCategory::BodyOnly => c.body_only += 1,
+        ChangeCategory::Signature => c.signature += 1,
+    }
 }
 
 /// 索引刷新队列:kode-scheduler 调度核 + 身份台账(pending)+ 风暴缓冲。
@@ -93,6 +123,8 @@ pub struct IndexQueue {
     /// Rc 共享(闭包持有克隆,队列持有原件;单线程 Rc/RefCell 世界)。
     done_log: Rc<RefCell<Vec<String>>>,
     counters: IndexQueueSnapshot,
+    /// RUST-120-W:分类失效计数(闭包执行时刻记账,snapshot 合并)。
+    ingest_counts: Rc<RefCell<IngestCounts>>,
     /// RUST-082:didChange 风暴缓冲(时间窗合并;核心 record 的内部超限
     /// 强制 flush 会静默丢弃返回值,包装侧恒在 record 前预排水,绝不触发)。
     storm: StormBuffer,
@@ -130,6 +162,7 @@ impl IndexQueue {
             pending: HashMap::new(),
             done_log: Rc::new(RefCell::new(Vec::new())),
             counters: IndexQueueSnapshot::default(),
+            ingest_counts: Rc::new(RefCell::new(IngestCounts::default())),
             storm: StormBuffer::new(STORM_BUFFER_MAX_FILES),
             storm_roots: HashMap::new(),
             storm_deadline: None,
@@ -236,9 +269,10 @@ impl IndexQueue {
         let identity_for_log = identity.clone();
         let store = Rc::clone(&self.store);
         let hover = Rc::clone(&self.hover);
+        let counts = Rc::clone(&self.ingest_counts);
         let key_for_run = key.clone();
         let wrapped: Box<RunFn> = Box::new(move |token| {
-            let run = ingest_refresh_task(store, hover, key_for_run);
+            let run = ingest_refresh_task(store, hover, counts, key_for_run);
             let result = run(token);
             done_log.borrow_mut().push(identity_for_log);
             result
@@ -339,11 +373,16 @@ impl IndexQueue {
 
     /// 观测快照(健康面同源)。
     pub fn snapshot(&self) -> IndexQueueSnapshot {
+        let ingest = self.ingest_counts.borrow();
         IndexQueueSnapshot {
             queued: self.sched.status().queued as u64,
             storm_seen: self.storm.events_seen,
             storm_merged: self.storm.merged,
             storm_buffered: self.storm.buffered() as u64,
+            ingest_identical: ingest.identical,
+            ingest_body_only: ingest.body_only,
+            ingest_signature: ingest.signature,
+            ingest_removed: ingest.removed,
             ..self.counters
         }
     }
@@ -361,20 +400,26 @@ impl IndexQueue {
 /// 构造刷新执行体(执行时刻真相重放):overlay 优先(打开文档未保存修订
 /// 不被盘上快照冲掉),回落磁盘,读盘失败=真正逐出(close ≠ 删除,VFS-012
 /// 修订同口径)。
-pub fn ingest_refresh_task(
+pub(crate) fn ingest_refresh_task(
     store: Rc<RefCell<kode_vfs::DocumentStore>>,
     hover: Rc<RefCell<HoverEngine>>,
+    counts: Rc<RefCell<IngestCounts>>,
     key: DocumentKey,
 ) -> Box<RunFn> {
     Box::new(move |_token| {
         if let Some((_, buffer)) = store.borrow().open_buffer(&key) {
             let text = buffer.text().to_string();
-            hover.borrow_mut().update(key, &text);
+            let change = hover.borrow_mut().update(key, &text);
+            record_ingest(&counts, change);
         } else {
             match std::fs::read_to_string(key.uri.as_path()) {
-                Ok(text) => hover.borrow_mut().update(key, &text),
+                Ok(text) => {
+                    let change = hover.borrow_mut().update(key, &text);
+                    record_ingest(&counts, change);
+                }
                 Err(_) => {
                     hover.borrow_mut().remove(&key);
+                    counts.borrow_mut().removed += 1;
                 }
             }
         }
@@ -543,6 +588,95 @@ mod tests {
         q.request_close(&k);
         assert_eq!(q.pump_budgeted(4), 1);
         assert_eq!(hover.borrow().index.symbol_count(), 0, "盘上已删除应逐出");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ingest_counters_classify_identical_body_only_signature_removed() {
+        // RUST-120-W:执行体按类别记账(健康面 ingest 四键同源)。def 语料:
+        // 同文本重开=identical;尾注(已登记位置全不变)=body-only;属性
+        // 类型变更=signature;盘上删除后的 close=removed。
+        const T_DEF: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+        let dir = std::env::temp_dir().join(format!("kode-iqc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("T.def");
+        std::fs::write(&path, T_DEF).unwrap();
+        let k = key(1, &path.to_string_lossy());
+
+        let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
+        let hover = Rc::new(RefCell::new(HoverEngine::new()));
+        let mut q = IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
+
+        // 首次入库 = signature。
+        q.request_open(&k, 1);
+        assert_eq!(q.pump_budgeted(4), 1);
+        let snap = q.snapshot();
+        assert_eq!(snap.ingest_signature, 1);
+
+        // 同文本重开 = identical(指纹命中,generation 不动)。
+        let gen0 = hover.borrow().index.generation();
+        q.request_open(&k, 2);
+        assert_eq!(q.pump_budgeted(4), 1);
+        let snap = q.snapshot();
+        assert_eq!(snap.ingest_identical, 1);
+        assert_eq!(hover.borrow().index.generation(), gen0);
+
+        // 尾注追加 = body-only(零失效)。
+        std::fs::write(&path, format!("{T_DEF}\n<!-- tail -->\n")).unwrap();
+        q.request_open(&k, 3);
+        assert_eq!(q.pump_budgeted(4), 1);
+        let snap = q.snapshot();
+        assert_eq!(snap.ingest_body_only, 1);
+        assert_eq!(hover.borrow().index.generation(), gen0);
+
+        // 属性类型变更 = signature(generation bump,视图反映新类型)。
+        let t16 = T_DEF.replace("UINT32", "UINT16");
+        std::fs::write(&path, &t16).unwrap();
+        q.request_open(&k, 4);
+        assert_eq!(q.pump_budgeted(4), 1);
+        let snap = q.snapshot();
+        assert_eq!(snap.ingest_signature, 2);
+        assert_eq!(hover.borrow().index.generation(), gen0 + 1);
+
+        // 盘上删除 + close = removed(逐出记账)。
+        std::fs::remove_file(&path).unwrap();
+        q.request_close(&k);
+        assert_eq!(q.pump_budgeted(4), 1);
+        let snap = q.snapshot();
+        assert_eq!(snap.ingest_removed, 1);
+        assert_eq!(hover.borrow().index.symbol_count(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn did_change_same_text_via_storm_take_buffered_classifies_identical() {
+        // RUST-120-W E2E 形状复刻:didOpen v1 → pump;didChange v2(同文本
+        // 全量替换)→ 风暴缓冲 → 请求入口 take_buffered + freshen → 分类
+        // = identical(与 kodeCoreDifferentialInvalidation e2e 对账)。
+        const T_DEF: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+        let dir = std::env::temp_dir().join(format!("kode-iqs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("T.def");
+        std::fs::write(&path, T_DEF).unwrap();
+        let k = key(1, &path.to_string_lossy());
+
+        let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
+        let hover = Rc::new(RefCell::new(HoverEngine::new()));
+        let mut q = IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
+
+        q.request_open(&k, 1);
+        assert_eq!(q.pump_budgeted(4), 1);
+        assert_eq!(q.snapshot().ingest_signature, 1);
+
+        // didChange v2:同文本全量替换(overlay 文本=盘上文本,变更语义在
+        // 分类面等价)+ 风暴缓冲记录(生产 handle_did_change 同型)。
+        let ident = identity_of(&k);
+        q.record_change(&k, 2);
+        assert!(q.take_buffered(&ident), "缓冲中的 v2 应被立即移交");
+        assert!(q.freshen(&ident), "移交后 freshen 应执行");
+        let snap = q.snapshot();
+        assert_eq!(snap.ingest_identical, 1, "同文本 didChange = identical");
+        assert_eq!(snap.ingest_signature, 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

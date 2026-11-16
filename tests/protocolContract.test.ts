@@ -102,8 +102,10 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     // 的 ingest 已入队;请求入口 freshen 使其可执行,queued 0/1 均为合法
     // 瞬态,只钉累计计数形状与 open 的入队事实)。
     // RUST-082:didChange 风暴缓冲五记账键同笔恒装配。
+    // RUST-120-W:分类失效四记账键(identical/bodyOnly/signature/removed)。
     expect(sortedKeys(health.ingest)).toEqual(
-      ['enqueued', 'executed', 'merged', 'purged', 'queued',
+      ['enqueued', 'executed', 'ingestBodyOnly', 'ingestIdentical',
+       'ingestRemoved', 'ingestSignature', 'merged', 'purged', 'queued',
        'rejectedQueueFull', 'staleDropped', 'stormBuffered',
        'stormDeadlineFlushes', 'stormForcedFlushes', 'stormMerged',
        'stormSeen']

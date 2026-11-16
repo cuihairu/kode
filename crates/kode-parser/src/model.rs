@@ -108,7 +108,7 @@ pub struct ComponentDef {
 }
 
 /// 单个 .def 文件的语义视图。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefFile {
     pub root_tag: Option<String>,
     pub parent: Option<String>,
@@ -498,7 +498,7 @@ pub struct EntityEntry {
 }
 
 /// entities.xml 注册清单(root 伪条目排除,与 TS getRegisteredEntities 同口径)。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EntitiesFile {
     pub entities: Vec<EntityEntry>,
     pub diagnostics: Vec<Diagnostic>,
@@ -564,7 +564,7 @@ pub struct TypeDecl {
 }
 
 /// types.xml 类型表。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TypesFile {
     pub types: Vec<TypeDecl>,
     pub diagnostics: Vec<Diagnostic>,
@@ -680,7 +680,7 @@ pub struct AliasDecl {
 }
 
 /// alias.xml 关联表。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AliasFile {
     pub aliases: Vec<AliasDecl>,
     /// 属性式别名(`<Foo type="ARRAY" of="UINT32"/>`;TS 现实现会跳过,Rust

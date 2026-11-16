@@ -13,7 +13,7 @@ pub mod golden;
 pub mod index;
 pub mod symbol;
 
-pub use index::{BatchReceipt, IndexStats, IndexUpdateReport, SymbolIndex};
+pub use index::{BatchReceipt, ChangeCategory, IndexStats, IndexUpdateReport, SymbolIndex};
 pub use symbol::{
     def_entity_name, extract_records, MethodFacet, Symbol, SymbolId, SymbolKind, SymbolRecord,
 };

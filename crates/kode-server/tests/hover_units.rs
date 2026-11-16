@@ -703,3 +703,52 @@ fn hover_engine_constructs_with_parse_budget() {
         Some(HOVER_PARSE_BUDGET_BYTES)
     );
 }
+
+// ---------------------------------------------------------------------------
+
+// RUST-120-W:分类失效差异化——Identical(指纹命中)/ BodyOnly(注册事实
+// 全等,视图零写不 bump)/ Signature(重灌视图 + bump)。generation 经
+// engine.index 读取(读者闭包失效的生产判据)。
+
+const HP_DEF_TAIL: &str = "\t</Properties>\n</root>\n";
+
+fn hp_def(dtype: &str) -> String {
+    format!(
+        "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> {dtype} </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n"
+    ) + HP_DEF_TAIL
+}
+
+#[test]
+fn update_classifies_identical_body_only_and_signature() {
+    use kode_index::ChangeCategory;
+    let mut engine = HoverEngine::new();
+    let k = key("/proj/entities/Avatar.def");
+    let v1 = hp_def("UINT32");
+    assert_eq!(
+        engine.update(k.clone(), &v1),
+        ChangeCategory::Signature,
+        "首次入库 = Signature"
+    );
+    let gen0 = engine.index.generation();
+
+    // 同文本重放:指纹命中 → Identical,generation 不动。
+    assert_eq!(engine.update(k.clone(), &v1), ChangeCategory::Identical);
+    assert_eq!(engine.index.generation(), gen0);
+
+    // 尾部注释(全部已登记位置不变的编辑):BodyOnly,generation 不 bump;
+    // 悬停视图保持旧事实(视图零写)且对新文本可正常响应。(前置插入会使
+    // name_span/line 位移 → DefFile 模型不等 → 判 Signature:位置位移的
+    // 编辑必须让持行锚数据的读者重读,属正确失效语义,不属 BodyOnly 面。)
+    let v2 = v1.clone() + "\n<!-- RUST-120-W body-only 尾注 -->\n";
+    assert_eq!(engine.update(k.clone(), &v2), ChangeCategory::BodyOnly);
+    assert_eq!(engine.index.generation(), gen0, "BodyOnly 零失效");
+    let hover_v2 = hover_on(&engine, &k, &v2, "hp").expect("BodyOnly 后悬停可用");
+    assert_eq!(hover_v2.signature.r#type.as_deref(), Some("UINT32"));
+
+    // 属性类型变更:Signature,generation bump,悬停视图反映新类型。
+    let v3 = hp_def("UINT16");
+    assert_eq!(engine.update(k.clone(), &v3), ChangeCategory::Signature);
+    assert_eq!(engine.index.generation(), gen0 + 1, "Signature 才失效读者");
+    let hover_v3 = hover_on(&engine, &k, &v3, "hp").expect("重灌后悬停可用");
+    assert_eq!(hover_v3.signature.r#type.as_deref(), Some("UINT16"));
+}

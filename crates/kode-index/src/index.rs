@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use kode_parser::dep::{file_kind_of_uri, FileKind, ParseRegistry, ParsedUnit};
+use kode_parser::dep::{file_kind_of_uri, FileKind, ParseRegistry};
 use kode_parser::diag::Diagnostic;
 use kode_parser::model::{resolve_parent_chain, ChainNode};
 use kode_vfs::store::{DocumentKey, RootId};
@@ -37,6 +37,31 @@ pub struct IndexStats {
     pub removals: u64,
     /// generation 递增次数(批量提交只 +1)。
     pub generation_bumps: u64,
+    /// RUST-120-W:重解析但签名事实全等(body-only)被差异化跳过的次数
+    /// (不换槽位、不 bump generation,读者快照全部存活)。
+    pub body_only_skips: u64,
+}
+
+/// 变化类别(RUST-120-W 差异化失效的判定产物):
+/// - [`ChangeCategory::Identical`] 文本未变(指纹命中,零重建零失效);
+/// - [`ChangeCategory::BodyOnly`] 文本变了但签名事实(records+Parent+引用集)
+///   全等——索引态零变异、generation 不 bump,持有快照的读者全部不失效;
+/// - [`ChangeCategory::Signature`] 签名事实变了——重登记 + bump。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeCategory {
+    Identical,
+    BodyOnly,
+    Signature,
+}
+
+impl ChangeCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ChangeCategory::Identical => "identical",
+            ChangeCategory::BodyOnly => "body-only",
+            ChangeCategory::Signature => "signature",
+        }
+    }
 }
 
 /// 单文件 update 回执(ARCH-004:明确告知发生了什么)。
@@ -46,6 +71,8 @@ pub struct IndexUpdateReport {
     pub rebuilt: bool,
     /// 非声明文件等原因(该文件不产符号)。
     pub error: Option<String>,
+    /// RUST-120-W:变化类别(Identical/BodyOnly/Signature)。
+    pub change: ChangeCategory,
     /// 本次新登记符号数(重建时有效)。
     pub added: usize,
     /// 本次被替换掉的旧符号数(重建时有效)。
@@ -60,8 +87,10 @@ pub struct BatchReceipt {
     pub generation: u64,
     /// 批内文件数。
     pub files: usize,
-    /// 批内真实重建的文件数(指纹命中不计)。
+    /// 批内真实重登记的文件数(指纹命中与 body-only 跳过不计)。
     pub rebuilds: u64,
+    /// 批内 body-only 差异化跳过数(RUST-120-W;不触发 generation bump)。
+    pub body_only: u64,
     pub added: usize,
     pub removed: usize,
 }
@@ -123,51 +152,56 @@ impl SymbolIndex {
         self.registry.resident_budget_bytes()
     }
 
-    /// 单文件增量入口:指纹命中零重建(不 bump generation)。
+    /// 单文件增量入口(RUST-120-W 差异化失效):指纹命中 = Identical 零重建
+    /// 零失效;重解析后签名事实(records + Parent + 引用集)全等 = BodyOnly,
+    /// 索引态零变异、generation 不 bump——持有快照的读者全部存活;事实有变
+    /// = Signature 才重登记 + bump。解析缓存被 LRU 驱逐时旧引用集取不到 =
+    /// 保守按 Signature(宁多失效绝不漏报),旧 records 为空的首次入库不受
+    /// 此保守项影响。
     pub fn update(&mut self, key: DocumentKey, text: &str) -> IndexUpdateReport {
         self.stats.update_calls += 1;
-        let (registry_report, unit) = self.registry.update(key.clone(), text);
-        if !registry_report.rebuilt {
-            self.stats.cache_hits += 1;
-            return IndexUpdateReport {
-                rebuilt: false,
-                error: registry_report.error,
-                added: 0,
-                removed: 0,
-                generation: self.generation,
-            };
+        let (rebuilt, change, error, added, removed) = self.ingest_classified(&key, text);
+        match change {
+            ChangeCategory::Identical => self.stats.cache_hits += 1,
+            ChangeCategory::BodyOnly => self.stats.body_only_skips += 1,
+            ChangeCategory::Signature => {
+                self.stats.rebuilds += 1;
+                self.bump();
+            }
         }
-        let (added, removed) = self.replace_file(&key, unit.as_deref());
-        self.stats.rebuilds += 1;
-        self.bump();
+        let _ = rebuilt;
         IndexUpdateReport {
-            rebuilt: true,
-            error: registry_report.error,
+            rebuilt: rebuilt || change != ChangeCategory::Identical,
+            error,
+            change,
             added,
             removed,
             generation: self.generation,
         }
     }
 
-    /// 批量提交:全部文件应用完成后一次性递增 generation(IDX-007)。
+    /// 批量提交:全部文件应用完成后一次性递增 generation(IDX-007);分类后
+    /// 仅 Signature 触发 bump(RUST-120-W:纯 Identical/BodyOnly 批读者快照
+    /// 全部不失效)。
     pub fn update_batch(&mut self, batch: &[(DocumentKey, String)]) -> BatchReceipt {
         let before_rebuilds = self.stats.rebuilds;
+        let before_body_only = self.stats.body_only_skips;
         let mut added = 0usize;
         let mut removed = 0usize;
         for (key, text) in batch {
             self.stats.update_calls += 1;
-            let (registry_report, unit) = self.registry.update(key.clone(), text);
-            if !registry_report.rebuilt {
-                self.stats.cache_hits += 1;
-                continue;
+            let (_rebuilt, change, _error, a, r) = self.ingest_classified(key, text);
+            match change {
+                ChangeCategory::Identical => self.stats.cache_hits += 1,
+                ChangeCategory::BodyOnly => self.stats.body_only_skips += 1,
+                ChangeCategory::Signature => self.stats.rebuilds += 1,
             }
-            let (a, r) = self.replace_file(key, unit.as_deref());
             added += a;
             removed += r;
-            self.stats.rebuilds += 1;
         }
         let rebuilds = self.stats.rebuilds - before_rebuilds;
-        // 零改动的空批不递增 generation(与单文件语义一致,读者快照不失效)。
+        let body_only = self.stats.body_only_skips - before_body_only;
+        // 零签名变化的批不递增 generation(读者快照不失效;与单文件语义一致)。
         if rebuilds > 0 {
             self.bump();
         }
@@ -177,7 +211,76 @@ impl SymbolIndex {
             rebuilds,
             added,
             removed,
+            body_only,
         }
+    }
+
+    /// 分类 ingest 核心(不动 stats/generation;调用方按类别记账):指纹命中
+    /// → Identical;重解析后旧新签名事实全等 → BodyOnly(索引态零变异);
+    /// 否则 Signature(差量替换)。旧事实在注册表更新前抓取(旧引用集经
+    /// `refs_of`;旧 records 由槽位重构,零额外驻留;旧 Parent 经继承边表)。
+    fn ingest_classified(
+        &mut self,
+        key: &DocumentKey,
+        text: &str,
+    ) -> (bool, ChangeCategory, Option<String>, usize, usize) {
+        let old_refs = self.registry.refs_of(key).cloned();
+        let old_records: Vec<SymbolRecord> = self
+            .symbols_in_file(key)
+            .iter()
+            .map(|s| SymbolRecord {
+                name: s.name.clone(),
+                kind: s.kind,
+                line: s.line,
+                facet: s.facet,
+                detail: s.detail.clone(),
+            })
+            .collect();
+        let old_parent = crate::symbol::def_entity_name(key.uri.as_path())
+            .and_then(|entity| self.entity_parents.get(&entity).cloned());
+        let had_old_records = self.by_file.contains_key(key);
+        let (registry_report, unit) = self.registry.update(key.clone(), text);
+        if !registry_report.rebuilt {
+            return (
+                false,
+                ChangeCategory::Identical,
+                registry_report.error,
+                0,
+                0,
+            );
+        }
+        let Some(unit) = unit.as_deref() else {
+            // 无解析产物(非声明文件等负缓存路径):摘旧符号,保守 Signature。
+            let removed = self.detach_file(key);
+            return (
+                true,
+                ChangeCategory::Signature,
+                registry_report.error,
+                0,
+                removed,
+            );
+        };
+        let (new_records, declaration) = extract_records(key, unit);
+        let new_refs = self.registry.refs_of(key).cloned();
+        let new_parent = declaration.as_ref().and_then(|(_, p)| p.clone());
+        // 旧引用集缺席且旧文件确有记录 = 解析缓存被驱逐,旧引用事实未知 →
+        // 保守 Signature(多失效不漏报);首次入库(无旧记录)不在此列。
+        let refs_known = old_refs.is_some() || !had_old_records;
+        let body_only = refs_known
+            && new_records == old_records
+            && new_parent == old_parent
+            && new_refs == old_refs;
+        if body_only {
+            return (true, ChangeCategory::BodyOnly, registry_report.error, 0, 0);
+        }
+        let (added, removed) = self.replace_file_with_records(key, &new_records, declaration);
+        (
+            true,
+            ChangeCategory::Signature,
+            registry_report.error,
+            added,
+            removed,
+        )
     }
 
     /// 删除/改名失效(VFS-012/IDX-014):符号、倒排、反向依赖、继承边连带清理。
@@ -315,17 +418,21 @@ impl SymbolIndex {
 
     // ---- 内部:文件级差量替换 ----
 
-    /// 摘除旧符号 → 装入新符号。返回 (added, removed)。
-    fn replace_file(&mut self, key: &DocumentKey, unit: Option<&ParsedUnit>) -> (usize, usize) {
+    // (RUST-120-W 起 None 臂由 ingest_classified 直接走 detach_file,
+    //  旧分发壳 replace_file 删除。)
+
+    /// 已抽取记录的装入(records/declaration 由分类路径抽取过,免二次抽取)。
+    fn replace_file_with_records(
+        &mut self,
+        key: &DocumentKey,
+        records: &[SymbolRecord],
+        declaration: Option<(String, Option<String>)>,
+    ) -> (usize, usize) {
         let removed = self.detach_file(key);
-        let Some(unit) = unit else {
-            return (0, removed);
-        };
-        let (records, declaration) = extract_records(key, unit);
         let added = records.len();
         let mut entry = FileEntry::default();
         for record in records {
-            let id = self.attach_record(key, record);
+            let id = self.attach_record(key, record.clone());
             entry.symbols.push(id);
         }
         if let Some((entity, Some(parent))) = declaration {
@@ -439,7 +546,7 @@ mod tests {
     use kode_vfs::store::{DocumentKey, RootId};
     use kode_vfs::uri::CanonicalUri;
 
-    use super::SymbolIndex;
+    use super::{ChangeCategory, SymbolIndex};
 
     fn key(path: &str) -> DocumentKey {
         DocumentKey::new(RootId(1), CanonicalUri::from_path(path))
@@ -494,7 +601,7 @@ mod tests {
         assert_eq!(index.generation(), pinned + 1);
     }
 
-    /// replace_file(key, None) 契约:无解析产物时只摘旧符号、零新增,返回
+    /// 摘除契约(原 replace_file(key, None) 面):只摘旧符号、零新增,返回
     /// (added=0, removed=旧符号数),倒排/继承边/by_file 连带清理。生产路径
     /// update/update_batch 只在 registry rebuilt 时传 Some,该分支按函数自身
     /// 契约直接验证(unit 级精度)。
@@ -515,9 +622,8 @@ mod tests {
             "带 Parent 的 def 先登记继承边"
         );
 
-        let (added, removed) = index.replace_file(&k, None);
-        assert_eq!(added, 0, "None 不装入新符号");
-        assert_eq!(removed, 3, "None 摘除旧文件全部符号");
+        let removed = index.detach_file(&k);
+        assert_eq!(removed, 3, "摘除旧文件全部符号,零新增");
         assert_eq!(index.symbol_count(), 0);
         assert!(index.symbols_in_file(&k).is_empty(), "文件摘除后符号表清空");
         assert!(index.lookup("hp").is_empty(), "倒排连带清空");
@@ -553,5 +659,178 @@ mod tests {
         assert!(report.rebuilt, "被驱逐条目必须重建");
         let again = index.lookup("hp");
         assert_eq!(again.len(), 5, "重建后符号不重复");
+    }
+
+    // ---- RUST-120-W 变化分类差异化失效 ----
+
+    fn def_with_property(dtype: &str) -> String {
+        format!(
+            "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> {dtype} </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n"
+        )
+    }
+
+    #[test]
+    fn identical_text_reports_identical_and_keeps_generation() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/A.def");
+        index.update(k.clone(), &def_with_property("UINT32"));
+        let gen = index.generation();
+        let report = index.update(k.clone(), &def_with_property("UINT32"));
+        assert_eq!(report.change, ChangeCategory::Identical);
+        assert!(!report.rebuilt);
+        assert_eq!(index.generation(), gen, "指纹命中零失效");
+        assert_eq!(index.stats.body_only_skips, 0);
+    }
+
+    #[test]
+    fn body_only_trailing_comment_skips_bump_and_mutation() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/A.def");
+        index.update(k.clone(), &def_with_property("UINT32"));
+        let gen = index.generation();
+        let records_before = index.symbols_in_file(&k).len();
+        // 尾注不位移任何已捕获元素的行号:模型全等 → BodyOnly(索引态零变异)。
+        let body_only_text = format!(
+            "{}<!-- trailing comment, model identical -->\n",
+            def_with_property("UINT32")
+        );
+        let report = index.update(k.clone(), &body_only_text);
+        assert_eq!(report.change, ChangeCategory::BodyOnly, "尾注 = body-only");
+        assert!(report.rebuilt, "文本确实变了(重解析发生)");
+        assert_eq!((report.added, report.removed), (0, 0), "索引态零变异");
+        assert_eq!(index.generation(), gen, "body-only 不 bump,读者快照全存活");
+        assert!(index.is_current(gen));
+        assert_eq!(index.symbols_in_file(&k).len(), records_before);
+        assert_eq!(index.stats.body_only_skips, 1);
+    }
+
+    #[test]
+    fn property_type_change_is_signature_and_bumps() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/A.def");
+        index.update(k.clone(), &def_with_property("UINT32"));
+        let gen = index.generation();
+        let report = index.update(k.clone(), &def_with_property("UINT64"));
+        assert_eq!(report.change, ChangeCategory::Signature);
+        assert_eq!(index.generation(), gen + 1, "签名变化才 bump");
+        // 实体文件级符号 + hp 属性 = 2 条全量重登记。
+        assert_eq!((report.added, report.removed), (2, 2));
+        let hp = index.lookup("hp");
+        assert_eq!(hp.len(), 1);
+        assert_eq!(hp[0].detail.as_deref(), Some("UINT64"), "新类型已入索引");
+    }
+
+    #[test]
+    fn parent_change_is_signature_via_declaration_face() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/Boss.def");
+        let v1 = "<root>\n\t<Parent> Monster </Parent>\n</root>\n";
+        index.update(k.clone(), v1);
+        assert_eq!(
+            index.entity_declarations().get("Boss").map(String::as_str),
+            Some("Monster")
+        );
+        let gen = index.generation();
+        // 尾注版:records 与引用集均等,唯 Parent 变 → 声明面判 Signature。
+        let v2 = "<root>\n\t<Parent> Dragon </Parent>\n</root>\n";
+        let report = index.update(k.clone(), v2);
+        assert_eq!(
+            report.change,
+            ChangeCategory::Signature,
+            "Parent 变 = 签名事实变"
+        );
+        assert_eq!(index.generation(), gen + 1);
+        assert_eq!(
+            index.entity_declarations().get("Boss").map(String::as_str),
+            Some("Dragon"),
+            "继承边同步更新"
+        );
+    }
+
+    #[test]
+    fn interfaces_only_change_is_signature_via_reference_face() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/C.def");
+        index.update(k.clone(), "<root>\n</root>\n");
+        let gen = index.generation();
+        // records(records 空)与 Parent(无)均等,唯 interface_defs 引用变
+        // → RefSet 引用面判 Signature。
+        let v2 = "<root>\n\t<Interfaces>\n\t\t<interface> BaseInterface </interface>\n\t</Interfaces>\n</root>\n";
+        let report = index.update(k.clone(), v2);
+        assert_eq!(
+            report.change,
+            ChangeCategory::Signature,
+            "接口引用变 = 引用集变"
+        );
+        assert_eq!(index.generation(), gen + 1);
+        let deps = index.dependents_of("BaseInterface");
+        assert!(deps.contains(&k), "反向依赖面登记新引用");
+    }
+
+    #[test]
+    fn evicted_parse_reparse_still_classifies_body_only() {
+        // 解析缓存被驱逐(极小预算,单条目超限即逐 + 第二文件挤占)后同文本
+        // 再 update:指纹未命中重解析发生,但引用表独立于解析缓存生存 → 旧
+        // 签名事实仍可得 → 判 BodyOnly,读者快照不因缓存驱逐被误失效。
+        // (ingest_classified 的"旧引用集缺席保守 Signature"守卫为防御纵深
+        // ——今日公共 API 不可达:refs 表只在 remove/invalidate_root 连带
+        // 清理,而那两路同时摘 records。)
+        let mut index = SymbolIndex::with_parse_budget(1);
+        let k = key("/proj/A.def");
+        index.update(k.clone(), &def_with_property("UINT32"));
+        // 挤占:插入 B 把 A 的解析缓存逐出(符号层不受影响)。
+        index.update(key("/proj/B.def"), &def_with_property("UINT16").repeat(20));
+        let gen = index.generation();
+        let rebuilds_before = index.stats.rebuilds;
+        let report = index.update(k.clone(), &def_with_property("UINT32"));
+        assert_eq!(report.change, ChangeCategory::BodyOnly, "重解析但事实全等");
+        assert!(report.rebuilt, "驱逐后指纹未命中,重解析确实发生");
+        assert_eq!(
+            index.stats.rebuilds, rebuilds_before,
+            "body-only 不计重登记(零索引态变异)"
+        );
+        assert_eq!(index.stats.body_only_skips, 1);
+        assert_eq!(index.generation(), gen, "事实全等不失效读者");
+    }
+
+    #[test]
+    fn batch_with_only_identical_and_body_only_never_bumps() {
+        let mut index = SymbolIndex::new();
+        let a = key("/proj/A.def");
+        let b = key("/proj/B.def");
+        index.update(a.clone(), &def_with_property("UINT32"));
+        index.update(b.clone(), &def_with_property("UINT16"));
+        let gen = index.generation();
+        // 同文本(Identical)+ 尾注(BodyOnly):零签名变化 → 不 bump。
+        let body_only_b = format!("{}<!-- note -->\n", def_with_property("UINT16"));
+        let receipt = index.update_batch(&[
+            (a.clone(), def_with_property("UINT32")),
+            (b.clone(), body_only_b),
+        ]);
+        assert_eq!(receipt.rebuilds, 0, "零 Signature 重登记");
+        assert_eq!(receipt.body_only, 1, "BodyOnly 计入回执");
+        assert_eq!(
+            index.generation(),
+            gen,
+            "纯 Identical/BodyOnly 批不失效读者"
+        );
+    }
+
+    #[test]
+    fn batch_bumps_once_for_any_signature_change() {
+        let mut index = SymbolIndex::new();
+        let a = key("/proj/A.def");
+        let b = key("/proj/B.def");
+        index.update(a.clone(), &def_with_property("UINT32"));
+        index.update(b.clone(), &def_with_property("UINT16"));
+        let gen = index.generation();
+        let receipt = index.update_batch(&[
+            (a.clone(), def_with_property("UINT64")),
+            (b.clone(), def_with_property("UINT16")),
+        ]);
+        assert_eq!(receipt.rebuilds, 1);
+        assert_eq!(receipt.body_only, 0);
+        assert_eq!(index.generation(), gen + 1, "整批一次 bump");
+        assert_eq!(index.lookup("hp")[0].detail.as_deref(), Some("UINT64"));
     }
 }

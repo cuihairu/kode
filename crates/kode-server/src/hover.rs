@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use kode_index::symbol::{def_entity_name, extract_records, MethodFacet, SymbolKind};
+use kode_index::ChangeCategory;
 use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
 use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 use kode_parser::model::{parse_alias, parse_def, parse_entities, parse_types, DefFile, TypeKind};
@@ -398,36 +399,69 @@ impl HoverEngine {
         }
     }
 
-    /// 单文件入库:符号索引 + 语料视图同步维护。
-    pub fn update(&mut self, key: DocumentKey, text: &str) {
-        self.index.update(key.clone(), text);
+    /// 单文件入库:符号索引 + 语料视图同步维护,按变化类别差异化失效
+    /// (RUST-120-W):`Identical` = 文本指纹命中 ⇒ 语料模型必同 ⇒ 视图零写;
+    /// `BodyOnly` = 注册事实(语料模型)全等 ⇒ 视图零写(index 层亦未 bump
+    /// generation,持有快照的读者全部存活);`Signature` = 重灌视图。
+    /// 语料四类之外的文件(.py 等)无语料视图,类别 = 索引层判定。
+    pub fn update(&mut self, key: DocumentKey, text: &str) -> ChangeCategory {
+        let report = self.index.update(key.clone(), text);
+        if report.change == ChangeCategory::Identical {
+            return ChangeCategory::Identical;
+        }
         let path = key.uri.as_path().to_string();
-        // RUST-069-W:登记路径归属(撤根扇出的定域依据)。
-        self.path_roots.insert(path.clone(), key.root);
         match file_kind_of_uri(&key.uri) {
             FileKind::Def => {
+                let parsed = parse_def(text);
+                if self.def_files.get(&path) == Some(&parsed) {
+                    return ChangeCategory::BodyOnly;
+                }
+                // RUST-069-W:登记路径归属(撤根扇出的定域依据)。
+                self.path_roots.insert(path.clone(), key.root);
                 self.corpus_defs.insert(path.clone());
-                self.def_files.insert(path.clone(), parse_def(text));
+                self.def_files.insert(path.clone(), parsed);
                 if let Some(name) = def_entity_name(&path) {
                     let candidates = self.def_by_name.entry((key.root, name)).or_default();
                     if !candidates.contains(&path) {
                         candidates.push(path);
                     }
                 }
+                ChangeCategory::Signature
             }
             FileKind::Entities => {
+                let parsed = parse_entities(text);
+                if self.entities_files.get(&path) == Some(&parsed) {
+                    return ChangeCategory::BodyOnly;
+                }
+                self.path_roots.insert(path.clone(), key.root);
                 if let Some(dir) = parent_dir(&path) {
                     self.entities_dirs.insert(dir.to_string());
                 }
-                self.entities_files.insert(path, parse_entities(text));
+                self.entities_files.insert(path, parsed);
+                ChangeCategory::Signature
             }
             FileKind::Types => {
-                self.types_files.insert(path, parse_types(text));
+                let parsed = parse_types(text);
+                if self.types_files.get(&path) == Some(&parsed) {
+                    return ChangeCategory::BodyOnly;
+                }
+                self.path_roots.insert(path.clone(), key.root);
+                self.types_files.insert(path, parsed);
+                ChangeCategory::Signature
             }
             FileKind::Alias => {
-                self.alias_files.insert(path, parse_alias(text));
+                let parsed = parse_alias(text);
+                if self.alias_files.get(&path) == Some(&parsed) {
+                    return ChangeCategory::BodyOnly;
+                }
+                self.path_roots.insert(path.clone(), key.root);
+                self.alias_files.insert(path, parsed);
+                ChangeCategory::Signature
             }
-            _ => {}
+            _ => {
+                self.path_roots.insert(path, key.root);
+                report.change
+            }
         }
     }
 

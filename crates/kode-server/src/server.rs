@@ -272,8 +272,7 @@ impl ServerState {
         session.register_sink(Rc::clone(&hover) as Rc<RefCell<dyn RootInvalidationSink>>);
         // RUST-070/071/073:索引刷新队列持有引擎句柄(入队时构建执行时刻
         // 真相执行体);RUST-082:didChange 风暴缓冲在队列内。
-        let index_queue =
-            crate::index_queue::IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
+        let index_queue = crate::index_queue::IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
         ServerState {
             initialized: false,
             shutdown_requested: false,
@@ -957,6 +956,11 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         "stormBuffered": ingest.storm_buffered,
         "stormDeadlineFlushes": ingest.storm_deadline_flushes,
         "stormForcedFlushes": ingest.storm_forced_flushes,
+        // RUST-120-W:分类失效计数(差异化失效观测面)。
+        "ingestIdentical": ingest.ingest_identical,
+        "ingestBodyOnly": ingest.ingest_body_only,
+        "ingestSignature": ingest.ingest_signature,
+        "ingestRemoved": ingest.ingest_removed,
     });
     value
 }
