@@ -476,7 +476,7 @@
 - [ ] RUST-204 （旧 PLUG-003） 插件只能请求 QueryService / TypeService / ProjectService / ArtifactService 的稳定 DTO，不暴露 mutable Rust graph。（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记;顺带诚实盘点=既有 Rust RPC 面($/kode/* 全集 35 项,RUST-055 契约门钉形状)已经是 DTO-only 形态——请求/响应信封+纯数据结构,零 mutable graph 暴露,插件面若落地四服务 DTO 通道的现成等价物就是该 RPC 面;拍板同 RUST-202。）
 - [ ] RUST-205 （旧 PLUG-004） 为 CPU、超时、内存、RPC 输出大小、并发配额制定 policy，阻止慢插件拖垮语言请求。（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——无宿主则无被管对象,配额策略无标的;既有相邻治理面=IndexScheduler 交互冷却+RPC lane 划分(Interactive/Cpu)+墙钟预算断言族,插件面落地时资源治理可复用该骨架;拍板同 RUST-202。）
 - [ ] RUST-206 （旧 PLUG-005） 安全隔离：默认 trusted built-in；第三方需要显式安装/授权，声明文件/网络/执行能力。（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——插件安全模型依赖宿主与清单(202/203)先行;既有信任面=workspace trust manifest 闸(RUST-198 本日落闸,扩展自身未信任工作区零执行);拍板同 RUST-202。）
-- [ ] RUST-207 （旧 PLUG-006） Plugin host 崩溃、挂起、协议不兼容时自动停用插件并保留核心功能。
+- [ ] RUST-207 （旧 PLUG-006） Plugin host 崩溃、挂起、协议不兼容时自动停用插件并保留核心功能（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——插件宿主崩溃/挂起/协议不兼容的自动停用面以宿主存在为前提,无宿主则无被管对象;产品核心功能本就不经插件(kbengine 扩展单体),「保留核心功能」天然成立;拍板同 RUST-202。）
 - [ ] RUST-208 （旧 PLUG-007） 插件贡献顺序显式：builtin < engine profile < workspace override（示例，最终按 ADR 审核）；冲突显示来源。
 - [ ] RUST-209 （旧 PLUG-008） 插件 API SemVer、版本协商、弃用窗口、兼容性检查。
 - [ ] RUST-210 （旧 PLUG-009） 配置隔离及密钥在 SecretStorage，禁止写插件 metadata 或 trace。
