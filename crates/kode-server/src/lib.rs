@@ -11,6 +11,7 @@ pub mod database_schema;
 pub mod db_clone;
 pub mod def_md5;
 pub mod def_param_hints;
+pub mod def_props_hints;
 pub mod def_rename;
 pub mod definition;
 pub mod diagnostic_pipeline;
@@ -60,6 +61,7 @@ pub use completion::{
 };
 pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};
 pub use def_param_hints::dump_def_param_hints_golden;
+pub use def_props_hints::dump_def_props_golden;
 pub use def_rename::dump_def_rename_golden;
 pub use diagnostic_pipeline::dump_diagnostic_pipeline_golden;
 pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
