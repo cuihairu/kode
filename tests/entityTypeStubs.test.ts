@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildEntityTypeStubPlan } from '../src/entityTypeStubs';
+import { buildPythonTypeStubPlan } from '../src/pythonTypeStubs';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import type { EntityMapping } from '../src/entityMapping';
 
@@ -403,5 +404,51 @@ describe('buildEntityTypeStubPlan', () => {
         }
       }
     }
+  });
+});
+
+// RUST-169:官方核心类型 IR(CustomTypeInfo[] 注册表,引擎 addDataType 去重
+// 规则单点 arbiter)是类型生成器唯一数据源——同一注册表数组喂实体桩与
+// kbe_types 类型桩两个 plan,同名两源裁定必须一致(types.xml 先见=winner,
+// alias.xml 后到=作废),两个消费面都不许各自再解析。
+describe('RUST-169 唯一数据源:同注册表跨 plan 裁定一致', () => {
+  it('同名两源:类型桩发射先见条+作废后到条,实体桩 customTypeLine 取先见条,同一数组两 plan 一致', () => {
+    const winner = {
+      ...customType,
+      name: 'ITEM_INFO',
+      filePath: '/ws/scripts/entity_defs/types.xml',
+      line: 3,
+      aliasType: 'UINT32',
+      rawValue: 'UINT32',
+      structure: { name: 'UINT32', rawValue: 'UINT32', children: [], line: 3 },
+      properties: []
+    };
+    const loser = {
+      ...winner,
+      filePath: '/ws/scripts/entity_defs/alias.xml',
+      line: 9,
+      aliasType: 'UINT8',
+      rawValue: 'UINT8',
+      structure: { name: 'UINT8', rawValue: 'UINT8', children: [], line: 9 }
+    };
+    const registry = [winner, loser];
+
+    const typePlan = buildPythonTypeStubPlan(registry);
+    const aliasEntries = typePlan.entries.filter(
+      entry => entry.kind === 'alias' && entry.name === 'ITEM_INFO'
+    );
+    expect(aliasEntries).toHaveLength(1);
+    // 引擎内建映射口径:UINT32 → Python int(与单发射 Winner 一致)
+    expect(aliasEntries[0].annotation).toBe('int');
+    expect(typePlan.skipped.some(item => item.name === 'ITEM_INFO' && item.reason.includes('types.xml'))).toBe(true);
+
+    const entityPlan = buildEntityTypeStubPlan([avatarMapping], registry);
+    const property = entityPlan.entries[0].properties[0];
+    expect(property.annotation).toBe('ITEM_INFO');
+    // 裁定面:行号取先见条(types.xml:3),不是后到条(alias.xml:9)
+    expect(property.customTypeLine).toBe(3);
+    expect(property.customTypeLine).not.toBe(9);
+    // 后到条若是 winner,实体桩会拿到 UINT8 形态的模块面——这里以行号断言钉死
+    expect(property.sourceLine).toBe(24);
   });
 });
