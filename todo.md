@@ -346,10 +346,10 @@
 - [x] RUST-096 （旧 VFS-013） 测试 100 次编辑、保存竞态、重命名过程、未保存变更、工作区根切换。(PR-004:crates/kode-vfs/tests/vfs.rs 五场景;cargo test --workspace 76 passed)
 
 #### 6.1 语法数据结构
-- [ ] RUST-097 （旧 SYNTAX-001） 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。(进行中:PR-005 已落 invalid fixtures/盲样变异;PR-008 pr-008.md 已定型四类文件的语义面口径(decls/aliases/composition/entities 抽取规则+对拍 golden),正式 grammar spec 文档仍待专单)
+- [x] RUST-097 （旧 SYNTAX-001） 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。(2026-11-17 收口:正式 grammar spec 文档已落=docs/kode2/grammar-spec.md——通用词法层(字节级状态机构造分派表/属性三形态/遗留多词标签容忍/伪注释掩码/EOF 容错收尾)+语义层四类文件各自文法(.def 段落·属性·方法·旗标全表=8 规范名+4 旧式别名+变体折叠+三域位/entities root 伪条目排除/types 指引面文本+属性式回落/alias 三元组判定+属性式结构化保留/truthy 语义/collect_type_refs/继承链防环)+14 诊断码表逐码恢复行为+无效输入目录(盲样四臂=截断/翻转/插入/删除,截断专项 UTF-8 边界吸附,对拍 golden 门禁,测试锚点表)+已知边界;每节实现锚 crates/kode-parser/src/{xml,model,diag}.rs,权威=tests/parser_units.rs 单测即文档;invalid fixtures 面=PR-005 既有盲样变异不重做)
 - [x] RUST-098 （旧 SYNTAX-002） 明确 XML 解析保持节点/属性/文本精确 Span：不可以只做值解析丢定位。(PR-005:crates/kode-parser/src/xml.rs 开/闭/内容/名称/属性字节 span,伪注释掩码字节长度不变;证据 docs/kode2/pr-005.md)
 - [x] RUST-099 （旧 SYNTAX-003） CST/AST 支持容错解析（缺闭合标签/临时不完整编辑），诊断精确位置。(PR-005 基础版:截断/坏标签/未闭合结构化诊断 13 码,树前缀不丢,逐字节截断扫描测试;CST 级增量重解析随 PR-007)
-- [ ] RUST-100 （旧 SYNTAX-004） 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。(PR-005 已裁决 ADR-102:自研零依赖状态机,quick-xml/rowan 未引入;若增量基准证明成瓶颈按 ADR-002 重评)
+- [x] RUST-100 （旧 SYNTAX-004） 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。(2026-11-17 对账收口:ADR 选型已闭=docs/kode2/adr/ADR-102-parser-tech-choice.md(已接受 2026-10-23,自研零依赖字节级状态机,quick-xml/rowan 未引入,对拍 golden 28/28);「验证成本与热更新性能」半句已由增量基准检验闭环=docs/perf/2026-11-15-index-increment-bench.md 热更新单文件 P50 402µs/P99 739µs 亚毫秒非瓶颈+同文本零重建 9.5µs/根级失效线性面,该报告显式核对 ADR-102 reopen 触发条件未触发(巨型单文件为已知独立形态,触发条款在案);若将来证明瓶颈仍按 ADR-002 重评)
 - [x] RUST-101 （旧 SYNTAX-005） AST 对未知字段保留以适应引擎分支/扩展，不因未知标签完全失败。(PR-005:extra_tags/extra_sections 保留 + 遗留拼写容忍)
 - [x] RUST-102 （旧 SYNTAX-006） 大文件解析/增量与缓存基准，禁止任何 debug build 性能结论代替 release。(c24e0870,2026-11-15 收口=索引层墙钟基准补齐(余项「热更新性能与增量基准随 PR-007/009」——两 PR 均已落地,前置齐):新增 crates/kode-index/examples/bench_increment.rs(release 铁律)五块车道=2000 真实形态实体 def(64 属性+12 方法+继承链)首扫全量 update_batch 825.0ms/13.9MB/s(154000 符号)+**热更新稳态交互面**(单文件真实改文本→update 必重建,300 次)P50=402µs/P95=672µs/max=757µs+同文本零重建对照(1000 次全 cache-hit 9.5µs/次,generation 不变,断言双证防假增量)+rename 318µs/次·未注册 remove 零副作用+invalidate_root 清 155450 符号 81.5ms→全量重扫 739.7ms(与首扫同路径同量级,无超线性回退)+巨型单文件 2 万属性 1.6MB 首插 148.1ms/热更重解析 169.3ms;报告 docs/perf/2026-11-15-index-increment-bench.md 含解读与边界(热更新亚毫秒非瓶颈/增量有效性双证/巨型文件增量到 CST 级才有空间随 ADR-102/ARCH-012 只立 Rust 自身基线不做跨实现对比);**历史账**:PR-007 既有 examples/bench_index.rs 是 rebuild 计数正确性车道(数字进 pr-007.md)——本批曾误覆盖,cp 暂存+git restore 字节还原(HEAD 对拍 cmp 一致)+墙钟车道独立落 bench_increment.rs 两个 example 互不覆盖;门禁 cargo test -p kode-index 全绿+clippy -D warnings 0+cargo fmt)
 
@@ -582,7 +582,7 @@
 
 ### 18. 关键架构决策待验证清单（不提前拍脑袋）
 - [ ] RUST-288 （旧 ADR-101） Salsa 与自研 revision query engine：根据 query DAG 大小、内存、工程维护成本决定。
-- [ ] RUST-289 （旧 ADR-102） quick-xml + spans / rowan / tree-sitter：根据错误恢复、源映射、增量表现决定。
+- [x] RUST-289 （旧 ADR-102） quick-xml + spans / rowan / tree-sitter：根据错误恢复、源映射、增量表现决定。(2026-11-17 对账收口:裁决档已在库=docs/kode2/adr/ADR-102-parser-tech-choice.md(已接受 2026-10-23,自研零依赖字节级状态机);三轴覆盖=错误恢复(SYNTAX-003 结构化诊断+局部跳过,树前缀永不丢)·源映射(字节级 span 精确+伪注释掩码长度不变)·增量表现(指纹+零重建断言+2026-11-15 增量基准检验 reopen 未触发);与 RUST-100 同证据链,文法细则见 docs/kode2/grammar-spec.md)
 - [ ] RUST-290 （旧 ADR-103） SQLite vs redb vs mmap cache：用 2k/10k/50k 数据集比较 cold startup/写放大。
 - [ ] RUST-291 （旧 ADR-104） 标准 LSP vs custom RPC：标准编辑器功能优先 LSP，专用交互使用命名空间协议。
 - [ ] RUST-292 （旧 ADR-105） Python engine AST/LS 方案：优先复用成熟 Python 工具的行为，避免维护第二套完整 Python LS。
