@@ -198,6 +198,23 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
     );
   });
 
+  // RUST-221(旧 UI-004)Core 重启:停当前 Rust 进程并清冷却/镜像账/快照,
+  // 下次语义请求按当前配置重建(与换 serverPath 自动重启同一路径);重启后
+  // 补镜像语料(新进程空库)。backend=ts 时如实说明无 Rust 进程可重启。
+  const restartCoreCommand = vscode.commands.registerCommand('kbengine.core.restart', () => {
+    if (gate.mode === 'ts') {
+      void vscode.window.showInformationMessage(
+        `当前 kbengine.core.backend=ts(纯 TS 轨道),没有 Rust Core 进程可重启;切到 rust/shadow 后本命令才有作用。`
+      );
+      return;
+    }
+    gate.restartCore();
+    void mirrorCorpusToRust(gate);
+    void vscode.window.showInformationMessage(
+      `Kode Core 已重启:旧进程已停止,镜像账与快照已清;下次语义请求按当前配置重建(冷启动短暂变慢)。backend=${gate.mode}。`
+    );
+  });
+
   const configWatcher = vscode.workspace.onDidChangeConfiguration(event => {
     if (
       event.affectsConfiguration('kbengine.core.backend') ||
@@ -219,6 +236,7 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
   context.subscriptions.push(
     gate,
     configWatcher,
+    restartCoreCommand,
     foldersWatcher,
     renamedFilesWatcher,
     deletedFilesWatcher,

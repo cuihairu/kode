@@ -52,15 +52,16 @@ import {
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';
-import { getAnnotationBuildWorkload, getPendingDocumentUpdateCount, getReturnAnnotationCacheGauge } from '../backend/pythonReturnTypeInference';
-import { getDatabaseSchemaCacheGauge, getPendingTypeStorageColdBuildCount } from '../databaseSchema';
+import { getAnnotationBuildWorkload, getPendingDocumentUpdateCount, getReturnAnnotationCacheGauge, resetPythonReturnAnnotationCache } from '../backend/pythonReturnTypeInference';
+import { clearDatabaseSchemaCache, getDatabaseSchemaCacheGauge, getPendingTypeStorageColdBuildCount } from '../databaseSchema';
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
 import { getDiagnosticScheduler } from '../backend/diagnosticScheduler';
 import { getIndexScanRoots } from '../scanRoots';
-import { getParsedDocumentCacheGauge } from '../backend/defParser';
+import { clearParsedDocumentCache, getParsedDocumentCacheGauge } from '../backend/defParser';
 import { getPythonParserWorkerGauge } from '../backend/pythonParserWorkerHost';
 import { hostLabel, renderExtensionIdentityReport, sideLabel } from '../backend/extensionIdentity';
 import { joinWorkspacePath } from '../backend/workspacePath';
+import { renderCacheClearConfirmation, renderCacheClearedReport } from '../backend/cacheMaintenance';
 import { LanguageServiceStatusController } from '../backend/languageServiceStatus';
 import { locateInterpreterOnPath, resolveInterpreterWith, resolveProfileInterpreter } from '../profileInterpreter';
 import { normalizeVenvDirectoryNames } from '../backend/quickActionConfig';
@@ -661,6 +662,43 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     );
   });
   context.subscriptions.push(pythonServiceStatusCommand);
+
+  // 缓存维护(RUST-221,旧 UI-004):三条内存缓存(解析文档/数据库 schema/
+  // 返回注解索引)一键清空——modal 确认列范围与影响(内存缓存重建,不动磁盘
+  // 与工作区文件,无数据丢失;重启窗口不是第一步),清后摘要逐条报差值,
+  // 缓存本已空时如实说明。范围/影响文案纯核渲染(cacheMaintenance)。
+  const clearCachesCommand = vscode.commands.registerCommand(
+    'kbengine.diagnostics.clearCaches',
+    async () => {
+      const gauges = [
+        { label: '解析文档缓存', entries: getParsedDocumentCacheGauge().entries },
+        { label: '数据库 schema 缓存', entries: getDatabaseSchemaCacheGauge().entries },
+        { label: '返回注解索引', entries: getReturnAnnotationCacheGauge().entries }
+      ];
+      const confirmLabel = l10nText('Clear caches');
+      const choice = await vscode.window.showWarningMessage(
+        renderCacheClearConfirmation(gauges),
+        { modal: true },
+        confirmLabel
+      );
+      if (choice !== confirmLabel) {
+        return;
+      }
+      const before = gauges.map(gauge => gauge.entries);
+      clearParsedDocumentCache();
+      clearDatabaseSchemaCache();
+      resetPythonReturnAnnotationCache();
+      const after = [
+        getParsedDocumentCacheGauge().entries,
+        getDatabaseSchemaCacheGauge().entries,
+        getReturnAnnotationCacheGauge().entries
+      ];
+      await vscode.window.showInformationMessage(renderCacheClearedReport(
+        gauges.map((gauge, i) => ({ label: gauge.label, before: before[i], after: after[i] }))
+      ));
+    }
+  );
+  context.subscriptions.push(clearCachesCommand);
 
   // profile 健康状态汇总(IDE-PRJ-009):缺引擎/缺解释器/缺语言服务/根歧义/
   // 索引停滞各带定位入口,活动 profile 经稳定 ID 解析(IDE-PRJ-010);

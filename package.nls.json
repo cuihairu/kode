@@ -67,6 +67,8 @@
   "kbengine.command.metrics.stopCpuProfile.title": "Kode: Stop Extension Host CPU Profile",
   "kbengine.command.metrics.showActiveTasks.title": "Kode: Show Active Language Service Tasks",
   "kbengine.command.metrics.showPerformancePanel.title": "Kode: Show Performance Panel (queues, caches, index, P95/P99, slow requests)",
+  "kbengine.command.core.restart.title": "Kode: Restart Core (stop Rust process, rebuild on next request)",
+  "kbengine.command.diagnostics.clearCaches.title": "Kode: Clear In-Memory Caches (parsed documents, database schemas, return annotations)",
   "kbengine.command.debug.createConfig.title": "Create Debug Config Template",
   "kbengine.command.monitoring.show.title": "Show Monitoring Panel",
   "kbengine.command.dependency.show.title": "Show Entity Dependency Graph",

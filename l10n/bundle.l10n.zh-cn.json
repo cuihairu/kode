@@ -609,6 +609,7 @@
   "No workspace open; cannot generate the discovery report": "未打开工作区,无法生成发现与定位诊断",
   "{count} discovery issues found; see the \"{channel}\" output panel": "发现与定位存在 {count} 项问题,详见「{channel}」输出面板",
   "Discovery report: all clear": "发现与定位全部正常",
+  "Clear caches": "清空缓存",
   "Python interpreter missing (click to select or create one)": "Python 解释器缺失(点击可选择或创建)",
   "Select the parent directory for the venv": "选择放置 venv 的目录",
   "Creating venv: python -m venv {target}": "创建 venv: python -m venv {target}",

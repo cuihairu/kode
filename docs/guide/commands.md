@@ -1141,6 +1141,16 @@ The flow graph panel supports:
   - In `ts`/`rust` mode: no channel exists — an info notice states the current `backend` value and that the log is empty; nothing is created
   - Rust results never affect any user-visible behavior in any mode; the log is diagnostic evidence for parity expansion and the rollback drill, not a serving path
 
+### `kbengine.core.restart`
+
+- Title: `Kode: Restart Core (stop Rust process, rebuild on next request)`
+- Purpose: stop the running kode-server (Rust Core) process and drop its mirror ledger and snapshots; the next semantic request rebuilds a fresh process from the current configuration (RUST-221) — the same path an automatic restart takes when `kbengine.core.serverPath` changes
+- Behavior:
+  - After restart, the workspace corpus is re-mirrored to the new process (the gate's restart reconciliation replays snapshots as `didOpen`, so edits keep working); expect a short cold-start on the next request
+  - In `kbengine.core.backend=ts` (kill-switch) mode: an honest notice states there is no Rust Core process to restart and nothing is changed
+  - The shadow diff log is preserved across restarts (same policy as disposal) so rollback-drill evidence is not lost
+  - Use cases: a suspected hung or wedged Core process, or picking up a freshly built kode-server binary without reloading the window
+
 ### `kbengine.mcp.toggle`
 
 - Title: `Toggle Kode MCP`
@@ -1327,6 +1337,20 @@ The flow graph panel supports:
   - Queue data: diagnostics queued/in-flight, pending document-update annotations, index tasks queued, schema cold builds, plus language-service operations currently on the ledger (the IDE-MET-008 counts)
   - Connections (masked): the engine dbmgr database interface config rendered as `host=… port=… database=… username=*** password=*** encrypt=…` — the username and password values are never written, and the whole report is passed through a masking pass that rewrites `password=`/`token=`/`secret=`/`authorization=` assignments and URL userinfo to `***`
 - Behavior: rendering is a pure function in `src/reproductionSummary.ts`; collection reads only existing faces (`resolveDatabaseInterfaceConfig`, `resolveActiveProfile`, index scan roots, the diagnostic scheduler, the language-service metrics ledger) and the extension's own `package.json`
+
+### `kbengine.diagnostics.clearCaches`
+
+- Title: `Kode: Clear In-Memory Caches (parsed documents, database schemas, return annotations)`
+- Purpose: clear the extension's three in-memory caches in one step, with a modal confirmation that lists scope and impact before anything is dropped (RUST-221)
+- Scope (confirmed first, with live entry counts):
+  - Parsed-document cache (`.def`/XML AST memoization)
+  - Database-schema cache
+  - Return-annotation index
+- Behavior:
+  - Impact stated honestly: these are acceleration layers only — the next queries rebuild them (a brief slowdown), nothing on disk or in the workspace is touched, and no data is lost. Reloading the window is not the first troubleshooting step
+  - After clearing, a summary reports the per-cache entry delta; when the caches were already empty it says so instead of claiming entries were dropped
+  - The confirmation/summary texts are pure functions in `src/backend/cacheMaintenance.ts`; the command only wires gauges → confirm → clear → report
+  - Use case: suspecting stale cache content (a changed def/type storage not reflected in the UI) — try this before any window reload
 
 ### `kbengine.quickActions.show`
 

@@ -67,6 +67,8 @@
   "kbengine.command.metrics.stopCpuProfile.title": "Kode: 停止扩展宿主 CPU 剖析",
   "kbengine.command.metrics.showActiveTasks.title": "Kode: 查看活跃语言服务任务",
   "kbengine.command.metrics.showPerformancePanel.title": "Kode: 查看性能面板（队列、缓存、索引、P95/P99、慢请求）",
+  "kbengine.command.core.restart.title": "Kode: 重启 Core（停 Rust 进程，下次请求重建）",
+  "kbengine.command.diagnostics.clearCaches.title": "Kode: 清空内存缓存（解析文档、数据库 schema、返回注解）",
   "kbengine.command.debug.createConfig.title": "创建调试配置模板",
   "kbengine.command.monitoring.show.title": "打开监控面板",
   "kbengine.command.dependency.show.title": "查看实体依赖图",

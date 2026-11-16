@@ -68,6 +68,12 @@ export function clearParsedDocumentCacheForTests(): void {
   parsedDocumentCache.clear();
 }
 
+/** RUST-221 生产维护面:kbengine.diagnostics.clearCaches 消费(与测试面同体,
+ * 正式别名供命令接线,测试面名字不进生产调用点) */
+export function clearParsedDocumentCache(): void {
+  parsedDocumentCache.clear();
+}
+
 /** IDE-AUD-048/R2-F12:按原文逐出全局解析缓存条目(内容键,不区分来源根)。
  *  根移除时把该根已释放文档的原文交给这里,长会话不再持有其 XML AST;
  *  其余根若复用同内容,下次访问重解析(正确性不变,只是缓存未命中)。

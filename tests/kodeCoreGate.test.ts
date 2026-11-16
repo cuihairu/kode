@@ -138,6 +138,32 @@ describe('语料镜像账与自动重启对账(E-2)', () => {
       'openDocument'
     ]);
   });
+
+  it('RUST-221 restartCore:显式重启与 kill-switch 往返同效,重开走 didOpen', async () => {
+    const client = makeRestartableStubClient();
+    const gate = makeShadowGate(client);
+    await gate.mirrorDocument(URI, 'kbengine-def', 4, '<Entity/>');
+    expect(client.calls.filter(call => call.method !== 'start')).toHaveLength(1);
+    gate.restartCore();
+    expect(client.dispose).toHaveBeenCalled();
+    // 旧账已清:重启后继续编辑按快照重放 didOpen(版本 4),不是 didChange(5)
+    await gate.mirrorDocument(URI, 'kbengine-def', 5, '<Entity/>');
+    expect(client.calls.filter(call => call.method !== 'start').map(call => call.method)).toEqual([
+      'openDocument',
+      'openDocument'
+    ]);
+  });
+
+  it('RUST-221 restartCore 在 ts 模式幂等无害:无进程可停,不抛不建 client', async () => {
+    const gate = new KodeCoreGate({
+      clientFactory: () => {
+        throw new Error('ts mode must not build a client');
+      }
+    });
+    gate.setConfig({ backend: 'ts', serverPath: '', shadowTimeoutMs: 500 });
+    expect(() => gate.restartCore()).not.toThrow();
+    await expect(gate.mirrorDocument(URI, 'kbengine-def', 1, '<Entity/>')).resolves.toBeUndefined();
+  });
 });
 
 describe('关文档清理(E-4)', () => {

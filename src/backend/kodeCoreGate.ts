@@ -812,4 +812,13 @@ export class KodeCoreGate {
   async dispose(): Promise<void> {
     this.stopClient();
   }
+
+  /**
+   * RUST-221 用户显式重启 Core:停当前 Rust 进程并清冷却、镜像账与快照,
+   * 下次语义请求按当前配置重建(与换 serverPath 自动重启同一路径)。
+   * backend=ts 时无进程可停,幂等无害;差异日志保留(与 dispose 同口径)。
+   */
+  restartCore(): void {
+    this.stopClient();
+  }
 }

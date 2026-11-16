@@ -609,6 +609,7 @@
   "No workspace open; cannot generate the discovery report": "No workspace open; cannot generate the discovery report",
   "{count} discovery issues found; see the \"{channel}\" output panel": "{count} discovery issues found; see the \"{channel}\" output panel",
   "Discovery report: all clear": "Discovery report: all clear",
+  "Clear caches": "Clear caches",
   "Python interpreter missing (click to select or create one)": "Python interpreter missing (click to select or create one)",
   "Select the parent directory for the venv": "Select the parent directory for the venv",
   "Creating venv: python -m venv {target}": "Creating venv: python -m venv {target}",

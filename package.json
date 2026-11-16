@@ -159,6 +159,7 @@
     "onCommand:kbengine.api.engineSource",
     "onCommand:kbengine.entities.checkRegistration",
     "onCommand:kbengine.diagnostics.exportReproSummary",
+    "onCommand:kbengine.diagnostics.clearCaches",
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.scanScripts",
     "onCommand:kbengine.quickActions.runDefault",
@@ -193,6 +194,7 @@
     "onCommand:kbengine.python.createVenv",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
+    "onCommand:kbengine.core.restart",
     "onCommand:kbengine.source.reveal",
     "onCommand:kbengine.infer.run",
     "onCommand:kbengine.managedDir.syncExclusions",
@@ -955,6 +957,10 @@
         "title": "%kbengine.command.core.showShadowDiffLog.title%"
       },
       {
+        "command": "kbengine.core.restart",
+        "title": "%kbengine.command.core.restart.title%"
+      },
+      {
         "command": "kbengine.discovery.report",
         "title": "%kbengine.command.discovery.report.title%"
       },
@@ -981,6 +987,10 @@
       {
         "command": "kbengine.diagnostics.exportReproSummary",
         "title": "%kbengine.command.diagnostics.exportReproSummary.title%"
+      },
+      {
+        "command": "kbengine.diagnostics.clearCaches",
+        "title": "%kbengine.command.diagnostics.clearCaches.title%"
       },
       {
         "command": "kbengine.quickActions.show",

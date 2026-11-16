@@ -91,6 +91,12 @@ export function clearDatabaseSchemaCacheForTests(): void {
   databaseSchemaCacheMisses = 0;
 }
 
+/** RUST-221 生产维护面:kbengine.diagnostics.clearCaches 消费(与测试面同体,
+ * 正式别名供命令接线,测试面名字不进生产调用点) */
+export function clearDatabaseSchemaCache(): void {
+  databaseSchemaCache.clear();
+}
+
 /** 测试/观测面:缓存命中/未命中/在册条目数/容量 */
 export function getDatabaseSchemaCacheStatsForTests(): {
   hits: number;
