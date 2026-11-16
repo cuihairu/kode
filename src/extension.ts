@@ -308,7 +308,9 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleCellDataCallbackDiagnostics,
     cellDataCallbackDiagnostics,
     cellDataCallbackScheduler,
+    fixedDictConstructDiagnostics,
     fixedDictConstructScheduler,
+    scalarAssignDiagnostics,
     scalarAssignScheduler,
     retriggerCellDataDiagnosticsForDefChange,
     processTopologyDiagnostics,
@@ -420,6 +422,13 @@ export function activate(context: vscode.ExtensionContext) {
       // KSEM-DATA-06:spaceData 保护键诊断随文档生命周期(关闭即摘除)。
       spaceDataProtectedKeyDiagnostics.delete(document.uri);
       spaceDataProtectedKeyScheduler.releaseDocument(document);
+      // KSEM-STRUCT-04:FIXED_DICT 构造点诊断随文档生命周期(关闭即摘除;与
+      // 同 close 面各族对齐,此前面板遗留已关文档的过期诊断)。
+      fixedDictConstructDiagnostics.delete(document.uri);
+      fixedDictConstructScheduler.releaseDocument(document);
+      // KSEM-STRUCT-05:def 属性标量赋值诊断随文档生命周期(关闭即摘除)。
+      scalarAssignDiagnostics.delete(document.uri);
+      scalarAssignScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)

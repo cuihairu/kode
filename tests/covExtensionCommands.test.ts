@@ -11,7 +11,9 @@ import { annotationSourceLog } from '../src/backend/annotationSourceLog';
 import { setHoverInFlightGateForTests } from '../src/languageProviders';
 import {
   makeTextDocument,
+  Diagnostic,
   Position,
+  Range,
   Uri,
   type ExtensionContext
 } from './fake-vscode/core';
@@ -23,6 +25,8 @@ import {
   type CpuProfilerSessionLike
 } from '../src/backend/cpuProfileCapture';
 import { locateInterpreterOnPath } from '../src/profileInterpreter';
+import { getOrParseDocumentSync } from '../src/backend/documentStore';
+import { getRootConfigGeneration, getRootConfigLastBumpReason } from '../src/rootConfigGeneration';
 
 // 真实解释器(双平台):测试面板「运行」档会真实 spawn 它跑 pytest——
 // CI(ubuntu) 取 PATH 上 /usr/bin/python3,Windows 取 PATH 上真实 python。
@@ -565,8 +569,77 @@ describe('extension 激活链命令面(补测)', () => {
   }, 20000);
 
   it('onDidChangeWorkspaceFolders:移除根整根摘除/新增根失效重扫', () => {
-    workspaceEvents.foldersChanged.fire({ added: [], removed: [{ uri: { fsPath: '/gone-root' } }] });
-    workspaceEvents.foldersChanged.fire({ added: [{ uri: { fsPath: '/added-root' } }], removed: [] });
+    // 五维钉 RUST-149(root-change 维度,接线级):激活期 foldersChanged
+    // 处理器的可观测效应断言——①移除根经 rootRemovals 链释放 documentStore
+    // 快照(IDE-RES-008);②根集变化推进 rootConfigGeneration(持旧快照的
+    // 消费端判过期);③无增删事件不推进(纯 no-op 事件不误伤缓存)。
+    const goneDoc = makeTextDocument('value = 1\n', {
+      fileName: '/gone-root-xyz/scripts/a.py',
+      languageId: 'python',
+      version: 3
+    });
+    const parse = (text: string): { text: string } => ({ text });
+    expect(getOrParseDocumentSync(goneDoc, parse, 'rust149-root-change').cacheHit).toBe(false);
+    expect(getOrParseDocumentSync(goneDoc, parse, 'rust149-root-change').cacheHit).toBe(true);
+
+    const before = getRootConfigGeneration();
+    workspaceEvents.foldersChanged.fire({ added: [], removed: [{ uri: { fsPath: '/gone-root-xyz' } }] });
+    expect(getRootConfigGeneration()).toBeGreaterThan(before);
+    expect(getRootConfigLastBumpReason()).toBe('workspace-folders');
+    // 快照已随根释放:同版本再查是 cacheMiss(重解析),证明不在长会话持有
+    expect(getOrParseDocumentSync(goneDoc, parse, 'rust149-root-change').cacheHit).toBe(false);
+
+    const afterRemove = getRootConfigGeneration();
+    workspaceEvents.foldersChanged.fire({ added: [{ uri: { fsPath: '/added-root-xyz' } }], removed: [] });
+    expect(getRootConfigGeneration()).toBeGreaterThan(afterRemove);
+
+    const afterAdd = getRootConfigGeneration();
+    workspaceEvents.foldersChanged.fire({ added: [], removed: [] });
+    expect(getRootConfigGeneration()).toBe(afterAdd);
+  });
+
+  it('onDidCloseTextDocument:诊断集合随文档生命周期整族摘除(root 移除→VSCode 关文档→清除 链钉)', () => {
+    // 五维钉 RUST-149(root-change→stale 维度):根移除后其文档被关闭,
+    // 已发布诊断必须随 close 整族摘除(否则 Problems 面遗留已关文档过期项)。
+    // 覆盖 close 面全 13 族:既有 11 族 + KSEM-STRUCT-04/05 两族(本批补齐
+    // 与兄弟族对齐的 close 摘除)。
+    const CLOSE_CLEARED_COLLECTIONS = [
+      'kbengine-def-method-consistency',
+      'kbengine-process-topology',
+      'kbengine-user-type-contract',
+      'kbengine-property-direction',
+      'kbengine-readonly-write',
+      'kbengine-role-misuse',
+      'kbengine-post-destroy',
+      'kbengine-celldata-write',
+      'kbengine-celldata-wrongkey',
+      'kbengine-celldata-callback',
+      'kbengine-space-data-protected-key',
+      'kbengine-fixeddict-construct',
+      'kbengine-scalar-assign'
+    ];
+    const closeDoc = makeTextDocument('value = 1\n', {
+      fileName: path.join(root, 'scripts', 'closey.py'),
+      languageId: 'python'
+    });
+    const seeded: string[] = [];
+    for (const entry of languagesRegistry.diagnosticCollections) {
+      if (!CLOSE_CLEARED_COLLECTIONS.includes(entry.name)) {
+        continue;
+      }
+      entry.collection.set(closeDoc.uri, [
+        new Diagnostic(new Range(new Position(0, 0), new Position(0, 1)), 'seed', 1)
+      ]);
+      seeded.push(entry.name);
+    }
+    expect(seeded.sort()).toEqual([...CLOSE_CLEARED_COLLECTIONS].sort());
+    workspaceEvents.documentClosed.fire(closeDoc);
+    for (const entry of languagesRegistry.diagnosticCollections) {
+      if (!CLOSE_CLEARED_COLLECTIONS.includes(entry.name)) {
+        continue;
+      }
+      expect(entry.collection.get(closeDoc.uri)).toHaveLength(0);
+    }
   });
 
   it('onDidChangeConfiguration:db 配置与引擎根变化走各自联动', () => {

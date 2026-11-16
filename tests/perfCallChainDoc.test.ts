@@ -350,8 +350,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-15(RUST-022):extension.ts 顶部 import +1(activationProfile)、
   // activate 同步体分段埋点 +10(enter 注释+标记 5、l0/l1/l2/l3 各 1、其余
   // 段位在后)→ 430/529 → 440/539,真位重探;出处随 baseline 锁步。
-  ['src/extension.ts', 440, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 539, 'flushQueued()'],
+  // 2026-11-17(RUST-149 批 1):extension.ts 诊断解构 +2(fixedDict/scalarAssign
+  // collections)、closeWatcher 生命周期 +7(两族 close 摘除,均在其前)→
+  // 440/539 → 449/548,真位重探;出处随 baseline 锁步。
+  ['src/extension.ts', 449, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 548, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
