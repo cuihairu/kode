@@ -196,6 +196,15 @@ const isCorpusDocument = (document: DocumentLike): boolean =>
   isDefDocument(document) ||
   CORPUS_XML_SUFFIXES.some(suffix => document.uri.fsPath.endsWith(suffix));
 
+/**
+ * 补全面 Rust 文档门(RUST-134):语料文档之外,.py 也在补全面候选
+ * (self. 实体成员面 + KBEngine./kbe. 模块别名面均由 Rust 共享查询接管)。
+ * 仅补全 serve 路径使用;definition/hover 等其余面维持 isCorpusDocument
+ * 口径(Python 悬停/定义落点不在 Rust 面)。
+ */
+const isCompletionRustDocument = (document: DocumentLike): boolean =>
+  isCorpusDocument(document) || document.uri.fsPath.toLowerCase().endsWith('.py');
+
 /** ProviderResult 是否 thenable(映射管理器方法跳转返回 Promise 的路径) */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   return value !== null && typeof value === 'object' && typeof (value as { then?: unknown }).then === 'function';
@@ -267,9 +276,9 @@ export async function serveDefinitionFromRust(
 
 /**
  * 补全面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
- * 语料文档(Rust 侧要有本文件 buffer 才可能应答),再请求 kode-server
+ * 文档(Rust 侧要有本文件 buffer 才可能应答),再请求 kode-server
  * textDocument/completion。Rust 判定出上下文且条目集非空时返回条目集;
- * 未判定上下文(接口段/属性子标签/def 顶层/非语料)、任何失败、或
+ * 未判定上下文(接口段/属性子标签/def 顶层/无归属的 py)、任何失败、或
  * 「空条目集+isIncomplete:false」(语料缺位与真无候选不可区分,RUST-021
  * 关闭面修订)返回 null —— 调用方回 TS。Rust 条目集优先于 TS(直接切语义),
  * 但空集不装权威结果。
@@ -282,8 +291,9 @@ export async function serveCompletionFromRust(
   if (!gate || !gate.serveFromRust()) {
     return null;
   }
-  // Rust 面 = 语料文档(def + 三类 XML);非语料零请求直通 TS。
-  if (!isCorpusDocument(document)) {
+  // Rust 面 = 语料文档 + py(补全专用门:RUST-134 self./模块别名面;
+  // 其余文档零请求直通 TS)。
+  if (!isCompletionRustDocument(document)) {
     return null;
   }
   const uri = document.uri.fsPath;

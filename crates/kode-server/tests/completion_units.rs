@@ -472,3 +472,116 @@ fn value_context_on_alias_documents_lists_types_without_entity() {
         "alias 取值位至少给出类型/别名候选"
     );
 }
+
+// ---------------------------------------------------------------------------
+// RUST-134:py `self.` 实体成员面(共享 def 链查询)
+// ---------------------------------------------------------------------------
+
+const AVATAR_PY: &str = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.\n";
+
+/// 全量点:本类属性(带类型)→ 三分面方法(base/cell/client,声明序)→
+/// 继承链成员(近祖先优先;同名被本类/先出项遮蔽,`inheritedFrom` 标注)。
+/// context 面 kind="self" section="Entity" entity=文件 stem 归属实体。
+#[test]
+fn py_self_completion_lists_own_then_facet_methods_then_chain() {
+    let engine = loaded_engine();
+    // 行 6(1 起)= `\t\tself.`,col 7 = 行尾全量点。
+    let response =
+        complete_at(&engine, "ws/scripts/base/Avatar.py", AVATAR_PY, 6, 7)
+            .expect("py self. 位应判面");
+    assert_eq!(response.context.kind, "self");
+    assert_eq!(response.context.section, "Entity");
+    assert_eq!(response.context.entity.as_deref(), Some("Avatar"));
+    assert_eq!(response.context.fragment, "");
+    // 本类 hp(UINT32)/level(UINT16)→ reqCastSkill(base)/respawn(cell)
+    // → 继承:name/onSpawned/onHPChanged/notify(BaseApp;hp·reqCastSkill
+    // 同名被本类遮蔽不出)。
+    assert_eq!(
+        labels(&response),
+        vec![
+            "hp".to_string(),
+            "level".to_string(),
+            "reqCastSkill".to_string(),
+            "respawn".to_string(),
+            "name".to_string(),
+            "onSpawned".to_string(),
+            "onHPChanged".to_string(),
+            "notify".to_string(),
+        ]
+    );
+    // 本类属性 detail=类型;同名遮蔽:hp 是本类 UINT32,非父 UINT64。
+    assert_eq!(response.items[0].kind, "property");
+    assert_eq!(response.items[0].detail.as_deref(), Some("UINT32"));
+    assert_eq!(response.items[0].inherited_from, None);
+    // 方法三分面 facet 标注归属。
+    assert_eq!(response.items[2].kind, "method");
+    assert_eq!(response.items[2].facet, Some("base"));
+    assert_eq!(response.items[3].facet, Some("cell"));
+    // 继承成员:inheritedFrom=BaseApp;name 本类无声明照常出项。
+    assert_eq!(response.items[4].kind, "property");
+    assert_eq!(response.items[4].detail.as_deref(), Some("STRING"));
+    assert_eq!(response.items[4].inherited_from.as_deref(), Some("BaseApp"));
+    assert_eq!(response.items[7].facet, Some("client"));
+    assert_eq!(response.items[7].inherited_from.as_deref(), Some("BaseApp"));
+}
+
+/// 过滤:片段大小写不敏感前缀(TS python 面同口径);命中本类时仍出
+/// 本类版本(遮蔽在过滤后同样生效)。
+#[test]
+fn py_self_completion_filters_fragment_case_insensitively() {
+    let engine = loaded_engine();
+    let py = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.HP\n";
+    // col 9 = `self.HP` 行尾,fragment="HP"。
+    let response =
+        complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 9)
+            .expect("过滤位应判面");
+    assert_eq!(response.context.fragment, "HP");
+    assert_eq!(labels(&response), vec!["hp".to_string()]);
+    assert_eq!(response.items[0].detail.as_deref(), Some("UINT32"));
+    assert_eq!(response.items[0].inherited_from, None);
+    // 无命中:片段存在但判面成立(items 空,不是 None)。
+    let py_none = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.zzz\n";
+    let response =
+        complete_at(&engine, "ws/scripts/base/Avatar.py", py_none, 6, 10)
+            .expect("无命中也是判面成立");
+    assert!(response.items.is_empty());
+}
+
+/// 诚实让位:嵌套 `self.a.` 多段路径不接管(TS nested 面语义);非 self
+/// 接收者不接管;非实体 py(无同 stem 语料 def)不接管;scripts/ 之外的
+/// py 不接管。
+#[test]
+fn py_self_completion_yields_none_outside_first_self_segment() {
+    let engine = loaded_engine();
+    let nested = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.pos.x\n";
+    assert!(
+        complete_at(&engine, "ws/scripts/base/Avatar.py", nested, 6, 12).is_none(),
+        "self.pos.x 嵌套段不接管"
+    );
+    let other = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tmonster.\n";
+    assert!(
+        complete_at(&engine, "ws/scripts/base/Avatar.py", other, 6, 12).is_none(),
+        "非 self 接收者不接管"
+    );
+    // 无 Helper.def 语料:stem 归属落空 → None。
+    assert!(
+        complete_at(&engine, "ws/scripts/base/Helper.py", AVATAR_PY, 6, 7).is_none(),
+        "非实体 py 不接管"
+    );
+    // scripts/ 之外:路径面不符 → None。
+    assert!(
+        complete_at(&engine, "ws/entity_defs/Avatar.py", AVATAR_PY, 6, 7).is_none(),
+        "scripts/ 外 py 不接管"
+    );
+}
+
+/// KBEngine. 模块别名面不被 py self 臂回归:module face 优先保持。
+#[test]
+fn py_module_alias_face_still_wins_over_self_arm() {
+    let engine = loaded_engine();
+    let py = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tKBEngine.\n";
+    let response = complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 13)
+        .expect("KBEngine. 位应判面");
+    assert_eq!(response.context.kind, "module");
+    assert_eq!(response.context.section, "KBEngine");
+}

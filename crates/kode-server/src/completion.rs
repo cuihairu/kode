@@ -125,7 +125,11 @@ impl HoverEngine {
     ) -> Option<CompletionResponse> {
         if key.uri.as_path().ends_with(".py") {
             let prefix = line_prefix(text, line0, character as usize)?;
-            return crate::python_process::completion(key.uri.as_path(), text, &prefix);
+            if let Some(report) = crate::python_process::completion(key.uri.as_path(), text, &prefix)
+            {
+                return Some(report);
+            }
+            return self.python_self_completion(key, &prefix);
         }
         if matches!(file_kind_of_uri(&key.uri), FileKind::Other) {
             return None;
@@ -232,6 +236,111 @@ impl HoverEngine {
                 items,
             })
         }
+    }
+
+    /// RUST-134:Python `self.<片段>` 实体成员面(共享 def 链查询)——实体
+    /// 归属 = py 文件 stem(注册候选优先/根内语料 stem 回落,唯一命中才接管,
+    /// 零/多命中 None 让位 TS 既有链);属性 = 本类声明 + 继承链(近祖先
+    /// 优先,同名被先出项遮蔽);方法 = 三分面全量(本类三分面声明序 +
+    /// 继承链),facet 标注归属分面。片段大小写不敏感前缀过滤(TS python
+    /// 面同口径);嵌套 `self.a.` 多段路径不接管(TS nested 面语义不同,
+    /// 不混装);判不出/无归属 None,不报错不阻塞。
+    fn python_self_completion(&self, key: &DocumentKey, prefix: &str) -> Option<CompletionResponse> {
+        let (head, fragment) = prefix.rsplit_once('.')?;
+        if !fragment.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return None;
+        }
+        let word = head
+            .rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()?;
+        if word != "self" {
+            return None;
+        }
+        let path = key.uri.as_path();
+        let (_, tail) = path.rsplit_once("/scripts/")?;
+        let file = tail.rsplit('/').next()?;
+        let entity = file.strip_suffix(".py")?;
+        if entity.is_empty() {
+            return None;
+        }
+        let def_path = self.corpus_def_for_entity(key.root, entity)?;
+        let def = self.corpus_def(def_path.as_str())?;
+        let needle = fragment.to_ascii_lowercase();
+        let mut items: Vec<CompletionItemFace> = Vec::new();
+        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut push = |label: String,
+                        kind: &'static str,
+                        facet: Option<&'static str>,
+                        detail: Option<String>,
+                        inherited: Option<String>,
+                        items: &mut Vec<CompletionItemFace>| {
+            if label.to_ascii_lowercase().starts_with(&needle) && seen.insert(label.clone()) {
+                items.push(CompletionItemFace {
+                    label,
+                    kind,
+                    facet,
+                    detail,
+                    inherited_from: inherited,
+                });
+            }
+        };
+        for prop in &def.properties {
+            push(
+                prop.name.clone(),
+                "property",
+                None,
+                prop.type_name.clone(),
+                None,
+                &mut items,
+            );
+        }
+        for (facet, section) in [
+            ("base", MethodSection::Base),
+            ("cell", MethodSection::Cell),
+            ("client", MethodSection::Client),
+        ] {
+            for method in def.methods(section) {
+                push(method.name.clone(), "method", Some(facet), None, None, &mut items);
+            }
+        }
+        // 继承成员:链面展开(近祖先优先;缺父如实空,绝不虚构)。链面按
+        // def 路径定位(defs_root/category 探测锚),非 py 路径。
+        let chain = self.chain_face(&def_path, def);
+        for member in &chain.members {
+            if !member.exists {
+                continue;
+            }
+            for prop in &member.properties {
+                push(
+                    prop.name.clone(),
+                    "property",
+                    None,
+                    prop.r#type.clone(),
+                    Some(member.entity.clone()),
+                    &mut items,
+                );
+            }
+            for method in &member.methods {
+                push(
+                    method.name.clone(),
+                    "method",
+                    Some(method.facet),
+                    None,
+                    Some(member.entity.clone()),
+                    &mut items,
+                );
+            }
+        }
+        Some(CompletionResponse {
+            context: CompletionContextFace {
+                kind: "self",
+                section: "Entity",
+                facet: None,
+                entity: Some(entity.to_string()),
+                fragment: fragment.to_string(),
+            },
+            items,
+        })
     }
 
     /// 属性/方法成员面:本类声明在前(声明序),继承成员随后(祖先链近者优先,

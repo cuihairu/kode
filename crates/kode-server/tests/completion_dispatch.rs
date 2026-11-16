@@ -436,3 +436,188 @@ fn did_close_of_deleted_file_drops_corpus() {
     );
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+// ---------------------------------------------------------------------------
+// RUST-134:py `self.` 实体成员面(LSP 级,内存 overlay fixture)
+// ---------------------------------------------------------------------------
+
+const SELF_ENTITIES: &str = "<root>\n\t<Avatar hasBase=\"true\"/>\n</root>\n";
+
+const SELF_AVATAR_DEF: &str = "<root>\n\
+\t<Parent> BaseApp </Parent>\n\
+\t<Properties>\n\
+\t\t<hp>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t</hp>\n\
+\t</Properties>\n\
+\t<BaseMethods>\n\
+\t\t<reqCastSkill>\n\
+\t\t\t<Exposed> true </Exposed>\n\
+\t\t</reqCastSkill>\n\
+\t</BaseMethods>\n\
+</root>\n";
+
+const SELF_BASEAPP_DEF: &str = "<root>\n\
+\t<Properties>\n\
+\t\t<name>\n\
+\t\t\t<Type> STRING </Type>\n\
+\t\t</name>\n\
+\t</Properties>\n\
+\t<ClientMethods>\n\
+\t\t<notify>\n\
+\t\t</notify>\n\
+\t</ClientMethods>\n\
+</root>\n";
+
+const SELF_AVATAR_PY: &str = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.\n";
+
+fn open_self_fixture(state: &mut ServerState) {
+    for (uri, language, text) in [
+        (
+            "file:///workspace/demo/scripts/entities.xml",
+            "xml",
+            SELF_ENTITIES,
+        ),
+        (
+            "file:///workspace/demo/scripts/entity_defs/Avatar.def",
+            "kbengine-def",
+            SELF_AVATAR_DEF,
+        ),
+        (
+            "file:///workspace/demo/scripts/entity_defs/BaseApp.def",
+            "kbengine-def",
+            SELF_BASEAPP_DEF,
+        ),
+        (
+            "file:///workspace/demo/scripts/base/Avatar.py",
+            "python",
+            SELF_AVATAR_PY,
+        ),
+    ] {
+        let out = handle_message(
+            state,
+            notification(
+                "textDocument/didOpen",
+                json!({
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": language,
+                        "version": 1,
+                        "text": text
+                    }
+                }),
+            ),
+        );
+        assert!(out.is_empty());
+    }
+}
+
+/// py `self.` 位出实体成员(LSP 投影 label/kind/detail):本类属性 →
+/// 方法分面 → 继承链成员(defs_root/category 探测锚在 def 路径上)。
+#[test]
+fn completion_on_py_self_lists_entity_members_from_def_corpus() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    open_self_fixture(&mut state);
+    // 行 6(1 起)= `\t\tself.`,col 7 = 行尾全量点。
+    let out = handle_message(
+        &mut state,
+        request(
+            31,
+            "textDocument/completion",
+            completion_params(
+                "file:///workspace/demo/scripts/base/Avatar.py",
+                5,
+                7,
+            ),
+        ),
+    );
+    let result = response_of(&out);
+    assert_eq!(result["isIncomplete"], json!(false));
+    let items = result["items"].as_array().expect("items");
+    let labels: Vec<&str> = items
+        .iter()
+        .map(|i| i["label"].as_str().expect("label"))
+        .collect();
+    assert_eq!(
+        labels,
+        vec!["hp", "reqCastSkill", "name", "notify"],
+        "本类属性/方法在前,继承链成员随后(hp/reqCastSkill 遮蔽 BaseApp 同名)"
+    );
+    // 属性带类型 detail;方法 kind=2(method)。
+    let hp = items.iter().find(|i| i["label"] == json!("hp")).unwrap();
+    assert_eq!(hp["kind"], json!(10));
+    assert_eq!(hp["detail"], json!("UINT32"));
+    let req = items
+        .iter()
+        .find(|i| i["label"] == json!("reqCastSkill"))
+        .unwrap();
+    assert_eq!(req["kind"], json!(2));
+    let name = items.iter().find(|i| i["label"] == json!("name")).unwrap();
+    assert_eq!(name["detail"], json!("STRING"));
+}
+
+/// 非 self 位/非实体 py 诚实 null(不装无候选,让位 TS 既有链的语义由
+/// TS 装配层处理;Rust 分派层回 null 结果)。
+#[test]
+fn completion_on_py_non_self_or_non_entity_is_null() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    open_self_fixture(&mut state);
+    let non_self = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tmonster.\n";
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didChange",
+            json!({
+                "textDocument": {
+                    "uri": "file:///workspace/demo/scripts/base/Avatar.py",
+                    "version": 2
+                },
+                "contentChanges": [{ "text": non_self }]
+            }),
+        ),
+    );
+    let out = handle_message(
+        &mut state,
+        request(
+            32,
+            "textDocument/completion",
+            completion_params(
+                "file:///workspace/demo/scripts/base/Avatar.py",
+                5,
+                12,
+            ),
+        ),
+    );
+    assert_eq!(response_of(&out), &serde_json::Value::Null);
+    // 无同 stem 语料 def 的 py:归属落空 → null。
+    let helper_py = "class Helper:\n\tdef run(self):\n\t\tself.\n";
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": "file:///workspace/demo/scripts/base/Helper.py",
+                    "languageId": "python",
+                    "version": 1,
+                    "text": helper_py
+                }
+            }),
+        ),
+    );
+    let out = handle_message(
+        &mut state,
+        request(
+            33,
+            "textDocument/completion",
+            completion_params(
+                "file:///workspace/demo/scripts/base/Helper.py",
+                2,
+                7,
+            ),
+        ),
+    );
+    assert_eq!(response_of(&out), &serde_json::Value::Null);
+}

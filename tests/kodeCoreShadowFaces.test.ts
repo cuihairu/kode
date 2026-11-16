@@ -599,12 +599,36 @@ describe('serveCompletionFromRust 服务面(2026-11-08 用户令「直接切」)
     expect(client.calls.some(call => call.method === 'request:textDocument/completion')).toBe(true);
   });
 
-  it('非语料文档(schema/python):零请求直通 null', async () => {
+  it('py 文档进补全 Rust 门(RUST-134):镜像 + 请求,self. 面由 Rust 接管', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/completion', {
+      isIncomplete: false,
+      items: [{ label: 'hp', kind: 10, detail: 'UINT32' }],
+    });
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const report = await serveCompletionFromRust(
+      makeDocument({
+        uri: { fsPath: '/w/demo/scripts/base/Avatar.py' },
+        languageId: 'python',
+        getText: () => 'class Avatar:\n\tdef onTick(self):\n\t\tself.\n'
+      }) as never,
+      { line: 2, character: 7 }
+    );
+    expect(report).toEqual({
+      isIncomplete: false,
+      items: [{ label: 'hp', kind: 10, detail: 'UINT32' }],
+    });
+    expect(client.calls.some(call => call.method === 'openDocument')).toBe(true);
+    expect(client.calls.some(call => call.method === 'request:textDocument/completion')).toBe(true);
+  });
+
+  it('补全门外的文档(schema):零请求直通 null', async () => {
     const { client } = makeStubClient();
     const { gate } = makeGate(client, 'rust');
     setKodeCoreShadowGate(gate);
     const report = await serveCompletionFromRust(
-      makeDocument({ uri: { fsPath: '/w/Avatar.py' }, languageId: 'python' }) as never,
+      makeDocument({ uri: { fsPath: '/w/demo/res/server/schema.json' }, languageId: 'json' }) as never,
       { line: 1, character: 0 }
     );
     expect(report).toBeNull();

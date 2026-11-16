@@ -303,4 +303,39 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
       await serveHoverFromRust(document as never, { line: 0, character: 1 } as never)
     ).toBeNull();
   }, 20_000);
+
+  it('rust 轨道:py self. 实体成员面(真实二进制;RUST-134)', async () => {
+    // 语料前置:entities.xml(注册 Avatar)+ Avatar.def(实体模型)镜像,
+    // py 文档 overlay 走真 fixture 路径(/scripts/ 面 + stem 归属)。
+    const scripts = join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts');
+    const entitiesPath = join(scripts, 'entities.xml');
+    const avatarDefPath = join(scripts, 'entity_defs', 'Avatar.def');
+    const avatarPyPath = join(scripts, 'base', 'Avatar.py');
+    await gate!.mirrorDocument(entitiesPath, 'xml', 1, readFileSync(entitiesPath, 'utf8'));
+    await gate!.mirrorDocument(avatarDefPath, 'kbengine-def', 1, readFileSync(avatarDefPath, 'utf8'));
+    const pyText = 'import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.\n';
+    const pyDocument = {
+      uri: { fsPath: avatarPyPath },
+      languageId: 'python',
+      version: 1,
+      getText: () => pyText
+    };
+    // 行 6(1 基)= `\t\tself.`,character 7 = 行尾全量点。
+    const report = await serveCompletionFromRust(pyDocument as never, {
+      line: 5,
+      character: 7
+    } as never);
+    expect(report).not.toBeNull();
+    const labels = report!.items.map(item => item.label);
+    // def 声明属性(name/level/hp/experience)+ 方法分面(onAvatarDead 等
+    // base 面)全量出项;detail=类型(def <Type> 首文本)。
+    expect(labels).toEqual(expect.arrayContaining(['name', 'level', 'hp', 'experience']));
+    expect(labels).toContain('onAvatarDead');
+    const nameItem = report!.items.find(item => item.label === 'name');
+    expect(nameItem!.detail).toBe('STRING');
+    expect(nameItem!.kind).toBe(10);
+    // 方法条目 kind=2(method)。
+    const methodItem = report!.items.find(item => item.label === 'onAvatarDead');
+    expect(methodItem!.kind).toBe(2);
+  }, 20_000);
 });

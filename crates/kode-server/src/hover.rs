@@ -491,6 +491,37 @@ impl HoverEngine {
             .unwrap_or(&[])
     }
 
+    /// RUST-134:py 文件名 stem → 根内唯一语料 def 路径(实体归属,共享
+    /// 补全查询用)。先 entities.xml 注册候选(注册表真相);空则根内语料
+    /// stem 扫描回落(TS entitiesByName 口径);零命中/多命中 None 让位
+    /// 调用方既有链,绝不硬猜。
+    pub(crate) fn corpus_def_for_entity(&self, root: RootId, entity: &str) -> Option<String> {
+        let registered = self.def_candidates(root, entity);
+        match registered {
+            [only] => return Some(only.clone()),
+            [] => {}
+            _ => return None,
+        }
+        let matches: Vec<&String> = self
+            .corpus_defs
+            .iter()
+            .filter(|p| {
+                self.path_roots.get(*p) == Some(&root)
+                    && def_entity_name(p).as_deref() == Some(entity)
+            })
+            .collect();
+        match matches.as_slice() {
+            [only] => Some((*only).clone()),
+            _ => None,
+        }
+    }
+
+    /// RUST-134:语料 def 路径 → 已入库 DefFile 视图(共享补全查询读面;
+    /// completion.rs 与 hover 同饮一江水,不各自再开字段口子)。
+    pub(crate) fn corpus_def(&self, path: &str) -> Option<&DefFile> {
+        self.def_files.get(path)
+    }
+
     /// 根级失效(RUST-069-W 撤根扇出):清该根全部驻留——符号索引 + 路径键
     /// 语料视图(按 path_roots 归属定域,不误伤留存根)+ 根键 def 候选 +
     /// entities 目录派生集(目录无根身份,按幸存 entities.xml 重算)。
