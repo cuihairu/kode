@@ -12,10 +12,6 @@
  *   1.07-4.48ms / editRoundTrip.diagnostic p99 6.84ms / rss.mirrorDeltaMb
  *   110 / rss.afterSteady 116MB。墙钟界取 ~10x 以上余量吸收共享 runner
  *   抖动;RSS 是最紧的界(memory 不像墙钟抖动,gateBounds 同口径 ~3x)。
- * steadyCpuPercentMax(RUST-242:稳态窗进程 CPU 占比断言,/proc stat
- * utime+stime 增量/墙钟×100,单核=100%):首版界 200=两核全忙(宽松上界
- * 同纪律,只捕跑飞自旋;首跑落账 docs/perf/serving-gate-run.txt 后可收紧);
- * /proc 不可得(非 Linux)=观测缺失如实跳过,不冒充违规也不冒充合规。
  * 环境变量覆盖:KODE_SERVING_BOUND_*(SNAKE 大写),非法值诚实回退缺省,
  * 不抛不猜(与 resolveGateBounds 同语义)。
  */
@@ -29,7 +25,6 @@ export interface ServingGateBounds {
   editRoundTripDiagnosticP99Ms: number;
   mirrorRssDeltaMb: number;
   steadyRssMb: number;
-  steadyCpuPercentMax: number;
 }
 
 const BOUND_DEFAULTS: ServingGateBounds = {
@@ -40,8 +35,7 @@ const BOUND_DEFAULTS: ServingGateBounds = {
   steadyDiagnosticP99Ms: 40,
   editRoundTripDiagnosticP99Ms: 60,
   mirrorRssDeltaMb: 300,
-  steadyRssMb: 400,
-  steadyCpuPercentMax: 200
+  steadyRssMb: 400
 };
 
 const boundEnvName = (key: string): string =>

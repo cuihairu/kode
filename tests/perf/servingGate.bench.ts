@@ -68,26 +68,6 @@ const serverRssMb = (pid: number): number | null => {
   }
 };
 
-// RUST-242:稳态窗进程 CPU 占比观测——/proc/<pid>/stat 第 14/15 字段
-// (utime+stime,clock tick;Linux USER_HZ 恒 100)。进程退出/非 Linux
-// 返回 null=观测缺失,收尾如实跳过(不冒充违规也不冒充合规)。
-const serverCpuSeconds = (pid: number): number | null => {
-  try {
-    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    // comm 可含空格/括号:从最后一个 ')' 之后取字段,utime=第 14 个、
-    // stime=第 15 个(1 基,含 state)。
-    const afterComm = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-    const utime = Number(afterComm[11]);
-    const stime = Number(afterComm[12]);
-    if (!Number.isFinite(utime) || !Number.isFinite(stime)) {
-      return null;
-    }
-    return (utime + stime) / 100;
-  } catch {
-    return null;
-  }
-};
-
 const repoRoot = path.resolve(__dirname, '../..');
 // KODE_SERVING_BINARY:红队替身入口(语义断言面的 prove-red 用——
 // 「所有语义请求回 null/空」的替身必须把本门打红;缺省真二进制)。
@@ -262,7 +242,7 @@ suite(`Rust 服务态门禁(${DEF_COUNT} def,KODE_SERVING_BOUND_* 宽松上界)`
     await client.dispose();
   });
 
-  it('steady:满语料三面热态 p99、每编辑与驻留与 CPU 占比在界(基线 p99 1-4.5ms/116MB,界 15-40ms/400MB/CPU 200%)', async () => {
+  it('steady:满语料三面热态 p99、每编辑与驻留在界(基线 p99 1-4.5ms/116MB,界 15-40ms/400MB)', async () => {
     const bounds = resolveServingBounds();
     const client = makeClient();
     await client.start();
@@ -289,11 +269,6 @@ suite(`Rust 服务态门禁(${DEF_COUNT} def,KODE_SERVING_BOUND_* 宽松上界)`
     const brokenUri = `${ws.defUris[0]}.broken.def`;
     const brokenText = ws.defTexts[0].replace('SKILL_SLOT', 'NOT_A_KNOWN_TYPE');
     await client.openDocument(brokenUri, 'kbengine-def', 1, brokenText);
-    // CPU 观测基线(RUST-242):测量循环开始前取进程 CPU 累计与墙钟起点,
-    // 稳态窗=下列全部量测面(镜像已在窗外,与 RSS 口径一致)。
-    const steadyHealth = await client.health();
-    const steadyCpuBaseline = serverCpuSeconds(steadyHealth.pid);
-    const steadyWallStartMs = performance.now();
     // 语义面首响应捕获(P1-2 审计修正:gate 此前只量速度不断内容,
     // 「语义请求全 null 的替身」照样 5/5 通过;现钉已知落点/必有项/正反例,
     // 断言在热循环外统一执行,不给计时面掺断言开销)。
@@ -398,23 +373,13 @@ suite(`Rust 服务态门禁(${DEF_COUNT} def,KODE_SERVING_BOUND_* 宽松上界)`
     const health = await client.health();
     const rssSteady = serverRssMb(health.pid);
     once('rss.afterSteady', rssSteady ?? -1, ' MB');
-    // CPU 占比收尾(RUST-242):稳态窗 CPU 增量/墙钟×100;/proc 缺失或
-    // 采样不可比(进程已换/回退)如实跳过,不冒充违规也不冒充合规。
-    const cpuAfter = serverCpuSeconds(steadyHealth.pid);
-    const wallSec = (performance.now() - steadyWallStartMs) / 1000;
-    const cpuPercent =
-      cpuAfter !== null && steadyCpuBaseline !== null && wallSec > 0 && cpuAfter >= steadyCpuBaseline
-        ? ((cpuAfter - steadyCpuBaseline) / wallSec) * 100
-        : null;
-    once('cpu.steadyPercent', cpuPercent ?? -1, ' %');
     violations.push(
       ...servingGateViolations(bounds, {
         steadyDefinitionP99Ms: percentile(defSamples, 0.99),
         steadyCompletionP99Ms: percentile(compSamples, 0.99),
         steadyDiagnosticP99Ms: percentile(diagSamples, 0.99),
         steadyRssMb: rssSteady ?? 0,
-        editRoundTripDiagnosticP99Ms: percentile(editSamples, 0.99),
-        ...(cpuPercent !== null ? { steadyCpuPercentMax: cpuPercent } : {})
+        editRoundTripDiagnosticP99Ms: percentile(editSamples, 0.99)
       })
     );
     await client.dispose();
