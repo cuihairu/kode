@@ -21,6 +21,7 @@
 pub mod disk;
 pub mod line_index;
 pub mod parse_cache;
+pub mod persist_key;
 pub mod store;
 pub mod uri;
 pub mod walk;
