@@ -485,7 +485,7 @@
 - [ ] RUST-213 （旧 PLUG-012） 测试最小 sample 插件：新增自定义类型、诊断、生成器、version profile 四项（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——sample 插件(自定义类型/诊断/生成器/version profile 四项)以宿主与扩展点(202/203)先行,无宿主则 sample 无处加载,写了也是死样例;拍板同 RUST-202。）
 - [ ] RUST-214 （旧 PLUG-013） 独立插件测试工具与 manifest validator，例子/文档/教程（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——validator/测试工具/教程均为插件生态配套,生态不存在则工具链全为死工件;拍板同 RUST-202。）
 - [ ] RUST-215 （旧 PLUG-014） 插件市场属于远期选项，第一版优先稳定 SDK 与本地安装能力（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——本行自述「插件市场属远期选项,第一版优先稳定 SDK」;诚实登记=市场保持远期不启动,SDK 与本地安装同属家族拍板范围;产品当前分发面=VSIX 安装(VS Code 扩展市场/nightly 滚动),插件 SDK 无需求方;拍板同 RUST-202。）
-- [ ] RUST-216 （旧 PLUG-015） 对“Python 插件”采用独立 Python worker RPC，不把 CPython 嵌入语言 Core；验证启动/内存成本。
+- [ ] RUST-216 （旧 PLUG-015） 对“Python 插件”采用独立 Python worker RPC，不把 CPython 嵌入语言 Core；验证启动/内存成本（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记;既有相邻面=pythonExecService 常驻解释器+帧协议(RUST-190 复用模式)就是「独立 Python worker,不嵌入 Core」的现成骨架,Python 插件面落地时直接复用(有状态会话须重审 RUST-190 隔离边界);拍板同 RUST-202。）
 - [ ] RUST-217 （旧 PLUG-016） 插件基准：安装 0/5/20 插件下 hover/definition 尾延迟不超配额，恶意死循环隔离测试。
 
 ### 13. UI / UX / 可观测与故障恢复
