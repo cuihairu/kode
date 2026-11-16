@@ -24,6 +24,7 @@ pub mod message_table;
 pub mod post_destroy;
 pub mod process_topology;
 pub mod property_direction;
+pub mod python_call_at;
 pub mod python_callgraph;
 pub mod python_lexical_mask;
 pub mod python_process;
@@ -54,6 +55,7 @@ pub use completion::{
 };
 pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};
 pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
+pub use python_call_at::dump_python_call_at_golden;
 pub use references::dump_references_golden;
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
