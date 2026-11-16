@@ -1,7 +1,8 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
   KBENGINE_STUB_TEMPLATE_RELATIVE_ROOT,
@@ -12,6 +13,7 @@ import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   collectKbengineStubTemplateFiles,
   exportKbeStubs,
+  fileSystemStubExportDeps,
   kbeStubDir,
   kbeStubFilePath,
   kbeStubPackageInitPath,
@@ -444,5 +446,42 @@ describe('resetKbeStubs(显式重置,唯一覆盖通道)', () => {
       vscode.window.showWarningMessage = original;
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('fileSystemStubExportDeps.writeFile(RUST-163 存根输出原子写)', () => {
+  let dir = '';
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(os.tmpdir(), 'kode-atomic-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('成功写:内容落盘且目录零临时件残留', () => {
+    const target = join(dir, 'entity_types.pyi');
+    fileSystemStubExportDeps.writeFile(target, '# stub\n');
+    expect(readFileSync(target, 'utf8')).toBe('# stub\n');
+    expect(readdirSync(dir).filter(name => name.includes('.kode-tmp'))).toEqual([]);
+  });
+
+  it('覆盖写:rename 换名替换既有目标', () => {
+    const target = join(dir, 'kbe_types.pyi');
+    writeFileSync(target, '# old\n', 'utf8');
+    fileSystemStubExportDeps.writeFile(target, '# new\n');
+    expect(readFileSync(target, 'utf8')).toBe('# new\n');
+    expect(readdirSync(dir).filter(name => name.includes('.kode-tmp'))).toEqual([]);
+  });
+
+  it('rename 故障注入:目标位被目录占住→rename 必败,抛错+零临时件残留(原子路径已接线:错误面是 rename 而非 write)', () => {
+    const target = join(dir, 'KBEngine.pyi');
+    mkdirSync(target);
+    // 原子写先落 `<target>.kode-tmp` 再 rename——rename 撞目录报 EISDIR
+    // (错误面含 "rename");直写路径会在 write 阶段就报错,此断言同时钉住
+    // 「写走的是临时件+换名」与「失败清理不残留」。
+    expect(() => fileSystemStubExportDeps.writeFile(target, '# x\n')).toThrow(/rename/);
+    expect(readdirSync(dir).filter(name => name.includes('.kode-tmp'))).toEqual([]);
   });
 });

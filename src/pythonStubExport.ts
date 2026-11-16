@@ -270,12 +270,32 @@ export interface StubExportDeps {
   listDir?: (dir: string) => string[];
 }
 
+/**
+ * RUST-163:存根输出原子写——同目录临时文件+rename 换名(同目录 rename
+ * 原子),读者(语言服务器/watcher)永不读到半截桩;失败清理临时件不残留,
+ * 原错照抛。三条导出车道(KBEngine 桩包/实体桩/类型桩)共用本 deps 默认写。
+ */
+function writeFileAtomic(target: string, content: string): void {
+  const tmp = `${target}.kode-tmp`;
+  try {
+    fs.writeFileSync(tmp, content, 'utf8');
+    fs.renameSync(tmp, target);
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      // 清理失败不掩盖原错
+    }
+    throw error;
+  }
+}
+
 /** 装配层默认注入:真 fs */
 export const fileSystemStubExportDeps: StubExportDeps = {
   exists: (candidate: string): boolean => fs.existsSync(candidate),
   readFile: (path: string): string => fs.readFileSync(path, 'utf8'),
   writeFile: (path: string, content: string): void => {
-    fs.writeFileSync(path, content, 'utf8');
+    writeFileAtomic(path, content);
   },
   mkdir: (dir: string): void => {
     fs.mkdirSync(dir, { recursive: true });
