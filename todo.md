@@ -503,7 +503,7 @@
 - [x] RUST-229 （旧 UI-012） 记录用户可禁用重扫描的配置，但禁用后必须标明结果可能部分不可用。（600d0521：配置维既有两键索引开关；标注维真缺口双标注点收口——hover 键位禁用说明（即时，零打扰不懒建）+profileHealth 第六类 index-disabled（逐开关 setting 入口，探针缺省/null 不判定向后兼容）；prove-red 两面；纪要 docs/review/2026-11-17-rust-229-rescan-disable-partial-availability-acceptance.md）
 
 ### 14. 测试、正确性、安全与发布门禁
-- [ ] RUST-230 （旧 QA-001） Unit: parser errors, byte spans, UTF-16 position, alias cycles, entity facets, source map。
+- [x] RUST-230 （旧 QA-001） Unit: parser errors, byte spans, UTF-16 position, alias cycles, entity facets, source map。（纯对账：六维全有既有面+测试钉——parse.rs 容错双钉/行域嵌入断言 300 例/utf16_columns 中文例/local_return 别名环诚实空/symbols_test 12 例实体面/generatedSourceMap+lenses 7 例；cargo test kode-python 300 全绿，TS 侧在 10659 门禁内；纪要 docs/review/2026-11-17-rust-230-parser-unit-coverage-acceptance.md）
 - [ ] RUST-231 （旧 QA-002） Property-based/fuzz: XML/DEF invalid input never panic/hang；path canonicalization 无碰撞。
 - [ ] RUST-232 （旧 QA-003） Golden: 基于真实引擎 fixtures 的 hover/definition/diagnostics/typings snapshot。
 - [ ] RUST-233 （旧 QA-004） Differential: 对旧 TS 输出与新 Rust 输出逐项差异审查，已知旧 bug 单独定标。
