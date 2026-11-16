@@ -15,6 +15,15 @@
 //! - 继承成员:def 链(parent 递归 + interfaces 平铺 + components 挂接,与 TS
 //!   buildDefChain 同口径,环截断显式标注)+ 链上各祖先的属性/方法成员展开。
 //!
+//! RUST-136 追加三面(仍是零 IO,语料可推导):
+//! - 来源(source):悬停词所在文档 + 命中声明行(1 基);
+//! - 可用分面(facets):def 实体本体面给本 def 方法三段非空段(base→cell→
+//!   client 序);方法面 markdown 渲染 Facet 行(symbol.facet 既有结构面);
+//! - 注释(comment):声明紧邻上方的 `<!-- -->` 注释块(空白行可间隔,遇内容
+//!   行即停)。版本面不在语料可推导域(引擎版本=TS kbengine.engineVersion
+//!   声明口径,供给链归 RUST-113 域,未做不装);完整类型解析(types.xml
+//!   FIXED_DICT 字段名)留 parser 模型扩展,同未做。
+//!
 //! ARCH-012 红线:不做任何性能宣称;结构保证只有一条(LSP-003 禁阻塞):查询
 //! 只碰本文件已持有的文本与已入库语料视图,无磁盘扫描、无全仓遍历。
 //!
@@ -37,7 +46,7 @@ use kode_vfs::store::{DocumentKey, RootId};
 // 响应模型(结构化面;markdown 渲染只为 LSP contents 兼容,不是对拍面)
 // ---------------------------------------------------------------------------
 
-/// 一条 hover 响应:符号身份 + 签名面 + 继承面(仅 def 实体)。
+/// 一条 hover 响应:符号身份 + 来源面 + 签名面 + 继承面(仅 def 实体)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverResponse {
@@ -45,10 +54,23 @@ pub struct HoverResponse {
     /// 归一化;同 face 才进入正文严格比较。
     pub face: HoverFace,
     pub symbol: HoverSymbol,
+    /// 来源面:悬停词所在文档(canonical 路径)+ 命中声明行(1 基)。悬停词
+    /// 所在文档即声明文档(定位只在本文件声明符号上成立),行 = 各 face 的
+    /// 命中声明行。纯内存,零 IO(RUST-136)。
+    pub source: HoverSource,
     pub signature: HoverSignature,
     /// def 实体悬停与 `<Parent>` 悬停时的继承闭包面;其余为 None。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inherited: Option<InheritedChain>,
+}
+
+/// 来源面(RUST-136):file = 悬停文档 canonical 路径(golden 语境 = 语料键
+/// 相对路径,与 golden files[].file 同源),line = 命中声明行(1 基)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverSource {
+    pub file: String,
+    pub line: usize,
 }
 
 /// hover provider face(每请求恰一个)。
@@ -114,6 +136,13 @@ pub struct HoverSignature {
     pub def_exists: Option<bool>,
     /// def 实体本体:`<Parent>` 名。
     pub parent: Option<String>,
+    /// 注释面(RUST-136):声明紧邻上方的 `<!-- -->` 注释块(空白行可间隔,
+    /// 遇首个非注释内容行即停;逐行去标记 trim,块首尾空行丢,多行 '\n'
+    /// 连接)。无 = null。
+    pub comment: Option<String>,
+    /// 可用分面(RUST-136):def 实体本体面 = 本 def 方法三段非空段
+    /// (base→cell→client 序);其余面恒空数组(键恒在)。
+    pub facets: Vec<String>,
 }
 
 /// 继承链节点(def 链三面共用):存在性 = 路径在已入库语料中。
@@ -184,6 +213,11 @@ pub fn render_markdown(response: &HoverResponse) -> String {
         "{}中的自定义定义。\n\n",
         section_label(response.symbol.section)
     ));
+    // RUST-136 来源面:声明文档:声明行(1 基)。
+    md.push_str(&format!(
+        "**Source**: `{}:{}`\n\n",
+        response.source.file, response.source.line
+    ));
     let s = &response.signature;
     let kind = response.symbol.kind.as_str();
     if kind == "property" {
@@ -209,11 +243,16 @@ pub fn render_markdown(response: &HoverResponse) -> String {
         if let Some(i) = &s.identifier {
             md.push_str(&format!("**Identifier**: `{i}`\n\n"));
         }
+        append_doc_block(&mut md, &s.comment);
         return md;
     }
     if kind == "method" {
         // 方法面:与 TS 同构 —— **Args** 行不带尾随空行(由 Exposed 段的
         // 前导空行衔接);无 Args 时以 **参数个数** 行的尾随空行收尾。
+        // RUST-136 分面行:symbol.facet(base/cell/client)即方法所属段。
+        if let Some(facet) = &response.symbol.facet {
+            md.push_str(&format!("**Facet**: `{facet}`\n\n"));
+        }
         md.push_str(&format!("**参数个数**: {}\n\n", s.arg_count.unwrap_or(0)));
         if let Some(args) = &s.args {
             if !args.is_empty() {
@@ -223,6 +262,7 @@ pub fn render_markdown(response: &HoverResponse) -> String {
         if let Some(true) = s.exposed {
             md.push_str("\n\n**Exposed**: `true`\n\n该方法可被客户端远程调用。");
         }
+        append_doc_block(&mut md, &s.comment);
         return md;
     }
     if let Some(t) = &s.r#type {
@@ -267,6 +307,11 @@ pub fn render_markdown(response: &HoverResponse) -> String {
     }
     if let Some(def_file) = &s.def_file {
         md.push_str(&format!("**Definition**: `{def_file}`\n\n"));
+    }
+    // RUST-136 可用分面:实体本体面的方法三段非空段(base→cell→client 序)。
+    if !s.facets.is_empty() {
+        let names: Vec<String> = s.facets.iter().map(|f| format!("`{f}`")).collect();
+        md.push_str(&format!("**Facets**: {}\n\n", names.join("、")));
     }
     if let Some(chain) = &response.inherited {
         md.push_str("**def 链**(引擎归并口径)\n\n");
@@ -319,7 +364,22 @@ pub fn render_markdown(response: &HoverResponse) -> String {
             ));
         }
     }
+    // RUST-136 注释面:声明紧邻上方 `<!-- -->` 块,引用块逐行渲染。
+    append_doc_block(&mut md, &s.comment);
     md.trim_end().to_string()
+}
+
+/// RUST-136 注释面块(`<!-- -->` 紧邻上方声明注释,引用块逐行渲染);属性/
+/// 方法早退分支与通用尾三段渲染路径共享,保证注释面在所有 face 出现。
+fn append_doc_block(md: &mut String, comment: &Option<String>) {
+    let Some(doc) = comment else {
+        return;
+    };
+    md.push_str("**Doc**\n\n");
+    for line in doc.lines() {
+        md.push_str(&format!("> {line}\n"));
+    }
+    md.push('\n');
 }
 
 fn chain_node_label(node: &ChainNodeInfo) -> String {
@@ -328,6 +388,89 @@ fn chain_node_label(node: &ChainNodeInfo) -> String {
     } else {
         format!("`{}`(def 缺失)", node.name)
     }
+}
+
+/// 实体本体面可用分面(RUST-136):本 def 方法三段非空段(base→cell→client
+/// 固定序);继承面方法不在本面(链上成员已逐祖先携带 facet)。
+fn entity_facets(def: &DefFile) -> Vec<String> {
+    let mut out = Vec::new();
+    if !def.base_methods.is_empty() {
+        out.push("base".to_string());
+    }
+    if !def.cell_methods.is_empty() {
+        out.push("cell".to_string());
+    }
+    if !def.client_methods.is_empty() {
+        out.push("client".to_string());
+    }
+    out
+}
+
+/// 声明行(1 基)紧邻上方的 `<!-- -->` 注释块(RUST-136 注释面)。规则:
+/// 自声明行上一行向上扫,空白行可间隔,遇首个非注释内容行即停;跨行注释
+/// (`<!--` 开、`-->` 闭分行)向上续;逐行去标记后 trim,块首尾空行丢弃,
+/// 多行以 '\n' 连接。畸形未闭合注释到顶按已收内容返回(诚实:不抬高成
+/// 错误);声明行自身的同行尾注释不在扫描域(不属于「上方」)。
+fn preceding_comment(text: &str, decl_line1: usize) -> Option<String> {
+    if decl_line1 <= 1 {
+        return None;
+    }
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut pieces: Vec<String> = Vec::new();
+    let mut in_comment = false; // 已见 `-->` 尾、向上找 `<!--` 开的跨行态
+    let mut idx = decl_line1 - 2; // 0 基:声明行上一行
+    while let Some(line) = lines.get(idx) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if in_comment {
+                break; // 跨行注释中间的空白行:块到此为止
+            }
+        } else {
+            let opens = trimmed.contains("<!--");
+            let closes = trimmed.contains("-->");
+            if !opens && !closes {
+                break; // 非注释内容行:停
+            }
+            if closes {
+                // 内容 = 最后 `<!--` 之后到其后首个 `-->` 之前(无 `<!--` 则
+                // 行首起);`-->` 不在行尾也边界安全。
+                let start = trimmed.rfind("<!--").map(|p| p + 4).unwrap_or(0);
+                let end = trimmed[start..]
+                    .find("-->")
+                    .map(|p| start + p)
+                    .unwrap_or(trimmed.len());
+                let content = trimmed[start..end].trim();
+                if !content.is_empty() {
+                    pieces.push(content.to_string());
+                }
+                if opens {
+                    break; // 同行闭合:块首
+                }
+                in_comment = true; // 跨行注释尾,向上续
+            } else {
+                // 只有 `<!--`(跨行注释开行):仅在跨行态内算块首,否则视为
+                // 内容行(一个未闭合的 `<!--` 悬在内容上方不算注释块)。
+                if !in_comment {
+                    break;
+                }
+                let pos = trimmed.rfind("<!--").expect("contains checked");
+                let content = trimmed[pos + 4..].trim();
+                if !content.is_empty() {
+                    pieces.push(content.to_string());
+                }
+                break; // 块首:收毕
+            }
+        }
+        if idx == 0 {
+            break;
+        }
+        idx -= 1;
+    }
+    if pieces.is_empty() {
+        return None;
+    }
+    pieces.reverse();
+    Some(pieces.join("\n"))
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +736,12 @@ impl HoverEngine {
         line1: usize,
     ) -> Option<HoverResponse> {
         let path = key.uri.as_path();
+        // 来源面:命中声明行在各 face 都是 `x.line == line1` 的 find 结果,
+        // 故 line 恒取 line1(RUST-136)。
+        let source = HoverSource {
+            file: path.to_string(),
+            line: line1,
+        };
         match file_kind_of_uri(&key.uri) {
             FileKind::Def => {
                 let def = parse_def(text);
@@ -608,8 +757,11 @@ impl HoverEngine {
                             facet: None,
                             section: "Entity",
                         },
+                        source,
                         signature: HoverSignature {
                             parent: def.parent.clone(),
+                            comment: preceding_comment(text, line1),
+                            facets: entity_facets(&def),
                             ..HoverSignature::default()
                         },
                         inherited: Some(self.chain_face(path, &def)),
@@ -626,6 +778,7 @@ impl HoverEngine {
                         Some(HoverResponse {
                             face: HoverFace::DefProperty,
                             symbol: hover_symbol(record, "Properties"),
+                            source,
                             signature: HoverSignature {
                                 r#type: prop.type_name.clone(),
                                 flags: prop.flags_raw.clone(),
@@ -634,6 +787,7 @@ impl HoverEngine {
                                 database_length: prop.database_length.clone(),
                                 identifier: prop.identifier.clone(),
                                 persistent: prop.persistent,
+                                comment: preceding_comment(text, prop.line),
                                 ..HoverSignature::default()
                             },
                             inherited: None,
@@ -649,10 +803,12 @@ impl HoverEngine {
                         Some(HoverResponse {
                             face: HoverFace::DefMethod,
                             symbol: hover_symbol(record, facet_section(facet_str)),
+                            source,
                             signature: HoverSignature {
                                 arg_count: Some(method.args.len()),
                                 args: Some(method.args.clone()),
                                 exposed: Some(method.exposed),
+                                comment: preceding_comment(text, method.line),
                                 ..HoverSignature::default()
                             },
                             inherited: None,
@@ -666,9 +822,11 @@ impl HoverEngine {
                         Some(HoverResponse {
                             face: HoverFace::DefComponent,
                             symbol: hover_symbol(record, "Components"),
+                            source,
                             signature: HoverSignature {
                                 component_type: comp.component_type.clone(),
                                 persistent: comp.persistent,
+                                comment: preceding_comment(text, comp.line),
                                 ..HoverSignature::default()
                             },
                             inherited: None,
@@ -682,8 +840,11 @@ impl HoverEngine {
                             facet: None,
                             section: "Entity",
                         },
+                        source,
                         signature: HoverSignature {
                             parent: def.parent.clone(),
+                            comment: preceding_comment(text, line1),
+                            facets: entity_facets(&def),
                             ..HoverSignature::default()
                         },
                         inherited: Some(self.chain_face(path, &def)),
@@ -694,7 +855,7 @@ impl HoverEngine {
             }
             FileKind::Entities => {
                 let entities = parse_entities(text);
-                let _entry = entities
+                let entry = entities
                     .entities
                     .iter()
                     .find(|e| e.name == word && e.line == line1)?;
@@ -708,9 +869,11 @@ impl HoverEngine {
                         facet: None,
                         section: "Entities",
                     },
+                    source,
                     signature: HoverSignature {
                         def_file: Some(def_path.cloned().unwrap_or_else(|| format!("{word}.def"))),
                         def_exists: Some(!candidates.is_empty()),
+                        comment: preceding_comment(text, entry.line),
                         ..HoverSignature::default()
                     },
                     inherited: None,
@@ -740,9 +903,11 @@ impl HoverEngine {
                         facet: None,
                         section: "Types",
                     },
+                    source,
                     signature: HoverSignature {
                         type_kind: Some(type_kind.to_string()),
                         alias_target,
+                        comment: preceding_comment(text, decl.line),
                         ..HoverSignature::default()
                     },
                     inherited: None,
@@ -762,8 +927,10 @@ impl HoverEngine {
                         facet: None,
                         section: "Aliases",
                     },
+                    source,
                     signature: HoverSignature {
                         alias_type: Some(alias.alias_type.clone()),
+                        comment: preceding_comment(text, alias.line),
                         ..HoverSignature::default()
                     },
                     inherited: None,

@@ -5,7 +5,7 @@
 
 use kode_server::hover::{
     render_markdown, word_at, ChainNodeInfo, HoverEngine, HoverFace, HoverResponse, HoverSignature,
-    HoverSymbol, InheritedChain, MemberMethod, MemberProperty, MemberSummary,
+    HoverSource, HoverSymbol, InheritedChain, MemberMethod, MemberProperty, MemberSummary,
     HOVER_PARSE_BUDGET_BYTES,
 };
 use kode_vfs::store::{DocumentKey, RootId};
@@ -642,8 +642,14 @@ fn render_markdown_entity_with_full_chain() {
             facet: None,
             section: "Entity",
         },
+        source: HoverSource {
+            file: "tests/fixtures/demo/Avatar.def".into(),
+            line: 1,
+        },
         signature: HoverSignature {
             parent: Some("Monster".into()),
+            facets: vec!["base".into(), "cell".into()],
+            comment: Some("主角实体。".into()),
             ..HoverSignature::default()
         },
         inherited: Some(chain),
@@ -651,6 +657,9 @@ fn render_markdown_entity_with_full_chain() {
     let md = render_markdown(&response);
     assert!(md.contains("**Avatar**"));
     assert!(md.contains("Entity中的自定义定义。"));
+    assert!(md.contains("**Source**: `tests/fixtures/demo/Avatar.def:1`"));
+    assert!(md.contains("**Facets**: `base`、`cell`"));
+    assert!(md.contains("**Doc**\n\n> 主角实体。"));
     assert!(md.contains("**Parent**: `Monster`"));
     assert!(md.contains("**def 链**"));
     assert!(md.contains("- **Parent 链**: `Monster` → `Ghost`(def 缺失)(共 2 层;检测到环,已截断)"));
@@ -673,6 +682,10 @@ fn render_markdown_generic_fields_are_emitted() {
             kind: "type".into(),
             facet: None,
             section: "Types",
+        },
+        source: HoverSource {
+            file: "tests/fixtures/demo/types.xml".into(),
+            line: 3,
         },
         signature: HoverSignature {
             r#type: Some("UINT16".into()),
@@ -751,4 +764,97 @@ fn update_classifies_identical_body_only_and_signature() {
     assert_eq!(engine.index.generation(), gen0 + 1, "Signature 才失效读者");
     let hover_v3 = hover_on(&engine, &k, &v3, "hp").expect("重灌后悬停可用");
     assert_eq!(hover_v3.signature.r#type.as_deref(), Some("UINT16"));
+}
+
+// ---------------------------------------------------------------------------
+// RUST-136:来源 / 可用分面 / 注释 三面
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rust136_source_facet_comment_faces_are_populated() {
+    // 属性面:来源 = 文档:声明行 + 紧邻上方注释;实体本体面:分面 = 方法
+    // 三段非空段(本 def 只有 BaseMethods);方法面:markdown Facet 行。
+    let mut engine = HoverEngine::new();
+    let text = "<root>\n\
+\t<Properties>\n\
+\t\t<!-- 血量,同步全部客户端 -->\n\
+\t\t<hp>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t</hp>\n\
+\t</Properties>\n\
+\t<BaseMethods>\n\
+\t\t<onRpc>\n\
+\t\t\t<Arg> UINT32 </Arg>\n\
+\t\t</onRpc>\n\
+\t</BaseMethods>\n\
+</root>\n";
+    let path = "/proj/scripts/entity_defs/Avatar.def";
+    feed(&mut engine, path, text);
+    let doc_key = key(path);
+
+    let hover = hover_on(&engine, &doc_key, text, "hp").expect("属性悬停");
+    assert_eq!(hover.source.file, path);
+    assert_eq!(hover.source.line, 4);
+    assert_eq!(
+        hover.signature.comment.as_deref(),
+        Some("血量,同步全部客户端")
+    );
+    assert!(hover.signature.facets.is_empty());
+    let md = render_markdown(&hover);
+    assert!(md.contains("**Source**: `/proj/scripts/entity_defs/Avatar.def:4`"));
+    assert!(md.contains("**Doc**\n\n> 血量,同步全部客户端"));
+
+    // 实体本体面(声明行入口):行 1 无上方注释;分面 = base 非空段。
+    let entity = engine
+        .hover_at_line(&doc_key, text, 1, "Avatar")
+        .expect("实体悬停");
+    assert_eq!(entity.source.line, 1);
+    assert_eq!(entity.signature.facets, vec!["base".to_string()]);
+    assert_eq!(entity.signature.comment, None);
+    assert!(render_markdown(&entity).contains("**Facets**: `base`"));
+
+    // 方法面:symbol.facet 既有结构面 + markdown Facet 行。
+    let method = hover_on(&engine, &doc_key, text, "onRpc").expect("方法悬停");
+    assert_eq!(method.symbol.facet.as_deref(), Some("base"));
+    let md = render_markdown(&method);
+    assert!(md.contains("**Facet**: `base`"));
+    assert!(md.contains("**Source**: `/proj/scripts/entity_defs/Avatar.def:9`"));
+}
+
+#[test]
+fn rust136_comment_gap_and_content_stop_rules() {
+    // 空行隔断仍可收(空白可间隔);非注释内容行隔断不收;跨行注释块按
+    // 原行序 '\n' 连接。
+    let mut engine = HoverEngine::new();
+    let text = "<root>\n\
+\t<Properties>\n\
+\t\t<!-- 空行隔断可收 -->\n\
+\n\
+\t\t<hp>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t</hp>\n\
+\t\t<mp>\n\
+\t\t\t<Type> UINT8 </Type>\n\
+\t\t</mp>\n\
+\t\t<!-- 多行\n\
+\t\t   注释第二行 -->\n\
+\t\t<xp>\n\
+\t\t\t<Type> UINT8 </Type>\n\
+\t\t</xp>\n\
+\t</Properties>\n\
+</root>\n";
+    let path = "/proj/scripts/entity_defs/Bag.def";
+    feed(&mut engine, path, text);
+    let doc_key = key(path);
+
+    let hp = hover_on(&engine, &doc_key, text, "hp").expect("hp 悬停");
+    assert_eq!(hp.signature.comment.as_deref(), Some("空行隔断可收"));
+    let mp = hover_on(&engine, &doc_key, text, "mp").expect("mp 悬停");
+    assert_eq!(mp.signature.comment, None, "内容行隔断不借注释");
+    let xp = hover_on(&engine, &doc_key, text, "xp").expect("xp 悬停");
+    assert_eq!(
+        xp.signature.comment.as_deref(),
+        Some("多行\n注释第二行"),
+        "跨行注释按原行序连接"
+    );
 }

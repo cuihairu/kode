@@ -143,6 +143,7 @@ interface InheritedFace {
 interface HoverFace {
   face: string;
   symbol: { name: string; kind: string; facet: string | null; section: string };
+  source: { file: string; line: number };
   signature: Record<string, unknown>;
   inherited?: InheritedFace;
 }
@@ -170,8 +171,90 @@ const emptySignature = (): Record<string, unknown> => ({
   aliasType: null,
   defFile: null,
   defExists: null,
-  parent: null
+  parent: null,
+  comment: null,
+  facets: []
 });
+
+// ---- RUST-136 三面(TS 复算镜像,与 kode_server::hover 同算法) ----
+
+// 声明行(1 基)紧邻上方的 `<!-- -->` 注释块:自上一行向上扫,空白行可间隔,
+// 遇首个非注释内容行即停;跨行注释向上续;逐行去标记 trim,块首尾空行丢,
+// 多行 '\n' 连接;畸形未闭合到顶按已收内容返回。
+const precedingComment = (text: string, declLine1: number): string | null => {
+  if (declLine1 <= 1) {
+    return null;
+  }
+  const lines = text.split('\n');
+  const pieces: string[] = [];
+  let inComment = false;
+  let idx = declLine1 - 2;
+  for (;;) {
+    const line = lines[idx];
+    if (line === undefined) {
+      break;
+    }
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      if (inComment) {
+        break;
+      }
+    } else {
+      const opens = trimmed.includes('<!--');
+      const closes = trimmed.includes('-->');
+      if (!opens && !closes) {
+        break;
+      }
+      if (closes) {
+        const markerPos = trimmed.lastIndexOf('<!--');
+        const start = markerPos === -1 ? 0 : markerPos + 4;
+        const closeRel = trimmed.indexOf('-->', start);
+        const end = closeRel === -1 ? trimmed.length : closeRel;
+        const content = trimmed.slice(start, end).trim();
+        if (content !== '') {
+          pieces.push(content);
+        }
+        if (opens) {
+          break;
+        }
+        inComment = true;
+      } else {
+        if (!inComment) {
+          break;
+        }
+        const content = trimmed.slice(trimmed.lastIndexOf('<!--') + 4).trim();
+        if (content !== '') {
+          pieces.push(content);
+        }
+        break;
+      }
+    }
+    if (idx === 0) {
+      break;
+    }
+    idx -= 1;
+  }
+  if (pieces.length === 0) {
+    return null;
+  }
+  pieces.reverse();
+  return pieces.join('\n');
+};
+
+// 实体本体面可用分面:本 def 方法三段非空段(base→cell→client 固定序)。
+const entityFacets = (root: DefElementNode): string[] => {
+  const facets: string[] = [];
+  if (sectionEntries(root, 'basemethods').length > 0) {
+    facets.push('base');
+  }
+  if (sectionEntries(root, 'cellmethods').length > 0) {
+    facets.push('cell');
+  }
+  if (sectionEntries(root, 'clientmethods').length > 0) {
+    facets.push('client');
+  }
+  return facets;
+};
 
 // 继承成员面:与 TS buildDefChain 同链,成员展开逐祖先读 def。
 const inheritedFaceOf = (absPath: string): InheritedFace => {
@@ -244,18 +327,26 @@ const computeHovers = (
           hover: {
             face: 'defEntity',
             symbol: { name: defEntityName(file), kind: 'entity', facet: null, section: 'Entity' },
-            signature: { ...emptySignature(), parent: parentName },
+            source: { file, line: 1 },
+            signature: {
+              ...emptySignature(),
+              parent: parentName,
+              comment: precedingComment(text, 1),
+              facets: entityFacets(root)
+            },
             inherited: inheritedFaceOf(path.join(REPO_ROOT, file))
           }
         });
         for (const prop of sectionEntries(root, 'properties')) {
           const typeNode = getDirectChildElement(prop, 'Type');
+          const propLine = getLineNumberAt(document, prop.tagStart);
           hovers.push({
-            line: getLineNumberAt(document, prop.tagStart),
+            line: propLine,
             word: prop.name,
             hover: {
               face: 'defProperty',
               symbol: { name: prop.name, kind: 'property', facet: null, section: 'Properties' },
+              source: { file, line: propLine },
               signature: {
                 ...emptySignature(),
                 type: typeNode ? firstTextToken(typeNode) ?? null : null,
@@ -264,22 +355,26 @@ const computeHovers = (
                 detailLevel: rawChildByCanon(prop, 'detaillevel'),
                 databaseLength: rawChildByCanon(prop, 'databaselength'),
                 identifier: rawChildByCanon(prop, 'identifier'),
-                persistent: persistentOptOf(prop, 'Persistent')
+                persistent: persistentOptOf(prop, 'Persistent'),
+                comment: precedingComment(text, propLine)
               }
             }
           });
         }
         for (const comp of sectionEntries(root, 'components')) {
+          const compLine = getLineNumberAt(document, comp.tagStart);
           hovers.push({
-            line: getLineNumberAt(document, comp.tagStart),
+            line: compLine,
             word: comp.name,
             hover: {
               face: 'defComponent',
               symbol: { name: comp.name, kind: 'component', facet: null, section: 'Components' },
+              source: { file, line: compLine },
               signature: {
                 ...emptySignature(),
                 componentType: rawChildByCanon(comp, 'type'),
-                persistent: persistentOptOf(comp, 'Persistent')
+                persistent: persistentOptOf(comp, 'Persistent'),
+                comment: precedingComment(text, compLine)
               }
             }
           });
@@ -304,17 +399,20 @@ const computeHovers = (
                 exposed = hasTruthyChildTag(method, child.name);
               }
             }
+            const methodLine = getLineNumberAt(document, method.tagStart);
             hovers.push({
-              line: getLineNumberAt(document, method.tagStart),
+              line: methodLine,
               word: method.name,
               hover: {
                 face: 'defMethod',
                 symbol: { name: method.name, kind: 'method', facet, section },
+                source: { file, line: methodLine },
                 signature: {
                   ...emptySignature(),
                   argCount: args.length,
                   args,
-                  exposed
+                  exposed,
+                  comment: precedingComment(text, methodLine)
                 }
               }
             });
@@ -329,16 +427,19 @@ const computeHovers = (
           }
           // KBUG-ROOT:候选按查询方语料工程根定域(defFile 报根内首候选)。
           const defPath = defsByStem.get(corpusRootOf(file))?.get(node.name)?.[0];
+          const entryLine = getLineNumberAt(document, node.tagStart);
           hovers.push({
-            line: getLineNumberAt(document, node.tagStart),
+            line: entryLine,
             word: node.name,
             hover: {
               face: 'entitiesXml',
               symbol: { name: node.name, kind: 'entity', facet: null, section: 'Entities' },
+              source: { file, line: entryLine },
               signature: {
                 ...emptySignature(),
                 defFile: defPath ?? `${node.name}.def`,
-                defExists: defPath !== undefined
+                defExists: defPath !== undefined,
+                comment: precedingComment(text, entryLine)
               }
             }
           });
@@ -354,13 +455,20 @@ const computeHovers = (
           }
           const typeKind = directive === 'FIXED_DICT' ? 'fixedDict' : directive === 'ARRAY' ? 'array' : 'builtin';
           const aliasTarget = directive !== 'FIXED_DICT' && directive !== 'ARRAY' ? directive : null;
+          const itemLine = getLineNumberAt(document, item.tagStart);
           hovers.push({
-            line: getLineNumberAt(document, item.tagStart),
+            line: itemLine,
             word: item.name,
             hover: {
               face: 'typesXml',
               symbol: { name: item.name, kind: 'type', facet: null, section: 'Types' },
-              signature: { ...emptySignature(), typeKind, aliasTarget }
+              source: { file, line: itemLine },
+              signature: {
+                ...emptySignature(),
+                typeKind,
+                aliasTarget,
+                comment: precedingComment(text, itemLine)
+              }
             }
           });
         }
@@ -383,19 +491,25 @@ const computeHovers = (
             : otherChild
               ? otherChild.name
               : texts[0] ?? 'ALIAS';
+          const aliasLine = getLineNumberAt(document, node.tagStart);
           hovers.push({
-            line: getLineNumberAt(document, node.tagStart),
+            line: aliasLine,
             word: node.name,
             hover: {
               face: 'aliasXml',
               symbol: { name: node.name, kind: 'alias', facet: null, section: 'Aliases' },
-              signature: { ...emptySignature(), aliasType }
+              source: { file, line: aliasLine },
+              signature: {
+                ...emptySignature(),
+                aliasType,
+                comment: precedingComment(text, aliasLine)
+              }
             }
           });
         }
       }
     }
-    void text;
+
     all.push(...hovers);
   }
   return all;
