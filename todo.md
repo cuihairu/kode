@@ -510,7 +510,7 @@
 - [x] RUST-234 （旧 QA-005） Integration: VS Code Extension Host + native server e2e，对比用户可见结果。（纯对账：mocha Extension Host 套件 29 文件+cellDataFullChain 真实 Rust 门（kode-server spawn+cellDataKeys，五面联动=补全/F12/inlay/hover/诊断，二进制缺席自动降级不假绿）；本日 xvfb demo 25 例实测 RC=0（兼作 229 hover 改动真机回归）；纪要 docs/review/2026-11-17-rust-234-integration-e2e-acceptance.md）
 - [x] RUST-235 （旧 QA-006） Python LS interoperability：Pylance / Pyright、不同 Python 环境和 .pyi 优先级。（纯对账整合验收：矩阵 RUST-148（f732df03 冲突矩阵决策记录）+拦截不劫持 RUST-161+pyrightconfig 五闸 RUST-162+真机 stub 优先级阶梯 RUST-170（106b5990，stubPath→extraPaths→同目录）+venv 三套件/双 OS 布局/坏环境不认领+profileHealth interpreter 面；纪要 docs/review/2026-11-17-rust-235-python-ls-interop-acceptance.md）
 - [x] RUST-236 （旧 QA-007） Workspace 兼容：Windows path、Linux case、macOS case-insensitive、WSL、SSH、containers。（纯对账整合验收：HR-MOD-009 词法规范化（盘符/UNC/WSL 双形/反斜杠）+SCH-002 POSIX 大小写双根不串缓存（skipIf win32 诚实平台门）+macOS 词法不折叠策略/darwin 夜构建双架构+七版本发布完整性门+ux009b/ux009c 真机走查记录；macOS case 专测不可构造/containers 无真机走查如实记账；纪要 docs/review/2026-11-17-rust-236-workspace-compat-acceptance.md）
-- [ ] RUST-237 （旧 QA-008） Engine 兼容：官方支持版本 + 用户 fork，profile 未知降级。
+- [x] RUST-237 （旧 QA-008） Engine 兼容：官方支持版本 + 用户 fork，profile 未知降级。（纯对账整合验收：KB-VER-002 三档版本归属+fork 预设+RUST-224 对账在案+RUST-009 三轴降级架构性 PASS 审计（TS 回落/崩溃重启/无引擎树 unknown 不造假）+activeProfile 未知 ID 拒绝+profileHealth 如实登记；纪要 docs/review/2026-11-17-rust-237-engine-compat-acceptance.md）
 - [ ] RUST-238 （旧 QA-009） Security：workspace trust、命令注入、路径穿越、生成文件覆盖、恶意插件、高频日志敏感数据。
 - [ ] RUST-239 （旧 QA-010） Resilience：Core kill、client disconnect、损坏缓存、文件 watcher flood、磁盘满、权限拒绝。
 - [ ] RUST-240 （旧 QA-011） Memory & race：1h 编辑负载、循环增删根、索引与 diagnostics 并发、高频 restart。
