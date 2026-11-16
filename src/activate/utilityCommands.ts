@@ -661,11 +661,15 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   });
   context.subscriptions.push(pythonServiceStatusCommand);
 
-  // profile 健康状态汇总(IDE-PRJ-009):缺引擎/缺解释器/缺语言服务/根歧义
-  // 各带定位入口,活动 profile 经稳定 ID 解析(IDE-PRJ-010)
+  // profile 健康状态汇总(IDE-PRJ-009):缺引擎/缺解释器/缺语言服务/根歧义/
+  // 索引停滞各带定位入口,活动 profile 经稳定 ID 解析(IDE-PRJ-010);
+  // 索引状态与调度面同源(indexScheduler.getStatus,RUST-187)
   const profileHealthCommand = vscode.commands.registerCommand(
     'kbengine.profile.health',
-    () => showProfileHealthSummary(context)
+    () =>
+      showProfileHealthSummary(context, {
+        indexStatus: () => indexScheduler.getStatus()
+      })
   );
   context.subscriptions.push(profileHealthCommand);
 

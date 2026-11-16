@@ -1,16 +1,18 @@
 /**
  * profile 健康状态汇总(IDE-PRJ-009):活动 profile(经 PRJ-010 稳定 ID
- * 解析)的四类健康问题——缺引擎/缺解释器/缺语言服务/根歧义——各自带
+ * 解析)的五类健康问题——缺引擎/缺解释器/缺语言服务/根歧义/索引停滞——各自带
  * 具体定位入口(命令 id 或设置键),汇总命令逐条列出,选中即跳入口,
  * Esc 只看不跳。判定复用既有单一来源:引擎/解释器/根只做存在性与记录
  * 事实检查,语言服务走 PRJ-005 三态判定(collectPythonServiceFacts 同源
- * 采集)。没有活动 profile 如实说明;全部健康不打扰。
+ * 采集),索引状态走 IndexScheduler.getStatus 同源计数(RUST-187)。没有
+ * 活动 profile 如实说明;全部健康不打扰。
  */
 
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { resolveActiveProfile } from './activeProfile';
 import type { ProjectProfile } from './projectProfiles';
+import type { SchedulerStatus } from './backend/indexScheduler';
 import {
   classifyPythonService,
   collectPythonServiceFacts,
@@ -21,13 +23,15 @@ export type ProfileHealthIssueKind =
   | 'engine-missing'
   | 'interpreter-missing'
   | 'service-unavailable'
-  | 'roots-ambiguous';
+  | 'roots-ambiguous'
+  | 'index-stalled';
 
 export const PROFILE_HEALTH_ISSUE_LABELS: Record<ProfileHealthIssueKind, string> = {
   'engine-missing': '缺引擎',
   'interpreter-missing': '缺解释器',
   'service-unavailable': '缺语言服务',
-  'roots-ambiguous': '根歧义'
+  'roots-ambiguous': '根歧义',
+  'index-stalled': '索引停滞'
 };
 
 /** 定位入口:命令(executeCommand)或设置键(openSettings) */
@@ -45,6 +49,8 @@ export interface ProfileHealthIssue {
 
 export interface ProfileHealthDeps {
   exists: (path: string) => boolean;
+  /** 索引调度状态同源探针(IndexScheduler.getStatus);缺省/返回 null=面不可用,不冒充判定 */
+  indexStatus?: () => Pick<SchedulerStatus, 'failed' | 'queued' | 'running'> | null;
 }
 
 const IMPORT_ENTRY: ProfileHealthEntry = {
@@ -54,10 +60,12 @@ const IMPORT_ENTRY: ProfileHealthEntry = {
 };
 
 /**
- * 收集四类健康问题(顺序固定:根歧义→缺引擎→缺解释器→缺语言服务):
+ * 收集五类健康问题(顺序固定:根歧义→缺引擎→缺解释器→缺语言服务→索引停滞):
  * 根歧义 = assetsRoot 不在盘上(profile 的根定位失效);缺引擎 =
  * engineRoot 未记录或不在盘上;缺解释器 = 来源缺失或路径不在盘上;
- * 缺语言服务 = PRJ-005 判定非已激活(未启用/未安装都算不可用)。
+ * 缺语言服务 = PRJ-005 判定非已激活(未启用/未安装都算不可用);
+ * 索引停滞 = 调度器有终态失败任务(failed>0;排队/运行中属正常推进,
+ * 不打扰;探针缺省或返回 null = 面不可用,如实不判定)。
  */
 export function collectProfileHealth(
   profile: ProjectProfile,
@@ -119,6 +127,18 @@ export function collectProfileHealth(
       }
     });
   }
+  const indexStatus = deps.indexStatus?.() ?? null;
+  if (indexStatus && indexStatus.failed > 0) {
+    issues.push({
+      kind: 'index-stalled',
+      message: `索引任务失败 ${indexStatus.failed} 个（排队 ${indexStatus.queued}/运行 ${indexStatus.running}）`,
+      entry: {
+        kind: 'command',
+        target: 'workbench.action.reloadWindow',
+        label: '重启窗口重建索引'
+      }
+    });
+  }
   return issues;
 }
 
@@ -127,6 +147,7 @@ export interface ProfileHealthSummaryDeps {
   exists?: (path: string) => boolean;
   resolveServiceFacts?: () => PythonServiceFacts;
   navigate?: (entry: ProfileHealthEntry) => Promise<void>;
+  indexStatus?: () => Pick<SchedulerStatus, 'failed' | 'queued' | 'running'> | null;
 }
 
 /**
@@ -151,7 +172,8 @@ export async function showProfileHealthSummary(
 
   const serviceFacts = (deps.resolveServiceFacts ?? collectPythonServiceFacts)();
   const issues = collectProfileHealth(profile, serviceFacts, {
-    exists: deps.exists ?? (candidate => fs.existsSync(candidate))
+    exists: deps.exists ?? (candidate => fs.existsSync(candidate)),
+    indexStatus: deps.indexStatus
   });
   if (issues.length === 0) {
     await vscode.window.showInformationMessage(`活动 profile 健康: ${profile.displayName} (${profile.id})`);
