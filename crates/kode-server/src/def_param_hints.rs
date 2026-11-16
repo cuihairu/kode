@@ -116,11 +116,11 @@ fn is_js_space_unit(unit: u16) -> bool {
     matches!(unit, 0x0020 | 0x0009 | 0x000A | 0x000D | 0x000C | 0x000B | 0x00A0)
 }
 
-fn units(text: &str) -> Vec<u16> {
+pub(crate) fn units(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()
 }
 
-fn units_to_string(slice: &[u16]) -> String {
+pub(crate) fn units_to_string(slice: &[u16]) -> String {
     String::from_utf16_lossy(slice)
 }
 
@@ -347,13 +347,13 @@ fn class_header_of(text: &str) -> Option<(String, String)> {
     Some((name, bases))
 }
 
-fn is_ident_start(u: u16) -> bool {
+pub(crate) fn is_ident_start(u: u16) -> bool {
     u == b'_' as u16
         || (u >= b'a' as u16 && u <= b'z' as u16)
         || (u >= b'A' as u16 && u <= b'Z' as u16)
 }
 
-fn is_ident_unit(u: u16) -> bool {
+pub(crate) fn is_ident_unit(u: u16) -> bool {
     is_ident_start(u) || (u >= b'0' as u16 && u <= b'9' as u16)
 }
 
@@ -403,7 +403,7 @@ fn def_header_of(text: &str) -> Option<String> {
 
 /// TS text.indexOf(name, text.indexOf('def') + 3) 同构:从 def 词后起找
 /// 名字首现列(UTF-16;掩码文本上)。
-fn index_from(haystack: &str, needle: &str, from: usize) -> Option<usize> {
+pub(crate) fn index_from(haystack: &str, needle: &str, from: usize) -> Option<usize> {
     let h = units(haystack);
     let n = units(needle);
     if from > h.len() {
@@ -512,7 +512,7 @@ pub struct DefParamSite {
 }
 
 /// 单行 def 解析:括号不闭合(跨行)返回 None,与调用点 inlay 同规则。
-fn parse_def_line(
+pub(crate) fn parse_def_line(
     line_text: &str,
     line: usize,
     method_name: &str,

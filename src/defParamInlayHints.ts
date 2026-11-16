@@ -69,7 +69,7 @@ export function findDefParamSites(text: string, filePath: string): DefParamSite[
 }
 
 /** 单行 def 解析:括号不闭合(跨行)返回 undefined,与调用点 inlay 同规则 */
-function parseDefLine(
+export function parseDefLine(
   lineText: string,
   line: number,
   methodName: string,
@@ -114,7 +114,7 @@ function parseDefLine(
 }
 
 /** 顶层逗号切分(括号/方括号/字符串字面量内不切);name token 定位到行内绝对列 */
-function splitParams(paramText: string, offset: number): DefParamSiteParam[] {
+export function splitParams(paramText: string, offset: number): DefParamSiteParam[] {
   const params: DefParamSiteParam[] = [];
   let depth = 0;
   let quote = '';
