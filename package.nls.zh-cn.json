@@ -70,6 +70,7 @@
   "kbengine.command.monitoring.show.title": "打开监控面板",
   "kbengine.command.dependency.show.title": "查看实体依赖图",
   "kbengine.command.pythonCallGraph.show.title": "查看 Python 调用图",
+  "kbengine.command.entityRelations.show.title": "查看实体关系浏览器",
   "kbengine.command.flow.show.title": "查看实体流转图",
   "kbengine.command.flow.openCallGraph.title": "打开调用图(G2 泳道)",
   "kbengine.command.flow.openTraceReplay.title": "打开回放流转图(G3 实例泳道)",

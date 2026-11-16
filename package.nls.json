@@ -70,6 +70,7 @@
   "kbengine.command.monitoring.show.title": "Show Monitoring Panel",
   "kbengine.command.dependency.show.title": "Show Entity Dependency Graph",
   "kbengine.command.pythonCallGraph.show.title": "Show Python Call Graph",
+  "kbengine.command.entityRelations.show.title": "Show Entity Relations Browser",
   "kbengine.command.flow.show.title": "Show Entity Flow Graph",
   "kbengine.command.flow.openCallGraph.title": "Open Call Graph (G2 swimlanes)",
   "kbengine.command.flow.openTraceReplay.title": "Open Trace Replay (G3 instance lanes)",

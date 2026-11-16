@@ -100,6 +100,7 @@
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
     "onCommand:kbengine.pythonCallGraph.show",
+    "onCommand:kbengine.entityRelations.show",
     "onCommand:kbengine.flow.show",
     "onCommand:kbengine.flow.openCallGraph",
     "onCommand:kbengine.flow.openTraceReplay",
@@ -691,6 +692,11 @@
         "command": "kbengine.pythonCallGraph.show",
         "title": "%kbengine.command.pythonCallGraph.show.title%",
         "icon": "$(graph)"
+      },
+      {
+        "command": "kbengine.entityRelations.show",
+        "title": "%kbengine.command.entityRelations.show.title%",
+        "icon": "$(graph-scatter)"
       },
       {
         "command": "kbengine.flow.show",

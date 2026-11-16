@@ -303,6 +303,14 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
   );
   context.subscriptions.push(showPythonCallGraphCommand);
 
+  // RUST-178:实体关系浏览器(同面板切 mode='relations')——聚焦实体双向
+  // 邻接懒加载子图,点击未展开节点逐层扩充,已展开节点点击开文件。
+  const showEntityRelationsCommand = vscode.commands.registerCommand(
+    'kbengine.entityRelations.show',
+    () => dependencyWebView.show('relations')
+  );
+  context.subscriptions.push(showEntityRelationsCommand);
+
   // 实体架构流程图(批124):客户端到 base/cell 的方法调用与属性自动同步,
   // 边语义按 Flags 位带引擎出处。实体名缺省取活动 .def 编辑器。
   const flowWebView = new EntityFlowWebView(context, backgroundWarmup);

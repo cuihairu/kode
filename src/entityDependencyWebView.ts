@@ -49,6 +49,15 @@ import {
   type CallGraphGraph,
   type CollectedPythonFiles
 } from './entityCallGraphView';
+import {
+  createEntityRelationsViewModel,
+  expandEntityRelations,
+  relationFocusCandidates,
+  relationsToRenderGraph,
+  renderRelationsMermaid,
+  resolveRelationsFocusId,
+  type RelationsViewModel
+} from './backend/entityRelationsBrowser';
 
 export {
   normalizeDependencyGraph,
@@ -77,6 +86,10 @@ export class EntityDependencyWebView {
   private analyzer: EntityDependencyAnalyzer;
   private currentRender: RenderGraph | null = null;
   private currentCallGraph: CallGraphGraph | null = null;
+  // RUST-178:关系浏览模式的懒加载视图状态(宿主驻留全图 + 可见子图模型,
+  // expand 消息逐层扩充;mode!=='relations' 时恒不消费)
+  private relationsGraph: RenderGraph | null = null;
+  private relationsModel: RelationsViewModel | null = null;
   private pendingExport: { format: 'png' | 'svg'; uri: vscode.Uri } | null = null;
   private mode: DependencyPanelMode = 'dependency';
   // KODE-PERF-005:刷新代际守卫——并发刷新/关面板/切模式后旧 RPC 结果不写入。
@@ -107,9 +120,12 @@ export class EntityDependencyWebView {
     );
   }
 
-  /** 面板标题(双模式)。 */
+  /** 面板标题(三模式)。 */
   private panelTitle(): string {
-    return this.mode === 'callgraph' ? 'KBEngine Python 调用图' : 'KBEngine 实体依赖关系';
+    if (this.mode === 'callgraph') {
+      return 'KBEngine Python 调用图';
+    }
+    return this.mode === 'relations' ? 'KBEngine 实体关系浏览器' : 'KBEngine 实体依赖关系';
   }
 
   /**
@@ -153,7 +169,8 @@ export class EntityDependencyWebView {
   }
 
   /**
-   * 显示依赖图(mode:'dependency'|'callgraph';已开面板时仅切换模式并刷新)。
+   * 显示依赖图(mode:'dependency'|'callgraph'|'relations';已开面板时仅切换
+   * 模式并刷新)。
    */
   async show(mode: DependencyPanelMode = 'dependency'): Promise<void> {
     const modeChanged = this.mode !== mode;
@@ -207,13 +224,17 @@ export class EntityDependencyWebView {
             break;
           case 'setMode':
             if (
-              (message.mode === 'dependency' || message.mode === 'callgraph') &&
+              (message.mode === 'dependency' || message.mode === 'callgraph' || message.mode === 'relations') &&
               this.panel
             ) {
               this.mode = message.mode;
               this.panel.title = this.panelTitle();
               await this.refreshGraph();
             }
+            break;
+          case 'expand':
+            // RUST-178:懒加载展开——纯核并入邻接后重渲染子图
+            this.expandRelations(message.nodeId);
             break;
         }
       },
@@ -250,45 +271,12 @@ export class EntityDependencyWebView {
         await this.refreshCallGraph(generation, cancellation.token);
         return;
       }
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      let render: RenderGraph | null = null;
-      // BG-WARM 只读缓存:预热产物 done → 直接归一渲染,零 findFiles/零 analyze;
-      // running → 先出进度页,复用在跑任务(同一 Promise,阶段只算一次),完成后
-      // 渲染;missing/failed/cancelled → 回落既有现算路径(不拿失败当结果)。
-      // 失效口径:缓存只服务「面板还空着」这一次打开——已出图后再刷新(源文件
-      // 改动、手动刷新、切模式回切)一律现算,否则激活期快照会永久盖住用户之后
-      // 的修改。
-      const cached =
-        this.currentRender === null
-          ? this.warmup?.peekArtifact<DependencyGraphSource>('dependencyGraph')
-          : undefined;
-      let reuseInFlight: Promise<DependencyGraphSource | undefined> | null = null;
-      if (cached && cached.state === 'done' && cached.value) {
-        render = normalizeGraphSource(cached.value);
-      } else if (cached && cached.state === 'running' && this.warmup) {
-        this.panel.webview.html = this.getWarmupProgressHtml();
-        reuseInFlight = this.warmup.artifact<DependencyGraphSource>('dependencyGraph');
+      if (this.mode === 'relations') {
+        // RUST-178:关系浏览模式——同一图采集面,聚焦实体后懒加载子图
+        await this.refreshRelations(generation, cancellation);
+        return;
       }
-      if (!render && reuseInFlight && !cancellation.token.isCancellationRequested) {
-        const reused = await reuseInFlight;
-        if (this.canWriteRefresh(generation, 'dependency') && reused) {
-          render = normalizeGraphSource(reused);
-        }
-      }
-      if (root && !render && !cancellation.token.isCancellationRequested) {
-        try {
-          const rust = await buildDependencyGraphInRust(root);
-          if (rust) {
-            render = normalizeRustGraph(rust);
-          }
-        } catch (rustError) {
-          // Rust 面异常按不可用处理(与返回 null 同),回落 TS 兜底
-          this.outputChannel.appendLine(`Rust 依赖图推导失败,回落 TS: ${rustError}`);
-        }
-      }
-      if (!render && !cancellation.token.isCancellationRequested) {
-        render = normalizeDependencyGraph(await this.analyzer.analyze());
-      }
+      const render = await this.acquireDependencyRender(generation, cancellation, 'dependency');
 
       // RPC 在途面复检(KODE 审核发现)+ KODE-PERF-005 代际守卫:面板在途
       // 关闭(panel=null)或代际已换代(并发刷新/切模式)时旧结果不得渲染进
@@ -297,7 +285,7 @@ export class EntityDependencyWebView {
         return;
       }
       // KODE-PERF-005:取消代不满足 canWriteRefresh(已 return);此处 render 为
-      // null 仅剩「本代未取消但推导得空」的异常态,按空图处理不写 null。
+      // 空仅剩「本代未取消但推导得空」的异常态,按空图处理不写 null。
       if (!render) {
         return;
       }
@@ -317,6 +305,160 @@ export class EntityDependencyWebView {
       this.outputChannel.appendLine(`刷新依赖图失败: ${error}`);
       vscode.window.showErrorMessage(`刷新依赖图失败: ${error}`);
     }
+  }
+
+  /**
+   * RUST-178:依赖全图采集面(dependency/relations 两模式共用)——warmup
+   * 只读缓存(面板还空着这一次)→ Rust 核心 → TS 兜底,原 refreshGraph
+   * 采集段原样抽取;写入面仍归各模式(canWriteRefresh 按 expectedMode 分
+   * 支判定,依赖模式行为与抽取前逐字节一致)。
+   */
+  private async acquireDependencyRender(
+    generation: number,
+    cancellation: vscode.CancellationTokenSource,
+    expectedMode: DependencyPanelMode
+  ): Promise<RenderGraph | null> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    let render: RenderGraph | null = null;
+    // BG-WARM 只读缓存:预热产物 done → 直接归一渲染,零 findFiles/零 analyze;
+    // running → 先出进度页,复用在跑任务(同一 Promise,阶段只算一次),完成后
+    // 渲染;missing/failed/cancelled → 回落既有现算路径(不拿失败当结果)。
+    // 失效口径:缓存只服务「面板还空着」这一次打开——已出图后再刷新(源文件
+    // 改动、手动刷新、切模式回切)一律现算,否则激活期快照会永久盖住用户之后
+    // 的修改。
+    const cached =
+      this.currentRender === null
+        ? this.warmup?.peekArtifact<DependencyGraphSource>('dependencyGraph')
+        : undefined;
+    let reuseInFlight: Promise<DependencyGraphSource | undefined> | null = null;
+    if (cached && cached.state === 'done' && cached.value) {
+      render = normalizeGraphSource(cached.value);
+    } else if (cached && cached.state === 'running' && this.warmup) {
+      if (this.panel) {
+        this.panel.webview.html = this.getWarmupProgressHtml();
+      }
+      reuseInFlight = this.warmup.artifact<DependencyGraphSource>('dependencyGraph');
+    }
+    if (!render && reuseInFlight && !cancellation.token.isCancellationRequested) {
+      const reused = await reuseInFlight;
+      if (this.canWriteRefresh(generation, expectedMode) && reused) {
+        render = normalizeGraphSource(reused);
+      }
+    }
+    if (root && !render && !cancellation.token.isCancellationRequested) {
+      try {
+        const rust = await buildDependencyGraphInRust(root);
+        if (rust) {
+          render = normalizeRustGraph(rust);
+        }
+      } catch (rustError) {
+        // Rust 面异常按不可用处理(与返回 null 同),回落 TS 兜底
+        this.outputChannel.appendLine(`Rust 依赖图推导失败,回落 TS: ${rustError}`);
+      }
+    }
+    if (!render && !cancellation.token.isCancellationRequested) {
+      render = normalizeDependencyGraph(await this.analyzer.analyze());
+    }
+    return render;
+  }
+
+  /**
+   * RUST-178:关系浏览模式刷新——与依赖模式同一图采集面(warmup 只读缓存/
+   * Rust 核心/TS 兜底),聚焦实体(活跃编辑器 .def/.py 基名 → 候选 QuickPick)
+   * 后由纯核建立懒加载视图模型;面板只渲染可见子图,点击未展开节点经
+   * expand 消息逐层扩充。用户取消候选/图空时不虚构焦点,面板留占位空态。
+   */
+  private async refreshRelations(
+    generation: number,
+    cancellation: vscode.CancellationTokenSource
+  ): Promise<void> {
+    const render = await this.acquireDependencyRender(generation, cancellation, 'relations');
+    if (!this.canWriteRefresh(generation, 'relations')) {
+      return;
+    }
+    if (!render || render.nodes.length === 0) {
+      // 图空/推导得空:出占位空态(与依赖模式空图注记同形),不静默白板
+      if (this.panel) {
+        this.panel.webview.html = this.getWebviewContent('', null, null, false);
+      }
+      return;
+    }
+    const focusId = await this.resolveRelationsFocus(render);
+    // QuickPick await 期间面板可能关闭/切模式/刷新换代——旧代一律弃置
+    if (!this.canWriteRefresh(generation, 'relations')) {
+      return;
+    }
+    if (!focusId) {
+      if (this.panel) {
+        this.panel.webview.html = this.getWebviewContent('', null, null, false);
+      }
+      return;
+    }
+    const result = createEntityRelationsViewModel(render, focusId);
+    if (!result.ok) {
+      // 焦点解析失败(候选选定后图已换代等),不虚构
+      return;
+    }
+    this.relationsGraph = render;
+    this.relationsModel = result.model;
+    if (this.panel) {
+      this.panel.webview.html = this.getWebviewContent(
+        renderRelationsMermaid(result.model, render),
+        relationsToRenderGraph(result.model, render),
+        null,
+        false
+      );
+    }
+  }
+
+  /**
+   * RUST-178:焦点解析——活跃编辑器 .def/.py 文件基名先试(实体脚本与
+   * 实体同名的项目惯例),解析不到出候选 QuickPick(实体优先);取消返回
+   * null(面板留空态,不猜)。
+   */
+  private async resolveRelationsFocus(render: RenderGraph): Promise<string | null> {
+    const activeUri = vscode.window.activeTextEditor?.document.uri;
+    if (activeUri) {
+      const base = activeUri.fsPath.split(/[\\/]/).pop() ?? '';
+      const stem = base.replace(/\.(def|py)$/i, '');
+      const resolved = resolveRelationsFocusId(render, stem);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    const candidates = relationFocusCandidates(render);
+    if (candidates.length === 0) {
+      return null;
+    }
+    const picked = await vscode.window.showQuickPick(candidates, {
+      title: 'KBEngine 实体关系浏览器',
+      placeHolder: '选择聚焦节点(实体优先;也可选组件/接口/类型/python)'
+    });
+    return picked ? resolveRelationsFocusId(render, picked) : null;
+  }
+
+  /**
+   * RUST-178:懒展开——纯核把目标节点的全图邻接(双向)并入可见集后重渲染
+   * 子图;幂等重放(重复点击/已展开/未知节点)零增量不重渲染。
+   */
+  private expandRelations(nodeId: string): void {
+    if (!this.panel || !this.relationsGraph || !this.relationsModel) {
+      return;
+    }
+    if (this.mode !== 'relations') {
+      return;
+    }
+    const expansion = expandEntityRelations(this.relationsModel, this.relationsGraph, nodeId);
+    if (!expansion.expanded) {
+      return;
+    }
+    this.relationsModel = expansion.model;
+    this.panel.webview.html = this.getWebviewContent(
+      renderRelationsMermaid(expansion.model, this.relationsGraph),
+      relationsToRenderGraph(expansion.model, this.relationsGraph),
+      null,
+      false
+    );
   }
 
   /**

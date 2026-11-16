@@ -20,7 +20,7 @@ import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 import { webviewScriptCsp } from './webviewSecurity';
 
 /** 面板双模式。 */
-export type DependencyPanelMode = 'dependency' | 'callgraph';
+export type DependencyPanelMode = 'dependency' | 'callgraph' | 'relations';
 
 export interface EntityDependencyWebviewOptions {
   mode: DependencyPanelMode;
@@ -87,6 +87,9 @@ export function renderEntityDependencyWebview(
   const cspSource = options.cspSource;
   const mermaidUri = options.mermaidUri;
   const isCallGraph = options.mode === 'callgraph';
+  // RUST-178:关系浏览模式——graph 传入的是懒加载子图(RenderGraph 投影),
+  // 统计/路径/来源徽章面与依赖模式共用同一分支,只有点击语义分叉。
+  const isRelations = options.mode === 'relations';
   const sourceBadge = isCallGraph
     ? rustUnavailable
       ? 'Rust 不可用'
@@ -389,8 +392,9 @@ ${mermaidGraph}
       <span class="source-badge">${sourceBadge}</span>
       <div class="toolbar">
         <select id="mode-select" style="padding: 8px; background-color: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);">
-          <option value="dependency" ${isCallGraph ? '' : 'selected'}>实体依赖</option>
+          <option value="dependency" ${isCallGraph || isRelations ? '' : 'selected'}>实体依赖</option>
           <option value="callgraph" ${isCallGraph ? 'selected' : ''}>调用图</option>
+          <option value="relations" ${isRelations ? 'selected' : ''}>关系浏览</option>
         </select>
         <button id="refresh-graph-btn">刷新</button>
         <button id="export-png-btn">导出 PNG</button>
@@ -442,11 +446,15 @@ ${legendHtml}
     // (mermaid 渲染会替换该元素内容,必须在 DOMContentLoaded 前抓取)
     const openPaths = new Map();
     const openLabels = new Map();
+    // RUST-178:关系浏览模式的未展开节点指令(click <id> relationsExpand "<id>")
+    // ——命中即发 expand 消息(懒加载展开),不命中回落 openFilePath 开文件。
+    const expandNodes = new Set();
     const mermaidSource = document.querySelector('#graph-container .mermaid');
     if (mermaidSource) {
       const text = mermaidSource.textContent || '';
       const nodeLabelRe = /^\\s*([A-Za-z0-9_]+)\\["((?:[^"\\\\]|\\\\.)*)"\\]/gm;
       const clickRe = /^\\s*click\\s+([A-Za-z0-9_]+)\\s+openFilePath\\s+"((?:[^"\\\\]|\\\\.)*)"/gm;
+      const expandRe = /^\\s*click\\s+([A-Za-z0-9_]+)\\s+relationsExpand\\s+"((?:[^"\\\\]|\\\\.)*)"/gm;
       const labels = new Map();
       let nodeMatch;
       while ((nodeMatch = nodeLabelRe.exec(text)) !== null) {
@@ -461,10 +469,23 @@ ${legendHtml}
           openLabels.set(label, filePath);
         }
       }
+      let expandMatch;
+      while ((expandMatch = expandRe.exec(text)) !== null) {
+        expandNodes.add(expandMatch[1]);
+      }
     }
 
     // 事件委托:mermaid 渲染出的 g.node id 形如 <前缀><节点 id>-<序号>
     // (可带 diagramId 前缀),解析不出时回落节点标签文本
+    function resolveNodeId(node) {
+      const domId = node.id || '';
+      const idMatch = /(?:^|[^A-Za-z0-9_])([A-Za-z0-9_]+)-\\d+$/.exec(domId);
+      if (idMatch) {
+        return idMatch[1];
+      }
+      return openPaths.has(domId) || expandNodes.has(domId) ? domId : null;
+    }
+
     function resolveOpenPath(node) {
       const domId = node.id || '';
       const idMatch = /(?:^|[^A-Za-z0-9_])([A-Za-z0-9_]+)-\\d+$/.exec(domId);
@@ -487,6 +508,13 @@ ${legendHtml}
           ? target.closest('g.node')
           : null;
         if (!node) {
+          return;
+        }
+        // RUST-178:关系浏览模式先判懒展开(未展开节点点击 = expand),
+        // 命中 openFilePath 才开文件
+        const nodeId = resolveNodeId(node);
+        if (nodeId && expandNodes.has(nodeId)) {
+          vscode.postMessage({ command: 'expand', nodeId: nodeId });
           return;
         }
         const filePath = resolveOpenPath(node);
