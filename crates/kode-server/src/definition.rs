@@ -103,7 +103,7 @@ pub(crate) fn byte_offset_to_position(text: &str, offset: usize) -> LspPosition 
 }
 
 /// 1 基行号(声明处)→ 行首落点(TS `new Position(line - 1, 0)` 同形)。
-fn line_start_location(uri: &str, line1: usize) -> DefinitionLocation {
+pub(crate) fn line_start_location(uri: &str, line1: usize) -> DefinitionLocation {
     let pos = LspPosition {
         line: line1 as u32 - 1,
         character: 0,
@@ -118,7 +118,7 @@ fn line_start_location(uri: &str, line1: usize) -> DefinitionLocation {
 }
 
 /// 文件首行落点(TS `Location(uri, Position(0, 0))` 同形)。
-fn file_head_location(uri: &str) -> DefinitionLocation {
+pub(crate) fn file_head_location(uri: &str) -> DefinitionLocation {
     line_start_location(uri, 1)
 }
 
@@ -482,7 +482,7 @@ impl HoverEngine {
     /// 内文件经 defs_root 已取该目录;types.xml 等非 def 文件的 defs_root
     /// 返回 entities 目录本身,此处统一折算 `{entities_dir}/entity_defs`
     /// (目录在语料中存在才算——corpus 有其下任一 def)。RUST-137 批 1。
-    fn entity_defs_root(&self, path: &str) -> Option<String> {
+    pub(crate) fn entity_defs_root(&self, path: &str) -> Option<String> {
         let defs_root = self.defs_root(path)?;
         if path.starts_with(&format!("{defs_root}/")) {
             return Some(defs_root.to_string());
@@ -619,7 +619,7 @@ fn deepest_element_at(doc: &xml::Document, node: usize, offset: usize) -> Option
 
 /// 同 deepest_element_at,附根→自身的祖先链(元素节点序;TS findAncestorElement
 /// 含自身的祖先判定同域)。RUST-137 批 1(`<Interfaces>` 段判定)。
-fn deepest_element_with_chain(
+pub(crate) fn deepest_element_with_chain(
     doc: &xml::Document,
     node: usize,
     offset: usize,

@@ -28,6 +28,7 @@ pub mod python_lexical_mask;
 pub mod python_process;
 pub mod readonly_write;
 pub mod receiver_none;
+pub mod references;
 pub mod return_annotations;
 pub mod role_misuse;
 pub mod root_lifecycle;
@@ -51,6 +52,7 @@ pub use completion::{
     CompletionResponse,
 };
 pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};
+pub use references::dump_references_golden;
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
 };

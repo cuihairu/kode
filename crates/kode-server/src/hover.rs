@@ -504,6 +504,10 @@ pub struct HoverEngine {
     pub(crate) types_files: BTreeMap<String, kode_parser::model::TypesFile>,
     /// alias.xml 语料视图(PR-011 补全别名面)。
     pub(crate) alias_files: BTreeMap<String, kode_parser::model::AliasFile>,
+    /// def/types 语料**原文**(RUST-138 references 引用位扫描要逐文件全文
+    /// 重扫,解析模型不含原文坐标)。BodyOnly(模型同文本异)也刷新——
+    /// 引用位行号直接依赖原文,不得用旧文本。
+    texts: BTreeMap<String, String>,
     /// 路径 → 所属根(RUST-069-W):路径键语料视图不记根,撤根扇出靠这张
     /// 归属表定域清除;update 登记,remove/invalidate_root 摘除。
     path_roots: BTreeMap<String, RootId>,
@@ -538,6 +542,7 @@ impl HoverEngine {
             entities_files: BTreeMap::new(),
             types_files: BTreeMap::new(),
             alias_files: BTreeMap::new(),
+            texts: BTreeMap::new(),
             path_roots: BTreeMap::new(),
         }
     }
@@ -556,6 +561,9 @@ impl HoverEngine {
         match file_kind_of_uri(&key.uri) {
             FileKind::Def => {
                 let parsed = parse_def(text);
+                // 原文驻留在模型等价早退**之前**:BodyOnly(模型同文本异,
+                // 如注释增删)也必须刷新——references 引用位坐标依赖原文行位。
+                self.texts.insert(path.clone(), text.to_string());
                 if self.def_files.get(&path) == Some(&parsed) {
                     return ChangeCategory::BodyOnly;
                 }
@@ -585,6 +593,8 @@ impl HoverEngine {
             }
             FileKind::Types => {
                 let parsed = parse_types(text);
+                // 同 def:原文驻留在早退之前,BodyOnly 亦刷新。
+                self.texts.insert(path.clone(), text.to_string());
                 if self.types_files.get(&path) == Some(&parsed) {
                     return ChangeCategory::BodyOnly;
                 }
@@ -618,6 +628,7 @@ impl HoverEngine {
         self.entities_files.remove(&path);
         self.types_files.remove(&path);
         self.alias_files.remove(&path);
+        self.texts.remove(&path);
         self.def_by_name.retain(|_, paths| {
             paths.retain(|p| p != &path);
             !paths.is_empty()
@@ -665,6 +676,16 @@ impl HoverEngine {
         self.def_files.get(path)
     }
 
+    /// RUST-138:语料原文读面(references 引用位扫描;def/types 入库驻留)。
+    pub(crate) fn corpus_text(&self, path: &str) -> Option<&str> {
+        self.texts.get(path).map(|text| text.as_str())
+    }
+
+    /// RUST-138:路径 → 所属根(references 同根声明定域读面)。
+    pub(crate) fn path_root_of(&self, path: &str) -> Option<RootId> {
+        self.path_roots.get(path).copied()
+    }
+
     /// 根级失效(RUST-069-W 撤根扇出):清该根全部驻留——符号索引 + 路径键
     /// 语料视图(按 path_roots 归属定域,不误伤留存根)+ 根键 def 候选 +
     /// entities 目录派生集(目录无根身份,按幸存 entities.xml 重算)。
@@ -684,6 +705,7 @@ impl HoverEngine {
             self.entities_files.remove(path);
             self.types_files.remove(path);
             self.alias_files.remove(path);
+            self.texts.remove(path);
             cleared += 1;
         }
         let before = self.def_by_name.len();
