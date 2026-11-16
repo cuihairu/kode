@@ -516,7 +516,7 @@
 - [x] RUST-240 （旧 QA-011） Memory & race：1h 编辑负载、循环增删根、索引与 diagnostics 并发、高频 restart。（纯对账审计：longSession 三族 180s 趋势+field 5000 文件基线、root_lifecycle.rs+kodeCoreRootLifecycle 36 例当日绿、mapWithConcurrency 有界并发+inflight 归零+预热不重扫、有界重启+30s 冷却；1h 不整测/无泄漏专测如实记账；纪要 docs/review/2026-11-17-rust-240-memory-race-acceptance.md）
 - [x] RUST-241 （旧 QA-012） Protocol compatibility：旧客户端/新 Core、新客户端/旧 Core 均有正确握手/错误。（纯对账：RUST-008 启动协议版本门（KODE_PROTOCOL_VERSION 0.2.0 对称双向比对，mismatch 含两侧版本+杀进程保留可再 spawn+回落 TS）+RUST-055 CI 形状指纹门（32 方法递归 pins+fileChanged 字面量锁）+framing_fuzz；版本门单向比对非协商如实记账；纪要 docs/review/2026-11-17-rust-241-protocol-compat-acceptance.md）
 - [x] RUST-242 （旧 QA-013） 性能发布门槛同时检测 P95、P99、max、CPU、RAM、index correctness。（2026-11-17 fefb6146 真增量：CPU 全门此前零断言，本批补稳态窗进程 CPU 占比门断言——/proc stat utime+stime 采样界 200% 宽松上界 env 可覆盖、非 Linux 如实跳过；六指标面=P99/RSS bounded 既有+P95/max 记录形态+index correctness 语义五面钉；纪要 docs/review/2026-11-17-rust-242-perf-gate-metrics-acceptance.md）
-- [ ] RUST-243 （旧 QA-014） 生成覆盖率达到门槛前不得标“所有 Python 文件类型完整生成”。
+- [x] RUST-243 （旧 QA-014） 生成覆盖率达到门槛前不得标“所有 Python 文件类型完整生成”。（2026-11-17 b934a66e 轻真增量：文案审计钉 tests/generationClaimAudit.test.ts——QA-014 验收口径逐字实现，README/CHANGELOG/docs 全域扫（豁免 kode2 任务档案/review 纪要/knowledge 官方镜像/acceptance-evidence 证据存档），宣称必须同句带覆盖率数字否则红；量测口径=typePreview resolved/total 既有面不造轮子（RUST-223 在案），宣称面当前零越界复证，门槛数值待首宣称定标不虚构；prove-red 三态（无数字红/带数字放行/删净复绿）；纪要 docs/review/2026-11-17-rust-243-generation-coverage-acceptance.md）
 - [ ] RUST-244 （旧 QA-015） 每个修复 PR 附复现脚本、测试证据、profile/perf delta、回退计划。
 - [ ] RUST-245 （旧 QA-016） 大型功能启用 feature flag，只有 parity/perf 完成后再移除旧实现。
 - [ ] RUST-246 （旧 QA-017） 自动发布必须遵循现有仓库的手动发布规则，避免重构顺手改变 release governance。
