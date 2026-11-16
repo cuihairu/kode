@@ -544,9 +544,9 @@
 - [ ] RUST-260 （旧 PH3-GATE） 冷启动/热缓存/并发编辑/跨 root 场景全部性能和正确性过关。(2026-11-17 对账注记,不勾=子门未满:冷启动=激活九段位+publish 端到端(PERF-005 b3582459+a6cd06b1)+Core spawn/handshake(d6e5be97)实测;热缓存=2026-gate-baseline.md §2 热态 P95(Hover 0.09ms/Completion 0.08~0.74ms)+def 定向重建 1.85ms+失效后首 Hover 0.29ms;并发编辑=requestStorm S1 200 版流(单版吸收 p50 0.06ms)+S5 并发跳转补全(p99 2.31ms)(docs/perf/2026-11-15-request-storm.md);跨 root=S2 三根同名轮转 45 次+SEM-009 多根同名勾;性能面四场景数字全在,但「正确性过关」以 LSP-003..010 全量完成+多根同名顺序 golden 为前提(RUST-258 门未满,ph0-gate 门2 缺口),随其收官后勾)
 
 #### Phase 4 — Python 与 typings
-- [ ] RUST-261 （旧 PH4-01） 完成 PY-001..020；与现有 Python LS 共同工作。
-- [ ] RUST-262 （旧 PH4-02） types.xml 自定义类型、用户 Python 文件、引擎 API stubs、生成→源导航全流程。
-- [ ] RUST-263 （旧 PH4-GATE） 在实际 Pylance/Pyright 环境验证类型提示与源跳转，不只测输出文本。
+- [x] RUST-261 （旧 PH4-01） 完成 PY-001..020；与现有 Python LS 共同工作。(2026-11-17 对账收口:PY-001..020=20/20 全勾(RUST-151..170,含 pyi 生成族 006..019 与真机收官 020);与现有 Python LS 共同工作=RUST-148 冲突矩阵(f732df03,docs/design/python-language-service-conflict-matrix.md,域数据归属判据=Pylance 通用语义/Kode def 域语义,source=kbengine+稳定 code 分离,禁重复 diagnostics/completion)+PY-018 typings 开关行为结案(78dbcfc)+PY-020 真机 stub 优先级收官(106b5990+16657600))
+- [x] RUST-262 （旧 PH4-02） types.xml 自定义类型、用户 Python 文件、引擎 API stubs、生成→源导航全流程。(2026-11-17 对账收口:types.xml 自定义类型=PY-005 勾+parity fixture types.xml/alias.xml(ph0-gate 门2)+definition Type·Arg·of 值臂(RUST-137 批 1 1ab8239c);用户 Python 文件=PY-003 symbol 索引/PY-007 typings 策略 spec/PY-008 签名推断(未知保留 Any 输出覆盖率)全勾;引擎 API stubs=PY-006/009/010 全勾+静态模板车道落地(dd05f83d static KBEngine stub package template copy-if-absent,内置 typings 派生自 fork cuihairu/kbengine 钉点 28d2117,PY-009 审计结案=按版本/commit+用户引擎分支覆盖);生成→源导航全流程=PY-010 源映射/PY-011 stub 逆向跳源(912510e7 审计)/PY-013 增量原子写(0f506461)/PY-016 gitignore 建议与用户 stub 守卫(e4947628)/PY-017 类型树预览/PY-020 真机导航收官全勾)
+- [ ] RUST-263 （旧 PH4-GATE） 在实际 Pylance/Pyright 环境验证类型提示与源跳转，不只测输出文本。(2026-11-17 对账注记,不勾=类型提示识别面欠真机实证:源跳转与 stub 优先级已真机收官=PY-020(106b5990,pyright 车道 scripts/verify/lsp-stub-priority.mjs 独立 LSP 客户端四变体 4/4 PASS serverInfo 1.1.414+Pylance 实测证伪旧「同名 .pyi 最优先」口径后文档顺修四处);但引擎侧类型提示识别面仍有在案疑点未立项未收口=KBEngine.pyi 在真 Pylance 的识别、工作区布局探测范围(memory kode-pylance-backlog,CLONE-P6 后观察);勾选条件=该两点真机走查实证后勾)
 
 #### Phase 5 — KBEngine 专业 IDE
 - [ ] RUST-264 （旧 PH5-01） 实现 KBE-001..018、UI-001..012，保持已有工具能力。
