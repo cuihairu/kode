@@ -124,6 +124,7 @@
     "onCommand:kbengine.hotReload.historyPanel",
     "onCommand:kbengine.hotReload.historySearch",
     "onCommand:kbengine.project.doctor",
+    "onCommand:kbengine.project.wizard",
     "onCommand:kbengine.symbolReferences.show",
     "onCommand:kbengine.profile.start",
     "onCommand:kbengine.runtimeQuery.show",
@@ -800,6 +801,10 @@
         "command": "kbengine.project.doctor",
         "title": "%kbengine.command.project.doctor.title%",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "kbengine.project.wizard",
+        "title": "%kbengine.command.project.wizard.title%"
       },
       {
         "command": "kbengine.symbolReferences.show",

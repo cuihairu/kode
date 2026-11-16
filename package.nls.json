@@ -91,6 +91,7 @@
   "kbengine.command.def.analyze.title": "Analyze Def Performance",
   "kbengine.command.def.checkEngineMd5.title": "Check Engine Def MD5 Consistency",
   "kbengine.command.project.doctor.title": "Run Project Doctor",
+  "kbengine.command.project.wizard.title": "Run Project Wizard",
   "kbengine.command.symbolReferences.show.title": "Show Symbol References Graph",
   "kbengine.command.profile.start.title": "Start Runtime Profile",
   "kbengine.command.python.showCallChain.title": "Show Call Chain",

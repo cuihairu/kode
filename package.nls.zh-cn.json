@@ -91,6 +91,7 @@
   "kbengine.command.def.analyze.title": "分析 Def 性能",
   "kbengine.command.def.checkEngineMd5.title": "检查引擎 Def MD5 一致性",
   "kbengine.command.project.doctor.title": "运行项目体检",
+  "kbengine.command.project.wizard.title": "运行项目向导",
   "kbengine.command.symbolReferences.show.title": "查看符号引用图",
   "kbengine.command.profile.start.title": "开始运行时剖析",
   "kbengine.command.python.showCallChain.title": "查看调用链",

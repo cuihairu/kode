@@ -25,6 +25,7 @@ import { getDefinitionWorkspaceLayout, getRegisteredEntities, readWorkspaceTextF
 import { getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace, setActiveProfileScanRoot } from '../scanRoots';
 import { getIndexScanRoots } from '../scanRoots';
 import { importExistingProject } from '../projectImport';
+import { runProjectWizard } from '../projectWizard';
 import { isPythonMroJumpEnabled } from '../languageProviders';
 import { registerTypePreviewView, openTypePreviewSource, buildTypePreviewModel } from '../typePreviewView';
 import { makeSdkEngineTrace } from '../sdk-gen/sdkGenerationTrace';
@@ -347,6 +348,15 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     () => selectActiveProfile(context)
   );
   context.subscriptions.push(selectActiveProfileCommand);
+
+  // 项目向导(RUST-172):五步走完资源 roots/引擎版本/脚本环境/component
+  // paths/server startup;每步即时落盘,Esc 即停(已完成步骤保留)。动作面
+  // 复用既有命令(syncExtraPaths/createConfig/updateLaunchJson),向导只编排
+  const projectWizardCommand = vscode.commands.registerCommand(
+    'kbengine.project.wizard',
+    () => runProjectWizard(context)
+  );
+  context.subscriptions.push(projectWizardCommand);
 
   // 语言索引响应 profile 切换(IDE-PRJ-011):活动 profile 的资产根成为索引
   // 输入(优先于 assetsRoot 设置/自动发现,见 scanRoots);切换时旧外部根先
