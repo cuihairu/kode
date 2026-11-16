@@ -549,10 +549,10 @@
 - [ ] RUST-263 （旧 PH4-GATE） 在实际 Pylance/Pyright 环境验证类型提示与源跳转，不只测输出文本。(2026-11-17 对账注记,不勾=类型提示识别面欠真机实证:源跳转与 stub 优先级已真机收官=PY-020(106b5990,pyright 车道 scripts/verify/lsp-stub-priority.mjs 独立 LSP 客户端四变体 4/4 PASS serverInfo 1.1.414+Pylance 实测证伪旧「同名 .pyi 最优先」口径后文档顺修四处);但引擎侧类型提示识别面仍有在案疑点未立项未收口=KBEngine.pyi 在真 Pylance 的识别、工作区布局探测范围(memory kode-pylance-backlog,CLONE-P6 后观察);勾选条件=该两点真机走查实证后勾)
 
 #### Phase 5 — KBEngine 专业 IDE
-- [ ] RUST-264 （旧 PH5-01） 实现 KBE-001..018、UI-001..012，保持已有工具能力。
-- [ ] RUST-265 （旧 PH5-02） 将运行时协议/DB/debug/log 控制拆成独立服务，避免影响 LSP latency。
+- [x] RUST-264 （旧 PH5-01） 实现 KBE-001..018、UI-001..012，保持已有工具能力。(2026-11-17 对账收口:KBE-001..018=18/18 全勾(RUST-171 起系列,含 Project Doctor/配置合并视图/实体关系浏览器面)+UI-001..012=12/12 全勾(RUST-218..229,2026-11-17 止 UI 廿八项批次收口在案);保持已有工具能力=全量回归网持续在役(unit 全量 10670 passed+mocha 烟测门+demo editor 25 RC=0 门禁+迁移期禁删项清单(legacy-todo-audit AUDIT-014))+真机走查两腿(009b imac 四阶段 af8a9f98+009c Linux xvfb 双形态)实证既有工具面不回退)
+- [ ] RUST-265 （旧 PH5-02） 将运行时协议/DB/debug/log 控制拆成独立服务，避免影响 LSP latency。(2026-11-17 对账注记,不勾=拆分未实现:运行时协议(telnet)/DB/debug/log 控制当前仍在扩展进程内(命令+面板形态,telnet 探测灯/console tail 灯/machined 面),docs/architecture/current-state.md 与 feature-flags 台账均无独立服务拆分记录;LSP latency 保障现状=kode-server(Rust)独立进程承载语义面+kodemcpHost 内建托管;拆分属架构级单待拍板,未立项)
 - [ ] RUST-266 （旧 PH5-02A） 将 HR-PR-02..07 纳入专业 IDE 验收，先行交付的 TS 功能保持兼容。(等接线批：HR-PR-02..08 装配接线批进行中（06 在途），收官后按本行验收；行文写 02..07，实际巡检单范围=02..08)
-- [ ] RUST-267 （旧 PH5-GATE） 界面功能 parity 与多个真实引擎工程测试通过。
+- [ ] RUST-267 （旧 PH5-GATE） 界面功能 parity 与多个真实引擎工程测试通过。(2026-11-17 对账注记,不勾=量化口径与逐面验收未全:真机走查两腿已做=009b imac 四阶段(2026-11-10,af8a9f98 纪要,实体区高度压缩 UX-REVIEW-011 已破案)+009c Linux xvfb 双形态(2026-11-10,四组数据健康);「多个真实引擎工程」的量化口径(几个工程/覆盖哪些界面面)未立,KBE-001..018/UI-001..012 的真机逐面 parity 验收表未建;勾选条件=口径立项+逐面验收表全绿)
 
 #### Phase 6 — 插件与执行管理
 - [ ] RUST-268 （旧 PH6-01） 实现 PLUG-001..016、EXEC-001..013，提供 sample 插件和 SDK。
