@@ -115,14 +115,21 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
       expect(typeof value).toBe('number');
     }
     // RUST-125:解析驻留观测恒装配(预算构造 256MB 常量口径;打开一文件
-    // 后驻留增长,驱逐未发生=0)。
+    // 后驻留增长,驱逐未发生=0)。didOpen 的 parse 在队列泵上异步执行,
+    // 满载下 health 可能早于首 parse 到达(valid=0 瞬态)——形状/常量断言
+    // 不轮询,就绪面(valid/resident)有界轮询至首 parse 落账。
     expect(sortedKeys(health.parseCache)).toEqual(
       ['budgetBytes', 'evictions', 'negative', 'residentBytes', 'valid']
     );
     expect(health.parseCache.budgetBytes).toBe(256 * 1024 * 1024);
-    expect(health.parseCache.valid).toBeGreaterThanOrEqual(1);
-    expect(health.parseCache.residentBytes).toBeGreaterThan(0);
     expect(health.parseCache.evictions).toBe(0);
+    let parseReady = health.parseCache;
+    for (let attempt = 0; attempt < 50 && parseReady.valid < 1; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      parseReady = (await client.health()).parseCache;
+    }
+    expect(parseReady.valid).toBeGreaterThanOrEqual(1);
+    expect(parseReady.residentBytes).toBeGreaterThan(0);
     // RUST-075-W:worker 执行器默认装配,健康面带池记账键。
     // RUST-076-W:LaneGate 泳道记账键(ioRunning/cpuRunning)入池形状。
     expect(sortedKeys(health.pool)).toEqual(
