@@ -1191,6 +1191,18 @@ The flow graph panel supports:
   - An unknown ID is refused (nothing persisted, nothing fired); a selection whose profile record was later removed resolves honestly to null instead of pretending to be valid
   - With no profiles at all the command says so and never opens the picker
 
+### `kbengine.project.wizard`
+
+- Title: `Run Project Wizard`
+- Purpose: walk a KBEngine project through the five setup faces in one command — asset roots, engine version, script environment, component paths, server startup config; every step applies immediately, and cancelling (Esc) at any step stops the rest while keeping what was already applied
+- Steps:
+  1. Asset roots: pick the assets root (prefilled with the profile's current root), review the identification preview (same convention chain as `kbengine.project.import`), confirm to save `assetsRoot`/`engineRoot` onto the active profile; if no profile exists yet, a default one is seeded and activated first
+  2. Engine version: detect the engine version marker through the shared probe chain (`findEngineRoot` + `readEngineVersionMarker`; the profile's engine root is normalized between the repo-root and `kbe/` shapes); the detected value is offered on top, followed by the version presets and a keep-current entry — an unknown marker is never fabricated
+  3. Script environment: resolve the current interpreter (setting → venv → PATH), then pick among the setting value, venv candidates and PATH candidate; the choice writes `kbengine.python.interpreterPath` (workspace) and records it on the profile
+  4. Component paths: present the derived facts (scripts roots count, derived pyright execution environments per server role, stub dir, component telnet defaults, whether `.kbengine/debug.json` is on disk) and optionally delegate to the existing commands (`kbengine.python.syncExtraPaths`, `kbengine.debug.createConfig`); continuing without changes writes nothing
+  5. Server startup: show the derived bin/config paths and the current `kbengine.autoStart`, pick a preset group (default/managers/all) or keep, then optionally run `kbengine.debug.updateLaunchJson` for launch entries
+- Honesty rules: each step writes only its own face; skipped or cancelled steps write nothing; the summary message reports per-step applied/skipped; engine roots that do not satisfy the marker probe are not trusted and detection falls back to the walk-up chain, never inventing a version
+
 ### `kbengine.profile.health`
 
 - Title: `Show Active Profile Health`

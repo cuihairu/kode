@@ -1150,6 +1150,18 @@ callgraph 模式面板支持：
   - 未知 ID 拒绝（不落盘不发事件）；选择对应的记录后来被删除时如实解析为 null，不伪装有效
   - 完全没有 profile 时如实说明，不打开选择器
 
+### `kbengine.project.wizard`
+
+- 标题：`Run Project Wizard`
+- 用途：一条命令走完 KBEngine 项目的五个配置面——资源 roots、引擎版本、脚本环境、组件路径、服务器启动配置；每步即时落盘,任一步取消（Esc）即停后续步骤,已应用步骤保留
+- 五步：
+  1. 资源 roots：选资产根（预填 profile 现值）、核对识别预览（与 `kbengine.project.import` 同一约定链）、确认后把 `assetsRoot`/`engineRoot` 落到活动 profile;还没有 profile 时先种默认档并激活
+  2. 引擎版本：走共享探测链（`findEngineRoot` + `readEngineVersionMarker`;profile 的引擎根在仓根与 `kbe/` 两种形态间归一）;探测值置顶,其后版本预设与保留当前项——未知标记绝不伪造
+  3. 脚本环境：先解析当前解释器（设置 → venv → PATH）,再在设置值/venv 候选/PATH 候选中选择;选中写 `kbengine.python.interpreterPath`（工作区级）并记入 profile
+  4. 组件路径：呈现派生事实（scripts 根数、按服务端角色派生的 pyright 执行环境数、桩目录、组件 telnet 默认表、`.kbengine/debug.json` 是否在盘）,动作项转发既有命令（`kbengine.python.syncExtraPaths`、`kbengine.debug.createConfig`）;不做更改继续即零写
+  5. 服务器启动：展示推导的 bin/config 路径与当前 `kbengine.autoStart`,选预设组（default/managers/all）或保留,随后可选运行 `kbengine.debug.updateLaunchJson` 生成启动条目
+- 诚实口径：每步只写自己的面;跳过或取消的步骤零写;收尾消息逐步报已应用/已跳过;不满足标记探测的引擎根不被信任,探测回落向上找链,绝不发明版本
+
 ### `kbengine.profile.health`
 
 - 标题：`Show Active Profile Health`
