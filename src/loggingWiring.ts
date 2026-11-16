@@ -8,6 +8,7 @@ import { LogViewerWebView } from './logWebView';
 import { setHoverBudgetLogHub } from './hoverBudget';
 import {
   getActiveOperationCounts,
+  getAllOperationSummaries,
   getLanguageServiceSummaryReport,
   renderActiveTasksReport,
   setDetailedRecordingEnabled,
@@ -18,6 +19,11 @@ import { resolveServerComponent } from './backend/serverCommandTarget';
 import { getDiagnosticScheduler } from './backend/diagnosticScheduler';
 import { setFileReadVerbose } from './backend/fileReadMetrics';
 import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './backend/cpuProfileCapture';
+import { renderPerformancePanelReport } from './backend/performancePanel';
+import { getParsedDocumentCacheGauge } from './backend/defParser';
+import { getDatabaseSchemaCacheGauge } from './databaseSchema';
+import { getReturnAnnotationCacheGauge } from './backend/pythonReturnTypeInference';
+import type { IndexScheduler } from './backend/indexScheduler';
 import {
   getEventLoopDelayReport,
   getHostVitalsReport,
@@ -33,7 +39,11 @@ export interface LoggingWiring {
   logHub: KBEngineServerManager['logHub'];
 }
 
-export function wireLogging(context: vscode.ExtensionContext, serverManager: KBEngineServerManager): LoggingWiring {
+export function wireLogging(
+  context: vscode.ExtensionContext,
+  serverManager: KBEngineServerManager,
+  indexScheduler: IndexScheduler
+): LoggingWiring {
   const showLogsCommand = vscode.commands.registerCommand(
     'kbengine.server.showLogs',
     (target) => {
@@ -124,6 +134,48 @@ export function wireLogging(context: vscode.ExtensionContext, serverManager: KBE
     metricsChannel.append(renderActiveTasksReport({
       operationCounts: getActiveOperationCounts(),
       scheduler: getDiagnosticScheduler().pendingWorkload()
+    }));
+    metricsChannel.show();
+  }));
+  // RUST-220(旧 UI-003)性能面板:队列/缓存/索引生成/P95·P99/主要慢请求及
+  // 处理建议单份快照(纯核 renderPerformancePanelReport,渲染层零判定);
+  // 数据面与既有源同源(诊断调度 DIA-006+索引调度 RUST-187+三缓存 gauge+
+  // PR1 分位数汇总),全量分位数表仍由 showSummary 承载,本面板只聚焦榜单。
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.showPerformancePanel', () => {
+    const indexStatus = indexScheduler.getStatus();
+    metricsChannel.clear();
+    metricsChannel.append(renderPerformancePanelReport({
+      queue: {
+        diagnosticsQueued: getDiagnosticScheduler().pendingWorkload().queued,
+        diagnosticsInFlight: getDiagnosticScheduler().pendingWorkload().inFlight,
+        indexQueued: indexStatus.queued,
+        indexRunning: indexStatus.running !== null,
+        indexFailed: indexStatus.failed,
+        indexCompleted: indexStatus.completed,
+        indexCancelled: indexStatus.cancelled,
+        indexQueuedByPriority: indexStatus.queuedByPriority
+      },
+      index: {
+        mergedTasks: indexStatus.metrics.mergedTasks,
+        staleDropped: indexStatus.metrics.staleDropped,
+        postponedBackground: indexStatus.metrics.postponedBackground,
+        backgroundDelayMs: indexStatus.metrics.backgroundDelayMs,
+        recoveries: indexStatus.metrics.recoveries
+      },
+      caches: {
+        parsedDocuments: getParsedDocumentCacheGauge(),
+        databaseSchemas: getDatabaseSchemaCacheGauge(),
+        annotationIndex: getReturnAnnotationCacheGauge()
+      },
+      latencies: getAllOperationSummaries().map(summary => ({
+        name: summary.name,
+        count: summary.count,
+        p50Ms: summary.p50Ms,
+        p95Ms: summary.p95Ms,
+        p99Ms: summary.p99Ms,
+        maxMs: summary.maxMs,
+        cacheHitRate: summary.cacheHitRate
+      }))
     }));
     metricsChannel.show();
   }));

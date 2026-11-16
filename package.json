@@ -100,6 +100,7 @@
     "onCommand:kbengine.metrics.startCpuProfile",
     "onCommand:kbengine.metrics.stopCpuProfile",
     "onCommand:kbengine.metrics.showActiveTasks",
+    "onCommand:kbengine.metrics.showPerformancePanel",
     "onCommand:kbengine.debug.createConfig",
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
@@ -680,6 +681,10 @@
       {
         "command": "kbengine.metrics.showActiveTasks",
         "title": "%kbengine.command.metrics.showActiveTasks.title%"
+      },
+      {
+        "command": "kbengine.metrics.showPerformancePanel",
+        "title": "%kbengine.command.metrics.showPerformancePanel.title%"
       },
       {
         "command": "kbengine.debug.createConfig",

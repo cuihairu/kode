@@ -66,6 +66,7 @@
   "kbengine.command.metrics.startCpuProfile.title": "Kode: 开始扩展宿主 CPU 剖析",
   "kbengine.command.metrics.stopCpuProfile.title": "Kode: 停止扩展宿主 CPU 剖析",
   "kbengine.command.metrics.showActiveTasks.title": "Kode: 查看活跃语言服务任务",
+  "kbengine.command.metrics.showPerformancePanel.title": "Kode: 查看性能面板（队列、缓存、索引、P95/P99、慢请求）",
   "kbengine.command.debug.createConfig.title": "创建调试配置模板",
   "kbengine.command.monitoring.show.title": "打开监控面板",
   "kbengine.command.dependency.show.title": "查看实体依赖图",

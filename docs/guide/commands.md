@@ -484,6 +484,19 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Read this ledger to compare active tasks before and after cancelling a request; do not infer that work stopped from an empty provider return value
 
 
+### `kbengine.metrics.showPerformancePanel`
+
+- Title: `Kode: Show Performance Panel (queues, caches, index, P95/P99, slow requests)`
+- Purpose: render a point-in-time performance snapshot into the `Kode Language Service Metrics` output channel, focused on the five dimensions queues / caches / index generation / P95·P99 / main slow requests with handling suggestions (RUST-220)
+- Behavior:
+  - Queue section: diagnostics scheduler queued/inFlight (same probe as `kbengine.metrics.showActiveTasks`) plus index scheduler queued/running/failed/completed/cancelled counts with the per-priority queue distribution (same `IndexScheduler.getStatus` probe as the profile health summary)
+  - Index generation section: scheduler metrics — merged duplicate tasks, stale-version drops, interaction-postponed background tasks with accumulated yield time, failure recoveries
+  - Cache section: parsed-document cache (entries/bytes vs caps with occupancy %), database schema cache, return-annotation index with TTL
+  - Main slow requests section: top 5 operation families by P99 (sampled rows only; zero-sample families are excluded rather than shown with empty-window quantiles) with count, P50/P95/P99/max and cache hit rate
+  - Suggestions section: threshold-mapped pointers to existing forensics entry points only — P99 > 1s suggests `kbengine.metrics.startCpuProfile` plus `[kode-lsm]`/`[kode-hover]` log filtering, P99 > 200ms suggests watching queue/cache gauges or enabling `kbengine.metrics.detailed`; otherwise an explicit "no abnormal slow requests" line
+  - The full quantile table remains in `kbengine.metrics.showSummary`; this panel is a focused snapshot, not a live-updating view
+
+
 ### `kbengine.python.debugpySync`
 
 - Title: `Copy System debugpy into Assets`

@@ -1357,8 +1357,9 @@ export function activate(context: vscode.ExtensionContext) {
   const { httpRequestService, quickActionManagerRef, httpRequestChannel } =
     activateHttpRequestViews({ context });
 
-  // 日志收集器/查看器/LogHub 与语言服务面板装配(本体在 ./loggingWiring,KODE-ARCH-002 纯移动)
-  const { logCollector, logViewer, logHub } = wireLogging(context, serverManager);
+  // 日志收集器/查看器/LogHub 与语言服务面板装配(本体在 ./loggingWiring,KODE-ARCH-002 纯移动);
+  // indexScheduler 注入供性能面板取索引调度快照(RUST-220)
+  const { logCollector, logViewer, logHub } = wireLogging(context, serverManager, indexScheduler);
 
   // 原始日志 ERROR 扫描(盘点 G6):离线聚合日志文件里的 ERROR/CRITICAL 行;
   // 重扫按上一批文件重跑,不再弹对话框
