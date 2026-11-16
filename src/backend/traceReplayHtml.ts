@@ -24,6 +24,21 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// RUST-150:回放页零脚本(enableScripts=false 硬纪律)不可做滚动加载或
+// 虚拟列表,渲染面上限+如实截断提示是该约束下的正确形态——模型(数据面)
+// 不截断,只防一次渲染万级 DOM(采集预算 20000 事件,帧/流可达万级)。
+export const TRACE_REPLAY_MAX_LANES = 24;
+export const TRACE_REPLAY_MAX_LANE_FRAMES = 2000;
+export const TRACE_REPLAY_MAX_LANE_FLOWS = 2000;
+export const TRACE_REPLAY_MAX_LANE_MARKERS = 500;
+
+function truncatedNote(shown: number, total: number, noun: string): string {
+  return (
+    `<div class="truncated-note">已截断:${noun}仅渲染前 ${shown} 项(共 ${total});` +
+    `数据完整,仅渲染面截断</div>`
+  );
+}
+
 function flowBadge(flow: ReplayFlow): string {
   if (flow.kind === 'causal') {
     const broadcast = flow.broadcast ? ' <span class="badge broadcast">broadcast</span>' : '';
@@ -59,16 +74,24 @@ function laneHtml(lane: ReplayLane): string {
           .join('')}</div>`
       : '<div class="instances none">实例身份:来源未观察(事件无 entityId)</div>';
 
+  // RUST-150:帧预算跨 segment 消耗(按序取前缀),预算尽后剩余段如实空+
+  // 泳道级截断尾注,不静默丢帧。
+  let framesRemaining = TRACE_REPLAY_MAX_LANE_FRAMES;
+  let framesTotal = 0;
   const segments =
     lane.segments.length > 0
       ? lane.segments
           .map(segment => {
+            framesTotal += segment.frames.length;
             const label =
               segment.kind === 'callback'
                 ? `回调段(receive#${segment.receiveSeq ?? '?'}`
                 : `入口链(root#${segment.rootCallSeq ?? '?'}`;
             const note = segment.note !== null ? `<div class="seg-note">${escapeHtml(segment.note)}</div>` : '';
+            const take = Math.min(segment.frames.length, Math.max(framesRemaining, 0));
+            framesRemaining -= take;
             const frames = segment.frames
+              .slice(0, take)
               .map(
                 frame =>
                   `<div class="frame" style="margin-left:${frame.depth * 18}px">` +
@@ -81,21 +104,36 @@ function laneHtml(lane: ReplayLane): string {
           })
           .join('')
       : '<div class="seg-empty">无本地栈段</div>';
+  const segmentsHtml =
+    lane.segments.length > 0 && framesTotal > TRACE_REPLAY_MAX_LANE_FRAMES
+      ? segments + truncatedNote(TRACE_REPLAY_MAX_LANE_FRAMES, framesTotal, '本地栈帧')
+      : segments;
 
-  const flows = lane.flows.length > 0 ? lane.flows.map(flowLine).join('') : '<div class="flow-empty">无消息流</div>';
+  const flowsShown = lane.flows.slice(0, TRACE_REPLAY_MAX_LANE_FLOWS);
+  const flows =
+    flowsShown.length > 0
+      ? flowsShown.map(flowLine).join('') +
+        (lane.flows.length > flowsShown.length
+          ? truncatedNote(flowsShown.length, lane.flows.length, '消息流')
+          : '')
+      : '<div class="flow-empty">无消息流</div>';
+  const markersShown = lane.missingMarkers.slice(0, TRACE_REPLAY_MAX_LANE_MARKERS);
   const markers =
-    lane.missingMarkers.length > 0
-      ? lane.missingMarkers
+    markersShown.length > 0
+      ? markersShown
           .map(
             marker =>
               `<div class="missing" title="${escapeHtml(marker.detail)}">` +
               `<span class="badge missing">缺失</span> ${escapeHtml(marker.kind)} ` +
               `<span class="method">${escapeHtml(marker.methodName)}</span> <span class="seq">#${marker.seq}</span></div>`
           )
-          .join('')
+          .join('') +
+        (lane.missingMarkers.length > markersShown.length
+          ? truncatedNote(markersShown.length, lane.missingMarkers.length, '缺失标记')
+          : '')
       : '';
 
-  return `<div class="lane">${header}${instances}${segments}${flows}${markers}</div>`;
+  return `<div class="lane">${header}${instances}${segmentsHtml}${flows}${markers}</div>`;
 }
 
 const STYLE = `
@@ -116,6 +154,7 @@ h1{font-size:14px} .summary{color:var(--vscode-descriptionForeground);margin:4px
 .seq{color:var(--vscode-descriptionForeground);margin-left:6px;font-size:10px}
 .seg-note{font-size:11px;color:var(--vscode-editorWarning-foreground,#cca700);margin-top:2px}
 .seg-empty,.flow-empty{color:var(--vscode-descriptionForeground);font-size:11px;font-style:italic}
+.truncated-note{margin:4px 0;font-size:11px;color:var(--vscode-editorWarning-foreground,#cca700);border:1px dashed var(--vscode-editorWarning-foreground,#cca700);padding:2px 4px}
 .flow{margin:4px 0;font-size:12px} .flow .method{font-weight:bold} .flow .anchors{color:var(--vscode-descriptionForeground)}
 .flow .order{color:var(--vscode-descriptionForeground);margin-left:6px;font-size:10px}
 .flow.candidate{opacity:.9} .reason{font-size:11px;color:var(--vscode-editorWarning-foreground,#cca700)}
@@ -137,10 +176,17 @@ export function renderTraceReplayHtml(model: TraceReplayModel, options: TraceRep
   const summary = escapeHtml(describeTraceReplayModel(model));
   const notes = [
     `来源:${escapeHtml(model.collectorKind)};${escapeHtml(model.sampleFaceNote)}`,
-    model.completenessNote !== model.sampleFaceNote ? escapeHtml(model.completenessNote) : null
+    model.completenessNote !== model.sampleFaceNote ? escapeHtml(model.completenessNote) : null,
+    model.lanes.length > TRACE_REPLAY_MAX_LANES
+      ? `泳道已截断:仅渲染前 ${TRACE_REPLAY_MAX_LANES} 条(共 ${model.lanes.length})`
+      : null
   ]
     .filter(note => note !== null)
     .map(note => `<div>${note}</div>`)
+    .join('');
+  const lanesHtml = model.lanes
+    .slice(0, TRACE_REPLAY_MAX_LANES)
+    .map(laneHtml)
     .join('');
   return `<!DOCTYPE html>
 <html>
@@ -150,6 +196,6 @@ export function renderTraceReplayHtml(model: TraceReplayModel, options: TraceRep
 <h1>${title}</h1>
 <div class="summary">${summary}</div>
 <div class="notes">${notes}</div>
-<div class="lanes">${model.lanes.map(laneHtml).join('')}</div>
+<div class="lanes">${lanesHtml}</div>
 </body></html>`;
 }
