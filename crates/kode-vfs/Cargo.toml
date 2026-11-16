@@ -8,5 +8,12 @@ license.workspace = true
 
 [dependencies]
 
+[dev-dependencies]
+# RUST-128 持久化格式基准候选(仅基准面消费,不进生产 lib 依赖):
+# rusqlite 与 kode-mcp 同版(bundled,零系统依赖);redb 为纯 Rust 嵌入式
+# B-tree 候选。基准与选型结论见 docs/perf/2026-11-16-persist-format-bench.md。
+rusqlite = { version = "0.41", default-features = false, features = ["bundled"] }
+redb = "2"
+
 [lints]
 workspace = true
