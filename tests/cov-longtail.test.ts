@@ -8,8 +8,10 @@ import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import { firstDiffPath, KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
 import {
   CORE_SHADOW_CHANNEL_NAME,
+  diffScanRoots,
   setupKodeCoreGate,
-  SHOW_SHADOW_DIFF_LOG_COMMAND
+  SHOW_SHADOW_DIFF_LOG_COMMAND,
+  syncRootDiffToGate
 } from '../src/kodeCoreGateWiring';
 import {
   checkDatabaseDriftForSnapshots,
@@ -367,6 +369,48 @@ describe('kodeCoreGateWiring(差异日志通道行格式)', () => {
         void Promise.resolve(disposable.dispose?.()).catch(() => undefined);
       }
     }
+  });
+});
+
+describe('kodeCoreGateWiring(根差量同步,RUST-149 批 2 接线)', () => {
+  it('diffScanRoots 纯差量:增/删/混合,输入快照不被改写', () => {
+    const previous = new Set(['/w/a', '/w/b']);
+    expect(diffScanRoots(previous, ['/w/b', '/w/c'])).toEqual({ added: ['/w/c'], removed: ['/w/a'] });
+    expect(diffScanRoots(new Set(), ['/w/a'])).toEqual({ added: ['/w/a'], removed: [] });
+    expect(diffScanRoots(previous, ['/w/a', '/w/b'])).toEqual({ added: [], removed: [] });
+    expect([...previous].sort()).toEqual(['/w/a', '/w/b']);
+    // 重复输入不产生假差量
+    expect(diffScanRoots(previous, ['/w/a', '/w/a', '/w/b'])).toEqual({ added: [], removed: [] });
+  });
+
+  it('syncRootDiffToGate 序列:移除先于注册,仅新增触发补镜像,返回新快照', () => {
+    const removedRoots: string[] = [];
+    const addedRoots: string[] = [];
+    const gate = {
+      removeRoot: async (root: string) => { removedRoots.push(root); return { removed: true }; },
+      registerRoot: async (root: string) => { addedRoots.push(root); return { root: 1 }; }
+    };
+    let remirrors = 0;
+    const last = syncRootDiffToGate(
+      gate,
+      new Set(['/w/gone', '/w/stay']),
+      ['/w/stay', '/w/new'],
+      () => { remirrors += 1; }
+    );
+    expect(removedRoots).toEqual(['/w/gone']);
+    expect(addedRoots).toEqual(['/w/new']);
+    expect(remirrors).toBe(1);
+    expect([...last].sort()).toEqual(['/w/new', '/w/stay']);
+    // 新快照滚动后同输入零差量、零镜像
+    const second = syncRootDiffToGate(gate, last, ['/w/stay', '/w/new'], () => { remirrors += 1; });
+    expect(removedRoots).toEqual(['/w/gone']);
+    expect(addedRoots).toEqual(['/w/new']);
+    expect(remirrors).toBe(1);
+    expect([...second].sort()).toEqual(['/w/new', '/w/stay']);
+    // 纯移除不触发补镜像
+    syncRootDiffToGate(gate, second, ['/w/new'], () => { remirrors += 1; });
+    expect(removedRoots).toEqual(['/w/gone', '/w/stay']);
+    expect(remirrors).toBe(1);
   });
 });
 

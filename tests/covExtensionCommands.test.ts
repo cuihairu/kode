@@ -642,6 +642,64 @@ describe('extension 激活链命令面(补测)', () => {
     }
   });
 
+  it('onDidChangeWorkspaceFolders:根移除扇出仍开着文档的整族诊断终局化(批 2 root-change 摘除)', () => {
+    // 五维钉 RUST-149(root-change 维度,批 2):VSCode 不随根移除关 tab,
+    // extension.ts rootRemovalWatcher 对被移除根下仍打开的文档按 close 口径
+    // 摘除(逐族 collection+调度器,teardownDocumentState);其他根文档不受
+    // 波及(文档保留打开,后续编辑走既有重算链,映射空=零产出)。
+    const CLOSE_CLEARED_COLLECTIONS = [
+      'kbengine-def-method-consistency',
+      'kbengine-process-topology',
+      'kbengine-user-type-contract',
+      'kbengine-property-direction',
+      'kbengine-readonly-write',
+      'kbengine-role-misuse',
+      'kbengine-post-destroy',
+      'kbengine-celldata-write',
+      'kbengine-celldata-wrongkey',
+      'kbengine-celldata-callback',
+      'kbengine-space-data-protected-key',
+      'kbengine-fixeddict-construct',
+      'kbengine-scalar-assign'
+    ];
+    const goneDoc = makeTextDocument('value = 1\n', {
+      fileName: '/gone-root-xyz/scripts/gone.py',
+      languageId: 'python'
+    });
+    const keptDoc = makeTextDocument('value = 2\n', {
+      fileName: path.join(root, 'scripts', 'kept.py'),
+      languageId: 'python'
+    });
+    const seeded: string[] = [];
+    for (const entry of languagesRegistry.diagnosticCollections) {
+      if (!CLOSE_CLEARED_COLLECTIONS.includes(entry.name)) {
+        continue;
+      }
+      entry.collection.set(goneDoc.uri, [
+        new Diagnostic(new Range(new Position(0, 0), new Position(0, 1)), 'seed', 1)
+      ]);
+      entry.collection.set(keptDoc.uri, [
+        new Diagnostic(new Range(new Position(0, 0), new Position(0, 1)), 'keep', 1)
+      ]);
+      seeded.push(entry.name);
+    }
+    expect(seeded.sort()).toEqual([...CLOSE_CLEARED_COLLECTIONS].sort());
+    const previousTextDocuments = workspace.textDocuments;
+    workspace.textDocuments = [goneDoc, keptDoc];
+    try {
+      workspaceEvents.foldersChanged.fire({ added: [], removed: [{ uri: { fsPath: '/gone-root-xyz' } }] });
+    } finally {
+      workspace.textDocuments = previousTextDocuments;
+    }
+    for (const entry of languagesRegistry.diagnosticCollections) {
+      if (!CLOSE_CLEARED_COLLECTIONS.includes(entry.name)) {
+        continue;
+      }
+      expect(entry.collection.get(goneDoc.uri), entry.name).toHaveLength(0);
+      expect(entry.collection.get(keptDoc.uri), entry.name).toHaveLength(1);
+    }
+  });
+
   it('onDidChangeConfiguration:db 配置与引擎根变化走各自联动', () => {
     // 真实语义:affectsConfiguration('kbengine') 对任意 kbengine.* 变化为真
     workspaceEvents.configurationChanged.fire({

@@ -386,7 +386,10 @@ export function activate(context: vscode.ExtensionContext) {
       // KSEM-DATA-06:打开 python 文档即 spaceData 保护键写入诊断(immediate)
       scheduleSpaceDataProtectedKeyDiagnostics(document, 'immediate');
     }));
-    const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
+    // RUST-149 批 2:文档终局状态摘除,close 与 workspace folder 移除共用——
+    // 逐族诊断+调度器、Rust 镜像 overlay/版本账、注解桶、schema 缓存,口径
+    // 与关闭一致(各面摘除后可由编辑/重开既有链重建,幂等安全)。
+    const teardownDocumentState = (document: vscode.TextDocument): void => {
       releaseDocument(document);
       diagnosticScheduler.releaseDocument(document);
       // C-19:关闭文档同步摘除本规则的诊断与一致性调度器状态(随文档生命周期)
@@ -444,8 +447,28 @@ export function activate(context: vscode.ExtensionContext) {
       if (isDefDocument(document) || isTypeRegistryFile(document.uri.fsPath)) {
         invalidateDatabaseSchemaCacheForFiles([document.uri.fsPath]);
       }
+    };
+    const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
+      teardownDocumentState(document);
     });
     context.subscriptions.push(closeWatcher);
+    // RUST-149 批 2:根移除扇出诊断终局化——VSCode 不随根移除关 tab,
+    // languageServices 同事件面已拆映射链(entityMapping/classIndex/共享
+    // 索引/documentStore 快照);仍开着的文档其已发布诊断与调度器状态是
+    // 过期语义(后续编辑重算时映射空=零产出,但滞留窗口内是误导),与
+    // close 同口径摘除。
+    const rootRemovalWatcher = vscode.workspace.onDidChangeWorkspaceFolders(event => {
+      for (const folder of event.removed) {
+        const rootPath = folder.uri.fsPath;
+        for (const document of vscode.workspace.textDocuments) {
+          const fsPath = document.uri.scheme === 'file' ? document.uri.fsPath : '';
+          if (fsPath === rootPath || fsPath.startsWith(rootPath + path.sep)) {
+            teardownDocumentState(document);
+          }
+        }
+      }
+    });
+    context.subscriptions.push(rootRemovalWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       updateDocumentSnapshot(event.document);
       shadowMirrorCorpusDocument(event.document);

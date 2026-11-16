@@ -65,6 +65,32 @@ export function diffScanRoots(
   return { added, removed };
 }
 
+/**
+ * RUST-149 批 2:根差量→gate 动作序列(可测纯逻辑)——移除扇出清理先于
+ * 注册,新增根补镜像;返回新快照作为下次差量基准(setup 内每次事件后以
+ * 返回值滚动 lastSyncedRoots)。
+ */
+export function syncRootDiffToGate(
+  gate: Pick<KodeCoreGate, 'removeRoot' | 'registerRoot'>,
+  lastSyncedRoots: ReadonlySet<string>,
+  current: readonly string[],
+  remirror: () => void
+): Set<string> {
+  const { added, removed } = diffScanRoots(lastSyncedRoots, current);
+  for (const root of removed) {
+    void gate.removeRoot(root);
+  }
+  for (const root of added) {
+    void gate.registerRoot(root);
+  }
+  if (added.length > 0) {
+    // 新根就位后补镜像该根语料(镜像入口先注册根再镜像;账内已镜像
+    // 文件按账跳过,新根文件走 didOpen 入库)。
+    remirror();
+  }
+  return new Set(current);
+}
+
 /** 当前扫描根全集(缓存先失效防拿到切换前旧值;异常回空数组不外抛) */
 function currentScanRootsSafe(): string[] {
   try {
@@ -109,20 +135,9 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
   // 顺序;gate 内账去重 + server 幂等兜底。
   let lastSyncedRoots = new Set<string>(currentScanRootsSafe());
   const syncRootsToRust = (): void => {
-    const current = currentScanRootsSafe();
-    const { added, removed } = diffScanRoots(lastSyncedRoots, current);
-    lastSyncedRoots = new Set(current);
-    for (const root of removed) {
-      void gate.removeRoot(root);
-    }
-    for (const root of added) {
-      void gate.registerRoot(root);
-    }
-    if (added.length > 0) {
-      // 新根就位后补镜像该根语料(镜像入口先注册根再镜像;账内已镜像
-      // 文件按账跳过,新根文件走 didOpen 入库)。
+    lastSyncedRoots = syncRootDiffToGate(gate, lastSyncedRoots, currentScanRootsSafe(), () => {
       void mirrorCorpusToRust(gate);
-    }
+    });
   };
   const foldersWatcher = vscode.workspace.onDidChangeWorkspaceFolders(() => {
     syncRootsToRust();
