@@ -9,7 +9,9 @@ import {
   getIndexScanRoots,
   getExternalScanRoots,
   getScanRootForFile,
-  resetScanRootCache
+  resolveAssetsRootForWorkspace,
+  resetScanRootCache,
+  setActiveProfileScanRoot
 } from '../src/scanRoots';
 import * as discoveryModule from '../src/workspaceDiscovery';
 import * as configDeriveModule from '../src/configDerive';
@@ -264,6 +266,67 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
       expect(result).toEqual([]);
     } finally {
       stubWorkspace.findFiles = originalFind;
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
+});
+
+// RUST-171 发现优先级钉:资产根合成序=profile 选定根 > kbengine.assetsRoot
+// 设置 > 自动发现;环境变量按关注点分道(KBENGINE_ROOT=引擎源码树,
+// KBENGINE_HOME=bin 路径回退),不参与资产根发现——env 值即使长成引擎树
+// 样子也不入资产根链。
+describe('RUST-171 发现优先级:profile > 设置 > 自动发现;env 不参与资产根', () => {
+  it('profile 选定根存在 → 优先于 assetsRoot 设置与自动发现', () => {
+    const ws = makeTmpDir('rust171-ws');
+    const assets = makeTmpDir('rust171-assets');
+    const profile = makeTmpDir('rust171-profile');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    try {
+      setAssetsRoot(assets);
+      setActiveProfileScanRoot(profile);
+      expect(resolveAssetsRootForWorkspace(ws)).toBe(profile);
+      expect(getExternalScanRoots()).toEqual([profile]);
+    } finally {
+      setActiveProfileScanRoot(null);
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('profile 选定根不存在 → 如实落空走设置链(不占位)', () => {
+    const ws = makeTmpDir('rust171-ghost-ws');
+    const assets = makeTmpDir('rust171-real-assets');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    try {
+      setAssetsRoot(assets);
+      setActiveProfileScanRoot(path.join(os.tmpdir(), `kode-rust171-ghost-${Date.now()}`));
+      expect(resolveAssetsRootForWorkspace(ws)).toBe(assets);
+    } finally {
+      setActiveProfileScanRoot(null);
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('KBENGINE_ROOT/KBENGINE_HOME 即使指向引擎树形状也不入资产根链', () => {
+    const ws = makeTmpDir('rust171-env-ws');
+    const envRoot = makeTmpDir('rust171-envroot');
+    fs.mkdirSync(path.join(envRoot, 'kbe/src/lib/common'), { recursive: true });
+    fs.writeFileSync(path.join(envRoot, 'kbe/src/lib/common/version.h'), '#define KBENGINE_VERSION "9.9"\n');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    const savedRoot = process.env.KBENGINE_ROOT;
+    const savedHome = process.env.KBENGINE_HOME;
+    process.env.KBENGINE_ROOT = envRoot;
+    process.env.KBENGINE_HOME = envRoot;
+    try {
+      setAssetsRoot(undefined);
+      // 资产根合成序无 env 道:解析落空返回空串(工作区回退在 getIndexScanRoots 组合层)
+      expect(resolveAssetsRootForWorkspace(ws)).toBe('');
+      expect(getIndexScanRoots()).toEqual([ws]);
+    } finally {
+      if (savedRoot === undefined) delete process.env.KBENGINE_ROOT; else process.env.KBENGINE_ROOT = savedRoot;
+      if (savedHome === undefined) delete process.env.KBENGINE_HOME; else process.env.KBENGINE_HOME = savedHome;
       stubWorkspace.workspaceFolders = [];
       setAssetsRoot(undefined);
     }
