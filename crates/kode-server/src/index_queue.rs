@@ -448,7 +448,10 @@ pub(crate) fn ingest_refresh_task(
             let change = hover.borrow_mut().update(key, &text);
             record_ingest(&counts, change);
         } else {
-            match std::fs::read_to_string(key.uri.as_path()) {
+            // 磁盘回落用原生路径:canonical `/C:/...` 形态在 Windows 上非
+            // 有效路径(相对当前盘根解析),直喂 std::fs 读盘恒败=关闭文档
+            // 回落全走逐出臂。
+            match std::fs::read_to_string(key.uri.to_native_path()) {
                 Ok(text) => {
                     let change = hover.borrow_mut().update(key, &text);
                     record_ingest(&counts, change);

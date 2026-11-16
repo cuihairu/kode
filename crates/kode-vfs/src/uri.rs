@@ -126,6 +126,25 @@ impl CanonicalUri {
         &self.path
     }
 
+    /// 还原成当前平台 std::fs 可直接消费的路径(磁盘 IO 专用;身份/展示面
+    /// 禁用——VFS-002 同禁则):Windows 盘符规范形态 `/C:/...` 去前缀还原
+    /// `C:/...`(std 对正斜杠分隔符原生兼容),POSIX 形态原样。与 from_path
+    /// 的盘符归一互逆——此前 index_queue 磁盘回落直接喂 `as_path()`,
+    /// `/C:/...` 在 Windows 上非有效路径(相对当前盘根解析),读盘恒败 =
+    /// 关闭文档回落全走逐出臂(2026-11-16 win 夜构建三例实红)。
+    pub fn to_native_path(&self) -> String {
+        let path = &self.path;
+        let bytes = path.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0] == b'/'
+            && bytes[1].is_ascii_alphabetic()
+            && bytes[2] == b':'
+        {
+            return path[1..].to_string();
+        }
+        path.to_string()
+    }
+
     /// 还原成 `file://` URI 字符串(保留字符做最小 percent 编码;非 ASCII 原样保留)。
     pub fn to_uri_string(&self) -> String {
         let mut out = String::with_capacity(self.path.len() + 8);
@@ -265,6 +284,24 @@ mod tests {
         assert_eq!(uri.to_uri_string(), "file:///w/my%20project/a%23b.def");
         // 二次解析同一身份(parse(to_string(u)) == u)。
         assert_eq!(CanonicalUri::parse(&uri.to_uri_string()).unwrap(), uri);
+    }
+
+    #[test]
+    fn to_native_path_posix_is_identity() {
+        let uri = CanonicalUri::from_path("/tmp/kode-iq-1/T.def");
+        assert_eq!(uri.to_native_path(), "/tmp/kode-iq-1/T.def");
+    }
+
+    #[test]
+    fn to_native_path_strips_windows_drive_prefix() {
+        // 反斜杠盘符路径 → 规范 `/C:/...` → 原生 `C:/...`(std 兼容正斜杠)。
+        let uri = CanonicalUri::from_path("C:\\Users\\u\\AppData\\Local\\Temp\\T.def");
+        assert_eq!(uri.as_path(), "/C:/Users/u/AppData/Local/Temp/T.def");
+        assert_eq!(uri.to_native_path(), "C:/Users/u/AppData/Local/Temp/T.def");
+        // 小写盘符 file URI 直传形态同样还原(file:///c:/x → C:/x)。
+        let uri = CanonicalUri::parse("file:///c:/temp/T.def").unwrap();
+        assert_eq!(uri.as_path(), "/C:/temp/T.def");
+        assert_eq!(uri.to_native_path(), "C:/temp/T.def");
     }
 
     #[test]

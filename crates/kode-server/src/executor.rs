@@ -326,8 +326,16 @@ impl PoolExecutor {
             {
                 state.running_cancelled.insert(id.clone());
             }
-            // RUST-068-W:排队摘除与在途丢弃都按 id 回捞 span(表内即有)。
-            let span = state.spans.remove(id);
+            // RUST-068-W:span 回捞两态——排队摘除=终态即本回执,span 随表
+            // 摘除随回执携带;在途丢弃=终态在 worker 结算段,span 留表
+            // (worker 回包携带),取消留痕只读克隆。此前在途也无条件摘表:
+            // worker 结算捞空 → 终态回执丢 span(排队摘除与 worker 弹出的
+            // 竞窗内必现,win32-arm64 夜构建 span_table 用例实红)。
+            let span = if removed.is_some() {
+                state.spans.remove(id)
+            } else {
+                state.spans.get(id).cloned()
+            };
             (removed, span)
         };
         log_cancel(id, span.as_deref());
@@ -878,6 +886,40 @@ mod tests {
             executor.outstanding_spans_for_tests(),
             0,
             "终态后 span 表排空(有界面)"
+        );
+        drop(executor);
+    }
+
+    #[test]
+    fn inflight_cancel_terminal_outcome_carries_span() {
+        // 回归钉:在途丢弃路径的取消不得从 span 表摘走 span——终态回执由
+        // worker 结算段产出,span 留表才能随回包携带(排队摘除路径已由
+        // span_table 用例覆盖;此前的无条件摘表让 worker 结算捞空,win32
+        // 夜构建实红)。确定性:起跑后再取消,不走排队竞窗。
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
+        // ticket 841:独立段(cancellable 用例同段 801 曾撞车——全局 hold
+        // 登记表跨池共享,票号重叠会让 wait_started 被他人登记误触发)。
+        executor.submit(job(841, "$/kode/test/blocking", PoolLane::Interactive));
+        wait_started(841);
+        executor.cancel(&RequestId::Number(841));
+        assert_eq!(
+            executor.outstanding_spans_for_tests(),
+            1,
+            "在途取消 span 留表待终态回执"
+        );
+        release(841);
+        let outcome = recv_outcome(&rx);
+        assert!(matches!(outcome.status, JobStatus::Cancelled));
+        assert_eq!(
+            outcome.span.as_deref(),
+            Some("span-0349"),
+            "在途取消终态回执携带 span"
+        );
+        assert_eq!(
+            executor.outstanding_spans_for_tests(),
+            0,
+            "终态后 span 表排空"
         );
         drop(executor);
     }
