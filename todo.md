@@ -514,7 +514,7 @@
 - [x] RUST-238 （旧 QA-009） Security：workspace trust、命令注入、路径穿越、生成文件覆盖、恶意插件、高频日志敏感数据。（纯对账审计六维真侦察：untrustedWorkspaces=false 平台闸/execFile+spawn 参数数组无 shell 零命中/quote_ident+`?` 绑定双闸+out-of-root/copy-if-absent 四面+pyrightconfig 五闸+writeFileAtomic+import 预留 fail-closed/webviewSecurity nonce+toJsonForScript 吃尖括号+default-src none+遥测外发 HTTP 全零+高噪默认关；纪要 docs/review/2026-11-17-rust-238-security-audit-acceptance.md）
 - [x] RUST-239 （旧 QA-010） Resilience：Core kill、client disconnect、损坏缓存、文件 watcher flood、磁盘满、权限拒绝。（纯对账审计：kodeCoreClient 10s 窗 3 次+rejectAll(EXITED)+版本门=RUST-009 轴2、预算壳+取消链 e2e、profiles 损坏条目跳过+trace 如实抛错、stormRecovery 输入风暴 e2e、writeFileAtomic 故障注入钉、inferPipeline assertWritable 闸；磁盘满无 ENOSPC 专测如实记账；纪要 docs/review/2026-11-17-rust-239-resilience-acceptance.md）
 - [x] RUST-240 （旧 QA-011） Memory & race：1h 编辑负载、循环增删根、索引与 diagnostics 并发、高频 restart。（纯对账审计：longSession 三族 180s 趋势+field 5000 文件基线、root_lifecycle.rs+kodeCoreRootLifecycle 36 例当日绿、mapWithConcurrency 有界并发+inflight 归零+预热不重扫、有界重启+30s 冷却；1h 不整测/无泄漏专测如实记账；纪要 docs/review/2026-11-17-rust-240-memory-race-acceptance.md）
-- [ ] RUST-241 （旧 QA-012） Protocol compatibility：旧客户端/新 Core、新客户端/旧 Core 均有正确握手/错误。
+- [x] RUST-241 （旧 QA-012） Protocol compatibility：旧客户端/新 Core、新客户端/旧 Core 均有正确握手/错误。（纯对账：RUST-008 启动协议版本门（KODE_PROTOCOL_VERSION 0.2.0 对称双向比对，mismatch 含两侧版本+杀进程保留可再 spawn+回落 TS）+RUST-055 CI 形状指纹门（32 方法递归 pins+fileChanged 字面量锁）+framing_fuzz；版本门单向比对非协商如实记账；纪要 docs/review/2026-11-17-rust-241-protocol-compat-acceptance.md）
 - [ ] RUST-242 （旧 QA-013） 性能发布门槛同时检测 P95、P99、max、CPU、RAM、index correctness。
 - [ ] RUST-243 （旧 QA-014） 生成覆盖率达到门槛前不得标“所有 Python 文件类型完整生成”。
 - [ ] RUST-244 （旧 QA-015） 每个修复 PR 附复现脚本、测试证据、profile/perf delta、回退计划。
