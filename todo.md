@@ -527,9 +527,9 @@
 - [x] RUST-249 （旧 PH0-GATE） 无完整基准和正确性 fixture **禁止进入 Rust 替换阶段**。(2026-11-17 对账收口:门禁清单本体=docs/kode2/ph0-gate.md 已立并 2026-11-17 刷新(248);「基准+正确性 fixture」现状=基准五面门(KODE_PERF_GATE nightly 接线)+18 golden 对拍在库,完整度已超书面门当时要求;实际路线如实记账=2026-11-08 用户令拍板切流(B1 收编战役,TSMIG 记录),非本门放行,ph0-gate 总判定节张力条目在案;守卫纪律继续有效=新增替换面 PR 仍以 ph0-gate 表判红自律,门 3 实战演练未执行前不勾全绿)
 
 #### Phase 1 — Core 骨架（最小垂直切片）
-- [ ] RUST-250 （旧 PH1-01） 实现 BUILD-001..016、CORE-001..004、CORE-015..016。(进行中:PR-003 已落 BUILD-001/002/003、CORE-001/002/003、CORE-015/016 最小版,证据见 docs/kode2/pr-003.md;余项随 PR-004..007)
+- [ ] RUST-250 （旧 PH1-01） 实现 BUILD-001..016、CORE-001..004、CORE-015..016。(进行中:PR-003 已落 BUILD-001/002/003、CORE-001/002/003、CORE-015/016 最小版,证据见 docs/kode2/pr-003.md;余项随 PR-004..007;2026-11-17 对账注记:BUILD-00x 清单原文=任务书不在仓内,仓内引用痕迹仅 BUILD-001/002/003/005/009(pr-003+ADR-001),004/006..008/010..016 零引用痕迹无法逐条对账;PR-004..007 已交付但用各自任务单编号(pr-004 VFS-001..013/pr-005 SYNTAX/pr-006 ROOT-001..015/pr-007 IDX-001..007+013/014/015),与 BUILD-00x 的功能映射无书面依据,不冒领不虚勾;待任务书原文或映射拍板后逐条对账再勾)
 - [x] RUST-251 （旧 PH1-02） Rust 服务与 TS client 握手、打开/编辑/关闭文件、cancel、健康状态 e2e。(PR-003:tests/kodeCoreE2E.test.ts 真实 kode-server 二进制,4 用例)
-- [ ] RUST-252 （旧 PH1-03） 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。(进行中:PR-004 已落 VFS-001..013 基础版+kode-server 文档同步对接,证据 docs/kode2/pr-004.md;PR-010 已落 Hover 垂直切片(响应链+TS 面对拍 100%),Definition 随后续单)
+- [x] RUST-252 （旧 PH1-03） 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。(2026-11-17 对账收口:VFS 基础=PR-004 VFS-001..013 基础版+kode-server 文档同步对接(pr-004.md);Hover 垂直切片=PR-010 响应链四阶段(定位→文档→签名→继承成员)+tests/kodeHoverParity.test.ts TS 面对拍 100%(pr-010.md)——满足「或」字面;Definition 面=definition-parity.json+kodeDefinitionParity.test.ts 对拍在,但 kode-server definition RPC 响应链未接(如实记账,归 PH2-03 迁移面);原「Definition 随后续单」注记按演进刷新)
 - [ ] RUST-253 （旧 PH1-GATE） Rust 与旧实现同场景一致；无长任务阻塞 VS Code；跨平台可启动。
 
 #### Phase 2 — 解析与索引（最大性能收益路径）
