@@ -75,6 +75,14 @@ function currentScanRootsSafe(): string[] {
   }
 }
 
+/** 删除事件载荷:真 API 带 files;fake 桩 delete 臂历史形状为 uris,
+ * 双形并读(processOwnership 同口径)保持桩/真机同一条事件链。 */
+function deletedEventUris(
+  event: { files?: ReadonlyArray<{ toString(): string }>; uris?: ReadonlyArray<{ toString(): string }> }
+): Array<{ toString(): string }> {
+  return [...(event.files ?? []), ...(event.uris ?? [])];
+}
+
 export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGate {
   const gate = new KodeCoreGate();
   const extensionRoot = context.extensionUri.fsPath;
@@ -118,6 +126,29 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
   };
   const foldersWatcher = vscode.workspace.onDidChangeWorkspaceFolders(() => {
     syncRootsToRust();
+  });
+
+  // RUST-131-W:生产文件事件(重命名/删除)直传 rust。VS Code 只对打开
+  // 缓冲区发 didOpen/didClose——未打开依赖被移动/删除时语料侧旧 URI 残留
+  // (符号/解析缓存/待执行刷新),由此面兜底撤销;gate 内仅存活 client 才
+  // 发(未启动静默忽略)。LSP 形状:didRenameFiles {files:[{oldUri,newUri}]},
+  // didDeleteFiles {files:[{uri}]}。
+  const renamedFilesWatcher = vscode.workspace.onDidRenameFiles(event => {
+    gate.notifyWorkspaceFileEvent(
+      'workspace/didRenameFiles',
+      {
+        files: event.files.map(f => ({
+          oldUri: f.oldUri.toString(),
+          newUri: f.newUri.toString(),
+        })),
+      }
+    );
+  });
+  const deletedFilesWatcher = vscode.workspace.onDidDeleteFiles(event => {
+    gate.notifyWorkspaceFileEvent(
+      'workspace/didDeleteFiles',
+      { files: deletedEventUris(event).map(uri => ({ uri: uri.toString() })) }
+    );
   });
 
   // 输出通道只在 shadow 模式存在(默认 ts 下用户不可见任何新面板)
@@ -174,6 +205,8 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
     gate,
     configWatcher,
     foldersWatcher,
+    renamedFilesWatcher,
+    deletedFilesWatcher,
     showDiffLogCommand,
     unsubscribe
   );

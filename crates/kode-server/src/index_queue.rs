@@ -378,6 +378,29 @@ impl IndexQueue {
         purged
     }
 
+    /// RUST-131-W:单文件撤销的队列侧延伸(生产文件事件 delete/rename 旧
+    /// URI 共用)——该身份的待执行刷新与风暴缓冲事件全部摘除。文件已删/
+    /// 已改名后残留刷新会把旧 URI 语料重新灌回 = 晚到复活缺陷(撤根
+    /// purge_root 同语义,定域到单身份)。返回摘除条数。
+    pub fn purge_key(&mut self, identity: &str) -> usize {
+        let mut purged = 0;
+        if let Some(&(id, _)) = self.pending.get(identity) {
+            if self.sched.cancel(id, "file removed") {
+                self.pending.remove(identity);
+                purged += 1;
+            }
+        }
+        if self.storm_roots.remove(identity).is_some() {
+            self.storm.take_file(identity);
+            purged += 1;
+        }
+        if self.storm.buffered() == 0 {
+            self.storm_deadline = None;
+        }
+        self.counters.purged += purged as u64;
+        purged
+    }
+
     /// 观测快照(健康面同源)。
     pub fn snapshot(&self) -> IndexQueueSnapshot {
         let ingest = self.ingest_counts.borrow();

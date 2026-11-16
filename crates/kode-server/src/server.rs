@@ -18,9 +18,10 @@ use std::time::{Duration, Instant};
 
 use kode_protocol::{
     error_codes, CompletionParams, ContentChangeEvent, CoreResources, DefinitionParams,
-    DidChangeParams, DidCloseParams, DidOpenParams, DocumentDiagnosticParams, DocumentSummary,
-    HealthReport, HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification,
-    Request, RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    DeleteFilesParams, DeletedFile, DidChangeParams, DidCloseParams, DidOpenParams,
+    DocumentDiagnosticParams, DocumentSummary, HealthReport, HoverParams, IncomingMessage,
+    InitializeParams, InitializeResult, Notification, RenameFilesParams, RenamedFile, Request,
+    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_scheduler::{RootInvalidationSink, WorkspaceSession};
@@ -595,6 +596,14 @@ fn handle_notification(state: &mut ServerState, notification: Notification) -> V
             handle_did_close(state, notification.params);
             Vec::new()
         }
+        "workspace/didDeleteFiles" => {
+            handle_did_delete_files(state, notification.params);
+            Vec::new()
+        }
+        "workspace/didRenameFiles" => {
+            handle_did_rename_files(state, notification.params);
+            Vec::new()
+        }
         "$/cancelRequest" => {
             if let Some(id) = notification
                 .params
@@ -897,6 +906,59 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
     // 与打开/编辑的 Some(version) 不同键:close 后必让位重入队,不合并
     // (close 不过风暴窗:状态转移)。
     state.index.request_close(&key);
+}
+
+/// RUST-131-W:workspace/didDeleteFiles(生产文件事件)——旧 URI 全链撤销:
+/// 队列摘除该身份的待执行刷新与风暴缓冲事件(晚到旧任务复活禁令)+
+/// store overlay/盘缓存逐出(VFS-012)+ hover 符号/语料/def 候选/解析
+/// 注册表连带(符号、反向依赖、解析缓存一条 remove 链收口)。根外路径
+/// 与不可解析 URI 诚实跳过(共享缓存身份永不脱离已注册根)。诊断为
+/// pull 形态:textDocument/diagnostic 对已逐出键回空 items(既有形状)。
+/// 引用与生成源映射在本轨无独立存储面——引用经解析注册表随键撤销,生成
+/// 源映射未接入(诚实边界,见验收文档)。
+fn handle_did_delete_files(state: &mut ServerState, params: Option<serde_json::Value>) {
+    let Ok(params) = serde_json::from_value::<DeleteFilesParams>(params.unwrap_or_default())
+    else {
+        return;
+    };
+    for DeletedFile { uri } in &params.files {
+        evict_uri(state, uri);
+    }
+}
+
+/// RUST-131-W:workspace/didRenameFiles——旧 URI 全链撤销(同删除链),
+/// 新 URI 经 request_close 执行时刻真相重放(overlay 优先回落磁盘,读盘
+/// 失败 = 逐出):didOpen(new) 先到则 overlay 未保存修订胜出,后到则其
+/// 自身入队兜底,未打开则回读盘上新文件;跨根移动新旧各归其根。
+fn handle_did_rename_files(state: &mut ServerState, params: Option<serde_json::Value>) {
+    let Ok(params) = serde_json::from_value::<RenameFilesParams>(params.unwrap_or_default())
+    else {
+        return;
+    };
+    for RenamedFile { old_uri, new_uri } in &params.files {
+        evict_uri(state, old_uri);
+        if let Ok(new) = CanonicalUri::parse(new_uri) {
+            if let Some(new_key) = state.session.key_for(&new) {
+                state.index.request_close(&new_key);
+            }
+        }
+    }
+}
+
+/// 单 URI 撤销全链(delete 主干,rename 旧侧共用):不可解析/根外诚实跳过;
+/// 命中则队列摘除 + store 逐出 + hover 全链 remove(同步序,无并发穿插,
+/// 泵只可能经残留待执行任务复活——已全部摘除)。
+fn evict_uri(state: &mut ServerState, uri: &str) {
+    let Ok(parsed) = CanonicalUri::parse(uri) else {
+        return;
+    };
+    let Some(key) = state.session.key_for(&parsed) else {
+        return;
+    };
+    let identity = crate::index_queue::identity_of(&key);
+    state.index.purge_key(&identity);
+    state.store.borrow_mut().remove(&key);
+    state.hover.borrow_mut().remove(&key);
 }
 
 /// CORE-016 健康报告:status/pid/版本/uptime/文档摘要,按 uri 排序保证确定性。

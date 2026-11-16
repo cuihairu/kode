@@ -597,3 +597,69 @@ describe('notifyFileChanged 通知面(热更旁路 §11.3)', () => {
     expect(gate.notifyFileChanged({ fsPath: '/a.xml' })).toBe(false);
   });
 });
+
+describe('notifyWorkspaceFileEvent 通知面(RUST-131-W 生产文件事件)', () => {
+  it('client 已存活 → 原方法名+params 通知帧,回 true', async () => {
+    const notes: Array<{ method: string; params?: unknown }> = [];
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async () => ({})),
+      notify: vi.fn((method: string, params?: unknown) => {
+        notes.push({ method, params });
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    await gate.runInRust('$/kode/echo', {});
+
+    const renameParams = {
+      files: [{ oldUri: 'file:///ws/a.def', newUri: 'file:///ws/b.def' }],
+    };
+    expect(gate.notifyWorkspaceFileEvent('workspace/didRenameFiles', renameParams)).toBe(true);
+    const deleteParams = { files: [{ uri: 'file:///ws/a.def' }] };
+    expect(gate.notifyWorkspaceFileEvent('workspace/didDeleteFiles', deleteParams)).toBe(true);
+
+    expect(notes).toEqual([
+      { method: 'workspace/didRenameFiles', params: renameParams },
+      { method: 'workspace/didDeleteFiles', params: deleteParams },
+    ]);
+  });
+
+  it('client 未启动 → 静默降级 false,不为发通知拉起进程', () => {
+    const factory = vi.fn();
+    const gate = new KodeCoreGate({ clientFactory: factory });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+
+    expect(
+      gate.notifyWorkspaceFileEvent('workspace/didDeleteFiles', { files: [{ uri: 'file:///x' }] })
+    ).toBe(false);
+
+    expect(factory).not.toHaveBeenCalled();
+    expect(gate.state.clientAlive).toBe(false);
+  });
+
+  it('通知口抛错 → 收口成 false,不外抛', () => {
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async () => ({})),
+      notify: vi.fn(() => {
+        throw new Error('stdio closed');
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+
+    expect(() =>
+      gate.notifyWorkspaceFileEvent('workspace/didRenameFiles', {
+        files: [{ oldUri: 'file:///a', newUri: 'file:///b' }],
+      })
+    ).not.toThrow();
+    expect(
+      gate.notifyWorkspaceFileEvent('workspace/didRenameFiles', {
+        files: [{ oldUri: 'file:///a', newUri: 'file:///b' }],
+      })
+    ).toBe(false);
+  });
+});

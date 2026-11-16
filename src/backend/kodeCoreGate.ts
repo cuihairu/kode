@@ -362,6 +362,30 @@ export class KodeCoreGate {
   }
 
   /**
+   * RUST-131-W:生产文件事件(workspace/didRenameFiles、workspace/
+   * didDeleteFiles)直传 rust——撤销旧 URI 符号/解析缓存/待执行刷新
+   * (晚到旧任务复活禁令),rename 侧新 URI 执行时刻回读盘。未打开依赖
+   * 的移动/删除由此面兜底(didOpen/didClose 只覆盖打开缓冲区)。口径同
+   * notifyFileChanged:只有已存活的 client 才发,未启动/不可用静默返回
+   * false(不为发通知拉起进程)。
+   */
+  notifyWorkspaceFileEvent(
+    method: 'workspace/didRenameFiles' | 'workspace/didDeleteFiles',
+    params: unknown
+  ): boolean {
+    const client = this.client;
+    if (!client?.notify) {
+      return false;
+    }
+    try {
+      client.notify(method, params);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * 命令级 Rust 调用(生成/消息表/lint 等用户主动命令):按需拉起 client,
    * 把请求包成 `$/kode/rpc { method, params }` 调一次,成功返回 ok:true,
    * 任何失败返回 ok:false(原因),由调用方回退 TS 路径。

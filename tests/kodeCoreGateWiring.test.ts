@@ -148,4 +148,29 @@ describe('kbengine.core 双轨切流门装配', () => {
 
     disposeAll(context);
   });
+
+  it('RUST-131-W:rename/delete 文件事件 watcher 装配(ts 回落零开销不炸)', () => {
+    setCore({ 'core.backend': 'ts', 'core.serverPath': '' });
+    const context = makeContext();
+    activate(context);
+
+    // 无 client(回落 ts)下点火生产文件事件:gate 侧静默降级,不拉进程
+    // 不外抛。只点火真 API 形状(files)——同一 fake 总线上 extension 注解
+    // watcher 等只认真形状(activate 全家桶同链,见 extension.test.ts 先例)。
+    expect(() => {
+      workspaceEvents.filesRenamed.fire({
+        files: [{ oldUri: Uri.file('/ws/a.def'), newUri: Uri.file('/ws/b.def') }],
+      });
+      workspaceEvents.filesDeleted.fire({ files: [Uri.file('/ws/a.def')] });
+    }).not.toThrow();
+    expect(shadowChannel()).toBeUndefined();
+
+    disposeAll(context);
+    expect(() => {
+      workspaceEvents.filesRenamed.fire({
+        files: [{ oldUri: Uri.file('/ws/a.def'), newUri: Uri.file('/ws/b.def') }],
+      });
+      workspaceEvents.filesDeleted.fire({ uris: [Uri.file('/ws/a.def')] });
+    }).not.toThrow();
+  });
 });

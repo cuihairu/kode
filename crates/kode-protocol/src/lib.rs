@@ -287,6 +287,37 @@ pub struct DidCloseTextDocumentIdentifier {
 }
 
 // ---------------------------------------------------------------------------
+// workspace/didRenameFiles / didDeleteFiles DTO(RUST-131-W 生产文件事件)
+// ---------------------------------------------------------------------------
+
+/// LSP `WorkspaceFileRename`:一条重命名事件(old → new)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenamedFile {
+    pub old_uri: String,
+    pub new_uri: String,
+}
+
+/// LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameFilesParams {
+    pub files: Vec<RenamedFile>,
+}
+
+/// LSP `DeleteFilesParams` 条目(仅消费 files[].uri)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeletedFile {
+    pub uri: String,
+}
+
+/// LSP `DeleteFilesParams`。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteFilesParams {
+    pub files: Vec<DeletedFile>,
+}
+
+// ---------------------------------------------------------------------------
 // textDocument/hover DTO(PR-010:HOVER-001 请求入口)
 // ---------------------------------------------------------------------------
 
