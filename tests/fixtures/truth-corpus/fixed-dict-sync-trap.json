@@ -1,0 +1,152 @@
+{
+  "family": "fixed-dict-sync-trap",
+  "grounding": {
+    "doc": "docs/knowledge/api-core-concepts.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "fd-subscript-mutation-flagged",
+      "kind": "negative",
+      "input": {
+        "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "code": "class Avatar:\n    def bump(self):\n        self.profile['level'] = 5"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "FD 子键下标赋值只写本地 pyDict_,mp_ass_subscript 无 owner-notification 路径:引擎静默不同步,客户端永远收不到 set_<property>。"
+      },
+      "evidence": [
+        "the broadcast fires only on **top-level** assignment of the property",
+        "so sub-key mutation never syncs; the whole-reassign idiom (`d = self.prop` → mutate → `self.prop = d`) is required"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "mutations": [{ "line": 2, "character": 8, "length": 21, "property": "profile", "key": "level", "kind": "subscript" }]
+        }
+      }
+    },
+    {
+      "id": "fd-attr-mutation-flagged",
+      "kind": "negative",
+      "input": {
+        "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "code": "class Avatar:\n    def bump(self):\n        self.profile.gold += 1"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "FD 子键点号赋值同陷阱:不触发属性同步事件,引擎静默。"
+      },
+      "evidence": [
+        "so sub-key mutation never syncs; the whole-reassign idiom (`d = self.prop` → mutate → `self.prop = d`) is required"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "mutations": [{ "line": 2, "character": 8, "length": 17, "property": "profile", "key": "gold", "kind": "attr" }]
+        }
+      }
+    },
+    {
+      "id": "fd-deep-nested-flagged",
+      "kind": "negative",
+      "input": {
+        "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "code": "class Avatar:\n    def bump(self):\n        self.profile.stats.hp = 100"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "更深嵌套子键赋值同样只改本地字典内部,不同步;key 记全段拼接。"
+      },
+      "evidence": [
+        "so sub-key mutation never syncs; the whole-reassign idiom (`d = self.prop` → mutate → `self.prop = d`) is required"
+      ],
+      "finding": "头注陈旧登记(注释修正归独立批):模块头注言「key 取首段」,实测=全段拼接(stats.hp);行为本身与引擎同向(嵌套全链不触发同步),仅注释漂移。",
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "mutations": [{ "line": 2, "character": 8, "length": 21, "property": "profile", "key": "stats.hp", "kind": "attr" }]
+        }
+      }
+    },
+    {
+      "id": "fd-augmented-subscript-flagged",
+      "kind": "negative",
+      "input": {
+        "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "code": "class Avatar:\n    def bump(self):\n        self.profile['gold'] += 1"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "增强赋值形态的子键写入同样不同步(仍是下标 store 路径)。"
+      },
+      "evidence": [
+        "`mp_ass_subscript` has no owner-notification path (`kbe/src/lib/entitydef/fixeddict.cpp:272-308`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "mutations": [{ "line": 2, "character": 8, "length": 20, "property": "profile", "key": "gold", "kind": "subscript" }]
+        }
+      }
+    },
+    {
+      "id": "fd-whole-reassign-silent",
+      "kind": "positive",
+      "input": {
+        "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "code": "class Avatar:\n    def bump(self):\n        d = self.profile\n        self.profile = d"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "整体重赋是唯一触发同步的正确姿势:顶层赋值才有 owner-notification;lint 对正确姿势保持沉默。"
+      },
+      "evidence": [
+        "so sub-key mutation never syncs; the whole-reassign idiom (`d = self.prop` → mutate → `self.prop = d`) is required"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "mutations": [] }
+      }
+    },
+    {
+      "id": "fd-comment-string-silent",
+      "kind": "positive",
+      "input": {
+        "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "code": "class Avatar:\n    def bump(self):\n        # self.profile['level'] = 5\n        msg = 'self.profile.level = 1'"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "注释与字符串字面量里的同形文本不是赋值语句,引擎无行为;lint 不报。"
+      },
+      "evidence": [
+        "A FIXED_DICT property is exposed to Python as a `FixedDict` object whose subscript store (`self.prop['key'] = value`) only writes the local `pyDict_`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "mutations": [] }
+      }
+    },
+    {
+      "id": "fd-non-fd-prop-silent",
+      "kind": "positive",
+      "input": {
+        "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "code": "class Avatar:\n    def bump(self):\n        self.hp['x'] = 1"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "非 FIXED_DICT 属性是普通 dict:本地可变本就是全部语义,不存在同步期待,封闭约束不适用。"
+      },
+      "evidence": [
+        "A FIXED_DICT property is exposed to Python as a `FixedDict` object whose subscript store (`self.prop['key'] = value`) only writes the local `pyDict_`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "mutations": [] }
+      }
+    }
+  ]
+}

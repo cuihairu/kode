@@ -22,6 +22,7 @@ import { pythonProcessFromPath, dataDictProcessDomain, dataDictSiteInDomain, pro
 import { KBENGINE_ENTRY_HOOKS } from '../src/backend/entryHooks';
 import { buildRpcLinks } from '../src/backend/flowRpcLinks';
 import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
+import { analyzeFixedDictMutations } from '../src/backend/fixedDictMutationDiagnostics';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -256,6 +257,18 @@ interface ProcSurfaceEntry extends TruthEntryBase {
 const procSurfaceFamily = families.find(f => f.family === 'process-module-surface')!;
 const procSurfaceEntries = procSurfaceFamily.entries as unknown as ProcSurfaceEntry[];
 const procSymbolNames = (process: string) => processApiSymbols(process as PythonProcess).map(s => s.name);
+
+// ---- fixed-dict-sync-trap 族形状与鞍具 ----
+interface FdSyncEntry extends TruthEntryBase {
+  input: { fixedDictProperties: Record<string, string[]>; code: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      mutations: { line: number; character: number; length: number; property: string; key: string; kind: 'attr' | 'subscript' }[];
+    };
+  };
+}
+const fdSyncFamily = families.find(f => f.family === 'fixed-dict-sync-trap')!;
+const fdSyncEntries = fdSyncFamily.entries as unknown as FdSyncEntry[];
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -622,6 +635,27 @@ describe('真值语料 execution 门:进程模块面(共享清单/单符号/dive
       for (const sym of entry.kode.analysis!.absent!) {
         expect(names.includes(sym), `缺席清单混入 ${sym}: ${entry.id}`).toBe(false);
       }
+    }
+  });
+});
+
+// ---- ⑫ fixed-dict-sync-trap 执行门 ----
+describe('真值语料 execution 门:FIXED_DICT 子键同步陷阱(四形态报/三形态沉默)', () => {
+  const pinned = fdSyncEntries.filter(e => e.kode.status === 'pinned');
+
+  it('每条条目的 mutation findings 实测等于语料钉值(陷阱报/正确姿势沉默,drift 即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      const props = new Map(Object.entries(entry.input.fixedDictProperties).map(([k, v]) => [k, v]));
+      const findings = analyzeFixedDictMutations(entry.input.code, props).map(f => ({
+        line: f.line,
+        character: f.character,
+        length: f.length,
+        property: f.property,
+        key: f.key,
+        kind: f.kind
+      }));
+      expect(findings, `fd sync drift: ${entry.id}`).toEqual(entry.kode.analysis?.mutations ?? []);
     }
   });
 });

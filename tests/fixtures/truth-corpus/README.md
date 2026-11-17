@@ -177,3 +177,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## process-module-surface 族(2026-11-17 第十二族)
 
 依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.7 共享工具面+§2 app 差异。7 例:base/cell 共享清单臂(21 名逐名在场,缺一即红)+单符号臂 3(base address 在场/component 双面在场)+**divergence 条目 1**(引擎 cellapp 无 address,kode cell 表含=面宽于引擎,补全/stub 会对 cell 脚本给运行期不存在的名字;钉 kode 现状,修复 process-api.json 双侧落地后翻钉)+bots subset 缺席清单臂 1(kind=unknown:档言 subset 未枚举成员,kode 缺席名单相容,逐项归属待取证)。**语料方法学第三次实战命中**:parity 全绿下抓出 process-api 实分歧,方向=误导面(补全给出 AttributeError 名字),与 def-flags 四分歧/cell 角色收窄同账本。执行门=processApiSymbols 名单谓词三臂(单符号/在场清单/缺席清单)。
+
+## fixed-dict-sync-trap 族(2026-11-17 第十三族)
+
+依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.5 property sync 节(档内含 fixeddict.cpp:272-308 C++ 锚)。7 例:子键陷阱臂 4(下标/点号/深嵌套/增强下标四形态 findings 逐字段钉)+沉默臂 3(整体重赋=唯一正确姿势/注释与字符串同形文本/非 FD 属性普通 dict)。执行门=analyzeFixedDictMutations findings 双向钉。登记面:①深嵌套 key 实测=全段拼接(stats.hp)而模块头注言「key 取首段」=头注陈旧(行为与引擎同向,注释修正归独立批);②FD 构造点闸(KSEM-STRUCT-04 缺键/多键)是另一模块另一面,grounding 走 types.xml 类型图,不在本族钉域,候选另立族。
