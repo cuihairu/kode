@@ -40,7 +40,16 @@ export interface DefAppliedDigestInput {
   readonly engineMd5?: string;
 }
 
-/** def 指纹台账:按文件存底上次快照(接线批装配持有,生命周期随宿主) */
+/**
+ * def 指纹台账:按文件存底上次快照(接线批装配持有,生命周期随宿主)。
+ *
+ * 键形态契约(RUST-003 收口,tests/hotReloadDefFingerprintLedger.test.ts
+ * 「键形态契约」块钉):键必须**根无歧义**——多 root 工作区同一相对路径
+ * (rootA/scripts/x.def 与 rootB/scripts/x.def)是两个不同文件,键若用
+ * 相对路径必串册。装配侧一律传绝对 fsPath(或含 root 前缀的等价键);
+ * 台账是纯核不做路径解析,键区分度责任在装配(装配批接线时受此契约约束)。
+ * 语义:同键重记录=时间性覆盖(上次 vs 当前判变更,不判版本身份)。
+ */
 export class DefFingerprintLedger {
   private readonly byFile = new Map<string, DefFingerprintSnapshot>();
 

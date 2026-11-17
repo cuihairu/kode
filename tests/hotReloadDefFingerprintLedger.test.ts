@@ -39,6 +39,30 @@ describe('DefFingerprintLedger 生命周期(HR-HASH-008 存底面)', () => {
   });
 });
 
+describe('键形态契约(RUST-003 收口:多 root 同相对路径不串册)', () => {
+  it('两 root 同名相对路径(绝对键)=台账互不相串;键区分度在装配(契约见模块头注)', () => {
+    const ledger = new DefFingerprintLedger();
+    const rootA = snapshotOf({ fileHash: 'hash-root-a' });
+    const rootB = snapshotOf({ fileHash: 'hash-root-b' });
+    // 同一相对路径 scripts/entities/avatar.def,分属两个 root:绝对键必不同。
+    ledger.record('/wsA/scripts/entities/avatar.def', rootA);
+    ledger.record('/wsB/scripts/entities/avatar.def', rootB);
+    expect(ledger.last('/wsA/scripts/entities/avatar.def')).toBe(rootA);
+    expect(ledger.last('/wsB/scripts/entities/avatar.def')).toBe(rootB);
+    // 相对路径键若被装配误用,台账无法拯救——契约上这类键禁止入册:
+    // 两个 root 的相对键会互相覆盖(此处只钉该行为可见,防装配误用后无痕)。
+    ledger.record('scripts/entities/avatar.def', snapshotOf({ fileHash: 'hash-relative' }));
+    expect(ledger.last('scripts/entities/avatar.def')?.fileHash).toBe('hash-relative');
+  });
+
+  it('同键重记录=时间性覆盖(上次 vs 当前判变更,不判版本身份)', () => {
+    const ledger = new DefFingerprintLedger();
+    ledger.record('/ws/entities/avatar.def', snapshotOf({ fileHash: 'v1' }));
+    ledger.record('/ws/entities/avatar.def', snapshotOf({ fileHash: 'v2' }));
+    expect(ledger.last('/ws/entities/avatar.def')?.fileHash).toBe('v2');
+  });
+});
+
 describe('buildTriCompareInput 组装(HR-HASH-008 同类对拍入参面)', () => {
   it('首见(null last):只带当前值对,不带 last 键', () => {
     const current = snapshotOf({ fileHash: 'cc', semanticHash: 'ss' });
