@@ -1,0 +1,21 @@
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "strict-peer-dependencies". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+ RUN  v5.1.0 /home/cui/workspaces/kode
+
+stdout | tests/interactiveDeadlineMeasure.test.ts > kode 交互截止与降级测量(QA-004,真实二进制) > 分段计时采样:热态 hover 镜像/查询/提取三段 P99 均低于交互预算
+[qa004] mirror n=40 P50=0.5 P95=0.7 P99=0.8 max=3.2
+[qa004] query n=40 P50=2.4 P95=3.0 P99=3.1 max=3.5
+[qa004] extract n=40 P50=0.1 P95=0.2 P99=0.3 max=0.3
+[qa004] providerTotal n=40 P50=3.0 P95=3.8 P99=4.2 max=5.7
+
+stdout | tests/interactiveDeadlineMeasure.test.ts > kode 交互截止与降级测量(QA-004,真实二进制) > provider 全链对照:降级后的 TS 悬停链在预算语义内返回(门未装配)
+[qa004] tsFallbackTotal n=1 12.7ms
+
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  03:12:25
+   Duration  7.09s (tests 93%, import 4%, transform 3%)
+
