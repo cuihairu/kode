@@ -7,6 +7,7 @@ import {
   applyManagedDirExclusions,
   createCopySyncScheduler,
   fileSystemInferDeps,
+  INFER_ENABLED_DEFAULT,
   runInfer,
   syncInferredCopy,
   activateInferPipeline,
@@ -352,6 +353,12 @@ describe('applyManagedDirExclusions(隔离面执行器)', () => {
 });
 
 describe('syncInferredCopy(副本层执行器)', () => {
+  // 机制用例显式 opt-in:2026-11-17 用户令起总闸默认关,本组只测同步机械;
+  // 闸行为由组内默认关/显式关两例专钉。
+  beforeEach(() => {
+    configurationOverrides.set('kbengine', { 'infer.enabled': true });
+  });
+
   it('镜像 scripts 树到 .kbengine/inferred/scripts,目录结构保留', async () => {
     const { root, files } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
@@ -436,9 +443,38 @@ describe('syncInferredCopy(副本层执行器)', () => {
     await syncInferredCopy(makeContext(), deps);
     expect(messages.info[0]).toContain('.kbengine/inferred 副本已同步');
   });
+  it('总闸默认关(2026-11-17 用户令):默认值 false,不设开关零复制镜像不落盘', async () => {
+    // 默认值钉:复制用户代码的面默认关闭(用户令原文「用户不知情的情况下
+    // 还以为插件盗用代码呢」)。INFER_ENABLED_DEFAULT=false + 零配置零写。
+    expect(INFER_ENABLED_DEFAULT).toBe(false);
+    // describe 级机制 opt-in 撤下,回到零配置(=默认值语义)
+    configurationOverrides.delete('kbengine');
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const result = await syncInferredCopy(makeContext(), makeDeps({ files }), { silent: true });
+    expect(result).toEqual({ copied: 0, overwritten: 0, deleted: 0, unchanged: 0, denied: [] });
+    expect(files.has(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBe(false);
+  });
+
+  it('总闸显式关闭:镜像不建,存量残留不删(三路同闸:watcher/初始化/命令)', async () => {
+    const { root, files } = makeTmpWorkspace();
+    const stale = path.join(root, '.kbengine', 'inferred', 'scripts', 'stale.py');
+    files.set(stale, 'old');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { 'infer.enabled': false });
+    const result = await syncInferredCopy(makeContext(), makeDeps({ files }), { silent: true });
+    expect(result).toEqual({ copied: 0, overwritten: 0, deleted: 0, unchanged: 0, denied: [] });
+    expect(files.get(stale)).toBe('old');
+  });
 });
 
 describe('runInfer(推断执行器)', () => {
+  // 机制用例显式 opt-in(总闸默认关;开关关闭例自带 false 覆写,Map.set
+  // 整段替换后设者胜)。
+  beforeEach(() => {
+    configurationOverrides.set('kbengine', { 'infer.enabled': true });
+  });
+
   it('开关关闭:status=disabled,不 spawn', async () => {
     configurationOverrides.set('kbengine', { 'infer.enabled': false });
     const { root, files } = makeTmpWorkspace();
@@ -468,7 +504,7 @@ describe('runInfer(推断执行器)', () => {
   it('运行:先镜像副本再 spawn,喂 def 真值 search-path', async () => {
     const { root, files } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    configurationOverrides.set('kbengine', { 'infer.enabled': true, 'infer.pyreflyPath': '/opt/pyrefly' });
     const spawned: Array<{ cmd: string; args: string[] }> = [];
     const deps = makeDeps({
       files,
@@ -494,7 +530,7 @@ describe('runInfer(推断执行器)', () => {
   it('非零退出码如实入账', async () => {
     const { root, files } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    configurationOverrides.set('kbengine', { 'infer.enabled': true, 'infer.pyreflyPath': '/opt/pyrefly' });
     const deps = makeDeps({
       files,
       spawn: async () => ({ code: 1, stdout: '', stderr: 'boom' })
@@ -506,6 +542,11 @@ describe('runInfer(推断执行器)', () => {
 });
 
 describe('activateInferPipeline(激活接线)', () => {
+  // 接线机械用例显式 opt-in(总闸默认关;闸行为由组内 watcher 默认关例专钉)。
+  beforeEach(() => {
+    configurationOverrides.set('kbengine', { 'infer.enabled': true });
+  });
+
   it('注册两条命令 + **/*.py watcher(无工作区时初始化为 no-op)', () => {
     stubWorkspace.workspaceFolders = [];
     const context = makeContext();
@@ -544,6 +585,22 @@ describe('activateInferPipeline(激活接线)', () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(fs.readFileSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'), 'utf-8')).toContain('import KBEngine');
     expect(messages.info).toHaveLength(0);
+  });
+
+  it('总闸默认关(2026-11-17 用户令):watcher 触发不建镜像', async () => {
+    // 关闭态下 watcher 链同样被闸——此前闸只在 runInfer,初始化/watcher 会
+    // 绕过它静默复制用户代码(本次收口的病灶本体)。
+    configurationOverrides.set('kbengine', { 'infer.enabled': false });
+    stubWorkspace.workspaceFolders = [];
+    const context = makeContext();
+    activateInferPipeline(context);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const watcher = lastFileSystemWatcher.current!;
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    watcher.fireChange(Uri.file(path.join(root, 'scripts', 'main.py')));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(fs.existsSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBe(false);
   });
 });
 
@@ -655,6 +712,11 @@ describe('fileSystemInferDeps 真依赖装配层(覆盖补测)', () => {
 });
 
 describe('runInfer 非静默播报面(覆盖补测)', () => {
+  // 同 runInfer 组:机制 opt-in,开关关闭例自带 false 覆写。
+  beforeEach(() => {
+    configurationOverrides.set('kbengine', { 'infer.enabled': true });
+  });
+
   it('开关关闭非静默:提示已关闭即止', async () => {
     configurationOverrides.set('kbengine', { 'infer.enabled': false });
     const { root, files } = makeTmpWorkspace();
@@ -675,7 +737,7 @@ describe('runInfer 非静默播报面(覆盖补测)', () => {
   it('ran 非静默:全零退出码报完成;非零报明细', async () => {
     const { root, files } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    configurationOverrides.set('kbengine', { 'infer.enabled': true, 'infer.pyreflyPath': '/opt/pyrefly' });
     await runInfer(makeContext(), makeDeps({ files }));
     expect(messages.info.some(text => text.includes('pyrefly infer 完成'))).toBe(true);
     messages.info.length = 0;
@@ -734,7 +796,7 @@ describe('infer 激活命令处理器(覆盖补测)', () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const bin = path.join(root, 'fake-pyrefly');
     fs.writeFileSync(bin, '#!/bin/sh\nexit 0\n');
-    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': bin });
+    configurationOverrides.set('kbengine', { 'infer.enabled': true, 'infer.pyreflyPath': bin });
     const context = makeContext();
     activateInferPipeline(context);
     await commands.executeCommand('kbengine.infer.run');

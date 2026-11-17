@@ -34,7 +34,10 @@ import { kbeStubDir, readManagedDirSetting, resolveManagedDirName } from './pyth
 // ---------------------------------------------------------------------------
 
 export const INFER_ENABLED_KEY = 'infer.enabled';
-export const INFER_ENABLED_DEFAULT = true;
+// 2026-11-17 用户令:复制用户代码的面默认关闭——静默把 scripts 复制进
+// .kbengine/inferred 会让不知情用户怀疑插件盗用代码;开启=显式同意镜像行为,
+// 配置描述里写明其行为。syncInferredCopy/runInfer 双闸同读本默认。
+export const INFER_ENABLED_DEFAULT = false;
 export const INFER_PYREFLY_PATH_KEY = 'infer.pyreflyPath';
 export const INFER_PYTHON_VERSION_KEY = 'infer.pythonVersion';
 export const INFER_PYTHON_VERSION_DEFAULT = '3.7';
@@ -355,6 +358,12 @@ export async function syncInferredCopy(
   deps: InferPipelineDeps = fileSystemInferDeps,
   options: { silent?: boolean } = {}
 ): Promise<CopySyncResult> {
+  // 总闸(2026-11-17 用户令:复制用户码的面默认关):激活初始化、**/*.py
+  // watcher、命令三条路都经此——关闭时镜像不建、存量不删、绝不复制用户
+  // 代码(此前闸只在 runInfer,watcher/初始化会绕过它静默复制)。
+  if (!inferEnabled()) {
+    return { copied: 0, overwritten: 0, deleted: 0, unchanged: 0, denied: [] };
+  }
   const managedDir = managedDirName();
   const scope = sourceWriteScope();
   const folders = vscode.workspace.workspaceFolders ?? [];
@@ -400,15 +409,20 @@ export interface InferRunResult {
   message?: string;
 }
 
+/** 推断管道总闸读数(2026-11-17 用户令:默认关;syncInferredCopy/runInfer 同读) */
+function inferEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>(INFER_ENABLED_KEY, INFER_ENABLED_DEFAULT);
+}
+
 /** 生成管道：镜像同步 → pyrefly infer（每个 scripts 根一趟，喂 def 真值 search-path） */
 export async function runInfer(
   context: vscode.ExtensionContext,
   deps: InferPipelineDeps = fileSystemInferDeps,
   options: { silent?: boolean } = {}
 ): Promise<InferRunResult> {
-  const enabled = vscode.workspace
-    .getConfiguration('kbengine')
-    .get<boolean>(INFER_ENABLED_KEY, INFER_ENABLED_DEFAULT);
+  const enabled = inferEnabled();
   if (!enabled) {
     if (!options.silent) {
       await vscode.window.showInformationMessage('pyrefly 推断已关闭（kbengine.infer.enabled）');

@@ -513,7 +513,7 @@
 | `kbengine.python.builtinTypeInlayHints` | `true` | `self.<内建属性>` 访问后内联 `: <类型>` 提示 — `src/languageProviders.ts`（`KBEngineBuiltinTypeInlayHintsProvider`），受 `kbengine.entity.builtinProperties` 总闸控制 |
 | `kbengine.python.proxyInternalAttrHints` | `true` | `self.__ACCOUNT_NAME__`/`self.__ACCOUNT_PASSWORD__`（baseapp 登录后注入、脚本只读）访问处内联「内部属性 · Proxy」提示；项目桩副本 `KBEngine/Proxy.pyi` 在盘时提示带 Ctrl+点击导航直达声明行 —— `src/languageProviders/inlay.ts`（`KBEngineProxyInternalAttrHintsProvider`），仅 demo 资产脚本域 |
 | `kbengine.python.entityStubMethods` | `true` | entity_types.pyi 方法面 — `src/entityTypeStubs.ts:74,139` |
-| `kbengine.infer.enabled` | `true` | 无标注函数 stub 推断管道 — `src/inferPipeline.ts`、`src/backend/pyreflyInfer.ts` |
+| `kbengine.infer.enabled` | `false` | 无标注函数 stub 推断管道。**开启时:工作区 scripts 树被复制到 `.kbengine/inferred` 镜像**,pyrefly infer 在副本上写注解(除非 `kbengine.infer.sourceWrite=user`,用户真码不改);默认关闭(2026-11-17 用户令——复制代码只在显式开启后发生,绝不知情静默复制;激活/`**/*.py` watcher/命令三条路同闸,盘上已有镜像保留至删除 `inferred/` 目录) — `src/inferPipeline.ts`、`src/backend/pyreflyInfer.ts` |
 | `kbengine.infer.pyreflyPath` | `""` | pyrefly 可执行路径（空 = PATH/pipx 发现）— `src/backend/pyreflyInfer.ts` |
 | `kbengine.infer.pythonVersion` | `"3.7"` | pyrefly infer `--python-version` 目标 — `src/backend/pyreflyInfer.ts` |
 | `kbengine.engineVersion` | `"3.7.3"` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此门控 — `src/engineVersion.ts` |

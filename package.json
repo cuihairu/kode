@@ -1822,7 +1822,7 @@
           },
           "kbengine.infer.enabled": {
             "type": "boolean",
-            "default": true,
+            "default": false,
             "markdownDescription": "%kbengine.config.infer.enabled.description%"
           },
           "kbengine.infer.exclusionsSync": {
