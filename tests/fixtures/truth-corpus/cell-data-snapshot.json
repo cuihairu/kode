@@ -1,0 +1,159 @@
+{
+  "family": "cell-data-snapshot",
+  "grounding": {
+    "doc": "docs/knowledge/entity-migration-and-cross-process-references.md",
+    "engineHead": "3082ab5"
+  },
+  "entries": [
+    {
+      "id": "base-read-declared-key",
+      "kind": "positive",
+      "input": {
+        "path": "base-script",
+        "method": "f",
+        "body": ["v = self.cellData[\"hp\"]"],
+        "universe": { "defFields": ["hp", "mp"], "builtins": ["position", "direction"] }
+      },
+      "engine": { "load": "accept", "truth": "base 面实体装 self.cellData 实例属性(plain dict);cell 不在场期间声明键读合法(cellData 本就是为 cell 不在场/DB 归档而设)" },
+      "evidence": [
+        "The base-side `self.cellData` attribute is a plain dict installed by",
+        "Correctness rule: `cellData` is meaningful only while the cell is absent"
+      ],
+      "kode": {
+        "validation": { "wrongKey": [], "lifecycle": [] },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "base-ongetcell-read-deleted",
+      "kind": "negative",
+      "input": {
+        "path": "base-script",
+        "method": "onGetCell",
+        "body": ["v = self.cellData[\"hp\"]"],
+        "universe": { "defFields": ["hp", "mp"], "builtins": ["position", "direction"] }
+      },
+      "engine": { "load": "reject", "truth": "onGetCell 先跑 destroyCellData 删属性、之后才调脚本回调——回调内任何 self.cellData 求值抛 AttributeError(属性表无 type 级 getter,删除后无回退)" },
+      "evidence": [
+        "- When the cell exists, the attribute is **deleted** (`onGetCell` calls",
+        "is deleted while the cell lives: reading it raises"
+      ],
+      "kode": {
+        "validation": {
+          "wrongKey": [],
+          "lifecycle": [{ "line": 2, "character": 12, "length": 13 }]
+        },
+        "status": "pinned"
+      },
+      "finding": "CELL-12(kbengine.cellDataLifecycle)时序面与引擎同向(onGetCell 删属性后才回调, Warning);角色闸=装配面 base 脚本;键面 CELL-10 对声明键 hp 同片段沉默=并行面分工(键合法,时机非法),不重复报"
+    },
+    {
+      "id": "base-ongetcell-read-after-reassign",
+      "kind": "positive",
+      "input": {
+        "path": "base-script",
+        "method": "onGetCell",
+        "body": ["self.cellData = {}", "v = self.cellData[\"hp\"]"],
+        "universe": { "defFields": ["hp", "mp"], "builtins": ["position", "direction"] }
+      },
+      "engine": { "load": "accept", "truth": "cellData 是普通实例属性,脚本自赋值重建后读合法(引擎只删不拦写;引擎重装点=构建时与 dirty backup 分支,脚本赋值走 Python 属性语义)" },
+      "evidence": [
+        "The base-side `self.cellData` attribute is a plain dict installed by",
+        "- When the cell exists, the attribute is **deleted** (`onGetCell` calls"
+      ],
+      "kode": {
+        "validation": { "wrongKey": [], "lifecycle": [] },
+        "status": "pinned"
+      },
+      "finding": "CELL-12 两态流(存储→present)与引擎 plain-attribute 语义同向:方法体内脚本自赋值后不再报——既不漏报合法读,也不把删后再读的成因猜成缺陷"
+    },
+    {
+      "id": "builtin-position-key-read",
+      "kind": "positive",
+      "input": {
+        "path": "base-script",
+        "method": "f",
+        "body": ["v = self.cellData[\"position\"]"],
+        "universe": { "defFields": ["hp", "mp"], "builtins": ["position", "direction"] }
+      },
+      "engine": { "load": "accept", "truth": "初始填充=createCellData 写 def 默认值外加零值 position/direction(非活值);内建键不用 def 声明即可读" },
+      "evidence": [
+        "defaults plus a zeroed `position`/`direction`",
+        "not the live cell values."
+      ],
+      "kode": {
+        "validation": { "wrongKey": [], "lifecycle": [] },
+        "status": "pinned"
+      },
+      "finding": "CELL-02 内建封闭表(position/direction,独立引擎来源)与引擎初始填充同向;kode 面只键不值,零值非活值的坑不在 kode 展示面上"
+    },
+    {
+      "id": "spaceid-not-in-universe",
+      "kind": "unknown",
+      "input": {
+        "path": "base-script",
+        "method": "f",
+        "body": ["v = self.cellData[\"spaceID\"]"],
+        "universe": { "defFields": ["hp", "mp"], "builtins": ["position", "direction"] }
+      },
+      "engine": { "load": "reject", "truth": "按本档口径初始填充只列 position/direction(spaceID 不在内,读它 KeyError);但 api-baseapp-entity.md 的 entity.cellData 节写「.def defaults plus position, direction, spaceID」——两档互相分歧,引擎真值未钉死" },
+      "evidence": [
+        "defaults plus a zeroed `position`/`direction`",
+        "not the live cell values."
+      ],
+      "kode": {
+        "validation": {
+          "wrongKey": [{ "line": 2, "key": "spaceID", "kind": "confirmed", "candidate": "" }],
+          "lifecycle": []
+        },
+        "status": "pinned"
+      },
+      "finding": "两档对账分歧登记:entity-migration 档(本 grounding)填充面无 spaceID,api-baseapp-entity.md cellData 节有 spaceID;kode 封闭表采「不含 spaceID」口径(cell.rs CELL-02 注:其余 cellapp 内建属性未核对为 cellData 键不入表不猜)。若 baseapp-entity 档正确,错键面 confirmed=对合法代码误报——风险登记,修复前提=引擎取证(fork baseapp/entity.cpp:299-314 或真机),语料不在取证前改 kode 期望",
+      "reason": "知识档互相分歧无法钉引擎真值;下一步=读 fork baseapp/entity.cpp createCellData 填充序列或真机引擎实测 cellData 键集"
+    },
+    {
+      "id": "base-only-def-field-read",
+      "kind": "unknown",
+      "input": {
+        "path": "base-script",
+        "method": "f",
+        "body": ["v = self.cellData[\"gold\"]"],
+        "universe": { "defFields": ["hp", "mp"], "builtins": ["position", "direction"] }
+      },
+      "engine": { "load": "accept", "truth": "「def-file defaults」最平直读法=全量 def 属性默认值入 cellData(BASE-only 属性也在);但填充是否按 cell 域过滤,知识档未钉死" },
+      "evidence": [
+        "The base-side `self.cellData` attribute is a plain dict installed by",
+        "defaults plus a zeroed `position`/`direction`"
+      ],
+      "kode": {
+        "validation": {
+          "wrongKey": [{ "line": 2, "key": "gold", "kind": "confirmed", "candidate": "" }],
+          "lifecycle": []
+        },
+        "status": "pinned"
+      },
+      "finding": "kode CELL-01 宇宙=仅 cell 域 def 字段(domains 含 cell 才入,含继承/接口展开;Rust cell.rs 过滤+cargo 测试钉)。若引擎实为全量 def 字段入 cellData,则 BASE-only 键=补全面漏建议+错键面误报——方向与 spaceID 例相反的镜像风险;漏报只是没帮忙、误报才打断合法代码,两向都登记,取证前不动 kode",
+      "reason": "createCellData 填充是否过滤 cell 域,fork baseapp/entity.cpp:250-314 未读;知识档「def-file defaults」歧义"
+    },
+    {
+      "id": "onlosecell-read-last-backup",
+      "kind": "positive",
+      "input": {
+        "path": "base-script",
+        "method": "onLoseCell",
+        "body": ["v = self.cellData[\"hp\"]"],
+        "universe": { "defFields": ["hp", "mp"], "builtins": ["position", "direction"] }
+      },
+      "engine": { "load": "accept", "truth": "脚本通知的 cell 销毁先 auto-backup 再通知 base——base 在失 cell 后仍可读最后一份 cellData 快照(onBackupCellData dirty 分支重装属性)" },
+      "evidence": [
+        "A script-notified cell destroy auto-backs-up before notifying the base",
+        "which is why a base can still read the **last** `cellData` after losing the"
+      ],
+      "kode": {
+        "validation": { "wrongKey": [], "lifecycle": [] },
+        "status": "pinned"
+      },
+      "finding": "CELL-12 范围界探针:onLoseCell 读沉默(头注验收原句=只认 onGetCell 这个明确入口,其余方法调用时机与 cellData 在场性的关系不做确定结论)——此处沉默与引擎真值(可读)同向;时序面扩展归后续批,前提=onBackupCellData 重装点证据在案"
+    }
+  ]
+}

@@ -12,18 +12,21 @@ QA-001 判据:「每类能力有引擎/声明依据的正例、反例、未知�
 {
   "family": "能力族 id",
   "grounding": {
-    "doc": "docs/knowledge/<依据档>.md",     // 必须真实存在
+    "doc": "docs/knowledge/<依据档>.md",     // 必须真实存在;每族只锚一份档
     "engineHead": "引擎 fork HEAD(依据档钉死的 commit)"
   },
   "entries": [{
     "id": "...",
     "kind": "positive | negative | unknown",  // 正例/反例/未知例
-    "input": { "spelling": "...", "path": "xml | decorator" },
+    // input 形状按族定(flags=spelling/path;cell-data=method/body/universe),
+    // 公共信封(id/kind/engine/evidence/kode.status/finding/reason)族间共享;
+    "input": { "...": "..." },
     "engine": { "load": "accept | reject | reject-silent", "truth": "一句话引擎行为" },
     "evidence": ["依据档原文的逐字子串(测试做 containment 闸,伪造锚点即红)"],
     "kode": {
-      "analysis": { "domains": [...], "tokens": [...] },  // 分析面实测输出(探针取真值后钉)
-      "validation": { "diagnostic": "none | pipe | unknown" },
+      // analysis/validation 细节形状按族定;两档分歧致引擎真值钉不死时
+      // load 取本 grounding 档口径,truth/reason 写明冲突与对峙档
+      "...": "...",
       "status": "pinned | not-analyzed | unverified"
     },
     "finding": "divergence 注记(无则省略)"
@@ -60,3 +63,21 @@ QA-001 判据:「每类能力有引擎/声明依据的正例、反例、未知�
   精确 8 名链,py_entitydef.cpp:2507 不检查)。
 - Rust 侧同表镜像(normalize_flag_tokens 同容忍族),golden=
   crates/kode-server/tests/golden/flag-domains-parity.json。
+
+## cell-data-snapshot 族(2026-11-17 第二族)
+
+依据:docs/knowledge/entity-migration-and-cross-process-references.md(fork HEAD
+3082ab5)。键宇宙按 Rust `cellDataKeys` 契约形构造(CELL-01 cell 域 def 字段 +
+CELL-02 内建封闭表 position/direction);Rust 侧组合面由 cargo cell 测试钉,本族
+execution 闸钉消费面(CELL-10 键面 + CELL-12 时序面)在给定宇宙下的行为。
+本族探针实测暴露的登记面(均条目 `finding` 注记,取证前不动 kode):
+
+- **两档对账分歧**:本档初始填充只列 position/direction,而
+  api-baseapp-entity.md 的 entity.cellData 节写含 `spaceID`——kode 封闭表采
+  「不含 spaceID」口径;若 baseapp-entity 档正确则错键面 confirmed=对合法代码
+  误报。取证前提=fork baseapp/entity.cpp:299-314 或真机键集实测。
+- **镜像风险**:CELL-01 宇宙仅收 cell 域 def 字段;若引擎 cellData 实为全量
+  def 字段,BASE-only 键=补全漏建议+错键误报(与 spaceID 例方向相反)。
+- **时序面范围界**:CELL-12 只认 onGetCell 明确入口(onLoseCell 等一律沉默),
+  本族实证 onLoseCell 读沉默与引擎真值(最后快照可读)同向;扩展需
+  onBackupCellData 重装点证据在案。
