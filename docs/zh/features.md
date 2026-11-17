@@ -303,6 +303,9 @@
 - **AI stub 建议（自愿开启，AI-004）** —— stub 成员的 AI 补注释/使用示例建议层（`kbengine.ai.suggestStub`）：typings 模板真源（钉死 fork commit）绝不替代或改写——只从模板真源提取选中成员的段（头行+装饰器+体,止于下一个同级定义；成员提不出诚实提示）送 AI 面,回复的围栏代码块成为只读 diff 预览：左=真源原段,右=AI 建议段（两侧都是虚拟文档——模板文件不写入,零落盘）；从预览誊抄完全手动,不提供一键写入面
   ——（证据：src/ai/aiStubSuggest.ts、src/ai/aiRegistration.ts、tests/aiStubSuggest.test.ts 11 例）
 
+- **AI 架构分析（自愿开启，AI-005）** —— 叙述性架构报告生成器（`kbengine.ai.analyzeArchitecture`）：把引擎结构化依赖图摘要（计数+实体清单+按 kind 分组的边示例——依赖图视图消费的同一份结构化面,绝不发源码本身）送 AI 面,回复以 Markdown 报告在只读虚拟文档预览打开（`markdown.showPreview`,零落盘）；摘要硬顶 12000 字符预算,截断在 prompt 与报告里都显式声明（绝不静默）；prompt 禁止编造摘要之外的关系（模糊的必须报不确定）；无打开工作区、或工作区没有可分析的 def 布局,诚实提示不硬猜
+  ——（证据：src/ai/aiArchitecture.ts、src/ai/aiRegistration.ts、tests/aiArchitecture.test.ts 10 例）
+
 
 ## 编辑器基础（UI）
 

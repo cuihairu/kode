@@ -332,6 +332,9 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **AI stub suggestion (opt-in, AI-004)** — a suggestion layer (`kbengine.ai.suggestStub`) for AI annotations/usage examples on a stub member: the typings template source (pinned to its fork commit) is never replaced or rewritten — only the selected member's section (header + decorators + body, ending at the next same-level definition; unresolvable members report honestly) is sent to the AI face, and the reply's fenced block becomes a read-only diff preview with the original section on the left and the suggestion on the right (both virtual documents — the template file is not written, zero disk changes); copying from the preview is entirely manual, with no one-click write face
    — (evidence: src/ai/aiStubSuggest.ts, src/ai/aiRegistration.ts; tests/aiStubSuggest.test.ts 11 例)
 
+- **AI architecture analysis (opt-in, AI-005)** — a narrative architecture report generator (`kbengine.ai.analyzeArchitecture`): feeds the engine's structured dependency-graph digest (counts + entity list + grouped edge samples — the same structured face the dependency graph view consumes, never the source files themselves) to the AI face and renders the reply as a Markdown report in a read-only virtual document preview (`markdown.showPreview`, zero disk changes); the digest is hard-capped at a 12000-character budget and any truncation is declared explicitly in both the prompt and the report (never silent); the prompt forbids inventing relations beyond the digest (ambiguous ones must be reported as uncertain); no open workspace, or a workspace without an analyzable def layout, reports honestly instead of guessing
+   — (evidence: src/ai/aiArchitecture.ts, src/ai/aiRegistration.ts; tests/aiArchitecture.test.ts 10 例)
+
 
 ## Editor Basics (UI)
 

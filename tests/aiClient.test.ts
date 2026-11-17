@@ -345,12 +345,14 @@ describe('AI-001:registerAiCommands(惰性注册+key 只进 SecretStorage)', () 
       'kbengine.ai.clearApiKey',
       'kbengine.ai.chat',
       'kbengine.ai.explainFix',
-      'kbengine.ai.suggestStub'
+      'kbengine.ai.suggestStub',
+      'kbengine.ai.analyzeArchitecture'
     ]);
     // 3 命令 + AI-003 建议层四件(python/kbengine-def 两 CodeAction provider+
     // explainFix 命令+只读虚拟 scheme provider)+ AI-004 建议层两件
-    // (suggestStub 命令+只读虚拟 scheme provider)
-    expect(subscriptions.length).toBe(9);
+    // (suggestStub 命令+只读虚拟 scheme provider)+ AI-005 分析面一件
+    // (analyzeArchitecture 命令;scheme provider 由分析首次惰性注册)
+    expect(subscriptions.length).toBe(10);
 
     const originalInput = (vscode.window as { showInputBox?: unknown }).showInputBox;
     (vscode.window as { showInputBox: unknown }).showInputBox = async () => 'sk-secret';

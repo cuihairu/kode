@@ -1752,7 +1752,7 @@ If `Attach to Component` fails, check these first:
   - This face carries a long timeout (120s) — large pcaps + the tshark hop do not fit the detection face's 5s probe budget
 ## AI
 
-All five commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
+All six commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
 
 ### `kbengine.ai.setApiKey`
 
@@ -1787,4 +1787,12 @@ All five commands are registered at runtime only when the AI face is available �
   - Only the selected member's section is extracted from the template source (header + decorators + body, ending at the next same-level definition; unresolvable members report honestly rather than guessing) and sent to the AI face — never the whole template
   - The reply's fenced block becomes a read-only diff preview with the original section on the left and the suggestion on the right (both virtual documents — the template file is not written, zero disk changes); a text-only reply reports honestly that it has no code suggestion
   - Copying anything from the preview into your own files is entirely manual — no one-click write face here
+
+### `kbengine.ai.analyzeArchitecture`
+
+- Purpose: generate a narrative architecture report (Markdown) from the engine's structured dependency graph — entity organization, inheritance/composition relations, notable structural features. The data source is the engine's analysis face (the same structured summary the dependency graph view consumes); the AI only summarizes it.
+- Behavior:
+  - Only a structured digest is sent to the AI face — graph counts, the entity list, and grouped edge samples — never the source files themselves; the digest is hard-capped at a 12000-character budget and any truncation is declared explicitly in both the prompt and the report (never silent)
+  - The report opens as a read-only virtual document preview (`markdown.showPreview`) — zero disk changes; the prompt forbids inventing relations beyond the digest (ambiguous ones must be reported as uncertain)
+  - No open workspace, or a workspace without an analyzable def layout, reports honestly instead of guessing
 
