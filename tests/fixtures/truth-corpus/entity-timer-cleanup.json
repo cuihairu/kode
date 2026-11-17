@@ -1,0 +1,178 @@
+{
+  "family": "entity-timer-cleanup",
+  "grounding": {
+    "doc": "docs/knowledge/entity-lifecycle-reference.md",
+    "engineHead": "c2a3b8f"
+  },
+  "entries": [
+    {
+      "id": "ondestroy-deltimer-redundant",
+      "kind": "negative",
+      "input": {
+        "path": "entity-script",
+        "method": "onDestroy",
+        "signature": "self",
+        "body": [
+          "self.delTimer(tid)"
+        ]
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "destroy() 已 scriptTimers_.cancelAll() 清空本实体全部定时器(cellapp/entity.cpp:4002)——onDestroy 回调体内任何 self.delTimer(id) 作用的都是已取消的陈旧 id,静默返回 -1(entity_macro.h:1478),清理冗余无实害"
+      },
+      "evidence": [
+        "`Entity::destroy()` calls `scriptTimers_.cancelAll()` (`cellapp/entity.cpp:4002`);",
+        "returns `-1` when the timer does not exist (`entity_macro.h:1478`,"
+      ],
+      "kode": {
+        "validation": {
+          "cleanup": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 14
+            }
+          ]
+        },
+        "status": "pinned"
+      },
+      "finding": "KBE-PY-017(kbengine.timerCleanupOnDestroy)与引擎真值同向:引擎已取消→再注销=冗余,kode 报 lint 面提示;诊断文案明示 cancelAll+陈旧 id 静默 -1 口径"
+    },
+    {
+      "id": "ondestroy-deltimer-all-variant",
+      "kind": "negative",
+      "input": {
+        "path": "entity-script",
+        "method": "onDestroy",
+        "signature": "self",
+        "body": [
+          "self.delTimer(\"All\")"
+        ]
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "delTimer(\"All\") 即 cancelAll(entity_macro.h:1449)——onDestroy 内调用时实体定时器已被 destroy 清空,等价对空集 cancelAll,no-op 冗余"
+      },
+      "evidence": [
+        "`script_timers.cpp:96-108`); `delTimer(\"All\")` → `cancelAll()`",
+        "returns `-1` when the timer does not exist (`entity_macro.h:1478`,"
+      ],
+      "kode": {
+        "validation": {
+          "cleanup": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 14
+            }
+          ]
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "ontimer-deltimer-legit",
+      "kind": "positive",
+      "input": {
+        "path": "entity-script",
+        "method": "onTimer",
+        "signature": "self, timerID, userArg",
+        "body": [
+          "self.delTimer(timerID)"
+        ]
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "onTimer 体内定时器在场,delTimer(id)→ScriptTimersUtil::delTimer→handle.cancel() 真实取消(entity_macro.h:1478)——合法清理,引擎接受"
+      },
+      "evidence": [
+        "Removal: `delTimer(id)` → `ScriptTimersUtil::delTimer` → `handle.cancel()`,",
+        "Timers are per-entity. Python `addTimer(interval, repeat, userArg)` builds a"
+      ],
+      "kode": {
+        "validation": {
+          "cleanup": []
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "no-ondestroy-file-silent",
+      "kind": "positive",
+      "input": {
+        "path": "entity-script",
+        "method": "f",
+        "signature": "self",
+        "body": [
+          "self.delTimer(tid)"
+        ]
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "无 onDestroy 的实体脚本里 delTimer 照常按在场语义真实取消——文件域无销毁期上下文,无冗余可言"
+      },
+      "evidence": [
+        "Removal: `delTimer(id)` → `ScriptTimersUtil::delTimer` → `handle.cancel()`,",
+        "returns `-1` when the timer does not exist (`entity_macro.h:1478`,"
+      ],
+      "kode": {
+        "validation": {
+          "cleanup": []
+        },
+        "status": "pinned"
+      },
+      "finding": "探针钉面域纪律:无 onDestroy 文件不报(代码头注验收句之一);本条防未来 face 把普通方法误划入销毁期"
+    },
+    {
+      "id": "module-addtimer-strong-ref-leak-gap",
+      "kind": "positive",
+      "input": {
+        "path": "entity-script",
+        "method": "onDestroy",
+        "signature": "self",
+        "body": [
+          "KBEngine.addTimer(1.0, 0, self.onTick)"
+        ]
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "模块级 KBEngine.addTimer 与实体定时器两回事:ScriptTimerHandler 持 callback 对象强引用(python_app.cpp:721-748),传 self.onTick 即强引用实体;Entity::destroy 的 scriptTimers_.cancelAll() 只取消实体自身 scriptTimers_,**永不**取消它——自绑重复定时器不在 onDestroy 里 KBEngine.delTimer 则持续 fire/把实体泄漏进 garbages"
+      },
+      "evidence": [
+        "Module-level `KBEngine.addTimer(interval, repeat, callback)` (interpreter-layer",
+        "`ScriptTimerHandler(pTimers, pyCallback)` that holds a **strong reference to the",
+        "`scriptTimers_.cancelAll()` cancels only the entity's own `scriptTimers_`,",
+        "**never** it. A self-bound repeating timer that is not `KBEngine.delTimer`'d in",
+        "`onDestroy` keeps firing / leaks the entity into `garbages` (same family as the"
+      ],
+      "kode": {
+        "status": "not-analyzed"
+      },
+      "finding": "缺口登记(漏报方向):kode timerCleanupOnDestroy 面只认 self.delTimer 冗余,onDestroy 内 KBEngine.addTimer 自绑注册与缺失 KBEngine.delTimer 清理均无诊断——本条即陷阱形态在 kode 全静默;修复=新增面归独立批(分析面 addTimer 归属判别+onDestroy 内 module timer 清理缺失检查)"
+    },
+    {
+      "id": "module-addtimer-repeat0-self-release",
+      "kind": "positive",
+      "input": {
+        "path": "entity-script",
+        "method": "onDestroy",
+        "signature": "self",
+        "body": [
+          "KBEngine.addTimer(1.0, 0, self.once)"
+        ]
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "repeat=0 单发定时器 fire 后自释放——无泄漏尾随,非陷阱形态"
+      },
+      "evidence": [
+        "closure/list references above); single-shot (repeat=0) self-releases after firing.",
+        "Timers are per-entity. Python `addTimer(interval, repeat, userArg)` builds a"
+      ],
+      "kode": {
+        "status": "not-analyzed"
+      },
+      "finding": "同上缺口:单发形态本无害,若未来新增 module timer 面须区分 repeat 语义,reject 面 only 重复自绑"
+    }
+  ]
+}

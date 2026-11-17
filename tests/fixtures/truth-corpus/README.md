@@ -128,3 +128,14 @@ roster 按 kode 实测声明序钉,成员无出入不构成分歧。缺席对=is
 (CHM 材料列之,fork 无脚本 getset——C++ 成员存在但只内部用):kode 采 fork
 口径缺席=同向;fork/CHM 分歧登记,插件层归属待取证(取证路径=diff 官方 SDK
 插件实体类),取证后若收编=pyi/面扩充独立批。
+
+## entity-timer-cleanup 族(2026-11-17 第七族)
+
+依据:docs/knowledge/entity-lifecycle-reference.md(fork HEAD c2a3b8f)§Timers
+(实体定时器 vs 模块级 KBEngine.addTimer 两回事)。6 例:pinned 4(销毁期
+冗余双形态 delTimer(id)/delTimer("All")+合法双场景 onTimer 体/无 onDestroy
+文件)+not-analyzed 登记 2(**缺口=漏报方向**:模块级自绑重复定时器强引用
+callback 且 Entity::destroy 永不取消,onDestroy 缺 KBEngine.delTimer 清理则
+实体泄漏 garbages——kode 全静默;单发 repeat=0 自释放非陷阱)。执行闸=
+analyzeTimerCleanupOnDestroy findings 双向钉(冗余报/合法沉默)。本面 TS-only
+(Rust 无镜像,parity golden 不涉)。模块 timer 泄漏面修复归独立批。

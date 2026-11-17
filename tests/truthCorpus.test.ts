@@ -17,6 +17,7 @@ import { trackCellDataKeys, cellDataKeyWorldOpen } from '../src/backend/cellData
 import { cellDataCallbackFindings } from '../src/backend/cellDataCallbackCheck';
 import { cellScriptRoleAndEntity, type CellDataKeyEntry } from '../src/backend/cellDataCompletion';
 import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
+import { analyzeTimerCleanupOnDestroy } from '../src/backend/timerCleanupDiagnostics';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -142,6 +143,18 @@ const builtinPropsBaseappFamily = families.find(f => f.family === 'entity-builti
 const builtinPropsBaseappEntries = builtinPropsBaseappFamily.entries as unknown as BuiltinPropEntry[];
 const builtinPropsClientFamily = families.find(f => f.family === 'entity-builtin-props-client')!;
 const builtinPropsClientEntries = builtinPropsClientFamily.entries as unknown as BuiltinPropEntry[];
+
+// ---- entity-timer-cleanup 族形状与鞍具 ----
+interface TimerEntry extends TruthEntryBase {
+  input: { path: string; method: string; signature?: string; body: string[] };
+  kode: TruthEntryBase['kode'] & {
+    validation?: { cleanup: { line: number; character: number; length: number }[] };
+  };
+}
+const timerFamily = families.find(f => f.family === 'entity-timer-cleanup')!;
+const timerEntries = timerFamily.entries as unknown as TimerEntry[];
+const timerSnippetOf = (input: TimerEntry['input']): string =>
+  ['class Avatar:', `    def ${input.method}(${input.signature ?? 'self'}):`, ...input.body.map(l => `        ${l}`)].join('\n');
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -315,6 +328,23 @@ describe('真值语料 execution 门:内建属性面逐项对账(cellapp §6 / b
       expect(table.map(p => p.name), `roster drift: ${rosterEntry!.id}`).toEqual(
         rosterEntry!.kode.analysis?.names
       );
+    }
+  });
+});
+
+// ---- ⑥ entity-timer-cleanup 执行门 ----
+describe('真值语料 execution 门:定时器清理面(KBE-PY-017 冗余/合法双向)', () => {
+  const pinned = timerEntries.filter(e => e.kode.status === 'pinned');
+
+  it('每条 pinned 条目的 cleanup findings 实测等于语料钉值(drift 即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      const findings = analyzeTimerCleanupOnDestroy(timerSnippetOf(entry.input)).map(f => ({
+        line: f.line,
+        character: f.character,
+        length: f.length
+      }));
+      expect(findings, `cleanup drift: ${entry.id}`).toEqual(entry.kode.validation?.cleanup ?? []);
     }
   });
 });
