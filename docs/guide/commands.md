@@ -1750,3 +1750,16 @@ If `Attach to Component` fails, check these first:
   - Dialog cancel does nothing; CLI undiscovered / probe failure warns honestly with the reason (same attribution as `buildSchema`)
   - Analysis failure notifies with the CLI's own error text (stderr → stdout → exit code); the report is rendered as-is — no summarizing, no re-formatting
   - This face carries a long timeout (120s) — large pcaps + the tshark hop do not fit the detection face's 5s probe budget
+## AI
+
+Both commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
+
+### `kbengine.ai.setApiKey`
+
+- Purpose: store the endpoint API key in VS Code SecretStorage (password-form input). The key is never written to settings.json; an empty input stores nothing.
+- Behavior: immediate; key-less local endpoints (Ollama/LM Studio style) work without running this command.
+
+### `kbengine.ai.clearApiKey`
+
+- Purpose: remove the stored key from SecretStorage.
+- Behavior: immediate; the next request simply goes out without an `Authorization` header.

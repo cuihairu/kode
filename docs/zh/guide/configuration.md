@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-116 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+168 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
 
 VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话作用 + 「默认值」段 + 跳回本指南的深链。设置 UI 只渲染 `markdownDescription`(裸 `description` 里的 markdown 不渲染)。`tests/configMarkdownDescription.test.ts` 把 package.json 与本页对账锁定:每键必须有含默认值段的 `markdownDescription`、每个 enum 必须逐选项给说明、提示里的指南链接锚点必须真存在于本页标题。
 
@@ -553,6 +553,25 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.clone.archiveEncryption` | `"encrypted" \| "plain"` | `"encrypted"` | 玩家数据克隆归档的加密默认值。`encrypted`（默认）= 导出写 chacha20poly1305 加密归档，密钥存本机 globalStorage `clone-keys/`（0600）——归档移机后须回原机取钥；`plain` = 导出写明文归档（敏感列仍脱敏），适合需要跨机转移的场景。该值只是默认：导出确认页每次可切换。逐项取舍见设置的 `markdownEnumDescriptions`；运维与密钥处理见 [玩家数据克隆运维与安全](/player-clone/ops-and-security)（英文站页） |
+
+### AI(自愿开启的底座,AI-001)
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.ai.baseUrl` | string | `""` | OpenAI 兼容服务地址(`/v1` 之前的主机部分,如 `https://api.example.com`);请求经扩展自带 `fetch` 发到 `{baseUrl}/v1/chat/completions`(零新依赖)。留空且宿主也无语言模型时,全部 AI 命令都不注册——功能完全关闭,激活零成本 |
+| `kbengine.ai.model` | string | `""` | 请求的模型名(如 `gpt-4o-mini` 或本地模型名);留空=由服务端默认模型决定 |
+| `kbengine.ai.temperature` | number | `0.2` | 采样温度(0~2);仅 OpenAI 兼容路线生效 |
+| `kbengine.ai.maxTokens` | number | `1024` | 单次回复最大 token 数;仅 OpenAI 兼容路线生效 |
+| `kbengine.ai.requestTimeoutMs` | number | `30000` | 单次请求超时毫秒数;超时中止并报错,不悬挂 |
+| `kbengine.ai.maxRetries` | number | `1` | 只对可重试失败设重试上限(HTTP 429/5xx 与网络错误;0=不重试);其它 4xx 立即失败 |
+
+AI 面的工作方式:
+
+- **自愿开启,默认全关。** 未配置 `kbengine.ai.baseUrl` 且宿主 VS Code 没有暴露语言模型(如 Copilot BYOK provider)时,一个 AI 命令都不注册;两者皆无,激活零成本。
+- **回退链。** 配置了 `baseUrl` 走 OpenAI 兼容路线;未配置则用宿主 `vscode.lm` 语言模型 API(运行时 feature-detect——扩展引擎范围早于该 API,从不硬依赖)。
+- **API key 绝不落 settings.json。** 上表刻意没有 key 字段:用 `kbengine.ai.setApiKey`(密码形态输入框)把 key 存进 VS Code SecretStorage,`kbengine.ai.clearApiKey` 删除;免 key 的本地服务(Ollama/LM Studio 类)不配 key 直接可用。
+- **每次请求带超时/取消/重试上限**;取消从调用方 UI token 贯穿传播。
+- **遥测零、负载最小。** 除用户显式触发 AI 命令外零代码外发,且只发该命令所需片段。对话面板、快速修复、stub/架构助手属后续 AI 批次,目前均不存在。
 
 ## 调试配置文件(`.kbengine/debug.json`)
 

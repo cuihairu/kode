@@ -1658,3 +1658,16 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 对话框取消不做任何事；CLI 未检出/探测失败如实警告并带归因（与 `buildSchema` 同口径）
   - 分析失败以通知带 CLI 自身错误文本（stderr → stdout → 退出码）；报告原样渲染——不摘要、不再排版
   - 本面带长超时（120s）——大 pcap + tshark 两跳不适用检测面 5s 预算
+## AI
+
+两条命令只在 AI 面可用时才注册——配置了 OpenAI 兼容端点(`kbengine.ai.baseUrl`)或宿主存在语言模型;否则完全不存在(见配置指南的 AI 一节)。
+
+### `kbengine.ai.setApiKey`
+
+- 用途:把端点 API key 存入 VS Code SecretStorage(密码形态输入框)。key 绝不写进 settings.json;空输入不落盘。
+- 行为:即时生效;免 key 的本地服务(Ollama/LM Studio 类)不运行本命令也能用。
+
+### `kbengine.ai.clearApiKey`
+
+- 用途:删除 SecretStorage 中已存的 key。
+- 行为:即时生效;下一次请求直接不带 `Authorization` 头。

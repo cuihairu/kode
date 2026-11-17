@@ -294,6 +294,9 @@
 - **状态报告的 Schema 状态段（PA-007 第四增量）** —— `kbengine.protocol.showStatus` 末尾带一段读 `globalStorage/kbengine-schema.json` 的 Schema 状态：已生成 → IR 版本（`schema_version`）、引擎基线、消息/实体规模、缺失实体（entities.xml 注册但 .def 缺盘）与 CLI 构建诊断原文逐条（SYNTAX-005 同规——坏输入保留为可定位诊断,绝不冒充通过;本段即错误诊断面）；未生成 → 给 `kbengine.protocol.buildSchema` 提示；读取失败/坏 JSON → 带归因；字段逐个防御提取,无 globalStorage 面如实按未生成处理
   ——（证据：src/protocolSchemaSync.ts `readSchemaState`、src/protocolTooling.ts `renderProtocolToolingStatus` Schema 段、tests/protocolSchemaSync.test.ts readSchemaState 6 例、tests/protocolTooling.test.ts Schema 段 5 例）
 
+- **AI 底座（自愿开启，AI-001）** —— 面向后续 AI 功能的 OpenAI 兼容底座，默认全关：`kbengine.ai.*` 配置（`baseUrl`/`model`/`temperature`/`maxTokens`/`requestTimeoutMs`/`maxRetries`）驱动扩展自带 `fetch` 客户端请求 `{baseUrl}/v1/chat/completions`（零新依赖）；`baseUrl` 未配置时回退宿主 `vscode.lm` 语言模型 API（运行时 feature-detect——引擎基线 1.82 早于该 API,从不硬依赖）；未配置端点且宿主无模型时不注册任何命令（惰性激活,零成本）；API key 只存 VS Code SecretStorage（`kbengine.ai.setApiKey`/`kbengine.ai.clearApiKey`，密码形态输入——settings 刻意无 key 字段）；每次请求带超时/取消/重试上限（仅 429/5xx/网络错误重试——其它 4xx 立即失败）；遥测零——除用户显式触发 AI 命令外零代码外发,且只发该命令所需片段。对话面板、快速修复、stub/架构助手属后续 AI 批次,目前均不存在
+  ——（证据：package.json#configuration `kbengine.ai.*`（分组 order 9）、src/ai/aiClient.ts、src/ai/aiRegistration.ts、src/extension.ts 惰性注册、tests/aiClient.test.ts 18 例）
+
 ## 编辑器基础（UI）
 
 - **types.xml + .def 注入语法** —— 语义着色：内置类型、自定义类型引用、ARRAY/FIXED_DICT 关键字与 implementedBy 值，注入 XML(types.xml)与 kbengine-def 语法(.def 文件，2026-10-29)——（证据：package.json#contributes.grammars（`injectTo: ["text.xml", "source.kbengine-def"]`））
@@ -373,6 +376,12 @@
 
 | 设置 | 默认值 | 作用 |
 | --- | --- | --- |
+| `kbengine.ai.baseUrl` | `""` | OpenAI 兼容服务地址（`/v1` 之前）；扩展自带 `fetch` 请求 `{baseUrl}/v1/chat/completions`；留空（且宿主无语言模型）时全部 AI 命令不注册——完全关闭零成本；API key 存 SecretStorage（`kbengine.ai.setApiKey`），绝不落 settings |
+| `kbengine.ai.model` | `""` | 请求的模型名；留空 = 服务端默认 |
+| `kbengine.ai.temperature` | `0.2` | 采样温度（0~2）；仅 OpenAI 兼容路线生效 |
+| `kbengine.ai.maxTokens` | `1024` | 单次回复最大 token 数；仅 OpenAI 兼容路线生效 |
+| `kbengine.ai.requestTimeoutMs` | `30000` | 单次请求超时毫秒数；超时中止不悬挂 |
+| `kbengine.ai.maxRetries` | `1` | 仅 429/5xx/网络错误设重试上限（`0` = 不重试）；其它 4xx 立即失败 |
 | `kbengine.console.discoveryHost` | `"127.0.0.1"` | console 链的 machined 发现目标；默认 localhost-only，跨机需显式填广播/IP（集群控制面安全边界） |
 | `kbengine.consoleLogTail.enabled` | `true` | 实时日志 tail 开关（guiconsole 链，KB-GC-001）：向发现到的 logger 注册 `Logger::registerLogWatcher`（702），把 65501 长连推流渲染进「KBEngine Console 日志」输出通道；配置缺失视为开，显式 `false` 才关；断线按指数退避自动重连；machined/logger 不在时如实提示不硬试 |
 | `kbengine.consoleLogTail.components` | `[]` | tail 组件过滤（按引擎组件类型名）；空 = 不过滤；下一次 tail 重连生效 |

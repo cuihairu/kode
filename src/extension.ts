@@ -115,6 +115,7 @@ import {
   setDefinitionDispatchGateForTests,
 } from './languageProviders';
 import { setSpaceDataIndexEnabled } from './spaceDataIndex';
+import { registerAiCommands } from './ai/aiRegistration';
 
 
 
@@ -219,6 +220,10 @@ export function activate(context: vscode.ExtensionContext) {
   } = activateCoreServices({ context });
   context.subscriptions.push(...coreServicesDisposables);
   markActivateStage('l1-core-services');
+
+  // AI-001(方案 C):AI 底座惰性注册——未配置 endpoint 且宿主无 lm 模型时
+  // 零命令零成本;注册失败静默不碍主链。
+  void registerAiCommands(context, context.secrets).catch(() => undefined);
 
 
   // SRC-001 L2 语言服务层(KODE-ARCH 纯移动):20+ 语言 provider 装配与

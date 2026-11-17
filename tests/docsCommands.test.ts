@@ -19,6 +19,13 @@ interface PackageJsonShape {
 
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as PackageJsonShape;
 const commandIds = pkg.contributes.commands.map(entry => entry.command);
+/**
+ * 运行时惰性注册的命令(AI-001 起):默认全关语义下刻意不进 contributes
+ * commands(未配置端点且宿主无 lm 模型时一个 AI 命令都不注册)——文档小节
+ * 经此白名单放行,双向锁的 runtime-only 例外面;新增 runtime 命令须登记。
+ */
+const runtimeOnlyCommandIds = ['kbengine.ai.setApiKey', 'kbengine.ai.clearApiKey'];
+const knownCommandIds = (): string[] => [...commandIds, ...runtimeOnlyCommandIds];
 const commandsMd = readFileSync(join(root, 'docs', 'guide', 'commands.md'), 'utf8');
 
 /** package.json 贡献的全部 `kbengine.*` 设置键(configuration 可能是数组分段) */
@@ -52,8 +59,9 @@ describe('docs 命令覆盖与失实表述锁', () => {
     expect(missing, `缺文档小节的命令: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('docs/guide/commands.md 的小节命令都真实存在于 package.json', () => {
-    const unknown = documentedCommands().filter(id => !commandIds.includes(id));
+  it('docs/guide/commands.md 的小节命令都真实存在于 package.json(runtime-only 白名单外)', () => {
+    const known = knownCommandIds();
+    const unknown = documentedCommands().filter(id => !known.includes(id));
     expect(unknown, `文档记载了不存在的命令: ${unknown.join(', ')}`).toEqual([]);
   });
 

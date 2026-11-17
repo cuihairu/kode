@@ -397,5 +397,12 @@
   "kbengine.configuration.engine.title": "Engine & Project Paths",
   "kbengine.configuration.runtime.title": "Runtime & Hot Reload",
   "kbengine.configuration.tools.title": "Generator & Tools",
-  "kbengine.configuration.general.title": "General & Views"
+  "kbengine.configuration.general.title": "General & Views",
+  "kbengine.configuration.ai.title": "AI",
+  "kbengine.config.ai.baseUrl.description": "OpenAI-compatible endpoint host (the part before `/v1`, e.g. `https://api.example.com`); requests go to `{baseUrl}/v1/chat/completions` through the extension's own `fetch` (no new dependencies). Leaving it empty — when the host also has no language model — keeps every AI command unregistered: the feature is fully off with zero activation cost. The API key is never configured here — use the `kbengine.ai.setApiKey` command to store it in SecretStorage.\n\n默认值：`\"\"`（空 = 未配置）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.model.description": "Model id to request (e.g. `gpt-4o-mini` or a local model name); empty = let the server pick its default.\n\n默认值：`\"\"`（空 = 服务端默认）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.temperature.description": "Sampling temperature (0–2). Applies to the OpenAI-compatible route only.\n\n默认值：`0.2`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.maxTokens.description": "Max tokens per reply. Applies to the OpenAI-compatible route only.\n\n默认值：`1024`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.requestTimeoutMs.description": "Per-request timeout in ms; timed-out requests abort with an error instead of hanging.\n\n默认值：`30000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.maxRetries.description": "Retry cap for retryable failures only (HTTP 429/5xx and network errors; `0` disables retry); other 4xx statuses fail immediately.\n\n默认值：`1`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)"
 }

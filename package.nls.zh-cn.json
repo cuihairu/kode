@@ -397,5 +397,12 @@
   "kbengine.configuration.engine.title": "引擎与项目路径",
   "kbengine.configuration.runtime.title": "运行时与热更",
   "kbengine.configuration.tools.title": "生成与工具",
-  "kbengine.configuration.general.title": "通用与视图"
+  "kbengine.configuration.general.title": "通用与视图",
+  "kbengine.configuration.ai.title": "AI",
+  "kbengine.config.ai.baseUrl.description": "OpenAI 兼容服务地址(`/v1` 之前的主机部分,如 `https://api.example.com`);请求经扩展自带 `fetch` 发到 `{baseUrl}/v1/chat/completions`(零新依赖)。留空且宿主也无语言模型时,全部 AI 命令都不注册——功能完全关闭,激活零成本。API key 不在此处配置——用 `kbengine.ai.setApiKey` 命令存入 SecretStorage。\n\n默认值：`\"\"`(空 = 未配置)\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.model.description": "请求的模型名(如 `gpt-4o-mini` 或本地模型名);留空 = 由服务端默认模型决定。\n\n默认值：`\"\"`(空 = 服务端默认)\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.temperature.description": "采样温度(0~2)。仅 OpenAI 兼容路线生效。\n\n默认值：`0.2`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.maxTokens.description": "单次回复最大 token 数。仅 OpenAI 兼容路线生效。\n\n默认值：`1024`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.requestTimeoutMs.description": "单次请求超时毫秒数;超时中止并报错,不悬挂。\n\n默认值：`30000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.config.ai.maxRetries.description": "只对可重试失败设重试上限(HTTP 429/5xx 与网络错误;`0` = 不重试);其它 4xx 立即失败。\n\n默认值：`1`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)"
 }

@@ -93,7 +93,7 @@
 > 2026-11-15(RUST-004-W1):pythonDefinition.ts 顶部 dataDictReadyBudget import +3、预算竞速重写 +56(均在 provideDefinitionTracedImpl 之前)→ 三锚真位重探 354/942/1048→413/1001/1107;completion.ts provideDataDictKeyCompletions marked 路由改写 +9(均在 PythonCompletionProvider 之前)→ provideCompletionItems 真位重探 1064→1073(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-16(RUST-135):completion resolve 延迟补详情接线——languageServices.ts inline 补全 provider 对象加 resolveCompletionItem 委托 +5(位于 :128 打点之后)→ 其后四打点真位重探 204/277/344/745→209/282/349/750;completion.ts 顶部 import +1、rustResolveData WeakMap 块 +9、lspCompletionToVscode sortText/filterText/snippet/data 面 +12、KBEngineCompletionProvider.resolveCompletionItem +26(均在 PythonCompletionProvider 之前)→ provideCompletionItems 真位重探 1086→1134(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-16(RUST-144 批 4):languageServices.ts 顶部 import +1(SemanticTokensProvider/buildSemanticTokensLegend)与语义 token 注册块 +14(defProps 注册块之后)→ 五打点 128/209/282/349/750 → 129/210/283/350/765(前四 +1,750 +15,真位重探;与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
-> 2026-11-18(KODE-CFG-015 恢复批):languageServices.ts 顶部 import +1(EngineSpiCodeLensProvider)+ 返回面接口/返回对象各 +1 + SPI 注册块与命令 +22(位于 :353 打点之后)→ 五打点 132/213/286/353/785 → 134/215/288/355/809(前四 +2,785 +24,真位重探);extension.ts 解构面 +1(engineSpi impl,在 :477 前)→ 477/582 → 478/583,fire 块 +1(582 之后)不再位移(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-18(KODE-CFG-015 恢复批):languageServices.ts 顶部 import +1(EngineSpiCodeLensProvider)+ 返回面接口/返回对象各 +1 + SPI 注册块与命令 +22(位于 :353 打点之后)→ 五打点 132/213/286/353/785 → 134/215/288/355/809(前四 +2,785 +24,真位重探);extension.ts 解构面 +1(engineSpi impl,在 :477 前)→ 477/582 → 478/583,fire 块 +1(582 之后)不再位移(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。 2026-11-18(AI-001 批):extension.ts 顶部 import +1(aiRegistration)+ activate 内 AI 注册块 +4(:220 后,两锚前)→ 478/583 → 483/588,真位重探。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -232,10 +232,10 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:478 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:483 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>backend/diagnosticScheduler.ts:228"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:583 → backend/diagnosticScheduler.ts:258"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:588 → backend/diagnosticScheduler.ts:258"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}

@@ -375,8 +375,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-18(KODE-CFG-015 恢复批):extension.ts 解构面 +1(engineSpi impl,
   // 在 477 前)→ 477/582 → 478/583;fire 块 +1(582 之后,不影响本表),真位
   // 重探;出处随 baseline 锁步。
-  ['src/extension.ts', 478, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 583, 'flushQueued()'],
+  // 2026-11-18(AI-001 批):extension.ts 顶部 import +1(aiRegistration,在
+  // spaceDataIndex 之后)+ activate 内 AI 注册块 +4(:220 push 行后,两锚前)
+  // → 478/583 → 483/588,真位重探;出处随 baseline 锁步。
+  ['src/extension.ts', 483, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 588, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

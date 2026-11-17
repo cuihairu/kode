@@ -323,6 +323,9 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **Protocol schema state in the status report (PA-007 increment 4)** — `kbengine.protocol.showStatus` ends with a schema section read from `globalStorage/kbengine-schema.json`: generated → IR version (`schema_version`), engine baseline, message/entity counts, missing entities (registered in entities.xml but no `.def` on disk) and the CLI's build diagnostics listed verbatim (SYNTAX-005 convention — bad inputs are kept as locatable diagnostics, never a fake pass; this face is the error-diagnostics surface); not generated → the `kbengine.protocol.buildSchema` hint; unreadable/bad JSON → the reason; field extraction is defensive per-field and a missing globalStorage face honestly reads as absent
    — (evidence: src/protocolSchemaSync.ts `readSchemaState`, src/protocolTooling.ts `renderProtocolToolingStatus` schema section, tests/protocolSchemaSync.test.ts readSchemaState 6 例, tests/protocolTooling.test.ts schema section 5 例)
 
+- **AI base (opt-in, AI-001)** — an OpenAI-compatible AI base for later AI features, fully off by default: the `kbengine.ai.*` settings (`baseUrl` / `model` / `temperature` / `maxTokens` / `requestTimeoutMs` / `maxRetries`) drive a bundled `fetch` client against `{baseUrl}/v1/chat/completions` (zero new dependencies); with `baseUrl` unset the host's `vscode.lm` Language Model API is the fallback (feature-detected at runtime — the engine baseline 1.82 predates that API, never hard-required); nothing is registered until either an endpoint is configured or a host model exists (lazy activation, zero cost); the API key lives only in VS Code SecretStorage via `kbengine.ai.setApiKey` / `kbengine.ai.clearApiKey` (password input — there is deliberately no key field in settings); every request carries timeout, cancellation and a retry cap (429/5xx/network errors only — other 4xx fail immediately); zero telemetry — nothing leaves the machine unless the user explicitly invokes an AI command, and only that command's needed snippet is included. Chat panel, quick fixes and stub/architecture helpers are later AI batches and do not exist yet
+   — (evidence: package.json#configuration `kbengine.ai.*` (group order 9); src/ai/aiClient.ts, src/ai/aiRegistration.ts, src/extension.ts lazy registration; tests/aiClient.test.ts 18 例)
+
 ## Editor Basics (UI)
 
 - **types.xml + .def injection grammar** — semantic coloring of builtin types, custom type references, ARRAY/FIXED_DICT keywords and implementedBy values, injected into XML (types.xml) and the kbengine-def grammar (.def files, 2026-10-29) — (evidence: package.json#contributes.grammars (`injectTo: ["text.xml", "source.kbengine-def"]`))
@@ -410,6 +413,12 @@ All extension settings (evidence: package.json#contributes.configuration for con
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
+| `kbengine.ai.baseUrl` | `""` | OpenAI-compatible endpoint host (before `/v1`); bundled `fetch` posts to `{baseUrl}/v1/chat/completions`; empty (with no host language model) keeps every AI command unregistered — fully off, zero cost; the API key lives in SecretStorage (`kbengine.ai.setApiKey`), never in settings |
+| `kbengine.ai.model` | `""` | Model id to request; empty = server default |
+| `kbengine.ai.temperature` | `0.2` | Sampling temperature (0–2); OpenAI-compatible route only |
+| `kbengine.ai.maxTokens` | `1024` | Max tokens per reply; OpenAI-compatible route only |
+| `kbengine.ai.requestTimeoutMs` | `30000` | Per-request timeout in ms; timed-out requests abort instead of hanging |
+| `kbengine.ai.maxRetries` | `1` | Retry cap for 429/5xx/network errors only (`0` = no retry); other 4xx fail immediately |
 | `kbengine.console.discoveryHost` | `"127.0.0.1"` | machined discovery target for the console line; localhost-only by default, explicit broadcast/IP for cross-machine (full-cluster-control security boundary) |
 | `kbengine.consoleLogTail.enabled` | `true` | Live log tail gate (guiconsole line, KB-GC-001): registers `Logger::registerLogWatcher` (702) on the discovered logger and renders the 65501 push stream into the 「KBEngine Console 日志」 Output channel; missing config counts as ON, only explicit `false` turns it off; disconnects reconnect with exponential backoff; machined/logger absence is reported honestly without hard retrying |
 | `kbengine.consoleLogTail.components` | `[]` | Tail component filter by engine component type name; empty = no filter; takes effect on next tail reconnect |

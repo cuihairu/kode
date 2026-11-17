@@ -41,16 +41,17 @@ const EXPECTED_GROUPS: Array<{ key: string; en: string; zh: string }> = [
   { key: 'kbengine.configuration.engine.title', en: 'Engine & Project Paths', zh: '引擎与项目路径' },
   { key: 'kbengine.configuration.runtime.title', en: 'Runtime & Hot Reload', zh: '运行时与热更' },
   { key: 'kbengine.configuration.tools.title', en: 'Generator & Tools', zh: '生成与工具' },
-  { key: 'kbengine.configuration.general.title', en: 'General & Views', zh: '通用与视图' }
+  { key: 'kbengine.configuration.general.title', en: 'General & Views', zh: '通用与视图' },
+  { key: 'kbengine.configuration.ai.title', en: 'AI', zh: 'AI' }
 ];
 
 describe('RUST-228 设置分组', () => {
-  it('configuration 拆为 8 个带标题块,order 递增,标题走 nls 双语', () => {
-    expect(blocks).toHaveLength(8);
+  it('configuration 拆为 9 个带标题块,order 递增,标题走 nls 双语(AI-001 起)', () => {
+    expect(blocks).toHaveLength(9);
     expect(blocks.map(block => unwrapNlsKey(block.title))).toEqual(
       EXPECTED_GROUPS.map(group => group.key)
     );
-    expect(blocks.map(block => block.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(blocks.map(block => block.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     for (const group of EXPECTED_GROUPS) {
       expect(nls[group.key]).toBe(group.en);
       expect(nlsZh[group.key]).toBe(group.zh);

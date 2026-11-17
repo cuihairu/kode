@@ -2524,6 +2524,42 @@
             ]
           }
         }
+      },
+      {
+        "title": "%kbengine.configuration.ai.title%",
+        "order": 9,
+        "properties": {
+          "kbengine.ai.baseUrl": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.ai.baseUrl.description%"
+          },
+          "kbengine.ai.model": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.ai.model.description%"
+          },
+          "kbengine.ai.temperature": {
+            "type": "number",
+            "default": 0.2,
+            "markdownDescription": "%kbengine.config.ai.temperature.description%"
+          },
+          "kbengine.ai.maxTokens": {
+            "type": "number",
+            "default": 1024,
+            "markdownDescription": "%kbengine.config.ai.maxTokens.description%"
+          },
+          "kbengine.ai.requestTimeoutMs": {
+            "type": "number",
+            "default": 30000,
+            "markdownDescription": "%kbengine.config.ai.requestTimeoutMs.description%"
+          },
+          "kbengine.ai.maxRetries": {
+            "type": "number",
+            "default": 1,
+            "markdownDescription": "%kbengine.config.ai.maxRetries.description%"
+          }
+        }
       }
     ],
     "problemMatchers": [

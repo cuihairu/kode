@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 116 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
+The 168 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
 
 Every key's tip in the VS Code settings UI is authored as `markdownDescription` — one sentence of purpose, a 「默认值」 (default value) section, and a deep link into this guide. The settings UI renders `markdownDescription` only (markdown inside a bare `description` never renders). `tests/configMarkdownDescription.test.ts` locks package.json against this page: every key must carry `markdownDescription` with a default section, every enum must document every option, and every guide-link anchor must exist as a heading on this page.
 
@@ -551,6 +551,25 @@ The credentials must be stored in plaintext (`<encrypt>false</encrypt>`). The en
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.clone.archiveEncryption` | `"encrypted" \| "plain"` | `"encrypted"` | Player-clone archive encryption default. `encrypted` (default) = exports write chacha20poly1305-encrypted archives, the key stored in this machine's globalStorage `clone-keys/` (0600) — move the archive to another machine and you must fetch the key from the original one; `plain` = exports write plaintext archives (sensitive columns still masked), for archives that must cross machines. This is only the default: the export confirm step can toggle it per run. Per-option trade-offs live in the setting's `markdownEnumDescriptions`; ops and key handling: see [Player Data Clone Ops & Security](/player-clone/ops-and-security) |
+
+### AI (opt-in base, AI-001)
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.ai.baseUrl` | string | `""` | OpenAI-compatible endpoint host (the part before `/v1`, e.g. `https://api.example.com`); requests go to `{baseUrl}/v1/chat/completions` through the extension's own `fetch` (no new dependencies). Leaving it empty — when the host also has no language model — keeps every AI command unregistered: the feature is fully off with zero activation cost |
+| `kbengine.ai.model` | string | `""` | Model id to request (e.g. `gpt-4o-mini` or a local model name); empty = let the server pick its default |
+| `kbengine.ai.temperature` | number | `0.2` | Sampling temperature (0–2); OpenAI-compatible route only |
+| `kbengine.ai.maxTokens` | number | `1024` | Max tokens per reply; OpenAI-compatible route only |
+| `kbengine.ai.requestTimeoutMs` | number | `30000` | Per-request timeout in ms; timed-out requests abort with an error instead of hanging |
+| `kbengine.ai.maxRetries` | number | `1` | Retry cap for retryable failures only (HTTP 429/5xx and network errors; 0 disables retry); other 4xx statuses fail immediately |
+
+How the AI face works:
+
+- **Opt-in, fully off by default.** No AI command exists until `kbengine.ai.baseUrl` is configured or the host VS Code exposes a language model (e.g. a Copilot BYOK provider); with both absent, activation registers nothing.
+- **Fallback chain.** With `baseUrl` set, requests go to the OpenAI-compatible endpoint; without it, the host's `vscode.lm` Language Model API is used (feature-detected at runtime — the extension's engine range predates that API, so it is never hard-required).
+- **API keys never touch settings.json.** There is deliberately no key field above: run `kbengine.ai.setApiKey` (password input) to store the key in VS Code SecretStorage and `kbengine.ai.clearApiKey` to remove it; key-less local endpoints (Ollama/LM Studio style) work without a key.
+- **Timeout, cancellation and retry caps** on every request; cancellation propagates from the invoking UI token.
+- **Zero telemetry, minimal payloads.** Nothing is sent anywhere except when you explicitly invoke an AI command, and only that command's needed snippet is included. Chat UI, quick fixes and stub/architecture helpers arrive in later AI batches; none of them exist yet.
 
 ## Debug Configuration File (`.kbengine/debug.json`)
 
