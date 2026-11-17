@@ -1,0 +1,77 @@
+{
+  "family": "writetodb-hook-signature",
+  "grounding": {
+    "doc": "docs/knowledge/api-cellapp-entity.md",
+    "engineHead": "96c42f70"
+  },
+  "entries": [
+    {
+      "id": "writetodb-hook-dual-compat",
+      "kind": "positive",
+      "input": {
+        "hookName": "onWriteToDB"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "onWriteToDB 双面触发:cellapp 侧零参(entity.cpp:1238,紧随 backupCellData :1239);同一实体类 base 侧同名回调携带一个 cellData 快照实参(cellDataDict_)。兼容两侧的脚本签名形如 def onWriteToDB(self, cellData=None)。"
+      },
+      "evidence": [
+        "script side when implemented — and on the cellapp it fires with **zero",
+        "arguments** (`entity.cpp:1238`, immediately followed by",
+        "base-side callback of the same name takes one `cellData` snapshot",
+        "`def onWriteToDB(self, cellData=None)` to work on both"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "signatureContains": ["(self, ", "=None"],
+          "hookExists": true
+        }
+      }
+    },
+    {
+      "id": "writetodb-hook-doc-face",
+      "kind": "positive",
+      "input": {
+        "hookName": "onWriteToDB"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "baseapp 侧触发附带快照实参、cellapp 侧无参;向导 documentation 的双侧描述须与档真值同向(baseapp 附参/cellapp 无参)。"
+      },
+      "evidence": [
+        "base-side callback of the same name takes one `cellData` snapshot",
+        "`def onWriteToDB(self, cellData=None)` to work on both"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "documentationSaysBaseappArg": true,
+          "documentationSaysCellappNoArg": true
+        },
+        "finding": "向导 signature/example 参数名 dbContext 与档内 baseapp 实参语义(cellData 快照,cellDataDict_;api-baseapp-entity.md §onWriteToDB)不符——误导性命名:脚本作者会误把该参当 DB 上下文而非 cell 属性快照。兼容性不变(=None 默认下 baseapp 位置传参存活、cellapp 零参存活),非炸点;修复候选=模板参数名改 cellData(与档内兼容签名建议同形),归独立批,本族只登记不冒充修复。"
+      }
+    },
+    {
+      "id": "writetodb-cellapp-defaults-gap",
+      "kind": "unknown",
+      "input": {
+        "face": "cellapp writeToDB 默认值"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cellapp 面 writeToDB(shouldAutoLoad, dbInterfaceName)(entity_macro.h:18)的参数默认值档内未载;cell-only 实体直接调 writeToDB() 零参的合法性未知(引擎行为面=现状无任何面拒绝,真值未钉)。"
+      },
+      "evidence": [
+        "`writeToDB(shouldAutoLoad, dbInterfaceName)` (`entity_macro.h:18`):"
+      ],
+      "kode": {
+        "status": "unverified",
+        "analysis": {
+          "writeToDBZeroArgCallSites": 1
+        }
+      },
+      "reason": "entity_macro.h C++ 真源本地未检出,cellapp writeToDB 默认值无档内 grounding;hooks.ts 现状零主张(全 hooks 中 self.writeToDB() 零参调用仅现于 onClientDeath 的 example,其 sourceLocation 为 baseapp entity.cpp:1048/proxy.cpp:237——baseapp 面 writeToDB(callback, shouldAutoLoad, dbInterfaceName) 三参全默认(api-baseapp-entity.md §writeToDB),零参合法,现状零误导)。缺口=cell-only 实体直接调 writeToDB() 的合法性;取证前 hooks 不为 cellapp 面生成 writeToDB 默认值主张。"
+    }
+  ]
+}

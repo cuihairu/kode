@@ -29,6 +29,7 @@ import { findReadOnlyWriteFindings } from '../src/backend/readOnlyWriteDiagnosti
 import { computeRpcArgCountFindings } from '../src/backend/rpcArgCountDiagnostics';
 import type { EntityMapping } from '../src/entityMapping';
 import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
+import { KBENGINE_HOOKS, getHookByName } from '../src/hooks';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -332,6 +333,7 @@ interface RpcArgCountEntry extends TruthEntryBase {
 }
 const rpcArgCountFamily = families.find(f => f.family === 'rpc-arg-count')!;
 const rpcArgCountEntries = rpcArgCountFamily.entries as unknown as RpcArgCountEntry[];
+const hookSigFamily = families.find(f => f.family === 'writetodb-hook-signature')!;
 /** 条目 methods 薄切片 → EntityMapping 快照(identity 薄桩;mapping 生产装配不属本族钉域)。 */
 const rpcArgCountMappingOf = (entry: RpcArgCountEntry): EntityMapping =>
   ({
@@ -877,6 +879,47 @@ describe('真值语料 execution 门:RPC 实参数对账面(computeRpcArgCountFi
         actualCount: f.actualCount
       }));
       expect(actual, `rpc arg count drift: ${entry.id}`).toEqual(entry.kode.analysis?.findings ?? []);
+    }
+  });
+});
+
+// ==================== writetodb-hook-signature 族(第二十一增量,2026-11-18) ====================
+// 向导 hooks 签名面探针:onWriteToDB 双面真值(cellapp 零参/baseapp cellData 快照)
+// 下,向导签名兼容性不变量与 documentation 同向性逐条实测;dbContext 参数命名
+// 分歧只在 finding 登记(不进断言,不冒充修复);cellapp writeToDB 默认值缺口
+// 走 unknown(闸=全 hooks 零主张探针)。
+describe('truth-corpus: writetodb-hook-signature 族执行闸(向导 hooks 签名面探针)', () => {
+  it('pinned 正例:onWriteToDB 向导签名双侧兼容(=None 默认下 cellapp 零参存活+baseapp 位置传参存活)', () => {
+    const hook = getHookByName('onWriteToDB');
+    expect(hook).toBeDefined();
+    const entry = hookSigFamily.entries.find(e => e.id === 'writetodb-hook-dual-compat')!;
+    expect(entry.kode.status).toBe('pinned');
+    const analysis = entry.kode.analysis as { signatureContains: string[]; hookExists: boolean };
+    expect(Boolean(hook)).toBe(analysis.hookExists);
+    for (const token of analysis.signatureContains) {
+      expect(hook!.signature, `signature drift: missing ${token}`).toContain(token);
+    }
+  });
+
+  it('pinned 正例:documentation 双侧描述与档真值同向(baseapp 附参/cellapp 无参)', () => {
+    const hook = getHookByName('onWriteToDB')!;
+    const entry = hookSigFamily.entries.find(e => e.id === 'writetodb-hook-doc-face')!;
+    const analysis = entry.kode.analysis as { documentationSaysBaseappArg: boolean; documentationSaysCellappNoArg: boolean };
+    expect(hook.documentation.includes('baseapp 侧调用时附带')).toBe(analysis.documentationSaysBaseappArg);
+    expect(hook.documentation.includes('cellapp 侧无参数')).toBe(analysis.documentationSaysCellappNoArg);
+    // 分歧登记面在档:finding 注记 dbContext 命名误导(兼容性不变,不冒充修复)
+    expect(entry.kode.finding).toContain('dbContext');
+  });
+
+  it('unknown 缺口闸:全 hooks 对 cellapp writeToDB 默认值零主张(零参调用仅现于 baseapp 面钩子)', () => {
+    const entry = hookSigFamily.entries.find(e => e.id === 'writetodb-cellapp-defaults-gap')!;
+    expect(entry.kind).toBe('unknown');
+    expect(entry.kode.status).toBe('unverified');
+    expect(entry.kode.analysis as { writeToDBZeroArgCallSites: number }).toEqual({ writeToDBZeroArgCallSites: 1 });
+    const callers = KBENGINE_HOOKS.filter(h => h.example.includes('self.writeToDB()'));
+    expect(callers.length).toBe(1);
+    for (const hook of callers) {
+      expect(hook.sourceLocation, 'writeToDB() 零参调用只允许出现在 baseapp 面钩子示例').toContain('baseapp');
     }
   });
 });

@@ -209,3 +209,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## rpc-arg-count 族(2026-11-18 第二十族)
 
 依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.1 EntityCall(打包前按 .def 描述校验+def-only 派发+三角色只读属性面不存在时 None)。13 例,执行门=computeRpcArgCountFindings 直钉(同步面;async Rust-first 面 parity 归 Rust 车道 cargo 测试)。条目 methods 薄切片经 loader 构 EntityMapping 快照(identity 薄桩)。臂形:mismatch 三报(cell 1v2/零参声明 1v0/跨行 3v2,含尾随逗号不多计)+沉默十臂(数量一致/星号实参/星号形参/段错配归 sectionMismatch/多来源歧义/字符串逗号词法态/声明未就绪/face 滤除(baseapp 面 self.base AttributeError 引用)/括号不闭合/注释掩码)。**对齐族零分歧**:十三臂与档口径逐项同向;登记面=undeclared-method 条目 kind=unknown(映射快照缺席≠def 未声明,真反例臂需全量映射 fixture)。注释掩码臂与第十五族事件面无掩码假阳性构成对照——同一掩码件(maskPythonNonCode)两消费面一有一无。
+
+## writetodb-hook-signature 族(2026-11-18 第二十一族)
+
+依据:docs/knowledge/api-cellapp-entity.md(HEAD 96c42f70)writeToDB 节(cellapp 零参 entity.cpp:1238→backupCellData :1239/base 侧 cellData 快照/兼容签名建议)。3 例,执行门=向导 hooks 签名面探针(getHookByName/KBENGINE_HOOKS 实测):①pinned 正例=onWriteToDB 向导签名双侧兼容不变量(signature 含 `(self, ` 与 `=None`——cellapp 零参存活+baseapp 位置传参存活);②pinned 正例+finding 登记=documentation 双侧描述与档同向(baseapp 附参/cellapp 无参),**分歧登记面=向导 signature/example 参数名 dbContext 与档内 baseapp 实参语义(cellData 快照,cellDataDict_)不符——误导性命名,兼容性不变非炸点,修复候选=模板参数名改 cellData 归独立批,不冒充修复**;③unknown=cellapp writeToDB(shouldAutoLoad, dbInterfaceName)(entity_macro.h:18)默认值缺口(C++ 真源未检出无档内 grounding),闸=全 hooks 零主张探针(self.writeToDB() 零参调用仅现于 baseapp 面钩子 onClientDeath 示例,现状零误导)。本族为「签名族」首例:向导模板面(静态数据)进语料护栏,与 hooks.test.ts 锚点面(引擎树位移校准)两脸互补。
