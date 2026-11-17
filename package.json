@@ -39,6 +39,8 @@
     "onLanguage:kbengine-def",
     "onLanguage:python",
     "workspaceContains:**/*.def",
+    "onCommand:kbengine.processOwnership.openCell",
+    "onCommand:kbengine.processOwnership.openBase",
     "onCommand:kbengine.refreshExplorer",
     "onCommand:kbengine.consoleLogTail.show",
     "onCommand:kbengine.consoleLogTail.toggle",
