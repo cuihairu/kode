@@ -185,3 +185,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## builtin-prop-role-misuse 族(2026-11-17 第十四族)
 
 依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.5 四数据类+§2.1 身份/控制/可见性三连(档称 classic misread)。7 例:错面臂 4(baseapp 访问 position·isWitnessed/cellapp 访问 databaseID/client 访问 isWitnessed,findings 逐字段钉含 registeredFaces 引证)+沉默臂 3(正确面/isPlayer 方法身份与自定义属性/def 多面歧义不猜)。执行门=findRoleMisuseFindings 四参直钉(生产面表=props 三族同源)。**对齐族**:错用方向与 §2.1 三连分工逐项同向;isPlayer 全面沉默=它是方法身份非 getset,kode 内建属性表不收=同向。登记面:registeredFaces 含 client(position 双面注册)——面表口径=fork getset 表,与 props 族 roster 一致。
+
+## entity-event-pubsub 族(2026-11-18 第十五族)
+
+依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.2 事件面四侧三连(registerEvent/fireEvent/deregisterEvent,per-process pub/sub 非 EntityCall)。8 例,执行门=findEventCalls 直钉(逐标量含 offset+fireEvent 缺席独立臂)。**对齐面**:registerEvent/deregisterEvent 两名识别同向,点号事件名取末段、裸引用不调用静默、裸变量回调诚实沉默(只认点名字段/字符串字面量)。**语料方法学第四次实战命中,双分歧同族**:①kode 识别表五名不含引擎真实发送名 fireEvent=发送侧调用点全静默漏检,发送/订阅镜链永不闭合(fireEvent 缺席臂钉现状,补名归独立批);②超集误纳 addEvent/emitEvent/removeEvent 三旧资产名——引擎 Entity 面无此三方法,运行期 AttributeError,kode 照常标注(收窄须双侧同步,归独立批)。登记边界:findEventCalls 无字符串/注释掩码(maskPythonNonCode 既有掩码件未被事件面消费),docstring 同形文本命中=假阳性面,掩码收编归独立批。

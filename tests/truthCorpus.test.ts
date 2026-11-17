@@ -24,6 +24,7 @@ import { buildRpcLinks } from '../src/backend/flowRpcLinks';
 import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
 import { analyzeFixedDictMutations } from '../src/backend/fixedDictMutationDiagnostics';
 import { findRoleMisuseFindings } from '../src/backend/roleMisuseDiagnostics';
+import { findEventCalls } from '../src/eventApi';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -282,6 +283,16 @@ interface RoleMisuseEntry extends TruthEntryBase {
 }
 const roleMisuseFamily = families.find(f => f.family === 'builtin-prop-role-misuse')!;
 const roleMisuseEntries = roleMisuseFamily.entries as unknown as RoleMisuseEntry[];
+
+// ---- entity-event-pubsub 族形状与鞍具 ----
+interface EventPubsubEntry extends TruthEntryBase {
+  input: { source: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { calls: { api: string; event: string; eventOffset: number; callback?: string; callbackOffset?: number }[] };
+  };
+}
+const eventPubsubFamily = families.find(f => f.family === 'entity-event-pubsub')!;
+const eventPubsubEntries = eventPubsubFamily.entries as unknown as EventPubsubEntry[];
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -694,5 +705,30 @@ describe('真值语料 execution 门:内建属性角色错用面(错面报/正�
       }));
       expect(findings, `role misuse drift: ${entry.id}`).toEqual(entry.kode.analysis?.findings ?? []);
     }
+  });
+});
+
+// ---- ⑮ entity-event-pubsub 执行门 ----
+describe('真值语料 execution 门:事件面(findEventCalls 识别表直钉)', () => {
+  const pinned = eventPubsubEntries.filter(e => e.kode.status === 'pinned');
+
+  it('每条条目的 EventCall 实测等于语料钉值(逐标量含 offset,drift 即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      const calls = findEventCalls(entry.input.source).map(c => ({
+        api: c.api,
+        event: c.event,
+        eventOffset: c.eventOffset,
+        callback: c.callback,
+        callbackOffset: c.callbackOffset
+      }));
+      expect(calls, `event drift: ${entry.id}`).toEqual(entry.kode.analysis?.calls ?? []);
+    }
+  });
+
+  it('fireEvent 缺席臂:引擎真实发送名在 kode 输出中零命中(漏检分歧钉现状)', () => {
+    const missed = eventPubsubEntries.find(e => e.id === 'event-emit-fireEvent-missed');
+    expect(missed?.kode.analysis?.calls).toEqual([]);
+    expect(findEventCalls(missed!.input.source)).toEqual([]);
   });
 });

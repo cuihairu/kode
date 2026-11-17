@@ -1,0 +1,234 @@
+{
+  "family": "entity-event-pubsub",
+  "grounding": {
+    "doc": "docs/knowledge/api-core-concepts.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "event-register-callback-anchor",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onGainSkill(self, skillID):\n        pass\n\n    def setup(self):\n        self.registerEvent('onGainSkill', self.onGainSkill)\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "registerEvent(name, callback) 是 Entity 面同进程 pub/sub 注册:事件按名注册到本实体,回调收本实体方法;发送与接收同进程,非 EntityCall 跨进程机制。"
+      },
+      "evidence": [
+        "`registerEvent` / `fireEvent` / `deregisterEvent` appear verbatim on all four `Entity` pages"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": [
+            {
+              "api": "registerEvent",
+              "event": "onGainSkill",
+              "eventOffset": 113,
+              "callback": "onGainSkill",
+              "callbackOffset": 132
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "event-register-dotted-name-last-segment",
+      "kind": "positive",
+      "input": {
+        "source": "class Guard:\n    def setup(self):\n        self.registerEvent(self.EV_ALERT, self.onAlert)\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "事件名实参任意表达式皆可(运行期求值转字符串键);点号属性名取末段只是 kode 的识别口径,引擎侧 self.EV_ALERT 与 'EV_ALERT' 同键注册,注册与注销两端一致即派发。"
+      },
+      "evidence": [
+        "`registerEvent` / `fireEvent` / `deregisterEvent` appear verbatim on all four `Entity` pages",
+        "this is a per-process pub/sub, **not** a remote-call mechanism (remote calls are EntityCall)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": [
+            {
+              "api": "registerEvent",
+              "event": "EV_ALERT",
+              "eventOffset": 66,
+              "callback": "onAlert",
+              "callbackOffset": 81
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "event-register-deregister-pair",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def setup(self):\n        self.registerEvent('onGainSkill', self.onGainSkill)\n\n    def teardown(self):\n        self.deregisterEvent('onGainSkill')\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "registerEvent/deregisterEvent 同键成对:注销按事件名解除本实体上的订阅;发送侧 fireEvent 同进程同名派发,订阅存在则回调执行,不存在则静默。"
+      },
+      "evidence": [
+        "`registerEvent` / `fireEvent` / `deregisterEvent` appear verbatim on all four `Entity` pages"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": [
+            {
+              "api": "registerEvent",
+              "event": "onGainSkill",
+              "eventOffset": 63,
+              "callback": "onGainSkill",
+              "callbackOffset": 82
+            },
+            {
+              "api": "deregisterEvent",
+              "event": "onGainSkill",
+              "eventOffset": 150
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "event-register-bare-callable-silent",
+      "kind": "positive",
+      "input": {
+        "source": "class Guard:\n    def setup(self):\n        self.registerEvent('EV_X', someLocalVar)\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "回调形参接受任意可调用对象(局部变量/函数/lambda 皆合法),运行期直接调用;kode 对裸变量回调保持沉默=诚实不猜(只认点名字段或字符串字面量),不标注不等于标注错。"
+      },
+      "evidence": [
+        "`registerEvent` / `fireEvent` / `deregisterEvent` appear verbatim on all four `Entity` pages",
+        "this is a per-process pub/sub, **not** a remote-call mechanism (remote calls are EntityCall)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": [
+            {
+              "api": "registerEvent",
+              "event": "EV_X",
+              "eventOffset": 62
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "event-emit-fireEvent-missed",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onGainSkill(self):\n        self.fireEvent('onGainSkill')\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fireEvent 是 fork Entity 面唯一发送侧方法(与 registerEvent/deregisterEvent 同列四侧文档):同进程同名派发,是事件流的另一半;kode 对这一真实调用点零标注。"
+      },
+      "evidence": [
+        "`registerEvent` / `fireEvent` / `deregisterEvent` appear verbatim on all four `Entity` pages"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": []
+        },
+        "finding": "登记分歧:findEventCalls 识别表五名(addEvent/registerEvent/emitEvent/removeEvent/deregisterEvent)不含引擎 Entity 真实发送名 fireEvent——引擎事件发送侧调用点全静默漏检,发送/订阅镜链永不闭合;修复候选=识别表补 fireEvent,归独立批,本条只钉现状不冒充修复。"
+      }
+    },
+    {
+      "id": "event-superset-legacy-names",
+      "kind": "negative",
+      "input": {
+        "source": "class Guard:\n    def legacy(self):\n        self.addEvent('EV_ALERT', self.onAlert)\n        self.emitEvent('EV_ALERT')\n        self.removeEvent('EV_ALERT')\n"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "fork Entity 面无 addEvent/emitEvent/removeEvent 三方法(事件面只有 registerEvent/fireEvent/deregisterEvent),运行期调用即 AttributeError:事件不会派发,订阅不会建立。"
+      },
+      "evidence": [
+        "`registerEvent` / `fireEvent` / `deregisterEvent` appear verbatim on all four `Entity` pages",
+        "this is a per-process pub/sub, **not** a remote-call mechanism (remote calls are EntityCall)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": [
+            {
+              "api": "addEvent",
+              "event": "EV_ALERT",
+              "eventOffset": 58,
+              "callback": "onAlert",
+              "callbackOffset": 74
+            },
+            {
+              "api": "emitEvent",
+              "event": "EV_ALERT",
+              "eventOffset": 107
+            },
+            {
+              "api": "removeEvent",
+              "event": "EV_ALERT",
+              "eventOffset": 144
+            }
+          ]
+        },
+        "finding": "登记分歧:kode 超集误纳三个引擎面不存在的旧资产名,对运行期 AttributeError 的调用点照常标注=面宽于引擎真值;是否收窄归独立批(收窄须双侧同步:识别表与消费面同改),本条只钉现状。"
+      }
+    },
+    {
+      "id": "event-docstring-text-matched",
+      "kind": "negative",
+      "input": {
+        "source": "class Avatar:\n    def helper(self):\n        \"\"\"call emitEvent('EV_X') here\"\"\"\n        pass\n"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "docstring 是模块文档字符串不是可执行代码:引擎既不派发事件也不报错,同形文本与真实调用零关系;kode 把它当调用点标注=假阳性面。"
+      },
+      "evidence": [
+        "this is a per-process pub/sub, **not** a remote-call mechanism (remote calls are EntityCall)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": [
+            {
+              "api": "emitEvent",
+              "event": "EV_X",
+              "eventOffset": 63
+            }
+          ]
+        },
+        "finding": "登记边界:findEventCalls 无字符串/注释掩码(仓库既有 maskPythonNonCode 掩码件未被事件面消费),docstring 同形文本照常命中;掩码收编归独立批(与 RPC 面同向问题),本条只钉现状。"
+      }
+    },
+    {
+      "id": "event-bare-reference-not-a-call",
+      "kind": "positive",
+      "input": {
+        "source": "class Guard:\n    def setup(self):\n        self.forward = self.deregisterEvent\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "方法裸引用(绑定不调用)不发生事件派发,引擎侧与普通属性赋值无异;kode 正则要求调用括号,裸引用静默=同向。"
+      },
+      "evidence": [
+        "`registerEvent` / `fireEvent` / `deregisterEvent` appear verbatim on all four `Entity` pages"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "calls": []
+        }
+      }
+    }
+  ]
+}
