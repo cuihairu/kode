@@ -1,0 +1,311 @@
+{
+  "family": "entity-builtin-props-client",
+  "grounding": {
+    "doc": "docs/knowledge/api-client.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "client-prop-id",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "id"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册只读 int getset(entity_macro.h:58);getter 宏返回 id_"
+      },
+      "evidence": [
+        "entity ID; the getter macro returns `id_`",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-spaceID",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "spaceID"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册只读 int getset(entity_macro.h:59,impl :739);实体所在 space 的 ID"
+      },
+      "evidence": [
+        "ID of the space the entity is in",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-isDestroyed",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "isDestroyed"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册只读 bool getset(entity_macro.h:60);销毁标记(CHM 材料未列)"
+      },
+      "evidence": [
+        "destruction flag (not in the CHM material)",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-className",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "className"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册只读 str getset(entity_macro.h:61);def 模块的实体类型名"
+      },
+      "evidence": [
+        "entity type name from its def module",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-base",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "base"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册只读 EntityCall getset(entity.cpp:41-42);base/cell 端点,服务端授予前 None"
+      },
+      "evidence": [
+        "endpoints for base/cell parts; `None` until the server grants them",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-cell",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "cell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "同上 getset 对(entity.cpp:41-42,impl entity.cpp:110-131);cell 端点"
+      },
+      "evidence": [
+        "endpoints for base/cell parts; `None` until the server grants them",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-clientapp",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "clientapp"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册只读 getset(entity.cpp:43);所属 client app 对象"
+      },
+      "evidence": [
+        "the owning client app object",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-position",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "position"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册 get/set Vector3(entity.cpp:44);世界坐标,服务端同步下行,客户端侧写经 updatePlayerToServer 上行"
+      },
+      "evidence": [
+        "world position; synced from server, client-side writes feed `updatePlayerToServer`",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-direction",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "direction"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册 get/set Vector3(entity.cpp:45);(roll,pitch,yaw) 弧度,同步纪律同 position"
+      },
+      "evidence": [
+        "(roll, pitch, yaw) in radians; same sync discipline as `position`",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-prop-velocity",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "prop": "velocity"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 注册 get/set float(entity.cpp:46);移动速率,moveToPoint 消费(CHM 材料未列)"
+      },
+      "evidence": [
+        "movement speed used by `moveToPoint` (not in the CHM material)",
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`"
+      ],
+      "kode": {
+        "analysis": {
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "client-roster-complete",
+      "kind": "positive",
+      "input": {
+        "face": "client",
+        "roster": true
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "fork client Entity 脚本可见 getset 全集=§4.3 表 10 项(id/spaceID/isDestroyed/className/base/cell/clientapp/position/direction/velocity);声明序=entity_macro.h:56-62 宏四项+entity.cpp:40-46 六项"
+      },
+      "evidence": [
+        "Declared in `CLIENT_ENTITY_GETSET_DECLARE_BEGIN`",
+        "(`entity_macro.h:56-62`) and `entity.cpp:40-46`"
+      ],
+      "kode": {
+        "analysis": {
+          "names": [
+            "id",
+            "spaceID",
+            "isDestroyed",
+            "className",
+            "base",
+            "cell",
+            "clientapp",
+            "position",
+            "direction",
+            "velocity"
+          ]
+        },
+        "status": "pinned"
+      },
+      "finding": "对齐族零分歧(成员+R/W):kode client 面 10 项与 §4.3 表逐项同。序观察=文档表呈现序(标量先行/端点后置)与 kode 序(声明序:宏四项 entity_macro.h:58-61→entity.cpp:41-46)不同,roster 按 kode 实测声明序钉;成员无出入,不构成分歧"
+    },
+    {
+      "id": "client-prop-isonground-absent",
+      "kind": "negative",
+      "input": {
+        "face": "client",
+        "prop": "isOnGround",
+        "absent": true
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "fork client Entity 无 isOnGround 脚本 getset:C++ 成员 isOnGround_ 存在且由网络流更新(entity.cpp:65/clientobjectbase.cpp:868)但无脚本 getter/setter 声明——fork 客户端脚本读它 AttributeError;CHM 材料列为读写 bool(客户端受控实体推服务端)=fork/CHM 分歧,插件层归属待取证(取证路径=diff 官方 SDK 插件实体类)"
+      },
+      "evidence": [
+        "but **no script getter/setter is declared**",
+        "as a script-visible attribute it is plugin-layer"
+      ],
+      "kode": {
+        "analysis": {
+          "absent": true
+        },
+        "status": "pinned"
+      },
+      "finding": "缺席登记:kode client 面不含 isOnGround=与 fork 口径同向;CHM 材料若为真(官方 SDK 实际暴露)则此缺席=补全/悬停漏建议方向——文档判「无脚本 getset 声明,脚本可见性=插件层」并标待取证,取证后若需收编=pyi/面扩充独立批,本语料先钉 fork 真值"
+    },
+    {
+      "id": "client-prop-inworld-absent",
+      "kind": "negative",
+      "input": {
+        "face": "client",
+        "prop": "inWorld",
+        "absent": true
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "fork client Entity 无 inWorld 脚本 getset:enterworld_ 为 C++ 内部标志(entity.cpp:61)无脚本 getter 声明——fork 客户端脚本读它 AttributeError;CHM 材料列为只读 bool=同名分歧,插件层归属待取证(同上取证路径)"
+      },
+      "evidence": [
+        "`enterworld_` is a C++-internal flag (`entity.cpp:61`); no script getter declared",
+        "diff the official SDK plugin entity class"
+      ],
+      "kode": {
+        "analysis": {
+          "absent": true
+        },
+        "status": "pinned"
+      },
+      "finding": "缺席登记:kode client 面不含 inWorld=与 fork 口径同向;CHM 材料若为真则此缺席=漏建议方向,同 isOnGround 待取证后独立批处置"
+    }
+  ]
+}

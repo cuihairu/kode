@@ -131,15 +131,17 @@ const roleFaceEntries = roleFaceFamily.entries as unknown as RoleFaceEntry[];
 
 // ---- entity-builtin-props-cellapp 族形状与鞍具 ----
 interface BuiltinPropEntry extends TruthEntryBase {
-  input: { face: 'cellapp' | 'baseapp'; prop?: string; roster?: boolean };
+  input: { face: 'cellapp' | 'baseapp' | 'client'; prop?: string; roster?: boolean; absent?: boolean };
   kode: TruthEntryBase['kode'] & {
-    analysis?: { name?: string; readonly?: boolean; names?: string[] };
+    analysis?: { name?: string; readonly?: boolean; names?: string[]; absent?: boolean };
   };
 }
 const builtinPropsFamily = families.find(f => f.family === 'entity-builtin-props-cellapp')!;
 const builtinPropsEntries = builtinPropsFamily.entries as unknown as BuiltinPropEntry[];
 const builtinPropsBaseappFamily = families.find(f => f.family === 'entity-builtin-props-baseapp')!;
 const builtinPropsBaseappEntries = builtinPropsBaseappFamily.entries as unknown as BuiltinPropEntry[];
+const builtinPropsClientFamily = families.find(f => f.family === 'entity-builtin-props-client')!;
+const builtinPropsClientEntries = builtinPropsClientFamily.entries as unknown as BuiltinPropEntry[];
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -282,11 +284,11 @@ describe('真值语料 execution 门:cell-data 角色闸接管矩阵(KR-AUD-74 �
 });
 
 // ---- ⑤ entity-builtin-props-cellapp/baseapp 执行门(逐项对账+roster 完备性) ----
-describe('真值语料 execution 门:内建属性面逐项对账(cellapp §6 / baseapp §1 注册表)', () => {
-  const all = [...builtinPropsEntries, ...builtinPropsBaseappEntries];
+describe('真值语料 execution 门:内建属性面逐项对账(cellapp §6 / baseapp §1 注册表 / client §4.3)', () => {
+  const all = [...builtinPropsEntries, ...builtinPropsBaseappEntries, ...builtinPropsClientEntries];
 
   it('每条 pinned 单属性条目的名字+读写性实测等于语料钉值(drift 即红)', () => {
-    const single = all.filter(e => e.kode.status === 'pinned' && e.input.prop);
+    const single = all.filter(e => e.kode.status === 'pinned' && e.input.prop && !e.input.absent);
     expect(single.length).toBeGreaterThan(0);
     for (const entry of single) {
       const table = getEntityBuiltinPropertiesForFace(entry.input.face);
@@ -296,8 +298,17 @@ describe('真值语料 execution 门:内建属性面逐项对账(cellapp §6 / b
     }
   });
 
+  it('缺席条目:fork 未注册脚本 getset 的属性不得出现在面上(混入即红)', () => {
+    const absent = all.filter(e => e.kode.status === 'pinned' && e.input.absent && e.input.prop);
+    expect(absent.length).toBeGreaterThan(0);
+    for (const entry of absent) {
+      const table = getEntityBuiltinPropertiesForFace(entry.input.face);
+      expect(table.find(p => p.name === entry.input.prop), `应缺席: ${entry.id} (${entry.input.prop})`).toBeUndefined();
+    }
+  });
+
   it('roster 完备性条目:面名单逐项等于语料钉值(多出/缺席/改序即红)', () => {
-    for (const entries of [builtinPropsEntries, builtinPropsBaseappEntries]) {
+    for (const entries of [builtinPropsEntries, builtinPropsBaseappEntries, builtinPropsClientEntries]) {
       const rosterEntry = entries.find(e => e.input.roster);
       expect(rosterEntry).toBeDefined();
       const table = getEntityBuiltinPropertiesForFace(rosterEntry!.input.face);

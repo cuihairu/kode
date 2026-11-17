@@ -116,3 +116,15 @@ baseapp/client 两面各有 grounding 档(api-baseapp-entity.md/api-client.md),
 cellapp 族共用(face 分发)。**对齐族零分歧**:kode baseapp 面 9 项与注册表
 行逐项同;cellData 缺席=正确(实例属性非 getset,归 CELL 家族)。client 面
 (api-client.md)同法另建。
+
+## entity-builtin-props-client 族(2026-11-17 第六族)
+
+依据:docs/knowledge/api-client.md(fork HEAD 6d12b8f)§4.3 Entity attributes
+(getset 表)。10 属性条目+roster 完备性条目+**缺席条目 2 例**(新臂:fork 未
+注册脚本 getset 的属性混入面即红),执行闸与其余两族共用(face 分发)。
+**对齐族零分歧**(成员+R/W):kode client 面 10 项与 §4.3 表逐项同。序观察=
+文档表呈现序与 kode 声明序(entity_macro.h:58-61→entity.cpp:41-46)不同,
+roster 按 kode 实测声明序钉,成员无出入不构成分歧。缺席对=isOnGround/inWorld
+(CHM 材料列之,fork 无脚本 getset——C++ 成员存在但只内部用):kode 采 fork
+口径缺席=同向;fork/CHM 分歧登记,插件层归属待取证(取证路径=diff 官方 SDK
+插件实体类),取证后若收编=pyi/面扩充独立批。
