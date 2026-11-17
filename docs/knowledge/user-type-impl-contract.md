@@ -25,6 +25,8 @@ if(strType.size() > 0 && !loadImplModule(strType))
 ```
 
 其余组件(dbmgr/loginapp/logger/interfaces/bots 等)不装载 impl 模块,`strType` 只进 `EntityDef::md5()` 参与校验和。
+
+kode 收集半对账(2026-11-18 fixture 直调取证):`collectUserTypeContractStatuses(workspaceRoot)` 无组件参数=跨组件统一收集(静态注册表一份,服务全部进程角色);引擎组件闸是运行期进程装载语义,静态收集面不做组件过滤=对齐非分歧;非三组件组件下的诊断范围语义=消费侧未建模,诚实登记。
 - `datatype.cpp:2328-2335`:`strutil::kbe_split<char>(moduleName, '.', res_)` 后要求**恰好两段**,否则报 `FixedDictType::loadImplModule: {} impl error! like:[moduleName.ClassName|moduleName.xxInstance]` 装载失败(`|` 两侧是「类 / 实例」两种合法形态的记法,不是分隔符)。
 - `datatype.cpp:2343-2354`:`PyImport_ImportModule(res_[0])` 取模块 → `PyObject_GetAttrString(implModule, res_[1])` 取符号 → `setImplModule(pyImplObj)`。
 - `.def`/脚本上下文直接传实现对象的另一路:`datatype.cpp:2203-2219` `PyEntityDef::FixedDictType::initialize()` 同样走 `setImplModule(implementedBy)`,失败报 `FIXED_DICT({}) setImplModule error!`。

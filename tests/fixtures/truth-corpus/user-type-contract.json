@@ -8,7 +8,9 @@
     {
       "id": "usertype-contract-roster",
       "kind": "positive",
-      "input": { "face": "contract roster" },
+      "input": {
+        "face": "contract roster"
+      },
       "engine": {
         "load": "accept",
         "truth": "FIXED_DICT implementedBy 实现须同时具备 createObjFromDict/getDictFromObj/isSameType 三属性;setImplModule 逐个 PyObject_GetAttrString 取(顺序即声明序),全部取到才装载成功。"
@@ -22,7 +24,11 @@
       "kode": {
         "status": "pinned",
         "analysis": {
-          "methods": ["createObjFromDict", "getDictFromObj", "isSameType"]
+          "methods": [
+            "createObjFromDict",
+            "getDictFromObj",
+            "isSameType"
+          ]
         }
       }
     },
@@ -49,7 +55,9 @@
         "status": "pinned",
         "analysis": {
           "missingCount": 1,
-          "missingMethods": ["isSameType"],
+          "missingMethods": [
+            "isSameType"
+          ],
           "consequence": "类型判定失效",
           "byImplFileLine": 3
         }
@@ -79,7 +87,10 @@
         "status": "pinned",
         "analysis": {
           "missingCount": 2,
-          "missingMethods": ["createObjFromDict", "getDictFromObj"]
+          "missingMethods": [
+            "createObjFromDict",
+            "getDictFromObj"
+          ]
         }
       }
     },
@@ -106,7 +117,9 @@
       ],
       "kode": {
         "status": "pinned",
-        "analysis": { "missingCount": 0 }
+        "analysis": {
+          "missingCount": 0
+        }
       }
     },
     {
@@ -127,7 +140,9 @@
       ],
       "kode": {
         "status": "pinned",
-        "analysis": { "implFileAbsentMissingItems": 0 }
+        "analysis": {
+          "implFileAbsentMissingItems": 0
+        }
       }
     },
     {
@@ -160,8 +175,12 @@
     },
     {
       "id": "usertype-component-scope",
-      "kind": "unknown",
-      "input": { "face": "契约装载的组件范围在 kode 收集半的映射" },
+      "kind": "positive",
+      "input": {
+        "typesXml": "<root>\n  <TAVATAR>\n    <implementedBy>item.doll</implementedBy>\n  </TAVATAR>\n</root>",
+        "implFile": "scripts/user_type/item/doll.py",
+        "implFileContent": "class doll:\n    def createObjFromDict(self, d):\n        return doll()\n\n    def getDictFromObj(self, o):\n        return {}\n\n    def isSameType(self, t):\n        return False"
+      },
       "engine": {
         "load": "accept",
         "truth": "契约装载仅 CELLAPP/BASEAPP/CLIENT 三组件执行(loadImplModule 在此闸内);其余组件(dbmgr/loginapp/logger/interfaces/bots 等)不装载 impl 模块,strType 只进 EntityDef::md5()。"
@@ -172,12 +191,25 @@
         "其余组件(dbmgr/loginapp/logger/interfaces/bots 等)不装载 impl 模块,`strType` 只进 `EntityDef::md5()` 参与校验和。"
       ],
       "kode": {
-        "status": "unverified",
+        "status": "pinned",
         "analysis": {
-          "collectionFace": "userTypeContractSource(注册表半,definitionWorkspace 宿主绑定)"
-        }
-      },
-      "reason": "kode 状态收集半(注册表半留 TS,B1 批 4 口径)绑定 definitionWorkspace 宿主,纯函数探针不可达;引擎侧组件闸已钉(datatype.cpp:2174-2179),kode 收集面是否按组件域过滤/是否对非三组件文件出诊断未取证。取证前提=fixture workspace 装 types.xml 走收集半;缺口=非 cellapp/baseapp/client 组件下 kode 诊断面的范围语义。"
+          "collectedTypes": [
+            {
+              "name": "TAVATAR",
+              "implementedBy": "item.doll",
+              "implFileBasename": "doll.py",
+              "implLine": 1,
+              "methods": {
+                "createObjFromDict": true,
+                "getDictFromObj": true,
+                "isSameType": true
+              }
+            }
+          ],
+          "componentFilter": "none"
+        },
+        "finding": "组件域对账(解封取证):fixture workspace 直调收集半实测——collectUserTypeContractStatuses 对 tmp 工程完整工作(types.xml TAVATAR→implementedBy item.doll→implFile 解析 scripts/user_type/item/doll.py→implLine=1(doll 符号行)→三方法 def 形态全 true)。kode 收集面无组件参数=跨组件统一收集(静态注册表一份,服务全部进程角色);引擎组件闸(仅 CELLAPP/BASEAPP/CLIENT 执行 loadImplModule)是运行期进程装载语义,静态收集面不做组件过滤=对齐非分歧;非三组件组件下的诊断范围语义=消费侧未建模,诚实登记。初版 unknown 判定「fixture workspace 取证前提」经 fixture 直调先例(definitionWorkspaceBranches.test.ts 模式)撤销。"
+      }
     }
   ]
 }

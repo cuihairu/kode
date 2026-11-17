@@ -40,6 +40,7 @@ import {
   implFileHasContractMethod,
   type UserTypeContractStatus
 } from '../src/backend/userTypeContract';
+import { collectUserTypeContractStatuses } from '../src/backend/userTypeContractSource';
 import { linearizeC3 } from '../src/backend/pythonClassIndex';
 import { parsePythonFile } from '../src/backend/pythonParser';
 import type { PythonClassDef } from '../src/backend/pythonParser';
@@ -1038,14 +1039,37 @@ describe('truth-corpus: user-type-contract 族执行闸(user_type 三契约面�
     expect(entry.kode.finding).toContain('赋值');
   });
 
-  it('组件范围闸 unknown:引擎侧已钉(三组件装载),kode 收集半未取证诚实缺口', () => {
+  it('组件范围臂(解封取证):fixture workspace 直调收集半,跨组件统一收集=对齐非分歧', async () => {
     const entry = utContractEntries.find(e => e.id === 'usertype-component-scope')!;
-    expect(entry.kind).toBe('unknown');
-    expect(entry.kode.status).toBe('unverified');
-    expect(entry.kode.analysis!.collectionFace).toBe(
-      'userTypeContractSource(注册表半,definitionWorkspace 宿主绑定)'
-    );
-    expect((entry.reason ?? '').length).toBeGreaterThan(0);
+    expect(entry.kind).toBe('positive');
+    expect(entry.kode.status).toBe('pinned');
+    // fixture workspace 直调(definitionWorkspaceBranches.test.ts 先例模式):
+    // mkdtemp 摆 types.xml+impl 文件 → collectUserTypeContractStatuses 实测。
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { join, dirname, basename } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const root = mkdtempSync(join(tmpdir(), 'kode-utscope-corpus-'));
+    const write = (rel: string, content: string) => {
+      const target = join(root, ...rel.split('/'));
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content, 'utf-8');
+    };
+    try {
+      write('scripts/entity_defs/types.xml', entry.input.typesXml);
+      write(entry.input.implFile, entry.input.implFileContent);
+      const statuses = collectUserTypeContractStatuses(root);
+      expect(statuses).toHaveLength(entry.kode.analysis!.collectedTypes.length);
+      const expected = entry.kode.analysis!.collectedTypes[0];
+      const got = statuses.find(s => s.name === expected.name)!;
+      expect(got.implementedBy).toBe(expected.implementedBy);
+      expect(basename(got.implFile ?? '')).toBe(expected.implFileBasename);
+      expect(got.implLine).toBe(expected.implLine);
+      expect(got.methods).toEqual(expected.methods);
+      expect(entry.kode.analysis!.componentFilter).toBe('none');
+      expect(entry.kode.finding).toContain('对齐非分歧');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
