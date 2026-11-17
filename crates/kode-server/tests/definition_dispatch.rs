@@ -141,18 +141,13 @@ fn definition_on_open_document_returns_location() {
         ),
     );
     let result = response_of(&out);
-    // 属性/方法声明词按 TS F12 落**注册面**:本语料未打开 entities.xml(无
-    // defsRoot 探测依据)→ 回落到 def 首行(TS findRegistryFallbackLocation
-    // 同一兜底),不再是声明名字 span。
-    assert_eq!(
-        result["uri"],
-        json!("/workspace/demo/scripts/entity_defs/Avatar.def")
-    );
-    assert_eq!(result["range"]["start"]["line"], json!(0));
+    // 2026-11-17 属性声明词回归收回:未打开 entities.xml(无注册依据)→
+    // null 回落 TS 全链(脚本实现层先行,注册兜底是 TS 末档),不再落 def 首行。
+    assert_eq!(result, &serde_json::Value::Null);
 }
 
 #[test]
-fn definition_property_word_lands_on_entities_registration_line() {
+fn definition_property_word_null_even_with_registry() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
     open_avatar(&mut state);
@@ -184,8 +179,9 @@ fn definition_property_word_lands_on_entities_registration_line() {
         ),
     );
     let result = response_of(&out);
-    assert_eq!(result["uri"], json!("/workspace/demo/scripts/entities.xml"));
-    assert_eq!(result["range"]["start"]["line"], json!(1));
+    // 注册表在库且含 Avatar 也 null:注册面不再是属性声明词落点(短路
+    // TS 脚本实现层=def 无法跳 py 实现,2026-11-17 用户报回归后收回)。
+    assert_eq!(result, &serde_json::Value::Null);
 }
 
 #[test]

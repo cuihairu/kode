@@ -39,20 +39,19 @@ fn engine_with(defs: &[(&str, &str)]) -> HoverEngine {
 }
 
 #[test]
-fn def_property_word_lands_on_entities_registration_line() {
+fn def_property_word_is_null_and_falls_to_ts_script_layer() {
+    // 2026-11-17 用户报回归(def 无法跳 py 实现)收回:属性声明词若落注册行
+    // 会短路 TS F12 属性链的脚本实现层(批110 用户令:同名类行→__init__→
+    // 首类行→脚本首行;接口/父链候选跨名可达)。与三方法段同口径:Rust 返
+    // null,服务轨道回落 TS 全链(注册回落是 TS 末档,兜底不丢)。
     let engine = engine_with(&[
         ("/w/scripts/entities.xml", ENTITIES_XML),
         ("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF),
     ]);
     let key = key_of("/w/scripts/entity_defs/Avatar.def");
-    // hp 在第 4 行(1 起),列 3(0 起 UTF-16):按 TS F12 的注册回落,
-    // 落 `<Avatar/>` 的注册行(0 基 1)而非本文件声明名字 span。
-    let location = engine
-        .definition(&key, AVATAR_DEF, 3, 3)
-        .expect("hp 声明应有落点");
-    assert_eq!(location.uri, "/w/scripts/entities.xml");
-    assert_eq!(location.range.start.line, 1);
-    assert_eq!(location.range.start.character, 0);
+    // hp 在第 4 行(1 起),列 3(0 起 UTF-16);注册表在库且含 Avatar,
+    // 即便如此仍 null——注册面不再是 Rust 属性落点。
+    assert!(engine.definition(&key, AVATAR_DEF, 3, 3).is_none());
 }
 
 #[test]
@@ -70,14 +69,12 @@ fn def_method_word_is_null_and_falls_to_ts_script_layer() {
 }
 
 #[test]
-fn def_declaration_word_without_registry_falls_back_to_def_head() {
+fn def_property_word_without_registry_is_null_too() {
+    // 无注册表同 null:属性声明词一律回落 TS 全链,不做 def 首行兜底
+    // (TS 链末档 findRegistryFallbackLocation 自会兜,Rust 不代落)。
     let engine = engine_with(&[("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF)]);
     let key = key_of("/w/scripts/entity_defs/Avatar.def");
-    let location = engine
-        .definition(&key, AVATAR_DEF, 3, 3)
-        .expect("无注册表时仍有兜底落点");
-    assert_eq!(location.uri, "/w/scripts/entity_defs/Avatar.def");
-    assert_eq!(location.range.start.line, 0);
+    assert!(engine.definition(&key, AVATAR_DEF, 3, 3).is_none());
 }
 
 #[test]
@@ -339,18 +336,15 @@ fn definition_beyond_line_end_and_document_is_null() {
 }
 
 #[test]
-fn registry_landing_falls_back_when_entity_unregistered() {
-    // entities.xml 在库但缺本实体注册:回落本文件首行。
+fn def_property_word_with_unrelated_registry_is_null() {
+    // entities.xml 在库但缺本实体注册:同样 null 回落 TS(注册兜底是 TS
+    // 末档,Rust 不再代落)。
     let engine = engine_with(&[
         ("/w/scripts/entities.xml", "<root>\n\t<Other/>\n</root>\n"),
         ("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF),
     ]);
     let key = key_of("/w/scripts/entity_defs/Avatar.def");
-    let location = engine
-        .definition(&key, AVATAR_DEF, 3, 3)
-        .expect("无注册项仍有兜底");
-    assert_eq!(location.uri, "/w/scripts/entity_defs/Avatar.def");
-    assert_eq!(location.range.start.line, 0);
+    assert!(engine.definition(&key, AVATAR_DEF, 3, 3).is_none());
 }
 
 // ---------------------------------------------------------------------------

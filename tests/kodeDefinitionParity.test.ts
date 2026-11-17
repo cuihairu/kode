@@ -401,29 +401,9 @@ const walkElementNodes = (node: DefElementNode, visit: (n: DefElementNode) => vo
   }
 };
 
-// Rust `registry_landing`:Properties 声明词 → entities.xml 声明行
-// (先 `<scripts>/entities.xml`,再 `<defs>/entities.xml`),缺注册 → def 首行。
-// 与 TS F12 的注册回落层同口径;TS 上的 Python 脚本层/DB schema 层是 Rust
-// 无此能力的面,按边界跳过直接落下一层。
-const registryLanding = (engine: Engine, filePath: string): LocationFace => {
-  const entity = stemOf(filePath);
-  const defsRoot = defsRootFor(engine, filePath);
-  if (defsRoot) {
-    const candidates: string[] = [];
-    const scriptsRoot = dirOf(defsRoot);
-    if (scriptsRoot) {
-      candidates.push(`${scriptsRoot}/entities.xml`);
-    }
-    candidates.push(`${defsRoot}/entities.xml`);
-    for (const candidate of candidates) {
-      const entry = engine.entitiesByPath.get(candidate)?.find(e => e.name === entity);
-      if (entry) {
-        return lineStartLocation(candidate, entry.line1);
-      }
-    }
-  }
-  return headLocation(filePath);
-};
+// 2026-11-17 属性声明词回归收回:Properties 与三方法段声明词一律 null
+// (TS F12 属性链脚本实现层先行,注册回落是 TS 末档;Rust 落注册会短路
+// 脚本层=def 无法跳 py 实现)。原 registry_landing 镜像随之删除。
 
 const sectionsOf = (root: DefElementNode): DefElementNode[] => getDirectChildElements(root);
 
@@ -463,18 +443,14 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
           return landed;
         }
       }
-      // ③ 声明词:Properties 声明词按 TS F12 落注册(entities.xml 行)而非
-      // 声明 span;三方法段声明词 → null(2026-11-08 demo 验收:TS 下一层取
-      // py 实现落点,Rust 不虚构注册落点挡路);组件段落 TS provider 链末尾
-      // 返 null(languageProviders.ts:2344)。命中声明词即终止(Arg/Interfaces
-      // 臂不再试,与 Rust match 早退同口径)。
+      // ③ 声明词:Properties 与三方法段声明词一律 null(2026-11-08 demo 验收
+      // +2026-11-17 属性回归收回:TS 下一层取 py 实现落点,Rust 不虚构注册
+      // 落点挡路);组件段落 TS provider 链末尾返 null(languageProviders.ts:
+      // 2344)。命中声明词即终止(Arg/Interfaces 臂不再试,与 Rust 早退同口径)。
       for (const section of sectionsOf(root)) {
         for (const symbol of sectionSymbols(section)) {
           const line = line1Of(file.text, symbol.tagStart + 1);
           if (line === line1 && symbol.name === word) {
-            if (section.name === 'Properties') {
-              return registryLanding(engine, file.file);
-            }
             return null;
           }
         }

@@ -92,6 +92,25 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
     expect(location).toBeNull();
   }, 20_000);
 
+  it('rust 轨道:def Properties 段声明词返 null(2026-11-17 回归收回:回落 TS 脚本层)', async () => {
+    // 复用 gate(真实进程已拉起)。属性声明词曾落 entities.xml 注册行,短路
+    // TS F12 属性链的脚本实现层=def 无法跳 py 实现;与三方法段同口径返 null,
+    // 脚本落点/注册兜底全链归 TS。
+    const text = readFileSync(DEF, 'utf8');
+    const document = {
+      uri: { fsPath: DEF },
+      languageId: 'kbengine-def',
+      version: 1,
+      getText: () => text
+    };
+    // 第 19 行(0 基 18)`\t\t<hp>`:词 hp 区间 2-4,取中 3。
+    const location = await serveDefinitionFromRust(
+      document as never,
+      { line: 18, character: 3 } as never
+    );
+    expect(location).toBeNull();
+  }, 20_000);
+
   it('rust 轨道:def Properties 开标签补全出已声明属性', async () => {
     // 复用 gate(真实进程已拉起);独立 uri 防同版本镜像 no-op 吃掉合成文本。
     const syntheticUri = '/tmp/kode-e2e-synthetic-properties.def';

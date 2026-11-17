@@ -5,23 +5,26 @@
 //! ARCH-012 红线同 hover)。四类文档的落点口径:
 //! - `.def`:按 TS F12 provider 链的**落点语义**逐层同构 —
 //!   ①`<DetailLevel>` 取值词 → 本文件 `<DetailLevels>` 档位声明行;
-//!   ②`Properties` 段声明词 → 注册回落(entities.xml 声明行,缺则本文件首行);
-//!   ③三方法段声明词 → null(2026-11-08 demo 验收面:TS 下一层 = py 实现/
-//!   def 调用链,Rust 不虚构落点,服务轨道回落 TS);④`<Parent>` 取值词 →
-//!   语料内父/接口/组件 def 文件首行(缺失即 null,绝不虚构);⑤`<Type>`/
-//!   `<of>` 取值词 → 语料内 types.xml 声明行(内建类型无定义文件,null);
-//!   ⑥`Components` 段声明词 → null(TS provider 链末尾同 null,不做单侧增强)。
-//!   ② 的 Python 脚本层与数据库 schema 层是 Rust 无此能力的面(.py 面 /
-//!   DB 快照),按能力边界跳过并直接落 TS 的下一层,不虚构落点。
+//!   ②`Properties` 段声明词 → null(2026-11-17 回归收回,与三方法段同口径:
+//!   TS F12 属性链脚本实现层先行,注册回落是 TS 末档;Rust 落注册会短路
+//!   脚本层=def 无法跳 py 实现);③三方法段声明词 → null(2026-11-08 demo
+//!   验收面:TS 下一层 = py 实现/def 调用链,Rust 不虚构落点,服务轨道回落
+//!   TS);④`<Parent>` 取值词 → 语料内父/接口/组件 def 文件首行(缺失即
+//!   null,绝不虚构);⑤`<Type>`/`<of>` 取值词 → 语料内 types.xml 声明行
+//!   (内建类型无定义文件,null);⑥`Components` 段声明词 → null(TS provider
+//!   链末尾同 null,不做单侧增强)。属性声明词的 Python 脚本层与数据库
+//!   schema 层是 Rust 无此能力的面(.py 面 / DB 快照),null 回落 TS 全链,
+//!   不虚构落点。
 //! - `entities.xml`:注册项词 → 语料内同名 def 文件首行(TS
 //!   findEntityDefinitionFile 同口径);
 //! - `types.xml`/`alias.xml`:声明词 → 本文件声明行(TS
 //!   findCustomTypeDefinition 同口径,落点=行首)。
 //!
 //! 剩余差异如实划归(Phase2 首片边界,docs/kode2/phase2-slice-a.md §面定义):
-//! TS F12 全脸中的 Python 脚本落点(402 声明词探针实测 401 命中 / 1 条分歧 =
-//! 属性链真实存在的 `scripts/base/Avatar.py` 脚本层,见 §1 表)、
-//! 数据库 schema 虚拟文档、kbe 桩;Rust 语料面一律 null/直接落下一层。
+//! TS F12 全脸中的 Python 脚本落点、数据库 schema 虚拟文档、kbe 桩;Rust
+//! 语料面一律 null 回落 TS。Phase2 首片曾以「402 声明词探针 401 命中 / 1 条
+//! 分歧=属性链脚本层」划归差异,2026-11-17 用户报 def 无法跳 py 实现回归后
+//! 收回:属性声明词 null 回落 TS 全链,脚本层分歧消除(golden 同步重生成)。
 //!
 //! RUST-137 批 1(2026-11-16)语料面补全(TS findDefinitionReferenceInDef
 //! 的纯语料半边全下沉,零 IO 红线保持):
@@ -44,18 +47,18 @@
 //! 产品面事实:TS 只注册 DefinitionProvider(config/def/def+语料/python 四路,
 //! activate/languageServices.ts),无独立 Declaration/TypeDefinition provider;
 //! 账本 LSP-004 三方法名按产品现实收敛为 definition 单方法全链。
-//! 方法段/属性声明词的 py 落点仍 null(TS 先试 py 实现,注册回落见既有臂),
-//! golden 探针带列(Type/of、Arg 取值词词首列;Interfaces 标签 `<` 列),
+//! 方法段/属性段声明词一律 null(TS 全链:脚本实现层先行,注册回落是
+//! TS 末档),golden 探针带列(Type/of、Arg 取值词词首列;Interfaces 标签 `<` 列),
 //! 位置判定型臂在 golden 语境真正触发。
 
-use kode_index::symbol::{def_entity_name, extract_records, SymbolKind};
+use kode_index::symbol::extract_records;
 use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
 use kode_parser::diag::LineMap;
 use kode_parser::model::{parse_alias, parse_def, parse_entities, parse_types};
 use kode_parser::xml;
 use kode_vfs::store::DocumentKey;
 
-use crate::hover::{category_of, parent_dir, word_at, Category, HoverEngine};
+use crate::hover::{category_of, word_at, Category, HoverEngine};
 
 // ---------------------------------------------------------------------------
 // 响应模型(LSP Location 同形;serde camelCase 与 TS 对拍面同键)
@@ -209,19 +212,15 @@ impl HoverEngine {
                         return Some(pos);
                     }
                 }
-                // ④段内声明词:Properties 声明词按 TS F12 落**注册**而非声明
-                // span(声明 span 见 hover 面);三方法段声明词 → null(能力
-                // 边界:py 脚本层/def 调用链是 TS 面,Rust 不虚构落点,服务
-                // 轨道回落 TS 取 py 实现落点——demo def-to-cell/base/client
-                // 验收面);组件段落 TS provider 链末尾返 null,不产出落点
-                // (不单侧增强)。
+                // ④段内声明词:Properties 与三方法段声明词一律 null(能力边界:
+                // py 脚本层/def 调用链是 TS 面,Rust 不虚构落点,服务轨道回落
+                // TS 取 py 实现落点——demo def-to-cell/base/client 验收面;
+                // 2026-11-17 回归收回:属性曾落注册行,短路 TS F12 属性链的
+                // 脚本实现层=def 无法跳 py 实现);组件段落 TS provider 链末尾
+                // 返 null,不产出落点(不单侧增强)。
                 let (records, _) = extract_records(key, &ParsedUnit::Def(parse_def(text)));
-                if let Some(record) = records.iter().find(|r| r.name == word && r.line == line1) {
-                    return match record.kind {
-                        SymbolKind::Property => Some(self.registry_landing(path)),
-                        // 实体本体/组件/类型/别名在 .def 无 F12 落点(TS 同)。
-                        _ => None,
-                    };
+                if records.iter().any(|r| r.name == word && r.line == line1) {
+                    return None;
                 }
                 // ⑤`<Arg>` 取值词 → 语料内实体 def 首行(RUST-137 批 1;gate 域)。
                 if gate {
@@ -319,29 +318,6 @@ impl HoverEngine {
             }
         }
         None
-    }
-
-    /// `Properties`/三方法段的注册落点(TS F12 第一层之后的语料层):
-    /// entities.xml 同名实体声明行;缺注册 → 本文件首行。Python 脚本层与
-    /// 数据库 schema 层是无此能力的面,跳过(见模块注释)。
-    fn registry_landing(&self, path: &str) -> DefinitionLocation {
-        if let Some(entity) = def_entity_name(path) {
-            if let Some(defs_root) = self.defs_root(path) {
-                let mut candidates = Vec::new();
-                if let Some(scripts_root) = parent_dir(&defs_root) {
-                    candidates.push(format!("{scripts_root}/entities.xml"));
-                }
-                candidates.push(format!("{defs_root}/entities.xml"));
-                for cand in candidates {
-                    if let Some(file) = self.entities_files.get(&cand) {
-                        if let Some(entry) = file.entities.iter().find(|e| e.name == entity) {
-                            return line_start_location(&cand, entry.line);
-                        }
-                    }
-                }
-            }
-        }
-        file_head_location(path)
     }
 
     /// `<Parent>` 取值 → 语料内父 def 首行。目录规则与 chain_face 同源:

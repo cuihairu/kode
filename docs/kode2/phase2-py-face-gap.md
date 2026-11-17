@@ -38,6 +38,14 @@ def 首行」(`src/languageProviders.ts:2260-2290、2846-2860`);Rust 首片实�
 档位层与注册层,中间两层按能力边界跳过。**这 1 条不是落点算错,是 `.py` 层不存在**:
 补上第 3 节 P1 即闭合到 402/402,不需要改对拍口径。
 
+> **2026-11-17 处置更新**:首片的 `registry_landing`(属性词→注册行,缺则 def
+> 首行)在产品上短路了 TS 属性链的脚本实现层——用户报「def 无法跳 py 实现」
+> 回归(即本节 TS→scripts/base/Avatar.py 与 Rust→entities.xml 的分歧面)。已
+> 收回:属性段声明词与三方法段同口径返 null,服务轨道回落 TS 全链(注册兜底
+> 是 TS 末档,不丢);对拍 golden 同步重生成(61→31,撤的全是属性声明词落点),
+> `tests/kodeDefinitionParity.test.ts` 镜像同步。P1 若将来落地 Rust `.py` 落点层,
+> 须以 TS 全链为 oracle 并接管 null 口径,不得恢复注册行短路。
+
 ## 3. TS 面清点(要对齐的能力,不是全部都要补)
 
 | # | 能力 | TS 落点 | 规模 |
