@@ -1,0 +1,174 @@
+{
+  "family": "data-dictionary-domain",
+  "grounding": {
+    "doc": "docs/knowledge/api-core-concepts.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "dict-globaldata-all-apps",
+      "kind": "positive",
+      "input": { "dict": "globalData" },
+      "engine": {
+        "load": "accept",
+        "truth": "globalData 注册于全部 server apps,baseapp/cellapp 两面均有 dict attribute 与变更回调;无进程收窄。"
+      },
+      "evidence": [
+        "| `globalData` | all server apps |",
+        "dict attribute `globalData` (`baseapp/KBEngine.md:1139`, `cellapp/KBEngine.md:949`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "domain": null }
+      }
+    },
+    {
+      "id": "dict-cellappdata-cellapp",
+      "kind": "positive",
+      "input": { "dict": "cellAppData" },
+      "engine": {
+        "load": "accept",
+        "truth": "cellAppData 属 cellapp 组:仅 cellapp 进程注册模块属性与 onCellAppData/onCellAppDataDel 回调。"
+      },
+      "evidence": [
+        "| `cellAppData` | cellapp group |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "domain": ["cell"] }
+      }
+    },
+    {
+      "id": "dict-baseappdata-baseapp",
+      "kind": "positive",
+      "input": { "dict": "baseAppData" },
+      "engine": {
+        "load": "accept",
+        "truth": "baseAppData 属 baseapp 组:仅 baseapp 进程注册模块属性与 onBaseAppData/onBaseAppDataDel 回调。"
+      },
+      "evidence": [
+        "| `baseAppData` | baseapp group |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "domain": ["base"] }
+      }
+    },
+    {
+      "id": "dict-spacedata-unmodeled",
+      "kind": "unknown",
+      "input": { "dict": "spaceData" },
+      "engine": {
+        "load": "accept",
+        "truth": "表语义=space 孤立字典(cellapp 写面 set/get/del + onSpaceData);clients 与 bots 只读。"
+      },
+      "evidence": [
+        "| `spaceData` | one space |",
+        "clients and bots only read: `client/KBEngine.md:144-160`, `bots/PyClientApp.md:35-49`"
+      ],
+      "reason": "缺口=spaceData 的模块 dict attribute 面未在表列出(仅函数+回调面);kode domain=null 未收窄,域闸对 spaceData 永不触发——无害但未建模,不构成误报面。取证下一步=fork cellapp/KBEngine.md 属性节+kbengine-pyi 车道;是否补域化归独立批。",
+      "kode": {
+        "status": "pinned",
+        "analysis": { "domain": null }
+      }
+    },
+    {
+      "id": "dict-site-baseappdata-in-base",
+      "kind": "positive",
+      "input": { "dict": "baseAppData", "file": "/ws/scripts/base/Avatar.py" },
+      "engine": {
+        "load": "accept",
+        "truth": "base 角色脚本内引用 KBEngine.baseAppData:运行期所在进程(baseapp)注册了该模块属性,可见。"
+      },
+      "evidence": [
+        "| `baseAppData` | baseapp group |",
+        "attribute `baseAppData` (`baseapp/KBEngine.md:1088`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "inDomain": true }
+      }
+    },
+    {
+      "id": "dict-site-baseappdata-out-cell",
+      "kind": "negative",
+      "input": { "dict": "baseAppData", "file": "/ws/scripts/cell/Avatar.py" },
+      "engine": {
+        "load": "reject",
+        "truth": "cell 角色脚本内引用 KBEngine.baseAppData:所在进程(cellapp)不注册该属性,运行期 KBEngine.baseAppData 不存在。"
+      },
+      "evidence": [
+        "| `baseAppData` | baseapp group |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "inDomain": false }
+      }
+    },
+    {
+      "id": "dict-site-unknown-role-no-claim",
+      "kind": "positive",
+      "input": { "dict": "baseAppData", "file": "/ws/scripts/common/foo.py" },
+      "engine": {
+        "load": "accept",
+        "truth": "共享目录(common/server_common)角色不可知:运行期可能被任何进程加载,引擎语义不定;分析侧诚实不判。"
+      },
+      "evidence": [
+        "| `baseAppData` | baseapp group |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "inDomain": true }
+      }
+    },
+    {
+      "id": "dict-site-cellappdata-in-cell",
+      "kind": "positive",
+      "input": { "dict": "cellAppData", "file": "/ws/scripts/cell/Avatar.py" },
+      "engine": {
+        "load": "accept",
+        "truth": "cell 角色脚本内引用 KBEngine.cellAppData:所在进程注册了该属性,可见。"
+      },
+      "evidence": [
+        "| `cellAppData` | cellapp group |",
+        "attribute `cellAppData` (`cellapp/KBEngine.md:863`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "inDomain": true }
+      }
+    },
+    {
+      "id": "dict-site-cellappdata-out-base",
+      "kind": "negative",
+      "input": { "dict": "cellAppData", "file": "/ws/scripts/base/Avatar.py" },
+      "engine": {
+        "load": "reject",
+        "truth": "base 角色脚本内引用 KBEngine.cellAppData:所在进程(baseapp)不注册该属性,运行期不存在。"
+      },
+      "evidence": [
+        "| `cellAppData` | cellapp group |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "inDomain": false }
+      }
+    },
+    {
+      "id": "dict-site-no-scripts-anchor-no-claim",
+      "kind": "positive",
+      "input": { "dict": "baseAppData", "file": "/ws/other.py" },
+      "engine": {
+        "load": "accept",
+        "truth": "无 scripts 锚定的路径角色不可知:引擎不加载此文件,语义无从谈起;分析侧诚实不判(与「不猜」口径一致)。"
+      },
+      "evidence": [
+        "| `baseAppData` | baseapp group |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "inDomain": true }
+      }
+    }
+  ]
+}

@@ -18,7 +18,7 @@ import { cellDataCallbackFindings } from '../src/backend/cellDataCallbackCheck';
 import { cellScriptRoleAndEntity, type CellDataKeyEntry } from '../src/backend/cellDataCompletion';
 import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
 import { analyzeTimerCleanupOnDestroy } from '../src/backend/timerCleanupDiagnostics';
-import { pythonProcessFromPath } from '../src/backend/pythonProcess';
+import { pythonProcessFromPath, dataDictProcessDomain, dataDictSiteInDomain } from '../src/backend/pythonProcess';
 import { KBENGINE_ENTRY_HOOKS } from '../src/backend/entryHooks';
 import { buildRpcLinks } from '../src/backend/flowRpcLinks';
 import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
@@ -235,6 +235,16 @@ interface RpcLinkEntry extends TruthEntryBase {
 }
 const rpcLinkFamily = families.find(f => f.family === 'rpc-entitycall-links')!;
 const rpcLinkEntries = rpcLinkFamily.entries as unknown as RpcLinkEntry[];
+
+// ---- data-dictionary-domain 族形状与鞍具 ----
+interface DictDomainEntry extends TruthEntryBase {
+  input: { dict: string; file?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { domain?: string[] | null; inDomain?: boolean };
+  };
+}
+const dictDomainFamily = families.find(f => f.family === 'data-dictionary-domain')!;
+const dictDomainEntries = dictDomainFamily.entries as unknown as DictDomainEntry[];
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -539,6 +549,31 @@ describe('真值语料 execution 门:EntityCall 跨进程连接面(两段建模/
       const result = rpcLinksOf(entry);
       const all = [...result.links.map(l => l.sendEdge), ...result.unresolvedLinks.map(u => u.sendEdge)];
       expect(all.find(edge => edge.callSite?.line === line), `应缺席: ${entry.id} (line ${line})`).toBeUndefined();
+    }
+  });
+});
+
+// ---- ⑩ data-dictionary-domain 执行门 ----
+describe('真值语料 execution 门:数据字典进程域(域化双函数直钉)', () => {
+  const pinned = dictDomainEntries.filter(e => e.kode.status === 'pinned');
+
+  it('字典域臂:四字典的进程域实测等于语料钉值(null=全进程不收窄)', () => {
+    const entries = pinned.filter(e => !e.input.file);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const domain = dataDictProcessDomain(entry.input.dict);
+      const actual = domain ? [...domain] : null;
+      expect(actual, `dict domain drift: ${entry.id}`).toEqual(entry.kode.analysis?.domain ?? null);
+    }
+  });
+
+  it('进程域臂:域内真/域外假/角色不可知诚实不判(漂移即红)', () => {
+    const entries = pinned.filter(e => e.input.file);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      expect(dataDictSiteInDomain(entry.input.file!, entry.input.dict), `site drift: ${entry.id}`).toBe(
+        entry.kode.analysis?.inDomain
+      );
     }
   });
 });

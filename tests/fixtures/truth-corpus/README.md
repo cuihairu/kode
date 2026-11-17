@@ -169,3 +169,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## rpc-entitycall-links 族(2026-11-17 第十族)
 
 依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.1 EntityCall。6 例,执行门=buildRpcLinks 三臂分组(连线臂=两段装配逐标量钉,发送 async-send/语法锚 vs 执行 sync/rpc/declaration-contract;未解析臂=def 未声明闸+实现缺席+unknown-receiver,原因码/证据串钉+「有发送无连线」断言;缺席臂=face-invalid/广播发送不得入链接面),发送边经 resolveFlowCallSites 真解析。**对齐族**:kode def 声明闸与引擎「EntityCall 只能调用 .def 声明的方法」同向——def 未声明时python 同名实现也不连线=引擎不派发的镜像。登记面:①实现缺席条目 kind=positive(def 已声明=引擎会派发,kode 报告的是脚本侧缺陷而非引擎拒绝);②广播边不入 def 契约面=FLOW-008 设计决策,引擎侧依据=EntityCall 最小形「实体 ID+目的地址」无固定接收位;③继承实现(inheritedFrom 证据标注)属宿主回调语义,不属本族钉域。
+
+## data-dictionary-domain 族(2026-11-17 第十一族)
+
+依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.4 数据字典表。10 例:字典域臂 4(globalData=null 全进程不收窄/cellAppData=[cell]/baseAppData=[base]/spaceData=null)+进程域臂 6(域内真/域外假/角色不可知与无 scripts 锚定=诚实不判)。执行门=dataDictProcessDomain+dataDictSiteInDomain 双函数直钉。**对齐族**:三字典域化与 §1.4 表逐项同向;登记面=spaceData 条目 kind=unknown(表的模块属性面未列,kode 未建模域化——无害但未建模,取证=cellapp/KBEngine.md 属性节,补域归独立批)。C++ 锚(baseapp.cpp:461/cellapp.cpp:200/entity_app.h:419)在 kode 源头注,本族evidence 采知识档表行。
