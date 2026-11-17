@@ -165,3 +165,7 @@ c2a3b8f)§固定目录三清单+「getPyUserComponentScriptsPath 只认四类」
 SPI=9 方法,kode 收 3(空间/导航三件套),6 缺席=头注明示的范围选择;缺席面
 里 onCellAppData/onCellAppDataDel 与字典域闸最相关,扩充归独立批。执行门=
 KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
+
+## rpc-entitycall-links 族(2026-11-17 第十族)
+
+依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.1 EntityCall。6 例,执行门=buildRpcLinks 三臂分组(连线臂=两段装配逐标量钉,发送 async-send/语法锚 vs 执行 sync/rpc/declaration-contract;未解析臂=def 未声明闸+实现缺席+unknown-receiver,原因码/证据串钉+「有发送无连线」断言;缺席臂=face-invalid/广播发送不得入链接面),发送边经 resolveFlowCallSites 真解析。**对齐族**:kode def 声明闸与引擎「EntityCall 只能调用 .def 声明的方法」同向——def 未声明时python 同名实现也不连线=引擎不派发的镜像。登记面:①实现缺席条目 kind=positive(def 已声明=引擎会派发,kode 报告的是脚本侧缺陷而非引擎拒绝);②广播边不入 def 契约面=FLOW-008 设计决策,引擎侧依据=EntityCall 最小形「实体 ID+目的地址」无固定接收位;③继承实现(inheritedFrom 证据标注)属宿主回调语义,不属本族钉域。

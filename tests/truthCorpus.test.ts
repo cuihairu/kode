@@ -20,6 +20,8 @@ import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinP
 import { analyzeTimerCleanupOnDestroy } from '../src/backend/timerCleanupDiagnostics';
 import { pythonProcessFromPath } from '../src/backend/pythonProcess';
 import { KBENGINE_ENTRY_HOOKS } from '../src/backend/entryHooks';
+import { buildRpcLinks } from '../src/backend/flowRpcLinks';
+import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -177,6 +179,76 @@ interface EntrySpiEntry extends TruthEntryBase {
 }
 const entrySpiFamily = families.find(f => f.family === 'entry-script-spi-cellapp')!;
 const entrySpiEntries = entrySpiFamily.entries as unknown as EntrySpiEntry[];
+
+// ---- rpc-entitycall-links 族形状与鞍具 ----
+interface RpcLinkEntry extends TruthEntryBase {
+  input: {
+    files: Record<string, string>;
+    defs: {
+      entity: string;
+      section: 'BaseMethods' | 'CellMethods' | 'ClientMethods';
+      method: string;
+      defFile: string;
+      line: number;
+      declaredArgs?: string[];
+      declaredReturnType?: string | null;
+    }[];
+    impls: {
+      entity: string;
+      section: 'BaseMethods' | 'CellMethods' | 'ClientMethods';
+      method: string;
+      filePath: string;
+      line: number;
+      signature: string;
+      className: string;
+      inheritedFrom?: string | null;
+    }[];
+  };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      link?: {
+        sendLine: number;
+        sendSyncAsync: string;
+        sendEvidenceType: string;
+        execSyncAsync: string;
+        execMessageKind: string;
+        execCallSite: null;
+        execEvidenceType: string;
+        defFile: string;
+        defLine: number;
+        defCharacter: number;
+        implFilePath: string;
+        callerEntity: string;
+        declaredArgs: string[];
+        declaredReturnType: string | null;
+      };
+      unresolved?: {
+        code: string;
+        sendLine: number;
+        detailHas: string;
+        evidenceHas: string;
+        linked: false;
+      };
+      absentSendLine?: number;
+    };
+  };
+}
+const rpcLinkFamily = families.find(f => f.family === 'rpc-entitycall-links')!;
+const rpcLinkEntries = rpcLinkFamily.entries as unknown as RpcLinkEntry[];
+/** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
+const rpcLinksOf = (entry: RpcLinkEntry) =>
+  buildRpcLinks({
+    rootKey: '/ws',
+    files: Object.keys(entry.input.files),
+    resolveFile: filePath => {
+      const text = entry.input.files[filePath];
+      return text === undefined ? null : resolveFlowCallSites({ text, filePath, rootKey: '/ws' });
+    },
+    resolveDefMethod: (entity, section, methodName) =>
+      entry.input.defs.find(d => d.entity === entity && d.section === section && d.method === methodName) ?? null,
+    resolveImplementation: (entity, section, methodName) =>
+      entry.input.impls.find(d => d.entity === entity && d.section === section && d.method === methodName) ?? null
+  });
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -405,5 +477,68 @@ describe('真值语料 execution 门:入口 SPI 面(cellapp 三件套 roster+签
     expect(roster).toBeDefined();
     const names = KBENGINE_ENTRY_HOOKS.filter(h => h.component === 'cellapp').map(h => h.name);
     expect(names, `spi roster drift: ${roster!.id}`).toEqual(roster!.kode.analysis?.names);
+  });
+});
+
+// ---- ⑨ rpc-entitycall-links 执行门 ----
+describe('真值语料 execution 门:EntityCall 跨进程连接面(两段建模/def 闸/诚实落点)', () => {
+  const pinned = rpcLinkEntries.filter(e => e.kode.status === 'pinned');
+
+  it('连线臂:def 已声明+实现在场=两段装配逐标量钉(发送 async-send/执行 sync-rpc)', () => {
+    const entries = pinned.filter(e => e.kode.analysis?.link);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const a = entry.kode.analysis!.link!;
+      const link = rpcLinksOf(entry).links.find(l => l.sendEdge.callSite?.line === a.sendLine);
+      expect(link, `link 缺席: ${entry.id}`).toBeDefined();
+      expect(link!.sendEdge.syncAsync, `sendSyncAsync drift: ${entry.id}`).toBe(a.sendSyncAsync);
+      expect(link!.sendEdge.evidence.type, `sendEvidence drift: ${entry.id}`).toBe(a.sendEvidenceType);
+      expect(link!.execEdge.syncAsync, `execSyncAsync drift: ${entry.id}`).toBe(a.execSyncAsync);
+      expect(link!.execEdge.messageKind, `execMessageKind drift: ${entry.id}`).toBe(a.execMessageKind);
+      expect(link!.execEdge.callSite, `execCallSite drift: ${entry.id}`).toBeNull();
+      expect(link!.execEdge.evidence.type, `execEvidence drift: ${entry.id}`).toBe(a.execEvidenceType);
+      expect(link!.rpcNode.declaration?.file, `defFile drift: ${entry.id}`).toBe(a.defFile);
+      expect(link!.rpcNode.declaration?.line, `defLine drift: ${entry.id}`).toBe(a.defLine);
+      expect(link!.rpcNode.declaration?.character, `defCharacter drift: ${entry.id}`).toBe(a.defCharacter);
+      expect(link!.implNode.fn?.filePath, `implFilePath drift: ${entry.id}`).toBe(a.implFilePath);
+      expect(link!.callerEntity, `callerEntity drift: ${entry.id}`).toBe(a.callerEntity);
+      expect(link!.declaredArgs, `declaredArgs drift: ${entry.id}`).toEqual(a.declaredArgs);
+      expect(link!.declaredReturnType, `declaredReturnType drift: ${entry.id}`).toBe(a.declaredReturnType);
+    }
+  });
+
+  it('未解析臂:def 闸双臂+引擎引用发送(原因码/证据串钉,有发送无连线)', () => {
+    const entries = pinned.filter(e => e.kode.analysis?.unresolved);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const a = entry.kode.analysis!.unresolved!;
+      const result = rpcLinksOf(entry);
+      const record = result.unresolvedLinks.find(
+        u => u.code === a.code && u.sendEdge.callSite?.line === a.sendLine
+      );
+      expect(record, `unresolved 缺席: ${entry.id}`).toBeDefined();
+      expect(record!.detail.includes(a.detailHas), `detail drift: ${entry.id}`).toBe(true);
+      expect(
+        record!.execUnresolvedEdge.evidence.detail.includes(a.evidenceHas),
+        `evidence drift: ${entry.id}`
+      ).toBe(true);
+      if (!a.linked) {
+        expect(
+          result.links.find(l => l.sendEdge.callSite?.line === a.sendLine),
+          `不应连线: ${entry.id}`
+        ).toBeUndefined();
+      }
+    }
+  });
+
+  it('缺席臂:face-invalid/广播发送不得出现在链接面(混入即红)', () => {
+    const entries = pinned.filter(e => e.kode.analysis?.absentSendLine != null);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const line = entry.kode.analysis!.absentSendLine!;
+      const result = rpcLinksOf(entry);
+      const all = [...result.links.map(l => l.sendEdge), ...result.unresolvedLinks.map(u => u.sendEdge)];
+      expect(all.find(edge => edge.callSite?.line === line), `应缺席: ${entry.id} (line ${line})`).toBeUndefined();
+    }
   });
 });

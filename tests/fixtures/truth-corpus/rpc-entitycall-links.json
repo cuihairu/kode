@@ -1,0 +1,229 @@
+{
+  "family": "rpc-entitycall-links",
+  "grounding": {
+    "doc": "docs/knowledge/api-core-concepts.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "rpc-two-segment-link",
+      "kind": "positive",
+      "input": {
+        "files": {
+          "/ws/scripts/base/Avatar.py": "class Avatar:\n    def requestMove(self, d):\n        self.cell.doMove(d)"
+        },
+        "defs": [
+          {
+            "entity": "Avatar",
+            "section": "CellMethods",
+            "method": "doMove",
+            "defFile": "/ws/entity_defs/Avatar.def",
+            "line": 21,
+            "declaredArgs": ["UINT8"],
+            "declaredReturnType": null
+          }
+        ],
+        "impls": [
+          {
+            "entity": "Avatar",
+            "section": "CellMethods",
+            "method": "doMove",
+            "filePath": "/ws/scripts/cell/Avatar.py",
+            "line": 3,
+            "signature": "def doMove(self, d)",
+            "className": "Avatar",
+            "inheritedFrom": null
+          }
+        ]
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "self.cell.doMove 经 cell 部分邮箱跨进程调用:EntityCall 打包前按 .def 描述校验,def 已声明即合法,引擎按 def 方法索引派发到 cell 部分实现;发送与远端执行是两段,非同步 Python 子栈。"
+      },
+      "evidence": [
+        "entity ID + destination address + entity type + call type, checked against the entity's `.def` description before packing",
+        "An `EntityCall` can only invoke methods declared in the `.def` file — never engine methods, never properties"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "link": {
+            "sendLine": 2,
+            "sendSyncAsync": "async-send",
+            "sendEvidenceType": "syntax-anchor",
+            "execSyncAsync": "sync",
+            "execMessageKind": "rpc",
+            "execCallSite": null,
+            "execEvidenceType": "declaration-contract",
+            "defFile": "/ws/entity_defs/Avatar.def",
+            "defLine": 21,
+            "defCharacter": 0,
+            "implFilePath": "/ws/scripts/cell/Avatar.py",
+            "callerEntity": "Avatar",
+            "declaredArgs": ["UINT8"],
+            "declaredReturnType": null
+          }
+        }
+      }
+    },
+    {
+      "id": "rpc-def-undeclared-gate",
+      "kind": "negative",
+      "input": {
+        "files": {
+          "/ws/scripts/cell/NPC.py": "class NPC:\n    def stalk(self):\n        self.base.shadowStep()"
+        },
+        "defs": [],
+        "impls": [
+          {
+            "entity": "NPC",
+            "section": "BaseMethods",
+            "method": "shadowStep",
+            "filePath": "/ws/scripts/cell/NPC.py",
+            "line": 4,
+            "signature": "def shadowStep(self)",
+            "className": "NPC",
+            "inheritedFrom": null
+          }
+        ]
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "EntityCall 只能调用 .def 声明的方法:def 未声明 shadowStep,引擎按 def 方法索引派发时无此方法,跨进程调用不可达——python 同名实现不会被派发。"
+      },
+      "evidence": [
+        "An `EntityCall` can only invoke methods declared in the `.def` file — never engine methods, never properties"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "unresolved": {
+            "code": "missing-declaration",
+            "sendLine": 2,
+            "detailHas": "按 def 方法索引派发",
+            "evidenceHas": "引擎不会派发该方法",
+            "linked": false
+          }
+        }
+      }
+    },
+    {
+      "id": "rpc-def-declared-impl-missing",
+      "kind": "positive",
+      "input": {
+        "files": {
+          "/ws/scripts/cell/NPC.py": "class NPC:\n    def stalk(self):\n        self.base.vanish()"
+        },
+        "defs": [
+          {
+            "entity": "NPC",
+            "section": "BaseMethods",
+            "method": "vanish",
+            "defFile": "/ws/entity_defs/NPC.def",
+            "line": 12
+          }
+        ],
+        "impls": []
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "def 已声明=该 EntityCall 合法且引擎会派发;python 实现文件全 owner 链无 vanish 是脚本侧缺陷,引擎侧表现为远端调用运行期失败。kode 的报告对象是这个脚本缺陷,不是引擎拒绝。"
+      },
+      "evidence": [
+        "An `EntityCall` can only invoke methods declared in the `.def` file — never engine methods, never properties",
+        "The parts talk to each other through `EntityCall`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "unresolved": {
+            "code": "missing-declaration",
+            "sendLine": 2,
+            "detailHas": "全 owner 链未找到",
+            "evidenceHas": "/ws/entity_defs/NPC.def:12",
+            "linked": false
+          }
+        }
+      }
+    },
+    {
+      "id": "rpc-unknown-receiver-honest",
+      "kind": "positive",
+      "input": {
+        "files": {
+          "/ws/scripts/cell/Avatar.py": "class Avatar:\n    def attack(self):\n        found = KBEngine.entities.get(101)\n        found.cell.halt()"
+        },
+        "defs": [],
+        "impls": []
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎引用发送(KBEngine.entities.get 的 found.cell.halt)运行期合法:EntityCall 按实体 ID+目的地址派发,落点实体运行期才定;分析期接收者不可知,如实不猜。"
+      },
+      "evidence": [
+        "entity ID + destination address + entity type + call type, checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "unresolved": {
+            "code": "unknown-receiver",
+            "sendLine": 3,
+            "detailHas": "落点实体未知",
+            "evidenceHas": "落点实体未知——远端执行待运行时证据",
+            "linked": false
+          }
+        }
+      }
+    },
+    {
+      "id": "rpc-face-invalid-base-base",
+      "kind": "negative",
+      "input": {
+        "files": {
+          "/ws/scripts/base/Avatar.py": "class Avatar:\n    def boom(self):\n        self.base.echo()"
+        },
+        "defs": [],
+        "impls": []
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "base 部分实体不存在自身 base 邮箱(EntityCall 属性在部件不存在处为 None/缺席):base 面脚本调 self.base.X 引擎侧不可能成立。"
+      },
+      "evidence": [
+        "`base`, `cell`, `client` are read-only `EntityCall` attributes, `None` when the part does not exist"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "absentSendLine": 2
+        }
+      }
+    },
+    {
+      "id": "rpc-broadcast-no-contract-frame",
+      "kind": "positive",
+      "input": {
+        "files": {
+          "/ws/scripts/cell/Avatar.py": "class Avatar:\n    def fanfare(self):\n        self.allClients.showBanner()"
+        },
+        "defs": [],
+        "impls": []
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "allClients 广播合法,但受众=动态观察集合而非单一目的地址:EntityCall 最小形里没有固定接收位,广播边不入 def 契约面(kode 不虚构固定接收帧,独立走查序呈现)。"
+      },
+      "evidence": [
+        "entity ID + destination address + entity type + call type, checked against the entity's `.def` description before packing",
+        "for the client broadcast family"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "absentSendLine": 2
+        }
+      }
+    }
+  ]
+}
