@@ -197,3 +197,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## entity-readonly-write-baseapp 族(2026-11-18 第十七族)
 
 依据:docs/knowledge/api-baseapp-entity.md(fork HEAD 6d12b8f)逐属性节头 `*(read-only …)*`/`*(get/set)*` 记法。8 例:负臂 4(databaseID 赋值/databaseInterfaceName 增强赋值/cell del/id 注解赋值)+正臂 4(shouldAutoBackup get/set 写沉默/client 判空比较沉默/customGold 表外沉默/docstring 掩码沉默)+非实体脸沉默独立臂(负臂同文本 null 脸全沉默)。执行门=与 cellapp 族共用三族同构闸(findReadOnlyWriteFindings 直钉)。**对齐族零分歧**:baseapp 面 9 项的 R/W 口径(family-5 语料已钉表)与逐属性节头记法逐项同向,get/set 与 R 分明。
+
+## entity-readonly-write-client 族(2026-11-18 第十八族)
+
+依据:docs/knowledge/api-client.md(fork HEAD 6d12b8f)§4.3 getset 表(read-only/get-set Type 列)。8 例:负臂 4(spaceID 赋值/className 增强赋值/base del/isDestroyed 注解赋值)+正臂 4(position 客户端写喂 updatePlayerToServer 沉默/velocity get/set 写沉默/base 判空比较沉默/docstring 掩码沉默)+非实体脸沉默独立臂。执行门=三族同构闸共用。**对齐族零分歧**:client 面 getset 表 R/W 口径(family-6 语料已钉表)与 §4.3 Type 列逐项同向;position 客户端侧写=引擎明示合法路径(同步机制 clientobjectbase.cpp:1193-1275),与 server 面 position 写路径分立。

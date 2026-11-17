@@ -302,7 +302,7 @@ interface ReadOnlyWriteEntry extends TruthEntryBase {
     analysis?: { findings: { line: number; character: number; length: number; propertyName: string; kind: string; face: string }[] };
   };
 }
-const readOnlyWriteFamilies = ['entity-readonly-write-cellapp', 'entity-readonly-write-baseapp']
+const readOnlyWriteFamilies = ['entity-readonly-write-cellapp', 'entity-readonly-write-baseapp', 'entity-readonly-write-client']
   .map(name => families.find(f => f.family === name)!);
 const readOnlyWriteEntries = readOnlyWriteFamilies.flatMap(f => f.entries as unknown as ReadOnlyWriteEntry[]);
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
