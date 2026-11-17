@@ -36,6 +36,7 @@
 | StartupScriptCompletionProvider | kbengineStartupScript.ts:430 | :921 | 行级纯文本 token 扫描(`--` 补 CLI 参数、`KBE_` 补环境变量,KBEXP-1) | 纯读 |
 | ConfigCompletionProvider | configCompletionProvider.ts:75 | activate/languageServices.ts:255(KSEM-CFG-04) | buildConfigTreePair resolve 缓存树(分析缓存按 defaultsTree 身份键 WeakMap)+ CFG-02 契约提取 + CFG-03 字段身份扫描;上下文解析与键/值建议在纯核 backend/configCompletion | 纯读(开关 kbengine.configCompletion.enabled;null defaultsTree → 无建议) |
 | ConfigSchemaHoverProvider | configSchemaHover.ts:11 | activate/diagnostics.ts:781(KODE-CFG-016) | 同激活器配置数据扫描自有的 schema 缓存(collectConfigSchema 直读配置绑定/类;随全工作区重扫 800 ms 防抖刷新);provider 自身零 IO/watcher | 纯读(闸 `kbengine.configData.enabled` + KBEngine 工作区探针;非 KBEngine 工作区缓存空) |
+| EngineSpiCodeLensProvider | engineSpiCodeLens.ts:255 | activate/languageServices.ts:544(KODE-CFG-015) | configDerive 派生 entryScripts 只读缓存(脚本根;派生未就绪回落路径启发式)+ 文件路径组件角色判定 + 文档文本模块级 def 扫描(pythonSourceMask 掩码;KODE-CFG-012 36 方法表) | fireConfigurationChanged 事件(开关 `kbengine.codeLens.engineSpi`;镜点击仅弹信息,无跳转) |
 | ConfigDefinitionProvider | configDefinitionProvider.ts:28 | activate/languageServices.ts:266(KSEM-CFG-06) | buildConfigTreePair defaults 树 + defaults 原文(声明行=CFG-05 行号表)+ buildFinalServerConfig 渲染文(生效值行);纯核 backend/configSourceFace 路径解析 | 纯读(路径解析不出 → 无跳转目标) |
 | RpcCodeLensProvider | languageProviders.ts:4651 | :1089 | EntityMappingManager(RPC 镜链) | 纯读 |
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview 面板创建/更新(UI 副作用) |

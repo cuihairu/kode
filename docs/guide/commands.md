@@ -801,6 +801,11 @@ The flow graph panel supports:
 - Title: `Show Call Chain`
 - Purpose: generate the configured Python call chain preview for the selected method
 
+### `kbengine.python.showEngineSpi`
+
+- Title: `Show Engine SPI Implementation Info`
+- Purpose: show the engine-SPI lens title (identity and trigger timing) of the clicked marker; the engine-side call sites live in the engine checkout, so there is no source to navigate to
+
 ### `kbengine.compatibility.check`
 
 - Title: `Check Engine Compatibility`

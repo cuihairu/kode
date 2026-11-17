@@ -148,7 +148,7 @@
 - **存根目录可配置** —— `kbengine.python.stubDir` 设置 > `KBENGINE_STUB_DIR` 环境变量 > 默认 `.kbengine/stubs`；用户已写的 `.pyi` 视为用户资产不覆盖 ——（证据：package.json#configuration `kbengine.python.stubDir`；src/pythonStubExport.ts）
 - **python.analysis.extraPaths 接线** —— 发现的 KBEngine scripts 根按 WorkspaceFolder 级写入 `${workspaceFolder}/...` 变量形态（带工作区根前缀的存量绝对路径在下次同步时自动迁移，不可迁移的绝对路径由 `kbengine.configContract.extraPathsAbsolute` 报出）；只管理自己那段，除该迁移外用户手填路径原样保留；管理段经 base/cell 角色隔离闸（角色目录永不进合并列表，base/Avatar.py 与 cell/Avatar.py 这类同名模块不会因 extraPaths 顺序跨角色误解析），手动同步时如实播报跨角色同名模块集合；
   同一次同步显式写 `python.analysis.stubPath` = `${workspaceFolder}/.kbengine/stubs`，Pylance 解析顺序由此明确（真机实测，RUST-170）：stubPath → extraPaths → 同目录 .pyi——importer 目录不参与绝对 import；并键级合并 `python.analysis.diagnosticSeverityOverrides` 加 `reportMissingModuleSource: none`（KBEngine 是 C++ 内嵌注册模块——py_entitydef 的 `PyImport_AddModule`——磁盘上永远没有对应 .py 源,Pylance 的「已找到类型声明、无法从源码解析」是嵌入模块常态噪声;用户已设的 override 与其他键一律不动,存根导出关时本面一并关）；存根目录落的是进程档模板时，同一同步还维护工作区 `pyrightconfig.json`——按 scripts 根 × 进程角色生成 `executionEnvironments`（对应进程桩包排各环境 `extraPaths` 首位）、全局 `stubPath` = `<managedDir>/stubs/_shared`、`reportMissingModuleSource: false`；pyrightconfig 面同样只重写自己记忆的管理段（用户键/用户 `extraPaths`/用户 executionEnvironments 一律保留;`pyproject.toml` 的 `[tool.pyright]`、`extends` 或冲突的用户全局 stubPath 如实播报并保留原文件）；`kbengine.managedDir` 或 `kbengine.python.stubDir` 变更即静默重同步整套接线——（证据：package.json#configuration `kbengine.python.extraPathsSync`；package.json#contributes.commands `kbengine.python.syncExtraPaths`；src/pythonExtraPaths.ts `planPythonExtraPaths` + `toWorkspaceFolderVar`；src/backend/pythonRoleRoots.ts `enforceRoleIsolation`；src/pythonProcessConfig.ts `buildProcessEnvironments` + `syncProcessPythonConfiguration`）
-- **托管目录可配置** —— kode 自管目录（默认 `.kbengine`，容纳 debug.json 与存根）可经 `kbengine.managedDir` 改名，改名后自动重建 ——（证据：src/backend/managedDir.ts；commit c69517e；src/extension.ts watcher）
+- **托管目录可配置** —— kode 自管目录（默认 `.kbengine`，容纳 debug.json 与存根）可经 `kbengine.managedDir` 改名，改名后自动重建；工作区扫描在 `findFilesAcrossRoots` 出口剔除托管目录副本，`inferred/` 镜像树绝不被双计——受管根按绝对路径前缀判定（工作区根 ∪ 外部扫描根拼配置的相对值，支持 `tools/.kbengine` 多段相对配置），工作区里恰好同名的普通目录不误伤（KODE-CFG-017）——（证据：src/backend/managedDir.ts；src/backend/pythonScanRules.ts `filterManagedDirCopies`；src/scanRoots.ts；commit c69517e；src/extension.ts watcher）
 
 ## 调试与运行（EXEC）
 
@@ -432,6 +432,7 @@
 | `kbengine.codeLens.property` | `true` | `self.<属性>` 访问处属性 CodeLens（回跳 def） |
 | `kbengine.codeLens.propertyInitOrder` | `true` | 实体类 `__init__` 声明处「属性先于 __init__ 装载 · 来自 <实体>.def」CodeLens（点击回 def） |
 | `kbengine.codeLens.typesXml` | `true` | types.xml 类型声明行落库镜链 CodeLens（引用反扫） |
+| `kbengine.codeLens.engineSpi` | `true` | 引擎经 `getEntryScript()` 以 SPI 模式调用的入口模块级函数标引擎 SPI 镜（KODE-CFG-012 36 方法表,标题带触发时机;组件角色由配置派生定,普通函数与表外方法不出镜） |
 | `kbengine.codeLens.processOwnership` | `true` | Python 实体脚本顶部进程归属 CodeLens（`scripts/<role>` 目录判定 baseapp/cellapp/client/bots，判不出不出镜；其他进程同名对应文件并列可点击 tag，点击打开对应文件；base↔cell 同名切换另绑快捷键 `ctrl+alt+shift+c` / `ctrl+alt+shift+b`） |
 | `kbengine.codeLens.fileModifiedTime` | `true` | Python 脚本顶部文件修改时间 CodeLens（盘上 mtime 一次 stat,保存即刷新；缓冲区未落盘只加注记不改写盘上时间；热更投递时间仍在热更状态点） |
 | `kbengine.inlayHints.typeData` | `true` | `self.<属性>` 访问处内联显示 def 声明的 types.xml 数据类型;`self.base/cell/client` RPC 调用点内联显示 def 已声明的形参类型;数组 `<of>` 元素类型在 `for ... in self.<属性>` 目标与下标赋值局部变量后内联显示 |

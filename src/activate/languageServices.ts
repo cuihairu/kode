@@ -15,6 +15,7 @@ import * as vscode from 'vscode';
 import { CallChainController } from '../defCallChainProvider';
 import { DefParamInlayHintsProvider } from '../defParamInlayHints';
 import { DefPropsInlayHintsProvider } from '../defPropsInlayHints';
+import { EngineSpiCodeLensProvider } from '../engineSpiCodeLens';
 import { SemanticTokensProvider, buildSemanticTokensLegend } from '../semanticTokensProvider';
 import { getCustomTypeInfos, getRegisteredEntities } from '../definitionWorkspace';
 import { createFileChangeMetaResolver } from '../backend/fileChangeMeta';
@@ -98,6 +99,7 @@ export interface LanguageServicesShared {
   propertyCodeLensProviderImpl: PropertyCodeLensProvider;
   processOwnershipCodeLensProviderImpl: ProcessOwnershipCodeLensProvider;
   fileModifiedTimeCodeLensProviderImpl: FileModifiedTimeCodeLensProvider;
+  engineSpiCodeLensProviderImpl: EngineSpiCodeLensProvider;
   eventCodeLensProviderImpl: EventCodeLensProvider;
   typesXmlCodeLensProviderImpl: TypesXmlCodeLensProvider;
 }
@@ -533,6 +535,28 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     fileModifiedTimeCodeLensProviderImpl
   );
 
+  // 引擎 SPI 函数标注镜(KODE-CFG-015,用户令 2026-11-03):被引擎以 SPI
+  // 模式调用的入口模块级函数(getEntryScript() 36 方法表,KODE-CFG-012)
+  // 声明行上标「引擎 SPI · <方法> · <触发时机>」,组件角色由配置派生
+  // entryScripts 推导(派生未就绪回落路径启发式);普通函数与表外方法不出;
+  // 独立开关 kbengine.codeLens.engineSpi
+  const engineSpiCodeLensProviderImpl = new EngineSpiCodeLensProvider();
+  const engineSpiCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    engineSpiCodeLensProviderImpl
+  );
+  context.subscriptions.push(engineSpiCodeLensProvider, engineSpiCodeLensProviderImpl);
+  // 镜点击仅弹信息(引擎侧调用点不在本仓,无源码可跳):显示 SPI 身份与触发时机
+  const showEngineSpiCommand = vscode.commands.registerCommand(
+    'kbengine.python.showEngineSpi',
+    (uri?: vscode.Uri, _line?: number, methodName?: string, title?: string) => {
+      void vscode.window.showInformationMessage(
+        title ?? `引擎 SPI · ${methodName ?? ''}`
+      );
+    }
+  );
+  context.subscriptions.push(showEngineSpiCommand);
+
   // 事件回调标记(批154 从 RPC 镜链返回值里拆出独立注册):addEvent/
   // registerEvent 的回调 def 声明处标「事件回调 · EV_X」、emitEvent 处标
   // 监听数,独立开关 kbengine.codeLens.eventCallbacks,与 RPC 互不影响
@@ -817,6 +841,7 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     propertyCodeLensProviderImpl,
     processOwnershipCodeLensProviderImpl,
     fileModifiedTimeCodeLensProviderImpl,
+    engineSpiCodeLensProviderImpl,
     eventCodeLensProviderImpl,
     typesXmlCodeLensProviderImpl
   };

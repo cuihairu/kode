@@ -196,6 +196,7 @@
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.python.selectInterpreter",
     "onCommand:kbengine.python.createVenv",
+    "onCommand:kbengine.python.showEngineSpi",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
     "onCommand:kbengine.core.restart",
@@ -866,6 +867,10 @@
       {
         "command": "kbengine.python.showCallChain",
         "title": "%kbengine.command.python.showCallChain.title%"
+      },
+      {
+        "command": "kbengine.python.showEngineSpi",
+        "title": "%kbengine.command.python.showEngineSpi.title%"
       },
       {
         "command": "kbengine.runtimeQuery.show",
@@ -1738,6 +1743,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.codeLens.typesXml.description%"
+          },
+          "kbengine.codeLens.engineSpi": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.engineSpi.description%"
           },
           "kbengine.hover.apiDocs": {
             "type": "boolean",

@@ -746,6 +746,11 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 - 标题：`Show Call Chain`
 - 作用：为选中方法生成配置的 Python 调用链预览
 
+### `kbengine.python.showEngineSpi`
+
+- 标题：`Show Engine SPI Implementation Info`
+- 作用：显示所点引擎 SPI 镜标题(身份与触发时机);引擎侧调用点在引擎源码仓,无源码可跳
+
 ### `kbengine.compatibility.check`
 
 - 标题：`Check Engine Compatibility`

@@ -278,11 +278,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // provider+切换命令注册)+ 共享服务类型面 +1 → 前四打点 129/210/283/350 →
   // 132/213/286/353(+3);processOwnership 块后注册块(+1 调用+新 provider
   // 装配)→ 750 一路 +20 → 785,真位重探;出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 213, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 286, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 353, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 132, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 785, "startLanguageServiceOperation('completion'"],
+  // 2026-11-18(KODE-CFG-015 恢复批):languageServices.ts 顶部 import +1
+  // (EngineSpiCodeLensProvider)+ 返回面接口与返回对象各 +1 + fileModified
+  // 块后 SPI 注册块与命令(+22,位于 353 打点之后)→ 前四打点 132/213/286/353
+  // → 134/215/288/355(+2),785 → 809(+24),真位重探;出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 215, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 288, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 355, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 134, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 809, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -368,8 +372,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-17(FILE-TIME-001):extension.ts 解构面 +1(新 provider impl,
   // 在 476 前)→ 476/581 → 477/582;fire 块 +1(785 之后,不影响本表),
   // 真位重探;出处随 baseline 锁步。
-  ['src/extension.ts', 477, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 582, 'flushQueued()'],
+  // 2026-11-18(KODE-CFG-015 恢复批):extension.ts 解构面 +1(engineSpi impl,
+  // 在 477 前)→ 477/582 → 478/583;fire 块 +1(582 之后,不影响本表),真位
+  // 重探;出处随 baseline 锁步。
+  ['src/extension.ts', 478, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 583, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
