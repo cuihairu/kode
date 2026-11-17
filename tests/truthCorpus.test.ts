@@ -131,13 +131,15 @@ const roleFaceEntries = roleFaceFamily.entries as unknown as RoleFaceEntry[];
 
 // ---- entity-builtin-props-cellapp 族形状与鞍具 ----
 interface BuiltinPropEntry extends TruthEntryBase {
-  input: { face: 'cellapp'; prop?: string; roster?: boolean };
+  input: { face: 'cellapp' | 'baseapp'; prop?: string; roster?: boolean };
   kode: TruthEntryBase['kode'] & {
     analysis?: { name?: string; readonly?: boolean; names?: string[] };
   };
 }
 const builtinPropsFamily = families.find(f => f.family === 'entity-builtin-props-cellapp')!;
 const builtinPropsEntries = builtinPropsFamily.entries as unknown as BuiltinPropEntry[];
+const builtinPropsBaseappFamily = families.find(f => f.family === 'entity-builtin-props-baseapp')!;
+const builtinPropsBaseappEntries = builtinPropsBaseappFamily.entries as unknown as BuiltinPropEntry[];
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -279,23 +281,29 @@ describe('真值语料 execution 门:cell-data 角色闸接管矩阵(KR-AUD-74 �
   });
 });
 
-// ---- ⑤ entity-builtin-props-cellapp 执行门 ----
-describe('真值语料 execution 门:cellapp 内建属性面逐项对账(§6 完整表)', () => {
-  const table = getEntityBuiltinPropertiesForFace('cellapp');
+// ---- ⑤ entity-builtin-props-cellapp/baseapp 执行门(逐项对账+roster 完备性) ----
+describe('真值语料 execution 门:内建属性面逐项对账(cellapp §6 / baseapp §1 注册表)', () => {
+  const all = [...builtinPropsEntries, ...builtinPropsBaseappEntries];
 
   it('每条 pinned 单属性条目的名字+读写性实测等于语料钉值(drift 即红)', () => {
-    const single = builtinPropsEntries.filter(e => e.kode.status === 'pinned' && e.input.prop);
+    const single = all.filter(e => e.kode.status === 'pinned' && e.input.prop);
     expect(single.length).toBeGreaterThan(0);
     for (const entry of single) {
+      const table = getEntityBuiltinPropertiesForFace(entry.input.face);
       const hit = table.find(p => p.name === entry.input.prop);
-      expect(hit, `属性缺席 cellapp 面: ${entry.id} (${entry.input.prop})`).toBeDefined();
+      expect(hit, `属性缺席 ${entry.input.face} 面: ${entry.id} (${entry.input.prop})`).toBeDefined();
       expect(hit!.readonly, `readonly drift: ${entry.id}`).toBe(entry.kode.analysis?.readonly);
     }
   });
 
   it('roster 完备性条目:面名单逐项等于语料钉值(多出/缺席/改序即红)', () => {
-    const rosterEntry = builtinPropsEntries.find(e => e.input.roster);
-    expect(rosterEntry).toBeDefined();
-    expect(table.map(p => p.name)).toEqual(rosterEntry!.kode.analysis?.names);
+    for (const entries of [builtinPropsEntries, builtinPropsBaseappEntries]) {
+      const rosterEntry = entries.find(e => e.input.roster);
+      expect(rosterEntry).toBeDefined();
+      const table = getEntityBuiltinPropertiesForFace(rosterEntry!.input.face);
+      expect(table.map(p => p.name), `roster drift: ${rosterEntry!.id}`).toEqual(
+        rosterEntry!.kode.analysis?.names
+      );
+    }
   });
 });

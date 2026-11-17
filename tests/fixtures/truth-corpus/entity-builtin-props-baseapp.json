@@ -1,0 +1,239 @@
+{
+  "family": "entity-builtin-props-baseapp",
+  "grounding": {
+    "doc": "docs/knowledge/api-baseapp-entity.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "baseapp-attr-id",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "id"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "id 只读 int32;base/cell/client 三面视图共享同一实体 id"
+      },
+      "evidence": [
+        "### `entity.id` *(read-only, int32)* — `entity.className` *(read-only, str)* — `entity.isDestroyed` *(bool)*"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "id",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-isDestroyed",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "isDestroyed"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "isDestroyed 只读;销毁旗(getter pyGetIsDestroyed :1491)"
+      },
+      "evidence": [
+        "### `entity.id` *(read-only, int32)* — `entity.className` *(read-only, str)* — `entity.isDestroyed` *(bool)*"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "isDestroyed",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-className",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "className"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "className 只读(getter pyGetClassName :1496)"
+      },
+      "evidence": [
+        "### `entity.id` *(read-only, int32)* — `entity.className` *(read-only, str)* — `entity.isDestroyed` *(bool)*"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "className",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-cell",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "cell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cell=cell 部分的 EntityCall,无 cell 时 None,只读(getter entity.cpp:750 pyGetCellEntityCall);一次异步 createCellEntity≠已持 Cell"
+      },
+      "evidence": [
+        "`EntityCall` to the cell part, `None` until a cell exists. Getter"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "cell",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-client",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "client"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "client=绑定客户端 EntityCall,无绑定时 None,只读"
+      },
+      "evidence": [
+        "### `entity.client` *(read-only attr)*"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "client",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-databaseID",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "databaseID"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "databaseID 只读 uint64;0=从未归档"
+      },
+      "evidence": [
+        "Permanent id; 0 means never archived. Getter `entity.cpp:769` (`pyGetDBID`)."
+      ],
+      "kode": {
+        "analysis": {
+          "name": "databaseID",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-databaseInterfaceName",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "databaseInterfaceName"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "databaseInterfaceName 只读;实体持久化经的 dbmgr 接口名,databaseID==0 时空串"
+      },
+      "evidence": [
+        "### `entity.databaseInterfaceName` *(read-only, str)*"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "databaseInterfaceName",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-shouldAutoBackup",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "shouldAutoBackup"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "shouldAutoBackup 可写;True/False/NEXT_ONLY(一次调度后翻 False),archiver 周期扫描用"
+      },
+      "evidence": [
+        "### `entity.shouldAutoArchive` / `entity.shouldAutoBackup` *(get/set)*"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "shouldAutoBackup",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-shouldAutoArchive",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "prop": "shouldAutoArchive"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "shouldAutoArchive 可写;True/False/NEXT_ONLY,archiver 周期扫描用"
+      },
+      "evidence": [
+        "### `entity.shouldAutoArchive` / `entity.shouldAutoBackup` *(get/set)*"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "shouldAutoArchive",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "baseapp-attr-roster-complete",
+      "kind": "positive",
+      "input": {
+        "face": "baseapp",
+        "roster": true
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "baseapp 实体 getset 属性全集=§1 注册表行 9 项(entity.cpp:35-41 六项+entity_macro.h:33-35 三项);无 cellData(实例属性非 getset,由 installCellDataAttr 装,归 cell-data 族)、无 base/cellapp 专属(spaceID/position 等)"
+      },
+      "evidence": [
+        "(`cell`, `client`, `databaseID`, `databaseInterfaceName`, `shouldAutoBackup`, `shouldAutoArchive`) plus `entity_macro.h:33-35` (`id`, `isDestroyed`, `className`)"
+      ],
+      "kode": {
+        "analysis": {
+          "names": [
+            "id",
+            "isDestroyed",
+            "className",
+            "cell",
+            "client",
+            "databaseID",
+            "databaseInterfaceName",
+            "shouldAutoBackup",
+            "shouldAutoArchive"
+          ]
+        },
+        "status": "pinned"
+      },
+      "finding": "完备性正向钉:kode baseapp 面名单与 §1 注册表行逐项对齐零分歧;cellData 缺席=正确(getset 表口径,cellData 走 CELL 家族独立面)"
+    }
+  ]
+}

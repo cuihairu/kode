@@ -108,3 +108,11 @@ attributes 完整表。execution 闸=单属性条目(名字+读写性)+roster �
 pyi,非本 grounding 档)。钉域边界:本族只证「cellapp 内建属性面」;
 baseapp/client 两面各有 grounding 档(api-baseapp-entity.md/api-client.md),
 逐族另建不混装。
+
+## entity-builtin-props-baseapp 族(2026-11-17 第五族)
+
+依据:docs/knowledge/api-baseapp-entity.md(fork HEAD 6d12b8f)§1 注册表行
+(getset 表 roster 一行钉)+逐属性节。9 属性条目+roster 完备性条目,执行闸与
+cellapp 族共用(face 分发)。**对齐族零分歧**:kode baseapp 面 9 项与注册表
+行逐项同;cellData 缺席=正确(实例属性非 getset,归 CELL 家族)。client 面
+(api-client.md)同法另建。
