@@ -16,6 +16,7 @@ import { cellDataWrongKeyFindings } from '../src/backend/cellDataWrongKey';
 import { trackCellDataKeys, cellDataKeyWorldOpen } from '../src/backend/cellDataKeyTracking';
 import { cellDataCallbackFindings } from '../src/backend/cellDataCallbackCheck';
 import { cellScriptRoleAndEntity, type CellDataKeyEntry } from '../src/backend/cellDataCompletion';
+import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -127,6 +128,16 @@ interface RoleFaceEntry extends TruthEntryBase {
 }
 const roleFaceFamily = families.find(f => f.family === 'cell-data-role-face')!;
 const roleFaceEntries = roleFaceFamily.entries as unknown as RoleFaceEntry[];
+
+// ---- entity-builtin-props-cellapp 族形状与鞍具 ----
+interface BuiltinPropEntry extends TruthEntryBase {
+  input: { face: 'cellapp'; prop?: string; roster?: boolean };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { name?: string; readonly?: boolean; names?: string[] };
+  };
+}
+const builtinPropsFamily = families.find(f => f.family === 'entity-builtin-props-cellapp')!;
+const builtinPropsEntries = builtinPropsFamily.entries as unknown as BuiltinPropEntry[];
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -265,5 +276,26 @@ describe('真值语料 execution 门:cell-data 角色闸接管矩阵(KR-AUD-74 �
       const actual = entry.input.roleProbes!.map(p => cellScriptRoleAndEntity(p));
       expect(actual, `roleGate drift: ${entry.id}`).toEqual(entry.kode.validation?.roleGate);
     }
+  });
+});
+
+// ---- ⑤ entity-builtin-props-cellapp 执行门 ----
+describe('真值语料 execution 门:cellapp 内建属性面逐项对账(§6 完整表)', () => {
+  const table = getEntityBuiltinPropertiesForFace('cellapp');
+
+  it('每条 pinned 单属性条目的名字+读写性实测等于语料钉值(drift 即红)', () => {
+    const single = builtinPropsEntries.filter(e => e.kode.status === 'pinned' && e.input.prop);
+    expect(single.length).toBeGreaterThan(0);
+    for (const entry of single) {
+      const hit = table.find(p => p.name === entry.input.prop);
+      expect(hit, `属性缺席 cellapp 面: ${entry.id} (${entry.input.prop})`).toBeDefined();
+      expect(hit!.readonly, `readonly drift: ${entry.id}`).toBe(entry.kode.analysis?.readonly);
+    }
+  });
+
+  it('roster 完备性条目:面名单逐项等于语料钉值(多出/缺席/改序即红)', () => {
+    const rosterEntry = builtinPropsEntries.find(e => e.input.roster);
+    expect(rosterEntry).toBeDefined();
+    expect(table.map(p => p.name)).toEqual(rosterEntry!.kode.analysis?.names);
   });
 });

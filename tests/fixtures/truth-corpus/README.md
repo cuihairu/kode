@@ -98,3 +98,13 @@ c2a3b8f)。execution 闸钉角色闸接管矩阵(`cellScriptRoleAndEntity` 五�
   双面写法);kode 无回调签名检查面,实体向导生成的正是无默认值签名(base
   段钩子)——分部布局下是否踩陷阱取决于同一类是否跨进程加载,布局语义
   待取证。
+
+## entity-builtin-props-cellapp 族(2026-11-17 第四族)
+
+依据:docs/knowledge/api-cellapp-entity.md(fork HEAD 6d12b8f)§6 Entity
+attributes 完整表。execution 闸=单属性条目(名字+读写性)+roster 完备性条目
+(面名单逐项等,多出/缺席/改序即红)。**对齐族**:kode cellapp 面 18 项与
+引擎 §6 表逐项零分歧(名字+R/W);类型面不属本族钉域(kode 类型来源=修正版
+pyi,非本 grounding 档)。钉域边界:本族只证「cellapp 内建属性面」;
+baseapp/client 两面各有 grounding 档(api-baseapp-entity.md/api-client.md),
+逐族另建不混装。

@@ -1,0 +1,447 @@
+{
+  "family": "entity-builtin-props-cellapp",
+  "grounding": {
+    "doc": "docs/knowledge/api-cellapp-entity.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "cellapp-attr-id",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "id"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "id 只读;宏公共三项,所有实体类继承"
+      },
+      "evidence": [
+        "| `id` | R | `entity_macro.h:37` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "id",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-isDestroyed",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "isDestroyed"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "isDestroyed 只读;销毁后翻真"
+      },
+      "evidence": [
+        "| `isDestroyed` | R | `entity_macro.h:38`, impl `:1489-1493` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "isDestroyed",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-className",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "className"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "className 只读"
+      },
+      "evidence": [
+        "| `className` | R | `entity_macro.h:39` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "className",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-base",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "base"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "base=属主 baseapp 部分的 EntityCall,只读;cellapp 实体没有 cell 属性(自身即 cell)"
+      },
+      "evidence": [
+        "| `base` / `client` | R | `entity.cpp:74-75` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "base",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-client",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "client"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "client=绑定客户端 EntityCall,无绑定时 None,只读"
+      },
+      "evidence": [
+        "| `base` / `client` | R | `entity.cpp:74-75` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "client",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-allClients",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "allClients"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "allClients=广播代理,受众=Witness 视野集合+先发自己客户端,只读"
+      },
+      "evidence": [
+        "| `allClients` / `otherClients` | R | `entity.cpp:76-77`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "allClients",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-otherClients",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "otherClients"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "otherClients=广播代理,跳过自己客户端只发视野他人,只读"
+      },
+      "evidence": [
+        "| `allClients` / `otherClients` | R | `entity.cpp:76-77`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "otherClients",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-isWitnessed",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "isWitnessed"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "isWitnessed 只读;Witness 视野面"
+      },
+      "evidence": [
+        "| `isWitnessed` / `hasWitness` | R | `entity.cpp:78-79` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "isWitnessed",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-hasWitness",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "hasWitness"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "hasWitness 只读;Witness 视野面"
+      },
+      "evidence": [
+        "| `isWitnessed` / `hasWitness` | R | `entity.cpp:78-79` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "hasWitness",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-isOnGround",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "isOnGround"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "isOnGround 只读;材料属性散文有但汇总表缺(§8)"
+      },
+      "evidence": [
+        "| `isOnGround` | R | `entity.cpp:80`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "isOnGround",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-spaceID",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "spaceID"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "spaceID 只读;当前空间 id"
+      },
+      "evidence": [
+        "| `spaceID` | R | `entity.cpp:81` |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "spaceID",
+          "readonly": true
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-layer",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "layer"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "layer 可写;navmesh layer 选择"
+      },
+      "evidence": [
+        "| `layer` | R/W | `entity.cpp:82`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "layer",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-position",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "position"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "position 可写;写走 position 更新路径(witness/volatile 机器)"
+      },
+      "evidence": [
+        "| `position` | R/W | `entity.cpp:83`;"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "position",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-direction",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "direction"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "direction 可写;(roll,pitch,yaw) 弧度"
+      },
+      "evidence": [
+        "| `direction` | R/W | `entity.cpp:84`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "direction",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-topSpeed",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "topSpeed"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "topSpeed 可写;服务端移动合法上限"
+      },
+      "evidence": [
+        "| `topSpeed` / `topSpeedY` | R/W | `entity.cpp:85-86`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "topSpeed",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-topSpeedY",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "topSpeedY"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "topSpeedY 可写;服务端移动合法上限"
+      },
+      "evidence": [
+        "| `topSpeed` / `topSpeedY` | R/W | `entity.cpp:85-86`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "topSpeedY",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-controlledBy",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "controlledBy"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "controlledBy 可写;控制权移交面(§5)"
+      },
+      "evidence": [
+        "| `controlledBy` | R/W | `entity.cpp:87`"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "controlledBy",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-volatileInfo",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "prop": "volatileInfo"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "volatileInfo 可写;逐轴 volatile 同步策略,也可被 .def <Volatile> 声明"
+      },
+      "evidence": [
+        "| `volatileInfo` | R/W | `entity.cpp:88` (`:2297`)"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "volatileInfo",
+          "readonly": false
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "cellapp-attr-roster-complete",
+      "kind": "positive",
+      "input": {
+        "face": "cellapp",
+        "roster": true
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cellapp 实体脚本可见属性全集=上表 18 项(宏公共 3+面 15);无 cell(自身即 cell)、无 cellData(见 cell-data-role-face 族)、无 baseapp 专属(databaseID/shouldAutoBackup/shouldAutoArchive)"
+      },
+      "evidence": [
+        "| `base` / `client` | R | `entity.cpp:74-75` |",
+        "| `spaceID` | R | `entity.cpp:81` |"
+      ],
+      "kode": {
+        "analysis": {
+          "names": [
+            "id",
+            "isDestroyed",
+            "className",
+            "base",
+            "client",
+            "allClients",
+            "otherClients",
+            "isWitnessed",
+            "hasWitness",
+            "isOnGround",
+            "spaceID",
+            "layer",
+            "position",
+            "direction",
+            "topSpeed",
+            "topSpeedY",
+            "controlledBy",
+            "volatileInfo"
+          ]
+        },
+        "status": "pinned"
+      },
+      "finding": "完备性正向钉:kode cellapp 面名单与引擎档 §6 完整表逐项对齐零分歧(名字+读写性);类型面不属本族钉域(类型来源=修正版 pyi,entityBuiltinProperties 头注)"
+    }
+  ]
+}
