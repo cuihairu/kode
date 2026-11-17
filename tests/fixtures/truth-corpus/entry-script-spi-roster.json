@@ -1,0 +1,180 @@
+{
+  "family": "entry-script-spi-roster",
+  "grounding": {
+    "doc": "docs/knowledge/entry-script-spi-methods.md",
+    "engineHead": "c2a3b8f"
+  },
+  "entries": [
+    {
+      "id": "spi-roster-baseapp",
+      "kind": "positive",
+      "input": { "component": "baseapp" },
+      "engine": {
+        "load": "accept",
+        "truth": "baseapp 入口 SPI=12 方法(template 注册面,KBEMAIN 宏块):kode 引擎 SPI 标注镜的 baseapp 名册与档表逐名同,可选三件(onReadyForLogin/onAutoLoadEntityCreate/onReadyForShutDown)同旗。"
+      },
+      "evidence": [
+        "### baseapp — 12 methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onAutoLoadEntityCreate", "onBaseAppData", "onBaseAppDataDel", "onBaseAppReady", "onBaseAppShutDown", "onCellAppDeath", "onGlobalData", "onGlobalDataDel", "onInit", "onLoseChargeCB", "onReadyForLogin", "onReadyForShutDown"],
+          "optionalNames": ["onAutoLoadEntityCreate", "onReadyForLogin", "onReadyForShutDown"]
+        }
+      }
+    },
+    {
+      "id": "spi-roster-cellapp",
+      "kind": "positive",
+      "input": { "component": "cellapp" },
+      "engine": {
+        "load": "accept",
+        "truth": "cellapp 入口 SPI=9 方法:空间数据三件(onSpaceData/onSpaceGeometryLoaded/onAllSpaceGeometryLoaded)+字典广播双件+全局广播双件+onInit/onReadyForLogin;kode 名册逐名同,可选一件同旗。"
+      },
+      "evidence": [
+        "### cellapp — 9 methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onAllSpaceGeometryLoaded", "onCellAppData", "onCellAppDataDel", "onGlobalData", "onGlobalDataDel", "onInit", "onReadyForLogin", "onSpaceData", "onSpaceGeometryLoaded"],
+          "optionalNames": ["onReadyForLogin"]
+        }
+      }
+    },
+    {
+      "id": "spi-roster-loginapp",
+      "kind": "positive",
+      "input": { "component": "loginapp" },
+      "engine": {
+        "load": "accept",
+        "truth": "loginapp 入口 SPI=7 方法(登录/建号两回调族+回调自 DB 双件+ready/shutdown 两件+onLoseLogin):kode 名册逐名同,全必选无可选=同旗。"
+      },
+      "evidence": [
+        "### loginapp — 7 methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onCreateAccountCallbackFromDB", "onLoginAppReady", "onLoginAppShutDown", "onLoginCallbackFromDB", "onLoseLogin", "onRequestCreateAccount", "onRequestLogin"],
+          "optionalNames": []
+        }
+      }
+    },
+    {
+      "id": "spi-roster-dbmgr",
+      "kind": "positive",
+      "input": { "component": "dbmgr" },
+      "engine": {
+        "load": "accept",
+        "truth": "dbmgr 入口 SPI=4 方法:ready/selectAccountDBInterface/shutdown+可选 onReadyForShutDown;kode 名册逐名同,可选一件同旗。"
+      },
+      "evidence": [
+        "### dbmgr — 4 methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onDBMgrReady", "onDBMgrShutDown", "onReadyForShutDown", "onSelectAccountDBInterface"],
+          "optionalNames": ["onReadyForShutDown"]
+        }
+      }
+    },
+    {
+      "id": "spi-roster-interfaces",
+      "kind": "positive",
+      "input": { "component": "interfaces" },
+      "engine": {
+        "load": "accept",
+        "truth": "interfaces 入口 SPI=5 方法(第三方账号接口面:ready/建号/登录/扣费+shutdown):kode 名册逐名同,全必选=同旗。"
+      },
+      "evidence": [
+        "### interfaces — 5 methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onInterfaceAppReady", "onInterfaceAppShutDown", "onRequestAccountLogin", "onRequestCharge", "onRequestCreateAccount"],
+          "optionalNames": []
+        }
+      }
+    },
+    {
+      "id": "spi-roster-logger",
+      "kind": "positive",
+      "input": { "component": "logger" },
+      "engine": {
+        "load": "accept",
+        "truth": "logger 入口 SPI=4 方法:ready/shutdown+可选 onReadyForShutDown 与 onLogWrote(guard 是 static bool 每进程只评一次):kode 名册逐名同,可选两件同旗。"
+      },
+      "evidence": [
+        "### logger — 4 methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onLogWrote", "onLoggerAppReady", "onLoggerAppShutDown", "onReadyForShutDown"],
+          "optionalNames": ["onLogWrote", "onReadyForShutDown"]
+        }
+      }
+    },
+    {
+      "id": "spi-roster-bots",
+      "kind": "positive",
+      "input": { "component": "bots" },
+      "engine": {
+        "load": "accept",
+        "truth": "bots 入口 SPI=2 方法(onInit/onFinish):共享表第三名 onTargetChanged 档内明示 client only,不入 bots 面;kode bots 名册正确剔除=同向。"
+      },
+      "evidence": [
+        "### client / bots — 3 methods",
+        "| `onTargetChanged` | yes | `i` | `clientapp.cpp:458` | client entity target change — client only |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onFinish", "onInit"],
+          "optionalNames": []
+        }
+      }
+    },
+    {
+      "id": "spi-roster-client",
+      "kind": "positive",
+      "input": { "component": "client" },
+      "engine": {
+        "load": "accept",
+        "truth": "client 入口 SPI=3 方法(onInit/onFinish/onTargetChanged):onFinish 是 client/bots 独有非服务端回调,onTargetChanged 只在 client;kode 名册逐名同。"
+      },
+      "evidence": [
+        "### client / bots — 3 methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onFinish", "onInit", "onTargetChanged"],
+          "optionalNames": []
+        }
+      }
+    },
+    {
+      "id": "spi-optional-four",
+      "kind": "positive",
+      "input": { "optionalRoster": true },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎可选入口 SPI=4 方法(HasAttr 守卫面):onAutoLoadEntityCreate(baseapp)/onLogWrote(logger)/onReadyForLogin(baseapp+cellapp)/onReadyForShutDown(baseapp+dbmgr+logger);其余 32 中 14 走宏(缺属性也静默只差打印),18 直调(缺属性每次 AttributeError)——kode required=false 旗与守卫面同。"
+      },
+      "evidence": [
+        "## The 4 optional methods"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onAutoLoadEntityCreate", "onLogWrote", "onReadyForLogin", "onReadyForShutDown"]
+        }
+      }
+    }
+  ]
+}

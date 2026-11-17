@@ -26,6 +26,7 @@ import { analyzeFixedDictMutations } from '../src/backend/fixedDictMutationDiagn
 import { findRoleMisuseFindings } from '../src/backend/roleMisuseDiagnostics';
 import { findEventCalls } from '../src/eventApi';
 import { findReadOnlyWriteFindings } from '../src/backend/readOnlyWriteDiagnostics';
+import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -305,6 +306,16 @@ interface ReadOnlyWriteEntry extends TruthEntryBase {
 const readOnlyWriteFamilies = ['entity-readonly-write-cellapp', 'entity-readonly-write-baseapp', 'entity-readonly-write-client']
   .map(name => families.find(f => f.family === name)!);
 const readOnlyWriteEntries = readOnlyWriteFamilies.flatMap(f => f.entries as unknown as ReadOnlyWriteEntry[]);
+
+// ---- entry-script-spi-roster 族形状与鞍具 ----
+interface SpiRosterEntry extends TruthEntryBase {
+  input: { component?: string; optionalRoster?: boolean };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { names?: string[]; optionalNames?: string[] };
+  };
+}
+const spiRosterFamily = families.find(f => f.family === 'entry-script-spi-roster')!;
+const spiRosterEntries = spiRosterFamily.entries as unknown as SpiRosterEntry[];
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -772,6 +783,31 @@ describe('真值语料 execution 门:内建属性只读写面(findReadOnlyWriteF
     for (const entry of pinned.filter(e => e.kind === 'negative')) {
       const findings = findReadOnlyWriteFindings(entry.input.code, null, null);
       expect(findings, `null face drift: ${entry.id}`).toEqual([]);
+    }
+  });
+});
+
+// ---- ⑲ entry-script-spi-roster 执行门 ----
+describe('真值语料 execution 门:入口 SPI 全组件名册(ENGINE_SPI_METHODS 对档表)', () => {
+  const pinned = spiRosterEntries.filter(e => e.kode.status === 'pinned');
+
+  it('每组件名册+可选旗实测等于语料钉值(缺一多一即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      if (entry.input.component) {
+        const roster = Object.entries(ENGINE_SPI_METHODS)
+          .filter(([, m]) => m.components.includes(entry.input.component!))
+          .map(([n]) => n).sort();
+        const optional = Object.entries(ENGINE_SPI_METHODS)
+          .filter(([, m]) => m.components.includes(entry.input.component!) && !m.required)
+          .map(([n]) => n).sort();
+        expect(roster, `spi roster drift: ${entry.id}`).toEqual(entry.kode.analysis?.names ?? []);
+        expect(optional, `spi optional drift: ${entry.id}`).toEqual(entry.kode.analysis?.optionalNames ?? []);
+      } else if (entry.input.optionalRoster) {
+        const all = Object.entries(ENGINE_SPI_METHODS).filter(([, m]) => !m.required).map(([n]) => n).sort();
+        expect(all, `spi optional-four drift: ${entry.id}`).toEqual(entry.kode.analysis?.names ?? []);
+        expect(all.length).toBe(4);
+      }
     }
   });
 });

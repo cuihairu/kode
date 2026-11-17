@@ -201,3 +201,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## entity-readonly-write-client 族(2026-11-18 第十八族)
 
 依据:docs/knowledge/api-client.md(fork HEAD 6d12b8f)§4.3 getset 表(read-only/get-set Type 列)。8 例:负臂 4(spaceID 赋值/className 增强赋值/base del/isDestroyed 注解赋值)+正臂 4(position 客户端写喂 updatePlayerToServer 沉默/velocity get/set 写沉默/base 判空比较沉默/docstring 掩码沉默)+非实体脸沉默独立臂。执行门=三族同构闸共用。**对齐族零分歧**:client 面 getset 表 R/W 口径(family-6 语料已钉表)与 §4.3 Type 列逐项同向;position 客户端侧写=引擎明示合法路径(同步机制 clientobjectbase.cpp:1193-1275),与 server 面 position 写路径分立。
+
+## entry-script-spi-roster 族(2026-11-18 第十九族)
+
+依据:docs/knowledge/entry-script-spi-methods.md(fork HEAD c2a3b8f)六组件表+可选四件节。9 例=roster 臂 8(baseapp 12/cellapp 9/loginapp 7/dbmgr 4/interfaces 5/logger 4/bots 2/client 3,名册+可选旗双钉,缺一多一即红)+可选四件臂 1(onAutoLoadEntityCreate/onLogWrote/onReadyForLogin/onReadyForShutDown)。执行门=ENGINE_SPI_METHODS 直钉(SRC-002 恢复件,九族 roster 只钉 SP-1 三件,本族把标注镜全 36 方法面钉进语料护栏)。**对齐族零分歧**:八组件名册+可选旗逐名同向;bots 名册正确剔除 onTargetChanged(档内明示 client only)=档内细分同向;与第九族的 SP-1 范围子集登记互补——标注镜面(本族)与入口钩子 roster 面(family-9)两脸各自钉死。
