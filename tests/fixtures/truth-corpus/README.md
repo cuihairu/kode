@@ -173,3 +173,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## data-dictionary-domain 族(2026-11-17 第十一族)
 
 依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.4 数据字典表。10 例:字典域臂 4(globalData=null 全进程不收窄/cellAppData=[cell]/baseAppData=[base]/spaceData=null)+进程域臂 6(域内真/域外假/角色不可知与无 scripts 锚定=诚实不判)。执行门=dataDictProcessDomain+dataDictSiteInDomain 双函数直钉。**对齐族**:三字典域化与 §1.4 表逐项同向;登记面=spaceData 条目 kind=unknown(表的模块属性面未列,kode 未建模域化——无害但未建模,取证=cellapp/KBEngine.md 属性节,补域归独立批)。C++ 锚(baseapp.cpp:461/cellapp.cpp:200/entity_app.h:419)在 kode 源头注,本族evidence 采知识档表行。
+
+## process-module-surface 族(2026-11-17 第十二族)
+
+依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.7 共享工具面+§2 app 差异。7 例:base/cell 共享清单臂(21 名逐名在场,缺一即红)+单符号臂 3(base address 在场/component 双面在场)+**divergence 条目 1**(引擎 cellapp 无 address,kode cell 表含=面宽于引擎,补全/stub 会对 cell 脚本给运行期不存在的名字;钉 kode 现状,修复 process-api.json 双侧落地后翻钉)+bots subset 缺席清单臂 1(kind=unknown:档言 subset 未枚举成员,kode 缺席名单相容,逐项归属待取证)。**语料方法学第三次实战命中**:parity 全绿下抓出 process-api 实分歧,方向=误导面(补全给出 AttributeError 名字),与 def-flags 四分歧/cell 角色收窄同账本。执行门=processApiSymbols 名单谓词三臂(单符号/在场清单/缺席清单)。

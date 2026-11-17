@@ -18,7 +18,7 @@ import { cellDataCallbackFindings } from '../src/backend/cellDataCallbackCheck';
 import { cellScriptRoleAndEntity, type CellDataKeyEntry } from '../src/backend/cellDataCompletion';
 import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
 import { analyzeTimerCleanupOnDestroy } from '../src/backend/timerCleanupDiagnostics';
-import { pythonProcessFromPath, dataDictProcessDomain, dataDictSiteInDomain } from '../src/backend/pythonProcess';
+import { pythonProcessFromPath, dataDictProcessDomain, dataDictSiteInDomain, processApiSymbols, type PythonProcess } from '../src/backend/pythonProcess';
 import { KBENGINE_ENTRY_HOOKS } from '../src/backend/entryHooks';
 import { buildRpcLinks } from '../src/backend/flowRpcLinks';
 import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
@@ -245,6 +245,17 @@ interface DictDomainEntry extends TruthEntryBase {
 }
 const dictDomainFamily = families.find(f => f.family === 'data-dictionary-domain')!;
 const dictDomainEntries = dictDomainFamily.entries as unknown as DictDomainEntry[];
+
+// ---- process-module-surface 族形状与鞍具 ----
+interface ProcSurfaceEntry extends TruthEntryBase {
+  input: { process: string; symbol?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { present?: boolean | string[]; absent?: string[] };
+  };
+}
+const procSurfaceFamily = families.find(f => f.family === 'process-module-surface')!;
+const procSurfaceEntries = procSurfaceFamily.entries as unknown as ProcSurfaceEntry[];
+const procSymbolNames = (process: string) => processApiSymbols(process as PythonProcess).map(s => s.name);
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -574,6 +585,43 @@ describe('真值语料 execution 门:数据字典进程域(域化双函数直钉
       expect(dataDictSiteInDomain(entry.input.file!, entry.input.dict), `site drift: ${entry.id}`).toBe(
         entry.kode.analysis?.inDomain
       );
+    }
+  });
+});
+
+// ---- ⑪ process-module-surface 执行门 ----
+describe('真值语料 execution 门:进程模块面(共享清单/单符号/divergence 现状钉)', () => {
+  const pinned = procSurfaceEntries.filter(e => e.kode.status === 'pinned');
+
+  it('单符号臂:presence 实测等于语料钉值(cell address 条目钉住 divergence 现状)', () => {
+    const entries = pinned.filter(e => e.input.symbol && typeof e.kode.analysis?.present === 'boolean');
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const hit = procSymbolNames(entry.input.process).includes(entry.input.symbol);
+      expect(hit, `symbol presence drift: ${entry.id}`).toBe(entry.kode.analysis!.present);
+    }
+  });
+
+  it('在场清单臂:名单逐名实测在场(缺一即红)', () => {
+    const entries = pinned.filter(e => Array.isArray(e.kode.analysis?.present));
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const names = procSymbolNames(entry.input.process);
+      const wanted = entry.kode.analysis!.present as string[];
+      for (const sym of wanted) {
+        expect(names.includes(sym), `在场清单缺名 ${sym}: ${entry.id}`).toBe(true);
+      }
+    }
+  });
+
+  it('缺席清单臂:名单逐名实测不在场(混入即红)', () => {
+    const entries = pinned.filter(e => (e.kode.analysis?.absent?.length ?? 0) > 0);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const names = procSymbolNames(entry.input.process);
+      for (const sym of entry.kode.analysis!.absent!) {
+        expect(names.includes(sym), `缺席清单混入 ${sym}: ${entry.id}`).toBe(false);
+      }
     }
   });
 });
