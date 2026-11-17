@@ -1,0 +1,58 @@
+{
+  "family": "cell-data-role-face",
+  "grounding": {
+    "doc": "docs/knowledge/api-cellapp-entity.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "cell-script-celldata-attr-absent",
+      "kind": "negative",
+      "input": {
+        "path": "cell-script",
+        "roleProbes": [
+          "/ws/scripts/cell/Avatar.py",
+          "/ws/scripts/base/Avatar.py",
+          "/ws/scripts/client/Avatar.py",
+          "/ws/scripts/bots/Avatar.py",
+          "/ws/scripts/Avatar.py"
+        ]
+      },
+      "engine": { "load": "reject", "truth": "cellapp 实体没有 cellData 属性(installCellDataAttr 从不在 cellapp 安装)——cell 属性是普通实例属性,cell 角色脚本里任何 self.cellData 访问抛 AttributeError" },
+      "evidence": [
+        "`def onWriteToDB(self, cellData=None)` to work on both. A cellapp entity",
+        "has no cellData attribute (`installCellDataAttr` is never installed"
+      ],
+      "kode": {
+        "validation": {
+          "roleGate": [
+            { "role": "cell", "entity": "Avatar" },
+            { "role": "base", "entity": "Avatar" },
+            null,
+            null,
+            null
+          ]
+        },
+        "status": "pinned"
+      },
+      "finding": "分歧登记(消费面误导):kode 角色闸双接管 cell+base(cellDataCompletion 头注自称「cell/base 面可达 cellData」),引擎真值=cellapp 实体无 cellData 属性——cell 角色脚本里的键补全(CELL-04)/错键(CELL-10)/读型(CELL-08)/hover 全部作用于引擎必抛 AttributeError 的属性。修复方向=面收窄到 base 角色,归独立批(CELL 家族装配面+面门+消费面联动);本语料先钉现状与引擎对照"
+    },
+    {
+      "id": "onwrite-todb-cellapp-zero-args",
+      "kind": "negative",
+      "input": {
+        "path": "cell-script",
+        "signature": "def onWriteToDB(self, cellData):"
+      },
+      "engine": { "load": "reject", "truth": "cellapp 侧 onWriteToDB 零参触发(entity.cpp:1238);同一实体类 cellapp 脚本带 cellData 形参则 TypeError——引擎文档给的双面写法=def onWriteToDB(self, cellData=None)" },
+      "evidence": [
+        "on the cellapp it fires with **zero",
+        "`def onWriteToDB(self, cellData=None)` to work on both. A cellapp entity"
+      ],
+      "kode": {
+        "status": "not-analyzed"
+      },
+      "finding": "缺口登记:kode 无回调签名检查面(onWriteToDB 形参形状零分析);codeGeneratorRender.ts:239 实体向导生成 `def onWriteToDB(self, cellData):`(无默认值,base 段钩子)——kode 分部布局(base 段只在 baseapp 加载)下是否踩引擎陷阱取决于同一类是否跨进程加载,布局语义待取证;若收编签名检查面=独立批(双侧+lint 规则注册)"
+    }
+  ]
+}

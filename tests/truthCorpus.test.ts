@@ -15,7 +15,7 @@ import { validateDocument } from '../src/languageProviders';
 import { cellDataWrongKeyFindings } from '../src/backend/cellDataWrongKey';
 import { trackCellDataKeys, cellDataKeyWorldOpen } from '../src/backend/cellDataKeyTracking';
 import { cellDataCallbackFindings } from '../src/backend/cellDataCallbackCheck';
-import type { CellDataKeyEntry } from '../src/backend/cellDataCompletion';
+import { cellScriptRoleAndEntity, type CellDataKeyEntry } from '../src/backend/cellDataCompletion';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -117,6 +117,16 @@ const cellDataUniverseOf = (input: CellDataEntry['input']): CellDataKeyEntry[] =
 ];
 const cellDataSnippetOf = (input: CellDataEntry['input']): string =>
   ['class Avatar:', `    def ${input.method}(self):`, ...input.body.map(l => `        ${l}`)].join('\n');
+
+// ---- cell-data-role-face 族形状与鞍具 ----
+interface RoleFaceEntry extends TruthEntryBase {
+  input: { path: string; roleProbes?: string[]; signature?: string };
+  kode: TruthEntryBase['kode'] & {
+    validation?: { roleGate: ({ role: string; entity: string } | null)[] };
+  };
+}
+const roleFaceFamily = families.find(f => f.family === 'cell-data-role-face')!;
+const roleFaceEntries = roleFaceFamily.entries as unknown as RoleFaceEntry[];
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -239,6 +249,21 @@ describe('真值语料 execution 门:cell-data 键面+时序面(封闭世界双�
       expect(lifecycle, `lifecycle drift: ${entry.id}`).toEqual(
         entry.kode.validation?.lifecycle ?? []
       );
+    }
+  });
+});
+
+// ---- ④ cell-data-role-face 执行门 ----
+describe('真值语料 execution 门:cell-data 角色闸接管矩阵(KR-AUD-74 布局)', () => {
+  const pinned = roleFaceEntries.filter(
+    e => e.kode.status === 'pinned' && (e.input.roleProbes?.length ?? 0) > 0
+  );
+
+  it('每条 pinned 条目的角色闸实测等于语料钉值(drift 即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      const actual = entry.input.roleProbes!.map(p => cellScriptRoleAndEntity(p));
+      expect(actual, `roleGate drift: ${entry.id}`).toEqual(entry.kode.validation?.roleGate);
     }
   });
 });

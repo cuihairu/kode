@@ -81,3 +81,20 @@ execution 闸钉消费面(CELL-10 键面 + CELL-12 时序面)在给定宇宙下�
 - **时序面范围界**:CELL-12 只认 onGetCell 明确入口(onLoseCell 等一律沉默),
   本族实证 onLoseCell 读沉默与引擎真值(最后快照可读)同向;扩展需
   onBackupCellData 重装点证据在案。
+
+## cell-data-role-face 族(2026-11-17 第三族)
+
+依据:docs/knowledge/api-cellapp-entity.md(fork HEAD 6d12b8f,grounding base
+c2a3b8f)。execution 闸钉角色闸接管矩阵(`cellScriptRoleAndEntity` 五臂探针)。
+本族探针实测暴露的登记面(均条目 `finding` 注记,修复归独立批):
+
+- **消费面误导(分歧登记)**:kode 角色闸双接管 `scripts/cell/` 与
+  `scripts/base/`(头注自称「cell/base 面可达 cellData」),引擎真值=
+  **cellapp 实体没有 cellData 属性**(installCellDataAttr 从不安装)——cell
+  角色脚本里的键补全/错键/读型/hover 全部作用于引擎必抛 AttributeError 的
+  属性。修复方向=面收窄到 base 角色。
+- **签名检查缺口**:cellapp 侧 onWriteToDB 零参触发,`def onWriteToDB(self,
+  cellData):` 形参签名在 cellapp TypeError(引擎文档给 `cellData=None`
+  双面写法);kode 无回调签名检查面,实体向导生成的正是无默认值签名(base
+  段钩子)——分部布局下是否踩陷阱取决于同一类是否跨进程加载,布局语义
+  待取证。
