@@ -1,0 +1,13 @@
+<root>
+	<Type> Avatar </Type>
+	<Entity>
+		<Properties>
+			<hp>
+				<Type> UINT32 </Type>
+				<Flags> ALL_CLIENTS </Flags>
+				<Default> 777 </Default>
+				<Persistent> true </Persistent>
+			</hp>
+		</Properties>
+	</Entity>
+</root>
