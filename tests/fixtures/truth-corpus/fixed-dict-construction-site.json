@@ -10,6 +10,7 @@
       "kind": "negative",
       "input": {
         "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "fieldTypes": { "level": "UINT64", "gold": "UINT64", "stats": "UINT64" },
         "code": "class Avatar:\n    def rebuild(self):\n        self.profile = {'level': 5}"
       },
       "engine": {
@@ -21,11 +22,13 @@
         "\"set FIXED_DICT(%s) error! keys[%s] not found, allKeyNames=[%s].\","
       ],
       "kode": {
-        "status": "not-analyzed",
+        "status": "pinned",
         "analysis": {
-          "constructionFindings": 0
+          "constructionFindings": 1,
+          "constructionKind": "missing",
+          "constructionKey": "gold, stats"
         },
-        "finding": "漏报方向缺口登记:引擎对 FD 属性整赋值裸 dict 有键数/键缺失/键值类型三道响闸(datatype.cpp:2528/2546/2555)而 kode analyzeFixedDictMutations 只旗子键赋值(ATTR_TARGET 点路径+SUBSCRIPT_TARGET 下标),整赋值构造点零覆盖=三类运行期响错误全部编辑期漏报;构造点检查面收编归独立批,本族只登记不冒充修复。"
+        "finding": "对齐登记(翻案纠正):引擎键缺失响闸(运行期 TypeError)对应 kode KSEM-STRUCT-04 构造面(analyzeFixedDictConstructWrites→kbengine.fixedDictConstruct 诊断,diagnostics.ts 接线)编辑期 kind=missing 同面诊断(缺 gold, stats)。初版语料误探 analyzeFixedDictMutations(mutation 面,只旗子键赋值)误判构造点零覆盖=漏报缺口,实为探错面;本版以真面探针实测翻案(constructionFindings=1)。"
       }
     },
     {
@@ -33,6 +36,7 @@
       "kind": "negative",
       "input": {
         "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "fieldTypes": { "level": "UINT64", "gold": "UINT64", "stats": "UINT64" },
         "code": "class Avatar:\n    def rebuild(self):\n        self.profile = {'level': 1, 'gold': 2, 'stats': 3, 'extra': 4}"
       },
       "engine": {
@@ -44,11 +48,13 @@
         "\"FIXED_DICT(%s) key does not match! giveKeySize=%d, dictKeySize=%d, dictKeyNames=[%s], notFoundKeys=[%s].\""
       ],
       "kode": {
-        "status": "not-analyzed",
+        "status": "pinned",
         "analysis": {
-          "constructionFindings": 0
+          "constructionFindings": 1,
+          "constructionKind": "extra",
+          "constructionKey": "extra"
         },
-        "finding": "漏报方向缺口登记(同 fd-construct-missing-key):构造点键数闸编辑期零覆盖,收编归独立批。"
+        "finding": "对齐登记(翻案纠正,同 fd-construct-missing-key 探错面已翻案):引擎键数不符响闸为整字面量 collective 一条 TypeError, kode 构造面 kind=extra 按涉事键逐条诊断(extra 不是 PROFILE 字段)——裁决同向,仅消息粒度差异(逐键 vs 整体),非分歧。"
       }
     },
     {
@@ -56,6 +62,7 @@
       "kind": "negative",
       "input": {
         "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "fieldTypes": { "level": "UINT64", "gold": "UINT64", "stats": "UINT64" },
         "code": "class Avatar:\n    def rebuild(self):\n        self.profile = {'level': 'five', 'gold': 2, 'stats': 3}"
       },
       "engine": {
@@ -67,11 +74,15 @@
         "if(!dataType->isSameType(value))"
       ],
       "kode": {
-        "status": "not-analyzed",
+        "status": "pinned",
         "analysis": {
-          "constructionFindings": 0
+          "constructionFindings": 1,
+          "constructionKind": "type",
+          "constructionKey": "level",
+          "expected": "UINT64 (int 0..2^64-1)",
+          "actual": "str"
         },
-        "finding": "漏报方向缺口登记(同 fd-construct-missing-key):构造点键值类型闸编辑期零覆盖,收编归独立批。"
+        "finding": "对齐登记(翻案纠正,同 fd-construct-missing-key 探错面已翻案):引擎 at key: level(str) 响闸对应 kode 构造面 kind=type 编辑期诊断(level 期望 UINT64 实得 str,文案附期望/实际与声明来源);类型族判定=标量字面量结构类,边界未知不猜。"
       }
     },
     {
@@ -79,6 +90,7 @@
       "kind": "positive",
       "input": {
         "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "fieldTypes": { "level": "UINT64", "gold": "UINT64", "stats": "UINT64" },
         "code": "class Avatar:\n    def rebuild(self):\n        self.profile = {'level': 5, 'gold': 2, 'stats': 3}"
       },
       "engine": {
@@ -100,6 +112,7 @@
       "kind": "negative",
       "input": {
         "fixedDictProperties": { "profile": ["level", "gold", "stats"] },
+        "fieldTypes": { "level": "UINT64", "gold": "UINT64", "stats": "UINT64" },
         "code": "class Avatar:\n    def bump(self):\n        self.profile['level'] = 'five'"
       },
       "engine": {

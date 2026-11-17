@@ -23,6 +23,8 @@ import { KBENGINE_ENTRY_HOOKS } from '../src/backend/entryHooks';
 import { buildRpcLinks } from '../src/backend/flowRpcLinks';
 import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
 import { analyzeFixedDictMutations } from '../src/backend/fixedDictMutationDiagnostics';
+import { analyzeFixedDictConstructWrites } from '../src/backend/fixedDictConstructCheck';
+import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import { findRoleMisuseFindings } from '../src/backend/roleMisuseDiagnostics';
 import { findEventCalls } from '../src/eventApi';
 import { findReadOnlyWriteFindings } from '../src/backend/readOnlyWriteDiagnostics';
@@ -1127,16 +1129,26 @@ describe('truth-corpus: entity-script-base-class 族执行闸(实体脚本基类
   });
 });
 
-// ==================== fixed-dict-construction-site 族(第二十四增量,2026-11-18) ====================
-// FD 构造点面探针:analyzeFixedDictMutations 对「整赋值构造」零覆盖=漏报方向
-// 缺口(引擎 isSameType 逐键三道响闸),三负臂钉现状沉默+finding 登记;齐备臂
-// 沉默对齐;下标已知键类型不符臂钉「构造点响/下标静默」不对称对照(family-13
-// 陷阱面行为作为对照重钉)。
+// ==================== fixed-dict-construction-site 族(第二十四增量,2026-11-18;翻案纠正版) ====================
+// FD 构造点面探针:真面=KSEM-STRUCT-04 analyzeFixedDictConstructWrites(kbengine.fixedDictConstruct,
+// diagnostics.ts 接线)。初版误探 analyzeFixedDictMutations(mutation 面,只旗子键赋值)误判构造点
+// 零覆盖=漏报缺口登记;以真面探针实测翻案:引擎三道响闸(键数/键缺失/键值类型,datatype.cpp
+// 2528/2546/2555)=kode missing/extra/type 三 kind 逐面对齐。齐备臂沉默对齐;下标已知键类型不符
+// 臂双面钉=构造面不接管下标(0)+mutation 面旗子键(1),「构造点响/下标静默」不对称对照保留
+// (family-13 陷阱面行为重钉)。
 interface FdConstructEntry extends TruthEntryBase {
-  input: { fixedDictProperties: Record<string, string[]>; code: string };
+  input: {
+    fixedDictProperties: Record<string, string[]>;
+    fieldTypes: Record<string, string>;
+    code: string;
+  };
   kode: TruthEntryBase['kode'] & {
     analysis?: {
       constructionFindings?: number;
+      constructionKind?: string;
+      constructionKey?: string;
+      expected?: string;
+      actual?: string;
       subscriptFindings?: number;
       subscriptKind?: string;
     };
@@ -1145,46 +1157,79 @@ interface FdConstructEntry extends TruthEntryBase {
 const fdConstructFamily = families.find(f => f.family === 'fixed-dict-construction-site')!;
 const fdConstructEntries = fdConstructFamily.entries as unknown as FdConstructEntry[];
 
+/** 真面探针夹具:input.fieldTypes → 内联 PROFILE(types.xml:10),声明序=键序。 */
+const fdConstructProfileOf = (input: FdConstructEntry['input']): CustomTypeInfo => ({
+  name: 'PROFILE',
+  filePath: '/entity_defs/types.xml',
+  line: 10,
+  implementedByLine: 10,
+  startOffset: 0,
+  endOffset: 0,
+  aliasType: 'FIXED_DICT',
+  rawValue: '',
+  structure: { name: 'FIXED_DICT', rawValue: 'FIXED_DICT', children: [], line: 10 },
+  properties: Object.entries(input.fieldTypes).map(([name, typeName], i) => ({
+    name,
+    typeName,
+    line: 12 + i * 2
+  }))
+});
+
 const fdConstructFindingsOf = (input: FdConstructEntry['input']) =>
+  analyzeFixedDictConstructWrites(
+    input.code,
+    prop => Promise.resolve(prop === 'profile' ? 'PROFILE' : null),
+    [fdConstructProfileOf(input)]
+  );
+const fdMutationFindingsOf = (input: FdConstructEntry['input']) =>
   analyzeFixedDictMutations(input.code, new Map(Object.entries(input.fixedDictProperties)));
 
-describe('truth-corpus: fixed-dict-construction-site 族执行闸(FD 构造点面探针)', () => {
-  it('缺键臂:engine 键缺失响闸;kode 构造点零覆盖(漏报方向缺口登记)', () => {
+describe('truth-corpus: fixed-dict-construction-site 族执行闸(FD 构造点面探针,真面=KSEM-STRUCT-04 construct)', () => {
+  it('缺键臂:engine 键缺失响闸;kode 构造面 kind=missing 对齐(翻案纠正)', async () => {
     const entry = fdConstructEntries.find(e => e.id === 'fd-construct-missing-key')!;
-    const findings = fdConstructFindingsOf(entry.input);
+    const findings = await fdConstructFindingsOf(entry.input);
     expect(findings).toHaveLength(entry.kode.analysis!.constructionFindings!);
-    expect(entry.kode.status).toBe('not-analyzed');
-    expect(entry.kode.finding).toContain('漏报方向缺口登记');
-    expect(entry.kode.finding).toContain('三道响闸');
+    expect(findings[0].kind).toBe(entry.kode.analysis!.constructionKind);
+    expect(findings[0].key).toBe(entry.kode.analysis!.constructionKey);
+    expect(findings[0].message).toContain('missing field(s)');
+    expect(entry.kode.status).toBe('pinned');
   });
 
-  it('多键臂:engine 键数不符响闸;kode 构造点零覆盖(缺口登记)', () => {
+  it('多键臂:engine 键数不符响闸;kode 构造面 kind=extra 逐键对齐(粒度差异非分歧)', async () => {
     const entry = fdConstructEntries.find(e => e.id === 'fd-construct-extra-key')!;
-    const findings = fdConstructFindingsOf(entry.input);
+    const findings = await fdConstructFindingsOf(entry.input);
     expect(findings).toHaveLength(entry.kode.analysis!.constructionFindings!);
-    expect(entry.kode.finding).toContain('漏报方向缺口登记');
+    expect(findings[0].kind).toBe(entry.kode.analysis!.constructionKind);
+    expect(findings[0].key).toBe(entry.kode.analysis!.constructionKey);
+    expect(findings[0].message).toContain('is not a field of PROFILE');
   });
 
-  it('键值类型不符臂:engine at key 响闸;kode 构造点零覆盖(缺口登记)', () => {
+  it('键值类型不符臂:engine at key 响闸;kode 构造面 kind=type 附期望/实际对齐', async () => {
     const entry = fdConstructEntries.find(e => e.id === 'fd-construct-wrong-type')!;
-    const findings = fdConstructFindingsOf(entry.input);
+    const findings = await fdConstructFindingsOf(entry.input);
     expect(findings).toHaveLength(entry.kode.analysis!.constructionFindings!);
-    expect(entry.kode.finding).toContain('漏报方向缺口登记');
+    expect(findings[0].kind).toBe(entry.kode.analysis!.constructionKind);
+    expect(findings[0].key).toBe(entry.kode.analysis!.constructionKey);
+    expect(findings[0].expected).toBe(entry.kode.analysis!.expected);
+    expect(findings[0].actual).toBe(entry.kode.analysis!.actual);
   });
 
-  it('齐备臂:逐键全过合法构造,kode 沉默=对齐(整赋值推荐姿势)', () => {
+  it('齐备臂:逐键全过合法构造,kode 沉默=对齐(整赋值推荐姿势)', async () => {
     const entry = fdConstructEntries.find(e => e.id === 'fd-construct-exact')!;
-    const findings = fdConstructFindingsOf(entry.input);
+    const findings = await fdConstructFindingsOf(entry.input);
     expect(findings).toHaveLength(entry.kode.analysis!.constructionFindings!);
     expect(findings).toHaveLength(0);
     expect(entry.kode.status).toBe('pinned');
   });
 
-  it('下标不对称对照臂:engine 已知键类型不符静默 drop 而 kode 旗子键赋值(family-13 行为对照重钉)', () => {
+  it('下标不对称对照臂:engine 已知键类型不符静默 drop;kode 双面=构造面不接管下标(0)+mutation 面旗子键(1)', async () => {
     const entry = fdConstructEntries.find(e => e.id === 'fd-subscript-known-key-wrong-type-silent')!;
-    const findings = fdConstructFindingsOf(entry.input);
-    expect(findings).toHaveLength(entry.kode.analysis!.subscriptFindings!);
-    expect(findings[0].kind).toBe(entry.kode.analysis!.subscriptKind);
-    expect(findings[0].key).toBe('level');
+    const construct = await fdConstructFindingsOf(entry.input);
+    expect(construct).toHaveLength(entry.kode.analysis!.constructionFindings!);
+    expect(construct).toHaveLength(0);
+    const mutation = fdMutationFindingsOf(entry.input);
+    expect(mutation).toHaveLength(entry.kode.analysis!.subscriptFindings!);
+    expect(mutation[0].kind).toBe(entry.kode.analysis!.subscriptKind);
+    expect(mutation[0].key).toBe('level');
   });
 });

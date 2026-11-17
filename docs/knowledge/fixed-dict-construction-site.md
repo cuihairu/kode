@@ -52,4 +52,6 @@ if(dictSize != (Py_ssize_t)keyTypes_.size())
 
 ## 4. 静态分析含义
 
-构造点错误全部是**运行期响错误**(装载后运行时抛 ValueError/TypeError),装载期不拦;静态面若对「FD 属性整赋值裸 dict 的键集完整性」零覆盖,则这三类错误全部漏报(编辑期不可见,运行期才炸)。
+构造点错误全部是**运行期响错误**(装载后运行时抛 ValueError/TypeError),装载期不拦。kode 的编辑期覆盖面=KSEM-STRUCT-04 构造面(`analyzeFixedDictConstructWrites` → `kbengine.fixedDictConstruct` 诊断,diagnostics.ts 接线):三道响闸逐面对应 kind=missing(缺声明字段,声明序逗号串)/kind=extra(字面量键不在声明集)/kind=type(字段值结构错配,文案附期望/实际与声明来源);目标不定型(非 FD 容器)不接管,开放普通 dict 不套封闭约束。下标点(已知键类型不符静默 drop)不归构造面接管——mutation 面(KSEM-STRUCT-02/family-13)旗子键赋值向用户预警「写了不生效」,与引擎静默语义的关系见 fixed-dict-sync-trap 族。
+
+语料对账注记:本档初版(2026-11-18)§4 曾按「构造点零覆盖=三类错误全漏报」登记;经真面探针实测翻案——初版探针误用 mutation 面(只旗子键赋值),未探及 STRUCT-04 构造面。语料族 fixed-dict-construction-site 三负臂已改为 pinned 对齐登记。
