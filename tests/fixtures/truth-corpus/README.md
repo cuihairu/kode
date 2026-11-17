@@ -193,3 +193,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## entity-readonly-write-cellapp 族(2026-11-18 第十六族)
 
 依据:docs/knowledge/api-cellapp-entity.md(fork HEAD 6d12b8f)§6 完整属性表 R/W 列。10 例:负臂 4(id 赋值/className 增强赋值/isDestroyed 注解赋值/spaceID del——四写入形态各一,findings 六字段钉)+正臂 6(position R/W 写与分量续写沉默/isDestroyed 读比较沉默/customHp 表外沉默/pathFace null 诚实沉默/docstring 掩码沉默)+非实体脸沉默独立臂(四负臂同文本 null 脸全沉默)。执行门=findReadOnlyWriteFindings 三参直钉(生产面表=内建属性三族同源底座)。**对齐族零分歧**:R 列四属性写侧全部报、R/W 与表外全沉默,与 §6 表逐项同向;写入形态检测走 pythonLexicalMask 掩码文本=与事件面无掩码假阳性(第十五族登记)构成对照。baseapp/client 脸各归己档逐族另建。
+
+## entity-readonly-write-baseapp 族(2026-11-18 第十七族)
+
+依据:docs/knowledge/api-baseapp-entity.md(fork HEAD 6d12b8f)逐属性节头 `*(read-only …)*`/`*(get/set)*` 记法。8 例:负臂 4(databaseID 赋值/databaseInterfaceName 增强赋值/cell del/id 注解赋值)+正臂 4(shouldAutoBackup get/set 写沉默/client 判空比较沉默/customGold 表外沉默/docstring 掩码沉默)+非实体脸沉默独立臂(负臂同文本 null 脸全沉默)。执行门=与 cellapp 族共用三族同构闸(findReadOnlyWriteFindings 直钉)。**对齐族零分歧**:baseapp 面 9 项的 R/W 口径(family-5 语料已钉表)与逐属性节头记法逐项同向,get/set 与 R 分明。

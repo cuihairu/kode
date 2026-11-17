@@ -1,0 +1,221 @@
+{
+  "family": "entity-readonly-write-baseapp",
+  "grounding": {
+    "doc": "docs/knowledge/api-baseapp-entity.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "ro-write-databaseid-assign",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def load(self):\n        self.databaseID = 7\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "databaseID 是 baseapp 面 getset 只读属性(uint64,由实体加载机制装配):脚本赋值无 setter 路径,引擎拒绝。"
+      },
+      "evidence": [
+        "### `entity.databaseID` *(read-only, uint64)*"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 15,
+              "propertyName": "databaseID",
+              "kind": "assign",
+              "face": "baseapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ro-write-databaseinterfacename-augmented",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def rename(self):\n        self.databaseInterfaceName += 'x'\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "databaseInterfaceName 是 baseapp 面 getset 只读属性(str,数据库接口名引擎装配):增强赋值写半步即 AttributeError,引擎拒绝。"
+      },
+      "evidence": [
+        "### `entity.databaseInterfaceName` *(read-only, str)*"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 26,
+              "propertyName": "databaseInterfaceName",
+              "kind": "augmented",
+              "face": "baseapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ro-write-cell-del",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def clear(self):\n        del self.cell\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "cell 是 baseapp 面 getset 只读属性(cell 部分邮箱,None 直到 cell 建立才有值):del 删 getset 属性绑定,引擎拒绝;正确姿势是 destroyCellEntity 走方法面。"
+      },
+      "evidence": [
+        "### `entity.cell` *(read-only attr)*"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 12,
+              "length": 9,
+              "propertyName": "cell",
+              "kind": "del",
+              "face": "baseapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ro-write-id-annotated",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def reset(self):\n        self.id: int = 0\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "id/className/isDestroyed 是宏公共三件(baseapp 面同样注册):id 只读 int32,注解赋值仍是重绑定写,引擎拒绝。"
+      },
+      "evidence": [
+        "### `entity.id` *(read-only, int32)* — `entity.className` *(read-only, str)* — `entity.isDestroyed` *(bool)*"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 7,
+              "propertyName": "id",
+              "kind": "annotated",
+              "face": "baseapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rw-shouldautobackup-assign-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def toggle(self):\n        self.shouldAutoBackup = True\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "shouldAutoBackup 是 get/set 属性:脚本切换自动备份开关是引擎文档明示的合法用法;kode 同向沉默。"
+      },
+      "evidence": [
+        "### `entity.shouldAutoArchive` / `entity.shouldAutoBackup` *(get/set)*"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "ro-client-read-comparison-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def check(self):\n        if self.client != None:\n            pass\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "client 是只读属性但读它做判空守卫是正常用法(有客户端绑定才有值):比较不是写,kode 比较排除不报=同向。"
+      },
+      "evidence": [
+        "### `entity.client` *(read-only attr)*"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "custom-property-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def earn(self):\n        self.customGold = 5\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "customGold 不在 baseapp 面属性注册表(封闭清单):普通脚本属性自由读写;kode 表外不判=同向。"
+      },
+      "evidence": [
+        "(`cell`, `client`, `databaseID`, `databaseInterfaceName`, `shouldAutoBackup`, `shouldAutoArchive`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "docstring-text-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def note(self):\n        \"\"\"self.databaseID = 0\"\"\"\n        pass\n",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "docstring 是文档字符串不是可执行写,引擎不发生赋值;kode 写入形态检测在词法掩码文本上做,同形文本不误认=同向。"
+      },
+      "evidence": [
+        "### `entity.databaseID` *(read-only, uint64)*"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    }
+  ]
+}

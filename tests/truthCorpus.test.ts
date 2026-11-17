@@ -295,15 +295,16 @@ interface EventPubsubEntry extends TruthEntryBase {
 const eventPubsubFamily = families.find(f => f.family === 'entity-event-pubsub')!;
 const eventPubsubEntries = eventPubsubFamily.entries as unknown as EventPubsubEntry[];
 
-// ---- entity-readonly-write-cellapp 族形状与鞍具 ----
+// ---- entity-readonly-write-{cellapp,baseapp,client} 族形状与鞍具(三脸同构) ----
 interface ReadOnlyWriteEntry extends TruthEntryBase {
-  input: { code: string; pathFace: 'cellapp' | null; defFaces: string[] | null };
+  input: { code: string; pathFace: 'baseapp' | 'cellapp' | 'client' | null; defFaces: string[] | null };
   kode: TruthEntryBase['kode'] & {
     analysis?: { findings: { line: number; character: number; length: number; propertyName: string; kind: string; face: string }[] };
   };
 }
-const readOnlyWriteFamily = families.find(f => f.family === 'entity-readonly-write-cellapp')!;
-const readOnlyWriteEntries = readOnlyWriteFamily.entries as unknown as ReadOnlyWriteEntry[];
+const readOnlyWriteFamilies = ['entity-readonly-write-cellapp', 'entity-readonly-write-baseapp']
+  .map(name => families.find(f => f.family === name)!);
+const readOnlyWriteEntries = readOnlyWriteFamilies.flatMap(f => f.entries as unknown as ReadOnlyWriteEntry[]);
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
