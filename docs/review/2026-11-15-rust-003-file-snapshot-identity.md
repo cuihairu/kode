@@ -63,3 +63,13 @@
 
 锚点：`perfCallChainDoc.test.ts` ANCHORS 表**不含** `src/backend/defCallChain.ts`（核过），本批改该行号不触发锁步。
 身份化批次改 `definitionSemantics.ts`/`sharedFileSnapshot.ts` 行号——ANCHORS 表两者均不含（核过），不触发锁步。
+
+## 5. 登记面收口裁定（2026-11-17，RUST-003 关账批）
+
+§3 尾登记的三面于 2026-11-17 逐面裁定并补契约，RUST-003 就此关账：
+
+1. **`hotReloadDefFingerprintLedger` 裸 fsPath 键**——新证据：装配侧（HR-PR-02..08 接线批）尚无生产调用点（`evaluateDefFingerprintChange` 除测试外零引用，grep 全 src 实证），串册风险 contingent on 装配的键形选择。本批交付mitigation=模块头注**键形态契约**（键必须根无歧义，多 root 同相对路径是两个文件；台账纯核不解析路径，区分度责任在装配）+ tests/hotReloadDefFingerprintLedger.test.ts「键形态契约」两例钉（两 root 绝对键互不相串；同键重记录=时间性覆盖语义）。装配批接线时受此契约约束。
+2. **25/28 快照调用点只取 content**——复核维持原判：identity 字段的 src 内消费者为零（rootId 零消费、version 仅 databaseSchema.ts 对账安全网），「只取 content」的调用点无 correctness 需求；字段在快照对象上齐备供未来消费者承接，丢弃无缺陷。
+3. **entityMapping 首扫读盘+查询兜底双面**——复核维持原判：直读位（entityMapping.ts readFileSyncUtf8Recorded 两处+entityMappingHelpers.ts 一处）与查询面 `collectOpenDocumentTexts()` 并存结构在当前行位实证（行号较本审计日漂移：1938→1942 等，结构未变），下游兜住判定成立；首扫读盘=索引构建期设计选择。
+
+任务书两轴「root + canonical URI + document version 唯一标识」「打开文件内存优先」均已落地并有测试钉（两批次 d38d9537+99fd303d+本契约批），登记面全部裁定完毕，无开放缺陷残留。
