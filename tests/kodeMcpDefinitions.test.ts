@@ -77,3 +77,37 @@ describe('buildKodeMcpServerSpecs (pure)', () => {
     ).toEqual([]);
   });
 });
+
+// 写键回归锁(2026-11-17 用户报错「Unable to write to user settings because
+// kbengine.kbengine.mcp.enabled is not a registered configuration」):toggle
+// 曾把全限定名传给 sectioned config.update —— update 键相对 section,叠出
+// kbengine.kbengine.* 双前缀(未注册,VS Code 拒写,状态栏点击静默失效)。
+// 锁死:落账键必须恰为 kbengine.mcp.enabled。
+import { toggleKodeMcpEnabled } from '../src/kodeMcpHost';
+import {
+  ConfigurationTarget,
+  globalConfigurationOverrides,
+  workspaceState
+} from './helpers/vscodeStub';
+
+describe('toggleKodeMcpEnabled(写键回归锁)', () => {
+  it('update 走相对键:落账 kbengine.mcp.enabled,不产出 kbengine.kbengine.* 双前缀', async () => {
+    globalConfigurationOverrides.clear();
+    workspaceState.workspaceConfigurationUpdates.length = 0;
+    await toggleKodeMcpEnabled();
+    const updates = workspaceState.workspaceConfigurationUpdates as Array<{
+      key: string;
+      value: boolean;
+      scope: unknown;
+    }>;
+    expect(updates).toHaveLength(1);
+    expect(updates[0].key).toBe('kbengine.mcp.enabled');
+    expect(updates[0].value).toBe(false); // 默认开启(true),首次点击即关
+    expect(updates[0].scope).toBe(ConfigurationTarget.Global);
+    // 替身写回覆写表(写后 get 立即可见):再点翻回开启
+    await toggleKodeMcpEnabled();
+    expect(updates[1].key).toBe('kbengine.mcp.enabled');
+    expect(updates[1].value).toBe(true);
+    globalConfigurationOverrides.clear();
+  });
+});

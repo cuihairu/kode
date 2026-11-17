@@ -88,5 +88,7 @@ export function setupKodeMcpHost(
 export async function toggleKodeMcpEnabled(): Promise<void> {
   const config = vscode.workspace.getConfiguration('kbengine');
   const current = config.get<boolean>('mcp.enabled', true);
-  await config.update(KODE_MCP_ENABLED_SETTING, !current, vscode.ConfigurationTarget.Global);
+  // update 键相对 section:传全限定名会写出 kbengine.kbengine.mcp.enabled
+  // (未注册配置,VS Code 拒写);全限定名只用于 affectsConfiguration。
+  await config.update('mcp.enabled', !current, vscode.ConfigurationTarget.Global);
 }

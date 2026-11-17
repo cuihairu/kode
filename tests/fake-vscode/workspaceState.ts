@@ -141,11 +141,31 @@ export const workspace = {
   findFiles: async () => [] as Uri[],
   getConfiguration: (section?: string, scope?: unknown) => ({
     get: <T>(key: string, defaultValue: T): T => {
-      // 作用域优先级:工作区级 > 用户级(Global) > 实现默认值
+      // 作用域优先级:工作区级 > 用户级(Global) > 实现默认值。
+      // 查找平铺优先(测试种子形态),命中不了再按 . 逐段走嵌套
+      // (本文件 update 写回即嵌套形态;真 VS Code 里 kbengine.mcp.enabled
+      // 就是 section 下的嵌套树,一键开关写回后 get 必须读得到)。
+      const resolveValue = (table: Record<string, unknown> | undefined, k: string): unknown => {
+        if (!table) {
+          return undefined;
+        }
+        if (k in table) {
+          return table[k];
+        }
+        let node: unknown = table;
+        for (const part of k.split('.')) {
+          if (typeof node !== 'object' || node === null || Array.isArray(node)) {
+            return undefined;
+          }
+          node = (node as Record<string, unknown>)[part];
+        }
+        return node;
+      };
       const overrides = section ? configurationOverrides.get(section) : undefined;
       const globals = section ? globalConfigurationOverrides.get(section) : undefined;
-      const workspaceValue = overrides ? overrides[key] : undefined;
-      const value = workspaceValue !== undefined ? workspaceValue : globals ? globals[key] : undefined;
+      const workspaceValue = resolveValue(overrides, key);
+      const globalValue = resolveValue(globals, key);
+      const value = workspaceValue !== undefined ? workspaceValue : globalValue;
       return (value === undefined ? defaultValue : value) as T;
     },
     update: async (key: string, value: unknown, target: unknown): Promise<void> => {
