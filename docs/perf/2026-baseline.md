@@ -239,7 +239,7 @@ flowchart TD
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:204 / entities 侧 :217"]
+  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:214 / entities 侧 :227"]
   VD["validateDocument(languageProviders/validation.ts:20)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders/validation.ts:20,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:265)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:278,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]

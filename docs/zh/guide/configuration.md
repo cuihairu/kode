@@ -186,6 +186,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录(实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出) |
+| `kbengine.configData` | object | `enabled: true`,3 个默认配置目录 glob、`*Config`/`*Data` 类名、`reload*`/`hotUpdate*` 热更入口、空 `mutationExclude` | 配置数据保护:配置绑定意外写诊断(`kbengine.configDataMutation`)+ 直读 schema 悬停;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
 | `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径。未显式配置时(CFG-01):默认值在盘即生效,不在盘回落自动发现扫描,扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
@@ -730,6 +731,17 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
 计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。2026-11-11 静态模板桩车道起,`kbengine.python.stubSourceMode` 与 `kbengine.python.stubEngineTypings` 退役,新增 `kbengine.python.proxyInternalAttrHints`(三项均已在总览分区表对账)。2026-11-16 起新增 `kbengine.python.stubCopy`,作为内置桩包复制这一步的窄闸(默认关,已在上方总览分区表对账)。
+
+## 配置数据保护(kbengine.configData)
+
+Excel 生成的配置表/配置类(dict 绑定与 `*Config`/`*Data` 类)是只允许热更新入口修改的数据。kode 用同一条全工作区扫描的两个面守护它们:
+
+1. **意外写诊断**(`kbengine.configDataMutation`):配置绑定的全部写点——属性(`x.f = v`)、下标(`x[k] = v`)、`del`、增强赋值(`x += v`)、变异方法(`append`/`pop`/`update`/`clear`/`sort`/……)——只要不在热更新入口函数(`reload*`/`hotUpdate*`)内、也不在 `mutationExclude` 白名单路径里,就出警告诊断。配置目录文件自身永不报。
+2. **schema 悬停**:悬停配置绑定/类名,直接展示从其定义直读的类型文本(schema 直读,非推断)。
+
+识别依据是配置驱动而非启发式:配置目录(`configDirGlobs`,默认 `scripts/config/**`、`scripts/data/config/**`、`scripts/data/**`)、配置类名(`configClassPatterns`,默认 `*Config`/`*Data`)、热更新入口(`reloadFunctionPatterns`,默认 `reload*`/`hotUpdate*`)、有意修改豁免(`mutationExclude`,默认空)。功能只在 KBEngine 工作区(发现到实体 .def 根)激活;激活首扫、Python 文件打开/保存(800 ms 防抖合并)、设置变更即重扫。`kbengine.configData.enabled` 设 `false` 可整体关闭两个面。
+
+诚实边界:行级扫描(跨行拆写的写语句不识别);消费面按绑定名匹配,不做模块路径解析;消费文件里模块级同名重绑定会遮蔽配置绑定,该点之后不再报。
 
 ## 常见问题
 

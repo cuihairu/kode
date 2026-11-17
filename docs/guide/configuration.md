@@ -186,6 +186,7 @@ The four CodeLens switches take effect on change, no window reload needed; inlay
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | Entity definitions directory (entity explorer list, `entities.xml` navigation, generator `.def` output) |
+| `kbengine.configData` | object | `enabled: true`, 3 default config-dir globs, `*Config`/`*Data` patterns, `reload*`/`hotUpdate*` exemptions, empty `mutationExclude` | Config data protection: accidental-write diagnostics (`kbengine.configDataMutation`) on config bindings plus direct-read schema hover; see [Config Data Protection](#config-data-protection) below |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` path (dependency graph reads and entity registration) |
 | `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | Engine binaries directory; also derives the engine root (`KBE_ROOT`) and the engine default config path. Unset (CFG-01): the default takes effect when present on disk, otherwise the auto-discovery scan runs, and only a full miss warns through the launch check chain |
 | `kbengine.assetsRoot` | string | `""` | Assets root (containing `res/`, `scripts/` below); empty = auto-discover |
@@ -737,6 +738,17 @@ Sub-paths inferable from existing files never become settings: the def root deri
 | `kbengine.httpRequests` | Default: one disabled example (`enabled: false`) | No (the user's business endpoints) | **Keep**; the example is disabled by default and has no side effects |
 
 Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Since batch 126, 12 more settings were added beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`, `kbengine.python.enableMroJump`, and `kbengine.engineVersion`), all registered in the grouped overview tables above. Since the 2026-11-11 static-template stub lane, `kbengine.python.stubSourceMode` and `kbengine.python.stubEngineTypings` are retired and `kbengine.python.proxyInternalAttrHints` is added (all three reconciled in the grouped overview tables). Since 2026-11-16, `kbengine.python.stubCopy` is added as the narrow copy gate for the built-in stub package (default off, reconciled in the grouped overview tables above).
+
+## Config Data Protection
+
+Excel-generated config tables/classes (`dict` bindings and `*Config`/`*Data` classes) hold data that only hot-reload entry points are allowed to change. Kode guards them with two faces driven by one whole-workspace scan:
+
+1. **Accidental-write diagnostics** (`kbengine.configDataMutation`): every write to a config binding — attribute (`x.f = v`), subscript (`x[k] = v`), `del`, augmented assignment (`x += v`), and mutator methods (`append`/`pop`/`update`/`clear`/`sort`/…) — is flagged unless it sits inside a hot-reload entry function (`reload*`/`hotUpdate*`) or a `mutationExclude` whitelist path. Config-directory files themselves are never flagged.
+2. **Schema hover**: hovering a config binding or class name shows the literal type text read straight from its definition (schema direct-read, not inference).
+
+Recognition is settings-driven, not heuristic: config directories (`configDirGlobs`, default `scripts/config/**`, `scripts/data/config/**`, `scripts/data/**`), config class names (`configClassPatterns`, default `*Config`/`*Data`), hot-reload entries (`reloadFunctionPatterns`, default `reload*`/`hotUpdate*`), and intentional-write exemptions (`mutationExclude`, default empty). The feature activates only in KBEngine workspaces (entity `.def` root discovered) and rescans on activation, on Python file open/save (800 ms debounce), and on settings changes. Set `kbengine.configData.enabled` to `false` to turn both faces off.
+
+Honest boundaries: the scan is line-level (a write statement split across lines is not recognized); consumption sites are matched by binding name without module-path resolution; a module-level rebinding of the same name in the consuming file shadows the config binding from that point on.
 
 ## FAQ
 

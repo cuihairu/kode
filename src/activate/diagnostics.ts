@@ -12,6 +12,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
+import {
+  collectConfigSchema,
+  computeConfigDataMutationFindings,
+  CONFIG_DATA_SETTINGS_DEFAULT,
+  type ConfigDataFinding,
+  type ConfigDataSettings,
+  type ConfigSchemaEntry,
+  type ConfigSourceInput
+} from '../configDataMutation';
+import { ConfigSchemaHoverProvider } from '../configSchemaHover';
 import { RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT, receiverNoneDiagnosticItemsAsync, type ReceiverDiagnosticItem } from '../backend/receiverNoneDiagnostics';
 import { buildReceiverNoneItemsWithRust } from '../backend/receiverNoneRust';
 import { buildAttributeNoneItemsWithRust } from '../backend/attributeNoneRust';
@@ -677,6 +687,132 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         void scanConfigContractDiagnostics();
       }
     }));
+  }
+
+  // KODE-CFG-016 配置数据保护(Excel 配置类意外写检测+schema hover;764843d0
+  // checkpoint 事故删除后按 b5b750a1 逐字恢复,SRC-000「独立实现线在树」判定
+  // 经 2026-11-17 全树 grep 证伪——configDataMutation/configSchemaHover 无任何
+  // 后继实现线)。纯逻辑面 computeConfigDataMutationFindings /
+  // collectConfigSchema(零 vscode 依赖,tests/configDataMutation.test.ts 红先行),
+  // 独立 collection,配置 kbengine.configData(enabled 默认开;configDirGlobs /
+  // configClassPatterns / reloadFunctionPatterns / mutationExclude)。触发面 =
+  // 激活首扫 + py 文件打开/保存(800ms 防抖合并)+ 配置变更即重算;配置目录
+  // 文件自身与 reload*/hotUpdate* 函数体、mutationExclude 白名单内写点不报。
+  // 门控改判(恢复批):原实现要求 .kbengine 托管目录在盘,但配置类住
+  // scripts/**,从未跑 infer 管线的正规 KBEngine 工程(如 demo 工作区)永远
+  // 不开——用户 2026-11-17 报「配置目录还是没有识别」的第二根因。改为每次
+  // 扫描内判定 KBEngine 工作区探针=entityDefsRoot 发现(def 布局家族同一
+  // 口径):非 KBEngine 纯 Python 工作区零噪声不变,正规工程即刻识别。
+  const configDataRoot = vscode.workspace.workspaceFolders?.[0];
+  if (configDataRoot) {
+    const configDataCollection = vscode.languages.createDiagnosticCollection(
+      'kbengine-config-data'
+    );
+    context.subscriptions.push(configDataCollection);
+    let configDataScanSeq = 0;
+    let configDataSchemaCache: readonly ConfigSchemaEntry[] = [];
+    const readConfigDataSettings = (): ConfigDataSettings => {
+      const raw = vscode.workspace
+        .getConfiguration('kbengine')
+        .get<Partial<ConfigDataSettings>>('configData');
+      return { ...CONFIG_DATA_SETTINGS_DEFAULT, ...(raw ?? {}) };
+    };
+    const scanConfigData = async (): Promise<void> => {
+      const seq = ++configDataScanSeq;
+      const root = configDataRoot.uri.fsPath;
+      try {
+        const settings = readConfigDataSettings();
+        if (!settings.enabled || !getDefinitionWorkspaceLayout(root).entityDefsRoot) {
+          // 开关关闭 / 非 KBEngine 工作区(def 布局家族口径):清空既有诊断,
+          // 零产出(configContract 开关关闭同款清空口径)
+          configDataCollection.clear();
+          configDataSchemaCache = [];
+          return;
+        }
+        const excluded = '{**/node_modules/**,**/out/**,**/.kbengine/**,**/venv/**,**/.venv/**,**/__pycache__/**}';
+        const uris = await vscode.workspace.findFiles('**/*.py', excluded, 20000);
+        const sources: ConfigSourceInput[] = [];
+        for (const uri of uris) {
+          try {
+            const text = (await vscode.workspace.openTextDocument(uri)).getText();
+            // 相对 posix 路径口径(与 configDirGlobs / mutationExclude 对齐)
+            const rel = path.relative(root, uri.fsPath).replace(/\\/g, '/');
+            sources.push({ file: rel, text });
+          } catch {
+            // 读不到的文件跳过(不猜)
+          }
+        }
+        const schema = collectConfigSchema(sources, settings);
+        const findings = computeConfigDataMutationFindings(sources, settings);
+        if (seq !== configDataScanSeq) {
+          // 过期扫描(更新的扫描已发起)丢弃,不回写缓存/集合
+          return;
+        }
+        configDataSchemaCache = schema;
+        const byFile = new Map<string, ConfigDataFinding[]>();
+        for (const finding of findings) {
+          const bucket = byFile.get(finding.file);
+          if (bucket) {
+            bucket.push(finding);
+          } else {
+            byFile.set(finding.file, [finding]);
+          }
+        }
+        configDataCollection.clear();
+        for (const [rel, fileFindings] of byFile) {
+          configDataCollection.set(
+            vscode.Uri.joinPath(configDataRoot.uri, rel),
+            fileFindings.map(f => new vscode.Diagnostic(
+              new vscode.Range(f.line, f.character, f.line, f.character + f.baseName.length),
+              f.message,
+              vscode.DiagnosticSeverity.Warning
+            ))
+          );
+        }
+      } catch {
+        // 扫描失败保持既有诊断不清空(后台增强扫描不反噬激活/事件面,与
+        // 单文件读不到跳过同口径);下一触发轮自然重试
+      }
+    };
+    // ②强类型 hover:绑定/类名 hover 出直读类型文本;schema 缓存随扫描刷新
+    const configSchemaHoverProviderImpl = new ConfigSchemaHoverProvider(
+      () => configDataSchemaCache
+    );
+    const configSchemaHoverProvider = vscode.languages.registerHoverProvider(
+      // 同 activate/infrastructure.ts pythonDocumentSelector(python file 文档)
+      [{ language: 'python', scheme: 'file' }],
+      configSchemaHoverProviderImpl
+    );
+    context.subscriptions.push(configSchemaHoverProvider, configSchemaHoverProviderImpl);
+    // 800ms 防抖:py 打开/保存合并重算(整工作区扫描,避免逐键逐存重算)
+    let configDataTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleConfigDataScan = (): void => {
+      if (configDataTimer !== undefined) {
+        clearTimeout(configDataTimer);
+      }
+      configDataTimer = setTimeout(() => {
+        configDataTimer = undefined;
+        void scanConfigData();
+      }, 800);
+    };
+    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
+      if (document.languageId === 'python') {
+        scheduleConfigDataScan();
+      }
+    }));
+    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
+      if (document.languageId === 'python') {
+        scheduleConfigDataScan();
+      }
+    }));
+    // 配置变更即重算(含 enabled 开关切换:关→清集合零产出)
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('kbengine.configData')) {
+        void scanConfigData();
+      }
+    }));
+    // 激活首扫(fire-and-forget,不阻塞激活)
+    void scanConfigData();
   }
 
   // C-19 交付①:def↔Python 方法一致性诊断。正向 def-method-missing-in-python

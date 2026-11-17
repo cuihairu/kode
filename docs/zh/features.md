@@ -440,6 +440,7 @@
 | `kbengine.semanticTokens.enabled` | `false` | Python 结构符号语义 token(class/function/method/parameter 名,装饰器 macro,declaration/async 修饰;决策核与 Rust golden 对拍同源)。默认关闭——Python 语义高亮通常由 Pylance 提供,RUST-148 冲突矩阵裁定前按需开启 |
 | `kbengine.inlayHints.propertyShadow` | `true` | 淡色内嵌提示(永不下划线):`self.y = self.cellData["x"]` 赋值行与裸的域外读取处渲染「复制属性 x: <类型> · <域位>」;`self.cellData["key"]` 访问后渲染 key 的 def 面(域位不含 cell 追加「不在 cellData」);受 `kbengine.propertyDirectionDiagnostics` 双控 |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | 实体定义文件默认路径 |
+| `kbengine.configData` | object（见配置指南） | 配置数据保护:Excel 生成的配置绑定/类在 `reload*`/`hotUpdate*` 热更入口与 `mutationExclude` 白名单之外的写点出意外写诊断(`kbengine.configDataMutation`),配置名悬停出直读 schema 类型;仅在 KBEngine 工作区激活 |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | entities.xml 默认路径 |
 | `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR}。未显式配置时（CFG-01）默认值在盘即生效，不在盘回落自动发现扫描，扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | `""` | KBEngine 资产根（其下应有 res/server/kbengine.xml 与 scripts/）；留空走约定路径与深扫描自动发现 |

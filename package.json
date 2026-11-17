@@ -2031,6 +2031,27 @@
             "type": "string",
             "default": "scripts/entity_defs",
             "markdownDescription": "%kbengine.config.entityDefsPath.description%"
+          },
+          "kbengine.configData": {
+            "type": "object",
+            "default": {
+              "enabled": true,
+              "configDirGlobs": [
+                "scripts/config/**",
+                "scripts/data/config/**",
+                "scripts/data/**"
+              ],
+              "configClassPatterns": [
+                "*Config",
+                "*Data"
+              ],
+              "reloadFunctionPatterns": [
+                "reload*",
+                "hotUpdate*"
+              ],
+              "mutationExclude": []
+            },
+            "markdownDescription": "%kbengine.config.configData.description%"
           }
         }
       },

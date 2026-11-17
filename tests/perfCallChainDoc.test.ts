@@ -339,8 +339,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // +5(195/208 → 200/213,真位重探);出处随 baseline 锁步。
   // 2026-11-17(RUST-176):diagnostics.ts 顶部 import +1(rpcArgTypeCompat)
   // → 两处打点锚点 +1(200/213 → 201/214,真位重探);出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 204, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 217, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-17(KODE-CFG-016 恢复批):diagnostics.ts 顶部 import +10
+  // (configDataMutation/configSchemaHover 导入块)→ 两处打点锚点 +10
+  // (204/217 → 214/227,真位重探);出处随 baseline 锁步。
+  ['src/activate/diagnostics.ts', 214, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 227, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
