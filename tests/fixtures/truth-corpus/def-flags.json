@@ -1,0 +1,215 @@
+{
+  "family": "def-property-flags",
+  "grounding": {
+    "doc": "docs/knowledge/def-flags.md",
+    "engineHead": "3082ab5"
+  },
+  "entries": [
+    {
+      "id": "xml-canonical-cell-public",
+      "kind": "positive",
+      "input": { "spelling": "CELL_PUBLIC", "path": "xml" },
+      "engine": { "load": "accept", "truth": "cellapp 注册;跨 cell 广播;任何客户端都看不到" },
+      "evidence": ["No client ever sees it", "CELL_PUBLIC (0x01) | cellapp | yes"],
+      "kode": {
+        "analysis": { "domains": ["cell"], "tokens": ["CELL_PUBLIC"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-canonical-base",
+      "kind": "positive",
+      "input": { "spelling": "BASE", "path": "xml" },
+      "engine": { "load": "accept", "truth": "仅 baseapp 注册;无客户端面;不触 cellapp" },
+      "evidence": ["No client ever sees it", "BASE (0x40) | baseapp | n/a | no | no |"],
+      "kode": {
+        "analysis": { "domains": ["base"], "tokens": ["BASE"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-canonical-all-clients",
+      "kind": "positive",
+      "input": { "spelling": "ALL_CLIENTS", "path": "xml" },
+      "engine": { "load": "accept", "truth": "cellapp 注册;跨 cell 广播;拥有者客户端与 AOI 其他客户端都可见" },
+      "evidence": ["Owner + AOI others see it"],
+      "kode": {
+        "analysis": { "domains": ["cell", "client"], "tokens": ["ALL_CLIENTS"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-canonical-cell-public-and-own",
+      "kind": "positive",
+      "input": { "spelling": "CELL_PUBLIC_AND_OWN", "path": "xml" },
+      "engine": { "load": "accept", "truth": "cellapp 注册;跨 cell 广播;仅拥有者客户端可见(2026-11-09 用户报的误解析拼法,引擎位 0x08)" },
+      "evidence": ["Only the owner's client sees it"],
+      "kode": {
+        "analysis": { "domains": ["cell", "client"], "tokens": ["CELL_PUBLIC_AND_OWN"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-canonical-own-client",
+      "kind": "positive",
+      "input": { "spelling": "OWN_CLIENT", "path": "xml" },
+      "engine": { "load": "accept", "truth": "cellapp 注册;仅拥有者客户端可见;无跨 cell 广播无 AOI" },
+      "evidence": ["Only the owner's client sees it"],
+      "kode": {
+        "analysis": { "domains": ["cell", "client"], "tokens": ["OWN_CLIENT"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-canonical-other-clients",
+      "kind": "positive",
+      "input": { "spelling": "OTHER_CLIENTS", "path": "xml" },
+      "engine": { "load": "accept", "truth": "cellapp 注册;AOI 其他客户端可见而拥有者客户端反而看不到(拥有者不可见陷阱)" },
+      "evidence": ["AOI others see it, the owner does not"],
+      "kode": {
+        "analysis": { "domains": ["cell", "client"], "tokens": ["OTHER_CLIENTS"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-canonical-base-and-client",
+      "kind": "positive",
+      "input": { "spelling": "BASE_AND_CLIENT", "path": "xml" },
+      "engine": { "load": "accept", "truth": "baseapp 注册+拥有者客户端;绝不触 cellapp" },
+      "evidence": ["Only the owner's client sees it"],
+      "kode": {
+        "analysis": { "domains": ["base", "client"], "tokens": ["BASE_AND_CLIENT"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-canonical-cell-private",
+      "kind": "positive",
+      "input": { "spelling": "CELL_PRIVATE", "path": "xml" },
+      "engine": { "load": "accept", "truth": "仅当前 cellapp;不广播;无客户端面" },
+      "evidence": ["No client ever sees it", "CELL_PRIVATE (0x02) | cellapp | no | no | no |"],
+      "kode": {
+        "analysis": { "domains": ["cell"], "tokens": ["CELL_PRIVATE"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-legacy-alias-cell",
+      "kind": "positive",
+      "input": { "spelling": "CELL", "path": "xml" },
+      "engine": { "load": "accept", "truth": "遗留别名→CELL_PUBLIC 同一位(0x01);别名仅 XML 路径有效" },
+      "evidence": ["`CELL` | 0x01 | alias → CELL_PUBLIC", "the four legacy aliases are XML-only"],
+      "kode": {
+        "analysis": { "domains": ["cell"], "tokens": ["CELL_PUBLIC"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-case-insensitive",
+      "kind": "positive",
+      "input": { "spelling": "cell_public", "path": "xml" },
+      "engine": { "load": "accept", "truth": "XML 路径先整串 toupper 再查表,大小写不敏感" },
+      "evidence": ["The raw text is upper-cased first", "So in XML: case-insensitive, alias-friendly, fail-hard on anything unknown"],
+      "kode": {
+        "analysis": { "domains": ["cell"], "tokens": ["CELL_PUBLIC"] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "xml-pipe-composition",
+      "kind": "negative",
+      "input": { "spelling": "BASE|CELL", "path": "xml" },
+      "engine": { "load": "reject", "truth": "整串查表不拆词;BASE|CELL 查表失败→ERROR_MSG+return false→整个 def 模块拒载" },
+      "evidence": ["`BASE|CELL` simply fails the lookup", "fail-hard on anything unknown"],
+      "kode": {
+        "analysis": { "domains": ["base", "cell"], "tokens": ["BASE", "CELL_PUBLIC"] },
+        "validation": { "diagnostic": "pipe" },
+        "status": "pinned"
+      },
+      "finding": "分析面容忍拆 '|' 并投影双侧域位(defAnalyzer 注释明示设计选择:分析侧容错只影响建议面);验证面 KR-AUD-84 整串查表红=与引擎同向兜住;残余=建议面展示引擎拒载写法的域位"
+    },
+    {
+      "id": "xml-whitespace-fold",
+      "kind": "negative",
+      "input": { "spelling": "ALL CLIENTS", "path": "xml" },
+      "engine": { "load": "reject", "truth": "整串查表;'ALL CLIENTS' 不在 12 拼写词表→查表失败→模块拒载(引擎无空白折叠)" },
+      "evidence": ["looked up as **one whole string** in", "fail-hard on anything unknown"],
+      "kode": {
+        "analysis": { "domains": ["cell", "client"], "tokens": ["ALL_CLIENTS"] },
+        "validation": { "diagnostic": "unknown" },
+        "status": "pinned"
+      },
+      "finding": "分析面空白/连字符折叠(normalizeFlagTokens compact 匹配)放行引擎拒载写法;验证面整串查表红同向兜住"
+    },
+    {
+      "id": "xml-underscore-compact-typo",
+      "kind": "negative",
+      "input": { "spelling": "CELLPUBLIC", "path": "xml" },
+      "engine": { "load": "reject", "truth": "'CELLPUBLIC' 不在词表→查表失败→模块拒载(漏下划线的真实错拼,引擎无紧缩匹配容忍)" },
+      "evidence": ["looked up as **one whole string** in", "fail-hard on anything unknown"],
+      "kode": {
+        "analysis": { "domains": ["cell"], "tokens": ["CELL_PUBLIC"] },
+        "validation": { "diagnostic": "unknown" },
+        "status": "pinned"
+      },
+      "finding": "最误导一处:真实错拼(漏下划线)被分析面 compact 匹配救成合法 CELL_PUBLIC 且投影域位;验证面红同向兜住;误导面=hover/补全建议"
+    },
+    {
+      "id": "xml-empty-flags",
+      "kind": "negative",
+      "input": { "spelling": "", "path": "xml" },
+      "engine": { "load": "reject", "truth": "空串 toupper 仍空串→查表失败→模块拒载(空值属未知拼写,同样 fail-hard)" },
+      "evidence": ["The raw text is upper-cased first", "fail-hard on anything unknown"],
+      "kode": {
+        "analysis": { "domains": [], "tokens": [] },
+        "validation": { "diagnostic": "none" },
+        "status": "pinned"
+      },
+      "finding": "验证面对空 Flags 静默(引擎拒载 kode 无诊断);分析面诚实空域位;缺口面=语言侧诊断"
+    },
+    {
+      "id": "xml-space-separated-duplicate",
+      "kind": "negative",
+      "input": { "spelling": "CELL_PUBLIC CELL_PUBLIC", "path": "xml" },
+      "engine": { "load": "reject", "truth": "含空格整串不在词表→查表失败→模块拒载" },
+      "evidence": ["looked up as **one whole string** in"],
+      "kode": {
+        "analysis": { "domains": [], "tokens": ["CELL_PUBLIC CELL_PUBLIC"] },
+        "validation": { "diagnostic": "unknown" },
+        "status": "pinned"
+      },
+      "finding": "分析面保未知不折叠(compact 不匹配)诚实空域位;验证面红;此例证明折叠只救词表拼写变体不救任意串"
+    },
+    {
+      "id": "decorator-alias-silent-unknown",
+      "kind": "negative",
+      "input": { "spelling": "CELL", "path": "decorator" },
+      "engine": { "load": "reject-silent", "truth": "装饰器路径 stringToEntityDataFlags 精确大小写 8 名链无别名;'CELL'→ED_FLAG_UNKOWN(0x00)且调用点不检查→属性无任何面、无报错" },
+      "evidence": ["stringToEntityDataFlags", "invisible everywhere, no error", "the four legacy aliases are XML-only"],
+      "kode": {
+        "status": "not-analyzed"
+      }
+    },
+    {
+      "id": "xml-duplicate-flags-node",
+      "kind": "unknown",
+      "input": { "spelling": "CELL_PUBLIC", "path": "xml" },
+      "engine": { "load": "accept", "truth": "单 <Flags> 节点真值如上;同一 <Property> 出现两个 <Flags> 节点时引擎取哪个(XML 库重复节点语义)知识档未覆盖" },
+      "evidence": ["For every `<Property>` in a `.def` file (`loadDefPropertys`)"],
+      "kode": {
+        "status": "unverified"
+      },
+      "reason": "docs/knowledge/def-flags.md 未覆盖重复节点语义;下一步=读 fork 3082ab5 entitydef.cpp loadDefPropertys 的 XML 遍历实现后升格为 positive/negative"
+    }
+  ]
+}
