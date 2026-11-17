@@ -181,3 +181,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## fixed-dict-sync-trap 族(2026-11-17 第十三族)
 
 依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.5 property sync 节(档内含 fixeddict.cpp:272-308 C++ 锚)。7 例:子键陷阱臂 4(下标/点号/深嵌套/增强下标四形态 findings 逐字段钉)+沉默臂 3(整体重赋=唯一正确姿势/注释与字符串同形文本/非 FD 属性普通 dict)。执行门=analyzeFixedDictMutations findings 双向钉。登记面:①深嵌套 key 实测=全段拼接(stats.hp)而模块头注言「key 取首段」=头注陈旧(行为与引擎同向,注释修正归独立批);②FD 构造点闸(KSEM-STRUCT-04 缺键/多键)是另一模块另一面,grounding 走 types.xml 类型图,不在本族钉域,候选另立族。
+
+## builtin-prop-role-misuse 族(2026-11-17 第十四族)
+
+依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.5 四数据类+§2.1 身份/控制/可见性三连(档称 classic misread)。7 例:错面臂 4(baseapp 访问 position·isWitnessed/cellapp 访问 databaseID/client 访问 isWitnessed,findings 逐字段钉含 registeredFaces 引证)+沉默臂 3(正确面/isPlayer 方法身份与自定义属性/def 多面歧义不猜)。执行门=findRoleMisuseFindings 四参直钉(生产面表=props 三族同源)。**对齐族**:错用方向与 §2.1 三连分工逐项同向;isPlayer 全面沉默=它是方法身份非 getset,kode 内建属性表不收=同向。登记面:registeredFaces 含 client(position 双面注册)——面表口径=fork getset 表,与 props 族 roster 一致。

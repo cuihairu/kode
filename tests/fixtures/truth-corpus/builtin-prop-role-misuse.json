@@ -1,0 +1,158 @@
+{
+  "family": "builtin-prop-role-misuse",
+  "grounding": {
+    "doc": "docs/knowledge/api-core-concepts.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "misuse-baseapp-position",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def a(self):\n        print(self.position)",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "position 属 cell 数据面(cellapp 属性;客户端持镜像):baseapp 实体不注册,baseapp 侧访问落空。"
+      },
+      "evidence": [
+        "2. **Cell data (position-adjacent).** `position`, `direction`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [{ "line": 2, "character": 14, "length": 13, "propertyName": "position", "currentFace": "baseapp", "registeredFaces": ["cellapp", "client"] }]
+        }
+      }
+    },
+    {
+      "id": "misuse-baseapp-iswitnessed",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def c(self):\n        print(self.isWitnessed)",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "isWitnessed 是可见性(view/witness)状态,cellapp 专属:baseapp 侧访问落空。"
+      },
+      "evidence": [
+        "view/witness state (`isWitnessed`, `hasWitness`) is visibility (`cellapp/Entity.md:1062-1122`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [{ "line": 2, "character": 14, "length": 16, "propertyName": "isWitnessed", "currentFace": "baseapp", "registeredFaces": ["cellapp"] }]
+        }
+      }
+    },
+    {
+      "id": "misuse-cellapp-databaseid",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def b(self):\n        print(self.databaseID)",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "databaseID 是 DB 持久化面属性,base 侧独有:cellapp 实体不注册,访问落空。"
+      },
+      "evidence": [
+        "4. **DB data (persisted).** `databaseID` (0 = not permanent)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [{ "line": 2, "character": 14, "length": 15, "propertyName": "databaseID", "currentFace": "cellapp", "registeredFaces": ["baseapp"] }]
+        }
+      }
+    },
+    {
+      "id": "misuse-client-iswitnessed",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def c(self):\n        print(self.isWitnessed)",
+        "pathFace": "client",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "客户端实体是镜像:witness 状态属于服务端 cell 面,客户端面不注册 isWitnessed。"
+      },
+      "evidence": [
+        "view/witness state (`isWitnessed`, `hasWitness`) is visibility (`cellapp/Entity.md:1062-1122`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [{ "line": 2, "character": 14, "length": 16, "propertyName": "isWitnessed", "currentFace": "client", "registeredFaces": ["cellapp"] }]
+        }
+      }
+    },
+    {
+      "id": "correct-face-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def a(self):\n        print(self.position)\n        print(self.isWitnessed)",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cellapp 实体注册 position 与 witness 状态:正当访问,不报。"
+      },
+      "evidence": [
+        "2. **Cell data (position-adjacent).** `position`, `direction`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "non-builtin-and-isplayer-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def d(self):\n        print(self.isPlayer)\n        print(self.someCustom)",
+        "pathFace": "baseapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "isPlayer 是 client/bots 侧身份判定(方法身份,非各面 getset 属性);someCustom 走 def/普通符号——两者皆无角色面错用概念,不报。"
+      },
+      "evidence": [
+        "`isPlayer` is an identity check on client/bots (`client/Entity.md:103-126`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "ambiguous-multiface-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def b(self):\n        print(self.databaseID)",
+        "pathFace": null,
+        "defFaces": ["baseapp", "cellapp"]
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "baseapp/cellapp 两 app 实体脚本同放 scripts/ 且共用 def 类型:该文件可能被任一进程加载,分析侧角色不明不猜。"
+      },
+      "evidence": [
+        "| baseapp | client connection, position-independent logic, archive/backup (`baseapp/index.md:1-5`) | scripts (project) |",
+        "| cellapp | space/view/witness, movement, navigation, AOI (`cellapp/index.md:1-6`) | scripts (project) |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    }
+  ]
+}

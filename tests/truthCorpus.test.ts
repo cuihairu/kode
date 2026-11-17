@@ -23,6 +23,7 @@ import { KBENGINE_ENTRY_HOOKS } from '../src/backend/entryHooks';
 import { buildRpcLinks } from '../src/backend/flowRpcLinks';
 import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
 import { analyzeFixedDictMutations } from '../src/backend/fixedDictMutationDiagnostics';
+import { findRoleMisuseFindings } from '../src/backend/roleMisuseDiagnostics';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -269,6 +270,18 @@ interface FdSyncEntry extends TruthEntryBase {
 }
 const fdSyncFamily = families.find(f => f.family === 'fixed-dict-sync-trap')!;
 const fdSyncEntries = fdSyncFamily.entries as unknown as FdSyncEntry[];
+
+// ---- builtin-prop-role-misuse 族形状与鞍具 ----
+interface RoleMisuseEntry extends TruthEntryBase {
+  input: { code: string; pathFace: 'baseapp' | 'cellapp' | 'client' | null; defFaces: string[] | null };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      findings: { line: number; character: number; length: number; propertyName: string; currentFace: string; registeredFaces: string[] }[];
+    };
+  };
+}
+const roleMisuseFamily = families.find(f => f.family === 'builtin-prop-role-misuse')!;
+const roleMisuseEntries = roleMisuseFamily.entries as unknown as RoleMisuseEntry[];
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -656,6 +669,30 @@ describe('真值语料 execution 门:FIXED_DICT 子键同步陷阱(四形态报/
         kind: f.kind
       }));
       expect(findings, `fd sync drift: ${entry.id}`).toEqual(entry.kode.analysis?.mutations ?? []);
+    }
+  });
+});
+
+// ---- ⑬ builtin-prop-role-misuse 执行门 ----
+describe('真值语料 execution 门:内建属性角色错用面(错面报/正确与不明沉默)', () => {
+  const pinned = roleMisuseEntries.filter(e => e.kode.status === 'pinned');
+
+  it('每条条目的错用 findings 实测等于语料钉值(含 registeredFaces 引证,drift 即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      const findings = findRoleMisuseFindings(
+        entry.input.code,
+        entry.input.pathFace,
+        entry.input.defFaces as unknown as Parameters<typeof findRoleMisuseFindings>[2]
+      ).map(f => ({
+        line: f.line,
+        character: f.character,
+        length: f.length,
+        propertyName: f.propertyName,
+        currentFace: f.currentFace,
+        registeredFaces: [...f.registeredFaces]
+      }));
+      expect(findings, `role misuse drift: ${entry.id}`).toEqual(entry.kode.analysis?.findings ?? []);
     }
   });
 });
