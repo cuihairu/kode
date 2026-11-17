@@ -1752,7 +1752,7 @@ If `Attach to Component` fails, check these first:
   - This face carries a long timeout (120s) — large pcaps + the tshark hop do not fit the detection face's 5s probe budget
 ## AI
 
-All three commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
+All four commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
 
 ### `kbengine.ai.setApiKey`
 
@@ -1771,4 +1771,12 @@ All three commands are registered at runtime only when the AI face is available 
   - Code suggestions are extracted from fenced code blocks in the reply; each gets a 「查看 diff 预览」 and 「应用」 button (preview uses the read-only virtual scheme — nothing is written to disk; apply goes through the normal `WorkspaceEdit` channel on the active document and is undoable with Ctrl+Z)
   - Nothing persists: conversation history lives in the panel memory only and is dropped when the panel closes; the API key never leaves SecretStorage
   - Concurrent asks follow the generation guard: a new ask cancels the previous in-flight request and stale chunks/results are discarded
+
+### `kbengine.ai.explainFix`
+
+- Purpose: on any `kbengine.*` diagnostic intersecting the cursor, offer an 「AI explain / fix suggestion」 quick-fix action. The engine's verdict never depends on AI — diagnostics are computed and shown fully offline; this action simply does not exist when the AI face is unconfigured (the provider gates per request).
+- Behavior:
+  - Choosing the action sends only the minimal snippet (diagnostic code + message + the diagnostic line's text) to the AI face — never the whole file; the CodeAction list itself makes zero network calls (the request happens only when the action is explicitly invoked)
+  - The reply's fenced code block becomes a read-only diff preview against the original file (virtual scheme, nothing written to disk); a text-only reply reports honestly that it contains no code suggestion
+  - The layer is suggestion-only: applying changes is left to the chat panel or the user's own editing — no one-click write face here
 

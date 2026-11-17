@@ -298,6 +298,8 @@
 - **AI 底座（自愿开启，AI-001）** —— 面向后续 AI 功能的 OpenAI 兼容底座，默认全关：`kbengine.ai.*` 配置（`baseUrl`/`model`/`temperature`/`maxTokens`/`requestTimeoutMs`/`maxRetries`）驱动扩展自带 `fetch` 客户端请求 `{baseUrl}/v1/chat/completions`（零新依赖）；`baseUrl` 未配置时回退宿主 `vscode.lm` 语言模型 API（运行时 feature-detect——引擎基线 1.82 早于该 API,从不硬依赖）；未配置端点且宿主无模型时不注册任何命令（惰性激活,零成本）；API key 只存 VS Code SecretStorage（`kbengine.ai.setApiKey`/`kbengine.ai.clearApiKey`，密码形态输入——settings 刻意无 key 字段）；每次请求带超时/取消/重试上限（仅 429/5xx/网络错误重试——其它 4xx 立即失败）；遥测零——除用户显式触发 AI 命令外零代码外发,且只发该命令所需片段
 - **AI 对话面板（自愿开启，AI-002）** —— AI 底座之上的 webview 对话面（`kbengine.ai.chat`，单例）：多轮会话,回复流式上屏（宿主语言模型路线逐 chunk、端点路线整段）且可中途中断（已收部分保留）；代码建议从回复的围栏代码块提取,只以「diff 预览 + 显式应用」两步交付——预览是只读虚拟文档（零落盘）,应用走活动文档的 `WorkspaceEdit` 常规通道（Ctrl+Z 可撤销）；并发提问走代际守卫（新问取消在途旧问,旧代 chunk/结果弃用）；会话历史只驻面板内存——零持久化
   ——（证据：package.json#configuration `kbengine.ai.*`（分组 order 9）、src/ai/aiClient.ts、src/ai/aiChatPanel.ts、src/ai/aiChatPanelHtml.ts、src/ai/aiRegistration.ts、src/extension.ts 惰性注册、tests/aiClient.test.ts 18 例、tests/aiChatPanel.test.ts 12 例）
+- **AI 解释/修复建议（自愿开启，AI-003）** —— 任意与光标相交的 `kbengine.*` 诊断上的建议层快速修复（`kbengine.ai.explainFix`）：引擎判定不变——诊断的计算与展示完全离线,不依赖 AI；AI 面未配置时该动作根本不出（provider 每次请求闸一次,命令执行时再二次闸）；执行只外发最小片段（诊断码+诊断消息+诊断行文本——绝不发整个文件）,回复的围栏代码块成为对原文件的只读 diff 预览（虚拟 scheme,零落盘）；纯文字回复诚实提示「未包含代码建议」；本层只做建议——应用改动留给对话面板或用户手工编辑,不提供一键写入面
+  ——（证据：src/ai/aiExplainFix.ts、src/ai/aiRegistration.ts、tests/aiExplainFix.test.ts 10 例）
 
 
 ## 编辑器基础（UI）

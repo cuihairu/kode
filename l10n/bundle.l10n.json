@@ -744,5 +744,7 @@
   "Engine C++ declaration": "Engine C++ declaration",
   "Built-in stub document": "Built-in stub document",
   "No engine checkout detected; opening the built-in stub document": "No engine checkout detected; opening the built-in stub document",
-  "Entity registration check needs an open workspace folder": "Entity registration check needs an open workspace folder"
+  "Entity registration check needs an open workspace folder": "Entity registration check needs an open workspace folder",
+  "AI explain / fix suggestion": "AI explain / fix suggestion",
+  "AI fix suggestion (read-only, nothing written)": "AI fix suggestion (read-only, nothing written)"
 }

@@ -744,5 +744,7 @@
   "Engine C++ declaration": "引擎 C++ 声明",
   "Built-in stub document": "内置桩文档",
   "No engine checkout detected; opening the built-in stub document": "未检测到引擎检出;打开内置桩文档",
-  "Entity registration check needs an open workspace folder": "实体注册完整性检查需要已打开的工作区文件夹"
+  "Entity registration check needs an open workspace folder": "实体注册完整性检查需要已打开的工作区文件夹",
+  "AI explain / fix suggestion": "AI 解释/修复建议",
+  "AI fix suggestion (read-only, nothing written)": "AI 修复建议(只读,不落盘)"
 }
