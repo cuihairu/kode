@@ -136,6 +136,24 @@ export async function sendAiMessage(options: AiSendOptions): Promise<string> {
   return sendViaLanguageModel(options);
 }
 
+/**
+ * 流式变体(AI-002 对话面板):onChunk 逐片回调,lm 路线逐 chunk 透传且
+ * 取消即刻停收(已收部分保留返回);endpoint 兼容面按整段到达上屏一次
+ * (本批不强制 SSE,中断=abort 已贯穿)——调用方在面板注记两种到达形态。
+ */
+export async function sendAiMessageStream(
+  options: AiSendOptions,
+  onChunk: (text: string) => void
+): Promise<string> {
+  const endpoint = options.endpoint ?? resolveAiEndpointConfig();
+  if (hasConfiguredEndpoint(endpoint)) {
+    const full = await sendViaEndpoint(options, endpoint);
+    onChunk(full);
+    return full;
+  }
+  return sendViaLanguageModel(options, onChunk);
+}
+
 async function sendViaEndpoint(options: AiSendOptions, endpoint: AiEndpointConfig): Promise<string> {
   const doFetch = options.fetchImpl ?? fetch;
   const doSleep = options.sleepImpl ?? sleep;
@@ -218,7 +236,7 @@ async function sendViaEndpoint(options: AiSendOptions, endpoint: AiEndpointConfi
   throw new Error(lastError);
 }
 
-async function sendViaLanguageModel(options: AiSendOptions): Promise<string> {
+async function sendViaLanguageModel(options: AiSendOptions, onChunk?: (text: string) => void): Promise<string> {
   const models = options.models ?? (await listLanguageModels());
   const model = models[0];
   if (!model) {
@@ -238,7 +256,14 @@ async function sendViaLanguageModel(options: AiSendOptions): Promise<string> {
   const response = await model.sendRequest(options.messages.map(toMessage), options.token);
   let text = '';
   for await (const chunk of response.text) {
-    text += typeof chunk?.content === 'string' ? chunk.content : '';
+    if (options.token?.isCancellationRequested) {
+      break; // 取消即刻停收,已收部分保留(AI-002 中断语义)
+    }
+    const piece = typeof chunk?.content === 'string' ? chunk.content : '';
+    text += piece;
+    if (piece && onChunk) {
+      onChunk(piece);
+    }
   }
   return text;
 }

@@ -76,6 +76,19 @@ function createPanel(viewType: string, title: string, showOptions: unknown, opti
     messageListeners: [],
     viewStateListeners: [],
     disposeListeners: [],
+    onDidReceiveMessage(listener: (message: unknown) => void): { dispose(): void } {
+      // 面板级消息监听(vscode 真面板 API 在 panel 顶层,不在 webview 上);
+      // 与 webview.onDidReceiveMessage 共享同一监听表,fireMessage 都触发
+      panel.messageListeners.push(listener);
+      return {
+        dispose: (): void => {
+          const index = panel.messageListeners.indexOf(listener);
+          if (index >= 0) {
+            panel.messageListeners.splice(index, 1);
+          }
+        }
+      };
+    },
     onDidDispose(listener: () => void): { dispose(): void } {
       panel.disposeListeners.push(listener);
       return {

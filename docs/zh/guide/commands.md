@@ -1660,7 +1660,7 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 本面带长超时（120s）——大 pcap + tshark 两跳不适用检测面 5s 预算
 ## AI
 
-两条命令只在 AI 面可用时才注册——配置了 OpenAI 兼容端点(`kbengine.ai.baseUrl`)或宿主存在语言模型;否则完全不存在(见配置指南的 AI 一节)。
+三条命令只在 AI 面可用时才注册——配置了 OpenAI 兼容端点(`kbengine.ai.baseUrl`)或宿主存在语言模型;否则完全不存在(见配置指南的 AI 一节)。
 
 ### `kbengine.ai.setApiKey`
 
@@ -1671,3 +1671,12 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
 
 - 用途:删除 SecretStorage 中已存的 key。
 - 行为:即时生效;下一次请求直接不带 `Authorization` 头。
+
+### `kbengine.ai.chat`
+
+- 用途:打开 AI 对话面板(webview,单例——重复执行只唤起已有面板)。多轮会话;回复流式上屏(宿主语言模型路线逐 chunk、端点路线整段),可中途中断(已收部分保留)。
+- 行为:
+  - 从回复中的围栏代码块提取代码建议,每条带「查看 diff 预览」「应用」按钮(预览走只读虚拟 scheme——零落盘;应用走活动文档的 `WorkspaceEdit` 常规通道,Ctrl+Z 可撤销)
+  - 会话零持久化:历史只驻面板内存,关面板即弃;API key 不出 SecretStorage
+  - 并发提问走代际守卫:新问取消旧问在途请求,旧代 chunk/结果一律弃用
+

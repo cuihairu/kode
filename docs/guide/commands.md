@@ -1752,7 +1752,7 @@ If `Attach to Component` fails, check these first:
   - This face carries a long timeout (120s) — large pcaps + the tshark hop do not fit the detection face's 5s probe budget
 ## AI
 
-Both commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
+All three commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
 
 ### `kbengine.ai.setApiKey`
 
@@ -1763,3 +1763,12 @@ Both commands are registered at runtime only when the AI face is available — a
 
 - Purpose: remove the stored key from SecretStorage.
 - Behavior: immediate; the next request simply goes out without an `Authorization` header.
+
+### `kbengine.ai.chat`
+
+- Purpose: open the AI chat panel (webview, singleton — reopening reveals the existing one). Multi-turn conversation; replies stream in (chunk by chunk on the host language-model route, one block on the endpoint route) and can be interrupted mid-stream (already-received chunks are kept).
+- Behavior:
+  - Code suggestions are extracted from fenced code blocks in the reply; each gets a 「查看 diff 预览」 and 「应用」 button (preview uses the read-only virtual scheme — nothing is written to disk; apply goes through the normal `WorkspaceEdit` channel on the active document and is undoable with Ctrl+Z)
+  - Nothing persists: conversation history lives in the panel memory only and is dropped when the panel closes; the API key never leaves SecretStorage
+  - Concurrent asks follow the generation guard: a new ask cancels the previous in-flight request and stale chunks/results are discarded
+

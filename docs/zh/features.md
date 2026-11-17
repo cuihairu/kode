@@ -295,8 +295,10 @@
 - **状态报告的 Schema 状态段（PA-007 第四增量）** —— `kbengine.protocol.showStatus` 末尾带一段读 `globalStorage/kbengine-schema.json` 的 Schema 状态：已生成 → IR 版本（`schema_version`）、引擎基线、消息/实体规模、缺失实体（entities.xml 注册但 .def 缺盘）与 CLI 构建诊断原文逐条（SYNTAX-005 同规——坏输入保留为可定位诊断,绝不冒充通过;本段即错误诊断面）；未生成 → 给 `kbengine.protocol.buildSchema` 提示；读取失败/坏 JSON → 带归因；字段逐个防御提取,无 globalStorage 面如实按未生成处理
   ——（证据：src/protocolSchemaSync.ts `readSchemaState`、src/protocolTooling.ts `renderProtocolToolingStatus` Schema 段、tests/protocolSchemaSync.test.ts readSchemaState 6 例、tests/protocolTooling.test.ts Schema 段 5 例）
 
-- **AI 底座（自愿开启，AI-001）** —— 面向后续 AI 功能的 OpenAI 兼容底座，默认全关：`kbengine.ai.*` 配置（`baseUrl`/`model`/`temperature`/`maxTokens`/`requestTimeoutMs`/`maxRetries`）驱动扩展自带 `fetch` 客户端请求 `{baseUrl}/v1/chat/completions`（零新依赖）；`baseUrl` 未配置时回退宿主 `vscode.lm` 语言模型 API（运行时 feature-detect——引擎基线 1.82 早于该 API,从不硬依赖）；未配置端点且宿主无模型时不注册任何命令（惰性激活,零成本）；API key 只存 VS Code SecretStorage（`kbengine.ai.setApiKey`/`kbengine.ai.clearApiKey`，密码形态输入——settings 刻意无 key 字段）；每次请求带超时/取消/重试上限（仅 429/5xx/网络错误重试——其它 4xx 立即失败）；遥测零——除用户显式触发 AI 命令外零代码外发,且只发该命令所需片段。对话面板、快速修复、stub/架构助手属后续 AI 批次,目前均不存在
-  ——（证据：package.json#configuration `kbengine.ai.*`（分组 order 9）、src/ai/aiClient.ts、src/ai/aiRegistration.ts、src/extension.ts 惰性注册、tests/aiClient.test.ts 18 例）
+- **AI 底座（自愿开启，AI-001）** —— 面向后续 AI 功能的 OpenAI 兼容底座，默认全关：`kbengine.ai.*` 配置（`baseUrl`/`model`/`temperature`/`maxTokens`/`requestTimeoutMs`/`maxRetries`）驱动扩展自带 `fetch` 客户端请求 `{baseUrl}/v1/chat/completions`（零新依赖）；`baseUrl` 未配置时回退宿主 `vscode.lm` 语言模型 API（运行时 feature-detect——引擎基线 1.82 早于该 API,从不硬依赖）；未配置端点且宿主无模型时不注册任何命令（惰性激活,零成本）；API key 只存 VS Code SecretStorage（`kbengine.ai.setApiKey`/`kbengine.ai.clearApiKey`，密码形态输入——settings 刻意无 key 字段）；每次请求带超时/取消/重试上限（仅 429/5xx/网络错误重试——其它 4xx 立即失败）；遥测零——除用户显式触发 AI 命令外零代码外发,且只发该命令所需片段
+- **AI 对话面板（自愿开启，AI-002）** —— AI 底座之上的 webview 对话面（`kbengine.ai.chat`，单例）：多轮会话,回复流式上屏（宿主语言模型路线逐 chunk、端点路线整段）且可中途中断（已收部分保留）；代码建议从回复的围栏代码块提取,只以「diff 预览 + 显式应用」两步交付——预览是只读虚拟文档（零落盘）,应用走活动文档的 `WorkspaceEdit` 常规通道（Ctrl+Z 可撤销）；并发提问走代际守卫（新问取消在途旧问,旧代 chunk/结果弃用）；会话历史只驻面板内存——零持久化
+  ——（证据：package.json#configuration `kbengine.ai.*`（分组 order 9）、src/ai/aiClient.ts、src/ai/aiChatPanel.ts、src/ai/aiChatPanelHtml.ts、src/ai/aiRegistration.ts、src/extension.ts 惰性注册、tests/aiClient.test.ts 18 例、tests/aiChatPanel.test.ts 12 例）
+
 
 ## 编辑器基础（UI）
 

@@ -342,9 +342,10 @@ describe('AI-001:registerAiCommands(惰性注册+key 只进 SecretStorage)', () 
     expect(result.registered).toBe(true);
     expect(commandRegistry.registeredCommandIds()).toEqual([
       'kbengine.ai.setApiKey',
-      'kbengine.ai.clearApiKey'
+      'kbengine.ai.clearApiKey',
+      'kbengine.ai.chat'
     ]);
-    expect(subscriptions.length).toBe(2);
+    expect(subscriptions.length).toBe(3);
 
     const originalInput = (vscode.window as { showInputBox?: unknown }).showInputBox;
     (vscode.window as { showInputBox: unknown }).showInputBox = async () => 'sk-secret';
