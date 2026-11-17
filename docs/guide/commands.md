@@ -150,7 +150,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Default keybinding: `ctrl+alt+shift+c` (macOS `cmd+alt+shift+c`), `when: editorLangId == python`
 - Purpose: from the active baseapp-side entity script jump to the same-named cellapp file (FILE-TIME-001, 2026-11-17 user order — a keyboard path alongside the process-ownership lens tags, PROC-TAG-001)
 - Behavior:
-  - Resolves the active file's process ownership with the same `scripts/<role>` decision chain as the lens; a shared dir like `common` reports 判不出进程归属(需 scripts/<role> 目录),无法切换 honestly — never guessed
+  - Resolves the active file's process ownership with the same `scripts/<role>` decision chain as the lens; a shared dir like `common` reports 判不出进程归属(需 `scripts/<role>` 目录),无法切换 honestly — never guessed
   - Opens `scripts/cell/<same-name>` with `{ preview: false }` when it exists; reports 未找到同名 cellapp 对应文件 when it does not
   - Silent no-op with no active editor; the reverse direction is `kbengine.processOwnership.openBase`
 
