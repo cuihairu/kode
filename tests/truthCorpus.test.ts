@@ -25,6 +25,7 @@ import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
 import { analyzeFixedDictMutations } from '../src/backend/fixedDictMutationDiagnostics';
 import { findRoleMisuseFindings } from '../src/backend/roleMisuseDiagnostics';
 import { findEventCalls } from '../src/eventApi';
+import { findReadOnlyWriteFindings } from '../src/backend/readOnlyWriteDiagnostics';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -293,6 +294,16 @@ interface EventPubsubEntry extends TruthEntryBase {
 }
 const eventPubsubFamily = families.find(f => f.family === 'entity-event-pubsub')!;
 const eventPubsubEntries = eventPubsubFamily.entries as unknown as EventPubsubEntry[];
+
+// ---- entity-readonly-write-cellapp 族形状与鞍具 ----
+interface ReadOnlyWriteEntry extends TruthEntryBase {
+  input: { code: string; pathFace: 'cellapp' | null; defFaces: string[] | null };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { findings: { line: number; character: number; length: number; propertyName: string; kind: string; face: string }[] };
+  };
+}
+const readOnlyWriteFamily = families.find(f => f.family === 'entity-readonly-write-cellapp')!;
+const readOnlyWriteEntries = readOnlyWriteFamily.entries as unknown as ReadOnlyWriteEntry[];
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -730,5 +741,36 @@ describe('真值语料 execution 门:事件面(findEventCalls 识别表直钉)',
     const missed = eventPubsubEntries.find(e => e.id === 'event-emit-fireEvent-missed');
     expect(missed?.kode.analysis?.calls).toEqual([]);
     expect(findEventCalls(missed!.input.source)).toEqual([]);
+  });
+});
+
+// ---- ⑯ entity-readonly-write-cellapp 执行门 ----
+describe('真值语料 execution 门:内建属性只读写面(findReadOnlyWriteFindings 直钉)', () => {
+  const pinned = readOnlyWriteEntries.filter(e => e.kode.status === 'pinned');
+
+  it('每条条目的只读写 findings 实测等于语料钉值(逐标量含 span/kind/face,drift 即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      const findings = findReadOnlyWriteFindings(
+        entry.input.code,
+        entry.input.pathFace,
+        entry.input.defFaces as unknown as Parameters<typeof findReadOnlyWriteFindings>[2]
+      ).map(f => ({
+        line: f.line,
+        character: f.character,
+        length: f.length,
+        propertyName: f.propertyName,
+        kind: f.kind,
+        face: f.face
+      }));
+      expect(findings, `readonly write drift: ${entry.id}`).toEqual(entry.kode.analysis?.findings ?? []);
+    }
+  });
+
+  it('非实体脸沉默臂:四个负臂同文本 pathFace=null 全沉默(无实体身份不判)', () => {
+    for (const entry of pinned.filter(e => e.kind === 'negative')) {
+      const findings = findReadOnlyWriteFindings(entry.input.code, null, null);
+      expect(findings, `null face drift: ${entry.id}`).toEqual([]);
+    }
   });
 });

@@ -1,0 +1,265 @@
+{
+  "family": "entity-readonly-write-cellapp",
+  "grounding": {
+    "doc": "docs/knowledge/api-cellapp-entity.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "ro-write-id-assign",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def setup(self):\n        self.id = 42\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "id 是引擎 getset 只读属性(R 列):实体 ID 由引擎分配,脚本无 setter,普通赋值即 AttributeError;这是内建属性表错用面 classic misread 的写侧。"
+      },
+      "evidence": [
+        "| `id` | R | `entity_macro.h:37` |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 7,
+              "propertyName": "id",
+              "kind": "assign",
+              "face": "cellapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ro-write-classname-augmented",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def rename(self):\n        self.className += 'x'\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "className 是引擎 getset 只读属性(实体类型名引擎装配):增强赋值先读后写,写半步即 AttributeError,同样被引擎拒绝。"
+      },
+      "evidence": [
+        "| `className` | R | `entity_macro.h:39` |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 14,
+              "propertyName": "className",
+              "kind": "augmented",
+              "face": "cellapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ro-write-isdestroyed-annotated",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def reset(self):\n        self.isDestroyed: bool = False\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "isDestroyed 是引擎 getset 只读生命周期旗(impl 有实现体,无 setter 路径):注解赋值仍是重绑定写,引擎拒绝;脚本读它做守卫是合法用法。"
+      },
+      "evidence": [
+        "| `isDestroyed` | R | `entity_macro.h:38`, impl `:1489-1493` |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 8,
+              "length": 16,
+              "propertyName": "isDestroyed",
+              "kind": "annotated",
+              "face": "cellapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ro-write-spaceid-del",
+      "kind": "negative",
+      "input": {
+        "code": "class Avatar:\n    def clear(self):\n        del self.spaceID\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "spaceID 是引擎 getset 只读属性(所在空间由引擎管理):del 删的是实体上的属性绑定,getset 属性不可删,引擎拒绝。"
+      },
+      "evidence": [
+        "| `spaceID` | R | `entity.cpp:81` |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [
+            {
+              "line": 2,
+              "character": 12,
+              "length": 12,
+              "propertyName": "spaceID",
+              "kind": "del",
+              "face": "cellapp"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rw-position-assign-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def place(self):\n        self.position = (1.0, 2.0, 3.0)\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "position 是 R/W 属性:写走 position-update 路径(witness/volatile 机制随动),是脚本移动实体的合法姿势;.kode 同向沉默。"
+      },
+      "evidence": [
+        "| `position` | R/W | `entity.cpp:83`; writes go through the position-update path (witness/volatile machinery) |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "rw-position-continuation-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def nudge(self):\n        self.position.x = 1.0\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "position 分量续写仍是 R/W 属性的合法使用(写路径随动):续写不是对 self.<属性> 的重绑定,kode 排除后续写不报=同向。"
+      },
+      "evidence": [
+        "| `position` | R/W | `entity.cpp:83`; writes go through the position-update path (witness/volatile machinery) |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "ro-read-comparison-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def check(self):\n        if self.isDestroyed == False:\n            pass\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "读 isDestroyed 做守卫是只读属性的正常用法:比较不是写,kode 比较排除不报=同向。"
+      },
+      "evidence": [
+        "| `isDestroyed` | R | `entity_macro.h:38`, impl `:1489-1493` |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "custom-property-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def hurt(self):\n        self.customHp = 100\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "customHp 不在引擎内建属性表(表是封闭清单):普通脚本属性自由读写,引擎不管;kode 表外不判=同向。"
+      },
+      "evidence": [
+        "## 6. Entity attributes (complete list)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "non-entity-face-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def setup(self):\n        self.id = 42\n",
+        "pathFace": null,
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "无实体身份的文件(普通模块)里同形文本与引擎实体无关,引擎无从拒绝;kode 判定不了实体脸时保持沉默=诚实不猜。"
+      },
+      "evidence": [
+        "## 6. Entity attributes (complete list)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "docstring-text-silent",
+      "kind": "positive",
+      "input": {
+        "code": "class Avatar:\n    def note(self):\n        \"\"\"self.id = 42\"\"\"\n        pass\n",
+        "pathFace": "cellapp",
+        "defFaces": null
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "docstring 是文档字符串不是可执行写,引擎不发生赋值;kode 写入形态检测在词法掩码文本上做(字符串/注释不误认)=同向。"
+      },
+      "evidence": [
+        "## 6. Entity attributes (complete list)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": []
+        }
+      }
+    }
+  ]
+}

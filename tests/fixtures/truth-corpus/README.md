@@ -189,3 +189,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## entity-event-pubsub 族(2026-11-18 第十五族)
 
 依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.2 事件面四侧三连(registerEvent/fireEvent/deregisterEvent,per-process pub/sub 非 EntityCall)。8 例,执行门=findEventCalls 直钉(逐标量含 offset+fireEvent 缺席独立臂)。**对齐面**:registerEvent/deregisterEvent 两名识别同向,点号事件名取末段、裸引用不调用静默、裸变量回调诚实沉默(只认点名字段/字符串字面量)。**语料方法学第四次实战命中,双分歧同族**:①kode 识别表五名不含引擎真实发送名 fireEvent=发送侧调用点全静默漏检,发送/订阅镜链永不闭合(fireEvent 缺席臂钉现状,补名归独立批);②超集误纳 addEvent/emitEvent/removeEvent 三旧资产名——引擎 Entity 面无此三方法,运行期 AttributeError,kode 照常标注(收窄须双侧同步,归独立批)。登记边界:findEventCalls 无字符串/注释掩码(maskPythonNonCode 既有掩码件未被事件面消费),docstring 同形文本命中=假阳性面,掩码收编归独立批。
+
+## entity-readonly-write-cellapp 族(2026-11-18 第十六族)
+
+依据:docs/knowledge/api-cellapp-entity.md(fork HEAD 6d12b8f)§6 完整属性表 R/W 列。10 例:负臂 4(id 赋值/className 增强赋值/isDestroyed 注解赋值/spaceID del——四写入形态各一,findings 六字段钉)+正臂 6(position R/W 写与分量续写沉默/isDestroyed 读比较沉默/customHp 表外沉默/pathFace null 诚实沉默/docstring 掩码沉默)+非实体脸沉默独立臂(四负臂同文本 null 脸全沉默)。执行门=findReadOnlyWriteFindings 三参直钉(生产面表=内建属性三族同源底座)。**对齐族零分歧**:R 列四属性写侧全部报、R/W 与表外全沉默,与 §6 表逐项同向;写入形态检测走 pythonLexicalMask 掩码文本=与事件面无掩码假阳性(第十五族登记)构成对照。baseapp/client 脸各归己档逐族另建。
