@@ -1752,7 +1752,7 @@ If `Attach to Component` fails, check these first:
   - This face carries a long timeout (120s) — large pcaps + the tshark hop do not fit the detection face's 5s probe budget
 ## AI
 
-All four commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
+All five commands are registered at runtime only when the AI face is available — an OpenAI-compatible endpoint configured (`kbengine.ai.baseUrl`) or a host language model present; otherwise they do not exist at all (see the AI section of the configuration guide).
 
 ### `kbengine.ai.setApiKey`
 
@@ -1779,4 +1779,12 @@ All four commands are registered at runtime only when the AI face is available �
   - Choosing the action sends only the minimal snippet (diagnostic code + message + the diagnostic line's text) to the AI face — never the whole file; the CodeAction list itself makes zero network calls (the request happens only when the action is explicitly invoked)
   - The reply's fenced code block becomes a read-only diff preview against the original file (virtual scheme, nothing written to disk); a text-only reply reports honestly that it contains no code suggestion
   - The layer is suggestion-only: applying changes is left to the chat panel or the user's own editing — no one-click write face here
+
+### `kbengine.ai.suggestStub`
+
+- Purpose: AI annotations/usage examples for a stub member, offered purely as a suggestion layer — the typings template source (pinned to its fork commit) is never replaced or rewritten. Run it with the cursor on a member name in a `.pyi` (or pass the member name as an argument).
+- Behavior:
+  - Only the selected member's section is extracted from the template source (header + decorators + body, ending at the next same-level definition; unresolvable members report honestly rather than guessing) and sent to the AI face — never the whole template
+  - The reply's fenced block becomes a read-only diff preview with the original section on the left and the suggestion on the right (both virtual documents — the template file is not written, zero disk changes); a text-only reply reports honestly that it has no code suggestion
+  - Copying anything from the preview into your own files is entirely manual — no one-click write face here
 

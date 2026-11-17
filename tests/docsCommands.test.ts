@@ -24,7 +24,7 @@ const commandIds = pkg.contributes.commands.map(entry => entry.command);
  * commands(未配置端点且宿主无 lm 模型时一个 AI 命令都不注册)——文档小节
  * 经此白名单放行,双向锁的 runtime-only 例外面;新增 runtime 命令须登记。
  */
-const runtimeOnlyCommandIds = ['kbengine.ai.setApiKey', 'kbengine.ai.clearApiKey', 'kbengine.ai.chat', 'kbengine.ai.explainFix'];
+const runtimeOnlyCommandIds = ['kbengine.ai.setApiKey', 'kbengine.ai.clearApiKey', 'kbengine.ai.chat', 'kbengine.ai.explainFix', 'kbengine.ai.suggestStub'];
 const knownCommandIds = (): string[] => [...commandIds, ...runtimeOnlyCommandIds];
 const commandsMd = readFileSync(join(root, 'docs', 'guide', 'commands.md'), 'utf8');
 

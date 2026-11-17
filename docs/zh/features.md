@@ -300,6 +300,8 @@
   ——（证据：package.json#configuration `kbengine.ai.*`（分组 order 9）、src/ai/aiClient.ts、src/ai/aiChatPanel.ts、src/ai/aiChatPanelHtml.ts、src/ai/aiRegistration.ts、src/extension.ts 惰性注册、tests/aiClient.test.ts 18 例、tests/aiChatPanel.test.ts 12 例）
 - **AI 解释/修复建议（自愿开启，AI-003）** —— 任意与光标相交的 `kbengine.*` 诊断上的建议层快速修复（`kbengine.ai.explainFix`）：引擎判定不变——诊断的计算与展示完全离线,不依赖 AI；AI 面未配置时该动作根本不出（provider 每次请求闸一次,命令执行时再二次闸）；执行只外发最小片段（诊断码+诊断消息+诊断行文本——绝不发整个文件）,回复的围栏代码块成为对原文件的只读 diff 预览（虚拟 scheme,零落盘）；纯文字回复诚实提示「未包含代码建议」；本层只做建议——应用改动留给对话面板或用户手工编辑,不提供一键写入面
   ——（证据：src/ai/aiExplainFix.ts、src/ai/aiRegistration.ts、tests/aiExplainFix.test.ts 10 例）
+- **AI stub 建议（自愿开启，AI-004）** —— stub 成员的 AI 补注释/使用示例建议层（`kbengine.ai.suggestStub`）：typings 模板真源（钉死 fork commit）绝不替代或改写——只从模板真源提取选中成员的段（头行+装饰器+体,止于下一个同级定义；成员提不出诚实提示）送 AI 面,回复的围栏代码块成为只读 diff 预览：左=真源原段,右=AI 建议段（两侧都是虚拟文档——模板文件不写入,零落盘）；从预览誊抄完全手动,不提供一键写入面
+  ——（证据：src/ai/aiStubSuggest.ts、src/ai/aiRegistration.ts、tests/aiStubSuggest.test.ts 11 例）
 
 
 ## 编辑器基础（UI）

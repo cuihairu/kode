@@ -746,5 +746,6 @@
   "No engine checkout detected; opening the built-in stub document": "No engine checkout detected; opening the built-in stub document",
   "Entity registration check needs an open workspace folder": "Entity registration check needs an open workspace folder",
   "AI explain / fix suggestion": "AI explain / fix suggestion",
-  "AI fix suggestion (read-only, nothing written)": "AI fix suggestion (read-only, nothing written)"
+  "AI fix suggestion (read-only, nothing written)": "AI fix suggestion (read-only, nothing written)",
+  "AI stub suggestion (template untouched, read-only preview)": "AI stub suggestion (template untouched, read-only preview)"
 }

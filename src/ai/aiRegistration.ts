@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { AI_API_KEY_SECRET, isAiFaceAvailable, type AiSecretsStore } from './aiClient';
 import { openAiChatPanel } from './aiChatPanel';
 import { registerAiExplainFix } from './aiExplainFix';
+import { registerAiStubSuggest } from './aiStubSuggest';
 
 export interface AiRegistrationResult {
   registered: boolean;
@@ -41,6 +42,8 @@ export async function registerAiCommands(
   // AI-003 建议层:CodeAction provider(python+kbengine-def)+ explainFix
   // 命令+只读虚拟 scheme,与命令同惰性块注册(未配置时零注册)
   registerAiExplainFix(context, secrets);
+  // AI-004 建议层:suggestStub 命令+只读虚拟 scheme(模板真源零写入)
+  registerAiStubSuggest(context, secrets);
   return {
     registered: true,
     commands: ['kbengine.ai.setApiKey', 'kbengine.ai.clearApiKey', 'kbengine.ai.chat']
