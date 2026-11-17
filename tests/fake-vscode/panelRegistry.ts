@@ -28,6 +28,8 @@ export interface FakeWebviewPanel {
   /** 测试驱动面:被捕获的显隐监听器(fireViewState 逐个调用并同步 visible) */
   readonly viewStateListeners: Array<(event: { webviewPanel: FakeWebviewPanel }) => void>;
   readonly disposeListeners: Array<() => void>;
+  /** 面板级消息监听(vscode 真面板 API 在 panel 顶层);与 webview 面共享监听表 */
+  onDidReceiveMessage(listener: (message: unknown) => void): { dispose(): void };
   onDidDispose(listener: () => void): { dispose(): void };
   onDidChangeViewState(
     listener: (event: { webviewPanel: FakeWebviewPanel }) => void,
