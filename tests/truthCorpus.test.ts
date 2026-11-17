@@ -1233,3 +1233,71 @@ describe('truth-corpus: fixed-dict-construction-site 族执行闸(FD 构造点�
     expect(mutation[0].key).toBe('level');
   });
 });
+
+// ==================== fixed-dict-decorator-binding 族(第二十五增量,2026-11-18) ====================
+// FD 装饰器路径探针:@EntityDef.fixed_dict() 绑定闸(三属性存在性+静默不绑)+处理链
+// 后段三道响闸(self 参数/模块域一段/未知 optionName),fork py_entitydef.cpp:1178-1302。
+// kode 零装饰器分析面(parsePythonFile 只收类)——登记型家族(同 family-23 模式):
+// 四负臂=漏报方向缺口登记,两段调用正臂=implFileHasContractMethod def 形态约束的
+// 误报镜像登记(family-22 装饰器侧)。探针面=parsePythonFile+implFileHasContractMethod。
+interface FdDecEntry extends TruthEntryBase {
+  input: { code: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      parsedClasses?: number;
+      parsedMethods?: string[];
+      contractDefForm?: boolean[];
+    };
+  };
+}
+const fdDecFamily = families.find(f => f.family === 'fixed-dict-decorator-binding')!;
+const fdDecEntries = fdDecFamily.entries as unknown as FdDecEntry[];
+
+const fdDecParsedOf = (input: FdDecEntry['input']) =>
+  parsePythonFile(input.code, '/w/entity_defs/types_impl.py');
+const fdDecContractOf = (input: FdDecEntry['input']): boolean[] => [
+  implFileHasContractMethod(input.code, 'createObjFromDict'),
+  implFileHasContractMethod(input.code, 'getDictFromObj'),
+  implFileHasContractMethod(input.code, 'isSameType')
+];
+
+describe('truth-corpus: fixed-dict-decorator-binding 族执行闸(FD 装饰器路径探针)', () => {
+  it('后置属性附加臂:engine 求值序=静默不绑;kode 零装饰器面(parse 只收类,def 正则对赋值形态恒 false)', () => {
+    const entry = fdDecEntries.find(e => e.id === 'fddec-attr-attach-after-decorator')!;
+    const parsed = fdDecParsedOf(entry.input);
+    expect(parsed.classes).toHaveLength(entry.kode.analysis!.parsedClasses!);
+    expect(fdDecContractOf(entry.input)).toEqual(entry.kode.analysis!.contractDefForm!);
+    expect(entry.kode.status).toBe('not-analyzed');
+    expect(entry.kode.finding).toContain('漏报方向缺口登记');
+  });
+
+  it('两段调用正臂:engine 存在性绑定(赋值形态合法);kode def 形态约束=误报镜像登记(family-22 装饰器侧)', () => {
+    const entry = fdDecEntries.find(e => e.id === 'fddec-explicit-two-phase-bind')!;
+    const parsed = fdDecParsedOf(entry.input);
+    expect(parsed.classes).toHaveLength(entry.kode.analysis!.parsedClasses!);
+    expect(fdDecContractOf(entry.input)).toEqual(entry.kode.analysis!.contractDefForm!);
+    expect(entry.kode.finding).toContain('误报方向镜像登记');
+  });
+
+  it('self 参数闸臂:engine 零参 AssertionError 响;kode 零诊断(缺口登记)', () => {
+    const entry = fdDecEntries.find(e => e.id === 'fddec-no-self-param')!;
+    const parsed = fdDecParsedOf(entry.input);
+    expect(parsed.classes).toHaveLength(entry.kode.analysis!.parsedClasses!);
+    expect(entry.kode.finding).toContain('self 参数闸');
+  });
+
+  it('嵌套两段臂:engine 模块域一段闸 AssertionError 响;kode parse 面只见类与方法、嵌套定义位置零判定', () => {
+    const entry = fdDecEntries.find(e => e.id === 'fddec-nested-two-segment')!;
+    const parsed = fdDecParsedOf(entry.input);
+    expect(parsed.classes).toHaveLength(entry.kode.analysis!.parsedClasses!);
+    expect(parsed.classes[0] ? [...parsed.classes[0].methods.keys()] : []).toEqual(entry.kode.analysis!.parsedMethods!);
+    expect(entry.kode.finding).toContain('模块域闸');
+  });
+
+  it('未知 optionName 臂:engine not support AssertionError 响;kode 装饰器名名册检查缺席(缺口登记)', () => {
+    const entry = fdDecEntries.find(e => e.id === 'fddec-unknown-option')!;
+    const parsed = fdDecParsedOf(entry.input);
+    expect(parsed.classes).toHaveLength(entry.kode.analysis!.parsedClasses!);
+    expect(entry.kode.finding).toContain('名册检查缺席');
+  });
+});

@@ -1,0 +1,119 @@
+{
+  "family": "fixed-dict-decorator-binding",
+  "grounding": {
+    "doc": "docs/knowledge/fixed-dict-decorator-binding.md",
+    "engineHead": "55a66552"
+  },
+  "entries": [
+    {
+      "id": "fddec-attr-attach-after-decorator",
+      "kind": "negative",
+      "input": {
+        "code": "import KBEngine\n\n@EntityDef.fixed_dict()\ndef TAVATAR(self):\n    return None\n\ndef _create(d):\n    return d\n\ndef _get(o):\n    return {}\n\ndef _same(t):\n    return True\n\nTAVATAR.createObjFromDict = _create\nTAVATAR.getDictFromObj = _get\nTAVATAR.isSameType = _same"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "CPython 装饰器求值序:绑定判定(@EntityDef.fixed_dict() 表达式求值时刻)先于模块顶层后置属性附加语句执行,三属性存在性必然为假 → if 块无 else 分支=静默不绑(零报错零绑定,静默降级;作者以为实现已挂载)。"
+      },
+      "evidence": [
+        "if (PyObject_HasAttrString(pyFunc, \"createObjFromDict\") && PyObject_HasAttrString(pyFunc, \"getDictFromObj\") && PyObject_HasAttrString(pyFunc, \"isSameType\"))",
+        "**条件不成立 → 静默不绑**"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "parsedClasses": 0,
+          "contractDefForm": [false, false, false]
+        },
+        "finding": "漏报方向缺口登记:引擎装饰器路径三属性缺席=静默不绑(用户无感知的静默降级)而 kode 无装饰器分析面(parsePythonFile 只收类,模块级函数装饰器零面);后置属性附加形态下 implFileHasContractMethod 的 def 正则亦不命中(赋值形态恒 false)。装饰器路径检查面收编归独立批,本族只登记不冒充修复。"
+      }
+    },
+    {
+      "id": "fddec-explicit-two-phase-bind",
+      "kind": "positive",
+      "input": {
+        "code": "import KBEngine\n\ndef TAVATAR(self):\n    return None\n\ndef _create(d):\n    return d\n\ndef _get(o):\n    return {}\n\ndef _same(t):\n    return True\n\nTAVATAR.createObjFromDict = _create\nTAVATAR.getDictFromObj = _get\nTAVATAR.isSameType = _same\n\nTAVATAR = EntityDef.fixed_dict()(TAVATAR)"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "属性先就位再显式两段调用:绑定判定时三属性存在性全真(HasAttrString 存在性判定,属性以赋值形态附加合法,无 def 形态约束)→ implementedBy=pyFunc,__qualname__=TAVATAR 恰一段,self 参数在位=self 闸过=绑定成立。"
+      },
+      "evidence": [
+        "**绑定条件=三契约属性的存在性**",
+        "defContext.implementedBy = pyFunc;"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "parsedClasses": 0,
+          "contractDefForm": [false, false, false]
+        },
+        "finding": "误报方向镜像登记(family-22 装饰器侧):引擎绑定条件=属性存在性(赋值形态合法)而 kode implFileHasContractMethod 正则只认 def 形态,对合法赋值附加恒 false=若以该面检查装饰器路径将误报缺契约;kode 装饰器分析面整体缺席,本臂钉文本面镜像现状。"
+      }
+    },
+    {
+      "id": "fddec-no-self-param",
+      "kind": "negative",
+      "input": {
+        "code": "import KBEngine\n\n@EntityDef.fixed_dict()\ndef TAVATAR():\n    return None"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "self 参数闸(处理链后段,排除表仅 rename/fixed_array,fixed_dict 在闸内):inspect.getfullargspec 取参表零参 → AssertionError 'did not find self parameter' 响(装饰器处理失败,无论绑定成败此闸都执行)。"
+      },
+      "evidence": [
+        "PyErr_Format(PyExc_AssertionError, \"EntityDef.%s: \\'%s\\' did not find \\'self\\' parameter!\\n\", defContext.optionName.c_str(), moduleQualname);"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "parsedClasses": 0
+        },
+        "finding": "漏报方向缺口登记:引擎 self 参数闸对零参装饰函数 AssertionError 响而 kode 无装饰器分析面零诊断;检查面收编归独立批。"
+      }
+    },
+    {
+      "id": "fddec-nested-two-segment",
+      "kind": "negative",
+      "input": {
+        "code": "import KBEngine\n\nclass Account:\n    def setup(self):\n        @EntityDef.fixed_dict()\n        def TAVATAR(self):\n            return None\n        return TAVATAR"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "模块域一段闸(isModuleScope=true 走 else 臂):嵌套定义 __qualname__ 两段(Account.setup.TAVATAR)≠恰一段 → AssertionError 'error! such as: @EntityDef.rename()' 响。"
+      },
+      "evidence": [
+        "PyErr_Format(PyExc_AssertionError, \"EntityDef.%s: error! such as: @EntityDef.rename()\\n\\tdef ENTITY_ID() -> EntityDef.INT32: pass\\n\", defContext.optionName.c_str());"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "parsedClasses": 1,
+          "parsedMethods": ["setup"]
+        },
+        "finding": "漏报方向缺口登记:引擎模块域闸要求模块顶层定义(嵌套即响)而 kode parse 面只见类与方法、装饰器与嵌套函数定义位置零判定;检查面收编归独立批。"
+      }
+    },
+    {
+      "id": "fddec-unknown-option",
+      "kind": "negative",
+      "input": {
+        "code": "import KBEngine\n\n@EntityDef.unknown_opt()\ndef TAVATAR(self):\n    return None"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "未知 optionName 闸:装饰器名不在 rename/method/clientmethod/property/entity/interface/component/fixed_dict/fixed_array/fixed_item 名册 → AssertionError 'EntityDef.unknown_opt: not support!' 响。"
+      },
+      "evidence": [
+        "PyErr_Format(PyExc_AssertionError, \"EntityDef.%s: not support!\\n\", defContext.optionName.c_str());"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "parsedClasses": 0
+        },
+        "finding": "漏报方向缺口登记:引擎对未知装饰器名 AssertionError 响而 kode 无装饰器分析面零诊断(装饰器名名册检查缺席);检查面收编归独立批。"
+      }
+    }
+  ]
+}
