@@ -40,18 +40,23 @@ export function interpreterSourceBadge(source: InterpreterSource): string {
 }
 
 /** Python 解释器选择器状态栏项的属主扩展(2026-11-10 用户令,venv/Pylance
- * 去重):ms-python.python 激活时它在状态栏渲染解释器选择器,本扩展再显示
- * 一个相同 venv 是重复。 */
+ * 去重):ms-python.python 在状态栏渲染解释器选择器,本扩展再显示一个相同
+ * venv 是重复。 */
 export const PYTHON_INTERPRETER_EXTENSION_ID = 'ms-python.python';
 
 /**
- * 解释器状态栏项是否应显示(venv/Pylance 去重):Python 扩展激活 → 隐藏本
- * 扩展的项(不重复展示相同的 venv);未激活 → 显示本扩展项。纯决策,激活
- * 事实由调用方采集(getExtension(...).isActive),便于单测。隐藏时不丢功能:
+ * 解释器状态栏项是否应显示(venv/Pylance 去重;2026-11-17 收紧为安装即让位):
+ * Python 扩展**已安装** → 隐藏本扩展的项;未安装 → 显示本扩展项。
+ *
+ * 为什么按安装而非 isActive 判:它是懒激活扩展,本扩展先激活时它多半还没
+ * 激活——按 isActive 判我们先出镜,等它激活后状态栏双份,而
+ * extensions.onDidChange 只在安装/卸载/启用/禁用发火(激活不发),补判无门。
+ * 安装即让位=管理权在安装时就成立,从起初无双份窗口。纯决策,安装事实由
+ * 调用方采集(getExtension(...) !== undefined),便于单测。隐藏时不丢功能:
  * 选择/创建 venv 仍经命令面板 kbengine.python.selectInterpreter / createVenv。
  */
-export function shouldShowInterpreterStatusBar(pythonExtensionActive: boolean): boolean {
-  return !pythonExtensionActive;
+export function shouldShowInterpreterStatusBar(pythonExtensionInstalled: boolean): boolean {
+  return !pythonExtensionInstalled;
 }
 
 /** 状态栏一行文案:$(python) <名> <版本>(徽标);缺失态明说 */

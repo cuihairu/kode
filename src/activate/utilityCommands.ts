@@ -793,12 +793,14 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       vscode.workspace.getConfiguration('kbengine').get('python.venvDirectories')
     );
   const refreshInterpreterStatusBar = async (): Promise<void> => {
-    // venv/Pylance 去重(2026-11-10 用户令):ms-python.python 激活时它自己
-    // 在状态栏显示解释器选择器,本扩展再显示一个相同 venv 是重复——隐藏
-    // 本项;选择/创建 venv 仍经命令面板,不丢功能。
-    const pythonExtActive =
-      vscode.extensions.getExtension(PYTHON_INTERPRETER_EXTENSION_ID)?.isActive === true;
-    if (!shouldShowInterpreterStatusBar(pythonExtActive)) {
+    // venv/Pylance 去重(2026-11-10 用户令;2026-11-17 收紧为安装即让位):
+    // ms-python.python 自己在状态栏显示解释器选择器,已安装即隐藏本项——
+    // 按 isActive 判会漏掉懒激活窗口(它未激活时我们先出镜,它激活后双份;
+    // onDidChange 不发激活事件,补判无门);选择/创建 venv 仍经命令面板,
+    // 不丢功能。
+    const pythonExtInstalled =
+      vscode.extensions.getExtension(PYTHON_INTERPRETER_EXTENSION_ID) !== undefined;
+    if (!shouldShowInterpreterStatusBar(pythonExtInstalled)) {
       interpreterStatusBarItem.hide();
       return;
     }
@@ -911,8 +913,9 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       void refreshInterpreterStatusBar();
     }
   });
-  // venv/Pylance 去重:Python 扩展安装/激活/失活都会改变它是否显示解释器
-  // 选择器,onDidChange 重评估(隐藏/恢复本项)。
+  // venv/Pylance 去重:Python 扩展安装/卸载/启用/禁用(onDidChange 的发火域,
+  // 不含激活)都会改变安装事实,重评估隐藏/恢复本项;判据=安装态,激活窗口
+  // 不产生双份。
   const interpreterExtListener = vscode.extensions.onDidChange(() => {
     void refreshInterpreterStatusBar();
   });

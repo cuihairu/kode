@@ -39,10 +39,12 @@ describe('source badge and status bar text (pure)', () => {
     expect(interpreterSourceBadge('missing')).toBe('missing');
   });
 
-  it('hides the interpreter status bar item when the python extension shows one (venv/Pylance dedup)', () => {
-    // ms-python.python 激活 → 它在状态栏显示解释器选择器 → 本扩展项隐藏
+  it('hides the interpreter status bar item once the python extension is installed (venv/Pylance dedup)', () => {
+    // 2026-11-17 收紧为安装即让位:ms-python.python 已安装(哪怕尚未激活)→
+    // 它拥有状态栏解释器选择器 → 本扩展项隐藏;按 isActive 判会漏懒激活
+    // 窗口(它激活后双份,onDidChange 不发激活事件补判无门)。
     expect(shouldShowInterpreterStatusBar(true)).toBe(false);
-    // Python 扩展未激活 → 本扩展项显示(不丢选择/创建 venv 入口)
+    // Python 扩展未安装 → 本扩展项显示(不丢选择/创建 venv 入口)
     expect(shouldShowInterpreterStatusBar(false)).toBe(true);
   });
 

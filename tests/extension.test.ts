@@ -43,7 +43,7 @@ import {
   configurationOverrides
 } from './fake-vscode/workspaceState';
 import { panelRegistry } from './fake-vscode/panelRegistry';
-import { fakeExtensionList } from './fake-vscode/extensionsState';
+import { fakeExtensionList, fireExtensionsChanged } from './fake-vscode/extensionsState';
 import { tests as testsRegistry } from './fake-vscode/core';
 import { FakeComponentBin } from './sim/fakeComponentBin';
 import {
@@ -1438,6 +1438,47 @@ describe('extension activate 装配', () => {
       fakeExtensionList.length = 0;
     }
   });
+
+  it('venv/Pylance 去重收紧(2026-11-17):ms-python.python 已安装未激活也让位,卸载恢复', async () => {
+    // 懒激活窗口:安装但 isActive:false 也必须隐藏本扩展的解释器状态栏项——
+    // 按 isActive 判会先出本项,等 Python 扩展激活后状态栏双份(onDidChange
+    // 只发安装/卸载/启用/禁用,激活不发,补判无门)。
+    const settleVisible = async (bar: { visible: boolean }): Promise<boolean> => {
+      let current = bar.visible;
+      for (let tick = 0; tick < 30; tick += 1) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        if (bar.visible === current) {
+          return current;
+        }
+        current = bar.visible;
+      }
+      return current;
+    };
+    fakeExtensionList.push({ id: 'ms-python.python', isActive: false });
+    const withPython = makeContext();
+    try {
+      activate(withPython);
+      // windowState.statusBars 跨 activate 累积,本腿 item 取末位(先前的
+      // activate 会留下同优先级旧 item,find 会抓到已 dispose 的它)
+      const hidden = windowState.statusBars.filter(item => item.priority === 97).pop()!;
+      expect(await settleVisible(hidden)).toBe(false);
+    } finally {
+      disposeAll(withPython);
+      fakeExtensionList.length = 0;
+    }
+
+    // 未安装 → fireExtensionsChanged 重评估 → 本项恢复出镜(命令面板之外
+    // 的常驻入口不丢)
+    const withoutPython = makeContext();
+    activate(withoutPython);
+    try {
+      const shown = windowState.statusBars.filter(item => item.priority === 97).pop()!;
+      fireExtensionsChanged();
+      expect(await settleVisible(shown)).toBe(true);
+    } finally {
+      disposeAll(withoutPython);
+    }
+  }, 15000);
 
   it('IDE-REL-007 复现配置摘要:命令落五节进输出通道,全文无未遮蔽凭据', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-repro-'));
