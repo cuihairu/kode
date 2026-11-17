@@ -156,3 +156,12 @@ c2a3b8f)§固定目录三清单+「getPyUserComponentScriptsPath 只认四类」
   是否收窄=独立批(先核官方 default assets 目录习惯)。
 - 同向面:共享目录 common/server_common 不归属、无 scripts 锚定不判、
   反斜杠归一、子目录取父角色。
+
+## entry-script-spi-cellapp 族(2026-11-17 第九族)
+
+依据:docs/knowledge/entry-script-spi-methods.md(fork HEAD c2a3b8f)cellapp
+表。4 例:三件套单钩条目(名字+签名对齐,格式串 Iss/IsO、Is、Iis 逐一对得上)
++roster 条目钉 SP-1 收录范围。**范围子集登记(非分歧)**:引擎 cellapp 入口
+SPI=9 方法,kode 收 3(空间/导航三件套),6 缺席=头注明示的范围选择;缺席面
+里 onCellAppData/onCellAppDataDel 与字典域闸最相关,扩充归独立批。执行门=
+KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。

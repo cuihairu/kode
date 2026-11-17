@@ -19,6 +19,7 @@ import { cellScriptRoleAndEntity, type CellDataKeyEntry } from '../src/backend/c
 import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
 import { analyzeTimerCleanupOnDestroy } from '../src/backend/timerCleanupDiagnostics';
 import { pythonProcessFromPath } from '../src/backend/pythonProcess';
+import { KBENGINE_ENTRY_HOOKS } from '../src/backend/entryHooks';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -166,6 +167,16 @@ interface RolePathEntry extends TruthEntryBase {
 }
 const rolePathFamily = families.find(f => f.family === 'script-role-path-matrix')!;
 const rolePathEntries = rolePathFamily.entries as unknown as RolePathEntry[];
+
+// ---- entry-script-spi-cellapp 族形状与鞍具 ----
+interface EntrySpiEntry extends TruthEntryBase {
+  input: { hook?: string; roster?: boolean };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { name?: string; signature?: string; names?: string[] };
+  };
+}
+const entrySpiFamily = families.find(f => f.family === 'entry-script-spi-cellapp')!;
+const entrySpiEntries = entrySpiFamily.entries as unknown as EntrySpiEntry[];
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -371,5 +382,28 @@ describe('真值语料 execution 门:脚本角色路径矩阵(引擎目录清单
         entry.kode.analysis?.role ?? null
       );
     }
+  });
+});
+
+// ---- ⑧ entry-script-spi-cellapp 执行门 ----
+describe('真值语料 execution 门:入口 SPI 面(cellapp 三件套 roster+签名)', () => {
+  const pinned = entrySpiEntries.filter(e => e.kode.status === 'pinned');
+  const hooksOf = (name: string) => KBENGINE_ENTRY_HOOKS.find(h => h.name === name && h.component === 'cellapp');
+
+  it('每条 pinned 单钩条目的名字+签名实测等于语料钉值(drift 即红)', () => {
+    const singles = pinned.filter(e => e.input.hook);
+    expect(singles.length).toBeGreaterThan(0);
+    for (const entry of singles) {
+      const hook = hooksOf(entry.input.hook!);
+      expect(hook, `钩子缺席: ${entry.id} (${entry.input.hook})`).toBeDefined();
+      expect(hook!.signature, `signature drift: ${entry.id}`).toBe(entry.kode.analysis?.signature);
+    }
+  });
+
+  it('roster 条目:cellapp 收录名单实测等于语料钉值(SP-1 范围漂移即红)', () => {
+    const roster = pinned.find(e => e.input.roster);
+    expect(roster).toBeDefined();
+    const names = KBENGINE_ENTRY_HOOKS.filter(h => h.component === 'cellapp').map(h => h.name);
+    expect(names, `spi roster drift: ${roster!.id}`).toEqual(roster!.kode.analysis?.names);
   });
 });

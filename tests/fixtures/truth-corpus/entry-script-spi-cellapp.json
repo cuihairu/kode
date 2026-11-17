@@ -1,0 +1,99 @@
+{
+  "family": "entry-script-spi-cellapp",
+  "grounding": {
+    "doc": "docs/knowledge/entry-script-spi-methods.md",
+    "engineHead": "c2a3b8f"
+  },
+  "entries": [
+    {
+      "id": "spi-on-space-data",
+      "kind": "positive",
+      "input": {
+        "hook": "onSpaceData"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cellapp 入口 SPI:onSpaceData 由 SpaceMemory::onSpaceDataChanged 通知,格式串 Iss(set)/IsO(del,value=None)——kode 签名 (spaceID, key, value) 与两路格式一致"
+      },
+      "evidence": [
+        "| `onSpaceData` | yes (macro) | `Iss` (set) / `IsO` (del) | `kbe/src/server/cellapp/spacememory.cpp:609`, `:615` | `SpaceMemory::onSpaceDataChanged` (`spacememory.cpp:603`) |",
+        "### cellapp — 9 methods"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "onSpaceData",
+          "signature": "def onSpaceData(spaceID, key, value):"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "spi-on-space-geometry-loaded",
+      "kind": "positive",
+      "input": {
+        "hook": "onSpaceGeometryLoaded"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cellapp 入口 SPI:onSpaceGeometryLoaded 格式串 Is——kode 签名 (spaceID, mapping) 一致;官方模板未实现此回调(kode 提示文案同向)"
+      },
+      "evidence": [
+        "| `onSpaceGeometryLoaded` | yes (macro) | `Is` | `spacememory.cpp:308` | `SpaceMemory::onLoadedSpaceGeometryMapping` (`spacememory.cpp:299`) — **not implemented in any template** |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "onSpaceGeometryLoaded",
+          "signature": "def onSpaceGeometryLoaded(spaceID, mapping):"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "spi-on-all-space-geometry-loaded",
+      "kind": "positive",
+      "input": {
+        "hook": "onAllSpaceGeometryLoaded"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cellapp 入口 SPI:onAllSpaceGeometryLoaded 格式串 Iis——kode 签名 (spaceID, isBootstrap, mapping) 一致"
+      },
+      "evidence": [
+        "| `onAllSpaceGeometryLoaded` | yes (macro) | `Iis` | `spacememory.cpp:336` | `SpaceMemory::onAllSpaceGeometryLoaded` (`spacememory.cpp:331`) |"
+      ],
+      "kode": {
+        "analysis": {
+          "name": "onAllSpaceGeometryLoaded",
+          "signature": "def onAllSpaceGeometryLoaded(spaceID, isBootstrap, mapping):"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "spi-cellapp-roster-scope",
+      "kind": "positive",
+      "input": {
+        "roster": true
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎 cellapp 入口 SPI 共 9 方法(onInit/onGlobalData/onGlobalDataDel/onCellAppData/onCellAppDataDel/onSpaceData/onSpaceGeometryLoaded/onAllSpaceGeometryLoaded/onReadyForLogin);kode 收录空间/导航三件套"
+      },
+      "evidence": [
+        "### cellapp — 9 methods",
+        "| `onSpaceData` | yes (macro) | `Iss` (set) / `IsO` (del) | `kbe/src/server/cellapp/spacememory.cpp:609`, `:615` | `SpaceMemory::onSpaceDataChanged` (`spacememory.cpp:603`) |"
+      ],
+      "kode": {
+        "analysis": {
+          "names": [
+            "onSpaceData",
+            "onSpaceGeometryLoaded",
+            "onAllSpaceGeometryLoaded"
+          ]
+        },
+        "status": "pinned"
+      },
+      "finding": "SP-1 范围子集登记(非分歧):kode 头注明示「当前收录范围:cellapp 空间/导航三件套;其余组件 SPI 后续按需追加」——6 缺席=范围选择;缺席面里 onCellAppData/onCellAppDataDel 与 cellData/字典域闸最相关,扩充归独立批;本条 roster 钉 kode 现有 3 项防 scope 漂移"
+    }
+  ]
+}
