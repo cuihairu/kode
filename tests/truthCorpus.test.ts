@@ -26,6 +26,8 @@ import { analyzeFixedDictMutations } from '../src/backend/fixedDictMutationDiagn
 import { findRoleMisuseFindings } from '../src/backend/roleMisuseDiagnostics';
 import { findEventCalls } from '../src/eventApi';
 import { findReadOnlyWriteFindings } from '../src/backend/readOnlyWriteDiagnostics';
+import { computeRpcArgCountFindings } from '../src/backend/rpcArgCountDiagnostics';
+import type { EntityMapping } from '../src/entityMapping';
 import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
@@ -316,6 +318,50 @@ interface SpiRosterEntry extends TruthEntryBase {
 }
 const spiRosterFamily = families.find(f => f.family === 'entry-script-spi-roster')!;
 const spiRosterEntries = spiRosterFamily.entries as unknown as SpiRosterEntry[];
+
+// ---- rpc-arg-count 族形状与鞍具 ----
+interface RpcArgCountEntry extends TruthEntryBase {
+  input: {
+    source: string;
+    methods: Record<string, { section: 'BaseMethods' | 'CellMethods' | 'ClientMethods'; declaredArgs?: string[] }[]>;
+    callerFace?: 'base' | 'cell' | 'client';
+  };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { findings: { line: number; character: number; methodName: string; receiver: string; declaredCount: number; actualCount: number }[] };
+  };
+}
+const rpcArgCountFamily = families.find(f => f.family === 'rpc-arg-count')!;
+const rpcArgCountEntries = rpcArgCountFamily.entries as unknown as RpcArgCountEntry[];
+/** 条目 methods 薄切片 → EntityMapping 快照(identity 薄桩;mapping 生产装配不属本族钉域)。 */
+const rpcArgCountMappingOf = (entry: RpcArgCountEntry): EntityMapping =>
+  ({
+    name: 'Avatar',
+    defFile: 'scripts/entity_defs/Avatar.def',
+    pythonFile: 'scripts/entity/Avatar.py',
+    pythonFiles: ['scripts/entity/Avatar.py'],
+    properties: {},
+    methods: Object.fromEntries(
+      Object.entries(entry.input.methods).map(([name, decls]) => [
+        name,
+        decls.map(decl => ({
+          defFile: 'scripts/entity_defs/Avatar.def',
+          line: 3,
+          section: decl.section,
+          exposed: true,
+          identity: {
+            ownerKind: 'entity',
+            ownerName: 'Avatar',
+            sourceKind: 'local',
+            sourceChain: [],
+            section: decl.section,
+            symbolName: name
+          },
+          declaredArgs: decl.declaredArgs,
+          declaredReturnType: null
+        }))
+      ])
+    )
+  }) as EntityMapping;
 /** 发送边走真解析(resolveFlowCallSites),def/impl 注册表来自条目自身。 */
 const rpcLinksOf = (entry: RpcLinkEntry) =>
   buildRpcLinks({
@@ -808,6 +854,29 @@ describe('真值语料 execution 门:入口 SPI 全组件名册(ENGINE_SPI_METHO
         expect(all, `spi optional-four drift: ${entry.id}`).toEqual(entry.kode.analysis?.names ?? []);
         expect(all.length).toBe(4);
       }
+    }
+  });
+});
+
+// ---- ⑳ rpc-arg-count 执行门 ----
+describe('真值语料 execution 门:RPC 实参数对账面(computeRpcArgCountFindings 直钉)', () => {
+  it('十三臂逐标量钉:mismatch 三报/沉默十臂全 silent', () => {
+    expect(rpcArgCountEntries.length).toBe(13);
+    for (const entry of rpcArgCountEntries) {
+      const findings = computeRpcArgCountFindings(
+        entry.input.source,
+        rpcArgCountMappingOf(entry),
+        entry.input.callerFace
+      );
+      const actual = findings.map(f => ({
+        line: f.line,
+        character: f.character,
+        methodName: f.methodName,
+        receiver: f.receiver,
+        declaredCount: f.declaredCount,
+        actualCount: f.actualCount
+      }));
+      expect(actual, `rpc arg count drift: ${entry.id}`).toEqual(entry.kode.analysis?.findings ?? []);
     }
   });
 });

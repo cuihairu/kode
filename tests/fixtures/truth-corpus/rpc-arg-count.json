@@ -1,0 +1,269 @@
+{
+  "family": "rpc-arg-count",
+  "grounding": {
+    "doc": "docs/knowledge/api-core-concepts.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "rpc-arg-count-mismatch",
+      "kind": "negative",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(5)\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "EntityCall 打包前按实体 .def 描述校验(entity ID+目的地址+类型+调用类型);实参数与 .def 声明不符=与描述不符的调用,不按描述派发(确切失败形态——报错/静默丢弃——档未言明)。kode 报 Warning=对账面同向。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [{ "line": 2, "character": 18, "methodName": "doMove", "receiver": "cell", "declaredCount": 2, "actualCount": 1 }]
+        }
+      }
+    },
+    {
+      "id": "rpc-arg-count-match-silent",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(5, 6)\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "def 已声明的 EntityCall 调用、顶层实参数与声明一致=合法派发面;kode 沉默=同向。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-zero-declared",
+      "kind": "negative",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.ping(1)\n",
+        "methods": { "ping": [{ "section": "CellMethods", "declaredArgs": [] }] }
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "零参声明却带实参调用=与 def 描述不符,同 mismatch 臂口径(确切失败形态档未言明);kode 报 declaredCount=0 对账=同向。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [{ "line": 2, "character": 18, "methodName": "ping", "receiver": "cell", "declaredCount": 0, "actualCount": 1 }]
+        }
+      }
+    },
+    {
+      "id": "rpc-arg-count-star-actual",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(*args)\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "解包实参的静态数量不可判定;kode 诚实沉默(未知),引擎侧按打包时实际元数依档口径校验。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-star-declared",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(1, 2, 3)\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "*rest"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "声明带星号形参=可变元数,静态数量不可判定;kode 诚实沉默。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-section-mismatch",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(5, 6)\n",
+        "methods": { "doMove": [{ "section": "BaseMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "方法只在 BaseMethods 声明,经 self.cell(ClientMethods 段)调用不会路由到该声明——段错配由 sectionMismatch 面单独报,本面沉默=边界同向,不重复报。"
+      },
+      "evidence": [
+        "An `EntityCall` can only invoke methods declared in the `.def` file — never engine methods, never properties"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-multisource-ambiguous",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(5, 6)\n",
+        "methods": {
+          "doMove": [
+            { "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] },
+            { "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3", "UINT32"] }
+          ]
+        }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "同名声明多来源 Arg 数不一致=静态歧义;kode 诚实沉默,不取首来源硬判。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-crossline",
+      "kind": "negative",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(\n            5,\n            6,\n            7,\n        )\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "跨行调用同样按 def 校验(打包看元数不看行布局);尾随逗号不多计,3 实参对 2 声明=不符,kode 跨行可计数=同向。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "findings": [{ "line": 2, "character": 18, "methodName": "doMove", "receiver": "cell", "declaredCount": 2, "actualCount": 3 }]
+        }
+      }
+    },
+    {
+      "id": "rpc-arg-count-string-comma",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.say(\"hi, there\", 2)\n",
+        "methods": { "say": [{ "section": "CellMethods", "declaredArgs": ["STRING", "UINT8"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "字符串字面量内的逗号不是实参分隔(打包按表达式元数);计数面词法态正确,2 实参对 2 声明=合法,kode 沉默=同向。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-undeclared-method",
+      "kind": "unknown",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.unknownMethod(1)\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "def 未声明的方法不可经 EntityCall 派发(never engine methods, never properties);本条映射快照缺该方法声明,kode 诚实沉默——快照缺席≠def 未声明。"
+      },
+      "evidence": [
+        "An `EntityCall` can only invoke methods declared in the `.def` file — never engine methods, never properties"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      },
+      "reason": "映射快照=部分 def 成员面,缺席声明是「未知」不是「def 未声明」;真反例臂需全量映射 fixture(def 成员闸归 mapping 生产车道),本条只钉诚实沉默边界。"
+    },
+    {
+      "id": "rpc-arg-count-face-filter",
+      "kind": "negative",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.base.doMove(5)\n",
+        "methods": { "doMove": [{ "section": "BaseMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] },
+        "callerFace": "base"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "base/cell/client 是只读 EntityCall 属性,所在面无此角色属性时=None——baseapp 面 self.base 运行期 AttributeError,不构成 def 派发;kode 发现面按逐面语义表滤除=同向,报出反而误导。"
+      },
+      "evidence": [
+        "`base`, `cell`, `client` are read-only `EntityCall` attributes, `None` when the part does not exist"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-unclosed-paren",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(\n            5, 6\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "括号不闭合到文件尾=静态不可判定;kode 诚实沉默(未知),不猜截断。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-comment-masked",
+      "kind": "positive",
+      "input": {
+        "source": "class Avatar:\n    def onSee(self, other):\n        # self.cell.doMove(5)\n",
+        "methods": { "doMove": [{ "section": "CellMethods", "declaredArgs": ["UINT8", "VECTOR3"] }] }
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "注释内伪调用不是调用点;kode 发现面走 maskPythonNonCode 词法掩码=同向(与第十五族事件面无掩码假阳性登记构成对照)。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] }
+      }
+    }
+  ]
+}

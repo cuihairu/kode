@@ -205,3 +205,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## entry-script-spi-roster 族(2026-11-18 第十九族)
 
 依据:docs/knowledge/entry-script-spi-methods.md(fork HEAD c2a3b8f)六组件表+可选四件节。9 例=roster 臂 8(baseapp 12/cellapp 9/loginapp 7/dbmgr 4/interfaces 5/logger 4/bots 2/client 3,名册+可选旗双钉,缺一多一即红)+可选四件臂 1(onAutoLoadEntityCreate/onLogWrote/onReadyForLogin/onReadyForShutDown)。执行门=ENGINE_SPI_METHODS 直钉(SRC-002 恢复件,九族 roster 只钉 SP-1 三件,本族把标注镜全 36 方法面钉进语料护栏)。**对齐族零分歧**:八组件名册+可选旗逐名同向;bots 名册正确剔除 onTargetChanged(档内明示 client only)=档内细分同向;与第九族的 SP-1 范围子集登记互补——标注镜面(本族)与入口钩子 roster 面(family-9)两脸各自钉死。
+
+## rpc-arg-count 族(2026-11-18 第二十族)
+
+依据:docs/knowledge/api-core-concepts.md(fork HEAD 6d12b8f)§1.1 EntityCall(打包前按 .def 描述校验+def-only 派发+三角色只读属性面不存在时 None)。13 例,执行门=computeRpcArgCountFindings 直钉(同步面;async Rust-first 面 parity 归 Rust 车道 cargo 测试)。条目 methods 薄切片经 loader 构 EntityMapping 快照(identity 薄桩)。臂形:mismatch 三报(cell 1v2/零参声明 1v0/跨行 3v2,含尾随逗号不多计)+沉默十臂(数量一致/星号实参/星号形参/段错配归 sectionMismatch/多来源歧义/字符串逗号词法态/声明未就绪/face 滤除(baseapp 面 self.base AttributeError 引用)/括号不闭合/注释掩码)。**对齐族零分歧**:十三臂与档口径逐项同向;登记面=undeclared-method 条目 kind=unknown(映射快照缺席≠def 未声明,真反例臂需全量映射 fixture)。注释掩码臂与第十五族事件面无掩码假阳性构成对照——同一掩码件(maskPythonNonCode)两消费面一有一无。
