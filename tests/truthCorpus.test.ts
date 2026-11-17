@@ -30,6 +30,14 @@ import { computeRpcArgCountFindings } from '../src/backend/rpcArgCountDiagnostic
 import type { EntityMapping } from '../src/entityMapping';
 import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { KBENGINE_HOOKS, getHookByName } from '../src/hooks';
+import {
+  USER_TYPE_CONTRACT_CONSEQUENCE,
+  USER_TYPE_CONTRACT_METHODS,
+  collectUserTypeContractMissing,
+  collectUserTypeContractMissingByImplFile,
+  implFileHasContractMethod,
+  type UserTypeContractStatus
+} from '../src/backend/userTypeContract';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -921,5 +929,117 @@ describe('truth-corpus: writetodb-hook-signature 族执行闸(向导 hooks 签�
     for (const hook of callers) {
       expect(hook.sourceLocation, 'writeToDB() 零参调用只允许出现在 baseapp 面钩子示例').toContain('baseapp');
     }
+  });
+});
+
+// ==================== user-type-contract 族(第二十二增量,2026-11-18) ====================
+// user_type 三契约面探针:implFileHasContractMethod/collectUserTypeContractMissing
+// 直钉(setImplModule 装载硬闸:三属性 GetAttrString 全过才装载成功);赋值/
+// lambda 形态误报只在 finding 登记(不冒充修复);组件范围闸走 unknown(收集
+// 半宿主绑定,纯函数探针不可达)。
+interface UserTypeContractEntry extends TruthEntryBase {
+  input: {
+    face: string;
+    typeName?: string;
+    implementedBy?: string;
+    implFile?: string;
+    implLine?: number;
+    implSource?: string;
+  };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      methods?: string[];
+      missingCount?: number;
+      missingMethods?: string[];
+      consequence?: string;
+      byImplFileLine?: number;
+      implFileAbsentMissingItems?: number;
+      detectedCount?: number;
+      missingReported?: number;
+      collectionFace?: string;
+    };
+  };
+}
+const utContractFamily = families.find(f => f.family === 'user-type-contract')!;
+const utContractEntries = utContractFamily.entries as unknown as UserTypeContractEntry[];
+
+/** 由 impl 源码按生产面口径扫出契约方法存在表(def 形态静态扫描)。 */
+const utContractStatusOf = (input: UserTypeContractEntry['input']): UserTypeContractStatus => ({
+  name: input.typeName ?? 'ProbeType',
+  implementedBy: input.implementedBy,
+  implFile: input.implFile,
+  implLine: input.implLine,
+  methods: {
+    createObjFromDict: implFileHasContractMethod(input.implSource ?? '', 'createObjFromDict'),
+    getDictFromObj: implFileHasContractMethod(input.implSource ?? '', 'getDictFromObj'),
+    isSameType: implFileHasContractMethod(input.implSource ?? '', 'isSameType')
+  }
+});
+
+describe('truth-corpus: user-type-contract 族执行闸(user_type 三契约面探针)', () => {
+  it('roster 臂:三契约方法名册与声明序钉死(setImplModule GetAttrString 链)', () => {
+    const entry = utContractEntries.find(e => e.id === 'usertype-contract-roster')!;
+    expect(entry.kode.status).toBe('pinned');
+    expect([...USER_TYPE_CONTRACT_METHODS]).toEqual(entry.kode.analysis!.methods);
+  });
+
+  it('缺一臂:缺 isSameType 报一条,后果文案与序列化契约同向,按 impl 文件聚合贴行', () => {
+    const entry = utContractEntries.find(e => e.id === 'usertype-missing-isSameType')!;
+    const status = utContractStatusOf(entry.input);
+    const items = collectUserTypeContractMissing(status);
+    expect(items.map(m => m.method)).toEqual(entry.kode.analysis!.missingMethods);
+    expect(items).toHaveLength(entry.kode.analysis!.missingCount!);
+    expect(items[0].message).toContain(entry.kode.analysis!.consequence!);
+    expect(items[0].message).toContain(USER_TYPE_CONTRACT_CONSEQUENCE.isSameType);
+    expect(items[0].typeName).toBe('AvatarProfile');
+    expect(items[0].symbolName).toBe('AvatarProfile');
+    const byFile = collectUserTypeContractMissingByImplFile([status], entry.input.implFile!);
+    expect(byFile).toHaveLength(1);
+    expect(byFile[0].line).toBe(entry.kode.analysis!.byImplFileLine);
+  });
+
+  it('缺二臂:两缺口各报一条,顺序=声明序(createObjFromDict → getDictFromObj)', () => {
+    const entry = utContractEntries.find(e => e.id === 'usertype-missing-two-order')!;
+    const items = collectUserTypeContractMissing(utContractStatusOf(entry.input));
+    expect(items.map(m => m.method)).toEqual(entry.kode.analysis!.missingMethods);
+    expect(items).toHaveLength(entry.kode.analysis!.missingCount!);
+  });
+
+  it('齐备臂:三契约俱全零诊断(引擎装载成功,合法实现沉默)', () => {
+    const entry = utContractEntries.find(e => e.id === 'usertype-complete-silent')!;
+    const items = collectUserTypeContractMissing(utContractStatusOf(entry.input));
+    expect(items).toHaveLength(entry.kode.analysis!.missingCount!);
+    expect(items).toHaveLength(0);
+  });
+
+  it('文件缺席面分工臂:implFile 缺席时缺方法面静默(兜底诊断另报,不重复)', () => {
+    const entry = utContractEntries.find(e => e.id === 'usertype-impl-file-missing-face-split')!;
+    const status = utContractStatusOf(entry.input);
+    expect(status.implFile).toBeUndefined();
+    expect(collectUserTypeContractMissing(status)).toHaveLength(
+      entry.kode.analysis!.implFileAbsentMissingItems!
+    );
+  });
+
+  it('赋值/lambda 形态臂:引擎属性存在性闸全过而 kode def 形态扫描全不识别=误报(finding 登记)', () => {
+    const entry = utContractEntries.find(e => e.id === 'usertype-assignment-form-gap')!;
+    const src = entry.input.implSource!;
+    const detected = [...USER_TYPE_CONTRACT_METHODS].filter(m => implFileHasContractMethod(src, m));
+    expect(detected).toHaveLength(entry.kode.analysis!.detectedCount!);
+    const items = collectUserTypeContractMissing(utContractStatusOf(entry.input));
+    expect(items).toHaveLength(entry.kode.analysis!.missingReported!);
+    // 分歧登记面在档:误报方向,修复归独立批
+    expect(entry.kode.finding).toContain('误报方向登记');
+    expect(entry.kode.finding).toContain('赋值');
+  });
+
+  it('组件范围闸 unknown:引擎侧已钉(三组件装载),kode 收集半未取证诚实缺口', () => {
+    const entry = utContractEntries.find(e => e.id === 'usertype-component-scope')!;
+    expect(entry.kind).toBe('unknown');
+    expect(entry.kode.status).toBe('unverified');
+    expect(entry.kode.analysis!.collectionFace).toBe(
+      'userTypeContractSource(注册表半,definitionWorkspace 宿主绑定)'
+    );
+    expect((entry.reason ?? '').length).toBeGreaterThan(0);
   });
 });

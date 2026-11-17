@@ -1,0 +1,183 @@
+{
+  "family": "user-type-contract",
+  "grounding": {
+    "doc": "docs/knowledge/user-type-impl-contract.md",
+    "engineHead": "55a66552"
+  },
+  "entries": [
+    {
+      "id": "usertype-contract-roster",
+      "kind": "positive",
+      "input": { "face": "contract roster" },
+      "engine": {
+        "load": "accept",
+        "truth": "FIXED_DICT implementedBy 实现须同时具备 createObjFromDict/getDictFromObj/isSameType 三属性;setImplModule 逐个 PyObject_GetAttrString 取(顺序即声明序),全部取到才装载成功。"
+      },
+      "evidence": [
+        "datatype.cpp:2360 FixedDictType::setImplModule(PyObject* pyobj)",
+        "pycreateObjFromDict_ = PyObject_GetAttrString(implObj_, \"createObjFromDict\");",
+        "pygetDictFromObj_ = PyObject_GetAttrString(implObj_, \"getDictFromObj\");",
+        "pyisSameType_ = PyObject_GetAttrString(implObj_, \"isSameType\");"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "methods": ["createObjFromDict", "getDictFromObj", "isSameType"]
+        }
+      }
+    },
+    {
+      "id": "usertype-missing-isSameType",
+      "kind": "negative",
+      "input": {
+        "face": "impl 缺单一契约方法",
+        "typeName": "AvatarProfile",
+        "implementedBy": "avatar_types.AvatarProfile",
+        "implFile": "/w/user_type/avatar_types.py",
+        "implLine": 3,
+        "implSource": "class AvatarProfile:\n    def createObjFromDict(self, dictData):\n        return dict(dictData)\n\n    def getDictFromObj(self, obj):\n        return dict(obj)\n"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "实现缺 isSameType:pyisSameType_ 的 GetAttrString 取不到 → SCRIPT_ERROR_CHECK + return false,实现模块装载失败(组件启动/实体定义装载链报错)。"
+      },
+      "evidence": [
+        "pyisSameType_ = PyObject_GetAttrString(implObj_, \"isSameType\");",
+        "3. 三契约方法逐个 `PyObject_GetAttrString` 取,**顺序即声明序**;任一取不到(实现缺该方法)→ `SCRIPT_ERROR_CHECK` + return false,实现模块装载失败——引擎侧表现为组件启动/实体定义装载链报错:"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "missingCount": 1,
+          "missingMethods": ["isSameType"],
+          "consequence": "类型判定失效",
+          "byImplFileLine": 3
+        }
+      }
+    },
+    {
+      "id": "usertype-missing-two-order",
+      "kind": "negative",
+      "input": {
+        "face": "impl 缺两个契约方法",
+        "typeName": "AvatarProfile",
+        "implementedBy": "avatar_types.AvatarProfile",
+        "implFile": "/w/user_type/avatar_types.py",
+        "implLine": 3,
+        "implSource": "class AvatarProfile:\n    def isSameType(self, other):\n        return isinstance(other, dict)\n"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "实现缺 createObjFromDict 与 getDictFromObj:两处 GetAttrString 各自取不到 → 装载失败;两缺口各自致命,逐方法分别报告比合并更精确。"
+      },
+      "evidence": [
+        "pycreateObjFromDict_ = PyObject_GetAttrString(implObj_, \"createObjFromDict\");",
+        "pygetDictFromObj_ = PyObject_GetAttrString(implObj_, \"getDictFromObj\");",
+        "3. 三契约方法逐个 `PyObject_GetAttrString` 取,**顺序即声明序**;任一取不到(实现缺该方法)→ `SCRIPT_ERROR_CHECK` + return false,实现模块装载失败——引擎侧表现为组件启动/实体定义装载链报错:"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "missingCount": 2,
+          "missingMethods": ["createObjFromDict", "getDictFromObj"]
+        }
+      }
+    },
+    {
+      "id": "usertype-complete-silent",
+      "kind": "positive",
+      "input": {
+        "face": "impl 三契约齐备",
+        "typeName": "AvatarProfile",
+        "implementedBy": "avatar_types.AvatarProfile",
+        "implFile": "/w/user_type/avatar_types.py",
+        "implLine": 3,
+        "implSource": "class AvatarProfile:\n    def createObjFromDict(self, dictData):\n        return dict(dictData)\n\n    def getDictFromObj(self, obj):\n        return dict(obj)\n\n    def isSameType(self, other):\n        return isinstance(other, dict)\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "三契约方法全部取到 → 实现模块装载成功;合法实现零诊断。"
+      },
+      "evidence": [
+        "datatype.cpp:2360 FixedDictType::setImplModule(PyObject* pyobj)",
+        "pycreateObjFromDict_ = PyObject_GetAttrString(implObj_, \"createObjFromDict\");",
+        "pygetDictFromObj_ = PyObject_GetAttrString(implObj_, \"getDictFromObj\");",
+        "pyisSameType_ = PyObject_GetAttrString(implObj_, \"isSameType\");"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "missingCount": 0 }
+      }
+    },
+    {
+      "id": "usertype-impl-file-missing-face-split",
+      "kind": "negative",
+      "input": {
+        "face": "impl 文件缺席(缺方法面分工)",
+        "typeName": "AvatarProfile",
+        "implementedBy": "avatar_types.AvatarProfile"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "实现模块/符号缺失时引擎装载即失败(ImportModule/GetAttrString 失败链);kode 缺方法面在 implFile 缺席时静默,由「user_type 未找到 python 文件」诊断兜底——面分工,不重复报。"
+      },
+      "evidence": [
+        "1. impl 对象为 null → `SCRIPT_ERROR_CHECK` + return false(实现模块装载失败)。",
+        "- `datatype.cpp:2343-2354`:`PyImport_ImportModule(res_[0])` 取模块 → `PyObject_GetAttrString(implModule, res_[1])` 取符号 → `setImplModule(pyImplObj)`。"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "implFileAbsentMissingItems": 0 }
+      }
+    },
+    {
+      "id": "usertype-assignment-form-gap",
+      "kind": "positive",
+      "input": {
+        "face": "赋值/lambda 绑定形态",
+        "typeName": "AvatarProfile",
+        "implementedBy": "avatar_types.AvatarProfile",
+        "implFile": "/w/user_type/avatar_types.py",
+        "implLine": 2,
+        "implSource": "class AvatarProfile:\n    pass\n\nAvatarProfile.createObjFromDict = lambda self, dictData: dict(dictData)\nAvatarProfile.getDictFromObj = lambda self, obj: dict(obj)\nAvatarProfile.isSameType = lambda self, other: isinstance(other, dict)\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎只做属性存在性检查(GetAttrString),对实现语法形态无 def 约束——赋值/lambda 绑定的 callable 三属性俱在,装载硬闸全过,合法装载。"
+      },
+      "evidence": [
+        "引擎在此只做**属性存在性**检查(`GetAttrString`),对实现的语法形态没有任何 `def` 约束:类方法、模块级函数、实例属性、赋值/lambda 绑定的 callable,只要属性取得到即通过本闸。",
+        "pyisSameType_ = PyObject_GetAttrString(implObj_, \"isSameType\");"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "detectedCount": 0,
+          "missingReported": 3
+        },
+        "finding": "误报方向登记:引擎 GetAttrString 只查属性存在性(datatype.cpp:2383-2397),赋值/lambda 绑定的 callable 合法装载;kode implFileHasContractMethod 只认 `def <name>(` 形态,本形三属性全判缺失=对合法代码报满 3 条缺方法诊断。修复候选=扫描面收编赋值/lambda 形态归独立批,本族只登记不冒充修复。"
+      }
+    },
+    {
+      "id": "usertype-component-scope",
+      "kind": "unknown",
+      "input": { "face": "契约装载的组件范围在 kode 收集半的映射" },
+      "engine": {
+        "load": "accept",
+        "truth": "契约装载仅 CELLAPP/BASEAPP/CLIENT 三组件执行(loadImplModule 在此闸内);其余组件(dbmgr/loginapp/logger/interfaces/bots 等)不装载 impl 模块,strType 只进 EntityDef::md5()。"
+      },
+      "evidence": [
+        "if(g_componentType == CELLAPP_TYPE || g_componentType == BASEAPP_TYPE ||",
+        "if(strType.size() > 0 && !loadImplModule(strType))",
+        "其余组件(dbmgr/loginapp/logger/interfaces/bots 等)不装载 impl 模块,`strType` 只进 `EntityDef::md5()` 参与校验和。"
+      ],
+      "kode": {
+        "status": "unverified",
+        "analysis": {
+          "collectionFace": "userTypeContractSource(注册表半,definitionWorkspace 宿主绑定)"
+        }
+      },
+      "reason": "kode 状态收集半(注册表半留 TS,B1 批 4 口径)绑定 definitionWorkspace 宿主,纯函数探针不可达;引擎侧组件闸已钉(datatype.cpp:2174-2179),kode 收集面是否按组件域过滤/是否对非三组件文件出诊断未取证。取证前提=fixture workspace 装 types.xml 走收集半;缺口=非 cellapp/baseapp/client 组件下 kode 诊断面的范围语义。"
+    }
+  ]
+}
