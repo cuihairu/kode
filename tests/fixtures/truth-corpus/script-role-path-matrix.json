@@ -1,0 +1,371 @@
+{
+  "family": "script-role-path-matrix",
+  "grounding": {
+    "doc": "docs/knowledge/fixed-directories-and-path-resolution.md",
+    "engineHead": "c2a3b8f"
+  },
+  "entries": [
+    {
+      "id": "dir-base",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/base/Avatar.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "BASEAPP 组件脚本家=scripts/base(BASEAPP_TYPE 清单 python_app.cpp:174-179;EntityApp 线走 common.cpp 同名分支)——目录存在即角色可判"
+      },
+      "evidence": [
+        "| `BASEAPP_TYPE` | `server_common`, `base`, `base/interfaces`, `base/components` | `python_app.cpp:174-179` |",
+        "| baseapp, cellapp | `EntityApp<Entity>` (`kbe/src/server/baseapp/baseapp.h:37`, `kbe/src/server/cellapp/cellapp.h:21`) | `entitydef/common.cpp:72-126` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "base"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "dir-cell",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/cell/Avatar.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "CELLAPP 组件脚本家=scripts/cell(CELLAPP_TYPE 清单 python_app.cpp:180-185)"
+      },
+      "evidence": [
+        "| `CELLAPP_TYPE` | `server_common`, `cell`, `cell/interfaces`, `cell/components` | `python_app.cpp:180-185` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "cell"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "dir-client",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/client/Avatar.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "client 组件脚本家=scripts/client(kbemain.h CLIENT_TYPE 分支与 PythonApp default 分支一致)"
+      },
+      "evidence": [
+        "| default (client) | `client`, `client/interfaces`, `client/components` — **no** `server_common` | `python_app.cpp:202-207` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "client"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "dir-bots",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/bots/Avatar.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "bots 组件脚本家=scripts/bots(kbemain.h 非 CLIENT 即 bots 分支)"
+      },
+      "evidence": [
+        "while everything else (i.e. bots) gets `bots`,",
+        "| default (client) | `client`, `client/interfaces`, `client/components` — **no** `server_common` | `python_app.cpp:202-207` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "bots"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "dir-logger",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/logger/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "LOGGER 组件脚本家=scripts/logger(LOGGER_TYPE 清单 python_app.cpp:198-201)——kode 目录名与引擎目录名同形"
+      },
+      "evidence": [
+        "| `LOGGER_TYPE` | `server_common`, `logger` | `python_app.cpp:198-201` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "logger"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "alias-baseapp",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/baseapp/Avatar.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎目录表无 scripts/baseapp(BASEAPP 脚本家是 base);kode 将 baseapp 别名为 base 角色"
+      },
+      "evidence": [
+        "| `BASEAPP_TYPE` | `server_common`, `base`, `base/interfaces`, `base/components` | `python_app.cpp:174-179` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,",
+        "and hit `KBE_ASSERT(false)` for everything else (`:525`, `:547`)."
+      ],
+      "kode": {
+        "analysis": {
+          "role": "base"
+        },
+        "status": "pinned"
+      },
+      "finding": "kode 容忍别名:引擎三份目录清单(python_app.cpp:144-213/common.cpp:72-126/kbemain.h:57-110)均无 scripts/baseapp 目录,kode 头注自称「Directory roles are distinct from engine component names」=有意设计;登记面=对该目录给出进程角色后,下游(字典域过滤/进程 API 面/stub 根/实体角色闸)据 phantom 角色出结论,而引擎视角该目录不在任何组件脚本清单——宽容超集,方向=对引擎不会加载的文件给出进程域结论;是否收窄=独立批(先核官方 default assets 目录习惯)"
+    },
+    {
+      "id": "alias-cellapp",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/cellapp/Avatar.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎目录表无 scripts/cellapp(CELLAPP 脚本家是 cell);kode 将 cellapp 别名为 cell 角色"
+      },
+      "evidence": [
+        "| `CELLAPP_TYPE` | `server_common`, `cell`, `cell/interfaces`, `cell/components` | `python_app.cpp:180-185` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "cell"
+        },
+        "status": "pinned"
+      },
+      "finding": "kode 容忍别名:引擎三份目录清单(python_app.cpp:144-213/common.cpp:72-126/kbemain.h:57-110)均无 scripts/cellapp 目录,kode 头注自称「Directory roles are distinct from engine component names」=有意设计;登记面=对该目录给出进程角色后,下游(字典域过滤/进程 API 面/stub 根/实体角色闸)据 phantom 角色出结论,而引擎视角该目录不在任何组件脚本清单——宽容超集,方向=对引擎不会加载的文件给出进程域结论;是否收窄=独立批(先核官方 default assets 目录习惯)"
+    },
+    {
+      "id": "alias-dbmgr",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/dbmgr/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎目录表无 scripts/dbmgr(DBMGR 脚本家是 db);kode 将 dbmgr 别名为 dbmgr 角色"
+      },
+      "evidence": [
+        "| `DBMGR_TYPE` | `server_common`, `db` | `python_app.cpp:186-189` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "dbmgr"
+        },
+        "status": "pinned"
+      },
+      "finding": "kode 容忍别名:引擎三份目录清单(python_app.cpp:144-213/common.cpp:72-126/kbemain.h:57-110)均无 scripts/dbmgr 目录,kode 头注自称「Directory roles are distinct from engine component names」=有意设计;登记面=对该目录给出进程角色后,下游(字典域过滤/进程 API 面/stub 根/实体角色闸)据 phantom 角色出结论,而引擎视角该目录不在任何组件脚本清单——宽容超集,方向=对引擎不会加载的文件给出进程域结论;是否收窄=独立批(先核官方 default assets 目录习惯)"
+    },
+    {
+      "id": "alias-interfaces",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/interfaces/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎目录表无 scripts/interfaces(INTERFACES 脚本家是 interface 单数);kode 将 interfaces 别名为 interfaces 角色"
+      },
+      "evidence": [
+        "| `INTERFACES_TYPE` | `server_common`, `interface` | `python_app.cpp:190-193` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "interfaces"
+        },
+        "status": "pinned"
+      },
+      "finding": "kode 容忍别名:引擎三份目录清单(python_app.cpp:144-213/common.cpp:72-126/kbemain.h:57-110)均无 scripts/interfaces 目录,kode 头注自称「Directory roles are distinct from engine component names」=有意设计;登记面=对该目录给出进程角色后,下游(字典域过滤/进程 API 面/stub 根/实体角色闸)据 phantom 角色出结论,而引擎视角该目录不在任何组件脚本清单——宽容超集,方向=对引擎不会加载的文件给出进程域结论;是否收窄=独立批(先核官方 default assets 目录习惯)"
+    },
+    {
+      "id": "alias-loginapp",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/loginapp/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎目录表无 scripts/loginapp(LOGINAPP 脚本家是 login);kode 将 loginapp 别名为 loginapp 角色"
+      },
+      "evidence": [
+        "| `LOGINAPP_TYPE` | `server_common`, `login` | `python_app.cpp:194-197` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "loginapp"
+        },
+        "status": "pinned"
+      },
+      "finding": "kode 容忍别名:引擎三份目录清单(python_app.cpp:144-213/common.cpp:72-126/kbemain.h:57-110)均无 scripts/loginapp 目录,kode 头注自称「Directory roles are distinct from engine component names」=有意设计;登记面=对该目录给出进程角色后,下游(字典域过滤/进程 API 面/stub 根/实体角色闸)据 phantom 角色出结论,而引擎视角该目录不在任何组件脚本清单——宽容超集,方向=对引擎不会加载的文件给出进程域结论;是否收窄=独立批(先核官方 default assets 目录习惯)"
+    },
+    {
+      "id": "miss-db-dir",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/db/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "DBMGR 组件脚本家=scripts/db(python_app.cpp:186-189)——引擎会把该目录推入 sys.path 并按 dbmgr 组件加载其脚本;kode 角色不可知"
+      },
+      "evidence": [
+        "| `DBMGR_TYPE` | `server_common`, `db` | `python_app.cpp:186-189` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,"
+      ],
+      "kode": {
+        "analysis": {
+          "role": null
+        },
+        "status": "pinned"
+      },
+      "finding": "**引擎真目录 kode 缺席**:引擎 DBMGR 组件脚本家=scripts/db(python_app.cpp:186-189),kode 返 null=角色不可知——dataDictProcessDomain 字典域闸/processApiSymbols 进程 API 面/processStubRoot stub 根全部跳过该文件=漏建议/漏报告方向;修复=目录别名补映射归独立批,且须双侧同步(process-api.json「embedded by the Rust implementation too」,映射逻辑 TS/Rust 双实现)"
+    },
+    {
+      "id": "miss-interface-dir",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/interface/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "INTERFACES 组件脚本家=scripts/interface(单数,python_app.cpp:190-193);kode 角色不可知"
+      },
+      "evidence": [
+        "| `INTERFACES_TYPE` | `server_common`, `interface` | `python_app.cpp:190-193` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,"
+      ],
+      "kode": {
+        "analysis": {
+          "role": null
+        },
+        "status": "pinned"
+      },
+      "finding": "**引擎真目录 kode 缺席**:引擎 INTERFACES 组件脚本家=scripts/interface(python_app.cpp:190-193),kode 返 null=角色不可知——dataDictProcessDomain 字典域闸/processApiSymbols 进程 API 面/processStubRoot stub 根全部跳过该文件=漏建议/漏报告方向;修复=目录别名补映射归独立批,且须双侧同步(process-api.json「embedded by the Rust implementation too」,映射逻辑 TS/Rust 双实现)"
+    },
+    {
+      "id": "miss-login-dir",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/login/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "LOGINAPP 组件脚本家=scripts/login(python_app.cpp:194-197);kode 角色不可知"
+      },
+      "evidence": [
+        "| `LOGINAPP_TYPE` | `server_common`, `login` | `python_app.cpp:194-197` |",
+        "`:538-547` otherwise) only accept `CELLAPP`, `BASEAPP`, `BOTS` and `CLIENT`,"
+      ],
+      "kode": {
+        "analysis": {
+          "role": null
+        },
+        "status": "pinned"
+      },
+      "finding": "**引擎真目录 kode 缺席**:引擎 LOGINAPP 组件脚本家=scripts/login(python_app.cpp:194-197),kode 返 null=角色不可知——dataDictProcessDomain 字典域闸/processApiSymbols 进程 API 面/processStubRoot stub 根全部跳过该文件=漏建议/漏报告方向;修复=目录别名补映射归独立批,且须双侧同步(process-api.json「embedded by the Rust implementation too」,映射逻辑 TS/Rust 双实现)"
+    },
+    {
+      "id": "shared-common-null",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/common/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "common/data/user_type 为全组件共享目录(common 行,python_app.cpp:168-170),无单一组件身份;kode null=诚实不归属"
+      },
+      "evidence": [
+        "| Common to every component | `common`, `data`, `user_type` | `python_app.cpp:168-170` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": null
+        },
+        "status": "pinned"
+      },
+      "finding": "共享目录不归属=与引擎「全组件都装」语义同向;server_common 同理(共享服务端目录);域过滤面对此类文件走不可知分支不声称出域"
+    },
+    {
+      "id": "anchor-no-scripts-dir",
+      "kind": "negative",
+      "input": {
+        "path": "/w/base/x.py"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "引擎组件脚本目录由 res_path→getPyUserScriptsPath 解析链钉死(rfind res 截断补 scripts/,resmgr.cpp:489-503),任意祖先目录名为 base/cell 不构成 scripts 树;kode 锚定 lastIndexOf(\"scripts\") 不被任意祖先目录骗过"
+      },
+      "evidence": [
+        "SCR[\"getPyUserScriptsPath rfind res 截断后补 scripts/<br/>resmgr.cpp:489-503\"]"
+      ],
+      "kode": {
+        "analysis": {
+          "role": null
+        },
+        "status": "pinned"
+      },
+      "finding": "面域纪律钉:无 scripts 锚定不判角色(代码头注「Anchor to scripts, never to arbitrary ancestor directories named base/cell」)"
+    },
+    {
+      "id": "backslash-normalized",
+      "kind": "positive",
+      "input": {
+        "path": "w:\\proj\\scripts\\cell\\A.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎 res_path 归一含反斜杠(resmgr.cpp:116-130);kode 路径先统一 / 再切——Windows 形路径同判"
+      },
+      "evidence": [
+        "NORM[\"补尾斜杠 · 归一 // 与反斜杠<br/>resmgr.cpp:116-130\"]",
+        "| `CELLAPP_TYPE` | `server_common`, `cell`, `cell/interfaces`, `cell/components` | `python_app.cpp:180-185` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "cell"
+        },
+        "status": "pinned"
+      }
+    },
+    {
+      "id": "nested-subdir-parent-role",
+      "kind": "positive",
+      "input": {
+        "path": "/w/scripts/cell/interfaces/x.py"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "cell/interfaces 是 CELLAPP 清单成员(python_app.cpp:180-185)——cell 目录之子目录,文件属 cell 侧模块;kode 取 scripts 后首段=父目录角色"
+      },
+      "evidence": [
+        "| `CELLAPP_TYPE` | `server_common`, `cell`, `cell/interfaces`, `cell/components` | `python_app.cpp:180-185` |"
+      ],
+      "kode": {
+        "analysis": {
+          "role": "cell"
+        },
+        "status": "pinned"
+      }
+    }
+  ]
+}

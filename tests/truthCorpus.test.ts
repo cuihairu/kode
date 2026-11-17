@@ -18,6 +18,7 @@ import { cellDataCallbackFindings } from '../src/backend/cellDataCallbackCheck';
 import { cellScriptRoleAndEntity, type CellDataKeyEntry } from '../src/backend/cellDataCompletion';
 import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
 import { analyzeTimerCleanupOnDestroy } from '../src/backend/timerCleanupDiagnostics';
+import { pythonProcessFromPath } from '../src/backend/pythonProcess';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -155,6 +156,16 @@ const timerFamily = families.find(f => f.family === 'entity-timer-cleanup')!;
 const timerEntries = timerFamily.entries as unknown as TimerEntry[];
 const timerSnippetOf = (input: TimerEntry['input']): string =>
   ['class Avatar:', `    def ${input.method}(${input.signature ?? 'self'}):`, ...input.body.map(l => `        ${l}`)].join('\n');
+
+// ---- script-role-path-matrix 族形状与鞍具 ----
+interface RolePathEntry extends TruthEntryBase {
+  input: { path: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { role: string | null };
+  };
+}
+const rolePathFamily = families.find(f => f.family === 'script-role-path-matrix')!;
+const rolePathEntries = rolePathFamily.entries as unknown as RolePathEntry[];
 
 // ---- ① schema 门(全族) ----
 describe('真值语料 schema 门(KSEM-QA-01)', () => {
@@ -345,6 +356,20 @@ describe('真值语料 execution 门:定时器清理面(KBE-PY-017 冗余/合法
         length: f.length
       }));
       expect(findings, `cleanup drift: ${entry.id}`).toEqual(entry.kode.validation?.cleanup ?? []);
+    }
+  });
+});
+
+// ---- ⑦ script-role-path-matrix 执行门 ----
+describe('真值语料 execution 门:脚本角色路径矩阵(引擎目录清单 vs kode 别名面)', () => {
+  const pinned = rolePathEntries.filter(e => e.kode.status === 'pinned');
+
+  it('每条 pinned 条目的角色判定实测等于语料钉值(含 null 缺席臂,drift 即红)', () => {
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const entry of pinned) {
+      expect(pythonProcessFromPath(entry.input.path), `role drift: ${entry.id}`).toBe(
+        entry.kode.analysis?.role ?? null
+      );
     }
   });
 });

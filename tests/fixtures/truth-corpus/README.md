@@ -139,3 +139,20 @@ callback 且 Entity::destroy 永不取消,onDestroy 缺 KBEngine.delTimer 清理
 实体泄漏 garbages——kode 全静默;单发 repeat=0 自释放非陷阱)。执行闸=
 analyzeTimerCleanupOnDestroy findings 双向钉(冗余报/合法沉默)。本面 TS-only
 (Rust 无镜像,parity golden 不涉)。模块 timer 泄漏面修复归独立批。
+
+## script-role-path-matrix 族(2026-11-17 第八族)
+
+依据:docs/knowledge/fixed-directories-and-path-resolution.md(fork HEAD
+c2a3b8f)§固定目录三清单+「getPyUserComponentScriptsPath 只认四类」陷阱。
+17 例路径矩阵探针(pythonProcessFromPath 逐路径钉,含 null 缺席臂),登记面:
+
+- **引擎真目录 kode 缺席(漏建议/漏报告方向)**:DBMGR/INTERFACES/LOGINAPP
+  组件脚本家=scripts/db、scripts/interface(单数)、scripts/login——kode 返
+  null 角色不可知,字典域闸/进程 API 面/stub 根全部跳过;修复=别名补映射
+  归独立批,须双侧同步(process-api.json Rust 同嵌)。
+- **phantom 宽容超集**:scripts/baseapp、cellapp、dbmgr、interfaces、loginapp
+  引擎目录表均无此目录,kode 别名给角色=有意设计(头注自称目录角色≠引擎
+  组件名);登记=下游据 phantom 角色对引擎不会加载的文件出进程域结论,
+  是否收窄=独立批(先核官方 default assets 目录习惯)。
+- 同向面:共享目录 common/server_common 不归属、无 scripts 锚定不判、
+  反斜杠归一、子目录取父角色。
