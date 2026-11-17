@@ -38,6 +38,9 @@ import {
   implFileHasContractMethod,
   type UserTypeContractStatus
 } from '../src/backend/userTypeContract';
+import { linearizeC3 } from '../src/backend/pythonClassIndex';
+import { parsePythonFile } from '../src/backend/pythonParser';
+import type { PythonClassDef } from '../src/backend/pythonParser';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
 /** 族间公共信封(input/kode 细节由各族执行闸窄化)。 */
@@ -1040,6 +1043,86 @@ describe('truth-corpus: user-type-contract 族执行闸(user_type 三契约面�
     expect(entry.kode.analysis!.collectionFace).toBe(
       'userTypeContractSource(注册表半,definitionWorkspace 宿主绑定)'
     );
+    expect((entry.reason ?? '').length).toBeGreaterThan(0);
+  });
+});
+
+// ==================== entity-script-base-class 族(第二十三增量,2026-11-18) ====================
+// 实体脚本基类面探针:parsePythonFile(类名/bases 表达式)+ linearizeC3(MRO 链)
+// 直钉引擎两条硬闸(类名==模块名/isSubClass 对组件名册)的对应 kode 面;
+// kode 无基类验证面与类名一致性检查面=漏报方向缺口,只在 finding 登记。
+interface EntityBaseClassEntry extends TruthEntryBase {
+  input: { face: string; fileName?: string; script?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      className?: string;
+      bases?: string[];
+      directBases?: string[];
+      mro?: string[];
+    };
+  };
+}
+const entityBaseFamily = families.find(f => f.family === 'entity-script-base-class')!;
+const entityBaseEntries = entityBaseFamily.entries as unknown as EntityBaseClassEntry[];
+
+/** 按名寻类(双类文件 classes[0] 不一定是目标;缺省回落文件名词干)。 */
+const entityBaseClassOf = (
+  input: EntityBaseClassEntry['input'],
+  className?: string
+): PythonClassDef | undefined => {
+  const parsed = parsePythonFile(input.script ?? '', '/w/scripts/' + (input.fileName ?? 'Avatar.py'));
+  const wanted = className ?? input.fileName?.replace(/\.py$/, '');
+  return parsed.classes.find(c => c.name === wanted) ?? parsed.classes[0];
+};
+
+describe('truth-corpus: entity-script-base-class 族执行闸(实体脚本基类面探针)', () => {
+  it('类名闸臂:engine 要求类名==模块名;kode parse 面见类名,一致性检查面缺席(缺口登记)', () => {
+    const entry = entityBaseEntries.find(e => e.id === 'entity-class-name-gate')!;
+    const cls = entityBaseClassOf(entry.input, entry.kode.analysis?.className);
+    expect(cls?.name).toBe(entry.kode.analysis!.className);
+    expect(entry.kode.status).toBe('not-analyzed');
+    expect(entry.kode.finding).toContain('类名必须与实体模块名一致');
+  });
+
+  it('合法基类臂:bases 表达式被 parse 面如实捕获(含 import 来源)', () => {
+    const entry = entityBaseEntries.find(e => e.id === 'entity-class-legal-base')!;
+    const cls = entityBaseClassOf(entry.input);
+    expect(cls?.bases).toEqual(entry.kode.analysis!.bases);
+    expect(entry.kode.status).toBe('pinned');
+  });
+
+  it('无基类臂:engine 对名册全假拒载;kode parse 见空 bases 且零验证面(漏报缺口登记)', () => {
+    const entry = entityBaseEntries.find(e => e.id === 'entity-class-no-base')!;
+    const cls = entityBaseClassOf(entry.input);
+    expect(cls?.bases).toEqual(entry.kode.analysis!.bases);
+    expect(entry.kode.finding).toContain('漏报方向缺口登记');
+    expect(entry.kode.finding).toContain('isSubClass');
+  });
+
+  it('间接基类臂:engine MRO 间接子类过闸;kode 直取基类表达式+linearizeC3 全链可算', () => {
+    const entry = entityBaseEntries.find(e => e.id === 'entity-class-indirect-base')!;
+    const cls = entityBaseClassOf(entry.input);
+    expect(cls?.bases).toEqual(entry.kode.analysis!.directBases);
+    const resolver = (base: string): PythonClassDef[] => {
+      if (base === 'Avatar') {
+        return [{ name: 'Avatar', bases: ['AccountBase'], filePath: entry.input.fileName!, startLine: 0, endLine: 0, methods: new Map() }];
+      }
+      if (base === 'AccountBase') {
+        return [{ name: 'AccountBase', bases: ['Base'], filePath: entry.input.fileName!, startLine: 0, endLine: 0, methods: new Map() }];
+      }
+      if (base === 'Base') {
+        return [{ name: 'Base', bases: ['KBEngine.Entity'], filePath: entry.input.fileName!, startLine: 0, endLine: 0, methods: new Map() }];
+      }
+      return [];
+    };
+    expect(linearizeC3('Avatar', resolver)).toEqual(entry.kode.analysis!.mro);
+  });
+
+  it('组件名册 unknown:引擎名册分立已钉,kode 组件域验证面未建模诚实缺口', () => {
+    const entry = entityBaseEntries.find(e => e.id === 'entity-base-roster-component-scope')!;
+    expect(entry.kind).toBe('unknown');
+    expect(entry.kode.status).toBe('unverified');
+    expect(entry.kode.analysis!.roleFace).toBe('pythonProcessFromPath(脚本角色路径矩阵,family-8 已钉)');
     expect((entry.reason ?? '').length).toBeGreaterThan(0);
   });
 });

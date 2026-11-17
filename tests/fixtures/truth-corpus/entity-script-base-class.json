@@ -1,0 +1,127 @@
+{
+  "family": "entity-script-base-class",
+  "grounding": {
+    "doc": "docs/knowledge/entity-script-base-class.md",
+    "engineHead": "55a66552"
+  },
+  "entries": [
+    {
+      "id": "entity-class-name-gate",
+      "kind": "negative",
+      "input": {
+        "face": "类名与模块名不一致",
+        "fileName": "Avatar.py",
+        "script": "class Player(Base):\n    def onEnterSpace(self):\n        pass\n"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "实体模块必须暴露与模块名同名的类(GetAttrString(pyModule, moduleName));取不到 → Could not find EntityClass[Avatar] → return false,实体定义装载失败。"
+      },
+      "evidence": [
+        "PyObject_GetAttrString(pyModule, const_cast<char *>(moduleName.c_str()));",
+        "EntityDef::initialize: Could not find EntityClass[{}]"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "className": "Player"
+        },
+        "finding": "漏报方向缺口登记:引擎有「类名必须与实体模块名一致」硬闸而 kode 无一致性检查面(parse 面如实见类名 Player,无任何诊断);检查面收编归独立批,本族只登记不冒充修复。"
+      }
+    },
+    {
+      "id": "entity-class-legal-base",
+      "kind": "positive",
+      "input": {
+        "face": "合法基类表达式",
+        "fileName": "Avatar.py",
+        "script": "from KBEngine import Base\n\nclass Avatar(Base):\n    def onCreated(self):\n        pass\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "PyObject_IsSubclass 对组件名册任一基类为真即通过(cellapp=Entity/EntityComponent,baseapp=Entity/Proxy/EntityComponent);基类表达式本身自由,引擎只查子类关系。"
+      },
+      "evidence": [
+        "std::string typeNames = isSubClass(pyClass);",
+        "registerScript(Entity::getScriptType());",
+        "registerScript(Proxy::getScriptType());",
+        "registerScript(EntityComponent::getScriptType());"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "bases": ["Base"]
+        }
+      }
+    },
+    {
+      "id": "entity-class-no-base",
+      "kind": "negative",
+      "input": {
+        "face": "无基类(普通 Python 类冒充实体的 classes)",
+        "fileName": "Avatar.py",
+        "script": "class Avatar:\n    def onCreated(self):\n        pass\n"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "无基类 → 对名册全部 IsSubclass 为假 → isSubClass 返回未命中清单 → not derived from KBEngine.['Entity''EntityComponent'](cellapp 口径)→ 装载失败。"
+      },
+      "evidence": [
+        "std::string typeNames = isSubClass(pyClass);",
+        "EntityDef::initialize: EntityClass {} is not derived from KBEngine.[{}]"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "bases": []
+        },
+        "finding": "漏报方向缺口登记:引擎有基类合法性硬闸(isSubClass 对组件名册)而 kode 无对应诊断面(parse 面见 bases=[] 但零诊断);依赖图 inheritance 边是结构建模非验证面,检查面收编归独立批。"
+      }
+    },
+    {
+      "id": "entity-class-indirect-base",
+      "kind": "positive",
+      "input": {
+        "face": "间接子类(MRO 链)",
+        "fileName": "Avatar.py",
+        "script": "from KBEngine import Base\n\nclass AccountBase(Base):\n    pass\n\nclass Avatar(AccountBase):\n    def onCreated(self):\n        pass\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "IsSubclass 沿 MRO 走,Avatar→AccountBase→Base(KBEngine.Base) 间接子类同样通过基类闸。"
+      },
+      "evidence": [
+        "**任一**为真 → valid → 返回空串(通过;IsSubclass 沿 MRO 走,间接子类同样通过)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "directBases": ["AccountBase"],
+          "mro": ["Avatar", "AccountBase", "Base", "KBEngine.Entity"]
+        }
+      }
+    },
+    {
+      "id": "entity-base-roster-component-scope",
+      "kind": "unknown",
+      "input": { "face": "组件名册在 kode 组件角色面的映射" },
+      "engine": {
+        "load": "accept",
+        "truth": "名册按组件分立:cellapp=Entity+EntityComponent(cellapp.cpp:158-159)、baseapp=Entity+Proxy+EntityComponent(baseapp.cpp:414-416)、dbmgr 局部空表直传=基类闸空转(isSubClass 空名册返回空串=任何类都过);loginapp/bots 未见 registerScript 调用(浅查口径)。"
+      },
+      "evidence": [
+        "registerScript(Entity::getScriptType());",
+        "registerScript(Proxy::getScriptType());",
+        "registerScript(EntityComponent::getScriptType());",
+        "**空名册空转**:基类表为空时循环体不执行,`valid` 保持 false 但清单为空串 → 返回空串 = 检查通过。dbmgr 即此形态(见 §4)。"
+      ],
+      "kode": {
+        "status": "unverified",
+        "analysis": {
+          "roleFace": "pythonProcessFromPath(脚本角色路径矩阵,family-8 已钉)"
+        }
+      },
+      "reason": "引擎组件名册已钉,但 kode 无基类验证面故无组件域映射可探;若未来收编检查面,名册须按 pythonProcessFromPath 角色分立(cellapp/baseapp 名册不同,dbmgr 空转=跳过),组件域语义未建模=诚实缺口,取证前提=检查面立项。"
+    }
+  ]
+}
