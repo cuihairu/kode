@@ -88,12 +88,13 @@ export class ProcessOwnershipCodeLensProvider implements vscode.CodeLensProvider
     for (const sibling of spec?.siblings ?? []) {
       lenses.push(
         new vscode.CodeLens(lineZero, {
-          title: `⚙ ${sibling.process}`,
+          title: `⚙ → ${sibling.process}`,
           command: KBENGINE_SOURCE_REVEAL_COMMAND,
           arguments: [
             vscode.Uri.file(sibling.path),
             { selection: new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0)) }
-          ]
+          ],
+          tooltip: `点击切换到同名 ${sibling.process} 文件(${sibling.path});base↔cell 亦可走快捷键 ctrl+alt+shift+b/c`
         })
       );
     }
@@ -138,4 +139,42 @@ export class ProcessOwnershipCodeLensProvider implements vscode.CodeLensProvider
     }
     return processFromDefSections(sections);
   }
+}
+
+/** 快捷键切换命令(FILE-TIME-001 批,用户令 2026-11-17「最好能绑定快捷键,
+ * 如果在 cell 可以可以快速切换到 base」):base↔cell 同名文件双向跳;
+ * client/bots 无键,CodeLens 点击(reveal)已覆盖。目录判定与互链复用
+ * 纯核 buildProcessOwnershipSpec(与 lens 同一条判定链,不造第二套);
+ * 目标缺位如实提示不静默。 */
+export const KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND = 'kbengine.processOwnership.openCell';
+export const KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND = 'kbengine.processOwnership.openBase';
+
+export function registerProcessOwnershipSwitchCommands(context: vscode.ExtensionContext): void {
+  const openSibling =
+    (process: ProcessName) =>
+    async (): Promise<void> => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        return;
+      }
+      const spec = buildProcessOwnershipSpec(editor.document.fileName, (candidate) =>
+        fs.existsSync(candidate)
+      );
+      if (!spec) {
+        void vscode.window.showInformationMessage(
+          '当前文件判不出进程归属(需 scripts/<role> 目录),无法切换'
+        );
+        return;
+      }
+      const target = spec.siblings.find(sibling => sibling.process === process);
+      if (!target) {
+        void vscode.window.showInformationMessage(`未找到同名 ${process} 对应文件`);
+        return;
+      }
+      await vscode.window.showTextDocument(vscode.Uri.file(target.path), { preview: false });
+    };
+  context.subscriptions.push(
+    vscode.commands.registerCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND, openSibling('cellapp')),
+    vscode.commands.registerCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND, openSibling('baseapp'))
+  );
 }

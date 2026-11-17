@@ -274,11 +274,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-16(RUST-135):inline 补全 provider 对象加 resolveCompletionItem 委托
   // +5 行(位于 128 打点之后)→ 其后四点 +5(204/277/344/745 → 209/282/349/750,
   // 真位重探)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 210, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 283, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 350, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 129, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 765, "startLanguageServiceOperation('completion'"],
+  // 2026-11-17(FILE-TIME-001):languageServices.ts 顶部 import +2(新
+  // provider+切换命令注册)+ 共享服务类型面 +1 → 前四打点 129/210/283/350 →
+  // 132/213/286/353(+3);processOwnership 块后注册块(+1 调用+新 provider
+  // 装配)→ 750 一路 +20 → 785,真位重探;出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 213, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 286, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 353, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 132, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 785, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -358,8 +362,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-17(RUST-149 批 2):closeWatcher body 提取 teardownDocumentState
   // +新增 rootRemovalWatcher 根移除扇出(净 +23,均在其前)→ 449/548 →
   // 472/571,真位重探;出处随 baseline 锁步。
-  ['src/extension.ts', 476, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 581, 'flushQueued()'],
+  // 2026-11-17(FILE-TIME-001):extension.ts 解构面 +1(新 provider impl,
+  // 在 476 前)→ 476/581 → 477/582;fire 块 +1(785 之后,不影响本表),
+  // 真位重探;出处随 baseline 锁步。
+  ['src/extension.ts', 477, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 582, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

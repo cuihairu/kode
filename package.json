@@ -1079,6 +1079,14 @@
         "title": "%kbengine.command.hotReload.showFileState.title%"
       },
       {
+        "command": "kbengine.processOwnership.openCell",
+        "title": "%kbengine.command.processOwnership.openCell.title%"
+      },
+      {
+        "command": "kbengine.processOwnership.openBase",
+        "title": "%kbengine.command.processOwnership.openBase.title%"
+      },
+      {
         "command": "kbengine.hotReload.configureChannel",
         "title": "%kbengine.command.hotReload.configureChannel.title%"
       },
@@ -1430,6 +1438,18 @@
         "command": "kbengine.hotReload.configureChannel",
         "key": "ctrl+alt+r",
         "mac": "cmd+alt+r"
+      },
+      {
+        "command": "kbengine.processOwnership.openCell",
+        "key": "ctrl+alt+shift+c",
+        "mac": "cmd+alt+shift+c",
+        "when": "editorLangId == python"
+      },
+      {
+        "command": "kbengine.processOwnership.openBase",
+        "key": "ctrl+alt+shift+b",
+        "mac": "cmd+alt+shift+b",
+        "when": "editorLangId == python"
       }
     ],
     "configuration": [
@@ -1691,6 +1711,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.codeLens.processOwnership.description%"
+          },
+          "kbengine.codeLens.fileModifiedTime": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.fileModifiedTime.description%"
           },
           "kbengine.codeLens.property": {
             "type": "boolean",

@@ -112,13 +112,14 @@ describe('ProcessOwnershipCodeLensProvider', () => {
     expect(lenses[0].command?.title).toBe('⚙ cellapp（当前）');
     // 纯展示=空命令 id(不可点击执行),tooltip 补判据说明
     expect(lenses[0].command?.command).toBe('');
-    // 其他进程 tag:reveal 命令 + 文件 Uri + line 0 selection
-    expect(lenses[1].command?.title).toBe('⚙ baseapp');
+    // 其他进程 tag:reveal 命令 + 文件 Uri + line 0 selection(FILE-TIME-001
+    // 起 title 带 → 动词,tooltip 点名 base↔cell 快捷键)
+    expect(lenses[1].command?.title).toBe('⚙ → baseapp');
     expect(lenses[1].command?.command).toBe(KBENGINE_SOURCE_REVEAL_COMMAND);
     const [uri, opts] = lenses[1].command!.arguments!;
     expect((uri as { fsPath: string }).fsPath).toBe('/ws/scripts/base/Hero.py');
     expect((opts as { selection: { start: { line: number } } }).selection.start.line).toBe(0);
-    expect(lenses[2].command?.title).toBe('⚙ bots');
+    expect(lenses[2].command?.title).toBe('⚙ → bots');
     // 镜都在 line 0
     for (const lens of lenses) {
       expect(lens.range.start.line).toBe(0);

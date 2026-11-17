@@ -144,6 +144,25 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - No-op when invoked without a URI
   - Exists for definition providers, not as a user-facing entry point: it is registered like every contributed command (with its `onCommand:` activation event) so the palette stays empty while programmatic jumps can rely on it
 
+### `kbengine.processOwnership.openCell`
+
+- Title: `Kode: Open Same-Name Cell File`
+- Default keybinding: `ctrl+alt+shift+c` (macOS `cmd+alt+shift+c`), `when: editorLangId == python`
+- Purpose: from the active baseapp-side entity script jump to the same-named cellapp file (FILE-TIME-001, 2026-11-17 user order — a keyboard path alongside the process-ownership lens tags, PROC-TAG-001)
+- Behavior:
+  - Resolves the active file's process ownership with the same `scripts/<role>` decision chain as the lens; a shared dir like `common` reports 判不出进程归属(需 scripts/<role> 目录),无法切换 honestly — never guessed
+  - Opens `scripts/cell/<same-name>` with `{ preview: false }` when it exists; reports 未找到同名 cellapp 对应文件 when it does not
+  - Silent no-op with no active editor; the reverse direction is `kbengine.processOwnership.openBase`
+
+### `kbengine.processOwnership.openBase`
+
+- Title: `Kode: Open Same-Name Base File`
+- Default keybinding: `ctrl+alt+shift+b` (macOS `cmd+alt+shift+b`), `when: editorLangId == python`
+- Purpose: the mirror direction — from the active cellapp-side entity script jump to the same-named baseapp file (FILE-TIME-001)
+- Behavior:
+  - Same decision chain and honest messages as `openCell`, targeting `scripts/base/<same-name>`
+  - Silent no-op with no active editor
+
 ## Player Data Clone
 
 ### `kbengine.clone.configureSource`

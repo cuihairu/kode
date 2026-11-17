@@ -47,6 +47,9 @@ export function getLanguageFeatureConfig() {
     // PROC-TAG-001:文件顶部进程归属镜链一枚独立开关(目录角色判定+跨进程
     // 同名互链;判不出不出镜)
     codeLensProcessOwnership: config.get<boolean>('codeLens.processOwnership', true),
+    // FILE-TIME-001:文件顶部修改时间镜一枚独立开关(热更时间半边归
+    // IDE-HOT-100 状态点,不重复出镜)
+    codeLensFileModifiedTime: config.get<boolean>('codeLens.fileModifiedTime', true),
     // 实体脚本新功能各一枚独立开关(用户令 2026-10-21:新功能都要配置开关,
     // 默认开)。builtinProperties 管内建属性 hover+self. 补全(内建属性相关
     // 面的总闸,行内 inlay 也先过它);receiverSections 管接收者段过滤

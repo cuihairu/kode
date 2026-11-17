@@ -44,6 +44,8 @@ import {
   KBEngineSignatureHelpProvider,
   KBEngineWorkspaceSymbolProvider,
   ProcessOwnershipCodeLensProvider,
+  FileModifiedTimeCodeLensProvider,
+  registerProcessOwnershipSwitchCommands,
   PropertyCodeLensProvider,
   PythonCompletionProvider,
   PythonDefinitionProvider,
@@ -95,6 +97,7 @@ export interface LanguageServicesShared {
   rpcCodeLensProviderImpl: RpcCodeLensProvider;
   propertyCodeLensProviderImpl: PropertyCodeLensProvider;
   processOwnershipCodeLensProviderImpl: ProcessOwnershipCodeLensProvider;
+  fileModifiedTimeCodeLensProviderImpl: FileModifiedTimeCodeLensProvider;
   eventCodeLensProviderImpl: EventCodeLensProvider;
   typesXmlCodeLensProviderImpl: TypesXmlCodeLensProvider;
 }
@@ -512,6 +515,23 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     processOwnershipCodeLensProvider,
     processOwnershipCodeLensProviderImpl
   );
+  // base↔cell 快捷键切换命令(FILE-TIME-001 批,用户令 2026-11-17):与
+  // 顶部镜同一条判定链(buildProcessOwnershipSpec),键位在 package.json
+  // keybindings(ctrl+alt+shift+b/c);client/bots 走顶部镜点击
+  registerProcessOwnershipSwitchCommands(context);
+
+  // 文件顶部修改时间镜(FILE-TIME-001,用户令 2026-11-17):盘上 mtime
+  // 一次 stat,保存即刷新;热更时间半边归 IDE-HOT-100 状态点不重复出镜。
+  // 独立开关 kbengine.codeLens.fileModifiedTime
+  const fileModifiedTimeCodeLensProviderImpl = new FileModifiedTimeCodeLensProvider();
+  const fileModifiedTimeCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    fileModifiedTimeCodeLensProviderImpl
+  );
+  context.subscriptions.push(
+    fileModifiedTimeCodeLensProvider,
+    fileModifiedTimeCodeLensProviderImpl
+  );
 
   // 事件回调标记(批154 从 RPC 镜链返回值里拆出独立注册):addEvent/
   // registerEvent 的回调 def 声明处标「事件回调 · EV_X」、emitEvent 处标
@@ -796,6 +816,7 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
     processOwnershipCodeLensProviderImpl,
+    fileModifiedTimeCodeLensProviderImpl,
     eventCodeLensProviderImpl,
     typesXmlCodeLensProviderImpl
   };
