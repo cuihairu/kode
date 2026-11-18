@@ -65,30 +65,6 @@ export function readEngineVersionMarker(
   }
 }
 
-/**
- * 引擎 API 主版本键(索引缓存兼容所依赖的版本粒度,2026-11-18 用户报
- * 「一直在扫」):取引擎版本宏的 major 段。读不出(引擎根未记录/无 marker
- * 文件/宏畸形)→ ''(未知,不猜)。缓存淘汰只认这个粒度:同 major 不同
- * minor/patch 不弃用,扩展自身版本号更不参与判定(见 indexDiskCache 版本门)。
- */
-export function engineMajorOf(engineRoot: string | null | undefined): string {
-  if (!engineRoot) {
-    return '';
-  }
-  const version = readEngineVersionMarker(engineRoot, candidate => {
-    try {
-      return readFileSync(candidate, 'utf8');
-    } catch {
-      return '';
-    }
-  });
-  if (!version) {
-    return '';
-  }
-  const major = version.split('.')[0];
-  return /^\d+$/.test(major) ? major : '';
-}
-
 export interface EngineApiMetadata {
   version: string;
   commit: string;

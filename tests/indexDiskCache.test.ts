@@ -46,22 +46,29 @@ describe('BG-WARM 索引磁盘缓存契约(纯核 load/write)', () => {
     expect(readIndexCache(dir, { schemaVersion: 'index-cache/1', kodeVersion: '0.2.0' })).toBeNull();
   });
 
-  it('④ 扩展版本号滚动(nightly)→缓存仍命中(版本键分级:它不再是淘汰键)', () => {
-    writeIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.1.0', engineMajor: '2' }, {
+  it('④ 扩展版本号滚动(nightly)→缓存仍命中(schema 不变=唯一淘汰键不变)', () => {
+    writeIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.1.0' }, {
       eventIndex: [{ path: '/ws/a.py', mtimeMs: 1, size: 1, indexed: { version: 0, methods: [], eventCalls: [], eventLines: [] } }]
     });
-    const loaded = readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0', engineMajor: '2' });
+    const loaded = readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0' });
     expect(loaded?.payload.eventIndex?.[0]?.path).toBe('/ws/a.py');
   });
 
-  it('④ 引擎 API 主版本变 → 旧缓存弃用(符号确实变了)', () => {
-    writeIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0', engineMajor: '2' }, {
+  it('④ 引擎版本与缓存淘汰解耦(2026-11-18 拍板):2fe69ff3 形态旧缓存(meta 带 engineMajor 键)照读命中', () => {
+    // 手搓 2fe69ff3 时期的 meta 形态(带 engineMajor 键且值与本机引擎无关),
+    // 验读侧只认 schemaVersion,遗留键被解析忽略不因此白扫
+    writeIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0' }, {
       eventIndex: [{ path: '/ws/a.py', mtimeMs: 1, size: 1, indexed: { version: 0, methods: [], eventCalls: [], eventLines: [] } }]
     });
-    expect(readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0', engineMajor: '3' })).toBeNull();
+    const metaPath = path.join(dir, 'meta.json');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    meta.engineMajor = '2';
+    fs.writeFileSync(metaPath, JSON.stringify(meta), 'utf8');
+    const loaded = readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0' });
+    expect(loaded?.payload.eventIndex?.[0]?.path).toBe('/ws/a.py');
   });
 
-  it('④ 旧缓存 meta 无 engineMajor 字段 → 按未知处理,不因此白扫一次', () => {
+  it('④ 旧缓存 meta 无 engineMajor 字段(更早形态)→ 同样照读,不因此白扫一次', () => {
     // 手搓本改动前形态的 meta(无 engineMajor 键),验读侧不把它当不符
     fs.writeFileSync(
       path.join(dir, 'meta.json'),
@@ -75,7 +82,7 @@ describe('BG-WARM 索引磁盘缓存契约(纯核 load/write)', () => {
       }),
       'utf8'
     );
-    expect(readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '9.9.9', engineMajor: '3' })).not.toBeNull();
+    expect(readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '9.9.9' })).not.toBeNull();
   });
 
   it('① 写盘→读回载荷逐字节等价(meta 命中时)', () => {

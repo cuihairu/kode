@@ -299,11 +299,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // 重写净 +20 → withInitialScanTimeout 锚点 1068 → 1088 且符号改
   // withInteractiveScanBudget(故障 C:查询先查增量索引,首扫只作兜底最后一跳)。
   // 出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 221, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 294, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 387, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 140, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 848, "startLanguageServiceOperation('completion'"],
+  // 2026-11-18(缓存版本键拍板批):顶部 import -1(activeProfileEngineMajor)
+  // 与 PythonClassIndex 装配块净 -4(ScanProgressController 构造收参回两参,
+  // engineMajor 键整体拆除)→ 五打点 140/221/294/387/848 → 139/220/293/382/843
+  // (前三 -1,后二在装配块后再 -4,真位重探);出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 220, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 293, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 382, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 139, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 843, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import

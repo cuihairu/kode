@@ -139,19 +139,24 @@ describe('SCAN-RESUME-001 纯核(零 vscode)', () => {
     expect(parsedPythonFileEqualsRoundtrip(bare, bareRestored)).toBe(true);
   });
 
-  it('readScanProgress:版本门(schema/kodeVersion/engineMajor)分级不符 → null;meta 损坏 → null;'
+  it('readScanProgress:版本门(schema 不符 → null);引擎版本解耦(2fe69ff3 形态旧断点照读);meta 损坏 → null;'
     + 'meta 列了但分块文件缺失/损坏 → 整体弃用不部分采纳', () => {
     const io = defaultScanProgressIo;
     const real = realPy();
-    const controller = new ScanProgressController(progressDir, 'v1', '2');
+    const controller = new ScanProgressController(progressDir, 'v1');
     controller.recordChunk(0, [{ path: real.file, version: 1, parsed: real.parsed }]);
     return controller.settle().then(() => {
-      const expected = { schemaVersion: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1', engineMajor: '2' };
+      const expected = { schemaVersion: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1' };
       expect(readScanProgress(progressDir, expected, io)).not.toBeNull();
       // 扩展版本号滚动 → 断点仍可用(「一直在扫」病根:它曾是淘汰键)
       expect(readScanProgress(progressDir, { ...expected, kodeVersion: 'v2' }, io)).not.toBeNull();
-      // 引擎 API 主版本变 → 弃用重扫
-      expect(readScanProgress(progressDir, { ...expected, engineMajor: '3' }, io)).toBeNull();
+      // 2fe69ff3 形态旧断点(meta 带 engineMajor 键且值任意)照读——引擎版本
+      // 与 kode 能否解析自己的缓存无关(2026-11-18 拍板),遗留键忽略不白扫
+      const legacyMeta = JSON.parse(fs.readFileSync(p(progressDir, 'progress.json'), 'utf8'));
+      legacyMeta.engineMajor = '9';
+      fs.writeFileSync(p(progressDir, 'progress.json'), JSON.stringify(legacyMeta), 'utf8');
+      expect(readScanProgress(progressDir, expected, io)).not.toBeNull();
+      // schema 格式常量不符(唯一淘汰键)→ 弃用重扫
       expect(readScanProgress(progressDir, { ...expected, schemaVersion: 'scan-progress/9' }, io)).toBeNull();
       // meta 损坏
       fs.writeFileSync(p(progressDir, 'progress.json'), '{not json', 'utf8');
@@ -201,7 +206,7 @@ describe('SCAN-RESUME-001 纯核(零 vscode)', () => {
       ...defaultScanProgressIo,
       writeTextAtomic: () => { throw new Error('disk full'); }
     };
-    const failing = new ScanProgressController(progressDir, 'v1', '', throwingIo);
+    const failing = new ScanProgressController(progressDir, 'v1', throwingIo);
     failing.recordChunk(0, [{ path: real.file, version: 1, parsed: real.parsed }]);
     await failing.settle();
     await failing.complete();
@@ -272,9 +277,10 @@ describe('SCAN-RESUME-001 索引面七钉子', () => {
     expect(index.getScanResumeStatsForTests()).toEqual({ adopted: 0, scanned: PY_FILE_COUNT });
   }, 20000);
 
-  it('钉子④:引擎主版本门——引擎换大版本断点作废全量照扫;扩展版本号滚动不再作废', async () => {
+  it('钉子④:版本门只剩 schema 常量——schema 不符断点作废全量照扫;扩展版本号滚动不再作废'
+    + '(引擎版本解耦=2fe69ff3 形态旧断点照读,已在 readScanProgress 版本门臂钉)', async () => {
     pointWorkspaceAt(fixture.root, fixture.files);
-    const interrupted = new ScanProgressController(progressDir, 'v0.1', '2');
+    const interrupted = new ScanProgressController(progressDir, 'v0.1');
     const first = new PythonClassIndex(new FailNthChunkScheduler(2), interrupted);
     await first.findClassesByName('Mod00').catch(() => undefined);
     await interrupted.settle();
@@ -282,7 +288,7 @@ describe('SCAN-RESUME-001 索引面七钉子', () => {
 
     // 扩展版本号滚动(升级重启):断点仍可用,增量续扫——「一直在扫」的病根
     // 就是旧版本键把每次升级都判成断点作废
-    const upgraded = new ScanProgressController(progressDir, 'v0.2', '2');
+    const upgraded = new ScanProgressController(progressDir, 'v0.2');
     const second = new PythonClassIndex(new IndexScheduler(), upgraded);
     await second.findClassesByName('Mod00');
     await waitFor(() => fileCacheSize(second) === PY_FILE_COUNT, 'upgraded incremental resume completes');
@@ -292,16 +298,19 @@ describe('SCAN-RESUME-001 索引面七钉子', () => {
     expect(resumed.scanned).toBeLessThan(PY_FILE_COUNT);
     expect(resumed.adopted + resumed.scanned).toBe(PY_FILE_COUNT);
 
-    // 清场重来(只验证引擎换大版本的作废面)
+    // 清场重来:schema 格式常量不符(唯一淘汰键,等价 kode bump 格式常量后读
+    // 旧断点)→ 断点作废全量照扫
     clearScanProgressDir(progressDir);
-    const engine2 = new ScanProgressController(progressDir, 'v0.1', '2');
-    const third = new PythonClassIndex(new FailNthChunkScheduler(2), engine2);
+    const stale = new ScanProgressController(progressDir, 'v0.1');
+    const third = new PythonClassIndex(new FailNthChunkScheduler(2), stale);
     await third.findClassesByName('Mod00').catch(() => undefined);
-    await engine2.settle();
-    const engine3 = new ScanProgressController(progressDir, 'v0.1', '3');
-    const fourth = new PythonClassIndex(new IndexScheduler(), engine3);
+    await stale.settle();
+    const staleMeta = JSON.parse(fs.readFileSync(p(progressDir, 'progress.json'), 'utf8'));
+    staleMeta.schema = 'scan-progress/9';
+    fs.writeFileSync(p(progressDir, 'progress.json'), JSON.stringify(staleMeta), 'utf8');
+    const fourth = new PythonClassIndex(new IndexScheduler(), new ScanProgressController(progressDir, 'v0.1'));
     await fourth.findClassesByName('Mod00');
-    await waitFor(() => fileCacheSize(fourth) === PY_FILE_COUNT, 'engine-major-change full scan completes');
+    await waitFor(() => fileCacheSize(fourth) === PY_FILE_COUNT, 'schema-mismatch full scan completes');
     expect(fourth.getScanResumeStatsForTests()).toEqual({ adopted: 0, scanned: PY_FILE_COUNT });
   }, 20000);
 

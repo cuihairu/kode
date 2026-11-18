@@ -26,7 +26,6 @@ import { MonitoringCollector } from '../monitoringCollector';
 import { MonitoringWebView } from '../monitoringWebView';
 import { RuntimeQueryWebView } from '../runtimeQueryWebView';
 import { createWarmupStages } from '../backend/warmupStages';
-import { activeProfileEngineMajor } from './engineVersionKey';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from '../backend/kbengineProtocol';
 import { findEngineRoot, formatEngineCompatibilityReport, runCompatibilityCheck, ExtensionCompatibilityTarget } from '../backend/engineCompatibility';
 import { formatUnresolvedException, parseExceptionSourceLocation, resolveExceptionSource } from '../backend/exceptionSourceLocator';
@@ -397,14 +396,14 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
           // eventIndex=接管 WorkspaceIndex 起始槽(命中条目直取,漂移文件增量
           // 重建)。版本不符/哈希不符/任何异常 → 静默降级照旧全扫(不打扰用户)。
           const kodeVersion = String(context.extension?.packageJSON?.version ?? 'dev');
-          // 版本键分级:扩展版本号只作溯源,淘汰键=引擎 API 主版本
-          const engineMajor = activeProfileEngineMajor(context.workspaceState);
+          // 版本键(2026-11-18 用户拍板):淘汰键只有 INDEX_CACHE_SCHEMA_VERSION
+          // (kode 索引数据格式常量);扩展版本号只作溯源,引擎版本不参与。
           const cacheDir = context.globalStorageUri?.fsPath
             ? path.join(context.globalStorageUri.fsPath, INDEX_CACHE_DIR_NAME)
             : null;
           if (cacheDir) {
             try {
-              const cached = readIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion, engineMajor });
+              const cached = readIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion });
               if (cached?.payload.discovery?.length) {
                 const restore = await entityMappingManager.restoreDefParseCacheFromDisk(cached.payload.discovery);
                 if (restore.injected > 0) {
@@ -470,7 +469,7 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   setImmediate(() => {
                     void (async () => {
                       try {
-                        const ok = writeIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion, engineMajor }, {
+                        const ok = writeIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion }, {
                           discovery: await entityMappingManager.captureDefParseCacheSnapshot(),
                           eventIndex: await sharedWorkspaceIndex.captureEventIndexSnapshot(),
                           defLut: entityMappingManager.captureDefMethodLutSnapshot()
