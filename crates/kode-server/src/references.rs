@@ -230,7 +230,15 @@ pub fn scan_type_references_in_xml(text: &str, uri: &str, target: &str) -> Vec<R
                         && doc.element(child).name == "of"
                     {
                         let content = doc.element(child).content_span;
-                        token_sites(text, uri, content.start, content.end, target, false, &mut sites);
+                        token_sites(
+                            text,
+                            uri,
+                            content.start,
+                            content.end,
+                            target,
+                            false,
+                            &mut sites,
+                        );
                     }
                 }
             }
@@ -244,7 +252,15 @@ pub fn scan_type_references_in_xml(text: &str, uri: &str, target: &str) -> Vec<R
             "of" if parent_name != Some("Type") => {
                 // 游离 `<of>`(Type 分支已收其直挂子)。
                 let content = el.content_span;
-                token_sites(text, uri, content.start, content.end, target, false, &mut sites);
+                token_sites(
+                    text,
+                    uri,
+                    content.start,
+                    content.end,
+                    target,
+                    false,
+                    &mut sites,
+                );
             }
             _ => {}
         }
@@ -276,7 +292,15 @@ fn scan_def_tag_value_sites(
             return;
         }
         let content = el.content_span;
-        token_sites(text, uri, content.start, content.end, target, false, &mut sites);
+        token_sites(
+            text,
+            uri,
+            content.start,
+            content.end,
+            target,
+            false,
+            &mut sites,
+        );
     });
     sites
 }
@@ -443,8 +467,7 @@ impl HoverEngine {
         let sites: Vec<RefSite>;
         match target.kind {
             RefKind::Type => {
-                if let Some((types_path, decl)) = self.same_root_type_decl(key.root, &target.name)
-                {
+                if let Some((types_path, decl)) = self.same_root_type_decl(key.root, &target.name) {
                     sites = self.custom_type_sites(&target.name);
                     declaration = Some(line_start_location(types_path, decl.line));
                 } else {
@@ -574,7 +597,9 @@ impl HoverEngine {
             let Some(content) = self.corpus_text(uri) else {
                 continue;
             };
-            sites.extend(scan_def_tag_value_sites(content, uri, "Parent", name, false));
+            sites.extend(scan_def_tag_value_sites(
+                content, uri, "Parent", name, false,
+            ));
             sites.extend(scan_type_references_in_xml(content, uri, name));
         }
         sites
@@ -684,14 +709,17 @@ fn def_probes(doc: &xml::Document, root: usize, text: &str) -> Vec<GoldenProbe> 
     let mut parent_tags: Vec<usize> = Vec::new();
     let mut value_tags: Vec<usize> = Vec::new();
     let mut interface_segments: Vec<usize> = Vec::new();
-    walk_with_parent(doc, root, None, &mut |node, _| {
-        match doc.element(node).name.as_str() {
+    walk_with_parent(
+        doc,
+        root,
+        None,
+        &mut |node, _| match doc.element(node).name.as_str() {
             "Parent" => parent_tags.push(node),
             "Type" | "of" | "Arg" => value_tags.push(node),
             "Interfaces" => interface_segments.push(node),
             _ => {}
-        }
-    });
+        },
+    );
     for node in parent_tags {
         if let Some(probe) = value_token_probe(doc, node, text) {
             probes.push(probe);
@@ -774,13 +802,9 @@ pub fn dump_references_golden(repo_root: &std::path::Path) -> String {
         let probes = order_probes(probes);
         let mut references = Vec::new();
         for probe in probes {
-            if let Some(locations) = engine.references_at(
-                &key,
-                text,
-                probe.line as u32 - 1,
-                probe.character,
-                true,
-            ) {
+            if let Some(locations) =
+                engine.references_at(&key, text, probe.line as u32 - 1, probe.character, true)
+            {
                 references.push(GoldenReference {
                     line: probe.line,
                     character: probe.character,
@@ -822,7 +846,8 @@ mod tests {
     }
 
     const A_ENTITIES: &str = "<root>\n  <Avatar> scripts/entity_defs/Avatar.def </Avatar>\n  <Monster> scripts/entity_defs/Monster.def </Monster>\n</root>\n";
-    const B_ENTITIES: &str = "<root>\n  <Avatar> scripts/entity_defs/Avatar.def </Avatar>\n</root>\n";
+    const B_ENTITIES: &str =
+        "<root>\n  <Avatar> scripts/entity_defs/Avatar.def </Avatar>\n</root>\n";
     const A_TYPES: &str = "<root>\n  <ITEM_ID> UINT16 </ITEM_ID>\n</root>\n";
     const A_AVATAR: &str = "<root>\n  <Properties>\n    <hp>\n      <Type> ITEM_ID </Type>\n    </hp>\n  </Properties>\n</root>\n";
     const A_MONSTER: &str = "<root>\n  <Parent> Avatar </Parent>\n  <Properties>\n    <ai>\n      <Type> Avatar </Type>\n    </ai>\n  </Properties>\n</root>\n";
@@ -840,7 +865,10 @@ mod tests {
             ("/proj-a/scripts/entity_defs/Avatar.def", A_AVATAR),
             ("/proj-a/scripts/entity_defs/Monster.def", A_MONSTER),
             ("/proj-a/scripts/entity_defs/interfaces/ROLE.def", A_ROLE),
-            ("/proj-a/scripts/entity_defs/AvatarIface.def", A_IFACE_AVATAR),
+            (
+                "/proj-a/scripts/entity_defs/AvatarIface.def",
+                A_IFACE_AVATAR,
+            ),
             ("/proj-b/scripts/entities.xml", B_ENTITIES),
             ("/proj-b/scripts/entity_defs/types.xml", B_TYPES),
             ("/proj-b/scripts/entity_defs/Avatar.def", B_AVATAR),
@@ -914,7 +942,8 @@ mod tests {
             Some(RefKind::Type)
         );
         assert_eq!(
-            def_symbol_reference_target_at(A_MONSTER, position_of(A_MONSTER, 2, 12)).map(|t| t.kind),
+            def_symbol_reference_target_at(A_MONSTER, position_of(A_MONSTER, 2, 12))
+                .map(|t| t.kind),
             Some(RefKind::Parent)
         );
         assert_eq!(
@@ -943,8 +972,15 @@ mod tests {
     fn type_face_custom_type_same_root_decl_and_cross_root_sites() {
         let (registry, engine) = build();
         let (line1, character) = probe_of(A_AVATAR, "Type");
-        let locations = refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/Avatar.def", A_AVATAR, line1, character)
-            .expect("type face");
+        let locations = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/Avatar.def",
+            A_AVATAR,
+            line1,
+            character,
+        )
+        .expect("type face");
         // 声明先行 = 同根 types.xml ITEM_ID 声明行首;站点含本 def 使用处
         // (跨 root /proj-b 的 Avatar.def 使用处也入列——TS 扫描全工作区)。
         assert_eq!(locations[0].uri, "/proj-a/scripts/entity_defs/types.xml");
@@ -954,8 +990,15 @@ mod tests {
         assert!(uris.contains(&"/proj-b/scripts/entity_defs/Avatar.def"));
         // 跨根同名词:proj-b 查询落 proj-b 声明。
         let (bline, bchar) = probe_of(B_AVATAR, "Type");
-        let b_locations = refs_at(&engine, &registry, "/proj-b/scripts/entity_defs/Avatar.def", B_AVATAR, bline, bchar)
-            .expect("type face b");
+        let b_locations = refs_at(
+            &engine,
+            &registry,
+            "/proj-b/scripts/entity_defs/Avatar.def",
+            B_AVATAR,
+            bline,
+            bchar,
+        )
+        .expect("type face b");
         assert_eq!(b_locations[0].uri, "/proj-b/scripts/entity_defs/types.xml");
     }
 
@@ -963,10 +1006,20 @@ mod tests {
     fn builtin_type_has_no_face() {
         let (registry, mut engine) = registry_holder();
         let text = "<root>\n  <Properties>\n    <hp>\n      <Type> UINT32 </Type>\n    </hp>\n  </Properties>\n</root>\n";
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/Builtin.def"), text);
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/Builtin.def"),
+            text,
+        );
         let (bl, bc) = probe_of(text, "Type");
         assert_eq!(
-            refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/Builtin.def", text, bl, bc),
+            refs_at(
+                &engine,
+                &registry,
+                "/proj-a/scripts/entity_defs/Builtin.def",
+                text,
+                bl,
+                bc
+            ),
             None
         );
     }
@@ -976,10 +1029,20 @@ mod tests {
         // ARRAY 在 Type 直挂文本上:词=ARRAY 容器字面 → None(引用面同拒)。
         let text = "<root>\n  <Properties>\n    <bag>\n      <Type>\n        ARRAY\n        <of> UINT32 </of>\n      </Type>\n    </bag>\n  </Properties>\n</root>\n";
         let (registry, mut engine) = registry_holder();
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/Bag.def"), text);
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/Bag.def"),
+            text,
+        );
         let (line1, character) = probe_of(text, "Type");
         assert_eq!(
-            refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/Bag.def", text, line1, character),
+            refs_at(
+                &engine,
+                &registry,
+                "/proj-a/scripts/entity_defs/Bag.def",
+                text,
+                line1,
+                character
+            ),
             None
         );
     }
@@ -992,8 +1055,15 @@ mod tests {
     fn entity_face_parent_and_type_refs() {
         let (registry, mut engine) = build();
         let (line1, character) = probe_of(A_MONSTER, "Parent");
-        let locations = refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/Monster.def", A_MONSTER, line1, character)
-            .expect("entity face");
+        let locations = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/Monster.def",
+            A_MONSTER,
+            line1,
+            character,
+        )
+        .expect("entity face");
         // 声明先行 = Avatar.def 首行;站点 = Parent 值先、Type 实体引用后
         // (全三元序钉:同文件两站点的先后也是契约,TS 镜像同序)。
         assert_eq!(locations[0].uri, "/proj-a/scripts/entity_defs/Avatar.def");
@@ -1002,7 +1072,13 @@ mod tests {
         let (tl, tc) = probe_of(A_MONSTER, "Type");
         let faces: Vec<(&str, u32, u32)> = locations
             .iter()
-            .map(|loc| (loc.uri.as_str(), loc.range.start.line, loc.range.start.character))
+            .map(|loc| {
+                (
+                    loc.uri.as_str(),
+                    loc.range.start.line,
+                    loc.range.start.character,
+                )
+            })
             .collect();
         assert_eq!(
             faces,
@@ -1022,10 +1098,20 @@ mod tests {
         );
         // 未注册实体的 Parent 词:语料缺 def → None。
         let missing = "<root>\n  <Parent> Ghost </Parent>\n</root>\n";
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/GhostRef.def"), missing);
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/GhostRef.def"),
+            missing,
+        );
         let (gl, gc) = probe_of(missing, "Parent");
         assert_eq!(
-            refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/GhostRef.def", missing, gl, gc),
+            refs_at(
+                &engine,
+                &registry,
+                "/proj-a/scripts/entity_defs/GhostRef.def",
+                missing,
+                gl,
+                gc
+            ),
             None
         );
     }
@@ -1036,17 +1122,46 @@ mod tests {
         // wrapper 值上的词 → interface 面:站点只含直挂 wrapper 值,
         // 属性 <Type> ROLE 不混入(KR-AUD-77)。
         let (line1, character) = probe_of(A_IFACE_AVATAR, "interface");
-        let locations = refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/AvatarIface.def", A_IFACE_AVATAR, line1, character)
-            .expect("interface face");
-        assert_eq!(locations[0].uri, "/proj-a/scripts/entity_defs/interfaces/ROLE.def");
-        assert_eq!(uris_of(&locations), vec!["/proj-a/scripts/entity_defs/interfaces/ROLE.def", "/proj-a/scripts/entity_defs/AvatarIface.def"]);
+        let locations = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/AvatarIface.def",
+            A_IFACE_AVATAR,
+            line1,
+            character,
+        )
+        .expect("interface face");
+        assert_eq!(
+            locations[0].uri,
+            "/proj-a/scripts/entity_defs/interfaces/ROLE.def"
+        );
+        assert_eq!(
+            uris_of(&locations),
+            vec![
+                "/proj-a/scripts/entity_defs/interfaces/ROLE.def",
+                "/proj-a/scripts/entity_defs/AvatarIface.def"
+            ]
+        );
         // 接口 def 语料缺失:站点照列,无声明位。
         let missing = "<root>\n  <Interfaces>\n    <Interface> GHOST_IFACE </Interface>\n  </Interfaces>\n</root>\n";
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/IfaceMissing.def"), missing);
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/IfaceMissing.def"),
+            missing,
+        );
         let (ml, mc) = probe_of(missing, "Interface");
-        let locations = refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/IfaceMissing.def", missing, ml, mc)
-            .expect("interface sites without decl");
-        assert_eq!(uris_of(&locations), vec!["/proj-a/scripts/entity_defs/IfaceMissing.def"]);
+        let locations = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/IfaceMissing.def",
+            missing,
+            ml,
+            mc,
+        )
+        .expect("interface sites without decl");
+        assert_eq!(
+            uris_of(&locations),
+            vec!["/proj-a/scripts/entity_defs/IfaceMissing.def"]
+        );
     }
 
     #[test]
@@ -1069,15 +1184,28 @@ mod tests {
         let (registry, engine) = build();
         // 顶层声明名探针(开标签名首)→ types 面:全语料引用位,无声明位。
         let (line1, character) = probe_at_decl(A_TYPES, "ITEM_ID");
-        let locations = refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/types.xml", A_TYPES, line1, character)
-            .expect("types face");
+        let locations = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/types.xml",
+            A_TYPES,
+            line1,
+            character,
+        )
+        .expect("types face");
         let uris = uris_of(&locations);
         assert!(uris.contains(&"/proj-a/scripts/entity_defs/Avatar.def"));
         // types.xml 内 ITEM_IDS 的 <of> ITEM_ID 也是引用位。
         let types_text = "<root>\n  <ITEM_ID> UINT16 </ITEM_ID>\n  <ITEM_IDS>\n    ARRAY\n    <of> ITEM_ID </of>\n  </ITEM_IDS>\n</root>\n";
         let mut local = HoverEngine::new();
-        local.update(key_for(&registry, "/proj-a/scripts/entity_defs/types.xml"), types_text);
-        local.update(key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"), A_AVATAR);
+        local.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/types.xml"),
+            types_text,
+        );
+        local.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"),
+            A_AVATAR,
+        );
         let (dl, dc) = probe_at_decl(types_text, "ITEM_ID");
         let locations = local
             .references_at(
@@ -1101,10 +1229,20 @@ mod tests {
     fn alias_xml_has_no_face() {
         let (registry, mut engine) = registry_holder();
         let text = "<root>\n  <GHOST_ALIAS> UINT16 </GHOST_ALIAS>\n</root>\n";
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/alias.xml"), text);
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/alias.xml"),
+            text,
+        );
         let (line1, character) = probe_at_decl(text, "GHOST_ALIAS");
         assert_eq!(
-            refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/alias.xml", text, line1, character),
+            refs_at(
+                &engine,
+                &registry,
+                "/proj-a/scripts/entity_defs/alias.xml",
+                text,
+                line1,
+                character
+            ),
             None
         );
     }
@@ -1126,16 +1264,47 @@ mod tests {
         let v1 = "<root>\n  <!-- c -->\n  <Properties>\n    <hp>\n      <Type> ITEM_ID </Type>\n    </hp>\n  </Properties>\n</root>\n";
         let v2 = "<root>\n  <!-- c1 -->\n  <!-- c2 -->\n  <Properties>\n    <hp>\n      <Type> ITEM_ID </Type>\n    </hp>\n  </Properties>\n</root>\n";
         let types = A_TYPES;
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/types.xml"), types);
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"), v1);
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/types.xml"),
+            types,
+        );
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"),
+            v1,
+        );
         let (l1, c1) = probe_of(v1, "Type");
-        let r1 = refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/Avatar.def", v1, l1, c1).expect("v1");
-        let site1 = r1.iter().find(|loc| loc.uri.ends_with("Avatar.def")).expect("site");
+        let r1 = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/Avatar.def",
+            v1,
+            l1,
+            c1,
+        )
+        .expect("v1");
+        let site1 = r1
+            .iter()
+            .find(|loc| loc.uri.ends_with("Avatar.def"))
+            .expect("site");
         assert_eq!(site1.range.start.line, (l1 - 1) as u32);
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"), v2);
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"),
+            v2,
+        );
         let (l2, c2) = probe_of(v2, "Type");
-        let r2 = refs_at(&engine, &registry, "/proj-a/scripts/entity_defs/Avatar.def", v2, l2, c2).expect("v2");
-        let site2 = r2.iter().find(|loc| loc.uri.ends_with("Avatar.def")).expect("site");
+        let r2 = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/Avatar.def",
+            v2,
+            l2,
+            c2,
+        )
+        .expect("v2");
+        let site2 = r2
+            .iter()
+            .find(|loc| loc.uri.ends_with("Avatar.def"))
+            .expect("site");
         assert_eq!(site2.range.start.line, (l2 - 1) as u32);
         assert_ne!(site1.range.start.line, site2.range.start.line);
         let _ = (c1, c2);
@@ -1144,10 +1313,133 @@ mod tests {
     #[test]
     fn remove_clears_corpus_text() {
         let (registry, mut engine) = registry_holder();
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"), A_AVATAR);
-        engine.update(key_for(&registry, "/proj-a/scripts/entity_defs/types.xml"), A_TYPES);
-        engine.remove(&key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"));
-        assert_eq!(engine.corpus_text("/proj-a/scripts/entity_defs/Avatar.def"), None);
-        assert!(engine.types_files.contains_key("/proj-a/scripts/entity_defs/types.xml"));
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"),
+            A_AVATAR,
+        );
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/types.xml"),
+            A_TYPES,
+        );
+        engine.remove(&key_for(
+            &registry,
+            "/proj-a/scripts/entity_defs/Avatar.def",
+        ));
+        assert_eq!(
+            engine.corpus_text("/proj-a/scripts/entity_defs/Avatar.def"),
+            None
+        );
+        assert!(engine
+            .types_files
+            .contains_key("/proj-a/scripts/entity_defs/types.xml"));
+    }
+
+    // ---- 边界面/入口包装/直挂文本臂(COV 批补) --------------------------------
+
+    #[test]
+    fn word_at_multibyte_boundary_walks_back_to_ascii() {
+        // 回扫跨过多字节字符的非边界字节位,停在 ASCII 词首
+        assert_eq!(word_at_offset("a中b", 4), "b");
+        assert_eq!(word_at_offset("中word中", 6), "word");
+    }
+
+    #[test]
+    fn token_sites_empty_range_and_empty_documents_are_noop() {
+        let mut sites = Vec::new();
+        token_sites("abc", "u", 2, 2, "a", false, &mut sites);
+        assert!(sites.is_empty());
+        assert!(scan_type_references_in_xml("", "u", "T").is_empty());
+        assert!(scan_def_tag_value_sites("", "u", "Parent", "T", false).is_empty());
+    }
+
+    #[test]
+    fn interfaces_direct_text_resolves_interface_kind() {
+        // <Interfaces> 直挂文本(无 wrapper 子元素)也判接口面
+        let text = "<root>\n  <Interfaces> WIDGET </Interfaces>\n</root>\n";
+        let offset = text.find("WIDGET").unwrap();
+        let target = def_symbol_reference_target_at(text, offset).expect("interface target");
+        assert_eq!(target.kind, RefKind::Interface);
+        assert_eq!(target.name, "WIDGET");
+    }
+
+    #[test]
+    fn types_xml_value_reference_and_none_faces() {
+        let with_arg = "<root>\n  <T1>\n    <Arg> UINT8 </Arg>\n  </T1>\n</root>\n";
+        assert_eq!(
+            types_xml_symbol_name_at(with_arg, with_arg.find("UINT8").unwrap()).as_deref(),
+            Some("UINT8")
+        );
+        // 顶层声明元素值内的词不是声明名(声明臂要求词==元素名)
+        assert_eq!(
+            types_xml_symbol_name_at(B_TYPES, B_TYPES.find("INT8").unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn references_wrapper_entry_delegates() {
+        let (registry, engine) = build();
+        let (line1, character) = probe_of(A_AVATAR, "Type");
+        let key = key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def");
+        let locations = engine
+            .references(&key, A_AVATAR, (line1 - 1) as u32, character, true)
+            .expect("wrapper delegates to references_at");
+        assert!(locations.iter().any(|loc| loc.uri.ends_with("types.xml")));
+    }
+
+    #[test]
+    fn type_target_without_types_decl_falls_back_to_entity_def() {
+        // Avatar 不是 types.xml 声明的自定义类型 → 回退实体 def 文件头
+        let (registry, engine) = build();
+        let (line1, character) = probe_of(A_MONSTER, "Type");
+        let locations = refs_at(
+            &engine,
+            &registry,
+            "/proj-a/scripts/entity_defs/Monster.def",
+            A_MONSTER,
+            line1,
+            character,
+        )
+        .expect("Avatar 作为实体名有 def 文件");
+        assert!(locations.iter().any(|loc| loc.uri.ends_with("Avatar.def")));
+    }
+
+    #[test]
+    fn interfaces_direct_text_without_sites_is_none_when_declaration_excluded() {
+        let (registry, mut engine) = registry_holder();
+        let text = "<root>\n  <Interfaces> WIDGET </Interfaces>\n</root>\n";
+        engine.update(
+            key_for(&registry, "/proj-a/scripts/entity_defs/Direct.def"),
+            text,
+        );
+        let key = key_for(&registry, "/proj-a/scripts/entity_defs/Direct.def");
+        let offset = text.find("WIDGET").unwrap();
+        let pos = byte_offset_to_position(text, offset);
+        // 直挂文本形无 wrapper 子元素 → 零站点;排除声明位 → 空结果如实 None
+        assert_eq!(
+            engine.references_at(&key, text, pos.line, pos.character, false),
+            None
+        );
+    }
+
+    #[test]
+    fn value_token_probe_skips_whitespace_only_content() {
+        let text = "<root>\n  <Empty>   </Empty>\n</root>\n";
+        let doc = xml::parse(text, true);
+        let root = doc.root().expect("root");
+        let mut hit = false;
+        walk_with_parent(&doc, root, None, &mut |node, _| {
+            if doc.element(node).name == "Empty" {
+                hit = true;
+                assert_eq!(value_token_probe(&doc, node, text), None);
+            }
+        });
+        assert!(hit, "Empty 元素被访问");
+    }
+
+    #[test]
+    #[should_panic(expected = "decl tag not found")]
+    fn probe_at_decl_missing_tag_panics_honestly() {
+        probe_at_decl(A_TYPES, "NOPE");
     }
 }
