@@ -132,7 +132,7 @@ describe('PR5 ④ 显式版本轴 + PR4 依赖图裁断失效', () => {
           languageId: 'python',
           uri: Uri.file(paths0(dir, 'thing.py'))
         }) as never;
-      await index.onDocumentChanged(doc('class Thing:\n\tdef alpha(self):\n\t\tpass\n'));
+      await index.asyncDocumentParse(doc('class Thing:\n\tdef alpha(self):\n\t\tpass\n'));
       const afterCreate = index.getIndexVersions();
       expect(afterCreate.classes).toBeGreaterThan(0);
       expect(afterCreate.bases).toBeGreaterThan(0);
@@ -140,7 +140,7 @@ describe('PR5 ④ 显式版本轴 + PR4 依赖图裁断失效', () => {
       expect(afterCreate.mro).toBe(0); // 首次解析无前版对比,MRO 未动
 
       // 只加方法:methods/mro 动,classes/bases 不动
-      await index.onDocumentChanged(doc('class Thing:\n\tdef alpha(self):\n\t\tpass\n\tdef beta(self):\n\t\tpass\n'));
+      await index.asyncDocumentParse(doc('class Thing:\n\tdef alpha(self):\n\t\tpass\n\tdef beta(self):\n\t\tpass\n'));
       const afterMethod = index.getIndexVersions();
       expect(afterMethod.methods).toBe(afterCreate.methods + 1);
       expect(afterMethod.mro).toBe(afterCreate.mro + 1);
@@ -148,7 +148,7 @@ describe('PR5 ④ 显式版本轴 + PR4 依赖图裁断失效', () => {
       expect(afterMethod.bases).toBe(afterCreate.bases);
 
       // 改基类(标识符基类;object 被解析器排除不算):bases/mro 动,classes/methods 不动
-      await index.onDocumentChanged(doc('class Thing(Base):\n\tdef alpha(self):\n\t\tpass\n\tdef beta(self):\n\t\tpass\n'));
+      await index.asyncDocumentParse(doc('class Thing(Base):\n\tdef alpha(self):\n\t\tpass\n\tdef beta(self):\n\t\tpass\n'));
       const afterBase = index.getIndexVersions();
       expect(afterBase.bases).toBe(afterMethod.bases + 1);
       expect(afterBase.mro).toBe(afterMethod.mro + 1);

@@ -38,9 +38,9 @@ describe('IDE-REV-001:Python 解析入口版本代守卫', () => {
     const v1 = documentAt(filePath, 'GenOne', 1);
     const v2 = documentAt(filePath, 'GenTwo', 2);
 
-    // 门住 v1 worker:onDocumentChanged 同步段只完成令牌递增与任务派发,
+    // 门住 v1 worker:asyncDocumentParse 同步段只完成令牌递增与任务派发,
     // 提交段在其后微任务——此刻同步发布 v2 即「旧回包在途,新代已发布」
-    const staleWorker = index.onDocumentChanged(v1 as never);
+    const staleWorker = index.asyncDocumentParse(v1 as never);
     expect(index.getParsedForVersion(filePath, 1)).toBeNull(); // v1 尚未提交
 
     const published = index.syncDocumentParse(v2);
@@ -48,7 +48,7 @@ describe('IDE-REV-001:Python 解析入口版本代守卫', () => {
     expect(index.getParsedForVersion(filePath, 2)).toBe(published); // 新代已入缓存
 
     // 同版本编辑通知:命中缓存提前返回(零解析零提交),不再递增令牌
-    const deduped = index.onDocumentChanged(v2 as never);
+    const deduped = index.asyncDocumentParse(v2 as never);
     await staleWorker; // 释放 v1:回包必须被令牌守卫丢弃
     await deduped;
     expect(parseCount()).toBe(1); // 唯一一次解析=同步发布的 v2
@@ -59,14 +59,14 @@ describe('IDE-REV-001:Python 解析入口版本代守卫', () => {
 
     // v3:版本前进换新代(新令牌),发布后可查
     const v3 = documentAt(filePath, 'GenThree', 3);
-    await index.onDocumentChanged(v3 as never);
+    await index.asyncDocumentParse(v3 as never);
     const v3Parsed = index.getParsedForVersion(filePath, 3);
     expect(v3Parsed?.classes.some(cls => cls.name === 'GenThree')).toBe(true);
     expect(parseCount()).toBe(2);
 
     // 同版本去重:重复 v3 通知零解析零提交,缓存对象不变
-    await index.onDocumentChanged(v3 as never);
-    await index.onDocumentChanged(v3 as never);
+    await index.asyncDocumentParse(v3 as never);
+    await index.asyncDocumentParse(v3 as never);
     expect(parseCount()).toBe(2);
     expect(index.getParsedForVersion(filePath, 3)).toBe(v3Parsed);
   });

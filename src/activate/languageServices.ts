@@ -59,6 +59,7 @@ import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../
 import { ConfigCompletionProvider, CONFIG_COMPLETION_SELECTORS } from '../configCompletionProvider';
 import { ConfigDefinitionProvider, CONFIG_DEFINITION_SELECTORS } from '../configDefinitionProvider';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
+import { createIndexEventCoalescer, type IndexEventCoalescer } from '../backend/indexEventCoalescer';
 import { INDEX_CACHE_DIR_NAME } from '../backend/indexDiskCache';
 import { SCAN_PROGRESS_DIR_NAME, ScanProgressController } from '../backend/scanProgress';
 import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonTypeStubPlan } from '../pythonTypeStubs';
@@ -93,6 +94,8 @@ export interface LanguageServicesShared {
   kbengineHoverImpl: KBEngineHoverProvider;
   pythonDefinitionImpl: PythonDefinitionProvider;
   pythonClassIndex: PythonClassIndex;
+  /** INDEX-DISCIPLINE-001 ①:索引重扫事件合并器(保存/外部写盘统一收口)。 */
+  indexEventCoalescer: IndexEventCoalescer;
   startKbEngineIndexing(): void;
   watchPythonIndex(): void;
   fileChangeMetaResolver: ReturnType<typeof createFileChangeMetaResolver>;
@@ -315,8 +318,17 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     indexScheduler,
     scanProgressDir
       ? new ScanProgressController(scanProgressDir, String(context.extension?.packageJSON?.version ?? 'dev'))
-      : undefined
+      : undefined,
+    // INDEX-DISCIPLINE-001 ③:语法门配置(kbengine.index.syntaxGate,默认开)。
+    () => vscode.workspace.getConfiguration('kbengine.index').get<boolean>('syntaxGate', true)
   );
+  // INDEX-DISCIPLINE-001 ①:索引重扫合并器——push 面只收「已落盘」信号
+  // (onDidSave + watcher 外部写盘);决策核 Rust 主路径,TS 薄壳持状态。
+  const indexEventCoalescer = createIndexEventCoalescer({
+    isDirty: file => vscode.workspace.textDocuments.find(d => d.fileName === file)?.isDirty ?? false,
+    enqueueReindex: file => { void pythonClassIndex.onFileChanged(file); }
+  });
+  context.subscriptions.push({ dispose: () => indexEventCoalescer.dispose() });
   // 书 PR-002 门控启动面:特征确认后 entityMapping 首扫 + python 后台全量扫描
   // 一起放行(与门控前激活期行为一致);负案例(无特征)两者都不启动。
   const startKbEngineIndexing = (): void => {
@@ -408,8 +420,19 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
         pythonClassIndex.invalidate(event.fsPath);
         return;
       }
-      void pythonClassIndex.onFileChanged(event.fsPath);
+      // INDEX-DISCIPLINE-001 ①②:外部写盘经合并器收口(不再直喂索引)——
+      // 300ms 窗口同文件并一,dirty(编辑中)尾随顺延,flush 按最近修改
+      // 落队尾;重索引统一 onFileChanged(语法门同面)。
+      indexEventCoalescer.push(event.fsPath);
     }) },
+    // INDEX-DISCIPLINE-001 ②:保存落盘才是重索引触发面(编辑事件只在
+    // pythonClassIndex.onDocumentChanged 标脏登记,零重索引);保存信号
+    // 同走合并器(格式化链多连保、保存+watcher 双报只并一)。
+    vscode.workspace.onDidSaveTextDocument(document => {
+      if (document.languageId === 'python' || document.fileName.toLowerCase().endsWith('.py')) {
+        indexEventCoalescer.push(document.fileName);
+      }
+    }),
     // 文件变化元信息(方案 B):索引事件的元信息行沿用既有 jumpLog 开关与
     // 通道(默认关 → 关时零 IO、不新增设置项)。与上面的索引接线分属两个
     // 订阅者:老消费端同步收单的口径不动,元信息解析是懒异步的。
@@ -840,6 +863,7 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     kbengineHoverImpl,
     pythonDefinitionImpl,
     pythonClassIndex,
+    indexEventCoalescer,
     startKbEngineIndexing,
     watchPythonIndex,
     fileChangeMetaResolver,

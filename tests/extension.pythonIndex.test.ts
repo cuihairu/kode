@@ -82,12 +82,14 @@ describe('Python index lifecycle wiring', () => {
       expect(watch, 'external assetsRoot has a RelativePattern watcher').toBeTruthy();
       const file = Uri.file(path.join(assets, 'scripts/cell/Avatar.py'));
       watch!.watcher.fireCreate(file);
-      // 新建文件走 onFileChanged 直接装载进索引;invalidate 对未索引文件是
-      // 刻意空转(不得重启扫描),故 create 必须不触发 invalidate
-      expect(changed).toHaveBeenCalledWith(file.fsPath);
+      // INDEX-DISCIPLINE-001 ①:新建/外部写盘不再直喂索引,经合并器 300ms
+      // 窗口收口后 flush 一次 onFileChanged;invalidate 对未索引文件仍是
+      // 刻意空转(不得重启扫描),create 必须不触发 invalidate
+      await until(() => changed.mock.calls.some(call => call[0] === file.fsPath));
       expect(invalidate, 'unindexed create must not restart the scan').not.toHaveBeenCalled();
       watch!.watcher.fireChange(file);
-      expect(changed).toHaveBeenCalledWith(file.fsPath);
+      await until(() => changed.mock.calls.filter(call => call[0] === file.fsPath).length >= 2);
+      expect(changed).toHaveBeenLastCalledWith(file.fsPath);
       watch!.watcher.fireDelete(file);
       expect(invalidate).toHaveBeenLastCalledWith(file.fsPath);
       const document = makeTextDocument('class Avatar: pass', { fileName: file.fsPath });
@@ -119,12 +121,14 @@ describe('Python index lifecycle wiring', () => {
   });
 });
 
-describe('Python index edit coalescing', () => {
-  it('reindexes one burst once after typing settles', async () => {
+describe('Python index input discipline (INDEX-DISCIPLINE-001)', () => {
+  it('edits never reindex (register-only); save flushes exactly one reindex after the 300ms window', async () => {
     vi.useFakeTimers();
     workspace.workspaceFolders = [{ uri: Uri.file('/workspace'), name: 'ws', index: 0 }];
     const context = makeContext();
-    const changed = vi.spyOn(PythonClassIndex.prototype, 'onDocumentChanged')
+    const fileChanged = vi.spyOn(PythonClassIndex.prototype, 'onFileChanged')
+      .mockResolvedValue(undefined);
+    const docChanged = vi.spyOn(PythonClassIndex.prototype, 'onDocumentChanged')
       .mockResolvedValue(undefined);
     const document = makeTextDocument('class Avatar: pass', {
       fileName: '/workspace/avatar.py',
@@ -132,6 +136,8 @@ describe('Python index edit coalescing', () => {
     }) as never;
     try {
       activate(context);
+      // ① 钉子:同文件 10 连击编辑——登记面每击一次(标脏供合并器顺延),
+      // 重索引零次(只认落盘:settle 后也零)
       for (let index = 0; index < 10; index += 1) {
         workspaceEvents.documentChanged.fire({
           document,
@@ -139,14 +145,22 @@ describe('Python index edit coalescing', () => {
           reason: undefined
         });
       }
-      expect(changed).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(100);
-      expect(changed).toHaveBeenCalledTimes(1);
-      expect(changed).toHaveBeenCalledWith(document);
+      expect(docChanged).toHaveBeenCalledTimes(10);
+      expect(fileChanged).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(600);
+      expect(fileChanged, 'edits alone never reindex').not.toHaveBeenCalled();
+      // ④ 钉子:保存 → 合并器 300ms 窗口到 → 恰一次重索引
+      workspaceEvents.documentSaved.fire(document);
+      await vi.advanceTimersByTimeAsync(299);
+      expect(fileChanged, 'still inside the coalesce window').not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      expect(fileChanged).toHaveBeenCalledTimes(1);
+      expect(fileChanged).toHaveBeenCalledWith(document.fileName);
     } finally {
       vi.useRealTimers();
       disposeAll(context);
-      changed.mockRestore();
+      fileChanged.mockRestore();
+      docChanged.mockRestore();
       workspace.workspaceFolders = [];
     }
   });

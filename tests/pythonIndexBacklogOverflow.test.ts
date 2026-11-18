@@ -6,7 +6,7 @@ import { Uri } from './fake-vscode/core';
 import { messages } from './fake-vscode/windowState';
 
 // IDE-RES-002 调用面:pythonParserWorkerHost 积压字节上限拒绝(可解释错误)
-// 到达 pythonClassIndex 时——onDocumentChanged 不得把拒绝变 unhandled rejection
+// 到达 pythonClassIndex 时——asyncDocumentParse 不得把拒绝变 unhandled rejection
 // 上抛;本次编辑不入索引,下一次编辑同通道自然重试。host 侧上限本身另有
 // pythonParserWorkerHost.test.ts 直测,此处 mock 拒绝只锁调用方行为。
 // RUST-031:超预算拒绝属能力限制,须走用户明示面(每文件会话内一次);
@@ -62,19 +62,19 @@ describe('IDE-RES-002 调用面:积压上限拒绝不变成 unhandled rejection'
     messages.warning.length = 0;
   });
 
-  it('host 拒绝时 onDocumentChanged 正常返回,本次不入索引;下次编辑自愈', async () => {
+  it('host 拒绝时按需解析(asyncDocumentParse)正常返回,本次不入索引;下次编辑自愈', async () => {
     const index = new PythonClassIndex();
     hostMock.failuresLeft = 1;
 
     const first = makeDoc('class A:\n\tdef m(self):\n\t\tpass\n', 1);
-    // 修复前:拒绝穿透 onDocumentChanged 上抛(调用方 extension 处是 void,
+    // 修复前:拒绝穿透 asyncDocumentParse 上抛(调用方 extension 处是 void,
     // 成 unhandled rejection);修复后:吞下并日志,返回 undefined
-    await expect(index.onDocumentChanged(first)).resolves.toBeUndefined();
+    await expect(index.asyncDocumentParse(first)).resolves.toBeNull();
     expect(index.getParsedForVersion(first.fileName, 1)).toBeNull();
 
     // 下一次编辑(版本前进)同通道重试:成功后该版本可查
     const second = makeDoc('class A:\n\tdef m(self):\n\t\tpass\n\tdef n(self):\n\t\tpass\n', 2);
-    await expect(index.onDocumentChanged(second)).resolves.toBeUndefined();
+    await index.asyncDocumentParse(second);
     const parsed = index.getParsedForVersion(second.fileName, 2);
     expect(parsed).not.toBeNull();
     expect(parsed?.classes.map(cls => cls.name)).toEqual(['A']);
@@ -87,7 +87,7 @@ describe('IDE-RES-002 调用面:积压上限拒绝不变成 unhandled rejection'
     // 首次超预算拒绝:用户可见警示(明示能力限制,文案含「降级」)
     hostMock.failuresLeft = 1;
     const doc = makeDoc('class A:\n\tdef m(self):\n\t\tpass\n', 1);
-    await index.onDocumentChanged(doc);
+    await index.asyncDocumentParse(doc);
     expect(messages.warning).toHaveLength(1);
     expect(messages.warning[0]).toContain('降级');
     expect(messages.warning[0]).toContain('backlog.py');
@@ -95,7 +95,7 @@ describe('IDE-RES-002 调用面:积压上限拒绝不变成 unhandled rejection'
     // 同文件第二次拒绝:去重,不重复轰炸
     hostMock.failuresLeft = 1;
     const doc2 = makeDoc('class A:\n\tdef m(self):\n\t\tpass\n', 2);
-    await index.onDocumentChanged(doc2);
+    await index.asyncDocumentParse(doc2);
     expect(messages.warning).toHaveLength(1);
 
     // 另一文件拒绝:再警示一次(每文件各一次)
@@ -106,14 +106,14 @@ describe('IDE-RES-002 调用面:积压上限拒绝不变成 unhandled rejection'
       uri: Uri.file('/ws/other.py')
     });
     other.version = 1;
-    await index.onDocumentChanged(other as typeof doc);
+    await index.asyncDocumentParse(other as typeof doc);
     expect(messages.warning).toHaveLength(2);
     expect(messages.warning[1]).toContain('other.py');
 
     // 非预算错误(worker 停用形态):能力限制不成立,不警示
     hostMock.disposedLeft = 1;
     const doc3 = makeDoc('class A:\n\tdef m(self):\n\t\tpass\n', 3);
-    await index.onDocumentChanged(doc3);
+    await index.asyncDocumentParse(doc3);
     expect(messages.warning).toHaveLength(2);
   });
 });

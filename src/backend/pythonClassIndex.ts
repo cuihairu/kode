@@ -8,6 +8,7 @@ import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
 import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
+import { checkSyntaxGate } from './syntaxGate';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { SemanticDependencyGraph } from './dependencyGraph';
 import {
@@ -253,14 +254,27 @@ export class PythonClassIndex {
   private lastScanResumeStats: { adopted: number; scanned: number } | null = null;
   /** 组合根来源内容缓存(mtime+size 指纹;未变更文件重派生不再重读) */
   private rootsContentCache = new Map<string, { mtimeMs: number; size: number; content: string }>();
+  /** INDEX-DISCIPLINE-001 ③:语法门开关(装配点注入;默认恒开) */
+  private syntaxGateEnabled: () => boolean;
+  /** INDEX-DISCIPLINE-001 ③:语法门累计拦下数(烂文件不入索引的次数) */
+  private syntaxGateSkipped = 0;
   /** 显式派生版本轴(④):断言「哪类变更动了哪层」 */
   private indexVersions: PythonIndexVersions = {
     classes: 0, bases: 0, methods: 0, mro: 0, compositionRoots: 0
   };
 
-  constructor(scheduler?: IndexScheduler, scanProgress?: ScanProgressController) {
+  constructor(scheduler?: IndexScheduler, scanProgress?: ScanProgressController,
+    /** INDEX-DISCIPLINE-001 ③:语法门开关读取(默认恒开;装配点注入真配置)。 */
+    syntaxGateEnabled?: () => boolean
+  ) {
     this.scheduler = scheduler ?? new IndexScheduler();
     this.scanProgress = scanProgress;
+    this.syntaxGateEnabled = syntaxGateEnabled ?? (() => true);
+  }
+
+  /** INDEX-DISCIPLINE-001 ③:语法门累计拦下数(状态栏 tooltip 观测面)。 */
+  getSyntaxGateSkippedCount(): number {
+    return this.syntaxGateSkipped;
   }
 
   /** SCAN-RESUME-001:最近一轮全扫的断点恢复统计(采纳/实扫;测试断言面) */
@@ -540,6 +554,32 @@ export class PythonClassIndex {
     }
     if (!this.fileCache.has(filePath) &&
         filePath.split(/[\\/]/).some(part => PY_SCAN_EXCLUDED_DIRS.has(part))) { return; }
+    // INDEX-DISCIPLINE-001 ③:语法门——重索引唯一入口(保存/外部写盘经
+    // 合并器收口到本面)统一过门。烂文件不入索引不绑定(索引保留上一次
+    // 健康版本符号,编辑中导航不断),只计数+日志;诊断面照旧由既有诊断链
+    // 报语法错。门禁文本与 loadFile 同源(开档缓冲优先,盘回落)——拦的
+    // 就是将要入索引的那份内容。
+    if (this.syntaxGateEnabled()) {
+      // 门禁文本与 loadFile 同源同序(workspace 开档优先,内部登记回落)——
+      // 拦的就是将要入索引的那份内容,两处取文不同序=门拦错文本。
+      const open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
+      let text: string;
+      try {
+        text = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
+      } catch {
+        // 读不到(外部删档竞态等):交给 loadFile 的既有缺档口径,不在此拦
+        text = '';
+      }
+      if (text !== '') {
+        const verdict = await checkSyntaxGate(text);
+        if (!verdict.ok) {
+          this.syntaxGateSkipped += 1;
+          jumpLog('info', () =>
+            `py 语法门拦下(保留上次健康索引): ${filePath} — ${verdict.reasons.slice(0, 2).join('; ')}`);
+          return;
+        }
+      }
+    }
     this.revisions.set(filePath, (this.revisions.get(filePath) ?? 0) + 1);
     await this.loadFile(filePath, -1);
   }
@@ -1273,7 +1313,13 @@ export class PythonClassIndex {
     }
   }
 
-  /** Use the buffer synchronously so an older disk read cannot overwrite edits. */
+  /**
+   * 编辑事件登记面(INDEX-DISCIPLINE-001 ②只认落盘,签名保留供既有调用点):
+   * - .def/.xml:依赖图失效照旧(def 面不是 python 批量索引,不在本纪律面);
+   * - .py:**只登记文档身份,不触发重索引**——重索引统一收口在
+   *   onFileChanged(保存/外部写盘经合并器);查询面(补全/悬停)的缓冲
+   *   实时性由 syncDocumentParse / asyncDocumentParse 按需解析承担。
+   */
   async onDocumentChanged(document: vscode.TextDocument): Promise<void> {
     if (!/\.(py|def|xml)$/i.test(document.fileName)) { return; }
     // IDE-DIA-003:同版本已入缓存即零成本跳过(诊断 syncDocumentParse 先解析
@@ -1291,17 +1337,7 @@ export class PythonClassIndex {
       }
       return;
     }
-    this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
-    const revision = this.revisions.get(document.fileName)!;
-    try {
-      await this.updateFileResponsive(document.fileName, document.getText(), document.version, revision);
-    } catch (error) {
-      // 解析线程停用/积压字节上限拒绝(IDE-RES-002)等:本次编辑不入索引,
-      // 版本号已前进,下一次编辑自然重试同通道;拒绝不当 unhandled rejection 上抛。
-      // 积压超预算属能力限制,额外走用户明示面(RUST-031,每文件一次)。
-      noteDegradedParse(document.fileName, error);
-      jumpLog('info', () => `py 解析未入索引(待下次编辑重试): ${document.fileName}`);
-    }
+    // py:只认落盘——编辑事件零重索引(缓冲查询走按需解析面)。
   }
 
   /** 版本键只读面:缓存命中且版本一致才给解析结果,否则 null(不把旧代
@@ -1310,6 +1346,19 @@ export class PythonClassIndex {
     if (version === undefined) { return null; }
     const cached = this.fileCache.get(filePath);
     return cached && cached.version === version ? cached.parsed : null;
+  }
+
+  /**
+   * INDEX-DISCIPLINE-001 ②:路径键查询面的按需缓冲解析——编辑事件已不再
+   * 喂索引,查询入口看到已登记文档且版本与缓存不同步时按需解析一次
+   * (同版本命中零解析;未登记=纯盘文件零成本直过)。这是「只认落盘」下
+   * 未保存缓冲导航不断链的补面:索引主体=盘上真值,查询文件本身按需新鲜。
+   */
+  private async ensureBufferFresh(filePath: string): Promise<void> {
+    const registered = this.documents.get(filePath);
+    if (!registered) { return; }
+    if (this.getParsedForVersion(filePath, registered.version) !== null) { return; }
+    await this.asyncDocumentParse(registered);
   }
 
   /** IDE-DIA-003 共享解析面:同版本命中直接返回缓存对象(零解析);未命中
@@ -1366,7 +1415,9 @@ export class PythonClassIndex {
   async resolveClassBase(document: vscode.TextDocument, expression: string, line?: number,
     token?: vscode.CancellationToken): Promise<PythonClassDef | null> {
     if (token?.isCancellationRequested) { return null; }
-    await this.onDocumentChanged(document);
+    // INDEX-DISCIPLINE-001 ②:查询面缓冲实时性改走按需解析面(编辑事件已
+    // 不再喂索引;这里同版本命中零解析,未命中解析+按版本提交)。
+    await this.asyncDocumentParse(document);
     // ② PR5:先查快照+已建索引,请求所需文件按需单文件解析;全量扫描后台补,
     // 不再让基类跳转等 107s 级冷启动扫描。
     this.scheduleBackgroundScan();
@@ -1449,7 +1500,9 @@ export class PythonClassIndex {
     if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
     const queryTimer = jumpTimeStart();
     jumpLog('info', () => `py 查询 ${path.basename(filePath)}:${line + 1} 方法=${methodName}`);
-    if (document) { await this.onDocumentChanged(document); }
+    // INDEX-DISCIPLINE-001 ②:同 resolveClassBase——查询面走按需解析。
+    if (document) { await this.asyncDocumentParse(document); }
+    await this.ensureBufferFresh(filePath);
     // ② PR5:首查不阻塞在全量扫描上——快照/已建索引先答,请求所需文件
     // (查询文件/同目录/import 候选)按需单文件解析,全量后台补。
     this.scheduleBackgroundScan();

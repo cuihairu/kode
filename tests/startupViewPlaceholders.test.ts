@@ -143,7 +143,7 @@ describe('KODE-PERF 重复扫描抑制:watcher 同签名重建跳过 + 排除目
     }
   });
 
-  it('排除目录(node_modules)下的文件事件不再流入 Python 索引消费面(修前红)', () => {
+  it('排除目录(node_modules)下的文件事件不再流入 Python 索引消费面(修前红)', async () => {
     const context = makeContext();
     const originalCreate = workspace.createFileSystemWatcher;
     const watchers: Array<{ pattern?: unknown; fireCreate: (uri: ReturnType<typeof Uri.file>) => void }> = [];
@@ -162,10 +162,18 @@ describe('KODE-PERF 重复扫描抑制:watcher 同签名重建跳过 + 排除目
       expect(workspaceWatcher).toBeTruthy();
       const onFileChanged = vi.spyOn(PythonClassIndex.prototype, 'onFileChanged')
         .mockResolvedValue(undefined);
+      // INDEX-DISCIPLINE-001 起 watcher 事件经 300ms 合并窗口收口,断言要
+      // 等窗口过(排除目录断言由此从「当场零到达」升级为「窗口后仍零到达」)
+      const settleCoalesceWindow = async (): Promise<void> => {
+        await new Promise(resolve => { setTimeout(resolve, 460); });
+      };
       workspaceWatcher.fireCreate(Uri.file('/ws/node_modules/pkg/lib.py'));
-      expect(onFileChanged, '排除目录事件在 watcher 出口被丢弃').not.toHaveBeenCalled();
-      // 非排除路径照常通过(过滤面不误伤业务脚本)
+      await settleCoalesceWindow();
+      expect(onFileChanged, '排除目录事件在 watcher 出口被丢弃(合并器窗口后仍零到达)').not.toHaveBeenCalled();
+      // 非排除路径照常通过(过滤面不误伤业务脚本;经合并窗口后抵达消费面)
       workspaceWatcher.fireCreate(Uri.file('/ws/scripts/cell/Avatar.py'));
+      await settleCoalesceWindow();
+      expect(onFileChanged).toHaveBeenCalledTimes(1);
       expect(onFileChanged).toHaveBeenCalledWith('/ws/scripts/cell/Avatar.py');
     } finally {
       disposeAll(context);

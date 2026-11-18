@@ -30,6 +30,9 @@ export interface LanguageServiceStatusInputs {
   lastBuildStartedAt?: number | null;
   /** 最近一轮索引跑空时刻(epoch ms);null/缺省=从未建完(就绪态不加建立行) */
   lastBuildCompletedAt?: number | null;
+  /** INDEX-DISCIPLINE-001:输入纪律观测(合并器待合并数+语法门拦截数);
+   * null/缺省=面未注入(tooltip 不加该行,不冒充)。 */
+  indexDiscipline?: { coalescerPending: number; syntaxGateSkipped: number } | null;
 }
 
 export interface LanguageServiceStatusView {
@@ -108,6 +111,11 @@ export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs):
   }
 
   const { failed, queued, running } = inputs.index;
+  // INDEX-DISCIPLINE-001:输入纪律观测行(合并器待合并+语法门拦截)——
+  // 面注入才有,用户能看见「保存才进队列 + 烂文件被拦」纪律在工作。
+  const disciplineLine = inputs.indexDiscipline
+    ? `\n索引输入队列：待合并 ${inputs.indexDiscipline.coalescerPending}（语法门拦截 ${inputs.indexDiscipline.syntaxGateSkipped}）。`
+    : '';
   if (failed > 0) {
     return {
       text: `$(error) Kode 索引: 失败 ${failed}（排队 ${queued}/运行 ${running}）${suffix}`,
@@ -119,7 +127,7 @@ export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs):
   if (running > 0 || queued > 0) {
     return {
       text: `$(sync~spin) Kode 索引: 运行 ${running} 排队 ${queued}${suffix}`,
-      tooltip: `索引推进中：运行 ${running}，排队 ${queued}。\n点击打开 Project Doctor 健康汇总。`,
+      tooltip: `索引推进中：运行 ${running}，排队 ${queued}。${disciplineLine}\n点击打开 Project Doctor 健康汇总。`,
       hasFailures: false,
       isBusy: true
     };
@@ -130,7 +138,7 @@ export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs):
   return {
     text: `$(check) Kode 索引: 就绪${suffix}`,
     tooltip:
-      `索引就绪。${buildLine !== null ? `\n${buildLine}` : ''}\n点击打开 Project Doctor 健康汇总。`,
+      `索引就绪。${buildLine !== null ? `\n${buildLine}` : ''}${disciplineLine}\n点击打开 Project Doctor 健康汇总。`,
     hasFailures: false,
     isBusy: false
   };

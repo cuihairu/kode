@@ -69,6 +69,26 @@ describe('buildLanguageServiceStatus 四态机 (RUST-219)', () => {
     expect(view.text).not.toContain(' · ');
   });
 
+  it('INDEX-DISCIPLINE-001:面注入 → busy/ready tooltip 增「索引输入队列」观测行;缺省不加不冒充', () => {
+    const ready = buildLanguageServiceStatus(inputs({
+      indexDiscipline: { coalescerPending: 3, syntaxGateSkipped: 1 }
+    }));
+    expect(ready.tooltip).toContain('索引输入队列：待合并 3（语法门拦截 1）。');
+    const busy = buildLanguageServiceStatus(inputs({
+      index: { failed: 0, queued: 2, running: 0 },
+      indexDiscipline: { coalescerPending: 0, syntaxGateSkipped: 4 }
+    }));
+    expect(busy.tooltip).toContain('索引输入队列：待合并 0（语法门拦截 4）。');
+    // 缺省(null/未注入):不加该行——面不可用不装数
+    expect(buildLanguageServiceStatus(inputs({})).tooltip).not.toContain('索引输入队列');
+    // 失败态不加(失败脸的恢复指引优先,观测行只在 busy/ready)
+    const failed = buildLanguageServiceStatus(inputs({
+      index: { failed: 1, queued: 0, running: 0 },
+      indexDiscipline: { coalescerPending: 2, syntaxGateSkipped: 0 }
+    }));
+    expect(failed.tooltip).not.toContain('索引输入队列');
+  });
+
   it('只知资源根 → 后缀只含资源根段', () => {
     const view = buildLanguageServiceStatus(inputs({ resourceRoot: 'assets' }));
     expect(view.text.endsWith(' · assets')).toBe(true);

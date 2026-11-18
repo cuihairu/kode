@@ -89,6 +89,9 @@ export interface UtilityCommandsDeps {
   entityMappingManager: EntityMappingManager;
   serverManager: KBEngineServerManager;
   indexScheduler: IndexScheduler;
+  /** INDEX-DISCIPLINE-001:索引输入纪律观测面(合并器待合并数+语法门拦计数);
+   * 可选注入,缺省时状态栏 tooltip 不加该行(面不冒充)。 */
+  indexDisciplineStats?: () => { coalescerPending: number; syntaxGateSkipped: number } | null;
 }
 
 export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
@@ -760,7 +763,9 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         },
         // 索引建立时间行(批 B):调度器轮次时间戳同源透传,纯核只格式化
         lastBuildStartedAt: status.lastBuildStartedAt,
-        lastBuildCompletedAt: status.lastBuildCompletedAt
+        lastBuildCompletedAt: status.lastBuildCompletedAt,
+        // INDEX-DISCIPLINE-001:输入纪律观测行(合并器待合并+语法门拦截)
+        indexDiscipline: deps.indexDisciplineStats ? deps.indexDisciplineStats() : null
       };
     },
     timers: {

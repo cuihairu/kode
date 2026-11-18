@@ -235,6 +235,7 @@ export function activate(context: vscode.ExtensionContext) {
     kbengineHoverImpl,
     pythonDefinitionImpl,
     pythonClassIndex,
+    indexEventCoalescer,
     watchPythonIndex,
     fileChangeMetaResolver,
     callChainController,
@@ -258,12 +259,9 @@ export function activate(context: vscode.ExtensionContext) {
   });
   markActivateStage('l2-language-services');
 
-  // Python 类索引编辑事件合并(IDE-SNP 线):三件状态被 didChange 事件面
-  // 写值(+=/赋值),留组合根作用域;pythonIndexWatchers 闭包私有,随 L2 模块。
-
-  const pythonIndexEditEvents = new Map<vscode.TextDocument, number>();
-  let pythonIndexEditFlushTimer: NodeJS.Timeout | undefined;
-  let pendingPythonIndexEditCount = 0;
+  // Python 类索引输入纪律(INDEX-DISCIPLINE-001 ②):编辑事件零重索引
+  // (只登记文档身份),重索引统一保存/外部写盘面——合并器与 watcher 都
+  // 装在 src/activate/languageServices.ts,组合根不再持编辑合并状态。
 
   // SRC-001 L3 诊断调度层(KODE-ARCH 纯移动):主 collection/PR1 计时助手/
   // 统一调度器/配置契约诊断块/7 个独立调度器管线装在
@@ -614,23 +612,13 @@ export function activate(context: vscode.ExtensionContext) {
           void scalarAssignScheduler.flushQueued();
         }, 0);
       }
-      // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
-      // 层2 关闭时索引不参与跳转,变更喂给索引纯属后台空转,一并跳过
+      // Python 类索引输入纪律(INDEX-DISCIPLINE-001 ②只认落盘):编辑事件
+      // 只登记文档身份(供查询面按需解析识别缓冲),零重索引——重索引统一
+      // 保存/外部写盘面(合并器在 languageServices);层2 关闭时索引不参与
+      // 跳转,登记纯属后台空转,一并跳过。
       if (isPythonMroJumpEnabled() && event.document.languageId === 'python' &&
           (event.contentChanges?.length ?? 0) > 0) {
-        pendingPythonIndexEditCount += 1;
-        pythonIndexEditEvents.set(event.document, pendingPythonIndexEditCount);
-        if (!pythonIndexEditFlushTimer) {
-          pythonIndexEditFlushTimer = setTimeout(() => {
-            pythonIndexEditFlushTimer = undefined;
-            const documents = [...pythonIndexEditEvents.keys()];
-            pythonIndexEditEvents.clear();
-            pendingPythonIndexEditCount = 0;
-            for (const document of documents) {
-              void pythonClassIndex.onDocumentChanged(document);
-            }
-          }, 100);
-        }
+        void pythonClassIndex.onDocumentChanged(event.document);
       }
     });
     context.subscriptions.push(watcher);
@@ -671,13 +659,6 @@ export function activate(context: vscode.ExtensionContext) {
       }
     });
     context.subscriptions.push(annotationRenameWatcher);
-  context.subscriptions.push({
-    dispose: () => {
-      if (pythonIndexEditFlushTimer) {
-        clearTimeout(pythonIndexEditFlushTimer);
-      }
-    }
-  });
 
     // 初始检查所有 .def 文件(立即通道:开档/激活期发布保持同步时点)
     const openWatcher = vscode.workspace.onDidOpenTextDocument(document => {
@@ -1482,7 +1463,12 @@ export function activate(context: vscode.ExtensionContext) {
     context,
     entityMappingManager,
     serverManager,
-    indexScheduler
+    indexScheduler,
+    // INDEX-DISCIPLINE-001:状态栏 tooltip 输入纪律观测行(待合并+语法门)
+    indexDisciplineStats: () => ({
+      coalescerPending: indexEventCoalescer.getPendingCount(),
+      syntaxGateSkipped: pythonClassIndex.getSyntaxGateSkippedCount()
+    })
   });
   markActivateStage('l5-tools');
 

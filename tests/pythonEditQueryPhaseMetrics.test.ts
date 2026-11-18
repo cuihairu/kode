@@ -52,7 +52,7 @@ describe('IDE-RST-009:Python 编辑查询耗时阶段拆分', () => {
     const dir = makeRoot();
     resetLanguageServiceMetrics();
     const index = new PythonClassIndex();
-    await index.onDocumentChanged(pythonDoc(dir, 'thing.py', 'class Thing:\n\tdef alpha(self):\n\t\tpass\n'));
+    await index.asyncDocumentParse(pythonDoc(dir, 'thing.py', 'class Thing:\n\tdef alpha(self):\n\t\tpass\n'));
 
     expect((getOperationSummary('document-parse')?.count ?? 0)).toBeGreaterThanOrEqual(1);
     expect((getOperationSummary('document-commit')?.count ?? 0)).toBeGreaterThanOrEqual(1);
@@ -63,8 +63,8 @@ describe('IDE-RST-009:Python 编辑查询耗时阶段拆分', () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(dir), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async () => []) as typeof stubWorkspace.findFiles;
     const index = new PythonClassIndex();
-    await index.onDocumentChanged(pythonDoc(dir, 'base.py', 'class Base:\n\tdef foo(self):\n\t\tpass\n'));
-    await index.onDocumentChanged(pythonDoc(dir, 'sub.py', 'class Sub(Base):\n\tdef bar(self):\n\t\tpass\n'));
+    await index.asyncDocumentParse(pythonDoc(dir, 'base.py', 'class Base:\n\tdef foo(self):\n\t\tpass\n'));
+    await index.asyncDocumentParse(pythonDoc(dir, 'sub.py', 'class Sub(Base):\n\tdef bar(self):\n\t\tpass\n'));
 
     resetLanguageServiceMetrics();
     const providers = await index.providersOfMethod('Sub', 'foo');
@@ -97,8 +97,8 @@ describe('IDE-RST-009:Python 编辑查询耗时阶段拆分', () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(dir), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async () => []) as typeof stubWorkspace.findFiles;
     const index = new PythonClassIndex();
-    await index.onDocumentChanged(pythonDoc(dir, 'base.py', 'class Base:\n\tdef foo(self):\n\t\tpass\n'));
-    await index.onDocumentChanged(pythonDoc(dir, 'sub.py', 'class Sub(Base):\n\tdef bar(self):\n\t\tpass\n'));
+    await index.asyncDocumentParse(pythonDoc(dir, 'base.py', 'class Base:\n\tdef foo(self):\n\t\tpass\n'));
+    await index.asyncDocumentParse(pythonDoc(dir, 'sub.py', 'class Sub(Base):\n\tdef bar(self):\n\t\tpass\n'));
     await index.providersOfMethod('Sub', 'foo');
     const source = ['data = get_data()', '', 'def get_data() -> JSONDATA:', '\tpass'].join('\n');
     resolveLocalVariableReturnTypeFromSnapshot(source.split('\n'), 0, 'data', dir, {
