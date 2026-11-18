@@ -215,4 +215,30 @@ mod tests {
         let f = Fact::new("INT32", Origin::declared());
         assert_eq!(f.severity(), Severity::Error);
     }
+
+    #[test]
+    fn origin_predicates_severity_str_and_evidence_faces() {
+        // 谓词面:is_unknown/is_conflict 互斥直证(Declared/Derived 两假)。
+        let u = Origin::unknown("");
+        assert!(u.is_unknown());
+        assert!(!u.is_conflict());
+        let c = Origin::conflict(vec!["A".into()], "two");
+        assert!(c.is_conflict());
+        assert!(!c.is_unknown());
+        assert!(!Origin::declared().is_unknown());
+        assert!(!Origin::derived(vec![]).is_conflict());
+        // Severity::as_str 三臂。
+        assert_eq!(Severity::Error.as_str(), "error");
+        assert_eq!(Severity::Warning.as_str(), "warning");
+        assert_eq!(Severity::Info.as_str(), "info");
+        // with_evidences 批量追加 + display 缺行/缺列两脸(无行=裸文件名,
+        // 有行无列=行号止)。
+        let f = Fact::new("v", Origin::declared()).with_evidences([
+            Evidence::new("a.def", None, None),
+            Evidence::new("b.def", Some(4), None),
+        ]);
+        assert_eq!(f.evidence.len(), 2, "批量证据一次并入");
+        assert_eq!(f.evidence[0].display(), "a.def");
+        assert_eq!(f.evidence[1].display(), "b.def:5");
+    }
 }
