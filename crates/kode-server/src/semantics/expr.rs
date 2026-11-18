@@ -828,4 +828,338 @@ mod tests {
             panic!("必须 Call");
         }
     }
+
+    // ---- COV-002 覆盖提满批(2026-11-19):classify 字面量全集/walk 深臂/
+    // ---- find_expr_at 直击族/pattern 全臂/文本截断。 ----
+
+    #[test]
+    fn cov_classify_literal_and_operator_firsts() {
+        let a = ast(concat!(
+            "x0 = await foo()\n",
+            "x1 = (n := 5)\n",
+            "x2 = a and b\n",
+            "x3 = a + b\n",
+            "x4 = -a\n",
+            "x5 = a if c else b\n",
+            "x6 = [u, v]\n",
+            "x7 = (u, v)\n",
+            "x8 = {u, v}\n",
+            "x9 = {'k': u}\n",
+            "x10 = 'txt'\n",
+            "x11 = 42\n",
+            "x12 = 3.5\n",
+            "x13 = 1j\n",
+            "x14 = True\n",
+            "x15 = None\n",
+            "x16 = b'bytes'\n",
+            "x17 = ...\n",
+            "x18 = [i for i in y]\n",
+            "x19 = {i for i in y}\n",
+            "x20 = {i: i for i in y}\n",
+            "x21 = (i for i in y)\n",
+            "x22 = f'{a}'\n",
+        ));
+        let ev = collect_assign_events(&a);
+        let val = |t: &str| {
+            ev.iter()
+                .find(|e| e.target == t)
+                .unwrap_or_else(|| panic!("缺事件 {t}"))
+                .value
+                .clone()
+        };
+        assert!(matches!(val("x0"), ExprKind::Call { .. }), "await 透传调用");
+        assert!(
+            matches!(val("x1"), ExprKind::LocalAssign { target } if target == "5"),
+            "Named 海象取内值"
+        );
+        assert!(
+            matches!(val("x2"), ExprKind::LocalAssign { .. }),
+            "BoolOp 首"
+        );
+        assert!(
+            matches!(val("x3"), ExprKind::LocalAssign { .. }),
+            "BinOp 左"
+        );
+        assert!(matches!(val("x4"), ExprKind::LocalAssign { .. }), "UnaryOp");
+        assert!(
+            matches!(val("x5"), ExprKind::LocalAssign { .. }),
+            "IfExp 体"
+        );
+        assert!(matches!(val("x6"), ExprKind::LocalAssign { .. }), "List 首");
+        assert!(
+            matches!(val("x7"), ExprKind::LocalAssign { .. }),
+            "Tuple 首"
+        );
+        assert!(matches!(val("x8"), ExprKind::LocalAssign { .. }), "Set 首");
+        assert!(
+            matches!(val("x9"), ExprKind::LocalAssign { .. }),
+            "Dict 首值"
+        );
+        assert!(
+            matches!(val("x10"), ExprKind::LocalAssign { target } if target == "txt"),
+            "字符串"
+        );
+        assert!(
+            matches!(val("x11"), ExprKind::LocalAssign { target } if target == "42"),
+            "整数"
+        );
+        assert!(
+            matches!(val("x12"), ExprKind::LocalAssign { target } if target == "3.5"),
+            "浮点"
+        );
+        assert!(
+            matches!(val("x13"), ExprKind::LocalAssign { target } if target.ends_with('j')),
+            "复数 {target:?}",
+            target = format!("{:?}", val("x13"))
+        );
+        assert!(
+            matches!(val("x14"), ExprKind::LocalAssign { target } if target == "true"),
+            "布尔"
+        );
+        assert!(
+            matches!(val("x15"), ExprKind::LocalAssign { target } if target == "None"),
+            "None"
+        );
+        assert!(
+            matches!(val("x16"), ExprKind::LocalAssign { target } if target == "bytes"),
+            "bytes"
+        );
+        assert!(
+            matches!(val("x17"), ExprKind::LocalAssign { target } if target == "..."),
+            "省略号"
+        );
+        for t in ["x18", "x19", "x20", "x21"] {
+            assert!(
+                matches!(val(t), ExprKind::Unknown(ref r) if r == "comprehension"),
+                "推导式 {t}"
+            );
+        }
+        assert!(
+            matches!(val("x22"), ExprKind::Unknown(_)),
+            "f-string 未分类"
+        );
+    }
+
+    #[test]
+    fn cov_classify_empty_containers_honest_unknown() {
+        let a = ast("a = []\nb = ()\nc = {}\n");
+        let ev = collect_assign_events(&a);
+        let reason = |t: &str| match &ev.iter().find(|e| e.target == t).unwrap().value {
+            ExprKind::Unknown(r) => r.clone(),
+            other => panic!("{t} 应 Unknown: {other:?}"),
+        };
+        assert_eq!(reason("a"), "empty-list");
+        assert_eq!(reason("b"), "empty-tuple");
+        assert_eq!(reason("c"), "empty-dict");
+    }
+
+    #[test]
+    fn cov_expr_text_truncated_at_80_chars() {
+        let long = "a".repeat(90);
+        let src = format!("v = {long}.attr\n");
+        let a = ast(&src);
+        match expr_kind_at(&a, 0, 4) {
+            Some(ExprKind::Attribute { base, attr }) => {
+                assert!(base.ends_with('…'), "80 字符截断: {base}");
+                assert_eq!(base.chars().count(), 81);
+                assert_eq!(attr, "attr");
+            }
+            other => panic!("应 Attribute: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cov_list_target_unpack_and_non_name_target() {
+        let a = ast("[a, b] = pair\nobj.attr = 5\n[c, [d, e]] = deep\n");
+        let ev = collect_assign_events(&a);
+        let targets: Vec<&str> = ev.iter().map(|e| e.target.as_str()).collect();
+        assert_eq!(
+            targets,
+            ["a", "b", "c", "d", "e"],
+            "List 目标展开;obj.attr 不登记"
+        );
+    }
+
+    #[test]
+    fn cov_pattern_singleton_mapping_rest_class_or() {
+        let a = ast(concat!(
+            "match p:\n",
+            "    case True:\n",
+            "        pass\n",
+            "    case {'k': v, **rest}:\n",
+            "        pass\n",
+            "    case Point(x, y, tag=t):\n",
+            "        pass\n",
+            "    case 1 | 2:\n",
+            "        pass\n",
+        ));
+        let ev = collect_assign_events(&a);
+        let targets: Vec<&str> = ev.iter().map(|e| e.target.as_str()).collect();
+        assert!(targets.contains(&"v"), "映射值绑定");
+        assert!(targets.contains(&"rest"), "映射 **rest 绑定");
+        assert!(
+            targets.contains(&"x") && targets.contains(&"y"),
+            "类模式位置参数绑定"
+        );
+        assert!(targets.contains(&"t"), "类模式关键字模式绑定");
+    }
+
+    #[test]
+    fn cov_ann_aug_assign_events() {
+        let a = ast("x: T = build()\ny: T\nz += other.load()\n");
+        let ev = collect_assign_events(&a);
+        assert!(matches!(
+            local_binding_at(&ev, 0, 9, "x").map(|e| &e.value),
+            Some(ExprKind::Call { .. })
+        ));
+        let y = local_binding_at(&ev, 1, 1, "y").unwrap();
+        assert!(
+            matches!(&y.value, ExprKind::Unknown(r) if r == "annassign-no-value"),
+            "无值注解赋值"
+        );
+        assert!(matches!(
+            local_binding_at(&ev, 2, 5, "z").map(|e| &e.value),
+            Some(ExprKind::Call { .. })
+        ));
+    }
+
+    #[test]
+    fn cov_nested_walrus_in_all_walk_expr_arms() {
+        let a = ast(concat!(
+            "v0 = d[(i := 0)]\n",            // Subscript value+slice
+            "v1 = f(k=(w := 1))\n",          // Call keywords
+            "v2 = a + (w := 1)\n",           // BinOp right
+            "v3 = -(w := 1)\n",              // UnaryOp
+            "v4 = a and (w := 1)\n",         // BoolOp
+            "v5 = (w := 1) if c else b\n",   // IfExp test
+            "v6 = await (w := 1)\n",         // Await
+            "v7 = [(w := 1)]\n",             // List elt
+            "v8 = ((w := 1),)\n",            // Tuple elt
+            "v9 = {(w := 1)}\n",             // Set elt
+            "v10 = {(w := 1): q}\n",         // Dict key
+            "v11 = f'{(w := 1)}'\n",         // f-string 插值
+            "v12 = f'{(w5 := 1)}' f'lit'\n", // 隐式拼接 f-string(非单件)
+            "while (m := cond()):\n",        // While test
+            "    pass\n",
+            "if a():\n",
+            "    pass\n",
+            "elif (m2 := check()):\n", // elif test
+            "    pass\n",
+            "def fn():\n",
+            "    return (r := inner())\n", // Return value
+            "class C:\n",
+            "    inner = (q := 1)\n", // ClassDef body
+        ));
+        let ev = collect_assign_events(&a);
+        let targets: Vec<&str> = ev.iter().map(|e| e.target.as_str()).collect();
+        for name in [
+            "i", "w", "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11",
+            "m", "m2", "r", "q",
+        ] {
+            assert!(targets.contains(&name), "缺 {name}: {targets:?}");
+        }
+    }
+
+    #[test]
+    fn cov_find_expr_at_direct_hits_per_stmt_kind() {
+        let a = ast(concat!(
+            "v0 = repo.load()\n",  // 0
+            "v1: T = data['x']\n", // 1
+            "v2 += other.attr\n",  // 2
+            "repo.save(v2)\n",     // 3
+            "for it in gen():\n",  // 4
+            "    pass\n",
+            "while cond():\n", // 6
+            "    pass\n",
+            "if a():\n", // 8
+            "    pass\n",
+            "elif b():\n", // 10
+            "    pass\n",
+            "with ctx():\n", // 12
+            "    pass\n",
+            "def fn():\n",               // 14
+            "    return inner.call()\n", // 15
+            "class C:\n",                // 17
+            "    attr = obj.x\n",        // 18
+            "try:\n",                    // 19
+            "    maybe()\n",             // 20
+            "except E:\n",               // 21
+            "    handle()\n",            // 22
+            "finally:\n",
+            "    done()\n",  // 23
+            "if a():\n",     // 24
+            "    inner()\n", // 25
+            "elif b():\n",   // 26
+            "    other()\n", // 27
+            "else:\n",       // 28
+            "    final()\n", // 29
+        ));
+        let call_at = |line: usize, col: usize| {
+            matches!(expr_kind_at(&a, line, col), Some(ExprKind::Call { .. }))
+        };
+        assert!(call_at(0, 5), "Assign RHS 直击");
+        assert!(
+            matches!(expr_kind_at(&a, 1, 10), Some(ExprKind::Subscript { .. })),
+            "AnnAssign RHS 直击"
+        );
+        assert!(
+            matches!(expr_kind_at(&a, 2, 6), Some(ExprKind::Attribute { .. })),
+            "AugAssign RHS 直击"
+        );
+        assert!(call_at(3, 1), "Expr 语句直击");
+        assert!(call_at(4, 11), "For iter 直击");
+        assert!(call_at(6, 7), "While test 直击");
+        assert!(call_at(8, 4), "If test 直击");
+        assert!(call_at(10, 6), "elif test 直击");
+        assert!(call_at(12, 6), "With 上下文直击");
+        assert!(call_at(15, 12), "Return 直击(经 FunctionDef 下钻)");
+        assert!(
+            matches!(expr_kind_at(&a, 17, 12), Some(ExprKind::Attribute { .. })),
+            "ClassDef 体下钻直击"
+        );
+        assert!(call_at(19, 4), "try 体直击");
+        assert!(call_at(21, 4), "except 体直击");
+        assert!(call_at(23, 4), "finally 直击");
+        assert!(
+            matches!(expr_kind_at(&a, 2, 1), Some(ExprKind::Attribute { .. })),
+            "AugAssign 目位列询走回退最近赋值事件(顺带走 walk 全语句:Expr 语句/裸 except)"
+        );
+        // 回退路径钉板:查询位落在无表达式区,回退最近赋值事件
+        assert!(
+            matches!(expr_kind_at(&a, 3, 1), Some(ExprKind::Call { .. })),
+            "Expr 语句位也命中;此处无先前同名路径歧义"
+        );
+    }
+
+    #[test]
+    fn cov_if_elif_else_body_hits_and_annassign_no_value() {
+        let a = ast(concat!(
+            "q: T\n",        // 0 无值注解赋值
+            "if a():\n",     // 1
+            "    inner()\n", // 2
+            "elif b():\n",   // 3
+            "    other()\n", // 4
+            "else:\n",       // 5
+            "    final()\n", // 6
+        ));
+        let call_at = |l, c| matches!(expr_kind_at(&a, l, c), Some(ExprKind::Call { .. }));
+        assert!(call_at(2, 4), "if 体下钻命中(test 不含点位)");
+        assert!(call_at(4, 4), "elif 体下钻命中");
+        assert!(call_at(6, 4), "else 体下钻命中(无 test 子句)");
+        // 无值注解赋值:find 无值可查走 None,回退到事件表
+        assert!(
+            matches!(expr_kind_at(&a, 0, 1), Some(ExprKind::Unknown(r)) if r == "annassign-no-value"),
+            "无值 AnnAssign 走事件回退"
+        );
+    }
+
+    #[test]
+    fn cov_multiline_rhs_start_line_query() {
+        let a = ast("v = repo.load(\n    a.b\n)\n");
+        // 查询在 RHS 起始行、区间末端在后续行:起始行整行含入
+        assert!(
+            matches!(expr_kind_at(&a, 0, 6), Some(ExprKind::Call { .. })),
+            "跨行 RHS 起始行查询命中"
+        );
+    }
 }
