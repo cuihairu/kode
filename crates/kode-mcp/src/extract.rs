@@ -1573,4 +1573,366 @@ mod tests {
         let err = tmx_nodes(project(), "notamap.tmx", text).unwrap_err();
         assert!(err.contains("root element is <root>"), "{err}");
     }
+
+    // ---- COV-006 覆盖提满批(2026-11-19):markdown 空标题序号名/python 倒置
+    // ---- 块/单元格全类型/xlsx 空表头·空行·空 sheet·行帽/csv 形状/json 根
+    // ---- 数组·null·深度帽·双帽/tmx 组嵌套·命名 fallback·诊断注记。 ----
+
+    #[test]
+    fn markdown_empty_heading_gets_ordinal_section_name() {
+        // 空标题(## 无文本)→ 具名序号 fallback,不产空名 section
+        let text = "# Title\n\n##\n\nbody\n";
+        let nodes = markdown_nodes(project(), "docs/e.md", text);
+        assert!(nodes
+            .iter()
+            .any(|n| n.kind == NodeKind::Section && n.name == "section 2"));
+    }
+
+    #[test]
+    fn python_symbol_with_inverted_span_yields_empty_block() {
+        // end_line < line(倒置):start >= end → 空块,不 panic
+        let sym = PySymbol {
+            name: "ghost".to_string(),
+            kind: "function",
+            class: None,
+            file: std::path::PathBuf::from("ghost.py"),
+            line: 3,
+            end_line: 2,
+        };
+        let nodes = python_nodes_from_symbols(
+            project(),
+            "scripts/ghost.py",
+            "a\nb\nc\nd\n",
+            std::slice::from_ref(&sym),
+        );
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].content, "");
+    }
+
+    #[test]
+    fn cell_text_covers_all_calamine_variants() {
+        use calamine::{CellErrorType, ExcelDateTime, ExcelDateTimeType};
+        assert_eq!(cell_text(&calamine::Data::Empty), "");
+        assert_eq!(cell_text(&calamine::Data::String("s".into())), "s");
+        assert_eq!(cell_text(&calamine::Data::Float(3.0)), "3"); // 整形浮点走 i64 格式
+        assert_eq!(cell_text(&calamine::Data::Float(1.5)), "1.5");
+        assert_eq!(cell_text(&calamine::Data::Int(7)), "7");
+        assert_eq!(cell_text(&calamine::Data::Bool(true)), "true");
+        assert_eq!(
+            cell_text(&calamine::Data::DateTime(ExcelDateTime::new(
+                45943.5,
+                ExcelDateTimeType::DateTime,
+                false
+            ))),
+            "45943.5"
+        );
+        assert_eq!(
+            cell_text(&calamine::Data::DateTimeIso("2024-01-01".into())),
+            "2024-01-01"
+        );
+        assert_eq!(
+            cell_text(&calamine::Data::DurationIso("PT1H".into())),
+            "PT1H"
+        );
+        assert_eq!(
+            cell_text(&calamine::Data::Error(CellErrorType::Div0)),
+            "error #DIV/0!"
+        );
+        // col_letter 多字母进位(26 → AA)
+        assert_eq!(col_letter(0), "A");
+        assert_eq!(col_letter(25), "Z");
+        assert_eq!(col_letter(26), "AA");
+        assert_eq!(col_letter(27), "AB");
+    }
+
+    #[test]
+    fn excel_fixture_empty_header_row_and_sheet_arms() {
+        let xlsx = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/kb/coverage.xlsx");
+        let nodes = excel_nodes(project(), "tables/coverage.xlsx", &xlsx).unwrap();
+        // types sheet:A1 空表头 → 无空名列节点;整空行(第3行)跳过
+        assert!(nodes.iter().any(|n| n.kind == NodeKind::ExcelSheet
+            && n.name == "types"
+            && n.content.contains("id | tag")));
+        assert!(!nodes
+            .iter()
+            .any(|n| n.kind == NodeKind::ExcelColumn && n.name == "types."));
+        let types_rows: Vec<&str> = nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::ExcelRow && n.name.starts_with("types.row"))
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(types_rows, vec!["types.row2", "types.row4"]);
+        assert!(nodes
+            .iter()
+            .any(|n| n.name == "types.row2" && n.content.contains("sword")));
+        // 完全空 sheet:无表头仍有 sheet 节点(range 兜底 A1)
+        let blank = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::ExcelSheet && n.name == "blank")
+            .expect("blank sheet node");
+        assert!(blank.content.contains("sheet blank"));
+        assert!(matches!(
+            &blank.location,
+            SourceLocation::Excel { range, .. } if range == "A1:A1"
+        ));
+    }
+
+    #[test]
+    fn excel_corrupt_sheet_yields_honest_unreadable_node() {
+        // zip 容器完好、单 sheet XML 打碎:工作簿可开,该 sheet cells 不可读
+        // → 诚实 unreadable 节点(错误可见,绝不吞),其余 sheet 正常索引
+        let xlsx =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/kb/corrupt_sheet.xlsx");
+        let nodes = excel_nodes(project(), "tables/corrupt_sheet.xlsx", &xlsx).unwrap();
+        let unreadable: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::ExcelSheet && n.content.contains("unreadable"))
+            .collect();
+        assert_eq!(unreadable.len(), 1, "exactly one unreadable sheet");
+        assert!(unreadable[0].content.contains("cells could not be parsed"));
+        assert!(matches!(
+            &unreadable[0].location,
+            SourceLocation::Excel { range, .. } if range == "unknown"
+        ));
+        // 打碎的是最后一个 sheet(many):types 的行节点仍在
+        assert!(nodes
+            .iter()
+            .any(|n| n.kind == NodeKind::ExcelRow && n.name == "types.row2"));
+    }
+
+    #[test]
+    fn excel_fixture_rows_cap_note_counts_exact() {
+        let xlsx = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/kb/coverage.xlsx");
+        let nodes = excel_nodes(project(), "tables/coverage.xlsx", &xlsx).unwrap();
+        let many = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::ExcelSheet && n.name == "many")
+            .expect("many sheet node");
+        assert!(
+            many.content.contains("rows indexed 200/205, capped at 200"),
+            "cap note must be exact: {}",
+            many.content
+        );
+        assert_eq!(
+            nodes
+                .iter()
+                .filter(|n| n.kind == NodeKind::ExcelRow && n.name.starts_with("many.row"))
+                .count(),
+            200
+        );
+    }
+
+    #[test]
+    fn csv_empty_rows_headers_and_quote_toggle() {
+        let dir = std::env::temp_dir().join(format!("kode_cov6_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("shapes.csv");
+        std::fs::write(&path, b"\"name\",,qty\nsword,2,\n,,\nbow,3,x\n").unwrap();
+        let nodes = csv_nodes(project(), "tables/shapes.csv", &path).unwrap();
+        // 引号翻转参与分隔符判定;空表头格不出列节点;全空行(第3行)不出行节点;
+        // 空行计入 total 但不索引 → 注记 "indexed 2/4"(现状钉:非 200 帽也注记)
+        let sheet = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::ExcelSheet)
+            .expect("sheet node");
+        assert!(sheet.content.contains("rows indexed 2/4, capped at 200"));
+        assert!(!nodes
+            .iter()
+            .any(|n| n.kind == NodeKind::ExcelColumn && n.name == "shapes."));
+        assert!(nodes
+            .iter()
+            .any(|n| n.kind == NodeKind::ExcelRow && n.name == "shapes.row4"));
+        assert!(!nodes.iter().any(|n| n.name == "shapes.row3"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn csv_rows_cap_note_counts_exact() {
+        let dir = std::env::temp_dir().join(format!("kode_cov6b_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("big.csv");
+        let mut text = String::from("n\n");
+        for i in 1..=205 {
+            text.push_str(&format!("{i}\n"));
+        }
+        std::fs::write(&path, text.as_bytes()).unwrap();
+        let nodes = csv_nodes(project(), "tables/big.csv", &path).unwrap();
+        let sheet = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::ExcelSheet)
+            .expect("sheet node");
+        // 表头行计入 total(206=1 表头+205 数据),索引帽 200
+        assert!(
+            sheet
+                .content
+                .contains("rows indexed 200/206, capped at 200"),
+            "cap note must be exact: {}",
+            sheet.content
+        );
+        assert_eq!(
+            nodes
+                .iter()
+                .filter(|n| n.kind == NodeKind::ExcelRow)
+                .count(),
+            200
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn json_root_array_null_leaf_and_depth_cap() {
+        // 根数组:子路径为纯十进制下标;null 叶以 "null" 入索引
+        let nodes = json_nodes(project(), "res/lut.json", "[null, 1]").unwrap();
+        assert!(nodes.iter().any(|n| n.name == "0" && n.content == "null"));
+        assert!(nodes.iter().any(|n| n.name == "1" && n.content == "1"));
+        // 20 层嵌套数组:深度 16 停(第 17 层不计 discovered),只留深度注记
+        let mut text = String::new();
+        for _ in 0..20 {
+            text.push('[');
+        }
+        text.push('7');
+        for _ in 0..20 {
+            text.push(']');
+        }
+        let nodes = json_nodes(project(), "deep.json", &text).unwrap();
+        let root = nodes.iter().find(|n| n.name == "deep").expect("root");
+        assert!(root.content.contains("depth capped at 16"));
+        assert!(!root.content.contains("paths indexed"));
+    }
+
+    #[test]
+    fn json_keys_and_depth_both_capped() {
+        // 301 键 + 1 个 20 层深值:键帽与深度帽同时触发
+        let mut text = String::from("{");
+        for i in 0..300 {
+            if i > 0 {
+                text.push(',');
+            }
+            text.push_str(&format!("\"k{i}\":{i}"));
+        }
+        text.push_str(",\"deep\":");
+        let mut v = String::from("7");
+        for _ in 0..20 {
+            v = format!("[{v}]");
+        }
+        text.push_str(&v);
+        text.push('}');
+        let nodes = json_nodes(project(), "both.json", &text).unwrap();
+        assert_eq!(nodes.len(), MAX_JSON_KEYS);
+        let root = nodes.iter().find(|n| n.name == "both").expect("root");
+        assert!(
+            root.content.contains("capped at 256"),
+            "keys cap must be noted: {}",
+            root.content
+        );
+        assert!(
+            root.content.contains("depth capped at 16"),
+            "depth cap must be noted too: {}",
+            root.content
+        );
+    }
+
+    #[test]
+    fn tmx_group_nesting_fallback_names_and_unknown_children() {
+        let text = "<map version=\"1.10\">\n\
+                    <properties><property name=\"p\"/></properties>\n\
+                    <tileset firstgid=\"2\"><image source=\"../tiles/dungeon.png\"/></tileset>\n\
+                    <tileset firstgid=\"4\" name=\"extra\"><tile id=\"0\"/><image width=\"8\"/></tileset>\n\
+                    <tileset firstgid=\"9\" source=\"../ext/cave.tsx\"/>\n\
+                    <imagelayer id=\"5\" name=\"bg\"/>\n\
+                    <layer id=\"6\" name=\"nosize\"/>\n\
+                    <objectgroup id=\"7\" name=\"empty\"/>\n\
+                    <objectgroup id=\"8\" name=\"objs\"><object name=\"flag\" x=\"1\"/></objectgroup>\n\
+                    <group name=\"ui\">\n\
+                    <layer id=\"8\" name=\"hud\" width=\"2\" height=\"2\"><data encoding=\"base64\"/></layer>\n\
+                    </group>\n\
+                    </map>\n";
+        let nodes = tmx_nodes(project(), "res/maps/level02.tmx", text).unwrap();
+        // 命名 fallback:无 name/source → tileset{N};source 无 name → stem
+        let tilesets: Vec<&str> = nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::TmxTileset)
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(tilesets, vec!["tileset1", "extra", "cave"]);
+        // 非 image 子元素与无 source 的 image:不追加面,不 panic
+        let extra = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxTileset && n.name == "extra")
+            .unwrap();
+        assert!(!extra.content.contains("image"));
+        // 内联 image 归 tileset 面
+        let ts1 = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxTileset && n.name == "tileset1")
+            .unwrap();
+        assert!(ts1.content.contains("image ../tiles/dungeon.png"));
+        // imagelayer 标签面 + 无宽高 layer 不带尺寸
+        let bg = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxLayer && n.name == "bg")
+            .unwrap();
+        assert!(bg.content.starts_with("image layer bg"));
+        let nosize = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxLayer && n.name == "nosize")
+            .unwrap();
+        // 无 width/height:内容无尺寸段(整句钉现状)
+        assert_eq!(
+            nosize.content,
+            "tile layer nosize encoding=unknown (tile data not indexed)"
+        );
+        // 空 objectgroup 无 objects 注记;无 id object 不带括号后缀
+        let empty = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxObjectGroup && n.name == "empty")
+            .unwrap();
+        assert!(!empty.content.contains("objects:"));
+        let objs = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxObjectGroup && n.name == "objs")
+            .unwrap();
+        assert!(objs.content.contains("objects: flag"));
+        assert!(!objs.content.contains("flag("));
+        // group 内 layer 正常下钻
+        assert!(nodes
+            .iter()
+            .any(|n| n.kind == NodeKind::TmxLayer && n.name == "hud"));
+    }
+
+    #[test]
+    fn tmx_deep_group_nesting_is_capped() {
+        // 34 层 group:depth>32 的组不再展开,底层 layer 不产节点
+        let mut text = String::from("<map>\n");
+        for _ in 0..34 {
+            text.push_str("<group>\n");
+        }
+        text.push_str("<layer id=\"1\" name=\"bottom\"/>\n");
+        for _ in 0..34 {
+            text.push_str("</group>\n");
+        }
+        text.push_str("</map>\n");
+        let nodes = tmx_nodes(project(), "res/maps/deep.tmx", &text).unwrap();
+        assert!(nodes.iter().any(|n| n.kind == NodeKind::TmxMap));
+        assert!(
+            nodes.iter().all(|n| n.kind != NodeKind::TmxLayer),
+            "超深 layer 不得产出"
+        );
+    }
+
+    #[test]
+    fn tmx_xml_diagnostics_note_in_map_summary() {
+        // map 未闭合:容错解析记 UnclosedElement 诊断,根仍是 map,注记入摘要
+        let text = "<map version=\"1.10\">\n<layer id=\"1\" name=\"x\"/>\n";
+        let nodes = tmx_nodes(project(), "res/maps/unclosed.tmx", text).unwrap();
+        let map = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxMap)
+            .expect("map node");
+        assert!(
+            map.content.contains("1 XML diagnostics recovered"),
+            "{}",
+            map.content
+        );
+    }
 }
