@@ -757,7 +757,10 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
           failed: status.failed,
           queued: status.queued,
           running: status.running ? 1 : 0
-        }
+        },
+        // 索引建立时间行(批 B):调度器轮次时间戳同源透传,纯核只格式化
+        lastBuildStartedAt: status.lastBuildStartedAt,
+        lastBuildCompletedAt: status.lastBuildCompletedAt
       };
     },
     timers: {

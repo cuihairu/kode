@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildLanguageServiceStatus,
+  formatIndexBuildTimeLine,
   LanguageServiceStatusController,
   type LanguageServiceStatusInputs,
   type LanguageServiceStatusTimers
@@ -182,5 +183,69 @@ describe('LanguageServiceStatusController (RUST-219)', () => {
     const before = collected;
     controller.refresh();
     expect(collected).toBe(before);
+  });
+});
+
+// 批 B(索引建立时间行):就绪态 tooltip 专属。三钉子=未建无行/就绪有行/
+// 运行中不显示;formatIndexBuildTimeLine 纯函数格式锁(本地时区固定格式,
+// 不随宿主 locale 漂移;耗时分档四档+起止缺失不编耗时)。
+describe('索引建立时间行 (批 B)', () => {
+  it('钉子1:就绪但从未建过(completedAt null/缺省) → tooltip 无建立行', () => {
+    const nullCase = buildLanguageServiceStatus(inputs({ lastBuildCompletedAt: null }));
+    expect(nullCase.tooltip).not.toContain('索引建立');
+    const missingCase = buildLanguageServiceStatus(inputs({}));
+    expect(missingCase.tooltip).not.toContain('索引建立');
+  });
+
+  it('钉子2:就绪且有轮次时间戳 → tooltip 增「索引建立：<时刻>（耗时 …）」行', () => {
+    const completedAt = Date.UTC(2026, 10, 18, 7, 30, 5);
+    const startedAt = completedAt - 83_000;
+    const view = buildLanguageServiceStatus(inputs({ lastBuildStartedAt: startedAt, lastBuildCompletedAt: completedAt }));
+    expect(view.tooltip).toMatch(/索引建立：\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}（耗时 1 分 23 秒）。/);
+    expect(view.tooltip).toContain('索引就绪。');
+    expect(view.tooltip).toContain('点击打开 Project Doctor 健康汇总。');
+  });
+
+  it('钉子3:运行中/失败/未知态不显示建立行(完成时刻只对已就绪有陈述意义)', () => {
+    const stamps = {
+      lastBuildStartedAt: Date.now() - 5000,
+      lastBuildCompletedAt: Date.now()
+    };
+    const busy = buildLanguageServiceStatus(inputs({ ...stamps, index: { failed: 0, queued: 2, running: 1 } }));
+    expect(busy.isBusy).toBe(true);
+    expect(busy.tooltip).not.toContain('索引建立');
+    const failed = buildLanguageServiceStatus(inputs({ ...stamps, index: { failed: 1, queued: 0, running: 0 } }));
+    expect(failed.tooltip).not.toContain('索引建立');
+    const unknown = buildLanguageServiceStatus(inputs({ ...stamps, index: null }));
+    expect(unknown.tooltip).not.toContain('索引建立');
+  });
+});
+
+describe('formatIndexBuildTimeLine 格式锁 (批 B)', () => {
+  const completedAt = Date.UTC(2026, 10, 18, 7, 30, 5);
+
+  it('时刻格式=本地时区 YYYY-MM-DD HH:mm:ss(镜像 Date getter 锁形状与补零)', () => {
+    const line = formatIndexBuildTimeLine(completedAt - 400, completedAt);
+    expect(line).not.toBeNull();
+    const d = new Date(completedAt);
+    const pad = (v: number): string => String(v).padStart(2, '0');
+    const expected = `索引建立：${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}（耗时 400 毫秒）。`;
+    expect(line).toBe(expected);
+  });
+
+  it('耗时分档:毫秒→x.x 秒→x 分 y 秒→x 小时 y 分 z 秒', () => {
+    expect(formatIndexBuildTimeLine(completedAt - 40, completedAt)).toContain('（耗时 40 毫秒）');
+    expect(formatIndexBuildTimeLine(completedAt - 1500, completedAt)).toContain('（耗时 1.5 秒）');
+    expect(formatIndexBuildTimeLine(completedAt - 59_900, completedAt)).toContain('（耗时 59.9 秒）');
+    expect(formatIndexBuildTimeLine(completedAt - 83_000, completedAt)).toContain('（耗时 1 分 23 秒）');
+    expect(formatIndexBuildTimeLine(completedAt - 3_723_000, completedAt)).toContain('（耗时 1 小时 2 分 3 秒）');
+  });
+
+  it('起止缺失/倒挂 → 只给时刻不编耗时;completedAt 缺失 → null', () => {
+    expect(formatIndexBuildTimeLine(undefined, completedAt)).not.toContain('耗时');
+    expect(formatIndexBuildTimeLine(null, completedAt)).not.toContain('耗时');
+    expect(formatIndexBuildTimeLine(completedAt + 1000, completedAt)).not.toContain('耗时');
+    expect(formatIndexBuildTimeLine(completedAt, null)).toBeNull();
+    expect(formatIndexBuildTimeLine(completedAt, undefined)).toBeNull();
   });
 });

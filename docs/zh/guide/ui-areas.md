@@ -84,7 +84,7 @@ Kode 在状态栏右侧最多占九项（VS Code 按优先级排序；Kode 有�
 | 95 | 日志 tail | 控制台日志尾随状态 |
 | 94 | Kode 核心 | kode-server 车道（Rust / Rust 降级 TS / TS / 对拍）。点击看对拍差异日志。配置：`kbengine.core.backend`、`kbengine.core.serverPath` |
 | 93 | Kode MCP | 内建 MCP 服务器状态（已构建 / 未构建 / 已关闭）。点击启停。配置：`kbengine.mcp.enabled`（默认开） |
-| 92 | Kode 索引 | 索引生命周期：`$(check) 就绪` / `$(sync~spin) 运行 n 排队 n` / `$(error) 失败 n` / `$(circle-slash) 未知`（四态，固定判定顺序——刻意没有「部分索引」态，因为调度器没有这个数据面）。点击打开 Project Doctor |
+| 92 | Kode 索引 | 索引生命周期：`$(check) 就绪` / `$(sync~spin) 运行 n 排队 n` / `$(error) 失败 n` / `$(circle-slash) 未知`（四态，固定判定顺序——刻意没有「部分索引」态，因为调度器没有这个数据面）。就绪态 tooltip 附最近一轮建立完成时刻（本地时间）与耗时；从未建完不加该行。点击打开 Project Doctor |
 
 截图：待补（已登记 todo）。
 
