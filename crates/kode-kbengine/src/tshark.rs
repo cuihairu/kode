@@ -63,7 +63,29 @@ pub fn spawn_tshark(
         cmd.stdin(Stdio::null());
     }
 
-    let mut child = cmd.spawn().map_err(|e| {
+    // ETXTBSY 短退避重试:exec 撞上刚落盘/并发更新的二进制(tmpfs 上
+    // 写→exec 竞窗实测偶发,真实 tshark 被包管理器并发更新同面)。三次
+    // 5ms 退避后仍失败才如实上抛。
+    let mut child = None;
+    let mut last_err = None;
+    for _ in 0..3 {
+        match cmd.spawn() {
+            Ok(c) => {
+                child = Some(c);
+                break;
+            }
+            Err(e) if e.raw_os_error() == Some(26) => {
+                last_err = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(e) => {
+                last_err = Some(e);
+                break;
+            }
+        }
+    }
+    let mut child = child.ok_or_else(|| {
+        let e = last_err.expect("spawn error captured");
         format!(
             "failed to launch tshark binary '{bin}' ({e}); install Wireshark/tshark \
              or pass --tshark <path>"
@@ -182,15 +204,19 @@ mod tests {
         dir
     }
 
-    /// 可执行脚本落盘(hermetic fake tshark 的载体)。
+    /// 可执行脚本落盘(hermetic fake tshark 的载体)。写临时名再原子 rename:
+    /// 目标路径出现时写句柄必已闭合,杜绝 exec 撞上残留写句柄的
+    /// ETXTBSY(实测偶发)。
     #[cfg(unix)]
     fn write_script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let script = dir.join(name);
-        std::fs::write(&script, body).unwrap();
-        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        let staging = dir.join(format!("{name}.staging"));
+        std::fs::write(&staging, body).unwrap();
+        let mut perms = std::fs::metadata(&staging).unwrap().permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&script, perms).unwrap();
+        std::fs::set_permissions(&staging, perms).unwrap();
+        std::fs::rename(&staging, &script).unwrap();
         script
     }
 
