@@ -604,4 +604,125 @@ mod tests {
         let found = run("self.addSpaceGeometryMapping(0, 1, 2, 3, {0: {\"a\": 1}})\n");
         assert!(found.is_empty());
     }
+
+    /// RPC 入口全链(此前只测 compute 面):合法参回 items,类型错回 Err。
+    #[test]
+    fn rpc_entry_returns_items_and_rejects_bad_params() {
+        let ok = analyze_space_nav(json!({"text": "self.setSpaceData(\"foo\", \"_mapping\")\n"}))
+            .expect("合法参数必 Ok");
+        assert_eq!(ok["items"].as_array().map(Vec::len), Some(1));
+        assert_eq!(ok["items"][0]["kind"], "mappingKey");
+        // text 类型错(数字)→ 反序列化失败;缺省参(无 text)→ 空文本零项。
+        let err = analyze_space_nav(json!({"text": 42})).expect_err("类型错必 Err");
+        assert!(err.starts_with("invalid params"), "{err}");
+        let empty = analyze_space_nav(json!({})).expect("缺省参走 Default");
+        assert_eq!(empty["items"].as_array().map(Vec::len), Some(0));
+    }
+
+    /// 空/异形文本早退。
+    #[test]
+    fn empty_text_yields_no_items() {
+        assert!(run("").is_empty());
+    }
+
+    /// TS `\s` 全谱(NBSP/行分隔/数理空格/表意空格)在各分隔位都当空白。
+    #[test]
+    fn exotic_js_whitespace_still_separates_tokens() {
+        let found = run("self.setSpaceData\u{a0}(\u{2003}x,\u{2028}'_mapping')\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, "mappingKey");
+        assert_eq!(found[0].length, 10);
+        let found = run("self\u{2029}.\u{3000}navigate\u{205f}(\u{1680}1)\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, "navigateNoGuard");
+    }
+
+    /// code_mask 三引号(开/闭)与转义(串内 \" 与串尾孤立反斜杠)整段非码。
+    #[test]
+    fn triple_quotes_and_escapes_mask_calls_inside_strings() {
+        let text = "s = \"a\\\"b\"\nt = '''self.navigate(1)'''\nu = \"\"\"self.setSpaceData(x, \"_mapping\")\"\"\"\nv = 'tail\\\n";
+        assert!(run(text).is_empty(), "全部命中均在掩码区");
+        // 掩码外真调用仍报(证明掩码没有吞掉正常代码)。
+        let found = run("s = \"a\\\"b\"\nself.navigate(1)\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, "navigateNoGuard");
+    }
+
+    /// match_mapping_key 全谱拒绝臂 + 空白容忍正形。
+    #[test]
+    fn mapping_key_reject_arms_and_space_tolerant_forms() {
+        // 关键字与 ( 之间空白 + 实参两侧空白:仍命中。
+        let found = run("setSpaceData ( x , \"_mapping\")\n");
+        assert_eq!(found.len(), 1);
+        // del 变体同规则。
+        let found = run("delSpaceData(\tx,\n  '_mapping')\n");
+        assert_eq!(found.len(), 1);
+        // 拒绝臂:关键字后非 ( / 实参空 / 无逗号 / 第二参非引号 /
+        // 键体截断 / 键体非 _mapping / 闭引号不配对。
+        for text in [
+            "setSpaceData;\n",
+            "setSpaceData(, \"_mapping\")\n",
+            "setSpaceData(x)\n",
+            "setSpaceData(x, y)\n",
+            "setSpaceData(x, \"_mapp",
+            "setSpaceData(x, \"_notmapping\")\n",
+            "setSpaceData(x, \"_mapping')\n",
+        ] {
+            assert!(run(text).is_empty(), "须无报告: {text}");
+        }
+    }
+
+    /// match_nav_call 空白容忍 + navigatePathPoints 长名 + 无括号拒绝。
+    #[test]
+    fn nav_call_spaces_long_name_and_rejects() {
+        // . 两侧空白 + 长方法名 navigatePathPoints(18)+ ( 前空白。
+        let found = run("def f(self):\n    self . navigatePathPoints (1)\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, "navigateNoGuard");
+        assert_eq!(found[0].length, 18, "navigatePathPoints 方法名长 18");
+        // 方法名后无 ( :EOF 截断拒绝。
+        assert!(run("self.navigate").is_empty());
+    }
+
+    /// canNavigate 右词界:canNavigateX 不算守卫。
+    #[test]
+    fn can_navigate_right_boundary_rejects_suffix() {
+        let found = run("def f(self):\n    if self.canNavigateX():\n        self.navigate(1)\n");
+        assert_eq!(found.len(), 1, "假守卫不拦截报告");
+        assert_eq!(found[0].kind, "navigateNoGuard");
+    }
+
+    /// match_mapping_call / find_params_dict_span 边界:空白、无 dict、EOF 未闭。
+    #[test]
+    fn mapping_call_span_edges() {
+        // 关键字与 ( 之间空白 + dict 顶层引号键仍报。
+        let found = run("self.addSpaceGeometryMapping ({\"a\": 1})\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, "paramsStringKey");
+        // 关键字后非 (。
+        assert!(run("self.addSpaceGeometryMapping;\n").is_empty());
+        // 调用无 dict:depth 归零即收手,不误报。
+        assert!(run("self.addSpaceGeometryMapping(0, 1)\n").is_empty());
+        // 调用 EOF 未闭合:扫描到尾保守返回。
+        assert!(run("self.addSpaceGeometryMapping(0,").is_empty());
+        // dict 值串内转义引号:括号深度扫描跳字符串不受影响,int 顶层键不报。
+        assert!(run("self.addSpaceGeometryMapping({0: \"a\\\"b\"})\n").is_empty());
+    }
+
+    /// params dict 顶层键微臂:键内转义引号 / 闭引号后空白再冒号 / 未闭合保守收手。
+    #[test]
+    fn params_dict_key_edge_arms() {
+        // 键 "a\"b" 含转义引号:token 逐字符跳转义后整体收键。
+        let found = run("self.addSpaceGeometryMapping({\"a\\\"b\": 1})\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].key.as_deref(), Some("\"a\\\"b\""));
+        // 闭引号与冒号之间的空白:跳过后仍判键位。
+        let found = run("self.addSpaceGeometryMapping({ \"a\" : 1})\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].key.as_deref(), Some("\"a\""));
+        // 未闭合引号体:直接对 top_level_quoted_keys 断保守收手契约
+        //(compute 管线下 dict 闭括号会被未闭串吞掉,此臂只在裸调用面可达)。
+        let body: Vec<u16> = "\"unclosed".encode_utf16().collect();
+        assert!(top_level_quoted_keys(&body).is_empty());
+    }
 }
