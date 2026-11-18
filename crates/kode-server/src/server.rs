@@ -245,7 +245,6 @@ impl ServerState {
         crate::message_table::register(&mut rpc);
         crate::process_topology::register(&mut rpc);
         crate::python_callgraph::register(&mut rpc);
-        crate::ruff_format::register(&mut rpc);
         crate::ruff_lint::register(&mut rpc);
         crate::semantics_rpc::register(&mut rpc);
         // wire/encode|decode 不注册:零 TS 消费者,kode-mcp 直复用 wire_codec

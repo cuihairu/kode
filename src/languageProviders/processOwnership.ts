@@ -1,78 +1,163 @@
-// 进程归属 vscode 面(PROC-TAG-001 立项 2026-11-13;PROC-BREADCRUMB-001
-// 改面 2026-11-18):判定链与互链推导在纯核 src/backend/processOwnershipLens,
-// 本文件保留 openCell/openBase 切换命令(面包屑子节点 detail 的切换后端)
-// 并承载 python 面包屑合成根 provider。文件顶部进程 CodeLens 渲染面已按
-// 用户令移除(面包屑常驻可见,头部镜属重复展示;kbengine.codeLens.
-// processOwnership 设置项连同声明一并删除,不留死开关)。
+// 文件顶部进程归属 CodeLens(PROC-TAG-001,用户令 2026-11-13):Python
+// 实体脚本顶部一行镜,标当前文件所属进程(scripts/<role>/ 目录判定),
+// 其他进程存在同名对应文件(cell/Hero.py ↔ base/Hero.py ↔ bots/Hero.py)
+// 时并列出可点击 tag,点击走既有源码 reveal 命令快速切换。判定链与互链
+// 推导在纯核 src/backend/processOwnershipLens.ts,本文件只做 vscode 面
+// (配置闸/def 佐证的解析链/命令装配/刷新源)。独立开关
+// kbengine.codeLens.processOwnership(批154 惯例:每类 lens 一枚开关)。
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { buildPythonProcessBreadcrumb } from '../backend/processOwnershipLens';
+import { EntityMappingManager } from '../entityMapping';
+import { findPythonMethodDeclarations } from '../backend/rpcCodeLens';
+import {
+  buildProcessOwnershipSpec,
+  processFromDefSections,
+  type ProcessName
+} from '../backend/processOwnershipLens';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../sourceRevealCommand';
+import { getLanguageFeatureConfig } from './shared';
 
-/**
- * python 面包屑合成根(第二刀):scripts/<role>/ 目录布局命中才返回节点
- * (判不出=null 零干扰 Pylance);节点 range=全文档,Outline 合并多
- * provider 结果时按 range 排序自然置首。与 Pylance 符号共存(VS Code 合并
- * 所有 DocumentSymbolProvider 输出)。当前进程(目录判定)带▸排首位,
- * children=互链对端段(Event,detail=对端路径+快捷键提示;无本文件锚点,
- * selectionRange 落文件头)。
- */
-export class ProcessBreadcrumbPythonSymbolProvider implements vscode.DocumentSymbolProvider {
+/** 文件事件载荷:真 API 两事件均带 files;fake 桩 delete 臂历史形状为
+ * uris,双形并读保持桩/真机同一条事件链(只关心路径是否 .py) */
+const fileEventPaths = (
+  event: { files?: ReadonlyArray<{ fsPath: string }>; uris?: ReadonlyArray<{ fsPath: string }> }
+): string[] => [...(event.files ?? []), ...(event.uris ?? [])].map(entry => entry.fsPath);
+
+export class ProcessOwnershipCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+  private readonly unsubscribeFileEvents: () => void;
   private readonly fileExists: (path: string) => boolean;
 
-  constructor(deps: { fileExists?: (path: string) => boolean } = {}) {
+  constructor(
+    private entityMappingManager: EntityMappingManager,
+    deps: { fileExists?: (path: string) => boolean } = {}
+  ) {
     this.fileExists = deps.fileExists ?? ((path: string) => fs.existsSync(path));
+    // 同名对应文件的新建/删除改变互链面:.py 文件事件即 fire 重取
+    // (文档自身变更 VS Code 自动重取,不需要这里管)
+    const onFileEvent = (event: { files?: ReadonlyArray<{ fsPath: string }>; uris?: ReadonlyArray<{ fsPath: string }> }): void => {
+      if (fileEventPaths(event).some(fsPath => fsPath.endsWith('.py'))) {
+        this.onDidChangeCodeLensesEmitter.fire();
+      }
+    };
+    const created = vscode.workspace.onDidCreateFiles(onFileEvent);
+    const deleted = vscode.workspace.onDidDeleteFiles(onFileEvent);
+    this.unsubscribeFileEvents = () => {
+      created.dispose();
+      deleted.dispose();
+    };
   }
 
-  provideDocumentSymbols(
+  // 批154 惯例:独立开关 kbengine.codeLens.processOwnership,关只熄这一类;
+  // 开关变更由 extension 配置监听 fire 即时生效
+  fireConfigurationChanged(): void {
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
+  dispose(): void {
+    this.unsubscribeFileEvents();
+    this.onDidChangeCodeLensesEmitter.dispose();
+  }
+
+  async provideCodeLenses(
     document: vscode.TextDocument,
-    _token?: vscode.CancellationToken
-  ): vscode.DocumentSymbol[] | null {
-    const spec = buildPythonProcessBreadcrumb(document.fileName, this.fileExists);
-    if (!spec) {
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CodeLens[]> {
+    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
+    if (cancelled() || !getLanguageFeatureConfig().codeLensProcessOwnership) {
+      return [];
+    }
+    // 判定链第一优先级:目录角色 + 同名互链
+    const spec = buildProcessOwnershipSpec(document.fileName, this.fileExists);
+    // 第二优先级:目录判不出时以 def 方法区块佐证(单族才认,不猜)
+    const current = spec?.current ?? (await this.resolveDefEvidenceProcess(document, cancelled));
+    if (cancelled() || !current) {
+      return [];
+    }
+    const lineZero = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
+    const lenses: vscode.CodeLens[] = [
+      // 当前进程纯展示:空命令 id=VS Code 渲染 title 文本但不可点击(无动作
+      // 可执行),tooltip 补判据说明(任务口径「无命令或仅 hover 提示」)
+      new vscode.CodeLens(lineZero, {
+        title: `⚙ ${current}（当前）`,
+        command: '',
+        tooltip: `本文件所属进程:${current}(由 scripts/<role> 目录判定;判不出不出镜)`
+      })
+    ];
+    for (const sibling of spec?.siblings ?? []) {
+      lenses.push(
+        new vscode.CodeLens(lineZero, {
+          title: `⚙ → ${sibling.process}`,
+          command: KBENGINE_SOURCE_REVEAL_COMMAND,
+          arguments: [
+            vscode.Uri.file(sibling.path),
+            { selection: new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0)) }
+          ],
+          tooltip: `点击切换到同名 ${sibling.process} 文件(${sibling.path});base↔cell 亦可走快捷键 ctrl+alt+shift+b/c`
+        })
+      );
+    }
+    return lenses;
+  }
+
+  /**
+   * 判定链第二优先级(def 区块佐证):本文件声明的 def 方法按既有解析链
+   * (resolveMethodDefinition,与 RPC 镜链同源)落段,收齐区块集合后交纯核
+   * 裁定——恰好单一进程族才佐证;Base/Cell 双有=双进程实体,目录判不出时
+   * 无法归属,如实 null。
+   */
+  private async resolveDefEvidenceProcess(
+    document: vscode.TextDocument,
+    cancelled: () => boolean
+  ): Promise<ProcessName | null> {
+    const declarations = findPythonMethodDeclarations(document.getText());
+    const sections = new Set<string>();
+    const resolved = new Set<string>();
+    for (const declaration of declarations) {
+      if (cancelled()) {
+        return null;
+      }
+      if (resolved.has(declaration.methodName)) {
+        continue;
+      }
+      resolved.add(declaration.methodName);
+      try {
+        const location = await this.entityMappingManager.resolveMethodDefinition(
+          document.fileName,
+          declaration.methodName
+        );
+        if (location?.section) {
+          sections.add(location.section);
+        }
+      } catch {
+        // 解析失败=该名无证据,继续后续名(整体不因单名失败放弃)
+      }
+    }
+    if (cancelled()) {
       return null;
     }
-    const fileHead = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
-    // 全文档 range 经 positionAt 换算(真 API 与测试替身同面;lineCount 替身缺)
-    const fullDocument = new vscode.Range(
-      new vscode.Position(0, 0),
-      document.positionAt(document.getText().length)
-    );
-    const root = new vscode.DocumentSymbol(
-      spec.name,
-      `当前进程:${spec.processes[0]}(scripts/<role> 目录判定);其余=同名对端文件。
-base↔cell 快捷键切换 ctrl+alt+shift+b/c(kbengine.processOwnership.openCell/openBase)。`,
-      vscode.SymbolKind.Namespace,
-      fullDocument,
-      fileHead
-    );
-    root.children = spec.children.map(child => new vscode.DocumentSymbol(
-      child.process,
-      `对端同名文件:${child.siblingPath ?? ''};base↔cell 可用快捷键 ctrl+alt+shift+b/c 切换`,
-      vscode.SymbolKind.Event,
-      fullDocument,
-      fileHead
-    ));
-    return [root];
+    return processFromDefSections(sections);
   }
 }
 
 /** 快捷键切换命令(FILE-TIME-001 批,用户令 2026-11-17「最好能绑定快捷键,
  * 如果在 cell 可以可以快速切换到 base」):base↔cell 同名文件双向跳;
- * client/bots 无键,面包屑子节点 detail 携对端路径。目录判定与互链复用
- * 纯核 buildProcessOwnershipSpec(与判定链同一条,不造第二套);
+ * client/bots 无键,CodeLens 点击(reveal)已覆盖。目录判定与互链复用
+ * 纯核 buildProcessOwnershipSpec(与 lens 同一条判定链,不造第二套);
  * 目标缺位如实提示不静默。 */
 export const KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND = 'kbengine.processOwnership.openCell';
 export const KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND = 'kbengine.processOwnership.openBase';
 
 export function registerProcessOwnershipSwitchCommands(context: vscode.ExtensionContext): void {
   const openSibling =
-    (process: 'cellapp' | 'baseapp') =>
+    (process: ProcessName) =>
     async (): Promise<void> => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         return;
       }
-      const spec = buildPythonProcessBreadcrumb(editor.document.fileName, (candidate) =>
+      const spec = buildProcessOwnershipSpec(editor.document.fileName, (candidate) =>
         fs.existsSync(candidate)
       );
       if (!spec) {
@@ -81,12 +166,12 @@ export function registerProcessOwnershipSwitchCommands(context: vscode.Extension
         );
         return;
       }
-      const target = spec.children.find(child => child.process === process);
-      if (!target || !target.siblingPath) {
+      const target = spec.siblings.find(sibling => sibling.process === process);
+      if (!target) {
         void vscode.window.showInformationMessage(`未找到同名 ${process} 对应文件`);
         return;
       }
-      await vscode.window.showTextDocument(vscode.Uri.file(target.siblingPath), { preview: false });
+      await vscode.window.showTextDocument(vscode.Uri.file(target.path), { preview: false });
     };
   context.subscriptions.push(
     vscode.commands.registerCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND, openSibling('cellapp')),

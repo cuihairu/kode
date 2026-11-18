@@ -112,10 +112,6 @@ Python 脚本 self.&lt;属性&gt; 访问处上方显示属性标记 CodeLens
 
 *动态图:* ![属性标记 CodeLens](/config-switch-gifs/codelens-property.gif)
 
-### 已移除：进程归属 CodeLens（`kbengine.codeLens.processOwnership`）
-
-文件顶部进程归属 CodeLens 与其设置项已移除（PROC-BREADCRUMB-001，2026-11-18）：面包屑合成根常驻可见且携带同信息，头部镜属重复展示。判定链（`src/backend/processOwnershipLens.ts`）与 base↔cell 切换命令保留；设置项随面删除，不留死开关。
-
 ## 内联提示
 
 ### 属性类型内联提示 (`kbengine.inlayHints.typeData`)

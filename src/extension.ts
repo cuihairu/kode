@@ -241,6 +241,7 @@ export function activate(context: vscode.ExtensionContext) {
     sharedWorkspaceIndex,
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
+  processOwnershipCodeLensProviderImpl,
     fileModifiedTimeCodeLensProviderImpl,
     engineSpiCodeLensProviderImpl,
     eventCodeLensProviderImpl,
@@ -774,6 +775,7 @@ export function activate(context: vscode.ExtensionContext) {
       eventCodeLensProviderImpl.fireConfigurationChanged();
       propertyCodeLensProviderImpl.fireConfigurationChanged();
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
+      processOwnershipCodeLensProviderImpl.fireConfigurationChanged();
       fileModifiedTimeCodeLensProviderImpl.fireConfigurationChanged();
       engineSpiCodeLensProviderImpl.fireConfigurationChanged();
     }

@@ -44,6 +44,9 @@ export function getLanguageFeatureConfig() {
     // 独立开关(关访问镜不关装载语义提示)
     codeLensPropertyInitOrder: config.get<boolean>('codeLens.propertyInitOrder', true),
     codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true),
+    // PROC-TAG-001:文件顶部进程归属镜链一枚独立开关(目录角色判定+跨进程
+    // 同名互链;判不出不出镜)
+    codeLensProcessOwnership: config.get<boolean>('codeLens.processOwnership', true),
     // FILE-TIME-001:文件顶部修改时间镜一枚独立开关(热更时间半边归
     // IDE-HOT-100 状态点,不重复出镜)
     codeLensFileModifiedTime: config.get<boolean>('codeLens.fileModifiedTime', true),

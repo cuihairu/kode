@@ -107,10 +107,6 @@ export interface SchedulerStatus {
   /** keyed 任务(如首扫)当前状态;无活动任务时为上一次终态 */
   keyedTasks: Record<string, IndexTaskState>;
   metrics: SchedulerMetrics;
-  /** 最近一轮「忙起」时刻(epoch ms);从未跑过任务=null(状态栏不显示建立行) */
-  lastBuildStartedAt: number | null;
-  /** 最近一轮「跑空」时刻(epoch ms;队列清空+无运行任一任务结算后);从未跑完=null */
-  lastBuildCompletedAt: number | null;
 }
 
 interface KeyedEntry {
@@ -149,12 +145,6 @@ export class IndexScheduler {
   };
   private lastInteractiveEnqueueAt = -Number.MAX_VALUE;
   private lastInteractiveEndAt = -Number.MAX_VALUE;
-  // 轮次生命周期时间戳(批 B 索引建立时间面):忙起=空闲后首个任务开跑,
-  // 跑空=任一任务终态后队列空且无运行任务。取消清队(dispose/reset)不算
-  // 跑完——没有「建立完成」事实,不更新 completedAt。
-  private buildActive = false;
-  private buildStartedAt: number | null = null;
-  private buildCompletedAt: number | null = null;
   private readonly interactiveCooldownMs: number;
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
@@ -283,9 +273,7 @@ export class IndexScheduler {
       failed: this.failed,
       cancelled: this.cancelled,
       keyedTasks,
-      metrics: { ...this.metrics },
-      lastBuildStartedAt: this.buildStartedAt,
-      lastBuildCompletedAt: this.buildCompletedAt
+      metrics: { ...this.metrics }
     };
   }
 
@@ -379,10 +367,6 @@ export class IndexScheduler {
     this.queueOrder.splice(this.queueOrder.indexOf(next.id), 1);
     next.state = 'running';
     this.runningId = next.id;
-    if (!this.buildActive) {
-      this.buildActive = true;
-      this.buildStartedAt = Date.now();
-    }
     const operation = startLanguageServiceOperation('index-scheduler', {
       indexGeneration: next.priority
     });
@@ -411,12 +395,6 @@ export class IndexScheduler {
         // 不依赖 Map;queued/running 查询也只看 queueOrder 与 runningId。
         this.tasks.delete(next.id);
         this.pump();
-        // 跑空结算(批 B):pump 递归后仍无运行/排队=本轮索引结束,记完成时刻。
-        // 后台限流挂起的队列(queueOrder 非空)不算跑空。
-        if (this.buildActive && this.runningId === null && this.queueOrder.length === 0) {
-          this.buildActive = false;
-          this.buildCompletedAt = Date.now();
-        }
       });
   }
 

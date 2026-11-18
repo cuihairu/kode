@@ -31,8 +31,7 @@ import { findEngineRoot, formatEngineCompatibilityReport, runCompatibilityCheck,
 import { formatUnresolvedException, parseExceptionSourceLocation, resolveExceptionSource } from '../backend/exceptionSourceLocator';
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
 import { shouldStartKbEngineIndexing } from '../workspaceGate';
-import { findMethodScriptLocationInDef } from '../languageProviders/navigation';
-import type { DefLutConventionResolver, EntityMappingManager } from '../entityMapping';
+import type { EntityMappingManager } from '../entityMapping';
 import type { IndexScheduler } from '../backend/indexScheduler';
 import type { WorkspaceIndex } from '../workspaceIndex';
 
@@ -53,24 +52,6 @@ export interface MonitoringShared {
 
 export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
   const { context, entityMappingManager, indexScheduler, sharedWorkspaceIndex } = deps;
-  // DEF-LUT-001:约定链臂适配——LUT 后台重建需要「父 def/接口脚本里找实现」
-  // (navigation 约定链),而 navigation 依赖 entityMapping(环),故此处开 def
-  // 文档适配注入。落点转 1 基(与解析面同形);文档打不开/无实现 → null。
-  const defLutConventionResolver: DefLutConventionResolver = async (defPath, methodName, section) => {
-    try {
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(defPath));
-      const location = findMethodScriptLocationInDef(document, methodName, section);
-      return location
-        ? {
-            filePath: location.uri.fsPath,
-            line: location.range.start.line + 1,
-            character: location.range.start.character
-          }
-        : null;
-    } catch {
-      return null;
-    }
-  };
   // 初始化监控面板
   const monitoringCollector = new MonitoringCollector(context);
   const monitoringWebView = new MonitoringWebView(context, monitoringCollector);
@@ -424,16 +405,6 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   );
                 }
               }
-              if (cached?.payload.defLut?.length) {
-                // DEF-LUT-001:跳转反查表二次启动载入(逐 def stat 校验,漂移
-                // 拒收);只入表零构建,门控红线不动(此处已在放行块内)
-                const restore = entityMappingManager.restoreDefMethodLutFromDisk(cached.payload.defLut);
-                if (restore.adoptedEntries > 0) {
-                  outputChannel.appendLine(
-                    `索引缓存命中(defLUT):载入 ${restore.adoptedDefs} def / ${restore.adoptedEntries} 条,漂移拒收 ${restore.rejectedDefs}`
-                  );
-                }
-              }
               if (warmupStageDefs?.some(stage => stage.cached)) {
                 reportWarmupDetail?.('索引缓存命中(跳过重扫) ⏭');
               }
@@ -452,36 +423,22 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
             );
             // 完成后异步写回(队列尾 setImmediate 节拍,不阻塞交互;失败/取消
             // 不写——与完成标记同口径,不基于残缺轮落盘)。写失败静默降级。
-            // DEF-LUT-001:先排低优先级 LUT 重建(keyed 任务,交互限流;门控
-            // 放行块内才发起),落定后再写回——defLut 产物不基于空表落盘。
-            if (final === 'completed') {
-              // 门控已放行(本块只在 gated 分支),幂等补一手 ensureStartup——
-              // 防调度次序抖动下 warmup 先于语言服务放行回调完成,LUT 重建
-              // 因 startupStarted=false 空转(零构建红线由放行块本身承担)。
-              entityMappingManager.ensureStartup();
-              const lutBuilt = entityMappingManager
-                .scheduleDefMethodLutRebuild(defLutConventionResolver)
-                .catch(() => undefined);
-              if (cacheDir) {
-                void lutBuilt.then(() => {
-                  setImmediate(() => {
-                    void (async () => {
-                      try {
-                        const ok = writeIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion }, {
-                          discovery: await entityMappingManager.captureDefParseCacheSnapshot(),
-                          eventIndex: await sharedWorkspaceIndex.captureEventIndexSnapshot(),
-                          defLut: entityMappingManager.captureDefMethodLutSnapshot()
-                        });
-                        if (!ok) {
-                          outputChannel.appendLine('索引缓存写盘失败(静默降级,下次启动照旧全扫)');
-                        }
-                      } catch {
-                        outputChannel.appendLine('索引缓存写盘异常(静默降级)');
-                      }
-                    })();
-                  });
-                });
-              }
+            if (final === 'completed' && cacheDir) {
+              setImmediate(() => {
+                void (async () => {
+                  try {
+                    const ok = writeIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion }, {
+                      discovery: await entityMappingManager.captureDefParseCacheSnapshot(),
+                      eventIndex: await sharedWorkspaceIndex.captureEventIndexSnapshot()
+                    });
+                    if (!ok) {
+                      outputChannel.appendLine('索引缓存写盘失败(静默降级,下次启动照旧全扫)');
+                    }
+                  } catch {
+                    outputChannel.appendLine('索引缓存写盘异常(静默降级)');
+                  }
+                })();
+              });
             }
           } finally {
             reportWarmupDetail = null;

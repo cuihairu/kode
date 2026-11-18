@@ -405,7 +405,6 @@ suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
       }
     },
     { method: '$/kode/ruff/lint', face: 'ruff', params: () => ({ files: [] }) },
-    { method: '$/kode/ruff/format', face: 'ruff', params: () => ({ content: '', fileName: '/w/a.py' }) },
     // dbClone 家族:输入面复杂(derivation/schema 由 CloneSchema::from_derivation
     // 解析),契约门钉错误信封面;深度往返由 Rust dispatch 测试承载
     { method: '$/kode/dbClone/planExport', face: 'pin', params: () => ({ derivation: {}, physicalTables: [] }) },
@@ -415,11 +414,11 @@ suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
     { method: '$/kode/dbClone/export', face: 'pin', params: () => ({ path: '', entity: '', rows: [], plan: {}, redactSensitive: true, keyRoot: undefined }) }
   ];
 
-  it('方法清单完整:33 方法与 TS 侧调用全集逐一对齐(git 字面量全集)', () => {
-    // TS 侧 `$/kode/...` 字面量全集(src/ 下 36 项)减去:信封 rpc、通知
-    // fileChanged、health(上文已钉)= 33 请求方法,与本表一一对应。
-    expect(probes).toHaveLength(33);
-    expect(new Set(probes.map(probe => probe.method)).size).toBe(33);
+  it('方法清单完整:32 方法与 TS 侧调用全集逐一对齐(git 字面量全集)', () => {
+    // TS 侧 `$/kode/...` 字面量全集(src/ 下 35 项)减去:信封 rpc、通知
+    // fileChanged、health(上文已钉)= 32 请求方法,与本表一一对应。
+    expect(probes).toHaveLength(32);
+    expect(new Set(probes.map(probe => probe.method)).size).toBe(32);
   });
 
   it('fileChanged:单向通知跨语言字面量锁(TS KODE_FILE_CHANGED_METHOD = Rust FILE_CHANGED_NOTIFICATION)', () => {
@@ -444,18 +443,12 @@ suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
       const params = probe.params();
       if (probe.face === 'ruff') {
         const result = (await client.request('$/kode/rpc', { method: probe.method, params })) as Record<string, unknown>;
-        // ruff 未装时响应只有 {available:false}——version/formatted(可用的)
-        // 与 diags(lint 面)键随可用性/方法有无(CI/本机都可能两态),结构面
-        // 只钉恒在键;extraKeys 白名单按方法分(lint=diags,format=formatted)
-        const allow = probe.method === '$/kode/ruff/lint'
-          ? ['available', 'diags', 'version']
-          : ['available', 'version', 'formatted'];
+        // ruff 未装时响应只有 {available:false, diags:[]}——version 键随可用性
+        // 有无(CI/本机都可能两态),结构面只钉恒在键
         loose[probe.method] = {
           available: typeof result.available,
-          ...(probe.method === '$/kode/ruff/lint'
-            ? { diags: Array.isArray(result.diags) ? 'array' : typeof result.diags }
-            : {}),
-          extraKeys: Object.keys(result).filter(k => !allow.includes(k))
+          diags: Array.isArray(result.diags) ? 'array' : typeof result.diags,
+          extraKeys: Object.keys(result).filter(k => !['available', 'diags', 'version'].includes(k))
         };
         continue;
       }
@@ -486,10 +479,6 @@ suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
     expect(loose['$/kode/ruff/lint']).toEqual({
       available: 'boolean',
       diags: 'array',
-      extraKeys: []
-    });
-    expect(loose['$/kode/ruff/format']).toEqual({
-      available: 'boolean',
       extraKeys: []
     });
     await client.dispose();

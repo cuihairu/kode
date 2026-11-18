@@ -3,7 +3,7 @@
  * 预热五阶段最重的两块(discovery def 解析缓存 / eventIndex 事件索引)落
  * globalStorage 磁盘,二次启动从「全仓重扫分钟级」降到「哈希校验秒级」。
  *
- * 布局:<globalStorage>/index-cache/{meta.json, discovery.json, eventIndex.json, defLut.json}
+ * 布局:<globalStorage>/index-cache/{meta.json, discovery.json, eventIndex.json}
  * - meta.json = 提交点:kode 版本 + schema 版本 + 各产物 sha256 + 计数。
  *   版本不符即整体弃用(升级不背旧包袱);产物先写、meta 后写,meta 未更新
  *   = 旧缓存完整可用(writeFileAtomic 单文件原子,绝不半截)。
@@ -19,7 +19,6 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { EntityMappingIndex } from '../entityMapping';
-import type { DefLutDiskFile } from './defMethodLut';
 import type { IndexedFile } from '../workspaceIndex';
 
 /** 缓存结构版本:载荷形状变更时 bump,旧缓存整体弃用(钉子④) */
@@ -48,8 +47,6 @@ export interface EventIndexDiskEntry {
 export interface IndexCacheDiskPayload {
   discovery?: DefCacheDiskEntry[];
   eventIndex?: EventIndexDiskEntry[];
-  /** DEF-LUT-001:def→py 方法跳转反查表(逐 def 桶+stat 快照,恢复侧校验) */
-  defLut?: DefLutDiskFile[];
 }
 
 export interface IndexCacheMetaFile {
@@ -57,10 +54,9 @@ export interface IndexCacheMetaFile {
   kodeVersion: string;
   savedAt: number;
   /** 各产物内容 sha256(读回逐件校验,防篡改/半截) */
-  sha: { discovery?: string; eventIndex?: string; defLut?: string };
+  sha: { discovery?: string; eventIndex?: string };
   discoveryCount: number;
   eventIndexCount: number;
-  defLutCount?: number;
 }
 
 /** IO 注入面(默认同步 fs;测试注入失败臂=钉子⑤) */
@@ -182,12 +178,6 @@ export function readIndexCache(
       payload.eventIndex = raw as EventIndexDiskEntry[];
     }
   }
-  if (meta.sha.defLut) {
-    const raw = parseJsonArray(io.readText(path.join(cacheDir, 'defLut.json')));
-    if (raw !== null && sha256Of(JSON.stringify(raw)) === meta.sha.defLut) {
-      payload.defLut = raw as DefLutDiskFile[];
-    }
-  }
   return { meta, payload };
 }
 
@@ -214,19 +204,13 @@ export function writeIndexCache(
       io.writeTextAtomic(path.join(cacheDir, 'eventIndex.json'), text);
       sha.eventIndex = sha256Of(text);
     }
-    if (payload.defLut) {
-      const text = JSON.stringify(payload.defLut);
-      io.writeTextAtomic(path.join(cacheDir, 'defLut.json'), text);
-      sha.defLut = sha256Of(text);
-    }
     const meta: IndexCacheMetaFile = {
       schemaVersion: expected.schemaVersion,
       kodeVersion: expected.kodeVersion,
       savedAt: Date.now(),
       sha,
       discoveryCount: payload.discovery?.length ?? 0,
-      eventIndexCount: payload.eventIndex?.length ?? 0,
-      defLutCount: payload.defLut?.length ?? 0
+      eventIndexCount: payload.eventIndex?.length ?? 0
     };
     io.writeTextAtomic(path.join(cacheDir, 'meta.json'), JSON.stringify(meta));
     return true;

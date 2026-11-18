@@ -12,9 +12,7 @@ import { l10nText } from '../nlsRuntime';
 import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../backend/snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../backend/snippetGenerator';
-import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, ruffExePathForInterpreter, RuffDiag } from '../backend/ruffLint';
-import { ensureRuffFormatterRegistered, runRuffFormat, runRuffFormatCommand } from '../backend/ruffFormat';
-import { ensureRuffConfigShared, wireSharedRuffConfigEnsure } from '../backend/ruffConfigEnsure';
+import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } from '../backend/ruffLint';
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
@@ -757,10 +755,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
           failed: status.failed,
           queued: status.queued,
           running: status.running ? 1 : 0
-        },
-        // 索引建立时间行(批 B):调度器轮次时间戳同源透传,纯核只格式化
-        lastBuildStartedAt: status.lastBuildStartedAt,
-        lastBuildCompletedAt: status.lastBuildCompletedAt
+        }
       };
     },
     timers: {
@@ -940,49 +935,6 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   const ruffDiagnostics = vscode.languages.createDiagnosticCollection('kode-ruff');
   context.subscriptions.push(ruffChannel, ruffDiagnostics);
 
-  // 批 A2(巡检单 kode-ruff-format-statusbar.md):工作区根 pyproject.toml
-  // [tool.ruff] 引导——lint/format 首次执行前检测一次(会话内幂等:拒绝过
-  // 不再问,已就绪不再检)。默认开启,`kbengine.ruff.ensureConfig` 可关;
-  // 红线=绝不动已有 [tool.ruff];存疑追加面如实 unsafe 跳过。
-  const ruffConfigEnsureDeps = {
-    getSettingEnabled: () =>
-      vscode.workspace.getConfiguration('kbengine.ruff').get<boolean>('ensureConfig', true),
-    workspaceRoot: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null,
-    rootFileExists: (name: string) => {
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      return root !== undefined && fs.existsSync(path.join(root, name));
-    },
-    readFileText: (name: string) => {
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (root === undefined) {
-        return null;
-      }
-      try {
-        return fs.readFileSync(path.join(root, name), 'utf8');
-      } catch {
-        return null;
-      }
-    },
-    writeFileText: (name: string, content: string) => {
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (root === undefined) {
-        return false;
-      }
-      try {
-        fs.writeFileSync(path.join(root, name), content, 'utf8');
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    showInformationMessage: (message: string, ...items: string[]) =>
-      vscode.window.showInformationMessage(message, ...items)
-  };
-  // 共享接线:命令入口(lint/format)与生成器入口(codeGenerator)共用同一
-  // 会话(跨入口「问过就记住」);生成器激活序在前,其生成期调用时已接线。
-  wireSharedRuffConfigEnsure(ruffConfigEnsureDeps);
-  const ensureRuffConfigOnce = () => ensureRuffConfigShared();
-
   // C-23 行为知识流水线(坑→lint/code action/hover):三规则(KBE-PY-015/
   // 016/017)独立诊断集合与 quick fix provider 自持装配(trapDiagnosticsWiring
   // 自带事件监听,不进主调度链);hover 行为注记在 languageProviders/hover.ts
@@ -1034,7 +986,6 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     channel: ruffChannel
   };
   const ruffLintCommand = vscode.commands.registerCommand('kbengine.python.ruffLint', async () => {
-    await ensureRuffConfigOnce();
     const summary = await runRuffLintCommand(ruffLintDeps);
     ruffChannel.appendLine(`[ruff] ${summary}`);
     ruffChannel.show(true);
@@ -1049,91 +1000,6 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     }
   );
   context.subscriptions.push(ruffLintCommand, installRuffCommand);
-
-  // 批 A(2026-11-18 巡检单 kode-ruff-format-statusbar.md):ruff format 一键
-  // 格式化 + Provider 自动注册(不抢默认)。桥=backend/ruffFormat.ts
-  // (`$/kode/ruff/format`),编排核零 vscode,此处只装配。ruff 定位与
-  // ruffLint 同源:选定解释器 bin 下优先(ruffExePathForInterpreter),
-  // PATH 回落在 Rust 侧。探测/格式化/Provider 同走 getRuffPath,防探测
-  // 命中而格式化落空的半可用态。
-  const ruffFormatDeps = {
-    getActivePythonFile: () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor || editor.document.languageId !== 'python' || editor.document.isClosed) {
-        return null;
-      }
-      return { fileName: editor.document.fileName, content: editor.document.getText() };
-    },
-    applyFormattedText: (text: string) => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        return;
-      }
-      void editor.edit(builder => {
-        const full = new vscode.Range(
-          editor.document.positionAt(0),
-          editor.document.positionAt(editor.document.getText().length)
-        );
-        builder.replace(full, text);
-      });
-    },
-    getInterpreterPath: ruffLintDeps.getInterpreterPath,
-    getRuffPath: () => {
-      const interpreter = ruffLintDeps.getInterpreterPath();
-      return interpreter ? ruffExePathForInterpreter(interpreter) : undefined;
-    },
-    runPipInstall: ruffLintDeps.runPipInstall,
-    showInformationMessage: (message: string, ...items: string[]) =>
-      vscode.window.showInformationMessage(message, ...items),
-    showErrorMessage: async (message: string) => {
-      await vscode.window.showErrorMessage(message);
-    },
-    channel: ruffChannel
-  };
-  const ruffFormatCommand = vscode.commands.registerCommand('kbengine.python.ruffFormat', async () => {
-    await ensureRuffConfigOnce();
-    await runRuffFormatCommand(ruffFormatDeps);
-  });
-  context.subscriptions.push(ruffFormatCommand);
-
-  // 激活期探测注册(不阻塞激活):有 ruff → document/range 两 provider;
-  // editor.defaultFormatter 未设才一次性提示「设为默认」,点才写,绝不自动改。
-  void ensureRuffFormatterRegistered({
-    probeRuffAvailable: async () => {
-      const call = await runRuffFormat(
-        'x = 1\n',
-        '/__kode_ruff_format_probe__.py',
-        ruffFormatDeps.getRuffPath()
-      );
-      return call.status === 'ok' && call.result.available;
-    },
-    registerDocumentFormattingEditProvider: (selector, provider) => {
-      context.subscriptions.push(
-        vscode.languages.registerDocumentFormattingEditProvider(
-          selector as vscode.DocumentSelector,
-          provider as vscode.DocumentFormattingEditProvider
-        )
-      );
-    },
-    registerDocumentRangeFormattingEditProvider: (selector, provider) => {
-      context.subscriptions.push(
-        vscode.languages.registerDocumentRangeFormattingEditProvider(
-          selector as vscode.DocumentSelector,
-          provider as vscode.DocumentRangeFormattingEditProvider
-        )
-      );
-    },
-    getDefaultFormatter: () =>
-      vscode.workspace.getConfiguration('editor').get<string | undefined>('defaultFormatter'),
-    setDefaultFormatter: () => {
-      void vscode.workspace
-        .getConfiguration('editor')
-        .update('defaultFormatter', 'cuihairu.kode-kbengine', vscode.ConfigurationTarget.Global);
-    },
-    getRuffPath: ruffFormatDeps.getRuffPath,
-    showInformationMessage: (message: string, ...items: string[]) =>
-      vscode.window.showInformationMessage(message, ...items)
-  }).catch(() => undefined);
 
   // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传。
   // UX-REVIEW-002b/002c:同一流程喂给侧栏「开始」入口的可观察状态(识别中/

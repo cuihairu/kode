@@ -112,10 +112,6 @@ A property marker CodeLens appears above self.&lt;property&gt; accesses
 
 *Animation:* ![Property marker CodeLens](/config-switch-gifs/codelens-property.gif)
 
-### Removed: process-ownership CodeLens (`kbengine.codeLens.processOwnership`)
-
-The file-top process-ownership CodeLens and its setting were removed (PROC-BREADCRUMB-001, 2026-11-18): the breadcrumb synthetic root carries the same information permanently in view, so the lens was duplicate display. The decision chain (`src/backend/processOwnershipLens.ts`) and the base↔cell switch commands stay; removing the setting leaves no dead switch.
-
 ## Inlay hints
 
 ### Property type inlay hints (`kbengine.inlayHints.typeData`)

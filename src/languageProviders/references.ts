@@ -17,7 +17,6 @@ import { createSelectionRange } from './callHierarchy';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys } from '../backend/cellDataCompletion';
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDataKeyAccesses } from '../backend/cellDataKeyAccess';
 import { findEntityScriptFile, findDefinitionFileByCategory } from '../definitionWorkspace';
-import { buildDefProcessBreadcrumb } from '../backend/processOwnershipLens';
 /**
  * IDE-NAV-001:def 原生引用查询入口(Shift+F12)。引用结果复用统一符号
  * 身份——与调用层级 prepare 完全同链(findDefSymbolInfo →
@@ -336,12 +335,6 @@ export function enclosingPythonClassAt(document: vscode.TextDocument, line: numb
  * Method)。精确范围:range=元素全跨度(开标签到闭标签,selfClosing 到开
  * 标签尾),selectionRange=名字所在开标签跨度(⊆ range);只出在场段,
  * 非符号段(Parent/Interfaces/Components/Volatile)不进 Outline。
- *
- * PROC-BREADCRUMB-001(2026-11-18):方法段在场时头部插合成根节点
- * 「实体名 · 进程段全列」(Namespace,锚定段带▸排首位),原段符号收编为
- * 其 children 之后的子树(Outline/面包屑单源同现);children 前缀=非锚定
- * 进程段(Event),锚点=本文件对应 def 区块(跨文件跳转 DocumentSymbol 无
- * command 面的诚实降级),detail 携对端 py 路径与 openCell/openBase 提示。
  */
 export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
   async provideDocumentSymbols(
@@ -354,7 +347,6 @@ export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProv
     }
 
     const symbols: vscode.DocumentSymbol[] = [];
-    const methodSections: Array<{ section: string; startLine: number; endLine: number }> = [];
     for (const child of ast.root.children) {
       if (child.kind !== 'element') {
         continue;
@@ -364,19 +356,11 @@ export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProv
         continue;
       }
       const isProperties = sectionName === 'Properties';
-      const fullRange = elementFullRange(document, child);
-      if (!isProperties) {
-        methodSections.push({
-          section: sectionName,
-          startLine: fullRange.start.line,
-          endLine: fullRange.end.line
-        });
-      }
       const sectionSymbol = new vscode.DocumentSymbol(
         sectionName,
         '',
         isProperties ? vscode.SymbolKind.Struct : vscode.SymbolKind.Class,
-        fullRange,
+        elementFullRange(document, child),
         elementTagRange(document, child)
       );
       sectionSymbol.children = child.children
@@ -390,52 +374,7 @@ export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProv
         ));
       symbols.push(sectionSymbol);
     }
-    const breadcrumb = buildDefProcessBreadcrumb(
-      document.fileName,
-      methodSections,
-      candidate => fs.existsSync(candidate)
-    );
-    if (!breadcrumb) {
-      return symbols;
-    }
-    const fileHead = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
-    // 全文档 range 经 positionAt 换算(真 API 与测试替身同面;lineCount 替身缺)
-    const fullDocument = new vscode.Range(
-      new vscode.Position(0, 0),
-      document.positionAt(document.getText().length)
-    );
-    const root = new vscode.DocumentSymbol(
-      breadcrumb.name,
-      `进程段全列:${breadcrumb.processes.join(' · ')}(▸=锚定段=文档序首段)。
-子节点=非锚定进程段:点击跳本文件对应区块;对端实现文件与 base↔cell 快捷
-键切换(ctrl+alt+shift+b/c=kbengine.processOwnership.openCell/openBase)见各子节点 detail。`,
-      vscode.SymbolKind.Namespace,
-      fullDocument,
-      fileHead
-    );
-    root.children = [
-      ...breadcrumb.children.map(child => {
-        const anchorRange = child.anchor
-          ? new vscode.Range(
-              new vscode.Position(child.anchor.startLine, 0),
-              new vscode.Position(child.anchor.endLine, 0)
-            )
-          : fullDocument;
-        return new vscode.DocumentSymbol(
-          child.process,
-          child.section
-            ? `${child.process} 段区块在本文件(${child.section});对端实现:${
-                child.siblingPath ?? '未找到同名 py 文件'
-              };base↔cell 可用快捷键 ctrl+alt+shift+b/c 切换`
-            : child.siblingPath ?? '',
-          vscode.SymbolKind.Event,
-          anchorRange,
-          anchorRange
-        );
-      }),
-      ...symbols
-    ];
-    return [root];
+    return symbols;
   }
 }
 

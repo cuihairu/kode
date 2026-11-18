@@ -41,8 +41,7 @@
 | RpcCodeLensProvider | languageProviders.ts:4651 | :1089 | EntityMappingManager(RPC 镜链) | 纯读 |
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview 面板创建/更新(UI 副作用) |
 | PropertyCodeLensProvider | languageProviders.ts:4819 | :1114 | EntityMappingManager(types.xml 属性回指) | fireConfigurationChanged 事件 |
-| ProcessBreadcrumbPythonSymbolProvider | languageProviders/processOwnership.ts:19 | :513 | `scripts/<role>` 目录角色判定(纯核 backend/processOwnershipLens `buildPythonProcessBreadcrumb`,同名文件存在性由注入的 fs.existsSync 判) | 纯读(角色布局外返回 null;文件顶部 CodeLens 面已移除 PROC-BREADCRUMB-001) |
-| KBEngineDocumentSymbolProvider(进程根) | languageProviders/references.ts:346 | :767 | def AST 方法段经纯核 `buildDefProcessBreadcrumb`(对端 `scripts/<role>/<实体>.py` 存在性由 fs.existsSync 判) | 纯读(方法段在场时合成根领头符号树) |
+| ProcessOwnershipCodeLensProvider | languageProviders/processOwnership.ts:26 | :696 | `scripts/<role>` 目录角色判定(纯核 backend/processOwnershipLens,同名文件存在性由注入的 fs.existsSync 判);EntityMappingManager(`resolveMethodDefinition`)作 def 区块佐证次级判据 | fireConfigurationChanged 事件 + workspace 文件新建/删除事件(.py 过滤) |
 | FileModifiedTimeCodeLensProvider | languageProviders/fileModifiedLens.ts:15 | :526 (SRC-001 L2) | 盘上 mtime 经注入 stat(`vscode.workspace.fs.stat` 默认实现),时间戳格式走纯核 backend/fileModifiedLens | fireConfigurationChanged 事件 + workspace 保存事件(mtime 只在落盘时变) |
 | EventCodeLensProvider | eventApi.ts:95 | :1128 | EventCallIndex 小接口(`allEventCalls`,ARC-002;注入 sharedWorkspaceIndex) | 预启动延迟 8s 后共享索引全仓 py 扫描入队(唯一扫描入口) |
 | TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | activate/languageServices.ts:514 (SRC-001 L2) | databaseSchema 类型存储使用索引(`onTypeStorageUsageIndexPublished` 订阅;构造零依赖) | fireConfigurationChanged 事件;watcher 归装配线(ARC-005) |

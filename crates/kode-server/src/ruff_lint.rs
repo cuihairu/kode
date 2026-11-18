@@ -53,7 +53,7 @@ fn ruff_lint_handler(params: Value) -> Result<Value, String> {
 /// 2026-11-16 nightly linux-x64 三拍窗口再次被打穿,补 EMFILE/ENFILE(文件表
 /// 耗尽,raw_os_error 判定——std ErrorKind 无稳定映射,仅 unix 数值)同入
 /// 暂态族,退避加宽为 20/60/150/400ms 四拍)。
-pub(crate) fn spawn_output(command: &mut std::process::Command) -> std::io::Result<std::process::Output> {
+fn spawn_output(command: &mut std::process::Command) -> std::io::Result<std::process::Output> {
     const BACKOFF_MS: [u64; 4] = [20, 60, 150, 400];
     for backoff in BACKOFF_MS {
         match command.output() {
@@ -155,7 +155,7 @@ fn lint(files: &[String], ruff_path: Option<&str>) -> Result<Value, String> {
 
 /// `ruff --version` 探测;spawn 失败(未安装/不可执行)= None(暂态 fork 失败
 /// 由 spawn_output 重试,不在此误判)。
-pub(crate) fn probe_version(program: &str) -> Option<String> {
+fn probe_version(program: &str) -> Option<String> {
     let mut command = std::process::Command::new(program);
     command.arg("--version");
     let output = spawn_output(&mut command).ok()?;

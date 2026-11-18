@@ -48,13 +48,6 @@ import {
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './backend/workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './backend/indexScheduler';
-import {
-  DefMethodLut,
-  buildDefMethodLutKey,
-  type DefLutDiskFile,
-  type DefMethodLutEntry,
-  type DefMethodLutRestoreReport
-} from './backend/defMethodLut';
 import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './backend/semanticIndex';
 import type { DefCacheDiskEntry } from './backend/indexDiskCache';
@@ -96,18 +89,6 @@ export interface EntityPropertyDefinitionLocation {
   line: number;
   identity: DefinitionSymbolIdentity;
 }
-
-/**
- * DEF-LUT-001:约定链解析注入面(装配层 → scheduleDefMethodLutRebuild)。
- * navigation.ts 的约定链(findMethodScriptLocationInDef,父 def/接口脚本里
- * 找 `def <方法>`)与本模块互导成环,依赖方向只能单向,故由装配层(monitoring)
- * 开 def 文档后适配传入。落点 line 为 1 基(与解析面同形),无实现返回 null。
- */
-export type DefLutConventionResolver = (
-  defPath: string,
-  methodName: string,
-  section: EntityMethodSection
-) => Promise<{ filePath: string; line: number; character: number } | null>;
 
 /**
  * 属性声明的完整面(批135 属性访问 CodeLens 用):声明位置之上再带 <Type>
@@ -304,10 +285,6 @@ export class EntityMappingManager {
   private startupStarted = false;
   /** deferStartup 模式下首扫完成句柄的resolve(ensureStartup 时接线) */
   private deferredInitialScanResolve: (() => void) | null = null;
-  /** DEF-LUT-001:跳转反查表(构建/失效见 defMethodLut.ts 注释) */
-  private readonly defMethodLut = new DefMethodLut();
-  /** DEF-LUT-001:约定链臂(装配层注入;失效触发的重建复用最近一次注入) */
-  private defLutConventionResolver: DefLutConventionResolver | undefined;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -1204,21 +1181,14 @@ export class EntityMappingManager {
     for (const file of plan.invalidateFiles) {
       this.removeIndexByDefFile(normalizeLookupPath(file));
     }
-    // DEF-LUT-001:受影响 def 的 LUT 桶同步出表(条目级失效,代际推进)
-    for (const file of plan.invalidateFiles) {
-      this.defMethodLut.removeDef(file);
-    }
     // IDE-SCH-003:变更面文件同步送 schema 缓存按清单摘除——只重建它及其
     // 依赖实体的快照,无关实体条目保留命中(懒过期之外的事件时失效)。
     invalidateDatabaseSchemaCacheForFiles(plan.invalidateFiles);
     this.missingOwnerPaths.clear();
     this.missingClassNames.clear();
     if (changeKind !== 'delete') {
-      // 定向重解析变更文件自身(缓存已摘除,必然真解析);重解析落定后
-      // 重建 LUT 受影响桶(DEF-LUT-001,防半新半旧入表)
-      this.chainDefMethodLutRebuildAfter([
-        this.parseDefFile(path.basename(defPath, '.def'), defPath)
-      ]);
+      // 定向重解析变更文件自身(缓存已摘除,必然真解析)
+      void this.parseDefFile(path.basename(defPath, '.def'), defPath);
     }
   }
 
@@ -1267,9 +1237,6 @@ export class EntityMappingManager {
   private handlePythonFileChanged(pythonPath: string): void {
     clearDefCallChainFileCache();
     this.allPythonMethodHits.clear();
-    // DEF-LUT-001:该 py 贡献的 LUT 条目精确出表(贡献者索引反查),重解析
-    // 落定后重建补回(下)。
-    const lutDropped = this.defMethodLut.invalidatePythonFile(pythonPath);
     // Reconcile only this file after any in-flight initial build. Queries made
     // after the event await the replacement promise, so they see the new file.
     if (this.pythonDefIndexBuild) {
@@ -1281,21 +1248,12 @@ export class EntityMappingManager {
     // PR4 A4-4:owner 归属反查改走语义索引(不再线性扫描 mappingIndexes)。
     // IDE-IDX-005:共享脚本(owner 归属多实体)保存时逐个 force 重解析全部
     // 依赖实体——只刷第一家会让其余实体的方法行号/绑定滞留旧脚本内容。
-    const ownerReparses: Array<Promise<void>> = [];
     for (const entry of this.semanticIndex.findEntitiesByPythonOwner(pythonPath)) {
       const mapping = this.mappingIndexesByRoot.get(entry.defFile);
       if (mapping) {
-        // force 重解析:py 变更不进 .def mtime 键,缓存会让绑定滞留旧内容;
-        // 全部落定后重建 LUT 受影响条目(DEF-LUT-001)
-        ownerReparses.push(
-          this.parseDefFile(entry.entityName, mapping.rootDefFile, undefined, 'entity', true)
-        );
+        // force 重解析:py 变更不进 .def mtime 键,缓存会让绑定滞留旧内容
+        void this.parseDefFile(entry.entityName, mapping.rootDefFile, undefined, 'entity', true);
       }
-    }
-    // 贡献条目出表或属主重解析任一发生才重建(纯 mixin 脚本无属主重解析,
-    // 但贡献条目已出表 → 立即重建补回;两者皆零 = 与 LUT 无关的 py,不空转)
-    if (lutDropped > 0 || ownerReparses.length > 0) {
-      this.chainDefMethodLutRebuildAfter(ownerReparses);
     }
   }
 
@@ -1821,176 +1779,6 @@ export class EntityMappingManager {
       });
     }
     return gaps;
-  }
-
-  // ─── DEF-LUT-001:def→py 方法跳转反查表(2026-11-18 用户拍板「执行」)──────
-  // 加速层铁律:命中直接答/missing 秒回空/miss 走既有慢链——清空 LUT 后查询
-  // 结果必须与慢链一致。构建只在门控放行后的预热完成回调发起(钉子⑦:未放行
-  // 工作区零构建),失效由 def/py watcher 事件精确作废 + 重解析收敛后重建。
-
-  /** LUT 反查表本体(零 vscode 纯核,src/backend/defMethodLut.ts) */
-  getDefMethodLut(): DefMethodLut {
-    return this.defMethodLut;
-  }
-
-  /**
-   * F12 快路查询(钉子①②④):key=entity::实体名::段::方法名(与绑定键同构,
-   * 根实体 def 的 ownerName 恒为文件基名)。表未含该 def/该条 → undefined,
-   * 调用方回落既有慢链;hit 带落点(1 基行,与解析面同形);missing=全链
-   * (属主/绑定+约定链+全项目回退)无实现,秒回空不进兜底等待。
-   */
-  getDefMethodLutHit(
-    defFile: string,
-    methodName: string,
-    section: EntityMethodSection
-  ): { status: 'hit'; target: { filePath: string; line: number; character: number } } | { status: 'missing' } | undefined {
-    const key = buildDefMethodLutKey({
-      ownerKind: 'entity',
-      ownerName: path.basename(defFile, '.def'),
-      section,
-      symbolName: methodName
-    });
-    return this.defMethodLut.getHit(key, defFile);
-  }
-
-  /**
-   * 后台整表重建(低优先级 keyed 任务,交互限流同既有后台面):逐实体 def
-   * 桶构建——缺实现集合差(C-19 同源,数据白拿)+ 属主实现面 + 注入的约定
-   * 链臂(父 def/接口脚本)+ 全项目唯一名回退,汇总成 LUT 条目原子替换。
-   * conventionResolver 由装配层注入(navigation 约定链与本模块互导成环,
-   * 依赖方向只能单向);缺省时约定链臂跳过(gap 判定仍完整)。
-   * 门控红线:startupStarted 前零调度(deferred 模式挂起等 ensureStartup,
-   * 本方法不作为使用证据,不触发启动)。
-   */
-  scheduleDefMethodLutRebuild(conventionResolver?: DefLutConventionResolver): Promise<void> {
-    if (!this.startupStarted) {
-      return Promise.resolve();
-    }
-    if (conventionResolver) {
-      this.defLutConventionResolver = conventionResolver;
-    }
-    return this.scheduler
-      .ensureTask('def-lut-build', () => ({
-        kind: 'non-interactive',
-        priority: IndexTaskPriority.NonInteractive,
-        run: async () => {
-          await this.initialScan;
-          await this.performDefMethodLutRebuild();
-        }
-      }))
-      .catch(() => undefined);
-  }
-
-  private async performDefMethodLutRebuild(): Promise<void> {
-    const startedAt = Date.now();
-    const resolver = this.defLutConventionResolver;
-    for (const index of [...this.mappingIndexesByRoot.values()]) {
-      if (index.rootCategory !== 'entity') {
-        continue;
-      }
-      const defPath = index.rootDefFile;
-      const defKey = normalizeLookupPath(defPath);
-      let stat: { mtimeMs: number; size: number };
-      try {
-        const raw = fs.statSync(defPath);
-        stat = { mtimeMs: raw.mtimeMs, size: raw.size };
-      } catch {
-        // def 已不在盘上:watcher delete 事件会摘桶,这里跳过不猜
-        continue;
-      }
-      // 缺实现集合差(C-19 同一查询面):gap 命中的方法跳过属主实现面直查
-      // (同一输入同一结果),直接走约定链/全项目补充臂。
-      const gaps = await this.collectDefMethodImplementationGaps(defPath);
-      const gapKeys = new Set(
-        gaps.map(gap => `${gap.section}::${gap.name}`.toLowerCase())
-      );
-      const entries = new Map<string, DefMethodLutEntry>();
-      for (const method of index.methodDefinitions) {
-        if (normalizeLookupPath(method.defFile) !== defKey) {
-          continue;
-        }
-        const isGap = gapKeys.has(`${method.section}::${method.identity.symbolName}`.toLowerCase());
-        const implementations = isGap
-          ? []
-          : await this.listMethodImplementationsByIdentity(method.identity);
-        const mroImplementations: Array<{ filePath: string; line: number; character: number }> = [];
-        if (implementations.length === 0) {
-          // 臂序=慢链逐字段一致(钉子④):identity 路径内部先走全项目唯一名回退
-          // (resolveMethodImplementationByIdentity 的落空臂),约定链只在其后
-          // (resolveDefMethodPythonTarget 同序)——两侧臂序不同时同名方法可能
-          // 拿到不同落点列,LUT 不得改变真相。
-          const defSection =
-            method.section === 'BaseMethods' || method.section === 'CellMethods' ? method.section : undefined;
-          const declaredArgTypes =
-            method.declaredArgs && method.declaredArgs.length > 0 ? method.declaredArgs : undefined;
-          const global = await this.resolveMethodImplementationGlobally(
-            method.identity.symbolName,
-            defSection,
-            declaredArgTypes
-          );
-          if (global) {
-            mroImplementations.push(global);
-          } else if (resolver) {
-            const byConvention = await resolver(defPath, method.identity.symbolName, method.section);
-            if (byConvention) {
-              mroImplementations.push(byConvention);
-            }
-          }
-        }
-        const missing = isGap && implementations.length === 0 && mroImplementations.length === 0;
-        entries.set(
-          buildDefMethodLutKey({
-            ownerKind: method.identity.ownerKind,
-            ownerName: method.identity.ownerName,
-            section: method.section,
-            symbolName: method.identity.symbolName
-          }),
-          {
-            defFile: defPath,
-            defDeclLine: method.line,
-            section: method.section,
-            implementations,
-            mroImplementations,
-            missing
-          }
-        );
-      }
-      this.defMethodLut.upsertDef(defPath, stat, entries);
-    }
-    jumpLog('info', () =>
-      `def LUT 重建完成 ${this.defMethodLut.defFileCount()} def / ${this.defMethodLut.size()} 条 ${Date.now() - startedAt}ms`
-    );
-  }
-
-  /** 磁盘载荷快照(indexDiskCache defLUT 产物;空表返回空数组=如实) */
-  captureDefMethodLutSnapshot(): DefLutDiskFile[] {
-    return this.defMethodLut.capture();
-  }
-
-  /**
-   * 磁盘恢复(钉子⑥):逐 def stat 校验,漂移/缺失拒收该桶(后台重建照旧
-   * 补上)。只入表零构建,不触发门控启动。
-   */
-  restoreDefMethodLutFromDisk(files: DefLutDiskFile[] | undefined): DefMethodLutRestoreReport {
-    return this.defMethodLut.restore(files, defPath => {
-      try {
-        const stat = fs.statSync(defPath);
-        return { mtimeMs: stat.mtimeMs, size: stat.size };
-      } catch {
-        return null;
-      }
-    });
-  }
-
-  /** 失效后重解析收敛 → 重建链(reparses 全部落定才重建,防半新半旧入表;
-   * 空数组=无重解析可等,立即重建——贡献条目已出表,慢链兜底只是过渡态) */
-  private chainDefMethodLutRebuildAfter(reparses: Array<Promise<void>>): void {
-    if (!this.startupStarted) {
-      return;
-    }
-    void Promise.allSettled(reparses).then(() => {
-      void this.scheduleDefMethodLutRebuild();
-    });
   }
 
   /**

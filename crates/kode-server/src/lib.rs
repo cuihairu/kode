@@ -43,7 +43,6 @@ pub mod role_misuse;
 pub mod root_lifecycle;
 pub mod rpc;
 pub mod rpc_arg_count;
-pub mod ruff_format;
 pub mod ruff_lint;
 pub mod self_attribute_flow;
 pub mod semantics;

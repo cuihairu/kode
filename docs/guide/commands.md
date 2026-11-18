@@ -148,9 +148,9 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 
 - Title: `Kode: Open Same-Name Cell File`
 - Default keybinding: `ctrl+alt+shift+c` (macOS `cmd+alt+shift+c`), `when: editorLangId == python`
-- Purpose: from the active baseapp-side entity script jump to the same-named cellapp file (FILE-TIME-001, 2026-11-17 user order — a keyboard path alongside the process breadcrumb root, PROC-TAG-001/PROC-BREADCRUMB-001)
+- Purpose: from the active baseapp-side entity script jump to the same-named cellapp file (FILE-TIME-001, 2026-11-17 user order — a keyboard path alongside the process-ownership lens tags, PROC-TAG-001)
 - Behavior:
-  - Resolves the active file's process ownership with the same `scripts/<role>` decision chain as the breadcrumb root; a shared dir like `common` reports 判不出进程归属(需 `scripts/<role>` 目录),无法切换 honestly — never guessed
+  - Resolves the active file's process ownership with the same `scripts/<role>` decision chain as the lens; a shared dir like `common` reports 判不出进程归属(需 `scripts/<role>` 目录),无法切换 honestly — never guessed
   - Opens `scripts/cell/<same-name>` with `{ preview: false }` when it exists; reports 未找到同名 cellapp 对应文件 when it does not
   - Silent no-op with no active editor; the reverse direction is `kbengine.processOwnership.openBase`
 
@@ -1242,18 +1242,6 @@ The flow graph panel supports:
 - Title: `Install Ruff via pip (Selected Interpreter)`
 - Purpose: manual install entry — runs `<selected interpreter> -m pip install ruff`, then probes ruff again and reports the version found (or 未检出, honestly)
 - Honesty rules: no selected interpreter refuses up front (pointing to `Select Python Interpreter` instead of guessing a python); a failed install reports the error together with the exact manual command (`"<python>" -m pip install ruff`, quoted when the path has spaces) so the user can run it themselves; the full pip log stays in the 「KBEngine Ruff」 output channel
-
-### `kbengine.python.ruffFormat`
-
-- Title: `Format Python File with Ruff (py37)`
-- Purpose: format the active `.py` file in one shot via the Rust backend (`$/kode/ruff/format`, crates/kode-server/src/ruff_format.rs): the file content goes in over stdin (`ruff format --stdin-filename <file> -`) and the formatted text replaces the whole document — nothing is written to disk until you save
-- Same locked flags as lint: `--target-version py37` (KBEngine 3.7.3) and `--no-cache` (never writes `.ruff_cache` into the workspace)
-- Consent-based install (never silent): when ruff is missing the command asks first — 「安装(Install via pip)」 runs `<selected interpreter> -m pip install ruff` and retries the format once on success; declining (or a failed install) shows the exact manual command instead; nothing is ever installed without consent
-- Non-`.py` active file (or no editor): an honest notice, zero requests, zero edits
-- Formatter providers (registered at activation when ruff is detected): document and range formatting for `python` — Shift+Alt+F / Format Document work without the command; **the default formatter is never hijacked**: `editor.defaultFormatter` is untouched, and only when it is unset a one-time prompt offers to set Kode (ruff) as the default — clicking is what sets it, never automatic
-- Generated code passthrough: Python files produced by the entity generator pass through the same format face when ruff is available (long FIXED_DICT/ARRAY defaults come out multi-line and readable); with ruff missing the generator output is unchanged — formatting never blocks generation
-- ruff lookup: the selected interpreter's own bin directory first (same source as lint), PATH fallback inside the backend
-- Config discovery (shared with lint and the generator's multi-lining): ruff reads the nearest `pyproject.toml` `[tool.ruff]` (or `ruff.toml`) walking up from the formatted file; with no config anywhere the effective line-length is ruff's default 88 — one config file drives all three faces uniformly. Bootstrap (`kbengine.ruff.ensureConfig`, default on): on the first lint/format run (or generator multi-lining) a workspace root with neither `[tool.ruff]` nor `ruff.toml` gets a one-time consent prompt with a content preview — on consent Kode creates the minimal `[tool.ruff]` section (`line-length = 88` plus common-value comments: 79 / 100 / 120, smaller = long generated data wraps earlier); an existing `[tool.ruff]` is never modified, an append that cannot be proven TOML-safe is skipped honestly (behavior stays default-88), and declining silences the prompt for the session
 
 ### `kbengine.project.import`
 

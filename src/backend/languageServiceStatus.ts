@@ -26,10 +26,6 @@ export interface LanguageServiceStatusInputs {
   resourceRoot: string | null;
   /** 索引调度计数;null = 面不可用(调度器未注入/已释放) */
   index: LanguageServiceIndexCounts | null;
-  /** 最近一轮索引忙起时刻(epoch ms);null/缺省=从未建过(就绪态不加建立行) */
-  lastBuildStartedAt?: number | null;
-  /** 最近一轮索引跑空时刻(epoch ms);null/缺省=从未建完(就绪态不加建立行) */
-  lastBuildCompletedAt?: number | null;
 }
 
 export interface LanguageServiceStatusView {
@@ -49,42 +45,6 @@ export interface LanguageServiceStatusBarItemLike {
   command?: string | { command: string };
   show(): void;
   dispose(): void;
-}
-
-/**
- * 索引建立时间行(批 B):就绪态 tooltip 专用。completedAt 缺失(从未建完)
- * → null 不加行;耗时=completed-started,起止缺一或倒挂 → 只给时刻不编耗时。
- * 时刻用本地时区固定 `YYYY-MM-DD HH:mm:ss` 格式(不随宿主 locale 漂移,
- * 测试可锁);耗时分档:毫秒 / x.x 秒 / x 分 y 秒 / x 小时 y 分 z 秒。
- */
-export function formatIndexBuildTimeLine(
-  startedAt: number | null | undefined,
-  completedAt: number | null | undefined
-): string | null {
-  if (completedAt === null || completedAt === undefined) {
-    return null;
-  }
-  const d = new Date(completedAt);
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  let durationPart = '';
-  if (typeof startedAt === 'number' && completedAt >= startedAt) {
-    const elapsedMs = completedAt - startedAt;
-    if (elapsedMs < 1000) {
-      durationPart = `（耗时 ${elapsedMs} 毫秒）`;
-    } else if (elapsedMs < 60_000) {
-      durationPart = `（耗时 ${(elapsedMs / 1000).toFixed(1)} 秒）`;
-    } else if (elapsedMs < 3_600_000) {
-      const totalSeconds = Math.floor(elapsedMs / 1000);
-      durationPart = `（耗时 ${Math.floor(totalSeconds / 60)} 分 ${totalSeconds % 60} 秒）`;
-    } else {
-      const totalSeconds = Math.floor(elapsedMs / 1000);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      durationPart = `（耗时 ${hours} 小时 ${minutes} 分 ${totalSeconds % 60} 秒）`;
-    }
-  }
-  return `索引建立：${stamp}${durationPart}。`;
 }
 
 /** 纯核:输入 → 状态栏文案。判定顺序固定(未知→失败→忙碌→就绪)。 */
@@ -124,13 +84,9 @@ export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs):
       isBusy: true
     };
   }
-  // 就绪态专属:最近一轮建立时刻+耗时行;从未建完(completedAt null)不加,
-  // 运行中/失败/未知态不加(完成时刻只对「已就绪」有陈述意义)。
-  const buildLine = formatIndexBuildTimeLine(inputs.lastBuildStartedAt, inputs.lastBuildCompletedAt);
   return {
     text: `$(check) Kode 索引: 就绪${suffix}`,
-    tooltip:
-      `索引就绪。${buildLine !== null ? `\n${buildLine}` : ''}\n点击打开 Project Doctor 健康汇总。`,
+    tooltip: `索引就绪。\n点击打开 Project Doctor 健康汇总。`,
     hasFailures: false,
     isBusy: false
   };
