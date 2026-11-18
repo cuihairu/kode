@@ -526,5 +526,21 @@
     "scenario": "manual",
     "demo": "编辑中途保存半截 .py + 状态栏 tooltip 拦截计数",
     "capture": false
+  },
+  {
+    "key": "folder-colors",
+    "setting": "kbengine.folderColors.enabled",
+    "off": false,
+    "on": true,
+    "name_zh": "工作区目录着色",
+    "name_en": "Workspace folder colors",
+    "group_zh": "视图",
+    "group_en": "Views",
+    "effect_zh": "关闭后 Explorer 里的语义文件角标(资产 A/venv V/文档 D/配置 C/日志 L/scripts 进程色)与实体树四分组彩色图标全部消失;重开生效还需当前主题属 KBEngine 主题族(双条件门)",
+    "effect_en": "With it off, the semantic file badges in the Explorer (assets A / venv V / docs D / configs C / logs L / process colors under scripts) and the entity tree's colored group icons all disappear; turning it back on also requires a KBEngine theme family colorTheme (dual gate)",
+    "visibility": "Explorer file badges + entity tree group icons",
+    "scenario": "vscode",
+    "demo": "assets/ + scripts/ tree under a KBEngine theme",
+    "capture": false
   }
 ]

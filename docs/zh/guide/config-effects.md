@@ -203,3 +203,4 @@ Show Call Chain 面板以 mermaid 关系图（graph）或纯文本（text）打�
 | `kbengine.python.extraPathsSync` | 自动把 KBEngine scripts 根写入 python.analysis.extraPaths |
 | `kbengine.webviewConsoleLogs` | 日志面板页面 console 与未捕获异常写入日志面板（内部行为） |
 | `kbengine.index.syntaxGate` | 开启后落盘重索引前做括号/引号/缩进预检，编辑中途保存的烂文件不入索引、索引保留上一次健康符号（状态栏 tooltip 可见拦截计数）；关闭后回到旧行为，烂文件照常入索引 |
+| `kbengine.folderColors.enabled` | 关闭后 Explorer 里的语义文件角标(资产 A/venv V/文档 D/配置 C/日志 L/scripts 进程色)与实体树四分组彩色图标全部消失;重开生效还需当前主题属 KBEngine 主题族(双条件门) |

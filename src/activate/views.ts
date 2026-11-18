@@ -27,6 +27,13 @@ import { hotReloadSectionReader, readHotReloadSettings } from '../hotReload';
 import { QuickActionManager } from '../quickActions';
 import { QuickActionTreeProvider } from '../quickActionTree';
 import { setupTypeStubRegeneration } from '../pythonTypeStubs';
+import {
+  activateFolderColorDecorations,
+  folderColorGroupIconPath,
+  folderColorsEnabledFromConfig,
+  folderColorsGateNow,
+  type FolderColorGroupCategory
+} from './folderColors';
 import { ConfigVisualizerPanel } from '../configVisualizerPanel';
 import {
   findEntityDefinitionFile,
@@ -137,12 +144,24 @@ export function activateEntityExplorerViews(deps: EntityExplorerViewsDeps): void
   // 受限宿主(fake-vscode 无 createTreeView)退化为 registerTreeDataProvider,
   // 徽章面随之缺席(与 gitHistory 同一 guard 先例)。
   const entityTreeViewRef: { view?: vscode.TreeView<EntityTreeNode> } = {};
+  // FOLDER-COLOR-001 目录着色:分组图标渲染期读双条件门(开关+Kode 主题族,
+  // 缺一=默认 ThemeIcon);门翻转经 activateFolderColorDecorations 的
+  // onGateChanged 回调刷树换/卸图标,配置面零轮询。
+  const folderColorGroupIcons = (category: FolderColorGroupCategory) =>
+    folderColorGroupIconPath(
+      context.extensionUri,
+      category,
+      folderColorsGateNow(
+        folderColorsEnabledFromConfig(vscode.workspace.getConfiguration('kbengine')),
+        vscode.workspace.getConfiguration('workbench').get<string>('colorTheme', '')
+      )
+    );
   const entityExplorerProvider = new EntityExplorerProvider(counts => {
     const badge = entityExplorerBadgeOf(counts);
     if (entityTreeViewRef.view) {
       entityTreeViewRef.view.badge = badge ?? undefined;
     }
-  });
+  }, folderColorGroupIcons);
   if (typeof vscode.window.createTreeView === 'function') {
     const entityTreeView = vscode.window.createTreeView('kbengine.entityExplorer', {
       treeDataProvider: entityExplorerProvider,
@@ -155,6 +174,11 @@ export function activateEntityExplorerViews(deps: EntityExplorerViewsDeps): void
       vscode.window.registerTreeDataProvider('kbengine.entityExplorer', entityExplorerProvider)
     );
   }
+  // FOLDER-COLOR-001:文件树角标 provider(原生 Explorer 文件级;目录零输出)
+  activateFolderColorDecorations({
+    context,
+    onGateChanged: () => entityExplorerProvider.refresh()
+  });
 
   // 刷新实体浏览器的命令
   const refreshCommand = vscode.commands.registerCommand(

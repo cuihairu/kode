@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 168 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
+The 170 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
 
 Every key's tip in the VS Code settings UI is authored as `markdownDescription` — one sentence of purpose, a 「默认值」 (default value) section, and a deep link into this guide. The settings UI renders `markdownDescription` only (markdown inside a bare `description` never renders). `tests/configMarkdownDescription.test.ts` locks package.json against this page: every key must carry `markdownDescription` with a default section, every enum must document every option, and every guide-link anchor must exist as a heading on this page.
 
@@ -243,6 +243,17 @@ The four path settings are "optional overrides": a configured value is honored a
 | `kbengine.finalConfigView` | string enum | `gui` | Which face the final config opens in: `gui` = the config merge visualization panel (default), `text` = the read-only composed `kbengine-final.xml` virtual document. Applies to `kbengine.config.showFinal`, the sidebar Config view's 「最终配置」 node and the activation auto-open; `kbengine.config.showFinalText` always opens the text face, and the panel toolbar's `Text view` button always opens the GUI's text counterpart |
 | `kbengine.autoRefreshFinalConfig` | boolean | `true` | After defaults or the component `kbengine.xml` is saved, added, or deleted, recompose the open composed document automatically. When off, reopen the document or rerun the command |
 | `kbengine.finalConfigComments` | boolean | `true` | In the synthesized final-config view, put a sourced purpose comment inside every configuration element and order elements by the functional sub-category of their section (custom keys with no known meaning fall into the "Custom (unrecognized)" sub-category). Comments are evidenced from the engine defaults/source and follow the VS Code display language; when off, the original order and no comments are shown |
+
+### Folder Colors
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.folderColors.enabled` | boolean | `true` | Master switch for workspace folder coloring (FOLDER-COLOR-001). Requires BOTH this switch and a KBEngine theme family `workbench.colorTheme` — with any other theme the feature is completely silent, as if not installed; switching themes takes effect live. Honest boundary: VS Code has no API to tint native Explorer folder backgrounds — only file badges (single-letter badge + theme color) and Kode's own tree views are decorated, folder background colors are never promised |
+| `kbengine.folderColors.rules` | array | see below | Coloring rule table (glob + semantic + per-rule toggle). Array order is the hit priority: first match wins, so reordering overrides; malformed entries (empty glob / unknown semantic) are filtered out. `glob` supports `**` across segments, `*` within a segment, `?` single char, `{a,b}` alternatives; the `{assetsRoot}` placeholder expands at resolve time to the active profile's assets root (absolute). Unset = the six built-in rules below; an explicit `[]` = zero rules, zero decorations. Faces: assets `A` orange · venv `V` muted gray · docs `D` blue · configs `C` purple · logs `L` red · process colors under `scripts/` (baseapp blue `B` / cellapp green `C` / client yellow `U` / bots purple `T`, same role-directory judgment chain as the process breadcrumbs) |
+
+Built-in default rules (in order): `{assetsRoot}/**` → assets, `**/{venv,.venv}/**` → venv, `**/docs/**` → docs, `**/configs/**` → configs, `**/logs/**` → logs, `**/scripts/**` → process. A `docs/` directory at any depth matches by default — narrow or reorder via a custom rules array if that is too broad.
+
+While the gate is on, the KBEngine Explorer entity tree's four groups (Types/Entities/Interfaces/Components) also switch to colored SVG icons (`resources/icons/folder-colors/`); when the gate is off (or the theme is not a KBEngine theme) they fall back to the default theme icons. See also the [UI areas page's Folder Colors section](./ui-areas.md#folder-colors).
 
 ### Server and Logs
 

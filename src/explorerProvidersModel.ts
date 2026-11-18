@@ -143,15 +143,21 @@ export function parseDefinitionStructure(content: string): DefinitionStats {
   };
 }
 
+/** TreeItem.iconPath 自定义图标形态(vscode 命名空间无 IconPath 导出类型,按
+ * 官方属性形状取并集;本批只用 Uri 面) */
+export type TreeIconPathOverride = vscode.Uri | { light: vscode.Uri; dark: vscode.Uri };
+
 export class ExplorerGroupItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly category: DefinitionCategory,
-    count: number
+    count: number,
+    /** 目录着色批(FOLDER-COLOR-001)分组图标覆盖;未提供=默认 ThemeIcon */
+    iconPathOverride?: TreeIconPathOverride
   ) {
     super(label, vscode.TreeItemCollapsibleState.Expanded);
     this.description = String(count);
-    this.iconPath = new vscode.ThemeIcon(getGroupIcon(category));
+    this.iconPath = iconPathOverride ?? new vscode.ThemeIcon(getGroupIcon(category));
     this.contextValue = `definition_group_${category}`;
   }
 }

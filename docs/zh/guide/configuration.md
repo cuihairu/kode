@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-168 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+170 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
 
 VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话作用 + 「默认值」段 + 跳回本指南的深链。设置 UI 只渲染 `markdownDescription`(裸 `description` 里的 markdown 不渲染)。`tests/configMarkdownDescription.test.ts` 把 package.json 与本页对账锁定:每键必须有含默认值段的 `markdownDescription`、每个 enum 必须逐选项给说明、提示里的指南链接锚点必须真存在于本页标题。
 
@@ -243,6 +243,17 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.finalConfigView` | string enum | `gui` | 最终配置打开哪个面:`gui`=配置合并可视化面板(默认,2026-11-12 用户令),`text`=只读合成文档 `kbengine-final.xml`。作用于 `kbengine.config.showFinal`、侧栏 Config 视图「最终配置」节点与激活自动打开;`kbengine.config.showFinalText` 恒开文本面,面板工具栏「文本视图」按钮恒开图形面的文本对照 |
 | `kbengine.autoRefreshFinalConfig` | boolean | `true` | defaults 或元件 `kbengine.xml` 保存、新增、删除后,自动重算已打开的合成文档。关闭后需重开文档或重跑命令 |
 | `kbengine.finalConfigComments` | boolean | `true` | 合成的最终配置视图里为每个配置元素在元素内部加作用注释并按段内功能子分类排序(查不到含义的自定义项归入「自定义配置」标「未识别」);注释逐条取证自引擎默认配置与源码,语言跟随 VS Code 显示语言。关闭则按原顺序、无注释展示 |
+
+### 目录着色
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.folderColors.enabled` | boolean | `true` | 工作区目录着色总开关(FOLDER-COLOR-001)。启用需双条件:本开关开启 + `workbench.colorTheme` 属 KBEngine 主题族——用其他主题时功能完全静默,与未安装无异;运行中切换主题即时生效。能力边界如实:VS Code 无原生 Explorer 文件夹底色 API,只装饰「文件」角标(单字母+主题色)与自有树视图,不承诺文件夹底色 |
+| `kbengine.folderColors.rules` | array | 见下文 | 着色规则表(glob+语义+单条开关)。数组序即命中优先序:第一条命中即用,调序即覆盖;脏条目(glob 空串/语义未知)自动滤除。glob 支持 `**` 跨段、`*` 段内、`?` 单字符、`{a,b}` 备选;`{assetsRoot}` 占位符解析期展开为活动 profile 资产根(绝对路径)。未设置 = 内置六条默认规则;显式 `[]` = 零规则零装饰。面孔:资产 A 橙 · venv V 弱化灰 · 文档 D 蓝 · 配置 C 紫 · 日志 L 红 · scripts 下进程色(baseapp 蓝 B/cellapp 绿 C/client 黄 U/bots 紫 T,与进程面包屑同源判定链) |
+
+内置默认规则(按序):`{assetsRoot}/**`→资产、`**/{venv,.venv}/**`→虚拟环境、`**/docs/**`→文档、`**/configs/**`→配置、`**/logs/**`→日志、`**/scripts/**`→进程色。默认口径下任意层的同名 `docs/` 目录都会命中——嫌宽可用自定义 rules 数组收窄或调序。
+
+门开启期间,KBEngine 侧栏实体树四分组(Types/Entities/Interfaces/Components)同时换彩色 SVG 图标(`resources/icons/folder-colors/`);门关(或非 KBEngine 主题)回落默认主题图标。另见 [UI 区域页的目录着色节](./ui-areas.md#目录着色)。
 
 ### 服务器与日志
 

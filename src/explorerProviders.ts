@@ -27,7 +27,8 @@ import {
   DefinitionLeafItem,
   toMethodStats,
   toStatsFromProperties,
-  createOpenDefinitionCommand
+  createOpenDefinitionCommand,
+  type TreeIconPathOverride
 } from './explorerProvidersModel';
 import type {
   EntityTreeNode,
@@ -84,7 +85,12 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
    * 据此设 TreeView.badge,侧栏压缩态下标题徽章仍外露「里面有东西」。
    * 计数只在 getRootGroups 真正执行时产生,不做急切扫描,零额外开销。
    */
-  constructor(private readonly onRootCounts?: (counts: EntityExplorerRootCounts) => void) {}
+  constructor(
+    private readonly onRootCounts?: (counts: EntityExplorerRootCounts) => void,
+    /** 目录着色批(FOLDER-COLOR-001):根分组图标解析器(渲染期求值;门关/
+     * 未注入=undefined 走默认 ThemeIcon,钉子:双条件缺一零装饰) */
+    private readonly groupIcons?: (category: DefinitionCategory) => TreeIconPathOverride | undefined
+  ) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
@@ -162,10 +168,10 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       components: components.length
     });
     return [
-      new ExplorerGroupItem(l10nText('Types'), 'type', types.length),
-      new ExplorerGroupItem(l10nText('Entities'), 'entity', entities.length),
-      new ExplorerGroupItem(l10nText('Interfaces'), 'interface', interfaces.length),
-      new ExplorerGroupItem(l10nText('Components'), 'component', components.length)
+      new ExplorerGroupItem(l10nText('Types'), 'type', types.length, this.groupIcons?.('type')),
+      new ExplorerGroupItem(l10nText('Entities'), 'entity', entities.length, this.groupIcons?.('entity')),
+      new ExplorerGroupItem(l10nText('Interfaces'), 'interface', interfaces.length, this.groupIcons?.('interface')),
+      new ExplorerGroupItem(l10nText('Components'), 'component', components.length, this.groupIcons?.('component'))
     ];
   }
 

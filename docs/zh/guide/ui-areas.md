@@ -20,7 +20,7 @@ Kode 在活动栏加一个图标（Kode logo）。点击即在侧边栏打开 **
 
 ## 侧边栏（KBEngine 资源管理器视图）
 
-- **实体浏览器** —— 实体树固定四分组：`Types`、`Entities`、`Interfaces`、`Components`（组头带实时计数）。点击实体打开其 `.def`/脚本分部；树是只读导航，不是编辑器。
+- **实体浏览器** —— 实体树固定四分组：`Types`、`Entities`、`Interfaces`、`Components`（组头带实时计数）。点击实体打开其 `.def`/脚本分部；树是只读导航，不是编辑器。目录着色生效期间（见下一节）四个组头换彩色 SVG 图标,否则用默认主题图标。
 - **开始** —— 发现/引导视图：工作区识别中如实显示状态（识别中 / 未找到 / 失败 / 就绪），陈旧根一律弃置不冒充当前态。
 - **快捷操作** —— 快捷操作树（跑默认脚本、扫描脚本、按名运行）。
 - **组件状态 / 服务器控制 / Telnet 状态** —— 服务器生命周期、组件状态、telnet 会话状态。
@@ -31,6 +31,15 @@ Kode 在活动栏加一个图标（Kode logo）。点击即在侧边栏打开 **
 - 相关配置：视图反映活动项目 profile，见[配置说明](./configuration.md)。
 
 ![实体浏览器](../../screenshots/entity-explorer.png)
+
+## 目录着色
+
+按路径语义给工作区文件与 Kode 自有树视图着色（FOLDER-COLOR-001，`kbengine.folderColors.*`）。
+
+- 出现在哪：①原生 Explorer 里给**文件**挂单字母角标+主题色——资产根 `A` 橙、`venv`/`.venv` `V` 弱化灰、`docs/` `D` 蓝、`configs/` `C` 紫、`logs/` `L` 红,`scripts/<角色>/` 下按进程色(baseapp 蓝 `B`、cellapp 绿 `C`、client 黄 `U`、bots 紫 `T`——与进程面包屑同源的角色目录判定链);②实体树四分组组头换彩色 SVG 图标(`resources/icons/folder-colors/`)。
+- 双条件门：`kbengine.folderColors.enabled` = true **且** `workbench.colorTheme` 属 KBEngine 主题族。其他主题下功能完全静默,与未安装无异;切主题/拨开关即时生效(角标与图标无重载刷新)。
+- 规则：`kbengine.folderColors.rules`(glob+语义+单条开关),数组序第一条命中即用;未设置 = 内置六条。完整规则表见配置指南的[目录着色节](./configuration.md#目录着色)。
+- 边界如实：VS Code 无扩展 API 给原生 Explorer 文件夹上底色/换文件夹图标——能着色的只有文件装饰(文件角标)与 Kode 自有树视图。文件夹底色永不承诺。
 
 ## 编辑器区（Editor）
 

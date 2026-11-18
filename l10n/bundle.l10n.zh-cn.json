@@ -759,5 +759,11 @@
   "Set as default formatter": "设为默认格式化器",
   "Create": "创建",
   "No ruff config in the workspace root. Create pyproject.toml with this block?": "工作区根没有 ruff 配置。按提示内容创建 pyproject.toml 吗？",
-  "pyproject.toml has no [tool.ruff] section. Append this block?": "pyproject.toml 没有 [tool.ruff] 段。按提示内容追加吗？"
+  "pyproject.toml has no [tool.ruff] section. Append this block?": "pyproject.toml 没有 [tool.ruff] 段。按提示内容追加吗？",
+  "Assets": "资产",
+  "Virtual environment": "虚拟环境",
+  "Docs": "文档",
+  "Configs": "配置",
+  "Logs": "日志",
+  "Process scripts": "进程脚本"
 }

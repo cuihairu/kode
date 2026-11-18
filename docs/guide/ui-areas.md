@@ -20,7 +20,7 @@ Screenshot: pending (tracked in the todo list; the Side Bar section below shows 
 
 ## Side Bar (KBEngine Explorer views)
 
-- **Entity Explorer** — the entity tree with four fixed groups: `Types`, `Entities`, `Interfaces`, `Components` (live counts in the group headers). Clicking an entity opens its `.def`/script parts; the tree is read-only navigation, not an editor.
+- **Entity Explorer** — the entity tree with four fixed groups: `Types`, `Entities`, `Interfaces`, `Components` (live counts in the group headers). Clicking an entity opens its `.def`/script parts; the tree is read-only navigation, not an editor. While folder colors are active (see the next section) the four group headers switch to colored SVG icons; otherwise they use the default theme icons.
 - **Start** — the discovery/onboarding view: while a workspace is being recognized it shows the discovery state honestly (recognizing / not found / failed / ready), and stale roots are discarded rather than displayed as current.
 - **Quick Actions** — the quick-action tree (run default script, scan scripts, run by name).
 - **Component Status / Server Control / Telnet Status** — server lifecycle, per-component status, and telnet session state.
@@ -31,6 +31,15 @@ Screenshot: pending (tracked in the todo list; the Side Bar section below shows 
 - Related settings: the views reflect the active project profile; see [Configuration](./configuration.md).
 
 ![Entity Explorer](../screenshots/entity-explorer.png)
+
+## Folder Colors
+
+Semantic coloring of workspace files and Kode's own tree views (FOLDER-COLOR-001, `kbengine.folderColors.*`).
+
+- Where it shows: ① single-letter badges with theme colors on **files** in the native Explorer — assets root `A` orange, `venv`/`.venv` `V` muted gray, `docs/` `D` blue, `configs/` `C` purple, `logs/` `L` red, and process colors under `scripts/<role>/` (baseapp blue `B`, cellapp green `C`, client yellow `U`, bots purple `T` — the same role-directory judgment chain as the process breadcrumbs); ② the entity tree's four group headers get colored SVG icons (`resources/icons/folder-colors/`).
+- Dual gate: `kbengine.folderColors.enabled` = true **and** `workbench.colorTheme` in the KBEngine theme family. With any other theme the feature is completely silent, as if not installed; switching themes or toggling the switch takes effect live (badges and icons refresh without a reload).
+- Rules: `kbengine.folderColors.rules` (glob + semantic + per-rule toggle), array order = first match wins; unset = the six built-in rules. See the [Folder Colors section](./configuration.md#folder-colors) of the configuration guide for the full table.
+- Honest boundary: VS Code has no extension API to tint native Explorer folder backgrounds or replace folder icons — only file decorations (badges on files) and Kode's own tree views can be colored. Folder background colors are never promised.
 
 ## Editor Area
 

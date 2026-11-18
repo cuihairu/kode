@@ -759,5 +759,11 @@
   "Set as default formatter": "Set as default formatter",
   "Create": "Create",
   "No ruff config in the workspace root. Create pyproject.toml with this block?": "No ruff config in the workspace root. Create pyproject.toml with this block?",
-  "pyproject.toml has no [tool.ruff] section. Append this block?": "pyproject.toml has no [tool.ruff] section. Append this block?"
+  "pyproject.toml has no [tool.ruff] section. Append this block?": "pyproject.toml has no [tool.ruff] section. Append this block?",
+  "Assets": "Assets",
+  "Virtual environment": "Virtual environment",
+  "Docs": "Docs",
+  "Configs": "Configs",
+  "Logs": "Logs",
+  "Process scripts": "Process scripts"
 }

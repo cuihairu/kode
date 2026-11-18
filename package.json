@@ -2509,6 +2509,51 @@
               "%kbengine.config.finalConfigView.enum.text%"
             ]
           },
+          "kbengine.folderColors.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.folderColors.enabled.description%"
+          },
+          "kbengine.folderColors.rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "glob",
+                "semantic"
+              ],
+              "properties": {
+                "glob": {
+                  "type": "string",
+                  "description": "%kbengine.config.folderColors.rules.items.glob.description%"
+                },
+                "semantic": {
+                  "type": "string",
+                  "enum": [
+                    "assets",
+                    "venv",
+                    "docs",
+                    "configs",
+                    "logs",
+                    "process"
+                  ],
+                  "markdownEnumDescriptions": [
+                    "%kbengine.config.folderColors.rules.items.semantic.enum.assets%",
+                    "%kbengine.config.folderColors.rules.items.semantic.enum.venv%",
+                    "%kbengine.config.folderColors.rules.items.semantic.enum.docs%",
+                    "%kbengine.config.folderColors.rules.items.semantic.enum.configs%",
+                    "%kbengine.config.folderColors.rules.items.semantic.enum.logs%",
+                    "%kbengine.config.folderColors.rules.items.semantic.enum.process%"
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "description": "%kbengine.config.folderColors.rules.items.enabled.description%"
+                }
+              }
+            },
+            "markdownDescription": "%kbengine.config.folderColors.rules.description%"
+          },
           "kbengine.jsoncAssociation": {
             "type": "boolean",
             "default": true,

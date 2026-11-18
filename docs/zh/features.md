@@ -472,6 +472,8 @@
 | `kbengine.finalConfigView` | `"gui"` | 最终配置默认视图:`gui`=配置合并可视化面板(默认),`text`=合成只读 `kbengine-final.xml` 文本视图;「查看最终服务器配置」跟随此项,`kbengine.config.showFinalText` 恒开文本视图 |
 | `kbengine.autoRefreshFinalConfig` | `true` | 引擎/元件 kbengine.xml 变更后自动重算并刷新已打开的最终配置视图 |
 | `kbengine.finalConfigComments` | `true` | 最终配置视图里每个元素内部带取证注释并按功能子分类排序;自定义项归入「自定义配置·未识别」,注释语言跟随 VS Code 显示语言 |
+| `kbengine.folderColors.enabled` | `true` | 工作区目录着色(FOLDER-COLOR-001):原生 Explorer 里按路径语义给文件挂角标(资产 A 橙/venv V 弱化灰/文档 D 蓝/配置 C 紫/日志 L 红/scripts 下进程色),KBEngine 侧栏实体树四分组同步换彩色图标。双条件门:本开关开启 + `workbench.colorTheme` 属 KBEngine 主题族——其他主题下完全静默;VS Code 无文件夹底色 API,只装饰文件与自有树视图 |
+| `kbengine.folderColors.rules` | array(见配置指南) | 着色规则表(glob+语义+开关),数组序第一条命中即用;未设置=内置六条,`[]`=全关;`{assetsRoot}` 占位符展开为活动 profile 资产根 |
 | `kbengine.debug.remoteTargets` | `[]` | 「Attach to Remote Component」的远程调试目标列表（debugpy connect；条目带成对 `localRoot`/`remoteRoot` 时写入该 pathMappings，半配或未配保持省略） |
 | `kbengine.jsoncAssociation` | `true` | 自动把 debug.json 的 glob 键写成 `jsonc` 写进工作区 `files.associations`（WorkspaceFolder 级；只动自己键、已有值不覆盖；`kbengine.jsoncAssociation.off` 回收本扩展写入的条目） |
 | `kbengine.debug.autoDebugpy` | `false` | 组件启动后经其 telnet `:python` 层注入 `debugpy.listen`（端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只绑 127.0.0.1；命名实例从每组件 8 槽窗口（5700 起）取独立口；单组件失败只记日志不阻塞启动；注入走 telnet，早期断点由启动等待模式覆盖） |

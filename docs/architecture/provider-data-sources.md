@@ -105,6 +105,7 @@ Construction-site history: from SRC-001 L4 the server/telnet/player-data/remote-
 | Provider | Class definition | Registration | Data sources | Allowed side effects |
 |---|---|---|---|---|
 | HotReloadFileDecorationProvider | hotReloadFileDecorations.ts:35 | :4446 | HotReloadFileStateMachine derived view aggregated by (rootId,targetId,file), colored by worst state | Pure read; refresh() via the onDidChangeFileDecorations event |
+| FolderColorDecorationProvider | folderColorDecorations.ts:40 | activate/folderColors.ts (wired from activate/views.ts, FOLDER-COLOR-001) | folderColorRules pure core: first-match-wins rule table (config `kbengine.folderColors.rules`, `{assetsRoot}` from the active profile) → single-letter badge + ThemeColor; dual gate (switch + KBEngine theme family) off = zero output; directories never decorated (no folder-background API) | Pure read (workspace.fs.stat for directory check); refresh() via the onDidChangeFileDecorations event on config/theme change |
 
 ## 3. Diagnostics surface
 

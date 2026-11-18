@@ -105,6 +105,7 @@
 | Provider | 类定义 | 注册位 | 数据源 | 允许副作用 |
 |---|---|---|---|---|
 | HotReloadFileDecorationProvider | hotReloadFileDecorations.ts:35 | :4446 | HotReloadFileStateMachine 派生视图按 (rootId,targetId,file) 聚合,取 worst 态着色 | 纯读;refresh() 经 onDidChangeFileDecorations 事件 |
+| FolderColorDecorationProvider | folderColorDecorations.ts:40 | activate/folderColors.ts(自 activate/views.ts 接线,FOLDER-COLOR-001) | folderColorRules 纯核:首条命中赢的规则表(配置 `kbengine.folderColors.rules`,`{assetsRoot}` 取活动 profile)→ 单字母角标+ThemeColor;双条件门(开关+KBEngine 主题族)关=零输出;目录永不装饰(无文件夹底色 API) | 纯读(workspace.fs.stat 判目录);配置/主题变更经 onDidChangeFileDecorations 事件 refresh() |
 
 ## 3. 诊断面
 
