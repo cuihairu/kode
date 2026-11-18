@@ -202,3 +202,4 @@ Show Call Chain 面板以 mermaid 关系图（graph）或纯文本（text）打�
 | `kbengine.jsoncAssociation` | 激活时把 **/.kbengine/debug.json 关联为 jsonc 写入工作区设置 |
 | `kbengine.python.extraPathsSync` | 自动把 KBEngine scripts 根写入 python.analysis.extraPaths |
 | `kbengine.webviewConsoleLogs` | 日志面板页面 console 与未捕获异常写入日志面板（内部行为） |
+| `kbengine.index.syntaxGate` | 开启后落盘重索引前做括号/引号/缩进预检，编辑中途保存的烂文件不入索引、索引保留上一次健康符号（状态栏 tooltip 可见拦截计数）；关闭后回到旧行为，烂文件照常入索引 |

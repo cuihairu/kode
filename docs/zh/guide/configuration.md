@@ -172,6 +172,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
+| `kbengine.index.syntaxGate` | boolean | `true` | Python 索引输入语法门(INDEX-DISCIPLINE-001):落盘重索引(保存/外部写盘经合并器收口)前做括号/引号/缩进单遍预检(零子进程);编辑中途保存的烂文件不入索引、索引保留上一次健康符号(诊断照常报语法错,编辑中导航不断);关闭后回到旧行为,烂文件照常入索引 |
 | `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
 | `kbengine.python.enableDataDictIndex` | boolean | `true` | KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关;键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链,支持 Shift+F12 引用与 F12 跳转(读点跳写点);写点 RHS 值类型能推才显,同键读点 inlay/hover 显示该类型(如 `{"gold": 1}` 写点在 `get("cfg")` 读点显 `Dict[str, int]`);关闭后不查索引,引用/跳转交回常规链 |
 | `kbengine.python.enableSpaceDataIndex` | boolean | `true` | 引擎 `KBEngine.setSpaceData` / `getSpaceData` / `delSpaceData`(仅 cellapp 注册、逐空间存储)的空间数据读写索引开关;spaceID 为 int 字面量或本文件模块级 int 常量绑定、key 为字符串字面量的调用按 `(spaceID, key)` 全等归族,支持键位补全、Shift+F12 引用与 F12 跳转(读/删点跳写点、写点跳首个异类点);动态 spaceID(解析不出)永不建族——动态空间不合并为同一确定对象;关闭后不查索引,补全/引用/跳转交回常规链 |
@@ -180,6 +181,10 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.python.apiMetadata` | boolean | `true` | KBEngine API 引擎版本/源码提交标识与原始声明位置;取不到源码标识显示 `unknown`,不硬造 |
 
 `kbengine.python.enableMroJump` 改动即时生效(不重载窗口);关闭后层2 只在跳转轨迹里记 skip、不做全仓 `.py` 扫描,`.py` 变更也不再投喂索引。方法使用处优先寻找 Python 实现，`.def` 方法声明会暂存为回退目标；属性访问和方法声明处保持 `.def` 导航。索引区分模块与 base/cell 同名类，并使用未保存的编辑器内容。逐层轨迹与排障口径见「日志」文档的 `[kode-jump]` 决策路径一节。引擎源码配置同时服务 `kbengine.python.apiMetadata`;元数据在激活期派生,不把本机路径写进代码。
+
+### 索引输入纪律
+
+`kbengine.index.syntaxGate` 与 INDEX-DISCIPLINE-001 输入纪律:重索引只认落盘状态——保存(`onDidSave`)与外部写盘(watcher)在 300ms 合并窗口内同文件并成一次重索引(编辑中的文件尾随顺延到下一窗,总上限 5 秒;同批 flush 的文件里最近触碰的最后重索引);纯编辑事件从不触发重索引,只登记文档身份,查询面(补全/悬停)靠按需的版本键解析看到未保存缓冲。重索引前文件先过 `kbengine.index.syntaxGate` 预检:编辑中途保存的烂文件(括号/引号断裂、缩进错乱)不入索引,索引保留上一次健康符号(导航不断链),语法错照常由诊断链报告;保存修复后的文件自动恢复全量索引。状态栏 tooltip 实时显示纪律计数(待合并数与语法门拦截数)。
 
 ### 路径与工作区发现
 

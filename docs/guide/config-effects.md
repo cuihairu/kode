@@ -202,3 +202,4 @@ These switches have no single static screenshot face: the effect is behavioral (
 | `kbengine.jsoncAssociation` | On activation writes a files.association mapping debug.json to jsonc into workspace settings |
 | `kbengine.python.extraPathsSync` | Writes the KBEngine scripts root into python.analysis.extraPaths |
 | `kbengine.webviewConsoleLogs` | Webview console errors are captured into the log panel (internal behavior) |
+| `kbengine.index.syntaxGate` | With it on, saved reindexing passes a bracket/quote/indent precheck: a file saved mid-edit with broken syntax stays out of the index and the last healthy symbols are kept (skip count visible in the status tooltip); off restores the old behavior where broken files are indexed as-is |

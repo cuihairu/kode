@@ -510,5 +510,21 @@
     "scenario": "manual",
     "demo": "需构造 webview 异常",
     "capture": false
+  },
+  {
+    "key": "index-syntax-gate",
+    "setting": "kbengine.index.syntaxGate",
+    "off": false,
+    "on": true,
+    "name_zh": "索引输入语法门",
+    "name_en": "Index syntax gate",
+    "group_zh": "索引",
+    "group_en": "Indexing",
+    "effect_zh": "开启后落盘重索引前做括号/引号/缩进预检，编辑中途保存的烂文件不入索引、索引保留上一次健康符号（状态栏 tooltip 可见拦截计数）；关闭后回到旧行为，烂文件照常入索引",
+    "effect_en": "With it on, saved reindexing passes a bracket/quote/indent precheck: a file saved mid-edit with broken syntax stays out of the index and the last healthy symbols are kept (skip count visible in the status tooltip); off restores the old behavior where broken files are indexed as-is",
+    "visibility": "index state + status bar tooltip",
+    "scenario": "manual",
+    "demo": "编辑中途保存半截 .py + 状态栏 tooltip 拦截计数",
+    "capture": false
   }
 ]

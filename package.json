@@ -1907,6 +1907,11 @@
               "%kbengine.config.python.callChainView.enum.1%"
             ]
           },
+          "kbengine.index.syntaxGate": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.index.syntaxGate.description%"
+          },
           "kbengine.python.enableDataDictIndex": {
             "type": "boolean",
             "default": true,
