@@ -940,3 +940,125 @@ fn looks_natural_language(q: &str) -> bool {
     let has_cjk = q.chars().any(|c| (0x4E00..=0x9FFF).contains(&(c as u32)));
     words >= 2 && (has_cjk || words >= 4)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Scratch root + index dir pair, unique per tag (removed at test end).
+    fn scratch(tag: &str) -> (PathBuf, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-kbidx-u-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("kode-mcp-kbidx-u-idx-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&root).expect("scratch root");
+        (root, dir)
+    }
+
+    fn cleanup(root: &Path, dir: &Path) {
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn node(kind: crate::nodes::NodeKind, rel: &str, name: &str, content: &str) -> IndexNode {
+        IndexNode {
+            id: crate::nodes::node_id(&kind, rel, name),
+            project: "proj".to_string(),
+            file_path: rel.to_string(),
+            kind,
+            name: name.to_string(),
+            content: content.to_string(),
+            location: crate::nodes::SourceLocation::Lines { start: 1, end: 1 },
+            content_hash: content_hash(name.as_bytes()),
+            confidence: crate::semantic_model::Confidence::Unknown,
+        }
+    }
+
+    /// canonical_endpoint 残臂:无前缀原样保留 / def 带点名走属性-方法桶
+    /// 解析到真节点 / 未知前缀原样保留(遍历面报 unindexed)。
+    #[test]
+    fn canonical_endpoint_passthrough_and_dotted_def_resolution() {
+        let (root, dir) = scratch("canon");
+        let index = KnowledgeIndex::open_at(&root, &dir).expect("open");
+        let ent = node(
+            crate::nodes::NodeKind::Entity,
+            "scripts/entities/Avatar.def",
+            "Avatar",
+            "",
+        );
+        let prop = node(
+            crate::nodes::NodeKind::EntityProperty,
+            "scripts/entities/Avatar.def",
+            "Avatar.slot",
+            "",
+        );
+        let prop_id = prop.id.clone();
+        let ent_id = ent.id.clone();
+        index
+            .store
+            .replace_file_nodes("scripts/entities/Avatar.def", &[ent, prop])
+            .expect("insert nodes");
+        assert_eq!(
+            index.canonical_endpoint("Avatar", None),
+            "Avatar",
+            "non-P1 endpoint (no colon) keeps its raw form"
+        );
+        assert_eq!(
+            index.canonical_endpoint("def:Avatar.slot", None),
+            prop_id,
+            "dotted def endpoint resolves through the property/method bucket"
+        );
+        assert_eq!(
+            index.canonical_endpoint("def:Avatar", None),
+            ent_id,
+            "dotless def endpoint resolves through the entity bucket"
+        );
+        assert_eq!(
+            index.canonical_endpoint("weird:Thing", None),
+            "weird:Thing",
+            "unknown prefix keeps its raw form"
+        );
+        cleanup(&root, &dir);
+    }
+
+    /// excel_edges 上限臂:行源超过 MAX_EXCEL_REF_EDGES 时在确定性帽截断,
+    /// 溢出行丢弃而非淹没边表。
+    #[test]
+    fn excel_edges_caps_at_max_reference_edges() {
+        let (root, dir) = scratch("cap");
+        let index = KnowledgeIndex::open_at(&root, &dir).expect("open");
+        let ent = node(
+            crate::nodes::NodeKind::Entity,
+            "scripts/entities/Avatar.def",
+            "Avatar",
+            "",
+        );
+        index
+            .store
+            .replace_file_nodes("scripts/entities/Avatar.def", &[ent])
+            .expect("insert entity");
+        let rows: Vec<IndexNode> = (0..=(MAX_EXCEL_REF_EDGES + 1))
+            .map(|i| {
+                node(
+                    crate::nodes::NodeKind::ExcelRow,
+                    "design.xlsx",
+                    &format!("row-{i}"),
+                    "Avatar | filler",
+                )
+            })
+            .collect();
+        index
+            .store
+            .replace_file_nodes("design.xlsx", &rows)
+            .expect("insert rows");
+        let edges = index.excel_edges();
+        assert_eq!(
+            edges.len(),
+            MAX_EXCEL_REF_EDGES,
+            "overflow rows must be dropped at the deterministic cap"
+        );
+        cleanup(&root, &dir);
+    }
+}

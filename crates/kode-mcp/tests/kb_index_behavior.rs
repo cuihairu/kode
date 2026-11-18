@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use kode_mcp::kb_index::{KnowledgeIndex, SearchOptions, SemanticRetriever};
+use kode_mcp::kb_index::{KnowledgeIndex, Route, SearchOptions, SemanticRetriever};
 
 /// A throwaway assets root + index dir, unique per test (tag + pid), removed
 /// on drop so parallel tests never collide or leak state. Same pattern as
@@ -176,4 +176,273 @@ fn kind_filter_narrows_the_exact_route() {
     let out = index.search("Gateway", &wrong_kind).expect("kind search");
     assert_eq!(out["route"], "exact");
     assert_eq!(out["count"], 0);
+}
+
+/// Debug/句柄面:Debug 只报字段摘要(finish_non_exhaustive)、root()/fts()
+/// 句柄直读、无 watcher 时状态诚实。
+#[test]
+fn debug_root_and_fts_getters_expose_honest_state() {
+    let fx = Fixture::new("getters");
+    fx.write("docs/a.md", "# Demo\n\n## Gateway\n\ntext\n");
+    let index = fx.index();
+    index.build();
+    let dbg = format!("{index:?}");
+    assert!(dbg.contains("KnowledgeIndex"), "{dbg}");
+    assert!(dbg.contains("root:"), "{dbg}");
+    assert!(
+        dbg.contains(".."),
+        "finish_non_exhaustive keeps internals private: {dbg}"
+    );
+    assert_eq!(index.root(), fx.root.as_path());
+    assert!(index.fts().doc_count() >= 1, "build indexes fts docs");
+    assert!(!index.watcher_active());
+}
+
+/// 存储降级面:SQLite 落盘不可写时诚实降到内存库(tantivy 目录预建,
+/// 本身可写,故只有 sqlite 走降级)。
+#[test]
+#[cfg(unix)]
+fn store_degrades_to_memory_when_sqlite_dir_unwritable() {
+    let fx = Fixture::new("memfb");
+    std::fs::create_dir_all(fx.index_dir.join("tantivy")).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fx.index_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let index = KnowledgeIndex::open_at(&fx.root, &fx.index_dir)
+        .expect("memory fallback keeps the index usable");
+    let mode = index.store().mode;
+    // 先恢复权限再断言,保证 Drop 清理可用。
+    std::fs::set_permissions(&fx.index_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(mode, "memory");
+}
+
+/// 扫描跳过面:超 1MB 大文件与不可读(mode 000)文件都不进扫描结果
+/// (metadata/read 双拒绝臂)。
+#[test]
+#[cfg(unix)]
+fn reconcile_skips_oversize_and_unreadable_files() {
+    let fx = Fixture::new("skipscan");
+    fx.write("docs/small.md", "# Small\n\n## Alpha\n\ntiny\n");
+    std::fs::write(fx.root.join("docs/big.md"), vec![b'x'; 1_000_001]).unwrap();
+    std::fs::write(fx.root.join("docs/locked.md"), "# Locked\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(
+        fx.root.join("docs/locked.md"),
+        std::fs::Permissions::from_mode(0o000),
+    )
+    .unwrap();
+    let index = fx.index();
+    let stats = index.reconcile();
+    std::fs::set_permissions(
+        fx.root.join("docs/locked.md"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
+    assert_eq!(
+        stats.files_scanned, 1,
+        "oversize + unreadable must both be skipped"
+    );
+    assert_eq!(stats.added, 1);
+}
+
+/// 查询路由面:空查询拒绝;显式 Exact 路由不走 Auto 判定。
+#[test]
+fn search_rejects_empty_query_and_honors_explicit_exact_route() {
+    let fx = Fixture::new("routes");
+    fx.write("docs/gw.md", "# Demo\n\n## Gateway\n\ntext\n");
+    let index = fx.index();
+    index.build();
+    let err = index.search("   ", &opts(5)).unwrap_err();
+    assert_eq!(err, "empty search query");
+    let mut exact = opts(5);
+    exact.route = Route::Exact;
+    let out = index.search("Gateway", &exact).unwrap();
+    assert_eq!(out["route"], "exact");
+    assert_eq!(out["count"].as_u64().unwrap(), 1);
+}
+
+/// Exact 路由的 limit 早停:同名节点跨文件存在时按 limit 截断。
+#[test]
+fn exact_route_breaks_early_at_limit() {
+    let fx = Fixture::new("limit");
+    fx.write("docs/one.md", "# Demo\n\n## Shared\n\nfirst\n");
+    fx.write("docs/two.md", "# Demo\n\n## Shared\n\nsecond\n");
+    let index = fx.index();
+    index.build();
+    let mut wide = opts(10);
+    wide.route = Route::Exact;
+    let wide_out = index.search("Shared", &wide).unwrap();
+    assert!(
+        wide_out["count"].as_u64().unwrap() >= 2,
+        "two same-name sections exist"
+    );
+    let mut exact = opts(1);
+    exact.route = Route::Exact;
+    let out = index.search("Shared", &exact).unwrap();
+    assert_eq!(out["route"], "exact");
+    assert_eq!(
+        out["count"].as_u64().unwrap(),
+        1,
+        "limit=1 must truncate the exact-route loop early"
+    );
+}
+
+/// BM25 路由命中面:fts 命中回表并携带 score。
+#[test]
+fn bm25_route_returns_scored_rows_from_fts_hits() {
+    let fx = Fixture::new("bm25");
+    fx.write(
+        "docs/q.md",
+        "# Demo\n\n## Notes\n\nquokka sparkle portal beacon\n",
+    );
+    let index = fx.index();
+    index.build();
+    let mut bm25 = opts(5);
+    bm25.route = Route::Bm25;
+    let out = index.search("quokka", &bm25).unwrap();
+    assert_eq!(out["route"], "bm25");
+    let matches = out["matches"].as_array().unwrap();
+    assert!(!matches.is_empty(), "term hits must surface from fts");
+    assert!(matches[0].get("score").is_some(), "bm25 rows carry a score");
+}
+
+/// 向量融合上限 + 后端离线诚实面:BM25 已占满 limit 时向量命中让位;
+/// retrieve Err 不炸查询,configured/engine 仍如实。
+#[test]
+fn vector_merge_caps_at_limit_and_offline_backend_is_honest() {
+    let fx = Fixture::new("vec-cap");
+    fx.write("docs/nl.md", "# Demo\n\nquokka sparkle portal beacon\n");
+    let index = fx.index();
+    index.build();
+    index.set_vector_retriever(Arc::new(StubRetriever {
+        hits: vec![("never-relevant".to_string(), 9.9)],
+    }));
+    // NL 形态(≥4 词带空格)→ BM25 行已占满 limit=1,向量命中必须让位。
+    let out = index
+        .search("quokka sparkle portal beacon", &opts(1))
+        .expect("capped vector merge");
+    assert_eq!(out["vector"]["configured"], true);
+    assert_eq!(out["count"].as_u64().unwrap(), 1);
+    assert!(
+        out["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|m| m["id"] != "never-relevant"),
+        "vector hit beyond the limit must not be merged"
+    );
+
+    #[derive(Debug)]
+    struct OfflineRetriever;
+    impl SemanticRetriever for OfflineRetriever {
+        fn name(&self) -> &'static str {
+            "offline-vector"
+        }
+        fn retrieve(&self, _q: &str, _l: usize) -> Result<Vec<(String, f32)>, String> {
+            Err("backend offline".to_string())
+        }
+    }
+    let fx2 = Fixture::new("vec-off");
+    fx2.write("docs/nl.md", "# Demo\n\nquokka sparkle portal beacon\n");
+    let index2 = fx2.index();
+    index2.build();
+    index2.set_vector_retriever(Arc::new(OfflineRetriever));
+    let out2 = index2
+        .search("quokka sparkle portal beacon", &opts(5))
+        .expect("offline backend must not fail the search");
+    assert_eq!(out2["vector"]["configured"], true);
+    assert_eq!(out2["vector"]["engine"], "offline-vector");
+}
+
+/// get_dependencies 面:同名多种子排序路径 + 规则幻影目标如实上报
+/// unindexed,绝不静默丢弃。
+#[test]
+fn get_dependencies_sorts_seeds_and_reports_unindexed_targets() {
+    use kode_mcp::nodes::{node_id, IndexNode, NodeKind, Reference, Relation, SourceLocation};
+    use kode_mcp::semantic_model::Confidence;
+
+    fn ent(rel: &str, name: &str) -> IndexNode {
+        IndexNode {
+            id: node_id(&NodeKind::Entity, rel, name),
+            project: "proj".to_string(),
+            file_path: rel.to_string(),
+            kind: NodeKind::Entity,
+            name: name.to_string(),
+            content: String::new(),
+            location: SourceLocation::Lines { start: 1, end: 1 },
+            content_hash: kode_mcp::nodes::content_hash(name.as_bytes()),
+            confidence: Confidence::Unknown,
+        }
+    }
+
+    let fx = Fixture::new("deps");
+    let a = ent("scripts/entities/a/Dup.def", "Dup");
+    let b = ent("scripts/entities/b/Dup.def", "Dup");
+    let leaf = ent("scripts/entities/Leaf.def", "Leaf");
+    let index = fx.index();
+    index
+        .store()
+        .replace_file_nodes("scripts/entities/a/Dup.def", std::slice::from_ref(&a))
+        .unwrap();
+    index
+        .store()
+        .replace_file_nodes("scripts/entities/b/Dup.def", std::slice::from_ref(&b))
+        .unwrap();
+    index
+        .store()
+        .replace_file_nodes("scripts/entities/Leaf.def", std::slice::from_ref(&leaf))
+        .unwrap();
+    index
+        .store()
+        .replace_edges(&[
+            Reference {
+                source_node: a.id.clone(),
+                target_node: leaf.id.clone(),
+                relation: Relation::Calls,
+                confidence: Confidence::Inferred,
+                rule: "unit-test".to_string(),
+            },
+            Reference {
+                source_node: a.id.clone(),
+                target_node: "phantom-target".to_string(),
+                relation: Relation::References,
+                confidence: Confidence::Unknown,
+                rule: "unit-test".to_string(),
+            },
+        ])
+        .unwrap();
+    let out = index.get_dependencies("Dup", 3, 50).unwrap();
+    assert_eq!(out["seeds"].as_array().unwrap().len(), 2);
+    assert_eq!(out["edgeCount"].as_u64().unwrap(), 2);
+    let nodes = out["nodes"].as_array().unwrap();
+    // 2 种子 + leaf + 幻影 = 4 行;幻影如实标 unindexed。
+    assert_eq!(nodes.len(), 4);
+    let phantom = nodes
+        .iter()
+        .find(|n| n.get("indexed") == Some(&serde_json::json!(false)))
+        .expect("phantom target reported");
+    assert_eq!(phantom["id"], "phantom-target");
+    assert_eq!(phantom["note"], "rule target has no indexed node");
+}
+
+/// 存储面与 fts 面短暂失同步(store 侧撤档、fts 文档仍在)时,BM25 命中
+/// 回表 miss 不炸查询,诚实返回空集。
+#[test]
+fn bm25_survives_store_fts_desync_with_honest_empty_set() {
+    let fx = Fixture::new("desync");
+    fx.write(
+        "docs/q.md",
+        "# Demo\n\n## Notes\n\nquokka sparkle portal beacon\n",
+    );
+    let index = fx.index();
+    index.build();
+    index.store().remove_file("docs/q.md").unwrap();
+    let mut bm25 = opts(5);
+    bm25.route = Route::Bm25;
+    let out = index.search("quokka", &bm25).unwrap();
+    assert_eq!(out["route"], "bm25");
+    assert_eq!(
+        out["count"].as_u64().unwrap(),
+        0,
+        "fts hit whose store node is gone must yield an honest empty set"
+    );
 }
