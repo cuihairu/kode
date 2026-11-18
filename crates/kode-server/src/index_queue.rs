@@ -851,4 +851,38 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+    #[test]
+    fn enqueue_identity_defense_arms_and_happy_path() {
+        let mut q = test_queue();
+        // 无冒号:split 防御臂(生产身份恒 root:path,identity_of 造不出)。
+        assert!(!q.enqueue_identity("nocolon", RootId(1), Some(1)));
+        // 冒号后非本地 uri:scheme 面解析失败防御臂,不伪造入队。
+        assert!(!q.enqueue_identity("1:http://x/y", RootId(1), Some(1)));
+        // 合法身份整链走 enqueue_refresh,真实入队一条。
+        let k = key(1, "/w/A.def");
+        assert!(q.enqueue_identity(&identity_of(&k), RootId(1), Some(1)));
+        assert_eq!(q.snapshot().queued, 1);
+    }
+
+    #[test]
+    fn debug_face_exposes_snapshot_and_pending() {
+        let mut q = test_queue();
+        q.request_open(&key(1, "/w/A.def"), 1);
+        let dbg = format!("{q:?}");
+        assert!(dbg.contains("IndexQueue"));
+        assert!(dbg.contains("snapshot"));
+        assert!(dbg.contains("pending"));
+    }
+
+    #[test]
+    fn replay_key_round_trip_and_bad_path_faces() {
+        // 身份重建 round-trip:identity_of 拆段回放与原键相等。
+        let k = key(3, "/w/C.def");
+        let ident = identity_of(&k);
+        let path = ident.split_once(':').unwrap().1;
+        assert_eq!(replay_key(RootId(3), path), Some(k));
+        // 非 scheme uri 与空白输入拒绝。
+        assert_eq!(replay_key(RootId(3), "http://x/y"), None);
+        assert_eq!(replay_key(RootId(3), "  "), None);
+    }
 }
