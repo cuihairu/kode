@@ -955,4 +955,171 @@ mod tests {
             "未知声明位保留未知,不吞 mismatch"
         );
     }
+
+    #[test]
+    fn variable_derived_python_and_vector_shapes() {
+        // PYTHON 推导变量 → Any 形态(actual_is_any → 与任何声明兼容)。
+        let r = check_rpc_args(
+            &[bt("STRING")],
+            None,
+            7,
+            &[CallArg::Variable {
+                name: "p".into(),
+                derived: Some(bt("PYTHON")),
+            }],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+        // VECTOR3 推导变量 → One(Vector),与 VECTOR3 声明同形。
+        let r = check_rpc_args(
+            &[bt("VECTOR3")],
+            None,
+            7,
+            &[CallArg::Variable {
+                name: "v".into(),
+                derived: Some(bt("VECTOR3")),
+            }],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+        // PYTHON 声明 + int 字面量:any_flag 放行;int_bounds(PYTHON)=None
+        // 不精查(非整型族名)。
+        let r = check_rpc_args(
+            &[bt("PYTHON")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(5))],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+    }
+
+    #[test]
+    fn py_set_entitycall_and_unregistered_builtin() {
+        // PY_SET 声明 + set 字面量:builtin_shape/字面量形态/证据文本三面。
+        let r = check_rpc_args(
+            &[bt("PY_SET")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Set)],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+        assert_eq!(r[0].actual, "set 字面量");
+        // ENTITYCALL 声明 + int 字面量:EntityRef 形态不符(int 非 None)。
+        let r = check_rpc_args(
+            &[bt("ENTITYCALL")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(1))],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
+        // 未注册内建名声明:形态不可识别 → 保留未知,绝不猜。
+        let r = check_rpc_args(
+            &[bt("NOSUCH")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(1))],
+        );
+        assert!(matches!(r[0].verdict, ArgVerdict::Unknown(_)));
+    }
+
+    #[test]
+    fn nullable_declaration_and_union_unrecognized_branch() {
+        // Nullable 声明穿透取内形:int 字面量兼容。
+        let r = check_rpc_args(
+            &[SemType::Nullable(Box::new(bt("INT32")))],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(5))],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+        // 联合声明含不可识别分支,字面量又匹配不上已知分支 → 联合未知。
+        let d = SemType::Union(vec![bt("INT32"), SemType::Unknown("x".into())]);
+        let r = check_rpc_args(&[d], None, 7, &[CallArg::Literal(LiteralValue::Float(1.5))]);
+        assert!(matches!(r[0].verdict, ArgVerdict::Unknown(_)));
+        // 纯已知联合 + int 字面量:int_bounds(Union)=None(非 Builtin/
+        // Alias/Range)不精查,兼容。
+        let d = SemType::Union(vec![bt("INT32"), bt("STRING")]);
+        let r = check_rpc_args(&[d], None, 7, &[CallArg::Literal(LiteralValue::Int(5))]);
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+    }
+
+    #[test]
+    fn variable_derived_unknown_shape_is_unknown() {
+        // 推导类型形态不可识别(expected 空)→ 变量面未知。
+        let r = check_rpc_args(
+            &[bt("INT32")],
+            None,
+            7,
+            &[CallArg::Variable {
+                name: "u".into(),
+                derived: Some(SemType::Unknown("ghost".into())),
+            }],
+        );
+        assert!(matches!(r[0].verdict, ArgVerdict::Unknown(_)));
+    }
+
+    #[test]
+    fn none_literal_alias_union_and_container_reject() {
+        // None + Alias 穿透:ENTITYCALL 别名接受。
+        let alias = SemType::Alias("Call".into(), Box::new(bt("ENTITYCALL")));
+        let r = check_rpc_args(
+            &[alias],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::NoneLiteral)],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+        // None + 联合:任一分支接受即接受。
+        let u = SemType::Union(vec![bt("INT32"), SemType::Entity("Avatar".into())]);
+        let r = check_rpc_args(
+            &[u],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::NoneLiteral)],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+        // None + ARRAY 容器:拒(none_accepts 兜底面)。
+        let arr = SemType::Array(Box::new(bt("INT32")));
+        let r = check_rpc_args(
+            &[arr],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::NoneLiteral)],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
+    }
+
+    #[test]
+    fn helper_defensive_arms_direct_calls() {
+        // single_shape 直调:Alias/Nullable/Entity/Union/Unknown 臂在唯一
+        // 调用方 collect_declared_shapes 里被前置拦截,只有直调可达。
+        let alias = SemType::Alias("HP".into(), Box::new(bt("INT32")));
+        assert_eq!(single_shape(&alias), Some(PyShape::Int));
+        let nullable = SemType::Nullable(Box::new(bt("STRING")));
+        assert_eq!(single_shape(&nullable), Some(PyShape::Str));
+        assert_eq!(
+            single_shape(&SemType::Entity("Avatar".into())),
+            Some(PyShape::EntityRef)
+        );
+        assert_eq!(single_shape(&SemType::Union(vec![bt("INT32")])), None);
+        assert_eq!(single_shape(&SemType::Unknown("x".into())), None);
+        // literal_shape 直调:NoneLiteral 在 check_one 前置特例返回,永不
+        // 进 literal_shape —— 直调钉 EntityRef 映射真值(三形态之一)。
+        assert_eq!(
+            literal_shape(&LiteralValue::NoneLiteral),
+            PyShape::EntityRef
+        );
+        // describe_arg 直调:*args/**kwargs 被 check_rpc_args 前置门全量
+        // 拦截,describe 永不收到 —— 直调钉证据文本。
+        assert_eq!(describe_arg(&CallArg::StarArgs), "*args");
+        assert_eq!(describe_arg(&CallArg::KwArgs), "**kwargs");
+        // check_one 直调:同前置门,check_one 永不收到 StarArgs —— 直调
+        // 钉防御臂「保留未知」真值。
+        assert!(matches!(
+            check_one(&bt("INT32"), &CallArg::StarArgs),
+            ArgVerdict::Unknown(_)
+        ));
+        assert!(matches!(
+            check_one(&bt("INT32"), &CallArg::KwArgs),
+            ArgVerdict::Unknown(_)
+        ));
+    }
 }
