@@ -1,7 +1,7 @@
 # 客户端实体 SDK 生成
 
 
-按 `entities.xml` 登记的实体，从 `.def` 生成客户端实体骨架。当前支持 TypeScript 与 C# 两种目标语言，在命令内勾选（可多选）。
+按 `entities.xml` 登记的实体，从 `.def` 生成客户端实体骨架。当前支持 TypeScript、C# 与 Python 三种目标语言，在命令内勾选（可多选）。
 
 ## 能力概览
 
@@ -17,8 +17,27 @@
 ## 相关命令
 
 - `kbengine.clientSdk.generate`
+- `client-sdk-gen`（独立 CLI 二进制，见下节）
 
 命令说明见 [命令与面板](./commands.md)。
+
+## 独立 CLI（`client-sdk-gen`）
+
+同一生成核心另以 headless 二进制发布，供 CI 与脚本使用，不依赖编辑器会话。收集契约与扩展流程同口径：`scripts/entities.xml` 登记序、组件 def 闭包（`entity_defs/components/` 优先，`entity_defs/interfaces/` 回落）、`entity_defs/types.xml`。
+
+```bash
+cargo build -p kode-server --bin client-sdk-gen --release
+
+./target/release/client-sdk-gen \
+  --assets-root <资产根目录> \
+  --language python \
+  --out <输出目录>                          # 缺省 <资产根>/scripts/client_entities
+  # [--namespace <ns>]                      # 仅 C#，缺省 KbEngineClient
+  # [--engine-version 2.5.10 --engine-commit 55a66552]   # 头部溯源，须成对给
+  # [--generated-at <文本>]                 # 头部生成时间，缺省空
+```
+
+退出码 0 写文件（路径逐行打到 stdout）；非 0 报错。CLI 模式始终覆盖已存在文件——CI 再生成按确定性对待。
 
 ## 相关配置
 
@@ -30,12 +49,13 @@
 
 ### 实体文件
 
-每个实体一个文件，文件名为 `<实体名>.ts` / `<实体名>.cs`。类内依次是：实体 id 只读成员、客户端可见属性、构造函数、`ClientMethods` 回调、Exposed 包装调用、两个发送接缝。
+每个实体一个文件，文件名为 `<实体名>.ts` / `<实体名>.cs` / `<实体名>.py`。类内依次是：实体 id 只读成员、客户端可见属性、构造函数、`ClientMethods` 回调、Exposed 包装调用、两个发送接缝。
 
 每个生成文件（实体文件与固定字典伴随文件）头部都带引擎溯源行：「引擎版本」/「引擎提交」记录输入引擎的版本宏与 git 提交（经 `readEngineApiMetadata` 探测，profile 记录的引擎根优先）；定位不到引擎时两行如实写 `unknown`，溯源绝不静默缺失（`src/sdkGenerationTrace.ts`）。
 
 - TypeScript：属性保持 def 原名，回调为具体方法，参数名 `_arg0`/`_arg1`…（def 的 `<Arg>` 只有类型没有名字）
 - C#：命名转 PascalCase（`hp` → `Hp`、`onHPChanged` → `OnHPChanged`），属性为 `get; set;`，回调为 `virtual`，参数写在类型之后，参数名 `arg0`/`arg1`…
+- Python：属性为类级注解，`__init__(entity_id)` 赋实体 id；命名保持 def 原拼（包装为蛇形前缀 `base_call_*`/`cell_call_*`，接缝 `on_base_outgoing`/`on_cell_outgoing`）。FIXED_DICT/组件伴随为 `@dataclass` 类，import 为包内相对（`from .ClientSdkFixedDicts import …`），消费时把输出目录当包用。骨架纯标准库零依赖，可直接 import/实例化——正是 e2e 测试的预期载体
 
 ### 属性
 
@@ -60,19 +80,21 @@ public baseCallCreateAvatar(_arg0: number): void {
 
 ## 类型映射
 
-| def 类型 | TypeScript | C# |
-| --- | --- | --- |
-| `UINT8` / `UINT16` / `UINT32` | `number` | `byte` / `ushort` / `uint` |
-| `UINT64` | `bigint` | `ulong` |
-| `INT8` / `INT16` / `INT32` | `number` | `sbyte` / `short` / `int` |
-| `INT64` | `bigint` | `long` |
-| `FLOAT` / `DOUBLE` | `number` | `float` / `double` |
-| `STRING` / `UNICODE` | `string` | `string` |
-| `VECTOR2` / `VECTOR3` / `VECTOR4` | `[number, number]` / `[number, number, number]` / `[number, number, number, number]` | `Vector2` / `Vector3` / `Vector4` |
-| `ENTITYCALL` / `PYTHON` / `PY_DICT` / `PY_TUPLE` / `PY_LIST` / `BLOB` | `unknown` | `object` |
-| `ARRAY`（`<of>` 元素类型） | 元素类型 + `[]` | 元素类型 + `[]` |
-| `FIXED_DICT` 别名 | 伴随文件的 `interface` 名 | 伴随文件的 `class` 名 |
-| 未识别 | `unknown` | `object` |
+| def 类型 | TypeScript | C# | Python |
+| --- | --- | --- | --- |
+| `UINT8` / `UINT16` / `UINT32` | `number` | `byte` / `ushort` / `uint` | `int` |
+| `UINT64` | `bigint` | `ulong` | `int` |
+| `INT8` / `INT16` / `INT32` | `number` | `sbyte` / `short` / `int` | `int` |
+| `INT64` | `bigint` | `long` | `int` |
+| `FLOAT` / `DOUBLE` | `number` | `float` / `double` | `float` |
+| `STRING` / `UNICODE` | `string` | `string` | `str` |
+| `VECTOR2` / `VECTOR3` / `VECTOR4` | `[number, number]` / `[number, number, number]` / `[number, number, number, number]` | `Vector2` / `Vector3` / `Vector4` | `tuple[float, float]` / `tuple[float, float, float]` / `tuple[float, float, float, float]` |
+| `ENTITYCALL` / `PYTHON` | `unknown` | `object` | `Any` |
+| `PY_DICT` / `PY_TUPLE` / `PY_LIST` | `unknown` | `object` | `dict` / `tuple` / `list` |
+| `BLOB` | `unknown` | `object` | `bytes` |
+| `ARRAY`（`<of>` 元素类型） | 元素类型 + `[]` | 元素类型 + `[]` | `list[元素类型]` |
+| `FIXED_DICT` 别名 | 伴随文件的 `interface` 名 | 伴随文件的 `class` 名 | 伴随文件的 `@dataclass` 名 |
+| 未识别 | `unknown` | `object` | `Any` |
 
 类型表与引擎注册表同源（17 个内置类型）。引擎未注册的 `BOOL` 等幻影类型不给映射，落兜底值，由 def 分析诊断照报。
 
@@ -85,12 +107,17 @@ C# 向量默认 `Vector2`/`Vector3`/`Vector4` 裸名（Unity 自带）；非 Uni
 - **编译目标**：消费方 TS 工程需 **ES2020+**（BigInt 支持）。
 - **编解码边界**：`JSON.stringify` 遇 `bigint` 抛错；网络编解码须走 BigInt 感知通道（如按字符串或二进制缓冲编码）。`entityId` 仍是 `number`（baseapp 分配，远低于 2^53）。
 - C# 不受影响（`ulong`/`long` 本身全宽）。
+- Python 不受影响：Python 3 的 `int` 本身无界，`UINT64`/`INT64` 直接映射 `int` 无特判（每个生成的 Python SDK 文件头部都带说明行）。
+
+### Python 零依赖选择
+
+Python 骨架有意不依赖 KBEngine Python stubs（`Vector` 类等），向量用纯标准库注解（`tuple[float, float, float]`），生成目录无需引擎在 `PYTHONPATH` 上即可 import/实例化——这正是它能当 e2e/测试载体的原因。若要引擎类型化注解，做后处理或扩生成器，不要手改生成文件。
 
 
 
 ## 固定字典伴随文件
 
-有客户端可见属性引用 `FIXED_DICT` 别名时才出伴随文件，文件名为 `ClientSdkFixedDicts.ts` / `ClientSdkFixedDicts.cs`，只收录被引用到的类型（`types.xml` 里声明了但没被引用的别名不生成）。TypeScript 侧为 `interface` 并由实体文件 `import`，C# 侧为 `class`，与实体文件同命名空间（固定 `KbEngineClient`，改名需改生成器常量 `CLIENT_SDK_CSHARP_NAMESPACE`）。
+有客户端可见属性引用 `FIXED_DICT` 别名时才出伴随文件，文件名为 `ClientSdkFixedDicts.ts` / `ClientSdkFixedDicts.cs` / `ClientSdkFixedDicts.py`，只收录被引用到的类型（`types.xml` 里声明了但没被引用的别名不生成）。TypeScript 侧为 `interface` 并由实体文件 `import`，C# 侧为 `class`，与实体文件同命名空间（固定 `KbEngineClient`，改名需改生成器常量 `CLIENT_SDK_CSHARP_NAMESPACE`），Python 侧为 `@dataclass` 并走包内相对 import。
 
 ## 典型流程
 
@@ -107,7 +134,7 @@ C# 向量默认 `Vector2`/`Vector3`/`Vector4` 裸名（Unity 自带）；非 Uni
 还没有做到：
 
 - 不生成客户端插件的调用通道实现，`onBaseOutgoing`/`onCellOutgoing` 需要按所用插件自己实现
-- 语言清单首批只有 TypeScript 与 C#；GDScript、C++ 未做
+- 语言清单为 TypeScript、C# 与 Python；GDScript、C++ 未做
 - 只按 `entities.xml` 登记的实体生成，未登记的 `.def` 不生成
 - 默认不覆盖已存在文件，重复生成同名实体会被跳过
 - 生成文件不自动进入版本控制或构建流程，接入方式由使用者决定

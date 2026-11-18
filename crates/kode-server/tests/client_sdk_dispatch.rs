@@ -221,6 +221,97 @@ fn dispatch_generates_entity_and_fixed_dicts() {
     assert!(!fixed.contains("Money"));
 }
 
+/// dispatch 面 python 臂:Avatar.py 骨架(注解属性/self 首参回调/蛇形包装/
+/// 接缝空方法)+ ClientSdkFixedDicts.py dataclass 伴随。
+#[test]
+fn dispatch_generates_python_entity_and_fixed_dicts() {
+    let files = generate(sdk_params("python", FULL_DEF));
+    let files = files.as_array().expect("array result");
+    assert_eq!(files.len(), 2);
+
+    let py = content_of(files, "Avatar.py");
+    assert!(py.contains("# 实体: Avatar 父类: Entity"));
+    assert!(py.contains("from __future__ import annotations"));
+    assert!(py.contains("class Avatar:"));
+    assert!(py.contains("    entity_id: int  # 实体 id（由 baseapp 分配）"));
+    // py 类型映射:UINT32→int,VECTOR3→tuple 泛型,ARRAY→list[...]
+    assert!(py.contains("    hp: int"));
+    assert!(py.contains("    homePosition: tuple[float, float, float]"));
+    assert!(py.contains("    loot: list[int]"));
+    assert!(py.contains("    skills: list[str]"));
+    assert!(py.contains("    bag: AvatarProps"));
+    // ClientMethods 回调 stub:self 首参 + TODO 体
+    assert!(py.contains("    def onHPChanged(self, arg0: int, arg1: int) -> None:"));
+    assert!(py.contains("        # TODO: 实现客户端回调"));
+    // Exposed 包装:base_call_/cell_call_ 前缀 + 发送接缝
+    assert!(py.contains("    def base_call_createAvatar(self, arg0: int) -> None:"));
+    assert!(py.contains("self.on_base_outgoing('createAvatar', [arg0])"));
+    assert!(py.contains("    def cell_call_moveTo(self, arg0: tuple[float, float, float]) -> None:"));
+    assert!(py.contains("self.on_cell_outgoing('moveTo', [arg0])"));
+    assert!(py.contains("    def on_base_outgoing(self, _method: str, _args: list) -> None:"));
+    assert!(py.contains("    def on_cell_outgoing(self, _method: str, _args: list) -> None:"));
+    // FIXED_DICT 相对 import(包形态消费)
+    assert!(py.contains("from .ClientSdkFixedDicts import AvatarProps"));
+    assert!(py.contains(GENERATED_AT));
+    // 纯服务端属性与未 Exposed 方法不进客户端面
+    assert!(!py.contains("    name:"));
+    assert!(!py.contains("internalPurge"));
+
+    let fixed = content_of(files, "ClientSdkFixedDicts.py");
+    assert!(fixed.contains("from dataclasses import dataclass"));
+    assert!(fixed.contains("@dataclass"));
+    assert!(fixed.contains("class AvatarProps:"));
+    assert!(fixed.contains("    hp: int"));
+    assert!(fixed.contains("    name: str"));
+    // source 行号溯源(types.xml:2 类型 / 5、6 字段)
+    assert!(fixed.contains("# source: types.xml:2"));
+    assert!(fixed.contains("    # source: types.xml:5"));
+    // 无字段的 Money 不进 FixedDict 伴随文件
+    assert!(!fixed.contains("Money"));
+}
+
+/// python 组件臂:slot 成员 + 组件 dataclass;无客户端可见属性的组件
+/// 空类体给 pass(裸空体是 IndentationError,生成物必须可 import)。
+#[test]
+fn python_component_slot_dataclass_with_empty_body_guard() {
+    let params = json!({
+        "language": "python",
+        "entities": [{"name": "Avatar", "defText": COMPONENT_ENTITY_DEF}],
+        "defs": {"HealthComp": COMPONENT_DEF},
+        "typesXml": TYPES_XML,
+        "generatedAt": GENERATED_AT,
+    });
+    let files = generate(params).as_array().unwrap().clone();
+    let py = content_of(&files, "Avatar.py");
+    assert!(py.contains("    healthPack: HealthComp"));
+    assert!(py.contains("from .ClientSdkComponents import HealthComp"));
+
+    let comps = content_of(&files, "ClientSdkComponents.py");
+    assert!(comps.contains("# 实体组件: HealthComp"));
+    assert!(comps.contains("class HealthComp:"));
+    assert!(comps.contains("    hp: int"));
+    // 纯服务端属性(name BASE)不进组件类
+    assert!(!comps.contains("    name:"));
+
+    // 空客户端可见属性组件(demo-assets Inventory 形态)→ pass 占位。
+    let empty_client_def = r#"<root>
+  <Properties>
+    <serverOnly><Type>UINT32</Type><Flags>BASE</Flags></serverOnly>
+  </Properties>
+</root>"#;
+    let params = json!({
+        "language": "python",
+        "entities": [{"name": "Avatar", "defText": COMPONENT_ENTITY_DEF}],
+        "defs": {"HealthComp": empty_client_def},
+        "typesXml": TYPES_XML,
+        "generatedAt": GENERATED_AT,
+    });
+    let files = generate(params).as_array().unwrap().clone();
+    let comps = content_of(&files, "ClientSdkComponents.py");
+    assert!(comps.contains("    # 无客户端可见属性"));
+    assert!(comps.contains("    pass"));
+}
+
 /// FULL_DEF 客户端可见属性过滤:仅客户端域旗标成字段(TS 同口径)。
 #[test]
 fn full_def_filters_client_visible_properties() {
@@ -447,7 +538,7 @@ fn component_slot_missing_def_skipped() {
         .any(|f| f["fileName"] == "ClientSdkComponents.ts"));
 }
 
-/// 未知语言 → handler 报错(TS 侧回退路径)。
+/// 未知语言 → handler 报错(TS 侧回退路径)。python 已是合法语言臂,样本用 go。
 #[test]
 fn unknown_language_is_error() {
     let mut state = ServerState::new();
@@ -460,7 +551,7 @@ fn unknown_language_is_error() {
         request(
             1,
             "$/kode/rpc",
-            json!({"method": "$/kode/sdk/generate", "params": sdk_params("python", FULL_DEF)}),
+            json!({"method": "$/kode/sdk/generate", "params": sdk_params("go", FULL_DEF)}),
         ),
     );
     match &out[0] {
@@ -497,6 +588,25 @@ fn rejects_member_name_collision_with_auxiliary() {
 
     let cs_err = generate_err(sdk_params("csharp", def));
     assert!(cs_err.contains("实体 Avatar 的 C# SDK 成员 \"EntityId\""));
+
+    // python 蛇形辅助名:entity_id/on_base_outgoing 冲突(业务名保持 def 原名)。
+    let py_def = r#"<root>
+  <Properties>
+    <entity_id>
+      <Type>UINT32</Type>
+      <Flags>OWN_CLIENT</Flags>
+    </entity_id>
+  </Properties>
+  <ClientMethods>
+    <on_cell_outgoing>
+      <Arg>UINT32</Arg>
+    </on_cell_outgoing>
+  </ClientMethods>
+</root>"#;
+    let py_err = generate_err(sdk_params("python", py_def));
+    assert!(py_err.contains("实体 Avatar 的 Python SDK 成员 \"entity_id\""));
+    assert!(py_err.contains("业务属性 entity_id"));
+    assert!(py_err.contains("ClientMethods 回调 on_cell_outgoing"));
 }
 
 /// IDE-AUD-062:无重名输入照常生成(预检不误伤合法实体)。
@@ -543,4 +653,13 @@ fn ts_int64_maps_to_bigint_with_boundary_note() {
     assert!(cs.contains("public ulong Coins { get; set; }"));
     assert!(cs.contains("public long Balance { get; set; }"));
     assert!(!cs.contains("64 位整数"));
+
+    // python:int 无界天然全精确域(IDE-AUD-063 py 镜像),头部带边界说明。
+    let py_files = generate(sdk_params("python", def));
+    let py_files = py_files.as_array().expect("array result");
+    let py = content_of(py_files, "Avatar.py");
+    assert!(py.contains("    coins: int"));
+    assert!(py.contains("    balance: int"));
+    assert!(py.contains("    tags: list[int]"));
+    assert!(py.contains("# 64 位整数: UINT64/INT64 → int"));
 }

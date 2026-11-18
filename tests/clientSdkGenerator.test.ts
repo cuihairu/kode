@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildClientSdkTypeMap,
@@ -381,6 +382,149 @@ describe('组件 SDK 发射(IDE-RUST-006,与 Rust client_sdk_dispatch 对拍)', 
   it('无组件槽:不产组件伴随文件', () => {
     const entity = parseClientSdkEntity(FULL_DEF, 'Avatar')!;
     expect(generateClientSdkComponentsFile([entity], 'typescript', makeFixedDictTypeMap('typescript'), GENERATED_AT)).toBeNull();
+  });
+});
+
+describe('python 语言臂(与 Rust client_sdk_dispatch python 用例对拍)', () => {
+  it('FULL_DEF:骨架全要素(注解属性/self 首参回调/蛇形包装/接缝/相对 import)', () => {
+    const entity = parseClientSdkEntity(FULL_DEF, 'Avatar')!;
+    const content = generateClientSdkEntityFile(entity, 'python', makeFixedDictTypeMap('python'), GENERATED_AT);
+    expect(content).toContain('# 实体: Avatar 父类: Entity');
+    expect(content).toContain('from __future__ import annotations');
+    expect(content).toContain('class Avatar:');
+    expect(content).toContain('    entity_id: int  # 实体 id（由 baseapp 分配）');
+    // py 类型映射:UINT32→int,VECTOR3→tuple 泛型,ARRAY→list[...]
+    expect(content).toContain('    hp: int');
+    expect(content).toContain('    homePosition: tuple[float, float, float]');
+    expect(content).toContain('    loot: list[int]');
+    expect(content).toContain('    skills: list[str]');
+    expect(content).toContain('    bag: AvatarProps');
+    // ClientMethods 回调 stub:self 首参 + TODO 体
+    expect(content).toContain('    def onHPChanged(self, arg0: int, arg1: int) -> None:');
+    expect(content).toContain('        # TODO: 实现客户端回调');
+    // Exposed 包装:base_call_/cell_call_ 前缀 + 发送接缝
+    expect(content).toContain('    def base_call_createAvatar(self, arg0: int) -> None:');
+    expect(content).toContain("self.on_base_outgoing('createAvatar', [arg0])");
+    expect(content).toContain('    def cell_call_moveTo(self, arg0: tuple[float, float, float]) -> None:');
+    expect(content).toContain("self.on_cell_outgoing('moveTo', [arg0])");
+    expect(content).toContain('    def on_base_outgoing(self, _method: str, _args: list) -> None:');
+    expect(content).toContain('    def on_cell_outgoing(self, _method: str, _args: list) -> None:');
+    // FIXED_DICT 相对 import(包形态消费)+ 溯源头
+    expect(content).toContain('from .ClientSdkFixedDicts import AvatarProps');
+    expect(content).toContain(GENERATED_AT);
+    // 纯服务端属性与未 Exposed 方法不进客户端面
+    expect(content).not.toContain('    name:');
+    expect(content).not.toContain('internalPurge');
+  });
+
+  it('INT64:int 无界全精确域 + 头部边界说明(IDE-AUD-063 py 镜像)', () => {
+    const entity = parseClientSdkEntity(INT64_DEF, 'Avatar')!;
+    const content = generateClientSdkEntityFile(entity, 'python', buildClientSdkTypeMap([], 'python'), GENERATED_AT);
+    expect(content).toContain('    coins: int');
+    expect(content).toContain('    balance: int');
+    expect(content).toContain('    tags: list[int]');
+    expect(content).toContain('# 64 位整数: UINT64/INT64 → int');
+  });
+
+  it('组件 dataclass:slot 成员 + 组件类;空客户端可见属性给 pass 占位', () => {
+    const entity = parseClientSdkEntity(COMPONENT_ENTITY_DEF, 'Avatar', { HealthComp: COMPONENT_DEF })!;
+    const content = generateClientSdkEntityFile(entity, 'python', buildClientSdkTypeMap([], 'python'), GENERATED_AT);
+    expect(content).toContain('    healthPack: HealthComp');
+    expect(content).toContain('from .ClientSdkComponents import HealthComp');
+
+    const comps = generateClientSdkComponentsFile(
+      [entity], 'python', buildClientSdkTypeMap([], 'python'), GENERATED_AT
+    );
+    expect(comps).not.toBeNull();
+    expect(comps ?? '').toContain('# 实体组件: HealthComp');
+    expect(comps ?? '').toContain('class HealthComp:');
+    expect(comps ?? '').toContain('    hp: int');
+    expect(comps ?? '').not.toContain('    name:');
+
+    // 无客户端可见属性的组件:裸空类体是 IndentationError,须 pass 占位。
+    const serverOnlyDef =
+      '<root><Properties><serverOnly><Type>UINT32</Type><Flags>BASE</Flags></serverOnly></Properties></root>';
+    const bare = parseClientSdkEntity(COMPONENT_ENTITY_DEF, 'Avatar', { HealthComp: serverOnlyDef })!;
+    const bareComps = generateClientSdkComponentsFile(
+      [bare], 'python', buildClientSdkTypeMap([], 'python'), GENERATED_AT
+    );
+    expect(bareComps ?? '').toContain('    # 无客户端可见属性');
+    expect(bareComps ?? '').toContain('    pass');
+  });
+
+  it('FixedDicts 伴随:dataclass 形态 + source 行号 + Money 别名不进', () => {
+    const entity = parseClientSdkEntity(FULL_DEF, 'Avatar')!;
+    const fixed = generateClientSdkFixedDictsFile(
+      [entity], 'python', makeFixedDictTypeMap('python'), GENERATED_AT
+    );
+    expect(fixed).not.toBeNull();
+    expect(fixed ?? '').toContain('from dataclasses import dataclass');
+    expect(fixed ?? '').toContain('@dataclass');
+    expect(fixed ?? '').toContain('class AvatarProps:');
+    expect(fixed ?? '').toContain('    hp: int');
+    expect(fixed ?? '').toContain('    name: str');
+    expect(fixed ?? '').not.toContain('Money');
+  });
+
+  it('成员冲突预检:蛇形辅助名 entity_id/on_cell_outgoing', () => {
+    const def = `<root>
+  <Properties>
+    <entity_id>
+      <Type>UINT32</Type>
+      <Flags>OWN_CLIENT</Flags>
+    </entity_id>
+  </Properties>
+  <ClientMethods>
+    <on_cell_outgoing>
+      <Arg>UINT32</Arg>
+    </on_cell_outgoing>
+  </ClientMethods>
+</root>
+`;
+    const entity = parseClientSdkEntity(def, 'Avatar')!;
+    const conflicts = findClientSdkMemberConflicts([entity], ['python']);
+    const message = formatClientSdkMemberConflictMessage(conflicts);
+    expect(message).toContain('实体 Avatar 的 Python SDK 成员 "entity_id"');
+    expect(message).toContain('业务属性 entity_id');
+    expect(message).toContain('ClientMethods 回调 on_cell_outgoing');
+  });
+
+  it('生成物落盘后可被 python3 编译并 import 实例化(有解释器时)', () => {
+    let pythonOk = true;
+    try {
+      execFileSync('python3', ['-c', 'pass'], { stdio: 'ignore' });
+    } catch {
+      pythonOk = false;
+    }
+    if (!pythonOk) {
+      return;
+    }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-sdk-py-'));
+    const outDir = path.join(dir, 'client_entities');
+    fs.mkdirSync(outDir, { recursive: true });
+    const entity = parseClientSdkEntity(FULL_DEF, 'Avatar')!;
+    const typeMap = makeFixedDictTypeMap('python');
+    fs.writeFileSync(path.join(outDir, 'Avatar.py'), generateClientSdkEntityFile(entity, 'python', typeMap, GENERATED_AT), 'utf8');
+    fs.writeFileSync(
+      path.join(outDir, 'ClientSdkFixedDicts.py'),
+      generateClientSdkFixedDictsFile([entity], 'python', typeMap, GENERATED_AT) ?? '',
+      'utf8'
+    );
+    // 包形态消费:client_entities 作为包,相对 import 成立;骨架零依赖可实例化。
+    execFileSync(
+      'python3',
+      ['-c', [
+        'import sys',
+        `sys.path.insert(0, ${JSON.stringify(dir)})`,
+        'from client_entities.Avatar import Avatar',
+        'a = Avatar(42)',
+        'assert a.entity_id == 42',
+        'assert callable(a.base_call_createAvatar)',
+        'assert callable(a.on_cell_outgoing)'
+      ].join('; ')],
+      { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 

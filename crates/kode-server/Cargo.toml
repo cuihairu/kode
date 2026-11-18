@@ -34,6 +34,10 @@ path = "src/bin/dump-def-md5-golden.rs"
 name = "validate-process-topology"
 path = "src/bin/validate-process-topology.rs"
 
+[[bin]]
+name = "client-sdk-gen"
+path = "src/bin/client-sdk-gen.rs"
+
 [lib]
 name = "kode_server"
 path = "src/lib.rs"

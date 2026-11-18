@@ -41,8 +41,9 @@ import {
 } from './clientSdkCodegen';
 import type { ClientSdkMemberConflict } from './clientSdkCodegen';
 
-/** 首批目标语言（已代决，用户可推翻后增删） */
-export const CLIENT_SDK_LANGUAGES = ['typescript', 'csharp'] as const;
+/** 首批目标语言（已代决，用户可推翻后增删）；python 臂=2026-11-18 增
+ * (e2e 测试载体:零依赖骨架可 import/实例化) */
+export const CLIENT_SDK_LANGUAGES = ['typescript', 'csharp', 'python'] as const;
 export type ClientSdkLanguage = typeof CLIENT_SDK_LANGUAGES[number];
 
 /** 配置段：kbengine.clientSdk.outputDir */
@@ -51,7 +52,8 @@ export const CLIENT_SDK_DEFAULT_OUTPUT_DIR = 'scripts/client_entities';
 
 export const CLIENT_SDK_LANGUAGE_EXTENSIONS: Record<ClientSdkLanguage, string> = {
   typescript: 'ts',
-  csharp: 'cs'
+  csharp: 'cs',
+  python: 'py'
 };
 
 export interface ClientSdkProperty {
@@ -128,6 +130,8 @@ export interface ClientSdkTypeMap {
   readonly aliases: ReadonlyMap<string, string>;
   readonly fixedDicts: ReadonlyMap<string, ClientSdkFixedDictType>;
   readonly fallback: string;
+  /** 目标语言(容器/数组发射形态按语言分流:TS/CS `T[]`,Python `list[T]`) */
+  readonly language: ClientSdkLanguage;
 }
 
 export interface ClientSdkGenerationOptions {
@@ -164,7 +168,8 @@ interface ClientSdkOverwritePickItem extends vscode.QuickPickItem {
 
 export const CLIENT_SDK_LANGUAGE_CHOICES: ReadonlyArray<ClientSdkLanguagePickItem> = [
   { label: 'TypeScript', value: 'typescript' },
-  { label: 'C#', value: 'csharp' }
+  { label: 'C#', value: 'csharp' },
+  { label: 'Python', value: 'python' }
 ];
 
 export const CLIENT_SDK_OVERWRITE_CHOICES: ReadonlyArray<ClientSdkOverwritePickItem> = [

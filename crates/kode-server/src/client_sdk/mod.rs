@@ -91,10 +91,38 @@ const CS_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("BLOB", "object"),
 ];
 
-/// 内建类型名缺失时的兜底(TS=unknown,C#=object)。
+/// 引擎内置类型 → Python(骨架零依赖:向量用 tuple 泛型,不依赖 KBEngine
+/// stubs 的 Vector 类;UINT64/INT64 → int,Python 3 int 无界天然全精确域)。
+const PY_BUILTIN_TYPES: &[(&str, &str)] = &[
+    ("UINT8", "int"),
+    ("UINT16", "int"),
+    ("UINT32", "int"),
+    ("UINT64", "int"),
+    ("INT8", "int"),
+    ("INT16", "int"),
+    ("INT32", "int"),
+    ("INT64", "int"),
+    ("FLOAT", "float"),
+    ("DOUBLE", "float"),
+    ("STRING", "str"),
+    ("UNICODE", "str"),
+    ("VECTOR2", "tuple[float, float]"),
+    ("VECTOR3", "tuple[float, float, float]"),
+    ("VECTOR4", "tuple[float, float, float, float]"),
+    ("ENTITYCALL", "Any"),
+    ("PYTHON", "Any"),
+    ("PY_DICT", "dict"),
+    ("PY_TUPLE", "tuple"),
+    ("PY_LIST", "list"),
+    ("BLOB", "bytes"),
+];
+
+/// 内建类型名缺失时的兜底(TS=unknown,C#=object,Python=Any)。
 fn builtin_table(language: &str) -> &'static [(&'static str, &'static str)] {
     if language == "csharp" {
         CS_BUILTIN_TYPES
+    } else if language == "python" {
+        PY_BUILTIN_TYPES
     } else {
         TS_BUILTIN_TYPES
     }
@@ -103,6 +131,8 @@ fn builtin_table(language: &str) -> &'static [(&'static str, &'static str)] {
 fn fallback_for(language: &str) -> &'static str {
     if language == "csharp" {
         "object"
+    } else if language == "python" {
+        "Any"
     } else {
         "unknown"
     }
@@ -170,6 +200,8 @@ struct TypeMap {
     aliases: HashMap<String, String>,
     fixed_dicts: HashMap<String, FixedDictType>,
     fallback: &'static str,
+    /// 目标语言(容器/数组发射形态按语言分流:TS/CS `T[]`,Python `list[T]`)。
+    language: String,
 }
 
 struct SdkEntityInput {
@@ -637,6 +669,216 @@ fn generate_handler(params: Value) -> Result<Value, String> {
     ))
 }
 
+// ---------------------------------------------------------------------------
+// headless 收集面(client-sdk-gen bin/CI;extension 流程的收集在 TS
+// definitionWorkspace,此处为同口径复刻:entities.xml 登记序(平铺+分节,
+// 文档序首条去重)→ {name}.def;组件闭包种子=实体 def `<Components>` 槽名,
+// visit 递归 Interfaces/Parent/组件槽(components/ 优先,interfaces/ 回落),
+// 与 TS collectClientSdkComponentDefs 同向;types.xml 缺席=空类型表。
+// ---------------------------------------------------------------------------
+
+/// def 文本的闭包线索(组件槽/接口/父类名;结构错误 → 全空,不 panic)。
+struct DefClosureLeads {
+    component_names: Vec<String>,
+    interface_names: Vec<String>,
+    parent_name: Option<String>,
+}
+
+fn parse_def_closure_leads(def_text: &str) -> DefClosureLeads {
+    let mut leads = DefClosureLeads {
+        component_names: Vec::new(),
+        interface_names: Vec::new(),
+        parent_name: None,
+    };
+    let doc = xml::parse(def_text, false);
+    if is_structural_error(&doc) {
+        return leads;
+    }
+    let Some(root) = doc.root() else {
+        return leads;
+    };
+    if let Some(components_node) = doc.child_element(root, "Components") {
+        for slot in doc.child_elements(components_node) {
+            let name = slot_type_name(&doc, slot);
+            if !name.is_empty() {
+                leads.component_names.push(name);
+            }
+        }
+    }
+    if let Some(ifaces) = doc.child_element(root, "Interfaces") {
+        for iface in doc.child_elements(ifaces) {
+            let name = reference_target_name(&doc, iface);
+            if !name.is_empty() {
+                leads.interface_names.push(name);
+            }
+        }
+    }
+    if let Some(parent) = doc.child_element(root, "Parent") {
+        let name = reference_target_name(&doc, parent);
+        if !name.is_empty() {
+            leads.parent_name = Some(name);
+        }
+    }
+    leads
+}
+
+/// entities.xml 登记名(文档序;平铺 + ClientServerEntities/ServerOnlyEntities
+/// 分节双口径,同名首条保留,与 TS getRegisteredEntities 同向)。文件不可读
+/// 或无根 → Err(调用方决定是否中止)。
+pub fn read_registered_entity_names(entities_xml_path: &std::path::Path) -> Result<Vec<String>, String> {
+    let text = std::fs::read_to_string(entities_xml_path)
+        .map_err(|e| format!("读取 entities.xml 失败({}): {e}", entities_xml_path.display()))?;
+    let doc = xml::parse(&text, false);
+    let root = doc
+        .root()
+        .ok_or_else(|| format!("entities.xml 无根元素:{}", entities_xml_path.display()))?;
+    let mut names: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut push_name = |name: &str| {
+        if !name.is_empty() && name != "root" && seen.insert(name.to_string()) {
+            names.push(name.to_string());
+        }
+    };
+    for child in doc.child_elements(root) {
+        let element = doc.element(child);
+        // 分节容器(BigWorld 语义):子元素才是登记项;平铺节自身即登记名。
+        if element.name == "ClientServerEntities" || element.name == "ServerOnlyEntities" {
+            for entry in doc.child_elements(child) {
+                push_name(doc.element(entry).name.as_str());
+            }
+        } else {
+            push_name(element.name.as_str());
+        }
+    }
+    Ok(names)
+}
+
+/// headless 生成请求:`assets_root` 指资产根(其下 `scripts/entities.xml` +
+/// `scripts/entity_defs/`);语言三选一;溯源/命名空间可选。
+#[derive(Debug)]
+pub struct ClientSdkCliRequest {
+    pub assets_root: std::path::PathBuf,
+    pub language: String,
+    pub namespace: Option<String>,
+    pub engine_version: Option<String>,
+    pub engine_commit: Option<String>,
+    pub generated_at: Option<String>,
+}
+
+/// headless 生成产物(文件名+内容,由调用方落盘)。
+#[derive(Debug)]
+pub struct ClientSdkCliFile {
+    pub file_name: String,
+    pub content: String,
+}
+
+/// 从资产根收集 def/types 语料并生成客户端 SDK 文件(CI/bin 入口;
+/// 生成核心与 `$/kode/sdk/generate` RPC 同一函数,双入口零分叉)。
+pub fn generate_sdk_headless(req: &ClientSdkCliRequest) -> Result<Vec<ClientSdkCliFile>, String> {
+    let scripts_dir = req.assets_root.join("scripts");
+    let entity_defs_root = scripts_dir.join("entity_defs");
+    if !entity_defs_root.is_dir() {
+        return Err(format!(
+            "entity_defs 目录不存在:{}",
+            entity_defs_root.display()
+        ));
+    }
+    let entities_xml = scripts_dir.join("entities.xml");
+    let names = read_registered_entity_names(&entities_xml)?;
+
+    let mut entities: Vec<SdkEntityInput> = Vec::new();
+    for name in &names {
+        let def_path = entity_defs_root.join(format!("{name}.def"));
+        if let Ok(def_text) = std::fs::read_to_string(&def_path) {
+            entities.push(SdkEntityInput {
+                name: name.clone(),
+                def_text,
+            });
+        }
+    }
+    if entities.is_empty() {
+        return Err(format!(
+            "entities.xml 登记的实体在 entity_defs 下均无 def 文件(登记 {} 项):{}",
+            names.len(),
+            entity_defs_root.display()
+        ));
+    }
+
+    // 组件闭包:种子=各实体 def 的组件槽名,visit 递归 Interfaces/Parent/组件槽。
+    let mut component_defs: ComponentDefs = HashMap::new();
+    let mut queue: Vec<String> = Vec::new();
+    let mut enqueued = HashSet::new();
+    let enqueue = |name: &str, queue: &mut Vec<String>, enqueued: &mut HashSet<String>| {
+        if !name.is_empty() && !enqueued.contains(name) {
+            enqueued.insert(name.to_string());
+            queue.push(name.to_string());
+        }
+    };
+    for entity in &entities {
+        let leads = parse_def_closure_leads(&entity.def_text);
+        for name in leads.component_names {
+            enqueue(&name, &mut queue, &mut enqueued);
+        }
+    }
+    while let Some(name) = queue.pop() {
+        if component_defs.contains_key(&name) {
+            continue;
+        }
+        // 组件优先 components/,接口回落 interfaces/(与 TS 同口径)。
+        let component_path = entity_defs_root.join("components").join(format!("{name}.def"));
+        let interface_path = entity_defs_root.join("interfaces").join(format!("{name}.def"));
+        let def_path = if component_path.is_file() {
+            component_path
+        } else if interface_path.is_file() {
+            interface_path
+        } else {
+            continue;
+        };
+        let Ok(def_text) = std::fs::read_to_string(&def_path) else {
+            continue;
+        };
+        let leads = parse_def_closure_leads(&def_text);
+        component_defs.insert(name.clone(), def_text);
+        for iface in leads.interface_names {
+            enqueue(&iface, &mut queue, &mut enqueued);
+        }
+        if let Some(parent) = leads.parent_name {
+            enqueue(&parent, &mut queue, &mut enqueued);
+        }
+        for comp in leads.component_names {
+            enqueue(&comp, &mut queue, &mut enqueued);
+        }
+    }
+
+    let types_xml = std::fs::read_to_string(entity_defs_root.join("types.xml")).ok();
+    let engine_trace = match (&req.engine_version, &req.engine_commit) {
+        (Some(v), Some(c)) => Some(EngineTrace {
+            engine_version: v.clone(),
+            engine_commit: c.clone(),
+        }),
+        // 单独给一边也不伪造另一半:溯源半缺时整段省略,与 RPC 侧
+        // engineTrace 对象缺席同形态。
+        _ => None,
+    };
+
+    let params = SdkGenerateParams {
+        language: req.language.clone(),
+        entities,
+        component_defs,
+        types_xml,
+        generated_at: req.generated_at.clone().unwrap_or_default(),
+        engine_trace,
+        namespace: req.namespace.clone(),
+    };
+    Ok(generate(&params)?
+        .into_iter()
+        .map(|file| ClientSdkCliFile {
+            file_name: file.file_name,
+            content: file.content,
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,6 +895,10 @@ mod tests {
             assert!(
                 CS_BUILTIN_TYPES.iter().any(|(key, _)| key == name),
                 "CS builtin table missing engine type {name}"
+            );
+            assert!(
+                PY_BUILTIN_TYPES.iter().any(|(key, _)| key == name),
+                "PY builtin table missing engine type {name}"
             );
         }
     }

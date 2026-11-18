@@ -36,9 +36,13 @@ import type {
 
 /** C# 输出命名空间，Unity 客户端工程可自行改 */
 export const CLIENT_SDK_CSHARP_NAMESPACE = 'KbEngineClient';
-/** SDK 内置类型映射覆盖的名字集(TS/C# 键并集,IDE-SDK-005 对拍面) */
+/** SDK 内置类型映射覆盖的名字集(TS/C#/py 键并集,IDE-SDK-005 对拍面) */
 export function listClientSdkBuiltinTypeNames(): string[] {
-  return [...new Set([...Object.keys(TS_BUILTIN_TYPES), ...Object.keys(CS_BUILTIN_TYPES)])]
+  return [...new Set([
+    ...Object.keys(TS_BUILTIN_TYPES),
+    ...Object.keys(CS_BUILTIN_TYPES),
+    ...Object.keys(PY_BUILTIN_TYPES)
+  ])]
     .sort((left, right) => left.localeCompare(right));
 }
 /** FIXED_DICT 伴随文件基名（无扩展名） */
@@ -93,9 +97,36 @@ const CS_BUILTIN_TYPES: Record<string, string> = {
   PY_LIST: 'object',
   BLOB: 'object'
 };
+/** 引擎内置类型 → Python(骨架零依赖:向量用 tuple 泛型,不依赖 KBEngine
+ * stubs 的 Vector 类;UINT64/INT64 → int,Python 3 int 无界天然全精确域,
+ * 与 stubs 面 PYTHON_BUILTIN_TYPE_ANNOTATIONS 的分歧是有意的(IDE-AUD-063 py 镜像)) */
+const PY_BUILTIN_TYPES: Record<string, string> = {
+  UINT8: 'int',
+  UINT16: 'int',
+  UINT32: 'int',
+  UINT64: 'int',
+  INT8: 'int',
+  INT16: 'int',
+  INT32: 'int',
+  INT64: 'int',
+  FLOAT: 'float',
+  DOUBLE: 'float',
+  STRING: 'str',
+  UNICODE: 'str',
+  VECTOR2: 'tuple[float, float]',
+  VECTOR3: 'tuple[float, float, float]',
+  VECTOR4: 'tuple[float, float, float, float]',
+  ENTITYCALL: 'Any',
+  PYTHON: 'Any',
+  PY_DICT: 'dict',
+  PY_TUPLE: 'tuple',
+  PY_LIST: 'list',
+  BLOB: 'bytes'
+};
 const CLIENT_SDK_TYPE_FALLBACKS: Record<ClientSdkLanguage, string> = {
   typescript: 'unknown',
-  csharp: 'object'
+  csharp: 'object',
+  python: 'Any'
 };
 /** 按引擎 `ARRAY<of>类型</of>` 口径读 `<Type>`：直文本 + 元素类型分两栏。 */
 function readDefTypeNode(typeNode: DefElementNode | undefined): { type: string; elementType: string | null } {
@@ -395,10 +426,11 @@ export function buildClientSdkTypeMap(
   }
 
   return {
-    builtin: language === 'typescript' ? TS_BUILTIN_TYPES : CS_BUILTIN_TYPES,
+    builtin: language === 'typescript' ? TS_BUILTIN_TYPES : language === 'python' ? PY_BUILTIN_TYPES : CS_BUILTIN_TYPES,
     aliases,
     fixedDicts,
-    fallback: CLIENT_SDK_TYPE_FALLBACKS[language]
+    fallback: CLIENT_SDK_TYPE_FALLBACKS[language],
+    language
   };
 }
 
@@ -409,7 +441,8 @@ export function resolveClientSdkTypeName(
   elementType: string | null
 ): string {
   if (elementType) {
-    return `${resolveClientSdkTypeName(typeMap, elementType, null)}[]`;
+    const inner = resolveClientSdkTypeName(typeMap, elementType, null);
+    return typeMap.language === 'python' ? `list[${inner}]` : `${inner}[]`;
   }
 
   const builtin = typeMap.builtin[type];
@@ -504,9 +537,16 @@ function formatArgTypes(
   language: ClientSdkLanguage
 ): string {
   return argTypes
-    .map((arg, index) => language === 'typescript'
-      ? `_arg${index}: ${resolveArgType(typeMap, arg)}`
-      : `${resolveArgType(typeMap, arg)} arg${index}`)
+    .map((arg, index) => {
+      const resolved = resolveArgType(typeMap, arg);
+      if (language === 'typescript') {
+        return `_arg${index}: ${resolved}`;
+      }
+      if (language === 'python') {
+        return `arg${index}: ${resolved}`;
+      }
+      return `${resolved} arg${index}`;
+    })
     .join(', ');
 }
 
@@ -521,18 +561,31 @@ function defHeader(
   generatedAt: string,
   engineTrace?: SdkEngineTrace
 ): string[] {
-  return [
-    '// 由 kode 客户端实体 SDK 生成器生成，手动修改会在下次生成时被覆盖',
-    `// 目标语言: ${language === 'typescript' ? 'TypeScript' : 'C#'}`,
-    `// 生成时间: ${generatedAt}`,
-    // IDE-AUD-063:TS 64 位整数表示与编解码边界——UINT64/INT64 用 bigint 保全域精确,
-    // 消费方工程需 ES2020+;bigint 不进 JSON.stringify,序列化须走 BigInt 感知通道。
-    ...(language === 'typescript'
-      ? ['// 64 位整数: UINT64/INT64 → bigint(全精确域);TS 编译目标需 ES2020+;bigint 不进 JSON.stringify,编解码按 BigInt 感知通道实现']
-      : []),
-    ...formatSdkEngineTraceLines(engineTrace ?? makeSdkEngineTrace(null)),
-    ''
+  // python 注释前缀是 `#`(GENERATED_HEADER_LINE 的 `//` 首段替换)。
+  const comment = language === 'python' ? '#' : '//';
+  const headerLine = language === 'python'
+    ? '// 由 kode 客户端实体 SDK 生成器生成，手动修改会在下次生成时被覆盖'.replace('//', '#')
+    : '// 由 kode 客户端实体 SDK 生成器生成，手动修改会在下次生成时被覆盖';
+  const target = language === 'typescript' ? 'TypeScript' : language === 'python' ? 'Python' : 'C#';
+  const lines = [
+    headerLine,
+    `${comment} 目标语言: ${target}`,
+    `${comment} 生成时间: ${generatedAt}`
   ];
+  // IDE-AUD-063:TS 64 位整数表示与编解码边界——UINT64/INT64 用 bigint 保全域精确,
+  // 消费方工程需 ES2020+;bigint 不进 JSON.stringify,序列化须走 BigInt 感知通道。
+  if (language === 'typescript') {
+    lines.push('// 64 位整数: UINT64/INT64 → bigint(全精确域);TS 编译目标需 ES2020+;bigint 不进 JSON.stringify,编解码按 BigInt 感知通道实现');
+  }
+  // Python 侧对应边界:int 无界天然全精确域(IDE-AUD-063 的 py 镜像口径)。
+  if (language === 'python') {
+    lines.push('# 64 位整数: UINT64/INT64 → int(Python 3 int 无界,全精确域,无 bigint 特判)');
+  }
+  lines.push(...formatSdkEngineTraceLines(engineTrace ?? makeSdkEngineTrace(null)).map(
+    line => language === 'python' ? line.replace(/^\/\//, '#') : line
+  ));
+  lines.push('');
+  return lines;
 }
 
 function generateTypeScriptEntityFile(
@@ -723,6 +776,115 @@ function generateCSharpEntityFile(
   return lines.join('\n');
 }
 
+/** Python 实体骨架（Rust 不可用时的回落镜像,与 Rust generate_py_entity 同形）:
+ * 类注解属性(客户端可见)+ `__init__`(entity_id)+ ClientMethods 回调 stub +
+ * Exposed Base/CellMethods 包装(发送接缝)+ 接缝空方法。骨架零依赖
+ * (标准库 only),e2e 测试可直接 import/实例化;FIXED_DICT/组件走相对
+ * import(包形态消费:client_entities/ 作为包)。 */
+function generatePythonEntityFile(
+  entity: ClientSdkEntity,
+  typeMap: ClientSdkTypeMap,
+  generatedAt: string,
+  engineTrace?: SdkEngineTrace,
+  knownEntities?: ReadonlySet<string>
+): string {
+  const lines = defHeader('python', generatedAt, engineTrace);
+  lines.push(`# 实体: ${entity.name}${entity.parent ? ` 父类: ${entity.parent}` : ''}`);
+  lines.push('');
+  lines.push('from __future__ import annotations');
+  lines.push('');
+  lines.push('from typing import Any');
+
+  // KR-AUD-73:同 TS/C# 口径——父实体在生成集内则继承,继承成员不重复声明。
+  const extendsName = entity.parent !== null && knownEntities?.has(entity.parent)
+    ? entity.parent
+    : null;
+  const declaredHere = (member: { readonly inheritedViaParent?: boolean }): boolean =>
+    extendsName === null || member.inheritedViaParent !== true;
+
+  const used = usedFixedDictTypes(entity, typeMap);
+  if (used.length > 0) {
+    lines.push('');
+    lines.push(`from .${CLIENT_SDK_FIXED_DICTS_BASENAME} import ${used.map(type => type.name).join(', ')}`);
+  }
+  if (entity.components.length > 0) {
+    lines.push('');
+    lines.push(`from .${CLIENT_SDK_COMPONENTS_BASENAME} import ${entity.components.map(component => component.typeName).join(', ')}`);
+  }
+  if (extendsName !== null) {
+    lines.push('');
+    lines.push(`from .${extendsName} import ${extendsName}`);
+  }
+  lines.push('');
+  lines.push('');
+
+  lines.push(`class ${entity.name}${extendsName !== null ? `(${extendsName})` : ''}:`);
+  const dictNote = used.length > 0 ? `（固定字典: ${used.map(type => type.name).join(', ')}）` : '';
+  lines.push(`    """${entity.name} 客户端实体 SDK 骨架${entity.parent ? ` 父类: ${entity.parent}` : ''}${dictNote}"""`);
+  lines.push('');
+  lines.push('    entity_id: int  # 实体 id（由 baseapp 分配）');
+
+  for (const property of clientVisibleProperties(entity)) {
+    if (!declaredHere(property)) {
+      continue;
+    }
+    lines.push('');
+    lines.push(`    # Flags: ${property.flags}`);
+    lines.push(`    ${property.name}: ${resolvePropertyType(typeMap, property)}`);
+  }
+
+  for (const component of entity.components) {
+    lines.push('');
+    lines.push(`    # 组件槽: ${component.typeName}`);
+    lines.push(`    ${component.slot}: ${component.typeName}`);
+  }
+
+  lines.push('');
+  lines.push('    def __init__(self, entity_id: int) -> None:');
+  lines.push('        self.entity_id = entity_id');
+
+  for (const method of entity.clientMethods) {
+    if (!declaredHere(method)) {
+      continue;
+    }
+    const argComment = method.argTypes.map(type => resolveArgType(typeMap, type)).join(', ');
+    const args = formatArgTypes(typeMap, method.argTypes, 'python');
+    const defArgs = args.length === 0 ? 'self' : `self, ${args}`;
+    lines.push('');
+    lines.push(`    def ${method.name}(${defArgs}) -> None:`);
+    lines.push(`        """ClientMethods 回调: ${method.name}(${argComment})"""`);
+    lines.push('        # TODO: 实现客户端回调');
+  }
+
+  for (const section of [
+    { methods: entity.exposedBaseMethods, label: 'Exposed BaseMethods（客户端可请求）', seam: 'on_base_outgoing', prefix: 'base_call_' } as const,
+    { methods: entity.exposedCellMethods, label: 'Exposed CellMethods（客户端可请求）', seam: 'on_cell_outgoing', prefix: 'cell_call_' } as const
+  ]) {
+    for (const method of section.methods) {
+      if (!declaredHere(method)) {
+        continue;
+      }
+      const args = formatArgTypes(typeMap, method.argTypes, 'python');
+      const defArgs = args.length === 0 ? 'self' : `self, ${args}`;
+      const callArgs = formatArgIds(method.argTypes, false);
+      lines.push('');
+      lines.push(`    def ${section.prefix}${method.name}(${defArgs}) -> None:`);
+      lines.push(`        """${section.label}: ${method.name}"""`);
+      lines.push(`        self.${section.seam}('${method.name}', [${callArgs}])`);
+    }
+  }
+
+  lines.push('');
+  lines.push('    def on_base_outgoing(self, _method: str, _args: list) -> None:');
+  lines.push('        """发送接缝: 按客户端插件的 base 调用通道实现"""');
+  lines.push('');
+  lines.push('    def on_cell_outgoing(self, _method: str, _args: list) -> None:');
+  lines.push('        """发送接缝: 按客户端插件的 cell 调用通道实现"""');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
 export function generateClientSdkEntityFile(
   entity: ClientSdkEntity,
   language: ClientSdkLanguage,
@@ -731,9 +893,13 @@ export function generateClientSdkEntityFile(
   engineTrace?: SdkEngineTrace,
   knownEntities?: ReadonlySet<string>
 ): string {
-  return language === 'typescript'
-    ? generateTypeScriptEntityFile(entity, typeMap, generatedAt, engineTrace, knownEntities)
-    : generateCSharpEntityFile(entity, typeMap, generatedAt, engineTrace, knownEntities);
+  if (language === 'typescript') {
+    return generateTypeScriptEntityFile(entity, typeMap, generatedAt, engineTrace, knownEntities);
+  }
+  if (language === 'python') {
+    return generatePythonEntityFile(entity, typeMap, generatedAt, engineTrace, knownEntities);
+  }
+  return generateCSharpEntityFile(entity, typeMap, generatedAt, engineTrace, knownEntities);
 }
 
 // ---------------------------------------------------------------------------
@@ -779,6 +945,12 @@ function collectEmittedClientSdkMembers(
     add('entityId', '辅助字段 entityId（实体 id）');
     add('onBaseOutgoing', '辅助方法 onBaseOutgoing（发送接缝）');
     add('onCellOutgoing', '辅助方法 onCellOutgoing（发送接缝）');
+  } else if (language === 'python') {
+    // python 骨架蛇形命名:辅助固定成员 entity_id/on_base_outgoing/on_cell_outgoing,
+    // 包装前缀 base_call_/cell_call_ 接方法原名(业务成员一律保持 def 原名不转写)。
+    add('entity_id', '辅助字段 entity_id（实体 id）');
+    add('on_base_outgoing', '辅助方法 on_base_outgoing（发送接缝）');
+    add('on_cell_outgoing', '辅助方法 on_cell_outgoing（发送接缝）');
   } else {
     add('EntityId', '辅助字段 EntityId（实体 id）');
     add('OnBaseOutgoing', '辅助方法 OnBaseOutgoing（发送接缝）');
@@ -786,27 +958,31 @@ function collectEmittedClientSdkMembers(
   }
 
   for (const property of clientVisibleProperties(entity)) {
-    const name = language === 'typescript' ? property.name : toPascalCase(property.name);
+    const name = language === 'csharp' ? toPascalCase(property.name) : property.name;
     add(name, `业务属性 ${property.name}`);
   }
   for (const component of entity.components) {
-    const name = language === 'typescript' ? component.slot : toPascalCase(component.slot);
+    const name = language === 'csharp' ? toPascalCase(component.slot) : component.slot;
     add(name, `组件槽 ${component.slot}`);
   }
   for (const method of entity.clientMethods) {
-    const name = language === 'typescript' ? method.name : toPascalCase(method.name);
+    const name = language === 'csharp' ? toPascalCase(method.name) : method.name;
     add(name, `ClientMethods 回调 ${method.name}`);
   }
   for (const method of entity.exposedBaseMethods) {
     const name = language === 'typescript'
       ? `baseCall${toPascalCase(method.name)}`
-      : `BaseCall${toPascalCase(method.name)}`;
+      : language === 'python'
+        ? `base_call_${method.name}`
+        : `BaseCall${toPascalCase(method.name)}`;
     add(name, `Exposed BaseMethods 包装 ${method.name}`);
   }
   for (const method of entity.exposedCellMethods) {
     const name = language === 'typescript'
       ? `cellCall${toPascalCase(method.name)}`
-      : `CellCall${toPascalCase(method.name)}`;
+      : language === 'python'
+        ? `cell_call_${method.name}`
+        : `CellCall${toPascalCase(method.name)}`;
     add(name, `Exposed CellMethods 包装 ${method.name}`);
   }
 
@@ -835,7 +1011,11 @@ export function formatClientSdkMemberConflictMessage(
   conflicts: readonly ClientSdkMemberConflict[]
 ): string {
   const lines = conflicts.map(conflict => {
-    const lang = conflict.language === 'typescript' ? 'TypeScript' : 'C#';
+    const lang = conflict.language === 'typescript'
+      ? 'TypeScript'
+      : conflict.language === 'python'
+        ? 'Python'
+        : 'C#';
     return `实体 ${conflict.entity} 的 ${lang} SDK 成员 "${conflict.name}" 由 ${conflict.sources.length} 个来源生成：${conflict.sources.join('、')}`;
   });
   return [
@@ -870,6 +1050,27 @@ export function generateClientSdkFixedDictsFile(
         lines.push(`  ${property.name}: ${property.typeName ? resolveNamedType(typeMap, property.typeName) : 'unknown'};`);
       }
       lines.push('}');
+      lines.push('');
+    }
+  } else if (language === 'python') {
+    lines.push('from __future__ import annotations');
+    lines.push('');
+    lines.push('from dataclasses import dataclass');
+    lines.push('');
+    lines.push('');
+    for (const type of used) {
+      lines.push(`# source: types.xml:${type.sourceLine ?? 'unknown'}`);
+      lines.push(`# ${type.name} FIXED_DICT 别名`);
+      lines.push('@dataclass');
+      lines.push(`class ${type.name}:`);
+      if (type.properties.length === 0) {
+        // 空 Properties 的 FIXED_DICT 同样需要类体占位(裸空体是 IndentationError)。
+        lines.push('    pass');
+      }
+      for (const property of type.properties) {
+        lines.push(`    # source: types.xml:${property.sourceLine ?? 'unknown'}`);
+        lines.push(`    ${property.name}: ${property.typeName ? resolveNamedType(typeMap, property.typeName) : 'Any'}`);
+      }
       lines.push('');
     }
   } else {
@@ -942,6 +1143,43 @@ export function generateClientSdkComponentsFile(
         lines.push(`  public ${property.name}: ${resolvePropertyType(typeMap, property)};`);
       }
       lines.push('}');
+      lines.push('');
+    }
+  } else if (language === 'python') {
+    // 组件属性引用的 FIXED_DICT 需相对 import(py 与 TS 同模式;CS 走 namespace 免 import)。
+    const dictSeen = new Set<string>();
+    const fixedNames: string[] = [];
+    for (const component of used) {
+      for (const property of component.properties) {
+        const dict = typeMap.fixedDicts.get(property.type);
+        if (dict && !dictSeen.has(dict.name)) {
+          dictSeen.add(dict.name);
+          fixedNames.push(dict.name);
+        }
+      }
+    }
+    lines.push('from __future__ import annotations');
+    lines.push('');
+    lines.push('from dataclasses import dataclass');
+    if (fixedNames.length > 0) {
+      lines.push('');
+      lines.push(`from .${CLIENT_SDK_FIXED_DICTS_BASENAME} import ${fixedNames.join(', ')}`);
+    }
+    lines.push('');
+    lines.push('');
+    for (const component of used) {
+      lines.push(`# 实体组件: ${component.typeName}`);
+      lines.push('@dataclass');
+      lines.push(`class ${component.typeName}:`);
+      if (component.properties.length === 0) {
+        // 无客户端可见属性也要给类体(空体是 IndentationError)。
+        lines.push('    # 无客户端可见属性');
+        lines.push('    pass');
+      }
+      for (const property of component.properties) {
+        lines.push(`    # Flags: ${property.flags}`);
+        lines.push(`    ${property.name}: ${resolvePropertyType(typeMap, property)}`);
+      }
       lines.push('');
     }
   } else {

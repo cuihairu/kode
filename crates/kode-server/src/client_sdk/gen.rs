@@ -50,6 +50,7 @@ fn build_client_sdk_type_map(types_xml: Option<&str>, language: &str) -> TypeMap
         aliases,
         fixed_dicts,
         fallback: fallback_for(language),
+        language: language.to_string(),
     }
 }
 
@@ -59,7 +60,11 @@ fn build_client_sdk_type_map(types_xml: Option<&str>, language: &str) -> TypeMap
 
 fn resolve_type_name(type_map: &TypeMap, type_name: &str, element_type: Option<&str>) -> String {
     if let Some(element) = element_type {
-        return format!("{}[]", resolve_type_name(type_map, element, None));
+        let inner = resolve_type_name(type_map, element, None);
+        if type_map.language == "python" {
+            return format!("list[{inner}]");
+        }
+        return format!("{inner}[]");
     }
     if let Some(builtin) = type_map
         .builtin
@@ -101,6 +106,8 @@ fn format_arg_types(type_map: &TypeMap, arg_types: &[String], language: &str) ->
             let resolved = resolve_arg_type(type_map, arg);
             if language == "typescript" {
                 format!("_arg{index}: {resolved}")
+            } else if language == "python" {
+                format!("arg{index}: {resolved}")
             } else {
                 format!("{resolved} arg{index}")
             }
@@ -139,7 +146,8 @@ fn used_fixed_dict_types<'a>(entity: &SdkEntity, type_map: &'a TypeMap) -> Vec<&
     used
 }
 
-fn engine_trace_lines(engine_trace: Option<&EngineTrace>) -> Vec<String> {
+fn engine_trace_lines(engine_trace: Option<&EngineTrace>, language: &str) -> Vec<String> {
+    let comment = if language == "python" { "#" } else { "//" };
     let (version, commit) = match engine_trace {
         Some(trace) => {
             let value = |field: &str| {
@@ -154,23 +162,29 @@ fn engine_trace_lines(engine_trace: Option<&EngineTrace>) -> Vec<String> {
         None => (TRACE_UNKNOWN.to_string(), TRACE_UNKNOWN.to_string()),
     };
     vec![
-        format!("// 引擎版本: {version}"),
-        format!("// 引擎提交: {commit}"),
+        format!("{comment} 引擎版本: {version}"),
+        format!("{comment} 引擎提交: {commit}"),
     ]
 }
 
 fn def_header(language: &str, generated_at: &str, trace_lines: &[String]) -> Vec<String> {
+    let comment = if language == "python" { "#" } else { "//" };
+    let target = if language == "typescript" {
+        "TypeScript"
+    } else if language == "python" {
+        "Python"
+    } else {
+        "C#"
+    };
+    let header_line = if language == "python" {
+        GENERATED_HEADER_LINE.replacen("//", "#", 1)
+    } else {
+        GENERATED_HEADER_LINE.to_string()
+    };
     let mut lines = vec![
-        GENERATED_HEADER_LINE.to_string(),
-        format!(
-            "// 目标语言: {}",
-            if language == "typescript" {
-                "TypeScript"
-            } else {
-                "C#"
-            }
-        ),
-        format!("// 生成时间: {generated_at}"),
+        header_line,
+        format!("{comment} 目标语言: {target}"),
+        format!("{comment} 生成时间: {generated_at}"),
     ];
     // IDE-AUD-063:TS 64 位整数表示与编解码边界(与 TS defHeader 同口径)。
     if language == "typescript" {
@@ -178,6 +192,10 @@ fn def_header(language: &str, generated_at: &str, trace_lines: &[String]) -> Vec
             "// 64 位整数: UINT64/INT64 → bigint(全精确域);TS 编译目标需 ES2020+;bigint 不进 JSON.stringify,编解码按 BigInt 感知通道实现"
                 .to_string(),
         );
+    }
+    // Python 侧对应边界:int 无界天然全精确域(IDE-AUD-063 的 py 镜像口径)。
+    if language == "python" {
+        lines.push("# 64 位整数: UINT64/INT64 → int(Python 3 int 无界,全精确域,无 bigint 特判)".to_string());
     }
     lines.extend(trace_lines.iter().cloned());
     lines.push(String::new());
@@ -446,6 +464,159 @@ fn generate_cs_entity(
     lines.join("\n")
 }
 
+/// Python 实体骨架(与 generate_ts_entity/generate_cs_entity 同构复刻):
+/// 类注解属性(客户端可见)+ `__init__`(entity_id)+ ClientMethods 回调
+/// stub + Exposed Base/CellMethods 包装(发送接缝)+ 接缝空方法。
+/// 骨架零依赖(标准库 only),e2e 测试可直接 import/实例化。
+fn generate_py_entity(
+    entity: &SdkEntity,
+    type_map: &TypeMap,
+    generated_at: &str,
+    trace_lines: &[String],
+) -> String {
+    let mut lines = def_header("python", generated_at, trace_lines);
+    let parent_note = match &entity.parent {
+        Some(parent) => format!(" 父类: {parent}"),
+        None => String::new(),
+    };
+    lines.push(format!("# 实体: {}{}", entity.name, parent_note));
+    lines.push(String::new());
+    lines.push("from __future__ import annotations".to_string());
+    lines.push(String::new());
+    lines.push("from typing import Any".to_string());
+    let used = used_fixed_dict_types(entity, type_map);
+    if !used.is_empty() {
+        let names = used
+            .iter()
+            .map(|dict| dict.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(String::new());
+        lines.push(format!("from .{FIXED_DICTS_BASENAME} import {names}"));
+    }
+    if !entity.components.is_empty() {
+        let comp_names = entity
+            .components
+            .iter()
+            .map(|comp| comp.type_name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(String::new());
+        lines.push(format!("from .{COMPONENTS_BASENAME} import {comp_names}"));
+    }
+    lines.push(String::new());
+    lines.push(String::new());
+
+    lines.push(format!("class {}:", entity.name));
+    let mut doc = format!("    \"\"\"{} 客户端实体 SDK 骨架{}", entity.name, parent_note);
+    if !used.is_empty() {
+        let names = used
+            .iter()
+            .map(|dict| dict.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        doc.push_str(&format!("（固定字典: {names}）"));
+    }
+    doc.push_str("\"\"\"");
+    lines.push(doc);
+    lines.push(String::new());
+    lines.push("    entity_id: int  # 实体 id（由 baseapp 分配）".to_string());
+
+    for property in client_visible_properties(entity) {
+        lines.push(String::new());
+        lines.push(format!("    # Flags: {}", property.flags));
+        lines.push(format!(
+            "    {}: {}",
+            property.name,
+            resolve_property_type(type_map, property)
+        ));
+    }
+    for component in &entity.components {
+        lines.push(String::new());
+        lines.push(format!("    # 组件槽: {}", component.type_name));
+        lines.push(format!("    {}: {}", component.slot, component.type_name));
+    }
+
+    lines.push(String::new());
+    lines.push("    def __init__(self, entity_id: int) -> None:".to_string());
+    lines.push("        self.entity_id = entity_id".to_string());
+
+    for method in &entity.client_methods {
+        lines.push(String::new());
+        let arg_comment = method
+            .arg_types
+            .iter()
+            .map(|arg| resolve_arg_type(type_map, arg))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let args = format_arg_types(type_map, &method.arg_types, "python");
+        let def_args = if args.is_empty() {
+            "self".to_string()
+        } else {
+            format!("self, {args}")
+        };
+        lines.push(format!(
+            "    def {name}({def_args}) -> None:",
+            name = method.name,
+            def_args = def_args
+        ));
+        lines.push(format!(
+            "        \"\"\"ClientMethods 回调: {}({})\"\"\"",
+            method.name, arg_comment
+        ));
+        lines.push("        # TODO: 实现客户端回调".to_string());
+    }
+
+    for section in [
+        (
+            &entity.exposed_base_methods,
+            "Exposed BaseMethods（客户端可请求）",
+            "on_base_outgoing",
+            "base_call_",
+        ),
+        (
+            &entity.exposed_cell_methods,
+            "Exposed CellMethods（客户端可请求）",
+            "on_cell_outgoing",
+            "cell_call_",
+        ),
+    ] {
+        let (methods, label, seam, call_prefix) = section;
+        for method in methods {
+            lines.push(String::new());
+            let args = format_arg_types(type_map, &method.arg_types, "python");
+            let def_args = if args.is_empty() {
+                "self".to_string()
+            } else {
+                format!("self, {args}")
+            };
+            let call_args = format_arg_ids(&method.arg_types, false);
+            lines.push(format!(
+                "    def {}{}({def_args}) -> None:",
+                call_prefix, method.name
+            ));
+            lines.push(format!("        \"\"\"{label}: {}\"\"\"", method.name));
+            lines.push(format!(
+                "        self.{seam}('{}', [{call_args}])",
+                method.name
+            ));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push(
+        "    def on_base_outgoing(self, _method: str, _args: list) -> None:".to_string(),
+    );
+    lines.push("        \"\"\"发送接缝: 按客户端插件的 base 调用通道实现\"\"\"".to_string());
+    lines.push(String::new());
+    lines.push(
+        "    def on_cell_outgoing(self, _method: str, _args: list) -> None:".to_string(),
+    );
+    lines.push("        \"\"\"发送接缝: 按客户端插件的 cell 调用通道实现\"\"\"".to_string());
+    lines.push(String::new());
+    lines.join("\n")
+}
+
 fn format_source_line(line: Option<usize>) -> String {
     match line {
         Some(line) => line.to_string(),
@@ -509,6 +680,37 @@ fn generate_fixed_dicts_file(
                 lines.push(format!("  {}: {resolved};", property.name));
             }
             lines.push("}".to_string());
+            lines.push(String::new());
+        }
+    } else if language == "python" {
+        lines.push("from __future__ import annotations".to_string());
+        lines.push(String::new());
+        lines.push("from dataclasses import dataclass".to_string());
+        lines.push(String::new());
+        lines.push(String::new());
+        for dict in &used {
+            lines.push(format!(
+                "# source: types.xml:{}",
+                format_source_line(dict.source_line)
+            ));
+            lines.push(format!("# {} FIXED_DICT 别名", dict.name));
+            lines.push("@dataclass".to_string());
+            lines.push(format!("class {}:", dict.name));
+            if dict.properties.is_empty() {
+                // 空 Properties 的 FIXED_DICT 同样需要类体占位。
+                lines.push("    pass".to_string());
+            }
+            for property in &dict.properties {
+                lines.push(format!(
+                    "    # source: types.xml:{}",
+                    format_source_line(property.source_line)
+                ));
+                let resolved = match &property.type_name {
+                    Some(type_name) => resolve_arg_type(type_map, type_name),
+                    None => "Any".to_string(),
+                };
+                lines.push(format!("    {}: {}", property.name, resolved));
+            }
             lines.push(String::new());
         }
     } else {
@@ -608,6 +810,49 @@ fn generate_components_file(
             lines.push("}".to_string());
             lines.push(String::new());
         }
+    } else if language == "python" {
+        // 组件属性引用的 FIXED_DICT 需 import(py 与 TS 同模式;CS 走 namespace 免 import)。
+        let mut py_fixed: Vec<String> = Vec::new();
+        for comp in &used {
+            for property in &comp.properties {
+                if let Some(dict) = type_map.fixed_dicts.get(&property.type_name) {
+                    if !py_fixed.contains(&dict.name) {
+                        py_fixed.push(dict.name.clone());
+                    }
+                }
+            }
+        }
+        lines.push("from __future__ import annotations".to_string());
+        lines.push(String::new());
+        lines.push("from dataclasses import dataclass".to_string());
+        if !py_fixed.is_empty() {
+            lines.push(String::new());
+            lines.push(format!(
+                "from .{FIXED_DICTS_BASENAME} import {}",
+                py_fixed.join(", ")
+            ));
+        }
+        lines.push(String::new());
+        lines.push(String::new());
+        for comp in &used {
+            lines.push(format!("# 实体组件: {}", comp.type_name));
+            lines.push("@dataclass".to_string());
+            lines.push(format!("class {}:", comp.type_name));
+            if comp.properties.is_empty() {
+                // 无客户端可见属性也要给类体(空体是 IndentationError)。
+                lines.push("    # 无客户端可见属性".to_string());
+                lines.push("    pass".to_string());
+            }
+            for property in &comp.properties {
+                lines.push(format!("    # Flags: {}", property.flags));
+                lines.push(format!(
+                    "    {}: {}",
+                    property.name,
+                    resolve_property_type(type_map, property)
+                ));
+            }
+            lines.push(String::new());
+        }
     } else {
         lines.push(format!("namespace {namespace}"));
         lines.push("{".to_string());
@@ -645,6 +890,8 @@ pub(super) struct GeneratedFile {
 fn extension_for(language: &str) -> &'static str {
     if language == "csharp" {
         "cs"
+    } else if language == "python" {
+        "py"
     } else {
         "ts"
     }
@@ -681,6 +928,24 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
             "onCellOutgoing",
             "辅助方法 onCellOutgoing（发送接缝）".to_string(),
         );
+    } else if language == "python" {
+        // python 骨架蛇形命名:辅助固定成员 entity_id/on_base_outgoing/on_cell_outgoing,
+        // 包装前缀 base_call_/cell_call_ 接方法原名(业务成员一律保持 def 原名不转写)。
+        add_member(
+            &mut members,
+            "entity_id",
+            "辅助字段 entity_id（实体 id）".to_string(),
+        );
+        add_member(
+            &mut members,
+            "on_base_outgoing",
+            "辅助方法 on_base_outgoing（发送接缝）".to_string(),
+        );
+        add_member(
+            &mut members,
+            "on_cell_outgoing",
+            "辅助方法 on_cell_outgoing（发送接缝）".to_string(),
+        );
     } else {
         add_member(
             &mut members,
@@ -700,26 +965,26 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
     }
 
     for property in client_visible_properties(entity) {
-        let name = if language == "typescript" {
-            property.name.clone()
-        } else {
+        let name = if language == "csharp" {
             to_pascal_case(&property.name)
+        } else {
+            property.name.clone()
         };
         add_member(&mut members, &name, format!("业务属性 {}", property.name));
     }
     for component in &entity.components {
-        let name = if language == "typescript" {
-            component.slot.clone()
-        } else {
+        let name = if language == "csharp" {
             to_pascal_case(&component.slot)
+        } else {
+            component.slot.clone()
         };
         add_member(&mut members, &name, format!("组件槽 {}", component.slot));
     }
     for method in &entity.client_methods {
-        let name = if language == "typescript" {
-            method.name.clone()
-        } else {
+        let name = if language == "csharp" {
             to_pascal_case(&method.name)
+        } else {
+            method.name.clone()
         };
         add_member(
             &mut members,
@@ -728,10 +993,10 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
         );
     }
     for method in &entity.exposed_base_methods {
-        let name = if language == "typescript" {
-            format!("baseCall{}", to_pascal_case(&method.name))
-        } else {
-            format!("BaseCall{}", to_pascal_case(&method.name))
+        let name = match language {
+            "typescript" => format!("baseCall{}", to_pascal_case(&method.name)),
+            "python" => format!("base_call_{}", method.name),
+            _ => format!("BaseCall{}", to_pascal_case(&method.name)),
         };
         add_member(
             &mut members,
@@ -740,10 +1005,10 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
         );
     }
     for method in &entity.exposed_cell_methods {
-        let name = if language == "typescript" {
-            format!("cellCall{}", to_pascal_case(&method.name))
-        } else {
-            format!("CellCall{}", to_pascal_case(&method.name))
+        let name = match language {
+            "typescript" => format!("cellCall{}", to_pascal_case(&method.name)),
+            "python" => format!("cell_call_{}", method.name),
+            _ => format!("CellCall{}", to_pascal_case(&method.name)),
         };
         add_member(
             &mut members,
@@ -756,10 +1021,10 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
 }
 
 fn find_member_conflicts(entities: &[SdkEntity], language: &str) -> Vec<String> {
-    let lang = if language == "typescript" {
-        "TypeScript"
-    } else {
-        "C#"
+    let lang = match language {
+        "typescript" => "TypeScript",
+        "python" => "Python",
+        _ => "C#",
     };
     let mut conflicts = Vec::new();
     for entity in entities {
@@ -779,11 +1044,11 @@ fn find_member_conflicts(entities: &[SdkEntity], language: &str) -> Vec<String> 
 
 pub(super) fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>, String> {
     let language = params.language.as_str();
-    if language != "typescript" && language != "csharp" {
+    if language != "typescript" && language != "csharp" && language != "python" {
         return Err(format!("unsupported language: {language}"));
     }
     let type_map = build_client_sdk_type_map(params.types_xml.as_deref(), language);
-    let trace_lines = engine_trace_lines(params.engine_trace.as_ref());
+    let trace_lines = engine_trace_lines(params.engine_trace.as_ref(), language);
     let namespace = params
         .namespace
         .clone()
@@ -811,6 +1076,9 @@ pub(super) fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>,
     for entity in &entities {
         let content = if language == "typescript" {
             generate_ts_entity(entity, &type_map, &params.generated_at, &trace_lines)
+        } else if language == "python" {
+            // python 骨架无 namespace 概念,类名即 def 实体名。
+            generate_py_entity(entity, &type_map, &params.generated_at, &trace_lines)
         } else {
             generate_cs_entity(
                 entity,
