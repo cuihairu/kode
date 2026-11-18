@@ -610,4 +610,25 @@ mod tests {
         );
         assert_eq!(state.warm.maintenance_snapshot().aged_terminal, 0);
     }
+
+    /// 队满(64 帽)时 begin 诚实拒绝:不写 keyed 假 pending,warm 态仍 idle;
+    /// Default 与 new 同构;Debug 输出携带观测字段。
+    #[test]
+    fn begin_rejects_when_queue_saturated_and_default_debug_faces() {
+        let mut state = ServerState::new();
+        for i in 0..WARM_QUEUE_BUDGET {
+            state
+                .warm
+                .scheduler
+                .cold_request(format!("f{i}.py"), 1, Box::new(|_token| Ok(())));
+        }
+        let (state_name, decision, _id) = state.warm.begin(10);
+        assert_eq!(decision, "rejected", "队满时入队被拒不造假 pending");
+        assert_eq!(state_name, "idle", "拒绝不写 keyed,warm 态仍 idle");
+        let gate = WarmGate::default();
+        assert_eq!(gate.options().max_queued, Some(WARM_QUEUE_BUDGET));
+        let dbg = format!("{gate:?}");
+        assert!(dbg.contains("WarmGate"), "{dbg}");
+        assert!(dbg.contains("state"), "{dbg}");
+    }
 }
