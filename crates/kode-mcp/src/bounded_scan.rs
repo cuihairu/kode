@@ -153,4 +153,25 @@ mod tests {
         assert_eq!(scan.files.len(), 0);
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    /// 中途 walkdir 项 Err(子目录不可读):errors +1 继续走,不炸扫描。
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_subdirectory_counts_as_scan_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("kode-mcp-scanlock-{}", std::process::id()));
+        let sub = root.join("locked");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("a.md"), "x").unwrap();
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let scan = collect(std::slice::from_ref(&root), "md", &[], 10);
+        // 先恢复权限再断言,保证清理可用。
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(scan.files.len(), 0, "locked dir yields no files");
+        assert_eq!(
+            scan.errors, 1,
+            "mid-walk unreadable subdir must surface as a scan error"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

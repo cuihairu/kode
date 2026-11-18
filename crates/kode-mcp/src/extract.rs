@@ -1935,4 +1935,30 @@ mod tests {
             map.content
         );
     }
+
+    #[test]
+    fn excel_row_cap_reports_indexed_over_total_honestly() {
+        // 205 条数据行 > 行帽 200:只索引前 200,sheet 摘要如实带
+        // "rows indexed 200/205, capped at 200" 注记,不静默装完整。
+        // (excel 面的 records 不含表头行,total 只数据行——与 csv 面
+        // 表头计入 total 的口径不同,各自如实。)
+        let xlsx = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/kb/wide_rows.xlsx");
+        let nodes = excel_nodes(project(), "tables/wide_rows.xlsx", &xlsx).unwrap();
+        let sheet = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::ExcelSheet && n.name == "wide")
+            .expect("wide sheet node");
+        let note_at = sheet.content.find("rows indexed").expect("note present");
+        let note = &sheet.content[note_at..];
+        assert!(
+            note.starts_with("rows indexed 200/205, capped at 200"),
+            "capped note must be honest: {note}"
+        );
+        let rows: Vec<&str> = nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::ExcelRow && n.name.starts_with("wide.row"))
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(rows.len(), 200, "row nodes capped at MAX_EXCEL_ROWS");
+    }
 }

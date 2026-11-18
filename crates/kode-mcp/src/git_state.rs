@@ -174,4 +174,21 @@ mod tests {
         assert!(!state.available);
         std::fs::remove_dir_all(&repo).ok();
     }
+
+    /// `.git/HEAD` 存在(has_git_dir 过)但内容非法:git check-ignore 以
+    /// 128 fatal 退出 → 降级 disabled,索引绝不因 git 卡死。
+    #[test]
+    fn probe_disabled_when_git_fatals_on_broken_head() {
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-gitstate-broken-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(root.join(".git").join("HEAD"), "garbage\n").unwrap();
+        let state = probe(&root, &[root.join("a.py")]);
+        assert!(
+            !state.available,
+            "git exit 128 (fatal) must degrade to disabled"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

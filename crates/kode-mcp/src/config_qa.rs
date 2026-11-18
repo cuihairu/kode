@@ -679,7 +679,31 @@ mod tests {
             split_res_path("/a/kbe/res:/b/assets"),
             vec!["/a/kbe/res/", "/b/assets/"]
         );
+        // 单段无分隔符:trim 后整段一条,段尾照常补 `/`
+        assert_eq!(split_res_path("/only"), vec!["/only/"]);
+        assert_eq!(split_res_path("  rel "), vec!["rel/"]);
         assert!(split_res_path("   ").is_empty());
+    }
+
+    /// ResPathEnvGuard 两侧恢复面:环境变量**先前已设值**时,guard drop
+    /// 恢复该值(而非删除)——Some 臂;隔离锁全程持有防并发写。
+    #[test]
+    fn res_path_env_guard_restores_previous_value_on_drop() {
+        let _iso = config_env_isolation();
+        // 预置一个已存值:内层 guard 捕获 Some("/prev/") → drop 恢复它。
+        std::env::set_var(KBE_RES_PATH_ENV, "/prev/");
+        {
+            let _inner = ResPathEnvGuard::set("/tmp/x/");
+            assert_eq!(
+                std::env::var(KBE_RES_PATH_ENV).ok().as_deref(),
+                Some("/tmp/x/")
+            );
+        }
+        assert_eq!(
+            std::env::var(KBE_RES_PATH_ENV).ok().as_deref(),
+            Some("/prev/"),
+            "drop must restore the pre-existing value, not remove it"
+        );
     }
 
     #[test]
