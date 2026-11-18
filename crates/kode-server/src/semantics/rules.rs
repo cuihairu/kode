@@ -861,4 +861,178 @@ mod tests {
             other => panic!("期望 NotReady,得 {other:?}"),
         }
     }
+
+    // ---- COV-021 残量臂 ----
+
+    fn slot_recv(parent: EntityRef) -> Receiver {
+        Receiver::ComponentSlot {
+            parent,
+            slot: "weapon".into(),
+            script_face: None,
+        }
+    }
+
+    #[test]
+    fn component_slot_without_owner_snapshot_is_not_ready() {
+        // 结构三重件第一重:槽宿主快照缺 → 未就绪,不判缺失。
+        let py = StubPy(HashMap::new());
+        let r = check_rpc_call(
+            ScriptFace::Cell,
+            &slot_recv(EntityRef::Remote {
+                class: Some("Avatar".into()),
+                call: CallType::Cell,
+            }),
+            "swing",
+            None,
+            None,
+            &py,
+        );
+        match r {
+            RpcCheck::NotReady { reason } => assert!(reason.contains("槽宿主无快照")),
+            other => panic!("期望 NotReady,得 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn component_slot_chain_overflow_and_iface_cycle_are_not_ready() {
+        // 链缺口谓词后两臂:inheritance-chain-overflow /
+        // interface-cycle-or-duplicate → 来源不完整 → 未就绪
+        //(不完整 ≠ 结构缺失,深审-4)。
+        let py = StubPy(HashMap::new());
+        let recv = slot_recv(EntityRef::Remote {
+            class: Some("Avatar".into()),
+            call: CallType::Cell,
+        });
+        let mut overflow = slot_host("bag", Some("Bag"));
+        overflow.issues.push(Fact::new(
+            "inheritance-chain-overflow:32".to_string(),
+            Origin::unknown("inheritance-chain-overflow:32"),
+        ));
+        match check(ScriptFace::Cell, &recv, "swing", Some(&overflow), &py) {
+            RpcCheck::NotReady { reason } => assert!(reason.contains("来源不完整")),
+            other => panic!("期望 NotReady,得 {other:?}"),
+        }
+        let mut dup = slot_host("bag", Some("Bag"));
+        dup.issues.push(Fact::new(
+            "interface-cycle-or-duplicate:Iface".to_string(),
+            Origin::unknown("interface-cycle-or-duplicate:Iface"),
+        ));
+        assert!(matches!(
+            check(ScriptFace::Cell, &recv, "swing", Some(&dup), &py),
+            RpcCheck::NotReady { .. }
+        ));
+    }
+
+    #[test]
+    fn local_entity_unknown_class_is_not_ready() {
+        // 本地引用类未知:不判缺失(区别于远程臂的类未知文案)。
+        let py = StubPy(HashMap::new());
+        let r = check(
+            ScriptFace::Base,
+            &Receiver::Role {
+                reference: EntityRef::Local { class: None },
+                script_face: Some(ScriptFace::Base),
+            },
+            "m",
+            Some(&EntitySnapshot::default()),
+            &py,
+        );
+        match r {
+            RpcCheck::NotReady { reason } => assert!(reason.contains("本地实体类未知")),
+            other => panic!("期望 NotReady,得 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_none_arms_direct_calls() {
+        // classify_dispatch_miss 的 None 臂:check_rpc_call 引用守卫
+        //(None → 方向不可达)先返回,classify 永不收到 None —— 直调钉
+        // 兜底真值(守卫与分类器口径一致)。
+        let role_none = Receiver::Role {
+            reference: EntityRef::None,
+            script_face: None,
+        };
+        match classify_dispatch_miss(&role_none, &EntityRef::None, "m", None) {
+            RpcCheck::DirectionUnreachable { reason } => {
+                assert!(reason.contains("None 引用无方法可调"))
+            }
+            other => panic!("期望 DirectionUnreachable,得 {other:?}"),
+        }
+        let slot_none = Receiver::ComponentSlot {
+            parent: EntityRef::None,
+            slot: "weapon".into(),
+            script_face: None,
+        };
+        match classify_dispatch_miss(&slot_none, &EntityRef::None, "m", None) {
+            RpcCheck::DirectionUnreachable { reason } => {
+                assert!(reason.contains("None 引用无组件槽"))
+            }
+            other => panic!("期望 DirectionUnreachable,得 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn py_facts_on_base_and_client_faces_resolve() {
+        // StubPy::with 的 Base/Client 面臂 + 双跳转:Base 面本地实体 def
+        // 声明 + Python 实现双命中;Client 面本地组件 plain 派发命中。
+        let py = StubPy(HashMap::new())
+            .with(
+                ScriptFace::Base,
+                PyClassFacts {
+                    class_name: "Avatar".into(),
+                    methods: vec![py_method("helper", 12)],
+                },
+            )
+            .with(
+                ScriptFace::Client,
+                PyClassFacts {
+                    class_name: "Weapon".into(),
+                    methods: vec![py_method("redraw", 7)],
+                },
+            );
+        let snap = EntitySnapshot {
+            base_methods: vec![view("helper", Facet::Base, "Avatar", 20, false)],
+            ..Default::default()
+        };
+        match check(
+            ScriptFace::Base,
+            &Receiver::Role {
+                reference: EntityRef::Local {
+                    class: Some("Avatar".into()),
+                },
+                script_face: Some(ScriptFace::Base),
+            },
+            "helper",
+            Some(&snap),
+            &py,
+        ) {
+            RpcCheck::Reachable { candidates } => {
+                assert_eq!(candidates.len(), 1);
+                assert_eq!(
+                    candidates[0].py_file.as_deref(),
+                    Some("scripts/base/Avatar.py")
+                );
+                assert_eq!(candidates[0].py_line, Some(12));
+            }
+            other => panic!("期望 Reachable,得 {other:?}"),
+        }
+        let host = slot_host("weapon", Some("Weapon"));
+        match check_rpc_call(
+            ScriptFace::Client,
+            &Receiver::ComponentSlot {
+                parent: EntityRef::Local {
+                    class: Some("Avatar".into()),
+                },
+                slot: "weapon".into(),
+                script_face: Some(ScriptFace::Client),
+            },
+            "redraw",
+            Some(&host),
+            Some(&EntitySnapshot::default()),
+            &py,
+        ) {
+            RpcCheck::Reachable { candidates } => assert_eq!(candidates.len(), 1),
+            other => panic!("期望 Reachable,得 {other:?}"),
+        }
+    }
 }
