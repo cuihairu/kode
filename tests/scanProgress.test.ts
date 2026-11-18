@@ -139,16 +139,19 @@ describe('SCAN-RESUME-001 纯核(零 vscode)', () => {
     expect(parsedPythonFileEqualsRoundtrip(bare, bareRestored)).toBe(true);
   });
 
-  it('readScanProgress:版本门(schema/kodeVersion)任一不符 → null;meta 损坏 → null;'
+  it('readScanProgress:版本门(schema/kodeVersion/engineMajor)分级不符 → null;meta 损坏 → null;'
     + 'meta 列了但分块文件缺失/损坏 → 整体弃用不部分采纳', () => {
     const io = defaultScanProgressIo;
     const real = realPy();
-    const controller = new ScanProgressController(progressDir, 'v1');
+    const controller = new ScanProgressController(progressDir, 'v1', '2');
     controller.recordChunk(0, [{ path: real.file, version: 1, parsed: real.parsed }]);
     return controller.settle().then(() => {
-      const expected = { schemaVersion: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1' };
+      const expected = { schemaVersion: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1', engineMajor: '2' };
       expect(readScanProgress(progressDir, expected, io)).not.toBeNull();
-      expect(readScanProgress(progressDir, { ...expected, kodeVersion: 'v2' }, io)).toBeNull();
+      // 扩展版本号滚动 → 断点仍可用(「一直在扫」病根:它曾是淘汰键)
+      expect(readScanProgress(progressDir, { ...expected, kodeVersion: 'v2' }, io)).not.toBeNull();
+      // 引擎 API 主版本变 → 弃用重扫
+      expect(readScanProgress(progressDir, { ...expected, engineMajor: '3' }, io)).toBeNull();
       expect(readScanProgress(progressDir, { ...expected, schemaVersion: 'scan-progress/9' }, io)).toBeNull();
       // meta 损坏
       fs.writeFileSync(p(progressDir, 'progress.json'), '{not json', 'utf8');
@@ -198,7 +201,7 @@ describe('SCAN-RESUME-001 纯核(零 vscode)', () => {
       ...defaultScanProgressIo,
       writeTextAtomic: () => { throw new Error('disk full'); }
     };
-    const failing = new ScanProgressController(progressDir, 'v1', throwingIo);
+    const failing = new ScanProgressController(progressDir, 'v1', '', throwingIo);
     failing.recordChunk(0, [{ path: real.file, version: 1, parsed: real.parsed }]);
     await failing.settle();
     await failing.complete();
@@ -269,20 +272,37 @@ describe('SCAN-RESUME-001 索引面七钉子', () => {
     expect(index.getScanResumeStatsForTests()).toEqual({ adopted: 0, scanned: PY_FILE_COUNT });
   }, 20000);
 
-  it('钉子④:kode 版本门——升级后断点作废,全量照扫', async () => {
+  it('钉子④:引擎主版本门——引擎换大版本断点作废全量照扫;扩展版本号滚动不再作废', async () => {
     pointWorkspaceAt(fixture.root, fixture.files);
-    const interrupted = new ScanProgressController(progressDir, 'v0.1');
+    const interrupted = new ScanProgressController(progressDir, 'v0.1', '2');
     const first = new PythonClassIndex(new FailNthChunkScheduler(2), interrupted);
     await first.findClassesByName('Mod00').catch(() => undefined);
     await interrupted.settle();
     expect(fs.existsSync(p(progressDir, 'progress.json'))).toBe(true);
 
-    // 升级版重启:版本不符 → 断点整体弃用
-    const upgraded = new ScanProgressController(progressDir, 'v0.2');
+    // 扩展版本号滚动(升级重启):断点仍可用,增量续扫——「一直在扫」的病根
+    // 就是旧版本键把每次升级都判成断点作废
+    const upgraded = new ScanProgressController(progressDir, 'v0.2', '2');
     const second = new PythonClassIndex(new IndexScheduler(), upgraded);
     await second.findClassesByName('Mod00');
-    await waitFor(() => fileCacheSize(second) === PY_FILE_COUNT, 'upgraded full scan completes');
-    expect(second.getScanResumeStatsForTests()).toEqual({ adopted: 0, scanned: PY_FILE_COUNT });
+    await waitFor(() => fileCacheSize(second) === PY_FILE_COUNT, 'upgraded incremental resume completes');
+    // 增量续扫:采纳断点已扫的分块,只扫剩余
+    const resumed = second.getScanResumeStatsForTests();
+    expect(resumed.adopted).toBeGreaterThan(0);
+    expect(resumed.scanned).toBeLessThan(PY_FILE_COUNT);
+    expect(resumed.adopted + resumed.scanned).toBe(PY_FILE_COUNT);
+
+    // 清场重来(只验证引擎换大版本的作废面)
+    clearScanProgressDir(progressDir);
+    const engine2 = new ScanProgressController(progressDir, 'v0.1', '2');
+    const third = new PythonClassIndex(new FailNthChunkScheduler(2), engine2);
+    await third.findClassesByName('Mod00').catch(() => undefined);
+    await engine2.settle();
+    const engine3 = new ScanProgressController(progressDir, 'v0.1', '3');
+    const fourth = new PythonClassIndex(new IndexScheduler(), engine3);
+    await fourth.findClassesByName('Mod00');
+    await waitFor(() => fileCacheSize(fourth) === PY_FILE_COUNT, 'engine-major-change full scan completes');
+    expect(fourth.getScanResumeStatsForTests()).toEqual({ adopted: 0, scanned: PY_FILE_COUNT });
   }, 20000);
 
   it('钉子⑤:采纳只发生在扫描内部——载入断点不等于提前开放查询(构造/载入零入索引)', async () => {

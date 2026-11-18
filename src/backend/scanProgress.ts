@@ -68,7 +68,10 @@ export interface ScanProgressEntry {
 /** 提交点 meta:版本门 + 已完成分块号清单 */
 export interface ScanProgressMetaFile {
   schema: string;
+  /** 溯源用:写断点时的扩展版本号。不作淘汰键(见 readScanProgress 版本门) */
   kodeVersion: string;
+  /** 写断点时的引擎 API 主版本键;''=未知。淘汰键之一 */
+  engineMajor?: string;
   chunks: number[];
   chunksDone: number;
 }
@@ -177,18 +180,30 @@ const isEntryShape = (value: unknown): value is ScanProgressEntry => {
     && !!entry.parsed && typeof entry.parsed === 'object';
 };
 
-/** 读断点:版本门(schema/kodeVersion 任一不符 → null)→ 逐分块读载荷
+/** 读断点:版本门(分级,只认破坏性变更,见下方注释)→ 逐分块读载荷
  * (meta 列了但文件缺失/损坏 → 整体弃用 null,不部分采纳半截)。 */
 export function readScanProgress(
   dir: string,
-  expected: { schemaVersion: string; kodeVersion: string },
+  expected: { schemaVersion: string; kodeVersion: string; engineMajor?: string },
   io: ScanProgressIo = defaultScanProgressIo
 ): { meta: ScanProgressMetaFile; entries: ScanProgressEntry[] } | null {
   const meta = parseJson<ScanProgressMetaFile>(io.readText(path.join(dir, META_FILE)));
   if (!meta || typeof meta !== 'object' || typeof meta.schema !== 'string') {
     return null;
   }
-  if (meta.schema !== expected.schemaVersion || meta.kodeVersion !== expected.kodeVersion) {
+  // 版本门分级(2026-11-18 用户报「一直在扫」,巡检单故障 B):与 indexDiskCache
+  // 同口径——schema 格式常量不符 → 弃用(安全闸);engineMajor(引擎 API 主版本)
+  // 不符 → 弃用重扫;扩展版本号不参与判定(nightly 每次滚动它都会把断点判成
+  // 陈旧 → 每次都从头扫)。meta 无 engineMajor 字段=本改动前写入的旧断点,
+  // 按未知处理,不因此作废。
+  if (meta.schema !== expected.schemaVersion) {
+    return null;
+  }
+  if (
+    expected.engineMajor
+    && meta.engineMajor !== undefined
+    && meta.engineMajor !== expected.engineMajor
+  ) {
     return null;
   }
   if (!Array.isArray(meta.chunks)) {
@@ -276,13 +291,25 @@ export interface ScanChunkCommit {
 export class ScanProgressController {
   private readonly dir: string;
   private readonly kodeVersion: string;
+  /**
+   * 引擎 API 主版本键(缓存淘汰键之一);''=未知,不据此作废断点。
+   * 惰性解析(字符串或提供函数):断点读写发生在扫描期,而启动早期才补录的
+   * 引擎根晚于控制器构造,若构造时快照会让补录成果到不了版本门。
+   */
+  private readonly engineMajor: () => string;
   private readonly io: ScanProgressIo;
   private chunksRecorded = new Set<number>();
   private writeChain: Promise<void> = Promise.resolve();
 
-  constructor(dir: string, kodeVersion: string, io: ScanProgressIo = defaultScanProgressIo) {
+  constructor(
+    dir: string,
+    kodeVersion: string,
+    engineMajor: string | (() => string) = '',
+    io: ScanProgressIo = defaultScanProgressIo
+  ) {
     this.dir = dir;
     this.kodeVersion = kodeVersion;
+    this.engineMajor = typeof engineMajor === 'function' ? engineMajor : () => engineMajor;
     this.io = io;
   }
 
@@ -290,7 +317,8 @@ export class ScanProgressController {
   loadResumePlan(files: string[]): { adopt: Map<string, ScanProgressEntry>; scan: string[] } | null {
     const loaded = readScanProgress(this.dir, {
       schemaVersion: SCAN_PROGRESS_SCHEMA_VERSION,
-      kodeVersion: this.kodeVersion
+      kodeVersion: this.kodeVersion,
+      engineMajor: this.engineMajor()
     }, this.io);
     clearScanProgressDir(this.dir, this.io);
     this.chunksRecorded = new Set();
@@ -336,6 +364,7 @@ export class ScanProgressController {
           const meta: ScanProgressMetaFile = {
             schema: SCAN_PROGRESS_SCHEMA_VERSION,
             kodeVersion: this.kodeVersion,
+            engineMajor: this.engineMajor(),
             chunks,
             chunksDone: chunks.length
           };

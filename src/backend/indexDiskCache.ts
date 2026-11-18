@@ -4,9 +4,12 @@
  * globalStorage 磁盘,二次启动从「全仓重扫分钟级」降到「哈希校验秒级」。
  *
  * 布局:<globalStorage>/index-cache/{meta.json, discovery.json, eventIndex.json, defLut.json}
- * - meta.json = 提交点:kode 版本 + schema 版本 + 各产物 sha256 + 计数。
- *   版本不符即整体弃用(升级不背旧包袱);产物先写、meta 后写,meta 未更新
- *   = 旧缓存完整可用(writeFileAtomic 单文件原子,绝不半截)。
+ * - meta.json = 提交点:schema 版本 + 引擎主版本键 + 扩展版本号(溯源)
+ *   + 各产物 sha256 + 计数。淘汰键分级,只认破坏性结构变更(见 readIndexCache
+ *   版本门注释):schema 格式常量 / 引擎 API 主版本 不符 → 整体弃用;
+ *   扩展版本号不参与判定(nightly 滚动它会让人每次启动都从零重扫)。
+ *   产物先写、meta 后写,meta 未更新 = 旧缓存完整可用(writeFileAtomic
+ *   单文件原子,绝不半截)。
  * - 产物文件 = 纯载荷数组;读回时按 meta 的 sha 逐件校验,篡改/半截 → 该
  *   产物弃用(下次启动照旧全扫)。
  *
@@ -54,7 +57,10 @@ export interface IndexCacheDiskPayload {
 
 export interface IndexCacheMetaFile {
   schemaVersion: string;
+  /** 溯源用:写缓存时的扩展版本号。不作淘汰键(见版本门注释) */
   kodeVersion: string;
+  /** 写缓存时的引擎 API 主版本键;''=未知(引擎根未记录)。淘汰键之一 */
+  engineMajor?: string;
   savedAt: number;
   /** 各产物内容 sha256(读回逐件校验,防篡改/半截) */
   sha: { discovery?: string; eventIndex?: string; defLut?: string };
@@ -143,13 +149,13 @@ const parseJsonArray = (text: string | null): unknown[] | null => {
 };
 
 /**
- * 读缓存:meta 版本门(schema/kode 任一不符 → null 整体弃用,钉子④)→
+ * 读缓存:meta 版本门(分级,只认破坏性变更,见下方注释)→
  * 产物逐件 sha 校验(不匹配 → 该产物缺席,调用方照旧全扫该侧)。
  * meta 缺失/损坏 → null(等同未缓存)。
  */
 export function readIndexCache(
   cacheDir: string,
-  expected: { schemaVersion: string; kodeVersion: string },
+  expected: { schemaVersion: string; kodeVersion: string; engineMajor?: string },
   io: IndexCacheIo = defaultIndexCacheIo
 ): LoadedIndexCache | null {
   const metaText = io.readText(path.join(cacheDir, 'meta.json'));
@@ -166,7 +172,23 @@ export function readIndexCache(
   } catch {
     return null;
   }
-  if (meta.schemaVersion !== expected.schemaVersion || meta.kodeVersion !== expected.kodeVersion) {
+  // 版本门分级(2026-11-18 用户报「一直在扫」,巡检单故障 B):只认破坏性
+  // 结构变更,扩展自身版本号不再是淘汰键。
+  // 1. schemaVersion=缓存格式常量 → 不符整体弃用(安全闸,保留原判定);
+  // 2. engineMajor=缓存兼容所依赖的引擎 API 主版本 → 不符弃用重扫(引擎换
+  //    大版本,符号确实变);同 major 不同 minor/patch → 不弃用;
+  // 3. kodeVersion(扩展版本号)**不参与判定**:nightly 每次滚动版本号都会让
+  //    每次启动都判「版本不符」→ 弃用 → 全量重扫,正是「一直在扫」的病根。
+  //    仍写入 meta 供溯源。meta 无 engineMajor 字段=本改动前写入的旧缓存,
+  //    按未知处理(不因此弃用),避免升级后白扫一次。
+  if (meta.schemaVersion !== expected.schemaVersion) {
+    return null;
+  }
+  if (
+    expected.engineMajor
+    && meta.engineMajor !== undefined
+    && meta.engineMajor !== expected.engineMajor
+  ) {
     return null;
   }
   const payload: IndexCacheDiskPayload = {};
@@ -197,7 +219,7 @@ export function readIndexCache(
  */
 export function writeIndexCache(
   cacheDir: string,
-  expected: { schemaVersion: string; kodeVersion: string },
+  expected: { schemaVersion: string; kodeVersion: string; engineMajor?: string },
   payload: IndexCacheDiskPayload,
   io: IndexCacheIo = defaultIndexCacheIo
 ): boolean {
@@ -222,6 +244,7 @@ export function writeIndexCache(
     const meta: IndexCacheMetaFile = {
       schemaVersion: expected.schemaVersion,
       kodeVersion: expected.kodeVersion,
+      engineMajor: expected.engineMajor ?? '',
       savedAt: Date.now(),
       sha,
       discoveryCount: payload.discovery?.length ?? 0,

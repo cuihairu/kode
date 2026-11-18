@@ -62,6 +62,7 @@ import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { createIndexEventCoalescer, type IndexEventCoalescer } from '../backend/indexEventCoalescer';
 import { INDEX_CACHE_DIR_NAME } from '../backend/indexDiskCache';
 import { SCAN_PROGRESS_DIR_NAME, ScanProgressController } from '../backend/scanProgress';
+import { activeProfileEngineMajor } from './engineVersionKey';
 import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonTypeStubPlan } from '../pythonTypeStubs';
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
 import { createRootRemovalNotifier } from '../backend/rootRemovalEvents';
@@ -317,7 +318,14 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   const pythonClassIndex = new PythonClassIndex(
     indexScheduler,
     scanProgressDir
-      ? new ScanProgressController(scanProgressDir, String(context.extension?.packageJSON?.version ?? 'dev'))
+      ? new ScanProgressController(
+          scanProgressDir,
+          String(context.extension?.packageJSON?.version ?? 'dev'),
+          // 版本键分级:断点淘汰键=引擎 API 主版本,扩展版本号只作溯源。
+          // 传解析函数(惰性):断点读写在扫描期,晚于启动早期补录引擎根,
+          // 构造时快照会让补录成果到不了版本门。
+          () => activeProfileEngineMajor(context.workspaceState)
+        )
       : undefined,
     // INDEX-DISCIPLINE-001 ③:语法门配置(kbengine.index.syntaxGate,默认开)。
     () => vscode.workspace.getConfiguration('kbengine.index').get<boolean>('syntaxGate', true)
