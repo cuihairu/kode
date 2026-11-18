@@ -2624,7 +2624,7 @@
 
 ## G2 文档审计（2026-11-14）：文档站语言自动识别（增强项，待拍板）
 
-- [ ] G2-LANG-001 [P2] docs 站浏览器语言自动识别跳转：首页 JS 探测 `navigator.language` 以 `zh` 开头且未显式选择过语言时 → `/zh/`（localStorage 记忆显式切换），否则留在 `/`。现状：VitePress locales root(en-US)+zh(zh-CN) 双语齐、语言菜单手动切换、README 双语对完整——「手动切换+显式链接」受规基线已满足；自动识别属增强项，舰队级是否上、哪些仓上待用户拍板，不自行实现。来源：舰队文档一致性+语言切换审计 G2 轮（docs/审计-文档一致性.md G2 节 G2-05）。
+- [x] G2-LANG-001 [P2] docs 站浏览器语言自动识别跳转：首页 JS 探测 `navigator.language` 以 `zh` 开头且未显式选择过语言时 → `/zh/`（localStorage 记忆显式切换），否则留在 `/`。来源：舰队文档一致性+语言切换审计 G2 轮（docs/审计-文档一致性.md G2 节 G2-05）。**2026-11-18 完成（commit 5e27ec47，CI 双绿 run 44322231846+44322231756，用户批准本仓实现）：纯核 langAutoRedirect.ts（唯一决策点 resolveAutoRedirect，零 vitepress 依赖）+ theme/index.ts enhanceApp 官方机制接线（不造轮子）；只英文首页探测、只看 navigator.languages 首选位 zh 开头（首个红咬=首版 some() 全列表形态越规，测试咬出后按任务书口径收正）；localStorage 记显式选择（任何跨语言段导航含 popstate=用户意志）、sessionStorage 本会话一次性防 back 死循环、suppress 标记防自动跳被记成显式；深链子页不跳、/zh/ 永不反向跳；存储访问全容错。门禁：定向 9 例+prove-red 红绿两态（storedChoice 闸一咬）+theme 一次性 tsc 0+docs:build ×2 产物键 grep 验真+全量唯一红=已知 pyspyDump 环境红（mysqld 僵尸）。舰队级推广其余仓仍待用户拍板（审计档 G2-05 行已注）。**
 
 ## 用户令 2026-11-17：大模型接入（方案 C + 对话框）
 
