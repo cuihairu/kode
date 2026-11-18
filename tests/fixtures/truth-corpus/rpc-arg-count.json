@@ -205,7 +205,7 @@
         "status": "pinned",
         "analysis": { "findings": [] }
       },
-      "reason": "映射快照=部分 def 成员面,缺席声明是「未知」不是「def 未声明」;真反例臂需全量映射 fixture(def 成员闸归 mapping 生产车道),本条只钉诚实沉默边界。"
+      "reason": "映射快照=部分 def 成员面,缺席声明是「未知」不是「def 未声明」;真反例臂需全量映射 fixture(def 成员闸归 mapping 生产车道),本条只钉诚实沉默边界。;真反例臂已落地:见 rpc-arg-count-undeclared-full-mapping(2026-11-18,第二十七增量)。"
     },
     {
       "id": "rpc-arg-count-face-filter",
@@ -263,6 +263,63 @@
       "kode": {
         "status": "pinned",
         "analysis": { "findings": [] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-mismatch-full-mapping",
+      "kind": "negative",
+      "input": {
+        "def": [
+      "<root>",
+      "  <CellMethods>",
+      "    <doMove>",
+      "      <Arg>UINT8</Arg>",
+      "      <Arg>VECTOR3</Arg>",
+      "    </doMove>",
+      "  </CellMethods>",
+      "</root>"
+    ],
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.doMove(5)\n"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "同首臂 mismatch 口径:实参数与 .def 声明不符=与描述不符的调用;本臂差异=映射不经手写薄切片,由 EntityMappingManager 实扫 mkdtemp 工作区 Avatar.def 产出(真 def 解析生产线),declaredCount=2 来自真实 <Arg> 序列。"
+      },
+      "evidence": [
+        "checked against the entity's `.def` description before packing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [{ "line": 2, "character": 18, "methodName": "doMove", "receiver": "cell", "declaredCount": 2, "actualCount": 1 }] }
+      }
+    },
+    {
+      "id": "rpc-arg-count-undeclared-full-mapping",
+      "kind": "positive",
+      "input": {
+        "def": [
+      "<root>",
+      "  <CellMethods>",
+      "    <doMove>",
+      "      <Arg>UINT8</Arg>",
+      "      <Arg>VECTOR3</Arg>",
+      "    </doMove>",
+      "  </CellMethods>",
+      "</root>"
+    ],
+        "source": "class Avatar:\n    def onSee(self, other):\n        self.cell.unknownMethod(1)\n"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "def 未声明的方法不可经 EntityCall 派发(never engine methods, never properties);全量映射(真 def 解析生产线)下 def 成员闸闭合——methods 里缺席=真未声明,不再是快照不全的未知。"
+      },
+      "evidence": [
+        "An `EntityCall` can only invoke methods declared in the `.def` file — never engine methods, never properties"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "findings": [] },
+        "finding": "登记分歧:全量映射下「def 真未声明」的 EntityCall 调用点诊断面零警告——运行期必败调用零提示=漏报缺口;与薄快照边界臂(undeclared-method)双臂合围=rpcArgCount 诊断从不主张 def 成员完备性。修复候选=未声明 EntityCall 方法诊断面(输入需 def 成员全集),归独立立项;本条只钉现状不冒充修复。"
       }
     }
   ]

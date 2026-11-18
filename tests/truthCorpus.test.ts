@@ -7,8 +7,9 @@
 // - def-property-flags → 分析面(defAnalyzer/flagDomains)+ 验证面(validateDocument);
 // - cell-data-snapshot → 键面(cellDataWrongKey)+ 时序面(cellDataCallbackCheck)。
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { propertyFlagDomainList } from '../src/backend/defAnalyzer';
 import { normalizeFlagTokens } from '../src/generated/flagDomains';
 import { validateDocument } from '../src/languageProviders';
@@ -29,7 +30,9 @@ import { findRoleMisuseFindings } from '../src/backend/roleMisuseDiagnostics';
 import { findEventCalls } from '../src/eventApi';
 import { findReadOnlyWriteFindings } from '../src/backend/readOnlyWriteDiagnostics';
 import { computeRpcArgCountFindings } from '../src/backend/rpcArgCountDiagnostics';
+import { EntityMappingManager } from '../src/entityMapping';
 import type { EntityMapping } from '../src/entityMapping';
+import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { KBENGINE_HOOKS, getHookByName } from '../src/hooks';
 import {
@@ -348,7 +351,19 @@ interface RpcArgCountEntry extends TruthEntryBase {
   };
 }
 const rpcArgCountFamily = families.find(f => f.family === 'rpc-arg-count')!;
-const rpcArgCountEntries = rpcArgCountFamily.entries as unknown as RpcArgCountEntry[];
+/** 薄切片臂(methods 手喂)与全量映射臂(def 经真管理器实扫)分流;两形状互斥。 */
+const rpcArgCountEntries = (rpcArgCountFamily.entries as unknown as RpcArgCountEntry[])
+  .filter(entry => (entry.input as { methods?: unknown }).methods !== undefined);
+/** 全量映射臂(第二十七增量):input 携 def 原文,映射不经手喂薄切片。 */
+interface RpcArgCountFullMappingEntry extends TruthEntryBase {
+  input: { def: string[]; source: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { findings: { line: number; character: number; methodName: string; receiver: string; declaredCount: number; actualCount: number }[] };
+  };
+}
+const rpcArgCountFullMappingEntries = rpcArgCountFamily.entries.filter(
+  (entry): entry is RpcArgCountFullMappingEntry => Array.isArray((entry.input as { def?: unknown }).def)
+);
 const hookSigFamily = families.find(f => f.family === 'writetodb-hook-signature')!;
 /** 条目 methods 薄切片 → EntityMapping 快照(identity 薄桩;mapping 生产装配不属本族钉域)。 */
 const rpcArgCountMappingOf = (entry: RpcArgCountEntry): EntityMapping =>
@@ -895,6 +910,69 @@ describe('真值语料 execution 门:RPC 实参数对账面(computeRpcArgCountFi
         actualCount: f.actualCount
       }));
       expect(actual, `rpc arg count drift: ${entry.id}`).toEqual(entry.kode.analysis?.findings ?? []);
+    }
+  });
+});
+
+// ---- ⑳b rpc-arg-count 全量映射臂(第二十七增量,2026-11-18) ----
+// undeclared 真反例解封:映射不经手写薄切片,由 EntityMappingManager 实扫
+// mkdtemp 工作区真 Avatar.def 产出(definitionSemantics→collectMethodDefinitions
+// 生产线);双臂=控制臂(真映射下 mismatch 照报,证 fixture 活)+真反例臂
+// (def 真未声明方法零警告=漏报向分歧登记,只钉现状不冒充修复)。
+describe('真值语料 execution 门:RPC 实参数对账面全量映射臂(mkdtemp 真管理器)', () => {
+  const originalFolders = stubWorkspace.workspaceFolders;
+  const originalFindFiles = stubWorkspace.findFiles;
+  const rpcFullMappingRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-rpc-fullmap-'));
+  let manager: EntityMappingManager | undefined;
+  let fullMapping: EntityMapping | undefined;
+
+  beforeAll(() => {
+    fs.mkdirSync(path.join(rpcFullMappingRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(rpcFullMappingRoot, 'scripts', 'entity_defs', 'Avatar.def'),
+      rpcArgCountFullMappingEntries[0]!.input.def.join('\n') + '\n'
+    );
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(rpcFullMappingRoot), name: 'ws', index: 0 }];
+    stubWorkspace.findFiles = async () => [
+      Uri.file(path.join(rpcFullMappingRoot, 'scripts', 'entity_defs', 'Avatar.def'))
+    ];
+    manager = new EntityMappingManager({ subscriptions: [] });
+  });
+  afterAll(() => {
+    manager?.dispose();
+    stubWorkspace.workspaceFolders = originalFolders;
+    stubWorkspace.findFiles = originalFindFiles;
+    fs.rmSync(rpcFullMappingRoot, { recursive: true, force: true });
+  });
+
+  it('真管理器实扫产出 Avatar 全量映射(def 成员闸=真解析)', async () => {
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      if (manager!.getAllMappings().length > 0) { break; }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const mapping = manager!.getAllMappings().find(m => m.name === 'Avatar');
+    expect(mapping, 'manager scan should produce Avatar mapping').toBeDefined();
+    expect(Object.keys(mapping!.methods)).toEqual(['doMove']);
+    expect(mapping!.methods.doMove![0]!.declaredArgs).toEqual(['UINT8', 'VECTOR3']);
+    expect(mapping!.methods.doMove![0]!.section).toBe('CellMethods');
+    fullMapping = mapping!;
+  });
+
+  it('双臂逐标量钉:控制臂真映射 mismatch 照报/真反例臂真未声明零警告', () => {
+    expect(rpcArgCountFullMappingEntries.length).toBe(2);
+    expect(fullMapping, '前置 fixture it 必须先行').toBeDefined();
+    for (const entry of rpcArgCountFullMappingEntries) {
+      const findings = computeRpcArgCountFindings(entry.input.source, fullMapping);
+      const actual = findings.map(f => ({
+        line: f.line,
+        character: f.character,
+        methodName: f.methodName,
+        receiver: f.receiver,
+        declaredCount: f.declaredCount,
+        actualCount: f.actualCount
+      }));
+      expect(actual, `rpc arg count full-mapping drift: ${entry.id}`)
+        .toEqual(entry.kode.analysis?.findings ?? []);
     }
   });
 });
