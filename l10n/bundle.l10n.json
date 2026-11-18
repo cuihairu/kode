@@ -756,5 +756,8 @@
   "ruff format failed: {reason}": "ruff format failed: {reason}",
   "ruff is not installed. Install it and retry.": "ruff is not installed. Install it and retry.",
   "ruff is not installed. Install it now via pip?": "ruff is not installed. Install it now via pip?",
-  "Set as default formatter": "Set as default formatter"
+  "Set as default formatter": "Set as default formatter",
+  "Create": "Create",
+  "No ruff config in the workspace root. Create pyproject.toml with this block?": "No ruff config in the workspace root. Create pyproject.toml with this block?",
+  "pyproject.toml has no [tool.ruff] section. Append this block?": "pyproject.toml has no [tool.ruff] section. Append this block?"
 }

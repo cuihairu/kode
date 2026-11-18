@@ -236,6 +236,7 @@ A Rust core runs alongside the TypeScript extension and speaks the same LSP surf
 - [Def call-chain view (`kbengine.python.showCallChain`) and call-chain inlay hints (`kbengine.python.callChainHints`)]
 - [Python test discovery and run (`kbengine.tests.list`) and the build task provider (`kbengine.build.previewTask`)]
 - [Python language service status check (`kbengine.python.serviceStatus`)]
+- Ruff formatting config: one `[tool.ruff]` section (nearest `pyproject.toml`, default line-length 88) drives the lint command, the one-shot format command, and the generator's multi-lining uniformly; `kbengine.ruff.ensureConfig` (default on) bootstraps a missing section with a consent prompt — see the [commands guide](./docs/guide/commands.md#kbenginepythonruffformat)
 
 ### Inlay Hints & Type Inference
 

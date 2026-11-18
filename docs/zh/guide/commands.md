@@ -1180,6 +1180,7 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 - 格式化 Provider（探测到 ruff 时激活期注册）：`python` 的 document/range 两面——Shift+Alt+F / Format Document 不走命令也可用；**绝不抢默认**：不动 `editor.defaultFormatter`，仅当其未设置时一次性提示可把 Kode (ruff) 设为默认——点了才设，绝不自动改
 - 生成器直通：实体生成器产出的 Python 文件在 ruff 可用时经同一 format 面多行化（FIXED_DICT/ARRAY 长默认值不再挤一行）；ruff 缺失时生成产物原样——格式化绝不阻塞生成
 - ruff 定位：选定解释器自身 bin 目录优先（与 lint 同源），后端内 PATH 回落
+- 配置发现（与 lint、生成器多行化同源）：ruff 自被格式化文件向上找最近的 `pyproject.toml` `[tool.ruff]`（或 `ruff.toml`），全程无配置时生效行宽为 ruff 默认 88——一份配置统一驱动三个面。引导（`kbengine.ruff.ensureConfig`，默认开）：首次 lint/format（或生成器多行化）时工作区根既无 `[tool.ruff]` 也无 `ruff.toml` → 带内容预览的一次性确认弹窗——同意即生成最小 `[tool.ruff]` 段（`line-length = 88`，附常用值注释：79 / 100 / 120，改小=长数据更早拆多行）；已有 `[tool.ruff]` 绝不修改，无法证明 TOML 安全的追加如实跳过（行为保持默认 88），拒绝后本会话不再询问
 
 ### `kbengine.project.import`
 

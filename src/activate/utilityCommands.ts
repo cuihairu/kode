@@ -14,6 +14,7 @@ import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../work
 import { MergeSnippetResult } from '../backend/snippetGenerator';
 import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, ruffExePathForInterpreter, RuffDiag } from '../backend/ruffLint';
 import { ensureRuffFormatterRegistered, runRuffFormat, runRuffFormatCommand } from '../backend/ruffFormat';
+import { ensureRuffConfigShared, wireSharedRuffConfigEnsure } from '../backend/ruffConfigEnsure';
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
@@ -936,6 +937,49 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   const ruffDiagnostics = vscode.languages.createDiagnosticCollection('kode-ruff');
   context.subscriptions.push(ruffChannel, ruffDiagnostics);
 
+  // 批 A2(巡检单 kode-ruff-format-statusbar.md):工作区根 pyproject.toml
+  // [tool.ruff] 引导——lint/format 首次执行前检测一次(会话内幂等:拒绝过
+  // 不再问,已就绪不再检)。默认开启,`kbengine.ruff.ensureConfig` 可关;
+  // 红线=绝不动已有 [tool.ruff];存疑追加面如实 unsafe 跳过。
+  const ruffConfigEnsureDeps = {
+    getSettingEnabled: () =>
+      vscode.workspace.getConfiguration('kbengine.ruff').get<boolean>('ensureConfig', true),
+    workspaceRoot: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null,
+    rootFileExists: (name: string) => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      return root !== undefined && fs.existsSync(path.join(root, name));
+    },
+    readFileText: (name: string) => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (root === undefined) {
+        return null;
+      }
+      try {
+        return fs.readFileSync(path.join(root, name), 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    writeFileText: (name: string, content: string) => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (root === undefined) {
+        return false;
+      }
+      try {
+        fs.writeFileSync(path.join(root, name), content, 'utf8');
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    showInformationMessage: (message: string, ...items: string[]) =>
+      vscode.window.showInformationMessage(message, ...items)
+  };
+  // 共享接线:命令入口(lint/format)与生成器入口(codeGenerator)共用同一
+  // 会话(跨入口「问过就记住」);生成器激活序在前,其生成期调用时已接线。
+  wireSharedRuffConfigEnsure(ruffConfigEnsureDeps);
+  const ensureRuffConfigOnce = () => ensureRuffConfigShared();
+
   // C-23 行为知识流水线(坑→lint/code action/hover):三规则(KBE-PY-015/
   // 016/017)独立诊断集合与 quick fix provider 自持装配(trapDiagnosticsWiring
   // 自带事件监听,不进主调度链);hover 行为注记在 languageProviders/hover.ts
@@ -987,6 +1031,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     channel: ruffChannel
   };
   const ruffLintCommand = vscode.commands.registerCommand('kbengine.python.ruffLint', async () => {
+    await ensureRuffConfigOnce();
     const summary = await runRuffLintCommand(ruffLintDeps);
     ruffChannel.appendLine(`[ruff] ${summary}`);
     ruffChannel.show(true);
@@ -1043,6 +1088,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     channel: ruffChannel
   };
   const ruffFormatCommand = vscode.commands.registerCommand('kbengine.python.ruffFormat', async () => {
+    await ensureRuffConfigOnce();
     await runRuffFormatCommand(ruffFormatDeps);
   });
   context.subscriptions.push(ruffFormatCommand);

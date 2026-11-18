@@ -1932,6 +1932,11 @@
             "default": true,
             "markdownDescription": "%kbengine.config.python.extraPathsSync.description%"
           },
+          "kbengine.ruff.ensureConfig": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.ruff.ensureConfig.description%"
+          },
           "kbengine.python.interpreterPath": {
             "type": "string",
             "default": "",

@@ -236,6 +236,7 @@ Rust 核心与 TypeScript 扩展并行运行,经 stdio 讲同一套 LSP 面;后�
 - [def 调用链视图(`kbengine.python.showCallChain`)与调用链 inlay 提示(`kbengine.python.callChainHints`)]
 - [Python 测试发现与运行(`kbengine.tests.list`)与构建任务提供器(`kbengine.build.previewTask`)]
 - [Python 语言服务状态检查(`kbengine.python.serviceStatus`)]
+- Ruff 格式化配置:一份 `[tool.ruff]` 段(最近的 `pyproject.toml`,默认行宽 88)统一驱动 lint 命令、一键格式化命令与生成器多行化;`kbengine.ruff.ensureConfig`(默认开)在缺失时以确认弹窗引导生成——见[命令指南](./docs/zh/guide/commands.md#kbenginepythonruffformat)
 
 ### Inlay 提示与类型推断
 

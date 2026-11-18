@@ -44,6 +44,7 @@ import {
   getMailTemplate
 } from './backend/codeGeneratorRender';
 import { formatGeneratedPython, runRuffFormat } from './backend/ruffFormat';
+import { ensureRuffConfigShared } from './backend/ruffConfigEnsure';
 
 /**
  * 实体类型配置
@@ -525,6 +526,10 @@ export class KBEngineCodeGenerator {
     }
 
     const written: string[] = [];
+    // 批 A2:首次生成触发 [tool.ruff] 配置引导(共享会话,与 lint/format 命令
+    // 同一「问过就记住」);fire-and-forget 不阻塞生成——ruff 无配置本就按
+    // 默认 88 行为,与引导落地值相同,首份产物不因弹窗等待。
+    void ensureRuffConfigShared();
     for (const [index, part] of this.entityScriptParts(entity.config).entries()) {
       const partFilePath = partPaths[index];
       // 批 A 生成器直通(2026-11-18 巡检单 kode-ruff-format-statusbar.md):
