@@ -145,4 +145,38 @@ mod tests {
         let id = SemId::entity(r, "Avatar");
         assert_eq!(id.kind, SemKind::Entity);
     }
+
+    /// display 面:全部 kind × 分面有无两形,as_str 全臂直证。
+    #[test]
+    fn display_renders_kind_and_facet_for_all_kinds() {
+        let r = root(1);
+        // 无分面:实体/属性/类型/别名/组件。
+        assert_eq!(SemId::entity(r, "Avatar").display(), "entity/Avatar");
+        assert_eq!(
+            SemId::new(r, SemKind::Property, "hp", None).display(),
+            "property/hp"
+        );
+        assert_eq!(SemId::new(r, SemKind::Type, "T", None).display(), "type/T");
+        assert_eq!(
+            SemId::new(r, SemKind::Alias, "A", None).display(),
+            "alias/A"
+        );
+        assert_eq!(
+            SemId::new(r, SemKind::Component, "C", None).display(),
+            "component/C"
+        );
+        // 有分面:Base/Cell/Client 三面。
+        assert_eq!(
+            SemId::new(r, SemKind::Method, "m", Some(Facet::Base)).display(),
+            "method/base.m"
+        );
+        assert_eq!(
+            SemId::method(r, "tick", Facet::Cell).display(),
+            "method/cell.tick"
+        );
+        assert_eq!(
+            SemId::new(r, SemKind::Method, "go", Some(Facet::Client)).display(),
+            "method/client.go"
+        );
+    }
 }

@@ -243,4 +243,61 @@ mod tests {
         // 可见代码自访问保留
         assert!(masked.contains("self.position"));
     }
+
+    /// f-string 深臂:{{ 字面转义/表达式内注释/内嵌字符串/字面段反斜杠
+    /// 转义/表达式嵌套大括号——字面段全掩,表达式段代码可见、非代码递归掩。
+    #[test]
+    fn masks_fstring_literal_escapes_and_nested_expression_faces() {
+        let text = "d = f\"{{lit}} {a # note\n} {'k'} \\t { {'x': 1} } tail\"\n";
+        let masked = to_string(&mask_python_non_code(text));
+        // 字面段与转义全掩
+        assert!(!masked.contains("lit"));
+        assert!(!masked.contains("note"), "comment inside f-expr masked");
+        assert!(!masked.contains("k"), "nested string inside f-expr masked");
+        assert!(!masked.contains("x"), "string in nested braces masked");
+        assert!(!masked.contains("tail"));
+        // 表达式段代码可见
+        assert!(masked.contains("a"), "f-expr code stays visible");
+        assert!(masked.contains("1"), "nested dict value stays visible");
+        // 码元长度守恒
+        assert_eq!(masked.encode_utf16().count(), text.encode_utf16().count());
+    }
+
+    /// 普通字符串深臂:转义对/三引号内嵌单引号/非法前缀引号/未闭合到
+    /// 行尾与到 EOF——换行保留、后续代码不误伤。
+    #[test]
+    fn masks_plain_escapes_embedded_quotes_and_unterminated_strings() {
+        let text = concat!(
+            "a = 'p\\q'\n",
+            "b = '''it's'''\n",
+            "c = ab\"cd\"\n",
+            "d = 'unterminated\n",
+            "z = 1\n"
+        );
+        let masked = to_string(&mask_python_non_code(text));
+        assert!(masked.contains("a ="), "code around strings survives");
+        assert!(
+            !masked.contains("p\\q"),
+            "escaped pair masked as one string"
+        );
+        assert!(!masked.contains("it's"), "triple-quoted body masked");
+        assert!(
+            !masked.contains("cd"),
+            "invalid-prefix quote still masks body"
+        );
+        assert!(
+            masked.contains("c = ab"),
+            "prefix letters are code, stay visible"
+        );
+        assert!(
+            !masked.contains("unterminated"),
+            "unterminated masks to EOL"
+        );
+        assert!(masked.contains("z = 1"), "next line unaffected");
+        // 无尾换行的未闭合串:掩到 EOF,不越界不 panic。
+        let eof_text = "x = \"abc";
+        let eof_masked = to_string(&mask_python_non_code(eof_text));
+        assert!(!eof_masked.contains("abc"));
+        assert_eq!(eof_masked.len(), eof_text.len());
+    }
 }
