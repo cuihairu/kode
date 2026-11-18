@@ -738,4 +738,144 @@ mod tests {
         assert_eq!(encoded["destroyColumn"], json!(4));
         assert_eq!(encoded["length"], json!(7));
     }
+
+    // ---- 入口/底层形态面(COV 批补) -------------------------------------------
+
+    /// RPC 入口直调:良形参数往返 + 非对象形参如实 Err。
+    #[test]
+    fn rpc_entry_round_trip_and_bad_shape_is_error() {
+        let v = analyze_post_destroy(json!({
+            "text": "def f(self):\n    self.destroy()\n    self.hp\n",
+            "destroyDeclared": false,
+            "statements": [
+                { "text": "def f(self):", "line": 0, "endLine": 0, "indent": 0 },
+                { "text": "self.destroy()", "line": 1, "endLine": 1, "indent": 4 },
+                { "text": "self.hp", "line": 2, "endLine": 2, "indent": 4 }
+            ]
+        }))
+        .expect("valid params decode");
+        assert_eq!(v["items"][0]["member"], json!("hp"));
+        assert!(analyze_post_destroy(json!(7)).is_err());
+    }
+
+    /// JS 全类空白:trim 两向剥离 + 头部缩进判定都按全类(NBSP/全角/行分隔
+    /// 符/ZWNBSP 一并算空白,窄 ASCII 类会与 TS 分歧)。
+    #[test]
+    fn js_space_class_full_width_faces_trim_and_header() {
+        let spaced: Vec<u16> =
+            "\u{00a0}\u{1680}\u{2003}\u{2028}\u{2029}\u{3000}\u{FEFF}self.destroy()\u{205F}"
+                .encode_utf16()
+                .collect();
+        assert!(destroy_statement(trim_u16(&spaced)));
+        let hdr: Vec<u16> = "\u{00a0}async def foo(self):".encode_utf16().collect();
+        assert!(function_header(&hdr), "NBSP 缩进 + async + 多字符名");
+    }
+
+    /// function_header 拒绝面:def 后无空白/名首非 name-start/def 后即尽。
+    #[test]
+    fn function_header_reject_faces() {
+        let s = |t: &str| t.encode_utf16().collect::<Vec<u16>>();
+        assert!(!function_header(&s("def(self):")));
+        assert!(!function_header(&s("def 1x(")));
+        assert!(!function_header(&s("async def")));
+        assert!(function_header(&s("def foo (self):")));
+    }
+
+    /// 掩码面:注释整行空格化、三引号开(___)体(空格)闭(空格×3)、
+    /// \r\n 对剥与末行孤 \r 剥(split 同语义)。
+    #[test]
+    fn masking_comments_triple_quotes_and_crlf_split() {
+        let text = "# note\r\n\ns = '''abc'''\r\nself.hp\r";
+        let lines = python_code_lines(&text.encode_utf16().collect::<Vec<u16>>());
+        assert_eq!(lines.len(), 4);
+        assert_eq!(String::from_utf16_lossy(&lines[0]), "      ");
+        // 空行(\n 紧随 \r\n):切分时 current 为空,last() None 路径
+        assert_eq!(String::from_utf16_lossy(&lines[1]), "");
+        // 开引号 ___;体(abc)与闭引号各掩空格(只有开引号是 _)
+        assert_eq!(String::from_utf16_lossy(&lines[2]), "s = ___      ");
+        assert_eq!(String::from_utf16_lossy(&lines[3]), "self.hp");
+    }
+
+    /// destroy 调用形:括号前空白仍成立;前缀非可赋名(( 开头)的候选语句
+    /// 在 destroy 之前先被否决(非 destroy 语句走赋值前缀拒绝臂)。
+    #[test]
+    fn destroy_call_space_before_paren_and_nonassignable_candidate() {
+        let text = "def f(self):\n    (x)\n    self.destroy ()\n    self.hp\n";
+        let statements = vec![
+            stmt("def f(self):", 0, 0, 0),
+            stmt("(x)", 1, 1, 4),
+            stmt("self.destroy ()", 2, 2, 4),
+            stmt("self.hp", 3, 3, 4),
+        ];
+        let items = compute_post_destroy_items(text, false, &statements);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].destroy_line, 2);
+        assert_eq!(items[0].destroy_column, 4);
+    }
+
+    /// 词边界失败:「returnx」前缀命中 return 但尾随词元 → 不是早退,
+    /// 访问仍要报。
+    #[test]
+    fn return_suffixed_word_is_not_early_exit() {
+        let text = "def f(self):\n    self.destroy()\n    returnx\n    self.hp\n";
+        let statements = vec![
+            stmt("def f(self):", 0, 0, 0),
+            stmt("self.destroy()", 1, 1, 4),
+            stmt("returnx", 2, 2, 4),
+            stmt("self.hp", 3, 3, 4),
+        ];
+        let items = compute_post_destroy_items(text, false, &statements);
+        assert_eq!(items.len(), 1);
+    }
+
+    /// `self.` 后无名(空白):访问语句成立(含 \bself\.)但逐命中扫描零
+    /// 命中;endLine 越过文本末行(掩码行缺席)同样零命中不 panic。
+    #[test]
+    fn self_dot_without_name_scans_no_hits_beyond_end() {
+        let text = "def f(self):\n    self.destroy()\n    self. hp\n";
+        let statements = vec![
+            stmt("def f(self):", 0, 0, 0),
+            stmt("self.destroy()", 1, 1, 4),
+            stmt("self. hp", 2, 9, 4),
+        ];
+        let items = compute_post_destroy_items(text, false, &statements);
+        assert!(items.is_empty());
+    }
+
+    /// destroy_column 回退:语句声明面与原文行失配时(行过短/行够长但无
+    /// self.destroy 子串)如实回 0,不编造。
+    #[test]
+    fn destroy_column_falls_back_when_masked_line_lacks_call() {
+        let short = "def f(self):\nzz\n    self.hp\n";
+        let statements = vec![
+            stmt("def f(self):", 0, 0, 0),
+            stmt("self.destroy()", 1, 1, 4),
+            stmt("self.hp", 2, 2, 4),
+        ];
+        let items = compute_post_destroy_items(short, false, &statements);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].destroy_column, 0);
+
+        let long_no_call = "def f(self):\n    zzzzzzzzzzzzzz\n    self.hp\n";
+        let items2 = compute_post_destroy_items(long_no_call, false, &statements);
+        assert_eq!(items2.len(), 1);
+        assert_eq!(items2[0].destroy_column, 0);
+    }
+
+    /// 嵌套函数体既随外层分析又作自身分析:同一命中两入 findings,去重
+    /// 后只报一次。
+    #[test]
+    fn nested_body_analyzed_twice_reports_once() {
+        let text = "def f(self):\n    def g():\n        self.destroy()\n        self.hp\n";
+        let statements = vec![
+            stmt("def f(self):", 0, 0, 0),
+            stmt("def g():", 1, 1, 4),
+            stmt("self.destroy()", 2, 2, 8),
+            stmt("self.hp", 3, 3, 8),
+        ];
+        let items = compute_post_destroy_items(text, false, &statements);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].line, 3);
+        assert_eq!(items[0].character, 8);
+    }
 }

@@ -703,4 +703,102 @@ mod tests {
         // 'self.cellData["k"]' 长 18,匹配起点 4 → accessEnd = 22
         assert_eq!(encoded2["cellDataAccesses"][0]["accessEnd"], json!(22));
     }
+
+    // ---- 入口/底层形态面(COV 批补) -------------------------------------------
+
+    /// RPC 入口直调:良形参数往返 + null 形参如实 Err。
+    #[test]
+    fn rpc_entry_round_trip_and_bad_shape_is_error() {
+        let v = analyze_property_direction(json!({ "text": "self.hp\n" })).unwrap();
+        assert_eq!(v["scan"]["accesses"][0]["fullPath"], json!("hp"));
+        assert!(analyze_property_direction(json!(null)).is_err());
+    }
+
+    /// first_occurrence 助手边界面:针长于草堆/无命中/命中偏移(线上恒命中,
+    /// 直调钉边)。
+    #[test]
+    fn first_occurrence_helper_edges() {
+        let s = |t: &str| t.encode_utf16().collect::<Vec<u16>>();
+        assert_eq!(first_occurrence(&s("ab"), &s("abc")), None);
+        assert_eq!(first_occurrence(&s("abc"), &s("z")), None);
+        assert_eq!(first_occurrence(&s("abc"), &s("bc")), Some(1));
+    }
+
+    /// 访问扫描边界面:行尾裸 self. / self. 后非词元 / 多行行号。
+    #[test]
+    fn access_scan_edge_faces() {
+        assert!(scan_self_accesses("self.").is_empty());
+        assert!(scan_self_accesses("self. hp").is_empty());
+        let items = scan_self_accesses("self.a\nx.self.b.c\n");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[1].line, 1);
+        assert_eq!(items[1].full_path, "b.c");
+        assert_eq!(items[1].character, 7);
+    }
+
+    /// RHS cellData 键两形带空白(头后/[ 后/get 后/( 后全类空白跳)与
+    /// 拒绝面(非引号/非 .get 守卫失败后推进再命中)。
+    #[test]
+    fn rhs_cell_key_spaced_forms_and_reject_faces() {
+        let s = |t: &str| t.encode_utf16().collect::<Vec<u16>>();
+        assert_eq!(
+            cell_data_key_after(&s("self.cellData [ \"k\"")),
+            Some("k".to_string())
+        );
+        assert_eq!(
+            cell_data_key_after(&s("self.cellData .get ( 'k'")),
+            Some("k".to_string())
+        );
+        assert_eq!(cell_data_key_after(&s("self.cellData [x")), None);
+        assert_eq!(cell_data_key_after(&s("self.cellData [")), None);
+        assert_eq!(cell_data_key_after(&s("self.cellData.get (1)")), None);
+        assert_eq!(cell_data_key_after(&s("self.cellData.get (")), None);
+        assert_eq!(cell_data_key_after(&s("self.cellData.get")), None);
+        // 引号已开但键未收口(EOF):两形都如实 None
+        assert_eq!(cell_data_key_after(&s("self.cellData[\"k")), None);
+        assert_eq!(cell_data_key_after(&s("self.cellData.get('k")), None);
+        assert_eq!(cell_data_key_after(&s("self.cellData + 1")), None);
+        assert_eq!(
+            cell_data_key_after(&s("self.cellData.z self.cellData[\"k\"]")),
+            Some("k".to_string())
+        );
+    }
+
+    /// init 头判定拒绝面与空白形:def 后无空白/非 ( 收口/带缩进带空白仍成立。
+    #[test]
+    fn init_def_indent_reject_and_spaced_faces() {
+        let s = |t: &str| t.encode_utf16().collect::<Vec<u16>>();
+        assert_eq!(init_def_indent(&s("def__init__(self):")), None);
+        assert_eq!(init_def_indent(&s("def __init__ [")), None);
+        assert_eq!(init_def_indent(&s("  def __init__ (self):")), Some(2));
+        assert_eq!(init_def_indent(&s("def other(self):")), None);
+    }
+
+    /// 赋值行拒绝面:非 self. 起头/名空/增强赋值。
+    #[test]
+    fn init_assign_reject_faces() {
+        let s = |t: &str| t.encode_utf16().collect::<Vec<u16>>();
+        assert_eq!(init_assign_of(&s("x = 1")), None);
+        assert_eq!(init_assign_of(&s("self. = 1")), None);
+        assert_eq!(init_assign_of(&s("self.a += 1")), None);
+    }
+
+    /// 扫描 3 两形带空白与拒绝面:引号未收口 / 非 .get / .get 后非 ( /
+    /// ( 后非引号 / 头后非 [ 非 .。
+    #[test]
+    fn scan3_spaced_forms_and_reject_faces() {
+        let items = scan_cell_data_accesses("x = self.cellData[ \"k\" ]\n");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].key, "k");
+        let items = scan_cell_data_accesses("x = self.cellData [\"k\"]\n");
+        assert_eq!(items.len(), 1);
+        let items = scan_cell_data_accesses("x = self.cellData .get ( 'k'\n");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].key, "k");
+        assert!(scan_cell_data_accesses("x = self.cellData[\"abc\n").is_empty());
+        assert!(scan_cell_data_accesses("x = self.cellData.x\n").is_empty());
+        assert!(scan_cell_data_accesses("x = self.cellData.getx\n").is_empty());
+        assert!(scan_cell_data_accesses("x = self.cellData.get(1)\n").is_empty());
+        assert!(scan_cell_data_accesses("x = self.cellData;\n").is_empty());
+    }
 }
