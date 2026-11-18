@@ -446,3 +446,86 @@ fn bm25_survives_store_fts_desync_with_honest_empty_set() {
         "fts hit whose store node is gone must yield an honest empty set"
     );
 }
+
+/// store 落盘面:目标路径的父目录被同名文件占住时,KbStore::open 如实
+/// 报错(错误携带目录路径),绝不 panic。
+#[test]
+fn kb_store_open_reports_blocked_parent_honestly() {
+    use kode_mcp::store::KbStore;
+    let base = std::env::temp_dir().join(format!("kode-mcp-store-err-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let blocker = base.join("blocker");
+    std::fs::write(&blocker, "a file, not a directory").unwrap();
+    let err = KbStore::open(&blocker.join("kb.sqlite"))
+        .expect_err("parent occupied by a file must fail open");
+    assert!(
+        err.contains("index dir"),
+        "error should name the dir creation failure: {err}"
+    );
+    std::fs::remove_dir_all(&base).ok();
+}
+
+/// sqlite 落盘面:目录只读时 Connection::open 失败必须如实上抛
+/// (内存降级是 kb_index 装配面的职责,store 自身不静默换库)。
+#[test]
+#[cfg(unix)]
+fn kb_store_open_reports_readonly_dir_honestly() {
+    use kode_mcp::store::KbStore;
+    let base = std::env::temp_dir().join(format!("kode-mcp-store-ro-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let res = KbStore::open(&base.join("kb.sqlite"));
+    std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let err = res.expect_err("sqlite cannot create a db file in a read-only dir");
+    assert!(!err.is_empty());
+    std::fs::remove_dir_all(&base).ok();
+}
+
+/// sqlite 落盘面:kb.sqlite 路径本身被目录占住时,Connection::open 立即
+/// 失败(sqlite 首写惰性建库,只读目录推迟到 execute_batch;目录占位才是
+/// open 当场报错的构造)。
+#[test]
+#[cfg(unix)]
+fn kb_store_open_reports_dir_occupied_db_path_honestly() {
+    use kode_mcp::store::KbStore;
+    let base = std::env::temp_dir().join(format!("kode-mcp-store-dir-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(base.join("kb.sqlite")).unwrap();
+    let err = KbStore::open(&base.join("kb.sqlite"))
+        .expect_err("opening a directory as the db file must fail at once");
+    assert!(!err.is_empty());
+    std::fs::remove_dir_all(&base).ok();
+}
+
+/// index_status 存储面:nodes/edges/byFormat 计数、watcher/dirty 状态与
+/// 内容寻址完整性(status() 首次驱动 stats+content_addressing_intact)。
+#[test]
+fn status_reports_storage_faces_and_content_addressing() {
+    let fx = Fixture::new("status");
+    fx.write("docs/net.md", "# Demo\n\n## Gateway\n\ntext\n");
+    let index = fx.index();
+    index.build();
+    let status = index.status();
+    assert!(status["nodes"].as_u64().unwrap() >= 1);
+    assert_eq!(status["edges"].as_u64().unwrap(), 0);
+    assert_eq!(status["storageMode"], "file");
+    assert_eq!(status["watcherActive"], false);
+    assert_eq!(status["dirtyPending"].as_u64().unwrap(), 0);
+    assert_eq!(status["contentAddressingIntact"], true);
+    assert!(status["lastReconcile"]["filesScanned"].as_u64().unwrap() >= 1);
+    // build 后内容寻址完整:BLAKE3 全量对账通过。
+    assert!(index.store().content_addressing_intact());
+}
+
+/// nodes_of_kinds 空清单守卫:空切片诚实返回空,不生成坏 SQL。
+#[test]
+fn nodes_of_kinds_empty_slice_is_empty() {
+    let fx = Fixture::new("emptykinds");
+    fx.write("docs/a.md", "# Demo\n");
+    let index = fx.index();
+    index.build();
+    assert!(index.store().nodes_of_kinds(&[]).is_empty());
+}
