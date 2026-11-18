@@ -94,9 +94,9 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     trees.push(base);
     const memento = new MemoryMemento();
     await seedProfile(memento, assetsRoot, '');
-    const probe = vi.fn().mockReturnValue(base);
-    const result = await ensureActiveProfileEngineRoot(memento, { probeEngineRoot: probe });
-    expect(probe).toHaveBeenCalledWith(assetsRoot);
+    const result = await ensureActiveProfileEngineRoot(memento, {
+      probeWithSiblingsFn: () => base
+    });
     expect(result.recorded).toBe(base);
     expect(result.stillMissing).toBe(false);
     // 持久化落地:活动 profile 快照读到新引擎根(profileHealth 的 engine-missing 自然消失)
@@ -125,7 +125,7 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     const memento = new MemoryMemento();
     await seedProfile(memento, assetsRoot, '/user/filled/engine');
     const probe = vi.fn().mockReturnValue('/user/filled/engine');
-    const result = await ensureActiveProfileEngineRoot(memento, { probeEngineRoot: probe });
+    const result = await ensureActiveProfileEngineRoot(memento, { probeWithSiblingsFn: probe });
     expect(probe, '已记录时不探测').not.toHaveBeenCalled();
     expect(result.recorded).toBeNull();
     expect(result.stillMissing).toBe(false);
@@ -139,11 +139,55 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     const explicit = path.join(base, 'kbe');
     const probe = vi.fn().mockReturnValue(explicit);
     const result = await ensureActiveProfileEngineRoot(memento, {
-      probeEngineRoot: probe,
+      probeWithSiblingsFn: probe,
       explicitEngineRoot: () => explicit
     });
     expect(probe).toHaveBeenCalledWith(assetsRoot, explicit);
     expect(result.recorded).toBe(explicit);
+  });
+
+  it('⑤ 兄弟目录布局:assets 同级 kbengine* 引擎仓(marker 命中)→ 自动补录', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-sibling-'));
+    trees.push(base);
+    const assetsRoot = path.join(base, 'assets');
+    fs.mkdirSync(assetsRoot, { recursive: true });
+    // 兄弟引擎仓:目录名含 kbengine(marker 落在仓内 kbe/src/lib/common)
+    const engineRoot = path.join(base, 'kbengine');
+    const markerDir = path.join(engineRoot, 'kbe', 'src', 'lib', 'common');
+    fs.mkdirSync(markerDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(markerDir, 'kbeversion.h'),
+      '#define KBE_VERSION_MAJOR 2\n#define KBE_VERSION_MINOR 5\n#define KBE_VERSION_PATCH 10\n',
+      'utf8'
+    );
+    const memento = new MemoryMemento();
+    await seedProfile(memento, assetsRoot, '');
+    const result = await ensureActiveProfileEngineRoot(memento);
+    expect(result.recorded).toBe(engineRoot);
+    expect(result.stillMissing).toBe(false);
+    const persisted = new ProjectProfileStore(memento).get(
+      memento.get<string>(ACTIVE_PROFILE_STATE_KEY)!
+    );
+    expect(persisted?.engineRoot).toBe(engineRoot);
+  });
+
+  it('⑥ 兄弟目录无 marker / 目录名不含 kbengine → 不误认,如实缺', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-sibneg-'));
+    trees.push(base);
+    const assetsRoot = path.join(base, 'assets');
+    fs.mkdirSync(assetsRoot, { recursive: true });
+    // 同级有随机名目录(无 marker)与 marker 目录但名不含 kbengine —— 都不是候选
+    const plain = path.join(base, 'neighbor');
+    fs.mkdirSync(plain, { recursive: true });
+    const markerDir = path.join(base, 'engine-src', 'kbe', 'src', 'lib', 'common');
+    fs.mkdirSync(markerDir, { recursive: true });
+    fs.writeFileSync(path.join(markerDir, 'kbeversion.h'), '#define KBE_VERSION_MAJOR 2\n', 'utf8');
+    const memento = new MemoryMemento();
+    const id = await seedProfile(memento, assetsRoot, '');
+    const result = await ensureActiveProfileEngineRoot(memento);
+    expect(result.recorded).toBeNull();
+    expect(result.stillMissing).toBe(true);
+    expect(new ProjectProfileStore(memento).get(id)!.engineRoot).toBe('');
   });
 
   it('无活动 profile / 无 assetsRoot → 如实缺,零写入', async () => {
@@ -157,7 +201,7 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     const probe = vi.fn().mockReturnValue('/x');
     const id = new ProjectProfileStore(m2).get(m2.get<string>(ACTIVE_PROFILE_STATE_KEY)!)!.id;
     await new ProjectProfileStore(m2).saveRoots(id, { assetsRoot: '' });
-    const result = await ensureActiveProfileEngineRoot(m2, { probeEngineRoot: probe });
+    const result = await ensureActiveProfileEngineRoot(m2, { probeWithSiblingsFn: probe });
     expect(probe, '空基底不探(会以 cwd 误探)').not.toHaveBeenCalled();
     expect(result).toEqual({ stillMissing: true, recorded: null });
   });

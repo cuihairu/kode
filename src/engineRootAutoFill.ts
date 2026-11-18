@@ -14,10 +14,13 @@
  * - 探测不中 → **不写**(如实保持缺失,不伪造路径),engine-missing 仍照报。
  */
 
+import * as path from 'path';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { ProjectProfileStore } from './projectProfiles';
 import { resolveActiveProfile } from './activeProfile';
 import { findEngineRoot } from './backend/engineCompatibility';
+import { hasEngineTreeMarker } from './backend/engineApiMetadata';
 
 export interface EngineRootAutoFillResult {
   /** 活动 profile 是否仍缺引擎根(false=本次补录成功或本已记录) */
@@ -32,6 +35,49 @@ function keepExisting(root: string): string | null {
 }
 
 /**
+ * 兄弟目录候选(2026-11-19 用户布局纠偏):KBEngine 常见布局是 assets 工作
+ * 区与引擎仓为**兄弟目录**(assets/ 旁放 kbengine/ 引擎仓),向上递归永远
+ * 找不到兄弟。候选 = assetsRoot 同级目录名含 kbengine(大小写不敏感)且
+ * 双 marker 命中;排序稳定(字母序),宁缺不造。
+ */
+export function siblingEngineRootCandidates(assetsRoot: string): string[] {
+  const parent = path.dirname(assetsRoot);
+  let names: string[];
+  try {
+    names = fs.readdirSync(parent);
+  } catch {
+    return [];
+  }
+  return names
+    .filter(name => name.toLowerCase().includes('kbengine'))
+    .sort()
+    .map(name => path.join(parent, name));
+}
+
+function probeWithSiblings(
+  assetsRoot: string,
+  explicitRoot?: string
+): string | null {
+  if (explicitRoot) {
+    return hasEngineTreeMarker(explicitRoot, probe => fs.existsSync(probe))
+      ? explicitRoot
+      : null;
+  }
+  // 1) assetsRoot 内部向上(引擎仓嵌在资产仓里的布局,原口径)
+  const upward = findEngineRoot(assetsRoot);
+  if (upward) {
+    return upward;
+  }
+  // 2) assetsRoot 同级的 kbengine* 兄弟目录(并列仓库布局)
+  for (const candidate of siblingEngineRootCandidates(assetsRoot)) {
+    if (hasEngineTreeMarker(candidate, probe => fs.existsSync(probe))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
  * 活动 profile 引擎根为空 → 以 assetsRoot 为起点向上探双 marker;
  * 命中即 saveRoots 持久化并刷新 resolveActiveProfile 读到的快照,未命中
  * 不写。无活动 profile / 无 assetsRoot → 如实返回 stillMissing。
@@ -39,12 +85,12 @@ function keepExisting(root: string): string | null {
 export async function ensureActiveProfileEngineRoot(
   memento: vscode.Memento | undefined,
   deps: {
-    readonly probeEngineRoot?: (assetsRoot: string, explicitRoot?: string) => string | null;
+    readonly probeWithSiblingsFn?: (assetsRoot: string, explicitRoot?: string) => string | null;
     /** 显式配置的引擎根(kbengine.engineRoot);读不到 → '' */
     readonly explicitEngineRoot?: () => string;
   } = {}
 ): Promise<EngineRootAutoFillResult> {
-  const probe = deps.probeEngineRoot ?? findEngineRoot;
+  const probe = deps.probeWithSiblingsFn ?? probeWithSiblings;
   const explicitOf = deps.explicitEngineRoot ?? (() =>
     vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', '')
   );
