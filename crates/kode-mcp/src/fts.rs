@@ -560,18 +560,22 @@ mod tests {
         assert!(fts.search("\"!!!", 10).unwrap().is_empty());
     }
 
-    /// 底层 tantivy 目录被移除后,replace_file 的 commit 失败必须如实上抛
-    /// (e_string 映射),绝不 panic。
+    /// 底层 tantivy 目录被占位文件顶替后,replace_file 的 commit 失败必须
+    /// 如实上抛(e_string 映射),绝不 panic。占位文件而非 rm -rf:tantivy
+    /// 在部分文件系统上会重建缺失目录(rm -rf 在 CI 盘上可能 Ok),文件
+    /// 顶替路径的 create_dir_all 必败,跨环境确定红。
     #[test]
-    fn replace_file_after_backing_dir_removal_is_honest_error() {
-        let dir = std::env::temp_dir().join(format!("kode-mcp-fts-rm-{}", std::process::id()));
+    fn replace_file_after_backing_dir_occupation_is_honest_error() {
+        let dir = std::env::temp_dir().join(format!("kode-mcp-fts-occ-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&dir);
         let fts = FtsIndex::open(&dir).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::write(&dir, b"occupied").unwrap();
         let err = fts
             .replace_file("a.md", &[node("s:a", "a.md", "T", "content words")])
-            .expect_err("commit against a deleted backing dir must error");
+            .expect_err("commit against an occupied backing path must error");
         assert!(!err.is_empty(), "error carries the tantivy failure");
-        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_file(&dir).ok();
     }
 }
