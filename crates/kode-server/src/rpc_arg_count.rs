@@ -365,4 +365,38 @@ mod tests {
         let encoded = serde_json::to_value(&report).unwrap();
         assert_eq!(encoded["counts"], json!([2, null]));
     }
+
+    #[test]
+    fn rpc_entry_round_trip_and_bad_shape_is_error() {
+        // RPC 入口直调:良形往返 counts 与 calls 序对齐;非对象形参 Err。
+        let ok = analyze_rpc_arg_count(json!({
+            "text": "self.cell.foo(1, 2)\n",
+            "calls": [
+                {"line": 0, "character": 10, "methodName": "foo"},
+                {"line": 5, "character": 10, "methodName": "bar"}
+            ]
+        }))
+        .expect("ok entry");
+        assert_eq!(ok["counts"][0], json!(2));
+        // 行号越界:空行替身,名后无 '(' → null(未知,非错误)
+        assert_eq!(ok["counts"][1], json!(null));
+        assert!(analyze_rpc_arg_count(json!(7)).is_err());
+    }
+
+    #[test]
+    fn star_segment_then_top_level_comma_is_null() {
+        // 星段后再遇顶层逗号:解包数量不可判定,逗号臂内直接 null
+        //(区别于星段后闭括号的 null 路径)。
+        assert_eq!(count_first("self.cell.foo(*a, 1)", "foo"), None);
+    }
+
+    #[test]
+    fn nested_opens_at_depth_push_matching_closers() {
+        // 嵌套深度 >0 的三种开括号各推配对闭符(首层开括号走深度 0 臂,
+        // 二层开括号才进深度 >0 推栈);配对闭符出栈,顶层计数不受嵌套内
+        // 逗号/括号影响。
+        assert_eq!(count_first("self.cell.foo(bar(baz(1, 2)))", "foo"), Some(1));
+        assert_eq!(count_first("self.cell.foo(bar(baz[1, 2]))", "foo"), Some(1));
+        assert_eq!(count_first("self.cell.foo(bar(baz{1, 2}))", "foo"), Some(1));
+    }
 }
