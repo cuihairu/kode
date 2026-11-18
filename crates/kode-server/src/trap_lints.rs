@@ -718,4 +718,144 @@ mod tests {
         assert_eq!(items[0]["container"], "CACHE");
         assert_eq!(items[1]["code"], CODE_TIMER_CLEANUP_ON_DESTROY);
     }
+
+    // ---- COV-005 覆盖提满批(2026-11-19):三闸开关 region + 目标/表达式/
+    // 下标键/容器/头部匹配全拒绝臂直测。 ----
+
+    #[test]
+    fn analyze_traps_covers_all_three_gates() {
+        // 缺省 enabled(全 true):fixed_dict 闸入 items
+        let result = analyze_traps(json!({
+            "text": "self.profile.name = 'x'\n",
+            "fixedDictProperties": {"profile": ["name"]}
+        }))
+        .unwrap();
+        let items = result["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["code"], CODE_FIXED_DICT_MUTATION);
+        assert_eq!(items[0]["line"], 0);
+        assert_eq!(items[0]["character"], 0);
+        assert_eq!(items[0]["length"], "self.profile.name".len());
+        assert_eq!(items[0]["property"], "profile");
+        assert!(items[0].get("container").is_none()); // skip_serializing_if 生效
+                                                      // destroyed 闸关:空 items
+        let off_destroyed = analyze_traps(json!({
+            "text": "CACHE = []\n    CACHE.append(self)\n",
+            "enabled": {"destroyedEntityReference": false}
+        }))
+        .unwrap();
+        assert_eq!(off_destroyed["items"].as_array().unwrap().len(), 0);
+        // timer 闸关:空 items
+        let off_timer = analyze_traps(json!({
+            "text": "def onDestroy(self):\n    self.delTimer(1)\n",
+            "enabled": {"timerCleanup": false}
+        }))
+        .unwrap();
+        assert_eq!(off_timer["items"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn cov_assign_and_attr_target_reject_arms() {
+        // is_assign_at `_` 臂:位置在行尾(None)或非算符字节
+        assert!(!is_assign_at(b"self.a.b", 8));
+        assert!(!is_assign_at(b"self.a.b;", 8));
+        // attr 目标拒绝臂
+        assert!(match_attr_target("x.y.z = 1").is_none()); // 非 self 起
+        assert!(match_attr_target("self.profile. = 1").is_none()); // 点后无词元
+        assert!(match_attr_target("self.profile.name").is_none()); // 行尾无算符
+                                                                   // take_word 空词元
+        assert!(take_word("  x", 0).is_none());
+        assert!(take_word("= 1", 0).is_none());
+    }
+
+    #[test]
+    fn cov_subscript_target_reject_arms() {
+        assert!(match_subscript_target("cache['k'] = 1").is_none()); // 非 self 起
+        assert!(match_subscript_target("self.profile[k] = 1").is_none()); // 裸下标
+        assert!(match_subscript_target("self.profile['k = 1").is_none()); // 引号未闭
+        assert!(match_subscript_target("self.profile['k'x] = 1").is_none()); // 闭引号后非 ]
+        assert!(match_subscript_target("self.profile['k'] == 1").is_none()); // == 非赋值
+    }
+
+    #[test]
+    fn cov_fixed_dict_expression_direct_arms() {
+        assert_eq!(match_fixed_dict_expression("x.y = 1"), None); // 非 self 起
+                                                                  // 点后无词元/空下标组:表达式止于点或 [ 后 `\s*=` 接不上,
+                                                                  // 正则无替代表达式可回溯 → 整匹配失败
+        assert_eq!(match_fixed_dict_expression("self.a. = 1"), None);
+        assert_eq!(match_fixed_dict_expression("self.a[] = 1"), None);
+        assert_eq!(match_fixed_dict_expression("self.a.b == 1"), None); // == 非赋值
+    }
+
+    #[test]
+    fn cov_fixed_dict_fallback_length_and_table_miss() {
+        // 行0:subscript 命中但属性不在表内 → 不报;
+        // 行1:键内含 ] → expression 扫描半途而废 → 回落 trimStart 余行全长
+        let lines = split_lines("self.other['k'] = 1\nself.profile['a]b'] = 2\n");
+        let table = table(&[("profile", &["a"])]);
+        let findings = analyze_fixed_dict_mutations(&lines, &table);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].0, 1);
+        assert_eq!(findings[0].1, 0);
+        assert_eq!(findings[0].2, "self.profile['a]b'] = 2".len());
+        assert_eq!(findings[0].3, "profile");
+    }
+
+    #[test]
+    fn cov_subscript_key_of_dead_code_arms() {
+        // dead_code 面:TS `/\[['"]([^'"]+)['"]\]/` 手工展开全臂
+        assert_eq!(subscript_key_of("cache['uid']"), Some("uid".to_string()));
+        assert_eq!(subscript_key_of("cache[\"uid\"]"), Some("uid".to_string()));
+        assert_eq!(subscript_key_of("cache[0]"), None); // 非引号开键
+        assert_eq!(subscript_key_of("cache['']"), None); // 空键
+        assert_eq!(subscript_key_of("cache['a]"), None); // 引号未闭/后非 ]
+        assert_eq!(subscript_key_of("plain"), None); // 无下标
+    }
+
+    #[test]
+    fn cov_container_init_reject_arms() {
+        assert_eq!(match_container_init("X = []"), Some("X")); // 基线命中
+        assert_eq!(match_container_init("X = set()  "), Some("X")); // 尾随空白 OK
+        assert_eq!(match_container_init("X = [] # note"), None); // 字面量后尾随内容
+        assert_eq!(match_container_init("X = list()"), None); // 无字面量命中
+    }
+
+    #[test]
+    fn cov_container_call_and_subscript_reject_arms() {
+        let mut containers: HashSet<&str> = HashSet::new();
+        containers.insert("REGISTRY");
+        containers.insert("CACHE");
+        // call:方法前缀命中但后非 '(' / 空实参
+        assert!(match_container_call("REGISTRY.appends(self)", &containers).is_none());
+        assert!(match_container_call("REGISTRY.append()", &containers).is_none());
+        let (name, args, at) = match_container_call("REGISTRY.append(self)", &containers).unwrap();
+        assert_eq!((name, args, at), ("REGISTRY", "self", 16));
+        // subscript:无闭 ]/空下标/算符非 =/右值空
+        assert!(match_container_subscript("CACHE[x = 1", &containers).is_none());
+        assert!(match_container_subscript("CACHE[] = 1", &containers).is_none());
+        assert!(match_container_subscript("CACHE[i] += self", &containers).is_none());
+        assert!(match_container_subscript("CACHE[i] =", &containers).is_none());
+    }
+
+    #[test]
+    fn cov_on_destroy_header_reject_arms() {
+        assert_eq!(
+            match_on_destroy_header("    async def onDestroy(self):"),
+            Some(4)
+        );
+        assert_eq!(match_on_destroy_header("asyncdef onDestroy(self):"), None); // async 后须空白
+        assert_eq!(match_on_destroy_header("defonDestroy(self):"), None); // def 后须空白
+        assert_eq!(match_on_destroy_header("def onDestroy cls):"), None); // 无 (
+        assert_eq!(match_on_destroy_header("def onDestroy(cls):"), None); // 非_self 形参
+        assert_eq!(match_on_destroy_header("def onDestroy(selfish):"), None); // self 后词元
+    }
+
+    #[test]
+    fn cov_del_timer_call_boundary_arms() {
+        assert!(match_del_timer_call("xself.delTimer(1)").is_none()); // \b 左界
+        let (at, len) = match_del_timer_call("self.delTimer  (1)").unwrap(); // 名后空白
+        assert_eq!(at, 0);
+        assert_eq!(len, "self.delTimer  (".len());
+        assert!(match_del_timer_call("self.delTimer 1").is_none()); // 尾非 (
+    }
 }
