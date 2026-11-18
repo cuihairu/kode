@@ -541,4 +541,37 @@ mod tests {
         assert_eq!(hits[0].0, "s:a", "name-boosted doc must rank first");
         assert!(hits[0].1 > hits[1].1);
     }
+
+    /// 未闭合引号触发严格解析失败 → 降级为 default 分词的合取查询;
+    /// 纯标点引号体走「不可合取词」兜底(NUL term)诚实返回空。
+    #[test]
+    fn unbalanced_quote_falls_back_to_term_conjunction() {
+        let fts = FtsIndex::open_in_memory().unwrap();
+        fts.replace_file("a.md", &[node("s:a", "a.md", "T", "gateway login retries")])
+            .unwrap();
+        let hits = fts.search("\"gateway", 10).unwrap();
+        assert_eq!(
+            hits.len(),
+            1,
+            "fallback conjunction must still find the term"
+        );
+        assert_eq!(hits[0].0, "s:a");
+        // 未闭合的纯标点短语:解析失败 + 分词零词元 → 不可合取兜底,空集。
+        assert!(fts.search("\"!!!", 10).unwrap().is_empty());
+    }
+
+    /// 底层 tantivy 目录被移除后,replace_file 的 commit 失败必须如实上抛
+    /// (e_string 映射),绝不 panic。
+    #[test]
+    fn replace_file_after_backing_dir_removal_is_honest_error() {
+        let dir = std::env::temp_dir().join(format!("kode-mcp-fts-rm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let fts = FtsIndex::open(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let err = fts
+            .replace_file("a.md", &[node("s:a", "a.md", "T", "content words")])
+            .expect_err("commit against a deleted backing dir must error");
+        assert!(!err.is_empty(), "error carries the tantivy failure");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
