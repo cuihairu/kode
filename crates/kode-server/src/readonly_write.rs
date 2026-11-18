@@ -460,4 +460,80 @@ mod tests {
         assert_eq!(encoded["propertyName"], json!("id"));
         assert_eq!(encoded["kind"], json!("assign"));
     }
+
+    use crate::def_param_hints::units;
+
+    #[test]
+    fn rpc_entry_round_trip_and_bad_shape_is_error() {
+        // RPC 入口直调:良形往返出 items;非对象形参如实 Err。
+        let ok = analyze_read_only_write(json!({
+            "text": "self.id = 1\n",
+            "readonlyNames": ["id"]
+        }))
+        .expect("ok entry");
+        assert_eq!(ok["items"].as_array().map(Vec::len), Some(1));
+        assert!(analyze_read_only_write(json!(7)).is_err());
+    }
+
+    #[test]
+    fn starts_with_text_exhaustion_faces() {
+        // 词先尽(命中)与文本先尽(短窗不匹配):compute 循环有 i+5 守卫
+        // 永不短窗,直调钉尾界真值。
+        assert!(starts_with(&units("self."), 0, "self."));
+        assert!(!starts_with(&units("sel"), 0, "self."));
+    }
+
+    #[test]
+    fn crlf_bare_lf_and_trailing_cr_split() {
+        // 行切分三分面:行中 crlf 对剥/行首裸 lf 空行/文尾孤 \r 剥。
+        let a = items("self.id = 1\r\nself.id = 2\n");
+        assert_eq!(a.len(), 2);
+        assert_eq!((a[0].line, a[1].line), (0, 1));
+        let b = items("\nself.id = 1\n");
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].line, 1);
+        let c = items("self.id = 1\r");
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].kind, "assign");
+    }
+
+    #[test]
+    fn suite_colon_bracket_depth_and_semicolon_start() {
+        // 括号深度对:左扫过 [] 配对不误判语句边界(括号须在左扫路径上——
+        // 紧邻名后的 `)` 会被 classify 前置臂收走);`;` 深度 0 处断语句
+        // 起始;行首缩进空白跳过——三种套件冒号左扫面,体里顶层 = 都不报。
+        assert_eq!(
+            items("if x[1] and self.isDestroyed: self.counter = 0\n").len(),
+            0
+        );
+        assert_eq!(items("; if self.isDestroyed: self.counter = 0\n").len(), 0);
+        assert_eq!(
+            items("    if self.isDestroyed: self.counter = 0\n").len(),
+            0
+        );
+    }
+
+    #[test]
+    fn classify_dot_and_subscript_direct_calls() {
+        // classify 的 `.`/`[` 臂:compute 前置预检(301)同位拦截,classify
+        // 永不收到 —— 直调钉「非重绑定」真值。
+        assert_eq!(classify_write_kind_after(&units("self.id.x = 1"), 7), None);
+        assert_eq!(classify_write_kind_after(&units("self.id[0] = 1"), 7), None);
+    }
+
+    #[test]
+    fn annotated_scan_depth_boundary_and_missing_eq() {
+        // 注解前扫:括号深度内不认 =;`;` 深度 0 断语句;行尾无 = 不写。
+        let a = items("self.id: list[int] = []\n");
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].kind, "annotated");
+        assert_eq!(items("self.id: int; y = 1\n").len(), 0);
+        assert_eq!(items("self.id: int\n").len(), 0);
+    }
+
+    #[test]
+    fn self_dot_without_name_advances() {
+        // `self.` 后无名字(如 `self.(`):\w+ 不匹配,引擎前进一步重试。
+        assert_eq!(items("self.(x) = 1\n").len(), 0);
+    }
 }
