@@ -468,4 +468,12 @@ mod tests {
         assert_eq!(site.flag("custom"), Some(false), "非 true/1 = false");
         assert_eq!(site.flag("hasGhost"), None, "缺属性 = None");
     }
+
+    #[test]
+    fn pyfacet_as_str_all_arms() {
+        assert_eq!(PyFacet::Root.as_str(), "root");
+        assert_eq!(PyFacet::Base.as_str(), "base");
+        assert_eq!(PyFacet::Cell.as_str(), "cell");
+        assert_eq!(PyFacet::Client.as_str(), "client");
+    }
 }
