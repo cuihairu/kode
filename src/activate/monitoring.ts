@@ -8,7 +8,14 @@
 // deactivate 收口 dispose。
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { l10nText } from '../nlsRuntime';
+import {
+  INDEX_CACHE_DIR_NAME,
+  INDEX_CACHE_SCHEMA_VERSION,
+  readIndexCache,
+  writeIndexCache
+} from '../backend/indexDiskCache';
 import { BackgroundWarmupController, WARMUP_SCAN_CONCURRENCY } from '../backend/backgroundWarmup';
 import { EntityDependencyWebView } from '../entityDependencyWebView';
 import { EntityFlowWebView } from '../entityFlowWebView';
@@ -197,6 +204,8 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
   } = { dependency: null, flow: null };
   // 状态栏进度 message 面:withProgress 任务体接线(未启动时 null,静默不报)
   let reportWarmupDetail: ((detail: string) => void) | null = null;
+  // BG-WARM 索引磁盘缓存:阶段 def 引用(恢复命中后置 cached;构造后可变面)
+  let warmupStageDefs: import('../backend/backgroundWarmup').WarmupStageDef[] | null = null;
   // 扩展关闭旗标:调度器在 dispose 后拒接任务(既有语义),这类拒绝是宿主收摊,
   // 不是索引失败——只它被就地吞掉,真实首扫错误照常向控制器传播(failed/不写标记)。
   let warmupDisposing = false;
@@ -213,7 +222,10 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
   })();
 
   const backgroundWarmup = new BackgroundWarmupController({
-    stages: createWarmupStages({
+    stages: (() => {
+      // BG-WARM 索引磁盘缓存:阶段 def 提变量——恢复命中后在 start() 前按 key
+      // 置 cached(见 withProgress 回调),snapshot 现读投影「cached ⏭」。
+      const defs = createWarmupStages({
       // 发现链首扫:复用 startKbEngineIndexing 已起的同一轮(ensureStartup 幂等),
       // 这里只等终态不重起第二套扫描(KR-AUD-34 会话缓存口径不动)。
       waitForDiscovery: () => entityMappingManager.waitForInitialScan(),
@@ -251,7 +263,10 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
         if (root) { getDefinitionWorkspaceLayout(root); }
       },
       report: detail => { reportWarmupDetail?.(detail); }
-    }),
+      });
+      warmupStageDefs = defs;
+      return defs;
+    })(),
     // 完成标记持久面:极简 context(既有测试/宿主缺 workspaceState)如实降级为
     // 「不持久」——本轮照跑照热,只是不跨会话记账,绝不因缺面炸激活。
     workspaceState: {
@@ -357,14 +372,74 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
         async (progress, token) => {
           reportWarmupDetail = detail => { void progress.report({ message: detail }); };
           token.onCancellationRequested(() => backgroundWarmup.cancel('user-cancel'));
+          // BG-WARM 索引磁盘缓存(2026-11-18):错峰冷窗后(与预热同节拍)先试恢复。
+          // discovery=注入 defParseCache(首扫批次 mtime 命中零重解析);
+          // eventIndex=接管 WorkspaceIndex 起始槽(命中条目直取,漂移文件增量
+          // 重建)。版本不符/哈希不符/任何异常 → 静默降级照旧全扫(不打扰用户)。
+          const kodeVersion = String(context.extension?.packageJSON?.version ?? 'dev');
+          const cacheDir = context.globalStorageUri?.fsPath
+            ? path.join(context.globalStorageUri.fsPath, INDEX_CACHE_DIR_NAME)
+            : null;
+          if (cacheDir) {
+            try {
+              const cached = readIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion });
+              if (cached?.payload.discovery?.length) {
+                const restore = await entityMappingManager.restoreDefParseCacheFromDisk(cached.payload.discovery);
+                if (restore.injected > 0) {
+                  if (warmupStageDefs && restore.injected === restore.discovered) {
+                    warmupStageDefs.find(stage => stage.key === 'discovery')!.cached = true;
+                  }
+                  outputChannel.appendLine(
+                    `索引缓存命中(discovery):注入 ${restore.injected}/${restore.discovered},漂移拒收 ${restore.rejected}`
+                  );
+                }
+              }
+              if (cached?.payload.eventIndex?.length) {
+                const restore = await sharedWorkspaceIndex.restoreFromCache(cached.payload.eventIndex);
+                if (restore.tookOver) {
+                  if (warmupStageDefs) {
+                    warmupStageDefs.find(stage => stage.key === 'eventIndex')!.cached = true;
+                  }
+                  outputChannel.appendLine(
+                    `索引缓存命中(eventIndex):直取 ${restore.restored},增量重建 ${restore.rebuilt},丢弃 ${restore.dropped}`
+                  );
+                }
+              }
+              if (warmupStageDefs?.some(stage => stage.cached)) {
+                reportWarmupDetail?.('索引缓存命中(跳过重扫) ⏭');
+              }
+            } catch {
+              // 缓存面失败静默降级:本轮照旧全扫
+            }
+          }
           try {
             const final = await backgroundWarmup.start();
             const snapshot = backgroundWarmup.snapshot();
+            const cachedCount = snapshot.stages.filter(stage => stage.cached).length;
             outputChannel.appendLine(
               final === 'completed'
-                ? `后台预热完成:${snapshot.completedStages}/${snapshot.totalStages} 阶段`
+                ? `后台预热完成:${snapshot.completedStages}/${snapshot.totalStages} 阶段${cachedCount ? `(缓存命中 ${cachedCount} ⏭)` : ''}`
                 : `后台预热${final === 'cancelled' ? '已取消' : '未完成'}:${snapshot.completedStages}/${snapshot.totalStages} 阶段`
             );
+            // 完成后异步写回(队列尾 setImmediate 节拍,不阻塞交互;失败/取消
+            // 不写——与完成标记同口径,不基于残缺轮落盘)。写失败静默降级。
+            if (final === 'completed' && cacheDir) {
+              setImmediate(() => {
+                void (async () => {
+                  try {
+                    const ok = writeIndexCache(cacheDir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion }, {
+                      discovery: await entityMappingManager.captureDefParseCacheSnapshot(),
+                      eventIndex: await sharedWorkspaceIndex.captureEventIndexSnapshot()
+                    });
+                    if (!ok) {
+                      outputChannel.appendLine('索引缓存写盘失败(静默降级,下次启动照旧全扫)');
+                    }
+                  } catch {
+                    outputChannel.appendLine('索引缓存写盘异常(静默降级)');
+                  }
+                })();
+              });
+            }
           } finally {
             reportWarmupDetail = null;
           }

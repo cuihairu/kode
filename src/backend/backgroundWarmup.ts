@@ -51,6 +51,12 @@ export interface WarmupStageDef {
   run(ctx: WarmupStageContext): Promise<void>;
   /** 阶段启动即登记 running 的产物键(面板预热中可复用在跑任务) */
   readonly expectedArtifacts?: readonly string[];
+  /**
+   * BG-WARM 索引磁盘缓存(2026-11-18):该阶段由磁盘缓存命中接管(跳过
+   * 重扫)。装配层在 start() 前按恢复结果置位;snapshot 逐阶段投影,状态栏
+   * 进度/完成摘要据此显示「cached ⏭」。
+   */
+  cached?: boolean;
 }
 
 export type WarmupStageState = 'pending' | 'running' | 'done' | 'cancelled' | 'failed';
@@ -60,6 +66,8 @@ export interface WarmupStageSnapshot {
   readonly label: string;
   readonly state: WarmupStageState;
   readonly error?: string;
+  /** 该阶段由磁盘缓存命中接管(BG-WARM 索引磁盘缓存) */
+  readonly cached?: boolean;
 }
 
 export type WarmupState = 'idle' | 'running' | 'completed' | 'cancelled' | 'failed';
@@ -290,11 +298,14 @@ export class BackgroundWarmupController implements PanelWarmupSource {
       upgraded: this.upgraded,
       completedStages,
       totalStages: this.stageStates.length,
-      stages: this.stageStates.map(stage => ({
+      stages: this.stageStates.map((stage, index) => ({
         key: stage.key,
         label: stage.label,
         state: stage.state,
-        ...(stage.error !== undefined ? { error: stage.error } : {})
+        ...(stage.error !== undefined ? { error: stage.error } : {}),
+        // cached 现读 def(装配层在 start() 前按磁盘缓存恢复结果置位,
+        // 晚于控制器构造)——stageStates 构造期快照不含该面
+        ...(this.options.stages[index]?.cached ? { cached: true } : {})
       })),
       currentLabel: running ? running.label : null
     };

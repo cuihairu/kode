@@ -50,6 +50,7 @@ import { joinWorkspacePath } from './backend/workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './backend/indexScheduler';
 import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './backend/semanticIndex';
+import type { DefCacheDiskEntry } from './backend/indexDiskCache';
 import { createSharedFileEventMerger, type SharedFileEvent } from './backend/sharedFileEvents';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './backend/dependencyGraph';
 import type { EntityComponentFace } from './backend/entityBuiltinProperties';
@@ -492,6 +493,93 @@ export class EntityMappingManager {
       }
     }
     return false;
+  }
+
+  /**
+   * BG-WARM 索引磁盘缓存(2026-11-18):导出 defParseCache 快照供落盘。
+   * 每条附 python owner 文件半边 stat 快照——py 内容不在 .def mtime 键里
+   * (既有口径,python 变更路径 force 重解析),跨会话恢复必须双半边校验,
+   * 否则恢复出陈旧 pythonMethods。owner 已不可 stat(删除竞态)整条放弃。
+   * 输出按 defPath 排序:序列化字节序确定,两次快照逐字节可比。
+   */
+  async captureDefParseCacheSnapshot(): Promise<DefCacheDiskEntry[]> {
+    const entries: DefCacheDiskEntry[] = [];
+    for (const [defPath, cached] of this.defParseCache) {
+      const pythonOwners: DefCacheDiskEntry['pythonOwners'] = [];
+      let ownersOk = true;
+      for (const owner of cached.index.pythonOwnerFiles) {
+        try {
+          const st = await fs.promises.stat(owner.filePath);
+          pythonOwners.push({ path: owner.filePath, mtimeMs: st.mtimeMs, size: st.size });
+        } catch {
+          ownersOk = false;
+          break;
+        }
+      }
+      if (!ownersOk) {
+        continue;
+      }
+      entries.push({ defPath, mtimeMs: cached.mtimeMs, size: cached.size, pythonOwners, index: cached.index });
+    }
+    entries.sort((a, b) => (a.defPath < b.defPath ? -1 : a.defPath > b.defPath ? 1 : 0));
+    return entries;
+  }
+
+  /**
+   * BG-WARM 索引磁盘缓存:磁盘载荷预热注入——校验通过的条目直接填进
+   * defParseCache,随后的首扫批次在 parseDefFile 的 mtime 命中分支零重解析
+   * (复用既有「重扫复用索引对象」机制,零第二套口径、零 ensureStartup 改动)。
+   * 校验 = .def mtime/size 与盘上 stat 比对 + python owner 半边逐文件 stat
+   * 比对;任一漂移即拒收该条(首扫自然真解析,钉子③增量语义)。
+   * discovered = 当前盘面 .def 数(与全量扫描同发现链,只 stat 不解析)。
+   */
+  async restoreDefParseCacheFromDisk(
+    entries: DefCacheDiskEntry[]
+  ): Promise<{ injected: number; rejected: number; discovered: number }> {
+    await ensureConfigDerivedScanRoot();
+    const scanRoots = getIndexScanRoots();
+    if (scanRoots.length === 0) {
+      return { injected: 0, rejected: 0, discovered: 0 };
+    }
+    const defFiles = await findFilesAcrossRoots('**/*.def', null);
+    const entities = defFiles.filter(defFile => {
+      const normalized = normalizeLookupPath(defFile.fsPath);
+      return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
+    });
+    const currentStat = new Map<string, { mtimeMs: number; size: number }>();
+    for (const defFile of entities) {
+      try {
+        const st = fs.statSync(defFile.fsPath);
+        currentStat.set(normalizeLookupPath(defFile.fsPath), { mtimeMs: st.mtimeMs, size: st.size });
+      } catch {
+        // stat 失败 → 不入清单,该文件按漂移处理(首扫自然处理)
+      }
+    }
+    const entriesByPath = new Map(entries.map(entry => [normalizeLookupPath(entry.defPath), entry]));
+    let injected = 0;
+    let rejected = 0;
+    for (const [normalized, st] of currentStat) {
+      const entry = entriesByPath.get(normalized);
+      if (!entry) {
+        continue; // 盘上新增:不属注入面,首扫自然解析
+      }
+      const defMatch = entry.mtimeMs === st.mtimeMs && entry.size === st.size;
+      const ownersMatch = entry.pythonOwners.every(owner => {
+        try {
+          const ownerStat = fs.statSync(owner.path);
+          return ownerStat.mtimeMs === owner.mtimeMs && ownerStat.size === owner.size;
+        } catch {
+          return false; // owner 已消失:半边失效,拒收
+        }
+      });
+      if (defMatch && ownersMatch) {
+        this.defParseCache.set(normalized, { mtimeMs: st.mtimeMs, size: st.size, index: entry.index });
+        injected += 1;
+      } else {
+        rejected += 1;
+      }
+    }
+    return { injected, rejected, discovered: entities.length };
   }
 
   private async parseDefFile(
