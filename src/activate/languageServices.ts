@@ -11,6 +11,7 @@
 // 销毁所有权仍由组合根 context.subscriptions 单一持有;装配期产出的共享
 // 实例经返回值交组合根注入后续层(事件接线/命令/探针)。
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { CallChainController } from '../defCallChainProvider';
 import { DefParamInlayHintsProvider } from '../defParamInlayHints';
@@ -44,7 +45,7 @@ import {
   KBEngineRenameProvider,
   KBEngineSignatureHelpProvider,
   KBEngineWorkspaceSymbolProvider,
-  ProcessOwnershipCodeLensProvider,
+  ProcessBreadcrumbPythonSymbolProvider,
   FileModifiedTimeCodeLensProvider,
   registerProcessOwnershipSwitchCommands,
   PropertyCodeLensProvider,
@@ -58,6 +59,8 @@ import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../
 import { ConfigCompletionProvider, CONFIG_COMPLETION_SELECTORS } from '../configCompletionProvider';
 import { ConfigDefinitionProvider, CONFIG_DEFINITION_SELECTORS } from '../configDefinitionProvider';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
+import { INDEX_CACHE_DIR_NAME } from '../backend/indexDiskCache';
+import { SCAN_PROGRESS_DIR_NAME, ScanProgressController } from '../backend/scanProgress';
 import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonTypeStubPlan } from '../pythonTypeStubs';
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
 import { createRootRemovalNotifier } from '../backend/rootRemovalEvents';
@@ -97,7 +100,6 @@ export interface LanguageServicesShared {
   sharedWorkspaceIndex: WorkspaceIndex;
   rpcCodeLensProviderImpl: RpcCodeLensProvider;
   propertyCodeLensProviderImpl: PropertyCodeLensProvider;
-  processOwnershipCodeLensProviderImpl: ProcessOwnershipCodeLensProvider;
   fileModifiedTimeCodeLensProviderImpl: FileModifiedTimeCodeLensProvider;
   engineSpiCodeLensProviderImpl: EngineSpiCodeLensProvider;
   eventCodeLensProviderImpl: EventCodeLensProvider;
@@ -304,7 +306,17 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
 
   // Python 方法使用优先跳实现；属性、声明与实现缺失时保留 .def 导航。
   // PR5:共享调度器注入 + 首扫后台化(激活即排程,Definition 首查不等全量)。
-  const pythonClassIndex = new PythonClassIndex(indexScheduler);
+  // SCAN-RESUME-001:断点控制器挂 index-cache/scan-progress(与 BG-WARM 磁盘
+  // 缓存同根);构造零 IO,断点读写只发生在全扫内部(门控放行后的扫描面)。
+  const scanProgressDir = context.globalStorageUri?.fsPath
+    ? path.join(context.globalStorageUri.fsPath, INDEX_CACHE_DIR_NAME, SCAN_PROGRESS_DIR_NAME)
+    : null;
+  const pythonClassIndex = new PythonClassIndex(
+    indexScheduler,
+    scanProgressDir
+      ? new ScanProgressController(scanProgressDir, String(context.extension?.packageJSON?.version ?? 'dev'))
+      : undefined
+  );
   // 书 PR-002 门控启动面:特征确认后 entityMapping 首扫 + python 后台全量扫描
   // 一起放行(与门控前激活期行为一致);负案例(无特征)两者都不启动。
   const startKbEngineIndexing = (): void => {
@@ -504,22 +516,18 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   );
   context.subscriptions.push(propertyCodeLensProvider);
 
-  // 文件顶部进程归属标记(PROC-TAG-001,用户令 2026-11-13):Python 实体
-  // 脚本顶部标当前文件所属进程(scripts/<role> 目录判定,判不出不出镜),
-  // 其他进程同名对应文件并列可点击 tag 快速切换(既有 reveal 命令);独立
-  // 开关 kbengine.codeLens.processOwnership
-  const processOwnershipCodeLensProviderImpl = new ProcessOwnershipCodeLensProvider(entityMappingManager);
-  const processOwnershipCodeLensProvider = vscode.languages.registerCodeLensProvider(
+  // 进程归属面(PROC-TAG-001 → PROC-BREADCRUMB-001,用户令 2026-11-18):
+  // 头部 CodeLens 渲染面已移除(面包屑合成根常驻可见,头部镜属重复展示);
+  // python 侧合成根 provider(scripts/<role> 布局命中才出节点,判不出零
+  // 干扰 Pylance)与 def 侧(references.ts KBEngineDocumentSymbolProvider
+  // 头部插根)同一条纯核判定链
+  const processBreadcrumbPythonSymbolProvider = vscode.languages.registerDocumentSymbolProvider(
     pythonDocumentSelector,
-    processOwnershipCodeLensProviderImpl
+    new ProcessBreadcrumbPythonSymbolProvider()
   );
-  context.subscriptions.push(
-    processOwnershipCodeLensProvider,
-    processOwnershipCodeLensProviderImpl
-  );
+  context.subscriptions.push(processBreadcrumbPythonSymbolProvider);
   // base↔cell 快捷键切换命令(FILE-TIME-001 批,用户令 2026-11-17):与
-  // 顶部镜同一条判定链(buildProcessOwnershipSpec),键位在 package.json
-  // keybindings(ctrl+alt+shift+b/c);client/bots 走顶部镜点击
+  // 面包屑同一条判定链,键位在 package.json keybindings(ctrl+alt+shift+b/c)
   registerProcessOwnershipSwitchCommands(context);
 
   // 文件顶部修改时间镜(FILE-TIME-001,用户令 2026-11-17):盘上 mtime
@@ -839,7 +847,6 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     sharedWorkspaceIndex,
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
-    processOwnershipCodeLensProviderImpl,
     fileModifiedTimeCodeLensProviderImpl,
     engineSpiCodeLensProviderImpl,
     eventCodeLensProviderImpl,

@@ -15,7 +15,7 @@ import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from '../databaseSc
 import { findCustomTypeDeclarationInfo, findCustomTypeInfo, findCustomTypePythonImplementationFile, findImplementedBySymbolLine, findDefinitionEntryByCategory, findDefinitionFileByCategory, findEntityDefsDirForDefFile, findComponentScriptFile, findEntityDefinitionFile, findEntitiesXmlFile, findEntityScriptFile, findInterfaceScriptFile, getDefinitionWorkspaceLayout, getRegisteredCustomTypes, getScriptsRootForDefFile, getWorkspaceRootForDocument, scriptFoldersForRole, notifyEntitiesXmlMissingOnce, readWorkspaceTextFile, readWorkspaceTextLines } from '../definitionWorkspace';
 import { parseDefFileSemantics } from '../backend/defRenamer';
 import { KBENGINE_TYPES } from '../backend/kbengineMetadata';
-import { logNavigation } from '../navigationLog';
+import { jumpLog, logNavigation } from '../navigationLog';
 import { SymbolHoverInfo, buildSymbolHoverInfo } from './hover';
 import { CustomTypeResolution, KBEngineSectionName, METHOD_SECTIONS, getDefNodeAtPosition, getDefNodeAtWord, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst } from './shared';
 /** LSP 落点面(规范路径 uri)→ vscode.Location(Rust 面与 shadow 同形)。 */
@@ -245,6 +245,37 @@ export function findEntityDefinitionInDef(
   }
 
   if (symbolInfo?.section && METHOD_SECTIONS.has(symbolInfo.section)) {
+    // DEF-LUT-001:F12 快路——先查跳转反查表(加速层):命中直接答(落点经
+    // 缓冲重定,与慢链同口径);missing=全链无实现,秒回空(负缓存合流,不进
+    // 兜底等待链,「未实现」提示由 defMethodConsistency 诊断承担);miss(表未含
+    // 该条)→ 慢链兜底,LUT 不是唯一真相。
+    // 方法面存在性守卫:管理器替身/旧形状无该面时直接走慢链,不炸
+    if (entityMappingManager && typeof entityMappingManager.getDefMethodLutHit === 'function') {
+      const lutStartedAt = Date.now();
+      const lutHit = entityMappingManager.getDefMethodLutHit(
+        document.fileName,
+        symbolInfo.symbolNode.name,
+        symbolInfo.section as EntityMethodSection
+      );
+      if (lutHit) {
+        if (lutHit.status === 'missing') {
+          jumpLog('info', () =>
+            `def LUT missing 秒回空 ${word}(${symbolInfo.section}) ${Date.now() - lutStartedAt}ms`
+          );
+          logNavigation(`def LUT missing 秒回空 ${word}(${symbolInfo.section})`);
+          return null;
+        }
+        const adjusted = adjustMethodTargetToOpenBuffer(lutHit.target, symbolInfo.symbolNode.name);
+        jumpLog('info', () =>
+          `def LUT 命中 ${word} → ${path.basename(adjusted.filePath)}:${adjusted.line} ${Date.now() - lutStartedAt}ms`
+        );
+        logNavigation(`def LUT 命中落点 ${adjusted.filePath}:${adjusted.line - 1}`);
+        return new vscode.Location(
+          vscode.Uri.file(adjusted.filePath),
+          new vscode.Position(Math.max(adjusted.line - 1, 0), adjusted.character)
+        );
+      }
+    }
     const methodLocation = findMethodImplementationLocationInDef(
       document,
       position,

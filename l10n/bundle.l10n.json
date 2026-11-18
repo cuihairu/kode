@@ -747,5 +747,17 @@
   "Entity registration check needs an open workspace folder": "Entity registration check needs an open workspace folder",
   "AI explain / fix suggestion": "AI explain / fix suggestion",
   "AI fix suggestion (read-only, nothing written)": "AI fix suggestion (read-only, nothing written)",
-  "AI stub suggestion (template untouched, read-only preview)": "AI stub suggestion (template untouched, read-only preview)"
+  "AI stub suggestion (template untouched, read-only preview)": "AI stub suggestion (template untouched, read-only preview)",
+  "Kode (ruff) can format Python files. Set it as the default formatter?": "Kode (ruff) can format Python files. Set it as the default formatter?",
+  "Manual install command: {cmd}": "Manual install command: {cmd}",
+  "Not now": "Not now",
+  "Open a Python file to format it with ruff.": "Open a Python file to format it with ruff.",
+  "pip install failed. Run it manually: {cmd}": "pip install failed. Run it manually: {cmd}",
+  "ruff format failed: {reason}": "ruff format failed: {reason}",
+  "ruff is not installed. Install it and retry.": "ruff is not installed. Install it and retry.",
+  "ruff is not installed. Install it now via pip?": "ruff is not installed. Install it now via pip?",
+  "Set as default formatter": "Set as default formatter",
+  "Create": "Create",
+  "No ruff config in the workspace root. Create pyproject.toml with this block?": "No ruff config in the workspace root. Create pyproject.toml with this block?",
+  "pyproject.toml has no [tool.ruff] section. Append this block?": "pyproject.toml has no [tool.ruff] section. Append this block?"
 }

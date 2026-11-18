@@ -451,3 +451,83 @@ describe('indexScheduler 后台限流', () => {
     scheduler.dispose();
   });
 });
+
+// 批 B(索引建立时间面)轮次时间戳:忙起=空闲后首任务开跑,跑空=任一任务
+// 终态后队列空且无运行;取消清队不算跑完(不更新 completedAt)。
+describe('indexScheduler 轮次时间戳 (批 B)', () => {
+  it('从未跑过任务 → started/completed 双 null(状态栏不加建立行)', () => {
+    const scheduler = new IndexScheduler();
+    const status = scheduler.getStatus();
+    expect(status.lastBuildStartedAt).toBeNull();
+    expect(status.lastBuildCompletedAt).toBeNull();
+    scheduler.dispose();
+  });
+
+  it('跑完一轮 → started/completed 双记,completed >= started', async () => {
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
+    const done = scheduler.enqueue({
+      kind: 'single-file-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      filePath: '/a.py',
+      version: 1,
+      run: async () => undefined
+    });
+    await done.wait;
+    await flush();
+    const status = scheduler.getStatus();
+    expect(status.lastBuildStartedAt).not.toBeNull();
+    expect(status.lastBuildCompletedAt).not.toBeNull();
+    expect(status.lastBuildCompletedAt!).toBeGreaterThanOrEqual(status.lastBuildStartedAt!);
+    scheduler.dispose();
+  });
+
+  it('任务挂起未终态 → 只记 started 不记 completed(未跑完不冒充)', async () => {
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const handle = scheduler.enqueue({
+      kind: 'single-file-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      filePath: '/a.py',
+      version: 1,
+      run: () => gate
+    });
+    await flush();
+    let status = scheduler.getStatus();
+    expect(status.lastBuildStartedAt).not.toBeNull();
+    expect(status.lastBuildCompletedAt).toBeNull();
+    release!();
+    await handle.wait;
+    await flush();
+    status = scheduler.getStatus();
+    expect(status.lastBuildCompletedAt).not.toBeNull();
+    scheduler.dispose();
+  });
+
+  it('第二轮覆盖第一轮时间戳(最近一轮语义)', async () => {
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
+    const first = scheduler.enqueue({
+      kind: 'single-file-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      filePath: '/a.py',
+      version: 1,
+      run: async () => undefined
+    });
+    await first.wait;
+    await flush();
+    const firstCompleted = scheduler.getStatus().lastBuildCompletedAt;
+    await new Promise(resolve => setTimeout(resolve, 2));
+    const second = scheduler.enqueue({
+      kind: 'single-file-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      filePath: '/b.py',
+      version: 1,
+      run: async () => undefined
+    });
+    await second.wait;
+    await flush();
+    const status = scheduler.getStatus();
+    expect(status.lastBuildCompletedAt!).toBeGreaterThan(firstCompleted!);
+    scheduler.dispose();
+  });
+});
