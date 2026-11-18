@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use kode_kbengine_schema::compat::{
-    check_classified, classify, diff_wire_type, Change, EngineGate, LayoutCompatReport,
+    check, check_classified, classify, diff_wire_type, Change, EngineGate, LayoutCompatReport,
     MethodSegment, WireDiff,
 };
 use kode_kbengine_schema::messages::{MessageEntry, MessageLength, MessageTable};
@@ -659,4 +659,287 @@ fn diff_wire_type_unit_faces() {
             new: "UINT8".to_string(),
         }]
     );
+}
+
+// ---------------------------------------------------------------------------
+// ⑥ COV-010 残臂:check 方法增删两臂 + Display 渲染面 + check_classified
+//    属性类型/方法参数(base/cell 段)细节臂
+// ---------------------------------------------------------------------------
+
+/// check() 的方法增删两臂(三段各一)+ 对应 Display 渲染(含 label 的
+/// base/cell 臂)。
+#[test]
+fn check_method_add_remove_and_display_labels() {
+    let old = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![],
+                vec![method("login", vec![])],
+                vec![method("tick", vec![])],
+                vec![],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let new = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![],
+                vec![method("summon", vec![])],
+                vec![],
+                vec![method("onPing", vec![])],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let report = check(&old, &new);
+    let texts: Vec<String> = report.changes.iter().map(|c| c.to_string()).collect();
+    assert!(
+        texts.contains(&"method removed: Avatar.base.login".to_string()),
+        "{texts:?}"
+    );
+    assert!(
+        texts.contains(&"method removed: Avatar.cell.tick".to_string()),
+        "{texts:?}"
+    );
+    assert!(
+        texts.contains(&"method added: Avatar.base.summon".to_string()),
+        "{texts:?}"
+    );
+    assert!(
+        texts.contains(&"method added: Avatar.client.onPing".to_string()),
+        "{texts:?}"
+    );
+    assert!(
+        !report.compatible,
+        "方法增删不在兼容白名单 → wire 维也不兼容"
+    );
+    // 直构 base/cell 段的 MethodArgsChanged 渲染(label 两臂):
+    assert_eq!(
+        Change::MethodArgsChanged {
+            entity: "Avatar".into(),
+            segment: MethodSegment::Base,
+            method: "login".into(),
+        }
+        .to_string(),
+        "method args changed: Avatar.base.login"
+    );
+    assert_eq!(
+        Change::MethodArgsChanged {
+            entity: "Avatar".into(),
+            segment: MethodSegment::Cell,
+            method: "tick".into(),
+        }
+        .to_string(),
+        "method args changed: Avatar.cell.tick"
+    );
+}
+
+/// check() 的属性删除/旗标漂移 + 对应 Display 渲染。
+#[test]
+fn check_property_removed_and_flags_changed_display() {
+    let old = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![
+                    prop("hp", WireType::UInt8, &["BASE_AND_CLIENT"]),
+                    prop("mp", WireType::UInt8, &[]),
+                ],
+                vec![],
+                vec![],
+                vec![],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let new = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![prop("hp", WireType::UInt8, &["ALL_CLIENTS"])],
+                vec![],
+                vec![],
+                vec![],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let report = check(&old, &new);
+    let texts: Vec<String> = report.changes.iter().map(|c| c.to_string()).collect();
+    assert!(
+        texts.contains(&"property removed: Avatar.mp (was index 1)".to_string()),
+        "{texts:?}"
+    );
+    let flags_expected = format!(
+        "property flags changed: Avatar.hp {:?} -> {:?}",
+        vec!["BASE_AND_CLIENT"],
+        vec!["ALL_CLIENTS"]
+    );
+    assert!(texts.contains(&flags_expected), "{texts:?}");
+    assert!(!report.compatible);
+}
+
+/// EngineGate 三面 Display 标签(报告面渲染)。
+#[test]
+fn engine_gate_display_labels() {
+    assert_eq!(
+        EngineGate::HandshakeRejected.to_string(),
+        "handshake-rejected"
+    );
+    assert_eq!(EngineGate::SilentRisk.to_string(), "silent-risk");
+    assert_eq!(EngineGate::UnGated.to_string(), "ungated");
+}
+
+/// check_classified 的 PropertyTypeChanged 细节臂:标量漂移 + FD 递归下钻。
+#[test]
+fn check_classified_property_type_change_wire_details() {
+    let old = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![
+                    prop("pos", WireType::UInt8, &[]),
+                    prop(
+                        "cfg",
+                        fd(vec![("a", WireType::UInt8), ("b", WireType::UInt16)]),
+                        &[],
+                    ),
+                ],
+                vec![],
+                vec![],
+                vec![],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let new = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![
+                    prop("pos", WireType::String, &[]),
+                    prop(
+                        "cfg",
+                        fd(vec![("a", WireType::String), ("b", WireType::UInt16)]),
+                        &[],
+                    ),
+                ],
+                vec![],
+                vec![],
+                vec![],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let report = check_classified(&old, &new);
+    assert!(!report.handshake_safe);
+    let pos = report
+        .classified
+        .iter()
+        .find(|c| {
+            c.change
+                .to_string()
+                .contains("property type changed: Avatar.pos")
+        })
+        .expect("pos type change");
+    assert_eq!(
+        pos.wire_diffs,
+        vec![WireDiff::FieldTypeChanged {
+            path: "Avatar.pos".to_string(),
+            old: WireType::UInt8.display_name(),
+            new: WireType::String.display_name(),
+        }]
+    );
+    let cfg = report
+        .classified
+        .iter()
+        .find(|c| {
+            c.change
+                .to_string()
+                .contains("property type changed: Avatar.cfg")
+        })
+        .expect("cfg type change");
+    assert_eq!(
+        cfg.wire_diffs,
+        vec![WireDiff::FieldTypeChanged {
+            path: "Avatar.cfg.a".to_string(),
+            old: WireType::UInt8.display_name(),
+            new: WireType::String.display_name(),
+        }]
+    );
+}
+
+/// check_classified 的 MethodArgsChanged 细节臂:base/cell 段(覆盖
+/// method_args 的 base/cell 查找臂)+ ArgChanged/ArgAdded/ArgRemoved 全形。
+#[test]
+fn check_classified_method_args_base_and_cell_segments() {
+    let old = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![],
+                vec![method("login", vec![WireType::UInt8, WireType::Int8])],
+                vec![method("tick", vec![WireType::Int8])],
+                vec![],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let new = schema(
+        BTreeMap::from([(
+            "Avatar",
+            entity(
+                vec![],
+                vec![method("login", vec![WireType::String])],
+                vec![method("tick", vec![WireType::Int8, WireType::UInt8])],
+                vec![],
+            ),
+        )]),
+        BTreeMap::new(),
+        vec![],
+    );
+    let report = check_classified(&old, &new);
+    let base = report
+        .classified
+        .iter()
+        .find(|c| c.change.to_string() == "method args changed: Avatar.base.login")
+        .expect("base args change");
+    assert_eq!(
+        base.wire_diffs,
+        vec![
+            WireDiff::ArgChanged {
+                path: "Avatar.base.login".to_string(),
+                index: 0,
+                old: WireType::UInt8.display_name(),
+                new: WireType::String.display_name(),
+            },
+            WireDiff::ArgRemoved {
+                path: "Avatar.base.login".to_string(),
+                index: 1,
+            },
+        ]
+    );
+    let cell = report
+        .classified
+        .iter()
+        .find(|c| c.change.to_string() == "method args changed: Avatar.cell.tick")
+        .expect("cell args change");
+    assert_eq!(
+        cell.wire_diffs,
+        vec![WireDiff::ArgAdded {
+            path: "Avatar.cell.tick".to_string(),
+            index: 1,
+        }]
+    );
+    assert!(!report.handshake_safe);
 }
