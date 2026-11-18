@@ -106,7 +106,10 @@ pub fn lane_budget_for_workers(workers: usize) -> LaneBudget {
 /// 错误路径(口径不变,不因分类器抢答)。
 pub fn execution_lane(method: &str, params: Option<&Value>) -> ExecutionLane {
     if method == "$/kode/rpc" {
-        return match params.and_then(|p| p.get("method")).and_then(|m| m.as_str()) {
+        return match params
+            .and_then(|p| p.get("method"))
+            .and_then(|m| m.as_str())
+        {
             Some(inner) => ExecutionLane::Pool(rpc_pool_lane(inner)),
             None => ExecutionLane::Inline,
         };
@@ -430,8 +433,7 @@ fn worker_loop(shared: Arc<ExecShared>) {
             'pick: loop {
                 // draining(退出中):排空已受理队列再退——受理过的请求都欠
                 // 回包,静默弃置会破坏与内联路径的回包平价。
-                if state.draining && state.interactive.is_empty() && state.background.is_empty()
-                {
+                if state.draining && state.interactive.is_empty() && state.background.is_empty() {
                     return;
                 }
                 // 交互优先:预留位语义——后台满载/排队也拦不住交互请求。
@@ -469,10 +471,7 @@ fn worker_loop(shared: Arc<ExecShared>) {
                         state.lane_gate.release(head_kind);
                     }
                 }
-                state = shared
-                    .signal
-                    .wait(state)
-                    .expect("pool state lock poisoned");
+                state = shared.signal.wait(state).expect("pool state lock poisoned");
             }
         };
         // RUST-072:登记本 job 取消令牌(锁内登记,cancel 三查窗口一致)并
@@ -558,38 +557,58 @@ mod tests {
     use super::*;
     use crate::rpc::RpcRegistry;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     /// 测试慢 handler 协调器:静态位(fn 指针不能捕获)。各测试用互不重叠
     /// 的 ticket 段,跨测试零串扰(cargo test 并行安全)。
     fn hold() -> &'static (Mutex<Vec<u32>>, Condvar) {
-        static HOLD: std::sync::OnceLock<(Mutex<Vec<u32>>, Condvar)> =
-            std::sync::OnceLock::new();
+        static HOLD: std::sync::OnceLock<(Mutex<Vec<u32>>, Condvar)> = std::sync::OnceLock::new();
         HOLD.get_or_init(|| (Mutex::new(Vec::new()), Condvar::new()))
     }
 
+    /// PoisonError 容错:worker panic 中毒后,测试协调面照常拿锁工作,
+    /// 不让单个测试的 panic 连坐整组(PoisonError 连坐前科:CI 实红)。
+    fn hold_lock() -> std::sync::MutexGuard<'static, Vec<u32>> {
+        hold().0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 慢机容忍:有界等待的拍数上限环境感知。缺省 3000 与历史口径一致
+    /// (20ms 拍≈60s);CI 慢机由 workflow 设 KODE_TEST_TICK_BUDGET=9000 放宽。
+    fn tick_budget() -> usize {
+        std::env::var("KODE_TEST_TICK_BUDGET")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3000)
+    }
+
     /// fn 指针 handler:登记 ticket 后阻塞,直到放行号(ticket+1000)出现。
-    /// 有界等待(回归时红而非挂死 CI)。
+    /// notify 驱动的真等待:单拍到 deadline,release 的 notify_all 提前唤醒
+    /// (spurious wakeup 由 contains 循环吸收),无逐拍轮询;总时长有界
+    /// (tick_budget×20ms,缺省 60s/CI 180s)——测试侧 panic 后孤儿 worker
+    /// 也能自行超时退出,不挂死 CI(纯 wait() 无界版实测挂死)。
     fn blocking_handler(params: Value) -> Result<Value, String> {
         let ticket = params.get("ticket").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         {
-            let mut waiting = hold().0.lock().expect("hold lock");
+            let mut waiting = hold_lock();
             waiting.push(ticket);
         }
         hold().1.notify_all();
-        let mut waiting = hold().0.lock().expect("hold lock");
-        let mut ticks = 0usize;
+        let mut waiting = hold_lock();
+        let deadline = Instant::now() + Duration::from_millis(tick_budget() as u64 * 20);
         loop {
             if waiting.contains(&(ticket + 1000)) {
                 break;
             }
-            assert!(ticks < 3000, "handler ticket {ticket} never released");
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(
+                !remaining.is_zero(),
+                "handler ticket {ticket} never released"
+            );
             let (next, _) = hold()
                 .1
-                .wait_timeout(waiting, Duration::from_millis(20))
-                .expect("hold lock");
+                .wait_timeout(waiting, remaining)
+                .unwrap_or_else(|e| e.into_inner());
             waiting = next;
-            ticks += 1;
         }
         waiting.retain(|t| *t != ticket);
         Ok(serde_json::json!({ "ticket": ticket }))
@@ -597,7 +616,7 @@ mod tests {
 
     /// 放行指定 ticket(测试协调面)。
     fn release(ticket: u32) {
-        let mut waiting = hold().0.lock().expect("hold lock");
+        let mut waiting = hold_lock();
         waiting.push(ticket + 1000);
         drop(waiting);
         hold().1.notify_all();
@@ -608,7 +627,7 @@ mod tests {
     fn cancellable_polling_handler(params: Value) -> Result<Value, String> {
         let ticket = params.get("ticket").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         {
-            let mut waiting = hold().0.lock().expect("hold lock");
+            let mut waiting = hold_lock();
             waiting.push(ticket);
         }
         hold().1.notify_all();
@@ -618,13 +637,13 @@ mod tests {
                 return Err(kode_python::cancel::CANCELLED_MSG.to_string());
             }
             {
-                let waiting = hold().0.lock().expect("hold lock");
+                let waiting = hold_lock();
                 if waiting.contains(&(ticket + 1000)) {
                     break;
                 }
             }
             assert!(
-                ticks < 3000,
+                ticks < tick_budget(),
                 "cancellable handler ticket {ticket} never resolved"
             );
             std::thread::sleep(Duration::from_millis(10));
@@ -636,17 +655,20 @@ mod tests {
     /// 等到 handler 登记了指定 ticket(worker 真正开跑的可观察面)。
     /// 有界等待:调度面回归(交互永不入)时红而非挂死。
     fn wait_started(ticket: u32) {
-        let mut waiting = hold().0.lock().expect("hold lock");
+        let mut waiting = hold_lock();
         let mut ticks = 0usize;
         loop {
             if waiting.contains(&ticket) {
                 return;
             }
-            assert!(ticks < 3000, "worker never started ticket {ticket}");
+            assert!(
+                ticks < tick_budget(),
+                "worker never started ticket {ticket}"
+            );
             let (next, _) = hold()
                 .1
                 .wait_timeout(waiting, Duration::from_millis(20))
-                .expect("hold lock");
+                .unwrap_or_else(|e| e.into_inner());
             waiting = next;
             ticks += 1;
         }
@@ -783,7 +805,11 @@ mod tests {
         wait_started(505);
         let stats = stats_of(&executor);
         assert_eq!(
-            (stats.io_running, stats.cpu_running, stats.interactive_running),
+            (
+                stats.io_running,
+                stats.cpu_running,
+                stats.interactive_running
+            ),
             (1, 2, 1),
             "IO 满+CPU 满+交互在飞并存(4 worker 全占)"
         );
@@ -804,10 +830,8 @@ mod tests {
     fn cancel_queued_io_job_leaves_no_lane_slot() {
         // total=2 → io_max=1。排队 IO job 取消:即刻回 -32800,泳道零占位;
         // 后续 IO job 在位释放后照常准入(无占位泄漏)。
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(2),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         executor.submit(job(601, "$/kode/test/blocking", PoolLane::Background));
         wait_started(601);
         executor.submit(job(602, "$/kode/test/blocking", PoolLane::Background));
@@ -829,10 +853,8 @@ mod tests {
     #[test]
     fn failing_io_job_releases_lane_slot() {
         // IO job 失败(handler Err):泳道位照常释放,后续 IO job 不饿死。
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(2),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         executor.submit(job(611, "$/kode/test/failing", PoolLane::Background));
         let outcome = recv_outcome(&rx);
         assert!(matches!(outcome.status, JobStatus::Failed(_)));
@@ -845,42 +867,63 @@ mod tests {
 
     #[test]
     fn span_table_tracks_outstanding_jobs_and_drains_on_terminal() {
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(2),
-        );
+        // 确定性排队:701/703 两张 wait_started 占满 total=2 的两个 worker,
+        // 702 提交时准入必拒(交互预留位也满),必走「排队→取消摘除」路径。
+        // 不再依赖主线程 cancel 抢在 worker 唤醒前拿锁的竞速——CI 慢机
+        // 实红前科:worker 先弹起则 702 在途,cancel 走在途路径 span 留表,
+        // 断言 2≠1 必红(try_admit_interactive「总占用<total 恒放行交互」)。
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         executor.submit(job(701, "$/kode/test/blocking", PoolLane::Interactive));
         wait_started(701);
+        executor.submit(job(703, "$/kode/test/blocking", PoolLane::Interactive));
+        wait_started(703);
         executor.submit(job(702, "$/kode/test/blocking", PoolLane::Interactive));
-        assert_eq!(executor.outstanding_spans_for_tests(), 2, "未决=2");
+        assert_eq!(
+            executor.outstanding_spans_for_tests(),
+            3,
+            "未决=3(两张在飞+一张排队)"
+        );
         executor.cancel(&RequestId::Number(702));
         assert_eq!(
             executor.outstanding_spans_for_tests(),
-            1,
+            2,
             "排队取消摘除 span"
         );
         release(701);
-        // 通道里先到的可能是 702 的取消回执:按 id 捞 701 的完成回执。
+        release(703);
+        // 通道里三张回执到达序不定:按 id 分捡齐(701/703 完成+702 取消)。
         let expected_701 = format!("span-{:04x}", 701);
         let expected_702 = format!("span-{:04x}", 702);
+        let expected_703 = format!("span-{:04x}", 703);
         let mut cancelled_span: Option<String> = None;
-        let outcome = loop {
+        let mut outcome_701: Option<JobOutcome> = None;
+        let mut outcome_703: Option<JobOutcome> = None;
+        while outcome_701.is_none() || outcome_703.is_none() || cancelled_span.is_none() {
             let o = recv_outcome(&rx);
             match o.id {
-                RequestId::Number(701) => break o,
-                RequestId::Number(702) => cancelled_span = Some(o.span.expect("702 取消回执带 span")),
+                RequestId::Number(701) => outcome_701 = Some(o),
+                RequestId::Number(703) => outcome_703 = Some(o),
+                RequestId::Number(702) => {
+                    cancelled_span = Some(o.span.expect("702 取消回执带 span"))
+                }
                 _ => {}
             }
-        };
+        }
         assert_eq!(
             cancelled_span.as_deref(),
             Some(expected_702.as_str()),
             "排队取消回执携带同源 span"
         );
         assert_eq!(
-            outcome.span.as_deref(),
+            outcome_701.unwrap().span.as_deref(),
             Some(expected_701.as_str()),
-            "回包携带同源 span"
+            "701 回包携带同源 span"
+        );
+        assert_eq!(
+            outcome_703.unwrap().span.as_deref(),
+            Some(expected_703.as_str()),
+            "703 回包携带同源 span"
         );
         assert_eq!(
             executor.outstanding_spans_for_tests(),
@@ -925,20 +968,19 @@ mod tests {
     }
 
     fn stats_of(executor: &PoolExecutor) -> PoolStats {
+        // PoisonError 容错:与 hold 面同款,panic 后记账观察不连坐。
         *executor
             .shared
             .stats_cell
             .lock()
-            .expect("stats lock")
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// 等到记账进入期望运行态(轮询,超时即断言失败)。
     fn wait_running(executor: &PoolExecutor, interactive: usize, background: usize) {
         for _ in 0..300 {
             let stats = stats_of(executor);
-            if stats.interactive_running == interactive
-                && stats.background_running == background
-            {
+            if stats.interactive_running == interactive && stats.background_running == background {
                 return;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -1080,10 +1122,8 @@ mod tests {
 
     #[test]
     fn cancel_queued_drops_before_start_without_taking_capacity() {
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(1),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         executor.submit(job(301, "$/kode/test/blocking", PoolLane::Interactive));
         wait_started(301);
         executor.submit(job(302, "$/kode/test/blocking", PoolLane::Interactive));
@@ -1115,10 +1155,8 @@ mod tests {
 
     #[test]
     fn cancel_running_discards_result_and_releases_capacity() {
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(1),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         executor.submit(job(401, "$/kode/test/blocking", PoolLane::Interactive));
         wait_started(401);
         executor.cancel(&RequestId::Number(401));
@@ -1140,10 +1178,8 @@ mod tests {
         // RUST-072 核心面:在途取消 → cancel 置位令牌 → handler 协作点探针
         // 提前退出(真中断,不等 handler 自然跑完)→ 结算 Cancelled(-32800),
         // 容量即刻回收,轻请求不被占用。
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(1),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         executor.submit(job(801, "$/kode/test/cancellable", PoolLane::Interactive));
         wait_started(801);
         let cancel_at = std::time::Instant::now();
@@ -1185,10 +1221,8 @@ mod tests {
         // 无 span 的 job(submit 未带 span → span 表无登记):在途取消的
         // 裁定走在途令牌表(worker 弹出即登记,与 span 无关)——结算
         // Cancelled,不落 Failed(-32602)。
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(1),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         let bare = Job {
             id: RequestId::Number(811),
             method: "$/kode/test/cancellable".to_string(),
@@ -1219,7 +1253,9 @@ mod tests {
             kode_python::cancel::set_probe(Some(token));
             let verdict = kode_python::cancel::check_point();
             kode_python::cancel::set_probe(None);
-            Err(verdict.expect_err("probe flipped true must cancel").to_string())
+            Err(verdict
+                .expect_err("probe flipped true must cancel")
+                .to_string())
         }
         let mut reg = RpcRegistry::new();
         reg.register("$/kode/test/selfcancel", self_reporting_cancel_handler);
@@ -1244,10 +1280,8 @@ mod tests {
         // 验收「长跑登记表有界」:未知 id(内联请求/没提交过的 id)、排队
         // 摘除(离队即永不执行,登记无人结算不入表)、终态后重复/迟到取消
         // 都不入表——表容量 ≤ 在途 job 数,长跑不膨胀。
-        let (executor, _rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(2),
-        );
+        let (executor, _rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         // 占满两个 worker:821/823 在途,822 排队。
         executor.submit(job(821, "$/kode/test/cancellable", PoolLane::Interactive));
         executor.submit(job(823, "$/kode/test/cancellable", PoolLane::Interactive));
@@ -1304,10 +1338,8 @@ mod tests {
     #[test]
     fn late_cancel_after_terminal_never_grows_registration_table() {
         // 迟到取消(终态后):表已摘除,取消落「未知 id」臂,不入表。
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(1),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         executor.submit(job(831, "$/kode/test/cancellable", PoolLane::Interactive));
         wait_started(831);
         release(831);
@@ -1326,10 +1358,8 @@ mod tests {
 
     #[test]
     fn failed_job_maps_error_and_releases_capacity() {
-        let (executor, rx) = PoolExecutor::spawn(
-            registry_with_test_handlers(),
-            PoolBudget::from_total(2),
-        );
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         executor.submit(job(501, "$/kode/test/failing", PoolLane::Interactive));
         let outcome = recv_outcome(&rx);
         let response = rpc_response_for(outcome.id, outcome.status);

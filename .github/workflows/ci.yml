@@ -268,6 +268,10 @@ jobs:
         mkdir -p coverage/rust
 
         cargo llvm-cov --workspace --all-targets --no-fail-fast --lcov --output-path coverage/rust/lcov.info
+      env:
+        # 慢机容忍:executor 测试的有界等待拍数放宽(20ms 拍 3000→9000,
+        # 60s→180s 上界),CI 慢机时序不再击穿协调面(实红前科)。
+        KODE_TEST_TICK_BUDGET: "9000"
 
     - name: 上传 Rust 覆盖率到 Codecov（OIDC 免 token）
       timeout-minutes: 5
