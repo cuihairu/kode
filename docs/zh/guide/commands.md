@@ -712,7 +712,7 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 ### `kbengine.clientSdk.generate`
 
 - 标题：`Generate Client Entity SDK`
-- 作用：按 `entities.xml` 登记的实体生成客户端实体骨架，语言在命令内勾选（TypeScript / C# 可多选），详见 [客户端实体 SDK 生成](./client-sdk.md)
+- 作用：按 `entities.xml` 登记的实体生成客户端实体骨架，语言在命令内勾选（TypeScript / C# / Python 可多选），详见 [客户端实体 SDK 生成](./client-sdk.md)
 - profile 绑定：有活动 profile 时，实体注册顺序与类型数据只取该 profile 的资产根（`src/sdkGenerationProfile.ts`）；其他扫描根的同名实体拒收并在完成通知里逐个点名，绝不静默合并；无活动 profile 回落工作区首根
 - 引擎溯源：每个生成文件头部记录输入引擎的版本与提交（`src/sdkGenerationTrace.ts`，经 `readEngineApiMetadata` 探测，profile 记录的引擎根优先）；定位不到引擎时两行如实写 `unknown`
 

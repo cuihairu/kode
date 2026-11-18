@@ -352,7 +352,7 @@ kode 按进程导出独立桩包：`.kbengine/stubs/base`、`cell`、`bots`、`c
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | 客户端实体 SDK 生成器(`kbengine.clientSdk.generate`)的输出目录,TypeScript / C# 骨架与伴随文件都写到这里;相对工作区根 |
+| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | 客户端实体 SDK 生成器(`kbengine.clientSdk.generate`)的输出目录,TypeScript / C# / Python 骨架与伴随文件都写到这里;相对工作区根 |
 
 语言清单与覆盖策略在命令内的 quick pick 里选择,默认不覆盖已存在的文件;详见 [客户端实体 SDK 生成](./client-sdk.md)。
 

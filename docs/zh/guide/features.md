@@ -194,7 +194,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 自动生成 `.def`
 - 自动生成 Python
 - 自动注册到 `entities.xml`
-- 客户端实体 SDK 生成（按 `entities.xml` 登记的实体生成客户端骨架，TypeScript / C# 可多选）
+- 客户端实体 SDK 生成（按 `entities.xml` 登记的实体生成客户端骨架，TypeScript / C# / Python 可多选）
 - 定义形态向导（批139，盘点 G7）：实体向导之外一次生成一种形态——代理（`proxy_defs/` 下的 Proxy def，`Parent` 指向同名 Proxy）、空间（`entities.xml` 登记 `hasBase` + `hasCell`）、组件（`components/` 下 def，可选往实体 `<Properties>` 段末挂一条 `COMPONENT` 属性）、固定字典类型（写入 `types.xml`）。已存在的文件默认不覆盖，重复登记与结构异常都如实说明不硬插
 
 说明：

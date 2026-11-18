@@ -196,7 +196,7 @@ Command details in [Commands and Panels](./commands.md); config keys and variabl
 - Automatic `.def` generation
 - Automatic Python generation
 - Automatic registration into `entities.xml`
-- Client entity SDK generation (generates client skeletons for entities registered in `entities.xml`; TypeScript / C# multi-select)
+- Client entity SDK generation (generates client skeletons for entities registered in `entities.xml`; TypeScript / C# / Python multi-select)
 - Definition form wizard (batch 139, inventory G7): beyond the entity wizard, generates one form per run — proxy (a Proxy def under `proxy_defs/` whose `Parent` points at the same-named Proxy), space (registers `hasBase` + `hasCell` in `entities.xml`), component (a def under `components/`, optionally mounting a `COMPONENT` property at the end of the entity's `<Properties>` block), fixed-dict type (written into `types.xml`). Existing files are not overwritten by default; duplicate registrations and malformed structures are reported plainly rather than force-inserted
 
 Notes:

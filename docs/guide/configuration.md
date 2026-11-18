@@ -352,7 +352,7 @@ Existing stub files remain copy-if-absent. New process directories are added alo
 
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | Output directory of the client entity SDK generator (`kbengine.clientSdk.generate`) — TypeScript / C# skeletons and companion files all land here; relative to the workspace root |
+| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | Output directory of the client entity SDK generator (`kbengine.clientSdk.generate`) — TypeScript / C# / Python skeletons and companion files all land here; relative to the workspace root |
 
 The language list and overwrite policy are chosen in the command's quick pick; existing files are not overwritten by default — see [Client Entity SDK Generation](./client-sdk.md).
 
