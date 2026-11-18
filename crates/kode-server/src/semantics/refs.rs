@@ -1091,4 +1091,103 @@ mod tests {
             "全候选仅一路 hop 成功 → 收敛 Ref"
         );
     }
+
+    #[test]
+    fn apply_local_hop_all_candidates_fail_and_unbound_name() {
+        // 全候选面跳失败(CELL/CELL_VIA_BASE 取 .cell 均自名闸拒)→ Unknown,
+        // 不造具体调用类型;未绑定名面跳 → Unknown(不猜)。
+        let mut t = AliasTable::default();
+        t.assign(
+            "peer",
+            AliasValue::Candidates(vec![
+                EntityRef::Remote {
+                    class: Some("Avatar".into()),
+                    call: CallType::Cell,
+                },
+                EntityRef::Remote {
+                    class: Some("Avatar".into()),
+                    call: CallType::CellViaBase,
+                },
+            ]),
+        );
+        t.apply(
+            "hop",
+            AliasSource::LocalHop {
+                name: "peer".into(),
+                attr: "cell".into(),
+            },
+            ScriptFace::Base,
+            Some("Avatar"),
+        );
+        assert!(matches!(
+            t.lookup("hop"),
+            Some(AliasValue::Unknown(reason))
+                if reason.contains("全候选面跳无源码规则")
+        ));
+        t.apply(
+            "loner",
+            AliasSource::LocalHop {
+                name: "absent".into(),
+                attr: "cell".into(),
+            },
+            ScriptFace::Base,
+            Some("Avatar"),
+        );
+        assert!(matches!(
+            t.lookup("loner"),
+            Some(AliasValue::Unknown(reason)) if reason.contains("未绑定,不猜")
+        ));
+    }
+
+    #[test]
+    fn merge_single_side_pass_and_candidate_union_faces() {
+        // 单侧缺 → 另一侧直通(右侧独有名走 right.order 补扫臂);
+        // Ref⊕Candidates / Candidates⊕Ref / Candidates⊕Candidates → 候选
+        // 并集去重保序(Candidates 侧先,Ref 后补;跨侧同值去重)。
+        let a = EntityRef::Remote {
+            class: Some("Avatar".into()),
+            call: CallType::Base,
+        };
+        let b = EntityRef::Remote {
+            class: Some("Avatar".into()),
+            call: CallType::Cell,
+        };
+        let c = EntityRef::Remote {
+            class: Some("Avatar".into()),
+            call: CallType::Client,
+        };
+        let d = EntityRef::Remote {
+            class: Some("Monster".into()),
+            call: CallType::ClientViaCell,
+        };
+        let mut left = AliasTable::default();
+        left.assign("rc", AliasValue::Ref(a.clone()));
+        left.assign("cr", AliasValue::Candidates(vec![b.clone(), c.clone()]));
+        left.assign("cc", AliasValue::Candidates(vec![b.clone(), c.clone()]));
+        left.assign("only_left", AliasValue::Ref(a.clone()));
+        let mut right = AliasTable::default();
+        right.assign("rc", AliasValue::Candidates(vec![b.clone(), c.clone()]));
+        right.assign("cr", AliasValue::Ref(a.clone()));
+        right.assign("cc", AliasValue::Candidates(vec![c.clone(), a.clone()]));
+        right.assign("only_right", AliasValue::Ref(d.clone()));
+        let t = AliasTable::merge(&left, &right);
+        assert_eq!(t.lookup("only_left"), Some(&AliasValue::Ref(a.clone())));
+        assert_eq!(t.lookup("only_right"), Some(&AliasValue::Ref(d.clone())));
+        let want = AliasValue::Candidates(vec![b.clone(), c.clone(), a.clone()]);
+        assert_eq!(
+            t.lookup("rc"),
+            Some(&want),
+            "Ref⊕Candidates:Candidates 先,Ref 后补"
+        );
+        assert_eq!(
+            t.lookup("cr"),
+            Some(&want),
+            "Candidates⊕Ref:同上(or 模式镜像)"
+        );
+        assert_eq!(
+            t.lookup("cc"),
+            Some(&want),
+            "Candidates⊕Candidates:跨侧同值去重保序"
+        );
+    }
 }
