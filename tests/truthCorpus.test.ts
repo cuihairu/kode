@@ -43,6 +43,8 @@ import {
 import { collectUserTypeContractStatuses } from '../src/backend/userTypeContractSource';
 import { linearizeC3 } from '../src/backend/pythonClassIndex';
 import { parsePythonFile } from '../src/backend/pythonParser';
+import { lookupApiDoc } from '../src/backend/pythonApiHoverDocs';
+import { computeReceiverNoneFindingsAsync, renderReceiverNoneMessage } from '../src/backend/receiverNoneDiagnostics';
 import type { PythonClassDef } from '../src/backend/pythonParser';
 import { Diagnostic, DiagnosticCollection, makeTextDocument } from './helpers/vscodeStub';
 
@@ -1323,5 +1325,107 @@ describe('truth-corpus: fixed-dict-decorator-binding 族执行闸(FD 装饰器�
     const parsed = fdDecParsedOf(entry.input);
     expect(parsed.classes).toHaveLength(entry.kode.analysis!.parsedClasses!);
     expect(entry.kode.finding).toContain('名册检查缺席');
+  });
+});
+
+// ==================== proxy-session-semantics 族(第二十六增量,2026-11-18) ====================
+// Proxy 会话语义探针:客户端通道所有权与仲裁(fork proxy.cpp+baseapp.cpp,
+// 知识档 docs/knowledge/proxy-session-semantics.md)。kode 面=悬停文档表
+// (lookupApiDoc,generated/apiDocs.ts base 域)+receiverNone 诊断+parse 方法表。
+// 对齐臂 4+分歧登记 1(onLogOnAttempt WAIT_FOR_DESTROY 文案 vs 源码同支拒绝,
+// 方法学第六命中)+文档稀薄登记 1(onGiveClientToFailure 行号零语义)。
+interface ProxySessionEntry extends TruthEntryBase {
+  input: {
+    script: string;
+    hoverMembers?: string[];
+    hoverMember?: string;
+    hoverClaim?: string;
+    scriptPath?: string;
+    receiver?: string;
+    parsedMethod?: string;
+  };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      hoverHits?: number;
+      hoverHit?: boolean;
+      hoverClaimPresent?: boolean;
+      lifecycleMisreport?: number;
+      parsedMethodVisible?: boolean;
+      receiverNoneFindings?: number;
+      receiver?: string;
+      messageContains?: string;
+      summarySemantic?: boolean;
+    };
+  };
+}
+const proxySessionFamily = families.find(f => f.family === 'proxy-session-semantics')!;
+const proxySessionEntries = proxySessionFamily.entries as unknown as ProxySessionEntry[];
+
+describe('truth-corpus: proxy-session-semantics 族执行闸(Proxy 会话语义探针)', () => {
+  it('悬停名册覆盖臂:Proxy 会话十成员 lookupApiDoc(base 域)全 hit——文档面名册完备对齐', () => {
+    const entry = proxySessionEntries.find(e => e.id === 'proxy-hover-roster-coverage')!;
+    const hits = entry.input.hoverMembers!.filter(
+      name => lookupApiDoc(name, ['base']).kind === 'hit'
+    );
+    expect(hits).toHaveLength(entry.kode.analysis!.hoverHits!);
+    expect(hits).toHaveLength(entry.input.hoverMembers!.length);
+    expect(entry.kode.status).toBe('pinned');
+  });
+
+  it('onLogOnAttempt 分歧臂:engine WAIT_FOR_DESTROY 与 default 同支=同拒绝;kode hover 文案声称独立排队流程(登记不修)', async () => {
+    const entry = proxySessionEntries.find(e => e.id === 'proxy-onlogonattempt-waitfordestroy-divergence')!;
+    const lookup = lookupApiDoc(entry.input.hoverMember!, ['base']);
+    expect(lookup.kind).toBe('hit');
+    if (lookup.kind !== 'hit') { return; }
+    expect(lookup.hit.entry.owner).toBe('proxy');
+    expect(lookup.hit.entry.summaryEn).toContain(entry.input.hoverClaim!);
+    expect(entry.kode.analysis!.hoverClaimPresent).toBe(true);
+    expect(entry.kode.finding).toContain('分歧登记');
+    expect(entry.kode.finding).toContain('不冒充修复');
+  });
+
+  it('onClientDeath 臂:engine 会话解绑后 clientEntityCall 返 None;kode receiverNone 消息含 onClientDeath 语义对齐', async () => {
+    const entry = proxySessionEntries.find(e => e.id === 'proxy-onclientdeath-receiver-none')!;
+    const findings = await computeReceiverNoneFindingsAsync(entry.input.script, entry.input.scriptPath!);
+    expect(findings).toHaveLength(entry.kode.analysis!.receiverNoneFindings!);
+    expect(findings[0]?.receiver).toBe(entry.kode.analysis!.receiver!);
+    expect(renderReceiverNoneMessage('client')).toContain(entry.kode.analysis!.messageContains!);
+    expect(renderReceiverNoneMessage('client')).toContain('entity.cpp:800');
+    expect(entry.kode.status).toBe('pinned');
+  });
+
+  it('disconnect 臂:engine 只 condemn 通道不断实体生命周期;kode hover 文案同向无实体销毁误述', () => {
+    const entry = proxySessionEntries.find(e => e.id === 'proxy-disconnect-not-destroy')!;
+    const lookup = lookupApiDoc(entry.input.hoverMember!, ['base']);
+    expect(lookup.kind).toBe('hit');
+    if (lookup.kind !== 'hit') { return; }
+    expect(lookup.hit.entry.summaryEn).toContain(entry.input.hoverClaim!);
+    expect(lookup.hit.entry.summaryEn).not.toMatch(/destro(y|ed)|delete/i);
+    expect(entry.kode.analysis!.lifecycleMisreport).toBe(0);
+    expect(entry.kode.status).toBe('pinned');
+  });
+
+  it('onClientGetCell 臂:engine=客户端可访问 Cell 阶段;kode hover 文案同向+parse 方法表可见', () => {
+    const entry = proxySessionEntries.find(e => e.id === 'proxy-onclientgetcell-stage')!;
+    const lookup = lookupApiDoc(entry.input.hoverMember!, ['base']);
+    expect(lookup.kind).toBe('hit');
+    if (lookup.kind !== 'hit') { return; }
+    expect(lookup.hit.entry.summaryEn).toContain(entry.input.hoverClaim!);
+    const parsed = parsePythonFile(entry.input.script, '/w/assets/scripts/base/Avatar.py');
+    const methods = parsed.classes[0] ? [...parsed.classes[0].methods.keys()] : [];
+    expect(methods).toContain(entry.input.parsedMethod!);
+    expect(entry.kode.status).toBe('pinned');
+  });
+
+  it('onGiveClientToFailure 臂:engine 前置校验边界语义;kode 回调条目文案零语义(稀薄登记,giveClientTo 本体已详尽)', () => {
+    const entry = proxySessionEntries.find(e => e.id === 'proxy-giveclienttofailure-doc-thin')!;
+    const lookup = lookupApiDoc(entry.input.hoverMember!, ['base']);
+    expect(lookup.kind).toBe('hit');
+    if (lookup.kind !== 'hit') { return; }
+    // 零语义判定:summary 去除行号引用后无剩余内容
+    const semantic = lookup.hit.entry.summaryEn.replace(/proxy\.cpp:[\d-]+\.?/g, '').trim().length > 0;
+    expect(semantic).toBe(entry.kode.analysis!.summarySemantic!);
+    expect(semantic).toBe(false);
+    expect(entry.kode.finding).toContain('文档稀薄登记');
   });
 });

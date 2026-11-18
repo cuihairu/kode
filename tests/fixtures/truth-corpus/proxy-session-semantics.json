@@ -1,0 +1,157 @@
+{
+  "family": "proxy-session-semantics",
+  "grounding": {
+    "doc": "docs/knowledge/proxy-session-semantics.md",
+    "engineHead": "55a66552"
+  },
+  "entries": [
+    {
+      "id": "proxy-hover-roster-coverage",
+      "kind": "positive",
+      "input": {
+        "script": "class Avatar:\n    def kick(self):\n        self.client.onKick()\n        return None",
+        "hoverMembers": ["giveClientTo", "onLogOnAttempt", "onClientGetCell", "onClientDeath", "disconnect", "streamFileToClient", "streamStringToClient", "onGiveClientToFailure", "getClientType", "getClientDatas"]
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "Proxy 专属会话 API 十成员(主动调用+回调+流式)全部存在于引擎(proxy.cpp 方法表)且可被脚本使用。"
+      },
+      "evidence": [
+        "| `giveClientTo(other)` | 主动调用 | 整条客户端所有权链迁移 |",
+        "| `streamStringToClient()` / `streamFileToClient()` | 主动调用 | 后台任务+主线程分片发送 |"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "hoverHits": 10
+        },
+        "finding": "对齐钉:kode 悬停文档表(API_DOC_ENTRIES,base 域)对 Proxy 会话十成员全覆盖(lookupApiDoc 逐名 hit)——文档面名册完备。"
+      }
+    },
+    {
+      "id": "proxy-onlogonattempt-waitfordestroy-divergence",
+      "kind": "negative",
+      "input": {
+        "script": "class Avatar:\n    def onLogOnAttempt(self, ip, port, password):\n        return KBEngine.LOG_ON_WAIT_FOR_DESTROY",
+        "hoverMember": "onLogOnAttempt",
+        "hoverClaim": "LOG_ON_WAIT_FOR_DESTROY (queue"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "三返回值现状矩阵(baseapp.cpp:3973-4028):switch 仅 LOG_ON_ACCEPT 有独立分支(接管+重建代理链);LOG_ON_WAIT_FOR_DESTROY 与 default 同支(:4020-4021)→ loginBaseappFailed(SERVER_ERR_ACCOUNT_IS_ONLINE)=实际效果同拒绝。API 文档保留的「排队等待销毁」是理想语义,当前源码未落地;脚本真正能稳定依赖的只有 accept/reject。"
+      },
+      "evidence": [
+        "- `LOG_ON_WAIT_FOR_DESTROY`:**当前源码未落地为独立流程**——switch 里与 default 同支,实际效果同拒绝;API 文档保留的是理想语义,脚本真正能稳定依赖的只有 accept/reject。"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "hoverHit": true,
+          "hoverClaimPresent": true
+        },
+        "finding": "文档 vs 源码分歧登记(语料方法学第六次实战命中):kode hover 文案声称 LOG_ON_WAIT_FOR_DESTROY=『queue the new login until this entity is destroyed』(独立排队流程,引用 wait-for-destroy :3960)而 fork 源码 baseapp.cpp:4020-4021 该 case 与 default 同支=实际同拒绝;文案行号亦漂移(switch 实际在 3973 起,WAIT_FOR_DESTROY 在 4020)。文案随引擎真值更新归独立批(generated/apiDocs.ts 再生),本族只登记不冒充修复。"
+      }
+    },
+    {
+      "id": "proxy-onclientdeath-receiver-none",
+      "kind": "positive",
+      "input": {
+        "script": "class Avatar:\n    def kick(self):\n        self.client.onKick()\n        return None",
+        "scriptPath": "/w/assets/scripts/base/Avatar.py",
+        "receiver": "client"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "onClientDeath=会话解绑非实体销毁(onChannelDeregister 入口;释放 clientEntityCall/清 addr/clientEnabled_=false/CALL_ENTITY_AND_COMPONENTS_METHOD 通知实体与组件)——之后 clientEntityCall getter 直接返回 None(entity.cpp:800)。"
+      },
+      "evidence": [
+        "不是在销毁 Proxy,而是做一轮会话解绑:释放 clientEntityCall/清空客户端地址/clientEnabled_ 置 false,**再经 CALL_ENTITY_AND_COMPONENTS_METHOD 通知实体与全部组件**。",
+        "Py_DECREF(clientEntityCall());"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "receiverNoneFindings": 1,
+          "receiver": "client",
+          "messageContains": "onClientDeath"
+        },
+        "finding": "对齐钉:kode receiverNone 诊断(baseapp 域 self.client 无 guard 调用)消息即携带引擎语义『onClientDeath/onLoseCell → S_RELEASE』+引擎源码引用(server/baseapp/entity.cpp:800 pyGetClientEntityCall)——与本档 §3 会话解绑真值(clientEntityCall 置空=getter 返 None)同义对齐。"
+      }
+    },
+    {
+      "id": "proxy-disconnect-not-destroy",
+      "kind": "positive",
+      "input": {
+        "script": "class Avatar:\n    def kick(self):\n        self.disconnect()\n        return None",
+        "hoverMember": "disconnect",
+        "hoverClaim": "condemns the client channel"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "disconnect() 只让当前客户端通道进入关闭流程(condemn);不销毁 Proxy、不删数据库记录、不主动销毁 Cell=只断会话不断实体生命周期。"
+      },
+      "evidence": [
+        "做的事只有一件:让当前客户端通道进入关闭流程。它**没有**:销毁 Proxy、删除数据库记录、主动销毁 Cell。",
+        "pChannel->condemn(\"\");"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "hoverHit": true,
+          "hoverClaimPresent": true,
+          "lifecycleMisreport": 0
+        },
+        "finding": "对齐钉:kode hover 文案=『Disconnects the bound client: condemns the client channel』与引擎「只 condemn 通道」真值一致,无误述实体销毁;诊断面 disconnect 后不误报实体已销毁(lifecycle 诊断零误报)。"
+      }
+    },
+    {
+      "id": "proxy-onclientgetcell-stage",
+      "kind": "positive",
+      "input": {
+        "script": "class Avatar:\n    def onClientGetCell(self):\n        return None",
+        "hoverMember": "onClientGetCell",
+        "hoverClaim": "gains access to the entity's cell",
+        "parsedMethod": "onClientGetCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "onClientGetCell 语义不是「Cell 创建成功」而是「带客户端的实体进入客户端可访问 Cell 的阶段」(onEntityGetCell→clientEntityCall 非空→initClientCellPropertys→onClientGetCell)。"
+      },
+      "evidence": [
+        "准确语义不是「Cell 创建成功」而是**带客户端的实体进入客户端可访问 Cell 的阶段**"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "hoverHit": true,
+          "hoverClaimPresent": true,
+          "parsedMethodVisible": true
+        },
+        "finding": "对齐钉:kode hover 文案=『client gains access to the entity's cell attribute』与「客户端可访问 Cell 阶段」真值一致;parse 面回调签名可见(方法表含 onClientGetCell)。"
+      }
+    },
+    {
+      "id": "proxy-giveclienttofailure-doc-thin",
+      "kind": "positive",
+      "input": {
+        "script": "class Avatar:\n    def onGiveClientToFailure(self, targetEntity):\n        return None",
+        "hoverMember": "onGiveClientToFailure"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "onGiveClientToFailure 只在迁移启动前的前置校验失败时触发(源已销毁/源无客户端/目标已销毁/目标是自己/目标已有客户端),不对应迁移中途网络失败——边界语义是脚本误用高发面。"
+      },
+      "evidence": [
+        "**onGiveClientToFailure 只在迁移启动前的前置校验失败时触发**(源已销毁/源无客户端/目标已销毁/目标是自己/目标已有客户端),不对应迁移中途的网络失败。"
+      ],
+      "kode": {
+        "status": "not-analyzed",
+        "analysis": {
+          "hoverHit": true,
+          "summarySemantic": false
+        },
+        "finding": "文档稀薄登记:kode onGiveClientToFailure 条目 hit 但 summary 仅有源码行号(proxy.cpp:304-307.)零语义——前置校验边界(五种触发条件/不对应网络失败)未入本回调条目文案;对照=giveClientTo 本体条目文案已详尽含五前置与「any violation raises onGiveClientToFailure」触发语义,稀薄面限于回调条目自身。文案充实归独立批(generated/apiDocs.ts 再生),边界语义已钉本档供后续收编。"
+      }
+    }
+  ]
+}
