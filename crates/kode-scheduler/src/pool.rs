@@ -240,4 +240,12 @@ mod tests {
         // 释放后容量恢复:后台可重新准入。
         assert!(gate.try_admit_background());
     }
+
+    /// budget() 读取面:构造期校验过的预算原样可见。
+    #[test]
+    fn budget_getter_returns_validated_budget() {
+        let budget = PoolBudget::from_total(6);
+        let gate = WorkerPoolGate::new(budget).expect("valid budget");
+        assert_eq!(gate.budget(), budget);
+    }
 }

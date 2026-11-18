@@ -1171,4 +1171,19 @@ mod task_debug_tests {
         s.drain(10_000);
         assert_eq!(s.task_state(live.id), Some(TaskState::Completed));
     }
+
+    /// 暖门空态:从未 begin_background_scan 过的调度器 = Idle。
+    #[test]
+    fn warm_state_idle_before_any_scan() {
+        let s = Scheduler::new(SchedulerOptions::default());
+        assert_eq!(s.warm_state(), WarmState::Idle);
+    }
+
+    /// 暂停期插队执行拒收:不出活(pump_once 同语义)。
+    #[test]
+    fn promote_and_run_paused_refuses() {
+        let mut s = Scheduler::new(SchedulerOptions::default());
+        s.pause();
+        assert!(!s.promote_and_run(1), "暂停期指名执行一律 false");
+    }
 }

@@ -487,3 +487,17 @@ pub fn dump_golden() -> String {
         bodies.join(",\n    ")
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::json_str;
+
+    /// JSON 字符串转义四臂 + 控制字符 \u 兜底(golden 快照语料从未含特殊字符)。
+    #[test]
+    fn json_str_escapes_quotes_backslash_newline_tab_and_control() {
+        assert_eq!(
+            json_str("a\"b\\c\nd\te\u{1}z"),
+            "\"a\\\"b\\\\c\\nd\\te\\u0001z\","
+        );
+    }
+}

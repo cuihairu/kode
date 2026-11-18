@@ -549,3 +549,181 @@ pub fn stress_storm_probe(
     }
     Ok((seen, buffer.merged, totals.landed as usize))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// StressOptions::default() 直测:长跑车道缺省形状(此前从未被读)。
+    #[test]
+    fn stress_options_default_matches_long_lane_shape() {
+        let d = StressOptions::default();
+        assert_eq!(d.total_ops, 100_000);
+        assert_eq!(d.max_queued, 0);
+        assert_eq!(d.interactive_cooldown_ms, 50);
+        assert_eq!(d.starvation_limit_ms, 5_000);
+        assert_eq!(d.check_every, 1_000);
+        assert_eq!(d.cancel_rate_pct, 5);
+    }
+
+    /// xorshift64 唯一坏点 = 0(恒 0):seed=0 必须替换成金常数,
+    /// 且与显式传入该金常数完全同序列(复现面等价)。
+    #[test]
+    fn rng_seed_zero_substitutes_golden_constant() {
+        const GOLDEN: u64 = 0x9E37_79B9_7F4A_7C15;
+        assert_eq!(Rng::new(0).0, GOLDEN);
+        let mut a = Rng::new(0);
+        let mut b = Rng::new(GOLDEN);
+        for _ in 0..8 {
+            assert_eq!(a.next(), b.next());
+            assert_eq!(a.below(97), b.below(97));
+        }
+        // below(0)/below(1) 恒 0(除零守卫)。
+        assert_eq!(Rng::new(7).below(0), 0);
+        assert_eq!(Rng::new(7).below(1), 0);
+    }
+
+    /// 已排空、带 n 个终态驻留条目的调度器(直测 assert_invariants 用)。
+    fn drained_with_terminals(n: u64) -> Scheduler {
+        let mut s = Scheduler::new(SchedulerOptions::default());
+        for op in 1..=n {
+            s.enqueue(make_spec(
+                TaskKind::SingleFileUpdate,
+                3,
+                Some(&format!("/cov/term-{op}.def")),
+                Some(op),
+                op,
+                false,
+            ));
+            s.drain(1_000);
+        }
+        s
+    }
+
+    fn probe(s: &mut Scheduler, created: u64, cancel_successes: u64) -> StressViolation {
+        let mut peaks = Peaks::default();
+        let mut checks = 0u64;
+        assert_invariants(s, 1, created, cancel_successes, &mut peaks, &mut checks)
+            .expect_err("上述参数组合必然破坏对应不变量")
+    }
+
+    /// 计数不守恒臂:虚报 created → completed+failed+cancelled != created。
+    #[test]
+    fn assert_invariants_flags_count_violation() {
+        let mut s = drained_with_terminals(3);
+        let v = probe(&mut s, 4, 0);
+        assert_eq!(v.kind, "count-violation");
+        assert!(
+            v.detail
+                .contains("completed+failed+cancelled=3 != created=4"),
+            "{}",
+            v.detail
+        );
+    }
+
+    /// 取消泄漏臂:cancel 成功数虚报 → cancelled < cancel_successes。
+    #[test]
+    fn assert_invariants_flags_cancel_leak() {
+        let mut s = drained_with_terminals(2);
+        let v = probe(&mut s, 2, 1);
+        assert_eq!(v.kind, "cancel-leak");
+        assert!(
+            v.detail.contains("cancel 成功 1 次但 cancelled 仅 0"),
+            "{}",
+            v.detail
+        );
+    }
+
+    /// Ok 路径峰值采样:排空后驻留终态条目要回写 peaks.retained
+    /// (run_stress 主循环先自采峰值,此臂只在直测面可见)。
+    #[test]
+    fn assert_invariants_ok_updates_peak_retained() {
+        let mut s = drained_with_terminals(3);
+        let mut peaks = Peaks::default();
+        let mut checks = 0u64;
+        assert_invariants(&mut s, 1, 3, 0, &mut peaks, &mut checks).expect("守恒成立");
+        assert_eq!(checks, 1);
+        assert_eq!(peaks.retained, 3, "驻留终态条目数回写峰值");
+    }
+
+    /// 排空失败臂:交互冷却 >> drain 预算(60s)且抗饥饿上限更远时,
+    /// 后台任务在预算内无法晋升 → 检测器按「排不掉 = 永久卡住」红。
+    /// (口径:钉检测器守卫与诊断内容,不是真死锁;生产缺省冷却 50ms << 60s。)
+    #[test]
+    fn assert_invariants_reports_undrained_queue_as_deadlock() {
+        let mut s = Scheduler::new(SchedulerOptions {
+            interactive_cooldown_ms: 200_000,
+            starvation_limit_ms: 400_000,
+            max_queued: None,
+        });
+        // 先跑一个交互任务,锚定冷却窗口起点。
+        s.enqueue(make_spec(
+            TaskKind::SingleFileUpdate,
+            0,
+            Some("/cov/interactive.def"),
+            Some(1),
+            1,
+            false,
+        ));
+        s.drain(1_000);
+        // 再入队后台任务:drain(60s) 内既过不了冷却也够不着饥饿晋升。
+        s.enqueue(make_spec(
+            TaskKind::SingleFileUpdate,
+            3,
+            Some("/cov/background.def"),
+            Some(2),
+            2,
+            false,
+        ));
+        let v = probe(&mut s, 2, 0);
+        assert_eq!(v.kind, "deadlock-or-permanent-pending");
+        assert!(v.detail.contains("queued=1"), "{}", v.detail);
+    }
+
+    /// 检测器失败经 run_stress 传播:周期断言(310 的 `?`)与终局断言
+    /// (321 的 `?`)两条车道都必须把 Err 原样带回调用方。
+    ///
+    /// 冷却窗口由交互任务锚定(无交互入队时 NEVER_MS 使后台不受节流),
+    /// 200 ops 下必有交互任务入队(确定性 seed,非概率断言)。
+    #[test]
+    fn run_stress_propagates_detector_failure_from_periodic_and_final_checks() {
+        let undrainable = |check_every: u64| StressOptions {
+            total_ops: 200,
+            max_queued: 0,
+            interactive_cooldown_ms: 200_000,
+            starvation_limit_ms: 400_000,
+            check_every,
+            cancel_rate_pct: 0,
+        };
+        // 周期断言:op=50 时 drain 预算耗尽即红。
+        let v = run_stress(1, undrainable(50)).expect_err("周期断言必传播失败");
+        assert_eq!(v.kind, "deadlock-or-permanent-pending");
+        // 终局断言:check_every=0 关掉周期面,只走收尾 `?`。
+        let v = run_stress(1, undrainable(0)).expect_err("终局断言必传播失败");
+        assert_eq!(v.kind, "deadlock-or-permanent-pending");
+    }
+
+    /// 风暴落盘丢弃臂:队列里已有同文件新版本(v9),缓冲再落旧版本(v5)
+    /// → StaleDropped → 「风暴事件未被接受」红(单调版本承诺被破坏面)。
+    #[test]
+    fn flush_storm_buffer_reports_stale_drop() {
+        let mut s = Scheduler::new(SchedulerOptions::default());
+        let mut buffer = crate::StormBuffer::new(64);
+        let mut totals = StormTotals::new();
+        buffer.record("/cov/storm.py".to_string(), 9, 3);
+        flush_storm_buffer(&mut s, &mut buffer, &mut totals).expect("首条新鲜事件必被接受");
+        buffer.record("/cov/storm.py".to_string(), 5, 3);
+        let v = flush_storm_buffer(&mut s, &mut buffer, &mut totals)
+            .expect_err("旧版本必然 StaleDropped");
+        assert_eq!(v.kind, "storm-event-dropped");
+        assert!(
+            v.detail.contains("v5 未被接受(decision=StaleDropped"),
+            "{}",
+            v.detail
+        );
+        // 口径:landed = 离开缓冲进入落盘流程的事件数(先计数后判收),
+        // 接受与否由 Err 表达;created 只在真入队时 +1。
+        assert_eq!(totals.landed, 2);
+        assert_eq!(totals.created, 1);
+    }
+}

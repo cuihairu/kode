@@ -290,4 +290,65 @@ mod tests {
         assert!(dbg.contains("sinks: 1"), "{dbg}");
         assert!(!dbg.contains("sink-a"), "sink 内部不得泄漏进 Debug");
     }
+
+    /// DocumentStore 内建消费面:回执名 + 只清被撤根的驻留文档。
+    #[test]
+    fn document_store_sink_receipt_and_root_isolation() {
+        let mut session = WorkspaceSession::new();
+        let a = session.add_root("/w/alpha");
+        let b = session.add_root("/w/beta");
+        let store = Rc::new(RefCell::new(DocumentStore::new()));
+        store
+            .borrow_mut()
+            .open(
+                DocumentKey::new(a, uri("/w/alpha/Avatar.def")),
+                1,
+                "<root/>",
+            )
+            .expect("open alpha doc");
+        store
+            .borrow_mut()
+            .open(
+                DocumentKey::new(b, uri("/w/beta/Monster.def")),
+                1,
+                "<root/>",
+            )
+            .expect("open beta doc");
+        session.register_sink(store.clone());
+        let removal = session.remove_root("/w/alpha").expect("撤 alpha");
+        assert_eq!(removal.invalidated, vec![("document-store", 1)]);
+        // beta 文档必须幸存:扇出只清被撤根的驻留条目。
+        assert!(store
+            .borrow()
+            .is_open(&DocumentKey::new(b, uri("/w/beta/Monster.def"))));
+        assert!(!store
+            .borrow()
+            .is_open(&DocumentKey::new(a, uri("/w/alpha/Avatar.def"))));
+    }
+
+    /// 查询面三件:sink_count / roots 列表 / overlapping_roots(嵌套根冲突)。
+    #[test]
+    fn sink_count_roots_listing_and_overlapping_roots() {
+        let mut session = WorkspaceSession::new();
+        assert_eq!(session.sink_count(), 0);
+        session.register_sink(Rc::new(RefCell::new(NamedLog::new("a"))));
+        session.register_sink(Rc::new(RefCell::new(NamedLog::new("b"))));
+        assert_eq!(session.sink_count(), 2);
+
+        let a = session.add_root("/w/alpha");
+        let nested = session.add_root("/w/alpha/nested");
+        let listing = session.roots();
+        assert_eq!(listing.len(), 2);
+        assert!(listing.contains(&(a, "/w/alpha".to_string())));
+        assert!(listing.contains(&(nested, "/w/alpha/nested".to_string())));
+
+        // 嵌套根同时命中同一 URI:>1 即根冲突面。
+        let hits = session.overlapping_roots(&uri("/w/alpha/nested/Monster.def"));
+        assert_eq!(hits.len(), 2, "内外两层根都命中");
+        assert!(hits.contains(&a) && hits.contains(&nested));
+        // 根外路径无命中。
+        assert!(session
+            .overlapping_roots(&uri("/elsewhere/x.def"))
+            .is_empty());
+    }
 }

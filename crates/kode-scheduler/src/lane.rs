@@ -252,4 +252,14 @@ mod tests {
         // 释放后容量恢复:同一泳道可重新准入。
         assert!(gate.try_admit(TaskLane::Io));
     }
+
+    /// 交互泳道读数/释放入口(预留位语义的记账面)。
+    #[test]
+    fn interactive_lane_running_read_and_release() {
+        let mut gate = LaneGate::new(LaneBudget::from_total(4)).expect("valid budget");
+        assert!(gate.try_admit(TaskLane::Interactive));
+        assert_eq!(gate.running(TaskLane::Interactive), 1);
+        assert!(gate.release(TaskLane::Interactive));
+        assert_eq!(gate.running(TaskLane::Interactive), 0);
+    }
 }
