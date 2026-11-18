@@ -481,4 +481,108 @@ mod tests {
             )
             .is_unavailable());
     }
+
+    #[test]
+    fn expr_kind_view_from_all_variants() {
+        // From<&ExprKind> 全臂直证:Attribute/Subscript(键 Some·None 两脸)/
+        // LocalAssign/Unknown——视图镜像核心型,字段逐一透传。
+        assert_eq!(
+            ExprKindView::from(&ExprKind::Attribute {
+                base: "self".into(),
+                attr: "cell".into()
+            }),
+            ExprKindView::Attribute {
+                base: "self".into(),
+                attr: "cell".into()
+            }
+        );
+        assert_eq!(
+            ExprKindView::from(&ExprKind::Subscript {
+                base: "v".into(),
+                key: Some("0".into())
+            }),
+            ExprKindView::Subscript {
+                base: "v".into(),
+                key: Some("0".into())
+            }
+        );
+        assert_eq!(
+            ExprKindView::from(&ExprKind::Subscript {
+                base: "v".into(),
+                key: None
+            }),
+            ExprKindView::Subscript {
+                base: "v".into(),
+                key: None
+            }
+        );
+        assert_eq!(
+            ExprKindView::from(&ExprKind::LocalAssign {
+                target: "hp".into()
+            }),
+            ExprKindView::LocalAssign {
+                target: "hp".into()
+            }
+        );
+        assert_eq!(
+            ExprKindView::from(&ExprKind::Unknown("bare-name".into())),
+            ExprKindView::Unknown {
+                reason: "bare-name".into()
+            }
+        );
+    }
+
+    #[test]
+    fn expr_kind_and_binding_miss_faces() {
+        // 位置无表达式 → ExprKind(None);名字无绑定 → BindingAt(None)
+        //(None 是定义好的查询结果,非降级)。
+        let e = ContractEngine::new(RootId(1));
+        // 无表达式源(pass 语句):位置落点无表达式 → None
+        //(注意:line 越界会被钳到末语句,不是 None 面)。
+        let src = "pass\n";
+        assert_eq!(
+            e.query(
+                &QueryRequest::ExprKind {
+                    uri: "u".into(),
+                    line: 0,
+                    col: 0
+                },
+                Some(src)
+            ),
+            QueryResponse::ExprKind(None)
+        );
+        let src = "v = 1\n";
+        assert_eq!(
+            e.query(
+                &QueryRequest::BindingAt {
+                    uri: "u".into(),
+                    line: 0,
+                    col: 0,
+                    name: "zzz".into()
+                },
+                Some(src)
+            ),
+            QueryResponse::BindingAt(None)
+        );
+    }
+
+    #[test]
+    fn invalidate_without_deps_degrades_and_absent_key_is_none() {
+        // 未注入依赖图 → Invalidate 降级 Unavailable;库在而键不在 →
+        // EntitySnapshot(None)(区别于无库的 Unavailable)。
+        let e = ContractEngine::new(RootId(1));
+        assert!(e
+            .query(&QueryRequest::Invalidate { uri: "u".into() }, None)
+            .is_unavailable());
+        let with_store = ContractEngine::new(RootId(1)).with_defs(SnapshotStore::new());
+        assert_eq!(
+            with_store.query(
+                &QueryRequest::EntitySnapshot {
+                    uri: "/nope.def".into()
+                },
+                None
+            ),
+            QueryResponse::EntitySnapshot(None)
+        );
+    }
 }
