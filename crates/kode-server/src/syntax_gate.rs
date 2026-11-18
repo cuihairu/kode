@@ -128,7 +128,10 @@ pub fn syntax_gate(text: &str) -> SyntaxGateResult {
         reasons.push(format!("unclosed-bracket '{open}' from line {line_no}"));
     }
 
-    SyntaxGateResult { ok: reasons.is_empty(), reasons }
+    SyntaxGateResult {
+        ok: reasons.is_empty(),
+        reasons,
+    }
 }
 
 /// 段扫描:只做括号配平与未闭合字符串定位(缩进判定不在此面)。
@@ -283,21 +286,30 @@ mod tests {
     fn rejects_mismatched_bracket() {
         let result = syntax_gate("x = (1, 2]\n");
         assert!(!result.ok);
-        assert!(result.reasons.iter().any(|r| r.contains("unbalanced-bracket")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|r| r.contains("unbalanced-bracket")));
     }
 
     #[test]
     fn rejects_unterminated_string() {
         let result = syntax_gate("x = 'abc\n");
         assert!(!result.ok);
-        assert!(result.reasons.iter().any(|r| r.contains("unterminated-string")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|r| r.contains("unterminated-string")));
     }
 
     #[test]
     fn rejects_unterminated_triple_string() {
         let result = syntax_gate("doc = '''\nstuff\n");
         assert!(!result.ok);
-        assert!(result.reasons.iter().any(|r| r.contains("unterminated-string")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|r| r.contains("unterminated-string")));
     }
 
     #[test]
@@ -312,7 +324,10 @@ mod tests {
         // dedent 到 2 空格(从未出现的层级)= 烂
         let result = syntax_gate("def f():\n        x = 1\n  y = 2\n");
         assert!(!result.ok);
-        assert!(result.reasons.iter().any(|r| r.contains("inconsistent-dedent")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|r| r.contains("inconsistent-dedent")));
     }
 
     #[test]
@@ -339,5 +354,53 @@ mod tests {
         let out = syntax_gate_handler(json!({ "text": "x = (" })).unwrap();
         assert_eq!(out["ok"], false);
         assert!(!out["reasons"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn indent_mixed_dedent_pop_and_flush_clear_faces() {
+        // 同一行内 space+tab 混用 → mixed-indent。
+        let mixed = syntax_gate("x = 1\n \ty = 2\n");
+        assert!(!mixed.ok, "reasons={:?}", mixed.reasons);
+        assert!(mixed
+            .reasons
+            .iter()
+            .any(|r| r.contains("mixed-indent at line 2")));
+        // 回既有层级:更深层级出栈,合法 dedent。
+        let dedent = syntax_gate("if a:\n    b = 1\n    if c:\n        d = 2\n    e = 5\n");
+        assert!(dedent.ok, "reasons={:?}", dedent.reasons);
+        // 顶格非空行:全部层级清栈。
+        let flush = syntax_gate("x = 1\n    y = 2\nz = 3\n");
+        assert!(flush.ok, "reasons={:?}", flush.reasons);
+    }
+
+    #[test]
+    fn bracket_mismatch_maps_expected_and_empty_stack_closer() {
+        // 错配闭符按开符映射期望字符(此处 [ 开在 ( 上,期望 ']')。
+        let mismatched = syntax_gate("([)]\n");
+        assert!(!mismatched.ok);
+        assert!(mismatched
+            .reasons
+            .iter()
+            .any(|r| r.contains("(expected ']' for line 1)")));
+        // 空栈闭符:无 (expected 尾巴的裸报。
+        let orphan = syntax_gate("x = )\n");
+        assert!(!orphan.ok);
+        assert!(orphan
+            .reasons
+            .iter()
+            .any(|r| r == "unbalanced-bracket at line 1"));
+    }
+
+    #[test]
+    fn string_reopen_after_close_code_backslash_and_body_escape() {
+        // 三引号收尾后同线又开新三引号 → 重回三引号态,整体仍配平。
+        let reopen = syntax_gate("a = \"\"\"text\nend\"\"\" b = \"\"\"\ntail\n\"\"\"\n");
+        assert!(reopen.ok, "reasons={:?}", reopen.reasons);
+        // 码位反斜杠(串外):字节对跳过,不影响配平。
+        let code_bs = syntax_gate("a = 1 \\ 2\n");
+        assert!(code_bs.ok, "reasons={:?}", code_bs.reasons);
+        // 三引号体内转义对被跳过后才认收尾引号。
+        let body_esc = syntax_gate("a = \"\"\"\nsay(\\\"hi\\\")\n\"\"\"\n");
+        assert!(body_esc.ok, "reasons={:?}", body_esc.reasons);
     }
 }
