@@ -9,6 +9,7 @@ import { flushActivateProfile, markActivateStage } from './backend/activationPro
 
 
 import { resolveActiveProfile } from './activeProfile';
+import { ensureActiveProfileEngineRoot } from './engineRootAutoFill';
 
 
 import { setJumpLogEnabled } from './navigationLog';
@@ -224,6 +225,13 @@ export function activate(context: vscode.ExtensionContext) {
   // AI-001(方案 C):AI 底座惰性注册——未配置 endpoint 且宿主无 lm 模型时
   // 零命令零成本;注册失败静默不碍主链。
   void registerAiCommands(context, context.secrets).catch(() => undefined);
+
+  // 2026-11-18 P0(用户亲报「扫描之后提示缺引擎 未记录引擎根」):活动 profile
+  // 的引擎根为空时,启动即向上探一次双 marker 并持久化——探测能力与
+  // saveRoots 接口本就现成,只是没接起来。放在 L2 之前:缓存/断点的版本
+  // 淘汰键由引擎主版本惰性解析,晚补录也生效;探测不中不写,engine-missing
+  // 仍照报(如实保持缺失)。
+  void ensureActiveProfileEngineRoot(context.workspaceState).catch(() => undefined);
 
 
   // SRC-001 L2 语言服务层(KODE-ARCH 纯移动):20+ 语言 provider 装配与
