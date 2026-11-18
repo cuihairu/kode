@@ -3249,7 +3249,11 @@ mod tests {
         assert!(infer_self_attribute_flow(&lines, 1, &[], None)
             .expect("infer not cancelled")
             .is_none());
-        assert!(infer_self_attribute_flow(&lines, usize::MAX, &attr_u16("x"), None).expect("not cancelled").is_none());
+        assert!(
+            infer_self_attribute_flow(&lines, usize::MAX, &attr_u16("x"), None)
+                .expect("not cancelled")
+                .is_none()
+        );
     }
 
     #[test]
@@ -3430,7 +3434,9 @@ mod tests {
             "        if other:",
             "",
         ]);
-        assert!(infer_self_attribute_flow(&lines, 4, &attr_u16("x"), None).expect("not cancelled").is_some());
+        assert!(infer_self_attribute_flow(&lines, 4, &attr_u16("x"), None)
+            .expect("not cancelled")
+            .is_some());
     }
 
     #[test]
@@ -3497,14 +3503,22 @@ mod tests {
             "        y = self.X",
         ]);
         let key = "file:///a.py|9";
-        let a = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key)).expect("not cancelled").unwrap();
-        let b = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key)).expect("not cancelled").unwrap();
+        let a = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key))
+            .expect("not cancelled")
+            .unwrap();
+        let b = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key))
+            .expect("not cancelled")
+            .unwrap();
         assert_eq!(a.annotation, b.annotation);
         // 异键/无键照常
         assert!(
-            infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some("file:///a.py|10")).expect("not cancelled").is_some()
+            infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some("file:///a.py|10"))
+                .expect("not cancelled")
+                .is_some()
         );
-        assert!(infer_self_attribute_flow(&lines, 5, &attr_u16("X"), None).expect("not cancelled").is_some());
+        assert!(infer_self_attribute_flow(&lines, 5, &attr_u16("X"), None)
+            .expect("not cancelled")
+            .is_some());
     }
 
     // ---- 精确性主车道批 A:AST 真域 ------------------------------------
@@ -4174,5 +4188,576 @@ mod tests {
         ];
         assert_eq!(flow(&body, 3, "s").types, vec!["str"]);
         assert_eq!(flow(&body, 3, "x").types, Vec::<String>::new());
+    }
+
+    // ---- COV-1 覆盖提满批(2026-11-19):按 llvm-cov 缺口清单逐臂补测 ----
+    // 命名规约:cov_<主题>;每条瞄准一组未盖行(注释给行域,防漂移后失义)。
+
+    /// 流树构建臂:While(628-638)/Match Join+With(678-693),及查询定位
+    /// 分支:while 体内(943-948)/头行与体外(950-954)/match case 内
+    /// (956-967)/case 外(969-973)/if 头行间隙(915-919);else-of-真值
+    /// 死支查询(899-913)与 while-else(836-837)、双亡合流(820-826)。
+    #[test]
+    fn cov_flow_tree_while_match_with_queries() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        self.a = None",
+            "        while flag:",    // 3
+            "            self.a = 1", // 4
+            "        else:",
+            "            self.a = 's'", // 6
+            "        match v:",         // 7
+            "            case 1:",
+            "                self.a = 2", // 9
+            "            case _:",
+            "                self.a = 3", // 11
+            "        with c:",
+            "            self.a = 4", // 13
+            "        return self.a",  // 14
+        ];
+        let at_header = flow(&body, 3, "a"); // 头行:入口值(None)
+        assert!(at_header.has_none, "header query keeps entry None");
+        let in_body = flow(&body, 4, "a"); // 体内写点环回保守
+        assert!(
+            in_body.types.iter().any(|t| t == "None" || t == "int"),
+            "body query folds write/entry: {:?}",
+            in_body.types
+        );
+        let in_case = flow(&body, 9, "a"); // Join 块内
+        assert!(
+            in_case.types.iter().any(|t| t == "int"),
+            "case body sees its write: {:?}",
+            in_case.types
+        );
+        let after = flow(&body, 14, "a"); // 全树合流
+                                          // while 0 次执行路径保守并入入口 None(CFGFLOW 保守过近似)
+        assert_eq!(
+            after.types,
+            vec!["None".to_string(), "int".to_string(), "str".to_string()]
+        );
+    }
+
+    #[test]
+    fn cov_const_bool_dead_branch_queries() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        self.a = 'init'",
+            "        if False:",      // 3 死 then
+            "            self.a = 1", // 4
+            "        if True:",       // 5
+            "            self.a = 2", // 6
+            "        else:",
+            "            self.a = 3", // 8 静态死 else:查询位 → Unbound
+            "        if None:",       // 9
+            "            self.a = 4", // 10
+            "        if 0:",          // 11
+            "            self.a = 5", // 12
+            "        if not 0:",      // 13
+            "            self.a = 6", // 14
+            "        if '':",         // 15
+            "            self.a = 7", // 16
+            "        if b'x':",       // 17
+            "            self.a = 8", // 18
+            "        if 0.0:",        // 19
+            "            self.a = 9", // 20
+            "        return self.a",  // 21
+        ];
+        // 写行命中短路:查询位=写点行时直接回该写值(即使身处静态死 else)
+        assert_eq!(flow(&body, 8, "a").types, vec!["int".to_string()]);
+        let dead_pass: Vec<&str> = vec![
+            "class K:",
+            "    def m(self):",
+            "        self.a = 'x'",
+            "        if True:",
+            "            self.a = 1",
+            "        else:",
+            "            pass", // 6 查询位:死 else 内非写行 → 899-913 Unbound
+        ];
+        // 死 else 内非写行:现实现并 then 出口+入口(实测钉板)
+        assert_eq!(
+            flow(&dead_pass, 6, "a").types,
+            vec!["int".to_string(), "str".to_string()]
+        );
+        let after = flow(&body, 21, "a");
+        // 死支不产出口:活写点(int)2/6/8/14/18 + 入口 str;None 写点(9)在死支
+        assert_eq!(after.types, vec!["int".to_string(), "str".to_string()]);
+        assert!(!after.has_none, "{:?}", after.types);
+    }
+
+    #[test]
+    fn cov_both_branches_terminated_unreachable_after() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        self.a = 'x'",
+            "        if True:", // 3 then 唯一活支且终止,无 else → any_live=false(820-826)
+            "            return",
+            "        return self.a", // 5 查询位:合流终止后的非写行
+        ];
+        // any_live=false(820-826):终止合流,终值=入口写点 str
+        assert_eq!(flow(&body, 5, "a").types, vec!["str".to_string()]);
+    }
+
+    /// 数值/字面原子臂:complex 字面(308/326/357)、TString(313)、
+    /// 一元 ±(349-352)、walrus(350)。
+    #[test]
+    fn cov_numeric_atom_variants() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        self.c = 1j",        // 2
+            "        self.h = 2j",        // 3
+            "        self.d = -xx",       // 4 一元负,操作数名 → Unknown
+            "        self.e = +yy",       // 5
+            "        self.f = (zz := 5)", // 6 walrus → int
+            "        self.g = t'hi'",     // 7 模板串 → str
+            "        return",
+        ];
+        assert_eq!(flow(&body, 2, "c").types, vec!["complex".to_string()]);
+        assert_eq!(flow(&body, 3, "h").types, vec!["complex".to_string()]);
+        let unknown_unary = flow(&body, 4, "d");
+        assert!(
+            unknown_unary.types.is_empty(),
+            "unary over name is unknown: {:?}",
+            unknown_unary.types
+        );
+        assert_eq!(flow(&body, 6, "f").types, vec!["int".to_string()]);
+        assert_eq!(flow(&body, 7, "g").types, vec!["str".to_string()]);
+    }
+
+    /// 行基础判定:tab 缩进(109-110)与行扫描器 none_guard/
+    /// not_none_guard/any_block_open 全臂直调。
+    #[test]
+    fn cov_line_scanners_direct_arms() {
+        assert_eq!(indent_of(&"\t x".encode_utf16().collect::<Vec<u16>>()), 5);
+        assert_eq!(indent_of(&"  y".encode_utf16().collect::<Vec<u16>>()), 2);
+        assert_eq!(indent_of(&"z".encode_utf16().collect::<Vec<u16>>()), 0);
+
+        let a = attr_u16("ESC");
+        let u = |s: &str| -> Vec<u16> { s.encode_utf16().collect() };
+        // none_guard:命中 + 各失败位(词间无空格/缺点/属性不符/缺冒号)
+        assert!(none_guard(&u("    if self.ESC is None:"), &a));
+        assert!(!none_guard(&u("    ifself.ESC is None:"), &a));
+        assert!(!none_guard(&u("    if selfESC is None:"), &a));
+        assert!(!none_guard(&u("    if self.OTHER is None:"), &a));
+        assert!(!none_guard(&u("    if self.ESC is None"), &a));
+        assert!(!none_guard(&u("    if self.ESC are None:"), &a));
+        // not_none_guard(整体未盖 → 全臂)。**现状钉板**:词循环要求
+        // `self` 后必须有空白再 `.`——正常 Python 形态 `self.ESC` 永假,
+        // 与 TS 真源(selfAttributeFlowTypes.ts notNoneGuard,`self\.` 无
+        // 空白)及本函数 doc 相悖;已登记 COV-1 finding,修复归独立批
+        // (会翻转 is_not_none_guard_terminal_and_block_stop 等钉板)。
+        assert!(!not_none_guard(&u("if self.ESC is not None:"), &a)); // 分歧形态
+        assert!(not_none_guard(&u("if self .ESC is not None:"), &a)); // 现状唯一接受形态
+        assert!(not_none_guard(
+            &u("   if  self  .ESC  is  not  None  :"),
+            &a
+        ));
+        assert!(!not_none_guard(&u("if self .ESC is not None"), &a));
+        assert!(!not_none_guard(&u("ifself .ESC is not None:"), &a));
+        assert!(!not_none_guard(&u("if self .X is not None:"), &a));
+        assert!(!not_none_guard(&u("if self .ESC are not None:"), &a));
+        // any_block_open:关键字 + 词界失败继续试后续交替
+        assert!(any_block_open(&u("  if x:")));
+        assert!(!any_block_open(&u("elsewhere = 1"))); // 'else' 词界败,余者不匹配
+        assert!(any_block_open(&u("finally:")));
+        assert!(any_block_open(&u("with a as b:")));
+        assert!(!any_block_open(&u("return 1")));
+    }
+
+    /// LRU 逐出(2332-2334):容量 8,插 9 键必逐最旧。
+    #[test]
+    fn cov_parse_cache_lru_eviction() {
+        reset_self_attribute_flow_parse_cache_for_tests();
+        let lines = lines_of(&["class K:", "    def m(self):", "        self.a = 1"]);
+        for i in 0..=PARSE_CACHE_MAX_ENTRIES {
+            flow_parse(&lines, Some(&format!("evict-{i}")))
+                .unwrap_or_else(|e| panic!("parse {i}: {e}"));
+        }
+        reset_self_attribute_flow_parse_cache_for_tests();
+    }
+
+    /// 取消探针(RUST-072):Err 早穿(2869/2896 收敛臂须经缓存命中
+    /// 越过解析检查点才可达)。
+    #[test]
+    fn cov_cancel_probe_err_propagation() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        let lines = lines_of(&[
+            "g = 1",
+            "class K:",
+            "    x = g",
+            "    def m(self):",
+            "        self.a = g",
+            "        return self.a",
+        ]);
+        // 预热两个域的缓存(方法域 + 类体域)
+        flow_parse(&lines, Some("cancel-warm")).expect("warm");
+        infer_self_attribute_flow(&lines, 4, &attr_u16("a"), Some("cancel-warm"))
+            .expect("infer warm");
+        crate::cancel::set_probe(Some(Arc::new(AtomicBool::new(true))));
+        // 解析期检查点(flow_parse_from_lines 三检查点)
+        assert!(matches!(
+            flow_parse(&lines, None),
+            Err(crate::cancel::CANCELLED_MSG)
+        ));
+        // 缓存命中越过解析 → 收敛/方法域臂的 `?`(2869/2896)
+        assert!(matches!(
+            infer_self_attribute_flow(&lines, 4, &attr_u16("a"), Some("cancel-warm")),
+            Err(crate::cancel::CANCELLED_MSG)
+        ));
+        assert!(matches!(
+            infer_self_attribute_flow(&lines, 2, &attr_u16("x"), Some("cancel-warm")),
+            Err(crate::cancel::CANCELLED_MSG)
+        ));
+        crate::cancel::set_probe(None);
+    }
+
+    /// 类体/模块体 walker 臂:while/with/match/try 各嵌套位
+    /// (232-249,1167-1229,1381-1445,1586-1642)。
+    #[test]
+    fn cov_class_and_module_walker_stmt_kinds() {
+        let body = [
+            "flag = 1",
+            "while flag:", // 1 模块级 while(1381-1385)
+            "    def mod_w(): pass",
+            "with flag:", // 3 模块级 with(1385)
+            "    def mod_x(): pass",
+            "match flag:", // 5 模块级 match(1395-1398)
+            "    case 1:",
+            "        def mod_m(): pass",
+            "class Outer:",
+            "    y = 1",
+            "    while y:", // 10 类体 while(232-236,1428-1431,1586-1595)
+            "        class InW: pass",
+            "    with y:", // 12 类体 with(236,1432,1597-1606)
+            "        class InX: pass",
+            "    match y:", // 14 类体 match(246-249,1442-1445,1631-1642)
+            "        case 1:",
+            "            class InM: pass",
+            "    try:", // 17 类体 try(1433-1441)
+            "        def cm(self): pass",
+            "    except Exception:",
+            "        pass",
+            "    for y2 in range(2):", // 21 类体 for(1424-1427)
+            "        def cm2(self): pass",
+            "    def flow_method(self):",
+            "        self.attr = None",
+            "        for i in range(3):", // 25 方法体 for(1167-1170,1208-1211)
+            "            def in_for(): pass",
+            "        else:",
+            "            self.attr = 2",
+            "        while self.attr:", // 29(1171-1174,1212-1215)
+            "            pass",
+            "        else:",
+            "            pass",
+            "        with open('f') as fh:", // 33(1175,1216)
+            "            pass",
+            "        match self.attr:", // 35(1185-1188,1226-1229)
+            "            case 1:",
+            "                pass",
+            "        if flag:",
+            "            if flag:", // elif 链(1421)
+            "                pass",
+            "            elif flag:",
+            "                pass",
+            "        try:",
+            "            def in_try(): pass",
+            "        except Exception:",
+            "            self.attr = True",
+            "        return self.attr", // 46
+        ];
+        let after = flow(&body, 46, "attr");
+        assert!(
+            after.types.contains(&"int".to_string()) || after.types.contains(&"bool".to_string()),
+            "walkers feed the flow: {:?}",
+            after.types
+        );
+    }
+
+    /// 嵌套类最小域(2572-2573)与单行方法缩进回退(2602-2604)、
+    /// 单行类直系(1503)、类体 global(1493)、lambda 域(1742)。
+    #[test]
+    fn cov_domain_picks_and_single_line_forms() {
+        let nested = [
+            "class A:",
+            "    class B:",
+            "        def inner(self):",
+            "            self.x = 1", // 3 查询位(嵌套类方法)
+            "    def outer(self):",
+            "        self.x = 's'",
+        ];
+        // 嵌套类方法域最小拾取(2572):inner 域写点可见
+        assert_eq!(flow(&nested, 3, "x").types, vec!["int".to_string()]);
+
+        let single = [
+            "class S:",
+            "    def m(self): self.a = 1",    // 单行方法体
+            "    def n(self): return self.a", // 2 查询位
+        ];
+        // 单行 def 体:缩进回退吃臂(2602-2604),写点不进表 → 空集(实测钉板)
+        assert_eq!(flow(&single, 2, "a").types, Vec::<String>::new());
+
+        // 单行类 + 同行直系赋值(基线行域不含类行 continue)
+        let one_line = ["class OL: x = 1", "def use(): return OL.x"];
+        flow_parse(&lines_of(&one_line), None).expect("single-line class parses");
+
+        let lam = [
+            "class L:",
+            "    def m(self):",
+            "        self.a = 1",
+            "        f = lambda: self.a", // 3 lambda 域登记(1742)+最小域拾取(2572)
+        ];
+        // lambda 最小域拾取(2572):域内查询可见先前写点
+        assert_eq!(flow(&lam, 3, "a").types, vec!["int".to_string()]);
+
+        let glob = [
+            "g = 1", // 模块名
+            "class G:",
+            "    global g", // 类体 global 声明(1493)
+            "    def m(self):",
+            "        self.a = g", // 4
+        ];
+        // 类体 global 声明(1493)后,方法内见模块名 g 的 int
+        assert_eq!(flow(&glob, 4, "a").types, vec!["int".to_string()]);
+    }
+
+    /// 绑定/被调臂:类体裸名绑定(2004-2019)、方法内 local 别名
+    /// (2015-2016)、模块级裸写别名(2053-2062)、global/nonlocal 让位
+    /// (1965)、未知接收者不猜(2207)、CalleeBinding 两态(2166-2167)。
+    #[test]
+    fn cov_binding_and_callee_arms() {
+        let body = [
+            "alias = list", // 模块级裸写(2053-2062)
+            "class K:",
+            "    helper = dict", // 类体直系(2004-2019)
+            "    def m(self):",
+            "        self.a = helper", // 4 类绑定名
+            "        b = alias",       // local 别名
+            "        self.b = b",      // 6 Local(alias) → local_atom
+            "        global alias",    // 1965 global 让位
+            "        self.c = alias",
+            "        self.d = self.unknown_attr.method()", // 2207 接收者不唯一
+            "        self.e = self.helper()",              // 2166/2167 被调绑定
+            "        self.f = make_unknown()",             // 未知名被调
+            "        nonlocal_marker = 1",
+            "        def inner():",
+            "            nonlocal nonlocal_marker", // nonlocal 让位(同 1965 面)
+            "            self.g = nonlocal_marker",
+            "        return",
+        ];
+        // 走通各查询位(吃臂为主;值断言只钉确定的)
+        // 裸名/别名绑定臂(2004-2062):local_atom 无类型面 → 空集(实测钉板)
+        assert_eq!(flow(&body, 4, "a").types, Vec::<String>::new());
+        assert_eq!(flow(&body, 6, "b").types, Vec::<String>::new());
+        assert_eq!(flow(&body, 8, "c").types, Vec::<String>::new());
+        let _ = flow(&body, 6, "b");
+        let _ = flow(&body, 8, "c");
+        let _ = flow(&body, 9, "d");
+        let _ = flow(&body, 10, "e");
+        let _ = flow(&body, 11, "f");
+        let _ = flow(&body, 15, "g");
+    }
+
+    /// Many 折叠(558-561):环内分支多写点 → 嵌套 Many 展平。
+    #[test]
+    fn cov_flow_val_many_folding() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        self.a = 0",
+            "        while flag:", // 3
+            "            if d:",   // 4
+            "                self.a = 1",
+            "            else:",
+            "                self.a = 2",
+            "        return self.a", // 8
+        ];
+        let after = flow(&body, 8, "a");
+        assert!(
+            after.types.contains(&"int".to_string()) && !after.has_none,
+            "loop-branch writes fold to int: {:?}",
+            after.types
+        );
+    }
+
+    /// 第二轮补针:嵌套 def 最小方法域拾取(2572-2573)、单行 def 头
+    /// 行查询(1467/2602)、类体 elif def 收集(1421-1422)、注解赋值
+    /// lambda 域登记(1742)、any_block_open 短行词长臂(2542)。
+    #[test]
+    fn cov_nested_def_minimal_method_domain() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        self.a = None",
+            "        def inner():",
+            "            self.a = 1", // 4 同时在 m 与 inner 域内 → 最小者胜
+        ];
+        assert_eq!(flow(&body, 4, "a").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_single_line_def_header_query() {
+        let body = [
+            "class S:",
+            "    def m(self): self.a = 1", // 1 单行 def:头行即查询位
+            "    def n(self): return self.a",
+        ];
+        // 单行 def 头行:体不另行,写点不进表 → 空集(实测钉板)
+        assert_eq!(flow(&body, 1, "a").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn cov_class_body_elif_def_collected() {
+        let body = [
+            "class K:",
+            "    if a:",
+            "        pass",
+            "    elif b:",
+            "        def m(self): pass",
+            "    def n(self):",
+            "        self.a = 1", // 6
+        ];
+        assert_eq!(flow(&body, 6, "a").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_ann_assign_lambda_domain_recorded() {
+        let body = [
+            "class L:",
+            "    def m(self):",
+            "        self.a = 1",
+            "        cb: Callable = lambda: self.a", // 3 注解赋值 lambda 入域表
+        ];
+        assert_eq!(flow(&body, 2, "a").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_any_block_open_short_line_and_boundaries() {
+        let u = |s: &str| -> Vec<u16> { s.encode_utf16().collect() };
+        assert!(!any_block_open(&u("w"))); // 短于全部关键字(词长 continue 臂)
+        assert!(!any_block_open(&u("ifx:"))); // 词界失败
+        assert!(any_block_open(&u("except E:")));
+    }
+
+    /// 第三轮补针:守卫扫描器尾臂(2428/2438-2439/2466/2479)、一元
+    /// walrus 数值臂(350)、方法内嵌类跨类域重叠(2572-2573)、单行块
+    /// 与无 dedent 块的扫描器尾(2783/2796)、单行复合语句早退(1700-1702)。
+    #[test]
+    fn cov_guard_scanner_tail_arms() {
+        let a = attr_u16("ESC");
+        let u = |s: &str| -> Vec<u16> { s.encode_utf16().collect() };
+        // none_guard:is 前无空白(2428)/冒号前空白(2438-2439)
+        assert!(!none_guard(&u("    if self.ESCis None:"), &a));
+        assert!(none_guard(&u("    if self.ESC is None  :"), &a));
+        // not_none_guard:缺点(2466)/is 前无空白(2479)
+        assert!(!not_none_guard(&u("if self x is not None:"), &a));
+        assert!(!not_none_guard(&u("if self .ESCis not None:"), &a));
+        // any_block_open:词界失败后续试(2542 一带)
+        assert!(!any_block_open(&u("iffy = 1")));
+        assert!(!any_block_open(&u("elsewhere = 1")));
+    }
+
+    #[test]
+    fn cov_unary_walrus_numeric_atom() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        self.n = -(q := 5)", // 2 一元操作数=walrus → numeric_atom Named(350)
+        ];
+        assert_eq!(flow(&body, 2, "n").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_nested_class_inside_method_domain_overlap() {
+        let body = [
+            "class A:",                   // 0
+            "    def outer(self):",       // 1
+            "        class B:",           // 2
+            "            def m(self):",   // 3
+            "                self.a = 1", // 4 同行在 A.outer 与 B.m 两域
+            "        return",             // 5
+        ];
+        assert_eq!(flow(&body, 4, "a").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_scanner_block_tail_arms() {
+        // 块体直达方法尾(2783)/单行块无体行(2796)
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        if c:",
+            "            self.a = 1", // 3 无 dedent 收尾 → find_block_end 兜底
+        ];
+        assert_eq!(flow(&body, 3, "a").types, vec!["int".to_string()]);
+        let single_block = [
+            "class K:",
+            "    def m(self):",
+            "        if c: pass", // 单行块:无体行
+            "        self.a = 2",
+        ];
+        assert_eq!(flow(&single_block, 3, "a").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_single_line_compound_stmt_early_return() {
+        let body = [
+            "class K:",
+            "    def m(self):",
+            "        if c: self.a = 1", // 2 单行复合:头体同行早退(1700-1702)
+            "        return self.a",
+        ];
+        // 单行复合体:头体同行早退,写点不进表 → 空集(实测钉板)
+        assert_eq!(flow(&body, 3, "a").types, Vec::<String>::new());
+    }
+
+    /// 第四轮补针:基线扫描块尾兜底(2783)/单行块体缩进(2796)/
+    /// 注释尾方法缩进回退(2602)/单行复合体早退(1467)。
+    #[test]
+    fn cov_baseline_scan_block_tails() {
+        let body = [
+            "class K:",
+            "    def __init__(self):",
+            "        if c:",
+            "            self.a = 1", // 3 方法尾无 dedent → find_block_end 兜底(2783)
+            "    def m(self):",
+            "        return self.a", // 5
+        ];
+        assert_eq!(flow(&body, 5, "a").types, vec!["int".to_string()]);
+        let single = [
+            "class K:",
+            "    def __init__(self):",
+            "        if c: pass", // 2 单行块:无体行(2796)
+            "        self.a = 1",
+            "    def m(self):",
+            "        return self.a", // 5
+        ];
+        assert_eq!(flow(&single, 5, "a").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_comment_tail_method_indent_fallback() {
+        let body = [
+            "class S:",
+            "    def m(self):",
+            "        self.a = 1",
+            "    # 尾注释行", // 3 域内全注释 → method_base_indent 回退(2602)
+        ];
+        assert_eq!(flow(&body, 2, "a").types, vec!["int".to_string()]);
+    }
+
+    #[test]
+    fn cov_inline_compound_header_early_return() {
+        let body = [
+            "class S:",
+            "    def m(self):",
+            "        while c: self.a = 1", // 2 头体同行
+            "        return self.a",
+        ];
+        // 单行 while 体:写点不进表 → 空集(实测钉板)
+        assert_eq!(flow(&body, 3, "a").types, Vec::<String>::new());
     }
 }

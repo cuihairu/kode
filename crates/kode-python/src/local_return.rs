@@ -70,10 +70,12 @@ pub fn local_return_type(
         line: hover_line,
         col: hover_column.unwrap_or_else(|| first_non_blank_col(&lines[hover_line])),
     };
-    Ok(face_scan(&fp, &mut state, lines, query, &word, 0, &mut visited).map(|mut face| {
-        face.target = word.clone();
-        face
-    }))
+    Ok(
+        face_scan(&fp, &mut state, lines, query, &word, 0, &mut visited).map(|mut face| {
+            face.target = word.clone();
+            face
+        }),
+    )
 }
 
 /// 全大写/数字/下划线常量名守卫(TS `/^[A-Z_][A-Z0-9_]*$/` 同语义)。
@@ -1610,8 +1612,9 @@ mod tests {
         let lines = lines_of(
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\ndef run():\n    y = a()\n    x = y\n    y = b()\n    return x\n",
         );
-        let face =
-            local_return_type(&lines, 10, Some(11), &wu16("x"), None).expect("not cancelled").expect("别名应命中 a 的 int");
+        let face = local_return_type(&lines, 10, Some(11), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("别名应命中 a 的 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1625,29 +1628,37 @@ mod tests {
             lines_of("def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n");
         // 悬 print(x) 的 x(列 10):写点未执行 → UnboundLocal 诚实空
         assert!(
-            local_return_type(&lines, 4, Some(10), &wu16("x"), None).expect("not cancelled").is_none(),
+            local_return_type(&lines, 4, Some(10), &wu16("x"), None)
+                .expect("not cancelled")
+                .is_none(),
             "读前写点应诚实空"
         );
         // 悬 x 目标(列 14):目标位先于 RHS = 新值 str
-        let face =
-            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("not cancelled").expect("悬目标应见新值");
+        let face = local_return_type(&lines, 4, Some(14), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("悬目标应见新值");
         assert_eq!(face.annotation, "str");
         // 悬 x = b() 的 RHS 内(列 18):语句内读旧值 → 无旧绑定诚实空
         assert!(
-            local_return_type(&lines, 4, Some(18), &wu16("x"), None).expect("not cancelled").is_none(),
+            local_return_type(&lines, 4, Some(18), &wu16("x"), None)
+                .expect("not cancelled")
+                .is_none(),
             "RHS 内读应见旧值(此处未绑定)"
         );
         // 缺列:保守回退行首非空白列(列 4 = print 语句内)→ 诚实空
         assert!(
-            local_return_type(&lines, 4, None, &wu16("x"), None).expect("not cancelled").is_none(),
+            local_return_type(&lines, 4, None, &wu16("x"), None)
+                .expect("not cancelled")
+                .is_none(),
             "缺列应保守,不得默认整行末写点"
         );
         // 写后读(下一行):str 照常命中
         let lines2 = lines_of(
             "def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n    return x\n",
         );
-        let face =
-            local_return_type(&lines2, 5, Some(11), &wu16("x"), None).expect("not cancelled").expect("写后读应命中 str");
+        let face = local_return_type(&lines2, 5, Some(11), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("写后读应命中 str");
         assert_eq!(face.annotation, "str");
     }
 
@@ -1657,8 +1668,9 @@ mod tests {
         let lines =
             lines_of("def a() -> int:\n    return None\n\ndef run():\n    x = a(); print(x)\n");
         // `    x = a(); print(x)`:print 内 x 列 14
-        let face =
-            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("not cancelled").expect("写后读应命中 int");
+        let face = local_return_type(&lines, 4, Some(14), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("写后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1692,12 +1704,17 @@ mod tests {
     #[test]
     fn kbug_order_chained_assignment_targets() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\nx = y = make()\nz = y\n");
-        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("not cancelled").expect("链式 x 应命中");
+        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("链式 x 应命中");
         assert_eq!(face.annotation, "Tree");
-        let face = local_return_type(&lines, 3, Some(4), &wu16("y"), None).expect("not cancelled").expect("链式 y 应命中");
+        let face = local_return_type(&lines, 3, Some(4), &wu16("y"), None)
+            .expect("not cancelled")
+            .expect("链式 y 应命中");
         assert_eq!(face.annotation, "Tree");
-        let face =
-            local_return_type(&lines, 4, Some(0), &wu16("z"), None).expect("not cancelled").expect("链式后别名应命中");
+        let face = local_return_type(&lines, 4, Some(0), &wu16("z"), None)
+            .expect("not cancelled")
+            .expect("链式后别名应命中");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -1708,12 +1725,14 @@ mod tests {
     fn kbug_order_self_reference_reads_prior_binding() {
         let lines = lines_of("def a() -> int:\n    return None\n\nx = a()\nx = x\n");
         // 悬 x = x 的目标(列 0):新值 = 旧值 = int(自引用保面)
-        let face =
-            local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("not cancelled").expect("自引用应保留前值 int");
+        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("自引用应保留前值 int");
         assert_eq!(face.annotation, "int");
         // 悬下一行(写后):同 int
-        let face =
-            local_return_type(&lines, 4, Some(0), &wu16("x"), None).expect("not cancelled").expect("自引用后读应命中 int");
+        let face = local_return_type(&lines, 4, Some(0), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("自引用后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1735,8 +1754,9 @@ mod tests {
             .expect("续行参数区读应见旧值 int");
         assert_eq!(face.annotation, "int");
         // 悬语句完成后的 print(x)(行 9 列 6):新值 Tree
-        let face =
-            local_return_type(&lines, 9, Some(6), &wu16("x"), None).expect("not cancelled").expect("语句后读应见新值 Tree");
+        let face = local_return_type(&lines, 9, Some(6), &wu16("x"), None)
+            .expect("not cancelled")
+            .expect("语句后读应见新值 Tree");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -1785,8 +1805,538 @@ mod tests {
     fn kbug_order_unsupported_tuple_shape_honest() {
         let lines = lines_of("def pair() -> tuple:\n    return None\n\nx, y = pair()\n");
         assert!(
-            local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("not cancelled").is_none(),
+            local_return_type(&lines, 3, Some(0), &wu16("x"), None)
+                .expect("not cancelled")
+                .is_none(),
             "非配对元组解包应诚实空"
         );
+    }
+
+    // ---- COV-1 第二轮(2026-11-19):经本入口驱动 self_flow 语句流树
+    // ---- 求值臂(eval_block 查询位 820-973)与绑定机(1895-2210) ----
+
+    fn face_is(lines: &[&str], line: usize, word: &str) -> Option<String> {
+        let ls = lines_of(&lines.join("\n"));
+        local_return_type(&ls, line, None, &wu16(word), None)
+            .expect("not cancelled")
+            .map(|f| f.annotation)
+    }
+
+    #[test]
+    fn cov_tree_then_span_query_keeps_block_value() {
+        // 查询落 then 块内(898):字面量写点无注解面 → None(臂已执行)
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    if c:",
+            "        v = 1",
+            "        v = 2",
+            "    return v",
+        ];
+        assert_eq!(face_is(&lines, 4, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_dead_else_query_unbound_honest() {
+        // const-true 的 else 块内查询(899-913)→ 不可达 = 诚实空
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    if True:",
+            "        v = 1",
+            "    else:",
+            "        v = 2",
+        ];
+        assert_eq!(face_is(&lines, 5, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_if_header_query_keeps_entry() {
+        // 查询在 if 头行间隙(915-919):入口字面量无注解面 → None(臂已执行)
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    if c:",
+            "        v = 1",
+            "    return v",
+        ];
+        assert_eq!(face_is(&lines, 2, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_loop_body_and_header_queries() {
+        // 体内在询(943-948)/头行位询(950-954):字面量无面 → None(臂已执行)
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    while c:",
+            "        v = 1",
+            "    return v",
+        ];
+        assert_eq!(face_is(&lines, 3, "v"), None);
+        assert_eq!(face_is(&lines, 2, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_join_case_and_gap_queries() {
+        // case 块内在询(958-967)/match 域内非 case 位(969-973)
+        let lines = [
+            "def m(x):",
+            "    v = 'init'",
+            "    match x:",
+            "        case 1:",
+            "            v = 1",
+            "        case _:",
+            "            v = 2",
+            "    return v",
+        ];
+        assert_eq!(face_is(&lines, 4, "v"), None);
+        assert_eq!(face_is(&lines, 2, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_both_branches_terminated_after_query() {
+        // 双终止合流(820-826):any_live=false → 终止出口
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    if c:",
+            "        return",
+            "    else:",
+            "        return",
+            "    v = 1",
+        ];
+        assert_eq!(face_is(&lines, 6, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_while_else_folds_into_exit() {
+        // while-else 出口并入(836-837)
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    while c:",
+            "        v = 1",
+            "    else:",
+            "        v = 's'",
+            "    return v",
+        ];
+        // while-else 折叠并入出口;字面量写点无注解面 → None(实测钉板)
+        assert_eq!(face_is(&lines, 6, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_many_of_many_nested_branch_in_loop() {
+        // 环内分支多写点 → Many 嵌套展平(558-561)
+        let lines = [
+            "def m(c, d):",
+            "    v = 'init'",
+            "    while c:",
+            "        if d:",
+            "            v = 1",
+            "        else:",
+            "            v = 2",
+            "    return v",
+        ];
+        assert_eq!(face_is(&lines, 7, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_unbound_fold_in_no_else_branch() {
+        // 无 else 折叠并入入口 Unbound(567)→ maybe_unbound 诚实空
+        let lines = ["def m(c):", "    if c:", "        v = 1", "    return v"];
+        assert_eq!(face_is(&lines, 3, "v"), None);
+    }
+
+    #[test]
+    fn cov_class_direct_alias_binding() {
+        // 类体直系绑定 + Local 别名递归(2004-2019):别名非调用无注解面 →
+        // None(绑定解析臂已执行)
+        let lines = [
+            "def make() -> Repo:",
+            "    return None",
+            "class K:",
+            "    helper = make",
+            "    x = helper",
+        ];
+        assert_eq!(face_is(&lines, 4, "helper"), None);
+    }
+
+    #[test]
+    fn cov_module_alias_binding() {
+        // 模块级裸写别名(2053-2062):非调用无面 → None(臂已执行)
+        let lines = [
+            "def make() -> Repo:",
+            "    return None",
+            "alias = make",
+            "def use():",
+            "    data = alias",
+        ];
+        assert_eq!(face_is(&lines, 4, "alias"), None);
+    }
+
+    #[test]
+    fn cov_binding_after_query_unbound() {
+        // 绑定在查询位之后(2019/2038)→ Unbound 诚实空
+        let lines = ["def m():", "    a = v", "    v = 1"];
+        assert_eq!(face_is(&lines, 1, "v"), None);
+    }
+
+    #[test]
+    fn cov_global_declaration_redirects_to_module() {
+        // 域内 global 声明让位(1965)+ 写点重定向模块
+        let lines = [
+            "g = 5",
+            "def m():",
+            "    global g",
+            "    g = 6",
+            "    x = g",
+        ];
+        // global 让位后落模块绑定;字面量无注解面 → None(实测钉板)
+        assert_eq!(face_is(&lines, 4, "g"), None);
+    }
+
+    #[test]
+    fn cov_numeric_unary_atom_faces() {
+        // 一元数值臂:complex(326/357)/Invert 未知(331)/walrus(350)/嵌套一元(351-352)
+        let lines = [
+            "def m(x):",
+            "    a = -1j",
+            "    b = ~x",
+            "    c = (n := 5)",
+            "    d = --5",
+            "    e = +1j",
+            "    return a",
+        ];
+        // 一元数值各形态:面=注解面,数值字面量无注解 → 全 None(实测钉板;
+        // 数值定型进写点 shape,由流面消费)
+        assert_eq!(face_is(&lines, 6, "a"), None);
+        assert_eq!(face_is(&lines, 6, "b"), None);
+        assert_eq!(face_is(&lines, 6, "c"), None);
+        assert_eq!(face_is(&lines, 6, "d"), None);
+        assert_eq!(face_is(&lines, 6, "e"), None);
+    }
+
+    #[test]
+    fn cov_unknown_callee_honest_none() {
+        // 未知名被调(2097/2157 一带):解析不外推
+        let lines = ["def m():", "    v = nope()", "    return v"];
+        assert_eq!(face_is(&lines, 2, "v"), None);
+    }
+
+    #[test]
+    fn cov_unknown_receiver_not_guessed() {
+        // 接收者不唯一/未知不猜(2207)
+        let lines = ["def m():", "    v = other.get()", "    return v"];
+        assert_eq!(face_is(&lines, 2, "v"), None);
+    }
+
+    // ---- COV-1 第三轮:列精确位询(910-919)/无写环体(943-948)/
+    // ---- 全 Unbound 折叠(567)/绑定机深臂(1957-2062/2166-2207)/
+    // ---- 方法注解歧义(1918)/基线备忘命中(1895)/lambda 被调(1067) ----
+
+    fn face_at(lines: &[&str], line: usize, col: usize, word: &str) -> Option<String> {
+        let ls = lines_of(&lines.join("\n"));
+        local_return_type(&ls, line, Some(col), &wu16(word), None)
+            .expect("not cancelled")
+            .map(|f| f.annotation)
+    }
+
+    #[test]
+    fn cov_tree_if_header_col_query_entry_value() {
+        // 查询位=if 行测试表达式列(≥ Branch start)→ 头行间隙臂(915-919)
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    if c:",
+            "        v = 1",
+            "    return v",
+        ];
+        assert_eq!(face_at(&lines, 2, 7, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_else_span_non_const_query() {
+        // 非常量 else 块内位询(910-913):进入 else 体求值
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    if c:",
+            "        v = 1",
+            "    else:",
+            "        v = 2",
+        ];
+        assert_eq!(face_at(&lines, 5, 8, "v"), None);
+    }
+
+    #[test]
+    fn cov_tree_loop_body_without_hovered_write() {
+        // 环体内询但体内无该名写点(943-948)
+        let lines = [
+            "def m(c):",
+            "    v = 'init'",
+            "    while c:",
+            "        x = 1",
+            "    return v",
+        ];
+        assert_eq!(face_at(&lines, 3, 8, "v"), None);
+    }
+
+    #[test]
+    fn cov_fold_all_unbound_branch() {
+        // 无 else 且 then 出口亦未绑定 → 折叠全 Unbound(567)
+        let lines = ["def m(c):", "    if c:", "        x = 1", "    return v"];
+        assert_eq!(face_is(&lines, 3, "v"), None);
+    }
+
+    #[test]
+    fn cov_nested_def_chain_sort() {
+        // 嵌套 def:作用域链双域排序(1957-1960)
+        let lines = [
+            "def outer(c):",
+            "    def inner():",
+            "        v = nope()",
+            "    return v",
+        ];
+        assert_eq!(face_is(&lines, 3, "v"), None);
+    }
+
+    #[test]
+    fn cov_class_alias_chain_resolves_class_binding() {
+        // 类体别名链:local_atom 走类体绑定臂(2004-2019)
+        let lines = [
+            "class K:",
+            "    b = 5",
+            "    a1 = b",
+            "    a2 = a1",
+            "    a3 = a2",
+        ];
+        assert_eq!(face_is(&lines, 4, "a2"), None);
+    }
+
+    #[test]
+    fn cov_class_alias_bound_after_query_unbound() {
+        // 类体绑定在查询位之后(2019)
+        let lines = ["class K:", "    u = a1", "    a1 = b", "    b = 5"];
+        assert_eq!(face_is(&lines, 1, "a1"), None);
+    }
+
+    #[test]
+    fn cov_method_alias_chain_and_bound_after() {
+        // 方法域别名链(2029-2036)与绑定在后(2038)
+        let lines = ["def m():", "    w1 = w2", "    w2 = 5", "    return w1"];
+        assert_eq!(face_is(&lines, 3, "w1"), None);
+        let after = [
+            "def m():",
+            "    w1 = w2",
+            "    w2 = 5",
+            "    q = w1",
+            "    return q",
+        ];
+        assert_eq!(face_is(&after, 4, "q"), None);
+    }
+
+    #[test]
+    fn cov_callee_alias_call_bound_atom() {
+        // 别名被调:CalleeBinding::Bound(Some)→callee_atom(2166)→注解面
+        let lines = [
+            "def make() -> Repo:",
+            "    return None",
+            "def use():",
+            "    mk = make",
+            "    v = mk()",
+            "    return v",
+        ];
+        assert_eq!(face_is(&lines, 5, "v").as_deref(), Some("Repo"));
+    }
+
+    #[test]
+    fn cov_callee_alias_literal_bound_none() {
+        // 字面量别名被调:Bound(None)(2167)→ 诚实空
+        let lines = ["def use():", "    mk = 5", "    v = mk()", "    return v"];
+        assert_eq!(face_is(&lines, 3, "v"), None);
+    }
+
+    #[test]
+    fn cov_receiver_not_unique_no_guess() {
+        // 接收者类型不唯一 → 不猜(2207)
+        let lines = [
+            "class K:",
+            "    def m(self, c):",
+            "        if c:",
+            "            self.h = A()",
+            "        else:",
+            "            self.h = B()",
+            "        v = self.h.get()",
+            "        return v",
+        ];
+        assert_eq!(face_is(&lines, 7, "v"), None);
+    }
+
+    #[test]
+    fn cov_ambiguous_same_name_method_atom_none() {
+        // 同类同名方法多注解 → 歧义不猜(1918)
+        let lines = [
+            "class K:",
+            "    def get(self) -> A:",
+            "        return None",
+            "    def get(self) -> B:",
+            "        return None",
+            "    def m(self):",
+            "        v = self.get()",
+            "        return v",
+        ];
+        assert_eq!(face_is(&lines, 7, "v"), None);
+    }
+
+    #[test]
+    fn cov_baseline_memo_hit_via_many_candidates() {
+        // 合流多候选同接收者 → 基线备忘第二次命中(1895)
+        let lines = [
+            "class K:",
+            "    def __init__(self):",
+            "        self.src = S()",
+            "    def m(self, c):",
+            "        if c:",
+            "            v = self.src.get()",
+            "        else:",
+            "            v = self.src.get()",
+            "        return v",
+        ];
+        // 双候选同接收者:基线备忘二访命中;S 未声明 → 无面(实测钉板)
+        assert_eq!(face_is(&lines, 8, "v"), None);
+    }
+
+    #[test]
+    fn cov_lambda_callee_shape_unknown() {
+        // 被调=lambda 调用式 → RhsShape::Unknown(1067)
+        let lines = ["def m():", "    v = (lambda: 1)()", "    return v"];
+        assert_eq!(face_is(&lines, 2, "v"), None);
+    }
+
+    // ---- COV-1 第四轮:callee_binding 类/模块臂(2004-2062)、
+    // ---- Bound(Some/None) 消费(2166-2167)、链比较器(1957-1960)、
+    // ---- global 域穿透、元组解包配对(1700-1702) ----
+
+    #[test]
+    fn cov_nested_def_hover_inside_inner_chain_sort() {
+        // 悬停位在嵌套 def 体内 → 链双域,比较器执行(1957-1960)
+        let lines = [
+            "def outer(c):",
+            "    def inner():",
+            "        v = 1",
+            "    return c",
+        ];
+        assert_eq!(face_is(&lines, 2, "v"), None);
+    }
+
+    #[test]
+    fn cov_class_body_callee_alias_call() {
+        // 类体直系别名被调:callee_binding 类体臂(2004-2019)
+        let lines = [
+            "def make() -> Repo:",
+            "    return None",
+            "class K:",
+            "    mk = make",
+            "    v = mk()",
+        ];
+        assert_eq!(face_is(&lines, 4, "v").as_deref(), Some("Repo"));
+    }
+
+    #[test]
+    fn cov_class_body_callee_bound_after_and_literal() {
+        // 类体绑定在后(2019/2038)与字面量绑定(2036)
+        let after = [
+            "def make() -> Repo:",
+            "    return None",
+            "class K:",
+            "    v = mk2()",
+            "    mk2 = make",
+        ];
+        assert_eq!(face_is(&after, 3, "v"), None);
+        let lit = ["class K:", "    mk = 5", "    v = mk()"];
+        assert_eq!(face_is(&lit, 2, "v"), None);
+    }
+
+    #[test]
+    fn cov_module_plain_alias_and_alias_chain() {
+        // 模块裸名别名(2053-2056 非 Local 终止 2062)与别名之别名(2059-2060)
+        let one = ["one = 5", "two = one", "three = 2"];
+        assert_eq!(face_is(&one, 2, "two"), None);
+        let chain = ["one = 5", "two = one", "three = two"];
+        assert_eq!(face_is(&chain, 2, "three"), None);
+    }
+
+    #[test]
+    fn cov_module_level_callee_alias_call() {
+        // 模块层调用别名:Bound 消费臂(2166-2167)
+        let lines = [
+            "def make() -> Repo:",
+            "    return None",
+            "alias = make",
+            "v = alias()",
+        ];
+        assert_eq!(face_is(&lines, 3, "v").as_deref(), Some("Repo"));
+    }
+
+    #[test]
+    fn cov_global_and_nonlocal_domain_penetration() {
+        // fn 域 global 声明穿透域绑定(1965);nonlocal 同面
+        let lines = [
+            "g = 5",
+            "def m():",
+            "    global g",
+            "    g = 6",
+            "    x = g",
+        ];
+        assert_eq!(face_is(&lines, 4, "g"), None);
+        let nl = [
+            "def outer():",
+            "    v = 1",
+            "    def inner():",
+            "        nonlocal v",
+            "        v = 2",
+            "        x = v",
+            "    return outer",
+        ];
+        assert_eq!(face_is(&nl, 5, "v"), None);
+    }
+
+    #[test]
+    fn cov_tuple_unpack_paired_entries() {
+        // 等长元组解包配对入表(1700-1702 return)
+        let lines = ["def m():", "    x, y = 1, 's'", "    return x"];
+        assert_eq!(face_is(&lines, 2, "x"), None);
+        assert_eq!(face_is(&lines, 2, "y"), None);
+    }
+
+    #[test]
+    fn cov_callee_nested_def_chain_sort_and_outer_binding() {
+        // 嵌套 def 内调用:域链双域排序(1957-1960)+ 外层域绑定解析
+        let lines = [
+            "def make() -> Repo:",
+            "    return None",
+            "def outer():",
+            "    mk = make",
+            "    def inner():",
+            "        v = mk()",
+            "    return inner",
+        ];
+        assert_eq!(face_is(&lines, 5, "v").as_deref(), Some("Repo"));
+    }
+
+    #[test]
+    fn cov_callee_global_declared_domain_penetration() {
+        // 域内 global 声明的被调名:穿透域绑定(1965)→ 模块声明表
+        let lines = [
+            "def make() -> Repo:",
+            "    return None",
+            "g = make",
+            "def m():",
+            "    global g",
+            "    v = g()",
+        ];
+        // global 声明名穿透域绑定 → 模块声明表 → 注解面(实测钉板)
+        assert_eq!(face_is(&lines, 5, "v").as_deref(), Some("Repo"));
     }
 }
