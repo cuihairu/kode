@@ -57,6 +57,8 @@ export function run(): Promise<void> {
                   ? file === 'debugpyInjectLive.test.js'
                   : suite === 'pylance'
                     ? file === 'pylanceStubPriority.test.js'
+                  : suite === 'pylancewire'
+                    ? file === 'pylanceWire.test.js'
                   : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));

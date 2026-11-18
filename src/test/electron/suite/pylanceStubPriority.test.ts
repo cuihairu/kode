@@ -12,10 +12,12 @@ import * as vscode from 'vscode';
 // 逐级记录实际 URI 作证据;hover 原文随证据落盘。这是真 VS Code + 真 Pylance
 // 扩展进程内跑的。对照车道(pyright,独立 LSP 客户端驱动真进程)见同一脚本
 // 默认模式。
-// 注:Pylance 读 VS Code 设置(python.analysis.*),不读 pyrightconfig.json
-// ——夹具的 .vscode/settings.json 双写同一套 stubPath/extraPaths(对照车道
-// 用 pyrightconfig.json),并把 kode 自身的 stub 同步关掉,避免被测扩展的
-// 激活链写设置污染测量面。
+// 注:Pylance 读 VS Code 设置(python.analysis.*);pyrightconfig.json 当年按
+// 「Pylance 不读」设计双写(本夹具 .vscode/settings.json 与对照车道的
+// pyrightconfig.json 内容同一套,两面一致故结果不受影响)。该前提已被
+// 2026-11-18 RUST-263 段2 实测推翻(Pylance 实读 kode 写的 pyrightconfig.json
+// 搜索根,见 docs/review/2026-11-18-rust-263-pylance-wire-realenv.md);
+// kode 自身 stub 同步仍关,避免激活链写设置污染测量面。
 
 const WS = process.env.KODE_PYLANCE_WORKSPACE;
 assert.ok(WS, 'runTest.js --pylance must set KODE_PYLANCE_WORKSPACE');

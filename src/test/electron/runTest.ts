@@ -101,6 +101,16 @@ async function main(): Promise<void> {
   // open→首诊断可见与 edit→新版本诊断可见;KODE_ACTIVATE_PROFILE_OUT 可由
   // 调用方同轮注入(activate 同步体分段表同轮采两段证据)。
   const pubBenchMode = process.argv.includes('--pubbench');
+  // RUST-263 Pylance 真机接线实证(疑点 B 识别/A 变量形态/C 探测范围界):
+  // 三段发射——段1=demo 标准布局+kode 默认激活链(stubExport/extraPathsSync
+  // 全默认开),钉默认态(stubCopy 关=桩包不在盘、extraPaths 变量形态已写);
+  // 段2=同工作区改设 stubCopy:true 重启,激活链 silent 自动复制桩包,验证
+  // KBEngine 桩包在真 Pylance 的解析落位(manual 命令尾部 await 通知,headless
+  // 必悬,走等价 silent 路径);段3=探测范围外布局(myserver/scripts,四前缀+
+  // *_assets 都不覆盖),钉「kode 零写入+真 Pylance 全 unresolved」的诚实
+  // 边界。三段共用同一套件文件(pylanceWire.test.ts),KODE_PYLANCE_WIRE_PHASE 分段。
+  const pylanceWireMode = process.argv.includes('--pylancewire');
+  let pylanceWire2Root = '';
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   let dbgLaunchArgs: string[] = [];
@@ -1006,6 +1016,91 @@ async function main(): Promise<void> {
     process.env.KODE_ELECTRON_SUITE = 'pubbench';
     process.env.KODE_PUBBENCH_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (pylanceWireMode) {
+    // 段1:demo 资产副本+探针;设置只关开窗提示——python.stubExport/
+    // extraPathsSync 留默认开(被测面就是默认激活链,与 --demo 显式关闸相反)。
+    const wireRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pylance-wire1-'));
+    const demoSource = path.resolve(extensionDevelopmentPath, 'tests/fixtures/kbengine-demo-assets');
+    workspacePath = path.join(wireRoot, 'kbengine-demo-assets');
+    fs.cpSync(demoSource, workspacePath, { recursive: true });
+    // 探针放 scripts/ 根:importer 自身目录不是绝对 import 的搜索根
+    // (RUST-170 真机裁定),解析必须走 kode 写的 extraPaths——探针放在
+    // scripts/ 里与放在任何地方一样依赖接线,不产生「同目录兜底」假阳性。
+    fs.writeFileSync(path.join(workspacePath, 'scripts', 'pylance_wire_probe.py'), [
+      '# RUST-263 pylance wiring probe: both import faces on one file.',
+      'import KBEngine',
+      'from common import DemoConsts',
+      '',
+      '',
+      'def probe() -> None:',
+      '    marker = DemoConsts.DEMO_LEVEL_UP_STEP'
+    ].join('\n'));
+    fs.mkdirSync(path.join(workspacePath, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(workspacePath, '.vscode', 'settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false
+    }, null, 2));
+    // 扩展挂载与 dbglive 同法:直接挂本机用户扩展目录(已装 ms-python.
+    // vscode-pylance + ms-python.python),user-data 按段隔离免与日常实例互扰。
+    pylLaunchArgs = [
+      '--extensions-dir',
+      path.join(os.homedir(), '.vscode', 'extensions'),
+      '--user-data-dir',
+      path.join(extensionDevelopmentPath, '.vscode-test', 'pylancewire-user-data-1')
+    ];
+    process.env.KODE_ELECTRON_SUITE = 'pylancewire';
+    process.env.KODE_PYLANCE_WIRE_ROOT = workspacePath;
+    process.env.KODE_PYLANCE_WIRE_PHASE = '1';
+    process.on('exit', () => fs.rmSync(wireRoot, { recursive: true, force: true }));
+    // 段3 夹具在此装配(发射在文件尾三段跑):探测范围外布局——myserver/
+    // server 不在四前缀(scripts/、assets/scripts、server_assets/scripts)与
+    // 一级 *_assets/scripts 约定内(首跑误用 myserver/scripts——`scripts/` 是
+    // 文件夹相对前缀,恰在探测范围内,负例臂作废实录);激活不依赖布局
+    // (activationEvents 含 onStartupFinished,任意工作区都激活,debug.json
+    // 激活标记照常出现),被测面=extraPaths 同步对该文件夹零写入。
+    const wire2 = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pylance-wire2-'));
+    pylanceWire2Root = path.join(wire2, 'myserver');
+    fs.mkdirSync(path.join(pylanceWire2Root, 'server', 'entity_defs'), { recursive: true });
+    fs.mkdirSync(path.join(pylanceWire2Root, 'server', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'entities.xml'), [
+      '<root>',
+      '\t<ScopeEntity hasBase="true"></ScopeEntity>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'entity_defs', 'ScopeEntity.def'), [
+      '<root>',
+      '    <BaseMethods>',
+      '        <onPing>',
+      '            <Arg>UINT8</Arg>',
+      '        </onPing>',
+      '    </BaseMethods>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'base', 'ScopeEntity.py'), [
+      'class ScopeEntity:',
+      '',
+      '    def onPing(self, level):',
+      '        return None'
+    ].join('\n'));
+    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'pylance_scope_probe.py'), [
+      '# RUST-263 pylance scope probe: layout outside detection prefixes.',
+      'import KBEngine',
+      'import scope_helper',
+      '',
+      '',
+      'def probe() -> None:',
+      '    return scope_helper.MARK'
+    ].join('\n'));
+    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'scope_helper.py'), [
+      '# sibling module: same-dir resolution must NOT kick in (importer dir is',
+      '# not a search root for absolute imports), so this import being unresolved',
+      '# is the expected honest boundary face.',
+      'MARK = 1'
+    ].join('\n'));
+    fs.mkdirSync(path.join(pylanceWire2Root, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(pylanceWire2Root, '.vscode', 'settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false
+    }, null, 2));
+    process.on('exit', () => fs.rmSync(wire2, { recursive: true, force: true }));
   }
 
   const cachedVersion = process.env.KODE_VSCODE_VERSION ?? '1.141.0';
@@ -1046,6 +1141,36 @@ async function main(): Promise<void> {
     process.env[launchGate] = 'verify';
     await electronLaunch();
     delete process.env[launchGate];
+  } else if (pylanceWireMode) {
+    // 三段:段1=默认态(stubCopy 关,零桩包);段2=同一工作区改设
+    // kbengine.python.stubCopy:true 重启——激活链 silent 自动复制桩包并同步
+    // settings。manual 命令(kbengine.python.exportStubs)尾部 await 通知关闭,
+    // headless 无人点掉必悬(run1 900s 超时/run2 closeNotifications 命令不存
+    // 在,两跑实录),故真机面走等价的 silent 激活路径(同一对拷贝/同步函数),
+    // manual 命令交互面在证据文档记边界。段3=探测范围外布局负例臂。
+    await electronLaunch();
+    fs.writeFileSync(path.join(workspacePath, '.vscode', 'settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubCopy': true
+    }, null, 2));
+    process.env.KODE_PYLANCE_WIRE_PHASE = '2';
+    pylLaunchArgs = [
+      '--extensions-dir',
+      path.join(os.homedir(), '.vscode', 'extensions'),
+      '--user-data-dir',
+      path.join(extensionDevelopmentPath, '.vscode-test', 'pylancewire-user-data-3')
+    ];
+    await electronLaunch();
+    process.env.KODE_PYLANCE_WIRE_PHASE = '3';
+    workspacePath = pylanceWire2Root;
+    process.env.KODE_PYLANCE_WIRE_ROOT = pylanceWire2Root;
+    pylLaunchArgs = [
+      '--extensions-dir',
+      path.join(os.homedir(), '.vscode', 'extensions'),
+      '--user-data-dir',
+      path.join(extensionDevelopmentPath, '.vscode-test', 'pylancewire-user-data-2')
+    ];
+    await electronLaunch();
   } else {
     await electronLaunch();
   }

@@ -272,9 +272,11 @@ const emitFixtureAt = process.argv.includes('--emit-fixture')
   : null;
 if (emitFixtureAt) {
   buildFixture(emitFixtureAt, { sameDir: true, stubPath: true, extraPaths: true });
-  // Pylance 车道补 VS Code 设置面:Pylance 读 python.analysis.*(不读
-  // pyrightconfig.json,该文件只服务对照车道);同时把 kode 自身的 stub
-  // 同步关掉,避免其激活链写设置污染测量面。
+  // Pylance 车道补 VS Code 设置面:Pylance 读 python.analysis.*;当年按
+  // 「不读 pyrightconfig.json」设计,该前提已被 2026-11-18 RUST-263 段2
+  // 实测推翻(Pylance 实读 pyrightconfig.json 搜索根,见 docs/review/
+  // 2026-11-18-rust-263-pylance-wire-realenv.md)——本夹具两面内容同一套,
+  // 结论不受影响;kode 自身 stub 同步仍关,避免激活链写设置污染测量面。
   mkdirSync(join(emitFixtureAt, '.vscode'), { recursive: true });
   writeFileSync(
     join(emitFixtureAt, '.vscode/settings.json'),

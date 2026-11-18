@@ -8,7 +8,7 @@
 
 - pyright-langserver 1.1.414(本机 `pyright-langserver --stdio`,serverInfo 实证);
 - Pylance ms-python.vscode-pylance-2026.4.1(`.vscode-test/extensions`,经 `--extensions-dir` 挂入测试宿主);
-- 夹具:`--emit-fixture` 预建三层同名 `KBEngine.pyi`(签名/文档串互异可辨层)——`scripts/KBEngine.pyi`(同目录 decoy,`addTimer(interval: float) -> int` / "tier1 same-dir decoy")、`.kbengine/stubs/KBEngine.pyi`(stubPath 层,`repeat: int = 0` / "tier2 stubPath")、`extraroot/KBEngine.pyi`(extraPaths 层,返回 `str` / "tier3 extraPaths");调用点 `scripts/entity/Avatar.py` 的 `KBEngine.addTimer(1.0)`;配置:pyright 车道写 `pyrightconfig.json`(stubPath/extraPaths),Pylance 车道写 `.vscode/settings.json` 的 `python.analysis.stubPath` / `python.analysis.extraPaths`(**Pylance 不读 pyrightconfig.json**——实测前提,两车道各写各的配置面),并把 kode 自身 stub 同步关掉防激活链写设置污染测量面。
+- 夹具:`--emit-fixture` 预建三层同名 `KBEngine.pyi`(签名/文档串互异可辨层)——`scripts/KBEngine.pyi`(同目录 decoy,`addTimer(interval: float) -> int` / "tier1 same-dir decoy")、`.kbengine/stubs/KBEngine.pyi`(stubPath 层,`repeat: int = 0` / "tier2 stubPath")、`extraroot/KBEngine.pyi`(extraPaths 层,返回 `str` / "tier3 extraPaths");调用点 `scripts/entity/Avatar.py` 的 `KBEngine.addTimer(1.0)`;配置:pyright 车道写 `pyrightconfig.json`(stubPath/extraPaths),Pylance 车道写 `.vscode/settings.json` 的 `python.analysis.stubPath` / `python.analysis.extraPaths`(**Pylance 不读 pyrightconfig.json**——实测前提,两车道各写各的配置面;**2026-11-18 追注:该前提被 RUST-263 段2 实测推翻——Pylance 实读 kode 写的 pyrightconfig.json 搜索根,见 docs/review/2026-11-18-rust-263-pylance-wire-realenv.md;本案夹具两面内容同一套,解析序结论不受影响**),并把 kode 自身 stub 同步关掉防激活链写设置污染测量面。
 
 ## pyright 车道(独立 LSP 客户端,四变体 4/4 PASS)
 
