@@ -771,6 +771,11 @@
 - [ ] RUST-449 （旧 HR-DOD-010） 每一个任务附源码路径、commit、测试命令、结果截图或报告，未经验证不得打勾。
 
 
+## COV — Rust 核心覆盖率提满战役（2026-11-19 用户令「尽量把 rust 核心的覆盖率提高到 100%」；基线=cargo llvm-cov workspace 95.49% 行/3101 未盖行,按未盖行数排序逐文件提满;kode-python crate 对方在途零冲突先行;kode-server 对方脏件只加测试文件不动源码,开工前必核 git status）
+
+- [x] COV-001 kode-python/self_flow.rs+local_return.rs 深臂提满（2026-11-19;载体 069ad670,CI 44352967556;self_flow 未盖行 335→21/行覆盖 92.0%→98.01%,local_return 19→8;打法=①self_flow 内联测试直打守卫扫描器/取消探针/LRU 逐出/常量死支 ②**关键破题=AST 流树 eval_block 查询位族+绑定机(callee_binding/local_atom 类·方法·模块臂)的真入口是 local_return_type 裸名 hover——pub infer_self_attribute_flow 只走行扫描器,全部经 local_return 测试驱动** ③列精确位询:头行查询须 col≥if 测试表达式列(Branch start=test 位,行首 col 在 start>query 处 break);**登记 finding 不修**:not_none_guard 词循环要求 `self` 后空白再点号,正常 Python `if self.X is not None:` 永假,与 TS 真源 src/backend/selfAttributeFlowTypes.ts notNoneGuard(`self\.` 无空白)及自家 doc 相悖,scan_sequence 非窄化分支对合法源永不可达;不冒充修复的因=修复会翻 is_not_none_guard_terminal_and_block_stop 等既有钉板行为,归独立批拍板;诚实余量=self_flow 21 行(2573 防御比较臂 walker 不产重叠方法域/610 complex 字面 real≠0 非 Python 源可表达/371 注解切片 None/其余单行 region 收尾与绑定微臂)+local_return 8 行;判例=①观察值 eprintln 并行线程截断骗人(嵌套类实测 int 被看成空)②llvm-cov lcov DA 行与 summary 行数口径有差(DA 只计带 region 行,前后对账必须同法)③git commit-tree 无 -c,身份走 GIT_AUTHOR_* env;门禁 cargo test -p kode-python 255+23+37+36+12 全绿/clippy -D warnings 0/cargo fmt 净(附带走 fmt 对既有测试行的纯换行重排,逐行核对零语义改);余队列按基线未盖行数:semantics/expr.rs 258(对方在途)/receiver_none.rs 138/kode-scheduler-stress bin 105(0%)/trap_lints.rs 75/client-sdk-gen bin 70(0%)/space_nav.rs 62/kbengine-schema/compat.rs 59/kode-mcp extract 89·kb_index 56·fts 54）
+
+
 ## EXEC — 后台执行与调试（Python 3.7.3 调试工具链）
 
 > 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 EXEC-001 起，旧编号以（旧 X）随行保留；来源分节标题原样。
