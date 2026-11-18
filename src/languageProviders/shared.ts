@@ -50,6 +50,9 @@ export function getLanguageFeatureConfig() {
     // KODE-CFG-015:引擎 SPI 函数标注镜(方法名匹配 KODE-CFG-012 的 36 方法
     // 表,组件角色由配置派生定),独立开关,默认开
     codeLensEngineSpi: config.get<boolean>('codeLens.engineSpi', true),
+    // MRO-CHAIN:mixin 链执行序镜(方法 def 声明行「链 N: A → B → C」,≥2
+    // 定义者才出镜),独立开关,默认开
+    codeLensMroChain: config.get<boolean>('codeLens.mroChain', true),
     // 实体脚本新功能各一枚独立开关(用户令 2026-10-21:新功能都要配置开关,
     // 默认开)。builtinProperties 管内建属性 hover+self. 补全(内建属性相关
     // 面的总闸,行内 inlay 也先过它);receiverSections 管接收者段过滤

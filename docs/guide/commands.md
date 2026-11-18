@@ -801,6 +801,11 @@ The flow graph panel supports:
 - Title: `Show Call Chain`
 - Purpose: generate the configured Python call chain preview for the selected method
 
+### `kbengine.python.mroChain`
+
+- Title: `Show MRO Chain`
+- Purpose: reveal the MRO execution chain of the clicked lens — a position-numbered quick pick over every definer of the method across all chain roots (the lens itself lives on method `def` lines via `kbengine.codeLens.mroChain`); selecting an entry opens that definition. This is the lens's own entry point, not a user-facing palette workflow
+
 ### `kbengine.python.showEngineSpi`
 
 - Title: `Show Engine SPI Implementation Info`

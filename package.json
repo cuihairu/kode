@@ -195,6 +195,7 @@
     "onCommand:kbengine.python.resetStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
+    "onCommand:kbengine.python.mroChain",
     "onCommand:kbengine.python.selectInterpreter",
     "onCommand:kbengine.python.createVenv",
     "onCommand:kbengine.python.showEngineSpi",
@@ -873,6 +874,10 @@
       {
         "command": "kbengine.python.showCallChain",
         "title": "%kbengine.command.python.showCallChain.title%"
+      },
+      {
+        "command": "kbengine.python.mroChain",
+        "title": "%kbengine.command.python.mroChain.title%"
       },
       {
         "command": "kbengine.python.showEngineSpi",
@@ -1724,6 +1729,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.codeLens.fileModifiedTime.description%"
+          },
+          "kbengine.codeLens.mroChain": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.mroChain.description%"
           },
           "kbengine.codeLens.property": {
             "type": "boolean",

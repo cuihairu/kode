@@ -41,6 +41,7 @@
 | RpcCodeLensProvider | languageProviders.ts:4651 | :1089 | EntityMappingManager(RPC 镜链) | 纯读 |
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview 面板创建/更新(UI 副作用) |
 | PropertyCodeLensProvider | languageProviders.ts:4819 | :1114 | EntityMappingManager(types.xml 属性回指) | fireConfigurationChanged 事件 |
+| MroChainCodeLensProvider | languageProviders/codeLens.ts:419 | :553(MRO-CHAIN) | PythonClassIndex `resolveMroMethodChains`(所在类/组合根/反向后代各视角的 C3 `mroClasses` 链;纯核 backend/mroChainLens 出标题与选项形状) | fireConfigurationChanged 事件(开关 `kbengine.codeLens.mroChain`;reveal 命令仅经 kbengine.source.reveal 跳转) |
 | ProcessBreadcrumbPythonSymbolProvider | languageProviders/processOwnership.ts:19 | :513 | `scripts/<role>` 目录角色判定(纯核 backend/processOwnershipLens `buildPythonProcessBreadcrumb`,同名文件存在性由注入的 fs.existsSync 判) | 纯读(角色布局外返回 null;文件顶部 CodeLens 面已移除 PROC-BREADCRUMB-001) |
 | KBEngineDocumentSymbolProvider(进程根) | languageProviders/references.ts:346 | :767 | def AST 方法段经纯核 `buildDefProcessBreadcrumb`(对端 `scripts/<role>/<实体>.py` 存在性由 fs.existsSync 判) | 纯读(方法段在场时合成根领头符号树) |
 | FileModifiedTimeCodeLensProvider | languageProviders/fileModifiedLens.ts:15 | :526 (SRC-001 L2) | 盘上 mtime 经注入 stat(`vscode.workspace.fs.stat` 默认实现),时间戳格式走纯核 backend/fileModifiedLens | fireConfigurationChanged 事件 + workspace 保存事件(mtime 只在落盘时变) |

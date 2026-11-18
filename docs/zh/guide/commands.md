@@ -746,6 +746,11 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 - 标题：`Show Call Chain`
 - 作用：为选中方法生成配置的 Python 调用链预览
 
+### `kbengine.python.mroChain`
+
+- 标题：`Show MRO Chain`
+- 作用：展开点击镜的 MRO 执行链——按执行位次列出该方法在全部链根上的定义者（镜本体由 `kbengine.codeLens.mroChain` 挂在方法 `def` 声明行），选中即跳该定义。这是镜自身的入口，不是面向命令面板的用户流程
+
 ### `kbengine.python.showEngineSpi`
 
 - 标题：`Show Engine SPI Implementation Info`

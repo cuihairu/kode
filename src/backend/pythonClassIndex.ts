@@ -140,6 +140,26 @@ export interface SelfMethodResolution {
   readonly partial: boolean;
 }
 
+/** MRO-CHAIN 链上一个定义者(类 + 方法定义落点) */
+export interface MroChainEntry {
+  readonly className: string;
+  readonly filePath: string;
+  readonly line: number;
+  readonly character: number;
+}
+
+/**
+ * MRO-CHAIN(用户令 2026-11-18「mixin 遍历调用的执行顺序推导」):一条链 = 一个
+ * 根类视角下,methodName 沿 MRO 序的全部定义者。for cls in __mro__ 遍历调度与
+ * super() 接力的执行顺序都等于「MRO 序过滤出定义了该方法的类」——静态可推导
+ * (C3 由基类声明序决定);链序即执行序,首项是最派生定义者。
+ */
+export interface MroMethodChain {
+  /** 视角根类(组合根本尊/其后代,或静态类自身) */
+  readonly rootClassName: string;
+  readonly entries: ReadonlyArray<MroChainEntry>;
+}
+
 /**
  * 工作区 Python 类索引:按需扫描 *.py 建 className → 定义列表,
  * 变更时按文件失效。所有查询走缓存,不在热点路径重复解析。
@@ -1679,6 +1699,101 @@ export class PythonClassIndex {
       }
     }
     return out;
+  }
+
+  /**
+   * MRO-CHAIN:methodName 在「光标所在类」及全部包含它的组合根/后代视角下的
+   * 执行链。链序 = MRO 序过滤出定义者 = for cls in __mro__ 遍历/super() 接力的
+   * 真实执行序(与运行时 C3 一致,tests/mroChainLens.test.ts 用 python3 真跑
+   * 对拍钉死)。视角收集与 resolveSelfMethodResolution ② 同源:组合根直接包含
+   * (Python MRO 含该类)或 .def 声明 mixin(Parent/Interfaces/Components);
+   * 组合根等待超预算时返回已收集的链(链是提示面,不作权威负结论)。
+   */
+  async resolveMroMethodChains(
+    filePath: string,
+    line: number,
+    methodName: string,
+    document?: vscode.TextDocument,
+    token?: vscode.CancellationToken,
+    budgetMs: number = INTERACTIVE_INDEX_WAIT_MS
+  ): Promise<MroMethodChain[]> {
+    if (token?.isCancellationRequested) { return []; }
+    if (document) { await this.asyncDocumentParse(document); }
+    await this.ensureBufferFresh(filePath);
+    this.scheduleBackgroundScan();
+    const enclosing = await this.findEnclosingClass(filePath, line);
+    if (token?.isCancellationRequested || !enclosing) { return []; }
+    await this.stageRequestFiles(filePath, token);
+    if (token?.isCancellationRequested) { return []; }
+
+    const chains: MroMethodChain[] = [];
+    const seenRoots = new Set<string>();
+    const addRoot = (root: PythonClassDef): void => {
+      const key = this.classKey(root);
+      if (seenRoots.has(key)) { return; }
+      seenRoots.add(key);
+      const entries: MroChainEntry[] = [];
+      for (const cls of this.mroClasses(root)) {
+        const loc = cls.methods.get(methodName);
+        if (loc) {
+          entries.push({ className: cls.name, filePath: cls.filePath, line: loc.line, character: loc.character });
+        }
+      }
+      if (entries.length > 0) { chains.push({ rootClassName: root.name, entries }); }
+    };
+
+    // ② 组合根视角:与 resolveSelfMethodResolution ② 同一包含判定。
+    // 反向后代(③)与组合根都要全仓口径:预算内等全量收敛,超时先返回已有链
+    // (链是提示面,不发布权威负结论,下次查询自然补齐)。① 静态臂也要在等待
+    // 之后算:残缺解析态下间接可达的基类(包 __init__ 别名转出口等)会解析成
+    // null 被剔除,且 mroClasses 的 mroCache 不随后续解析失效——首次残缺 MRO
+    // 会被永久缓存,故全部链都从全仓口径起算。
+    const rootsReady = await raceWithBudget('definition:composition-roots',
+      this.ensureCompositionRoots().then(() => true), budgetMs, token);
+    const scanReady = await raceWithBudget('definition:python-index',
+      this.ensureScanned().then(() => true), budgetMs, token);
+
+    // ① 静态类自身视角(未进实体清单的小根也有链)
+    addRoot(enclosing);
+
+    if (rootsReady) {
+      const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
+        .sort((left, right) => right.length - left.length)[0];
+      const composition = scope ? this.rootsByScope.get(scope) : undefined;
+      for (const root of composition?.roots ?? []) {
+        if (token?.isCancellationRequested) { break; }
+        for (const rootClass of this.byName.get(root) ?? []) {
+          if (!this.compatibleContext(rootClass, enclosing)) { continue; }
+          const contains = this.mroClasses(rootClass).some(cls => this.classKey(cls) === this.classKey(enclosing));
+          const declared = composition?.defMixins.get(root) ?? [];
+          const declaredEnclosing = declared.some(name => {
+            const resolved = this.resolveSymbol(rootClass.filePath, name);
+            return !!resolved && this.classKey(resolved) === this.classKey(enclosing);
+          });
+          if (contains) { addRoot(rootClass); }
+          // def 声明 mixin(Parent/Interfaces/Components)不在 Python 基类里时,
+          // mixin 自身 MRO 也给一链(根名=该 mixin 类)
+          for (const name of declared) {
+            const mixin = this.resolveSymbol(rootClass.filePath, name);
+            if (mixin) { addRoot(mixin); }
+          }
+          if (!contains && !declaredEnclosing) { continue; }
+        }
+      }
+      // ③ 反向后代:mixin 文件里同名钩子,后代根(子类)各自的链(需全量索引)
+      if (scanReady) {
+        for (const defs of this.byName.values()) {
+          if (token?.isCancellationRequested) { break; }
+          for (const sub of defs) {
+            if (!this.compatibleContext(sub, enclosing)) { continue; }
+            if (this.mroClasses(sub).some(cls => this.classKey(cls) === this.classKey(enclosing))) {
+              addRoot(sub);
+            }
+          }
+        }
+      }
+    }
+    return chains;
   }
 }
 

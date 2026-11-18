@@ -14,6 +14,7 @@
 - 全账 1563 条（已勾 1173 / 未勾 390），与重整前一致；本次核对零取消勾选、零删除，仅结构重整与编号迁移。
 - 2026-11-15 复核：全账 1564 条（已勾 1259 / 未勾 305）——较重整时点 +1 新登记（G2-LANG-001，2026-11-14 G2 文档审计新增）、86 项新勾（SEM −22 / FLOW −29 / HOT −2 / RUST −33），零取消勾选、零删除；下表已按本时点更新。
 - 2026-11-16 复核：全账 1550 条（已勾 1289 / 未勾 261）——较 11-15 时点：RUST 域新勾 54（含 RUST-134 py self 补全 / RUST-135 completion resolve）且新登记 +10（295/154 → 251/208），历史分节净 −24（并发会话整理 Archive）；算术对账全等：已勾 +30 / 未勾 −44 / 总条目 −14；其余六域计数与本时点一致；活跃七域未勾 260，另 1 条 legacy 未勾（G2-LANG-001 待拍板）；下表已按本时点更新。
+- 2026-11-18 复核：全账 1596 条（已勾 1449 / 未勾 147）——较 11-16 时点：+46 新登记（11-17/18 用户令与故障批新节 21 条：AI 大模型组 5、文件修改时间+base↔cell 快捷键、executor CI flake 归因、MCP 写键双前缀、def 跳转回归、venv 去重+inferred 默认关、SDK-PY 2、BG-WARM+P0 def 回归 2、P0 三故障 4、FOLDER-COLOR 1、MRO-CHAIN 1,及真值语料 family 21..26/executor 加固/QA 测量等既有分节随批增项 25）+160 新勾（RUST +109、QA +5、G2 legacy 落勾 b06ee41d,其余历史分节 +45）,零取消勾选、零删除；算术对账全等：已勾 +160 / 未勾 −115 / 总 +45,再 +1 本次新登记；活跃七域未勾 146,另 1 条为本日新登记 MRO-CHAIN-001（勾行随 CI 绿后落）；下表已按本时点更新。
 - 账本按功能域分节：七个 Active 域（SEM/FLOW/HOT/RUST/EXEC/DIST/QA）承载全部未勾条目；全部已勾历史分节整节搬入尾部 Archive（编号为旧制，不改不引）。
 - 编号规则：域内条目按原账本出现顺序重编为 `<域>-NNN`，旧编号以（旧 X）随行保留一次；「进行中：」注记原样保留。
 - Kode 2.0 Rust Core 账本已并入 RUST 域（2026-11-13 自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，该文件已不存在）；合并核对结论见下节。
@@ -24,10 +25,10 @@
 | SEM | KBEngine 语义分析（KSEM 族：cellData / 序列化 / 配置 / 共享数据） | 1 | 46 |
 | FLOW | 进程流转与调用树（KFLOW 族） | 0 | 29 |
 | HOT | 热更新（Demo 双通道与 Python 3.7.3 联验） | 0 | 7 |
-| RUST | Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13） | 251 | 208 |
+| RUST | Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13） | 142 | 317 |
 | EXEC | 后台执行与调试（Python 3.7.3 调试工具链） | 1 | 7 |
 | DIST | 分发与平台包（kode-mcp 上 npm） | 1 | 6 |
-| QA | 验收与文档交付（KSEM-QA） | 6 | 0 |
+| QA | 验收与文档交付（KSEM-QA） | 1 | 5 |
 
 ---
 
@@ -2688,3 +2689,9 @@
 - [x] FOLDER-COLOR-001 [P2] 目录着色三面+双条件门（commit bc340f1c）——纯核 `src/backend/folderColorRules.ts`（零 vscode 零 IO）：规则表 `{glob,semantic,enabled}` 数组序第一条赢（用户调序即覆盖，enabled=false 条目跳过后续接手）；零依赖 glob→RegExp 微实现（整段双星=跨段任意/段尾双星=余下全部/`{a,b}` 备选/点前缀字面；`{assetsRoot}` 占位符解析期展开为活动 profile 资产根，盘符绝对形 C: 识别；无资产根该规则如实跳过）；内置六条默认（资产根→venv·.venv→docs→configs→logs→scripts）；process 语义交 `resolveScriptRole`（与面包屑批同源判定链，共享目录层跳过/判不出不出角标不猜）；面孔=badge 单字母+charts.* 主题色（venv=descriptionForeground 弱化灰；进程色 baseapp 蓝 B/cellapp 绿 C/client 黄 U/bots 紫 T）。呈现面 `src/folderColorDecorations.ts`（FileDecorationProvider，对齐 hotReloadFileDecorations 先例）：门关/目录/无命中=undefined——**VS Code 无文件夹底色 API，目录本身永不装饰（钉子⑧），边界在 docs 如实写死不承诺底色**。装配 `src/activate/folderColors.ts`：**双条件门（用户令终版口径）=开关开启 + workbench.colorTheme 命中 KBEngine 前缀主题族**，任一不满足=零装饰输出与未安装无异；onDidChangeConfiguration(kbengine.folderColors|workbench.colorTheme)→provider.refresh+onGateChanged 刷树（运行中切走主题即时停，钉子②）；rules 配置校验（非数组→内置默认/脏条目滤除保留数组序/显式 `[]`=全关）；多根工作区逐根锚定；目录判定 workspace.fs.stat 按位（File=1/Directory=2 数值字面量兼容 fake 无枚举面）。实体树四分组图标（面②）：ExplorerGroupItem 增 iconPathOverride（未提供=默认 ThemeIcon）、EntityExplorerProvider 增 groupIcons 渲染期解析器，装配在 activate/views.ts——**extension.ts 零改动=锚点零漂移**；10 个 16x16 SVG（6 语义+4 分组，内联中调色亮暗通读）落 resources/icons/folder-colors/（.vscodeignore 不排除，随 VSIX 发布）。测试 40 例（纯核 23+呈现/装配 17）=任务书八钉全覆盖+glob 微实现单元+rules 校验+真装配链（fake 多根工作区+memoryFileSystem 目录臂+配置事件联动臂）；prove-red 双咬（provider 门分支改恒不拦→门关两例红；纯核 enabled 跳过摘除→钉子⑤红）+sha256 字节还原。docs 六面双语锁步：configuration.md en/zh 新增 Folder Colors 区（两键行+内置规则+门与边界+ui-areas 互链；总览计数 168→170）、features.md en/zh Settings 两行（enabled 默认值格 `true` 标量对账）、ui-areas.md en/zh 新增 Folder Colors 节+实体浏览器 bullet 联动、provider-data-sources.md en/zh 2d 表新行（providerDataSourceDoc 装配扫描锁咬出）、config-effects.md en/zh（switches.json +1 capture:false 经 render_docs.py 再生）、l10n bundle en/zh +6 词条（categoryI18n 正向锁咬出）；package.json general 组两键（rules 不声明默认=hotReload.globs 先例防预填）+nls en/zh 10 键。门禁=eslint src 0/tsc main 0/tsc mocha 0/全量 vitest 11047 过+8 skip 零红（基线 11007，+40）/cargo 未触及（纯 TS 批）。
 - 判例（render_docs.py 再生吃手写段）：config-effects.md 是生成器产物但其上叠有手写段（「已移除：进程归属 CodeLens」）——再生会把手写段吃掉，再生后必须按原文恢复；日后凡跑 render_docs.py 先 diff 核对手写段。
 - 剩余边界：①FileDecoration 只装饰「文件」，文件夹本体无 API（任务书写死不冒充）②进程色角标字母 B/C/U/T 为本批选定（baseapp/cellapp/client/bots 各一字），想换字母或收窄默认口径（任意层同名 docs/ 目录命中）一句话可调③Kode 主题族=label 前缀「KBEngine」（现 11 主题全前缀一致；日后若加不带前缀的 Kode 主题需补族清单）④真机走查待用户：开关+KBEngine 主题下 Explorer 角标/实体树彩色分组图标生效、切走主题即时停。
+
+## 用户令 2026-11-18（续）：mixin MRO 遍历调用执行序推导（onCrossDay demo 先行+补全验证）
+
+用户原话：「还有代码里大量使用了 mixin 也就是 MRO 那么在同一个方法里调用 call_super(xxx) 那么这个 xx 各个函数执行的顺序可以推导出来吗」→「MRO 继续」→定形纠正：「就一个典型的例子，onCrossDay()，很多类都实现了，然后在一个类中调用遍历调用，你最好是在 demo 中先实现，然后补全验证」。真实形态=遍历调度（`for cls in type(self).__mro__[1:]` + `cls.__dict__.get` 防继承重复调用），非 super() 接力；两者执行序同=MRO 序过滤出定义该方法的类（C3 纯由基类声明序决定→静态可推导）。
+
+- [ ] MRO-CHAIN-001 mixin 遍历调度执行序：demo 先行——training mixin 族 onCrossDay 钩子×3（health 回满血/history 归档 battleLog/inventory 每日补给）+ TrainingAvatar（9 基类）/TrainingMonster 两根遍历调度器，kode-demo-run 五件同步镜像；补全验证——`pythonClassIndex.resolveMroMethodChains` 三臂（①静态所在类 ②组合根 contains/declared ③反向后代 byName 全扫）C3 链序（修复=① 挪到 ensureScanned/ensureCompositionRoots 预算等待之后：残缺解析态下包 __init__ 别名转出口基类解析成 null 且 mroCache 缓存残缺 MRO 不失效）；呈现=`codeLens.ts` MroChainCodeLensProvider def 行「链 N: A → B → C」（≥2 定义者才出镜；`kbengine.codeLens.mroChain` 独立开关）+ reveal QuickPick 按执行位次跳 kbengine.source.reveal；纯核 `mroChainLens.ts`（标题折叠/选项形状）。tests/mroChainLens.test.ts 9 例：python3 真跑对拍（monkeypatch 记序）钉死静态推导序==运行时执行序、同名双 DamageMixin（critical.py 覆写先于 damage.py 基类,靠文件区分）、health.py 视角多根两链（Avatar+Monster 反向后代）、单定义者/开关关不出镜；prove-red 两咬（链序反转 4 红/gate 旁路 1 红）。锁步面：package.json 键+命令+activation、nls en/zh、configuration/commands/features 双语、provider-data-sources en/zh、perfCallChainDoc 锚点五打点+extension/pythonClassIndex 锚（139/220/293/382/843→143/224/297/386/863;488/593→489/594;746/1415/1539→766/1435/1559）随 baseline §7 出处锁步、python-call-at parity golden 再生（fixture 语料扩）、extension.test codeLens 注册 10→11+fire 计数、history.py 元组解包同行读写 TS/Rust flow 引擎分歧→拆两行消歧（demo 素材不捎带 flow 语义拍板）。

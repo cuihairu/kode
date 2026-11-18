@@ -1,8 +1,8 @@
 {
   "generator": "kode-server dump-python-call-at-golden",
   "fileCount": 73,
-  "probeCount": 110444,
-  "hitCount": 7534,
+  "probeCount": 111677,
+  "hitCount": 7609,
   "files": [
     {
       "file": "tests/fixtures/electron-ws/.kbengine/inferred/scripts/base/Boxe.py",
@@ -24019,7 +24019,7 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/TrainingAvatar.py",
-      "probeCount": 1335,
+      "probeCount": 1807,
       "hits": [
         {
           "line": 25,
@@ -24268,12 +24268,244 @@
           "methodName": "runtime_role",
           "section": null,
           "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 38,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 39,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 40,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 41,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 42,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 43,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 44,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 45,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 46,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 47,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 48,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 49,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 50,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 56,
+          "character": 51,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 30,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 31,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 32,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 33,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 34,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 35,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 36,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 37,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 38,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 39,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 40,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 41,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 42,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 43,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 58,
+          "character": 44,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
         }
       ]
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/cell/TrainingMonster.py",
-      "probeCount": 649,
+      "probeCount": 1040,
       "hits": [
         {
           "line": 20,
@@ -24416,6 +24648,238 @@
           "character": 41,
           "receiverName": "self",
           "methodName": "brain_turn",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 38,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 39,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 40,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 41,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 42,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 43,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 44,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 45,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 46,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 47,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 48,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 49,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 50,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 32,
+          "character": 51,
+          "receiverName": "__dict__",
+          "methodName": "get",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 30,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 31,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 32,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 33,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 34,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 35,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 36,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 37,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 38,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 39,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 40,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 41,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 42,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 43,
+          "receiverName": "effects",
+          "methodName": "append",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 34,
+          "character": 44,
+          "receiverName": "effects",
+          "methodName": "append",
           "section": null,
           "activeArgument": 0
         }
@@ -42685,7 +43149,7 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/training/mixins/health.py",
-      "probeCount": 339,
+      "probeCount": 463,
       "hits": [
         {
           "line": 11,
@@ -42822,12 +43286,108 @@
           "methodName": "heal",
           "section": null,
           "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 24,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 25,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 26,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 27,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 28,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 29,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 30,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 31,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 32,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 33,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 34,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 15,
+          "character": 35,
+          "receiverName": "self",
+          "methodName": "heal",
+          "section": null,
+          "activeArgument": 0
         }
       ]
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/training/mixins/history.py",
-      "probeCount": 117,
+      "probeCount": 269,
       "hits": [
         {
           "line": 3,
@@ -43001,8 +43561,49 @@
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/training/mixins/inventory.py",
-      "probeCount": 111,
-      "hits": []
+      "probeCount": 205,
+      "hits": [
+        {
+          "line": 8,
+          "character": 29,
+          "receiverName": "self",
+          "methodName": "add_coins",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 8,
+          "character": 30,
+          "receiverName": "self",
+          "methodName": "add_coins",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 8,
+          "character": 31,
+          "receiverName": "self",
+          "methodName": "add_coins",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 8,
+          "character": 32,
+          "receiverName": "self",
+          "methodName": "add_coins",
+          "section": null,
+          "activeArgument": 0
+        },
+        {
+          "line": 8,
+          "character": 33,
+          "receiverName": "self",
+          "methodName": "add_coins",
+          "section": null,
+          "activeArgument": 0
+        }
+      ]
     },
     {
       "file": "tests/fixtures/kbengine-demo-assets/scripts/common/training/mixins/movement.py",

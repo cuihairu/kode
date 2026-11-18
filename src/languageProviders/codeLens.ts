@@ -5,6 +5,9 @@ import { EntityMappingManager } from '../entityMapping';
 import { buildRpcCodeLenses, defaultRpcCodeLensTitle, findPythonMethodDeclarations, RpcMethodHit } from '../backend/rpcCodeLens';
 import { buildPropertyCodeLenses, findPythonSelfPropertyAccesses, propertyAccessKey, PropertyCodeLensHit } from '../backend/propertyCodeLens';
 import { buildPropertyInitOrderLensSpecs } from '../backend/propertyInitOrderLens';
+import { chainPickShapes, formatMroChainTitle, hasMroChainToPresent, MRO_CHAIN_COMMAND } from '../backend/mroChainLens';
+import type { MroMethodChain } from '../backend/pythonClassIndex';
+import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { getTypeStorageUsageIndexReadOnly, indexTypeStorageUsageEntries, onTypeStorageUsageIndexPublished, TypeStorageUsage } from '../databaseSchema';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
 import { getLineCharacterAtOffset } from '../backend/defRenamer';
@@ -405,4 +408,78 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
     this.unsubscribeIndexPublished();
     this.onDidChangeCodeLensesEmitter.dispose();
   }
+}
+
+// MRO-CHAIN(用户令 2026-11-18「mixin 遍历调用的执行顺序推导」):Python 方法
+// def 声明行上方出「链 N: A → B → C」CodeLens——该方法沿所在类与各组合根
+// MRO 的全部定义者按执行序排列(= for cls in __mro__ 遍历/super() 接力的
+// 真实顺序,python3 真跑对拍钉死)。≥2 定义者才出镜(单定义者无顺序可言);
+// 点击 → QuickPick 按执行位次列出全部链落点,选中即跳。批154 口径独立开关
+// kbengine.codeLens.mroChain。
+export class MroChainCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+
+  constructor(private pythonClassIndex: PythonClassIndex) {}
+
+  fireConfigurationChanged(): void {
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
+  async provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
+    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
+    if (cancelled() || !getLanguageFeatureConfig().codeLensMroChain) {
+      return [];
+    }
+    const lenses: vscode.CodeLens[] = [];
+    for (const declaration of findPythonMethodDeclarations(document.getText())) {
+      if (cancelled()) { return []; }
+      const chains = await this.pythonClassIndex.resolveMroMethodChains(
+        document.fileName,
+        declaration.line,
+        declaration.methodName,
+        document,
+        token
+      );
+      if (cancelled()) { return []; }
+      if (!hasMroChainToPresent(chains)) {
+        continue;
+      }
+      lenses.push(
+        new vscode.CodeLens(
+          new vscode.Range(
+            new vscode.Position(declaration.line, declaration.character),
+            new vscode.Position(declaration.line, declaration.character + declaration.methodName.length)
+          ),
+          {
+            title: formatMroChainTitle(chains),
+            command: MRO_CHAIN_COMMAND,
+            arguments: [chains]
+          }
+        )
+      );
+    }
+    return cancelled() ? [] : lenses;
+  }
+}
+
+/** MRO-CHAIN 链 reveal:QuickPick 按执行位次列出全部链落点,选中经
+ * kbengine.source.reveal(批159 强制滚显语义)打开目标行 */
+export async function revealMroChainCommand(chains: unknown): Promise<void> {
+  const list = Array.isArray(chains) ? chains as MroMethodChain[] : [];
+  const items = chainPickShapes(list);
+  if (items.length === 0) {
+    return;
+  }
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'MRO 执行链(序号=执行位次,自上而下依次执行)'
+  });
+  if (!picked) {
+    return;
+  }
+  await vscode.commands.executeCommand(
+    KBENGINE_SOURCE_REVEAL_COMMAND,
+    vscode.Uri.file(picked.filePath),
+    { selection: createDefinitionSelection(picked.line + 1) }
+  );
 }

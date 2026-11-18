@@ -45,3 +45,15 @@ class TrainingAvatar(
 
     def show_health(self):
         return self.hp  # nav: inherited-property
+
+    # 跨天调度:MRO 遍历调用全部 mixin 的 onCrossDay——执行顺序 = MRO 序中
+    # 定义了该方法的类,即 HealthMixin → HistoryMixin → InventoryMixin(本类
+    # 自己的 onCrossDay 是入口,不重复进链)。__mro__[1:] 跳过自身;
+    # cls.__dict__.get 只取本类定义,getattr 会沿继承再命中已调过的实现。
+    def onCrossDay(self):
+        effects = []
+        for cls in type(self).__mro__[1:]:
+            handler = cls.__dict__.get('onCrossDay')
+            if handler is not None:
+                effects.append(handler(self))
+        return effects

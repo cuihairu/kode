@@ -303,11 +303,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // 与 PythonClassIndex 装配块净 -4(ScanProgressController 构造收参回两参,
   // engineMajor 键整体拆除)→ 五打点 140/221/294/387/848 → 139/220/293/382/843
   // (前三 -1,后二在装配块后再 -4,真位重探);出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 220, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 293, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 382, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 139, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 843, "startLanguageServiceOperation('completion'"],
+  // 2026-11-18(MRO-CHAIN):languageServices.ts 顶部 import +4
+  // (MroChainCodeLensProvider/revealMroChainCommand/MRO_CHAIN_COMMAND)与
+  // MRO 链镜注册块 +16(在 843 打点前)→ 139/220/293/382 → 143/224/297/386、
+  // 843 → 863(真位重探)。extension.ts 解构 +1(mroChainCodeLensProviderImpl)
+  // → 488/593 → 489/594(真位重探)。pythonClassIndex.ts MroChainEntry/
+  // MroMethodChain 接口块 +20(146 前)→ 746/1415/1539 → 766/1435/1559
+  // (真位重探;resolveMroMethodChains 追加在文件尾不再位移)。出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 224, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 297, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 386, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 143, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 863, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -401,8 +408,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 478/583 → 483/588,真位重探;出处随 baseline 锁步。
   // 2026-11-18(PROC-BREADCRUMB-001):extension.ts 解构面 -1(processOwnership
   // 镜实例)→ 483/588 → 482/587(fire 调用行在其后,不影响本组),真位重探。
-  ['src/extension.ts', 488, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 593, 'flushQueued()'],
+  ['src/extension.ts', 489, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 594, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
@@ -581,11 +588,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-18:SCAN-RESUME-001 断点续扫——pythonClassIndex.ts 顶部 import +5、
   // 字段+构造器段 +15、runScheduledScan 恢复块 +46(非均匀):688→706(+18)、
   // 1300→1366/1420→1486(+66)。出处随 baseline 锁步。
-  ['src/backend/pythonClassIndex.ts', 746, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1415, 'resolveClassBase'],
+  ['src/backend/pythonClassIndex.ts', 766, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1435, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1539, '①② 两段查询']
+  ['src/backend/pythonClassIndex.ts', 1559, '①② 两段查询']
   // 2026-11-06:KBE-CFG-001..005(2a87d77)工作区配置契约诊断——extension.ts
   // 顶部 import +4(1014 前锚点全 +4),activate 装配块 +136 落在 1432 之后:
   // onDidChangeTextDocument/flushQueued 锚点 +140(2155→2295/2235→2375);

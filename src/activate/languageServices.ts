@@ -48,13 +48,16 @@ import {
   ProcessBreadcrumbPythonSymbolProvider,
   FileModifiedTimeCodeLensProvider,
   registerProcessOwnershipSwitchCommands,
+  MroChainCodeLensProvider,
   PropertyCodeLensProvider,
   PythonCompletionProvider,
   PythonDefinitionProvider,
   revealSourceCommand,
   RpcCodeLensProvider,
+  revealMroChainCommand,
   TypesXmlCodeLensProvider
 } from '../languageProviders';
+import { MRO_CHAIN_COMMAND } from '../backend/mroChainLens';
 import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../kbengineStartupScript';
 import { ConfigCompletionProvider, CONFIG_COMPLETION_SELECTORS } from '../configCompletionProvider';
 import { ConfigDefinitionProvider, CONFIG_DEFINITION_SELECTORS } from '../configDefinitionProvider';
@@ -103,6 +106,7 @@ export interface LanguageServicesShared {
   sharedWorkspaceIndex: WorkspaceIndex;
   rpcCodeLensProviderImpl: RpcCodeLensProvider;
   propertyCodeLensProviderImpl: PropertyCodeLensProvider;
+  mroChainCodeLensProviderImpl: MroChainCodeLensProvider;
   fileModifiedTimeCodeLensProviderImpl: FileModifiedTimeCodeLensProvider;
   engineSpiCodeLensProviderImpl: EngineSpiCodeLensProvider;
   eventCodeLensProviderImpl: EventCodeLensProvider;
@@ -542,6 +546,22 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   );
   context.subscriptions.push(propertyCodeLensProvider);
 
+  // MRO-CHAIN(用户令 2026-11-18):mixin 链执行序镜——方法 def 声明行出
+  // 「链 N: A → B → C」(MRO 序过滤出定义者=遍历/super() 接力的真实执行
+  // 序),点击 QuickPick 按位次跳全部落点。批154 口径独立开关
+  // kbengine.codeLens.mroChain,配置监听 fire 即时生效
+  const mroChainCodeLensProviderImpl = new MroChainCodeLensProvider(pythonClassIndex);
+  const mroChainCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    mroChainCodeLensProviderImpl
+  );
+  context.subscriptions.push(mroChainCodeLensProvider);
+  const mroChainRevealCommand = vscode.commands.registerCommand(
+    MRO_CHAIN_COMMAND,
+    revealMroChainCommand
+  );
+  context.subscriptions.push(mroChainRevealCommand);
+
   // 进程归属面(PROC-TAG-001 → PROC-BREADCRUMB-001,用户令 2026-11-18):
   // 头部 CodeLens 渲染面已移除(面包屑合成根常驻可见,头部镜属重复展示);
   // python 侧合成根 provider(scripts/<role> 布局命中才出节点,判不出零
@@ -874,6 +894,7 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     sharedWorkspaceIndex,
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
+    mroChainCodeLensProviderImpl,
     fileModifiedTimeCodeLensProviderImpl,
     engineSpiCodeLensProviderImpl,
     eventCodeLensProviderImpl,
