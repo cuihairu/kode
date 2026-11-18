@@ -9,6 +9,7 @@
 //! 故意不做的:async IO、服务器状态机(在 kode-server)。本 crate 保持纯数据 +
 //! 纯编解码,可无 IO 单测。
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// 协议/服务器版本;ADR-001 语义下两侧握手时交换,不匹配由 TS 侧提示(BUILD-015 后续 PR)。
@@ -38,7 +39,7 @@ pub mod error_codes {
 
 /// JSON-RPC 请求/响应 id。CORE-003:request_id 贯穿扩展↔Core↔后台任务,
 /// 数字与字符串两种形态都要保真(禁止归一化成一种)。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RequestId {
     Number(i64),
@@ -55,7 +56,7 @@ impl std::fmt::Display for RequestId {
 }
 
 /// 入站消息:请求(带 id)或通知(无 id)。untagged 按字段区分。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum IncomingMessage {
     Request(Request),
@@ -63,7 +64,7 @@ pub enum IncomingMessage {
 }
 
 /// JSON-RPC 请求。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Request {
     pub jsonrpc: String,
     pub id: RequestId,
@@ -73,7 +74,7 @@ pub struct Request {
 }
 
 /// JSON-RPC 通知。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Notification {
     pub jsonrpc: String,
     pub method: String,
@@ -82,7 +83,7 @@ pub struct Notification {
 }
 
 /// JSON-RPC 响应。`id: None` 仅用于 id 不可知的解析错误(规范允许 null)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Response {
     pub jsonrpc: &'static str,
     pub id: Option<RequestId>,
@@ -117,7 +118,7 @@ impl Response {
 }
 
 /// JSON-RPC 错误对象。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ResponseError {
     pub code: i64,
     pub message: String,
@@ -126,7 +127,7 @@ pub struct ResponseError {
 }
 
 /// 出站通知(服务器 → 客户端)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ServerNotification {
     pub jsonrpc: &'static str,
     pub method: String,
@@ -149,7 +150,7 @@ impl ServerNotification {
 // ---------------------------------------------------------------------------
 
 /// `initialize` 请求参数(只取本切片关心的字段,其余透传丢弃)。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
     #[serde(default)]
@@ -168,7 +169,7 @@ pub struct InitializeParams {
 }
 
 /// LSP 工作区文件夹(initialize.workspaceFolders 条目;uri 必需)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceFolder {
     pub uri: String,
@@ -177,7 +178,7 @@ pub struct WorkspaceFolder {
 }
 
 /// `initialize` 响应。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
     pub capabilities: ServerCapabilities,
@@ -185,7 +186,7 @@ pub struct InitializeResult {
 }
 
 /// 服务器 capabilities(最小集:full 文本同步 + hover + completion)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
     pub text_document_sync: TextDocumentSyncOptions,
@@ -201,7 +202,7 @@ pub struct ServerCapabilities {
 }
 
 /// 全量同步(openClose + change=1)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TextDocumentSyncOptions {
     pub open_close: bool,
@@ -210,7 +211,7 @@ pub struct TextDocumentSyncOptions {
 }
 
 /// serverInfo:TS 侧握手时校验名字/版本(BUILD-015 版本不匹配提示的输入)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerInfo {
     pub name: String,
@@ -221,13 +222,13 @@ pub struct ServerInfo {
 // didOpen / didChange / didClose DTO(full sync)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DidOpenParams {
     pub text_document: TextDocumentItem,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TextDocumentItem {
     pub uri: String,
@@ -236,14 +237,14 @@ pub struct TextDocumentItem {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DidChangeParams {
     pub text_document: VersionedTextDocumentIdentifier,
     pub content_changes: Vec<ContentChangeEvent>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionedTextDocumentIdentifier {
     pub uri: String,
@@ -251,20 +252,20 @@ pub struct VersionedTextDocumentIdentifier {
 }
 
 /// LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Position {
     pub line: u32,
     pub character: u32,
 }
 
 /// LSP 区间。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Range {
     pub start: Position,
     pub end: Position,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentChangeEvent {
     /// Full sync(change=1)下恒为 None;增量同步(change=2)带 range,
@@ -274,13 +275,13 @@ pub struct ContentChangeEvent {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DidCloseParams {
     pub text_document: DidCloseTextDocumentIdentifier,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DidCloseTextDocumentIdentifier {
     pub uri: String,
@@ -291,7 +292,7 @@ pub struct DidCloseTextDocumentIdentifier {
 // ---------------------------------------------------------------------------
 
 /// LSP `WorkspaceFileRename`:一条重命名事件(old → new)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RenamedFile {
     pub old_uri: String,
@@ -299,20 +300,20 @@ pub struct RenamedFile {
 }
 
 /// LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameFilesParams {
     pub files: Vec<RenamedFile>,
 }
 
 /// LSP `DeleteFilesParams` 条目(仅消费 files[].uri)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeletedFile {
     pub uri: String,
 }
 
 /// LSP `DeleteFilesParams`。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteFilesParams {
     pub files: Vec<DeletedFile>,
 }
@@ -321,14 +322,14 @@ pub struct DeleteFilesParams {
 // textDocument/hover DTO(PR-010:HOVER-001 请求入口)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TextDocumentIdentifier {
     pub uri: String,
 }
 
 /// hover 请求参数:文档身份 + UTF-16 位置(语义同 Position)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverParams {
     pub text_document: TextDocumentIdentifier,
@@ -341,7 +342,7 @@ pub struct HoverParams {
 
 /// completion 请求参数:文档身份 + UTF-16 位置(触发上下文由服务端从
 /// 光标前文本推导,与 TS 行前缀判面同口径)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionParams {
     pub text_document: TextDocumentIdentifier,
@@ -349,7 +350,7 @@ pub struct CompletionParams {
 }
 
 /// completion 能力声明(triggerCharacters 供客户端决定何时发请求)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionOptions {
     pub trigger_characters: Vec<String>,
@@ -362,7 +363,7 @@ pub struct CompletionOptions {
 // ---------------------------------------------------------------------------
 
 /// definition 请求参数:文档身份 + UTF-16 位置(与 hover 同一定位基建)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DefinitionParams {
     pub text_document: TextDocumentIdentifier,
@@ -370,7 +371,7 @@ pub struct DefinitionParams {
 }
 
 /// definition 请求的文档身份(与 hover 同形,单独类型保 LSP 语义清晰)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentDiagnosticParams {
     pub text_document: TextDocumentIdentifier,
@@ -382,7 +383,7 @@ pub struct DocumentDiagnosticParams {
 
 /// `$/kode/health` 响应:启动探针/健康状态/可观察恢复原因(CORE-016)。
 /// `restart_generation` 由 TS 侧传入增长,崩溃重启后客户端可对账。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthReport {
     pub status: String,
@@ -399,7 +400,7 @@ pub struct HealthReport {
 }
 
 /// Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreResources {
     pub rss_bytes: u64,
@@ -412,7 +413,7 @@ pub struct CoreResources {
 }
 
 /// 打开文档摘要(只含 uri+version,不带正文)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentSummary {
     pub uri: String,
@@ -592,7 +593,7 @@ pub const FILE_CHANGED_NOTIFICATION: &str = "$/kode/fileChanged";
 /// `$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust
 /// 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构
 /// (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChangedParams {
     /// 原样路径

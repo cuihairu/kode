@@ -3,6 +3,7 @@
 - 状态:已接受(2026-11-17,RUST-291 裁决落档;de-facto 双面在役,本 ADR 追认)
 - 关联:书 §18 ADR-104、RUST-291、ADR-001(stdio 传输)、pr-003(协议握手)、RUST-055(协议契约门)
 - 证据:`crates/kode-server/src/server.rs`(标准 LSP 面+自命名空间面同服务)、`tests/protocolContract.test.ts`(全协议面清单钉,RUST-055 第二增量)
+- 证据(结构面):`crates/kode-protocol/protocol.schema.json` + `src/generated/protocolTypes.ts`(wire DTO 单一真源三锁链,RUST-055 第三增量,见 `docs/design/protocol-schema-single-source.md`;行为面观测钉与结构面生成钉互补)
 
 ## 背景
 

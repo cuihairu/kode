@@ -9,6 +9,9 @@ license.workspace = true
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# RUST-055:协议 schema 单一真源——wire DTO derive JsonSchema,
+# dump-protocol-schema bin 导出 JSON Schema,TS 类型由 schema 生成。
+schemars = "0.8"
 
 [lints]
 workspace = true

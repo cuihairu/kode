@@ -1,0 +1,900 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "CompletionOptions": {
+      "description": "completion 能力声明(triggerCharacters 供客户端决定何时发请求)。",
+      "properties": {
+        "resolveProvider": {
+          "description": "RUST-135:completionItem/resolve 延迟补详情面(文档/来源按需补)。",
+          "type": "boolean"
+        },
+        "triggerCharacters": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "resolveProvider",
+        "triggerCharacters"
+      ],
+      "type": "object"
+    },
+    "CompletionParams": {
+      "description": "completion 请求参数:文档身份 + UTF-16 位置(触发上下文由服务端从 光标前文本推导,与 TS 行前缀判面同口径)。",
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
+    "ContentChangeEvent": {
+      "properties": {
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Range"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Full sync(change=1)下恒为 None;增量同步(change=2)带 range, 由 kode-vfs 做精确坐标转换(VFS-004)。"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "CoreResources": {
+      "description": "Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。",
+      "properties": {
+        "cpuTimeMs": {
+          "description": "进程累计 CPU 时间 ms(utime+stime,CLK_TCK=100 Linux 标准假设); 调用方两次采样差分得速率",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "diskReadBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "diskWriteBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "rssBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "threads": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cpuTimeMs",
+        "diskReadBytes",
+        "diskWriteBytes",
+        "rssBytes",
+        "threads"
+      ],
+      "type": "object"
+    },
+    "DefinitionParams": {
+      "description": "definition 请求参数:文档身份 + UTF-16 位置(与 hover 同一定位基建)。",
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
+    "DeleteFilesParams": {
+      "description": "LSP `DeleteFilesParams`。",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/definitions/DeletedFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "type": "object"
+    },
+    "DeletedFile": {
+      "description": "LSP `DeleteFilesParams` 条目(仅消费 files[].uri)。",
+      "properties": {
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "type": "object"
+    },
+    "DidChangeParams": {
+      "properties": {
+        "contentChanges": {
+          "items": {
+            "$ref": "#/definitions/ContentChangeEvent"
+          },
+          "type": "array"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/VersionedTextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "contentChanges",
+        "textDocument"
+      ],
+      "type": "object"
+    },
+    "DidCloseParams": {
+      "properties": {
+        "textDocument": {
+          "$ref": "#/definitions/DidCloseTextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "textDocument"
+      ],
+      "type": "object"
+    },
+    "DidCloseTextDocumentIdentifier": {
+      "properties": {
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "type": "object"
+    },
+    "DidOpenParams": {
+      "properties": {
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentItem"
+        }
+      },
+      "required": [
+        "textDocument"
+      ],
+      "type": "object"
+    },
+    "DocumentDiagnosticParams": {
+      "description": "definition 请求的文档身份(与 hover 同形,单独类型保 LSP 语义清晰)。",
+      "properties": {
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "textDocument"
+      ],
+      "type": "object"
+    },
+    "DocumentSummary": {
+      "description": "打开文档摘要(只含 uri+version,不带正文)。",
+      "properties": {
+        "uri": {
+          "type": "string"
+        },
+        "version": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "uri",
+        "version"
+      ],
+      "type": "object"
+    },
+    "FileChangedParams": {
+      "description": "`$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构 (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。",
+      "properties": {
+        "ext": {
+          "description": "小写含点扩展名(`.def`);无扩展名为空串",
+          "type": "string"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "fsPath": {
+          "description": "原样路径",
+          "type": "string"
+        },
+        "handledBy": {
+          "description": "\"python\" | \"rust\" | \"unrouted\"(路由命中的处理方)",
+          "type": "string"
+        },
+        "identity": {
+          "description": "归一身份键(斜杠/点段归一)",
+          "type": "string"
+        },
+        "kind": {
+          "description": "\"create\" | \"change\" | \"delete\"",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "内容 sha256 hex;删除或读不到为 None(不编造)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "盘上版本 token `${mtimeMs}:${size}`;拿不到为 None(不编造)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ext",
+        "fileName",
+        "fsPath",
+        "handledBy",
+        "identity",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "HealthReport": {
+      "description": "`$/kode/health` 响应:启动探针/健康状态/可观察恢复原因(CORE-016)。 `restart_generation` 由 TS 侧传入增长,崩溃重启后客户端可对账。",
+      "properties": {
+        "documents": {
+          "items": {
+            "$ref": "#/definitions/DocumentSummary"
+          },
+          "type": "array"
+        },
+        "initialized": {
+          "type": "boolean"
+        },
+        "pid": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "resources": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CoreResources"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "RUST-026 Core 进程资源观测;非 Linux 或 /proc 解析失败 = None 诚实降级"
+        },
+        "restartGeneration": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "serverVersion": {
+          "type": "string"
+        },
+        "shutdownRequested": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "uptimeMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "documents",
+        "initialized",
+        "pid",
+        "restartGeneration",
+        "serverVersion",
+        "shutdownRequested",
+        "status",
+        "uptimeMs"
+      ],
+      "type": "object"
+    },
+    "HoverParams": {
+      "description": "hover 请求参数:文档身份 + UTF-16 位置(语义同 Position)。",
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
+    "IncomingMessage": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Request"
+        },
+        {
+          "$ref": "#/definitions/Notification"
+        }
+      ],
+      "description": "入站消息:请求(带 id)或通知(无 id)。untagged 按字段区分。"
+    },
+    "InitializeParams": {
+      "description": "`initialize` 请求参数(只取本切片关心的字段,其余透传丢弃)。",
+      "properties": {
+        "capabilities": {
+          "default": null
+        },
+        "initializationOptions": {
+          "default": null,
+          "description": "kode2 扩展位:restartGeneration 等客户端状态经此传入(CORE-015 对账)。"
+        },
+        "processId": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rootUri": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspaceFolders": {
+          "default": null,
+          "description": "LSP 多工作区文件夹(VFS-009/KBUG-ROOT):逐个注册为资源根,跨根同名 实体隔离的归属依据;缺省只落 rootUri。",
+          "items": {
+            "$ref": "#/definitions/WorkspaceFolder"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "InitializeResult": {
+      "description": "`initialize` 响应。",
+      "properties": {
+        "capabilities": {
+          "$ref": "#/definitions/ServerCapabilities"
+        },
+        "serverInfo": {
+          "$ref": "#/definitions/ServerInfo"
+        }
+      },
+      "required": [
+        "capabilities",
+        "serverInfo"
+      ],
+      "type": "object"
+    },
+    "Notification": {
+      "description": "JSON-RPC 通知。",
+      "properties": {
+        "jsonrpc": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "default": null
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "method"
+      ],
+      "type": "object"
+    },
+    "Position": {
+      "description": "LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。",
+      "properties": {
+        "character": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "character",
+        "line"
+      ],
+      "type": "object"
+    },
+    "Range": {
+      "description": "LSP 区间。",
+      "properties": {
+        "end": {
+          "$ref": "#/definitions/Position"
+        },
+        "start": {
+          "$ref": "#/definitions/Position"
+        }
+      },
+      "required": [
+        "end",
+        "start"
+      ],
+      "type": "object"
+    },
+    "RenameFilesParams": {
+      "description": "LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/definitions/RenamedFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "type": "object"
+    },
+    "RenamedFile": {
+      "description": "LSP `WorkspaceFileRename`:一条重命名事件(old → new)。",
+      "properties": {
+        "newUri": {
+          "type": "string"
+        },
+        "oldUri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "newUri",
+        "oldUri"
+      ],
+      "type": "object"
+    },
+    "Request": {
+      "description": "JSON-RPC 请求。",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "jsonrpc": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "jsonrpc",
+        "method"
+      ],
+      "type": "object"
+    },
+    "RequestId": {
+      "anyOf": [
+        {
+          "format": "int64",
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "JSON-RPC 请求/响应 id。CORE-003:request_id 贯穿扩展↔Core↔后台任务, 数字与字符串两种形态都要保真(禁止归一化成一种)。"
+    },
+    "Response": {
+      "description": "JSON-RPC 响应。`id: None` 仅用于 id 不可知的解析错误(规范允许 null)。",
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ResponseError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jsonrpc": {
+          "type": "string"
+        },
+        "result": true
+      },
+      "required": [
+        "jsonrpc"
+      ],
+      "type": "object"
+    },
+    "ResponseError": {
+      "description": "JSON-RPC 错误对象。",
+      "properties": {
+        "code": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "data": true,
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ServerCapabilities": {
+      "description": "服务器 capabilities(最小集:full 文本同步 + hover + completion)。",
+      "properties": {
+        "completionProvider": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CompletionOptions"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。"
+        },
+        "definitionProvider": {
+          "default": false,
+          "description": "Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。",
+          "type": "boolean"
+        },
+        "hoverProvider": {
+          "default": false,
+          "description": "LSP-003 / PH1-03(PR-010):hover provider 能力声明。",
+          "type": "boolean"
+        },
+        "textDocumentSync": {
+          "$ref": "#/definitions/TextDocumentSyncOptions"
+        }
+      },
+      "required": [
+        "textDocumentSync"
+      ],
+      "type": "object"
+    },
+    "ServerInfo": {
+      "description": "serverInfo:TS 侧握手时校验名字/版本(BUILD-015 版本不匹配提示的输入)。",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "ServerNotification": {
+      "description": "出站通知(服务器 → 客户端)。",
+      "properties": {
+        "jsonrpc": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": true
+      },
+      "required": [
+        "jsonrpc",
+        "method"
+      ],
+      "type": "object"
+    },
+    "TextDocumentIdentifier": {
+      "properties": {
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "type": "object"
+    },
+    "TextDocumentItem": {
+      "properties": {
+        "languageId": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "version": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "languageId",
+        "text",
+        "uri",
+        "version"
+      ],
+      "type": "object"
+    },
+    "TextDocumentSyncOptions": {
+      "description": "全量同步(openClose + change=1)。",
+      "properties": {
+        "change": {
+          "description": "1 = Full:didChange 每次带全文(PH1 切片够用,增量同步在 VFS PR-004)。",
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "openClose": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "change",
+        "openClose"
+      ],
+      "type": "object"
+    },
+    "VersionedTextDocumentIdentifier": {
+      "properties": {
+        "uri": {
+          "type": "string"
+        },
+        "version": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "uri",
+        "version"
+      ],
+      "type": "object"
+    },
+    "WorkspaceFolder": {
+      "description": "LSP 工作区文件夹(initialize.workspaceFolders 条目;uri 必需)。",
+      "properties": {
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "kode2 协议 wire DTO 全集(RUST-055 单一真源)。",
+  "properties": {
+    "completion_options": {
+      "$ref": "#/definitions/CompletionOptions"
+    },
+    "completion_params": {
+      "$ref": "#/definitions/CompletionParams"
+    },
+    "content_change_event": {
+      "$ref": "#/definitions/ContentChangeEvent"
+    },
+    "core_resources": {
+      "$ref": "#/definitions/CoreResources"
+    },
+    "definition_params": {
+      "$ref": "#/definitions/DefinitionParams"
+    },
+    "delete_files_params": {
+      "$ref": "#/definitions/DeleteFilesParams"
+    },
+    "deleted_file": {
+      "$ref": "#/definitions/DeletedFile"
+    },
+    "did_change_params": {
+      "$ref": "#/definitions/DidChangeParams"
+    },
+    "did_close_params": {
+      "$ref": "#/definitions/DidCloseParams"
+    },
+    "did_close_text_document_identifier": {
+      "$ref": "#/definitions/DidCloseTextDocumentIdentifier"
+    },
+    "did_open_params": {
+      "$ref": "#/definitions/DidOpenParams"
+    },
+    "document_diagnostic_params": {
+      "$ref": "#/definitions/DocumentDiagnosticParams"
+    },
+    "document_summary": {
+      "$ref": "#/definitions/DocumentSummary"
+    },
+    "file_changed_params": {
+      "$ref": "#/definitions/FileChangedParams"
+    },
+    "health_report": {
+      "$ref": "#/definitions/HealthReport"
+    },
+    "hover_params": {
+      "$ref": "#/definitions/HoverParams"
+    },
+    "incoming_message": {
+      "$ref": "#/definitions/IncomingMessage"
+    },
+    "initialize_params": {
+      "$ref": "#/definitions/InitializeParams"
+    },
+    "initialize_result": {
+      "$ref": "#/definitions/InitializeResult"
+    },
+    "notification": {
+      "$ref": "#/definitions/Notification"
+    },
+    "position": {
+      "$ref": "#/definitions/Position"
+    },
+    "range": {
+      "$ref": "#/definitions/Range"
+    },
+    "rename_files_params": {
+      "$ref": "#/definitions/RenameFilesParams"
+    },
+    "renamed_file": {
+      "$ref": "#/definitions/RenamedFile"
+    },
+    "request": {
+      "$ref": "#/definitions/Request"
+    },
+    "request_id": {
+      "$ref": "#/definitions/RequestId"
+    },
+    "response": {
+      "$ref": "#/definitions/Response"
+    },
+    "response_error": {
+      "$ref": "#/definitions/ResponseError"
+    },
+    "server_capabilities": {
+      "$ref": "#/definitions/ServerCapabilities"
+    },
+    "server_info": {
+      "$ref": "#/definitions/ServerInfo"
+    },
+    "server_notification": {
+      "$ref": "#/definitions/ServerNotification"
+    },
+    "text_document_identifier": {
+      "$ref": "#/definitions/TextDocumentIdentifier"
+    },
+    "text_document_item": {
+      "$ref": "#/definitions/TextDocumentItem"
+    },
+    "text_document_sync_options": {
+      "$ref": "#/definitions/TextDocumentSyncOptions"
+    },
+    "versioned_text_document_identifier": {
+      "$ref": "#/definitions/VersionedTextDocumentIdentifier"
+    },
+    "workspace_folder": {
+      "$ref": "#/definitions/WorkspaceFolder"
+    }
+  },
+  "required": [
+    "completion_options",
+    "completion_params",
+    "content_change_event",
+    "core_resources",
+    "definition_params",
+    "delete_files_params",
+    "deleted_file",
+    "did_change_params",
+    "did_close_params",
+    "did_close_text_document_identifier",
+    "did_open_params",
+    "document_diagnostic_params",
+    "document_summary",
+    "file_changed_params",
+    "health_report",
+    "hover_params",
+    "incoming_message",
+    "initialize_params",
+    "initialize_result",
+    "notification",
+    "position",
+    "range",
+    "rename_files_params",
+    "renamed_file",
+    "request",
+    "request_id",
+    "response",
+    "response_error",
+    "server_capabilities",
+    "server_info",
+    "server_notification",
+    "text_document_identifier",
+    "text_document_item",
+    "text_document_sync_options",
+    "versioned_text_document_identifier",
+    "workspace_folder"
+  ],
+  "title": "KodeProtocol",
+  "type": "object",
+  "x-kode-protocol-version": "0.2.0"
+}
