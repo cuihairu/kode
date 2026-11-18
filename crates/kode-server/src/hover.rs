@@ -1318,3 +1318,174 @@ pub fn dump_hover_golden(repo_root: &std::path::Path) -> String {
     }
     serde_json::to_string(&dump).expect("serialize hover golden")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(path: &str) -> DocumentKey {
+        DocumentKey::new(
+            kode_vfs::store::RootId(1),
+            kode_vfs::uri::CanonicalUri::from_path(path),
+        )
+    }
+
+    #[test]
+    fn update_round_trips_per_file_kind() {
+        let mut e = HoverEngine::new();
+        // Def:首入 Signature;同文本 Identical;注释增删(模型同文本异)BodyOnly。
+        let def_path = "/p/scripts/entity_defs/Avatar.def";
+        let def_text = "<root>\n\t<Properties>\n\t</Properties>\n</root>\n";
+        assert!(matches!(
+            e.update(key(def_path), def_text),
+            ChangeCategory::Signature
+        ));
+        assert!(matches!(
+            e.update(key(def_path), def_text),
+            ChangeCategory::Identical
+        ));
+        let def_commented = def_text.replace("</root>", "<!-- note --></root>");
+        assert!(matches!(
+            e.update(key(def_path), &def_commented),
+            ChangeCategory::BodyOnly
+        ));
+        // Entities / Types / Alias:同构往返(首 Signature,模型等价再入 BodyOnly)。
+        for (path, text) in [
+            ("/p/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+            ("/p/scripts/entity_defs/types.xml", "<root>\n</root>\n"),
+            ("/p/scripts/entity_defs/alias.xml", "<root>\n</root>\n"),
+        ] {
+            assert!(
+                matches!(e.update(key(path), text), ChangeCategory::Signature),
+                "{path} 首入必须 Signature"
+            );
+            let commented = text.replace("</root>", "<!-- c --></root>");
+            assert!(
+                matches!(e.update(key(path), &commented), ChangeCategory::BodyOnly),
+                "{path} 模型等价再入必须 BodyOnly"
+            );
+        }
+        // 语料四类之外(.py):索引层负缓存拦死(非 KBEngine 声明文件)→
+        // update 恒 Identical 早退,语料模型零写。
+        assert!(matches!(
+            e.update(
+                key("/p/scripts/base/Avatar.py"),
+                "class Avatar(object):\n    pass\n"
+            ),
+            ChangeCategory::Identical
+        ));
+    }
+
+    fn resp(kind: &str, sig: HoverSignature, inherited: Option<InheritedChain>) -> HoverResponse {
+        HoverResponse {
+            face: HoverFace::DefMethod,
+            symbol: HoverSymbol {
+                name: "attack".into(),
+                kind: kind.into(),
+                facet: None,
+                section: "BaseMethods",
+            },
+            source: HoverSource {
+                file: "Avatar.def".into(),
+                line: 3,
+            },
+            signature: sig,
+            inherited,
+        }
+    }
+
+    #[test]
+    fn render_method_args_and_exposed_face() {
+        let md = render_markdown(&resp(
+            "method",
+            HoverSignature {
+                arg_count: Some(2),
+                args: Some(vec!["self".into(), "x".into()]),
+                exposed: Some(true),
+                ..HoverSignature::default()
+            },
+            None,
+        ));
+        assert!(md.contains("**Args**: `self, x`"), "{md}");
+        assert!(md.contains("**Exposed**: `true`"), "{md}");
+    }
+
+    #[test]
+    fn render_inherited_chain_cycle_note() {
+        let chain = InheritedChain {
+            parent_chain: vec![ChainNodeInfo {
+                name: "Monster".into(),
+                exists: true,
+            }],
+            interfaces: vec![],
+            components: vec![],
+            cycle_truncated: true,
+            members: vec![],
+        };
+        let md = render_markdown(&resp("entity", HoverSignature::default(), Some(chain)));
+        assert!(md.contains("**Parent 链**"), "{md}");
+        assert!(md.contains(";检测到环,已截断"), "{md}");
+        // 无环链:同段渲染但零环注记。
+        let plain = InheritedChain {
+            parent_chain: vec![ChainNodeInfo {
+                name: "Monster".into(),
+                exists: true,
+            }],
+            interfaces: vec![],
+            components: vec![],
+            cycle_truncated: false,
+            members: vec![],
+        };
+        let md2 = render_markdown(&resp("entity", HoverSignature::default(), Some(plain)));
+        assert!(md2.contains("**Parent 链**"), "{md2}");
+        assert!(!md2.contains("检测到环"), "{md2}");
+    }
+
+    #[test]
+    fn preceding_comment_block_boundary_faces() {
+        // 跨行态内遇空行:块到此截断,只收 `-->` 行内容。
+        let mid = preceding_comment("<!-- top\n\nmid -->\nDECL\n", 4);
+        assert_eq!(mid.as_deref(), Some("mid"));
+        // 未闭合 `<!--` 悬在内容上方(非跨行态):不算注释块。
+        assert_eq!(preceding_comment("<!-- dangling\nDECL\n", 2), None);
+        // 注释链直抵文件首行(idx==0 收毕)。
+        assert!(preceding_comment("one -->\ntwo -->\nDECL\n", 3).is_some());
+    }
+
+    #[test]
+    fn corpus_def_multi_candidate_is_none() {
+        // 同根同 stem 双 def:多候选不硬猜 → None。
+        let mut e = HoverEngine::new();
+        let t = "<root>\n</root>\n";
+        e.update(key("/p/scripts/entity_defs/Avatar.def"), t);
+        e.update(key("/p/scripts/other/Avatar.def"), t);
+        assert_eq!(e.corpus_def_for_entity(RootId(1), "Avatar"), None);
+    }
+
+    #[test]
+    fn misc_helpers_direct_faces() {
+        // defsRoot 前缀不命中 → Entity 兜底;命中走 interfaces 判定。
+        assert_eq!(
+            category_of("/defs", "/elsewhere/Avatar.def"),
+            Category::Entity
+        );
+        assert_eq!(
+            category_of("/defs", "/defs/interfaces/ROLE.def"),
+            Category::Interface
+        );
+        // 末行无换行符:区间收到文本末(line==line0 兜底臂)。
+        assert_eq!(line_bounds("ab\ncd", 1), Some((3, 5)));
+        // 文本以换行收尾:末空行走循环后兜底臂(区间空)。
+        assert_eq!(line_bounds("ab\n", 1), Some((3, 3)));
+        // parse_by_kind:types/alias 两臂 + 未知 kind None。
+        assert!(matches!(
+            parse_by_kind("types", "<root/>"),
+            Some(ParsedUnit::Types(_))
+        ));
+        assert!(matches!(
+            parse_by_kind("alias", "<root/>"),
+            Some(ParsedUnit::Alias(_))
+        ));
+        assert!(parse_by_kind("py", "x = 1\n").is_none());
+    }
+}
