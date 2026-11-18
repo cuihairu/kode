@@ -454,4 +454,157 @@ mod tests {
         let out = read_node(&k, &root, "Avatar", 100_000).unwrap();
         assert_eq!(out["matches"][0]["excerptTruncated"], false);
     }
+
+    // ------- 残臂:字节帽/无文本臂/各族 resultsLimited 截断链 -------
+
+    /// 内存构造 n 个 def(各带一个同名属性):直插 defs,不落盘。
+    fn kb_with_defs(n: usize, prop: &str) -> AssetKnowledge {
+        let mut k = AssetKnowledge::default();
+        for i in 0..n {
+            let text = format!(
+                "<root>\n<Properties>\n<{prop}><Type>UINT8</Type></{prop}>\n</Properties>\n</root>\n"
+            );
+            let model = kode_parser::model::parse_def(&text);
+            k.defs.insert(
+                format!("scripts/entity_defs/E{i}.def"),
+                ParsedDef {
+                    name: format!("E{i}"),
+                    category: "entity".into(),
+                    rel_path: format!("scripts/entity_defs/E{i}.def"),
+                    text,
+                    model,
+                },
+            );
+        }
+        k
+    }
+
+    /// excerpt 字节帽:单行超 16KB 时按字节封顶提前停,前段保留、如实标截断。
+    #[test]
+    fn byte_cap_truncates_oversized_line_honestly() {
+        let mut text =
+            String::from("<root>\n<Properties>\n<p0><Type>UINT8</Type></p0>\n</Properties>\n");
+        text.push_str("<!-- ");
+        text.push_str(&"a".repeat(MAX_EXCERPT_BYTES));
+        text.push_str(" -->\n</root>\n");
+        let model = kode_parser::model::parse_def(&text);
+        let mut k = AssetKnowledge::default();
+        k.defs.insert(
+            "Avatar".into(),
+            ParsedDef {
+                name: "Avatar".into(),
+                category: "entity".into(),
+                rel_path: "scripts/entity_defs/Avatar.def".into(),
+                text,
+                model,
+            },
+        );
+        let root = py_root("bytecap", &[]);
+        let out = read_node(&k, &root, "Avatar", 120).unwrap();
+        assert_eq!(out["count"], 1);
+        let m = &out["matches"][0];
+        assert_eq!(m["excerptTruncated"], true);
+        let ex = m["excerpt"].as_str().unwrap();
+        assert!(
+            ex.contains("<p0>"),
+            "lines before the oversized one survive"
+        );
+        assert!(!ex.contains("aaaa"), "oversized line cut at the byte cap");
+    }
+
+    /// types 条目无 types_text(纯内存解析产物)时:excerpt 空 + 截断如实,
+    /// span 仍来自解析产物。
+    #[test]
+    fn type_entry_without_types_text_is_flagged_truncated() {
+        let mut k = AssetKnowledge::default();
+        let types_text = "<root>\n<ITEM_ID> UINT16 </ITEM_ID>\n</root>";
+        // 故意不装 types_text → line_entry 走无文本臂。
+        k.types = kode_parser::model::parse_types(types_text);
+        let root = py_root("notext", &[]);
+        let out = read_node(&k, &root, "ITEM_ID", 120).unwrap();
+        assert_eq!(out["count"], 1);
+        let m = &out["matches"][0];
+        assert_eq!(m["kind"], "type");
+        assert_eq!(m["excerpt"], "");
+        assert_eq!(m["excerptTruncated"], true);
+        assert!(m.get("span").is_some(), "span still reported from parse");
+    }
+
+    /// 实体族截断:20 个跨目录同名 def 推满 20 帽 → resultsLimited。
+    #[test]
+    fn twenty_same_name_entities_cap_results_limited() {
+        let mut k = AssetKnowledge::default();
+        for i in 0..20 {
+            let rel = format!("scripts/entity_defs/d{i}/Dup.def");
+            let model = kode_parser::model::parse_def("<root/>\n");
+            k.defs.insert(
+                rel.clone(),
+                ParsedDef {
+                    name: "Dup".into(),
+                    category: "entity".into(),
+                    rel_path: rel,
+                    text: "<root/>\n".into(),
+                    model,
+                },
+            );
+        }
+        let root = py_root("ent20", &[]);
+        let out = read_node(&k, &root, "dup", 120).unwrap();
+        assert_eq!(out["count"], 20);
+        assert_eq!(out["resultsLimited"], true);
+    }
+
+    /// 属性族截断:21 个 def 各带同名属性 → 第 20 推设限,内外双 break。
+    #[test]
+    fn twenty_same_name_properties_cap_results_limited() {
+        let k = kb_with_defs(21, "shared");
+        let root = py_root("prop20", &[]);
+        let out = read_node(&k, &root, "shared", 120).unwrap();
+        assert_eq!(out["count"], 20);
+        assert_eq!(out["resultsLimited"], true);
+        assert!(out["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|m| m["kind"] == "entity-property"));
+    }
+
+    /// types 族截断:19 属性垫位 + 1 个同名类型推上第 20 席 → 设限。
+    #[test]
+    fn types_takes_twentieth_slot_and_caps_results() {
+        let mut k = kb_with_defs(19, "mixa");
+        let types_text = "<root>\n<mixa> UINT16 </mixa>\n</root>";
+        k.types_text = Some(types_text.into());
+        k.types = kode_parser::model::parse_types(types_text);
+        let root = py_root("type20", &[]);
+        let out = read_node(&k, &root, "mixa", 120).unwrap();
+        assert_eq!(out["count"], 20);
+        assert_eq!(out["resultsLimited"], true);
+        assert_eq!(out["matches"][19]["kind"], "type");
+    }
+
+    /// alias 族截断:19 属性垫位 + 1 个同名别名推上第 20 席 → 设限。
+    #[test]
+    fn alias_takes_twentieth_slot_and_caps_results() {
+        let mut k = kb_with_defs(19, "mixb");
+        let alias_text = "<root>\n<mixb><Type>UINT16</Type></mixb>\n</root>";
+        k.alias_text = Some(alias_text.into());
+        k.alias = kode_parser::model::parse_alias(alias_text);
+        let root = py_root("alias20", &[]);
+        let out = read_node(&k, &root, "mixb", 120).unwrap();
+        assert_eq!(out["count"], 20);
+        assert_eq!(out["resultsLimited"], true);
+        assert_eq!(out["matches"][19]["kind"], "alias");
+    }
+
+    /// Python 族截断:19 属性垫位 + 1 个同名类推上第 20 席 → 设限。
+    #[test]
+    fn python_takes_twentieth_slot_and_caps_results() {
+        let k = kb_with_defs(19, "mixc");
+        let root = py_root("py20", &[("mixc.py", "class Mixc:\n    pass\n")]);
+        let out = read_node(&k, &root, "mixc", 120).unwrap();
+        assert_eq!(out["count"], 20);
+        assert_eq!(out["resultsLimited"], true);
+        assert_eq!(out["matches"][19]["kind"], "class");
+    }
 }

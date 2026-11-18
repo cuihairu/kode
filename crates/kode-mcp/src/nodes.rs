@@ -348,4 +348,61 @@ mod tests {
         // Structure kinds rank before document kinds (exact-route determinism).
         assert!(NodeKind::Entity.rank() < NodeKind::Document.rank());
     }
+
+    /// rank() 全 20 臂:结构序严格递增(0..19)且两两不同。
+    #[test]
+    fn rank_covers_every_kind_with_strict_total_order() {
+        let ordered = [
+            NodeKind::Entity,
+            NodeKind::XmlType,
+            NodeKind::EntityProperty,
+            NodeKind::EntityMethod,
+            NodeKind::XmlElement,
+            NodeKind::XmlAttribute,
+            NodeKind::PythonClass,
+            NodeKind::PythonFunction,
+            NodeKind::PythonMethod,
+            NodeKind::Section,
+            NodeKind::Document,
+            NodeKind::ExcelSheet,
+            NodeKind::ExcelColumn,
+            NodeKind::ExcelRow,
+            NodeKind::PythonAttribute,
+            NodeKind::JsonKey,
+            NodeKind::TmxMap,
+            NodeKind::TmxTileset,
+            NodeKind::TmxLayer,
+            NodeKind::TmxObjectGroup,
+        ];
+        let ranks: Vec<u32> = ordered.iter().map(|k| k.rank()).collect();
+        for (i, w) in ranks.windows(2).enumerate() {
+            assert!(w[0] < w[1], "rank must strictly increase at {i}: {ranks:?}");
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for r in ranks {
+            assert!(seen.insert(r), "rank {r} duplicated");
+        }
+    }
+
+    /// from_kind_str 未知串 → None(存读面回落XmlElement 的判据);Relation
+    /// 七名稳定且两两不同。
+    #[test]
+    fn from_kind_str_rejects_unknown_and_relation_names_are_stable() {
+        assert_eq!(NodeKind::from_kind_str("nope"), None);
+        assert_eq!(NodeKind::from_kind_str(""), None);
+        let pairs = [
+            (Relation::Defines, "defines"),
+            (Relation::References, "references"),
+            (Relation::Imports, "imports"),
+            (Relation::Contains, "contains"),
+            (Relation::Configures, "configures"),
+            (Relation::Implements, "implements"),
+            (Relation::Calls, "calls"),
+        ];
+        let mut names = std::collections::BTreeSet::new();
+        for (rel, name) in pairs {
+            assert_eq!(rel.as_str(), name);
+            assert!(names.insert(name), "{name} duplicated");
+        }
+    }
 }
