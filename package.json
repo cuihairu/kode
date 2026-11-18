@@ -1720,11 +1720,6 @@
             "default": true,
             "markdownDescription": "%kbengine.config.codeLens.eventCallbacks.description%"
           },
-          "kbengine.codeLens.processOwnership": {
-            "type": "boolean",
-            "default": true,
-            "markdownDescription": "%kbengine.config.codeLens.processOwnership.description%"
-          },
           "kbengine.codeLens.fileModifiedTime": {
             "type": "boolean",
             "default": true,
