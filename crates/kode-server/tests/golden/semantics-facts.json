@@ -551,7 +551,7 @@
             "RewardMixin",
             "KBEngine.Entity"
           ],
-          "class_end_line": 46,
+          "class_end_line": 58,
           "class_line": 12,
           "facet": "cell",
           "file": "scripts/cell/TrainingAvatar.py"
@@ -600,7 +600,7 @@
             "RewardMixin",
             "KBEngine.Entity"
           ],
-          "class_end_line": 23,
+          "class_end_line": 34,
           "class_line": 9,
           "facet": "cell",
           "file": "scripts/cell/TrainingMonster.py"

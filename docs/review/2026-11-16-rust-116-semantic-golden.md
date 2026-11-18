@@ -31,6 +31,7 @@
 | 8 | def MD5 规范推导 | Rust 重放器(引擎 EntityDef::md5 字节序镜像) | TS defMd5Check | 字节对拍锁(golden: def-md5-parity.json) | 1cc63444 等 def-md5 账行 |
 | 9 | provider 面(hover/completion/definition/diagnostics/flag-domains/wire) | Rust dispatch 输出 | TS provider 输出 | 字节对拍锁(golden: 6 份 *-parity.json) | crates/kode-server/tests/golden/ |
 | 10 | 本金标(semantics-facts.json) | KSEM 纯库面快照 | 无逐面对应 TS 老逻辑(各面裁决见 #1-#6) | 快照锁(本账载体;后续重放差异按四档入账) | 本批 |
+| 11 | 语料夹具行号位移(MRO-CHAIN demo 扩展:TrainingAvatar/TrainingMonster 尾追加 onCrossDay 遍历调度器) | `doclass` 两处 `class_end_line` 46→58 / 23→34,零语义事实增删(方法级事实不在采集面) | 无涉(纯夹具变更) | 夹具扩展快照锁步——裁决=预期位移,再生成合法 | 4ee6aae3(载体)/本批 MRO-CHAIN |
 
 账内规则:后续任何重放/对拍发现的新差异,**先入本表补行并给裁决档+证据,再谈合并**;「真分歧待修」档的修复必须有独立账行驱动,不允许借再生成静默对齐。
 
