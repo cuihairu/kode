@@ -1243,6 +1243,17 @@ The flow graph panel supports:
 - Purpose: manual install entry — runs `<selected interpreter> -m pip install ruff`, then probes ruff again and reports the version found (or 未检出, honestly)
 - Honesty rules: no selected interpreter refuses up front (pointing to `Select Python Interpreter` instead of guessing a python); a failed install reports the error together with the exact manual command (`"<python>" -m pip install ruff`, quoted when the path has spaces) so the user can run it themselves; the full pip log stays in the 「KBEngine Ruff」 output channel
 
+### `kbengine.python.ruffFormat`
+
+- Title: `Format Python File with Ruff (py37)`
+- Purpose: format the active `.py` file in one shot via the Rust backend (`$/kode/ruff/format`, crates/kode-server/src/ruff_format.rs): the file content goes in over stdin (`ruff format --stdin-filename <file> -`) and the formatted text replaces the whole document — nothing is written to disk until you save
+- Same locked flags as lint: `--target-version py37` (KBEngine 3.7.3) and `--no-cache` (never writes `.ruff_cache` into the workspace)
+- Consent-based install (never silent): when ruff is missing the command asks first — 「安装(Install via pip)」 runs `<selected interpreter> -m pip install ruff` and retries the format once on success; declining (or a failed install) shows the exact manual command instead; nothing is ever installed without consent
+- Non-`.py` active file (or no editor): an honest notice, zero requests, zero edits
+- Formatter providers (registered at activation when ruff is detected): document and range formatting for `python` — Shift+Alt+F / Format Document work without the command; **the default formatter is never hijacked**: `editor.defaultFormatter` is untouched, and only when it is unset a one-time prompt offers to set Kode (ruff) as the default — clicking is what sets it, never automatic
+- Generated code passthrough: Python files produced by the entity generator pass through the same format face when ruff is available (long FIXED_DICT/ARRAY defaults come out multi-line and readable); with ruff missing the generator output is unchanged — formatting never blocks generation
+- ruff lookup: the selected interpreter's own bin directory first (same source as lint), PATH fallback inside the backend
+
 ### `kbengine.project.import`
 
 - Title: `Import Existing KBEngine Project`

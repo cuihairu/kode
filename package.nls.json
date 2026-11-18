@@ -90,6 +90,7 @@
   "kbengine.command.python.createVenv.title": "Create Virtual Environment (venv)",
   "kbengine.command.python.ruffLint.title": "Ruff Lint Python Files (py37)",
   "kbengine.command.python.installRuff.title": "Install Ruff via pip (Selected Interpreter)",
+  "kbengine.command.python.ruffFormat.title": "Format Python File with Ruff (py37)",
   "kbengine.command.generator.templates.title": "Create Entity from Template",
   "kbengine.command.entity.addRpc.title": "Add RPC Method to Entity",
   "kbengine.command.component.new.title": "New KBEngine Component",

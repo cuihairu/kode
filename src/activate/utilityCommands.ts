@@ -12,7 +12,8 @@ import { l10nText } from '../nlsRuntime';
 import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../backend/snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../backend/snippetGenerator';
-import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } from '../backend/ruffLint';
+import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, ruffExePathForInterpreter, RuffDiag } from '../backend/ruffLint';
+import { ensureRuffFormatterRegistered, runRuffFormat, runRuffFormatCommand } from '../backend/ruffFormat';
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
@@ -1000,6 +1001,90 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     }
   );
   context.subscriptions.push(ruffLintCommand, installRuffCommand);
+
+  // 批 A(2026-11-18 巡检单 kode-ruff-format-statusbar.md):ruff format 一键
+  // 格式化 + Provider 自动注册(不抢默认)。桥=backend/ruffFormat.ts
+  // (`$/kode/ruff/format`),编排核零 vscode,此处只装配。ruff 定位与
+  // ruffLint 同源:选定解释器 bin 下优先(ruffExePathForInterpreter),
+  // PATH 回落在 Rust 侧。探测/格式化/Provider 同走 getRuffPath,防探测
+  // 命中而格式化落空的半可用态。
+  const ruffFormatDeps = {
+    getActivePythonFile: () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.document.languageId !== 'python' || editor.document.isClosed) {
+        return null;
+      }
+      return { fileName: editor.document.fileName, content: editor.document.getText() };
+    },
+    applyFormattedText: (text: string) => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        return;
+      }
+      void editor.edit(builder => {
+        const full = new vscode.Range(
+          editor.document.positionAt(0),
+          editor.document.positionAt(editor.document.getText().length)
+        );
+        builder.replace(full, text);
+      });
+    },
+    getInterpreterPath: ruffLintDeps.getInterpreterPath,
+    getRuffPath: () => {
+      const interpreter = ruffLintDeps.getInterpreterPath();
+      return interpreter ? ruffExePathForInterpreter(interpreter) : undefined;
+    },
+    runPipInstall: ruffLintDeps.runPipInstall,
+    showInformationMessage: (message: string, ...items: string[]) =>
+      vscode.window.showInformationMessage(message, ...items),
+    showErrorMessage: async (message: string) => {
+      await vscode.window.showErrorMessage(message);
+    },
+    channel: ruffChannel
+  };
+  const ruffFormatCommand = vscode.commands.registerCommand('kbengine.python.ruffFormat', async () => {
+    await runRuffFormatCommand(ruffFormatDeps);
+  });
+  context.subscriptions.push(ruffFormatCommand);
+
+  // 激活期探测注册(不阻塞激活):有 ruff → document/range 两 provider;
+  // editor.defaultFormatter 未设才一次性提示「设为默认」,点才写,绝不自动改。
+  void ensureRuffFormatterRegistered({
+    probeRuffAvailable: async () => {
+      const call = await runRuffFormat(
+        'x = 1\n',
+        '/__kode_ruff_format_probe__.py',
+        ruffFormatDeps.getRuffPath()
+      );
+      return call.status === 'ok' && call.result.available;
+    },
+    registerDocumentFormattingEditProvider: (selector, provider) => {
+      context.subscriptions.push(
+        vscode.languages.registerDocumentFormattingEditProvider(
+          selector as vscode.DocumentSelector,
+          provider as vscode.DocumentFormattingEditProvider
+        )
+      );
+    },
+    registerDocumentRangeFormattingEditProvider: (selector, provider) => {
+      context.subscriptions.push(
+        vscode.languages.registerDocumentRangeFormattingEditProvider(
+          selector as vscode.DocumentSelector,
+          provider as vscode.DocumentRangeFormattingEditProvider
+        )
+      );
+    },
+    getDefaultFormatter: () =>
+      vscode.workspace.getConfiguration('editor').get<string | undefined>('defaultFormatter'),
+    setDefaultFormatter: () => {
+      void vscode.workspace
+        .getConfiguration('editor')
+        .update('defaultFormatter', 'cuihairu.kode-kbengine', vscode.ConfigurationTarget.Global);
+    },
+    getRuffPath: ruffFormatDeps.getRuffPath,
+    showInformationMessage: (message: string, ...items: string[]) =>
+      vscode.window.showInformationMessage(message, ...items)
+  }).catch(() => undefined);
 
   // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传。
   // UX-REVIEW-002b/002c:同一流程喂给侧栏「开始」入口的可观察状态(识别中/

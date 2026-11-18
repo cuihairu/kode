@@ -171,6 +171,7 @@
     "onCommand:kbengine.python.syncExtraPaths",
     "onCommand:kbengine.python.ruffLint",
     "onCommand:kbengine.python.installRuff",
+    "onCommand:kbengine.python.ruffFormat",
     "onCommand:kbengine.jsoncAssociation.off",
     "onCommand:kbengine.python.debugpySync",
     "onCommand:kbengine.debug.waitAtStartup.on",
@@ -791,6 +792,11 @@
         "command": "kbengine.python.installRuff",
         "title": "%kbengine.command.python.installRuff.title%",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "kbengine.python.ruffFormat",
+        "title": "%kbengine.command.python.ruffFormat.title%",
+        "icon": "$(paint)"
       },
       {
         "command": "kbengine.generator.templates",

@@ -747,5 +747,14 @@
   "Entity registration check needs an open workspace folder": "实体注册完整性检查需要已打开的工作区文件夹",
   "AI explain / fix suggestion": "AI 解释/修复建议",
   "AI fix suggestion (read-only, nothing written)": "AI 修复建议(只读,不落盘)",
-  "AI stub suggestion (template untouched, read-only preview)": "AI stub 建议(真源不动,只读预览)"
+  "AI stub suggestion (template untouched, read-only preview)": "AI stub 建议(真源不动,只读预览)",
+  "Kode (ruff) can format Python files. Set it as the default formatter?": "Kode (ruff) 可以格式化 Python 文件。设为默认格式化器吗?",
+  "Manual install command: {cmd}": "手动安装命令:{cmd}",
+  "Not now": "暂不",
+  "Open a Python file to format it with ruff.": "打开一个 Python 文件后再用 ruff 格式化。",
+  "pip install failed. Run it manually: {cmd}": "pip 安装失败,请手动执行:{cmd}",
+  "ruff format failed: {reason}": "ruff 格式化失败:{reason}",
+  "ruff is not installed. Install it and retry.": "未安装 ruff,请安装后重试。",
+  "ruff is not installed. Install it now via pip?": "未安装 ruff。现在通过 pip 安装吗?",
+  "Set as default formatter": "设为默认格式化器"
 }

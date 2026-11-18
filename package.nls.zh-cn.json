@@ -90,6 +90,7 @@
   "kbengine.command.python.createVenv.title": "创建虚拟环境 (venv)",
   "kbengine.command.python.ruffLint.title": "Ruff 检查 Python 文件 (py37)",
   "kbengine.command.python.installRuff.title": "通过 pip 安装 Ruff(所选解释器)",
+  "kbengine.command.python.ruffFormat.title": "用 Ruff 格式化 Python 文件 (py37)",
   "kbengine.command.generator.templates.title": "从模板创建实体",
   "kbengine.command.entity.addRpc.title": "为实体添加 RPC 方法",
   "kbengine.command.component.new.title": "新建 KBEngine 组件",

@@ -43,6 +43,7 @@ import {
   getTeamTemplate,
   getMailTemplate
 } from './backend/codeGeneratorRender';
+import { formatGeneratedPython, runRuffFormat } from './backend/ruffFormat';
 
 /**
  * 实体类型配置
@@ -526,7 +527,19 @@ export class KBEngineCodeGenerator {
     const written: string[] = [];
     for (const [index, part] of this.entityScriptParts(entity.config).entries()) {
       const partFilePath = partPaths[index];
-      const content = generatePythonContent(entity, part);
+      // 批 A 生成器直通(2026-11-18 巡检单 kode-ruff-format-statusbar.md):
+      // 生成内容经 ruff format 多行化(FIXED_DICT/ARRAY 长默认值不再挤一行)。
+      // gate 未装配(单测面)/ruff 缺失/任何失败 → 原样返回,绝不阻塞生成。
+      const content = await formatGeneratedPython(
+        generatePythonContent(entity, part),
+        partFilePath,
+        {
+          runFormat: async (source, fileName) => {
+            const call = await runRuffFormat(source, fileName);
+            return call.status === 'ok' ? call.result : { available: false };
+          }
+        }
+      );
 
       // 确保目录存在
       const dir = path.dirname(partFilePath);
