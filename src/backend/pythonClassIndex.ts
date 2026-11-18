@@ -10,11 +10,6 @@ import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { SemanticDependencyGraph } from './dependencyGraph';
-import {
-  restoreSerializedParsedPythonFile,
-  ScanProgressController,
-  type ScanChunkCommit
-} from './scanProgress';
 import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from '../hoverBudget';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
 import {
@@ -244,13 +239,6 @@ export class PythonClassIndex {
   private scanRetryInFlight = false;
   /** 关闭文档后按盘重载的进行中 promise(每文件一条;查询须等它落定) */
   private closeReloads = new Map<string, Promise<void>>();
-  /**
-   * SCAN-RESUME-001:全扫断点控制器(可选;装配层注入 index-cache 目录)。
-   * 分块完成落断点,中断后重开指纹匹配的文件直接采纳(直取路径),只扫剩余。
-   */
-  private readonly scanProgress?: ScanProgressController;
-  /** SCAN-RESUME-001 测试面:最近一轮全扫的恢复统计(采纳/实扫计数) */
-  private lastScanResumeStats: { adopted: number; scanned: number } | null = null;
   /** 组合根来源内容缓存(mtime+size 指纹;未变更文件重派生不再重读) */
   private rootsContentCache = new Map<string, { mtimeMs: number; size: number; content: string }>();
   /** 显式派生版本轴(④):断言「哪类变更动了哪层」 */
@@ -258,14 +246,8 @@ export class PythonClassIndex {
     classes: 0, bases: 0, methods: 0, mro: 0, compositionRoots: 0
   };
 
-  constructor(scheduler?: IndexScheduler, scanProgress?: ScanProgressController) {
+  constructor(scheduler?: IndexScheduler) {
     this.scheduler = scheduler ?? new IndexScheduler();
-    this.scanProgress = scanProgress;
-  }
-
-  /** SCAN-RESUME-001:最近一轮全扫的断点恢复统计(采纳/实扫;测试断言面) */
-  getScanResumeStatsForTests(): { adopted: number; scanned: number } | null {
-    return this.lastScanResumeStats;
   }
 
   /** 显式版本查询(测试/遥测):断言变更只动受影响的派生层 */
@@ -992,48 +974,18 @@ export class PythonClassIndex {
       // 读取/解析计数按「尝试处理的文件数」口径:loadFile 内部有打开缓冲复用
       // 与读失败回退,精确的读/解析分布由 document-parse 事件单独承载。
       scanMetrics.countFileDiscovery(files.length);
+      scanMetrics.countFileRead(files.length);
+      scanMetrics.countFileParse(files.length);
       // ③ 反向候选的跨文件排序基线:发现序在此落号(首见不重排)。分块装载
       // 是 Promise.all 并发,完成序随 IO 时序翻动;按需预载又是 readdir 序,
       // 只有发现序才是候选顺序的稳定口径(CI 40470720225 红例根因)。
       for (const uri of files) { this.noteFileOrder(uri.fsPath); }
-      // SCAN-RESUME-001:断点恢复——读断点出采纳计划并清场(计划驻内存)。
-      // 指纹匹配(mtimeMs+size)的文件直接采纳(直取路径,与磁盘缓存恢复
-      // 同构);漂移/新增/断点缺席照扫。采纳与实扫都走分块提交同一面,
-      // 查询面 loading/partial 口径不动(半成品索引不提前对外服务)。
-      const filePaths = files.map(uri => uri.fsPath);
-      const resume = this.scanProgress ? this.scanProgress.loadResumePlan(filePaths) : null;
-      const adoptedEntries = resume ? [...resume.adopt.values()] : [];
-      const scanFiles = resume ? resume.scan : filePaths;
-      this.lastScanResumeStats = { adopted: adoptedEntries.length, scanned: scanFiles.length };
-      scanMetrics.countFileRead(scanFiles.length);
-      scanMetrics.countFileParse(scanFiles.length);
       // 分块入队:每块一个后台任务,块与块之间调度器可插队交互任务
       // (RequestLocal 单文件解析/当前文件更新),全量扫描不再独占主线程。
       const batches: string[][] = [];
       const handles = [];
-      if (adoptedEntries.length > 0) {
-        // 采纳伪分块:断点条目恢复 Map 后走 commitParsedFile(不重读不重解析)。
-        // 也按分块记账:任务被取消/失败时这批文件照 failedFiles→待补重试口径走。
-        const adoptedPaths = adoptedEntries.map(entry => entry.path);
-        batches.push(adoptedPaths);
-        handles.push(this.scheduler.enqueue({
-          kind: 'full-reindex',
-          priority: IndexTaskPriority.BackgroundFull,
-          run: async () => {
-            // 失效换代:过期分块直接放弃(旧代结果不得覆盖新一代状态)
-            if (scanGeneration !== this.scanGeneration) { return; }
-            for (const entry of adoptedEntries) {
-              this.commitParsedFile(
-                entry.path, restoreSerializedParsedPythonFile(entry.parsed), entry.version, 0);
-            }
-            jumpLog('info', () =>
-              `py 全扫断点恢复:采纳 ${adoptedEntries.length} 个文件(直取,不重读不重解析)`);
-          }
-        }));
-      }
-      for (let offset = 0; offset < scanFiles.length; offset += SCAN_CHUNK_SIZE) {
-        const batch = scanFiles.slice(offset, offset + SCAN_CHUNK_SIZE);
-        const chunkIndex = batches.length;
+      for (let offset = 0; offset < files.length; offset += SCAN_CHUNK_SIZE) {
+        const batch = files.slice(offset, offset + SCAN_CHUNK_SIZE).map(uri => uri.fsPath);
         batches.push(batch);
         handles.push(this.scheduler.enqueue({
           kind: 'full-reindex',
@@ -1041,21 +993,7 @@ export class PythonClassIndex {
           run: async () => {
             // 失效换代:过期分块直接放弃(旧代结果不得覆盖新一代状态)
             if (scanGeneration !== this.scanGeneration) { return; }
-            const results = await Promise.all(batch.map(file =>
-              this.loadFile(file, -1).then(committed => (committed ? file : null), () => null)));
-            // SCAN-RESUME-001:本块已提交文件落断点(指纹自查盘;写失败静默,
-            // 断点只是加速);换代后不落(旧代条目不得混入新轮断点)
-            if (this.scanProgress && scanGeneration === this.scanGeneration) {
-              const commits: ScanChunkCommit[] = [];
-              for (const file of results) {
-                if (file === null) { continue; }
-                const cached = this.fileCache.get(file);
-                if (cached) {
-                  commits.push({ path: file, version: cached.version, parsed: cached.parsed });
-                }
-              }
-              this.scanProgress.recordChunk(chunkIndex, commits);
-            }
+            await Promise.all(batch.map(file => this.loadFile(file, -1)));
           }
         }));
       }
@@ -1079,13 +1017,9 @@ export class PythonClassIndex {
       } else {
         // 本轮无失败分块:上一代遗留的待补文件已被本轮全量覆盖,清表
         this.pendingScanRetries.clear();
-        // SCAN-RESUME-001:全量零失败收尾——断点使命完成,清场(部分失败/
-        // 取消不 complete:已记录分块留盘,下一轮从断点续扫)
-        this.scanProgress?.complete();
       }
       jumpLog('info', () =>
-        `py 全仓索引完成 ${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`
-        + ` → 类 ${this.byName.size} 个,${scanTimer()}ms(调度器分块后台执行)`);
+        `py 全仓索引完成 ${files.length} 个文件 → 类 ${this.byName.size} 个,${scanTimer()}ms(调度器分块后台执行)`);
       scanMetrics.end('ok');
     } catch (error) {
       scanMetrics.end('error');

@@ -1,16 +1,18 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { findEventCalls } from './eventApi';
 import { raceColdIndexReadiness, resolveColdIndexReadyBudgetMs, type ColdIndexToken } from './coldIndexReadiness';
 import type { EventCall, EventCallIndex, EventCallsMarkedQuery, EventIndexReadySubscription, IndexedEventCall } from './backend/eventIndexTypes';
 import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './backend/pythonScanRules';
+import type { EventIndexDiskEntry } from './backend/indexDiskCache';
 
 // 本地索引缓存（用户令 2026-10-20：跳转/CodeLens 不得每次全仓重扫）。
 // 一次性建索引 + watcher 增量失效；实例由 provider 持有（测试各自全新实例，互不污染）。
 // 范围（第一片）：.py 的 def/class/事件调用；后续片再并入 .def 常量与类型面。
 // IDE-ARC-002:事件消费面只以小接口 EventCallIndex 暴露(类型住 eventIndexTypes)。
 
-interface IndexedFile {
+export interface IndexedFile {
   version: number;
   methods: Array<{ name: string; line: number }>;
   eventCalls: EventCall[];
@@ -90,7 +92,130 @@ export class WorkspaceIndex implements EventCallIndex {
     }
   }
 
+  /**
+   * BG-WARM 索引磁盘缓存(2026-11-18):导出当前索引快照。逐文件 stat 采集
+   * 失效判据(mtimeMs+size,与恢复侧同源);stat 失败的文件跳过不缓存——
+   * 恢复侧自然按漂移重建。输出按 path 排序:序列化字节序确定,冷扫/恢复
+   * 两次快照逐字节可比(语义不变铁律的等价断言面)。
+   */
+  async captureEventIndexSnapshot(): Promise<EventIndexDiskEntry[]> {
+    const entries: EventIndexDiskEntry[] = [];
+    for (const [filePath, indexed] of this.cache) {
+      try {
+        const st = await fs.promises.stat(filePath);
+        entries.push({ path: filePath, mtimeMs: st.mtimeMs, size: st.size, indexed });
+      } catch {
+        // 盘上已不可 stat(删除竞态):不缓存该条
+      }
+    }
+    entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return entries;
+  }
+
+  /**
+   * BG-WARM 索引磁盘缓存:磁盘载荷恢复——命中文件(mtime/size 快照匹配)直取
+   * 缓存条目,漂移/新增文件走 indexFile 增量重建(去重/revision/脏文档短路
+   * 全套,零第二套口径),盘上消失的条目丢弃不复活。与 ensureStarted 互斥
+   * 共用 starting 槽:恢复接管后 ensureStarted(含预热阶段2)秒回;全扫已
+   * 起步则不接管(tookOver=false,该缓存弃用)。
+   */
+  async restoreFromCache(entries: EventIndexDiskEntry[]): Promise<{ tookOver: boolean; restored: number; rebuilt: number; dropped: number }> {
+    if (this.started || this.disposed || this.starting) {
+      return { tookOver: false, restored: 0, rebuilt: 0, dropped: 0 };
+    }
+    const run = this.performRestoreFromCache(entries);
+    this.starting = run.then(() => undefined);
+    try {
+      return await run;
+    } catch (error) {
+      this.starting = undefined;
+      throw error;
+    }
+  }
+
+  private async performRestoreFromCache(entries: EventIndexDiskEntry[]): Promise<{ tookOver: boolean; restored: number; rebuilt: number; dropped: number }> {
+    // 增量维护面先装(KR-AUD-27 同守恒):恢复期间与恢复之后的磁盘变化都
+    // 走既有 watcher/rename/脏文档增量链,恢复结果不是静态快照
+    this.installIncrementalInfrastructure();
+    const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
+    if (this.disposed) return { tookOver: false, restored: 0, rebuilt: 0, dropped: 0 };
+    const currentStat = new Map<string, { mtimeMs: number; size: number }>();
+    await Promise.all(files.map(async uri => {
+      try {
+        const st = await fs.promises.stat(uri.fsPath);
+        currentStat.set(uri.fsPath, { mtimeMs: st.mtimeMs, size: st.size });
+      } catch {
+        // stat 失败 → 不入清单,该文件按漂移处理
+      }
+    }));
+    const entriesByPath = new Map(entries.map(entry => [entry.path, entry]));
+    const rebuildUris: vscode.Uri[] = [];
+    let restored = 0;
+    let dropped = 0;
+    for (const uri of files) {
+      const entry = entriesByPath.get(uri.fsPath);
+      const st = currentStat.get(uri.fsPath);
+      if (entry && st && entry.mtimeMs === st.mtimeMs && entry.size === st.size) {
+        this.cache.set(uri.fsPath, entry.indexed);
+        restored += 1;
+      } else {
+        rebuildUris.push(uri);
+      }
+    }
+    for (const entry of entries) {
+      if (!currentStat.has(entry.path)) dropped += 1;
+    }
+    // 漂移/新增文件增量重建:并发与冷扫同口径
+    let nextFile = 0;
+    let rebuilt = 0;
+    const rebuildWorker = async (): Promise<void> => {
+      while (!this.disposed && nextFile < rebuildUris.length) {
+        const uri = rebuildUris[nextFile++];
+        await this.indexFile(uri);
+        rebuilt += 1;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(INITIAL_SCAN_CONCURRENCY, rebuildUris.length) }, rebuildWorker));
+    if (this.disposed) return { tookOver: false, restored: 0, rebuilt: 0, dropped: 0 };
+    this.refreshExternalWatchers();
+    this.started = true;
+    this.readyEmitter.fire();
+    return { tookOver: true, restored, rebuilt, dropped };
+  }
+
   private async startIndex(): Promise<void> {
+    this.installIncrementalInfrastructure();
+    const initialRevisions = new Map(this.revisions);
+    const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
+    if (this.disposed) return;
+    let nextFile = 0;
+    const scanWorker = async (): Promise<void> => {
+      while (!this.disposed && nextFile < files.length) {
+        const uri = files[nextFile++];
+        if ((this.revisions.get(uri.fsPath) ?? 0) !== (initialRevisions.get(uri.fsPath) ?? 0)) continue;
+        await this.indexFile(uri);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(INITIAL_SCAN_CONCURRENCY, files.length) }, scanWorker));
+    if (this.disposed) return;
+    // IDE-AUD-035(R2-F11):事件初扫支持外部根,但 watcher 只挂 workspace 字符串
+    // glob——外部 assetsRoot 增删改不触发维护。外部根改挂 RelativePattern 整组
+    // (切根可重建),与实体面 refreshExternalRootWatchers 同口径。
+    this.refreshExternalWatchers();
+    this.started = true;
+    // 初扫完成广播(未就绪→就绪):等待期消费端(预算耗尽 pending 面)
+    // 收到通知后自动重渲染
+    this.readyEmitter.fire();
+  }
+
+  /**
+   * 增量维护基础设施:document/close/rename 监听 + 脏文档播种 + 磁盘
+   * watcher(KR-AUD-27:watcher 必须先于文件发现,扫描期间的变更 bump
+   * revision 被索引而非永久丢失)。冷扫(startIndex)与磁盘缓存恢复
+   * (performRestoreFromCache)共用——恢复路径同样必须有增量维护面,
+   * 否则恢复后索引退化为静态快照。
+   */
+  private installIncrementalInfrastructure(): void {
     this.documentListener ??= vscode.workspace.onDidChangeTextDocument(event => {
       this.noteSaved(event.document);
     });
@@ -132,28 +257,6 @@ export class WorkspaceIndex implements EventCallIndex {
       this.cache.delete(uri.fsPath);
     });
     this.watchers.push(watcher);
-
-    const initialRevisions = new Map(this.revisions);
-    const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
-    if (this.disposed) return;
-    let nextFile = 0;
-    const scanWorker = async (): Promise<void> => {
-      while (!this.disposed && nextFile < files.length) {
-        const uri = files[nextFile++];
-        if ((this.revisions.get(uri.fsPath) ?? 0) !== (initialRevisions.get(uri.fsPath) ?? 0)) continue;
-        await this.indexFile(uri);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(INITIAL_SCAN_CONCURRENCY, files.length) }, scanWorker));
-    if (this.disposed) return;
-    // IDE-AUD-035(R2-F11):事件初扫支持外部根,但 watcher 只挂 workspace 字符串
-    // glob——外部 assetsRoot 增删改不触发维护。外部根改挂 RelativePattern 整组
-    // (切根可重建),与实体面 refreshExternalRootWatchers 同口径。
-    this.refreshExternalWatchers();
-    this.started = true;
-    // 初扫完成广播(未就绪→就绪):等待期消费端(预算耗尽 pending 面)
-    // 收到通知后自动重渲染
-    this.readyEmitter.fire();
   }
 
   /**
