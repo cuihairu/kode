@@ -788,4 +788,82 @@ mod tests {
             .any(|f| f.value.contains("missing-component-type:Ghost")));
         assert_eq!(snap.components[0].component_type.as_deref(), Some("RealW"));
     }
+
+    #[test]
+    fn chain_overflow_at_65_is_diagnosed() {
+        // 65 层父链(深于上限 64)→ overflow 诊断,break 不再展开。
+        let mut defs: Vec<(&'static str, DefFile)> = Vec::new();
+        for i in 1..=64u32 {
+            let name: &'static str = Box::leak(format!("E{i}").into_boxed_str());
+            let next: &'static str = Box::leak(format!("E{}", i + 1).into_boxed_str());
+            defs.push((name, def(Some(next), vec![], vec![])));
+        }
+        let own = def(Some("E1"), vec![], vec![]);
+        let resolve = map_defs(defs, super::ReferenceKind::Entity);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
+        assert!(snap
+            .issues
+            .iter()
+            .any(|f| f.value.contains("inheritance-chain-overflow:Avatar")));
+    }
+
+    #[test]
+    fn interface_duplicate_and_missing_are_diagnosed() {
+        // 接口重复(二次命中 visited)与不可解析接口 → 各自诊断,不串。
+        let own = def(None, vec!["Mixin", "Mixin", "Ghost"], vec![]);
+        let mixin = def(None, vec![], vec![]);
+        let resolve = map_defs(vec![("Mixin", mixin)], super::ReferenceKind::Interface);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
+        assert!(snap
+            .issues
+            .iter()
+            .any(|f| f.value.contains("interface-cycle-or-duplicate:Mixin")));
+        assert!(snap
+            .issues
+            .iter()
+            .any(|f| f.value.contains("missing-interface:Ghost")));
+    }
+
+    #[test]
+    fn same_method_two_sources_conflicts() {
+        // 同面同名方法两来源(自身+父)→ method-defined-in-multiple-sources,
+        // 双候选不任取。
+        let mut own = def(Some("P"), vec![], vec![]);
+        own.base_methods = vec![method("attack", false)];
+        let mut parent = def(None, vec![], vec![]);
+        parent.base_methods = vec![method("attack", true)];
+        let resolve = map_defs(vec![("P", parent)], super::ReferenceKind::Entity);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
+        let conflict = snap
+            .conflicts
+            .iter()
+            .find(|c| c.name == "attack")
+            .expect("同名方法必须冲突");
+        assert_eq!(conflict.reason, "method-defined-in-multiple-sources");
+        assert_eq!(conflict.candidates.len(), 2, "自身+父两候选");
+    }
 }
