@@ -1416,6 +1416,359 @@ mod tests {
         assert_eq!(found[0].character, 34); // self.cell. 之后 foo 起点(码元列)
     }
 
+    // ---- COV-003 覆盖提满批(2026-11-19):词法微臂直测 + guard 几何/别名
+    // ---- 作用域链/重绑失效管线臂。 ----
+
+    fn u(s: &str) -> Vec<u16> {
+        s.encode_utf16().collect()
+    }
+
+    #[test]
+    fn cov_lexical_micro_arms() {
+        // indent_of:\t 记 4
+        assert_eq!(indent_of(&u("\t\t x")), 9);
+        // is_js_space 奇异空白面经 trim_u16(\u000B/\u000C/\u00A0/\u2028)
+        assert_eq!(trim_u16(&u("\u{000B}a\u{000C}")), u("a"));
+        assert_eq!(trim_u16(&u("\u{00A0}hi\u{2028}")), u("hi"));
+        assert_eq!(
+            trim_u16(&u("\u{1680}\u{2001}\u{2029}\u{202F}\u{205F}\u{3000}x")),
+            u("x")
+        );
+        // comment_only:# 分支(常态被掩码,直测钉语义)
+        assert!(comment_only(&u("# x")));
+        assert!(comment_only(&u("   ")));
+        assert!(!comment_only(&u("x")));
+        // nested_scope_header:async 分支
+        assert!(nested_scope_header(&u("    async def g():")));
+        assert!(!nested_scope_header(&u("    asyncx def g():"))); // async 后须空白
+        assert!(nested_scope_header(&u("    def g():")));
+        assert!(nested_scope_header(&u("  class B:")));
+        assert!(!nested_scope_header(&u("    defx g():")));
+        // receiver_alias_assign 拒绝臂
+        assert!(receiver_alias_assign(&u("123 = self.cell")).is_none()); // 名首非字母_
+        assert!(receiver_alias_assign(&u("x = self.other")).is_none()); // 非接收者角色
+        let (name, role, rest_ws) = receiver_alias_assign(&u("x = self.cellx")).unwrap();
+        assert_eq!(name, u("x"));
+        assert_eq!(role, "cell"); // cellx 以 cell 起头,尾部非纯空白
+        assert!(!rest_ws);
+        // rebind_match 操作符族
+        assert!(rebind_match(&u("cell := 5"), &u("cell"))); // 海象
+        assert!(rebind_match(&u("cell **= 2"), &u("cell"))); // 双字符
+        assert!(rebind_match(&u("cell <<= 2"), &u("cell")));
+        assert!(rebind_match(&u("cell += 1"), &u("cell"))); // 单字符增广
+        assert!(!rebind_match(&u("cell == 1"), &u("cell"))); // == 非重绑
+        assert!(!rebind_match(&u("cell != 1"), &u("cell")));
+        // name_rebind_extras:for/del/as
+        assert!(name_rebind_extras(&u("for cell in xs"), &u("cell")));
+        assert!(name_rebind_extras(&u("del cell"), &u("cell")));
+        assert!(name_rebind_extras(&u("import q as cell"), &u("cell")));
+        assert!(!name_rebind_extras(&u("forx cell"), &u("cell"))); // 关键字后须空白
+        assert!(!name_rebind_extras(&u("forcell"), &u("cell")));
+        // find_word_occurrences 空主语守卫与词元左界
+        assert!(find_word_occurrences(&u("x"), &[]).is_empty());
+        // 词元左界 only:cellx 的 cell 前缀同样命中(TS \bcell 无右界,忠实)
+        assert_eq!(
+            find_word_occurrences(&u("a cell + cellx"), &u("cell")),
+            vec![2, 9]
+        );
+        // keyword_bounded_at 词元右界
+        assert!(keyword_bounded_at(&u("   return"), &["return", "raise"]));
+        assert!(!keyword_bounded_at(&u("   returns"), &["return"]));
+    }
+
+    #[test]
+    fn cov_if_header_and_boolean_micro_arms() {
+        // extract_if_header 拒绝/边界臂
+        assert!(extract_if_header(&u("if(self.cell): x")).is_none()); // if 后须空白
+        assert!(extract_if_header(&u("if self.cell")).is_none()); // 无顶层冒号
+        let (cond, body) = extract_if_header(&u("  if a[1] and b: pass")).unwrap();
+        assert_eq!(cond, u("a[1] and b"));
+        assert_eq!(body, 16); // 冒号位 15,body = 冒号后一列
+                              // strip_outer_parens
+        assert_eq!(strip_outer_parens(&u("(a) + (b)")), u("(a) + (b)")); // 外括号不包全
+        assert_eq!(strip_outer_parens(&u("((a))")), u("a")); // 剥两层
+        assert_eq!(strip_outer_parens(&u("(a")), u("(a")); // 括号不配平
+                                                           // is_engine_validator_call
+        assert!(is_engine_validator_call(
+            &u("kbe.isValid( self.cell )"),
+            &u("self.cell")
+        ));
+        assert!(!is_engine_validator_call(
+            &u("kbe.isValid(x, self.cell)"),
+            &u("self.cell")
+        ));
+        assert!(!is_engine_validator_call(
+            &u("xkbe.isValid(self.cell)"),
+            &u("self.cell")
+        ));
+        // split_top_level
+        let parts = split_top_level(&u("a and (b or c) and d"), "and");
+        assert_eq!(parts.len(), 3);
+        assert_eq!(split_top_level(&u("x or y"), "or").len(), 2);
+        assert_eq!(split_top_level(&u("sandy road"), "and").len(), 1); // 词内 and 不切
+                                                                       // condition_verdict 全臂
+        let cell = u("self.cell");
+        assert!(condition_verdict(&u("self.cell or x"), &cell).is_none()); // or 拆分→不确定
+        assert!(matches!(
+            condition_verdict(&u("self.cell and ok"), &cell),
+            Some(ConditionVerdict::Positive)
+        ));
+        assert!(condition_verdict(&u("ok and other"), &cell).is_none()); // 无正向分句
+        assert!(matches!(
+            condition_verdict(&u("not self.cell"), &cell),
+            Some(ConditionVerdict::EarlyExit)
+        ));
+        assert!(matches!(
+            condition_verdict(&u("not kbe.isValid(self.cell)"), &cell),
+            Some(ConditionVerdict::EarlyExit)
+        ));
+        assert!(matches!(
+            condition_verdict(&u("self.cell is None"), &cell),
+            Some(ConditionVerdict::EarlyExit)
+        ));
+        assert!(condition_verdict(&u("other is None"), &cell).is_none());
+        assert!(matches!(
+            condition_verdict(&u("(self.cell)"), &cell),
+            Some(ConditionVerdict::Positive)
+        )); // 剥括号后本体
+            // is_not_prefixed
+        assert!(is_not_prefixed(&u("not")));
+        assert!(!is_not_prefixed(&u("nothing")));
+        // same_line_ternary 双形与拒绝
+        assert!(same_line_ternary(&u("v = x if cell else y"), &u("cell")));
+        // 分歧钉板:TS \s*(is\s+not\s+None)?\s+else 吃空白后组可匹配(带空格全形
+        // TS=true);Rust starts_with(k,"is") 要求 subject 后零空白 → 带空格恒 false。
+        // 登记不修:修复属源码逻辑变更,归独立批拍板。
+        assert!(!same_line_ternary(
+            &u("v = x if cell is not None else y"),
+            &u("cell")
+        ));
+        // 零空白形 subject 后紧接 is → Rust 臂唯一真值形态(TS 同真)
+        assert!(same_line_ternary(
+            &u("v = x if cellis not None else y"),
+            &u("cell")
+        ));
+        assert!(!same_line_ternary(&u("x = y iffy cell else z"), &u("cell")));
+        assert!(!same_line_ternary(&u("x = y if other else z"), &u("cell")));
+        // has_alias_hint 边界
+        assert!(has_alias_hint(&u("q = self.base")));
+        assert!(has_alias_hint(&u("q=self.cell"))); // 无空白形
+        assert!(!has_alias_hint(&u("q = self.cellx"))); // 词元右界
+                                                        // section_mismatches:空声明表条目 → 不判
+        let mut decls = HashMap::new();
+        decls.insert("foo".to_string(), Vec::new());
+        assert!(!section_mismatches(&decls, "cell", "foo"));
+    }
+
+    #[test]
+    fn cov_multi_def_span_boundaries_and_dedent() {
+        let text = concat!(
+            "class A:\n",                // 0
+            "    self.cell.foo()\n",     // 1 首 def 前:enclosing None → 不判
+            "    def f(self):\n",        // 2
+            "        self.cell.foo()\n", // 3 无 guard → 报
+            "    def g(self):\n",        // 4
+            "        if self.cell:\n",   // 5 正向 guard
+            "            pass\n",        // 6
+            "        self.cell.foo()\n", // 7 与 guard 同缩进=块外 → 报
+        );
+        let found = run_with(text, vec![class(0, 8, &[2, 4])], HashMap::new());
+        let lines: Vec<usize> = found.iter().map(|i| i.line).collect();
+        assert_eq!(lines, vec![3, 7]);
+    }
+
+    #[test]
+    fn cov_guard_after_use_reports() {
+        let text = concat!(
+            "class A:\n",                // 0
+            "    def f(self):\n",        // 1
+            "        self.cell.foo()\n", // 2 use
+            "        if self.cell:\n",   // 3 guard 在 use 之后 → 不算
+            "            pass\n",
+        );
+        let found = run_with(text, vec![class(0, 5, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].line, 2);
+    }
+
+    #[test]
+    fn cov_guard_crossing_nested_scope_invalid() {
+        let text = concat!(
+            "class A:\n",                // 0
+            "    def f(self):\n",        // 1
+            "        if self.cell:\n",   // 2 guard
+            "            pass\n",        // 3
+            "        def inner():\n",    // 4 嵌套作用域头
+            "            pass\n",        // 5
+            "        self.cell.foo()\n", // 6 跨嵌套头 → 证明失效 → 报
+        );
+        let found = run_with(text, vec![class(0, 7, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].line, 6);
+    }
+
+    #[test]
+    fn cov_early_exit_variants() {
+        // raise 同样算早退
+        let raise_form = concat!(
+            "class A:\n",                       // 0
+            "    def f(self):\n",               // 1
+            "        if not self.cell:\n",      // 2
+            "            raise ValueError()\n", // 3
+            "        self.cell.foo()\n",        // 4
+        );
+        assert!(run_with(raise_form, vec![class(0, 5, &[1])], HashMap::new()).is_empty());
+        // 块闭合无早退 → 不算 guard → 报
+        let no_exit = concat!(
+            "class A:\n",                      // 0
+            "    def f(self):\n",              // 1
+            "        if self.cell is None:\n", // 2
+            "            log()\n",             // 3
+            "        self.cell.foo()\n",       // 4
+        );
+        let found = run_with(no_exit, vec![class(0, 5, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        // 块内首语句是复合语句 → 不确定 → 报
+        let compound_first = concat!(
+            "class A:\n",                      // 0
+            "    def f(self):\n",              // 1
+            "        if self.cell is None:\n", // 2
+            "            if deep:\n",          // 3
+            "                return\n",        // 4
+            "        self.cell.foo()\n",       // 5
+        );
+        let found = run_with(compound_first, vec![class(0, 6, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        // 块内注释跳过 + 块到方法体界无早退(exit=None 经循环尾)
+        let comment_tail = concat!(
+            "class A:\n",                      // 0
+            "    def f(self):\n",              // 1
+            "        self.cell.foo()\n",       // 2
+            "        if self.cell is None:\n", // 3
+            "            # gone\n",            // 4 掩码后全空白,跳
+            "            pass\n",              // 5
+        );
+        let found = run_with(comment_tail, vec![class(0, 6, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].line, 2);
+    }
+
+    #[test]
+    fn cov_same_line_if_guard_suppresses() {
+        let text = concat!(
+            "class A:\n",                              // 0
+            "    def f(self):\n",                      // 1
+            "        if self.cell: self.cell.foo()\n", // 2 单行体
+        );
+        assert!(run_with(text, vec![class(0, 3, &[1])], HashMap::new()).is_empty());
+    }
+
+    #[test]
+    fn cov_and_or_condition_verdicts() {
+        let and_positive = concat!(
+            "class A:\n",                     // 0
+            "    def f(self):\n",             // 1
+            "        if self.cell and ok:\n", // 2 含正向分句
+            "            self.cell.foo()\n",  // 3
+        );
+        assert!(run_with(and_positive, vec![class(0, 4, &[1])], HashMap::new()).is_empty());
+        let with_or = concat!(
+            "class A:\n",                    // 0
+            "    def f(self):\n",            // 1
+            "        if ok or self.cell:\n", // 2 or 拆分 → 不确定
+            "            self.cell.foo()\n", // 3
+        );
+        let found = run_with(with_or, vec![class(0, 4, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        let no_positive = concat!(
+            "class A:\n",                    // 0
+            "    def f(self):\n",            // 1
+            "        if ok and other:\n",    // 2 无正向分句
+            "            self.cell.foo()\n", // 3
+        );
+        let found = run_with(no_positive, vec![class(0, 4, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+    }
+
+    #[test]
+    fn cov_ternary_full_form_current_semantics() {
+        // 带空格全形:Rust same_line_ternary 可选组臂零空白才真(TS 吃 \s* 后可
+        // 匹配,分歧登记)→ 现状不压制,如实钉 1 条
+        let spaced = concat!(
+            "class A:\n",                                                    // 0
+            "    def f(self):\n",                                            // 1
+            "        v = self.cell.foo() if self.cell is not None else 0\n", // 2
+        );
+        let found = run_with(spaced, vec![class(0, 3, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        // 零空白形:subject 紧接 is → 深臂真值 → 压制
+        let zero_ws = concat!(
+            "class A:\n",                                                   // 0
+            "    def f(self):\n",                                           // 1
+            "        v = self.cell.foo() if self.cellis not None else 0\n", // 2
+        );
+        assert!(run_with(zero_ws, vec![class(0, 3, &[1])], HashMap::new()).is_empty());
+    }
+
+    #[test]
+    fn cov_same_line_double_call() {
+        let text = concat!(
+            "class A:\n",                                 // 0
+            "    def f(self):\n",                         // 1
+            "        self.cell.foo(); self.cell.bar()\n", // 2 同行双调用
+        );
+        let found = run_with(text, vec![class(0, 3, &[1])], HashMap::new());
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].method_name, "foo");
+        assert_eq!(found[1].method_name, "bar");
+    }
+
+    #[test]
+    fn cov_module_level_call_outside_class_not_spanned() {
+        // 类外模块级引用:enclosing None → 无 guard 闸面(与 TS 同语义)
+        let text = "self.cell.foo()\nclass A:\n    pass\n";
+        let found = run_with(text, vec![class(1, 3, &[])], HashMap::new());
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn cov_alias_guard_invalidated_by_for_rebind() {
+        let text = concat!(
+            "class A:\n",                 // 0
+            "    def f(self):\n",         // 1
+            "        cell = self.cell\n", // 2 别名
+            "        if cell:\n",         // 3 别名正向 guard
+            "            pass\n",         // 4
+            "        for cell in xs:\n",  // 5 for 重绑 → 旧证明失效
+            "            pass\n",         // 6
+            "        self.cell.foo()\n",  // 7 → 报
+        );
+        let found = run_with(text, vec![class(0, 8, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].line, 7);
+    }
+
+    #[test]
+    fn cov_alias_use_in_nested_scope_resolves_chain() {
+        let text = concat!(
+            "class A:\n",                 // 0
+            "    def f(self):\n",         // 1
+            "        cell = self.cell\n", // 2
+            "        def inner():\n",     // 3 嵌套作用域
+            "            cell.foo()\n",   // 4 链式解析到外层绑定
+        );
+        let found = run_with(text, vec![class(0, 5, &[1])], HashMap::new());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].line, 4);
+        assert_eq!(found[0].receiver, "cell");
+        assert_eq!(found[0].method_name, "foo");
+    }
+
+    #[test]
+    fn cov_empty_text_early_return() {
+        assert!(run("x = 1\n").is_empty());
+    }
+
     #[test]
     fn params_shape_round_trip() {
         let result = analyze_receiver_none(json!({
