@@ -8,7 +8,7 @@ import {
 } from './backend/defCallChain';
 import type { DefCallChain } from './backend/defCallChain';
 import { findPythonMethodDeclarations } from './backend/rpcCodeLens';
-import { withInitialScanTimeout } from './hoverBudget';
+import { withInteractiveScanBudget } from './hoverBudget';
 import {
   CALL_CHAIN_TAB_STATE_KEY,
   normalizeCallChainTab,
@@ -150,9 +150,13 @@ export class CallChainController {
 
     let index = this.entityMappingManager.getIndexForPythonFile(uri!.fsPath);
     if (!index) {
-      // 首扫超时闸(用户令 2026-10-22):大树首扫可秒级+,不拖死命令应答
-      await withInitialScanTimeout(this.entityMappingManager.waitForInitialScan());
-      index = this.entityMappingManager.getIndexForPythonFile(uri!.fsPath);
+      // 故障 C(2026-11-18 P0):先查已有索引(增量命中即用)——命中不进这里。
+      // 未命中才走兜底等待:交互预算(1s)内首扫完成则重查一次,超时即放行
+      // 按 miss 收口。旧版在此干等首扫 5s,大树首扫秒级+时命令应答常态卡死。
+      const ready = await withInteractiveScanBudget(this.entityMappingManager.waitForInitialScan());
+      if (ready) {
+        index = this.entityMappingManager.getIndexForPythonFile(uri!.fsPath);
+      }
     }
     if (!index) {
       vscode.window.showInformationMessage(`No entity mapping found for ${path.basename(uri.fsPath)}`);

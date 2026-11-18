@@ -333,19 +333,25 @@ describe('pythonDefinition 缺口臂:runDefinitionLayers 入口与探针取消',
     expect(traced.layers[0].detail).toBe('cancelled');
   });
 
-  it('属性命中 + waitForInitialScan 取消(L818)', async () => {
+  it('属性命中不等待首扫(L1078):probe 命中即返,waitForInitialScan 零调用', async () => {
     const token = { isCancellationRequested: false };
+    let scanCalls = 0;
     const manager = makeManager({
       resolvePropertyDefinition: async () => ({ defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 7 }),
       waitForInitialScan: async () => {
+        // 若查询面仍以「全量扫完」作前置条件,这里会被调到并把 token 翻真 →
+        // 已命中的属性跳转被自己的等待取消(旧语义,2026-11-18 故障 C 病根)
+        scanCalls += 1;
         token.isCancellationRequested = true;
       }
     });
     const provider = new PythonDefinitionProvider(manager as never);
     const { text, position } = posOf('def tick(self):\n    self.h|p = 1\n');
     const traced = await provider.provideDefinitionTraced(makeDoc(text), position, token as never);
-    expect(traced.location).toBeNull();
-    expect(traced.layers[0].detail).toBe('cancelled');
+    expect(scanCalls).toBe(0);
+    expect(traced.location).not.toBeNull();
+    expect((traced.location as { uri: { fsPath: string } }).uri.fsPath).toContain('Hero.def');
+    expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'hit' });
   });
 });
 
@@ -426,5 +432,96 @@ describe('pythonDefinition 缺口臂:def 兜底与 file-scope 后代', () => {
     const traced = await provider.provideDefinitionTraced(makeDoc(text), position);
     expect(traced.location).toBeNull();
     expect(traced.layers.some(l => l.layer === 'file-scope' && l.status === 'miss')).toBe(true);
+  });
+});
+
+// ── 2026-11-18 P0 故障 C 契约:扫描期间索引可用性 ─────────────────────
+// 用户亲报「kode 扫描之后提示缺引擎…一直在扫」的同源面:查询层把
+// waitForInitialScan 当查询前置条件,已扫进内存的符号一律不查,F12 每次先
+// 干等 5s 超时才答「没有」。三臂锁死新契约:增量命中即用 / 未命中才走
+// 兜底短等待且可取消 / 全量完成后行为不变。
+describe('故障 C 契约:查询先查增量索引,首扫只作兜底最后一跳', () => {
+  const propertyHit = { defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 7 };
+
+  it('臂① 首扫进行中 + 符号已在索引里 → 即时命中,首扫等待零调用', async () => {
+    let scanCalls = 0;
+    // 首扫永不完成(模拟大树仍在扫):命中不得依赖它
+    const pendingScan = new Promise<void>(() => undefined);
+    const manager = makeManager({
+      resolvePropertyDefinition: async () => propertyHit,
+      waitForInitialScan: () => {
+        scanCalls += 1;
+        return pendingScan;
+      }
+    });
+    const provider = new PythonDefinitionProvider(manager as never);
+    const { text, position } = posOf('def tick(self):\n    self.h|p = 1\n');
+    const startedAt = Date.now();
+    const traced = await provider.provideDefinitionTraced(makeDoc(text), position);
+    expect(scanCalls).toBe(0);
+    expect(traced.location).not.toBeNull();
+    expect((traced.location as { uri: { fsPath: string } }).uri.fsPath).toContain('Hero.def');
+    expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'hit' });
+    // 命中路径不得产生交互延迟(兜底等待只在未命中时发生)
+    expect(Date.now() - startedAt).toBeLessThan(500);
+  });
+
+  it('臂② 未索引文件 → 走兜底等待,首扫完成后复查命中', async () => {
+    let scanCalls = 0;
+    let probes = 0;
+    const manager = makeManager({
+      resolvePropertyDefinition: async () => (probes += 1) > 1 ? propertyHit : null,
+      waitForInitialScan: async () => {
+        scanCalls += 1;
+      }
+    });
+    const provider = new PythonDefinitionProvider(manager as never);
+    const { text, position } = posOf('def tick(self):\n    self.h|p = 1\n');
+    const traced = await provider.provideDefinitionTraced(makeDoc(text), position);
+    expect(scanCalls).toBe(1);
+    expect(probes).toBeGreaterThanOrEqual(2);
+    expect(traced.location).not.toBeNull();
+    // 复查命中留痕(区分「首查命中」与「等待后复查命中」)
+    expect(traced.layers[0].detail).toContain('retry');
+  });
+
+  it('臂③ 首扫永不完成 → 交互预算超时按 miss 收口,不挂死;token 取消更早收口', async () => {
+    const pendingScan = new Promise<void>(() => undefined);
+    const makeMissManager = (): ProbeManager => makeManager({
+      resolvePropertyDefinition: async () => null,
+      waitForInitialScan: () => pendingScan
+    });
+    const spec = 'def tick(self):\n    self.h|p = 1\n';
+
+    // 3a:无取消 → 1s 交互预算到期后放行判 miss(旧版会挂到 5s 全量闸)
+    const timed = Date.now();
+    const { text, position } = posOf(spec);
+    const timedTraced = await new PythonDefinitionProvider(makeMissManager() as never)
+      .provideDefinitionTraced(makeDoc(text), position);
+    const waitedMs = Date.now() - timed;
+    expect(timedTraced.location).toBeNull();
+    expect(waitedMs).toBeGreaterThanOrEqual(900);
+    expect(waitedMs).toBeLessThan(4000);
+
+    // 3b:token 取消(预算内)→ 远早于预算收口
+    let requestCancel: (() => void) | undefined;
+    const cancellation: { isCancellationRequested: boolean } = { isCancellationRequested: false };
+    const token = {
+      get isCancellationRequested(): boolean { return cancellation.isCancellationRequested; },
+      onCancellationRequested(listener: () => void): { dispose(): void } {
+        requestCancel = () => {
+          cancellation.isCancellationRequested = true;
+          listener();
+        };
+        return { dispose: () => undefined };
+      }
+    };
+    setTimeout(() => { requestCancel?.(); }, 60);
+    const cancelledAt = Date.now();
+    const cancelled = await new PythonDefinitionProvider(makeMissManager() as never)
+      .provideDefinitionTraced(makeDoc(text), position, token as never);
+    expect(cancelled.location).toBeNull();
+    expect(token.isCancellationRequested).toBe(true);
+    expect(Date.now() - cancelledAt).toBeLessThan(900);
   });
 });

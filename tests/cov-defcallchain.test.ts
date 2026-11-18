@@ -482,6 +482,60 @@ describe('defCallChainProvider 补测', () => {
     expect(messages.info).toContain('No entity mapping found for Hero.py');
   });
 
+  // 故障 C 契约(2026-11-18 P0):调用链查询先查已有索引,命中直返;未命中才
+  // 走首扫兜底短等待。臂①锁「命中不进等待」(旧版每次调用链命令都先干等
+  // 首扫 5s),臂③锁「首扫永不完成也不挂死」(预算到期按 miss 收口)。
+  // 臂②(等待后复查命中)由上面「编辑器单方法 + 首扫后索引到位」的 indexCalls
+  // === 2 断言覆盖。
+  it('臂① 调用链:索引增量命中 → 首扫等待零调用', async () => {
+    const index = mkIndex(
+      [mkDefinition('start', 'BaseMethods', 2), mkDefinition('move', 'CellMethods', 2)],
+      [mkPythonMethod(HERO_PY, 'start', 'BaseMethods')]
+    );
+    let scanCalls = 0;
+    const base = new EntityMappingManager({ subscriptions: [] });
+    managers.push(base);
+    // 计数式 waitForInitialScan:被调到即证明查询面把首扫当查询前置条件
+    // (旧语义);命中路径不得触碰它。
+    const countingManager = new Proxy(base, {
+      get(target, property, receiver) {
+        if (property === 'getIndexForPythonFile') return () => index;
+        if (property === 'waitForInitialScan') return () => {
+          scanCalls += 1;
+          return Promise.resolve();
+        };
+        return Reflect.get(target, property, receiver);
+      }
+    }) as EntityMappingManager;
+    const controller = newController(countingManager);
+    await controller.showForActiveEditor(Uri.file(HERO_PY), 2, 'start');
+    expect(scanCalls).toBe(0);
+    expect(panelRegistry.panels).toHaveLength(1);
+  });
+
+  it('臂③ 调用链:首扫永不完成 → 交互预算内按 miss 收口,不挂死', async () => {
+    const neverReady = new Promise<void>(() => undefined);
+    let scanCalls = 0;
+    const base = new EntityMappingManager({ subscriptions: [] });
+    managers.push(base);
+    const countingManager = new Proxy(base, {
+      get(target, property, receiver) {
+        if (property === 'getIndexForPythonFile') return () => null;
+        if (property === 'waitForInitialScan') return () => {
+          scanCalls += 1;
+          return neverReady;
+        };
+        return Reflect.get(target, property, receiver);
+      }
+    }) as EntityMappingManager;
+    const controller = newController(countingManager);
+    const startedAt = Date.now();
+    await controller.showForActiveEditor(Uri.file(HERO_PY), 2, 'start');
+    expect(scanCalls).toBe(1);
+    expect(messages.info).toContain('No entity mapping found for Hero.py');
+    expect(Date.now() - startedAt).toBeLessThan(4000);
+  });
+
   it('索引有但起点方法未登记:提示非索引实体方法', async () => {
     const index = mkIndex([mkDefinition('move', 'CellMethods', 2)], []);
     const controller = newController(newManager(() => index));

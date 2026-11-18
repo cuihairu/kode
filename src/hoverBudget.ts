@@ -241,6 +241,26 @@ export async function withInitialScanTimeout(
   await raceWithBudget('initial-scan', scan, timeoutMs, token);
 }
 
+/**
+ * 首扫兜底等待(2026-11-18 P0 故障 C:「扫描期间索引全不可用」):查询面先查
+ * 增量索引,命中即用;未命中才走这里兜底等待——交互预算(1s,可被 token
+ * 取消)内首扫完成 → true(调用方重查一次);超时 → false 放行(不阻塞应答,
+ * 记 LogHub)。返回 true 表示「值得重查」,false 表示「预算内没等到,按 miss 收口」。
+ * 与 withInitialScanTimeout 的区别:那是全量完成闸(5s 常态),这是兜底最后一跳。
+ */
+export async function withInteractiveScanBudget(
+  scan: Promise<unknown>,
+  token?: vscode.CancellationToken
+): Promise<boolean> {
+  const ready = await raceWithBudget(
+    'initial-scan-fallback',
+    scan.then(() => true),
+    INTERACTIVE_INDEX_WAIT_MS,
+    token
+  );
+  return ready === true;
+}
+
 /** 各层耗时记账(LogHub info):与超时记录同通道,真机对时间线定位慢层 */
 export function logLayerTiming(layer: string, elapsedMs: number, detail = ''): void {
   logHub?.info({

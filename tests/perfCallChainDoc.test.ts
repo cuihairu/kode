@@ -289,11 +289,21 @@ const ANCHORS: Array<[string, number, string]> = [
   // scanProgress 两行)与 PythonClassIndex 装配块净 +10(350 后)→ 前三打点
   // 133/214/287 → 136/217/290(+3),354 → 367/804 → 817(+13),真位重探;
   // 出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 220, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 293, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 379, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 139, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 840, "startLanguageServiceOperation('completion'"],
+  // 2026-11-18(INDEX-DISCIPLINE-001+P0 三故障):languageServices.ts 顶部 import
+  // +1(indexEventCoalescer)、PythonClassIndex 装配块 +4(coalescer 注入,均在
+  // 前三打点前)、首扫兜底闸块 extension 侧接线 +8(definition 第二个打点后)
+  // → 139/220/293/379 → 140/221/294/387、840 → 848(真位重探)。extension.ts
+  // 顶部 import +1(engineRootAutoFill)、激活链补探针块 +8(在 onDidChange
+  // TextDocument 前)、诊断解构 flush 块净 +6 → 480/587 → 488/593(真位重探)。
+  // pythonDefinition.ts 顶部 import 同数(换符号)、属性探针抽函数+首扫兜底
+  // 重写净 +20 → withInitialScanTimeout 锚点 1068 → 1088 且符号改
+  // withInteractiveScanBudget(故障 C:查询先查增量索引,首扫只作兜底最后一跳)。
+  // 出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 221, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 294, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 387, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 140, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 848, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -387,8 +397,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 478/583 → 483/588,真位重探;出处随 baseline 锁步。
   // 2026-11-18(PROC-BREADCRUMB-001):extension.ts 解构面 -1(processOwnership
   // 镜实例)→ 483/588 → 482/587(fire 调用行在其后,不影响本组),真位重探。
-  ['src/extension.ts', 480, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 587, 'flushQueued()'],
+  ['src/extension.ts', 488, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 593, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
@@ -510,7 +520,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // const,provideDefinition 260/provideDefinitionTracedImpl 312 不变)→ 其后锚点
   // +2(真位重探 829/935,出处随 baseline 锁步)。
   ['src/languageProviders/pythonDefinition.ts', 962, '层0 接收者段闸'],
-  ['src/languageProviders/pythonDefinition.ts', 1068, 'withInitialScanTimeout'],
+  // 2026-11-18(P0 故障 C):pythonDefinition.ts 属性探针抽 runPropertyProbes
+  // 闭包 + 首扫兜底闸由 5s 全量完成闸(withInitialScanTimeout)改交互预算
+  // (withInteractiveScanBudget)净 +20 → 锚点 1068 → 1088,符号同改;前两个锚
+  // (374/962)在其前不位移。出处随 baseline 锁步。
+  ['src/languageProviders/pythonDefinition.ts', 1088, 'withInteractiveScanBudget'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders

@@ -18,7 +18,7 @@ import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelf
 import { buildKbeStubDocument, buildKbeStubUriString, getKbeAliases, getKbeFromImportedSymbols, getKbeSymbol, getPythonClassBaseAtPosition, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
 import { pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, isKeyInsideLineComment, queryDataDictSitesForAccessMarked, resolveScopeRoot, type KbeDataDictSite } from '../globalDataIndex';
-import { withInitialScanTimeout } from '../hoverBudget';
+import { withInteractiveScanBudget } from '../hoverBudget';
 import {
   raceColdIndexReadiness,
   resolveColdIndexReadyBudgetMs,
@@ -1045,35 +1045,52 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         via: `file=${basename}`,
         run: () => manager.resolvePropertyDefinition(document.fileName, access.fullPath, access.rootSymbol)
       });
-      for (const probe of propertyProbes) {
-        let hit: { defFile: string; line: number } | null;
-        try {
-          hit = await probe.run();
-        } catch (error) {
-          defParts.push(`property(${access.fullPath}) ${probe.via} error=${layerErrorMessage(error)}`);
-          continue;
-        }
-        if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
-        if (hit) {
-          defLocation = new vscode.Location(
-            vscode.Uri.file(hit.defFile),
-            new vscode.Position(hit.line - 1, 0)
-          );
-          // 属性访问的定义 = def 的属性声明行(defLocation);类型的声明
-          // (types.xml)不是属性访问的定义——按 def 里的类型名才该去那里,
-          // 故不再优先类型声明(2026-11-04 用户反馈纠正)。
-          const managerWithScan = manager as EntityMappingManager & { waitForInitialScan?: () => Promise<void> };
-          if (managerWithScan.waitForInitialScan) {
-            // 首扫超时闸(用户令 2026-10-22):大树首扫可秒级+,不拖死跳转层
-            await withInitialScanTimeout(managerWithScan.waitForInitialScan(), undefined, token);
-            if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
+      // 故障 C(2026-11-18 P0 用户亲报「扫描期间索引全不可用」):索引是增量
+      // 累积的,查询先查已有索引,命中直返——不再以「全量扫完」作查询前置
+      // 条件(旧版在此干等首扫 5s,已解析文件的符号明明在内存里也不查)。
+      const runPropertyProbes = async (tag: string): Promise<boolean> => {
+        for (const probe of propertyProbes) {
+          let hit: { defFile: string; line: number } | null;
+          try {
+            hit = await probe.run();
+          } catch (error) {
+            defParts.push(`property(${access.fullPath}) ${probe.via} error=${layerErrorMessage(error)}`);
+            continue;
           }
-          propertyHit = true;
-          defParts.push(`property(${access.fullPath}) ${probe.via} hit ${path.basename(hit.defFile)}:${hit.line}`);
-          break;
+          if (hit) {
+            defLocation = new vscode.Location(
+              vscode.Uri.file(hit.defFile),
+              new vscode.Position(hit.line - 1, 0)
+            );
+            // 属性访问的定义 = def 的属性声明行(defLocation);类型的声明
+            // (types.xml)不是属性访问的定义——按 def 里的类型名才该去那里,
+            // 故不再优先类型声明(2026-11-04 用户反馈纠正)。
+            defParts.push(
+              `property(${access.fullPath}) ${probe.via}${tag} hit ${path.basename(hit.defFile)}:${hit.line}`
+            );
+            return true;
+          }
+          defParts.push(`property(${access.fullPath}) ${probe.via}${tag} miss`);
         }
-        defParts.push(`property(${access.fullPath}) ${probe.via} miss`);
+        return false;
+      };
+
+      propertyHit = await runPropertyProbes('');
+      if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
+      if (!propertyHit) {
+        // 增量未命中且首扫可能仍在进行 → 交互预算兜底等待(1s,可被 token
+        // 取消)后重查一次;仍未命中才判 miss。首扫已完成时等待立即返回,
+        // 零额外成本——超时闸保留但不再是 5s 常态延迟。
+        const managerWithScan = manager as EntityMappingManager & {
+          waitForInitialScan?: () => Promise<void>;
+        };
+        if (managerWithScan.waitForInitialScan) {
+          const ready = await withInteractiveScanBudget(managerWithScan.waitForInitialScan(), token);
+          if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
+          if (ready) { propertyHit = await runPropertyProbes(' retry'); }
+        }
       }
+      if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
     }
 
     // A member of self.component is not a method on self. Until its receiver
