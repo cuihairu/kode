@@ -34,8 +34,9 @@ pub fn normalize_file_identity(file_path: &str) -> String {
         }
         if part == ".." {
             let last = parts.last().copied();
-            let last_is_drive_root =
-                last.is_some_and(|p| p.len() == 2 && p.as_bytes()[1] == b':' && p.as_bytes()[0].is_ascii_alphabetic());
+            let last_is_drive_root = last.is_some_and(|p| {
+                p.len() == 2 && p.as_bytes()[1] == b':' && p.as_bytes()[0].is_ascii_alphabetic()
+            });
             let unc_floor = if unc { 2 } else { 0 };
             if parts.len() > unc_floor && last != Some("..") && !last_is_drive_root {
                 parts.pop();
@@ -52,7 +53,8 @@ pub fn normalize_file_identity(file_path: &str) -> String {
     // 裸盘符段收尾仅对无前缀路径生效(POSIX `/C:` 不与盘符根碰撞)
     if prefix.is_empty() && parts.len() == 1 {
         let only = parts[0];
-        if only.len() == 2 && only.as_bytes()[1] == b':' && only.as_bytes()[0].is_ascii_alphabetic() {
+        if only.len() == 2 && only.as_bytes()[1] == b':' && only.as_bytes()[0].is_ascii_alphabetic()
+        {
             return format!("{}/", only.to_lowercase());
         }
     }
@@ -113,7 +115,10 @@ pub fn infer_method_section_from_python_file(python_file: &str) -> Option<&'stat
 // ---------------------------------------------------------------------------
 
 fn is_js_space_unit(unit: u16) -> bool {
-    matches!(unit, 0x0020 | 0x0009 | 0x000A | 0x000D | 0x000C | 0x000B | 0x00A0)
+    matches!(
+        unit,
+        0x0020 | 0x0009 | 0x000A | 0x000D | 0x000C | 0x000B | 0x00A0
+    )
 }
 
 pub(crate) fn units(text: &str) -> Vec<u16> {
@@ -545,13 +550,12 @@ pub(crate) fn parse_def_line(
     let close_paren = close_paren?;
     let params = split_params(&u[open + 1..close_paren], open + 1);
     // 首参 self/cls 不参与(引擎实体方法恒 self;类方法 cls 同样不是 RPC 形参)
-    let meaningful: Vec<DefParamSiteParam> = if !params.is_empty()
-        && (params[0].name == "self" || params[0].name == "cls")
-    {
-        params[1..].to_vec()
-    } else {
-        params
-    };
+    let meaningful: Vec<DefParamSiteParam> =
+        if !params.is_empty() && (params[0].name == "self" || params[0].name == "cls") {
+            params[1..].to_vec()
+        } else {
+            params
+        };
     Some(DefParamSite {
         line,
         method_name: method_name.to_string(),
@@ -570,10 +574,7 @@ fn top_level_flush(
 ) {
     let raw_u = &param_units[start..end_exclusive];
     let raw = units_to_string(raw_u);
-    let leading = raw_u
-        .iter()
-        .take_while(|u| is_js_space_unit(**u))
-        .count();
+    let leading = raw_u.iter().take_while(|u| is_js_space_unit(**u)).count();
     let trimmed = raw.trim().to_string();
     if trimmed.is_empty() {
         return;
@@ -634,7 +635,11 @@ fn split_params(param_text_units: &[u16], offset: usize) -> Vec<DefParamSitePara
     while index < param_text_units.len() {
         let ch = param_text_units[index];
         if quote != 0 {
-            let prev = if index > 0 { param_text_units[index - 1] } else { 0 };
+            let prev = if index > 0 {
+                param_text_units[index - 1]
+            } else {
+                0
+            };
             if ch == quote && prev != b'\\' as u16 {
                 quote = 0;
             }
@@ -653,7 +658,13 @@ fn split_params(param_text_units: &[u16], offset: usize) -> Vec<DefParamSitePara
         }
         index += 1;
     }
-    top_level_flush(param_text_units, start, param_text_units.len(), offset, &mut params);
+    top_level_flush(
+        param_text_units,
+        start,
+        param_text_units.len(),
+        offset,
+        &mut params,
+    );
     params
 }
 
@@ -783,7 +794,10 @@ pub fn build_def_param_inlay_items(
             _ => continue,
         };
         items.push(DefParamInlayItem {
-            position: InlayPosition { line: site.line, character: param.end },
+            position: InlayPosition {
+                line: site.line,
+                character: param.end,
+            },
             text: format!(": {}", annotation),
             kind: "Parameter".to_string(),
         });
@@ -797,7 +811,10 @@ pub fn build_def_param_inlay_items(
             if let Some(return_annotation) = resolve_annotation_direct(&declared_return) {
                 if return_annotation != "Any" {
                     items.push(DefParamInlayItem {
-                        position: InlayPosition { line: site.line, character: site.close_paren_character + 1 },
+                        position: InlayPosition {
+                            line: site.line,
+                            character: site.close_paren_character + 1,
+                        },
                         text: format!(" -> {}", return_annotation),
                         kind: "Type".to_string(),
                     });
@@ -824,7 +841,9 @@ pub struct CorpusEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "face", rename_all = "camelCase")]
 pub enum Probe {
-    Sites { corpus: String },
+    Sites {
+        corpus: String,
+    },
     Items {
         corpus: String,
         site_index: usize,
@@ -992,7 +1011,9 @@ fn probes() -> Vec<Probe> {
     let args_c = vec!["ENTITYCALL".to_string(), "PY_DICT".to_string()];
     let mut probes = Vec::new();
     for entry in corpus() {
-        probes.push(Probe::Sites { corpus: entry.name.clone() });
+        probes.push(Probe::Sites {
+            corpus: entry.name.clone(),
+        });
     }
     // cell_multimethod:5 站点 × 4 声明面
     for site_index in 0..5usize {
@@ -1012,7 +1033,12 @@ fn probes() -> Vec<Probe> {
     }
     for (corpus, site_index, args, ret) in [
         ("base_methods", 0usize, Some(args_b.clone()), None),
-        ("base_methods", 1, Some(args_c.clone()), Some("BOOL".to_string())),
+        (
+            "base_methods",
+            1,
+            Some(args_c.clone()),
+            Some("BOOL".to_string()),
+        ),
         ("bots_section", 0, Some(args_a.clone()), None),
         ("client_section", 0, Some(args_a.clone()), None),
         ("client_section", 0, Some(args_c.clone()), None),
@@ -1051,7 +1077,10 @@ fn probes() -> Vec<Probe> {
     probes
 }
 
-fn run_probe(table: &std::collections::HashMap<String, CorpusEntry>, probe: &Probe) -> ProbeOutcome {
+fn run_probe(
+    table: &std::collections::HashMap<String, CorpusEntry>,
+    probe: &Probe,
+) -> ProbeOutcome {
     match probe {
         Probe::Sites { corpus } => {
             let entry = table.get(corpus).expect("corpus 名必在表");
@@ -1059,7 +1088,12 @@ fn run_probe(table: &std::collections::HashMap<String, CorpusEntry>, probe: &Pro
                 sites: find_def_param_sites(&entry.text, &entry.path),
             }
         }
-        Probe::Items { corpus, site_index, declared_args, declared_return_type } => {
+        Probe::Items {
+            corpus,
+            site_index,
+            declared_args,
+            declared_return_type,
+        } => {
             let entry = table.get(corpus).expect("corpus 名必在表");
             let sites = find_def_param_sites(&entry.text, &entry.path);
             let items = sites
@@ -1106,7 +1140,11 @@ mod tests {
         let lines = split_lines_keep(text);
         assert_eq!(masked.len(), lines.len());
         for (m, r) in masked.iter().zip(lines.iter()) {
-            assert_eq!(m.encode_utf16().count(), r.encode_utf16().count(), "掩码不位移: {m:?} vs {r:?}");
+            assert_eq!(
+                m.encode_utf16().count(),
+                r.encode_utf16().count(),
+                "掩码不位移: {m:?} vs {r:?}"
+            );
         }
         // 字面量:开引号 _ 其余空格(位置不变),注释到行尾全空白
         assert_eq!(masked[0], "def f(self, a=_    , b):       ");
@@ -1146,26 +1184,62 @@ mod tests {
         assert_eq!(classes.len(), 2, "函数体内的 Local 类不进表");
         assert_eq!(classes[0].name, "Avatar");
         assert_eq!(classes[0].qualified_name, "Avatar");
-        let names: Vec<&str> = classes[0].methods.iter().map(|(n, _, _)| n.as_str()).collect();
-        assert_eq!(names, vec!["foo", "bar", "notAMethod", "inner"], "async def 同表;Local.hidden 闭包不是方法");
+        let names: Vec<&str> = classes[0]
+            .methods
+            .iter()
+            .map(|(n, _, _)| n.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["foo", "bar", "notAMethod", "inner"],
+            "async def 同表;Local.hidden 闭包不是方法"
+        );
         assert_eq!(classes[1].qualified_name, "Other");
         // 嵌套类(类体内 class):qualifiedName 链
-        let nested = parse_python_file("class Outer:\n    class Inner:\n        def m(self):\n            pass\n");
+        let nested = parse_python_file(
+            "class Outer:\n    class Inner:\n        def m(self):\n            pass\n",
+        );
         assert_eq!(nested.len(), 2);
         assert_eq!(nested[1].qualified_name, "Outer.Inner");
     }
 
     #[test]
     fn section_inference_multiform() {
-        assert_eq!(infer_method_section_from_python_file("/p/assets/scripts/cell/a.py"), Some("CellMethods"));
-        assert_eq!(infer_method_section_from_python_file("/p/scripts/base/a.py"), Some("BaseMethods"));
-        assert_eq!(infer_method_section_from_python_file("/p/scripts/bots/a.py"), Some("ClientMethods"));
-        assert_eq!(infer_method_section_from_python_file("/p/scripts/client/a.py"), Some("ClientMethods"));
-        assert_eq!(infer_method_section_from_python_file("base/a.py"), Some("BaseMethods"));
-        assert_eq!(infer_method_section_from_python_file("/p/scripts/../scripts/cell/a.py"), Some("CellMethods"), ".. 词法折叠");
-        assert_eq!(infer_method_section_from_python_file("/p/scripts/common/util.py"), None, "区块外");
+        assert_eq!(
+            infer_method_section_from_python_file("/p/assets/scripts/cell/a.py"),
+            Some("CellMethods")
+        );
+        assert_eq!(
+            infer_method_section_from_python_file("/p/scripts/base/a.py"),
+            Some("BaseMethods")
+        );
+        assert_eq!(
+            infer_method_section_from_python_file("/p/scripts/bots/a.py"),
+            Some("ClientMethods")
+        );
+        assert_eq!(
+            infer_method_section_from_python_file("/p/scripts/client/a.py"),
+            Some("ClientMethods")
+        );
+        assert_eq!(
+            infer_method_section_from_python_file("base/a.py"),
+            Some("BaseMethods")
+        );
+        assert_eq!(
+            infer_method_section_from_python_file("/p/scripts/../scripts/cell/a.py"),
+            Some("CellMethods"),
+            ".. 词法折叠"
+        );
+        assert_eq!(
+            infer_method_section_from_python_file("/p/scripts/common/util.py"),
+            None,
+            "区块外"
+        );
         // 大小写:Windows 盘符身份小写化
-        assert_eq!(infer_method_section_from_python_file("C:/Proj/Scripts/Cell/a.py"), Some("CellMethods"));
+        assert_eq!(
+            infer_method_section_from_python_file("C:/Proj/Scripts/Cell/a.py"),
+            Some("CellMethods")
+        );
     }
 
     #[test]
@@ -1183,7 +1257,10 @@ mod tests {
         let site = parse_def_line("def m(x, y):", 0, "m", 4, "BaseMethods").unwrap();
         assert_eq!(site.params.len(), 2);
         // 跨行(同行括号不闭合)不出
-        assert_eq!(parse_def_line("def m(self, a,", 0, "m", 4, "CellMethods"), None);
+        assert_eq!(
+            parse_def_line("def m(self, a,", 0, "m", 4, "CellMethods"),
+            None
+        );
         // 名后无 '(' 不出
         assert_eq!(parse_def_line("def m:", 0, "m", 4, "CellMethods"), None);
     }
@@ -1204,7 +1281,10 @@ mod tests {
         assert_eq!(cjk[0].name, "中文");
         assert_eq!(cjk[0].start, 0);
         assert_eq!(cjk[0].end, 2, "UTF-16 单元域");
-        assert_eq!(cjk[1].start, 4, "x 在 UTF-16 全域 index 4(两 CJK 各 1 单元)");
+        assert_eq!(
+            cjk[1].start, 4,
+            "x 在 UTF-16 全域 index 4(两 CJK 各 1 单元)"
+        );
         // star 形参
         let star = split_params(&units("*args, **kwargs"), 0);
         assert!(star[0].is_star);
@@ -1226,7 +1306,13 @@ mod tests {
         };
         let items = build_def_param_inlay_items(site, &decl);
         assert_eq!(items.len(), 2, "UNKNOWN_X 落 Any 不出");
-        assert_eq!(items[0].position, InlayPosition { line: 1, character: site.params[0].end });
+        assert_eq!(
+            items[0].position,
+            InlayPosition {
+                line: 1,
+                character: site.params[0].end
+            }
+        );
         assert_eq!(items[0].text, ": int");
         assert_eq!(items[0].kind, "Parameter");
         assert_eq!(items[1].text, ": Vector3", "VECTOR2/3 直查无闸照出");
@@ -1236,7 +1322,13 @@ mod tests {
         let items = build_def_param_inlay_items(&sites[0], &decl);
         assert_eq!(items.len(), 1, "a 已标注跳过;b 配 VECTOR3 照出");
         assert_eq!(items[0].text, ": Vector3");
-        assert_eq!(items[0].position, InlayPosition { line: 1, character: sites[0].params[1].end });
+        assert_eq!(
+            items[0].position,
+            InlayPosition {
+                line: 1,
+                character: sites[0].params[1].end
+            }
+        );
         // ReturnType
         let text = "class Avatar:\n    def foo(self, a):\n        pass\n";
         let sites = find_def_param_sites(text, "/p/scripts/cell/avatar.py");
@@ -1248,7 +1340,13 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[1].text, " -> bool");
         assert_eq!(items[1].kind, "Type");
-        assert_eq!(items[1].position, InlayPosition { line: 1, character: sites[0].close_paren_character + 1 });
+        assert_eq!(
+            items[1].position,
+            InlayPosition {
+                line: 1,
+                character: sites[0].close_paren_character + 1
+            }
+        );
         // ReturnType 落 Any 不出
         let decl = DeclarationFace {
             declared_args: Some(vec!["UINT16".into()]),
@@ -1289,9 +1387,18 @@ mod tests {
     #[test]
     fn builtin_direct_gate() {
         assert_eq!(resolve_annotation_direct("UINT8").as_deref(), Some("int"));
-        assert_eq!(resolve_annotation_direct(" VECTOR3 ").as_deref(), Some("Vector3"));
-        assert_eq!(resolve_annotation_direct("Address").as_deref(), Some("Address"));
-        assert_eq!(resolve_annotation_direct("ENTITYCALL").as_deref(), Some("Any"));
+        assert_eq!(
+            resolve_annotation_direct(" VECTOR3 ").as_deref(),
+            Some("Vector3")
+        );
+        assert_eq!(
+            resolve_annotation_direct("Address").as_deref(),
+            Some("Address")
+        );
+        assert_eq!(
+            resolve_annotation_direct("ENTITYCALL").as_deref(),
+            Some("Any")
+        );
         assert_eq!(resolve_annotation_direct("UNKNOWN_X").as_deref(), None);
         assert_eq!(resolve_annotation_direct("ALIAS").as_deref(), None);
         assert_eq!(resolve_annotation_direct("  ").as_deref(), None);
@@ -1304,6 +1411,104 @@ mod tests {
         assert!(find_def_param_sites(text, "/p/scripts/common/util.py").is_empty());
         assert!(find_def_param_sites(text, "/p/scripts/cell/avatar.py").len() == 1);
         // 区块内无类零站点
-        assert!(find_def_param_sites("def foo(self):\n    pass\n", "/p/scripts/cell/a.py").is_empty());
+        assert!(
+            find_def_param_sites("def foo(self):\n    pass\n", "/p/scripts/cell/a.py").is_empty()
+        );
+    }
+
+    // ---- 身份折叠/头部拒绝/查找边界面(COV 批补) --------------------------------
+
+    /// 路径身份折叠:UNC 前缀/UNC 根界不弹/盘符根不弹/前导 .. 保留/裸盘符
+    /// 小写收尾/POSIX 大小写保留。
+    #[test]
+    fn normalize_file_identity_unc_drive_and_dotdot_folds() {
+        // UNC 前缀 + UNC 根界(srv/share 两段是地板,.. 不弹穿)
+        assert_eq!(normalize_file_identity("//Srv/Share/.."), "//srv/share");
+        // POSIX 绝对根:.. 不穿根
+        assert_eq!(normalize_file_identity("/.."), "/");
+        // 盘符根:.. 不弹掉 C:
+        assert_eq!(normalize_file_identity("C:/.."), "c:/");
+        // 无前缀前导 ..:如实保留(相对路径身份)
+        assert_eq!(normalize_file_identity("a/../../x"), "../x");
+        // 裸盘符:小写 + 收尾 /
+        assert_eq!(normalize_file_identity("C:"), "c:/");
+        // POSIX 保留大小写(仅 drive/unc 折叠小写)
+        assert_eq!(normalize_file_identity("/Scripts/Base"), "/Scripts/Base");
+    }
+
+    /// class 头拒绝面与带基类/带空白的完整形。
+    #[test]
+    fn class_header_reject_and_bases_faces() {
+        assert_eq!(class_header_of("class"), None);
+        assert_eq!(class_header_of("class 1X:"), None);
+        assert_eq!(class_header_of("class A(Base)"), None, "缺收尾冒号");
+        assert_eq!(
+            class_header_of("class A (Base) :"),
+            Some(("A".to_string(), "Base".to_string()))
+        );
+        assert_eq!(
+            class_header_of("class A:"),
+            Some(("A".to_string(), String::new()))
+        );
+    }
+
+    /// def 头拒绝面:async 无空白不成立/名字与括号间空白成立/无括号拒绝。
+    #[test]
+    fn def_header_reject_and_space_faces() {
+        assert_eq!(def_header_of("asyncdef foo(x)"), None);
+        assert_eq!(def_header_of("def foo:"), None);
+        assert_eq!(def_header_of("def foo (x):"), Some("foo".to_string()));
+    }
+
+    /// index_from 边界:起点越界/无命中/起点后首现。
+    #[test]
+    fn index_from_bounds_and_miss() {
+        assert_eq!(index_from("abc", "a", 99), None);
+        assert_eq!(index_from("abc", "z", 0), None);
+        assert_eq!(index_from("abcabc", "b", 3), Some(4));
+    }
+
+    /// crlf 文本全链:切分剥 \r、站点照出。
+    #[test]
+    fn crlf_text_still_yields_sites() {
+        let text = "class A:\r\n    def f(self, a):\r\n        pass\r\n";
+        let sites = find_def_param_sites(text, "/p/scripts/base/mod.py");
+        assert_eq!(sites.len(), 1);
+        // 首参 self 剔除后只剩 a
+        assert_eq!(sites[0].params.len(), 1);
+        assert_eq!(sites[0].params[0].name, "a");
+    }
+
+    /// 空形参段(尾逗号)如实跳过不出伪参数。
+    #[test]
+    fn split_params_trailing_comma_skips_empty_segment() {
+        let params = split_params(&units("a, "), 0);
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].name, "a");
+    }
+
+    /// 返回注解三拒绝面:空串/ALIAS/Any 表值都不出;引擎别名照出。
+    #[test]
+    fn return_annotation_reject_faces_and_alias_emits() {
+        let text = "class A:\n    def f(self):\n        pass\n";
+        let site = &find_def_param_sites(text, "/p/scripts/cell/a.py")[0];
+        for bad in ["", "  ", "ALIAS", "ENTITYCALL"] {
+            let decl = DeclarationFace {
+                declared_args: None,
+                declared_return_type: Some(bad.to_string()),
+            };
+            assert!(
+                build_def_param_inlay_items(site, &decl).is_empty(),
+                "{bad:?} 不出返回注解"
+            );
+        }
+        let decl = DeclarationFace {
+            declared_args: None,
+            declared_return_type: Some("Address".to_string()),
+        };
+        let items = build_def_param_inlay_items(site, &decl);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].text, " -> Address");
+        assert_eq!(items[0].kind, "Type");
     }
 }
