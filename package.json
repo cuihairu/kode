@@ -144,6 +144,7 @@
     "onCommand:kbengine.workbench.show",
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
+    "onCommand:kbengine.telnet.openPythonConsole",
     "onCommand:kbengine.telnet.disconnect",
     "onCommand:kbengine.bots.add",
     "onCommand:kbengine.bots.count",
@@ -916,6 +917,11 @@
         "icon": "$(plug)"
       },
       {
+        "command": "kbengine.telnet.openPythonConsole",
+        "title": "%kbengine.command.telnet.openPythonConsole.title%",
+        "icon": "$(terminal)"
+      },
+      {
         "command": "kbengine.telnet.disconnect",
         "title": "%kbengine.command.telnet.disconnect.title%",
         "icon": "$(debug-disconnect)"
@@ -1227,6 +1233,11 @@
           "command": "kbengine.server.start",
           "when": "view == kbengine.serverControl",
           "group": "navigation"
+        },
+        {
+          "command": "kbengine.telnet.openPythonConsole",
+          "when": "view == kbengine.telnetStatus",
+          "group": "navigation@0"
         },
         {
           "command": "kbengine.telnet.disconnect",

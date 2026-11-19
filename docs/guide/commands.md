@@ -900,6 +900,18 @@ The flow graph panel supports:
   - The session panel's currently selected target goes first; with nothing selected or no session on it, the first connected target is taken
   - With no connected session it says so honestly, no spinning
 
+### `kbengine.telnet.openPythonConsole`
+
+- Title: `Open Python Console (Telnet)`
+- Purpose: the shallow "Python console" entry (TELNET-EZ-001) — one click runs a fresh probe of every component telnet port (the existing probe chain; ports/passwords come from the real kbengine.xml / engine defaults, zero config knowledge), lists the open components for one-click selection, and drops you into the panel session
+- Entries: the telnet tree title-bar button (top of the sidebar tree) and the command palette
+- Behavior:
+  - A fresh probe round runs before judging — a stale cache never decides "all closed"
+  - Open components (open / connected / port-open-no-password) enter the quick pick with host:port and state; picking one opens the panel on that target, and an `open` target connects its session immediately; a port-open-no-password target opens the panel with the password guidance instead of force-connecting
+  - With every component closed (or no telnet target at all): a one-shot guidance message names the kbengine.xml `<telnet_service>` fix and offers an "open Telnet panel" action (the panel carries the full config snippet)
+  - Cancelling the pick does nothing further, honestly
+- Session console modes (TELNET-EZ-001 ①, in-panel): the session area carries a mode toggle — whitelist mode (default: the safe read-only shortcut set plus user `kbengine.telnet.enableCommands`) ↔ free Python mode ("Enter Python REPL", warning-colored badge "runs Python directly on the engine", `>>>` primary prompt with `…` continuation hint). Mode is a per-target session property: it survives disconnects and reconnects. Free mode sends arbitrary Python expressions engine-side; empty commands and `:quit` are refused in both modes. The quick-button set is expanded with read-only `entities` / `globalData` / `KBEngine.debug` expressions (entity type distribution, global data snapshot, engine debug info)
+
 ### `kbengine.bots.add`
 
 - Title: `KBEngine: Add Bots (telnet addBots)`

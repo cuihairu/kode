@@ -114,6 +114,7 @@
   "kbengine.command.snippets.generateFromSelection.title": "从选区生成代码片段",
   "kbengine.command.telnet.showPanel.title": "打开 Telnet 面板",
   "kbengine.command.telnet.disconnect.title": "断开 Telnet 会话",
+  "kbengine.command.telnet.openPythonConsole.title": "打开 Python 控制台(Telnet)",
   "kbengine.command.playerData.refresh.title": "刷新玩家数据概览",
   "kbengine.command.playerData.testConnection.title": "测试数据库连接(只读 SELECT 1)",
   "kbengine.command.playerData.queryByDbid.title": "按 DBID 查询玩家(只读)",

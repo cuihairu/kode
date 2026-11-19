@@ -203,11 +203,24 @@ export function isCommandAllowed(command: string, whitelist: readonly string[]):
   });
 }
 
-/** 内置只读快捷命令(查实体数/实体清单/全局数据键,均引擎 python 层表达式) */
+/**
+ * 自由 Python 模式闸(TELNET-EZ-001):直接执行引擎侧 Python——任意表达式
+ * 放行,只有两条恒拒:空命令与 `:quit`(会关闭服务端进程,任何模式都拒)。
+ * 与白名单闸互斥并存,由会话模式决定走哪条。
+ */
+export function isPythonCommandAllowed(command: string): boolean {
+  const trimmed = command.trim();
+  return trimmed.length > 0 && trimmed.toLowerCase() !== ':quit';
+}
+
+/** 内置只读快捷命令(引擎 python 层表达式;TELNET-EZ-001 扩充 KBEngine.debug 面) */
 export const BUILTIN_QUICK_COMMANDS: ReadonlyArray<{ label: string; command: string }> = [
   { label: '实体数量', command: 'len(entities)' },
   { label: '实体清单(前50)', command: 'sorted(entities.keys())[:50]' },
+  { label: '实体类型分布', command: 'sorted({type(e).__name__ for e in entities.values()})' },
   { label: '全局数据键', command: 'list(KBEngine.globalData.keys())' },
+  { label: '全局数据快照', command: 'KBEngine.globalData' },
+  { label: '引擎调试信息', command: 'KBEngine.debug' },
   { label: '帮助', command: ':help' }
 ];
 

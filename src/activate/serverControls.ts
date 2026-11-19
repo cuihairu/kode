@@ -81,6 +81,7 @@ import { setDefaultScriptRuntime } from '../quickActions';
 import { readDerivedTelnetTargets } from '../telnetDeriveTargets';
 import { makeProbeOne, TelnetService, updateTelnetStatusBar } from '../telnetService';
 import { TelnetWebView } from '../telnetWebView';
+import { runPythonConsoleEntry } from '../telnetPythonConsole';
 import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '../backend/botsControl';
 import { TelnetTreeProvider } from '../telnetTree';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../configDerive';
@@ -699,7 +700,26 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
   const disconnectTelnetCommand = vscode.commands.registerCommand('kbengine.telnet.disconnect', () => {
     telnetWebView.disconnectActive();
   });
-  context.subscriptions.push(showTelnetPanelCommand, disconnectTelnetCommand, telnetStatusBarItem);
+  // Python 控制台浅入口(TELNET-EZ-001 ②):telnet 树标题栏按钮 + 命令面板
+  // 双入口——探测→选已开组件→进面板会话,全未开一次性引导(零配置知识)
+  const openPythonConsoleCommand = vscode.commands.registerCommand('kbengine.telnet.openPythonConsole', () => {
+    return runPythonConsoleEntry({
+      probeOnce: () => telnetService.probeOnce(),
+      getTargets: () => telnetService.getTargets(),
+      getState: key => telnetService.getState(key),
+      showQuickPick: (items, options) => vscode.window.showQuickPick(items, options),
+      showInformationMessage: (message, ...actions) =>
+        vscode.window.showInformationMessage(message, ...actions),
+      openPanelWithTarget: key => telnetWebView.openPythonConsoleTarget(key),
+      openPanel: () => telnetWebView.show()
+    });
+  });
+  context.subscriptions.push(
+    showTelnetPanelCommand,
+    disconnectTelnetCommand,
+    openPythonConsoleCommand,
+    telnetStatusBarItem
+  );
   const telnetStateSubscription = telnetService.onDidChange(() => {
     telnetTreeProvider.refresh();
     updateTelnetStatusBar(telnetService, telnetStatusBarItem);
