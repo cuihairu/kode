@@ -281,7 +281,7 @@ describe('PR5 ① 首扫接管面(调度器 keyed 发现 + 分块后台解析)',
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('注入共享调度器:发现经类内单飞完成,分块任务计入 completed', async () => {
+  it('注入共享调度器:发现任务 keyed 完成,分块任务计入 completed', async () => {
     const { dir, paths, cleanup } = makeRoot(MIXIN_FILES);
     pointWorkspaceAt(dir);
     routePy([paths['a.py'], paths['b.py']]);
@@ -290,10 +290,8 @@ describe('PR5 ① 首扫接管面(调度器 keyed 发现 + 分块后台解析)',
       const index = new PythonClassIndex(scheduler);
       await index.findClassesByName('Beta'); // 等全量扫描完成(全量口径 API)
       const status = scheduler.getStatus();
-      // RESP-002:发现等待移出调度执行位(类内代际单飞)——调度器不再有
-      // 发现任务;回归锚=发现键缺席,执行位只承载分块/交互任务。
-      expect(status.keyedTasks['python-file-discovery#0'], 'RESP-002:发现不再入调度器')
-        .toBeUndefined();
+      expect(status.keyedTasks['python-file-discovery#0'], '发现任务经调度器 keyed 单例完成')
+        .toBe('completed');
       expect(status.completed, '分块解析任务计入调度器完成数').toBeGreaterThan(0);
       expect(status.failed).toBe(0);
     } finally {
@@ -460,9 +458,8 @@ describe('PR5 ② Definition 首查不阻塞全仓(快照命中/按需单文件/
 });
 
 /**
- * PR5 ② 观测面:放行/扣住后台全量分块的调度器。发现(RESP-002 后不经调度器,
- * 类内代际单飞)与按需单文件任务(single-file-update)原样透传;full-reindex
- * 分块在 release() 之前
+ * PR5 ② 观测面:放行/扣住后台全量分块的调度器。发现任务(initial-scan)与按需
+ * 单文件任务(single-file-update)原样透传;full-reindex 分块在 release() 之前
  * 只记数不执行——用于断言「首查不依赖全仓扫描」与「后台补全量可观测」。
  */
 class GatedBackgroundScheduler extends IndexScheduler {
@@ -482,9 +479,6 @@ class GatedBackgroundScheduler extends IndexScheduler {
    * 完成后才入队;首查返回就断言 gatedCount 会抢到发现前面(0 而非 >0)。
    */
   get chunksEnqueued(): Promise<void> {
-    // RESP-002:发现在调度器外即时完成后,首个分块可能在首次访问本 getter
-    // 之前就已入队(先发后等)——快径直接落定,不造永不 resolve 的新诺言。
-    if (this.gatedQueued > 0) { return Promise.resolve(); }
     if (!this.chunksEnqueuedHandle) {
       this.chunksEnqueuedHandle = new Promise<void>(resolve => {
         this.resolveChunksEnqueued = resolve;

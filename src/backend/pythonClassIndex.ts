@@ -249,13 +249,6 @@ export class PythonClassIndex {
   /** discoveredFiles 所属扫描代(换代后强制重新发现) */
   private discoveredGeneration = -1;
   /**
-   * RESP-002:发现单飞(代际键)。发现等待不占调度器执行位——调度器单并发
-   * 位若被全盘 findFiles 的 await 占据,RequestLocal 已知路径补载也只能排队
-   * (异步让出事件循环,却不让出执行位)。换代守卫晚到结果不落缓存;失败不
-   * 缓存(下一调用重发现)。
-   */
-  private discoveredInFlight: { generation: number; promise: Promise<void> } | null = null;
-  /**
    * 文件发现序(装载入口同步记号):③ 反向候选的跨文件排序用。分块装载是
    * Promise.all 并发(:837),完成序随 IO 时序翻动——不记号的话候选顺序
    * 不确定(CI 40470720225 红例:同两候选仅顺序翻)。按发现序定死。
@@ -1145,13 +1138,8 @@ export class PythonClassIndex {
         jumpLog('info', () =>
           `py 全扫有 ${failedFiles.length} 个文件未随分块解析,已登记待补(后续查询定向重试)`);
       } else {
-        // 本轮无失败分块:被本轮全量覆盖的遗留待补文件清表。RESP-002 后发现
-        // 不占调度执行位,按需补载与全扫收尾可并发——在册但不在本轮发现集的
-        // 条目是扫描期按需登记的,本轮未覆盖,不得误删。
-        const covered = new Set(filePaths);
-        for (const file of [...this.pendingScanRetries.keys()]) {
-          if (covered.has(file)) { this.pendingScanRetries.delete(file); }
-        }
+        // 本轮无失败分块:上一代遗留的待补文件已被本轮全量覆盖,清表
+        this.pendingScanRetries.clear();
         // SCAN-RESUME-001:全量零失败收尾——断点使命完成,清场(部分失败/
         // 取消不 complete:已记录分块留盘,下一轮从断点续扫)
         this.scanProgress?.complete();
@@ -1170,49 +1158,28 @@ export class PythonClassIndex {
   }
 
   /**
-   * 文件发现(类内代际单飞)只供后台全扫；请求所需的已知文件按路径定向补载。
+   * 文件发现(keyed 单例)只供后台全扫；请求所需的已知文件按路径定向补载。
    * 同代缓存直接复用，换代或失败后可重新发现。
-   *
-   * RESP-002:发现不经调度器——单并发执行位被全盘 findFiles 的 await 占据时,
-   * RequestLocal 已知路径补载也被迫排队(异步扫盘让出 JS 事件循环,却没有
-   * 让出调度执行位;慢外部目录/未结束 findFiles 期间高优先级任务恒 queued)。
-   * 发现等待与交互执行分离后,分块解析仍走调度器,块与块之间可插队交互任务。
    */
   private async ensureDiscovered(scanGeneration: number): Promise<vscode.Uri[]> {
     if (this.discoveredFiles && this.discoveredGeneration === scanGeneration) {
       return this.discoveredFiles;
     }
-    if (!this.discoveredInFlight || this.discoveredInFlight.generation !== scanGeneration) {
-      this.discoveredInFlight = {
-        generation: scanGeneration,
-        promise: (async () => {
-          // ENGINE-LIB-SCAN-005 刀1:引擎仓 python 标准库镜像(kbe/scripts/common/Lib)
-          // 按路径形态剔出业务扫描——workspace glob 结果后滤 + 外部根遍历剪枝。
-          const files = await findFilesAcrossRoots(
-            '**/*.py',
-            PY_SCAN_EXCLUDE,
-            undefined,
-            fsPath => !isEnginePythonLibPath(fsPath)
-          );
-          // 换代守卫:晚到的旧代发现不落缓存(scanGeneration 已推进,结果
-          // 无关;下一调用按新代重发现)。
-          if (scanGeneration === this.scanGeneration) {
-            this.discoveredFiles = files;
-            this.discoveredGeneration = scanGeneration;
-          }
-        })()
-      };
-    }
-    const flight = this.discoveredInFlight;
-    try {
-      await flight.promise;
-    } catch (error) {
-      // 失败不缓存「已发现」假象(与首扫失败口径一致):同代错误上抛给首扫
-      // 记账,换代错误静默(结果已无关,新代单飞已接管)。
-      if (scanGeneration === this.scanGeneration) { throw error; }
-    } finally {
-      if (this.discoveredInFlight === flight) { this.discoveredInFlight = null; }
-    }
+    await this.scheduler.ensureTask(`python-file-discovery#${scanGeneration}`, () => ({
+      kind: 'initial-scan' as const,
+      priority: IndexTaskPriority.BackgroundFull,
+      run: async () => {
+        // ENGINE-LIB-SCAN-005 刀1:引擎仓 python 标准库镜像(kbe/scripts/common/Lib)
+        // 按路径形态剔出业务扫描——workspace glob 结果后滤 + 外部根遍历剪枝。
+        this.discoveredFiles = await findFilesAcrossRoots(
+          '**/*.py',
+          PY_SCAN_EXCLUDE,
+          undefined,
+          fsPath => !isEnginePythonLibPath(fsPath)
+        );
+      }
+    }));
+    this.discoveredGeneration = scanGeneration;
     return this.discoveredFiles ?? [];
   }
 
