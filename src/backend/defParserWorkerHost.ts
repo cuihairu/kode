@@ -15,8 +15,23 @@ export const DEF_PARSE_WORKER_MIN_BYTES = 64 * 1024;
 /** 在途(已派发未回包)任务数硬上限——超限拒绝,调用方同步兜底 */
 export const MAX_POSTED_PARSE_JOBS = 16;
 
-/** 在途源码串字节硬上限——超限拒绝,调用方同步兜底 */
+/** 在途源码串字节硬上限——超限拒绝,由调用方按类别处置(KODE-FULL-015) */
 export const MAX_POSTED_PARSE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * KODE-FULL-015:预算类拒绝(过载/单件超大)的可分辨错误——调用方据此
+ * 区分「排队可恢复」与「输入超形」,不再无差别回落宿主同步解析。
+ */
+export class DefParserBudgetError extends Error {
+  constructor(
+    /** overload=在途任务/字节预算满(等待后可恢复);too-large=单件超字节上限 */
+    readonly kind: 'overload' | 'too-large',
+    message: string
+  ) {
+    super(message);
+    this.name = 'DefParserBudgetError';
+  }
+}
 
 interface DefParseReply {
   id: number;
@@ -101,8 +116,21 @@ export async function parseDefDocumentResponsive(
   if (text.length < DEF_PARSE_WORKER_MIN_BYTES || !fs.existsSync(workerFile)) {
     return parseDefDocument(text);
   }
-  if (posted.size >= MAX_POSTED_PARSE_JOBS || postedBytes + text.length > MAX_POSTED_PARSE_BYTES) {
-    throw new Error(
+  // KODE-FULL-015:预算拒绝分两类可恢复语义——
+  // - overload:在途任务数或字节预算满,调用方可等待重试(排干后可恢复);
+  // - too-large:单件自身超字节上限。too-large 且当前无任何在途任务时放行
+  //   单飞(worker 本就是隔离边界,宿主绝不因超大输入回落同步解析——
+  //   那正是把最大输入拉回 Extension Host 冻结 UI 的旧病灶)。
+  if (posted.size >= MAX_POSTED_PARSE_JOBS) {
+    throw new DefParserBudgetError(
+      'overload',
+      `Def parse ${label} in-flight job budget exceeded (${MAX_POSTED_PARSE_JOBS} jobs)`
+    );
+  }
+  const soloOversize = text.length > MAX_POSTED_PARSE_BYTES && posted.size === 0 && postedBytes === 0;
+  if (!soloOversize && postedBytes + text.length > MAX_POSTED_PARSE_BYTES) {
+    throw new DefParserBudgetError(
+      'too-large',
       `Def parse ${label} backlog byte budget exceeded (${MAX_POSTED_PARSE_BYTES} bytes in flight)`
     );
   }

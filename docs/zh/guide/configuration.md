@@ -519,7 +519,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.core.backend` | string | `"ts"` | 双轨后端开关（kill-switch）：`ts` 单轨（现状真相）；`rust` 为保留值，切流前置条件未全绿前被 serving 门禁拒绝，生效轨道仍是 `ts`；`shadow` 影子比对——TS 照常服务，同参请求镜像给 kode-server 只记差异日志。任何非法值一律回落 `ts`；改回 `ts` 立即停用 Rust 进程，用户无感回退 |
+| `kbengine.core.backend` | string | `"rust"` | 双轨后端开关（kill-switch）：默认 `rust`（2026-11-08 用户令「直接切」——definition/completion 由 kode-server Rust-first 服务，空结果/失败回落 TS）；`ts` 单轨回落（改回 `ts` 立即停用 Rust 进程，用户无感回退）；`shadow` 影子比对——TS 照常服务，同参请求镜像给 kode-server 只记差异日志。任何非法值一律回落 `ts`。`rust` 轨道下 TS 侧 python 索引全量首扫不再随激活自启（首个 TS 面查询才懒补扫——RUST-TRACK-FREEZE-007），语料镜像每 8 文件让路交互一帧 |
 | `kbengine.core.serverPath` | string | 空 | kode-server 二进制路径；仅在 `backend=shadow` 时使用，留空则影子比对记 `rust-unavailable`，不启动进程 |
 | `kbengine.core.shadow.timeoutMs` | number | `2000` | 影子比对镜像请求超时（毫秒）；超时只记差异日志 `rust-timeout`，不影响 TS 服务路径 |
 

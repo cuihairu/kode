@@ -439,3 +439,43 @@ fn parity_entity_call_overlap_semantics_locked() {
     assert_eq!(out.nodes[0].len, 4);
     assert_eq!(out.nodes[1].start, 0, "重叠语义 = span_inner 同款");
 }
+
+#[test]
+fn remaining_scalar_and_vector4_layout_nodes_mirror_spans() {
+    // 布局展示面与数据面同读序:补齐 I8/I16/I32/U64/I64/F32 与 Vector4 臂——
+    // 每条标量臂的 read_* 与 node 行各须跑一次(展示面分支漏跑 = 该臂的路径
+    // 线程与类型标签零断言)。parity 对拍锁两面零行为漂移。
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&(-7i8).to_le_bytes());
+    payload.extend_from_slice(&(-300i16).to_le_bytes());
+    payload.extend_from_slice(&(-123_456i32).to_le_bytes());
+    payload.extend_from_slice(&0x11_22_33_44_55_66_77_88u64.to_le_bytes());
+    payload.extend_from_slice(&(-2i64).to_le_bytes());
+    payload.extend_from_slice(&2.5f32.to_le_bytes());
+    for f in [1.0f32, 2.0, 3.0, 4.0] {
+        payload.extend_from_slice(&f.to_le_bytes());
+    }
+    let args = vec![
+        WireType::Int8,
+        WireType::Int16,
+        WireType::Int32,
+        WireType::UInt64,
+        WireType::Int64,
+        WireType::Float,
+        WireType::Vector4,
+    ];
+    parity(&args, &payload);
+    let out = decode_layout(&args, &payload, &limits());
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(out.nodes.len(), 7);
+    assert!(out.structural_only, "展示面必须携带诚实声明");
+    // 路径线程:顶层 arg{i};Vector4 子项 arg6[i]
+    assert_eq!(out.nodes[0].path, "arg0");
+    assert_eq!(out.nodes[5].path, "arg5");
+    assert_eq!(out.nodes[6].children.len(), 4);
+    assert_eq!(out.nodes[6].children[2].path, "arg6[2]");
+    assert_eq!(out.nodes[6].children[2].type_label, "f32");
+    // 类型标签随 schema 走(display_name),展示面不得自造
+    assert_eq!(out.nodes[0].type_label, WireType::Int8.display_name());
+    assert_eq!(out.nodes[6].type_label, WireType::Vector4.display_name());
+}

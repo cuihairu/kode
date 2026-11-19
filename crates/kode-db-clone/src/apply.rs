@@ -54,6 +54,12 @@ pub trait ImportRunStore {
     fn find_by_fingerprint(&self, fingerprint: &str) -> Option<ImportRun>;
     /// 落账一次成功导入。
     fn record(&mut self, run: ImportRun);
+    /// 改写同 run 号的既有落账为终态(KODE-FULL-009 两阶段:提交成功先
+    /// record committed/unknown,核对结束 upsert 终态)。默认实现等价追加;
+    /// 持久化实现应按 run_id 原位改写,避免同 run 双账。
+    fn upsert(&mut self, run: ImportRun) {
+        self.record(run)
+    }
 }
 
 /// 进程内登记(测试/单次 CLI 面;持久化面由调用方另配)。
@@ -93,6 +99,14 @@ impl ImportRunStore for MemoryRunStore {
 
     fn record(&mut self, run: ImportRun) {
         self.runs.push(run);
+    }
+
+    fn upsert(&mut self, run: ImportRun) {
+        // 同 run 号原位改写(两阶段落账不留双账);未见过的 run 号按追加。
+        match self.runs.iter_mut().find(|r| r.run_id == run.run_id) {
+            Some(slot) => *slot = run,
+            None => self.runs.push(run),
+        }
     }
 }
 
@@ -137,12 +151,28 @@ pub struct VerifyCheck {
     pub ok: bool,
 }
 
+/// 核对结论三态(KODE-FULL-009)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerifyState {
+    /// 已提交但核对未完成(计数查询异常中断):数据在库是事实,计数未知。
+    Unknown,
+    /// 核对完成且逐表计数全对上。
+    Passed,
+    /// 核对完成且有表计数不齐。
+    Failed,
+}
+
 /// 提交后核对报告。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct VerifyReport {
     pub checks: Vec<VerifyCheck>,
-    /// 全部核对通过才为 true。
+    /// 全部核对通过才为 true;核对未完成(state=unknown)恒 false。
     pub passed: bool,
+    /// 核对三态(KODE-FULL-009):「计数未知」与「计数对不上」的显式区分。
+    pub state: VerifyState,
+    /// 计数查询异常原文(仅 state=unknown 时有值)。
+    pub error: Option<String>,
 }
 
 /// KBEngine 原生加载验证记录(PDC-0407)。
@@ -224,6 +254,22 @@ pub fn archive_fingerprint(archive: &Archive) -> CloneResult<String> {
     Ok(hex_encode(Sha256::digest(manifest).as_slice()))
 }
 
+/// 事务 guard(KODE-FULL-010):begin..commit 之间的任何错误返回(含
+/// `?` 直穿)都在 Drop 中回滚——不依赖每条错误路径手写回滚,
+/// 「begin 后错误绕过 rollback」的窗口由类型系统关闭。
+struct TxnGuard<'a> {
+    executor: &'a mut dyn WriteExecutor,
+    done: bool,
+}
+
+impl Drop for TxnGuard<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            let _ = self.executor.rollback();
+        }
+    }
+}
+
 /// 导入执行器(Prepare 产物 → 单事务 Apply → 提交后 Verify)。
 #[derive(Debug, Default)]
 pub struct ImportApplier;
@@ -259,14 +305,46 @@ impl ImportApplier {
             rows_by_table.insert(meta.name.clone(), archive.table_rows(&meta.name)?);
         }
 
+        // ---- 校验先行(KODE-FULL-010):表/行/列宽纯数据校验移到 begin 前 ----
+        // begin 后的任何错误返回都必须回滚;旧口径这两处 `?` 直穿曾绕过
+        // rollback,把漂移错误留在已开启的事务里。前移后事务内只剩执行/
+        // 绑定失败,统一由 TxnGuard 兜底回滚。
+        for (index, stmt) in plan.statements.iter().enumerate() {
+            let rows = rows_by_table.get(&stmt.table).ok_or_else(|| {
+                CloneError::DriftMismatch(format!(
+                    "statement references table `{}` which is absent from the archive",
+                    stmt.table
+                ))
+            })?;
+            let row = rows.get(stmt.row_index).ok_or_else(|| {
+                CloneError::DriftMismatch(format!(
+                    "statement references row {} of `{}` which is absent from the archive",
+                    stmt.row_index, stmt.table
+                ))
+            })?;
+            if stmt.cells.len() != stmt.columns.len() || stmt.cells.len() != row.values.len() {
+                return Err(CloneError::DriftMismatch(format!(
+                    "statement {} of `{}` column arity mismatch: {} cells, {} columns, {} archived values",
+                    index + 1,
+                    stmt.table,
+                    stmt.cells.len(),
+                    stmt.columns.len(),
+                    row.values.len()
+                )));
+            }
+        }
+
         executor.begin()?;
+        let mut txn = TxnGuard {
+            executor: &mut *executor,
+            done: false,
+        };
         let mut inserted_per_table: BTreeMap<String, u64> = BTreeMap::new();
         let mut resolved_ids: BTreeMap<u64, u64> = BTreeMap::new();
 
         for (index, stmt) in plan.statements.iter().enumerate() {
-            // PDC-0405:失败注入点(rollback 后无半套;重试走全新 run,不静默续写)。
+            // PDC-0405:失败注入点(guard 兜底回滚,无半套;重试走全新 run,不静默续写)。
             if control.fail_at_statement == Some(index + 1) {
-                executor.rollback()?;
                 return Err(CloneError::ImportRejected(format!(
                     "injected failure at statement {} of {}; transaction rolled back, nothing committed",
                     index + 1,
@@ -292,26 +370,12 @@ impl ImportApplier {
                 .zip(stmt.columns.iter())
                 .zip(row.values.iter())
             {
-                // 绑定失败(顺序违规等)与语句失败同闸:先回滚再上报,
-                // 前面语句的暂存行不留半套(失败路径保证 rollback)。
-                let bound =
-                    match resolve_param(cell, column, value, &stmt.table, plan, &resolved_ids) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let _ = executor.rollback();
-                            return Err(e);
-                        }
-                    };
+                // 绑定失败(顺序违规等)与语句失败同闸:guard Drop 兜底回滚,
+                // 前面语句的暂存行不留半套。
+                let bound = resolve_param(cell, column, value, &stmt.table, plan, &resolved_ids)?;
                 params.push(bound);
             }
-            let new_id = match executor.execute_insert(&stmt.insert_sql, &params) {
-                Ok(id) => id,
-                Err(e) => {
-                    // 语句失败(约束/连接):先回滚再上报;回滚失败不掩盖原始错误。
-                    let _ = executor.rollback();
-                    return Err(e);
-                }
-            };
+            let new_id = txn.executor.execute_insert(&stmt.insert_sql, &params)?;
             // 占位回填:该语句的 NewKey 占位 → 数据库返回的真实主键(PDC-0402)。
             for cell in &stmt.cells {
                 if let PlannedCell::NewKey { placeholder } = cell {
@@ -321,26 +385,17 @@ impl ImportApplier {
             *inserted_per_table.entry(stmt.table.clone()).or_insert(0) += 1;
         }
 
-        executor.commit()?;
+        txn.executor.commit()?;
+        txn.done = true;
+        drop(txn);
 
-        // ---- Verify(PDC-0406):提交后按表只读核对(新主键必须逐行可查) ----
-        let mut checks: Vec<VerifyCheck> = Vec::new();
-        for name in &plan.order {
-            let expected = inserted_per_table.get(name).copied().unwrap_or(0);
-            if expected == 0 {
-                continue;
-            }
-            let ids = new_ids_for_table(plan, &resolved_ids, &rows_by_table, name);
-            let sql = count_by_ids(name, &ids);
-            let found = executor.query_count(&sql, &ids)?;
-            checks.push(VerifyCheck {
-                table: name.clone(),
-                expected,
-                found,
-                ok: found == expected,
-            });
-        }
-        let passed = checks.iter().all(|c| c.ok);
+        // ---- 账面先于核对 I/O(KODE-FULL-009):提交成功即落账 ----
+        // 数据已提交是既成事实;随后的核对只是只读计数,任何异常/中断都
+        // 不得让指纹闸(:249 find_by_fingerprint)对本导入失明——否则同一
+        // 归档重试会绕过闸再插一套数据。先按已知事实(行数/映射/清理计划)
+        // 把本 run 落账,核对区记 state=unknown;核对完成后 upsert 终态。
+        // 语句失败路径走不到这里(commit 前已 rollback),账面不会出现
+        // 「未提交先记账」的假账。
 
         // ---- 账号绑定写侧(PDC-0306):只登记事实,不写凭据/账号表 ----
         let binding = match &plan.account_binding.declaration {
@@ -388,15 +443,20 @@ impl ImportApplier {
                 .and_then(typed_id_to_u64)
         });
 
-        let run = ImportRun {
+        let mut run = ImportRun {
             run_id: store.next_run_id(),
             archive_fingerprint: fingerprint,
             mode: plan.mode,
-            inserted_per_table,
-            resolved_ids,
+            inserted_per_table: inserted_per_table.clone(),
+            resolved_ids: resolved_ids.clone(),
             new_root_id,
             binding,
-            verify: VerifyReport { checks, passed },
+            verify: VerifyReport {
+                checks: Vec::new(),
+                passed: false,
+                state: VerifyState::Unknown,
+                error: None,
+            },
             cleanup,
             load_verification: LoadVerification {
                 attempted: false,
@@ -406,11 +466,66 @@ impl ImportApplier {
                 note: "engine load verification not attempted: local KBEngine wiring is applied at the UI phase (PDC-0003 environment)".into(),
             },
         };
-        // 数据已提交(原子完整):无论核对成败,指纹先落账——重复导入闸
-        // (:249 find_by_fingerprint)靠它识别同一导入重试;核对失败也记录,
-        // 否则 retry 后数据重复而闸不认(回滚早已不可能,数据真实在库)。
-        // 强制重导由 control.allow_duplicate 面开启,不受影响。
         store.record(run.clone());
+
+        // ---- Verify(PDC-0406):提交后按表只读核对(新主键必须逐行可查) ----
+        // 计数查询异常不再 `?` 直穿(KODE-FULL-009):账面已落,异常记
+        // unknown 并上抛可恢复报告,重试走闸回显映射,绝不重复插数。
+        let mut checks: Vec<VerifyCheck> = Vec::new();
+        let mut verify_error: Option<CloneError> = None;
+        for name in &plan.order {
+            let expected = inserted_per_table.get(name).copied().unwrap_or(0);
+            if expected == 0 {
+                continue;
+            }
+            let ids = new_ids_for_table(plan, &resolved_ids, &rows_by_table, name);
+            let sql = count_by_ids(name, &ids);
+            match executor.query_count(&sql, &ids) {
+                Ok(found) => checks.push(VerifyCheck {
+                    table: name.clone(),
+                    expected,
+                    found,
+                    ok: found == expected,
+                }),
+                // 计数查询异常 ≠ 数据不在:提交事实不变,核对记 unknown。
+                Err(e) => {
+                    verify_error = Some(e);
+                    break;
+                }
+            }
+        }
+        run.verify = match verify_error.as_ref() {
+            Some(e) => VerifyReport {
+                checks,
+                passed: false,
+                state: VerifyState::Unknown,
+                error: Some(e.to_string()),
+            },
+            None => {
+                let passed = checks.iter().all(|c| c.ok);
+                VerifyReport {
+                    passed,
+                    state: if passed {
+                        VerifyState::Passed
+                    } else {
+                        VerifyState::Failed
+                    },
+                    checks,
+                    error: None,
+                }
+            }
+        };
+        // 终态改写同 run 号落账(两阶段:unknown → passed/failed/unknown)。
+        store.upsert(run.clone());
+        if let Some(e) = verify_error.as_ref() {
+            // 可恢复报告:数据已提交且已按指纹落账;同一归档重试由重复
+            // 导入闸回显 prior_run(映射/清理计划俱全),计数核对可按
+            // resolved_ids 人工补做,不自动重插。
+            return Err(CloneError::ImportRejected(format!(
+                "post-commit verification errored: {e}; data is committed and run {} is recorded, retry of the same archive returns the prior run instead of re-inserting",
+                run.run_id
+            )));
+        }
         if !run.verify.passed {
             // 数据已提交(原子完整);核对失败如实上报,不回滚已提交事务,
             // 清理计划随错误对象之外的 run 报告由调用方取回处理。
@@ -689,6 +804,8 @@ mod tests {
             verify: VerifyReport {
                 checks: vec![],
                 passed: true,
+                state: VerifyState::Passed,
+                error: None,
             },
             cleanup: CleanupPlan {
                 steps: vec![],

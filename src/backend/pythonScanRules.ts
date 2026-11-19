@@ -37,3 +37,30 @@ export function withManagedDirSkip(dirs: ReadonlySet<string>, managedDir: string
   }
   return out;
 }
+
+/**
+ * ENGINE-LIB-SCAN-005 刀1:KBEngine 引擎仓自带的 Python 标准库镜像
+ * (kbe/scripts/common/Lib,纯库文件非业务代码,数千量级)按**路径形态**剔出
+ * 业务 python 扫描——只在 `kbe/scripts/common/Lib` 段序下的路径才剔,
+ * 普通项目自己的 `Lib`/`lib` 目录不受影响(照 KODE-CFG-017 的「形态/前缀
+ * 锚定,不按任意同名段全局剔除」先例)。大小写不敏感(Windows 引擎仓);
+ * 分隔符 \ 与 / 都认。
+ */
+const ENGINE_LIB_SEGMENT_TAIL = ['kbe', 'scripts', 'common', 'lib'] as const;
+
+export function isEnginePythonLibPath(fsPath: string): boolean {
+  const parts = fsPath.toLowerCase().split(/[\\/]+/);
+  const tail: readonly string[] = ENGINE_LIB_SEGMENT_TAIL;
+  if (parts.length < tail.length) {
+    return false;
+  }
+  outer: for (let i = 0; i + tail.length <= parts.length; i++) {
+    for (let j = 0; j < tail.length; j++) {
+      if (parts[i + j] !== tail[j]) {
+        continue outer;
+      }
+    }
+    return true;
+  }
+  return false;
+}

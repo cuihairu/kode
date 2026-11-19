@@ -271,26 +271,72 @@ describe('AI-001:sendAiMessage endpoint 路线', () => {
       /missing message content/
     );
   });
+
+  it('KODE-FULL-012:ok 但缺 content 进重试后 deadline 仍在役,第二轮悬挂按 timed out 截止', async () => {
+    const { calls, impl } = fetchStub([
+      () => jsonResponse(200, { choices: [{ message: {} }] }),
+      (_call, signal) =>
+        new Promise<Response>((_resolve, reject) => {
+          // 第二轮悬挂,仅 abort 时拒绝(真实 fetch 对 signal 的行为);
+          // 旧实现第一轮 finish() 已清定时器,这里会永不截止
+          signal.addEventListener('abort', () =>
+            reject(new Error('The operation was aborted'))
+          );
+        }) as never
+    ]);
+    await assert.rejects(
+      sendAiMessage({
+        messages: MESSAGES,
+        endpoint: endpointConfig({ requestTimeoutMs: 60, maxRetries: 1 }),
+        fetchImpl: impl,
+        sleepImpl: () => Promise.resolve()
+      }),
+      /timed out/
+    );
+    expect(calls.length).toBe(2);
+  });
 });
 
 describe('AI-001:sendAiMessage lm 回退路线', () => {
-  const lmModel = (chunks: string[]): AiLanguageModelLike => ({
-    sendRequest: async () => ({
-      text: (async function* () {
-        for (const chunk of chunks) {
-          yield { content: chunk };
-        }
-      })()
-    })
+  // KODE-FULL-011:替身按宿主真实契约构造——sendRequest 三参
+  // (messages, options, token),text 逐片产出 string 本体。
+  const lmModel = (chunks: string[], calls?: { args: unknown[][] }): AiLanguageModelLike => ({
+    sendRequest: async (messages: unknown[], options?: unknown, token?: unknown) => {
+      calls?.args.push([messages, options, token]);
+      return {
+        text: (async function* () {
+          for (const chunk of chunks) {
+            yield chunk;
+          }
+        })()
+      };
+    }
   });
 
-  it('endpoint 未配置+注入模型 → 流式聚合', async () => {
+  it('endpoint 未配置+注入模型 → 字符串片流式聚合(真实契约形状)', async () => {
     const text = await sendAiMessage({
       messages: MESSAGES,
       endpoint: endpointConfig({ baseUrl: '' }),
       models: [lmModel(['a', 'b', 'c'])]
     });
     expect(text).toBe('abc');
+  });
+
+  it('KODE-FULL-011:token 走 sendRequest 第三参,不进 options 位', async () => {
+    const calls: { args: unknown[][] } = { args: [] };
+    const source = new CancellationTokenSource();
+    await sendAiMessage({
+      messages: MESSAGES,
+      endpoint: endpointConfig({ baseUrl: '' }),
+      models: [lmModel(['ok'], calls)],
+      token: source.token
+    });
+    expect(calls.args.length).toBe(1);
+    const [messages, options, token] = calls.args[0] as [unknown[], unknown, unknown];
+    expect(Array.isArray(messages)).toBe(true);
+    expect(token).toBe(source.token);
+    expect(options).not.toBe(source.token);
+    source.dispose();
   });
 
   it('endpoint 未配置且无模型 → 抛错不静默假成功', async () => {

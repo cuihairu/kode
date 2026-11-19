@@ -57,6 +57,7 @@ export default withMermaid(defineConfig({
               text: 'Entity mechanics',
               items: [
                 { text: 'Entity lifecycle & reference release', link: '/knowledge/entity-lifecycle-reference' },
+                { text: 'Entity callback sequencing map', link: '/knowledge/hook-sequencing' },
                 { text: 'Entity teleport & cross-process references', link: '/knowledge/entity-migration-and-cross-process-references' },
                 { text: '.def property Flags — engine truth', link: '/knowledge/def-flags' }
               ]
@@ -169,6 +170,7 @@ export default withMermaid(defineConfig({
               text: '实体机制',
               items: [
                 { text: '实体生命周期与引用释放', link: '/zh/knowledge/entity-lifecycle-reference' },
+                { text: '实体回调时序总图', link: '/zh/knowledge/hook-sequencing' },
                 { text: '实体传送与跨进程引用', link: '/zh/knowledge/entity-migration-and-cross-process-references' },
                 { text: '.def 属性 Flags——引擎真源', link: '/zh/knowledge/def-flags' }
               ]

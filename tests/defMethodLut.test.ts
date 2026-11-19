@@ -510,4 +510,46 @@ describe('DEF-LUT-001 管理器+provider 八钉子', () => {
       deferred.dispose();
     }
   });
+
+  it('KODE-RESP-004:LUT 重建不持调度槽等首扫(自锁「一直在扫」收口)', async () => {
+    const deferred = new EntityMappingManager({ subscriptions: [] } as never, undefined, { deferStartup: true });
+    const internal = deferred as unknown as {
+      initialScan: Promise<void>;
+      scheduler: {
+        enqueue(spec: {
+          kind: string;
+          priority: number;
+          run: () => Promise<void>;
+        }): { wait: Promise<void> };
+      };
+    };
+    try {
+      deferred.ensureStartup();
+      // 钉住首扫终态:落定权在本测试(模拟「首扫分块仍在排队」的窗口)。
+      let releaseScan!: () => void;
+      internal.initialScan = new Promise<void>(resolve => { releaseScan = resolve; });
+
+      const rebuild = deferred.scheduleDefMethodLutRebuild(resolver);
+      // 让泵跑一拍:旧口径下 def-lut-build 是唯一任务,必已持槽起跑
+      // (新口径闸在任务外,此拍无事发生);再投探针才还原「分块排在
+      // 持槽任务之后」的自锁时序。
+      await Promise.resolve();
+      await Promise.resolve();
+      // 同调度器上排队一个普通任务(首扫分块同型):首扫未落定时也必须
+      // 能拿到槽执行完——旧口径 def-lut-build 的 run() 持槽
+      // await initialScan,排队任务被饿死,首扫分块同理 → 自锁。
+      let probeRan = false;
+      void internal.scheduler.enqueue({
+        kind: 'full-reindex',
+        priority: 1,
+        run: async () => { probeRan = true; }
+      });
+      await until(() => probeRan, 'probe task must run while initial scan is pending');
+
+      releaseScan();
+      await rebuild;
+    } finally {
+      deferred.dispose();
+    }
+  }, 10000);
 });

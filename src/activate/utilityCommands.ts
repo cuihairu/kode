@@ -66,14 +66,19 @@ import { hostLabel, renderExtensionIdentityReport, sideLabel } from '../backend/
 import { joinWorkspacePath } from '../backend/workspacePath';
 import { renderCacheClearConfirmation, renderCacheClearedReport } from '../backend/cacheMaintenance';
 import { LanguageServiceStatusController } from '../backend/languageServiceStatus';
-import { locateInterpreterOnPath, resolveInterpreterWith, resolveProfileInterpreter } from '../profileInterpreter';
+import {
+  locateInterpreterOnPath,
+  resolveInterpreterWith,
+  resolveProfileInterpreter,
+  resolveProfileInterpreterAsync
+} from '../profileInterpreter';
 import { normalizeVenvDirectoryNames } from '../backend/quickActionConfig';
 import { readBuildCommit } from '../backend/buildCommit';
 import { renderReproductionSummary } from '../backend/reproductionSummary';
 import { onDidChangeActiveProfile, resolveActiveProfile } from '../activeProfile';
 import { StartEntryController } from '../startEntry';
 import { resolveDatabaseInterfaceConfig } from '../serverConfigMerge';
-import { scanVenvs, verifyVenvDirectory } from '../backend/venvDiscovery';
+import { discoverVenvsCached, verifyVenvDirectory } from '../backend/venvDiscovery';
 import { showProfileHealthSummary } from '../profileHealth';
 import { wireDefAnalysis } from '../defAnalysisWiring';
 import { wireTrapLintDiagnostics } from '../trapDiagnosticsWiring';
@@ -815,7 +820,9 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       return;
     }
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const resolution = resolveProfileInterpreter(root);
+    // KODE-RESP-010:解析走异步链——venv 扫描不卡扩展宿主主线程;与选择器/
+    // profile 解析共享同一份在途发现与缓存(缓存热值即时返回,刷新不重扫)。
+    const resolution = await resolveProfileInterpreterAsync(root);
     interpreterStatusBarItem.text = interpreterStatusBarText(resolution);
     interpreterStatusBarItem.tooltip = resolution.interpreterPath
       ? resolution.interpreterPath
@@ -893,8 +900,12 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     async () => {
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       await selectInterpreter({
-        current: () => resolveProfileInterpreter(root),
-        discovered: () => (root ? scanVenvs(root, { preferredNames: venvPreferredNames() }) : []),
+        // KODE-RESP-010:current/discovered 接缓存异步发现——同键(根+约定名
+        // 清单)与状态栏刷新共享一次在途扫描;缓存热值即时返回,QuickPick 先
+        // 出已有候选;冷启动也只是一段带预算/让步的异步扫描,不卡命令线程。
+        current: () => resolveProfileInterpreterAsync(root),
+        discovered: () =>
+          root ? discoverVenvsCached(root, { preferredNames: venvPreferredNames() }) : [],
         pathInterpreter: () => locateInterpreterOnPath(process.env.PATH, process.platform),
         showQuickPick: async items =>
           await vscode.window.showQuickPick(items, {

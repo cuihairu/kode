@@ -43,37 +43,67 @@ fn ruff_lint_handler(params: Value) -> Result<Value, String> {
     lint(&files, ruff_path.as_deref())
 }
 
-/// 探测可用性并执行 lint。缺二进制 → `available:false`(不报错);文件空 →
-/// 只探测版本;其余失败(present 但坏输出/坏旗标/非零退出)如实 Err。
-/// spawn 出完整输出;满载下 fork 偶发 EAGAIN(WouldBlock)/ENOMEM(OutOfMemory)
-/// 是暂态而非「未安装」,短退避重试,仍败才按原错误回落
-/// (2026-11-08 CI 观察:llvm-cov 全 workspace 并行下 probe spawn 瞬败被
-/// `.ok()?` 吞成 available:false,误报 ruff 未安装;2026-11-13 nightly
-/// linux-arm64 实测单拍 20ms 仍可被打穿,同测试上一轮全绿、下一轮红=纯暂态;
-/// 2026-11-16 nightly linux-x64 三拍窗口再次被打穿,补 EMFILE/ENFILE(文件表
-/// 耗尽,raw_os_error 判定——std ErrorKind 无稳定映射,仅 unix 数值)同入
-/// 暂态族,退避加宽为 20/60/150/400ms 四拍)。
-pub(crate) fn spawn_output(command: &mut std::process::Command) -> std::io::Result<std::process::Output> {
-    const BACKOFF_MS: [u64; 4] = [20, 60, 150, 400];
-    for backoff in BACKOFF_MS {
-        match command.output() {
-            Ok(output) => return Ok(output),
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::OutOfMemory
-                ) || (cfg!(unix)
-                    && matches!(
-                        error.raw_os_error(),
-                        Some(11 | 12 | 23 | 24) // EAGAIN/ENOMEM/ENFILE/EMFILE
-                    )) =>
+/// 单次 `ruff check`(2000 文件上限)的墙钟 deadline:正常批次秒级完成,
+/// 120s 是含 CI 慢机的极端余量;到点 kill+wait 并如实报超时。
+const RUFF_CHECK_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+/// `ruff --version` 探测的墙钟 deadline(快命令,10s 极端余量)。
+const RUFF_PROBE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// 读取 `KODE_RUFF_DEADLINE_MS`(测试窄化窗)。并行测试下只 set 不 remove:
+/// remove 会与其他测试的读取竞态,把别人的窗误读回默认值(2026-11-19 实测
+/// 假红:remove_var 被并行读到中间态,挂起测试回落 120s 默认,单测 120.83s)。
+pub(crate) fn ruff_deadline(default: std::time::Duration) -> std::time::Duration {
+    std::env::var("KODE_RUFF_DEADLINE_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .map(std::time::Duration::from_millis)
+        .unwrap_or(default)
+}
+
+/// 有界 ruff 执行:[`crate::subprocess::run_bounded`] 统一执行面(并发写
+/// stdin/排空 stdout+stderr,deadline 到点 kill+wait,输出字节封顶),外层
+/// 套同表暂态 spawn 退避——满载下 fork 偶发 EAGAIN(WouldBlock)/ENOMEM
+/// (OutOfMemory)是暂态而非「未安装」(2026-11-08 CI 观察:llvm-cov 全
+/// workspace 并行下 probe spawn 瞬败被 `.ok()?` 吞成 available:false,误报
+/// ruff 未安装;2026-11-13 nightly linux-arm64 与 2026-11-16 linux-x64 再证,
+/// 补 EMFILE/ENFILE(文件表耗尽,raw_os_error 数值判定——std ErrorKind 无
+/// 稳定映射,仅 unix)同入暂态族,退避 20/60/150/400ms 四拍)。
+fn run_ruff_bounded(
+    command: &mut std::process::Command,
+    deadline: std::time::Duration,
+) -> Result<std::process::Output, String> {
+    for backoff in crate::subprocess::SPAWN_BACKOFF_MS {
+        match crate::subprocess::run_bounded(command, None, deadline) {
+            Ok(bounded) => {
+                return Ok(std::process::Output {
+                    status: bounded.status,
+                    stdout: bounded.stdout,
+                    stderr: bounded.stderr,
+                })
+            }
+            Err(crate::subprocess::BoundedError::Spawn(error))
+                if crate::subprocess::is_transient_spawn(&error) =>
             {
                 std::thread::sleep(std::time::Duration::from_millis(backoff));
             }
-            Err(error) => return Err(error),
+            Err(crate::subprocess::BoundedError::Spawn(error)) => {
+                return Err(format!("spawn failed: {error}"))
+            }
+            Err(crate::subprocess::BoundedError::Deadline) => {
+                return Err(format!(
+                    "timed out after {}ms (process killed)",
+                    deadline.as_millis()
+                ))
+            }
+            Err(crate::subprocess::BoundedError::OutputTooLarge) => {
+                return Err(format!(
+                    "output exceeds {} bytes",
+                    crate::subprocess::MAX_OUTPUT_BYTES
+                ))
+            }
         }
     }
-    command.output()
+    Err("spawn retries exhausted".to_string())
 }
 
 fn lint(files: &[String], ruff_path: Option<&str>) -> Result<Value, String> {
@@ -107,7 +137,8 @@ fn lint(files: &[String], ruff_path: Option<&str>) -> Result<Value, String> {
         "--",
     ]);
     cmd.args(files);
-    let output = spawn_output(&mut cmd).map_err(|e| format!("ruff check: spawn failed: {e}"))?;
+    let output = run_ruff_bounded(&mut cmd, ruff_deadline(RUFF_CHECK_DEADLINE))
+        .map_err(|e| format!("ruff check: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
@@ -153,12 +184,12 @@ fn lint(files: &[String], ruff_path: Option<&str>) -> Result<Value, String> {
     Ok(json!({ "available": true, "version": version, "diags": diags }))
 }
 
-/// `ruff --version` 探测;spawn 失败(未安装/不可执行)= None(暂态 fork 失败
-/// 由 spawn_output 重试,不在此误判)。
+/// `ruff --version` 探测;挂起/失败(未安装/不可执行)= None(降级可用面,
+/// 不无限等;暂态 fork 失败由 run_ruff_bounded 重试,不在此误判)。
 pub(crate) fn probe_version(program: &str) -> Option<String> {
     let mut command = std::process::Command::new(program);
     command.arg("--version");
-    let output = spawn_output(&mut command).ok()?;
+    let output = run_ruff_bounded(&mut command, ruff_deadline(RUFF_PROBE_DEADLINE)).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -269,5 +300,69 @@ mod tests {
             .expect("缺二进制如实回退不报错");
         assert_eq!(face["available"], serde_json::json!(false));
         std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    /// KODE-FULL-004:挂起面有界收割。探测 stub 永挂 → probe 降级 None;
+    /// check stub 版本即回、check 永挂 → 到点 kill+wait,如实报超时(不吞成
+    /// available:false)。KODE_RUFF_DEADLINE_MS 窄化窗只 set 不 remove(并行
+    /// 测试竞态判例:remove_var 会被别的测试读走,窗漂回默认造成假红)。
+    #[test]
+    fn hanging_stub_times_out_and_probe_degrades() {
+        let version_dir = temp_dir("hang-v");
+        #[cfg(unix)]
+        let version_stub = {
+            let script = version_dir.join("hang.sh");
+            std::fs::write(&script, "#!/bin/sh\nexec sleep 300\n").expect("write hang stub");
+            std::fs::set_permissions(
+                &script,
+                std::os::unix::fs::PermissionsExt::from_mode(0o755),
+            )
+            .expect("chmod");
+            script
+        };
+        #[cfg(windows)]
+        let version_stub = compile_stub(
+            &version_dir,
+            "fn main() { std::thread::sleep(std::time::Duration::from_secs(300)); }",
+        );
+        std::env::set_var("KODE_RUFF_DEADLINE_MS", "300");
+        // 探测面挂起:降级 None,不无限等(墙钟 ~300ms 级)。
+        assert_eq!(probe_version(version_stub.to_str().expect("utf8 path")), None);
+
+        let check_dir = temp_dir("hang-c");
+        #[cfg(unix)]
+        let check_stub = {
+            let script = check_dir.join("hang.sh");
+            std::fs::write(
+                &script,
+                "#!/bin/sh\n\
+                 if [ \"$1\" = \"--version\" ]; then echo \"ruff 0.0.0-fake\"; exit 0; fi\n\
+                 exec sleep 300\n",
+            )
+            .expect("write hang stub");
+            std::fs::set_permissions(
+                &script,
+                std::os::unix::fs::PermissionsExt::from_mode(0o755),
+            )
+            .expect("chmod");
+            script
+        };
+        #[cfg(windows)]
+        let check_stub = compile_stub(
+            &check_dir,
+            "fn main() { \
+             if std::env::args().any(|a| a == \"--version\") { println!(\"ruff 0.0.0-fake\"); return; } \
+             std::thread::sleep(std::time::Duration::from_secs(300)); }",
+        );
+        // check 面:probe 即回,check 挂起 → Deadline 如实报错(非 available:false)。
+        let error = lint(
+            &["/w/x.py".to_string()],
+            Some(check_stub.to_str().expect("utf8 path")),
+        )
+        .expect_err("挂起 check 必须报超时");
+        assert!(error.contains("ruff check"), "{error}");
+        assert!(error.contains("timed out"), "{error}");
+        std::fs::remove_dir_all(&version_dir).ok();
+        std::fs::remove_dir_all(&check_dir).ok();
     }
 }

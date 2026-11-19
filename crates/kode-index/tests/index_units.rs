@@ -207,6 +207,53 @@ fn queries_cover_all_kinds_and_prefix_scan() {
 }
 
 #[test]
+fn inheritance_edges_are_isolated_per_root() {
+    // KODE-FULL-017:继承边以 (根, 实体名) 存查——两根各有同名实体时
+    // Parent 边互不覆盖、互不串链;摘除一根的 def 不动另一根的边。
+    let mut index = SymbolIndex::new();
+    let root_a = RootId(1);
+    let root_b = RootId(2);
+    let key_a = DocumentKey::new(
+        root_a,
+        CanonicalUri::from_path("/proj_a/entities/Avatar.def"),
+    );
+    let key_b = DocumentKey::new(
+        root_b,
+        CanonicalUri::from_path("/proj_b/entities/Avatar.def"),
+    );
+    index.update(
+        key_a.clone(),
+        &def_text(Some("Monster"), "hp", "UINT32", &[]),
+    );
+    index.update(key_b.clone(), &def_text(Some("NPC"), "hp", "UINT32", &[]));
+
+    // 各根各链:同名实体按各自根的 Parent 解析,不取「后注册者」。
+    let (chain_a, cycle_a) = index.entity_chain(root_a, "Avatar");
+    assert!(cycle_a.is_none());
+    assert_eq!(chain_a[0].parent.as_deref(), Some("Monster"));
+    let (chain_b, cycle_b) = index.entity_chain(root_b, "Avatar");
+    assert!(cycle_b.is_none());
+    assert_eq!(chain_b[0].parent.as_deref(), Some("NPC"));
+
+    // 摘除 root_b 的 def:root_a 的边原样,root_b 的边随文件消失。
+    index.remove(&key_b);
+    assert_eq!(
+        index
+            .entity_declarations_in(root_a)
+            .get("Avatar")
+            .map(String::as_str),
+        Some("Monster"),
+        "他根摘除不得牵连本根同名实体的边"
+    );
+    assert!(
+        !index.entity_declarations_in(root_b).contains_key("Avatar"),
+        "摘除文件的继承边随文件消失"
+    );
+    let (chain_a2, _) = index.entity_chain(root_a, "Avatar");
+    assert_eq!(chain_a2[0].parent.as_deref(), Some("Monster"));
+}
+
+#[test]
 fn reverse_deps_and_inheritance_chain_with_cycle_termination() {
     let mut index = SymbolIndex::new();
     index.update_batch(&workspace());
@@ -217,7 +264,7 @@ fn reverse_deps_and_inheritance_chain_with_cycle_termination() {
         .iter()
         .any(|k| k.uri.as_path().ends_with("Monster.def")));
     // 继承链(SEM-004/IDX-005):Monster → Avatar → 根。
-    let (chain, cycle) = index.entity_chain("Monster");
+    let (chain, cycle) = index.entity_chain(RootId(1), "Monster");
     assert!(cycle.is_none());
     assert_eq!(chain.len(), 2);
     assert_eq!(chain[0].entity, "Monster");
@@ -233,7 +280,7 @@ fn reverse_deps_and_inheritance_chain_with_cycle_termination() {
         key("/proj/entities/B.def"),
         &def_text(Some("A"), "y", "UINT32", &[]),
     );
-    let (chain, cycle) = index.entity_chain("A");
+    let (chain, cycle) = index.entity_chain(RootId(1), "A");
     println!("环链长度={} 有环={}", chain.len(), cycle.is_some());
     assert!(cycle.is_some(), "环必须显式诊断");
     assert!(chain.len() <= 3, "环必须截断");
@@ -254,12 +301,14 @@ fn removal_and_rename_clean_every_lookup_path() {
     assert!(index.lookup("onRpc").is_empty());
     assert!(index.symbols_in_file(&avatar_key).is_empty());
     assert!(
-        index.entity_declarations().get("Avatar").is_none(),
+        !index
+            .entity_declarations_in(avatar_key.root)
+            .contains_key("Avatar"),
         "继承边连带清理(IDX-014)"
     );
     assert_eq!(index.tracked_files(), 5, "解析缓存同步失效");
     // Monster 的 Parent 引用还在(它自己声明),但链在 Avatar 处断(根)。
-    let (chain, cycle) = index.entity_chain("Monster");
+    let (chain, cycle) = index.entity_chain(avatar_key.root, "Monster");
     assert!(cycle.is_none() && chain.len() == 2 && chain[1].parent.is_none());
 
     // 改名 = remove(old) + update(new)(IDX-014)。

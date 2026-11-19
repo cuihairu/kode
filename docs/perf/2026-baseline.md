@@ -94,14 +94,17 @@
 > 2026-11-16(RUST-135):completion resolve 延迟补详情接线——languageServices.ts inline 补全 provider 对象加 resolveCompletionItem 委托 +5(位于 :128 打点之后)→ 其后四打点真位重探 204/277/344/745→209/282/349/750;completion.ts 顶部 import +1、rustResolveData WeakMap 块 +9、lspCompletionToVscode sortText/filterText/snippet/data 面 +12、KBEngineCompletionProvider.resolveCompletionItem +26(均在 PythonCompletionProvider 之前)→ provideCompletionItems 真位重探 1086→1134(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-16(RUST-144 批 4):languageServices.ts 顶部 import +1(SemanticTokensProvider/buildSemanticTokensLegend)与语义 token 注册块 +14(defProps 注册块之后)→ 五打点 128/209/282/349/750 → 129/210/283/350/765(前四 +1,750 +15,真位重探;与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-18(KODE-CFG-015 恢复批):languageServices.ts 顶部 import +1(EngineSpiCodeLensProvider)+ 返回面接口/返回对象各 +1 + SPI 注册块与命令 +22(位于 :353 打点之后)→ 五打点 132/213/286/353/785 → 134/215/288/355/809(前四 +2,785 +24,真位重探);extension.ts 解构面 +1(engineSpi impl,在 :477 前)→ 477/582 → 478/583,fire 块 +1(582 之后)不再位移(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。 2026-11-18(AI-001 批):extension.ts 顶部 import +1(aiRegistration)+ activate 内 AI 注册块 +4(:220 后,两锚前)→ 478/583 → 483/588,真位重探。
+> 2026-11-19(RUST-TRACK-FREEZE-007 刀2):languageServices.ts 顶部 import +1(resolveBackendMode)+ startKbEngineIndexing 门控块净 +11(rust 轨道 pythonClassIndex 懒启动)→ 五打点 143/224/297/386/863 → 144/225/298/397/874,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-19(ENGINE-LIB-SCAN-005 刀1):pythonClassIndex.ts 引擎库路径滤除三接线点(onFileChanged 判据 +1、全量发现块 +7、按名懒查块 +5,非均匀)→ CB2 import 绑定循环 :1228→1236、MRO :1559→1572、WAITC :766→767/打点 :772→773,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-19(RUST-149 批 3):取消令牌贯穿 inlay 四 provider(BuiltinType/InferredMirror/PropertyShadow/ProxyInternalAttr)——入口 cancelled() 闸 + def 归属/方向扫描束放行点复查,顶部累计 +9 → getDocumentLines 出处 inlay.ts 52→61,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["activate/languageServices.ts:224 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
-  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:313"]
+  M1["activate/languageServices.ts:225 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:315"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
   BR{"languageId==python 且<br/>注入 EntityMappingManager?"}
@@ -116,7 +119,7 @@ flowchart TD
   RS1["resolveDefMethodAnnotation → def 索引<br/>(形参个数/注解类型闸)"]
   RS2["resolveReceiverCallAnnotation<br/>段过滤 → 形参/类型对账"]
   RS3["resolveBuiltinPropertyAnnotation → 分面内建属性表"]
-  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:52 / backend/documentStore.ts:155"]
+  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:61 / backend/documentStore.ts:155"]
   MISS["标注落空 → 回退 provideKnownHover"]
   END1["operation.end(ok|miss) → return Hover|null"]
 
@@ -148,7 +151,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["activate/languageServices.ts:297 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :386 一路)"]
+  M2["activate/languageServices.ts:298 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :397 一路)"]
   AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders/pythonDefinition.ts:261"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :4736 / Impl :4754"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
@@ -156,14 +159,14 @@ flowchart TD
   STUB["内置桩文档(buildKbeStubDocument)"]
   CB{"class X(Base) 基类位?"}
   CB1["kbe from-import 桩"]
-  CB2["pythonClassIndex.resolveClassBase :1228<br/>(显式 import 绑定优先)"]
+  CB2["pythonClassIndex.resolveClassBase :1236<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
   L0["层0 接收者段闸(languageProviders/pythonDefinition.ts:962)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
-  MRO["PR5 两段方法解析(backend/pythonClassIndex.ts:1559)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
+  MRO["PR5 两段方法解析(backend/pythonClassIndex.ts:1572)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
   PASS2["pass2:①② 均落空才等全量收敛重查<br/>(ensureScanned,PR5 主路径首查不等这里)<br/>③ 反向形态:子类 MRO 反查 enclosing(精确身份)"]
   SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders/navigation.ts:47(fire-and-forget,不改返回值)"]
   END2["operation.end(hit|miss) → Location 或 Location 列表或 null"]
@@ -186,7 +189,7 @@ flowchart TD
   AD2 -.->|对拍| SHD
 
   WAITB("等待点 B:withInteractiveScanBudget 1s(首扫兜底最后一跳)<br/>languageProviders/pythonDefinition.ts:1088,属性探针增量索引未命中才等;命中直返不经过这里")
-  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:766,打点 :772)")
+  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:767,打点 :773)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
   MRO -.->|等待| WAITC

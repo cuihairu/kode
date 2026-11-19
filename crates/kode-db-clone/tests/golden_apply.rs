@@ -18,7 +18,7 @@ use kode_db_clone::{
     CloneError, CloneSchema, DerivedField, DerivedTable, ImportApplier, ImportMode, ImportOptions,
     ImportPlanner, ImportRunStore, MemoryRunStore, PhysicalTable, RowSink, RuleSet, SchemaResolver,
     SchemaSource, TargetEnvironment, TargetProfile, TargetSnapshot, TypedRow, TypedValue,
-    UniqueKey, UniquePolicy, VirtualSchema, WriteExecutor,
+    UniqueKey, UniquePolicy, VerifyState, VirtualSchema, WriteExecutor,
 };
 
 // ---- 与 golden_import.rs 同源的 Avatar 三级代表结构(集成测试独立二进制) ----
@@ -242,6 +242,8 @@ struct VirtualDb {
     fail_needle: Option<String>,
     /// 核对期少报的行数(验证失败注入面)。
     undercount_by: u64,
+    /// 核对期计数查询异常注入面(KODE-FULL-009)。
+    verify_error: Option<String>,
 }
 
 impl VirtualDb {
@@ -307,6 +309,9 @@ impl WriteExecutor for VirtualDb {
     }
 
     fn query_count(&mut self, sql: &str, params: &[TypedValue]) -> kode_db_clone::CloneResult<u64> {
+        if let Some(msg) = &self.verify_error {
+            return Err(CloneError::ImportRejected(msg.clone()));
+        }
         let table = table_of(sql);
         let ids: Vec<&TypedValue> = params.iter().collect();
         Ok(self
@@ -812,6 +817,132 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
         matches!(err2, CloneError::DriftMismatch(ref m) if m.contains("post-commit verification failed")),
         "{err2:?}"
     );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn pre_begin_validation_rejects_drift_before_transaction_opens() {
+    // KODE-FULL-010:表/行/列宽校验移 begin 前——漂移错误不再落进已开启
+    // 的事务(旧口径 begin 后 `?` 直穿绕过 rollback);事务内剩余错误
+    // 路径统一由 TxnGuard 兜底回滚。
+    let dir = temp_dir("prebegin");
+    let (mut plan, archive) = fixture(&dir);
+
+    // 臂 1:语句引用归档缺失的表——begin 前拒绝,事务零开销。
+    plan.statements[0].table = "tbl_Missing".into();
+    let mut db = VirtualDb::new();
+    let mut store = MemoryRunStore::new();
+    let err = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, CloneError::DriftMismatch(ref m) if m.contains("tbl_Missing")
+            && m.contains("absent from the archive")),
+        "{err:?}"
+    );
+    assert_eq!(db.begins, 0, "校验在 begin 前,事务未开");
+    assert_eq!(db.rollbacks, 0);
+    assert_eq!(db.committed_total(), 0);
+    assert!(store.runs().is_empty());
+
+    // 臂 2:列宽三不一致(cells/columns/归档行值)——同闸前置拒绝,
+    // 旧口径 zip 静默截断会变成本地错位插入。
+    let (mut plan2, archive2) = fixture(&dir);
+    plan2.statements[0].columns.push("sm_extra".into());
+    let mut db2 = VirtualDb::new();
+    let err2 = ImportApplier
+        .apply(
+            &plan2,
+            &archive2,
+            &local_target(),
+            &mut db2,
+            &mut MemoryRunStore::new(),
+            &ApplyControl::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err2, CloneError::DriftMismatch(ref m) if m.contains("column arity mismatch")),
+        "{err2:?}"
+    );
+    assert_eq!(db2.begins, 0);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn verify_query_error_after_commit_still_records_run_for_retry() {
+    // KODE-FULL-009:commit 成功后计数查询异常——run 必须已按指纹落账
+    // (账面先于核对 I/O,不再 `?` 直穿丢账),核对态=unknown;同归档
+    // 重试走重复导入闸回显 prior_run,库中数据不重复。
+    let dir = temp_dir("verr");
+    let (plan, archive) = fixture(&dir);
+
+    let mut db = VirtualDb::new();
+    db.verify_error = Some("verify connection lost".into());
+    let mut store = MemoryRunStore::new();
+    let err = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, CloneError::ImportRejected(ref m) if m.contains("post-commit verification errored")),
+        "{err:?}"
+    );
+    assert!(err.to_string().contains("is recorded"));
+    // 数据已提交(原子完整),不因核对异常回滚。
+    assert_eq!(db.committed_total(), 4);
+    assert_eq!(db.begins, 1);
+    assert_eq!(db.commits, 1);
+    // 已落账:指纹闸能取回;核对态 unknown(≠ failed),映射/清理计划在。
+    let fingerprint = archive_fingerprint(&archive).unwrap();
+    let recorded = store
+        .find_by_fingerprint(&fingerprint)
+        .expect("run must be recorded even when verify errored");
+    assert_eq!(recorded.verify.state, VerifyState::Unknown);
+    assert!(!recorded.verify.passed);
+    assert!(recorded
+        .verify
+        .error
+        .as_deref()
+        .is_some_and(|e| e.contains("verify connection lost")));
+    assert!(!recorded.resolved_ids.is_empty());
+    assert!(!recorded.cleanup.steps.is_empty());
+
+    // 同归档重试:闸先于写触发,回显同一 run,库中数据不重复。
+    match ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .expect("retry must hit the duplicate gate, not re-insert")
+    {
+        ApplyOutcome::DuplicateRejected(dup) => {
+            assert_eq!(dup.prior_run.run_id, recorded.run_id);
+            assert_eq!(dup.prior_run.verify.state, VerifyState::Unknown);
+            assert!(!dup.prior_run.resolved_ids.is_empty());
+        }
+        other => panic!("expected DuplicateRejected, got {other:?}"),
+    }
+    assert_eq!(db.committed_total(), 4, "重试不得重复插入");
+    assert_eq!(db.commits, 1, "重试未开启新事务");
+
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

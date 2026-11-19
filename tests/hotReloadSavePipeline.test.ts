@@ -691,6 +691,55 @@ describe('HR-WATCH-012 语法闸·窗 0 内容面(单拍直取,闸不死面)', (
     expect(h.emitted[0].events[0].revision).toBe(1); // 拦截不占号
   });
 
+  it('KODE-FULL-014:检查在途时的新保存,检查收口后补排处理,不悬挂到第三次保存', async () => {
+    // 场景复刻探针(save-pipeline-probe):v1 语法检查挂起 → v2 保存入 pending →
+    // v2 去抖窗到期被 settling 守卫挡回(timer 已耗尽)→ v1 检查放行。
+    // 旧实现在此停摆:v2 pending 无 timer,悬到第三次保存才被推动
+    let releaseCheck: ((verdict: { ok: boolean }) => void) | undefined;
+    const gate = new Promise<{ ok: boolean }>(resolve => {
+      releaseCheck = resolve;
+    });
+    let checkCalls = 0;
+    const h = makePipeline(
+      {
+        stabilityWindowMs: 0,
+        checkSyntax: (): Promise<{ ok: boolean }> => {
+          checkCalls += 1;
+          return gate.then(verdict => verdict);
+        }
+      },
+      { withSnapshot: true }
+    );
+    h.disk.set('/ws/a.py', { hash: 'h1', content: 'a=1' });
+    h.pipeline.offer('/ws/a.py', 'save');
+    // t=100:v1 到期定稿 → 语法检查挂起(await 中,pending 已删,settling 在册)
+    await h.clock.advance(100);
+    expect(checkCalls).toBe(1);
+    // 检查在途时保存 v2(新 pending + 去抖窗)
+    h.disk.set('/ws/a.py', { hash: 'h2', content: 'b=2' });
+    h.pipeline.offer('/ws/a.py', 'save');
+    // t=200:v2 窗到期 → settling 守卫挡回,timer 耗尽(悬置态成形)
+    await h.clock.advance(100);
+    expect(checkCalls).toBe(1);
+    // 放行 v1 检查:定稿收口 → finally 补排 v2
+    releaseCheck?.({ ok: true });
+    for (let i = 0; i < 30; i++) {
+      await Promise.resolve(); // 推进 gate.then → settle 续行 → finally 补排
+    }
+    await h.clock.advance(50); // v1 波次冲口
+    expect(h.emitted).toHaveLength(1);
+    expect(h.emitted[0].events[0].diskHash).toBe('h1');
+    // t+100:补排的 v2 窗到期 → 读到最新内容 → 检查(已放行)→ 定稿
+    await h.clock.advance(100);
+    expect(checkCalls).toBe(2);
+    await h.clock.advance(50); // v2 波次冲口
+    expect(h.emitted).toHaveLength(2);
+    expect(h.emitted[1].events[0].diskHash).toBe('h2');
+    expect(h.emitted[1].events[0].revision).toBe(2);
+    // 终态:无悬置 pending(最新保存已处理,不是悬到第三次事件)
+    expect(h.pipeline.pendingFiles()).toEqual([]);
+  });
+
   it('缺省装配形态(无读无检):定稿空哈希直发,全程不触快照(现有时序不变)', async () => {
     const h = makePipeline({ stabilityWindowMs: 0 });
     h.pipeline.offer('/ws/a.py', 'save');

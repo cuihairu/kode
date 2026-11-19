@@ -46,6 +46,15 @@ from the built site via `srcExclude`.
     index; and the kode single-source mirror pipeline
     (`model.rs` → golden → `src/generated/flagDomains.ts`).
 
+- **Entity callback sequencing map** (2026-11-19, HOOK-TIMING-001, from the
+  "hook timing / sequencing graph in hover" request):
+  - Covers: per-callback `{phase, before, after, triggers}` data core
+    (`src/backend/hookSequencing.ts`, all 36 callbacks + corroborated
+    `onLoseCell`); non-hook timing anchors — def-property injection
+    before script logic, `cellData` population/deletion/never-revived,
+    teleport target-space readiness; hover timing sections for hook
+    hovers, entry-SPI hovers and `self.<def-property>` hovers.
+
 - **Entity lifecycle & object reference release** — the user-named head topic
   (memory object reference & release):
   - Covers: the live registry strong reference (`entities.h:24`); the destroy

@@ -55,6 +55,7 @@ const IO_TASK_METHODS: &[&str] = &[
     "$/kode/dbClone/export",
     "$/kode/dbClone/inspectArchive",
     "$/kode/dbClone/readArchiveRows",
+    "$/kode/ruff/format",
     "$/kode/ruff/lint",
     "$/kode/workspace/scanAnchors",
 ];

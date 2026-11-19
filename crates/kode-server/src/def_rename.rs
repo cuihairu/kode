@@ -1529,4 +1529,182 @@ mod tests {
         assert_eq!(hit.surface, "Properties");
         assert!(hit.file_path.as_deref().unwrap().ends_with("Monster.def"));
     }
+
+    // ---- COV-039:防御臂/边界臂直调与工作区夹具 -----------------------------
+
+    #[test]
+    fn cov_utf16_map_interior_and_identifier_empty() {
+        // 83:多字节字符内部字节偏移钳到该字符 UTF-16 起点(防御面直调)。
+        let map = Utf16Map::new("a中b");
+        let mid = "a中b".find('中').unwrap() + 1;
+        assert_eq!(map.to_u16(mid), 1);
+        assert_eq!(map.to_u16(0), 0);
+        // 162:空文本/无词落点 → None。
+        assert_eq!(find_identifier_at_offset(&[], 0), None);
+        let blanks: Vec<u16> = "  ".encode_utf16().collect();
+        assert_eq!(find_identifier_at_offset(&blanks, 0), None);
+    }
+
+    #[test]
+    fn cov_tag_self_closing_and_miss_faces() {
+        // 203:自闭合元素 close span 空 → 闭区间 None,编辑只含开区间。
+        // 注:Rust tokenizer recover 模式直接丢弃 `< hp>`/`</ hp>` 空白形态
+        // (实测 Properties 子元素只剩内层 Type),get_tag_name_range 的空白
+        // 跳过臂(213/214/218/219)在 Rust 输入空间不可达,与 209/223/228
+        // 同列结构性余量。
+        let self_closing = "<root>\n  <Properties>\n    <mp/>\n  </Properties>\n</root>\n";
+        let sym = resolve_rename_symbol_at_offset(self_closing, self_closing.find("mp").unwrap())
+            .expect("自闭合属性可解析");
+        assert_eq!(sym.kind, "property");
+        assert_eq!(sym.name, "mp");
+        assert_eq!(collect_rename_edits_in_text(self_closing, &sym).len(), 1);
+        // 267:非 Properties/方法段命中 → None;478:全无命中 → None。
+        let odd = "<root>\n  <Unknown>\n    <zz/>\n  </Unknown>\n</root>\n";
+        assert_eq!(
+            resolve_rename_symbol_at_offset(odd, odd.find("zz").unwrap()),
+            None
+        );
+        assert_eq!(
+            resolve_rename_symbol_at_offset(HERO_DEF, HERO_DEF.find("</root>").unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn cov_flags_element_child_and_reference_faces() {
+        // 375:Flags 段挂元素子节点(非文本)→ find_map None 走空 flags 面。
+        let odd_flags = "<root>\n  <Properties>\n    <hp>\n      <Type>UINT32</Type>\n      <Flags><BASE_AND_CLIENT/></Flags>\n    </hp>\n  </Properties>\n</root>\n";
+        let hit = resolve_rename_symbol_at_offset(odd_flags, odd_flags.find("<hp>").unwrap() + 2)
+            .expect("元素形态 Flags 仍可解析");
+        assert_eq!(hit.name, "hp");
+        // 498:Parent 混合内容非文本/非元素节点跳过;526:空 wrapper 跳过。
+        let sem_text = "<root>\n  <Parent><!--c--><Base/></Parent>\n  <Interfaces>\n    <Interface/>\n    <Interface>IFoo</Interface>\n  </Interfaces>\n</root>\n";
+        let sem = parse_def_file_semantics(sem_text).expect("语义面可解析");
+        assert_eq!(sem.parent_name.as_deref(), Some("Base"));
+        assert_eq!(sem.interface_names, vec!["IFoo".to_string()]);
+    }
+
+    #[test]
+    fn cov_root_walk_classify_list_and_component_parent() {
+        // 580:向上到文件系统根无 entities.xml → None(tmp 深度 3 跳即可)。
+        let lonely = tmp_workspace("lonely", &[("entity_defs/Hero.def", HERO_DEF)]);
+        assert_eq!(
+            find_entity_defs_root_from_file(&lonely.join("entity_defs/Hero.def")),
+            None
+        );
+        // 600:目标不在 defs_root 子树 → strip_prefix 失败,类目保 Entity。
+        let other_root = tmp_workspace("other", &[("elsewhere/Monster.def", HERO_DEF)]);
+        let entry = classify_def_file(
+            &lonely.join("entity_defs"),
+            &other_root.join("elsewhere/Monster.def"),
+        );
+        assert_eq!(entry.category, DefOwnerCategory::Entity);
+        // 615:递归枚举不存在目录 → 空。
+        assert!(list_def_files_recursive(&lonely.join("nope")).is_empty());
+        // 655:Component 类目 Parent 解析进 components/ 子目录。
+        let comp_path = lonely.join("entity_defs/components/Slot.def");
+        std::fs::create_dir_all(comp_path.parent().unwrap()).unwrap();
+        std::fs::write(&comp_path, "<root>\n  <Parent>Base</Parent>\n</root>\n").unwrap();
+        let comp = classify_def_file(&lonely.join("entity_defs"), &comp_path);
+        assert_eq!(comp.category, DefOwnerCategory::Component);
+        let sem = parse_def_file_semantics("<root>\n  <Parent>Base</Parent>\n</root>\n").unwrap();
+        let links = resolve_link_paths(&lonely.join("entity_defs"), &comp, &sem);
+        assert_eq!(
+            links.parent_path,
+            Some(lonely.join("entity_defs/components/Base.def"))
+        );
+    }
+
+    #[test]
+    fn cov_owner_closure_skip_arms() {
+        // 683:起始文件读不到;686:内容无根元素;695:悬空 Parent 引用不产边。
+        let root = tmp_workspace("closure", &[("entity_defs/Hero.def", HERO_DEF)]);
+        let defs = root.join("entity_defs");
+        let hero = classify_def_file(&defs, &defs.join("Hero.def"));
+        let mut index = std::collections::BTreeMap::new();
+        index.insert(hero.file_path.clone(), hero.clone());
+        let none_reader: CrossFileReader = &|_: &Path| None;
+        assert!(collect_owner_closure(&hero, &defs, &index, none_reader).is_empty());
+        let garbage_reader: CrossFileReader = &|_: &Path| Some("garbage".to_string());
+        assert!(collect_owner_closure(&hero, &defs, &index, garbage_reader).is_empty());
+        let dangling_reader: CrossFileReader = &|p: &Path| {
+            if p.ends_with("Hero.def") {
+                Some("<root>\n  <Parent>Ghost</Parent>\n</root>\n".to_string())
+            } else {
+                None
+            }
+        };
+        assert!(collect_owner_closure(&hero, &defs, &index, dangling_reader).is_empty());
+    }
+
+    #[test]
+    fn cov_collect_compute_and_corpus_edges() {
+        // 715/1022:无根文本面 → 空;771:新名非法 → 空编辑。
+        let sym =
+            resolve_rename_symbol_at_offset(HERO_DEF, HERO_DEF.find("<hp>").unwrap() + 2).unwrap();
+        assert!(collect_rename_edits_in_text("", &sym).is_empty());
+        assert!(member_names_of("").is_empty());
+        let hero_path = tmp_workspace("edges", &[("entity_defs/Hero.def", HERO_DEF)])
+            .join("entity_defs/Hero.def");
+        let fs_reader: CrossFileReader = &|p: &Path| std::fs::read_to_string(p).ok();
+        assert!(compute_def_rename_edits(&hero_path, HERO_DEF, &sym, "1bad", fs_reader).is_empty());
+        // 991:语料目录不存在 → 空收;997:非 UTF-8 文件名跳过。
+        let corpus_root = tmp_workspace("corpus", &[]);
+        assert!(collect_def_corpus(&corpus_root).is_empty());
+        let first = kode_parser::json::PARITY_CORPORA[0];
+        let dir = corpus_root.join(first);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 非 UTF-8 文件名臂只在 Linux 可构造:Windows 无 unix 字节名 API,
+        // macOS APFS 拒绝非 UTF-8 文件名(write 必败,2026-11-19 nightly
+        // darwin 实测 unwrap 炸);corpus.len()==1 断言各侧同真,保持无条件。
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let bad = std::ffi::OsStr::from_bytes(b"\xff\xfe.def");
+            std::fs::write(dir.join(bad), "<root/>").unwrap();
+        }
+        std::fs::write(
+            dir.join("ok.def"),
+            "<root>\n  <Properties>\n    <hp/>\n  </Properties>\n</root>\n",
+        )
+        .unwrap();
+        let corpus = collect_def_corpus(&corpus_root);
+        assert_eq!(corpus.len(), 1, "只收合法文件名 def: {corpus:?}");
+    }
+
+    #[test]
+    fn cov_workspace_loop_skip_arms() {
+        // 795:compute 循环跳过目标自身;856:祖先 def 坏 XML 根 None 跳过;
+        // 866:conflict 循环中既非祖先也非后代的 def 跳过;descendant 臂走通。
+        let hero_text = "<root>\n  <Parent>Base</Parent>\n  <Properties>\n    <hp>\n      <Type>UINT32</Type>\n    </hp>\n  </Properties>\n</root>\n";
+        let alien_text = "<root>\n  <Parent>Hero</Parent>\n  <Properties>\n    <zz9>\n      <Type>UINT32</Type>\n      <Flags><BASE_AND_CLIENT/></Flags>\n    </zz9>\n  </Properties>\n</root>\n";
+        let root = tmp_workspace(
+            "loops",
+            &[
+                ("entities.xml", "<root/>"),
+                ("entity_defs/Hero.def", hero_text),
+                ("entity_defs/Base.def", "not xml <<<"),
+                (
+                    "entity_defs/Ghost2.def",
+                    "<root>\n  <Properties>\n    <mana>UINT32</mana>\n  </Properties>\n</root>\n",
+                ),
+                ("entity_defs/Alien.def", alien_text),
+            ],
+        );
+        let hero = root.join("entity_defs/Hero.def");
+        let text = std::fs::read_to_string(&hero).unwrap();
+        let sym = resolve_rename_symbol_at_offset(&text, text.find("<hp>").unwrap() + 2).unwrap();
+        let fs_reader: CrossFileReader = &|p: &Path| std::fs::read_to_string(p).ok();
+        let edits = compute_def_rename_edits(&hero, &text, &sym, "mp2", fs_reader);
+        assert!(
+            edits.iter().any(|e| e.file_path.ends_with("Hero.def")),
+            "目标文件自身编辑在场: {edits:?}"
+        );
+        // 856:祖先 Base 坏 XML 跳过;Alien(后代)zz9 方法与 hp 属性面不同,
+        // member_conflicts 不咬 → 无冲突。
+        assert!(
+            find_def_rename_conflict_in_closure(&hero, &text, &sym, "zz9", fs_reader).is_none(),
+            "无占用冲突"
+        );
+    }
 }

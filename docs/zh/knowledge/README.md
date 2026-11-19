@@ -39,6 +39,14 @@ baseapp 两篇同构。`knowledge/official-docs/`(kbengine.github.io 原始 HTML
     2912-2926`);逐旗标运行时语义表;踩坑索引;kode 单一来源镜像管线
     (`model.rs` → golden → `src/generated/flagDomains.ts`)。
 
+- **实体回调时序总图**(2026-11-19,HOOK-TIMING-001,源自「钩子调用时机
+  与前后时序关系图,提示时展示」需求):
+  - 覆盖:逐回调 `{phase, before, after, triggers}` 数据核
+    (`src/backend/hookSequencing.ts`,36 条回调全收录 + 语料佐证的
+    `onLoseCell` 补录);非钩子时序锚点——def 属性先于脚本逻辑注入、
+    `cellData` 就位/删除/永不复活、传送目标 space 就位;钩子 hover、
+    入口 SPI hover、`self.<def 属性>` hover 三面时序段接线。
+
 - **实体对象生命周期与引用释放** — 用户点名的头号专题(内存对象引用与释放):
   - 覆盖:活跃注册表强引用(`entities.h:24`);移出注册表进 `garbages` 的销毁
     流程(`entity_macro.h:1486`,`entity_app.h:713`,`entities.h:331`);非持有

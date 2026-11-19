@@ -235,7 +235,7 @@ struct GoldenDump {
 
 /// .py 语料收集(PARITY_CORPORA 同根;collect_corpus 只收 def/xml,本面
 /// 自收 .py,BTreeMap 字典序确定性)。
-fn collect_python_corpus(repo_root: &std::path::Path) -> BTreeMap<String, String> {
+pub(crate) fn collect_python_corpus(repo_root: &std::path::Path) -> BTreeMap<String, String> {
     fn walk(dir: &std::path::Path, rel_prefix: &str, out: &mut BTreeMap<String, String>) {
         let Ok(rd) = std::fs::read_dir(dir) else {
             return;

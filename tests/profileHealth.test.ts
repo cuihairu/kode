@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import {
+  INDEX_FORMAT_SCHEMA_LINE,
   PROFILE_HEALTH_ISSUE_LABELS,
   collectProfileHealth,
   showProfileHealthSummary
@@ -99,7 +100,7 @@ describe('profile health collection (IDE-PRJ-009)', () => {
       kind: 'command',
       target: 'kbengine.python.serviceStatus'
     });
-    expect(PROFILE_HEALTH_ISSUE_LABELS['engine-missing']).toBe('缺引擎');
+    expect(PROFILE_HEALTH_ISSUE_LABELS['engine-missing']).toBe('缺引擎仓路径');
     expect(PROFILE_HEALTH_ISSUE_LABELS['roots-ambiguous']).toBe('根歧义');
   });
 
@@ -305,7 +306,8 @@ describe('profile health summary command (IDE-PRJ-009)', () => {
       { exists: (): boolean => false }
     );
     const engine = issues.find(issue => issue.kind === 'engine-missing');
-    expect(engine?.message).toContain('引擎根不在盘上');
+    expect(engine?.message).toContain('引擎仓路径不在盘上');
+    expect(engine?.message).toContain('不影响索引兼容');
     expect(engine?.message).toContain('/gone/kbe');
   });
 
@@ -321,7 +323,7 @@ describe('profile health summary command (IDE-PRJ-009)', () => {
     patchWindow();
     windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
       const resolved = (await items) as Array<{ label: string; issue: { kind: string } }>;
-      return resolved.find(row => row.issue.kind === 'engine-missing');
+      return resolved.find(row => row.issue?.kind === 'engine-missing');
     };
     const exec = vi.spyOn(commands, 'executeCommand').mockResolvedValue(undefined);
     try {
@@ -334,6 +336,74 @@ describe('profile health summary command (IDE-PRJ-009)', () => {
       expect(exec).toHaveBeenCalledWith('kbengine.project.import');
     } finally {
       exec.mockRestore();
+      restoreWindow();
+    }
+  });
+  it('ENGINE-WORDING-006:缺引擎仓路径措辞与索引格式行分词(KBEngine 仓≠kode 索引兼容)', () => {
+    expect(PROFILE_HEALTH_ISSUE_LABELS['engine-missing']).toBe('缺引擎仓路径');
+    const unrecorded = collectProfileHealth(
+      { ...healthyProfile, engineRoot: '' },
+      activeServiceFacts,
+      { exists: (): boolean => true }
+    ).find(issue => issue.kind === 'engine-missing');
+    expect(unrecorded?.message).toContain('KBEngine 引擎根未记录');
+    expect(unrecorded?.message).toContain('不影响索引兼容');
+    expect(INDEX_FORMAT_SCHEMA_LINE).toContain('索引格式 schema=index-cache/1');
+    expect(INDEX_FORMAT_SCHEMA_LINE).toContain('与 KBEngine 引擎版本无关');
+  });
+
+  it('健康面板首行=索引格式 schema 行,选中只展示不跳转(ENGINE-WORDING-006)', async () => {
+    const memento = new MemoryMemento();
+    const store = new ProjectProfileStore(memento);
+    const profile = await store.create({
+      displayName: 'wording',
+      assetsRoot: '/ws/proj',
+      engineRoot: ''
+    });
+    await setActiveProfile(memento, profile.id);
+    patchWindow();
+    let pickedItem: { label?: string } | undefined;
+    windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+      const resolved = (await items) as Array<{ label?: string }>;
+      pickedItem = resolved[0];
+      return pickedItem;
+    };
+    const exec = vi.spyOn(commands, 'executeCommand').mockResolvedValue(undefined);
+    try {
+      await showProfileHealthSummary({ workspaceState: memento }, {
+        exists: (): boolean => false,
+        resolveServiceFacts: () => activeServiceFacts
+      });
+      expect(pickedItem?.label).toContain('索引格式');
+      expect(info).toContain(INDEX_FORMAT_SCHEMA_LINE);
+      expect(exec).not.toHaveBeenCalled();
+    } finally {
+      exec.mockRestore();
+      restoreWindow();
+    }
+  });
+
+  it('全部健康时健康消息尾带索引格式 schema 行(ENGINE-WORDING-006)', async () => {
+    const memento = new MemoryMemento();
+    const store = new ProjectProfileStore(memento);
+    const profile = await store.create({
+      displayName: 'ok',
+      assetsRoot: '/ws/proj',
+      engineRoot: '/ws/kbe',
+      interpreterPath: '/opt/py/python3',
+      interpreterSource: 'path'
+    });
+    await setActiveProfile(memento, profile.id);
+    patchWindow();
+    try {
+      await showProfileHealthSummary({ workspaceState: memento }, {
+        exists: (): boolean => true,
+        resolveServiceFacts: () => activeServiceFacts
+      });
+      const last = info[info.length - 1];
+      expect(last).toContain('活动 profile 健康');
+      expect(last).toContain('索引格式 schema=index-cache/1');
+    } finally {
       restoreWindow();
     }
   });
@@ -351,7 +421,7 @@ describe('profile health summary command (IDE-PRJ-009)', () => {
     patchWindow();
     windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
       const resolved = (await items) as Array<{ label: string; issue: { kind: string } }>;
-      return resolved.find(row => row.issue.kind === 'interpreter-missing');
+      return resolved.find(row => row.issue?.kind === 'interpreter-missing');
     };
     const exec = vi.spyOn(commands, 'executeCommand').mockResolvedValue(undefined);
     try {

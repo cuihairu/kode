@@ -97,3 +97,11 @@ fn method_registry_coexists_with_type_graph_faces() {
     assert_eq!(g.entity_methods("Hero").len(), 4);
     assert_eq!(g.classify("ITEM_ID"), kode_types::TypeClass::Alias);
 }
+
+/// 稳定协议面:方法分面 as_str 三变体钉板。
+#[test]
+fn method_facet_as_str_all_variants() {
+    assert_eq!(MethodFacet::Base.as_str(), "base");
+    assert_eq!(MethodFacet::Cell.as_str(), "cell");
+    assert_eq!(MethodFacet::Client.as_str(), "client");
+}

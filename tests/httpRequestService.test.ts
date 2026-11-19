@@ -304,6 +304,44 @@ describe('默认 transport(真 TCP localhost)', () => {
     await expect(service.runByName('热更')).resolves.toBe(false);
     expect(errors[0]).toContain('请求超时(60ms)');
   }, 10000);
+
+  it('KODE-FULL-013:drip-feed 慢响应(间隔<timeoutMs 持续滴字节不结束)在墙钟预算内失败', async () => {
+    // 每 20ms 发一字节且永不结束:socket 永不空闲,旧实现(仅空闲超时)
+    // 永不触发,请求无限占住调用方;墙钟 deadline 必须截止
+    const port = await listen((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      const drip = setInterval(() => {
+        res.write('x');
+      }, 20);
+      res.on('close', () => {
+        clearInterval(drip);
+      });
+    });
+    const { service, errors } = makeService([entry({ url: `http://127.0.0.1:${port}/drip` })], {
+      timeoutMs: 80
+    });
+    const startedAt = Date.now();
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(Date.now() - startedAt).toBeLessThan(5000); // 墙钟截止,不悬挂
+    expect(errors[0]).toContain('请求超时(80ms)');
+  }, 10000);
+
+  it('KODE-FULL-013:慢但完整结束的响应不被误伤(总时长<timeoutMs 照常成功)', async () => {
+    const port = await listen((_req, res) => {
+      res.writeHead(200);
+      res.write('part1');
+      setTimeout(() => {
+        res.write('part2');
+        res.end();
+      }, 30);
+    });
+    const { service, logs } = makeService([entry({ url: `http://127.0.0.1:${port}/slow-ok` })], {
+      timeoutMs: 5000
+    });
+
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(logs[2]).toBe('part1part2');
+  }, 10000);
 });
 
 describe('内置示例默认停用(服务侧过滤兜底)', () => {

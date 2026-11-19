@@ -275,8 +275,13 @@ impl ServerState {
         session.register_sink(Rc::clone(&store) as Rc<RefCell<dyn RootInvalidationSink>>);
         session.register_sink(Rc::clone(&hover) as Rc<RefCell<dyn RootInvalidationSink>>);
         // RUST-070/071/073:索引刷新队列持有引擎句柄(入队时构建执行时刻
-        // 真相执行体);RUST-082:didChange 风暴缓冲在队列内。
-        let index_queue = crate::index_queue::IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
+        // 真相执行体);RUST-082:didChange 风暴缓冲在队列内。RESP-001b:
+        // 回落读盘走专用读线程(协议线程绝不内联读盘)。
+        let index_queue = crate::index_queue::IndexQueue::with_off_thread_reader(
+            Rc::clone(&store),
+            Rc::clone(&hover),
+            std::sync::Arc::new(|path| std::fs::read_to_string(path)),
+        );
         ServerState {
             initialized: false,
             shutdown_requested: false,
@@ -648,7 +653,11 @@ fn drain_index_for_request(state: &mut ServerState, key: &DocumentKey) {
     state.index.freshen(&identity);
     state
         .index
-        .pump_budgeted(crate::index_queue::REQUEST_DRAIN_BUDGET);
+        .pump_budgeted_until(
+            crate::index_queue::REQUEST_DRAIN_BUDGET,
+            std::time::Instant::now()
+                + std::time::Duration::from_millis(crate::index_queue::REQUEST_DRAIN_BUDGET_MS),
+        );
 }
 
 /// textDocument/hover(PR-010/LSP-003):文档须已打开(open overlay 优先,
@@ -1274,6 +1283,8 @@ pub fn self_rss_bytes() -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    // 唯一测试 linux-only(/proc 面);use 同门,Windows 夜构建不引 dead import。
+    #[cfg(target_os = "linux")]
     use super::*;
 
     /// RUST-026:Linux 下资源快照来自 /proc,字段齐全且非零(绝不伪造零值)。

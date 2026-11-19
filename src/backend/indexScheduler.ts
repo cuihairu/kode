@@ -130,6 +130,16 @@ export interface IndexSchedulerOptions {
 
 const DEFAULT_INTERACTIVE_COOLDOWN_MS = 50;
 
+/**
+ * 交互活动信标(RUST-TRACK-FREEZE-007 刀1):最近一次交互任务入队/完成时刻
+ * (performance.now 口径,与调度器冷却窗同一时钟)。调度器外的后台洪水
+ * (如语料镜像分帧)据此避让——冷却窗内=用户在交互,后台多让一拍,复用
+ * 本模块 interactiveCooldownMs 的单一口径,不另造时钟。模块级共享:
+ * 调度器实例在 languageServices 装配,镜像入口在 gate wiring,只有模块级
+ * 信标能让两侧同读。
+ */
+export const interactiveActivityBeacon = { lastAt: -Number.MAX_VALUE };
+
 export class IndexScheduler {
   private readonly tasks = new Map<number, ScheduledTask>();
   private queueOrder: number[] = [];
@@ -174,6 +184,7 @@ export class IndexScheduler {
 
     if (isInteractivePriority(spec.priority)) {
       this.lastInteractiveEnqueueAt = performance.now();
+      interactiveActivityBeacon.lastAt = this.lastInteractiveEnqueueAt;
     }
 
     // 同文件合并/过期判定:只对带 filePath 的任务生效(首扫等无文件任务不合并)
@@ -386,8 +397,12 @@ export class IndexScheduler {
     const operation = startLanguageServiceOperation('index-scheduler', {
       indexGeneration: next.priority
     });
-    void next
-      .run()
+    // KODE-RESP-003:run 声明返回 Promise 并不禁止函数体在返回前同步 throw
+    // ——直接调用时同步异常在 Promise 链建立前逸出,绕过失败记账/清槽,
+    // runningId 永不释放→后续任务永久排队。先包一层 Promise.resolve().then
+    // 把调用挪进 Promise 上下文,同步 throw 变 rejection 走统一失败收口。
+    void Promise.resolve()
+      .then(() => next.run())
       .then(() => {
         next.state = 'completed';
         this.completed += 1;
@@ -404,6 +419,7 @@ export class IndexScheduler {
         if (this.runningId === next.id) { this.runningId = null; }
         if (isInteractivePriority(next.priority)) {
           this.lastInteractiveEndAt = performance.now();
+          interactiveActivityBeacon.lastAt = this.lastInteractiveEndAt;
         }
         for (const listener of next.settleListeners.splice(0)) { listener(); }
         // 终态任务出表:run 闭包持有整批文件路径与错误对象,长会话保存/扫描
