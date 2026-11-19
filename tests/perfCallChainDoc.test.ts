@@ -593,11 +593,14 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-18:SCAN-RESUME-001 断点续扫——pythonClassIndex.ts 顶部 import +5、
   // 字段+构造器段 +15、runScheduledScan 恢复块 +46(非均匀):688→706(+18)、
   // 1300→1366/1420→1486(+66)。出处随 baseline 锁步。
-  ['src/backend/pythonClassIndex.ts', 766, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1435, 'resolveClassBase'],
+  ['src/backend/pythonClassIndex.ts', 767, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1448, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1559, '①② 两段查询']
+  ['src/backend/pythonClassIndex.ts', 1572, '①② 两段查询'],
+  // 2026-11-19(ENGINE-LIB-SCAN-005 刀1):pythonClassIndex.ts 引擎库路径滤除
+  // 三接线点——onFileChanged 判据 +1、全量发现块 +7、按名懒查块 +5(非均匀):
+  // 766→767(+1)、1435→1448(+13)、1559→1572(+13)。出处随 baseline 锁步。
   // 2026-11-06:KBE-CFG-001..005(2a87d77)工作区配置契约诊断——extension.ts
   // 顶部 import +4(1014 前锚点全 +4),activate 装配块 +136 落在 1432 之后:
   // onDidChangeTextDocument/flushQueued 锚点 +140(2155→2295/2235→2375);
