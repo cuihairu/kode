@@ -247,14 +247,16 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
       const defs = createWarmupStages({
       // 发现链首扫:复用 startKbEngineIndexing 已起的同一轮(ensureStartup 幂等),
       // 这里只等终态不重起第二套扫描(KR-AUD-34 会话缓存口径不动)。
-      waitForDiscovery: () => entityMappingManager.waitForInitialScan(),
+      waitForDiscovery: onProgress => entityMappingManager.waitForInitialScan(onProgress),
       // 事件/方法全量首扫:统一调度器非交互优先级入队(交互任务让路),
       // ensureStarted 幂等复用在跑任务;调度器拒接(已 dispose)按已终态结算。
-      ensureEventIndex: async () => {
+      // onProgress(WARM-VISIBILITY-004 刀 A):首扫进度回调透传进扫描环,
+      // 状态栏 message 随「事件/方法索引 N/M」逐档推进。
+      ensureEventIndex: async onProgress => {
         const handle = indexScheduler.enqueue({
           kind: 'non-interactive',
           priority: IndexTaskPriority.NonInteractive,
-          run: () => sharedWorkspaceIndex.ensureStarted()
+          run: () => sharedWorkspaceIndex.ensureStarted(onProgress)
         });
         try {
           await handle.wait;
@@ -416,7 +418,12 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                 }
               }
               if (cached?.payload.eventIndex?.length) {
-                const restore = await sharedWorkspaceIndex.restoreFromCache(cached.payload.eventIndex);
+                // 恢复路径进度(WARM-VISIBILITY-004 刀 A):漂移重建逐档上报,
+                // 大漂移(接近全量)时状态栏不再静默
+                const restore = await sharedWorkspaceIndex.restoreFromCache(
+                  cached.payload.eventIndex,
+                  detail => { reportWarmupDetail?.(detail); }
+                );
                 if (restore.tookOver) {
                   if (warmupStageDefs) {
                     warmupStageDefs.find(stage => stage.key === 'eventIndex')!.cached = true;

@@ -312,3 +312,31 @@ describe('BG-WARM 审核整改:动态登记 / 让出与取消 / 失败传播', (
   });
 });
 
+
+describe('createWarmupStages 阶段内进度透传(WARM-VISIBILITY-004 刀 A)', () => {
+  it('发现链/事件索引的 onProgress 回调经 stage.report 推到状态栏 message', async () => {
+    const details: string[] = [];
+    let discoveryCb: ((detail: string) => void) | undefined;
+    let eventIndexCb: ((detail: string) => void) | undefined;
+    const deps = makeDeps({
+      waitForDiscovery: async onProgress => {
+        discoveryCb = onProgress;
+        onProgress?.('实体发现链 def 23/87');
+      },
+      ensureEventIndex: async onProgress => {
+        eventIndexCb = onProgress;
+        onProgress?.('事件/方法索引 145/612 文件');
+      },
+      report: detail => { details.push(detail); }
+    });
+    await runAll(deps);
+    // 两阶段都注入了回调,且阶段运行期内的上报已路由到 report(状态栏面)
+    expect(typeof discoveryCb).toBe('function');
+    expect(typeof eventIndexCb).toBe('function');
+    expect(details).toContain('实体发现链 def 23/87');
+    expect(details).toContain('事件/方法索引 145/612 文件');
+    // report 未装配(无状态栏)时回调仍可安全注入(no-op 路由不炸)
+    const bare = makeDeps({ report: undefined });
+    await runAll(bare);
+  });
+});

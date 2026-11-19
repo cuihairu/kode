@@ -12,6 +12,7 @@ import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { ensureConfigDerivedScanRoot } from './configDerive';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
+import { createScanStageProgressReporter } from './backend/scanStageProgress';
 import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   resolveIncomingPythonMethodCalls,
@@ -245,6 +246,13 @@ export class EntityMappingManager {
   private readonly semanticIndex = new SemanticIndex();
   private readonly dependencyGraph = new SemanticDependencyGraph();
   private scanningEntityMappings: Promise<void> | null = null;
+  /**
+   * 首扫进度上报面(WARM-VISIBILITY-004 刀 A):warmup 阶段 1 等待首扫时注入,
+   * def 逐文件解析经节流上报器推到状态栏 message「实体发现链 def N/M」。
+   * 扫描可能在等待方注入回调前已起步——上报器每次发射现读本字段,晚附上也
+   * 能收到后续进度;无等待方(warmup 未跑)时为 null,零上报。
+   */
+  private scanProgressSink: ((detail: string) => void) | null = null;
   private pythonWatcher: vscode.FileSystemWatcher | null = null;
   private defWatcher: vscode.FileSystemWatcher | null = null;
   /** 外部资产根 watcher 三件套(assetsRoot 切换时整组重建,IDE-IDX-014) */
@@ -480,6 +488,12 @@ export class EntityMappingManager {
       const normalized = normalizeLookupPath(defFile.fsPath);
       return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
     });
+    // WARM-VISIBILITY-004 刀 A:def 逐文件节流进度(无 sink 时发射为 no-op)
+    const defProgress = createScanStageProgressReporter({
+      label: '实体发现链 def',
+      total: entities.length,
+      report: detail => { this.scanProgressSink?.(detail); }
+    });
     const handles = [];
     for (let offset = 0; offset < entities.length; offset += 8) {
       const batch = entities.slice(offset, offset + 8);
@@ -495,11 +509,13 @@ export class EntityMappingManager {
             await this.parseDefFile(path.basename(defFile.fsPath, '.def'), defFile.fsPath, loader);
             scanMetrics.countFileRead(1);
             scanMetrics.countFileParse(1);
+            defProgress.step();
           }
         }
       }));
     }
     await Promise.all(handles.map(handle => handle.wait));
+    defProgress.finish();
     jumpLog('info', () => `def 全量索引完成 ${defFiles.length} 个 .def → 实体 ${this.mappingIndexes.size} 个,${indexTimer()}ms`);
     // 扫描总耗时进 LogHub(用户令「加计时日志实测,别猜」):独立计时
     // (jumpTimeStart 关开关时恒 0,不做闸),便于真机定位首扫占比
@@ -1323,9 +1339,14 @@ export class EntityMappingManager {
     return entry?.defFile;
   }
 
-  async waitForInitialScan(): Promise<void> {
+  async waitForInitialScan(onProgress?: (detail: string) => void): Promise<void> {
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
+    // WARM-VISIBILITY-004 刀 A:等待方(后台预热阶段 1)注入进度回调——首扫
+    // 在途也照收后续进度(上报器发射时现读 sink),状态栏不再分钟级静默
+    if (onProgress) {
+      this.scanProgressSink = onProgress;
+    }
     await this.initialScan;
   }
 
