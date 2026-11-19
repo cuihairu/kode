@@ -237,7 +237,8 @@ async function walkExternalRoot(
   skipDirs: Set<string>,
   merged: Map<string, vscode.Uri>,
   token?: vscode.CancellationToken,
-  pathFilter?: (fsPath: string) => boolean
+  pathFilter?: (fsPath: string) => boolean,
+  managedRoots: readonly string[] = []
 ): Promise<void> {
   if (token?.isCancellationRequested) { return; }
   let entries: fs.Dirent[];
@@ -257,12 +258,25 @@ async function walkExternalRoot(
       if (entry.name === '.git' || skipDirs.has(entry.name)) {
         continue;
       }
+      // KODE-RESP-008:受管镜像树剪枝——外部根自身的 .kbengine/inferred 副本
+      // 整棵不下潜(与引擎 Lib 剪枝同形:连 readdir 的 IO 都省掉,不只是事后
+      // 滤结果;旧版遍历会重新进结果,造成自身副本重复索引)
+      if (managedRoots.length > 0) {
+        const key = normalizeForCompare(full);
+        if (
+          managedRoots.some(
+            rootKey => key === rootKey || key.startsWith(rootKey.endsWith('/') ? rootKey : `${rootKey}/`)
+          )
+        ) {
+          continue;
+        }
+      }
       // 路径形态剪枝:命中过滤器的目录整棵不下潜(引擎 Lib 数千文件连
       // readdir 的 IO 都省掉,不只是事后滤结果)
       if (pathFilter && !pathFilter(full)) {
         continue;
       }
-      await walkExternalRoot(full, match, skipDirs, merged, token, pathFilter);
+      await walkExternalRoot(full, match, skipDirs, merged, token, pathFilter, managedRoots);
       continue;
     }
     if (entry.isFile() && match(entry.name) && !(pathFilter && !pathFilter(full))) {
@@ -302,30 +316,31 @@ export async function findFilesAcrossRoots(
   }
   // KODE-CFG-017:托管目录(.kbengine/inferred 镜像树)副本剔出合并结果,
   // 防 kode 自身扫描镜像双计;目录名按 kbengine.managedDir 设置值(可为
-  // 多段相对路径如 tools/.kbengine),受管根=workspaceRoot∪各外部扫描根
-  // + 相对值,按绝对路径前缀判定,不按任意同名段全局剔除
+  // 多段相对路径如 tools/.kbengine),受管根=各扫描根+相对值,按绝对路径
+  // 前缀判定,不按任意同名段全局剔除。
+  // KODE-RESP-008:受管根=**全部 workspace 文件夹 ∪ 各外部扫描根**(旧版只
+  // 登记首个 workspace 根——第二工作区与外部根自己的镜像副本逃过过滤,且
+  // 外部遍历在旧版的前置过滤之后跑,会把外部根的受管副本重新加回结果)。
+  // 统一在收尾一次剔净;外部遍历另按该集合剪枝(受管子树零 readdir)。
   const managedDir = resolveManagedDirName(
     vscode.workspace.getConfiguration('kbengine').get<string>('managedDir')
   ).name;
-  const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
-  const managedRootAbs = wsRoot ? normalizeForCompare(path.join(wsRoot, managedDir)) : null;
   const managedRoots: string[] = [];
-  if (managedRootAbs !== null) {
-    managedRoots.push(managedRootAbs);
-  }
-  for (const root of getExternalScanRoots()) {
-    const abs = normalizeForCompare(path.join(root, managedDir));
-    if (abs !== managedRootAbs) {
+  const seenManagedRoots = new Set<string>();
+  const pushManagedRoot = (rootFsPath: string): void => {
+    const abs = normalizeForCompare(path.join(rootFsPath, managedDir));
+    if (!seenManagedRoots.has(abs)) {
+      seenManagedRoots.add(abs);
       managedRoots.push(abs);
     }
-  }
-  if (managedRoots.length > 0) {
-    const kept = new Set(filterManagedDirCopies([...merged.keys()], managedRoots));
-    for (const key of merged.keys()) {
-      if (!kept.has(key)) {
-        merged.delete(key);
-      }
+  };
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    if (folder?.uri?.fsPath) {
+      pushManagedRoot(folder.uri.fsPath);
     }
+  }
+  for (const root of getExternalScanRoots()) {
+    pushManagedRoot(root);
   }
   try {
     const match = matcherForGlob(glob);
@@ -334,19 +349,20 @@ export async function findFilesAcrossRoots(
       const stopExternalWalk = discovery.startSubPhase('external-walk');
       for (const root of getExternalScanRoots()) {
         if (token?.isCancellationRequested) { break; }
-        await walkExternalRoot(root, match, skipDirs, merged, token, pathFilter);
+        await walkExternalRoot(root, match, skipDirs, merged, token, pathFilter, managedRoots);
       }
       stopExternalWalk();
     }
   } catch {
     // workspace 外根遍历失败不拖垮 workspace 结果(扫描按可得范围降级)
   }
-  // 外部遍历结果同受托管根前缀过滤(assetsRoot 恰为工作区根时,遍历起点
-  // 覆盖受管目录;一般情形下受管根不在外部根内,过滤为无操作)
-  if (managedRootAbs !== null) {
-    const prefix = managedRootAbs + '/';
+  // 收尾统一过滤(RESP-008):workspace glob 结果与外部遍历结果按同一受管根
+  // 集合一次剔净(旧版收尾只按首个 workspace 受管根前缀过滤,外部根/第二
+  // 工作区的副本会重新进结果);遍历剪枝之外,任何来源的受管副本都在此兜底
+  if (managedRoots.length > 0) {
+    const kept = new Set(filterManagedDirCopies([...merged.keys()], managedRoots));
     for (const key of merged.keys()) {
-      if (key.startsWith(prefix)) {
+      if (!kept.has(key)) {
         merged.delete(key);
       }
     }
