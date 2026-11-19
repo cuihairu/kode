@@ -28,6 +28,7 @@ import { recordHttpDelivery } from './backend/hotReloadDelivery';
 import { applyAcceptedReceipt } from './backend/hotReloadReceipt';
 import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt } from './backend/hotReloadAppliedCheck';
 import { createDefStructuralGate, type DefStructuralGate } from './backend/hotReloadDefGate';
+import { checkHotReloadConfigFiles, isHotReloadConfigFile } from './backend/hotReloadConfigGate';
 import { sendFilesViaReloadChannel } from './backend/hotReloadChannelSend';
 import { sendDefaultHotfix } from './backend/hotReloadDefaultHotfix';
 import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './backend/hotReloadNotice';
@@ -1055,8 +1056,11 @@ export function setupHotReload(
       }
     };
     const gateDefChanges = (): void => {
-      // 纯 Python 批同步放行(与抽闸前行为逐字一致,不引入微任务延迟)
-      if (!triggers.some(file => file.toLowerCase().endsWith('.def'))) {
+      // 纯 Python 批同步放行(与抽闸前行为逐字一致,不引入微任务延迟);
+      // 配置文件批(RUST-336)同走闸链,只是判定面换成配置校验
+      const hasDef = triggers.some(file => file.toLowerCase().endsWith('.def'));
+      const configFiles = triggers.filter(isHotReloadConfigFile);
+      if (!hasDef && configFiles.length === 0) {
         proceed();
         return;
       }
@@ -1072,6 +1076,49 @@ export function setupHotReload(
         auditLine('拦截:需重启', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
         warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
       };
+      // RUST-336 配置闸拦下:不发普通 reload,但**不**称需重启——拦的是
+      // 内容本身有问题(修复前重启也起不来),诚实口径是修好再发;审计
+      // 通道记「拦截:配置校验失败」,与 def 闸共用五要素语义。状态机面
+      // 不推(与流水线语法闸 blocked 同口径:不 fire 不推状态)。
+      const blockConfig = (reasons: readonly string[]): void => {
+        const first = reasons[0] ?? '配置校验失败';
+        auditLine('拦截:配置校验失败', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
+        warnRestart(`配置文件校验失败,本次不发普通 reload(修复后再次保存即重发): ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
+      };
+      // RUST-336 配置闸放行面:内容校验通过的配置变更也不走模块热更
+      // (引擎按 python 模块重载,XML 配置没有可发的 module_name),生效
+      // 通道本就是重启——按 def 闸同款需重启面呈现(状态机/审计/警告),
+      // 校验通过让重启决策有依据。
+      const blockConfigRestart = (reasonText: string): void => {
+        status.setRestartRequired([reasonText], triggers);
+        options.onRestartRequired?.(settings.actionName, triggers, [reasonText]);
+        auditLine('拦截:配置变更需重启', triggers, `未发送——${reasonText}`);
+        warnRestart(`配置文件变更不走模块热更,需重启引擎生效: ${reasonText}`);
+      };
+      // RUST-336:批内配置文件内容校验(良构+types.xml 值域/一致性);
+      // 有致命发现拦下报校验失败,零发现走需重启面(配置永不走普通通道)
+      const gateConfig = (then: () => void): void => {
+        if (configFiles.length === 0) {
+          then();
+          return;
+        }
+        const readConfig = options.targetState?.readFileContent;
+        if (!readConfig) {
+          blockConfigRestart(`${configFiles[0]}: 无内容读取通道,内容未校验`);
+          return;
+        }
+        void checkHotReloadConfigFiles(triggers, readConfig).then(verdict => {
+          if (verdict.reasons.length > 0) {
+            blockConfig(verdict.reasons);
+            return;
+          }
+          blockConfigRestart('内容校验通过');
+        });
+      };
+      if (!hasDef) {
+        gateConfig(proceed);
+        return;
+      }
       void defGate.check(triggers).then(verdict => {
         if (verdict.reasons.length > 0) {
           block(verdict.reasons);
@@ -1083,7 +1130,7 @@ export function setupHotReload(
         // 并发批各归各)。前滚失败不阻塞发送(保守面在判定,不在前滚;下次
         // 判定按旧基线保守拦)。
         void Promise.resolve(defGate.commit?.(verdict.token)).catch(() => undefined);
-        proceed();
+        gateConfig(proceed);
       });
     };
     gateDefChanges();
@@ -1347,12 +1394,15 @@ export function setupHotReload(
    * python 模块重载,其余扩展没有可发的模块(默认热更 POST 的 module_name
    * 同样只对 python 模块有意义),只走旁路。否则显式的全匹配模式会让 .xml
    * 既进投递(推状态栏、跑动作)又进旁路,同事件双处理。
+   * RUST-336 例外:KBEngine 配置文件(types.xml/kbengine*.xml/entity_defs
+   * 下 XML)进投递只为过配置闸受检——校验失败拦下报错,校验通过走需重启
+   * 面;配置永不走普通模块发送(见 gateConfig)。
    */
   const hotDomainOnly =
     (handler: (uri: vscode.Uri) => void) =>
     (uri: vscode.Uri): void => {
       const lower = uri.fsPath.toLowerCase();
-      if (lower.endsWith('.py') || lower.endsWith('.def')) {
+      if (lower.endsWith('.py') || lower.endsWith('.def') || isHotReloadConfigFile(uri.fsPath)) {
         handler(uri);
       }
     };

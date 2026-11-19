@@ -521,18 +521,28 @@ describe('装配(§11.1/§11.4 watcher 生命周期)', () => {
     const explicitWatcher = allFileSystemWatchers[0];
     const bypassWatcher = allFileSystemWatchers[1];
 
-    // 显式 `**/*` 匹配到的 .xml:不进投递(引擎按模块重载,xml 无模块可发),
-    // 不排去抖、不触发动作、状态不动
-    explicitWatcher.fireChange(Uri.file(path.join(assets, 'res', 'types.xml')));
+    // 显式 `**/*` 匹配到的普通 .xml(非 KBEngine 配置文件):不进投递
+    // (引擎按模块重载,xml 无模块可发),不排去抖、不触发动作、状态不动
+    explicitWatcher.fireChange(Uri.file(path.join(assets, 'res', 'ui.xml')));
     expect(clock.pending()).toBe(0);
     expect(runCalls).toEqual([]);
     expect(status.bar.text).toBe(READY_FACE);
     expect(status.lines.some(line => line.includes('触发:'))).toBe(false);
 
     // 同一个 .xml 仍从旁路面照捕(旁路不因显式 globs 而失效)
-    bypassWatcher.fireChange(Uri.file(path.join(assets, 'res', 'types.xml')));
+    bypassWatcher.fireChange(Uri.file(path.join(assets, 'res', 'ui.xml')));
     await vi.waitFor(() => expect(bypass).toHaveLength(1));
     expect(bypass[0]).toMatchObject({ ext: '.xml', handledBy: 'unrouted' });
+
+    // RUST-336:types.xml 是配置文件,进投递只为过配置闸——无读取通道时
+    // 如实走需重启面拦下(不走模块发送),动作不触发
+    explicitWatcher.fireChange(Uri.file(path.join(assets, 'res', 'types.xml')));
+    expect(clock.pending()).toBe(2);
+    clock.tick();
+    settle(clock);
+    expect(runCalls).toEqual([]);
+    expect(status.lines.some(line => line.includes('拦截:配置变更需重启'))).toBe(true);
+    expect(status.lines.some(line => line.includes('无内容读取通道'))).toBe(true);
 
     // .def 仍在热更域:确实进投递(会话首见无基线 → 结构闸保守不发,那是
     // IDE-HOT-005/REV-024 的口径,不是没进投递)
