@@ -348,3 +348,70 @@ fn main() {
         log("clean shutdown");
     }
 }
+
+// ---- 单测 -----------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 最小装配:state + 两 worker 池(分派坏帧臂只需 error 响应可构造)。
+    fn fixture() -> (ServerState, PoolExecutor) {
+        let mut state = ServerState::new();
+        state.initialized = true;
+        let (executor, _rx) = PoolExecutor::spawn(state.rpc.snapshot(), PoolBudget::from_total(2));
+        (state, executor)
+    }
+
+    #[test]
+    fn recover_id_faces() {
+        // 数字/字符串 id 回捞;缺 id/非标量形态 → None(响应账面不可知)。
+        assert!(matches!(
+            recover_id(&serde_json::json!({ "id": 7 })),
+            Some(RequestId::Number(7))
+        ));
+        assert!(matches!(
+            recover_id(&serde_json::json!({ "id": "abc" })),
+            Some(RequestId::String(s)) if s == "abc"
+        ));
+        assert_eq!(recover_id(&serde_json::json!({ "method": "x" })), None);
+        assert_eq!(
+            recover_id(&serde_json::json!({ "id": { "nested": 1 } })),
+            None
+        );
+    }
+
+    #[test]
+    fn dispatch_bad_frame_outcomes_error_responses() {
+        // 三个帧级坏形臂:非对象消息体(serde 拒)/非法帧头/非法 body。
+        // 可观边界=不 panic 且经 write_outgoing 落错误响应帧(stdout)。
+        let (mut state, executor) = fixture();
+        let mut never = || false;
+        dispatch_outcome(
+            &mut state,
+            &executor,
+            FrameOutcome::Message(serde_json::json!(3)),
+            &mut never,
+        );
+        dispatch_outcome(
+            &mut state,
+            &executor,
+            FrameOutcome::InvalidHeader("missing Content-Length".into()),
+            &mut never,
+        );
+        dispatch_outcome(&mut state, &executor, FrameOutcome::InvalidBody, &mut never);
+    }
+
+    #[test]
+    fn write_outgoing_both_variants_execute() {
+        // Response/Notification 双臂序列化+编码+写盘链(stdout;encode 对
+        // 合法消息恒成功,错误臂为防御面)。
+        write_outgoing(&[
+            Outgoing::Response(Response::error(
+                Some(RequestId::Number(1)),
+                error_codes::INVALID_REQUEST,
+                "unit probe",
+            )),
+            Outgoing::Notification(kode_protocol::ServerNotification::new("$/unitProbe", None)),
+        ]);
+    }
+}
