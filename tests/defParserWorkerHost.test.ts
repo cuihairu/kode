@@ -184,6 +184,49 @@ describe('defParserWorkerHost worker 路径(IDE-REV-039)', () => {
     expect(host.getDefParserWorkerGauge().running).toBe(0);
   });
 
+  it('KODE-FULL-015:单件超字节上限且空闲时放行单飞(worker 是隔离边界,不回落宿主)', async () => {
+    const host = await loadHost();
+    const oversize = 'x'.repeat(host.MAX_POSTED_PARSE_BYTES + 1);
+    const promise = host.parseDefDocumentResponsive(oversize, 'giant');
+    // 空闲单飞:直接派发进 worker(旧实现此处直接拒绝,调用方回落宿主同步
+    // 解析巨型文本=UI 冻结病灶)
+    expect(workerState.instances).toHaveLength(1);
+    expect(workerState.instances[0].posted).toHaveLength(1);
+    const document = parseDefDocument('<root/>');
+    workerState.instances[0].emit('message', { id: workerState.instances[0].posted[0].id, document });
+    await expect(promise).resolves.toBe(document);
+  });
+
+  it('KODE-FULL-015:单件超上限且有在途任务时按 too-large 拒收(可分辨错误类别)', async () => {
+    const host = await loadHost();
+    const first = host.parseDefDocumentResponsive(bigContent, 'a'); // 占位在途
+    const oversize = 'x'.repeat(host.MAX_POSTED_PARSE_BYTES + 1);
+    const second = host.parseDefDocumentResponsive(oversize, 'giant');
+    await expect(second).rejects.toMatchObject({ name: 'DefParserBudgetError', kind: 'too-large' });
+    // 在途不受影响
+    const document = parseDefDocument('<root/>');
+    const worker = workerState.instances[0];
+    worker.emit('message', { id: worker.posted[0].id, document });
+    await expect(first).resolves.toBe(document);
+  });
+
+  it('KODE-FULL-015:任务数满时拒收类别为 overload(等待排干后可恢复)', async () => {
+    const host = await loadHost();
+    const inflight: Array<Promise<unknown>> = [];
+    for (let i = 0; i < host.MAX_POSTED_PARSE_JOBS; i += 1) {
+      inflight.push(host.parseDefDocumentResponsive(bigContent, `q${i}`));
+    }
+    const overflow = host.parseDefDocumentResponsive(bigContent, 'overflow');
+    await expect(overflow).rejects.toMatchObject({ name: 'DefParserBudgetError', kind: 'overload' });
+    const document = parseDefDocument('<root/>');
+    const worker = workerState.instances[0];
+    for (const message of worker.posted) {
+      worker.emit('message', { id: message.id, document });
+    }
+    await Promise.allSettled(inflight);
+    expect(host.getDefParserWorkerGauge().running).toBe(0);
+  });
+
   it('不认识 id 的回包被忽略,不影响在途请求', async () => {
     const host = await loadHost();
     const pending = host.parseDefDocumentResponsive(bigContent, 'a');
