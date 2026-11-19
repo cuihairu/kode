@@ -1,7 +1,8 @@
 //! CORE-001 帧解码单测:短读、分包、单 chunk 多帧、非法帧重同步。
 
 use kode_protocol::{
-    encode_frame, FrameDecoder, FrameOutcome, Request, RequestId, HEADER_DELIMITER,
+    encode_frame, FrameDecoder, FrameOutcome, Request, RequestId, HEADER_DELIMITER, MAX_BODY_BYTES,
+    MAX_HEADER_BYTES,
 };
 use serde_json::json;
 
@@ -142,4 +143,64 @@ fn request_id_round_trips_number_and_string_forms() {
     // 响应保真回显,禁止归一化
     let echoed = serde_json::to_value(&string.id).unwrap();
     assert_eq!(echoed, json!("abc-1"));
+}
+
+#[test]
+fn oversized_header_without_delimiter_reports_invalid_header_then_resyncs() {
+    // 纯垃圾字节(无定界符、无 Content-Length 候选)压过 64KiB 头上限:
+    // 超限臂报 InvalidHeader 并清缓冲进入重同步;下一有效帧照常解出。
+    let garbage = vec![b'x'; MAX_HEADER_BYTES + 4];
+    let mut decoder = FrameDecoder::new();
+    let out = decoder.push(&garbage);
+    assert_eq!(out.len(), 1, "超限垃圾只产出一笔 InvalidHeader,不产短读");
+    assert!(
+        matches!(&out[0], FrameOutcome::InvalidHeader(m) if m.contains("within limit")),
+        "超限头必须走 InvalidHeader(within limit) 而非静默吞掉: {out:?}"
+    );
+    let out2 = decoder.push(&frame_raw(&msg_body(11)));
+    assert_eq!(out2.len(), 1);
+    assert!(
+        matches!(&out2[0], FrameOutcome::Message(v) if v["id"] == 11),
+        "重同步后紧跟的有效帧必须照常解出: {out2:?}"
+    );
+}
+
+#[test]
+fn oversized_content_length_claim_reports_invalid_header_then_resyncs() {
+    // 声称的 Content-Length 超过 64MiB body 上限:直接报 InvalidHeader
+    // (不预读 body),重同步后下一有效帧照常解出。
+    let claim = format!("Content-Length: {}\r\n\r\nx", MAX_BODY_BYTES + 1).into_bytes();
+    let mut decoder = FrameDecoder::new();
+    let out = decoder.push(&claim);
+    assert_eq!(out.len(), 1);
+    assert!(
+        matches!(&out[0], FrameOutcome::InvalidHeader(m) if m.contains("exceeds limit")),
+        "超限声称必须走 InvalidHeader(exceeds limit): {out:?}"
+    );
+    let out2 = decoder.push(&frame_raw(&msg_body(12)));
+    assert_eq!(out2.len(), 1);
+    assert!(
+        matches!(&out2[0], FrameOutcome::Message(v) if v["id"] == 12),
+        "重同步后紧跟的有效帧必须照常解出: {out2:?}"
+    );
+}
+
+#[test]
+fn huge_overflow_push_reclaims_buffer_capacity() {
+    // 2MiB 垃圾过限后缓冲清空;compact 在容量 >1MiB 且残量 <64KiB 时
+    // shrink_to_fit 防缓冲无限滞留。收缩无协议可观面(buf 私有字段),
+    // 可断言面=过限报错后解码器立即恢复可用;收缩行由覆盖率对账钉证。
+    let mut decoder = FrameDecoder::new();
+    let out = decoder.push(&vec![b'x'; 2 * 1024 * 1024]);
+    assert_eq!(out.len(), 1);
+    assert!(
+        matches!(&out[0], FrameOutcome::InvalidHeader(m) if m.contains("within limit")),
+        "过限垃圾必须报 InvalidHeader: {out:?}"
+    );
+    let out2 = decoder.push(&frame_raw(&msg_body(13)));
+    assert_eq!(out2.len(), 1);
+    assert!(
+        matches!(&out2[0], FrameOutcome::Message(v) if v["id"] == 13),
+        "容量收缩后小帧照常解出: {out2:?}"
+    );
 }
