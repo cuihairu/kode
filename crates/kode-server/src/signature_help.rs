@@ -38,7 +38,7 @@ use serde::Serialize;
 use crate::def_param_hints::{
     infer_method_section_from_python_file, normalize_file_identity, resolve_annotation_direct,
 };
-use crate::hover::{category_of, Category, HoverEngine};
+use crate::hover::{Category, HoverEngine, category_of};
 use crate::python_call_at::get_python_call_at_position;
 
 // ---------------------------------------------------------------------------
@@ -160,16 +160,78 @@ impl HoverEngine {
         if !self.corpus_defs.contains(&owner_path) {
             return None;
         }
-        let Some(defs_root) = self.defs_root(&owner_path) else {
-            return Some(vec![owner_path]);
+        Some(self.def_chain_paths(&owner_path))
+    }
+
+    /// def 路径起点的继承链闭包路径集(owner_chain_paths 的走查核;
+    /// RUST-139 workspace_symbols 同饮)。自身 + interfaces + components +
+    /// parent 链,接口 def 不跟随 Parent,环截断,只取语料存在路径。
+    pub(crate) fn def_chain_paths(&self, owner_path: &str) -> Vec<String> {
+        self.def_chain_paths_impl(owner_path, true)
+    }
+
+    /// effective 折叠口径的闭包路径集(不含 components——TS
+    /// effectiveProperties/effectiveMethodsBySection 折叠不折组件,组件槽
+    /// 在 workspace_symbols 走独立槽面)。
+    pub(crate) fn def_fold_paths(&self, owner_path: &str) -> Vec<String> {
+        self.def_chain_paths_impl(owner_path, false)
+    }
+
+    /// 自身 + parent 链(不折 interfaces/components;接口 def 不跟随
+    /// Parent)。workspace_symbols 组件槽收集用它定位宿主链的 Components
+    /// 段(TS semantics.components = local + parent 链折叠同口径)。
+    pub(crate) fn parent_chain_paths(&self, owner_path: &str) -> Vec<String> {
+        let Some(defs_root) = self.defs_root(owner_path) else {
+            return vec![owner_path.to_string()];
         };
-        let mut out = vec![owner_path.clone()];
-        let mut seen = std::collections::BTreeSet::from([owner_path.clone()]);
-        let mut current = Some(owner_path);
+        let mut out = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut current = Some(owner_path.to_string());
         while let Some(cpath) = current {
+            if !seen.insert(cpath.clone()) {
+                break;
+            }
             let Some(cdef) = self.corpus_def(&cpath) else {
                 break;
             };
+            out.push(cpath.clone());
+            let category = category_of(&defs_root, &cpath);
+            // 接口 def 不跟随 Parent(引擎 loadInterfaces 口径)。
+            let parent = match category {
+                Category::Interface => None,
+                _ => cdef.parent.clone(),
+            };
+            let Some(parent) = parent.filter(|p| !p.is_empty()) else {
+                break;
+            };
+            let parent_dir = match category {
+                Category::Component => format!("{defs_root}/components"),
+                _ => defs_root.clone(),
+            };
+            let parent_path = format!("{parent_dir}/{parent}.def");
+            if !self.corpus_defs.contains(&parent_path) {
+                break;
+            }
+            current = Some(parent_path);
+        }
+        out
+    }
+
+    fn def_chain_paths_impl(&self, owner_path: &str, with_components: bool) -> Vec<String> {
+        let Some(defs_root) = self.defs_root(owner_path) else {
+            return vec![owner_path.to_string()];
+        };
+        let mut out = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut current = Some(owner_path.to_string());
+        while let Some(cpath) = current {
+            if !seen.insert(cpath.clone()) {
+                break;
+            }
+            let Some(cdef) = self.corpus_def(&cpath) else {
+                break;
+            };
+            out.push(cpath.clone());
             let category = category_of(&defs_root, &cpath);
             for name in &cdef.interfaces {
                 let candidate = format!("{defs_root}/interfaces/{name}.def");
@@ -177,13 +239,15 @@ impl HoverEngine {
                     out.push(candidate);
                 }
             }
-            for comp in &cdef.components {
-                let Some(name) = &comp.component_type else {
-                    continue;
-                };
-                let candidate = format!("{defs_root}/components/{name}.def");
-                if self.corpus_defs.contains(&candidate) && seen.insert(candidate.clone()) {
-                    out.push(candidate);
+            if with_components {
+                for comp in &cdef.components {
+                    let Some(name) = &comp.component_type else {
+                        continue;
+                    };
+                    let candidate = format!("{defs_root}/components/{name}.def");
+                    if self.corpus_defs.contains(&candidate) && seen.insert(candidate.clone()) {
+                        out.push(candidate);
+                    }
                 }
             }
             // 接口 def 不跟随 Parent(引擎 loadInterfaces 口径)。
@@ -199,13 +263,14 @@ impl HoverEngine {
                 _ => defs_root.clone(),
             };
             let parent_path = format!("{parent_dir}/{parent}.def");
-            if !self.corpus_defs.contains(&parent_path) || !seen.insert(parent_path.clone()) {
+            // seen 去重交由循环顶(入列即在循环顶 push;此处预插会把父路径
+            // 双插,下一轮 insert false 直接 break——父链永远不入列)。
+            if !self.corpus_defs.contains(&parent_path) || seen.contains(&parent_path) {
                 break;
             }
-            out.push(parent_path.clone());
             current = Some(parent_path);
         }
-        Some(out)
+        out
     }
 }
 
@@ -457,7 +522,7 @@ struct GoldenActivation {
 /// activeArgument→activeParameter 标亮。未解析命中不入档(对账靠
 /// hitCount/resolvedCount 差值,TS 侧复算未解析位必须同落空)。
 pub fn dump_signature_help_golden(repo_root: &std::path::Path) -> String {
-    use kode_parser::json::{collect_corpus, PARITY_CORPORA};
+    use kode_parser::json::{PARITY_CORPORA, collect_corpus};
 
     let py_corpus = crate::python_call_at::collect_python_corpus(repo_root);
     let files = collect_corpus(repo_root, PARITY_CORPORA);
@@ -809,9 +874,11 @@ mod tests {
     fn root_removal_drops_resolution() {
         let (registry, mut engine) = build();
         let py = py_path("base", "Avatar");
-        assert!(engine
-            .signature_help(&py, "onRpc", Some("BaseMethods"))
-            .is_some());
+        assert!(
+            engine
+                .signature_help(&py, "onRpc", Some("BaseMethods"))
+                .is_some()
+        );
         engine.invalidate_root(registry.root_for(&CanonicalUri::from_path("/proj-a/x.def")));
         assert!(
             engine

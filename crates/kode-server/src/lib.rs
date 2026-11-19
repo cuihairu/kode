@@ -54,6 +54,7 @@ pub mod semantics_rpc;
 pub mod server;
 pub mod signature_help;
 pub mod space_nav;
+pub mod workspace_symbols;
 pub mod trap_lints;
 pub mod user_type_contract;
 pub mod warm_gate;
@@ -76,6 +77,7 @@ pub use python_call_at::dump_python_call_at_golden;
 pub use references::dump_references_golden;
 pub use references::dump_references_semantic_golden;
 pub use signature_help::dump_signature_help_golden;
+pub use workspace_symbols::dump_workspace_symbols_golden;
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
 };
