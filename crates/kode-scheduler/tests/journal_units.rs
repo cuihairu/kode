@@ -5,8 +5,14 @@ use std::collections::HashMap;
 use kode_scheduler::{load_journal, write_journal, TaskKind};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("kode-sched-journal-{name}-{}", std::process::id()));
+    // 序号后缀:同一测试进程内各用例共享 pid,同名目录会互相 remove_dir_all
+    // (并行线程下 write_journal 中途 NotFound)——每次调用必须唯一。
+    static DIR_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let seq = DIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "kode-sched-journal-{name}-{seq}-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
