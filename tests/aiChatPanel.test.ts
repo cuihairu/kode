@@ -207,23 +207,25 @@ describe('AI-002 对话面板(真实消息协议)', () => {
   });
 
   it('lm 路线流式逐 chunk 上屏,中断停收保留已收部分', async () => {
+    // KODE-FULL-011:替身按宿主真实契约——sendRequest 三参,token 第三参;
+    // text 逐片产出 string 本体。
     let token: { isCancellationRequested: boolean } | null = null;
-    const makeStream = (): AsyncIterable<{ content?: string }> =>
+    const makeStream = (): AsyncIterable<string> =>
       ({
         async *[Symbol.asyncIterator]() {
-          yield { content: 'part1-' };
-          yield { content: 'part2' };
+          yield 'part1-';
+          yield 'part2';
           // 挂起等取消:中断停收,已收部分保留
           while (!token?.isCancellationRequested) {
             await new Promise(resolve => setTimeout(resolve, 5));
           }
-          yield { content: 'SHOULD_NOT_APPEAR' };
+          yield 'SHOULD_NOT_APPEAR';
         }
-      }) as AsyncIterable<{ content?: string }>;
+      }) as AsyncIterable<string>;
     (vscode as { lm?: unknown }).lm = {
       selectChatModels: async () => [
         {
-          sendRequest: async (_messages: unknown[], t?: { isCancellationRequested: boolean }) => {
+          sendRequest: async (_messages: unknown[], _options: unknown, t?: { isCancellationRequested: boolean }) => {
             token = t ?? null;
             return { text: makeStream() };
           }
