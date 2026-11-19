@@ -7,6 +7,7 @@ use kode_kbengine_protocol::codec::{
     decode_spans, decode_value, DecodeLimits, SpanKind, ValueSpan,
 };
 use kode_kbengine_protocol::cursor::Cursor;
+use kode_kbengine_protocol::error::DecodeErrorKind;
 use kode_kbengine_schema::wire::{DictField, WireType};
 
 fn limits() -> DecodeLimits {
@@ -342,4 +343,81 @@ fn depth_limit_errors_identically() {
     let s = decode_spans(&[ty], &p, &lim);
     assert!(v.is_err());
     assert!(s.is_err());
+}
+
+#[test]
+fn remaining_scalar_and_vector4_spans_offset_and_length() {
+    // 既有 scalars_spans_offsets 只走 U8/U16/U32/I64/F64/Bool 六臂;此测补齐
+    // I8/I16/I32/U64/F32 与 Vector4 组臂——每条标量臂的 read_* 与 leaf 行
+    // 各须跑一次,否则该分支在覆盖率口径上恒为 0(分支未被任何语料触达)。
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&(-7i8).to_le_bytes());
+    payload.extend_from_slice(&(-300i16).to_le_bytes());
+    payload.extend_from_slice(&(-123_456i32).to_le_bytes());
+    payload.extend_from_slice(&0x11_22_33_44_55_66_77_88u64.to_le_bytes());
+    payload.extend_from_slice(&(-2i64).to_le_bytes());
+    payload.extend_from_slice(&2.5f32.to_le_bytes());
+    for f in [1.0f32, 2.0, 3.0, 4.0] {
+        payload.extend_from_slice(&f.to_le_bytes());
+    }
+    let args = vec![
+        WireType::Int8,
+        WireType::Int16,
+        WireType::Int32,
+        WireType::UInt64,
+        WireType::Int64,
+        WireType::Float,
+        WireType::Vector4,
+    ];
+    let spans = decode_spans(&args, &payload, &limits()).unwrap();
+    assert_eq!(spans.len(), 7);
+    leaf(&spans[0], SpanKind::I8);
+    assert_eq!((spans[0].start, spans[0].len), (0, 1));
+    leaf(&spans[1], SpanKind::I16);
+    assert_eq!((spans[1].start, spans[1].len), (1, 2));
+    leaf(&spans[2], SpanKind::I32);
+    assert_eq!((spans[2].start, spans[2].len), (3, 4));
+    leaf(&spans[3], SpanKind::U64);
+    assert_eq!((spans[3].start, spans[3].len), (7, 8));
+    leaf(&spans[4], SpanKind::I64);
+    assert_eq!((spans[4].start, spans[4].len), (15, 8));
+    leaf(&spans[5], SpanKind::F32);
+    assert_eq!((spans[5].start, spans[5].len), (23, 4));
+    // Vector4:16B = 4×F32 子项(组臂的维度分派行由本测触达)。
+    assert_eq!(spans[6].kind, SpanKind::Group);
+    assert_eq!((spans[6].start, spans[6].len), (27, 16));
+    assert_eq!(spans[6].children.len(), 4);
+    for (i, c) in spans[6].children.iter().enumerate() {
+        leaf(c, SpanKind::F32);
+        assert_eq!((c.start, c.len), (27 + i * 4, 4));
+    }
+}
+
+#[test]
+fn array_span_count_over_cap_reports_memory_limit_with_count_and_cap() {
+    // 声明 count 超 max_array_len:预检臂必须在读任何元素前报错(防模板放大),
+    // 且把 count 与 cap 带出便于定位是哪条消息声明了巨数组。
+    let limits = DecodeLimits {
+        max_array_len: 2,
+        ..DecodeLimits::default()
+    };
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&5u32.to_le_bytes());
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend_from_slice(&2u16.to_le_bytes());
+    let err = decode_spans(
+        &[WireType::Array {
+            of: Box::new(WireType::UInt16),
+        }],
+        &payload,
+        &limits,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, DecodeErrorKind::MemoryLimit);
+    assert_eq!(err.path, "array");
+    assert_eq!(err.offset, 4, "报点 = 读完 count 后的游标偏移");
+    assert!(
+        err.message.contains("declared 5 > cap 2"),
+        "错误文本须带出声明值与上限,实得 {err}"
+    );
 }
