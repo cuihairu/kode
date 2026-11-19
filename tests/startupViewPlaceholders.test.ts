@@ -172,8 +172,12 @@ describe('KODE-PERF 重复扫描抑制:watcher 同签名重建跳过 + 排除目
       expect(onFileChanged, '排除目录事件在 watcher 出口被丢弃(合并器窗口后仍零到达)').not.toHaveBeenCalled();
       // 非排除路径照常通过(过滤面不误伤业务脚本;经合并窗口后抵达消费面)
       workspaceWatcher.fireCreate(Uri.file('/ws/scripts/cell/Avatar.py'));
-      await settleCoalesceWindow();
-      expect(onFileChanged).toHaveBeenCalledTimes(1);
+      // 正向到达用轮询等待:固定 460ms 窗口在满载 runner 上偶发输给
+      // 300ms 合并窗+派发开销(CI 三跑两红实证),waitFor 保留「窗口后必达」
+      // 语义同时去掉固定睡眠竞态;排除面零到达断言(上)不受影响。
+      await vi.waitFor(() => {
+        expect(onFileChanged).toHaveBeenCalledTimes(1);
+      }, { timeout: 5000, interval: 50 });
       expect(onFileChanged).toHaveBeenCalledWith('/ws/scripts/cell/Avatar.py');
     } finally {
       disposeAll(context);
