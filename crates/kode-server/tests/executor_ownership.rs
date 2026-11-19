@@ -91,6 +91,7 @@ fn io_table_has_no_stale_registrations() {
         "$/kode/dbClone/export",
         "$/kode/dbClone/inspectArchive",
         "$/kode/dbClone/readArchiveRows",
+        "$/kode/ruff/format",
         "$/kode/ruff/lint",
         "$/kode/workspace/scanAnchors",
     ] {
@@ -98,6 +99,17 @@ fn io_table_has_no_stale_registrations() {
             registered.contains(method),
             "IO 表登记面 {method} 已不在生产注册表(陈旧登记,清表或改名)"
         );
+    }
+}
+
+#[test]
+fn ruff_format_classifies_as_background_io_like_lint() {
+    // KODE-FULL-004:format 走 stdin→stdout 管道外部进程,与 lint 同归后台
+    // IO 面(漏登记则占交互位,挂起时饿死交互请求)。
+    for method in ["$/kode/ruff/format", "$/kode/ruff/lint"] {
+        let (pool_lane, kind) = rpc_lane_class(method);
+        assert_eq!(pool_lane, PoolLane::Background, "{method} 须归后台泳道");
+        assert_eq!(kind, kode_scheduler::lane::TaskLane::Io);
     }
 }
 

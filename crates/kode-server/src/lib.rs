@@ -49,6 +49,7 @@ pub mod rpc_arg_count;
 pub mod ruff_format;
 pub mod ruff_lint;
 pub mod self_attribute_flow;
+pub mod subprocess;
 pub mod syntax_gate;
 pub mod semantics;
 pub mod semantics_golden;
