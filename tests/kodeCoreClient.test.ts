@@ -98,6 +98,32 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     await client.dispose();
   }, 15_000);
 
+  it('WARM-VISIBILITY-004 刀B 生命周期取证行:spawned/ready/exit/重启循环(FREEZE 刀3)', async () => {
+    const lines: string[] = [];
+    let resolveRestart!: (generation: number) => void;
+    const restarted = new Promise<number>(resolve => {
+      resolveRestart = resolve;
+    });
+    const client = tracked(
+      makeClient({
+        args: [FAKE_SERVER, 'triggerCrash'],
+        onRestart: resolveRestart,
+        onLifecycle: line => lines.push(line),
+      })
+    );
+    await client.start();
+    await expect(client.request('triggerCrash')).rejects.toMatchObject({ code: 'EXITED' });
+    await expect(restarted).resolves.toBe(1);
+    // 首代:spawned → ready;崩溃:exit → restarting → spawned → ready(新代重握手)
+    expect(lines[0]).toMatch(/^spawned \(pid \d+\)$/);
+    expect(lines[1]).toBe('ready (generation 0, server 0.2.0)');
+    expect(lines[2]).toMatch(/^exit \(code=/);
+    expect(lines[3]).toBe('restarting server (generation 1)');
+    expect(lines[4]).toMatch(/^spawned \(pid \d+\)$/);
+    expect(lines[5]).toBe('ready (generation 1, server 0.2.0)');
+    await client.dispose();
+  }, 15_000);
+
   it('request_id 贯穿 + didOpen/didChange/didClose 全生命周期', async () => {
     const client = tracked(makeClient());
     await client.start();

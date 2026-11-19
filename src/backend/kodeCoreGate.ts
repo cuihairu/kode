@@ -1,5 +1,6 @@
 import { KodeCoreClient, KodeCoreTransportError, type KodeCoreInitializeParams } from './kodeCoreClient';
 import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
+import { indexLog } from './indexLog';
 
 // kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
 // 2026-11-08 用户令「直接切到 rust」:serving 门禁解除,rust 字面量生效为
@@ -468,6 +469,9 @@ export class KodeCoreGate {
         new KodeCoreClient({
           binaryPath: this.config.serverPath,
           initializeParams: this.initializeParams,
+          // WARM-VISIBILITY-004 刀 B(FREEZE 刀3):kode-server 存活心跳/
+          // 重启循环取证进统一「KBEngine Index」通道。
+          onLifecycle: line => { indexLog('server', line); },
         });
       this.clientServerPath = this.config.serverPath;
       return this.client;

@@ -53,6 +53,8 @@ export interface KodeCoreClientOptions {
   onStderr?: (line: string) => void;
   /** RUST-068-W 客户端追踪行回调(发送/响应/取消,带 span;默认丢弃) */
   onTrace?: (line: string) => void;
+  /** 生命周期取证行回调(spawned/ready/exit/重启循环;默认丢弃;WARM-VISIBILITY-004 刀 B) */
+  onLifecycle?: (line: string) => void;
 }
 
 export interface KodeCoreInitializeParams {
@@ -292,6 +294,7 @@ export class KodeCoreClient {
     this.child.stdin!.on('error', () => undefined);
     this.child.on('error', error => this.rejectAll(new KodeCoreTransportError(`spawn failed: ${error.message}`, 'EXITED')));
     this.child.on('exit', (_code, signal) => this.handleExit(_code, signal));
+    this.emitLifecycle(`spawned (pid ${this.child.pid ?? '?'})`);
   }
 
   /** LSP initialize 握手(CORE-002);restartGeneration 经 initializationOptions 对账 */
@@ -328,6 +331,7 @@ export class KodeCoreClient {
     if (generation === this.restartGeneration) {
       this.handshakeResult = result;
       this.handshakeGeneration = generation;
+      this.emitLifecycle(`ready (generation ${generation}, server ${result.serverInfo?.version ?? '?'})`);
     }
     return result;
   }
@@ -702,6 +706,11 @@ export class KodeCoreClient {
     this.options.onStderr?.(line);
   }
 
+  /** 生命周期取证行(WARM-VISIBILITY-004 刀 B:kode-server 存活心跳进统一通道) */
+  private emitLifecycle(line: string): void {
+    this.options.onLifecycle?.(line);
+  }
+
   private rejectAll(error: Error): void {
     for (const pending of this.pending.values()) {
       pending.reject(error);
@@ -711,6 +720,7 @@ export class KodeCoreClient {
 
   /** 意外退出:重启窗口内自动 respawn + 重握手;超出放弃(CORE-015) */
   private handleExit(_code: number | null, signal: string | null): void {
+    this.emitLifecycle(`exit (code=${_code ?? '?'}, signal=${signal ?? '?'})`);
     this.rejectAll(new KodeCoreTransportError(`server exited (signal=${signal})`, 'EXITED'));
     this.buffer = Buffer.alloc(0);
     this.child = null;
@@ -723,17 +733,20 @@ export class KodeCoreClient {
     this.restartTimestamps = this.restartTimestamps.filter(ts => now - ts < windowMs);
     if (this.restartTimestamps.length >= maxRestarts) {
       this.recordStderrLine(`restart limit reached (${maxRestarts} in ${windowMs}ms), giving up`);
+      this.emitLifecycle(`restart limit reached (${maxRestarts} in ${windowMs}ms), giving up`);
       return;
     }
     this.restartTimestamps.push(now);
     this.restartGeneration += 1;
     this.recordStderrLine(`restarting server (generation ${this.restartGeneration})`);
+    this.emitLifecycle(`restarting server (generation ${this.restartGeneration})`);
     this.spawnProcess();
     this.initialize()
       .then(() => this.options.onRestart?.(this.restartGeneration))
       .catch(error => {
         const message = `restart handshake failed: ${(error as Error).message}`;
         this.recordStderrLine(message);
+        this.emitLifecycle(message);
         // CORE-3:respawn 后握手失败的进程处于未初始化态,继续接单只会让
         // 后续请求得到误导性 SERVER_ERROR(Rust 侧 -32002 SERVER_NOT_INITIALIZED)。
         // 杀掉子进程并置 child=null,让请求走 EXITED 路径(服务不可用语义)。

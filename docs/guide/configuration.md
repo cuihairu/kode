@@ -840,7 +840,11 @@ background after activation. Two surfaces show what the indexer is doing:
    index and the Python class index, per-chunk Python index progress, disk cache
    hits/restore, slow-file notices and scan-failure retries. Every line carries
    a relative timestamp (`[+12.3s]`) and a source tag
-   (`discovery` / `event-index` / `python-index` / `cache`).
+   (`discovery` / `event-index` / `python-index` / `cache` / `server`).
+   The `server` tag covers the Rust kode-server helper process itself:
+   `spawned` / `ready` / `exit` lines and restart-loop forensics (crash →
+   auto-restart generations). These lines only appear when the helper process
+   is actually running.
 
 Notes:
 

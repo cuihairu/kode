@@ -830,7 +830,9 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时,不是扩展直接启动一
 2. **输出面板 → `KBEngine Index`**——统一且常开的索引工作日志通道:发现链/
    事件索引/Python 类索引的起扫与完成、Python 索引的分块进度、磁盘缓存命中与
    恢复、慢文件记录、扫描失败重试。每行带相对时间戳(`[+12.3s]`)与来源标签
-   (`discovery` / `event-index` / `python-index` / `cache`)。
+   (`discovery` / `event-index` / `python-index` / `cache` / `server`)。
+   `server` 标签覆盖 Rust kode-server 辅助进程本身:`spawned` / `ready` /
+   `exit` 行与重启循环取证(崩溃 → 自动重启代际);该进程真正跑起来才有行。
 
 说明:
 

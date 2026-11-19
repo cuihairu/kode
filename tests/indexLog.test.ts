@@ -16,7 +16,7 @@ import { setScanStageProgressClockForTests } from '../src/backend/scanStageProgr
 import { windowState, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // WARM-VISIBILITY-004 刀 B:统一「KBEngine Index」输出通道。
-//   - 常开(无开关,Navigation 静默教训);四源标签 + 相对时间戳;
+//   - 常开(无开关,Navigation 静默教训);五源标签 + 相对时间戳;
 //   - 镜像面:def 全量索引完成/慢文件两条事实行与 Navigation 一对一;
 //   - 决策路径流量(jumpLog debug/决策行)不进本通道;
 //   - 测试桩按通道名入账(windowState.channels),与 navigationLog 同基建。
@@ -49,12 +49,15 @@ describe('indexLog 通道行为', () => {
     indexLog('discovery', 'def 首扫开始:3 个 .def');
     clock = 11_500;
     indexLog('event-index', '事件/方法索引首扫开始:12 个 .py');
+    clock = 12_600;
+    indexLog('server', 'spawned (pid 4242)'); // FREEZE 刀3 心跳源标签
     const lines = channelLines();
-    expect(lines).toHaveLength(2);
+    expect(lines).toHaveLength(3);
     expect(lines[0]).toBe('[+0.0s][kode-index][discovery] def 首扫开始:3 个 .def');
     expect(lines[1]).toBe('[+1.5s][kode-index][event-index] 事件/方法索引首扫开始:12 个 .py');
+    expect(lines[2]).toBe('[+2.6s][kode-index][server] spawned (pid 4242)');
     // 环形缓冲与通道行同序同文(取证口径与 Navigation recent 一致)
-    expect(getIndexLogRecentLines().slice(-2)).toEqual(lines);
+    expect(getIndexLogRecentLines().slice(-3)).toEqual(lines);
   });
 
   it('惰性消息与决策路径隔离:jumpLog 行永不进 Index 通道', () => {
