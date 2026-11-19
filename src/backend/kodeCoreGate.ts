@@ -692,12 +692,21 @@ export class KodeCoreGate {
    * (verdict 口径归 compare 自己的失败分类,镜像不刷差异日志);非 shadow
    * 或未配 serverPath 零开销直通。版本账在会话内单调:前进走 didChange,
    * 回退(重开)走 close+open,不虚构版本;自动重启后账本重置并重放快照。
+   *
+   * KODE-RESP-007:磁盘语料与编辑器 overlay 生命周期分开——corpus 旗标
+   * 的调用方(全量语料镜像的盘读/枚举快照)是后台快照,只允许补位
+   * (fill-only):账内已有该文档(编辑器流已镜像,或本轮已补)即跳过,
+   * 绝不驱动 change/降级 close+open,晚到的盘快照 v1 不得把在役文档从
+   * v2 拉回旧内容;缺席才按 didOpen 补位入账(与编辑器流共用账本,重启
+   * 重放/关闭清理同口径)。不带 corpus 的编辑器流调用保持原语义(前进
+   * didChange,重开低版本 close+open 兜底 missed-close 边,不虚构版本)。
    */
   async mirrorDocument(
     uri: string,
     languageId: string,
     version: number,
-    text: string
+    text: string,
+    options?: { readonly corpus?: boolean }
   ): Promise<void> {
     if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
       return;
@@ -709,6 +718,16 @@ export class KodeCoreGate {
     await client.start();
     this.syncRestartGeneration(client);
     const mirrored = this.mirroredVersions.get(uri);
+    if (options?.corpus) {
+      // 后台快照补位:在场即跳过(不重发不降级),缺席才补 openDocument。
+      if (mirrored !== undefined) {
+        return;
+      }
+      client.openDocument?.(uri, languageId, version, text);
+      this.mirroredVersions.set(uri, version);
+      this.mirrorSnapshots.set(uri, { languageId, version, text });
+      return;
+    }
     if (mirrored === undefined) {
       client.openDocument?.(uri, languageId, version, text);
     } else if (version > mirrored) {

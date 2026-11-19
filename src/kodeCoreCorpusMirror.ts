@@ -11,6 +11,13 @@ import { findFilesAcrossRoots, getIndexScanRoots } from './scanRoots';
 // (值上下文甚至会回空项,比 TS 更差——发现问题即修)。本模块在服务轨道
 // 生效时把工作区静态语料全量镜像给 Rust,给足与 TS 同一输入。尽力而为:
 // 任何失败静默,不阻塞调用方,不误伤服务。
+//
+// KODE-RESP-007:磁盘语料与编辑器 overlay 生命周期分开。本模块是后台
+// 快照,全部 mirrorDocument 调用带 corpus 旗标(gate 侧 fill-only:账内
+// 已有该文档即跳过,绝不把在役文档降级回盘快照);且每个文件发送前重查
+// 当前打开状态——枚举后拍的打开集合只是快照,readFile/让路期间文档可能
+// 已打开/修改/关闭/重开,此刻在役就发编辑器活体内容(未保存修订不被磁盘
+// 字节冲掉),已关闭才发盘读/快照遗留内容。
 
 /** 语料发现 glob(def 全量 + 三类语料 XML;与 kode-server file_kind 口径同源) */
 export const CORPUS_MIRROR_GLOBS = [
@@ -116,10 +123,20 @@ const defaultMirrorYield: MirrorYieldFn = async () => {
 };
 
 /**
+ * 发送前重查当前打开文档(KODE-RESP-007):枚举后拍的打开集合只是快照,
+ * readFile/让路期间打开状态可能已变;此刻在役就返回活体文档(编辑器内容
+ * 与版本以发送时点为准),否则 undefined(调用方退回盘读/快照遗留内容)。
+ */
+function findLiveDocument(fsPath: string): vscode.TextDocument | undefined {
+  return vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === fsPath);
+}
+
+/**
  * 服务轨道语料全量镜像:枚举工作区语料文件,逐个 didOpen 给 Rust。已打开
  * 文档优先用编辑器内容(未保存修订不能被磁盘快照冲掉),未打开读盘。顺序
  * 镜像(1 路)规避并发 client.start() 的 initialize 握手竞态;didOpen 本身
  * 是 fire-and-forget 通知,无服务端回程。非服务轨道/未装配门零开销。
+ * 所有发送带 corpus 旗标(RESP-007 fill-only,后台快照不降级在役版本)。
  */
 export async function mirrorCorpusToRust(
   gate: KodeCoreGate,
@@ -210,7 +227,13 @@ export async function mirrorCorpusToRust(
     const open = openByFsPath.get(fsPath);
     if (open) {
       try {
-        await gate.mirrorDocument(fsPath, open.languageId, open.version, open.getText());
+        // RESP-007:发送前重查打开状态——枚举快照对象可能已被关闭/重开,
+        // 此刻在役就发活体文档(版本/内容以发送时点为准),已关闭则发快照
+        // 对象遗留内容(编辑器最后已知态);corpus 旗标保证 gate 侧只补位。
+        const live = findLiveDocument(fsPath) ?? open;
+        await gate.mirrorDocument(fsPath, live.languageId, live.version, live.getText(), {
+          corpus: true
+        });
         mirrored += 1;
       } catch {
         failed += 1;
@@ -231,12 +254,28 @@ export async function mirrorCorpusToRust(
       // 读盘期间被顶替:读到的旧内容不再发送。
       return;
     }
+    // RESP-007:读盘期间文档可能已打开(编辑器流已镜像在役版本)——发送前
+    // 重查打开状态,已打开发编辑器活体内容(未保存修订不被盘字节冲掉),
+    // 未打开才发盘读字节;corpus 旗标保证 gate 侧在场即跳过、绝不降级。
+    const live = findLiveDocument(fsPath);
+    if (live) {
+      try {
+        await gate.mirrorDocument(fsPath, live.languageId, live.version, live.getText(), {
+          corpus: true
+        });
+        mirrored += 1;
+      } catch {
+        failed += 1;
+      }
+      continue;
+    }
     try {
       await gate.mirrorDocument(
         fsPath,
         corpusMirrorLanguageId(fsPath),
         1,
-        Buffer.from(bytes).toString('utf8')
+        Buffer.from(bytes).toString('utf8'),
+        { corpus: true }
       );
       mirrored += 1;
     } catch {
