@@ -190,6 +190,17 @@ export class KodeCoreClient {
   /** 崩溃重启代数:每次意外退出+成功重启 +1(CORE-015 对账字段) */
   restartGeneration = 0;
 
+  /**
+   * RUST-TRACK-FREEZE-007 刀1:握手结果按代缓存。镜像洪水(mirrorCorpusToRust
+   * 逐文件 start())与 serveInRust 每请求 start()此前每次都重发完整 initialize
+   * 握手——数千 def/xml 镜像=数千次握手往返压在扩展主线程 await 链上(用户报
+   * 「切 rust 越来越卡」主因之一)。同代存活进程的重复 start() 直接返回既有
+   * 握手结果;崩溃重启代际递增,缓存自动失效,重启重握手语义(CORE-002/015)
+   * 不变。initialize() 写缓存(start() 与 handleExit 重启路径共用同一入口)。
+   */
+  private handshakeResult: KodeCoreInitializeResult | null = null;
+  private handshakeGeneration = -1;
+
   constructor(private readonly options: KodeCoreClientOptions) {
     this.initParams = options.initializeParams ?? { processId: process.pid, capabilities: {} };
   }
@@ -222,8 +233,16 @@ export class KodeCoreClient {
     return { bytesIn: this.rpcBytesIn, bytesOut: this.rpcBytesOut };
   }
 
-  /** spawn + initialize 握手。已启动则幂等返回既有握手结果。 */
+  /** spawn + initialize 握手。已启动则幂等返回既有握手结果(同代缓存,零 RPC)。 */
   async start(): Promise<KodeCoreInitializeResult> {
+    if (
+      !this.disposed &&
+      this.child &&
+      this.handshakeGeneration === this.restartGeneration &&
+      this.handshakeResult
+    ) {
+      return this.handshakeResult;
+    }
     if (!this.child) {
       this.spawnProcess();
     }
@@ -249,6 +268,9 @@ export class KodeCoreClient {
 
   /** LSP initialize 握手(CORE-002);restartGeneration 经 initializationOptions 对账 */
   private async initialize(): Promise<KodeCoreInitializeResult> {
+    // RUST-TRACK-FREEZE-007 刀1:代际快照——握手在途期间进程崩溃重启时,
+    // 迟到的旧代握手结果不得写入新代缓存。
+    const generation = this.restartGeneration;
     const params: KodeCoreInitializeParams = {
       ...this.initParams,
       initializationOptions: {
@@ -274,6 +296,10 @@ export class KodeCoreClient {
         `kode-server reports ${serverVersion ?? 'unknown'}`,
         'PROTOCOL_VERSION_MISMATCH'
       );
+    }
+    if (generation === this.restartGeneration) {
+      this.handshakeResult = result;
+      this.handshakeGeneration = generation;
     }
     return result;
   }

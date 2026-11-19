@@ -65,6 +65,39 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     await recovered.dispose();
   }, 10_000);
 
+  it('RUST-TRACK-FREEZE-007 握手按代缓存:同代重复 start() 不再重发 initialize(镜像/服务热路径)', async () => {
+    const client = tracked(makeClient({ args: [FAKE_SERVER, 'countInitialize'] }));
+    const first = await client.start();
+    const second = await client.start();
+    const third = await client.start();
+    // 缓存命中:直接返回同一握手结果对象,零 RPC
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+    const count = (await client.request('kode/initCount')) as { initializeRequests: number };
+    expect(count.initializeRequests).toBe(1);
+    await client.dispose();
+  }, 10_000);
+
+  it('RUST-TRACK-FREEZE-007 缓存跨代失效:崩溃自动重启后重新握手,重启后的 start() 又走缓存', async () => {
+    let resolveRestart!: (generation: number) => void;
+    const restarted = new Promise<number>(resolve => {
+      resolveRestart = resolve;
+    });
+    const client = tracked(
+      makeClient({ args: [FAKE_SERVER, 'triggerCrash', 'countInitialize'], onRestart: resolveRestart })
+    );
+    await client.start();
+    await expect(client.request('triggerCrash')).rejects.toMatchObject({ code: 'EXITED' });
+    await expect(restarted).resolves.toBe(1);
+    // 重启路径已对新进程握手(新进程 initialize=1);随后 start() 必须命中
+    // 新代缓存而非重发握手——否则 initializeRequests 变 2。
+    const cached = await client.start();
+    expect(cached.serverInfo.version).toBe('0.2.0');
+    const count = (await client.request('kode/initCount')) as { initializeRequests: number };
+    expect(count.initializeRequests).toBe(1);
+    await client.dispose();
+  }, 15_000);
+
   it('request_id 贯穿 + didOpen/didChange/didClose 全生命周期', async () => {
     const client = tracked(makeClient());
     await client.start();
