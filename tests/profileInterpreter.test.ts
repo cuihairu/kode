@@ -1,15 +1,17 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import {
   interpreterSourceLabels,
   describeInterpreterState,
   locateInterpreterOnPath,
   locateVenvInterpreter,
-  resolveInterpreterWith
+  resolveInterpreterWith,
+  resolveInterpreterWithAsync
 } from '../src/profileInterpreter';
+import { clearVenvDiscoveryCache } from '../src/backend/venvDiscovery';
 import { ProjectProfileStore, PROJECT_PROFILES_STATE_KEY } from '../src/projectProfiles';
 
 // IDE-PRJ-004:按 profile 记录 Python 解释器来源。解析链:显式设置
@@ -311,5 +313,86 @@ describe('profile interpreter recording (IDE-PRJ-004)', () => {
       interpreterPath: null,
       interpreterSource: 'missing'
     });
+  });
+});
+
+// KODE-RESP-010:解析链异步版——venv 分支走缓存异步发现(discoverVenvsCached),
+// 优先级与同步链一致(setting → venv → PATH);UI/状态栏/选择器主线程面用它,
+// 宽目录/慢文件系统不卡扩展宿主。
+
+describe('interpreter resolution async chain (KODE-RESP-010)', () => {
+  beforeEach(() => {
+    clearVenvDiscoveryCache();
+  });
+
+  it('resolves the workspace venv through the cached async discovery', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-interp-async-venv-'));
+    const binDir = path.join(base, '.venv', 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const exe = path.join(binDir, 'python');
+    fs.writeFileSync(exe, '', 'utf8');
+    fs.writeFileSync(path.join(base, '.venv', 'pyvenv.cfg'), 'home = /usr\n', 'utf8');
+
+    const resolution = await resolveInterpreterWithAsync({
+      workspaceRoot: base,
+      pathEnv: '',
+      platform: 'linux'
+    });
+    expect(resolution.interpreterSource).toBe('venv');
+    expect(resolution.interpreterPath).toBe(exe);
+
+    // 同根同配置代再解析:缓存热值,同一结果
+    const again = await resolveInterpreterWithAsync({
+      workspaceRoot: base,
+      pathEnv: '',
+      platform: 'linux'
+    });
+    expect(again).toEqual(resolution);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('keeps the priority chain: setting wins, then venv, then PATH, then honest missing', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-interp-async-chain-'));
+    const binDir = path.join(base, '.venv', 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, 'python'), '', 'utf8');
+    fs.writeFileSync(path.join(base, '.venv', 'pyvenv.cfg'), 'home = /usr\n', 'utf8');
+    const configured = path.join(base, 'my-python');
+    fs.writeFileSync(configured, '', 'utf8');
+    const pathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-interp-async-path-'));
+    fs.writeFileSync(path.join(pathDir, 'python3'), '', 'utf8');
+
+    const fromSetting = await resolveInterpreterWithAsync({
+      interpreterSetting: '${workspaceFolder}/my-python',
+      workspaceRoot: base,
+      pathEnv: pathDir,
+      platform: 'linux'
+    });
+    expect(fromSetting.interpreterSource).toBe('setting');
+
+    const fromVenv = await resolveInterpreterWithAsync({
+      workspaceRoot: base,
+      pathEnv: pathDir,
+      platform: 'linux'
+    });
+    expect(fromVenv.interpreterSource).toBe('venv');
+
+    const fromPath = await resolveInterpreterWithAsync({
+      workspaceRoot: pathDir,
+      pathEnv: pathDir,
+      platform: 'linux'
+    });
+    expect(fromPath.interpreterSource).toBe('path');
+
+    const missing = await resolveInterpreterWithAsync({
+      workspaceRoot: pathDir,
+      pathEnv: '',
+      platform: 'linux'
+    });
+    expect(missing.interpreterSource).toBe('missing');
+    expect(missing.interpreterPath).toBeNull();
+
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.rmSync(pathDir, { recursive: true, force: true });
   });
 });

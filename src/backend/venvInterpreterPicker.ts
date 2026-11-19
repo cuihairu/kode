@@ -142,8 +142,10 @@ export function buildInterpreterPickItems(inputs: {
 }
 
 export interface SelectInterpreterDeps {
-  current: () => InterpreterResolution;
-  discovered: () => DiscoveredVenv[];
+  /** 同步或异步都收(异步面=KODE-RESP-010 缓存发现;热值即时返回,冷值在途
+   * 扫描不卡主线程),调用处无需区分 */
+  current: () => InterpreterResolution | Promise<InterpreterResolution>;
+  discovered: () => DiscoveredVenv[] | Promise<DiscoveredVenv[]>;
   pathInterpreter: () => string | null;
   showQuickPick: (items: InterpreterPickItem[]) => Promise<InterpreterPickItem | undefined>;
   writeInterpreterSetting: (value: string | null) => Promise<void>;
@@ -153,16 +155,18 @@ export interface SelectInterpreterDeps {
 
 /**
  * 选择命令体:选中环境 → 写 kbengine.python.interpreterPath(即刻生效,
- * 解析链读实时配置);Esc 零写入;「创建新 venv…」转创建流。
+ * 解析链读实时配置);Esc 零写入;「创建新 venv…」转创建流。current/discovered
+ * 允许异步——装配处接缓存异步发现(KODE-RESP-010)后,列表先出已有候选
+ * (缓存热值),冷启动也只有一段带预算的异步扫描,不卡命令线程。
  */
 export async function selectInterpreter(
   deps: SelectInterpreterDeps
 ): Promise<'selected' | 'created' | null> {
-  const current = deps.current();
+  const current = await deps.current();
   const picked = await deps.showQuickPick(
     buildInterpreterPickItems({
       current,
-      discovered: deps.discovered(),
+      discovered: await deps.discovered(),
       pathInterpreter: deps.pathInterpreter()
     })
   );
