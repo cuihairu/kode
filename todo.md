@@ -799,7 +799,7 @@
 - [ ] RUST-416 （旧 HR-QA-004） 500 文件同时变动触发批次确认/限流机制，无全仓热更风暴；UI 不冻结。
 - [ ] RUST-417 （旧 HR-QA-005） 模拟 10 秒 HTTP 超时+用户继续编辑；请求返回后不得把过期版本标成当前成功。
 - [ ] RUST-418 （旧 HR-QA-006） 模拟 HTTP 200 body `error`：状态必须失败；HTTP 200 无规范回执为未确认。
-- [ ] RUST-419 （旧 HR-QA-007） endpoint 不可达、证书错误、代理错误、target 重启、部分节点成功各自输出可用错误。
+- [ ] RUST-419 （旧 HR-QA-007） endpoint 不可达、证书错误、代理错误、target 重启、部分节点成功各自输出可用错误。（2026-11-20 收口;载体 dab4d84b fix: classify hot reload transport errors;CI=run 44568086511 success;分类器=classifyReloadTransportError 四族+unknown(src/backend/hotReloadTransportErrors.ts,匹配次序 cert→proxy→restart→unreachable 有语义),defaultReloadHttpRunner ok:false 抛真因不再折 HTTP 0,probe/send/组级 catch/部分失败汇总四面共享分类,原始原因括号保留;验收=tests/hotReloadTransportErrors.test.ts 四族分类+mock 传输面(send 逐文件 failed 回执带分类+原始原因/probe detail/default runner 不可解析协议抛)+部分节点成功臂(两组一成一败 sentCount/failedCount 各计,台账 failed 明细带端点不可达+ECONNREFUSED);全量 11201 例零红+prove-red 四咬）
 - [ ] RUST-420 （旧 HR-QA-008） 默认只允许经确认的 loopback/trusted endpoint；若允许非 loopback，要有明确授权与安全警告。
 - [ ] RUST-421 （旧 HR-QA-009） 确保 HTTP header/token 不出现在 output、trace、history、UI tooltip、导出数据中。
 - [ ] RUST-422 （旧 HR-QA-010） 阻止配置模板造成 SSRF/任意 file URI 泄露、路径穿越、恶意脚本执行；workspace trust 强制生效。
