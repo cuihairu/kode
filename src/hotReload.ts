@@ -794,13 +794,18 @@ export function setupHotReload(
         }).then(({ sentCount, failedCount }) => {
           annotateStaleResponses(triggers);
           // HR-WATCH-008:逐文件精确撤回——最新回执为 failed 的文件才撤指纹,
-          // 已送达文件的去重不受影响
+          // 已送达文件的去重不受影响;RUST-419:同时收第一条 failed 明细
+          // (分类后的可用错误)供部分失败汇总呈现
+          let firstFailedDetail = '';
           if (failedCount > 0 && wiring) {
             for (const file of triggers) {
               const rootId = wiring.resolveRootId(file);
               const record = rootId == null ? undefined : wiring.store.get({ rootId, targetId: channelTargetId }, file);
               if (record?.outcome === 'failed') {
                 pipeline?.forgetSent(file);
+                if (firstFailedDetail === '' && record.detail) {
+                  firstFailedDetail = record.detail.length > 160 ? `${record.detail.slice(0, 160)}…` : record.detail;
+                }
               }
             }
           }
@@ -811,20 +816,20 @@ export function setupHotReload(
           });
           const result =
             failedCount > 0 && sentCount === 0
-              ? `失败(${failedCount})`
+              ? `失败(${failedCount})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`
               : failedCount > 0
-                ? `部分失败(${failedCount} 失败/${sentCount} 已发)`
+                ? `部分失败(${failedCount} 失败/${sentCount} 已发)${firstFailedDetail ? `:${firstFailedDetail}` : ''}`
                 : allApplied ? `已应用(${sentCount})——引擎回执指纹已核验`
                   : `已发送(${sentCount})——未确认引擎应用`;
           // F4:通道审计行带目标标识(状态/审计面区分目标;通道名仍是
           // transport.kind,通道=前缀断言不受影响)
           auditLine(`${transport.kind} 目标=${channelTargetId}`, triggers, result);
           if (failedCount > 0 && sentCount === 0) {
-            status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})`);
+            status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`);
           } else if (allApplied) {
             status.setApplied(`目标=${channelTargetId}，${sentCount} 个文件，回执指纹一致`);
           } else if (failedCount > 0) {
-            status.setFailed(`通道 ${transport.kind} 部分失败(${failedCount}/${triggers.length})`);
+            status.setFailed(`通道 ${transport.kind} 部分失败(${failedCount}/${triggers.length})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`);
           } else {
             status.setSentUnverified();
           }
