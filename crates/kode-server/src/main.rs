@@ -15,10 +15,9 @@ use std::time::Duration;
 use kode_protocol::{
     encode_frame, error_codes, FrameDecoder, FrameOutcome, IncomingMessage, RequestId, Response,
 };
-use kode_scheduler::PoolBudget;
 use kode_server::executor::{
-    execution_lane, rpc_job_kind, rpc_response_for, ExecutionLane, Job, JobOutcome, JobStatus,
-    PoolExecutor,
+    assembly_pool_budget, execution_lane, rpc_job_kind, rpc_response_for, ExecutionLane, Job,
+    JobOutcome, JobStatus, PoolExecutor,
 };
 use kode_server::{cancel_target, handle_message_with_poll, rpc::span_id_of, Outgoing, ServerState};
 
@@ -293,9 +292,11 @@ fn main() {
     let mut state = ServerState::new();
     // RUST-075-W:worker 执行器装配(预算=可用核数;交互预留/后台硬顶由
     // WorkerPoolGate 持有)。快照与注册表同源;健康面共享记账 cell。
+    // KODE-RESP-005:装配经 assembly_pool_budget 下限 2——单核/单配额机
+    // from_total(1) 后台永不准入且 draining join 挂死。
     let snapshot = state.rpc.snapshot();
     let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
-    let (executor, pool_rx) = PoolExecutor::spawn(snapshot, PoolBudget::from_total(workers));
+    let (executor, pool_rx) = PoolExecutor::spawn(snapshot, assembly_pool_budget(workers));
     state.pool_stats = Some(executor.stats_cell());
     // 池回包由专职线程泵出(不占主循环 tick;worker 完成 → 回包微秒级落盘)。
     let drainer = spawn_pool_drainer(pool_rx);
@@ -362,6 +363,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kode_scheduler::PoolBudget;
 
     /// 最小装配:state + 两 worker 池(分派坏帧臂只需 error 响应可构造)。
     fn fixture() -> (ServerState, PoolExecutor) {
