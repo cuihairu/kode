@@ -14,8 +14,8 @@ import { describeMethodCallDirection, describePropertySyncDirection } from '../b
 import { renderUserTypeContractHoverSection, userTypeContractStatusForName, implementedByBindingForWorkspace } from '../backend/userTypeContractSource';
 import { renderImplementedByBindingSection } from '../backend/implementedByBinding';
 import { HOOK_CATEGORY_NAMES } from '../hooks';
-import { renderHookSequencingSection, renderEntrySpiSequencingSection } from '../backend/hookSequencing';
-import { engineApiVersionAnnotation, summaryForLanguage } from '../kbeModuleIndex';
+import { renderHookSequencingSection, renderEntrySpiSequencingSection, TIMING_ANCHORS } from '../backend/hookSequencing';
+import { engineApiVersionAnnotation, summaryForLanguage, renderKbeParamsSection, renderKbeReturnsSection } from '../kbeModuleIndex';
 import { getEngineVersion } from '../engineVersion';
 import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, getSectionLabel, parseDefAst } from './shared';
 import { describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, isPositionInsideTagValue } from './navigation';
@@ -202,12 +202,33 @@ export function createEntryHookHover(hook: import('../backend/entryHooks').KBEng
 }
 
 /** SP-2: kbe/KBEngine module symbol hover - knowledge summary + typings anchor */
-export function createKbeSymbolHover(entry: import('../kbeModuleIndex').KbeSymbolEntry): vscode.Hover {
+export function createKbeSymbolHover(
+  entry: import('../kbeModuleIndex').KbeSymbolEntry,
+  options?: {
+    /** API-PARAM-HOVER-001:entityType→运行时类映射(工作区实体注册表构建)。 */
+    entityTypeHints?: ReadonlyArray<import('../kbeModuleIndex').EntityTypeRuntimeHint>;
+  }
+): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   const language = vscode.env.language;
   markdown.appendMarkdown(`**${entry.name}** - ${entry.signature}\n\n`);
   markdown.appendMarkdown(summaryForLanguage(entry, language) + '\n\n');
+  // API-PARAM-HOVER-001:参数段+返回值段(数据在 kbeModuleIndex,此处只接线)。
+  const paramsSection = renderKbeParamsSection(entry, language);
+  if (paramsSection) {
+    markdown.appendMarkdown(paramsSection + '\n\n');
+  }
+  const returnsSection = renderKbeReturnsSection(entry, language, options?.entityTypeHints);
+  if (returnsSection) {
+    markdown.appendMarkdown(returnsSection + '\n\n');
+  }
   markdown.appendMarkdown('原始声明: `' + entry.sourceFile + ':' + entry.sourceLine + '`');
+  // API-PARAM-HOVER-001:create-entity 家族挂 cellData 时序锚(params dict 的
+  // cell 属性键路由语义,与 HOOK-TIMING-001 数据复用,不另造)。
+  if (entry.params?.some(param => param.name === 'params')) {
+    const cellDataAnchor = TIMING_ANCHORS['cellData-就位'];
+    markdown.appendMarkdown('\n\n注入时序: ' + cellDataAnchor.anchors.map(a => '`' + a + '`').join('  \n'));
+  }
   const note = engineApiVersionAnnotation(entry, getEngineVersion(), language);
   if (note) {
     markdown.appendMarkdown('\n\n' + note);

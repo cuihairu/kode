@@ -1,4 +1,5 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
+import * as nodeFs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { documentEventCacheKey, findEventCallsCached } from '../eventApi';
@@ -39,7 +40,7 @@ import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelf
 import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyEntry } from '../backend/cellDataCompletion';
 import { cellDataProvenStateAtLine } from '../backend/cellDataCallbackCheck';
 import { cellDataHoverMarkdown } from '../backend/cellDataHover';
-import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
+import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition, buildEntityTypeRuntimeHints } from '../kbeModuleIndex';
 import { dataDictProcessDomain, dataDictSiteInDomain, pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
@@ -1315,7 +1316,15 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         if (kbeAccess) {
           const kbeEntry = getKbeSymbol(kbeAccess.symbol, pythonProcessFromPath(document.fileName));
           if (kbeEntry) {
-            return createKbeSymbolHover(kbeEntry);
+            // API-PARAM-HOVER-001:create-entity 家族(entityTypeHint)挂
+            // entityType→运行时类映射(工作区实体注册表+盘上类文件存在性)。
+            const hints = kbeEntry.returns?.entityTypeHint && this.entityMappingManager
+              ? buildEntityTypeRuntimeHints(
+                  this.entityMappingManager.getAllMappings(),
+                  candidate => nodeFs.existsSync(candidate)
+                )
+              : undefined;
+            return createKbeSymbolHover(kbeEntry, { entityTypeHints: hints });
           }
         }
       }
