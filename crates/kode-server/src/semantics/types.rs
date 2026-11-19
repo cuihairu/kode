@@ -357,4 +357,90 @@ mod tests {
         );
         assert_eq!(SemType::Entity("Avatar".into()).display(), "Entity<Avatar>");
     }
+    #[test]
+    fn span_new_and_range_partial_display_faces() {
+        // Span::new 直构(0 基行/列)。
+        let sp = Span::new(3, 5);
+        assert_eq!((sp.line, sp.col), (3, 5));
+        // Range 半开两脸:只有下界/只有上界。
+        let lower = SemType::Range {
+            base: Box::new(SemType::Builtin("INT32".into())),
+            min: Some("1".into()),
+            max: None,
+        };
+        assert_eq!(lower.display(), "INT32[1..]");
+        let upper = SemType::Range {
+            base: Box::new(SemType::Builtin("INT32".into())),
+            min: None,
+            max: Some("9".into()),
+        };
+        assert_eq!(upper.display(), "INT32[..9]");
+        // 全开 Range:基名直显无界标。
+        let open = SemType::Range {
+            base: Box::new(SemType::Builtin("INT32".into())),
+            min: None,
+            max: None,
+        };
+        assert_eq!(open.display(), "INT32");
+        // 匿名 FIXED_DICT 显示不带名前缀。
+        let anon = SemType::FixedDict {
+            name: None,
+            fields: vec![FieldDef::new("x", None, SemType::Builtin("INT32".into()))],
+        };
+        assert_eq!(anon.display(), "{x:INT32}");
+    }
+
+    #[test]
+    fn alias_overflow_propagates_top_level_and_array_without_element() {
+        let mut g = TypeGraph::new();
+        let mk = |name: &str, tgt: &str| AliasDecl {
+            name: name.into(),
+            name_span: kode_parser::Span::new(0, 0),
+            line: 1,
+            alias_type: tgt.into(),
+        };
+        g.add_alias(&AliasFile {
+            aliases: vec![mk("A", "B"), mk("B", "C"), mk("C", "INT32")],
+            ..Default::default()
+        });
+        // max_hops=1:A(0)→B(1)→C(2) 超限,溢出 Unknown 逐层透传不包 Alias。
+        let t = SemType::from_type_graph(&g, "A", 1);
+        assert_eq!(
+            t,
+            SemType::Unknown("alias-chain-overflow:C".into()),
+            "环/超限不可信:顶层直传溢出原因,不逐层包 Alias"
+        );
+        // 非溢出原因的 Unknown(如 unresolved)仍逐层包 Alias(只有环/超限透传)。
+        let mut g2 = TypeGraph::new();
+        g2.add_alias(&AliasFile {
+            aliases: vec![mk("D", "_Missing")],
+            ..Default::default()
+        });
+        let d = SemType::from_type_graph(&g2, "D", 4);
+        assert_eq!(
+            d.display(),
+            "D=Unknown(unresolved:_Missing)",
+            "悬挂别名包 Alias 展示,与溢出透传区分"
+        );
+        // 空 element 的 ARRAY:诚实降级 array-no-element。
+        let decl = TypeDecl {
+            name: "Hollow".into(),
+            name_span: kode_parser::Span::new(0, 0),
+            line: 1,
+            kind: TypeKind::Array,
+            directive: Some("ARRAY".into()),
+            implemented_by_symbol: None,
+            field_refs: vec![],
+            element_ref: None,
+        };
+        g.add_types(&TypesFile {
+            types: vec![decl],
+            ..Default::default()
+        });
+        let t = SemType::from_type_graph(&g, "Hollow", 4);
+        assert!(matches!(
+            t,
+            SemType::Array(e) if matches!(&*e, SemType::Unknown(r) if r == "array-no-element")
+        ));
+    }
 }
