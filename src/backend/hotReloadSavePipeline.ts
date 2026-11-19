@@ -463,6 +463,16 @@ export class HotReloadSavePipeline {
       await this.awaitStable(uri, entry, probe + 1);
     } finally {
       this.settling.delete(uri);
+      // KODE-FULL-014:定稿/稳定等待期间新到的保存,其去抖窗到期时被上面
+      // settling 守卫挡回,只留下无 timer 的 pending——不补排的话最新保存
+      // 要等第三次事件才被推动(检查耗时超过去抖窗即触发)。当前代收口
+      // 时检查补排,窗口按 offer 同款 max-delay 封顶规则重算,最新保存必被处理。
+      const late = this.pending.get(uri);
+      if (!this.disposed && late && late.timer === undefined) {
+        const elapsed = this.now() - late.firstOfferAt;
+        const remaining = Math.min(this.debounceMs, Math.max(0, this.maxDelayMs - elapsed));
+        this.schedule(late, uri, remaining);
+      }
     }
   }
 
