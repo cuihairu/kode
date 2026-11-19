@@ -1869,16 +1869,24 @@ export class EntityMappingManager {
     if (conventionResolver) {
       this.defLutConventionResolver = conventionResolver;
     }
-    return this.scheduler
-      .ensureTask('def-lut-build', () => ({
-        kind: 'non-interactive',
-        priority: IndexTaskPriority.NonInteractive,
-        run: async () => {
-          await this.initialScan;
-          await this.performDefMethodLutRebuild();
-        }
-      }))
-      .catch(() => undefined);
+    // KODE-RESP-004:首扫闸移到 keyed 任务之外。旧口径 run() 内
+    // `await this.initialScan` 在首扫分块尚在排队时持槽等分块、分块又等
+    // 槽——单槽调度器自锁(「一直在扫」;失效触发的重建链同样会撞上,
+    // 不能假定初扫已结束)。任务外等首扫终态,落定后才投重建任务;
+    // run() 只持重建本体(重建不依赖同调度器的其他任务)。
+    return this.initialScan
+      .catch(() => undefined)
+      .then(() =>
+        this.scheduler
+          .ensureTask('def-lut-build', () => ({
+            kind: 'non-interactive',
+            priority: IndexTaskPriority.NonInteractive,
+            run: async () => {
+              await this.performDefMethodLutRebuild();
+            }
+          }))
+          .catch(() => undefined)
+      );
   }
 
   private async performDefMethodLutRebuild(): Promise<void> {
