@@ -86,7 +86,9 @@ pub fn rpc_job_kind(inner: &str) -> TaskLane {
 /// (恒留 ≥1 个 worker 给交互预留位;WorkerPoolGate 的 interactive 配额
 /// 是准入闸,LaneGate 预算是 worker 占用闸,两层叠加)。库
 /// `LaneBudget::from_total` 在 N=2 会给出 io_max=0(饿死 2 核 CI 的 IO
-/// 面),此处自定:≥2 核 io ≥ 1;1 核机两泳道皆 0(全给交互)。
+/// 面),此处自定:≥2 核 io ≥ 1;workers=1 时两泳道皆 0(全给交互)——
+/// KODE-RESP-005 起生产装配经 `assembly_pool_budget` 下限 2,该分支仅
+/// 为直接构造(测试/安全网)保留。
 pub fn lane_budget_for_workers(workers: usize) -> LaneBudget {
     let remaining = workers.saturating_sub(1);
     let io_max = if remaining == 0 {
@@ -100,6 +102,19 @@ pub fn lane_budget_for_workers(workers: usize) -> LaneBudget {
         io_max,
         cpu_max,
     }
+}
+
+/// KODE-RESP-005:装配面预算(唯一生产入口,main.rs 使用)。
+///
+/// 单核/单 CPU 配额机(available_parallelism=1)下 `from_total(1)` 给
+/// background_max=0、io_max=0——后台 IO 面(dbClone/ruff/scanAnchors,生产
+/// 后台队列全是 Io 泳道)永不准入,请求恒无结果;draining 排空语义下
+/// shutdown join 也永久挂起。装配下限 2:1 交互 worker + 1 IO 面 worker。
+/// 超售一根线程不构成「占满全核」的本意——后台 job 阻塞在子进程/读盘,
+/// 不是 CPU 饱和源;且 background_max=1/io_max=1 双硬顶仍界住并发。多核
+/// (≥2)行为与 from_total 完全一致,下限只救退化预算。
+pub fn assembly_pool_budget(cores: usize) -> PoolBudget {
+    PoolBudget::from_total(cores.max(2))
 }
 
 /// 主分派环入口的执行归属决策。`$/kode/rpc` 按内层 method 归池;params
@@ -423,6 +438,27 @@ fn bump_stats(cell: &Mutex<PoolStats>, state: &ExecState, f: impl FnOnce(&mut Po
     }
 }
 
+/// KODE-RESP-005:后台队头可否准入的只读探测(不改任何记账;与 worker
+/// 取 job 段的 try_admit 判据同式:泳道硬顶 + gate 双闸)。供 draining
+/// 守卫识别「永不被调度」的排队 job。
+fn background_admittable(state: &ExecState) -> bool {
+    let head_kind = match state.background.front() {
+        Some(job) => job.kind,
+        None => return true,
+    };
+    let lane_budget = state.lane_gate.budget();
+    let lane_ok = match head_kind {
+        TaskLane::Interactive => true,
+        TaskLane::Io => state.lane_gate.running(TaskLane::Io) < lane_budget.io_max,
+        TaskLane::Cpu => state.lane_gate.running(TaskLane::Cpu) < lane_budget.cpu_max,
+    };
+    let gate_budget = state.gate.budget();
+    let gate_ok = state.gate.background_running() < gate_budget.background_max
+        && state.gate.interactive_running() + state.gate.background_running()
+            < gate_budget.total - gate_budget.interactive_reserved;
+    lane_ok && gate_ok
+}
+
 fn worker_loop(shared: Arc<ExecShared>) {
     loop {
         // 取 job 段:锁内只做队列摘取与准入记账,handler 在锁外执行。
@@ -436,6 +472,34 @@ fn worker_loop(shared: Arc<ExecShared>) {
                 // 回包,静默弃置会破坏与内联路径的回包平价。
                 if state.draining && state.interactive.is_empty() && state.background.is_empty() {
                     return;
+                }
+                // KODE-RESP-005:draining 时队头永不可准入(退化预算,如未经
+                // 装配下限的 total=1:background_max=0/io_max=0)且无任何
+                // 在飞 job——排空语义等不到排空,join 将永久挂起。如实取消
+                // 余下排队 job(回 -32800,受理即欠回包的诚实近似)后走
+                // 循环顶排空检查退出。探测只读不改记账;交互队头在占用为
+                // 零时恒可入,不存在此形态。
+                if state.draining
+                    && state.interactive.is_empty()
+                    && !state.background.is_empty()
+                    && state.gate.interactive_running() == 0
+                    && state.gate.background_running() == 0
+                    && !background_admittable(&state)
+                {
+                    while let Some(job) = state.background.pop_front() {
+                        let span = state.spans.remove(&job.id);
+                        bump_stats(&shared.stats_cell, &state, |stats| {
+                            stats.jobs_cancelled += 1;
+                        });
+                        let _ = shared.done_tx.send(JobOutcome {
+                            id: job.id,
+                            lane: job.lane,
+                            status: JobStatus::Cancelled,
+                            span,
+                        });
+                    }
+                    shared.signal.notify_all();
+                    continue;
                 }
                 // 交互优先:预留位语义——后台满载/排队也拦不住交互请求。
                 // 交互面准入恒走 LaneGate::Interactive(恒可入,直至总量
@@ -1415,5 +1479,75 @@ mod tests {
         assert_eq!(stats.jobs_done, 6);
         assert_eq!(stats.interactive_running, 0);
         drop(executor);
+    }
+
+    /// KODE-RESP-005:装配预算下限——单核给 2(交互 1 + IO 面 1,后台可
+    /// 准入),多核与 from_total 逐字段一致(下限只救退化预算)。
+    #[test]
+    fn assembly_budget_floors_single_core_and_keeps_multicore() {
+        let single = assembly_pool_budget(1);
+        assert_eq!(
+            single,
+            PoolBudget {
+                total: 2,
+                interactive_reserved: 1,
+                background_max: 1
+            },
+            "单核装配下限 2:后台 IO 面可准入"
+        );
+        assert!(single.validate().is_ok());
+        assert_eq!(assembly_pool_budget(8), PoolBudget::from_total(8));
+        assert_eq!(assembly_pool_budget(2), PoolBudget::from_total(2));
+    }
+
+    /// KODE-RESP-005 验收臂 1(池级):单核推导的装配预算下,后台 IO 面
+    /// job(dbClone/ruff/scanAnchors 形态)真实执行出结果——修复前
+    /// from_total(1) 的 background_max=0 使其永不出队。
+    #[test]
+    fn single_core_assembly_budget_runs_background_io_job() {
+        fn echo_handler(params: Value) -> Result<Value, String> {
+            Ok(params)
+        }
+        let mut reg = RpcRegistry::new();
+        reg.register("$/kode/test/echo", echo_handler);
+        let (executor, rx) = PoolExecutor::spawn(reg.snapshot(), assembly_pool_budget(1));
+        executor.submit(job(901, "$/kode/test/echo", PoolLane::Background));
+        let outcome = recv_outcome(&rx);
+        assert_eq!(outcome.id, RequestId::Number(901));
+        assert!(
+            matches!(outcome.status, JobStatus::Done(_)),
+            "单核装配预算下后台 job 必须真实执行: {outcome:?}"
+        );
+        drop(executor);
+    }
+
+    /// KODE-RESP-005 验收臂 2(池级):draining 时永不可准入的后台排队 job
+    /// 被如实取消(-32800)且 shutdown 有界返回——修复前 join 永久挂起。
+    /// 退化预算 from_total(1) 直接构造:装配下限已防生产路径,此处钉
+    /// 安全网语义(任何预算组合下退出都不挂死)。
+    #[test]
+    fn shutdown_cancels_unschedulable_background_queue() {
+        let (executor, rx) =
+            PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
+        executor.submit(job(911, "$/kode/test/echo", PoolLane::Background));
+        executor.submit(job(912, "$/kode/test/echo", PoolLane::Background));
+        let started = std::time::Instant::now();
+        executor.shutdown();
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "shutdown 必须有界返回(实测 {elapsed:?})"
+        );
+        let mut cancelled = 0;
+        for _ in 0..2 {
+            let outcome = recv_outcome(&rx);
+            assert!(
+                matches!(outcome.status, JobStatus::Cancelled),
+                "不可调度排队 job 应取消回执: {outcome:?}"
+            );
+            cancelled += 1;
+        }
+        assert_eq!(cancelled, 2);
+        assert_eq!(stats_of(&executor).jobs_cancelled, 2);
     }
 }
