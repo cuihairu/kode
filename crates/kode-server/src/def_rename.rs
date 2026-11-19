@@ -1654,9 +1654,10 @@ mod tests {
         let first = kode_parser::json::PARITY_CORPORA[0];
         let dir = corpus_root.join(first);
         std::fs::create_dir_all(&dir).unwrap();
-        // 非 UTF-8 文件名臂只在 unix 可构造(Windows 夜构建编译门);
-        // corpus.len()==1 断言两侧同真,保持无条件。
-        #[cfg(unix)]
+        // 非 UTF-8 文件名臂只在 Linux 可构造:Windows 无 unix 字节名 API,
+        // macOS APFS 拒绝非 UTF-8 文件名(write 必败,2026-11-19 nightly
+        // darwin 实测 unwrap 炸);corpus.len()==1 断言各侧同真,保持无条件。
+        #[cfg(target_os = "linux")]
         {
             use std::os::unix::ffi::OsStrExt;
             let bad = std::ffi::OsStr::from_bytes(b"\xff\xfe.def");
