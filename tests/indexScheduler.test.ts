@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach } from 'vitest';
 import {
   IndexScheduler,
   IndexTaskPriority,
+  interactiveActivityBeacon,
   isInteractivePriority
 } from '../src/backend/indexScheduler';
 
@@ -528,6 +529,32 @@ describe('indexScheduler 轮次时间戳 (批 B)', () => {
     await flush();
     const status = scheduler.getStatus();
     expect(status.lastBuildCompletedAt!).toBeGreaterThan(firstCompleted!);
+    scheduler.dispose();
+  });
+});
+
+describe('indexScheduler 交互活动信标(RUST-TRACK-FREEZE-007 刀1)', () => {
+  it('交互任务入队即刷新 beacon,后台任务不刷;任务完成后 beacon 保持完成时刻', async () => {
+    const before = interactiveActivityBeacon.lastAt;
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
+    // 后台任务先入队:不得刷新信标
+    const background = scheduler.enqueue({
+      kind: 'full-reindex',
+      priority: IndexTaskPriority.BackgroundFull,
+      run: async () => undefined
+    });
+    await background.wait;
+    await flush();
+    expect(interactiveActivityBeacon.lastAt).toBe(before);
+    // 交互任务入队:信标即刻刷新(镜像分帧据此避让,不等任务跑完)
+    scheduler.enqueue({
+      kind: 'single-file-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      filePath: '/i.py',
+      version: 1,
+      run: async () => undefined
+    });
+    expect(interactiveActivityBeacon.lastAt).toBeGreaterThan(before);
     scheduler.dispose();
   });
 });
