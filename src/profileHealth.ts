@@ -1,6 +1,6 @@
 /**
  * profile 健康状态汇总(IDE-PRJ-009):活动 profile(经 PRJ-010 稳定 ID
- * 解析)的六类健康问题——缺引擎/缺解释器/缺语言服务/根歧义/索引停滞/索引
+ * 解析)的六类健康问题——缺引擎仓路径/缺解释器/缺语言服务/根歧义/索引停滞/索引
  * 开关禁用——各自带具体定位入口(命令 id 或设置键),汇总命令逐条列出,
  * 选中即跳入口,Esc 只看不跳。判定复用既有单一来源:引擎/解释器/根只做
  * 存在性与记录事实检查,语言服务走 PRJ-005 三态判定(collectPythonServiceFacts
@@ -15,6 +15,7 @@ import * as vscode from 'vscode';
 import { resolveActiveProfile } from './activeProfile';
 import type { ProjectProfile } from './projectProfiles';
 import type { SchedulerStatus } from './backend/indexScheduler';
+import { INDEX_CACHE_SCHEMA_VERSION } from './backend/indexDiskCache';
 import {
   classifyPythonService,
   collectPythonServiceFacts,
@@ -30,13 +31,18 @@ export type ProfileHealthIssueKind =
   | 'index-disabled';
 
 export const PROFILE_HEALTH_ISSUE_LABELS: Record<ProfileHealthIssueKind, string> = {
-  'engine-missing': '缺引擎',
+  'engine-missing': '缺引擎仓路径',
   'interpreter-missing': '缺解释器',
   'service-unavailable': '缺语言服务',
   'roots-ambiguous': '根歧义',
   'index-stalled': '索引停滞',
   'index-disabled': '索引开关已禁用'
 };
+
+/** 索引格式行(ENGINE-WORDING-006):kode 索引数据兼容键的正式展示位。
+ *  措辞纪律:KBEngine=引擎仓/引擎版本;kode 索引兼容=索引格式 schema,两词永不混用。 */
+export const INDEX_FORMAT_SCHEMA_LINE =
+  `索引格式 schema=${INDEX_CACHE_SCHEMA_VERSION}(kode 索引数据兼容键,与 KBEngine 引擎版本无关)`;
 
 /** 定位入口:命令(executeCommand)或设置键(openSettings) */
 export interface ProfileHealthEntry {
@@ -66,9 +72,10 @@ const IMPORT_ENTRY: ProfileHealthEntry = {
 };
 
 /**
- * 收集五类健康问题(顺序固定:根歧义→缺引擎→缺解释器→缺语言服务→索引停滞):
- * 根歧义 = assetsRoot 不在盘上(profile 的根定位失效);缺引擎 =
- * engineRoot 未记录或不在盘上;缺解释器 = 来源缺失或路径不在盘上;
+ * 收集五类健康问题(顺序固定:根歧义→缺引擎仓路径→缺解释器→缺语言服务→索引停滞):
+ * 根歧义 = assetsRoot 不在盘上(profile 的根定位失效);缺引擎仓路径 =
+ * KBEngine 引擎仓根(engineRoot)未记录或不在盘上——只影响引擎 API/版本探测,
+ * 不影响 kode 索引兼容(索引兼容=索引格式 schema,两词分立);缺解释器 = 来源缺失或路径不在盘上;
  * 缺语言服务 = PRJ-005 判定非已激活(未启用/未安装都算不可用);
  * 索引停滞 = 调度器有终态失败任务(failed>0;排队/运行中属正常推进,
  * 不打扰;探针缺省或返回 null = 面不可用,如实不判定)。
@@ -90,13 +97,13 @@ export function collectProfileHealth(
   if (!profile.engineRoot) {
     issues.push({
       kind: 'engine-missing',
-      message: '未记录引擎根(engine 面未识别)',
+      message: 'KBEngine 引擎根未记录(影响引擎 API/版本探测,不影响索引兼容)',
       entry: IMPORT_ENTRY
     });
   } else if (!deps.exists(profile.engineRoot)) {
     issues.push({
       kind: 'engine-missing',
-      message: `引擎根不在盘上: ${profile.engineRoot}`,
+      message: `KBEngine 引擎仓路径不在盘上: ${profile.engineRoot}(影响引擎 API/版本探测,不影响索引兼容)`,
       entry: IMPORT_ENTRY
     });
   }
@@ -223,23 +230,38 @@ export async function showProfileHealthSummary(
     indexToggles
   });
   if (issues.length === 0) {
-    await vscode.window.showInformationMessage(`活动 profile 健康: ${profile.displayName} (${profile.id})`);
+    await vscode.window.showInformationMessage(
+      `活动 profile 健康: ${profile.displayName} (${profile.id});${INDEX_FORMAT_SCHEMA_LINE}`
+    );
     return;
   }
 
   await vscode.window.showWarningMessage(
     `活动 profile 健康问题 ${issues.length} 项(${profile.displayName})，选择一项跳到定位入口`
   );
+  const schemaItem = {
+    label: '$(database) 索引格式',
+    description: `schema=${INDEX_CACHE_SCHEMA_VERSION}`,
+    detail: 'kode 索引数据兼容键,与 KBEngine 引擎版本无关(选中查看)',
+    schemaInfo: true as const
+  };
   const picked = await vscode.window.showQuickPick(
-    issues.map(issue => ({
-      label: PROFILE_HEALTH_ISSUE_LABELS[issue.kind],
-      description: issue.message,
-      detail: `入口: ${issue.entry.label}(${issue.entry.target})`,
-      issue
-    })),
+    [
+      schemaItem,
+      ...issues.map(issue => ({
+        label: PROFILE_HEALTH_ISSUE_LABELS[issue.kind],
+        description: issue.message,
+        detail: `入口: ${issue.entry.label}(${issue.entry.target})`,
+        issue
+      }))
+    ],
     { placeHolder: '健康问题——选择一项跳到定位入口，Esc 关闭' }
   );
   if (!picked) {
+    return;
+  }
+  if ('schemaInfo' in picked) {
+    await vscode.window.showInformationMessage(INDEX_FORMAT_SCHEMA_LINE);
     return;
   }
   const navigate =

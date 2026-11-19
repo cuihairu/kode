@@ -637,6 +637,7 @@
   "$(beaker) Kode LSP: Shadow parity": "$(beaker) Kode LSP: Shadow parity",
   "$(circuit-board) Kode LSP: Rust": "$(circuit-board) Kode LSP: Rust",
   "$(warning) Kode LSP: Rust fallback TS": "$(warning) Kode LSP: Rust fallback TS",
+  "Index format schema={version} (kode index data compat key, unrelated to the KBEngine engine version)": "Index format schema={version} (kode index data compat key, unrelated to the KBEngine engine version)",
   "$(circuit-board) Kode LSP: TS": "$(circuit-board) Kode LSP: TS",
   "Kode core not initialized": "Kode core not initialized",
   "kode-server dual-track shadow comparison (shadow mode)": "kode-server dual-track shadow comparison (shadow mode)",
