@@ -382,4 +382,34 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     expect(cancelSpan).toBe(sendSpan);
     await client.dispose();
   }, 10_000);
+
+  it('KODE-RESP-009: 服务端停读(freeze)期间持续镜像——客户端在队帧数有硬上界;恢复后语料不丢、交互请求低延迟', async () => {
+    const client = tracked(makeClient());
+    await client.start();
+    // 冻结服务端 stdin 消费 900ms:帧堆在 OS 管道,客户端写背压真实触发
+    client.notify('kode/freeze', { ms: 900 });
+    // 镜像洪水:1500 帧 × ~1.1KB ≈ 1.65MB,远超 OS 管道+流水位——服务端停读
+    // 期间写背压必然真实触发。生产端逐帧 await openDocument(=帧写完+必要时
+    // drain),被管道自然限速:冻结窗内洪水不可能灌完(在队帧数硬上界)。
+    const N = 1500;
+    let floodDone = false;
+    const flood = (async () => {
+      for (let i = 0; i < N; i += 1) {
+        await client.openDocument(`/ws/flood${i}.def`, 'kbengine-def', 1, `${'x'.repeat(1024)}${i}`);
+      }
+      floodDone = true;
+    })();
+    await sleep(300); // 冻结窗中段采样:生产端被背压阻塞(未灌完)且在队帧数有硬上界
+    expect(floodDone).toBe(false);
+    expect(client.writeQueueDepth).toBeLessThanOrEqual(2);
+    await flood;
+    // 恢复后交互请求不受积压拖累(预算 2s 内回包),语料一帧不丢
+    const t0 = Date.now();
+    const health = (await client.request('$/kode/health', undefined, { timeoutMs: 5000 })) as {
+      documents: { uri: string }[];
+    };
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(health.documents).toHaveLength(N);
+    await client.dispose();
+  }, 15_000);
 });
