@@ -89,3 +89,4 @@ references 族 stale、semanticTokens 的 GAP 依本收口的登记不变(前者
 - 771f9bf6 `feat: rust resilience pin for document symbols`(本收口唯一
   代码载体)
 - 勾行提交(见 todo.md RUST-149 行第三段证据)
+- 批 3:da7f4f50 `feat: consume cancellation tokens across inlay and code lens providers`(TS 接线面 token/cancel,见上文批 3 节)+ 勾行提交
