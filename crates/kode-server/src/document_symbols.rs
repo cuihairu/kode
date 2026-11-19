@@ -31,8 +31,8 @@ pub const SYMBOL_KIND_METHOD: &str = "Method";
 /// TS `toSectionName` 同构:8 规范段名精确匹配(大小写敏感,小写变体不算)。
 fn to_section_name(name: &str) -> Option<&str> {
     match name {
-        "Parent" | "Interfaces" | "Components" | "Properties" | "BaseMethods"
-        | "CellMethods" | "ClientMethods" | "Volatile" => Some(name),
+        "Parent" | "Interfaces" | "Components" | "Properties" | "BaseMethods" | "CellMethods"
+        | "ClientMethods" | "Volatile" => Some(name),
         _ => None,
     }
 }
@@ -84,7 +84,8 @@ pub fn document_symbols(text: &str) -> Option<Vec<DocumentSymbolFace>> {
         } else {
             SYMBOL_KIND_METHOD
         };
-        let children = doc.element(child)
+        let children = doc
+            .element(child)
             .children
             .iter()
             .filter(|&&c| matches!(doc.nodes[c].data, NodeData::Element(_)))
@@ -237,14 +238,28 @@ mod tests {
         );
         assert_eq!(symbols[0].kind, SYMBOL_KIND_STRUCT);
         assert_eq!(symbols[1].kind, SYMBOL_KIND_CLASS);
-        assert_eq!(symbols[0].children.iter().map(|s| s.kind).collect::<Vec<_>>(), vec![
-            SYMBOL_KIND_FIELD, SYMBOL_KIND_FIELD
-        ]);
-        assert_eq!(symbols[1].children.iter().map(|s| s.kind).collect::<Vec<_>>(), vec![
-            SYMBOL_KIND_METHOD
-        ]);
         assert_eq!(
-            symbols[1].children.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            symbols[0]
+                .children
+                .iter()
+                .map(|s| s.kind)
+                .collect::<Vec<_>>(),
+            vec![SYMBOL_KIND_FIELD, SYMBOL_KIND_FIELD]
+        );
+        assert_eq!(
+            symbols[1]
+                .children
+                .iter()
+                .map(|s| s.kind)
+                .collect::<Vec<_>>(),
+            vec![SYMBOL_KIND_METHOD]
+        );
+        assert_eq!(
+            symbols[1]
+                .children
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["doSpell"]
         );
     }
@@ -274,23 +289,65 @@ mod tests {
         let symbols = document_symbols(text).expect("root");
         let section = &symbols[0];
         // 段:开标签头(1,0) → 闭标签尾(6,13)「</Properties>」13 字符终位。
-        assert_eq!(section.range.start, crate::definition::LspPosition { line: 1, character: 0 });
-        assert_eq!(section.range.end, crate::definition::LspPosition { line: 6, character: 13 });
+        assert_eq!(
+            section.range.start,
+            crate::definition::LspPosition {
+                line: 1,
+                character: 0
+            }
+        );
+        assert_eq!(
+            section.range.end,
+            crate::definition::LspPosition {
+                line: 6,
+                character: 13
+            }
+        );
         // selectionRange = 开标签跨度(1,0)-(1,12)。
         assert_eq!(
             section.selection_range,
             crate::definition::LspRange {
-                start: crate::definition::LspPosition { line: 1, character: 0 },
-                end: crate::definition::LspPosition { line: 1, character: 12 },
+                start: crate::definition::LspPosition {
+                    line: 1,
+                    character: 0
+                },
+                end: crate::definition::LspPosition {
+                    line: 1,
+                    character: 12
+                },
             }
         );
         let hp = &section.children[0];
-        assert_eq!(hp.range.start, crate::definition::LspPosition { line: 2, character: 0 });
-        assert_eq!(hp.range.end, crate::definition::LspPosition { line: 4, character: 5 });
+        assert_eq!(
+            hp.range.start,
+            crate::definition::LspPosition {
+                line: 2,
+                character: 0
+            }
+        );
+        assert_eq!(
+            hp.range.end,
+            crate::definition::LspPosition {
+                line: 4,
+                character: 5
+            }
+        );
         // 自闭合:range 终 = 开标签尾(5,6)。
         let bag = &section.children[1];
-        assert_eq!(bag.range.start, crate::definition::LspPosition { line: 5, character: 0 });
-        assert_eq!(bag.range.end, crate::definition::LspPosition { line: 5, character: 6 });
+        assert_eq!(
+            bag.range.start,
+            crate::definition::LspPosition {
+                line: 5,
+                character: 0
+            }
+        );
+        assert_eq!(
+            bag.range.end,
+            crate::definition::LspPosition {
+                line: 5,
+                character: 6
+            }
+        );
         assert_eq!(bag.selection_range, bag.range);
     }
 
@@ -322,5 +379,25 @@ mod tests {
             </root>";
         let symbols = document_symbols(text).expect("root");
         assert_eq!(names(&symbols[0].children), vec!["hp"]);
+    }
+
+    /// RUST-149 横切登记(纯面):本 face 是 text→树 纯函数,四维结构性
+    /// 无载体——cancel(同步零 await 无取消位)/cold(无 workspace 索引
+    /// 与缓存,冷热同路)/root(per-document 面,无根状态,撤根语义归
+    /// 索引面 references/workspace_symbols 钉)。stale 无缓存载体,钉其
+    /// 可观察契约:同文本重复求值确定性无漂移,文本换代即换树。
+    #[test]
+    fn rust_149_recompute_swaps_tree_and_is_stateless() {
+        let v1 = "<root>\n<Properties>\n<hp/>\n</Properties>\n</root>";
+        let first = document_symbols(v1).expect("root");
+        let second = document_symbols(v1).expect("root");
+        assert_eq!(first, second, "同文本重复求值确定性(无隐藏状态漂移)");
+
+        let v2 = "<root>\n<Properties>\n<hp/>\n</Properties>\n\
+            <BaseMethods>\n<onTalk/>\n</BaseMethods>\n</root>";
+        let swapped = document_symbols(v2).expect("root");
+        assert_ne!(first, swapped, "文本换代即换树,不服务旧树");
+        assert_eq!(names(&swapped), vec!["Properties", "BaseMethods"]);
+        assert_eq!(names(&swapped[1].children), vec!["onTalk"]);
     }
 }
