@@ -96,6 +96,7 @@
 > 2026-11-18(KODE-CFG-015 恢复批):languageServices.ts 顶部 import +1(EngineSpiCodeLensProvider)+ 返回面接口/返回对象各 +1 + SPI 注册块与命令 +22(位于 :353 打点之后)→ 五打点 132/213/286/353/785 → 134/215/288/355/809(前四 +2,785 +24,真位重探);extension.ts 解构面 +1(engineSpi impl,在 :477 前)→ 477/582 → 478/583,fire 块 +1(582 之后)不再位移(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。 2026-11-18(AI-001 批):extension.ts 顶部 import +1(aiRegistration)+ activate 内 AI 注册块 +4(:220 后,两锚前)→ 478/583 → 483/588,真位重探。
 > 2026-11-19(RUST-TRACK-FREEZE-007 刀2):languageServices.ts 顶部 import +1(resolveBackendMode)+ startKbEngineIndexing 门控块净 +11(rust 轨道 pythonClassIndex 懒启动)→ 五打点 143/224/297/386/863 → 144/225/298/397/874,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-19(ENGINE-LIB-SCAN-005 刀1):pythonClassIndex.ts 引擎库路径滤除三接线点(onFileChanged 判据 +1、全量发现块 +7、按名懒查块 +5,非均匀)→ CB2 import 绑定循环 :1228→1236、MRO :1559→1572、WAITC :766→767/打点 :772→773,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-19(RUST-149 批 3):取消令牌贯穿 inlay 四 provider(BuiltinType/InferredMirror/PropertyShadow/ProxyInternalAttr)——入口 cancelled() 闸 + def 归属/方向扫描束放行点复查,顶部累计 +9 → getDocumentLines 出处 inlay.ts 52→61,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -118,7 +119,7 @@ flowchart TD
   RS1["resolveDefMethodAnnotation → def 索引<br/>(形参个数/注解类型闸)"]
   RS2["resolveReceiverCallAnnotation<br/>段过滤 → 形参/类型对账"]
   RS3["resolveBuiltinPropertyAnnotation → 分面内建属性表"]
-  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:52 / backend/documentStore.ts:155"]
+  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:61 / backend/documentStore.ts:155"]
   MISS["标注落空 → 回退 provideKnownHover"]
   END1["operation.end(ok|miss) → return Hover|null"]
 

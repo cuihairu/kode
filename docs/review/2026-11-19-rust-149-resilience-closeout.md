@@ -47,6 +47,35 @@ document_symbols.rs):同文本重复求值 deep-equal(无隐藏状态漂移)+ �
 - 本收口只动 Rust 测试面(771f9bf6)+ 文档,零生产语义变更;
   document_symbols.rs 附带 rustfmt 2021 归一(本 sweep 自有件,纯排版)。
 
+## 批 3:TS 接线面 token/cancel(2026-11-19 收口)
+
+按本收口「诚实边界」登记的批 3+ 候选,把 inlay / codeLens 家族的取消面按
+批 1 判例补全(判例:真异步面每个 await 放行点复查令牌,取消后不再发起后续
+解析;同步 provider 只设入口闸)。新增面:
+
+| 面(文件:行) | 形态 | 闸位 |
+|---|---|---|
+| `CallChainController.provideCodeLenses`(defCallChainProvider.ts:89) | 真异步(逐方法 def 反查 await) | 入口 + 循环顶 + 每 await 后 + 返回前 |
+| `DefParamInlayHintsProvider`(defParamInlayHints.ts:229) | 真异步(逐点位 def 反查 await) | 入口 + 循环顶(取消即空,反查次数冻结) |
+| `DefPropsInlayHintsProvider`(defPropsInlayHints.ts:129) | 真异步(属性面单次 await) | 入口 + 放行前复查 |
+| `KBEngineBuiltinTypeInlayHintsProvider`(inlay.ts:29) | 真异步(def 归属面 await) | 入口 + 放行前复查 |
+| `KBEnginePropertyShadowInlayHintsProvider`(inlay.ts:125) | 真异步(扫描束 + 逐候选 def 反查) | 入口 + resolve 闭包入口/放行后 + 束 await 后 |
+| `KBEngineProxyInternalAttrHintsProvider`(inlay.ts:228) | async 签名/同步体(桩副本同步 fs 读) | 仅入口闸 |
+| `InferredMirrorTypeInlayHintsProvider`(inlay.ts:77) | 同步(镜像同步 fs 读) | 仅入口闸 |
+| `GeneratedSourceCodeLensProvider`(generatedSourceLenses.ts:46) | 同步 | 仅入口闸 |
+| `TypesXmlCodeLensProvider`(codeLens.ts:380) | 同步 | 仅入口闸 |
+
+同一批补了测试缺口:此前 `tests/codeLensCancellation.test.ts` 只覆盖
+property / rpc 两族。新增 `tests/cancellationTokenBatch3.test.ts`
+(9 例):四个真异步面各钉「放行前复查 → 返空 + 解析次数冻结」(callChain /
+defParam / defProps / builtinType),propertyShadow 钉「取消后不再反查后续
+候选 + 入口零反查」,四个同步面各钉「活令牌出内容 vs 已取消令牌返空」两臂
+对照(generatedSource / inferredMirror / proxyInternalAttr / typesXml)。
+prove-red 六臂逐一扰动对应闸,各臂只咬自己那一条并 `cmp` 字节还原。
+
+references 族 stale、semanticTokens 的 GAP 依本收口的登记不变(前者 TS 层
+已由 references.ts 贯穿 token,后者待语义 token 异步化时补),本批不收。
+
 ## 门禁
 
 - `cargo test -p kode-server`(--test-threads=4 口径):800 lib(799+本

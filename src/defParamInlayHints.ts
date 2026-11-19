@@ -228,9 +228,13 @@ export class DefParamInlayHintsProvider implements vscode.InlayHintsProvider {
 
   async provideInlayHints(
     document: vscode.TextDocument,
-    range: vscode.Range
+    range: vscode.Range,
+    token?: vscode.CancellationToken
   ): Promise<vscode.InlayHint[]> {
-    if (!vscode.workspace.getConfiguration('kbengine').get<boolean>('inlayHints.defParams', true)) {
+    // RUST-149 批 3:取消令牌贯穿——逐点位 def 反查是 await 面,取消后不再
+    // 解析后续方法(与 rpc CodeLens 同口径:循环顶闸 + 返回空)
+    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
+    if (cancelled() || !vscode.workspace.getConfiguration('kbengine').get<boolean>('inlayHints.defParams', true)) {
       return [];
     }
     const text = document.getText();
@@ -244,6 +248,9 @@ export class DefParamInlayHintsProvider implements vscode.InlayHintsProvider {
       // inlay 按可视区要:视图口外的定义行不出 hint
       if (site.line < range.start.line || site.line > range.end.line) {
         continue;
+      }
+      if (cancelled()) {
+        return [];
       }
       const key = `${site.section}.${site.methodName}`;
       if (!resolved.has(key)) {

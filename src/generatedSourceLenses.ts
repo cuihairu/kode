@@ -43,7 +43,11 @@ export class GeneratedSourceCodeLensProvider implements vscode.CodeLensProvider 
     this._onDidChangeCodeLenses.dispose();
   }
 
-  provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+  provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): vscode.CodeLens[] {
+    // RUST-149 批 3:同步 provider 同样吃取消令牌(入口即停)
+    if (!!token?.isCancellationRequested || document.isClosed) {
+      return [];
+    }
     if (!document.fileName.endsWith(this.fileName)) {
       return [];
     }

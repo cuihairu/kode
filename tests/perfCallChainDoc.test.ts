@@ -451,7 +451,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   // 2026-11-09:139f7035 新增 InferredMirrorTypeInlayHintsProvider 顶置两行,
   // getDocumentLines 行 42→44,真位重探,出处随 baseline 锁步。
-  ['src/languageProviders/inlay.ts', 52, 'getDocumentLines(document)'],
+  // 2026-11-19(RUST-149 批 3):inlay 四 provider 补 token/cancel 接线,顶部
+  // cancelled() 入口/放行闸插行,getDocumentLines 行 52→61,真位重探,出处随
+  // baseline 锁步。
+  ['src/languageProviders/inlay.ts', 61, 'getDocumentLines(document)'],
   // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,

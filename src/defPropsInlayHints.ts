@@ -128,9 +128,12 @@ export class DefPropsInlayHintsProvider implements vscode.InlayHintsProvider {
 
   async provideInlayHints(
     document: vscode.TextDocument,
-    range: vscode.Range
+    range: vscode.Range,
+    token?: vscode.CancellationToken
   ): Promise<vscode.InlayHint[]> {
-    if (!vscode.workspace.getConfiguration('kbengine').get<boolean>('inlayHints.defProps', true)) {
+    // RUST-149 批 3:取消令牌贯穿——def 属性面解析是唯一 await,放行前复查
+    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
+    if (cancelled() || !vscode.workspace.getConfiguration('kbengine').get<boolean>('inlayHints.defProps', true)) {
       return [];
     }
     let properties: PropertyDefinitionInfo[] | null = null;
@@ -138,6 +141,9 @@ export class DefPropsInlayHintsProvider implements vscode.InlayHintsProvider {
       properties = await this.entityMappingManager.listPropertyDefinitionsForFile(document.fileName);
     } catch {
       properties = null;
+    }
+    if (cancelled()) {
+      return [];
     }
     if (!properties || properties.length === 0) {
       return [];
