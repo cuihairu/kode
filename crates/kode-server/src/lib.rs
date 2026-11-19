@@ -73,6 +73,7 @@ pub use diagnostic_pipeline::dump_diagnostic_pipeline_golden;
 pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
 pub use python_call_at::dump_python_call_at_golden;
 pub use references::dump_references_golden;
+pub use references::dump_references_semantic_golden;
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
 };
