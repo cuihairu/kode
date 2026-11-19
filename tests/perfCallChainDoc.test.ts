@@ -282,6 +282,9 @@ const ANCHORS: Array<[string, number, string]> = [
   // (EngineSpiCodeLensProvider)+ 返回面接口与返回对象各 +1 + fileModified
   // 块后 SPI 注册块与命令(+22,位于 353 打点之后)→ 前四打点 132/213/286/353
   // → 134/215/288/355(+2),785 → 809(+24),真位重探;出处随 baseline 锁步。
+  // 2026-11-19(RUST-TRACK-FREEZE-007 刀2):顶部 import +1(resolveBackendMode)
+  // + startKbEngineIndexing 门控块净 +11(rust 轨道 pythonClassIndex 懒启动)
+  // → 五打点 143/224/297/386/863 → 144/225/298/397/874,真位重探;出处随 baseline 锁步。
   // 2026-11-18(PROC-BREADCRUMB-001):processOwnership 镜链移除(接口字段-1,
   // lens 注册块换成面包屑符号 provider 净 -4)→ 前四打点 134/215/288/355 →
   // 133/214/287/354(-1),809 → 804(-5),真位重探;出处随 baseline 锁步。
@@ -310,11 +313,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 488/593 → 489/594(真位重探)。pythonClassIndex.ts MroChainEntry/
   // MroMethodChain 接口块 +20(146 前)→ 746/1415/1539 → 766/1435/1559
   // (真位重探;resolveMroMethodChains 追加在文件尾不再位移)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 224, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 297, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 386, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 143, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 863, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 225, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 298, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 397, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 144, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 874, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import

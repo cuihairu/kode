@@ -62,6 +62,7 @@ import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../
 import { ConfigCompletionProvider, CONFIG_COMPLETION_SELECTORS } from '../configCompletionProvider';
 import { ConfigDefinitionProvider, CONFIG_DEFINITION_SELECTORS } from '../configDefinitionProvider';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
+import { resolveBackendMode } from '../backend/kodeCoreGate';
 import { createIndexEventCoalescer, type IndexEventCoalescer } from '../backend/indexEventCoalescer';
 import { INDEX_CACHE_DIR_NAME } from '../backend/indexDiskCache';
 import { SCAN_PROGRESS_DIR_NAME, ScanProgressController } from '../backend/scanProgress';
@@ -340,7 +341,17 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   // 一起放行(与门控前激活期行为一致);负案例(无特征)两者都不启动。
   const startKbEngineIndexing = (): void => {
     entityMappingManager.ensureStartup();
-    if (vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true)) {
+    // RUST-TRACK-FREEZE-007 刀2:rust 服务轨道下 pythonClassIndex 全量首扫
+    // 不再自启——rust 轨道语言服务面由 kode-server 承接,TS 全量扫描+Rust
+    // 镜像双引擎同时跑是「越来越卡」主因之二。TS 面仍是 rust 失败的回退轨:
+    // pythonClassIndex 首次查询本就幂等懒补扫,回退语义不变,只是把
+    // 「激活即全量」改成「首个 TS 查询才补」。shadow/ts 轨道照旧自启。
+    if (
+      resolveBackendMode(
+        vscode.workspace.getConfiguration('kbengine.core').get<string>('backend')
+      ).mode !== 'rust' &&
+      vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true)
+    ) {
       pythonClassIndex.scheduleBackgroundScan();
     }
     // 书 PR-002 ③:深扫描缓存激活期预热——首查交互不再付 20000 条目有界
