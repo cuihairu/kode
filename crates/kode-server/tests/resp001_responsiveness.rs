@@ -94,7 +94,7 @@ impl ServerProc {
         let deadline = Duration::from_secs(10);
         loop {
             match self.rx.recv_timeout(deadline) {
-                Ok((value, at)) => {
+                Ok((value, _at)) => {
                     if value.get("id") == Some(&json!(id)) {
                         return (value, sent.elapsed());
                     }

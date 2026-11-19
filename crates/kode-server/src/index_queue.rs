@@ -127,6 +127,11 @@ fn record_ingest(counts: &Rc<RefCell<IngestCounts>>, change: ChangeCategory) {
 /// RESP-001:磁盘回落读函数(注入位)。参数=native 路径字符串。
 pub type DiskReadFn = Rc<dyn Fn(&str) -> std::io::Result<String>>;
 
+/// RESP-001b:跨线程读函数(读线程所有)。同 [`DiskReadFn`] 但
+/// `Arc + Send + Sync`,供 [`IngestReadThread::spawn`] 与
+/// [`IndexQueue::with_off_thread_reader`] 注入位共用。
+pub type SharedDiskReadFn = std::sync::Arc<dyn Fn(&str) -> std::io::Result<String> + Send + Sync>;
+
 /// 生产读函数:`std::fs::read_to_string` 直通。
 fn default_disk_reader() -> DiskReadFn {
     Rc::new(|path| std::fs::read_to_string(path))
@@ -172,9 +177,7 @@ pub(crate) struct IngestReadThread {
 impl IngestReadThread {
     /// 起读线程;reader 须 Send+Sync(线程所有——主线程 Rc 注入位
     /// [`DiskReadFn`] 不适用于此,测试慢读/错读用 Arc 闭包注入)。
-    fn spawn(
-        reader: std::sync::Arc<dyn Fn(&str) -> std::io::Result<String> + Send + Sync>,
-    ) -> Rc<RefCell<Self>> {
+    fn spawn(reader: SharedDiskReadFn) -> Rc<RefCell<Self>> {
         let (job_tx, job_rx) = mpsc::channel::<DiskReadJob>();
         let (done_tx, done_rx) = mpsc::channel::<DiskReadDone>();
         std::thread::Builder::new()
@@ -303,7 +306,7 @@ impl IndexQueue {
     pub fn with_off_thread_reader(
         store: Rc<RefCell<kode_vfs::DocumentStore>>,
         hover: Rc<RefCell<HoverEngine>>,
-        reader: std::sync::Arc<dyn Fn(&str) -> std::io::Result<String> + Send + Sync>,
+        reader: SharedDiskReadFn,
     ) -> IndexQueue {
         let mut queue = IndexQueue::with_disk_reader(store, hover, default_disk_reader());
         queue.reads = Some(IngestReadThread::spawn(reader));
