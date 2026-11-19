@@ -855,3 +855,11 @@ Notes:
 - If the status bar never advances and `KBEngine Index` shows no scan-start
   line, the workspace was likely not detected as a KBEngine project (check the
   scan-root settings referenced above).
+- If the workspace contains the KBEngine engine repository itself (for example
+  a parent folder holding the engine repo next to your assets), the engine
+  subtree is excluded from business indexing automatically — detected through
+  the engine tree markers (`kbe/src/lib/common/version.h` /
+  `kbeversion.h`) or the `kbengine.engineRoot` setting, and reported in the
+  scan-start line (`已剔引擎仓子树 N 处`). Engine-side corpus flows through its
+  own dedicated channel, so opening the engine repo alone yields an empty
+  business index by design.

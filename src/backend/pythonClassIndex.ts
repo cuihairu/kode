@@ -3,7 +3,7 @@ import * as path from 'path';
 import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from '../compositionRoots';
-import { findFilesAcrossRoots } from '../scanRoots';
+import { findFilesAcrossRoots, resolveEngineSubtreeExclusions } from '../scanRoots';
 import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS, isEnginePythonLibPath } from './pythonScanRules';
 import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
@@ -1078,9 +1078,11 @@ export class PythonClassIndex {
       scanMetrics.countFileRead(scanFiles.length);
       scanMetrics.countFileParse(scanFiles.length);
       // WARM-VISIBILITY-004 刀 B:python 全扫起扫行 + 块级节流进度,进统一
-      // 「KBEngine Index」通道(常开;进度行复用 scanStageProgress 双闸节流)
+      // 「KBEngine Index」通道(常开;进度行复用 scanStageProgress 双闸节流);
+      // ENGINE-LIB-SCAN-005 刀2:剔除面入行(任务书「范围变化可审计」)
+      const engineExcludedRoots = resolveEngineSubtreeExclusions().length;
       indexLog('python-index',
-        `python 类索引全扫开始:${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`);
+        `python 类索引全扫开始:${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length}${engineExcludedRoots > 0 ? `/已剔引擎仓子树 ${engineExcludedRoots} 处` : ''})`);
       const pyProgress = createScanStageProgressReporter({
         label: 'python 类索引',
         total: files.length,

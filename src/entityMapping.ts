@@ -21,6 +21,7 @@ import {
 } from './backend/pythonMethodCallQueries';
 import {
   findFilesAcrossRoots,
+  resolveEngineSubtreeExclusions,
   getExternalScanRoots,
   getIndexScanRoots,
   getScanRootForFile
@@ -494,7 +495,9 @@ export class EntityMappingManager {
       return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
     });
     // WARM-VISIBILITY-004 刀 B:起扫行进统一「KBEngine Index」通道(常开)
-    indexLog('discovery', `def 首扫开始:${defFiles.length} 个 .def(实体候选 ${entities.length})`);
+    // ENGINE-LIB-SCAN-005 刀2:引擎仓子树剔除面入起扫行(范围可审计)
+    const engineExcludedRoots = resolveEngineSubtreeExclusions().length;
+    indexLog('discovery', `def 首扫开始:${defFiles.length} 个 .def(实体候选 ${entities.length}${engineExcludedRoots > 0 ? `/已剔引擎仓子树 ${engineExcludedRoots} 处` : ''})`);
     // WARM-VISIBILITY-004 刀 A:def 逐文件节流进度(无 sink 时发射为 no-op)
     const defProgress = createScanStageProgressReporter({
       label: '实体发现链 def',

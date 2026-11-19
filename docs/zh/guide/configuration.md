@@ -840,3 +840,8 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时,不是扩展直接启动一
   的调试流量;`kbengine.jumpLog` 仍然只控制 `KBEngine Navigation` 通道。
 - 若状态栏一直不动且 `KBEngine Index` 没有起扫行,多半是工作区没被识别为
   KBEngine 工程(先核对上文扫描根相关设置)。
+- 工作区里包含 KBEngine 引擎仓本身时(比如打开引擎仓与 assets 的上层目录),
+  引擎子树会自动剔出业务索引——按引擎树标记(`kbe/src/lib/common/version.h`
+  / `kbeversion.h`)或 `kbengine.engineRoot` 设置识别,起扫行会标注
+  (`已剔引擎仓子树 N 处`)。引擎侧语料走专用通道;只打开引擎仓时业务索引
+  为空属于设计行为。
