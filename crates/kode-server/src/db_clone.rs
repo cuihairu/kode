@@ -95,6 +95,66 @@ fn write_key_from_root(archive_path: &str, key_root: &str) -> Result<ArchiveKey,
         .map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------------------
+// 同目标导出互斥(KODE-FULL-016)
+// ---------------------------------------------------------------------------
+
+/// 目标锁等待上限:等不到就如实报错,绝不无限阻塞调用方。进程崩溃时内核
+/// 自动释放文件锁,不留死锁。
+const EXPORT_LOCK_WAIT_MS: u64 = 10_000;
+
+/// 持锁守卫:导出全程(取钥→写归档)持有,离开作用域自动解锁。
+struct ExportLockGuard {
+    file: Option<std::fs::File>,
+}
+
+impl Drop for ExportLockGuard {
+    fn drop(&mut self) {
+        if let Some(file) = self.file.take() {
+            let _ = file.unlock();
+        }
+    }
+}
+
+/// 按归档目标取独占导出锁:锁文件落密钥根目录(kode 自有目录,不污染用户
+/// 导出目录),按归档绝对路径 id(`key_id_for_archive`)命名——同目标互斥、
+/// 不同目标并行。std 文件锁(flock/LockFileEx)跨进程成立;持锁进程死亡由
+/// 内核释放。明文导出(无 keyRoot)没有 kode 自有目录可落锁,维持原行为。
+fn lock_export_target(archive_path: &str, key_root: &str) -> Result<ExportLockGuard, String> {
+    let root = std::path::Path::new(key_root);
+    let archive = std::path::Path::new(archive_path);
+    ensure_key_outside_archive(root, archive).map_err(|e| e.to_string())?;
+    let id = key_id_for_archive(archive);
+    std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    let lock_path = root.join(format!("{id}.export-lock"));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|e| format!("open export lock `{}`: {e}", lock_path.display()))?;
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(EXPORT_LOCK_WAIT_MS);
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(ExportLockGuard { file: Some(file) }),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(format!(
+                        "another export to `{archive_path}` is still in progress \
+                         (waited {EXPORT_LOCK_WAIT_MS}ms on lock `{}`)",
+                        lock_path.display()
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(e) => {
+                return Err(format!("lock export target `{archive_path}`: {e}"));
+            }
+        }
+    }
+}
+
 /// 读侧:显式 keyHex 优先(向后兼容旧载荷);否则未加密档 → None,加密档按
 /// 密钥根取钥——钥匙缺失如实报错(点名密钥根与 id,便于运维定位),绝不
 /// 静默生成新钥(那只会造出永远解不开档的错误钥匙)。
@@ -217,6 +277,14 @@ fn default_true() -> bool {
 
 fn export_archive(params: Value) -> Result<Value, String> {
     let params: ExportParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
+    // KODE-FULL-016:同目标导出互斥——先取目标锁,再取/建密钥、写归档;
+    // 守卫活到函数返回,写入全程串行化(两路并发首建也只会有一把钥、
+    // 一份完整归档)。明文导出无 keyRoot 可落锁,维持原行为。
+    let _export_lock = params
+        .key_root
+        .as_ref()
+        .map(|root| lock_export_target(&params.path, root))
+        .transpose()?;
     let key = match &params.key_root {
         Some(root) => Some(write_key_from_root(&params.path, root)?),
         None => None,
@@ -1097,6 +1165,121 @@ mod tests {
         })))
         .unwrap();
         assert!(plan["statements"].as_array().is_some());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn concurrent_same_target_exports_serialize_and_archive_stays_openable() {
+        // KODE-FULL-016:屏障同时开始多路同目标导出——目标锁把写入串行化,
+        // 各路收敛到同一把密钥(原子首建),最终归档完整、可用存储密钥打开。
+        // 探针只断言结果,绝不打印密钥材料。
+        let dir = temp_dir("export-race");
+        let keys = dir.join("clone-keys");
+        let archive_path = dir.join("avatar.kdpclone");
+
+        const LANES: usize = 4;
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(LANES));
+        let handles: Vec<_> = (0..LANES)
+            .map(|round| {
+                let barrier = std::sync::Arc::clone(&barrier);
+                let path = archive_path.to_string_lossy().into_owned();
+                let key_root = keys.to_string_lossy().into_owned();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    export_archive(json!({
+                        "path": path,
+                        "entity": "Avatar",
+                        "redactSensitive": false,
+                        "keyRoot": key_root,
+                        "rows": [
+                            { "table": "tbl_Avatar", "values": [
+                                {"t":"big-u-int","v":"9007199254740993"}, {"t":"u-int","v":1}, {"t":"text","v": format!("hero-{round}")}
+                            ]}
+                        ]
+                    }))
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap().unwrap();
+        }
+
+        // 存储密钥打开最终归档:inspect 成功、加密如实、实体对得上。
+        let inspected = inspect_archive(json!({
+            "path": archive_path.to_string_lossy(),
+            "keyRoot": keys.to_string_lossy()
+        }))
+        .unwrap();
+        assert_eq!(inspected["encrypted"].as_bool(), Some(true));
+        assert_eq!(inspected["entity"].as_str(), Some("Avatar"));
+
+        // 密钥根里恰一把钥(4 路首建收敛) + 一把目标锁;锁不落用户导出目录。
+        let mut key_count = 0;
+        let mut lock_count = 0;
+        for entry in std::fs::read_dir(&keys).unwrap().filter_map(|e| e.ok()) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.ends_with(".key") {
+                key_count += 1;
+            } else if name.ends_with(".export-lock") {
+                lock_count += 1;
+            }
+        }
+        assert_eq!(key_count, 1, "4 路并发首建必须收敛到一把钥");
+        assert_eq!(lock_count, 1, "一目标一锁");
+        assert!(
+            !dir.join("avatar.kdpclone.export-lock").exists(),
+            "锁文件不得落用户导出目录"
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn export_lock_times_out_with_clear_error_when_held() {
+        // KODE-FULL-016:持锁期间第二路同目标导出有界等待后如实报错,
+        // 绝不无限阻塞;锁释放后同目标立即可再导。
+        let dir = temp_dir("export-lock");
+        let keys = dir.join("clone-keys");
+        let archive_path = dir.join("avatar.kdpclone");
+
+        let _held =
+            lock_export_target(&archive_path.to_string_lossy(), &keys.to_string_lossy()).unwrap();
+        let start = std::time::Instant::now();
+        let blocked = export_archive(json!({
+            "path": archive_path.to_string_lossy(),
+            "entity": "Avatar",
+            "redactSensitive": false,
+            "keyRoot": keys.to_string_lossy(),
+            "rows": [
+                { "table": "tbl_Avatar", "values": [
+                    {"t":"big-u-int","v":"9007199254740993"}, {"t":"u-int","v":1}, {"t":"text","v":"hero"}
+                ]}
+            ]
+        }))
+        .unwrap_err();
+        assert!(
+            blocked.contains("another export") && blocked.contains("in progress"),
+            "有界等待话术: {blocked}"
+        );
+        // 等待确有界(远小于上限的硬上界 sanity:不超过 60s;实测略高于
+        // 上限因锁等待先于其他工作)。
+        assert!(start.elapsed().as_secs() < 60);
+
+        drop(_held);
+        let after = export_archive(json!({
+            "path": archive_path.to_string_lossy(),
+            "entity": "Avatar",
+            "redactSensitive": false,
+            "keyRoot": keys.to_string_lossy(),
+            "rows": [
+                { "table": "tbl_Avatar", "values": [
+                    {"t":"big-u-int","v":"9007199254740993"}, {"t":"u-int","v":1}, {"t":"text","v":"hero"}
+                ]}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(after["encrypted"].as_bool(), Some(true));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
