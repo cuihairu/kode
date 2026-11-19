@@ -13,11 +13,8 @@ import { spawnProcess } from './processManager';
  *
  * 帧协议（双向）：`<十进制字节长度>\n<恰好那么多字节>\n`。
  * - 长度前缀使多行源码跨帧无损传递，换行只作分隔不进载荷（长度即边界）；
- * - 长度恒为 **utf-8 字节数**。解释器侧回包 `ensure_ascii=False` 时载荷可含
- *   非 ASCII（中文/弯引号语法错误文案），字节数>字符数——收包侧全程按
- *   Buffer 字节流缓冲与切分（KODE-FULL-001:旧实现 setEncoding 成字符串后按
- *   字符 slice,非 ASCII 回包永远切不出等长载荷,语法错误被误收口成基建
- *   超时,热更语法闸随之 fail-open）。
+ * - 本服务收到的载荷全为 ASCII（JSON），故长度与字符数同值，可按字符切片
+ *   消费（decodeFrame）。
  *
  * 并发与超时语义：协议是单请求-单回包。并发指令进**队列**按 FIFO 兑现
  * （不拒、不乱序）。**超时不摘队**——迟到的帧会串到下一条请求上造成错位，
@@ -153,7 +150,7 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
 
   let disposed = false;
   let child: ChildProcessWithoutNullStreams | null = null;
-  let stdoutBytes: Buffer = Buffer.alloc(0);
+  let stdoutBuffer = '';
   let stderrTail = '';
   let ready = false;
   const queue: PendingCall[] = [];
@@ -188,7 +185,7 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
     child = null;
     ready = false;
     handshake = null;
-    stdoutBytes = Buffer.alloc(0);
+    stdoutBuffer = '';
     settleAll(
       reason ?? `解释器进程退出(code=${exitCode}, signal=${signal})${stderrTail.trim() ? `: ${lastLine(stderrTail)}` : ''}`
     );
@@ -204,11 +201,11 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
 
   const drainFrames = (): void => {
     for (;;) {
-      const decoded = decodeFrame(stdoutBytes);
+      const decoded = decodeFrame(stdoutBuffer);
       if (decoded === null) {
         return;
       }
-      stdoutBytes = decoded.remainder;
+      stdoutBuffer = decoded.remainder;
       if (!ready) {
         ready = true;
         continue; // 首帧=握手证据,不作为请求回包
@@ -228,29 +225,20 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
   };
 
   const wire = (proc: ChildProcessWithoutNullStreams): void => {
-    // KODE-FULL-002:代际守卫——超时/故障拆掉旧进程后新进程已接管(child!==proc),
-    // 旧进程迟到的 exit/error/stdout 帧不再属于本代,一律忽略;否则旧 exit
-    // 会把新进程一并 teardown,旧残字节会污染新代帧缓冲
-    const stale = (): boolean => child !== proc;
-    // KODE-FULL-001:stdout 保持字节流(不 setEncoding)——帧边界按字节判定,
-    // 多字节字符跨 chunk 断裂也不会被逐块 utf8 解码弄脏
+    proc.stdout.setEncoding('utf8');
     proc.stderr.setEncoding('utf8');
     proc.stdout.on('data', chunk => {
-      if (stale()) { return; }
-      stdoutBytes = Buffer.concat([stdoutBytes, chunk as Buffer]);
+      stdoutBuffer += String(chunk);
       drainFrames();
     });
     proc.stderr.on('data', chunk => {
-      if (stale()) { return; }
       // 有界尾部(错误行取最后一行),不随长会话无界增长
       stderrTail = `${stderrTail}${String(chunk)}`.slice(-2048);
     });
     proc.on('error', error => {
-      if (stale()) { return; }
       teardown(error.message);
     });
     proc.on('exit', () => {
-      if (stale()) { return; }
       teardown();
     });
   };
@@ -265,7 +253,7 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
     }
     if (!child) {
       stderrTail = '';
-      stdoutBytes = Buffer.alloc(0);
+      stdoutBuffer = '';
       ready = false;
       child = spawn(interpreter, ['-c', PYTHON_EXEC_SERVICE_SOURCE], {
         stdio: ['pipe', 'pipe', 'pipe']
@@ -344,29 +332,29 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
   };
 }
 
-/**
- * 帧解码(字节管道):无完整帧返回 null;消费掉已解码帧并返回载荷与余量。
- * KODE-FULL-001:长度=字节数,缓冲/切分/余量全程 Buffer——按字节切出的
- * 载荷再整体 utf8 解码,非 ASCII 载荷与跨 chunk 断裂的多字节字符都无损。
- */
-function decodeFrame(buffer: Buffer): { body: string; remainder: Buffer } | null {
-  const headerEnd = buffer.indexOf(0x0a);
+/** 帧解码：无完整帧返回 null；消费掉已解码帧并返回载荷与余量 */
+function decodeFrame(buffer: string): { body: string; remainder: string } | null {
+  const headerEnd = buffer.indexOf('\n');
   if (headerEnd < 0) {
     return null;
   }
-  const sizeText = buffer.subarray(0, headerEnd).toString('ascii');
+  const sizeText = buffer.slice(0, headerEnd);
   if (!/^\d{1,10}$/.test(sizeText)) {
     // 帧边界已被破坏:清缓冲避免死锁
-    return { body: '', remainder: Buffer.alloc(0) };
+    return { body: '', remainder: '' };
   }
   const size = Number(sizeText);
   const payloadStart = headerEnd + 1;
-  // 帧完整 = 载荷 size 字节 + 1 字节帧尾换行都已到达
-  if (buffer.length < payloadStart + size + 1) {
+  const tail = buffer.slice(payloadStart);
+  if (Buffer.byteLength(tail.slice(0, size), 'utf8') < size) {
     return null;
   }
-  const payload = buffer.subarray(payloadStart, payloadStart + size).toString('utf8');
-  return { body: payload, remainder: buffer.subarray(payloadStart + size + 1) };
+  // 载荷为 ASCII(JSON),字符数=字节数;按字符切即按字节切
+  const payload = tail.slice(0, size);
+  if (Buffer.byteLength(payload, 'utf8') !== size) {
+    return null;
+  }
+  return { body: payload, remainder: tail.slice(size + 1) }; // +1 = 帧尾换行
 }
 
 /** 取最后一行非空文本(错误行展示用) */

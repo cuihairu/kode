@@ -197,9 +197,6 @@ pub fn parse_tshark_line(line: &str) -> Result<TsharkPacket, String> {
 mod tests {
     use super::*;
 
-    // 用例全 unix-only(sh 脚本 fake tshark),助手同门,Windows 夜构建
-    // 不产 dead_code 警告。
-    #[cfg(unix)]
     fn temp_dir(tag: &str) -> std::path::PathBuf {
         let dir =
             std::env::temp_dir().join(format!("kode-kbengine-tshark-{tag}-{}", std::process::id()));

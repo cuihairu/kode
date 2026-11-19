@@ -76,15 +76,3 @@ describe('mcp status bar (pure)', () => {
     expect(mcpStatusBarTooltip(true, false)).toContain('click to enable');
   });
 });
-
-describe('index format schema line (ENGINE-WORDING-006)', () => {
-  it('every core tooltip carries the schema line, word-separated from KBEngine', () => {
-    expect(coreStatusBarTooltip({ mode: 'rust', serverPath: '/x/kode-server' })).toContain(
-      'Index format schema=index-cache/1'
-    );
-    expect(coreStatusBarTooltip({ mode: 'ts', serverPath: '' })).toContain(
-      'unrelated to the KBEngine engine version'
-    );
-    expect(coreStatusBarTooltip(null)).toContain('Index format schema=index-cache/1');
-  });
-});

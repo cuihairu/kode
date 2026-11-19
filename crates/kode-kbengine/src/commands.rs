@@ -404,9 +404,6 @@ mod tests {
         script
     }
 
-    // 三个 fixture 助手只服务 unix-only 用例(sh 脚本),与用例同门,
-    // Windows 夜构建不产 dead_code 警告。
-    #[cfg(unix)]
     fn tshark_line(ts: &str, sport: u16, dport: u16, payload: &[u8]) -> String {
         let hex: Vec<String> = payload.iter().map(|b| format!("{b:02x}")).collect();
         format!("{ts}\t{sport}\t{dport}\t{}\n", hex.join(":"))
@@ -626,7 +623,6 @@ mod tests {
     }
 
     /// 变长帧线上形态:`u16 id (LE) + u16 载荷长 (LE) + 载荷`。
-    #[cfg(unix)]
     fn var_frame(id: u16, payload: &[u8]) -> Vec<u8> {
         let mut v = Vec::with_capacity(4 + payload.len());
         v.extend_from_slice(&id.to_le_bytes());
@@ -636,7 +632,6 @@ mod tests {
     }
 
     /// Loginapp::login(id 3)载荷:STRING UINT8_ARRAY STRING STRING。
-    #[cfg(unix)]
     fn login_payload() -> Vec<u8> {
         let mut v = Vec::new();
         v.extend_from_slice(b"1\0");

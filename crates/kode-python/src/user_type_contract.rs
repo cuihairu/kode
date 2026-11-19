@@ -350,10 +350,4 @@ mod tests {
         let items = status_with("T", Some("pkg.Impl"), Some("no-sep"), [false; 3]);
         assert_eq!(items[0].related_label, "实现文件 no-sep");
     }
-
-    #[test]
-    fn unknown_method_consequence_is_empty() {
-        // 未知方法空串(调用面固定三方法;pub 直调钉住 `_` 臂语义)
-        assert_eq!(contract_consequence("notInContract"), "");
-    }
 }

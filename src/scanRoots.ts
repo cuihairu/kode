@@ -236,8 +236,7 @@ async function walkExternalRoot(
   match: (name: string) => boolean,
   skipDirs: Set<string>,
   merged: Map<string, vscode.Uri>,
-  token?: vscode.CancellationToken,
-  pathFilter?: (fsPath: string) => boolean
+  token?: vscode.CancellationToken
 ): Promise<void> {
   if (token?.isCancellationRequested) { return; }
   let entries: fs.Dirent[];
@@ -257,15 +256,10 @@ async function walkExternalRoot(
       if (entry.name === '.git' || skipDirs.has(entry.name)) {
         continue;
       }
-      // 路径形态剪枝:命中过滤器的目录整棵不下潜(引擎 Lib 数千文件连
-      // readdir 的 IO 都省掉,不只是事后滤结果)
-      if (pathFilter && !pathFilter(full)) {
-        continue;
-      }
-      await walkExternalRoot(full, match, skipDirs, merged, token, pathFilter);
+      await walkExternalRoot(full, match, skipDirs, merged, token);
       continue;
     }
-    if (entry.isFile() && match(entry.name) && !(pathFilter && !pathFilter(full))) {
+    if (entry.isFile() && match(entry.name)) {
       merged.set(normalizeForCompare(full), vscode.Uri.file(full));
     }
   }
@@ -278,14 +272,7 @@ async function walkExternalRoot(
 export async function findFilesAcrossRoots(
   glob: string,
   exclude?: vscode.GlobPattern | null,
-  token?: vscode.CancellationToken,
-  /**
-   * ENGINE-LIB-SCAN-005:调用方路径形态过滤器(true=保留)。workspace glob
-   * 结果按它后滤,外部根遍历按它剪枝(命中的目录整棵不下潜)——多段路径
-   * 形态(如 kbe/scripts/common/Lib)无法塞进 PY_SCAN_EXCLUDE 的单段 brace
-   * glob,由调用方在业务语义层给出。缺省不过滤(generic 行为不变)。
-   */
-  pathFilter?: (fsPath: string) => boolean
+  token?: vscode.CancellationToken
 ): Promise<vscode.Uri[]> {
   // PR1 性能打点:发现耗时拆 workspace glob 与外部根遍历两段,只记计数/耗时,
   // 不改发现口径与去重行为。
@@ -295,9 +282,6 @@ export async function findFilesAcrossRoots(
   const base = await vscode.workspace.findFiles(glob, exclude, undefined, token);
   stopWorkspaceGlob();
   for (const uri of base) {
-    if (pathFilter && !pathFilter(uri.fsPath)) {
-      continue;
-    }
     merged.set(normalizeForCompare(uri.fsPath), uri);
   }
   // KODE-CFG-017:托管目录(.kbengine/inferred 镜像树)副本剔出合并结果,
@@ -334,7 +318,7 @@ export async function findFilesAcrossRoots(
       const stopExternalWalk = discovery.startSubPhase('external-walk');
       for (const root of getExternalScanRoots()) {
         if (token?.isCancellationRequested) { break; }
-        await walkExternalRoot(root, match, skipDirs, merged, token, pathFilter);
+        await walkExternalRoot(root, match, skipDirs, merged, token);
       }
       stopExternalWalk();
     }

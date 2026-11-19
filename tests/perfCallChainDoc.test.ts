@@ -282,9 +282,6 @@ const ANCHORS: Array<[string, number, string]> = [
   // (EngineSpiCodeLensProvider)+ 返回面接口与返回对象各 +1 + fileModified
   // 块后 SPI 注册块与命令(+22,位于 353 打点之后)→ 前四打点 132/213/286/353
   // → 134/215/288/355(+2),785 → 809(+24),真位重探;出处随 baseline 锁步。
-  // 2026-11-19(RUST-TRACK-FREEZE-007 刀2):顶部 import +1(resolveBackendMode)
-  // + startKbEngineIndexing 门控块净 +11(rust 轨道 pythonClassIndex 懒启动)
-  // → 五打点 143/224/297/386/863 → 144/225/298/397/874,真位重探;出处随 baseline 锁步。
   // 2026-11-18(PROC-BREADCRUMB-001):processOwnership 镜链移除(接口字段-1,
   // lens 注册块换成面包屑符号 provider 净 -4)→ 前四打点 134/215/288/355 →
   // 133/214/287/354(-1),809 → 804(-5),真位重探;出处随 baseline 锁步。
@@ -313,11 +310,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 488/593 → 489/594(真位重探)。pythonClassIndex.ts MroChainEntry/
   // MroMethodChain 接口块 +20(146 前)→ 746/1415/1539 → 766/1435/1559
   // (真位重探;resolveMroMethodChains 追加在文件尾不再位移)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 225, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 298, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 397, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 144, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 874, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 224, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 297, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 386, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 143, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 863, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -451,10 +448,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   // 2026-11-09:139f7035 新增 InferredMirrorTypeInlayHintsProvider 顶置两行,
   // getDocumentLines 行 42→44,真位重探,出处随 baseline 锁步。
-  // 2026-11-19(RUST-149 批 3):inlay 四 provider 补 token/cancel 接线,顶部
-  // cancelled() 入口/放行闸插行,getDocumentLines 行 52→61,真位重探,出处随
-  // baseline 锁步。
-  ['src/languageProviders/inlay.ts', 61, 'getDocumentLines(document)'],
+  ['src/languageProviders/inlay.ts', 52, 'getDocumentLines(document)'],
   // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,
@@ -486,9 +480,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // resolveWireDictSubscriptKeyFromContainer 并入 fixedDictSubscript import +1、
   // resolveFixedDictKeyHover 内输入面臂 +4 → provideHover 真位重探 307→313,
   // 出处随 baseline 锁步。
-  // HOOK-TIMING-001:hover.ts 顶部新增 1 行 import(renderDefPropertyTimingNote)
-  // API-PARAM-HOVER-001:hover.ts 顶部再 +1 行 import(nodeFs,实体类映射存在性)
-  ['src/languageProviders/hover.ts', 315, 'provideHover('],
+  ['src/languageProviders/hover.ts', 313, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
@@ -596,14 +588,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-18:SCAN-RESUME-001 断点续扫——pythonClassIndex.ts 顶部 import +5、
   // 字段+构造器段 +15、runScheduledScan 恢复块 +46(非均匀):688→706(+18)、
   // 1300→1366/1420→1486(+66)。出处随 baseline 锁步。
-  ['src/backend/pythonClassIndex.ts', 767, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1448, 'resolveClassBase'],
+  ['src/backend/pythonClassIndex.ts', 766, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1435, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1572, '①② 两段查询'],
-  // 2026-11-19(ENGINE-LIB-SCAN-005 刀1):pythonClassIndex.ts 引擎库路径滤除
-  // 三接线点——onFileChanged 判据 +1、全量发现块 +7、按名懒查块 +5(非均匀):
-  // 766→767(+1)、1435→1448(+13)、1559→1572(+13)。出处随 baseline 锁步。
+  ['src/backend/pythonClassIndex.ts', 1559, '①② 两段查询']
   // 2026-11-06:KBE-CFG-001..005(2a87d77)工作区配置契约诊断——extension.ts
   // 顶部 import +4(1014 前锚点全 +4),activate 装配块 +136 落在 1432 之后:
   // onDidChangeTextDocument/flushQueued 锚点 +140(2155→2295/2235→2375);

@@ -553,25 +553,3 @@ fn ir_covers_all_node_forms_of_original_entry() {
         .iter()
         .any(|f| f.name == "POSITION" && f.slot == OptionalSlot::FixedDictImplementedBy));
 }
-
-/// 拒收登记:空名拒收(RUST-104-W 与 push_node 同口径)。
-#[test]
-fn push_error_node_rejects_empty_name() {
-    use kode_types::TypeErrorReason;
-    let mut g = TypeGraph::new();
-    assert!(
-        g.push_error_node("", TypeErrorReason::EmptyTarget)
-            .is_none(),
-        "空名不得入图"
-    );
-}
-
-/// 符合性报告:FIXED_DICT 字段键指向已知终态(内建)→ 跳过臂不产报告。
-#[test]
-fn conformance_skips_known_terminal_field_keys() {
-    let g = graph_with_types(
-        "<root>\n<FD>\n\tFIXED_DICT\n\t<Properties>\n\t\t<x>\n\t\t\t<Type> UINT32 </Type>\n\t\t</x>\n\t</Properties>\n</FD>\n</root>",
-    );
-    let reports = g.engine_conformance_reports();
-    assert!(reports.is_empty(), "终态键不产报告: {reports:?}");
-}

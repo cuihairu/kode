@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { parseDefDocument } from './backend/defParser';
-import { DefParserBudgetError, parseDefDocumentResponsive } from './backend/defParserWorkerHost';
+import { parseDefDocumentResponsive } from './backend/defParserWorkerHost';
 import {
   findEntityDefinitionFile,
   getDefinitionWorkspaceLayout,
@@ -438,19 +438,7 @@ export interface SchemaBuildGateOptions {
   /** IDE-AUD-013(F13):共享让路量规——调用方(分阶段冷构建)传入以把单实体
    * 内部的让路计入同一把量规 */
   progress?: SchemaBuildProgress;
-  /**
-   * KODE-FULL-015:def 解析 worker 预算拒收(过载/单件超大)后的有界重试
-   * 总窗(ms);窗内每轮过闸让出宿主并小睡退避,取消即止步不发布。窗耗尽
-   * 该定义本轮贡献空属性面(槽 null,与文件不可读同语义,事件面重建重试)。
-   * 绝不回落宿主同步解析大输入(旧病灶:UI 冻结)。
-   */
-  defParseBudgetRetryMs?: number;
 }
-
-/** KODE-FULL-015:def 解析预算重试缺省总窗 */
-export const DEF_PARSE_BUDGET_RETRY_MS = 10_000;
-/** KODE-FULL-015:预算重试轮间退避 */
-const DEF_PARSE_BUDGET_RETRY_STEP_MS = 25;
 
 // IDE-REV-012:在飞后台构建登记(键=根+实体,同 getDatabaseSchemaSnapshot)
 interface SchemaBuildFlight {
@@ -596,38 +584,15 @@ export async function buildDatabaseSchemaSnapshotAsync(
         step.value.result.value = deriveDatabaseTables(step.value.derive);
       }
     } else if (isParseDefPhase(step.value)) {
-      // IDE-REV-039:def 解析移出宿主线程。解析段是宿主真实让点(让给
-      // worker),解析后重置 sliceStart:worker 往返不计入下一连续片。
-      // KODE-FULL-015:worker 预算拒收(过载/超大)不再无差别回落宿主同步
-      // 解析——那会把最大输入拉回 Extension Host 冻结 UI。预算类错误走
-      // 有界重试(每轮过闸让出+取消检查+小睡退避);窗耗尽槽置 null,该
-      // 定义本轮贡献空属性面(与文件不可读同语义,事件面重建重试),构建
-      // 不炸不假成功。worker 崩溃等真错误仍同步兜底一次(罕见路径,
-      // IDE-REV-039 原语义)。
-      const retryDeadline = Date.now() + (options.defParseBudgetRetryMs ?? DEF_PARSE_BUDGET_RETRY_MS);
-      let parseResolved = false;
-      while (!parseResolved) {
-        try {
-          step.value.parseDef.result.value =
-            await parseDefDocumentResponsive(step.value.parseDef.text, step.value.parseDef.label);
-          parseResolved = true;
-        } catch (error) {
-          if (!(error instanceof DefParserBudgetError)) {
-            step.value.parseDef.result.value = parseDefDocument(step.value.parseDef.text);
-            parseResolved = true;
-          } else if (Date.now() >= retryDeadline) {
-            step.value.parseDef.result.value = null; // 预算耗尽:本轮诚实跳过该定义
-            parseResolved = true;
-          } else {
-            const proceed = await gate();
-            if (!proceed) {
-              return null; // 取消:不发布部分构建
-            }
-            await new Promise<void>(resolve => {
-              setTimeout(resolve, DEF_PARSE_BUDGET_RETRY_STEP_MS);
-            });
-          }
-        }
+      // IDE-REV-039:def 解析移出宿主线程——大文本经 worker(阈值以下/产物
+      // 缺失/在途超限/worker 崩溃一律兜底同步解析,绝不炸构建)。解析段是宿主
+      // 真实让点(让给 worker),解析后重置 sliceStart:worker 往返不计入下一
+      // 连续片,量规只记宿主自身连续执行。
+      try {
+        step.value.parseDef.result.value =
+          await parseDefDocumentResponsive(step.value.parseDef.text, step.value.parseDef.label);
+      } catch {
+        step.value.parseDef.result.value = parseDefDocument(step.value.parseDef.text);
       }
       progress.sliceStart = Date.now();
     }

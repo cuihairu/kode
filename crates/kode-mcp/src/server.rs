@@ -11,20 +11,20 @@ use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
 };
 use std::future::Future;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::kb::AssetKnowledge;
 
 #[derive(Debug)]
 pub struct KodeMcpServer {
-    pub knowledge: Arc<RwLock<AssetKnowledge>>,
+    pub knowledge: AssetKnowledge,
     /// 资产根(config_qa 配置问答面读 `{root}/res/server/kbengine.xml` 等)。
     pub assets_root: std::path::PathBuf,
     /// 额外知识路径(CLI 附加参数;search_docs 在此+资产根下收 `.md`)。
     pub extra_paths: Vec<std::path::PathBuf>,
     /// P2 知识索引(Tantivy BM25 + SQLite + notify 增量;search 工具与
     /// index_status 的 storage 面由此出)。
-    pub index: Arc<crate::kb_index::KnowledgeIndex>,
+    pub index: crate::kb_index::KnowledgeIndex,
 }
 
 fn object(schema: serde_json::Value) -> Arc<rmcp::model::JsonObject> {
@@ -68,9 +68,6 @@ impl KodeMcpServer {
     }
 
     fn call_tool_impl(&self, params: CallToolRequestParams) -> Result<CallToolResponse, McpError> {
-        // KODE-FULL-005:knowledge 是后台对账同代刷新的共享缓存;本面全部
-        // 同步工具,读守卫短持(无 await 穿越持有)。
-        let knowledge = self.knowledge.read().expect("knowledge read lock");
         let arguments = params.arguments.clone().unwrap_or_default();
         let arg_str = |key: &str| {
             arguments
@@ -85,16 +82,20 @@ impl KodeMcpServer {
                     .get("limit")
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(20) as usize;
-                Ok(knowledge.search_entities(&query, limit.max(1)))
+                Ok(self.knowledge.search_entities(&query, limit.max(1)))
             }
             "get_entity_model" => match arg_str("entity") {
-                Some(entity) => knowledge.get_entity_model(&entity),
+                Some(entity) => self.knowledge.get_entity_model(&entity),
                 None => Err("missing argument: entity".to_string()),
             },
-            "get_type_graph" => Ok(knowledge.get_type_graph()),
-            "validate_defs" => Ok(knowledge.validate_defs(arg_str("manifestPath").as_deref())),
+            "get_type_graph" => Ok(self.knowledge.get_type_graph()),
+            "validate_defs" => Ok(self
+                .knowledge
+                .validate_defs(arg_str("manifestPath").as_deref())),
             "get_message_entry" => match arg_str("entity") {
-                Some(entity) => knowledge.get_message_entry(&entity, arg_str("method").as_deref()),
+                Some(entity) => self
+                    .knowledge
+                    .get_message_entry(&entity, arg_str("method").as_deref()),
                 None => Err("missing argument: entity".to_string()),
             },
             "encode_decode_sample" => {
@@ -103,11 +104,13 @@ impl KodeMcpServer {
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
                 match arg_str("typeName") {
-                    Some(type_name) => knowledge.encode_decode_sample(&type_name, &value),
+                    Some(type_name) => self.knowledge.encode_decode_sample(&type_name, &value),
                     None => Err("missing argument: typeName".to_string()),
                 }
             }
-            "db_schema_preview" => knowledge.db_schema_preview(arg_str("entity").as_deref()),
+            "db_schema_preview" => self
+                .knowledge
+                .db_schema_preview(arg_str("entity").as_deref()),
             "explain" => Ok(crate::explain::explain(
                 &arg_str("topic").unwrap_or_default(),
                 arg_str("domain").as_deref(),
@@ -116,8 +119,8 @@ impl KodeMcpServer {
             "get_final_config" => Ok(crate::config_qa::final_config(&self.assets_root)),
             "get_entry_scripts" => Ok(crate::config_qa::entry_scripts(&self.assets_root)),
             "get_database_schema" => match arg_str("entity") {
-                Some(entity) => crate::config_qa::database_schema(&knowledge, Some(&entity)),
-                None => crate::config_qa::database_schema(&knowledge, None),
+                Some(entity) => crate::config_qa::database_schema(&self.knowledge, Some(&entity)),
+                None => crate::config_qa::database_schema(&self.knowledge, None),
             },
             "why_setting" => match arg_str("key") {
                 Some(key) => crate::config_qa::why_setting(&self.assets_root, &key),
@@ -131,7 +134,7 @@ impl KodeMcpServer {
             // 注:search_docs/search_symbols 在 call_tool 里走 spawn_blocking
             // 面,不经过 call_tool_impl(此面只处理同步工具)。
             "protocol_frame" => crate::protocol_frame::protocol_frame(
-                &knowledge,
+                &self.knowledge,
                 arg_str("typeName").as_deref(),
                 arg_str("entity").as_deref(),
                 arg_str("method").as_deref(),
@@ -144,7 +147,7 @@ impl KodeMcpServer {
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(20) as usize;
                 crate::semantic_model::find_symbol(
-                    &knowledge,
+                    &self.knowledge,
                     &self.assets_root,
                     &query,
                     limit.max(1),
@@ -153,7 +156,7 @@ impl KodeMcpServer {
             "index_status" => {
                 // P1 语义面 + P2 存储面合并;P1 键保持原样(不破坏既有断言)。
                 let mut status =
-                    crate::semantic_model::index_status(&knowledge, &self.assets_root);
+                    crate::semantic_model::index_status(&self.knowledge, &self.assets_root);
                 status["storage"] = self.index.status();
                 Ok(status)
             }
@@ -185,14 +188,14 @@ impl KodeMcpServer {
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(20) as usize;
                 crate::semantic_model::find_references(
-                    &knowledge,
+                    &self.knowledge,
                     &self.assets_root,
                     &symbol,
                     limit.max(1),
                 )
             }
             "query_xml" => crate::semantic_model::query_xml(
-                &knowledge,
+                &self.knowledge,
                 &self.assets_root,
                 arg_str("path").as_deref().unwrap_or(""),
             ),
@@ -203,7 +206,7 @@ impl KodeMcpServer {
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(crate::read_node::DEFAULT_LIMIT_LINES as u64)
                     as usize;
-                crate::read_node::read_node(&knowledge, &self.assets_root, &node, limit)
+                crate::read_node::read_node(&self.knowledge, &self.assets_root, &node, limit)
             }
             "get_dependencies" => {
                 let symbol = arg_str("symbol").unwrap_or_default();
@@ -590,15 +593,11 @@ pub async fn run_stdio(
     root: std::path::PathBuf,
     extra_paths: Vec<std::path::PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let index = Arc::new(crate::kb_index::KnowledgeIndex::open(&root)?);
-    let knowledge = Arc::new(RwLock::new(AssetKnowledge::load(&root)));
-    index.attach_model_cache(Arc::clone(&knowledge));
+    let index = crate::kb_index::KnowledgeIndex::open(&root)?;
+    let knowledge = AssetKnowledge::load(&root);
     index.build();
     // 监视失败不致命(网络文件系统等):BLAKE3 对账兜底,index_status 如实报告。
     let _ = index.start_watch();
-    // KODE-FULL-005:watcher 只记 dirty,后台 worker 消费——增删改
-    // py/def/表格后不重启 MCP,search/read_node/依赖查询同代更新。
-    index.start_reconcile_worker();
     let server = KodeMcpServer {
         knowledge,
         assets_root: root,

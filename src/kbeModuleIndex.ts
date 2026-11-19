@@ -46,40 +46,6 @@ export interface KbeSymbolEntry {
    * 不得凭猜测改标。
    */
   version?: EngineApiVersion;
-  /** API-PARAM-HOVER-001:参数级文档(先覆盖 create-entity 家族,其余符号分批补)。 */
-  params?: KbeParamDoc[];
-  /** API-PARAM-HOVER-001:返回值文档。 */
-  returns?: KbeReturnsDoc;
-}
-
-/**
- * API-PARAM-HOVER-001:参数级文档。描述只从 docs/knowledge 语料提炼
- * (create-entity 家族=api-baseapp.md §2),语料没有的如实写「引擎未文档化」,
- * 不新造语义。
- */
-export interface KbeParamDoc {
-  name: string;
-  /** 参数说明,中文 */
-  description: string;
-  /** 参数说明,英文(GEN-DEF-1d 双语纪律,缺一不可) */
-  descriptionEn: string;
-  /** 签名带默认值(可选参数)。 */
-  optional: boolean;
-}
-
-/** API-PARAM-HOVER-001:返回值文档(含实体类型提示层)。 */
-export interface KbeReturnsDoc {
-  /** 返回类型文本(与签名尾部同源)。 */
-  type: string;
-  description: string;
-  descriptionEn: string;
-  /**
-   * true=本函数产出/回调交付的对象是 entityType 参数指名的实体运行时类
-   * (create-entity 家族);hover 返回值段据此挂 entityType→运行时类映射
-   * (映射来自工作区 entities.xml 注册表+scripts 类表,缺类文件如实标
-   * not-found,不编造)。
-   */
-  entityTypeHint?: boolean;
 }
 
 /** KB-VER-002 版本分层标注的三档值(见 KbeSymbolEntry.version) */
@@ -88,52 +54,6 @@ export type EngineApiVersion = 'baseline' | 'fork' | 'pending';
 const COMMON_STUB = 'typings/_KBEngine_common.pyi';
 const BASEAPP_STUB = 'typings/_KBEngine_baseapp.pyi';
 const CELLAPP_STUB = 'typings/_KBEngine_cellapp.pyi';
-
-// —— API-PARAM-HOVER-001:create-entity 家族参数文档(语料=docs/knowledge/
-// api-baseapp.md §2 逐条提炼:共享 params 约定、各回调形参、dbID/baseMB 语义;
-// 不新造语义)——
-const PARAM_ENTITY_TYPE: KbeParamDoc = {
-  name: 'entityType',
-  description: '实体类型名(entities.xml 注册名);本函数创建/交付的对象即该类型的运行时实体类。',
-  descriptionEn: 'Entity type name (as registered in entities.xml); the created/delivered object is that type\'s runtime entity class.',
-  optional: false
-};
-const PARAM_PROPS_DICT: KbeParamDoc = {
-  name: 'params',
-  description: '属性初始化字典:键初始化 base 属性;指名 cell 属性的键被路由进实体的 cellData,cell 实体创建时才生效;未指定的属性保持 .def 默认值。',
-  descriptionEn: 'Property-initialization dict: keys initialize base properties; keys naming cell properties are routed into the entity\'s cellData and only take effect when the cell entity is later created; unspecified properties keep their .def defaults.',
-  optional: true
-};
-const PARAM_CALLBACK_ENTITYCALL: KbeParamDoc = {
-  name: 'callback',
-  description: '完成回调,形如 callback(entityCall | None)。',
-  descriptionEn: 'Completion callback: callback(entityCall | None).',
-  optional: true
-};
-const PARAM_BASE_MB: KbeParamDoc = {
-  name: 'baseMB',
-  description: '目标 base 实体的 EntityCall;创建被钉在该 EntityCall 所在的 baseapp。',
-  descriptionEn: 'EntityCall of the target base entity; creation is pinned to the baseapp owning it.',
-  optional: false
-};
-const PARAM_DB_ID: KbeParamDoc = {
-  name: 'dbID',
-  description: '数据库中归档实体的 ID。',
-  descriptionEn: 'Database ID of the archived entity.',
-  optional: false
-};
-const PARAM_CALLBACK_DBID_LOAD: KbeParamDoc = {
-  name: 'callback',
-  description: '回调形如 (baseRef, databaseID, wasActive);失败时 (None, 0, False)。',
-  descriptionEn: 'Callback: (baseRef, databaseID, wasActive); on failure (None, 0, False).',
-  optional: true
-};
-const PARAM_DB_INTERFACE: KbeParamDoc = {
-  name: 'dbInterfaceName',
-  description: '数据库接口名(默认 "default")。',
-  descriptionEn: 'Database interface name (defaults to "default").',
-  optional: true
-};
 
 export const KBE_SYMBOLS: KbeSymbolEntry[] = [
   {
@@ -335,14 +255,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '本地创建实体(同步返回)。',
     summaryEn: 'Create an entity locally (returns synchronously).',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 36,
-    params: [PARAM_ENTITY_TYPE, PARAM_PROPS_DICT],
-    returns: {
-      type: 'Union[Entity, None]',
-      description: '同步返回新实体的直接对象(无回调、无往返);与 createEntityLocally 同一处理器(baseapp.cpp:431-432)。',
-      descriptionEn: 'Returns the direct entity object synchronously (no callback, no round trip); same handler as createEntityLocally (baseapp.cpp:431-432).',
-      entityTypeHint: true
-    }
+    sourceLine: 36
   },
   {
     name: 'createEntityLocally',
@@ -351,14 +264,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '在本进程创建实体(同步返回)。',
     summaryEn: 'Create an entity in this process (returns synchronously).',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 40,
-    params: [PARAM_ENTITY_TYPE, PARAM_PROPS_DICT],
-    returns: {
-      type: 'Union[Entity, None]',
-      description: '同步返回直接实体对象。需要自管生命周期(control destroy 时机)或访问 EntityCall 未暴露的属性时用它;部分 API 要求直接引用(如 Proxy.giveClientTo)。',
-      descriptionEn: 'Returns the direct entity object synchronously. Use it when you must manage the life cycle (control when destroy happens) or touch attributes not exposed through EntityCall; some APIs require a direct reference (e.g. Proxy.giveClientTo).',
-      entityTypeHint: true
-    }
+    sourceLine: 40
   },
   {
     name: 'createEntityAnywhere',
@@ -367,14 +273,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '在任意合适进程创建实体(回调返回)。',
     summaryEn: 'Create an entity in any suitable process (returns via callback).',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 44,
-    params: [PARAM_ENTITY_TYPE, PARAM_PROPS_DICT, PARAM_CALLBACK_ENTITYCALL],
-    returns: {
-      type: 'None',
-      description: '本函数无返回值;实体经回调的 entityCall 交付,由 baseappmgr 选定合适的 baseapp(负载均衡上优选本函数)。',
-      descriptionEn: 'No return value; the entity is delivered via the callback\'s entityCall, with baseappmgr picking a suitable baseapp (prefer this over createEntityLocally for load balancing).',
-      entityTypeHint: true
-    }
+    sourceLine: 44
   },
   {
     name: 'createEntityRemotely',
@@ -383,14 +282,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '在指定 base 实体所在进程创建实体(回调返回)。',
     summaryEn: 'Create an entity in the process hosting a specified base entity (returns via callback).',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 49,
-    params: [PARAM_ENTITY_TYPE, PARAM_BASE_MB, PARAM_PROPS_DICT, PARAM_CALLBACK_ENTITYCALL],
-    returns: {
-      type: 'None',
-      description: '本函数无返回值;实体经回调的 entityCall 交付,创建钉在 baseMB 所在的 baseapp(与 createEntityAnywhere 同形,仅目标被钉定)。',
-      descriptionEn: 'No return value; the entity is delivered via the callback\'s entityCall, pinned to the baseapp owning baseMB (like createEntityAnywhere but pinned).',
-      entityTypeHint: true
-    }
+    sourceLine: 49
   },
   {
     name: 'createEntityFromDBID',
@@ -399,14 +291,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '按数据库 ID 创建实体(回调返回)。',
     summaryEn: 'Create an entity by database ID (returns via callback).',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 55,
-    params: [PARAM_ENTITY_TYPE, PARAM_DB_ID, PARAM_CALLBACK_DBID_LOAD, PARAM_DB_INTERFACE],
-    returns: {
-      type: 'None',
-      description: '本函数无返回值;从数据库装载归档实体到本 baseapp,经回调 (baseRef, databaseID, wasActive) 交付;实体已被检出时回调收到既有实体的引用。',
-      descriptionEn: 'No return value; loads the archived entity from the database onto this baseapp, delivered via callback (baseRef, databaseID, wasActive); if already checked out, the callback receives a reference to the existing entity.',
-      entityTypeHint: true
-    }
+    sourceLine: 55
   },
   {
     name: 'createEntityAnywhereFromDBID',
@@ -415,14 +300,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '按数据库 ID 在任意进程创建实体(回调返回)。',
     summaryEn: 'Create an entity by database ID in any process (returns via callback).',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 61,
-    params: [PARAM_ENTITY_TYPE, PARAM_DB_ID, PARAM_CALLBACK_DBID_LOAD, PARAM_DB_INTERFACE],
-    returns: {
-      type: 'None',
-      description: '本函数无返回值;与 createEntityFromDBID 同形,但由 baseappmgr 选定目标 baseapp。',
-      descriptionEn: 'No return value; same as createEntityFromDBID but baseappmgr chooses the target baseapp.',
-      entityTypeHint: true
-    }
+    sourceLine: 61
   },
   {
     name: 'createEntityRemotelyFromDBID',
@@ -431,14 +309,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '按数据库 ID 在指定 base 实体所在进程创建实体(回调返回)。',
     summaryEn: 'Create an entity by database ID in the process hosting a specified base entity (returns via callback).',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 67,
-    params: [PARAM_ENTITY_TYPE, PARAM_DB_ID, PARAM_BASE_MB, PARAM_CALLBACK_DBID_LOAD, PARAM_DB_INTERFACE],
-    returns: {
-      type: 'None',
-      description: '本函数无返回值;从数据库装载到 baseMB 所在的 baseapp,回调形同 (baseRef, databaseID, wasActive)。',
-      descriptionEn: 'No return value; loads from the database onto the baseapp owning baseMB, callback shaped (baseRef, databaseID, wasActive).',
-      entityTypeHint: true
-    }
+    sourceLine: 67
   },
   {
     name: 'charge',
@@ -616,116 +487,6 @@ export function summaryForLanguage(
     return entry.summary || entry.summaryEn;
   }
   return entry.summaryEn || entry.summary;
-}
-
-/**
- * API-PARAM-HOVER-001:create-entity 家族的参数语义语料锚(hover 参数段
- * 尾注,与条目级 typings 锚互补——参数语义来自知识库,不是桩文件)。
- */
-export const KBE_PARAM_DOC_SOURCE_ANCHOR = 'docs/knowledge/api-baseapp.md §2';
-
-/** API-PARAM-HOVER-001:双语描述取值(zh IDE 取中文,缺一退另一)。 */
-export function descriptionForLanguage(
-  text: { description: string; descriptionEn: string },
-  ideLanguage?: string
-): string {
-  if (ideLanguage?.startsWith('zh')) {
-    return text.description || text.descriptionEn;
-  }
-  return text.descriptionEn || text.description;
-}
-
-/**
- * API-PARAM-HOVER-001:entityType → 运行时实体类的单条映射。
- * scriptPath=工作区解析出的该实体脚本文件(base 侧优先,create-entity
- * 家族创建的是 base 实体);found=false 如实标 not-found,不编造。
- */
-export interface EntityTypeRuntimeHint {
-  entityType: string;
-  /** 相对展示形态的脚本路径(工作区根相对或原样绝对)。 */
-  scriptPath: string;
-  /** 脚本文件在盘上存在;false=注册表有名但类文件缺失(not-found)。 */
-  found: boolean;
-}
-
-/**
- * 从实体注册表映射(entities.xml→脚本类表)构建 entityType 运行时类提示。
- * 纯函数:存在性判定经 fileExists 注入(装配层给 fs.existsSync,测试给
- * 字面量表),不 import vscode 不碰盘。
- */
-export function buildEntityTypeRuntimeHints(
-  mappings: ReadonlyArray<{ name: string; pythonFiles: readonly string[] }>,
-  fileExists: (path: string) => boolean
-): EntityTypeRuntimeHint[] {
-  const hints: EntityTypeRuntimeHint[] = [];
-  for (const mapping of mappings) {
-    // create-entity 家族创建 base 实体:路径带 /base/ 段的脚本优先,
-    // 无侧位线索时取第一个 owner 文件(诚实呈现注册表解析结果)。
-    const files = mapping.pythonFiles;
-    const baseSide = files.find(file => /(^|\/)base\//.test(file.replace(/\\/g, '/')));
-    const scriptPath = baseSide ?? files[0];
-    if (!scriptPath) {
-      hints.push({ entityType: mapping.name, scriptPath: '', found: false });
-      continue;
-    }
-    hints.push({ entityType: mapping.name, scriptPath, found: fileExists(scriptPath) });
-  }
-  return hints;
-}
-
-/** API-PARAM-HOVER-001:hover 参数段;无 params 数据返回 null。 */
-export function renderKbeParamsSection(
-  entry: Pick<KbeSymbolEntry, 'params' | 'name'>,
-  ideLanguage?: string
-): string | null {
-  if (!entry.params || entry.params.length === 0) {
-    return null;
-  }
-  const zh = ideLanguage?.startsWith('zh') ?? true;
-  const lines: string[] = [];
-  lines.push(zh ? '**参数**' : '**Parameters**');
-  for (const param of entry.params) {
-    const optionalMark = param.optional ? (zh ? '(可选) ' : '(optional) ') : '';
-    lines.push(`- \`${param.name}\` ${optionalMark}— ${descriptionForLanguage(param, ideLanguage)}`);
-  }
-  lines.push('');
-  lines.push(zh ? `参数语义锚: \`${KBE_PARAM_DOC_SOURCE_ANCHOR}\`` : `Param semantics anchor: \`${KBE_PARAM_DOC_SOURCE_ANCHOR}\``);
-  return lines.join('\n');
-}
-
-/**
- * API-PARAM-HOVER-001:hover 返回值段;无 returns 数据返回 null。
- * entityTypeHint 且给了 hints 时附 entityType → 运行时类映射列表
- * (not-found 条目如实标注)。
- */
-export function renderKbeReturnsSection(
-  entry: Pick<KbeSymbolEntry, 'returns' | 'name'>,
-  ideLanguage?: string,
-  entityTypeHints?: ReadonlyArray<EntityTypeRuntimeHint>
-): string | null {
-  const returns = entry.returns;
-  if (!returns) {
-    return null;
-  }
-  const zh = ideLanguage?.startsWith('zh') ?? true;
-  const lines: string[] = [];
-  lines.push(zh ? `**返回** \`${returns.type}\`` : `**Returns** \`${returns.type}\``);
-  lines.push(descriptionForLanguage(returns, ideLanguage));
-  if (returns.entityTypeHint && entityTypeHints && entityTypeHints.length > 0) {
-    lines.push('');
-    lines.push(zh ? 'entityType → 运行时实体类(工作区 entities.xml 注册表+scripts 类表):' : 'entityType → runtime entity class (workspace entities.xml registry + scripts class table):');
-    for (const hint of entityTypeHints.slice(0, 30)) {
-      if (hint.found) {
-        lines.push(`- \`${hint.entityType}\` → \`${hint.scriptPath}\``);
-      } else {
-        lines.push(`- \`${hint.entityType}\` → ${zh ? '未找到类文件(not-found)' : 'class file not found (not-found)'}`);
-      }
-    }
-    if (entityTypeHints.length > 30) {
-      lines.push(zh ? `…(共 ${entityTypeHints.length} 个注册实体)` : `…(${entityTypeHints.length} registered entities in total)`);
-    }
-  }
-  return lines.join('\n');
 }
 
 /**

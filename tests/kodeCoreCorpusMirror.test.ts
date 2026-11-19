@@ -7,12 +7,10 @@ import { Uri } from './fake-vscode/core';
 import { workspace } from './fake-vscode/workspaceState';
 import {
   CORPUS_MIRROR_GLOBS,
-  MIRROR_YIELD_EVERY,
   corpusMirrorLanguageId,
   mirrorCorpusToRust,
   type CorpusFileFinder
 } from '../src/kodeCoreCorpusMirror';
-import { interactiveActivityBeacon } from '../src/backend/indexScheduler';
 import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
 
 // 2026-11-08 用户令「直接切到 rust」:服务轨道语料镜像。Rust 的类型/实体/
@@ -408,65 +406,5 @@ describe('kodeCoreCorpusMirror 根生命周期先行(RUST-069-W)', () => {
       })
     ).resolves.toBeUndefined();
     expect(calls.map(call => call.uri)).toEqual([defPath]);
-  });
-});
-
-describe('kodeCoreCorpusMirror 分帧让路(RUST-TRACK-FREEZE-007 刀1)', () => {
-  it('每 8 个唯一文件让路一帧:让路点与镜像交错,总数与完成计数不变', async () => {
-    const files: string[] = [];
-    for (let i = 0; i < 20; i++) {
-      const p = path.join(tempRoot, `F${i}.def`);
-      await writeCorpusFile(p, `<root>${i}</root>\n`);
-      files.push(p);
-    }
-    const order: string[] = [];
-    const warm: WarmGateCalls = { begins: [], completions: [], cancels: 0 };
-    const gate = {
-      serveFromRust: () => true,
-      ...makeWarmStubs(warm),
-      mirrorDocument: async (uri: string) => {
-        order.push(`mirror:${path.basename(uri)}`);
-      }
-    } as unknown as KodeCoreGate;
-    const finder: CorpusFileFinder = async () => files.map(Uri.file);
-    await mirrorCorpusToRust(
-      gate,
-      finder,
-      () => [],
-      async () => { order.push('yield'); }
-    );
-    // 20 个唯一文件 → 第 8/16 个之后各让路一拍;镜像内容与顺序不受影响
-    const expected = [
-      ...files.slice(0, MIRROR_YIELD_EVERY).map(f => `mirror:${path.basename(f)}`),
-      'yield',
-      ...files.slice(MIRROR_YIELD_EVERY, MIRROR_YIELD_EVERY * 2).map(f => `mirror:${path.basename(f)}`),
-      'yield',
-      ...files.slice(MIRROR_YIELD_EVERY * 2).map(f => `mirror:${path.basename(f)}`)
-    ];
-    expect(order).toEqual(expected);
-    expect(warm.begins).toEqual([20]);
-    expect(warm.completions).toEqual([[20, 0]]);
-  });
-
-  it('缺省让路尊重交互冷却窗:beacon 刚刷新时镜像整体至少等出窗', async () => {
-    const files: string[] = [];
-    // 9 个文件:第 8 个完成后(第 9 个开跑前)恰一拍让路
-    for (let i = 0; i < MIRROR_YIELD_EVERY + 1; i++) {
-      const p = path.join(tempRoot, `C${i}.def`);
-      await writeCorpusFile(p, '<root/>\n');
-      files.push(p);
-    }
-    const { gate, calls } = makeFakeGate(true);
-    const finder: CorpusFileFinder = async () => files.map(Uri.file);
-    interactiveActivityBeacon.lastAt = performance.now();
-    const startedAt = Date.now();
-    try {
-      await mirrorCorpusToRust(gate as KodeCoreGate, finder, () => []);
-      expect(calls).toHaveLength(MIRROR_YIELD_EVERY + 1);
-      // 恰一拍让路,该拍先等出 50ms 冷却窗(下界断言:慢机只会更久,不 flake)
-      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(45);
-    } finally {
-      interactiveActivityBeacon.lastAt = -Number.MAX_VALUE;
-    }
   });
 });

@@ -17,14 +17,11 @@
 //     echoParams      — RUST-068-W:$ /kode/rpc 原样回显信封 params(含
 //                       spanId;测客户端信封注入),其余顶层请求回
 //                       {method, params} 回显(测非 $ /kode/rpc 不注入)
-//     countInitialize — RUST-TRACK-FREEZE-007:统计本进程收到的 initialize
-//                       请求数,kode/initCount 可查(测握手按代缓存后
-//                       重复 start() 不再重发 initialize)
 'use strict';
 
 const fs = require('fs');
 
-const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash', 'silentRpc', 'silentInitialize', 'echoParams', 'countInitialize'];
+const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash', 'silentRpc', 'silentInitialize', 'echoParams'];
 const args = process.argv.slice(2);
 const crashMethod = args.find(a => !MODE_TOKENS.includes(a) && !a.startsWith('markerPath=') && !a.startsWith('delayRpc=') && !a.startsWith('delayInitialize=')) || null;
 const hangShutdown = args.includes('hangShutdown');
@@ -37,7 +34,6 @@ const wrongVersion = args.includes('wrongVersion');
 const silentInitialize = args.includes('silentInitialize');
 const delayRpcMs = msArg(args, 'delayRpc=');
 const echoParams = args.includes('echoParams');
-const countInitialize = args.includes('countInitialize');
 const delayInitializeMs = msArg(args, 'delayInitialize=');
 const markerPath = (args.find(a => a.startsWith('markerPath=')) || '').slice('markerPath='.length) || null;
 
@@ -56,7 +52,6 @@ let shutdown = false;
 const documents = new Map();
 const waitTimers = new Map();
 const cancelTrace = new Set();
-const initializeCount = { received: 0 };
 
 function send(obj) {
   const body = Buffer.from(JSON.stringify(obj), 'utf8');
@@ -88,9 +83,6 @@ function handle(msg) {
   }
   switch (msg.method) {
     case 'initialize':
-      if (countInitialize) {
-        initializeCount.received += 1;
-      }
       if (silentInitialize) {
         // KBUG-TIME 替身:initialize 永不回包(start 端到端预算靶)
         return;
@@ -194,8 +186,6 @@ function handle(msg) {
     }
     case 'kode/pid':
       return reply(msg.id, { pid: process.pid });
-    case 'kode/initCount':
-      return reply(msg.id, { initializeRequests: initializeCount.received });
     case 'kode/cancels':
       return reply(msg.id, { ids: [...cancelTrace].sort((a, b) => a - b) });
     default:

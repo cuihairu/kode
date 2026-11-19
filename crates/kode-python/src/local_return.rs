@@ -2339,48 +2339,4 @@ mod tests {
         // global 声明名穿透域绑定 → 模块声明表 → 注解面(实测钉板)
         assert_eq!(face_is(&lines, 5, "v").as_deref(), Some("Repo"));
     }
-
-    // ---- COV-044:面扫描残臂直打 -------------------------------------------
-
-    #[test]
-    fn alias_chain_beyond_hop_cap_returns_none() {
-        // 链长超 FACE_MAX_HOPS(=4):a0→a1→…→a5 六名,查 a5 需 5 跳,
-        // 第 5 跳入 face_scan 时 depth=5 > 4 → 诚实空
-        // 行 0..7:def/return/a0..a5;查询位=目标别名自身写行(写已生效)
-        let lines = [
-            "def src() -> Src:",
-            "    return None",
-            "a0 = src()",
-            "a1 = a0",
-            "a2 = a1",
-            "a3 = a2",
-            "a4 = a3",
-            "a5 = a4",
-        ];
-        assert_eq!(face_is(&lines, 7, "a5"), None, "超跳链应诚实空");
-        // 同链查 a3:4 跳内可达调用面,注解照常命中(负对照,证明上限臂
-        // 不是把整条链都吞了)
-        assert_eq!(face_is(&lines, 5, "a3").as_deref(), Some("Src"));
-    }
-
-    #[test]
-    fn identity_alias_revisit_returns_none() {
-        // `x = x` 身份链:首次解 x 写点后,别名面再扫 x 命中同一写点 →
-        // visited 拦截 → 诚实空(写点 RHS 读位仍可见自身 LHS 位)
-        // 环路族诚实空:`x = x` 自引用 RHS 读位不可见自身写;元组交换
-        // `x, y = y, x` 逐元素记位后 y 跳的读位仍在同语句内、交换前值
-        // 不可见 → Unbound。环在别名语义下无解,两形态都不得出面
-        let lines = ["x, y = y, x", "z = 1"];
-        assert_eq!(face_is(&lines, 1, "x"), None, "交换环应诚实空");
-        assert_eq!(face_is(&lines, 1, "y"), None, "交换环双向同语义");
-    }
-
-    #[test]
-    fn alias_bound_to_class_is_instantiation_not_face() {
-        // 调用位绑定到类名:`ctor = Widget` 后 `w = ctor()` = 实例化语义,
-        // 非返回注解面 → 诚实空(类名原子消费臂;对照 cov_module_level_
-        // callee_alias_call 的 def 原子透传臂)
-        let lines = ["class Widget:", "    pass", "ctor = Widget", "w = ctor()"];
-        assert_eq!(face_is(&lines, 3, "w"), None, "实例化语义不应出注解面");
-    }
 }

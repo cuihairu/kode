@@ -1,17 +1,12 @@
-//! references 响应链(RUST-138 批 1 语料面 + 批 2 语义分类面,
-//! IDE-NAV-017/018 下沉)。
+//! references 响应链(RUST-138 批 1,IDE-NAV-017/018 语料半边下沉)。
 //!
 //! 面 = **语料引用位**:UTF-16 position → 符号目标(kind+名)→ LSP Location
 //! 列表。与 definition.rs 同饮 HoverEngine 语料视图;TS 生产面
 //! (src/defSymbolReferences.ts + src/typesXmlReferences.ts)分两类:
-//! - **纯语料半边**(批 1):def 内类型名(`<Type>/<Arg>/<of>` 值)、实体名
+//! - **纯语料半边**(本批):def 内类型名(`<Type>/<Arg>/<of>` 值)、实体名
 //!   (`<Parent>` 值)、接口名(`<Interfaces>` 直挂 wrapper 值)与 types.xml
 //!   符号(顶层声明名/值引用)的引用位扫描 + 语料声明落点;
-//! - **语义分类半边**(批 2):跨 root/跨 tree 同名站点的三分类
-//!   (Semantic=站点域声明==查询声明 / Shadow=同名异声明 / Dangling=
-//!   站点域不可解析)——「真实引用=类型 IR 可证」;位置面与分类面同饮
-//!   def_reference_query/types_reference_query 查询核;
-//! - **entityMapping 运行时半边**(批 3+,不在本批):Properties 属性
+//! - **entityMapping 运行时半边**(批 2+,不在本批):Properties 属性
 //!   self 访问、三方法段实现/receiver 调用、python 数据字典/cellData 键族
 //!   ——TS 经 EntityMappingManager 查 py 实现,Rust 无此能力,保持 null。
 //!
@@ -65,7 +60,7 @@ use crate::hover::HoverEngine;
 
 /// def 光标处符号的引用类(TS DefSymbolReferenceKind 同形)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RefKind {
+pub(crate) enum RefKind {
     Type,
     Parent,
     Interface,
@@ -73,7 +68,7 @@ pub enum RefKind {
 
 /// 光标处解析出的引用目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RefTarget {
+pub(crate) struct RefTarget {
     pub kind: RefKind,
     pub name: String,
 }
@@ -85,44 +80,6 @@ pub struct RefSite {
     pub line: u32,
     pub start: u32,
     pub end: u32,
-}
-
-/// 引用位语义分类(RUST-138 批 2:跨 root/跨 tree 同名三分):
-/// - `Semantic`:站点自身解析域内该名字解析到的声明 == 查询声明(同一
-///   IR 节点)——真实语义引用;
-/// - `Shadow`:站点域内解析到**不同**声明(别 root 的同名 types 声明/
-///   同名实体 def/同名接口 def,含同根多 entity_defs 树)——语法同名;
-/// - `Dangling`:站点域内不可解析(该资产树没有此符号)——语法同名且
-///   悬挂。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SemanticClass {
-    Semantic,
-    Shadow,
-    Dangling,
-}
-
-impl SemanticClass {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SemanticClass::Semantic => "semantic",
-            SemanticClass::Shadow => "shadow",
-            SemanticClass::Dangling => "dangling",
-        }
-    }
-}
-
-impl serde::Serialize for SemanticClass {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-/// 分类后的引用位(证据 = 站点域命中的声明路径;Dangling 无证据,不猜)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClassifiedSite {
-    pub site: RefSite,
-    pub semantic: SemanticClass,
-    pub evidence: Option<String>,
 }
 
 /// 容器字面不是类型符号(TS CONTAINER_LITERALS 同表)。
@@ -443,14 +400,6 @@ pub(crate) fn types_xml_symbol_name_at(text: &str, offset: usize) -> Option<Stri
 // 响应链(HoverEngine 语料视图)
 // ---------------------------------------------------------------------------
 
-/// 查询解析产物(批 1 位置面与批 2 语义面共用):目标 + 声明落点 + 语料
-/// 站点。位置面消费声明+站点;语义面消费目标+站点逐条分类。
-struct ReferenceQuery {
-    target: RefTarget,
-    declaration: Option<DefinitionLocation>,
-    sites: Vec<RefSite>,
-}
-
 fn site_location(site: &RefSite) -> DefinitionLocation {
     let pos = LspPosition {
         line: site.line,
@@ -462,35 +411,6 @@ fn site_location(site: &RefSite) -> DefinitionLocation {
             start: pos.clone(),
             end: pos,
         },
-    }
-}
-
-/// 声明先行 + 站点序;dedup 键:decl = file:line(无列)、
-/// site = file:line:start(TS 同)。`sites` 供语义过滤面传入筛后子集
-/// (位置面传全集)。
-fn assemble_reference_locations(
-    query: &ReferenceQuery,
-    include_declaration: bool,
-    sites: &[RefSite],
-) -> Option<Vec<DefinitionLocation>> {
-    let mut locations = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    if include_declaration {
-        if let Some(decl) = &query.declaration {
-            seen.insert(format!("{}:{}", decl.uri, decl.range.start.line));
-            locations.push(decl.clone());
-        }
-    }
-    for site in sites {
-        let dedup_key = format!("{}:{}:{}", site.uri, site.line, site.start);
-        if seen.insert(dedup_key) {
-            locations.push(site_location(site));
-        }
-    }
-    if locations.is_empty() {
-        None
-    } else {
-        Some(locations)
     }
 }
 
@@ -527,15 +447,15 @@ impl HoverEngine {
         }
     }
 
-    /// def 查询核(批 1 位置面与批 2 语义面共用):光标目标 → 声明落点 +
-    /// 全语料站点;目标不可解析(类型两链皆空/实体 def 缺)→ None。
-    fn def_reference_query(
+    /// def 面(TS provideDefSymbolReferences 语料半边)。
+    fn def_references(
         &self,
         key: &DocumentKey,
         text: &str,
         line0: u32,
         character: u32,
-    ) -> Option<ReferenceQuery> {
+        include_declaration: bool,
+    ) -> Option<Vec<DefinitionLocation>> {
         let offset = position_to_byte_offset(text, line0, character);
         let target = def_symbol_reference_target_at(text, offset)?;
         // 内建类型无引用面(TS builtIns 同拒;含 ARRAY/FIXED_DICT 容器)。
@@ -568,60 +488,32 @@ impl HoverEngine {
                     .map(|ref path| file_head_location(path));
             }
         }
-        Some(ReferenceQuery {
-            target,
-            declaration,
-            sites,
-        })
-    }
-
-    /// types.xml 查询核(共用):符号名 → 同根 types 声明存在性闸 → 全语料
-    /// .def + types.xml 引用位(types.xml 面无声明位——TS 同)。
-    fn types_reference_query(
-        &self,
-        key: &DocumentKey,
-        text: &str,
-        line0: u32,
-        character: u32,
-    ) -> Option<ReferenceQuery> {
-        let offset = position_to_byte_offset(text, line0, character);
-        let name = types_xml_symbol_name_at(text, offset)?;
-        // 只对同根 types.xml 已声明的自定义类型出引用(内建类型不是
-        // types.xml 符号,免全仓同名内建使用处噪声)。
-        self.same_root_type_decl(key.root, &name)?;
-        let mut sites = Vec::new();
-        for uri in self.scan_corpus_uris() {
-            let Some(content) = self.corpus_text(&uri) else {
-                continue;
-            };
-            sites.extend(scan_type_references_in_xml(content, &uri, &name));
+        // 声明先行 + 站点序;dedup 键:decl = file:line(无列)、
+        // site = file:line:start(TS 同)。
+        let mut locations = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        if include_declaration {
+            if let Some(decl) = &declaration {
+                seen.insert(format!("{}:{}", decl.uri, decl.range.start.line));
+                locations.push(decl.clone());
+            }
         }
-        Some(ReferenceQuery {
-            target: RefTarget {
-                kind: RefKind::Type,
-                name,
-            },
-            declaration: None,
-            sites,
-        })
-    }
-
-    /// def 面(TS provideDefSymbolReferences 语料半边)。
-    fn def_references(
-        &self,
-        key: &DocumentKey,
-        text: &str,
-        line0: u32,
-        character: u32,
-        include_declaration: bool,
-    ) -> Option<Vec<DefinitionLocation>> {
-        let query = self.def_reference_query(key, text, line0, character)?;
-        assemble_reference_locations(&query, include_declaration, &query.sites)
+        for site in &sites {
+            let dedup_key = format!("{}:{}:{}", site.uri, site.line, site.start);
+            if seen.insert(dedup_key) {
+                locations.push(site_location(site));
+            }
+        }
+        if locations.is_empty() {
+            None
+        } else {
+            Some(locations)
+        }
     }
 
     /// types.xml 面(TS provideTypesXmlReferences):符号名 → 同根 types
-    /// 声明存在性闸 → 全语料引用位(无声明位,不 dedup——TS 同;空结果
-    /// None)。
+    /// 声明存在性闸 → 全语料 .def + types.xml 引用位(无声明位,不 dedup
+    /// ——TS 同;空结果 None)。
     fn types_references(
         &self,
         key: &DocumentKey,
@@ -629,9 +521,20 @@ impl HoverEngine {
         line0: u32,
         character: u32,
     ) -> Option<Vec<DefinitionLocation>> {
-        let query = self.types_reference_query(key, text, line0, character)?;
-        let locations: Vec<DefinitionLocation> =
-            query.sites.iter().map(site_location).collect();
+        let offset = position_to_byte_offset(text, line0, character);
+        let name = types_xml_symbol_name_at(text, offset)?;
+        // 只对同根 types.xml 已声明的自定义类型出引用(内建类型不是
+        // types.xml 符号,免全仓同名内建使用处噪声)。
+        self.same_root_type_decl(key.root, &name)?;
+        let mut locations = Vec::new();
+        for uri in self.scan_corpus_uris() {
+            let Some(content) = self.corpus_text(&uri) else {
+                continue;
+            };
+            for site in scan_type_references_in_xml(content, &uri, &name) {
+                locations.push(site_location(&site));
+            }
+        }
         if locations.is_empty() {
             None
         } else {
@@ -724,134 +627,6 @@ impl HoverEngine {
         let mut uris: Vec<String> = self.corpus_defs.iter().cloned().collect();
         uris.extend(self.types_files.keys().cloned());
         uris
-    }
-
-    // -----------------------------------------------------------------------
-    // 语义分类面(RUST-138 批 2:真实引用 = 类型 IR 可证)
-    // -----------------------------------------------------------------------
-
-    /// 名字在给定文件解析域内的声明路径(批 1 查询臂同链:Type = 同根
-    /// types 字典序首见声明,无则实体 def;Parent = 实体 def;Interface =
-    /// 接口 def)。None = 该域不可解析(不猜)。域按**站点自身路径**定
-    /// (defs_root 逐路径走查,同根多 entity_defs 树互不串)。
-    fn name_decl_path_at(&self, kind: RefKind, path: &str, name: &str) -> Option<String> {
-        match kind {
-            RefKind::Type => {
-                self.path_root_of(path)
-                    .and_then(|root| self.same_root_type_decl(root, name))
-                    .map(|(types_path, _)| types_path.clone())
-                    .or_else(|| self.entity_def_file(path, name))
-            }
-            RefKind::Parent => self.entity_def_file(path, name),
-            RefKind::Interface => self.interface_def_file(path, name),
-        }
-    }
-
-    /// 查询自身的声明路径(与 name_decl_path_at 同链,落在查询文档域)。
-    /// 与批 1 位置面声明落点同源(Type=types 声明文件/实体 def;Interface
-    /// 可 None——位置面缺声明位照列站点的先例)。
-    fn query_decl_path(&self, key: &DocumentKey, query: &ReferenceQuery) -> Option<String> {
-        self.name_decl_path_at(
-            query.target.kind,
-            key.uri.as_path(),
-            &query.target.name,
-        )
-    }
-
-    /// 逐站点语义分类(批 2 核):站点域内声明 == 查询声明(同一 IR 节点)
-    /// → Semantic;不同声明(别 root/别 tree 同名 types/实体/接口声明)
-    /// → Shadow;站点域不可解析 → Dangling。证据 = 站点域命中声明路径,
-    /// Dangling 无证据(不猜)。
-    fn classify_sites(&self, key: &DocumentKey, query: &ReferenceQuery) -> Vec<ClassifiedSite> {
-        let query_decl = self.query_decl_path(key, query);
-        query
-            .sites
-            .iter()
-            .map(|site| {
-                let site_decl =
-                    self.name_decl_path_at(query.target.kind, &site.uri, &query.target.name);
-                let (semantic, evidence) = match (&site_decl, &query_decl) {
-                    (Some(d), Some(q)) if d == q => {
-                        (SemanticClass::Semantic, Some(d.clone()))
-                    }
-                    (Some(d), _) => (SemanticClass::Shadow, Some(d.clone())),
-                    (None, _) => (SemanticClass::Dangling, None),
-                };
-                ClassifiedSite {
-                    site: site.clone(),
-                    semantic,
-                    evidence,
-                }
-            })
-            .collect()
-    }
-
-    /// 只保留真实语义引用的站点(过滤面内核)。
-    fn semantic_only_sites(&self, key: &DocumentKey, query: &ReferenceQuery) -> Vec<RefSite> {
-        self.classify_sites(key, query)
-            .into_iter()
-            .filter(|c| c.semantic == SemanticClass::Semantic)
-            .map(|c| c.site)
-            .collect()
-    }
-
-    /// 分类面入口:目标 + 逐站点语义分类(0 基行)。与 references_at 同闸
-    /// (内建类型/目标不可解析/非 def·types 文档 → None);空站点集照返
-    /// (分类面如实,调用方按需取舍)。
-    pub fn classified_references(
-        &self,
-        key: &DocumentKey,
-        text: &str,
-        line0: u32,
-        character: u32,
-    ) -> Option<(RefTarget, Vec<ClassifiedSite>)> {
-        match file_kind_of_uri(&key.uri) {
-            FileKind::Def => {
-                let query = self.def_reference_query(key, text, line0, character)?;
-                let sites = self.classify_sites(key, &query);
-                Some((query.target, sites))
-            }
-            FileKind::Types => {
-                let query = self.types_reference_query(key, text, line0, character)?;
-                let sites = self.classify_sites(key, &query);
-                Some((query.target, sites))
-            }
-            // python 文档(entityMapping 运行时面)/entities.xml/alias.xml
-            // 无 Rust 引用面(TS provider 同 null)。
-            _ => None,
-        }
-    }
-
-    /// 语义过滤面:只保留真实语义引用(Semantic)的 Location 列表(def 面
-    /// 声明先行+dedup 同位置面;types 面无声明不 dedup 同位置面;空结果
-    /// None)。跨 root 同名异声明(Shadow)与不可解析(Dangling)不入列。
-    pub fn semantic_reference_locations(
-        &self,
-        key: &DocumentKey,
-        text: &str,
-        line0: u32,
-        character: u32,
-        include_declaration: bool,
-    ) -> Option<Vec<DefinitionLocation>> {
-        match file_kind_of_uri(&key.uri) {
-            FileKind::Def => {
-                let query = self.def_reference_query(key, text, line0, character)?;
-                let sites = self.semantic_only_sites(key, &query);
-                assemble_reference_locations(&query, include_declaration, &sites)
-            }
-            FileKind::Types => {
-                let query = self.types_reference_query(key, text, line0, character)?;
-                let sites = self.semantic_only_sites(key, &query);
-                let locations: Vec<DefinitionLocation> =
-                    sites.iter().map(site_location).collect();
-                if locations.is_empty() {
-                    None
-                } else {
-                    Some(locations)
-                }
-            }
-            _ => None,
-        }
     }
 }
 
@@ -1045,156 +820,6 @@ pub fn dump_references_golden(repo_root: &std::path::Path) -> String {
         });
     }
     serde_json::to_string(&dump).expect("serialize references golden")
-}
-
-// ---------------------------------------------------------------------------
-// 语义分类 golden(批 2;只写不读;TS 侧
-// tests/kodeReferencesSemanticParity.test.ts 复算)
-// ---------------------------------------------------------------------------
-
-/// golden 文件名(仓库相对)。
-pub const SEMANTIC_GOLDEN_REL_PATH: &str =
-    "crates/kode-server/tests/golden/references-semantic-parity.json";
-
-#[derive(Debug, serde::Serialize)]
-struct GoldenTarget {
-    kind: &'static str,
-    name: String,
-}
-
-fn golden_target_kind(kind: RefKind) -> &'static str {
-    match kind {
-        RefKind::Type => "type",
-        RefKind::Parent => "parent",
-        RefKind::Interface => "interface",
-    }
-}
-
-#[derive(Debug, serde::Serialize)]
-struct GoldenClassifiedSite {
-    uri: String,
-    line: u32,
-    start: u32,
-    end: u32,
-    semantic: SemanticClass,
-    evidence: Option<String>,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct GoldenSemanticReference {
-    line: usize,
-    character: u32,
-    target: GoldenTarget,
-    sites: Vec<GoldenClassifiedSite>,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct GoldenSemanticFile {
-    file: String,
-    kind: String,
-    references: Vec<GoldenSemanticReference>,
-}
-
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GoldenSemanticDump {
-    generator: &'static str,
-    file_count: usize,
-    /// 入档引用条目数(站点非空的探针;全集探针数见 probe_count)。
-    reference_count: usize,
-    /// 全探针数(含空结果——分类面审计口径)。
-    probe_count: usize,
-    /// 分类站点总数(class_counts 三项之和 = site_count)。
-    site_count: usize,
-    /// 三分类计数(BTreeMap 键序 = semantic/shadow/dangling 字典序)。
-    class_counts: std::collections::BTreeMap<&'static str, usize>,
-    files: Vec<GoldenSemanticFile>,
-}
-
-/// 整个语料的 references 语义分类 golden(批 1 同探针集,逐探针附逐站点
-/// 分类;站点为空的探针不入档)。
-pub fn dump_references_semantic_golden(repo_root: &std::path::Path) -> String {
-    use kode_parser::json::{collect_corpus, PARITY_CORPORA};
-
-    let files = collect_corpus(repo_root, PARITY_CORPORA);
-    let registry = crate::golden_corpus::corpus_registry();
-    let mut engine = HoverEngine::new();
-    for (path, (_kind, text)) in &files {
-        engine.update(crate::golden_corpus::corpus_key(&registry, path), text);
-    }
-    let mut dump = GoldenSemanticDump {
-        generator: "kode-server dump-references-semantic-golden",
-        file_count: files.len(),
-        reference_count: 0,
-        probe_count: 0,
-        site_count: 0,
-        class_counts: std::collections::BTreeMap::new(),
-        files: Vec::new(),
-    };
-    for (path, (kind, text)) in &files {
-        let key = crate::golden_corpus::corpus_key(&registry, path);
-        let mut probes: Vec<GoldenProbe> = Vec::new();
-        match *kind {
-            "def" => {
-                let doc = xml::parse(text, true);
-                if let Some(root) = doc.root() {
-                    probes.extend(def_probes(&doc, root, text));
-                }
-            }
-            "types" => {
-                let doc = xml::parse(text, true);
-                if let Some(root) = doc.root() {
-                    probes.extend(types_probes(&doc, root, text));
-                }
-            }
-            _ => {}
-        }
-        let probes = order_probes(probes);
-        dump.probe_count += probes.len();
-        let mut references = Vec::new();
-        for probe in probes {
-            if let Some((target, classified)) = engine.classified_references(
-                &key,
-                text,
-                probe.line as u32 - 1,
-                probe.character,
-            ) {
-                if classified.is_empty() {
-                    continue;
-                }
-                for site in &classified {
-                    *dump.class_counts.entry(site.semantic.as_str()).or_insert(0) += 1;
-                    dump.site_count += 1;
-                }
-                references.push(GoldenSemanticReference {
-                    line: probe.line,
-                    character: probe.character,
-                    target: GoldenTarget {
-                        kind: golden_target_kind(target.kind),
-                        name: target.name,
-                    },
-                    sites: classified
-                        .into_iter()
-                        .map(|c| GoldenClassifiedSite {
-                            uri: c.site.uri,
-                            line: c.site.line,
-                            start: c.site.start,
-                            end: c.site.end,
-                            semantic: c.semantic,
-                            evidence: c.evidence,
-                        })
-                        .collect(),
-                });
-            }
-        }
-        dump.reference_count += references.len();
-        dump.files.push(GoldenSemanticFile {
-            file: path.clone(),
-            kind: kind.to_string(),
-            references,
-        });
-    }
-    serde_json::to_string(&dump).expect("serialize references semantic golden")
 }
 
 // ---------------------------------------------------------------------------
@@ -1816,281 +1441,5 @@ mod tests {
     #[should_panic(expected = "decl tag not found")]
     fn probe_at_decl_missing_tag_panics_honestly() {
         probe_at_decl(A_TYPES, "NOPE");
-    }
-
-    // ---- 语义分类面(批 2:真实引用 = 类型 IR 可证) ------------------------
-
-    #[test]
-    fn shadow_site_when_cross_root_has_own_decl() {
-        // proj-a 查询 ITEM_ID(自己的 types 声明):proj-b 使用处是**语法
-        // 同名**——proj-b 有自己的 ITEM_ID 声明(异 IR 节点)→ Shadow,
-        // 证据 = proj-b 自己的 types.xml 声明文件。
-        let (registry, engine) = build();
-        let (line1, character) = probe_of(A_AVATAR, "Type");
-        let (target, classified) = engine
-            .classified_references(
-                &key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"),
-                A_AVATAR,
-                line1 as u32 - 1,
-                character,
-            )
-            .expect("classified type face");
-        assert_eq!(target.kind, RefKind::Type);
-        assert_eq!(target.name, "ITEM_ID");
-        let shadow: Vec<&ClassifiedSite> = classified
-            .iter()
-            .filter(|c| c.site.uri.starts_with("/proj-b"))
-            .collect();
-        assert_eq!(shadow.len(), 1);
-        assert_eq!(shadow[0].semantic, SemanticClass::Shadow);
-        assert_eq!(
-            shadow[0].evidence.as_deref(),
-            Some("/proj-b/scripts/entity_defs/types.xml")
-        );
-        // 同 root 站点 = 真实语义引用,证据 == 查询声明。
-        let semantic = classified
-            .iter()
-            .find(|c| c.site.uri.starts_with("/proj-a"))
-            .expect("same-root site");
-        assert_eq!(semantic.semantic, SemanticClass::Semantic);
-        assert_eq!(
-            semantic.evidence.as_deref(),
-            Some("/proj-a/scripts/entity_defs/types.xml")
-        );
-    }
-
-    #[test]
-    fn dangling_site_when_cross_root_cannot_resolve() {
-        // proj-b 无 types.xml 也无同名实体 def:使用处不可解析 → Dangling,
-        // 无证据(不猜)。
-        let registry = registry();
-        let mut engine = HoverEngine::new();
-        for (path, text) in [
-            ("/proj-a/scripts/entities.xml", A_ENTITIES),
-            ("/proj-a/scripts/entity_defs/types.xml", A_TYPES),
-            ("/proj-a/scripts/entity_defs/Avatar.def", A_AVATAR),
-            ("/proj-b/scripts/entities.xml", B_ENTITIES),
-            ("/proj-b/scripts/entity_defs/Avatar.def", B_AVATAR),
-        ] {
-            engine.update(key_for(&registry, path), text);
-        }
-        let (line1, character) = probe_of(A_AVATAR, "Type");
-        let (_target, classified) = engine
-            .classified_references(
-                &key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def"),
-                A_AVATAR,
-                line1 as u32 - 1,
-                character,
-            )
-            .expect("classified dangling face");
-        let proj_b: Vec<&ClassifiedSite> = classified
-            .iter()
-            .filter(|c| c.site.uri.starts_with("/proj-b"))
-            .collect();
-        assert_eq!(proj_b.len(), 1);
-        assert_eq!(proj_b[0].semantic, SemanticClass::Dangling);
-        assert_eq!(proj_b[0].evidence, None);
-    }
-
-    #[test]
-    fn semantic_filter_keeps_same_decl_sites_only() {
-        let (registry, engine) = build();
-        let (line1, character) = probe_of(A_AVATAR, "Type");
-        let key = key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def");
-        // 不含声明:只剩 proj-a 同声明站点,proj-b Shadow 不入列。
-        let filtered = engine
-            .semantic_reference_locations(&key, A_AVATAR, line1 as u32 - 1, character, false)
-            .expect("filtered locations");
-        assert!(filtered
-            .iter()
-            .all(|loc| loc.uri.starts_with("/proj-a")));
-        assert_eq!(filtered.len(), 1);
-        // 含声明:声明先行 + 同声明站点;全量位置面比过滤面多 proj-b 位。
-        let with_decl = engine
-            .semantic_reference_locations(&key, A_AVATAR, line1 as u32 - 1, character, true)
-            .expect("filtered with decl");
-        assert_eq!(with_decl[0].uri, "/proj-a/scripts/entity_defs/types.xml");
-        assert_eq!(with_decl.len(), filtered.len() + 1);
-        let full = engine
-            .references_at(&key, A_AVATAR, line1 as u32 - 1, character, false)
-            .expect("unfiltered");
-        assert_eq!(full.len(), filtered.len() + 1);
-    }
-
-    #[test]
-    fn interface_missing_decl_sites_dangle() {
-        // 接口 def 缺失(同 root):位置面照列站点(批 1 先例),语义面
-        // 如实 Dangling(站点域不可解析),无证据。
-        let (registry, mut engine) = registry_holder();
-        let missing = "<root>\n  <Interfaces>\n    <Interface> GHOST_IFACE </Interface>\n  </Interfaces>\n</root>\n";
-        engine.update(
-            key_for(&registry, "/proj-a/scripts/entity_defs/IfaceMissing.def"),
-            missing,
-        );
-        let (ml, mc) = probe_of(missing, "Interface");
-        let (_target, classified) = engine
-            .classified_references(
-                &key_for(&registry, "/proj-a/scripts/entity_defs/IfaceMissing.def"),
-                missing,
-                ml as u32 - 1,
-                mc,
-            )
-            .expect("classified missing interface");
-        assert_eq!(classified.len(), 1);
-        assert_eq!(classified[0].semantic, SemanticClass::Dangling);
-        assert_eq!(classified[0].evidence, None);
-        // 过滤面:全 Dangling → 空结果 None(不虚构)。
-        assert_eq!(
-            engine.semantic_reference_locations(
-                &key_for(&registry, "/proj-a/scripts/entity_defs/IfaceMissing.def"),
-                missing,
-                ml as u32 - 1,
-                mc,
-                true
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn interface_shadow_across_trees_in_same_root() {
-        // 同一 root 两棵 entity_defs 树:树 2 有自己的 ROLE.def 接口——
-        // 树 1 查询的 ROLE 引用在树 2 的使用处 = 同名异声明(Shadow),
-        // 域按站点路径走查,root 相同不影响判定。
-        let registry = registry();
-        let mut engine = HoverEngine::new();
-        let tree_one = "<root>\n  <Interfaces>\n    <interface> ROLE </interface>\n  </Interfaces>\n</root>\n";
-        let tree_two = "<root>\n  <Interfaces>\n    <interface> ROLE </interface>\n  </Interfaces>\n</root>\n";
-        for (path, text) in [
-            ("/proj-a/scripts/entities.xml", A_ENTITIES),
-            (
-                "/proj-a/scripts/entity_defs/interfaces/ROLE.def",
-                A_ROLE,
-            ),
-            ("/proj-a/alt/scripts/entities.xml", B_ENTITIES),
-            (
-                "/proj-a/alt/scripts/entity_defs/interfaces/ROLE.def",
-                A_ROLE,
-            ),
-            ("/proj-a/alt/scripts/entity_defs/Alt.def", tree_two),
-            ("/proj-a/scripts/entity_defs/TreeOne.def", tree_one),
-        ] {
-            engine.update(key_for(&registry, path), text);
-        }
-        let (line1, character) = probe_of(tree_one, "interface");
-        let (_target, classified) = engine
-            .classified_references(
-                &key_for(&registry, "/proj-a/scripts/entity_defs/TreeOne.def"),
-                tree_one,
-                line1 as u32 - 1,
-                character,
-            )
-            .expect("classified cross-tree interface");
-        let mut faces: Vec<(&str, SemanticClass, Option<&str>)> = classified
-            .iter()
-            .map(|c| {
-                (
-                    c.site.uri.as_str(),
-                    c.semantic,
-                    c.evidence.as_deref(),
-                )
-            })
-            .collect();
-        faces.sort();
-        assert_eq!(
-            faces,
-            vec![
-                (
-                    "/proj-a/alt/scripts/entity_defs/Alt.def",
-                    SemanticClass::Shadow,
-                    Some("/proj-a/alt/scripts/entity_defs/interfaces/ROLE.def")
-                ),
-                (
-                    "/proj-a/scripts/entity_defs/TreeOne.def",
-                    SemanticClass::Semantic,
-                    Some("/proj-a/scripts/entity_defs/interfaces/ROLE.def")
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn types_xml_face_classifies_cross_root_shadow() {
-        // types.xml 查询面(声明名探针)同分类口径:proj-b 使用处 Shadow。
-        let (registry, engine) = build();
-        let (line1, character) = probe_at_decl(A_TYPES, "ITEM_ID");
-        let (target, classified) = engine
-            .classified_references(
-                &key_for(&registry, "/proj-a/scripts/entity_defs/types.xml"),
-                A_TYPES,
-                line1 as u32 - 1,
-                character,
-            )
-            .expect("classified types face");
-        assert_eq!(target.kind, RefKind::Type);
-        assert_eq!(target.name, "ITEM_ID");
-        assert!(classified
-            .iter()
-            .any(|c| c.site.uri.starts_with("/proj-b") && c.semantic == SemanticClass::Shadow));
-        assert!(classified
-            .iter()
-            .any(|c| c.site.uri.starts_with("/proj-a") && c.semantic == SemanticClass::Semantic));
-    }
-
-    #[test]
-    fn classified_face_absent_for_non_corpus_kinds() {
-        // entities.xml / alias.xml 无引用面(与位置面同闸)。
-        let (registry, mut engine) = registry_holder();
-        engine.update(
-            key_for(&registry, "/proj-a/scripts/entities.xml"),
-            A_ENTITIES,
-        );
-        let key = key_for(&registry, "/proj-a/scripts/entities.xml");
-        assert_eq!(engine.classified_references(&key, A_ENTITIES, 0, 0), None);
-        assert_eq!(
-            engine.semantic_reference_locations(&key, A_ENTITIES, 0, 0, true),
-            None
-        );
-    }
-
-    #[test]
-    fn root_removal_drops_stale_sites_and_keeps_query_domain() {
-        // RUST-149 横切(root 移除):撤掉 proj-b 根后其文件被扇出摘除
-        // (corpus/texts/path_roots 清)——站点收集不再扫到 proj-b(陈旧
-        // 站点整个消失,不会以 Shadow/Dangling 形态虚报);查询域(proj-a)
-        // 分类不变(仍 Semantic,证据仍是同根声明)。
-        let (registry, mut engine) = build();
-        let (line1, character) = probe_of(A_AVATAR, "Type");
-        let key = key_for(&registry, "/proj-a/scripts/entity_defs/Avatar.def");
-        let before = engine
-            .classified_references(&key, A_AVATAR, line1 as u32 - 1, character)
-            .expect("before removal");
-        assert!(before
-            .1
-            .iter()
-            .any(|c| c.site.uri.starts_with("/proj-b") && c.semantic == SemanticClass::Shadow));
-        let root_b = registry
-            .root_for(&kode_vfs::uri::CanonicalUri::from_path(
-                "/proj-b/scripts/entities.xml",
-            ));
-        engine.invalidate_root(root_b);
-        let after = engine
-            .classified_references(&key, A_AVATAR, line1 as u32 - 1, character)
-            .expect("after removal");
-        assert!(
-            after.1.iter().all(|c| !c.site.uri.starts_with("/proj-b")),
-            "被撤根站点的陈旧引用位不得残留"
-        );
-        assert_eq!(after.1.len(), before.1.len() - 1);
-        let semantic = after
-            .1
-            .iter()
-            .find(|c| c.site.uri.starts_with("/proj-a"))
-            .expect("query-domain site survives");
-        assert_eq!(semantic.semantic, SemanticClass::Semantic);
-        assert_eq!(
-            semantic.evidence.as_deref(),
-            Some("/proj-a/scripts/entity_defs/types.xml")
-        );
     }
 }

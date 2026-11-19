@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 
-import { interactiveActivityBeacon } from './backend/indexScheduler';
 import type { KodeCoreGate } from './backend/kodeCoreGate';
 import { findFilesAcrossRoots, getIndexScanRoots } from './scanRoots';
 
@@ -40,33 +39,6 @@ const defaultFinder: CorpusFileFinder = (glob, token) =>
   findFilesAcrossRoots(glob, null, token);
 
 /**
- * 分帧让路步长(RUST-TRACK-FREEZE-007 刀1):每镜像 N 个唯一文件让出扩展
- * 主线程一帧。数千 def/xml 的镜像洪水此前是连续 await 链,主线程被周期性
- * 抢占-让出-再抢占,观感=卡;分帧只插让路点,镜像总数与内容不变。
- */
-export const MIRROR_YIELD_EVERY = 8;
-
-/** 交互冷却窗(与 indexScheduler DEFAULT_INTERACTIVE_COOLDOWN_MS 同值,单一口径) */
-const MIRROR_INTERACTIVE_COOLDOWN_MS = 50;
-
-/** 让路一帧(可注入替身;测试断言让路点)。 */
-export type MirrorYieldFn = () => Promise<void>;
-
-/**
- * 缺省让路:调度器交互冷却窗内(用户刚有交互任务)先等出窗,再让出一帧
- * setImmediate——镜像洪水对交互让路,复用 indexScheduler 的冷却口径
- * (interactiveActivityBeacon 同一时钟),不另造判定。
- */
-const defaultMirrorYield: MirrorYieldFn = async () => {
-  const since = performance.now() - interactiveActivityBeacon.lastAt;
-  const wait = MIRROR_INTERACTIVE_COOLDOWN_MS - since;
-  if (wait > 0) {
-    await new Promise<void>(resolve => setTimeout(resolve, wait));
-  }
-  await new Promise<void>(resolve => setImmediate(resolve));
-};
-
-/**
  * 服务轨道语料全量镜像:枚举工作区语料文件,逐个 didOpen 给 Rust。已打开
  * 文档优先用编辑器内容(未保存修订不能被磁盘快照冲掉),未打开读盘。顺序
  * 镜像(1 路)规避并发 client.start() 的 initialize 握手竞态;didOpen 本身
@@ -75,8 +47,7 @@ const defaultMirrorYield: MirrorYieldFn = async () => {
 export async function mirrorCorpusToRust(
   gate: KodeCoreGate,
   findFiles: CorpusFileFinder = defaultFinder,
-  scanRoots: ScanRootsProvider = defaultScanRoots,
-  yieldFrame: MirrorYieldFn = defaultMirrorYield
+  scanRoots: ScanRootsProvider = defaultScanRoots
 ): Promise<void> {
   if (!gate.serveFromRust()) {
     return;
@@ -132,12 +103,6 @@ export async function mirrorCorpusToRust(
       continue;
     }
     seenFsPaths.add(fsPath);
-    const completed = mirrored + failed;
-    if (completed > 0 && completed % MIRROR_YIELD_EVERY === 0) {
-      // RUST-TRACK-FREEZE-007 刀1:分帧让路——每完成 N 个文件让出主线程一帧
-      // (交互冷却窗内多等一拍);切走服务轨道的检查在让路后照常。
-      await yieldFrame();
-    }
     if (!gate.serveFromRust()) {
       // 镜像期间配置切走服务轨道(杀进程/回 ts):取消首扫(回 Idle,
       // 不留假 pending),停止补镜像,不写新账。

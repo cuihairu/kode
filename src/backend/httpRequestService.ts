@@ -71,18 +71,6 @@ export const defaultTransport: HttpTransport = request =>
       });
       return;
     }
-    // KODE-FULL-013:请求级墙钟 deadline——DNS/连接/响应读取全程计入总预算。
-    // req.setTimeout 只是 socket 空闲超时,drip-feed 服务端(每隔小于
-    // timeoutMs 发一字节且永不结束)永不触发空闲,请求可无限占住调用方。
-    // 首次结算(finish)即清定时器;到点 destroy 沿用既有超时文案收口。
-    const finish = (result: HttpExecutionResult): void => {
-      clearTimeout(deadline);
-      resolve(result);
-    };
-    const deadline = setTimeout(() => {
-      req.destroy(new Error(`请求超时(${request.timeoutMs}ms)`));
-    }, Math.max(1, request.timeoutMs));
-    deadline.unref?.();
     const client = parsed.protocol === 'https:' ? https : http;
     const req = client.request(
       parsed,
@@ -108,7 +96,7 @@ export const defaultTransport: HttpTransport = request =>
         // error)。在此显式收口为失败;Promise 只认首次 resolve,后到的
         // 重复调用天然无效,无需额外哨兵。
         res.on('aborted', () => {
-          finish({
+          resolve({
             ok: false,
             status: 0,
             durationMs: Date.now() - startedAt,
@@ -117,7 +105,7 @@ export const defaultTransport: HttpTransport = request =>
           });
         });
         res.on('error', (err: Error) => {
-          finish({
+          resolve({
             ok: false,
             status: 0,
             durationMs: Date.now() - startedAt,
@@ -130,7 +118,7 @@ export const defaultTransport: HttpTransport = request =>
         // 语义一致),不引入覆盖率的 ?? 死臂。
         res.on('end', () => {
           const { statusCode = 0 } = res;
-          finish({
+          resolve({
             ok: true,
             status: statusCode,
             durationMs: Date.now() - startedAt,
@@ -139,8 +127,11 @@ export const defaultTransport: HttpTransport = request =>
         });
       }
     );
+    req.setTimeout(request.timeoutMs, () => {
+      req.destroy(new Error(`请求超时(${request.timeoutMs}ms)`));
+    });
     req.on('error', (err: Error) => {
-      finish({
+      resolve({
         ok: false,
         status: 0,
         durationMs: Date.now() - startedAt,

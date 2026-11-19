@@ -17,14 +17,14 @@
 //!   stderr,不静默吞(与 ruff_lint check 同面)。
 //! - `ruffPath` 由 TS 显式传(解释器 bin 下定位);缺省回落 PATH 上的 `ruff`。
 //! - 版本探测共用 ruff_lint(probe_version 提升 pub(crate) 共享);format 面
-//!   stdin 形状不同,走 subprocess::run_bounded 有界管道(同暂态族同表退避,
-//!   见 spawn_format_pipe)。
+//!   stdin 形状不同不能用 spawn_output 整装,自带同族退避管道(同暂态族
+//!   同表,见 spawn_format_pipe)。
 
 use serde_json::{json, Value};
+use std::io::Write;
 
 use crate::rpc::RpcRegistry;
-use crate::ruff_lint::{probe_version, ruff_deadline};
-use crate::subprocess;
+use crate::ruff_lint::probe_version;
 
 pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/ruff/format", ruff_format_handler);
@@ -48,54 +48,47 @@ fn ruff_format_handler(params: Value) -> Result<Value, String> {
     format_content(&content, &file_name, ruff_path.as_deref())
 }
 
-/// 单次 format 的墙钟 deadline(单文件快命令,60s 极端余量)。
-const RUFF_FORMAT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// stdin 管道有界执行:subprocess::run_bounded 统一执行面(并发写 stdin 与
-/// 排空 stdout/stderr——旧实现先写完再 wait,大文件双向塞满管道即互等
-/// 死锁;deadline 到点 kill+wait,输出字节封顶),外层同表暂态 spawn 退避
-/// (与 ruff_lint 同族同表);stdin 写入与等待本身不重试(真失败如实 Err)。
+/// stdin 管道 spawn:同 ruff_lint::spawn_output 的暂态退避族(EAGAIN/
+/// ENOMEM/ENFILE/EMFILE 满载 fork 瞬态,20/60/150/400ms 四拍),但 format
+/// 需要 stdin 写入,不能用 `output()` 整装——spawn 瞬态在同表上重试,stdin
+/// 写入与等待不重试(写管道失败=真失败,如实 Err)。
 fn spawn_format_pipe(
     program: &str,
     args: &[&str],
     stdin_data: &str,
-    deadline: std::time::Duration,
-) -> Result<std::process::Output, String> {
-    for backoff in subprocess::SPAWN_BACKOFF_MS {
+) -> std::io::Result<std::process::Output> {
+    const BACKOFF_MS: [u64; 4] = [20, 60, 150, 400];
+    let transient = |error: &std::io::Error| {
+        matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::OutOfMemory
+        ) || (cfg!(unix) && matches!(error.raw_os_error(), Some(11 | 12 | 23 | 24)))
+    };
+    for backoff in BACKOFF_MS {
         let mut command = std::process::Command::new(program);
-        command.args(args);
-        match subprocess::run_bounded(&mut command, Some(stdin_data.as_bytes().to_vec()), deadline)
-        {
-            Ok(bounded) => {
-                return Ok(std::process::Output {
-                    status: bounded.status,
-                    stdout: bounded.stdout,
-                    stderr: bounded.stderr,
-                })
+        command
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        match command.spawn() {
+            Ok(mut child) => {
+                // stdin 写完即关(drop 管道),子进程读到 EOF 开始格式化。
+                {
+                    let mut stdin = child.stdin.take().expect("piped stdin handle must exist");
+                    stdin.write_all(stdin_data.as_bytes())?;
+                }
+                return child.wait_with_output();
             }
-            Err(subprocess::BoundedError::Spawn(error))
-                if subprocess::is_transient_spawn(&error) =>
-            {
+            Err(error) if transient(&error) => {
                 std::thread::sleep(std::time::Duration::from_millis(backoff));
             }
-            Err(subprocess::BoundedError::Spawn(error)) => {
-                return Err(format!("spawn failed: {error}"))
-            }
-            Err(subprocess::BoundedError::Deadline) => {
-                return Err(format!(
-                    "timed out after {}ms (process killed)",
-                    deadline.as_millis()
-                ))
-            }
-            Err(subprocess::BoundedError::OutputTooLarge) => {
-                return Err(format!(
-                    "output exceeds {} bytes",
-                    subprocess::MAX_OUTPUT_BYTES
-                ))
-            }
+            Err(error) => return Err(error),
         }
     }
-    Err("spawn retries exhausted".to_string())
+    Err(std::io::Error::other(
+        "ruff format: spawn retries exhausted",
+    ))
 }
 
 fn format_content(
@@ -111,7 +104,6 @@ fn format_content(
             return Ok(json!({ "available": false }));
         }
     };
-    let deadline = ruff_deadline(RUFF_FORMAT_DEADLINE);
     let output = spawn_format_pipe(
         program,
         &[
@@ -124,9 +116,8 @@ fn format_content(
             "-",
         ],
         content,
-        deadline,
     )
-    .map_err(|e| format!("ruff format: {e}"))?;
+    .map_err(|e| format!("ruff format: spawn failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
@@ -271,42 +262,5 @@ mod tests {
     fn handler_requires_content_and_file_name() {
         assert!(ruff_format_handler(serde_json::json!({ "fileName": "/w/a.py" })).is_err());
         assert!(ruff_format_handler(serde_json::json!({ "content": "x=1" })).is_err());
-    }
-
-    /// KODE-FULL-004:挂起 stub(版本即回、format 永挂)到点 kill+wait,如实
-    /// Err 带超时面;窄化窗 env 只 set 不 remove(并行竞态判例)。
-    #[test]
-    fn hanging_format_stub_times_out_bounded() {
-        let dir = temp_dir("hang");
-        #[cfg(unix)]
-        let script = {
-            let script = dir.join("hang.sh");
-            std::fs::write(
-                &script,
-                "#!/bin/sh\n\
-                 if [ \"$1\" = \"--version\" ]; then echo \"ruff 0.0.0-fake\"; exit 0; fi\n\
-                 exec sleep 300\n",
-            )
-            .expect("write hang stub");
-            std::fs::set_permissions(
-                &script,
-                std::os::unix::fs::PermissionsExt::from_mode(0o755),
-            )
-            .expect("chmod");
-            script
-        };
-        #[cfg(windows)]
-        let script = compile_stub(
-            &dir,
-            "fn main() { \
-             if std::env::args().any(|a| a == \"--version\") { println!(\"ruff 0.0.0-fake\"); return; } \
-             std::thread::sleep(std::time::Duration::from_secs(300)); }",
-        );
-        std::env::set_var("KODE_RUFF_DEADLINE_MS", "300");
-        let error = format_content("x=1\n", "/w/a.py", Some(script.to_str().expect("utf8 path")))
-            .expect_err("挂起 format 必须报超时");
-        assert!(error.contains("ruff format"), "{error}");
-        assert!(error.contains("timed out"), "{error}");
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -18,7 +18,7 @@ import {
   DEFAULT_VENV_DIRECTORY_NAMES,
   normalizeVenvDirectoryNames
 } from './backend/quickActionConfig';
-import { discoverVenvsCached, scanVenvs } from './backend/venvDiscovery';
+import { scanVenvs } from './backend/venvDiscovery';
 
 export type InterpreterSource = 'setting' | 'venv' | 'path' | 'missing';
 
@@ -142,41 +142,8 @@ export function resolveInterpreterWith(inputs: InterpreterResolutionInputs): Int
   return { interpreterPath: null, interpreterSource: 'missing' };
 }
 
-/**
- * 解析链的异步版(KODE-RESP-010):venv 分支走缓存异步发现(discoverVenvsCached
- * ——预算封顶/让步/在途共享),宽目录/慢文件系统不卡扩展宿主主线程;解析优
- * 先级与同步链完全一致(setting → venv → PATH),setting/PATH 两支都是单点
- * 存在性探测,保持同步即可。其余需要离开主线程的调用方逐批迁移到此入口。
- */
-export async function resolveInterpreterWithAsync(
-  inputs: InterpreterResolutionInputs
-): Promise<InterpreterResolution> {
-  const configured = (inputs.interpreterSetting ?? '').trim();
-  if (configured) {
-    const expanded = configured.replace(/\$\{workspaceFolder\}/g, inputs.workspaceRoot ?? '');
-    if (fs.existsSync(expanded)) {
-      return { interpreterPath: expanded, interpreterSource: 'setting' };
-    }
-  }
-  if (inputs.workspaceRoot) {
-    const scanned = await discoverVenvsCached(inputs.workspaceRoot, {
-      platform: inputs.platform,
-      preferredNames: inputs.venvDirectoryNames ?? [...DEFAULT_VENV_DIRECTORY_NAMES]
-    });
-    if (scanned.length > 0) {
-      return { interpreterPath: scanned[0].interpreterPath, interpreterSource: 'venv' };
-    }
-  }
-  const onPath = locateInterpreterOnPath(inputs.pathEnv, inputs.platform);
-  if (onPath) {
-    return { interpreterPath: onPath, interpreterSource: 'path' };
-  }
-  return { interpreterPath: null, interpreterSource: 'missing' };
-}
-
-/** 真实配置与 PATH 聚集(同步/异步产品入口共用):读 interpreterPath 原值与
- * venvDirectories 名单,读失败如实回默认 */
-const interpreterInputs = (workspaceRoot?: string): InterpreterResolutionInputs => {
+/** 产品入口:读真实配置与 PATH;workspaceRoot 缺省取首个工作区文件夹 */
+export function resolveProfileInterpreter(workspaceRoot?: string): InterpreterResolution {
   let configured = '';
   let venvNames: string[] = [...DEFAULT_VENV_DIRECTORY_NAMES];
   try {
@@ -189,26 +156,13 @@ const interpreterInputs = (workspaceRoot?: string): InterpreterResolutionInputs 
     configured = '';
   }
   const root = workspaceRoot ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  return {
+  return resolveInterpreterWith({
     interpreterSetting: configured,
     workspaceRoot: root,
     venvDirectoryNames: venvNames,
     pathEnv: process.env.PATH,
     platform: process.platform
-  };
-};
-
-/** 产品入口:读真实配置与 PATH;workspaceRoot 缺省取首个工作区文件夹 */
-export function resolveProfileInterpreter(workspaceRoot?: string): InterpreterResolution {
-  return resolveInterpreterWith(interpreterInputs(workspaceRoot));
-}
-
-/** 产品入口异步版(KODE-RESP-010):UI/状态栏/选择器等主线程面走这个——venv
- * 分支共享同一份在途发现,缓存热值即时返回 */
-export async function resolveProfileInterpreterAsync(
-  workspaceRoot?: string
-): Promise<InterpreterResolution> {
-  return resolveInterpreterWithAsync(interpreterInputs(workspaceRoot));
+  });
 }
 
 /**

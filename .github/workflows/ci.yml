@@ -71,7 +71,7 @@ jobs:
     # rust-toolchain.toml 钉死,rustup 首次调用自动安装。
     - name: Cache Rust builds (serving gate)
       timeout-minutes: 5
-      uses: actions/cache@v4.2.4
+      uses: actions/cache@v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -230,7 +230,7 @@ jobs:
     # 增量。缓存损坏/超限被逐出=回落冷构建(即本批前行为),不影响正确性。
     - name: Cache Rust builds (cargo registry + target)
       timeout-minutes: 5
-      uses: actions/cache@v4.2.4
+      uses: actions/cache@v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -361,7 +361,7 @@ jobs:
 
     - name: Cache Rust builds (cargo registry + target)
       timeout-minutes: 5
-      uses: actions/cache@v4.2.4
+      uses: actions/cache@v6.1.0
       with:
         path: |
           ~/.cargo/registry

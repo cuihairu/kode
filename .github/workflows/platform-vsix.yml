@@ -62,7 +62,7 @@ jobs:
       # 与该 target 的编译产物跨 run 复用;Cargo.lock 变更全量重建,restore-keys
       # 前缀命中做增量;缓存逐出=回落冷构建,不影响正确性。
       - name: Cache Rust builds (cargo registry + target)
-        uses: actions/cache@v4.2.4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry

@@ -86,29 +86,20 @@ export class CallChainController {
     return this.context.workspaceState?.get<unknown>(CALL_CHAIN_TAB_STATE_KEY) ?? null;
   }
 
-  async provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
-    // RUST-149 批 3:取消令牌贯穿——逐方法 def 反查是 await 面;取消/关文档即
-    // 停,不继续解析后续方法(与 rpc/property/mroChain CodeLens 同口径)
-    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
-    if (cancelled() || !this.enabled() || document.languageId !== 'python') {
+  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    if (!this.enabled() || document.languageId !== 'python') {
       return [];
     }
 
     const declarations = findPythonMethodDeclarations(document.getText());
     const lenses: vscode.CodeLens[] = [];
     for (const declaration of declarations) {
-      if (cancelled()) {
-        return [];
-      }
       const definition = await this.entityMappingManager.resolveMethodDefinition(
         document.fileName,
         declaration.methodName
       );
       if (!definition) {
         continue;
-      }
-      if (cancelled()) {
-        return [];
       }
       lenses.push(new vscode.CodeLens(
         new vscode.Range(declaration.line, declaration.character, declaration.line, declaration.character),
@@ -119,7 +110,7 @@ export class CallChainController {
         }
       ));
     }
-    return cancelled() ? [] : lenses;
+    return lenses;
   }
 
   async showForActiveEditor(

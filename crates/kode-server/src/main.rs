@@ -315,30 +315,17 @@ fn main() {
                     process_outcomes(&mut state, &executor, outcomes, &rx, &mut decoder, &mut deferred);
                     // 索引刷新小切片(RUST-070/071/073):帧间让 ingest 走步,
                     // 不逐文件内联压住交互帧(CORE-005);风暴窗到期先移交
-                    // (RUST-082 max latency 兑现)。RESP-001:切片条数+墙钟
-                    // 双界,时间到即回读帧,下一帧间续跑。
+                    // (RUST-082 max latency 兑现)。
                     state.index.flush_due(std::time::Instant::now());
-                    state.index.pump_budgeted_until(
-                        8,
-                        std::time::Instant::now()
-                            + std::time::Duration::from_millis(
-                                kode_server::index_queue::FRAME_SLICE_BUDGET_MS,
-                            ),
-                    );
+                    state.index.pump_budgeted(8);
                 }
                 Ok(None) | Err(RecvTimeoutError::Disconnected) => eof = true,
                 Err(RecvTimeoutError::Timeout) => {
                     // 空闲 tick:风暴窗到期移交(RUST-082)+ 大切片追赶
                     // (CORE-006 后台不可永久推迟;DEPENDENCY_UPDATE 优先级
-                    // 恒交互级,冷却不适用)。RESP-001:同样叠墙钟界。
+                    // 恒交互级,冷却不适用)。
                     state.index.flush_due(std::time::Instant::now());
-                    state.index.pump_budgeted_until(
-                        64,
-                        std::time::Instant::now()
-                            + std::time::Duration::from_millis(
-                                kode_server::index_queue::IDLE_SLICE_BUDGET_MS,
-                            ),
-                    );
+                    state.index.pump_budgeted(64);
                 }
             }
         } else if deferred.is_empty() {
@@ -359,72 +346,5 @@ fn main() {
         log("exited without shutdown (crash-like; client should restart)");
     } else {
         log("clean shutdown");
-    }
-}
-
-// ---- 单测 -----------------------------------------------------------------
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 最小装配:state + 两 worker 池(分派坏帧臂只需 error 响应可构造)。
-    fn fixture() -> (ServerState, PoolExecutor) {
-        let mut state = ServerState::new();
-        state.initialized = true;
-        let (executor, _rx) = PoolExecutor::spawn(state.rpc.snapshot(), PoolBudget::from_total(2));
-        (state, executor)
-    }
-
-    #[test]
-    fn recover_id_faces() {
-        // 数字/字符串 id 回捞;缺 id/非标量形态 → None(响应账面不可知)。
-        assert!(matches!(
-            recover_id(&serde_json::json!({ "id": 7 })),
-            Some(RequestId::Number(7))
-        ));
-        assert!(matches!(
-            recover_id(&serde_json::json!({ "id": "abc" })),
-            Some(RequestId::String(s)) if s == "abc"
-        ));
-        assert_eq!(recover_id(&serde_json::json!({ "method": "x" })), None);
-        assert_eq!(
-            recover_id(&serde_json::json!({ "id": { "nested": 1 } })),
-            None
-        );
-    }
-
-    #[test]
-    fn dispatch_bad_frame_outcomes_error_responses() {
-        // 三个帧级坏形臂:非对象消息体(serde 拒)/非法帧头/非法 body。
-        // 可观边界=不 panic 且经 write_outgoing 落错误响应帧(stdout)。
-        let (mut state, executor) = fixture();
-        let mut never = || false;
-        dispatch_outcome(
-            &mut state,
-            &executor,
-            FrameOutcome::Message(serde_json::json!(3)),
-            &mut never,
-        );
-        dispatch_outcome(
-            &mut state,
-            &executor,
-            FrameOutcome::InvalidHeader("missing Content-Length".into()),
-            &mut never,
-        );
-        dispatch_outcome(&mut state, &executor, FrameOutcome::InvalidBody, &mut never);
-    }
-
-    #[test]
-    fn write_outgoing_both_variants_execute() {
-        // Response/Notification 双臂序列化+编码+写盘链(stdout;encode 对
-        // 合法消息恒成功,错误臂为防御面)。
-        write_outgoing(&[
-            Outgoing::Response(Response::error(
-                Some(RequestId::Number(1)),
-                error_codes::INVALID_REQUEST,
-                "unit probe",
-            )),
-            Outgoing::Notification(kode_protocol::ServerNotification::new("$/unitProbe", None)),
-        ]);
     }
 }

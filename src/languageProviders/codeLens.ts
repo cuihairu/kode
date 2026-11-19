@@ -377,11 +377,8 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
     this.onDidChangeCodeLensesEmitter.fire();
   }
 
-  provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): vscode.CodeLens[] {
-    // RUST-149 批 3:同步 provider 也要吃取消令牌(入口即停,不产镜);
-    // 与 rpc/property/mroChain 同一 cancelled() 口径
-    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
-    if (cancelled() || !getLanguageFeatureConfig().codeLensTypesXml) {
+  provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    if (!getLanguageFeatureConfig().codeLensTypesXml) {
       return [];
     }
     const workspaceRoot = getWorkspaceRootForDocument(document);

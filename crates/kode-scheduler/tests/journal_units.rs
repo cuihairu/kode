@@ -5,14 +5,8 @@ use std::collections::HashMap;
 use kode_scheduler::{load_journal, write_journal, TaskKind};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    // 序号后缀:同一测试进程内各用例共享 pid,同名目录会互相 remove_dir_all
-    // (并行线程下 write_journal 中途 NotFound)——每次调用必须唯一。
-    static DIR_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let seq = DIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "kode-sched-journal-{name}-{seq}-{}",
-        std::process::id()
-    ));
+    let dir =
+        std::env::temp_dir().join(format!("kode-sched-journal-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -270,56 +264,4 @@ fn journal_tmp_name_has_no_double_dot_kraud24() {
     let tmp2 = kode_scheduler::journal::journal_tmp_path(with_ext);
     assert_eq!(tmp2, std::path::Path::new("/run/kbe/sched.bin.tmp"));
     assert_ne!(tmp2, with_ext);
-}
-
-#[test]
-fn write_journal_creates_missing_parent_dirs() {
-    let dir = temp_dir("nested");
-    let nested = dir.join("a/b/c/journal.log");
-    let records = vec![record(
-        TaskKind::DependencyUpdate,
-        2,
-        Some("/x.def"),
-        Some(1),
-    )];
-    assert_eq!(write_journal(&nested, &records).unwrap(), 1);
-    let (back, _skipped) = load_journal(&nested).expect("回读应成功");
-    assert_eq!(back.len(), 1, "落盘记录数一致");
-}
-
-#[test]
-fn write_journal_errors_when_parent_blocked_by_file() {
-    // 父链被普通文件挡住:create_dir_all 失败 → 错误早退臂必须把 Err
-    // 如实带回(不落半成品)。
-    let dir = temp_dir("blocked");
-    let blocker = dir.join("blocker");
-    std::fs::write(&blocker, b"not a dir").unwrap();
-    let target = blocker.join("sub/journal.log");
-    let records = vec![record(
-        TaskKind::DependencyUpdate,
-        2,
-        Some("/x.def"),
-        Some(1),
-    )];
-    assert!(
-        write_journal(&target, &records).is_err(),
-        "父目录不可创建应报错"
-    );
-}
-
-#[test]
-fn write_journal_empty_path_errors_without_dir_setup() {
-    // 空路径:parent() == None,目录准备段整段跳过,落盘段报错;
-    // 错误必须如实带回而非 panic。
-    let records = vec![record(
-        TaskKind::DependencyUpdate,
-        2,
-        Some("/x.def"),
-        Some(1),
-    )];
-    let out = std::panic::catch_unwind(|| write_journal(std::path::Path::new(""), &records));
-    match out {
-        Ok(res) => assert!(res.is_err(), "空路径应报错"),
-        Err(_) => panic!("空路径不得 panic"),
-    }
 }

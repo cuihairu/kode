@@ -26,7 +26,7 @@ pub mod wire;
 pub use apply::{
     archive_fingerprint, ApplyControl, ApplyOutcome, BindingOutcome, CleanupPlan, CleanupStatement,
     DuplicateImport, FieldConsistency, ImportApplier, ImportRun, ImportRunStore, LoadVerification,
-    MemoryRunStore, NoopRunStore, VerifyCheck, VerifyReport, VerifyState, WriteExecutor,
+    MemoryRunStore, NoopRunStore, VerifyCheck, VerifyReport, WriteExecutor,
 };
 pub use archive::{
     is_encrypted, relations_from_plan, write_archive, Archive, ArchiveMeta, ArchiveWriter,

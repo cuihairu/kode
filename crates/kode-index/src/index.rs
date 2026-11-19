@@ -110,9 +110,8 @@ pub struct SymbolIndex {
     by_name: BTreeMap<String, BTreeSet<SymbolId>>,
     /// 文件级增量单元:file → 该文件符号槽位表(保文档序)。
     by_file: BTreeMap<DocumentKey, FileEntry>,
-    /// 继承边:(根, def 实体名) → Parent(IDX-002 基础版;链查询 IDX-005)。
-    /// 跨根同名实体的边互不覆盖、互不串链(KODE-FULL-017)。
-    entity_parents: HashMap<(RootId, String), String>,
+    /// 继承边:def 实体名 → Parent(IDX-002 基础版;链查询 IDX-005)。
+    entity_parents: HashMap<String, String>,
     generation: u64,
     pub stats: IndexStats,
 }
@@ -269,7 +268,7 @@ impl SymbolIndex {
             })
             .collect();
         let old_parent = crate::symbol::def_entity_name(key.uri.as_path())
-            .and_then(|entity| self.entity_parents.get(&(key.root, entity)).cloned());
+            .and_then(|entity| self.entity_parents.get(&entity).cloned());
         let had_old_records = self.by_file.contains_key(key);
         let (registry_report, unit) = self.registry.update(key.clone(), text);
         if !registry_report.rebuilt {
@@ -430,10 +429,9 @@ impl SymbolIndex {
         self.registry.dependents_of(name)
     }
 
-    /// 实体继承链(IDX-005:环显式诊断并截断,有限步终止)。继承边按根
-    /// 隔离(KODE-FULL-017):他根同名实体的 Parent 边不参与本根链解析。
-    pub fn entity_chain(&self, root: RootId, entity: &str) -> (Vec<ChainNode>, Option<Diagnostic>) {
-        resolve_parent_chain(entity, &self.scoped_parents(root))
+    /// 实体继承链(IDX-005:环显式诊断并截断,有限步终止)。
+    pub fn entity_chain(&self, entity: &str) -> (Vec<ChainNode>, Option<Diagnostic>) {
+        resolve_parent_chain(entity, &self.entity_parents)
     }
 
     pub fn symbol_count(&self) -> usize {
@@ -444,18 +442,9 @@ impl SymbolIndex {
         self.by_file.len()
     }
 
-    /// 已登记继承边的实体清单(观测/测试用;按根隔离,KODE-FULL-017)。
-    pub fn entity_declarations_in(&self, root: RootId) -> HashMap<String, String> {
-        self.scoped_parents(root)
-    }
-
-    /// 单根继承边视图:name → Parent(链解析/观测共用同一隔离口径)。
-    fn scoped_parents(&self, root: RootId) -> HashMap<String, String> {
-        self.entity_parents
-            .iter()
-            .filter(|((r, _), _)| *r == root)
-            .map(|((_, entity), parent)| (entity.clone(), parent.clone()))
-            .collect()
+    /// 已登记继承边的实体清单(观测/测试用)。
+    pub fn entity_declarations(&self) -> &HashMap<String, String> {
+        &self.entity_parents
     }
 
     // ---- 内部:文件级差量替换 ----
@@ -478,7 +467,7 @@ impl SymbolIndex {
             entry.symbols.push(id);
         }
         if let Some((entity, Some(parent))) = declaration {
-            self.entity_parents.insert((key.root, entity), parent);
+            self.entity_parents.insert(entity, parent);
         }
         self.by_file.insert(key.clone(), entry);
         (added, removed)
@@ -500,11 +489,10 @@ impl SymbolIndex {
                 self.free.push(*id);
             }
         }
-        // 继承边跟随 def 文件摘除(改名/删除即失效,IDX-014);按
-        // (根, 实体) 摘,他根同名实体的边不受牵连(KODE-FULL-017)。
+        // 继承边跟随 def 文件摘除(改名/删除即失效,IDX-014)。
         if file_kind_of_uri(&key.uri) == FileKind::Def {
             if let Some(entity) = crate::symbol::def_entity_name(key.uri.as_path()) {
-                self.entity_parents.remove(&(key.root, entity));
+                self.entity_parents.remove(&entity);
             }
         }
         entry.symbols.len()
@@ -658,7 +646,7 @@ mod tests {
         assert_eq!(index.symbol_count(), 3, "Avatar.def = 实体 + hp + onRpc");
         assert_eq!(
             index
-                .entity_declarations_in(k.root)
+                .entity_declarations()
                 .get("Avatar")
                 .map(String::as_str),
             Some("Base"),
@@ -673,7 +661,7 @@ mod tests {
         assert!(index.lookup("onRpc").is_empty());
         assert_eq!(index.tracked_files(), 0, "by_file 条目摘除");
         assert!(
-            !index.entity_declarations_in(k.root).contains_key("Avatar"),
+            index.entity_declarations().get("Avatar").is_none(),
             ".def 继承边跟随摘除(IDX-014)"
         );
     }
@@ -795,10 +783,7 @@ mod tests {
         let v1 = "<root>\n\t<Parent> Monster </Parent>\n</root>\n";
         index.update(k.clone(), v1);
         assert_eq!(
-            index
-                .entity_declarations_in(k.root)
-                .get("Boss")
-                .map(String::as_str),
+            index.entity_declarations().get("Boss").map(String::as_str),
             Some("Monster")
         );
         let gen = index.generation();
@@ -812,10 +797,7 @@ mod tests {
         );
         assert_eq!(index.generation(), gen + 1);
         assert_eq!(
-            index
-                .entity_declarations_in(k.root)
-                .get("Boss")
-                .map(String::as_str),
+            index.entity_declarations().get("Boss").map(String::as_str),
             Some("Dragon"),
             "继承边同步更新"
         );

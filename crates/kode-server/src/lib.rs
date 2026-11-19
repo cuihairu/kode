@@ -5,7 +5,6 @@ pub mod api_docs;
 pub mod attribute_none;
 pub mod client_sdk;
 pub mod code_action;
-pub mod code_action_assembly;
 pub mod completion;
 pub mod config_rpc;
 pub mod database_schema;
@@ -16,7 +15,6 @@ pub mod def_props_hints;
 pub mod semantic_tokens;
 pub mod def_rename;
 pub mod definition;
-pub mod diagnostic_layering;
 pub mod diagnostic_pipeline;
 pub mod document_symbols;
 pub mod dependency_graph;
@@ -49,15 +47,12 @@ pub mod rpc_arg_count;
 pub mod ruff_format;
 pub mod ruff_lint;
 pub mod self_attribute_flow;
-pub mod subprocess;
 pub mod syntax_gate;
 pub mod semantics;
 pub mod semantics_golden;
 pub mod semantics_rpc;
 pub mod server;
-pub mod signature_help;
 pub mod space_nav;
-pub mod workspace_symbols;
 pub mod trap_lints;
 pub mod user_type_contract;
 pub mod warm_gate;
@@ -65,7 +60,6 @@ pub mod wire_codec;
 pub mod workspace_discovery;
 
 pub use code_action::dump_code_action_golden;
-pub use code_action_assembly::dump_code_action_assembly_golden;
 pub use completion::{
     dump_completion_golden, resolve_item, to_lsp_items, CompletionContextFace, CompletionItemFace,
     CompletionResponse,
@@ -75,14 +69,10 @@ pub use def_param_hints::dump_def_param_hints_golden;
 pub use def_props_hints::dump_def_props_golden;
 pub use semantic_tokens::dump_semantic_tokens_golden;
 pub use def_rename::dump_def_rename_golden;
-pub use diagnostic_layering::dump_diagnostic_layering_golden;
 pub use diagnostic_pipeline::dump_diagnostic_pipeline_golden;
 pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
 pub use python_call_at::dump_python_call_at_golden;
 pub use references::dump_references_golden;
-pub use references::dump_references_semantic_golden;
-pub use signature_help::dump_signature_help_golden;
-pub use workspace_symbols::dump_workspace_symbols_golden;
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
 };

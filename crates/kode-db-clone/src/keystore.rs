@@ -5,9 +5,8 @@
 //! 输出目录内——结构上保证「密钥不跟归档同存」。归档帧永不包含密钥材料。
 
 use std::fs;
-use std::io::{ErrorKind, Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -51,87 +50,18 @@ impl FileKeyStore {
     }
 
     fn key_path(&self, id: &str) -> PathBuf {
-        self.root.join(format!("{}.key", safe_id(id)))
-    }
-
-    /// 密钥先落同目录临时件(独占创建即 0600、fsync),发布走 hard_link。
-    /// 撞名(陈旧临时件恰好复用同 pid)换计数重试。
-    fn stage_key_temp(&self, id: &str, key: &ArchiveKey) -> CloneResult<PathBuf> {
-        let stem = safe_id(id);
-        for _ in 0..8 {
-            let seq = TEMP_KEY_SEQ.fetch_add(1, Ordering::Relaxed);
-            let tmp = self
-                .root
-                .join(format!("{stem}.{}.{}.tmp", std::process::id(), seq));
-            let mut file = match open_new_private(&tmp) {
-                Ok(file) => file,
-                Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
-                Err(e) => {
-                    return Err(CloneError::InvalidRule(format!("stage key `{id}`: {e}")));
+        // id 只允许安全字符,防路径穿越。
+        let safe: String = id
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
                 }
-            };
-            if let Err(e) = file.write_all(key).and_then(|_| file.sync_all()) {
-                let _ = fs::remove_file(&tmp);
-                return Err(CloneError::InvalidRule(format!("stage key `{id}`: {e}")));
-            }
-            // 权限钉死 0600:open 的 mode 位会被 umask 剥离,显式 chmod 保证
-            // 终态与旧实现完全一致(密钥材料永不出现在非 0600 的最终路径上)。
-            #[cfg(unix)]
-            if let Err(e) = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)) {
-                let _ = fs::remove_file(&tmp);
-                return Err(CloneError::InvalidRule(format!("chmod key `{id}`: {e}")));
-            }
-            return Ok(tmp);
-        }
-        Err(CloneError::InvalidRule(format!(
-            "stage key `{id}`: temp name collision"
-        )))
-    }
-}
-
-/// id 消毒:只允许安全字符,防路径穿越。
-fn safe_id(id: &str) -> String {
-    id.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-/// 临时件单调计数:进程内唯一化临时件名(pid 之外再加计数)。
-static TEMP_KEY_SEQ: AtomicU64 = AtomicU64::new(0);
-
-/// 读取并校验密钥文件:非 32 字节按 InvalidData 如实报错(损坏文件绝不
-/// 静默重生成——重生成只会造出解不开既有归档的错误钥匙)。
-fn read_key_file(path: &Path) -> std::io::Result<ArchiveKey> {
-    let mut buf = Vec::new();
-    fs::File::open(path)?.read_to_end(&mut buf)?;
-    buf.try_into()
-        .map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "key is not 32 bytes"))
-}
-
-/// 独占创建新文件;Unix 下创建即 0600(密钥材料在落盘瞬间就只有属主可读,
-/// 不存在「先默认权限再补 chmod」的暴露窗口)。
-fn open_new_private(path: &Path) -> std::io::Result<fs::File> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(path)
-    }
-    #[cfg(not(unix))]
-    {
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
+            })
+            .collect();
+        self.root.join(format!("{safe}.key"))
     }
 }
 
@@ -146,43 +76,30 @@ impl std::fmt::Debug for FileKeyStore {
 impl KeyStore for FileKeyStore {
     fn get_or_create(&self, id: &str) -> CloneResult<ArchiveKey> {
         let path = self.key_path(id);
-        // 已发布密钥直接读:发布是原子的(见下),最终路径一经出现,内容必为
-        // 完整 32 字节;损坏文件如实报错,不静默重生成。
-        match read_key_file(&path) {
-            Ok(key) => return Ok(key),
-            Err(e) if e.kind() == ErrorKind::NotFound => {}
-            Err(e) => {
-                return Err(CloneError::InvalidRule(format!("read key `{id}`: {e}")));
-            }
+        if path.exists() {
+            let mut buf = Vec::new();
+            fs::File::open(&path)
+                .and_then(|mut f| f.read_to_end(&mut buf))
+                .map_err(|e| CloneError::InvalidRule(format!("read key `{id}`: {e}")))?;
+            let key: ArchiveKey = buf
+                .as_slice()
+                .try_into()
+                .map_err(|_| CloneError::InvalidRule(format!("key `{id}` is not 32 bytes")))?;
+            return Ok(key);
         }
         let mut key = [0u8; 32];
         getrandom::getrandom(&mut key)
             .map_err(|e| CloneError::InvalidRule(format!("generate key: {e}")))?;
         fs::create_dir_all(&self.root)
             .map_err(|e| CloneError::InvalidRule(format!("create key dir: {e}")))?;
-        // KODE-FULL-016:原子发布三步——
-        // 1. 同目录临时件独占创建(即 0600)+ 写满 32 字节 + fsync;
-        // 2. hard_link 到最终路径:目标已存在时以 AlreadyExists 失败,是
-        //    内核级 create-or-fail 原语——并发首建恰有一个赢家(跨进程成立);
-        // 3. 败者删自己的临时件、只读获胜密钥。
-        // 最终路径从不暴露部分内容;任何失败路径不残留文件;已存在密钥
-        // 绝不被覆盖(旧 fs::write 会互相截断,把先到者手里的钥匙悄悄换掉)。
-        let tmp = self.stage_key_temp(id, &key)?;
-        match fs::hard_link(&tmp, &path) {
-            Ok(()) => {
-                let _ = fs::remove_file(&tmp); // 链接计数归一:发布完成
-                Ok(key)
-            }
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                let _ = fs::remove_file(&tmp);
-                read_key_file(&path)
-                    .map_err(|e| CloneError::InvalidRule(format!("read key `{id}`: {e}")))
-            }
-            Err(e) => {
-                let _ = fs::remove_file(&tmp);
-                Err(CloneError::InvalidRule(format!("publish key `{id}`: {e}")))
-            }
-        }
+        fs::write(&path, key)
+            .map_err(|e| CloneError::InvalidRule(format!("write key `{id}`: {e}")))?;
+        // 0600:仅属主可读(密钥材料不该组/其他可读)。Unix 下强制;非 Unix
+        // 依赖宿主 ACL/凭据存储策略(Windows 由用户目录 ACL 提供)。
+        #[cfg(unix)]
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .map_err(|e| CloneError::InvalidRule(format!("chmod key `{id}`: {e}")))?;
+        Ok(key)
     }
 
     fn exists(&self, id: &str) -> bool {

@@ -28,14 +28,8 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
 
   async provideInlayHints(
     document: vscode.TextDocument,
-    range: vscode.Range,
-    token?: vscode.CancellationToken
+    range: vscode.Range
   ): Promise<vscode.InlayHint[]> {
-    // RUST-149 批 3:取消令牌贯穿(def 归属解析是 await 面);取消/关文档即停
-    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
-    if (cancelled()) {
-      return [];
-    }
     const featureConfig = getLanguageFeatureConfig();
     if (!featureConfig.entityBuiltinProperties || !featureConfig.entityBuiltinTypeInlayHints) {
       return [];
@@ -52,9 +46,6 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
         );
       } catch {
         defFaces = null;
-      }
-      if (cancelled()) {
-        return [];
       }
     }
     // PR2 快照接入:行数组走 documentStore(同版本复用,不再逐次全文拆行)
@@ -85,14 +76,8 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
 export class InferredMirrorTypeInlayHintsProvider implements vscode.InlayHintsProvider {
   provideInlayHints(
     document: vscode.TextDocument,
-    range: vscode.Range,
-    token?: vscode.CancellationToken
+    range: vscode.Range
   ): vscode.InlayHint[] {
-    // RUST-149 批 3:同步 provider 同样吃取消令牌(入口即停);读副本是同步 fs
-    // 面,无 await 可打断,故只设入口闸。
-    if (!!token?.isCancellationRequested || document.isClosed) {
-      return [];
-    }
     if (document.languageId !== 'python') {
       return [];
     }
@@ -139,15 +124,8 @@ export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHin
 
   async provideInlayHints(
     document: vscode.TextDocument,
-    range: vscode.Range,
-    token?: vscode.CancellationToken
+    range: vscode.Range
   ): Promise<vscode.InlayHint[]> {
-    // RUST-149 批 3:取消令牌贯穿三处 await(Rust 扫描束/方向扫描束/逐候选
-    // def 反查);取消后不再发起后续 def 落点解析。
-    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
-    if (cancelled()) {
-      return [];
-    }
     if (document.languageId !== 'python') {
       return [];
     }
@@ -162,9 +140,6 @@ export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHin
       propertyPath: string,
       rootSymbol: string
     ): Promise<PropertyDirectionHit | null | undefined> => {
-      if (cancelled()) {
-        return null;
-      }
       if (!this.entityMappingManager) {
         return null;
       }
@@ -174,9 +149,6 @@ export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHin
           propertyPath,
           rootSymbol
         );
-        if (cancelled()) {
-          return null;
-        }
         if (!info) {
           return null;
         }
@@ -199,9 +171,6 @@ export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHin
       // AUDIT-005 B2 批 7:Rust-first 三扫描束(与诊断流同一判定核),束不可用回本地扫描
       (await buildPropertyDirectionScanBundleWithRust(document.getText())) ?? undefined
     );
-    if (cancelled()) {
-      return [];
-    }
     return items
       // inlay 按可视区要:视图口外的行不出 hint(批154 同口径)
       .filter(item => item.position.line >= range.start.line && item.position.line <= range.end.line)
@@ -258,14 +227,8 @@ export class KBEngineProxyInternalAttrHintsProvider implements vscode.InlayHints
 
   async provideInlayHints(
     document: vscode.TextDocument,
-    range: vscode.Range,
-    token?: vscode.CancellationToken
+    range: vscode.Range
   ): Promise<vscode.InlayHint[]> {
-    // RUST-149 批 3:取消令牌入口闸(本 provider 无 await 面:读项目副本走同步
-    // fs,无中途可打断点,故不设中途检查)
-    if (!!token?.isCancellationRequested || document.isClosed) {
-      return [];
-    }
     if (document.languageId !== 'python') {
       return [];
     }

@@ -159,22 +159,6 @@ describe('selectInterpreter (injected ui + setting write)', () => {
     expect(deps.written).toEqual([]);
   });
 
-  it('awaits async current/discovered providers (KODE-RESP-010 cached async discovery wiring)', async () => {
-    // 装配处接缓存异步发现后,current/discovered 返回 Promise;选择器必须
-    // 照常组装列表并落选——同步替身(既有用例)与异步替身同一契约。
-    const deps: any = baseDeps({
-      current: async (): Promise<InterpreterResolution> => ({
-        interpreterPath: '/ws/.venv/bin/python',
-        interpreterSource: 'venv'
-      }),
-      discovered: async (): Promise<DiscoveredVenv[]> => [venv('/ws/.venv', '/ws/.venv/bin/python')]
-    });
-    deps.picked = { create: false, interpreterPath: '/ws/.venv/bin/python', label: '.venv' };
-    const result = await selectInterpreter(deps);
-    expect(result).toBe('selected');
-    expect(deps.written).toEqual(['/ws/.venv/bin/python']);
-  });
-
   it('the create entry hands over to the creation flow', async () => {
     let created = false;
     const deps: any = baseDeps({

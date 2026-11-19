@@ -6,12 +6,6 @@
  * 没标记)一律不认,绝不伪造。扫描面与 pythonScanRules(Python 源码类索
  * 引)完全解耦:不共享候选清单、不共享剪枝规则、互不 import。全部只做
  * 存在性探测,不执行任何程序。
- *
- * 同步版(scanVenvs)之外另有异步层(scanVenvsAsync + discoverVenvsCached,
- * KODE-RESP-010):目录读走异步 I/O 且目录间让步,宽目录/慢文件系统下事件
- * 循环心跳持续;总目录/时间预算与取消令牌到顶即停;按根及配置代(约定名
- * 清单)缓存,多消费者共享一次在途发现。产品主线程(UI/状态栏/选择器)一律
- * 走异步层,同步版只留给确已离开主线程的调用方。
  */
 
 import * as fs from 'fs';
@@ -152,7 +146,6 @@ export function scanVenvs(root: string, options: VenvScanOptions = {}): Discover
   const pruned = options.prunedDirectoryNames ?? DEFAULT_PRUNED_DIRECTORY_NAMES;
   const platform = options.platform ?? process.platform;
   const found: Array<DiscoveredVenv & { preferred: boolean }> = [];
-  const preferredSet = new Set(options.preferredNames ?? []);
 
   const visit = (dir: string, depth: number): void => {
     let entries: fs.Dirent[];
@@ -174,7 +167,7 @@ export function scanVenvs(root: string, options: VenvScanOptions = {}): Discover
           interpreterPath,
           envKind: hasEnvMarker(child) === 'conda' ? 'conda' : 'venv',
           depth,
-          preferred: preferredSet.has(entry.name)
+          preferred: false
         });
         continue; // 不向环境内部下钻
       }
@@ -185,15 +178,11 @@ export function scanVenvs(root: string, options: VenvScanOptions = {}): Discover
   };
 
   visit(root, 0);
-  return sortDiscoveredVenvs(found);
-}
-
-/** 排序(同步/异步两道扫描共用,零漂移):浅者先,同深度约定名命中
- * (preferredNames)先置,再字典序 */
-const sortDiscoveredVenvs = (
-  found: Array<DiscoveredVenv & { preferred: boolean }>
-): DiscoveredVenv[] =>
-  found
+  const preferredSet = new Set(options.preferredNames ?? []);
+  for (const env of found) {
+    env.preferred = preferredSet.has(env.name);
+  }
+  return found
     .sort(
       (a, b) =>
         a.depth - b.depth ||
@@ -201,193 +190,6 @@ const sortDiscoveredVenvs = (
         a.name.localeCompare(b.name)
     )
     .map(({ preferred: _preferred, ...env }) => env);
-
-// ---- 异步扫描层(KODE-RESP-010):宽目录/慢文件系统不得卡死扩展宿主主线程 ----
-
-/** 异步扫描的总目录访问预算(含扫描根与约定候选探测;大仓库到顶即停) */
-export const MAX_VENV_SCAN_DIRECTORIES = 4096;
-/** 异步扫描的总时间预算(ms);超时即停,返回已发现部分 */
-export const VENV_SCAN_DEADLINE_MS = 5000;
-
-export interface VenvScanAsyncOptions extends VenvScanOptions {
-  /** 总目录预算,默认 MAX_VENV_SCAN_DIRECTORIES;到顶停止深扫 */
-  maxDirectories?: number;
-  /** 时间预算 ms,默认 VENV_SCAN_DEADLINE_MS */
-  deadlineMs?: number;
-  /** 取消令牌:置 aborted 后不再深扫(在途扫描以已发现部分正常收束) */
-  signal?: { aborted: boolean };
-  /** 目录读取注入面(测试注入慢文件系统);缺省 fs.promises.readdir */
-  readDirectory?: (dir: string) => Promise<fs.Dirent[]>;
-  /** 目录间让步(缺省 setImmediate);事件循环心跳由它保证 */
-  yieldControl?: () => Promise<void>;
-}
-
-const yieldToEventLoop = (): Promise<void> => new Promise<void>(resolve => setImmediate(resolve));
-
-const readDirectoryDefault = (dir: string): Promise<fs.Dirent[]> =>
-  fs.promises.readdir(dir, { withFileTypes: true });
-
-/**
- * scanVenvs 的异步版(KODE-RESP-010):目录读走异步 I/O,目录之间让步一次
- * (setImmediate,可注入),事件循环心跳持续运行;总目录/时间预算到顶或取消
- * 令牌置位即停,不再深扫,已发现部分如实返回(不伪造完整)。约定候选
- * (preferredNames)先直接探测——常见 .venv/venv 布局不必等全树走完;走查
- * 与同步版同规则(深度封顶/剪枝名单/环境不下钻),输出排序与同步版一致。
- */
-export async function scanVenvsAsync(
-  root: string,
-  options: VenvScanAsyncOptions = {}
-): Promise<DiscoveredVenv[]> {
-  const maxDepth = options.maxDepth ?? MAX_VENV_SCAN_DEPTH;
-  const pruned = options.prunedDirectoryNames ?? DEFAULT_PRUNED_DIRECTORY_NAMES;
-  const platform = options.platform ?? process.platform;
-  const maxDirectories = options.maxDirectories ?? MAX_VENV_SCAN_DIRECTORIES;
-  const deadline = Date.now() + (options.deadlineMs ?? VENV_SCAN_DEADLINE_MS);
-  const readDirectory = options.readDirectory ?? readDirectoryDefault;
-  const yieldControl = options.yieldControl ?? yieldToEventLoop;
-  const preferredNames = options.preferredNames ?? [];
-  const preferredSet = new Set(preferredNames);
-  const found: Array<DiscoveredVenv & { preferred: boolean }> = [];
-  const claimed = new Set<string>();
-  let visited = 0;
-
-  // 预算/取消/时间三重闸:任一触发后不再发生任何后续目录读
-  const exhausted = (): boolean =>
-    visited >= maxDirectories || options.signal?.aborted === true || Date.now() > deadline;
-
-  const record = (dir: string, name: string, depth: number): void => {
-    const interpreterPath = verifyVenvDirectory(dir, platform);
-    if (interpreterPath) {
-      claimed.add(dir);
-      found.push({
-        rootPath: dir,
-        name,
-        interpreterPath,
-        envKind: hasEnvMarker(dir) === 'conda' ? 'conda' : 'venv',
-        depth,
-        preferred: preferredSet.has(name)
-      });
-    }
-  };
-
-  // 优先探测约定候选(单点 stat 验真,不依赖全树走查):.venv/venv 常见布局
-  // 在这里直接命中;未命中的名字由后面的走查如实收录。命中即 claimed,走查
-  // 不重复验真也不向环境内部下钻(与同步版「环境不下钻」同规则)。
-  for (const name of preferredNames) {
-    if (exhausted()) {
-      break;
-    }
-    visited += 1;
-    await yieldControl();
-    const candidate = path.join(root, name);
-    if (!claimed.has(candidate)) {
-      record(candidate, name, 0);
-    }
-  }
-
-  const visit = async (dir: string, depth: number): Promise<void> => {
-    if (exhausted()) {
-      return;
-    }
-    visited += 1;
-    await yieldControl();
-    let entries: fs.Dirent[];
-    try {
-      entries = await readDirectory(dir);
-    } catch {
-      return; // 不可读目录如实跳过
-    }
-    for (const entry of entries) {
-      if (exhausted()) {
-        return;
-      }
-      if (!entry.isDirectory() || shouldPruneVenvScanDirectory(entry.name, pruned)) {
-        continue;
-      }
-      const child = path.join(dir, entry.name);
-      if (!claimed.has(child)) {
-        record(child, entry.name, depth);
-      }
-      if (!claimed.has(child) && depth < maxDepth) {
-        await visit(child, depth + 1);
-      }
-    }
-  };
-
-  await visit(root, 0);
-  return sortDiscoveredVenvs(found);
-}
-
-// ---- 发现缓存层(KODE-RESP-010):按根及配置代缓存 + 在途共享 ----
-
-const VENV_DISCOVERY_CACHE_CAPACITY = 4;
-const venvDiscoveryCache = new Map<string, DiscoveredVenv[]>();
-const venvDiscoveryInFlight = new Map<string, Promise<DiscoveredVenv[]>>();
-
-/** 缓存键 = 平台 + 根 + 排序后的约定名清单:配置内容进键(按根及配置代
- * 缓存),venvDirectories 改动自然换键重扫;名序不同视为同一配置代 */
-export function venvDiscoveryCacheKey(
-  root: string,
-  preferredNames: readonly string[],
-  platform: NodeJS.Platform = process.platform
-): string {
-  return [platform, root, ...[...preferredNames].sort()].join('|');
-}
-
-/** 只读缓存不触发扫描(undefined = 无热值);UI 用它先展示已有候选 */
-export function peekVenvDiscoveryCache(
-  root: string,
-  preferredNames: readonly string[],
-  platform: NodeJS.Platform = process.platform
-): DiscoveredVenv[] | undefined {
-  return venvDiscoveryCache.get(venvDiscoveryCacheKey(root, preferredNames, platform));
-}
-
-/** 清空缓存与在途记录(测试隔离用) */
-export function clearVenvDiscoveryCache(): void {
-  venvDiscoveryCache.clear();
-  venvDiscoveryInFlight.clear();
-}
-
-/**
- * 带缓存的发现:热值直接返回(UI 先展示已有候选,不再重扫);冷值启动一次
- * 带预算的异步扫描,同键的多个消费者共享同一支在途 Promise(一次在途发现),
- * 收束后写缓存供后续消费。扫描失败不缓存、如实抛出(下次调用可重试)。
- * 首个消费者的 options 负责本次扫描的预算参数;缓存键只认根/约定名/平台。
- */
-export function discoverVenvsCached(
-  root: string,
-  options: VenvScanAsyncOptions = {}
-): Promise<DiscoveredVenv[]> {
-  const preferredNames = options.preferredNames ?? [];
-  const key = venvDiscoveryCacheKey(root, preferredNames, options.platform);
-  const cached = venvDiscoveryCache.get(key);
-  if (cached) {
-    return Promise.resolve(cached);
-  }
-  const inFlight = venvDiscoveryInFlight.get(key);
-  if (inFlight) {
-    return inFlight;
-  }
-  const discovery = scanVenvsAsync(root, options).then(
-    envs => {
-      venvDiscoveryCache.set(key, envs);
-      if (venvDiscoveryCache.size > VENV_DISCOVERY_CACHE_CAPACITY) {
-        const oldest = venvDiscoveryCache.keys().next().value;
-        if (oldest !== undefined) {
-          venvDiscoveryCache.delete(oldest);
-        }
-      }
-      venvDiscoveryInFlight.delete(key);
-      return envs;
-    },
-    error => {
-      venvDiscoveryInFlight.delete(key);
-      throw error;
-    }
-  );
-  venvDiscoveryInFlight.set(key, discovery);
-  return discovery;
 }
 
 /**

@@ -18,7 +18,6 @@
  */
 
 import { l10nText } from '../nlsRuntime';
-import { INDEX_CACHE_SCHEMA_VERSION } from './indexDiskCache';
 
 export interface KodeCoreStateLite {
   mode: 'ts' | 'rust' | 'shadow';
@@ -42,20 +41,8 @@ export function coreStatusBarText(state: KodeCoreStateLite | null): string {
   return l10nText('$(circuit-board) Kode LSP: TS');
 }
 
-/** 索引格式行(ENGINE-WORDING-006):kode 索引数据兼容键展示位,与 KBEngine 引擎版本分词 */
-function indexFormatSchemaLine(): string {
-  return l10nText(
-    'Index format schema={version} (kode index data compat key, unrelated to the KBEngine engine version)',
-    { version: INDEX_CACHE_SCHEMA_VERSION }
-  );
-}
-
-/** 核心 tooltip:当前服务轨道与依据(路径/降级原因)+ 固定索引格式行 */
+/** 核心 tooltip:当前服务轨道与依据(路径/降级原因) */
 export function coreStatusBarTooltip(state: KodeCoreStateLite | null): string {
-  return `${coreStatusBarTooltipBody(state)}\n${indexFormatSchemaLine()}`;
-}
-
-function coreStatusBarTooltipBody(state: KodeCoreStateLite | null): string {
   if (!state) {
     return l10nText('Kode core not initialized');
   }

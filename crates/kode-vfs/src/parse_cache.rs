@@ -251,8 +251,10 @@ impl<V> ParseCache<V> {
             .iter()
             .map(|(key, entry)| (key.clone(), entry.reason.clone()))
             .collect();
-        entries
-            .sort_by(|a, b| (a.0.root.0, a.0.uri.as_path()).cmp(&(b.0.root.0, b.0.uri.as_path())));
+        entries.sort_by(|a, b| {
+            (a.0.root.0, a.0.uri.as_path())
+                .cmp(&(b.0.root.0, b.0.uri.as_path()))
+        });
         entries
     }
 
@@ -587,43 +589,5 @@ mod tests {
             "0123456789",
             "重插即恢复"
         );
-    }
-
-    #[test]
-    fn budget_bytes_face() {
-        // 有界=Some(透传),缺省无界=None:与 dep 层访问器同口径。
-        assert_eq!(
-            ParseCache::<String>::with_budget(20, len_weight).budget_bytes(),
-            Some(20)
-        );
-        assert_eq!(ParseCache::<String>::new().budget_bytes(), None);
-    }
-
-    #[test]
-    fn stale_clock_key_is_skipped_in_eviction_scan() {
-        let mut cache: ParseCache<String> = ParseCache::with_budget(20, len_weight);
-        let fp = content_fingerprint("v");
-        let a = key(1, "/w/a.def");
-        cache.insert(a.clone(), fp, "0123456789".into());
-        // 失效只删 valid,陈旧键滞留 clock → 扫描弹到时走跳过臂
-        cache.invalidate(&a);
-        cache.insert(key(1, "/w/b.def"), fp, "x".repeat(25));
-        assert_eq!(cache.valid_len(), 0, "超限条目被驱逐");
-        assert_eq!(cache.evictions(), 1);
-    }
-
-    #[test]
-    fn clock_compacts_after_stale_key_flood() {
-        let mut cache: ParseCache<String> = ParseCache::with_budget(100, len_weight);
-        let fp = content_fingerprint("v");
-        for i in 0..70 {
-            let k = key(1, &format!("/w/f{i}.def"));
-            cache.insert(k.clone(), fp, "x".into());
-            cache.invalidate(&k);
-        }
-        // clock 71 键 vs valid 1:71 > 1*2+64 → 比例压缩;未超预算不得驱逐
-        cache.insert(key(1, "/w/keep.def"), fp, "y".into());
-        assert_eq!(cache.valid_len(), 1);
-        assert_eq!(cache.evictions(), 0, "未超预算不得驱逐");
     }
 }

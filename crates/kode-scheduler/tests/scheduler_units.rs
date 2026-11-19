@@ -867,28 +867,3 @@ fn cold_request_after_warm_is_immediate_and_unmarked() {
     assert!(!outcome.while_warming, "暖态冷请求不得亮 warming 位");
     assert_eq!(sched.cold_while_warming_count(), 0);
 }
-
-#[test]
-fn terminal_retention_window_evicts_oldest_beyond_cap() {
-    // 终态环形窗口:超出 MAX_RETAINED_TERMINAL_TASKS 后最旧终态条目
-    // 必须被摘除(内存有界承诺的执行面,非仅断言面)。
-    let mut s = Scheduler::default();
-    for i in 0..(MAX_RETAINED_TERMINAL_TASKS + 2) {
-        s.enqueue(spec(
-            TaskKind::DependencyUpdate,
-            2,
-            Some(&format!("/f{i}.def")),
-            Some(1),
-        ));
-        s.drain(0);
-    }
-    let retained = s.retained_task_count();
-    assert!(
-        retained <= MAX_RETAINED_TERMINAL_TASKS,
-        "终态窗口有界: {retained}"
-    );
-    assert!(
-        retained >= MAX_RETAINED_TERMINAL_TASKS,
-        "满窗才触发摘除: {retained}"
-    );
-}

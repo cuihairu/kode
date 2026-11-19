@@ -26,19 +26,12 @@ export interface AiEndpointConfig {
   maxRetries: number;
 }
 
-/**
- * vscode.lm LanguageModelChat 面的注入形状(生产=feature-detect 后的实例)。
- * KODE-FULL-011:按宿主真实契约对齐——sendRequest(messages, options?, token?)
- * 三参,token 是第三参(旧两参形态把 token 塞进了 options 位);response.text
- * 逐片产出 string 本体,不是 { content } 对象(旧读法把真实字符串片全读成 '',
- * 回复被吞成空串)。替身(测试)也按宿主 API 构造。
- */
+/** vscode.lm LanguageModelChat 面的注入形状(生产=feature-detect 后的实例) */
 export interface AiLanguageModelLike {
   sendRequest(
     messages: unknown[],
-    options?: unknown,
     token?: vscode.CancellationToken
-  ): { text: AsyncIterable<string> };
+  ): { text: AsyncIterable<{ content?: string }> };
 }
 
 /** SecretStorage 注入形状(vscode context.secrets 即合此形;Thenable=vscode.d.ts 全局面) */
@@ -195,54 +188,52 @@ async function sendViaEndpoint(options: AiSendOptions, endpoint: AiEndpointConfi
     max_tokens: endpoint.maxTokens
   });
   let lastError = 'AI request failed';
-  // KODE-FULL-012:超时定时器/取消订阅的生命周期收口到整个重试轮的
-  // finally——此前 ok 但缺 content 的响应先 finish() 清掉定时器再抛错进
-  // 重试,下一轮用已死的定时器与已退订的取消监听,悬挂请求可永不截止。
-  // 重试轮内保持 deadline 在役:形状坏/网络失败重试仍受总超时与取消约束。
-  try {
-    for (let attempt = 0; attempt <= endpoint.maxRetries; attempt++) {
-      try {
-        const response = await doFetch(url, {
-          method: 'POST',
-          headers,
-          body,
-          signal: controller.signal
-        });
-        if (response.ok) {
-          const payload = (await response.json()) as ChatCompletionResponse;
-          const content = payload?.choices?.[0]?.message?.content;
-          if (typeof content === 'string') {
-            return content;
-          }
-          lastError = 'AI response missing message content';
-        } else if (!isRetryableStatus(response.status)) {
-          throw new Error(`AI request failed with status ${response.status}`);
-        } else {
-          lastError = `AI request failed with status ${response.status}`;
+  for (let attempt = 0; attempt <= endpoint.maxRetries; attempt++) {
+    try {
+      const response = await doFetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal
+      });
+      if (response.ok) {
+        const payload = (await response.json()) as ChatCompletionResponse;
+        const content = payload?.choices?.[0]?.message?.content;
+        finish();
+        if (typeof content !== 'string') {
+          throw new Error('AI response missing message content');
         }
-      } catch (error) {
-        if (options.token?.isCancellationRequested) {
-          throw new Error('AI request cancelled');
-        }
-        if (controller.signal.aborted) {
-          throw new Error('AI request timed out');
-        }
-        // try 内抛出的 status error 只可能是非重试 4xx(fetch 分支已筛)——
-        // 直通出函数,不进重试循环;其余(网络失败/响应形状坏)按可重试记账
-        const statusMatch = error instanceof Error && /^AI request failed with status (\d+)$/.exec(error.message);
-        if (statusMatch && !isRetryableStatus(Number(statusMatch[1]))) {
-          throw error;
-        }
-        lastError = error instanceof Error ? error.message : lastError;
+        return content;
       }
-      if (attempt < endpoint.maxRetries) {
-        await doSleep(Math.min(250 * 2 ** attempt, 4000));
+      if (!isRetryableStatus(response.status)) {
+        finish();
+        throw new Error(`AI request failed with status ${response.status}`);
       }
+      lastError = `AI request failed with status ${response.status}`;
+    } catch (error) {
+      if (options.token?.isCancellationRequested) {
+        finish();
+        throw new Error('AI request cancelled');
+      }
+      if (controller.signal.aborted) {
+        finish();
+        throw new Error('AI request timed out');
+      }
+      // try 内抛出的 status error 只可能是非重试 4xx(fetch 分支已筛)——
+      // 直通出函数,不进重试循环;其余(网络失败/响应形状坏)按可重试记账
+      const statusMatch = error instanceof Error && /^AI request failed with status (\d+)$/.exec(error.message);
+      if (statusMatch && !isRetryableStatus(Number(statusMatch[1]))) {
+        finish();
+        throw error;
+      }
+      lastError = error instanceof Error ? error.message : lastError;
     }
-    throw new Error(lastError);
-  } finally {
-    finish();
+    if (attempt < endpoint.maxRetries) {
+      await doSleep(Math.min(250 * 2 ** attempt, 4000));
+    }
   }
+  finish();
+  throw new Error(lastError);
 }
 
 async function sendViaLanguageModel(options: AiSendOptions, onChunk?: (text: string) => void): Promise<string> {
@@ -262,13 +253,13 @@ async function sendViaLanguageModel(options: AiSendOptions, onChunk?: (text: str
     }
     return { role: m.role, content: m.content };
   };
-  const response = await model.sendRequest(options.messages.map(toMessage), {}, options.token);
+  const response = await model.sendRequest(options.messages.map(toMessage), options.token);
   let text = '';
   for await (const chunk of response.text) {
     if (options.token?.isCancellationRequested) {
       break; // 取消即刻停收,已收部分保留(AI-002 中断语义)
     }
-    const piece = typeof chunk === 'string' ? chunk : '';
+    const piece = typeof chunk?.content === 'string' ? chunk.content : '';
     text += piece;
     if (piece && onChunk) {
       onChunk(piece);

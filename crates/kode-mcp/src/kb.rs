@@ -4,7 +4,7 @@
 //! kode-server 的既有实现(不复制逻辑),类型图/实体模型/校验直调
 //! kode-parser。bin(server.rs)只是薄装配。
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use kode_parser::diag::LineMap;
@@ -47,16 +47,9 @@ pub struct AssetKnowledge {
 impl AssetKnowledge {
     /// 从资产根装载(目录不存在=空库不抛错,如实记 load_errors)。
     pub fn load(root: &Path) -> AssetKnowledge {
-        Self::load_filtered(root, &HashSet::new())
-    }
-
-    /// 装载并跳过 `skip` 内的 def(root 相对、正斜杠键)。git-ignore 资格
-    /// 集合走此面:被忽略的 def 不进模型,节点/边/模型同源,不会因其他
-    /// def 的普通修改被批量重建重新收录(KODE-FULL-008)。
-    pub fn load_filtered(root: &Path, skip: &HashSet<String>) -> AssetKnowledge {
         let mut kb = AssetKnowledge::default();
         let defs_dir = root.join("scripts").join("entity_defs");
-        collect_defs(&defs_dir, "", &mut kb, skip);
+        collect_defs(&defs_dir, "", &mut kb);
         kb.types_text = read_opt(&defs_dir.join("types.xml"));
         kb.alias_text = read_opt(&defs_dir.join("alias.xml"));
         kb.entities_xml_text = read_opt(&root.join("scripts").join("entities.xml"));
@@ -667,7 +660,7 @@ fn read_opt(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-fn collect_defs(dir: &Path, prefix: &str, kb: &mut AssetKnowledge, skip: &HashSet<String>) {
+fn collect_defs(dir: &Path, prefix: &str, kb: &mut AssetKnowledge) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         if !prefix.is_empty() {
             kb.load_errors
@@ -687,12 +680,8 @@ fn collect_defs(dir: &Path, prefix: &str, kb: &mut AssetKnowledge, skip: &HashSe
             format!("{prefix}/{name}")
         };
         if path.is_dir() {
-            collect_defs(&path, &rel, kb, skip);
+            collect_defs(&path, &rel, kb);
         } else if name.to_lowercase().ends_with(".def") {
-            // 资格过滤:被忽略的 def 整文件跳过(rel_path 同键口径)。
-            if skip.contains(&format!("scripts/entity_defs/{rel}")) {
-                continue;
-            }
             let stem = name.trim_end_matches(".def").to_string();
             match std::fs::read_to_string(&path) {
                 Ok(text) => {

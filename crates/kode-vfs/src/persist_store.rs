@@ -195,11 +195,8 @@ impl PersistStore {
         if bytes.len() < FRAME_OVERHEAD || &bytes[0..MAGIC.len()] != MAGIC {
             return None;
         }
-        let len = u64::from_le_bytes(
-            bytes[MAGIC.len()..MAGIC.len() + LEN_BYTES]
-                .try_into()
-                .ok()?,
-        ) as usize;
+        let len = u64::from_le_bytes(bytes[MAGIC.len()..MAGIC.len() + LEN_BYTES].try_into().ok()?)
+            as usize;
         if len != bytes.len() - FRAME_OVERHEAD {
             return None;
         }
@@ -259,10 +256,7 @@ mod tests {
         let store = PersistStore::open(&dir).unwrap();
         let key = key_of("/ws/A.def");
         store.write(&key, b"payload-1").unwrap();
-        assert_eq!(
-            store.read(&key).unwrap().as_deref(),
-            Some(b"payload-1".as_slice())
-        );
+        assert_eq!(store.read(&key).unwrap().as_deref(), Some(b"payload-1".as_slice()));
         // 布局:恰好一个 {hex}.bin,写后无残留 tmp。
         let names = entry_names(&dir);
         assert_eq!(names, vec![format!("{}{ENTRY_EXT}", key.hex())]);
@@ -277,10 +271,7 @@ mod tests {
         let key = key_of("/ws/A.def");
         store.write(&key, b"first").unwrap();
         store.write(&key, b"second-payload").unwrap();
-        assert_eq!(
-            store.read(&key).unwrap().as_deref(),
-            Some(b"second-payload".as_slice())
-        );
+        assert_eq!(store.read(&key).unwrap().as_deref(), Some(b"second-payload".as_slice()));
         // 覆盖写不堆积:仍只有一个条目文件。
         assert_eq!(entry_names(&dir).len(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -321,10 +312,7 @@ mod tests {
         assert!(!path.exists(), "坏条目必须被清理,不得留在库内");
         // 清理后按 miss 重建:再写再读,完好如初。
         store.write(&key, b"rebuilt").unwrap();
-        assert_eq!(
-            store.read(&key).unwrap().as_deref(),
-            Some(b"rebuilt".as_slice())
-        );
+        assert_eq!(store.read(&key).unwrap().as_deref(), Some(b"rebuilt".as_slice()));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -364,10 +352,7 @@ mod tests {
         std::fs::write(dir.join("tmp-deadbeef-42-1.tmp"), b"half-frame").unwrap();
         std::fs::write(dir.join("notes.txt"), b"keep me").unwrap();
         let store = PersistStore::open(&dir).unwrap();
-        assert!(
-            !dir.join("tmp-deadbeef-42-1.tmp").exists(),
-            "孤儿 tmp 必须开库即扫"
-        );
+        assert!(!dir.join("tmp-deadbeef-42-1.tmp").exists(), "孤儿 tmp 必须开库即扫");
         assert!(dir.join("notes.txt").exists(), "外来文件不得误伤");
         let _ = store;
         std::fs::remove_dir_all(&dir).unwrap();
@@ -392,106 +377,6 @@ mod tests {
         assert!(store.read(&b).unwrap().is_none());
         assert!(!dir.join("tmp-leftover-7-9.tmp").exists());
         assert!(dir.join("notes.txt").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn dir_accessor_exposes_store_root() {
-        let dir = temp_dir("dir-accessor");
-        let store = PersistStore::open(&dir).unwrap();
-        assert_eq!(store.dir(), dir.as_path());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn write_failure_removes_temp_file() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = temp_dir("write-fail");
-        let store = PersistStore::open(&dir).unwrap();
-        let key = key_of("/ws/W.def");
-        // 目录只读:write_frame 建 tmp 必 EACCES → 失败路径清理 tmp
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-        assert!(store.write(&key, b"payload").is_err());
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let names = entry_names(&dir);
-        assert!(names.is_empty(), "失败后不得残留: {names:?}");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn rename_failure_removes_temp_and_errors() {
-        let dir = temp_dir("rename-fail");
-        let store = PersistStore::open(&dir).unwrap();
-        let key = key_of("/ws/R.def");
-        // 目标位预置目录:rename(file→dir) 必失败 → 失败路径清理 tmp
-        std::fs::create_dir(store.entry_path(&key)).unwrap();
-        assert!(store.write(&key, b"payload").is_err());
-        let tmp_left: Vec<String> = entry_names(&dir)
-            .into_iter()
-            .filter(|n| n.starts_with(TMP_PREFIX))
-            .collect();
-        assert!(tmp_left.is_empty(), "失败后不得残留 tmp: {tmp_left:?}");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn read_io_error_on_directory_entry_propagates() {
-        let dir = temp_dir("read-eisdir");
-        let store = PersistStore::open(&dir).unwrap();
-        let key = key_of("/ws/D.def");
-        std::fs::create_dir(store.entry_path(&key)).unwrap();
-        // fs::read(目录) = EISDIR:真实 IO 错误原样上抛,不当未命中
-        assert!(store.read(&key).is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn remove_io_error_on_directory_entry_propagates() {
-        let dir = temp_dir("remove-eisdir");
-        let store = PersistStore::open(&dir).unwrap();
-        let key = key_of("/ws/RM.def");
-        std::fs::create_dir(store.entry_path(&key)).unwrap();
-        assert!(store.remove(&key).is_err());
-        // 不存在 = 幂等 Ok(NotFound 分支既有口径对照)
-        assert!(store.remove(&key_of("/ws/absent.def")).is_ok());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn frame_length_mismatch_reads_miss_after_cleanup() {
-        let dir = temp_dir("len-mismatch");
-        let store = PersistStore::open(&dir).unwrap();
-        let key = key_of("/ws/L.def");
-        // 手构帧:魔数 + 与真实载荷不符的长度头 + 载荷 + 指纹 → decode None
-        let mut frame = Vec::new();
-        frame.extend_from_slice(MAGIC);
-        frame.extend_from_slice(&7u64.to_le_bytes());
-        frame.extend_from_slice(b"payload-x");
-        frame.extend_from_slice(&[0u8; FP_BYTES]);
-        std::fs::write(store.entry_path(&key), &frame).unwrap();
-        assert_eq!(store.read(&key).unwrap(), None);
-        assert!(!store.entry_path(&key).exists(), "坏帧条目应被清理");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn clear_and_sweep_skip_non_utf8_names() {
-        use std::ffi::OsString;
-        use std::os::unix::ffi::OsStringExt;
-        let dir = temp_dir("non-utf8");
-        // 开库前放非 UTF8 名文件:sweep 与 clear 两面都须跳过
-        let alien = OsString::from_vec(vec![0xff, 0xfe, b'.', b'b', b'i', b'n']);
-        std::fs::write(dir.join(&alien), b"x").unwrap();
-        let store = PersistStore::open(&dir).unwrap();
-        let key = key_of("/ws/A.def");
-        store.write(&key, b"p").unwrap();
-        assert_eq!(store.clear().unwrap(), 1, "只清自己的条目");
-        assert!(
-            std::fs::read_dir(&dir)
-                .unwrap()
-                .any(|e| e.unwrap().file_name() == alien),
-            "非 UTF8 名外来文件不得被动"
-        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

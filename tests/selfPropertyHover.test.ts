@@ -193,21 +193,3 @@ describe('TYP-ARRAY inlay: 数组元素类型行内提示(② 视觉面)', () =>
     expect(containerHints.length).toBeGreaterThanOrEqual(1);
   });
 });
-
-describe('HOOK-TIMING-001:def 属性 hover 注入时序注', () => {
-  it('self.<def 属性> hover 带 .def 注入时机与 cellData 路由语义', async () => {
-    setupWorkspace();
-    const { provider } = makeProvider();
-    const result = await provider.provideHover(
-      makeTextDocument(HERO_PY, { fileName: pyPath, languageId: 'python' }),
-      PROPERTY_POSITION
-    );
-    expect(result).not.toBeNull();
-    const text = JSON.stringify(result);
-    // 注入时序注:时机锚 + cellData 路由 + 语料出处。
-    expect(text).toContain('注入时序');
-    expect(text).toContain('`.def` 注入');
-    expect(text).toContain('cellData');
-    expect(text).toContain('api-baseapp.md');
-  });
-});

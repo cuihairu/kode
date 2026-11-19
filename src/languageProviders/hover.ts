@@ -1,5 +1,4 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
-import * as nodeFs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { documentEventCacheKey, findEventCallsCached } from '../eventApi';
@@ -9,7 +8,6 @@ import { getTypeStorageShape } from '../databaseSchema';
 import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
-import { renderDefPropertyTimingNote } from '../backend/hookSequencing';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatFixedDictKeyHover, formatImplementedBySubscriptNoteHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
@@ -40,7 +38,7 @@ import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelf
 import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyEntry } from '../backend/cellDataCompletion';
 import { cellDataProvenStateAtLine } from '../backend/cellDataCallbackCheck';
 import { cellDataHoverMarkdown } from '../backend/cellDataHover';
-import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition, buildEntityTypeRuntimeHints } from '../kbeModuleIndex';
+import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
 import { dataDictProcessDomain, dataDictSiteInDomain, pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
@@ -1112,9 +1110,6 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         if (shape.kind === 'fixedDict' || isFixedDictTypeName(resolved.typeName, [])) {
           markdown.appendMarkdown(fixedDictBehaviorNoteMarkdown());
         }
-        // HOOK-TIMING-001:def 属性注入时序注(.def 默认/params 键先于脚本
-        // 逻辑;cell 部分经 cellData 暂存,cell 创建时生效)。
-        markdown.appendMarkdown('\n\n' + renderDefPropertyTimingNote());
       }
       return new vscode.Hover(markdown);
     } finally { stopRender?.(); }
@@ -1316,15 +1311,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         if (kbeAccess) {
           const kbeEntry = getKbeSymbol(kbeAccess.symbol, pythonProcessFromPath(document.fileName));
           if (kbeEntry) {
-            // API-PARAM-HOVER-001:create-entity 家族(entityTypeHint)挂
-            // entityType→运行时类映射(工作区实体注册表+盘上类文件存在性)。
-            const hints = kbeEntry.returns?.entityTypeHint && this.entityMappingManager
-              ? buildEntityTypeRuntimeHints(
-                  this.entityMappingManager.getAllMappings(),
-                  candidate => nodeFs.existsSync(candidate)
-                )
-              : undefined;
-            return createKbeSymbolHover(kbeEntry, { entityTypeHints: hints });
+            return createKbeSymbolHover(kbeEntry);
           }
         }
       }

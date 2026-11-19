@@ -15,7 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use notify::Watcher;
 use serde_json::{json, Value};
@@ -85,31 +85,11 @@ pub struct ReconcileStats {
     pub ignored_by_git: usize,
     pub git_available: bool,
     pub extract_errors: usize,
-    /// 本轮扫描自身的不完备面(KODE-FULL-006):收集截断 + 目录/元数据读
-    /// 失败。覆盖不完整时移除面退化为逐路径确认,绝不把扫描缺口当删除。
-    pub scan_truncated: bool,
-    pub scan_errors: usize,
-    /// 在盘上但本轮未覆盖到的已收录文件(截断/瞬态读失败;保留旧节点)。
-    pub coverage_gaps: usize,
-    /// stat 不可访问的已收录文件(保留旧节点,如实报)。
-    pub inaccessible: usize,
-    /// 提取成功但结构/全文发布失败的文件(KODE-FULL-007:哈希不提交,
-    /// 下一轮按 changed 重试)。
-    pub publish_errors: usize,
     pub errors: Vec<String>,
     pub elapsed_ms: u128,
 }
 
 impl ReconcileStats {
-    /// 本轮覆盖不完整(截断/扫描错/覆盖缺口/不可访问):移除与「clean 全量」
-    /// 结论不可信,状态面必须如实暴露。
-    fn coverage_incomplete(&self) -> bool {
-        self.scan_truncated
-            || self.scan_errors > 0
-            || self.coverage_gaps > 0
-            || self.inaccessible > 0
-    }
-
     fn to_value(&self) -> Value {
         json!({
             "filesScanned": self.files_scanned,
@@ -120,12 +100,6 @@ impl ReconcileStats {
             "ignoredByGit": self.ignored_by_git,
             "gitAvailable": self.git_available,
             "extractErrors": self.extract_errors,
-            "scanTruncated": self.scan_truncated,
-            "scanErrors": self.scan_errors,
-            "coverageGaps": self.coverage_gaps,
-            "inaccessibleFiles": self.inaccessible,
-            "coverageIncomplete": self.coverage_incomplete(),
-            "publishErrors": self.publish_errors,
             "errors": self.errors,
             "elapsedMs": self.elapsed_ms,
         })
@@ -141,32 +115,6 @@ struct FileEntry {
     ext: String,
 }
 
-/// One sweep's view of the disk, with coverage honesty (KODE-FULL-006):
-/// `truncated`/`scan_errors` mean the file list is NOT the full disk truth —
-/// callers must not treat missing-from-scan as deleted.
-#[derive(Debug, Default)]
-struct ScanView {
-    entries: Vec<FileEntry>,
-    truncated: bool,
-    scan_errors: usize,
-}
-
-/// 后台对账 worker 状态(KODE-FULL-005;status 的 autoReconcile 面)。
-#[derive(Debug, Default)]
-struct AutoReconcileState {
-    active: bool,
-    running: bool,
-    pending_retry: bool,
-    consecutive_failures: u32,
-}
-
-/// Worker tick:watcher 事件成簇到达(编辑器保存=create/modify/close),
-/// 每拍检查一次 dirty,有则跑一轮有界对账。
-const WORKER_TICK: std::time::Duration = std::time::Duration::from_millis(1500);
-
-/// 发布失败后的连续重试上限:仍败挂 failed 状态等下一次变更事件。
-const WORKER_MAX_RETRIES: u32 = 3;
-
 /// The index: SQLite structure store + Tantivy BM25 + notify watcher.
 pub struct KnowledgeIndex {
     root: PathBuf,
@@ -177,11 +125,6 @@ pub struct KnowledgeIndex {
     dirty: Arc<Mutex<HashSet<String>>>,
     last_stats: Mutex<ReconcileStats>,
     vector: Mutex<Option<Arc<dyn SemanticRetriever>>>,
-    /// 串行化手动 build/reconcile 与后台 worker(KODE-FULL-005)。
-    reconcile_gate: Mutex<()>,
-    /// 挂接的模型缓存:对账全量发布成功后同代刷新(KODE-FULL-005)。
-    model_cache: Mutex<Option<Arc<RwLock<AssetKnowledge>>>>,
-    auto: Mutex<AutoReconcileState>,
 }
 
 impl std::fmt::Debug for KnowledgeIndex {
@@ -240,9 +183,6 @@ impl KnowledgeIndex {
             dirty: Arc::new(Mutex::new(HashSet::new())),
             last_stats: Mutex::new(ReconcileStats::default()),
             vector: Mutex::new(None),
-            reconcile_gate: Mutex::new(()),
-            model_cache: Mutex::new(None),
-            auto: Mutex::new(AutoReconcileState::default()),
         })
     }
 
@@ -256,19 +196,13 @@ impl KnowledgeIndex {
     }
 
     /// Files that will be considered by the sweep, in deterministic order,
-    /// with the extension group they belong to. Coverage failures (collection
-    /// truncation, directory/metadata/read errors) are counted and reported
-    /// instead of being silently treated as "not on disk" (KODE-FULL-006).
-    fn scan_files(&self) -> ScanView {
+    /// with the extension group they belong to.
+    fn scan_files(&self) -> Vec<FileEntry> {
         let root = &self.root;
         let mut paths: Vec<(PathBuf, String)> = Vec::new();
-        let mut truncated = false;
-        let mut scan_errors = 0usize;
         let mut push_scan = |exts: &[&str], roots: &[PathBuf]| {
             for ext in exts {
                 let scan = crate::bounded_scan::collect(roots, ext, SKIP_COMMON, 5000);
-                truncated |= scan.truncated;
-                scan_errors += scan.errors;
                 for p in scan.files {
                     paths.push((p, ext.to_string()));
                 }
@@ -295,22 +229,14 @@ impl KnowledgeIndex {
         for (abs, ext) in paths {
             let meta = match std::fs::metadata(&abs) {
                 Ok(m) => m,
-                Err(_) => {
-                    scan_errors += 1;
-                    continue;
-                }
+                Err(_) => continue,
             };
-            // Policy exclusions (not errors): non-files and >1MB inputs are
-            // deliberately not indexed.
             if !meta.is_file() || meta.len() > 1_000_000 {
                 continue;
             }
             let bytes = match std::fs::read(&abs) {
                 Ok(b) => b,
-                Err(_) => {
-                    scan_errors += 1;
-                    continue;
-                }
+                Err(_) => continue,
             };
             let rel = crate::nodes::rel_path(root, &abs);
             out.push(FileEntry {
@@ -320,43 +246,20 @@ impl KnowledgeIndex {
                 ext,
             });
         }
-        ScanView {
-            entries: out,
-            truncated,
-            scan_errors,
-        }
+        out
     }
 
     /// Full incremental sweep: BLAKE3 diff + per-file re-extraction. Files
     /// git-ignored are never indexed. Content-addressed dedup skips
     /// unchanged files. def/xml nodes come from a freshly parsed model,
     /// loaded here so the sweep always sees the on-disk truth.
-    ///
-    /// KODE-FULL-006: a stored path missing from this sweep is only removed
-    /// after per-path confirmation (git-ignored / stat NotFound / became a
-    /// directory or over-size policy exclusion) — truncation and transient
-    /// read failures keep the old nodes and surface `coverageIncomplete`.
-    /// KODE-FULL-007: content hashes commit ONLY after the structure and FTS
-    /// stores both published; a failed round keeps the last-success
-    /// generation so the next sweep retries instead of skipping as unchanged.
-    /// KODE-FULL-008: git eligibility is one set everywhere — new files skip,
-    /// indexed-then-ignored files are explicitly evicted, and the model
-    /// rebuild only replaces eligible def/xml files.
     pub fn reconcile(&self) -> ReconcileStats {
-        // 串行化手动 build 与后台 worker(KODE-FULL-005)。
-        let _gate = self.reconcile_gate.lock().expect("reconcile gate");
         let started = std::time::Instant::now();
-        // 本轮已见的 dirty 快照:结束时只清这批——扫描窗内新到的事件留给
-        // 下一轮(全清会吞掉对账期间的变更,索引停在旧代)。
-        let seen_dirty: HashSet<String> = self.dirty.lock().expect("dirty lock").clone();
-        let view = self.scan_files();
-        let entries = view.entries;
+        let entries = self.scan_files();
         let disk: HashSet<String> = entries.iter().map(|e| e.rel_path.clone()).collect();
         let stored = self.store.file_hashes();
         let mut stats = ReconcileStats {
             files_scanned: entries.len(),
-            scan_truncated: view.truncated,
-            scan_errors: view.scan_errors,
             ..Default::default()
         };
 
@@ -366,17 +269,11 @@ impl KnowledgeIndex {
         stats.git_available = git.available;
         stats.ignored_by_git = git.ignored.len();
 
-        // 资格集合(KODE-FULL-008):被忽略的路径永不入索引——新文件跳过、
-        // 已收录变忽略的显式逐出、模型重建同源用同一集合。
-        let eligible: HashSet<String> = disk
-            .iter()
-            .filter(|p| !(git.available && git.ignored.contains(*p)))
-            .cloned()
-            .collect();
-
         let mut changed_files: Vec<FileEntry> = Vec::new();
+        let mut to_remove: Vec<String> = Vec::new();
+
         for e in &entries {
-            if !eligible.contains(&e.rel_path) {
+            if git.available && git.ignored.contains(&e.rel_path) {
                 continue; // never index gitignored/generated paths
             }
             match stored.get(&e.rel_path) {
@@ -391,40 +288,14 @@ impl KnowledgeIndex {
                 }
             }
         }
-
-        // Removals (frees ids before re-insert) — confirmed paths only.
-        let mut to_remove: Vec<String> = Vec::new();
         for path in stored.keys() {
-            if eligible.contains(path) {
-                continue;
-            }
-            if git.available && git.ignored.contains(path) {
-                // 显式逐出:由已收录变为被忽略(KODE-FULL-008)。
+            if !disk.contains(path) {
                 stats.removed += 1;
                 to_remove.push(path.clone());
-                continue;
-            }
-            match std::fs::metadata(self.root.join(path)) {
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    stats.removed += 1;
-                    to_remove.push(path.clone());
-                }
-                Err(_) => {
-                    // 不可访问:保留旧节点,如实报缺口。
-                    stats.inaccessible += 1;
-                }
-                Ok(meta) if meta.is_file() && meta.len() <= 1_000_000 => {
-                    // 在盘上但本轮没扫到(截断/瞬态读失败):保留旧节点。
-                    stats.coverage_gaps += 1;
-                }
-                Ok(_) => {
-                    // 现为目录或超 1MB:策略排除,确认移除。
-                    stats.removed += 1;
-                    to_remove.push(path.clone());
-                }
             }
         }
 
+        // Removals first (frees ids before re-insert).
         for path in &to_remove {
             let _ = self.store.remove_file(path);
             let _ = self.fts.remove_file(path);
@@ -442,27 +313,19 @@ impl KnowledgeIndex {
             ) {
                 match extract::extract_file(&self.project, &self.root, &e.abs_path) {
                     Ok(nodes) => {
-                        let struct_res = self.store.replace_file_nodes(&e.rel_path, &nodes);
-                        let fts_res = self.fts.replace_file(&e.rel_path, &nodes);
-                        let mut published = true;
-                        for res in [struct_res, fts_res] {
-                            if let Err(err) = res {
-                                published = false;
-                                stats.extract_errors += 1;
-                                stats.errors.push(format!("{}: {err}", e.rel_path));
-                            }
+                        let _ = self.store.replace_file_nodes(&e.rel_path, &nodes);
+                        if let Err(err) = self.fts.replace_file(&e.rel_path, &nodes) {
+                            stats.extract_errors += 1;
+                            stats.errors.push(format!("{}: {err}", e.rel_path));
                         }
-                        if published {
-                            let _ = self.store.set_file(&e.rel_path, &e.blake3);
-                        } else {
-                            stats.publish_errors += 1;
-                        }
+                        let _ = self.store.set_file(&e.rel_path, &e.blake3);
                     }
                     Err(err) => {
                         stats.extract_errors += 1;
                         stats.errors.push(err);
-                        // 不提交新哈希:下一轮按 changed 重试,旧节点保留
-                        //(可见于 errors 面;KODE-FULL-007)。
+                        // Keep the old nodes on a failed re-extract rather
+                        // than silently dropping them (visible in errors).
+                        let _ = self.store.set_file(&e.rel_path, &e.blake3);
                     }
                 }
             }
@@ -487,9 +350,7 @@ impl KnowledgeIndex {
             )
         }) || !to_remove.is_empty();
         if def_xml_dirty || edge_sources_dirty {
-            // 模型装载走同一资格集合:被忽略的 def 不进模型,节点/边同源
-            //(KODE-FULL-008)。
-            let kb = AssetKnowledge::load_filtered(&self.root, &git.ignored);
+            let kb = AssetKnowledge::load(&self.root);
             if def_xml_dirty {
                 let model_nodes = extract::def_xml_nodes(&kb, &self.project);
                 let mut by_file: HashMap<String, Vec<IndexNode>> = HashMap::new();
@@ -499,32 +360,18 @@ impl KnowledgeIndex {
                         .or_default()
                         .push(n.clone());
                 }
-                // Replace every eligible model-backed file on disk.
+                // Replace every model-backed file currently present on disk.
                 let model_files: Vec<String> = disk
                     .iter()
-                    .filter(|p| {
-                        (p.ends_with(".def") || p.ends_with(".xml")) && eligible.contains(*p)
-                    })
+                    .filter(|p| p.ends_with(".def") || p.ends_with(".xml"))
                     .cloned()
                     .collect();
                 for rel in &model_files {
                     let nodes = by_file.remove(rel).unwrap_or_default();
-                    let struct_res = self.store.replace_file_nodes(rel, &nodes);
-                    let fts_res = self.fts.replace_file(rel, &nodes);
-                    let mut published = true;
-                    for res in [struct_res, fts_res] {
-                        if let Err(err) = res {
-                            published = false;
-                            stats.extract_errors += 1;
-                            stats.errors.push(format!("{rel}: {err}"));
-                        }
-                    }
-                    if published {
-                        if let Some(e) = entries.iter().find(|e| &e.rel_path == rel) {
-                            let _ = self.store.set_file(rel, &e.blake3);
-                        }
-                    } else {
-                        stats.publish_errors += 1;
+                    let _ = self.store.replace_file_nodes(rel, &nodes);
+                    if let Err(err) = self.fts.replace_file(rel, &nodes) {
+                        stats.extract_errors += 1;
+                        stats.errors.push(format!("{rel}: {err}"));
                     }
                 }
             }
@@ -533,15 +380,11 @@ impl KnowledgeIndex {
             let py = crate::code_index::collect_symbols(&self.root);
             let mut edges = self.semantic_edges(&kb, &py);
             edges.extend(self.excel_edges());
-            if let Err(err) = self.store.replace_edges(&edges) {
-                stats.publish_errors += 1;
-                stats.errors.push(format!("edges: {err}"));
-            }
-            // 模型同代发布(KODE-FULL-005):本轮全部发布成功才刷新挂接的
-            // 模型缓存,工具面(def/type 语义)与结构/全文索引同代。
-            if stats.publish_errors == 0 {
-                if let Some(cache) = self.model_cache.lock().expect("model cache lock").clone() {
-                    *cache.write().expect("model cache write") = kb;
+            let _ = self.store.replace_edges(&edges);
+            // Update hashes for all model-backed files (they were "changed").
+            for e in &entries {
+                if e.rel_path.ends_with(".def") || e.rel_path.ends_with(".xml") {
+                    let _ = self.store.set_file(&e.rel_path, &e.blake3);
                 }
             }
         }
@@ -549,11 +392,8 @@ impl KnowledgeIndex {
         // Config catalog nodes: indexed once, never from disk.
         self.ensure_catalog_nodes();
 
-        // 只清本轮快照:扫描窗内新到的事件留给下一轮(KODE-FULL-005)。
-        self.dirty
-            .lock()
-            .expect("dirty lock")
-            .retain(|d| !seen_dirty.contains(d));
+        // Clear the watcher dirty set (already folded into the sweep).
+        self.dirty.lock().expect("dirty lock").clear();
         stats.elapsed_ms = started.elapsed().as_millis();
         *self.last_stats.lock().expect("stats lock") = stats.clone();
         stats
@@ -703,18 +543,6 @@ impl KnowledgeIndex {
         let dirty = self.dirty.clone();
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(event) = res {
-                // 只认数据变更类(Create/Modify/Remove/Rename 即 Modify/Remove 族):
-                // Access(读)事件把对账自身的扫盘读也记成 dirty,会自激振荡
-                // 永不归零(2026-11-19 worker 消费批实测)。
-                let data_changed = !matches!(
-                    event.kind,
-                    notify::EventKind::Access(_)
-                        | notify::EventKind::Other
-                        | notify::EventKind::Any
-                );
-                if !data_changed {
-                    return;
-                }
                 for path in &event.paths {
                     if path
                         .extension()
@@ -743,54 +571,6 @@ impl KnowledgeIndex {
 
     pub fn dirty_pending(&self) -> usize {
         self.dirty.lock().expect("dirty lock").len()
-    }
-
-
-    /// 挂接模型缓存:对账全量发布成功后同代刷新(KODE-FULL-005)——工具面
-    /// 的 def/type 语义与结构/全文索引不再各走各的旧代。
-    pub fn attach_model_cache(&self, cache: Arc<RwLock<AssetKnowledge>>) {
-        *self.model_cache.lock().expect("model cache lock") = Some(cache);
-    }
-
-    /// 启动后台对账 worker(KODE-FULL-005):watcher 只记 dirty,消费在此。
-    /// 周期检查 dirty(或发布失败的重试位),串行跑有界对账。发布失败保留
-    /// 旧代并在连续 {WORKER_MAX_RETRIES} 轮内重试,仍败则状态面如实报
-    /// failed 并等下一次变更事件再恢复。
-    pub fn start_reconcile_worker(self: &Arc<Self>) {
-        let mut state = self.auto.lock().expect("auto lock");
-        if state.active {
-            return; // already running
-        }
-        state.active = true;
-        drop(state);
-        let index = Arc::clone(self);
-        std::thread::Builder::new()
-            .name("kb-reconcile-worker".to_string())
-            .spawn(move || loop {
-                std::thread::sleep(WORKER_TICK);
-                let pending_retry = {
-                    let state = index.auto.lock().expect("auto lock");
-                    state.pending_retry
-                };
-                if index.dirty_pending() == 0 && !pending_retry {
-                    continue;
-                }
-                {
-                    let mut state = index.auto.lock().expect("auto lock");
-                    state.running = true;
-                }
-                let stats = index.reconcile();
-                let mut state = index.auto.lock().expect("auto lock");
-                state.running = false;
-                if stats.publish_errors > 0 {
-                    state.consecutive_failures += 1;
-                    state.pending_retry = state.consecutive_failures < WORKER_MAX_RETRIES;
-                } else {
-                    state.consecutive_failures = 0;
-                    state.pending_retry = false;
-                }
-            })
-            .expect("spawn kb-reconcile-worker");
     }
 
     /// Unified search: routes exact → structure index, term → BM25, and
@@ -1091,7 +871,6 @@ impl KnowledgeIndex {
     pub fn status(&self) -> Value {
         let (nodes, edges, by_format) = self.store.stats();
         let stats = self.last_stats.lock().expect("stats lock").clone();
-        let auto = self.auto.lock().expect("auto lock");
         json!({
             "nodes": nodes,
             "edges": edges,
@@ -1101,12 +880,6 @@ impl KnowledgeIndex {
             "storagePath": self.store.path.to_string_lossy(),
             "watcherActive": self.watcher_active(),
             "dirtyPending": self.dirty_pending(),
-            "autoReconcile": {
-                "active": auto.active,
-                "running": auto.running,
-                "pendingRetry": auto.pending_retry,
-                "consecutiveFailures": auto.consecutive_failures,
-            },
             "gitAvailable": stats.git_available,
             "gitIgnoredLast": stats.ignored_by_git,
             "contentAddressingIntact": self.store.content_addressing_intact(),

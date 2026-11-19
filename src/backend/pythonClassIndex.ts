@@ -4,7 +4,7 @@ import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from '../compositionRoots';
 import { findFilesAcrossRoots } from '../scanRoots';
-import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS, isEnginePythonLibPath } from './pythonScanRules';
+import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
 import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
@@ -573,8 +573,7 @@ export class PythonClassIndex {
       return;
     }
     if (!this.fileCache.has(filePath) &&
-        (filePath.split(/[\\/]/).some(part => PY_SCAN_EXCLUDED_DIRS.has(part)) ||
-          isEnginePythonLibPath(filePath))) { return; }
+        filePath.split(/[\\/]/).some(part => PY_SCAN_EXCLUDED_DIRS.has(part))) { return; }
     // INDEX-DISCIPLINE-001 ③:语法门——重索引唯一入口(保存/外部写盘经
     // 合并器收口到本面)统一过门。烂文件不入索引不绑定(索引保留上一次
     // 健康版本符号,编辑中导航不断),只计数+日志;诊断面照旧由既有诊断链
@@ -1169,14 +1168,7 @@ export class PythonClassIndex {
       kind: 'initial-scan' as const,
       priority: IndexTaskPriority.BackgroundFull,
       run: async () => {
-        // ENGINE-LIB-SCAN-005 刀1:引擎仓 python 标准库镜像(kbe/scripts/common/Lib)
-        // 按路径形态剔出业务扫描——workspace glob 结果后滤 + 外部根遍历剪枝。
-        this.discoveredFiles = await findFilesAcrossRoots(
-          '**/*.py',
-          PY_SCAN_EXCLUDE,
-          undefined,
-          fsPath => !isEnginePythonLibPath(fsPath)
-        );
+        this.discoveredFiles = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
       }
     }));
     this.discoveredGeneration = scanGeneration;
@@ -1269,12 +1261,7 @@ export class PythonClassIndex {
     const unique = [...new Set(names.filter(name => /^[A-Za-z_]\w*$/.test(name)))].slice(0, 8);
     const discovered = await Promise.all(unique.map(async name => {
       try {
-        return await findFilesAcrossRoots(
-          `**/${name}.py`,
-          PY_SCAN_EXCLUDE,
-          token,
-          fsPath => !isEnginePythonLibPath(fsPath)
-        );
+        return await findFilesAcrossRoots(`**/${name}.py`, PY_SCAN_EXCLUDE, token);
       } catch {
         return [];
       }

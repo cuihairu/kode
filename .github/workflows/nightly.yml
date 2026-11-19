@@ -117,7 +117,7 @@ jobs:
       # 钉死,rustup 首次调用自动安装(runner 预装 rustup)。
       - name: Cache Rust builds (serving gate)
         timeout-minutes: 5
-        uses: actions/cache@v4.2.4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry

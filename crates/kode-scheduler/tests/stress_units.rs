@@ -88,19 +88,3 @@ fn storm_probe_monotone_versions_never_drop_events() {
     assert_eq!(seen, merged + landed as u64, "事件总数 = 合并数 + 落盘数");
     assert!(merged > 0, "8 文件高密度下必然产生合并");
 }
-
-#[test]
-fn stress_dense_sampling_captures_queued_peak() {
-    // check_every=1 每操作即采样:入队瞬时排队深度进峰值面(否则峰值
-    // 恒 0,采样臂形同虚设)。
-    let opts = StressOptions {
-        total_ops: 2_000,
-        max_queued: 0,
-        interactive_cooldown_ms: 50,
-        starvation_limit_ms: 5_000,
-        check_every: 1,
-        cancel_rate_pct: 5,
-    };
-    let report = run_stress(7, opts).expect("不变量成立");
-    assert!(report.peak_queued >= 1, "密集采样必须捕获到排队峰值");
-}

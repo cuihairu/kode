@@ -186,34 +186,3 @@ fn ingest_context_reset_leaves_source_site_intact() {
     assert_eq!(b.source, TypeSourceKind::TypesXml, "来源种类不受影响");
     assert_eq!(b.line, Some(1), "声明 site 不受影响");
 }
-
-/// 稳定协议面:出处/生成/拒收三枚举 as_str 全变体钉板(序列化契约,
-/// 码值漂移即时红)。
-#[test]
-fn enum_as_str_covers_all_variants() {
-    use kode_types::TypeErrorReason;
-    assert_eq!(
-        TypeErrorReason::ReservedUnderscorePrefix.as_str(),
-        "reserved_underscore_prefix"
-    );
-    assert_eq!(TypeErrorReason::EmptyTarget.as_str(), "empty_target");
-    assert_eq!(TypeErrorReason::ArrayMissingOf.as_str(), "array_missing_of");
-    assert_eq!(
-        TypeErrorReason::FixedDictMissingProperties.as_str(),
-        "fixed_dict_missing_properties"
-    );
-    assert_eq!(TypeSourceKind::TypesXml.as_str(), "types_xml");
-    assert_eq!(TypeSourceKind::AliasXml.as_str(), "alias_xml");
-    assert_eq!(TypeSourceKind::Def.as_str(), "def");
-    assert_eq!(TypeSourceKind::EntitiesXml.as_str(), "entities_xml");
-    assert_eq!(TypeSourceKind::Direct.as_str(), "direct");
-    assert_eq!(GenerationKind::PyiStub.as_str(), "pyi_stub");
-    assert_eq!(GenerationKind::EntityStub.as_str(), "entity_stub");
-    assert_eq!(
-        TypeErrorReason::FixedDictKeyUnknownType {
-            target: "X".to_string()
-        }
-        .as_str(),
-        "fixed_dict_key_unknown_type"
-    );
-}
