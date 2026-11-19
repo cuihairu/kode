@@ -20,6 +20,55 @@ export const CORPUS_MIRROR_GLOBS = [
   '**/alias.xml',
 ];
 
+/**
+ * KODE-RESP-006:镜像轮凭据(代际 + 取消令牌)。新轮 begin 即取消旧轮
+ * 令牌;旧轮在 register/read/发送/complete 前校验 isCurrent,晚到的旧
+ * 结果不再落库/记账(新轮已接管暖门与根表)。
+ */
+export interface MirrorRun {
+  generation: number;
+  token: vscode.CancellationToken;
+  /** 本轮仍是最新且未被取消。 */
+  isCurrent: () => boolean;
+}
+
+/** 镜像轮协调器(代际递增 + 单一在飞取消源)。 */
+export class MirrorRunCoordinator {
+  private generation = 0;
+  private cancelSource: vscode.CancellationTokenSource | null = null;
+
+  /** 开新轮:取消旧轮令牌,返回本轮凭据。 */
+  begin(): MirrorRun {
+    this.cancelSource?.cancel();
+    this.cancelSource = new vscode.CancellationTokenSource();
+    this.generation += 1;
+    const generation = this.generation;
+    const token = this.cancelSource.token;
+    return {
+      generation,
+      token,
+      isCurrent: () =>
+        this.generation === generation && !token.isCancellationRequested,
+    };
+  }
+
+  /** 取消当前轮(重启/停进程:在途旧轮不得向新进程投递)。 */
+  cancel(): void {
+    this.cancelSource?.cancel();
+  }
+}
+
+/**
+ * 全局镜像轮协调器(KODE-RESP-006):激活/根差量/重启/配置变化四个触发
+ * 位共用;重启路径先 cancel 再开新轮。
+ */
+const corpusMirrorRuns = new MirrorRunCoordinator();
+
+/** 取消在途镜像轮(重启 Core:stopClient 后旧轮不得向新进程投递)。 */
+export function cancelCorpusMirrorRuns(): void {
+  corpusMirrorRuns.cancel();
+}
+
 /** 扫描根提供者(可注入替身;缺省走索引扫描根全集) */
 export type ScanRootsProvider = () => string[];
 
@@ -81,6 +130,11 @@ export async function mirrorCorpusToRust(
   if (!gate.serveFromRust()) {
     return;
   }
+  // KODE-RESP-006:本轮凭据——begin 即取消旧轮;此后 register/read/发送/
+  // complete 各步校验 isCurrent,被新轮顶替的旧轮静默停(不 scanCancel:
+  // 暖门账已归新轮管,旧轮 cancel 会砸掉新轮的 Warming)。
+  const run = corpusMirrorRuns.begin();
+  const superseded = () => !run.isCurrent();
   // RUST-069-W:根生命周期先行——语料 didOpen 的根归属(server 侧
   // root_for 最长前缀)依赖根已注册;外部 assetsRoot 根不在 initialize
   // 握手里,不先注册则外部根语料落 UNROOTED(与 workspace 根互不隔离)。
@@ -91,13 +145,17 @@ export async function mirrorCorpusToRust(
     roots = [];
   }
   for (const root of roots) {
+    if (superseded()) {
+      return;
+    }
     await gate.registerRoot(root).catch(() => undefined);
   }
   // 枚举 + 去重(同一文件可能被多个 glob 命中;路径为规范 fsPath)。
+  // 发现请求携带本轮取消令牌(RESP-006:旧轮的枚举可被新轮掐掉)。
   const corpusUris = new Map<string, vscode.Uri>();
   for (const glob of CORPUS_MIRROR_GLOBS) {
     try {
-      const found = await findFiles(glob);
+      const found = await findFiles(glob, run.token);
       for (const uri of found) {
         corpusUris.set(uri.fsPath, uri);
       }
@@ -144,6 +202,11 @@ export async function mirrorCorpusToRust(
       await gate.scanCancel().catch(() => undefined);
       return;
     }
+    if (superseded()) {
+      // RESP-006:被新轮顶替(换根/重启/配置变化)——静默停,不投递、
+      // 不 complete、不 cancel(暖门账归新轮)。
+      return;
+    }
     const open = openByFsPath.get(fsPath);
     if (open) {
       try {
@@ -164,6 +227,10 @@ export async function mirrorCorpusToRust(
       failed += 1;
       continue;
     }
+    if (superseded()) {
+      // 读盘期间被顶替:读到的旧内容不再发送。
+      return;
+    }
     try {
       await gate.mirrorDocument(
         fsPath,
@@ -175,6 +242,10 @@ export async function mirrorCorpusToRust(
     } catch {
       failed += 1;
     }
+  }
+  if (superseded()) {
+    // 收尾前被顶替:旧轮不得替新轮记账 complete。
+    return;
   }
   await gate.scanComplete(mirrored, failed).catch(() => undefined);
 }
