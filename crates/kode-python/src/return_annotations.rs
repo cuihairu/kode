@@ -979,4 +979,107 @@ mod tests {
         assert_eq!(out.names.len(), 1);
         assert_eq!(out.names[0].local, "Good");
     }
+
+    // ---- COV-043:掩码/匹配器残臂直打 --------------------------------------
+
+    #[test]
+    fn mask_triple_quote_opens_and_closes_in_one_line() {
+        // 同行开闭三引号:开=三下划线占位,体内逐码元空白,闭=三空白
+        let masked = mask_code_line(&u("s = \"\"\"abc\"\"\""));
+        assert_eq!(from_utf16(&masked), "s = ___      ");
+    }
+
+    #[test]
+    fn def_head_failure_and_space_tolerant_arms() {
+        // 词后无空白(defg)/名字首元非词(def 1x)/名字后非括号(def q:)各归
+        // None;括号前空白(def f (x))合法命中且注解照常提取
+        let text = u("defg(x):\ndef 1x():\ndef q:\ndef f (x) -> int:\n    pass\n");
+        let facts = collect_file_annotation_facts(&text);
+        assert_eq!(facts.len(), 1, "{facts:?}");
+        assert_eq!(facts[0].name, "f");
+        assert_eq!(facts[0].annotation.as_deref(), Some("int"));
+    }
+
+    #[test]
+    fn assignment_head_leading_space_and_bad_name_arms() {
+        // 缩进赋值(缩进块内的 x = f())合法;名字首元非词归 None
+        let hit = parse("    x = f()");
+        assert_eq!(
+            hit.map(|c| (c.target, c.receiver, c.method_name)),
+            Some(("x".to_string(), None, "f".to_string()))
+        );
+        assert!(parse("1x = f()").is_none());
+    }
+
+    #[test]
+    fn call_matcher_residual_arms() {
+        // 属性直调:点后非名字首元/方法后无括号 → None
+        assert!(parse("x = a.1b()").is_none());
+        assert!(parse("x = a.b").is_none());
+        // 简单调用:名字与括号间空白合法命中;名字后无括号 → None
+        let spaced = parse("x = f ()");
+        assert_eq!(
+            spaced.map(|c| (c.target, c.method_name)),
+            Some(("x".to_string(), "f".to_string()))
+        );
+        assert!(parse("x = f").is_none());
+        // 属性直调前缀命中但右值不以 ) 收尾(二元式)→ 整体 None
+        assert!(parse("x = a.b() + 1").is_none());
+    }
+
+    #[test]
+    fn facts_truncate_after_64_unclosed_lines() {
+        // 签名跨 64 行未闭合:截断弃当前(f 不得产出),后续定义照常收
+        let mut text = String::from("def f(\n");
+        for _ in 0..63 {
+            text.push_str("    filler\n");
+        }
+        text.push_str("def g() -> int:\n    pass\n");
+        let facts = collect_file_annotation_facts(&u(&text));
+        assert_eq!(facts.len(), 1, "{facts:?}");
+        assert_eq!(facts[0].name, "g");
+        assert_eq!(facts[0].annotation.as_deref(), Some("int"));
+    }
+
+    #[test]
+    fn from_import_leading_space_and_module_arms() {
+        // 缩进 from 导入合法;from 后无空白/模块段空各归 None
+        let out = extract_file_imports(&[u("    from m import x")]);
+        assert_eq!(out.names.len(), 1);
+        assert_eq!(out.names[0].local, "x");
+        let bad = extract_file_imports(&[u("frommod import x"), u("from # import y")]);
+        assert!(bad.names.is_empty() && bad.receivers.is_empty());
+    }
+
+    #[test]
+    fn import_alias_residual_arms() {
+        let lines = vec![
+            u("from m import 1x"),       // 名字首元非词
+            u("from m import x y"),      // 残段非 as
+            u("from m import x as"),     // as 后无名字
+            u("from m import x as yz"),  // 多字符别名
+            u("from m import x as y z"), // 别名后残段
+        ];
+        let out = extract_file_imports(&lines);
+        assert_eq!(out.names.len(), 1, "{:?}", out.names);
+        assert_eq!(out.names[0].local, "yz");
+        assert_eq!(out.names[0].symbol, "x");
+        assert_eq!(out.names[0].module, "m");
+    }
+
+    #[test]
+    fn bare_import_residual_arms() {
+        let lines = vec![
+            u("    import time"),  // 缩进 bare 导入
+            u("importx"),          // import 后无空白
+            u("import 1x"),        // 段首非词
+            u("import a.b as cd"), // 多字符别名
+        ];
+        let out = extract_file_imports(&lines);
+        assert_eq!(out.receivers.len(), 2, "{:?}", out.receivers);
+        assert_eq!(out.receivers[0].local, "time");
+        assert_eq!(out.receivers[0].module, "time");
+        assert_eq!(out.receivers[1].local, "cd");
+        assert_eq!(out.receivers[1].module, "a/b");
+    }
 }
