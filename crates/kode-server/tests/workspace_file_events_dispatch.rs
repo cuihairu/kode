@@ -11,7 +11,7 @@
 //! 作复活探针;复活面直接读 `state.hover.borrow().index.symbols_in_file`
 //! (符号索引真态)+ `state.index.snapshot()` 队列记账。
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -104,7 +104,8 @@ fn drain_and_hover(state: &mut ServerState, uri: &str, id: i64) -> Option<String
 }
 
 fn pump(state: &mut ServerState) {
-    state.index.pump_budgeted(64);
+    // RESP-001b:泵=生产形态(墙钟界;读线程往返在预算内交货应用)。
+    state.index.pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
 }
 
 const DEF_TEXT: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";

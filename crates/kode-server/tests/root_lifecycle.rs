@@ -9,6 +9,7 @@ use serde_json::json;
 
 use kode_protocol::{IncomingMessage, Notification, Request, RequestId};
 use kode_server::{handle_message, Outgoing, ServerState};
+use std::time::{Duration, Instant};
 
 fn request(id: i64, method: &str, params: serde_json::Value) -> IncomingMessage {
     IncomingMessage::Request(Request {
@@ -107,7 +108,8 @@ fn open_entities(state: &mut ServerState, uri: &str) {
 /// RUST-070/071/073:模拟主循环空闲切片——didOpen 的语料 ingest 已入
 /// 索引刷新队列,泵过后才真正入库(与生产时序一致)。
 fn pump_index(state: &mut ServerState) {
-    state.index.pump_budgeted(64);
+    // RESP-001b:泵=生产形态(墙钟界;读线程往返在预算内交货应用)。
+    state.index.pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
 }
 
 fn definition_at(state: &mut ServerState, id: i64, uri: &str) -> serde_json::Value {

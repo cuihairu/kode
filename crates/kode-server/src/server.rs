@@ -275,8 +275,13 @@ impl ServerState {
         session.register_sink(Rc::clone(&store) as Rc<RefCell<dyn RootInvalidationSink>>);
         session.register_sink(Rc::clone(&hover) as Rc<RefCell<dyn RootInvalidationSink>>);
         // RUST-070/071/073:索引刷新队列持有引擎句柄(入队时构建执行时刻
-        // 真相执行体);RUST-082:didChange 风暴缓冲在队列内。
-        let index_queue = crate::index_queue::IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
+        // 真相执行体);RUST-082:didChange 风暴缓冲在队列内。RESP-001b:
+        // 回落读盘走专用读线程(协议线程绝不内联读盘)。
+        let index_queue = crate::index_queue::IndexQueue::with_off_thread_reader(
+            Rc::clone(&store),
+            Rc::clone(&hover),
+            std::sync::Arc::new(|path| std::fs::read_to_string(path)),
+        );
         ServerState {
             initialized: false,
             shutdown_requested: false,
