@@ -677,8 +677,8 @@ describe('pythonClassIndex 覆盖补齐', () => {
     const paths = makeRoot({ 'a.py': 'class A:\n    pass\n' });
     pointWorkspaceAt(rootDirOf(paths['a.py']));
     stubFindFiles(pattern => (String(pattern).includes('*.py') ? [paths['a.py']] : []));
-    // 发现任务(initial-scan)放行,分块解析任务(full-reindex)同步抛:
-    // 第一次扫描在发现成功后于入队处失败 → 完成代不记账,scanPromise 清空。
+    // 发现(RESP-002 后类内单飞,不经调度器)放行,分块解析任务(full-reindex)
+    // 同步抛:第一次扫描在发现成功后于入队处失败 → 完成代不记账,scanPromise 清空。
     class ThrowChunkScheduler extends IndexScheduler {
       override enqueue(spec: IndexTaskSpec): IndexTaskHandle {
         if (spec.kind === 'full-reindex') { throw new Error('chunk enqueue boom'); }

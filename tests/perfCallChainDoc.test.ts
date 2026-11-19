@@ -596,11 +596,14 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-18:SCAN-RESUME-001 断点续扫——pythonClassIndex.ts 顶部 import +5、
   // 字段+构造器段 +15、runScheduledScan 恢复块 +46(非均匀):688→706(+18)、
   // 1300→1366/1420→1486(+66)。出处随 baseline 锁步。
-  ['src/backend/pythonClassIndex.ts', 767, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1448, 'resolveClassBase'],
+  ['src/backend/pythonClassIndex.ts', 774, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1481, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1572, '①② 两段查询'],
+  ['src/backend/pythonClassIndex.ts', 1605, '①② 两段查询'],
+  // 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位——
+  // 单飞字段块 +7、ensureDiscovered 重写 +22、零失败清表改覆盖式 +4(非均匀):
+  // 767→774(+7)、1448→1481(+33)、1572→1605(+33)。出处随 baseline 锁步。
   // 2026-11-19(ENGINE-LIB-SCAN-005 刀1):pythonClassIndex.ts 引擎库路径滤除
   // 三接线点——onFileChanged 判据 +1、全量发现块 +7、按名懒查块 +5(非均匀):
   // 766→767(+1)、1435→1448(+13)、1559→1572(+13)。出处随 baseline 锁步。
