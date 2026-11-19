@@ -1,0 +1,89 @@
+{
+  "generator": "kode-server dump-code-action-assembly-golden",
+  "caseCount": 4,
+  "actionCount": 5,
+  "cases": [
+    {
+      "name": "type-replacement",
+      "actions": [
+        {
+          "kind": "QuickFix",
+          "title": "Replace with registered type UINT32",
+          "edit": {
+            "type": "replaceRange",
+            "file": "/w/scripts/entity_defs/Avatar.def",
+            "range": {
+              "startLine": 2,
+              "startChar": 14,
+              "endLine": 2,
+              "endChar": 20
+            },
+            "newText": "UINT32"
+          },
+          "diagnosticStartLine": 2
+        }
+      ]
+    },
+    {
+      "name": "parity-method",
+      "actions": [
+        {
+          "kind": "QuickFix",
+          "title": "Generate method onTalk → /w/scripts/avatar.py:9",
+          "edit": {
+            "type": "insertLine",
+            "file": "/w/scripts/avatar.py",
+            "line": 8,
+            "text": "\n    def onTalk(self, arg0: int) -> None:\n        raise NotImplementedError\n"
+          },
+          "diagnosticStartLine": 5
+        }
+      ]
+    },
+    {
+      "name": "receiver-none-guard",
+      "actions": [
+        {
+          "kind": "QuickFix",
+          "title": "Wrap with null guard (if self.cell:)",
+          "edit": {
+            "type": "replaceLines",
+            "file": "/w/scripts/mob.py",
+            "startLine": 2,
+            "endLine": 4,
+            "text": "        if self.cell:\n            self.cell.prepareEnter(entity)\n            self.cell.ready()\n"
+          },
+          "diagnosticStartLine": 2
+        },
+        {
+          "kind": "QuickFix",
+          "title": "Insert None guard (if not self.cell: return)",
+          "edit": {
+            "type": "insertLine",
+            "file": "/w/scripts/mob.py",
+            "line": 2,
+            "text": "        if not self.cell:\n            return\n"
+          },
+          "diagnosticStartLine": 2
+        }
+      ]
+    },
+    {
+      "name": "fixed-dict-whole-reassign",
+      "actions": [
+        {
+          "kind": "QuickFix",
+          "title": "Whole reassign: rewrite FIXED_DICT sub-key assignment as top-level assignment",
+          "edit": {
+            "type": "replaceLines",
+            "file": "/w/scripts/box.py",
+            "startLine": 2,
+            "endLine": 3,
+            "text": "        _fd = self.contents\n        _fd[\"slot\"] = 1\n        self.contents = _fd\n"
+          },
+          "diagnosticStartLine": 2
+        }
+      ]
+    }
+  ]
+}

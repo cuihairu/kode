@@ -5,6 +5,7 @@ pub mod api_docs;
 pub mod attribute_none;
 pub mod client_sdk;
 pub mod code_action;
+pub mod code_action_assembly;
 pub mod completion;
 pub mod config_rpc;
 pub mod database_schema;
@@ -63,6 +64,7 @@ pub mod wire_codec;
 pub mod workspace_discovery;
 
 pub use code_action::dump_code_action_golden;
+pub use code_action_assembly::dump_code_action_assembly_golden;
 pub use completion::{
     dump_completion_golden, resolve_item, to_lsp_items, CompletionContextFace, CompletionItemFace,
     CompletionResponse,
