@@ -43,6 +43,19 @@ pub const INDEX_QUEUE_MAX: usize = 8192;
 /// 空闲切片——小语料(测试/小仓)单请求即全量就绪,大语料请求不背全量洪水。
 pub const REQUEST_DRAIN_BUDGET: usize = 16;
 
+/// RESP-001:请求排水墙钟顶(ms)。条数上限保留(小语料单请求全量就绪
+/// 口径不变),叠加墙钟界——条数约束不了响应时间,时间才能:慢盘/大文件
+/// 下交互请求在无关追赶上最多付这么多,余量留给空闲切片。
+pub const REQUEST_DRAIN_BUDGET_MS: u64 = 4;
+
+/// RESP-001:主循环帧间小切片墙钟顶(ms)。帧到达间隙的 ingest 步进让出
+/// 协议线程的上界,超时即回读帧,下一帧间续跑(条数 8 保留为上限)。
+pub const FRAME_SLICE_BUDGET_MS: u64 = 4;
+
+/// RESP-001:空闲 tick 大切片墙钟顶(ms)。空闲期追赶可以更拼,同样有界
+/// (条数 64 保留为上限)。
+pub const IDLE_SLICE_BUDGET_MS: u64 = 16;
+
 /// didChange debounce 时间窗(CORE-017 max latency):窗口内同文件多版本
 /// 并一,窗口到期整批移交——最坏延迟 = 窗口时长,连续输入下至多每窗一批
 /// (延迟有界,绝不无限推迟)。
@@ -114,6 +127,14 @@ fn record_ingest(counts: &Rc<RefCell<IngestCounts>>, change: ChangeCategory) {
     }
 }
 
+/// RESP-001:磁盘回落读函数(注入位)。参数=native 路径字符串。
+pub type DiskReadFn = Rc<dyn Fn(&str) -> std::io::Result<String>>;
+
+/// 生产读函数:`std::fs::read_to_string` 直通。
+fn default_disk_reader() -> DiskReadFn {
+    Rc::new(|path| std::fs::read_to_string(path))
+}
+
 /// 索引刷新队列:kode-scheduler 调度核 + 身份台账(pending)+ 风暴缓冲。
 pub struct IndexQueue {
     sched: Scheduler,
@@ -135,6 +156,8 @@ pub struct IndexQueue {
     /// 引擎句柄(入队时构建执行时刻真相执行体)。
     store: Rc<RefCell<kode_vfs::DocumentStore>>,
     hover: Rc<RefCell<HoverEngine>>,
+    /// RESP-001:磁盘回落读函数(测试注入口,慢盘/大文件模拟)。
+    disk_reader: DiskReadFn,
 }
 
 impl std::fmt::Debug for IndexQueue {
@@ -150,6 +173,16 @@ impl IndexQueue {
     pub fn new(
         store: Rc<RefCell<kode_vfs::DocumentStore>>,
         hover: Rc<RefCell<HoverEngine>>,
+    ) -> IndexQueue {
+        IndexQueue::with_disk_reader(store, hover, default_disk_reader())
+    }
+
+    /// RESP-001:同 [`IndexQueue::new`],磁盘回落读经注入位 `disk_reader`
+    /// (生产=`std::fs::read_to_string`;测试注入慢读,模拟慢盘/大文件)。
+    pub fn with_disk_reader(
+        store: Rc<RefCell<kode_vfs::DocumentStore>>,
+        hover: Rc<RefCell<HoverEngine>>,
+        disk_reader: DiskReadFn,
     ) -> IndexQueue {
         IndexQueue {
             sched: Scheduler::new(SchedulerOptions {
@@ -168,6 +201,7 @@ impl IndexQueue {
             storm_deadline: None,
             store,
             hover,
+            disk_reader,
         }
     }
 
@@ -277,9 +311,10 @@ impl IndexQueue {
         let store = Rc::clone(&self.store);
         let hover = Rc::clone(&self.hover);
         let counts = Rc::clone(&self.ingest_counts);
+        let disk_reader = Rc::clone(&self.disk_reader);
         let key_for_run = key.clone();
         let wrapped: Box<RunFn> = Box::new(move |token| {
-            let run = ingest_refresh_task(store, hover, counts, key_for_run);
+            let run = ingest_refresh_task(store, hover, counts, disk_reader, key_for_run);
             let result = run(token);
             done_log.borrow_mut().push(identity_for_log);
             result
@@ -315,6 +350,24 @@ impl IndexQueue {
     pub fn pump_budgeted(&mut self, max_tasks: usize) -> usize {
         let mut ran = 0;
         while ran < max_tasks {
+            match self.sched.pump_once() {
+                kode_scheduler::Pump::Ran => {
+                    ran += 1;
+                    self.settle_done();
+                }
+                _ => break,
+            }
+        }
+        ran
+    }
+
+    /// RESP-001:泵切片(墙钟版):至多 `max_tasks` 条**且**不越过
+    /// `deadline`(条数与时间双界——条数约束不了响应时间)。预算在任务
+    /// 间检查,单任务超支不可抢占(最坏无响应间隔=单文件读+解析时长,
+    /// 读盘移池另行收口)。返回实际执行数。
+    pub fn pump_budgeted_until(&mut self, max_tasks: usize, deadline: Instant) -> usize {
+        let mut ran = 0;
+        while ran < max_tasks && Instant::now() < deadline {
             match self.sched.pump_once() {
                 kode_scheduler::Pump::Ran => {
                     ran += 1;
@@ -440,6 +493,7 @@ pub(crate) fn ingest_refresh_task(
     store: Rc<RefCell<kode_vfs::DocumentStore>>,
     hover: Rc<RefCell<HoverEngine>>,
     counts: Rc<RefCell<IngestCounts>>,
+    disk_reader: DiskReadFn,
     key: DocumentKey,
 ) -> Box<RunFn> {
     Box::new(move |_token| {
@@ -450,8 +504,8 @@ pub(crate) fn ingest_refresh_task(
         } else {
             // 磁盘回落用原生路径:canonical `/C:/...` 形态在 Windows 上非
             // 有效路径(相对当前盘根解析),直喂 std::fs 读盘恒败=关闭文档
-            // 回落全走逐出臂。
-            match std::fs::read_to_string(key.uri.to_native_path()) {
+            // 回落全走逐出臂。RESP-001:读经注入位(生产=std::fs)。
+            match disk_reader(&key.uri.to_native_path()) {
                 Ok(text) => {
                     let change = hover.borrow_mut().update(key, &text);
                     record_ingest(&counts, change);
@@ -628,6 +682,47 @@ mod tests {
         assert_eq!(q.pump_budgeted(4), 1);
         assert_eq!(hover.borrow().index.symbol_count(), 0, "盘上已删除应逐出");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wall_clock_budget_stops_slice_between_tasks() {
+        // RESP-001:条数上限内,墙钟到期即停——慢读注入下切片不吞协议
+        // 线程。三键全走磁盘臂(注入 40ms/次慢读),deadline=25ms:首任务
+        // 执行后时间尽,切片停在 1(条数界 4 不会先到;预算在任务间检查)。
+        let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
+        let hover = Rc::new(RefCell::new(HoverEngine::new()));
+        let slow: DiskReadFn = Rc::new(|_| {
+            std::thread::sleep(Duration::from_millis(40));
+            Ok("<root>\n</root>\n".to_string())
+        });
+        let mut q = IndexQueue::with_disk_reader(Rc::clone(&store), Rc::clone(&hover), slow);
+        for i in 0..3 {
+            let k = key(1, &format!("/w/slow{i}.def"));
+            q.request_open(&k, 1);
+        }
+        let deadline = Instant::now() + Duration::from_millis(25);
+        let ran = q.pump_budgeted_until(4, deadline);
+        assert_eq!(ran, 1, "墙钟到期应停在首任务后(条数界 4 未到)");
+        // 余下两键由后续切片续跑(不丢)。
+        assert_eq!(q.pump_budgeted_until(4, Instant::now() + Duration::from_secs(5)), 2);
+    }
+
+    #[test]
+    fn injected_disk_reader_supplies_text_without_fs() {
+        // RESP-001:读注入位供文本:盘上无文件也能走 ingest 全链(慢读
+        // 模拟的基准形态);读成功不得逐出(removed==0)。
+        let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
+        let hover = Rc::new(RefCell::new(HoverEngine::new()));
+        let reader: DiskReadFn = Rc::new(|_| {
+            Ok("<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t</hp>\n\t</Properties>\n</root>\n".to_string())
+        });
+        let mut q = IndexQueue::with_disk_reader(Rc::clone(&store), Rc::clone(&hover), reader);
+        let k = key(1, "/w/injected.def");
+        q.request_open(&k, 1);
+        assert_eq!(q.pump_budgeted(2), 1);
+        assert!(hover.borrow().index.symbol_count() > 0, "注入文本应入索引");
+        let snap = q.snapshot();
+        assert_eq!(snap.ingest_removed, 0, "注入读成功不得逐出");
     }
 
     #[test]

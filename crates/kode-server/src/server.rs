@@ -648,7 +648,11 @@ fn drain_index_for_request(state: &mut ServerState, key: &DocumentKey) {
     state.index.freshen(&identity);
     state
         .index
-        .pump_budgeted(crate::index_queue::REQUEST_DRAIN_BUDGET);
+        .pump_budgeted_until(
+            crate::index_queue::REQUEST_DRAIN_BUDGET,
+            std::time::Instant::now()
+                + std::time::Duration::from_millis(crate::index_queue::REQUEST_DRAIN_BUDGET_MS),
+        );
 }
 
 /// textDocument/hover(PR-010/LSP-003):文档须已打开(open overlay 优先,

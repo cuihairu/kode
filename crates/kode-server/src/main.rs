@@ -315,17 +315,30 @@ fn main() {
                     process_outcomes(&mut state, &executor, outcomes, &rx, &mut decoder, &mut deferred);
                     // 索引刷新小切片(RUST-070/071/073):帧间让 ingest 走步,
                     // 不逐文件内联压住交互帧(CORE-005);风暴窗到期先移交
-                    // (RUST-082 max latency 兑现)。
+                    // (RUST-082 max latency 兑现)。RESP-001:切片条数+墙钟
+                    // 双界,时间到即回读帧,下一帧间续跑。
                     state.index.flush_due(std::time::Instant::now());
-                    state.index.pump_budgeted(8);
+                    state.index.pump_budgeted_until(
+                        8,
+                        std::time::Instant::now()
+                            + std::time::Duration::from_millis(
+                                kode_server::index_queue::FRAME_SLICE_BUDGET_MS,
+                            ),
+                    );
                 }
                 Ok(None) | Err(RecvTimeoutError::Disconnected) => eof = true,
                 Err(RecvTimeoutError::Timeout) => {
                     // 空闲 tick:风暴窗到期移交(RUST-082)+ 大切片追赶
                     // (CORE-006 后台不可永久推迟;DEPENDENCY_UPDATE 优先级
-                    // 恒交互级,冷却不适用)。
+                    // 恒交互级,冷却不适用)。RESP-001:同样叠墙钟界。
                     state.index.flush_due(std::time::Instant::now());
-                    state.index.pump_budgeted(64);
+                    state.index.pump_budgeted_until(
+                        64,
+                        std::time::Instant::now()
+                            + std::time::Duration::from_millis(
+                                kode_server::index_queue::IDLE_SLICE_BUDGET_MS,
+                            ),
+                    );
                 }
             }
         } else if deferred.is_empty() {
