@@ -191,6 +191,7 @@
     "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.hotReload.materializeGlobs",
     "onCommand:kbengine.hotReload.releasePreview",
+    "onCommand:kbengine.hotReload.showDiagnostics",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.resetStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -1200,6 +1201,10 @@
       {
         "command": "kbengine.hotReload.releasePreview",
         "title": "%kbengine.command.hotReload.releasePreview.title%"
+      },
+      {
+        "command": "kbengine.hotReload.showDiagnostics",
+        "title": "%kbengine.command.hotReload.showDiagnostics.title%"
       },
       {
         "command": "kbengine.typePreview.refresh",

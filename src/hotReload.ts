@@ -2,10 +2,16 @@ import { createHash } from 'crypto';
 
 import * as vscode from 'vscode';
 import {
+  formatHotReloadTime,
   HotReloadStatusController,
   type HotReloadGlobSource,
   type HotReloadWatchOffReason
 } from './hotReloadStatus';
+import {
+  HotReloadDiagnosticsPanel,
+  HOT_RELOAD_DIAGNOSTICS_CHANNEL_NAME,
+  HOT_RELOAD_SHOW_DIAGNOSTICS_COMMAND
+} from './backend/hotReloadDiagnostics';
 import { createSharedFileEventMerger, type SharedFileEvent } from './backend/sharedFileEvents';
 import {
   buildNonPythonChangeEvent,
@@ -519,6 +525,14 @@ export function setupHotReload(
         vscode.commands.registerCommand(command, handler),
       timers: realHotReloadTimerDeps
     });
+  // RUST-341:八型诊断事件的用户可审查呈现面——「KBEngine 热更诊断」通道
+  // 全量落账(呈现即全量,不聚合不筛除,被拦下的事件同样可见),
+  // kbengine.hotReload.showDiagnostics 命令打开通道。面板随 setupHotReload
+  // 建一次,pipeline 随配置重建仍写同一面板(闭包引用,不随 apply 换)。
+  const diagnosticsPanel = new HotReloadDiagnosticsPanel({
+    channel: vscode.window.createOutputChannel(HOT_RELOAD_DIAGNOSTICS_CHANNEL_NAME),
+    formatTime: formatHotReloadTime
+  });
   const reportActionError = (error: unknown): void => {
     if (options.onActionError) {
       try {
@@ -1142,8 +1156,11 @@ export function setupHotReload(
       ...(current.syntaxGate
         ? { checkSyntax: options.pipelineFaces?.syntaxCheck ?? buildRealSyntaxGate() }
         : {}),
-      // HR-WATCH-016 滞留可见性:预览滞留必须上日志,否则放行命令无从发现
+      // HR-WATCH-016 滞留可见性:预览滞留必须上日志,否则放行命令无从发现;
+      // RUST-341:八型诊断全量另落「KBEngine 热更诊断」通道(用户可审查
+      // 时间线),主日志的既有可见性契约不因新面而丢
       onDiagnostic: diagnostic => {
+        diagnosticsPanel.push(diagnostic);
         if (diagnostic.type === 'preview') {
           status.log(`热更批量预览滞留: ${diagnostic.detail}`);
         }
@@ -1178,6 +1195,14 @@ export function setupHotReload(
       pipeline?.releasePreview();
       void vscode.window.showInformationMessage(`已放行热更预览批次(${held.length} 文件)`);
     }
+  );
+
+  // RUST-341:诊断审查入口——打开「KBEngine 热更诊断」通道(八型事件
+  // 时间线,见 buildPipeline 的 onDiagnostic 全量落账)。命令随复合
+  // disposable 一并释放(与 releasePreview 同口径)。
+  const showDiagnosticsCommand = vscode.commands.registerCommand(
+    HOT_RELOAD_SHOW_DIAGNOSTICS_COMMAND,
+    () => diagnosticsPanel.show()
   );
 
   // HR-PR-05 磁盘侧接线面(HR-WATCH-003/005/015):注入 watcher 工厂才建。
@@ -1475,6 +1500,8 @@ export function setupHotReload(
   context.subscriptions.push({
     dispose: (): void => {
       releasePreviewCommand.dispose();
+      showDiagnosticsCommand.dispose();
+      diagnosticsPanel.dispose();
       subscription.dispose();
       unsubscribeBypass();
       bypassMerger.dispose();

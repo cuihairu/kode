@@ -984,6 +984,16 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
   - 阈值按批计数,到阈值需先成批(`kbengine.hotReload.batchFlushMs > 0`);`batchPreviewThreshold: 0` = 一律滞留
 
 
+### `kbengine.hotReload.showDiagnostics`
+
+- 标题：`Show Hot Reload Diagnostics`
+- 作用：打开「KBEngine 热更诊断」通道——热更保存流水线全部诊断事件的用户可审查时间线（RUST-341 / HR-WATCH-017）
+- 行为：
+  - 八型诊断全部落通道，一行一事件——trigger/filtered/debounced/deduped/blocked（语法闸拦下）/scheduled/preview（批量预览滞留）/flushed——行格式 `[时间] 标签 文件: 明细`；不聚合、不筛除（呈现即全量：被闸门拦下的事件与已发出的事件同样可见）
+  - 通道按事件落账，命令从未运行也照常积累；本命令只负责打开供审查（不重采样、无额外计算）
+  - 通道跨流水线重建共用（配置变化重建流水线仍写同一通道）；「KBEngine 热更新」主日志的既有契约不变（批量预览滞留提示仍同时落主日志）
+  - 热更装配释放时通道一并释放
+
 ### `kbengine.hotReload.showBatchSummary`
 
 - 标题：`Show Hot Reload Batch Summary`

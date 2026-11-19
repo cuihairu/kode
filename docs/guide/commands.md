@@ -1048,6 +1048,16 @@ The flow graph panel supports:
   - The threshold counts per batch, so reaching it requires wave batching (`kbengine.hotReload.batchFlushMs > 0`); `batchPreviewThreshold: 0` holds every batch
 
 
+### `kbengine.hotReload.showDiagnostics`
+
+- Title: `Show Hot Reload Diagnostics`
+- Purpose: open the 「KBEngine 热更诊断」 OUTPUT channel — the user-reviewable timeline of every hot-reload save-pipeline diagnostic event (RUST-341 / HR-WATCH-017)
+- Behavior:
+  - All eight diagnostic kinds land in the channel, one line per event — trigger / filtered / debounced / deduped / blocked (syntax gate) / scheduled / preview (batch hold) / flushed — each line formatted `[time] label file: detail`; nothing is aggregated or filtered out (presentation is the full account: an event blocked by the gate is just as visible as one that shipped)
+  - The channel fills on event whether or not this command is ever run; the command only opens it for review (no re-sampling, no extra computation)
+  - The channel is shared across pipeline rebuilds (configuration changes re-create the pipeline but keep appending to the same channel); the existing 「KBEngine 热更新」 log keeps its own contract (the batch-preview hold notice still logs there too)
+  - Disposing the hot-reload assembly disposes the channel
+
 ### `kbengine.hotReload.showBatchSummary`
 
 - Title: `Show Hot Reload Batch Summary`
