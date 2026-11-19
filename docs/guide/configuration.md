@@ -782,9 +782,22 @@ Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user 
 Excel-generated config tables/classes (`dict` bindings and `*Config`/`*Data` classes) hold data that only hot-reload entry points are allowed to change. Kode guards them with two faces driven by one whole-workspace scan:
 
 1. **Accidental-write diagnostics** (`kbengine.configDataMutation`): every write to a config binding — attribute (`x.f = v`), subscript (`x[k] = v`), `del`, augmented assignment (`x += v`), and mutator methods (`append`/`pop`/`update`/`clear`/`sort`/…) — is flagged unless it sits inside a hot-reload entry function (`reload*`/`hotUpdate*`) or a `mutationExclude` whitelist path. Config-directory files themselves are never flagged.
-2. **Schema hover**: hovering a config binding or class name shows the literal type text read straight from its definition (schema direct-read, not inference).
+2. **Schema hover**: hovering a config binding or class name shows the literal type text read straight from its definition (schema direct-read, not inference). Member access resolves through the same schema: hovering `hp` in `Config.MOBILES[0].hp` (module-rooted chain), a dict key inside `TABLE["warrior"]["hp"]`, or a module-level alias (`TBL = MOBILES`, then `TBL[0].hp`) shows the member's direct-read type plus the source binding location. Container method names (`.get` and friends) never match.
 
 Recognition is settings-driven, not heuristic: config directories (`configDirGlobs`, default `scripts/config/**`, `scripts/data/config/**`, `scripts/data/**`), config class names (`configClassPatterns`, default `*Config`/`*Data`), hot-reload entries (`reloadFunctionPatterns`, default `reload*`/`hotUpdate*`), and intentional-write exemptions (`mutationExclude`, default empty). The feature activates only in KBEngine workspaces (entity `.def` root discovered) and rescans on activation, on Python file open/save (800 ms debounce), and on settings changes. Set `kbengine.configData.enabled` to `false` to turn both faces off.
+
+Pointing kode at your own layout: when your tables live outside the default directories or your classes are not named `*Config`/`*Data`, extend the settings instead of renaming code:
+
+```json
+{
+  "kbengine.configData": {
+    "configDirGlobs": ["assets/config_data/**", "scripts/config/**"],
+    "configClassPatterns": ["*Config", "*Data", "TABLE_*", "Cfg*"]
+  }
+}
+```
+
+When the feature is on but the schema comes back empty, hovering a config-class-shaped name shows a notice listing the current `configDirGlobs`/`configClassPatterns`, so a directory or pattern miss is visible instead of silent.
 
 Honest boundaries: the scan is line-level (a write statement split across lines is not recognized); consumption sites are matched by binding name without module-path resolution; a module-level rebinding of the same name in the consuming file shadows the config binding from that point on.
 

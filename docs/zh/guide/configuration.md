@@ -775,9 +775,22 @@ AI 面的工作方式:
 Excel 生成的配置表/配置类(dict 绑定与 `*Config`/`*Data` 类)是只允许热更新入口修改的数据。kode 用同一条全工作区扫描的两个面守护它们:
 
 1. **意外写诊断**(`kbengine.configDataMutation`):配置绑定的全部写点——属性(`x.f = v`)、下标(`x[k] = v`)、`del`、增强赋值(`x += v`)、变异方法(`append`/`pop`/`update`/`clear`/`sort`/……)——只要不在热更新入口函数(`reload*`/`hotUpdate*`)内、也不在 `mutationExclude` 白名单路径里,就出警告诊断。配置目录文件自身永不报。
-2. **schema 悬停**:悬停配置绑定/类名,直接展示从其定义直读的类型文本(schema 直读,非推断)。
+2. **schema 悬停**:悬停配置绑定/类名,直接展示从其定义直读的类型文本(schema 直读,非推断)。成员访问走同一份 schema:悬停 `Config.MOBILES[0].hp` 里的 `hp`(模块根链)、`TABLE["warrior"]["hp"]` 里的键名、或模块级别名(`TBL = MOBILES` 后用 `TBL[0].hp`),都会出该成员的直读类型与源绑定位置。容器方法名(`.get` 等)永不命中。
 
 识别依据是配置驱动而非启发式:配置目录(`configDirGlobs`,默认 `scripts/config/**`、`scripts/data/config/**`、`scripts/data/**`)、配置类名(`configClassPatterns`,默认 `*Config`/`*Data`)、热更新入口(`reloadFunctionPatterns`,默认 `reload*`/`hotUpdate*`)、有意修改豁免(`mutationExclude`,默认空)。功能只在 KBEngine 工作区(发现到实体 .def 根)激活;激活首扫、Python 文件打开/保存(800 ms 防抖合并)、设置变更即重扫。`kbengine.configData.enabled` 设 `false` 可整体关闭两个面。
+
+把 kode 指向自己的工程布局:配置表不在默认目录、或类名不叫 `*Config`/`*Data` 时,扩设置而不是改代码命名:
+
+```json
+{
+  "kbengine.configData": {
+    "configDirGlobs": ["assets/config_data/**", "scripts/config/**"],
+    "configClassPatterns": ["*Config", "*Data", "TABLE_*", "Cfg*"]
+  }
+}
+```
+
+功能开着但 schema 扫出来是空时,悬停一个形似配置类的名字会出一发引导 notice,列出当前生效的 `configDirGlobs`/`configClassPatterns`——目录或模式没中是可见的,不再静默。
 
 诚实边界:行级扫描(跨行拆写的写语句不识别);消费面按绑定名匹配,不做模块路径解析;消费文件里模块级同名重绑定会遮蔽配置绑定,该点之后不再报。
 
