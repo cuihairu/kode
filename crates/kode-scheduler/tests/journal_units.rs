@@ -265,3 +265,55 @@ fn journal_tmp_name_has_no_double_dot_kraud24() {
     assert_eq!(tmp2, std::path::Path::new("/run/kbe/sched.bin.tmp"));
     assert_ne!(tmp2, with_ext);
 }
+
+#[test]
+fn write_journal_creates_missing_parent_dirs() {
+    let dir = temp_dir("nested");
+    let nested = dir.join("a/b/c/journal.log");
+    let records = vec![record(
+        TaskKind::DependencyUpdate,
+        2,
+        Some("/x.def"),
+        Some(1),
+    )];
+    assert_eq!(write_journal(&nested, &records).unwrap(), 1);
+    let (back, _skipped) = load_journal(&nested).expect("回读应成功");
+    assert_eq!(back.len(), 1, "落盘记录数一致");
+}
+
+#[test]
+fn write_journal_errors_when_parent_blocked_by_file() {
+    // 父链被普通文件挡住:create_dir_all 失败 → 错误早退臂必须把 Err
+    // 如实带回(不落半成品)。
+    let dir = temp_dir("blocked");
+    let blocker = dir.join("blocker");
+    std::fs::write(&blocker, b"not a dir").unwrap();
+    let target = blocker.join("sub/journal.log");
+    let records = vec![record(
+        TaskKind::DependencyUpdate,
+        2,
+        Some("/x.def"),
+        Some(1),
+    )];
+    assert!(
+        write_journal(&target, &records).is_err(),
+        "父目录不可创建应报错"
+    );
+}
+
+#[test]
+fn write_journal_empty_path_errors_without_dir_setup() {
+    // 空路径:parent() == None,目录准备段整段跳过,落盘段报错;
+    // 错误必须如实带回而非 panic。
+    let records = vec![record(
+        TaskKind::DependencyUpdate,
+        2,
+        Some("/x.def"),
+        Some(1),
+    )];
+    let out = std::panic::catch_unwind(|| write_journal(std::path::Path::new(""), &records));
+    match out {
+        Ok(res) => assert!(res.is_err(), "空路径应报错"),
+        Err(_) => panic!("空路径不得 panic"),
+    }
+}
