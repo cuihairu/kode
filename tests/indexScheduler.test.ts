@@ -19,6 +19,38 @@ afterEach(() => {
 });
 
 describe('indexScheduler 任务生命周期与状态查询', () => {
+  it('KODE-RESP-003:run 同步 throw 也走失败收口并释放执行位,后续任务不被永久排队', async () => {
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
+    const seen: string[] = [];
+    // 三臂:同步 throw / 异步 reject / 成功,均须释放执行位让下一任务可跑
+    const syncThrow = scheduler.enqueue({
+      kind: 'dependency-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      run: () => { seen.push('sync-throw'); throw new Error('sync boom'); }
+    });
+    await expect(syncThrow.wait).rejects.toThrow('sync boom');
+    expect(syncThrow.state()).toBe('failed');
+    const reject = scheduler.enqueue({
+      kind: 'dependency-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      run: async () => { seen.push('reject'); throw new Error('async boom'); }
+    });
+    await expect(reject.wait).rejects.toThrow('async boom');
+    const after = scheduler.enqueue({
+      kind: 'dependency-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      run: async () => { seen.push('after'); }
+    });
+    await after.wait;
+    expect(seen).toEqual(['sync-throw', 'reject', 'after']);
+    const status = scheduler.getStatus();
+    expect(status.failed).toBe(2);
+    expect(status.completed).toBe(1);
+    expect(status.queued).toBe(0);
+    expect(status.running).toBeNull();
+    scheduler.dispose();
+  });
+
   it('任务按 completed/failed/cancelled 终态计数,状态查询可见', async () => {
     const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
     const done = scheduler.enqueue({

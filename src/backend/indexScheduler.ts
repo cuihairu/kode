@@ -397,8 +397,12 @@ export class IndexScheduler {
     const operation = startLanguageServiceOperation('index-scheduler', {
       indexGeneration: next.priority
     });
-    void next
-      .run()
+    // KODE-RESP-003:run 声明返回 Promise 并不禁止函数体在返回前同步 throw
+    // ——直接调用时同步异常在 Promise 链建立前逸出,绕过失败记账/清槽,
+    // runningId 永不释放→后续任务永久排队。先包一层 Promise.resolve().then
+    // 把调用挪进 Promise 上下文,同步 throw 变 rejection 走统一失败收口。
+    void Promise.resolve()
+      .then(() => next.run())
       .then(() => {
         next.state = 'completed';
         this.completed += 1;
