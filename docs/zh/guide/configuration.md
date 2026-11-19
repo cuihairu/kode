@@ -174,6 +174,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | --- | --- | --- | --- |
 | `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
 | `kbengine.index.syntaxGate` | boolean | `true` | Python 索引输入语法门(INDEX-DISCIPLINE-001):落盘重索引(保存/外部写盘经合并器收口)前做括号/引号/缩进单遍预检(零子进程);编辑中途保存的烂文件不入索引、索引保留上一次健康符号(诊断照常报语法错,编辑中导航不断);关闭后回到旧行为,烂文件照常入索引 |
+| `kbengine.index.scanExcludeGlobs` | string[] | `[]` | 业务索引的用户排除 glob 兜底(ENGINE-LIB-SCAN-005):每条 glob 经 minimatch(dot 开)编译,对规范化绝对路径匹配,命中的文件/目录不进业务索引——发现链 def、事件/方法索引、Python 类索引共用同一排除面。裸目录名简写(如 `kbe`)按「任意前缀/kbe/任意后缀」的双星 glob 形态解释;坏模式跳过不炸扫描。引擎仓子树由引擎树标记自动剔除(见上文「怎么看索引工作状态」),本键是额外兜底 |
 | `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
 | `kbengine.python.enableDataDictIndex` | boolean | `true` | KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关;键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链,支持 Shift+F12 引用与 F12 跳转(读点跳写点);写点 RHS 值类型能推才显,同键读点 inlay/hover 显示该类型(如 `{"gold": 1}` 写点在 `get("cfg")` 读点显 `Dict[str, int]`);关闭后不查索引,引用/跳转交回常规链 |
 | `kbengine.python.enableSpaceDataIndex` | boolean | `true` | 引擎 `KBEngine.setSpaceData` / `getSpaceData` / `delSpaceData`(仅 cellapp 注册、逐空间存储)的空间数据读写索引开关;spaceID 为 int 字面量或本文件模块级 int 常量绑定、key 为字符串字面量的调用按 `(spaceID, key)` 全等归族,支持键位补全、Shift+F12 引用与 F12 跳转(读/删点跳写点、写点跳首个异类点);动态 spaceID(解析不出)永不建族——动态空间不合并为同一确定对象;关闭后不查索引,补全/引用/跳转交回常规链 |

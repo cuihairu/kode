@@ -16,6 +16,7 @@ import { resolveManagedDirName } from './backend/managedDir';
 import { filterManagedDirCopies } from './backend/pythonScanRules';
 import { findEngineRoot } from './backend/engineCompatibility';
 import { hasEngineTreeMarker } from './backend/engineApiMetadata';
+import minimatch from 'minimatch';
 
 /** 比较用规范化:绝对化、正斜杠;Windows 盘符路径小写化以稳定去重 */
 function normalizeForCompare(p: string): string {
@@ -295,6 +296,48 @@ export function resolveEngineSubtreeExclusions(): string[] {
   return exclusions;
 }
 
+/**
+ * 用户排除 glob 编译缓存(ENGINE-LIB-SCAN-005 刀3):key=globs JSON,配置
+ * 变化自然换 key 重编译(编译结果与扫描根无关,不必进 engineExclusionCache)。
+ */
+let userExcludeCache: { key: string; matchers: RegExp[] } | null = null;
+
+/** 测试复位:清用户排除 glob 编译缓存 */
+export function resetUserScanExcludeCache(): void {
+  userExcludeCache = null;
+}
+
+/**
+ * kbengine.index.scanExcludeGlobs 用户排除兜底(ENGINE-LIB-SCAN-005 刀3):
+ * 每条 glob 经 minimatch.makeRe(dot 开)编译为正则,对规范化绝对路径
+ * 匹配,命中的文件/目录不进业务索引(与刀2 引擎子树同一接入面)。裸目录
+ * 名简写(如 kbe)按「任意前缀/kbe/任意后缀」的双星 glob 形态解释——
+ * 用户心智=「剔这个目录」。坏模式(如未闭合的方括号)跳过不炸:配置
+ * 兜底面不因一条手误把整个扫描炸停。默认空=零排除。
+ */
+export function getUserScanExcludeMatchers(): RegExp[] {
+  const globs = vscode.workspace.getConfiguration('kbengine.index').get<string[]>('scanExcludeGlobs', []);
+  const entries = Array.isArray(globs)
+    ? globs.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : [];
+  const key = JSON.stringify(entries);
+  if (userExcludeCache && userExcludeCache.key === key) {
+    return userExcludeCache.matchers;
+  }
+  const matchers: RegExp[] = [];
+  for (const raw of entries) {
+    const glob = raw.trim();
+    const pattern = glob.includes('*') ? glob : `**/${glob}/**`;
+    try {
+      matchers.push(minimatch.makeRe(pattern, { dot: true }));
+    } catch {
+      // 坏模式跳过(不炸扫描)
+    }
+  }
+  userExcludeCache = { key, matchers };
+  return matchers;
+}
+
 /** 支持的 glob 形状 → 文件名谓词;不认识的形状不手工走(只返回 workspace 结果) */
 function matcherForGlob(glob: string): ((name: string) => boolean) | null {
   const extension = /^\*\*\/\*\.([A-Za-z0-9_]+)$/.exec(glob);
@@ -406,19 +449,29 @@ export async function findFilesAcrossRoots(
   // (workspace glob 后滤 + 外部遍历剪枝 + 收尾兜底);memo 见
   // resolveEngineSubtreeExclusions(悬停级调用不重复探盘)。
   const engineExclusions = resolveEngineSubtreeExclusions();
+  // 刀3:用户排除 glob(minimatch)并入同一谓词——workspace glob 后滤 +
+  // 外部遍历剪枝共用,目录命中整棵不下潜
+  const userExcludeMatchers = getUserScanExcludeMatchers();
+  /** 刀2 引擎子树(前缀)+ 刀3 用户 glob(minimatch)+ 调用方形态过滤器的合取 */
+  const keepPath = (fsPath: string): boolean => {
+    const key = normalizeForCompare(fsPath);
+    if (engineExclusions.some(rootKey => isContained(rootKey, key))) {
+      return false;
+    }
+    if (userExcludeMatchers.length > 0 && userExcludeMatchers.some(matcher => matcher.test(key))) {
+      return false;
+    }
+    return pathFilter ? pathFilter(fsPath) : true;
+  };
   const merged = new Map<string, vscode.Uri>();
   const stopWorkspaceGlob = discovery.startSubPhase('workspace-glob');
   const base = await vscode.workspace.findFiles(glob, exclude, undefined, token);
   stopWorkspaceGlob();
   for (const uri of base) {
-    const key = normalizeForCompare(uri.fsPath);
-    if (engineExclusions.some(rootKey => isContained(rootKey, key))) {
+    if (!keepPath(uri.fsPath)) {
       continue;
     }
-    if (pathFilter && !pathFilter(uri.fsPath)) {
-      continue;
-    }
-    merged.set(key, uri);
+    merged.set(normalizeForCompare(uri.fsPath), uri);
   }
   // KODE-CFG-017:托管目录(.kbengine/inferred 镜像树)副本剔出合并结果,
   // 防 kode 自身扫描镜像双计;目录名按 kbengine.managedDir 设置值(可为
@@ -463,7 +516,7 @@ export async function findFilesAcrossRoots(
       const stopExternalWalk = discovery.startSubPhase('external-walk');
       for (const root of getExternalScanRoots()) {
         if (token?.isCancellationRequested) { break; }
-        await walkExternalRoot(root, match, skipDirs, merged, token, pathFilter, pruneRoots);
+        await walkExternalRoot(root, match, skipDirs, merged, token, keepPath, pruneRoots);
       }
       stopExternalWalk();
     }

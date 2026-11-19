@@ -1938,6 +1938,12 @@
             "default": true,
             "markdownDescription": "%kbengine.config.index.syntaxGate.description%"
           },
+          "kbengine.index.scanExcludeGlobs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "markdownDescription": "%kbengine.config.index.scanExcludeGlobs.description%"
+          },
           "kbengine.python.enableDataDictIndex": {
             "type": "boolean",
             "default": true,
@@ -2715,6 +2721,7 @@
   "devDependencies": {
     "@mermaid-js/tiny": "^12.2.0",
     "@shikijs/langs": "^4.6.0",
+    "@types/minimatch": "3.0.5",
     "@types/mocha": "^8.2.3",
     "@types/node": "~20.19.43",
     "@types/vscode": "1.82.0",
@@ -2738,5 +2745,7 @@
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   },
-  "dependencies": {}
+  "dependencies": {
+    "minimatch": "3.1.4"
+  }
 }
