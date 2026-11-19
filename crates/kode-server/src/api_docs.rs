@@ -238,4 +238,14 @@ mod tests {
             .expect("合法参数必须成功");
         assert!(ok.get("member").is_some());
     }
+    #[test]
+    fn domain_filter_miss_returns_null_not_ambiguous() {
+        // addTimer 在库(跨 4 域),但查不存在的域:域内零条 → Null,
+        // 不落回全库 ambiguous(域过滤是收窄,不是建议)。
+        let v = api_docs_lookup("addTimer", Some("nonesuch-domain"), "en");
+        assert_eq!(v, Value::Null);
+        // 空域字符串=未给域(走全库路径),与域内零条区分。
+        let all = api_docs_lookup("addTimer", Some(""), "en");
+        assert!(all.get("ambiguous").is_some(), "空域退化为全库歧义面");
+    }
 }
