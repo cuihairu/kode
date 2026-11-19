@@ -1654,9 +1654,14 @@ mod tests {
         let first = kode_parser::json::PARITY_CORPORA[0];
         let dir = corpus_root.join(first);
         std::fs::create_dir_all(&dir).unwrap();
-        use std::os::unix::ffi::OsStrExt;
-        let bad = std::ffi::OsStr::from_bytes(b"\xff\xfe.def");
-        std::fs::write(dir.join(bad), "<root/>").unwrap();
+        // 非 UTF-8 文件名臂只在 unix 可构造(Windows 夜构建编译门);
+        // corpus.len()==1 断言两侧同真,保持无条件。
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let bad = std::ffi::OsStr::from_bytes(b"\xff\xfe.def");
+            std::fs::write(dir.join(bad), "<root/>").unwrap();
+        }
         std::fs::write(
             dir.join("ok.def"),
             "<root>\n  <Properties>\n    <hp/>\n  </Properties>\n</root>\n",

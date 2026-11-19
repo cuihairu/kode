@@ -1274,6 +1274,8 @@ pub fn self_rss_bytes() -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    // 唯一测试 linux-only(/proc 面);use 同门,Windows 夜构建不引 dead import。
+    #[cfg(target_os = "linux")]
     use super::*;
 
     /// RUST-026:Linux 下资源快照来自 /proc,字段齐全且非零(绝不伪造零值)。
