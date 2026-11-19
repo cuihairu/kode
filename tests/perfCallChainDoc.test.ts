@@ -480,7 +480,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // resolveWireDictSubscriptKeyFromContainer 并入 fixedDictSubscript import +1、
   // resolveFixedDictKeyHover 内输入面臂 +4 → provideHover 真位重探 307→313,
   // 出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 313, 'provideHover('],
+  // HOOK-TIMING-001:hover.ts 顶部新增 1 行 import(renderDefPropertyTimingNote)
+  ['src/languageProviders/hover.ts', 314, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,

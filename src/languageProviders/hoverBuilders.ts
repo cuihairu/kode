@@ -14,6 +14,7 @@ import { describeMethodCallDirection, describePropertySyncDirection } from '../b
 import { renderUserTypeContractHoverSection, userTypeContractStatusForName, implementedByBindingForWorkspace } from '../backend/userTypeContractSource';
 import { renderImplementedByBindingSection } from '../backend/implementedByBinding';
 import { HOOK_CATEGORY_NAMES } from '../hooks';
+import { renderHookSequencingSection, renderEntrySpiSequencingSection } from '../backend/hookSequencing';
 import { engineApiVersionAnnotation, summaryForLanguage } from '../kbeModuleIndex';
 import { getEngineVersion } from '../engineVersion';
 import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, getSectionLabel, parseDefAst } from './shared';
@@ -141,6 +142,11 @@ export function createHookHover(hook: import('../hooks').KBEngineHook): vscode.H
     markdown.appendMarkdown('\n\n**使用示例**:\n');
     markdown.appendCodeblock(hook.example, 'python');
   }
+  // HOOK-TIMING-001:时序段(阶段+等宽箭头链+触发源);36 条全收录,恒有段。
+  const sequencing = renderHookSequencingSection(hook.name);
+  if (sequencing) {
+    markdown.appendMarkdown('\n\n' + sequencing);
+  }
   return new vscode.Hover(markdown);
 }
 
@@ -186,6 +192,11 @@ export function createEntryHookHover(hook: import('../backend/entryHooks').KBEng
   if (hook.example) {
     markdown.appendMarkdown('\n\n**使用示例**:\n');
     markdown.appendCodeblock(hook.example, 'python');
+  }
+  // HOOK-TIMING-001:入口 SPI 几何加载链时序段(3 条 cellapp 空间/导航件)。
+  const sequencing = renderEntrySpiSequencingSection(hook.name);
+  if (sequencing) {
+    markdown.appendMarkdown('\n\n' + sequencing);
   }
   return new vscode.Hover(markdown);
 }

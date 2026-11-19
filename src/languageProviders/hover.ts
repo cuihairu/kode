@@ -8,6 +8,7 @@ import { getTypeStorageShape } from '../databaseSchema';
 import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
+import { renderDefPropertyTimingNote } from '../backend/hookSequencing';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatFixedDictKeyHover, formatImplementedBySubscriptNoteHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
@@ -1110,6 +1111,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         if (shape.kind === 'fixedDict' || isFixedDictTypeName(resolved.typeName, [])) {
           markdown.appendMarkdown(fixedDictBehaviorNoteMarkdown());
         }
+        // HOOK-TIMING-001:def 属性注入时序注(.def 默认/params 键先于脚本
+        // 逻辑;cell 部分经 cellData 暂存,cell 创建时生效)。
+        markdown.appendMarkdown('\n\n' + renderDefPropertyTimingNote());
       }
       return new vscode.Hover(markdown);
     } finally { stopRender?.(); }
