@@ -18,6 +18,8 @@ import {
 } from './scanProgress';
 import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from '../hoverBudget';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
+import { indexLog } from './indexLog';
+import { createScanStageProgressReporter } from './scanStageProgress';
 import {
   recordLanguageServiceOperation,
   startLanguageServiceOperation
@@ -1075,6 +1077,15 @@ export class PythonClassIndex {
       this.lastScanResumeStats = { adopted: adoptedEntries.length, scanned: scanFiles.length };
       scanMetrics.countFileRead(scanFiles.length);
       scanMetrics.countFileParse(scanFiles.length);
+      // WARM-VISIBILITY-004 刀 B:python 全扫起扫行 + 块级节流进度,进统一
+      // 「KBEngine Index」通道(常开;进度行复用 scanStageProgress 双闸节流)
+      indexLog('python-index',
+        `python 类索引全扫开始:${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`);
+      const pyProgress = createScanStageProgressReporter({
+        label: 'python 类索引',
+        total: files.length,
+        report: detail => { indexLog('python-index', detail); }
+      });
       // 分块入队:每块一个后台任务,块与块之间调度器可插队交互任务
       // (RequestLocal 单文件解析/当前文件更新),全量扫描不再独占主线程。
       const batches: string[][] = [];
@@ -1094,7 +1105,10 @@ export class PythonClassIndex {
               this.commitParsedFile(
                 entry.path, restoreSerializedParsedPythonFile(entry.parsed), entry.version, 0);
             }
+            pyProgress.step(adoptedEntries.length);
             jumpLog('info', () =>
+              `py 全扫断点恢复:采纳 ${adoptedEntries.length} 个文件(直取,不重读不重解析)`);
+            indexLog('python-index',
               `py 全扫断点恢复:采纳 ${adoptedEntries.length} 个文件(直取,不重读不重解析)`);
           }
         }));
@@ -1111,6 +1125,7 @@ export class PythonClassIndex {
             if (scanGeneration !== this.scanGeneration) { return; }
             const results = await Promise.all(batch.map(file =>
               this.loadFile(file, -1).then(committed => (committed ? file : null), () => null)));
+            pyProgress.step(results.filter(file => file !== null).length);
             // SCAN-RESUME-001:本块已提交文件落断点(指纹自查盘;写失败静默,
             // 断点只是加速);换代后不落(旧代条目不得混入新轮断点)
             if (this.scanProgress && scanGeneration === this.scanGeneration) {
@@ -1144,6 +1159,8 @@ export class PythonClassIndex {
         }
         jumpLog('info', () =>
           `py 全扫有 ${failedFiles.length} 个文件未随分块解析,已登记待补(后续查询定向重试)`);
+        indexLog('python-index',
+          `py 全扫有 ${failedFiles.length} 个文件未随分块解析,已登记待补(后续查询定向重试)`);
       } else {
         // 本轮无失败分块:被本轮全量覆盖的遗留待补文件清表。RESP-002 后发现
         // 不占调度执行位,按需补载与全扫收尾可并发——在册但不在本轮发现集的
@@ -1159,6 +1176,11 @@ export class PythonClassIndex {
       jumpLog('info', () =>
         `py 全仓索引完成 ${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`
         + ` → 类 ${this.byName.size} 个,${scanTimer()}ms(调度器分块后台执行)`);
+      pyProgress.finish();
+      // WARM-VISIBILITY-004 刀 B:完成行镜像进统一通道(计时取同段墙钟)
+      indexLog('python-index', () =>
+        `py 全仓索引完成 ${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`
+        + ` → 类 ${this.byName.size} 个`);
       scanMetrics.end('ok');
     } catch (error) {
       scanMetrics.end('error');

@@ -13,6 +13,7 @@ import { ensureConfigDerivedScanRoot } from './configDerive';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import { createScanStageProgressReporter } from './backend/scanStageProgress';
+import { indexLog } from './backend/indexLog';
 import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   resolveIncomingPythonMethodCalls,
@@ -422,6 +423,10 @@ export class EntityMappingManager {
     this.initialScanFailed = false; // 重触发在途:防同一查询风暴内重复重排
     jumpLog('info', () =>
       `def 首扫失败,冷查询重触发(第 ${this.initialScanAttempts + 1}/${MAX_INITIAL_SCAN_ATTEMPTS} 次尝试)`);
+    // WARM-VISIBILITY-004 刀 B:失败重试行进统一通道(jumpLog 关时也可见——
+    // 索引真坏时用户必须看得见,不能只有取证开关开着的人知道)
+    indexLog('discovery',
+      `def 首扫失败,冷查询重触发(第 ${this.initialScanAttempts + 1}/${MAX_INITIAL_SCAN_ATTEMPTS} 次尝试)`);
     void this.launchInitialScanViaScheduler().then(
       () => { this.initialScanCompleted = true; },
       () => {
@@ -488,6 +493,8 @@ export class EntityMappingManager {
       const normalized = normalizeLookupPath(defFile.fsPath);
       return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
     });
+    // WARM-VISIBILITY-004 刀 B:起扫行进统一「KBEngine Index」通道(常开)
+    indexLog('discovery', `def 首扫开始:${defFiles.length} 个 .def(实体候选 ${entities.length})`);
     // WARM-VISIBILITY-004 刀 A:def 逐文件节流进度(无 sink 时发射为 no-op)
     const defProgress = createScanStageProgressReporter({
       label: '实体发现链 def',
@@ -517,6 +524,9 @@ export class EntityMappingManager {
     await Promise.all(handles.map(handle => handle.wait));
     defProgress.finish();
     jumpLog('info', () => `def 全量索引完成 ${defFiles.length} 个 .def → 实体 ${this.mappingIndexes.size} 个,${indexTimer()}ms`);
+    // WARM-VISIBILITY-004 刀 B:完成行镜像进统一通道(常开;与 Navigation 行
+    // 内容一对一,计时取同段墙钟 scanStartedAt)
+    indexLog('discovery', () => `def 全量索引完成 ${defFiles.length} 个 .def → 实体 ${this.mappingIndexes.size} 个,${Date.now() - scanStartedAt}ms`);
     // 扫描总耗时进 LogHub(用户令「加计时日志实测,别猜」):独立计时
     // (jumpTimeStart 关开关时恒 0,不做闸),便于真机定位首扫占比
     logLayerTiming('initial-scan', Date.now() - scanStartedAt, `defs=${defFiles.length} entities=${this.mappingIndexes.size}`);
@@ -649,6 +659,8 @@ export class EntityMappingManager {
       if (elapsedMs >= 200) {
         // 慢解析记账(用户令「加计时日志实测,别猜」):>200ms 的单文件进日志
         jumpLog('info', () => `def 解析慢文件 ${path.basename(defPath)} ${elapsedMs}ms`);
+        // WARM-VISIBILITY-004 刀 B:慢文件行镜像进统一通道(常开)
+        indexLog('discovery', `def 解析慢文件 ${path.basename(defPath)} ${elapsedMs}ms`);
         logLayerTiming('def-parse', elapsedMs, `file=${path.basename(defPath)}`);
       }
       if (mapping && stat) {

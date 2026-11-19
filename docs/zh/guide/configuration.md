@@ -817,3 +817,24 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时,不是扩展直接启动一
 5. 本机是否已安装 `ms-python.debugpy`,VS Code 能否正常通过它附加进程
 
 旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug` 已移除,`kbengine.pythonDefsPath`、`kbengine.enablePythonNavigation` 也已移除(导航走 `.def` 定义体系,见实体浏览器)。
+
+## 怎么看索引工作状态(WARM-VISIBILITY-004)
+
+插件激活后会在后台索引实体定义、Python 类与事件调用。观测索引在不在工作,
+看两个面:
+
+1. **状态栏进度**——后台预热期间状态栏显示 `KBEngine 后台索引预热`,悬停可见
+   当前阶段;长阶段内部现在会报中间计数(`实体发现链 def 23/87`、
+   `事件/方法索引 145/612 文件`),节流上限为每 500ms / 每 10 个文件一条,
+   分钟级首扫期间也能看到推进,不再像卡死。
+2. **输出面板 → `KBEngine Index`**——统一且常开的索引工作日志通道:发现链/
+   事件索引/Python 类索引的起扫与完成、Python 索引的分块进度、磁盘缓存命中与
+   恢复、慢文件记录、扫描失败重试。每行带相对时间戳(`[+12.3s]`)与来源标签
+   (`discovery` / `event-index` / `python-index` / `cache`)。
+
+说明:
+
+- `KBEngine Index` 通道没有开关:只出关键事实行(每轮扫描几条),不出逐决策
+  的调试流量;`kbengine.jumpLog` 仍然只控制 `KBEngine Navigation` 通道。
+- 若状态栏一直不动且 `KBEngine Index` 没有起扫行,多半是工作区没被识别为
+  KBEngine 工程(先核对上文扫描根相关设置)。

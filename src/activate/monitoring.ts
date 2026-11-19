@@ -22,6 +22,7 @@ import { EntityFlowWebView } from '../entityFlowWebView';
 import { FlowSwimlanePanel } from '../flowSwimlanePanel';
 import { TraceReplayPanel } from '../traceReplayPanel';
 import { IndexTaskPriority } from '../backend/indexScheduler';
+import { indexLog } from '../backend/indexLog';
 import { MonitoringCollector } from '../monitoringCollector';
 import { MonitoringWebView } from '../monitoringWebView';
 import { RuntimeQueryWebView } from '../runtimeQueryWebView';
@@ -415,6 +416,8 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   outputChannel.appendLine(
                     `索引缓存命中(discovery):注入 ${restore.injected}/${restore.discovered},漂移拒收 ${restore.rejected}`
                   );
+                  indexLog('cache',
+                    `索引缓存命中(discovery):注入 ${restore.injected}/${restore.discovered},漂移拒收 ${restore.rejected}`);
                 }
               }
               if (cached?.payload.eventIndex?.length) {
@@ -431,6 +434,8 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   outputChannel.appendLine(
                     `索引缓存命中(eventIndex):直取 ${restore.restored},增量重建 ${restore.rebuilt},丢弃 ${restore.dropped}`
                   );
+                  indexLog('cache',
+                    `索引缓存命中(eventIndex):直取 ${restore.restored},增量重建 ${restore.rebuilt},丢弃 ${restore.dropped}`);
                 }
               }
               if (cached?.payload.defLut?.length) {
@@ -441,6 +446,8 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   outputChannel.appendLine(
                     `索引缓存命中(defLUT):载入 ${restore.adoptedDefs} def / ${restore.adoptedEntries} 条,漂移拒收 ${restore.rejectedDefs}`
                   );
+                  indexLog('cache',
+                    `索引缓存命中(defLUT):载入 ${restore.adoptedDefs} def / ${restore.adoptedEntries} 条,漂移拒收 ${restore.rejectedDefs}`);
                 }
               }
               if (warmupStageDefs?.some(stage => stage.cached)) {
@@ -459,6 +466,11 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                 ? `后台预热完成:${snapshot.completedStages}/${snapshot.totalStages} 阶段${cachedCount ? `(缓存命中 ${cachedCount} ⏭)` : ''}`
                 : `后台预热${final === 'cancelled' ? '已取消' : '未完成'}:${snapshot.completedStages}/${snapshot.totalStages} 阶段`
             );
+            // WARM-VISIBILITY-004 刀 B:预热终态行镜像进统一通道(常开)
+            indexLog('cache', () =>
+              final === 'completed'
+                ? `后台预热完成:${snapshot.completedStages}/${snapshot.totalStages} 阶段${cachedCount ? `(缓存命中 ${cachedCount} ⏭)` : ''}`
+                : `后台预热${final === 'cancelled' ? '已取消' : '未完成'}:${snapshot.completedStages}/${snapshot.totalStages} 阶段`);
             // 完成后异步写回(队列尾 setImmediate 节拍,不阻塞交互;失败/取消
             // 不写——与完成标记同口径,不基于残缺轮落盘)。写失败静默降级。
             // DEF-LUT-001:先排低优先级 LUT 重建(keyed 任务,交互限流;门控

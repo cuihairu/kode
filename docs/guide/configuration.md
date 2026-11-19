@@ -824,3 +824,30 @@ Check in this order:
 5. Whether `ms-python.debugpy` is installed on this machine and VS Code can attach through it normally
 
 The old `kbengine.pythonPath`, `kbengine.debugPort`, `kbengine.autoAttachDebug` have been removed; `kbengine.pythonDefsPath`, `kbengine.enablePythonNavigation` have also been removed (navigation goes through the `.def` definition system — see the entity explorer).
+
+## How to Watch Index Progress (WARM-VISIBILITY-004)
+
+The extension indexes entity definitions, Python classes and event calls in the
+background after activation. Two surfaces show what the indexer is doing:
+
+1. **Status bar progress** — while the warmup pipeline runs you see
+   `KBEngine 后台索引预热` in the status bar. Hovering it shows the current
+   stage, and long stages now report intra-stage counters (`实体发现链 def 23/87`,
+   `事件/方法索引 145/612 文件`) throttled to at most one update per 500 ms /
+   10 files, so a minute-long first scan is visibly alive instead of stuck.
+2. **Output panel → `KBEngine Index`** — a unified, always-on log channel for
+   indexer key events: scan start/completion for the discovery chain, the event
+   index and the Python class index, per-chunk Python index progress, disk cache
+   hits/restore, slow-file notices and scan-failure retries. Every line carries
+   a relative timestamp (`[+12.3s]`) and a source tag
+   (`discovery` / `event-index` / `python-index` / `cache`).
+
+Notes:
+
+- The `KBEngine Index` channel has no on/off switch: it only carries key facts
+  (a handful of lines per scan), never per-decision debug traffic. The
+  `kbengine.jumpLog` setting still controls the verbose
+  `KBEngine Navigation` channel only.
+- If the status bar never advances and `KBEngine Index` shows no scan-start
+  line, the workspace was likely not detected as a KBEngine project (check the
+  scan-root settings referenced above).

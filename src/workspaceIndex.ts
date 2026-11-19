@@ -6,6 +6,7 @@ import type { EventCall, EventCallIndex, EventCallsMarkedQuery, EventIndexReadyS
 import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './backend/pythonScanRules';
 import { createScanStageProgressReporter } from './backend/scanStageProgress';
+import { indexLog } from './backend/indexLog';
 import type { EventIndexDiskEntry } from './backend/indexDiskCache';
 
 // 本地索引缓存（用户令 2026-10-20：跳转/CodeLens 不得每次全仓重扫）。
@@ -198,6 +199,8 @@ export class WorkspaceIndex implements EventCallIndex {
     };
     await Promise.all(Array.from({ length: Math.min(INITIAL_SCAN_CONCURRENCY, rebuildUris.length) }, rebuildWorker));
     rebuildProgress.finish();
+    // WARM-VISIBILITY-004 刀 B:缓存恢复结果行进统一通道(常开)
+    indexLog('event-index', () => `事件索引缓存恢复:直取 ${restored},增量重建 ${rebuilt},丢弃 ${dropped}`);
     if (this.disposed) return { tookOver: false, restored: 0, rebuilt: 0, dropped: 0 };
     this.refreshExternalWatchers();
     this.started = true;
@@ -210,6 +213,9 @@ export class WorkspaceIndex implements EventCallIndex {
     const initialRevisions = new Map(this.revisions);
     const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
     if (this.disposed) return;
+    // WARM-VISIBILITY-004 刀 B:冷扫起扫/完成行进统一「KBEngine Index」通道(常开)
+    const scanStartedAt = Date.now();
+    indexLog('event-index', `事件/方法索引首扫开始:${files.length} 个 .py`);
     // WARM-VISIBILITY-004 刀 A:冷扫逐文件节流进度(无 sink 时发射为 no-op)
     const scanProgress = createScanStageProgressReporter({
       label: '事件/方法索引',
@@ -227,6 +233,7 @@ export class WorkspaceIndex implements EventCallIndex {
     };
     await Promise.all(Array.from({ length: Math.min(INITIAL_SCAN_CONCURRENCY, files.length) }, scanWorker));
     scanProgress.finish();
+    indexLog('event-index', () => `事件/方法索引首扫完成:${files.length} 个文件,${Date.now() - scanStartedAt}ms`);
     if (this.disposed) return;
     // IDE-AUD-035(R2-F11):事件初扫支持外部根,但 watcher 只挂 workspace 字符串
     // glob——外部 assetsRoot 增删改不触发维护。外部根改挂 RelativePattern 整组
