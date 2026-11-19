@@ -254,6 +254,22 @@ pub fn archive_fingerprint(archive: &Archive) -> CloneResult<String> {
     Ok(hex_encode(Sha256::digest(manifest).as_slice()))
 }
 
+/// 事务 guard(KODE-FULL-010):begin..commit 之间的任何错误返回(含
+/// `?` 直穿)都在 Drop 中回滚——不依赖每条错误路径手写回滚,
+/// 「begin 后错误绕过 rollback」的窗口由类型系统关闭。
+struct TxnGuard<'a> {
+    executor: &'a mut dyn WriteExecutor,
+    done: bool,
+}
+
+impl Drop for TxnGuard<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            let _ = self.executor.rollback();
+        }
+    }
+}
+
 /// 导入执行器(Prepare 产物 → 单事务 Apply → 提交后 Verify)。
 #[derive(Debug, Default)]
 pub struct ImportApplier;
@@ -289,14 +305,46 @@ impl ImportApplier {
             rows_by_table.insert(meta.name.clone(), archive.table_rows(&meta.name)?);
         }
 
+        // ---- 校验先行(KODE-FULL-010):表/行/列宽纯数据校验移到 begin 前 ----
+        // begin 后的任何错误返回都必须回滚;旧口径这两处 `?` 直穿曾绕过
+        // rollback,把漂移错误留在已开启的事务里。前移后事务内只剩执行/
+        // 绑定失败,统一由 TxnGuard 兜底回滚。
+        for (index, stmt) in plan.statements.iter().enumerate() {
+            let rows = rows_by_table.get(&stmt.table).ok_or_else(|| {
+                CloneError::DriftMismatch(format!(
+                    "statement references table `{}` which is absent from the archive",
+                    stmt.table
+                ))
+            })?;
+            let row = rows.get(stmt.row_index).ok_or_else(|| {
+                CloneError::DriftMismatch(format!(
+                    "statement references row {} of `{}` which is absent from the archive",
+                    stmt.row_index, stmt.table
+                ))
+            })?;
+            if stmt.cells.len() != stmt.columns.len() || stmt.cells.len() != row.values.len() {
+                return Err(CloneError::DriftMismatch(format!(
+                    "statement {} of `{}` column arity mismatch: {} cells, {} columns, {} archived values",
+                    index + 1,
+                    stmt.table,
+                    stmt.cells.len(),
+                    stmt.columns.len(),
+                    row.values.len()
+                )));
+            }
+        }
+
         executor.begin()?;
+        let mut txn = TxnGuard {
+            executor: &mut *executor,
+            done: false,
+        };
         let mut inserted_per_table: BTreeMap<String, u64> = BTreeMap::new();
         let mut resolved_ids: BTreeMap<u64, u64> = BTreeMap::new();
 
         for (index, stmt) in plan.statements.iter().enumerate() {
-            // PDC-0405:失败注入点(rollback 后无半套;重试走全新 run,不静默续写)。
+            // PDC-0405:失败注入点(guard 兜底回滚,无半套;重试走全新 run,不静默续写)。
             if control.fail_at_statement == Some(index + 1) {
-                executor.rollback()?;
                 return Err(CloneError::ImportRejected(format!(
                     "injected failure at statement {} of {}; transaction rolled back, nothing committed",
                     index + 1,
@@ -322,26 +370,12 @@ impl ImportApplier {
                 .zip(stmt.columns.iter())
                 .zip(row.values.iter())
             {
-                // 绑定失败(顺序违规等)与语句失败同闸:先回滚再上报,
-                // 前面语句的暂存行不留半套(失败路径保证 rollback)。
-                let bound =
-                    match resolve_param(cell, column, value, &stmt.table, plan, &resolved_ids) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let _ = executor.rollback();
-                            return Err(e);
-                        }
-                    };
+                // 绑定失败(顺序违规等)与语句失败同闸:guard Drop 兜底回滚,
+                // 前面语句的暂存行不留半套。
+                let bound = resolve_param(cell, column, value, &stmt.table, plan, &resolved_ids)?;
                 params.push(bound);
             }
-            let new_id = match executor.execute_insert(&stmt.insert_sql, &params) {
-                Ok(id) => id,
-                Err(e) => {
-                    // 语句失败(约束/连接):先回滚再上报;回滚失败不掩盖原始错误。
-                    let _ = executor.rollback();
-                    return Err(e);
-                }
-            };
+            let new_id = txn.executor.execute_insert(&stmt.insert_sql, &params)?;
             // 占位回填:该语句的 NewKey 占位 → 数据库返回的真实主键(PDC-0402)。
             for cell in &stmt.cells {
                 if let PlannedCell::NewKey { placeholder } = cell {
@@ -351,7 +385,9 @@ impl ImportApplier {
             *inserted_per_table.entry(stmt.table.clone()).or_insert(0) += 1;
         }
 
-        executor.commit()?;
+        txn.executor.commit()?;
+        txn.done = true;
+        drop(txn);
 
         // ---- 账面先于核对 I/O(KODE-FULL-009):提交成功即落账 ----
         // 数据已提交是既成事实;随后的核对只是只读计数,任何异常/中断都

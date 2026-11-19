@@ -821,6 +821,62 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
 }
 
 #[test]
+fn pre_begin_validation_rejects_drift_before_transaction_opens() {
+    // KODE-FULL-010:表/行/列宽校验移 begin 前——漂移错误不再落进已开启
+    // 的事务(旧口径 begin 后 `?` 直穿绕过 rollback);事务内剩余错误
+    // 路径统一由 TxnGuard 兜底回滚。
+    let dir = temp_dir("prebegin");
+    let (mut plan, archive) = fixture(&dir);
+
+    // 臂 1:语句引用归档缺失的表——begin 前拒绝,事务零开销。
+    plan.statements[0].table = "tbl_Missing".into();
+    let mut db = VirtualDb::new();
+    let mut store = MemoryRunStore::new();
+    let err = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, CloneError::DriftMismatch(ref m) if m.contains("tbl_Missing")
+            && m.contains("absent from the archive")),
+        "{err:?}"
+    );
+    assert_eq!(db.begins, 0, "校验在 begin 前,事务未开");
+    assert_eq!(db.rollbacks, 0);
+    assert_eq!(db.committed_total(), 0);
+    assert!(store.runs().is_empty());
+
+    // 臂 2:列宽三不一致(cells/columns/归档行值)——同闸前置拒绝,
+    // 旧口径 zip 静默截断会变成本地错位插入。
+    let (mut plan2, archive2) = fixture(&dir);
+    plan2.statements[0].columns.push("sm_extra".into());
+    let mut db2 = VirtualDb::new();
+    let err2 = ImportApplier
+        .apply(
+            &plan2,
+            &archive2,
+            &local_target(),
+            &mut db2,
+            &mut MemoryRunStore::new(),
+            &ApplyControl::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err2, CloneError::DriftMismatch(ref m) if m.contains("column arity mismatch")),
+        "{err2:?}"
+    );
+    assert_eq!(db2.begins, 0);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn verify_query_error_after_commit_still_records_run_for_retry() {
     // KODE-FULL-009:commit 成功后计数查询异常——run 必须已按指纹落账
     // (账面先于核对 I/O,不再 `?` 直穿丢账),核对态=unknown;同归档
