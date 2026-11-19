@@ -864,3 +864,7 @@ Notes:
   scan-start line (`已剔引擎仓子树 N 处`). Engine-side corpus flows through its
   own dedicated channel, so opening the engine repo alone yields an empty
   business index by design.
+- Background full scans parse in 4-file chunks and check the interactive
+  cooldown window before each chunk (a fresh user interaction postpones the
+  next chunk by up to 50 ms), so a large first scan stays responsive instead
+  of freezing the UI.

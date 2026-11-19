@@ -9,7 +9,7 @@ import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 import { checkSyntaxGate } from './syntaxGate';
-import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
+import { IndexScheduler, IndexTaskPriority, interactiveActivityBeacon } from './indexScheduler';
 import { SemanticDependencyGraph } from './dependencyGraph';
 import {
   restoreSerializedParsedPythonFile,
@@ -188,8 +188,30 @@ export type PythonIndexVersions = Record<PythonIndexVersionKey, number>;
 /** 组合根派生物在依赖图里的节点键(PR4 SemanticDependencyGraph) */
 export const COMPOSITION_ROOTS_NODE = 'python:composition-roots';
 
-/** 全扫分块大小(对齐 PR1 基线的 16 路并发读;机械盘更高并发反而增加寻道) */
-const SCAN_CHUNK_SIZE = 16;
+/**
+ * 全扫分块大小(ENGINE-LIB-SCAN-005 刀4:16→4)。单块=N 个文件的连续主线程
+ * 占用(<256KB 文件全走 parsePythonFile 纯同步),块越大单次占用越长——
+ * Lib 级量级文件把 16 文件块放大成周期性前台卡顿;4 文件一块+块前交互
+ * 冷却让路把后台占用粒度压到交互可插队。并发读收益在此块型下由块间流水
+ * 补偿(块本身走调度器后台任务)。
+ */
+export const SCAN_CHUNK_SIZE = 4;
+/**
+ * 块前交互冷却窗(ENGINE-LIB-SCAN-005 刀4;与 indexScheduler
+ * DEFAULT_INTERACTIVE_COOLDOWN_MS 同值,单一口径——kodeCoreCorpusMirror
+ * defaultMirrorYield 同一判定形态)。
+ */
+export const SCAN_INTERACTIVE_COOLDOWN_MS = 50;
+/**
+ * 块前让路等待时长(纯函数,时钟读点在调用方):交互信标刚刷新(冷却窗内)
+ * 时先等出窗再解析本块;信标陈旧或时钟异常(负差)都返回 0 不让路。
+ */
+export function scanChunkYieldDelayMs(now: number, beaconAt: number): number {
+  const since = now - beaconAt;
+  return since >= 0 && since < SCAN_INTERACTIVE_COOLDOWN_MS
+    ? SCAN_INTERACTIVE_COOLDOWN_MS - since
+    : 0;
+}
 /** 分块失败遗留文件的待补解析重试上限(永久不可读文件不无限重试) */
 const MAX_SCAN_RETRY_ATTEMPTS = 3;
 
@@ -1125,6 +1147,13 @@ export class PythonClassIndex {
           run: async () => {
             // 失效换代:过期分块直接放弃(旧代结果不得覆盖新一代状态)
             if (scanGeneration !== this.scanGeneration) { return; }
+            // ENGINE-LIB-SCAN-005 刀4:交互冷却窗让路——信标刚刷新(交互任务
+            // 在途或刚结束)时先等出窗再解析本块(FREEZE 刀1b 信标同源,
+            // defaultMirrorYield 同一判定形态),后台占用对交互让步。
+            const yieldMs = scanChunkYieldDelayMs(performance.now(), interactiveActivityBeacon.lastAt);
+            if (yieldMs > 0) {
+              await new Promise<void>(resolve => setTimeout(resolve, yieldMs));
+            }
             const results = await Promise.all(batch.map(file =>
               this.loadFile(file, -1).then(committed => (committed ? file : null), () => null)));
             pyProgress.step(results.filter(file => file !== null).length);

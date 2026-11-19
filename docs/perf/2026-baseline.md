@@ -98,6 +98,7 @@
 > 2026-11-19(ENGINE-LIB-SCAN-005 刀1):pythonClassIndex.ts 引擎库路径滤除三接线点(onFileChanged 判据 +1、全量发现块 +7、按名懒查块 +5,非均匀)→ CB2 import 绑定循环 :1228→1236、MRO :1559→1572、WAITC :766→767/打点 :772→773,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-20(WARM-VISIBILITY-004 刀 B):pythonClassIndex.ts 统一索引通道接线——顶部 import +2、runScheduledScan 内起扫/进度/完成行 +20(非均匀)→ CB2 import 绑定循环 :1267→1289、MRO :1605→1627、WAITC :774→776(打点仍 :781),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-20(ENGINE-LIB-SCAN-005 刀2):pythonClassIndex.ts 起扫行剔除计数 +2(1481 之后,非均匀)→ MRO :1627→1629,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-20(ENGINE-LIB-SCAN-005 刀4):pythonClassIndex.ts SCAN_CHUNK_SIZE 常量块扩写 +22(全部锚点之前)+ 块前让路 +7(1130 区,锚点 CB2/MRO 之前)→ CB2 import 绑定循环 :1289→1318、MRO :1629→1658、WAITC :776→798(打点 :781→803),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位(单飞字段块 +7、ensureDiscovered 重写 +22、覆盖式清表 +4,非均匀)→ CB2 import 绑定循环 :1236→1267、MRO :1572→1605、WAITC :767→774/打点 :773→781,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-19(RUST-149 批 3):取消令牌贯穿 inlay 四 provider(BuiltinType/InferredMirror/PropertyShadow/ProxyInternalAttr)——入口 cancelled() 闸 + def 归属/方向扫描束放行点复查,顶部累计 +9 → getDocumentLines 出处 inlay.ts 52→61,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
@@ -162,7 +163,7 @@ flowchart TD
   STUB["内置桩文档(buildKbeStubDocument)"]
   CB{"class X(Base) 基类位?"}
   CB1["kbe from-import 桩"]
-  CB2["pythonClassIndex.resolveClassBase :1289<br/>(显式 import 绑定优先)"]
+  CB2["pythonClassIndex.resolveClassBase :1318<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
   L0["层0 接收者段闸(languageProviders/pythonDefinition.ts:962)<br/>self.段.方法:段不符即 miss"]
@@ -192,7 +193,7 @@ flowchart TD
   AD2 -.->|对拍| SHD
 
   WAITB("等待点 B:withInteractiveScanBudget 1s(首扫兜底最后一跳)<br/>languageProviders/pythonDefinition.ts:1088,属性探针增量索引未命中才等;命中直返不经过这里")
-  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:776,打点 :781)")
+  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:798,打点 :803)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
   MRO -.->|等待| WAITC
