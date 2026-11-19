@@ -1162,4 +1162,25 @@ mod tests {
             "跨行 RHS 起始行查询命中"
         );
     }
+
+    #[test]
+    fn cov_multiline_rhs_continuation_line_queries() {
+        // 续行(非起始行)查询:外层 value 起始行不匹配 → find_expr_in_list。
+        // 非 attr/subscript/call 容器(BinOp)→ 内层 match `_ => None` 分支;
+        // 结果经 expr_kind_at 回退到本行之前最近赋值事件(classify(BinOp)=左操作数)。
+        let a = ast("v = (x +\n     2)\n");
+        assert!(
+            matches!(expr_kind_at(&a, 1, 5),
+                     Some(ExprKind::LocalAssign { target }) if target == "x"),
+            "BinOp 续行查询应回退到左操作数绑定"
+        );
+        // Call 续行:inner=func(起始行=行0)存在但不包含行1点位 → 空手出循环;
+        // 同样回退到赋值事件,classify(Call)=callee 全形态。
+        let b = ast("w = foo.bar(\n    arg)\n");
+        assert!(
+            matches!(expr_kind_at(&b, 1, 4),
+                     Some(ExprKind::Call { callee }) if callee == "foo.bar"),
+            "Call 续行查询应回退到赋值事件 callee"
+        );
+    }
 }
