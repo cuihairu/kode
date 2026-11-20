@@ -14,8 +14,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyzeCellDataFieldWrites,
+  cellDataScalarFamilyLabel,
   cellDataWriteFindingToItem,
   classifyCellDataWriteValue,
+  judgeCellDataValueStructure,
+  judgeCellDataValueWithRange,
   CELL_DATA_WRITE_TYPE_DIAGNOSTIC_CODE
 } from '../src/backend/cellDataWriteCheck';
 import type { CellDataKeyEntry } from '../src/backend/cellDataCompletion';
@@ -389,3 +392,109 @@ describe('消息渲染与 finding → 诊断项', () => {
     expect(item.related?.label).toContain('字段 hp');
   });
 });
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 13:字面量分类残余臂 + STRUCT-04/05 复用面
+// (judgeCellDataValueStructure / judgeCellDataValueWithRange / 家族文案)。
+// 覆盖口径残余:actualLabel 的 default 臂(:321)不可达——ValueLiteral 的全部
+// class 在 switch 里逐个命中(TS 穷尽),故 default 为防御性死码,不硬凑。
+// ---------------------------------------------------------------------------
+describe('批 13:分类残余臂与 STRUCT-04/05 复用面', () => {
+  it('整段空白 → unknown(不猜)', () => {
+    expect(classifyCellDataWriteValue('')).toEqual({ class: 'unknown' });
+    expect(classifyCellDataWriteValue('   ')).toEqual({ class: 'unknown' });
+  });
+
+  it('单元素元组:元数可数,元素面内层未知则不猜', () => {
+    // (foo,) 是单元素元组(尾逗号才是元组,`(5)` 是括号表达式);
+    // 元数 1 可数,内层推不出 → 只保元数,元素面 null
+    const tuple = classifyCellDataWriteValue('(foo,)');
+    expect(tuple).toEqual({ class: 'sequence', sequenceClass: 'tuple', arity: 1, elements: null });
+    // 内层可判 → 元素面照给(括号表达式语义退化回内层类)
+    expect(classifyCellDataWriteValue('(5,)')).toEqual({
+      class: 'sequence', sequenceClass: 'tuple', arity: 1,
+      elements: [{ class: 'int', value: 5n }]
+    });
+  });
+
+  it('未闭合引号:顶层结构切分直接 unknown', () => {
+    expect(classifyCellDataWriteValue('(1, 2"')).toEqual({ class: 'unknown' });
+  });
+
+  it('嵌套序列:元素切分认括号深度,逗号只在顶层切', () => {
+    const literal = classifyCellDataWriteValue('[[1, 2], [3, 4]]');
+    expect(literal.class).toBe('sequence');
+    if (literal.class === 'sequence') {
+      expect(literal.arity).toBe(2);
+      expect(literal.sequenceClass).toBe('list');
+    }
+  });
+
+  it('花括号面:有顶层冒号是字典,无冒号是集合,引号内含冒号不判字典', () => {
+    // 键串里嵌一个双引号(掩码/引号扫描的边界面)
+    const dictWithQuote = "{'a" + String.fromCharCode(34) + "b': 1}";
+    expect(classifyCellDataWriteValue(dictWithQuote).class).toBe('dict');
+    expect(classifyCellDataWriteValue('{1, 2}').class).toBe('set');
+    // 引号内含冒号 → 顶层冒号扫描认引号内,不入字典面
+    expect(classifyCellDataWriteValue("{'k': 'a:b'}").class).toBe('dict');
+  });
+
+  it('写点 RHS 空段:不裁定(不猜不造)', () => {
+    const text = wrap('self.cellData["hp"] =');
+    expect(analyzeCellDataFieldWrites(text, BASIC_ENTRIES)).toEqual([]);
+  });
+
+  it('BLOB 家族:非字节字面量按结构面报 actual 文案', () => {
+    const text = wrap('self.cellData["avatarData"] = 5');
+    const [finding] = analyzeCellDataFieldWrites(text, BASIC_ENTRIES);
+    expect(finding.actual).toBe('int');
+    expect(finding.reason).toBe('structure');
+  });
+
+  it('STRUCT-04 结构面:非标量类型不裁定 / 相符 ok / 范围面豁免 / 结构错配报错', () => {
+    // 非标量表类型(PYTHON 族/自定义别名)→ null:构造面不猜
+    expect(judgeCellDataValueStructure(classifyCellDataWriteValue('5'), 'PYTHON')).toBeNull();
+    expect(judgeCellDataValueStructure(classifyCellDataWriteValue('"x"'), 'ARRAY')).toBeNull();
+    // 标量且相符 → ok
+    expect(judgeCellDataValueStructure(classifyCellDataWriteValue('5'), 'UINT16')).toEqual({ ok: true });
+    // 范围面越界 → 构造面不重复报(归 STRUCT-05 车道)
+    expect(judgeCellDataValueStructure(classifyCellDataWriteValue('999999'), 'UINT16')).toEqual({ ok: true });
+    // 结构错配 → ok:false + actual 文案
+    expect(judgeCellDataValueStructure(classifyCellDataWriteValue('"x"'), 'UINT16')).toEqual({
+      ok: false,
+      actual: 'str'
+    });
+    // 家族文案:非标量表类型 → null
+    expect(cellDataScalarFamilyLabel('UINT16')).toBe('UINT16 (int 0..65535)');
+    expect(cellDataScalarFamilyLabel('PYTHON')).toBeNull();
+  });
+
+  it('STRUCT-05 范围面:与构造面同表,但范围面不豁免', () => {
+    expect(judgeCellDataValueWithRange(classifyCellDataWriteValue('999999'), 'UINT16')).toEqual({
+      reason: 'range',
+      actual: 'int',
+      valueText: '999999'
+    });
+    // 相符 → null(无错配)
+    expect(judgeCellDataValueWithRange(classifyCellDataWriteValue('5'), 'UINT16')).toBeNull();
+    // 非标量表类型 → null(不裁定)
+    expect(judgeCellDataValueWithRange(classifyCellDataWriteValue('5'), 'PYTHON')).toBeNull();
+  });
+});
+
+// 覆盖口径残余(诚实边界,不硬凑):本模块 8 处不可达防御臂。
+//  167 空序列字面量(空 `()`/`[]` 走 arity 0 分支前已被上层整段判空)
+//  202 scanQuotedEnd 三引号闭(三引号串在本面不作 RHS 整段字面量,前置整段
+//      解析已先行判 unknown)
+//  254 / 282 顶层切分器与冒号扫描器的未闭合引号退路——外层引号感知括号扫描
+//      恒先命中,引号失衡输入到不了这两处(实测 `(1, 'a", 2)`/`{'k': 1, 'j': "a`
+//      均在更早的整段判空处返 unknown)
+//  288 hasTopLevelColon 的括号深度自增——该函数只在花括号体上调用,体是
+//      `{...}` 内文,其自身的 `{` 已被剥壳,只剩可能嵌套的 `[`/`(`,
+//      实测 `{'k': [1, 2]}` 走不到该分支(外层先判)
+//  321 actualLabel 的 default 兜底——ValueLiteral 全部 class 在 switch 里
+//      逐个命中(TypeScript 穷尽联合),default 为防御性死码
+//  360 bytes 家族判 null 的成功路径同分支族由 BLOB 正例臂覆盖;该独立行
+//      属同族冗余判位
+//  473 writeRhsLiteral 空段退路——`self.cellData["hp"] =` 这类写点在操作
+//      识别阶段已被丢弃(写点须有 RHS 才成 op),到不了这里
