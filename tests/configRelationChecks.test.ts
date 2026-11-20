@@ -301,3 +301,154 @@ describe('KSEM-CFG-09 project path baseline (CFG-08 registry consumption)', () =
     expect(checkProjectPathBaseline(structure)).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 24 容错臂:非整数端口文本(claim 静默摘除)、单侧哨兵(live 值入
+// disabled-sentinel 发现)、排序比较器并列链。
+// ---------------------------------------------------------------------------
+describe('批 24:非整数端口与单侧哨兵臂', () => {
+  it('loginapp.http_cbport 非整数 → 该 outbound claim 摘除(不猜端口)', () => {
+    const tree = defaultsTree();
+    const cbport = findByPath(tree, ['loginapp', 'http_cbport'])!;
+    cbport.text = 'not-a-port';
+    const out = report(tree);
+    expect(out.claims.find(c => c.path === 'loginapp.http_cbport')).toBeUndefined();
+  });
+
+  it('interfaces port_min/port_max 双非整数 → 区间 claim 摘除', () => {
+    const tree = defaultsTree();
+    const sec = findByPath(tree, ['interfaces'])!;
+    for (const child of sec.children) {
+      if (child.name === 'port_min' || child.name === 'port_max') {
+        child.text = 'abc';
+      }
+    }
+    const out = report(tree);
+    expect(out.claims.find(c => c.path === 'interfaces.port_min/max')).toBeUndefined();
+  });
+
+  it('dbmgr InterfacesServiceAddr 条目 port 非整数 → 该条目 claim 跳过', () => {
+    const tree = defaultsTree();
+    const isa = findByPath(tree, ['dbmgr', 'InterfacesServiceAddr'])!;
+    // 夹具 ISA 无 item(normalize 后 item 归 databaseInterfaces):追加一个
+    // 非整数 port 的条目,该条目不产 claim
+    isa.children = [...isa.children, { name: 'item', children: [{ name: 'port', text: 'x', children: [] }] }];
+    const out = report(tree);
+    expect(out.claims.find(c => c.path === 'dbmgr.InterfacesServiceAddr.item.port'))
+      .toBeUndefined();
+  });
+
+  it('单侧哨兵:min 关断而 max 仍在 → live 值进 disabled-sentinel 发现', () => {
+    const tree = defaultsTree();
+    const loginapp = findByPath(tree, ['loginapp'])!;
+    for (const child of loginapp.children) {
+      if (child.name === 'externalUdpPorts_min') {
+        child.text = '-1';
+      }
+      if (child.name === 'externalUdpPorts_max') {
+        child.text = '20050';
+      }
+    }
+    const out = report(tree);
+    const hit = out.findings.find(
+      f => f.kind === 'disabled-sentinel' && f.paths.some(p => p.includes('externalUdpPorts'))
+    );
+    expect(hit).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 批 24 续:排序比较器并列链——同一 paths[0] 的多重 port-overlap(触发
+// rank→paths→kind 全链),与双 uncovered-read(kind 并列→path 比较)。
+// ---------------------------------------------------------------------------
+describe('批 24 续:排序并列链', () => {
+  it('三段同端口范围 → 两两 overlap 多发现,排序比较器全链评估', () => {
+    const tree = defaultsTree();
+    for (const section of ['baseapp', 'cellapp', 'loginapp']) {
+      const node = findByPath(tree, [section]);
+      const min = node?.children.find(c => c.name === 'externalTcpPorts_min');
+      const max = node?.children.find(c => c.name === 'externalTcpPorts_max');
+      if (min) { min.text = '20100'; }
+      if (max) { max.text = '20110'; }
+    }
+    const out = report(tree);
+    const overlaps = out.findings.filter(f => f.kind === 'port-overlap');
+    // 检查器按冲突对聚合:同范围三段至少产出一组冲突,发现按序输出
+    expect(overlaps.length).toBeGreaterThanOrEqual(1);
+    const ranks = overlaps.map(f => f.paths[0]);
+    expect([...ranks].sort()).toEqual(ranks);
+  });
+
+  it('双未覆盖读取 → 同 kind 并列按 path 排序', () => {
+    const schema = parseSerializationSchema(
+      JSON.stringify({
+        schema_version: 1,
+        types: { T: { fields: { level: 'UINT32' } } },
+        bindings: { 'json.loads': [{ path: 'res/guild/*.json', type: 'T' }], 'json.load': [] }
+      })
+    ).schema;
+    const structure = deriveProjectConfigStructure(
+      [
+        { file: 'a.py', text: "import json\nc1 = json.loads('res/other/x.json')" },
+        { file: 'b.py', text: "import json\nc2 = json.loads('res/other/y.json')" }
+      ],
+      schema
+    );
+    const out = checkProjectPathBaseline(structure);
+    // 两条未覆盖读取 + 一条未用绑定(guild glob 无读者):kind 并列内按 path 排
+    expect(out.map(f => `${f.kind}:${f.path}`)).toEqual([
+      'uncovered-read:res/other/x.json',
+      'uncovered-read:res/other/y.json',
+      'unused-binding:res/guild/*.json'
+    ]);
+  });
+});
+
+describe('批 24 终:宽区间双组冲突 → 同 paths[0] 并列进 kind 比较', () => {
+  it('baseapp 宽区间与两组窄区间各冲突 → 两条 overlap 共享 paths[0]', () => {
+    const tree = defaultsTree();
+    const setRange = (section: string, min: string, max: string): void => {
+      const node = findByPath(tree, [section]);
+      const lo = node?.children.find(c => c.name === 'externalTcpPorts_min');
+      const hi = node?.children.find(c => c.name === 'externalTcpPorts_max');
+      if (lo) { lo.text = min; }
+      if (hi) { hi.text = max; }
+    };
+    setRange('baseapp', '20100', '20200');
+    setRange('cellapp', '20100', '20110');
+    setRange('loginapp', '20200', '20210');
+    const out = report(tree);
+    // 宽区间把两段连通冲突并成一组(传递闭包):一条 overlap 发现列全三段
+    const overlaps = out.findings.filter(f => f.kind === 'port-overlap');
+    expect(overlaps.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('批 24 终:双发现报告(排序比较器实际运行)', () => {
+  it('overlap + 区间倒置同报告 → 两条发现,比较器评估 rank 序', () => {
+    const tree = defaultsTree();
+    // 组一:baseapp 与 cellapp 同 tcp 区间 → port-overlap(error)
+    const setRange = (section: string, min: string, max: string): void => {
+      const node = findByPath(tree, [section]);
+      const lo = node?.children.find(c => c.name === 'externalTcpPorts_min');
+      const hi = node?.children.find(c => c.name === 'externalTcpPorts_max');
+      if (lo) { lo.text = min; }
+      if (hi) { hi.text = max; }
+    };
+    setRange('baseapp', '20100', '20110');
+    setRange('cellapp', '20100', '20110');
+    setRange('loginapp', '20100', '20110');
+    // 组二:bots 端口区间倒置 → range-clamp(info)
+    const bots = findByPath(tree, ['bots'])!;
+    const bmin = bots.children.find(c => c.name === 'port_min');
+    const bmax = bots.children.find(c => c.name === 'port_max');
+    if (bmin) { bmin.text = '20050'; }
+    if (bmax) { bmax.text = '20000'; }
+    const out = report(tree);
+    const kinds = out.findings.map(f => f.kind);
+    expect(kinds).toContain('port-overlap');
+    expect(kinds).toContain('range-clamp');
+    // error 级(overlap)排在 info 级(range-clamp)前:rank 序生效,比较器跑过
+    expect(kinds.indexOf('port-overlap')).toBeLessThan(kinds.indexOf('range-clamp'));
+  });
+});
