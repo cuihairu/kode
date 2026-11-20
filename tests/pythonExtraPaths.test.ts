@@ -229,6 +229,23 @@ describe('planPythonExtraPaths(只管理自己那一段)', () => {
       '${workspaceFolder}/server_assets/scripts'
     ]);
   });
+
+  it.each([
+    [['.kbengine/stubs'], [], '.kbengine/stubs'],
+    [['${workspaceFolder}/.kbengine/stubs'], [], '${workspaceFolder}/.kbengine/stubs'],
+    [['${workspaceFolder}/.kbengine/stubs', '.kbengine/stubs'], ['${workspaceFolder}/.kbengine/stubs'], '.kbengine/stubs']
+  ])('保留等价存根路径的现有写法', (currentPaths, previouslyManaged, expected) => {
+    const plan = planPythonExtraPaths({
+      workspaceRoot: '/ws',
+      currentPaths,
+      previouslyManaged,
+      extraManaged: ['/ws/.kbengine/stubs'],
+      deps: { exists: () => false, listSubdirs: () => [] }
+    });
+    expect(plan.nextPaths).toEqual([expected]);
+    expect(plan.managedPaths).toEqual([]);
+    expect(plan.changed).toBe(currentPaths.length > 1);
+  });
 });
 
 describe('planPythonExtraPaths(存量绝对路径迁移,CFG-02)', () => {

@@ -21,7 +21,7 @@ import {
 // (extraPaths 计划恒无镜像目录 + 源码静态审计)。
 
 const SRC_TEXT = 'def foo(self):\n    return 1\n\n\ncount = 0\n';
-const MIR_TEXT = 'def foo(self) -> int:\n    return 1\n\n\ncount: int = 0\n';
+const STUB_TEXT = '# Exported declarations\ncount: int\n\ndef foo(self) -> int: ...\n';
 
 const tmpRoots: string[] = [];
 const makeRoot = (label: string): string => {
@@ -37,7 +37,7 @@ const makeScene = (label: string, mirrorText: string | null) => {
   fs.mkdirSync(path.dirname(srcPath), { recursive: true });
   fs.writeFileSync(srcPath, SRC_TEXT);
   if (mirrorText !== null) {
-    const mirPath = path.join(root, '.kbengine', 'inferred', 'scripts', 'foo.py');
+    const mirPath = path.join(root, '.kbengine', 'stubs', 'generated', 'scripts', 'foo.pyi');
     fs.mkdirSync(path.dirname(mirPath), { recursive: true });
     fs.writeFileSync(mirPath, mirrorText);
   }
@@ -68,7 +68,7 @@ afterEach(() => {
 
 describe('hover 镜像兜底富化', () => {
   it('普通 Python def 链全 miss → 镜像推断类型悬停(返回+形参)', async () => {
-    const { document } = makeScene('hover-def', MIR_TEXT);
+    const { document } = makeScene('hover-def', STUB_TEXT);
     const provider = new KBEngineHoverProvider();
     const hover = (await provider.provideHover(document, new Position(0, 5))) as {
       contents: unknown;
@@ -81,7 +81,7 @@ describe('hover 镜像兜底富化', () => {
   });
 
   it('变量赋值悬停 → 镜像变量注解', async () => {
-    const { document } = makeScene('hover-var', MIR_TEXT);
+    const { document } = makeScene('hover-var', STUB_TEXT);
     const provider = new KBEngineHoverProvider();
     const hover = (await provider.provideHover(document, new Position(4, 2))) as {
       contents: unknown;
@@ -107,7 +107,7 @@ describe('hover 镜像兜底富化', () => {
 
 describe('createInferredMirrorHover 直接面', () => {
   it('非标识符词 → null', () => {
-    const { document } = makeScene('word-bad', MIR_TEXT);
+    const { document } = makeScene('word-bad', STUB_TEXT);
     expect(createInferredMirrorHover(document, 'not-a-word')).toBeNull();
   });
 
@@ -117,7 +117,7 @@ describe('createInferredMirrorHover 直接面', () => {
     const srcPath = path.join(root, 'scripts', 'a.py');
     fs.mkdirSync(path.dirname(srcPath), { recursive: true });
     fs.writeFileSync(srcPath, 'x = 1\n');
-    const mirPath = path.join(root, '.kbengine', 'inferred', 'scripts', 'a.py');
+    const mirPath = path.join(root, '.kbengine', 'stubs', 'generated', 'scripts', 'a.pyi');
     fs.mkdirSync(path.dirname(mirPath), { recursive: true });
     fs.writeFileSync(mirPath, 'x: int = 1\n');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
@@ -132,7 +132,7 @@ describe('InferredMirrorTypeInlayHintsProvider', () => {
   const WHOLE = new Range(new Position(0, 0), new Position(64, 0));
 
   it('源缺注解而镜像同行有 → 形参/返回/赋值三类提示', () => {
-    const { document } = makeScene('inlay', MIR_TEXT);
+    const { document } = makeScene('inlay', STUB_TEXT);
     const hints = new InferredMirrorTypeInlayHintsProvider().provideInlayHints(document, WHOLE);
     expect(hints.map(h => [h.position.line, h.position.character, h.label])).toEqual([
       [0, 13, '-> int'],
@@ -142,7 +142,7 @@ describe('InferredMirrorTypeInlayHintsProvider', () => {
   });
 
   it('可视区外行不出提示', () => {
-    const { document } = makeScene('inlay-window', MIR_TEXT);
+    const { document } = makeScene('inlay-window', STUB_TEXT);
     const hints = new InferredMirrorTypeInlayHintsProvider().provideInlayHints(
       document,
       new Range(new Position(4, 0), new Position(4, 10))
@@ -150,9 +150,27 @@ describe('InferredMirrorTypeInlayHintsProvider', () => {
     expect(hints.map(h => h.position.line)).toEqual([4]);
   });
 
+  it('同名 Base 和 Cell 脚本使用各自的桩，忽略 Incomplete', () => {
+    const root = makeRoot('roles');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    for (const [role, type] of [['base', 'int'], ['cell', 'str']]) {
+      const file = path.join(root, 'scripts', role, 'Avatar.py');
+      const stub = path.join(root, '.kbengine', 'stubs', 'generated', 'scripts', role, 'Avatar.pyi');
+      const source = 'class Player:\n    def value(\n        self, arg\n    ):\n        pass\n';
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.mkdirSync(path.dirname(stub), { recursive: true });
+      fs.writeFileSync(file, source);
+      fs.writeFileSync(stub, `from _typeshed import Incomplete\n\nclass Player:\n    def value(self, arg: Incomplete) -> ${type}: ...\n`);
+      const document = makeTextDocument(source, { fileName: file, languageId: 'python' });
+      const provider = new InferredMirrorTypeInlayHintsProvider();
+      expect(provider.provideInlayHints(document, WHOLE).map(h => [h.position.line, h.label])).toEqual([[3, `-> ${type}`]]);
+      expect(hoverValue(createInferredMirrorHover(document, 'value', 1)!)).toContain(`-> ${type}`);
+    }
+  });
+
   it('infer.enabled=false(镜像生产总闸)→ 空', () => {
     configurationOverrides.set('kbengine', { 'infer.enabled': false });
-    const { document } = makeScene('inlay-off', MIR_TEXT);
+    const { document } = makeScene('inlay-off', STUB_TEXT);
     expect(new InferredMirrorTypeInlayHintsProvider().provideInlayHints(document, WHOLE)).toEqual([]);
   });
 
@@ -162,7 +180,7 @@ describe('InferredMirrorTypeInlayHintsProvider', () => {
   });
 
   it('非 python 文档 → 空', () => {
-    const { document } = makeScene('inlay-lang', MIR_TEXT);
+    const { document } = makeScene('inlay-lang', STUB_TEXT);
     const defDoc = makeTextDocument('<Properties>\n</Properties>\n', {
       fileName: path.join(path.dirname(document.fileName), 'Avatar.def'),
       languageId: 'kbengine-def'
@@ -181,7 +199,7 @@ describe('T-04 禁遮蔽:镜像绝不进导入解析', () => {
     });
     expect(plan.nextPaths.length).toBeGreaterThan(0);
     for (const entry of plan.nextPaths) {
-      expect(entry.toLowerCase()).not.toContain('inferred');
+      expect(entry.toLowerCase()).not.toMatch(/inferred|generated/);
     }
   });
 

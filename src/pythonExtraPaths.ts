@@ -25,6 +25,7 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
@@ -185,7 +186,28 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
       (isVarForm(left) && isVarForm(right) && workspaceIsDrive);
     return caseInsensitive ? left.toLowerCase() === right.toLowerCase() : false;
   };
-  const userPaths = current.filter(candidate => !managedBefore.some(managed => sameCandidate(candidate, managed)));
+  const workspaceRoot = input.workspaceRoot.replace(/\\/g, '/');
+  const pathKey = (entry: string): string => {
+    const normalized = entry.replace(/\\/g, '/');
+    if (isDriveLiteral(normalized)) { return path.win32.normalize(normalized).toLowerCase(); }
+    const expanded = normalized === WORKSPACE_FOLDER_VAR || normalized.startsWith(`${WORKSPACE_FOLDER_VAR}/`)
+      ? workspaceRoot + normalized.slice(WORKSPACE_FOLDER_VAR.length)
+      : normalized;
+    if (expanded.includes('${')) { return expanded; }
+    if (expanded.startsWith('/')) { return path.posix.normalize(expanded); }
+    return workspaceIsDrive
+      ? path.win32.resolve(workspaceRoot, expanded).toLowerCase()
+      : path.posix.normalize(path.posix.join(workspaceRoot, expanded));
+  };
+  const seen = new Set<string>();
+  const addUnique = (candidate: string): boolean => {
+    const key = pathKey(candidate);
+    if (seen.has(key)) { return false; }
+    seen.add(key);
+    return true;
+  };
+  const userPaths = current.filter(candidate =>
+    !managedBefore.some(managed => sameCandidate(candidate, managed)) && addUnique(candidate));
   // IDE-PRJ-006 角色隔离闸:管理段经每个发现的 scripts 根逐个过闸,角色
   // 目录(base/cell)剥出合并列表——scripts/base 与 scripts/cell 的同名模块
   // 不会因 extraPaths 顺序跨角色误解析;用户手填段不经闸(只管自己那段)。
@@ -200,8 +222,8 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
     managedPaths = kept;
     isolatedRoleRoots.push(...removedRoleRoots);
   }
-  const managedVar = uniquePaths(managedPaths.map(toVar));
-  const nextPaths = uniquePaths([...userPaths, ...managedVar]);
+  const managedVar = managedPaths.map(toVar).filter(addUnique);
+  const nextPaths = [...userPaths, ...managedVar];
   const sameLength = nextPaths.length === rawCurrent.length;
   const changed = !sameLength || nextPaths.some((candidate, index) => candidate !== rawCurrent[index]);
   return { nextPaths, managedPaths: managedVar, changed, isolatedRoleRoots, userPaths };
@@ -324,7 +346,8 @@ export async function syncPythonExtraPaths(
         }
       }
     }
-    if (plan.managedPaths.length === 0) {
+    if (plan.managedPaths.length === 0 && extraManaged.length === 0 &&
+        pythonScriptRootCandidates(workspaceRoot, deps).length === 0) {
       continue;
     }
     if (plan.changed) {

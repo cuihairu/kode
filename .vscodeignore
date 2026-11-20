@@ -76,3 +76,5 @@ Cargo.lock
 rust-toolchain.toml
 # Wireshark's GPL plugin is an independent deliverable, outside the VSIX.
 plugins/
+# KBEngine templates are copied from the installed extension at runtime.
+!typings/**

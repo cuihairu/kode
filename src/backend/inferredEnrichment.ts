@@ -13,6 +13,15 @@
 
 import * as path from 'path';
 import { maskPythonNonCode } from './pythonLexicalMask';
+import { pythonStatements } from './pythonParser';
+
+export function generatedStubPath(root: string, managedDir: string, source: string): string | null {
+  const relative = path.relative(root, source);
+  if (!relative.endsWith('.py') || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return null;
+  }
+  return path.join(root, managedDir, 'stubs', 'generated', `${relative}i`);
+}
 
 /** 源 .py 在镜像里的相对路径（工作区相对路径，复用 mirrorPrefixFor 口径）。 */
 export function mirrorRelPathFor(
@@ -279,6 +288,108 @@ export interface InferredAnnotationHint {
   line: number;
   character: number;
   label: string;
+}
+
+interface StubDeclaration {
+  name: string;
+  key: string;
+  line: number;
+  text: string;
+  signature?: ParsedDefHeader;
+  assignment?: { column: number };
+  type?: string;
+}
+
+function declarations(content: string): StubDeclaration[] {
+  const lines = content.split('\n');
+  const scopes: Array<{ name: string; indent: number; isFunction: boolean }> = [];
+  const result: StubDeclaration[] = [];
+  for (const statement of pythonStatements(content)) {
+    while (scopes.length && scopes.at(-1)!.indent >= statement.indent) { scopes.pop(); }
+    const { line, endLine, indent, text } = statement;
+    const definition = /^\s*(?:(async)\s+)?(class|def)\s+([A-Za-z_]\w*)/.exec(text);
+    const owner = scopes.map(scope => scope.name).join('.');
+    if (definition) {
+      const [, , kind, name] = definition;
+      const raw = lines.slice(line, endLine + 1).join('\n');
+      if (kind === 'def') {
+        const signature = parseDefHeaderInLine(raw);
+        if (signature) { result.push({ key: `def:${owner}.${name}`, name, line, text: raw, signature }); }
+      }
+      scopes.push({ name, indent, isFunction: kind === 'def' });
+      continue;
+    }
+    if (scopes.some(scope => scope.isFunction)) { continue; }
+    const variable = /^(\s*)([A-Za-z_]\w*)\s*(:|=(?!=))/.exec(text);
+    if (!variable) { continue; }
+    const [, space, name, operator] = variable;
+    const raw = lines.slice(line, endLine + 1).join('\n');
+    const item: StubDeclaration = { key: `var:${owner}.${name}`, name, line, text: raw };
+    if (operator === '=') {
+      item.assignment = { column: space.length + name.length };
+    } else {
+      const mask = maskPythonNonCode(raw);
+      item.type = knownType(annotatedTypeAfterColon(mask, raw, variable[0].length, mask.length));
+    }
+    result.push(item);
+  }
+  return result;
+}
+
+function knownType(type: string | null | undefined): string | undefined {
+  return type && !/\b(?:Incomplete|Unknown|Any)\b/.test(type) ? type : undefined;
+}
+
+function addOffsetHint(hints: InferredAnnotationHint[], declaration: StubDeclaration, offset: number, label: string): void {
+  const prefix = declaration.text.slice(0, offset).split('\n');
+  hints.push({ line: declaration.line + prefix.length - 1, character: prefix.at(-1)!.length, label });
+}
+
+/** Bind generated declarations to source declarations by scope and name. */
+export function diffGeneratedStubAnnotations(source: string, stub: string): InferredAnnotationHint[] {
+  const hints: InferredAnnotationHint[] = [];
+  const byKey = new Map<string, StubDeclaration | null>();
+  for (const candidate of declarations(stub)) {
+    byKey.set(candidate.key, byKey.has(candidate.key) ? null : candidate);
+  }
+  for (const declaration of declarations(source)) {
+    const candidate = byKey.get(declaration.key);
+    if (!candidate) { continue; }
+    if (declaration.assignment && candidate.type) {
+      addOffsetHint(hints, declaration, declaration.assignment.column, `: ${candidate.type}`);
+    }
+    const signature = declaration.signature;
+    if (!signature || !candidate.signature) { continue; }
+    const returnType = knownType(candidate.signature.returnType);
+    if (!signature.hasReturnArrow && returnType) {
+      addOffsetHint(hints, declaration, signature.closeParen + 1, `-> ${returnType}`);
+    }
+    const parameterTypes = new Map(candidate.signature.params.map(param => [param.name, param.type]));
+    for (const param of signature.params) {
+      const type = knownType(parameterTypes.get(param.name));
+      if (!param.type && type) { addOffsetHint(hints, declaration, param.nameEnd, `: ${type}`); }
+    }
+  }
+  return hints;
+}
+
+export function generatedStubSymbol(source: string, stub: string, name: string, line?: number): {
+  returnType?: string;
+  variableType?: string;
+  params: Array<{ name: string; type: string }>;
+} | null {
+  const sourceMatches = line === undefined ? [] : declarations(source).filter(item => item.name === name && item.line === line);
+  const matches = declarations(stub).filter(item => sourceMatches.length === 1
+    ? item.key === sourceMatches[0].key
+    : item.name === name);
+  if (matches.length !== 1) { return null; }
+  const [item] = matches;
+  const returnType = knownType(item.signature?.returnType);
+  const params = (item.signature?.params ?? []).flatMap(param => {
+    const type = knownType(param.type);
+    return type ? [{ name: param.name, type }] : [];
+  });
+  return returnType || item.type || params.length ? { returnType, variableType: item.type, params } : null;
 }
 
 /**

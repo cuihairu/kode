@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
 import { DEBUG_CONFIG_CHANNEL_NAME, ensureDebugConfig, fileSystemBootstrapDeps } from '../backend/debugConfigBootstrap';
 import { GeneratedSourceCodeLensProvider } from '../generatedSourceLenses';
 import { KBEngineCodeGenerator } from '../codeGenerator';
-import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resetKbeStubs, resolveKbengineStubTemplateRoot, resolveManagedDirName } from '../pythonStubExport';
+import { exportKbeStubs, fileSystemStubExportDeps, PYTHON_STUB_EXPORT_ENABLED_DEFAULT, PYTHON_STUB_EXPORT_SETTING, readManagedDirSetting, resetKbeStubs, resolveKbengineStubTemplateRoot, resolveManagedDirName } from '../pythonStubExport';
 import { activateInferPipeline } from '../inferPipeline';
 import { bindSdkGenerationToProfile } from '../sdk-gen/sdkGenerationProfile';
 import { buildEntityTypeStubLineMap, buildEntityTypeStubPlan, exportEntityTypeStubs } from '../entityTypeStubs';
@@ -36,6 +36,7 @@ import { resolveDemoGameTemplateRoot } from '../demoGameTemplate';
 import { runClientSdkGenerateCommand } from '../sdk-gen/clientSdkGenerator';
 import { runGeneratorFormWizard } from '../generatorForms';
 import { registerEntityCreateCommands } from '../entityCreateCommands';
+import { shouldStartKbEngineIndexing } from '../workspaceGate';
 import type { EntityMappingManager } from '../entityMapping';
 import type { QuickActionManager } from '../quickActions';
 import type { PythonClassIndex } from '../backend/pythonClassIndex';
@@ -55,6 +56,22 @@ export interface GeneratorsShared {
 
 export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   const { context, entityMappingManager, quickActionManager, pythonClassIndex, pythonDocumentSelector, watchPythonIndex } = deps;
+  const templateRoot = resolveKbengineStubTemplateRoot(context.extensionPath);
+  const generatePythonStubs = async (manual = false): Promise<boolean> => {
+    const enabled = vscode.workspace.getConfiguration('kbengine')
+      .get<boolean>(PYTHON_STUB_EXPORT_SETTING, PYTHON_STUB_EXPORT_ENABLED_DEFAULT);
+    const shouldExport = manual || (enabled && (getExternalScanRoots().length > 0 || await shouldStartKbEngineIndexing()));
+    if (shouldExport) {
+      await exportKbeStubs(fileSystemStubExportDeps, { manual, silent: !manual, templateRoot });
+      await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
+    }
+    await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: !manual });
+    if (shouldExport && enabled && vscode.workspace.workspaceFolders?.length) {
+      await entityMappingManager.waitForInitialScan();
+      await exportEntityTypeStubs(entityMappingManager, fileSystemStubExportDeps, { silent: !manual });
+    }
+    return shouldExport && enabled;
+  };
   // Python 生态接线(盘点 G1/G2):先导出 .kbengine/stubs/KBEngine.pyi
   // (符号索引发射,盘点 G2),再同步 python.analysis.extraPaths(scripts 根
   // + 存根目录,盘点 G1)——顺序保证首次激活存根就进得了 extraPaths。
@@ -75,13 +92,7 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   const exportKbeStubsCommand = vscode.commands.registerCommand(
     'kbengine.python.exportStubs',
     async () => {
-      // manual: 显式命令绕过 kbengine.python.stubCopy(默认关)——默认关闭只关
-      // 激活期/托管目录自动重建这两条自动路径,用户手点要桩包时仍拿得到。
-      await exportKbeStubs(fileSystemStubExportDeps, {
-        manual: true,
-        templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
-      });
-      await syncPythonExtraPaths(context);
+      await generatePythonStubs(true);
       typePreviewHandle.refresh();
     }
   );
@@ -92,7 +103,7 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     'kbengine.python.resetStubs',
     async () => {
       await resetKbeStubs(fileSystemStubExportDeps, {
-        templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
+        templateRoot
       });
       await syncPythonExtraPaths(context);
     }
@@ -153,21 +164,15 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     generatedEntitySourceLensProviderImpl
   );
   context.subscriptions.push(generatedEntitySourceLensProvider);
-  // KODE-CFG-017:pyrefly 推断管道接线——.kbengine 隔离(搜索/watcher/gitignore)
-  // + .kbengine/inferred 副本同步 + 脚本变更 watcher + kbengine.infer.run 命令
-  activateInferPipeline(context);
+  const generateProjectStubs = activateInferPipeline(context, async () => { await generatePythonStubs(); });
   void (async () => {
     // RUST-009 兜底:激活期桩导出链任何未预期失败不再成为未处理 rejection
     // (链内各步已各自降级,这里是传播面保险);warning 存照,UI 照常可用。
     try {
-      await exportKbeStubs(fileSystemStubExportDeps, {
-        silent: true,
-        templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
-      });
-      await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
-      await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
-      await exportEntityTypeStubs(entityMappingManager);
       await syncJsoncAssociation(context, { silent: true });
+      if (await generatePythonStubs()) {
+        await generateProjectStubs();
+      }
     } catch (error) {
       console.error('[kbengine] stub export chain failed:', error);
       void Promise.resolve(
@@ -208,16 +213,11 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     managedDirName: resolveManagedDirName(readManagedDirSetting()).name
   });
   const regenerateManagedDirAssets = async (): Promise<void> => {
-    await exportKbeStubs(fileSystemStubExportDeps, {
-      silent: true,
-      templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
-    });
-    await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
-    await exportEntityTypeStubs(entityMappingManager);
     ensureDebugConfig(
       { ...fileSystemBootstrapDeps, log: (line: string): void => debugConfigChannel.appendLine(line) },
       bootstrapOptions()
     );
+    await generatePythonStubs();
   };
   const createManagedDirWatcher = (): vscode.FileSystemWatcher => {
     const name = resolveManagedDirName(readManagedDirSetting()).name;
@@ -226,9 +226,9 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
       vscode.workspace.createFileSystemWatcher(pattern)
     );
     for (const watcher of watchers) {
-      watcher.onDidChange(regenerateManagedDirAssets);
-      watcher.onDidCreate(regenerateManagedDirAssets);
-      watcher.onDidDelete(regenerateManagedDirAssets);
+      watcher.onDidDelete(() => {
+        void regenerateManagedDirAssets().catch(error => console.error('[kbengine] stub export chain failed:', error));
+      });
       context.subscriptions.push(watcher);
     }
     return { dispose: (): void => watchers.forEach(watcher => watcher.dispose()) } as vscode.FileSystemWatcher;
@@ -238,33 +238,20 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   // kbengine.python.stubDir 改了之后,先按新位置重导存根链,再静默同步
   // Python 分析接线(extraPaths/stubPath/pyrightconfig.json 随新目录改写),
   // 不再等下一次手动命令或重载窗口才跟上新位置。
-  const regenerateAndSyncPythonWiring = async (): Promise<void> => {
-    await regenerateManagedDirAssets();
-    await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
-  };
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(event => {
       const touchesManagedDir = event.affectsConfiguration('kbengine.managedDir');
-      if (!touchesManagedDir && !event.affectsConfiguration('kbengine.python.stubDir')) {
+      if (!touchesManagedDir && ![
+        'kbengine.python.stubDir', 'kbengine.python.stubCopy', 'kbengine.python.stubExport',
+        'kbengine.python.entityStubMethods'
+      ].some(key => event.affectsConfiguration(key))) {
         return;
       }
       if (touchesManagedDir) {
         managedDirWatcher.dispose();
         managedDirWatcher = createManagedDirWatcher();
       }
-      void regenerateAndSyncPythonWiring();
-    })
-  );
-  // 实体方法面开关变更即时重导(用户令 2026-10-21:配置开关变更即时生效):
-  // 关掉实体方法面后,下次激活前先把已生成的 entity_types.pyi 收回到关掉后
-  // 的内容(总闸 kbengine.python.stubExport 关时导出函数自门,零写)。
-  // 批 ③ 起 KBEngine 桩面是静态模板 copy-if-absent,配置变更不再触碰它
-  // (触发重导也只会零复制,留在这里只为 entity_types 面继续即时生效)
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('kbengine.python.entityStubMethods')) {
-        void regenerateManagedDirAssets();
-      }
+      void regenerateManagedDirAssets().catch(error => console.error('[kbengine] stub export chain failed:', error));
     })
   );
   const firstWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';

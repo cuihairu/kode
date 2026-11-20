@@ -193,6 +193,7 @@ export interface EntityMapping {
   pythonFile: string;
   pythonFiles: string[];
   properties: { [propertyName: string]: { defFile: string; line: number } };
+  propertyDefinitions?: readonly PropertyDefinitionInfo[];
   methods: { [methodName: string]: EntityMethodDefinitionLocation[] };
 }
 
@@ -1403,7 +1404,10 @@ export class EntityMappingManager {
   // 门控后读空集同口径;启动面只在异步查询/等待入口,避免激活期读状态把
   // 负案例工作区悄悄拉回全量启动。
   getAllMappings(): EntityMapping[] {
-    return [...this.mappingIndexes.values()].map(index => this.toLegacyMapping(index));
+    return [...this.mappingIndexes.values()].map(index => ({
+      ...this.toLegacyMapping(index),
+      propertyDefinitions: index.propertyDefinitions
+    }));
   }
 
   async resolvePropertyDefinition(

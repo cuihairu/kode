@@ -1,18 +1,15 @@
 /**
  * KODE-CFG-017 装配层：pyrefly 推断管道的 vscode 接线。
- * 组合四个纯模块 + vscode 配置/工作区状态：
  * - 隔离面（managedDirExclusions）：search.exclude / files.watcherExclude /
  *   gitignore，VCS 感知、只管理自己那一段、.gitignore 绝不创建；
- * - 副本层（inferredCopy）：.kbengine/inferred/ 镜像 scripts 树，内容比对零写；
- * - 推断层（pyreflyInfer）：二进制发现 + 参数构造 + 写权限闸；
- * 消费面（kode 原生 provider 读副本富化）在后续批次接入。
+ * - 推断层：Pyrefly 读取原始 scripts，产物写入托管目录的 stubs/generated/。
  *
- * 写权限闸铁律：本模块全部落盘路径先过 assertWritable——默认 Managed 域
- * （.kbengine/**）才可写；用户 scripts/** 须显式开启 kbengine.infer.sourceWrite=user。
+ * 项目桩的输出目录必须位于工作区托管目录中。
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import * as vscode from 'vscode';
 import { InferredDirEntry, listSourceFiles, mirrorPrefixFor, planInferredMirror } from './backend/inferredCopy';
 import { pathApiFor } from './backend/workspacePath';
@@ -24,20 +21,18 @@ import {
   SourceWriteScope,
   SpawnFn,
   assertWritable,
-  buildInferArgs,
   discoverPyrefly
 } from './backend/pyreflyInfer';
-import { kbeStubDir, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
+import { kbeStubDir, readManagedDirSetting, readStubDirSetting, resolveManagedDirName, resolveStubDir } from './pythonStubExport';
+import { processStubRoot, pythonProcessFromPath } from './backend/pythonProcess';
+import { generatedStubPath } from './backend/inferredEnrichment';
 
 // ---------------------------------------------------------------------------
 // 设置键（package.json contributes.configuration 同步）
 // ---------------------------------------------------------------------------
 
 export const INFER_ENABLED_KEY = 'infer.enabled';
-// 2026-11-17 用户令:复制用户代码的面默认关闭——静默把 scripts 复制进
-// .kbengine/inferred 会让不知情用户怀疑插件盗用代码;开启=显式同意镜像行为,
-// 配置描述里写明其行为。syncInferredCopy/runInfer 双闸同读本默认。
-export const INFER_ENABLED_DEFAULT = false;
+export const INFER_ENABLED_DEFAULT = true;
 export const INFER_PYREFLY_PATH_KEY = 'infer.pyreflyPath';
 export const INFER_PYTHON_VERSION_KEY = 'infer.pythonVersion';
 export const INFER_PYTHON_VERSION_DEFAULT = '3.7';
@@ -74,6 +69,27 @@ export interface InferPipelineDeps {
   findGitRoot: (startDir: string) => string | null;
   findSvnRoot: (startDir: string) => string | null;
   spawn: SpawnFn;
+  listInferenceFiles?: typeof scanInferenceTree;
+}
+
+async function scanInferenceTree(root: string, pattern: RegExp, skipGenerated = false): Promise<Array<[string, number, number]>> {
+  const files: Array<[string, number, number]> = [];
+  const pending = [root];
+  while (pending.length > 0) {
+    const dir = pending.pop()!;
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory() && entry.name !== '__pycache__' && !entry.name.startsWith('.') &&
+          !(skipGenerated && dir === root && entry.name === 'generated')) {
+        pending.push(file);
+      } else if (entry.isFile() && pattern.test(entry.name)) {
+        const { mtimeMs, size } = await fs.promises.stat(file);
+        files.push([file, mtimeMs, size]);
+      }
+    }
+  }
+  return files.sort(([left], [right]) => left.localeCompare(right));
 }
 
 function walkUpFor(startDir: string, name: string): string | null {
@@ -92,6 +108,7 @@ function walkUpFor(startDir: string, name: string): string | null {
 
 /** 装配层默认注入：真 fs + 真 spawn */
 export const fileSystemInferDeps: InferPipelineDeps = {
+  listInferenceFiles: scanInferenceTree,
   exists: (p) => fs.existsSync(p),
   readText: (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null),
   writeText: (p, content) => {
@@ -361,7 +378,7 @@ export async function syncInferredCopy(
   // 总闸(2026-11-17 用户令:复制用户码的面默认关):激活初始化、**/*.py
   // watcher、命令三条路都经此——关闭时镜像不建、存量不删、绝不复制用户
   // 代码(此前闸只在 runInfer,watcher/初始化会绕过它静默复制)。
-  if (!inferEnabled()) {
+  if (!vscode.workspace.getConfiguration('kbengine').get<boolean>(INFER_ENABLED_KEY, false)) {
     return { copied: 0, overwritten: 0, deleted: 0, unchanged: 0, denied: [] };
   }
   const managedDir = managedDirName();
@@ -409,27 +426,29 @@ export interface InferRunResult {
   message?: string;
 }
 
-/** 推断管道总闸读数(2026-11-17 用户令:默认关;syncInferredCopy/runInfer 同读) */
-function inferEnabled(): boolean {
+/** 推断管道总闸。 */
+export function generatedInferencesEnabled(): boolean {
   return vscode.workspace
     .getConfiguration('kbengine')
     .get<boolean>(INFER_ENABLED_KEY, INFER_ENABLED_DEFAULT);
 }
 
-/** 生成管道：镜像同步 → pyrefly infer（每个 scripts 根一趟，喂 def 真值 search-path） */
+const generatedStubsDidChange = new vscode.EventEmitter<void>();
+export const onDidGenerateInferredStubs = generatedStubsDidChange.event;
+
+/** 静态读取源码和对应进程的类型桩，只输出 .pyi。 */
 export async function runInfer(
   context: vscode.ExtensionContext,
   deps: InferPipelineDeps = fileSystemInferDeps,
-  options: { silent?: boolean } = {}
+  options: { silent?: boolean; reuse?: boolean } = {}
 ): Promise<InferRunResult> {
-  const enabled = inferEnabled();
+  const enabled = generatedInferencesEnabled();
   if (!enabled) {
     if (!options.silent) {
       await vscode.window.showInformationMessage('pyrefly 推断已关闭（kbengine.infer.enabled）');
     }
     return { status: 'disabled', exitCodes: [] };
   }
-  await syncInferredCopy(context, deps, { silent: true });
   const pyreflyPath = discoverPyrefly(
     vscode.workspace.getConfiguration('kbengine').get<string>(INFER_PYREFLY_PATH_KEY),
     { exists: deps.exists, envPath: process.env.PATH, homeDir: process.env.HOME }
@@ -450,22 +469,110 @@ export async function runInfer(
   const folders = vscode.workspace.workspaceFolders ?? [];
   for (const folder of folders) {
     const workspaceRoot = folder.uri.fsPath;
+    const stubDir = resolveStubDir(workspaceRoot, {
+      managedDir, setting: readStubDirSetting(), folders: [{ fsPath: workspaceRoot, name: folder.name }]
+    }).dir;
+    const cache = context.workspaceState;
+    const canCache = cache && deps.listInferenceFiles;
+    const stubTree = canCache && deps.exists(stubDir) ? await canCache(stubDir, /\.pyi$/, true) : [];
     for (const scriptsRoot of pythonScriptRootCandidates(workspaceRoot, fileSystemScriptRootDeps)) {
-      const mirrorRoot = path.join(workspaceRoot, managedDir, 'inferred', mirrorPrefixFor(workspaceRoot, scriptsRoot));
-      // WIN-3:kbeStubDir 为托管目录比较统一产出 / 形态(去重契约);spawn 参数
-      // 按工作区根风格归一——win32 断言期待平台分隔符形态。
-      const stubSearch = pathApiFor(workspaceRoot).join(kbeStubDir(workspaceRoot, managedDir));
-      const args = buildInferArgs(pythonVersion, [stubSearch], mirrorRoot);
-      const outcome = await deps.spawn(pyreflyPath, args, { cwd: workspaceRoot });
-      exitCodes.push(outcome.code);
+      const paths = pathApiFor(workspaceRoot);
+      const sourceTree: ReadonlyArray<readonly [string, number, number]> = deps.listInferenceFiles
+        ? await deps.listInferenceFiles(scriptsRoot, /\.(?:py|pyi|def|xml|toml)$/)
+        : listSourceFiles(scriptsRoot, deps).files.map(file => [paths.join(scriptsRoot, file), 0, 0] as const);
+      const sources = sourceTree.map(([file]) => file).filter(file => file.endsWith('.py'));
+      if (sources.length === 0) { continue; }
+      const cacheKey = `infer.generated.v1:${scriptsRoot}`;
+      let fingerprint: string | undefined;
+      if (cache && deps.listInferenceFiles) {
+        const binary = await fs.promises.stat(pyreflyPath);
+        const configs = await Promise.all(['pyrefly.toml', 'pyproject.toml'].map(async name => {
+          const file = paths.join(workspaceRoot, name);
+          const info = await fs.promises.stat(file).catch(() => undefined);
+          return info && [file, info.mtimeMs, info.size];
+        }));
+        fingerprint = createHash('sha256').update(JSON.stringify([
+          pyreflyPath, binary.mtimeMs, pythonVersion, managedDir, stubDir, configs, sourceTree, stubTree
+        ])).digest('hex');
+        if (options.reuse && cache.get(cacheKey) === fingerprint) {
+          const outputRoot = paths.join(kbeStubDir(workspaceRoot, managedDir), 'generated');
+          const output = deps.exists(outputRoot) ? await deps.listInferenceFiles(outputRoot, /\.pyi$/) : [];
+          const outputTimes = new Map(output.map(([file, mtime]) => [paths.normalize(file), mtime]));
+          if (sourceTree.every(([source, mtime]) => {
+            if (!source.endsWith('.py')) { return true; }
+            const stub = generatedStubPath(workspaceRoot, managedDir, source);
+            return stub && (outputTimes.get(paths.normalize(stub)) ?? -1) >= mtime;
+          })) { continue; }
+        }
+      }
+      const sharedPaths = [stubDir, paths.join(stubDir, 'shared'), scriptsRoot, paths.join(scriptsRoot, 'common')];
+      const byRole = new Map<string, string[]>();
+      for (const source of sources) {
+        const top = paths.relative(scriptsRoot, source).split(paths.sep)[0];
+        const key = pythonProcessFromPath(source) ? top : '';
+        const group = byRole.get(key);
+        if (group) { group.push(source); }
+        else { byRole.set(key, [source]); }
+      }
+      const exitStart = exitCodes.length;
+      for (const [directory, files] of byRole) {
+        const cwd = paths.join(scriptsRoot, directory);
+        const role = directory ? pythonProcessFromPath(cwd) : null;
+        const searchPaths = role ? [cwd, processStubRoot(stubDir, role), ...sharedPaths] : sharedPaths;
+        let targets: string[] = [];
+        let length = 0;
+        for (const source of files) {
+          if (length + source.length > (process.platform === 'win32' ? 16_000 : 96_000) && targets.length) {
+            await runBatch(cwd, searchPaths, targets);
+            targets = [];
+            length = 0;
+          }
+          targets.push(source);
+          length += source.length + 3;
+        }
+        await runBatch(cwd, searchPaths, targets);
+      }
+      if (fingerprint && exitCodes.slice(exitStart).every(code => code === 0)) {
+        await cache?.update(cacheKey, fingerprint);
+      }
+
+      async function runBatch(cwd: string, searchPaths: string[], targets: string[]): Promise<void> {
+        // Stubgen writes paths relative to the common parent of the files in this invocation.
+        let commonParent = paths.dirname(targets[0]);
+        for (const target of targets) {
+          while (paths.relative(commonParent, target).startsWith(`..${paths.sep}`)) {
+            commonParent = paths.dirname(commonParent);
+          }
+        }
+        const output = paths.join(kbeStubDir(workspaceRoot, managedDir), 'generated', paths.relative(workspaceRoot, commonParent));
+        const scope = assertWritable(output, SOURCE_WRITE_SCOPE_MANAGED, workspaceRoot, managedDir, scriptsRoot);
+        if (!scope.allowed) {
+          exitCodes.push(-1);
+          return;
+        }
+        const args = ['stubgen', '--python-version', pythonVersion, '--include-private', '--output-dir', output];
+        for (const searchPath of new Set(searchPaths)) {
+          if (deps.exists(searchPath)) {
+            args.push('--search-path', searchPath);
+          }
+        }
+        const outcome = await deps.spawn(pyreflyPath!, [...args, ...targets], { cwd });
+        if (outcome.code !== 0) {
+          console.warn('[kbengine] pyrefly stubgen:', outcome.stderr || outcome.stdout);
+        }
+        exitCodes.push(outcome.code);
+      }
     }
   }
+  if (exitCodes.some(code => code === 0)) { generatedStubsDidChange.fire(); }
   if (!options.silent) {
-    const ok = exitCodes.every((code) => code === 0);
+    const ok = exitCodes.length > 0 && exitCodes.every((code) => code === 0);
     await vscode.window.showInformationMessage(
       ok
-        ? `pyrefly infer 完成（${exitCodes.length} 个脚本根）`
-        : `pyrefly infer 有退出码非 0：${exitCodes.join('、')}（详见 OUTPUT 通道）`
+        ? `pyrefly 类型桩生成完成（${exitCodes.length} 批）`
+        : exitCodes.length === 0
+          ? '未发现可生成类型桩的 Python 脚本'
+          : `pyrefly 类型桩生成有退出码非 0：${exitCodes.join('、')}`
     );
   }
   return { status: 'ran', exitCodes, pyreflyPath };
@@ -495,6 +602,7 @@ export function createCopySyncScheduler(
   let timer: NodeJS.Timeout | null = null;
   let inFlight = false;
   let dirty = false;
+  let disposed = false;
 
   const startRound = (): void => {
     inFlight = true;
@@ -503,7 +611,7 @@ export function createCopySyncScheduler(
       .catch(() => undefined)
       .finally(() => {
         inFlight = false;
-        if (dirty) {
+        if (dirty && !disposed) {
           dirty = false;
           startRound();
         }
@@ -512,6 +620,7 @@ export function createCopySyncScheduler(
 
   return {
     schedule(): void {
+      if (disposed) { return; }
       if (inFlight) {
         dirty = true;
         return;
@@ -525,6 +634,7 @@ export function createCopySyncScheduler(
       }, debounceMs);
     },
     dispose(): void {
+      disposed = true;
       if (timer) {
         clearTimeout(timer);
         timer = null;
@@ -533,19 +643,22 @@ export function createCopySyncScheduler(
   };
 }
 
-/** 副本同步防抖窗(激活接线用;watcher 连发折叠) */
-const COPY_SYNC_DEBOUNCE_MS = 200;
-
 /**
- * 激活接线：注册 `kbengine.infer.run` 命令 + 激活期静默同步（隔离面 + 副本）
- * + 脚本变更 watcher（用户源码改后同步覆盖副本；排除 managedDir 防自环）。
+ * 仅在基础类型桩准备好后运行 Pyrefly。
  */
-export function activateInferPipeline(context: vscode.ExtensionContext): void {
+export function activateInferPipeline(context: vscode.ExtensionContext, prepareStubs?: () => Promise<void>): () => Promise<void> {
+  let running: Promise<InferRunResult> | undefined;
+  let projectReady = false;
+  const generate = (silent: boolean): Promise<InferRunResult> => {
+    running ??= runInfer(context, undefined, { silent, reuse: silent })
+      .finally(() => { running = undefined; });
+    return running;
+  };
   const runCommand = vscode.commands.registerCommand('kbengine.infer.run', async () => {
-    const result = await runInfer(context);
-    if (result.status === 'ran') {
-      await syncInferredCopy(context, fileSystemInferDeps, { silent: true });
+    if (generatedInferencesEnabled()) {
+      await prepareStubs?.();
     }
+    await generate(false);
   });
   context.subscriptions.push(runCommand);
   const syncExclusionsCommand = vscode.commands.registerCommand('kbengine.managedDir.syncExclusions', () =>
@@ -554,32 +667,27 @@ export function activateInferPipeline(context: vscode.ExtensionContext): void {
     applyManagedDirExclusions(context, fileSystemInferDeps, { userRequested: true })
   );
   context.subscriptions.push(syncExclusionsCommand);
-  const managedDir = managedDirName();
-  const watcher = vscode.workspace.createFileSystemWatcher('**/*.py');
-  // KR-AUD-56:watcher 事件经调度器进副本同步(防抖 + 在途互斥),不再
-  // 每事件直发 syncInferredCopy(并发 unlink/write 竞态)
-  const copySyncScheduler = createCopySyncScheduler(
-    () => syncInferredCopy(context, fileSystemInferDeps, { silent: true }),
-    COPY_SYNC_DEBOUNCE_MS
-  );
-  const onChange = (uri: vscode.Uri): void => {
-    const fsPath = uri.fsPath.replace(/\\/g, '/');
-    if (fsPath.includes(`/${managedDir}/`)) {
-      return;
+  const refresh = createCopySyncScheduler(async () => {
+    if (projectReady && generatedInferencesEnabled()) {
+      await generate(true);
     }
-    copySyncScheduler.schedule();
+  }, 1200);
+  const watcher = vscode.workspace.createFileSystemWatcher('**/scripts/**/*.py');
+  const onSourceFile = (uri: vscode.Uri): void => {
+    if (!uri.fsPath.replace(/\\/g, '/').includes(`/${managedDirName()}/`)) { refresh.schedule(); }
   };
-  watcher.onDidChange(onChange);
-  watcher.onDidCreate(onChange);
-  watcher.onDidDelete(onChange);
-  context.subscriptions.push(watcher);
-  context.subscriptions.push({ dispose: () => copySyncScheduler.dispose() });
+  context.subscriptions.push(watcher, watcher.onDidCreate(onSourceFile),
+    watcher.onDidChange(onSourceFile), watcher.onDidDelete(onSourceFile), refresh,
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('kbengine.infer.enabled')) { generatedStubsDidChange.fire(); }
+      if (['kbengine.infer.enabled', 'kbengine.infer.pyreflyPath', 'kbengine.infer.pythonVersion']
+        .some(key => event.affectsConfiguration(key))) { refresh.schedule(); }
+    }));
   void (async () => {
     // RUST-009 兜底:推断管道静默初始化链的未预期失败不再成为未处理
     // rejection;warning 存照,provider 面照常走无富化路径。
     try {
       await applyManagedDirExclusions(context, fileSystemInferDeps, { silent: true });
-      await syncInferredCopy(context, fileSystemInferDeps, { silent: true });
     } catch (error) {
       console.error('[kbengine] infer pipeline init failed:', error);
       void Promise.resolve(
@@ -587,4 +695,8 @@ export function activateInferPipeline(context: vscode.ExtensionContext): void {
       ).catch(() => undefined);
     }
   })();
+  return async () => {
+    projectReady = true;
+    await generate(true);
+  };
 }

@@ -350,18 +350,18 @@ describe('exportKbeStubs(copy-if-absent 复制)', () => {
   });
 });
 
-describe('stubCopy 窄闸(用户令 2026-11-16:复制这一步默认关)', () => {
-  it('开关常量:键名 python.stubCopy,默认 false(总闸默认开不变)', () => {
+describe('stubCopy 窄闸', () => {
+  it('默认自动复制', () => {
     expect(PYTHON_STUB_COPY_SETTING).toBe('python.stubCopy');
-    expect(PYTHON_STUB_COPY_ENABLED_DEFAULT).toBe(false);
+    expect(PYTHON_STUB_COPY_ENABLED_DEFAULT).toBe(true);
     expect(PYTHON_STUB_EXPORT_ENABLED_DEFAULT).toBe(true);
   });
 
-  it('默认(零配置):激活期静默复制零写零提示;非静默报 stubCopy 文案', async () => {
+  it('显式关闭后，静默路径零写零提示，非静默路径说明原因', async () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const root = makeTemplateRoot();
     try {
-      // 外层 beforeEach 清过配置,这里不放任何覆写=默认关
+      configurationOverrides.set('kbengine', { 'python.stubCopy': false });
       await exportKbeStubs(makeDeps(root), { templateRoot: root, silent: true });
       expect(writes).toHaveLength(0);
       expect(mkdirs).toHaveLength(0);
@@ -375,11 +375,10 @@ describe('stubCopy 窄闸(用户令 2026-11-16:复制这一步默认关)', () =>
     }
   });
 
-  it('显式开启(stubCopy=true)恢复自动复制', async () => {
+  it('零配置时自动复制', async () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const root = makeTemplateRoot();
     try {
-      configurationOverrides.set('kbengine', { 'python.stubCopy': true });
       const copied = await exportKbeStubs(makeDeps(root), { templateRoot: root, silent: true });
       expect(copied).toEqual(['ws']);
       expect(writes).toHaveLength(3);
@@ -388,10 +387,11 @@ describe('stubCopy 窄闸(用户令 2026-11-16:复制这一步默认关)', () =>
     }
   });
 
-  it('manual 位(显式命令)绕过窄闸,默认关也照复制', async () => {
+  it('关闭自动复制后仍可手动导出', async () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const root = makeTemplateRoot();
     try {
+      configurationOverrides.set('kbengine', { 'python.stubCopy': false });
       const copied = await exportKbeStubs(makeDeps(root), { templateRoot: root, manual: true });
       expect(copied).toEqual(['ws']);
       expect(writes).toHaveLength(3);

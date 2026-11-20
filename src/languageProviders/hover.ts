@@ -1437,12 +1437,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
     }
 
-    // KODE-CFG-017-R:镜像兜底富化——整条 KBEngine 域解析链未命中时,普通
-    // Python 符号读 .kbengine/inferred 副本出推断类型(返回/形参/变量注解)。
-    // 副本缺失/无注解静默回退 null(不抛错不刷通知);更强面已提前 return,
-    // 本面只补缺不覆盖,且副本绝不进 extraPaths/导入解析(T-04 禁遮蔽)。
     if (document.languageId === 'python' && featureConfig.hoverShowSymbolDocs) {
-      const mirrorHover = createInferredMirrorHover(document, word);
+      const mirrorHover = createInferredMirrorHover(document, word, position.line);
       if (mirrorHover) {
         return mirrorHover;
       }

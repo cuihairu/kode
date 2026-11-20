@@ -344,26 +344,23 @@ export function buildEntityTypeStubPlan(
   const entries = [...mappings]
     .sort((left, right) => left.name.localeCompare(right.name))
     .map(mapping => {
-      const withDefinitions = mapping as EntityMapping & {
-        propertyDefinitions?: Array<{
-          identity: { symbolName: string };
-          typeName?: string;
-          defaultValue?: string;
-          domains?: Array<'base' | 'cell' | 'client'>;
-        }>
-      };
+      const propertyDefinitions = new Map<string, NonNullable<EntityMapping['propertyDefinitions']>[number]>();
+      for (const definition of mapping.propertyDefinitions ?? []) {
+        if (options.role && !definition.domains?.includes(options.role)) { continue; }
+        const name = definition.identity.propertyPath ?? definition.identity.symbolName;
+        const previous = propertyDefinitions.get(name);
+        if (!previous || (!options.role && !previous.domains?.includes('client') && definition.domains?.includes('client'))) {
+          propertyDefinitions.set(name, definition);
+        }
+      }
       // ARRAY of 折叠(用户报 bug 2026-10-27):parseProperties 对 ARRAY of 的
       // 元素/嵌套子属性以 `${fullPath}[]` 登记(foo[] 与 foo[].x),toLegacyMapping
       // 原样进 properties 表——存根原样吐出时 foo 与 foo[] 各出一行,且 foo[]
       // 非法标识符。[] 子路径一律不落行,折叠回顶层属性;顶层元素(恰好 `x[]`
       // 那条)的 typeName 经同链解析,可解析则升级 list[元素类型],否则保持
       // 顶层自身注解(裸 ARRAY 无元素声明仍 list[Any],诚实不硬造)。
-      const rawEntries = Object.entries(mapping.properties).filter(([name]) => {
-        if (!options.role) { return true; }
-        const definition = withDefinitions.propertyDefinitions?.find(p => p.identity.symbolName === name);
-        // Unknown flags must not be advertised on every process.
-        return definition?.domains?.includes(options.role) ?? false;
-      });
+      const rawEntries = Object.entries(mapping.properties)
+        .filter(([name]) => !options.role || propertyDefinitions.has(name));
       const elementAnnotations = new Map<string, { annotation: string; customTypeLine?: number }>();
       for (const [name] of rawEntries) {
         const cut = name.indexOf('[]');
@@ -371,9 +368,7 @@ export function buildEntityTypeStubPlan(
         const parentPath = name.slice(0, cut);
         if (elementAnnotations.has(parentPath)) { continue; }
         if (!rawEntries.some(([other]) => other === parentPath)) { continue; }
-        const elementInfo = withDefinitions.propertyDefinitions?.find(
-          definition => definition.identity.symbolName === name
-        );
+        const elementInfo = propertyDefinitions.get(name);
         elementAnnotations.set(
           parentPath,
           annotationForDefType(elementInfo?.typeName, context, elementInfo?.defaultValue)
@@ -384,9 +379,7 @@ export function buildEntityTypeStubPlan(
         properties: rawEntries
           .filter(([name]) => !name.includes('[]'))
           .map(([name, location]) => {
-            const propertyInfo = withDefinitions.propertyDefinitions?.find(
-              definition => definition.identity.symbolName === name
-            );
+            const propertyInfo = propertyDefinitions.get(name);
             let resolved = annotationForDefType(
               propertyInfo?.typeName,
               context,
@@ -406,7 +399,7 @@ export function buildEntityTypeStubPlan(
               name,
               annotation: resolved.annotation,
               customTypeLine: resolved.customTypeLine,
-              sourceLine: location.line,
+              sourceLine: propertyInfo?.line ?? location.line,
               ...(guardNoneEmpty !== undefined ? { guardNoneEmpty } : {})
             };
           })

@@ -321,7 +321,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | `kbengine.python.venvDirectories` | string[] | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单(单段目录名,不含路径分隔符):快速执行动作启用 venv 且未写 `venv.path` 时,按此清单在动作目录与配置根逐名探测(动作目录优先);解释器链在 `interpreterPath` 为空时把该清单作为工作区环境扫描的同深度优先提示。非数组或全无效回落默认 |
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级)。生成的 `python.analysis.extraPaths` 条目一律写成 `${workspaceFolder}/...` 变量形态;工作区前缀可替换的存量绝对路径在下次同步时自动迁移,不可替换的绝对路径由 `kbengine.configContract.extraPathsAbsolute` 报出。只管理本扩展写入的那一段(除该工作区前缀迁移外用户手填路径原样保留;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
 | `kbengine.ruff.ensureConfig` | boolean | `true` | 首次执行 ruff lint/format（或生成器多行化）时检测工作区根的 ruff 配置（pyproject.toml 的 `[tool.ruff]` / ruff.toml）：缺失时询问一次，同意即生成最小 `[tool.ruff]` 段（`line-length = 88`，附常用值注释）；已有 `[tool.ruff]` 绝不动，无法证明 TOML 安全的追加如实跳过。拒绝后本会话不再询问 |
-| `kbengine.python.stubCopy` | boolean | `false` | 内置 KBEngine 桩包**复制这一步**的窄闸（激活期自动复制 + 托管目录自动重建两条自动路径）：默认不往工作区自动写任何桩文件。`kbengine.python.stubExport` 管的其余面（自定义类型 `.pyi` 生成、`python.analysis.extraPaths` 同步、实体存根方法面）不受影响；`kbengine.python.exportStubs` / `kbengine.python.resetStubs` 按需照跑、不受本开关限制 |
+| `kbengine.python.stubCopy` | boolean | `true` | 识别到 KBEngine 项目后，自动复制缺失的内置引擎桩。设为 `false` 可关闭自动复制，手动导出和重置命令仍可用。 |
 | `kbengine.python.stubExport` | boolean | `true` | 把插件内置 KBEngine 桩包(仓库顶层 `typings/` 模板,派生自 cuihairu/kbengine fork typings;copy-if-absent,项目副本永不覆盖)复制到存根目录供 Pylance 解析 `import KBEngine`,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口,`kbengine.python.resetStubs` 是唯一覆盖通道 关闭即停导出停接线：下次同步（激活期静默链或手动命令）把存根目录撤出 `python.analysis.extraPaths` 管理段，并不再写 `python.analysis.stubPath` 与 `reportMissingModuleSource` 压制；已在盘的桩文件保留（本开关管导出不管删除），已写入的值保留（无托管记忆键、无法与用户自设值区分，详见 docs/review/2026-11-17-rust-168-typings-toggle-audit.md） |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
 | `kbengine.python.entityStubMethods` | boolean | `true` | `entity_types.pyi` 实体存根包含 def 方法面(Base/Cell/ClientMethods,默认开);关掉回落只含属性面 |
@@ -330,10 +330,10 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.infer.enabled` | boolean | `false` | 启用 pyrefly 无标注函数 stub 推断管道(KODE-CFG-017)。**开启后的行为:扩展会把工作区 scripts 树复制到 `.kbengine/inferred/` 镜像,并在副本上运行 `pyrefly infer`**(以 `.kbengine/stubs` def 真值为类型环境)产出推断注解;消费面只读副本(KODE-CFG-017-R),除非把 `kbengine.infer.sourceWrite=user` 否则用户真码永不被改写。默认关闭(2026-11-17 用户令):复制代码的行为只在显式开启后发生,绝不在用户不知情时静默复制;关闭时激活/文件 watcher/命令三条路同闸全停,盘上已有镜像文件保留,删除 `inferred/` 目录即清除。消费面细节:hover 在整条 KBEngine 解析链 miss 时以镜像推断注解兜底(返回/形参/变量的 `**推断类型**` 最小悬停),inlay 在源行缺注解而镜像同行有注解处原位渲染 `: <type>` / `-> <type>`(定义点行差分,行数漂移整批不出宁缺毋错);镜像绝不进 extraPaths/导入解析(T-04 禁遮蔽,计划面+静态审计双断言) |
+| `kbengine.infer.enabled` | boolean | `true` | 识别到 KBEngine 项目且本机有 Pyrefly 时默认启用。生成的项目 `.pyi` 放在 `.kbengine/stubs/generated/`，Kode 按源码路径读取并补充悬停和行内提示。 |
 | `kbengine.infer.pyreflyPath` | string | 空 | pyrefly 可执行文件绝对路径(留空则按 PATH 再 `~/.local/bin` pipx 默认位发现;找不到时 `kbengine.infer.run` 如实提示,功能降级不报错) |
-| `kbengine.infer.pythonVersion` | string | `3.7` | pyrefly infer `--python-version` 目标(KBEngine 内嵌解释器版本;官方最小支持 3.5) |
-| `kbengine.infer.sourceWrite` | string | `managed` | 写权限闸 scope:`managed`=仅 `.kbengine/**` 可写(默认);`user`=另允许写用户 `scripts/**`(须用户显式开启;scope 外写一律拒绝不静默) |
+| `kbengine.infer.pythonVersion` | string | `3.7` | pyrefly stubgen `--python-version` 目标(KBEngine 内嵌解释器版本;官方最小支持 3.5) |
+| `kbengine.infer.sourceWrite` | string | `managed` | 旧版兼容设置。当前流程只读源码，仅在托管目录写入 .pyi。 |
 | `kbengine.infer.exclusionsSync` | boolean | `true` | 自动把 `.kbengine` 从 `search.exclude` / `files.watcherExclude` 排除;git 仓根 `.gitignore` 已存在时走**建议**:弹询问、用户点击「加入」才追加——绝不擅自编辑、绝不创建(SVN/无 VCS 不写任何 git 专属物)。写一次记忆:接受**或拒答**都每 仓根×托管目录名 记一次「已定局」——之后再缺失=用户已表态(如想提交 `.kbengine`),不再重复弹、永不补写;`kbengine.managedDir.syncExclusions` 命令是显式绕过入口,`KBE-CFG-004` 诊断继续提示未忽略 `debug.json` 含密码的误提交风险 |
 
 ### 实体脚本增强(2026-10-21)
@@ -768,7 +768,7 @@ AI 面的工作方式:
 | `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。2026-11-11 静态模板桩车道起,`kbengine.python.stubSourceMode` 与 `kbengine.python.stubEngineTypings` 退役,新增 `kbengine.python.proxyInternalAttrHints`(三项均已在总览分区表对账)。2026-11-16 起新增 `kbengine.python.stubCopy`,作为内置桩包复制这一步的窄闸(默认关,已在上方总览分区表对账)。
+计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。2026-11-11 静态模板桩车道起,`kbengine.python.stubSourceMode` 与 `kbengine.python.stubEngineTypings` 退役,新增 `kbengine.python.proxyInternalAttrHints`(三项均已在总览分区表对账)。2026-11-16 起新增 `kbengine.python.stubCopy`,作为内置桩包复制这一步的窄闸(当前默认值见上方总览分区表)。
 
 ## 配置数据保护(kbengine.configData)
 

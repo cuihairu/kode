@@ -17,7 +17,6 @@ import {
   commandRegistry,
   commands,
   configurationOverrides,
-  lastFileSystemWatcher,
   messages,
   Uri,
   window,
@@ -444,9 +443,8 @@ describe('syncInferredCopy(副本层执行器)', () => {
     expect(messages.info[0]).toContain('.kbengine/inferred 副本已同步');
   });
   it('总闸默认关(2026-11-17 用户令):默认值 false,不设开关零复制镜像不落盘', async () => {
-    // 默认值钉:复制用户代码的面默认关闭(用户令原文「用户不知情的情况下
-    // 还以为插件盗用代码呢」)。INFER_ENABLED_DEFAULT=false + 零配置零写。
-    expect(INFER_ENABLED_DEFAULT).toBe(false);
+    // 默认开启只读桩生成，旧的源码镜像入口仍不会在零配置时复制文件。
+    expect(INFER_ENABLED_DEFAULT).toBe(true);
     // describe 级机制 opt-in 撤下,回到零配置(=默认值语义)
     configurationOverrides.delete('kbengine');
     const { root, files } = makeTmpWorkspace();
@@ -501,10 +499,11 @@ describe('runInfer(推断执行器)', () => {
     expect(result.message).toBeDefined();
   });
 
-  it('运行:先镜像副本再 spawn,喂 def 真值 search-path', async () => {
+  it('直接读取源码并按进程生成类型桩', async () => {
     const { root, files } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    configurationOverrides.set('kbengine', { 'infer.enabled': true, 'infer.pyreflyPath': '/opt/pyrefly' });
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    fs.mkdirSync(path.join(root, '.kbengine', 'stubs', 'base'), { recursive: true });
     const spawned: Array<{ cmd: string; args: string[] }> = [];
     const deps = makeDeps({
       files,
@@ -516,15 +515,71 @@ describe('runInfer(推断执行器)', () => {
     const result = await runInfer(makeContext(), deps, { silent: true });
     expect(result.status).toBe('ran');
     expect(result.pyreflyPath).toBe('/opt/pyrefly');
-    expect(result.exitCodes).toEqual([0]);
-    expect(spawned).toHaveLength(1);
+    expect(result.exitCodes).toEqual([0, 0]);
+    expect(spawned).toHaveLength(2);
     expect(spawned[0].cmd).toBe('/opt/pyrefly');
-    expect(spawned[0].args[0]).toBe('infer');
+    expect(spawned[0].args[0]).toBe('stubgen');
     expect(spawned[0].args).toContain('--python-version');
-    expect(spawned[0].args).toContain(path.join(root, '.kbengine', 'stubs'));
-    expect(spawned[0].args[spawned[0].args.length - 1]).toBe(path.join(root, '.kbengine', 'inferred', 'scripts'));
-    // 镜像副本先于推断产生
-    expect(files.get(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toContain('import KBEngine');
+    expect(spawned[0].args).toContain(path.join(root, '.kbengine', 'stubs').replace(/\\/g, '/'));
+    expect(spawned[0].args).toContain(path.join(root, '.kbengine', 'stubs', 'base').replace(/\\/g, '/'));
+    expect(spawned[0].args).not.toContain(path.join(root, 'scripts', 'common'));
+    expect(spawned[0].args).toContain(path.join(root, '.kbengine', 'stubs', 'generated', 'scripts', 'base'));
+    expect(spawned[0].args.at(-1)).toBe(path.join(root, 'scripts', 'base', 'Avatar.py'));
+    expect(spawned[1].args.at(-1)).toBe(path.join(root, 'scripts', 'main.py'));
+    expect([...files.keys()].some(file => file.endsWith('.py') && file.includes('.kbengine'))).toBe(false);
+  });
+
+  it('单个深层文件的输出仍保留源码的完整相对目录', async () => {
+    const { root, scriptsRoot } = makeTmpWorkspace();
+    const source = path.join(scriptsRoot, 'cell', 'nested', 'Avatar.py');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    const files = new Map([[source, 'class Avatar: pass']]);
+    const outputDir = path.join(root, '.kbengine', 'stubs', 'generated', 'scripts', 'cell', 'nested');
+    const calls: string[][] = [];
+    const deps = makeDeps({
+      files,
+      spawn: async (_cmd, args) => {
+        calls.push([...args]);
+        return { code: 0, stdout: '', stderr: '' };
+      }
+    });
+    await runInfer(makeContext(), deps, { silent: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain(outputDir);
+    expect(calls[0].at(-1)).toBe(source);
+  });
+
+  it('后台运行复用未变结果，源码保存后重新生成', async () => {
+    const { root, scriptsRoot, files } = makeTmpWorkspace();
+    const binary = path.join(root, 'pyrefly');
+    fs.writeFileSync(binary, '');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': binary });
+    let runs = 0;
+    const deps = {
+      ...makeDeps({
+        files,
+        spawn: async (_cmd, args) => {
+          runs += 1;
+          const output = args[args.indexOf('--output-dir') + 1];
+          fs.mkdirSync(output, { recursive: true });
+          fs.writeFileSync(path.join(output, path.basename(args.at(-1)!) + 'i'), '# Generated');
+          return { code: 0, stdout: '', stderr: '' };
+        }
+      }),
+      listInferenceFiles: fileSystemInferDeps.listInferenceFiles
+    };
+    const context = makeContext();
+    const options = { silent: true, reuse: true };
+    await runInfer(context, deps, options);
+    const firstRun = runs;
+    expect(firstRun).toBeGreaterThan(0);
+    await runInfer(context, deps, options);
+    expect(runs).toBe(firstRun);
+    fs.appendFileSync(path.join(scriptsRoot, 'main.py'), '# saved\n');
+    await runInfer(context, deps, options);
+    expect(runs).toBeGreaterThan(firstRun);
   });
 
   it('非零退出码如实入账', async () => {
@@ -537,69 +592,19 @@ describe('runInfer(推断执行器)', () => {
     });
     const result = await runInfer(makeContext(), deps, { silent: true });
     expect(result.status).toBe('ran');
-    expect(result.exitCodes).toEqual([1]);
+    expect(result.exitCodes).toEqual([1, 1]);
   });
 });
 
 describe('activateInferPipeline(激活接线)', () => {
-  // 接线机械用例显式 opt-in(总闸默认关;闸行为由组内 watcher 默认关例专钉)。
-  beforeEach(() => {
+  it('注册两条命令，激活时不创建源码镜像', async () => {
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     configurationOverrides.set('kbengine', { 'infer.enabled': true });
-  });
-
-  it('注册两条命令 + **/*.py watcher(无工作区时初始化为 no-op)', () => {
-    stubWorkspace.workspaceFolders = [];
-    const context = makeContext();
-    activateInferPipeline(context);
+    activateInferPipeline(makeContext());
+    await new Promise(resolve => setTimeout(resolve, 0));
     expect(commandRegistry.registeredCommandIds()).toContain('kbengine.infer.run');
     expect(commandRegistry.registeredCommandIds()).toContain('kbengine.managedDir.syncExclusions');
-    expect(lastFileSystemWatcher.current?.pattern).toBe('**/*.py');
-    expect(context.subscriptions.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('watcher 自环过滤:managedDir 内变更不触发副本同步', async () => {
-    // 激活时无工作区,先排空初始化异步(empty folders → no-op,镜像不存在)
-    stubWorkspace.workspaceFolders = [];
-    const context = makeContext();
-    activateInferPipeline(context);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const watcher = lastFileSystemWatcher.current!;
-    const { root } = makeTmpWorkspace();
-    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    // 仅 fire .kbengine 内变更:若自环未过滤,会触发副本同步并建镜像
-    watcher.fireChange(Uri.file(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py')));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(fs.existsSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBe(false);
-  });
-
-  it('watcher 联动:真脚本根变更触发副本同步(自环外路径)', async () => {
-    stubWorkspace.workspaceFolders = [];
-    const context = makeContext();
-    activateInferPipeline(context);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const watcher = lastFileSystemWatcher.current!;
-    const { root } = makeTmpWorkspace();
-    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    watcher.fireChange(Uri.file(path.join(root, 'scripts', 'main.py')));
-    // KR-AUD-56:watcher 同步走 200ms 防抖,等防抖窗过 + 同步落盘
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    expect(fs.readFileSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'), 'utf-8')).toContain('import KBEngine');
-    expect(messages.info).toHaveLength(0);
-  });
-
-  it('总闸默认关(2026-11-17 用户令):watcher 触发不建镜像', async () => {
-    // 关闭态下 watcher 链同样被闸——此前闸只在 runInfer,初始化/watcher 会
-    // 绕过它静默复制用户代码(本次收口的病灶本体)。
-    configurationOverrides.set('kbengine', { 'infer.enabled': false });
-    stubWorkspace.workspaceFolders = [];
-    const context = makeContext();
-    activateInferPipeline(context);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const watcher = lastFileSystemWatcher.current!;
-    const { root } = makeTmpWorkspace();
-    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    watcher.fireChange(Uri.file(path.join(root, 'scripts', 'main.py')));
-    await new Promise((resolve) => setTimeout(resolve, 350));
     expect(fs.existsSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBe(false);
   });
 });
@@ -739,7 +744,7 @@ describe('runInfer 非静默播报面(覆盖补测)', () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     configurationOverrides.set('kbengine', { 'infer.enabled': true, 'infer.pyreflyPath': '/opt/pyrefly' });
     await runInfer(makeContext(), makeDeps({ files }));
-    expect(messages.info.some(text => text.includes('pyrefly infer 完成'))).toBe(true);
+    expect(messages.info.some(text => text.includes('pyrefly 类型桩生成完成'))).toBe(true);
     messages.info.length = 0;
     await runInfer(makeContext(), makeDeps({
       files,
@@ -791,20 +796,21 @@ describe('infer 激活命令处理器(覆盖补测)', () => {
     expect(messages.info.some(text => text.includes('pyrefly 推断已关闭'))).toBe(true);
   });
 
-  it('kbengine.infer.run:ran 后同步副本;真 spawn 对不可执行二进制如实降级', async () => {
+  it('kbengine.infer.run:先准备基础桩，二进制无法执行时保留源码原样', async () => {
     const { root, files } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const bin = path.join(root, 'fake-pyrefly');
     fs.writeFileSync(bin, '#!/bin/sh\nexit 0\n');
     configurationOverrides.set('kbengine', { 'infer.enabled': true, 'infer.pyreflyPath': bin });
     const context = makeContext();
-    activateInferPipeline(context);
+    let prepared = false;
+    activateInferPipeline(context, async () => { prepared = true; });
     await commands.executeCommand('kbengine.infer.run');
-    // 默认 fileSystemInferDeps 真 spawn:普通文件不可执行 → error 臂 code=-1,
-    // 退出码明细如实播报;随后 ran 分支补一轮静默副本同步(镜像落真盘)
+    expect(prepared).toBe(true);
     expect(messages.info.some(text => text.includes('退出码非 0'))).toBe(true);
-    expect(fs.existsSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBe(true);
-    expect(files.size).toBeGreaterThanOrEqual(0);
+    expect(fs.existsSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBe(false);
+    const source = path.join(root, 'scripts', 'main.py');
+    expect(fs.readFileSync(source, 'utf8')).toBe(files.get(source));
   });
 
   it('kbengine.managedDir.syncExclusions:空工作区空转不抛', async () => {

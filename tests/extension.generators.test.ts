@@ -58,6 +58,41 @@ import { until, makeContext, disposeAll, watcherPatternKey, resetExtensionTestSt
 
 beforeEach(resetExtensionTestState);
 
+it('激活后从安装目录复制引擎桩，并按已索引的 def 生成实体桩', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-stub-activation-'));
+  const scripts = path.join(root, 'scripts');
+  const defs = path.join(scripts, 'entity_defs');
+  const defFile = path.join(defs, 'Avatar.def');
+  const typesFile = path.join(defs, 'types.xml');
+  const sourceFile = path.join(scripts, 'base', 'Avatar.py');
+  const source = 'import KBEngine\n\nclass Avatar(KBEngine.Entity):\n    pass\n';
+  const context = makeContext();
+  try {
+    fs.mkdirSync(defs, { recursive: true });
+    fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+    fs.writeFileSync(sourceFile, source);
+    fs.writeFileSync(path.join(scripts, 'entities.xml'), '<root><Avatar hasBase="true"/></root>');
+    fs.writeFileSync(typesFile, '<root><ENTITY_ID>UINT32</ENTITY_ID></root>');
+    fs.writeFileSync(defFile, '<root><Properties><ownerId><Type>ENTITY_ID</Type><Flags>BASE</Flags></ownerId></Properties></root>');
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'fixture', index: 0 }];
+    workspace.findFiles = async include => include.toString().includes('*.def') ? [Uri.file(defFile)] : [];
+
+    activate(context);
+    const stubs = path.join(root, '.kbengine', 'stubs');
+    const entityStub = path.join(stubs, 'base', 'entity_types.pyi');
+    await until(() => fs.existsSync(entityStub));
+    expect(fs.existsSync(path.join(stubs, 'base', 'KBEngine', '__init__.pyi'))).toBe(true);
+    expect(fs.existsSync(path.join(stubs, 'cell', 'KBEngine', '__init__.pyi'))).toBe(true);
+    expect(fs.readFileSync(path.join(stubs, 'scripts', 'entity_defs', 'kbe_types.pyi'), 'utf8')).toContain('ENTITY_ID = int');
+    expect(fs.readFileSync(entityStub, 'utf8')).toContain('ownerId: ENTITY_ID');
+    expect(fs.readFileSync(sourceFile, 'utf8')).toBe(source);
+  } finally {
+    disposeAll(context);
+    deactivate();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}, 12000);
+
 describe('extension activate 原始日志 ERROR 扫描装配(盘点 G6)', () => {
   it('scanErrors 命令:取消不建面板;选文件扫出聚合面板;重扫与点击行走默认链', async () => {
     const windowish = fakeWindow as unknown as Record<string, unknown>;

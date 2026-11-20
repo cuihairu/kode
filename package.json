@@ -1859,7 +1859,7 @@
           },
           "kbengine.infer.enabled": {
             "type": "boolean",
-            "default": false,
+            "default": true,
             "markdownDescription": "%kbengine.config.infer.enabled.description%"
           },
           "kbengine.infer.exclusionsSync": {
@@ -2009,7 +2009,7 @@
           },
           "kbengine.python.stubCopy": {
             "type": "boolean",
-            "default": false,
+            "default": true,
             "markdownDescription": "%kbengine.config.python.stubCopy.description%"
           },
           "kbengine.python.stubDir": {

@@ -6,8 +6,9 @@ import { l10nText } from '../nlsRuntime';
 import { getDocumentLines } from '../backend/documentStore';
 import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { getLanguageFeatureConfig } from './shared';
-import { diffInferredAnnotations } from '../backend/inferredEnrichment';
-import { readInferredMirrorText } from '../inferredMirrorLookup';
+import { diffGeneratedStubAnnotations } from '../backend/inferredEnrichment';
+import { readGeneratedStub } from '../inferredMirrorLookup';
+import { onDidGenerateInferredStubs } from '../inferPipeline';
 import {
   PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT,
   propertyDirectionShadowHintItemsAsync,
@@ -75,38 +76,23 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
   }
 }
 
-/**
- * KODE-CFG-017-R 推断镜像行内提示：源行缺注解而 `.kbengine/inferred` 副本
- * 同行有 pyrefly 注解处（形参/返回/赋值）原位渲染 `: <type>` / `-> <type>`
- * (kind=Type)。开关复用 kbengine.infer.enabled（镜像生产总闸——停管线即无
- * 新鲜镜像,提示随之关）；副本缺失/读失败/行数漂移整批静默空(diffInferred-
- * Annotations 宁缺毋错)。副本只读,绝不进 extraPaths/导入解析(T-04)。
- */
+/** Supply missing annotations from the generated stub at the original source positions. */
 export class InferredMirrorTypeInlayHintsProvider implements vscode.InlayHintsProvider {
+  readonly onDidChangeInlayHints = onDidGenerateInferredStubs;
+
   provideInlayHints(
     document: vscode.TextDocument,
     range: vscode.Range,
     token?: vscode.CancellationToken
   ): vscode.InlayHint[] {
-    // RUST-149 批 3:同步 provider 同样吃取消令牌(入口即停);读副本是同步 fs
-    // 面,无 await 可打断,故只设入口闸。
-    if (!!token?.isCancellationRequested || document.isClosed) {
+    if (token?.isCancellationRequested || document.isClosed || document.languageId !== 'python') {
       return [];
     }
-    if (document.languageId !== 'python') {
+    const stub = readGeneratedStub(document);
+    if (!stub) {
       return [];
     }
-    const inferEnabled = vscode.workspace
-      .getConfiguration('kbengine')
-      .get<boolean>('infer.enabled', true);
-    if (!inferEnabled) {
-      return [];
-    }
-    const mirrorText = readInferredMirrorText(document.fileName);
-    if (!mirrorText) {
-      return [];
-    }
-    return diffInferredAnnotations(document.getText(), mirrorText)
+    return diffGeneratedStubAnnotations(document.getText(), stub)
       .filter(hint => hint.line >= range.start.line && hint.line <= range.end.line)
       .map(
         hint =>
