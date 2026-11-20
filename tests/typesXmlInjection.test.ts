@@ -6,7 +6,9 @@ import { Registry } from 'vscode-textmate';
 import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma';
 
 // types.xml 注入语法功能验收(批130,来源:用户 2026-10-14 着色增强需求;
-// 批131 追加 implementedBy 分段着色):
+// 批131 追加 implementedBy 分段着色;KODE-SYN-001 收窄着色作用域——内建/
+// ARRAY/FIXED_DICT 裸词规则改为字段锚定+别名正文/行形态,普通 XML 正文
+// 与 .def Default 值零误着色;Flags 收窄在 tmLanguage.test.ts):
 // types.xml 默认由 XML 插件接管着色,kode 不得抢宿主分词——用注入语法
 // (injection grammar)在其上叠加 KBEngine 语义 scope:
 //   ① 内置类型(UINT32 等)有别于普通 XML 文本
@@ -40,6 +42,7 @@ const FOREGROUND_SHIFT = 15;
 const TYPES_SAMPLE = [
   '<types>',
   '  <ITEM_ID>UINT16</ITEM_ID>',
+  '  <XPAD> UINT8 </XPAD>',
   '  <SKILL_SLOT>',
   '    FIXED_DICT',
   '    <Properties>',
@@ -76,6 +79,51 @@ const DEF_SAMPLE = [
   '      <Arg>UINT8</Arg>',
   '    </reborn>',
   '  </CellMethods>',
+  '</root>'
+].join('\n');
+
+// KODE-SYN-001 收窄验收样本一:普通 XML 正文(非 KBEngine 类型文档)——
+// 内建/指令词嵌在句子与属性里,收窄后不得触发任何 kbengine scope。
+const GENERIC_XML_SAMPLE = [
+  '<library>',
+  '  <book id="4711" kind="reference">Building ARRAY systems for UINT32 ids</book>',
+  '  <meta>See CELL_PUBLIC spec; FIXED_DICT layout; VECTOR3 math notes</meta>',
+  '  <tags>STRING_UNION, UINT16X</tags>',
+  '</library>'
+].join('\n');
+
+// KODE-SYN-001 收窄验收样本二:.def 的 <Default> 值(Python 字面量/表达式)——
+// 裸词时代 VECTOR3/BASE 会在默认值里误着色;收窄后只有 <Type> 字段值着色。
+const DEF_DEFAULT_SAMPLE = [
+  '<root>',
+  '  <Properties>',
+  '    <pos>',
+  '      <Type>VECTOR3</Type>',
+  '      <Default>VECTOR3(0, 0, 0)</Default>',
+  '    </pos>',
+  '    <title>',
+  '      <Type>STRING</Type>',
+  '      <Default>"BASE"</Default>',
+  '    </title>',
+  '  </Properties>',
+  '</root>'
+].join('\n');
+
+// KODE-SYN-001 收窄验收样本三:真正的 Flags 字段(空白垫值 + | 组合值,与
+// demo 资产 Monster.def 同形)着色保留;Default 值里的旗标词不着色。
+const DEF_FLAGS_SAMPLE = [
+  '<root>',
+  '  <Properties>',
+  '    <aiState>',
+  '      <Type>UINT8</Type>',
+  '      <Flags> CELL_PUBLIC </Flags>',
+  '      <Flags>CELL_PUBLIC|OTHER_CLIENTS</Flags>',
+  '    </aiState>',
+  '    <memo>',
+  '      <Type>STRING</Type>',
+  '      <Default>CELL_PUBLIC</Default>',
+  '    </memo>',
+  '  </Properties>',
   '</root>'
 ].join('\n');
 
@@ -205,11 +253,11 @@ describe('types.xml 注入语法(批130)', () => {
   };
 
   /** 同 scopesIn,但宿主是 .def(source.kbengine-def 语法,注入双宿主另一边) */
-  const scopesInDef = async (needle: string): Promise<string[]> => {
+  const scopesInDef = async (needle: string, sample: string = DEF_SAMPLE): Promise<string[]> => {
     const grammar = await registry!.loadGrammar('source.kbengine-def');
     let stack = null;
     const found: string[][] = [];
-    for (const line of DEF_SAMPLE.split('\n')) {
+    for (const line of sample.split('\n')) {
       const result = grammar!.tokenizeLine(line, stack);
       stack = result.ruleStack;
       for (const token of result.tokens) {
@@ -433,6 +481,104 @@ describe('types.xml 注入语法(批130)', () => {
     expect(serverId.some(scope => scope.endsWith('.kbengine.custom'))).toBe(true);
   });
 
+  it('KODE-SYN-001 收窄:普通 XML 正文零 kbengine scope', async () => {
+    if (!registry) {
+      return;
+    }
+    const grammar = await registry.loadGrammar('text.xml');
+    let stack = null;
+    const leaked: string[] = [];
+    for (const line of GENERIC_XML_SAMPLE.split('\n')) {
+      const result = grammar.tokenizeLine(line, stack);
+      stack = result.ruleStack;
+      for (const token of result.tokens) {
+        for (const scope of token.scopes) {
+          if (scope.endsWith('.kbengine') || scope.includes('.kbengine.')) {
+            leaked.push(`${scope}@${line.slice(token.startIndex, token.endIndex)}`);
+          }
+        }
+      }
+    }
+    expect(leaked, '普通 XML 正文不得出现 kbengine scope').toEqual([]);
+  });
+
+  it('KODE-SYN-001 收窄:别名正文保留(空白垫形态),普通正文/Default 不再误着色', async () => {
+    if (!registry) {
+      return;
+    }
+    // 正面一:空白垫别名正文 <XPAD> UINT8 </XPAD>(demo alias.xml 实形)
+    const { scopes } = await scopesOfToken('UINT8');
+    expect(scopes, '空白垫别名值缺内置类型 scope').toContain('support.type.kbengine.builtin');
+    // 正面二:复合条目体独占行指令(TYPES_SAMPLE 的 FIXED_DICT 行)由既有
+    // 「ARRAY/FIXED_DICT 指令取得专属 keyword scope」用例覆盖,不赘述。
+  });
+
+  it('KODE-SYN-001 收窄:.def Default 值零 kbengine scope,Type 字段值保留', async () => {
+    if (!registry) {
+      return;
+    }
+    // 正控:同一文件 <Type> 字段值仍着色
+    const posVector = await scopesInDef('VECTOR3', DEF_DEFAULT_SAMPLE);
+    expect(posVector, 'Type 字段值应保留内置 scope').toContain('support.type.kbengine.builtin');
+    const posString = await scopesInDef('STRING', DEF_DEFAULT_SAMPLE);
+    expect(posString, 'Type 字段值应保留内置 scope').toContain('support.type.kbengine.builtin');
+
+    // 负控:Default 值行(VECTOR3(0, 0, 0) / "BASE")零 kbengine scope
+    const grammar = await registry.loadGrammar('source.kbengine-def');
+    let stack = null;
+    const leaked: string[] = [];
+    for (const line of DEF_DEFAULT_SAMPLE.split('\n')) {
+      const result = grammar.tokenizeLine(line, stack);
+      stack = result.ruleStack;
+      if (!line.includes('<Default>')) {
+        continue;
+      }
+      for (const token of result.tokens) {
+        for (const scope of token.scopes) {
+          if (scope.endsWith('.kbengine') || scope.includes('.kbengine.')) {
+            leaked.push(`${scope}@${line.slice(token.startIndex, token.endIndex)}`);
+          }
+        }
+      }
+    }
+    expect(leaked, 'Default 值不得出现 kbengine scope').toEqual([]);
+  });
+
+  it('KODE-SYN-001 收窄:真 Flags 字段着色保留(空白垫/|组合),Default 旗标词不着色', async () => {
+    if (!registry) {
+      return;
+    }
+    const grammar = await registry.loadGrammar('source.kbengine-def');
+    let stack = null;
+    const flagHits: string[] = [];
+    const leaked: string[] = [];
+    for (const line of DEF_FLAGS_SAMPLE.split('\n')) {
+      const result = grammar.tokenizeLine(line, stack);
+      stack = result.ruleStack;
+      for (const token of result.tokens) {
+        const text = line.slice(token.startIndex, token.endIndex);
+        if (token.scopes.some(scope => scope.includes('constant.language.flag'))) {
+          flagHits.push(`${text}@${line.trim()}`);
+        }
+        if (
+          line.includes('<Default>') &&
+          token.scopes.some(scope => scope.endsWith('.kbengine') || scope.includes('.kbengine.'))
+        ) {
+          leaked.push(`${text}@${line.trim()}`);
+        }
+      }
+    }
+    expect(flagHits).toContain('CELL_PUBLIC@<Flags> CELL_PUBLIC </Flags>');
+    expect(flagHits).toContain('CELL_PUBLIC@<Flags>CELL_PUBLIC|OTHER_CLIENTS</Flags>');
+    expect(flagHits).toContain('OTHER_CLIENTS@<Flags>CELL_PUBLIC|OTHER_CLIENTS</Flags>');
+    expect(flagHits, 'Flags 字段值之外不得再着旗标 scope').toHaveLength(3);
+    expect(leaked, 'Default 旗标词不得着色').toEqual([]);
+
+    // 正控:同文件 <Type>UINT8</Type> 仍走注入内置 scope
+    const control = await scopesInDef('UINT8', DEF_FLAGS_SAMPLE);
+    expect(control).toContain('support.type.kbengine.builtin');
+  });
+
   it('五类落在五个不同语义 scope(换主题仍可区分的机制保证)', () => {
     const grammar = JSON.parse(
       fs.readFileSync(path.join(root, 'syntaxes', 'kbengine-types-injection.json'), 'utf8')
@@ -446,7 +592,7 @@ describe('types.xml 注入语法(批130)', () => {
     );
 
     const scopes = grammar.patterns.map(rule => rule.name ?? '').filter(Boolean);
-    // 内置类型的 <Type> 锚定式与裸文本式共用同一 scope(形态不同、语义相同)
+    // 内置类型的字段锚定式与别名正文式共用同一 scope(形态不同、语义相同)
     expect(scopes).toContain('support.type.kbengine.builtin');
 
     // 五类各自独占一个 scope 字符串:不写死色值,主题按 scope 着色即可区分

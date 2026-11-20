@@ -342,6 +342,23 @@ describe('kbengine.tmLanguage 功能验证(vscode-textmate + oniguruma 真实分
     expectScopeOn(doc, 'CELL_PUBLIC_AND_OWN', 'constant.language.flag.kbengine');
   });
 
+  it('KODE-SYN-001 收窄:Flags 空白垫值与 | 组合值仍取得常量 scope', () => {
+    // demo 资产实形:<Flags> CELL_PUBLIC </Flags>(Monster.def);
+    // | 组合值按引擎口径逐旗标着色(管道后段由 | 前瞻锚定)。
+    const doc = tokenizeDoc([
+      '<Flags> CELL_PUBLIC </Flags>',
+      '<Flags>CELL_PUBLIC|OTHER_CLIENTS</Flags>'
+    ]);
+    expectScopeOn(doc, 'CELL_PUBLIC', 'constant.language.flag.kbengine');
+    expectScopeOn(doc, 'OTHER_CLIENTS', 'constant.language.flag.kbengine');
+  });
+
+  it('KODE-SYN-001 收窄:非 Flags 字段的旗标词不再得到常量 scope', () => {
+    const doc = tokenizeDoc(['<Default>CELL_PUBLIC</Default>', '<Default>"BASE"</Default>']);
+    expectNoScopeOn(doc, 'CELL_PUBLIC', 'constant.language.flag.kbengine');
+    expectNoScopeOn(doc, 'BASE', 'constant.language.flag.kbengine');
+  });
+
   it('引擎未注册的旗标不再得到常量 scope(负向锁)', () => {
     const doc = tokenizeDoc(['<Flags>INSTALL_ALWAYS</Flags>', '<Flags>FLAG_DESTROY</Flags>']);
     expectNoScopeOn(doc, 'INSTALL_ALWAYS', 'constant.language.flag.kbengine');

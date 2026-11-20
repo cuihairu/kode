@@ -3,22 +3,73 @@
   "injectionSelector": "L:text.xml - (comment, string), L:source.kbengine-def - (comment, string)",
   "patterns": [
     {
-      "match": "(?<=<Type>)(?:UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",
+      "comment": "KODE-SYN-001 收窄:内建类型只认类型值字段(<Type>/<of>/<Arg> 开标签紧邻值——引擎 def/types 加载器只在字段位读类型名)。普通 XML 正文与 .def Default 值里散落的类型词不再着色。空白/换行等值形态的位置统一归 KODE-SYN-002",
+      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))(?:UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",
       "name": "support.type.kbengine.builtin"
     },
     {
-      "match": "\\b(?:UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",
-      "name": "support.type.kbengine.builtin"
-    },
-    {
-      "match": "\\bARRAY\\b",
+      "comment": "ARRAY/FIXED_DICT 指令同收窄:只在类型值字段位着色(引擎在类型值位把指令当复合结构读)",
+      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))ARRAY(?![A-Za-z0-9_])",
       "name": "keyword.other.kbengine.array"
     },
     {
-      "match": "\\bFIXED_DICT\\b",
+      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))FIXED_DICT(?![A-Za-z0-9_])",
       "name": "keyword.other.kbengine.fixed-dict"
     },
     {
+      "comment": "类型别名正文保留(types.xml/alias.xml 条目值形态):元素文本整段恰为一个类型词、随后闭标签(允许空白垫),如 <ITEM_ID> UINT32 </ITEM_ID>。词嵌句中(前后还有别的词)不命中——普通 XML 正文不再误着色。残面:任意 XML 中元素文本恰好只是类型词仍命中——纯文本层无文档身份可依时的最小误报面;跨行条目值需块状态,归 KODE-SYN-002",
+      "match": "(?<=>)[ \\t]*(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])(?=\\s*</)",
+      "captures": {
+        "1": {
+          "name": "support.type.kbengine.builtin"
+        }
+      }
+    },
+    {
+      "comment": "复合类型条目体的内联指令(值首、后随子节点):<SKILL_SLOT>FIXED_DICT<Properties>…。词嵌句中不命中(尾部必须紧跟标签)",
+      "match": "(?<=>)[ \\t]*(ARRAY)(?![A-Za-z0-9_])(?=\\s*<)",
+      "captures": {
+        "1": {
+          "name": "keyword.other.kbengine.array"
+        }
+      }
+    },
+    {
+      "match": "(?<=>)[ \\t]*(FIXED_DICT)(?![A-Za-z0-9_])(?=\\s*<)",
+      "captures": {
+        "1": {
+          "name": "keyword.other.kbengine.fixed-dict"
+        }
+      }
+    },
+    {
+      "comment": "复合类型条目体的独占行指令(体里自成一行,TextMate match 不跨行,行形态是这一形态下的可锚点)。capture 组保词边界:token 与裸词时代逐位同形",
+      "match": "^[ \\t]*(ARRAY)(?=[ \\t]*$)",
+      "captures": {
+        "1": {
+          "name": "keyword.other.kbengine.array"
+        }
+      }
+    },
+    {
+      "match": "^[ \\t]*(FIXED_DICT)(?=[ \\t]*$)",
+      "captures": {
+        "1": {
+          "name": "keyword.other.kbengine.fixed-dict"
+        }
+      }
+    },
+    {
+      "comment": "独占行的内建类型值(多行简单条目/类型别名正文)",
+      "match": "^[ \\t]*(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])[ \\t]*$",
+      "captures": {
+        "1": {
+          "name": "support.type.kbengine.builtin"
+        }
+      }
+    },
+    {
+      "comment": "自定义类型引用:<Type> 值位(批130;其余引用位形态——空白/换行/Arg/of 值——归 KODE-SYN-002 统一)",
       "match": "(?<=<Type>)[A-Za-z_][A-Za-z0-9_]*",
       "name": "entity.name.type.kbengine.custom"
     },

@@ -95,8 +95,13 @@
       "name": "constant.language.persistent.kbengine"
     },
     {
-      "match": "\\b(CELL_PUBLIC_AND_OWN|CELL_PUBLIC|CELL_PRIVATE|CELL_AND_OTHER_CLIENTS|CELL_AND_CLIENTS|CELL_AND_CLIENT|BASE_AND_CLIENT|OTHER_CLIENTS|OWN_CLIENT|ALL_CLIENTS|CELL|BASE)\\b",
-      "name": "constant.language.flag.kbengine"
+      "comment": "KODE-SYN-001 收窄:旗标只认 <Flags> 字段值位(含 | 组合值的管道后段——引擎 def 加载器按 | 切分旗标值,字段内不留空白)。Default 值/普通文本里的旗标词不再着色",
+      "match": "(?:(?<=<Flags>)|(?<=\\|))[ \\t]*\\b(CELL_PUBLIC_AND_OWN|CELL_PUBLIC|CELL_PRIVATE|CELL_AND_OTHER_CLIENTS|CELL_AND_CLIENTS|CELL_AND_CLIENT|BASE_AND_CLIENT|OTHER_CLIENTS|OWN_CLIENT|ALL_CLIENTS|CELL|BASE)\\b",
+      "captures": {
+        "1": {
+          "name": "constant.language.flag.kbengine"
+        }
+      }
     },
     {
       "include": "text.xml"
