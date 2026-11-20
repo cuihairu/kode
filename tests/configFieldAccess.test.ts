@@ -271,3 +271,201 @@ describe('KSEM-CFG-07 config field access types', () => {
     expect(out).toHaveLength(0);
   });
 });
+
+// COV-98-TS-BACKEND 批 1:分支/容错臂补测(77.77%→98 档)。
+// 全部走公开入口 deriveConfigFieldAccesses,不 mock 内部件;断言面=
+// 实现的真实语义(诚实边界各臂断言零声称,不硬造期望)。
+describe('KSEM-CFG-07 sweep: chain fallbacks and def-scope guards', () => {
+  it('schema 链容错:根整数下标/键打列表/键打标量/ref 字段本体', () => {
+    const out = access([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g1.json')",
+      'a = cfg[0]',
+      "b = cfg['members']['x']",
+      "c = cfg['level']['x']",
+      "s = cfg['settings']"
+    ]);
+    expect(out).toHaveLength(4);
+    expect(out[0].keys).toEqual([]);
+    expect(out[0].fieldType).toBeNull();
+    expect(out[1].keys).toEqual(['members', 'x']);
+    expect(out[1].fieldType).toBeNull();
+    expect(out[2].keys).toEqual(['level', 'x']);
+    expect(out[2].fieldType).toBeNull();
+    expect(out[3].keys).toEqual(['settings']);
+    expect(out[3].fieldType).toEqual({ kind: 'ref', type: 'proj.guild.GuildSettings' });
+  });
+
+  it('derived 嵌套面:dict/list/tuple 值的键访问与整数下标', () => {
+    const out = access([
+      "raw = {'outer': {'a': 1}, 'lst': [1, 2], 'tup': (1, 2)}",
+      'd = raw',
+      "n = d['outer']",
+      "na = d['outer']['a']",
+      "l = d['lst']",
+      'li = d[0]',
+      "lk = d['lst']['x']",
+      "ti = d['tup'][0]",
+      "t = d['tup']",
+      "sk = d['outer']['a']['x']"
+    ], null);
+    expect(out).toHaveLength(8);
+    expect(out[0].fieldType).toEqual({
+      kind: 'dict',
+      fields: new Map([['a', { kind: 'scalar', family: 'int' }]])
+    });
+    expect(out[1].fieldType).toEqual({ kind: 'scalar', family: 'int' });
+    expect(out[2].fieldType).toEqual({ kind: 'list', element: { kind: 'scalar', family: 'int' } });
+    expect(out[3].keys).toEqual([]);
+    expect(out[3].fieldType).toBeNull();
+    expect(out[4].keys).toEqual(['lst', 'x']);
+    expect(out[4].fieldType).toBeNull();
+    expect(out[5].fieldType).toEqual({ kind: 'scalar', family: 'int' });
+    expect(out[6].fieldType).toEqual({ kind: 'tuple', element: { kind: 'scalar', family: 'int' } });
+    expect(out[7].keys).toEqual(['outer', 'a', 'x']);
+    expect(out[7].fieldType).toBeNull();
+  });
+
+  it('get 形态容错:3 实参/关键字/括号默认值/未知默认值/段间空白', () => {
+    const out = access([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g1.json')",
+      "a = cfg.get('level', 0, 1)",
+      "b = cfg.get(key='level')",
+      "c = cfg.get('notice', [0])",
+      "d = cfg.get('level', fallback)",
+      "e = cfg ['level']"
+    ]);
+    expect(out).toHaveLength(3);
+    expect(out[0].keys).toEqual(['notice']);
+    expect(out[0].fieldType).toEqual({ kind: 'scalar', family: 'STRING' });
+    expect(out[0].unionWith).toEqual([{ kind: 'list', element: { kind: 'scalar', family: 'int' } }]);
+    expect(out[1].keys).toEqual(['level']);
+    expect(out[1].fieldType).toEqual({ kind: 'scalar', family: 'UINT32' });
+    expect(out[1].unionWith).toEqual([]);
+    expect(out[2].keys).toEqual(['level']);
+    expect(out[2].fieldType).toEqual({ kind: 'scalar', family: 'UINT32' });
+    expect(out[2].unionWith).toEqual([]);
+  });
+
+  it('未闭合括号/get:链到此为止不产出位点(行级有状态掩码,各例独立解析)', () => {
+    const bracket = access([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g1.json')",
+      "x = cfg['level"
+    ]);
+    expect(bracket).toHaveLength(0);
+    const get = access([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g1.json')",
+      "y = cfg.get('level'"
+    ]);
+    expect(get).toHaveLength(0);
+  });
+
+  it('def 头形态:多参数单行/多行参数表/体末空行', () => {
+    const multi = access([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g1.json')",
+      'def read(other, third):',
+      "    return cfg['level']"
+    ]);
+    expect(multi).toHaveLength(1);
+    expect(multi[0].fieldType).toEqual({ kind: 'scalar', family: 'UINT32' });
+
+    const header = access([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g1.json')",
+      'def read(a,',
+      '         b):',
+      "    return cfg['level']",
+      '',
+      'x = 1'
+    ]);
+    expect(header).toHaveLength(1);
+    expect(header[0].fieldType).toEqual({ kind: 'scalar', family: 'UINT32' });
+
+    const headerShadow = access([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g1.json')",
+      'def read(cfg,',
+      '         b):',
+      "    return cfg['level']"
+    ]);
+    expect(headerShadow).toHaveLength(0);
+  });
+
+  it('体内遮蔽粗扫:下标写/增量/变异调用/for 目标/with-as/import/del', () => {
+    const arms: Array<{ name: string; body: string[] }> = [
+      { name: 'subscript write', body: ["    cfg['level'] = 5", "    return cfg['level']"] },
+      { name: 'augmented assign', body: ['    cfg += 1', "    return cfg['level']"] },
+      { name: 'mutation call', body: ["    cfg.update({'x': 1})", "    return cfg['level']"] },
+      { name: 'for target', body: ['    for cfg, b in pairs:', '        pass', "    return cfg['level']"] },
+      { name: 'with as', body: ['    with open(p) as cfg:', '        pass', "    return cfg['level']"] },
+      { name: 'import', body: ['    import cfg', "    return cfg['level']"] },
+      { name: 'del', body: ['    del cfg', "    return cfg['level']"] }
+    ];
+    for (const arm of arms) {
+      const out = access([
+        'import json',
+        "cfg = json.loads('res/guild_configs/g1.json')",
+        'def read():',
+        ...arm.body
+      ]);
+      expect(out, arm.name).toHaveLength(0);
+    }
+  });
+
+  it('derived 条件合并:键成 optional 仍可声称;推导式开放结构零声称', () => {
+    const merged = access([
+      'flag = True',
+      "raw = {'a': 1} if flag else {'b': 2}",
+      'd = raw',
+      "x = d['a']",
+      "y = d.get('a', 0)"
+    ], null);
+    expect(merged).toHaveLength(2);
+    expect(merged[0].keys).toEqual(['a']);
+    expect(merged[0].fieldType).toEqual({ kind: 'scalar', family: 'int' });
+    expect(merged[1].unionWith).toEqual([{ kind: 'scalar', family: 'int' }]);
+
+    const open = access([
+      'keys = [1]',
+      'raw = {k: 1 for k in keys}',
+      'd = raw',
+      "x = d['a']",
+      "y = d.get('a', 0)"
+    ], null);
+    expect(open).toHaveLength(0);
+
+    const topSpread = access([
+      'x = {}',
+      "raw = {**x, 'a': 1}",
+      'd = raw',
+      "n = d['a']"
+    ], null);
+    expect(topSpread).toHaveLength(0);
+  });
+
+  it('derived 嵌套展开值与不可解析值:open observed 键面/unknown 空键面', () => {
+    const spread = access([
+      'x = {}',
+      "raw = {'outer': {**x, 'a': 1}}",
+      'd = raw',
+      "n = d['outer']"
+    ], null);
+    expect(spread).toHaveLength(1);
+    expect(spread[0].fieldType).toEqual({
+      kind: 'dict',
+      fields: new Map([['a', { kind: 'scalar', family: 'int' }]])
+    });
+
+    const hex = access([
+      "raw = {'x': 0x1F}",
+      'd = raw',
+      "v = d['x']"
+    ], null);
+    expect(hex).toHaveLength(1);
+    expect(hex[0].fieldType).toEqual({ kind: 'dict', fields: new Map() });
+  });
+});
