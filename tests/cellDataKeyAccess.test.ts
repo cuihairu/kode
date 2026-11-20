@@ -388,3 +388,107 @@ describe('KSEM-CELL-05 sweep: 转义解码族与形态容错臂', () => {
     expect(cellDataKeyAccessAtPosition(trailing, 3)).toBeNull();
   });
 });
+
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 转义解引族(decodeStringLiteral):CELL-05 键字面量解引的四族转义(八进制/
+// 十六进制/Unicode/非法)——本批前零覆盖。诚实边界:decodeEscape 的
+// 「反斜杠收尾无下一字符」臂按当前调用图不可达(decodeStringLiteral 先验
+// 证 trimmed 以引号收尾,转义下标恒 ≤ len-3,下一字符必存在),不硬凑。
+// ---------------------------------------------------------------------------
+
+describe('decodeStringLiteral 转义解引族', () => {
+  it('八进制 1-3 位:\\101 解出 A', () => {
+    expect(decodeStringLiteral('"\\101"')).toBe('A');
+    expect(decodeStringLiteral('"\\7"')).toBe('\x07');
+    expect(decodeStringLiteral('"a\\101b"')).toBe('aAb');
+  });
+
+  it('八进制越界(\\777 > 0xff):该键跳过,不改写键值', () => {
+    expect(decodeStringLiteral('"\\777"')).toBeNull();
+  });
+
+  it('十六进制 \\xNN:合法解出,残缺两位跳过', () => {
+    expect(decodeStringLiteral('"\\x41"')).toBe('A');
+    expect(decodeStringLiteral('"\\x4"')).toBeNull();
+    expect(decodeStringLiteral('"\\xzz"')).toBeNull();
+  });
+
+  it('Unicode \\uNNNN:合法解出,不足四位跳过', () => {
+    expect(decodeStringLiteral('"\\u4e2d"')).toBe('中');
+    expect(decodeStringLiteral('"\\u12"')).toBeNull();
+    expect(decodeStringLiteral('"\\uzzzz"')).toBeNull();
+  });
+
+  it('扩展 \\UNNNNNNNN:合法解出,不足八位跳过', () => {
+    expect(decodeStringLiteral('"\\U0001F600"')).toBe('\u{1F600}');
+    expect(decodeStringLiteral('"\\U0001F6"')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 键访问解析边界(parseCellDataKeyAccess):未闭合/空段/嵌套深度/转义——
+// 跳转与引用两个消费面共享的解析真源,边界落 null(不是可关联访问)。
+// ---------------------------------------------------------------------------
+
+describe('parseCellDataKeyAccess 边界面', () => {
+  /** 从 receiver 尾后解析(receiver 恒取行内首处 self.cellData)。 */
+  const parse = (line: string) => {
+    const m = /self\.cellData/.exec(line)!;
+    return parseCellDataKeyAccess(line, m.index + m[0].length);
+  };
+
+  it('空下标段 self.cellData[]:空区间 → null', () => {
+    expect(parse('a = self.cellData[]')).toBeNull();
+    expect(cellDataKeyAccessAtPosition('a = self.cellData[]', 17)).toBeNull();
+  });
+
+  it('下标段尾随空白:trimSpan 收尾,键位不含空白', () => {
+    const line = 'a = self.cellData["hp"   ]';
+    const res = parse(line);
+    expect(res).toMatchObject({ key: 'hp', rawKey: '"hp"', kind: 'subscript' });
+    expect(res?.keyStart).toBe(line.indexOf('"hp"') + 1);
+    expect(res?.keyEnd).toBe(line.indexOf('"hp"') + 3);
+  });
+
+  it('get 段尾随空白同口径;无第二实参 defaultExpr 为 null', () => {
+    const res = parse('a = self.cellData.get("hp" )');
+    expect(res).toMatchObject({ key: 'hp', kind: 'get', defaultExpr: null });
+  });
+
+  it('嵌套下标 self.cellData[d["hp"]]:闭括号深度回账,动态键不跳转', () => {
+    const res = parse('a = self.cellData[d["hp"]]');
+    expect(res).toMatchObject({ key: null, keyLiteral: false, rawKey: 'd["hp"]' });
+    // 引用面同口径:动态键不入索引
+    expect(scanCellDataKeyAccesses('a = self.cellData[d["hp"]]')).toEqual([]);
+  });
+
+  it('下标未闭合(跨行):null', () => {
+    expect(parse('a = self.cellData["hp"')).toBeNull();
+  });
+
+  it('get 嵌套括号(("hp"), 0):闭括号取最外配对,动态键/default 照常两分', () => {
+    const res = parse('a = self.cellData.get(("hp"), 0)');
+    expect(res).toMatchObject({ key: null, keyLiteral: false, rawKey: '("hp")', defaultExpr: '0', kind: 'get' });
+  });
+
+  it('get 括号未闭合(跨行):null', () => {
+    expect(parse('a = self.cellData.get("hp"')).toBeNull();
+  });
+
+  it('get 空实参 self.cellData.get():空区间 → null', () => {
+    expect(parse('a = self.cellData.get()')).toBeNull();
+  });
+
+  it('get 实参内转义:配对扫描不误断串,键值按转义解引', () => {
+    const res = parse('a = self.cellData.get("a\\nb", 1)');
+    expect(res?.key).toBe('a\nb');
+    expect(res?.keyLiteral).toBe(true);
+    expect(res?.defaultExpr).toBe('1');
+  });
+
+  it('get 首实参为调用 pick():括号抬深度不误切逗号,动态键不跳转', () => {
+    const res = parse('a = self.cellData.get(pick(), 0)');
+    expect(res).toMatchObject({ key: null, keyLiteral: false, rawKey: 'pick()', defaultExpr: '0' });
