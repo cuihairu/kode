@@ -266,3 +266,84 @@ describe('scalarAssignFindingToItem', () => {
     });
   });
 });
+
+// 断链/边界逐臂补批:每条用例单点破坏一个前提,保证落点就是目标断链臂,
+// 不靠「目标形态不匹配」早退臂顶替。局部注册表复用全局夹具形状(与
+// STRUCT-02/04 测试同构),只追加本批专用形态。
+describe('analyzeScalarAssignWrites 断链与边界逐臂', () => {
+  const CYCLE_A = customType('CYCLE_A', 'CYCLE_B', [], 80);
+  const CYCLE_B = customType('CYCLE_B', 'CYCLE_A', [], 81);
+  const BOX_INFO = customType('BOX_INFO', 'FIXED_DICT', [
+    scalarField('bag', 'BAG_U8', 21),
+    scalarField('inner', 'POSITION', 22)
+  ], 20);
+  // 数组声明缺内联 `of` 节点(structure 无 children)
+  const BARE_ARRAY = customType('BARE_ARRAY', 'ARRAY', [], 90, node('ARRAY', 90));
+  const LOCAL_REGISTRY = [...REGISTRY, CYCLE_A, CYCLE_B, BOX_INFO, BARE_ARRAY];
+  const analyzeLocal = (
+    text: string,
+    table: Record<string, { typeName: string; source: string } | null>
+  ) => analyzeScalarAssignWrites(text, makeResolver(table), LOCAL_REGISTRY);
+
+  it('别名环(A→B→A):逐层下钻有界跳出,诚实断链不接管', async () => {
+    expect(await analyzeLocal(wrap('self.cyc = 1'), {
+      cyc: { typeName: 'CYCLE_A', source: 'Avatar.def:40' }
+    })).toHaveLength(0);
+  });
+
+  it('RHS 暂空(`=` 后无字面量):目标表达式成立但字面量缺位,不接管', async () => {
+    // 本面是纯文本扫描(无 Python 解析器早退风险),`=` 后暂空是编辑器
+    // 中间态真实形态;行尾注释剥净后同落空 RHS 臂。
+    expect(await analyze(wrap('self.health ='))).toHaveLength(0);
+    expect(await analyze(wrap('self.health =  # pending'))).toHaveLength(0);
+  });
+
+  it('双键链逐段下钻嵌套 FD:末键字段 FLOAT 接浮点字面量不报', async () => {
+    const stmt = 'self.box["inner"]["x"] = 1.5';
+    const findings = await analyzeLocal(wrap(stmt), {
+      box: { typeName: 'BOX_INFO', source: 'Avatar.def:41' }
+    });
+    expect(findings).toHaveLength(0);
+  });
+
+  it('FD 字段非标量(数组型字段):容器错配不越界,诚实断链', async () => {
+    expect(await analyzeLocal(wrap('self.box["bag"] = 1'), {
+      box: { typeName: 'BOX_INFO', source: 'Avatar.def:41' }
+    })).toHaveLength(0);
+  });
+
+  it('数组声明缺内联 of 节点:元素类型推不出,诚实断链', async () => {
+    expect(await analyzeLocal(wrap('self.bare[0] = 1'), {
+      bare: { typeName: 'BARE_ARRAY', source: 'types.xml:90' }
+    })).toHaveLength(0);
+  });
+
+  it('括号段杂质形态:正则整体不匹配,不接管', async () => {
+    // 杂质段/嵌套括号/负下标/比较与增强符都进不了目标形态(正则不匹配或
+    // RHS 推不出),本面一律不猜。
+    expect(await analyze(wrap('self.bag[0] junk [1] = 1'))).toHaveLength(0);
+    expect(await analyze(wrap('self.bag[[0]] = 1'))).toHaveLength(0);
+    expect(await analyze(wrap('self.bag[-1] = 1'))).toHaveLength(0);
+    expect(await analyze(wrap('self.bag[0] == 1'))).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------
+  // 诚实边界(逐行不可达论证,lcov DA 164/174/179):matchScalarAssignTarget
+  // 是模块私有函数,唯一调用点是 analyzeScalarAssignWrites(公共入口)。本批
+  // 收口时以临时探针穷举 35 种奇异 LHS 形态(杂质段/嵌套括号/负下标/全宽
+  // 空白/比较增强符/空 RHS 等)+ dev-set 覆盖率实证三行 DA 恒 0。逐行:
+  // - 164(段间杂质臂 `gap.trim() !== ''`):TARGET_LHS 括号重复组
+  //   `(?:\s*\[…\])*` 相邻两段之间只允许 `\s*`,bracketBlock 即该组捕获原文,
+  //   bracketRe 对同一文本用同一定义重扫,gap 恒为空白;且 JS `\s` 字符集
+  //   (含 ﻿/NBSP/全部 Zs)⊆ trim() 可剥字符集,`gap.trim()` 恒空串,
+  //   条件恒假 → 164 不可达。
+  // - 174(段后残留臂):括号组贪婪吃满后 `\s*=(?!=)` 只认 `\s*=`;引擎若为
+  //   满足 `=` 回退括号组,残留文本以 `[` 开头又使 `\s*=` 失败 → 整行不匹配
+  //   (在非匹配早退口出,到不了 173);bracketBlock 内部残留非空白同理
+  //   不可能 → 174 不可达。
+  // - 179(`eqAt < 0` 臂):eqAt 自属性名尾起 indexOf('=');正则已保证
+  //   stripped 里括号段之后必有一个 `=`,而段内三种段型('id'/"id"/\d+)
+  //   均不含 `=`,indexOf 必命中非负 → 179 不可达。
+  // 三行皆防正则/解析漂移的防御臂,公共入口无可达路径,不写凑数测试。
+  // ---------------------------------------------------------------
+});

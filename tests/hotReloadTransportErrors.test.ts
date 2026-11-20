@@ -187,3 +187,138 @@ describe('部分节点成功:一组失败一组送达,逐文件明细带分类�
     expect(badRecord?.detail).toContain('ECONNREFUSED');
   });
 });
+
+// 通道发送缺口臂:根解析三态(null/''/命中)、冻结读取抛错、applied 负臂、
+// 超时注解二次结算早退。计时器手工 tick(生产定时器绝不同步触发),tick
+// 后保留回调以复触发——注解已在时二次结算必须早退(注解不重复堆叠)。
+describe('通道发送缺口臂(根解析三态/冻结读取抛错/超时注解只写一次)', () => {
+  const makeManualTimers = (): { timers: HotReloadTimerDeps; tick: () => number } => {
+    const pending: Array<() => void> = [];
+    return {
+      tick: () => {
+        let fired = 0;
+        for (const callback of [...pending]) {
+          callback();
+          fired += 1;
+        }
+        return fired;
+      },
+      timers: {
+        set: callback => {
+          pending.push(callback);
+          return pending.length;
+        },
+        clear: () => undefined
+      }
+    };
+  };
+
+  const makeReceiptTransport = (
+    receipts: ReloadReceipt[]
+  ): { transport: ReloadTransport; seenTargets: ReloadTarget[] } => {
+    const seenTargets: ReloadTarget[] = [];
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (target: ReloadTarget, fileSet: readonly string[], onReceipt) => {
+        seenTargets.push(target);
+        for (const file of fileSet) {
+          for (const receipt of receipts) {
+            onReceipt(receipt);
+          }
+        }
+        return { kind: 'http', receipts: [] };
+      }
+    };
+    return { transport, seenTargets };
+  };
+
+  it('根解析不到(null):文件仍发送归空组,不落台账也不排结算', async () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const { transport, seenTargets } = makeReceiptTransport([
+      { status: 'sent', file: '/unknown/Avatar.py', detail: '已送达:无匹配回执(不 claim applied)' }
+    ]);
+    const result = await sendFilesViaReloadChannel({
+      transport,
+      targetId: 'profile-1',
+      files: ['/unknown/Avatar.py'],
+      resolveRootId: () => null,
+      store,
+      timers: makeManualTimers().timers,
+      settleHandles: new Set(),
+      now: () => 1000
+    });
+    expect(result.sentCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+    // 仍发送,但归 '' 组(不猜根);台账键 ('' , profile-1) 无任何记录
+    expect(seenTargets).toEqual([{ rootId: '', targetId: 'profile-1' }]);
+    expect(store.get({ rootId: '', targetId: 'profile-1' }, '/unknown/Avatar.py')).toBeUndefined();
+  });
+
+  it('根解析为空串:发起记录照落,但回执与结算都被空根早退拦下', async () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const clock = makeManualTimers();
+    const { transport } = makeReceiptTransport([
+      { status: 'sent', file: '/odd/Avatar.py', detail: '已送达:无匹配回执(不 claim applied)' }
+    ]);
+    const result = await sendFilesViaReloadChannel({
+      transport,
+      targetId: 'profile-1',
+      files: ['/odd/Avatar.py'],
+      resolveRootId: () => '',
+      store,
+      timers: clock.timers,
+      settleHandles: new Set(),
+      now: () => 1000
+    });
+    expect(result.sentCount).toBe(1);
+    // 发起记录落了('' 根可记),attempt=1;回执 detail 不落(空根早退)
+    const record = store.get({ rootId: '', targetId: 'profile-1' }, '/odd/Avatar.py');
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.attempt).toBe(1);
+    expect(record?.detail).toBeUndefined();
+    // 结算句柄被空根早退拦下:tick 无回调可发,注解也不会堆上来
+    expect(clock.tick()).toBe(0);
+    expect(store.get({ rootId: '', targetId: 'profile-1' }, '/odd/Avatar.py')?.detail).toBeUndefined();
+  });
+
+  it('冻结读取抛错:digest 无基准,applied 回执如实保持未确认并排结算注解', async () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const clock = makeManualTimers();
+    let clockNow = 1000;
+    const { transport } = makeReceiptTransport([
+      { status: 'applied', file: '/ok/Avatar.py', digest: 'deadbeef' }
+    ]);
+    const settleHandles = new Set<unknown>();
+    const result = await sendFilesViaReloadChannel({
+      transport,
+      targetId: 'profile-1',
+      files: ['/ok/Avatar.py'],
+      resolveRootId: () => '/ok',
+      store,
+      readFileContent: async () => {
+        throw new Error('disk blown');
+      },
+      timers: clock.timers,
+      settleHandles,
+      now: () => clockNow
+    });
+    expect(result.sentCount).toBe(1);
+    const key = { rootId: '/ok', targetId: 'profile-1' };
+    const record = store.get(key, '/ok/Avatar.py');
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.detail).toContain('发送时点内容基准不可读');
+    // 越过核验窗口后 tick:超时注解落上(保持未确认,不冒充失败/applied)
+    clockNow = 12_000;
+    expect(clock.tick()).toBe(1);
+    const annotated = store.get(key, '/ok/Avatar.py');
+    expect(annotated?.outcome).toBe('sent-unverified');
+    expect(annotated?.detail).toContain('applied 核验超时');
+    // 再 tick:注解已在,二次结算早退,不重复堆叠同因注解
+    expect(clock.tick()).toBe(1);
+    const settled = store.get(key, '/ok/Avatar.py');
+    expect(settled?.detail).toBe(annotated?.detail);
+    expect(settled?.detail?.split('applied 核验超时')).toHaveLength(2);
+    expect(settleHandles.size).toBe(0);
+  });
+});
