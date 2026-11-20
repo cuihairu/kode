@@ -157,3 +157,119 @@ describe('合并器壳(pending 状态 + 轮询钟 + 采样 + 入队)', () => {
     expect(coalescer.getPendingCount()).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 34:Rust 决策主路径($. /kode/events/coalesce)四臂——Rust 决策被采用 /
+// 失败·畸形·抛错回落 TS 镜像核(行为不变降级) + 空队列拍停钟。
+// ---------------------------------------------------------------------------
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+
+describe('批 34:Rust 决策主路径与空拍停钟', () => {
+  afterEach(() => { setKodeCoreShadowGate(null); vi.useRealTimers(); });
+
+  const makeGate = (respond: () => unknown): { gate: KodeCoreGate; calls: number } => {
+    const state = { gate: null as unknown as KodeCoreGate, calls: 0 };
+    state.gate = {
+      runInRust: async () => {
+        state.calls += 1;
+        return respond() as never;
+      }
+    } as unknown as KodeCoreGate;
+    return state;
+  };
+
+  it('Rust 决策可用:flush 序被采用(Rust 自定义序,非 TS 核排序)', async () => {
+    vi.useFakeTimers();
+    const reindexed: string[] = [];
+    const state = makeGate(() => ({
+      ok: true,
+      result: { flush: ['/ws/b.py', '/ws/a.py'], defer: [], hold: 0 }
+    }));
+    setKodeCoreShadowGate(state.gate);
+    const coalescer = createIndexEventCoalescer({
+      isDirty: () => false,
+      enqueueReindex: file => { reindexed.push(file); }
+    });
+    coalescer.push('/ws/a.py');
+    coalescer.push('/ws/b.py');
+    await vi.advanceTimersByTimeAsync(INDEX_COALESCE_WINDOW_MS + 150);
+    expect(state.calls).toBeGreaterThan(0);
+    // Rust 给的顺序原样采用(b 先 a,与 TS 核 last 升序不同即证走了 Rust 面)
+    expect(reindexed).toEqual(['/ws/b.py', '/ws/a.py']);
+    coalescer.dispose();
+  });
+
+  it('Rust 失败(ok:false)→ TS 镜像核兜底,行为不变', async () => {
+    vi.useFakeTimers();
+    const reindexed: string[] = [];
+    setKodeCoreShadowGate(makeGate(() => ({ ok: false, reason: 'no serverPath' })).gate);
+    const coalescer = createIndexEventCoalescer({
+      isDirty: () => false,
+      enqueueReindex: file => { reindexed.push(file); }
+    });
+    coalescer.push('/ws/a.py');
+    await vi.advanceTimersByTimeAsync(INDEX_COALESCE_WINDOW_MS + 150);
+    expect(reindexed).toEqual(['/ws/a.py']);
+    coalescer.dispose();
+  });
+
+  it('Rust 应答畸形(缺 flush 数组)→ 回落 TS 镜像核', async () => {
+    vi.useFakeTimers();
+    const reindexed: string[] = [];
+    setKodeCoreShadowGate(makeGate(() => ({ ok: true, result: { defer: [] } })).gate);
+    const coalescer = createIndexEventCoalescer({
+      isDirty: () => false,
+      enqueueReindex: file => { reindexed.push(file); }
+    });
+    coalescer.push('/ws/a.py');
+    await vi.advanceTimersByTimeAsync(INDEX_COALESCE_WINDOW_MS + 150);
+    expect(reindexed).toEqual(['/ws/a.py']);
+    coalescer.dispose();
+  });
+
+  it('Rust 调用抛错 → catch 回落 TS 镜像核', async () => {
+    vi.useFakeTimers();
+    const reindexed: string[] = [];
+    const throwingGate = {
+      runInRust: async () => {
+        throw new Error('gate boom');
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(throwingGate);
+    const coalescer = createIndexEventCoalescer({
+      isDirty: () => false,
+      enqueueReindex: file => { reindexed.push(file); }
+    });
+    coalescer.push('/ws/a.py');
+    await vi.advanceTimersByTimeAsync(INDEX_COALESCE_WINDOW_MS + 150);
+    expect(reindexed).toEqual(['/ws/a.py']);
+    coalescer.dispose();
+  });
+
+  it('flush 清空后下一拍空队列 → 停钟(零悬挂定时器)', async () => {
+    vi.useFakeTimers();
+    const cleared: number[] = [];
+    const coalescer = createIndexEventCoalescer({
+      isDirty: () => false,
+      enqueueReindex: () => undefined
+    });
+    coalescer.push('/ws/a.py');
+    await vi.advanceTimersByTimeAsync(INDEX_COALESCE_WINDOW_MS + 150);
+    expect(coalescer.getPendingCount()).toBe(0);
+    // flush 完成的同一拍内就停钟(:179-181),后续时间推进零定时器回调;
+    // 后续 push 仍可重启钟(无死面)
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+    await vi.advanceTimersByTimeAsync(INDEX_COALESCE_WINDOW_MS);
+    expect(coalescer.getPendingCount()).toBe(0);
+    clearSpy.mockRestore();
+    coalescer.dispose();
+    coalescer.push('/ws/a.py');
+    expect(coalescer.getPendingCount()).toBe(1);
+    coalescer.dispose();
+  });
+});
+
+// 覆盖口径残余(批 34 定性)::165-166 tick 的空队列停钟分支不可达——每条
+// 清空 pending 的路径(flush 完成处 :179-181)都在同拍内同步停钟,轮询拍
+// 不可能在 pending 已空时仍触发,防御位。
