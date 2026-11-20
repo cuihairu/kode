@@ -210,19 +210,27 @@ jobs:
   # cargo-deny 依赖审计门禁（RUST-060 第二增量，2026-11-20 coverage 任务书
   # P1 清扫）：advisories（RUSTSEC 漏洞/撤包）+ licenses（deny.toml 白名单，
   # LGPL 仅 r-efi 例外=UEFI cfg 依赖，三发布平台不链接）。bans/sources 不查
-  # （超本批审计面）。action 预装 cargo-deny 二进制，无需编译；deny.toml 与
-  # Cargo.lock 变更均触发本门（paths-ignore 只放行 docs/md）。SBOM 生成在
-  # nightly（发布产物审计面），与这里的每次 push 门禁互补。
-  # arguments 里不写 check：action 已按 command=check 拼前置命令，arguments
-  # 只进 WHICH 位（首跑 44667793292 重复 check 报 invalid value 即此因）。
+  # （超本批审计面）。deny.toml 与 Cargo.lock 变更均触发本门（paths-ignore
+  # 只放行 docs/md）。SBOM 生成在 nightly（发布产物审计面），与这里的每次
+  # push 门禁互补。
+  # 不用 EmbarkStudios/cargo-deny-action：其 docker 入口把 arguments 整串塞
+  # 单参且与 command 拼接顺序拧巴——带 check 报 invalid value 'check'
+  # （44667793292），去掉 check 又报 unrecognized subcommand（44670335212），
+  # 两跑两败。改预编译 musl tarball 装同版 0.22.0 直调，命令形态与本地验证
+  # 完全一致（本地 tarball 同款二进制实跑 rc=0 在案）。
   cargo-deny:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: EmbarkStudios/cargo-deny-action@v2.1.3
-        with:
-          arguments: --workspace advisories licenses
+      - name: Install cargo-deny 0.22.0 (prebuilt musl binary)
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          curl -sSfL https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar xz -C "$HOME/.cargo/bin" --strip-components=1
+          cargo-deny --version
+      - name: cargo deny check (advisories + licenses)
+        run: cargo-deny --workspace check advisories licenses
 
   # Rust core 覆盖率独立成 job（与 build 的 TS 覆盖率并存，互不覆盖），同时是
   # Rust 测试门禁的唯一执行点（本仓此前没有任何 workflow 跑过 cargo test）：
