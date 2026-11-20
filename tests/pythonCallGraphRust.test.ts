@@ -518,3 +518,145 @@ describe('normalizeCallGraphPath (KR-AUD-89 上游斜杠归一)', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// 批 48:形状闸逐臂(406/423/436/465)+ 反索引分页三臂(194 取消/218 滞留/
+// 228 首页即完)。
+// ---------------------------------------------------------------------------
+describe('批 48:形状闸与分页容错臂', () => {
+  const makeGate = (results: unknown[]): { gate: KodeCoreGate; calls: () => number } => {
+    let n = 0;
+    const gate = {
+      runInRust: async () => {
+        const r = results[Math.min(n, results.length - 1)];
+        n += 1;
+        return { ok: true, result: r };
+      }
+    } as unknown as KodeCoreGate;
+    return { gate, calls: () => n };
+  };
+
+  it('结果非对象 → null(406)', async () => {
+    setKodeCoreShadowGate(makeGate([42]).gate);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('节点缺 kind/name/filePath/line → null(423)', async () => {
+    const bad = cannedGraph();
+    (bad as { nodes: unknown[] }).nodes = [{ id: 'only-id' }];
+    setKodeCoreShadowGate(makeGate([bad]).gate);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('边缺 callee/kind/filePath → null(436)', async () => {
+    const bad = cannedGraph();
+    (bad as { edges: unknown[] }).edges = [{ caller: 'act', callerLine: 2 }];
+    setKodeCoreShadowGate(makeGate([bad]).gate);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('符号表条目非对象 → null(465)', async () => {
+    setKodeCoreShadowGate(makeGate([['not-an-entry']]).gate);
+    try {
+      expect(await buildPythonSymbolsInRust([{ path: '/x.py', text: 'x = 1\n' }])).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('反索引分页取消(cancelled)→ null 回落 TS(194)', async () => {
+    const first = { ...cannedGraph(), reversePage: { nextOffset: 10 } };
+    const second = { ...cannedGraph(), reversePage: { cancelled: true } };
+    setKodeCoreShadowGate(makeGate([first, second]).gate);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('反索引分页滞留(nextOffset 不前进)→ null 回落 TS(218)', async () => {
+    const first = { ...cannedGraph(), reversePage: { nextOffset: 10 } };
+    const second = { ...cannedGraph(), reversePage: { nextOffset: 10 } };
+    setKodeCoreShadowGate(makeGate([first, second]).gate);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('首页无分页元(单页即完)→ 正常返回(228 对照)', async () => {
+    setKodeCoreShadowGate(makeGate([cannedGraph()]).gate);
+    try {
+      const result = await buildPythonCallGraphInRust(params());
+      expect(result).not.toBeNull();
+      expect(result?.stats.fileCount).toBe(1);
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+
+describe('批 48 续:条目非对象字面臂', () => {
+  it('nodes 条目为 null → null', async () => {
+    const bad = cannedGraph();
+    (bad as { nodes: unknown[] }).nodes = [null];
+    const gate = {
+      runInRust: async () => ({ ok: true, result: bad })
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('edges 条目为数字 → null', async () => {
+    const bad = cannedGraph();
+    (bad as { edges: unknown[] }).edges = [7];
+    const gate = {
+      runInRust: async () => ({ ok: true, result: bad })
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+
+describe('批 48 终:reverse 已完但后续页带 cancelled(194)', () => {
+  it('reverse 首页即完,nodes 维翻页中后续页 reversePage.cancelled → null', async () => {
+    const r1 = { ...cannedGraph(), nodePage: { nextOffset: 10 } };
+    const r2 = { ...cannedGraph(), nodePage: { nextOffset: 20 }, reversePage: { cancelled: true } };
+    let n = 0;
+    const gate2 = {
+      runInRust: async () => {
+        const r = n === 0 ? r1 : r2;
+        n += 1;
+        return { ok: true, result: r };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate2);
+    try {
+      expect(await buildPythonCallGraphInRust(params())).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
