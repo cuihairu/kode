@@ -290,28 +290,28 @@ describe('KBEngineMethodImplementationCodeActionProvider 守卫(覆盖率)', () 
 // IDE-NAV-013 未注册类型修正候选的守卫分支(覆盖率):候选只对账同码
 // 诊断且区间相交;异码/不相交诊断跳过,不建动作。
 describe('KBEngineTypeCodeActionProvider 守卫(覆盖率)', () => {
-  it('异码诊断:continue 跳过,不出动作', () => {
+  it('异码诊断:continue 跳过,不出动作', async () => {
     const provider = new KBEngineTypeCodeActionProvider();
     const doc = defDocument();
     const other = new Diagnostic(
       new Range(new Position(0, 0), new Position(0, 5)), 'x', 1
     );
     other.code = 'kbengine.other';
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       doc, new Range(new Position(0, 0), new Position(0, 5)),
       { diagnostics: [other] }, undefined
     );
     expect(actions).toEqual([]);
   });
 
-  it('同码但区间不相交:continue 跳过,不出动作', () => {
+  it('同码但区间不相交:continue 跳过,不出动作', async () => {
     const provider = new KBEngineTypeCodeActionProvider();
     const doc = defDocument();
     const unknown = new Diagnostic(
       new Range(new Position(0, 0), new Position(0, 5)), 'x', 1
     );
     unknown.code = UNKNOWN_TYPE_DIAGNOSTIC_CODE;
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       doc, new Range(new Position(5, 0), new Position(5, 5)),
       { diagnostics: [unknown] }, undefined
     );
@@ -569,12 +569,12 @@ describe('KBEngineMethodImplementationCodeActionProvider 分支(覆盖率)', () 
 // 5622:同码诊断但区间内文本为空(零宽区间)→ continue 跳过不建动作。
 // 5677:类体后出现顶格语句(indent<4)→ 类块扫描终止,插入点=类体末。
 describe('类型修正候选空名与类块终止(覆盖率)', () => {
-  it('零宽区间诊断:text 空 → continue 不出动作', () => {
+  it('零宽区间诊断:text 空 → continue 不出动作', async () => {
     const provider = new KBEngineTypeCodeActionProvider();
     const doc = defDocument();
     const zeroWidth = new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)), 'x', 1);
     zeroWidth.code = UNKNOWN_TYPE_DIAGNOSTIC_CODE;
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       doc, new Range(new Position(0, 0), new Position(0, 5)),
       { diagnostics: [zeroWidth] }, undefined
     );

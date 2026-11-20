@@ -500,7 +500,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // 出处随 baseline 锁步。
   // HOOK-TIMING-001:hover.ts 顶部新增 1 行 import(renderDefPropertyTimingNote)
   // API-PARAM-HOVER-001:hover.ts 顶部再 +1 行 import(nodeFs,实体类映射存在性)
-  ['src/languageProviders/hover.ts', 315, 'provideHover('],
+  // RUST-140 批 3(signatureHelp 接线):hover.ts 顶部 +1 行 import
+  // (serveSignatureHelpFromRust),其后 provideHover 真位重探 315→316,
+  // 出处随 baseline 锁步。
+  ['src/languageProviders/hover.ts', 316, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,

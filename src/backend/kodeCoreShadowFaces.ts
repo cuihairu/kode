@@ -70,6 +70,32 @@ export interface LspDiagnosticReportFace {
   items: { range: RangeLike; severity: number; message: string }[];
 }
 
+/** LSP 位置面(kode-server LspPosition 同形;行 0 基、列 UTF-16 code unit) */
+export interface LspPositionFace {
+  line: number;
+  character: number;
+}
+
+/** LSP 区间面(kode-server LspRange 同形) */
+export interface LspRangeFace {
+  start: LspPositionFace;
+  end: LspPositionFace;
+}
+
+/**
+ * 文档符号面(kode-server document_symbols::DocumentSymbolFace 同形)。
+ * kind 是符号种类字符串面(与 TS vscode.SymbolKind 枚举名同形;协议数值
+ * 映射归 provider 投影细节)。
+ */
+export interface LspDocumentSymbolFace {
+  name: string;
+  detail: string;
+  kind: 'Struct' | 'Class' | 'Field' | 'Method';
+  range: LspRangeFace;
+  selectionRange: LspRangeFace;
+  children: LspDocumentSymbolFace[];
+}
+
 /** kode-server textDocument/completion 应答面(to_lsp_items 投影) */
 export interface LspCompletionReportFace {
   isIncomplete: boolean;
@@ -470,6 +496,550 @@ export async function serveDiagnosticsFromRust(
     }
   }
   return face as LspDiagnosticReportFace;
+}
+
+const isLspPositionFace = (value: unknown): value is LspPositionFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return typeof face.line === 'number' && typeof face.character === 'number';
+};
+
+const isLspRangeFace = (value: unknown): value is LspRangeFace =>
+  !!value &&
+  typeof value === 'object' &&
+  isLspPositionFace((value as Record<string, unknown>).start) &&
+  isLspPositionFace((value as Record<string, unknown>).end);
+
+/** 递归校验符号面:任意一层畸形 → 整面作废(不做部分采用) */
+const isLspDocumentSymbolFace = (value: unknown): value is LspDocumentSymbolFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  if (typeof face.name !== 'string' || typeof face.detail !== 'string') {
+    return false;
+  }
+  if (
+    face.kind !== 'Struct' &&
+    face.kind !== 'Class' &&
+    face.kind !== 'Field' &&
+    face.kind !== 'Method'
+  ) {
+    return false;
+  }
+  if (!isLspRangeFace(face.range) || !isLspRangeFace(face.selectionRange)) {
+    return false;
+  }
+  return Array.isArray(face.children) && face.children.every(isLspDocumentSymbolFace);
+};
+
+/**
+ * 文档符号面 rust 服务(RUST-139 批 3 接线;2026-11-08 用户令「直接切到
+ * rust」):服务轨道下先镜像 .def 文档(未保存修订以编辑器内容为准),再请求
+ * kode-server textDocument/documentSymbol。Rust 段符号面 = Properties/三方法
+ * 段的容器符号+直接成员符号(核 document_symbols.rs,与 TS IDE-NAV-005 逐点
+ * 同构);解析无根/文档未打开/任何失败/应答畸形 → null,调用方回 TS 既有
+ * 实现(不部分采用)。
+ * 诚实边界:Rust 面不含进程段面包屑合成根(跨文件对端跳是 TS 投影层职责),
+ * provider 侧保留面包屑装配。
+ */
+export async function serveDocumentSymbolsFromRust(
+  document: DocumentLike,
+  isCancelled?: () => boolean
+): Promise<LspDocumentSymbolFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isDefDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>(
+        'textDocument/documentSymbol',
+        { textDocument: { uri } },
+        null,
+        opts
+      );
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (!Array.isArray(result) || !result.every(isLspDocumentSymbolFace)) {
+    return null;
+  }
+  return result;
+}
+
+const isLspLocationFace = (value: unknown): value is LspLocationFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return typeof face.uri === 'string' && isLspRangeFace(face.range);
+};
+
+/**
+ * 引用位面 rust 服务(RUST-138 批 3 接线):服务轨道下先镜像语料文档,再请求
+ * kode-server textDocument/references。Rust 面 = 语料面引用:def 文档出
+ * 自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration 时前置)
+ * + 全语料站点位;types.xml 文档出该类型名全语料引用位(无声明位)。Python
+ * 文档(属性 self 访问/调用点面归 entityMapping 运行时)、entities/alias、
+ * 未知符号、空结果、任何失败、应答畸形(任一条目缺 uri/区间)→ null,调用方
+ * 回 TS 既有实现(不部分采用)。非服务轨道/未装配门零开销。
+ */
+export async function serveReferencesFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  includeDeclaration: boolean,
+  isCancelled?: () => boolean
+): Promise<LspLocationFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isCorpusDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character },
+    context: { includeDeclaration }
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/references', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (!Array.isArray(result) || !result.every(isLspLocationFace)) {
+    return null;
+  }
+  return result;
+}
+
+export interface LspPrepareRenameFace {
+  range: LspRangeFace;
+  placeholder: string;
+}
+
+export interface DefRenameConflictFace {
+  surface: string;
+  name: string;
+  line: number;
+  filePath: string | null;
+}
+
+export interface DefRenameFileEditsFace {
+  filePath: string;
+  edits: LspRangeFace[];
+}
+
+export interface DefRenameEditsFace {
+  conflict: DefRenameConflictFace | null;
+  closureConflict: DefRenameConflictFace | null;
+  fileEdits: DefRenameFileEditsFace[];
+}
+
+const isLspPrepareRenameFace = (value: unknown): value is LspPrepareRenameFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return isLspRangeFace(face.range) && typeof face.placeholder === 'string';
+};
+
+const isDefRenameConflictFace = (value: unknown): value is DefRenameConflictFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return (
+    typeof face.surface === 'string' &&
+    typeof face.name === 'string' &&
+    typeof face.line === 'number' &&
+    (face.filePath === null || typeof face.filePath === 'string')
+  );
+};
+
+const isDefRenameEditsFace = (value: unknown): value is DefRenameEditsFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  if (
+    !(face.conflict === null || isDefRenameConflictFace(face.conflict)) ||
+    !(face.closureConflict === null || isDefRenameConflictFace(face.closureConflict)) ||
+    !Array.isArray(face.fileEdits)
+  ) {
+    return false;
+  }
+  return face.fileEdits.every(entry => {
+    if (!entry || typeof entry !== 'object') {
+      return false;
+    }
+    const fileEdits = entry as Record<string, unknown>;
+    return (
+      typeof fileEdits.filePath === 'string' &&
+      Array.isArray(fileEdits.edits) &&
+      fileEdits.edits.every(isLspRangeFace)
+    );
+  });
+};
+
+/**
+ * prepareRename 面 rust 服务(RUST-141 批 2 接线):服务轨道下先镜像 .def
+ * 文档,再请求 kode-server textDocument/prepareRename。Rust 面 = def 属性/
+ * 方法名上光标的候选区间+占位名(核 resolve_rename_symbol_at_offset,与 TS
+ * defRenamer 同构)。非 .def/未开档/光标不在可重命名符号上(null)/任何失败/
+ * 应答畸形 → null,调用方回 TS 既有实现(不部分采用)。非服务轨道/未装配门
+ * 零开销。
+ */
+export async function servePrepareRenameFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  isCancelled?: () => boolean
+): Promise<LspPrepareRenameFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isDefDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/prepareRename', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (result === null) {
+    return null;
+  }
+  if (!isLspPrepareRenameFace(result)) {
+    return null;
+  }
+  return result;
+}
+
+/**
+ * def 重命名编辑复算面 rust 服务(RUST-141 批 2 接线):服务轨道下先镜像
+ * .def 文档,再请求 kode-server textDocument/rename。Rust 面 = 同文件冲突
+ * 预检(NAV-008)+ 闭包占名预检(AUD-061)+ 目标与后代 def 全部编辑
+ * (AUD-046);冲突位不阻塞应答,由 provider 决定抛错文案(文案串留 TS 侧
+ * l10n 边界)。python self 访问/receiver 调用改写与漂移守卫归 TS
+ * entityMapping 车道,不在本面。应答畸形(任一键形状不对)→ null,调用方
+ * 回 TS 既有实现(不部分采用)。
+ */
+export async function serveRenameFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  newName: string,
+  isCancelled?: () => boolean
+): Promise<DefRenameEditsFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isDefDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character },
+    newName
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/rename', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (result === null || !isDefRenameEditsFace(result)) {
+    return null;
+  }
+  return result;
+}
+
+/** Rust GateRange 面(平铺 0 基行/列,与 code_action_assembly::GateRange 同形) */
+export interface CodeActionGateRangeFace {
+  startLine: number;
+  startChar: number;
+  endLine: number;
+  endChar: number;
+}
+
+/**
+ * EditFace 三态(RUST-143 批 3):replaceRange=定点替换;insertLine=类体/语句
+ * 插行(text 以换行开/结尾由 Rust 侧烘焙);replaceLines=整行段替换(换行
+ * 已烘焙进 text)。
+ */
+export type CodeActionEditFace =
+  | { type: 'replaceRange'; file: string; range: CodeActionGateRangeFace; newText: string }
+  | { type: 'insertLine'; file: string; line: number; text: string }
+  | { type: 'replaceLines'; file: string; startLine: number; endLine: number; text: string };
+
+/** ActionFace:Rust 装配描述符(vscode 对象构造与 l10n 标题插值归 TS 薄壳) */
+export interface CodeActionFace {
+  kind: string;
+  title: string;
+  edit: CodeActionEditFace;
+  diagnosticStartLine: number;
+  titleParams: string[];
+}
+
+/** 诊断入参面(TS 侧由 vscode.Diagnostic 投影;related* 供 parity 族定位) */
+export interface CodeActionDiagnosticParam {
+  code: string;
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  relatedFile?: string | null;
+  relatedMessage?: string | null;
+}
+
+const isCodeActionGateRangeFace = (value: unknown): value is CodeActionGateRangeFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const range = value as Record<string, unknown>;
+  return (
+    typeof range.startLine === 'number' &&
+    typeof range.startChar === 'number' &&
+    typeof range.endLine === 'number' &&
+    typeof range.endChar === 'number'
+  );
+};
+
+const isCodeActionEditFace = (value: unknown): value is CodeActionEditFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const edit = value as Record<string, unknown>;
+  switch (edit.type) {
+    case 'replaceRange':
+      return (
+        typeof edit.file === 'string' &&
+        isCodeActionGateRangeFace(edit.range) &&
+        typeof edit.newText === 'string'
+      );
+    case 'insertLine':
+      return (
+        typeof edit.file === 'string' &&
+        typeof edit.line === 'number' &&
+        typeof edit.text === 'string'
+      );
+    case 'replaceLines':
+      return (
+        typeof edit.file === 'string' &&
+        typeof edit.startLine === 'number' &&
+        typeof edit.endLine === 'number' &&
+        typeof edit.text === 'string'
+      );
+    default:
+      return false;
+  }
+};
+
+const isCodeActionFace = (value: unknown): value is CodeActionFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return (
+    typeof face.kind === 'string' &&
+    typeof face.title === 'string' &&
+    isCodeActionEditFace(face.edit) &&
+    typeof face.diagnosticStartLine === 'number' &&
+    Array.isArray(face.titleParams) &&
+    face.titleParams.every(entry => typeof entry === 'string')
+  );
+};
+
+/** def 族(typeReplacement/parityMethod)只在 .def 文档请求;py 族反之 */
+const CODE_ACTION_DEF_FAMILIES = new Set(['typeReplacement', 'parityMethod']);
+const CODE_ACTION_PY_FAMILIES = new Set(['receiverNone', 'fixedDict']);
+
+/**
+ * codeAction 装配面 rust 服务(RUST-143 批 3 接线):服务轨道下先镜像文档,
+ * 再按族请求 kode-server textDocument/codeAction。Rust 面 = 四族装配决策
+ * (修参数类型/创建缺失定义/receiver-none 守卫双动作/FIXED_DICT 整体重赋),
+ * 产出 ActionFace 描述符数组。诚实边界:registered 近拼宇宙(getKnownTypeContext
+ * 装配)与 parity 目标 python 快照(readSharedFileSnapshot 打开缓冲区优先)
+ * 由 TS 作入参传入;vscode.CodeAction/WorkspaceEdit 构造与 l10n 标题插值归
+ * TS 薄壳。族×文档类不匹配/未开档/任何失败/应答畸形(任一 face 缺键)→
+ * null,调用方回 TS 既有实现(不部分采用)。非服务轨道/未装配门零开销。
+ */
+export async function serveCodeActionsFromRust(
+  document: DocumentLike,
+  input: {
+    family: string;
+    range: { start: PositionLike; end: PositionLike };
+    diagnostics: readonly CodeActionDiagnosticParam[];
+    registered: string[];
+    snapshotText: string | null;
+  },
+  isCancelled?: () => boolean
+): Promise<CodeActionFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  if (CODE_ACTION_DEF_FAMILIES.has(input.family)) {
+    if (!isDefDocument(document)) {
+      return null;
+    }
+  } else if (CODE_ACTION_PY_FAMILIES.has(input.family)) {
+    if (!document.uri.fsPath.toLowerCase().endsWith('.py')) {
+      return null;
+    }
+  } else {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    range: {
+      start: { line: input.range.start.line, character: input.range.start.character },
+      end: { line: input.range.end.line, character: input.range.end.character }
+    },
+    family: input.family,
+    registered: input.registered,
+    snapshotText: input.snapshotText,
+    diagnostics: input.diagnostics.map(diagnostic => ({
+      code: diagnostic.code,
+      range: {
+        start: { line: diagnostic.range.start.line, character: diagnostic.range.start.character },
+        end: { line: diagnostic.range.end.line, character: diagnostic.range.end.character }
+      },
+      relatedFile: diagnostic.relatedFile ?? null,
+      relatedMessage: diagnostic.relatedMessage ?? null
+    }))
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/codeAction', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (!Array.isArray(result) || !result.every(isCodeActionFace)) {
+    return null;
+  }
+  return result;
+}
+
+/** 选中声明的落点面(signature_help::SignatureDefinition 同形,行 1 起) */
+export interface SignatureHelpDefinitionFace {
+  file: string;
+  line: number;
+  section: string;
+  exposed: boolean;
+}
+
+/** SignatureHelp 面(RUST-140 批 3):位置无关四件,签名组装与 TS 同构 */
+export interface SignatureHelpFace {
+  label: string;
+  parameters: string[];
+  documentation: string;
+  definition: SignatureHelpDefinitionFace;
+}
+
+/** 应答双键:face + 活动形参标亮(clamp 零形参臂由 Rust 决策核给出) */
+export interface SignatureHelpResultFace {
+  signature: SignatureHelpFace;
+  activeParameter: number;
+}
+
+const isSignatureHelpFace = (value: unknown): value is SignatureHelpFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  const definition = face.definition as Record<string, unknown> | undefined;
+  return (
+    typeof face.label === 'string' &&
+    Array.isArray(face.parameters) &&
+    face.parameters.every(parameter => typeof parameter === 'string') &&
+    typeof face.documentation === 'string' &&
+    !!definition &&
+    typeof definition === 'object' &&
+    typeof definition.file === 'string' &&
+    typeof definition.line === 'number' &&
+    typeof definition.section === 'string' &&
+    typeof definition.exposed === 'boolean'
+  );
+};
+
+const isSignatureHelpResultFace = (value: unknown): value is SignatureHelpResultFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const result = value as Record<string, unknown>;
+  return (
+    isSignatureHelpFace(result.signature) &&
+    typeof result.activeParameter === 'number' &&
+    Number.isInteger(result.activeParameter) &&
+    result.activeParameter >= 0
+  );
+};
+
+/**
+ * SignatureHelp 决策面 rust 服务(RUST-140 批 3 接线):服务轨道下先镜像
+ * python 文档,再请求 kode-server textDocument/signatureHelp。Rust 面 =
+ * 调用点归属(python_call_at)+ def 声明解析(owner 链闭包 + 接收者段硬闸)
+ * + 签名组装,回 {signature, activeParameter} 双键;应答 null = 该位置无
+ * 签名。诚实边界:vscode.SignatureInformation/MarkdownString 构造归 TS
+ * 薄壳;entityMapping 注册表运行时链(resolveMethodDefinition)留 TS 回退
+ * 车道。非 .py/非服务轨道/取消/任何失败/应答畸形 → null,调用方回 TS 既有
+ * 实现(不部分采用)。非服务轨道/未装配门零开销。
+ */
+export async function serveSignatureHelpFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  isCancelled?: () => boolean
+): Promise<SignatureHelpResultFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !document.uri.fsPath.toLowerCase().endsWith('.py')) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/signatureHelp', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (result === null || !isSignatureHelpResultFace(result)) {
+    return null;
+  }
+  return result;
 }
 
 /**

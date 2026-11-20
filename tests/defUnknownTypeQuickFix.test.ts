@@ -97,16 +97,16 @@ describe('未知类型诊断修正候选(IDE-NAV-013)', () => {
     expect(findRegisteredTypeSuggestions('AB', many)).toEqual(['AB1', 'AB2', 'AB3', 'AB4', 'AB5']);
   });
 
-  it('provider:仅出已注册替换编辑,不建声明;非未知诊断/取消位不出', () => {
+  it('provider:仅出已注册替换编辑,不建声明;非未知诊断/取消位不出', async () => {
     const provider = new KBEngineTypeCodeActionProvider();
     const document = defDocument();
     const diagnostic = unknownTypeDiagnostic();
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       document,
       diagnostic.range,
       { diagnostics: [diagnostic] },
       undefined
-    )!;
+    );
 
     expect(actions.length).toBeGreaterThan(0);
     expect(actions.length).toBeLessThanOrEqual(5);
@@ -136,18 +136,18 @@ describe('未知类型诊断修正候选(IDE-NAV-013)', () => {
     const plainDiagnostic = new Diagnostic(
       diagnostic.range, '别的诊断', DiagnosticSeverity.Warning
     );
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       document, diagnostic.range, { diagnostics: [plainDiagnostic] }, undefined
     )).toEqual([]);
 
     // 取消位 → 空
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       document, diagnostic.range, { diagnostics: [diagnostic] },
       { isCancellationRequested: true } as never
     )).toEqual([]);
   });
 
-  it('诊断面:未知类型诊断带稳定 code,provider 与 validateDocument 同链', () => {
+  it('诊断面:未知类型诊断带稳定 code,provider 与 validateDocument 同链', async () => {
     const document = defDocument();
     const collection = new DiagnosticCollection();
     const originalFolders = stubWorkspace.workspaceFolders;
@@ -164,9 +164,9 @@ describe('未知类型诊断修正候选(IDE-NAV-013)', () => {
 
     // 同链:validator 的诊断直接喂 provider 出候选
     const provider = new KBEngineTypeCodeActionProvider();
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       document, unknown!.range, { diagnostics }, undefined
-    )!;
+    );
     expect(actions.length).toBeGreaterThan(0);
     expect(actions[0].title).toContain('Replace with registered type');
     expect(actions[0].title).toContain('UINT16');

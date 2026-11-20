@@ -9,19 +9,20 @@
 //!   身份 (root_id, canonical URI)、open overlay、严格 version 转移、
 //!   full/ranged 双模式 change、根注册与最长前缀归属。
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kode_protocol::{
-    error_codes, CompletionParams, ContentChangeEvent, CoreResources, DefinitionParams,
-    DeleteFilesParams, DeletedFile, DidChangeParams, DidCloseParams, DidOpenParams,
-    DocumentDiagnosticParams, DocumentSummary, HealthReport, HoverParams, IncomingMessage,
-    InitializeParams, InitializeResult, Notification, RenameFilesParams, RenamedFile, Request,
-    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    error_codes, CodeActionDiagnostic, CodeActionParams, CompletionParams, ContentChangeEvent,
+    CoreResources, DefinitionParams, DeleteFilesParams, DeletedFile, DidChangeParams,
+    DidCloseParams, DidOpenParams, DocumentDiagnosticParams, DocumentSummary, DocumentSymbolParams,
+    HealthReport, HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification,
+    PrepareRenameParams, ReferenceParams, RenameFilesParams, RenameParams, RenamedFile, Request,
+    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification, SignatureHelpParams,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
@@ -415,22 +416,41 @@ fn handle_request_inner(
         }
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
         "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
+        // RUST-139 批 3:def 段符号面(Properties/三方法段容器 + 段内直接声明)。
+        "textDocument/documentSymbol" => {
+            vec![Outgoing::Response(handle_document_symbol(state, request))]
+        }
+        // RUST-138 批 3:语料引用位(Properties/方法段的属性与调用点面仍是
+        // TS entityMapping 运行时面,Rust 面 = 类型/实体/接口引用位)。
+        "textDocument/references" => vec![Outgoing::Response(handle_references(state, request))],
+        // RUST-141 批 2:def 重命名面(符号解析/闭包冲突/编辑复算;python
+        // self 访问改写面归 TS entityMapping)。
+        "textDocument/prepareRename" => {
+            vec![Outgoing::Response(handle_prepare_rename(state, request))]
+        }
+        "textDocument/rename" => vec![Outgoing::Response(handle_rename(state, request))],
+        // RUST-143 批 3:codeAction 四族装配面(决策核 code_action_assembly;
+        // 诊断对象构造/l10n 标题/WorkspaceEdit 装配归 TS 薄壳)。
+        "textDocument/codeAction" => vec![Outgoing::Response(handle_code_action(state, request))],
+        "textDocument/signatureHelp" => {
+            vec![Outgoing::Response(handle_signature_help(state, request))]
+        }
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
         // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
         "$/kode/workspace/rootAdded" => {
-            vec![Outgoing::Response(crate::root_lifecycle::handle_root_added(
-                state, request,
-            ))]
+            vec![Outgoing::Response(
+                crate::root_lifecycle::handle_root_added(state, request),
+            )]
         }
         "$/kode/workspace/rootRemoved" => {
-            vec![Outgoing::Response(crate::root_lifecycle::handle_root_removed(
-                state, request,
-            ))]
+            vec![Outgoing::Response(
+                crate::root_lifecycle::handle_root_removed(state, request),
+            )]
         }
         "$/kode/workspace/roots" => {
-            vec![Outgoing::Response(crate::root_lifecycle::handle_roots_list(
-                state, request,
-            ))]
+            vec![Outgoing::Response(
+                crate::root_lifecycle::handle_roots_list(state, request),
+            )]
         }
         // RUST-074-W 暖门四面:首扫 keyed 状态机(begin/complete/cancel)+
         // 暖态观测。要动 &mut ServerState 里的状态机,走顶层臂(root_lifecycle
@@ -530,6 +550,15 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             hover_provider: true,
             // Phase2 首片:textDocument/definition(语料声明落点面)。
             definition_provider: true,
+            // RUST-139 批 3:textDocument/documentSymbol(def 段符号面)。
+            document_symbol_provider: true,
+            // RUST-138 批 3:textDocument/references(语料声明+引用位面)。
+            references_provider: true,
+            // RUST-141 批 2:textDocument/rename+prepareRename(def 重命名面)。
+            rename_provider: true,
+            // RUST-143 批 3:textDocument/codeAction(四族装配面)。
+            code_action_provider: true,
+            signature_help_provider: true,
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
@@ -653,13 +682,11 @@ fn drain_index_for_request(state: &mut ServerState, key: &DocumentKey) {
     // freshen 即可执行它——打开文档请求即新鲜。
     state.index.take_buffered(&identity);
     state.index.freshen(&identity);
-    state
-        .index
-        .pump_budgeted_until(
-            crate::index_queue::REQUEST_DRAIN_BUDGET,
-            std::time::Instant::now()
-                + std::time::Duration::from_millis(crate::index_queue::REQUEST_DRAIN_BUDGET_MS),
-        );
+    state.index.pump_budgeted_until(
+        crate::index_queue::REQUEST_DRAIN_BUDGET,
+        std::time::Instant::now()
+            + std::time::Duration::from_millis(crate::index_queue::REQUEST_DRAIN_BUDGET_MS),
+    );
 }
 
 /// textDocument/hover(PR-010/LSP-003):文档须已打开(open overlay 优先,
@@ -695,10 +722,11 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
     ) {
         return Response::success(request.id, hover);
     }
-    let hover = state
-        .hover
-        .borrow()
-        .hover(&key, &text, params.position.line, params.position.character);
+    let hover =
+        state
+            .hover
+            .borrow()
+            .hover(&key, &text, params.position.line, params.position.character);
     match hover {
         Some(response) => Response::success(
             request.id,
@@ -751,11 +779,12 @@ fn handle_completion(state: &mut ServerState, request: Request, cancelled_early:
         return Response::success(request.id, serde_json::Value::Null);
     };
     let text = buffer.text().to_string();
-    let completion =
-        state
-            .hover
-            .borrow()
-            .completion(&key, &text, params.position.line, params.position.character);
+    let completion = state.hover.borrow().completion(
+        &key,
+        &text,
+        params.position.line,
+        params.position.character,
+    );
     match completion {
         Some(response) => Response::success(request.id, to_lsp_items(&response, key.root)),
         None => Response::success(request.id, serde_json::Value::Null),
@@ -825,11 +854,12 @@ fn handle_definition(state: &mut ServerState, request: Request) -> Response {
         return Response::success(request.id, serde_json::Value::Null);
     };
     let text = buffer.text().to_string();
-    let definition =
-        state
-            .hover
-            .borrow()
-            .definition(&key, &text, params.position.line, params.position.character);
+    let definition = state.hover.borrow().definition(
+        &key,
+        &text,
+        params.position.line,
+        params.position.character,
+    );
     match definition {
         Some(location) => Response::success(
             request.id,
@@ -838,6 +868,386 @@ fn handle_definition(state: &mut ServerState, request: Request) -> Response {
         None => Response::success(request.id, serde_json::Value::Null),
     }
 }
+
+/// textDocument/documentSymbol(RUST-139 批 3):def 段符号面——Properties/
+/// 三方法段作容器符号、段内直接声明作子符号(核在
+/// [`crate::document_symbols::document_symbols`],与 TS IDE-NAV-005 逐点同构)。
+/// 文档须已打开;未打开/解析无根一律回 null 结果(LSP 允许),不报错不阻塞。
+/// 诚实边界:本面只出段符号树;进程段面包屑合成根(跨文件对端跳)是 TS
+/// provider 投影层职责,不在本面(Rust 恒不含合成根)。
+fn handle_document_symbol(state: &mut ServerState, request: Request) -> Response {
+    let params: DocumentSymbolParams =
+        match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+            Some(params) => params,
+            None => {
+                return Response::error(
+                    Some(request.id),
+                    error_codes::INVALID_PARAMS,
+                    "invalid textDocument/documentSymbol params",
+                )
+            }
+        };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.session.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    match crate::document_symbols::document_symbols(&text) {
+        Some(symbols) => Response::success(
+            request.id,
+            serde_json::to_value(symbols).expect("serialize document symbols"),
+        ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
+/// textDocument/references(RUST-138 批 3):语料引用位面——def 文档出
+/// 自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration 时才
+/// 前置)+ 全语料站点位;types.xml 文档出该类型名在全语料 .def/<Type>/
+/// <Arg>/<of> 值与 types.xml 内引用位(该面无声明位,includeDeclaration 不
+/// 生效,与 TS provideTypesXmlReferences 同)。
+/// 文档须已打开;未打开/未知符号/空结果一律回 null 结果(LSP 允许),不报错。
+/// 诚实边界:本面只出语料面引用。Properties/方法段的属性 self 访问与
+/// Python 调用点面由 entityMapping 运行时索引(TS)负责,Python 文档本面恒
+/// null——切换语义过滤面(semantic_reference_locations)属产品决策,不在本面。
+fn handle_references(state: &mut ServerState, request: Request) -> Response {
+    let params: ReferenceParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/references params",
+            )
+        }
+    };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.session.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    let locations = state.hover.borrow().references(
+        &key,
+        &text,
+        params.position.line,
+        params.position.character,
+        params.context.include_declaration,
+    );
+    match locations {
+        Some(locations) => Response::success(
+            request.id,
+            serde_json::to_value(locations).expect("serialize reference locations"),
+        ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
+/// 请求文档文本(uri 解析 → root 归属 → 索引清泵 → 打开缓冲;未打开 None)。
+/// 重命名两臂与 documentSymbol/references 同步前置链的公共形状。
+fn request_document_text(
+    state: &mut ServerState,
+    uri_string: &str,
+) -> Option<(DocumentKey, String)> {
+    let uri = CanonicalUri::parse(uri_string).ok()?;
+    let root = state.session.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
+    let (_, buffer) = state.store.borrow().open_buffer(&key)?;
+    Some((key, buffer.text().to_string()))
+}
+
+/// textDocument/prepareRename(RUST-141 批 2):可重命名符号解析面——def
+/// 属性/方法名上的光标给出候选名区间与占位名(核
+/// [`crate::def_rename::resolve_rename_symbol_at_offset`],TS defRenamer 同构)。
+/// 文档须已打开;未打开/光标不在可重命名符号上回 null(LSP 允许)。
+fn handle_prepare_rename(state: &mut ServerState, request: Request) -> Response {
+    let params: PrepareRenameParams =
+        match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+            Some(params) => params,
+            None => {
+                return Response::error(
+                    Some(request.id),
+                    error_codes::INVALID_PARAMS,
+                    "invalid textDocument/prepareRename params",
+                )
+            }
+        };
+    let Some((_, text)) = request_document_text(state, &params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let offset = crate::def_rename::utf16_position_to_offset(
+        &units,
+        params.position.line as usize,
+        params.position.character as usize,
+    );
+    let Some(symbol) = crate::def_rename::resolve_rename_symbol_at_offset(&text, offset) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let (start_line, start_character) =
+        crate::def_rename::utf16_offset_to_position(&units, symbol.word_start);
+    let (end_line, end_character) =
+        crate::def_rename::utf16_offset_to_position(&units, symbol.word_end);
+    Response::success(
+        request.id,
+        serde_json::json!({
+            "range": {
+                "start": {"line": start_line, "character": start_character},
+                "end": {"line": end_line, "character": end_character}
+            },
+            "placeholder": symbol.name,
+        }),
+    )
+}
+
+/// textDocument/rename(RUST-141 批 2):def 重命名编辑复算面——符号解析 +
+/// 同文件冲突预检(NAV-008)+ 祖先/后代闭包占名预检(AUD-061)+ 目标与后代
+/// def 全部编辑(AUD-046 闭包语义)。应答 = `{conflict, closureConflict,
+/// fileEdits}` 三键(冲突位不阻塞应答,由调用方决定抛错文案;fileEdits 仅在
+/// 双冲突皆空时非空,编辑位为 LSP (line,character) 区间,各行按文件自身
+/// 文本换算)。python self 访问/receiver 调用改写面归 TS entityMapping,
+/// 不在本面。
+/// 诚实边界:闭包预检与后代发现走盘上语料(`find_entity_defs_root_from_file`
+/// 向上走查 entities.xml + 递归列 def;决策核既有行为),跨文件文本先查服务
+/// 端已同步文档(打开缓冲区优先,与 TS readSharedFileSnapshot 同语义)再落盘读。
+fn handle_rename(state: &mut ServerState, request: Request) -> Response {
+    let params: RenameParams = match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/rename params",
+            )
+        }
+    };
+    let Some((key, text)) = request_document_text(state, &params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let path = key.uri.as_path().to_string();
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let offset = crate::def_rename::utf16_position_to_offset(
+        &units,
+        params.position.line as usize,
+        params.position.character as usize,
+    );
+    let Some(symbol) = crate::def_rename::resolve_rename_symbol_at_offset(&text, offset) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let conflict = crate::def_rename::find_def_rename_conflict(&text, &symbol, &params.new_name);
+    // 跨文件读取:已同步文档(打开缓冲区)优先,否则盘读(与 TS
+    // readSharedFileSnapshot 同语义)。DocumentStore 无该路径 buffer = 未
+    // 镜像/已关,落盘即快照真值。
+    let cross_file = |file: &std::path::Path| -> Option<String> {
+        let uri = kode_vfs::CanonicalUri::from_path(&file.to_string_lossy());
+        let root = state.session.root_for(&uri);
+        let key = DocumentKey::new(root, uri);
+        if let Some((_, buffer)) = state.store.borrow().open_buffer(&key) {
+            return Some(buffer.text().to_string());
+        }
+        std::fs::read_to_string(file).ok()
+    };
+    let closure_conflict = crate::def_rename::find_def_rename_conflict_in_closure(
+        std::path::Path::new(&path),
+        &text,
+        &symbol,
+        &params.new_name,
+        &cross_file,
+    );
+    let mut file_edits = Vec::new();
+    if conflict.is_none() && closure_conflict.is_none() {
+        for edit in crate::def_rename::compute_def_rename_edits(
+            std::path::Path::new(&path),
+            &text,
+            &symbol,
+            &params.new_name,
+            &cross_file,
+        ) {
+            let file_units: Vec<u16> = edit.text.encode_utf16().collect();
+            let ranges: Vec<serde_json::Value> = edit
+                .edits
+                .iter()
+                .map(|range| {
+                    let (start_line, start_character) =
+                        crate::def_rename::utf16_offset_to_position(&file_units, range.start);
+                    let (end_line, end_character) =
+                        crate::def_rename::utf16_offset_to_position(&file_units, range.end);
+                    serde_json::json!({
+                        "start": {"line": start_line, "character": start_character},
+                        "end": {"line": end_line, "character": end_character},
+                    })
+                })
+                .collect();
+            file_edits.push(serde_json::json!({
+                "filePath": edit.file_path.to_string_lossy(),
+                "edits": ranges,
+            }));
+        }
+    }
+    Response::success(
+        request.id,
+        serde_json::json!({
+            "conflict": conflict.map(|c| serde_json::to_value(c).expect("serialize conflict")),
+            "closureConflict": closure_conflict
+                .map(|c| serde_json::to_value(c).expect("serialize conflict")),
+            "fileEdits": file_edits,
+        }),
+    )
+}
+
+/// textDocument/codeAction(RUST-143 批 3):四族装配决策面——修参数类型/
+/// 创建缺失定义/冲突定位(receiver-none 守卫双动作 + FIXED_DICT 整体重赋)。
+/// 决策核 [`crate::code_action_assembly`] 纯库直用;`family` 分派单族装配,
+/// 产出 ActionFace 描述符数组。诚实边界:registered 近拼宇宙由 TS
+/// getKnownTypeContext 装配入参;parity 族目标 python 快照由 TS
+/// readSharedFileSnapshot 打开缓冲区优先读入参;vscode.Diagnostic/WorkspaceEdit
+/// 对象构造与 l10n 标题(titleParams 按族插值)归 TS 薄壳,不在本面。
+/// 文档须已打开(未开档回 null);未知 family 回 -32602(枚举入参诚实拒绝,
+/// 不静默空数组)。
+fn handle_code_action(state: &mut ServerState, request: Request) -> Response {
+    let params: CodeActionParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/codeAction params",
+            )
+        }
+    };
+    let Some((key, text)) = request_document_text(state, &params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let doc_file = key.uri.as_path().to_string();
+    let to_gate_range = |range: &kode_protocol::Range| crate::code_action_assembly::GateRange {
+        start_line: range.start.line as usize,
+        start_char: range.start.character as usize,
+        end_line: range.end.line as usize,
+        end_char: range.end.character as usize,
+    };
+    let diagnostics: Vec<CodeActionDiagnostic> = params.diagnostics;
+    let gate_diagnostics: Vec<crate::code_action_assembly::DiagnosticGateFace> = diagnostics
+        .iter()
+        .map(
+            |diagnostic| crate::code_action_assembly::DiagnosticGateFace {
+                code: diagnostic.code.clone(),
+                range: to_gate_range(&diagnostic.range),
+                related_file: diagnostic.related_file.clone(),
+                related_message: diagnostic.related_message.clone(),
+            },
+        )
+        .collect();
+    let request_range = crate::code_action_assembly::RequestRangeFace {
+        start_line: params.range.start.line as usize,
+        start_char: params.range.start.character as usize,
+        end_line: params.range.end.line as usize,
+        end_char: params.range.end.character as usize,
+    };
+    let registered: Vec<&str> = params.registered.iter().map(String::as_str).collect();
+    let actions = match params.family.as_str() {
+        "typeReplacement" => crate::code_action_assembly::assemble_type_replacement_actions(
+            &text,
+            &doc_file,
+            &registered,
+            &gate_diagnostics,
+            &request_range,
+        ),
+        "parityMethod" => crate::code_action_assembly::assemble_parity_method_actions(
+            &text,
+            &doc_file,
+            params.snapshot_text.as_deref(),
+            &gate_diagnostics,
+            &request_range,
+        ),
+        "receiverNone" => crate::code_action_assembly::assemble_receiver_none_actions(
+            &text,
+            &doc_file,
+            &gate_diagnostics,
+            &request_range,
+        ),
+        "fixedDict" => crate::code_action_assembly::assemble_fixed_dict_actions(
+            &text,
+            &doc_file,
+            &gate_diagnostics,
+            &request_range,
+        ),
+        _ => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "unknown codeAction family",
+            )
+        }
+    };
+    let faces: Vec<serde_json::Value> = actions
+        .iter()
+        .map(|action| serde_json::to_value(action).expect("serialize action face"))
+        .collect();
+    Response::success(request.id, serde_json::Value::Array(faces))
+}
+
+/// textDocument/signatureHelp(RUST-140 批 3):python 调用点词法(python_call_at,
+/// 与 TS getPythonCallAtPosition 同构)→ 本域继承链闭包签名决策(signature_help
+/// 决策核,打分/段闸/回退/骨架组装全在 Rust)→ SignatureHelpFace + 活动形参
+/// 标亮(clamp)。文档须已打开(未开档回 null);光标不在调用点/解析不到签名 →
+/// null(LSP 允许)。诚实边界:实体注册表运行时链(EntityMappingManager)不跨
+/// 该面,签名来源是语料 def 视图;vscode SignatureHelp/ParameterInformation
+/// 对象构造与 MarkdownString 包装归 TS 薄壳。
+fn handle_signature_help(state: &mut ServerState, request: Request) -> Response {
+    let params: SignatureHelpParams =
+        match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+            Some(params) => params,
+            None => {
+                return Response::error(
+                    Some(request.id),
+                    error_codes::INVALID_PARAMS,
+                    "invalid textDocument/signatureHelp params",
+                );
+            }
+        };
+    let Some((key, text)) = request_document_text(state, &params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let Some(line) = text.split('\n').nth(params.position.line as usize) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let Some(call) = crate::python_call_at::get_python_call_at_position(
+        line,
+        params.position.character as usize,
+    ) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let doc_file = key.uri.as_path().to_string();
+    let face = state
+        .hover
+        .borrow()
+        .signature_help(&doc_file, &call.method_name, call.section);
+    let Some(face) = face else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let active_parameter =
+        crate::signature_help::clamp_active_parameter(call.active_argument, face.parameters.len());
+    Response::success(
+        request.id,
+        serde_json::json!({
+            "signature": face,
+            "activeParameter": active_parameter
+        }),
+    )
+}
+
 
 /// textDocument/diagnostic(Phase2 首片,LSP pull 诊断 full 报告形):
 /// `{kind:"full", items:[DiagnosticFace...]}`。文档须已打开;未打开回
@@ -870,10 +1280,7 @@ fn handle_diagnostic(state: &mut ServerState, request: Request) -> Response {
         );
     };
     let text = buffer.text().to_string();
-    let items: Vec<DiagnosticFace> = state
-        .hover
-        .borrow()
-        .diagnostics(key.uri.as_path(), &text);
+    let items: Vec<DiagnosticFace> = state.hover.borrow().diagnostics(key.uri.as_path(), &text);
     Response::success(
         request.id,
         serde_json::json!({ "kind": "full", "items": items }),
@@ -982,8 +1389,7 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
 /// 引用与生成源映射在本轨无独立存储面——引用经解析注册表随键撤销,生成
 /// 源映射未接入(诚实边界,见验收文档)。
 fn handle_did_delete_files(state: &mut ServerState, params: Option<serde_json::Value>) {
-    let Ok(params) = serde_json::from_value::<DeleteFilesParams>(params.unwrap_or_default())
-    else {
+    let Ok(params) = serde_json::from_value::<DeleteFilesParams>(params.unwrap_or_default()) else {
         return;
     };
     for DeletedFile { uri } in &params.files {
@@ -996,8 +1402,7 @@ fn handle_did_delete_files(state: &mut ServerState, params: Option<serde_json::V
 /// 失败 = 逐出):didOpen(new) 先到则 overlay 未保存修订胜出,后到则其
 /// 自身入队兜底,未打开则回读盘上新文件;跨根移动新旧各归其根。
 fn handle_did_rename_files(state: &mut ServerState, params: Option<serde_json::Value>) {
-    let Ok(params) = serde_json::from_value::<RenameFilesParams>(params.unwrap_or_default())
-    else {
+    let Ok(params) = serde_json::from_value::<RenameFilesParams>(params.unwrap_or_default()) else {
         return;
     };
     for RenamedFile { old_uri, new_uri } in &params.files {
@@ -1036,18 +1441,14 @@ fn index_gaps_report(state: &ServerState) -> serde_json::Value {
     let samples: Vec<serde_json::Value> = negatives
         .iter()
         .take(SAMPLE_MAX)
-        .map(|(key, reason)| {
-            serde_json::json!({ "uri": key.uri.to_string(), "reason": reason })
-        })
+        .map(|(key, reason)| serde_json::json!({ "uri": key.uri.to_string(), "reason": reason }))
         .collect();
     let warm = state.warm.snapshot();
     let ingest = state.index.snapshot();
     let (known, missing) = match warm.total {
         Some(total) => (
             serde_json::Value::from(total),
-            serde_json::Value::from(
-                total.saturating_sub(warm.done).saturating_sub(warm.failed),
-            ),
+            serde_json::Value::from(total.saturating_sub(warm.done).saturating_sub(warm.failed)),
         ),
         None => (serde_json::Value::Null, serde_json::Value::Null),
     };
@@ -1108,7 +1509,9 @@ fn handle_index_gaps(state: &mut ServerState, request: Request) -> Response {
         .into_iter()
         .find(|(k, _)| *k == key)
         .map(|(_, reason)| reason);
-    let pending_refresh = state.index.has_pending(&crate::index_queue::identity_of(&key));
+    let pending_refresh = state
+        .index
+        .has_pending(&crate::index_queue::identity_of(&key));
     // tracked = 索引以任何形态知晓(成功入库或已记解析失败);负缓存文件
     // 不进注册表前向表,只按 known 判会把 partial 误报成 unindexed。
     let tracked = known || parse_error.is_some();

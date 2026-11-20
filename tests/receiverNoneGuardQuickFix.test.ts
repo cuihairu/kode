@@ -208,15 +208,15 @@ describe('buildReceiverNoneWrapEdit(2026-10-30 包裹式守卫纯函数)', () =>
 describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
   const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
 
-  it('receiver-none 诊断 → 两条 QuickFix:包裹式(首选靠前)+早退式(次选),不碰其他文件', () => {
+  it('receiver-none 诊断 → 两条 QuickFix:包裹式(首选靠前)+早退式(次选),不碰其他文件', async () => {
     const document = pyDocument();
     const diagnostic = receiverNoneDiagnostic();
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       document,
       diagnostic.range,
       { diagnostics: [diagnostic] },
       undefined
-    )!;
+    );
 
     // 2026-10-30 用户令:包裹式(`if self.client:` 包住后续块继续执行)是常见
     // 操作,排在早退式之前;两条都是 QuickFix,同码同诊断
@@ -254,12 +254,12 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
     expect(guardEdits[0].newText).toBe('        if not self.client:\n            return\n');
   });
 
-  it('同码双诊断(同行两处调用)去重只出两条(包裹+早退各一);段错配码/无码诊断不出', () => {
+  it('同码双诊断(同行两处调用)去重只出两条(包裹+早退各一);段错配码/无码诊断不出', async () => {
     const document = pyDocument();
     const first = receiverNoneDiagnostic();
     const second = receiverNoneDiagnostic();
     // 同行同码去重:包裹+早退各一条,不会 4 条
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       document, first.range, { diagnostics: [first, second] }, undefined
     );
     expect(actions).toHaveLength(2);
@@ -268,7 +268,7 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
 
     // 段错配是路由问题不是判空问题:不出守卫动作
     const mismatch = receiverNoneDiagnostic(RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE);
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       document, mismatch.range, { diagnostics: [mismatch] }, undefined
     )).toEqual([]);
 
@@ -278,25 +278,25 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
       '别的 Warning',
       DiagnosticSeverity.Warning
     );
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       document, plain.range, { diagnostics: [plain] }, undefined
     )).toEqual([]);
   });
 
-  it('诊断区间与请求区间不相交 → 不出;取消位 → 空', () => {
+  it('诊断区间与请求区间不相交 → 不出;取消位 → 空', async () => {
     const document = pyDocument();
     const diagnostic = receiverNoneDiagnostic();
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       document, new Range(new Position(0, 0), new Position(0, 5)),
       { diagnostics: [diagnostic] }, undefined
     )).toEqual([]);
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       document, diagnostic.range, { diagnostics: [diagnostic] },
       { isCancellationRequested: true } as never
     )).toEqual([]);
   });
 
-  it('诊断行提取不出接收者(诊断与文本错位)→ 不出,不猜', () => {
+  it('诊断行提取不出接收者(诊断与文本错位)→ 不出,不猜', async () => {
     const document = pyDocument();
     const elsewhere = new Diagnostic(
       new Range(new Position(0, 0), new Position(0, 5)),
@@ -305,7 +305,7 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
     );
     elsewhere.code = RECEIVER_NONE_DIAGNOSTIC_CODE;
     // 行 0 是 class 头,无 self.<receiver>. 调用 → 不出
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       document, elsewhere.range, { diagnostics: [elsewhere] }, undefined
     )).toEqual([]);
   });
@@ -332,23 +332,23 @@ describe('IDE-LINT-012 同行两个不同 receiver 归属', () => {
     return d;
   };
 
-  it('cell 诊断只出 cell 守卫(包裹 if self.cell:),不套 base', () => {
+  it('cell 诊断只出 cell 守卫(包裹 if self.cell:),不套 base', async () => {
     const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
     const cellDiag = diagnosticAt(18, 19);
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       mixedDoc(), cellDiag.range, { diagnostics: [cellDiag] }, undefined
-    )!;
+    );
     expect(actions).toHaveLength(2);
     expect(actions[0].title).toContain('if self.cell:');
     expect(actions[1].title).toContain('if not self.cell:');
   });
 
-  it('base 诊断只出 base 守卫(不把第一个 receiver 的修复套给第二个)', () => {
+  it('base 诊断只出 base 守卫(不把第一个 receiver 的修复套给第二个)', async () => {
     const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
     const baseDiag = diagnosticAt(33, 34);
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       mixedDoc(), baseDiag.range, { diagnostics: [baseDiag] }, undefined
-    )!;
+    );
     expect(actions).toHaveLength(2);
     expect(actions[0].title).toContain('if self.base:');
     expect(actions[1].title).toContain('if not self.base:');
@@ -358,24 +358,24 @@ describe('IDE-LINT-012 同行两个不同 receiver 归属', () => {
     expect(wrapEdits[0].newText).not.toContain('if self.cell:');
   });
 
-  it('两条诊断同行(不同 receiver)→ 各出各的守卫,共 4 条动作', () => {
+  it('两条诊断同行(不同 receiver)→ 各出各的守卫,共 4 条动作', async () => {
     const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
     const cellDiag = diagnosticAt(18, 19);
     const baseDiag = diagnosticAt(33, 34);
-    const actions = provider.provideCodeActions(
+    const actions = await provider.provideCodeActions(
       mixedDoc(), new Range(new Position(2, 0), new Position(2, 40)),
       { diagnostics: [cellDiag, baseDiag] }, undefined
-    )!;
+    );
     expect(actions).toHaveLength(4);
     const titles = actions.map(a => a.title);
     expect(titles.filter(t => t.includes('self.cell')).length).toBe(2);
     expect(titles.filter(t => t.includes('self.base')).length).toBe(2);
   });
 
-  it('区间内无 self.<receiver>.<方法>(别名调用/诊断与文本错位)→ 不出,不猜', () => {
+  it('区间内无 self.<receiver>.<方法>(别名调用/诊断与文本错位)→ 不出,不猜', async () => {
     const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
     const aliasDiag = diagnosticAt(40, 41); // 行 2 没有第 41 列方法名
-    expect(provider.provideCodeActions(
+    expect(await provider.provideCodeActions(
       mixedDoc(), aliasDiag.range, { diagnostics: [aliasDiag] }, undefined
     )).toEqual([]);
   });
@@ -393,28 +393,28 @@ describe('诊断项 code 对账面(B-7)', () => {
 describe('quick fix 标题本地化(默认英文,zh-cn 出中文)', () => {
   const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
 
-  it('默认(无 bundle)=英文;注入 zh-cn bundle=中文,复位回英文', () => {
+  it('默认(无 bundle)=英文;注入 zh-cn bundle=中文,复位回英文', async () => {
     const document = pyDocument();
     const diagnostic = receiverNoneDiagnostic();
-    const actions = (): { title: string }[] =>
+    const actions = async (): Promise<{ title: string }[]> =>
       provider.provideCodeActions(
         document, diagnostic.range, { diagnostics: [diagnostic] }, undefined
-      )!;
+      );
 
     // 默认英文面
-    let got = actions();
+    let got = await actions();
     expect(got[0].title).toBe('Wrap with null guard (if self.client:)');
     expect(got[1].title).toBe('Insert None guard (if not self.client: return)');
 
     // zh-cn 面(注入真实 bundle 文件,key 与代码 t() 源串对账)
     setL10nBundle(zhCnBundle);
-    got = actions();
+    got = await actions();
     expect(got[0].title).toBe('包裹判空守卫(if self.client:)');
     expect(got[1].title).toBe('插入 None 守卫(if not self.client: return)');
 
     // 复位,防串扰后续用例
     setL10nBundle(null);
-    got = actions();
+    got = await actions();
     expect(got[0].title).toBe('Wrap with null guard (if self.client:)');
   });
 });

@@ -20,6 +20,8 @@ export type RequestId = number | string;
  * kode2 协议 wire DTO 全集(RUST-055 单一真源)。
  */
 export interface KodeProtocol {
+  code_action_diagnostic: CodeActionDiagnostic;
+  code_action_params: CodeActionParams;
   completion_options: CompletionOptions;
   completion_params: CompletionParams;
   content_change_event: ContentChangeEvent;
@@ -33,6 +35,7 @@ export interface KodeProtocol {
   did_open_params: DidOpenParams;
   document_diagnostic_params: DocumentDiagnosticParams;
   document_summary: DocumentSummary;
+  document_symbol_params: DocumentSymbolParams;
   file_changed_params: FileChangedParams;
   health_report: HealthReport;
   hover_params: HoverParams;
@@ -41,8 +44,12 @@ export interface KodeProtocol {
   initialize_result: InitializeResult;
   notification: Notification;
   position: Position;
+  prepare_rename_params: PrepareRenameParams;
   range: Range;
+  reference_context: ReferenceContext;
+  reference_params: ReferenceParams;
   rename_files_params: RenameFilesParams;
+  rename_params: RenameParams;
   renamed_file: RenamedFile;
   request: Request;
   request_id: RequestId;
@@ -51,11 +58,55 @@ export interface KodeProtocol {
   server_capabilities: ServerCapabilities;
   server_info: ServerInfo;
   server_notification: ServerNotification;
+  signature_help_params: SignatureHelpParams;
   text_document_identifier: TextDocumentIdentifier;
   text_document_item: TextDocumentItem;
   text_document_sync_options: TextDocumentSyncOptions;
   versioned_text_document_identifier: VersionedTextDocumentIdentifier;
   workspace_folder: WorkspaceFolder;
+}
+/**
+ * codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。
+ */
+export interface CodeActionDiagnostic {
+  code: string;
+  range: Range;
+  /**
+   * relatedInformation[0].location.uri.fsPath(parity 族定位面;无则缺省)。
+   */
+  relatedFile?: string | null;
+  /**
+   * relatedInformation[0].message(目标类名;空串时服务端按 def 文件名兜底)。
+   */
+  relatedMessage?: string | null;
+}
+/**
+ * LSP 区间。
+ */
+export interface Range {
+  end: Position;
+  start: Position;
+}
+/**
+ * LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
+ */
+export interface Position {
+  character: number;
+  line: number;
+}
+/**
+ * codeAction 请求参数(RUST-143 批 3):装配族分派 + 族输入(registered 近拼宇宙=TS getKnownTypeContext 装配;snapshotText=parity 族目标 python 快照,TS readSharedFileSnapshot 打开缓冲区优先)+ 诊断面数组。四族 (typeReplacement/parityMethod/receiverNone/fixedDict)各自装配,产出 ActionFace 描述符数组(vscode 对象构造与 l10n 标题归 TS 薄壳)。
+ */
+export interface CodeActionParams {
+  diagnostics?: CodeActionDiagnostic[];
+  family: string;
+  range: Range;
+  registered?: string[];
+  snapshotText?: string | null;
+  textDocument: TextDocumentIdentifier;
+}
+export interface TextDocumentIdentifier {
+  uri: string;
 }
 /**
  * completion 能力声明(triggerCharacters 供客户端决定何时发请求)。
@@ -74,29 +125,12 @@ export interface CompletionParams {
   position: Position;
   textDocument: TextDocumentIdentifier;
 }
-/**
- * LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
- */
-export interface Position {
-  character: number;
-  line: number;
-}
-export interface TextDocumentIdentifier {
-  uri: string;
-}
 export interface ContentChangeEvent {
   /**
    * Full sync(change=1)下恒为 None;增量同步(change=2)带 range, 由 kode-vfs 做精确坐标转换(VFS-004)。
    */
   range?: Range | null;
   text: string;
-}
-/**
- * LSP 区间。
- */
-export interface Range {
-  end: Position;
-  start: Position;
 }
 /**
  * Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。
@@ -165,6 +199,12 @@ export interface DocumentDiagnosticParams {
 export interface DocumentSummary {
   uri: string;
   version: number;
+}
+/**
+ * documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。
+ */
+export interface DocumentSymbolParams {
+  textDocument: TextDocumentIdentifier;
 }
 /**
  * `$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构 (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。
@@ -284,6 +324,10 @@ export interface InitializeResult {
  */
 export interface ServerCapabilities {
   /**
+   * RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。
+   */
+  codeActionProvider?: boolean;
+  /**
    * LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
    */
   completionProvider?: CompletionOptions | null;
@@ -292,9 +336,25 @@ export interface ServerCapabilities {
    */
   definitionProvider?: boolean;
   /**
+   * RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。
+   */
+  documentSymbolProvider?: boolean;
+  /**
    * LSP-003 / PH1-03(PR-010):hover provider 能力声明。
    */
   hoverProvider?: boolean;
+  /**
+   * RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。
+   */
+  referencesProvider?: boolean;
+  /**
+   * RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。
+   */
+  renameProvider?: boolean;
+  /**
+   * RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。
+   */
+  signatureHelpProvider?: boolean;
   textDocumentSync: TextDocumentSyncOptions;
 }
 /**
@@ -315,6 +375,27 @@ export interface ServerInfo {
   version: string;
 }
 /**
+ * prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置—— 可重命名符号解析与候选名区间由服务端从已同步文档复算。
+ */
+export interface PrepareRenameParams {
+  position: Position;
+  textDocument: TextDocumentIdentifier;
+}
+/**
+ * 引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。
+ */
+export interface ReferenceContext {
+  includeDeclaration?: boolean;
+}
+/**
+ * references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。 `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP ReferenceContext 语义一致;客户端可只送文档与位置)。
+ */
+export interface ReferenceParams {
+  context?: ReferenceContext;
+  position: Position;
+  textDocument: TextDocumentIdentifier;
+}
+/**
  * LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。
  */
 export interface RenameFilesParams {
@@ -326,6 +407,14 @@ export interface RenameFilesParams {
 export interface RenamedFile {
   newUri: string;
   oldUri: string;
+}
+/**
+ * rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。 def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。
+ */
+export interface RenameParams {
+  newName: string;
+  position: Position;
+  textDocument: TextDocumentIdentifier;
 }
 /**
  * JSON-RPC 响应。`id: None` 仅用于 id 不可知的解析错误(规范允许 null)。
@@ -351,4 +440,11 @@ export interface ServerNotification {
   jsonrpc: string;
   method: string;
   params?: unknown;
+}
+/**
+ * signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构) → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。
+ */
+export interface SignatureHelpParams {
+  position: Position;
+  textDocument: TextDocumentIdentifier;
 }

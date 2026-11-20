@@ -97,6 +97,7 @@
 > 2026-11-19(RUST-TRACK-FREEZE-007 刀2):languageServices.ts 顶部 import +1(resolveBackendMode)+ startKbEngineIndexing 门控块净 +11(rust 轨道 pythonClassIndex 懒启动)→ 五打点 143/224/297/386/863 → 144/225/298/397/874,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-19(ENGINE-LIB-SCAN-005 刀1):pythonClassIndex.ts 引擎库路径滤除三接线点(onFileChanged 判据 +1、全量发现块 +7、按名懒查块 +5,非均匀)→ CB2 import 绑定循环 :1228→1236、MRO :1559→1572、WAITC :766→767/打点 :772→773,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-20(WARM-VISIBILITY-004 刀 B):pythonClassIndex.ts 统一索引通道接线——顶部 import +2、runScheduledScan 内起扫/进度/完成行 +20(非均匀)→ CB2 import 绑定循环 :1267→1289、MRO :1605→1627、WAITC :774→776(打点仍 :781),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-20(RUST-140 批 3 signatureHelp 接线):hover.ts 顶部 +1 行 import(serveSignatureHelpFromRust)→ provideHover 真位重探 hover.ts:315→316(唯一 hover.ts 锚点,在本批 provider 体改动之前);其后签名帮助装配在 hover.ts 尾段 +30 行,不越锚点(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-20(ENGINE-LIB-SCAN-005 刀2):pythonClassIndex.ts 起扫行剔除计数 +2(1481 之后,非均匀)→ MRO :1627→1629,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-20(ENGINE-LIB-SCAN-005 刀4):pythonClassIndex.ts SCAN_CHUNK_SIZE 常量块扩写 +22(全部锚点之前)+ 块前让路 +7(1130 区,锚点 CB2/MRO 之前)→ CB2 import 绑定循环 :1289→1318、MRO :1629→1658、WAITC :776→798(打点 :781→803),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-20(KODE-SYN-005 领域标记接线):languageServices.ts 顶部 import +1(setupKbengineDomainMarkers)+ 领域标记装配块 +7(在前四打点后、python completion 打点前)→ 五打点 226/299/398/145/936 → 227/300/399/146/944(前四 +1,936 +8,真位重探;M3 节点此前仍挂 003 批之前的 143/863,随本批一并校准)(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
@@ -109,7 +110,7 @@
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
   M1["activate/languageServices.ts:227 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
-  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:315"]
+  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:316"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
   BR{"languageId==python 且<br/>注入 EntityMappingManager?"}

@@ -67,8 +67,28 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     const result = await client.start();
     expect(sortedKeys(result)).toEqual(['capabilities', 'serverInfo']);
     expect(sortedKeys(result.capabilities)).toEqual(
-      ['completionProvider', 'definitionProvider', 'hoverProvider', 'textDocumentSync']
+      [
+        'codeActionProvider',
+        'completionProvider',
+        'definitionProvider',
+        'documentSymbolProvider',
+        'hoverProvider',
+        'referencesProvider',
+        'renameProvider',
+        'signatureHelpProvider',
+        'textDocumentSync'
+      ]
     );
+    // RUST-139 批 3:textDocument/documentSymbol(def 段符号面)能力声明。
+    expect(result.capabilities.documentSymbolProvider).toBe(true);
+    // RUST-138 批 3:textDocument/references(语料声明+引用位面)能力声明。
+    expect(result.capabilities.referencesProvider).toBe(true);
+    // RUST-141 批 2:textDocument/rename+prepareRename(def 重命名面)能力声明。
+    expect(result.capabilities.renameProvider).toBe(true);
+    // RUST-143 批 3:textDocument/codeAction(四族装配面)能力声明。
+    expect(result.capabilities.codeActionProvider).toBe(true);
+    // RUST-140 批 3:textDocument/signatureHelp(def 方法签名面)能力声明。
+    expect(result.capabilities.signatureHelpProvider).toBe(true);
     expect(result.capabilities.textDocumentSync).toEqual({ openClose: true, change: 1 });
     // completion triggerCharacters 面随契约钉死(def 标签补全 '<' 触发);
     // RUST-135:resolveProvider 延迟补详情面(complationItem/resolve)同契约。

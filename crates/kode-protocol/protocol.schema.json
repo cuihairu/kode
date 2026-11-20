@@ -1,6 +1,79 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "CodeActionDiagnostic": {
+      "description": "codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/definitions/Range"
+        },
+        "relatedFile": {
+          "default": null,
+          "description": "relatedInformation[0].location.uri.fsPath(parity 族定位面;无则缺省)。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relatedMessage": {
+          "default": null,
+          "description": "relatedInformation[0].message(目标类名;空串时服务端按 def 文件名兜底)。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "range"
+      ],
+      "type": "object"
+    },
+    "CodeActionParams": {
+      "description": "codeAction 请求参数(RUST-143 批 3):装配族分派 + 族输入(registered 近拼宇宙=TS getKnownTypeContext 装配;snapshotText=parity 族目标 python 快照,TS readSharedFileSnapshot 打开缓冲区优先)+ 诊断面数组。四族 (typeReplacement/parityMethod/receiverNone/fixedDict)各自装配,产出 ActionFace 描述符数组(vscode 对象构造与 l10n 标题归 TS 薄壳)。",
+      "properties": {
+        "diagnostics": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/CodeActionDiagnostic"
+          },
+          "type": "array"
+        },
+        "family": {
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/definitions/Range"
+        },
+        "registered": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "snapshotText": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "family",
+        "range",
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "CompletionOptions": {
       "description": "completion 能力声明(triggerCharacters 供客户端决定何时发请求)。",
       "properties": {
@@ -219,6 +292,18 @@
       "required": [
         "uri",
         "version"
+      ],
+      "type": "object"
+    },
+    "DocumentSymbolParams": {
+      "description": "documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。",
+      "properties": {
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "textDocument"
       ],
       "type": "object"
     },
@@ -456,6 +541,22 @@
       ],
       "type": "object"
     },
+    "PrepareRenameParams": {
+      "description": "prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置—— 可重命名符号解析与候选名区间由服务端从已同步文档复算。",
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "Range": {
       "description": "LSP 区间。",
       "properties": {
@@ -472,6 +573,42 @@
       ],
       "type": "object"
     },
+    "ReferenceContext": {
+      "description": "引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。",
+      "properties": {
+        "includeDeclaration": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ReferenceParams": {
+      "description": "references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。 `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP ReferenceContext 语义一致;客户端可只送文档与位置)。",
+      "properties": {
+        "context": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ReferenceContext"
+            }
+          ],
+          "default": {
+            "includeDeclaration": false
+          }
+        },
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "RenameFilesParams": {
       "description": "LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。",
       "properties": {
@@ -484,6 +621,26 @@
       },
       "required": [
         "files"
+      ],
+      "type": "object"
+    },
+    "RenameParams": {
+      "description": "rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。 def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。",
+      "properties": {
+        "newName": {
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "newName",
+        "position",
+        "textDocument"
       ],
       "type": "object"
     },
@@ -592,6 +749,11 @@
     "ServerCapabilities": {
       "description": "服务器 capabilities(最小集:full 文本同步 + hover + completion)。",
       "properties": {
+        "codeActionProvider": {
+          "default": false,
+          "description": "RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。",
+          "type": "boolean"
+        },
         "completionProvider": {
           "anyOf": [
             {
@@ -608,9 +770,29 @@
           "description": "Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。",
           "type": "boolean"
         },
+        "documentSymbolProvider": {
+          "default": false,
+          "description": "RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。",
+          "type": "boolean"
+        },
         "hoverProvider": {
           "default": false,
           "description": "LSP-003 / PH1-03(PR-010):hover provider 能力声明。",
+          "type": "boolean"
+        },
+        "referencesProvider": {
+          "default": false,
+          "description": "RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。",
+          "type": "boolean"
+        },
+        "renameProvider": {
+          "default": false,
+          "description": "RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。",
+          "type": "boolean"
+        },
+        "signatureHelpProvider": {
+          "default": false,
+          "description": "RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。",
           "type": "boolean"
         },
         "textDocumentSync": {
@@ -652,6 +834,22 @@
       "required": [
         "jsonrpc",
         "method"
+      ],
+      "type": "object"
+    },
+    "SignatureHelpParams": {
+      "description": "signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构) → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。",
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
       ],
       "type": "object"
     },
@@ -747,6 +945,12 @@
   },
   "description": "kode2 协议 wire DTO 全集(RUST-055 单一真源)。",
   "properties": {
+    "code_action_diagnostic": {
+      "$ref": "#/definitions/CodeActionDiagnostic"
+    },
+    "code_action_params": {
+      "$ref": "#/definitions/CodeActionParams"
+    },
     "completion_options": {
       "$ref": "#/definitions/CompletionOptions"
     },
@@ -786,6 +990,9 @@
     "document_summary": {
       "$ref": "#/definitions/DocumentSummary"
     },
+    "document_symbol_params": {
+      "$ref": "#/definitions/DocumentSymbolParams"
+    },
     "file_changed_params": {
       "$ref": "#/definitions/FileChangedParams"
     },
@@ -810,11 +1017,23 @@
     "position": {
       "$ref": "#/definitions/Position"
     },
+    "prepare_rename_params": {
+      "$ref": "#/definitions/PrepareRenameParams"
+    },
     "range": {
       "$ref": "#/definitions/Range"
     },
+    "reference_context": {
+      "$ref": "#/definitions/ReferenceContext"
+    },
+    "reference_params": {
+      "$ref": "#/definitions/ReferenceParams"
+    },
     "rename_files_params": {
       "$ref": "#/definitions/RenameFilesParams"
+    },
+    "rename_params": {
+      "$ref": "#/definitions/RenameParams"
     },
     "renamed_file": {
       "$ref": "#/definitions/RenamedFile"
@@ -840,6 +1059,9 @@
     "server_notification": {
       "$ref": "#/definitions/ServerNotification"
     },
+    "signature_help_params": {
+      "$ref": "#/definitions/SignatureHelpParams"
+    },
     "text_document_identifier": {
       "$ref": "#/definitions/TextDocumentIdentifier"
     },
@@ -857,6 +1079,8 @@
     }
   },
   "required": [
+    "code_action_diagnostic",
+    "code_action_params",
     "completion_options",
     "completion_params",
     "content_change_event",
@@ -870,6 +1094,7 @@
     "did_open_params",
     "document_diagnostic_params",
     "document_summary",
+    "document_symbol_params",
     "file_changed_params",
     "health_report",
     "hover_params",
@@ -878,8 +1103,12 @@
     "initialize_result",
     "notification",
     "position",
+    "prepare_rename_params",
     "range",
+    "reference_context",
+    "reference_params",
     "rename_files_params",
+    "rename_params",
     "renamed_file",
     "request",
     "request_id",
@@ -888,6 +1117,7 @@
     "server_capabilities",
     "server_info",
     "server_notification",
+    "signature_help_params",
     "text_document_identifier",
     "text_document_item",
     "text_document_sync_options",
