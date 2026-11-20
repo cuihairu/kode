@@ -2110,6 +2110,11 @@
               "mutationExclude": []
             },
             "markdownDescription": "%kbengine.config.configData.description%"
+          },
+          "kbengine.configData.schemas": {
+            "type": "object",
+            "default": {},
+            "markdownDescription": "%kbengine.config.configData.schemas.description%"
           }
         }
       },

@@ -195,6 +195,7 @@ The four CodeLens switches take effect on change, no window reload needed; inlay
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | Entity definitions directory (entity explorer list, `entities.xml` navigation, generator `.def` output) |
 | `kbengine.configData` | object | `enabled: true`, 3 default config-dir globs, `*Config`/`*Data` patterns, `reload*`/`hotUpdate*` exemptions, empty `mutationExclude` | Config data protection: accidental-write diagnostics (`kbengine.configDataMutation`) on config bindings plus direct-read schema hover; see [Config Data Protection](#config-data-protection) below |
+| `kbengine.configData.schemas` | object | `{}` (no declarations) | Declarative types for `config.getXXX()` / `config[key]` config-manager objects: manager object expression → table-key set; the generated stub reads this declaration instead of inference; see [Config Data Protection](#config-data-protection) below |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` path (dependency graph reads and entity registration) |
 | `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | Engine binaries directory; also derives the engine root (`KBE_ROOT`) and the engine default config path. Unset (CFG-01): the default takes effect when present on disk, otherwise the auto-discovery scan runs, and only a full miss warns through the launch check chain |
 | `kbengine.assetsRoot` | string | `""` | Assets root (containing `res/`, `scripts/` below); empty = auto-discover |
@@ -801,6 +802,27 @@ Pointing kode at your own layout: when your tables live outside the default dire
 When the feature is on but the schema comes back empty, hovering a config-class-shaped name shows a notice listing the current `configDirGlobs`/`configClassPatterns`, so a directory or pattern miss is visible instead of silent.
 
 Honest boundaries: the scan is line-level (a write statement split across lines is not recognized); consumption sites are matched by binding name without module-path resolution; a module-level rebinding of the same name in the consuming file shadows the config binding from that point on.
+
+### Declarative Types for `config.getXXX()` Managers
+
+A project that reads config through a manager object (`config.getXXX()`, `config[key]`) has nothing for static inference to hold on to: the manager looks like a `dict`, so no member type can be inferred and no completion can be offered. Declare the key set instead of inferring it — `kbengine.configData.schemas` maps a manager object expression to its table keys, and the declaration becomes the single source of the stub's key set and type text:
+
+```json
+{
+  "kbengine.configData.schemas": {
+    "config": {
+      "keys": { "hp": "int", "name": "str", "skills": "list[str]" },
+      "source": "configs/skills.xlsx"
+    }
+  }
+}
+```
+
+Every key must be a Python identifier and every value a plain annotation text (`int`, `str`, `list[str]`, …) — no quotes, newlines or backslashes. `source` is optional provenance metadata (an Excel table path or a config class name) and is never parsed as a declaration. Malformed entries are skipped one by one, never fatal: one bad declaration cannot blank the whole stub.
+
+Generated stub shape: each declared manager becomes a table class with one `@overload` per key on `get`/`__getitem__` (key literal + declared type), an object fallback overload, direct attribute annotations and a `@dataclass`-style class, plus a module-level binding for the manager name — so `config.get("hp")`, `config["hp"]` and `config.hp` all carry the declared type under Pylance/pyright.
+
+Shipment boundary: the setting collects declarations and the stub generator is contract-tested; what is gated is the write face — landing the generated stub into the Pylance stub path happens only after the Pylance crash triage (PYLANCE-CRASH-001) clears the suspicion that kode writes trigger it. Declarations written now are already valid input for that face.
 
 ## FAQ
 

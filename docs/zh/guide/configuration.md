@@ -195,6 +195,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录(实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出) |
 | `kbengine.configData` | object | `enabled: true`,3 个默认配置目录 glob、`*Config`/`*Data` 类名、`reload*`/`hotUpdate*` 热更入口、空 `mutationExclude` | 配置数据保护:配置绑定意外写诊断(`kbengine.configDataMutation`)+ 直读 schema 悬停;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
+| `kbengine.configData.schemas` | object | `{}`(未声明) | 配置管理器对象(`config.getXXX()` / `config[key]`)的声明式类型:管理器对象表达式 → 表键集合;生成存根读该声明而非推断;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
 | `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径。未显式配置时(CFG-01):默认值在盘即生效,不在盘回落自动发现扫描,扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
@@ -794,6 +795,27 @@ Excel 生成的配置表/配置类(dict 绑定与 `*Config`/`*Data` 类)是只�
 功能开着但 schema 扫出来是空时,悬停一个形似配置类的名字会出一发引导 notice,列出当前生效的 `configDirGlobs`/`configClassPatterns`——目录或模式没中是可见的,不再静默。
 
 诚实边界:行级扫描(跨行拆写的写语句不识别);消费面按绑定名匹配,不做模块路径解析;消费文件里模块级同名重绑定会遮蔽配置绑定,该点之后不再报。
+
+### 配置管理器对象的声明式类型
+
+用管理器对象取配置(`config.getXXX()`、`config[key]`)的工程,静态推断没有抓手:管理器看起来就是 `dict`,成员类型推不出来,也出不了补全。与其推断,不如声明键集合——`kbengine.configData.schemas` 把「管理器对象表达式 → 表键集合」写进声明,声明即存根键集合与类型文本的单一真源:
+
+```json
+{
+  "kbengine.configData.schemas": {
+    "config": {
+      "keys": { "hp": "int", "name": "str", "skills": "list[str]" },
+      "source": "configs/skills.xlsx"
+    }
+  }
+}
+```
+
+每个键须是 Python 标识符,每个值须是纯注解文本(`int`、`str`、`list[str]`、……)——不带引号、换行、反斜杠。`source` 是可选项来源信息(Excel 表路径或配置类名),从不被当作声明解析。畸形条目逐条跳过,不致命:一条坏声明不会让整份存根空白。
+
+生成存根的形状:每个声明的管理器出一个表类——`get`/`__getitem__` 每键一个 `@overload`(键字面量 + 声明类型)、object 兜底 overload、直读属性注解与 `@dataclass` 式属性类,外加管理器名的模块级绑定——于是 `config.get("hp")`、`config["hp"]`、`config.hp` 在 Pylance/pyright 下都带声明类型。
+
+交付边界:设置已收声明、存根生成器已按契约测试;受门禁的是写盘面——把生成存根落到 Pylance 存根路径,要等 Pylance 崩溃定性批(PYLANCE-CRASH-001)排除「kode 写盘触发崩溃」嫌疑之后。现在写下的声明已经是该面的合法输入。
 
 ## 常见问题
 
