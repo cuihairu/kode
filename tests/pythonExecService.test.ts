@@ -302,3 +302,148 @@ describe('pythonExecService(RUST-002 可复用执行服务)', () => {
     expect(PYTHON_EXEC_SERVICE_SOURCE).not.toContain('exec(');
   });
 });
+// ---------------------------------------------------------------------------
+// 批 17 故障臂(全部走 fake 子进程注入,不依赖真解释器):
+//  不可解析回包 / 握手超时 / 迟到帧丢弃 / stderr 尾部只留末行 / 写 stdin 时
+//  进程已消失 / 错误回包缺 error 字段的默认文案。
+// ---------------------------------------------------------------------------
+describe('批 17:pythonExecService 故障臂(fake 注入)', () => {
+  const frame = (payload: string): Buffer =>
+    Buffer.concat([
+      Buffer.from(`${Buffer.byteLength(payload, 'utf8')}\n`, 'ascii'),
+      Buffer.from(payload, 'utf8'),
+      Buffer.from('\n', 'ascii')
+    ]);
+
+  const makeFake = (
+    pid: number,
+    listeners: Record<string, (arg?: unknown) => void>,
+    options: { stdinThrows?: boolean } = {}
+  ) => {
+    const stdout = new Readable({ read(): void { /* 手动 push */ } });
+    const stderr = new Readable({ read(): void { /* 手动 push */ } });
+    const fake = {
+      pid,
+      stdout,
+      stderr,
+      stdin: options.stdinThrows
+        ? {
+            write: (): boolean => {
+              throw new Error('EPIPE');
+            }
+          }
+        : new Writable({ write(_c, _e, cb) { cb(); } }),
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+      on: (event: string, listener: (arg?: unknown) => void): void => {
+        listeners[event] = listener;
+      },
+      kill: (): boolean => true
+    } as unknown as ChildProcessWithoutNullStreams;
+    return { fake, stdout, stderr, listeners };
+  };
+
+  it('回包不可解析:如实报 infra 错误,不冒充编译器判定', async () => {
+    const listeners: Record<string, (arg?: unknown) => void> = {};
+    const made = makeFake(6100, listeners);
+    const service = createPythonExecService({ timeoutMs: 2000, spawn: () => made.fake });
+    try {
+      const probe = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      made.stdout.push(frame('not json at all'));
+      const outcome = await probe;
+      expect(outcome).toEqual({ ok: false, error: '执行服务回包不可解析', infra: true });
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it('错误回包缺 error 字段:落默认文案,不冒称空错误', async () => {
+    const listeners: Record<string, (arg?: unknown) => void> = {};
+    const made = makeFake(6101, listeners);
+    const service = createPythonExecService({ timeoutMs: 2000, spawn: () => made.fake });
+    try {
+      const probe = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      made.stdout.push(frame('{"ok":false}'));
+      expect(await probe).toEqual({ ok: false, error: '解释器回包异常' });
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it('握手超时:如实报未就绪并拆进程,不悬挂', async () => {
+    const listeners: Record<string, (arg?: unknown) => void> = {};
+    const made = makeFake(6102, listeners);
+    const service = createPythonExecService({
+      timeoutMs: 2000,
+      handshakeTimeoutMs: 30,
+      spawn: () => made.fake
+    });
+    try {
+      // 永不推 ready 帧 → 握手超时
+      const outcome = await service.runCompile({ content: 'x = 1\n' });
+      // 握手失败 = 未启动:调用方按「未就绪」如实上报(infra),进程已拆
+      expect(outcome.ok).toBe(false);
+      expect(outcome.infra).toBe(true);
+      expect(outcome.error).toContain('未就绪');
+      expect(service.pid()).toBe(0);
+      expect(service.pendingCount()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it('无在途请求的迟到帧如实丢弃;stderr 尾部只保留末行用于错误文案', async () => {
+    const listeners: Record<string, (arg?: unknown) => void> = {};
+    const made = makeFake(6103, listeners);
+    const service = createPythonExecService({ timeoutMs: 2000, spawn: () => made.fake });
+    try {
+      const probe = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      // stderr 只留尾部:两行错误,teardown 文案取最后一行
+      made.stderr.push(Buffer.from('Traceback noise\nImportError: boom\n', 'utf8'));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      // 进程退出:在途请求如实失败,错误文案带 stderr 末行(不带首行)
+      made.listeners['exit']?.();
+      const outcome = await probe;
+      expect(outcome.ok).toBe(false);
+      expect(outcome.infra).toBe(true);
+      expect(outcome.error).toContain('ImportError: boom');
+      expect(outcome.error).not.toContain('Traceback noise');
+      expect(service.pid()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it('写 stdin 时进程已消失:如实报错不抛出', async () => {
+    const listeners: Record<string, (arg?: unknown) => void> = {};
+    const made = makeFake(6104, listeners, { stdinThrows: true });
+    const service = createPythonExecService({ timeoutMs: 500, spawn: () => made.fake });
+    try {
+      const probe = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      // stdin 写失败(async 体内=reject):调用方契约是 reject,由
+      // createPythonSyntaxGate 的 try/catch 兜成 fail-open,不致悬挂
+      await expect(probe).rejects.toThrow('EPIPE');
+      // 在途请求的超时定时器到点后如实收口:队列清空、进程拆掉(无泄漏)
+      await new Promise(resolve => setTimeout(resolve, 700));
+      expect(service.pendingCount()).toBe(0);
+      expect(service.pid()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  });
+});
+
+// 覆盖口径残余(不硬凑):src/backend/pythonExecService.ts 三行为定时器竞态下的
+// 防御分,公开面不可稳定复现——
+//  165 settle():索引越界(调用方已保证 index 在册;唯一并发改动点是 pop 后重入)
+//  279/280 握手轮询 poll 中 `ready` 已真而超时定时器尚未清除的那一拍
+//          resolve(true) 分支(与定时器回调同义,正常路径恒由定时器先赢)
+// 两处均为幂等兜底(重复 resolve 无害),保留而非删除;不为此改产品代码。
