@@ -10,6 +10,13 @@
  * 崩溃的嫌疑之前,不往 stubPath 写新东西)——接线随该批放行后单开。
  */
 
+/**
+ * dataclass 臂类名前缀:每管理器另产一个纯注解 `@dataclass` 属性式类
+ * (任务书「另产 dataclass 属性式类」),给用户一个可引用的行/记录类型;
+ * 管理器绑定仍指表类(dict 用法面),dataclass 是附加命名类型不抢绑定。
+ */
+const DATACLASS_PREFIX = '_KodeConfigData_';
+
 export interface ConfigGetChainKey {
   key: string;
   /** Python 注解文本(声明原样,如 `int`/`list[str]`) */
@@ -74,7 +81,8 @@ export function parseConfigGetChainDeclarations(raw: unknown): ConfigGetChainDec
  * 生成 stub 文本(`config_gen.pyi` 形态):每管理器一个表类,
  * `get(key: Literal[...])` 逐键 @overload + `object` 兜底、
  * `__getitem__` 同套重载、直属属性注解(dict/属性/get 三用),
- * 尾部以管理器名出模块级绑定。
+ * 另产纯注解 `@dataclass` 属性式类(声明 keys → 字段,可引用的记录类型),
+ * 尾部以管理器名出模块级绑定(指表类)。
  */
 export function generateConfigGetChainStubPyi(declarations: readonly ConfigGetChainDeclaration[]): string {
   const header = [
@@ -103,11 +111,23 @@ export function generateConfigGetChainStubPyi(declarations: readonly ConfigGetCh
     body.push('');
     body.push(`${decl.manager}: ${cls}`);
     body.push('');
+    // dataclass 臂:纯注解属性类(stub 内 @dataclass = pyright dataclass transform,
+    // 字段即声明 keys;管理器绑定不指它,属性面由表类直属注解承担)
+    body.push(`@dataclass`);
+    body.push(`class ${DATACLASS_PREFIX}${decl.manager}:`);
+    for (const { key, type } of decl.keys) {
+      body.push(`    ${key}: ${type}`);
+    }
+    body.push('');
+  }
+  const imports = ['from typing import Literal, overload'];
+  if (declarations.length > 0) {
+    imports.push('from dataclasses import dataclass');
   }
   return [
     ...header,
     '',
-    'from typing import Literal, overload',
+    ...imports,
     '',
     body.join('\n').trimEnd() + '\n'
   ].join('\n');

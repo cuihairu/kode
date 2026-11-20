@@ -2,7 +2,8 @@
 //   - 声明解析:合法多管理器/坏形状逐条跳过不抛(键名非标识符、类型含
 //     引号换行、keys 空、容器非对象)
 //   - stub 生成:逐键 get/__getitem__ @overload(Literal 集合完整性)、
-//     object 兜底、直属属性注解、管理器绑定、source 头注释
+//     object 兜底、直属属性注解、另产 @dataclass 属性式类、管理器绑定、
+//     source 头注释;空声明不引 dataclasses
 //   - 落盘/接线面被 PYLANCE-CRASH-001 门禁挡,本批只有纯函数(零 IO)
 // 期望文本与生成器逐字对账(直读非手抄快照)。
 import { describe, expect, it } from 'vitest';
@@ -78,12 +79,20 @@ describe('generateConfigGetChainStubPyi(stub 文本生成)', () => {
     expect(pyi).toContain('    skills: list[str]');
     expect(pyi).toContain('config: _KodeConfigTable_config');
     expect(pyi).toContain('reward: _KodeConfigTable_reward');
+    // dataclass 臂:每管理器另产纯注解属性类(键序=声明序);绑定仍指表类
+    expect(pyi).toContain('from dataclasses import dataclass');
+    expect(pyi).toContain(
+      '@dataclass\nclass _KodeConfigData_config:\n    hp: int\n    name: str\n    skills: list[str]'
+    );
+    expect(pyi).toContain('@dataclass\nclass _KodeConfigData_reward:\n    gold: int');
+    expect(pyi).not.toContain('config: _KodeConfigData_config');
   });
 
-  it('空声明 → 仅头与 import(零类零绑定)', () => {
+  it('空声明 → 仅头与 import(零类零绑定,不引 dataclasses)', () => {
     const empty = generateConfigGetChainStubPyi([]);
     expect(empty).toContain('from typing import Literal, overload');
     expect(empty).not.toContain('class ');
+    expect(empty).not.toContain('dataclass');
     expect(empty).not.toMatch(/^config:/m);
   });
 
