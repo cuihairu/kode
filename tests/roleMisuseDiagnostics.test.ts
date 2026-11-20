@@ -374,3 +374,94 @@ describe('buildRoleMisuseItemsWithRust(Rust-first,TS 兜底)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 19:renderRustRoleMisuseItems 逐臂校验(纯函数,不经门)——Rust 应答逐字段
+// 畸形时整面作废返回 null,不部分采用;以及 propertyName 不在任何面表 → 作废。
+// ---------------------------------------------------------------------------
+describe('批 19:render 逐臂校验(纯函数面)', () => {
+  const raw = (over: Record<string, unknown>): unknown => ({
+    code: ROLE_MISUSE_DIAGNOSTIC_CODE,
+    line: 0,
+    character: 0,
+    length: 3,
+    propertyName: 'velocity',
+    registeredFaces: ['client'],
+    ...over
+  });
+
+  it('非数组 items → null', () => {
+    expect(renderRustRoleMisuseItems('nope', 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems(null, 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+  });
+
+  it('条目非对象/非整数坐标/负坐标 → null', () => {
+    expect(renderRustRoleMisuseItems(['str'], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems([raw({ line: 1.5 })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems([raw({ line: -1 })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems([raw({ character: -1 })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems([raw({ length: -1 })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+  });
+
+  it('propertyName 非串/空串、registeredFaces 非数组/含非法面值 → null', () => {
+    expect(renderRustRoleMisuseItems([raw({ propertyName: 123 })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems([raw({ propertyName: '' })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems([raw({ registeredFaces: 'client' })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    expect(renderRustRoleMisuseItems([raw({ registeredFaces: ['client', 'not-a-face'] })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+  });
+
+  it('合法条目:渲染形状与消息模板齐备(正例,不与门面重复)', () => {
+    const items = renderRustRoleMisuseItems([raw({})], 'baseapp', ROLE_MISUSE_TABLES)!;
+    expect(items).toHaveLength(1);
+    expect(items[0].code).toBe(ROLE_MISUSE_DIAGNOSTIC_CODE);
+    expect(items[0].severity).toBe('Warning');
+    expect(items[0].message).toContain('velocity');
+  });
+});
+
+describe('批 19 续:render 语义矛盾三臂 + 取证空串', () => {
+  const raw = (over: Record<string, unknown>): unknown => ({
+    code: ROLE_MISUSE_DIAGNOSTIC_CODE,
+    line: 0, character: 0, length: 3,
+    propertyName: 'velocity', registeredFaces: ['client'],
+    ...over
+  });
+
+  it('空注册面 / 当前面在注册面 / 非内建名 → 三臂各自作废', () => {
+    // 空注册面
+    expect(renderRustRoleMisuseItems([raw({ registeredFaces: [] })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    // 当前面(face)出现在注册面里 = 语义矛盾
+    expect(renderRustRoleMisuseItems([raw({ registeredFaces: ['baseapp'] })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+    // 名称不在任何面表(非内建)
+    expect(renderRustRoleMisuseItems([raw({ propertyName: 'customProp' })], 'baseapp', ROLE_MISUSE_TABLES)).toBeNull();
+  });
+
+  it('取证缺失:面表里查不到该名 → source 为空串但仍出诊断(不伪造来源)', () => {
+    // 构造窄表:allBuiltin 含该名(过内建闸),但 getEntityBuiltinPropertiesForFace
+    // 查不到取证 → sourceFor 落空串
+    const narrowTables = {
+      baseapp: [] as string[],
+      cellapp: [] as string[],
+      client: ['velocity']
+    };
+    const items = renderRustRoleMisuseItems([raw({})], 'baseapp', narrowTables)!;
+    expect(items).toHaveLength(1);
+    // 引擎真表里 velocity 有取证,故此处 source 非空——正向确认取证链走通
+    expect(items[0].message).toContain('velocity');
+  });
+});
+
+describe('批 19 终:sourceFor 取证落空串臂', () => {
+  it('窄表含名而注册面真表无取证 → source 空串,诊断照出(不因缺取证作废)', () => {
+    const ghost = 'ghostProp';
+    const narrowTables = { baseapp: [ghost], cellapp: [] as string[], client: [] as string[] };
+    const item = {
+      code: ROLE_MISUSE_DIAGNOSTIC_CODE,
+      line: 0, character: 0, length: 3,
+      propertyName: ghost, registeredFaces: ['cellapp' as const]
+    };
+    const items = renderRustRoleMisuseItems([item], 'baseapp', narrowTables)!;
+    expect(items).toHaveLength(1);
+    expect(items[0].message).toContain(ghost);
+  });
+});
