@@ -54,6 +54,7 @@ struct ProtocolSchemaRoot {
     completion_options: CompletionOptions,
     definition_params: DefinitionParams,
     document_diagnostic_params: DocumentDiagnosticParams,
+    document_symbol_params: DocumentSymbolParams,
     health_report: HealthReport,
     core_resources: CoreResources,
     document_summary: DocumentSummary,

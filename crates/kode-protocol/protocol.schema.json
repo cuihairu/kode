@@ -222,6 +222,18 @@
       ],
       "type": "object"
     },
+    "DocumentSymbolParams": {
+      "description": "documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。",
+      "properties": {
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "FileChangedParams": {
       "description": "`$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构 (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。",
       "properties": {
@@ -608,6 +620,11 @@
           "description": "Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。",
           "type": "boolean"
         },
+        "documentSymbolProvider": {
+          "default": false,
+          "description": "RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。",
+          "type": "boolean"
+        },
         "hoverProvider": {
           "default": false,
           "description": "LSP-003 / PH1-03(PR-010):hover provider 能力声明。",
@@ -786,6 +803,9 @@
     "document_summary": {
       "$ref": "#/definitions/DocumentSummary"
     },
+    "document_symbol_params": {
+      "$ref": "#/definitions/DocumentSymbolParams"
+    },
     "file_changed_params": {
       "$ref": "#/definitions/FileChangedParams"
     },
@@ -870,6 +890,7 @@
     "did_open_params",
     "document_diagnostic_params",
     "document_summary",
+    "document_symbol_params",
     "file_changed_params",
     "health_report",
     "hover_params",

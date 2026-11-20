@@ -70,6 +70,32 @@ export interface LspDiagnosticReportFace {
   items: { range: RangeLike; severity: number; message: string }[];
 }
 
+/** LSP 位置面(kode-server LspPosition 同形;行 0 基、列 UTF-16 code unit) */
+export interface LspPositionFace {
+  line: number;
+  character: number;
+}
+
+/** LSP 区间面(kode-server LspRange 同形) */
+export interface LspRangeFace {
+  start: LspPositionFace;
+  end: LspPositionFace;
+}
+
+/**
+ * 文档符号面(kode-server document_symbols::DocumentSymbolFace 同形)。
+ * kind 是符号种类字符串面(与 TS vscode.SymbolKind 枚举名同形;协议数值
+ * 映射归 provider 投影细节)。
+ */
+export interface LspDocumentSymbolFace {
+  name: string;
+  detail: string;
+  kind: 'Struct' | 'Class' | 'Field' | 'Method';
+  range: LspRangeFace;
+  selectionRange: LspRangeFace;
+  children: LspDocumentSymbolFace[];
+}
+
 /** kode-server textDocument/completion 应答面(to_lsp_items 投影) */
 export interface LspCompletionReportFace {
   isIncomplete: boolean;
@@ -470,6 +496,83 @@ export async function serveDiagnosticsFromRust(
     }
   }
   return face as LspDiagnosticReportFace;
+}
+
+const isLspPositionFace = (value: unknown): value is LspPositionFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return typeof face.line === 'number' && typeof face.character === 'number';
+};
+
+const isLspRangeFace = (value: unknown): value is LspRangeFace =>
+  !!value &&
+  typeof value === 'object' &&
+  isLspPositionFace((value as Record<string, unknown>).start) &&
+  isLspPositionFace((value as Record<string, unknown>).end);
+
+/** 递归校验符号面:任意一层畸形 → 整面作废(不做部分采用) */
+const isLspDocumentSymbolFace = (value: unknown): value is LspDocumentSymbolFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  if (typeof face.name !== 'string' || typeof face.detail !== 'string') {
+    return false;
+  }
+  if (
+    face.kind !== 'Struct' &&
+    face.kind !== 'Class' &&
+    face.kind !== 'Field' &&
+    face.kind !== 'Method'
+  ) {
+    return false;
+  }
+  if (!isLspRangeFace(face.range) || !isLspRangeFace(face.selectionRange)) {
+    return false;
+  }
+  return Array.isArray(face.children) && face.children.every(isLspDocumentSymbolFace);
+};
+
+/**
+ * 文档符号面 rust 服务(RUST-139 批 3 接线;2026-11-08 用户令「直接切到
+ * rust」):服务轨道下先镜像 .def 文档(未保存修订以编辑器内容为准),再请求
+ * kode-server textDocument/documentSymbol。Rust 段符号面 = Properties/三方法
+ * 段的容器符号+直接成员符号(核 document_symbols.rs,与 TS IDE-NAV-005 逐点
+ * 同构);解析无根/文档未打开/任何失败/应答畸形 → null,调用方回 TS 既有
+ * 实现(不部分采用)。
+ * 诚实边界:Rust 面不含进程段面包屑合成根(跨文件对端跳是 TS 投影层职责),
+ * provider 侧保留面包屑装配。
+ */
+export async function serveDocumentSymbolsFromRust(
+  document: DocumentLike,
+  isCancelled?: () => boolean
+): Promise<LspDocumentSymbolFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isDefDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>(
+        'textDocument/documentSymbol',
+        { textDocument: { uri } },
+        null,
+        opts
+      );
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (!Array.isArray(result) || !result.every(isLspDocumentSymbolFace)) {
+    return null;
+  }
+  return result;
 }
 
 /**

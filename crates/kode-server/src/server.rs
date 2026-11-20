@@ -19,9 +19,9 @@ use std::time::{Duration, Instant};
 use kode_protocol::{
     error_codes, CompletionParams, ContentChangeEvent, CoreResources, DefinitionParams,
     DeleteFilesParams, DeletedFile, DidChangeParams, DidCloseParams, DidOpenParams,
-    DocumentDiagnosticParams, DocumentSummary, HealthReport, HoverParams, IncomingMessage,
-    InitializeParams, InitializeResult, Notification, RenameFilesParams, RenamedFile, Request,
-    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    DocumentDiagnosticParams, DocumentSummary, DocumentSymbolParams, HealthReport, HoverParams,
+    IncomingMessage, InitializeParams, InitializeResult, Notification, RenameFilesParams,
+    RenamedFile, Request, RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
@@ -415,6 +415,10 @@ fn handle_request_inner(
         }
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
         "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
+        // RUST-139 批 3:def 段符号面(Properties/三方法段容器 + 段内直接声明)。
+        "textDocument/documentSymbol" => {
+            vec![Outgoing::Response(handle_document_symbol(state, request))]
+        }
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
         // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
         "$/kode/workspace/rootAdded" => {
@@ -530,6 +534,8 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             hover_provider: true,
             // Phase2 首片:textDocument/definition(语料声明落点面)。
             definition_provider: true,
+            // RUST-139 批 3:textDocument/documentSymbol(def 段符号面)。
+            document_symbol_provider: true,
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
@@ -834,6 +840,43 @@ fn handle_definition(state: &mut ServerState, request: Request) -> Response {
         Some(location) => Response::success(
             request.id,
             serde_json::to_value(location).expect("serialize location"),
+        ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
+/// textDocument/documentSymbol(RUST-139 批 3):def 段符号面——Properties/
+/// 三方法段作容器符号、段内直接声明作子符号(核在
+/// [`crate::document_symbols::document_symbols`],与 TS IDE-NAV-005 逐点同构)。
+/// 文档须已打开;未打开/解析无根一律回 null 结果(LSP 允许),不报错不阻塞。
+/// 诚实边界:本面只出段符号树;进程段面包屑合成根(跨文件对端跳)是 TS
+/// provider 投影层职责,不在本面(Rust 恒不含合成根)。
+fn handle_document_symbol(state: &mut ServerState, request: Request) -> Response {
+    let params: DocumentSymbolParams =
+        match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+            Some(params) => params,
+            None => {
+                return Response::error(
+                    Some(request.id),
+                    error_codes::INVALID_PARAMS,
+                    "invalid textDocument/documentSymbol params",
+                )
+            }
+        };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.session.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    match crate::document_symbols::document_symbols(&text) {
+        Some(symbols) => Response::success(
+            request.id,
+            serde_json::to_value(symbols).expect("serialize document symbols"),
         ),
         None => Response::success(request.id, serde_json::Value::Null),
     }

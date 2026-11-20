@@ -196,6 +196,9 @@ pub struct ServerCapabilities {
     /// Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。
     #[serde(default)]
     pub definition_provider: bool,
+    /// RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。
+    #[serde(default)]
+    pub document_symbol_provider: bool,
     /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
@@ -374,6 +377,18 @@ pub struct DefinitionParams {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentDiagnosticParams {
+    pub text_document: TextDocumentIdentifier,
+}
+
+// ---------------------------------------------------------------------------
+// textDocument/documentSymbol DTO(RUST-139 批 3:Outline 段符号面下沉接线)
+// ---------------------------------------------------------------------------
+
+/// documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本
+/// 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentSymbolParams {
     pub text_document: TextDocumentIdentifier,
 }
 

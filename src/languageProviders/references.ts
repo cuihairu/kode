@@ -18,6 +18,26 @@ import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchC
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDataKeyAccesses } from '../backend/cellDataKeyAccess';
 import { findEntityScriptFile, findDefinitionFileByCategory } from '../definitionWorkspace';
 import { buildDefProcessBreadcrumb } from '../backend/processOwnershipLens';
+import { serveDocumentSymbolsFromRust } from '../backend/kodeCoreShadowFaces';
+import type { LspDocumentSymbolFace } from '../backend/kodeCoreShadowFaces';
+
+/**
+ * Rust 段符号 kind 字符串面 → vscode.SymbolKind(投影细节,协议数值映射)。
+ * 惰性函数而非模块级查表:模块作用域不得触碰 vscode API(UMD 运行时
+ * require 泄漏,bundle 装载即红)。
+ */
+function symbolKindByName(kind: LspDocumentSymbolFace['kind']): vscode.SymbolKind {
+  switch (kind) {
+    case 'Struct':
+      return vscode.SymbolKind.Struct;
+    case 'Class':
+      return vscode.SymbolKind.Class;
+    case 'Field':
+      return vscode.SymbolKind.Field;
+    default:
+      return vscode.SymbolKind.Method;
+  }
+}
 /**
  * IDE-NAV-001:def 原生引用查询入口(Shift+F12)。引用结果复用统一符号
  * 身份——与调用层级 prepare 完全同链(findDefSymbolInfo →
@@ -346,50 +366,24 @@ export function enclosingPythonClassAt(document: vscode.TextDocument, line: numb
 export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
   async provideDocumentSymbols(
     document: vscode.TextDocument,
-    _token?: vscode.CancellationToken
+    token?: vscode.CancellationToken
   ): Promise<vscode.DocumentSymbol[] | null> {
     const ast = parseDefAst(document);
     if (!ast || !ast.root) {
       return null;
     }
-
-    const symbols: vscode.DocumentSymbol[] = [];
-    const methodSections: Array<{ section: string; startLine: number; endLine: number }> = [];
-    for (const child of ast.root.children) {
-      if (child.kind !== 'element') {
-        continue;
-      }
-      const sectionName = toSectionName(child.name);
-      if (!sectionName || !DEF_SYMBOL_SECTIONS.has(sectionName)) {
-        continue;
-      }
-      const isProperties = sectionName === 'Properties';
-      const fullRange = elementFullRange(document, child);
-      if (!isProperties) {
-        methodSections.push({
-          section: sectionName,
-          startLine: fullRange.start.line,
-          endLine: fullRange.end.line
-        });
-      }
-      const sectionSymbol = new vscode.DocumentSymbol(
-        sectionName,
-        '',
-        isProperties ? vscode.SymbolKind.Struct : vscode.SymbolKind.Class,
-        fullRange,
-        elementTagRange(document, child)
-      );
-      sectionSymbol.children = child.children
-        .filter((member): member is DefElementNode => member.kind === 'element')
-        .map(member => new vscode.DocumentSymbol(
-          member.name,
-          '',
-          isProperties ? vscode.SymbolKind.Field : vscode.SymbolKind.Method,
-          elementFullRange(document, member),
-          elementTagRange(document, member)
-        ));
-      symbols.push(sectionSymbol);
-    }
+    // RUST-139 批 3 接线:段符号面先走 Rust(kode-server
+    // textDocument/documentSymbol);命中即用,未命中(null=非服务轨道/文档
+    // 未入库/解析无根/任何失败)回 TS 既有逐点实现(同构口径)。面包屑合成根
+    // 仍是 TS 投影层职责(Rust 面恒不含合成根)。
+    const rustSections = await serveDocumentSymbolsFromRust(
+      document,
+      () => token?.isCancellationRequested === true
+    );
+    const { symbols, methodSections } =
+      rustSections !== null
+        ? rustSectionSymbols(document, rustSections)
+        : tsSectionSymbols(document, ast.root);
     const breadcrumb = buildDefProcessBreadcrumb(
       document.fileName,
       methodSections,
@@ -437,6 +431,88 @@ export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProv
     ];
     return [root];
   }
+}
+
+/** 段符号装配产物:Outline 段符号 + 方法段跨度账(面包屑用) */
+interface DefSectionSymbols {
+  symbols: vscode.DocumentSymbol[];
+  methodSections: Array<{ section: string; startLine: number; endLine: number }>;
+}
+
+/** TS 逐点实现:ast 段容器 + 段内直接成员(IDE-NAV-005 原口径) */
+function tsSectionSymbols(document: vscode.TextDocument, root: DefElementNode): DefSectionSymbols {
+  const symbols: vscode.DocumentSymbol[] = [];
+  const methodSections: DefSectionSymbols['methodSections'] = [];
+  for (const child of root.children) {
+    if (child.kind !== 'element') {
+      continue;
+    }
+    const sectionName = toSectionName(child.name);
+    if (!sectionName || !DEF_SYMBOL_SECTIONS.has(sectionName)) {
+      continue;
+    }
+    const isProperties = sectionName === 'Properties';
+    const fullRange = elementFullRange(document, child);
+    if (!isProperties) {
+      methodSections.push({
+        section: sectionName,
+        startLine: fullRange.start.line,
+        endLine: fullRange.end.line
+      });
+    }
+    const sectionSymbol = new vscode.DocumentSymbol(
+      sectionName,
+      '',
+      isProperties ? vscode.SymbolKind.Struct : vscode.SymbolKind.Class,
+      fullRange,
+      elementTagRange(document, child)
+    );
+    sectionSymbol.children = child.children
+      .filter((member): member is DefElementNode => member.kind === 'element')
+      .map(member => new vscode.DocumentSymbol(
+        member.name,
+        '',
+        isProperties ? vscode.SymbolKind.Field : vscode.SymbolKind.Method,
+        elementFullRange(document, member),
+        elementTagRange(document, member)
+      ));
+    symbols.push(sectionSymbol);
+  }
+  return { symbols, methodSections };
+}
+
+/** LSP 位置面 → vscode.Position(Rust 列域 = UTF-16 code unit,与 positionAt 同语义) */
+function toPosition(position: { line: number; character: number }): vscode.Position {
+  return new vscode.Position(position.line, position.character);
+}
+
+/** Rust 段符号面投影:kind 字符串 → vscode.SymbolKind,区间逐面透传 */
+function rustSectionSymbols(
+  document: vscode.TextDocument,
+  faces: LspDocumentSymbolFace[]
+): DefSectionSymbols {
+  const toSymbol = (face: LspDocumentSymbolFace): vscode.DocumentSymbol =>
+    new vscode.DocumentSymbol(
+      face.name,
+      face.detail,
+      symbolKindByName(face.kind),
+      new vscode.Range(toPosition(face.range.start), toPosition(face.range.end)),
+      new vscode.Range(toPosition(face.selectionRange.start), toPosition(face.selectionRange.end))
+    );
+  const symbols = faces.map(face => {
+    const symbol = toSymbol(face);
+    symbol.children = face.children.map(toSymbol);
+    return symbol;
+  });
+  // 方法段 = Class 容器(Properties 恒 Struct,四段面里二者互斥)。
+  const methodSections = symbols
+    .filter(symbol => symbol.kind === vscode.SymbolKind.Class)
+    .map(symbol => ({
+      section: symbol.name,
+      startLine: symbol.range.start.line,
+      endLine: symbol.range.end.line
+    }));
+  return { symbols, methodSections };
 }
 
 /**

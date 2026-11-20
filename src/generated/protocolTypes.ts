@@ -33,6 +33,7 @@ export interface KodeProtocol {
   did_open_params: DidOpenParams;
   document_diagnostic_params: DocumentDiagnosticParams;
   document_summary: DocumentSummary;
+  document_symbol_params: DocumentSymbolParams;
   file_changed_params: FileChangedParams;
   health_report: HealthReport;
   hover_params: HoverParams;
@@ -167,6 +168,12 @@ export interface DocumentSummary {
   version: number;
 }
 /**
+ * documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。
+ */
+export interface DocumentSymbolParams {
+  textDocument: TextDocumentIdentifier;
+}
+/**
  * `$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构 (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。
  */
 export interface FileChangedParams {
@@ -291,6 +298,10 @@ export interface ServerCapabilities {
    * Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。
    */
   definitionProvider?: boolean;
+  /**
+   * RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。
+   */
+  documentSymbolProvider?: boolean;
   /**
    * LSP-003 / PH1-03(PR-010):hover provider 能力声明。
    */
