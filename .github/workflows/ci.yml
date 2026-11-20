@@ -283,6 +283,16 @@ jobs:
         disable_search: true
         fail_ci_if_error: false
 
+    # 覆盖率两档门禁(2026-11-19 coverage-98 批):第一档=核心 crate
+    # kode-server/kode-kbengine/kode-python 行覆盖各 ≥98%(lcov DA 口径,
+    # 一次测试执行内分 crate 聚合,不重跑测试);第二档=全仓合计只报数不设
+    # 门(「全仓底线不动」,维持只上传 codecov 的既有口径)。放在上传之后
+    # 与 clippy 同理:门禁步红不丢已上传的覆盖率。基线(2026-11-20 干净
+    # 全量):server 98.31 / kbengine 99.87 / python 99.47,全仓 98.72。
+    - name: 覆盖率两档门禁（核心 crate ≥98%）
+      timeout-minutes: 3
+      run: python3 scripts/coverage-gate.py coverage/rust/lcov.info
+
     # PDC-0606:clippy 门禁此前不在任何 workflow(本地手跑才拦),Rust 测试门禁
     # 只 cover cargo test。clippy 组件由 rust-toolchain.toml 声明(rustup 首次
     # 调用即装),无需额外 install。放在覆盖率上传之后:clippy 失败仍让 job 红
