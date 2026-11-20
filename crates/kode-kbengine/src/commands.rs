@@ -593,6 +593,31 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn capture_analyze_keeps_first_packet_error_when_lines_repeat() {
+        // 两行都坏:首错保留(packet_err 只记首个,后续不覆盖);fake tshark
+        // 零退出,错误必须从 packet_err 面浮出(而非 tshark 退出码面)。
+        let dir = temp_dir("cap-bad2");
+        let lines = dir.join("lines.txt");
+        std::fs::write(&lines, "bad1\nbad2\n").unwrap();
+        let fake = write_fake_tshark(&dir, &lines);
+        let pcap = dir.join("capture.pcap");
+        std::fs::write(&pcap, b"x").unwrap();
+
+        let result = capture_analyze(
+            Some(pcap.to_str().unwrap()),
+            fake.to_str().unwrap(),
+            &[("loginapp".to_string(), 20013u16)],
+            &[],
+            None,
+            None,
+        );
+        let err = result.expect_err("malformed packet lines must fail");
+        assert!(err.contains("unexpected tshark field line"), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn capture_analyze_reports_tshark_nonzero_exit() {
         // tshark 打印一行后非零退出 → for_each_packet 报「tshark exited with」。
         let dir = temp_dir("cap-exit");

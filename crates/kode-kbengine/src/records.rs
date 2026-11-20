@@ -394,6 +394,9 @@ mod tests {
         // 非 RPC 的 UInt 不冒充方法 id。
         let (e, m) = extract_entity_fields(&[UInt(16)], "Client::onKicked");
         assert_eq!((e, m), (None, None));
+        // 非 RPC 出现第二个 Int:else-if 条件为假,rpc 臂不参与(仍只取首个)。
+        let (e, m) = extract_entity_fields(&[Int(1), Int(2)], "Client::onCreatedProxies");
+        assert_eq!((e, m), (Some(1), None));
     }
 
     #[test]

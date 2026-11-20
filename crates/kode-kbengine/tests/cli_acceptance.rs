@@ -448,6 +448,21 @@ fn decode_hex_reports_unknown_id_as_anomaly_not_crash() {
     assert!(cli.out.contains("unknown_message_id"), "stdout={}", cli.out);
 }
 
+#[test]
+fn command_execution_error_exits_1_with_error_line() {
+    // dispatch 层 Err(区别于 CmdResult::fail 携码返回):--defaults 读不到
+    // → main 的 Err 面:stderr 一行 error:...,退出码 1,stdout 干净。
+    let cli = run_cli(&["decode", "--hex", "00", "--defaults", "/nonexistent/defaults.xml"]);
+    assert_eq!(cli.code, 1, "stdout={} stderr={}", cli.out, cli.err);
+    assert!(cli.err.contains("error:"), "stderr={}", cli.err);
+    assert!(
+        cli.err.contains("/nonexistent/defaults.xml"),
+        "stderr={}",
+        cli.err
+    );
+    assert!(cli.out.is_empty(), "stdout={}", cli.out);
+}
+
 // ---------------------------------------------------------------------------
 // capture analyze
 // ---------------------------------------------------------------------------
