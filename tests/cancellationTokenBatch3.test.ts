@@ -277,16 +277,19 @@ describe('同步 provider 入口闸(活令牌出内容 vs 已取消返空)', () 
     expect(provider.provideCodeLenses(doc, { isCancellationRequested: true } as vscode.CancellationToken)).toEqual([]);
   });
 
-  it('InferredMirrorTypeInlayHints:取消返空,活令牌按镜像差分出提示', () => {
+  it('InferredMirrorTypeInlayHints:取消返空,活令牌按生成桩差分出提示', () => {
+    // 车道对齐 17570cb5 现行产品真相:pyrefly 只跑 stubgen,注解产物是
+    // `<managedDir>/stubs/generated/<相对路径>.pyi`(镜像目录只收普通副本,
+    // 无注解);消费面 readGeneratedStub 读 .pyi 车道。
     const root = makeRoot('mirror');
     const srcPath = path.join(root, 'scripts', 'foo.py');
     fs.mkdirSync(path.dirname(srcPath), { recursive: true });
     const sourceText = 'def foo(self):\n    return 1\n\n\ncount = 0\n';
-    const mirrorText = 'def foo(self) -> int:\n    return 1\n\n\ncount: int = 0\n';
-    const mirrorPath = path.join(root, '.kbengine', 'inferred', 'scripts', 'foo.py');
-    fs.mkdirSync(path.dirname(mirrorPath), { recursive: true });
+    const stubText = 'def foo(self) -> int:\n    return 1\n\n\ncount: int = 0\n';
+    const stubPath = path.join(root, '.kbengine', 'stubs', 'generated', 'scripts', 'foo.pyi');
+    fs.mkdirSync(path.dirname(stubPath), { recursive: true });
     fs.writeFileSync(srcPath, sourceText, 'utf8');
-    fs.writeFileSync(mirrorPath, mirrorText, 'utf8');
+    fs.writeFileSync(stubPath, stubText, 'utf8');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'b3', index: 0 }];
     const doc = makeTextDocument(sourceText, { fileName: srcPath, languageId: 'python' });
     const provider = new InferredMirrorTypeInlayHintsProvider();

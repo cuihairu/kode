@@ -89,9 +89,13 @@ describe('extension activate 工作区门控(书 PR-002)', () => {
     const context = makeContext();
     try {
       activate(context);
-      // 门控探测异步:静置后确认 EntityMapping 的根前缀 python watcher 永不出现
+      // 门控探测异步:静置后确认 EntityMapping 的根前缀 python watcher 永不出现。
+      // infer 镜像 watcher(`**/scripts/**/*.py`,infer.enabled 默认开,不受
+      // 本门控管)是非根前缀的独立件,不在本负例的被测面内。
       await new Promise(resolve => setTimeout(resolve, 500));
-      const managerPythonWatcher = patterns.find(p => p.endsWith('/**/*.py'));
+      const managerPythonWatcher = patterns.find(
+        p => p.startsWith('/ws/plain-py') && p.endsWith('/**/*.py')
+      );
       expect(managerPythonWatcher).toBeUndefined();
       // 静置再确认:不会迟到的启动
       const countAtSettle = patterns.length;
@@ -116,12 +120,15 @@ describe('extension activate 工作区门控(书 PR-002)', () => {
     try {
       activate(context);
       // 门控放行 → ensureStartup 建三件套;python watcher(根前缀 **/*.py)
-      // 最后创建(既有次序契约)
+      // 最后创建(既有次序契约)。infer 镜像 watcher(**/scripts/**/*.py)在
+      // 激活即建且同以 .py 结尾,等待与定位都必须钉根前缀,防止被它提前满足。
       await until(
-        () => patterns.some(p => p.endsWith('/**/*.py')),
+        () => patterns.some(p => p.startsWith('/ws/kbe') && p.endsWith('/**/*.py')),
         'gate-promoted manager watchers'
       );
-      const pythonIndex = patterns.findIndex(p => p.endsWith('/**/*.py'));
+      const pythonIndex = patterns.findIndex(
+        p => p.startsWith('/ws/kbe') && p.endsWith('/**/*.py')
+      );
       const defIndex = patterns.findIndex(p => p.endsWith('/**/*.def') && p.startsWith('/ws/kbe'));
       const typesIndex = patterns.findIndex(p => p.includes('{types,alias}.xml'));
       expect(defIndex).toBeGreaterThan(-1);
