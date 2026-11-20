@@ -107,7 +107,7 @@
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["activate/languageServices.ts:225 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  M1["activate/languageServices.ts:226 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
   HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:315"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
@@ -123,7 +123,7 @@ flowchart TD
   RS1["resolveDefMethodAnnotation → def 索引<br/>(形参个数/注解类型闸)"]
   RS2["resolveReceiverCallAnnotation<br/>段过滤 → 形参/类型对账"]
   RS3["resolveBuiltinPropertyAnnotation → 分面内建属性表"]
-  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:61 / backend/documentStore.ts:155"]
+  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:62 / backend/documentStore.ts:155"]
   MISS["标注落空 → 回退 provideKnownHover"]
   END1["operation.end(ok|miss) → return Hover|null"]
 
@@ -155,7 +155,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["activate/languageServices.ts:298 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :397 一路)"]
+  M2["activate/languageServices.ts:299 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :398 一路)"]
   AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders/pythonDefinition.ts:261"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :4736 / Impl :4754"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
@@ -239,15 +239,15 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:489 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:492 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>backend/diagnosticScheduler.ts:228"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:594 → backend/diagnosticScheduler.ts:258"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:600 → backend/diagnosticScheduler.ts:258"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:214 / entities 侧 :227"]
+  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:216 / entities 侧 :229"]
   VD["validateDocument(languageProviders/validation.ts:20)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders/validation.ts:20,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:265)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:278,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]

@@ -313,11 +313,19 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 488/593 → 489/594(真位重探)。pythonClassIndex.ts MroChainEntry/
   // MroMethodChain 接口块 +20(146 前)→ 746/1415/1539 → 766/1435/1559
   // (真位重探;resolveMroMethodChains 追加在文件尾不再位移)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 225, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 298, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 397, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 144, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 874, "startLanguageServiceOperation('completion'"],
+  // 2026-11-20(KODE-SYN-003):alias.xml 编辑能力批——languageServices.ts 顶部
+  // import +1、alias 双 provider 注册块 +62(在前四打点后、python completion 打
+  // 点前)→ 225/298/397/144 → 226/299/398/145,874(python completion)→ 936
+  // (真位重探,fileKind 'python' 双面确认)。diagnostics.ts 顶部 import +1、
+  // deps/共享面声明 +1(打点前)→ 214/227 → 216/229(alias 计时臂 257 在全部
+  // 锚点之后)。extension.ts 解构 +3(489 前)→ 492,onDidChange alias 路由臂
+  // +3 → 594 → 600(真位重探)。inlay.ts:61 → 62 系 peer 17570cb5 顶置行
+  // (getDocumentLines 真位 62,随本批一并校准)。出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 226, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 299, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 398, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 145, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 936, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -377,8 +385,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-17(KODE-CFG-016 恢复批):diagnostics.ts 顶部 import +10
   // (configDataMutation/configSchemaHover 导入块)→ 两处打点锚点 +10
   // (204/217 → 214/227,真位重探);出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 214, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 227, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 216, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 229, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -411,8 +419,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 478/583 → 483/588,真位重探;出处随 baseline 锁步。
   // 2026-11-18(PROC-BREADCRUMB-001):extension.ts 解构面 -1(processOwnership
   // 镜实例)→ 483/588 → 482/587(fire 调用行在其后,不影响本组),真位重探。
-  ['src/extension.ts', 489, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 594, 'flushQueued()'],
+  ['src/extension.ts', 492, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 600, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
@@ -454,7 +462,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-19(RUST-149 批 3):inlay 四 provider 补 token/cancel 接线,顶部
   // cancelled() 入口/放行闸插行,getDocumentLines 行 52→61,真位重探,出处随
   // baseline 锁步。
-  ['src/languageProviders/inlay.ts', 61, 'getDocumentLines(document)'],
+  ['src/languageProviders/inlay.ts', 62, 'getDocumentLines(document)'],
   // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,
