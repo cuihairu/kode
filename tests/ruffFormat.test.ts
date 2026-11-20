@@ -52,6 +52,23 @@ describe('ruffFormat 桥契约(②载荷与回包)', () => {
     expect(result.status).toBe('error');
     setKodeCoreShadowGate(null);
   });
+
+  it('回包非对象(null)→ error:unexpected result shape', async () => {
+    const { gate } = makeGate({ '$/kode/ruff/format': null });
+    setKodeCoreShadowGate(gate);
+    const result = await runRuffFormat('x=1', '/w/a.py');
+    expect(result.status).toBe('error');
+    expect((result as { reason?: string }).reason).toBe(
+      'ruffFormat: unexpected result shape from rust backend'
+    );
+    setKodeCoreShadowGate(null);
+  });
+
+  it('无 gate → no-gate 状态(调用方按不可用处理)', async () => {
+    setKodeCoreShadowGate(null);
+    const result = await runRuffFormat('x=1', '/w/a.py');
+    expect(result).toEqual({ status: 'no-gate' });
+  });
 });
 
 describe('ruffFormat 命令编排(①③)', () => {
@@ -126,6 +143,51 @@ describe('ruffFormat 命令编排(①③)', () => {
     expect(manual).not.toHaveBeenCalled();
     setKodeCoreShadowGate(null);
   });
+
+  it('③ 同意安装但装失败 → 亮 pip 手动命令,channel 前置,不编辑', async () => {
+    const { gate } = makeGate({ '$/kode/ruff/format': { available: false } });
+    setKodeCoreShadowGate(gate);
+    const deps = baseDeps({
+      runPipInstall: vi.fn(async () => ({ ok: false, output: 'pip: error' })),
+      showInformationMessage: vi.fn(async (_m: string, ...items: string[]) => items[0])
+    });
+    await runRuffFormatCommand(deps);
+    expect(deps.runPipInstall).toHaveBeenCalledWith('/venv/bin/python');
+    expect(deps.channel.appendLine).toHaveBeenCalledWith('pip: error');
+    expect(deps.channel.show).toHaveBeenCalledWith(true);
+    const msg = (deps.showErrorMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+    expect(msg).toContain('pip install failed');
+    expect(msg).toContain('/venv/bin/python -m pip install ruff');
+    expect(deps.applyFormattedText).not.toHaveBeenCalled();
+    setKodeCoreShadowGate(null);
+  });
+
+  it('桥回包 error(status!==ok)→ 亮「ruff format failed: 原因」,不编辑', async () => {
+    // gate 无脚本 → {ok:false, reason:'unscripted'} → call.status==='error'。
+    const { gate } = makeGate({});
+    setKodeCoreShadowGate(gate);
+    const deps = baseDeps();
+    await runRuffFormatCommand(deps);
+    const msg = (deps.showErrorMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+    expect(msg).toBe('ruff format failed: unscripted');
+    expect(deps.applyFormattedText).not.toHaveBeenCalled();
+    setKodeCoreShadowGate(null);
+  });
+
+  it('无可选解释器时仍不可用 → 亮「装好再试」,不进安装询问', async () => {
+    const { gate, calls } = makeGate({ '$/kode/ruff/format': { available: false } });
+    setKodeCoreShadowGate(gate);
+    const deps = baseDeps({ getInterpreterPath: () => null });
+    await runRuffFormatCommand(deps);
+    // 无解释器 → 同意式安装询问整块跳过(零询问零安装),只亮手动指引。
+    expect(deps.showInformationMessage).not.toHaveBeenCalled();
+    expect(deps.runPipInstall).not.toHaveBeenCalled();
+    const msg = (deps.showErrorMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+    expect(msg).toContain('ruff is not installed');
+    expect(deps.applyFormattedText).not.toHaveBeenCalled();
+    expect(calls.filter(c => c.method === '$/kode/ruff/format')).toHaveLength(1);
+    setKodeCoreShadowGate(null);
+  });
 });
 
 describe('ruffFormat Provider 注册编排(④⑤)', () => {
@@ -167,6 +229,58 @@ describe('ruffFormat Provider 注册编排(④⑤)', () => {
     await ensureRuffFormatterRegistered(deps as never);
     expect(deps.registerDocumentFormattingEditProvider).toHaveBeenCalled();
     expect(deps.showInformationMessage).not.toHaveBeenCalled();
+  });
+
+  it('⑤ provider 本体:document/range 同链,available → 全文替换 edits', async () => {
+    const { gate, calls } = makeGate({
+      '$/kode/ruff/format': { available: true, version: 'ruff 0.6.9', formatted: 'x = 1\n' }
+    });
+    setKodeCoreShadowGate(gate);
+    const providers: Array<{ provideDocumentFormattingEdits(d: unknown): Promise<unknown>; provideDocumentRangeFormattingEdits(d: unknown): Promise<unknown> }> = [];
+    const deps = {
+      probeRuffAvailable: async () => true,
+      registerDocumentFormattingEditProvider: vi.fn((_s: unknown, p: unknown) => { providers.push(p as never); }),
+      registerDocumentRangeFormattingEditProvider: vi.fn((_s: unknown, p: unknown) => { providers.push(p as never); }),
+      getDefaultFormatter: () => 'ms-python.black-formatter',
+      getRuffPath: () => '/venv/bin/ruff',
+      showInformationMessage: vi.fn(async () => undefined)
+    };
+    await ensureRuffFormatterRegistered(deps as never);
+    // 注册的是同一个 provider 本体(document/range 共用)。
+    expect(providers).toHaveLength(2);
+    expect(providers[0]).toBe(providers[1]);
+    const doc = { fileName: '/w/a.py', getText: () => 'x=1' };
+    expect(await providers[0].provideDocumentFormattingEdits(doc)).toEqual([
+      { range: undefined, newText: 'x = 1\n' }
+    ]);
+    expect(await providers[0].provideDocumentRangeFormattingEdits(doc)).toEqual([
+      { range: undefined, newText: 'x = 1\n' }
+    ]);
+    // ruffPath 同源进桥载荷(探测/格式化一致,防探测命中而格式化落空)。
+    expect(calls.every(c => (c.params as { ruffPath?: string }).ruffPath === '/venv/bin/ruff')).toBe(true);
+    setKodeCoreShadowGate(null);
+  });
+
+  it('⑤ provider 本体:不可用/桥 error → undefined(不产假 edits)', async () => {
+    const unavailable = makeGate({ '$/kode/ruff/format': { available: false } });
+    setKodeCoreShadowGate(unavailable.gate);
+    const providers: Array<{ provideDocumentFormattingEdits(d: unknown): Promise<unknown> }> = [];
+    const deps = {
+      probeRuffAvailable: async () => true,
+      registerDocumentFormattingEditProvider: vi.fn((_s: unknown, p: unknown) => { providers.push(p as never); }),
+      registerDocumentRangeFormattingEditProvider: vi.fn(),
+      getDefaultFormatter: () => 'ms-python.black-formatter',
+      showInformationMessage: vi.fn(async () => undefined)
+    };
+    await ensureRuffFormatterRegistered(deps as never);
+    const doc = { fileName: '/w/a.py', getText: () => 'x=1' };
+    expect(await providers[0].provideDocumentFormattingEdits(doc)).toBeUndefined();
+    setKodeCoreShadowGate(null);
+    // 桥 error(unscripted)同面:undefined。
+    const broken = makeGate({});
+    setKodeCoreShadowGate(broken.gate);
+    expect(await providers[0].provideDocumentFormattingEdits(doc)).toBeUndefined();
+    setKodeCoreShadowGate(null);
   });
 });
 

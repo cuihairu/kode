@@ -14,6 +14,7 @@ import {
   commandRegistry,
   commands,
   configurationOverrides,
+  memoryFileSystem,
   makeTextDocument,
   messages,
   window as stubWindow,
@@ -106,6 +107,46 @@ describe('FileModifiedTimeCodeLensProvider', () => {
       pythonDoc('/ws/scripts/base/Gone.py') as unknown as vscode.TextDocument
     );
     expect(lenses).toEqual([]);
+    provider.dispose();
+  });
+
+  it('defaultStat 缺省链:stat 命中但无 mtime 字段 → 镜文 null 不出镜', async () => {
+    // 不注入 stat:defaultStat 走 fake workspace.fs.stat(返回 {type,size},
+    // 无 mtime 字段)→ mtimeMs undefined → 镜文 null → 不出镜不编造时间。
+    memoryFileSystem.set('/ws/scripts/base/Hero.py', 'class Hero:\n');
+    const provider = new FileModifiedTimeCodeLensProvider({ now: () => NOW });
+    const lenses = await provider.provideCodeLenses(
+      pythonDoc('/ws/scripts/base/Hero.py') as unknown as vscode.TextDocument
+    );
+    expect(lenses).toEqual([]);
+    provider.dispose();
+  });
+
+  it('fireConfigurationChanged:配置变更即发重询事件', () => {
+    const provider = new FileModifiedTimeCodeLensProvider({
+      stat: async () => ({ mtimeMs: TODAY_90501 }),
+      now: () => NOW
+    });
+    let fired = 0;
+    const subscription = provider.onDidChangeCodeLenses(() => {
+      fired += 1;
+    });
+    provider.fireConfigurationChanged();
+    expect(fired).toBe(1);
+    subscription.dispose();
+    provider.dispose();
+  });
+
+  it('取消令牌/已关文档:早退零查询零出镜', async () => {
+    const provider = new FileModifiedTimeCodeLensProvider({
+      stat: async () => ({ mtimeMs: TODAY_90501 }),
+      now: () => NOW
+    });
+    const document = pythonDoc('/ws/scripts/base/Hero.py') as unknown as vscode.TextDocument;
+    const cancelled = { isCancellationRequested: true } as never;
+    expect(await provider.provideCodeLenses(document, cancelled)).toEqual([]);
+    const closed = { uri: { fsPath: '/ws/scripts/base/Hero.py' }, isClosed: true } as never;
+    expect(await provider.provideCodeLenses(closed)).toEqual([]);
     provider.dispose();
   });
 
