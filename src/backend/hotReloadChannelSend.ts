@@ -14,6 +14,7 @@
 import { createHash } from 'crypto';
 
 import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus } from './hotReloadAppliedCheck';
+import { formatReloadTransportThrownError } from './hotReloadTransportErrors';
 import type { ReloadTransport } from './hotReloadTransport';
 import type {
   HotReloadDeliveryOutcome,
@@ -315,10 +316,13 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
           )
         );
       } catch (error: unknown) {
-        // 单组失败:整组按 failed 落账(不冒充未确认),绑定发送时点代际写回
+        // 单组失败:整组按 failed 落账(不冒充未确认),绑定发送时点代际写回。
+        // RUST-419:组级异常分类输出可用错误(endpoint 不可达/证书/代理/target
+        // 重启),原始原因保留在括号内。
+        const reason = formatReloadTransportThrownError(error);
         failedCount += groupFiles.length;
         for (const file of groupFiles) {
-          recordOutcome(rootId, file, 'failed', error instanceof Error ? error.message : String(error));
+          recordOutcome(rootId, file, 'failed', reason);
           noteSentDigest(rootId, file);
         }
       }

@@ -29,10 +29,11 @@ export interface DependencyGraphSource {
 }
 
 export interface WarmupStageDeps {
-  /** 发现链首扫完成句柄(复用 activate 已起的一轮) */
-  waitForDiscovery(): Promise<void>;
-  /** 事件索引全量首扫(ensureStarted 幂等) */
-  ensureEventIndex(): Promise<void>;
+  /** 发现链首扫完成句柄(复用 activate 已起的一轮);onProgress = 阶段内
+   * 逐文件节流进度(WARM-VISIBILITY-004 刀 A:def N/M 推状态栏 message) */
+  waitForDiscovery(onProgress?: (detail: string) => void): Promise<void>;
+  /** 事件索引全量首扫(ensureStarted 幂等);onProgress 同上(N/M 文件) */
+  ensureEventIndex(onProgress?: (detail: string) => void): Promise<void>;
   /** 依赖图计算(Rust 优先 TS 兜底,与面板现算同源) */
   buildDependencyGraph(): Promise<DependencyGraphSource>;
   /** 已注册实体清单(流程图阶段输入) */
@@ -51,14 +52,14 @@ export function createWarmupStages(deps: WarmupStageDeps): WarmupStageDef[] {
       key: 'discovery',
       label: '实体发现链',
       run: async () => {
-        await deps.waitForDiscovery();
+        await deps.waitForDiscovery(detail => { deps.report?.(detail); });
       }
     },
     {
       key: 'eventIndex',
       label: '事件/方法索引',
       run: async () => {
-        await deps.ensureEventIndex();
+        await deps.ensureEventIndex(detail => { deps.report?.(detail); });
       }
     },
     {

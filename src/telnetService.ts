@@ -3,9 +3,16 @@ import * as net from 'net';
 import {
   BUILTIN_QUICK_COMMANDS,
   isCommandAllowed,
+  isPythonCommandAllowed,
   KBEngineTelnetClient,
   TelnetClientState
 } from './backend/telnetClient';
+import {
+  DEFAULT_TELNET_CONSOLE_MODE,
+  isTelnetConsoleMode,
+  telnetConsoleModeReducer,
+  type TelnetConsoleMode
+} from './telnetConsoleMode';
 import { expandWorkspacePlaceholders } from './backend/workspacePath';
 import {
   ensureConfigResolved,
@@ -248,6 +255,8 @@ export class TelnetService {
   private readonly states = new Map<string, TelnetProbeState>();
   private readonly clients = new Map<string, KBEngineTelnetClient>();
   private readonly outputs = new Map<string, string[]>();
+  /** 会话控制台模式(TELNET-EZ-001):目标键上的会话属性,断线保留 */
+  private readonly consoleModes = new Map<string, TelnetConsoleMode>();
   private timer: unknown = null;
   private disposed = false;
   private probing = false;
@@ -275,6 +284,27 @@ export class TelnetService {
 
   getSessionState(key: string): TelnetClientState | null {
     return this.clients.get(key)?.state ?? null;
+  }
+
+  /** 会话控制台模式(TELNET-EZ-001):默认白名单;断线/重连保留 */
+  getConsoleMode(key: string): TelnetConsoleMode {
+    return this.consoleModes.get(key) ?? DEFAULT_TELNET_CONSOLE_MODE;
+  }
+
+  /** 切换控制台模式(白名单 ↔ 自由 Python);未知值忽略不动账 */
+  setConsoleMode(key: string, mode: TelnetConsoleMode): void {
+    if (!isTelnetConsoleMode(mode)) {
+      return;
+    }
+    const next = telnetConsoleModeReducer({ mode: this.getConsoleMode(key) }, {
+      type: 'set-mode',
+      mode
+    });
+    if (next.mode === this.getConsoleMode(key)) {
+      return;
+    }
+    this.consoleModes.set(key, next.mode);
+    this._onDidChange.fire();
   }
 
   getOutput(key: string): string[] {
@@ -346,7 +376,8 @@ export class TelnetService {
     return isCommandAllowed(command, whitelist);
   }
 
-  /** 建立持久会话(自动握手登录);已存在则先断旧 */
+  /** 建立持久会话(自动握手登录);已存在则先断旧。会话控制台模式沿用
+   *  目标键上的旧模式——断线/重连不丢(TELNET-EZ-001 保留契约) */
   connectTarget(key: string): void {
     const target = this.targets.find(item => item.key === key);
     if (!target || this.disposed) {
@@ -410,9 +441,14 @@ export class TelnetService {
     client.disconnect();
   }
 
-  /** 发送命令:白名单闸在服务层,未过闸/无会话返回 false */
+  /** 发送命令:白名单模式走白名单闸,自由 Python 模式走 python 闸
+   *  (TELNET-EZ-001:两闸都恒拒 :quit);未过闸/无会话返回 false */
   sendCommand(key: string, command: string): boolean {
-    if (!this.isAllowed(key, command)) {
+    const allowed =
+      this.getConsoleMode(key) === 'python'
+        ? isPythonCommandAllowed(command)
+        : this.isAllowed(key, command);
+    if (!allowed) {
       return false;
     }
     const client = this.clients.get(key);

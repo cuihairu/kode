@@ -1,5 +1,6 @@
 import { KodeCoreClient, KodeCoreTransportError, type KodeCoreInitializeParams } from './kodeCoreClient';
 import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
+import { indexLog } from './indexLog';
 
 // kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
 // 2026-11-08 用户令「直接切到 rust」:serving 门禁解除,rust 字面量生效为
@@ -212,10 +213,12 @@ export interface ShadowClientLike {
     opts?: { timeoutMs?: number }
   ): Promise<unknown>;
   dispose(): Promise<void>;
-  /** 语料镜像腿(Phase2 首片):文档 open/change/close,notify 语义不回包 */
-  openDocument?(uri: string, languageId: string, version: number, text: string): void;
-  changeDocument?(uri: string, version: number, text: string): void;
-  closeDocument?(uri: string): void;
+  /** 语料镜像腿(Phase2 首片):文档 open/change/close,notify 语义不回包。
+   * KODE-RESP-009:返回可为 Promise(帧真正写完+drain 才完成)——镜像生产
+   * 端 await 即写背压;同步实现(测试替身)照样满足(不等待)。 */
+  openDocument?(uri: string, languageId: string, version: number, text: string): void | Promise<void>;
+  changeDocument?(uri: string, version: number, text: string): void | Promise<void>;
+  closeDocument?(uri: string): void | Promise<void>;
   /** 重启代数读口(E-2;可选):自动重启后 gate 重置镜像账并重放快照 */
   getRestartGeneration?(): number;
   /** 通知面(§11.3 可选):单向通知,不回包;KodeCoreClient 同名方法 */
@@ -466,6 +469,9 @@ export class KodeCoreGate {
         new KodeCoreClient({
           binaryPath: this.config.serverPath,
           initializeParams: this.initializeParams,
+          // WARM-VISIBILITY-004 刀 B(FREEZE 刀3):kode-server 存活心跳/
+          // 重启循环取证进统一「KBEngine Index」通道。
+          onLifecycle: line => { indexLog('server', line); },
         });
       this.clientServerPath = this.config.serverPath;
       return this.client;
@@ -692,12 +698,21 @@ export class KodeCoreGate {
    * (verdict 口径归 compare 自己的失败分类,镜像不刷差异日志);非 shadow
    * 或未配 serverPath 零开销直通。版本账在会话内单调:前进走 didChange,
    * 回退(重开)走 close+open,不虚构版本;自动重启后账本重置并重放快照。
+   *
+   * KODE-RESP-007:磁盘语料与编辑器 overlay 生命周期分开——corpus 旗标
+   * 的调用方(全量语料镜像的盘读/枚举快照)是后台快照,只允许补位
+   * (fill-only):账内已有该文档(编辑器流已镜像,或本轮已补)即跳过,
+   * 绝不驱动 change/降级 close+open,晚到的盘快照 v1 不得把在役文档从
+   * v2 拉回旧内容;缺席才按 didOpen 补位入账(与编辑器流共用账本,重启
+   * 重放/关闭清理同口径)。不带 corpus 的编辑器流调用保持原语义(前进
+   * didChange,重开低版本 close+open 兜底 missed-close 边,不虚构版本)。
    */
   async mirrorDocument(
     uri: string,
     languageId: string,
     version: number,
-    text: string
+    text: string,
+    options?: { readonly corpus?: boolean }
   ): Promise<void> {
     if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
       return;
@@ -709,19 +724,69 @@ export class KodeCoreGate {
     await client.start();
     this.syncRestartGeneration(client);
     const mirrored = this.mirroredVersions.get(uri);
-    if (mirrored === undefined) {
-      client.openDocument?.(uri, languageId, version, text);
-    } else if (version > mirrored) {
-      client.changeDocument?.(uri, version, text);
-    } else if (version < mirrored) {
-      client.closeDocument?.(uri);
-      client.openDocument?.(uri, languageId, version, text);
-    } else {
-      // 同版本 = 同内容(VS Code 每次内容变更版本必增):镜像腿重入不重发。
+    // RESP-009:账本同步先行,await 只承担帧写背压等待(必要时等 drain,
+    // 语料镜像生产端被管道限速,客户端缓冲有硬上界)。占位在 await 之前,
+    // 并发重入(编辑器腿与语料快照腿同帧各补一次)只发一次 didOpen;
+    // 发送抛错回滚账本,下一次调用重补(尽力而为,失败静默)。
+    const priorVersion = mirrored;
+    const priorSnapshot = this.mirrorSnapshots.get(uri);
+    const rollback = (): void => {
+      if (priorVersion === undefined) {
+        this.mirroredVersions.delete(uri);
+        this.mirrorSnapshots.delete(uri);
+      } else {
+        this.mirroredVersions.set(uri, priorVersion);
+        if (priorSnapshot) {
+          this.mirrorSnapshots.set(uri, priorSnapshot);
+        }
+      }
+    };
+    if (options?.corpus) {
+      // 后台快照补位:在场即跳过(不重发不降级),缺席才补 openDocument。
+      if (mirrored !== undefined) {
+        return;
+      }
+      this.mirroredVersions.set(uri, version);
+      this.mirrorSnapshots.set(uri, { languageId, version, text });
+      try {
+        await client.openDocument?.(uri, languageId, version, text);
+      } catch {
+        rollback();
+      }
       return;
     }
-    this.mirroredVersions.set(uri, version);
-    this.mirrorSnapshots.set(uri, { languageId, version, text });
+    if (mirrored === undefined) {
+      this.mirroredVersions.set(uri, version);
+      this.mirrorSnapshots.set(uri, { languageId, version, text });
+      try {
+        await client.openDocument?.(uri, languageId, version, text);
+      } catch {
+        rollback();
+      }
+      return;
+    }
+    if (version > mirrored) {
+      this.mirroredVersions.set(uri, version);
+      this.mirrorSnapshots.set(uri, { languageId, version, text });
+      try {
+        await client.changeDocument?.(uri, version, text);
+      } catch {
+        rollback();
+      }
+      return;
+    }
+    if (version < mirrored) {
+      this.mirroredVersions.set(uri, version);
+      this.mirrorSnapshots.set(uri, { languageId, version, text });
+      try {
+        await client.closeDocument?.(uri);
+        await client.openDocument?.(uri, languageId, version, text);
+      } catch {
+        rollback();
+      }
+      return;
+    }
+    // 同版本 = 同内容(VS Code 每次内容变更版本必增):镜像腿重入不重发。
   }
 
   /**

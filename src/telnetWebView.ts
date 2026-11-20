@@ -46,18 +46,20 @@ const KBENGINE_XML_SNIPPET = [
 ].join('\n');
 
 interface TelnetPanelMessage {
-  command: 'select' | 'connect' | 'disconnect' | 'send';
+  command: 'select' | 'connect' | 'disconnect' | 'send' | 'set-mode';
   key?: string;
   text?: string;
+  mode?: 'whitelist' | 'python';
 }
 
 export class TelnetWebView {
   private panel: vscode.WebviewPanel | null = null;
   private selectedKey: string | null = null;
-  /** 最近一次整页渲染时的目标键序与选中目标状态:服务驱动的状态变化只在
-   *  这些真变了的时候才值得整页重渲,其余走轻量状态灯补丁 */
+  /** 最近一次整页渲染时的目标键序与选中目标状态/控制台模式:服务驱动的
+   *  状态变化只在这些真变了的时候才值得整页重渲,其余走轻量状态灯补丁 */
   private renderedTargetKeys = '';
   private renderedSelectedState: TelnetProbeState | null = null;
+  private renderedSelectedMode: 'whitelist' | 'python' | null = null;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -132,6 +134,14 @@ export class TelnetWebView {
       this.updateWebView();
       return;
     }
+    if (message.command === 'set-mode') {
+      // 模式切换(TELNET-EZ-001):非法值由服务层忽略;模式变化经
+      // onDidChange 驱动 refreshWebView 重渲会话区
+      if (message.mode) {
+        this.service.setConsoleMode?.(key, message.mode);
+      }
+      return;
+    }
     if (message.command === 'send') {
       const command = (message.text ?? '').trim();
       if (command.length === 0) {
@@ -151,6 +161,23 @@ export class TelnetWebView {
       // 回显不用面板本地补:引擎 onRecvInput 的 default 分支逐字回显
       // (telnet_handler.cpp L396-411),本地再补一行会与服务端回显重复
     }
+  }
+
+  /** Python 控制台浅入口(TELNET-EZ-001 ②):选中所给目标并打开面板;
+   *  端口已开(open)即建会话,已连接沿用,auth-required 只开面板让密码
+   *  指引接管(不硬连)。 */
+  openPythonConsoleTarget(key: string): void {
+    const targets = this.service.getTargets();
+    if (!targets.some(target => target.key === key)) {
+      return;
+    }
+    this.selectedKey = key;
+    this.show();
+    const state = this.service.getState(key);
+    if (state === 'open') {
+      this.service.connectTarget(key);
+    }
+    this.updateWebView();
   }
 
   /** 断开当前会话:优先面板选中目标,否则取首个已连接目标;没有则如实提示。
@@ -191,7 +218,14 @@ export class TelnetWebView {
     const keys = JSON.stringify(targets.map(target => target.key));
     const effective = this.effectiveSelectedKey();
     const selectedState = effective ? this.service.getState(effective) : null;
-    if (keys !== this.renderedTargetKeys || selectedState !== this.renderedSelectedState) {
+    const selectedMode = effective
+      ? this.service.getConsoleMode?.(effective) ?? 'whitelist'
+      : null;
+    if (
+      keys !== this.renderedTargetKeys ||
+      selectedState !== this.renderedSelectedState ||
+      selectedMode !== this.renderedSelectedMode
+    ) {
       this.updateWebView();
       return;
     }
@@ -223,6 +257,9 @@ export class TelnetWebView {
     );
     const effective = this.effectiveSelectedKey();
     this.renderedSelectedState = effective ? this.service.getState(effective) : null;
+    this.renderedSelectedMode = effective
+      ? this.service.getConsoleMode?.(effective) ?? 'whitelist'
+      : null;
     this.panel.webview.html = this.getHtml();
   }
 
@@ -275,6 +312,15 @@ export class TelnetWebView {
       ].join('\n');
     }
     const sessionState = this.service.getSessionState(target.key);
+    // 会话控制台模式(TELNET-EZ-001):白名单 ↔ 自由 Python 并存可切
+    const consoleMode = this.service.getConsoleMode?.(target.key) ?? 'whitelist';
+    const pythonMode = consoleMode === 'python';
+    const modeButton = pythonMode
+      ? `<button class="quick mode" data-key="${escapeHtml(target.key)}" data-mode="whitelist">${t.pythonExit}</button>`
+      : `<button class="quick mode" data-key="${escapeHtml(target.key)}" data-mode="python">${t.pythonEnter}</button>`;
+    const modeBadge = pythonMode
+      ? `<span class="modebadge">${escapeHtml(t.pythonBadge)}</span>`
+      : '';
     const output = this.service
       .getOutput(target.key)
       .map(line => `<div class="line">${escapeHtml(line)}</div>`)
@@ -283,13 +329,22 @@ export class TelnetWebView {
       entry =>
         `<button class="quick" data-key="${escapeHtml(target.key)}" data-command="${escapeHtml(entry.command)}">${entry.label}</button>`
     ).join('\n');
+    const prompt = pythonMode
+      ? `<span class="prompt" title="${escapeHtml(t.pythonContinuation)}">${escapeHtml(t.pythonPrompt)}</span>`
+      : '';
+    const inputPlaceholder = pythonMode
+      ? t.pythonInputReady
+      : sessionState === 'ready'
+        ? t.inputReady
+        : t.inputWaiting;
+    const keyshint = pythonMode ? `${t.keyshint} · ${t.pythonContinuation}` : t.keyshint;
     return [
-      `<div class="session" data-session-state="${escapeHtml(sessionState ?? '')}">`,
-      `  <div class="quickrow">${connectButton}</div>`,
+      `<div class="session" data-session-state="${escapeHtml(sessionState ?? '')}" data-console-mode="${escapeHtml(consoleMode)}">`,
+      `  <div class="quickrow">${connectButton}${modeButton}${modeBadge}</div>`,
       output.length > 0 ? `<div class="output">${output}</div>` : `<div class="output muted">${t.noOutput}</div>`,
       `<div class="quickrow">${quickButtons}</div>`,
-      `  <input class="cmd" data-key="${escapeHtml(target.key)}" placeholder="${sessionState === 'ready' ? t.inputReady : t.inputWaiting}" />`,
-      `  <div class="keyshint">${t.keyshint}</div>`,
+      `  <div class="cmdrow">${prompt}<input class="cmd" data-key="${escapeHtml(target.key)}" placeholder="${inputPlaceholder}" /></div>`,
+      `  <div class="keyshint">${keyshint}</div>`,
       '</div>'
     ].join('\n');
   }
@@ -334,9 +389,15 @@ export class TelnetWebView {
   .quickrow { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   button.quick, button.connect { cursor: pointer; font-family: var(--kode-mono); font-size: var(--kode-t-meta); background: var(--kode-surface-2); border: 1px solid var(--kode-border); color: var(--kode-fg-2); border-radius: 3px; padding: 3px 10px; }
   button.quick:hover, button.connect:hover { border-color: var(--kode-accent); color: var(--kode-fg); }
-  input.cmd { width: 100%; margin-top: 8px; background: var(--kode-surface-2); color: var(--kode-fg); border: 1px solid var(--kode-border); border-radius: 3px; padding: 4px 8px; font-family: var(--kode-mono); }
+  input.cmd { width: 100%; background: var(--kode-surface-2); color: var(--kode-fg); border: 1px solid var(--kode-border); border-radius: 3px; padding: 4px 8px; font-family: var(--kode-mono); }
+  .cmdrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .cmdrow .prompt { flex: none; font-family: var(--kode-mono); font-weight: 700; color: var(--kode-warn); }
   .keyshint { font-size: var(--kode-t-tag); color: var(--kode-fg-4); margin-top: 4px; }
   .rejected { color: var(--kode-err); }
+  /* TELNET-EZ-001:自由 Python 模式警示面(直接执行引擎侧 Python) */
+  .modebadge { font-size: var(--kode-t-tag); color: var(--kode-warn); border: 1px solid var(--kode-warn); border-radius: 3px; padding: 2px 8px; font-family: var(--kode-mono); }
+  .session[data-console-mode="python"] input.cmd { border-color: var(--kode-warn); }
+  button.quick.mode { border-color: var(--kode-accent); color: var(--kode-fg); }
 </style>
 </head>
 <body>
@@ -354,6 +415,7 @@ ${sessionHtml}
   const stateLabels = ${JSON.stringify(labels)};
   const stateColors = ${JSON.stringify(stateColors)};
   const rejectedPrefix = ${JSON.stringify(t.rejected(''))};
+  const pythonRejectedPrefix = ${JSON.stringify(t.pythonRejected(''))};
   document.getElementById('targets').addEventListener('click', event => {
     const item = event.target.closest('.target');
     if (item) {
@@ -361,6 +423,11 @@ ${sessionHtml}
     }
   });
   document.getElementById('session').addEventListener('click', event => {
+    const mode = event.target.closest('button.quick.mode');
+    if (mode) {
+      vscode.postMessage({ command: 'set-mode', key: mode.dataset.key, mode: mode.dataset.mode });
+      return;
+    }
     const quick = event.target.closest('button.quick');
     if (quick) {
       vscode.postMessage({ command: 'send', key: quick.dataset.key, text: quick.dataset.command });
@@ -415,7 +482,9 @@ ${sessionHtml}
       return;
     }
     if (message.command === 'rejected') {
-      appendLines([rejectedPrefix + message.text], 'rejected');
+      const session = document.querySelector('.session');
+      const python = session && session.dataset.consoleMode === 'python';
+      appendLines([(python ? pythonRejectedPrefix : rejectedPrefix) + message.text], 'rejected');
       return;
     }
     if (message.command === 'states') {

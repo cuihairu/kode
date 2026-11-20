@@ -148,7 +148,7 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
     ]);
   });
 
-  it('执行器抛错 → 全 failed(不吞异常)', async () => {
+  it('执行器抛错 → 全 failed(不吞异常;RUST-419 原因带分类前缀)', async () => {
     const transport = new HttpReloadTransport(entry(), {
       run: async () => {
         throw new Error('connection refused');
@@ -156,8 +156,8 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
     });
     const summary = await transport.send(target, files, () => undefined);
     expect(summary.receipts).toEqual([
-      { status: 'failed', file: files[0], reason: 'connection refused' },
-      { status: 'failed', file: files[1], reason: 'connection refused' }
+      { status: 'failed', file: files[0], reason: '传输失败:见原始原因(原始:connection refused)' },
+      { status: 'failed', file: files[1], reason: '传输失败:见原始原因(原始:connection refused)' }
     ]);
   });
 });
@@ -308,7 +308,7 @@ describe('HttpReloadTransport.probe (IDE-HOT-101 验收 5)', () => {
     const transport = new HttpReloadTransport(entry(), { run: runStub({ status: 503, body: '' }) });
     expect((await transport.probe()).ok).toBe(false);
   });
-  it('抛错 → not ok with 原因', async () => {
+  it('抛错 → not ok with 原因(RUST-419:ECONNREFUSED 归端点不可达族)', async () => {
     const transport = new HttpReloadTransport(entry(), {
       run: async () => {
         throw new Error('ECONNREFUSED');
@@ -316,7 +316,8 @@ describe('HttpReloadTransport.probe (IDE-HOT-101 验收 5)', () => {
     });
     const result = await transport.probe();
     expect(result.ok).toBe(false);
-    expect(result.detail).toBe('ECONNREFUSED');
+    expect(result.detail).toContain('端点不可达');
+    expect(result.detail).toContain('ECONNREFUSED');
   });
 });
 

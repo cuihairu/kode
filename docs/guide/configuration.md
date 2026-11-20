@@ -174,6 +174,7 @@ The four CodeLens switches take effect on change, no window reload needed; inlay
 | --- | --- | --- | --- |
 | `kbengine.jumpLog` | boolean | `false` | Jump decision-path logging (Output panel KBEngine Navigation, filter `[kode-jump]`; zero overhead when off) |
 | `kbengine.index.syntaxGate` | boolean | `true` | Python index input syntax gate (INDEX-DISCIPLINE-001): before a saved reindex (save + external write, coalesced) the file passes a single-pass bracket/quote/indent precheck (no subprocess); a file saved mid-edit with broken syntax stays out of the index and the last healthy symbols are kept (diagnostics still report the error, navigation keeps working); off restores indexing broken files as-is |
+| `kbengine.index.scanExcludeGlobs` | string[] | `[]` | User exclusion globs for business indexing (ENGINE-LIB-SCAN-005): each glob is compiled with minimatch (dot on) and matched against the normalized absolute path; matching files/directories are pruned from every business scan surface (discovery chain `.def`, event index, Python class index). A bare directory name (`kbe`) is interpreted as the double-star form matching any prefix and suffix; invalid patterns are skipped without breaking the scan. The engine repo subtree is excluded automatically by engine-tree markers (see "How to Watch Index Progress" above) — this key is an additional escape hatch |
 | `kbengine.python.enableMroJump` | boolean | `true` | Switch for Python jump layer 2 (cross-file C3-MRO + composition roots resolving mixin/base-class methods); when off, layer 2 records a skip and no full-repo scan runs — jumps fall back to layer 1 (the `.def` derived index) and layer 3 (current-file class scopes) |
 | `kbengine.python.enableDataDictIndex` | boolean | `true` | Switch for the KBEngine.globalData/baseAppData/cellAppData cross-process data-dict key index; write sites `[K]=RHS` and read sites `[K]`/`.get(K)` link by key signature for Shift+F12 references and F12 jumps (read site jumps to the write site); a write-site RHS value type is inferred (only when known) and shown at same-key read sites as an inlay `: <type>` and in hover, so a `{"gold": 1}` write yields `Dict[str, int]` at `get("cfg")` readers; off skips the index and references/jumps fall back to the regular chain |
 | `kbengine.python.enableSpaceDataIndex` | boolean | `true` | Switch for the engine `KBEngine.setSpaceData` / `getSpaceData` / `delSpaceData` (cellapp-registered, per-space storage) space-data read/write index; calls whose spaceID is an int literal or module-level int constant binding and whose key is a string literal join a `(spaceID, key)`-exact family for key-position completion, Shift+F12 references and F12 jumps (read/delete site jumps to the write site, set site jumps to the first different-kind site); dynamic spaceIDs (unresolvable) never join a family — a dynamic space is not merged into one definite object; off skips the index and completion/references/jumps fall back to the regular chain |
@@ -781,9 +782,22 @@ Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user 
 Excel-generated config tables/classes (`dict` bindings and `*Config`/`*Data` classes) hold data that only hot-reload entry points are allowed to change. Kode guards them with two faces driven by one whole-workspace scan:
 
 1. **Accidental-write diagnostics** (`kbengine.configDataMutation`): every write to a config binding — attribute (`x.f = v`), subscript (`x[k] = v`), `del`, augmented assignment (`x += v`), and mutator methods (`append`/`pop`/`update`/`clear`/`sort`/…) — is flagged unless it sits inside a hot-reload entry function (`reload*`/`hotUpdate*`) or a `mutationExclude` whitelist path. Config-directory files themselves are never flagged.
-2. **Schema hover**: hovering a config binding or class name shows the literal type text read straight from its definition (schema direct-read, not inference).
+2. **Schema hover**: hovering a config binding or class name shows the literal type text read straight from its definition (schema direct-read, not inference). Member access resolves through the same schema: hovering `hp` in `Config.MOBILES[0].hp` (module-rooted chain), a dict key inside `TABLE["warrior"]["hp"]`, or a module-level alias (`TBL = MOBILES`, then `TBL[0].hp`) shows the member's direct-read type plus the source binding location. Container method names (`.get` and friends) never match.
 
 Recognition is settings-driven, not heuristic: config directories (`configDirGlobs`, default `scripts/config/**`, `scripts/data/config/**`, `scripts/data/**`), config class names (`configClassPatterns`, default `*Config`/`*Data`), hot-reload entries (`reloadFunctionPatterns`, default `reload*`/`hotUpdate*`), and intentional-write exemptions (`mutationExclude`, default empty). The feature activates only in KBEngine workspaces (entity `.def` root discovered) and rescans on activation, on Python file open/save (800 ms debounce), and on settings changes. Set `kbengine.configData.enabled` to `false` to turn both faces off.
+
+Pointing kode at your own layout: when your tables live outside the default directories or your classes are not named `*Config`/`*Data`, extend the settings instead of renaming code:
+
+```json
+{
+  "kbengine.configData": {
+    "configDirGlobs": ["assets/config_data/**", "scripts/config/**"],
+    "configClassPatterns": ["*Config", "*Data", "TABLE_*", "Cfg*"]
+  }
+}
+```
+
+When the feature is on but the schema comes back empty, hovering a config-class-shaped name shows a notice listing the current `configDirGlobs`/`configClassPatterns`, so a directory or pattern miss is visible instead of silent.
 
 Honest boundaries: the scan is line-level (a write statement split across lines is not recognized); consumption sites are matched by binding name without module-path resolution; a module-level rebinding of the same name in the consuming file shadows the config binding from that point on.
 
@@ -824,3 +838,46 @@ Check in this order:
 5. Whether `ms-python.debugpy` is installed on this machine and VS Code can attach through it normally
 
 The old `kbengine.pythonPath`, `kbengine.debugPort`, `kbengine.autoAttachDebug` have been removed; `kbengine.pythonDefsPath`, `kbengine.enablePythonNavigation` have also been removed (navigation goes through the `.def` definition system — see the entity explorer).
+
+## How to Watch Index Progress (WARM-VISIBILITY-004)
+
+The extension indexes entity definitions, Python classes and event calls in the
+background after activation. Two surfaces show what the indexer is doing:
+
+1. **Status bar progress** — while the warmup pipeline runs you see
+   `KBEngine 后台索引预热` in the status bar. Hovering it shows the current
+   stage, and long stages now report intra-stage counters (`实体发现链 def 23/87`,
+   `事件/方法索引 145/612 文件`) throttled to at most one update per 500 ms /
+   10 files, so a minute-long first scan is visibly alive instead of stuck.
+2. **Output panel → `KBEngine Index`** — a unified, always-on log channel for
+   indexer key events: scan start/completion for the discovery chain, the event
+   index and the Python class index, per-chunk Python index progress, disk cache
+   hits/restore, slow-file notices and scan-failure retries. Every line carries
+   a relative timestamp (`[+12.3s]`) and a source tag
+   (`discovery` / `event-index` / `python-index` / `cache` / `server`).
+   The `server` tag covers the Rust kode-server helper process itself:
+   `spawned` / `ready` / `exit` lines and restart-loop forensics (crash →
+   auto-restart generations). These lines only appear when the helper process
+   is actually running.
+
+Notes:
+
+- The `KBEngine Index` channel has no on/off switch: it only carries key facts
+  (a handful of lines per scan), never per-decision debug traffic. The
+  `kbengine.jumpLog` setting still controls the verbose
+  `KBEngine Navigation` channel only.
+- If the status bar never advances and `KBEngine Index` shows no scan-start
+  line, the workspace was likely not detected as a KBEngine project (check the
+  scan-root settings referenced above).
+- If the workspace contains the KBEngine engine repository itself (for example
+  a parent folder holding the engine repo next to your assets), the engine
+  subtree is excluded from business indexing automatically — detected through
+  the engine tree markers (`kbe/src/lib/common/version.h` /
+  `kbeversion.h`) or the `kbengine.engineRoot` setting, and reported in the
+  scan-start line (`已剔引擎仓子树 N 处`). Engine-side corpus flows through its
+  own dedicated channel, so opening the engine repo alone yields an empty
+  business index by design.
+- Background full scans parse in 4-file chunks and check the interactive
+  cooldown window before each chunk (a fresh user interaction postpones the
+  next chunk by up to 50 ms), so a large first scan stays responsive instead
+  of freezing the UI.

@@ -257,6 +257,7 @@ mod tests {
             directive: Some("FIXED_DICT".into()),
             implemented_by_symbol: None,
             field_refs: vec!["x".into(), "y".into(), "z".into()],
+            fields: vec![],
             element_ref: None,
         };
         g.add_types(&TypesFile {
@@ -286,6 +287,7 @@ mod tests {
             directive: Some("ARRAY".into()),
             implemented_by_symbol: None,
             field_refs: vec![],
+            fields: vec![],
             element_ref: Some("UINT32".into()),
         };
         g.add_types(&TypesFile {
@@ -431,6 +433,7 @@ mod tests {
             directive: Some("ARRAY".into()),
             implemented_by_symbol: None,
             field_refs: vec![],
+            fields: vec![],
             element_ref: None,
         };
         g.add_types(&TypesFile {

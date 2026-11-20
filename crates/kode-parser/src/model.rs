@@ -59,6 +59,9 @@ pub struct PropertyDef {
     /// `<Type>` 上的全部类型引用(文本 token 去掉 ARRAY/FIXED_DICT + `<of>` 文本;
     /// 与 TS collectTypeReferences 同口径)。
     pub type_refs: Vec<String>,
+    /// `<Type>` 的 `<of>` 元素类型(ARRAY 属性;RUST-136 hover fullType
+    /// 消费;不进 parser golden)。
+    pub of_ref: Option<String>,
     /// `<Flags>` 原文(trim)。
     pub flags_raw: Option<String>,
     /// 旗标 token 规范化结果(顺序保留)。
@@ -235,6 +238,7 @@ fn extract_property(doc: &Document, idx: usize, lines: &LineMap) -> PropertyDef 
         line: lines.line_of(e.name_span.start),
         type_name: None,
         type_refs: Vec::new(),
+        of_ref: None,
         flags_raw: None,
         flags: Vec::new(),
         default_value: None,
@@ -251,6 +255,10 @@ fn extract_property(doc: &Document, idx: usize, lines: &LineMap) -> PropertyDef 
             "type" => {
                 let refs = collect_type_refs(doc, child);
                 prop.type_name = ce.first_text_token(doc);
+                prop.of_ref = doc
+                    .child_element(child, "of")
+                    .map(|o| doc.element(o).text(doc).trim().to_string())
+                    .filter(|s| !s.is_empty());
                 prop.type_refs = refs;
             }
             "flags" | "clientflags" => {
@@ -546,6 +554,17 @@ pub enum TypeKind {
     Builtin,
 }
 
+/// FIXED_DICT 键字段(逐属性:名 + Type 指引首 token + `<of>` 元素;
+/// RUST-136 hover fullType 消费;不进 parser golden)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeField {
+    pub name: String,
+    /// 字段 `<Type>` 直接文本首 token(ARRAY/内建名/自定义名)。
+    pub directive: String,
+    /// 字段 `<Type>` 的 `<of>` 元素类型(ARRAY 字段)。
+    pub of_ref: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeDecl {
     pub name: String,
@@ -559,6 +578,9 @@ pub struct TypeDecl {
     pub implemented_by_symbol: Option<String>,
     /// FIXED_DICT 键字段类型引用(逐属性 Type 收集)。
     pub field_refs: Vec<String>,
+    /// FIXED_DICT 键字段(名+指引+of;与 field_refs 同源逐属性;RUST-136
+    /// fullType 消费;不进 parser golden)。
+    pub fields: Vec<TypeField>,
     /// ARRAY 的 `<of>` 元素类型。
     pub element_ref: Option<String>,
 }
@@ -606,7 +628,7 @@ pub fn extract_types(doc: &Document, raw_text: &str) -> TypesFile {
             "" => continue, // 空条目(纯注释位)不产出,与 TS 一致
             _ => TypeKind::Builtin,
         };
-        let (implemented_by_symbol, field_refs, element_ref) = match kind {
+        let (implemented_by_symbol, field_refs, fields, element_ref) = match kind {
             TypeKind::FixedDict => {
                 let symbol = doc
                     .scalar_child_value(child, "implementedBy")
@@ -620,14 +642,23 @@ pub fn extract_types(doc: &Document, raw_text: &str) -> TypesFile {
                     })
                     .filter(|s| !s.is_empty());
                 let mut field_refs = Vec::new();
+                let mut fields = Vec::new();
                 if let Some(props) = doc.child_element(child, "Properties") {
                     for prop in doc.child_elements(props) {
                         if let Some(t) = doc.child_element(prop, "Type") {
                             field_refs.extend(collect_type_refs(doc, t));
+                            fields.push(TypeField {
+                                name: doc.element(prop).name.clone(),
+                                directive: doc.element(t).first_text_token(doc).unwrap_or_default(),
+                                of_ref: doc
+                                    .child_element(t, "of")
+                                    .map(|o| doc.element(o).text(doc).trim().to_string())
+                                    .filter(|s| !s.is_empty()),
+                            });
                         }
                     }
                 }
-                (symbol, field_refs, None)
+                (symbol, field_refs, fields, None)
             }
             TypeKind::Array => {
                 let element_ref = doc
@@ -642,9 +673,9 @@ pub fn extract_types(doc: &Document, raw_text: &str) -> TypesFile {
                             .map(|a| a.value.trim().to_string())
                             .filter(|s| !s.is_empty())
                     });
-                (None, Vec::new(), element_ref)
+                (None, Vec::new(), Vec::new(), element_ref)
             }
-            TypeKind::Builtin => (None, Vec::new(), None),
+            TypeKind::Builtin => (None, Vec::new(), Vec::new(), None),
         };
         out.types.push(TypeDecl {
             name: e.name.clone(),
@@ -658,6 +689,7 @@ pub fn extract_types(doc: &Document, raw_text: &str) -> TypesFile {
             },
             implemented_by_symbol,
             field_refs,
+            fields,
             element_ref,
         });
     }

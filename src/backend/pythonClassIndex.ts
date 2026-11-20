@@ -3,13 +3,13 @@ import * as path from 'path';
 import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from '../compositionRoots';
-import { findFilesAcrossRoots } from '../scanRoots';
+import { findFilesAcrossRoots, resolveEngineSubtreeExclusions } from '../scanRoots';
 import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS, isEnginePythonLibPath } from './pythonScanRules';
 import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 import { checkSyntaxGate } from './syntaxGate';
-import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
+import { IndexScheduler, IndexTaskPriority, interactiveActivityBeacon } from './indexScheduler';
 import { SemanticDependencyGraph } from './dependencyGraph';
 import {
   restoreSerializedParsedPythonFile,
@@ -18,6 +18,8 @@ import {
 } from './scanProgress';
 import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from '../hoverBudget';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
+import { indexLog } from './indexLog';
+import { createScanStageProgressReporter } from './scanStageProgress';
 import {
   recordLanguageServiceOperation,
   startLanguageServiceOperation
@@ -186,8 +188,30 @@ export type PythonIndexVersions = Record<PythonIndexVersionKey, number>;
 /** 组合根派生物在依赖图里的节点键(PR4 SemanticDependencyGraph) */
 export const COMPOSITION_ROOTS_NODE = 'python:composition-roots';
 
-/** 全扫分块大小(对齐 PR1 基线的 16 路并发读;机械盘更高并发反而增加寻道) */
-const SCAN_CHUNK_SIZE = 16;
+/**
+ * 全扫分块大小(ENGINE-LIB-SCAN-005 刀4:16→4)。单块=N 个文件的连续主线程
+ * 占用(<256KB 文件全走 parsePythonFile 纯同步),块越大单次占用越长——
+ * Lib 级量级文件把 16 文件块放大成周期性前台卡顿;4 文件一块+块前交互
+ * 冷却让路把后台占用粒度压到交互可插队。并发读收益在此块型下由块间流水
+ * 补偿(块本身走调度器后台任务)。
+ */
+export const SCAN_CHUNK_SIZE = 4;
+/**
+ * 块前交互冷却窗(ENGINE-LIB-SCAN-005 刀4;与 indexScheduler
+ * DEFAULT_INTERACTIVE_COOLDOWN_MS 同值,单一口径——kodeCoreCorpusMirror
+ * defaultMirrorYield 同一判定形态)。
+ */
+export const SCAN_INTERACTIVE_COOLDOWN_MS = 50;
+/**
+ * 块前让路等待时长(纯函数,时钟读点在调用方):交互信标刚刷新(冷却窗内)
+ * 时先等出窗再解析本块;信标陈旧或时钟异常(负差)都返回 0 不让路。
+ */
+export function scanChunkYieldDelayMs(now: number, beaconAt: number): number {
+  const since = now - beaconAt;
+  return since >= 0 && since < SCAN_INTERACTIVE_COOLDOWN_MS
+    ? SCAN_INTERACTIVE_COOLDOWN_MS - since
+    : 0;
+}
 /** 分块失败遗留文件的待补解析重试上限(永久不可读文件不无限重试) */
 const MAX_SCAN_RETRY_ATTEMPTS = 3;
 
@@ -248,6 +272,13 @@ export class PythonClassIndex {
   private discoveredFiles: vscode.Uri[] | null = null;
   /** discoveredFiles 所属扫描代(换代后强制重新发现) */
   private discoveredGeneration = -1;
+  /**
+   * RESP-002:发现单飞(代际键)。发现等待不占调度器执行位——调度器单并发
+   * 位若被全盘 findFiles 的 await 占据,RequestLocal 已知路径补载也只能排队
+   * (异步让出事件循环,却不让出执行位)。换代守卫晚到结果不落缓存;失败不
+   * 缓存(下一调用重发现)。
+   */
+  private discoveredInFlight: { generation: number; promise: Promise<void> } | null = null;
   /**
    * 文件发现序(装载入口同步记号):③ 反向候选的跨文件排序用。分块装载是
    * Promise.all 并发(:837),完成序随 IO 时序翻动——不记号的话候选顺序
@@ -1068,6 +1099,17 @@ export class PythonClassIndex {
       this.lastScanResumeStats = { adopted: adoptedEntries.length, scanned: scanFiles.length };
       scanMetrics.countFileRead(scanFiles.length);
       scanMetrics.countFileParse(scanFiles.length);
+      // WARM-VISIBILITY-004 刀 B:python 全扫起扫行 + 块级节流进度,进统一
+      // 「KBEngine Index」通道(常开;进度行复用 scanStageProgress 双闸节流);
+      // ENGINE-LIB-SCAN-005 刀2:剔除面入行(任务书「范围变化可审计」)
+      const engineExcludedRoots = resolveEngineSubtreeExclusions().length;
+      indexLog('python-index',
+        `python 类索引全扫开始:${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length}${engineExcludedRoots > 0 ? `/已剔引擎仓子树 ${engineExcludedRoots} 处` : ''})`);
+      const pyProgress = createScanStageProgressReporter({
+        label: 'python 类索引',
+        total: files.length,
+        report: detail => { indexLog('python-index', detail); }
+      });
       // 分块入队:每块一个后台任务,块与块之间调度器可插队交互任务
       // (RequestLocal 单文件解析/当前文件更新),全量扫描不再独占主线程。
       const batches: string[][] = [];
@@ -1087,7 +1129,10 @@ export class PythonClassIndex {
               this.commitParsedFile(
                 entry.path, restoreSerializedParsedPythonFile(entry.parsed), entry.version, 0);
             }
+            pyProgress.step(adoptedEntries.length);
             jumpLog('info', () =>
+              `py 全扫断点恢复:采纳 ${adoptedEntries.length} 个文件(直取,不重读不重解析)`);
+            indexLog('python-index',
               `py 全扫断点恢复:采纳 ${adoptedEntries.length} 个文件(直取,不重读不重解析)`);
           }
         }));
@@ -1102,8 +1147,16 @@ export class PythonClassIndex {
           run: async () => {
             // 失效换代:过期分块直接放弃(旧代结果不得覆盖新一代状态)
             if (scanGeneration !== this.scanGeneration) { return; }
+            // ENGINE-LIB-SCAN-005 刀4:交互冷却窗让路——信标刚刷新(交互任务
+            // 在途或刚结束)时先等出窗再解析本块(FREEZE 刀1b 信标同源,
+            // defaultMirrorYield 同一判定形态),后台占用对交互让步。
+            const yieldMs = scanChunkYieldDelayMs(performance.now(), interactiveActivityBeacon.lastAt);
+            if (yieldMs > 0) {
+              await new Promise<void>(resolve => setTimeout(resolve, yieldMs));
+            }
             const results = await Promise.all(batch.map(file =>
               this.loadFile(file, -1).then(committed => (committed ? file : null), () => null)));
+            pyProgress.step(results.filter(file => file !== null).length);
             // SCAN-RESUME-001:本块已提交文件落断点(指纹自查盘;写失败静默,
             // 断点只是加速);换代后不落(旧代条目不得混入新轮断点)
             if (this.scanProgress && scanGeneration === this.scanGeneration) {
@@ -1137,9 +1190,16 @@ export class PythonClassIndex {
         }
         jumpLog('info', () =>
           `py 全扫有 ${failedFiles.length} 个文件未随分块解析,已登记待补(后续查询定向重试)`);
+        indexLog('python-index',
+          `py 全扫有 ${failedFiles.length} 个文件未随分块解析,已登记待补(后续查询定向重试)`);
       } else {
-        // 本轮无失败分块:上一代遗留的待补文件已被本轮全量覆盖,清表
-        this.pendingScanRetries.clear();
+        // 本轮无失败分块:被本轮全量覆盖的遗留待补文件清表。RESP-002 后发现
+        // 不占调度执行位,按需补载与全扫收尾可并发——在册但不在本轮发现集的
+        // 条目是扫描期按需登记的,本轮未覆盖,不得误删。
+        const covered = new Set(filePaths);
+        for (const file of [...this.pendingScanRetries.keys()]) {
+          if (covered.has(file)) { this.pendingScanRetries.delete(file); }
+        }
         // SCAN-RESUME-001:全量零失败收尾——断点使命完成,清场(部分失败/
         // 取消不 complete:已记录分块留盘,下一轮从断点续扫)
         this.scanProgress?.complete();
@@ -1147,6 +1207,11 @@ export class PythonClassIndex {
       jumpLog('info', () =>
         `py 全仓索引完成 ${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`
         + ` → 类 ${this.byName.size} 个,${scanTimer()}ms(调度器分块后台执行)`);
+      pyProgress.finish();
+      // WARM-VISIBILITY-004 刀 B:完成行镜像进统一通道(计时取同段墙钟)
+      indexLog('python-index', () =>
+        `py 全仓索引完成 ${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`
+        + ` → 类 ${this.byName.size} 个`);
       scanMetrics.end('ok');
     } catch (error) {
       scanMetrics.end('error');
@@ -1158,28 +1223,49 @@ export class PythonClassIndex {
   }
 
   /**
-   * 文件发现(keyed 单例)只供后台全扫；请求所需的已知文件按路径定向补载。
+   * 文件发现(类内代际单飞)只供后台全扫；请求所需的已知文件按路径定向补载。
    * 同代缓存直接复用，换代或失败后可重新发现。
+   *
+   * RESP-002:发现不经调度器——单并发执行位被全盘 findFiles 的 await 占据时,
+   * RequestLocal 已知路径补载也被迫排队(异步扫盘让出 JS 事件循环,却没有
+   * 让出调度执行位;慢外部目录/未结束 findFiles 期间高优先级任务恒 queued)。
+   * 发现等待与交互执行分离后,分块解析仍走调度器,块与块之间可插队交互任务。
    */
   private async ensureDiscovered(scanGeneration: number): Promise<vscode.Uri[]> {
     if (this.discoveredFiles && this.discoveredGeneration === scanGeneration) {
       return this.discoveredFiles;
     }
-    await this.scheduler.ensureTask(`python-file-discovery#${scanGeneration}`, () => ({
-      kind: 'initial-scan' as const,
-      priority: IndexTaskPriority.BackgroundFull,
-      run: async () => {
-        // ENGINE-LIB-SCAN-005 刀1:引擎仓 python 标准库镜像(kbe/scripts/common/Lib)
-        // 按路径形态剔出业务扫描——workspace glob 结果后滤 + 外部根遍历剪枝。
-        this.discoveredFiles = await findFilesAcrossRoots(
-          '**/*.py',
-          PY_SCAN_EXCLUDE,
-          undefined,
-          fsPath => !isEnginePythonLibPath(fsPath)
-        );
-      }
-    }));
-    this.discoveredGeneration = scanGeneration;
+    if (!this.discoveredInFlight || this.discoveredInFlight.generation !== scanGeneration) {
+      this.discoveredInFlight = {
+        generation: scanGeneration,
+        promise: (async () => {
+          // ENGINE-LIB-SCAN-005 刀1:引擎仓 python 标准库镜像(kbe/scripts/common/Lib)
+          // 按路径形态剔出业务扫描——workspace glob 结果后滤 + 外部根遍历剪枝。
+          const files = await findFilesAcrossRoots(
+            '**/*.py',
+            PY_SCAN_EXCLUDE,
+            undefined,
+            fsPath => !isEnginePythonLibPath(fsPath)
+          );
+          // 换代守卫:晚到的旧代发现不落缓存(scanGeneration 已推进,结果
+          // 无关;下一调用按新代重发现)。
+          if (scanGeneration === this.scanGeneration) {
+            this.discoveredFiles = files;
+            this.discoveredGeneration = scanGeneration;
+          }
+        })()
+      };
+    }
+    const flight = this.discoveredInFlight;
+    try {
+      await flight.promise;
+    } catch (error) {
+      // 失败不缓存「已发现」假象(与首扫失败口径一致):同代错误上抛给首扫
+      // 记账,换代错误静默(结果已无关,新代单飞已接管)。
+      if (scanGeneration === this.scanGeneration) { throw error; }
+    } finally {
+      if (this.discoveredInFlight === flight) { this.discoveredInFlight = null; }
+    }
     return this.discoveredFiles ?? [];
   }
 

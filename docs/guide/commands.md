@@ -900,6 +900,18 @@ The flow graph panel supports:
   - The session panel's currently selected target goes first; with nothing selected or no session on it, the first connected target is taken
   - With no connected session it says so honestly, no spinning
 
+### `kbengine.telnet.openPythonConsole`
+
+- Title: `Open Python Console (Telnet)`
+- Purpose: the shallow "Python console" entry (TELNET-EZ-001) — one click runs a fresh probe of every component telnet port (the existing probe chain; ports/passwords come from the real kbengine.xml / engine defaults, zero config knowledge), lists the open components for one-click selection, and drops you into the panel session
+- Entries: the telnet tree title-bar button (top of the sidebar tree) and the command palette
+- Behavior:
+  - A fresh probe round runs before judging — a stale cache never decides "all closed"
+  - Open components (open / connected / port-open-no-password) enter the quick pick with host:port and state; picking one opens the panel on that target, and an `open` target connects its session immediately; a port-open-no-password target opens the panel with the password guidance instead of force-connecting
+  - With every component closed (or no telnet target at all): a one-shot guidance message names the kbengine.xml `<telnet_service>` fix and offers an "open Telnet panel" action (the panel carries the full config snippet)
+  - Cancelling the pick does nothing further, honestly
+- Session console modes (TELNET-EZ-001 ①, in-panel): the session area carries a mode toggle — whitelist mode (default: the safe read-only shortcut set plus user `kbengine.telnet.enableCommands`) ↔ free Python mode ("Enter Python REPL", warning-colored badge "runs Python directly on the engine", `>>>` primary prompt with `…` continuation hint). Mode is a per-target session property: it survives disconnects and reconnects. Free mode sends arbitrary Python expressions engine-side; empty commands and `:quit` are refused in both modes. The quick-button set is expanded with read-only `entities` / `globalData` / `KBEngine.debug` expressions (entity type distribution, global data snapshot, engine debug info)
+
 ### `kbengine.bots.add`
 
 - Title: `KBEngine: Add Bots (telnet addBots)`
@@ -1047,6 +1059,16 @@ The flow graph panel supports:
   - With nothing held the command reports honestly (没有滞留的热更预览批次) and sends nothing
   - The threshold counts per batch, so reaching it requires wave batching (`kbengine.hotReload.batchFlushMs > 0`); `batchPreviewThreshold: 0` holds every batch
 
+
+### `kbengine.hotReload.showDiagnostics`
+
+- Title: `Show Hot Reload Diagnostics`
+- Purpose: open the 「KBEngine 热更诊断」 OUTPUT channel — the user-reviewable timeline of every hot-reload save-pipeline diagnostic event (RUST-341 / HR-WATCH-017)
+- Behavior:
+  - All eight diagnostic kinds land in the channel, one line per event — trigger / filtered / debounced / deduped / blocked (syntax gate) / scheduled / preview (batch hold) / flushed — each line formatted `[time] label file: detail`; nothing is aggregated or filtered out (presentation is the full account: an event blocked by the gate is just as visible as one that shipped)
+  - The channel fills on event whether or not this command is ever run; the command only opens it for review (no re-sampling, no extra computation)
+  - The channel is shared across pipeline rebuilds (configuration changes re-create the pipeline but keep appending to the same channel); the existing 「KBEngine 热更新」 log keeps its own contract (the batch-preview hold notice still logs there too)
+  - Disposing the hot-reload assembly disposes the channel
 
 ### `kbengine.hotReload.showBatchSummary`
 

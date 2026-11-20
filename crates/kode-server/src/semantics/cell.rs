@@ -422,6 +422,7 @@ mod tests {
             line: 1,
             type_name: Some(ty.into()),
             type_refs: vec![ty.into()],
+            of_ref: None,
             flags_raw: None,
             flags: flags.iter().map(|s| s.to_string()).collect(),
             default_value: None,

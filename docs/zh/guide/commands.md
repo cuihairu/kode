@@ -845,6 +845,18 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
   - 优先断开会话面板当前选中的目标；未选中或选中目标无会话时取首个已连接目标
   - 没有已连接的会话时如实提示，不空转
 
+### `kbengine.telnet.openPythonConsole`
+
+- 标题：`打开 Python 控制台(Telnet)`
+- 作用：「Python 控制台」浅入口（TELNET-EZ-001）——点击即对全部组件 telnet 端口跑一轮即时探测（复用既有探测链，端口/密码取 kbengine.xml / 引擎 defaults 真值，全程零配置知识），列出已开组件一键选，落进面板会话
+- 入口：侧边栏 telnet 树标题栏按钮（树顶部）+ 命令面板
+- 行为：
+  - 判定前先跑一轮新鲜探测——不吃旧缓存，「全未开」结论不作数于过期状态
+  - 已开组件（已开启 / 已连接 / 端口开·未配密码）进选择列表，带 host:port 与状态；选中即打开面板定位该目标——「已开启」目标顺手建立会话，「端口开·未配密码」目标只开面板交给密码指引，不硬连
+  - 全部组件未开（或没有任何 telnet 目标）：一次性引导消息给出 kbengine.xml `<telnet_service>` 的修法与「打开 Telnet 面板」动作（面板内有完整配置片段）
+  - 取消选择如实返回，不空转
+- 会话控制台模式（TELNET-EZ-001 ①，面板内）：会话区带模式切换钮——白名单模式（默认：安全只读快捷集 + 用户 `kbengine.telnet.enableCommands`）↔ 自由 Python 模式（「进入 Python 交互」，警示色徽章「直接执行引擎侧 Python」，`>>>` 主提示符与 `…` 续行提示）。模式是目标键上的会话属性：断线保留、重连沿用。自由模式任意 Python 表达式直接在引擎侧执行；空命令与 `:quit` 两模式恒拒。快捷钮扩充只读 `entities` / `globalData` / `KBEngine.debug` 表达式（实体类型分布 / 全局数据快照 / 引擎调试信息）
+
 ### `kbengine.bots.add`
 
 - 标题：`KBEngine: Add Bots (telnet addBots)`
@@ -983,6 +995,16 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
   - 无滞留时如实报告(没有滞留的热更预览批次),不假装放行
   - 阈值按批计数,到阈值需先成批(`kbengine.hotReload.batchFlushMs > 0`);`batchPreviewThreshold: 0` = 一律滞留
 
+
+### `kbengine.hotReload.showDiagnostics`
+
+- 标题：`Show Hot Reload Diagnostics`
+- 作用：打开「KBEngine 热更诊断」通道——热更保存流水线全部诊断事件的用户可审查时间线（RUST-341 / HR-WATCH-017）
+- 行为：
+  - 八型诊断全部落通道，一行一事件——trigger/filtered/debounced/deduped/blocked（语法闸拦下）/scheduled/preview（批量预览滞留）/flushed——行格式 `[时间] 标签 文件: 明细`；不聚合、不筛除（呈现即全量：被闸门拦下的事件与已发出的事件同样可见）
+  - 通道按事件落账，命令从未运行也照常积累；本命令只负责打开供审查（不重采样、无额外计算）
+  - 通道跨流水线重建共用（配置变化重建流水线仍写同一通道）；「KBEngine 热更新」主日志的既有契约不变（批量预览滞留提示仍同时落主日志）
+  - 热更装配释放时通道一并释放
 
 ### `kbengine.hotReload.showBatchSummary`
 

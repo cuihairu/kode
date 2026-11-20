@@ -144,6 +144,7 @@
     "onCommand:kbengine.workbench.show",
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
+    "onCommand:kbengine.telnet.openPythonConsole",
     "onCommand:kbengine.telnet.disconnect",
     "onCommand:kbengine.bots.add",
     "onCommand:kbengine.bots.count",
@@ -191,6 +192,7 @@
     "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.hotReload.materializeGlobs",
     "onCommand:kbengine.hotReload.releasePreview",
+    "onCommand:kbengine.hotReload.showDiagnostics",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.resetStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -915,6 +917,11 @@
         "icon": "$(plug)"
       },
       {
+        "command": "kbengine.telnet.openPythonConsole",
+        "title": "%kbengine.command.telnet.openPythonConsole.title%",
+        "icon": "$(terminal)"
+      },
+      {
         "command": "kbengine.telnet.disconnect",
         "title": "%kbengine.command.telnet.disconnect.title%",
         "icon": "$(debug-disconnect)"
@@ -1202,6 +1209,10 @@
         "title": "%kbengine.command.hotReload.releasePreview.title%"
       },
       {
+        "command": "kbengine.hotReload.showDiagnostics",
+        "title": "%kbengine.command.hotReload.showDiagnostics.title%"
+      },
+      {
         "command": "kbengine.typePreview.refresh",
         "title": "%kbengine.command.typePreview.refresh%",
         "icon": "$(refresh)"
@@ -1222,6 +1233,11 @@
           "command": "kbengine.server.start",
           "when": "view == kbengine.serverControl",
           "group": "navigation"
+        },
+        {
+          "command": "kbengine.telnet.openPythonConsole",
+          "when": "view == kbengine.telnetStatus",
+          "group": "navigation@0"
         },
         {
           "command": "kbengine.telnet.disconnect",
@@ -1921,6 +1937,12 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.index.syntaxGate.description%"
+          },
+          "kbengine.index.scanExcludeGlobs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "markdownDescription": "%kbengine.config.index.scanExcludeGlobs.description%"
           },
           "kbengine.python.enableDataDictIndex": {
             "type": "boolean",
@@ -2699,6 +2721,7 @@
   "devDependencies": {
     "@mermaid-js/tiny": "^12.2.0",
     "@shikijs/langs": "^4.6.0",
+    "@types/minimatch": "3.0.5",
     "@types/mocha": "^8.2.3",
     "@types/node": "~20.19.43",
     "@types/vscode": "1.82.0",
@@ -2722,5 +2745,7 @@
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   },
-  "dependencies": {}
+  "dependencies": {
+    "minimatch": "3.1.4"
+  }
 }

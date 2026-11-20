@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   BUILTIN_QUICK_COMMANDS,
+  isPythonCommandAllowed,
   consumeTelnetFrame,
   isCommandAllowed,
   KBEngineTelnetClient,
@@ -247,13 +248,27 @@ describe('telnet 文本清洗纯函数', () => {
     expect(isCommandAllowed(':QUIT', whitelist)).toBe(false);
   });
 
-  it('内置快捷命令均为只读表达式', () => {
+  it('内置快捷命令均为只读表达式(TELNET-EZ-001 扩充 entities/globalData/KBEngine.debug 面)', () => {
     expect(BUILTIN_QUICK_COMMANDS.map(entry => entry.command)).toEqual([
       'len(entities)',
       'sorted(entities.keys())[:50]',
+      'sorted({type(e).__name__ for e in entities.values()})',
       'list(KBEngine.globalData.keys())',
+      'KBEngine.globalData',
+      'KBEngine.debug',
       ':help'
     ]);
+  });
+
+  it('自由 Python 模式闸(TELNET-EZ-001):任意表达式放行,空命令与 :quit 恒拒', () => {
+    expect(isPythonCommandAllowed('print("hello world")')).toBe(true);
+    expect(isPythonCommandAllowed('KBEngine.entityTypes')).toBe(true);
+    expect(isPythonCommandAllowed('  len(entities)  ')).toBe(true);
+    expect(isPythonCommandAllowed('')).toBe(false);
+    expect(isPythonCommandAllowed('   ')).toBe(false);
+    // :quit 会关闭服务端进程,自由模式也恒拒(大小写不敏感)
+    expect(isPythonCommandAllowed(':quit')).toBe(false);
+    expect(isPythonCommandAllowed(':QUIT')).toBe(false);
   });
 });
 

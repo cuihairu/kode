@@ -879,6 +879,7 @@ mod tests {
                 directive: None,
                 implemented_by_symbol: None,
                 field_refs: fields.into_iter().map(|s| s.into()).collect(),
+                fields: Vec::new(),
                 element_ref: element.map(|s| s.into()),
             }
         };

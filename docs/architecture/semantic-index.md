@@ -162,13 +162,17 @@ locked tests).
     (locked test); staging probe failures are not cached forever;
   - status queries: `SchedulerStatus` / `SchedulerMetrics` (includes
     backgroundDelayMs);
-  - activation schedules initial-scan + full-reindex immediately
-    (extension.ts); providers only wait for RequestLocal-level tasks.
+  - activation schedules initial-scan (entity discovery) + full-reindex
+    immediately (extension.ts); providers only wait for RequestLocal-level
+    tasks. Since KODE-RESP-002 the python workspace discovery runs as an
+    in-class generation-keyed single flight outside the scheduler (it never
+    occupies the single execution slot; stale-generation results are dropped),
+    so the scheduler only carries chunked parsing and single-file loads.
 
 ## 6. Data-flow example (cold-start Definition; final report U1=475.34ms)
 
 ```text
-activation ─▶ scheduler queues initial-scan (discovery) + full-reindex (chunked background)
+activation ─▶ scheduler queues initial-scan (entity discovery) + full-reindex (chunked background; python discovery single-flights outside the scheduler)
 user's first Definition ─▶ Provider: ① static MRO hit? ② composition-root hit? ──yes──▶ answer now (no waiting)
                                         └──no──▶ RequestLocal on-demand single-file parse (query file/import candidates/same dir)
                                                  still missing ▶ re-query after background convergence (③ reverse shape)

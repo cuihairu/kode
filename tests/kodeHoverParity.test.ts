@@ -156,6 +156,7 @@ interface ExpectedHover {
 
 const emptySignature = (): Record<string, unknown> => ({
   type: null,
+  fullType: null,
   flags: null,
   defaultValue: null,
   detailLevel: null,
@@ -306,9 +307,137 @@ const inheritedFaceOf = (absPath: string): InheritedFace => {
   };
 };
 
+// ---- RUST-136 增量② fullType(TS 复算镜像,与 kode_server::hover 同算法)----
+
+interface TypeDeclFace {
+  kind: 'fixedDict' | 'array' | 'builtin';
+  fields: { name: string; directive: string; of: string | null }[];
+  element: string | null;
+}
+
+// 根内 types.xml 声明表:语料路径字典序,同名首见(与 Rust root_types_table
+// 的 BTreeMap 键序 + entry/or_insert 同口径;根隔离 = corpusRootOf)。必须由
+// **全量语料**一次建表传入 computeHovers——逐文件重算调用若在函数内建表,
+// 单文件子集会丢同根其余 types.xml 的声明,与 Rust 引擎整表口径漂移。
+const buildTypeTables = (corpus: CorpusFile[]): Map<string, Map<string, TypeDeclFace>> => {
+  const tables = new Map<string, Map<string, TypeDeclFace>>();
+  for (const { file, kind, text } of corpus) {
+    if (kind !== 'types') {
+      continue;
+    }
+    const document = parseDefDocument(text);
+    if (!document.root) {
+      continue;
+    }
+    const root = corpusRootOf(file);
+    let table = tables.get(root);
+    if (!table) {
+      table = new Map();
+      tables.set(root, table);
+    }
+    for (const item of getDirectChildElements(document.root)) {
+      // 属性式回落 `type` 属性(与 Rust parse_types 同口径)。
+      const directive =
+        firstTextToken(item) ?? ((item.attributes['type'] ?? '').trim() || undefined);
+      if (!directive || table.has(item.name)) {
+        continue; // 空条目不产声明/同名首见
+      }
+      if (directive === 'FIXED_DICT') {
+        const fields: TypeDeclFace['fields'] = [];
+        const props = getDirectChildElements(item).find(
+          n => canonicalTagOf(n.name) === 'properties'
+        );
+        if (props) {
+          for (const prop of getDirectChildElements(props)) {
+            const typeNode = getDirectChildElement(prop, 'Type');
+            if (!typeNode) {
+              continue;
+            }
+            const ofNode = getDirectChildElement(typeNode, 'of');
+            fields.push({
+              name: prop.name,
+              directive: firstTextToken(typeNode) ?? '',
+              of: ofNode ? getElementText(ofNode).trim() || null : null
+            });
+          }
+        }
+        table.set(item.name, { kind: 'fixedDict', fields, element: null });
+      } else if (directive === 'ARRAY') {
+        const ofNode = getDirectChildElement(item, 'of');
+        const ofAttr = (item.attributes['of'] ?? '').trim();
+        table.set(item.name, {
+          kind: 'array',
+          fields: [],
+          element: ofNode ? getElementText(ofNode).trim() || null : ofAttr || null
+        });
+      } else {
+        table.set(item.name, { kind: 'builtin', fields: [], element: null });
+      }
+    }
+  }
+  return tables;
+};
+
+// 展开深度护栏:≥3 按原文 token(防环/防爆炸;与 Rust 同常数)。
+const FULL_TYPE_MAX_DEPTH = 3;
+
+const expandTypeToken = (
+  table: Map<string, TypeDeclFace>,
+  tok: string,
+  depth: number
+): string => {
+  if (depth >= FULL_TYPE_MAX_DEPTH) {
+    return tok;
+  }
+  const decl = table.get(tok);
+  if (!decl || decl.kind === 'builtin') {
+    return tok;
+  }
+  if (decl.kind === 'array') {
+    return decl.element
+      ? `ARRAY<${expandTypeToken(table, decl.element, depth + 1)}>`
+      : tok;
+  }
+  if (decl.fields.length === 0) {
+    return tok;
+  }
+  const inner = decl.fields
+    .map(f => {
+      const disp =
+        f.directive === 'ARRAY'
+          ? f.of
+            ? `ARRAY<${expandTypeToken(table, f.of, depth + 1)}>`
+            : 'ARRAY'
+          : expandTypeToken(table, f.directive, depth);
+      return `${f.name}: ${disp}`;
+    })
+    .join(', ');
+  return `FIXED_DICT { ${inner} }`;
+};
+
+// def 属性面:ARRAY 指引走 `<of>` 元素展开;展开=原文(内建/缺席/ARRAY 无
+// of/根内无 types.xml)→ null(与 Rust full_type_of_property 同判据)。
+const fullTypeOfProperty = (
+  table: Map<string, TypeDeclFace> | undefined,
+  tok: string | null,
+  of: string | null
+): string | null => {
+  if (!tok || !table) {
+    return null;
+  }
+  let expanded: string | null;
+  if (tok === 'ARRAY') {
+    expanded = of ? `ARRAY<${expandTypeToken(table, of, 1)}>` : null;
+  } else {
+    expanded = expandTypeToken(table, tok, 0);
+  }
+  return expanded !== null && expanded !== tok ? expanded : null;
+};
+
 const computeHovers = (
   corpus: CorpusFile[],
-  defsByStem: Map<string, Map<string, string[]>>
+  defsByStem: Map<string, Map<string, string[]>>,
+  typeTables: Map<string, Map<string, TypeDeclFace>>
 ): ExpectedHover[] => {
   // 逐文件产出(顺序 = Rust extract_records / parse 顺序)。
   const all: ExpectedHover[] = [];
@@ -339,6 +468,9 @@ const computeHovers = (
         });
         for (const prop of sectionEntries(root, 'properties')) {
           const typeNode = getDirectChildElement(prop, 'Type');
+          const typeTok = typeNode ? firstTextToken(typeNode) ?? null : null;
+          const ofNode = typeNode ? getDirectChildElement(typeNode, 'of') : null;
+          const typeOf = ofNode ? getElementText(ofNode).trim() || null : null;
           const propLine = getLineNumberAt(document, prop.tagStart);
           hovers.push({
             line: propLine,
@@ -349,7 +481,8 @@ const computeHovers = (
               source: { file, line: propLine },
               signature: {
                 ...emptySignature(),
-                type: typeNode ? firstTextToken(typeNode) ?? null : null,
+                type: typeTok,
+                fullType: fullTypeOfProperty(typeTables.get(corpusRootOf(file)), typeTok, typeOf),
                 flags: flagsRawOf(prop),
                 defaultValue: rawChildByCanon(prop, 'default'),
                 detailLevel: rawChildByCanon(prop, 'detaillevel'),
@@ -456,6 +589,9 @@ const computeHovers = (
           const typeKind = directive === 'FIXED_DICT' ? 'fixedDict' : directive === 'ARRAY' ? 'array' : 'builtin';
           const aliasTarget = directive !== 'FIXED_DICT' && directive !== 'ARRAY' ? directive : null;
           const itemLine = getLineNumberAt(document, item.tagStart);
+          // 声明本体展开(同名首见表,悬停项可能被更早声明遮蔽——两镜像同表同判据)。
+          const table = typeTables.get(corpusRootOf(file));
+          const expanded = table ? expandTypeToken(table, item.name, 0) : item.name;
           hovers.push({
             line: itemLine,
             word: item.name,
@@ -466,6 +602,7 @@ const computeHovers = (
               signature: {
                 ...emptySignature(),
                 typeKind,
+                fullType: expanded === item.name ? null : expanded,
                 aliasTarget,
                 comment: precedingComment(text, itemLine)
               }
@@ -540,7 +677,8 @@ describe('kode2 PR-010 hover 对拍(Rust hover 响应链 vs TS hover 面)', () =
     }
   }
   const computedFiles = corpus.map(({ file, kind }) => ({ file, kind: kind as string }));
-  const computed = computeHovers(corpus, defsByStem);
+  const typeTables = buildTypeTables(corpus);
+  const computed = computeHovers(corpus, defsByStem, typeTables);
 
   it('语料文件数与 golden 一致(文件面 N/N)', () => {
     expect(computedFiles.length).toBe(golden.fileCount);
@@ -561,7 +699,8 @@ describe('kode2 PR-010 hover 对拍(Rust hover 响应链 vs TS hover 面)', () =
       expect(computedByFile.has(goldenFile.file), goldenFile.file).toBe(true);
       const expected = computeHovers(
         corpus.filter(c => c.file === goldenFile.file),
-        defsByStem
+        defsByStem,
+        typeTables
       );
       expect(expected, goldenFile.file).toEqual(goldenFile.hovers);
     }
