@@ -106,14 +106,17 @@ pub(crate) fn run_bounded(
     }
 }
 
-/// 暂态 fork 失败族(EAGAIN/ENOMEM/ENFILE/EMFILE)判定——满载 CI 下 spawn
-/// 瞬败是暂态而非「未安装」(2026-11-08..16 三次 nightly 实测钉死;
-/// raw_os_error 数值判定因 std ErrorKind 无稳定映射,仅 unix)。
+/// 暂态 fork 失败族(EAGAIN/ENOMEM/ENFILE/EMFILE/ETXTBSY)判定——满载 CI
+/// 下 spawn 瞬败是暂态而非「未安装」(2026-11-08..16 三次 nightly 实测钉死;
+/// raw_os_error 数值判定因 std ErrorKind 无稳定映射,仅 unix)。ETXTBSY(26)
+/// 同族:exec 目标仍被某写句柄持有(本机并行测试下 fake 脚本落盘后 exec
+/// 实测捕获 os error 26,写入方早已 close 仍偶发,2026-11-20;生产侧 ruff
+/// 升级替换中的二进制同样可撞)——持有方必然关闭,退避重试即愈。
 pub(crate) fn is_transient_spawn(error: &std::io::Error) -> bool {
     matches!(
         error.kind(),
         std::io::ErrorKind::WouldBlock | std::io::ErrorKind::OutOfMemory
-    ) || (cfg!(unix) && matches!(error.raw_os_error(), Some(11 | 12 | 23 | 24)))
+    ) || (cfg!(unix) && matches!(error.raw_os_error(), Some(11 | 12 | 23 | 24 | 26)))
 }
 
 /// 暂态 spawn 四拍退避表(20/60/150/400ms,与原 ruff 面实测口径一致)。
@@ -156,6 +159,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// 暂态族 roster:fork 资源族四类 + ETXTBSY(26,写句柄残留)同收;
+    /// 权限/不存在类(13/2)是永久失败,必须进如实 Err 不退避。
+    #[test]
+    fn transient_spawn_family_roster() {
+        for errno in [11, 12, 23, 24, 26] {
+            let error = std::io::Error::from_raw_os_error(errno);
+            assert!(
+                is_transient_spawn(&error),
+                "errno {errno} 应判暂态重试"
+            );
+        }
+        for errno in [2, 13] {
+            let error = std::io::Error::from_raw_os_error(errno);
+            assert!(
+                !is_transient_spawn(&error),
+                "errno {errno} 是永久失败,不得退避"
+            );
+        }
+        assert!(is_transient_spawn(&std::io::Error::from(
+            std::io::ErrorKind::WouldBlock
+        )));
     }
 
     /// 正常完成:stdout 收全,stdin 写入生效(cat 回显;unix 面)。
