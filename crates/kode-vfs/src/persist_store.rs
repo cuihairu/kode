@@ -476,7 +476,9 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    // 非 UTF8 文件名(0xff/0xfe)仅 Linux 原生文件系统放行;macOS APFS 按
+    // UTF-8 校验路径,fs::write 直接 EILSEQ(nightly darwin 44645370378)。
+    #[cfg(target_os = "linux")]
     fn clear_and_sweep_skip_non_utf8_names() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
