@@ -549,3 +549,137 @@ describe('RUST-177 validateTypesXmlDocument(装配面)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 20 容错臂:ARRAY <of> 链解析三退路(空指引/断链/循环)、FD 字段 <Type>
+// 空指引与 ARRAY 装载失败中止、畸形 XML 零发现(解析器抛 → 不声称)。
+// ---------------------------------------------------------------------------
+describe('批 20:ARRAY 链与 FD 字段容错臂', () => {
+  it('<of> 无指引 → arrayOf error(did not find type 路径)', () => {
+    const text = [
+      '<root>',
+      '  <ITEMS>',
+      '    ARRAY',
+      '    <of></of>',
+      '  </ITEMS>',
+      '</root>'
+    ].join('\n');
+    const findings = check(text);
+    expect(codesOf(text)).toContain('kbengine.types.arrayOf');
+    const target = findings.find(f => f.code === 'kbengine.types.arrayOf')!;
+    expect(target.severity).toBe('error');
+    expect(target.message).toContain('did not find type');
+  });
+
+  it('<of> 指向未知名 → 链尾不可解,arrayOf error', () => {
+    const text = [
+      '<root>',
+      '  <ITEMS>',
+      '    ARRAY',
+      '    <of> GHOST </of>',
+      '  </ITEMS>',
+      '</root>'
+    ].join('\n');
+    expect(codesOf(text)).toContain('kbengine.types.arrayOf');
+  });
+
+  it('别名链成环 → 不可解,不悬挂', () => {
+    const text = [
+      '<root>',
+      '  <ITEMS>',
+      '    ARRAY',
+      '    <of> LOOP_A </of>',
+      '  </ITEMS>',
+      '  <LOOP_A>LOOP_B</LOOP_A>',
+      '  <LOOP_B>LOOP_A</LOOP_B>',
+      '</root>'
+    ].join('\n');
+    expect(codesOf(text)).toContain('kbengine.types.arrayOf');
+  });
+
+  it('FD 字段 <Type> 空指引 → fieldType error + 中止装载', () => {
+    const text = [
+      '<root>',
+      '  <SLOT>',
+      '    FIXED_DICT',
+      '    <Properties>',
+      '      <count>',
+      '        <Type></Type>',
+      '      </count>',
+      '    </Properties>',
+      '  </SLOT>',
+      '</root>'
+    ].join('\n');
+    expect(codesOf(text)).toContain('kbengine.types.fieldType');
+    const target = check(text).find(f => f.code === 'kbengine.types.fieldType')!;
+    expect(target.severity).toBe('error');
+    expect(target.message).toContain('did not find type');
+  });
+
+  it('FD 字段 ARRAY 链断 → 装载失败中止(fatal),不再继续判该字段', () => {
+    const text = [
+      '<root>',
+      '  <SLOT>',
+      '    FIXED_DICT',
+      '    <Properties>',
+      '      <items>',
+      '        <Type>',
+      '          ARRAY',
+      '          <of> GHOST </of>',
+      '        </Type>',
+      '      </items>',
+      '    </Properties>',
+      '  </SLOT>',
+      '</root>'
+    ].join('\n');
+    // 装载失败的中止路径本身不产新发现码;断链的 arrayOf 已由 <of> 解析报出
+    expect(codesOf(text)).toContain('kbengine.types.arrayOf');
+  });
+
+  it('畸形 XML(不可解析)→ 零发现(不声称)', () => {
+    expect(check('<root')).toEqual([]);
+    expect(check('')).toEqual([]);
+  });
+});
+
+describe('批 20 续:别名链断与环(preload 精确构造,FD 字段装载面)', () => {
+  // FD 字段 ARRAY 元素类型经别名链解析:链断/成环 → 字段装载失败(fatal),
+  // 可观察后果 = 即便链首指向 ENTITYCALL 也不出静默降持久化警告
+  const fdOf = [
+    '<root>',
+    '  <SLOT>',
+    '    FIXED_DICT',
+    '    <Properties>',
+    '      <calls>',
+    '        <Type>',
+    '          ARRAY',
+    '          <of> EC_ALIAS </of>',
+    '        </Type>',
+    '      </calls>',
+    '    </Properties>',
+    '  </SLOT>',
+    '</root>'
+  ].join('\n');
+
+  it('链尾目标未注册(悬空别名)→ 字段装载失败,零 ENTITYCALL 警告', () => {
+    const preload = [
+      { name: 'EC_ALIAS', target: 'GHOST_TYPE' }
+    ];
+    expect(computeTypesXmlStructureFindings(fdOf, preload)).toEqual([]);
+  });
+
+  it('别名链成环(preload CA→CB→CA)→ 不可解不悬挂,零 ENTITYCALL 警告', () => {
+    const preload = [
+      { name: 'EC_ALIAS', target: 'CA' },
+      { name: 'CA', target: 'CB' },
+      { name: 'CB', target: 'CA' }
+    ];
+    expect(computeTypesXmlStructureFindings(fdOf, preload)).toEqual([]);
+  });
+
+  it('对照:链首直连 ENTITYCALL(链通)→ 静默降持久化警告照出', () => {
+    const preload = [{ name: 'EC_ALIAS', target: 'ENTITYCALL' }];
+    const findings = computeTypesXmlStructureFindings(fdOf, preload);
+    expect(findings.map(f => f.code)).toEqual(['kbengine.types.fdEntityCallPersistent']);
+  });
+});
