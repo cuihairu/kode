@@ -170,3 +170,64 @@ describe('会话编排五钉子', () => {
     expect(depot.dialogs).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 18 容错臂:TOML 扫描器的引号/转义/三引号/行注释臂、表头残行与剥引号、
+// 写盘失败如实报 write-failed。
+// ---------------------------------------------------------------------------
+describe('批 18:TOML 扫描与写盘容错', () => {
+  it('hasToolRuffSection:表头无 ] / 带引号段 / 非表头行都不误判', () => {
+    // 无 `]`:不是表头,跳过
+    expect(hasToolRuffSection('[tool.ruff\nline-length = 88\n')).toBe(false);
+    // `]` 在第 0 位:close <= 0 跳过
+    expect(hasToolRuffSection(']\n')).toBe(false);
+    // 带引号段被剥壳后识别
+    expect(hasToolRuffSection('["tool"."ruff"]\n')).toBe(true);
+    expect(hasToolRuffSection("['tool'.'ruff']\n")).toBe(true);
+    // 普通键行(不以 [ 开头)不认
+    expect(hasToolRuffSection('line-length = 88\n')).toBe(false);
+    // 空行不认
+    expect(hasToolRuffSection('\n\n')).toBe(false);
+  });
+
+  it('appendToolRuffSection:注释里的引号/括号不干扰平衡判定', () => {
+    // 行注释里的未闭引号与括号必须被跳过(否则误判 unsafe)
+    expect(appendToolRuffSection('# "unclosed and [\nname = "x"\n')).not.toBeNull();
+    // 转义引号消费下一字符:字符串内的 \" 不提前闭合
+    expect(appendToolRuffSection('name = "a\\"b"\n')).not.toBeNull();
+    // 单引号三引号块已闭合 → 可追加
+    expect(appendToolRuffSection("x = '''\nblock\n'''\n")).not.toBeNull();
+    // 双引号三引号块已闭合 → 可追加
+    expect(appendToolRuffSection('x = """\nblock\n"""\n')).not.toBeNull();
+  });
+
+  it('appendToolRuffSection:括号先闭后开(depth<0)判 unsafe', () => {
+    expect(appendToolRuffSection('deps = ]\n')).toBeNull();
+  });
+
+  it('appendToolRuffSection:行 continuation 悬空(行尾反斜杠)判 unsafe', () => {
+    expect(appendToolRuffSection('deps = [\n  "a",\n] \\\n')).toBeNull();
+  });
+
+  it('写盘失败 → 如实报 write-failed,不冒称已创建', async () => {
+    const { deps } = makeDeps({ answer: CREATE_ACTION, root: '/w/proj' });
+    deps.writeFileText = () => false;
+    const session = createRuffConfigEnsureSession();
+    expect(await session.ensure(deps)).toBe('write-failed');
+  });
+});
+
+describe('批 18 续:共享接线面', () => {
+  it('未接线 → unwired;接线后走同一会话(重复 ensure 不重复弹窗)', async () => {
+    const { ensureRuffConfigShared, wireSharedRuffConfigEnsure } =
+      await import('../src/backend/ruffConfigEnsure');
+    // 先复位:本组只验接线契约(会话状态归 wire 调用)
+    const { deps, depot } = makeDeps({ answer: undefined, root: '/w/other' });
+    wireSharedRuffConfigEnsure(deps);
+    // 用户不给确认 → declined;同会话第二次直接 declined-session,零新弹窗
+    expect(await ensureRuffConfigShared()).toBe('declined');
+    expect(depot.dialogs).toHaveLength(1);
+    expect(await ensureRuffConfigShared()).toBe('declined-session');
+    expect(depot.dialogs).toHaveLength(1);
+  });
+});
