@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import {
-  findDeepestElementAtOffset,
   getDirectChildElements,
   parseDefDocument,
   type DefDocument,

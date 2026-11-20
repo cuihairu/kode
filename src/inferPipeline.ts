@@ -514,29 +514,8 @@ export async function runInfer(
         if (group) { group.push(source); }
         else { byRole.set(key, [source]); }
       }
-      const exitStart = exitCodes.length;
-      for (const [directory, files] of byRole) {
-        const cwd = paths.join(scriptsRoot, directory);
-        const role = directory ? pythonProcessFromPath(cwd) : null;
-        const searchPaths = role ? [cwd, processStubRoot(stubDir, role), ...sharedPaths] : sharedPaths;
-        let targets: string[] = [];
-        let length = 0;
-        for (const source of files) {
-          if (length + source.length > (process.platform === 'win32' ? 16_000 : 96_000) && targets.length) {
-            await runBatch(cwd, searchPaths, targets);
-            targets = [];
-            length = 0;
-          }
-          targets.push(source);
-          length += source.length + 3;
-        }
-        await runBatch(cwd, searchPaths, targets);
-      }
-      if (fingerprint && exitCodes.slice(exitStart).every(code => code === 0)) {
-        await cache?.update(cacheKey, fingerprint);
-      }
 
-      async function runBatch(cwd: string, searchPaths: string[], targets: string[]): Promise<void> {
+      const runBatch = async (cwd: string, searchPaths: string[], targets: string[]): Promise<void> => {
         // Stubgen writes paths relative to the common parent of the files in this invocation.
         let commonParent = paths.dirname(targets[0]);
         for (const target of targets) {
@@ -561,6 +540,28 @@ export async function runInfer(
           console.warn('[kbengine] pyrefly stubgen:', outcome.stderr || outcome.stdout);
         }
         exitCodes.push(outcome.code);
+      };
+
+      const exitStart = exitCodes.length;
+      for (const [directory, files] of byRole) {
+        const cwd = paths.join(scriptsRoot, directory);
+        const role = directory ? pythonProcessFromPath(cwd) : null;
+        const searchPaths = role ? [cwd, processStubRoot(stubDir, role), ...sharedPaths] : sharedPaths;
+        let targets: string[] = [];
+        let length = 0;
+        for (const source of files) {
+          if (length + source.length > (process.platform === 'win32' ? 16_000 : 96_000) && targets.length) {
+            await runBatch(cwd, searchPaths, targets);
+            targets = [];
+            length = 0;
+          }
+          targets.push(source);
+          length += source.length + 3;
+        }
+        await runBatch(cwd, searchPaths, targets);
+      }
+      if (fingerprint && exitCodes.slice(exitStart).every(code => code === 0)) {
+        await cache?.update(cacheKey, fingerprint);
       }
     }
   }
