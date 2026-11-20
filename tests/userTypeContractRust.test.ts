@@ -260,3 +260,87 @@ describe('collectUserTypeContractMissingByImplFileFromRust(契约收集 Rust 主
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 27:形状闸补齐臂——line 非整数/负数、typeName/symbolName 非串、related
+// 非对象。既有畸形清单已盖 message/method/symbolLength/related 双串缺项。
+// ---------------------------------------------------------------------------
+describe('批 27:形状闸补齐臂', () => {
+  const baseItem = (over: Record<string, unknown>): Record<string, unknown> => ({
+    message: 'm',
+    method: 'isSameType',
+    typeName: 'T',
+    symbolName: 'S',
+    symbolLength: 1,
+    line: 1,
+    related: { targetFile: 'a', label: 'b' },
+    ...over
+  });
+
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['line 非整数', baseItem({ line: 1.5 })],
+    ['line 负数', baseItem({ line: -1 })],
+    ['line 非数值', baseItem({ line: '1' })],
+    ['typeName 非串', baseItem({ typeName: 1 })],
+    ['symbolName 非串', baseItem({ symbolName: null })],
+    ['related 为 null', baseItem({ related: null })],
+    ['related 为原始值', baseItem({ related: 'x' })]
+  ];
+
+  for (const [label, item] of cases) {
+    it(`${label} → 整面弃用 null`, async () => {
+      const fakeGate = {
+        runInRust: async () => ({ ok: true, result: { items: [item] } })
+      } as unknown as KodeCoreGate;
+      setKodeCoreShadowGate(fakeGate);
+      try {
+        const items = await collectUserTypeContractMissingByImplFileFromRust(
+          [statusOf({})],
+          implFile
+        );
+        expect(items, `${label} 应弃用`).toBeNull();
+      } finally {
+        setKodeCoreShadowGate(null);
+      }
+    });
+  }
+});
+
+describe('批 27 续:五臂显式补齐', () => {
+  const baseItem = (over: Record<string, unknown>): Record<string, unknown> => ({
+    message: 'm',
+    method: 'isSameType',
+    typeName: 'T',
+    symbolName: 'S',
+    symbolLength: 1,
+    line: 1,
+    related: { targetFile: 'a', label: 'b' },
+    ...over
+  });
+
+  const cases: Array<[string, unknown[]]> = [
+    ['条目为原始串', ['not-an-object']],
+    ['message 非串', [baseItem({ message: 9 })]],
+    ['method 越三方法', [baseItem({ method: 'nope' })]],
+    ['method 非串', [baseItem({ method: 3 })]],
+    ['symbolLength 非数值', [baseItem({ symbolLength: 'x' })]],
+    ['related.targetFile 非串', [baseItem({ related: { targetFile: 1, label: 'b' } })]],
+    ['related.label 缺失', [baseItem({ related: { targetFile: 'a' } })]]
+  ];
+
+  for (const [label, items] of cases) {
+    it(`${label} → null`, async () => {
+      const fakeGate = {
+        runInRust: async () => ({ ok: true, result: { items } })
+      } as unknown as KodeCoreGate;
+      setKodeCoreShadowGate(fakeGate);
+      try {
+        expect(
+          await collectUserTypeContractMissingByImplFileFromRust([statusOf({})], implFile)
+        ).toBeNull();
+      } finally {
+        setKodeCoreShadowGate(null);
+      }
+    });
+  }
+});
