@@ -52,6 +52,8 @@
 | KBE-DEF-013 | 进程拓扑定义与定义期错配预警 | 已有实时 Warning | `kbengine.processTopology`；`processTopologyDiagnostics.ts` |
 | KBE-DEF-014 | types.xml 别名装载结构（前向引用/循环/`_` 保留前缀/重定义/ARRAY `<of>` 链缺失/FIXED_DICT 缺 Properties 或无字段/字段缺 Type/字段类型未知/FD 字段 ENTITYCALL 静默降持久化） | 已有实时 Error/Warning（8 码；重定义、字段缺 Type、FD 字段 ENTITYCALL 降持久化为 Warning，其余 Error） | `kbengine.types.*`；`typesXmlStructureCheck.ts`（引擎单遍序敏装载 datatypes.cpp:105-187、大小写双表 :198-203/:221-236、ARRAY datatype.cpp:1658-1719、FIXED_DICT :2048-2196；致命条目不入表，扫描继续给全发现，注册账与引擎装载序一致） |
 | KBE-DEF-015 | def 属性 `<Persistent>true</Persistent>` × 类型解析到 ENTITYCALL（以为在持久化，引擎静默关闭） | 已有实时 Warning | `kbengine.persistentEntityCall`；`persistentEntityCallCheck.ts`（property.cpp:48-51 无日志 isPersistent=false；别名链末端同命中；内联 ARRAY 属性引擎判定对象是数组自身类型名，不报） |
+
+| KODE-SYN-003 | alias.xml 别名装载结构（复用 types.xml 八码，注册表预载形态）+ 目标补全/定义跳转 | 已有实时 Error/Warning（同 `kbengine.types.*` 八码；诊断复用 types.xml 调度臂，同一 `kbengine.enableDiagnostics` 总闸） | `kbengine.types.*`；`typesXmlStructureCheck.ts` 预载（工作区 types.xml 注册名先入表镜像引擎单遍装载序：types.xml 先载 alias.xml 后载，别名条目对内建 + types.xml 名 + 文内更早条目解析；光标条目自身不在可解析域（引擎先读指引后注册）；`_` 前缀预载跳过；对 types.xml 重定义先注册者胜）；补全/跳转挂 `**/alias.xml`（`aliasAssist.ts`：目标值位列内建 + 文内更早条目 + types.xml 注册名，内建目标跳转让位，文内条目跳标签范围，注册名跳声明行） |
 | KBE-CFG-001 | 工作区配置层:debug.json components 空/缺(unparsable/telnet 段整段被注释同族) | 已有实时 Warning | `kbengine.configContract.debugComponentsEmpty`；`configContractDiagnostics.ts` |
 | KBE-CFG-002 | 工作区配置层:已知组件 telnet 端口缺失或偏离引擎默认(31000/32000/40000/50000 等) | 已有实时 Warning | `kbengine.configContract.debugTelnetPortMismatch`；`configContractDiagnostics.ts` |
 | KBE-CFG-003 | 工作区配置层:extraPaths 双层上跳(`../..`)或指向不存在目录 | 已有实时 Warning | `kbengine.configContract.extraPathsDoubleUp`；`configContractDiagnostics.ts` |
