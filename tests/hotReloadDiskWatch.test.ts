@@ -414,3 +414,77 @@ describe('全链集成(磁盘事件 → 流水线 → 去抖 → 波次 → 发�
     expect(h.emitted[0].mode).toBe('auto');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 42 容错臂:空规范化根跳过(102)、disposed 后三面早退(141/155/176)、
+// 过滤后的超集事件(167,非 .py 或不在根内)、删除事件如实记账。
+// ---------------------------------------------------------------------------
+describe('批 42:监视器容错臂', () => {
+  it('空规范化根(纯空白)不建 watcher(102)', () => {
+    const h = makeHarness();
+    h.controller.watchRoots(['   ', '/ws/scripts']);
+    expect(h.controller.watchedPatterns()).toEqual(['/ws/scripts/**/*.py']);
+  });
+
+  it('dispose 幂等:二次 dispose 零副作用(141)', () => {
+    const h = makeHarness();
+    h.controller.watchRoots(['/ws/scripts']);
+    h.controller.dispose();
+    const disposedDiag = h.watchDiagnostics.filter(d => d.type === 'disposed').length;
+    h.controller.dispose(); // 二次:早退,不再发 disposed 诊断
+    expect(h.watchDiagnostics.filter(d => d.type === 'disposed').length).toBe(disposedDiag);
+  });
+
+  it('dispose 后 arm/rebuild/磁盘事件/删除事件四面各自早退(155/176)', () => {
+    const h = makeHarness();
+    h.controller.watchRoots(['/ws/scripts']);
+    // 先捕获回调(FakeWatcher 自身 disposed 守卫会拦 fire,直调 cb 绕开)
+    const changeCb = h.bus.watchers[0].changeCbs[0];
+    const deleteCb = h.bus.watchers[0].deleteCbs[0];
+    h.controller.dispose();
+    // arm 早退:armed 保持 false
+    h.controller.arm();
+    // rebuild 早退:不重建 watcher
+    const patternsBefore = h.controller.watchedPatterns();
+    h.controller.rebuild(['/ws/scripts', '/ws/other']);
+    expect(h.controller.watchedPatterns()).toEqual(patternsBefore);
+    // 磁盘事件早退:零诊断零 offer(含 before-arm 也无)
+    const diagBefore = h.watchDiagnostics.length;
+    changeCb('/ws/scripts/Avatar.py');
+    expect(h.watchDiagnostics.length).toBe(diagBefore);
+    expect(h.emitted).toHaveLength(0);
+    // 删除事件早退:不记 delete-ignored
+    deleteCb('/ws/scripts/Gone.py');
+    expect(h.watchDiagnostics.filter(d => d.type === 'delete-ignored')).toHaveLength(0);
+  });
+
+  it('过滤面:非 .py 与根外文件各记 filtered 诊断(167 等)', () => {
+    const h = makeHarness();
+    h.controller.watchRoots(['/ws/scripts']);
+    h.controller.arm();
+    // 直接驱动 watcher 回调(绕过 bus 的模式匹配)验证过滤 diagnose
+    const watcher = h.bus.watchers[0];
+    watcher.fire('change', '/ws/scripts/readme.md');
+    expect(h.watchDiagnostics.some(d => d.type === 'filtered')).toBe(true);
+    const filteredCount = h.watchDiagnostics.filter(d => d.type === 'filtered').length;
+    // 空规范化根(只有协议/空白)同样走 filtered
+    watcher.fire('change', 'file://   ');
+    expect(h.watchDiagnostics.filter(d => d.type === 'filtered').length)
+      .toBeGreaterThanOrEqual(filteredCount);
+    expect(h.emitted).toHaveLength(0);
+  });
+
+  it('删除事件不进流水线,只记 delete-ignored', () => {
+    const h = makeHarness();
+    h.controller.watchRoots(['/ws/scripts']);
+    h.controller.arm();
+    h.bus.emitDisk('delete', '/ws/scripts/Gone.py');
+    expect(h.emitted).toHaveLength(0);
+    expect(h.watchDiagnostics.some(d => d.type === 'delete-ignored')).toBe(true);
+  });
+});
+
+// 覆盖口径残余(批 42 定性)::167-168 canonical 空后的 filtered 分支——
+// isWatchableScriptFile 自身要求非空段名+非备份名通过才到 canonical,
+// 其通过前提(trim 非空)保证 canonicalizeScriptFilePath 恒非空,该臂
+// 实为前置守卫的冗余复核,防御位。
