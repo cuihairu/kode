@@ -478,3 +478,201 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
     expect(record?.detail).toContain('核验超时');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 31 容错臂:根不可解析(整批跳过)、内容读取抛错(digest 基准缺失)、
+// 无 store 的结算/注解退路、already-annotated 再注解去重。
+// ---------------------------------------------------------------------------
+describe('批 31:通道发送容错臂', () => {
+  beforeEach(() => {
+    configurationOverrides.clear();
+    lastFileSystemWatcher.current = null;
+    channels.length = 0;
+  });
+
+  const makeContext = (): vscode.ExtensionContext =>
+    ({ subscriptions: [] }) as unknown as vscode.ExtensionContext;
+
+  const fireWith = async (options: {
+    receipts?: ReloadReceipt[];
+    resolveRootId?: (file: string) => string | null;
+    readFileContent?: (file: string) => Promise<string | null>;
+    withStore?: boolean;
+  } = {}): Promise<{ store: HotReloadTargetStateStore; clock: ReturnType<typeof makeTimers> }> => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const receipts = options.receipts ?? [];
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (_target: ReloadTarget, _fileSet: readonly string[], onReceipt) => {
+        for (const receipt of receipts) {
+          onReceipt(receipt);
+        }
+        return { kind: 'http', receipts };
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(makeContext(), () => undefined, {
+      timers: clock.timers,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      ...(options.withStore === false
+        ? {}
+        : {
+            targetState: {
+              store,
+              resolveTargetId: () => 't1',
+              resolveRootId: options.resolveRootId ?? (() => '/ws'),
+              ...(options.readFileContent ? { readFileContent: options.readFileContent } : {})
+            }
+          })
+    });
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    return { store, clock };
+  };
+
+  it('根不可解析(返回 null)→ 该文件整批跳过,零台账写', async () => {
+    const { store } = await fireWith({ resolveRootId: () => null });
+    expect(store.get(KEY, '/ws/a.py')).toBeUndefined();
+  });
+
+  it('内容读取抛错 → digest 基准缺失,applied 回执不升格(保持未确认)', async () => {
+    const { store } = await fireWith({
+      receipts: [{ status: 'applied', file: '/ws/a.py', digest: 'deadbeef' }],
+      readFileContent: async () => {
+        throw new Error('read boom');
+      }
+    });
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.detail).toContain('保持未确认');
+  });
+
+  it('无 store 注入:发送照跑,零台账写且不抛', async () => {
+    await expect(fireWith({ withStore: false })).resolves.toBeTruthy();
+  });
+
+  it('同一未确认记录重复注解同一原因 → 去重(不叠加 detail)', async () => {
+    const { store } = await fireWith({
+      receipts: [
+        { status: 'applied', file: '/ws/a.py', digest: 'x1' },
+        { status: 'applied', file: '/ws/a.py', digest: 'x2' }
+      ],
+      readFileContent: async () => 'print("c")'
+    });
+    const detail = store.get(KEY, '/ws/a.py')?.detail ?? '';
+    // 同一原因只写一次(reason 已在 detail 里 → 第二个回执的注解被拒)
+    const first = detail.indexOf('不可信');
+    expect(first).toBeGreaterThan(-1);
+    expect(detail.indexOf('不可信', first + 1)).toBe(-1);
+  });
+});
+
+describe('批 31 续:accepted 回执与重复注解去重', () => {
+  beforeEach(() => {
+    configurationOverrides.clear();
+    lastFileSystemWatcher.current = null;
+    channels.length = 0;
+  });
+
+  const fireOne = async (receipt: ReloadReceipt, opts: { readFileContent?: (f: string) => Promise<string | null> } = {}) => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (_t: ReloadTarget, _f: readonly string[], onReceipt) => {
+        onReceipt(receipt);
+        return { kind: 'http', receipts: [receipt] };
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(({ subscriptions: [] }) as unknown as vscode.ExtensionContext, () => undefined, {
+      timers: clock.timers,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/ws',
+        ...(opts.readFileContent ? { readFileContent: opts.readFileContent } : {})
+      }
+    });
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    return { store, clock };
+  };
+
+  it('accepted 回执 → 台账记 accepted 带 HOT-003 注解与发送 digest', async () => {
+    const { store } = await fireOne({ status: 'accepted', file: '/ws/a.py' }, {
+      readFileContent: async () => 'print("c")'
+    });
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('accepted');
+    expect(record?.detail).toContain('仍等 applied');
+    expect(record?.sentDigest).toBeTruthy();
+  });
+
+  it('accepted 回执带自定义 note → 用回执 note 而非默认文案', async () => {
+    const { store } = await fireOne(
+      { status: 'accepted', file: '/ws/a.py', note: '服务端已收,待重启生效' },
+      { readFileContent: async () => 'print("c")' }
+    );
+    expect(store.get(KEY, '/ws/a.py')?.detail).toContain('服务端已收');
+  });
+});
+
+describe('批 31 终:根为空串的回执/注解/结算守卫', () => {
+  beforeEach(() => {
+    configurationOverrides.clear();
+    lastFileSystemWatcher.current = null;
+    channels.length = 0;
+  });
+
+  it('根为空串:发起记录照写,回执写回/注解/结算三守卫各自早退(零抛)', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const receipts: ReloadReceipt[] = [
+      { status: 'accepted', file: '/ws/a.py' },
+      { status: 'applied', file: '/ws/a.py', digest: 'x' }
+    ];
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (_t: ReloadTarget, _f: readonly string[], onReceipt) => {
+        for (const r of receipts) {
+          onReceipt(r);
+        }
+        return { kind: 'http', receipts };
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(({ subscriptions: [] }) as unknown as vscode.ExtensionContext, () => undefined, {
+      timers: clock.timers,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '',
+        readFileContent: async () => 'print("c")'
+      }
+    });
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    // 回执/注解/结算因根为空串各自早退:管道全程零抛,正常根键下零记录
+    expect(store.get(KEY, '/ws/a.py')).toBeUndefined();
+  });
+});
+
+// 覆盖口径残余(批 31 定性):60 是 noteStillUnverified 的「记录已非 sent-unverified
+// 或 detail 已含同因」早退——回执处理链在调用它之前已把台账写成 accepted/failed,
+// 故二次注解从公共入口不可触发,防御位。
