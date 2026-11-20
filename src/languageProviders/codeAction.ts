@@ -12,23 +12,165 @@ import { findDefSymbolInfo } from './navigation';
 import { FIXED_DICT_NESTED_MUTATION_CODE } from '../backend/behaviorKnowledge';
 import { buildFixedDictWholeReassignEdit } from '../backend/behaviorLints';
 import { findRegisteredTypeSuggestions, getKnownTypeContext } from './completion';
+import {
+  serveCodeActionsFromRust,
+  type CodeActionDiagnosticParam,
+  type CodeActionFace
+} from '../backend/kodeCoreShadowFaces';
+
+/** 诊断入参投影(vscode.Diagnostic → wire face;code 对账已在各 provider 过滤) */
+function diagnosticParamOf(diagnostic: vscode.Diagnostic): CodeActionDiagnosticParam {
+  return {
+    code: String(diagnostic.code),
+    range: {
+      start: { line: diagnostic.range.start.line, character: diagnostic.range.start.character },
+      end: { line: diagnostic.range.end.line, character: diagnostic.range.end.character }
+    },
+    relatedFile: diagnostic.relatedInformation?.[0]?.location.uri.fsPath ?? null,
+    relatedMessage: diagnostic.relatedInformation?.[0]?.message || null
+  };
+}
+
+/** Rust face → vscode 编辑(三态 EditFace 直投影;目标面同文档用原 URI) */
+function workspaceEditOfFace(document: vscode.TextDocument, face: CodeActionFace): vscode.WorkspaceEdit {
+  const edit = new vscode.WorkspaceEdit();
+  const target = face.edit.file === document.uri.fsPath ? document.uri : vscode.Uri.file(face.edit.file);
+  switch (face.edit.type) {
+    case 'replaceRange':
+      edit.set(target, [
+        new vscode.TextEdit(
+          new vscode.Range(
+            new vscode.Position(face.edit.range.startLine, face.edit.range.startChar),
+            new vscode.Position(face.edit.range.endLine, face.edit.range.endChar)
+          ),
+          face.edit.newText
+        )
+      ]);
+      break;
+    case 'insertLine':
+      edit.insert(target, new vscode.Position(face.edit.line, 0), face.edit.text);
+      break;
+    case 'replaceLines':
+      edit.replace(target, new vscode.Range(face.edit.startLine, 0, face.edit.endLine, 0), face.edit.text);
+      break;
+  }
+  return edit;
+}
+
+/** l10n 标题按族选模板并按位插值 titleParams(全部字符串位,zh bundle 不经 en 插值串) */
+function faceTitle(family: string, face: CodeActionFace): string {
+  switch (family) {
+    case 'typeReplacement':
+      return vscode.l10n.t('Replace with registered type {name}', { name: face.titleParams[0] ?? '' });
+    case 'parityMethod':
+      return vscode.l10n.t('Generate method {name} → {file}:{line}', {
+        name: face.titleParams[0] ?? '',
+        file: face.titleParams[1] ?? '',
+        line: face.titleParams[2] ?? ''
+      });
+    case 'receiverNone':
+      return face.edit.type === 'replaceLines'
+        ? vscode.l10n.t('Wrap with null guard (if self.{receiver}:)', { receiver: face.titleParams[0] ?? '' })
+        : vscode.l10n.t('Insert None guard (if not self.{receiver}: return)', { receiver: face.titleParams[0] ?? '' });
+    default:
+      return vscode.l10n.t('Whole reassign: rewrite FIXED_DICT sub-key assignment as top-level assignment');
+  }
+}
+
+function faceKind(face: CodeActionFace): vscode.CodeActionKind {
+  return face.kind === 'Refactor' ? vscode.CodeActionKind.Refactor : vscode.CodeActionKind.QuickFix;
+}
+
+/**
+ * face.diagnosticStartLine → 诊断配对:同行诊断按面序 1:1 顺配;面多于诊断
+ * (receiver 族包裹式+早退式两面对同一诊断)钳位复用首条——语义=该动作修哪条
+ * 诊断的元数据,与 TS 逐诊断产出同形。
+ */
+function pairedDiagnostics(
+  faces: readonly CodeActionFace[],
+  diagnostics: readonly vscode.Diagnostic[]
+): (vscode.Diagnostic | undefined)[] {
+  const byLine = new Map<number, vscode.Diagnostic[]>();
+  for (const diagnostic of diagnostics) {
+    const line = diagnostic.range.start.line;
+    const bucket = byLine.get(line) ?? [];
+    bucket.push(diagnostic);
+    byLine.set(line, bucket);
+  }
+  const usedPerLine = new Map<number, number>();
+  return faces.map(face => {
+    const bucket = byLine.get(face.diagnosticStartLine);
+    if (!bucket || bucket.length === 0) {
+      return undefined;
+    }
+    const used = usedPerLine.get(face.diagnosticStartLine) ?? 0;
+    usedPerLine.set(face.diagnosticStartLine, used + 1);
+    return bucket[Math.min(used, bucket.length - 1)];
+  });
+}
+
+/** Rust faces → vscode.CodeAction[](title/kind/编辑/配对诊断四件全投影) */
+function facesToCodeActions(
+  document: vscode.TextDocument,
+  family: string,
+  faces: readonly CodeActionFace[],
+  matched: readonly vscode.Diagnostic[]
+): vscode.CodeAction[] {
+  const paired = pairedDiagnostics(faces, matched);
+  return faces.map((face, index) => {
+    const action = new vscode.CodeAction(faceTitle(family, face), faceKind(face));
+    const diagnostic = paired[index];
+    if (diagnostic) {
+      action.diagnostics = [diagnostic];
+    }
+    action.edit = workspaceEditOfFace(document, face);
+    return action;
+  });
+}
+
 export class KBEngineTypeCodeActionProvider implements vscode.CodeActionProvider {
   /**
    * IDE-NAV-013:未注册类型诊断的修正候选——仅提供已注册类型(内建+
    * types.xml 自定义+实体)的近拼替换编辑(QuickFix),候选与诊断同 code
    * 对账;不自动创建 types.xml 声明(硬边界,没有任何命令型/跨文件动作)。
+   * Rust-first(RUST-143 批 3):装配决策走 textDocument/codeAction
+   * typeReplacement 族(registered 近拼宇宙仍是 TS getKnownTypeContext
+   * 装配入参);门关/畸形面回 TS 既有实现(不部分采用)。
    */
-  provideCodeActions(
+  async provideCodeActions(
     document: vscode.TextDocument,
     range: vscode.Range,
     context: vscode.CodeActionContext,
     token?: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.CodeAction[]> {
+  ): Promise<vscode.CodeAction[]> {
     if (token?.isCancellationRequested) {
       return [];
     }
     const known = getKnownTypeContext(document);
     const registered = [...known.builtins, ...known.customTypes, ...known.entityTypes];
+    const matched = context.diagnostics.filter(
+      diagnostic =>
+        diagnostic.code === UNKNOWN_TYPE_DIAGNOSTIC_CODE &&
+        diagnosticRangeIntersects(diagnostic.range, range) &&
+        !!document.getText(diagnostic.range).trim()
+    );
+    const faces = await serveCodeActionsFromRust(
+      document,
+      {
+        family: 'typeReplacement',
+        range: { start: range.start, end: range.end },
+        diagnostics: matched.map(diagnosticParamOf),
+        registered,
+        snapshotText: null
+      },
+      () => token?.isCancellationRequested ?? false
+    );
+    if (faces !== null) {
+      if (token?.isCancellationRequested) {
+        return [];
+      }
+      return facesToCodeActions(document, 'typeReplacement', faces, matched);
+    }
     const actions: vscode.CodeAction[] = [];
     for (const diagnostic of context.diagnostics) {
       if (diagnostic.code !== UNKNOWN_TYPE_DIAGNOSTIC_CODE) {
@@ -240,12 +382,24 @@ export const DEF_PYTHON_PARITY_DIAGNOSTIC_CODE = DEF_METHOD_MISSING_DIAGNOSTIC_C
  * (relatedInformation),与 lint 规则同一解析口径,不重新猜测。
  */
 export class KBEngineDefPythonParityCodeActionProvider implements vscode.CodeActionProvider {
-  provideCodeActions(
+  /**
+   * C-19 交付②:def-method-missing-in-python 诊断的一键生成 CodeAction。
+   * 仅出现在「def 有 Python 无」方法上(诊断 code 对账),在目标 Python 类
+   * 末尾生成方法骨架(签名参数从 def `<Arg>` 类型映射,体默认 raise
+   * NotImplementedError,可配 pass);生成后一致性自动重算(诊断消除,走
+   * 既有 observeRustDefFindings 重扫)。目标文件取自诊断双向定位面
+   * (relatedInformation),与 lint 规则同一解析口径,不重新猜测。
+   * Rust-first(RUST-143 批 3):parityMethod 族装配走 textDocument/codeAction
+   * (目标 python 快照 readSharedFileSnapshot 作入参);快照面是单快照契约
+   * ——全部诊断同一目标文件才走 Rust(多目标逐诊断快照归 TS 车道);门关/
+   * 畸形面回 TS 既有实现(不部分采用)。
+   */
+  async provideCodeActions(
     document: vscode.TextDocument,
     range: vscode.Range,
     context: vscode.CodeActionContext,
     token?: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.CodeAction[]> {
+  ): Promise<vscode.CodeAction[]> {
     if (token?.isCancellationRequested) {
       return [];
     }
@@ -254,6 +408,36 @@ export class KBEngineDefPythonParityCodeActionProvider implements vscode.CodeAct
       !document.fileName.toLowerCase().endsWith('.def')
     ) {
       return [];
+    }
+    const matched = context.diagnostics.filter(
+      diagnostic =>
+        diagnostic.code === DEF_PYTHON_PARITY_DIAGNOSTIC_CODE &&
+        diagnosticRangeIntersects(diagnostic.range, range)
+    );
+    const targets = matched.map(
+      diagnostic => diagnostic.relatedInformation?.[0]?.location.uri.fsPath
+    );
+    const singleTarget = targets[0];
+    const snapshotText =
+      singleTarget !== undefined && targets.every(target => target === singleTarget)
+        ? readSharedFileSnapshot(singleTarget)?.content ?? null
+        : null;
+    const faces = await serveCodeActionsFromRust(
+      document,
+      {
+        family: 'parityMethod',
+        range: { start: range.start, end: range.end },
+        diagnostics: matched.map(diagnosticParamOf),
+        registered: [],
+        snapshotText
+      },
+      () => token?.isCancellationRequested ?? false
+    );
+    if (faces !== null) {
+      if (token?.isCancellationRequested) {
+        return [];
+      }
+      return facesToCodeActions(document, 'parityMethod', faces, matched);
     }
     const actions: vscode.CodeAction[] = [];
     const seen = new Set<string>();
@@ -386,15 +570,40 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
    * kbengine.receiverNone:段错配码/无码诊断不出(路由问题不是判空问题);
    * 接收者从诊断行文本提取(self.<cell|base|client>.),提不出不猜;
    * 同行同码多诊断去重只出一条;只插本文档,无命令型动作。
+   * Rust-first(RUST-143 批 3):receiverNone 族装配(receiver 区间归属+
+   * 包裹式首选/早退式次选)走 textDocument/codeAction;门关/畸形面回 TS
+   * 既有实现(不部分采用)。
    */
-  provideCodeActions(
+  async provideCodeActions(
     document: vscode.TextDocument,
     range: vscode.Range,
     context: vscode.CodeActionContext,
     token?: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.CodeAction[]> {
+  ): Promise<vscode.CodeAction[]> {
     if (token?.isCancellationRequested) {
       return [];
+    }
+    const matched = context.diagnostics.filter(
+      diagnostic =>
+        diagnostic.code === RECEIVER_NONE_DIAGNOSTIC_CODE &&
+        diagnosticRangeIntersects(diagnostic.range, range)
+    );
+    const faces = await serveCodeActionsFromRust(
+      document,
+      {
+        family: 'receiverNone',
+        range: { start: range.start, end: range.end },
+        diagnostics: matched.map(diagnosticParamOf),
+        registered: [],
+        snapshotText: null
+      },
+      () => token?.isCancellationRequested ?? false
+    );
+    if (faces !== null) {
+      if (token?.isCancellationRequested) {
+        return [];
+      }
+      return facesToCodeActions(document, 'receiverNone', faces, matched);
     }
     const actions: vscode.CodeAction[] = [];
     const seen = new Set<string>();
@@ -474,14 +683,46 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
  * (多语句行/跨行)不出(不猜);只动本文档该行。
  */
 export class KBEngineFixedDictWholeReassignCodeActionProvider implements vscode.CodeActionProvider {
-  provideCodeActions(
+  /**
+   * C-23(交付②):FIXED_DICT 子键赋值诊断(kbengine.fixedDictNestedMutation)
+   * 的快速修复——整行子键赋值改写为整体重赋习语(`_fd = self.<属性>` →
+   * `_fd[子键] = 值` → `self.<属性> = _fd`;编辑由 behaviorLints
+   * buildFixedDictWholeReassignEdit 纯函数产出,替换后顶层赋值走引擎同步
+   * 路径,重算该位不再报)。code 对账:非本码诊断不出;行文本形态不匹配
+   * (多语句行/跨行)不出(不猜);只动本文档该行。
+   * Rust-first(RUST-143 批 3):fixedDict 族装配(形态判别+整行段替换)
+   * 走 textDocument/codeAction;门关/畸形面回 TS 既有实现(不部分采用)。
+   */
+  async provideCodeActions(
     document: vscode.TextDocument,
     range: vscode.Range,
     context: vscode.CodeActionContext,
     token?: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.CodeAction[]> {
+  ): Promise<vscode.CodeAction[]> {
     if (token?.isCancellationRequested) {
       return [];
+    }
+    const matched = context.diagnostics.filter(
+      diagnostic =>
+        diagnostic.code === FIXED_DICT_NESTED_MUTATION_CODE &&
+        diagnosticRangeIntersects(diagnostic.range, range)
+    );
+    const faces = await serveCodeActionsFromRust(
+      document,
+      {
+        family: 'fixedDict',
+        range: { start: range.start, end: range.end },
+        diagnostics: matched.map(diagnosticParamOf),
+        registered: [],
+        snapshotText: null
+      },
+      () => token?.isCancellationRequested ?? false
+    );
+    if (faces !== null) {
+      if (token?.isCancellationRequested) {
+        return [];
+      }
+      return facesToCodeActions(document, 'fixedDict', faces, matched);
     }
     const actions: vscode.CodeAction[] = [];
     const seen = new Set<number>();

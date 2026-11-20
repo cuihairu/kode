@@ -20,6 +20,8 @@ export type RequestId = number | string;
  * kode2 协议 wire DTO 全集(RUST-055 单一真源)。
  */
 export interface KodeProtocol {
+  code_action_diagnostic: CodeActionDiagnostic;
+  code_action_params: CodeActionParams;
   completion_options: CompletionOptions;
   completion_params: CompletionParams;
   content_change_event: ContentChangeEvent;
@@ -63,6 +65,49 @@ export interface KodeProtocol {
   workspace_folder: WorkspaceFolder;
 }
 /**
+ * codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。
+ */
+export interface CodeActionDiagnostic {
+  code: string;
+  range: Range;
+  /**
+   * relatedInformation[0].location.uri.fsPath(parity 族定位面;无则缺省)。
+   */
+  relatedFile?: string | null;
+  /**
+   * relatedInformation[0].message(目标类名;空串时服务端按 def 文件名兜底)。
+   */
+  relatedMessage?: string | null;
+}
+/**
+ * LSP 区间。
+ */
+export interface Range {
+  end: Position;
+  start: Position;
+}
+/**
+ * LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
+ */
+export interface Position {
+  character: number;
+  line: number;
+}
+/**
+ * codeAction 请求参数(RUST-143 批 3):装配族分派 + 族输入(registered 近拼宇宙=TS getKnownTypeContext 装配;snapshotText=parity 族目标 python 快照,TS readSharedFileSnapshot 打开缓冲区优先)+ 诊断面数组。四族 (typeReplacement/parityMethod/receiverNone/fixedDict)各自装配,产出 ActionFace 描述符数组(vscode 对象构造与 l10n 标题归 TS 薄壳)。
+ */
+export interface CodeActionParams {
+  diagnostics?: CodeActionDiagnostic[];
+  family: string;
+  range: Range;
+  registered?: string[];
+  snapshotText?: string | null;
+  textDocument: TextDocumentIdentifier;
+}
+export interface TextDocumentIdentifier {
+  uri: string;
+}
+/**
  * completion 能力声明(triggerCharacters 供客户端决定何时发请求)。
  */
 export interface CompletionOptions {
@@ -79,29 +124,12 @@ export interface CompletionParams {
   position: Position;
   textDocument: TextDocumentIdentifier;
 }
-/**
- * LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
- */
-export interface Position {
-  character: number;
-  line: number;
-}
-export interface TextDocumentIdentifier {
-  uri: string;
-}
 export interface ContentChangeEvent {
   /**
    * Full sync(change=1)下恒为 None;增量同步(change=2)带 range, 由 kode-vfs 做精确坐标转换(VFS-004)。
    */
   range?: Range | null;
   text: string;
-}
-/**
- * LSP 区间。
- */
-export interface Range {
-  end: Position;
-  start: Position;
 }
 /**
  * Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。
@@ -294,6 +322,10 @@ export interface InitializeResult {
  * 服务器 capabilities(最小集:full 文本同步 + hover + completion)。
  */
 export interface ServerCapabilities {
+  /**
+   * RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。
+   */
+  codeActionProvider?: boolean;
   /**
    * LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
    */

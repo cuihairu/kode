@@ -219,7 +219,7 @@ describe('kodeCodeActionAssemblyParity', () => {
     expect(diagnosticRangeIntersects(new vscode.Range(2, 20, 2, 30), new vscode.Range(2, 0, 2, 20))).toBe(true);
   });
 
-  it('parity method skeleton provider assembles golden action', () => {
+  it('parity method skeleton provider assembles golden action', async () => {
     // 快照经真 readSharedFileSnapshot 磁盘补载(provider 默认 deps)——
     // 写临时文件,深比前把临时根归一为 /w。
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ca-parity-'));
@@ -236,11 +236,11 @@ describe('kodeCodeActionAssemblyParity', () => {
           makeDiag(DEF_PYTHON_PARITY_DIAGNOSTIC_CODE, 5, 5, 5, 11, { relatedFile: targetFile, relatedMessage: '' })
         ]
       } as vscode.CodeActionContext;
-      const actions = provider.provideCodeActions(
+      const actions = (await provider.provideCodeActions(
         document as unknown as vscode.TextDocument,
         new vscode.Range(5, 0, 5, 999),
         context
-      ) as vscode.CodeAction[];
+      )) as vscode.CodeAction[];
       expect(normalizeActions(actions ?? [], tempDir)).toEqual(normalizeGolden(goldenCase('parity-method')));
       expect(actions).toHaveLength(1);
       expect(normalizeTitle(actions![0].title, tempDir)).toBe('Generate method onTalk → /w/scripts/avatar.py:9');
@@ -249,7 +249,7 @@ describe('kodeCodeActionAssemblyParity', () => {
     }
   });
 
-  it('receiver none guard provider orders wrap then guard and dedupes', () => {
+  it('receiver none guard provider orders wrap then guard and dedupes', async () => {
     const document = makeDoc(RECV_PY, '/w/scripts/mob.py');
     const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
     const context = {
@@ -259,18 +259,18 @@ describe('kodeCodeActionAssemblyParity', () => {
         makeDiag(RECEIVER_NONE_DIAGNOSTIC_CODE, 1, 4, 1, 11)
       ]
     } as vscode.CodeActionContext;
-    const actions = provider.provideCodeActions(
+    const actions = (await provider.provideCodeActions(
       document as unknown as vscode.TextDocument,
       new vscode.Range(0, 0, 3, 999),
       context
-    ) as vscode.CodeAction[];
+    )) as vscode.CodeAction[];
     expect(actions).toHaveLength(2);
     expect(normalizeActions(actions, null)).toEqual(normalizeGolden(goldenCase('receiver-none-guard')));
     expect(actions[0].title).toBe('Wrap with null guard (if self.cell:)');
     expect(actions[1].title).toBe('Insert None guard (if not self.cell: return)');
   });
 
-  it('fixed dict whole reassign provider dedupes by line', () => {
+  it('fixed dict whole reassign provider dedupes by line', async () => {
     const document = makeDoc(FD_PY, '/w/scripts/box.py');
     const provider = new KBEngineFixedDictWholeReassignCodeActionProvider();
     const context = {
@@ -279,11 +279,11 @@ describe('kodeCodeActionAssemblyParity', () => {
         makeDiag(FIXED_DICT_NESTED_MUTATION_CODE, 2, 8, 2, 13)
       ]
     } as vscode.CodeActionContext;
-    const actions = provider.provideCodeActions(
+    const actions = (await provider.provideCodeActions(
       document as unknown as vscode.TextDocument,
       new vscode.Range(2, 0, 2, 999),
       context
-    ) as vscode.CodeAction[];
+    )) as vscode.CodeAction[];
     expect(actions).toHaveLength(1);
     expect(normalizeActions(actions, null)).toEqual(normalizeGolden(goldenCase('fixed-dict-whole-reassign')));
   });

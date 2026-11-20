@@ -775,6 +775,178 @@ export async function serveRenameFromRust(
   return result;
 }
 
+/** Rust GateRange 面(平铺 0 基行/列,与 code_action_assembly::GateRange 同形) */
+export interface CodeActionGateRangeFace {
+  startLine: number;
+  startChar: number;
+  endLine: number;
+  endChar: number;
+}
+
+/**
+ * EditFace 三态(RUST-143 批 3):replaceRange=定点替换;insertLine=类体/语句
+ * 插行(text 以换行开/结尾由 Rust 侧烘焙);replaceLines=整行段替换(换行
+ * 已烘焙进 text)。
+ */
+export type CodeActionEditFace =
+  | { type: 'replaceRange'; file: string; range: CodeActionGateRangeFace; newText: string }
+  | { type: 'insertLine'; file: string; line: number; text: string }
+  | { type: 'replaceLines'; file: string; startLine: number; endLine: number; text: string };
+
+/** ActionFace:Rust 装配描述符(vscode 对象构造与 l10n 标题插值归 TS 薄壳) */
+export interface CodeActionFace {
+  kind: string;
+  title: string;
+  edit: CodeActionEditFace;
+  diagnosticStartLine: number;
+  titleParams: string[];
+}
+
+/** 诊断入参面(TS 侧由 vscode.Diagnostic 投影;related* 供 parity 族定位) */
+export interface CodeActionDiagnosticParam {
+  code: string;
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  relatedFile?: string | null;
+  relatedMessage?: string | null;
+}
+
+const isCodeActionGateRangeFace = (value: unknown): value is CodeActionGateRangeFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const range = value as Record<string, unknown>;
+  return (
+    typeof range.startLine === 'number' &&
+    typeof range.startChar === 'number' &&
+    typeof range.endLine === 'number' &&
+    typeof range.endChar === 'number'
+  );
+};
+
+const isCodeActionEditFace = (value: unknown): value is CodeActionEditFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const edit = value as Record<string, unknown>;
+  switch (edit.type) {
+    case 'replaceRange':
+      return (
+        typeof edit.file === 'string' &&
+        isCodeActionGateRangeFace(edit.range) &&
+        typeof edit.newText === 'string'
+      );
+    case 'insertLine':
+      return (
+        typeof edit.file === 'string' &&
+        typeof edit.line === 'number' &&
+        typeof edit.text === 'string'
+      );
+    case 'replaceLines':
+      return (
+        typeof edit.file === 'string' &&
+        typeof edit.startLine === 'number' &&
+        typeof edit.endLine === 'number' &&
+        typeof edit.text === 'string'
+      );
+    default:
+      return false;
+  }
+};
+
+const isCodeActionFace = (value: unknown): value is CodeActionFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return (
+    typeof face.kind === 'string' &&
+    typeof face.title === 'string' &&
+    isCodeActionEditFace(face.edit) &&
+    typeof face.diagnosticStartLine === 'number' &&
+    Array.isArray(face.titleParams) &&
+    face.titleParams.every(entry => typeof entry === 'string')
+  );
+};
+
+/** def 族(typeReplacement/parityMethod)只在 .def 文档请求;py 族反之 */
+const CODE_ACTION_DEF_FAMILIES = new Set(['typeReplacement', 'parityMethod']);
+const CODE_ACTION_PY_FAMILIES = new Set(['receiverNone', 'fixedDict']);
+
+/**
+ * codeAction 装配面 rust 服务(RUST-143 批 3 接线):服务轨道下先镜像文档,
+ * 再按族请求 kode-server textDocument/codeAction。Rust 面 = 四族装配决策
+ * (修参数类型/创建缺失定义/receiver-none 守卫双动作/FIXED_DICT 整体重赋),
+ * 产出 ActionFace 描述符数组。诚实边界:registered 近拼宇宙(getKnownTypeContext
+ * 装配)与 parity 目标 python 快照(readSharedFileSnapshot 打开缓冲区优先)
+ * 由 TS 作入参传入;vscode.CodeAction/WorkspaceEdit 构造与 l10n 标题插值归
+ * TS 薄壳。族×文档类不匹配/未开档/任何失败/应答畸形(任一 face 缺键)→
+ * null,调用方回 TS 既有实现(不部分采用)。非服务轨道/未装配门零开销。
+ */
+export async function serveCodeActionsFromRust(
+  document: DocumentLike,
+  input: {
+    family: string;
+    range: { start: PositionLike; end: PositionLike };
+    diagnostics: readonly CodeActionDiagnosticParam[];
+    registered: string[];
+    snapshotText: string | null;
+  },
+  isCancelled?: () => boolean
+): Promise<CodeActionFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  if (CODE_ACTION_DEF_FAMILIES.has(input.family)) {
+    if (!isDefDocument(document)) {
+      return null;
+    }
+  } else if (CODE_ACTION_PY_FAMILIES.has(input.family)) {
+    if (!document.uri.fsPath.toLowerCase().endsWith('.py')) {
+      return null;
+    }
+  } else {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    range: {
+      start: { line: input.range.start.line, character: input.range.start.character },
+      end: { line: input.range.end.line, character: input.range.end.character }
+    },
+    family: input.family,
+    registered: input.registered,
+    snapshotText: input.snapshotText,
+    diagnostics: input.diagnostics.map(diagnostic => ({
+      code: diagnostic.code,
+      range: {
+        start: { line: diagnostic.range.start.line, character: diagnostic.range.start.character },
+        end: { line: diagnostic.range.end.line, character: diagnostic.range.end.character }
+      },
+      relatedFile: diagnostic.relatedFile ?? null,
+      relatedMessage: diagnostic.relatedMessage ?? null
+    }))
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/codeAction', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (!Array.isArray(result) || !result.every(isCodeActionFace)) {
+    return null;
+  }
+  return result;
+}
+
 /**
  * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
  * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值

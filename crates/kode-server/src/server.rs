@@ -17,12 +17,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kode_protocol::{
-    error_codes, CompletionParams, ContentChangeEvent, CoreResources, DefinitionParams,
-    DeleteFilesParams, DeletedFile, DidChangeParams, DidCloseParams, DidOpenParams,
-    DocumentDiagnosticParams, DocumentSummary, DocumentSymbolParams, HealthReport, HoverParams,
-    IncomingMessage, InitializeParams, InitializeResult, Notification, PrepareRenameParams,
-    ReferenceParams, RenameFilesParams, RenameParams, RenamedFile, Request, RequestId, Response,
-    ServerCapabilities, ServerInfo, ServerNotification, TextDocumentSyncOptions, PROTOCOL_VERSION,
+    error_codes, CodeActionDiagnostic, CodeActionParams, CompletionParams, ContentChangeEvent,
+    CoreResources, DefinitionParams, DeleteFilesParams, DeletedFile, DidChangeParams,
+    DidCloseParams, DidOpenParams, DocumentDiagnosticParams, DocumentSummary, DocumentSymbolParams,
+    HealthReport, HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification,
+    PrepareRenameParams, ReferenceParams, RenameFilesParams, RenameParams, RenamedFile, Request,
+    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, TextChange};
@@ -428,6 +429,9 @@ fn handle_request_inner(
             vec![Outgoing::Response(handle_prepare_rename(state, request))]
         }
         "textDocument/rename" => vec![Outgoing::Response(handle_rename(state, request))],
+        // RUST-143 批 3:codeAction 四族装配面(决策核 code_action_assembly;
+        // 诊断对象构造/l10n 标题/WorkspaceEdit 装配归 TS 薄壳)。
+        "textDocument/codeAction" => vec![Outgoing::Response(handle_code_action(state, request))],
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
         // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
         "$/kode/workspace/rootAdded" => {
@@ -549,6 +553,8 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             references_provider: true,
             // RUST-141 批 2:textDocument/rename+prepareRename(def 重命名面)。
             rename_provider: true,
+            // RUST-143 批 3:textDocument/codeAction(四族装配面)。
+            code_action_provider: true,
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
@@ -1094,6 +1100,98 @@ fn handle_rename(state: &mut ServerState, request: Request) -> Response {
             "fileEdits": file_edits,
         }),
     )
+}
+
+/// textDocument/codeAction(RUST-143 批 3):四族装配决策面——修参数类型/
+/// 创建缺失定义/冲突定位(receiver-none 守卫双动作 + FIXED_DICT 整体重赋)。
+/// 决策核 [`crate::code_action_assembly`] 纯库直用;`family` 分派单族装配,
+/// 产出 ActionFace 描述符数组。诚实边界:registered 近拼宇宙由 TS
+/// getKnownTypeContext 装配入参;parity 族目标 python 快照由 TS
+/// readSharedFileSnapshot 打开缓冲区优先读入参;vscode.Diagnostic/WorkspaceEdit
+/// 对象构造与 l10n 标题(titleParams 按族插值)归 TS 薄壳,不在本面。
+/// 文档须已打开(未开档回 null);未知 family 回 -32602(枚举入参诚实拒绝,
+/// 不静默空数组)。
+fn handle_code_action(state: &mut ServerState, request: Request) -> Response {
+    let params: CodeActionParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/codeAction params",
+            )
+        }
+    };
+    let Some((key, text)) = request_document_text(state, &params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let doc_file = key.uri.as_path().to_string();
+    let to_gate_range = |range: &kode_protocol::Range| crate::code_action_assembly::GateRange {
+        start_line: range.start.line as usize,
+        start_char: range.start.character as usize,
+        end_line: range.end.line as usize,
+        end_char: range.end.character as usize,
+    };
+    let diagnostics: Vec<CodeActionDiagnostic> = params.diagnostics;
+    let gate_diagnostics: Vec<crate::code_action_assembly::DiagnosticGateFace> = diagnostics
+        .iter()
+        .map(
+            |diagnostic| crate::code_action_assembly::DiagnosticGateFace {
+                code: diagnostic.code.clone(),
+                range: to_gate_range(&diagnostic.range),
+                related_file: diagnostic.related_file.clone(),
+                related_message: diagnostic.related_message.clone(),
+            },
+        )
+        .collect();
+    let request_range = crate::code_action_assembly::RequestRangeFace {
+        start_line: params.range.start.line as usize,
+        start_char: params.range.start.character as usize,
+        end_line: params.range.end.line as usize,
+        end_char: params.range.end.character as usize,
+    };
+    let registered: Vec<&str> = params.registered.iter().map(String::as_str).collect();
+    let actions = match params.family.as_str() {
+        "typeReplacement" => crate::code_action_assembly::assemble_type_replacement_actions(
+            &text,
+            &doc_file,
+            &registered,
+            &gate_diagnostics,
+            &request_range,
+        ),
+        "parityMethod" => crate::code_action_assembly::assemble_parity_method_actions(
+            &text,
+            &doc_file,
+            params.snapshot_text.as_deref(),
+            &gate_diagnostics,
+            &request_range,
+        ),
+        "receiverNone" => crate::code_action_assembly::assemble_receiver_none_actions(
+            &text,
+            &doc_file,
+            &gate_diagnostics,
+            &request_range,
+        ),
+        "fixedDict" => crate::code_action_assembly::assemble_fixed_dict_actions(
+            &text,
+            &doc_file,
+            &gate_diagnostics,
+            &request_range,
+        ),
+        _ => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "unknown codeAction family",
+            )
+        }
+    };
+    let faces: Vec<serde_json::Value> = actions
+        .iter()
+        .map(|action| serde_json::to_value(action).expect("serialize action face"))
+        .collect();
+    Response::success(request.id, serde_json::Value::Array(faces))
 }
 
 /// textDocument/diagnostic(Phase2 首片,LSP pull 诊断 full 报告形):

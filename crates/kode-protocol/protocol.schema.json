@@ -1,6 +1,79 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "CodeActionDiagnostic": {
+      "description": "codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/definitions/Range"
+        },
+        "relatedFile": {
+          "default": null,
+          "description": "relatedInformation[0].location.uri.fsPath(parity 族定位面;无则缺省)。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relatedMessage": {
+          "default": null,
+          "description": "relatedInformation[0].message(目标类名;空串时服务端按 def 文件名兜底)。",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "range"
+      ],
+      "type": "object"
+    },
+    "CodeActionParams": {
+      "description": "codeAction 请求参数(RUST-143 批 3):装配族分派 + 族输入(registered 近拼宇宙=TS getKnownTypeContext 装配;snapshotText=parity 族目标 python 快照,TS readSharedFileSnapshot 打开缓冲区优先)+ 诊断面数组。四族 (typeReplacement/parityMethod/receiverNone/fixedDict)各自装配,产出 ActionFace 描述符数组(vscode 对象构造与 l10n 标题归 TS 薄壳)。",
+      "properties": {
+        "diagnostics": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/CodeActionDiagnostic"
+          },
+          "type": "array"
+        },
+        "family": {
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/definitions/Range"
+        },
+        "registered": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "snapshotText": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "family",
+        "range",
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "CompletionOptions": {
       "description": "completion 能力声明(triggerCharacters 供客户端决定何时发请求)。",
       "properties": {
@@ -676,6 +749,11 @@
     "ServerCapabilities": {
       "description": "服务器 capabilities(最小集:full 文本同步 + hover + completion)。",
       "properties": {
+        "codeActionProvider": {
+          "default": false,
+          "description": "RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。",
+          "type": "boolean"
+        },
         "completionProvider": {
           "anyOf": [
             {
@@ -846,6 +924,12 @@
   },
   "description": "kode2 协议 wire DTO 全集(RUST-055 单一真源)。",
   "properties": {
+    "code_action_diagnostic": {
+      "$ref": "#/definitions/CodeActionDiagnostic"
+    },
+    "code_action_params": {
+      "$ref": "#/definitions/CodeActionParams"
+    },
     "completion_options": {
       "$ref": "#/definitions/CompletionOptions"
     },
@@ -971,6 +1055,8 @@
     }
   },
   "required": [
+    "code_action_diagnostic",
+    "code_action_params",
     "completion_options",
     "completion_params",
     "content_change_event",

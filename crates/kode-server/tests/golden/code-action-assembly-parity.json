@@ -20,7 +20,10 @@
             },
             "newText": "UINT32"
           },
-          "diagnosticStartLine": 2
+          "diagnosticStartLine": 2,
+          "titleParams": [
+            "UINT32"
+          ]
         }
       ]
     },
@@ -36,7 +39,12 @@
             "line": 8,
             "text": "\n    def onTalk(self, arg0: int) -> None:\n        raise NotImplementedError\n"
           },
-          "diagnosticStartLine": 5
+          "diagnosticStartLine": 5,
+          "titleParams": [
+            "onTalk",
+            "/w/scripts/avatar.py",
+            "9"
+          ]
         }
       ]
     },
@@ -53,7 +61,10 @@
             "endLine": 4,
             "text": "        if self.cell:\n            self.cell.prepareEnter(entity)\n            self.cell.ready()\n"
           },
-          "diagnosticStartLine": 2
+          "diagnosticStartLine": 2,
+          "titleParams": [
+            "cell"
+          ]
         },
         {
           "kind": "QuickFix",
@@ -64,7 +75,10 @@
             "line": 2,
             "text": "        if not self.cell:\n            return\n"
           },
-          "diagnosticStartLine": 2
+          "diagnosticStartLine": 2,
+          "titleParams": [
+            "cell"
+          ]
         }
       ]
     },
@@ -81,7 +95,8 @@
             "endLine": 3,
             "text": "        _fd = self.contents\n        _fd[\"slot\"] = 1\n        self.contents = _fd\n"
           },
-          "diagnosticStartLine": 2
+          "diagnosticStartLine": 2,
+          "titleParams": []
         }
       ]
     }

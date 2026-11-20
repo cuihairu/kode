@@ -252,6 +252,10 @@ pub struct ActionFace {
     pub edit: EditFace,
     /// action.diagnostics 对账 = 命中诊断的起始行(单诊断)。
     pub diagnostic_start_line: usize,
+    /// 标题插值参数(按族定序;TS l10n 薄壳按族选模板并按位插值,zh bundle
+    /// 不经 en 插值串):typeReplacement=[候选名];parityMethod=[方法名,
+    /// 目标文件,1 基展示行];receiverNone=[receiver];fixedDict=[]。
+    pub title_params: Vec<String>,
 }
 
 /// 类型近拼替换装配(KBEngineTypeCodeActionProvider 决策流):code 闸 →
@@ -286,9 +290,10 @@ pub fn assemble_type_replacement_actions(
                 edit: EditFace::ReplaceRange {
                     file: doc_file.to_string(),
                     range: diagnostic.range.clone(),
-                    new_text: candidate,
+                    new_text: candidate.clone(),
                 },
                 diagnostic_start_line: diagnostic.range.start_line,
+                title_params: vec![candidate],
             });
         }
     }
@@ -356,7 +361,7 @@ pub fn assemble_parity_method_actions(
                 line + 1
             ),
             edit: EditFace::InsertLine {
-                file: related_file,
+                file: related_file.clone(),
                 line,
                 text: if blank_prefix {
                     format!("\n{skeleton}")
@@ -365,6 +370,7 @@ pub fn assemble_parity_method_actions(
                 },
             },
             diagnostic_start_line: diagnostic.range.start_line,
+            title_params: vec![method_name, related_file, (line + 1).to_string()],
         });
     }
     actions
@@ -430,6 +436,7 @@ pub fn assemble_receiver_none_actions(
                     },
                 },
                 diagnostic_start_line: line,
+                title_params: vec![receiver.to_string()],
             });
         }
         if let Some(edit) = guard {
@@ -442,6 +449,7 @@ pub fn assemble_receiver_none_actions(
                     text: edit.text,
                 },
                 diagnostic_start_line: line,
+                title_params: vec![receiver.to_string()],
             });
         }
     }
@@ -492,6 +500,7 @@ pub fn assemble_fixed_dict_actions(
                 },
             },
             diagnostic_start_line: line,
+            title_params: Vec::new(),
         });
     }
     actions

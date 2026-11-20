@@ -181,12 +181,12 @@ const fixedDictDiagnostic = (line = 2): Diagnostic => {
 describe('C-23 整体重赋快速修复 provider(wiring)', () => {
   const provider = new KBEngineFixedDictWholeReassignCodeActionProvider();
 
-  it('fixedDictNestedMutation 诊断 → 整体重赋编辑(三行习语,缩进保持)', () => {
+  it('fixedDictNestedMutation 诊断 → 整体重赋编辑(三行习语,缩进保持)', async () => {
     const document = pyDocument();
     const diagnostic = fixedDictDiagnostic();
-    const actions = provider.provideCodeActions(document, diagnostic.range, {
+    const actions = (await provider.provideCodeActions(document, diagnostic.range, {
       diagnostics: [diagnostic]
-    }) as Array<{ title: string; kind: string; edit?: { get(uri: unknown): Array<{ range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }> } }>;
+    })) as Array<{ title: string; kind: string; edit?: { get(uri: unknown): Array<{ range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }> } }>;
     expect(actions).toHaveLength(1);
     const action = actions[0];
     expect(action.kind).toBe(CodeActionKind.QuickFix);
@@ -203,7 +203,7 @@ describe('C-23 整体重赋快速修复 provider(wiring)', () => {
     ]);
   });
 
-  it('非本码诊断/行形态不匹配/同行重复诊断:不出候选或去重', () => {
+  it('非本码诊断/行形态不匹配/同行重复诊断:不出候选或去重', async () => {
     const document = pyDocument();
     // 非 code 对账:receiverNone 诊断不出
     const other = new Diagnostic(
@@ -212,14 +212,14 @@ describe('C-23 整体重赋快速修复 provider(wiring)', () => {
       DiagnosticSeverity.Warning
     );
     other.code = 'kbengine.receiverNone';
-    expect(provider.provideCodeActions(document, other.range, { diagnostics: [other] })).toHaveLength(0);
+    expect(await provider.provideCodeActions(document, other.range, { diagnostics: [other] })).toHaveLength(0);
     // 光标不在诊断范围内:不出
     const away = fixedDictDiagnostic();
-    expect(provider.provideCodeActions(document, new Range(0, 0, 0, 1), { diagnostics: [away] })).toHaveLength(0);
+    expect(await provider.provideCodeActions(document, new Range(0, 0, 0, 1), { diagnostics: [away] })).toHaveLength(0);
     // 同行两条重复诊断:去重为一条
     const dupA = fixedDictDiagnostic();
     const dupB = fixedDictDiagnostic();
-    const dedup = provider.provideCodeActions(document, dupA.range, { diagnostics: [dupA, dupB] });
+    const dedup = await provider.provideCodeActions(document, dupA.range, { diagnostics: [dupA, dupB] });
     expect(dedup).toHaveLength(1);
   });
 });

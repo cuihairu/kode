@@ -59,6 +59,8 @@ struct ProtocolSchemaRoot {
     reference_context: ReferenceContext,
     prepare_rename_params: PrepareRenameParams,
     rename_params: RenameParams,
+    code_action_params: CodeActionParams,
+    code_action_diagnostic: CodeActionDiagnostic,
     health_report: HealthReport,
     core_resources: CoreResources,
     document_summary: DocumentSummary,
