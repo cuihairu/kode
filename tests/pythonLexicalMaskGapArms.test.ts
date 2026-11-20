@@ -87,3 +87,10 @@ describe('pythonLexicalMask 缺口臂:普通字符串未闭合边界', () => {
     expect(getPythonMaskPassCountForTests()).toBe(0);
   });
 });
+
+// 覆盖口径残余(批 37 定性,2026-11-21):maskPythonNonCode 的 fexprDepth>0
+// 分支(114-119 共 6 行)为死码——该函数的字符串处理唯一入口是 maskStringAt,
+// 而 f-string 表达式段状态是 maskStringAt 的**局部**变量(:49),表达式段在
+// maskStringAt 内部自洽消费(闭引号/行尾才返回,永不半途带着表达式态返回),
+// 外壳的 fexprDepth 恒为 0(:109 初始化后仅 :115 有减无加)。两台扫描器的
+// 该分支是旧设计(外壳自管表达式段)的复制残留。
