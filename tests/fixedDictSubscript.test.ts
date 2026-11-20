@@ -602,6 +602,18 @@ describe('KSEM-STRUCT-02 Provider 三面(补全/跳转/悬停)', () => {
     expect((items ?? []).map(item => item.label)).not.toContain('x');
   });
 
+  it('无 workspace 根:不接管不造键(游离文档诚实落空)', async () => {
+    // workspaceFolders 拿不到根(单文件窗口/游离文档):FD 键位分支
+    // 在取根处 null 交回常规链,绝不凭空造键。
+    workspace.workspaceFolders = undefined;
+    const provider = new KBEngineCompletionProvider(manager());
+    const items = (await provider.provideCompletionItems(
+      cellDoc('v = self.pos["'),
+      new Position(0, 'v = self.pos["'.length)
+    )) as CompletionLike[] | undefined;
+    expect((items ?? []).map(item => item.label)).not.toContain('x');
+  });
+
   // ---- 跳转面 ----
 
   it('F12 嵌套键 → types.xml 字段声明行(逐层容器归位)', async () => {

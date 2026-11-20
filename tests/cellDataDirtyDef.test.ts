@@ -219,5 +219,54 @@ describe('KSEM-CELL-15 cellData 全链:未保存 def 编辑进键宇宙', () => 
       expect(capture.seenDefs).toHaveLength(2);
       expect(capture.seenDefs[1].some(def => def.text === DIRTY_DEF)).toBe(true);
     });
+
+    it('Rust 键宇宙查询抛错:降级为键不可用注记,悬停不炸不造键', async () => {
+      // 传输层整体抛错(而非 ok:false):catch 臂如实降级 keys=null,
+      // 生命周期语义注记照给,绝不编造键,也绝不把异常外泄给编辑器。
+      const failingGate = {
+        serveFromRust: () => false,
+        runInRust: async (_method: string, args: { defs?: unknown }) => {
+          if (Array.isArray(args.defs)) {
+            throw new Error('transport down');
+          }
+          return { ok: true, result: {} };
+        }
+      } as unknown as KodeCoreGate;
+      setKodeCoreShadowGate(failingGate);
+      const text = 'class ChainEntity:\n    def onTick(self):\n        total = self.cellData["gold"]\n';
+      const document = makeTextDocument(text, {
+        fileName: path.join(root, 'scripts', 'cell', 'ChainEntity.py'),
+        languageId: 'python',
+        version: 1
+      });
+      const provider = new KBEngineHoverProvider();
+      const dataStart = text.split('\n')[2].indexOf('cellData') + 1;
+      const hover = await provider.provideHover(document as never, new Position(2, dataStart));
+      expect(hover).not.toBeNull();
+    });
+
+    it('键缓存 8 条上限:满即整清,被逐出的键重取(不吐陈旧)', async () => {
+      const capture = installGate();
+      const provider = new KBEngineHoverProvider();
+      const hoverOnce = async (entity: string) => {
+        const scriptPath = path.join(root, 'scripts', 'cell', `${entity}.py`);
+        const text = `class ${entity}:\n    def onTick(self):\n        total = self.cellData["gold"]\n`;
+        const document = makeTextDocument(text, {
+          fileName: scriptPath,
+          languageId: 'python',
+          version: 1
+        });
+        const dataStart = text.split('\n')[2].indexOf('cellData') + 1;
+        await provider.provideHover(document as never, new Position(2, dataStart));
+      };
+      // 16 个互异新键(多于任何起始驻留量)必触至少一次整清;互异键全 miss。
+      for (let i = 1; i <= 16; i++) {
+        await hoverOnce(`Evict${i}`);
+      }
+      expect(capture.seenDefs).toHaveLength(16);
+      // 首键在整清中已被逐出:重悬停必重取(第 17 次 RPC),缓存不吐陈旧。
+      await hoverOnce('Evict1');
+      expect(capture.seenDefs).toHaveLength(17);
+    });
   });
 });

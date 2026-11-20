@@ -318,6 +318,32 @@ describe('KBEngineCompletionProvider cellData 键位分支(CELL-04 全链)', () 
     expect(items).toEqual([]);
   });
 
+  it('cancellation after the Rust fetch stops the list (mid-flight cancel)', async () => {
+    // 闸内在取键途中翻取消位:入口闸已过、RPC 已发且带回了键——用户已走,
+    // 此处必须停表返回空,不把到手的键漏出去。
+    const token = { isCancellationRequested: false };
+    const fakeGate = {
+      serveFromRust: () => false,
+      runInRust: async () => {
+        token.isCancellationRequested = true;
+        return { ok: true, result: { keys: CANNED_KEYS } };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    const provider = new KBEngineCompletionProvider();
+    const lineText = 'self.cellData["h';
+    const document = makeTextDocument(`${lineText}\n`, {
+      fileName: path.join(root, 'scripts', 'cell', 'Avatar.py'),
+      languageId: 'python'
+    });
+    const items = (await provider.provideCompletionItems(
+      document,
+      new Position(0, lineText.length),
+      token as never
+    )) as unknown[];
+    expect(items).toEqual([]);
+  });
+
   it('non-key positions keep the existing chain (reloadScript)', async () => {
     installGate(CANNED_KEYS);
     const items = await complete(path.join(root, 'scripts', 'cell', 'Avatar.py'), 'self.cellData = KBEngine.');

@@ -398,4 +398,57 @@ describe('KSEM-DATA-06 面:补全 / F12 / Shift+F12 / 开关', () => {
       ws.restore();
     }
   });
+
+  it('开关关:键位补全不接管,族键不出现(落回常规链)', async () => {
+    const ws = setupWorkspace();
+    try {
+      setSpaceDataIndexEnabled(false);
+      const provider = new KBEngineCompletionProvider();
+      const text = ws.texts.get(ws.reader)!;
+      const line = text.split('\n')[1];
+      const doc = vscode.makeTextDocument(text, { fileName: ws.reader, languageId: 'python' });
+      const atOpenQuote = new vscode.Position(1, line.indexOf('"cfg"') + 1);
+      const items = await provider.provideCompletionItems(doc, atOpenQuote) as vscode.CompletionItem[];
+      // 门关 → 键位分支 null → 常规链接管:spaceData 族键('cfg')绝不出
+      expect(items.some(item => item.label === 'cfg')).toBe(false);
+    } finally {
+      ws.restore();
+    }
+  });
+
+  it('前缀不匹配的族被跳过(键位不造无关项)', async () => {
+    const ws = setupWorkspace();
+    try {
+      const provider = new KBEngineCompletionProvider();
+      const text = 'import KBEngine\nvalue = KBEngine.getSpaceData(1, "zz\n';
+      const doc = vscode.makeTextDocument(text, { fileName: ws.reader, languageId: 'python' });
+      const items = await provider.provideCompletionItems(
+        doc, new vscode.Position(1, text.split('\n')[1].length)
+      ) as vscode.CompletionItem[];
+      // 族键 'cfg' 与片段 'zz' 无前缀关系:continue,一项不给
+      expect(items).toEqual([]);
+    } finally {
+      ws.restore();
+    }
+  });
+
+  it('纯读键族诚实标「无写点」', async () => {
+    const ws = setupWorkspace();
+    try {
+      const provider = new KBEngineCompletionProvider();
+      // reader 改成 get-only:首行完闭调用建族 family (5, "ro"),光标行
+      // 另起(未闭合行不建族,只探测键位)——族内只有读点没有写点。
+      const text = 'import KBEngine\nprev = KBEngine.getSpaceData(5, "ro")\nvalue = KBEngine.getSpaceData(5, "ro\n';
+      fs.writeFileSync(ws.reader, text);
+      const doc = vscode.makeTextDocument(text, { fileName: ws.reader, languageId: 'python' });
+      const items = await provider.provideCompletionItems(
+        doc, new vscode.Position(2, text.split('\n')[2].length)
+      ) as vscode.CompletionItem[];
+      expect(items.map(item => item.label)).toEqual(['ro']);
+      expect(items[0].detail).toContain('no write site');
+      expect(items[0].detail).toContain('0 write site');
+    } finally {
+      ws.restore();
+    }
+  });
 });

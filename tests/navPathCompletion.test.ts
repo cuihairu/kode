@@ -91,6 +91,40 @@ describe('nav path completion in addSpaceGeometryMapping (SP-3)', () => {
     expect(notInString).toEqual([]);
   });
 
+  it('dedups a file surfaced by both scan patterns (dup guard)', async () => {
+    // 同一文件被两条扫描模式(navmesh/tmx)各带回一次(跨根/跨模式重复):
+    // seen 去重,同一 rel 只出一个条目。
+    stubWorkspace.findFiles = (async (pattern?: string) => {
+      const dup = Uri.file(NAV_FILES[0]);
+      return pattern?.includes('.tmx') ? [dup] : [dup, Uri.file(NAV_FILES[1])];
+    }) as typeof stubWorkspace.findFiles;
+    const items = await complete('KBEngine.addSpaceGeometryMapping(0, None, "');
+    const labels = items.map(item => String(item.label));
+    expect(labels.filter(label => label.endsWith('srv_xinshoucun.navmesh'))).toHaveLength(1);
+    expect(labels.filter(label => label.endsWith('srv_xinshoucun_1.navmesh'))).toHaveLength(1);
+  });
+
+  it('cancellation between the scan and the build yields [] (mid-flight cancel)', async () => {
+    // 入口闸已过、扫描在途时用户取消:停表返回空,不报错不造项。
+    const token = { isCancellationRequested: false };
+    stubWorkspace.findFiles = (async () => {
+      token.isCancellationRequested = true;
+      return [Uri.file(NAV_FILES[0])];
+    }) as typeof stubWorkspace.findFiles;
+    const provider = new KBEngineCompletionProvider();
+    const lineText = 'KBEngine.addSpaceGeometryMapping(0, None, "';
+    const document = makeTextDocument(lineText + '\n', {
+      fileName: 'D:/ws/scripts/cell/kbemain.py',
+      languageId: 'python'
+    });
+    const items = (await provider.provideCompletionItems(
+      document,
+      new Position(0, lineText.length),
+      token as never
+    )) as unknown[];
+    expect(items).toEqual([]);
+  });
+
   it('does not break existing KBEngine. reload completion on the same provider', async () => {
     const items = await complete('self.cellData = KBEngine.');
     const labels = items.map(item => String(item.label));
