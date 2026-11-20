@@ -378,6 +378,28 @@ pub struct DocumentDiagnosticParams {
 }
 
 // ---------------------------------------------------------------------------
+// textDocument/references DTO(RUST-138 接线:语料引用位请求链路)
+// ---------------------------------------------------------------------------
+
+/// references 请求的引用上下文:是否把声明本身计入结果(LSP includeDeclaration;
+/// 只对 def 面生效,types.xml 面无声明位)。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceContext {
+    pub include_declaration: bool,
+}
+
+/// references 请求参数:文档身份 + UTF-16 位置 + 引用上下文。服务面 =
+/// 语义引用(Semantic;跨 root 同名异声明 Shadow 与不可解析 Dangling 不入列)。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferencesParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+    pub context: ReferenceContext,
+}
+
+// ---------------------------------------------------------------------------
 // CORE-016 健康探针 DTO
 // ---------------------------------------------------------------------------
 

@@ -42,6 +42,8 @@ export interface KodeProtocol {
   notification: Notification;
   position: Position;
   range: Range;
+  reference_context: ReferenceContext;
+  references_params: ReferencesParams;
   rename_files_params: RenameFilesParams;
   renamed_file: RenamedFile;
   request: Request;
@@ -313,6 +315,20 @@ export interface TextDocumentSyncOptions {
 export interface ServerInfo {
   name: string;
   version: string;
+}
+/**
+ * references 请求的引用上下文:是否把声明本身计入结果(LSP includeDeclaration; 只对 def 面生效,types.xml 面无声明位)。
+ */
+export interface ReferenceContext {
+  includeDeclaration: boolean;
+}
+/**
+ * references 请求参数:文档身份 + UTF-16 位置 + 引用上下文。服务面 = 语义引用(Semantic;跨 root 同名异声明 Shadow 与不可解析 Dangling 不入列)。
+ */
+export interface ReferencesParams {
+  context: ReferenceContext;
+  position: Position;
+  textDocument: TextDocumentIdentifier;
 }
 /**
  * LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。

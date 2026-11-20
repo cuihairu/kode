@@ -472,6 +472,38 @@
       ],
       "type": "object"
     },
+    "ReferenceContext": {
+      "description": "references 请求的引用上下文:是否把声明本身计入结果(LSP includeDeclaration; 只对 def 面生效,types.xml 面无声明位)。",
+      "properties": {
+        "includeDeclaration": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "includeDeclaration"
+      ],
+      "type": "object"
+    },
+    "ReferencesParams": {
+      "description": "references 请求参数:文档身份 + UTF-16 位置 + 引用上下文。服务面 = 语义引用(Semantic;跨 root 同名异声明 Shadow 与不可解析 Dangling 不入列)。",
+      "properties": {
+        "context": {
+          "$ref": "#/definitions/ReferenceContext"
+        },
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "context",
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "RenameFilesParams": {
       "description": "LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。",
       "properties": {
@@ -813,6 +845,12 @@
     "range": {
       "$ref": "#/definitions/Range"
     },
+    "reference_context": {
+      "$ref": "#/definitions/ReferenceContext"
+    },
+    "references_params": {
+      "$ref": "#/definitions/ReferencesParams"
+    },
     "rename_files_params": {
       "$ref": "#/definitions/RenameFilesParams"
     },
@@ -879,6 +917,8 @@
     "notification",
     "position",
     "range",
+    "reference_context",
+    "references_params",
     "rename_files_params",
     "renamed_file",
     "request",

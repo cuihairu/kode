@@ -20,9 +20,9 @@ use kode_protocol::{
     error_codes, CompletionParams, ContentChangeEvent, CoreResources, DefinitionParams,
     DeleteFilesParams, DeletedFile, DidChangeParams, DidCloseParams, DidOpenParams,
     DocumentDiagnosticParams, DocumentSummary, HealthReport, HoverParams, IncomingMessage,
-    InitializeParams, InitializeResult, Notification, RenameFilesParams, RenamedFile, Request,
-    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
-    TextDocumentSyncOptions, PROTOCOL_VERSION,
+    InitializeParams, InitializeResult, Notification, ReferencesParams, RenameFilesParams,
+    RenamedFile, Request, RequestId, Response, ServerCapabilities, ServerInfo,
+    ServerNotification, TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, TextChange};
@@ -412,6 +412,10 @@ fn handle_request_inner(
             ))]
         }
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
+        // RUST-138 接线:语料引用位(def/types.xml)。服务面 = 语义引用
+        // (semantic_reference_locations:跨 root 同名异声明 Shadow 与不可解析
+        // Dangling 不入列);python/entities/alias 无 Rust 面 → null 回 TS。
+        "textDocument/references" => vec![Outgoing::Response(handle_references(state, request))],
         "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
         // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
@@ -832,6 +836,50 @@ fn handle_definition(state: &mut ServerState, request: Request) -> Response {
         Some(location) => Response::success(
             request.id,
             serde_json::to_value(location).expect("serialize location"),
+        ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
+/// textDocument/references(RUST-138 接线):语料引用位(def/types.xml)。
+/// 面 = `semantic_reference_locations`(真实语义引用;跨 root 同名异声明
+/// Shadow 与不可解析 Dangling 不入列——「引用=类型 IR 可证」,同名噪声
+/// 不进生产结果)。文档须已打开(open overlay 优先);未打开/未知目标/
+/// 空结果一律回 null(LSP 允许),不报错不阻塞;python/entities/alias
+/// 无 Rust 引用面同样 null(TS provider 下游实体映射半边接管)。
+fn handle_references(state: &mut ServerState, request: Request) -> Response {
+    let params: ReferencesParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/references params",
+            )
+        }
+    };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.session.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    let references = state.hover.borrow().semantic_reference_locations(
+        &key,
+        &text,
+        params.position.line,
+        params.position.character,
+        params.context.include_declaration,
+    );
+    match references {
+        Some(locations) => Response::success(
+            request.id,
+            serde_json::to_value(locations).expect("serialize locations"),
         ),
         None => Response::success(request.id, serde_json::Value::Null),
     }

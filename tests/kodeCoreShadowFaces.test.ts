@@ -13,6 +13,7 @@ import {
   serveDefinitionFromRust,
   serveDiagnosticsFromRust,
   serveHoverFromRust,
+  serveReferencesFromRust,
   setKodeCoreShadowGate,
   shadowCompareDefinition,
   shadowMirrorCorpusDocument,
@@ -41,8 +42,8 @@ function makeStubClient() {
       calls.push({ method: 'start' });
       return {};
     }),
-    request: vi.fn(async (method: string) => {
-      calls.push({ method: `request:${method}` });
+    request: vi.fn(async (method: string, params?: unknown) => {
+      calls.push({ method: `request:${method}`, params });
       if (responses.has(method)) {
         return responses.get(method);
       }
@@ -526,6 +527,132 @@ describe('serveDefinitionFromRust 服务面(2026-11-08 用户令「直接切」)
       character: 0,
     });
     expect(location).toBeNull();
+  });
+});
+
+describe('serveReferencesFromRust 服务面(RUST-138 接线)', () => {
+  it('rust 轨道:镜像语料 + 请求引用,返回 Location 集且 includeDeclaration 透传', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/references', [
+      {
+        uri: '/workspace/demo/scripts/entity_defs/types.xml',
+        range: { start: { line: 4, character: 1 }, end: { line: 4, character: 9 } },
+      },
+      {
+        uri: '/workspace/demo/scripts/entity_defs/Monster.def',
+        range: { start: { line: 10, character: 7 }, end: { line: 10, character: 15 } },
+      },
+    ]);
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const locations = await serveReferencesFromRust(makeDocument() as never, {
+      line: 2,
+      character: 8,
+    }, true);
+    expect(locations).toEqual([
+      {
+        uri: '/workspace/demo/scripts/entity_defs/types.xml',
+        range: { start: { line: 4, character: 1 }, end: { line: 4, character: 9 } },
+      },
+      {
+        uri: '/workspace/demo/scripts/entity_defs/Monster.def',
+        range: { start: { line: 10, character: 7 }, end: { line: 10, character: 15 } },
+      },
+    ]);
+    expect(client.calls.some(call => call.method === 'openDocument')).toBe(true);
+    const request = client.calls.find(call => call.method === 'request:textDocument/references');
+    expect(request).toBeDefined();
+    expect(request!.params).toEqual({
+      textDocument: { uri: DEF_URI },
+      position: { line: 2, character: 8 },
+      context: { includeDeclaration: true },
+    });
+  });
+
+  it('Rust 无引用(目标不可解析/空):返回 null,调用方回 TS', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/references', null);
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const locations = await serveReferencesFromRust(makeDocument() as never, {
+      line: 0,
+      character: 0,
+    }, false);
+    expect(locations).toBeNull();
+    expect(client.calls.some(call => call.method === 'request:textDocument/references')).toBe(true);
+  });
+
+  it('畸形条目(缺 range.end):整面作废返回 null,不做部分采用', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/references', [
+      {
+        uri: '/workspace/demo/scripts/entity_defs/types.xml',
+        range: { start: { line: 4, character: 1 } },
+      },
+    ]);
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const locations = await serveReferencesFromRust(makeDocument() as never, {
+      line: 0,
+      character: 0,
+    }, false);
+    expect(locations).toBeNull();
+  });
+
+  it('非数组应答(壳坏):返回 null 回 TS', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/references', { kind: 'full' });
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const locations = await serveReferencesFromRust(makeDocument() as never, {
+      line: 0,
+      character: 0,
+    }, false);
+    expect(locations).toBeNull();
+  });
+
+  it('非语料文档(python):零请求直通 null(实体映射半边归 TS)', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const locations = await serveReferencesFromRust(
+      makeDocument({ uri: { fsPath: '/w/Avatar.py' }, languageId: 'python' }) as never,
+      { line: 1, character: 0 },
+      false
+    );
+    expect(locations).toBeNull();
+    expect(client.calls).toEqual([]);
+  });
+
+  it('非服务轨道(ts):零开销返回 null,不拉进程', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client, 'ts');
+    setKodeCoreShadowGate(gate);
+    const locations = await serveReferencesFromRust(makeDocument() as never, {
+      line: 1,
+      character: 0,
+    }, false);
+    expect(locations).toBeNull();
+    expect(client.calls).toEqual([]);
+  });
+
+  it('门未装配:零开销返回 null', async () => {
+    const locations = await serveReferencesFromRust(makeDocument() as never, {
+      line: 1,
+      character: 0,
+    }, false);
+    expect(locations).toBeNull();
+  });
+
+  it('Rust 请求失败:gate.serveInRust 兜底 null,不抛', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const locations = await serveReferencesFromRust(makeDocument() as never, {
+      line: 1,
+      character: 0,
+    }, false);
+    expect(locations).toBeNull();
   });
 });
 

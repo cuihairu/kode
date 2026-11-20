@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import { KodeCoreGate } from '../src/backend/kodeCoreGate';
-import { serveCompletionFromRust, serveCompletionResolveFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, serveHoverFromRust, setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
+import { serveCompletionFromRust, serveCompletionResolveFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, serveHoverFromRust, serveReferencesFromRust, setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // 2026-11-08 用户令「直接切到 rust」:定义面 rust 服务 e2e(真实 kode-server
 // 二进制)。证明 switch 不是纸面:gate 服务轨道 + serveDefinitionFromRust
@@ -374,5 +374,184 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
     expect(doc).toContain('**hp**');
     expect(doc).toContain('`UINT32`');
     expect(doc).toContain('entity_defs/Avatar.def');
+  }, 20_000);
+});
+
+// RUST-138 接线:引用面 rust 服务(真实 kode-server 二进制)。服务面 =
+// 语义引用(textDocument/references → semantic_reference_locations):
+// 跨 root 同名异声明(Shadow)与不可解析(Dangling)不入列。二进制缺失
+// 时跳过(与上套件同口径)。
+
+const refsSuite = existsSync(binaryPath) ? describe : describe.skip;
+
+suite('kode 引用面 rust 服务 e2e(RUST-138 接线,真实二进制)', () => {
+  let client: KodeCoreClient | null = null;
+  let gate: KodeCoreGate | null = null;
+
+  afterAll(async () => {
+    setKodeCoreShadowGate(null);
+    await gate?.dispose().catch(() => undefined);
+  });
+
+  it('rust 轨道:def 类型引用 SKILL_SLOT → types.xml 声明 + 全语料使用位', async () => {
+    client = new KodeCoreClient({ binaryPath });
+    gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'rust', serverPath: binaryPath, shadowTimeoutMs: 5000 });
+    setKodeCoreShadowGate(gate);
+
+    const defsDir = join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'entity_defs');
+    const avatarPath = join(defsDir, 'Avatar.def');
+    const typesPath = join(defsDir, 'types.xml');
+    // 语料前置:引用扫描逐文件全文重扫,types.xml 必须在库(声明落点)。
+    await gate.mirrorDocument(typesPath, 'xml', 1, readFileSync(typesPath, 'utf8'));
+    const avatarText = readFileSync(avatarPath, 'utf8');
+    const document = {
+      uri: { fsPath: avatarPath },
+      languageId: 'kbengine-def',
+      version: 1,
+      getText: () => avatarText
+    };
+    // 第 41 行(0 基 40)`\t\t\t<of> SKILL_SLOT </of>`:词 SKILL_SLOT
+    // 起点 = 3 tab + `<of> `(5)= 8,取中 10。
+    const locations = await serveReferencesFromRust(document as never, {
+      line: 40,
+      character: 10
+    } as never, true);
+    expect(locations).not.toBeNull();
+    const uris = locations!.map(location => location.uri);
+    // 声明先行:types.xml `<SKILL_SLOT>` 开标签行(1 基 14 → 0 基 13)。
+    const declaration = locations!.find(location => location.uri === typesPath);
+    expect(declaration).toBeDefined();
+    expect(declaration!.range.start.line).toBe(13);
+    expect(declaration!.range.start.character).toBe(0);
+    // 使用位:Avatar.def 同文件 `<of>` 值(1 基 41 → 0 基 40)。
+    const usage = locations!.find(location => location.uri === avatarPath);
+    expect(usage).toBeDefined();
+    expect(usage!.range.start.line).toBe(40);
+  }, 20_000);
+
+  it('rust 轨道:includeDeclaration=false 不含声明行', async () => {
+    const defsDir = join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'entity_defs');
+    const avatarPath = join(defsDir, 'Avatar.def');
+    const typesPath = join(defsDir, 'types.xml');
+    const avatarText = readFileSync(avatarPath, 'utf8');
+    const document = {
+      uri: { fsPath: avatarPath },
+      languageId: 'kbengine-def',
+      version: 1,
+      getText: () => avatarText
+    };
+    const locations = await serveReferencesFromRust(document as never, {
+      line: 40,
+      character: 10
+    } as never, false);
+    expect(locations).not.toBeNull();
+    // 使用位仍在,types.xml 声明行不在列。
+    expect(locations!.some(location => location.uri === avatarPath)).toBe(true);
+    expect(locations!.every(location => location.uri !== typesPath)).toBe(true);
+  }, 20_000);
+
+  it('rust 轨道:types.xml 符号引用 ITEM_ID → 语料使用位(无声明位)', async () => {
+    const defsDir = join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'entity_defs');
+    const avatarPath = join(defsDir, 'Avatar.def');
+    const typesPath = join(defsDir, 'types.xml');
+    const typesText = readFileSync(typesPath, 'utf8');
+    // 语料前置:声明方 types.xml 与使用方 .def 都在库。
+    await gate!.mirrorDocument(avatarPath, 'kbengine-def', 1, readFileSync(avatarPath, 'utf8'));
+    const document = {
+      uri: { fsPath: typesPath },
+      languageId: 'xml',
+      version: 1,
+      getText: () => typesText
+    };
+    // 第 8 行(0 基 7)`\t<ITEM_ID> UINT16 </ITEM_ID>`:声明名 ITEM_ID,
+    // 词起点 = 1 tab + `<` = 2,取中 4。
+    const locations = await serveReferencesFromRust(document as never, {
+      line: 7,
+      character: 4
+    } as never, true);
+    expect(locations).not.toBeNull();
+    // types.xml 面无声明位(TS provideTypesXmlReferences 同口径):唯一
+    // 使用位 = 同文件 `<of> ITEM_ID </of>`(1 基 50 → 0 基 49)。
+    expect(locations!.length).toBe(1);
+    expect(locations![0].uri).toBe(typesPath);
+    expect(locations![0].range.start.line).toBe(49);
+  }, 20_000);
+
+  it('rust 轨道:跨 root 同名异声明只收查询根语义引用(Shadow 不入列)', async () => {
+    // 独立进程 + 显式双根注册(initialize workspaceFolders):同名类型
+    // RATING 在两根各有独立声明。位置面会并收两根站点;语义面(生产面)
+    // 只收「站点域声明==查询声明」的 root-a 站点 —— 用例即区分判据。
+    const rootA = '/tmp/kode-e2e-refs-root-a';
+    const rootB = '/tmp/kode-e2e-refs-root-b';
+    const clientB = new KodeCoreClient({
+      binaryPath,
+      initializeParams: {
+        processId: process.pid,
+        capabilities: {},
+        workspaceFolders: [
+          { uri: `file://${rootA}`, name: 'root-a' },
+          { uri: `file://${rootB}`, name: 'root-b' }
+        ]
+      }
+    });
+    const gateB = new KodeCoreGate({ clientFactory: () => clientB });
+    gateB.setConfig({ backend: 'rust', serverPath: binaryPath, shadowTimeoutMs: 5000 });
+    // serveReferencesFromRust 走模块级全局门:本用例期间切到双根 gate
+    // (镜像与请求同进程对账),finally 还原首用例 gate。
+    setKodeCoreShadowGate(gateB);
+    const defA = `${rootA}/scripts/entity_defs/MonsterA.def`;
+    const typesA = `${rootA}/scripts/entity_defs/types.xml`;
+    const defB = `${rootB}/scripts/entity_defs/MonsterB.def`;
+    const typesB = `${rootB}/scripts/entity_defs/types.xml`;
+    try {
+      // 两根语料全量入库(didOpen 镜像,overlay-only 无需盘上文件)。
+      await gateB.mirrorDocument(typesA, 'xml', 1, '<root>\n\t<RATING> UINT32 </RATING>\n</root>\n');
+      await gateB.mirrorDocument(typesB, 'xml', 1, '<root>\n\t<RATING> UINT8 </RATING>\n</root>\n');
+      const defAText = '<root>\n\t<Properties>\n\t\t<score>\n\t\t\t<Type> RATING </Type>\n\t\t</score>\n\t</Properties>\n</root>\n';
+      const defBText = '<root>\n\t<Properties>\n\t\t<score>\n\t\t\t<Type> RATING </Type>\n\t\t</score>\n\t</Properties>\n</root>\n';
+      await gateB.mirrorDocument(defA, 'kbengine-def', 1, defAText);
+      await gateB.mirrorDocument(defB, 'kbengine-def', 1, defBText);
+      const documentA = {
+        uri: { fsPath: defA },
+        languageId: 'kbengine-def',
+        version: 1,
+        getText: () => defAText
+      };
+      // 第 4 行(0 基 3)`\t\t\t<Type> RATING </Type>`:词 RATING 起点
+      // = 3 tab + `<Type> `(7)= 10,取中 12。
+      const locations = await serveReferencesFromRust(documentA as never, {
+        line: 3,
+        character: 12
+      } as never, true);
+      expect(locations).not.toBeNull();
+      const uris = locations!.map(location => location.uri);
+      // 查询根(root-a)声明 + 同根使用位全在列。
+      expect(uris).toContain(typesA);
+      expect(uris).toContain(defA);
+      // 跨 root 同名(root-b 的声明与使用位)一律不入列(Shadow 过滤)。
+      expect(uris).not.toContain(typesB);
+      expect(uris).not.toContain(defB);
+      expect(uris.every(uri => uri.startsWith(rootA))).toBe(true);
+    } finally {
+      setKodeCoreShadowGate(gate);
+      await gateB.dispose().catch(() => undefined);
+    }
+  }, 30_000);
+
+  it('rust 轨道:python 文档零请求直通 null(实体映射半边归 TS)', async () => {
+    // 复用首用例 gate。py 的引用面(self 访问/方法调用)由 TS
+    // entityMapping 半边接管,Rust 无此面(与 references.rs 批 1 边界同注)。
+    const document = {
+      uri: { fsPath: '/tmp/kode-e2e-refs-avatar.py' },
+      languageId: 'python',
+      version: 1,
+      getText: () => 'class Avatar:\n    pass\n'
+    };
+    const locations = await serveReferencesFromRust(document as never, {
+      line: 0,
+      character: 6
+    } as never, false);
+    expect(locations).toBeNull();
   }, 20_000);
 });

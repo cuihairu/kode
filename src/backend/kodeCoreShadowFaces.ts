@@ -419,6 +419,68 @@ export async function serveHoverFromRust(
 }
 
 /**
+ * 引用面 rust 服务(RUST-138 接线):服务轨道下先镜像语料文档(未保存修订
+ * 以编辑器内容为准),再请求 kode-server textDocument/references。服务面 =
+ * 语义引用(LSP Location[];跨 root 同名异声明 Shadow 与不可解析 Dangling
+ * 不入列);未命中(目标不可解析/空结果)、非语料文档(python 的实体映射
+ * 半边归 TS)或任何失败返回 null —— 调用方回 TS 既有链。非服务轨道/未装配
+ * 门零开销。Rust 结果优先于 TS(直接切语义);畸形条目整面作废,不做部分
+ * 采用(同诊断面口径,保 TS 集完整性)。
+ */
+export async function serveReferencesFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  includeDeclaration: boolean
+): Promise<LspLocationFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  // Rust 面 = 语料声明引用位(def + types.xml);其余文档零请求直通 TS。
+  if (!isCorpusDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character },
+    context: { includeDeclaration },
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/references', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS
+  );
+  if (!Array.isArray(result)) {
+    return null;
+  }
+  for (const item of result) {
+    if (
+      !item ||
+      typeof item !== 'object' ||
+      typeof (item as Partial<LspLocationFace>).uri !== 'string' ||
+      !(item as Partial<LspLocationFace>).range
+    ) {
+      return null;
+    }
+    const { start, end } = (item as Partial<LspLocationFace>).range!;
+    if (
+      typeof start?.line !== 'number' ||
+      typeof start?.character !== 'number' ||
+      typeof end?.line !== 'number' ||
+      typeof end?.character !== 'number'
+    ) {
+      return null;
+    }
+  }
+  return result as LspLocationFace[];
+}
+
+/**
  * 诊断面 rust 服务(2026-11-08 用户令「直接切到 rust」,诊断面最后一片):
  * 服务轨道下先镜像 .def 文档(未保存修订以编辑器内容为准),再请求
  * kode-server textDocument/diagnostic(LSP pull 全量面 {kind:'full',items})。

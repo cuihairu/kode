@@ -18,6 +18,7 @@ import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchC
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDataKeyAccesses } from '../backend/cellDataKeyAccess';
 import { findEntityScriptFile, findDefinitionFileByCategory } from '../definitionWorkspace';
 import { buildDefProcessBreadcrumb } from '../backend/processOwnershipLens';
+import { serveReferencesFromRust } from '../backend/kodeCoreShadowFaces';
 /**
  * IDE-NAV-001:def 原生引用查询入口(Shift+F12)。引用结果复用统一符号
  * 身份——与调用层级 prepare 完全同链(findDefSymbolInfo →
@@ -130,7 +131,20 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     // IDE-NAV-017:types.xml 符号引用查询(Shift+F12)——光标在类型符号上时
     // 返回工作区 .def/<Type>/<Arg>/<of> 值使用处与 types.xml 内引用位;
     // 不在类型符号上/空结果如实 null(调用方约定)。
+    // RUST-138 接线(2026-11-08 用户令「直接切到 rust」同车):服务轨道下
+    // 语料面引用先走 Rust(语义引用;Shadow/Dangling 不入列),miss 回 TS。
     if (document.fileName.endsWith('types.xml')) {
+      const fromRust = await serveReferencesFromRust(
+        document,
+        position,
+        context.includeDeclaration === true
+      );
+      if (token?.isCancellationRequested) {
+        return null;
+      }
+      if (fromRust) {
+        return fromRust.map(toVscodeLocation);
+      }
       return provideTypesXmlReferences(document, position, token);
     }
     if (
@@ -149,6 +163,19 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
       // IDE-NAV-018:类型名/实体名/接口名不在 Properties/方法段,findDefSymbolInfo
       // 不识别(返回 null)——交由 defSymbolReferences 补查(自定义类型/实体
       // Parent/Type/Interface 引用位);非此类符号时其内部解析同样如实 null。
+      // RUST-138 接线:服务轨道下语料引用面(def 类型/实体/接口臂)先走
+      // Rust(语义引用;Shadow/Dangling 不入列),miss 回 TS 既有链。
+      const fromRust = await serveReferencesFromRust(
+        document,
+        position,
+        context.includeDeclaration === true
+      );
+      if (token?.isCancellationRequested) {
+        return null;
+      }
+      if (fromRust) {
+        return fromRust.map(toVscodeLocation);
+      }
       return provideDefSymbolReferences(
         document,
         position,
@@ -328,6 +355,25 @@ export function enclosingPythonClassAt(document: vscode.TextDocument, line: numb
   } catch {
     return undefined;
   }
+}
+
+/**
+ * RUST-138:Rust 引用面(规范路径 + 0 基行列)→ vscode.Location 投影。
+ * uri 是 kode-server canonical 路径(与 definition 面同源),Uri.file 直挂。
+ */
+function toVscodeLocation(face: {
+  uri: string;
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+}): vscode.Location {
+  return new vscode.Location(
+    vscode.Uri.file(face.uri),
+    new vscode.Range(
+      face.range.start.line,
+      face.range.start.character,
+      face.range.end.line,
+      face.range.end.character
+    )
+  );
 }
 
 /**
