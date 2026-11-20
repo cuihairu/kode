@@ -1,0 +1,200 @@
+{
+  "family": "baseapp-module-face",
+  "grounding": {
+    "doc": "docs/knowledge/api-baseapp.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "pos-site1-app-methods",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "base", "roster": "site1" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1 登记点一(baseapp.cpp:430-451 installPyModules app-specific 块)登记的 22 个 baseapp 专属方法,time/createEntity 族/描记符号/关停态,address 族全在其中"
+      },
+      "evidence": [
+        "`Baseapp::installPyModules` block, app-specific methods)",
+        "`reloadScript`, `isShuttingDown`, `address`, `deleteEntityByDBID`,"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "site1Names": [
+            "time",
+            "createEntity",
+            "createEntityLocally",
+            "createEntityAnywhere",
+            "createEntityRemotely",
+            "createEntityFromDBID",
+            "createEntityAnywhereFromDBID",
+            "createEntityRemotelyFromDBID",
+            "executeRawDatabaseCommand",
+            "quantumPassedPercent",
+            "charge",
+            "registerReadFileDescriptor",
+            "registerWriteFileDescriptor",
+            "deregisterReadFileDescriptor",
+            "deregisterWriteFileDescriptor",
+            "reloadScript",
+            "isShuttingDown",
+            "address",
+            "deleteEntityByDBID",
+            "lookUpEntityByDBID",
+            "setAppFlags",
+            "getAppFlags"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pos-shared-sites",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "base", "roster": "shared" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1 登记点二至五(EntityApp 共享 11 方法 + pywatcher 双名 + script 双件 + pyurl.urlopen)全在 baseapp 模块面;模块属性 entities/globalData/baseAppData 与常量族同面注册"
+      },
+      "evidence": [
+        "`EntityApp::installPyModules`, shared by all EntityApps)",
+        "`kbe/src/lib/pyscript/pywatcher.cpp:184-185` | `addWatcher`, `delWatcher` |",
+        "`globalData` (`:419`), `baseAppData`",
+        "`LOG_TYPE_NORMAL / INFO / ERR / DBG / WAR`",
+        "`LOG_ON_ACCEPT / LOG_ON_REJECT / LOG_ON_WAIT_FOR_DESTROY`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "functions": [
+            "kbassert",
+            "publish",
+            "scriptLogType",
+            "getResFullPath",
+            "hasRes",
+            "open",
+            "listPathRes",
+            "matchPath",
+            "getWatcher",
+            "getWatcherDir",
+            "debugTracing",
+            "addWatcher",
+            "delWatcher",
+            "genUUID64",
+            "urlopen"
+          ],
+          "variables": [
+            "component",
+            "entities",
+            "globalData",
+            "baseAppData",
+            "LOG_ON_ACCEPT",
+            "LOG_ON_REJECT",
+            "LOG_ON_WAIT_FOR_DESTROY",
+            "LOG_TYPE_NORMAL",
+            "LOG_TYPE_INFO",
+            "LOG_TYPE_ERR",
+            "LOG_TYPE_DBG",
+            "LOG_TYPE_WAR",
+            "NEXT_ONLY"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pos-time-handler-binding",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "base", "name": "time" },
+      "engine": {
+        "load": "accept",
+        "truth": "KBEngine.time() 返回 uint32;以名 time 注册但绑定 handler __py_gametime(baseapp.cpp:430,impl :504)"
+      },
+      "evidence": [
+        "`KBEngine.time() -> uint32`",
+        "but bound to handler `__py_gametime` (`baseapp.cpp:430`, impl `:504`)"
+      ],
+      "kode": { "status": "pinned", "analysis": { "kind": "function" } }
+    },
+    {
+      "id": "div-appFlags-absent",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "base" },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎按 app-flags 表迭代注册 APP_FLAGS_NONE=0 与 APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING=0x1(baseapp.cpp:419-424,值定义 common.h:348-352),baseapp 脚本可读"
+      },
+      "evidence": [
+        "`APP_FLAGS_NONE`, `APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING`",
+        "`baseapp.cpp:419-424`; `common.h:348-352`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "absentNames": ["APP_FLAGS_NONE", "APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING"]
+        }
+      },
+      "finding": "divergence 登记(漏报方向)=引擎注册而 kode base 符号表缺席:baseapp 脚本里 setAppFlags 位掩码常量零补全零类型;只钉现状,收编=process-api.json 双侧扩充(Rust 同嵌)归独立批,不冒充修复"
+    },
+    {
+      "id": "neg-onFini",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "base", "spi": "onFini" },
+      "engine": {
+        "load": "reject",
+        "truth": "fork HEAD 无 onFini 钩子(grep -rn onFini kbe/src = 0 hits),仅 client_lib/bots 认 onFinish;3.7 源文本的「引擎正式关停后回调」在 fork 不成立"
+      },
+      "evidence": [
+        "No `onFini` hook exists at HEAD; only client_lib/bots know an `onFinish`",
+        "`grep -rn onFini kbe/src` = 0 hits"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "neg-onDelBaseAppData",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "base", "spi": "onDelBaseAppData" },
+      "engine": {
+        "load": "reject",
+        "truth": "3.7 属性文本写的 onDelBaseAppData 名不存在,引擎实际注册名=onBaseAppDataDel(baseapp.cpp:3688);kode SPI 表收的是引擎真名,无源码文本假名"
+      },
+      "evidence": [
+        "The registered callback name is `onBaseAppDataDel` — the source text's `onDelBaseAppData` does not exist",
+        "`baseapp.cpp:3688`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "resolved": false, "realName": "onBaseAppDataDel" }
+      }
+    },
+    {
+      "id": "div-memoryStream",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "base", "name": "MemoryStream" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "baseapp(EntityApp)链无 MemoryStream 注册,仅 PythonApp 工具在 python_app.cpp:271 注册;档把运行期结论标为待取证(证据路径=跑一个带 KBEngine.MemoryStream() 的 baseapp 入口脚本)"
+      },
+      "evidence": [
+        "No registration on the baseapp (`EntityApp`) chain; only `PythonApp` tools register it — **待取证** at runtime",
+        "contains no `MemoryStream` registration, and no `PyMemoryStream::installScript`",
+        "`lib/server/python_app.cpp:271` present; `entity_app.h:407-453` absent"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "kind": "class", "presentInKode": true }
+      },
+      "finding": "divergence 登记(误导方向)=引擎 baseapp 模块面无 MemoryStream 而 kode base 符号表含 class MemoryStream 行:补全/类型面会给运行期 AttributeError 的名字;档自身标待取证(运行期实测=独立步),只钉现状不冒充修复;收窄或取证归独立批"
+    },
+    {
+      "id": "unk-serverErrValues",
+      "kind": "unknown",
+      "input": { "path": "module-face", "process": "base", "name": "SERVER_ERR_MAX" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1 登记点二只给 SERVER_ERR_* 家族名,未枚举数值集;数值真源在 common.h 错误码枚举"
+      },
+      "evidence": ["`SERVER_ERR_*`"],
+      "kode": { "status": "unverified", "analysis": {} },
+      "reason": "依据档只给 SERVER_ERR_* 家族名不给逐值;kode base 符号表带 SERVER_SUCCESS..SERVER_ERR_MAX 逐值(源自 typings stub,非本档钉域)。下一步=读 fork 6d12b8f 的 kbe/src/lib/common/common.h 错误码枚举核数值后改 pinned。"
+    }
+  ]
+}

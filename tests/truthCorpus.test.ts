@@ -1561,3 +1561,81 @@ describe('truth-corpus: entity-lifecycle-hook-roster 族执行闸(脚本回调�
     expect(entry.reason).toBeTruthy();
   });
 });
+
+// ---- baseapp-module-face 族:baseapp KBEngine 模块面(档 §1 五登记点/§9 属性/§10 常量/§8 回调) ----
+// 探针实测后钉(processApiSymbols('base') 真值):登记点名册在场+kind、引擎注册而
+// kode 缺席的常量(漏报方向)、引擎无注册而 kode 有行的 MemoryStream(误导方向)、
+// 源码文本假回调名不进 SPI 表。
+interface ModuleFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string; spi?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      site1Names?: string[];
+      functions?: string[];
+      variables?: string[];
+      kind?: string;
+      presentInKode?: boolean;
+      absentNames?: string[];
+      resolved?: boolean;
+      realName?: string;
+    };
+  };
+}
+const moduleFaceFamily = families.find(f => f.family === 'baseapp-module-face')!;
+const moduleFaceEntries = moduleFaceFamily.entries as unknown as ModuleFaceEntry[];
+const baseFaceSymbols = new Map(processApiSymbols('base').map(s => [s.name, s.kind]));
+
+describe('truth-corpus: baseapp-module-face 族执行闸(baseapp 模块面探针)', () => {
+  it('登记点名册臂:§1 site1 二十二字法名=function 行;共享/watcher/script/url 名册与属性常量按 role 钉 kind', () => {
+    for (const entry of moduleFaceEntries) {
+      if (entry.kode.status !== 'pinned' || !entry.input.roster) { continue; }
+      const a = entry.kode.analysis!;
+      for (const name of a.site1Names ?? []) {
+        expect(baseFaceSymbols.get(name), `${entry.id}:${name}`).toBe('function');
+      }
+      for (const name of a.functions ?? []) {
+        expect(baseFaceSymbols.get(name), `${entry.id}:${name}`).toBe('function');
+      }
+      for (const name of a.variables ?? []) {
+        expect(baseFaceSymbols.get(name), `${entry.id}:${name}`).toBe('variable');
+      }
+    }
+  });
+
+  it('单符号臂:time 以该名注册=function 行在场(kind 钉,改表即红)', () => {
+    const entry = moduleFaceEntries.find(e => e.input.name === 'time')!;
+    expect(baseFaceSymbols.get(entry.input.name!)).toBe(entry.kode.analysis!.kind);
+  });
+
+  it('漏报分歧臂:引擎注册的 APP_FLAGS_* 常量在 kode 表缺席(收编即红,证现状未变)', () => {
+    const entry = moduleFaceEntries.find(e => e.kode.analysis?.absentNames)!;
+    expect(entry.kode.analysis!.absentNames!.length).toBeGreaterThan(0);
+    for (const name of entry.kode.analysis!.absentNames!) {
+      expect(baseFaceSymbols.has(name), name).toBe(false);
+    }
+    expect(entry.finding).toContain('漏报方向');
+  });
+
+  it('误导分歧臂:MemoryStream 引擎 baseapp 链无注册而 kode 表有 class 行(收窄即红)', () => {
+    const entry = moduleFaceEntries.find(e => e.input.name === 'MemoryStream')!;
+    expect(baseFaceSymbols.get(entry.input.name!)).toBe(entry.kode.analysis!.kind);
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('负例臂:onFini/onDelBaseAppData 名册不进 SPI 表;引擎真名 onBaseAppDataDel 在场', () => {
+    for (const entry of moduleFaceEntries) {
+      if (!entry.input.spi || entry.kode.analysis?.resolved !== false) { continue; }
+      expect(ENGINE_SPI_METHODS[entry.input.spi], entry.input.spi).toBeUndefined();
+    }
+    const real = moduleFaceEntries.find(e => e.kode.analysis?.realName)!;
+    expect(ENGINE_SPI_METHODS[real.kode.analysis!.realName!]).toBeDefined();
+    expect(ENGINE_SPI_METHODS[real.kode.analysis!.realName!].components).toContain('baseapp');
+  });
+
+  it('未知臂:SERVER_ERR_* 数值集档内未枚举,符号在场但按未核钉不冒充已核', () => {
+    const entry = moduleFaceEntries.find(e => e.kode.status === 'unverified')!;
+    expect(baseFaceSymbols.get(entry.input.name!)).toBeDefined();
+    expect(entry.reason).toBeTruthy();
+  });
+});
