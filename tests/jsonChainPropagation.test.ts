@@ -913,7 +913,7 @@ describe('批 45:链传播容错臂', () => {
     expect(back.required.get('level')).toEqual(scalar('int'));
   });
 
-  it('类型自引用环 → 整 type 零声称(785)', () => {
+  it('类型自引用环 → parse 层拒环,零声称(实况:环在 parseSerializationSchema 即被拒并摘除该 type,绑定随之失效;臂钉对外语义=环输入零声称)', () => {
     const cyc = schemaFrom({
       schema_version: 1,
       types: {
@@ -929,9 +929,9 @@ describe('批 45:链传播容错臂', () => {
     expect(out.has('cfg')).toBe(false);
   });
 
-  it('字段引用未知类型 → 该字段整键丢弃(可证字段照留,不灭整 type)', () => {
-    // 实测口径(schemaFieldKind 返 null):未知字段不落 unknown 也不灭整 type,
-    // 而是整键摘除——零声称面在字段级,不在 type 级
+  it('字段引用未知类型 → parse 层摘键(可证字段照留,不灭整 type)', () => {
+    // 实测口径:parseSerializationSchema 在解析期即摘除未知类型字段
+    // ("unknown type name Ghost"),schemaFieldKind 运行时不复见
     const ghost = schemaFrom({
       schema_version: 1,
       types: { Holder: { fields: { x: 'Ghost', n: 'UINT32' } } },
@@ -975,3 +975,30 @@ describe('批 45 续:typed-values 容错臂', () => {
 // 变量与 f 串首实参均零声称、类型自引用环整 type 零声称、未知字段类型整键
 // 摘除),但上述行所在的内部代码路径与本批输入的路径不同构,未逐一归因,
 // 留下一窗按内部调用链定位。
+
+describe('批 45 终:dumps 实参调用形态(343)', () => {
+  it('dumps 实参是调用形态(非字面量/非变量链)→ 载体格式为空(343)', () => {
+    const out = chains([
+      'import json',
+      'data = json.dumps(get_data())'
+    ], guildSchema());
+    // dumps 调用形态实参:无链可传 → 不产 cfg 载体
+    expect(out.has('data')).toBe(false);
+  });
+});
+
+// 覆盖口径残余(批 45 终定性):
+//  737/745 schemaTypeFormat 的环/字段解析失败两臂——parseSerializationSchema
+//     在解析层即拒环("cyclic or unresolved type reference")并摘除未知类型
+//     字段("unknown type name"),运行时 schema.types 不复见环与未知引用,
+//     两臂受 parse 校验保护,防御位(本批环/ghost 臂实测为退化 schema 的
+//     空真臂,语义钉面保留)。
+//  343 dumpsArgFormat 的非字典实参臂——dumps 位点检测的前置层只放行
+//     字面量/名字形态实参,调用形态(get_data())在到达本函数前已被拦,
+//     上游已拦判例同款,防御位。
+//  724 loadOpenPath 的 end<0——匹配前置条件(同侧括号配对)由更早的
+//     matchDictBraces/形态匹配保证,防御位。
+//  785 scalarFamilyKind 的未知 family——标量 family 名在 parse 层校验
+//     (未知引用同样被摘),防御位。
+//  815 jsonFormat 的尾 return(fmt.kind 非 literal/open)——公共入口产出的
+//     DictFormat 恒为 literal/open,防御位。
