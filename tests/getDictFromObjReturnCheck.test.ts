@@ -281,3 +281,87 @@ describe('fixedDictReturnFindingToItem', () => {
     expect(item.range.start.character).toBe(text.split('\n')[2].indexOf('{'));
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 14 容错臂:spread 宇宙开放项/动态键不进键集、非标量字段类型不猜结构面、
+// 绑定无 symbol 零产出、嵌套 def 块整块跳过(域诚实)、return 花括号未闭合跳过。
+// ---------------------------------------------------------------------------
+describe('computeGetDictFromObjReturnFindings 容错臂(批 14)', () => {
+  const PACK = customType('PACK', 'FIXED_DICT', [
+    scalarField('x', 'FLOAT', 22),
+    scalarField('y', 'FLOAT', 24)
+  ], 20, 'serializers.PackSer');
+
+  it('spread 裸展开段:宇宙开放,缺键不判', () => {
+    const spread = [
+      'class PackSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": 1.0, **rest}',
+      ''
+    ].join('\n');
+    expect(computeGetDictFromObjReturnFindings(spread, [bind(PACK)])).toEqual([]);
+  });
+
+  it('动态键(带冒号)不进字面量键集,但宇宙不开放:缺键照判', () => {
+    // 语义口径与 dictFormatDerivation 一致:`**r` 裸段才开宇宙;`k: 1.0` 动态键
+    // 是"键不可判"不是"宇宙开放"——y 是否被 k 覆盖不可证,但 x/y 声明集里 y
+    // 缺席是可判事实,照报 missing(引擎静默默认值面)。
+    const dynamic = [
+      'class PackSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": 1.0, k: 1.0}',
+      ''
+    ].join('\n');
+    const findings = computeGetDictFromObjReturnFindings(dynamic, [bind(PACK)]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe('missing');
+    expect(findings[0].key).toBe('y');
+  });
+
+  it('非标量字段类型(ARRAY)不猜结构面:值再离谱也不报', () => {
+    const BAG = customType('BAG', 'FIXED_DICT', [
+      scalarField('items', 'ARRAY', 32),
+      scalarField('x', 'FLOAT', 34)
+    ], 30, 'serializers.BagSer');
+    const text = [
+      'class BagSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"items": "not a list", "x": 1.0}',
+      ''
+    ].join('\n');
+    expect(computeGetDictFromObjReturnFindings(text, [bind(BAG)])).toEqual([]);
+  });
+
+  it('绑定无 symbol → 零产出(不冒称解析到类)', () => {
+    const text = [
+      'class PackSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": 1.0}',
+      ''
+    ].join('\n');
+    expect(computeGetDictFromObjReturnFindings(text, [{ container: PACK, symbol: '' }])).toEqual([]);
+  });
+
+  it('嵌套 def 块整块跳过:内层 return 不冒称本方法出口(域诚实)', () => {
+    const text = [
+      'class PackSer:',
+      '    def getDictFromObj(self, obj):',
+      '        def inner(other):',
+      '            return {"ghost": 1.0}',
+      '        return {"x": 1.0, "y": 2.0}',
+      ''
+    ].join('\n');
+    // ghost 是多键(不在 PACK 声明集),若内层 return 被误收必报 extra;跳块 → 零产出
+    expect(computeGetDictFromObjReturnFindings(text, [bind(PACK)])).toEqual([]);
+  });
+
+  it('return 花括号未闭合:配对失败整行跳过,不猜半截字面量', () => {
+    const text = [
+      'class PackSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": 1.0, "y": 2.0',
+      ''
+    ].join('\n');
+    expect(computeGetDictFromObjReturnFindings(text, [bind(PACK)])).toEqual([]);
+  });
+});
