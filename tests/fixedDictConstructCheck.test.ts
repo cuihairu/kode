@@ -357,3 +357,66 @@ describe('KSEM-STRUCT-07 implementedBy 类型不按 FIXED_DICT 键集校验', ()
     expect(findings[0]).toMatchObject({ kind: 'missing', container: 'POSITION' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 字面量内转义与三引号态(matchDictBraces/parseDictPairs 配对扫描真源):
+// 串态/转义/三引号跨行在逗号切分与冒号定位两遍扫描里同口径。诚实边界:
+// matchConstructTarget 的 eqAt<0 防御臂按当前正则不可达——TARGET_LHS 已
+// 保证 '=' 在 prop 之后,indexOf 恒命中,不硬凑。
+// ---------------------------------------------------------------------------
+
+describe('analyzeFixedDictConstructWrites 字面量内转义与三引号态', () => {
+  it('值内转义序列:串态不误断,值段照裁定 str 入 FLOAT', async () => {
+    const stmt = 'self.pos = {"x": "a\\nb", "y": 2.0, "z": 3.0}';
+    const findings = await analyze(wrap(stmt));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ kind: 'type', key: 'x', actual: 'str' });
+  });
+
+  it('行尾转义:串态跨行续接,配对不误断', async () => {
+    const findings = await analyze(wrap(
+      'self.pos = {"x": "a\\',
+      'b", "y": 2.0, "z": 3.0}'
+    ));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ kind: 'type', key: 'x', actual: 'str' });
+  });
+
+  it('三引号值(单行):配对收口,值类 unknown 诚实退化不猜', async () => {
+    const findings = await analyze(wrap('self.pos = {"x": """1.0""", "y": 2.0, "z": 3.0}'));
+    expect(findings).toHaveLength(0);
+  });
+
+  it('三引号值(跨行续接):串态带过行界照常收口', async () => {
+    const findings = await analyze(wrap(
+      'self.pos = {"x": """1.0',
+      '2.0""", "y": 2.0, "z": 3.0}'
+    ));
+    expect(findings).toHaveLength(0);
+  });
+
+  it('下标动态键 a[0]:冒号定位过括号深度,宇宙开放不判缺键', async () => {
+    const findings = await analyze(wrap('self.pos = {a[0]: 1.0, "y": 2.0, "z": 3.0}'));
+    expect(findings).toHaveLength(0);
+  });
+
+  it('属性类型纯空白:注解两路都落空,构造面不接管', async () => {
+    const findings = await analyze(wrap('self.pos = {"x": 1.0}'), { pos: '   ' });
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe('analyzeFixedDictConstructWrites 键侧转义与三引号(冒号定位扫描)', () => {
+  it('键内转义序列:冒号定位过串态,转义键不作字面量键(宇宙开放)', async () => {
+    const findings = await analyze(wrap('self.pos = {"a\\nb": 1.0, "y": 2.0, "z": 3.0}'));
+    expect(findings).toHaveLength(0);
+  });
+
+  it('三引号键:冒号定位过三引号态;键字面量正则不做三引号建模(精度边界如实钉住)', async () => {
+    // 现行键字面量正则把 """k""" 的内容解作 ""k""(首尾引号夹取),按字面量
+    // 键落 extra+missing 两面——已知精度边界,本钉如实记录现行行为不修饰。
+    const findings = await analyze(wrap('self.pos = {"""k""": 1.0, "y": 2.0, "z": 3.0}'));
+    expect(findings.map(f => f.kind)).toEqual(['missing', 'extra']);
+    expect(findings[1]).toMatchObject({ kind: 'extra', key: '""k""' });
+  });
+});
