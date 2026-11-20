@@ -141,3 +141,67 @@ describe('KODE-HOT-002 全转换矩阵(逐边)', () => {
     expect(worstHotReloadState(['CLEAN'])).toBe('CLEAN');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 30 容错臂:unconfirmed-timeout + 内容漂移 → DIRTY(不冒充 FAILED)、
+// knownKeys 三源并集与排序、filesByState 的基线册候选源。
+// ---------------------------------------------------------------------------
+describe('批 30:超时漂移与三源并集', () => {
+  it('unconfirmed-timeout 且内容已偏离所发 → DIRTY(新编辑回落,不冒充 FAILED)', () => {
+    const store = makeStore();
+    const sm = new HotReloadFileStateMachine({ now: () => 1000, timeoutWindowMs: 10_000 });
+    sm.derive(store, KEY, FILE, CONTENT_A);
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: sha256Hex(CONTENT_A) });
+    // 过截止 + 内容已改成 B:按 sentDigest 判定 → 新编辑回落 DIRTY
+    const late = new HotReloadFileStateMachine({ now: () => 20_000, timeoutWindowMs: 10_000 });
+    const view = late.derive(store, KEY, FILE, CONTENT_B);
+    expect(view.state).toBe('DIRTY');
+    // 同内容未漂移 → FAILED(未确认语义)
+    expect(late.derive(store, KEY, FILE, CONTENT_A).state).toBe('FAILED');
+  });
+
+  it('knownKeys:纯基线册键(台账空)也算已知;多键按 rootId::targetId 排序', async () => {
+    const sm = new HotReloadFileStateMachine({ now: () => 1000, timeoutWindowMs: 10_000 });
+    const empty = makeStore();
+    const keyB: HotReloadTargetKey = { rootId: '/ws', targetId: 'loginapp#b' };
+    sm.derive(empty, keyB, '/ws/scripts/b.py', 'x\n');
+    sm.derive(empty, KEY, FILE, CONTENT_A);
+    const keys = sm.knownKeys(empty);
+    expect(keys).toHaveLength(2);
+    // 排序:cellapp#a 在 loginapp#b 前
+    expect(keys[0].targetId).toBe('cellapp#a');
+    expect(keys[1].targetId).toBe('loginapp#b');
+  });
+
+  it('filesByState:仅基线册有名的文件也进候选集', async () => {
+    const sm = new HotReloadFileStateMachine({ now: () => 1000, timeoutWindowMs: 10_000 });
+    const store = makeStore();
+    sm.derive(store, KEY, FILE, CONTENT_A); // 注册基线 → CLEAN
+    const views = await sm.filesByState(store, KEY, ['CLEAN'], file =>
+      file === FILE ? CONTENT_A : undefined
+    );
+    expect(views.map(v => v.state)).toContain('CLEAN');
+  });
+});
+
+describe('批 30 续:knownKeys/filesByState 三源各自的分支', () => {
+  it('台账有记录的键、被拦键、被拦文件各自进入并集与候选集', async () => {
+    const sm = new HotReloadFileStateMachine({ now: () => 1000, timeoutWindowMs: 10_000 });
+    const store = makeStore();
+    sm.derive(store, KEY, FILE, CONTENT_A);
+    store.record(KEY, FILE, 'sent-unverified', {}); // 台账有记录 → 277
+    sm.markRestartRequired(KEY, [FILE], ['结构性 def 拦下']); // 被拦集 → 286-288/316
+    const keys = sm.knownKeys(store);
+    expect(keys.some(k => k.targetId === KEY.targetId)).toBe(true);
+    const views = await sm.filesByState(store, KEY, ['RESTART_REQUIRED'], () => CONTENT_A);
+    expect(views.map(v => v.state)).toContain('RESTART_REQUIRED');
+    // 解除后回落台账事实态(SENT)
+    sm.clearRestartRequired(KEY, [FILE]);
+    const after = await sm.filesByState(store, KEY, ['SENT'], () => CONTENT_A);
+    expect(after.map(v => v.file)).toContain(FILE);
+  });
+});
+
+// 覆盖口径残余(批 30 定性,不硬凑)::179/:183 splitKeyId 的两段 null 退路——
+// 内部键恒经 keyOf(两段分隔符)构造,splitKeyId 只吃自家产物,畸形键不可达,
+// 防御位。
