@@ -391,4 +391,87 @@ mod tests {
         );
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_tshark_retries_then_reports_when_binary_busy() {
+        // exec 撞写句柄(ETXTBSY):三次退避重试后如实上抛安装提示,
+        // 不无限等。真实成因=二进制被并发更新/刚落盘的竞窗(见上注释);
+        // 测试以受控写句柄复现同一 errno 面。
+        let dir = temp_dir("etxtbsy");
+        let script = write_script(&dir, "fake.sh", "#!/bin/sh\nexit 0\n");
+        let _writer = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&script)
+            .expect("hold write handle to force ETXTBSY");
+        let err = spawn_tshark(script.to_str().unwrap(), "x.pcap", None).unwrap_err();
+        assert!(err.contains("failed to launch tshark binary"), "{err}");
+        drop(_writer);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_tshark_streaming_stops_feeding_when_downstream_exits_early() {
+        // 下游不读 stdin 直接退出:拷贝线程写满管道后撞 EPIPE 即停灌
+        // (不 panic 不挂死),stdout 正常收尾。
+        let dir = temp_dir("epipe");
+        let lines = dir.join("lines.txt");
+        std::fs::write(&lines, "1759000000.100000\t51023\t20013\t00\n").unwrap();
+        // fake tshark 输出一行后立即退出(全程不读 stdin)。
+        let script = write_script(
+            &dir,
+            "fake.sh",
+            &format!("#!/bin/sh\ncat '{}'\n", lines.to_str().unwrap()),
+        );
+        let big = vec![b'x'; 256 * 1024];
+        let stdin_bytes: Box<dyn Read + Send> = Box::new(std::io::Cursor::new(big));
+        let mut proc = spawn_tshark(script.to_str().unwrap(), "-", Some(stdin_bytes)).unwrap();
+        let mut packets = 0;
+        proc.for_each_packet(|_| packets += 1).unwrap();
+        assert_eq!(packets, 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_tshark_streaming_stops_feeding_on_source_read_error() {
+        // 源读错误:拷贝线程如实停止灌入并关 stdin,下游到 EOF 收尾,
+        // 错误不外泄(输入面问题不该伪装成 tshark 失败)。
+        struct FlakyRead {
+            data: Vec<u8>,
+            served: bool,
+        }
+        impl Read for FlakyRead {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if !self.served {
+                    self.served = true;
+                    let n = self.data.len().min(buf.len());
+                    buf[..n].copy_from_slice(&self.data);
+                    return Ok(n);
+                }
+                Err(std::io::Error::other("source blew up"))
+            }
+        }
+        let dir = temp_dir("srcerr");
+        let lines = dir.join("lines.txt");
+        std::fs::write(&lines, "1759000000.100000\t51023\t20013\t00\n").unwrap();
+        let script = write_script(
+            &dir,
+            "fake.sh",
+            &format!(
+                "#!/bin/sh\ncat >/dev/null\ncat '{}'\n",
+                lines.to_str().unwrap()
+            ),
+        );
+        let stdin_bytes: Box<dyn Read + Send> = Box::new(FlakyRead {
+            data: b"partial-pcap".to_vec(),
+            served: false,
+        });
+        let mut proc = spawn_tshark(script.to_str().unwrap(), "-", Some(stdin_bytes)).unwrap();
+        let mut packets = 0;
+        proc.for_each_packet(|_| packets += 1).unwrap();
+        assert_eq!(packets, 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
