@@ -364,3 +364,42 @@ describe('debugExtensionCompatFor(3.7 目标 × 扩展线判定)', () => {
     expect(debugExtensionCompatFor(target('3.6.9'), '2024.1.1')).toEqual({ kind: 'ok', message: null });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 15:生产默认依赖(defaultListServerBinaries / defaultReadBinaryHead)——
+// 既有臂全部注入替身,这两条真实 fs 路径从未跑过。这里用真临时目录钉住:
+// 按名确定序 + 只收普通文件 + 缺目录如实空;读头部按 maxBytes 截断 + 读不了如实 null。
+// ---------------------------------------------------------------------------
+describe('生产默认依赖(真实文件系统)', () => {
+  it('defaultListServerBinaries:kbe/bin/server 下普通文件按名排序,子目录不入列', async () => {
+    const { defaultListServerBinaries, pythonTargetDeps } = await import('../src/backend/pythonTarget');
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pytarget-'));
+    const bin = path.join(root, 'kbe', 'bin', 'server');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'b_engine'), 'x');
+    fs.writeFileSync(path.join(bin, 'a_engine'), 'y');
+    fs.mkdirSync(path.join(bin, 'subdir'));
+    try {
+      const listed = defaultListServerBinaries(root);
+      expect(listed.map(p => path.basename(p))).toEqual(['a_engine', 'b_engine']);
+      // 缺 kbe/bin/server → 如实空数组(不抛)
+      expect(defaultListServerBinaries(path.join(root, 'nowhere'))).toEqual([]);
+      // 读头部经 pythonTargetDeps 装配的生产真身(模块未直接导出):按 maxBytes 截断
+      const deps = pythonTargetDeps(undefined);
+      const head = deps.readBinaryHead(path.join(bin, 'a_engine'), 1);
+      expect(head).not.toBeNull();
+      expect(head!.length).toBe(1);
+      // 读不了(不存在)→ null
+      expect(deps.readBinaryHead(path.join(bin, 'missing'), 8)).toBeNull();
+      // configValue 生产默认源:未注入替身时走真 vscode.workspace 配置面,
+      // 读不到值如实 undefined(零配置工作区的诚实面)
+      setWorkspaceConfigSourceForTests(null);
+      expect(deps.configValue()).toBeUndefined();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
