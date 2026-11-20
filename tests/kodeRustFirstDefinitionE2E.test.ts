@@ -157,4 +157,22 @@ const wordPosition = (content: string, marker: string, symbol: string): Position
       'scripts/entity_defs/Avatar.def', '<level>', 'level',
       'scripts/base/Avatar.py', 'class Avatar');
   }, 60_000);
+
+  it('⑤ types.xml 声明词 → 语料首个消费站点(RUST-137 批 4 反边,of 值位)', async () => {
+    await probeLanding(
+      'scripts/entity_defs/types.xml', '<ITEM_ID>', 'ITEM_ID',
+      'scripts/entity_defs/components/Inventory.def', '<of> ITEM_ID');
+  }, 60_000);
+
+  it('⑥ FIXED_DICT 声明词 → 消费站点 of 值位(Inventory.def Arg 位次之不选)', async () => {
+    await probeLanding(
+      'scripts/entity_defs/types.xml', '<SKILL_SLOT>', 'SKILL_SLOT',
+      'scripts/entity_defs/Avatar.def', '<of> SKILL_SLOT');
+  }, 60_000);
+
+  it('⑦ 语料无消费的声明词回落声明行(反边回落臂,不再自跳后才回落)', async () => {
+    await probeLanding(
+      'scripts/entity_defs/types.xml', '<ITEM_DESC>', 'ITEM_DESC',
+      'scripts/entity_defs/types.xml', '<ITEM_DESC>');
+  }, 60_000);
 });

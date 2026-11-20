@@ -258,6 +258,18 @@ impl HoverEngine {
                     .iter()
                     .find(|t| t.name == word && t.line == line1)
                 {
+                    // RUST-137 批 4 反边(`.def`↔types.xml 双向的回程):声明词
+                    // 不再做无效自跳——落语料内首个消费站点(`Type/Arg/of` 值
+                    // 使用面,semantic_reference_locations 同源扫描,语义面
+                    // 同口径剔除跨 root 同名异声明 Shadow;路径序首命中,
+                    // 本文件内引用位不选,消费站点在 .def)。语料无消费回落
+                    // 本文件声明行(原自跳行为)。
+                    if let Some(consumer) = self
+                        .semantic_reference_locations(key, text, line0, character, false)
+                        .and_then(|sites| sites.into_iter().find(|loc| loc.uri != path))
+                    {
+                        return Some(consumer);
+                    }
                     return Some(line_start_location(path, decl.line));
                 }
                 // RUST-137 批 1:`<Type>` 取值词面(TS findTypeValueDefinitionInTypesXml
@@ -801,9 +813,25 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
             }
             "types" => {
                 for decl in parse_types(text).types {
+                    // RUST-137 批 4:声明词探针升格词首列(批 1 判例:位置判定
+                    // 型面须真正触发)。char 0 落在 `<` 上,语义面符号解析不出
+                    // 只走回落臂;词首列(元素名首字符)才触发反边臂。
+                    let character = text
+                        .lines()
+                        .nth(decl.line - 1)
+                        .and_then(|l| {
+                            let idx = l.find('<')?;
+                            Some(
+                                l[..idx + 1]
+                                    .chars()
+                                    .map(|c| c.len_utf16() as u32)
+                                    .sum::<u32>(),
+                            )
+                        })
+                        .unwrap_or(0);
                     probes.push(GoldenProbe {
                         line: decl.line,
-                        character: 0,
+                        character,
                         word: decl.name,
                     });
                 }

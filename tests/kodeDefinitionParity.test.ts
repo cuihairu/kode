@@ -401,6 +401,61 @@ const walkElementNodes = (node: DefElementNode, visit: (n: DefElementNode) => vo
   }
 };
 
+// RUST-137 批 4 反边镜像辅助:声明行元素名首字符的 UTF-16 列(行内首个
+// `<` 含自身;无 `<` 回 0,与 Rust dump 探针同算术)。
+const declarationNameCharacter = (text: string, line1: number): number => {
+  const line = text.split('\n')[line1 - 1] ?? '';
+  const idx = line.indexOf('<');
+  if (idx < 0) {
+    return 0;
+  }
+  let character = 0;
+  for (const ch of line.slice(0, idx + 1)) {
+    character += ch.codePointAt(0)! >= 0x10000 ? 2 : 1;
+  }
+  return character;
+};
+
+// RUST-137 批 4 反边镜像:语料内首个消费站点(def/types 的 Type/Arg/of 值
+// 词)。语义面同口径:同 corpus root 定域(跨根同名异声明 Shadow 不入列),
+// 本文件引用位不选,corpus 数组序 = 路径字典序首命中;文件内先序首词位。
+const firstConsumingSite = (
+  corpus: CorpusFile[],
+  queryFile: CorpusFile,
+  word: string
+): LocationFace | null => {
+  const rootId = corpusRootOf(queryFile.file);
+  for (const other of corpus) {
+    if (other.file === queryFile.file || corpusRootOf(other.file) !== rootId) {
+      continue;
+    }
+    if (other.kind !== 'def' && other.kind !== 'types') {
+      continue;
+    }
+    const otherRoot = other.parsed.root;
+    if (!otherRoot) {
+      continue;
+    }
+    let found: { line: number; character: number } | null = null;
+    walkElementNodes(otherRoot, node => {
+      if (found) {
+        return;
+      }
+      if (node.name !== 'Type' && node.name !== 'Arg' && node.name !== 'of') {
+        return;
+      }
+      const probe = valueTokenProbeOf(node, other.text);
+      if (probe && probe.word === word) {
+        found = { line: probe.line1 - 1, character: probe.character };
+      }
+    });
+    if (found) {
+      return { uri: other.file, range: { start: found, end: found } };
+    }
+  }
+  return null;
+};
+
 // 2026-11-17 属性声明词回归收回:Properties 与三方法段声明词一律 null
 // (TS F12 属性链脚本实现层先行,注册回落是 TS 末档;Rust 落注册会短路
 // 脚本层=def 无法跳 py 实现)。原 registry_landing 镜像随之删除。
@@ -414,7 +469,7 @@ const sectionSymbols = (section: DefElementNode): DefElementNode[] =>
 
 interface ExpectedDefinition { line: number; character: number; word: string; definition: LocationFace }
 
-const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] => {
+const recomputeFile = (engine: Engine, file: CorpusFile, corpus: CorpusFile[]): ExpectedDefinition[] => {
   const probes: { line1: number; character: number; word: string }[] = [];
   const root = file.parsed.root;
   if (!root) {
@@ -487,9 +542,15 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
       return candidates.length === 1 ? headLocation(candidates[0]) : null;
     }
     if (file.kind === 'types') {
-      // 声明词臂(词 + 行)。
+      // 声明词臂(词 + 行):RUST-137 批 4 反边(回程)——声明词不再自跳,
+      // 落语料内首个消费站点(Type/Arg/of 值使用面;同根定域,本文件内
+      // 引用位不选,路径序首命中);语料无消费回落本文件声明行(原自跳)。
       const atDeclaration = typesDeclsOf(file).some(d => d.name === word && d.line1 === line1);
       if (atDeclaration) {
+        const consumer = firstConsumingSite(corpus, file, word);
+        if (consumer) {
+          return consumer;
+        }
         return lineStartLocation(file.file, line1);
       }
       // RUST-137 批 1:Type 取值词臂(无 gate——TS types.xml 分支不经
@@ -559,7 +620,14 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
     probes.push(...entitiesEntriesOf(file).map(entry => ({ line1: entry.line1, character: 0, word: entry.name })));
   }
   if (file.kind === 'types') {
-    probes.push(...typesDeclsOf(file).map(decl => ({ line1: decl.line1, character: 0, word: decl.name })));
+    // RUST-137 批 4:声明词探针升格词首列(批 1 判例:位置判定型面须真正
+    // 触发)。char 0 落在 `<` 上语义面解析不出符号只走回落臂;词首列才触发
+    // 反边臂(与 Rust dump 探针同算术:`<` 含自身的 UTF-16 列)。
+    probes.push(...typesDeclsOf(file).map(decl => ({
+      line1: decl.line1,
+      character: declarationNameCharacter(file.text, decl.line1),
+      word: decl.name
+    })));
     // RUST-137 批 1:全树 `<Type>` 取值词探针(嵌套 FIXED_DICT 字段)。
     walkElementNodes(root, node => {
       if (node.name === 'Type') {
@@ -608,7 +676,7 @@ describe('kode2 Phase2 definition 对拍(Rust golden ↔ TS 复算)', () => {
   it('逐文件逐落点比对(声明落点面)', () => {
     let compared = 0;
     for (let i = 0; i < corpus.length; i += 1) {
-      const expected = recomputeFile(engine, corpus[i]);
+      const expected = recomputeFile(engine, corpus[i], corpus);
       const actual = golden.files[i].definitions ?? [];
       expect(actual).toEqual(expected);
       compared += actual.length;

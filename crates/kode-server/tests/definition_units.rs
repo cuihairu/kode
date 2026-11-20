@@ -150,6 +150,8 @@ fn entities_registry_word_lands_on_corpus_def_head() {
 
 #[test]
 fn types_declaration_word_lands_on_line_start() {
+    // RUST-137 批 4 后本例 = 反边回落臂:语料只有 types.xml、无消费 def
+    // → 声明词回落本文件声明行(原自跳行为保持)。
     let engine = engine_with(&[("/w/scripts/entity_defs/types.xml", TYPES_XML)]);
     let key = key_of("/w/scripts/entity_defs/types.xml");
     let location = engine
@@ -171,6 +173,41 @@ fn types_declaration_word_lands_on_line_start() {
             },
         }
     );
+}
+
+#[test]
+fn types_declaration_word_lands_on_first_consuming_def_site() {
+    // RUST-137 批 4 反边(`.def`↔types.xml 双向的回程):声明词不再无效自跳,
+    // 落语料内首个 .def 消费站点(`<Type>` 取值词位置,Avatar.def 第 5 行
+    // 词首列 10);消费站点序 = 语义引用面同源扫描(路径序首命中)。
+    let engine = engine_with(&[
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF),
+        ("/w/scripts/entity_defs/types.xml", TYPES_XML),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/types.xml");
+    let location = engine
+        .definition(&key, TYPES_XML, 1, 2)
+        .expect("声明词反边应有消费落点");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/Avatar.def");
+    assert_eq!(location.range.start.line, 4);
+    assert_eq!(location.range.start.character, 10);
+}
+
+#[test]
+fn types_declaration_word_picks_first_def_in_path_order() {
+    // 多消费 def 按路径序首命中(Avatar.def < Mob.def),不挑声明邻近。
+    let mob = "<root>\n\t<Properties>\n\t\t<level>\n\t\t\t<Type> SHADOW_TYPE </Type>\n\t\t</level>\n\t</Properties>\n</root>\n";
+    let engine = engine_with(&[
+        ("/w/scripts/entity_defs/Mob.def", mob),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF),
+        ("/w/scripts/entity_defs/types.xml", TYPES_XML),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/types.xml");
+    let location = engine
+        .definition(&key, TYPES_XML, 1, 2)
+        .expect("路径序首命中");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/Avatar.def");
+    assert_eq!(location.range.start.line, 4);
 }
 
 #[test]
