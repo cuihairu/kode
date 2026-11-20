@@ -1507,3 +1507,57 @@ describe('truth-corpus: proxy-session-semantics 族执行闸(Proxy 会话语义�
     expect(entry.kode.finding).toContain('文档稀薄登记');
   });
 });
+
+// ---- entity-lifecycle-hook-roster 族:引擎脚本回调名册面(36 条 KBENGINE_HOOKS) ----
+// 探针实测后钉(getHookByName 真值):正例=档里以脚本回调形态出现的名字全解析,
+// 负例=档明说「引擎无」的谓词与档里不存在的回调名册全不解析。
+interface LifecycleRosterEntry extends TruthEntryBase {
+  input: { path: string; name: string; roster: boolean };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      resolved?: boolean;
+      category?: string;
+      signature?: string;
+      sourceLocation?: string;
+      lifecycleNames?: string[];
+    };
+  };
+}
+const lifecycleRosterFamily = families.find(f => f.family === 'entity-lifecycle-hook-roster')!;
+const lifecycleRosterEntries = lifecycleRosterFamily.entries as unknown as LifecycleRosterEntry[];
+
+describe('truth-corpus: entity-lifecycle-hook-roster 族执行闸(脚本回调名册面探针)', () => {
+  it('正例臂:档内脚本回调逐标量钉(解析在场+分类+签名+引擎调用点,drift 即红)', () => {
+    for (const entry of lifecycleRosterEntries) {
+      if (entry.kode.status !== 'pinned' || entry.input.roster) { continue; }
+      if (entry.kode.analysis!.resolved !== true) { continue; }
+      const hook = getHookByName(entry.input.name)!;
+      expect(hook, entry.id).toBeDefined();
+      expect(hook.category).toBe(entry.kode.analysis!.category);
+      expect(hook.signature).toBe(entry.kode.analysis!.signature);
+      expect(hook.sourceLocation).toBe(entry.kode.analysis!.sourceLocation);
+    }
+  });
+
+  it('名册臂:lifecycle 分类名单逐名钉(改名/改分类/新收录即红)', () => {
+    const entry = lifecycleRosterEntries.find(e => e.input.roster)!;
+    expect(KBENGINE_HOOKS.filter(h => h.category === 'lifecycle').map(h => h.name)).toEqual(
+      entry.kode.analysis!.lifecycleNames!
+    );
+    expect(entry.kode.status).toBe('pinned');
+  });
+
+  it('负例臂:引擎无谓词/档内不存在的回调名册不解析(混入即红)', () => {
+    for (const entry of lifecycleRosterEntries) {
+      if (entry.kode.status !== 'pinned' || entry.input.roster) { continue; }
+      if (entry.kode.analysis!.resolved !== false) { continue; }
+      expect(getHookByName(entry.input.name), entry.id).toBeUndefined();
+    }
+  });
+
+  it('未知臂:onRestore 签名已解析但引擎实参集合未取证,保持 unverified 不冒充已核', () => {
+    const entry = lifecycleRosterEntries.find(e => e.kode.status === 'unverified')!;
+    expect(getHookByName(entry.input.name)).toBeDefined();
+    expect(entry.reason).toBeTruthy();
+  });
+});

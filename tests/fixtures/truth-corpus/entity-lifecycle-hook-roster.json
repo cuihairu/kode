@@ -1,0 +1,204 @@
+{
+  "family": "entity-lifecycle-hook-roster",
+  "grounding": {
+    "doc": "docs/knowledge/entity-lifecycle-reference.md",
+    "engineHead": "3082ab5"
+  },
+  "entries": [
+    {
+      "id": "pos-ondestroy",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onDestroy", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "引擎销毁实体时调脚本 onDestroy(baseapp :164 / cellapp :204,callScript 门控),脚本侧清理定时器与收尾"
+      },
+      "evidence": [
+        "base `Entity::onDestroy` `:164` (fires `onDestroy` when `callScript`)",
+        "cellapp `:204`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "lifecycle",
+          "signature": "def onDestroy(self):",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:169; kbe/src/server/cellapp/entity.cpp:211"
+        }
+      }
+    },
+    {
+      "id": "pos-ontimer",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onTimer", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "定时器到期经 bufferOrExeCallback 调脚本 onTimer(timerID, userArg);_scriptCallbacksBufferCount>0 时先缓冲"
+      },
+      "evidence": [
+        "`onTimer(timerID, userArg)` via",
+        "`bufferOrExeCallback` (`cellapp/entity.cpp:4318-4322`)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "lifecycle",
+          "signature": "def onTimer(self, timerID, userArg=None):",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:4358; kbe/src/server/baseapp/entity.cpp:1662"
+        }
+      }
+    },
+    {
+      "id": "pos-onrestore",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onRestore", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "baseapp 崩溃后 RestoreEntityHandler 在 cell 已到后回放 onRestore(baseapp :1080,由 restore_entity_handler.cpp:173,266 驱动)"
+      },
+      "evidence": [
+        "`onRestore` `:1080`, driven from `restore_entity_handler.cpp:173,266`",
+        "fires `onRestore` from the handler"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "lifecycle",
+          "signature": "def onRestore(self):",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3871; kbe/src/server/baseapp/entity.cpp:1083"
+        }
+      }
+    },
+    {
+      "id": "pos-ongetcell",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onGetCell", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "cell 就绪回调(inRestore_ 时跳过);同一处 destroyCellData() 删掉 cellData 属性"
+      },
+      "evidence": [
+        "`onGetCell` `:1030-1032`, skipped when `inRestore_`",
+        "`onGetCell` also runs `destroyCellData()` (`:1024`) — the `cellData` attribute\nis **deleted** the moment the cell exists."
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "cell",
+          "signature": "def onGetCell(self):",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:1032"
+        }
+      }
+    },
+    {
+      "id": "pos-oncreatecellfailure",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onCreateCellFailure", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "建 cell 请求失败的回执回调(清 creatingCell_ 的清理面),与 in-flight 期间 destroy 走 onGetCell 后的销毁同族"
+      },
+      "evidence": ["`onCreateCellFailure` `:881`"],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "cell",
+          "signature": "def onCreateCellFailure(self):",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:884"
+        }
+      }
+    },
+    {
+      "id": "pos-lifecycle-category-roster",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "", "roster": true },
+      "engine": {
+        "load": "accept",
+        "truth": "档内以脚本回调形态出现的生命周期钩子=onDestroy/onTimer/onRestore 三条(均 category=lifecycle);onGetCell/onCreateCellFailure 属 cell 状态面"
+      },
+      "evidence": [
+        "base `Entity::onDestroy` `:164` (fires `onDestroy` when `callScript`)",
+        "`onRestore` `:1080`, driven from `restore_entity_handler.cpp:173,266`",
+        "`onTimer(timerID, userArg)` via"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "lifecycleNames": ["onDestroy", "onTimer", "onRestore"] }
+      }
+    },
+    {
+      "id": "neg-isOnCell",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "isOnCell", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "引擎无 isOnCell 谓词,脚本读基座实体该属性即 AttributeError;判据只能读 entity.cell"
+      },
+      "evidence": [
+        "the engine has **no** `isOnCell`/`isOnDB`/`isPersisted`\npredicate",
+        "Code that reasons about \"does it have a cell\" must\nread `entity.cell`, not the fact that a create was called."
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "neg-isOnDB",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "isOnDB", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "引擎无 isOnDB 谓词;基座属性面只有 cell/client/databaseID/databaseInterfaceName/shouldAutoBackup/shouldAutoArchive 与 id/isDestroyed/className"
+      },
+      "evidence": [
+        "the engine has **no** `isOnCell`/`isOnDB`/`isPersisted`\npredicate",
+        "The base `Entity` attribute surface is `cell`, `client`,\n`databaseID`, `databaseInterfaceName`, `shouldAutoBackup`,\n`shouldAutoArchive`"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "neg-isPersisted",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "isPersisted", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "引擎无 isPersisted 谓词,与 isOnCell/isOnDB 同一缺口族"
+      },
+      "evidence": [
+        "the engine has **no** `isOnCell`/`isOnDB`/`isPersisted`\npredicate",
+        "`entity.isDestroyed` is a read-only Python property (`entity_macro.h:34`)"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "neg-onRestoreCell",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "onRestoreCell", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "档内 restoring 态的脚本回调只有 onRestore;restoreCell 是引擎内部 C++ 入口(:159/:304),不派生 onRestoreCell 脚本回调"
+      },
+      "evidence": [
+        "restoreCell` (`:159`, `:304`)",
+        "`onRestore` `:1080`, driven from `restore_entity_handler.cpp:173,266`"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "unk-onrestore-script-params",
+      "kind": "unknown",
+      "input": { "path": "hooks-roster", "name": "onRestore", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "档只钉 onRestore 的回放时机(handler 在 cell 到后回放),未写引擎传给脚本回调的实参集合"
+      },
+      "evidence": [
+        "`onRestore` `:1080`, driven from `restore_entity_handler.cpp:173,266`"
+      ],
+      "kode": { "status": "unverified", "analysis": {} },
+      "reason": "依据档未写 onRestore 的脚本实参;kode 钩子表签名为 def onRestore(self):(除 self 零参),引擎侧 Py_BuildValue 格式串未经取证=按未核钉。下一步=读 fork 3082ab5 的 restore_entity_handler.cpp:173/266 调用点格式串(与 hooks.ts「签名取自调用点格式串」口径同源),核后再改 pinned。"
+    }
+  ]
+}
