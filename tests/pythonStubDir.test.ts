@@ -191,7 +191,7 @@ describe('exportKbeStubs 用户指定目录(copy-if-absent 装配层)', () => {
     configurationOverrides.clear();
     workspaceState.reset();
     windowState.reset();
-    // stubCopy 窄闸(默认关)本组常开:本组钉目录解析与落点,窄闸自有钉在
+    // stubCopy 窄闸(默认开)本组常开:本组钉目录解析与落点,窄闸自有钉在
     // pythonStubExport.test.ts;全局覆写不挡各用例的 stubDir 工作区覆写。
     // 必须放在 workspaceState.reset() 之后——reset 内部清全局覆写表
     globalConfigurationOverrides.set('kbengine', { 'python.stubCopy': true });

@@ -1051,38 +1051,22 @@ async function main(): Promise<void> {
     process.env.KODE_PYLANCE_WIRE_ROOT = workspacePath;
     process.env.KODE_PYLANCE_WIRE_PHASE = '1';
     process.on('exit', () => fs.rmSync(wireRoot, { recursive: true, force: true }));
-    // 段3 夹具在此装配(发射在文件尾三段跑):探测范围外布局——myserver/
-    // server 不在四前缀(scripts/、assets/scripts、server_assets/scripts)与
-    // 一级 *_assets/scripts 约定内(首跑误用 myserver/scripts——`scripts/` 是
-    // 文件夹相对前缀,恰在探测范围内,负例臂作废实录);激活不依赖布局
-    // (activationEvents 含 onStartupFinished,任意工作区都激活,debug.json
-    // 激活标记照常出现),被测面=extraPaths 同步对该文件夹零写入。
+    // 段3 夹具在此装配(发射在文件尾三段跑):探测范围外布局。范围界口径已随
+    // 特征探测演进:复制门不再看 scripts 前缀,而看 KBEngine 特征信号
+    // (.def / entities.xml / types.xml / alias.xml / kbengine*.xml)——旧夹具
+    // myserver/server 带 ScopeEntity.def + entities.xml 恰命中特征 glob,复制与
+    // 接线全部照跑,负例臂失效(工作区 dump 实录:桩包 10 目录 + pyrightconfig
+    // 六角色 executionEnvironments + extraPaths 全落盘)。故本夹具改为**无特征
+    // 信号**的普通 Python 布局:无 .def、无 *.xml、无 scripts/ 与 server/ 约定。
+    // (首跑误用 myserver/scripts——`scripts/` 是文件夹相对前缀,恰在探测范围内,
+    // 负例臂作废实录。)激活不依赖布局(activationEvents 含 onStartupFinished,
+    // 任意工作区都激活,debug.json 激活标记照常出现),被测面=桩包复制与
+    // python.analysis 同步对该文件夹零写入。
     const wire2 = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pylance-wire2-'));
     pylanceWire2Root = path.join(wire2, 'myserver');
-    fs.mkdirSync(path.join(pylanceWire2Root, 'server', 'entity_defs'), { recursive: true });
-    fs.mkdirSync(path.join(pylanceWire2Root, 'server', 'base'), { recursive: true });
-    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'entities.xml'), [
-      '<root>',
-      '\t<ScopeEntity hasBase="true"></ScopeEntity>',
-      '</root>'
-    ].join('\n'));
-    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'entity_defs', 'ScopeEntity.def'), [
-      '<root>',
-      '    <BaseMethods>',
-      '        <onPing>',
-      '            <Arg>UINT8</Arg>',
-      '        </onPing>',
-      '    </BaseMethods>',
-      '</root>'
-    ].join('\n'));
-    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'base', 'ScopeEntity.py'), [
-      'class ScopeEntity:',
-      '',
-      '    def onPing(self, level):',
-      '        return None'
-    ].join('\n'));
-    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'pylance_scope_probe.py'), [
-      '# RUST-263 pylance scope probe: layout outside detection prefixes.',
+    fs.mkdirSync(path.join(pylanceWire2Root, 'app'), { recursive: true });
+    fs.writeFileSync(path.join(pylanceWire2Root, 'app', 'pylance_scope_probe.py'), [
+      '# RUST-263 pylance scope probe: layout without KBEngine feature signals.',
       'import KBEngine',
       'import scope_helper',
       '',
@@ -1090,10 +1074,9 @@ async function main(): Promise<void> {
       'def probe() -> None:',
       '    return scope_helper.MARK'
     ].join('\n'));
-    fs.writeFileSync(path.join(pylanceWire2Root, 'server', 'scope_helper.py'), [
-      '# sibling module: same-dir resolution must NOT kick in (importer dir is',
-      '# not a search root for absolute imports), so this import being unresolved',
-      '# is the expected honest boundary face.',
+    fs.writeFileSync(path.join(pylanceWire2Root, 'app', 'scope_helper.py'), [
+      '# sibling module: same-dir resolution is the lowest available source',
+      '# when kode wires nothing, so it should still land on the sibling file.',
       'MARK = 1'
     ].join('\n'));
     fs.mkdirSync(path.join(pylanceWire2Root, '.vscode'), { recursive: true });
@@ -1142,12 +1125,13 @@ async function main(): Promise<void> {
     await electronLaunch();
     delete process.env[launchGate];
   } else if (pylanceWireMode) {
-    // 三段:段1=默认态(stubCopy 关,零桩包);段2=同一工作区改设
-    // kbengine.python.stubCopy:true 重启——激活链 silent 自动复制桩包并同步
-    // settings。manual 命令(kbengine.python.exportStubs)尾部 await 通知关闭,
-    // headless 无人点掉必悬(run1 900s 超时/run2 closeNotifications 命令不存
-    // 在,两跑实录),故真机面走等价的 silent 激活路径(同一对拷贝/同步函数),
-    // manual 命令交互面在证据文档记边界。段3=探测范围外布局负例臂。
+    // 三段:段1=默认态(stubCopy 自 17570cb5 起默认开,默认激活即复制桩包);
+    // 段2=同一工作区显式设 kbengine.python.stubCopy:true 重启——激活链 silent
+    // 自动复制桩包并同步 settings。manual 命令(kbengine.python.exportStubs)
+    // 尾部 await 通知关闭,headless 无人点掉必悬(run1 900s 超时/run2
+    // closeNotifications 命令不存在,两跑实录),故真机面走等价的 silent
+    // 激活路径(同一对拷贝/同步函数),manual 命令交互面在证据文档记边界。
+    // 段3=无 KBEngine 特征信号的布局负例臂(零写入+全 unresolved)。
     await electronLaunch();
     fs.writeFileSync(path.join(workspacePath, '.vscode', 'settings.json'), JSON.stringify({
       'kbengine.showFinalConfigOnOpen': false,

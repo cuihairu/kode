@@ -191,8 +191,8 @@ describe('collectKbengineStubTemplateFiles(内置模板清单)', () => {
 });
 
 describe('exportKbeStubs(copy-if-absent 复制)', () => {
-  // 窄闸 stubCopy(默认关)在本组用全局覆写常开:本组钉的是复制行为面本身;
-  // 窄闸自己的默认关/manual 绕过/显式开在下方专属 describe 里钉。
+  // 窄闸 stubCopy(默认开)在本组用全局覆写常开:本组钉的是复制行为面本身;
+  // 窄闸自己的默认开/显式关/manual 绕不过在下方专属 describe 里钉。
   beforeEach(() => {
     globalConfigurationOverrides.set('kbengine', { 'python.stubCopy': true });
   });

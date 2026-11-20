@@ -61,7 +61,7 @@ describe('resolveManagedDirName(默认/配置解析)', () => {
 });
 
 describe('托管目录落点(pythonStubExport 面)', () => {
-  // stubCopy 窄闸(默认关)本组常开:导出链按配置目录落盘的钉面不经窄闸红
+  // stubCopy 窄闸(默认开)本组常开:导出链按配置目录落盘的钉面不经窄闸红
   beforeEach(() => {
     globalConfigurationOverrides.set('kbengine', { 'python.stubCopy': true });
   });

@@ -8,8 +8,8 @@ import * as vscode from 'vscode';
 // (RUST-170,手写 settings 测优先级)互补:本套件跑的是 kode 的**默认激活链**
 // (python.stubExport / python.extraPathsSync 全默认开),settings 由 kode 写,
 // 被测问题是「kode 写出来的东西真 Pylance 吃不吃」。三段由 runTest --pylancewire
-// 发射:段1=demo 标准布局默认态(stubCopy 关=桩包不在盘、extraPaths 变量形态
-// 已写);段2=同工作区改设 stubCopy:true 重启,激活链 silent 自动复制桩包,
+// 发射:段1=demo 标准布局默认态(stubCopy 默认开=桩包已复制、extraPaths 变量
+// 形态已写);段2=同工作区显式 stubCopy:true 重启,激活链 silent 自动复制桩包,
 // 测 KBEngine 桩包在真 Pylance 的解析落位(manual 命令尾部 await 通知关闭,
 // headless 无人点掉必悬——run1 900s 超时实录,故走等价 silent 激活路径);
 // 段3=探测范围外布局(kode 零写入+全 unresolved 边界)。三段共用本文件,
@@ -22,7 +22,7 @@ const PHASE = process.env.KODE_PYLANCE_WIRE_PHASE ?? '1';
 assert.ok(ROOT, 'runTest.js --pylancewire must set KODE_PYLANCE_WIRE_ROOT');
 
 const PROBE = path.join(ROOT!, 'scripts', 'pylance_wire_probe.py');
-const SCOPE_PROBE = path.join(ROOT!, 'server', 'pylance_scope_probe.py');
+const SCOPE_PROBE = path.join(ROOT!, 'app', 'pylance_scope_probe.py');
 const SETTINGS = path.join(ROOT!, '.vscode', 'settings.json');
 const STUBS_DIR = path.join(ROOT!, '.kbengine', 'stubs');
 
@@ -166,15 +166,21 @@ phase1('RUST-263 段1:demo 标准布局默认激活链(真 Pylance)', function (
     );
   });
 
-  it('默认态(stubCopy 关):KBEngine 桩包不在盘;common 走变量形态 extraPaths 解析成功', async function () {
-    // 默认态钉边界:python.stubCopy 默认关(批③ 定案),激活不复制桩包——
-    // import KBEngine 此时 unresolved 是**设计行为**,不是接线缺陷。
-    assert.strictEqual(
-      stubPackageInitFiles().length, 0,
-      '默认激活不应复制 KBEngine 桩包(python.stubCopy 默认关)'
+  it('默认态(stubCopy 默认开):桩包已复制;common 走变量形态 extraPaths 解析成功', async function () {
+    // 默认态钉边界:kbengine.python.stubCopy 默认开(17570cb5 起),激活即复制
+    // 桩包——不写 settings 也照跑。窄闸的 false 臂不在本链:真机三段的被测面是
+    // 「kode 写出来的东西 Pylance 吃不吃」,关闸臂归单测(pythonStubExport /
+    // pythonExtraPaths)覆盖。
+    const initFiles = await poll(
+      () => stubPackageInitFiles(),
+      list => list.length > 0,
+      90000
     );
+    EVIDENCE.push(`default-state stub init files=${JSON.stringify(initFiles.map(file => file.slice(ROOT!.length)))}`);
+    assert.ok(initFiles.length > 0, 'stubCopy 默认开:默认激活应复制 KBEngine 桩包');
     // 疑点 A 的正例:kode 写的 `${workspaceFolder}/scripts` 变量形态若真
     // Pylance 不展开,这里落空;落位即变量形态在真 Pylance 生效的实证。
+    // 排在桩包复制之后:复制先落,extraPaths 同步才成,才谈得上被 Pylance 消费。
     const targets = await poll(
       () => definitionTargets(PROBE, 'DemoConsts'),
       paths => paths.some(target => target.endsWith('/scripts/common/DemoConsts.py')),
@@ -185,7 +191,7 @@ phase1('RUST-263 段1:demo 标准布局默认激活链(真 Pylance)', function (
       targets.some(target => target.endsWith('/scripts/common/DemoConsts.py')),
       `common 模块未经变量形态 extraPaths 解析: ${JSON.stringify(targets)}`
     );
-    // 证据面(不断言空):默认态 KBEngine 解析落空记录在案
+    // 证据面(不断言):默认态 KBEngine 解析落位记录在案
     const kbeTargets = await definitionTargets(PROBE, 'KBEngine');
     EVIDENCE.push(`default-state KBEngine def targets=${JSON.stringify(kbeTargets)}`);
   });
@@ -287,7 +293,7 @@ phase3('RUST-263 段3:探测范围外布局(kode 零写入+真 Pylance 全 unres
     await pylance.activate();
   });
 
-  it('扩展照常激活(activationEvents 命中)但 extraPaths/stubPath 零写入', async function () {
+  it('扩展照常激活(activationEvents 命中)且无 KBEngine 特征信号', async function () {
     // 激活发生标记:ensureDebugConfig 激活期在托管目录生成 debug.json 骨架。
     // 没有它就断言「零写入」会是空洞的绿(扩展没激活也零写入)。
     const debugConfig = path.join(ROOT!, '.kbengine', 'debug.json');
@@ -298,16 +304,16 @@ phase3('RUST-263 段3:探测范围外布局(kode 零写入+真 Pylance 全 unres
     );
     EVIDENCE.push(`activation marker .kbengine/debug.json present=${found}`);
     assert.ok(found, '激活标记 debug.json 未出现——扩展未激活,负例断言不作数');
-    const settings = readSettings();
-    EVIDENCE.push(`scope-out settings=${JSON.stringify(settings)}`);
-    assert.ok(
-      settings?.['python.analysis.extraPaths'] === undefined,
-      '范围外布局不应写 python.analysis.extraPaths'
+    // 负例的前提本身要钉住:夹具无任何 KBEngine 特征信号(.def / entities.xml
+    // 等),否则「范围外」不成立——旧夹具 myserver/server 下带 .def + entities.xml,
+    // 恰命中 workspaceGate 的特征 glob,复制+接线全部照跑,负例臂已失效。
+    const signalFiles = await vscode.workspace.findFiles(
+      '{**/*.def,**/entities.xml,**/types.xml,**/alias.xml,**/kbengine*.xml}',
+      '**/node_modules/**',
+      1
     );
-    assert.ok(
-      settings?.['python.analysis.stubPath'] === undefined,
-      '范围外布局不应写 python.analysis.stubPath'
-    );
+    EVIDENCE.push(`scope-out feature signal files=${JSON.stringify(signalFiles.map(file => file.fsPath))}`);
+    assert.strictEqual(signalFiles.length, 0, '负例夹具必须无 KBEngine 特征信号文件');
   });
 
   it('真 Pylance:探针 import 全部 unresolved(范围界实证)', async function () {
@@ -323,17 +329,46 @@ phase3('RUST-263 段3:探测范围外布局(kode 零写入+真 Pylance 全 unres
       diags.some(diag => diag.message.includes('KBEngine')),
       `KBEngine 导入无 unresolved 诊断: ${JSON.stringify(diags.map(d => d.message))}`
     );
-    const kbeTargets = await definitionTargets(SCOPE_PROBE, 'KBEngine');
-    const helperTargets = await definitionTargets(SCOPE_PROBE, 'scope_helper');
-    EVIDENCE.push(`scope-out KBEngine def=${JSON.stringify(kbeTargets)} scope_helper def=${JSON.stringify(helperTargets)}`);
-    assert.strictEqual(kbeTargets.length, 0, '范围外布局 KBEngine 不应有定义落位');
     // scope_helper(同级普通模块)= RUST-170 C 阶段同款同目录兜底:kode 零接线时
     // 它是最低位解析来源,应解析到同级文件(run4 实测已如此;断言翻转实录:
     // 首版误按「importer 目录非搜索根」期望空,RUST-170 原裁定是排位序而非
     // 绝对缺席)。KBEngine 与之对照:桩包不在盘+零接线 → 全 unresolved。
+    const helperTargets = await definitionTargets(SCOPE_PROBE, 'scope_helper');
+    EVIDENCE.push(`scope-out scope_helper def=${JSON.stringify(helperTargets)}`);
     assert.ok(
-      helperTargets.some(target => target.endsWith('/server/scope_helper.py')),
+      helperTargets.some(target => target.endsWith('/app/scope_helper.py')),
       `同目录兜底应解析同级 scope_helper: ${JSON.stringify(helperTargets)}`
     );
+  });
+
+  it('范围外布局零写入(分析完成后复核,非激活瞬间快照)', async function () {
+    // 时序坑:激活链(桩导出→类型桩→extraPaths 同步)全异步,在 debug.json 标记
+    // 出现后**立即**读 settings 会读到同步落盘前的空——旧臂的「零写入」就是这么
+    // 假绿的(工作区 dump 实证:settings.json 与 pyrightconfig.json 事后都写了)。
+    // 故本臂排在上一臂的 Pylance 分析轮询之后:Pylance 已分析完,激活链早跑完,
+    // 此时再读才是真零写入。
+    const settings = readSettings();
+    EVIDENCE.push(`scope-out post-analysis settings=${JSON.stringify(settings)}`);
+    assert.ok(
+      settings?.['python.analysis.extraPaths'] === undefined,
+      '范围外布局不应写 python.analysis.extraPaths'
+    );
+    assert.ok(
+      settings?.['python.analysis.stubPath'] === undefined,
+      '范围外布局不应写 python.analysis.stubPath'
+    );
+    assert.ok(
+      !fs.existsSync(path.join(ROOT!, 'pyrightconfig.json')),
+      '范围外布局不应写 pyrightconfig.json'
+    );
+    const stubRoot = path.join(ROOT!, '.kbengine', 'stubs');
+    EVIDENCE.push(`scope-out stubs dir present=${fs.existsSync(stubRoot)}`);
+    assert.ok(
+      !fs.existsSync(stubRoot),
+      '范围外布局不应复制 KBEngine 桩包'
+    );
+    const kbeTargets = await definitionTargets(SCOPE_PROBE, 'KBEngine');
+    EVIDENCE.push(`scope-out post-analysis KBEngine def=${JSON.stringify(kbeTargets)}`);
+    assert.strictEqual(kbeTargets.length, 0, '范围外布局 KBEngine 不应有定义落位');
   });
 });
