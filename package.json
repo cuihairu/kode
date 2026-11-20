@@ -1910,6 +1910,11 @@
             "default": true,
             "markdownDescription": "%kbengine.config.inlayHints.typeData.description%"
           },
+          "kbengine.domainMarkers.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.domainMarkers.enabled.description%"
+          },
           "kbengine.python.builtinTypeInlayHints": {
             "type": "boolean",
             "default": true,

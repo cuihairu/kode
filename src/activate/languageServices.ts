@@ -77,6 +77,7 @@ import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../sourceRevealCommand';
 import { SERVER_CONFIG_SELECTOR, ServerConfigHoverProvider } from '../serverConfigHover';
 import { registerTypeStorageIndexWatchers } from '../typeStorageIndexWatchers';
 import { PythonTypeInlayHintsProvider } from '../typeInlayHints';
+import { setupKbengineDomainMarkers } from '../kbengineDomainMarkers';
 import { shouldStartKbEngineIndexing } from '../workspaceGate';
 import { WorkspaceIndex } from '../workspaceIndex';
 import { preheatDiscoveryScanActivation } from '../workspaceDiscovery';
@@ -711,6 +712,13 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     new PythonTypeInlayHintsProvider(entityMappingManager, dataDictIndex)
   );
   context.subscriptions.push(typeInlayHintsProvider);
+
+  // KODE-SYN-005:KBEngine 符号可选领域标记(轻量装饰试点)——def 属性/
+  // RPC 接收者/生命周期钩子/有身份的数据字典键四个面,编辑器装饰层与
+  // Pylance 分层共存(不占 semantic token 命名空间,RUST-148 默认关闭决策
+  // 保持);独立开关 kbengine.domainMarkers.enabled(默认关,可选试点),
+  // 解析未命中/索引未就绪一律零装饰不猜
+  setupKbengineDomainMarkers(context, { entityMappingManager, dataDictIndex });
 
   // 内建属性行内类型提示(用户令 2026-10-21 形态升级单 ③):self.<内建属性>
   // 访问处 `: <type>` inlay,与 hover 同一命中底座;独立开关

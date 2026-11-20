@@ -321,11 +321,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // 锚点之后)。extension.ts 解构 +3(489 前)→ 492,onDidChange alias 路由臂
   // +3 → 594 → 600(真位重探)。inlay.ts:61 → 62 系 peer 17570cb5 顶置行
   // (getDocumentLines 真位 62,随本批一并校准)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 226, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 299, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 398, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 145, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 936, "startLanguageServiceOperation('completion'"],
+  // 2026-11-20(KODE-SYN-005):领域标记接线——languageServices.ts 顶部 import +1
+  // (setupKbengineDomainMarkers)、领域标记装配块 +7(在前四打点后、python
+  // completion 打点前)→ 226/299/398/145 → 227/300/399/146,936 → 944
+  // (真位重探,startLanguageServiceOperation 内容双面确认)。出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 227, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 300, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 399, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 146, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 944, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import

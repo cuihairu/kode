@@ -165,6 +165,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.inlayHints.defProps` | boolean | `true` | entity 脚本内整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(逐属性名+解析类型;段悬停给 def 声明出处)。纯渲染层,不写代码,属性唯一事实源仍为 .def |
 | `kbengine.semanticTokens.enabled` | boolean | `false` | Python 结构符号语义 token:class/function/method/parameter 名与装饰器(macro),declaration/async 修饰;决策核与 Rust golden 对拍同源(RUST-144)。默认关闭——Python 语义高亮通常由 Pylance 提供,冲突矩阵(RUST-148)裁定前按需开启;关闭时零 token |
 | `kbengine.inlayHints.propertyShadow` | boolean | `true` | 淡色内嵌提示,永不下划线:`self.y = self.cellData["x"]` 赋值行与裸的域外读取处渲染「复制属性 x: <类型> · cell」;`self.cellData["key"]` 访问后渲染 key 的 def 面(标签只显 cell 面,域位不含 cell 保持原域位并追加「不在 cellData」,完整并集留悬停);解析得出 def 声明的提示把声明落点作导航目标(Ctrl+点击,与非复制提示一致);受 `kbengine.propertyDirectionDiagnostics` 双控 |
+| `kbengine.domainMarkers.enabled` | boolean | `false` | 为**已解析**的 KBEngine 符号加编辑器装饰(下划线类,零颜色,悬停给域身份与出处),与 Pylance 语义高亮分层共存(装饰层,不占 semantic token 命名空间,RUST-148 默认关闭决策不变)。四个试点面:① `self.<DEF 属性>` 访问命中 def 属性(与 F12 同一解析索引,继承链由索引侧裁定);② `self.base/cell/client.<RPC>` 命中 def 方法(过段闸,同名跨 Base/Cell/Client 由接收者段分辨);③ entity 脚本树内、类体上声明且名字命中 36 条引擎生命周期钩子表的方法声明;④ 有确定身份的数据字典键(globalData/baseAppData/cellAppData 访问点键签名在索引里有真实写点)。解析未命中/索引未就绪(首扫)/未知接收者一律零装饰不猜;默认关闭(KODE-SYN-005 试点) |
 
 四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。
 

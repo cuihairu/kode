@@ -139,6 +139,9 @@
   连接信息两层遮蔽——连接行永不落 username/password 值，全文再过一遍把 `password=`/`token=`/`secret=`/`authorization=` 赋值与 URL userinfo 改写为 `***` 的兜底——（证据：src/backend/reproductionSummary.ts、src/extension.ts `kbengine.diagnostics.exportReproSummary`、tests/reproductionSummary.test.ts、tests/extension.test.ts）
 - **数据库模拟与导出** —— 模拟表结构可导出 JSON/Markdown ——（证据：package.json#contributes.commands `kbengine.database.simulate|exportSimulation`；src/databaseSimulator.ts）
 
+
+- **已解析 KBEngine 符号的领域标记(KODE-SYN-005)** —— 可选试点(`kbengine.domainMarkers.enabled`,默认关),对扩展**已解析**的符号出轻量编辑器装饰四面:`self.<属性>` 访问命中 def 声明(悬停给 Flags 域位、类型与声明出处)、`self.base/cell/client.<RPC>` 接收者调用(段闸:同名方法跨 Base/Cell/Client 段由接收者分辨,不按名字猜)、entity 脚本类体上声明且命中 36 条引擎生命周期钩子表的 def 方法、索引里有真实写点的数据字典键;未解析接收者/未知属性、首扫未就绪一律零装饰不猜。装饰层叠在 Pylance 之上而非争抢 semantic token 命名空间,RUST-148 对语义 token 的默认关闭决策保持不动 ——（证据：package.json#configuration `kbengine.domainMarkers.enabled`;src/kbengineDomainMarkers.ts;tests/kbengineDomainMarkers.test.ts）
+
 ## 类型桩与托管目录（SEM）
 
 - **KBEngine 桩包复制(静态模板,2026-11-11)** —— 插件内置静态模板随包发布在仓库顶层 `typings/`（派生自用户 fork 的 typings,钉点与再生成见 `typings/README.md`;`KBEngine/` 包一类一文件,`__init__.pyi` 重导出顺序裁决同名遮蔽）,在 `kbengine.python.stubCopy` 开启时复制到存根目录（默认 `<managedDir>/stubs/`）供 Pylance/pyright 解析 `import KBEngine`——默认**关**(2026-11-16 起插件不再自动往工作区写桩文件;开启开关即恢复激活期自动复制);copy-if-absent 零覆盖——已存在的文件一个字节不动（用户修改永久保留）,托管目录里带 kode 生成标记的旧单文件 `KBEngine.pyi` 一次性移除由桩包取代,覆盖只走显式重置命令且要用户确认;`kbengine.python.stubCopy` 开启才有激活期静默自动复制,手动导出+重置双命令入口不受限 ——（证据：package.json#configuration `kbengine.python.stubExport` + `kbengine.python.stubCopy`；package.json#contributes.commands `kbengine.python.exportStubs` + `kbengine.python.resetStubs`；typings/README.md；scripts/derive-kbengine-stub-typings.mjs；scripts/vsix-staging.mjs（VSIX stage 名单随包携带 `typings/`）；src/pythonStubExport.ts、tests/pythonStubExport.test.ts、tests/kbengineStubTemplate.test.ts）
@@ -471,6 +474,7 @@
 | `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
 | `kbengine.inlayHints.defProps` | `true` | 整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(名+类型;悬停给声明出处) |
 | `kbengine.semanticTokens.enabled` | `false` | Python 结构符号语义 token(class/function/method/parameter 名,跨行 def 签名同收且形参 span 落各自所在行,装饰器 macro,declaration/async 修饰;决策核与 Rust golden 对拍同源)。默认关闭——Python 语义高亮通常由 Pylance 提供,RUST-148 冲突矩阵裁定前按需开启 |
+| `kbengine.domainMarkers.enabled` | `false` | 可选试点(KODE-SYN-005):给**已解析**的 KBEngine 符号出轻量编辑器装饰,四面——def 声明命中的 `self.<属性>` 访问、`self.base/cell/client.<RPC>` 接收者调用(段闸分辨同名跨段,绝不按名字猜)、entity 脚本类体上声明且命中 36 条生命周期钩子表的 def 方法、索引里有真实写点的数据字典键;未解析接收者/属性与首扫未就绪一律零装饰不猜。装饰层叠在 Pylance 之上,不占用 semantic token 命名空间,RUST-148 默认关闭决策不受影响 |
 | `kbengine.inlayHints.propertyShadow` | `true` | 淡色内嵌提示(永不下划线):`self.y = self.cellData["x"]` 赋值行与裸的域外读取处渲染「复制属性 x: <类型> · <域位>」;`self.cellData["key"]` 访问后渲染 key 的 def 面(域位不含 cell 追加「不在 cellData」);受 `kbengine.propertyDirectionDiagnostics` 双控 |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | 实体定义文件默认路径 |
 | `kbengine.configData` | object（见配置指南） | 配置数据保护:Excel 生成的配置绑定/类在 `reload*`/`hotUpdate*` 热更入口与 `mutationExclude` 白名单之外的写点出意外写诊断(`kbengine.configDataMutation`),配置名悬停出直读 schema 类型;仅在 KBEngine 工作区激活 |

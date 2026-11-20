@@ -36,6 +36,21 @@ export interface RecordedOutputChannel {
 /** 已建通道登记(断言默认构造走真工厂的用例读尾部条目) */
 export const channels: RecordedOutputChannel[] = [];
 
+/**
+ * createTextEditorDecorationType 的入账(KODE-SYN-005 领域标记装饰层)。
+ * 真 API 只保证「样式被记住 + dispose 可拆」,本替身照此最小建模,不给装饰
+ * 结果语义(标记位语义在纯核层 tests/kbengineDomainMarkers.test.ts 断言)。
+ */
+export interface RecordedDecorationType {
+  key: string;
+  options: Record<string, unknown>;
+  disposed: boolean;
+  dispose(): void;
+}
+
+/** 已建装饰类型登记(断言装配面建了四类面/拆除链逐项释放的用例读) */
+export const decorationTypes: RecordedDecorationType[] = [];
+
 /** createStatusBarItem 的入账 */
 export interface RecordedStatusBarItem {
   alignment: StatusBarAlignment;
@@ -106,6 +121,18 @@ export const window = {
         channel.disposed = true;
       }
     };
+  },
+  createTextEditorDecorationType: (options: Record<string, unknown>): RecordedDecorationType => {
+    const type: RecordedDecorationType = {
+      key: `decoration-${decorationTypes.length + 1}`,
+      options,
+      disposed: false,
+      dispose(): void {
+        type.disposed = true;
+      }
+    };
+    decorationTypes.push(type);
+    return type;
   },
   createStatusBarItem: (alignment: StatusBarAlignment, priority?: number): RecordedStatusBarItem => {
     const item: RecordedStatusBarItem = {
