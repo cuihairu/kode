@@ -210,3 +210,158 @@ describe('buildDependencyGraphInRust(依赖图 Rust 主路径)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 28:形状闸五臂逐行 + def 目录分类 fallback(三根之外) + 空名 .def 跳过
+// + 资产根反推(defs 父目录进 scripts 根)。
+// ---------------------------------------------------------------------------
+describe('批 28:形状闸逐臂与收集容错', () => {
+  const base = (): Record<string, unknown> => ({
+    nodes: [],
+    edges: [],
+    reverseEdges: {},
+    paths: { entitiesXml: '/e.xml', defsRoot: '/d', typesXml: '/t.xml' },
+    stats: { nodeCount: 0 }
+  });
+
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['nodes 非数组', { ...base(), nodes: 'x' }],
+    ['edges 非数组', { ...base(), edges: 'x' }],
+    ['reverseEdges 缺失', { ...base(), reverseEdges: null }],
+    ['paths 三串不全', { ...base(), paths: { entitiesXml: 1, defsRoot: '/d', typesXml: '/t.xml' } }],
+    ['stats 缺失', { ...base(), stats: null }]
+  ];
+
+  for (const [label, result] of cases) {
+    it(`${label} → null 回落 TS`, async () => {
+      const fakeGate = {
+        runInRust: async () => ({ ok: true, result })
+      } as unknown as KodeCoreGate;
+      setKodeCoreShadowGate(fakeGate);
+      try {
+        expect(await buildDependencyGraphInRust(depRoot)).toBeNull();
+      } finally {
+        setKodeCoreShadowGate(null);
+      }
+    });
+  }
+
+  it('非对象结果 → null', async () => {
+    const fakeGate = {
+      runInRust: async () => ({ ok: true, result: 42 })
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      expect(await buildDependencyGraphInRust(depRoot)).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('三根之外的 .def 分类 def;空名 .def 跳过;资产根反推进 python 根', async () => {
+    // 三根之外:alt 布局(独立 *_assets 树)
+    fs.mkdirSync(p(depRoot, 'alt_assets', 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(p(depRoot, 'alt_assets', 'scripts', 'entity_defs', 'Alt.def'), '<root/>', 'utf8');
+    // 空名:.def 文件(basename 为空串)
+    fs.mkdirSync(p(depRoot, 'loose'), { recursive: true });
+    fs.writeFileSync(p(depRoot, 'loose', '.def'), '<root/>', 'utf8');
+
+    let capturedParams: { categories: Record<string, string>; defs: Record<string, string> } | null = null;
+    const fakeGate = {
+      runInRust: async (_method: string, params: unknown) => {
+        capturedParams = params as { categories: Record<string, string>; defs: Record<string, string> };
+        return { ok: true, result: cannedGraph() };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      const graph = await buildDependencyGraphInRust(depRoot);
+      expect(graph).not.toBeNull();
+      const params = capturedParams!;
+      // 三根之外 → 'def' 兜底分类
+      expect(params.categories.Alt).toBe('def');
+      // 空名 .def 不入 defs(无名字可键)
+      expect(params.defs['']).toBeUndefined();
+      expect(params.defs.Alt).toBe('<root/>');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+
+describe('批 28 续:节点 kind 闸与空名 .def', () => {
+  it('节点 kind 越枚举 → null 回落 TS', async () => {
+    const fakeGate = {
+      runInRust: async () => ({
+        ok: true,
+        result: {
+          nodes: [{ id: 'x', kind: 'weird-kind' }],
+          edges: [],
+          reverseEdges: {},
+          paths: { entitiesXml: '/e.xml', defsRoot: '/d', typesXml: '/t.xml' },
+          stats: { nodeCount: 1 }
+        }
+      })
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      expect(await buildDependencyGraphInRust(depRoot)).toBeNull();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('空名 .def(loose/.def)被 glob 收录且被跳过', async () => {
+    fs.mkdirSync(p(depRoot, 'loose2'), { recursive: true });
+    fs.writeFileSync(p(depRoot, 'loose2', '.def'), '<root/>', 'utf8');
+    let seenEmpty = false;
+    let sawAny = false;
+    const fakeGate = {
+      runInRust: async (_method: string, params: unknown) => {
+        const defs = (params as { defs: Record<string, string> }).defs;
+        sawAny = Object.keys(defs).length > 0;
+        seenEmpty = '' in defs;
+        return { ok: true, result: cannedGraph() };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      await buildDependencyGraphInRust(depRoot);
+      expect(sawAny).toBe(true);
+      expect(seenEmpty).toBe(false);
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+
+describe('批 28 终:typeImpls(用户类型实现路径)', () => {
+  // 必须在类型快照首次构建前落盘(semanticIndex 快照按根缓存,文件后补不失效)
+  beforeAll(() => {
+    // 实现文件解析约定:user_type 根下按模块路径/类型名找 <候选>.py
+    // (layout.userTypeRoots = scripts/user_type;typeName Vec3 是候选之一)
+    fs.mkdirSync(p(depRoot, 'scripts', 'user_type'), { recursive: true });
+    fs.writeFileSync(p(depRoot, 'scripts', 'user_type', 'Vec3.py'), 'class Vec3:\n    pass\n', 'utf8');
+  });
+
+  it('implementedBy 指向真实 py 文件 → typeImpls 收录', async () => {
+    let captured: { typeImpls: Record<string, string> } | null = null;
+    const fakeGate = {
+      runInRust: async (_method: string, params: unknown) => {
+        captured = params as { typeImpls: Record<string, string> };
+        return { ok: true, result: cannedGraph() };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      await buildDependencyGraphInRust(depRoot);
+      expect(captured!.typeImpls.Vec3).toBeTruthy();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+
+// 覆盖口径残余(批 28 定性,不硬凑)::124 空名 .def 跳过——findFilesAcrossRoots
+// 的 `**/*.def` glob 不收录点文件(实测 loose/.def 不在结果集),basename 为空
+// 的条目到不了收集循环,该 continue 为防御位。
