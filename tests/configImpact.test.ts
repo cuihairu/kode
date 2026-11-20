@@ -266,3 +266,121 @@ describe('KSEM-CFG-10 type impact', () => {
     expect(impact.files).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 16 容错臂:渲染块 en 侧三分支(读取点未知/零声称/有读取点+受影响文件)、
+// engine-xml en 侧三态回退文案(未知/无引擎默认/回落默认结构)。
+// 既有臂只覆盖 zh 侧与 sensitive en 臂,en 普通分支从未执行。
+// ---------------------------------------------------------------------------
+describe('批 16:renderImpactBlock en 侧分支', () => {
+  const schemaWithGuild = () =>
+    parseSerializationSchema(
+      JSON.stringify({
+        schema_version: 1,
+        types: { T: { fields: { level: 'UINT32' } } },
+        bindings: { 'json.loads': [{ path: 'res/guild/*.json', type: 'T' }], 'json.load': [] }
+      })
+    ).schema;
+
+  it('project-json en:读取点未知(注册表不可得)', () => {
+    const impact = computeKeyImpact({
+      path: 'res/guild/g1.json', face: 'project-json',
+      customTree: null, defaultsTree: null, structure: null
+    })!;
+    const en = renderImpactBlock(impact, 'en');
+    expect(en).toContain('**Modification impact** (if this key is changed)');
+    expect(en).toContain('Read points: unknown (project config registry not available)');
+  });
+
+  it('project-json en:零声称(无绑定 glob 命中)', () => {
+    const structure = deriveProjectConfigStructure(
+      [{ file: 'a.py', text: "import json\ncfg = json.loads('res/other/x.json')" }],
+      schemaWithGuild()
+    );
+    const impact = computeKeyImpact({
+      path: 'res/other/x.json', face: 'project-json',
+      customTree: null, defaultsTree: null, structure
+    })!;
+    const en = renderImpactBlock(impact, 'en');
+    expect(en).toContain('Read points: none claimed');
+    expect(en).not.toContain('Affected files');
+  });
+
+  it('project-json en:有读取点(1 基行号)与受影响文件', () => {
+    const structure = deriveProjectConfigStructure(
+      [{ file: 'a.py', text: "import json\ncfg = json.loads('res/guild/g1.json')" }],
+      schemaWithGuild()
+    );
+    const impact = computeKeyImpact({
+      path: 'res/guild/g1.json', face: 'project-json',
+      customTree: null, defaultsTree: null, structure
+    })!;
+    const en = renderImpactBlock(impact, 'en');
+    expect(en).toContain('Read points: a.py:2');
+    expect(en).toContain('Affected files: a.py');
+  });
+
+  it('engine-xml en:三态回退文案(未知/无引擎默认/回落默认结构)', () => {
+    // 未知:defaults 树不可得
+    const unknown = computeKeyImpact({
+      path: 'baseapp.customThing', face: 'engine-xml',
+      customTree: customTree(), defaultsTree: null
+    })!;
+    expect(renderImpactBlock(unknown, 'en')).toContain(
+      'Default fallback: unknown (engine defaults tree unavailable)'
+    );
+    // 无引擎默认:组件配置键
+    const none = computeKeyImpact({
+      path: 'baseapp.customThing', face: 'engine-xml',
+      customTree: customTree(), defaultsTree: defaultsTree()
+    })!;
+    expect(renderImpactBlock(none, 'en')).toContain('Default fallback: none');
+    // 回落默认结构:容器节点
+    const container = computeKeyImpact({
+      path: 'dbmgr.telnet_service', face: 'engine-xml',
+      customTree: null, defaultsTree: defaultsTree()
+    })!;
+    expect(renderImpactBlock(container, 'en')).toContain(
+      'falls back to the engine default structure'
+    );
+  });
+});
+
+describe('批 16 续:类型影响去重与窄注册表', () => {
+  it('同表重复绑定去重;窄注册表查不到条目照跳(零 readers 不冒称)', () => {
+    const dupSchema = parseSerializationSchema(
+      JSON.stringify({
+        schema_version: 1,
+        types: { T: { fields: { level: 'UINT32' } } },
+        bindings: {
+          'json.loads': [
+            { path: 'res/guild/*.json', type: 'T' },
+            { path: 'res/guild/*.json', type: 'T' }
+          ],
+          'json.load': []
+        }
+      })
+    ).schema;
+    // 结构按窄 schema 派生:res/guild glob 无 path-binding 条目
+    const narrowStructure = deriveProjectConfigStructure(
+      [{ file: 'a.py', text: "import json\nc1 = json.loads('res/guild/g1.json')" }],
+      parseSerializationSchema(
+        JSON.stringify({
+          schema_version: 1,
+          types: { T: { fields: { level: 'UINT32' } } },
+          bindings: { 'json.loads': [], 'json.load': [] }
+        })
+      ).schema
+    );
+    const impact = computeTypeImpact('T', dupSchema, narrowStructure)!;
+    // 同 loader 同 path 重复声明只留一条
+    expect(impact.bindings).toEqual([{ glob: 'res/guild/*.json', loader: 'json.loads' }]);
+    // 窄注册表里查不到该 glob 的条目:readers 零,不冒称
+    expect(impact.readers).toEqual([]);
+  });
+});
+
+// 覆盖口径残余(不硬凑):src/backend/configImpact.ts:192 的 `seen.has(key)` 去重
+// continue 不可达——parseSerializationSchema(:178-181)已按 `path\u0000type` 在
+// 解析期去重全同条目,进表后同 loader 不可能出现同 path 两条,故 computeTypeImpact
+// 的第二道去重是防御性死码(保留为上游行为变更时的兜底)。
