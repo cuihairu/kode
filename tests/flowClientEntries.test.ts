@@ -165,3 +165,71 @@ describe('FLOW-006 诚实边界', () => {
     expect(record!.callerLabel).toContain('chooseRole');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 35:证据收集与绑定容错臂——文件不可解析跳过、非 rpc 边跳过、client 角色
+// 边跳过、模块级调用者+注册表唯一名绑(实体未知但唯一)。
+// ---------------------------------------------------------------------------
+describe('批 35:证据收集与绑定容错', () => {
+  const EXTRA = '/ws/tools/panel.py';
+  const FILES: Record<string, string> = {
+    ...CLIENT_FILES,
+    [EXTRA]: [
+      'import KBEngine',
+      '',
+      'def helper():',
+      '    pass',
+      '',
+      'def call_all():',
+      '    e = KBEngine.entities.get(1)',
+      '    e.base.ping()',
+      '    helper()',
+      '',
+      'class SpaceView:',
+      '    def onUpdate(self):',
+      '        self.client.shout()'
+    ].join('\n'),
+    '/ws/scripts/client/gone.py': 'unresolvable marker'
+  };
+  const EXPOSED_EXT: FlowExposedMethod[] = [
+    ...EXPOSED,
+    { entity: 'Avatar', section: 'BaseMethods', methodName: 'ping', defFile: '/ws/entity_defs/Avatar.def', line: 30 }
+  ];
+
+  const buildExt = () =>
+    buildClientEntries({
+      rootKey: '/ws',
+      exposedMethods: EXPOSED_EXT,
+      clientFiles: Object.keys(FILES),
+      resolveFile: filePath => {
+        const text = FILES[filePath];
+        if (filePath === '/ws/scripts/client/gone.py') {
+          return null; // 文件不可解析:如实跳过
+        }
+        return text === undefined ? null : resolveFlowCallSites({ text, filePath });
+      }
+    });
+
+  it('不可解析文件跳过;client 角色与非 rpc 调用不进证据', () => {
+    const result = buildExt();
+    // gone.py 被跳过不抛;本地函数调用(非 rpc 边)与 client 角色边零绑定
+    expect(result.bindings.find(b => b.exposed.methodName === 'helper')).toBeUndefined();
+    expect(result.bindings.find(b => b.exposed.methodName === 'shout' && b.callerNodes.some(n => n.fn?.name === 'onUpdate'))).toBeUndefined();
+  });
+
+  it('模块级调用者 + 注册表唯一 (role,name) → 绑(实体键为空)', () => {
+    const result = buildExt();
+    const binding = result.bindings.find(b => b.exposed.methodName === 'ping');
+    expect(binding).toBeDefined();
+    expect(binding!.callerNodes.length).toBeGreaterThan(0);
+    // 模块级调用者帧:函数名来自模块 def
+    expect(binding!.callerNodes.map(n => n.fn?.name)).toContain('call_all');
+  });
+});
+
+// 覆盖口径残余(批 35 定性)::144 边的 caller 节点缺位——resolveFlowCallSites
+// 产出的边 fromNodeId 恒指向本文件节点集内(自产自销不变量),跨文件悬空边
+// 经公共入口不可构造,防御位。
+// 判例:**client 接收边的剪枝按路径**——文件在 scripts/client/ 下时
+// `self.client.X` 调用边被剪(客户端脚本自身 ClientMethods 面),夹具要触发
+// client 角色收集臂须放非 client 路径(如 tools/)。
