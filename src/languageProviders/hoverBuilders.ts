@@ -5,11 +5,12 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { DefElementNode, findDeepestElementAtOffset, findTextNodeAtOffset, getScalarChildValue, getScalarChildValues, hasTruthyChildTag } from '../backend/defParser';
+import { DefElementNode, findDeepestElementAtOffset, findTextNodeAtOffset, getDirectChildElement, getScalarChildValue, getScalarChildValues, hasTruthyChildTag } from '../backend/defParser';
 import { buildDefChain } from '../backend/defChain';
+import { defFullTypeTable, fullTypeOfDefDeclaration, fullTypeOfDefProperty, type DefFullTypeDecl } from '../backend/defFullType';
 import { describePropertyDatabaseStoragePublished, getTypeStorageShape, TypeStorageShape } from '../databaseSchema';
 import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from '../databaseSimulator';
-import { findCustomTypeInfo, findTypesXmlImplementedByReference, findDefinitionFileByCategory, findEntityDefinitionFile, findEntityScriptFile, getEntityRuntimeProfile, getRegisteredEntities, getWorkspaceRootForDocument } from '../definitionWorkspace';
+import { findCustomTypeInfo, findTypesXmlImplementedByReference, findDefinitionFileByCategory, findEntityDefinitionFile, findEntityScriptFile, getEntityCustomTypesSnapshot, getEntityRuntimeProfile, getRegisteredEntities, getWorkspaceRootForDocument } from '../definitionWorkspace';
 import { describeMethodCallDirection, describePropertySyncDirection } from '../backend/entityFlowGraph';
 import { renderUserTypeContractHoverSection, userTypeContractStatusForName, implementedByBindingForWorkspace } from '../backend/userTypeContractSource';
 import { renderImplementedByBindingSection } from '../backend/implementedByBinding';
@@ -24,6 +25,8 @@ export interface SymbolHoverInfo {
   name: string;
   section: KBEngineSectionName;
   type?: string;
+  /** <Type> 的 <of> 元素类型(RUST-136 增量③ fullType 展开用) */
+  typeOf?: string;
   flags?: string;
   defaultValue?: string;
   detailLevel?: string;
@@ -33,6 +36,33 @@ export interface SymbolHoverInfo {
   args: string[];
   exposed?: boolean;
 }
+
+// RUST-136 增量③:生产悬停跟随 Rust 侧 `**Full Type**` 增面(types.xml 声明表
+// 展开,与 crates/kode-server hover 的 expand_type_token 同算法)。根键控表
+// 缓存见 defFullType;快照 entries 引用换代即重算。
+const customTypeTableFor = (document: vscode.TextDocument): Map<string, DefFullTypeDecl> | null => {
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (!workspaceRoot) {
+    return null;
+  }
+  return defFullTypeTable(workspaceRoot, getEntityCustomTypesSnapshot(workspaceRoot));
+};
+
+const propertyFullType = (
+  document: vscode.TextDocument,
+  info: Pick<SymbolHoverInfo, 'type' | 'typeOf'>
+): string | null => {
+  const table = customTypeTableFor(document);
+  return table ? fullTypeOfDefProperty(table, info.type, info.typeOf) : null;
+};
+
+const declarationFullType = (
+  document: vscode.TextDocument,
+  info: NonNullable<ReturnType<typeof findCustomTypeInfo>>
+): string | null => {
+  const table = customTypeTableFor(document);
+  return table ? fullTypeOfDefDeclaration(table, info.name) : null;
+};
 
 export function getSymbolHover(
   document: vscode.TextDocument,
@@ -51,6 +81,12 @@ export function getSymbolHover(
   if (PROPERTY_SECTIONS.has(symbolInfo.section)) {
     if (symbolInfo.type) {
       markdown.appendMarkdown(`**Type**: \`${symbolInfo.type}\`\n\n`);
+      // RUST-136 增量③:**Full Type** 紧随 **Type**(Rust render_markdown 属性
+      // 面同位)。展开=原文(内建/别名链尾/根内无 types.xml)不渲染该行。
+      const fullType = propertyFullType(document, symbolInfo);
+      if (fullType) {
+        markdown.appendMarkdown(`**Full Type**: \`${fullType}\`\n\n`);
+      }
     }
     if (symbolInfo.flags) {
       markdown.appendMarkdown(`**Flags**: \`${symbolInfo.flags}\`\n\n`);
@@ -292,7 +328,8 @@ export function getCustomTypeHover(
     // 批134:声明行悬停追加落库形态;implementedBy 值上的悬停只谈引用,不谈存储
     customTypeTarget.isImplementedByValue ? null : getTypeStorageShapeMarkdown(document, word),
     resolveUserTypeContractSection(document, customTypeTarget.info),
-    resolveImplementedByBindingSection(document, customTypeTarget.info)
+    resolveImplementedByBindingSection(document, customTypeTarget.info),
+    declarationFullType(document, customTypeTarget.info)
   );
 }
 
@@ -397,7 +434,9 @@ export function getTypeValueHover(
       customTypeInfo,
       'Referenced custom type from `types.xml`',
       null,
-      resolveUserTypeContractSection(document, customTypeInfo)
+      resolveUserTypeContractSection(document, customTypeInfo),
+      null,
+      declarationFullType(document, customTypeInfo)
     );
   }
 
@@ -420,11 +459,18 @@ export function createCustomTypeHover(
   summary: string,
   shapeMarkdown: string | null = null,
   contractSection: string | null = null,
-  bindingSection: string | null = null
+  bindingSection: string | null = null,
+  // RUST-136 增量③:声明本体展开(末尾可选参,既有位置传参调用面不变)
+  fullType: string | null = null
 ): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${customTypeInfo.name}**\n\n`);
   markdown.appendMarkdown(`${summary}\n\n`);
+  // RUST-136 增量③:**Full Type** 在 **AliasType** 之前(Rust typesXml 面
+  // TypeKind→Full Type→AliasType 同相对序)。
+  if (fullType) {
+    markdown.appendMarkdown(`**Full Type**: \`${fullType}\`\n\n`);
+  }
   markdown.appendMarkdown(`**AliasType**: \`${customTypeInfo.aliasType}\`\n\n`);
 
   if (customTypeInfo.rawValue && customTypeInfo.rawValue !== customTypeInfo.aliasType) {
@@ -707,10 +753,14 @@ export function buildSymbolHoverInfo(
   section: KBEngineSectionName,
   symbolNode: DefElementNode
 ): SymbolHoverInfo {
+  const typeNode = getDirectChildElement(symbolNode, 'Type');
   return {
     name: symbolNode.name,
     section,
     type: getScalarChildValue(symbolNode, 'Type'),
+    // RUST-136 增量③:ARRAY 指引的元素型在 <Type> 的 <of> 子元素(属性式
+    // <of> 属性形态不进快照 rawValue,按原文不展开,见 defFullType 余口)。
+    typeOf: getScalarChildValue(typeNode, 'of'),
     flags: getScalarChildValue(symbolNode, 'Flags'),
     defaultValue: getScalarChildValue(symbolNode, 'Default'),
     detailLevel: getScalarChildValue(symbolNode, 'DetailLevel'),
