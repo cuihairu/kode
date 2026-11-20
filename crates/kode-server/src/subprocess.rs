@@ -163,7 +163,10 @@ mod tests {
 
     /// 暂态族 roster:fork 资源族四类 + ETXTBSY(26,写句柄残留)同收;
     /// 权限/不存在类(13/2)是永久失败,必须进如实 Err 不退避。
+    /// errno 语义按 unix 布局(EAGAIN=11 等);Windows 的 raw OS error
+    /// 编号完全不同(11=ERROR_NO_MORE_FILES),此断言只在 unix 成立。
     #[test]
+    #[cfg(unix)]
     fn transient_spawn_family_roster() {
         for errno in [11, 12, 23, 24, 26] {
             let error = std::io::Error::from_raw_os_error(errno);

@@ -392,7 +392,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    #[cfg(unix)]
+    /// unix→linux:ETXTBSY 竞窗复现只在 linux 验证过;macOS 的 exec 对
+    /// 持写句柄脚本不必然回 ETXTBSY(行为差异,darwin-x64 真红 2026-11-21),
+    /// 该断言平台语义不在 darwin 成立。
+    #[cfg(target_os = "linux")]
     #[test]
     fn spawn_tshark_retries_then_reports_when_binary_busy() {
         // exec 撞写句柄(ETXTBSY):三次退避重试后如实上抛安装提示,
