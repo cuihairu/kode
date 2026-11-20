@@ -7,8 +7,9 @@ import {
   linkContinuations,
   type FlowContinuationInput
 } from '../src/backend/flowContinuations';
-import { resolveFlowCallSites } from '../src/backend/flowCallResolver';
+import { resolveFlowCallSites, type FlowCallResolverResult } from '../src/backend/flowCallResolver';
 import { scanBridgeContracts, type FlowBridgeEntryModule } from '../src/backend/flowBridges';
+import { flowGraphEdge, flowGraphNode, type FlowGraphEdge } from '../src/backend/flowGraphModel';
 
 // FLOW-010(旧 KFLOW-CORE-10)引擎回调与异步续段钉。
 // 验收:创建实体、数据库返回、timer 等以契约关联请求和回调;回调未可确定
@@ -265,5 +266,251 @@ describe('FLOW-010 桥 pairsWith 连线', () => {
     expect(bp).toBeDefined();
     expect(bp!.detail).toContain('onCreateAccountCallbackFromDB');
     expect(bp!.detail).toContain('pending 记录悬挂');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 覆盖批5:callArgumentsOnLine 缺名行 / 帧缓存复用 / 文件缺位与边守卫 /
+// 模块 API 同文件模块函数·lambda·跨行·双不可证 / 实体缺类身份与兜底形态 /
+// 非契约 self 调用零产出 / 桥入口模块不可解析。诚实边界:实体
+// callbackIndex===null 实参臂(448-450)按现行契约表不可达——callbackIndex
+// 为 null 的实体 API 只有 addTimer,必带 continuationMethod 走固定续段
+// 车道,不硬凑。
+// ---------------------------------------------------------------------------
+
+describe('FLOW-010 断点与原因(覆盖批5边界)', () => {
+  const API_FILE = '/ws/scripts/base/Carrier.py';
+  const WATCHER_FILE = '/ws/scripts/base/Watcher.py';
+
+  const API_TEXT = [
+    'def onUrlopenDone(httpcode, data, headers, success, url):',
+    '    pass',
+    '',
+    'class Avatar:',
+    '    def finish(self):',
+    "        KBEngine.urlopen('http://x', onUrlopenDone)",
+    '',
+    '    def ghost(self):',
+    "        KBEngine.urlopen('http://x', ghostHandler)",
+    '',
+    '    def weird(self):',
+    "        KBEngine.urlopen('http://x', self.onTimer)",
+    '',
+    '    def inline(self):',
+    "        KBEngine.urlopen('http://x', lambda hc, d, h, s, u: None)",
+    '',
+    '    def late(self):',
+    '        KBEngine.urlopen(',
+    "            'http://x',",
+    '            onUrlopenDone',
+    '        )',
+    '',
+    '    def twice(self):',
+    "        KBEngine.urlopen('http://x', done)",
+    '',
+    '    def again(self):',
+    "        KBEngine.urlopen('http://x', done)",
+    '',
+    '    def ordinary(self):',
+    '        self.plainHelper()',
+    '',
+    '    def drop(self):',
+    '        self.writeToDB(None)',
+    '',
+    '    def opaque(self):',
+    '        self.writeToDB(handleResult)',
+    '',
+    'def warmup():',
+    '    onUrlopenDone(200, "", {}, True, "http://x")'
+  ].join('\n');
+
+  const WATCHER_TEXT = [
+    'class Watcher:',
+    '    def arm(self):',
+    '        self.addTimer(0.1, 0.1, 0)'
+  ].join('\n');
+
+  const TEXTS5: Record<string, string> = {
+    [API_FILE]: API_TEXT,
+    [WATCHER_FILE]: WATCHER_TEXT
+  };
+
+  const apiInput = (overrides: Partial<FlowContinuationInput> = {}): FlowContinuationInput => ({
+    rootKey: '/ws',
+    files: Object.keys(TEXTS5),
+    resolveFile: filePath => {
+      const text = TEXTS5[filePath];
+      if (text === undefined) {
+        return null;
+      }
+      return resolveFlowCallSites({ text, filePath, rootKey: '/ws' });
+    },
+    lineTextAt: (filePath, line) => TEXTS5[filePath]?.split('\n')[line] ?? '',
+    resolveModuleFunction: name => (name === 'done' ? { filePath: API_FILE, line: 99 } : null),
+    // 本 describe 专表:类方法解析一律缺位(Watcher.onTimer 未定义 → 续段断点)
+    resolveClassMethod: () => null,
+    ...overrides
+  });
+
+  it('callArgumentsOnLine:行内无 API 名 → null(不猜)', () => {
+    expect(callArgumentsOnLine('        pass', 'urlopen')).toBeNull();
+    expect(callArgumentsOnLine('log("urlopen (quoted)", )', 'urlopen')).toBeNull();
+  });
+
+  it('裸名回调同文件模块函数:链接到解析图既有函数帧', () => {
+    const result = linkContinuations(apiInput());
+    const fileResult = resolveFlowCallSites({ text: API_TEXT, filePath: API_FILE, rootKey: '/ws' });
+    const fnNode = fileResult.nodes.find(node => node.fn?.name === 'onUrlopenDone');
+    expect(fnNode).toBeDefined();
+    const link = result.links.find(l => l.apiName === 'urlopen' && l.toNodeId === fnNode!.id);
+    expect(link).toBeDefined();
+    expect(link!.edge.evidence.detail).toContain('httpcode, data, headers, success, url');
+    expect(link!.edge.callSite?.line).toBe(5);
+  });
+
+  it('外部模块函数两次调用共帧:帧节点缓存复用同 id', () => {
+    const result = linkContinuations(apiInput());
+    const all = result.links.filter(l => l.apiName === 'urlopen');
+    expect(all).toHaveLength(3);
+    const doneLinks = all.filter(l => l.edge.callSite?.line === 23 || l.edge.callSite?.line === 26);
+    expect(doneLinks).toHaveLength(2);
+    expect(doneLinks[0].toNodeId).toBe(doneLinks[1].toNodeId);
+    expect(doneLinks[0].toNodeId).toContain(`${API_FILE}#done`);
+  });
+
+  it('裸名不可证/表达式形态:unresolved 与 unprovable 各自断点落位', () => {
+    const result = linkContinuations(apiInput());
+    const ghost = result.breakpoints.find(b => b.code === 'callback-target-unresolved');
+    expect(ghost).toBeDefined();
+    expect(ghost!.detail).toContain('ghostHandler');
+    expect(ghost!.callSite?.line).toBe(8);
+    const weird = result.breakpoints.find(
+      b => b.code === 'callback-target-unprovable' && b.detail.includes('self.onTimer')
+    );
+    expect(weird).toBeDefined();
+    expect(weird!.callSite?.line).toBe(11);
+  });
+
+  it('内联 lambda / 跨行调用:模块 API 侧断点保留原因', () => {
+    const result = linkContinuations(apiInput());
+    const lambda = result.breakpoints.find(b => b.code === 'lambda-callback');
+    expect(lambda).toBeDefined();
+    expect(lambda!.detail).toContain('urlopen');
+    expect(lambda!.callSite?.line).toBe(14);
+    const late = result.breakpoints.find(b => b.code === 'multiline-call');
+    expect(late).toBeDefined();
+    expect(late!.detail).toContain('urlopen');
+    expect(late!.callSite?.line).toBe(17);
+  });
+
+  it('非契约 self 调用零产出;实体回调缺位 None;兜底形态不可证', () => {
+    const result = linkContinuations(apiInput());
+    expect(JSON.stringify(result)).not.toContain('plainHelper');
+    const absent = result.breakpoints.find(
+      b => b.code === 'callback-absent' && b.detail.includes('writeToDB')
+    );
+    expect(absent).toBeDefined();
+    expect(absent!.detail).toContain('success, baseEntity');
+    expect(absent!.callSite?.line).toBe(32);
+    const opaque = result.breakpoints.find(b => b.detail.includes('handleResult'));
+    expect(opaque).toBeDefined();
+    expect(opaque!.code).toBe('callback-target-unprovable');
+    expect(opaque!.callSite?.line).toBe(35);
+  });
+
+  it('契约续段未定义:onTimer 缺类表 → continuation-missing 断点', () => {
+    const result = linkContinuations(apiInput());
+    const missing = result.breakpoints.find(b => b.code === 'continuation-missing');
+    expect(missing).toBeDefined();
+    expect(missing!.detail).toContain('Watcher');
+    expect(missing!.detail).toContain('onTimer');
+    expect(missing!.callSite?.line).toBe(2);
+  });
+
+  it('resolveFile 缺位文件跳过不误连', () => {
+    const baseline = linkContinuations(apiInput());
+    const ghosted = linkContinuations(
+      apiInput({ files: [...Object.keys(TEXTS5), '/ws/scripts/base/Ghost.py'] })
+    );
+    expect(ghosted.links).toHaveLength(baseline.links.length);
+    expect(ghosted.breakpoints).toHaveLength(baseline.breakpoints.length);
+  });
+
+  it('无类身份帧的实体契约:固定续段与回调绑定各自如实断点;非语法锚边/非契约调用零产出', () => {
+    const caller = flowGraphNode({
+      rootKey: '/ws',
+      role: 'unknown',
+      kind: 'function',
+      fn: { name: 'loose', filePath: '/ws/scripts/base/loose.py', signature: 'def loose' },
+      declaration: { file: '/ws/scripts/base/loose.py', line: 0, character: 0 },
+      label: '候选帧 loose'
+    });
+    const anchoredEdge = (calleeRef: string, line: number): FlowGraphEdge =>
+      flowGraphEdge({
+        fromNodeId: caller.id,
+        toNodeId: caller.id,
+        callSite: { file: '/ws/scripts/base/loose.py', line, character: 8 },
+        direction: { fromRole: 'unknown', toRole: 'unknown', kind: 'downstream-call' },
+        syncAsync: 'sync',
+        messageKind: 'local-call',
+        evidence: { type: 'syntax-anchor', detail: calleeRef }
+      });
+    const fabricated: FlowCallResolverResult = {
+      nodes: [caller],
+      edges: [
+        flowGraphEdge({
+          fromNodeId: caller.id,
+          toNodeId: caller.id,
+          direction: { fromRole: 'unknown', toRole: 'unknown', kind: 'downstream-call' },
+          syncAsync: 'sync',
+          messageKind: 'local-call',
+          evidence: { type: 'declaration-contract', detail: 'engine-side note' }
+        }),
+        anchoredEdge('self.plainCall', 1),
+        anchoredEdge('self.addTimer', 2),
+        anchoredEdge('self.writeToDB', 3)
+      ]
+    };
+    const result = linkContinuations(
+      apiInput({
+        files: ['/ws/scripts/base/loose.py'],
+        resolveFile: filePath =>
+          filePath === '/ws/scripts/base/loose.py' ? fabricated : null,
+        lineTextAt: () => ''
+      })
+    );
+    expect(result.links).toHaveLength(0);
+    expect(result.breakpoints.map(b => b.code)).toEqual([
+      'callback-target-unprovable',
+      'callback-target-unprovable'
+    ]);
+    expect(result.breakpoints[0].detail).toContain('onTimer 续段不可证');
+    expect(result.breakpoints[0].callSite?.line).toBe(2);
+    expect(result.breakpoints[1].detail).toContain('回调绑定不可证');
+    expect(result.breakpoints[1].callSite?.line).toBe(3);
+  });
+
+  it('桥 script-response 入口模块不可解析:pending-record 断点(记录面)', () => {
+    const ORPHAN: FlowBridgeEntryModule = {
+      filePath: '/ws/scripts/interface/orphan_kbemain.py',
+      text: [
+        'def onRequestAccountLogin(loginName, password, datas):',
+        '    pass'
+      ].join('\n')
+    };
+    const result = linkContinuations(
+      apiInput({
+        bridgeScan: scanBridgeContracts({
+          rootKey: '/ws',
+          entryModules: { interfaces: ORPHAN }
+        })
+      })
+    );
+    expect(result.scriptResponses).toHaveLength(0);
+    const pending = result.breakpoints.filter(b => b.code === 'pending-record-uncompleted');
+    expect(pending).toHaveLength(1);
+    expect(pending[0].detail).toContain('入口模块不可解析');
+    expect(pending[0].callSite).toBeNull();
+    expect(pending[0].edge).not.toBeNull();
   });
 });

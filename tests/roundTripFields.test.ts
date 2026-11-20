@@ -433,3 +433,151 @@ describe('roundTripFieldFindingToItem', () => {
     expect(item.range.end.character).toBe(item.range.start.character + 1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 覆盖批5:encode 嵌套 def 跳过 / 超窗字面量(配对窗 100 行,超窗
+// 不硬猜)/ 展开项键集 / 开放字面量后的写点与体尾跳过 / 掩码位写点
+// 与动态下标 / decode 赋值目标不判读取 / decode 开放面(setdefault
+// 与空白下标)/ get 侧无配对容器。诚实边界:值往返/语义等价不静态
+// 断言(既有口径);真·未闭合字面量不可作语料——残缺括号使实现绑定
+// 扫描把下一个 def 吞进上一方法体,绑定缺位即早退,断言空过无覆盖。
+// ---------------------------------------------------------------------------
+
+describe('computeRoundTripFieldFindings 覆盖批5边界', () => {
+  it('encode 嵌套 def 块整块跳过:内层 return 不并入,外层字面量照常对拍', () => {
+    const encodeLine = 'return {"x": obj["x"], "y": obj["y"]}';
+    const text = pair(
+      ['def inner(o):', '    seen = {"q": o["q"]}', '    return seen', encodeLine],
+      ['return {"x": dct["x"]}']
+    );
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].key).toBe('y');
+    expect(findings[0].line).toBe(5);
+    expect(findings[0].character).toBe(encKeyCol(encodeLine, 'y'));
+  });
+
+  it('字面量超配对窗(100 行不闭):配对 null → unknown 整容器跳过不硬猜', () => {
+    // 语料是合法 Python(括号真闭合),只是闭括号落在配对窗(100 行)
+    // 之外 → matchDictBraces 窗口超界 null。别名与 return 两臂同构。
+    // 形状 unknown:大字面量里的键(含仅 encode 侧的 lost 键)一律不
+    // 声称归向,decode 读取也不反向开_scalar。
+    const bigDictRows = (n: number): string[] => {
+      const rows: string[] = [];
+      for (let i = 0; i < n; i += 1) {
+        rows.push(`"k${i}": ${i},`);
+      }
+      return rows;
+    };
+    const lostKeyOnlyInEncode = '"onlyInEncode"';
+    expect(
+      findingsOf(pair(
+        ['d = {', ...bigDictRows(110), `    ${lostKeyOnlyInEncode}: 1,`, '}', 'return d'],
+        ['lost = dct["x"]']
+      ))
+    ).toHaveLength(0);
+    expect(
+      findingsOf(pair(
+        ['return {', ...bigDictRows(110), `    ${lostKeyOnlyInEncode}: 1,`, '}'],
+        ['lost = dct["x"]']
+      ))
+    ).toHaveLength(0);
+  });
+
+  it('展开/动态键项不进键集(开放宇宙):混合字面量整容器 unknown', () => {
+    expect(
+      findingsOf(pair(['return {"x": obj["x"], **extra}'], ['return {"x": dct["x"]}']))
+    ).toHaveLength(0);
+    expect(
+      findingsOf(pair(['return {"x": obj["x"], k: 1}'], ['return {"x": dct["x"]}']))
+    ).toHaveLength(0);
+  });
+
+  it('开放字面量后的非 return 行:写点收集与体尾开放面双双跳过', () => {
+    expect(
+      findingsOf(pair(
+        ['d = {"x": obj["x"]}', 'd.setdefault("y", 2)', 'pass', 'return d'],
+        ['return {"x": dct["x"]}']
+      ))
+    ).toHaveLength(0);
+  });
+
+  it('文档串里的写点形态:掩码位拒绝,键集不污染', () => {
+    expect(
+      findingsOf(pair(
+        ['d = {"x": obj["x"]}', '"""', 'd["y"] = 1', '"""', 'return d'],
+        ['return {"x": dct["x"]}']
+      ))
+    ).toHaveLength(0);
+  });
+
+  it('字符串位的动态下标:体尾扫描掩码核验跳过,形状保持闭合', () => {
+    expect(
+      findingsOf(pair(
+        ['d = {"x": obj["x"]}', 'log("see d[grid]")', 'return d'],
+        ['return {"x": dct["x"]}']
+      ))
+    ).toHaveLength(0);
+  });
+
+  it('下标后空白:开放面扫描跳过空白判引号键,不误开', () => {
+    expect(
+      findingsOf(pair(
+        ['d = {"x": obj["x"]}', 'self.hp = d[ "hp" ]', 'return d'],
+        ['return {"x": dct["x"]}']
+      ))
+    ).toHaveLength(0);
+  });
+
+  it('decode 赋值目标键不判读取:写 x 不压制 encodeOnly(x/y 齐报)', () => {
+    const encodeLine = 'return {"x": obj["x"], "y": obj["y"]}';
+    const text = pair([encodeLine], ['dct["x"] = 1']);
+    const findings = findingsOf(text);
+    expect(findings.map(f => f.key)).toEqual(['x', 'y']);
+    expect(findings.every(f => f.direction === 'encodeOnly')).toBe(true);
+    expect(findings[0].line).toBe(2);
+    expect(findings[0].character).toBe(encKeyCol(encodeLine, 'x'));
+    expect(findings[1].character).toBe(encKeyCol(encodeLine, 'y'));
+  });
+
+  it('decode setdefault 开放面:压 encodeOnly,decodeOnly 照报', () => {
+    // setdefault 令 decode 宇宙开放(压 x/y encodeOnly);decodeOnly
+    // 认读取位,setdefault 写位不算读 → decode 体须真读 z。
+    const text = trio(
+      ['return {"x": obj["x"], "y": obj["y"]}'],
+      ['dct.setdefault("z", 1)', 'lost = dct["z"]']
+    );
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ direction: 'decodeOnly', key: 'z' });
+  });
+
+  it('decode 动态下标前空白:开放面同扫描(开放只压 encodeOnly)', () => {
+    const text = trio(
+      ['return {"x": obj["x"], "y": obj["y"]}'],
+      ['probe = dct [ t ]', 'extra = dct.get("z")']
+    );
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ direction: 'decodeOnly', key: 'z' });
+  });
+
+  it('get 侧无配对容器跳过:混排不串扰', () => {
+    const text = lines([
+      'class PairSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj["x"], "y": obj["y"]}',
+      '',
+      '    def createObjFromDict(self, dct):',
+      '        return {"x": dct["x"]}',
+      '',
+      'class SingleSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj["x"]}',
+      ''
+    ]);
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ container: 'PAIR', key: 'y', direction: 'encodeOnly' });
+  });
+});
