@@ -6,9 +6,8 @@
 //!   1) accesses = `\bself\.(\w+(?:\.\w+)*)`(propertyCodeLens 同正则,列取
 //!      后缀算术 match.index+len-path_len,躲 indexOf 同形子串);
 //!   2) init 赋值扫描 = `def __init__` 出块缩进行扫 + `self.(\w+)\s*=(?!=)`
-//!      以及 RHS 内 `self.cellData[\"k\"]`/`.get(\"k\")` 键提取(注意 TS 按 '\n'
-//!      切分,行尾 \r 全保留;且 `(.*)$` 尾锚下 JS `.` 不匹配行终结符——携
-//!      \r 行整匹配失败即不出赋值,crlf 对拍抓出);
+//!      以及 RHS 内 `self.cellData[\"k\"]`/`.get(\"k\")` 键提取。所有扫描按
+//!      CRLF 或 LF 切行，孤立的 \r 保持原样;
 //!   3) cellData 键访问 = `self.cellData[\"k\"]`(须闭])/`.get(\"k\")`(无须
 //!      闭)),列取 match[0].indexOf(key) 首次出现语义(既有口径,含键名命中
 //!      'self.cellData' 前缀的既行行为)。
@@ -359,7 +358,7 @@ fn init_assign_of(line: &[u16]) -> Option<(usize, String, usize, usize)> {
     Some((i, name, j, k + 1))
 }
 
-/// def __init__ 出块扫描(TS `split('\n')` 口径:raw 视图,孤/尾 \r 全保留;
+/// def __init__ 出块扫描(TS `split(/\r?\n/)` 口径:剥除 CRLF 的 \r，保留孤 \r;
 /// 空行(trim 全空白,JS 全类)跳过不退出;缩进回落出块;`==`/增强/注解
 /// 不计)。返 (names, sites, cellKeys)。
 fn scan_init_assignments(text: &str) -> (Vec<String>, Vec<InitSiteItem>, Vec<CellDataKeyPair>) {
@@ -367,7 +366,7 @@ fn scan_init_assignments(text: &str) -> (Vec<String>, Vec<InitSiteItem>, Vec<Cel
     let mut sites = Vec::new();
     let mut cell_keys = Vec::new();
     let mut init_indent: Option<usize> = None;
-    for (line_idx, line) in split_lines(text).1.iter().enumerate() {
+    for (line_idx, line) in split_lines(text).0.iter().enumerate() {
         if let Some(indent) = init_def_indent(line) {
             init_indent = Some(indent);
             continue;
@@ -579,13 +578,13 @@ mod tests {
     }
 
     #[test]
-    fn init_assignment_crlf_line_whole_match_fails() {
-        // TS `(.*)$` 尾锚:JS `.` 不匹配行终结符 → 携尾 \r 行整匹配失败
-        // (init 扫描空、影子抑制不生效;crlf-corpus 对拍抓出的真分歧)
-        let text = "class A:\r\n    def __init__(self):\r\n        self.hp = 1\r\n";
-        let (names, sites, _) = scan_init_assignments(text);
-        assert!(names.is_empty());
-        assert!(sites.is_empty());
+    fn init_assignment_crlf_preserves_cell_data_copy() {
+        let text = "class A:\r\n    def __init__(self):\r\n        self.hp = self.cellData[\"hp\"]\r\n";
+        let (names, sites, keys) = scan_init_assignments(text);
+        assert_eq!(names, vec!["hp"]);
+        assert_eq!(sites[0].line, 2);
+        assert_eq!(sites[0].character, 15);
+        assert_eq!(keys[0].key, "hp");
     }
 
     #[test]

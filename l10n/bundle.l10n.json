@@ -273,6 +273,7 @@
   "Attached": "Attached",
   "Failed": "Failed",
   "(Flags not configured)": "(Flags not configured)",
+  "Base copy of self.cellData[\"{key}\"] (DEF domains: {domains}). The value depends on whether the assignment has run.": "Base copy of self.cellData[\"{key}\"] (DEF domains: {domains}). The value depends on whether the assignment has run.",
   "base-side copy of the cell def field {key} — assigned in __init__ from self.cellData; the engine syncs {key} only to the {domains} domain, reads here see the copy": "base-side copy of the cell def field {key} — assigned in __init__ from self.cellData; the engine syncs {key} only to the {domains} domain, reads here see the copy",
   "cellData[\"{key}\"] carries the {domains} def field — the cell side writes it, base reads the copy here": "cellData[\"{key}\"] carries the {domains} def field — the cell side writes it, base reads the copy here",
   "cellData[\"{key}\"] never carries this def field: the {domains} domain set has no cell part, so the engine does not put it into cellData": "cellData[\"{key}\"] never carries this def field: the {domains} domain set has no cell part, so the engine does not put it into cellData",

@@ -252,8 +252,8 @@ suite('propertyDirection Rust↔TS 扫描束对拍(真实 kode-server)', () => {
           expect(rustBundle, `${sample.label}: 零线索应回合法空束`).not.toBeNull();
         } else {
           expect(calls.length, `${sample.label}: 应恰好一次 RPC`).toBe(callsBefore + 1);
-          expect(calls[calls.length - 1].params, `${sample.label}: params.text=原文`).toEqual({
-            text: sample.text
+          expect(calls[calls.length - 1].params, `${sample.label}: RPC 统一 CRLF 换行`).toEqual({
+            text: sample.text.replace(/\r\n/g, '\n')
           });
         }
         // 束面对拍(严格面:五份逐位,Set/Map 结构等)
@@ -301,14 +301,14 @@ suite('propertyDirection Rust↔TS 扫描束对拍(真实 kode-server)', () => {
       expect(shadow).toHaveLength(2);
       expect(shadow.every(f => f.code === PROPERTY_DIRECTION_SHADOW_DIAGNOSTIC_CODE)).toBe(true);
       expect(shadow.every(f => f.severity === 'Information')).toBe(true);
-      // CRLF 语料:TS init 扫描 `(.*)$` 尾锚(JS `.` 不匹配行终结符)→ 携 \r
-      // 行整匹配失败,影子不生效,裸访问仍出 Warning 违规 + RHS 键提示
+      // CRLF and LF must agree on both the cached attribute and the source key.
       const crlf = await rustFindingsOf(SYNTHETIC_SAMPLES[12]);
       expect(
         crlf.some(
           f => f.code === PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE && f.severity === 'Warning'
         )
-      ).toBe(true);
+      ).toBe(false);
+      expect(crlf.filter(f => f.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE)).toHaveLength(2);
       expect(crlf.some(f => f.code === PROPERTY_DIRECTION_CELL_DATA_KEY_DIAGNOSTIC_CODE)).toBe(true);
       // 复制属性两流:赋值行(裸访问命中,emitted 去重赋值位)+ 裸访问位 +
       // RHS cellData 键提示 = 2 copy + 1 key

@@ -158,7 +158,11 @@ export async function buildPropertyDirectionScanBundleWithRust(
   if (!text.includes('self.')) {
     return emptyBundle();
   }
-  const response = await gate.runInRust<unknown>(PROPERTY_DIRECTION_RUST_METHOD, { text });
+  // Older packaged cores drop initializer assignments with a trailing CR.
+  // Normalizing CRLF preserves all line and in-line UTF-16 coordinates.
+  const response = await gate.runInRust<unknown>(PROPERTY_DIRECTION_RUST_METHOD, {
+    text: text.includes('\r\n') ? text.replace(/\r\n/g, '\n') : text
+  });
   if (!response.ok) {
     return null;
   }

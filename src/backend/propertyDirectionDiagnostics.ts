@@ -31,6 +31,7 @@
 import { findPythonSelfPropertyAccesses } from './propertyCodeLens';
 import { l10nText } from '../nlsRuntime';
 import { inferMethodSectionFromPythonFile } from '../entityMapping';
+import { pythonStatements } from './pythonParser';
 import type { PropertyFlagDomain } from './defAnalyzer';
 
 export const PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionViolation';
@@ -149,7 +150,7 @@ export function findInitAssignedSelfProperties(text: string): InitAssignedSelfPr
   const sites = new Map<string, InitAssignmentSite>();
   const cellDataCopyKeys = new Map<string, string>();
   let initIndent = -1;
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const defMatch = /^(\s*)def\s+__init__\s*\(/.exec(line);
@@ -239,6 +240,54 @@ export interface PropertyDirectionScanBundle {
   cellDataAccesses: CellDataKeyAccess[];
 }
 
+interface CellDataCopyScope {
+  keys: Map<string, string | null>;
+  assignments: Map<number, { name: string; key: string }>;
+}
+
+/** Resolve direct copy origins inside each class, independently of the scanner backend. */
+function scanCellDataCopyScopes(text: string): Map<number, CellDataCopyScope> {
+  const byLine = new Map<number, CellDataCopyScope>();
+  if (!text.includes('self.cellData')) { return byLine; }
+  const lines = text.split(/\r?\n/);
+  const stack: Array<{ indent: number; scope?: CellDataCopyScope; method?: boolean }> = [];
+  for (const statement of pythonStatements(text)) {
+    const { line, endLine, indent } = statement;
+    while (stack.length && stack[stack.length - 1].indent >= indent) { stack.pop(); }
+    const parent = stack[stack.length - 1];
+    if (/^\s*class\s+\w+/.test(statement.text)) {
+      stack.push({ indent, scope: { keys: new Map(), assignments: new Map() } });
+      continue;
+    }
+    if (/^\s*(?:async\s+)?def\s+\w+\s*\(/.test(statement.text)) {
+      const method = parent?.scope !== undefined && !parent.method
+        && /^\s*(?:async\s+)?def\s+\w+\s*\(\s*self\s*(?=[,):])/.test(statement.text);
+      stack.push({ indent, scope: method ? parent.scope : undefined, method });
+      continue;
+    }
+    if (!parent?.method || !parent.scope) { continue; }
+    const { scope } = parent;
+    for (let row = line; row <= endLine; row += 1) { byLine.set(row, scope); }
+    const target = /^\s*self\.([A-Za-z_]\w*)\s*(?::[^=]+)?=(?!=)/.exec(statement.text);
+    if (!target) { continue; }
+    const name = target[1];
+    const rhs = statement.text.slice(target[0].length);
+    const direct = /^\s*\(*\s*self\.cellData\s*(?:\[|\.get\s*\()/.test(rhs);
+    const rawKey = direct
+      ? /^\s*\(*\s*self\.cellData\s*(?:\[\s*(["'])([^"'\r\n]+)\1\s*\]|\.get\s*\(\s*(["'])([^"'\r\n]+)\3)/.exec(
+        lines.slice(line, endLine + 1).join('\n').slice(target[0].length)
+      )
+      : null;
+    const key = rawKey?.[2] ?? rawKey?.[4];
+    if (key !== undefined) { scope.assignments.set(line, { name, key }); }
+    // When a destination has multiple possible origins, keep each
+    // assignment's own hint and leave other reads to normal resolution.
+    const previous = scope.keys.get(name);
+    scope.keys.set(name, key !== undefined && (previous === undefined || previous === key) ? key : null);
+  }
+  return byLine;
+}
+
 /** 本地扫描束(兜底与缺省路径;Rust 面同形供给,判定核零分叉) */
 export function scanBundleOf(text: string): PropertyDirectionScanBundle {
   return {
@@ -260,7 +309,8 @@ export function findPropertyDirectionFindings(
   text: string,
   filePath: string,
   resolve: (propertyPath: string, rootSymbol: string) => PropertyDirectionHit | null | undefined,
-  bundle: PropertyDirectionScanBundle = scanBundleOf(text)
+  bundle: PropertyDirectionScanBundle = scanBundleOf(text),
+  copyScopes = inferProcessScopeFromPythonFile(filePath) === 'base' ? scanCellDataCopyScopes(text) : undefined
 ): PropertyDirectionFinding[] {
   const fileScope = inferProcessScopeFromPythonFile(filePath);
   const initAssigned = bundle.initAssigned;
@@ -277,6 +327,37 @@ export function findPropertyDirectionFindings(
     if (RECEIVER_SCOPE[root] && segments.length >= 2) {
       receiver = RECEIVER_SCOPE[root];
       propertyPath = segments.slice(1).join('.');
+    }
+
+    // The destination is a Base instance attribute. Its type and navigation
+    // come from the Cell key, even when its own name has no def declaration.
+    const copyScope = copyScopes?.get(access.line);
+    const assignment = copyScope?.assignments.get(access.line);
+    const copiedKey = receiver ? undefined
+      : (assignment?.name === root ? assignment.key : copyScope?.keys.get(root)) ?? undefined;
+    const copiedFrom = copiedKey === undefined ? undefined : resolve(copiedKey, copiedKey);
+    if (copiedKey !== undefined && copiedFrom?.domains.includes('cell')) {
+      emitted.add(`${access.line}\u0000${root}`);
+      findings.push({
+        line: access.line,
+        character: access.character,
+        length: root.length,
+        propertyPath,
+        fileScope,
+        domains: copiedFrom.domains,
+        severity: 'Information',
+        code: PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE,
+        cellDataKey: copiedKey,
+        endCharacter: access.character + root.length,
+        typeName: copiedFrom.typeName,
+        defFile: copiedFrom.defFile,
+        defLine: copiedFrom.defLine,
+        message: l10nText(
+          'Base copy of self.cellData["{key}"] (DEF domains: {domains}). The value depends on whether the assignment has run.',
+          { key: copiedKey, domains: domainLabel(copiedFrom.domains) }
+        )
+      });
+      continue;
     }
 
     const hit = resolve(propertyPath, propertyPath.split('.')[0]);
@@ -577,13 +658,17 @@ export async function findPropertyDirectionFindingsAsync(
     ...bundle.cellDataAccesses.map(access => access.key),
     ...bundle.initAssigned.cellDataCopyKeys.values()
   ]);
+  const copyScopes = inferProcessScopeFromPythonFile(filePath) === 'base' ? scanCellDataCopyScopes(text) : undefined;
+  for (const scope of new Set(copyScopes?.values())) {
+    for (const assignment of scope.assignments.values()) { cellKeys.add(assignment.key); }
+  }
   for (const key of cellKeys) {
     const cacheKey = `${key}\u0000${key}`;
     if (!cache.has(cacheKey)) {
       cache.set(cacheKey, (await resolve(key, key)) ?? null);
     }
   }
-  return findPropertyDirectionFindings(text, filePath, syncResolve, bundle);
+  return findPropertyDirectionFindings(text, filePath, syncResolve, bundle, copyScopes);
 }
 
 /**

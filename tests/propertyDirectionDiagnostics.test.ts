@@ -408,6 +408,98 @@ describe('findInitAssignedSelfProperties __init__ 赋值扫描', () => {
 });
 
 describe('影子属性降级(__init__ 赋值 → 不再报 Warning)', () => {
+  it('Windows CRLF 源码中的初始化缓存不产生方向下划线', () => {
+    const text = COPY_FIXTURE.replace(/\n/g, '\r\n');
+    expect(propertyDirectionDiagnosticItems(text, BASE_FILE, resolver({ spaceUType: SPACE_U_TYPE }), true))
+      .toEqual([]);
+  });
+
+  it('普通方法和回调中的缓存按所属类索引，后续读取链接 Cell 声明', async () => {
+    const text = [
+      'class Hero:',
+      '    def cache_before_create(self):',
+      '        self.hp = self.cellData["hp"]',
+      '    def onGetCell(self):',
+      '        return self.hp',
+      'class Other:',
+      '    def onGetCell(self):',
+      '        return self.hp'
+    ].join('\n');
+    const resolve = async () => hit(['cell'], { typeName: 'UINT32', defLine: 42 });
+    const hints = await propertyDirectionShadowHintItemsAsync(text, BASE_FILE, resolve, true);
+    expect(hints.filter(hint => hint.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE)
+      .map(hint => [hint.position.line, hint.location?.line])).toEqual([[2, 42], [4, 42]]);
+    const diagnostics = await propertyDirectionDiagnosticItemsAsync(text, BASE_FILE, resolve, true);
+    expect(diagnostics.filter(item => item.code === PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE)
+      .map(item => item.range.start.line)).toContain(7);
+    expect(diagnostics.some(item => item.range.start.line === 4)).toBe(false);
+  });
+
+  it('异步诊断路径能解析普通方法中的多行带注解缓存', async () => {
+    const text = [
+      'class Hero:',
+      '    def cache(self):',
+      '        self.saved: int = self.cellData[',
+      '            "hp"',
+      '        ]',
+      '    def read(self):',
+      '        return self.saved'
+    ].join('\n');
+    const hints = await propertyDirectionShadowHintItemsAsync(
+      text, BASE_FILE, async (path) => path === 'hp' ? hit(['cell'], { typeName: 'UINT32' }) : null, true
+    );
+    expect(hints.filter(hint => hint.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE)
+      .map(hint => [hint.position.line, hint.label]))
+      .toEqual([[2, 'copied property hp: UINT32 · cell'], [6, 'copied property hp: UINT32 · cell']]);
+  });
+
+  it('Base 声明按 Flags 判定，只对有 Cell 来源的字段提示并链接来源', async () => {
+    const text = [
+      'class Hero:',
+      '    def __init__(self):',
+      '        self.cached_hp = self.cellData["hp"]',
+      '    def onTick(self):',
+      '        return self.account, self.cached_hp, self.cell.account'
+    ].join('\r\n');
+    const resolve = async (path: string, root: string) => resolver({
+      account: hit(['base']),
+      cached_hp: hit(['base'], { typeName: 'UINT32', defLine: 9 }),
+      hp: hit(['cell'], { typeName: 'UINT32', defFile: '/ws/scripts/entity_defs/CellStats.def', defLine: 42 })
+    })(path, root);
+    const diagnostics = await propertyDirectionDiagnosticItemsAsync(text, BASE_FILE, resolve, true);
+    expect(diagnostics.map(item => item.range.start.character))
+      .toEqual([text.split('\r\n')[4].lastIndexOf('account')]);
+    const hints = await propertyDirectionShadowHintItemsAsync(text, BASE_FILE, resolve, true);
+    const copies = hints.filter(hint => hint.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE);
+    expect(copies.map(hint => hint.position.line)).toEqual([2, 4]);
+    expect(copies.every(hint => hint.label === 'copied property hp: UINT32 · cell')).toBe(true);
+    expect(copies.map(hint => hint.location)).toEqual(Array(2).fill({
+      uri: '/ws/scripts/entity_defs/CellStats.def', line: 42
+    }));
+  });
+
+  it('缓存改名或撞到另一个 def 字段时，使用来源字段的类型和位置', async () => {
+    const text = [
+      'class Hero:',
+      '    def __init__(self):',
+      '        self.cached_hp = self.cellData["hp"]',
+      '        self.cached_mp = self.cellData["hp"]',
+      '    def onTick(self):',
+      '        return self.cached_hp, self.cached_mp, self.base.cached_mp'
+    ].join('\n');
+    const resolve = async (propertyPath: string, rootSymbol: string) => resolver({
+      hp: hit(['cell'], { typeName: 'UINT32', defLine: 12 }),
+      cached_mp: hit(['cell'], { typeName: 'STRING', defLine: 20 })
+    })(propertyPath, rootSymbol);
+    const findings = await findPropertyDirectionFindingsAsync(text, BASE_FILE, resolve);
+    const reads = findings.filter(item => item.line === 5);
+    expect(reads.filter(item => item.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE)
+      .map(item => [item.propertyPath, item.typeName, item.defLine]))
+      .toEqual([['cached_hp', 'UINT32', 12], ['cached_mp', 'UINT32', 12]]);
+    expect(reads.filter(item => item.code === PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE)
+      .map(item => item.receiver)).toEqual(['base']);
+  });
+
   it('cellData 取值副本:裸访问出复制属性提示,诊断流零产出', () => {
     const findings = findPropertyDirectionFindings(
       COPY_FIXTURE,
