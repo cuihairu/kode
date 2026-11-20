@@ -46,11 +46,11 @@ struct Golden {
 
 #[test]
 fn def_param_hints_golden_structure_is_complete() {
-    let committed = std::fs::read_to_string(
-        repo_root().join(kode_server::def_param_hints::GOLDEN_REL_PATH),
-    )
-    .expect("golden");
-    let value: Golden = serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
+    let committed =
+        std::fs::read_to_string(repo_root().join(kode_server::def_param_hints::GOLDEN_REL_PATH))
+            .expect("golden");
+    let value: Golden =
+        serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     // 语料规模与自含性(name/path/text 三元)
     assert!(value.corpus.len() >= 10, "语料应覆盖边界形态族");
     for entry in &value.corpus {
@@ -59,8 +59,15 @@ fn def_param_hints_golden_structure_is_complete() {
             "语料条目形: {entry}"
         );
     }
-    assert_eq!(value.probes.len(), value.outcomes.len(), "探测数与产出数一致");
-    assert!(value.probes.len() >= 30, "探测面规模(12 语料站点面 + 声明配对面)");
+    assert_eq!(
+        value.probes.len(),
+        value.outcomes.len(),
+        "探测数与产出数一致"
+    );
+    assert!(
+        value.probes.len() >= 30,
+        "探测面规模(12 语料站点面 + 声明配对面)"
+    );
     // 两面全覆盖审计
     let mut lit = std::collections::BTreeSet::new();
     for probe in &value.probes {
@@ -78,11 +85,17 @@ fn def_param_hints_golden_structure_is_complete() {
                     assert!(site["line"].is_u64(), "site 行: {site}");
                     assert!(site["methodName"].is_string(), "site 方法名: {site}");
                     assert!(site["section"].is_string(), "site 段: {site}");
-                    assert!(site["closeParenCharacter"].is_u64(), "site 闭括号列: {site}");
+                    assert!(
+                        site["closeParenCharacter"].is_u64(),
+                        "site 闭括号列: {site}"
+                    );
+                    // KODE-SYN-004:跨行行位字段随模型一并钉形
+                    assert!(site["closeParenLine"].is_u64(), "site 闭括号行: {site}");
                     for param in site["params"].as_array().expect("params 数组") {
                         assert!(
                             param["start"].is_u64()
                                 && param["end"].is_u64()
+                                && param["line"].is_u64()
                                 && param["name"].is_string()
                                 && param["hasAnnotation"].is_boolean()
                                 && param["isStar"].is_boolean(),
@@ -98,7 +111,10 @@ fn def_param_hints_golden_structure_is_complete() {
                 }
                 for item in items {
                     let position = &item["position"];
-                    assert!(position["line"].is_u64() && position["character"].is_u64(), "位置形: {item}");
+                    assert!(
+                        position["line"].is_u64() && position["character"].is_u64(),
+                        "位置形: {item}"
+                    );
                     assert!(item["text"].is_string(), "text 形: {item}");
                     let kind = item["kind"].as_str().expect("kind");
                     assert!(kind == "Parameter" || kind == "Type", "kind 形: {item}");

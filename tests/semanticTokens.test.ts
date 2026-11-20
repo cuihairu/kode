@@ -51,7 +51,7 @@ describe('semantic tokens decision core (RUST-144 batch 3)', () => {
     });
   });
 
-  it('字符串与注释内伪声明不触发;跨行 def 形参不出', () => {
+  it('字符串与注释内伪声明不触发;跨行 def 形参落各自所在行', () => {
     const text = [
       'x = "def fake(self, a):"',
       '# class Ghost:',
@@ -63,10 +63,13 @@ describe('semantic tokens decision core (RUST-144 batch 3)', () => {
     const spans = buildSemanticTokenSpans(text);
     expect(spans.some(span => span.type === 'class')).toBe(true);
     expect(spans.map(span => span.type)).not.toContain('function');
-    // 跨行 def:方法名出(单行),形参不出(同行括号不闭合)
+    // 跨行 def(KODE-SYN-004):方法名出(单行),形参出且落各自所在行
     const method = spans.find(span => span.type === 'method');
     expect(method).toBeDefined();
-    expect(spans.filter(span => span.type === 'parameter')).toEqual([]);
+    expect(spans.filter(span => span.type === 'parameter')).toEqual([
+      { line: 3, startCharacter: 20, length: 1, type: 'parameter', modifiers: ['declaration'] },
+      { line: 4, startCharacter: 14, length: 1, type: 'parameter', modifiers: ['declaration'] }
+    ]);
   });
 
   it('encodeSemanticTokens LSP 相对编码与类型索引', () => {

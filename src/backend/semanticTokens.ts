@@ -7,7 +7,7 @@
 // 与局部变量面不做(与 Pylance 冲突大+需 self scope 分析,后续批次按
 // RUST-148 冲突矩阵裁度);跨行 def 的形参不提取(与 inlay 同单行闸)。
 import { parsePythonFile, pythonCodeLines, pythonStatements } from './pythonParser';
-import { parseDefLine } from '../defParamInlayHints';
+import { parseDefSignature } from '../defParamInlayHints';
 
 /** legend 顺序即编码 typeIndex(与 Rust semantic_tokens.rs 同序,勿改序) */
 export const SEMANTIC_TOKEN_TYPES = ['class', 'function', 'method', 'parameter', 'macro'] as const;
@@ -99,7 +99,7 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
         modifiers
       });
       collectParameterSpans(
-        maskedLines[statement.line] ?? '',
+        maskedLines,
         statement.line,
         methodName,
         start,
@@ -126,7 +126,7 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
   for (const cls of parsed.classes) {
     for (const [methodName, location] of cls.methods) {
       collectParameterSpans(
-        maskedLines[location.line] ?? '',
+        maskedLines,
         location.line,
         methodName,
         location.character,
@@ -142,27 +142,28 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
 }
 
 /**
- * 单行闭合 def 的形参 span(parseDefLine+splitParams,与 inlay 同一套;
- * 跨行不出)。参数自带 declaration+async 修饰。
+ * def 形参 span(parseDefSignature,与 inlay 同一套统一事实源=掩码行域;
+ * KODE-SYN-004 起签名可跨行,span 落形参名所在行)。参数自带 declaration+
+ * async 修饰。
  */
 function collectParameterSpans(
-  lineText: string,
+  maskedLines: readonly string[],
   line: number,
   methodName: string,
   nameCharacter: number,
   spans: SemanticTokenSpan[],
   modifiers: string[]
 ): void {
-  // 单行闭合闸+形参切分与 inlay 同一套:parseDefLine 的 site.params 已剥
-  // 首参 self/cls(本扩展 parameter 语义=RPC 形参,接收者不是形参,与
-  // inlay/签名 formatter 同口径),跨行(同行括号不闭合)不出。
-  const site = parseDefLine(lineText, line, methodName, nameCharacter, 'ClientMethods');
+  // 形参切分与 inlay 同一套:parseDefSignature 的 site.params 已剥首参
+  // self/cls(本扩展 parameter 语义=RPC 形参,接收者不是形参,与 inlay/
+  // 签名 formatter 同口径),未闭合签名(编辑中)不出。
+  const site = parseDefSignature(maskedLines, line, methodName, nameCharacter, 'ClientMethods');
   if (!site) {
     return;
   }
   for (const param of site.params) {
     spans.push({
-      line,
+      line: param.line,
       startCharacter: param.start,
       length: param.end - param.start,
       type: 'parameter',

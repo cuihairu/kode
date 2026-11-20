@@ -2,12 +2,13 @@
 // ——class/方法/模块级函数声明名、def 形参名、装饰器名,共 5 类 token
 // (语法关键字/字符串面留给 TextMate grammar,不与之重叠)。纯函数零
 // RPC,解析复用 def_param_hints(python_code_lines/python_statements/
-// parse_python_file/parse_def_line 同一套 def 行扫描,口径一致),全程
+// parse_python_file/parse_def_signature 同一套 def 行扫描,口径一致),全程
 // UTF-16 单元域。诚实边界:self.X 属性访问与局部变量面不做(与
 // Pylance 冲突大+需 self scope 分析,后续批次按 RUST-148 冲突矩阵裁
-// 度);跨行 def 的形参不提取(与 inlay 同单行闸)。
+// 度);跨行 def 形参随 KODE-SYN-004 掩码行核支持(形参 span 落各自
+// 所在行,与 inlay 同核)。
 use crate::def_param_hints::{
-    index_from, is_ident_start, is_ident_unit, parse_def_line, parse_python_file,
+    index_from, is_ident_start, is_ident_unit, parse_def_signature, parse_python_file,
     python_code_lines, python_statements, units, units_to_string,
 };
 use serde::{Deserialize, Serialize};
@@ -150,25 +151,31 @@ fn is_async_def_line(line: &str) -> bool {
     i < u.len() && is_js_space(u[i])
 }
 
-/// 单行闭合 def 的形参 span(parse_def_line 与 inlay 同一套;site.params
-/// 已剥首参 self/cls——本扩展 parameter 语义=RPC 形参,接收者不是形参,
-/// 与 inlay/签名 formatter 同口径;跨行不出)。
+/// def 形参 span(KODE-SYN-004:掩码行域跨行核,与 inlay 同一套
+/// parse_def_signature;site.params 已剥首参 self/cls——本扩展 parameter
+/// 语义=RPC 形参,接收者不是形参,与 inlay/签名 formatter 同口径;每个
+/// 形参 span 落其自身所在行)。
 #[allow(clippy::too_many_arguments)]
 fn collect_parameter_spans(
-    line_text: &str,
+    masked_lines: &[String],
     line: usize,
     method_name: &str,
     name_character: usize,
     modifiers: &[&str],
     spans: &mut Vec<SemanticTokenSpan>,
 ) {
-    let Some(site) = parse_def_line(line_text, line, method_name, name_character, "ClientMethods")
-    else {
+    let Some(site) = parse_def_signature(
+        masked_lines,
+        line,
+        method_name,
+        name_character,
+        "ClientMethods",
+    ) else {
         return;
     };
     for param in &site.params {
         spans.push(SemanticTokenSpan {
-            line,
+            line: param.line,
             start_character: param.start,
             length: param.end - param.start,
             token_type: "parameter".into(),
@@ -187,7 +194,10 @@ pub fn build_semantic_token_spans(text: &str) -> Vec<SemanticTokenSpan> {
 
     // 类声明名(掩码行内 class 后名字;掩码位置不变故列对齐原文)
     for cls in &parsed {
-        let line_text = masked_lines.get(cls.start_line).map(String::as_str).unwrap_or("");
+        let line_text = masked_lines
+            .get(cls.start_line)
+            .map(String::as_str)
+            .unwrap_or("");
         if let Some((name, match_end)) = match_class_name(line_text) {
             let name_units = units(&name).len();
             let from = match_end - name_units;
@@ -241,14 +251,9 @@ pub fn build_semantic_token_spans(text: &str) -> Vec<SemanticTokenSpan> {
                     token_type: "function".into(),
                     modifiers: modifiers.clone(),
                 });
-                let masked = masked_lines
-                    .get(statement.line)
-                    .map(String::as_str)
-                    .unwrap_or("");
-                let modifier_refs: Vec<&str> =
-                    modifiers.iter().map(String::as_str).collect();
+                let modifier_refs: Vec<&str> = modifiers.iter().map(String::as_str).collect();
                 collect_parameter_spans(
-                    masked,
+                    &masked_lines,
                     statement.line,
                     &name,
                     start,
@@ -283,11 +288,22 @@ pub fn build_semantic_token_spans(text: &str) -> Vec<SemanticTokenSpan> {
             } else {
                 vec!["declaration"]
             };
-            collect_parameter_spans(masked, *line, method_name, *character, &modifiers, &mut spans);
+            collect_parameter_spans(
+                &masked_lines,
+                *line,
+                method_name,
+                *character,
+                &modifiers,
+                &mut spans,
+            );
         }
     }
 
-    spans.sort_by(|a, b| a.line.cmp(&b.line).then(a.start_character.cmp(&b.start_character)));
+    spans.sort_by(|a, b| {
+        a.line
+            .cmp(&b.line)
+            .then(a.start_character.cmp(&b.start_character))
+    });
     spans
 }
 
@@ -468,12 +484,7 @@ fn semantic_corpus() -> Vec<SemanticCorpusEntry> {
         },
         SemanticCorpusEntry {
             name: "only_comments".into(),
-            text: concat!(
-                "# 只有注释\n",
-                "# class Phantom:\n",
-                "\n",
-            )
-            .into(),
+            text: concat!("# 只有注释\n", "# class Phantom:\n", "\n",).into(),
         },
     ]
 }
@@ -491,10 +502,14 @@ fn semantic_probes() -> Vec<SemanticProbe> {
     ];
     let mut probes = Vec::new();
     for name in names {
-        probes.push(SemanticProbe::Spans { corpus: name.into() });
+        probes.push(SemanticProbe::Spans {
+            corpus: name.into(),
+        });
     }
     for name in names {
-        probes.push(SemanticProbe::Encoded { corpus: name.into() });
+        probes.push(SemanticProbe::Encoded {
+            corpus: name.into(),
+        });
     }
     probes
 }
@@ -604,14 +619,39 @@ mod tests {
         let spans = build_semantic_token_spans(text);
         assert!(spans.iter().any(|span| span.token_type == "class"));
         assert!(!spans.iter().any(|span| span.token_type == "function"));
-        // 跨行 def:方法名出(单行),形参不出(同行括号不闭合)
+        // 跨行 def(KODE-SYN-004):方法名出,形参落各自所在行(a 行3/b 行4)
         assert!(spans.iter().any(|span| span.token_type == "method"));
-        assert!(!spans.iter().any(|span| span.token_type == "parameter"));
+        let params: Vec<&SemanticTokenSpan> = spans
+            .iter()
+            .filter(|span| span.token_type == "parameter")
+            .collect();
+        assert_eq!(
+            params,
+            vec![
+                &SemanticTokenSpan {
+                    line: 3,
+                    start_character: 20,
+                    length: 1,
+                    token_type: "parameter".into(),
+                    modifiers: vec!["declaration".into()],
+                },
+                &SemanticTokenSpan {
+                    line: 4,
+                    start_character: 14,
+                    length: 1,
+                    token_type: "parameter".into(),
+                    modifiers: vec!["declaration".into()],
+                },
+            ]
+        );
     }
 
     #[test]
     fn encode_relative_and_unknown_type() {
-        assert_eq!(SEMANTIC_TOKEN_TYPES, ["class", "function", "method", "parameter", "macro"]);
+        assert_eq!(
+            SEMANTIC_TOKEN_TYPES,
+            ["class", "function", "method", "parameter", "macro"]
+        );
         assert_eq!(SEMANTIC_TOKEN_MODIFIERS, ["declaration", "async"]);
         let spans = vec![
             SemanticTokenSpan {
@@ -658,7 +698,10 @@ mod tests {
                 modifiers: Vec::new(),
             },
         ];
-        assert_eq!(encode_semantic_tokens(&same_line).expect("encode"), vec![0, 2, 3, 0, 0, 0, 7, 3, 4, 0]);
+        assert_eq!(
+            encode_semantic_tokens(&same_line).expect("encode"),
+            vec![0, 2, 3, 0, 0, 0, 7, 3, 4, 0]
+        );
         // 未知类型报错
         assert!(encode_semantic_tokens(&[SemanticTokenSpan {
             line: 0,

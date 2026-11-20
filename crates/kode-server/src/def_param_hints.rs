@@ -500,6 +500,8 @@ pub fn parse_python_file(content: &str) -> Vec<PythonClassDef> {
 pub struct DefParamSiteParam {
     pub start: usize,
     pub end: usize,
+    /// 形参名所在行(0 起)——KODE-SYN-004 起签名跨行,形参可落在续行
+    pub line: usize,
     pub name: String,
     pub has_annotation: bool,
     pub is_star: bool,
@@ -513,18 +515,27 @@ pub struct DefParamSite {
     pub method_name: String,
     pub section: String,
     pub params: Vec<DefParamSiteParam>,
+    /// 参数列表闭括号行(0 起)——KODE-SYN-004 起闭括号可在续行
+    pub close_paren_line: usize,
     pub close_paren_character: usize,
 }
 
-/// 单行 def 解析:括号不闭合(跨行)返回 None,与调用点 inlay 同规则。
-pub(crate) fn parse_def_line(
-    line_text: &str,
-    line: usize,
+/// 跨行 def 签名解析(KODE-SYN-004):统一事实源=python_code_lines 掩码行域
+/// (列不位移;引号/字符串/注释已中性化,括号/逗号扫描零字符串干扰)。从方法
+/// 名 token 后首个 '(' 起,跨行括号配对到 depth-0 ')';未闭合(编辑中签名/
+/// EOF 截断)返回 None 如实让位。形参位(名字 token 行/列 UTF-16 域)与
+/// inlay/semantic_tokens 消费面共用同一产物;`/` 与裸 `*` 仅为 Python 形参
+/// 标记不占 <Arg> 位,出序列;`*args`/`**kwargs` 保留 is_star 位。
+/// TS parseDefSignature 逐位同构。
+pub(crate) fn parse_def_signature(
+    masked_lines: &[String],
+    start_line: usize,
     method_name: &str,
     name_character: usize,
     section: &str,
 ) -> Option<DefParamSite> {
-    let u = units(line_text);
+    let first_units = masked_lines.get(start_line).map(|l| units(l));
+    let u = first_units?;
     let mut open = name_character + method_name.chars().map(|c| c.len_utf16()).sum::<usize>();
     // TS indexOf('(', from) 同构:from 起首个 '('
     while open < u.len() && u[open] != b'(' as u16 {
@@ -533,22 +544,63 @@ pub(crate) fn parse_def_line(
     if open >= u.len() {
         return None;
     }
-    let mut depth = 0isize;
-    let mut close_paren: Option<usize> = None;
-    for (index, &ch) in u[open..].iter().enumerate() {
-        let index = open + index;
-        if ch == b'(' as u16 || ch == b'[' as u16 {
-            depth += 1;
-        } else if ch == b')' as u16 || ch == b']' as u16 {
-            depth -= 1;
-            if depth == 0 && ch == b')' as u16 {
-                close_paren = Some(index);
-                break;
+    // 跨行分段:depth-1 逗号切段(depth 1=参数列表顶层,开括号已计入),每段
+    // 记录 (line, col, ch) 单元流
+    let mut segments: Vec<Vec<(usize, usize, u16)>> = vec![Vec::new()];
+    let mut depth: isize = 1;
+    let mut close_paren_line: Option<usize> = None;
+    let mut close_paren_character: Option<usize> = None;
+    'scan: for (line_index, line) in masked_lines.iter().enumerate().skip(start_line) {
+        let lu = units(line);
+        let from = if line_index == start_line {
+            open + 1
+        } else {
+            0
+        };
+        let mut col = from;
+        while col < lu.len() {
+            let ch = lu[col];
+            if ch == b'(' as u16 || ch == b'[' as u16 || ch == b'{' as u16 {
+                depth += 1;
+                segments
+                    .last_mut()
+                    .expect("非空")
+                    .push((line_index, col, ch));
+            } else if ch == b')' as u16 || ch == b']' as u16 || ch == b'}' as u16 {
+                depth -= 1;
+                if depth == 0 && ch == b')' as u16 {
+                    close_paren_line = Some(line_index);
+                    close_paren_character = Some(col);
+                    break 'scan;
+                }
+                segments
+                    .last_mut()
+                    .expect("非空")
+                    .push((line_index, col, ch));
+            } else if ch == b',' as u16 && depth == 1 {
+                // depth 1=参数列表顶层;嵌套默认值里的逗号在 depth ≥2 不切
+                segments.push(Vec::new());
+            } else {
+                segments
+                    .last_mut()
+                    .expect("非空")
+                    .push((line_index, col, ch));
             }
+            col += 1;
         }
     }
-    let close_paren = close_paren?;
-    let params = split_params(&u[open + 1..close_paren], open + 1);
+    // 编辑中未闭合签名:括号未配对到 depth-0 ')' 不出
+    let (close_paren_line, close_paren_character) = match (close_paren_line, close_paren_character)
+    {
+        (Some(l), Some(c)) => (l, c),
+        _ => return None,
+    };
+    let mut params: Vec<DefParamSiteParam> = Vec::new();
+    for segment in &segments {
+        if let Some(param) = flush_segment(segment, masked_lines) {
+            params.push(param);
+        }
+    }
     // 首参 self/cls 不参与(引擎实体方法恒 self;类方法 cls 同样不是 RPC 形参)
     let meaningful: Vec<DefParamSiteParam> =
         if !params.is_empty() && (params[0].name == "self" || params[0].name == "cls") {
@@ -557,115 +609,84 @@ pub(crate) fn parse_def_line(
             params
         };
     Some(DefParamSite {
-        line,
+        line: start_line,
         method_name: method_name.to_string(),
         section: section.to_string(),
         params: meaningful,
-        close_paren_character: close_paren,
+        close_paren_line,
+        close_paren_character,
     })
 }
 
-fn top_level_flush(
-    param_units: &[u16],
-    start: usize,
-    end_exclusive: usize,
-    offset: usize,
-    params: &mut Vec<DefParamSiteParam>,
-) {
-    let raw_u = &param_units[start..end_exclusive];
-    let raw = units_to_string(raw_u);
-    let leading = raw_u.iter().take_while(|u| is_js_space_unit(**u)).count();
-    let trimmed = raw.trim().to_string();
-    if trimmed.is_empty() {
-        return;
-    }
-    let star = trimmed.starts_with('*');
-    let name_source = if star {
-        trimmed.trim_start_matches('*').to_string()
-    } else {
-        trimmed.clone()
-    };
-    // 名字 token:标注/默认值之前的标识符段(IDENTIFIER 锚首)
-    let ns_u = units(&name_source);
-    let mut name_len = 0usize;
-    if !ns_u.is_empty() && is_ident_start(ns_u[0]) {
-        name_len = 1;
-        while name_len < ns_u.len() && is_ident_unit(ns_u[name_len]) {
-            name_len += 1;
-        }
-    }
-    let after = if name_len > 0 { name_len } else { 0 };
-    let find_from = |needle: u16, from: usize| -> Option<usize> {
-        (from..ns_u.len()).find(|i| ns_u[*i] == needle)
-    };
-    let annotation_separator = find_from(b':' as u16, after);
-    let default_separator = find_from(b'=' as u16, after);
-    let boundary = match (annotation_separator, default_separator) {
-        (Some(a), Some(d)) => Some(if a < d { a } else { d }),
-        (Some(a), None) => Some(a),
-        (None, Some(d)) => Some(d),
-        (None, None) => None,
-    };
-    let name_text = match boundary {
-        Some(b) => units_to_string(&ns_u[..b]),
-        None => name_source.clone(),
-    };
-    let name_trimmed = name_text.trim().to_string();
-    // raw.indexOf(nameText.trim())(UTF-16 域)
-    let name_in_raw = index_from(&raw, &name_trimmed, 0);
-    // 标注判定:名字 token 后首个顶层分隔符是 ':' 才算已标注
-    let has_annotation = boundary.is_some_and(|b| ns_u[b] == b':' as u16);
-    let base = name_in_raw.unwrap_or(leading);
-    params.push(DefParamSiteParam {
-        start: offset + start + base,
-        end: offset + start + base + name_trimmed.encode_utf16().count(),
-        name: name_trimmed,
-        has_annotation,
-        is_star: star,
-    });
-}
-
-/// 顶层逗号切分(括号/方括号/花括号/字符串字面量内不切);全程 UTF-16 域。
-fn split_params(param_text_units: &[u16], offset: usize) -> Vec<DefParamSiteParam> {
-    let mut params = Vec::new();
-    let mut depth = 0isize;
-    let mut quote: u16 = 0;
-    let mut start = 0usize;
+/// 单段成形:跳空白(跨行续行的行首缩进)→ `*` 标记 → 名字 token(ASCII
+/// 标识符 + 非 ASCII 名字单元);标注判定走段内 depth-0 首个 ':'/'='(嵌套
+/// 默认值里的分隔符不算)。`/` 与裸 `*`(后随无标识符)是 Python 形参标
+/// 记,不产形参位。TS flushSegment 同构。
+fn flush_segment(
+    segment: &[(usize, usize, u16)],
+    masked_lines: &[String],
+) -> Option<DefParamSiteParam> {
     let mut index = 0usize;
-    while index < param_text_units.len() {
-        let ch = param_text_units[index];
-        if quote != 0 {
-            let prev = if index > 0 {
-                param_text_units[index - 1]
-            } else {
-                0
-            };
-            if ch == quote && prev != b'\\' as u16 {
-                quote = 0;
-            }
-            index += 1;
-            continue;
-        }
-        if ch == b'"' as u16 || ch == b'\'' as u16 {
-            quote = ch;
-        } else if ch == b'(' as u16 || ch == b'[' as u16 || ch == b'{' as u16 {
-            depth += 1;
-        } else if ch == b')' as u16 || ch == b']' as u16 || ch == b'}' as u16 {
-            depth -= 1;
-        } else if ch == b',' as u16 && depth == 0 {
-            top_level_flush(param_text_units, start, index, offset, &mut params);
-            start = index + 1;
-        }
+    while index < segment.len() && is_js_space_unit(segment[index].2) {
         index += 1;
     }
-    top_level_flush(
-        param_text_units,
-        start,
-        param_text_units.len(),
-        offset,
-        &mut params,
-    );
-    params
+    if index >= segment.len() {
+        return None; // 尾逗号空段不产形参
+    }
+    let mut is_star = false;
+    while index < segment.len() && segment[index].2 == b'*' as u16 {
+        is_star = true;
+        index += 1;
+    }
+    let (name_line, name_col, _) = *segment.get(index)?;
+    let line_u = units(masked_lines.get(name_line)?);
+    if name_col >= line_u.len() {
+        return None;
+    }
+    // ASCII 侧走标识符判定;非 ASCII 单元(中文等 Unicode 名字,PEP 3131)
+    // 保留为名字单元。`/` 等标记是 ASCII 非标识符,照旧不产形参位。
+    if !is_ident_start(line_u[name_col]) && line_u[name_col] < 0x80 {
+        return None; // `/`(positional-only 标记)等 ASCII 非标识符段不产形参位
+    }
+    let mut name_len = 1usize;
+    while name_col + name_len < line_u.len()
+        && (is_ident_unit(line_u[name_col + name_len]) || line_u[name_col + name_len] >= 0x80)
+    {
+        name_len += 1;
+    }
+    let name = units_to_string(&line_u[name_col..name_col + name_len]);
+    // 名字 token 后首个 depth-0 分隔符是 ':' 才算已标注(默认值字典字面量
+    // 里的 ':' 处在 depth ≥1,不算)
+    let mut seg_depth: isize = 0;
+    let mut has_annotation = false;
+    let mut after_name = false;
+    for &(unit_line, unit_col, ch) in segment {
+        if !after_name {
+            if unit_line == name_line && unit_col == name_col + name_len {
+                after_name = true; // 命中位本身也可能是分隔符(`a: int`),落穿到下面的判定
+            } else {
+                continue;
+            }
+        }
+        if ch == b'(' as u16 || ch == b'[' as u16 || ch == b'{' as u16 {
+            seg_depth += 1;
+        } else if ch == b')' as u16 || ch == b']' as u16 || ch == b'}' as u16 {
+            seg_depth -= 1;
+        } else if seg_depth == 0 && ch == b':' as u16 {
+            has_annotation = true;
+            break;
+        } else if seg_depth == 0 && ch == b'=' as u16 {
+            break;
+        }
+    }
+    Some(DefParamSiteParam {
+        start: name_col,
+        end: name_col + name_len,
+        line: name_line,
+        name,
+        has_annotation,
+        is_star,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -679,17 +700,23 @@ pub fn find_def_param_sites(text: &str, file_path: &str) -> Vec<DefParamSite> {
         // 区块外普通方法不出(不做推导)
         None => return Vec::new(),
     };
-    let lines = split_lines_keep(text);
+    // KODE-SYN-004:统一事实源=python_code_lines 掩码行域(列不位移,引号/
+    // 注释天然中性化)——跨行签名解析与 semantic_tokens 形参着色走同一份
+    // 掩码行,与 TS parseDefSignature 逐位同构
+    let masked_lines = python_code_lines(text);
     let mut sites = Vec::new();
     for cls in parse_python_file(text) {
         for (method_name, method_line, character) in &cls.methods {
-            let line_text = match lines.get(*method_line) {
-                Some(line_text) => line_text.clone(),
-                None => continue,
-            };
-            if let Some(site) =
-                parse_def_line(&line_text, *method_line, method_name, *character, section)
-            {
+            if masked_lines.get(*method_line).is_none() {
+                continue;
+            }
+            if let Some(site) = parse_def_signature(
+                &masked_lines,
+                *method_line,
+                method_name,
+                *character,
+                section,
+            ) {
                 sites.push(site);
             }
         }
@@ -794,8 +821,9 @@ pub fn build_def_param_inlay_items(
             _ => continue,
         };
         items.push(DefParamInlayItem {
+            // KODE-SYN-004:形参提示锚其所在行(跨行签名各提示落各自行)
             position: InlayPosition {
-                line: site.line,
+                line: param.line,
                 character: param.end,
             },
             text: format!(": {}", annotation),
@@ -811,8 +839,9 @@ pub fn build_def_param_inlay_items(
             if let Some(return_annotation) = resolve_annotation_direct(&declared_return) {
                 if return_annotation != "Any" {
                     items.push(DefParamInlayItem {
+                        // 闭括号可能跨行(KODE-SYN-004),锚闭括号所在行
                         position: InlayPosition {
-                            line: site.line,
+                            line: site.close_paren_line,
                             character: site.close_paren_character + 1,
                         },
                         text: format!(" -> {}", return_annotation),
@@ -996,6 +1025,43 @@ fn corpus() -> Vec<CorpusEntry> {
             path: "/p/assets/scripts/cell/x.py".into(),
             text: "class X:\n    def go(self, a):\n        pass\n".into(),
         },
+        // KODE-SYN-004 验收语料:多行 async + `/`/`*` 标记 + CJK + 非 BMP
+        // (astral 代理对)+ 跨行嵌套默认值(dict 内 ':' 在 depth ≥2 不误判
+        // 已标注;段内跨行逗号在 depth ≥2 不切段)
+        CorpusEntry {
+            name: "multiline_rich".into(),
+            path: "/p/scripts/cell/summon.py".into(),
+            text: concat!(
+                "class Rich:\n",
+                "    async def summon(\n",
+                "        self,\n",
+                "        \u{76ee}\u{6807},\n",
+                "        /,\n",
+                "        power,\n",
+                "        *,\n",
+                "        options={\"delay\": 1, \"rows\": [\n",
+                "            1, 2\n",
+                "        ]},\n",
+                "        note,\n",
+                "    ):\n",
+                "        pass\n",
+            )
+            .into(),
+        },
+        // 编辑中未闭合签名:括号未配对到 depth-0 ')',诚实让位零站点
+        CorpusEntry {
+            name: "unclosed_sig".into(),
+            path: "/p/scripts/cell/torn.py".into(),
+            text: concat!(
+                "class Torn:\n",
+                "    def part(self, a):\n",
+                "        pass\n",
+                "\n",
+                "    def torn(self,\n",
+                "        b,\n",
+            )
+            .into(),
+        },
     ]
 }
 
@@ -1066,6 +1132,30 @@ fn probes() -> Vec<Probe> {
             Some("BOOL".to_string()),
         ),
         ("assets_scripts_cell", 0, Some(args_a.clone()), None),
+        // KODE-SYN-004:多行签名站点 × 声明面(逐位配对/未声明零提示)
+        (
+            "multiline_rich",
+            0,
+            Some(vec![
+                "UINT16".to_string(),
+                "UINT8".to_string(),
+                "PY_DICT".to_string(),
+                "STRING".to_string(),
+            ]),
+            None,
+        ),
+        (
+            "multiline_rich",
+            0,
+            Some(vec![
+                "UINT16".to_string(),
+                "UINT8".to_string(),
+                "PY_DICT".to_string(),
+                "STRING".to_string(),
+            ]),
+            Some("BOOL".to_string()),
+        ),
+        ("multiline_rich", 0, None, None),
     ] {
         probes.push(Probe::Items {
             corpus: corpus.into(),
@@ -1243,54 +1333,129 @@ mod tests {
     }
 
     #[test]
-    fn parse_def_line_boundaries() {
-        // self 剥离/闭括号列
-        let site = parse_def_line("    def foo(self, a, b):", 3, "foo", 8, "CellMethods").unwrap();
-        assert_eq!(site.line, 3);
+    fn parse_def_signature_boundaries() {
+        // self 剥离/闭括号列(KODE-SYN-004:掩码行域跨行核)
+        let masked = python_code_lines("    def foo(self, a, b):\n");
+        let site = parse_def_signature(&masked, 0, "foo", 8, "CellMethods").unwrap();
+        assert_eq!(site.line, 0);
         assert_eq!(site.method_name, "foo");
         assert_eq!(site.params.len(), 2);
         assert_eq!(site.params[0].name, "a");
         assert_eq!(site.params[0].start, 18);
+        assert_eq!(site.params[0].line, 0);
         assert_eq!(site.params[1].name, "b");
+        assert_eq!(site.close_paren_line, 0);
         assert_eq!(site.close_paren_character, 22);
         // 首参非 self 全保留
-        let site = parse_def_line("def m(x, y):", 0, "m", 4, "BaseMethods").unwrap();
+        let masked = python_code_lines("def m(x, y):\n");
+        let site = parse_def_signature(&masked, 0, "m", 4, "BaseMethods").unwrap();
         assert_eq!(site.params.len(), 2);
-        // 跨行(同行括号不闭合)不出
-        assert_eq!(
-            parse_def_line("def m(self, a,", 0, "m", 4, "CellMethods"),
-            None
-        );
+        // 编辑中未闭合签名(跨行不闭合)不出
+        let masked = python_code_lines("def m(self, a,\n");
+        assert_eq!(parse_def_signature(&masked, 0, "m", 4, "CellMethods"), None);
         // 名后无 '(' 不出
-        assert_eq!(parse_def_line("def m:", 0, "m", 4, "CellMethods"), None);
+        let masked = python_code_lines("def m:\n");
+        assert_eq!(parse_def_signature(&masked, 0, "m", 4, "CellMethods"), None);
     }
 
     #[test]
-    fn split_params_strings_and_defaults() {
-        // 字符串内逗号不切/默认值 dict 内冒号不算标注
-        let params = split_params(&units("a, b=\"x,y\", c={'k': 1}, d: int = 2"), 7);
-        assert_eq!(params.len(), 4);
-        assert_eq!(params[1].name, "b");
-        assert!(!params[1].has_annotation);
-        assert_eq!(params[2].name, "c");
-        assert!(!params[2].has_annotation, "默认值字面量内冒号不算已标注");
-        assert_eq!(params[3].name, "d");
-        assert!(params[3].has_annotation);
-        // 名字列含 CJK 前缀(UTF-16 域)
-        let cjk = split_params(&units("中文, x"), 0);
-        assert_eq!(cjk[0].name, "中文");
-        assert_eq!(cjk[0].start, 0);
-        assert_eq!(cjk[0].end, 2, "UTF-16 单元域");
-        assert_eq!(
-            cjk[1].start, 4,
-            "x 在 UTF-16 全域 index 4(两 CJK 各 1 单元)"
+    fn signature_masking_defaults_and_markers() {
+        // 字符串内逗号/冒号被掩码中性化;默认值 dict 内冒号不算标注
+        let masked = python_code_lines("def m(self, a, b=\"x,y\", c={'k': 1}, d: int = 2):\n");
+        let site = parse_def_signature(&masked, 0, "m", 4, "BaseMethods").unwrap();
+        assert_eq!(site.params.len(), 4);
+        assert_eq!(site.params[1].name, "b");
+        assert!(!site.params[1].has_annotation);
+        assert_eq!(site.params[2].name, "c");
+        assert!(
+            !site.params[2].has_annotation,
+            "默认值字面量内冒号不算已标注"
         );
-        // star 形参
-        let star = split_params(&units("*args, **kwargs"), 0);
-        assert!(star[0].is_star);
-        assert_eq!(star[0].name, "args");
-        assert!(star[1].is_star);
-        assert_eq!(star[1].name, "kwargs");
+        assert_eq!(site.params[3].name, "d");
+        assert!(site.params[3].has_annotation);
+        // 名字列含 CJK 前缀(UTF-16 域)
+        let masked = python_code_lines("def m(self, 中文, x):\n");
+        let site = parse_def_signature(&masked, 0, "m", 4, "CellMethods").unwrap();
+        assert_eq!(site.params[0].name, "中文");
+        assert_eq!(site.params[0].start, 12);
+        assert_eq!(site.params[0].end, 14, "UTF-16 单元域");
+        assert_eq!(
+            site.params[1].start, 16,
+            "x 在 UTF-16 全域 index 16(两 CJK 各 1 单元)"
+        );
+        // star 形参保留 is_star
+        let masked = python_code_lines("def m(self, *args, **kwargs):\n");
+        let site = parse_def_signature(&masked, 0, "m", 4, "CellMethods").unwrap();
+        assert!(site.params[0].is_star);
+        assert_eq!(site.params[0].name, "args");
+        assert!(site.params[1].is_star);
+        assert_eq!(site.params[1].name, "kwargs");
+        // `/` 与裸 `*` 标记出序列(keyword-only 前后形参仍逐位对齐)
+        let masked = python_code_lines("def m(self, a, /, b, *, c):\n");
+        let site = parse_def_signature(&masked, 0, "m", 4, "CellMethods").unwrap();
+        let names: Vec<&str> = site.params.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["a", "b", "c"], "标记 `/` 与裸 `*` 不产形参位");
+        assert!(!site.params.iter().any(|p| p.is_star));
+    }
+
+    /// KODE-SYN-004 验收面:多行 async/嵌套默认值/CJK+非 BMP 坐标/未闭合。
+    #[test]
+    fn multiline_signature_acceptance_arms() {
+        // 多行 async:形参落各自所在行,闭括号行如实
+        let masked = python_code_lines(
+            "    async def multi(\n        self,\n        a,\n        b: str = \"x,y\",\n    ):\n        pass\n",
+        );
+        let site = parse_def_signature(&masked, 0, "multi", 14, "ClientMethods").unwrap();
+        assert_eq!(site.params.len(), 2);
+        assert_eq!(site.params[0].name, "a");
+        assert_eq!(site.params[0].line, 2);
+        assert_eq!(site.params[0].start, 8);
+        assert_eq!(site.params[1].name, "b");
+        assert_eq!(site.params[1].line, 3);
+        assert!(
+            site.params[1].has_annotation,
+            "真实标注 :str 认出;默认值字符串内逗号不切段"
+        );
+        assert_eq!(site.close_paren_line, 4);
+        assert_eq!(site.close_paren_character, 4);
+        // 嵌套默认值跨行 + 段内注释(掩码后空白)不误切
+        let masked = python_code_lines(
+            "    def nested(self, a={\n        \"k\": [1, 2]},\n        b):\n        pass\n",
+        );
+        let site = parse_def_signature(&masked, 0, "nested", 8, "ClientMethods").unwrap();
+        assert_eq!(site.params.len(), 2);
+        assert_eq!(site.params[0].name, "a");
+        assert_eq!(site.params[0].line, 0);
+        assert!(
+            !site.params[0].has_annotation,
+            "嵌套默认值里的 ':' 在 depth ≥1"
+        );
+        assert_eq!(site.params[1].name, "b");
+        assert_eq!(site.params[1].line, 2);
+        assert_eq!(site.close_paren_line, 2);
+        // 中文形参 + 非 BMP(astral 代理对 2 单元)后的坐标
+        let masked = python_code_lines("def m(self, 中文, \u{1D11E}note):\n");
+        let site = parse_def_signature(&masked, 0, "m", 4, "CellMethods").unwrap();
+        assert_eq!(site.params[0].name, "中文");
+        assert_eq!(site.params[0].start, 12);
+        assert_eq!(site.params[1].name, "\u{1D11E}note");
+        assert_eq!(site.params[1].start, 16, "astral 名起在 UTF-16 index 16");
+        assert_eq!(site.params[1].end, 22, "𝄞 占 2 单元 + note 4 单元");
+        // 多行编辑中未闭合签名:EOF 截断不出
+        let masked = python_code_lines("    def broken(self,\n        a,\n");
+        assert_eq!(
+            parse_def_signature(&masked, 0, "broken", 8, "CellMethods"),
+            None
+        );
+    }
+
+    /// 空形参段(尾逗号)如实跳过不出伪参数。
+    #[test]
+    fn trailing_comma_skips_empty_segment() {
+        let masked = python_code_lines("def m(self, a, ):\n");
+        let site = parse_def_signature(&masked, 0, "m", 4, "CellMethods").unwrap();
+        assert_eq!(site.params.len(), 1);
+        assert_eq!(site.params[0].name, "a");
     }
 
     #[test]
@@ -1477,14 +1642,6 @@ mod tests {
         // 首参 self 剔除后只剩 a
         assert_eq!(sites[0].params.len(), 1);
         assert_eq!(sites[0].params[0].name, "a");
-    }
-
-    /// 空形参段(尾逗号)如实跳过不出伪参数。
-    #[test]
-    fn split_params_trailing_comma_skips_empty_segment() {
-        let params = split_params(&units("a, "), 0);
-        assert_eq!(params.len(), 1);
-        assert_eq!(params[0].name, "a");
     }
 
     /// 返回注解三拒绝面:空串/ALIAS/Any 表值都不出;引擎别名照出。
