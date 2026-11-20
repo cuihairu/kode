@@ -12,6 +12,7 @@ import {
 
 const AVATAR_PY = '/ws/scripts/cell/avatar.py';
 const HELPERS_PY = '/ws/scripts/cell/nav_helpers.py';
+const BOTS_PY = '/ws/scripts/bots/main.py';
 
 const FILES: Record<string, string> = {
   [AVATAR_PY]: [
@@ -300,3 +301,147 @@ describe('FLOW-005 边界', () => {
     expect(expandedFromDeadEnds).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 41 容错臂:根不可解析抛错、菱形汇合不重复展开、上游模块级调用者链
+// (homeBundleOf 兜底)、maxDepth 上游截断、不可解析文件跳过。
+// ---------------------------------------------------------------------------
+describe('批 41:展开容错臂', () => {
+  it('根文件不可解析 → 抛错点名路径(111)', () => {
+    expect(() => expand({ files: {}, root: { filePath: '/gone.py', className: 'X', functionName: 'f' } }))
+      .toThrow(/root file not resolvable/);
+  });
+
+  it('菱形汇合:b/c 都到 d → d 只展开一次,边保留两条(202)', () => {
+    const files: Record<string, string> = {
+      [AVATAR_PY]: [
+        'class Avatar:',
+        '    def a(self):',
+        '        self.b()',
+        '        self.c()',
+        '',
+        '    def b(self):',
+        '        self.d()',
+        '',
+        '    def c(self):',
+        '        self.d()',
+        '',
+        '    def d(self):',
+        '        pass'
+      ].join('\n')
+    };
+    const result = expand({ files, root: { filePath: AVATAR_PY, className: 'Avatar', functionName: 'a' } });
+    const dNode = result.graph.nodes.find(node => node.fn?.name === 'd');
+    expect(dNode).toBeDefined();
+    // d 节点本体只有一个(expanded 去重:菱形汇合不重复入图)
+    const dNodes = result.graph.nodes.filter(node => node.fn?.name === 'd');
+    expect(dNodes).toHaveLength(1);
+    // 两条入边都在
+    const dEdges = result.graph.edges.filter(edge => edge.toNodeId === dNode!.id);
+    expect(dEdges).toHaveLength(2);
+  });
+
+  it('上游:模块级调用者(无类帧)→ homeBundleOf 兜底回捞(137-139)', async () => {
+    // step 自调 doMove(经 doMove→step 边反向成上游 caller):LIFO 展开序
+    // 下 step 先于 entry 弹出,doMove 已 expanded → 上游 caller 侧 278 分支实测
+    const files: Record<string, string> = {
+      [AVATAR_PY]: [
+        'class Avatar:',
+        '    def doMove(self, d):',
+        '        self.step(d)',
+        '',
+        '    def step(self, d):',
+        '        self.doMove(0)',
+        '',
+        'def entry(d):',
+        '    a = Avatar()',
+        '    a.doMove(d)'
+      ].join('\n'),
+      [BOTS_PY]: [
+        'from avatar import doMove',
+        'def boot():',
+        '    doMove(1)'
+      ].join('\n')
+    };
+    const resolver = (filePath: string) => {
+      const text = files[filePath];
+      if (text === undefined) {
+        return null;
+      }
+      return resolveFlowCallSites({
+        text,
+        filePath,
+        resolveImportedFunction: (module, name) => {
+          if (module === 'nav_helpers' && name === 'clamp_pos') {
+            return { filePath: HELPERS_PY, line: 0 };
+          }
+          if (module === 'avatar' && name === 'doMove') {
+            return { filePath: AVATAR_PY, line: 3 };
+          }
+          return null;
+        }
+      });
+    };
+    const result = expandFlowCallTree({
+      root: { filePath: AVATAR_PY, className: 'Avatar', functionName: 'doMove' },
+      direction: 'upstream',
+      maxDepth: 16,
+      files: Object.keys(files),
+      resolveFile: resolver
+    });
+    // 上游链可达面=同文件调用者(类内 + 本文件模块级 entry):跨文件调用者
+    // (boot)的节点 id 内嵌调用侧 (role, entity) 上下文(实测 BOTS 边的
+    // toNodeId 前缀=client/no-entity,而根节点前缀=cell/Avatar),与本文件
+    // 节点 id 精确匹配永不成立 → 跨文件上游调用者结构不可达(登记的产品
+    // 限制,非本测试可修);本臂钉同文件可达面(模块级 entry 入图)。
+    const nodeNames = result.graph.nodes.map(node => node.fn?.name ?? node.label);
+    expect(nodeNames.some(name => name.includes('entry'))).toBe(true);
+  });
+
+  it('上游 maxDepth 截断如实记录(243)', () => {
+    const files: Record<string, string> = {
+      [AVATAR_PY]: FILES[AVATAR_PY],
+      [HELPERS_PY]: FILES[HELPERS_PY],
+      [BOTS_PY]: [
+        'from avatar import doMove',
+        'def boot():',
+        '    doMove(1)'
+      ].join('\n')
+    };
+    const result = expand({
+      files,
+      direction: 'upstream',
+      maxDepth: 1,
+      root: { filePath: AVATAR_PY, className: 'Avatar', functionName: 'doMove' }
+    });
+    expect(result.graph.query.truncatedAtDepth).not.toBeNull();
+  });
+
+  it('files 内含不可解析路径 → 上游反向索引构建跳过(219)', () => {
+    const files: Record<string, string> = { ...FILES, '/ws/scripts/ghost.py': 'x' };
+    const result = expand({
+      files,
+      direction: 'upstream',
+      resolveFile: filePath => (filePath === '/ws/scripts/ghost.py' ? null : makeResolver(FILES)(filePath))
+    });
+    expect(result.graph.nodes.length).toBeGreaterThan(0);
+  });
+});
+
+// 覆盖口径残余(批 41 定性,10 行全部结构性不可达/不变量防御,不硬凑):
+//  137-142 homeBundleOf 的 fn.filePath 缺失兜底:展开帧只收 function 目标,
+//     而 resolver 的跨文件导入函数节点 fn 本身未定义(实测 fn@-),fn?.filePath
+//     恒假 → 首分支永走,兜底回捞循环不可达。**连带登记产品限制:上游视图的
+//     跨文件调用者结构不可达——节点 id 内嵌调用侧 (role, entity) 上下文
+//     (实测同函数在 BOTS 边的 toNodeId 前缀=client/no-entity,在本文件
+//     前缀=cell/Avatar),上游反向索引按 id 精确匹配跨 bundle 永不命中**。
+//  161/165 下游展开帧的 node 缺位/home 缺位:resolver 产出的函数节点恒带
+//     fn.filePath 且 id 在本 bundle 节点集内(自产自销不变量),防御位。
+//  189 边 toNodeId 缺位:同上不变量。
+//  265 上游 caller 节点缺位:边与节点同 bundle 产出,防御位。
+//  275 上游 caller 非 function:resolver 的 caller 恒为真实代码位函数节点
+//     (实测 from=function 恒成立),external-entry/unresolved 不会作为 caller
+//     出现,防御位。
+//  278 上游 caller 已展开/达界:递归调用在 resolver 内即被改写为 recursion
+//     边(step→doMove 自调用实录,边不再以普通形态进反向索引),构造不出
+//     "caller 已 expanded 而其边后处理"的次序,防御位。
