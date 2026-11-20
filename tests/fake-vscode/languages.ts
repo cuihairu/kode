@@ -24,6 +24,10 @@ const signatureHelpRegistrations: ProviderRegistration[] = [];
 const codeLensRegistrations: ProviderRegistration[] = [];
 const codeActionsRegistrations: ProviderRegistration[] = [];
 const inlayHintsRegistrations: ProviderRegistration[] = [];
+// 格式化两面(document/range)与其余 provider 同形态记账(KODE-SYN-006:.def
+// 原生格式化无条件注册,替身缺该字段会让整条激活链塌)
+const formattingRegistrations: ProviderRegistration[] = [];
+const rangeFormattingRegistrations: ProviderRegistration[] = [];
 // 语义 token 注册第三参是 legend 不是触发字符,独立形态记账
 const semanticTokensRegistrations: Array<{
   selector: unknown;
@@ -62,6 +66,8 @@ export const languages = {
   registerCodeLensProvider: register(codeLensRegistrations),
   registerCodeActionsProvider: register(codeActionsRegistrations),
   registerInlayHintsProvider: register(inlayHintsRegistrations),
+  registerDocumentFormattingEditProvider: register(formattingRegistrations),
+  registerDocumentRangeFormattingEditProvider: register(rangeFormattingRegistrations),
   registerDocumentSemanticTokensProvider: (
     selector: unknown,
     provider: unknown,
@@ -99,6 +105,8 @@ export const languagesRegistry = {
   codeLensRegistrations,
   codeActionsRegistrations,
   inlayHintsRegistrations,
+  formattingRegistrations,
+  rangeFormattingRegistrations,
   semanticTokensRegistrations,
   diagnosticCollections,
   reset: (): void => {
@@ -115,6 +123,8 @@ export const languagesRegistry = {
     codeLensRegistrations.length = 0;
     codeActionsRegistrations.length = 0;
     inlayHintsRegistrations.length = 0;
+    formattingRegistrations.length = 0;
+    rangeFormattingRegistrations.length = 0;
     semanticTokensRegistrations.length = 0;
     diagnosticCollections.length = 0;
   }

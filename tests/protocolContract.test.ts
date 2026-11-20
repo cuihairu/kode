@@ -278,7 +278,7 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
   }, 20_000);
 });
 
-// RUST-055 第二增量:全协议面清单——TS 消费的 32 个 `$/kode/*` 请求方法逐一
+// RUST-055 第二增量:全协议面清单——TS 消费的 34 个 `$/kode/*` 请求方法逐一
 // 入契约门(TS 侧方法字面量 grep 全集 vs Rust RpcRegistry 注册集零漂移已由
 // 构建 probe 对齐;`$/kode/fileChanged` 是单向通知无应答面,`$/kode/rpc` 信封
 // 与 health 已在上文钉)。方法级应答形状钉法:**递归形状指纹**(对象=排序键集
@@ -287,7 +287,7 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
 // 形状由 Rust dispatch 测试与 kode-kbengine cli_acceptance 承载。ruff/lint
 // 因 ruff 可用性机器相关,只钉结构面不钉指纹。prove-red 面:改 Rust 任一应答
 // 键名 → 本门红(由首条 lint/* 指纹承载)。
-suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
+suite('全协议面:34 方法逐一形状钉(真实 kode-server)', () => {
   const PROBE = process.env.KODE_CONTRACT_PROBE === '1';
 
   /** 递归形状指纹:对象→{键:形状} 键排序;数组→[首元素形状] 或 [];叶子→JSON 类型名(null 单列,不与 object 混) */
@@ -374,6 +374,7 @@ suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
       method: '$/kode/def/md5', face: 'pin',
       params: () => ({ typesXml: '', entitiesXml: '', defs: {}, aliasXml: '', componentScripts: {} })
     },
+    { method: '$/kode/def/format', face: 'pin', params: () => ({ content: DEF_FIXTURE }) },
     {
       method: '$/kode/dependency/graph', face: 'pin',
       params: () => ({
@@ -415,11 +416,11 @@ suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
     { method: '$/kode/dbClone/export', face: 'pin', params: () => ({ path: '', entity: '', rows: [], plan: {}, redactSensitive: true, keyRoot: undefined }) }
   ];
 
-  it('方法清单完整:33 方法与 TS 侧调用全集逐一对齐(git 字面量全集)', () => {
-    // TS 侧 `$/kode/...` 字面量全集(src/ 下 36 项)减去:信封 rpc、通知
-    // fileChanged、health(上文已钉)= 33 请求方法,与本表一一对应。
-    expect(probes).toHaveLength(33);
-    expect(new Set(probes.map(probe => probe.method)).size).toBe(33);
+  it('方法清单完整:34 方法与 TS 侧调用全集逐一对齐(git 字面量全集)', () => {
+    // TS 侧 `$/kode/...` 字面量全集(src/ 下 37 项)减去:信封 rpc、通知
+    // fileChanged、health(上文已钉)= 34 请求方法,与本表一一对应。
+    expect(probes).toHaveLength(34);
+    expect(new Set(probes.map(probe => probe.method)).size).toBe(34);
   });
 
   it('fileChanged:单向通知跨语言字面量锁(TS KODE_FILE_CHANGED_METHOD = Rust FILE_CHANGED_NOTIFICATION)', () => {
@@ -509,6 +510,7 @@ suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
     "$/kode/dbClone/planExport": {"__error__": "$/kode/rpc failed (-32602): invalid relation rule: cannot parse kode-server derivation output: missing field `tables` at line 1 column 2"},
     "$/kode/dbClone/planImport": {"__error__": "$/kode/rpc failed (-32602): missing field `uniqueKeys`"},
     "$/kode/dbClone/readArchiveRows": {"__error__": "$/kode/rpc failed (-32602): archive error: open archive: No such file or directory (os error 2)"},
+    "$/kode/def/format": {"diagnostics": "number", "edits": [{"end": "number", "start": "number", "text": "string"}]},
     "$/kode/def/md5": {"algorithm": "string", "md5": "string", "streamHex": "string", "trace": [{"bytes": "string", "field": "string", "source": "string"}]},
     "$/kode/dependency/graph": {"edges": [], "nodes": [], "paths": {"defsRoot": "string", "entitiesXml": "string", "typesXml": "string"}, "reverseEdges": {}, "stats": {"componentCount": "number", "defCount": "number", "edgeCount": "number", "entityCount": "number", "interfaceCount": "number", "nodeCount": "number", "pythonCount": "number", "typeCount": "number"}},
     "$/kode/lint/analyzeAttributeNone": {"items": []},

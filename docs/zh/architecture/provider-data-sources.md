@@ -19,7 +19,7 @@
 
 ## 2. Provider 清单
 
-### 2a. 语言 provider(vscode.languages.register\*,32 注册 / 31 类)
+### 2a. 语言 provider(vscode.languages.register\*,34 注册 / 32 类)
 
 注册位为 extension.ts 行号:
 
@@ -68,6 +68,7 @@
 | KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1776 | 诊断面(context.diagnostics,code=def-method-missing-in-python)+双向定位面(目标 Python 文件/类)+当前文档 def 结构(签名类型映射) | 编辑提案(WorkspaceEdit,类尾插方法骨架) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1784 | 诊断面(context.diagnostics,code=kbengine.receiverNone)+当前文档文本 | 编辑提案(WorkspaceEdit,包裹式首选+早退式) |
 | HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine 派生视图(台账事实源,IDE-HOT-100) | 纯读;状态点点击命令 kbengine.hotReload.showFileState |
+| KBEngineDefFormatProvider | languageProviders/defFormatProvider.ts:23 | activate/utilityCommands.ts:1162/:1166 (KODE-SYN-006,整文档 + 选区两面) | 仅当前文档文本,经 `$/kode/def/format`(crates/kode-parser/src/def_format.rs 精确 span 核、crates/kode-server/src/def_format.rs);UTF-8 字节位 ↔ UTF-16 码元位换算在 backend/defFormat.ts | 编辑提议(TextEdit 集);已格式化、Rust 不可用、应答畸形或 XML 残缺(安全退回)时零编辑 |
 
 命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
 

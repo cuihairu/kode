@@ -10,6 +10,7 @@ pub mod completion;
 pub mod config_rpc;
 pub mod database_schema;
 pub mod db_clone;
+pub mod def_format;
 pub mod def_md5;
 pub mod def_param_hints;
 pub mod def_props_hints;

@@ -1489,6 +1489,8 @@ export function activate(context: vscode.ExtensionContext) {
     entityMappingManager,
     serverManager,
     indexScheduler,
+    // KODE-SYN-006:.def 格式化 provider 的文档选择器(与其余 .def 语言服务同源)
+    defDocumentSelector,
     // INDEX-DISCIPLINE-001:状态栏 tooltip 输入纪律观测行(待合并+语法门)
     indexDisciplineStats: () => ({
       coalescerPending: indexEventCoalescer.getPendingCount(),

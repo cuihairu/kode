@@ -7,6 +7,8 @@
 //! - [`model`]:`.def` 语义(属性/旗标/方法/组件/继承)、entities/types/alias
 //!   提取,未知字段保留(SYNTAX-005,SEM-006..008 基础);
 //! - [`dep`]:增量重构注册表(指纹零重建 + 反向依赖索引,VFS-011 复用);
+//! - [`def_format`]:`.def` 原生格式化核(KODE-SYN-006:深度缩进 + span 逐字
+//!   回写 + 行级极小编辑集,任何解析诊断安全退回);
 //! - [`json`]:对拍 golden 序列化(零依赖 JSON 写出)。
 //!
 //! 铁律:除密码学外零第三方 crate(本 crate 仅依赖 workspace 内 kode-vfs);
@@ -14,12 +16,17 @@
 
 pub mod config;
 pub mod config_derive;
+pub mod def_format;
 pub mod dep;
 pub mod diag;
 pub mod json;
 pub mod model;
 pub mod xml;
 
+pub use def_format::{
+    format_def_edits, format_def_report, format_def_text, DefFormatEdit, DefFormatOptions,
+    DefFormatReport,
+};
 pub use dep::{FileKind, ParseRegistry, ParsedUnit, RefSet, UpdateReport};
 pub use diag::{DiagCode, Diagnostic, LineMap, Severity, Span};
 pub use model::{

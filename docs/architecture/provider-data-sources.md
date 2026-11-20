@@ -19,7 +19,7 @@ Read-path general rule (set by ARC-005, source-level lock tests/typeStorageWatch
 
 ## 2. Provider inventory
 
-### 2a. Language providers (vscode.languages.register\*, 32 registrations / 31 classes)
+### 2a. Language providers (vscode.languages.register\*, 34 registrations / 32 classes)
 
 Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-ARCH-001 将 languageProviders.ts 拆为 src/languageProviders/* 子模块,类定义列与注册行已按当前代码逐行重探):
 
@@ -67,7 +67,8 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | KBEngineMethodImplementationCodeActionProvider | languageProviders/codeAction.ts:113 | :2281 | EntityMappingManager (interface method stub generation) | Edit proposal (WorkspaceEdit) |
 | KBEngineDefPythonParityCodeActionProvider | languageProviders/codeAction.ts:240 | :2289 | Diagnostics surface (context.diagnostics, code=def-method-missing-in-python) + bidirectional location surface (target Python file/class) + current document def structure (signature type mapping) | Edit proposal (WorkspaceEdit, method skeleton appended at class end) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders/codeAction.ts:378 | :2297 | Diagnostics surface (context.diagnostics, code=kbengine.receiverNone) + current document text | Edit proposal (WorkspaceEdit, wrap-style preferred + early-return style) |
-| HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine derived view (ledger source of truth, IDE-HOT-100) | Pure read; state-dot click command kbengine.hotReload.showFileState |
+| HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 |
+| KBEngineDefFormatProvider | languageProviders/defFormatProvider.ts:23 | activate/utilityCommands.ts:1162/:1166 (KODE-SYN-006, document + range both) | Current document text only, over `$/kode/def/format` (crates/kode-parser/src/def_format.rs exact-span core, crates/kode-server/src/def_format.rs); UTF-8-byte to UTF-16-code-unit conversion in backend/defFormat.ts | Edit proposal (TextEdit set); zero edits when already formatted, Rust unavailable, reply malformed or the XML is incomplete (safe give-up) | HotReloadFileStateMachine derived view (ledger source of truth, IDE-HOT-100) | Pure read; state-dot click command kbengine.hotReload.showFileState |
 
 Command query surfaces (non-register\* providers, recorded under the same rules): the symbol references panel `kbengine.symbolReferences.show` uses the defReferenceGraph custom reference graph (coexists with the LSP references provider); the entity dependency graph `kbengine.dependency.show` uses dependencyGraph.ts + webview. Their data sources are likewise EntityMappingManager snapshots, with side effects limited to the webview.
 

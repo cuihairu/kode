@@ -246,6 +246,8 @@ impl ServerState {
         crate::process_topology::register(&mut rpc);
         crate::python_callgraph::register(&mut rpc);
         crate::ruff_format::register(&mut rpc);
+        // KODE-SYN-006:.def 原生格式化(纯解析面,核收敛在 kode-parser,方案 B)。
+        crate::def_format::register(&mut rpc);
         crate::event_coalesce::register(&mut rpc);
         crate::ruff_lint::register(&mut rpc);
         crate::syntax_gate::register(&mut rpc);

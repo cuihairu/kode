@@ -16,6 +16,7 @@ import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, ruffExePathF
 import { ensureRuffFormatterRegistered, runRuffFormat, runRuffFormatCommand } from '../backend/ruffFormat';
 import { ensureRuffConfigShared, wireSharedRuffConfigEnsure } from '../backend/ruffConfigEnsure';
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
+import { KBEngineDefFormatProvider } from '../languageProviders/defFormatProvider';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
 import {
@@ -94,13 +95,15 @@ export interface UtilityCommandsDeps {
   entityMappingManager: EntityMappingManager;
   serverManager: KBEngineServerManager;
   indexScheduler: IndexScheduler;
+  /** .def 格式化 provider 的选择器(KODE-SYN-006;与 .def 其余语言服务同一 selector)。 */
+  defDocumentSelector: ReadonlyArray<vscode.DocumentFilter | string>;
   /** INDEX-DISCIPLINE-001:索引输入纪律观测面(合并器待合并数+语法门拦计数);
    * 可选注入,缺省时状态栏 tooltip 不加该行(面不冒充)。 */
   indexDisciplineStats?: () => { coalescerPending: number; syntaxGateSkipped: number } | null;
 }
 
 export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
-  const { context, entityMappingManager, serverManager, indexScheduler } = deps;
+  const { context, entityMappingManager, serverManager, indexScheduler, defDocumentSelector } = deps;
   // .def 静态分析建议(性能分析):扫描工作区全部 .def,报告写入输出面板
   // 并以诊断形式落到问题列表(装配本体在 ./defAnalysisWiring,KODE-ARCH-002 纯移动)
   const defAnalysis = wireDefAnalysis();
@@ -1150,6 +1153,21 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     showInformationMessage: (message: string, ...items: string[]) =>
       vscode.window.showInformationMessage(message, ...items)
   }).catch(() => undefined);
+
+  // KODE-SYN-006:.def 原生格式化(整文档 + 选区两面,核在 Rust 精确 span
+  // 面)。无条件注册两面 provider,不抢 editor.defaultFormatter;
+  // Rust 不可用时 provider 如实返回空编辑,不猜不半改。
+  const defFormatProvider = new KBEngineDefFormatProvider();
+  context.subscriptions.push(
+    vscode.languages.registerDocumentFormattingEditProvider(
+      defDocumentSelector,
+      defFormatProvider
+    ),
+    vscode.languages.registerDocumentRangeFormattingEditProvider(
+      defDocumentSelector,
+      defFormatProvider
+    )
+  );
 
   // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传。
   // UX-REVIEW-002b/002c:同一流程喂给侧栏「开始」入口的可观察状态(识别中/
