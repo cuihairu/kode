@@ -416,6 +416,107 @@ describe('RUST-177 types.xml 结构完整性(纯核)', () => {
   });
 });
 
+describe('KODE-SYN-003 alias.xml 文档域(预载 types.xml 注册名)', () => {
+  const preload = [
+    { name: 'ITEM_ID', target: 'UINT16' },
+    { name: 'BASE_REF', target: 'STRING' },
+    { name: 'SLOT', target: 'FIXED_DICT' }
+  ];
+  const checkPre = (text: string) => computeTypesXmlStructureFindings(text, preload);
+
+  it('types.xml 预载名在 alias 文档域可解(引擎先载 types.xml)', () => {
+    const aliasDoc = [
+      '<root>',
+      '  <CUR_ID> ITEM_ID </CUR_ID>',
+      '  <WHO> BASE_REF </WHO>',
+      '</root>'
+    ].join('\n');
+    expect(checkPre(aliasDoc)).toEqual([]);
+    // 对照:不预载同文档即前向引用口径的「此刻不可解」(预载正是差异本体)
+    expect(check(aliasDoc).map(f => f.code)).toEqual([
+      'kbengine.types.forwardRef',
+      'kbengine.types.forwardRef'
+    ]);
+  });
+
+  it('本文件先声明条目照常可解;后文条目仍是前向引用', () => {
+    const chain = [
+      '<root>',
+      '  <A> ITEM_ID </A>',
+      '  <B> A </B>',
+      '  <C> B </C>',
+      '</root>'
+    ].join('\n');
+    expect(checkPre(chain)).toEqual([]);
+    const forward = [
+      '<root>',
+      '  <C> B </C>',
+      '  <B> A </B>',
+      '  <A> ITEM_ID </A>',
+      '</root>'
+    ].join('\n');
+    expect(checkPre(forward).map(f => f.code)).toEqual([
+      'kbengine.types.forwardRef',
+      'kbengine.types.forwardRef'
+    ]);
+  });
+
+  it('本文件环链逐条报前向引用(引擎单遍装载必然中止)', () => {
+    const cycle = [
+      '<root>',
+      '  <A> B </A>',
+      '  <B> A </B>',
+      '</root>'
+    ].join('\n');
+    expect(checkPre(cycle).map(f => f.code)).toEqual([
+      'kbengine.types.forwardRef',
+      'kbengine.types.forwardRef'
+    ]);
+  });
+
+  it('与 types.xml 重名:duplicateAlias Warning(先注册者胜,本条不生效)', () => {
+    const dup = ['<root>', '  <ITEM_ID> UINT32 </ITEM_ID>', '</root>'].join('\n');
+    const findings = checkPre(dup);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].code).toBe('kbengine.types.duplicateAlias');
+    expect(findings[0].severity).toBe('warning');
+    // 本条不入表(types.xml 的 UINT16 版仍在表):后文引用照常可解——
+    // 引擎先注册者胜,引用解析到的就是先注册那条
+    const useDoc = ['<root>', '  <ITEM_ID> UINT32 </ITEM_ID>', '  <USE> ITEM_ID </USE>', '</root>'].join('\n');
+    expect(checkPre(useDoc).map(f => f.code)).toEqual(['kbengine.types.duplicateAlias']);
+  });
+
+  it('预载带 _ 前缀名不入表:引用它如实报不可解(引擎 validTypeName 拒注册)', () => {
+    const preloadWithReserved = [...preload, { name: '_TEMP', target: 'UINT8' }];
+    const doc = ['<root>', '  <X> _TEMP </X>', '</root>'].join('\n');
+    const findings = computeTypesXmlStructureFindings(doc, preloadWithReserved);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].code).toBe('kbengine.types.forwardRef');
+    expect(findings[0].message).toContain('此刻不可解');
+  });
+
+  it('FD 字段类型=预载名照常可解;预载复合名链末端 null 与在册条目行为一致', () => {
+    const fdDoc = [
+      '<root>',
+      '  <PAYLOAD>',
+      '    FIXED_DICT',
+      '    <Properties>',
+      '      <ref>',
+      '        <Type> ITEM_ID </Type>',
+      '      </ref>',
+      '      <slot>',
+      '        <Type> SLOT </Type>',
+      '      </slot>',
+      '    </Properties>',
+      '  </PAYLOAD>',
+      '</root>'
+    ].join('\n');
+    // SLOT 预载指引 FIXED_DICT:可解性走精确表命中;链末端 null=复合名
+    // 不出 ENTITYCALL 误报(与在册复合条目同口径)
+    expect(checkPre(fdDoc)).toEqual([]);
+  });
+});
+
 describe('RUST-177 validateTypesXmlDocument(装配面)', () => {
   const doc = (text: string) =>
     makeTextDocument(text, { fileName: '/tmp/ws/scripts/entity_defs/types.xml', languageId: 'xml' });

@@ -19,6 +19,7 @@ import { DefPropsInlayHintsProvider } from '../defPropsInlayHints';
 import { EngineSpiCodeLensProvider } from '../engineSpiCodeLens';
 import { SemanticTokensProvider, buildSemanticTokensLegend } from '../semanticTokensProvider';
 import { getCustomTypeInfos, getRegisteredEntities } from '../definitionWorkspace';
+import { provideAliasXmlCompletionItems, provideAliasXmlDefinition } from '../languageProviders/aliasAssist';
 import { createFileChangeMetaResolver } from '../backend/fileChangeMeta';
 import { logIndexFileChangeMeta } from '../backend/fileChangeMetaLog';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget } from '../hoverBudget';
@@ -830,6 +831,67 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     referencesImpl
   );
   context.subscriptions.push(typesXmlReferencesProvider);
+
+  // KODE-SYN-003:alias.xml 直接编辑能力——条目目标位的类型补全与跳转。
+  // 可解域=内建+types.xml 注册面+本文件先声明条目(引擎单遍装载序同口径,
+  // 后文/前向引用不供货);结构诊断面在 diagnostics 车道
+  // scheduleAliasDiagnostics,本处只挂补全/跳转双 provider。
+  const aliasXmlCompletionProvider = vscode.languages.registerCompletionItemProvider(
+    { language: 'xml', scheme: 'file', pattern: '**/alias.xml' },
+    {
+      async provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken
+      ) {
+        const operation = startLanguageServiceOperation('completion', {
+          fileKind: 'alias',
+          documentVersion: document.version
+        });
+        try {
+          if (token.isCancellationRequested) {
+            operation.end('cancelled');
+            return null;
+          }
+          const items = await provideAliasXmlCompletionItems(document, position);
+          operation.end('ok');
+          return items;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    }
+  );
+  context.subscriptions.push(aliasXmlCompletionProvider);
+  const aliasXmlDefinitionProvider = vscode.languages.registerDefinitionProvider(
+    { language: 'xml', scheme: 'file', pattern: '**/alias.xml' },
+    {
+      async provideDefinition(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        token: vscode.CancellationToken
+      ) {
+        const operation = startLanguageServiceOperation('definition', {
+          fileKind: 'alias',
+          documentVersion: document.version
+        });
+        try {
+          if (token.isCancellationRequested) {
+            operation.end('cancelled');
+            return null;
+          }
+          const locations = await provideAliasXmlDefinition(document, position);
+          operation.end('ok');
+          return locations;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    }
+  );
+  context.subscriptions.push(aliasXmlDefinitionProvider);
 
   // IDE-NAV-005:def 文档符号(Outline)——Properties/三方法段容器+段内声明
   const documentSymbolProvider = vscode.languages.registerDocumentSymbolProvider(

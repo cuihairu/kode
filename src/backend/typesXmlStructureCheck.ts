@@ -436,13 +436,30 @@ function checkFixedDictFields(
 }
 
 /**
+ * 预载注册名(KODE-SYN-003 alias.xml 文档域校验的装载语境):引擎单遍先载
+ * types.xml 再载 alias.xml,校验 alias.xml 时把 types.xml 已注册名带指引
+ * 预载进注册账——types.xml 名在 alias 文档域内可解,与引擎装载序一致。
+ */
+export interface PreloadedRegistryName {
+  name: string;
+  /** 装载指引(折叠形态,如 UINT32/FIXED_DICT/ARRAY/另一别名名) */
+  target: string;
+}
+
+/**
  * 全量计算:types.xml 结构完整性发现。纯函数(文本进,发现出)。
  * `known` 表严格按引擎单遍装载序累积——检查本条目标时表里**没有本条**
  * (引擎 addDataType 在目标解析成功之后才注册),自引用与前向引用同落
  * 「此刻未知」。引擎首个致命错即中止、后文条目不装载;本检查继续扫描给全
  * 发现,但致命条目一律不入表(注册账与引擎一致,见头注边界)。
+ * `preloaded` = 在本文档之前已注册的名字(KODE-SYN-003:alias.xml 校验时
+ * 传 types.xml 注册面)。带 `_` 前缀的不预载(validTypeName 在注册前拒绝,
+ * 引擎侧根本不会入表);预载内部重名按首位保留(引擎先注册者胜)。
  */
-export function computeTypesXmlStructureFindings(text: string): TypesXmlStructureFinding[] {
+export function computeTypesXmlStructureFindings(
+  text: string,
+  preloaded?: ReadonlyArray<PreloadedRegistryName>
+): TypesXmlStructureFinding[] {
   // 解析器对畸形 XML 会抛(assignNodePositions 定位失败);本文面只在可解析
   // 文档上声称,解析失败 = 零发现
   let document;
@@ -454,6 +471,15 @@ export function computeTypesXmlStructureFindings(text: string): TypesXmlStructur
   if (!document.root) { return []; }
   const findings: TypesXmlStructureFinding[] = [];
   const tables: KnownTables = { known: new Map<string, KnownAlias>(), knownLower: new Set<string>() };
+  if (preloaded) {
+    for (const entry of preloaded) {
+      if (entry.name.startsWith('_') || tables.known.has(entry.name)) {
+        continue;
+      }
+      tables.known.set(entry.name, { name: entry.name, target: entry.target });
+      tables.knownLower.add(entry.name.toLowerCase());
+    }
+  }
   const items = getDirectChildElements(document.root);
   const names: NameContext = {
     allExact: new Set(items.map(item => item.name.trim())),

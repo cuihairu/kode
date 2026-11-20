@@ -176,6 +176,7 @@ export function activate(context: vscode.ExtensionContext) {
     isDefDocument,
     isEntitiesXmlDocument,
     isTypesXmlDocument,
+    isAliasXmlDocument,
     isPythonDocument,
     isProcessTopologyManifestDocument
   } = activateInfrastructure({ context });
@@ -285,6 +286,7 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleDefDiagnostics,
     scheduleEntitiesDiagnostics,
     scheduleTypesDiagnostics,
+    scheduleAliasDiagnostics,
     scheduleReceiverNoneDiagnostics,
     scheduleStartupScriptDiagnostics,
     scheduleDefMethodConsistencyDiagnostics,
@@ -337,7 +339,8 @@ export function activate(context: vscode.ExtensionContext) {
     pythonClassIndex,
     isDefDocument,
     isPythonDocument,
-    isTypesXmlDocument
+    isTypesXmlDocument,
+    isAliasXmlDocument
   });
   markActivateStage('l3-diagnostics');
 
@@ -518,6 +521,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isTypesXmlDocument(event.document)) {
         // RUST-177:types.xml 结构完整性诊断(装载序敏/ARRAY/FIXED_DICT 面)
         scheduleTypesDiagnostics(event.document, 'queued');
+      } else if (isAliasXmlDocument(event.document)) {
+        // KODE-SYN-003:alias.xml 结构完整性诊断(types.xml 预载语境)
+        scheduleAliasDiagnostics(event.document, 'queued');
       } else if (isProcessTopologyManifestDocument(event.document)) {
         // C-17:清单变更 → 拓扑校验(全量重排,拓扑是全局输入)。
         scheduleProcessTopologyDiagnostics(event.document, 'queued');
@@ -682,6 +688,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isTypesXmlDocument(document)) {
         // RUST-177:打开 types.xml 即发布结构完整性诊断(立即通道)
         scheduleTypesDiagnostics(document, 'immediate');
+      } else if (isAliasXmlDocument(document)) {
+        // KODE-SYN-003:打开 alias.xml 即发布结构完整性诊断(立即通道)
+        scheduleAliasDiagnostics(document, 'immediate');
       } else if (isProcessTopologyManifestDocument(document)) {
         // C-17:清单打开 → 全量重排(拓扑是全局输入)。
         scheduleProcessTopologyDiagnostics(document, 'immediate');
@@ -710,6 +719,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isTypesXmlDocument(document)) {
         // RUST-177:已开 types.xml 档(激活期补发)结构完整性诊断。
         scheduleTypesDiagnostics(document, 'immediate');
+      } else if (isAliasXmlDocument(document)) {
+        // KODE-SYN-003:已开 alias.xml 档(激活期补发)结构完整性诊断。
+        scheduleAliasDiagnostics(document, 'immediate');
       } else if (isProcessTopologyManifestDocument(document)) {
         scheduleProcessTopologyDiagnostics(document, 'immediate');
       } else if (isPythonDocument(document)) {
@@ -938,6 +950,9 @@ export function activate(context: vscode.ExtensionContext) {
         } else if (isTypesXmlDocument(doc)) {
           // RUST-177:配置切换重算 types.xml 结构诊断面。
           scheduleTypesDiagnostics(doc, 'immediate');
+        } else if (isAliasXmlDocument(doc)) {
+          // KODE-SYN-003:配置切换重算 alias.xml 结构诊断面。
+          scheduleAliasDiagnostics(doc, 'immediate');
         } else if (isProcessTopologyManifestDocument(doc)) {
           if (processTopologyInputsChanged) {
             scheduleProcessTopologyDiagnostics(doc, 'immediate');

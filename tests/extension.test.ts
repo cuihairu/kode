@@ -160,13 +160,15 @@ describe('extension activate 装配', () => {
     expect(registeredViewIds.slice(0, declaredViewIds.length).sort()).toEqual(declaredViewIds);
     expect(registeredViewIds.slice(declaredViewIds.length).sort()).toEqual(declaredViewIds);
 
-    // 语言服务:补全 4(.def + Python + 启动脚本,KBEXP-1 + 配置 XML,KSEM-CFG-04)、
+    // 语言服务:补全 4(.def + Python + 启动脚本,KBEXP-1 + 配置 XML,KSEM-CFG-04)
+    // + alias.xml 编辑辅助再一份(KODE-SYN-003:别名类型补全)、
     // 悬停 3(.def/hook + 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、
     // 调用层级 1、重命名 1
-    expect(languagesRegistry.completionRegistrations).toHaveLength(4);
+    expect(languagesRegistry.completionRegistrations).toHaveLength(5);
     expect(languagesRegistry.hoverRegistrations).toHaveLength(3);
     // 定义跳转 3(.def + Python,KSEM-CFG-06 起配置来源跳转再一份)
-    expect(languagesRegistry.definitionRegistrations).toHaveLength(3);
+    // + alias.xml 别名目标跳转再一份(KODE-SYN-003)
+    expect(languagesRegistry.definitionRegistrations).toHaveLength(4);
     // 引用提供者(Shift+F12)三份:IDE-NAV-001 def 文档选择器一份、
     // GLOBDATA-001 python 数据字典键选择器一份(同一实例双 selector 注册)、
     // IDE-NAV-017 types.xml 符号选择器一份

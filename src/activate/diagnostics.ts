@@ -114,7 +114,7 @@ import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
 import { readSharedFileSnapshot, readSharedFileSnapshotAsync } from '../sharedFileSnapshot';
-import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument, validateTypesXmlDocument } from '../languageProviders';
+import { isPythonMroJumpEnabled, validateAliasXmlDocument, validateDocument, validateEntitiesXmlDocument, validateTypesXmlDocument } from '../languageProviders';
 import { DiagnosticScheduler, getDiagnosticScheduler } from '../backend/diagnosticScheduler';
 import { validateProcessTopologyInRust } from '../backend/processTopologyRust';
 import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from '../backend/processTopologyDiagnostics';
@@ -149,6 +149,7 @@ export interface DiagnosticsDeps {
   isDefDocument(document: vscode.TextDocument): boolean;
   isPythonDocument(document: vscode.TextDocument): boolean;
   isTypesXmlDocument(document: vscode.TextDocument): boolean;
+  isAliasXmlDocument(document: vscode.TextDocument): boolean;
 }
 
 /** L3 产出的调度句柄/集合——文档事件面经组合根注入消费 */
@@ -158,6 +159,7 @@ export interface DiagnosticsShared {
   scheduleDefDiagnostics: ScheduleDiagnostics;
   scheduleEntitiesDiagnostics: ScheduleDiagnostics;
   scheduleTypesDiagnostics: ScheduleDiagnostics;
+  scheduleAliasDiagnostics: ScheduleDiagnostics;
   scheduleReceiverNoneDiagnostics: ScheduleDiagnostics;
   scheduleStartupScriptDiagnostics: ScheduleDiagnostics;
   scheduleDefMethodConsistencyDiagnostics: ScheduleDiagnostics;
@@ -207,7 +209,7 @@ export interface DiagnosticsShared {
 }
 
 export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
-  const { context, entityMappingManager, pythonClassIndex, isDefDocument, isPythonDocument, isTypesXmlDocument } = deps;
+  const { context, entityMappingManager, pythonClassIndex, isDefDocument, isPythonDocument, isTypesXmlDocument, isAliasXmlDocument } = deps;
   // PR1 打点:diagnostics = validateDocument/validateEntitiesXmlDocument 的
   // 同步耗时(保持同步调用,不改发布时序)。
   const validateDocumentTimed = (document: vscode.TextDocument, collection: vscode.DiagnosticCollection): void => {
@@ -244,6 +246,20 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     });
     try {
       validateTypesXmlDocument(document, collection);
+      operation.end('ok');
+    } catch (error) {
+      operation.end('error');
+      throw error;
+    }
+  };
+  // KODE-SYN-003:alias.xml 结构诊断打点(同 types 计时面,fileKind 独立可辨)
+  const validateAliasXmlDocumentTimed = (document: vscode.TextDocument, collection: vscode.DiagnosticCollection): void => {
+    const operation = startLanguageServiceOperation('diagnostics', {
+      fileKind: 'alias',
+      documentVersion: document.version
+    });
+    try {
+      validateAliasXmlDocument(document, collection);
       operation.end('ok');
     } catch (error) {
       operation.end('error');
@@ -317,6 +333,33 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
       },
       publish: () => {
         /* validateTypesXmlDocument 直接写 collection,无独立发布面 */
+      }
+    };
+    if (channel === 'queued') {
+      diagnosticScheduler.requestQueued(document, options);
+    } else {
+      diagnosticScheduler.request(document, options);
+    }
+  };
+
+  // KODE-SYN-003:alias.xml 结构完整性诊断——同一检查核(computeTypesXmlStructureFindings
+  // 带 types.xml 预载注册面),同调度器单排队槽,共用诊断 collection 与事件生命周期
+  const scheduleAliasDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isAliasXmlDocument(document)) {
+      return;
+    }
+    const options = {
+      layer: 'local' as const,
+      compute: () => {
+        const list: vscode.Diagnostic[] = [];
+        validateAliasXmlDocumentTimed(document, diagnostics);
+        return list;
+      },
+      publish: () => {
+        /* validateAliasXmlDocument 直接写 collection,无独立发布面 */
       }
     };
     if (channel === 'queued') {
@@ -2068,6 +2111,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleDefDiagnostics,
     scheduleEntitiesDiagnostics,
     scheduleTypesDiagnostics,
+    scheduleAliasDiagnostics,
     scheduleReceiverNoneDiagnostics,
     scheduleStartupScriptDiagnostics,
     scheduleDefMethodConsistencyDiagnostics,

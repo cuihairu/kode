@@ -47,6 +47,7 @@ export interface InfrastructureShared {
   isDefDocument(document: vscode.TextDocument): boolean;
   isEntitiesXmlDocument(document: vscode.TextDocument): boolean;
   isTypesXmlDocument(document: vscode.TextDocument): boolean;
+  isAliasXmlDocument(document: vscode.TextDocument): boolean;
   isPythonDocument(document: vscode.TextDocument): boolean;
   isProcessTopologyManifestDocument(document: vscode.TextDocument): boolean;
 }
@@ -201,9 +202,12 @@ export function activateInfrastructure(
     document.fileName.endsWith('entities.xml');
   // types.xml 结构诊断(RUST-177/KBE-007):别名装载序敏/ARRAY/FIXED_DICT
   // 结构面;与 .def/entities.xml 共用诊断 collection 与文档事件生命周期
-  // (alias.xml 是注册表失效路由面,不走本谓词——结构检查只认 types.xml)
   const isTypesXmlDocument = (document: vscode.TextDocument): boolean =>
     document.fileName.endsWith('types.xml');
+  // alias.xml 结构诊断(KODE-SYN-003):与 types.xml 同一检查核、同一调度臂
+  // (scheduleTypesDiagnostics 分支),装载语境预载 types.xml 注册名
+  const isAliasXmlDocument = (document: vscode.TextDocument): boolean =>
+    document.fileName.endsWith('alias.xml');
   // Python 侧诊断(receiver 可能为 None + 段错配,用户令 2026-10-27):与
   // .def/entities.xml 共用诊断 collection 与文档事件生命周期
   const isPythonDocument = (document: vscode.TextDocument): boolean =>
@@ -225,6 +229,7 @@ export function activateInfrastructure(
     isDefDocument,
     isEntitiesXmlDocument,
     isTypesXmlDocument,
+    isAliasXmlDocument,
     isPythonDocument,
     isProcessTopologyManifestDocument
   };

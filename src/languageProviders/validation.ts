@@ -6,7 +6,7 @@ import { getOrParseDocumentSync } from '../backend/documentStore';
 import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocument, type LspDiagnosticReportFace } from '../backend/kodeCoreShadowFaces';
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../backend/defAnalyzer';
 import { collectDefPythonParityInput } from '../backend/defPythonParity';
-import { computeTypesXmlStructureFindings } from '../backend/typesXmlStructureCheck';
+import { computeTypesXmlStructureFindings, type PreloadedRegistryName } from '../backend/typesXmlStructureCheck';
 import {
   computePersistentEntityCallFindings,
   PERSISTENT_ENTITY_CALL_DIAGNOSTIC_CODE
@@ -331,6 +331,66 @@ export function validateTypesXmlDocument(
       return diagnostic;
     })
   );
+}
+
+// alias.xml 结构完整性诊断(KODE-SYN-003):与 types.xml 同一检查核
+// (computeTypesXmlStructureFindings),差异仅在装载语境——引擎单遍先载
+// types.xml 再载 alias.xml(datatypes.cpp loadTypes 调用序),alias 文档域
+// 预载 types.xml 注册名(仅名字+指引,过滤 alias.xml 来源:alias 条目按
+// 本文件装载序在本文件域内判定,跨文件引用只认 types.xml——alias→后文
+// alias 的前向引用仍是引擎中止面)。未保存编辑双通道:本文件按缓冲文本
+// 校验;types.xml 脏版经 getEntityCustomTypesSnapshot 的 open-version
+// 前进即时生效。开关与缓存命名空间('alias-analysis')同 types 面。
+export function validateAliasXmlDocument(
+  document: vscode.TextDocument,
+  diagnostics: vscode.DiagnosticCollection
+): void {
+  const featureConfig = getLanguageFeatureConfig();
+  if (!featureConfig.enableDiagnostics) {
+    diagnostics.delete(document.uri);
+    return;
+  }
+
+  const { result: findings } = getOrParseDocumentSync(
+    document,
+    text => computeTypesXmlStructureFindings(text, typesXmlRegistryNamesForDocument(document)),
+    'alias-analysis'
+  );
+
+  diagnostics.set(
+    document.uri,
+    findings.map(item => {
+      const start = document.positionAt(item.offset);
+      const end = document.positionAt(item.offset + item.length);
+      const diagnostic = new vscode.Diagnostic(
+        new vscode.Range(start, end),
+        item.message,
+        item.severity === 'warning'
+          ? vscode.DiagnosticSeverity.Warning
+          : vscode.DiagnosticSeverity.Error
+      );
+      diagnostic.code = item.code;
+      return diagnostic;
+    })
+  );
+}
+
+/** alias.xml 文档域的 types.xml 预载注册面(名字+指引;无工作区语境为空) */
+function typesXmlRegistryNamesForDocument(
+  document: vscode.TextDocument
+): PreloadedRegistryName[] {
+  const root = getWorkspaceRootForDocument(document) ?? '';
+  if (!root) {
+    return [];
+  }
+  return getEntityCustomTypesSnapshot(root)
+    .filter(info => !info.filePath.endsWith('alias.xml'))
+    .map(info => ({
+      name: info.name,
+      // extractCustomTypeAliasType 的空指引哨兵 'ALIAS' 还原为空串:
+      // 引擎对空指引 getDataType("") 必然查不到,不得让哨兵词假可解
+      target: info.aliasType === 'ALIAS' ? '' : info.aliasType
+    }));
 }
 
 // .def 属性 Persistent×ENTITYCALL 静默降级诊断(RUST-177/KBE-007 诊断面,
