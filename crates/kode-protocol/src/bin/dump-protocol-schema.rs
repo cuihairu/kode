@@ -57,6 +57,8 @@ struct ProtocolSchemaRoot {
     document_symbol_params: DocumentSymbolParams,
     reference_params: ReferenceParams,
     reference_context: ReferenceContext,
+    prepare_rename_params: PrepareRenameParams,
+    rename_params: RenameParams,
     health_report: HealthReport,
     core_resources: CoreResources,
     document_summary: DocumentSummary,

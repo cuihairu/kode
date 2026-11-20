@@ -468,6 +468,22 @@
       ],
       "type": "object"
     },
+    "PrepareRenameParams": {
+      "description": "prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置—— 可重命名符号解析与候选名区间由服务端从已同步文档复算。",
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "Range": {
       "description": "LSP 区间。",
       "properties": {
@@ -532,6 +548,26 @@
       },
       "required": [
         "files"
+      ],
+      "type": "object"
+    },
+    "RenameParams": {
+      "description": "rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。 def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。",
+      "properties": {
+        "newName": {
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "newName",
+        "position",
+        "textDocument"
       ],
       "type": "object"
     },
@@ -669,6 +705,11 @@
         "referencesProvider": {
           "default": false,
           "description": "RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。",
+          "type": "boolean"
+        },
+        "renameProvider": {
+          "default": false,
+          "description": "RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。",
           "type": "boolean"
         },
         "textDocumentSync": {
@@ -871,6 +912,9 @@
     "position": {
       "$ref": "#/definitions/Position"
     },
+    "prepare_rename_params": {
+      "$ref": "#/definitions/PrepareRenameParams"
+    },
     "range": {
       "$ref": "#/definitions/Range"
     },
@@ -882,6 +926,9 @@
     },
     "rename_files_params": {
       "$ref": "#/definitions/RenameFilesParams"
+    },
+    "rename_params": {
+      "$ref": "#/definitions/RenameParams"
     },
     "renamed_file": {
       "$ref": "#/definitions/RenamedFile"
@@ -946,10 +993,12 @@
     "initialize_result",
     "notification",
     "position",
+    "prepare_rename_params",
     "range",
     "reference_context",
     "reference_params",
     "rename_files_params",
+    "rename_params",
     "renamed_file",
     "request",
     "request_id",

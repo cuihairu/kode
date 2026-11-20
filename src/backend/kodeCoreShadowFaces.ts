@@ -624,6 +624,157 @@ export async function serveReferencesFromRust(
   return result;
 }
 
+export interface LspPrepareRenameFace {
+  range: LspRangeFace;
+  placeholder: string;
+}
+
+export interface DefRenameConflictFace {
+  surface: string;
+  name: string;
+  line: number;
+  filePath: string | null;
+}
+
+export interface DefRenameFileEditsFace {
+  filePath: string;
+  edits: LspRangeFace[];
+}
+
+export interface DefRenameEditsFace {
+  conflict: DefRenameConflictFace | null;
+  closureConflict: DefRenameConflictFace | null;
+  fileEdits: DefRenameFileEditsFace[];
+}
+
+const isLspPrepareRenameFace = (value: unknown): value is LspPrepareRenameFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return isLspRangeFace(face.range) && typeof face.placeholder === 'string';
+};
+
+const isDefRenameConflictFace = (value: unknown): value is DefRenameConflictFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return (
+    typeof face.surface === 'string' &&
+    typeof face.name === 'string' &&
+    typeof face.line === 'number' &&
+    (face.filePath === null || typeof face.filePath === 'string')
+  );
+};
+
+const isDefRenameEditsFace = (value: unknown): value is DefRenameEditsFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  if (
+    !(face.conflict === null || isDefRenameConflictFace(face.conflict)) ||
+    !(face.closureConflict === null || isDefRenameConflictFace(face.closureConflict)) ||
+    !Array.isArray(face.fileEdits)
+  ) {
+    return false;
+  }
+  return face.fileEdits.every(entry => {
+    if (!entry || typeof entry !== 'object') {
+      return false;
+    }
+    const fileEdits = entry as Record<string, unknown>;
+    return (
+      typeof fileEdits.filePath === 'string' &&
+      Array.isArray(fileEdits.edits) &&
+      fileEdits.edits.every(isLspRangeFace)
+    );
+  });
+};
+
+/**
+ * prepareRename 面 rust 服务(RUST-141 批 2 接线):服务轨道下先镜像 .def
+ * 文档,再请求 kode-server textDocument/prepareRename。Rust 面 = def 属性/
+ * 方法名上光标的候选区间+占位名(核 resolve_rename_symbol_at_offset,与 TS
+ * defRenamer 同构)。非 .def/未开档/光标不在可重命名符号上(null)/任何失败/
+ * 应答畸形 → null,调用方回 TS 既有实现(不部分采用)。非服务轨道/未装配门
+ * 零开销。
+ */
+export async function servePrepareRenameFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  isCancelled?: () => boolean
+): Promise<LspPrepareRenameFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isDefDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/prepareRename', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (result === null) {
+    return null;
+  }
+  if (!isLspPrepareRenameFace(result)) {
+    return null;
+  }
+  return result;
+}
+
+/**
+ * def 重命名编辑复算面 rust 服务(RUST-141 批 2 接线):服务轨道下先镜像
+ * .def 文档,再请求 kode-server textDocument/rename。Rust 面 = 同文件冲突
+ * 预检(NAV-008)+ 闭包占名预检(AUD-061)+ 目标与后代 def 全部编辑
+ * (AUD-046);冲突位不阻塞应答,由 provider 决定抛错文案(文案串留 TS 侧
+ * l10n 边界)。python self 访问/receiver 调用改写与漂移守卫归 TS
+ * entityMapping 车道,不在本面。应答畸形(任一键形状不对)→ null,调用方
+ * 回 TS 既有实现(不部分采用)。
+ */
+export async function serveRenameFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  newName: string,
+  isCancelled?: () => boolean
+): Promise<DefRenameEditsFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isDefDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character },
+    newName
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/rename', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (result === null || !isDefRenameEditsFace(result)) {
+    return null;
+  }
+  return result;
+}
+
 /**
  * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
  * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值

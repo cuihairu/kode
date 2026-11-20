@@ -202,6 +202,9 @@ pub struct ServerCapabilities {
     /// RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。
     #[serde(default)]
     pub references_provider: bool,
+    /// RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。
+    #[serde(default)]
+    pub rename_provider: bool,
     /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
@@ -414,6 +417,25 @@ pub struct ReferenceParams {
 pub struct ReferenceContext {
     #[serde(default)]
     pub include_declaration: bool,
+}
+
+/// prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置——
+/// 可重命名符号解析与候选名区间由服务端从已同步文档复算。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PrepareRenameParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+}
+
+/// rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。
+/// def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+    pub new_name: String,
 }
 
 // ---------------------------------------------------------------------------

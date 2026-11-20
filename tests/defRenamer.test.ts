@@ -861,7 +861,7 @@ describe('KBEngineRenameProvider 装配', () => {
   it('prepareRename 返回词区间与占位名', async () => {
     const document = heroDocument();
     const offset = cursorAt(HERO_DEF, '<hp>');
-    const result = provider.prepareRename(document, document.positionAt(offset));
+    const result = await provider.prepareRename(document, document.positionAt(offset));
 
     expect(result).not.toBeNull();
     expect(result!.placeholder).toBe('hp');
@@ -872,7 +872,7 @@ describe('KBEngineRenameProvider 装配', () => {
   it('非符号位置 prepareRename 返回 null', async () => {
     const document = heroDocument();
     const typeValue = HERO_DEF.indexOf('UINT32') + 1;
-    expect(provider.prepareRename(document, document.positionAt(typeValue))).toBeNull();
+    expect(await provider.prepareRename(document, document.positionAt(typeValue))).toBeNull();
   });
 
   it('provideRenameEdits 产出跨文件 WorkspaceEdit 且区间可经各自行表回原', async () => {

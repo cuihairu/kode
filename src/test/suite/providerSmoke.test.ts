@@ -103,7 +103,7 @@ describe('compiled language provider smoke', () => {
     const offset = sampleText.indexOf('<hp>') + 1;
     const position = document.positionAt(offset) as unknown as vscode.Position;
 
-    const prepared = provider.prepareRename(document, position);
+    const prepared = await provider.prepareRename(document, position);
     assert.ok(prepared, 'prepareRename for the hp property is expected');
     if (!('placeholder' in prepared)) {
       assert.fail('prepareRename expected the placeholder form');

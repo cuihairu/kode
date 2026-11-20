@@ -42,10 +42,12 @@ export interface KodeProtocol {
   initialize_result: InitializeResult;
   notification: Notification;
   position: Position;
+  prepare_rename_params: PrepareRenameParams;
   range: Range;
   reference_context: ReferenceContext;
   reference_params: ReferenceParams;
   rename_files_params: RenameFilesParams;
+  rename_params: RenameParams;
   renamed_file: RenamedFile;
   request: Request;
   request_id: RequestId;
@@ -312,6 +314,10 @@ export interface ServerCapabilities {
    * RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。
    */
   referencesProvider?: boolean;
+  /**
+   * RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。
+   */
+  renameProvider?: boolean;
   textDocumentSync: TextDocumentSyncOptions;
 }
 /**
@@ -330,6 +336,13 @@ export interface TextDocumentSyncOptions {
 export interface ServerInfo {
   name: string;
   version: string;
+}
+/**
+ * prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置—— 可重命名符号解析与候选名区间由服务端从已同步文档复算。
+ */
+export interface PrepareRenameParams {
+  position: Position;
+  textDocument: TextDocumentIdentifier;
 }
 /**
  * 引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。
@@ -357,6 +370,14 @@ export interface RenameFilesParams {
 export interface RenamedFile {
   newUri: string;
   oldUri: string;
+}
+/**
+ * rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。 def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。
+ */
+export interface RenameParams {
+  newName: string;
+  position: Position;
+  textDocument: TextDocumentIdentifier;
 }
 /**
  * JSON-RPC 响应。`id: None` 仅用于 id 不可知的解析错误(规范允许 null)。

@@ -91,6 +91,41 @@ fn utf16_offset_to_line(units: &[u16], offset: usize) -> usize {
     units[..clamped].iter().filter(|&&c| c == 0x0A).count() + 1
 }
 
+/// UTF-16 (0 基行,行内 UTF-16 列) → UTF-16 偏移(与 TS `document.offsetAt`
+/// 同语义:行/列越界钳制——行超尾钳到文本末尾,列超行尾钳到行尾;行分隔
+/// 恒 '\n')。LSP position → 决策核 offset 的服务面换算。
+pub fn utf16_position_to_offset(units: &[u16], line0: usize, character: usize) -> usize {
+    let mut line = 0usize;
+    let mut offset = 0usize;
+    while offset < units.len() && line < line0 {
+        if units[offset] == 0x0A {
+            line += 1;
+        }
+        offset += 1;
+    }
+    let mut col = 0usize;
+    while offset < units.len() && col < character && units[offset] != 0x0A {
+        offset += 1;
+        col += 1;
+    }
+    offset
+}
+
+/// UTF-16 偏移 → (0 基行,行内 UTF-16 列)(与 TS `document.positionAt` 同
+/// 语义:偏移越界钳到文本末尾)。决策核 offset → LSP 区间面的服务面换算。
+pub fn utf16_offset_to_position(units: &[u16], offset: usize) -> (usize, usize) {
+    let clamped = offset.min(units.len());
+    let mut line = 0usize;
+    let mut line_start = 0usize;
+    for (idx, &unit) in units[..clamped].iter().enumerate() {
+        if unit == 0x0A {
+            line += 1;
+            line_start = idx + 1;
+        }
+    }
+    (line, clamped - line_start)
+}
+
 // ---------------------------------------------------------------------------
 // 面
 // ---------------------------------------------------------------------------
