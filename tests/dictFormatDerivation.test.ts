@@ -553,3 +553,51 @@ describe('KSEM-SER-09 sweep 三批: sameKind 空元素同形', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 29 语义钉面:注释/字符串位写点不判、未闭合括号退路、空写点集、
+// unknown 基、字面量基+条件键并入。
+// 覆盖口径残余:9 miss(282/326/432/437/552/616/734/744/784)与批 6 定性
+// 一致(见下方九臂死码论证),本组不改变覆盖数,只补行为钉面。
+// ---------------------------------------------------------------------------
+describe('批 29:写点位与括号退路容错', () => {
+  it('注释行里的 NAME = {…} 不是写点', () => {
+    const out = fmts(['# CFG = {1: 2}', 'x = 1']);
+    expect(out.has('CFG')).toBe(false);
+  });
+
+  it('字符串里的 name[...] = 不是写点(名位非真代码)', () => {
+    const out = fmts(['s = "CFG[1] = 2"', 'x = 1']);
+    expect(out.has('CFG')).toBe(false);
+  });
+
+  it('元组/括号未闭合 → unknown,不猜', () => {
+    expect(classifyValue('(1, (2')).toEqual({ kind: 'unknown' });
+    expect(classifyValue('(1')).toEqual({ kind: 'unknown' });
+  });
+
+  it('列表字面量在非 [ 开头时不进列表分支(dispatch 由首字符决定)', () => {
+    expect(classifyValue('None')).toEqual(scalar('none'));
+    expect(classifyValue('(1, 2)')).toEqual({ kind: 'tuple', element: scalar('int') });
+  });
+});
+
+describe('批 29 续:空写点与纯 unknown 基', () => {
+  it('无写点变量 → 不入表(空形状声称)', () => {
+    expect(fmts(['x = 1', 'y = 2']).size).toBe(0);
+  });
+
+  it('模块级 unknown 基 + 无条件非字面量 → 表内无该名', () => {
+    expect(fmts(['CFG = build()', 'CFG = other()']).size).toBe(0);
+  });
+
+  it('无条件字面量 + 条件写点 → 保留字面量基,键并入', () => {
+    const fmt = asLiteral('CFG', [
+      "CFG = {'a': 1}",
+      'if c:',
+      "    CFG['b'] = 2"
+    ]);
+    expect([...fmt.required.keys()]).toEqual(['a']);
+    expect([...fmt.optional.keys()]).toEqual(['b']);
+  });
+});
