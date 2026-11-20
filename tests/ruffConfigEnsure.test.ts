@@ -92,6 +92,50 @@ describe('纯函数面', () => {
   });
 });
 
+describe('落点扫描与守卫边界臂', () => {
+  it('行注释/转义/已闭多行串/干净尾界:照常追加(原内容逐字节保留)', () => {
+    // '#' 只在字符串外当行注释:注释里的 `]` 与未配平引号都不算落点存疑
+    const withComment = '# trailing ] quote "\n[project]\nname = "demo"\n';
+    const appendedComment = appendToolRuffSection(withComment);
+    expect(appendedComment).not.toBeNull();
+    expect(appendedComment!.startsWith(withComment)).toBe(true);
+    // 双引号内转义:闭引号位由转义消费,串仍闭合
+    const withEscape = 'name = "a\\\\b"\n';
+    const appendedEscape = appendToolRuffSection(withEscape);
+    expect(appendedEscape).not.toBeNull();
+    expect(appendedEscape!.startsWith(withEscape)).toBe(true);
+    // 已闭合三引号多行串:跨行连续后回到干净落点
+    const tripleClosed = 'desc = """\nmulti\n"""\n';
+    const appendedTriple = appendToolRuffSection(tripleClosed);
+    expect(appendedTriple).not.toBeNull();
+    expect(appendedTriple!.startsWith(tripleClosed)).toBe(true);
+  });
+
+  it('未配平收括号/尾行 continuation → 如实拒绝,绝不写可能损坏的 TOML', () => {
+    expect(appendToolRuffSection('[project]\nname = "a" ]\n')).toBeNull();
+    expect(appendToolRuffSection('name = "a"\\\n')).toBeNull();
+  });
+
+  it('表头未配平 ]:不认成 [tool.ruff] 段,整文件仍按 unsafe 拒绝', () => {
+    // `[tool.ruff`(无收括号)= 畸形表头行,close<=0 跳过 → 不认成已存在段;
+    // 但整文件括号未归零 → 追加如实拒绝(不冒充检测结果)
+    expect(hasToolRuffSection('[tool.ruff\nline-length = 88\n')).toBe(false);
+    expect(appendToolRuffSection('[tool.ruff\nline-length = 88\n')).toBeNull();
+  });
+
+  it('写入失败 → write-failed(弹窗已发生一次,文件未落)', async () => {
+    const { deps, depot } = makeDeps({ answer: CREATE_ACTION });
+    const failingDeps: RuffConfigEnsureDeps = {
+      ...deps,
+      writeFileText: () => false
+    };
+    const session = createRuffConfigEnsureSession();
+    expect(await session.ensure(failingDeps)).toBe('write-failed');
+    expect(depot.dialogs).toHaveLength(1);
+    expect(depot.files.has('pyproject.toml')).toBe(false);
+  });
+});
+
 describe('会话编排五钉子', () => {
   it('① 无配置 → 确认后生成最小文件;内容可预览', async () => {
     const { deps, depot } = makeDeps({ answer: CREATE_ACTION });

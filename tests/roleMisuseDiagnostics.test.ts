@@ -374,3 +374,131 @@ describe('buildRoleMisuseItemsWithRust(Rust-first,TS 兜底)', () => {
     });
   });
 });
+
+
+// 畸形应答逐条臂:渲染层对「缺字段/语义矛盾/非内建」一律整面作废回 TS 兜底,
+// 绝不部分采用(静默丢能力)。空数组是合法空面,不算畸形。
+describe('renderRustRoleMisuseItems 畸形面整面作废(逐条臂)', () => {
+  /** 注入门替身(与本文件上方 buildRoleMisuseItemsWithRust 用例同形,块内自带) */
+  const withGateLocal = async (
+    respond: () => unknown,
+    run: () => Promise<void>
+  ): Promise<void> => {
+    const gate = {
+      runInRust: async (_method: string, _params: unknown) => respond()
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate);
+    try {
+      await run();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  };
+
+  /** 合成面表:phantomFaceProp 只在 baseapp/client 注册(引擎属性表无此名 →
+   * 取证空串);当前面取 cellapp(注册面不含当前面才不是语义矛盾)。 */
+  const SYNTHETIC: RoleMisuseTables = {
+    baseapp: ['phantomFaceProp'],
+    cellapp: [],
+    client: ['phantomFaceProp']
+  };
+
+  const baseItem = {
+    code: ROLE_MISUSE_DIAGNOSTIC_CODE,
+    line: 0,
+    character: 0,
+    length: 14,
+    propertyName: 'velocity',
+    registeredFaces: ['client'] as EntityComponentFace[]
+  };
+  const mk = (over: Partial<typeof baseItem>): unknown => ({ ...baseItem, ...over });
+
+  const arms: Array<{ label: string; items: unknown; tables: RoleMisuseTables; expectNull: boolean }> = [
+    { label: '应答非数组', items: 'not-an-array', tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: '数组元素非对象', items: [baseItem, 42], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'code 不符', items: [mk({ code: 'kbengine.unknownRoleMisuseCode' })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'line 负值', items: [mk({ line: -1 })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'character 负值', items: [mk({ character: -1 })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'length 负值', items: [mk({ length: -1 })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'propertyName 缺失', items: [mk({ propertyName: undefined })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'propertyName 空串', items: [mk({ propertyName: '' })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'registeredFaces 非数组', items: [mk({ registeredFaces: 'client' })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'registeredFaces 元素非法面', items: [mk({ registeredFaces: ['galaxy'] })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: 'registeredFaces 空数组(非内建)', items: [mk({ registeredFaces: [] })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: '当前面在注册面(语义矛盾)', items: [mk({ registeredFaces: ['baseapp'] })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    { label: '非内建属性(不在注入面表)', items: [mk({ propertyName: 'customProp' })], tables: ROLE_MISUSE_TABLES, expectNull: true },
+    // 合成面表内但引擎属性表无同名项:全 builtin 命中、语义不矛盾 → 照常渲染,
+    // 引擎取证为空串(sourceFor 落底臂,不冒充已取证)
+    { label: '引擎面表无同名项(取证空串)', items: [mk({ propertyName: 'phantomFaceProp', registeredFaces: ['baseapp', 'client'] })], tables: SYNTHETIC, expectNull: false }
+  ];
+
+  for (const arm of arms) {
+    it(`${arm.label}:${arm.expectNull ? ' 整面作废回 null' : ' 照常渲染'}`, () => {
+      // 当前面取 cellapp:合成面表三面都注册该属性,cellapp 不在注册面
+      // (baseapp 在注册面会语义矛盾 → 整面作废),取证源表无同名项 → source 空
+      const result = renderRustRoleMisuseItems(
+        arm.items,
+        arm.tables === SYNTHETIC ? 'cellapp' : 'baseapp',
+        arm.tables
+      );
+      if (arm.expectNull) {
+        expect(result).toBeNull();
+      } else {
+        expect(result).toHaveLength(1);
+      }
+    });
+  }
+
+  it('门级整面作废:任一畸形条目 → 回 TS 兜底,不部分采用', async () => {
+    const text = 'self.velocity = 1.0\n';
+    const tsFallback = () => roleMisuseFindingsToItems(
+      findRoleMisuseFindings(text, 'baseapp', null, ROLE_MISUSE_TABLES)
+    );
+    for (const items of [mk({ length: -1 }), mk({ registeredFaces: [] })]) {
+      await withGateLocal(
+        () => ({ ok: true as const, result: { items: [items] } }),
+        async () => {
+          const rendered = await buildRoleMisuseItemsWithRust(text, 'baseapp', null, {
+            facePropertyNames: ROLE_MISUSE_TABLES,
+            enabled: true
+          });
+          expect(rendered).toEqual(tsFallback());
+        }
+      );
+    }
+  });
+
+  it('引擎面表无同名项:取证 source 为空串照常渲染(不冒充引擎取证)', async () => {
+    const text = 'self.phantomFaceProp = 1.0\n';
+    // TS 同步路径:cellapp 面属性注册于 baseapp/client → 一条 finding,
+    // 引擎属性表无此名 → source 为空串(sourceFor 落底臂)
+    const findings = findRoleMisuseFindings(text, 'cellapp', null, SYNTHETIC);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].source).toBe('');
+    // 门路径:结构面经渲染,产物与 TS 兜底逐条一致(含空 source)
+    await withGateLocal(
+      () => ({
+        ok: true as const,
+        result: {
+          items: [{
+            code: ROLE_MISUSE_DIAGNOSTIC_CODE,
+            line: 0,
+            character: 0,
+            length: 'self.phantomFaceProp'.length,
+            propertyName: 'phantomFaceProp',
+            registeredFaces: ['baseapp', 'client']
+          }]
+        }
+      }),
+      async () => {
+        const items = await buildRoleMisuseItemsWithRust(text, 'cellapp', null, {
+          facePropertyNames: SYNTHETIC,
+          enabled: true
+        });
+        expect(items).toEqual(roleMisuseFindingsToItems(findings));
+        expect(items).toHaveLength(1);
+        expect(items[0].message).toContain('role misuse');
+      }
+    );
+  });
+});

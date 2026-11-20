@@ -654,4 +654,93 @@ describe('KR-AUD-51: connect 无响应超时销毁 socket', () => {
     expect(closes).toEqual([]);
     client.disconnect();
   });
+
+  /**
+   * 注册期即到达的 socket:首包在 connect() 装配 socket 事件期间同步到达
+   * (data 处理器注册时即触发)。此时 connect() 尚未排上 connect 超时
+   * 定时器,handleData 的 clearConnectTimer 扑空;定时器随后照常排上,
+   * 到点时会话已不在 connecting 态——KR-AUD-51 的守卫必须把这次到点
+   * 挡回,不得把已就绪会话误杀成超时 closed。
+   */
+  class SyncDataSocket extends EventEmitter {
+    destroyed = false;
+    override on(event: string, listener: (...args: unknown[]) => void): this {
+      super.on(event, listener);
+      if (event === 'data') {
+        listener(Buffer.from('[dbmgr@python ~]# '));
+      }
+      return this;
+    }
+    override write(): boolean {
+      return true;
+    }
+    override destroy(): void {
+      this.destroyed = true;
+    }
+    override end(): void {}
+  }
+
+  it('定时器到点时会话已就绪:守卫挡回,不误杀已就绪会话', async () => {
+    const socket = new SyncDataSocket();
+    const closes: boolean[] = [];
+    const client = new KBEngineTelnetClient({
+      host: '127.0.0.1',
+      port: 1,
+      connectTimeoutMs: 20,
+      events: {
+        onClose: hadError => closes.push(hadError)
+      },
+      socketFactory: () => socket as unknown as net.Socket
+    });
+    client.connect();
+    // 注册期首包已把会话推到 ready;超时窗走完也不得翻转状态/销毁 socket
+    expect(client.state).toBe('ready');
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(client.state).toBe('ready');
+    expect(socket.destroyed).toBe(false);
+    expect(closes).toEqual([]);
+  });
+});
+
+/* ---------------- consumeTelnetFrame 半包切帧的其余引擎形态 ---------------- */
+
+describe('consumeTelnetFrame 半包切帧的其余引擎形态', () => {
+  it('子协商内 IAC IAC 转义按字面量跳过:整段序列成帧,不误切半包', () => {
+    // IAC SB 24 <IAC IAC 转义字面量> 118 IAC SE 正文——转义对的第二个
+    // IAC 不得被当成新序列起点把帧腰斩
+    const buf = Buffer.from([255, 250, 24, 255, 255, 118, 255, 240, 65, 66]);
+    const r = consumeTelnetFrame(buf);
+    expect(r.rest.length).toBe(0);
+    expect([...r.frame]).toEqual([...buf]);
+  });
+
+  it('非协商两字节命令(IAC 后接普通命令字节)整体吞掉成帧', () => {
+    // IAC GA(249)不在 DO/DONT/WILL/WONT/SB 之列:命令字节在位即整体吞掉,
+    // 不按半包保留
+    const buf = Buffer.from([65, 255, 249, 66]);
+    const r = consumeTelnetFrame(buf);
+    expect(r.rest.length).toBe(0);
+    expect([...r.frame]).toEqual([65, 255, 249, 66]);
+    expect([...stripTelnetControl(r.frame)]).toEqual([65, 66]);
+  });
+
+  it('两字节/四字节完整 UTF-8 字符结尾:整帧出无半包', () => {
+    const two = consumeTelnetFrame(Buffer.from('é', 'utf8'));
+    expect(two.rest.length).toBe(0);
+    expect(two.frame.toString('utf8')).toBe('é');
+    const four = consumeTelnetFrame(Buffer.from('😀', 'utf8'));
+    expect(four.rest.length).toBe(0);
+    expect(four.frame.toString('utf8')).toBe('😀');
+  });
+
+  it('整块续字节/孤立续字节与非法头:不猜测按原样出帧', () => {
+    // 全块都是续字节(无任何首字节可锚):截断检测如实放弃,原样出帧
+    const allContinuation = consumeTelnetFrame(Buffer.from([0x80, 0x80]));
+    expect([...allContinuation.frame]).toEqual([0x80, 0x80]);
+    expect(allContinuation.rest.length).toBe(0);
+    // 非法头字节(0xf8 不属任何 UTF-8 首字节形态)后跟续字节:不猜,原样出帧
+    const illegalLead = consumeTelnetFrame(Buffer.from([0xf8, 0x80]));
+    expect([...illegalLead.frame]).toEqual([0xf8, 0x80]);
+    expect(illegalLead.rest.length).toBe(0);
+  });
 });
