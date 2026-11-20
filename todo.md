@@ -74,6 +74,30 @@
 
 > 登记说明(2026-11-19):两节登记文本自 codex 审核会话工作树逐字抄录(证据探针目录未随本提交入库);已修复项勾行随修随补 hash——RESP-003/FULL-001/002/011/012/013/014 七项收口,余项按序推进。
 
+## 语法增强覆盖审核
+
+| 文件 | 当前着色 | Kode 编辑能力 |
+| --- | --- | --- |
+| `.def` | XML 基础语法，叠加属性区、三类方法区、Exposed、Persistent、Flags 和部分类型值着色 | 结构与值补全、悬停、跳转、引用、实现、重命名、大纲和引擎诊断 |
+| `types.xml` | 内建类型、部分自定义引用、ARRAY/FIXED_DICT、implementedBy 分段着色 | 类型与实现导航、引用、结构诊断、数据库落点 CodeLens |
+| `entities.xml`、`alias.xml` | 普通 XML，以及全局 XML 注入命中的词。两者各自的声明结构没有专属规则 | `entities.xml` 有实体注册跳转和诊断。`alias.xml` 参与类型注册表与失效更新，缺少对应的直接编辑器入口 |
+| `.py` | TextMate 注入给函数调用及大写常量形态加色。可选 Semantic Tokens 覆盖类、函数、方法、单行形参和装饰器，`kbengine.semanticTokens.enabled` 默认关闭 | KBEngine API 与实体成员提示、签名、跳转、部分域引用、CodeLens、Inlay Hints 和领域诊断。通用 Python 语义由 Python 语言服务提供 |
+| 引擎配置 XML、shell/bat | 宿主基础语法 | 配置键及部分值补全、悬停和来源跳转。启动脚本具有 KBEngine 参数与环境变量的悬停和补全 |
+
+覆盖依据为 `package.json` 的 grammar/设置贡献点、`src/activate/infrastructure.ts` 的文档选择器，以及 `src/activate/languageServices.ts` 与 `src/activate/diagnostics.ts` 的注册链。本轮按源码判定。
+
+- [x] KODE-SYN-001 [P2] 收窄 XML 语法着色的作用域。`syntaxes/kbengine-types-injection.json` 注入所有 `text.xml`，其中内建名及 ARRAY/FIXED_DICT 按裸词匹配。`.def` grammar 的 Flags 也是裸词匹配。让 KBEngine 类型和 Flags 着色由实际字段或文档身份决定，保留类型别名正文和兼容拼写。验收覆盖普通 XML 正文、`.def` 的 `<Default>`、真正的 Flags 字段与类型字段。（2026-11-20 收口;载体 301a8bc3,CI 44676021620）①注入语法三条裸词规则（内建名/ARRAY/FIXED_DICT 全文档裸词命中）收窄为字段锚定:类型值位前缀 `(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))`（引擎 def/types 加载器只在字段位读类型名）+类型别名正文形态（元素文本整段恰为一个类型词、闭标签收尾、允许空白垫,demo alias.xml `<DBID> UINT32 </DBID>` 实形;capture 组保 token 与裸词时代逐位同形）+复合条目体形态（独占行 `    FIXED_DICT`/值首内联 `<SKILL_SLOT>FIXED_DICT<Properties>`）;②def grammar Flags 裸词收窄为 `<Flags>` 字段值位锚定 `(?:(?<=<Flags>)|(?<=\|))[ \t]*`（| 组合值管道后段照着色,引擎按 | 切分旗标值且字段内不留空白;Flags 名单与 KBENGINE_FLAGS 集合相等锁不变）;③保留面全守=<Type>/<of>/<Arg> 字段值、别名正文、兼容拼写名单、五 scope 家族与主题可区分断言全绿;④验收四臂全钉=普通 XML 正文零 kbengine scope（句子/属性嵌词样本）/.def Default 值零 kbengine（`VECTOR3(0, 0, 0)`/`"BASE"`/`CELL_PUBLIC` 三形态）/真 Flags 字段着色（空白垫+|组合,demo Monster.def 同形）/类型字段正控保留;prove-red=两语法 restore 旧版回放四新臂全红→新版复绿;⑤perf golden c4ba7ccb 逐位不变（大 fixture 旗标全在 Flags 字段位,锚定后 token 流同形）;⑥残面如实登记=纯文本层无文档身份可依,任意 XML 中「元素文本恰好只是一个类型词」「独占行恰好是类型词/指令」仍命中（最小误报面）;跨行条目值需块状态、文档身份车道（语言注册）未取——位置形态统一归 KODE-SYN-002 再评;门禁=定向 52 绿+全量电池六步绿（cargo test workspace/clippy -D warnings/fmt/vitest 全量/compile+tsc mocha+runTest/deny）,CI 44676021620 全绿。
+
+- [ ] KODE-SYN-002 [P2] 统一类型引用位置的着色。当前自定义类型规则要求标识符紧跟 `<Type>`，`<Type> ITEM_ID </Type>`、换行值、`<Arg>ITEM_ID</Arg>`、`<of>ITEM_ID</of>` 均不满足规则。`implementedBy` 的模块首段也依赖紧贴开标签。按语法节点识别位置，覆盖空白、换行、嵌套 ARRAY/FIXED_DICT 和实现路径。与类型元数据及主题 scope 对账。参考 `syntaxes/kbengine-types-injection.json`、`tests/typesXmlInjection.test.ts`。
+
+- [ ] KODE-SYN-003 [P2] 为 `alias.xml` 补直接编辑能力。`src/activate/infrastructure.ts` 的 XML 导航选择器只纳入 types/entities，结构诊断谓词只识别 types.xml。复用既有别名解析及有效类型注册表，支持目标类型补全与跳转，并在别名文档中指出可证实的重名、未解析目标或成环。验收包含跨 types/alias 的合法链、成环链、多根同名和未保存编辑。`entities.xml` 可另增实体声明导航与注册属性值提示，优先复用已有诊断事实。
+
+- [ ] KODE-SYN-004 [P2] 补齐多行 Python RPC 声明的形参增强。TS/Rust 结构 token 只产出单行形参，DEF 形参 Inlay 也复用单行 `parseDefLine`。用带位置的参数声明复用同一事实，同时补齐多行着色和 `.def` 参数类型提示。验收覆盖多行 async、嵌套默认值、`/` 与 `*`、中文及非 BMP 字符后的坐标、编辑中未闭合签名。关联 RUST-144。
+
+- [ ] KODE-SYN-005 [P2] 给已解析的 KBEngine 符号增加可选的领域标记。试点 `self.<DEF 属性>`、`self.base/cell/client.<RPC>`、引擎生命周期钩子和有确定身份的数据字典键。只消费现有符号与版本快照，首扫未就绪时直接略过，避免新增阻塞或依据名称猜角色。先以轻量装饰验证与 Pylance 共存，保持 RUST-148 的通用 Semantic Tokens 默认关闭决策。验收使用 Base/Cell/Client 同名、继承与未知接收者样例。
+
+- [ ] KODE-SYN-006 [P2] 落地 `.def` 原生格式化。已有 KODE-FEAT-001 评估，当前格式化 provider 装配仅见 Python Ruff。复用已评估的 XML span 方案，首版提供整文档与选区，保留注释、CDATA、节点顺序与有语义的值文本。验收包含格式化幂等、格式化前后引擎语义相等、不完整 XML 安全退回，以及大文件时间预算。
+
 ## 账本现状总览（2026-11-14 功能域重整）
 
 - 全账 1563 条（已勾 1173 / 未勾 390），与重整前一致；本次核对零取消勾选、零删除，仅结构重整与编号迁移。
@@ -2850,3 +2874,4 @@
 ## 2026-11-20 nightly darwin EILSEQ（kode-vfs-nonutf8-macos 任务书）
 
 - [x] VFS-NONUTF8-MAC [P1] （commit 100cd526） 6aa0cc87 先行修只挂 #[cfg(unix)] 不够（macOS 亦 unix）——clear_and_sweep_skip_non_utf8_names 的 0xff/0xfe 文件名仅 Linux 原生文件系统放行，APFS 按 UTF-8 校验路径 fs::write 直接 EILSEQ（nightly 44645370378 darwin 红）；收紧为 #[cfg(target_os = "linux")] 单测试门（同仓先例 3784b9ee def_rename.rs；write_failure_removes_temp_file 的 cfg(unix) 不动=PermissionsExt API 层真 unix-only）；cargo test -p kode-vfs --lib 100 绿；mac 面待 nightly 复跑验证。
+- [ ] TSHARK-ETXTBSY-MAC [P1] （登记 2026-11-20,nightly 44674796300 darwin-arm64 红;归 peer tshark 车道,本会话仅登记不抢修,防在途碰撞）spawn_tshark_retries_then_reports_when_binary_busy 撞 darwin 语义差:测试 cfg(unix) 下持写句柄断言 exec 必 ETXTBSY,本跑 38 过/1 红,tshark.rs:407 unwrap_err panic=exec 在 darwin 竟成功(posix_spawn 面),与 VFS-NONUTF8-MAC 同类(cfg(unix) 过宽,darwin≠linux errno 语义;同仓先例=100cd526 收紧 cfg(target_os="linux"));连锁=nightly release all-or-nothing 闸被挡,SBOM 首跑复验(RUST-060 残面)未走到——红因非 SBOM,彼勾谓词「红即回滚」不触发,勾保留;修法候选=tshark.rs:397 cfg(unix)→cfg(target_os="linux")(真实暂态退避产品面不受影响,fake 脚本受控面才依赖 errno 必现),归 tshark 车道拍板。
