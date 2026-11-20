@@ -245,3 +245,40 @@ describe('AUDIT-002 apiDocs/lookup 全语料对拍(二进制在场才测)', () =
     expect(max).toBeLessThan(250);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 43 容错臂(纯函数直调):无域查跨 owner 名(addTimer)→ ambiguous 渲染、
+// miss 渲染空串、callback 判定的名字位外光标、def 行不匹配。
+// ---------------------------------------------------------------------------
+import { formatApiDocHover, getPythonCallbackDefinitionAtPosition, lookupApiDoc } from '../src/backend/pythonApiHoverDocs';
+
+describe('批 43:api 文档悬停容错臂', () => {
+  it('无域查跨 owner 名(addTimer)→ ambiguous,渲染列出多进程面', () => {
+    const lookup = lookupApiDoc('addTimer', [], 'zh-cn');
+    expect(lookup.kind).toBe('ambiguous');
+    const rendered = formatApiDocHover(lookup);
+    expect(rendered).toContain('多个进程面');
+    expect(rendered).toContain('client');
+  });
+
+  it('miss 渲染空串', () => {
+    const lookup = lookupApiDoc('no_such_api_xyz__batch', [], 'zh-cn');
+    expect(lookup.kind).toBe('miss');
+    expect(formatApiDocHover(lookup)).toBe('');
+  });
+
+  it('callback 判定:光标在 def 名字位外/非 def 行 → null', () => {
+    // '    def onDestroy(self):' 名字位 start=8..17;位外前后都 null
+    expect(getPythonCallbackDefinitionAtPosition('    def onDestroy(self):', 7)).toBeNull();
+    expect(getPythonCallbackDefinitionAtPosition('    def onDestroy(self):', 18)).toBeNull();
+    expect(getPythonCallbackDefinitionAtPosition('x = 1', 0)).toBeNull();
+    // 名字位内(真实 callback 名)照常命中
+    const hit = getPythonCallbackDefinitionAtPosition('    def onDestroy(self):', 10);
+    expect(hit).toEqual({ name: 'onDestroy' });
+  });
+});
+
+// 覆盖口径残余(批 43 定性)::73-75 同域同名同 owner 消歧分支为**数据依赖死臂**
+// ——对 src/generated/apiDocs.ts 全量 225 条扫描,无任何成员在同一 domain 下
+// 存在多条条目(同域同名多 owner 消歧输入不存在),当前数据形态下不可达;
+// 数据再生成引入同域重名时应随本臂激活。
