@@ -359,3 +359,25 @@ describe('buildHttpRequest', () => {
     expect(request.url).toBe('/ws/log/Foo-Foo.txt');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 44:applyTemplate 后六个占位全覆盖(fileName 双名族与 HR-MOD-012 增族)。
+// ---------------------------------------------------------------------------
+describe('批 44:模板占位全族', () => {
+  it('fileName/reloadModule/fullModule/relativePath/workspaceRoot/targetId 六占位逐个替换', () => {
+    const vars = buildTemplateVars({
+      filePath: '/ws/scripts/base/Foo.py',
+      workspaceRoots: ['/ws'],
+      reloadModule: 'FightAI',
+      fullModule: 'entities.fight.FightAI',
+      targetId: 'profile-1'
+    } as never);
+    expect(applyTemplate(
+      '${fileName}|${reloadModule}|${fullModule}|${relativePath}|${workspaceRoot}|${targetId}',
+      vars
+    )).toBe([vars.fileName, vars.reloadModule, vars.fullModule, vars.relativePath, vars.workspaceRoot, vars.targetId].join('|'));
+    // 空 targetId(缺省)占位也走替换(替换为空串)
+    const noTarget = buildTemplateVars({ filePath: '/ws/scripts/base/Foo.py', workspaceRoots: ['/ws'] });
+    expect(applyTemplate('x${targetId}y', noTarget)).toBe('xy');
+  });
+});
