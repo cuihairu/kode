@@ -452,3 +452,84 @@ describe('KSEM-DATA-06 面:补全 / F12 / Shift+F12 / 开关', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// KSEM-DATA-06 纯核:参数扫描容错面 / 补全首参形态 / 光标探测边界
+// ---------------------------------------------------------------------------
+
+describe('KSEM-DATA-06 纯核:参数扫描容错面', () => {
+  it('实参内转义与嵌套容器:引号态跳转义、深度回账,元数精确照收', () => {
+    const text = [
+      'import KBEngine',
+      'KBEngine.setSpaceData(1, "a\\"b", {"depth": [1, 2]})'
+    ].join('\n');
+    const calls = findKbeSpaceDataCalls(text, ALIASES);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].keySignature).toBe('a\\"b'); // 原文内部,不解转义(同族既定口径)
+    expect(calls[0].spaceIdSignature).toBe('1');
+  });
+
+  it('实参两侧空白裁净;空白 key 位=非字面量记录;拼接串内嵌同引号拒绝', () => {
+    const trailingText = 'import KBEngine\nKBEngine.getSpaceData(1, "cfg" )';
+    const trailing = findKbeSpaceDataCalls(trailingText, ALIASES);
+    expect(trailing).toHaveLength(1);
+    expect(trailing[0].keySignature).toBe('cfg');
+
+    const emptyText = 'import KBEngine\nKBEngine.setSpaceData(1, , 2)';
+    const empty = findKbeSpaceDataCalls(emptyText, ALIASES);
+    expect(empty).toHaveLength(1);
+    expect(empty[0].keySignature).toBeNull(); // 空实参非字面量:记而不入族
+    expect(empty[0].keyStart).toBe(emptyText.split('\n')[1].indexOf(', ,') + 2);
+
+    const glueText = "import KBEngine\nKBEngine.setSpaceData(1, 'a' + 'b', 2)";
+    const glue = findKbeSpaceDataCalls(glueText, ALIASES);
+    expect(glue).toHaveLength(1);
+    expect(glue[0].keySignature).toBeNull(); // 'a' + 'b' 内嵌同引号:非简单字面量
+  });
+
+  it('别名面:空别名集早退;名单外别名不收', () => {
+    expect(findKbeSpaceDataCalls('KBEngine.setSpaceData(1, "k", "v")', new Set())).toEqual([]);
+    expect(findKbeSpaceDataCalls('zzz.setSpaceData(1, "k", "v")', ALIASES)).toEqual([]);
+  });
+});
+
+describe('KSEM-DATA-06 纯核:键位补全首实参形态', () => {
+  it('转义字符串首参:跳转义、经闭引号与顶层逗号,sid 动态', () => {
+    const line = 'KBEngine.setSpaceData("a\\"b", "';
+    const context = spaceDataKeyCompletionContext(line, line.length, ALIASES);
+    expect(context).not.toBeNull();
+    expect(context?.fn).toBe('setSpaceData');
+    expect(context?.spaceIdSignature).toBeNull(); // "a\"b" 既非 int 字面量也非标识符
+    expect(context?.partial).toBe('');
+  });
+
+  it('首参引号未闭 / 含容器 opener → 无顶层逗号 → null;调用已闭合 → null', () => {
+    const unterminated = 'KBEngine.setSpaceData("unterminated';
+    expect(spaceDataKeyCompletionContext(unterminated, unterminated.length, ALIASES)).toBeNull();
+    const bracketed = 'KBEngine.setSpaceData(["x", "';
+    expect(spaceDataKeyCompletionContext(bracketed, bracketed.length, ALIASES)).toBeNull();
+    const closed = 'KBEngine.setSpaceData(1)';
+    expect(spaceDataKeyCompletionContext(closed, closed.length, ALIASES)).toBeNull();
+  });
+
+  it('属性链与名单外别名在补全面同不收;空别名集早退', () => {
+    const chained = 'x.KBEngine.setSpaceData(1, "';
+    expect(spaceDataKeyCompletionContext(chained, chained.length, ALIASES)).toBeNull();
+    const unknownAlias = 'zzz.setSpaceData(1, "';
+    expect(spaceDataKeyCompletionContext(unknownAlias, unknownAlias.length, ALIASES)).toBeNull();
+    const noAlias = 'KBEngine.setSpaceData(1, "';
+    expect(spaceDataKeyCompletionContext(noAlias, noAlias.length, new Set())).toBeNull();
+  });
+});
+
+describe('KSEM-DATA-06 纯核:光标键位探测边界', () => {
+  it('行/列越界与无调用行 → null;键内容列命中带回该调用', () => {
+    const text = 'import KBEngine\nKBEngine.setSpaceData(1, "cfg", "hello")';
+    expect(findKbeSpaceDataCallAtPosition(text, 99, 0, ALIASES)).toBeNull();
+    expect(findKbeSpaceDataCallAtPosition(text, 1, 999, ALIASES)).toBeNull();
+    expect(findKbeSpaceDataCallAtPosition(text, 0, 5, ALIASES)).toBeNull();
+    const hit = findKbeSpaceDataCallAtPosition(text, 1, 26, ALIASES);
+    expect(hit?.keySignature).toBe('cfg');
+    expect(hit?.spaceIdSignature).toBe('1');
+  });
+});

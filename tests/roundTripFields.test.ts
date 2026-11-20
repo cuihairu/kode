@@ -163,6 +163,22 @@ const single = (encodeBody: string[], decodeBody: string[]): string =>
     ''
   ]);
 
+/**
+ * 倒序骨架(create 在前):encode 体需要未闭合 `{` 等残缺形态时专用——
+ * 残缺字面量会让**其后**的 def 方法域解析落空,create 绑定缺位则入口早退
+ * (表面零产出=假绿),故未闭形态必须钉在倒序骨架上。
+ */
+const pairRev = (encodeBody: string[], decodeBody: string[]): string =>
+  lines([
+    'class PairSer:',
+    '    def createObjFromDict(self, dct):',
+    ...decodeBody.map(row => `        ${row}`),
+    '',
+    '    def getDictFromObj(self, obj):',
+    ...encodeBody.map(row => `        ${row}`),
+    ''
+  ]);
+
 // ---------------------------------------------------------------------------
 // encodeOnly(编码产出而解码不读)
 // ---------------------------------------------------------------------------
@@ -568,6 +584,25 @@ describe('KSEM-SER-06 sweep: decode 读面与配对容错臂', () => {
       '        return {"y": obj["y"]}',
       ''
     ]);
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// COV-98 批5 补扫:encode 残缺字面量未知臂(倒序骨架限定)
+// ---------------------------------------------------------------------------
+
+describe('COV-98 批5:encode 未闭合字面量不入册', () => {
+  it('别名赋未闭合字面量(d = { 后无收括号)→ 字面量不入册,整容器未知', () => {
+    const text = pairRev(
+      ['d = {', '"x": obj["x"]', 'return d'],
+      ['return {"x": dct["x"]}']
+    );
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+
+  it('return 未闭合字面量 → 该 return 位未知(不凭残缺字面量推定)', () => {
+    const text = pairRev(['return {'], ['return {"x": dct["x"]}']);
     expect(findingsOf(text)).toHaveLength(0);
   });
 });
