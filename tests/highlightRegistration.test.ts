@@ -311,7 +311,9 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         'Cargo.toml',
         'Cargo.lock',
         'rust-toolchain.toml',
-        'plugins/'
+        'plugins/',
+        // Stubs batch: KBEngine typings ship in the vsix (copied at runtime).
+        '!typings/**'
       ])
     );
   });
