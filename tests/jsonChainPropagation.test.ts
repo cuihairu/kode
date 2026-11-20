@@ -12,6 +12,7 @@ import {
   parseSerializationSchema,
   deriveJsonChainStructures,
   deriveJsonChainTypedValues,
+  schemaGlobMatches,
   type SerializationSchema,
   type DictFormat,
   type DictValueKind
@@ -287,6 +288,17 @@ describe('loads schema 绑定', () => {
     const t = asLiteral(chains(['import json', "c = json.loads('t.json')"], result.schema), 'c');
     expect(t.required.get('blob')).toEqual({ kind: 'unknown' });
     expect(t.required.get('pos')).toEqual({ kind: 'list', element: null });
+  });
+
+  it('FLOAT 字段 → float 标量(DOUBLE 同族)', () => {
+    const result = schemaFrom({
+      schema_version: 1,
+      types: { T: { fields: { ratio: 'FLOAT', weight: 'DOUBLE' } } },
+      bindings: { 'json.loads': [{ path: 't.json', type: 'T' }] }
+    });
+    const t = asLiteral(chains(['import json', "c = json.loads('t.json')"], result.schema), 'c');
+    expect(t.required.get('ratio')).toEqual(scalar('float'));
+    expect(t.required.get('weight')).toEqual(scalar('float'));
   });
 
   it('注解赋值形态同样命中', () => {
@@ -698,5 +710,277 @@ describe('KSEM-CFG-07 json.load 面(配置 loader 绑定)', () => {
       "cfg = json.load(open('res/conf/g1.json'))"
     ];
     expect(deriveJsonChainStructures(rows.join('\n'), schema).has('cfg')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// schema 解析校验边界
+// ---------------------------------------------------------------------------
+
+describe('schema 解析校验边界', () => {
+  it('types/bindings 非对象与 fields 非对象:error 且有效部分保留', () => {
+    const badTypes = schemaFrom({ schema_version: 1, types: 5, bindings: {} });
+    expect(badTypes.errors).toContain('types must be an object');
+    expect(badTypes.schema?.types.size).toBe(0);
+    // fields 非对象 → 整 type 淘汰(fieldsOf 不收),schema 仍非 null
+    const badFields = schemaFrom({ schema_version: 1, types: { T: { fields: 5 } }, bindings: {} });
+    expect(badFields.errors).toContain('type T: fields must be an object');
+    expect(badFields.schema?.types.has('T')).toBe(false);
+    const badBindings = schemaFrom({
+      schema_version: 1,
+      types: { T: { fields: { a: 'UINT8' } } },
+      bindings: 5
+    });
+    expect(badBindings.errors).toContain('bindings must be an object');
+    expect(badBindings.schema?.loadsBindings).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// import 证据与绑定作废边界
+// ---------------------------------------------------------------------------
+
+describe('import 证据与绑定作废边界', () => {
+  it('from-import 条目非标识符:跳过该条,好条目照绑', () => {
+    const out = chains([
+      'from json import dumps, loads, 123',
+      's = dumps({"a": 1})',
+      'back = loads(s)'
+    ], null);
+    expect(asLiteral(out, 'back').required.get('a')).toEqual(scalar('int'));
+  });
+
+  it('括号续行未闭(8 行界)→ 零绑定诚实', () => {
+    const out = chains([
+      'from json import (',
+      '    dumps,',
+      '    loads,',
+      '    load,',
+      '    other1,',
+      '    other2,',
+      '    other3,',
+      '    other4,',
+      '    other5',
+      's = dumps({"a": 1})',
+      'back = loads(s)'
+    ], null);
+    expect(out.has('back')).toBe(false);
+  });
+
+  it('绑定名裸赋值作废:dumps/loads/load 三表各自 kill', () => {
+    const out = chains([
+      'from json import dumps',
+      'from json import loads',
+      'from json import load',
+      'dumps = 1',
+      'loads = 2',
+      'load = 3',
+      's = dumps({"a": 1})',
+      'back = loads(s)'
+    ], null);
+    expect(out.has('back')).toBe(false);
+  });
+
+  it('def 体后模块行回归:scope 弹出后链照绑', () => {
+    const out = chains([
+      'import json',
+      'def helper(x):',
+      '    return x',
+      "cfg = json.loads('res/guild_configs/g.json')"
+    ]);
+    expect(asLiteral(out, 'cfg').required.get('level')).toEqual(scalar('int'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 跨行调用与作废面
+// ---------------------------------------------------------------------------
+
+describe('跨行调用与作废面', () => {
+  it('loads 跨行实参:v1 未知 → 写点作废', () => {
+    const out = chains([
+      'import json',
+      'cfg = json.loads(',
+      "    'res/guild_configs/g.json'",
+      ')'
+    ]);
+    expect(out.has('cfg')).toBe(false);
+  });
+
+  it('dumps 跨行字面量未闭 → 写点作废', () => {
+    const out = chains([
+      'import json',
+      's = json.dumps({',
+      '    "x": 1'
+    ]);
+    expect(out.has('s')).toBe(false);
+  });
+
+  it('行内注解串含 {:实参花括号定位偏移,字典实参不声称', () => {
+    // 注解串里的 {:原文首个 { 偏离实参 { ,括号配对失配 → 诚实未知
+    const out = chains([
+      'import json',
+      "s: Literal['{'] = json.dumps({'a': 1})",
+      'back = json.loads(s)'
+    ], null);
+    expect(out.has('back')).toBe(false);
+    expect(out.has('s')).toBe(false);
+  });
+
+  it('mutate/del 写点作废链名', () => {
+    const out = chains([
+      'import json',
+      "cfg = json.loads('res/guild_configs/g.json')",
+      'cfg.update({"b": 2})',
+      "cfg2 = json.loads('res/guild_configs/g.json')",
+      'del cfg2'
+    ]);
+    expect(out.has('cfg')).toBe(false);
+    expect(out.has('cfg2')).toBe(false);
+  });
+
+  it('SER-09 派生变量经别名透传入链', () => {
+    const back = asLiteral(chains([
+      'import json',
+      'd = {"a": 1}',
+      'alias = d',
+      's = json.dumps(alias)',
+      'back = json.loads(s)'
+    ]), 'back');
+    expect(back.required.get('a')).toEqual(scalar('int'));
+  });
+
+  it('动态键写开放结构透传 dumps→loads(observed 面保留)', () => {
+    const out = chains([
+      'import json',
+      'd = {"a": 1}',
+      'd[k] = 2',
+      's = json.dumps(d)',
+      'back = json.loads(s)'
+    ], null);
+    const back = out.get('back');
+    expect(back?.kind).toBe('open');
+    if (back?.kind === 'open') {
+      expect(back.observed.get('a')).toEqual(scalar('int'));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 快照与 loadOpenPath 边界
+// ---------------------------------------------------------------------------
+
+describe('快照与 loadOpenPath 边界', () => {
+  it('跳过区(跨行字面量中段)行前快照顺延回填', () => {
+    const schema = guildSchema();
+    const text = [
+      'import json',
+      's = json.dumps({',
+      '    "x": 1,',
+      '    "y": 2',
+      '})',
+      "back = json.loads(s)"
+    ].join('\n');
+    // 行 2/3 在跨行字面量跳过区内:行前快照 = 前一快照顺延(空链态)
+    const typed = deriveJsonChainTypedValues(text, schema, [0, 2, 3, 5]);
+    expect(typed.get(0)?.size).toBe(0);
+    expect(typed.get(2)?.size).toBe(0);
+    expect(typed.get(3)?.size).toBe(0);
+    // 行 5:行前快照(赋值未执行),carrier 不入 value 面,链上无 value
+    expect(typed.get(5)?.size).toBe(0);
+  });
+
+  it('json.load 非 open 形态(调用路径)→ 不可证明', () => {
+    const schema = parseSerializationSchema(JSON.stringify({
+      schema_version: 1,
+      types: { T: { fields: { a: 'UINT8' } } },
+      bindings: { 'json.load': [{ path: 'res/conf/*.json', type: 'T' }] }
+    })).schema;
+    const out = deriveJsonChainStructures([
+      'import json',
+      'cfg = json.load(pick_path())'
+    ].join('\n'), schema);
+    expect(out.has('cfg')).toBe(false);
+    // open 内嵌调用(括号配平扫描)同样不可证明:首实参非串字面量
+    const nested = deriveJsonChainStructures([
+      'import json',
+      'cfg = json.load(open(get_path()))'
+    ].join('\n'), schema);
+    expect(nested.has('cfg')).toBe(false);
+    // 下标形态路径:扫描器 ] 不回账 → 深度残差 → 首实参截取失败
+    const subscriptPath = deriveJsonChainStructures([
+      'import json',
+      'cfg = json.load(open(paths[0]))'
+    ].join('\n'), schema);
+    expect(subscriptPath.has('cfg')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fnmatch 类语义(CFG-08 结构注册表共用)
+// ---------------------------------------------------------------------------
+
+describe('fnmatch 类语义', () => {
+  it('[abc] 字符类:类内字符命中,类外不中', () => {
+    expect(schemaGlobMatches('res/[abc].json', 'res/a.json')).toBe(true);
+    expect(schemaGlobMatches('res/[abc].json', 'res/b.json')).toBe(true);
+    expect(schemaGlobMatches('res/[abc].json', 'res/d.json')).toBe(false);
+  });
+
+  it('[!abc] 否定类:类外命中,类内不中', () => {
+    expect(schemaGlobMatches('res/[!abc].json', 'res/d.json')).toBe(true);
+    expect(schemaGlobMatches('res/[!abc].json', 'res/a.json')).toBe(false);
+  });
+
+  it('未闭 [ :字面量转义不猜类', () => {
+    expect(schemaGlobMatches('res/[abc.json', 'res/[abc.json')).toBe(true);
+    expect(schemaGlobMatches('res/[abc.json', 'res/x[abc.json')).toBe(false);
+  });
+
+  it('空类 []:字面量转义', () => {
+    expect(schemaGlobMatches('res/[].json', 'res/[].json')).toBe(true);
+    expect(schemaGlobMatches('res/[].json', 'res/a.json')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 手造 schema 消费面防御(parse 期淘汰的形状,消费面仍零声称)
+// ---------------------------------------------------------------------------
+
+describe('手造 schema 消费面防御', () => {
+  // parseSerializationSchema 会在解析期淘汰未知族名/未定义 ref/环(报错
+  // 且整 type 移除);此处按 CustomTypeInfo 手造夹具同口径直造 schema
+  // 常量,验证消费面(schemaTypeFormat)对越界形状的防御合同:整 type
+  // 零声称、不半声称。
+  it('未知标量族 → 字段解析失败整 type 零声称', () => {
+    const schema: SerializationSchema = {
+      version: null,
+      types: new Map([
+        ['T', new Map([['flag', { kind: 'scalar', family: 'NOPE' }]])]
+      ]),
+      loadsBindings: [{ path: 'res/*.json', type: 'T' }],
+      loadBindings: []
+    };
+    const out = deriveJsonChainStructures([
+      'import json',
+      'cfg = json.loads("res/g.json")'
+    ].join('\n'), schema);
+    expect(out.has('cfg')).toBe(false);
+  });
+
+  it('ref 未定义 type → 零声称(不半声称)', () => {
+    const schema: SerializationSchema = {
+      version: null,
+      types: new Map([
+        ['T', new Map([['g', { kind: 'ref', type: 'Ghost' }]])]
+      ]),
+      loadsBindings: [{ path: 'res/*.json', type: 'T' }],
+      loadBindings: []
+    };
+    const out = deriveJsonChainStructures([
+      'import json',
+      'cfg = json.loads("res/g.json")'
+    ].join('\n'), schema);
+    expect(out.has('cfg')).toBe(false);
   });
 });

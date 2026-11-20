@@ -632,6 +632,313 @@ describe('消息模板与 finding→item', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// 字面量/链解析基元边界(SER-05 推导基元的分支面)
+// ---------------------------------------------------------------------------
+
+describe('字面量与链解析基元边界', () => {
+  it('转义引号键:键内容保留反斜杠,推导不误判', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return {"a\\\\": 1}',
+      ''
+    ]);
+    const structure = computeConvertedObjStructure(text, createInputsOf(text)[0], REGISTRY);
+    expect(structure).toEqual({ kind: 'dict', keys: ['a\\'], open: false, source: 'serializers_impl.py:3' });
+  });
+
+  it('键后空白再冒号:键照收;尾逗号空条目跳过', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return {"x" : 1,}',
+      ''
+    ]);
+    const structure = computeConvertedObjStructure(text, createInputsOf(text)[0], REGISTRY);
+    expect(structure).toEqual({ kind: 'dict', keys: ['x'], open: false, source: 'serializers_impl.py:3' });
+  });
+
+  it('字符串条目无冒号(集合元素)/数字动态键/调用动态键:非 dict 或开放', () => {
+    const setElement = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return {"x" "y"}',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(setElement, createInputsOf(setElement)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' });
+    const numberKey = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return {1: 2}',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(numberKey, createInputsOf(numberKey)[0], REGISTRY))
+      .toEqual({ kind: 'dict', keys: [], open: true, source: 'serializers_impl.py:3' });
+    const callKey = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return {f(1): 2}',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(callKey, createInputsOf(callKey)[0], REGISTRY))
+      .toEqual({ kind: 'dict', keys: [], open: true, source: 'serializers_impl.py:3' });
+  });
+
+  it('return 与 { 之间空白/字面量未闭合:照常定位或诚实未知', () => {
+    const spaced = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return  {"a": 1}',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(spaced, createInputsOf(spaced)[0], REGISTRY))
+      .toEqual({ kind: 'dict', keys: ['a'], open: false, source: 'serializers_impl.py:3' });
+    const unclosed = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return {',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(unclosed, createInputsOf(unclosed)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' });
+  });
+
+  it('裸 return / 元组 return:未知', () => {
+    const bare = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(bare, createInputsOf(bare)[0], REGISTRY)).toEqual({ kind: 'unknown' });
+    const tuple = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return (1, 2)',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(tuple, createInputsOf(tuple)[0], REGISTRY)).toEqual({ kind: 'unknown' });
+  });
+
+  it('链形态边界:接收者空白/动态键下标/链间空白/链后尾缀', () => {
+    const spaced = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct ["inner"]',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(spaced, createInputsOf(spaced)[0], REGISTRY))
+      .toMatchObject({ kind: 'wire', container: INNER });
+    const dynamicKey = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct[k]',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(dynamicKey, createInputsOf(dynamicKey)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' });
+    const spacedChain = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct["inner"] ["hp"]',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(spacedChain, createInputsOf(spacedChain)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' }); // hp 标量:链终点非 FD
+    const trailing = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct["inner"] + 1',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(trailing, createInputsOf(trailing)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' });
+  });
+
+  it('别名边界:字面量未闭合/集合字面量别名 → 未知', () => {
+    const unclosed = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        d = {',
+      '        return d',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(unclosed, createInputsOf(unclosed)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' });
+    const setAlias = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        d = {1, 2}',
+      '        return d',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(setAlias, createInputsOf(setAlias)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' });
+  });
+
+  it('体域键增面:表达式段/混合引号段/跨行下标写/setdefault → 键宇宙开放', () => {
+    const exprSegment = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        dct["a" + k] = 1',
+      '        return dct',
+      ''
+    ]);
+    const exprStructure = computeConvertedObjStructure(exprSegment, createInputsOf(exprSegment)[0], REGISTRY);
+    expect(exprStructure).toMatchObject({ kind: 'dict', open: true });
+
+    const mixedQuote = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      "        dct[\"a'b\"] = 1",
+      '        return dct',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(mixedQuote, createInputsOf(mixedQuote)[0], REGISTRY))
+      .toMatchObject({ kind: 'dict', open: true });
+
+    const multilineWrite = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        dct[',
+      '            "extra"',
+      '        ] = 1',
+      '        return dct',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(multilineWrite, createInputsOf(multilineWrite)[0], REGISTRY))
+      .toMatchObject({ kind: 'dict', open: true });
+
+    const setdefault = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        dct.setdefault("k", 1)',
+      '        return dct',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(setdefault, createInputsOf(setdefault)[0], REGISTRY))
+      .toMatchObject({ kind: 'dict', open: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 多 return 并集与校验面边界
+// ---------------------------------------------------------------------------
+
+describe('多 return 并集与校验面边界', () => {
+  it('多 wire 不同容器:键并集(含体域字面量键写点)', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        dct["extra"] = 1',
+      '        if dct:',
+      '            return dct',
+      '        return dct["inner"]',
+      ''
+    ]);
+    const structure = computeConvertedObjStructure(text, createInputsOf(text)[0], REGISTRY);
+    expect(structure).toMatchObject({
+      kind: 'dict',
+      open: false,
+      source: 'types.xml:50'
+    });
+    if (structure.kind === 'dict') {
+      expect(structure.keys).toEqual(['inner', 'uid', 'hp', 'mp', 'extra']);
+    }
+  });
+
+  it('混合 wire/dict 字面量:键并集,extraKeys 并入', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        dct["extra"] = 1',
+      '        if dct:',
+      '            return dct',
+      '        return {"a": 1}',
+      ''
+    ]);
+    const structure = computeConvertedObjStructure(text, createInputsOf(text)[0], REGISTRY);
+    expect(structure).toMatchObject({ kind: 'dict', open: false, source: 'types.xml:50' });
+    if (structure.kind === 'dict') {
+      expect(structure.keys).toEqual(['inner', 'uid', 'a', 'extra']);
+    }
+  });
+
+  it('接收者与 [ 之间空白:读取照判(声明键零产出)', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct',
+      '',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj ["uid"]}',
+      ''
+    ]);
+    expect(computeConvertedObjMemberFindings(text, createInputsOf(text), getInputsOf(text), REGISTRY))
+      .toHaveLength(0);
+  });
+
+  it('属性访问断链(accesses 空)不判', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct',
+      '',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj.attr}',
+      ''
+    ]);
+    expect(computeConvertedObjMemberFindings(text, createInputsOf(text), getInputsOf(text), REGISTRY))
+      .toHaveLength(0);
+  });
+
+  it('wire 链中段字段非 FD:嵌套键不猜容器,零产出', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct',
+      '',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj["inner"]["hp"]["x"]}',
+      ''
+    ]);
+    expect(computeConvertedObjMemberFindings(text, createInputsOf(text), getInputsOf(text), REGISTRY))
+      .toHaveLength(0);
+  });
+
+  it('getDictFromObj 有绑定而 createObjFromDict 只在别的容器:零产出', () => {
+    const text = lines([
+      'class InnerSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct',
+      '',
+      'class BagSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj["zz"]}',
+      ''
+    ]);
+    expect(computeConvertedObjMemberFindings(text, createInputsOf(text), getInputsOf(text), REGISTRY))
+      .toHaveLength(0);
+  });
+
+  it('wire extraKeys 键写后读取:并入键集零产出', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        dct["extra"] = 1',
+      '        return dct',
+      '',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj["extra"], "y": obj["uid"]}',
+      ''
+    ]);
+    expect(computeConvertedObjMemberFindings(text, createInputsOf(text), getInputsOf(text), REGISTRY))
+      .toHaveLength(0);
+  });
+});
+
 /** 取指定行原文(keyCol 锚点断言用)。 */
 function badFindingsLine(text: string, line: number): string {
   return text.split(/\r?\n/)[line] ?? '';
