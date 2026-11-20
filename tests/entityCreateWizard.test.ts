@@ -270,3 +270,55 @@ describe('buildComponentDefContent', () => {
     expect(content.trimEnd().endsWith('</root>')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 22 容错臂:五个 builder 的 parse-failed 面(不可解析/缺关闭标签)、
+// 段存在但子元素行首非纯空白 → 缩进回退 fallback。
+// ---------------------------------------------------------------------------
+describe('批 22:parse-failed 与缩进回退臂', () => {
+  const BAD = 'not-xml at all';
+
+  it('XML 面 builder 对不可解析输入一律 parse-failed,不部分产出', () => {
+    expect(buildRpcMethodDefInsertion(BAD, 'BaseMethods', 'm', [], false))
+      .toEqual({ ok: false, reason: 'parse-failed' });
+    expect(buildComponentSlotInsertion(BAD, 'Components', 'bag', 'Inventory'))
+      .toEqual({ ok: false, reason: 'parse-failed' });
+    expect(buildTypeAliasInsertion(BAD, 'SKILL_SLOT', 'UINT32'))
+      .toEqual({ ok: false, reason: 'parse-failed' });
+    // py 面:parsePythonFile 对任意文本输入都不抛(行扫描器全容忍,实测
+    // tab 混排/缩进骤缩/冒号垃圾/空串全 OK),332 的 catch 臂为防御死码;
+    // 不可解析文本落到下一闸:无类 → no-class
+    expect(buildRpcMethodPythonInsertion(BAD, 'a.py', 'm', []))
+      .toEqual({ ok: false, reason: 'no-class' });
+  });
+
+  it('段无关闭标签(截断残缺)→ closeInsertionOffset null → parse-failed 拒插', () => {
+    const truncated = '<root>\n\t<BaseMethods>\n\t\t<old/>\n</root>';
+    expect(buildRpcMethodDefInsertion(truncated, 'BaseMethods', 'm', [], false).ok).toBe(false);
+  });
+
+  it('段内子元素与段首同行(行首非纯空白)→ 缩进回退 fallback 照插', () => {
+    const inline = '<root>\n\t<BaseMethods><old/></BaseMethods>\n</root>';
+    const result = buildRpcMethodDefInsertion(inline, 'BaseMethods', 'onPing', [], false);
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe('批 22 续:自闭合形态实测口径(解析器给自闭合标签落 closeTagStart)', () => {
+  it('段/根自闭合照样可插(实测 ok,拒插臂是对 closeTagStart<0 的防御)', () => {
+    expect(buildRpcMethodDefInsertion('<root>\n\t<BaseMethods/>\n</root>', 'BaseMethods', 'm', [], false).ok)
+      .toBe(true);
+    expect(buildComponentSlotInsertion('<root>\n\t<Components/>\n</root>', 'bag', 'Inventory', true).ok)
+      .toBe(true);
+    expect(buildRpcMethodDefInsertion('<root/>', 'BaseMethods', 'm', [], false).ok).toBe(true);
+    expect(buildComponentSlotInsertion('<root/>', 'bag', 'Inventory', true).ok).toBe(true);
+    expect(buildTypeAliasInsertion('<root/>', 'SKILL_SLOT', 'UINT32').ok).toBe(true);
+  });
+});
+
+// 覆盖口径残余(批 22 定性,不硬凑):62/145/163/218/236/275/332 七行防御死码——
+//  - closeInsertionOffset 的 closeTagStart<0(:62)与其四个 parse-failed 消费位
+//    (:145/163/218/236/275):解析器要么给每个元素落 closeTagStart(自闭合也落,
+//    上臂实测 ok),要么整档解析失败走首闸 parse-failed;到不了"有元素但无关闭位"。
+//  - :332 parsePythonFile 的 catch:该解析器行扫描全容忍(tab 混排/缩进骤缩/
+//    冒号垃圾/空串实测全 OK 不抛),文本输入不可能让它抛。
