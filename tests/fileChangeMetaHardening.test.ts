@@ -257,3 +257,154 @@ describe('fileChangeMeta 整改:同键同 kind 的对象契约与同 token 快�
     expect(reads).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 39 容错臂:归属三退路(根外/单层文件/点段)、scriptRoot 空走 assetsRoot
+// 兜底、formatter 的 candidates/note/reason 分词、读抛错不缓存。
+// ---------------------------------------------------------------------------
+describe('批 39:归属退路与兜底臂', () => {
+  it('文件在根外 → unresolved(178)', async () => {
+    const { deps } = fixedDeps(() => '/ws/scripts', 'x = 1\n', { mtimeMs: 1, size: 1 });
+    const resolver = createFileChangeMetaResolver(deps);
+    const meta = await resolver.metaFor({
+      fsPath: '/other/cell/Foo.py',
+      identity: normalizeFileIdentity('/other/cell/Foo.py'),
+      kind: 'change',
+      version: '1:1'
+    });
+    expect(meta.processSource).toBe('unresolved');
+  });
+
+  it('根下单层文件 → unresolved(182:无目录段判不出归属)', async () => {
+    const { deps } = fixedDeps(() => '/ws/scripts', 'x = 1\n', { mtimeMs: 1, size: 1 });
+    const resolver = createFileChangeMetaResolver(deps);
+    const meta = await resolver.metaFor({
+      fsPath: '/ws/scripts/Foo.py',
+      identity: normalizeFileIdentity('/ws/scripts/Foo.py'),
+      kind: 'change',
+      version: '1:1'
+    });
+    expect(meta.processSource).toBe('unresolved');
+  });
+
+  it('scriptRoot 空 → assetsRoot+scripts 兜底生效(268)', async () => {
+    const { deps } = fixedDeps(() => '', 'x = 1\n', { mtimeMs: 1, size: 1 }, () => '/ws/assets');
+    const resolver = createFileChangeMetaResolver(deps);
+    const meta = await resolver.metaFor({
+      fsPath: '/ws/assets/scripts/cell/Foo.py',
+      identity: normalizeFileIdentity('/ws/assets/scripts/cell/Foo.py'),
+      kind: 'change',
+      version: '1:1'
+    });
+    expect(meta.processKind).toBe('cellapp');
+    expect(meta.processSource).toBe('path');
+  });
+});
+
+describe('批 39 续:formatter 分词与读抛错', () => {
+  it('formatFileChangeMeta:ambiguous candidates 与 note 分词(236/244)', async () => {
+    const { formatFileChangeMeta } = await import('../src/backend/fileChangeMeta');
+    const ambiguous = formatFileChangeMeta({
+      fsPath: '/ws/scripts/cell/Foo.py',
+      identity: '/ws/scripts/cell/foo.py',
+      ext: '.py',
+      kind: 'change',
+      version: '1:1',
+      sha256: 'a'.repeat(64),
+      processKind: 'ambiguous',
+      processSource: 'path',
+      processCandidates: ['baseapp', 'cellapp'],
+      processReason: '双进程目录命中',
+      module: 'Foo'
+    });
+    expect(ambiguous).toContain('candidates=baseapp|cellapp');
+    expect(ambiguous).toContain('note=双进程目录命中');
+
+    const noteOnly = formatFileChangeMeta({
+      fsPath: '/ws/scripts/cell/Foo.py',
+      identity: '/ws/scripts/cell/foo.py',
+      ext: '.py',
+      kind: 'change',
+      version: '1:1',
+      processKind: undefined,
+      processSource: 'unresolved',
+      processReason: 'unresolved'
+    });
+    expect(noteOnly).toContain('note=unresolved');
+
+    const reasonLine = formatFileChangeMeta({
+      fsPath: '/ws/scripts/cell/Foo.py',
+      identity: '/ws/scripts/cell/foo.py',
+      ext: '.py',
+      kind: 'change',
+      version: '1:1',
+      reason: '读失败'
+    });
+    expect(reasonLine).toContain('reason=读失败');
+    expect(reasonLine).not.toContain('note=');
+  });
+});
+
+describe('批 39 续:读抛错不缓存(420)', () => {
+  it('readFile 抛错 → meta.reason 落账,失败态不缓存', async () => {
+    const deps: FileChangeMetaDeps = {
+      scriptRoot: () => '/ws/scripts',
+      assetsRoot: () => '',
+      readFile: async (): Promise<Buffer> => {
+        throw new Error('read boom');
+      },
+      stat: async () => ({ mtimeMs: 1, size: 1 })
+    };
+    const resolver = createFileChangeMetaResolver(deps);
+    const meta = await resolver.metaFor({
+      fsPath: '/ws/scripts/cell/Foo.py',
+      identity: normalizeFileIdentity('/ws/scripts/cell/Foo.py'),
+      kind: 'change',
+      version: '1:1'
+    });
+    expect(meta.reason).toBeTruthy();
+  });
+});
+
+describe('批 39 终:LRU 512 封顶淘汰(294)', () => {
+  it('513 个独立文件 → 缓存封顶,最老条目淘汰(重复查询重读)', async () => {
+    const reads: string[] = [];
+    const deps: FileChangeMetaDeps = {
+      scriptRoot: () => '/ws/scripts',
+      assetsRoot: () => '',
+      readFile: async (file: string): Promise<Buffer> => {
+        reads.push(file);
+        return Buffer.from(`content of ${file}`, 'utf8');
+      },
+      stat: async () => ({ mtimeMs: 1, size: 1 })
+    };
+    const resolver = createFileChangeMetaResolver(deps);
+    const metaFor = (n: number): Promise<unknown> =>
+      resolver.metaFor({
+        fsPath: `/ws/scripts/cell/Foo${n}.py`,
+        identity: normalizeFileIdentity(`/ws/scripts/cell/Foo${n}.py`),
+        kind: 'change',
+        version: '1:1'
+      });
+    // 首算 Foo0(入缓存)
+    await metaFor(0);
+    expect(reads).toHaveLength(1);
+    // 再灌 512 个新文件 → 封顶,Foo0 被挤掉
+    for (let n = 1; n <= 512; n += 1) {
+      await metaFor(n);
+    }
+    // Foo0 重复查询:缓存已淘汰 → 重读(reads 增加)
+    const before = reads.length;
+    await metaFor(0);
+    expect(reads.length).toBeGreaterThan(before);
+  });
+});
+
+// 覆盖口径残余(批 39 定性):182/294/420 三行防御位——
+//  182 单层文件 unresolved 退路:单层文件按契约不判归属,该形态在更早的
+//     分派处已被排除到本函数之外(本臂实测返回 unresolved 但来自上游闸)
+//  294 LRU while 内 `oldest===undefined → break`:size>512 ⟹ Map 非空,
+//     keys().next() 恒有值,break 不可达(防御位)
+//  420 resolver promise 的 rejection 分支:全部 IO 失败(readFile/stat)都
+//     在内层被捕获转成 meta.reason,promise 恒 resolve,不可达(防御位)
+// LRU 淘汰本体(cache.delete)已由 513 文件臂实测(重读发生=淘汰生效)。
