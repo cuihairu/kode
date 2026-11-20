@@ -1,0 +1,149 @@
+{
+  "files": 2277,
+  "code_files": 2132,
+  "config_files": 145,
+  "lines": 751938,
+  "scope": "git tracked + nonignored untracked textual code/config; excludes audit evidence; ignored build outputs/dependencies not reviewed",
+  "groups": {
+    "(root)": {
+      "files": 15,
+      "lines": 10255
+    },
+    ".github/workflows": {
+      "files": 7,
+      "lines": 1289
+    },
+    ".vitest": {
+      "files": 1,
+      "lines": 1
+    },
+    ".vscode": {
+      "files": 3,
+      "lines": 75
+    },
+    "_winrun": {
+      "files": 2,
+      "lines": 2
+    },
+    "crates/kode-corpus": {
+      "files": 11,
+      "lines": 3461
+    },
+    "crates/kode-db-clone": {
+      "files": 29,
+      "lines": 12664
+    },
+    "crates/kode-index": {
+      "files": 14,
+      "lines": 2522
+    },
+    "crates/kode-kbengine-analyzer": {
+      "files": 10,
+      "lines": 1307
+    },
+    "crates/kode-kbengine-protocol": {
+      "files": 16,
+      "lines": 4786
+    },
+    "crates/kode-kbengine-schema": {
+      "files": 13,
+      "lines": 4322
+    },
+    "crates/kode-kbengine": {
+      "files": 8,
+      "lines": 2935
+    },
+    "crates/kode-mcp": {
+      "files": 27,
+      "lines": 16874
+    },
+    "crates/kode-parser": {
+      "files": 27,
+      "lines": 6868
+    },
+    "crates/kode-protocol": {
+      "files": 5,
+      "lines": 1796
+    },
+    "crates/kode-python": {
+      "files": 18,
+      "lines": 13835
+    },
+    "crates/kode-root": {
+      "files": 17,
+      "lines": 3320
+    },
+    "crates/kode-scheduler": {
+      "files": 21,
+      "lines": 6015
+    },
+    "crates/kode-server": {
+      "files": 221,
+      "lines": 169894
+    },
+    "crates/kode-types": {
+      "files": 16,
+      "lines": 2872
+    },
+    "crates/kode-vfs": {
+      "files": 13,
+      "lines": 4596
+    },
+    "docs": {
+      "files": 31,
+      "lines": 1177
+    },
+    "l10n": {
+      "files": 2,
+      "lines": 1538
+    },
+    "media": {
+      "files": 3,
+      "lines": 7175
+    },
+    "packages/kode-mcp": {
+      "files": 8,
+      "lines": 317
+    },
+    "plugins/wireshark-kbengine": {
+      "files": 2,
+      "lines": 483
+    },
+    "schemas": {
+      "files": 1,
+      "lines": 325
+    },
+    "scripts": {
+      "files": 37,
+      "lines": 7793
+    },
+    "snippets": {
+      "files": 3,
+      "lines": 201
+    },
+    "src": {
+      "files": 552,
+      "lines": 182635
+    },
+    "syntaxes": {
+      "files": 16,
+      "lines": 3616
+    },
+    "templates": {
+      "files": 41,
+      "lines": 2695
+    },
+    "tests": {
+      "files": 1085,
+      "lines": 270737
+    },
+    "typings": {
+      "files": 1,
+      "lines": 3556
+    },
+    "vendor": {
+      "files": 1,
+      "lines": 1
+    }
+  }
+}
