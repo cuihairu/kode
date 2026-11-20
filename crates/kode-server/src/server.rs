@@ -20,8 +20,9 @@ use kode_protocol::{
     error_codes, CompletionParams, ContentChangeEvent, CoreResources, DefinitionParams,
     DeleteFilesParams, DeletedFile, DidChangeParams, DidCloseParams, DidOpenParams,
     DocumentDiagnosticParams, DocumentSummary, DocumentSymbolParams, HealthReport, HoverParams,
-    IncomingMessage, InitializeParams, InitializeResult, Notification, RenameFilesParams,
-    RenamedFile, Request, RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    IncomingMessage, InitializeParams, InitializeResult, Notification, ReferenceParams,
+    RenameFilesParams, RenamedFile, Request, RequestId, Response, ServerCapabilities, ServerInfo,
+    ServerNotification,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
@@ -419,6 +420,9 @@ fn handle_request_inner(
         "textDocument/documentSymbol" => {
             vec![Outgoing::Response(handle_document_symbol(state, request))]
         }
+        // RUST-138 批 3:语料引用位(Properties/方法段的属性与调用点面仍是
+        // TS entityMapping 运行时面,Rust 面 = 类型/实体/接口引用位)。
+        "textDocument/references" => vec![Outgoing::Response(handle_references(state, request))],
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
         // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
         "$/kode/workspace/rootAdded" => {
@@ -536,6 +540,8 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             definition_provider: true,
             // RUST-139 批 3:textDocument/documentSymbol(def 段符号面)。
             document_symbol_provider: true,
+            // RUST-138 批 3:textDocument/references(语料声明+引用位面)。
+            references_provider: true,
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
@@ -877,6 +883,53 @@ fn handle_document_symbol(state: &mut ServerState, request: Request) -> Response
         Some(symbols) => Response::success(
             request.id,
             serde_json::to_value(symbols).expect("serialize document symbols"),
+        ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
+/// textDocument/references(RUST-138 批 3):语料引用位面——def 文档出
+/// 自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration 时才
+/// 前置)+ 全语料站点位;types.xml 文档出该类型名在全语料 .def/<Type>/
+/// <Arg>/<of> 值与 types.xml 内引用位(该面无声明位,includeDeclaration 不
+/// 生效,与 TS provideTypesXmlReferences 同)。
+/// 文档须已打开;未打开/未知符号/空结果一律回 null 结果(LSP 允许),不报错。
+/// 诚实边界:本面只出语料面引用。Properties/方法段的属性 self 访问与
+/// Python 调用点面由 entityMapping 运行时索引(TS)负责,Python 文档本面恒
+/// null——切换语义过滤面(semantic_reference_locations)属产品决策,不在本面。
+fn handle_references(state: &mut ServerState, request: Request) -> Response {
+    let params: ReferenceParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/references params",
+            )
+        }
+    };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.session.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    let locations = state.hover.borrow().references(
+        &key,
+        &text,
+        params.position.line,
+        params.position.character,
+        params.context.include_declaration,
+    );
+    match locations {
+        Some(locations) => Response::success(
+            request.id,
+            serde_json::to_value(locations).expect("serialize reference locations"),
         ),
         None => Response::success(request.id, serde_json::Value::Null),
     }

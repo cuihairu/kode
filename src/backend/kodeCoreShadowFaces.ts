@@ -575,6 +575,55 @@ export async function serveDocumentSymbolsFromRust(
   return result;
 }
 
+const isLspLocationFace = (value: unknown): value is LspLocationFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  return typeof face.uri === 'string' && isLspRangeFace(face.range);
+};
+
+/**
+ * 引用位面 rust 服务(RUST-138 批 3 接线):服务轨道下先镜像语料文档,再请求
+ * kode-server textDocument/references。Rust 面 = 语料面引用:def 文档出
+ * 自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration 时前置)
+ * + 全语料站点位;types.xml 文档出该类型名全语料引用位(无声明位)。Python
+ * 文档(属性 self 访问/调用点面归 entityMapping 运行时)、entities/alias、
+ * 未知符号、空结果、任何失败、应答畸形(任一条目缺 uri/区间)→ null,调用方
+ * 回 TS 既有实现(不部分采用)。非服务轨道/未装配门零开销。
+ */
+export async function serveReferencesFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  includeDeclaration: boolean,
+  isCancelled?: () => boolean
+): Promise<LspLocationFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !isCorpusDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character },
+    context: { includeDeclaration }
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/references', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (!Array.isArray(result) || !result.every(isLspLocationFace)) {
+    return null;
+  }
+  return result;
+}
+
 /**
  * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
  * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值

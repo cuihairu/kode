@@ -199,6 +199,9 @@ pub struct ServerCapabilities {
     /// RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。
     #[serde(default)]
     pub document_symbol_provider: bool,
+    /// RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。
+    #[serde(default)]
+    pub references_provider: bool,
     /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
@@ -390,6 +393,27 @@ pub struct DocumentDiagnosticParams {
 #[serde(rename_all = "camelCase")]
 pub struct DocumentSymbolParams {
     pub text_document: TextDocumentIdentifier,
+}
+
+/// references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。
+/// `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP
+/// ReferenceContext 语义一致;客户端可只送文档与位置)。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+    #[serde(default)]
+    pub context: ReferenceContext,
+}
+
+/// 引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字
+/// 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceContext {
+    #[serde(default)]
+    pub include_declaration: bool,
 }
 
 // ---------------------------------------------------------------------------

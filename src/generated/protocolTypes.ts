@@ -43,6 +43,8 @@ export interface KodeProtocol {
   notification: Notification;
   position: Position;
   range: Range;
+  reference_context: ReferenceContext;
+  reference_params: ReferenceParams;
   rename_files_params: RenameFilesParams;
   renamed_file: RenamedFile;
   request: Request;
@@ -306,6 +308,10 @@ export interface ServerCapabilities {
    * LSP-003 / PH1-03(PR-010):hover provider 能力声明。
    */
   hoverProvider?: boolean;
+  /**
+   * RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。
+   */
+  referencesProvider?: boolean;
   textDocumentSync: TextDocumentSyncOptions;
 }
 /**
@@ -324,6 +330,20 @@ export interface TextDocumentSyncOptions {
 export interface ServerInfo {
   name: string;
   version: string;
+}
+/**
+ * 引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。
+ */
+export interface ReferenceContext {
+  includeDeclaration?: boolean;
+}
+/**
+ * references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。 `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP ReferenceContext 语义一致;客户端可只送文档与位置)。
+ */
+export interface ReferenceParams {
+  context?: ReferenceContext;
+  position: Position;
+  textDocument: TextDocumentIdentifier;
 }
 /**
  * LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。

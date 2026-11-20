@@ -55,6 +55,8 @@ struct ProtocolSchemaRoot {
     definition_params: DefinitionParams,
     document_diagnostic_params: DocumentDiagnosticParams,
     document_symbol_params: DocumentSymbolParams,
+    reference_params: ReferenceParams,
+    reference_context: ReferenceContext,
     health_report: HealthReport,
     core_resources: CoreResources,
     document_summary: DocumentSummary,

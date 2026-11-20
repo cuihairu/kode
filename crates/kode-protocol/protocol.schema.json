@@ -484,6 +484,42 @@
       ],
       "type": "object"
     },
+    "ReferenceContext": {
+      "description": "引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。",
+      "properties": {
+        "includeDeclaration": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ReferenceParams": {
+      "description": "references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。 `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP ReferenceContext 语义一致;客户端可只送文档与位置)。",
+      "properties": {
+        "context": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ReferenceContext"
+            }
+          ],
+          "default": {
+            "includeDeclaration": false
+          }
+        },
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
+      ],
+      "type": "object"
+    },
     "RenameFilesParams": {
       "description": "LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。",
       "properties": {
@@ -628,6 +664,11 @@
         "hoverProvider": {
           "default": false,
           "description": "LSP-003 / PH1-03(PR-010):hover provider 能力声明。",
+          "type": "boolean"
+        },
+        "referencesProvider": {
+          "default": false,
+          "description": "RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。",
           "type": "boolean"
         },
         "textDocumentSync": {
@@ -833,6 +874,12 @@
     "range": {
       "$ref": "#/definitions/Range"
     },
+    "reference_context": {
+      "$ref": "#/definitions/ReferenceContext"
+    },
+    "reference_params": {
+      "$ref": "#/definitions/ReferenceParams"
+    },
     "rename_files_params": {
       "$ref": "#/definitions/RenameFilesParams"
     },
@@ -900,6 +947,8 @@
     "notification",
     "position",
     "range",
+    "reference_context",
+    "reference_params",
     "rename_files_params",
     "renamed_file",
     "request",

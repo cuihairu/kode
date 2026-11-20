@@ -10,7 +10,7 @@ import { provideDefSymbolReferences } from '../defSymbolReferences';
 import { PYTHON_RECEIVER_BY_SECTION, getPythonSelfAccessAtPosition } from '../backend/pythonLanguageUtils';
 import { GlobalDataDictIndex, isKeyInsideLineComment } from '../globalDataIndex';
 import { DEF_SYMBOL_SECTIONS, METHOD_SECTIONS, elementFullRange, elementTagRange, parseDefAst, toSectionName } from './shared';
-import { findDefSymbolInfo } from './navigation';
+import { findDefSymbolInfo, lspFaceToVscodeLocation } from './navigation';
 import { resolveDataDictSitesAtPosition, resolveSpaceDataSitesAtPosition } from './pythonDefinition';
 import { isSpaceDataIndexEnabled } from '../spaceDataIndex';
 import { createSelectionRange } from './callHierarchy';
@@ -18,7 +18,7 @@ import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchC
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDataKeyAccesses } from '../backend/cellDataKeyAccess';
 import { findEntityScriptFile, findDefinitionFileByCategory } from '../definitionWorkspace';
 import { buildDefProcessBreadcrumb } from '../backend/processOwnershipLens';
-import { serveDocumentSymbolsFromRust } from '../backend/kodeCoreShadowFaces';
+import { serveDocumentSymbolsFromRust, serveReferencesFromRust } from '../backend/kodeCoreShadowFaces';
 import type { LspDocumentSymbolFace } from '../backend/kodeCoreShadowFaces';
 
 /**
@@ -46,6 +46,30 @@ function symbolKindByName(kind: LspDocumentSymbolFace['kind']): vscode.SymbolKin
  * 名字搜索。本批收方法段;属性 self 访问(NAV-002)与 receiver RPC
  * (NAV-003)在引用收录面上后续批扩展。
  */
+/**
+ * RUST-138 批 3:语料引用位面 Rust 服务壳(types.xml 面 + def 语料面两处
+ * 消费)。命中 → vscode.Location 列表(uri 规范路径,零宽站点位);null
+ * (非服务轨道/Python 文档/未知符号/失败/畸形)→ 调用方回 TS 既有实现。
+ * 取消探测走 token(预算壳内 50ms 轮询)。
+ */
+async function rustReferenceLocations(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  includeDeclaration: boolean,
+  token?: vscode.CancellationToken
+): Promise<vscode.Location[] | null> {
+  const faces = await serveReferencesFromRust(
+    document,
+    { line: position.line, character: position.character },
+    includeDeclaration,
+    () => token?.isCancellationRequested === true
+  );
+  if (faces === null) {
+    return null;
+  }
+  return faces.map(lspFaceToVscodeLocation);
+}
+
 export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
   constructor(
     private entityMappingManager: EntityMappingManager,
@@ -151,6 +175,15 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     // 返回工作区 .def/<Type>/<Arg>/<of> 值使用处与 types.xml 内引用位;
     // 不在类型符号上/空结果如实 null(调用方约定)。
     if (document.fileName.endsWith('types.xml')) {
+      const rustSites = await rustReferenceLocations(
+        document,
+        position,
+        context.includeDeclaration === true,
+        token
+      );
+      if (rustSites !== null) {
+        return rustSites;
+      }
       return provideTypesXmlReferences(document, position, token);
     }
     if (
@@ -167,8 +200,18 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     const symbolInfo = findDefSymbolInfo(document, position, word);
     if (!symbolInfo) {
       // IDE-NAV-018:类型名/实体名/接口名不在 Properties/方法段,findDefSymbolInfo
-      // 不识别(返回 null)——交由 defSymbolReferences 补查(自定义类型/实体
-      // Parent/Type/Interface 引用位);非此类符号时其内部解析同样如实 null。
+      // 不识别(返回 null)——RUST-138 批 3:先试 Rust 语料引用位面(Type/
+      // Parent/Interface 三类目标),未命中/失败回 defSymbolReferences(自定义
+      // 类型/实体/接口引用位);非此类符号时两路解析同样如实 null。
+      const rustSites = await rustReferenceLocations(
+        document,
+        position,
+        context.includeDeclaration === true,
+        token
+      );
+      if (rustSites !== null) {
+        return rustSites;
+      }
       return provideDefSymbolReferences(
         document,
         position,

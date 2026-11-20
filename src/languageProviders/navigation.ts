@@ -19,7 +19,7 @@ import { jumpLog, logNavigation } from '../navigationLog';
 import { SymbolHoverInfo, buildSymbolHoverInfo } from './hover';
 import { CustomTypeResolution, KBEngineSectionName, METHOD_SECTIONS, getDefNodeAtPosition, getDefNodeAtWord, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst } from './shared';
 /** LSP 落点面(规范路径 uri)→ vscode.Location(Rust 面与 shadow 同形)。 */
-function lspFaceToVscodeLocation(face: LspLocationFace): vscode.Location {
+export function lspFaceToVscodeLocation(face: LspLocationFace): vscode.Location {
   return new vscode.Location(
     vscode.Uri.file(face.uri),
     new vscode.Range(
