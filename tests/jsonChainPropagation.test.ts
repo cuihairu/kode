@@ -862,3 +862,116 @@ describe('KSEM-SER-10 sweep: 容错臂与绑定边界', () => {
     expect(fmt.observed.get('a')).toEqual(scalar('int'));
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 45 容错臂:loads 非路径实参(调用/字典字面量外的形态)→ 零声称、
+// json.load(open(…)) 首实参四退路(未闭合/变量/关键字/f 串)、类型引用
+// 环/未知 → 整 type 零声称。
+// ---------------------------------------------------------------------------
+describe('批 45:链传播容错臂', () => {
+  it('loads 实参是调用形态(非路径/非字典)→ 零声称(343)', () => {
+    const out = chains([
+      'import json',
+      'cfg = json.loads(get_path())'
+    ]);
+    expect(out.has('cfg')).toBe(false);
+  });
+
+  it('load(open(p)) 首实参:变量形态 → 不可证明零声称(737)', () => {
+    const out = chains([
+      'import json',
+      'cfg = json.load(open(p))'
+    ]);
+    expect(out.has('cfg')).toBe(false);
+  });
+
+  it('load(open(f"res/x.json")) 首实参:f 串前缀 → 不可证明零声称(745)', () => {
+    const out = chains([
+      'import json',
+      'cfg = json.load(open(f"res/guild_configs/{n}.json"))'
+    ]);
+    expect(out.has('cfg')).toBe(false);
+  });
+
+  it("load(open('res/guild_configs/g1.json')):json.load 面无绑定 → 零声称", () => {
+    // GUILD_SCHEMA 只声明 json.loads 绑定,json.load 面无绑定 → 不声称
+    const out = chains([
+      'import json',
+      "cfg = json.load(open('res/guild_configs/g1.json'))"
+    ]);
+    expect(out.has('cfg')).toBe(false);
+    // 对照组:显式给 json.load 绑定后照常声称
+    const withLoad = schemaFrom({
+      schema_version: 1,
+      types: { T: { fields: { level: 'UINT32' } } },
+      bindings: { 'json.loads': [], 'json.load': [{ path: 'res/*.json', type: 'T' }] }
+    }).schema;
+    const back = asLiteral(chains([
+      'import json',
+      "cfg = json.load(open('res/g1.json'))"
+    ], withLoad), 'cfg');
+    expect(back.required.get('level')).toEqual(scalar('int'));
+  });
+
+  it('类型自引用环 → 整 type 零声称(785)', () => {
+    const cyc = schemaFrom({
+      schema_version: 1,
+      types: {
+        Loop: { fields: { next: 'Loop' } },
+        Holder: { fields: { l: 'Loop' } }
+      },
+      bindings: { 'json.loads': [{ path: 'res/cyc/*.json', type: 'Holder' }] }
+    }).schema;
+    const out = chains([
+      'import json',
+      "cfg = json.loads('res/cyc/c1.json')"
+    ], cyc);
+    expect(out.has('cfg')).toBe(false);
+  });
+
+  it('字段引用未知类型 → 该字段整键丢弃(可证字段照留,不灭整 type)', () => {
+    // 实测口径(schemaFieldKind 返 null):未知字段不落 unknown 也不灭整 type,
+    // 而是整键摘除——零声称面在字段级,不在 type 级
+    const ghost = schemaFrom({
+      schema_version: 1,
+      types: { Holder: { fields: { x: 'Ghost', n: 'UINT32' } } },
+      bindings: { 'json.loads': [{ path: 'res/ghost/*.json', type: 'Holder' }] }
+    }).schema;
+    const back = asLiteral(chains([
+      'import json',
+      "cfg = json.loads('res/ghost/g1.json')"
+    ], ghost), 'cfg');
+    expect(back.required.has('x')).toBe(false);
+    expect(back.required.get('n')).toEqual(scalar('int'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 批 45 续:typed-values 面容错臂(deriveJsonChainTypedValues)——loads 实参
+// 调用形态、load(open(…)) 首实参变量/f 串/未闭合、未知类型。
+// ---------------------------------------------------------------------------
+describe('批 45 续:typed-values 容错臂', () => {
+  const tv = (rows: string[], schema: SerializationSchema | null) =>
+    deriveJsonChainTypedValues(rows.join('\n'), schema, [1]);
+
+  it('loads 实参为调用形态 → 零声称(343)', () => {
+    const out = tv(['import json', 'cfg = json.loads(get_path())'], guildSchema());
+    expect(out.get(1)?.has('cfg') ?? false).toBe(false);
+  });
+
+  it('load(open(p)) 变量首实参 → 零声称(737)', () => {
+    const out = tv(['import json', 'cfg = json.load(open(p))'], guildSchema());
+    expect(out.get(1)?.has('cfg') ?? false).toBe(false);
+  });
+
+  it('load(open(f"x.json")) f 串首实参 → 零声称(745)', () => {
+    const out = tv(['import json', 'cfg = json.load(open(f"res/x.json"))'], guildSchema());
+    expect(out.get(1)?.has('cfg') ?? false).toBe(false);
+  });
+});
+
+// 覆盖口径残余(批 45 部分收口,如实记录):343/724/737/745/785/815 六行未被
+// 本批臂击中——臂本身全绿且钉住了对外语义(loads 调用形态实参/load(open(p))
+// 变量与 f 串首实参均零声称、类型自引用环整 type 零声称、未知字段类型整键
+// 摘除),但上述行所在的内部代码路径与本批输入的路径不同构,未逐一归因,
+// 留下一窗按内部调用链定位。
