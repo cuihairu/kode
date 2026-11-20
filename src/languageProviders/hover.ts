@@ -1467,6 +1467,9 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
     if (document.languageId !== 'python' || !this.entityMappingManager) {
       return null;
     }
+    // 入口版本基线在任何 await 之前捕获:切流期文档被改属漂移,两臂皆弃。
+    // (基线若挪到本 await 之后会读到已 bump 的版本,漂移复查形同虚设)
+    const version = document.version;
     // RUST-140 批 3:签名决策面 rust 服务优先(python_call_at 调用点归属 +
     // owner 链闭包 + 接收者段硬闸,决策核与 TS 链同构)。非服务轨道/取消/
     // 应答畸形 → null 回 TS 既有实现(不部分采用);vscode 对象构造留本侧
@@ -1476,7 +1479,7 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
       position,
       () => token?.isCancellationRequested === true
     );
-    if (rustFace) {
+    if (rustFace && document.version === version) {
       const signature = new vscode.SignatureInformation(rustFace.signature.label);
       signature.parameters = rustFace.signature.parameters.map(
         parameterLabel => new vscode.ParameterInformation(parameterLabel)
@@ -1498,7 +1501,6 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
       return null;
     }
     const featureConfig = getLanguageFeatureConfig();
-    const version = document.version;
     const result = await raceWithBudget(
       'signatureHelp:def-method',
       this.resolveSignatureHelp(this.entityMappingManager, document, call),
