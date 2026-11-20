@@ -164,3 +164,68 @@ describe('buildPropertyDirectionScanBundleWithRust(Rust-first,本地扫描兜底
     expect(local.cellDataAccesses).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 33:convertScanBundle 逐臂形状闸——Rust 扫描束任一面畸形整面作废 null,
+// 不部分采用。逐字段变异一份合法束,每臂只破一处。
+// ---------------------------------------------------------------------------
+describe('批 33:扫描束形状闸逐臂', () => {
+  const base = (): Record<string, unknown> => ({
+    accesses: [{ line: 2, character: 5, fullPath: 'hp.max' }],
+    initNames: ['ut'],
+    initSites: [{ name: 'ut', line: 1, character: 4 }],
+    initCellDataKeys: [{ name: 'ut', key: 'spaceUType' }],
+    cellDataAccesses: [{ line: 3, character: 7, length: 10, accessEnd: 17, key: 'spaceUType' }]
+  });
+
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['accesses 非数组', { ...base(), accesses: 'nope' }],
+    ['accesses 条目为原始串', { ...base(), accesses: ['str'] }],
+    ['accesses 条目坐标非整数', { ...base(), accesses: [{ line: 1.5, character: 0, fullPath: 'a.b' }] }],
+    ['accesses 条目 fullPath 非法字符', { ...base(), accesses: [{ line: 0, character: 0, fullPath: 'bad path' }] }],
+    ['initNames 非数组', { ...base(), initNames: 'nope' }],
+    ['initNames 成员带非法字符', { ...base(), initNames: ['bad!'] }],
+    ['initSites 条目非对象', { ...base(), initSites: ['str'] }],
+    ['initSites 条目坐标为负', { ...base(), initSites: [{ name: 'ut', line: -1, character: 0 }] }],
+    ['initCellDataKeys 条目键为空', { ...base(), initCellDataKeys: [{ name: 'ut', key: '' }] }],
+    ['initCellDataKeys 条目名带引号', { ...base(), initCellDataKeys: [{ name: 'bad!', key: 'k' }] }],
+    ['cellDataAccesses 条目键带闭括号', { ...base(), cellDataAccesses: [{ line: 0, character: 0, length: 1, accessEnd: 2, key: 'k"' }] }],
+    ['cellDataAccesses 条目坐标缺 length 整数性', { ...base(), cellDataAccesses: [{ line: 0, character: 0, length: 1.5, accessEnd: 2, key: 'k' }] }]
+  ];
+
+  for (const [label, scan] of cases) {
+    it(`${label} → 整面作废 null`, async () => {
+      await withGate(() => okScan(scan), async () => {
+        expect(await buildPropertyDirectionScanBundleWithRust('self.hp\n')).toBeNull();
+      });
+    });
+  }
+
+  it('应答缺 scan 键 → null', async () => {
+    await withGate(() => ({ ok: true as const, result: {} }), async () => {
+      expect(await buildPropertyDirectionScanBundleWithRust('self.hp\n')).toBeNull();
+    });
+  });
+});
+
+describe('批 33 续:非对象条目两臂', () => {
+  const base = (): Record<string, unknown> => ({
+    accesses: [{ line: 2, character: 5, fullPath: 'hp.max' }],
+    initNames: ['ut'],
+    initSites: [{ name: 'ut', line: 1, character: 4 }],
+    initCellDataKeys: [{ name: 'ut', key: 'spaceUType' }],
+    cellDataAccesses: [{ line: 3, character: 7, length: 10, accessEnd: 17, key: 'spaceUType' }]
+  });
+
+  it('initCellDataKeys 条目为原始串 → null', async () => {
+    await withGate(() => okScan({ ...base(), initCellDataKeys: ['str'] }), async () => {
+      expect(await buildPropertyDirectionScanBundleWithRust('self.hp\n')).toBeNull();
+    });
+  });
+
+  it('cellDataAccesses 条目为 null → null', async () => {
+    await withGate(() => okScan({ ...base(), cellDataAccesses: [null] }), async () => {
+      expect(await buildPropertyDirectionScanBundleWithRust('self.hp\n')).toBeNull();
+    });
+  });
+});
