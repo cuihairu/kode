@@ -303,3 +303,129 @@ describe('KSEM-CFG-08 pathReads(path-level readers, CFG-10 消费)', () => {
     expect(out.uncoveredReads).toEqual([]);
   });
 });
+
+// 读面拒绝臂:这些写法**不**构成 path 读取证据。分三类——
+// 非字面量首实参 / json.load 首实参不是 open(...) / 跨行调用。
+describe('KSEM-CFG-08 read-side rejection arms', () => {
+  const noReads = (text: string): void => {
+    const out = run([{ file: 'a.py', text }]);
+    expect(out.pathReads).toEqual([]);
+    expect(out.pathConflicts).toEqual([]);
+  };
+
+  it('json.loads first arg that is a bare name is not a read', () => {
+    noReads('import json\ncfg = json.loads(_)');
+    noReads('import json\ncfg = json.loads(p)');
+  });
+
+  it('json.loads first arg that is an f-string or concatenation is not a read', () => {
+    // 掩码把串 token 折成 '_',原文复核按段全距切后仍非法 → 拒(容错边界)
+    noReads("import json\ncfg = json.loads(f'res/guild/g1.json')");
+    noReads("import json\ncfg = json.loads('res/guild/g1.json' 'x')");
+  });
+
+  it('json.load whose first arg is not an open(...) call is not a read', () => {
+    noReads('import json\ncfg = json.load(p)');
+    noReads("import json\ncfg = json.load('res/world/w1.json')");
+  });
+
+  it('cross-line json.load calls are not reads (v1 is same-line only)', () => {
+    noReads('import json\ncfg = json.load(\n    open("res/world/w1.json"))');
+  });
+
+  it('json.load(open(literal, encoding=...)) is still a read (trailing args tolerated)', () => {
+    const out = run([
+      { file: 'a.py', text: 'import json\ncfg = json.load(open("res/world/w1.json", encoding="utf-8"))' }
+    ]);
+    expect(out.pathReads).toEqual([
+      { path: 'res/world/w1.json', loader: 'json.load', sources: [{ file: 'a.py', line: 1 }] }
+    ]);
+  });
+});
+
+// 值类型等价面:跨文件同名变量合并时,只有**全等**的值类型才算一致键。
+// 逐臂钉:种类不同 / 两侧 unknown / list·tuple 元素面 / dict 形状面
+// (字面量 vs 开放 / 开放 vs 开放 / 键集大小)/ required∪optional 面。
+// 不可达防御臂定性(公共入口不可达,不硬凑):src/backend/configProjectStructure.ts
+// 238(sameFormat unknown 形状)/273(fmtKeyKind unknown 形状)/461(模块级 unknown 形状
+// 并入)三行都只对 DictFormat 的 {kind:'unknown'} 变体成立;而 deriveDictFormats 的
+// 合并路径(:732 返回 DictFormat|null)只产出 literal/open,unknown 基一律 return null
+// (空形状声称)。故该变体经公共入口不可产,三行为防御性死码。
+describe('KSEM-CFG-08 value-kind agreement arms', () => {
+  const merged = (a: string, b: string): ReturnType<typeof run> => {
+    return run([{ file: 'a.py', text: a }, { file: 'b.py', text: b }], null);
+  };
+
+  it('different value kinds diverge: key dropped, entry open, conflict reported', () => {
+    const e = merged("CFG = {'x': 1}", "CFG = {'x': [1]}").entries[0];
+    expect(e.open).toBe(true);
+    expect(e.fields.size).toBe(0);
+    expect(e.conflicts).toHaveLength(1);
+  });
+
+  it('unknown on both sides agrees as an empty field face (no guess)', () => {
+    const e = merged("CFG = {'x': f(1)}", "CFG = {'x': g(2)}").entries[0];
+    expect(e.open).toBe(false);
+    expect([...e.fields.keys()]).toEqual(['x']);
+    // unknown → 空字段面:键在,类型面不猜
+    expect(e.fields.get('x')).toEqual({ kind: 'dict', fields: new Map() });
+  });
+
+  it('list elements compare structurally: same ok, empty vs non-empty diverge', () => {
+    const same = merged("CFG = {'x': [1]}", "CFG = {'x': [2]}").entries[0];
+    expect(same.open).toBe(false);
+    expect(same.fields.get('x')).toEqual({
+      kind: 'list',
+      element: { kind: 'scalar', family: 'int' }
+    });
+    const both = merged("CFG = {'x': []}", "CFG = {'x': []}").entries[0];
+    expect(both.open).toBe(false);
+    expect(both.fields.get('x')).toEqual({ kind: 'list', element: null });
+    const mixed = merged("CFG = {'x': [1]}", "CFG = {'x': []}").entries[0];
+    expect(mixed.open).toBe(true);
+    expect(mixed.fields.size).toBe(0);
+  });
+
+  it('tuple elements compare structurally like lists', () => {
+    const same = merged("CFG = {'x': (1, 2)}", "CFG = {'x': (3, 4)}").entries[0];
+    expect(same.open).toBe(false);
+    expect(same.fields.get('x')).toEqual({
+      kind: 'tuple',
+      element: { kind: 'scalar', family: 'int' }
+    });
+  });
+
+  it('nested dict shapes compare: identical ok, literal-vs-open diverges', () => {
+    const same = merged("CFG = {'x': {'k': 1}}", "CFG = {'x': {'k': 2}}").entries[0];
+    expect(same.open).toBe(false);
+    expect([...same.fields.keys()]).toEqual(['x']);
+
+    const diverged = merged("CFG = {'x': {'k': 1}}", "CFG = {'x': {k: 1}}").entries[0];
+    expect(diverged.open).toBe(true);
+    expect(diverged.conflicts).toHaveLength(1);
+  });
+
+  it('open shapes compare by observed key set: same ok, different size diverges', () => {
+    // **spread 让内层 dict 成开放面(观察键集),对拍走 observed 分支
+    const same = merged("CFG = {'x': {'k': 1, **r}}", "CFG = {'x': {'k': 2, **r}}").entries[0];
+    expect(same.open).toBe(false);
+    expect([...same.fields.keys()]).toEqual(['x']);
+
+    const sized = merged(
+      "CFG = {'x': {'k': 1, **r}}",
+      "CFG = {'x': {'k': 1, 'j': 2, **r}}"
+    ).entries[0];
+    expect(sized.open).toBe(true);
+    expect(sized.fields.size).toBe(0);
+  });
+
+  it('optional keys from branch writes participate in the agreement face', () => {
+    const e = merged(
+      "CFG = {'x': 1}\nif c:\n    CFG['y'] = 2",
+      "CFG = {'x': 1}\nif c:\n    CFG['y'] = 3"
+    ).entries[0];
+    expect(e.open).toBe(false);
+    expect([...e.fields.keys()]).toEqual(['x', 'y']);
+    expect(e.fields.get('y')).toEqual({ kind: 'scalar', family: 'int' });
+  });
+});
