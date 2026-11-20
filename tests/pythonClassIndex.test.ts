@@ -8,6 +8,7 @@ import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import {
   PythonClassIndex,
   PY_SCAN_EXCLUDE,
+  displayPath,
   linearizeC3,
   parsePythonFile,
   type PythonClassDef
@@ -580,5 +581,161 @@ describe('provideDefinition 真实 kbengine 跳转(端到端)', () => {
       stubWorkspace.findFiles = ORIGINAL;
       stubWorkspace.workspaceFolders = [];
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 提示面 MRO 链(resolveMroMethodChains):调用方所在类解不到时,返回**每一条**
+// 可达实现根及其各自链上的实现条目——不取首见,多根并列(悬停链的提示面)。
+//
+// 覆盖口径残余(不硬凑):src/backend/pythonClassIndex.ts:1860 `if (rootsReady) {`
+// 这**一行**在 lcov 记为未覆盖,而它的块体 1861-1879 全部命中(本组两个臂分别走
+// 组合根视角与反向后代视角,各命中 3 次)。属 istanbul 对 `if (变量) {` 的行计数
+// 归属产物——条件本身无分支可挂,BRDA 不产记录,故不可由测试消除。
+// ---------------------------------------------------------------------------
+describe('resolveMroMethodChains(提示面多根链)', () => {
+  const A_FILE = [
+    'class MixinA:',
+    '\tdef check_alpha(self):',
+    '\t\tpass',
+    ''
+  ].join('\n');
+  const B_FILE = [
+    'class MixinB:',
+    '\tdef run_b(self):',
+    '\t\tself.check_alpha()',
+    ''
+  ].join('\n');
+  const AVATAR_FILE = [
+    'class Avatar(MixinA, MixinB):',
+    '\tdef boot(self):',
+    '\t\tpass',
+    ''
+  ].join('\n');
+
+  it('调用方静态类解不到 → 返回子类根各自的实现链', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mro-chain-'));
+    const paths: Record<string, string> = {};
+    for (const [name, content] of [
+      ['mixin_a.py', A_FILE],
+      ['mixin_b.py', B_FILE],
+      ['avatar.py', AVATAR_FILE]
+    ] as Array<[string, string]>) {
+      paths[name] = path.join(tmp, name);
+      fs.writeFileSync(paths[name], content, 'utf8');
+    }
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.includes('*.def')
+        ? []
+        : Object.values(paths).map(f => Uri.file(f))) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      const chains = await index.resolveMroMethodChains(
+        paths['mixin_b.py'], 2, 'check_alpha'
+      );
+      expect(chains.length).toBeGreaterThan(0);
+      const avatarChain = chains.find(c => c.rootClassName === 'Avatar');
+      expect(avatarChain, '应有 Avatar 根链').toBeDefined();
+      const entry = avatarChain!.entries[0];
+      expect(entry.className).toBe('MixinA');
+      expect(entry.filePath).toBe(paths['mixin_a.py']);
+      expect(entry.line).toBe(1);
+      expect(entry.character).toBeGreaterThan(0);
+    } finally {
+      stubWorkspace.findFiles = original;
+    }
+  });
+
+  it('组合根视角:entities.xml 里的实体根各自给一条链', async () => {
+    // 组合根派生靠 entities.xml + 实体 def:Avatar 既是实体根又经 Python
+    // 继承 MixinB → 调用方所在类(MixinB)不在自己 MRO 里也能拿到根链。
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mro-composition-'));
+    fs.mkdirSync(path.join(tmp, 'entity_defs'), { recursive: true });
+    const paths: Record<string, string> = {
+      'mixin_a.py': A_FILE,
+      'mixin_b.py': B_FILE,
+      'avatar.py': AVATAR_FILE
+    };
+    for (const [name, content] of Object.entries(paths)) {
+      const full = path.join(tmp, name);
+      paths[name] = full;
+      fs.writeFileSync(full, content, 'utf8');
+    }
+    const entities = path.join(tmp, 'entities.xml');
+    fs.writeFileSync(
+      entities,
+      ['<root>', '\t<Avatar hasBase="true"></Avatar>', '</root>'].join('\n'),
+      'utf8'
+    );
+    const defFile = path.join(tmp, 'entity_defs', 'Avatar.def');
+    fs.writeFileSync(
+      defFile,
+      ['<root>', '\t<Interfaces>', '\t\t<interface> ROLE </interface>', '\t</Interfaces>', '</root>'].join('\n'),
+      'utf8'
+    );
+    const all = [entities, defFile, ...Object.values(paths)];
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.includes('entities.xml')
+        ? [Uri.file(entities)]
+        : pattern && pattern.includes('*.def')
+          ? [Uri.file(defFile)]
+          : pattern && pattern.includes('types.xml')
+            ? []
+            : all.filter(f => f.endsWith('.py')).map(f => Uri.file(f))
+    ) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      const chains = await index.resolveMroMethodChains(
+        paths['mixin_b.py'], 2, 'check_alpha'
+      );
+      expect(chains.length).toBeGreaterThan(0);
+      const avatarChain = chains.find(c => c.rootClassName === 'Avatar');
+      expect(avatarChain, '组合根视角应有 Avatar 根链').toBeDefined();
+      expect(avatarChain!.entries[0].className).toBe('MixinA');
+      // 反向臂:该实体根经根名收录查询同样在列
+      expect(await index.rootsContaining('Avatar')).toContain('Avatar');
+    } finally {
+      stubWorkspace.findFiles = original;
+    }
+  });
+
+  it('方法名不存在 → 零链(不猜不造)', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mro-empty-'));
+    const p = path.join(tmp, 'mixin_b.py');
+    fs.writeFileSync(p, B_FILE, 'utf8');
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.includes('*.def')
+        ? []
+        : [Uri.file(p)]) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      expect(await index.resolveMroMethodChains(p, 2, 'no_such_method')).toEqual([]);
+      // 已取消令牌 → 立即空(不触碰索引)
+      const token = { isCancellationRequested: true } as vscode.CancellationToken;
+      expect(await index.resolveMroMethodChains(p, 2, 'check_alpha', undefined, token)).toEqual([]);
+    } finally {
+      stubWorkspace.findFiles = original;
+    }
+  });
+});
+
+describe('displayPath(工作区根下相对化)', () => {
+  const ORIGINAL = stubWorkspace.workspaceFolders;
+  it('根内路径相对化;根外路径原样返回;无根时原样返回', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-display-'));
+    const inside = path.join(tmp, 'a', 'b.py');
+    const outside = path.join(os.tmpdir(), 'kode-outside.py');
+    try {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: tmp } }] as never;
+      expect(displayPath(inside)).toBe(path.join('a', 'b.py').replace(/\\/g, '/'));
+      expect(displayPath(outside)).toBe(outside);
+    } finally {
+      stubWorkspace.workspaceFolders = ORIGINAL;
+    }
+    // 无工作区根:相对化无从谈起,原样返回
+    expect(displayPath(inside)).toBe(inside);
   });
 });
