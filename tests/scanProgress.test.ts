@@ -33,6 +33,11 @@ import {
   type ScanProgressMetaFile
 } from '../src/backend/scanProgress';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import {
+  clearRecentJumpLogs,
+  getRecentJumpLogs,
+  setJumpLogEnabled
+} from '../src/navigationLog';
 
 const p = (root: string, ...segments: string[]) => path.join(root, ...segments);
 
@@ -115,6 +120,8 @@ afterEach(() => {
   fixture.cleanup();
   fs.rmSync(progressDir, { recursive: true, force: true });
   stubWorkspace.workspaceFolders = originalWorkspaceFolders;
+  setJumpLogEnabled(false);
+  clearRecentJumpLogs();
 });
 
 describe('SCAN-RESUME-001 纯核(零 vscode)', () => {
@@ -239,6 +246,27 @@ describe('SCAN-RESUME-001 索引面七钉子', () => {
     }).fileCache.get(pyFilePath(fixture.root, 3))!.parsed;
     expect(parsed.classes[0].name).toBe('Mod03');
     expect(parsed.classes[0].methods.has('onTick3')).toBe(true);
+    void first;
+  }, 20000);
+
+  it('钉子①+跳转日志:断点采纳事实进 jump 日志(开关开才拼串,采纳数如实)', async () => {
+    pointWorkspaceAt(fixture.root, fixture.files);
+    const interrupted = new ScanProgressController(progressDir, 'v1');
+    const first = new PythonClassIndex(new FailNthChunkScheduler(2), interrupted);
+    await first.findClassesByName('Mod00').catch(() => undefined);
+    await interrupted.settle();
+
+    clearRecentJumpLogs();
+    setJumpLogEnabled(true);
+    const resumed = new ScanProgressController(progressDir, 'v1');
+    const second = new PythonClassIndex(new IndexScheduler(), resumed);
+    await second.findClassesByName('Mod00');
+    await waitFor(() => fileCacheSize(second) === PY_FILE_COUNT, 'resumed scan completes');
+    expect(second.getScanResumeStatsForTests()).toEqual({ adopted: 16, scanned: 4 });
+    const resumeLog = getRecentJumpLogs().filter(line => line.includes('py 全扫断点恢复'));
+    expect(resumeLog).toHaveLength(1);
+    expect(resumeLog[0]).toContain('采纳 16 个文件');
+    expect(resumeLog[0]).toContain('不重读不重解析');
     void first;
   }, 20000);
 

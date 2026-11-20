@@ -10,6 +10,11 @@ import {
 } from '../src/backend/kodeCoreShadowFaces';
 import { workspace } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './helpers/vscodeStub';
+import {
+  clearRecentJumpLogs,
+  getRecentJumpLogs,
+  setJumpLogEnabled
+} from '../src/navigationLog';
 
 // INDEX-DISCIPLINE-001 ③:python 索引输入语法门。TS 镜像核与 Rust
 // `$/kode/syntax/gate`(kode-server syntax_gate.rs)语义同构——本套镜像
@@ -20,6 +25,8 @@ const temporaryDirectories: string[] = [];
 afterEach(() => {
   for (const dir of temporaryDirectories.splice(0)) { fs.rmSync(dir, { recursive: true, force: true }); }
   workspace.textDocuments = [];
+  setJumpLogEnabled(false);
+  clearRecentJumpLogs();
   vi.restoreAllMocks();
 });
 
@@ -208,5 +215,30 @@ describe('onFileChanged 语法门收口(烂文件不入索引)', () => {
     const kept = await index.findClassesByName('Gate');
     expect(kept).toHaveLength(1);
     expect(kept[0].methods.has('tock')).toBe(false);
+  });
+
+  it('跳转日志开关开时,语法门拦截事实落在 jump 日志(默认关闭不产生字符串)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-syngate-log-'));
+    temporaryDirectories.push(root);
+    const file = path.join(root, 'gate.py');
+    fs.writeFileSync(file, BROKEN_PY, 'utf8');
+    const index = new PythonClassIndex();
+    clearRecentJumpLogs();
+    // 开关关:拦截照常计数,但惰性 thunk 不评估(零字符串拼接开销,无日志)
+    setJumpLogEnabled(false);
+    await index.onFileChanged(file);
+    expect(index.getSyntaxGateSkippedCount()).toBe(1);
+    expect(getRecentJumpLogs()).toEqual([]);
+
+    // 开关开:拦下原因进 jump 日志(含文件名与首个原因)
+    setJumpLogEnabled(true);
+    fs.writeFileSync(file, 'class Gate:\n    def tick(self:\n        return 2\n', 'utf8');
+    await index.onFileChanged(file);
+    expect(index.getSyntaxGateSkippedCount()).toBe(2);
+    const logs = getRecentJumpLogs();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('py 语法门拦下');
+    expect(logs[0]).toContain('gate.py');
+    expect(logs[0]).toContain('保留上次健康索引');
   });
 });

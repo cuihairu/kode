@@ -384,3 +384,147 @@ describe('批 16 续:类型影响去重与窄注册表', () => {
 // continue 不可达——parseSerializationSchema(:178-181)已按 `path\u0000type` 在
 // 解析期去重全同条目,进表后同 loader 不可能出现同 path 两条,故 computeTypeImpact
 // 的第二道去重是防御性死码(保留为上游行为变更时的兜底)。
+
+
+describe('KSEM-CFG-10 renderImpactBlock:en 文案臂', () => {
+  /**
+   * 既有块只渲染 zh 文案;en 是同一格式面的另一臂,必须各自对账——
+   * 文案漂移(改词漏改一处)在两臂分开渲染才查得出。断言文本按
+   * renderImpactBlock 实跑产出钉(不凭文案记忆)。
+   *
+   * 诚实边界:读取点行号三元(r.line === null ? r.file : `${file}:${line+1}`)
+   * 的 null 臂在本模块不可达——project-json 面的读取点恒来自 pathReads
+   * (collectPathReads 登记的真实代码行,line 恒为数字),line===null 的
+   * ConfigStructureSource 只出现在 schema 约定/静态构造来源面,不流经
+   * renderImpactBlock。行覆盖(285/301)由 map 执行即达成,不虚凑。
+   */
+
+  it('engine-xml 面三态回退的 en 文案:未知/仅元件键/容器段', () => {
+    const unknown = computeKeyImpact({
+      path: 'baseapp.customThing',
+      face: 'engine-xml',
+      customTree: customTree(),
+      defaultsTree: null
+    })!;
+    expect(renderImpactBlock(unknown, 'en')).toContain(
+      '- Default fallback: unknown (engine defaults tree unavailable)'
+    );
+
+    const componentOnly = computeKeyImpact({
+      path: 'baseapp.customThing',
+      face: 'engine-xml',
+      customTree: customTree(),
+      defaultsTree: defaultsTree()
+    })!;
+    expect(renderImpactBlock(componentOnly, 'en')).toContain(
+      'component-config-only key; removing it disables the setting'
+    );
+
+    const container = computeKeyImpact({
+      path: 'dbmgr.databaseInterfaces',
+      face: 'engine-xml',
+      customTree: null,
+      defaultsTree: defaultsTree()
+    })!;
+    expect(renderImpactBlock(container, 'en')).toContain(
+      '- Default fallback: falls back to the engine default structure (`kbengine_defaults.xml`)'
+    );
+    expect(renderImpactBlock(container, 'en')).toContain(
+      'Affected module: `dbmgr` process section'
+    );
+  });
+
+  const guildStructure = () =>
+    deriveProjectConfigStructure(
+      [{ file: 'a.py', text: "import json\ncfg = json.loads('res/guild/g1.json')" }],
+      parseSerializationSchema(
+        JSON.stringify({
+          schema_version: 1,
+          types: { T: { fields: { level: 'UINT32' } } },
+          bindings: { 'json.loads': [{ path: 'res/guild/*.json', type: 'T' }] }
+        })
+      ).schema
+    );
+
+  it('project-json 面 en 文案:读取点带行号/未覆盖零声称/注册表缺未知三态', () => {
+    const impact = computeKeyImpact({
+      path: 'res/guild/g1.json',
+      face: 'project-json',
+      customTree: null,
+      defaultsTree: null,
+      structure: guildStructure()
+    })!;
+    const en = renderImpactBlock(impact, 'en');
+    expect(en).toContain('- Read points: a.py:2');
+    expect(en).toContain('- Affected files: a.py');
+    expect(en).not.toContain('Affected module');
+
+    const none = computeKeyImpact({
+      path: 'res/other/x.json',
+      face: 'project-json',
+      customTree: null,
+      defaultsTree: null,
+      structure: guildStructure()
+    })!;
+    expect(renderImpactBlock(none, 'en')).toContain(
+      '- Read points: none claimed — no bound schema glob matches this path'
+    );
+
+    const unknown = computeKeyImpact({
+      path: 'res/guild/g1.json',
+      face: 'project-json',
+      customTree: null,
+      defaultsTree: null,
+      structure: null
+    })!;
+    expect(renderImpactBlock(unknown, 'en')).toContain(
+      '- Read points: unknown (project config registry not available)'
+    );
+  });
+});
+
+describe('KSEM-CFG-10 type impact:同 loader 重复绑定与注册表条目缺位', () => {
+  const parsedGuild = () =>
+    parseSerializationSchema(
+      JSON.stringify({
+        schema_version: 1,
+        types: { T: { fields: { level: 'UINT32' } } },
+        bindings: { 'json.loads': [{ path: 'res/guild/*.json', type: 'T' }] }
+      })
+    ).schema!;
+
+  it('同 loader 同 path 同 type 的重复绑定只计一次,不虚增绑定面', () => {
+    // schema 解析层已对全同条目去重;展开核按宿主协议另存一份带重复的
+    // 绑定表(host 缓存可能来自未去重的中间形态),核自身必须仍只算一条
+    const dupSchema = { ...parsedGuild(), loadsBindings: [{ path: 'res/guild/*.json', type: 'T' }, { path: 'res/guild/*.json', type: 'T' }] };
+    const impact = computeTypeImpact('T', dupSchema, null)!;
+    expect(impact.bindings).toEqual([
+      { glob: 'res/guild/*.json', loader: 'json.loads' }
+    ]);
+    expect(impact.readers).toEqual([]);
+    expect(impact.files).toEqual([]);
+  });
+
+  it('注册表无该绑定 glob 的 path-binding 条目:读取点零声称,绑定仍如实列出', () => {
+    // 注册表由另一份 schema 推导(只登记 res/other 绑定)→ guild 的
+    // path-binding 条目缺位:不猜读取点,只留绑定与诚实注记
+    const otherSchema = parseSerializationSchema(
+      JSON.stringify({
+        schema_version: 1,
+        types: { U: { fields: { name: 'STRING' } } },
+        bindings: { 'json.loads': [{ path: 'res/other/*.json', type: 'U' }] }
+      })
+    ).schema;
+    const structure = deriveProjectConfigStructure(
+      [{ file: 'a.py', text: "import json\ncfg = json.loads('res/other/x.json')" }],
+      otherSchema
+    );
+    const impact = computeTypeImpact('T', parsedGuild(), structure)!;
+    expect(impact.bindings).toEqual([
+      { glob: 'res/guild/*.json', loader: 'json.loads' }
+    ]);
+    expect(impact.readers).toEqual([]);
+    expect(impact.files).toEqual([]);
+    expect(impact.fallbackNote).toContain('失去类型信息');
+  });
+});
