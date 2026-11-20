@@ -241,3 +241,200 @@ describe('buildMessageTableInRust(消息表 build 主路径)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 25:闭包 BFS 容错臂——接口/父实体/组件原文缺失或解析抛错时如实跳过,
+// 其余闭包照常收集(单点失败不毒化整表)。
+// ---------------------------------------------------------------------------
+describe('批 25:闭包收集容错臂', () => {
+  const fakeGate = (): { gate: KodeCoreGate; captured: () => { defs: Record<string, string>; paths: Record<string, string> } | null } => {
+    let capturedParams: { defs: Record<string, string>; paths: Record<string, string> } | null = null;
+    const gate = {
+      runInRust: async (_method: string, params: unknown) => {
+        capturedParams = params as { defs: Record<string, string>; paths: Record<string, string> };
+        return { ok: true, result: cannedTable() };
+      }
+    } as unknown as KodeCoreGate;
+    return { gate, captured: () => capturedParams };
+  };
+
+  it('接口原文缺失:如实跳过,实体其余闭包照常', async () => {
+    const own =
+      '<root><Interfaces><interface>IGhost</interface><interface>IReal</interface></Interfaces></root>';
+    const source: DefRawSource = {
+      loadDefRaw: (name, kind) =>
+        `${kind}:${name}` === 'entity:E'
+          ? { content: own, filePath: '/d/E.def' }
+          : `${kind}:${name}` === 'interface:IReal'
+            ? { content: '<root><ClientMethods><r1></r1></ClientMethods></root>', filePath: '/d/IReal.def' }
+            : null
+    };
+    const { gate, captured } = fakeGate();
+    setKodeCoreShadowGate(gate);
+    try {
+      await buildMessageTableInRust('E', source);
+      const params = captured()!;
+      expect(params.defs.IGhost).toBeUndefined();
+      expect(params.defs.IReal).toBeDefined();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('接口 XML 解析抛错:跳过该接口,不毒化闭包', async () => {
+    const own =
+      '<root><Interfaces><interface>IBad</interface><interface>IGood</interface></Interfaces></root>';
+    const source: DefRawSource = {
+      loadDefRaw: (name, kind) =>
+        `${kind}:${name}` === 'entity:E'
+          ? { content: own, filePath: '/d/E.def' }
+          : `${kind}:${name}` === 'interface:IBad'
+            ? { content: '<', filePath: '/d/IBad.def' }
+            : `${kind}:${name}` === 'interface:IGood'
+              ? { content: '<root><ClientMethods><g1></g1></ClientMethods></root>', filePath: '/d/IGood.def' }
+              : null
+    };
+    const { gate, captured } = fakeGate();
+    setKodeCoreShadowGate(gate);
+    try {
+      await buildMessageTableInRust('E', source);
+      const params = captured()!;
+      // 抛错不回滚已收原文:IBad 的 defs/paths 在解析前已落;catch 只中断
+      // 它自身的后续闭包('<' 无引用可递归);同表其他接口照常收集
+      expect(params.defs.IBad).toBe('<');
+      expect(params.defs.IGood).toBeDefined();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('父实体原文缺失:父链断点跳过,自身照常入 defs', async () => {
+    const own = '<root><Parent><MissingParent/></Parent></root>';
+    const source: DefRawSource = {
+      loadDefRaw: (name, kind) =>
+        `${kind}:${name}` === 'entity:E' ? { content: own, filePath: '/d/E.def' } : null
+    };
+    const { gate, captured } = fakeGate();
+    setKodeCoreShadowGate(gate);
+    try {
+      await buildMessageTableInRust('E', source);
+      const params = captured()!;
+      expect(params.defs.E).toBe(own);
+      expect(params.defs.MissingParent).toBeUndefined();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('组件原文缺失与解析抛错:组件闭包两点都如实跳过', async () => {
+    const componentEntityDef =
+      '<root><Components><bad><Type>BadComp</Type></bad><good><Type>GoodComp</Type></good></Components></root>';
+    const goodCompDef =
+      '<root><Interfaces><interface>IGoodC</interface></Interfaces></root>';
+    const source: DefRawSource = {
+      loadDefRaw: (name, kind) =>
+        ({
+          'entity:CE': { content: componentEntityDef, filePath: '/d/CE.def' },
+          'component:GoodComp': { content: goodCompDef, filePath: '/d/GoodComp.def' },
+          'interface:IGoodC': { content: '<root><ClientMethods><gc1></gc1></ClientMethods></root>', filePath: '/d/IGoodC.def' }
+        } as Record<string, { content: string; filePath: string }>)[`${kind}:${name}`] ?? null
+    };
+    const { gate, captured } = fakeGate();
+    setKodeCoreShadowGate(gate);
+    try {
+      await buildMessageTableInRust('CE', source);
+      const params = captured()!;
+      expect(params.defs.BadComp).toBeUndefined();
+      expect(params.defs.GoodComp).toBeDefined();
+      expect(params.defs.IGoodC).toBeDefined();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+
+describe('批 25 续:重复接口与抛错原文臂', () => {
+  const fakeGate = (): { gate: KodeCoreGate; captured: () => { defs: Record<string, string>; paths: Record<string, string> } | null } => {
+    let capturedParams: { defs: Record<string, string>; paths: Record<string, string> } | null = null;
+    const gate = {
+      runInRust: async (_method: string, params: unknown) => {
+        capturedParams = params as { defs: Record<string, string>; paths: Record<string, string> };
+        return { ok: true, result: cannedTable() };
+      }
+    } as unknown as KodeCoreGate;
+    return { gate, captured: () => capturedParams };
+  };
+
+  it('接口自指(实体与接口都引用同一接口)→ seen 去重,单次收集', async () => {
+    const own = '<root><Interfaces><interface>IShared</interface></Interfaces></root>';
+    const ifaceSelf =
+      '<root><Parent><E/></Parent><Interfaces><interface>IShared</interface></Interfaces></root>';
+    const source: DefRawSource = {
+      loadDefRaw: (name, kind) =>
+        `${kind}:${name}` === 'entity:E'
+          ? { content: own, filePath: '/d/E.def' }
+          : `${kind}:${name}` === 'interface:IShared'
+            ? { content: ifaceSelf, filePath: '/d/IShared.def' }
+            : null
+    };
+    const { gate, captured } = fakeGate();
+    setKodeCoreShadowGate(gate);
+    try {
+      await buildMessageTableInRust('E', source);
+      const params = captured()!;
+      expect(params.defs.IShared).toBe(ifaceSelf);
+      // 父实体 E 经接口的 Parent 也入实体闭包
+      expect(params.defs.E).toBe(own);
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('父实体原文解析抛错 → 该父跳过,不再上溯', async () => {
+    const own = '<root><Parent><BrokenParent/></Parent></root>';
+    const source: DefRawSource = {
+      loadDefRaw: (name, kind) =>
+        `${kind}:${name}` === 'entity:E'
+          ? { content: own, filePath: '/d/E.def' }
+          : `${kind}:${name}` === 'entity:BrokenParent'
+            ? { content: '<', filePath: '/d/BrokenParent.def' }
+            : null
+    };
+    const { gate, captured } = fakeGate();
+    setKodeCoreShadowGate(gate);
+    try {
+      await buildMessageTableInRust('E', source);
+      const params = captured()!;
+      // 原文在解析前已落 defs;抛错只断父链上溯
+      expect(params.defs.BrokenParent).toBe('<');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('组件原文解析抛错 → 原文已落 defs,组件自身闭包中断', async () => {
+    const componentEntityDef =
+      '<root><Components><broken><Type>BrokenComp</Type></broken></Components></root>';
+    const source: DefRawSource = {
+      loadDefRaw: (name, kind) =>
+        `${kind}:${name}` === 'entity:CE'
+          ? { content: componentEntityDef, filePath: '/d/CE.def' }
+          : `${kind}:${name}` === 'component:BrokenComp'
+            ? { content: '<', filePath: '/d/BrokenComp.def' }
+            : null
+    };
+    const { gate, captured } = fakeGate();
+    setKodeCoreShadowGate(gate);
+    try {
+      await buildMessageTableInRust('CE', source);
+      const params = captured()!;
+      expect(params.defs.BrokenComp).toBe('<');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+
+// 覆盖口径残余(批 25 定性,不硬凑)::365 实体队列 shift 位 seen 去重——实体
+// 队列只由父链线性生长且所有入队都过同一 seen 守卫,不可能把已见名再入队,
+// 该行是对不变量的防御。:341/:378/:402 已由上组三臂覆盖。
