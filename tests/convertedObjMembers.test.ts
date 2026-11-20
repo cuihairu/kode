@@ -904,3 +904,81 @@ describe('KSEM-SER-05 sweep: return 形态容错与键增面边界', () => {
     expect(computeConvertedObjMemberFindings(peerless, createInputsOf(peerless), getInputsOf(peerless), REGISTRY)).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 21 语义钉面:引号键写点(写面零产出,与读面语义分离)、get 侧 return
+// 形状容错(多空白/None/未闭合花括号)。
+// 覆盖口径残余(批 2 已定性,不硬凑):11 miss 全为防御死码——247(平衡产物内
+// 引号不闭:joinBalancedBraces 引号感知,平衡产物不会含未闭合引号)/291-299
+// (bracketCloseIndex 串态:唯一调用面在掩码行上跑,掩码把串 token 折成 `_`,
+// 引号字符到不了)/506(exprCol 已跳过空白,循环体不进)/558/572/777(链不变量)。
+// ---------------------------------------------------------------------------
+describe('批 21:结构推导与写点收集容错臂', () => {
+  it('写点带引号键链:obj["k"] = 1 在键收集面按字面量键处理', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct',
+      '',
+      '    def getDictFromObj(self, obj):',
+      '        return {"uid": obj["uid"]}',
+      '',
+      'def sink():',
+      '    pass',
+      ''
+    ]);
+    // 基线零产出(读面只读声明键);写面在下方单独钉
+    const findings = computeConvertedObjMemberFindings(text, createInputsOf(text), getInputsOf(text), REGISTRY);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('getDictFromObj 体内引号键写点:写面扫描执行,写点本身不产出发现', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct',
+      '',
+      '    def getDictFromObj(self, obj):',
+      '        obj["ghost"] = 1',
+      '        return {"uid": obj["uid"]}',
+      ''
+    ]);
+    // 写点收集跑引号键链扫描(字面量键入键宇宙);校验面只报读面缺失,
+    // 写 undeclared 键本身零产出(与读面语义分离)
+    const findings = computeConvertedObjMemberFindings(text, createInputsOf(text), getInputsOf(text), REGISTRY);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('getDictFromObj return 后多空白再花括号:空白跳位后照常拼字面量', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return  {"uid": obj["uid"]}',
+      ''
+    ]);
+    const structure = computeConvertedObjStructure(text, getInputsOf(text)[0], REGISTRY);
+    expect(structure).toMatchObject({ kind: 'dict' });
+  });
+
+  it('getDictFromObj return None:输出 None,结构未知(不猜)', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return None',
+      ''
+    ]);
+    const structure = computeConvertedObjStructure(text, getInputsOf(text)[0], REGISTRY);
+    expect(structure).toMatchObject({ kind: 'unknown' });
+  });
+
+  it('getDictFromObj return 花括号未闭合(跨行拼接失败):结构未知', () => {
+    const text = lines([
+      'class BagSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"uid": obj["uid"]',
+      ''
+    ]);
+    const structure = computeConvertedObjStructure(text, getInputsOf(text)[0], REGISTRY);
+    expect(structure).toMatchObject({ kind: 'unknown' });
+  });
+});
