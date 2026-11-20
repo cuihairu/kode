@@ -163,84 +163,102 @@ describe('collectUserTypeContractMissingByImplFileFromRust(契约收集 Rust 主
   });
 
   it('形状畸形整面弃用:非数组/条目非对象/字段缺失或越型', async () => {
-    const malformed = [
-      { result: {} },
-      { result: { items: 'nope' } },
-      { result: { items: ['not-an-object'] } },
-      { result: { items: [{ method: 'isSameType' }] } },
-      { result: { items: [{ message: 'm', method: 'unknownMethod' }] } },
+    // 空账判例:malformed 存的是 response.result **内层**载荷(fake gate 直接
+    // `{ ok: true, result }` 回)。旧写法每条再多包一层 `{ result: … }`,结果
+    // 10 条全部落在「items 非数组」早退臂上,后面逐字段校验臂一条没跑,断言
+    // 全 null 照样绿——空账。逐条对准单一畸形臂,校验顺序=message → method →
+    // typeName/symbolName → symbolLength → line → related。
+    const malformed: unknown[] = [
+      // items 缺失/非数组(早退臂)
+      {},
+      { items: 'nope' },
+      // 条目非对象(串/null)
+      { items: ['not-an-object'] },
+      { items: [null] },
+      // message 非串
+      { items: [{ method: 'isSameType' }] },
+      // method 越三方法集
+      { items: [{ message: 'm', method: 'unknownMethod' }] },
+      // typeName/symbolName 非串
+      { items: [{ message: 'm', method: 'isSameType' }] },
+      // symbolLength 非整数/负
       {
-        result: {
-          items: [
-            {
-              message: 'm',
-              method: 'isSameType',
-              typeName: 'T',
-              symbolName: 'S',
-              symbolLength: -1,
-              line: 1,
-              related: { targetFile: 'a', label: 'b' }
-            }
-          ]
-        }
+        items: [
+          {
+            message: 'm',
+            method: 'isSameType',
+            typeName: 'T',
+            symbolName: 'S',
+            symbolLength: -1,
+            line: 1,
+            related: { targetFile: 'a', label: 'b' }
+          }
+        ]
       },
       {
-        result: {
-          items: [
-            {
-              message: 'm',
-              method: 'isSameType',
-              typeName: 'T',
-              symbolName: 'S',
-              symbolLength: 1.5,
-              line: 1,
-              related: { targetFile: 'a', label: 'b' }
-            }
-          ]
-        }
+        items: [
+          {
+            message: 'm',
+            method: 'isSameType',
+            typeName: 'T',
+            symbolName: 'S',
+            symbolLength: 1.5,
+            line: 1,
+            related: { targetFile: 'a', label: 'b' }
+          }
+        ]
+      },
+      // line 非整数/缺失
+      {
+        items: [
+          {
+            message: 'm',
+            method: 'isSameType',
+            typeName: 'T',
+            symbolName: 'S',
+            symbolLength: 1,
+            line: 1.5,
+            related: { targetFile: 'a', label: 'b' }
+          }
+        ]
       },
       {
-        result: {
-          items: [
-            {
-              message: 'm',
-              method: 'isSameType',
-              typeName: 'T',
-              symbolName: 'S',
-              symbolLength: 1,
-              related: { targetFile: 'a', label: 'b' }
-            }
-          ]
-        }
+        items: [
+          {
+            message: 'm',
+            method: 'isSameType',
+            typeName: 'T',
+            symbolName: 'S',
+            symbolLength: 1,
+            related: { targetFile: 'a', label: 'b' }
+          }
+        ]
+      },
+      // related 缺失/缺 label(双串校验)
+      {
+        items: [
+          {
+            message: 'm',
+            method: 'isSameType',
+            typeName: 'T',
+            symbolName: 'S',
+            symbolLength: 1,
+            line: 1
+          }
+        ]
       },
       {
-        result: {
-          items: [
-            {
-              message: 'm',
-              method: 'isSameType',
-              typeName: 'T',
-              symbolName: 'S',
-              symbolLength: 1,
-              line: 1
-            }
-          ]
-        }
-      },
-      {
-        result: {
-          items: [
-            {
-              message: 'm',
-              method: 'isSameType',
-              typeName: 'T',
-              symbolName: 'S',
-              symbolLength: 1,
-              line: 1,
-              related: { targetFile: 'a' }
-            }
-          ]
-        }
+        items: [
+          {
+            message: 'm',
+            method: 'isSameType',
+            typeName: 'T',
+            symbolName: 'S',
+            symbolLength: 1,
+            line: 1,
+            related: { targetFile: 'a' }
+          }
+        ]
       }
     ];
     for (const result of malformed) {

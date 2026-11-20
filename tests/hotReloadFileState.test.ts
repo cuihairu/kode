@@ -243,3 +243,50 @@ describe('展示辅助:严重度聚合与注意力集', () => {
     expect([...HOT_RELOAD_ATTENTION_STATES].sort()).toEqual(['DIRTY', 'SENT']);
   });
 });
+
+describe('回执超时后内容再改 → DIRTY(新一次编辑,可再发)', () => {
+  it('超时未确认且内容偏离所发 digest → DIRTY,不带失败原因', () => {
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    // 状态机时钟越过核验窗口(sentAt=1000 + 窗口 10s < now=20s)→ 超时结算;
+    // 内容已是 B(≠ 所发 A):保持未确认语义里内容再改 = 新一次编辑回落 DIRTY
+    const view = makeState(20_000, 10_000).derive(store, KEY, FILE, CONTENT_B);
+    expect(view.state).toBe('DIRTY');
+    expect(view.reason).toBeUndefined();
+    expect(view.detail).toBeUndefined();
+  });
+});
+
+describe('knownKeys 并集:被拦集与多目标键排序', () => {
+  it('被拦集的键进 knownKeys(台账空也有键),多目标按 rootId::targetId 排序', () => {
+    const sm = makeState();
+    const keyB: HotReloadTargetKey = { rootId: '/ws2', targetId: 'cellapp#b' };
+    sm.markRestartRequired(KEY, [FILE], ['结构性 def 变更']);
+    sm.markRestartRequired(keyB, ['/ws2/scripts/cell/Mob.py'], ['结构性 def 变更']);
+    const keys = sm.knownKeys(makeStore());
+    expect(keys).toHaveLength(2);
+    expect(`${keys[0].rootId}::${keys[0].targetId}`).toBe('/ws::cellapp#a');
+    expect(`${keys[1].rootId}::${keys[1].targetId}`).toBe('/ws2::cellapp#b');
+  });
+});
+
+describe('filesByState 候选:被拦文件不靠台账记录也能筛出', () => {
+  it('被拦文件进候选且筛出 RESTART_REQUIRED 视图', async () => {
+    const sm = makeState();
+    const store = makeStore();
+    sm.markRestartRequired(KEY, [FILE], ['拦下原因A']);
+    const views = await sm.filesByState(store, KEY, ['RESTART_REQUIRED'], () => undefined);
+    expect(views.map(view => view.file)).toEqual([FILE]);
+    expect(views[0].state).toBe('RESTART_REQUIRED');
+    // 实跑对账:RESTART_REQUIRED 视图的 reason 是派生面固定文案,写入的
+    // 拦截原因明细留在 restartRequiredFiles/restartReasons 侧,不透传到视图
+    expect(views[0].reason).toContain('结构性 def 变更');
+  });
+});
+
+// 逐行不可达论证(诚实边界,不写凑数测试):
+// - splitKeyId 的两个 null 守卫(`first < 0` / `second < 0`):splitKeyId 仅被
+//   knownKeys 调用,入参只有 baselines / restartReasons 两张私有表的键;两表
+//   只经 keyOf 写入,keyOf = buildHotReloadTargetKeyId(key)(rootId::targetId,
+//   恒含一个 '::')+ '::' + file,任意键恒含 ≥2 个分隔符,两个 indexOf 恒 ≥0,
+//   从公共入口(knownKeys/filesByState/derive)不可达,属防御性分支。

@@ -21,6 +21,7 @@ import {
   cellToTypedValue,
   isArchiveMeta,
   isImportPlan,
+  isQueryPlan,
   typedValueToBind,
   tvBigUInt,
   tvInt,
@@ -519,5 +520,46 @@ describe('executeExportPlan(只读计划执行)', () => {
         { shouldCancel: () => true }
       )
     ).rejects.toBeInstanceOf(CloneCancelledError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wire 守卫负臂(整数字面量/超窗值、形状闸非对象入参、Date 单元格、
+// date-time 绑定两形态)——这些臂此前无任何测试触达,实跑对账钉行为。
+// ---------------------------------------------------------------------------
+
+describe('playerDataCloneWire 守卫负臂与 date-time 两形态', () => {
+  it('整数构造器拒绝非法字面量与超 64 位值(错误如实带值)', () => {
+    // 字符串形态绕过安全整数检查,直接撞字面量正则:非纯整数字面量拒绝
+    expect(() => tvInt('abc')).toThrow(/invalid integer abc/);
+    expect(() => tvUInt('1.5')).toThrow(/invalid integer 1\.5/);
+    // 合法字面量但越过 64 位边界:u-int 上界之上 / int 下界之下
+    expect(() => tvBigUInt('18446744073709551616')).toThrow(/outside 64-bit range/);
+    expect(() => tvInt('-9223372036854775809')).toThrow(/outside 64-bit range/);
+    expect(() => tvUInt('-1')).toThrow(/outside 64-bit range/);
+  });
+
+  it('形状闸对非对象输入(null/数组/原始值)一律拒绝,不猜字段', () => {
+    expect(isArchiveMeta(null)).toBe(false);
+    expect(isArchiveMeta(undefined)).toBe(false);
+    expect(isArchiveMeta(['entity', 2])).toBe(false);
+    expect(isArchiveMeta('Avatar')).toBe(false);
+    expect(isImportPlan(null)).toBe(false);
+    expect(isImportPlan(42)).toBe(false);
+    expect(isQueryPlan(null)).toBe(false);
+    expect(isQueryPlan({ queries: 'x' })).toBe(false);
+  });
+
+  it('Date 单元格归型为 ISO 文本;整数列上的非数值单元格如实拒绝', () => {
+    const at = new Date('2026-01-02T03:04:05.678Z');
+    expect(cellToTypedValue(at, 'datetime')).toEqual({ t: 'text', v: '2026-01-02T03:04:05.678Z' });
+    // 整数族列型收到布尔/对象:不是可无损整数的表示,抛出带列型的错误
+    expect(() => cellToTypedValue(true, 'int')).toThrow(/invalid integer in int/);
+    expect(() => cellToTypedValue({ x: 1 }, 'bigint(20)')).toThrow(/invalid integer in bigint\(20\)/);
+  });
+
+  it('date-time 绑定:DateTime 包装取内值,裸值原样透传', () => {
+    expect(typedValueToBind({ t: 'date-time', v: { value: 1700000000000 } })).toBe(1700000000000);
+    expect(typedValueToBind({ t: 'date-time', v: '2026-01-02 03:04:05' })).toBe('2026-01-02 03:04:05');
   });
 });

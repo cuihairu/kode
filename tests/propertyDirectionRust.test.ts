@@ -229,3 +229,68 @@ describe('批 33 续:非对象条目两臂', () => {
     });
   });
 });
+
+
+// 逐臂收口补批(空账防线):上方畸形束覆盖「坏路径/坏名/空键/负值/缺面」,
+// 但「条目本身非对象」「name 合法而坐标越型」「键校验先于坐标校验」这几个
+// 臂各有独立 return null,束里没有对准面(样例扫束其余字段全合法,单点破坏
+// 一个字段,保证落点就是目标臂,不靠早退臂顶替)。束校验顺序固定:accesses
+// → initNames → initSites → initCellDataKeys → cellDataAccesses。
+describe('buildPropertyDirectionScanBundleWithRust 畸形束逐臂(条目形态/坐标越型)', () => {
+  const okScanArm = (scan: unknown) => ({ ok: true as const, result: { scan } });
+
+  const expectNullOn = async (scan: unknown): Promise<void> => {
+    await withGate(() => okScanArm(scan), async () => {
+      expect(await buildPropertyDirectionScanBundleWithRust('self.hp\n'), JSON.stringify(scan))
+        .toBeNull();
+    });
+  };
+
+  it('accesses 条目非对象:整面作废', async () => {
+    await expectNullOn({ ...SAMPLE_SCAN, accesses: [null] });
+    await expectNullOn({ ...SAMPLE_SCAN, accesses: ['stray'] });
+  });
+
+  it('initSites 条目非对象:整面作废', async () => {
+    await expectNullOn({ ...SAMPLE_SCAN, initSites: [null] });
+    await expectNullOn({ ...SAMPLE_SCAN, initSites: ['stray'] });
+  });
+
+  it('initSites 条目 name 合法但坐标缺/负:整面作废(不落 name 臂顶替)', async () => {
+    await expectNullOn({ ...SAMPLE_SCAN, initSites: [{ name: 'spaceUType', character: 3 }] });
+    await expectNullOn({ ...SAMPLE_SCAN, initSites: [{ name: 'spaceUType', line: -2, character: 3 }] });
+    await expectNullOn({ ...SAMPLE_SCAN, initSites: [{ name: 'spaceUType', line: 1.5, character: 3 }] });
+  });
+
+  it('initCellDataKeys 条目非对象:整面作废', async () => {
+    await expectNullOn({ ...SAMPLE_SCAN, initCellDataKeys: [null] });
+    await expectNullOn({ ...SAMPLE_SCAN, initCellDataKeys: ['stray'] });
+  });
+
+  it('initCellDataKeys 条目缺 name/name 越型:整面作废(不落键臂顶替)', async () => {
+    await expectNullOn({ ...SAMPLE_SCAN, initCellDataKeys: [{ key: 'hp' }] });
+    await expectNullOn({ ...SAMPLE_SCAN, initCellDataKeys: [{ name: 'a b', key: 'hp' }] });
+  });
+
+  it('cellDataAccesses 条目非对象:整面作废', async () => {
+    await expectNullOn({ ...SAMPLE_SCAN, cellDataAccesses: [null] });
+    await expectNullOn({ ...SAMPLE_SCAN, cellDataAccesses: ['stray'] });
+  });
+
+  it('cellDataAccesses 条目键空/键越型:整面作废(键校验先于坐标校验)', async () => {
+    await expectNullOn({
+      ...SAMPLE_SCAN,
+      cellDataAccesses: [{ line: 0, character: 0, length: 1, accessEnd: 2, key: '' }]
+    });
+    await expectNullOn({
+      ...SAMPLE_SCAN,
+      cellDataAccesses: [{ line: 0, character: 0, length: 1, accessEnd: 2, key: 'a"b' }]
+    });
+  });
+
+  it('ok 应答但 result 无 scan 键:null(畸形,回本地扫描束)', async () => {
+    await withGate(() => ({ ok: true as const, result: {} }), async () => {
+      expect(await buildPropertyDirectionScanBundleWithRust('self.hp\n')).toBeNull();
+    });
+  });
+});
