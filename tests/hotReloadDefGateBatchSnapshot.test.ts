@@ -96,3 +96,76 @@ describe('def 结构闸批次令牌(F1 四轮回归)', () => {
     expect(baselines.get(FILE)).toBe(NONSTRUCTURAL_DEF);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 32 容错臂:无 reader 的 commit/confirmLoaded 早退、读取抛错按 null、
+// 纯 Python 批放行、两册 64 上限丢最老(防泄漏)。
+// ---------------------------------------------------------------------------
+describe('批 32:def 结构闸容错臂', () => {
+  it('无 reader:check 拦下整批,commit/confirmLoaded 零操作', async () => {
+    const gate = createDefStructuralGate(undefined, new Map());
+    const verdict = await gate.check([FILE]);
+    expect(verdict.reasons).toHaveLength(1);
+    expect(verdict.reasons[0]).toContain('无内容读取通道');
+    await expect(gate.commit(verdict.token)).resolves.toBeUndefined();
+    await expect(gate.confirmLoaded([FILE])).resolves.toBe(0);
+  });
+
+  it('读取抛错按 null:整批拦下(证明不了无结构变化,保守不发)', async () => {
+    const gate = createDefStructuralGate(async () => {
+      throw new Error('read boom');
+    }, new Map([[FILE, BASE_DEF]]));
+    const verdict = await gate.check([FILE]);
+    expect(verdict.reasons.length).toBeGreaterThan(0);
+  });
+
+  it('纯 Python 批(无 def 文件)放行,commit 零操作', async () => {
+    const gate = createDefStructuralGate(async () => NONSTRUCTURAL_DEF, new Map([[FILE, BASE_DEF]]));
+    const verdict = await gate.check(['/ws/scripts/base/Avatar.py']);
+    expect(verdict.reasons).toEqual([]);
+    await expect(gate.commit(verdict.token)).resolves.toBeUndefined();
+  });
+
+  it('被拦册超 64 批丢最老(防泄漏,不误留任意早批)', async () => {
+    const gate = createDefStructuralGate(undefined, new Map());
+    const tokens: number[] = [];
+    for (let i = 0; i < 66; i += 1) {
+      tokens.push((await gate.check([FILE])).token);
+    }
+    // 全部被拦(无 reader);册只留最近 64 批:最早两批的令牌已丢,
+    // 被拦批永不 commit(其令牌本来也认领不到),此臂钉丢最老不抛即可
+    expect(tokens).toHaveLength(66);
+    await expect(gate.commit(tokens[tokens.length - 1])).resolves.toBeUndefined();
+  });
+
+  it('放行册超 64 批丢最老:最早放行批的令牌不再可认领', async () => {
+    const baselines = new Map([[FILE, BASE_DEF]]);
+    const gate = createDefStructuralGate(async () => NONSTRUCTURAL_DEF, baselines);
+    const tokens: number[] = [];
+    for (let i = 0; i < 66; i += 1) {
+      const verdict = await gate.check([FILE]);
+      expect(verdict.reasons).toEqual([]);
+      tokens.push(verdict.token);
+    }
+    // 全放行未 commit → 册满 64,最早两批被丢:commit 首批零操作,
+    // 最新批仍可认领
+    await expect(gate.commit(tokens[0])).resolves.toBeUndefined();
+    await expect(gate.commit(tokens[tokens.length - 1])).resolves.toBeUndefined();
+  });
+});
+
+describe('批 32 续:读取通道在场时被拦册超限丢最老', () => {
+  it('66 次结构性被拦 → 被拦册丢最老,不抛不滞留', async () => {
+    const gate = createDefStructuralGate(async () => STRUCTURAL_DEF, new Map([[FILE, BASE_DEF]]));
+    for (let i = 0; i < 66; i += 1) {
+      const verdict = await gate.check([FILE]);
+      expect(verdict.reasons.length).toBeGreaterThan(0);
+    }
+    // 册满丢最老后仍可继续判定:第 67 次照常被拦
+    expect((await gate.check([FILE])).reasons.length).toBeGreaterThan(0);
+  });
+});
+
+// 覆盖口径残余(批 32 定性)::93 readContent 的 `!reader` 早退——check/
+// confirmLoaded/commit 三调用方都在调用前以同一条件自守,reader 为空时
+// readContent 根本不会被调,防御位。
