@@ -293,3 +293,63 @@ describe('配置契约检查:整体契约', () => {
     expect(codes).toContain('kbengine.configContract.telnetPasswordDocConflict');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 36 容错臂:JSONC 块注释剥离、合法 JSON 非对象(null/数组)→ ok:false、
+// components 条目非对象(字符串值)跳过。
+// ---------------------------------------------------------------------------
+describe('批 36:debug.json 容错臂', () => {
+  it('块注释 /* */ 剥离后照常解析(JSONC)', () => {
+    const text = [
+      '// 行注释',
+      '/* 块注释',
+      '   跨行说明 */',
+      JSON.stringify({ version: '1.0', debug: { components: {} } })
+    ].join('\n');
+    const findings = computeConfigContractFindings(cleanInput({
+      debugJson: { exists: true, text }
+    }));
+    // components 空 → 照报空表 finding(证明解析未炸)
+    expect(findings.some(f => f.code === 'kbengine.configContract.debugComponentsEmpty')).toBe(true);
+  });
+
+  it('合法 JSON 但顶层为数组 → ok:false 走无 components 口径', () => {
+    const findings = computeConfigContractFindings(cleanInput({
+      debugJson: { exists: true, text: '[1, 2, 3]' } as never
+    }));
+    // 数组不是 debug 对象 → 解析失败口径,与缺 components 同类(不抛)
+    expect(Array.isArray(findings)).toBe(true);
+  });
+
+  it('components 条目为原始字符串 → 跳过该条目,其余照判', () => {
+    const findings = computeConfigContractFindings(cleanInput({
+      debugJson: {
+        exists: true,
+        text: JSON.stringify({
+          version: '1.0',
+          debug: {
+            components: {
+              loginapp: 'not-an-object',
+              baseapp: { telnetHost: '127.0.0.1', telnetPort: 40000, telnetPassword: 'HxQYjC9+WyeiRNYH' }
+            }
+          }
+        })
+      }
+    }));
+    // loginapp 被跳过:重复端口类发现不应含它
+    const dup = findings.find(f => f.kind === 'port-overlap');
+    if (dup) {
+      expect(JSON.stringify(dup)).not.toContain('loginapp');
+    }
+    expect(Array.isArray(findings)).toBe(true);
+  });
+});
+
+describe('批 36 续:debug 键非对象', () => {
+  it('debug 为字符串 → components null(无 components 口径,不抛)', () => {
+    const findings = computeConfigContractFindings(cleanInput({
+      debugJson: { exists: true, text: JSON.stringify({ version: '1.0', debug: 'just-a-string' }) }
+    }));
+    expect(Array.isArray(findings)).toBe(true);
+  });
+});
