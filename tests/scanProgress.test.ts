@@ -249,10 +249,9 @@ describe('SCAN-RESUME-001 索引面七钉子', () => {
     await first.findClassesByName('Mod00').catch(() => undefined);
     await interrupted.settle();
 
-    // 块0 内第 2 个文件改内容(size/mtime 漂移)——须落在首扫已提交的块内
-    // (ENGINE-LIB-SCAN-005 刀4 起 4 文件/块,第 5 文件已入失败块1 无指纹可漂)
-    const drifted = pyFilePath(fixture.root, 1);
-    fs.writeFileSync(drifted, pyFileContent(1) + '\n\nclass Drifted(object):\n    pass\n', 'utf8');
+    // 块0 内第 5 个文件改内容(size/mtime 漂移)
+    const drifted = pyFilePath(fixture.root, 5);
+    fs.writeFileSync(drifted, pyFileContent(5) + '\n\nclass Drifted(object):\n    pass\n', 'utf8');
 
     const resumed = new ScanProgressController(progressDir, 'v1');
     const second = new PythonClassIndex(new IndexScheduler(), resumed);

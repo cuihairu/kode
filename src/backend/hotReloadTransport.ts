@@ -21,7 +21,6 @@
  */
 
 import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from './httpRequestService';
-import { formatReloadTransportThrownError } from './hotReloadTransportErrors';
 import type { HttpRequestEntry } from './httpRequests';
 import { BUILTIN_HTTP_REQUEST_EXAMPLE } from './httpRequests';
 import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
@@ -149,15 +148,7 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
     headers: request.headers,
     body: request.body,
     timeoutMs: DEFAULT_HTTP_TIMEOUT_MS
-  }).then(result => {
-    // RUST-419:失败结果(ECONNREFUSED/证书/代理/超时等真实原因在 error 字段)
-    // 必须以 throw 送达 send/probe 的 catch 面分类输出——原先 ok:false 被折成
-    // status:0 静默丢弃,全部网络错误都呈现为无用的「HTTP 0:非 2xx」。
-    if (!result.ok) {
-      throw new Error(result.error ?? `HTTP ${result.status} 请求失败`);
-    }
-    return { status: result.status, body: result.body };
-  });
+  }).then(result => ({ status: result.status, body: result.body }));
 
 /**
  * 解析 HTTP 回包体为回执列表(HOT-003/004 协议口径):
@@ -291,8 +282,7 @@ export class HttpReloadTransport implements ReloadTransport {
           : `端点不可达(HTTP ${response.status} 非 2xx)`
       };
     } catch (error) {
-      // RUST-419:探测失败分类输出可用错误(endpoint/证书/代理/中断)
-      return { ok: false, detail: formatReloadTransportThrownError(error) };
+      return { ok: false, detail: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -373,8 +363,7 @@ export class HttpReloadTransport implements ReloadTransport {
     try {
       response = await this.deps.run(request);
     } catch (error) {
-      // RUST-419:传输异常分类输出可用错误(逐文件 failed 回执同因)
-      const reason = formatReloadTransportThrownError(error);
+      const reason = error instanceof Error ? error.message : String(error);
       const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
       for (const receipt of receipts) {
         onReceipt(receipt);

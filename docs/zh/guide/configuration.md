@@ -174,7 +174,6 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | --- | --- | --- | --- |
 | `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
 | `kbengine.index.syntaxGate` | boolean | `true` | Python 索引输入语法门(INDEX-DISCIPLINE-001):落盘重索引(保存/外部写盘经合并器收口)前做括号/引号/缩进单遍预检(零子进程);编辑中途保存的烂文件不入索引、索引保留上一次健康符号(诊断照常报语法错,编辑中导航不断);关闭后回到旧行为,烂文件照常入索引 |
-| `kbengine.index.scanExcludeGlobs` | string[] | `[]` | 业务索引的用户排除 glob 兜底(ENGINE-LIB-SCAN-005):每条 glob 经 minimatch(dot 开)编译,对规范化绝对路径匹配,命中的文件/目录不进业务索引——发现链 def、事件/方法索引、Python 类索引共用同一排除面。裸目录名简写(如 `kbe`)按「任意前缀/kbe/任意后缀」的双星 glob 形态解释;坏模式跳过不炸扫描。引擎仓子树由引擎树标记自动剔除(见上文「怎么看索引工作状态」),本键是额外兜底 |
 | `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
 | `kbengine.python.enableDataDictIndex` | boolean | `true` | KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关;键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链,支持 Shift+F12 引用与 F12 跳转(读点跳写点);写点 RHS 值类型能推才显,同键读点 inlay/hover 显示该类型(如 `{"gold": 1}` 写点在 `get("cfg")` 读点显 `Dict[str, int]`);关闭后不查索引,引用/跳转交回常规链 |
 | `kbengine.python.enableSpaceDataIndex` | boolean | `true` | 引擎 `KBEngine.setSpaceData` / `getSpaceData` / `delSpaceData`(仅 cellapp 注册、逐空间存储)的空间数据读写索引开关;spaceID 为 int 字面量或本文件模块级 int 常量绑定、key 为字符串字面量的调用按 `(spaceID, key)` 全等归族,支持键位补全、Shift+F12 引用与 F12 跳转(读/删点跳写点、写点跳首个异类点);动态 spaceID(解析不出)永不建族——动态空间不合并为同一确定对象;关闭后不查索引,补全/引用/跳转交回常规链 |
@@ -520,7 +519,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.core.backend` | string | `"rust"` | 双轨后端开关（kill-switch）：默认 `rust`（2026-11-08 用户令「直接切」——definition/completion 由 kode-server Rust-first 服务，空结果/失败回落 TS）；`ts` 单轨回落（改回 `ts` 立即停用 Rust 进程，用户无感回退）；`shadow` 影子比对——TS 照常服务，同参请求镜像给 kode-server 只记差异日志。任何非法值一律回落 `ts`。`rust` 轨道下 TS 侧 python 索引全量首扫不再随激活自启（首个 TS 面查询才懒补扫——RUST-TRACK-FREEZE-007），语料镜像每 8 文件让路交互一帧;镜像轮代际单飞,新轮取消旧轮、重启先掐在途轮,晚到旧语料不落库(KODE-RESP-006) |
+| `kbengine.core.backend` | string | `"rust"` | 双轨后端开关（kill-switch）：默认 `rust`（2026-11-08 用户令「直接切」——definition/completion 由 kode-server Rust-first 服务，空结果/失败回落 TS）；`ts` 单轨回落（改回 `ts` 立即停用 Rust 进程，用户无感回退）；`shadow` 影子比对——TS 照常服务，同参请求镜像给 kode-server 只记差异日志。任何非法值一律回落 `ts`。`rust` 轨道下 TS 侧 python 索引全量首扫不再随激活自启（首个 TS 面查询才懒补扫——RUST-TRACK-FREEZE-007），语料镜像每 8 文件让路交互一帧 |
 | `kbengine.core.serverPath` | string | 空 | kode-server 二进制路径；仅在 `backend=shadow` 时使用，留空则影子比对记 `rust-unavailable`，不启动进程 |
 | `kbengine.core.shadow.timeoutMs` | number | `2000` | 影子比对镜像请求超时（毫秒）；超时只记差异日志 `rust-timeout`，不影响 TS 服务路径 |
 
@@ -775,22 +774,9 @@ AI 面的工作方式:
 Excel 生成的配置表/配置类(dict 绑定与 `*Config`/`*Data` 类)是只允许热更新入口修改的数据。kode 用同一条全工作区扫描的两个面守护它们:
 
 1. **意外写诊断**(`kbengine.configDataMutation`):配置绑定的全部写点——属性(`x.f = v`)、下标(`x[k] = v`)、`del`、增强赋值(`x += v`)、变异方法(`append`/`pop`/`update`/`clear`/`sort`/……)——只要不在热更新入口函数(`reload*`/`hotUpdate*`)内、也不在 `mutationExclude` 白名单路径里,就出警告诊断。配置目录文件自身永不报。
-2. **schema 悬停**:悬停配置绑定/类名,直接展示从其定义直读的类型文本(schema 直读,非推断)。成员访问走同一份 schema:悬停 `Config.MOBILES[0].hp` 里的 `hp`(模块根链)、`TABLE["warrior"]["hp"]` 里的键名、或模块级别名(`TBL = MOBILES` 后用 `TBL[0].hp`),都会出该成员的直读类型与源绑定位置。容器方法名(`.get` 等)永不命中。
+2. **schema 悬停**:悬停配置绑定/类名,直接展示从其定义直读的类型文本(schema 直读,非推断)。
 
 识别依据是配置驱动而非启发式:配置目录(`configDirGlobs`,默认 `scripts/config/**`、`scripts/data/config/**`、`scripts/data/**`)、配置类名(`configClassPatterns`,默认 `*Config`/`*Data`)、热更新入口(`reloadFunctionPatterns`,默认 `reload*`/`hotUpdate*`)、有意修改豁免(`mutationExclude`,默认空)。功能只在 KBEngine 工作区(发现到实体 .def 根)激活;激活首扫、Python 文件打开/保存(800 ms 防抖合并)、设置变更即重扫。`kbengine.configData.enabled` 设 `false` 可整体关闭两个面。
-
-把 kode 指向自己的工程布局:配置表不在默认目录、或类名不叫 `*Config`/`*Data` 时,扩设置而不是改代码命名:
-
-```json
-{
-  "kbengine.configData": {
-    "configDirGlobs": ["assets/config_data/**", "scripts/config/**"],
-    "configClassPatterns": ["*Config", "*Data", "TABLE_*", "Cfg*"]
-  }
-}
-```
-
-功能开着但 schema 扫出来是空时,悬停一个形似配置类的名字会出一发引导 notice,列出当前生效的 `configDirGlobs`/`configClassPatterns`——目录或模式没中是可见的,不再静默。
 
 诚实边界:行级扫描(跨行拆写的写语句不识别);消费面按绑定名匹配,不做模块路径解析;消费文件里模块级同名重绑定会遮蔽配置绑定,该点之后不再报。
 
@@ -831,33 +817,3 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时,不是扩展直接启动一
 5. 本机是否已安装 `ms-python.debugpy`,VS Code 能否正常通过它附加进程
 
 旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug` 已移除,`kbengine.pythonDefsPath`、`kbengine.enablePythonNavigation` 也已移除(导航走 `.def` 定义体系,见实体浏览器)。
-
-## 怎么看索引工作状态(WARM-VISIBILITY-004)
-
-插件激活后会在后台索引实体定义、Python 类与事件调用。观测索引在不在工作,
-看两个面:
-
-1. **状态栏进度**——后台预热期间状态栏显示 `KBEngine 后台索引预热`,悬停可见
-   当前阶段;长阶段内部现在会报中间计数(`实体发现链 def 23/87`、
-   `事件/方法索引 145/612 文件`),节流上限为每 500ms / 每 10 个文件一条,
-   分钟级首扫期间也能看到推进,不再像卡死。
-2. **输出面板 → `KBEngine Index`**——统一且常开的索引工作日志通道:发现链/
-   事件索引/Python 类索引的起扫与完成、Python 索引的分块进度、磁盘缓存命中与
-   恢复、慢文件记录、扫描失败重试。每行带相对时间戳(`[+12.3s]`)与来源标签
-   (`discovery` / `event-index` / `python-index` / `cache` / `server`)。
-   `server` 标签覆盖 Rust kode-server 辅助进程本身:`spawned` / `ready` /
-   `exit` 行与重启循环取证(崩溃 → 自动重启代际);该进程真正跑起来才有行。
-
-说明:
-
-- `KBEngine Index` 通道没有开关:只出关键事实行(每轮扫描几条),不出逐决策
-  的调试流量;`kbengine.jumpLog` 仍然只控制 `KBEngine Navigation` 通道。
-- 若状态栏一直不动且 `KBEngine Index` 没有起扫行,多半是工作区没被识别为
-  KBEngine 工程(先核对上文扫描根相关设置)。
-- 工作区里包含 KBEngine 引擎仓本身时(比如打开引擎仓与 assets 的上层目录),
-  引擎子树会自动剔出业务索引——按引擎树标记(`kbe/src/lib/common/version.h`
-  / `kbeversion.h`)或 `kbengine.engineRoot` 设置识别,起扫行会标注
-  (`已剔引擎仓子树 N 处`)。引擎侧语料走专用通道;只打开引擎仓时业务索引
-  为空属于设计行为。
-- 后台全量扫描按 4 文件一块解析,每块开始前核对交互冷却窗(新近的用户
-  交互会把下一块最多顺延 50ms),大型首扫期间保持界面响应,不会冻结 UI。

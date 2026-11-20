@@ -170,7 +170,7 @@ function anyGlobMatch(globs: readonly string[], value: string): boolean {
 }
 
 /** fnmatch 口径(模式匹配名字,`*` 可含段内任意字符) */
-export function nameMatchesPattern(name: string, patterns: readonly string[]): boolean {
+function nameMatchesPattern(name: string, patterns: readonly string[]): boolean {
   return patterns.some(p => globToRegExp(p).test(name));
 }
 

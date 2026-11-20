@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { discoverNativeBinary } from './backend/nativeBinary';
 
 import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './backend/kodeCoreGate';
-import { cancelCorpusMirrorRuns, mirrorCorpusToRust } from './kodeCoreCorpusMirror';
+import { mirrorCorpusToRust } from './kodeCoreCorpusMirror';
 import { getIndexScanRoots, resetScanRootCache } from './scanRoots';
 import { setKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 
@@ -209,9 +209,6 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
       return;
     }
     gate.restartCore();
-    // KODE-RESP-006:停进程后先掐在途镜像轮——旧轮的 mirrorDocument 会把
-    // 被杀的 client 重新拉起(僵尸复活),晚到的旧语料也不得进新进程。
-    cancelCorpusMirrorRuns();
     void mirrorCorpusToRust(gate);
     void vscode.window.showInformationMessage(
       `Kode Core 已重启:旧进程已停止,镜像账与快照已清;下次语义请求按当前配置重建(冷启动短暂变慢)。backend=${gate.mode}。`

@@ -404,6 +404,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn write_failure_removes_temp_file() {
         use std::os::unix::fs::PermissionsExt;
         let dir = temp_dir("write-fail");
@@ -475,6 +476,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn clear_and_sweep_skip_non_utf8_names() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;

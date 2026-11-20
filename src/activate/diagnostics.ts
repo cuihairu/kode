@@ -774,11 +774,9 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         // 单文件读不到跳过同口径);下一触发轮自然重试
       }
     };
-    // ②强类型 hover:绑定/类名 hover 出直读类型文本;schema 缓存随扫描刷新;
-    // CFG-HOVER-FIX-002:成员链直读+空 schema 引导 notice(读同一设置快照)
+    // ②强类型 hover:绑定/类名 hover 出直读类型文本;schema 缓存随扫描刷新
     const configSchemaHoverProviderImpl = new ConfigSchemaHoverProvider(
-      () => configDataSchemaCache,
-      readConfigDataSettings
+      () => configDataSchemaCache
     );
     const configSchemaHoverProvider = vscode.languages.registerHoverProvider(
       // 同 activate/infrastructure.ts pythonDocumentSelector(python file 文档)

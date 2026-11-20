@@ -218,8 +218,7 @@ describe('setupHotReload 部署通道接线(IDE-HOT-102)', () => {
 
     expect(store.get({ rootId: '/ws', targetId: 'profile-1' }, '/ws/a.py')).toMatchObject({
       outcome: 'failed',
-      // RUST-419:组级异常分类落账(未命中族=传输失败),原始原因保留
-      detail: '传输失败:见原始原因(原始:transport boom)'
+      detail: 'transport boom'
     });
     // 组内错误落账 failed + 汇总上报一次(失败即报,与动作名回落面同口径)
     expect(errors.map(error => (error as Error).message)).toContain('通道 http 发送失败:1 个文件未送达');

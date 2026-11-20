@@ -134,10 +134,7 @@ describe('hotReloadChannelConfig 缺口臂:defaultProbe', () => {
       }
     });
     expect(result.ok).toBe(false);
-    // RUST-419:失败原因分类输出可用错误(不支持的协议归端点不可达族),
-    // 原因不再被折成「HTTP 0」丢弃
-    expect(result.detail).toContain('端点不可达');
-    expect(result.detail).toContain('不支持的协议');
+    expect(result.detail).toContain('HTTP 0');
   });
 });
 

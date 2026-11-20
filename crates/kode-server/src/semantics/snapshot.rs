@@ -385,7 +385,6 @@ mod tests {
             line: 1,
             type_name: Some(ty.into()),
             type_refs: vec![ty.into()],
-            of_ref: None,
             flags_raw: None,
             flags: vec![],
             default_value: None,

@@ -2,16 +2,10 @@ import { createHash } from 'crypto';
 
 import * as vscode from 'vscode';
 import {
-  formatHotReloadTime,
   HotReloadStatusController,
   type HotReloadGlobSource,
   type HotReloadWatchOffReason
 } from './hotReloadStatus';
-import {
-  HotReloadDiagnosticsPanel,
-  HOT_RELOAD_DIAGNOSTICS_CHANNEL_NAME,
-  HOT_RELOAD_SHOW_DIAGNOSTICS_COMMAND
-} from './backend/hotReloadDiagnostics';
 import { createSharedFileEventMerger, type SharedFileEvent } from './backend/sharedFileEvents';
 import {
   buildNonPythonChangeEvent,
@@ -28,7 +22,6 @@ import { recordHttpDelivery } from './backend/hotReloadDelivery';
 import { applyAcceptedReceipt } from './backend/hotReloadReceipt';
 import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt } from './backend/hotReloadAppliedCheck';
 import { createDefStructuralGate, type DefStructuralGate } from './backend/hotReloadDefGate';
-import { checkHotReloadConfigFiles, isHotReloadConfigFile } from './backend/hotReloadConfigGate';
 import { sendFilesViaReloadChannel } from './backend/hotReloadChannelSend';
 import { sendDefaultHotfix } from './backend/hotReloadDefaultHotfix';
 import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './backend/hotReloadNotice';
@@ -526,14 +519,6 @@ export function setupHotReload(
         vscode.commands.registerCommand(command, handler),
       timers: realHotReloadTimerDeps
     });
-  // RUST-341:八型诊断事件的用户可审查呈现面——「KBEngine 热更诊断」通道
-  // 全量落账(呈现即全量,不聚合不筛除,被拦下的事件同样可见),
-  // kbengine.hotReload.showDiagnostics 命令打开通道。面板随 setupHotReload
-  // 建一次,pipeline 随配置重建仍写同一面板(闭包引用,不随 apply 换)。
-  const diagnosticsPanel = new HotReloadDiagnosticsPanel({
-    channel: vscode.window.createOutputChannel(HOT_RELOAD_DIAGNOSTICS_CHANNEL_NAME),
-    formatTime: formatHotReloadTime
-  });
   const reportActionError = (error: unknown): void => {
     if (options.onActionError) {
       try {
@@ -809,18 +794,13 @@ export function setupHotReload(
         }).then(({ sentCount, failedCount }) => {
           annotateStaleResponses(triggers);
           // HR-WATCH-008:逐文件精确撤回——最新回执为 failed 的文件才撤指纹,
-          // 已送达文件的去重不受影响;RUST-419:同时收第一条 failed 明细
-          // (分类后的可用错误)供部分失败汇总呈现
-          let firstFailedDetail = '';
+          // 已送达文件的去重不受影响
           if (failedCount > 0 && wiring) {
             for (const file of triggers) {
               const rootId = wiring.resolveRootId(file);
               const record = rootId == null ? undefined : wiring.store.get({ rootId, targetId: channelTargetId }, file);
               if (record?.outcome === 'failed') {
                 pipeline?.forgetSent(file);
-                if (firstFailedDetail === '' && record.detail) {
-                  firstFailedDetail = record.detail.length > 160 ? `${record.detail.slice(0, 160)}…` : record.detail;
-                }
               }
             }
           }
@@ -831,20 +811,20 @@ export function setupHotReload(
           });
           const result =
             failedCount > 0 && sentCount === 0
-              ? `失败(${failedCount})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`
+              ? `失败(${failedCount})`
               : failedCount > 0
-                ? `部分失败(${failedCount} 失败/${sentCount} 已发)${firstFailedDetail ? `:${firstFailedDetail}` : ''}`
+                ? `部分失败(${failedCount} 失败/${sentCount} 已发)`
                 : allApplied ? `已应用(${sentCount})——引擎回执指纹已核验`
                   : `已发送(${sentCount})——未确认引擎应用`;
           // F4:通道审计行带目标标识(状态/审计面区分目标;通道名仍是
           // transport.kind,通道=前缀断言不受影响)
           auditLine(`${transport.kind} 目标=${channelTargetId}`, triggers, result);
           if (failedCount > 0 && sentCount === 0) {
-            status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`);
+            status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})`);
           } else if (allApplied) {
             status.setApplied(`目标=${channelTargetId}，${sentCount} 个文件，回执指纹一致`);
           } else if (failedCount > 0) {
-            status.setFailed(`通道 ${transport.kind} 部分失败(${failedCount}/${triggers.length})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`);
+            status.setFailed(`通道 ${transport.kind} 部分失败(${failedCount}/${triggers.length})`);
           } else {
             status.setSentUnverified();
           }
@@ -1056,11 +1036,8 @@ export function setupHotReload(
       }
     };
     const gateDefChanges = (): void => {
-      // 纯 Python 批同步放行(与抽闸前行为逐字一致,不引入微任务延迟);
-      // 配置文件批(RUST-336)同走闸链,只是判定面换成配置校验
-      const hasDef = triggers.some(file => file.toLowerCase().endsWith('.def'));
-      const configFiles = triggers.filter(isHotReloadConfigFile);
-      if (!hasDef && configFiles.length === 0) {
+      // 纯 Python 批同步放行(与抽闸前行为逐字一致,不引入微任务延迟)
+      if (!triggers.some(file => file.toLowerCase().endsWith('.def'))) {
         proceed();
         return;
       }
@@ -1076,49 +1053,6 @@ export function setupHotReload(
         auditLine('拦截:需重启', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
         warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
       };
-      // RUST-336 配置闸拦下:不发普通 reload,但**不**称需重启——拦的是
-      // 内容本身有问题(修复前重启也起不来),诚实口径是修好再发;审计
-      // 通道记「拦截:配置校验失败」,与 def 闸共用五要素语义。状态机面
-      // 不推(与流水线语法闸 blocked 同口径:不 fire 不推状态)。
-      const blockConfig = (reasons: readonly string[]): void => {
-        const first = reasons[0] ?? '配置校验失败';
-        auditLine('拦截:配置校验失败', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
-        warnRestart(`配置文件校验失败,本次不发普通 reload(修复后再次保存即重发): ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
-      };
-      // RUST-336 配置闸放行面:内容校验通过的配置变更也不走模块热更
-      // (引擎按 python 模块重载,XML 配置没有可发的 module_name),生效
-      // 通道本就是重启——按 def 闸同款需重启面呈现(状态机/审计/警告),
-      // 校验通过让重启决策有依据。
-      const blockConfigRestart = (reasonText: string): void => {
-        status.setRestartRequired([reasonText], triggers);
-        options.onRestartRequired?.(settings.actionName, triggers, [reasonText]);
-        auditLine('拦截:配置变更需重启', triggers, `未发送——${reasonText}`);
-        warnRestart(`配置文件变更不走模块热更,需重启引擎生效: ${reasonText}`);
-      };
-      // RUST-336:批内配置文件内容校验(良构+types.xml 值域/一致性);
-      // 有致命发现拦下报校验失败,零发现走需重启面(配置永不走普通通道)
-      const gateConfig = (then: () => void): void => {
-        if (configFiles.length === 0) {
-          then();
-          return;
-        }
-        const readConfig = options.targetState?.readFileContent;
-        if (!readConfig) {
-          blockConfigRestart(`${configFiles[0]}: 无内容读取通道,内容未校验`);
-          return;
-        }
-        void checkHotReloadConfigFiles(triggers, readConfig).then(verdict => {
-          if (verdict.reasons.length > 0) {
-            blockConfig(verdict.reasons);
-            return;
-          }
-          blockConfigRestart('内容校验通过');
-        });
-      };
-      if (!hasDef) {
-        gateConfig(proceed);
-        return;
-      }
       void defGate.check(triggers).then(verdict => {
         if (verdict.reasons.length > 0) {
           block(verdict.reasons);
@@ -1130,7 +1064,7 @@ export function setupHotReload(
         // 并发批各归各)。前滚失败不阻塞发送(保守面在判定,不在前滚;下次
         // 判定按旧基线保守拦)。
         void Promise.resolve(defGate.commit?.(verdict.token)).catch(() => undefined);
-        gateConfig(proceed);
+        proceed();
       });
     };
     gateDefChanges();
@@ -1203,11 +1137,8 @@ export function setupHotReload(
       ...(current.syntaxGate
         ? { checkSyntax: options.pipelineFaces?.syntaxCheck ?? buildRealSyntaxGate() }
         : {}),
-      // HR-WATCH-016 滞留可见性:预览滞留必须上日志,否则放行命令无从发现;
-      // RUST-341:八型诊断全量另落「KBEngine 热更诊断」通道(用户可审查
-      // 时间线),主日志的既有可见性契约不因新面而丢
+      // HR-WATCH-016 滞留可见性:预览滞留必须上日志,否则放行命令无从发现
       onDiagnostic: diagnostic => {
-        diagnosticsPanel.push(diagnostic);
         if (diagnostic.type === 'preview') {
           status.log(`热更批量预览滞留: ${diagnostic.detail}`);
         }
@@ -1242,14 +1173,6 @@ export function setupHotReload(
       pipeline?.releasePreview();
       void vscode.window.showInformationMessage(`已放行热更预览批次(${held.length} 文件)`);
     }
-  );
-
-  // RUST-341:诊断审查入口——打开「KBEngine 热更诊断」通道(八型事件
-  // 时间线,见 buildPipeline 的 onDiagnostic 全量落账)。命令随复合
-  // disposable 一并释放(与 releasePreview 同口径)。
-  const showDiagnosticsCommand = vscode.commands.registerCommand(
-    HOT_RELOAD_SHOW_DIAGNOSTICS_COMMAND,
-    () => diagnosticsPanel.show()
   );
 
   // HR-PR-05 磁盘侧接线面(HR-WATCH-003/005/015):注入 watcher 工厂才建。
@@ -1394,15 +1317,12 @@ export function setupHotReload(
    * python 模块重载,其余扩展没有可发的模块(默认热更 POST 的 module_name
    * 同样只对 python 模块有意义),只走旁路。否则显式的全匹配模式会让 .xml
    * 既进投递(推状态栏、跑动作)又进旁路,同事件双处理。
-   * RUST-336 例外:KBEngine 配置文件(types.xml/kbengine*.xml/entity_defs
-   * 下 XML)进投递只为过配置闸受检——校验失败拦下报错,校验通过走需重启
-   * 面;配置永不走普通模块发送(见 gateConfig)。
    */
   const hotDomainOnly =
     (handler: (uri: vscode.Uri) => void) =>
     (uri: vscode.Uri): void => {
       const lower = uri.fsPath.toLowerCase();
-      if (lower.endsWith('.py') || lower.endsWith('.def') || isHotReloadConfigFile(uri.fsPath)) {
+      if (lower.endsWith('.py') || lower.endsWith('.def')) {
         handler(uri);
       }
     };
@@ -1550,8 +1470,6 @@ export function setupHotReload(
   context.subscriptions.push({
     dispose: (): void => {
       releasePreviewCommand.dispose();
-      showDiagnosticsCommand.dispose();
-      diagnosticsPanel.dispose();
       subscription.dispose();
       unsubscribeBypass();
       bypassMerger.dispose();

@@ -1,8 +1,6 @@
 import { ChildProcess, spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 
-import { FrameWriter } from './frameWriter';
-
 // kode2 Rust Core 统一 transport(BUILD-005 最小版,书 §3/§4/§15 PH1-02):
 // spawn kode-server 二进制 + LSP stdio 帧读写 + initialize 握手 + 请求取消 +
 // 崩溃重启(CORE-015 最小版)。PR-003 只交付 transport 本体;Provider 接线在
@@ -53,8 +51,6 @@ export interface KodeCoreClientOptions {
   onStderr?: (line: string) => void;
   /** RUST-068-W 客户端追踪行回调(发送/响应/取消,带 span;默认丢弃) */
   onTrace?: (line: string) => void;
-  /** 生命周期取证行回调(spawned/ready/exit/重启循环;默认丢弃;WARM-VISIBILITY-004 刀 B) */
-  onLifecycle?: (line: string) => void;
 }
 
 export interface KodeCoreInitializeParams {
@@ -205,32 +201,6 @@ export class KodeCoreClient {
   private handshakeResult: KodeCoreInitializeResult | null = null;
   private handshakeGeneration = -1;
 
-  /**
-   * KODE-RESP-009:drain 感知帧写器——所有出站帧(请求/通知)串行经此写
-   * 入,管道满时等 drain 再写下一帧。写口/事件面每帧现取当前 child.stdin
-   * (重启换进程后自动指向新管道);进程死亡时 close/error 放行,链不悬挂。
-   */
-  private readonly frameWriter = new FrameWriter({
-    write: frame => {
-      const stdin = this.child?.stdin;
-      if (!stdin || !stdin.writable) {
-        return true;
-      }
-      return stdin.write(frame);
-    },
-    once: (event, listener) => {
-      this.child?.stdin?.once(event, listener);
-    },
-    off: (event, listener) => {
-      this.child?.stdin?.off(event, listener);
-    }
-  });
-
-  /** 在队未写帧数(RESP-009 缓冲上界观测口;测试/可观测用) */
-  get writeQueueDepth(): number {
-    return this.frameWriter.pendingFrames;
-  }
-
   constructor(private readonly options: KodeCoreClientOptions) {
     this.initParams = options.initializeParams ?? { processId: process.pid, capabilities: {} };
   }
@@ -294,7 +264,6 @@ export class KodeCoreClient {
     this.child.stdin!.on('error', () => undefined);
     this.child.on('error', error => this.rejectAll(new KodeCoreTransportError(`spawn failed: ${error.message}`, 'EXITED')));
     this.child.on('exit', (_code, signal) => this.handleExit(_code, signal));
-    this.emitLifecycle(`spawned (pid ${this.child.pid ?? '?'})`);
   }
 
   /** LSP initialize 握手(CORE-002);restartGeneration 经 initializationOptions 对账 */
@@ -331,7 +300,6 @@ export class KodeCoreClient {
     if (generation === this.restartGeneration) {
       this.handshakeResult = result;
       this.handshakeGeneration = generation;
-      this.emitLifecycle(`ready (generation ${generation}, server ${result.serverInfo?.version ?? '?'})`);
     }
     return result;
   }
@@ -411,18 +379,6 @@ export class KodeCoreClient {
     this.sendRaw({ jsonrpc: '2.0', method, params });
   }
 
-  /**
-   * KODE-RESP-009:通知入队并等本帧写完(drain 感知)——生产端 await 即
-   * 背压;帧序仍 FIFO(先入队先写,与请求的相对顺序不破坏)。
-   */
-  private notifyDrained(method: string, params?: unknown): Promise<void> {
-    if (this.disposed) {
-      return Promise.resolve();
-    }
-    this.sendRaw({ jsonrpc: '2.0', method, params });
-    return this.frameWriter.drained();
-  }
-
   /** 取消进行中的请求(CORE-007 最小版:$ /cancelRequest 通知) */
   cancelRequest(id: number): void {
     const span = this.pending.get(id)?.span;
@@ -435,27 +391,21 @@ export class KodeCoreClient {
     return (await this.request('$/kode/health')) as KodeCoreHealth;
   }
 
-  /**
-   * KODE-RESP-009:文档通知入队并等本帧真正写完(含必要时等 drain)才完成
-   * ——语料镜像生产端逐帧 await 即被管道背压限速,客户端缓冲有硬上界;
-   * 旧版 fire-and-forget 写在慢消费端把帧无限堆进 Node 流内部缓冲。
-   * 不 await 的调用方(编辑器流 fire-and-forget 镜像)语义不变(仅入队)。
-   */
-  openDocument(uri: string, languageId: string, version: number, text: string): Promise<void> {
-    return this.notifyDrained('textDocument/didOpen', {
+  openDocument(uri: string, languageId: string, version: number, text: string): void {
+    this.notify('textDocument/didOpen', {
       textDocument: { uri, languageId, version, text },
     });
   }
 
-  changeDocument(uri: string, version: number, text: string): Promise<void> {
-    return this.notifyDrained('textDocument/didChange', {
+  changeDocument(uri: string, version: number, text: string): void {
+    this.notify('textDocument/didChange', {
       textDocument: { uri, version },
       contentChanges: [{ text }],
     });
   }
 
-  closeDocument(uri: string): Promise<void> {
-    return this.notifyDrained('textDocument/didClose', { textDocument: { uri } });
+  closeDocument(uri: string): void {
+    this.notify('textDocument/didClose', { textDocument: { uri } });
   }
 
   /**
@@ -619,13 +569,14 @@ export class KodeCoreClient {
       return;
     }
     const body = Buffer.from(JSON.stringify(payload), 'utf8');
-    // KODE-RESP-009:帧经 drain 感知写器入队(串行 FIFO;管道满时下一帧
-    // 等 drain,不再无限压进 Node 流内部缓冲)。字节计数仍在入队时点
-    // (rpcTraffic 观测口径不变)。
-    this.rpcBytesOut += body.length;
-    this.frameWriter.send(
-      Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body])
-    );
+    try {
+      stdin.write(
+        Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body])
+      );
+      this.rpcBytesOut += body.length;
+    } catch {
+      // exit 竞态窗口的同步写失败同上吞掉：响应已不可能，拒绝走 exit 路径
+    }
   }
 
   private consumeStdout(chunk: Buffer): void {
@@ -706,11 +657,6 @@ export class KodeCoreClient {
     this.options.onStderr?.(line);
   }
 
-  /** 生命周期取证行(WARM-VISIBILITY-004 刀 B:kode-server 存活心跳进统一通道) */
-  private emitLifecycle(line: string): void {
-    this.options.onLifecycle?.(line);
-  }
-
   private rejectAll(error: Error): void {
     for (const pending of this.pending.values()) {
       pending.reject(error);
@@ -720,7 +666,6 @@ export class KodeCoreClient {
 
   /** 意外退出:重启窗口内自动 respawn + 重握手;超出放弃(CORE-015) */
   private handleExit(_code: number | null, signal: string | null): void {
-    this.emitLifecycle(`exit (code=${_code ?? '?'}, signal=${signal ?? '?'})`);
     this.rejectAll(new KodeCoreTransportError(`server exited (signal=${signal})`, 'EXITED'));
     this.buffer = Buffer.alloc(0);
     this.child = null;
@@ -733,20 +678,17 @@ export class KodeCoreClient {
     this.restartTimestamps = this.restartTimestamps.filter(ts => now - ts < windowMs);
     if (this.restartTimestamps.length >= maxRestarts) {
       this.recordStderrLine(`restart limit reached (${maxRestarts} in ${windowMs}ms), giving up`);
-      this.emitLifecycle(`restart limit reached (${maxRestarts} in ${windowMs}ms), giving up`);
       return;
     }
     this.restartTimestamps.push(now);
     this.restartGeneration += 1;
     this.recordStderrLine(`restarting server (generation ${this.restartGeneration})`);
-    this.emitLifecycle(`restarting server (generation ${this.restartGeneration})`);
     this.spawnProcess();
     this.initialize()
       .then(() => this.options.onRestart?.(this.restartGeneration))
       .catch(error => {
         const message = `restart handshake failed: ${(error as Error).message}`;
         this.recordStderrLine(message);
-        this.emitLifecycle(message);
         // CORE-3:respawn 后握手失败的进程处于未初始化态,继续接单只会让
         // 后续请求得到误导性 SERVER_ERROR(Rust 侧 -32002 SERVER_NOT_INITIALIZED)。
         // 杀掉子进程并置 child=null,让请求走 EXITED 路径(服务不可用语义)。

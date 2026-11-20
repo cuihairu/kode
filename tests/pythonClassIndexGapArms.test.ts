@@ -276,11 +276,6 @@ describe('pythonClassIndex 缺口臂:组合根派生缓冲面与让位风暴', (
     expect(internals.documents.has(paths['entities.xml'])).toBe(true);
     // 派生应读到缓冲内容(而非磁盘),且缓存该缓冲内容(mtimeMs=0 口径)
     expect(await index.rootsContaining('Avatar')).toContain('Avatar');
-    // ENGINE-LIB-SCAN-005 刀4 起块前有交互冷却让路:同文件前序用例可能刚
-    // 刷新信标,首块提交可晚于派生返回——轮询等首块落地,不赌时序巧合
-    for (let i = 0; i < 100 && internals.fileCache.size === 0; i += 1) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
     expect(internals.fileCache.size).toBeGreaterThan(0);
   });
 

@@ -105,14 +105,7 @@ const zh = {
     inputReady: '输入白名单内命令(回车发送)',
     inputWaiting: '等待会话就绪…',
     keyshint: 'Ctrl+] / Ctrl+D 断开会话',
-    rejected: (text: string) => `已拒绝(白名单外或会话未就绪): ${text}`,
-    pythonEnter: '进入 Python 交互',
-    pythonExit: '回到白名单模式',
-    pythonBadge: '直接执行引擎侧 Python',
-    pythonPrompt: '>>>',
-    pythonContinuation: '…续行提示符: …',
-    pythonInputReady: '输入 Python 表达式(回车发送,直接在引擎侧执行)',
-    pythonRejected: (text: string) => `已拒绝(Python 模式仍恒拒 :quit 与空命令): ${text}`
+    rejected: (text: string) => `已拒绝(白名单外或会话未就绪): ${text}`
   },
   runtimeQuery: {
     title: '运行时查询',
@@ -428,14 +421,7 @@ const en: typeof zh = {
     inputReady: 'Enter an allow-listed command (Enter to send)',
     inputWaiting: 'Waiting for session to be ready…',
     keyshint: 'Ctrl+] / Ctrl+D disconnects the session',
-    rejected: (text: string) => `Rejected (not allow-listed or session not ready): ${text}`,
-    pythonEnter: 'Enter Python REPL',
-    pythonExit: 'Back to allow-list mode',
-    pythonBadge: 'Runs Python directly on the engine',
-    pythonPrompt: '>>>',
-    pythonContinuation: 'continuation prompt: …',
-    pythonInputReady: 'Enter a Python expression (Enter to send, executed engine-side)',
-    pythonRejected: (text: string) => `Rejected (Python mode still rejects :quit and empty commands): ${text}`
+    rejected: (text: string) => `Rejected (not allow-listed or session not ready): ${text}`
   },
   runtimeQuery: {
     title: 'Runtime Queries',

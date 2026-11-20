@@ -39,9 +39,7 @@ use kode_index::symbol::{def_entity_name, extract_records, MethodFacet, SymbolKi
 use kode_index::ChangeCategory;
 use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
 use kode_parser::json::{collect_corpus, PARITY_CORPORA};
-use kode_parser::model::{
-    parse_alias, parse_def, parse_entities, parse_types, DefFile, TypeDecl, TypeField, TypeKind,
-};
+use kode_parser::model::{parse_alias, parse_def, parse_entities, parse_types, DefFile, TypeKind};
 use kode_vfs::store::{DocumentKey, RootId};
 
 // ---------------------------------------------------------------------------
@@ -106,11 +104,6 @@ pub struct HoverSymbol {
 pub struct HoverSignature {
     /// 属性:`<Type>` 直接文本首 token。
     pub r#type: Option<String>,
-    /// 完整类型(RUST-136 增量②):`<Type>` token 经根内 types.xml 声明
-    /// 递归展开的可读全文(FIXED_DICT 键字段名/ARRAY 元素;深度护栏 ≤3;
-    /// 展开与原 token 相同(内建/缺席/空 FD/ARRAY 无 of)= null)。两消费面:
-    /// def 属性 + types.xml 声明本体。
-    pub full_type: Option<String>,
     /// 属性:`<Flags>` 原文(trim)。
     pub flags: Option<String>,
     /// 属性:`<Default>` 原文(trim)。
@@ -211,96 +204,6 @@ fn section_label(section: &str) -> &str {
     }
 }
 
-// ---------------------------------------------------------------------------
-// RUST-136 增量②:fullType 展开(与 tests/kodeHoverParity.test.ts TS 镜像
-// 同算法——递归深度护栏、分隔符、null 判据逐条对应)
-// ---------------------------------------------------------------------------
-
-/// 展开递归深度护栏:超过即按原文 token 呈现(防环/防爆炸)。
-const FULL_TYPE_MAX_DEPTH: usize = 3;
-
-/// 根内 types.xml 声明表:路径字典序(BTreeMap 键序),同名首见
-/// (entry/or_insert);根隔离 = path_roots 归属核对(KBUG-ROOT 口径)。
-fn root_types_table<'a>(
-    types_files: &'a BTreeMap<String, kode_parser::model::TypesFile>,
-    path_roots: &'a BTreeMap<String, RootId>,
-    root: RootId,
-) -> BTreeMap<&'a str, &'a TypeDecl> {
-    let mut table = BTreeMap::new();
-    for (path, tf) in types_files {
-        if path_roots.get(path) != Some(&root) {
-            continue;
-        }
-        for decl in &tf.types {
-            table.entry(decl.name.as_str()).or_insert(decl);
-        }
-    }
-    table
-}
-
-/// token 经声明表递归展开:FD → `FIXED_DICT { 名: 展示, … }`,ARRAY →
-/// `ARRAY<展开>`;内建/缺席/空 FD/ARRAY 无 of → 原 token;深度 ≥ 护栏 → 原 token。
-fn expand_type_token(table: &BTreeMap<&str, &TypeDecl>, tok: &str, depth: usize) -> String {
-    if depth >= FULL_TYPE_MAX_DEPTH {
-        return tok.to_string();
-    }
-    let Some(decl) = table.get(tok) else {
-        return tok.to_string();
-    };
-    match decl.kind {
-        TypeKind::Builtin => tok.to_string(),
-        TypeKind::Array => match &decl.element_ref {
-            Some(elem) => format!("ARRAY<{}>", expand_type_token(table, elem, depth + 1)),
-            None => tok.to_string(),
-        },
-        TypeKind::FixedDict => {
-            if decl.fields.is_empty() {
-                return tok.to_string();
-            }
-            let inner = decl
-                .fields
-                .iter()
-                .map(|f| format!("{}: {}", f.name, expand_field(table, f, depth + 1)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("FIXED_DICT {{ {} }}", inner)
-        }
-    }
-}
-
-/// FD 键字段展示:ARRAY 字段走 `<of>` 元素展开(无 of = `ARRAY`),
-/// 其余 token 直展开(深度沿用调用方已 +1 的层)。
-fn expand_field(table: &BTreeMap<&str, &TypeDecl>, f: &TypeField, depth: usize) -> String {
-    if f.directive == "ARRAY" {
-        return match &f.of_ref {
-            Some(of) => format!("ARRAY<{}>", expand_type_token(table, of, depth + 1)),
-            None => "ARRAY".to_string(),
-        };
-    }
-    expand_type_token(table, &f.directive, depth)
-}
-
-/// def 属性面:ARRAY 指引走 `<of>` 元素展开,其余 token 直展开;
-/// 展开与原 token 相同 → None。
-fn full_type_of_property(
-    table: &BTreeMap<&str, &TypeDecl>,
-    tok: Option<&str>,
-    of: Option<&str>,
-) -> Option<String> {
-    let tok = tok?;
-    let expanded = if tok == "ARRAY" {
-        let of = of?;
-        format!("ARRAY<{}>", expand_type_token(table, of, 1))
-    } else {
-        expand_type_token(table, tok, 0)
-    };
-    if expanded == tok {
-        None
-    } else {
-        Some(expanded)
-    }
-}
-
 /// LSP contents 用 markdown 渲染(属性/方法面与 TS getSymbolHover 逐字节同
 /// 文案同尾随空白,PR-012 门 §1.3-③;其余面为 Rust 侧措辞,非对拍面)。
 pub fn render_markdown(response: &HoverResponse) -> String {
@@ -322,13 +225,8 @@ pub fn render_markdown(response: &HoverResponse) -> String {
         // (languageProviders.ts:1623-1649:Type→Flags→Default→DetailLevel→
         // DatabaseLength→Identifier)。TS 属性面不渲染 **Persistent**,Rust 同脸
         // 不再单侧输出;数据库存储段需 DB 快照(FS/DB 面),划归边界。
-        // RUST-136 增量②:**Full Type** 行为 Rust 侧增面(TS 生产 hover 未跟,
-        // 对拍面=golden 数据面非 markdown),紧随 Type 行。
         if let Some(t) = &s.r#type {
             md.push_str(&format!("**Type**: `{t}`\n\n"));
-        }
-        if let Some(ft) = &s.full_type {
-            md.push_str(&format!("**Full Type**: `{ft}`\n\n"));
         }
         if let Some(f) = &s.flags {
             md.push_str(&format!("**Flags**: `{f}`\n\n"));
@@ -397,9 +295,6 @@ pub fn render_markdown(response: &HoverResponse) -> String {
     }
     if let Some(kind) = &s.type_kind {
         md.push_str(&format!("**TypeKind**: `{kind}`\n\n"));
-    }
-    if let Some(ft) = &s.full_type {
-        md.push_str(&format!("**Full Type**: `{ft}`\n\n"));
     }
     if let Some(target) = &s.alias_target {
         md.push_str(&format!("**AliasType**: `{target}`\n\n"));
@@ -902,20 +797,12 @@ impl HoverEngine {
                             .properties
                             .iter()
                             .find(|p| p.name == word && p.line == line1)?;
-                        // RUST-136 增量②:根内声明表展开 fullType(ARRAY 走 `<of>`)。
-                        let table = root_types_table(&self.types_files, &self.path_roots, key.root);
-                        let full_type = full_type_of_property(
-                            &table,
-                            prop.type_name.as_deref(),
-                            prop.of_ref.as_deref(),
-                        );
                         Some(HoverResponse {
                             face: HoverFace::DefProperty,
                             symbol: hover_symbol(record, "Properties"),
                             source,
                             signature: HoverSignature {
                                 r#type: prop.type_name.clone(),
-                                full_type,
                                 flags: prop.flags_raw.clone(),
                                 default_value: prop.default_value.clone(),
                                 detail_level: prop.detail_level.clone(),
@@ -1030,13 +917,6 @@ impl HoverEngine {
                     Some(d) if d != "ARRAY" && d != "FIXED_DICT" => Some(d.to_string()),
                     _ => None,
                 };
-                // RUST-136 增量②:声明本体展开(同名首见表,悬停项可能被更早
-                // 声明遮蔽——两镜像同表同判据)。
-                let table = root_types_table(&self.types_files, &self.path_roots, key.root);
-                let full_type = match expand_type_token(&table, word, 0) {
-                    s if s == word => None,
-                    s => Some(s),
-                };
                 Some(HoverResponse {
                     face: HoverFace::TypesXml,
                     symbol: HoverSymbol {
@@ -1048,7 +928,6 @@ impl HoverEngine {
                     source,
                     signature: HoverSignature {
                         type_kind: Some(type_kind.to_string()),
-                        full_type,
                         alias_target,
                         comment: preceding_comment(text, decl.line),
                         ..HoverSignature::default()
@@ -1608,85 +1487,5 @@ mod tests {
             Some(ParsedUnit::Alias(_))
         ));
         assert!(parse_by_kind("py", "x = 1\n").is_none());
-    }
-
-    #[test]
-    fn full_type_display_faces() {
-        // 语料:自引用 FD(深度护栏 + 防环)+ ARRAY 包装 + builtin 条目。
-        let types_text = "<root>\n <SPACE_VECTOR>\n  FIXED_DICT\n  <Properties>\n   <x>\n    <Type> FLOAT </Type>\n   </x>\n   <slots>\n    <Type>\n     ARRAY\n     <of> UINT32 </of>\n    </Type>\n   </slots>\n   <deep>\n    <Type> SPACE_VECTOR </Type>\n   </deep>\n  </Properties>\n </SPACE_VECTOR>\n <TELEPORT_POINTS>\n  ARRAY\n  <of> SPACE_VECTOR </of>\n </TELEPORT_POINTS>\n <PLAIN>\n  UINT32\n </PLAIN>\n</root>\n";
-        // def 属性四面:FD token / ARRAY<of> 双层 / 内建(=null) / ARRAY 无 of(=null)。
-        let def_text = "<root>\n <Properties>\n  <pos>\n   <Type> SPACE_VECTOR </Type>\n  </pos>\n  <path>\n   <Type> ARRAY <of> TELEPORT_POINTS </of> </Type>\n  </path>\n  <count>\n   <Type> UINT32 </Type>\n  </count>\n  <broken>\n   <Type> ARRAY </Type>\n  </broken>\n </Properties>\n</root>\n";
-        let mut e = HoverEngine::new();
-        assert!(matches!(
-            e.update(key("/p/scripts/entity_defs/types.xml"), types_text),
-            ChangeCategory::Signature
-        ));
-        assert!(matches!(
-            e.update(key("/p/scripts/entity_defs/Avatar.def"), def_text),
-            ChangeCategory::Signature
-        ));
-        // 深度护栏:0/1/2 层展开,第 3 层起按原文 token(自引用不死循环)。
-        let inner2 = "FIXED_DICT { x: FLOAT, slots: ARRAY<UINT32>, deep: SPACE_VECTOR }";
-        let inner1 = format!(
-            "FIXED_DICT {{ x: FLOAT, slots: ARRAY<UINT32>, deep: {} }}",
-            inner2
-        );
-        let outer = format!(
-            "FIXED_DICT {{ x: FLOAT, slots: ARRAY<UINT32>, deep: {} }}",
-            inner1
-        );
-        let def_key = key("/p/scripts/entity_defs/Avatar.def");
-        let pos = e
-            .hover_at_line(&def_key, def_text, 3, "pos")
-            .expect("pos 悬停");
-        assert_eq!(pos.signature.full_type.as_deref(), Some(outer.as_str()));
-        let path = e
-            .hover_at_line(&def_key, def_text, 6, "path")
-            .expect("path 悬停");
-        // 属性 ARRAY<of> 从深度 1 起算:内层 FD 在深度 2 展开,其内引用按护栏
-        // 原文呈现(与 pos 的深度 0 起算差一层,两镜像同判据)。
-        assert_eq!(
-            path.signature.full_type.as_deref(),
-            Some(format!("ARRAY<ARRAY<{inner2}>>").as_str())
-        );
-        let count = e
-            .hover_at_line(&def_key, def_text, 9, "count")
-            .expect("count 悬停");
-        assert_eq!(count.signature.full_type, None, "内建 token 展开=原文→null");
-        let broken = e
-            .hover_at_line(&def_key, def_text, 12, "broken")
-            .expect("broken 悬停");
-        assert_eq!(broken.signature.full_type, None, "ARRAY 无 of→null");
-        // markdown 渲染:**Full Type** 行紧随 **Type**。
-        let md = render_markdown(&pos);
-        let type_at = md.find("**Type**: `SPACE_VECTOR`").expect("Type 行");
-        let full_at = md.find("**Full Type**:").expect("Full Type 行");
-        assert!(full_at > type_at, "{md}");
-        assert!(md.contains(&format!("**Full Type**: `{outer}`")), "{md}");
-        // types.xml 声明面:FD/ARRAY 展开,builtin=null。
-        let types_key = key("/p/scripts/entity_defs/types.xml");
-        let sv = e
-            .hover_at_line(&types_key, types_text, 2, "SPACE_VECTOR")
-            .expect("SPACE_VECTOR 悬停");
-        assert_eq!(sv.signature.full_type.as_deref(), Some(outer.as_str()));
-        let tp = e
-            .hover_at_line(&types_key, types_text, 19, "TELEPORT_POINTS")
-            .expect("TELEPORT_POINTS 悬停");
-        // 声明面深度 0 起算,ARRAY 元素消耗一层:内层 FD 在深度 1 展开。
-        assert_eq!(
-            tp.signature.full_type.as_deref(),
-            Some(format!("ARRAY<{inner1}>").as_str())
-        );
-        let plain = e
-            .hover_at_line(&types_key, types_text, 23, "PLAIN")
-            .expect("PLAIN 悬停");
-        assert_eq!(plain.signature.full_type, None, "builtin 声明→null");
-        // markdown:声明面 TypeKind 后跟 Full Type 行。
-        let tp_md = render_markdown(&tp);
-        assert!(tp_md.contains("**TypeKind**: `array`"), "{tp_md}");
-        assert!(
-            tp_md.contains(&format!("**Full Type**: `ARRAY<{inner1}>`")),
-            "{tp_md}"
-        );
     }
 }

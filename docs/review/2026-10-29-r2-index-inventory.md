@@ -17,11 +17,11 @@
 逐字段(字段名与 model.rs 定义一致):
 
 - `DefFile`:root_tag parent interfaces volatile properties components base_methods cell_methods client_methods extra_sections diagnostics
-- `PropertyDef`:name name_span line type_name type_refs of_ref flags_raw flags default_value detail_level database_length identifier persistent sensitive extra_tags(type_refs 与 TS collectTypeReferences 同口径;persistent truthy 语义同 TS;of_ref = `<Type>` 的 `<of>` 元素,RUST-136 hover fullType 消费,不进 parser golden)
+- `PropertyDef`:name name_span line type_name type_refs flags_raw flags default_value detail_level database_length identifier persistent sensitive extra_tags(type_refs 与 TS collectTypeReferences 同口径;persistent truthy 语义同 TS)
 - `MethodDef`:name name_span line args arg_type_refs return_type exposed——只保留这七个字段(name/name_span/line/args/arg_type_refs/return_type/exposed;RUST-108 补逐 Arg 类型引用与 ReturnType 直文本声明,均不进 parser golden;见 §4 缺失)
 - `ComponentDef`:name name_span line component_type persistent
 - `EntityEntry`:name name_span line attributes(hasBase/hasCell/hasClient 等,文档顺序;root 伪条目排除)
-- `TypeDecl`:name name_span line kind(FixedDict|Array|Builtin) directive implemented_by_symbol field_refs fields element_ref(fields = FIXED_DICT 键字段名+指引+of,`TypeField{name directive of_ref}`;RUST-136 hover fullType 消费,不进 parser golden)
+- `TypeDecl`:name name_span line kind(FixedDict|Array|Builtin) directive implemented_by_symbol field_refs element_ref
 - `AliasDecl`:name name_span line alias_type(属性式别名另存 attribute_aliases,不进对拍 golden)
 - `ChainNode`:entity parent(继承链节点;解析器 `resolve_parent_chain` 环时截断+诊断,不死循环)
 - `TypeGraph`(kode-types,PR-008 类型图):装配 `add_types`/`add_alias`/`add_def`/`register_entities`;查询 `classify`(TypeClass)/`resolve_alias_chain`/`resolve_inheritance`/`find_cycles`;Alias/Array/FixedDict/UserType 节点+六种边,全图环检测,TS 类型面对拍 100%。

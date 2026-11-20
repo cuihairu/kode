@@ -171,14 +171,6 @@ function handle(msg) {
       }
       return;
     }
-    case 'kode/freeze':
-      // KODE-RESP-009 替身:暂停 stdin 消费 params.ms 毫秒再恢复(帧堆在
-      // OS 管道,客户端写背压被真实触发;测镜像洪水缓冲上界/恢复后延迟)。
-      if (Number(msg.params && msg.params.ms) > 0) {
-        process.stdin.pause();
-        setTimeout(() => process.stdin.resume(), Number(msg.params.ms));
-      }
-      return;
     case '$/kode/health':
       return reply(msg.id, {
         status: 'ok',

@@ -1114,7 +1114,6 @@ mod tests {
             directive: directive.map(str::to_string),
             implemented_by_symbol: impl_sym.map(str::to_string),
             field_refs: vec![],
-            fields: vec![],
             element_ref: element.map(str::to_string),
         }
     }
@@ -1160,7 +1159,6 @@ mod tests {
                 directive,
                 implemented_by_symbol: None,
                 field_refs: vec![],
-                fields: vec![],
                 element_ref: None,
             });
         }

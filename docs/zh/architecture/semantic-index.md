@@ -105,12 +105,12 @@
   - 交互冷却(interactiveCooldownMs):后台全量任务在交互任务后让路,分块 16 路并发/块,块间可插队;
   - 失败恢复:任务失败可重试,不永久停留 pending(锁定测试);staging 探测失败不永久缓存;
   - 状态查询:`SchedulerStatus` / `SchedulerMetrics`(含 backgroundDelayMs);
-  - 激活即排程 initial-scan(实体发现)+ full-reindex(extension.ts),Provider 只等 RequestLocal 级任务;Python 全仓发现自 KODE-RESP-002 起在调度器外类内代际单飞(不占单并发执行位,换代守卫晚到结果不落缓存),调度器只承载分块解析与单文件补载。
+  - 激活即排程 initial-scan + full-reindex(extension.ts),Provider 只等 RequestLocal 级任务。
 
 ## 6. 数据流示例(冷启动 Definition,对应最终报告 U1=475.34ms)
 
 ```text
-激活 ─▶ 调度器排程 initial-scan(实体发现)+ full-reindex(分块后台;Python 全仓发现在调度器外单飞)
+激活 ─▶ 调度器排程 initial-scan(发现)+ full-reindex(分块后台)
 用户首次 Definition ─▶ Provider:①静态 MRO 命中?②组合根命中? ──是──▶ 即答(不等全量)
                                         └──否──▶ RequestLocal 单文件按需解析(查询文件/import 候选/同目录)
                                                  仍落空 ▶ 等后台收敛后重查(③ 反向形态)

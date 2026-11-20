@@ -22,7 +22,6 @@ import { EntityFlowWebView } from '../entityFlowWebView';
 import { FlowSwimlanePanel } from '../flowSwimlanePanel';
 import { TraceReplayPanel } from '../traceReplayPanel';
 import { IndexTaskPriority } from '../backend/indexScheduler';
-import { indexLog } from '../backend/indexLog';
 import { MonitoringCollector } from '../monitoringCollector';
 import { MonitoringWebView } from '../monitoringWebView';
 import { RuntimeQueryWebView } from '../runtimeQueryWebView';
@@ -248,16 +247,14 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
       const defs = createWarmupStages({
       // 发现链首扫:复用 startKbEngineIndexing 已起的同一轮(ensureStartup 幂等),
       // 这里只等终态不重起第二套扫描(KR-AUD-34 会话缓存口径不动)。
-      waitForDiscovery: onProgress => entityMappingManager.waitForInitialScan(onProgress),
+      waitForDiscovery: () => entityMappingManager.waitForInitialScan(),
       // 事件/方法全量首扫:统一调度器非交互优先级入队(交互任务让路),
       // ensureStarted 幂等复用在跑任务;调度器拒接(已 dispose)按已终态结算。
-      // onProgress(WARM-VISIBILITY-004 刀 A):首扫进度回调透传进扫描环,
-      // 状态栏 message 随「事件/方法索引 N/M」逐档推进。
-      ensureEventIndex: async onProgress => {
+      ensureEventIndex: async () => {
         const handle = indexScheduler.enqueue({
           kind: 'non-interactive',
           priority: IndexTaskPriority.NonInteractive,
-          run: () => sharedWorkspaceIndex.ensureStarted(onProgress)
+          run: () => sharedWorkspaceIndex.ensureStarted()
         });
         try {
           await handle.wait;
@@ -416,17 +413,10 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   outputChannel.appendLine(
                     `索引缓存命中(discovery):注入 ${restore.injected}/${restore.discovered},漂移拒收 ${restore.rejected}`
                   );
-                  indexLog('cache',
-                    `索引缓存命中(discovery):注入 ${restore.injected}/${restore.discovered},漂移拒收 ${restore.rejected}`);
                 }
               }
               if (cached?.payload.eventIndex?.length) {
-                // 恢复路径进度(WARM-VISIBILITY-004 刀 A):漂移重建逐档上报,
-                // 大漂移(接近全量)时状态栏不再静默
-                const restore = await sharedWorkspaceIndex.restoreFromCache(
-                  cached.payload.eventIndex,
-                  detail => { reportWarmupDetail?.(detail); }
-                );
+                const restore = await sharedWorkspaceIndex.restoreFromCache(cached.payload.eventIndex);
                 if (restore.tookOver) {
                   if (warmupStageDefs) {
                     warmupStageDefs.find(stage => stage.key === 'eventIndex')!.cached = true;
@@ -434,8 +424,6 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   outputChannel.appendLine(
                     `索引缓存命中(eventIndex):直取 ${restore.restored},增量重建 ${restore.rebuilt},丢弃 ${restore.dropped}`
                   );
-                  indexLog('cache',
-                    `索引缓存命中(eventIndex):直取 ${restore.restored},增量重建 ${restore.rebuilt},丢弃 ${restore.dropped}`);
                 }
               }
               if (cached?.payload.defLut?.length) {
@@ -446,8 +434,6 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                   outputChannel.appendLine(
                     `索引缓存命中(defLUT):载入 ${restore.adoptedDefs} def / ${restore.adoptedEntries} 条,漂移拒收 ${restore.rejectedDefs}`
                   );
-                  indexLog('cache',
-                    `索引缓存命中(defLUT):载入 ${restore.adoptedDefs} def / ${restore.adoptedEntries} 条,漂移拒收 ${restore.rejectedDefs}`);
                 }
               }
               if (warmupStageDefs?.some(stage => stage.cached)) {
@@ -466,11 +452,6 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
                 ? `后台预热完成:${snapshot.completedStages}/${snapshot.totalStages} 阶段${cachedCount ? `(缓存命中 ${cachedCount} ⏭)` : ''}`
                 : `后台预热${final === 'cancelled' ? '已取消' : '未完成'}:${snapshot.completedStages}/${snapshot.totalStages} 阶段`
             );
-            // WARM-VISIBILITY-004 刀 B:预热终态行镜像进统一通道(常开)
-            indexLog('cache', () =>
-              final === 'completed'
-                ? `后台预热完成:${snapshot.completedStages}/${snapshot.totalStages} 阶段${cachedCount ? `(缓存命中 ${cachedCount} ⏭)` : ''}`
-                : `后台预热${final === 'cancelled' ? '已取消' : '未完成'}:${snapshot.completedStages}/${snapshot.totalStages} 阶段`);
             // 完成后异步写回(队列尾 setImmediate 节拍,不阻塞交互;失败/取消
             // 不写——与完成标记同口径,不基于残缺轮落盘)。写失败静默降级。
             // DEF-LUT-001:先排低优先级 LUT 重建(keyed 任务,交互限流;门控
