@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   DEF_IDENTIFIER_PATTERN,
   DefRenameFileEdits,
+  findDefRenameConflict,
   DefRenameSymbol,
   collectRenameEditsInText,
   computeDefRenameEdits,
@@ -911,5 +912,51 @@ describe('KBEngineRenameProvider 装配', () => {
 
     const typeValue = HERO_DEF.indexOf('UINT32') + 1;
     expect(await provider.provideRenameEdits(document, document.positionAt(typeValue), 'vigor')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 批 38 容错臂:不可解析 def 文本(plan/成员收集/目标解析三面一致拒)、
+// 目标 def 缺该成员声明、defsRoot 解析不到。
+// ---------------------------------------------------------------------------
+describe('批 38:def 重命名容错臂', () => {
+  const BROKEN = '<root><Properties><hp><Type>INT32';
+
+  const methodSymbol = {
+    kind: 'method' as const,
+    name: 'onSpawn',
+    section: 'BaseMethods',
+    line: 1
+  };
+
+  it('不可解析 def 文本:冲突面返回 null', () => {
+    expect(findDefRenameConflict(BROKEN, methodSymbol, 'onRenamed')).toBeNull();
+  });
+
+  it('collectOwnMemberDecls 面:不可解析文本 → 零声明(经冲突面间接驱动)', () => {
+    // 同输入再走一次冲突面(内部成员收集同样空),结果仍是 null 不抛
+    expect(findDefRenameConflict(BROKEN, methodSymbol, 'onRenamed2')).toBeNull();
+  });
+
+  it('目标 def 不可解析且符号非 method(resolveTargetRenameDecl)→ null', () => {
+    const propSymbol = {
+      kind: 'property' as const,
+      name: 'hp',
+      section: 'Properties',
+      line: 1
+    };
+    expect(findDefRenameConflict(BROKEN, propSymbol, 'hpNew')).toBeNull();
+  });
+
+  it('目标 def 可解析但缺该成员声明 → 冲突面 null(无从谈重名)', () => {
+    const text = [
+      '<root>',
+      '  <Properties>',
+      '    <mp><Type>INT32</Type></mp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n');
+    const propSymbol = { kind: 'property' as const, name: 'hp', section: 'Properties', line: 1 };
+    expect(findDefRenameConflict(text, propSymbol, 'hpNew')).toBeNull();
   });
 });
