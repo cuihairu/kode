@@ -203,6 +203,21 @@ jobs:
       - name: Verify all seven packages and generate checksums
         run: node scripts/verify-platform-set.mjs dist
 
+      # RUST-060 第二增量:发布二进制的 CycloneDX 1.5 SBOM(依赖闭包全清单,
+      # 含 crate 名/版本/purl/SPDX license),与 SHA256SUMS 同面进滚动 release
+      # 资产。三发布二进制=kode-server/kode-kbengine/kode-mcp(与 bin/manifest
+      # 校验面同集);dump-* golden 工具不发布不生成。cargo-cyclonedx 版本钉
+      # 死与本地验证同款;rust-toolchain.toml 钉的链 rustup 首调自动装。
+      - name: Generate CycloneDX SBOMs for released binaries (RUST-060)
+        timeout-minutes: 10
+        run: |
+          cargo install cargo-cyclonedx --locked --version 0.5.10
+          cargo cyclonedx -f json --describe binaries --spec-version 1.5 -q
+          mkdir -p dist/sbom
+          cp crates/kode-server/kode-server_bin.cdx.json dist/sbom/kode-server.cdx.json
+          cp crates/kode-kbengine/kode-kbengine_bin.cdx.json dist/sbom/kode-kbengine.cdx.json
+          cp crates/kode-mcp/kode-mcp_bin.cdx.json dist/sbom/kode-mcp.cdx.json
+
       - name: Prepare release metadata
         id: meta
         run: |
@@ -225,6 +240,7 @@ jobs:
           | kode-*-linux-x64.vsix / linux-arm64.vsix | Linux x64 / ARM64 | musl 静态目标，含 Rust 后台与协议 CLI |
           | kode-*-pure-ts.vsix | 通用纯 TS | 无二进制，默认 TS 后端；Rust 独有工具能力受限 |
           | SHA256SUMS | 全平台 | 下载完整性校验 |
+          | sbom/*.cdx.json | Rust 二进制 | kode-server/kode-kbengine/kode-mcp 的 CycloneDX 1.5 依赖清单（RUST-060 来源审计） |
 
           每个平台均通过原生 Rust 单元测试、CLI 集成测试、二进制发现测试，
           并从最终 VSIX 解出二进制完成 LSP 生命周期与 CLI 启动验证。
@@ -243,7 +259,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ASSETS=(dist/*.vsix dist/SHA256SUMS)
+          ASSETS=(dist/*.vsix dist/SHA256SUMS dist/sbom/*.cdx.json)
           if gh release view nightly --repo cuihairu/kode >/dev/null 2>&1; then
             gh release edit nightly --repo cuihairu/kode \
               --title "Kode Nightly (rolling)" \

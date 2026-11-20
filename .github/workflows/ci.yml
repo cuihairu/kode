@@ -207,6 +207,21 @@ jobs:
         gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
           -q '.assets[] | "  \(.name)  \(.size) bytes"'
 
+  # cargo-deny 依赖审计门禁（RUST-060 第二增量，2026-11-20 coverage 任务书
+  # P1 清扫）：advisories（RUSTSEC 漏洞/撤包）+ licenses（deny.toml 白名单，
+  # LGPL 仅 r-efi 例外=UEFI cfg 依赖，三发布平台不链接）。bans/sources 不查
+  # （超本批审计面）。action 预装 cargo-deny 二进制，无需编译；deny.toml 与
+  # Cargo.lock 变更均触发本门（paths-ignore 只放行 docs/md）。SBOM 生成在
+  # nightly（发布产物审计面），与这里的每次 push 门禁互补。
+  cargo-deny:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@v2.1.3
+        with:
+          arguments: --workspace check advisories licenses
+
   # Rust core 覆盖率独立成 job（与 build 的 TS 覆盖率并存，互不覆盖），同时是
   # Rust 测试门禁的唯一执行点（本仓此前没有任何 workflow 跑过 cargo test）：
   # ① rustup 工具链下载 + cargo-llvm-cov 安装 + 全 workspace 插桩编译耗时长，
