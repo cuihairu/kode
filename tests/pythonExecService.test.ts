@@ -302,3 +302,145 @@ describe('pythonExecService(RUST-002 可复用执行服务)', () => {
     expect(PYTHON_EXEC_SERVICE_SOURCE).not.toContain('exec(');
   });
 });
+
+describe('pythonExecService(回包/退出/握手窗口注入)', () => {
+  /**
+   * 故障面注入钉:回包不可解析、在途时进程退出(带 stderr 尾行)、dispose
+   * 拆服务在途按批失败、握手计时器与轮询的窗口语义。复用前块的 fake 子
+   * 进程形态(手动 push 的 stdout/stderr + 监听器登记),不用真解释器。
+   *
+   * 诚实边界(逐行不可达论证):
+   *   - 165 `if (!call) return;`(settle 取队列越界)= 防御臂,不可达。
+   *     settle 的三处调用点都先保证 index 有效:settleAll 从 queue.length-1
+   *     倒序递进;drainFrames 在 settle(0,…) 前 216 行已判 queue.length
+   *     非空且两者同属一次同步调用无中断;超时定时器 323-324 行先取
+   *     indexOf,只在 index>=0 时调 settle。公共入口无越界路径,不硬凑。
+   */
+
+  const frame = (payload: string): Buffer =>
+    Buffer.concat([
+      Buffer.from(`${Buffer.byteLength(payload, 'utf8')}\n`, 'ascii'),
+      Buffer.from(payload, 'utf8'),
+      Buffer.from('\n', 'ascii')
+    ]);
+
+  const makeFake = (pid: number) => {
+    const stdout = new Readable({ read(): void { /* 手动 push */ } });
+    const stderr = new Readable({ read(): void { /* 手动 push */ } });
+    const listeners: Record<string, (arg?: unknown) => void> = {};
+    const fake = {
+      pid,
+      stdout,
+      stderr,
+      stdin: new Writable({ write(_c, _e, cb) { cb(); } }),
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+      on: (event: string, listener: (arg?: unknown) => void): void => {
+        listeners[event] = listener;
+      },
+      kill: (): boolean => true
+    } as unknown as ChildProcessWithoutNullStreams;
+    return { fake, stdout, stderr, listeners };
+  };
+
+  it('回包帧不可解析:按基建故障兑现,不悬挂不冒充判定', async () => {
+    if (SKIP) { return; }
+    const made = makeFake(600001);
+    const service = createPythonExecService({ spawn: () => made.fake, timeoutMs: 2000 });
+    try {
+      const pending = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      await new Promise(resolve => setTimeout(resolve, 10)); // 握手完成,请求在途
+      made.stdout.push(frame('not json')); // 协议帧合法但载荷非 JSON
+      const outcome = await pending;
+      expect(outcome).toEqual({ ok: false, error: '执行服务回包不可解析', infra: true });
+      expect(service.pendingCount()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  }, 20000);
+
+  it('在途时进程自然退出:带 stderr 尾行如实报基建故障,在途按批失败', async () => {
+    if (SKIP) { return; }
+    const made = makeFake(600003);
+    const service = createPythonExecService({ spawn: () => made.fake, timeoutMs: 2000 });
+    try {
+      const pending = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      // stderr 尾行随错误消息透出(取最后一行非空文本)
+      made.stderr.push('Traceback (most recent call last):\nboom\n');
+      made.listeners['exit']?.(); // 当前代进程退出(非陈旧 exit)
+      const outcome = await pending;
+      expect(outcome.ok).toBe(false);
+      expect(outcome.infra).toBe(true);
+      expect(outcome.error).toContain('解释器进程退出');
+      expect(outcome.error).toContain('boom');
+      expect(service.pid()).toBe(0);
+      expect(service.pendingCount()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  }, 20000);
+
+  it('dispose 拆服务:在途请求按批如实失败,不悬挂半开连接', async () => {
+    if (SKIP) { return; }
+    const made = makeFake(600005);
+    const service = createPythonExecService({ spawn: () => made.fake, timeoutMs: 2000 });
+    try {
+      const pending = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      await new Promise(resolve => setTimeout(resolve, 10)); // 握手完成,请求在途
+      expect(service.pendingCount()).toBe(1);
+      service.dispose();
+      const outcome = await pending;
+      expect(outcome).toEqual({ ok: false, error: '执行服务已关闭', infra: true });
+      expect(service.pid()).toBe(0);
+      expect(service.pendingCount()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  }, 20000);
+
+  it('握手计时器到点但 ready 已到:按就绪兑现,不误拆新进程', async () => {
+    if (SKIP) { return; }
+    // 握手窗 3ms < 轮询周期 5ms:ready 帧同步入缓冲后,先到点的是握手
+    // 计时器——计时器里 ready 已真,必须走就绪臂(拆掉会冤杀刚就绪的进程)
+    const made = makeFake(600007);
+    const service = createPythonExecService({
+      spawn: () => made.fake,
+      timeoutMs: 2000,
+      handshakeTimeoutMs: 3
+    });
+    try {
+      const pending = service.runCompile({ content: 'x = 1\n' });
+      made.stdout.push(frame('{"ready":true}'));
+      await new Promise(resolve => setTimeout(resolve, 12)); // 3ms 计时器先于 5ms 轮询到点
+      const pid = service.pid();
+      expect(pid).toBe(made.fake.pid); // 未被误拆
+      made.stdout.push(frame('{"ok":true}'));
+      expect(await pending).toEqual({ ok: true });
+    } finally {
+      service.dispose();
+    }
+  }, 20000);
+
+  it('握手超时:按未就绪如实上报,进程拆净不留 pid', async () => {
+    if (SKIP) { return; }
+    const made = makeFake(600009); // 永不发 ready 帧
+    const service = createPythonExecService({
+      spawn: () => made.fake,
+      timeoutMs: 500,
+      handshakeTimeoutMs: 30
+    });
+    try {
+      const outcome = await service.runCompile({ content: 'x = 1\n' });
+      expect(outcome).toEqual({ ok: false, error: '执行服务未就绪', infra: true });
+      expect(service.pid()).toBe(0);
+      expect(service.pendingCount()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  }, 20000);
+});

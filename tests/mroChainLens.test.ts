@@ -8,7 +8,8 @@
 // ③单定义者不出镜(无顺序可言);④mixin 文件视角=多根两链(反向后代);
 // ⑤kbengine.codeLens.mroChain 关掉不出镜;⑥纯核格式化。
 import { execFile } from 'child_process';
-import * as fs from 'fs';
+import * as fs from 'node:fs';
+import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -187,6 +188,79 @@ describe('MRO-CHAIN demo 真值(training mixin 族 onCrossDay)', () => {
     expect(hasMroChainToPresent(chains)).toBe(false);
     expect(chains.every(chain => chain.entries.length === 1)).toBe(true);
   });
+});
+
+// MRO-CHAIN 组合根视角(②)的收口面:resolveMroMethodChains 只在
+// rootsByScope 对查询文件有匹配作用域时才走这一臂。demo fixture 只有一份
+// entities.xml(单作用域),故这里用 mkdtemp 真盘搭两棵嵌套作用域:
+// 外层 ws/entities.xml + 内层 ws/sub/entities.xml(demo 的 scripts 树搬进
+// ws/sub/scripts)。查询文件落在内层 → 两个作用域都前缀命中,最长作用域
+// 胜出(排序比较器真实执行),内层组合根(实体 + def 声明的接口/组件)逐个
+// 过 Python MRO 包含判定与 def mixin 链。
+describe('MRO-CHAIN 组合根视角(嵌套作用域 + def mixin 面)', () => {
+  const buildNestedWorkspace = (): { root: string; avatar: string } => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mro-nested-'));
+    fs.cpSync(path.join(DEMO_SCRIPTS, '..'), path.join(root, 'sub'), {
+      recursive: true,
+      filter: (item: string) => !item.endsWith('__pycache__')
+    });
+    // 外层作用域:仅一份 entities.xml(内层才是查询所在作用域)
+    fs.cpSync(path.join(DEMO_SCRIPTS, 'entities.xml'), path.join(root, 'entities.xml'));
+    const avatar = path.join(root, 'sub', 'scripts', 'cell', 'TrainingAvatar.py');
+    return { root, avatar };
+  };
+
+  const stubNestedMetadata = (root: string): void => {
+    const matches = (pattern: string, name: string): boolean =>
+      pattern.includes('entities.xml') ? name === 'entities.xml'
+        : pattern.includes('*.def') ? name.endsWith('.def')
+          : pattern.includes('types.xml') ? name === 'types.xml'
+            : name.endsWith('.py');
+    workspace.findFiles = (async (glob: string) => {
+      const out: string[] = [];
+      const walk = (dir: string): void => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (entry.name === '__pycache__') { return; }
+            walk(full);
+          } else if (matches(String(glob), entry.name)) {
+            out.push(full);
+          }
+        }
+      };
+      walk(root);
+      return out.map(file => Uri.file(file));
+    }) as typeof workspace.findFiles;
+  };
+
+  it('嵌套作用域内查询:最长作用域胜出,组合根视角给出根链与 def mixin 链', async () => {
+    const { root, avatar } = buildNestedWorkspace();
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'nested', index: 0 }];
+    stubNestedMetadata(root);
+    try {
+      const index = new PythonClassIndex();
+      // 组合根派生按「首次查询」口径预热(真机=跳转/CodeLens 早已触发过派生,
+      // rootsMap 已落地);否则 resolveMroMethodChains 的交互预算内派生会被
+      // raceWithBudget 判超时,组合根视角整臂跳过,本测试就退化成静态自身链。
+      await index.rootsContaining('TrainingAvatar');
+      const text = fs.readFileSync(avatar, 'utf8');
+      const doc = makeTextDocument(text, { fileName: avatar, languageId: 'python' });
+      const chains = await index.resolveMroMethodChains(
+        avatar, lineOf(avatar, 'def onCrossDay'), 'onCrossDay', doc
+      );
+      const rootNames = chains.map(chain => chain.rootClassName);
+      // 组合根视角产出实体根链:本尊(静态自身)与实体根 TrainingMonster
+      // (其 MRO 含 TrainingAvatar 本尊,组合根视角才看得见)
+      expect(rootNames).toContain('TrainingAvatar');
+      expect(rootNames).toContain('TrainingMonster');
+      const monsterChain = chains.find(chain => chain.rootClassName === 'TrainingMonster')!;
+      expect(monsterChain.entries.map(entry => entry.className))
+        .toEqual(['TrainingMonster', 'HealthMixin', 'HistoryMixin', 'InventoryMixin']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe('MRO-CHAIN provider 面与开关', () => {

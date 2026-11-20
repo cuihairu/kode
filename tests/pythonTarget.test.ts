@@ -1,5 +1,8 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ENGINE_BIN_SCAN_LIMIT,
   PYTHON_TARGET_SETTING,
@@ -235,6 +238,64 @@ describe('pythonTargetDeps(生产装配)', () => {
   it('无活动 profile:engineRoot null(未知,不猜)', () => {
     expect(pythonTargetDeps(new MemoryMemento()).engineRoot()).toBeNull();
     expect(pythonTargetDeps().engineRoot()).toBeNull();
+  });
+});
+
+// 生产装配的两个真盘面(引擎二进制投票的实际取数路径):
+// listServerBinaries = kbe/bin/server 目录的**文件**按名确定序(子目录不入,
+// 目录缺失/不可读如实空表,不炸调用方);readBinaryHead = 读头部字节(不足则
+// 给实读长度,读不了如实 null)。此处用 mkdtemp 真盘跑一遍,锁住
+// path.join 组装与 isFile 过滤的确定序(投票面只接受确定序)。
+describe('pythonTargetDeps(生产真盘面:kbe/bin/server 与二进制头部)', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pythontarget-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const serverDir = (): string => path.join(root, 'kbe', 'bin', 'server');
+
+  it('listServerBinaries:目录文件按名确定序(跨平台无后缀过滤),子目录不入', () => {
+    const dir = serverDir();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'base'), 'x', 'utf8');
+    fs.writeFileSync(path.join(dir, 'cell'), 'x', 'utf8');
+    fs.writeFileSync(path.join(dir, 'login'), 'x', 'utf8');
+    fs.mkdirSync(path.join(dir, 'subdir'));
+
+    const deps = pythonTargetDeps();
+    expect(deps.listServerBinaries(root)).toEqual([
+      path.join(dir, 'base'),
+      path.join(dir, 'cell'),
+      path.join(dir, 'login')
+    ]);
+  });
+
+  it('listServerBinaries:目录缺失/不可读 → 空表(未知,不炸)', () => {
+    const deps = pythonTargetDeps();
+    expect(deps.listServerBinaries(root)).toEqual([]);
+    expect(deps.listServerBinaries(path.join(root, 'no-such-root'))).toEqual([]);
+  });
+
+  it('readBinaryHead:按实读长度给头部字节;读不了如实 null', () => {
+    const file = path.join(root, 'banner.bin');
+    fs.writeFileSync(file, 'KBEngine built with Python 3.7.3 tail', 'utf8');
+    const deps = pythonTargetDeps();
+    const head = (target: string, max: number): Buffer => {
+      const buffer = deps.readBinaryHead(target, max);
+      expect(buffer).not.toBeNull();
+      return Buffer.from(buffer!);
+    };
+
+    expect(head(file, 200)).toEqual(Buffer.from('KBEngine built with Python 3.7.3 tail', 'utf8'));
+    expect(head(file, 9)).toEqual(Buffer.from('KBEngine ', 'utf8'));
+    expect(deps.readBinaryHead(path.join(root, 'missing.bin'), 64)).toBeNull();
+    // 目录不可当文件读:同样如实 null(不炸)
+    expect(deps.readBinaryHead(root, 64)).toBeNull();
   });
 });
 

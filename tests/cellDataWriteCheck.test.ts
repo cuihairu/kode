@@ -16,6 +16,8 @@ import {
   analyzeCellDataFieldWrites,
   cellDataWriteFindingToItem,
   classifyCellDataWriteValue,
+  judgeCellDataValueStructure,
+  judgeCellDataValueWithRange,
   CELL_DATA_WRITE_TYPE_DIAGNOSTIC_CODE
 } from '../src/backend/cellDataWriteCheck';
 import type { CellDataKeyEntry } from '../src/backend/cellDataCompletion';
@@ -334,6 +336,126 @@ describe('analyzeCellDataFieldWrites(诚实面:未知键/未知类型不查)', (
     expect(analyzeCellDataFieldWrites(wrap('self.cellData["hp"] = hpConfig'), BASIC_ENTRIES)).toEqual([]);
     expect(analyzeCellDataFieldWrites(wrap('pass'), BASIC_ENTRIES)).toEqual([]);
     expect(analyzeCellDataFieldWrites(wrap('self.cellData["hp"] = 5'), [])).toEqual([]);
+  });
+});
+
+/**
+ * 字面量分类器的诚实边界(整段不恰为一个字面量 → unknown 不猜):
+ * 空段、残缺引号、未闭合括号体、三引号(单行不闭)全部落到 unknown。
+ * 嵌套序列/集合的元数与元素已知性按语法可数才算(元素含未知 → 只保元数)。
+ *
+ * 论证为不可达的防御行(不写空账测试):
+ * - 行 167 `(,)` 形态单空段元组:splitTopLevelCommas 末尾
+ *   `parts.filter(part => part.trim() !== '')` 已剔除空段,
+ *   rawElements[0].trim() === '' 永假;且合法的 `(,)` 是 Python 语法错误,
+ *   无合法语料能到达;
+ * - 行 254 / 282(splitTopLevelCommas 与 hasTopLevelColon 的残缺引号臂):
+ *   两函数只被 classifyCellDataWriteValue 调用,且传入的括号体都来自
+ *   scanBracketBody —— 它已用同一个 scanQuotedEnd 逐引号预校验(未闭合 →
+ *   null),故体内不可能再出现未闭合引号;
+ * - 行 321 actualLabel 的 default 臂:checkWriteAgainstFamily 在
+ *   literal.class === 'unknown' 时先行 return null(行 331),default 臂
+ *   拿不到 unknown 字面量;
+ * - 行 473(writeRhsLiteral 的 `eq < 0` 返回 null):能走到 writeRhsLiteral
+ *   的操作都是 classifyKind 判的 write——它在**原文**上要求 accessEnd 之后
+ *   (跳过纯空白)紧跟 `=`(非 `==`)。行尾注释剥离只能砍在引号外的 `#` 上,
+ *   而 accessEnd 与该 `=` 之间只有空白,不可能藏 `#`;键串内的引号/转义
+ *   (`\'`、`\\`)被 findLineCommentIndex 与 parseCellDataKeyAccess 按同一
+ *   规则跟踪,不会把键内 `#` 误判成注释起点。故剥离后的行里那个 `=` 仍在,
+ *   `stripped.indexOf('=', op.exprEnd)` 恒 ≥ 0,该行对一切合法 Python 语料
+ *   不可达。
+ */
+describe('classifyCellDataWriteValue(诚实边界:空段/残缺引号/未闭合体)', () => {
+  it('空段与空白段 → unknown(不猜成任何字面量)', () => {
+    expect(classifyCellDataWriteValue('')).toEqual({ class: 'unknown' });
+    expect(classifyCellDataWriteValue('   ')).toEqual({ class: 'unknown' });
+  });
+
+  it('三引号串:单行内不闭 → unknown', () => {
+    // 六个引号 = 合法的空三引号串;分类面只认单引号形态,不猜
+    expect(classifyCellDataWriteValue("''''''")).toEqual({ class: 'unknown' });
+    expect(classifyCellDataWriteValue("'''abc'''")).toEqual({ class: 'unknown' });
+  });
+
+  it('括号体内引号未闭合 → unknown(跨行残缺不猜元数)', () => {
+    expect(classifyCellDataWriteValue("['abc")).toEqual({ class: 'unknown' });
+    expect(classifyCellDataWriteValue('{1, 2')).toEqual({ class: 'unknown' });
+  });
+
+  it('嵌套序列:深度感知的顶层切分,元素含未知只保元数', () => {
+    // 元素含名字(未知表达式)→ 元素面不猜,只保元数
+    expect(classifyCellDataWriteValue('[x, [2, 3]]')).toEqual({
+      class: 'sequence', sequenceClass: 'list', arity: 2, elements: null
+    });
+    // 元素全是可数字面量(混 int 与 list)→ 逐元素结构如实给(嵌套元数也保)
+    expect(classifyCellDataWriteValue('[1, [2, 3]]')).toEqual({
+      class: 'sequence', sequenceClass: 'list', arity: 2,
+      elements: [
+        { class: 'int', value: 1n },
+        { class: 'sequence', sequenceClass: 'list', arity: 2, elements: [{ class: 'int', value: 2n }, { class: 'int', value: 3n }] }
+      ]
+    });
+    // 元素全是可数字面量 → 逐元素结构如实给
+    expect(classifyCellDataWriteValue('[[], [1]]')).toEqual({
+      class: 'sequence', sequenceClass: 'list', arity: 2,
+      elements: [
+        { class: 'sequence', sequenceClass: 'list', arity: 0, elements: [] },
+        { class: 'sequence', sequenceClass: 'list', arity: 1, elements: [{ class: 'int', value: 1n }] }
+      ]
+    });
+  });
+
+  it('集合字面量:无顶层冒号即 set(嵌套方括号深度感知)', () => {
+    expect(classifyCellDataWriteValue("{'k', [1, 2]}")).toEqual({ class: 'set' });
+    expect(classifyCellDataWriteValue("{'a', (1, 2)}")).toEqual({ class: 'set' });
+    // 对照:有顶层冒号 → dict
+    expect(classifyCellDataWriteValue("{'k': [1, 2]}")).toEqual({ class: 'dict' });
+  });
+});
+
+describe('analyzeCellDataFieldWrites(诚实边界:字节串正写与空 RHS)', () => {
+  it('字节串入 BLOB 是正写不报;字符串仍报(对照)', () => {
+    const text = wrap(
+      'self.cellData["avatarData"] = b"ok"',
+      'self.cellData["avatarData"] = "no"'
+    );
+    const findings = analyzeCellDataFieldWrites(text, BASIC_ENTRIES);
+    expect(findings.map(f => [f.key, f.actual])).toEqual([['avatarData', 'str']]);
+  });
+
+  it('写点后接行尾注释(RHS 空段)不猜,不报', () => {
+    const text = wrap(
+      'self.cellData["hp"] = # 待补',
+      'self.cellData["hp"] = "x"'
+    );
+    const findings = analyzeCellDataFieldWrites(text, BASIC_ENTRIES);
+    expect(findings.map(f => [f.key, f.actual])).toEqual([['hp', 'str']]);
+  });
+});
+
+describe('judge 裁定复用面(STRUCT-04/05 同表)', () => {
+  it('judgeCellDataValueStructure:结构错配报、范围越界交 STRUCT-05 不重复报', () => {
+    expect(judgeCellDataValueStructure({ class: 'str' }, 'UINT16'))
+      .toEqual({ ok: false, actual: 'str' });
+    // 70000 越 UINT16 上界:范围面归 STRUCT-05,结构面判 ok
+    expect(judgeCellDataValueStructure({ class: 'int', value: 70000n }, 'UINT16'))
+      .toEqual({ ok: true });
+    expect(judgeCellDataValueStructure({ class: 'int', value: 5n }, 'UINT16'))
+      .toEqual({ ok: true });
+  });
+
+  it('judgeCellDataValueWithRange:范围面不豁免;非标量类型不裁定(null)', () => {
+    expect(judgeCellDataValueWithRange({ class: 'int', value: 70000n }, 'UINT16'))
+      .toEqual({ reason: 'range', actual: 'int', valueText: '70000' });
+    expect(judgeCellDataValueWithRange({ class: 'int', value: -1 }, 'UINT16'))
+      .toEqual({ reason: 'range', actual: 'int', valueText: '-1' });
+    expect(judgeCellDataValueWithRange({ class: 'str' }, 'PYTHON')).toBeNull();
+    expect(judgeCellDataValueStructure({ class: 'int', value: 1n }, 'PYTHON')).toBeNull();
+  });
+
+  it('整段推不出(unknown)→ 两裁定面都不报', () => {
+    expect(judgeCellDataValueStructure({ class: 'unknown' }, 'UINT16')).toEqual({ ok: true });
+    expect(judgeCellDataValueWithRange({ class: 'unknown' }, 'UINT16')).toBeNull();
   });
 });
 

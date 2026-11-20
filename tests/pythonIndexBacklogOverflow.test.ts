@@ -116,4 +116,35 @@ describe('IDE-RES-002 调用面:积压上限拒绝不变成 unhandled rejection'
     await index.asyncDocumentParse(doc3);
     expect(messages.warning).toHaveLength(2);
   });
+
+  it('RUST-031 有界去重表:超过 50 文件逐出最旧,被逐出的文件再次降级会重新警示', async () => {
+    const index = new PythonClassIndex();
+    const docAt = (name: string, version: number): VersionedDocument => {
+      const document = makeTextDocument('class A:\n\tpass\n', {
+        fileName: `/ws/big/${name}.py`,
+        languageId: 'python',
+        uri: Uri.file(`/ws/big/${name}.py`)
+      }) as VersionedDocument;
+      document.version = version;
+      return document;
+    };
+
+    // 51 个不同文件各超预算一次:去重表有界 50,第 51 个入表时逐出最旧(第 1 个)
+    for (let i = 0; i < 51; i += 1) {
+      hostMock.failuresLeft = 1;
+      await index.asyncDocumentParse(docAt(`f${i}`, 1));
+    }
+    expect(messages.warning).toHaveLength(51);
+
+    // 被逐出的第一个文件再次超预算:去重表里已无它,重新警示一次
+    hostMock.failuresLeft = 1;
+    await index.asyncDocumentParse(docAt('f0', 2));
+    expect(messages.warning).toHaveLength(52);
+    expect(messages.warning[51]).toContain('f0.py');
+
+    // 仍在表内的文件再次拒绝:去重,不重复警示
+    hostMock.failuresLeft = 1;
+    await index.asyncDocumentParse(docAt('f10', 2));
+    expect(messages.warning).toHaveLength(52);
+  });
 });
