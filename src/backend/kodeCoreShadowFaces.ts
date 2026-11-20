@@ -947,6 +947,101 @@ export async function serveCodeActionsFromRust(
   return result;
 }
 
+/** 选中声明的落点面(signature_help::SignatureDefinition 同形,行 1 起) */
+export interface SignatureHelpDefinitionFace {
+  file: string;
+  line: number;
+  section: string;
+  exposed: boolean;
+}
+
+/** SignatureHelp 面(RUST-140 批 3):位置无关四件,签名组装与 TS 同构 */
+export interface SignatureHelpFace {
+  label: string;
+  parameters: string[];
+  documentation: string;
+  definition: SignatureHelpDefinitionFace;
+}
+
+/** 应答双键:face + 活动形参标亮(clamp 零形参臂由 Rust 决策核给出) */
+export interface SignatureHelpResultFace {
+  signature: SignatureHelpFace;
+  activeParameter: number;
+}
+
+const isSignatureHelpFace = (value: unknown): value is SignatureHelpFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const face = value as Record<string, unknown>;
+  const definition = face.definition as Record<string, unknown> | undefined;
+  return (
+    typeof face.label === 'string' &&
+    Array.isArray(face.parameters) &&
+    face.parameters.every(parameter => typeof parameter === 'string') &&
+    typeof face.documentation === 'string' &&
+    !!definition &&
+    typeof definition === 'object' &&
+    typeof definition.file === 'string' &&
+    typeof definition.line === 'number' &&
+    typeof definition.section === 'string' &&
+    typeof definition.exposed === 'boolean'
+  );
+};
+
+const isSignatureHelpResultFace = (value: unknown): value is SignatureHelpResultFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const result = value as Record<string, unknown>;
+  return (
+    isSignatureHelpFace(result.signature) &&
+    typeof result.activeParameter === 'number' &&
+    Number.isInteger(result.activeParameter) &&
+    result.activeParameter >= 0
+  );
+};
+
+/**
+ * SignatureHelp 决策面 rust 服务(RUST-140 批 3 接线):服务轨道下先镜像
+ * python 文档,再请求 kode-server textDocument/signatureHelp。Rust 面 =
+ * 调用点归属(python_call_at)+ def 声明解析(owner 链闭包 + 接收者段硬闸)
+ * + 签名组装,回 {signature, activeParameter} 双键;应答 null = 该位置无
+ * 签名。诚实边界:vscode.SignatureInformation/MarkdownString 构造归 TS
+ * 薄壳;entityMapping 注册表运行时链(resolveMethodDefinition)留 TS 回退
+ * 车道。非 .py/非服务轨道/取消/任何失败/应答畸形 → null,调用方回 TS 既有
+ * 实现(不部分采用)。非服务轨道/未装配门零开销。
+ */
+export async function serveSignatureHelpFromRust(
+  document: DocumentLike,
+  position: PositionLike,
+  isCancelled?: () => boolean
+): Promise<SignatureHelpResultFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !document.uri.fsPath.toLowerCase().endsWith('.py')) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/signatureHelp', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (result === null || !isSignatureHelpResultFace(result)) {
+    return null;
+  }
+  return result;
+}
+
 /**
  * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
  * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值

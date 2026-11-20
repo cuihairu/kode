@@ -61,6 +61,7 @@ struct ProtocolSchemaRoot {
     rename_params: RenameParams,
     code_action_params: CodeActionParams,
     code_action_diagnostic: CodeActionDiagnostic,
+    signature_help_params: SignatureHelpParams,
     health_report: HealthReport,
     core_resources: CoreResources,
     document_summary: DocumentSummary,

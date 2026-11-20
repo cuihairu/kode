@@ -58,6 +58,7 @@ export interface KodeProtocol {
   server_capabilities: ServerCapabilities;
   server_info: ServerInfo;
   server_notification: ServerNotification;
+  signature_help_params: SignatureHelpParams;
   text_document_identifier: TextDocumentIdentifier;
   text_document_item: TextDocumentItem;
   text_document_sync_options: TextDocumentSyncOptions;
@@ -350,6 +351,10 @@ export interface ServerCapabilities {
    * RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。
    */
   renameProvider?: boolean;
+  /**
+   * RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。
+   */
+  signatureHelpProvider?: boolean;
   textDocumentSync: TextDocumentSyncOptions;
 }
 /**
@@ -435,4 +440,11 @@ export interface ServerNotification {
   jsonrpc: string;
   method: string;
   params?: unknown;
+}
+/**
+ * signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构) → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。
+ */
+export interface SignatureHelpParams {
+  position: Position;
+  textDocument: TextDocumentIdentifier;
 }

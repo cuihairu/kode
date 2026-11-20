@@ -17,6 +17,7 @@ import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbe
 import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from '../hoverLocale';
 import { hasLocalReturnCandidate, resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
 import { inferLocalReturnTypeFromRust } from '../backend/localReturnTypeRust';
+import { serveSignatureHelpFromRust } from '../backend/kodeCoreShadowFaces';
 import { flowVersionKeyForDocument } from '../flowVersionKey';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../backend/selfPropertyTypeInference';
@@ -1465,6 +1466,29 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
   ): Promise<vscode.SignatureHelp | null> {
     if (document.languageId !== 'python' || !this.entityMappingManager) {
       return null;
+    }
+    // RUST-140 批 3:签名决策面 rust 服务优先(python_call_at 调用点归属 +
+    // owner 链闭包 + 接收者段硬闸,决策核与 TS 链同构)。非服务轨道/取消/
+    // 应答畸形 → null 回 TS 既有实现(不部分采用);vscode 对象构造留本侧
+    // 薄壳,documentation 由 Rust 组装(拼接与 TS appendMarkdown 逐字节一致)。
+    const rustFace = await serveSignatureHelpFromRust(
+      document,
+      position,
+      () => token?.isCancellationRequested === true
+    );
+    if (rustFace) {
+      const signature = new vscode.SignatureInformation(rustFace.signature.label);
+      signature.parameters = rustFace.signature.parameters.map(
+        parameterLabel => new vscode.ParameterInformation(parameterLabel)
+      );
+      const documentation = new vscode.MarkdownString();
+      documentation.appendMarkdown(rustFace.signature.documentation);
+      signature.documentation = documentation;
+      const help = new vscode.SignatureHelp();
+      help.signatures = [signature];
+      help.activeSignature = 0;
+      help.activeParameter = rustFace.activeParameter;
+      return help;
     }
     const call = getPythonCallAtPosition(
       document.lineAt(position.line).text,

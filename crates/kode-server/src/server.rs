@@ -22,7 +22,7 @@ use kode_protocol::{
     DidCloseParams, DidOpenParams, DocumentDiagnosticParams, DocumentSummary, DocumentSymbolParams,
     HealthReport, HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification,
     PrepareRenameParams, ReferenceParams, RenameFilesParams, RenameParams, RenamedFile, Request,
-    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification, SignatureHelpParams,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
@@ -432,6 +432,9 @@ fn handle_request_inner(
         // RUST-143 批 3:codeAction 四族装配面(决策核 code_action_assembly;
         // 诊断对象构造/l10n 标题/WorkspaceEdit 装配归 TS 薄壳)。
         "textDocument/codeAction" => vec![Outgoing::Response(handle_code_action(state, request))],
+        "textDocument/signatureHelp" => {
+            vec![Outgoing::Response(handle_signature_help(state, request))]
+        }
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
         // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
         "$/kode/workspace/rootAdded" => {
@@ -555,6 +558,7 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             rename_provider: true,
             // RUST-143 批 3:textDocument/codeAction(四族装配面)。
             code_action_provider: true,
+            signature_help_provider: true,
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
@@ -1193,6 +1197,57 @@ fn handle_code_action(state: &mut ServerState, request: Request) -> Response {
         .collect();
     Response::success(request.id, serde_json::Value::Array(faces))
 }
+
+/// textDocument/signatureHelp(RUST-140 批 3):python 调用点词法(python_call_at,
+/// 与 TS getPythonCallAtPosition 同构)→ 本域继承链闭包签名决策(signature_help
+/// 决策核,打分/段闸/回退/骨架组装全在 Rust)→ SignatureHelpFace + 活动形参
+/// 标亮(clamp)。文档须已打开(未开档回 null);光标不在调用点/解析不到签名 →
+/// null(LSP 允许)。诚实边界:实体注册表运行时链(EntityMappingManager)不跨
+/// 该面,签名来源是语料 def 视图;vscode SignatureHelp/ParameterInformation
+/// 对象构造与 MarkdownString 包装归 TS 薄壳。
+fn handle_signature_help(state: &mut ServerState, request: Request) -> Response {
+    let params: SignatureHelpParams =
+        match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+            Some(params) => params,
+            None => {
+                return Response::error(
+                    Some(request.id),
+                    error_codes::INVALID_PARAMS,
+                    "invalid textDocument/signatureHelp params",
+                );
+            }
+        };
+    let Some((key, text)) = request_document_text(state, &params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let Some(line) = text.split('\n').nth(params.position.line as usize) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let Some(call) = crate::python_call_at::get_python_call_at_position(
+        line,
+        params.position.character as usize,
+    ) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let doc_file = key.uri.as_path().to_string();
+    let face = state
+        .hover
+        .borrow()
+        .signature_help(&doc_file, &call.method_name, call.section);
+    let Some(face) = face else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let active_parameter =
+        crate::signature_help::clamp_active_parameter(call.active_argument, face.parameters.len());
+    Response::success(
+        request.id,
+        serde_json::json!({
+            "signature": face,
+            "activeParameter": active_parameter
+        }),
+    )
+}
+
 
 /// textDocument/diagnostic(Phase2 首片,LSP pull 诊断 full 报告形):
 /// `{kind:"full", items:[DiagnosticFace...]}`。文档须已打开;未打开回

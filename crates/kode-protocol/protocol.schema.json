@@ -790,6 +790,11 @@
           "description": "RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。",
           "type": "boolean"
         },
+        "signatureHelpProvider": {
+          "default": false,
+          "description": "RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。",
+          "type": "boolean"
+        },
         "textDocumentSync": {
           "$ref": "#/definitions/TextDocumentSyncOptions"
         }
@@ -829,6 +834,22 @@
       "required": [
         "jsonrpc",
         "method"
+      ],
+      "type": "object"
+    },
+    "SignatureHelpParams": {
+      "description": "signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构) → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。",
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/Position"
+        },
+        "textDocument": {
+          "$ref": "#/definitions/TextDocumentIdentifier"
+        }
+      },
+      "required": [
+        "position",
+        "textDocument"
       ],
       "type": "object"
     },
@@ -1038,6 +1059,9 @@
     "server_notification": {
       "$ref": "#/definitions/ServerNotification"
     },
+    "signature_help_params": {
+      "$ref": "#/definitions/SignatureHelpParams"
+    },
     "text_document_identifier": {
       "$ref": "#/definitions/TextDocumentIdentifier"
     },
@@ -1093,6 +1117,7 @@
     "server_capabilities",
     "server_info",
     "server_notification",
+    "signature_help_params",
     "text_document_identifier",
     "text_document_item",
     "text_document_sync_options",

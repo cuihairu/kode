@@ -208,6 +208,9 @@ pub struct ServerCapabilities {
     /// RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。
     #[serde(default)]
     pub code_action_provider: bool,
+    /// RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。
+    #[serde(default)]
+    pub signature_help_provider: bool,
     /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
@@ -473,6 +476,17 @@ pub struct CodeActionParams {
     pub snapshot_text: Option<String>,
     #[serde(default)]
     pub diagnostics: Vec<CodeActionDiagnostic>,
+}
+
+/// signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自
+/// 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构)
+/// → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册
+/// 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureHelpParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
 }
 
 // ---------------------------------------------------------------------------
