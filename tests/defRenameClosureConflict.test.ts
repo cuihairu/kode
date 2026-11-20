@@ -297,3 +297,129 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 40 容错臂(直调闭包面):目标不在 entity_defs 根、property+目标不可解析、
+// property+目标缺成员声明、祖先 def 破损(collect 空不炸)、跨文件读取 null
+// 跳过。五臂分别钉 473/417/435/352/510。
+// ---------------------------------------------------------------------------
+import { findDefRenameConflictInClosure } from '../src/backend/defRenamer';
+
+describe('批 40:闭包走查容错臂(直调)', () => {
+  const BROKEN = '<root><Properties><hp><Type>INT32';
+
+  it('目标不在任何 entity_defs 根(向上无 entities.xml)→ null(473)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-loose-'));
+    const loose = path.join(root, 'Loose.def');
+    fs.writeFileSync(loose, HERO_DEF, 'utf8');
+    const result = await findDefRenameConflictInClosure({
+      targetFilePath: loose,
+      targetText: HERO_DEF,
+      symbol: { kind: 'method', name: 'attack', section: 'BaseMethods', line: 2 },
+      newName: 'vigor'
+    });
+    expect(result).toBeNull();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('property 符号 + 目标 def 不可解析 → null(417)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-broken-'));
+    writeFixtures(root, {
+      'scripts/entities.xml': '<root><Hero/></root>\n',
+      'scripts/entity_defs/Hero.def': BROKEN
+    });
+    const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
+    const result = await findDefRenameConflictInClosure({
+      targetFilePath: heroPath,
+      targetText: BROKEN,
+      symbol: { kind: 'property', name: 'hp', section: 'Properties', line: 3 },
+      newName: 'vigor'
+    });
+    expect(result).toBeNull();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('property 符号 + 目标 def 无该成员(Properties 缺 hp)→ null(435)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-nomember-'));
+    writeFixtures(root, {
+      'scripts/entities.xml': '<root><Hero/></root>\n',
+      'scripts/entity_defs/Hero.def': [
+        '<root>',
+        '  <Properties>',
+        '    <mp><Type>INT32</Type></mp>',
+        '  </Properties>',
+        '</root>',
+        ''
+      ].join('\n')
+    });
+    const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
+    const result = await findDefRenameConflictInClosure({
+      targetFilePath: heroPath,
+      targetText: '<root><Properties><mp><Type>INT32</Type></mp></Properties></root>\n',
+      symbol: { kind: 'property', name: 'hp', section: 'Properties', line: 3 },
+      newName: 'vigor'
+    });
+    expect(result).toBeNull();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('祖先 def 破损 → collect 面空,走查继续不炸(352)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-ancbad-'));
+    writeFixtures(root, {
+      'scripts/entities.xml': '<root><Hero/><Grand/></root>\n',
+      'scripts/entity_defs/Hero.def': HERO_WITH_PARENT_DEF,
+      'scripts/entity_defs/Grand.def': BROKEN
+    });
+    const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
+    const result = await findDefRenameConflictInClosure({
+      targetFilePath: heroPath,
+      targetText: HERO_WITH_PARENT_DEF,
+      symbol: { kind: 'method', name: 'attack', section: 'BaseMethods', line: 6 },
+      newName: 'vigor'
+    });
+    // Grand 破损收集面为空:无 vigor 冲突(不因坏文件中断),照常返回 null
+    expect(result).toBeNull();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('跨文件读取返回 null → 该后代跳过(510)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-skipread-'));
+    writeFixtures(root, {
+      'scripts/entities.xml': '<root><Hero/><Monster/></root>\n',
+      'scripts/entity_defs/Hero.def': HERO_DEF,
+      'scripts/entity_defs/Monster.def': MONSTER_DEF
+    });
+    const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
+    const result = await findDefRenameConflictInClosure({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol: { kind: 'method', name: 'attack', section: 'BaseMethods', line: 2 },
+      newName: 'vigor',
+      readCrossFileContent: filePath =>
+        filePath.endsWith('Monster.def') ? null : fs.readFileSync(filePath, 'utf8')
+    });
+    // Monster 被跳过:其 vigor 不再构成冲突
+    expect(result).toBeNull();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe('批 40 续:标签名区间导出面', () => {
+  it('getTagNameRangeForGraph:开/闭标签区间与文本切片一致', async () => {
+    const { getTagNameRangeForGraph } = await import('../src/backend/defRenamer');
+    const text = HERO_WITH_PARENT_DEF;
+    // 取 <BaseMethods> 元素(重建一次解析拿节点)
+    const doc = (await import('../src/backend/defParser')).parseDefDocument(text);
+    const section = doc?.root
+      ? (await import('../src/backend/defParser')).getDirectChildElements(doc.root)
+          .find(node => node.name === 'BaseMethods')
+      : undefined;
+    expect(section).toBeDefined();
+    const open = getTagNameRangeForGraph(text, section!, 'open');
+    const close = getTagNameRangeForGraph(text, section!, 'close');
+    expect(open).not.toBeNull();
+    expect(close).not.toBeNull();
+    expect(text.slice(open!.start, open!.end)).toContain('BaseMethods');
+    expect(text.slice(close!.start, close!.end)).toContain('BaseMethods');
+  });
+});
