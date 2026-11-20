@@ -266,3 +266,86 @@ describe('scalarAssignFindingToItem', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 批 23 容错臂:括号段间有非空白内容、`=` 缺位、RHS 空、键链末键非标量、
+// 数组元素非标量、别名链断(未知类型)。均属"不接管"的诚实边界。
+// ---------------------------------------------------------------------------
+describe('批 23:目标解析与类型裁定容错臂', () => {
+  it('括号段间夹非空白(调用/运算)→ 不接管', async () => {
+    expect(await analyze(wrap('self.info["uid"].bit_length() = 1'))).toEqual([]);
+    // 段尾多余内容同样不接管
+    expect(await analyze(wrap('self.info["uid"] x = 1'))).toEqual([]);
+  });
+
+  it('RHS 为空(`self.health =` 后无内容)→ 不接管', async () => {
+    expect(await analyze(wrap('self.health ='))).toEqual([]);
+    expect(await analyze(wrap('self.health =   '))).toEqual([]);
+  });
+
+  it('键链末键非标量(FD 字段指向 FD)→ 不接管', async () => {
+    // info.inner 若声明为 FIXED_DICT 则构造面(STRUCT-04)接管,本面让位
+    const table = { info: { typeName: 'AVATAR_INFO', source: 'Avatar.def:9' } };
+    expect(await analyze(wrap('self.info["uid"]["deep"] = 1'), table)).toEqual([]);
+  });
+
+  it('数组元素非标量(BAG_POS 的 POSITION)→ 不接管', async () => {
+    expect(await analyze(wrap('self.bagPos[0] = 1'))).toEqual([]);
+  });
+
+  it('别名链断(类型名不在注册表)→ 不接管', async () => {
+    const table = { ghost: { typeName: 'NOT_IN_REGISTRY', source: 'Avatar.def:20' } };
+    expect(await analyze(wrap('self.ghost["k"] = 1'), table)).toEqual([]);
+    expect(await analyze(wrap('self.ghost[0] = 1'), table)).toEqual([]);
+  });
+
+  it('整数下标但根不是 ARRAY → 不接管', async () => {
+    // info 是 FIXED_DICT,整数下标不做数组元素解析
+    expect(await analyze(wrap('self.info[0] = 1'))).toEqual([]);
+  });
+});
+
+describe('批 23 续:别名链下钻三臂(未知/环/直达标量)', () => {
+  it('根类型不在注册表(unknown)→ 链断 null,不接管', async () => {
+    const table = { ghost: { typeName: 'NOT_IN_REGISTRY', source: 'Avatar.def:20' } };
+    expect(await analyze(wrap('self.ghost = 300'), table)).toEqual([]);
+  });
+
+  it('别名链成环(A→B→A)→ 有界退出 null,不接管且不悬挂', async () => {
+    // 手工造环:两个自定义别名互指
+    const CYCLE_A = customType('CYCLE_A', 'CYCLE_B', [], 80);
+    const CYCLE_B = customType('CYCLE_B', 'CYCLE_A', [], 82);
+    REGISTRY.push(CYCLE_A, CYCLE_B);
+    try {
+      const table = { cyc: { typeName: 'CYCLE_A', source: 'Avatar.def:21' } };
+      expect(await analyze(wrap('self.cyc = 300'), table)).toEqual([]);
+    } finally {
+      REGISTRY.splice(REGISTRY.indexOf(CYCLE_A), 2);
+    }
+  });
+
+  it('别名直达引擎标量(HEALTH→UINT8)→ 照判范围', async () => {
+    const out = await analyze(wrap('self.hp = 300'));
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ kind: 'range', expected: 'UINT8 (int 0..255)' });
+  });
+});
+
+describe('批 23 终:FD 字段值类型裁定臂', () => {
+  it('末键字段声明为 FIXED_DICT → 非标量不接管(构造面 STRUCT-04 边界)', async () => {
+    // WRAP 含一个 FD 字段 pos:POSITION——单键链命中声明字段但值类型非标量
+    const WRAP_FD = customType('WRAP_FD', 'FIXED_DICT', [scalarField('pos', 'POSITION', 91)], 90);
+    REGISTRY.push(WRAP_FD);
+    try {
+      const table = { w: { typeName: 'WRAP_FD', source: 'Avatar.def:22' } };
+      expect(await analyze(wrap('self.w["pos"] = 1'), table)).toEqual([]);
+    } finally {
+      REGISTRY.splice(REGISTRY.indexOf(WRAP_FD), 1);
+    }
+  });
+});
+
+// 覆盖口径残余(批 23 定性,不硬凑):164/174(段间/段尾杂质再校验)与
+// 179(`=` 缺位)三行不可达——TARGET_LHS 外层正则已保证括号块只含段+空白、
+// 且 `=` 必在;内层逐段重校验是对同一事实的防御性双保险。130(别名链断)
+// 与 238(FD 字段非标量)已由上臂覆盖。
