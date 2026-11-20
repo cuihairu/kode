@@ -11,6 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  classifyValue,
   deriveDictFormats,
   type DictFormat,
   type DictValueKind
@@ -403,5 +404,152 @@ describe('classifyValue 元组面', () => {
       '    d["t"] = ("a", "b")'
     ]);
     expect(fmt.required.get('t')).toEqual({ kind: 'unknown' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 6:值分类族(逃逸/推导/残缺/嵌套等形)与收集
+// 容错臂。九臂死码论证:282(group≠null ⟹ 栈内必有组帧,armIndex 反向
+// 扫描必命中)、326(掩码全空行先被空行闸拦)、432(braceAt≥0 ⟹ probe
+// 恒为 '{')、437(argText 是 rawTrim 子串,indexOf 必中)、552
+// (splitTopLevel 恒返数组)、616(调用方已验首字符)、734(collector
+// state 与首 rec 同 push 创建)、744(臂下标取值 1..armCount-1 不够
+// armCount 个,arm0 缺席则 size<armCount 先拦)、784(unknownBase 路径
+// 保留自身 rec,过滤只落非 always)。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-SER-09 sweep: classifyValue 值分类族', () => {
+  it('空值/推导式/残缺括号 → 不猜', () => {
+    expect(classifyValue('')).toEqual({ kind: 'unknown' });
+    expect(classifyValue('[x for x in y]')).toEqual({ kind: 'list', element: null });
+    expect(classifyValue('[1, 2')).toEqual({ kind: 'unknown' });
+    expect(classifyValue('(x for x in y)')).toEqual({ kind: 'unknown' });
+    expect(classifyValue('(1')).toEqual({ kind: 'unknown' });
+  });
+
+  it('字典推导式与展开 → 嵌套开放;串内转义容忍', () => {
+    const comp = classifyValue('{a for b in c}');
+    expect(comp).toEqual({ kind: 'dict', dict: { kind: 'open', observed: new Map() } });
+    const spread = classifyValue("{'a': 1, **r}");
+    if (spread.kind !== 'dict' || spread.dict.kind !== 'open') {
+      throw new Error('expected nested open dict');
+    }
+    expect(spread.dict.observed.get('a')).toEqual(scalar('int'));
+    expect(classifyValue('["a\\\'b" for x in y]')).toEqual({ kind: 'list', element: null });
+    expect(classifyValue("['a\\\"b', 1]")).toEqual({ kind: 'list', element: null });
+    expect(classifyValue('"a\\\'b"')).toEqual(scalar('str'));
+  });
+
+  it('嵌套等形收敛与混合不猜', () => {
+    expect(classifyValue('[[1], [2]]')).toEqual({
+      kind: 'list',
+      element: { kind: 'list', element: scalar('int') }
+    });
+    expect(classifyValue('[[1], []]')).toEqual({ kind: 'list', element: null });
+    expect(classifyValue('((1,), (2,))')).toEqual({
+      kind: 'tuple',
+      element: { kind: 'tuple', element: scalar('int') }
+    });
+    expect(classifyValue('(1,)')).toEqual({ kind: 'tuple', element: scalar('int') });
+    expect(classifyValue('(1)')).toEqual(scalar('int'));
+  });
+});
+
+describe('KSEM-SER-09 sweep: 收集容错与合流边界', () => {
+  it('未闭合字面量与 unknown 基条件写点:整变量不声称', () => {
+    expect(fmts(['d = {"a": 1']).get('d')).toBeUndefined();
+    expect(fmts(['d = make()', 'if c:', '    d["k"] = 1']).get('d')).toBeUndefined();
+  });
+
+  it('非写点行正常推进;def 域缩退后回到模块作用域', () => {
+    const fmt = asLiteral('d', ['import json', 'd = {"a": 1}']);
+    expect(fmt.required.get('a')).toEqual(scalar('int'));
+    const afterDef = asLiteral('d', ['def f():', '    pass', 'd = {"a": 1}']);
+    expect(afterDef.required.size).toBe(1);
+  });
+
+  it('for 体写点为 maybe 键', () => {
+    const fmt = asLiteral('d', ['d = {}', 'for x in y:', '    d["k"] = 1']);
+    expect(fmt.optional.get('k')).toEqual(scalar('int'));
+    expect(fmt.required.size).toBe(0);
+  });
+
+  it('setdefault 变量键 / update 非字面量实参 → 开放(观测键面保留)', () => {
+    const setd = asOpen('d', ['d = {"a": 1}', 'd.setdefault(k, 1)']);
+    expect(setd.observed.get('a')).toEqual(scalar('int'));
+    const upd = asOpen('d', ['d = {"a": 1}', 'd.update(other)']);
+    expect(upd.observed.get('a')).toEqual(scalar('int'));
+  });
+
+  it('同秩类型冲突 → 该键值 unknown(不猜)', () => {
+    const fmt = asLiteral('d', ['d = {}', 'if c:', '    d["k"] = 1', 'else:', '    d["k"] = "s"']);
+    expect(fmt.required.get('k')).toEqual({ kind: 'unknown' });
+  });
+
+  it('字面量内 spread → 开放(观测键面保留)', () => {
+    const fmt = asOpen('d', ['d = {**rest, "a": 1}']);
+    expect(fmt.observed.get('a')).toEqual(scalar('int'));
+  });
+
+  it('嵌套多行 dict 值:递归全键必有', () => {
+    const fmt = asLiteral('d', ['d = {"outer": {', '    "a": 1}}']);
+    const outer = fmt.required.get('outer');
+    if (outer?.kind !== 'dict' || outer.dict.kind !== 'literal') {
+      throw new Error('expected nested literal dict');
+    }
+    expect(outer.dict.required.get('a')).toEqual(scalar('int'));
+  });
+});
+
+describe('KSEM-SER-09 sweep 二批: 动态键冒号态与秩升位', () => {
+  it('带冒号的动态键:顶层与嵌套各自开放,观测键面保留', () => {
+    const top = asOpen('d', ['d = {k: 1, "a": 2}']);
+    expect(top.observed.get('a')).toEqual(scalar('int'));
+    const nested = classifyValue("{'a': 1, k: 2}");
+    if (nested.kind !== 'dict' || nested.dict.kind !== 'open') {
+      throw new Error('expected nested open dict');
+    }
+    expect(nested.dict.observed.get('a')).toEqual(scalar('int'));
+  });
+
+  it('sameKind:元组递归与 dict/unknown 同形收敛', () => {
+    expect(classifyValue('[(1,), (2,)]')).toEqual({
+      kind: 'list',
+      element: { kind: 'tuple', element: scalar('int') }
+    });
+    expect(classifyValue('((1,), (2,))')).toEqual({
+      kind: 'tuple',
+      element: { kind: 'tuple', element: scalar('int') }
+    });
+    expect(classifyValue('[{"a": 1}, {"b": 2}]')).toEqual({
+      kind: 'list',
+      element: {
+        kind: 'dict',
+        dict: { kind: 'literal', required: new Map([['a', scalar('int')]]), optional: new Map() }
+      }
+    });
+  });
+
+  it('秩升位:后位 always 写点覆盖前位 maybe(同键)', () => {
+    const fmt = asLiteral('d', ['if c:', '    d["k"] = 1', 'd["k"] = 2']);
+    expect(fmt.required.get('k')).toEqual(scalar('int'));
+  });
+
+  it('带真实换行的嵌套字面量直查(合成行起始表)', () => {
+    const nested = classifyValue('{\n"a": 1}');
+    if (nested.kind !== 'dict' || nested.dict.kind !== 'literal') {
+      throw new Error('expected nested literal dict');
+    }
+    expect(nested.dict.required.get('a')).toEqual(scalar('int'));
+  });
+});
+
+describe('KSEM-SER-09 sweep 三批: sameKind 空元素同形', () => {
+  it('元组空元素与元组空元素同形(递归不猜面)', () => {
+    // 内层 ((1,), ("a",)) 混合 → tuple element null;两个同形互比 → 空元素相等臂
+    expect(classifyValue('[((1,), ("a",)), ((2,), ("b",))]')).toEqual({
+      kind: 'list',
+      element: { kind: 'tuple', element: null }
+    });
   });
 });

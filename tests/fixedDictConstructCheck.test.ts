@@ -357,3 +357,50 @@ describe('KSEM-STRUCT-07 implementedBy 类型不按 FIXED_DICT 键集校验', ()
     expect(findings[0]).toMatchObject({ kind: 'missing', container: 'POSITION' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 4:三大扫描器(配对/逗号/冒号)串态臂与定型早退。
+// 冒号扫描在段内首个顶层冒号 break——转义/三引号要落在键位才经过其串态。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-STRUCT-04 sweep: 字符串态与定型容错臂', () => {
+  it('值内转义:配对器与逗号扫描的串态转义臂,零误报', async () => {
+    const findings = await analyze(
+      wrap('self.info = {"pos": None, "label": "a\\"b", "moveVec": [1, 2, 3]}')
+    );
+    expect(findings).toHaveLength(0);
+  });
+
+  it('三引号字符串值:配对器与逗号扫描的开/闭三引号态,零误报', async () => {
+    const findings = await analyze(
+      wrap('self.info = {"pos": None, "label": """a b""", "moveVec": [1, 2, 3]}')
+    );
+    expect(findings).toHaveLength(0);
+  });
+
+  it('转义键:冒号扫描串态转义臂;动态键宇宙开放不判缺键', async () => {
+    const findings = await analyze(wrap('self.pos = {"a\\"b": 1.0, "y": 2.0, "z": 3.0}'));
+    expect(findings).toHaveLength(0);
+  });
+
+  it('三引号键:冒号扫描三引号开/闭态;剥壳后按字面量键参与对账', async () => {
+    const findings = await analyze(wrap('self.pos = {"""a b""": 1.0, "y": 2.0, "z": 3.0}'));
+    // 三引号剥成字面量键 ""a b"":不在声明集 → extra;宇宙封闭 → missing x
+    expect(findings).toHaveLength(2);
+    expect(findings.map(f => f.kind).sort()).toEqual(['extra', 'missing']);
+    expect(findings.find(f => f.kind === 'extra')?.key).toBe('""a b""');
+  });
+
+  it('键位带括号:冒号扫描深度臂;非字面量键同样开放宇宙', async () => {
+    const findings = await analyze(wrap('self.pos = {[1, 2]: 3, "y": 2.0, "z": 3.0}'));
+    expect(findings).toHaveLength(0);
+  });
+
+  it('def 类型文本纯空白:容器定型早退,不接管', async () => {
+    const findings = await analyze(
+      wrap('self.pos = {"x": 1.0, "y": 2.0, "z": 3.0}'),
+      { pos: '   ' }
+    );
+    expect(findings).toHaveLength(0);
+  });
+});

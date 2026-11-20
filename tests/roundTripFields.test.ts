@@ -433,3 +433,141 @@ describe('roundTripFieldFindingToItem', () => {
     expect(item.range.end.character).toBe(item.range.start.character + 1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 10:encode 字面量跟踪面容错臂(嵌套 def 跳块/
+// 未闭合字面量/开放形状写点/三引号字符串位伪写点/键前空白动态下标)、
+// decode 读面赋值目标跳位与 setdefault 开放面、动态冒号键不进键集、
+// 容器配对缺位。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-SER-06 sweep: encode 跟踪面容错臂', () => {
+  it('嵌套 def 内的 return 字面量不入产出面(域诚实)', () => {
+    const text = pair(
+      ['def helper():', '    return {"y": obj["y"]}', 'return {"x": obj["x"]}'],
+      ['return {"x": dct["x"], "y": dct["y"]}']
+    );
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].direction).toBe('decodeOnly');
+    expect(findings[0].key).toBe('y');
+  });
+
+  it('未闭合字面量:别名赋值与 return 两面都不猜', () => {
+    expect(findingsOf(pair(
+      ['d = {"x": obj["x"]', 'return d'],
+      ['return {"x": dct["x"], "y": dct["y"]}']
+    ))).toHaveLength(0);
+    expect(findingsOf(pair(
+      ['return {"x": obj["x"]'],
+      ['return {"x": dct["x"]}']
+    ))).toHaveLength(0);
+  });
+
+  it('动态冒号键不入键集(不猜键名),但不整容器跳过', () => {
+    // 实测口径:encode 侧 `k: 1` 非字面量键,只产出 {x}(不猜 k 是啥);
+    // 容器**不**因此整跳过——decode 读的 y 与产出 {x} 的差集照报 decodeOnly。
+    const text = pair(
+      ['return {"x": obj["x"], k: 1}'],
+      ['return {"x": dct["x"], "y": dct["y"]}']
+    );
+    const findings = findingsOf(text);
+    expect(findings.map(f => `${f.direction}:${f.key}`)).toEqual(['decodeOnly:y']);
+  });
+
+  it('开放形状上的写点行不并入(open 先拦);开放面循环照跳', () => {
+    const text = pair(
+      ['d = {"x": obj["x"]}', 'd.update(rest)', 'd["y"] = 1', 'return d'],
+      ['return {"x": dct["x"], "y": dct["y"]}']
+    );
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+
+  it('三引号字符串内的伪写点/伪动态下标:掩码核验跳过', () => {
+    const literal = pair(
+      [
+        'd = {"x": obj["x"]}',
+        'doc = """',
+        'd["y"] = 1',
+        '"""',
+        'return d'
+      ],
+      ['return {"x": dct["x"]}']
+    );
+    // 伪写点不并入:y 仍未产出但 decode 也不读 → 零产出
+    expect(findingsOf(literal)).toHaveLength(0);
+
+    const dynamic = pair(
+      [
+        'd = {"x": obj["x"]}',
+        'doc = """',
+        'd[k] = 1',
+        '"""',
+        'return d'
+      ],
+      ['return {"x": dct["x"]}']
+    );
+    // 伪动态下标不翻开放面:容器仍闭合对拍
+    expect(findingsOf(dynamic)).toHaveLength(0);
+  });
+
+  it('动态下标键前空白:`d[ t] = 1` 照判开放', () => {
+    const text = pair(
+      ['d = {"x": obj["x"]}', 'd[ t] = 1', 'return d'],
+      ['return {"x": dct["x"]}']
+    );
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+});
+
+describe('KSEM-SER-06 sweep: decode 读面与配对容错臂', () => {
+  it('入参下标赋值目标不是读取:encodeOnly 照报', () => {
+    const text = trio(
+      ['return {"x": obj["x"], "y": obj["y"]}'],
+      ['dct["y"] = 1', 'return {"x": dct["x"]}']
+    );
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].direction).toBe('encodeOnly');
+    expect(findings[0].key).toBe('y');
+  });
+
+  it('decode setdefault/update 开放面:压 encodeOnly,decodeOnly 照报', () => {
+    const text = trio(
+      ['return {"x": obj["x"], "y": obj["y"]}'],
+      ['dct.update(rest)', 'extra = dct.get("z")']
+    );
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].direction).toBe('decodeOnly');
+    expect(findings[0].key).toBe('z');
+  });
+
+  it('decode 动态下标键前空白照判开放', () => {
+    const text = trio(
+      ['return {"x": obj["x"], "y": obj["y"]}'],
+      ['probe = dct[ t]', 'extra = dct.get("z")']
+    );
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].direction).toBe('decodeOnly');
+    expect(findings[0].key).toBe('z');
+  });
+
+  it('get 侧容器无 create 配对:该容器零产出(其余容器照判)', () => {
+    const text = lines([
+      'class PairSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": obj["x"], "y": obj["y"]}',
+      '',
+      '    def createObjFromDict(self, dct):',
+      '        return {"x": dct["x"], "y": dct["y"]}',
+      '',
+      'class SingleSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"y": obj["y"]}',
+      ''
+    ]);
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+});

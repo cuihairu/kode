@@ -17,10 +17,14 @@ import {
   FIXED_DICT_INPUT_KEY_SCHEMA_DIAGNOSTIC_CODE,
   computeCreateObjFromDictInputKeyFindings,
   createObjFromDictInputFindingToItem,
+  defSignatureParams,
   implBindingsForDocument,
+  keyAccessAt,
+  paramNameOf,
   renderFixedDictInputKeyMessage,
   resolveCreateObjFromDictInputBindings,
-  resolveCreateObjFromDictInputReceiver
+  resolveCreateObjFromDictInputReceiver,
+  wireFdOfAnnotation
 } from '../src/backend/createObjFromDictInput';
 import {
   resolveWireDictSubscriptKeyFromContainer,
@@ -820,5 +824,123 @@ describe('KSEM-SER-04 Provider 三面(补全/跳转/悬停)', () => {
       keyCol('        return dct["nope"]', 'nope')
     )) ?? '';
     expect(unknown).not.toContain('**nope:');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 7:签名扫描串态(defSignatureParams/paramNameOf)、
+// 绑定面 continue 门(空符号/签名不可解析)、键访问段空白与断链臂、容器
+// 止链位(前段字段非 FD)。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-SER-04 sweep: 签名扫描串态与形参剥壳臂', () => {
+  it('defSignatureParams:def 行无开括号 → null 不猜', () => {
+    expect(defSignatureParams(['def createObjFromDict self, dct:'], 0)).toBeNull();
+  });
+
+  it('defSignatureParams:签名串内引号/转义/撇号穿透(默认值含引号)', () => {
+    const sig = defSignatureParams(['def createObjFromDict(self, s="a\\"b", x="it\'s", y=1):'], 0);
+    expect(sig?.closeLine).toBe(0);
+    expect(sig?.params).toEqual(['self', ' s="a\\"b"', ' x="it\'s"', ' y=1']);
+    const single = defSignatureParams(["def f(self, x='it\\'s'):"], 0);
+    expect(single?.params).toEqual(["self", " x='it\\'s'"]);
+  });
+
+  it('defSignatureParams:收括号未闭(跨行耗尽)→ null', () => {
+    expect(defSignatureParams(['def createObjFromDict(self, dct,', '        body'], 0)).toBeNull();
+  });
+
+  it('paramNameOf:引号段/括号深度先于切点出现时不误切,剥壳正常形收口', () => {
+    // 引号内的 = / : 不作切点;带括号段的整体非标识符 → 空
+    expect(paramNameOf('"a=b"')).toBe('');
+    expect(paramNameOf('"a\\"b"')).toBe('');
+    expect(paramNameOf('(a, b)')).toBe('');
+    expect(paramNameOf('x[0]')).toBe('');
+    expect(paramNameOf('dct: dict = None')).toBe('dct');
+  });
+});
+
+describe('KSEM-SER-04 sweep: 绑定面门与键访问段容错臂', () => {
+  const bindingsFor = () => implBindingsForDocument(REGISTRY, IMPL_FILE);
+  const findingsOf = (lines: string[]) => {
+    const text = lines.join('\n');
+    return computeCreateObjFromDictInputKeyFindings(
+      text,
+      resolveCreateObjFromDictInputBindings(text, implBindingsForDocument(REGISTRY, IMPL_FILE)),
+      REGISTRY
+    );
+  };
+
+  it('绑定符号为空:continue 门零产出不猜', () => {
+    const text = [
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct["uid"]',
+      ''
+    ].join('\n');
+    const faceless = bindingsFor().map(b => ({ ...b, symbol: '' }));
+    expect(resolveCreateObjFromDictInputBindings(text, faceless)).toHaveLength(0);
+  });
+
+  it('签名注释位开括号抬深 → 收括号永不闭合,解析失败零产出', () => {
+    const text = [
+      'class BagSer:',
+      '    def createObjFromDict(self,  # ( legacy 注释抬深',
+      '                          dct):',
+      '        return dct["uid"]',
+      ''
+    ].join('\n');
+    expect(resolveCreateObjFromDictInputBindings(text, bindingsFor())).toHaveLength(0);
+  });
+
+  it('keyAccessAt:下标两侧空白与尾随杂字符断链', () => {
+    expect(keyAccessAt('dct[ "w" ]', 3)).toMatchObject({ key: 'w', form: 'subscript' });
+    expect(keyAccessAt('dct["w"x]', 3)).toBeNull();
+    expect(keyAccessAt('dct["w', 3)).toBeNull();
+    expect(keyAccessAt('dct.get(var)', 3)).toBeNull();
+  });
+
+  it('键段两侧空白容忍:get 形态与接收者后空白照判', () => {
+    const getForm = findingsOf([
+      'class PositionSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct.get( "w" )'
+    ]);
+    expect(getForm).toHaveLength(1);
+    expect(getForm[0].key).toBe('w');
+
+    const spaced = findingsOf([
+      'class PositionSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct ["w"]'
+    ]);
+    expect(spaced).toHaveLength(1);
+    expect(spaced[0].key).toBe('w');
+  });
+
+  it('键段尾随杂字符/未闭合/.get(变量):断链零产出;空入参面零产出', () => {
+    expect(findingsOf([
+      'class PositionSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct["w"x]'
+    ])).toHaveLength(0);
+    expect(findingsOf([
+      'class PositionSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct.get(var)'
+    ])).toHaveLength(0);
+    expect(computeCreateObjFromDictInputKeyFindings('x = 1\n', [], REGISTRY)).toEqual([]);
+  });
+
+  it('前段字段非 FD 容器:嵌套键不猜容器,止链不报', () => {
+    expect(findingsOf([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct["uid"]["w"]'
+    ])).toHaveLength(0);
+  });
+
+  it('wireFdOfAnnotation:无注解 → null 止链', () => {
+    expect(wireFdOfAnnotation(null, REGISTRY)).toBeNull();
   });
 });

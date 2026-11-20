@@ -100,3 +100,35 @@ describe('analyzeFixedDictMutations(KBE-PY-015)', () => {
     ).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 5a:字符串面守卫与 quick fix 容错臂。
+// ---------------------------------------------------------------------------
+
+describe('KBE-PY-015 sweep: 字符串面守卫与 quick fix 容错臂', () => {
+  it('字符串续行含同形文本不报(引号开头行跳过)', () => {
+    const text = [
+      'class Avatar:',
+      '    def rename(self):',
+      '        hint = (',
+      "            'self.profile.name = \"abc\"'",
+      '        )',
+      '        return hint',
+      ''
+    ].join('\n');
+    const findings = analyzeFixedDictMutations(text, FD_PROPS);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('quick fix:语句无赋值号(纯表达式)不生成', () => {
+    expect(
+      buildFixedDictWholeReassignText('self.profile.name', 'profile', 'name')
+    ).toBeNull();
+  });
+
+  it('quick fix:右值空缺不生成', () => {
+    expect(
+      buildFixedDictWholeReassignText('self.profile.name =', 'profile', 'name')
+    ).toBeNull();
+  });
+});

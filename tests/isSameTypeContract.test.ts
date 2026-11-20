@@ -410,3 +410,53 @@ describe('sameTypeFindingToItem', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 8:isinstance 扫描串态(parenSpan/splitTypeArgs 引号
+// 与转义臂)、首实参括号包裹解包位、未闭合断链位与 arity 面签外 continue。
+// 死码:parenSpan 185(调用方恒传 indexOf('(') 位)、typeTestArgs 228
+// (外层平衡 ⟹ 首段 '(' 必有配对闭)、235/247(splitTypeArgs 恒返数组,
+// 类型面无 null)、243(外层平衡 ⟹ 分段平衡,splitTypeArgs 同为深度感知)。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-SER-07 sweep: isinstance 串态与断链臂', () => {
+  it('实参含字符串下标键:parenSpan/splitTypeArgs 引号臂穿过,已证明零产出', () => {
+    const text = single(sig('self, obj'), [`return ${ISINSTANCE}(d["k"], int)`]);
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+
+  it('实参含转义字符串键:两扫描器转义臂', () => {
+    const text = single(sig('self, obj'), [`return ${ISINSTANCE}(d["a\\"b"], int)`]);
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+
+  it('首实参括号包裹:解包位展开后按叶子裁定(未知叶子 pending)', () => {
+    const text = single(sig('self, obj'), [`return ${ISINSTANCE}((a, b), tuple)`]);
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].face).toBe('pending');
+  });
+
+  it('isinstance 括号未闭合:span null → pending 锚 isinstance', () => {
+    const text = single(sig('self, obj'), [`return ${ISINSTANCE}(obj, int`]);
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].face).toBe('pending');
+  });
+});
+
+describe('KSEM-SER-07 sweep: 签名面与外部构造 inputs', () => {
+  it('positional-only 标记 `/` 跳过:obj 承接合法走证明面', () => {
+    const text = single(sig('self, obj, /'), [`return ${PY_TRUE}`]);
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].face).toBe('acceptAll');
+  });
+
+  it('inputs 携带不可解析签名(外部构造面):零产出不猜', () => {
+    const text = single(sig('self, obj'), [`return ${PY_TRUE}`]);
+    const handBuilt = resolveImplMethodInputs(text, bindingsFor(), METHOD, true)
+      .map(input => ({ ...input, defLine: 0 }));
+    expect(computeSameTypeFindings(text, handBuilt)).toHaveLength(0);
+  });
+});

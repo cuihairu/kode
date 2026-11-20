@@ -267,3 +267,216 @@ describe('FLOW-010 桥 pairsWith 连线', () => {
     expect(bp!.detail).toContain('pending 记录悬挂');
   });
 });
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 9:模块/实体两 lane 的断点族臂(跨行/lambda/裸名
+// 未解析/属性形态不可证)、本地函数帧优先位、帧缓存命中、无类身份位、
+// 桥 handler 模块不可解析位与 resolveFile 容错。
+// 死码:449(实体契约表内 callbackIndex=null 与 continuationMethod=null
+// 不同时成立——addTimer 走固定续段分支,writeToDB 有实参位)。
+// ---------------------------------------------------------------------------
+
+describe('FLOW-010 sweep: 模块面断点族与本地函数帧', () => {
+  const SWEEP_FILE = '/ws/scripts/base/Sweep.py';
+  const sweepRun = (
+    text: string,
+    opts: {
+      classMethods?: Record<string, { filePath: string; line: number }>;
+      extraFiles?: string[];
+      resolveFile?: FlowContinuationInput['resolveFile'];
+    } = {}
+  ) =>
+    linkContinuations(
+      input({
+        files: opts.extraFiles ? [SWEEP_FILE, ...opts.extraFiles] : [SWEEP_FILE],
+        resolveFile: opts.resolveFile
+          ? opts.resolveFile
+          : filePath => {
+              if (filePath !== SWEEP_FILE) {
+                return null; // 文件在列但不可解析:如实跳过
+              }
+              return resolveFlowCallSites({ text, filePath, rootKey: '/ws' });
+            },
+        lineTextAt: (filePath, line) =>
+          filePath === SWEEP_FILE ? text.split('\n')[line] ?? '' : '',
+        resolveModuleFunction: () => null,
+        resolveClassMethod: (className, methodName) =>
+          opts.classMethods?.[`${className}\u001f${methodName}`] ?? null
+      })
+    );
+
+  it('同文件模块函数帧优先 + 跨行/lambda/裸名未解析断点族', () => {
+    const text = [
+      'def onDbLoaded(baseRef, databaseID, wasActive):',
+      '    pass',
+      '',
+      'def fire():',
+      '    onDbLoaded(None, 1, False)',
+      '',
+      'class Sweep:',
+      '    def load(self):',
+      "        KBEngine.createEntityFromDBID('Avatar', 42, onDbLoaded)",
+      "        KBEngine.executeRawDatabaseCommand('SELECT 1', lambda r: r)",
+      "        KBEngine.executeRawDatabaseCommand('SELECT 1', onGhost2)",
+      '',
+      '    def rawMulti(self):',
+      '        KBEngine.executeRawDatabaseCommand(',
+      "            'SELECT 1', None)",
+      ''
+    ].join('\n');
+    const result = sweepRun(text);
+    // 本地函数帧:onDbLoaded 是本文件模块函数节点,直连不落断点
+    const link = result.links.find(l => l.apiName === 'createEntityFromDBID');
+    expect(link).toBeDefined();
+    const codes = result.breakpoints.map(b => b.code);
+    expect(codes).toContain('lambda-callback');
+    expect(codes).toContain('callback-target-unresolved');
+    expect(codes).toContain('multiline-call');
+  });
+
+  it('callArgumentsOnLine:调用名不在行 → null', () => {
+    expect(callArgumentsOnLine('self.save()', 'writeToDB')).toBeNull();
+  });
+
+  it('文件在列但 resolveFile 不可解析:如实跳过(零产出不猜)', () => {
+    const result = sweepRun('def f():\n    pass\n', { extraFiles: ['/ws/ghost.py'] });
+    expect(result.links).toHaveLength(0);
+    expect(result.breakpoints).toHaveLength(0);
+  });
+
+  it('帧缓存:同目标两次回调共用一帧(第二次命中缓存)', () => {
+    const text = [
+      'class Sweep:',
+      '    def saveA(self):',
+      '        self.writeToDB(self.onSaved)',
+      '',
+      '    def saveB(self):',
+      '        self.writeToDB(self.onSaved)',
+      ''
+    ].join('\n');
+    const result = sweepRun(text, {
+      classMethods: { 'Sweep\u001fonSaved': { filePath: SWEEP_FILE, line: 1 } }
+    });
+    const saved = result.links.filter(l => l.apiName === 'writeToDB');
+    expect(saved).toHaveLength(2);
+    expect(new Set(saved.map(l => l.toNodeId)).size).toBe(1);
+  });
+});
+
+describe('FLOW-010 sweep: 实体面与桥面容错臂', () => {
+  const SWEEP_FILE = '/ws/scripts/base/Sweep.py';
+  const sweepRun = (
+    text: string,
+    classMethods: Record<string, { filePath: string; line: number }> = {},
+    extra: Partial<FlowContinuationInput> = {}
+  ) =>
+    linkContinuations(
+      input({
+        files: [SWEEP_FILE],
+        resolveFile: filePath =>
+          filePath === SWEEP_FILE
+            ? resolveFlowCallSites({ text, filePath, rootKey: '/ws' })
+            : null,
+        lineTextAt: (filePath, line) =>
+          filePath === SWEEP_FILE ? text.split('\n')[line] ?? '' : '',
+        resolveModuleFunction: () => null,
+        resolveClassMethod: (className, methodName) =>
+          classMethods[`${className}\u001f${methodName}`] ?? null,
+        ...extra
+      })
+    );
+
+  it('实体面断点族:固定续段缺失/None 回调/属性形态不可证/非契约 self 调用', () => {
+    const text = [
+      'class Timerless:',
+      '    def go(self):',
+      '        self.addTimer(1.0, 1.0, 0)',
+      '',
+      'class Sweep:',
+      '    def tick(self):',
+      '        self.tick2()',
+      '',
+      '    def saveNone(self):',
+      '        self.writeToDB(None)',
+      '',
+      '    def saveAttr(self):',
+      '        self.writeToDB(self.inner.onDone)',
+      ''
+    ].join('\n');
+    const result = sweepRun(text);
+    const codes = result.breakpoints.map(b => b.code);
+    expect(codes).toContain('continuation-missing'); // Timerless 无 onTimer
+    expect(codes).toContain('callback-absent'); // writeToDB(None)
+    expect(codes).toContain('callback-target-unprovable'); // self.inner.onDone 属性形态
+    // self.tick2 非契约 API:零边零断点(诚实边界)
+    expect(
+      result.breakpoints.some(b => b.detail.includes('self.tick2'))
+    ).toBe(false);
+    expect(result.links.some(l => l.apiName === 'tick2')).toBe(false);
+  });
+
+  it('模块级 self 调用:所在帧无类身份,固定续段/回调绑定均不可证', () => {
+    const text = [
+      'self.writeToDB(self.onSaved)',
+      'self.addTimer(1.0, 1.0, 0)',
+      ''
+    ].join('\n');
+    const result = sweepRun(text);
+    const unprovable = result.breakpoints.filter(b => b.code === 'callback-target-unprovable');
+    expect(unprovable).toHaveLength(2); // 实参面 + 固定续段(onTimer)面
+    expect(unprovable.some(bp => bp.detail.includes('onTimer 续段不可证'))).toBe(true);
+    expect(unprovable.some(bp => bp.detail.includes('回调绑定不可证'))).toBe(true);
+  });
+
+  it('桥 handler 模块不可解析:pending-record-uncompleted 断点', () => {
+    const absentEntry: FlowBridgeEntryModule = {
+      filePath: '/ws/scripts/interface/absent.py',
+      text: [
+        'def onInterfaceAppReady():',
+        '    pass',
+        '',
+        'def onRequestAccountLogin(loginName, password, datas):',
+        '    KBEngine.accountLoginResponse(loginName, loginName, datas, 0)',
+        ''
+      ].join('\n')
+    };
+    const text = 'def f():\n    pass\n';
+    const result = sweepRun(text, {}, {
+      bridgeScan: scanBridgeContracts({
+        rootKey: '/ws',
+        entryModules: { interfaces: absentEntry }
+      })
+    });
+    const bp = result.breakpoints.find(b => b.code === 'pending-record-uncompleted');
+    expect(bp).toBeDefined();
+    expect(bp!.detail).toContain('入口模块不可解析');
+  });
+
+  it('callSite 缺位的边:跳过不产断点(接口防御面)', () => {
+    const text = [
+      'def go():',
+      "    KBEngine.createEntityFromDBID('Avatar', 42, onLoaded)",
+      ''
+    ].join('\n');
+    const base = resolveFlowCallSites({ text, filePath: SWEEP_FILE, rootKey: '/ws' });
+    const result = linkContinuations(
+      input({
+        files: [SWEEP_FILE],
+        resolveFile: filePath =>
+          filePath === SWEEP_FILE
+            ? {
+                nodes: base.nodes,
+                edges: [...base.edges, { ...base.edges[0], callSite: null }]
+              }
+            : null,
+        lineTextAt: (filePath, line) =>
+          filePath === SWEEP_FILE ? text.split('\n')[line] ?? '' : '',
+        resolveModuleFunction: name =>
+          name === 'onLoaded' ? { filePath: SWEEP_FILE, line: 0 } : null,
+        resolveClassMethod: () => null
+      })
+    );
+    // 真边照连一条;callSite 缺位的复制边被跳过,不产第二条也不产断点
+    expect(result.links.filter(l => l.apiName === 'createEntityFromDBID')).toHaveLength(1);
+  });
+});

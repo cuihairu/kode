@@ -4,7 +4,9 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   cellDataKeyAccessAtPosition,
+  decodeStringLiteral,
   isCellDataKeyInsideLineComment,
+  parseCellDataKeyAccess,
   scanCellDataKeyAccesses
 } from '../src/backend/cellDataKeyAccess';
 import {
@@ -289,5 +291,100 @@ describe('KSEM-CELL-05 provider 全链(跳转/引用)', () => {
   it('cellScriptRoleAndEntity isolates role/entity for the reference scan', () => {
     expect(cellScriptRoleAndEntity(path.join(root, 'scripts', 'base', 'Monster.py'))).toEqual({ role: 'base', entity: 'Monster' });
     expect(cellScriptRoleAndEntity(path.join(root, 'scripts', 'client', 'Monster.py'))).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// COV-98-TS-BACKEND 批 5:转义解码族全谱(八进制/\x/\u/\U/单字符)与
+// 下标/get 形态容错臂。85(字面量尾反斜杠)为死码:末字符为 `\` 时必不
+// 等于闭引号,149 先行返回,decodeEscape 的 next===undefined 不可达。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-CELL-05 sweep: 转义解码族与形态容错臂', () => {
+  it('decodeStringLiteral:八进制/十六进制/Unicode 转义族与非法面', () => {
+    expect(decodeStringLiteral('"\\101"')).toBe('A');
+    expect(decodeStringLiteral('"\\7"')).toBe('\x07');
+    expect(decodeStringLiteral('"\\1010"')).toBe('A0');
+    expect(decodeStringLiteral('"\\777"')).toBeNull();
+    expect(decodeStringLiteral('"\\x41"')).toBe('A');
+    expect(decodeStringLiteral('"\\xZZ"')).toBeNull();
+    expect(decodeStringLiteral('"\\x4"')).toBeNull();
+    expect(decodeStringLiteral('"\\u0041"')).toBe('A');
+    expect(decodeStringLiteral('"\\uZZZZ"')).toBeNull();
+    expect(decodeStringLiteral('"\\u41"')).toBeNull();
+    expect(decodeStringLiteral('"\\U0001F600"')).toBe('😀');
+    expect(decodeStringLiteral('"\\U0001F60"')).toBeNull();
+    expect(decodeStringLiteral('"\\t\\r\\a\\b\\f\\v\\\\\\"\\\'"')).toBe('\t\r\x07\x08\x0c\x0b\\"\'');
+  });
+
+  it('decodeStringLiteral 容错:残引/未转义同引号/非引号开头', () => {
+    expect(decodeStringLiteral('"')).toBeNull();
+    expect(decodeStringLiteral("''")).toBe('');
+    expect(decodeStringLiteral("'it's'")).toBeNull();
+    expect(decodeStringLiteral('hp')).toBeNull();
+  });
+
+  it('parseCellDataKeyAccess:接收者后空白与键段空白/空段', () => {
+    const spaced = parseCellDataKeyAccess('self.cellData [ "hp" ]', 13);
+    expect(spaced).toMatchObject({ key: 'hp', keyLiteral: true, kind: 'subscript' });
+    expect(parseCellDataKeyAccess('self.cellData[  ]', 13)).toBeNull();
+    expect(parseCellDataKeyAccess('self.cellData[]', 13)).toBeNull();
+  });
+
+  it('parseCellDataKeyAccess:下标串内转义与同行未闭合', () => {
+    expect(parseCellDataKeyAccess("self.cellData['a\\'b']", 13)).toMatchObject({ key: "a'b" });
+    expect(parseCellDataKeyAccess('self.cellData["hp', 13)).toBeNull();
+  });
+
+  it('parseCellDataKeyAccess:get 形态边界(head 失配/未闭合/空首参/尾逗号)', () => {
+    expect(parseCellDataKeyAccess('self.cellData.getx("hp")', 13)).toBeNull();
+    expect(parseCellDataKeyAccess('self.cellData.get("hp"', 13)).toBeNull();
+    expect(parseCellDataKeyAccess('self.cellData.get( )', 13)).toBeNull();
+    expect(parseCellDataKeyAccess('self.cellData.get("hp", )', 13)).toMatchObject({
+      key: 'hp',
+      defaultExpr: null
+    });
+  });
+
+  it('parseCellDataKeyAccess:get 首参扫描深度/串态与 default 提取', () => {
+    expect(parseCellDataKeyAccess("self.cellData.get('a\\'b', 0)", 13)).toMatchObject({
+      key: "a'b",
+      defaultExpr: '0'
+    });
+    expect(parseCellDataKeyAccess('self.cellData.get(d["hp"], 0)', 13)).toMatchObject({
+      key: null,
+      rawKey: 'd["hp"]',
+      defaultExpr: '0'
+    });
+    expect(parseCellDataKeyAccess('self.cellData.get("hp", 5)', 13)).toMatchObject({
+      key: 'hp',
+      defaultExpr: '5'
+    });
+  });
+
+  it('parseCellDataKeyAccess:嵌套括号/括号键的深度臂(动态键不猜)', () => {
+    expect(parseCellDataKeyAccess('self.cellData[d["hp"]]', 13)).toMatchObject({
+      key: null,
+      rawKey: 'd["hp"]'
+    });
+    expect(parseCellDataKeyAccess('self.cellData.get(make("hp"), 0)', 13)).toMatchObject({
+      key: null,
+      rawKey: 'make("hp")',
+      defaultExpr: '0'
+    });
+  });
+
+  it('parseCellDataKeyAccess:既非下标也非 get 的后继 → null', () => {
+    expect(parseCellDataKeyAccess('self.cellData = {}', 13)).toBeNull();
+    expect(parseCellDataKeyAccess('self.cellData.hp', 13)).toBeNull();
+  });
+
+  it('cellDataKeyAccessAtPosition:多访问行循环推进与收尾 break', () => {
+    const line = 'self.cellData["hp"] + self.cellData["mp"]';
+    const second = line.indexOf('"mp"') + 1;
+    expect(cellDataKeyAccessAtPosition(line, second)).toMatchObject({ key: 'mp' });
+    // 尾随内容让末次推进后再进一轮扫描 → 无匹配 break
+    const trailing = 't = self.cellData["hp"] + 1';
+    expect(cellDataKeyAccessAtPosition(trailing, 3)).toBeNull();
   });
 });

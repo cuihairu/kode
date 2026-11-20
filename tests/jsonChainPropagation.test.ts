@@ -12,6 +12,7 @@ import {
   parseSerializationSchema,
   deriveJsonChainStructures,
   deriveJsonChainTypedValues,
+  schemaGlobMatches,
   type SerializationSchema,
   type DictFormat,
   type DictValueKind
@@ -698,5 +699,166 @@ describe('KSEM-CFG-07 json.load 面(配置 loader 绑定)', () => {
       "cfg = json.load(open('res/conf/g1.json'))"
     ];
     expect(deriveJsonChainStructures(rows.join('\n'), schema).has('cfg')).toBe(false);
+  });
+});
+
+// COV-98-TS-BACKEND 批 3:分支/容错臂补测(46 miss 行)。
+// 全部走公开入口(parseSerializationSchema / deriveJsonChainStructures /
+// deriveJsonChainTypedValues / schemaGlobMatches),不 mock 内部件;探针
+// 实跑核实后落测,诚实边界各臂断言零声称。余 6 行防御臂不硬凑(matchDictBraces
+// 单行返回 null/loadOpenPath 非纯引号串/schemaTypeFormat 缺型与字段失败/
+// scalarFamilyKind 未知族/jsonFormat unknown 透传——经掩码与解析不变量不可达)。
+describe('KSEM-SER-10 sweep: 容错臂与绑定边界', () => {
+  it('schemaGlobMatches 字符类:闭类/否定/空类/未闭合 [', () => {
+    expect(schemaGlobMatches('res/[a-c].json', 'res/a.json')).toBe(true);
+    expect(schemaGlobMatches('res/[a-c].json', 'res/d.json')).toBe(false);
+    expect(schemaGlobMatches('res/[!a].json', 'res/b.json')).toBe(true);
+    expect(schemaGlobMatches('res/[!a].json', 'res/a.json')).toBe(false);
+    expect(schemaGlobMatches('res/[].json', 'res/[].json')).toBe(true);
+    expect(schemaGlobMatches('res/[].json', 'res/a.json')).toBe(false);
+    expect(schemaGlobMatches('res/[.json', 'res/[.json')).toBe(true);
+    expect(schemaGlobMatches('res/[.json', 'res/x.json')).toBe(false);
+  });
+
+  it('schema 校验臂:types 非对象/fields 非对象/bindings 非对象', () => {
+    const types = schemaFrom({ schema_version: 1, types: [], bindings: {} });
+    expect(types.errors).toContain('types must be an object');
+    expect(types.schema?.types.size).toBe(0);
+    const fields = schemaFrom({ schema_version: 1, types: { T: { fields: [] } }, bindings: {} });
+    expect(fields.errors).toContain('type T: fields must be an object');
+    expect(fields.schema?.types.size).toBe(0);
+    const bindings = schemaFrom({ schema_version: 1, bindings: [] });
+    expect(bindings.errors).toContain('bindings must be an object');
+  });
+
+  it('裸名重绑杀三表:dumps 别名/loads/load 再赋值后调用零声称', () => {
+    const out = chains([
+      'import json',
+      'from json import dumps as D, loads, load',
+      'D = 5',
+      'loads = 5',
+      'load = 5',
+      'a = D({"x": 1})',
+      "b = loads('res/guild_configs/g1.json')",
+      "c = load(open('res/guild_configs/g1.json'))",
+      ''
+    ]);
+    expect(out.has('a')).toBe(false);
+    expect(out.has('b')).toBe(false);
+    expect(out.has('c')).toBe(false);
+  });
+
+  it('from-import 括号续行 8 行未闭:无绑定诚实', () => {
+    const out = chains([
+      'from json import (loads,',
+      'a = 1',
+      'b = 2',
+      'c = 3',
+      'd = 4',
+      'e = 5',
+      'f = 6',
+      'g = 7',
+      'h = 8',
+      "x = loads('res/guild_configs/g1.json')",
+      ''
+    ]);
+    expect(out.has('x')).toBe(false);
+  });
+
+  it('from-import 坏条目兄弟跳过,好条目照绑', () => {
+    const out = chains([
+      'import json',
+      'from json import dumps, *',
+      's = dumps({"a": 1})',
+      'v = json.loads(s)',
+      ''
+    ]);
+    expect(asLiteral(out, 'v').required.get('a')).toEqual(scalar('int'));
+  });
+
+  it('跨行 loads 实参:写点作废', () => {
+    const out = chains([
+      'import json',
+      'v = json.loads(',
+      "    'res/guild_configs/g1.json')",
+      ''
+    ]);
+    expect(out.has('v')).toBe(false);
+  });
+
+  it('条件体跨行 dumps 字面量:条件可能不执行不作废为 carrier', () => {
+    const out = chains([
+      'import json',
+      'if flag:',
+      '    s = json.dumps({',
+      '        "a": 1})',
+      'v = json.loads(s)',
+      ''
+    ]);
+    expect(out.has('v')).toBe(false);
+  });
+
+  it('变异调用与 del 杀链值(loads 产物)', () => {
+    const mutate = chains([
+      'import json',
+      "v = json.loads('res/guild_configs/g1.json')",
+      'v.update(u)',
+      ''
+    ]);
+    expect(mutate.has('v')).toBe(false);
+    const delArm = chains([
+      'import json',
+      "v = json.loads('res/guild_configs/g1.json')",
+      'del v',
+      ''
+    ]);
+    expect(delArm.has('v')).toBe(false);
+  });
+
+  it('行前快照补齐:跨行字面量内行顺延前快照', () => {
+    const snap = deriveJsonChainTypedValues([
+      'import json',
+      'flag = 1',
+      's = json.dumps({',
+      '    "y": 2})',
+      ''
+    ].join('\n'), guildSchema(), [1, 3]);
+    expect([...snap.keys()]).toEqual([1, 3]);
+  });
+
+  it('json.load 实参容错:非 open 形/内层括号/下标路径 → 零声称', () => {
+    const nonOpen = chains(['import json', "v = json.load(make_path('res/x.json'))", '']);
+    expect(nonOpen.has('v')).toBe(false);
+    const innerParen = chains(['import json', "v = json.load(open(('res/x.json')))", '']);
+    expect(innerParen.has('v')).toBe(false);
+    const subscriptPath = chains(['import json', 'v = json.load(open(paths[0]))', '']);
+    expect(subscriptPath.has('v')).toBe(false);
+  });
+
+  it('FLOAT/DOUBLE 标量族 → float 值面', () => {
+    const schema = schemaFrom({
+      schema_version: 1,
+      types: { 'f.T': { fields: { ratio: 'FLOAT', dbl: 'DOUBLE' } } },
+      bindings: { 'json.loads': [{ path: 'res/*.json', type: 'f.T' }] }
+    }).schema;
+    const out = chains(['import json', "v = json.loads('res/a.json')", ''], schema);
+    expect(asLiteral(out, 'v').required.get('ratio')).toEqual(scalar('float'));
+    expect(asLiteral(out, 'v').required.get('dbl')).toEqual(scalar('float'));
+  });
+
+  it('dumps 开放结构(SER-09 展开)传播:loads 侧 open observed', () => {
+    const out = chains([
+      'x = {}',
+      "d = {**x, 'a': 1}",
+      'import json',
+      's = json.dumps(d)',
+      'v = json.loads(s)',
+      ''
+    ]);
+    const fmt = out.get('v');
+    if (!fmt || fmt.kind !== 'open') {
+      throw new Error(`v expected open, got ${fmt?.kind ?? 'absent'}`);
+    }
+    expect(fmt.observed.get('a')).toEqual(scalar('int'));
   });
 });
