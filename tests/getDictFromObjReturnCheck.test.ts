@@ -263,6 +263,88 @@ describe('computeGetDictFromObjReturnFindings 缺键/多键/类型面', () => {
   });
 });
 
+describe('computeGetDictFromObjReturnFindings 体域/宇宙/绑定边界臂', () => {
+  it('动态键(无字面量键)项不进字面量键集:缺键照报、字面量键零误报', () => {
+    // parseDictPairs 对非字符串字面量键给 key=null(展开/动态键不进键集);
+    // `**x` 裸展开在无冒号段即置 openUniverse(不入 pairs)。
+    const text = [
+      'class PositionSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": 1.0, "y": 2.0, n: 3}',
+      ''
+    ].join('\n');
+    const findings = computeGetDictFromObjReturnFindings(text, [bind(POSITION)]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe('missing');
+    expect(findings[0].key).toBe('z');
+  });
+
+  it('非标量字段(ARRAY/自定义别名)值结构不裁定:非整数字面值零产出', () => {
+    const BAG = customType('BAG', 'FIXED_DICT', [
+      scalarField('slot_list', 'ARRAY', 22),
+      scalarField('uid', 'UINT32', 24)
+    ], 20, 'serializers.BagSer');
+    const text = [
+      'class BagSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"slot_list": 1, "uid": 2}',
+      ''
+    ].join('\n');
+    expect(computeGetDictFromObjReturnFindings(text, [bind(BAG)])).toHaveLength(0);
+  });
+
+  it('空绑定符号:该绑定跳过,其余绑定照常判', () => {
+    const text = [
+      'class PositionSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {"x": 1.0}',
+      ''
+    ].join('\n');
+    const findings = computeGetDictFromObjReturnFindings(text, [
+      { container: BOUNDS, symbol: '' },
+      bind(POSITION)
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].container).toBe('POSITION');
+  });
+
+  it('嵌套 def 域跳过:内层 return 字面量不判本方法,本方法 return 照判', () => {
+    // 若不剥内层域,内层 `return {"w": 1}` 会被判成多键(第 2 条);实跑只有本
+    // 方法 return 的缺键一条,即证明内层域被整块跳过。
+    const text = [
+      'class PositionSer:',
+      '    def getDictFromObj(self, obj):',
+      '        def nested():',
+      '            return {"w": 1}',
+      '        return {"x": 1.0, "y": 2.0}',
+      ''
+    ].join('\n');
+    const findings = computeGetDictFromObjReturnFindings(text, [bind(POSITION)]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].anchor).toBe('return');
+    expect(findings[0].kind).toBe('missing');
+    expect(findings[0].key).toBe('z');
+    expect(findings[0].line).toBe(4);
+  });
+
+  it('return 字面量超配对窗口:该 return 零产出不猜', () => {
+    // matchDictBraces 的配对窗口上限 FIXED_DICT_CONSTRUCT_MAX_SPAN_LINES=100 行
+    // (与构造点面同口径);字面量跨窗未闭合 → 整点不猜。语料是合法 Python:
+    // 120 个字面量键的超大多字典面(键全在声明集外,若窗口够宽本该全报多键)。
+    const N = 120;
+    const entries = Array.from({ length: N }, (_, i) => `        "k${i}": 1,`);
+    const text = [
+      'class PositionSer:',
+      '    def getDictFromObj(self, obj):',
+      '        return {',
+      ...entries,
+      '        }',
+      ''
+    ].join('\n');
+    expect(computeGetDictFromObjReturnFindings(text, [bind(POSITION)])).toHaveLength(0);
+  });
+});
+
 describe('fixedDictReturnFindingToItem', () => {
   it('形状与构造点同构,code=kbengine.fixedDictReturnSchema', () => {
     const text = [

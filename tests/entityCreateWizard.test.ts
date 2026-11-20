@@ -322,3 +322,65 @@ describe('批 22 续:自闭合形态实测口径(解析器给自闭合标签落 
 //    上臂实测 ok),要么整档解析失败走首闸 parse-failed;到不了"有元素但无关闭位"。
 //  - :332 parsePythonFile 的 catch:该解析器行扫描全容忍(tab 混排/缩进骤缩/
 //    冒号垃圾/空串实测全 OK 不抛),文本输入不可能让它抛。
+
+
+// COV 批 7:残缺文本与紧凑形态的插入边界。本文件余下不可达行的逐行
+// 论证(全部走公开入口 + 残缺语料实测排查,均无触发路径,不写凑数测试):
+// - closeInsertionOffset 的 closeTagStart<0 守卫与四个 offset===null 拒绝臂
+//   (方法段/缺段根/组件段/缺段根/别名根):defParser 对成功解析的文档,
+//   closeTagStart 只会来自 openToken.end(自闭合)或 closeToken.start
+//   (普通),token 偏移恒 ≥0;截断/残缺形态(无闭标签、悬空闭标签、
+//   重复嵌套同名)在 assignNodePositions 的 consumeNextToken 处直接抛错,
+//   parseDefOrUndefined 归一为 undefined,走的是各入口的 !document ||
+//   !document.root 拒绝臂(已有测试覆盖),closeInsertionOffset 根本
+//   不会被调到。自闭合根 `<root/>` 实测 closeTagStart=7 ≥0。
+// - buildRpcMethodPythonInsertion 的 parse-failed 臂:pythonParser 全文
+//   无 throw 点(词法残缺如实产空 classes → no-class 拒绝,已有测试),
+//   parsePythonFile 不会抛错,catch 臂不可达。
+describe('残缺文本与紧凑形态的插入边界(拒绝计算/缩进回退)', () => {
+  it('段首子元素缺行首缩进前缀:成员缩进回退段默认缩进,不硬凑', () => {
+    // 子元素顶格(行首前缀为空)与段开标签同行(前缀非纯缩进)两种形态,
+    // 都取不到既有缩进 → 回退 '\t\t',插入点仍在段关闭标签行首
+    const column0 = ['<root>', '<BaseMethods>', '<m>', '</m>', '</BaseMethods>', '</root>'].join('\n');
+    const r0 = buildRpcMethodDefInsertion(column0, 'BaseMethods', 'n', [], false);
+    expect(r0.ok).toBe(true);
+    if (!r0.ok) {
+      return;
+    }
+    expect(r0.insertion.text).toBe('\t\t<n>\n\t\t</n>\n');
+    expect(r0.insertion.offset).toBe(column0.indexOf('</BaseMethods>'));
+
+    const sameLine = '<root>\n\t<BaseMethods><m></m>\n\t</BaseMethods>\n</root>';
+    const r1 = buildRpcMethodDefInsertion(sameLine, 'BaseMethods', 'n', [], false);
+    expect(r1.ok).toBe(true);
+    if (!r1.ok) {
+      return;
+    }
+    expect(r1.insertion.text).toBe('\t\t<n>\n\t\t</n>\n');
+    expect(r1.insertion.offset).toBe(sameLine.indexOf('\t</BaseMethods>'));
+  });
+
+  it('根/段解析失败(残缺文本):槽与别名插入同口径拒绝,不硬插', () => {
+    const slot = buildComponentSlotInsertion('', 'wallet', 'Wallet', true);
+    expect(slot.ok).toBe(false);
+    if (!slot.ok) {
+      expect(slot.reason).toBe('parse-failed');
+    }
+    const truncated = buildComponentSlotInsertion('<root>\n\t<Properties>\n', 'wallet', 'Wallet', true);
+    expect(truncated.ok).toBe(false);
+    if (!truncated.ok) {
+      expect(truncated.reason).toBe('parse-failed');
+    }
+
+    const alias = buildTypeAliasInsertion('not xml at all', 'GOLD', 'UINT32');
+    expect(alias.ok).toBe(false);
+    if (!alias.ok) {
+      expect(alias.reason).toBe('parse-failed');
+    }
+    const aliasTruncated = buildTypeAliasInsertion('<Type>\n\t<ITEM_ID>', 'GOLD', 'UINT32');
+    expect(aliasTruncated.ok).toBe(false);
+    if (!aliasTruncated.ok) {
+      expect(aliasTruncated.reason).toBe('parse-failed');
+    }
+  });
+});

@@ -1289,3 +1289,64 @@ describe('批 21:结构推导与写点收集容错臂', () => {
     expect(structure).toMatchObject({ kind: 'unknown' });
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// lcov DA 诚实边界批(批 7C):可达臂 + 逐行不可达论证
+// ---------------------------------------------------------------------------
+
+// 逐行不可达论证(公共入口无任何语料可达,不写凑数测试):
+// - dictLiteralKeysOf L212(空条目 continue):splitTopLevelParams 逐段 push
+//   不滤空,但合法 Python 的 dict 字面量不可能产生空段(`,,` 是语法错误,
+//   尾逗号空段由结尾 trim 过滤)——本文件下方「双逗号探针」用蓄意畸形语料
+//   实证该防御臂(绑定不受影响,断言键集非空,非空账)。
+// - dictLiteralKeysOf L247(条目引号未闭 return null):joinBalancedBraces
+//   成功的前提是引号态归零(引号开着时 `}` 不计深度),splitTopLevelParams
+//   与其同一套引号/转义状态机——开引号条目必然延伸到闭引号之后才遇顶层
+//   逗号,条目内首引号必闭,该臂结构性不可达(防御臂)。
+// - resolveReturnExpr L506(return 与 { 间空白推进):collectReturnSites 已在
+//   掩码行上把 exprCol 推进到首个非空白列,掩码保长保列,原文行同列必非空白
+//   ——该循环体永假(防御臂;既有「return 与 { 之间空白」用例实跑亦未触达)。
+// - resolveReturnExpr L558(链循环后 cursor 未走完):链循环三条出口——break
+//   时 cursor=next=trimmed.length、`trimmed[next] !== '['` 与 access 非
+//   subscript 均提前 return,cursor 只在 < length 时被赋值,循环条件出口时
+//   cursor 恒等于 length → L557 恒假(防御臂)。
+// - resolveReturnExpr L572(链循环空容器臂):容器只在段尾 L578 被置 null,
+//   L579 随即对 null 容器提前 return,循环不会带着 null 容器进入下一段;
+//   初值 input.container 类型非空——L571 恒假(防御臂;下方「链中段字段
+//   非 FD」用例实跑落位 L579 非 FD 臂,行为钉子保留)。
+// - bracketCloseIndex L291-299(引号感知臂):唯一调用点 scanKeyAdditionSurfaces
+//   只喂掩码行,而 pythonCodeLines 把引号字符一并掩成 `_`(注释位掩成空白)
+//   ——掩码行不含任何引号字符,quote 态永不建立,引号臂全死(防御臂)。
+// - objMemberReadsOnLine L777(kind !== 'wire' 收窄 continue):唯一调用点
+//   computeConvertedObjMemberFindings 已在 L853 把 unknown 结构 continue 掉,
+//   dict 形态在 L759 已 continue——走到 L776 时 kind 恒为 wire(类型收窄断言,
+//   运行时不可达)。
+describe('lcov DA 诚实边界批(批 7C)', () => {
+  it('链中段字段非 FD:第二段落位不可知 → unknown(段尾非 FD 臂)', () => {
+    // uid 是标量字段:第一段落位后 wireFdOfAnnotation 得 null,段尾「非 FD
+    // 字段」臂即判 unknown(不进下一段)。
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct["uid"]["x"]',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(text, createInputsOf(text)[0], REGISTRY))
+      .toEqual({ kind: 'unknown' });
+  });
+
+  it('dict 字面量空段防御臂:双逗号空段跳过,字面量键照收(蓄意畸形语料探针)', () => {
+    // 合法 Python 不可能产生空段(`,,` 语法错误),本条是刻意畸形语料探针:
+    // `,,` 只出现在方法体内一行,类/def 绑定不受影响(下方断言键集非空即证
+    // 绑定成立),用于实证空段防御臂真实行为。
+    const text = lines([
+      'class BagSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return {"x": 1.0, , "y": 2.0}',
+      ''
+    ]);
+    expect(computeConvertedObjStructure(text, createInputsOf(text)[0], REGISTRY))
+      .toEqual({ kind: 'dict', keys: ['x', 'y'], open: false, source: 'serializers_impl.py:3' });
+  });
+});

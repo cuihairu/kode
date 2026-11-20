@@ -15,6 +15,7 @@ import {
 } from '../src/backend/jsonChainPropagation';
 import {
   deriveConfigFieldAccesses,
+  matchBracket,
   type ConfigFieldAccess
 } from '../src/backend/configFieldAccess';
 
@@ -467,5 +468,69 @@ describe('KSEM-CFG-07 sweep: chain fallbacks and def-scope guards', () => {
     ], null);
     expect(hex).toHaveLength(1);
     expect(hex[0].fieldType).toEqual({ kind: 'dict', fields: new Map() });
+  });
+});
+
+// COV 批 7:derived 可选键查询面与导出容错面。此处同文件余下不可达行
+// 的逐行论证(全部走公开入口,均无触发路径,不写凑数测试):
+// - stepCursor 的 key/index 双空守卫:collectSites 产出的段只有两种形态
+//   (引号键段 key 非空 / 整数下标段 index 非空,get 段同键形态),双空段
+//   无从产生,守卫恒假;
+// - mapFmtFields 的 optional 并入环(175/176):DictFormat 的 optional 表
+//   只在 resolveShape 内写入(dictFormatDerivation.ts:822),该表被消费
+//   只有两条身份:经名字格式作 derived-fmt 游标(而位点段链恒 ≥1 段,
+//   stepCursor 的 derived-fmt 臂经任一段必推到 derived 值或 null,链尾
+//   不可能停在 derived-fmt,故 cursorType 的 derived-fmt 兜底臂不取到它)
+//   与作 DictValueKind.dict 成员(后者只在 classifyValue 字面量分支构造,
+//   该分支的 optional 表声明后从未写入——584 行建表、590 行全部键入
+//   required、599 行原样返回空表)。故到达 mapFmtFields 的 literal 格式
+//   optional 表恒空,并入环不可达(键查询走 fmtField 的
+//   required.get ?? optional.get,那条路是可达的,下面钉住);
+// - cursorType 的 null 兜底臂:调用点为 dead ? null : cursorType(cursor),
+//   dead 为真时不调用;为假时 cursor 必非空(每段要么推进要么置 dead);
+// - schema-root 兜底臂:位点仅在有段时收录(≥1 段),首段 stepCursor 后
+//   游标必离开 schema-root,段链为 0 的形态不存在;
+// - derived-fmt 兜底臂:同因——derived-fmt 游标经任一段下标必推到
+//   derived 值或 null,链尾不可能是 derived-fmt;
+// - get 段「引号形态与掩码判定不符」容错臂:pythonCodeLines 同行掩码下,
+//   掩码首字符为下划线当且仅当原文首字符是引号;掩码闭引号用的必是同一
+//   引号字符且掩成空格,故引号闭到段内时 trim 后原文必以同引号收尾
+//   (isQuotedLiteral 为真);段内出现任何非空白字面字符会先在掩码
+//   _+ 判定处被拒。掩码/原文失配的形态在同行掩码机制下不可构造;
+// - enclosingDef 的空行兜底臂:仅对已收录位点行调用,位点行必含标识符,
+//   掩码行非空白。
+describe('KSEM-CFG-07 sweep: derived 可选键查询面与导出容错面', () => {
+  it('derived 条件写点新增键:可选键与必填键都可查出值类型', () => {
+    // 字面量写点定必填面,if 臂内的增量写点产生可选键;键查询经
+    // fmtField 的 required ?? optional 双表口径取到值类型
+    const out = access([
+      'flag = True',
+      "raw = {'a': 1}",
+      'if flag:',
+      "    raw['x'] = {'p': 1}",
+      "    raw['c'] = 3",
+      'd = raw',
+      "n = d['x']",
+      "q = d['a']",
+      "r = d['c']"
+    ], null);
+    expect(out).toHaveLength(3);
+    expect(out[0].keys).toEqual(['x']);
+    expect(out[0].fieldType).toEqual({
+      kind: 'dict',
+      fields: new Map([['p', { kind: 'scalar', family: 'int' }]])
+    });
+    expect(out[1].keys).toEqual(['a']);
+    expect(out[1].fieldType).toEqual({ kind: 'scalar', family: 'int' });
+    expect(out[2].keys).toEqual(['c']);
+    expect(out[2].fieldType).toEqual({ kind: 'scalar', family: 'int' });
+  });
+
+  it('matchBracket 非括号起点如实返回 -1(导出容错面,CFG-08 路径扫描同用)', () => {
+    expect(matchBracket('abc', 0)).toBe(-1);
+    expect(matchBracket('', 0)).toBe(-1);
+    // 普通括号配对面不受容错臂影响
+    expect(matchBracket("d.get('k')", 5)).toBe(9);
+    expect(matchBracket("d['k']", 1)).toBe(5);
   });
 });

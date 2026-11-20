@@ -683,3 +683,103 @@ describe('批 20 续:别名链断与环(preload 精确构造,FD 字段装载面)
     expect(findings.map(f => f.code)).toEqual(['kbengine.types.fdEntityCallPersistent']);
   });
 });
+
+
+// 预载链末端与畸形域:别名链末端不可解/成环 → resolveAliasChainEnd null
+// (条目不注册,后文引用照常如实检出);解析失败的文档不在本文面声称(零发现)。
+describe('别名链末端不可解与解析失败域', () => {
+  it('预载别名链末端指向未注册名:ARRAY 条目不注册,后文引用如实检出', () => {
+    // 预载表无目标校验(KODE-SYN-003 预载 = types.xml 已注册名带指引),
+    // 引用面沿链走末端 → GHOST 既非内建也不在册 → 链末端 null,ARRAY 装载失败
+    const findings = computeTypesXmlStructureFindings(
+      ['<root>', '  <LIST>', '    ARRAY', '    <of> GHOSTREF </of>', '  </LIST>', '  <USE> LIST </USE>', '</root>'].join('\n'),
+      [{ name: 'GHOSTREF', target: 'GHOST' }]
+    );
+    expect(codesOf).toBeDefined();
+    expect(findings.map(f => f.code)).toEqual(['kbengine.types.forwardRef']);
+    expect(findings[0].message).toContain('LIST');
+  });
+
+  it('预载别名链成环(X→Y→X):ARRAY 条目同样不注册', () => {
+    // 引擎单遍装载不可能成环注册,但预载表按指引原样入账——环链末端解析
+    // 有界防环,返回 null 与不可解同口径(条目不注册)
+    const findings = computeTypesXmlStructureFindings(
+      ['<root>', '  <LIST>', '    ARRAY', '    <of> X </of>', '  </LIST>', '  <USE> LIST </USE>', '</root>'].join('\n'),
+      [{ name: 'X', target: 'Y' }, { name: 'Y', target: 'X' }]
+    );
+    expect(findings.map(f => f.code)).toEqual(['kbengine.types.forwardRef']);
+  });
+
+  it('FD 字段别名链末端不可解:零发现(链末端 null 不冒充 ENTITYCALL 误报)', () => {
+    // 对照:链末端解析到 ENTITYCALL 会报静默降持久化;末端不可解 → 不报
+    const findings = computeTypesXmlStructureFindings(
+      ['<root>', '  <PAYLOAD>', '    FIXED_DICT', '    <Properties>', '      <ref>', '        <Type> GHOSTREF </Type>', '      </ref>', '    </Properties>', '  </PAYLOAD>', '</root>'].join('\n'),
+      [{ name: 'GHOSTREF', target: 'GHOST' }]
+    );
+    expect(findings).toEqual([]);
+  });
+
+  it('<of> 无元素类型指引(空元素):arrayOf error', () => {
+    const text = ['<root>', '  <LIST>', '    ARRAY', '    <of></of>', '  </LIST>', '</root>'].join('\n');
+    const findings = check(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].code).toBe('kbengine.types.arrayOf');
+    expect(findings[0].severity).toBe('error');
+    expect(findings[0].message).toContain('没有元素类型指引');
+    // 无(非空白)子节点 → 锚回落整个 <of> 元素区间
+    expect(text.slice(findings[0].offset, findings[0].offset + findings[0].length)).toBe('<of></of>');
+  });
+
+  it('FD 字段 <Type> 无类型指引(空元素):fieldType 致命,FD 不注册', () => {
+    const text = [
+      '<root>',
+      '  <PAYLOAD>',
+      '    FIXED_DICT',
+      '    <Properties>',
+      '      <ref>',
+      '        <Type></Type>',
+      '      </ref>',
+      '      <count>',
+      '        <Type> UINT32 </Type>',
+      '      </count>',
+      '    </Properties>',
+      '  </PAYLOAD>',
+      '  <USE> PAYLOAD </USE>',
+      '</root>'
+    ].join('\n');
+    const findings = check(text);
+    expect(findings.map(f => f.code)).toEqual(['kbengine.types.fieldType', 'kbengine.types.forwardRef']);
+    expect(findings[0].severity).toBe('error');
+    expect(findings[0].message).toContain('没有类型指引');
+    // 致命条目不入表:后文引用 PAYLOAD 照常如实检出(第二条 forwardRef)
+    expect(findings[1].message).toContain('PAYLOAD');
+  });
+
+  it('FD ARRAY 字段元素链不可解:装载失败,FD 不注册', () => {
+    const text = [
+      '<root>',
+      '  <PAYLOAD>',
+      '    FIXED_DICT',
+      '    <Properties>',
+      '      <slots>',
+      '        <Type>',
+      '          ARRAY',
+      '          <of> GHOST </of>',
+      '        </Type>',
+      '      </slots>',
+      '    </Properties>',
+      '  </PAYLOAD>',
+      '  <USE> PAYLOAD </USE>',
+      '</root>'
+    ].join('\n');
+    const findings = check(text);
+    expect(findings.map(f => f.code)).toEqual(['kbengine.types.arrayOf', 'kbengine.types.forwardRef']);
+    expect(findings[1].message).toContain('PAYLOAD');
+  });
+
+  it('畸形 XML(元素未闭合):解析失败不在本文面声称,零发现', () => {
+    // 解析器对定位失败抛错(defParser consumeNextToken);本文面只在可解析
+    // 文档上声称 → catch 兜底零发现
+    expect(check(['<root>', '  <A> UINT32', '</root>'].join('\n'))).toEqual([]);
+  });
+});

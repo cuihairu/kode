@@ -751,3 +751,131 @@ describe('HR-WATCH-012 语法闸·窗 0 内容面(单拍直取,闸不死面)', (
     expect(h.diagnostics.some(d => d.type === 'blocked')).toBe(false);
   });
 });
+
+// COV 批 7:异步等待面的 dispose 让位守卫与缺省装配面。本文件余下不可达
+// 行的逐行论证(全部走公开入口,均无触发路径,不写凑数测试):
+// - 420 awaitStable 入口守卫(等待开始前 pending 已缺/disposed):两处调用点
+//   (due 到期面 / 探测递归)与该守卫之间没有任何 await——due 的守卫与
+//   awaitStable 首行同步连续执行,探测递归前的守卫(第二拍后)同样同步
+//   连续;单线程事件循环下没有任何交错点能让 pending 在两行之间被抽走,
+//   守卫与调用方的 pending/disposed 判定完全同条件冗余;
+// - 489 settle 入口守卫(settle 被调时 pending 已缺/disposed):三个调用点
+//   (due 直定稿 / 窗 0 单拍 / 第二拍一致 / 超限)到 settle 首行全部同步
+//   连续,调用点前方各自的守卫刚验过同一条件,无交错点;
+// - 564 flushWave 的 disposed/空波守卫:两处调用点——settle 定稿即发(前面
+//   dispose 判定同步刚过,且 wave 刚 push 必非空)/波次冲口 timer 回调
+//   (dispose 会先 clear 该 timer,注入时钟与真定时器都不再触发);波次
+//   只被 flushWave 自身清空,故「空波或已停用时被调」不可构造。
+describe('稳定等待面的 dispose 让位守卫(HR-WATCH-007 异步边界)', () => {
+  it('稳定首拍读取挂起期间停用:续言如实让位,不产生事件', async () => {
+    const h = makePipeline({ stabilityWindowMs: 200 });
+    let release!: (snapshot: Snapshot | null) => void;
+    const gate = new Promise<Snapshot | null>(resolve => {
+      release = resolve;
+    });
+    h.readBehavior = (() => gate) as unknown as Harness['readBehavior'];
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100); // 到期进稳定等待:首拍读取挂起
+    expect(h.readCalls).toHaveLength(1);
+    h.pipeline.dispose(); // 停用清 pending;挂起的读取随后才落地
+    release?.({ hash: 'h1', content: 'x=1' });
+    for (let i = 0; i < 30; i++) {
+      await Promise.resolve(); // 推进读取续言:守卫见 pending 已缺 → 让位
+    }
+    await h.clock.advance(400);
+    expect(h.emitted).toHaveLength(0);
+    expect(h.pipeline.pendingFiles()).toHaveLength(0);
+    expect(h.diagnostics.some(d => d.type === 'flushed')).toBe(false);
+  });
+
+  it('稳定窗睡眠期间停用:睡眠到点续言如实让位,不产生事件', async () => {
+    const h = makePipeline({ stabilityWindowMs: 200 });
+    h.disk.set('/ws/a.py', { hash: 'h1', content: 'x=1' });
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100); // 到期:首拍读到,稳定窗睡眠挂起
+    h.pipeline.dispose(); // 清 pending(核不跟踪睡眠 timer,到点仍会续言)
+    await h.clock.advance(300); // 睡眠到点:续言见 disposed/pending 缺 → 让位
+    expect(h.emitted).toHaveLength(0);
+    expect(h.pipeline.pendingFiles()).toHaveLength(0);
+  });
+
+  it('第二拍读取挂起期间停用:续言如实让位,不产生事件', async () => {
+    const h = makePipeline({ stabilityWindowMs: 200 });
+    let reads = 0;
+    let release!: (snapshot: Snapshot | null) => void;
+    const gate = new Promise<Snapshot | null>(resolve => {
+      release = resolve;
+    });
+    h.readBehavior = ((): Snapshot | null => {
+      reads += 1;
+      // 第二拍换成挂起 Promise:dispose 落在两拍之间
+      return reads === 1 ? { hash: 'h1', content: 'x=1' } : (gate as unknown as Snapshot | null);
+    }) as unknown as Harness['readBehavior'];
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100); // 到期:首拍读到,稳定窗睡眠挂起
+    await h.clock.advance(200); // 睡眠到点:第二拍读取挂起
+    expect(h.readCalls).toHaveLength(2);
+    h.pipeline.dispose();
+    release?.({ hash: 'h1', content: 'x=1' });
+    for (let i = 0; i < 30; i++) {
+      await Promise.resolve(); // 推进第二拍续言:守卫见 pending 已缺 → 让位
+    }
+    await h.clock.advance(100);
+    expect(h.emitted).toHaveLength(0);
+    expect(h.pipeline.pendingFiles()).toHaveLength(0);
+    expect(h.diagnostics.some(d => d.type === 'flushed')).toBe(false);
+  });
+
+  it('语法检查挂起期间停用:续言如实丢弃,不发送不入波', async () => {
+    let release!: (verdict: { ok: boolean }) => void;
+    const gate = new Promise<{ ok: boolean }>(resolve => {
+      release = resolve;
+    });
+    const h = makePipeline(
+      { stabilityWindowMs: 0, checkSyntax: (): Promise<{ ok: boolean }> => gate },
+      { withSnapshot: true }
+    );
+    h.disk.set('/ws/a.py', { hash: 'h1', content: 'a=1' });
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100); // 到期:单拍读 → 定稿带内容 → 闸挂起
+    h.pipeline.dispose();
+    release?.({ ok: true });
+    for (let i = 0; i < 30; i++) {
+      await Promise.resolve(); // 推进检查续言:守卫见 disposed → 丢弃
+    }
+    await h.clock.advance(50);
+    expect(h.emitted).toHaveLength(0);
+    expect(h.pipeline.waveFiles()).toHaveLength(0);
+    expect(h.diagnostics.some(d => d.type === 'flushed')).toBe(false);
+  });
+});
+
+describe('缺省装配面(未注入的定时器与备份形态第二道闸)', () => {
+  it('未注入 timers:缺省真 setTimeout 面,去抖与波次冲口照常驱动', async () => {
+    // 构造器缺省定时器臂只在装配未注入时走(测试/装配接线都注入),
+    // 此处按真墙钟走通一个完整周期
+    const emitted: Emitted[] = [];
+    const pipeline = new HotReloadSavePipeline({
+      debounceMs: 30,
+      batchFlushMs: 10,
+      stabilityWindowMs: 0,
+      onEmit: (events, mode) => emitted.push({ events, mode })
+    });
+    pipeline.offer('/ws/a.py', 'save');
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].mode).toBe('auto');
+    expect(emitted[0].events.map(event => event.uri)).toEqual(['/ws/a.py']);
+  });
+
+  it('调用方扩展名表含备份后缀时,备份形态仍如实拒收(扩展门后的第二道闸)', () => {
+    // 默认扩展名表(.py)与备份形态后缀互斥,此闸只有调用方显式声明
+    // 备份类扩展名才会到达;闸的语义=声明表再宽也不收编辑器临时文件
+    expect(isWatchableScriptFile('/ws/.a.py.swp', { extensions: ['.py', '.swp'] })).toBe(false);
+    expect(isWatchableScriptFile('/ws/a.py~', { extensions: ['.py', ''] })).toBe(false);
+    expect(isWatchableScriptFile('/ws/#a.py#', { extensions: ['.py', ''] })).toBe(false);
+    expect(isWatchableScriptFile('/ws/a.py.swo', { extensions: ['.swo'] })).toBe(false);
+    expect(isWatchableScriptFile('/ws/a.py.bak', { extensions: ['.bak'] })).toBe(false);
+    expect(isWatchableScriptFile('/ws/a.py.tmp', { extensions: ['.tmp'] })).toBe(false);
+  });
+});
