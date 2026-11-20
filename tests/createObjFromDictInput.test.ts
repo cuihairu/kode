@@ -24,6 +24,7 @@ import {
   renderFixedDictInputKeyMessage,
   resolveCreateObjFromDictInputBindings,
   resolveCreateObjFromDictInputReceiver,
+  resolveImplMethodInputs,
   wireFdOfAnnotation
 } from '../src/backend/createObjFromDictInput';
 import {
@@ -942,5 +943,109 @@ describe('KSEM-SER-04 sweep: 绑定面门与键访问段容错臂', () => {
 
   it('wireFdOfAnnotation:无注解 → null 止链', () => {
     expect(wireFdOfAnnotation(null, REGISTRY)).toBeNull();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// 签名/形参/键访问解析边界(覆盖批4)。诚实边界(按当前调用图不可达,
+// 不硬凑):defSignatureParams 的 def 行无 '('(111 由本测试直查可达,
+// 生产调用点 def 行恒带括号)、resolveImplMethodInputs 的 null 签名丢弃
+// 臂(258——parsePythonFile 不登记无收括号的残缺 def,方法缺失丢弃路
+// 先行,该臂在现调用图不可达)。
+// ---------------------------------------------------------------------------
+
+describe('defSignatureParams / paramNameOf 签名解析边界', () => {
+  it('def 行无开括号:null', () => {
+    expect(defSignatureParams(['def f', '(self):'], 0)).toBeNull();
+  });
+
+  it('签名括号到文件尾未闭:null(不猜)', () => {
+    expect(defSignatureParams(['def f(self', '    pass'], 0)).toBeNull();
+  });
+
+  it('默认值串内转义/括号 + 元组默认:引号态过扫描,顶层逗号切三参', () => {
+    const sigResult = defSignatureParams(['def f(self, a="x\\")", b=(1, 2)):'], 0);
+    expect(sigResult?.closeLine).toBe(0);
+    expect(sigResult?.params).toHaveLength(3);
+  });
+
+  it('跨行签名:closeLine=收括号行,续行并入切参', () => {
+    const sigResult = defSignatureParams(['def f(self,', '        b=(1, 2)):'], 0);
+    expect(sigResult?.closeLine).toBe(1);
+    expect(sigResult?.params).toHaveLength(2);
+  });
+
+  it('paramNameOf 引号态形参片段:片段名位不收(非标识符 → 空)', () => {
+    expect(paramNameOf('"x)"')).toBe('');
+    expect(paramNameOf('"a\\)"')).toBe('');
+    expect(paramNameOf('(1, 2)')).toBe('');
+    expect(paramNameOf('obj: int = 0')).toBe('obj');
+  });
+});
+
+describe('keyAccessAt 空白与未闭边界', () => {
+  it('括号后/引号后空白:游标越过空白取键,锚位与段尾如实', () => {
+    const sub = keyAccessAt('d[ "hp" ]', 1);
+    expect(sub).toMatchObject({ key: 'hp', form: 'subscript', character: 1, keyCharacter: 4, end: 9 });
+    const get = keyAccessAt('d.get( "hp" )', 1);
+    expect(get).toMatchObject({ key: 'hp', form: 'get', character: 1, keyCharacter: 8, end: 13 });
+  });
+
+  it('非键访问(get 名不符)与引号未闭(跨行):null 断链', () => {
+    expect(keyAccessAt('d.foo', 1)).toBeNull();
+    expect(keyAccessAt('d["hp', 1)).toBeNull();
+    expect(keyAccessAt('d.get("hp', 1)).toBeNull();
+  });
+});
+
+describe('绑定推导防御与键读取空白面', () => {
+  const findingsOf = (lines: string[]) => {
+    const text = lines.join('\n');
+    return computeCreateObjFromDictInputKeyFindings(
+      text,
+      resolveCreateObjFromDictInputBindings(text, implBindingsForDocument(REGISTRY, IMPL_FILE)),
+      REGISTRY
+    );
+  };
+
+  it('空绑定面:校验入口零产出', () => {
+    expect(computeCreateObjFromDictInputKeyFindings('x = 1', [], REGISTRY)).toEqual([]);
+  });
+
+  it('空符号绑定:推导跳过(不猜类名)', () => {
+    const text = 'class BagSer:\n    def createObjFromDict(self, dct):\n        pass';
+    expect(resolveImplMethodInputs(text, [{ container: AVATAR_BAG, symbol: '' }], 'createObjFromDict')).toEqual([]);
+  });
+
+  it('签名残缺的契约方法:绑定推导零产出(登记与否两路同不猜)', () => {
+    const text = 'class BagSer:\n    def createObjFromDict(self, dct\n        return dct["w"]';
+    expect(resolveCreateObjFromDictInputBindings(text, implBindingsForDocument(REGISTRY, IMPL_FILE))).toEqual([]);
+  });
+
+  it('接收者与键段间空白:扫描游标越过,未声明键照报', () => {
+    const rows = [
+      'class PositionSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct ["w"]'
+    ];
+    const findings = findingsOf(rows);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ key: 'w', container: 'POSITION' });
+  });
+
+  it('声明标量键后的续链:容器落空断链,后段不猜零产出', () => {
+    expect(findingsOf([
+      'class PositionSer:',
+      '    def createObjFromDict(self, dct):',
+      '        return dct["x"]["sub"]'
+    ])).toHaveLength(0);
+  });
+
+  it('wireFdOfAnnotation 空注解/非 FD 注解止链;FD 注解落容器', () => {
+    expect(wireFdOfAnnotation(null, REGISTRY)).toBeNull();
+    expect(wireFdOfAnnotation('', REGISTRY)).toBeNull();
+    expect(wireFdOfAnnotation('FLOAT', REGISTRY)).toBeNull();
+    expect(wireFdOfAnnotation('POSITION', REGISTRY)?.name).toBe('POSITION');
   });
 });

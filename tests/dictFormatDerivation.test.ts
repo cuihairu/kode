@@ -601,3 +601,150 @@ describe('批 29 续:空写点与纯 unknown 基', () => {
     expect([...fmt.optional.keys()]).toEqual(['b']);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// 残缺/退化写点与值扫描边界(覆盖批4)。诚实边界:防御臂按当前调用图
+// 不可达,不硬凑——armIndex 兜底(282,组框保证存在)、掩码空行 skip
+// (326,门先行过滤)、rawIndentOf 探针(432,braceAt≥0 由调用点保证)、
+// indexOf('{') 恒命中(437,实参 '{' 在位)、splitTopLevel 非空返回
+// (552)、unwrapBracket 调用点预校验(616)、collectors 非空(734)、
+// arm0 缺席先行捕获(744)、recs2 空 ⟺ recs 空(784,写点入口恒非空,
+// unknownBase 旗标置位必伴随 always-rec 占位 recs2)。
+// ---------------------------------------------------------------------------
+
+describe('deriveDictFormats 残缺与退化写点', () => {
+  it('字面量未闭合({ 不闭):形状不猜,unknown 终局缺席', () => {
+    expect(fmts(['d = {"a": 1']).has('d')).toBe(false);
+  });
+
+  it('setdefault 变量键:开放宇宙零观测 → 无形状声称(缺席)', () => {
+    expect(fmts(['d.setdefault(k, 1)']).has('d')).toBe(false);
+  });
+
+  it('unknown 基上的条件写点:开放面已表达,不并键 → 零键证据缺席', () => {
+    expect(fmts(['d = build()', 'if x:', '    d["k"] = 1']).has('d')).toBe(false);
+  });
+
+  it('块内 unknownBase 基:maybe 基不作开放标记,写点照并入可选', () => {
+    const fmt = asLiteral('d', ['if x:', '    d = build()', '    d["k"] = 1']);
+    expect(fmt.required.size).toBe(0);
+    expect(fmt.optional.get('k')).toEqual(scalar('int'));
+  });
+
+  it('动态键对:键宇宙开放,字面量键观测保留', () => {
+    const fmt = asOpen('d', ['d = {k: 1, "a": 2}']);
+    expect(fmt.observed.size).toBe(1);
+    expect(fmt.observed.get('a')).toEqual(scalar('int'));
+  });
+
+  it('嵌套值跨行:合成行起始表带过换行,内层照推导', () => {
+    const fmt = asLiteral('d', ['d = {"n": {', '    "x": 1}}']);
+    expect(fmt.required.get('n')).toEqual({
+      kind: 'dict',
+      dict: { kind: 'literal', required: new Map([['x', scalar('int')]]), optional: new Map() }
+    });
+  });
+
+  it('def 局部写点后缩退:作用域收缩,模块名重绑干净胜出', () => {
+    const fmt = asLiteral('d', ['def f():', '    d = {"a": 1}', 'd = {"b": 2}']);
+    expect(fmt.required.get('b')).toEqual(scalar('int'));
+    expect(fmt.required.has('a')).toBe(false);
+  });
+
+  it('非写点行:扫描落空推进不误读', () => {
+    const fmt = asLiteral('d', ['d = {"a": 1}', 'pass']);
+    expect(fmt.required.get('a')).toEqual(scalar('int'));
+  });
+
+  it('元素转义:unwrap/split 引号态过转义,元素照分类 str', () => {
+    const fmt = asLiteral('d', ['d = {"l": ["a\\b", "c"]}']);
+    expect(fmt.required.get('l')).toEqual({ kind: 'list', element: scalar('str') });
+  });
+
+  it('嵌套 dict 动态键:开放结构携带已观测键', () => {
+    const fmt = asLiteral('d', ['d = {"n": {k: v, "x": 1}}']);
+    expect(fmt.required.get('n')).toEqual({
+      kind: 'dict',
+      dict: { kind: 'open', observed: new Map([['x', scalar('int')]]) }
+    });
+  });
+});
+
+describe('classifyValue 直查边界', () => {
+  it('空值文本 → unknown', () => {
+    expect(classifyValue('')).toEqual({ kind: 'unknown' });
+  });
+
+  it('未闭列表容器 → unknown', () => {
+    expect(classifyValue('[1, 2')).toEqual({ kind: 'unknown' });
+  });
+
+  it('未闭元组容器 → unknown', () => {
+    expect(classifyValue('(1, 2')).toEqual({ kind: 'unknown' });
+  });
+
+  it('dict 推导式值 → 开放宇宙零观测', () => {
+    expect(classifyValue('{k: v for k in xs}')).toEqual({
+      kind: 'dict',
+      dict: { kind: 'open', observed: new Map() }
+    });
+  });
+
+  it('列表推导式值 → 元素宇宙开放(element null)', () => {
+    expect(classifyValue('[i for i in xs]')).toEqual({ kind: 'list', element: null });
+  });
+
+  it('推导式引号转义:扫描串态带过不误判 for', () => {
+    expect(classifyValue('["a\\for x" for x in xs]')).toEqual({ kind: 'list', element: null });
+  });
+
+  it('值文本内嵌换行:行起始表过换行,内层对照收', () => {
+    expect(classifyValue('{\n"x": 1}')).toEqual({
+      kind: 'dict',
+      dict: { kind: 'literal', required: new Map([['x', scalar('int')]]), optional: new Map() }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 条件合流形状分歧(同键跨臂 kind 对账;sameKind 递归与空元素面)
+// ---------------------------------------------------------------------------
+
+describe('deriveDictFormats 条件合流值分歧', () => {
+  it('list [1] vs []:空元素面对非空元素 → 未收敛 unknown', () => {
+    const fmt = asLiteral('d', ['if c:', '    d["l"] = [1]', 'else:', '    d["l"] = []']);
+    expect(fmt.required.get('l')).toEqual({ kind: 'unknown' });
+  });
+
+  it('list [1] vs ["a"]:递归同型失配 → unknown', () => {
+    const fmt = asLiteral('d', ['if c:', '    d["l"] = [1]', 'else:', '    d["l"] = ["a"]']);
+    expect(fmt.required.get('l')).toEqual({ kind: 'unknown' });
+  });
+
+  it('tuple (1,) vs (1, "a"):空元素面失配 → unknown', () => {
+    const fmt = asLiteral('d', ['if c:', '    d["t"] = (1,)', 'else:', '    d["t"] = (1, "a")']);
+    expect(fmt.required.get('t')).toEqual({ kind: 'unknown' });
+  });
+
+  it('嵌套 dict 异键:同 kind 即一致形状证据,保留先臂键集', () => {
+    const fmt = asLiteral('d', [
+      'if c:',
+      '    d["n"] = {"x": 1}',
+      'else:',
+      '    d["n"] = {"y": 2}'
+    ]);
+    const n = fmt.required.get('n');
+    if (!n || n.kind !== 'dict' || n.dict.kind !== 'literal') {
+      throw new Error(`n expected literal dict, got ${n?.kind ?? 'absent'}`);
+    }
+    expect(n.dict.required.get('x')).toEqual(scalar('int'));
+    expect(n.dict.required.has('y')).toBe(false);
+  });
+
+  it('同键 maybe → always 升级:后写 always 并入必有', () => {
+    const fmt = asLiteral('d', ['if x:', '    d["k"] = 1', 'd["k"] = 2']);
+    expect(fmt.required.get('k')).toEqual(scalar('int'));
+    expect(fmt.optional.size).toBe(0);
+  });
+});

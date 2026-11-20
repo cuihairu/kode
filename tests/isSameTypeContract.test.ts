@@ -460,3 +460,67 @@ describe('KSEM-SER-07 sweep: 签名面与外部构造 inputs', () => {
     expect(computeSameTypeFindings(text, handBuilt)).toHaveLength(0);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// isinstance 形态边界(覆盖批4):元组形态 parenSpan/splitTypeArgs 引号
+// 全臂、未闭括号诚实退化、positional-only 标记。诚实边界:防御臂按当前
+// 调用图不可达,不硬凑——parenSpan 起始非 '('(185,三调用点皆保证
+// raw[start]==='(')、首参括号内层未闭(228,外层同扫描器同文既已
+// 收口则内层必收口;227 条件行由首参括号语料求值)、splitTypeArgs
+// 恒非 null(235)、piece 起始未闭 '('(243,平衡内文)、嵌套
+// splitTypeArgs 非 null(247)、「签名不可解析」343
+// (resolveImplMethodInputs 已在绑定推导处滤掉 null 签名,inputs 为
+// 空走 325 早退,不经此臂)。
+// ---------------------------------------------------------------------------
+
+describe('computeSameTypeFindings isinstance 形态边界', () => {
+  it('顶层引号元素:转义扫描带过,不可解析元素 pending 锚元素', () => {
+    const bodyRow = `return ${ISINSTANCE}(obj, str, "a\\b")`;
+    const text = single(sig('self, obj'), [bodyRow]);
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].face).toBe('pending');
+    expect(findings[0].character).toBe(col(bodyRow, '"a\\b"'));
+    // splitTypeArgs 转义臂收引号内字符时丢转义后字符,元素名退化为 "a\"
+    //(4 字符)——已知精度边界,本钉如实记录现行行为不修饰。
+    expect(findings[0].length).toBe('"a\\"'.length);
+  });
+
+  it('嵌套元组内转义元素:嵌套括号取位退化,pending 锚 isinstance(精度边界如实钉住)', () => {
+    // splitTypeArgs 丢转义后字符使嵌套段名成 ("a\") ,parenSpan 视引号
+    // 吞掉真收括号 → 形态判 null 走 pending 锚 isinstance 的诚实退化。
+    const bodyRow = `return ${ISINSTANCE}(obj, (str, "a\\b"))`;
+    const text = single(sig('self, obj'), [bodyRow]);
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].face).toBe('pending');
+    expect(findings[0].character).toBe(col(bodyRow, ISINSTANCE));
+    expect(findings[0].length).toBe(ISINSTANCE.length);
+  });
+
+  it('首实参带括号形态:元组实参剥括号照切元素,全可解析 → 零产出', () => {
+    const text = single(sig('self, obj'), [`return ${ISINSTANCE}((str, int), str)`]);
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+
+  it('元组形态全内建:全元素可解析 → 已证明零产出', () => {
+    const text = single(sig('self, obj'), [`return ${ISINSTANCE}(obj, (str, int))`]);
+    expect(findingsOf(text)).toHaveLength(0);
+  });
+
+  it('元组未闭(内层括号不闭):parenSpan null → pending 锚 isinstance', () => {
+    const bodyRow = `return ${ISINSTANCE}(obj, (str, int`;
+    const text = single(sig('self, obj'), [bodyRow]);
+    const findings = findingsOf(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].face).toBe('pending');
+    expect(findings[0].character).toBe(BODY_INDENT + bodyRow.indexOf(ISINSTANCE));
+    expect(findings[0].length).toBe(ISINSTANCE.length);
+  });
+
+  it('/ positional-only 标记:合法签名照常走证明状态面', () => {
+    const text = single(sig('self, obj, /'), [`return ${PY_TRUE}`]);
+    expect(findingsOf(text).map(f => f.face)).toEqual(['acceptAll']);
+  });
+});
