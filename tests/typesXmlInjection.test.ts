@@ -8,7 +8,9 @@ import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma'
 // types.xml 注入语法功能验收(批130,来源:用户 2026-10-14 着色增强需求;
 // 批131 追加 implementedBy 分段着色;KODE-SYN-001 收窄着色作用域——内建/
 // ARRAY/FIXED_DICT 裸词规则改为字段锚定+别名正文/行形态,普通 XML 正文
-// 与 .def Default 值零误着色;Flags 收窄在 tmLanguage.test.ts):
+// 与 .def Default 值零误着色;Flags 收窄在 tmLanguage.test.ts;
+// KODE-SYN-002 统一类型引用位置——字段锚定加空白容差(captures 形态,
+// 空白垫不占 token),Arg/of 值位、换行值块、implementedBy 空白垫首段纳入):
 // types.xml 默认由 XML 插件接管着色,kode 不得抢宿主分词——用注入语法
 // (injection grammar)在其上叠加 KBEngine 语义 scope:
 //   ① 内置类型(UINT32 等)有别于普通 XML 文本
@@ -141,6 +143,42 @@ const IMPL_FORMS_SAMPLE = [
   '    <implementedBy>kbtest.sub.DataImpl</implementedBy>',
   '  </DEEP>',
   '</types>'
+].join('\n');
+
+// KODE-SYN-002 统一位置样本:空白垫字段值(<Type> ITEM_ID </Type>)、Arg/of
+// 值位、嵌套 ARRAY<of>、换行值块、implementedBy 空白垫首段——001 时代这些
+// 形态一律不着色(自定义规则要求标识符紧跟 <Type>)。负位 <note> 独占词行
+// 锁「块只许在换行值位开,普通正文独占词行不着色」。
+const TYPES_POSITIONS_SAMPLE = [
+  '<types>',
+  '  <WS_FORM>',
+  '    <Type> ITEM_ID </Type>',
+  '    <Type> ARRAY </Type>',
+  '    <Arg>SKILL_REF</Arg>',
+  '    <Type>ARRAY<of> NESTED_REF </of></Type>',
+  '  </WS_FORM>',
+  '  <NL_FORM>',
+  '    <Type>',
+  '      LINE_REF',
+  '    </Type>',
+  '  </NL_FORM>',
+  '  <IMPL_WS><implementedBy> MODPATH.mod.deep.SymImpl </implementedBy></IMPL_WS>',
+  '  <note>PLAIN_WORD</note>',
+  '</types>'
+].join('\n');
+
+// KODE-SYN-002:def 宿主同款换行值(注入双宿主另一边,引擎 def 加载器对
+// 字段值先 trim,换行值与单行值语义等价)。
+const DEF_NL_SAMPLE = [
+  '<root>',
+  '  <Properties>',
+  '    <items>',
+  '      <Type>',
+  '        ITEM_INFO',
+  '      </Type>',
+  '    </items>',
+  '  </Properties>',
+  '</root>'
 ].join('\n');
 
 describe('types.xml 注入语法(批130)', () => {
@@ -579,10 +617,69 @@ describe('types.xml 注入语法(批130)', () => {
     expect(control).toContain('support.type.kbengine.builtin');
   });
 
+  it('KODE-SYN-002:空白垫字段值与 Arg/of 值位统一着色(含 ws 垫 ARRAY)', async () => {
+    if (!registry) {
+      return;
+    }
+    // <Type> ITEM_ID </Type>:001 时代紧邻要求不满足,零着色;002 空白容差
+    const wsCustom = await scopesIn(TYPES_POSITIONS_SAMPLE, 'ITEM_ID');
+    expect(wsCustom, '空白垫 Type 值缺 custom scope').toContain('entity.name.type.kbengine.custom');
+    // <Type> ARRAY </Type>:指令位同样空白容差,且不得落 custom(规则序保证)
+    const wsArray = await scopesIn(TYPES_POSITIONS_SAMPLE, 'ARRAY');
+    expect(wsArray, '空白垫 ARRAY 缺指令 scope').toContain('keyword.other.kbengine.array');
+    expect(wsArray).not.toContain('entity.name.type.kbengine.custom');
+    // <Arg>SKILL_REF</Arg>:方法形参类型值位
+    const argCustom = await scopesIn(TYPES_POSITIONS_SAMPLE, 'SKILL_REF');
+    expect(argCustom, 'Arg 值位缺 custom scope').toContain('entity.name.type.kbengine.custom');
+    // ARRAY<of> NESTED_REF </of>:复合类型嵌套位
+    const ofCustom = await scopesIn(TYPES_POSITIONS_SAMPLE, 'NESTED_REF');
+    expect(ofCustom, '嵌套 of 值位缺 custom scope').toContain('entity.name.type.kbengine.custom');
+  });
+
+  it('KODE-SYN-002:换行值块着色,块外独占词行与普通正文不着色', async () => {
+    if (!registry) {
+      return;
+    }
+    // <Type> 换行值:块规则(零宽 begin/end)命中独占行自定义类型
+    const nl = await scopesIn(TYPES_POSITIONS_SAMPLE, 'LINE_REF');
+    expect(nl, '换行值缺 custom scope').toContain('entity.name.type.kbengine.custom');
+    // 负位:普通正文元素里的独占词行不得着色(块只在换行值位开)
+    const plain = await scopesIn(TYPES_POSITIONS_SAMPLE, 'PLAIN_WORD');
+    expect(
+      plain.filter(scope => scope.endsWith('.kbengine') || scope.includes('.kbengine.')),
+      '块外独占词行不得着色'
+    ).toEqual([]);
+    // def 宿主同款换行值(注入双宿主另一边)
+    const defNl = await scopesInDef('ITEM_INFO', DEF_NL_SAMPLE);
+    expect(defNl, 'def 宿主换行值缺 custom scope').toContain('entity.name.type.kbengine.custom');
+  });
+
+  it('KODE-SYN-002:implementedBy 空白垫值分段照常(首段空白容差)', async () => {
+    if (!registry) {
+      return;
+    }
+    // <implementedBy> MODPATH.mod.deep.SymImpl </implementedBy>:
+    // 首段带空白垫仍落模块段,逐段照常,末段符号段
+    for (const seg of ['MODPATH', 'mod', 'deep']) {
+      const scopes = await scopesIn(TYPES_POSITIONS_SAMPLE, seg);
+      expect(scopes, `${seg} 应落模块段 scope`).toContain(
+        'entity.name.namespace.kbengine.implmodule'
+      );
+      expect(scopes, `${seg} 不得落符号段`).not.toContain('variable.other.kbengine.implementedby');
+    }
+    const symbol = await scopesIn(TYPES_POSITIONS_SAMPLE, 'SymImpl');
+    expect(symbol, '符号段缺 variable.other scope').toContain('variable.other.kbengine.implementedby');
+    expect(symbol).not.toContain('entity.name.namespace.kbengine.implmodule');
+  });
+
   it('五类落在五个不同语义 scope(换主题仍可区分的机制保证)', () => {
     const grammar = JSON.parse(
       fs.readFileSync(path.join(root, 'syntaxes', 'kbengine-types-injection.json'), 'utf8')
-    ) as { scopeName: string; injectionSelector: string; patterns: Array<{ name?: string }> };
+    ) as {
+      scopeName: string;
+      injectionSelector: string;
+      patterns: Array<{ name?: string; captures?: Record<string, { name?: string }> }>;
+    };
 
     // 选择器形态:双宿主注入(text.xml + source.kbengine-def,2026-10-29
     // def 着色扩展),带注释/字符串排除(vscode 自带注入同款)
@@ -591,7 +688,14 @@ describe('types.xml 注入语法(批130)', () => {
       'L:text.xml - (comment, string), L:source.kbengine-def - (comment, string)'
     );
 
-    const scopes = grammar.patterns.map(rule => rule.name ?? '').filter(Boolean);
+    // KODE-SYN-002 起规则普遍改 captures 形态(空白垫前缀不占 token,scope 挂
+    // capture 组),scope 收集须同时看顶层 name 与各 capture 组
+    const scopes = grammar.patterns.flatMap(rule => [
+      ...(typeof rule.name === 'string' ? [rule.name] : []),
+      ...Object.values(rule.captures ?? {})
+        .map(entry => entry?.name ?? '')
+        .filter(Boolean)
+    ]);
     // 内置类型的字段锚定式与别名正文式共用同一 scope(形态不同、语义相同)
     expect(scopes).toContain('support.type.kbengine.builtin');
 

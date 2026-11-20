@@ -3,21 +3,51 @@
   "injectionSelector": "L:text.xml - (comment, string), L:source.kbengine-def - (comment, string)",
   "patterns": [
     {
-      "comment": "KODE-SYN-001 收窄:内建类型只认类型值字段(<Type>/<of>/<Arg> 开标签紧邻值——引擎 def/types 加载器只在字段位读类型名)。普通 XML 正文与 .def Default 值里散落的类型词不再着色。空白/换行等值形态的位置统一归 KODE-SYN-002",
-      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))(?:UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",
-      "name": "support.type.kbengine.builtin"
+      "comment": "KODE-SYN-002 换行值块:Type/Arg/of 开标签行尾零宽入块,任一闭标签行出块(end 用泛闭标签收束,防未闭合文档把块开到 EOF)。块内 $self 复用顶层字段规则+独占行自定义类型——换行值的精确锚;独占行自定义只许在块内命中,普通 XML 正文的独占词行不着色",
+      "begin": "(?:(?<=<Type>)|(?<=<Arg>)|(?<=<of>))(?=$)",
+      "end": "^(?=[ \\t]*</[A-Za-z_][A-Za-z0-9_]*>)",
+      "patterns": [
+        {
+          "include": "$self"
+        },
+        {
+          "match": "^[ \\t]*([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])[ \\t]*$",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.kbengine.custom"
+            }
+          }
+        }
+      ]
     },
     {
-      "comment": "ARRAY/FIXED_DICT 指令同收窄:只在类型值字段位着色(引擎在类型值位把指令当复合结构读)",
-      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))ARRAY(?![A-Za-z0-9_])",
-      "name": "keyword.other.kbengine.array"
+      "comment": "KODE-SYN-001 收窄+002 空白容差:内建类型认类型值字段(<Type>/<of>/<Arg> 开标签紧邻值,允许空白垫——引擎加载器对字段值先 trim)。普通 XML 正文与 .def Default 值里散落的类型词不着色",
+      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))[ \\t]*(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",
+      "captures": {
+        "1": {
+          "name": "support.type.kbengine.builtin"
+        }
+      }
     },
     {
-      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))FIXED_DICT(?![A-Za-z0-9_])",
-      "name": "keyword.other.kbengine.fixed-dict"
+      "comment": "ARRAY/FIXED_DICT 指令同字段锚定+空白容差(002):引擎在类型值位把指令当复合结构读",
+      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))[ \\t]*(ARRAY)(?![A-Za-z0-9_])",
+      "captures": {
+        "1": {
+          "name": "keyword.other.kbengine.array"
+        }
+      }
     },
     {
-      "comment": "类型别名正文保留(types.xml/alias.xml 条目值形态):元素文本整段恰为一个类型词、随后闭标签(允许空白垫),如 <ITEM_ID> UINT32 </ITEM_ID>。词嵌句中(前后还有别的词)不命中——普通 XML 正文不再误着色。残面:任意 XML 中元素文本恰好只是类型词仍命中——纯文本层无文档身份可依时的最小误报面;跨行条目值需块状态,归 KODE-SYN-002",
+      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))[ \\t]*(FIXED_DICT)(?![A-Za-z0-9_])",
+      "captures": {
+        "1": {
+          "name": "keyword.other.kbengine.fixed-dict"
+        }
+      }
+    },
+    {
+      "comment": "类型别名正文保留(001;types.xml/alias.xml 条目值形态):元素文本整段恰为一个类型词、随后闭标签(允许空白垫),如 <ITEM_ID> UINT32 </ITEM_ID>。词嵌句中(前后还有别的词)不命中。残面:任意 XML 中元素文本恰好只是类型词仍命中——纯文本层无文档身份可依时的最小误报面",
       "match": "(?<=>)[ \\t]*(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])(?=\\s*</)",
       "captures": {
         "1": {
@@ -26,7 +56,7 @@
       }
     },
     {
-      "comment": "复合类型条目体的内联指令(值首、后随子节点):<SKILL_SLOT>FIXED_DICT<Properties>…。词嵌句中不命中(尾部必须紧跟标签)",
+      "comment": "复合类型条目体的内联指令(001;值首、后随子节点):<SKILL_SLOT>FIXED_DICT<Properties>…",
       "match": "(?<=>)[ \\t]*(ARRAY)(?![A-Za-z0-9_])(?=\\s*<)",
       "captures": {
         "1": {
@@ -43,7 +73,7 @@
       }
     },
     {
-      "comment": "复合类型条目体的独占行指令(体里自成一行,TextMate match 不跨行,行形态是这一形态下的可锚点)。capture 组保词边界:token 与裸词时代逐位同形",
+      "comment": "复合类型条目体的独占行指令(001;TextMate match 不跨行,行形态是别名正文在此形态下的可锚点;002 起换行块内的独占行由块规则+行形态双保险)",
       "match": "^[ \\t]*(ARRAY)(?=[ \\t]*$)",
       "captures": {
         "1": {
@@ -60,7 +90,7 @@
       }
     },
     {
-      "comment": "独占行的内建类型值(多行简单条目/类型别名正文)",
+      "comment": "独占行的内建类型值(001;多行简单条目/类型别名正文)",
       "match": "^[ \\t]*(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])[ \\t]*$",
       "captures": {
         "1": {
@@ -69,17 +99,28 @@
       }
     },
     {
-      "comment": "自定义类型引用:<Type> 值位(批130;其余引用位形态——空白/换行/Arg/of 值——归 KODE-SYN-002 统一)",
-      "match": "(?<=<Type>)[A-Za-z_][A-Za-z0-9_]*",
-      "name": "entity.name.type.kbengine.custom"
+      "comment": "自定义类型引用(002 统一):Type/of/Arg 值位,允许空白垫(<Type> ITEM_ID </Type> 形态)。换行值走块规则;其余孤立位置不猜——与引擎加载面一致",
+      "match": "(?:(?<=<Type>)|(?<=<of>)|(?<=<Arg>))[ \\t]*([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])",
+      "captures": {
+        "1": {
+          "name": "entity.name.type.kbengine.custom"
+        }
+      }
     },
     {
-      "comment": "implementedBy 模块段:点号前的每一段。引擎 datatype.cpp loadImplModule 把值当「模块路径.实现对象」装载,分段与引擎语义对齐(批131)。lookahead 钉住闭标签,点号后的尾巴必须是纯标识符序列——不会误伤 implementedBy 之外的文本",
-      "match": "(?<=<implementedBy>)[A-Za-z_][A-Za-z0-9_]*(?=\\.[A-Za-z_][A-Za-z0-9_.]*\\s*</implementedBy>)|(?<=\\.)[A-Za-z_][A-Za-z0-9_]*(?=\\.[A-Za-z_][A-Za-z0-9_.]*\\s*</implementedBy>)",
-      "name": "entity.name.namespace.kbengine.implmodule"
+      "comment": "implementedBy 模块段(002 空白容差):点号前的每一段,首段允许与开标签间空白垫(<implementedBy> MOD.path.Sym </implementedBy>)。引擎 datatype.cpp loadImplModule 把值当「模块路径.实现对象」装载(trim 后按点号切),分段与引擎语义对齐(批131)",
+      "match": "(?<=<implementedBy>)[ \\t]*([A-Za-z_][A-Za-z0-9_]*)(?=\\.[A-Za-z_][A-Za-z0-9_.]*\\s*</implementedBy>)|(?<=\\.)[ \\t]*([A-Za-z_][A-Za-z0-9_]*)(?=\\.[A-Za-z_][A-Za-z0-9_.]*\\s*</implementedBy>)",
+      "captures": {
+        "1": {
+          "name": "entity.name.namespace.kbengine.implmodule"
+        },
+        "2": {
+          "name": "entity.name.namespace.kbengine.implmodule"
+        }
+      }
     },
     {
-      "comment": "implementedBy 符号段:紧贴闭标签的最后一段(实现对象)。裸值(无点号)整段落这里",
+      "comment": "implementedBy 符号段:紧贴闭标签的最后一段(实现对象)。裸值(无点号)整段落这里;闭标签前空白垫由 \\s* 收(批131)",
       "match": "[A-Za-z_][A-Za-z0-9_]*(?=\\s*</implementedBy>)",
       "name": "variable.other.kbengine.implementedby"
     }
