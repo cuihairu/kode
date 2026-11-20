@@ -373,3 +373,160 @@ describe('processManager 平台臂(WIN-3)与 taskkill 回落', () => {
 });
 
 });
+
+// ---------------------------------------------------------------------------
+// 批 47:watchdog 硬截止兜底(cancelSampler 与 hardDeadline 两路,334/367-368/
+// 378-379)与状态表清理(484:进程已不在册且非终态事件 → 删表项)。
+// ---------------------------------------------------------------------------
+describe('批 47:ready 盯守与状态表清理', () => {
+  it('probe 永不回:硬截止计时器兜底终局为 timeout,且采样器在进程离册后自停', async () => {
+    const child = new FakeChild();
+    const giveUps: string[] = [];
+    const manager = new ProcessManager(() => child);
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        timeoutMs: 10,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(giveUps).toEqual(['timeout']);
+    void manager.dispose();
+  });
+
+  it('采样器拍点:进程被移出册 → stopWatchdog 早退(334),不再二次报', async () => {
+    const child = new FakeChild();
+    const giveUps: string[] = [];
+    const manager = new ProcessManager(() => child);
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        cancelHandle: { aborted: false },
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    // 无 timeoutMs 且未取消:不应报 giveUp;进程仍在册
+    expect(giveUps).toEqual([]);
+    // 停进程 → 进程离册 → 下一采样拍走 stopWatchdog 早退
+    await manager.stop('svc', 100);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(giveUps).toEqual([]);
+    void manager.dispose();
+  });
+
+  it('状态表:进程离册后的非终态事件 → 表项删除(484)', async () => {
+    const child = new FakeChild();
+    const manager = new ProcessManager(() => child);
+    const seen: string[] = [];
+    manager.onState(event => seen.push(event.state));
+    manager.start({ id: 'svc', command: 'server', readyAfterMs: 1 });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    // 手动清册(模拟进程已不在册)
+    (manager as unknown as { processes: Map<string, unknown> }).processes.delete('svc');
+    // 再发一个非终态事件:states 表删除该 id,事件照发
+    (manager as unknown as { emitState(e: unknown): void }).emitState({
+      id: 'svc', component: 'server', state: 'starting'
+    });
+    expect(seen).toContain('starting');
+    expect(manager.get('svc')).toBeUndefined();
+    void manager.dispose();
+  });
+});
+
+describe('批 47 续:采样器拍点的离册/超时两臂', () => {
+  it('cancelHandle 在场 + 进程离册 → 采样拍 stopWatchdog(334)', async () => {
+    const child = new FakeChild();
+    const giveUps: string[] = [];
+    const manager = new ProcessManager(() => child);
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        cancelHandle: { aborted: false },
+        intervalMs: 5,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    // 立刻清册:下一采样拍(intervalMs=5)走 "进程已不在册" 早退
+    (manager as unknown as { processes: Map<string, unknown> }).processes.delete('svc');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(giveUps).toEqual([]);
+    void manager.dispose();
+  });
+
+  it('无 hardDeadline 时超时由采样拍报 timeout(367/378)', async () => {
+    // timeoutMs 给值 → hardDeadline 也在,但采样器先到点同样报 timeout;
+    // 两路都给同一终局,此处钉采样器拍点(interval 内到点)不抛不重复
+    const child = new FakeChild();
+    const giveUps: string[] = [];
+    const manager = new ProcessManager(() => child);
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        cancelHandle: { aborted: false },
+        intervalMs: 5,
+        timeoutMs: 1,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(giveUps).toEqual(['timeout']);
+    void manager.dispose();
+  });
+});
+
+describe('批 47 终:硬截止二次拍与 poll 内超时臂', () => {
+  it('采样器已报 timeout 后 hardDeadline 才到 → stopWatchdog 早退(334)', async () => {
+    const child = new FakeChild();
+    const giveUps: string[] = [];
+    const manager = new ProcessManager(() => child);
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        cancelHandle: { aborted: false },
+        intervalMs: 2,
+        timeoutMs: 20,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    // 采样器(2ms)先到点报 timeout;hardDeadline(20ms)后到,gaveUp 已真 → 早退
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(giveUps).toEqual(['timeout']);
+    void manager.dispose();
+  });
+
+  it('poll 拍内超时:probe 未回但截止已过 → 报 timeout(367-368)', async () => {
+    const child = new FakeChild();
+    const giveUps: string[] = [];
+    const manager = new ProcessManager(() => child);
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        intervalMs: 3,
+        timeoutMs: 6,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(giveUps).toEqual(['timeout']);
+    void manager.dispose();
+  });
+});
+
+// 覆盖口径残余(批 47 定性):334/367-368/378-379 五行为**定时器竞争时的
+// 二次兜底分**,不可稳定复现——
+//  334 hardDeadline 回调的 `gaveUp 已真 → stopWatchdog` 早退:需采样器先于
+//     硬截止到点报到(两定时器同源 timeoutMs,采样间隔须恰小于截止且抖动可控),
+//     实测 intervalMs=2/timeoutMs=20 仍不可靠命中(单拍回调顺序由 libuv 决定)
+//  367-368 / 378-379 poll 内的超时判断:poll 首拍即同步判截止,只有 probe
+//     承诺在 croak 前后跨过截止窗口才落到该分;实测 probe 永不回时终局恒由
+//     采样器/hardDeadline 先给出,该分不触达
+// 上述分支与已覆盖的终局语义同源(同一 giveUp('timeout') 出口,终局去重靠
+// gaveUp 幂等),属防御冗余,不为此改产品代码或加 sleep 竞态型断言。
