@@ -30,6 +30,10 @@ import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt
 import { createDefStructuralGate, type DefStructuralGate } from './backend/hotReloadDefGate';
 import { checkHotReloadConfigFiles, isHotReloadConfigFile } from './backend/hotReloadConfigGate';
 import { analyzeTypesImpact, formatTypesImpactReport } from './backend/hotReloadTypesImpact';
+import {
+  analyzeEntitiesImpact,
+  formatEntitiesImpactReport
+} from './backend/hotReloadEntitiesImpact';
 import { sendFilesViaReloadChannel } from './backend/hotReloadChannelSend';
 import { sendDefaultHotfix } from './backend/hotReloadDefaultHotfix';
 import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './backend/hotReloadNotice';
@@ -89,6 +93,15 @@ export const HOT_RELOAD_DEFAULT_DEBOUNCE_MS = 500;
 const isTypesXmlBasename = (file: string): boolean => {
   const norm = file.replace(/\\/g, '/');
   return norm.slice(norm.lastIndexOf('/') + 1).toLowerCase() === 'types.xml';
+};
+
+/**
+ * RUST-399:批内 entities.xml 判定(KBEngine 实体注册文件,任意目录;与
+ * isHotReloadConfigFile 同路径形状口径,不猜项目布局)。
+ */
+const isEntitiesXmlBasename = (file: string): boolean => {
+  const norm = file.replace(/\\/g, '/');
+  return norm.slice(norm.lastIndexOf('/') + 1).toLowerCase() === 'entities.xml';
 };
 /** 派生 glob 的尾段:热更只处理 .py(非 py 走旁路,不进投递) */
 export const HOT_RELOAD_DERIVED_GLOB_SUFFIX = '**/*.py';
@@ -1150,6 +1163,51 @@ export function setupHotReload(
         }
         return lines.join(';');
       };
+      // RUST-399(HR-HASH-012):entities.xml 注册项变化影响报告——会话基线:
+      // 该文件首次在本会话经管道见到即建档(变更面自下次起报告),此后变化做
+      // before/after 注册项对比。注册表是引擎装载期结构面:注册项变化即注册表
+      // 版本变化,Python reload 不替代(默认不发 Python 热更请求替代结构变更),
+      // 报告并入需重启理由。不需要收集 .def(受影响实体即变化集本身)。
+      const buildEntitiesImpact = async (): Promise<string | null> => {
+        const entitiesXmlFiles = configFiles.filter(isEntitiesXmlBasename);
+        if (entitiesXmlFiles.length === 0) {
+          return null;
+        }
+        const readConfig = options.targetState?.readFileContent;
+        if (!readConfig) {
+          return 'entities.xml 变更:无内容读取通道,影响报告未生成(如实跳过)';
+        }
+        const lines: string[] = [];
+        for (const file of entitiesXmlFiles) {
+          const after = await readConfig(file);
+          if (after === null || after === undefined) {
+            lines.push(`${file}: 内容不可读,影响报告未生成(如实跳过)`);
+            continue;
+          }
+          const before = entitiesXmlBaselines.get(file);
+          entitiesXmlBaselines.set(file, after);
+          if (before === undefined) {
+            lines.push(`${file}: 本次会话首次见到,已建档为基线(变更面自下次起报告)`);
+            continue;
+          }
+          const report = analyzeEntitiesImpact({ beforeEntitiesXml: before, afterEntitiesXml: after });
+          lines.push(`${file}: ${formatEntitiesImpactReport(report)}`);
+        }
+        return lines.join(';');
+      };
+      // 批内配置影响报告(types.xml + entities.xml):并入需重启理由/审计
+      const buildConfigImpact = async (): Promise<string | null> => {
+        const parts: string[] = [];
+        const typesLine = await buildTypesImpact();
+        if (typesLine) {
+          parts.push(typesLine);
+        }
+        const entitiesLine = await buildEntitiesImpact();
+        if (entitiesLine) {
+          parts.push(entitiesLine);
+        }
+        return parts.length > 0 ? parts.join(';') : null;
+      };
       // RUST-336:批内配置文件内容校验(良构+types.xml 值域/一致性);
       // 有致命发现拦下报校验失败,零发现走需重启面(配置永不走普通通道)
       const gateConfig = (then: () => void): void => {
@@ -1166,15 +1224,15 @@ export function setupHotReload(
           if (verdict.reasons.length > 0) {
             blockConfig(verdict.reasons);
             // 影响报告是事实面(内容有问题也如实报影响),不阻塞校验失败面
-            void buildTypesImpact().then(line => {
+            void buildConfigImpact().then(line => {
               if (line) {
-                status.log(`types.xml 影响报告: ${line}`);
+                status.log(`配置影响报告: ${line}`);
               }
             });
             return;
           }
-          // 影响报告并入需重启理由(受影响 .def 同判据需重启,不自动热更)
-          void buildTypesImpact().then(line => {
+          // 影响报告并入需重启理由(受影响 .def / 实体注册表同判据需重启,不自动热更)
+          void buildConfigImpact().then(line => {
             blockConfigRestart(line ? `内容校验通过;${line}` : '内容校验通过');
           });
         });
@@ -1361,6 +1419,9 @@ export function setupHotReload(
   // 再次变化才前后对比出影响报告;会话级(与 def 基线册同生命周期,fire 间
   // 不重置)——每批 fire 内建的基线册会因「首见即建档」永不产生前后对比。
   const typesXmlBaselines = new Map<string, string>();
+  // RUST-399:entities.xml 会话基线(名 → 最近一次经管道见到的原文)。与
+  // types.xml 基线册同纪律:首见建档,再次变化才前后对比出注册影响报告。
+  const entitiesXmlBaselines = new Map<string, string>();
   // RT-3:判定面共用(hotReloadDefGate)——注入的闸实例优先(与重试侧同一基
   // 线册),否则本装配自建(基线册私有,重试侧拿不到)
   const defGate =

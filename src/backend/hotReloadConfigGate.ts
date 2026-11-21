@@ -29,14 +29,20 @@ const basename = (file: string): string => {
 };
 
 /**
- * 热更配置文件判定:types.xml(KBEngine 类型表)、kbengine.xml/
- * kbengine_defaults.xml(引擎全局配置)任意目录,以及 entity_defs/ 下的
- * 实体定义 XML。判定只看路径形状,不猜项目布局之外的文件。
+ * 热更配置文件判定:types.xml(KBEngine 类型表)、entities.xml(实体注册表,
+ * RUST-399)、kbengine.xml/kbengine_defaults.xml(引擎全局配置)任意目录,
+ * 以及 entity_defs/ 下的实体定义 XML。判定只看路径形状,不猜项目布局之外
+ * 的文件。
  */
 export function isHotReloadConfigFile(file: string): boolean {
   const norm = file.replace(/\\/g, '/').toLowerCase();
   const base = basename(file);
-  if (base === 'types.xml' || base === 'kbengine.xml' || base === 'kbengine_defaults.xml') {
+  if (
+    base === 'types.xml' ||
+    base === 'entities.xml' ||
+    base === 'kbengine.xml' ||
+    base === 'kbengine_defaults.xml'
+  ) {
     return true;
   }
   return norm.endsWith('.xml') && norm.includes('/entity_defs/');

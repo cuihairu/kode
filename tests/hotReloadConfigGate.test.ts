@@ -43,9 +43,11 @@ const MALFORMED_XML = `<kbengine>
 `;
 
 describe('纯核:配置文件判定与校验(RUST-336)', () => {
-  it('isHotReloadConfigFile:types.xml/kbengine*.xml 任意目录 + entity_defs 下 XML', () => {
+  it('isHotReloadConfigFile:types.xml/entities.xml/kbengine*.xml 任意目录 + entity_defs 下 XML', () => {
     expect(isHotReloadConfigFile('/ws/assets/scripts/entity_defs/types.xml')).toBe(true);
     expect(isHotReloadConfigFile('/ws/types.xml')).toBe(true);
+    // RUST-399:entities.xml 实体注册表任意目录也是配置(注册表版本变化,需重启)
+    expect(isHotReloadConfigFile('/ws/scripts/entities.xml')).toBe(true);
     expect(isHotReloadConfigFile('/ws/kbengine.xml')).toBe(true);
     expect(isHotReloadConfigFile('/ws/kbengine_defaults.xml')).toBe(true);
     expect(isHotReloadConfigFile('/ws/assets/scripts/entity_defs/Avatar.xml')).toBe(true);
