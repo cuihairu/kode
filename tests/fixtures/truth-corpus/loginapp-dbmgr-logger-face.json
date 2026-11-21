@@ -1,0 +1,258 @@
+{
+  "family": "loginapp-dbmgr-logger-face",
+  "grounding": {
+    "doc": "docs/knowledge/api-loginapp-dbmgr-logger.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "pos-shared-pythonapp-face",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "loginapp", "roster": "pythonapp" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1:三进程皆 PythonApp 派生,模块面=python_app.cpp:230-349 共享层(publish..debugTracing 九函数+LOG_TYPE_*/NEXT_ONLY 常量+addTimer/delTimer+描述符四件+MemoryStream)+Script::install core(component:248/genUUID64:258/urlopen:286+pyurl.cpp:23);三面逐名同构"
+      },
+      "evidence": [
+        "`kbe/src/lib/server/python_app.cpp:230-349` (`PythonApp::installPyModules`, base class of all three apps)",
+        "`MemoryStream` (`:271`), `publish` (`:275`), `scriptLogType` (`:278`)",
+        "`addTimer`/`delTimer` (`:329-330`)",
+        "`registerReadFileDescriptor`/`registerWriteFileDescriptor`/`deregisterReadFileDescriptor`/`deregisterWriteFileDescriptor` (`:331-334`)",
+        "`kbe/src/lib/pyscript/script.cpp:258` | `genUUID64`",
+        "`urlopen` (installed by `PyUrl::initialize` during `Script::install`)",
+        "five-arg callback `(httpcode, data, headers, success,",
+        "Same semantics on all `PythonApp` processes."
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "faces": ["loginapp", "dbmgr", "logger"],
+          "functions": [
+            "publish",
+            "scriptLogType",
+            "getResFullPath",
+            "hasRes",
+            "open",
+            "listPathRes",
+            "matchPath",
+            "debugTracing",
+            "addTimer",
+            "delTimer",
+            "registerReadFileDescriptor",
+            "registerWriteFileDescriptor",
+            "deregisterReadFileDescriptor",
+            "deregisterWriteFileDescriptor",
+            "genUUID64",
+            "urlopen"
+          ],
+          "variables": [
+            "component",
+            "LOG_TYPE_NORMAL",
+            "LOG_TYPE_INFO",
+            "LOG_TYPE_ERR",
+            "LOG_TYPE_DBG",
+            "LOG_TYPE_WAR",
+            "NEXT_ONLY"
+          ],
+          "classes": ["MemoryStream"],
+          "urlopenCallbackParams": 5
+        }
+      }
+    },
+    {
+      "id": "pos-d2-serverErr-values",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "loginapp", "roster": "serverErr" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 D2:SERVER_ERR_* 常量在 loginapp(Loginapp::onInstallPyModules loginapp.cpp:199-206)与 dbmgr(dbmgr.cpp:343-352)各自登记;登记循环按 SERVER_ERR_STR[i]=i 逐值(server_errors.h:57+ 表 38 名,SERVER_SUCCESS=0..SERVER_ERR_ACCOUNT_LOGIN_ANOTHER_SERVER=37);fork 实读表序与 kode 钉值一致"
+      },
+      "evidence": [
+        "`SERVER_ERR_*` constants exist on loginapp and dbmgr (each registers its own loop in `Loginapp::onInstallPyModules` `loginapp.cpp:199-206` and `Dbmgr::onInstallPyModules` `dbmgr.cpp:343-352`)",
+        "values from `kbe/src/lib/server/server_errors.h:57+`), and loginapp/dbmgr/"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "faces": ["loginapp", "dbmgr"],
+          "tableCount": 38,
+          "valuePins": {
+            "SERVER_SUCCESS": 0,
+            "SERVER_ERR_SRV_NO_READY": 1,
+            "SERVER_ERR_USER1": 25,
+            "SERVER_ERR_ACCOUNT_LOGIN_ANOTHER_SERVER": 37
+          }
+        }
+      }
+    },
+    {
+      "id": "neg-d2-serverErr-logger",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "logger", "name": "SERVER_SUCCESS" },
+      "engine": {
+        "load": "reject",
+        "truth": "档 D2:logger 无 onInstallPyModules 循环(logger.h:49 直承 PythonApp 无此登记),SERVER_ERR_*/SERVER_SUCCESS 在 logger 模块面缺席,脚本读即 AttributeError;fork grep logger.cpp SERVER_ERR/onInstallPyModules=0 hits 实证"
+      },
+      "evidence": [
+        "but are **missing on logger** (no `onInstallPyModules` loop; `logger.h:49` derives from",
+        "logger are *not* EntityApps. See the deviations table (row D2)."
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "absentNamesOnLogger": "ALL_SERVER_STAR" }
+      }
+    },
+    {
+      "id": "div-serverErrMax-extra",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "loginapp", "name": "SERVER_ERR_MAX" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "引擎登记循环为 for i < SERVER_ERR_MAX 只登记 SERVER_ERR_STR[0..37](loginapp.cpp:199-206/dbmgr.cpp:343-352/entity_app.h 同形);SERVER_ERR_MAX 本身是循环界与 #define(server_errors.h:55=38),不在 STR 表内,模块面从不出现该名"
+      },
+      "evidence": [
+        "each registers its own loop in `Loginapp::onInstallPyModules` `loginapp.cpp:199-206` and `Dbmgr::onInstallPyModules` `dbmgr.cpp:343-352`",
+        "values from `kbe/src/lib/server/server_errors.h:57+`), and loginapp/dbmgr/"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "presentInKode": true,
+          "faces": ["loginapp", "dbmgr"],
+          "pinnedSignature": "SERVER_ERR_MAX: int = 38"
+        }
+      },
+      "finding": "divergence 登记(误导方向)=引擎从不把 SERVER_ERR_MAX 登记为模块面名字(循环界非表项)而 kode loginapp/dbmgr 符号表带 SERVER_ERR_MAX: int = 38 行:补全面会给运行期 AttributeError 的名字;只钉现状,收窄(typings 双侧+Rust 同嵌)归独立批,不冒充修复"
+    },
+    {
+      "id": "div-vector-fixedarray-extra",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "logger", "name": "Vector2" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "档 §1 称模块面全貌=PythonApp 层+Script::install core;fork 实读:Script::install 经 math::installModule(\"Math\") 把 Vector2/3/4 装进顶层 Math 模块(script.cpp:291,math.cpp:9-23),FixedArray 全树无模块面注册(fixedarray.cpp 仅 GC/pickle 内部引用);KBEngine 模块面上四名皆无"
+      },
+      "evidence": [
+        "The entire module face comes from the shared `PythonApp` layer plus the",
+        "`Script::install` core:"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "presentInKode": true,
+          "faces": ["loginapp", "dbmgr", "logger"],
+          "extraClasses": ["Vector2", "Vector3", "Vector4", "FixedArray"]
+        }
+      },
+      "finding": "divergence 登记(误导方向)=引擎 KBEngine 面无 Vector2/3/4(Math 模块另有)与 FixedArray 而 kode 三面符号表各带四条 class 行:KBEngine.Vector2 补全即误导;只钉现状,收窄(或改挂 Math 模块面)归独立批;其余五面(base/cell/client/bots/interfaces)同形,归各族各自核,本族只钉三工具面"
+    },
+    {
+      "id": "pos-dbmgr-executeRaw-only",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "dbmgr", "name": "executeRawDatabaseCommand" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §3:dbmgr 唯一 app-specific KBEngine 方法(dbmgr.cpp:355);1-4 位参 \"s#|O|i|O\";dbInterfaceName 缺省 \"default\"(:860),未知接口名 TypeError(:865-870)"
+      },
+      "evidence": [
+        "`executeRawDatabaseCommand(command, callback, threadID, dbInterfaceName)`",
+        "— the only app-specific `KBEngine` method dbmgr registers:",
+        "`dbmgr.cpp:355` (`APPEND_SCRIPT_MODULE_METHOD` inside",
+        "1-4 positional args via `\"s#|O|i|O\"` —",
+        "unknown interface names raise `TypeError` at"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "onlyOn": "dbmgr",
+          "absentOn": ["loginapp", "logger"],
+          "defaultDbInterfaceInSignature": "__dbInterfaceName: str='default'"
+        }
+      }
+    },
+    {
+      "id": "pos-loginapp-spi-roster",
+      "kind": "positive",
+      "input": { "path": "spi-roster", "process": "loginapp", "roster": true },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §2 六回调:onLoginAppReady(loginapp.cpp:170-180,格式串\"\")/onLoginAppShutDown(:59-62)/onRequestLogin(\"ssby#\" :1012-1018,返回裸错误码或 5 元组 \"H|s|s|b|y#\" :1024-1029)/onLoginCallbackFromDB(:1229-1235)/onRequestCreateAccount(\"ssy#\" :367-373)/onCreateAccountCallbackFromDB(:588-594)"
+      },
+      "evidence": [
+        "`onLoginAppReady()` — invoked at the end of `Loginapp::initializeEnd`",
+        "with format `\"ssby#\"` (`loginapp.cpp:1012-1018`)",
+        "or a **5-tuple** parsed with `\"H|s|s|b|y#\"`",
+        "format `\"ssy#\"` (`loginapp.cpp:367-373`)",
+        "`onLoginAppShutDown()` — invoked from `Loginapp::onShutdownBegin`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": [
+            "onLoginAppReady",
+            "onLoginAppShutDown",
+            "onRequestLogin",
+            "onLoginCallbackFromDB",
+            "onRequestCreateAccount",
+            "onCreateAccountCallbackFromDB"
+          ],
+          "required": true,
+          "component": "loginapp"
+        }
+      }
+    },
+    {
+      "id": "pos-dbmgr-logger-spi-roster",
+      "kind": "positive",
+      "input": { "path": "spi-roster", "process": "dbmgr", "roster": true },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §3/§4:dbmgr 四回调(onDBMgrReady dbmgr.cpp:306-313/onDBMgrShutDown :153-156/onReadyForShutDown canShutdown 轮询 :77-95 须返 Py_True/onSelectAccountDBInterface \"s\" :1240-1267);logger 四回调(onLoggerAppReady logger.cpp:126-135/onLoggerAppShutDown :215-218/onReadyForShutDown 同 Py_True 门 :175-192/onLogWrote \"y#\" :286-316,返 False 不落盘/返 str 重写行)"
+      },
+      "evidence": [
+        "`onReadyForShutDown()` — polled from `Dbmgr::canShutdown` when the",
+        "the callback returns exactly `Py_True`; anything else yields",
+        "`onDBMgrReady()` — end of `Dbmgr::initializeEnd`",
+        "`onSelectAccountDBInterface(accountName)` — invoked from",
+        "`onLoggerAppReady()` — end of `Logger::initializeEnd`",
+        "`onReadyForShutDown()` — same `Py_True` gate as dbmgr, from",
+        "`onLogWrote(datas)` — invoked for every log item when the entry script",
+        "beyond the material: returning `False` marks the item non-persistent",
+        "(`:297-301`), returning a `str`/bytes **rewrites the persisted line**"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "dbmgrNames": ["onDBMgrReady", "onDBMgrShutDown", "onSelectAccountDBInterface"],
+          "loggerNames": ["onLoggerAppReady", "onLoggerAppShutDown", "onLogWrote"],
+          "onReadyForShutDownComponents": ["baseapp", "dbmgr", "logger"],
+          "onReadyForShutDownRequired": false,
+          "onLogWroteRequired": false
+        }
+      }
+    },
+    {
+      "id": "pos-d1-addtimer-required-callback",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "loginapp", "name": "addTimer" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 D1:fork __py_addTimer 按 \"ffO\" 解析,回调实参必需(python_app.cpp:721-725),3.7 材料 callbackObj=None 不成立;D4:delTimer 非法 id 抛 TypeError 返 -1(python_app.cpp:755-771);三面同形共享层方法"
+      },
+      "evidence": [
+        "`\"ffO\"` — the callback argument is **required**, not optional with a",
+        "`None` default (deviation row D1)",
+        "| D1 `addTimer` `callbackObj` default | `callbackObj=None` — optional parameter | Callback is **required**: `PyArg_ParseTuple(args, \"ffO\")` fails without it | Fork | `kbe/src/lib/server/python_app.cpp:721-725` |",
+        "raises `TypeError` and returns `-1` — no deviation in contract, error type now explicit"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "faces": ["loginapp", "dbmgr", "logger"],
+          "addTimerSignature": "def addTimer(__initialOffset: float, __repeatOffset: float, __callbackObj: TimerCallback) -> int",
+          "delTimerSignature": "def delTimer(__id: int) -> int"
+        }
+      }
+    }
+  ]
+}

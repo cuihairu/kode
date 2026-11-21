@@ -1639,3 +1639,149 @@ describe('truth-corpus: baseapp-module-face 族执行闸(baseapp 模块面探针
     expect(entry.reason).toBeTruthy();
   });
 });
+
+// ── 第二十九族 loginapp-dbmgr-logger-face(KB-API-006 三工具面)────────────
+// 三面符号表(loginapp 67/dbmgr 68/logger 28)存在性+kind+签名直钉;SPI 名册面
+// 六+七回调 required/components 钉;两处误导分歧(SERVER_ERR_MAX/Vector 族)按
+// 现状钉——kode 侧收编或收窄即红,触发重钉,不冒充修复。
+interface ToolFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      faces?: string[];
+      functions?: string[];
+      variables?: string[];
+      classes?: string[];
+      urlopenCallbackParams?: number;
+      tableCount?: number;
+      valuePins?: Record<string, number>;
+      absentNamesOnLogger?: string;
+      presentInKode?: boolean;
+      pinnedSignature?: string;
+      extraClasses?: string[];
+      onlyOn?: string;
+      absentOn?: string[];
+      defaultDbInterfaceInSignature?: string;
+      names?: string[];
+      required?: boolean;
+      component?: string;
+      dbmgrNames?: string[];
+      loggerNames?: string[];
+      onReadyForShutDownComponents?: string[];
+      onReadyForShutDownRequired?: boolean;
+      onLogWroteRequired?: boolean;
+      addTimerSignature?: string;
+      delTimerSignature?: string;
+    };
+  };
+}
+const toolFaceFamily = families.find(f => f.family === 'loginapp-dbmgr-logger-face')!;
+const toolFaceEntries = toolFaceFamily.entries as unknown as ToolFaceEntry[];
+const toolFaceSymbols = new Map(
+  (['loginapp', 'dbmgr', 'logger'] as const).map(
+    p => [p, new Map(processApiSymbols(p).map(s => [s.name, s]))] as const
+  )
+);
+describe('truth-corpus: loginapp-dbmgr-logger-face 族执行闸(三工具面探针)', () => {
+  it('登记点名册臂:§1 共享面 24 名三面逐名钉 kind;urlopen 回调五参元组入签名', () => {
+    const roster = toolFaceEntries.find(e => e.input.roster === 'pythonapp')!;
+    const a = roster.kode.analysis!;
+    expect(a.faces).toEqual(['loginapp', 'dbmgr', 'logger']);
+    for (const face of a.faces!) {
+      const syms = toolFaceSymbols.get(face as 'loginapp')!;
+      for (const n of a.functions!) { expect(syms.get(n), `${face}:${n}`).toMatchObject({ kind: 'function' }); }
+      for (const n of a.variables!) { expect(syms.get(n), `${face}:${n}`).toMatchObject({ kind: 'variable' }); }
+      for (const n of a.classes!) { expect(syms.get(n), `${face}:${n}`).toMatchObject({ kind: 'class' }); }
+      // D8:五参回调元组 (httpcode, data, headers, success, url) 固化进签名
+      expect(a.urlopenCallbackParams).toBe(5);
+      expect((syms.get('urlopen') as { signature: string }).signature)
+        .toContain('Callable[[int, str, str, bool, str], Any]');
+    }
+  });
+
+  it('D2 值钉臂:SERVER_ERR 38 表名在 loginapp+dbmgr,逐值=server_errors.h 表序', () => {
+    const values = toolFaceEntries.find(e => e.id === 'pos-d2-serverErr-values')!;
+    const a = values.kode.analysis!;
+    expect(a.faces).toEqual(['loginapp', 'dbmgr']);
+    for (const face of a.faces!) {
+      const syms = toolFaceSymbols.get(face as 'loginapp')!;
+      const serverNames = [...syms.keys()].filter(n => n.startsWith('SERVER_'));
+      // 38 表名 + SERVER_ERR_MAX(误导分歧另钉)=39
+      expect(serverNames.length, face).toBe(a.tableCount! + 1);
+      for (const [name, value] of Object.entries(a.valuePins!)) {
+        expect((syms.get(name) as { signature: string }).signature, `${face}:${name}`).toBe(`${name}: int = ${value}`);
+      }
+    }
+  });
+
+  it('D2 logger 负例臂:logger 面零 SERVER_*(loginapp 全集反查零命中)', () => {
+    const neg = toolFaceEntries.find(e => e.id === 'neg-d2-serverErr-logger')!;
+    expect(neg.kind).toBe('negative');
+    expect(neg.kode.analysis!.absentNamesOnLogger).toBe('ALL_SERVER_STAR');
+    const loggerNames = new Set(toolFaceSymbols.get('logger')!.keys());
+    for (const n of toolFaceSymbols.get('loginapp')!.keys()) {
+      if (n.startsWith('SERVER_')) { expect(loggerNames.has(n), n).toBe(false); }
+    }
+  });
+
+  it('SERVER_ERR_MAX 误导臂:kode 两面带 =38 行(现状钉,收窄即红重钉)', () => {
+    const div = toolFaceEntries.find(e => e.id === 'div-serverErrMax-extra')!;
+    expect(div.kode.analysis!.presentInKode).toBe(true);
+    for (const face of div.kode.analysis!.faces!) {
+      const syms = toolFaceSymbols.get(face as 'loginapp')!;
+      expect((syms.get('SERVER_ERR_MAX') as { signature: string }).signature, face)
+        .toBe(div.kode.analysis!.pinnedSignature);
+    }
+  });
+
+  it('Vector/FixedArray 误导臂:三面各带四条 class 行(Math 模块面/FixedArray 引擎面皆无)', () => {
+    const div = toolFaceEntries.find(e => e.id === 'div-vector-fixedarray-extra')!;
+    expect(div.kode.analysis!.presentInKode).toBe(true);
+    for (const face of div.kode.analysis!.faces!) {
+      const syms = toolFaceSymbols.get(face as 'loginapp')!;
+      for (const n of div.kode.analysis!.extraClasses!) { expect(syms.get(n), `${face}:${n}`).toMatchObject({ kind: 'class' }); }
+    }
+  });
+
+  it('executeRawDatabaseCommand 独占臂:dbmgr 有+两面无+签名默认接口 default', () => {
+    const raw = toolFaceEntries.find(e => e.input.name === 'executeRawDatabaseCommand')!;
+    const a = raw.kode.analysis!;
+    expect(toolFaceSymbols.get(a.onlyOn as 'dbmgr')!.get('executeRawDatabaseCommand')).toBeDefined();
+    for (const face of a.absentOn!) {
+      expect(toolFaceSymbols.get(face as 'loginapp')!.get('executeRawDatabaseCommand')).toBeUndefined();
+    }
+    const sig = (toolFaceSymbols.get('dbmgr')!.get('executeRawDatabaseCommand') as { signature: string }).signature;
+    expect(sig).toContain(a.defaultDbInterfaceInSignature!);
+  });
+
+  it('SPI 名册臂:loginapp 六回调必需;dbmgr/logger 名册+onReadyForShutDown 三组件精确+onLogWrote 可选', () => {
+    const loginappRoster = toolFaceEntries.find(e => e.input.process === 'loginapp' && e.input.path === 'spi-roster')!;
+    const a = loginappRoster.kode.analysis!;
+    for (const n of a.names!) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].required, n).toBe(a.required);
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain(a.component);
+    }
+    const rosters = toolFaceEntries.find(e => e.input.process === 'dbmgr' && e.input.path === 'spi-roster')!;
+    const b = rosters.kode.analysis!;
+    for (const n of [...b.dbmgrNames!, ...b.loggerNames!]) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain(n.startsWith('onDBMgr') || n === 'onSelectAccountDBInterface' ? 'dbmgr' : 'logger');
+    }
+    expect(ENGINE_SPI_METHODS.onReadyForShutDown.components).toEqual(b.onReadyForShutDownComponents);
+    expect(ENGINE_SPI_METHODS.onReadyForShutDown.required).toBe(b.onReadyForShutDownRequired);
+    expect(ENGINE_SPI_METHODS.onLogWrote.required).toBe(b.onLogWroteRequired);
+  });
+
+  it('D1 定时器签名臂:三面 addTimer/delTimer 精确签名(ffO 回调必需已固化)', () => {
+    const timer = toolFaceEntries.find(e => e.input.name === 'addTimer')!;
+    const a = timer.kode.analysis!;
+    for (const face of a.faces!) {
+      const syms = toolFaceSymbols.get(face as 'loginapp')!;
+      expect((syms.get('addTimer') as { signature: string }).signature, face).toBe(a.addTimerSignature);
+      expect((syms.get('delTimer') as { signature: string }).signature, face).toBe(a.delTimerSignature);
+    }
+    // D1 对齐面:kode 签名无 callbackObj 默认值,与 fork "ffO" 必需口径一致
+    expect(a.addTimerSignature).not.toContain('callbackObj=');
+  });
+});
