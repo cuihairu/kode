@@ -53,7 +53,7 @@ const makeDeps = (contents: Record<string, string>, opts: { md5Check?: null } = 
       : null,
   now: () => FIXED_NOW,
   lastMd5Check: () => opts.md5Check === undefined
-    ? { workspaceMd5: 'a'.repeat(32), handshake: { algorithm: 'md5', negotiated: true, digest: 'a'.repeat(32), reason: '测试' }, notes: [], stamps: [] }
+    ? { workspaceMd5: 'a'.repeat(32), handshake: { algorithm: 'md5', negotiated: true, digest: 'a'.repeat(32), reason: '测试' }, notes: [], stamps: [], compatibility: { tier: 'spec-derived', verified: false, compatible: null, reason: '测试:无真实引擎摘要证据' } }
     : null
 });
 

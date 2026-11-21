@@ -146,6 +146,9 @@ export function renderFingerprintReport(input: {
     lines.push(
       `工作区闭包面(另账,最近核查): ${input.md5Check.workspaceMd5 === null ? 'MD5 未知(Rust 不可用)' : input.md5Check.workspaceMd5};SDK 盖章 ${input.md5Check.stamps.length} 处`
     );
+    // RUST-404:兼容性结论另账转显(与 checkEngineMd5 通道同源;无真实引擎
+    // 证据即明示不可用,不把规范推导冒充已同步)。
+    lines.push(`引擎兼容性(另账): ${input.md5Check.compatibility.reason}`);
   }
   return lines.join('\n');
 }
@@ -222,7 +225,7 @@ export function renderInspectorHtml(input: {
   ${
     input.md5Check === null
       ? '<p>未运行引擎盖章核查(kbengine.def.checkEngineMd5 显式核查,不随面板补算)。</p>'
-      : `<p>闭包 MD5: ${input.md5Check.workspaceMd5 === null ? '未知(Rust 不可用)' : `<code>${esc(input.md5Check.workspaceMd5)}</code>`};SDK 盖章 ${input.md5Check.stamps.length} 处。</p>`
+      : `<p>闭包 MD5: ${input.md5Check.workspaceMd5 === null ? '未知(Rust 不可用)' : `<code>${esc(input.md5Check.workspaceMd5)}</code>`};SDK 盖章 ${input.md5Check.stamps.length} 处。</p><p>引擎兼容性: ${esc(input.md5Check.compatibility.reason)}</p>`
   }
   <script>
     const vscode = acquireVsCodeApi();

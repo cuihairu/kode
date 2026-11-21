@@ -245,6 +245,12 @@ pub fn dump_def_md5_golden(repo_root: &Path) -> String {
     let value = json!({
         "generator": "kode-server dump-def-md5-golden",
         "algorithm": "engine EntityDef::md5() replay (kbengine 732b389)",
+        // RUST-404:golden 是规范推导(源码逐字节镜像重放),不是真实引擎运行
+        // 产物。兼容性宣称只允许来自真实引擎摘要对拍;无真实引擎证据时此处
+        // 恒 false,禁止把规范推导冒充「已同步」。置 true 必须附真实引擎证据
+        // 并同步改 def_md5_golden.rs 的 evidenceTier 断言。
+        "realEngineVerified": false,
+        "evidenceTier": "spec-derived (kbengine 732b389 source replay; no real engine run)",
         "provenance": {
             "builtins": "datatypes.cpp:53-83",
             "dataTypeCtor": "datatype.cpp:86-97",

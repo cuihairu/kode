@@ -31,6 +31,26 @@ fn def_md5_golden_matches_regenerated_dump() {
 }
 
 #[test]
+fn def_md5_golden_marks_spec_derived_not_real_engine_verified() {
+    // RUST-404:兼容性证据层级钉死——golden 是规范推导重放,不是真实引擎运行
+    // 产物;realEngineVerified 恒 false,防「已同步」冒充。翻转 true 必须附
+    // 真实引擎摘要对拍证据并同步改本断言与生成器。
+    let value: serde_json::Value =
+        serde_json::from_str(dump_def_md5_golden(repo_root()).as_str()).expect("golden JSON 合法");
+    assert_eq!(
+        value["realEngineVerified"], false,
+        "golden 为规范推导证据,非真实引擎运行产物;不得宣称引擎已同步"
+    );
+    assert!(
+        value["evidenceTier"]
+            .as_str()
+            .expect("evidenceTier")
+            .starts_with("spec-derived"),
+        "证据层级应为 spec-derived"
+    );
+}
+
+#[test]
 fn def_md5_golden_covers_anchor_and_fixtures() {
     let value: serde_json::Value =
         serde_json::from_str(dump_def_md5_golden(repo_root()).as_str()).expect("golden JSON 合法");
