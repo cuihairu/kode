@@ -1621,10 +1621,14 @@ describe('truth-corpus: entity-lifecycle-hook-roster 族执行闸(脚本回调�
     }
   });
 
-  it('未知臂:onRestore 签名已解析但引擎实参集合未取证,保持 unverified 不冒充已核', () => {
-    const entry = lifecycleRosterEntries.find(e => e.kode.status === 'unverified')!;
-    expect(getHookByName(entry.input.name)).toBeDefined();
-    expect(entry.reason).toBeTruthy();
+  it('实参臂:onRestore 引擎实参集合已取证=零参(格式串空串,签名与引擎对齐)', () => {
+    const entry = lifecycleRosterEntries.find(e => e.id === 'pos-onrestore-script-args')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.kode.status).toBe('pinned');
+    expect(entry.engine.truth).toContain('零实参');
+    const hook = getHookByName(entry.input.name)!;
+    expect(hook.signature).toBe('def onRestore(self):');
+    expect(entry.evidence.join(' ')).toContain('PyObject_CallMethod(obj, "onRestore", "")');
   });
 });
 

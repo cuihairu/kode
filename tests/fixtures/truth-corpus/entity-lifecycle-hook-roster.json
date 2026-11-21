@@ -187,18 +187,28 @@
       "kode": { "status": "pinned", "analysis": { "resolved": false } }
     },
     {
-      "id": "unk-onrestore-script-params",
-      "kind": "unknown",
+      "id": "pos-onrestore-script-args",
+      "kind": "positive",
       "input": { "path": "hooks-roster", "name": "onRestore", "roster": false },
       "engine": {
         "load": "accept",
-        "truth": "档只钉 onRestore 的回放时机(handler 在 cell 到后回放),未写引擎传给脚本回调的实参集合"
+        "truth": "handler 调用点(:173/:266)经 Entity::onRestore(:1077)→SCRIPT_OBJECT_CALL_ARGS0→PyObject_CallMethod(obj, \"onRestore\", \"\")——格式串为空串=引擎传给 onRestore 脚本回调零实参(除 self);组件面同一零参调用(hasBase 筛选);脚本缺 onRestore 时 HasAttrString 静默跳过"
       },
       "evidence": [
-        "`onRestore` `:1080`, driven from `restore_entity_handler.cpp:173,266`"
+        "`onRestore` is invoked with zero script arguments",
+        "`Entity::onRestore` (`:1077`)",
+        "`PyObject_CallMethod(obj, \"onRestore\", \"\")`",
+        "kode's roster signature `def onRestore(self):` matches"
       ],
-      "kode": { "status": "unverified", "analysis": {} },
-      "reason": "依据档未写 onRestore 的脚本实参;kode 钩子表签名为 def onRestore(self):(除 self 零参),引擎侧 Py_BuildValue 格式串未经取证=按未核钉。下一步=读 fork 3082ab5 的 restore_entity_handler.cpp:173/266 调用点格式串(与 hooks.ts「签名取自调用点格式串」口径同源),核后再改 pinned。"
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "lifecycle",
+          "signature": "def onRestore(self):",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3871; kbe/src/server/baseapp/entity.cpp:1083"
+        }
+      }
     }
   ]
 }

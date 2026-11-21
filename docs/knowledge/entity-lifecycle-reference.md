@@ -114,6 +114,27 @@ it calls `restoreCell` (`:159`, `:304`), which reuses the normal cell path but
 with `inRestore_` set, then fires `onRestore` from the handler
 (`:173`, `:266`) **after** the cell has arrived.
 
+### `onRestore` is invoked with zero script arguments
+
+The handler call sites above (`:173`, `:266`) call the C++ method
+`Entity::onRestore` (`:1077`), which is gated on `inRestore_` (`:1079-1080`)
+and then fires the script callback via
+`CALL_ENTITY_AND_COMPONENTS_METHOD(this, SCRIPT_OBJECT_CALL_ARGS0(pyTempObj, "onRestore", GETERR))`
+(`:1083`). The `SCRIPT_OBJECT_CALL_ARGS0` macro
+(`kbe/src/lib/pyscript/py_macros.h:657-668`) expands to
+`PyObject_CallMethod(obj, "onRestore", "")` — the **format string is the
+empty string**, so the Python callback receives **no arguments** (besides the
+bound `self`). kode's roster signature `def onRestore(self):` matches.
+
+Two details of that macro matter for analysis. The method is only called
+when `PyObject_HasAttrString(obj, "onRestore")` is true (`py_macros.h:665`),
+so a script that does not define `onRestore` is **silently skipped** — no
+error is raised or logged (`GETERR` is `false` at this call site,
+`py_macros.h:668-675`). And the entity-components macro re-fires the same
+zero-argument call on every entity component whose descriptor `hasBase()` on
+the baseapp (`kbe/src/lib/entitydef/entity_component.h:16-26`, `:49-55`), so
+component scripts receive the identical no-argument `onRestore`.
+
 ### A create call never proves a cell is held
 
 `createCellEntity` (`:1416`) ends by setting `creatingCell_ = true`
