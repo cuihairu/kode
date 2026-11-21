@@ -43,10 +43,16 @@ const RUST_CHECK_CODES = [
 // 四层名(Rust DiagnosticLayer 全员)+ 合流序字节序重算基准。
 const FOUR_LAYERS = ['localSyntax', 'semantic', 'engineCompat', 'runtimeConfig'] as const;
 
-// 现状决策表(家族迁移由 TS 装配批翻表;此字面翻动即联动 Rust 翻表 +
-// golden 重生成,双侧对拍门同时红)。
+// 现状决策表(RUST-142 批 3a 真占员:12 本地 + 3 语义;engineCompat/
+// runtimeConfig 两座位归 def-md5/configContract 车道,家族迁移时入表)。
+// 本字面翻动即联动 Rust 翻表 + golden 重生成,双侧对拍门同时红。
+const TS_SEMANTIC_CODES = new Set([
+  'def-method-missing-in-python',
+  'inherited-name-collision',
+  'unknown-type-reference'
+]);
 const TS_LAYER_FOR_CHECK: Record<string, string> = Object.fromEntries(
-  RUST_CHECK_CODES.map((code) => [code, 'localSyntax'])
+  RUST_CHECK_CODES.map((code) => [code, TS_SEMANTIC_CODES.has(code) ? 'semantic' : 'localSyntax'])
 );
 
 interface GoldenFinding {
@@ -185,21 +191,30 @@ describe('kodeDiagnosticLayeringParity', () => {
       expect(layer).toBe('local');
     }
 
-    // 逐层独立回放记账:localSyntax 每命中文件一请求一发布、零同版跳过;
-    // 其余层现状零请求(与 production seam 全 local 同源的现状面)。
+    // 逐层独立回放记账:每层「命中文件数」= 该层至少一条 finding 的文件数;
+    // 立即通道每命中文件一请求一发布(批 3a 真占员:localSyntax/semantic
+    // 各按其命中文件计,engineCompat/runtimeConfig 语料无占员零请求)。
     const byLayer = new Map(golden.replayStats.map((s) => [s.layer, s]));
     expect(byLayer.size).toBe(4);
     for (const layer of FOUR_LAYERS) {
       expect(byLayer.has(layer)).toBe(true);
     }
-    const local = byLayer.get('localSyntax')!;
-    expect(local.requested).toBe(golden.fileCount);
-    expect(local.published).toBe(golden.fileCount);
-    expect(local.skippedCurrentVersion).toBe(0);
-    for (const name of ['semantic', 'engineCompat', 'runtimeConfig'] as const) {
-      const stats = byLayer.get(name)!;
-      expect(stats.requested).toBe(0);
-      expect(stats.published).toBe(0);
+    const hitFiles = new Map<string, Set<string>>();
+    for (const file of golden.files) {
+      for (const finding of file.findings) {
+        const layer = golden.layerForCheck[finding.check];
+        expect(layer).toBeDefined();
+        if (!hitFiles.has(layer)) {
+          hitFiles.set(layer, new Set());
+        }
+        hitFiles.get(layer)!.add(file.file);
+      }
+    }
+    for (const layer of FOUR_LAYERS) {
+      const stats = byLayer.get(layer)!;
+      const expected = hitFiles.get(layer)?.size ?? 0;
+      expect(stats.requested).toBe(expected);
+      expect(stats.published).toBe(stats.requested);
       expect(stats.skippedCurrentVersion).toBe(0);
     }
   });

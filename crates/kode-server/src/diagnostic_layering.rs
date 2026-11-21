@@ -50,10 +50,31 @@ pub const CHECK_CODES: &[&str] = &[
     "unknown-type-reference",
 ];
 
-/// 家族 → 层决策表(现状:全 LocalSyntax——生产把这些 findings 并进
-/// 本地 def 校验诊断;未知 check 码保守路由 LocalSyntax,不丢产出)。
-pub fn layer_for_check(_check: &str) -> DiagnosticLayer {
-    DiagnosticLayer::LocalSyntax
+/// 家族 → 层决策表(RUST-142 批 3a 四族真占员入表——按「检查的计算依赖」
+/// 分层,非按消息语义:层 = 该诊断重算所需的工作域/节奏,独立节流)。
+///
+/// - LocalSyntax:单 def 自足、廉价、按击键可重算的结构/词表/作用域检查
+///   (12 码:重复标签/重复定义/关键字名/缺 Type/缺 Flags/flag·detail 词表/
+///   DetailLevel 冗余/ALL_CLIENTS+大负载组合/方法·属性同名/引擎受限名/
+///   引擎未注册幻影类型——后两码虽是「引擎不接受」语义,但其判定是静态
+///   词表、零索引零引擎版本,按计算域归本地层);
+/// - Semantic:需工作区解析(index/types.xml 注册表/继承链/Python 对拍)的
+///   检查(3 码:def-method-missing-in-python/inherited-name-collision/
+///   unknown-type-reference);
+/// - EngineCompat / RuntimeConfig:本表无占员——按批 2 诚实边界,两座位
+///   归各自车道(engineCompat = def md5 兼容面,runtimeConfig =
+///   configContract 族),家族迁移时再入表。
+///
+/// 未知 check 码保守路由 LocalSyntax(不丢产出)。
+pub fn layer_for_check(check: &str) -> DiagnosticLayer {
+    match check {
+        // 需要工作区解析(types.xml 注册表/继承链/Python 对拍)。
+        "def-method-missing-in-python"
+        | "inherited-name-collision"
+        | "unknown-type-reference" => DiagnosticLayer::Semantic,
+        // 其余在役码均单 def 自足静态判定 → 本地语法层。
+        _ => DiagnosticLayer::LocalSyntax,
+    }
 }
 
 /// 四层名合流序 = 批 1 golden 同款字节序(publishLog 拼接口径)。
@@ -330,8 +351,9 @@ mod tests {
         }
     }
 
-    /// 决策表覆盖面:CHECK_CODES 全表可路由(现役 15 码 → LocalSyntax);
-    /// 未知码保守路由 LocalSyntax(不丢产出)。
+    /// 决策表覆盖面:CHECK_CODES 全表可路由(批 3a 真占员:12 本地 +
+    /// 3 语义,engineCompat/runtimeConfig 两座位归 def-md5/configContract
+    /// 车道);未知码保守路由 LocalSyntax(不丢产出)。
     #[test]
     fn layer_table_is_total_and_failsafe() {
         assert_eq!(
@@ -339,11 +361,21 @@ mod tests {
             15,
             "税表与 lint 规则数同步(新增规则双侧同表)"
         );
+        const SEMANTIC_CODES: &[&str] = &[
+            "def-method-missing-in-python",
+            "inherited-name-collision",
+            "unknown-type-reference",
+        ];
         for check in CHECK_CODES {
+            let expected = if SEMANTIC_CODES.contains(check) {
+                DiagnosticLayer::Semantic
+            } else {
+                DiagnosticLayer::LocalSyntax
+            };
             assert_eq!(
                 layer_for_check(check),
-                DiagnosticLayer::LocalSyntax,
-                "现状全本地语法层(家族迁移由 TS 装配批翻表)"
+                expected,
+                "码 {check} 应按计算域分层(语义=需工作区解析,其余本地)"
             );
         }
         assert_eq!(

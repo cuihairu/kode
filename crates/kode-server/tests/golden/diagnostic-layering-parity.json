@@ -8,12 +8,13 @@
     "unknown-type-reference": 3
   },
   "layerCounts": {
-    "localSyntax": 8
+    "localSyntax": 5,
+    "semantic": 3
   },
   "layerForCheck": {
     "missing-flags": "localSyntax",
     "redundant-detail-level": "localSyntax",
-    "unknown-type-reference": "localSyntax"
+    "unknown-type-reference": "semantic"
   },
   "mergedPublishOrder": [
     "engineCompat",
@@ -24,14 +25,14 @@
   "replayStats": [
     {
       "layer": "localSyntax",
-      "requested": 6,
-      "published": 6,
+      "requested": 5,
+      "published": 5,
       "skippedCurrentVersion": 0
     },
     {
       "layer": "semantic",
-      "requested": 0,
-      "published": 0,
+      "requested": 3,
+      "published": 3,
       "skippedCurrentVersion": 0
     },
     {
@@ -53,20 +54,20 @@
       "findingCount": 2,
       "findings": [
         {
-          "check": "unknown-type-reference",
-          "severity": "error",
-          "line": 4,
-          "offset": 41,
-          "length": 15,
-          "message": "自定义类型 NOT_A_REAL_TYPE 未在 types.xml 中注册，请先在 types.xml 注册后再引用"
-        },
-        {
           "check": "missing-flags",
           "severity": "error",
           "line": 3,
           "offset": 23,
           "length": 52,
           "message": "属性 broken 缺少 <Flags> 定义"
+        },
+        {
+          "check": "unknown-type-reference",
+          "severity": "error",
+          "line": 4,
+          "offset": 41,
+          "length": 15,
+          "message": "自定义类型 NOT_A_REAL_TYPE 未在 types.xml 中注册，请先在 types.xml 注册后再引用"
         }
       ]
     },

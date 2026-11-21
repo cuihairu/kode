@@ -153,25 +153,43 @@ fn diagnostic_layering_golden_structure_is_complete() {
         vec!["engineCompat", "localSyntax", "runtimeConfig", "semantic"]
     );
 
-    // 逐层独立回放记账:localSyntax 每命中文件一请求一发布;其余层零请求
-    // (现状全本地路由的可观察面;家族迁移翻表后此钉随之重生成)。
+    // 逐层独立回放记账:每层「命中文件数」= 该层至少一条 finding 的文件数;
+    // 立即通道每命中文件一请求一发布(批 3a 真占员:localSyntax/semantic
+    // 各按其命中文件计,engineCompat/runtimeConfig 语料无占员零请求)。
     let mut by_layer = std::collections::BTreeMap::new();
     for stats in &value.replay_stats {
         by_layer.insert(stats.layer.as_str(), stats);
         assert!(LAYERS.contains(&stats.layer.as_str()));
     }
     assert_eq!(by_layer.len(), 4, "四层记账齐");
-    let local = by_layer.get("localSyntax").expect("localSyntax 记账");
-    assert_eq!(local.requested, value.file_count as u64, "每命中文件一请求");
-    assert_eq!(
-        local.published, value.file_count as u64,
-        "立即通道逐请求发布"
-    );
-    assert_eq!(local.skipped_current_version, 0, "回放每次独立核无同版跳过");
-    for name in ["semantic", "engineCompat", "runtimeConfig"] {
-        let stats = by_layer.get(name).expect("层记账");
-        assert_eq!(stats.requested, 0, "{name} 现状零请求(全本地路由)");
-        assert_eq!(stats.published, 0);
+    let mut hit_files: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    for file in &value.files {
+        for finding in &file.findings {
+            let layer = value
+                .layer_for_check
+                .get(&finding.check)
+                .expect("决策表逐码在场");
+            hit_files.entry(layer.as_str()).or_default().insert(&file.file);
+        }
+    }
+    for stats in &value.replay_stats {
+        let expected = hit_files.get(stats.layer.as_str()).map_or(0, |s| s.len());
+        assert_eq!(
+            stats.requested as usize, expected,
+            "{} 命中文件数(每命中文件一请求)",
+            stats.layer
+        );
+        assert_eq!(
+            stats.published, stats.requested,
+            "{} 立即通道逐请求发布",
+            stats.layer
+        );
+        assert_eq!(
+            stats.skipped_current_version, 0,
+            "{} 回放每次独立核无同版跳过",
+            stats.layer
+        );
     }
 
     // 真分布钉:≥2 个 check 家族在场(分类面退化成单码会红)。
