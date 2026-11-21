@@ -26,6 +26,7 @@ import {
   DefFingerprintLedger,
   evaluateDefFingerprint,
   type DefAppliedDigestInput,
+  type DefFingerprintLedgerStorage,
   type DefFingerprintSnapshot
 } from './backend/hotReloadDefFingerprintLedger';
 import type { FingerprintTriVerdict } from './backend/hotReloadFingerprintCompare';
@@ -253,10 +254,12 @@ export function setupDefFingerprintInspector(
   opts: {
     deps?: DefFingerprintDeps;
     onConclusion?: (line: string) => void;
+    /** RUST-401 持久化面;缺省=context.workspaceState(Memento 结构兼容) */
+    storage?: DefFingerprintLedgerStorage;
   } = {}
 ): { ledger: DefFingerprintLedger } {
   const deps = opts.deps ?? defaultDefFingerprintDeps(() => null);
-  const ledger = new DefFingerprintLedger();
+  const ledger = new DefFingerprintLedger(opts.storage ?? context.workspaceState);
   // 通道惰性建(与 defMd5Check 同口径):激活零开销,也避免装配期抢建
   // 同名通道让「首个同名通道」断言面拿到空壳。
   const channel = (): vscode.OutputChannel => ensureInspectorChannel(context);

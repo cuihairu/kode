@@ -11,11 +11,37 @@
  * - 纯逻辑零 vscode;快照生产(读面/计时)与呈现面归装配(defFingerprintInspector)。
  */
 
+import { DEF_FINGERPRINT_SPEC_VERSION } from './hotReloadDefStructure';
 import {
   compareFingerprints,
   type FingerprintTriCompareInput,
   type FingerprintTriVerdict
 } from './hotReloadFingerprintCompare';
+
+/** RUST-401 持久化存底键(workspaceState Memento 命名空间) */
+export const DEF_FINGERPRINT_LEDGER_STORAGE_KEY = 'kbengine.defFingerprintLedger';
+
+/**
+ * RUST-401 持久化面:workspaceState Memento 的结构子集(get/update)。
+ * update 可返回 Thenable(真 Memento 即 Thenable);调用方不阻塞等待落盘
+ * (持久化是尽力而为的审计/恢复面,失败静默——不阻断指纹判定主路径)。
+ */
+export interface DefFingerprintLedgerStorage {
+  get<T>(key: string): T | undefined;
+  update(key: string, value: unknown): Thenable<unknown> | unknown;
+}
+
+/** 持久化表项:file 键(绝对 fsPath,契约同台账)+ 元数据快照 */
+interface PersistedDefFingerprintEntry {
+  readonly file: string;
+  readonly snapshot: DefFingerprintSnapshot;
+}
+
+/** 持久化载荷:规范版本键 + 表项数组(不匹配即整体丢弃) */
+interface PersistedDefFingerprintLedger {
+  readonly specVersion: string;
+  readonly entries: PersistedDefFingerprintEntry[];
+}
 
 /** 单次快照:读面来源 + 三类值 + 计时(HR-HASH-007 Inspector 展示字段) */
 export interface DefFingerprintSnapshot {
@@ -53,6 +79,15 @@ export interface DefAppliedDigestInput {
 export class DefFingerprintLedger {
   private readonly byFile = new Map<string, DefFingerprintSnapshot>();
 
+  constructor(
+    /** RUST-401:持久化面(Memento 子集;缺省=会话内存,不落盘);写只存元数据快照 */
+    private readonly storage?: DefFingerprintLedgerStorage,
+    /** 指纹规范版本键(破坏性变更分级):不匹配的旧存底丢弃,重算 */
+    private readonly specVersion: string = DEF_FINGERPRINT_SPEC_VERSION
+  ) {
+    this.hydrate();
+  }
+
   /** 上次快照;首见=null(如实缺,不编基线) */
   last(file: string): DefFingerprintSnapshot | null {
     return this.byFile.get(file) ?? null;
@@ -60,11 +95,63 @@ export class DefFingerprintLedger {
 
   record(file: string, snapshot: DefFingerprintSnapshot): void {
     this.byFile.set(file, snapshot);
+    this.persist();
   }
 
   /** 生命周期:清空存底(宿主 dispose;重记录即重建) */
   clear(): void {
     this.byFile.clear();
+    this.persist();
+  }
+
+  /**
+   * RUST-401:启动恢复——读持久化存底,只载入与当前指纹规范版本一致的表项;
+   * 版本不一致 = 旧指纹算法/规范已变,跨版本不可比(HR-HASH-003 口径),
+   * 丢弃让下一次记录重新计算(版本键分级只认破坏性变更)。
+   */
+  private hydrate(): void {
+    if (!this.storage) {
+      return;
+    }
+    const raw = this.storage.get(DEF_FINGERPRINT_LEDGER_STORAGE_KEY);
+    if (raw === null || raw === undefined || typeof raw !== 'object') {
+      return;
+    }
+    const persisted = raw as Partial<PersistedDefFingerprintLedger>;
+    if (persisted.specVersion !== this.specVersion || !Array.isArray(persisted.entries)) {
+      return;
+    }
+    for (const entry of persisted.entries) {
+      if (entry && typeof entry === 'object' && typeof entry.file === 'string') {
+        const snapshot = entry.snapshot;
+        if (snapshot && typeof snapshot === 'object' && typeof snapshot.fileHash === 'string') {
+          this.byFile.set(entry.file, snapshot as DefFingerprintSnapshot);
+        }
+      }
+    }
+  }
+
+  /** RUST-401:落盘——只写必要元数据(fileHash/byteLength/语义/来源/计时),
+   * 绝不缓存源码内容副本(快照本就无 content 字段,序列化天然只含元数据)。
+   * 持久化是尽力而为的审计/恢复面:同步抛错与异步拒绝都静默,不阻断判定主路径。 */
+  private persist(): void {
+    if (!this.storage) {
+      return;
+    }
+    const entries: PersistedDefFingerprintEntry[] = [...this.byFile].map(([file, snapshot]) => ({
+      file,
+      snapshot
+    }));
+    const payload: PersistedDefFingerprintLedger = {
+      specVersion: this.specVersion,
+      entries
+    };
+    try {
+      const result = this.storage.update(DEF_FINGERPRINT_LEDGER_STORAGE_KEY, payload);
+      void Promise.resolve(result).catch(() => undefined);
+    } catch {
+      // 同步抛错也吞:持久化失败不阻断指纹判定
+    }
   }
 }
 

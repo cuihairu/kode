@@ -11,6 +11,7 @@ import {
   setupDefFingerprintInspector,
   type DefFingerprintDeps
 } from '../src/defFingerprintInspector';
+import { DEF_FINGERPRINT_LEDGER_STORAGE_KEY } from '../src/backend/hotReloadDefFingerprintLedger';
 import { hashDefContent } from '../src/backend/hotReloadDefHash';
 import { semanticFingerprintReport } from '../src/backend/hotReloadDefStructure';
 import { resolveFingerprintProfile } from '../src/backend/hotReloadFingerprintCompare';
@@ -251,5 +252,60 @@ describe('defFingerprintInspector 装配(HR-HASH-007/008 接线批)', () => {
     expect(deps.lastMd5Check()).toBeNull();
     // 读面走 readSharedFileSnapshot:/ws 不存在 → null(不造内容)
     expect(deps.readSnapshot(DEF_PATH)).toBeNull();
+  });
+
+  it('RUST-401 持久化接线:同存底重启后恢复基线(第二次保存不判首见)', () => {
+    const makeStorage = () => {
+      const map = new Map<string, unknown>();
+      return {
+        get: <T>(key: string): T | undefined => map.get(key) as T | undefined,
+        update: (key: string, value: unknown): unknown => {
+          map.set(key, value);
+          return undefined;
+        }
+      };
+    };
+    const storage = makeStorage();
+    const conclusions1: string[] = [];
+    setupDefFingerprintInspector(
+      { subscriptions: [], workspaceState: storage } as unknown as vscode.ExtensionContext,
+      { deps: makeDeps({ [DEF_PATH]: DEF_A }), onConclusion: line => conclusions1.push(line) }
+    );
+    workspaceEvents.documentSaved.fire({ uri: { fsPath: DEF_PATH } });
+    expect(conclusions1).toEqual(['def 指纹首见(只存底): avatar.def']);
+
+    // 重启(新装配,同一 workspaceState):基线从存底恢复,再次保存是正常比对非首见
+    const conclusions2: string[] = [];
+    setupDefFingerprintInspector(
+      { subscriptions: [], workspaceState: storage } as unknown as vscode.ExtensionContext,
+      { deps: makeDeps({ [DEF_PATH]: DEF_A }), onConclusion: line => conclusions2.push(line) }
+    );
+    workspaceEvents.documentSaved.fire({ uri: { fsPath: DEF_PATH } });
+    expect(conclusions2).toHaveLength(1);
+    expect(conclusions2[0]).toContain('file=无变化');
+    expect(conclusions2[0]).not.toContain('首见');
+  });
+
+  it('RUST-401 显式 storage 优先:注入面生效,context 无 workspaceState 也可持久化', () => {
+    const map = new Map<string, unknown>();
+    const storage = {
+      get: <T>(key: string): T | undefined => map.get(key) as T | undefined,
+      update: (key: string, value: unknown): unknown => {
+        map.set(key, value);
+        return undefined;
+      }
+    };
+    // context 不带 workspaceState(fake 默认形态):storage 显式注入时不受影响
+    const conclusions: string[] = [];
+    setupDefFingerprintInspector({ subscriptions: [] } as unknown as vscode.ExtensionContext, {
+      deps: makeDeps({ [DEF_PATH]: DEF_A }),
+      onConclusion: line => conclusions.push(line),
+      storage
+    });
+    workspaceEvents.documentSaved.fire({ uri: { fsPath: DEF_PATH } });
+    expect(conclusions).toEqual(['def 指纹首见(只存底): avatar.def']);
+    // 落盘真发生了(载荷在存底里)
+    const payload = map.get(DEF_FINGERPRINT_LEDGER_STORAGE_KEY) as { entries: unknown[] };
+    expect(payload.entries).toHaveLength(1);
   });
 });
