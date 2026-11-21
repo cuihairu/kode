@@ -395,6 +395,14 @@ export interface SetupHotReloadOptions {
   readonly timers?: HotReloadTimerDeps;
   /** 动作自身未收口的同步/异步异常报告口;默认提示 VS Code 用户 */
   readonly onActionError?: (error: unknown) => void;
+  /**
+   * HR-HTTP-005(RUST-347)工作区信任探针:自动热更发送前逐次读取,
+   * 未信任(返回 false)禁止任何自动 HTTP/通道发送并如实落日志(用户可
+   * 审查的阻止事件);缺省不注入=视为可信(零配置不回归)。装配注入
+   * `() => vscode.workspace.isTrusted`;fire 时读而非装配时读——信任
+   * 状态可随用户「信任工作区」变化,以发送时刻为准。
+   */
+  readonly isWorkspaceTrusted?: () => boolean;
   /** 状态机控制器注入(测试用);缺省建真实状态栏项+专用 OUTPUT 通道 */
   readonly status?: HotReloadStatusController;
   /** IDE-REV-021 目标状态台账接线:注入即逐发送按 rootId × targetId 记账 */
@@ -625,6 +633,18 @@ export function setupHotReload(
   // ——定稿文件清单作为参数进来,状态/审计/闸/通道面编排逐字保留。
   const runFire = (triggers: string[]): void => {
     const settings = readHotReloadSettings(hotReloadSectionReader());
+    // HR-HTTP-005(RUST-347):工作区未信任时自动热更发送一律禁止——热更会
+    // 把脚本推到引擎内存(写引擎动作),未信任工作区里的代码不可执行,故
+    // 任何自动发送(通道投递/默认热更)都必须先过信任闸。fire 时读取信任
+    // 状态(用户可能在本窗内点过「信任工作区」),false=阻止并落用户可
+    // 审查的阻止日志,不动状态栏(不进入「发送中」假象);缺省未注入=
+    // 视为可信(零配置不回归)。
+    if (options.isWorkspaceTrusted?.() === false) {
+      status.log(
+        `工作区未信任,自动热更发送已阻止(${triggers.length} 个文件: ${triggers.join(', ')})`
+      );
+      return;
+    }
     status.setSending(triggers, settings.debounceMs);
     // HR-WATCH-011 响应面:发送时刻的版本快照——响应落地时该文件已又定稿
     // 新版本(isStaleResponse 真)则旧响应如实注解,绝不作为新版本的成功依据。

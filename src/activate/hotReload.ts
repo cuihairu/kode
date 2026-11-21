@@ -451,6 +451,9 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   };
   setupHotReload(context, runQuickActionForHotReload, {
     fileChangeRouter,
+    // HR-HTTP-005(RUST-347):自动热更发送前过工作区信任闸——未信任工作区
+    // 禁止任何自动发送(装配注入真实 vscode.workspace.isTrusted;fire 时读)
+    isWorkspaceTrusted: () => vscode.workspace.isTrusted,
     // HR-UI-004 实时队列面:历史面板经此句柄读流水线三队列自省快照
     pipelineQueue: hotReloadPipelineQueueRef,
     status: hotReloadStatus,

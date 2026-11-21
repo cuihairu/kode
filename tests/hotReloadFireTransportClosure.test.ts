@@ -97,6 +97,7 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     hotReload: Record<string, unknown> | undefined;
     transportDeps: Parameters<typeof resolveReloadTransport>[1];
     readFileContent?: (file: string) => Promise<string | null>;
+    isWorkspaceTrusted?: () => boolean;
   }): Promise<{ store: HotReloadTargetStateStore; runCalls: string[]; targetId: string }> => {
     const clock = makeTimers();
     const store = new HotReloadTargetStateStore({ now: () => 7 });
@@ -127,6 +128,7 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     setupHotReload(makeContext(), name => void runCalls.push(name), {
       timers: clock.timers,
       resolveChannelTransport,
+      ...(options.isWorkspaceTrusted ? { isWorkspaceTrusted: options.isWorkspaceTrusted } : {}),
       targetState: {
         store,
         resolveTargetId: () => 't1',
@@ -246,6 +248,38 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     const record = store.get({ rootId: '/ws', targetId: 't1' }, '/ws/avatar.py');
     expect(record?.outcome).toBe('sent-unverified');
     expect(record?.channel).toBe('actionName:热更');
+  });
+
+  it('HR-HTTP-005:工作区未信任时自动发送一律阻止(不发请求、不回落动作、落阻止日志)', async () => {
+    const requests: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
+    const { runCalls } = await fireViaActiveProfile({
+      hotReload: {
+        channel: 'http',
+        http: {
+          name: 'engine-reload',
+          url: 'http://10.0.0.8:32000/reload',
+          method: 'POST',
+          headers: {},
+          body: '{"files":${files}}',
+          enabled: true,
+          keybinding: ''
+        }
+      },
+      transportDeps: {
+        http: {
+          run: async request => {
+            requests.push({ ...request });
+            return { status: 200, body: '{}' };
+          }
+        }
+      },
+      readFileContent: async () => 'print("x")',
+      isWorkspaceTrusted: () => false
+    });
+    // 未信任:一次发送都不发生,也不回落 actionName,状态栏不进入发送假象
+    expect(requests).toHaveLength(0);
+    expect(runCalls).toEqual([]);
+    expect(channels.some(channel => channel.lines.some(line => line.includes('工作区未信任')))).toBe(true);
   });
 
   it('源锁:装配层真装配经 resolveActiveProfile+resolveReloadTransport 解出通道,fire 与重试共用', () => {
