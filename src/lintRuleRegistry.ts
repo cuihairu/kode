@@ -455,6 +455,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/entityScriptBaseClassDiagnostics.ts'
   },
+  {
+    id: 'KBE-PY-030', code: 'kbengine.proxySessionSemantics',
+    title: 'Proxy 会话语义两分歧臂(onLogOnAttempt 返回 WAIT_FOR_DESTROY 同拒绝;giveClientTo(self) 前置必败;只报可证形态)',
+    severity: 'Warning', roles: 'base',
+    toggles: ['kbengine.proxySessionSemanticsDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/proxySessionSemanticsDiagnostics.ts'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

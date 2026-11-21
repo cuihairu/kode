@@ -391,8 +391,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // (204/217 → 214/227,真位重探);出处随 baseline 锁步。
   // 2026-11-22(QA-001a):entityScriptBaseClass 导入块(+6)与两处接口条目(+3)
   // → 两处打点锚点 +9(216/229 → 225/238,真位重探),出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 225, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 238, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-22(QA-001b):proxySession 导入块(+6)与两处接口条目(+3)
+  // → 两处打点锚点 +9(225/238 → 234/247,真位重探),出处随 baseline 锁步。
+  ['src/activate/diagnostics.ts', 234, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 247, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -427,8 +429,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // 镜实例)→ 483/588 → 482/587(fire 调用行在其后,不影响本组),真位重探。
   // 2026-11-22(QA-001a):extension.ts 三处接线(解构+1/打开+2/变更+2)
   // → 492/600 → 495/605(真位重探),出处随 baseline 锁步。
-  ['src/extension.ts', 495, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 605, 'flushQueued()'],
+  // 2026-11-22(QA-001b):extension.ts 三处接线(解构+1/打开+2/变更+2)
+  // → 495/605 → 498/610(真位重探),出处随 baseline 锁步。
+  ['src/extension.ts', 498, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 610, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

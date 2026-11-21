@@ -1695,6 +1695,11 @@
             "default": true,
             "markdownDescription": "%kbengine.config.entityScriptBaseClassDiagnostics.description%"
           },
+          "kbengine.proxySessionSemanticsDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.proxySessionSemanticsDiagnostics.description%"
+          },
           "kbengine.rpcArgCountDiagnostics": {
             "type": "boolean",
             "default": true,

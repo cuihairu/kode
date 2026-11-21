@@ -47,6 +47,7 @@ import { collectUserTypeContractStatuses } from '../src/backend/userTypeContract
 import { linearizeC3 } from '../src/backend/pythonClassIndex';
 import { parsePythonFile } from '../src/backend/pythonParser';
 import { findEntityScriptBaseClassFindings } from '../src/backend/entityScriptBaseClassDiagnostics';
+import { findProxySessionFindings } from '../src/backend/proxySessionSemanticsDiagnostics';
 import { lookupApiDoc } from '../src/backend/pythonApiHoverDocs';
 import { computeReceiverNoneFindingsAsync, renderReceiverNoneMessage } from '../src/backend/receiverNoneDiagnostics';
 import type { PythonClassDef } from '../src/backend/pythonParser';
@@ -1453,6 +1454,7 @@ interface ProxySessionEntry extends TruthEntryBase {
     scriptPath?: string;
     receiver?: string;
     parsedMethod?: string;
+    faces?: string[];
   };
   kode: TruthEntryBase['kode'] & {
     analysis?: {
@@ -1465,6 +1467,7 @@ interface ProxySessionEntry extends TruthEntryBase {
       receiver?: string;
       messageContains?: string;
       summarySemantic?: boolean;
+      checkFaceFindings?: string[];
     };
   };
 }
@@ -1537,6 +1540,37 @@ describe('truth-corpus: proxy-session-semantics 族执行闸(Proxy 会话语义�
     expect(semantic).toBe(entry.kode.analysis!.summarySemantic!);
     expect(semantic).toBe(false);
     expect(entry.kode.finding).toContain('文档稀薄登记');
+  });
+
+  // QA-001b:检查面(findProxySessionFindings)对语料脚本的真实产出即真值。
+  it('QA-001b 检查面:两分歧臂报/稳定值零产出/面不明零产出(不猜)', () => {
+    const waitEntry = proxySessionEntries.find(
+      e => e.id === 'proxy-session-check-logonwaitfordestroy'
+    )!;
+    const waitFindings = findProxySessionFindings(waitEntry.input.script, waitEntry.input.faces);
+    expect(waitFindings.map(f => f.kind)).toEqual(waitEntry.kode.analysis!.checkFaceFindings);
+    expect(waitFindings[0]?.message).toContain('LOG_ON_WAIT_FOR_DESTROY');
+    expect(waitFindings[0]?.message).toContain('4020-4021');
+    expect(waitEntry.kode.status).toBe('pinned');
+
+    const giveEntry = proxySessionEntries.find(
+      e => e.id === 'proxy-session-check-giveclienttoself'
+    )!;
+    const giveFindings = findProxySessionFindings(giveEntry.input.script, giveEntry.input.faces);
+    expect(giveFindings.map(f => f.kind)).toEqual(giveEntry.kode.analysis!.checkFaceFindings);
+    expect(giveFindings[0]?.message).toContain('giveClientTo(self)');
+    expect(giveFindings[0]?.message).toContain('onGiveClientToFailure');
+    expect(giveEntry.kode.status).toBe('pinned');
+
+    const acceptEntry = proxySessionEntries.find(
+      e => e.id === 'proxy-session-check-accept-stable'
+    )!;
+    const acceptFindings = findProxySessionFindings(acceptEntry.input.script, acceptEntry.input.faces);
+    expect(acceptFindings.map(f => f.kind)).toEqual(acceptEntry.kode.analysis!.checkFaceFindings);
+    expect(acceptFindings).toHaveLength(0);
+    // 面不明(null)=不猜,零产出
+    expect(findProxySessionFindings(waitEntry.input.script, null)).toHaveLength(0);
+    expect(acceptEntry.kode.status).toBe('pinned');
   });
 });
 

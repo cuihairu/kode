@@ -297,6 +297,7 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
     scheduleEntityScriptBaseClassDiagnostics,
+    scheduleProxySessionDiagnostics,
     scheduleCellDataWriteDiagnostics,
     scheduleSpaceDataProtectedKeyDiagnostics,
     scheduleFixedDictConstructDiagnostics,
@@ -396,6 +397,8 @@ export function activate(context: vscode.ExtensionContext) {
       schedulePostDestroyDiagnostics(document, 'immediate');
       // QA-001a:打开 python 文件即排实体脚本基类面诊断(类名一致性+基类合法性)
       scheduleEntityScriptBaseClassDiagnostics(document, 'immediate');
+      // QA-001b:打开 python 文件即排 Proxy 会话语义两分歧臂诊断
+      scheduleProxySessionDiagnostics(document, 'immediate');
       // KSEM-CELL-08:打开 python 文件即排 cellData 写入类型诊断
       scheduleCellDataWriteDiagnostics(document, 'immediate');
       // KSEM-STRUCT-04:打开 python 文件即排 FIXED_DICT 构造点诊断
@@ -548,6 +551,8 @@ export function activate(context: vscode.ExtensionContext) {
         schedulePostDestroyDiagnostics(event.document, 'queued');
         // QA-001a:python 改动 → 重排本文件的实体脚本基类面诊断
         scheduleEntityScriptBaseClassDiagnostics(event.document, 'queued');
+        // QA-001b:python 改动 → 重排本文件的 Proxy 会话语义诊断
+        scheduleProxySessionDiagnostics(event.document, 'queued');
         // KSEM-CELL-08:python 改动 → 重排本文件的 cellData 写入类型诊断
         scheduleCellDataWriteDiagnostics(event.document, 'queued');
         // KSEM-STRUCT-04:python 改动 → 重排本文件的 FIXED_DICT 构造点诊断
@@ -989,6 +994,10 @@ export function activate(context: vscode.ExtensionContext) {
           // QA-001a:实体脚本基类面开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.entityScriptBaseClassDiagnostics')) {
             scheduleEntityScriptBaseClassDiagnostics(doc, 'immediate');
+          }
+          // QA-001b:Proxy 会话语义开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.proxySessionSemanticsDiagnostics')) {
+            scheduleProxySessionDiagnostics(doc, 'immediate');
           }
           // KSEM-CELL-08:cellData 写入类型开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.cellDataWriteDiagnostics')) {

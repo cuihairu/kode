@@ -58,6 +58,12 @@ import {
   findEntityScriptBaseClassFindings,
   type EntityScriptBaseClassDiagnosticItem
 } from '../backend/entityScriptBaseClassDiagnostics';
+import {
+  PROXY_SESSION_DIAGNOSTICS_ENABLED_DEFAULT,
+  findProxySessionFindings,
+  proxySessionFindingsToItems,
+  type ProxySessionDiagnosticItem
+} from '../backend/proxySessionSemanticsDiagnostics';
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
 import { CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, analyzeCellDataFieldWrites, cellDataWriteFindingToItem, type CellDataWriteDiagnosticItem } from '../backend/cellDataWriteCheck';
 import { SPACE_DATA_PROTECTED_KEY_DIAGNOSTICS_ENABLED_DEFAULT, analyzeSpaceDataProtectedKeys, type SpaceDataProtectedKeyDiagnosticItem } from '../backend/spaceDataProtectedKeyCheck';
@@ -176,6 +182,7 @@ export interface DiagnosticsShared {
   scheduleRoleMisuseDiagnostics: ScheduleDiagnostics;
   schedulePostDestroyDiagnostics: ScheduleDiagnostics;
   scheduleEntityScriptBaseClassDiagnostics: ScheduleDiagnostics;
+  scheduleProxySessionDiagnostics: ScheduleDiagnostics;
   scheduleCellDataWriteDiagnostics: ScheduleDiagnostics;
   scheduleSpaceDataProtectedKeyDiagnostics: ScheduleDiagnostics;
   scheduleFixedDictConstructDiagnostics: ScheduleDiagnostics;
@@ -195,6 +202,8 @@ export interface DiagnosticsShared {
   postDestroyScheduler: DiagnosticScheduler;
   entityScriptBaseClassDiagnostics: vscode.DiagnosticCollection;
   entityScriptBaseClassScheduler: DiagnosticScheduler;
+  proxySessionDiagnostics: vscode.DiagnosticCollection;
+  proxySessionScheduler: DiagnosticScheduler;
   cellDataWriteDiagnostics: vscode.DiagnosticCollection;
   cellDataWriteScheduler: DiagnosticScheduler;
   spaceDataProtectedKeyDiagnostics: vscode.DiagnosticCollection;
@@ -1404,6 +1413,70 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // QA-001b:Proxy 会话语义两分歧臂(判例源
+  // docs/knowledge/proxy-session-semantics.md §4/§6)。onLogOnAttempt 返回
+  // WAIT_FOR_DESTROY 与 default 同支=实际同拒绝;giveClientTo(self) 目标是自己=
+  // 前置校验必败。只对 baseapp 实体脚本接管,面不明/非 baseapp 零产出。
+  const proxySessionDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-proxy-session-semantics'
+  );
+  context.subscriptions.push(proxySessionDiagnostics);
+  const proxySessionScheduler = new DiagnosticScheduler();
+  const scheduleProxySessionDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly ProxySessionDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>(
+            'proxySessionSemanticsDiagnostics',
+            PROXY_SESSION_DIAGNOSTICS_ENABLED_DEFAULT
+          );
+        if (!enabled) {
+          return [];
+        }
+        const fsPath = document.uri.fsPath;
+        // 非实体脚本 → 不接管(Proxy 会话域只属实体脚本)
+        if (!entityMappingManager.getMappingForPythonFile(fsPath)) {
+          return [];
+        }
+        const faces = await entityMappingManager.getEntityComponentFacesForPythonFile(fsPath);
+        return proxySessionFindingsToItems(
+          findProxySessionFindings(document.getText(), faces)
+        );
+      },
+      publish: (items: readonly ProxySessionDiagnosticItem[]) => {
+        proxySessionDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      proxySessionScheduler.requestQueued(document, options);
+    } else {
+      proxySessionScheduler.request(document, options);
+    }
+  };
+
   // KSEM-CELL-08:cellData 已知字段写入类型校验(独立集合,键宇宙与读型提示
   // 同源 CELL-04)。已知键的字面量赋值按声明类型校验引擎标量结构(datatypes.cpp
   // 注册表)与取值范围;RHS 整段字面量才判,未知键/非标量类型/推不出的值不猜;
@@ -2204,6 +2277,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
     scheduleEntityScriptBaseClassDiagnostics,
+    scheduleProxySessionDiagnostics,
     scheduleCellDataWriteDiagnostics,
     scheduleSpaceDataProtectedKeyDiagnostics,
     scheduleFixedDictConstructDiagnostics,
@@ -2226,6 +2300,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     postDestroyScheduler,
     entityScriptBaseClassDiagnostics,
     entityScriptBaseClassScheduler,
+    proxySessionDiagnostics,
+    proxySessionScheduler,
     cellDataWriteDiagnostics,
     cellDataWriteScheduler,
     spaceDataProtectedKeyDiagnostics,
