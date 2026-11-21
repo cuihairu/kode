@@ -70,11 +70,11 @@ describe('serveReferencesFromRust 桥契约(①载荷与回包)', () => {
     setKodeCoreShadowGate(null);
   });
 
-  it('ok:先镜像再请求,载荷带位置与 includeDeclaration,面原样透传', async () => {
+  it('ok:先镜像再请求,载荷带位置与 includeDeclaration,面原样透传(locations 态)', async () => {
     const { gate, served, mirrored } = makeServingGate(FACES);
     setKodeCoreShadowGate(gate);
     const result = await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true);
-    expect(result).toEqual(FACES);
+    expect(result).toEqual({ kind: 'locations', locations: FACES });
     expect(mirrored).toEqual(['/tmp/ws/scripts/entity_defs/Avatar.def']);
     expect(served).toEqual([
       {
@@ -87,27 +87,49 @@ describe('serveReferencesFromRust 桥契约(①载荷与回包)', () => {
       }
     ]);
     const flipped = await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, false);
-    expect(flipped).toEqual(FACES);
+    expect(flipped).toEqual({ kind: 'locations', locations: FACES });
     expect(served[1].params.context).toEqual({ includeDeclaration: false });
   });
 
-  it('无门/非服务轨道/python 文档 → null 且零请求', async () => {
+  it('Rust 权威 null → none 态(与失败/不可用分开,消费点据此不回 TS)', async () => {
+    const { gate, served } = makeServingGate(null);
+    setKodeCoreShadowGate(gate);
+    const result = await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true);
+    expect(result).toEqual({ kind: 'none' });
+    expect(served.length).toBe(1);
+  });
+
+  it('Rust 权威空数组 → locations 态空集(合法应答,非失败)', async () => {
+    const { gate } = makeServingGate([]);
+    setKodeCoreShadowGate(gate);
+    expect(await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true)).toEqual({
+      kind: 'locations',
+      locations: []
+    });
+  });
+
+  it('无门/非服务轨道/python 文档 → unavailable 态且零请求(回 TS 既有实现)', async () => {
     setKodeCoreShadowGate(null);
-    expect(await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true)).toBeNull();
+    expect(await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true)).toEqual({
+      kind: 'unavailable'
+    });
     const { gate, served } = makeServingGate(FACES, { serving: false });
     setKodeCoreShadowGate(gate);
-    expect(await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true)).toBeNull();
+    expect(await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true)).toEqual({
+      kind: 'unavailable'
+    });
     const pyDoc = makeTextDocument('class Monster:\n    pass\n', {
       fileName: '/tmp/ws/scripts/cell/Monster.py',
       languageId: 'python'
     });
-    expect(await serveReferencesFromRust(pyDoc, { line: 0, character: 6 }, true)).toBeNull();
+    expect(await serveReferencesFromRust(pyDoc, { line: 0, character: 6 }, true)).toEqual({
+      kind: 'unavailable'
+    });
     expect(served).toEqual([]);
   });
 
-  it('应答非数组/条目畸形(缺 uri、区间缺位、外层包壳)→ 整面作废', async () => {
+  it('应答非数组/条目畸形(缺 uri、区间缺位、外层包壳)→ 整面作废不可用', async () => {
     const badCases: unknown[] = [
-      null,
       { locations: FACES },
       [{ uri: 42, range: FACES[0].range }],
       [{ uri: FACES[0].uri, range: { start: { line: 1 } } }],
@@ -117,17 +139,19 @@ describe('serveReferencesFromRust 桥契约(①载荷与回包)', () => {
     for (const bad of badCases) {
       const { gate } = makeServingGate(bad);
       setKodeCoreShadowGate(gate);
-      expect(await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true)).toBeNull();
+      expect(await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true)).toEqual({
+        kind: 'unavailable'
+      });
       setKodeCoreShadowGate(null);
     }
   });
 
-  it('取消位先置 → 零请求直接回落', async () => {
+  it('取消位先置 → 零请求直接不可用', async () => {
     const { gate, served } = makeServingGate(FACES);
     setKodeCoreShadowGate(gate);
     expect(
       await serveReferencesFromRust(DEF_DOC, { line: 1, character: 10 }, true, () => true)
-    ).toBeNull();
+    ).toEqual({ kind: 'unavailable' });
     expect(served).toEqual([]);
   });
 });
@@ -306,6 +330,49 @@ describe('provider 切流(②Rust 命中/失败回落)', () => {
       const fallback = await query();
       setKodeCoreShadowGate(null);
       expect(toView(fallback!)).toEqual(toView(baseline!));
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFindFiles;
+      fs.rmSync(wsRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('Rust 权威 null → provider 权威空(不回 TS 补同名语法站点,批 4)', async () => {
+    // 临时小工作区:TS 语料面真能算出 Parent Monster 引用位(基线非空),
+    // 权威 null 时 provider 必须如实 null——若回 TS 兜底,语义过滤面
+    // (Shadow/Dangling 不出列)就被兜底否决。本批拍板(2026-11-21)钉死此岔。
+    const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-refs-none-'));
+    const defsDir = path.join(wsRoot, 'scripts', 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    const monsterPath = path.join(defsDir, 'Monster.def');
+    const avatarPath = path.join(defsDir, 'Avatar.def');
+    fs.writeFileSync(monsterPath, '<root>\n\t<Parent> Account </Parent>\n</root>\n');
+    fs.writeFileSync(avatarPath, '<root>\n\t<Parent> Monster </Parent>\n</root>\n');
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFindFiles = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
+    stubWorkspace.findFiles = (async (glob?: string) =>
+      glob === '**/*.def' ? [Uri.file(avatarPath), Uri.file(monsterPath)] : []) as never;
+    try {
+      const doc = makeTextDocument(fs.readFileSync(avatarPath, 'utf8'), {
+        fileName: avatarPath,
+        version: 1
+      }) as never;
+      const { manager, calls } = makeManagerStub();
+      const query = () =>
+        new KBEngineReferencesProvider(manager).provideReferences(
+          doc,
+          new Position(1, 10),
+          { includeDeclaration: true },
+          undefined
+        );
+      setKodeCoreShadowGate(null);
+      const baseline = await query();
+      expect(baseline, '无门基线 TS 语料面应真算出引用位').not.toBeNull();
+      setKodeCoreShadowGate(makeServingGate(null).gate);
+      const authoritative = await query();
+      expect(authoritative, 'Rust 权威 null 必须如实空,不回 TS 补').toBeNull();
+      expect(calls, '运行时引用面零调用').toBe(0);
     } finally {
       stubWorkspace.workspaceFolders = originalFolders;
       stubWorkspace.findFiles = originalFindFiles;

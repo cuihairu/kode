@@ -346,3 +346,19 @@ fn references_after_did_close_reverts_to_null() {
     let after = reference_result(&mut state, 19, AVATAR_URI, 1, 10, Some(true));
     assert_eq!(after, serde_json::Value::Null);
 }
+
+#[test]
+fn references_on_interface_word_excludes_dangling_site() {
+    // RUST-138 批 4(2026-11-21 用户拍板「先切 Rust」):语义过滤面分歧行为钉。
+    // `movable` 是 Avatar.def 的接口 wrapper 目标,但语料无 interfaces/movable.def
+    // ——站点域声明路径 None = Dangling,语义面剔除;includeDeclaration 也只
+    // 前置声明位而该查询声明本身 None,故两个取值都空集 → null。位置面(旧)则
+    // 会照列该站点(数组 len 1),正是本批切换消灭的同名语法噪声。
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    open_corpus(&mut state);
+    let result = reference_result(&mut state, 20, AVATAR_URI, 3, 15, Some(false));
+    assert_eq!(result, serde_json::Value::Null, "{result}");
+    let with_decl = reference_result(&mut state, 21, AVATAR_URI, 3, 15, Some(true));
+    assert_eq!(with_decl, serde_json::Value::Null, "{with_decl}");
+}

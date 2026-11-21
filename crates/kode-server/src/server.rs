@@ -923,15 +923,18 @@ fn handle_document_symbol(state: &mut ServerState, request: Request) -> Response
     }
 }
 
-/// textDocument/references(RUST-138 批 3):语料引用位面——def 文档出
-/// 自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration 时才
-/// 前置)+ 全语料站点位;types.xml 文档出该类型名在全语料 .def/<Type>/
-/// <Arg>/<of> 值与 types.xml 内引用位(该面无声明位,includeDeclaration 不
-/// 生效,与 TS provideTypesXmlReferences 同)。
+/// textDocument/references(RUST-138 批 3 接线;批 4 切语义过滤面):
+/// 语料引用面——def 文档出自定义类型/实体 Parent/接口名三类目标的声明位
+/// (includeDeclaration 才前置)+ 全语料站点位;types.xml 文档出该类型名在
+/// 全语料 .def/<Type>/<Arg>/<of> 值与 types.xml 内引用位(该面无声明位,
+/// includeDeclaration 不生效,与 TS provideTypesXmlReferences 同)。
 /// 文档须已打开;未打开/未知符号/空结果一律回 null 结果(LSP 允许),不报错。
 /// 诚实边界:本面只出语料面引用。Properties/方法段的属性 self 访问与
 /// Python 调用点面由 entityMapping 运行时索引(TS)负责,Python 文档本面恒
-/// null——切换语义过滤面(semantic_reference_locations)属产品决策,不在本面。
+/// null。站点面走 semantic_reference_locations(批 2 分类核过滤):跨 root
+/// 同名异声明(Shadow)与站点域不可解析(Dangling)不入列——2026-11-21 用户
+/// 拍板「先切 Rust,测试发现问题」:误杀随发现随修,不再由 TS 兜底补回
+/// 同名语法站点(消费点见 references.ts 的 authoritative 分支)。
 fn handle_references(state: &mut ServerState, request: Request) -> Response {
     let params: ReferenceParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
     {
@@ -954,7 +957,7 @@ fn handle_references(state: &mut ServerState, request: Request) -> Response {
         return Response::success(request.id, serde_json::Value::Null);
     };
     let text = buffer.text().to_string();
-    let locations = state.hover.borrow().references(
+    let locations = state.hover.borrow().semantic_reference_locations(
         &key,
         &text,
         params.position.line,

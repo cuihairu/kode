@@ -19,7 +19,7 @@ import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDa
 import { findEntityScriptFile, findDefinitionFileByCategory } from '../definitionWorkspace';
 import { buildDefProcessBreadcrumb } from '../backend/processOwnershipLens';
 import { serveDocumentSymbolsFromRust, serveReferencesFromRust, serveWorkspaceSymbolsFromRust } from '../backend/kodeCoreShadowFaces';
-import type { LspDocumentSymbolFace } from '../backend/kodeCoreShadowFaces';
+import type { LspDocumentSymbolFace, ReferencesServeFace } from '../backend/kodeCoreShadowFaces';
 
 /**
  * Rust 段符号 kind 字符串面 → vscode.SymbolKind(投影细节,协议数值映射)。
@@ -47,9 +47,13 @@ function symbolKindByName(kind: LspDocumentSymbolFace['kind']): vscode.SymbolKin
  * (NAV-003)在引用收录面上后续批扩展。
  */
 /**
- * RUST-138 批 3:语料引用位面 Rust 服务壳(types.xml 面 + def 语料面两处
- * 消费)。命中 → vscode.Location 列表(uri 规范路径,零宽站点位);null
- * (非服务轨道/Python 文档/未知符号/失败/畸形)→ 调用方回 TS 既有实现。
+ * RUST-138 批 3 接线,批 4 切语义过滤面:语料引用位面 Rust 服务壳(types.xml
+ * 面 + def 语料面两处消费)。应答三态,消费点据此分岔:
+ * locations(Rust 权威命中)→ vscode.Location 列表(uri 规范路径,零宽站点位);
+ * none(Rust 权威 null:符号不可解析/站点全被语义过滤)→ 如实 null,**不回**
+ * TS 既有实现——TS 兜底会补回同名语法站点(Shadow/Dangling),正是批 4 拍板
+ * 「先切 Rust,测试发现问题」要消灭的噪声(2026-11-21);
+ * unavailable(非服务轨道/非语料文档/预算超时/取消/失败/畸形)→ 回 TS 既有实现。
  * 取消探测走 token(预算壳内 50ms 轮询)。
  */
 async function rustReferenceLocations(
@@ -57,17 +61,18 @@ async function rustReferenceLocations(
   position: vscode.Position,
   includeDeclaration: boolean,
   token?: vscode.CancellationToken
-): Promise<vscode.Location[] | null> {
-  const faces = await serveReferencesFromRust(
+): Promise<ReferencesServeFace> {
+  return serveReferencesFromRust(
     document,
     { line: position.line, character: position.character },
     includeDeclaration,
     () => token?.isCancellationRequested === true
   );
-  if (faces === null) {
-    return null;
-  }
-  return faces.map(lspFaceToVscodeLocation);
+}
+
+/** Rust 权威命中面 → vscode.Location[];两权威空态返回 null 表示「无引用位」 */
+function authoritativeLocations(face: ReferencesServeFace): vscode.Location[] | null {
+  return face.kind === 'locations' ? face.locations.map(lspFaceToVscodeLocation) : null;
 }
 
 export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
@@ -175,14 +180,20 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     // 返回工作区 .def/<Type>/<Arg>/<of> 值使用处与 types.xml 内引用位;
     // 不在类型符号上/空结果如实 null(调用方约定)。
     if (document.fileName.endsWith('types.xml')) {
-      const rustSites = await rustReferenceLocations(
+      const rustFace = await rustReferenceLocations(
         document,
         position,
         context.includeDeclaration === true,
         token
       );
-      if (rustSites !== null) {
-        return rustSites;
+      const rustLocations = authoritativeLocations(rustFace);
+      if (rustLocations !== null) {
+        return rustLocations;
+      }
+      // RUST-138 批 4:Rust 权威 null(符号不可解析/站点全被语义过滤)不回 TS
+      // 补回同名语法站点——Shadow/Dangling 不再出列(2026-11-21 用户拍板)。
+      if (rustFace.kind === 'none') {
+        return null;
       }
       return provideTypesXmlReferences(document, position, token);
     }
@@ -201,16 +212,21 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     if (!symbolInfo) {
       // IDE-NAV-018:类型名/实体名/接口名不在 Properties/方法段,findDefSymbolInfo
       // 不识别(返回 null)——RUST-138 批 3:先试 Rust 语料引用位面(Type/
-      // Parent/Interface 三类目标),未命中/失败回 defSymbolReferences(自定义
-      // 类型/实体/接口引用位);非此类符号时两路解析同样如实 null。
-      const rustSites = await rustReferenceLocations(
+      // Parent/Interface 三类目标),批 4 切语义过滤面后三态:权威命中即用、权威
+      // null(null 不回 TS——TS 兜底会补回 Shadow/Dangling 同名语法站点,2026-11-21
+      // 用户拍板不再补)、不可用回 defSymbolReferences 既有链。
+      const rustFace = await rustReferenceLocations(
         document,
         position,
         context.includeDeclaration === true,
         token
       );
-      if (rustSites !== null) {
-        return rustSites;
+      const rustLocations = authoritativeLocations(rustFace);
+      if (rustLocations !== null) {
+        return rustLocations;
+      }
+      if (rustFace.kind === 'none') {
+        return null;
       }
       return provideDefSymbolReferences(
         document,

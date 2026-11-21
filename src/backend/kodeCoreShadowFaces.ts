@@ -584,12 +584,34 @@ const isLspLocationFace = (value: unknown): value is LspLocationFace => {
 };
 
 /**
- * 引用位面 rust 服务(RUST-138 批 3 接线):服务轨道下先镜像语料文档,再请求
- * kode-server textDocument/references。Rust 面 = 语料面引用:def 文档出
- * 自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration 时前置)
- * + 全语料站点位;types.xml 文档出该类型名全语料引用位(无声明位)。Python
- * 文档(属性 self 访问/调用点面归 entityMapping 运行时)、entities/alias、
- * 未知符号、空结果、任何失败、应答畸形(任一条目缺 uri/区间)→ null,调用方
+ * 引用面 rust 服务应答三态(RUST-138 批 4 切语义过滤面):失败面与 Rust 权威
+ * 空集必须分开,否则「权威空」会被当「不可用」而回 TS 补回同名语法站点。
+ * unavailable = 非服务轨道/非语料文档/预算超时/取消/请求失败/应答畸形
+ *   → 调用方回 TS 既有实现(可用性优先);
+ * locations   = Rust 权威命中(Rust 已镜像语料并出引用位,空集是合法应答);
+ * none        = Rust 权威 null(符号不可解析/站点全被语义过滤)→ 如实空,
+ *   **不再**回 TS 补同名语法站点(2026-11-21 用户拍板:Shadow/Dangling 不回 TS)。
+ */
+export type ReferencesServeFace =
+  | { kind: 'unavailable' }
+  | { kind: 'locations'; locations: LspLocationFace[] }
+  | { kind: 'none' };
+
+/** serveInRust 的失败回落哨兵:与 Rust 权威 null 区分(铁律失败不误伤)。 */
+const REFERENCES_SERVE_FAILED = {};
+
+/** 服务壳内部三态:{ raw } = Rust 已应答(值可空),{ failed } = 请求未答成 */
+type ReferencesServed = { state: 'raw'; value: unknown } | { state: 'failed' };
+
+/**
+ * 引用位面 rust 服务(RUST-138 批 3 接线,批 4 切语义过滤面):服务轨道下先镜像
+ * 语料文档,再请求 kode-server textDocument/references。Rust 面 = 语料面引用:
+ * def 文档出自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration
+ * 时前置)+ 全语料语义站点位;types.xml 文档出该类型名全语料引用位(无声明位)。
+ * 站点面走 semantic_reference_locations:跨 root 同名异声明(Shadow)与站点域
+ * 不可解析(Dangling)不入列。Python 文档(属性 self 访问/调用点面归
+ * entityMapping 运行时)、entities/alias、未知符号 → 语义面如实 null(kind=
+ * none);任何失败/超时/取消/应答畸形(任一条目缺 uri/区间)→ unavailable,调用方
  * 回 TS 既有实现(不部分采用)。非服务轨道/未装配门零开销。
  */
 export async function serveReferencesFromRust(
@@ -597,10 +619,10 @@ export async function serveReferencesFromRust(
   position: PositionLike,
   includeDeclaration: boolean,
   isCancelled?: () => boolean
-): Promise<LspLocationFace[] | null> {
+): Promise<ReferencesServeFace> {
   const gate = shadowGate;
   if (!gate || !gate.serveFromRust() || !isCorpusDocument(document)) {
-    return null;
+    return { kind: 'unavailable' };
   }
   const uri = document.uri.fsPath;
   const params = {
@@ -608,20 +630,35 @@ export async function serveReferencesFromRust(
     position: { line: position.line, character: position.character },
     context: { includeDeclaration }
   };
-  const result = await awaitWithInteractiveBudget(
+  const result = await awaitWithInteractiveBudget<ReferencesServed>(
     async opts => {
       await gate
         .mirrorDocument(uri, document.languageId, document.version, document.getText())
         .catch(() => undefined);
-      return gate.serveInRust<unknown>('textDocument/references', params, null, opts);
+      const value = await gate.serveInRust<unknown>(
+        'textDocument/references',
+        params,
+        REFERENCES_SERVE_FAILED,
+        opts
+      );
+      return value === REFERENCES_SERVE_FAILED
+        ? { state: 'failed' as const }
+        : { state: 'raw' as const, value };
     },
     INTERACTIVE_SERVE_BUDGET_MS,
     isCancelled
   );
-  if (!Array.isArray(result) || !result.every(isLspLocationFace)) {
-    return null;
+  // 预算壳 null = 超时/取消/抛错 → 失败面,回 TS(可用性优先,不误伤服务)。
+  if (result === null || result.state === 'failed') {
+    return { kind: 'unavailable' };
   }
-  return result;
+  if (result.value === null) {
+    return { kind: 'none' };
+  }
+  if (!Array.isArray(result.value) || !result.value.every(isLspLocationFace)) {
+    return { kind: 'unavailable' };
+  }
+  return { kind: 'locations', locations: result.value };
 }
 
 export interface LspPrepareRenameFace {
