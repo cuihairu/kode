@@ -114,3 +114,70 @@ children/arrayElement)」,本批把 TS `parseProperties`/`pushProperty` 的
 ## 余界
 
 entities.xml 异名 root 与接口条目元素形态留接线批。
+
+## 批 6:接口条目元素形态(2026-11-21)
+
+批 5 余界两子项裁定:
+
+### 子项 1:entities.xml 异名 root —— 假证(零代码改动)
+
+批 2/批 5 的「TS rootName 来自 entities.xml 实体名」是**伪前提**。生产
+TS `parseDefFile` 的 rootName 恒为 `path.basename(defFile, '.def')`——def
+文件基名,与 entities.xml 元素名无关,三处同源:
+`entityMapping.ts:520`(`parseDefFile(path.basename(defFile.fsPath,'.def'),...)`)、
+`:1252`、`:3030`。Rust/mirror 已同口径(def basename),故**异名 root 不是
+缺口**,不实现 entities.xml 基 root(那会引入与生产不一致的第三种口径)。
+本子项以假证登记收口。
+
+### 子项 2:接口条目元素形态 —— 真实缺陷,本批修复
+
+引擎 `loadInterfaces(entitydef.cpp:561-585)` 的接口名 = 条目首个非注释子
+节点的 getKey:文本形态取 trim 文本、**元素形态取元素名**;且引擎 tinyxml
+`Blank()` 分支丢弃元素间纯空白(tinyxmlparser.cpp:1204-1213)。生产 TS
+`getReferenceTargetName(defRenamer.ts:673)` 同口径(跳过空文本子节点)。
+
+缺陷:parser `find` 谓词修前只跳过 `Comment`,元素形态
+`<interface>\n  <GadgetIface/>\n</interface>` 的首个子节点是换行缩进空白
+文本 → 取到空串 → **条目整体丢失**(接口不折入)。
+
+修复(两处,行为保持):
+
+- `crates/kode-parser/src/model.rs`:`find` 谓词跳过空文本
+  (`!decoded.trim().is_empty()`)与注释;元素形态取首元素标签名。
+- `tests/kodeWorkspaceSymbolsParity.test.ts`:`interfacesOf` 从
+  `getDirectChildElementsByName(node,'interface')` 文本形态专取改为
+  生产对齐——`INTERFACE_WRAPPER_NAMES` 四名
+  {interface,Interface,type,Type} 过滤 + `referenceTargetName`
+  (首非注释非空子节点:文本取文本、元素取标签名)。
+
+语料自洽盲区:四语料 `<interface>` 条目全为文本形态(逐语料 grep 实证),
+且 entities.xml 元素名恒=def 基名——故两处修复都是行为保持,golden
+逐字节不变。盲区由合成钉补齐:
+
+- **Rust 钉** `element_child_interface_entry_folds_interface_symbols`:
+  `build()` 语料加 `ElemIface.def`(元素形态接口 + own `gadgetOwn`)+
+  `interfaces/GadgetIface.def`(独有 `gadgetOnly`);断言 gadgetOnly 经元素
+  形态条目折入 + 文本形态 ROLE 臂不回归。
+- **TS 合成钉** `RUST-139 批 6:接口条目元素形态(合成语料内联钉)`:
+  hand-constructed CorpusFile 三件(entities.xml + ElemIface.def +
+  GadgetIface.def),镜像 engine 复算,gadgetOnly 落接口 def。
+
+prove-red:model.rs 谓词临时还原(只跳注释)→ Rust 钉红(gadgetOnly 缺失,
+left=[ElemIface.def] only),cp 还原复绿。TS 侧镜像钉修前
+`getElementText` 取空白文本 → 空串 → 条目丢失,修复后取元素名,红绿同构。
+
+`roots_are_entity_defs_only` 精确 root 表同步补 `ElemIface`(新 root)。
+
+## 批 6 门禁
+
+- `cargo test -p kode-server --lib workspace_symbols` 11/11(新钉 + 既有
+  全绿);`cargo test -p kode-parser` 0(编译净);
+- rustfmt 本批两文件净(`cargo fmt -p kode-parser -p kode-server`,不触
+  kode-mcp 预存漂移);
+- golden `workspace-symbols-parity.json` 重生成 `cmp` **逐字节不变**;
+- vitest `tests/kodeWorkspaceSymbolsParity.test.ts` 5/5(4 对拍 + 1 合成钉);
+- tsc 0;eslint 本批文件 0。
+
+## 结案
+
+RUST-139 全部子项收口(批 1–6),todo.md 整行勾销。
