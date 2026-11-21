@@ -245,3 +245,44 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## loginapp-dbmgr-logger-face 族(2026-11-21 第二十九族)
 
 依据:docs/knowledge/api-loginapp-dbmgr-logger.md(**KB-API-006**,fork HEAD **6d12b8f**,grounding base c2a3b8f,档内 2026-11-04 自证;§1 装配表=python_app.cpp:230-349 共享层九函数+LOG_TYPE_*/NEXT_ONLY+addTimer/delTimer+描述符四件+MemoryStream(:271)+script.cpp:248/258/286 component/genUUID64/urlopen;§2-§4 三面 24 名录;偏差表 D1 ffO 回调必需/D2 SERVER_ERR_* loginapp·dbmgr 有 logger 无/D4 delTimer TypeError/D6 onLogWrote 返回语义/D8 urlopen 三面同形)。9 例,执行门=**processApiSymbols 三面直钉 + ENGINE_SPI_METHODS 名册面**(loginapp 67/dbmgr 68/logger 28 符号表存在性+kind+签名三标量;探针实测后写值,drift 即红)。臂形:正例 5(§1 共享面 24 名三面逐名钉 kind+urlopen 回调五参元组入签名/D2 SERVER_ERR 38 表名 loginapp+dbmgr 逐值钉=SERVER_SUCCESS 0..SERVER_ERR_ACCOUNT_LOGIN_ANOTHER_SERVER 37,fork server_errors.h:57+ 表序实读核值,直接收割第二十八族 unknown 的「下一步」/dbmgr executeRawDatabaseCommand 独占钉+签名默认接口 'default'/loginapp SPI 六回调 required:true/components 含 loginapp/dbmgr+logger SPI 名册钉+onReadyForShutDown components 精确=['baseapp','dbmgr','logger'] required:false+onLogWrote required:false/D1 三面 addTimer/delTimer 精确签名钉——kode 签名无 callbackObj 默认值,与 fork ffO 必需口径一致)+**分歧登记 2(皆误导方向)**:①SERVER_ERR_MAX=引擎从不登记的模块面名字(登记循环 for i<SERVER_ERR_MAX 只走 SERVER_ERR_STR[0..37],MAX 系 #define 循环界非表项,fork 实读)而 kode loginapp/dbmgr 带 `SERVER_ERR_MAX: int = 38` 行②Vector2/3/4+FixedArray=引擎 KBEngine 面皆无(Vector 三名由 script.cpp:291 math::installModule(\"Math\") 装进顶层 Math 模块,FixedArray 全树仅 GC/pickle 内部引用)而 kode 三面各带四条 class 行;两向只钉现状,收窄(typings 双侧+Rust 同嵌)归独立批+负例 1(D2 logger 面:SERVER_*/SERVER_SUCCESS 全缺席,kode logger 表同步缺席=对齐钉,loginapp 表全集反查 logger 零命中)。**判例=fork 树在场则档内张力须源码仲裁**:§1 正文称「SERVER_ERR_* registered only by EntityApp::installPyModules」与偏差表 D2「loginapp/dbmgr 各自有登记循环」互斥——fork 实读 loginapp.cpp:195-206/dbmgr.cpp:343-352 两循环在场、logger 零命中,D2 胜,语料按 D2 钉;Vector/FixedArray 跨族观察=kode 七面(base/cell/client/bots/interfaces/loginapp/dbmgr/logger 之全部探及面)同形,本族只钉三工具面,其余五面归各族各自核。门禁=定向/prove-red/tsc/lint/mocha/全量对基线(数字以提交时实测为准);语料 29 族 249 条。余族=Math 模块面(档 §1 未覆盖,kode 亦无此面,双双缺席非分歧)+entry scripts 缺席致回调运行期不可实测(档 §1 末自证,留部署侧)。
+
+## cellapp-module-face 族(2026-11-22 第三十族)
+
+依据:docs/knowledge/api-cellapp.md(**KB-API-004**,fork HEAD **6d12b8f**,grounding
+base c2a3b8f;档 §1 五层装配表=cellapp.cpp:172-189 cell-specific 18 方法+
+entity_app.h:423-453 共享 11 方法+python_app.cpp/pyscript 解释器层;§2 33 函数
+含 spaceData 契约与 createSpace 缺席行;§3 九回调;§4 属性表)。10 例,执行门=
+**processApiSymbols('cell') 直钉 + ENGINE_SPI_METHODS 名册面**(94 符号表的
+存在性+kind+签名三标量;探针实测后写值,drift 即红)。臂形:正例 6(site1
+十八名逐名 function/共享十五 function+属性常量十 variable/SPI 九回调
+components+required 旗/spaceData 三签名逐字钉 Iss·Is 同向/raycast 双 overload
+对齐/address 单符号)+**分歧登记 2**:①误导方向=MemoryStream(引擎 cell
+EntityApp 链无注册——Cellapp::installPyModules 调 EntityApp::installPyModules
+返回,EntityApp 直承 ServerApp 非基 PythonApp,MemoryStream 仅
+PythonApp::installPyModules 注册 python_app.cpp:271;档 §1 行头
+「Interpreter-layer (all apps)」与实际链不符=档内张力,fork 仲裁)而 kode
+cell 表含 class 行②漏报方向=APP_FLAGS_*(fork cellapp.cpp:165-171
+createAppFlagsMaps 循环注册,同 baseapp.cpp:419-424 形状)而 kode cell 表缺席
++负例 1(createSpace 两侧皆缺席=对齐;空间创建走 baseapp→cellappmgr
+cellapp.cpp:875)+unknown 1(createEntity 运行期 TypeError 三条件无编辑期面,
+待读 fork cellapp.cpp:471-533)。
+
+**判例=跨族对账翻案须 fork 仲裁且两族同刻翻正**:process-module-surface 族
+(第十二族)曾按 api-core-concepts §1.7「cellapp has no `address`」把 cell
+address 登记为 divergence(官方 3.7 材料口径);fork 实读 cellapp.cpp:187
+`__py_address` 登记在场(Cellapp::installPyModules cell-specific 块,实现
+:1870)——官方材料口径不适用于 fork,翻案=address 在 cellapp 模块面,第十二
+族 proc-cell-address-absent-divergence 条目与 proc-cell-shared-utility-present
+清单同刻翻正(kind→positive/load→accept/present 清单补 address),翻案注记
+随本族落地。执行闸 address 翻案臂同时咬两族(本族正钉+第十二族翻正态),
+回翻即红。**raycast 双 overload 判例**:档 §2 行文只写四参形
+`raycast(spaceID, layer, src, dst)`,fork `__py_raycast`(cellapp.cpp:2215 起)
+按 currargsSize==3("IOO")与 ==4("IiOO")双形态解析——kode 两 overload 与
+fork 同向非超集,语料按双形态钉(档行文缺 3 参形,fork 补全)。
+
+门禁=定向 93/93(84+9 新增 it)/prove-red 九咬(八臂 perturb family-30+一臂
+回翻 family-12,各红一次,sha256 765d60e4/54a1e9d7 字节还原复绿)/tsc -p ./ 0/
+tsc -p tsconfig.mocha.json 0/eslint tests/truthCorpus.test.ts 2 error 系第九族与
+第十一族旧债(:94 flagsGroundingText/:133 cellDataGroundingText 未用变量,本族
+零新增;CI lint 仅覆盖 src/)。本批零 src/ 零 Rust 改动(仅语料+执行门+README+
+todo);语料 30 族 264 条(29→30 族,+10;基线 254=第三十增量 249+peer 检查面批 f4654be0 +2/cb5e1510 +3)。

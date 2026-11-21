@@ -1851,3 +1851,114 @@ describe('truth-corpus: loginapp-dbmgr-logger-face 族执行闸(三工具面探�
     expect(a.addTimerSignature).not.toContain('callbackObj=');
   });
 });
+
+// ── 第三十族 cellapp-module-face(KB-API-004 cell 模块面)────────────
+// cellapp 符号表(94)存在性+kind+签名直钉;SPI 名册九回调 components/required 钉;
+// MemoryStream 误导分歧与 APP_FLAGS 漏报分歧按现状钉——kode 侧收编或收窄即红,
+// 触发重钉,不冒充修复。address 跨族翻案:process-module-surface 族的 cell address
+// 负例 divergence 被 fork cellapp.cpp:187 源码仲裁推翻(官方 3.7 材料口径不适用
+// fork),两族条目同刻翻正;raycast 双 overload 对齐 fork currargsSize 3/4 双形态。
+interface CellFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      site1Names?: string[];
+      functions?: string[];
+      variables?: string[];
+      signatures?: string[];
+      absentNames?: string[];
+      presentInKode?: boolean;
+      overloadCount?: number;
+      resolved?: boolean;
+      names?: string[];
+      requiredFlags?: Record<string, boolean>;
+    };
+  };
+}
+const cellFaceFamily = families.find(f => f.family === 'cellapp-module-face')!;
+const cellFaceEntries = cellFaceFamily.entries as unknown as CellFaceEntry[];
+const cellFaceSymbols = new Map(processApiSymbols('cell').map(s => [s.name, s]));
+describe('truth-corpus: cellapp-module-face 族执行闸(cell 模块面探针)', () => {
+  it('登记点名册臂:site1 十八名+共享十五名=function 行;属性常量十名=variable 行', () => {
+    for (const entry of cellFaceEntries) {
+      if (entry.kode.status !== 'pinned' || !entry.input.roster || entry.input.roster === 'spi') { continue; }
+      const a = entry.kode.analysis!;
+      for (const name of a.site1Names ?? []) {
+        expect(cellFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.functions ?? []) {
+        expect(cellFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.variables ?? []) {
+        expect(cellFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'variable' });
+      }
+    }
+  });
+
+  it('SPI 名册臂:九回调 components 含 cellapp;required 旗逐名钉(onReadyForLogin 唯一可选)', () => {
+    const entry = cellFaceEntries.find(e => e.input.roster === 'spi')!;
+    const a = entry.kode.analysis!;
+    expect(a.names!.length).toBe(9);
+    for (const n of a.names!) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain('cellapp');
+      expect(ENGINE_SPI_METHODS[n].required, n).toBe(a.requiredFlags![n]);
+    }
+  });
+
+  it('spaceData 签名臂:三函数 str 注解签名逐字钉(Iss/Is 契约同向,drift 即红)', () => {
+    const entry = cellFaceEntries.find(e => e.id === 'pos-spacedata-str-signatures')!;
+    for (const sig of entry.kode.analysis!.signatures!) {
+      const name = sig.slice('def '.length, sig.indexOf('('));
+      expect((cellFaceSymbols.get(name) as { signature: string }).signature, name).toBe(sig);
+    }
+  });
+
+  it('raycast 双 overload 臂:恰 2 签名且 3 参/4 参形都在(fork currargsSize 3/4 同向)', () => {
+    const entry = cellFaceEntries.find(e => e.id === 'pos-raycast-dual-overload')!;
+    const a = entry.kode.analysis!;
+    const sigs = (cellFaceSymbols.get('raycast') as { signature: string }).signature.split('\n');
+    expect(sigs.length).toBe(a.overloadCount);
+    for (const sig of a.signatures!) { expect(sigs).toContain(sig); }
+  });
+
+  it('address 翻案臂:fork 登记在场,kode=function 行;第十二族 cell 负例条目已翻正', () => {
+    const entry = cellFaceEntries.find(e => e.id === 'pos-address-fork-arbitration')!;
+    expect(cellFaceSymbols.get('address')).toMatchObject({ kind: 'function' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('跨族对账翻案');
+    const flipped = procSurfaceFamily.entries.find(
+      e => (e as ProcSurfaceEntry).id === 'proc-cell-address-absent-divergence'
+    ) as ProcSurfaceEntry;
+    expect(flipped.kind).toBe('positive');
+    expect(flipped.engine.load).toBe('accept');
+  });
+
+  it('MemoryStream 误导臂:引擎 cell 链无注册而 kode 表有 class 行(收窄即红)', () => {
+    const entry = cellFaceEntries.find(e => e.input.name === 'MemoryStream')!;
+    expect(cellFaceSymbols.get('MemoryStream')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('APP_FLAGS 漏报臂:引擎注册的 APP_FLAGS_* 常量在 kode 表缺席(收编即红)', () => {
+    const entry = cellFaceEntries.find(e => (e.kode.analysis?.absentNames?.length ?? 0) > 0)!;
+    for (const name of entry.kode.analysis!.absentNames!) {
+      expect(cellFaceSymbols.has(name), name).toBe(false);
+    }
+    expect(entry.finding).toContain('漏报方向');
+  });
+
+  it('createSpace 负例臂:两侧皆缺席(对齐钉,混入即红)', () => {
+    const entry = cellFaceEntries.find(e => e.input.name === 'createSpace')!;
+    expect(entry.kind).toBe('negative');
+    expect(cellFaceSymbols.has('createSpace')).toBe(false);
+    expect(entry.kode.analysis!.presentInKode).toBe(false);
+  });
+
+  it('未知臂:createEntity 三运行期 TypeError 条件未核,按未核钉不冒充已核', () => {
+    const entry = cellFaceEntries.find(e => e.kode.status === 'unverified')!;
+    expect(cellFaceSymbols.get(entry.input.name!)).toBeDefined();
+    expect(entry.reason).toBeTruthy();
+  });
+});

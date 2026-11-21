@@ -1,0 +1,279 @@
+{
+  "family": "cellapp-module-face",
+  "grounding": {
+    "doc": "docs/knowledge/api-cellapp.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "pos-site1-cell-methods",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "cell", "roster": "site1" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1 登记点三(cellapp.cpp:172-189 Cellapp::installPyModules cell-specific 块)登记的 18 个 cell 专属方法,time/createEntity 族/空间数据/描记符号/关停态/address/raycast/app-flags 全在其中"
+      },
+      "evidence": [
+        "Cellapp `KBEngine` module functions",
+        "`time`, `createEntity`, `executeRawDatabaseCommand`, `reloadScript`",
+        "`setSpaceData`, `getSpaceData`, `delSpaceData`",
+        "`isShuttingDown`, `address`, `raycast`, `setAppFlags`, `getAppFlags`",
+        "cellapp.cpp:172-189"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "site1Names": [
+            "time",
+            "createEntity",
+            "executeRawDatabaseCommand",
+            "reloadScript",
+            "registerReadFileDescriptor",
+            "registerWriteFileDescriptor",
+            "deregisterReadFileDescriptor",
+            "deregisterWriteFileDescriptor",
+            "addSpaceGeometryMapping",
+            "getSpaceGeometryMapping",
+            "setSpaceData",
+            "getSpaceData",
+            "delSpaceData",
+            "isShuttingDown",
+            "address",
+            "raycast",
+            "setAppFlags",
+            "getAppFlags"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pos-shared-sites",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "cell", "roster": "shared" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1 登记点四(EntityApp 共享 11 方法+globalData)+登记点五(解释器层 MemoryStream/NEXT_ONLY/addTimer/delTimer/component/genUUID64/addWatcher/delWatcher/urlopen)在 cell 模块面;模块属性 entities/globalData/cellAppData 与常量族同面注册"
+      },
+      "evidence": [
+        "`kbassert`(private), `publish`, `scriptLogType`, `getResFullPath`, `hasRes`, `open`, `listPathRes`, `matchPath`, `getWatcher`, `getWatcherDir`, `debugTracing`, `globalData` object",
+        "`addWatcher(path, dataType, getFunction)` / `delWatcher(path)`",
+        "`urlopen(url, callback, postData, headers)` | interp `pyurl.cpp:23`, impl `:69+`",
+        "`entities` | `Entities`",
+        "`globalData` | `GlobalDataClient` | `entity_app.h:418-419`",
+        "`cellAppData` | dict-like | `cellapp.cpp:199` (`pCellAppData_`)",
+        "`component` | string | `script.cpp:248` — `'cellapp'` on this process",
+        "`LOG_TYPE_DBG/INFO/NORMAL/WAR/ERR` | int | log levels for `scriptLogType`",
+        "`NEXT_ONLY` | int | defined as `KBE_NEXT_ONLY` (`python_app.cpp:323`); no cellapp consumer"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "functions": [
+            "kbassert",
+            "publish",
+            "scriptLogType",
+            "getResFullPath",
+            "hasRes",
+            "open",
+            "listPathRes",
+            "matchPath",
+            "getWatcher",
+            "getWatcherDir",
+            "debugTracing",
+            "addWatcher",
+            "delWatcher",
+            "genUUID64",
+            "urlopen"
+          ],
+          "variables": [
+            "component",
+            "entities",
+            "globalData",
+            "cellAppData",
+            "LOG_TYPE_NORMAL",
+            "LOG_TYPE_INFO",
+            "LOG_TYPE_ERR",
+            "LOG_TYPE_DBG",
+            "LOG_TYPE_WAR",
+            "NEXT_ONLY"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pos-spi-roster",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "cell", "roster": "spi" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §3 九回调逐名钉(触达调用点:initprogress/onBroadcastCellAppDataChanged/onBroadcastGlobalDataChanged/onSpaceDataChanged/空间几何完成),全部经 getEntryScript 派发"
+      },
+      "evidence": [
+        "`onInit(isReload)` | Entry script, after all scripts loaded",
+        "`onReadyForLogin(isBootstrap)` | Cellapp init-progress poller",
+        "`onCellAppData(key, value)` | `Cellapp::onBroadcastCellAppDataChanged`",
+        "`onGlobalData(key, value)` | `EntityApp::onBroadcastGlobalDataChanged`",
+        "`onSpaceData(spaceID, key, value)` | `SpaceMemory::onSpaceDataChanged`",
+        "`onSpaceGeometryLoaded(spaceID, mapping)` | Per-space geometry done",
+        "`onAllSpaceGeometryLoaded(spaceID, isBootstrap, mapping)` | All cells' geometry"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": [
+            "onInit",
+            "onReadyForLogin",
+            "onCellAppData",
+            "onCellAppDataDel",
+            "onGlobalData",
+            "onGlobalDataDel",
+            "onSpaceData",
+            "onSpaceGeometryLoaded",
+            "onAllSpaceGeometryLoaded"
+          ],
+          "requiredFlags": {
+            "onInit": true,
+            "onReadyForLogin": false,
+            "onCellAppData": true,
+            "onCellAppDataDel": true,
+            "onGlobalData": true,
+            "onGlobalDataDel": true,
+            "onSpaceData": true,
+            "onSpaceGeometryLoaded": true,
+            "onAllSpaceGeometryLoaded": true
+          }
+        }
+      }
+    },
+    {
+      "id": "pos-spacedata-str-signatures",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "cell", "name": "setSpaceData" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §2 spaceData 契约:三函数按 Iss/Is 解析(字符串-only),kode 三签名 str 注解=契约同向;set/get/del 逐签名钉,drift 即红"
+      },
+      "evidence": [
+        "`setSpaceData` / `getSpaceData` / `delSpaceData` | cell `cellapp.cpp:183-185`",
+        "`PyArg_ParseTuple(\"Iss\"/\"Is\")`",
+        "`_mapping` protection"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "signatures": [
+            "def setSpaceData(__spaceID: int, __key: str, __value: str) -> None",
+            "def getSpaceData(__spaceID: int, __key: str) -> str",
+            "def delSpaceData(__spaceID: int, __key: str) -> None"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pos-raycast-dual-overload",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "cell", "name": "raycast" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §2 行文写 raycast(spaceID, layer, src, dst) 四参;fork __py_raycast(cellapp.cpp:2215 起)按 currargsSize==3(\"IOO\")与 ==4(\"IiOO\")双形态解析——3 参形态 layer 缺省 0,引擎双侧合法;kode 两 overload 与 fork 双形态同向,非超集"
+      },
+      "evidence": [
+        "`raycast(spaceID, layer, src, dst)` | cell `cellapp.cpp:187`, impl `cellapp.cpp:2158`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "overloadCount": 2,
+          "signatures": [
+            "def raycast(__spaceID: int, __src: Vector3Like, __dst: Vector3Like) -> Union[Tuple[Tuple[float, float, float], ...], None]",
+            "def raycast(__spaceID: int, __layer: int, __src: Vector3Like, __dst: Vector3Like) -> Union[Tuple[Tuple[float, float, float], ...], None]"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pos-address-fork-arbitration",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "cell", "name": "address" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 实读 Cellapp::installPyModules 的 cell-specific 块注册 address(cellapp.cpp:187,绑定 __py_address cellapp.cpp:1870);cell 模块面含 address=引擎真值"
+      },
+      "evidence": [
+        "`address()` | cell `cellapp.cpp:186` | Internal network interface address"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "kind": "function", "presentInKode": true }
+      },
+      "finding": "跨族对账翻案(2026-11-22,fork 仲裁)=process-module-surface 族(第十二族)曾按 api-core-concepts §1.7「cellapp has no `address`」把 cell address 登记为 divergence(engine.load=reject,依据档=api-core-concepts,官方 3.7 材料口径);fork 实读 cellapp.cpp:187 __py_address 登记在场,官方材料口径不适用于 fork——fork 树在场则档内张力须源码仲裁(第二十九族判例),翻案=address 在 cellapp 模块面,第十二族该条目不冒充改写,翻案注记随本族落地,两族语料对齐为正向(皆 kind=positive/load=accept)"
+    },
+    {
+      "id": "div-memoryStream",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "cell", "name": "MemoryStream" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 实读 Cellapp::installPyModules(cellapp.cpp:151-192)调 EntityApp::installPyModules(entity_app.h:404-453)返回;EntityApp 链自含 kbassert..debugTracing+LOG_TYPE_*/NEXT_ONLY+SERVER_ERR 循环+entryScript 装载,不调 PythonApp::installPyModules;MemoryStream 仅 PythonApp::installPyModules 注册(python_app.cpp:271),PythonApp 非 Cellapp 基类(EntityApp:44 直承 ServerApp)——cell 模块面无 MemoryStream"
+      },
+      "evidence": [
+        "`MemoryStream()` | interp `python_app.cpp:271`",
+        "Interpreter-layer (all apps)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "kind": "class", "presentInKode": true }
+      },
+      "finding": "divergence 登记(误导方向)=引擎 cell(EntityApp)链无 MemoryStream 注册而 kode cell 符号表含 class MemoryStream 行:补全/类型面会给运行期 AttributeError 的名字;档 §1 行 5 行头「Interpreter-layer (all apps)」与 EntityApp 实际链不符(档内张力,fork 仲裁同 second 十九族判例);只钉现状不冒充修复,收窄归独立批"
+    },
+    {
+      "id": "div-appflags-absent",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "cell" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork Cellapp::installPyModules 把 app 标记注册到脚本(cellapp.cpp:165-171 createAppFlagsMaps 循环,同 baseapp.cpp:419-424 形状),APP_FLAGS_NONE/APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING 在 cell 脚本可读"
+      },
+      "evidence": [
+        "`setAppFlags` / `getAppFlags` | cell `cellapp.cpp:188-189` | e.g. opt out of load balancing"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "absentNames": ["APP_FLAGS_NONE", "APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING"]
+        }
+      },
+      "finding": "divergence 登记(漏报方向)=引擎按 app-flags 表迭代注册 APP_FLAGS_*(cellapp.cpp:165-171)而 kode cell 符号表缺席:cell 脚本里 setAppFlags 位掩码常量零补全零类型;只钉现状,收编=process-api.json 双侧扩充(Rust 同嵌)归独立批,不冒充修复"
+    },
+    {
+      "id": "neg-createSpace",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "cell", "name": "createSpace" },
+      "engine": {
+        "load": "reject",
+        "truth": "档 §2 createSpace 行:cellapp 源材料不记载,fork 无 cellapp 侧注册(grep server/cellapp/ + lib/server/ = 0 hits);空间创建走 baseapp→cellappmgr 路径(cellapp.cpp:875)"
+      },
+      "evidence": [
+        "`createSpace` | — | **Absent**: the cellapp source material does not document it, and the fork registers no cellapp-side `createSpace` (grep over `server/cellapp/` + `lib/server/` = 0 hits)."
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "presentInKode": false, "resolved": false }
+      }
+    },
+    {
+      "id": "unk-createEntity-runtime-args",
+      "kind": "unknown",
+      "input": { "path": "module-face", "process": "cell", "name": "createEntity" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §2 createEntity 行:失败按运行期条件抛 TypeError(空 entityType/spaceID 不在本 cellapp/关停中),这些条件无编辑期静态面"
+      },
+      "evidence": [
+        "Failure raises `TypeError`: empty `entityType`"
+      ],
+      "kode": { "status": "unverified", "analysis": {} },
+      "reason": "档 §2 createEntity 运行期 TypeError 三条件(空 entityType/spaceID 不在本 cellapp/app 关停中)无编辑期静态检查面,kode 签名只钉形状;下一步=读 fork cellapp.cpp:471-533 核三条件后评估登记诊断面"
+    }
+  ]
+}

@@ -8,7 +8,9 @@
     {
       "id": "proc-base-shared-utility-present",
       "kind": "positive",
-      "input": { "process": "base" },
+      "input": {
+        "process": "base"
+      },
       "engine": {
         "load": "accept",
         "truth": "§1.7 共享工具面(near-)verbatim 于两个 server app:资源 IO/文件描述符钩子/urlopen/genUUID64/executeRawDatabaseCommand/watcher 引照/time/publish/appFlags/scriptLogType/reloadScript/MemoryStream/address 均在 baseapp 模块面。"
@@ -23,17 +25,41 @@
       "kode": {
         "status": "pinned",
         "analysis": {
-          "present": ["open", "hasRes", "getResFullPath", "listPathRes", "matchPath", "registerReadFileDescriptor", "registerWriteFileDescriptor", "urlopen", "genUUID64", "executeRawDatabaseCommand", "addWatcher", "getWatcher", "getWatcherDir", "delWatcher", "time", "publish", "getAppFlags", "setAppFlags", "scriptLogType", "reloadScript", "MemoryStream"]
+          "present": [
+            "open",
+            "hasRes",
+            "getResFullPath",
+            "listPathRes",
+            "matchPath",
+            "registerReadFileDescriptor",
+            "registerWriteFileDescriptor",
+            "urlopen",
+            "genUUID64",
+            "executeRawDatabaseCommand",
+            "addWatcher",
+            "getWatcher",
+            "getWatcherDir",
+            "delWatcher",
+            "time",
+            "publish",
+            "getAppFlags",
+            "setAppFlags",
+            "scriptLogType",
+            "reloadScript",
+            "MemoryStream"
+          ]
         }
       }
     },
     {
       "id": "proc-cell-shared-utility-present",
       "kind": "positive",
-      "input": { "process": "cell" },
+      "input": {
+        "process": "cell"
+      },
       "engine": {
         "load": "accept",
-        "truth": "共享工具面同样在 cellapp 模块面,唯一例外=address(见 divergence 条目):本清单为共享面减 address,逐名在场。"
+        "truth": "共享工具面同样在 cellapp 模块面,address 含在内(fork cellapp.cpp:187 注册;第二十八族 cellapp-module-face 同源钉);逐名在场。"
       },
       "evidence": [
         "resource IO `open`/`hasRes`/`getResFullPath`/`listPathRes`/`matchPath`",
@@ -43,14 +69,40 @@
       "kode": {
         "status": "pinned",
         "analysis": {
-          "present": ["open", "hasRes", "getResFullPath", "listPathRes", "matchPath", "registerReadFileDescriptor", "registerWriteFileDescriptor", "urlopen", "genUUID64", "executeRawDatabaseCommand", "addWatcher", "getWatcher", "getWatcherDir", "delWatcher", "time", "publish", "getAppFlags", "setAppFlags", "scriptLogType", "reloadScript", "MemoryStream"]
+          "present": [
+            "open",
+            "hasRes",
+            "getResFullPath",
+            "listPathRes",
+            "matchPath",
+            "registerReadFileDescriptor",
+            "registerWriteFileDescriptor",
+            "urlopen",
+            "genUUID64",
+            "executeRawDatabaseCommand",
+            "addWatcher",
+            "getWatcher",
+            "getWatcherDir",
+            "delWatcher",
+            "time",
+            "publish",
+            "getAppFlags",
+            "setAppFlags",
+            "scriptLogType",
+            "reloadScript",
+            "MemoryStream",
+            "address"
+          ]
         }
       }
     },
     {
       "id": "proc-base-address-present",
       "kind": "positive",
-      "input": { "process": "base", "symbol": "address" },
+      "input": {
+        "process": "base",
+        "symbol": "address"
+      },
       "engine": {
         "load": "accept",
         "truth": "address 在共享工具面清单内,baseapp 模块面含 address。"
@@ -60,30 +112,40 @@
       ],
       "kode": {
         "status": "pinned",
-        "analysis": { "present": true }
+        "analysis": {
+          "present": true
+        }
       }
     },
     {
       "id": "proc-cell-address-absent-divergence",
-      "kind": "negative",
-      "input": { "process": "cell", "symbol": "address" },
+      "kind": "positive",
+      "input": {
+        "process": "cell",
+        "symbol": "address"
+      },
       "engine": {
-        "load": "reject",
-        "truth": "cellapp 模块面无 address:cellapp 脚本引用 KBEngine.address 运行期不存在。"
+        "load": "accept",
+        "truth": "fork 仲裁(2026-11-22)=Cellapp::installPyModules 的 cell-specific 块注册 address(cellapp.cpp:187 绑 __py_address cellapp.cpp:1870);cell 模块面含 address;本族原按 api-core-concepts §1.7「cellapp has no `address`」登记为 divergence,官方 3.7 材料口径不适用于 fork,翻案为正向对齐(kode cell 表含 address=引擎同向,零分歧)"
       },
       "evidence": [
-        "cellapp has no `address`"
+        "`time`, `publish`, `getAppFlags`/`setAppFlags`, `scriptLogType`, `reloadScript`, `MemoryStream`, `address`"
       ],
-      "finding": "divergence(修复归独立批):kode cell 进程表(process-api.json,TS/Rust 双侧同嵌)含 address=面宽于引擎——补全/stub 面会对 cell 脚本给出运行期 AttributeError 的名字。本条钉 kode 现状(present=true),修复落地后翻钉为 absent。取证链=cellapp/KBEngine.md:78-679(档引)→fork cellapp 注册面。",
+      "finding": "跨族对账翻案(2026-11-22,fork 仲裁)=原按 api-core-concepts「cellapp has no `address`」登记的 cell address 负例 divergence 被 fork cellapp.cpp:187 推翻(官方 3.7 材料口径不适用于 fork);翻正为对齐:cellapp 模块面含 address,kode cell 表 address 行=引擎同向;翻案注记随 cellapp-module-face 族落地,本族同刻翻正为 positive",
       "kode": {
         "status": "pinned",
-        "analysis": { "present": true }
+        "analysis": {
+          "present": true
+        }
       }
     },
     {
       "id": "proc-base-component-present",
       "kind": "positive",
-      "input": { "process": "base", "symbol": "component" },
+      "input": {
+        "process": "base",
+        "symbol": "component"
+      },
       "engine": {
         "load": "accept",
         "truth": "component 属性告知脚本当前所在 app,baseapp 模块面含之。"
@@ -93,13 +155,18 @@
       ],
       "kode": {
         "status": "pinned",
-        "analysis": { "present": true }
+        "analysis": {
+          "present": true
+        }
       }
     },
     {
       "id": "proc-bots-component-present",
       "kind": "positive",
-      "input": { "process": "bots", "symbol": "component" },
+      "input": {
+        "process": "bots",
+        "symbol": "component"
+      },
       "engine": {
         "load": "accept",
         "truth": "component 属性同样在 bots 模块面(档引 bots/KBEngine.md:233-239)。"
@@ -109,13 +176,17 @@
       ],
       "kode": {
         "status": "pinned",
-        "analysis": { "present": true }
+        "analysis": {
+          "present": true
+        }
       }
     },
     {
       "id": "proc-bots-subset-absent",
       "kind": "unknown",
-      "input": { "process": "bots" },
+      "input": {
+        "process": "bots"
+      },
       "engine": {
         "load": "accept",
         "truth": "bots 模块面只是 server app 共享面的子集(档明言 subset,未枚举成员)。"
@@ -127,7 +198,14 @@
       "kode": {
         "status": "pinned",
         "analysis": {
-          "absent": ["address", "executeRawDatabaseCommand", "addWatcher", "time", "reloadScript", "registerReadFileDescriptor"]
+          "absent": [
+            "address",
+            "executeRawDatabaseCommand",
+            "addWatcher",
+            "time",
+            "reloadScript",
+            "registerReadFileDescriptor"
+          ]
         }
       }
     }
