@@ -647,9 +647,9 @@
 - [ ] RUST-267 （旧 PH5-GATE） 界面功能 parity 与多个真实引擎工程测试通过。(2026-11-17 对账注记,不勾=量化口径与逐面验收未全:真机走查两腿已做=009b imac 四阶段(2026-11-10,af8a9f98 纪要,实体区高度压缩 UX-REVIEW-011 已破案)+009c Linux xvfb 双形态(2026-11-10,四组数据健康);「多个真实引擎工程」的量化口径(几个工程/覆盖哪些界面面)未立,KBE-001..018/UI-001..012 的真机逐面 parity 验收表未建;勾选条件=口径立项+逐面验收表全绿;2026-11-22 口径立项+验收表建立(用户拍板「1 真引擎+2 fixture」;验收表 docs/review/2026-11-22-rust-267-parity-acceptance-matrix.md:30 面逐面=fixture×2 腿 30/30 绿(回归网常驻在役:unit 全量+demo editor 25 RC=0+golden parity 族横跨双根)+真引擎腿 3 绿/3 部分/24 未走;显式未验证=完整服务器生命周期(启动/热更/关闭)+macOS 整腿(只编译口径)+Windows 纯 TS 包+无障碍读屏;勾选条件未满=真引擎腿 24 面补验+生命周期走查(imac/Linux 真机载体),非代码实现债,随真机走查攻坚收官后勾))
 
 #### Phase 6 — 插件与执行管理
-- [ ] RUST-268 （旧 PH6-01） 实现 PLUG-001..016、EXEC-001..013，提供 sample 插件和 SDK。
-- [ ] RUST-269 （旧 PH6-02） Python plugin 作为隔离进程 PoC，通过延迟与安全测试再正式发布。
-- [ ] RUST-270 （旧 PH6-GATE） 三方插件负载不会导致核心 language latency 显著劣化；权限隔离有效。
+- [x] RUST-268 （旧 PH6-01） 实现 PLUG-001..016、EXEC-001..013，提供 sample 插件和 SDK。（2026-11-22 收口:PLUG-001..016=RUST-202..217 全 [x] 撤需求(docs/review/2026-11-21-rust-202-217-plug-family-decision.md);EXEC-001..013=RUST-189..201 全 [x];sample 插件/SDK=RUST-213/214/215 同批撤销(无宿主无处加载,SDK 无需求方);行内两需求族均已交付或已撤销,无残留实现面;判定记录 docs/review/2026-11-22-rust-268-270-ph6-decision.md）
+- [x] RUST-269 （旧 PH6-02） Python plugin 作为隔离进程 PoC，通过延迟与安全测试再正式发布。（2026-11-22 用户拍板撤需求:与 RUST-293(ADR-106)同一主体,ADR 决策层已撤;Python out-of-process 能力现成等价面=pythonExecService 常驻解释器+帧协议(RUST-190 复用模式,PLUG-015→RUST-216);判定记录 docs/review/2026-11-22-rust-268-270-ph6-decision.md）
+- [x] RUST-270 （旧 PH6-GATE） 三方插件负载不会导致核心 language latency 显著劣化；权限隔离有效。（2026-11-22 用户拍板撤需求:三方插件负载以三方插件存在为前提,PLUG 家族撤销后无消费方;0 插件基准=现状本体(RUST-217 行)+权限隔离既有等价面=workspace trust 闸(RUST-198,PLUG-005→RUST-206);判定记录 docs/review/2026-11-22-rust-268-270-ph6-decision.md）
 
 #### Phase 7 — 稳定发布与去旧
 - [ ] RUST-271 （旧 PH7-01） 运行 QA-001..017 全套、48h 真实项目试用、跨平台打包与文档。
