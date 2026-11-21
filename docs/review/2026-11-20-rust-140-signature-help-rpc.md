@@ -67,3 +67,22 @@ initialize 广播 `signatureHelpProvider`;正臂 CellMethods 双形参签名(lab
 - **MethodImplementationProvider 不接**(IDE-NAV-014 空方法生成,同 RUST-143 边界);
 - **documentation 文案归 Rust 拼接**(与 TS appendMarkdown 逐字节一致),zh bundle 不经 en 插值串,故不需 TS l10n 重组;
 - 活动形参标亮的**触发面**(括号/逗号触发、SignatureHelpTriggerKind)属 VSCode 请求侧行为,服务端只按位置回包,不在本面。
+
+## 结案(2026-11-21)
+
+RUST-140 收口:批 1 调用点词法面(2026-11-16 30e8d6c6)+批 2 决策核
+(resolveMethodDefinition 同构下沉,2026-11-19)+批 3 LSP 接线/provider 切流
+(2026-11-20 db5691e9)全部完成;本面(类型 IR 驱动的 SignatureHelp)无剩余
+实现工作。剩余三项均为诚实边界,不属本面:
+
+- **组件槽展开 componentSlotName +30 分支**:signature_help 候选面无
+  `componentSlotName` 字段,归 entityMapping 属性身份车道(TS 既有 +30 分支
+  保持,不经 Rust signature_help 面迁移);非本面交付。
+- **注册表快照链留 TS**:`resolveMethodDefinition` 走 entityMapping 运行时
+  索引,provider 回退链原样保留(RUST-144 同边界),Rust 面不可用时行为与
+  切流前逐字节一致;设计如此,非缺口。
+- **MethodImplementationProvider 不接**:IDE-NAV-014 已收口(todo 行已勾),
+  空方法生成归该面,非本面。
+
+复验:signature_help_dispatch 8/8 + kodeSignatureHelpRust 10/10 全绿,
+零代码改动(仅结案注记)。todo.md RUST-140 整行勾销。
