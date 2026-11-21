@@ -6,13 +6,22 @@ import {
   type ShadowClientLike,
 } from '../src/backend/kodeCoreGate';
 import {
+  awaitWithInteractiveBudget,
   diagnosticsToLspFace,
   getKodeCoreShadowGate,
   locationToLspFace,
+  serveCodeActionsFromRust,
   serveCompletionFromRust,
+  serveCompletionResolveFromRust,
   serveDefinitionFromRust,
   serveDiagnosticsFromRust,
+  serveDocumentSymbolsFromRust,
   serveHoverFromRust,
+  servePrepareRenameFromRust,
+  serveReferencesFromRust,
+  serveRenameFromRust,
+  serveSignatureHelpFromRust,
+  serveWorkspaceSymbolsFromRust,
   setKodeCoreShadowGate,
   shadowCompareDefinition,
   shadowMirrorCorpusDocument,
@@ -807,4 +816,858 @@ describe('serve 面缺口臂二(直通与坏形状收尾)', () => {
   });
 });
 
+});
+
+// ---- 缺口臂三:resolve/documentSymbols/references/prepareRename/rename/
+// codeActions/signatureHelp 七个 serve 面 + 交互预算壳 + 递归形状闸
+// (覆盖率补测;形状闸逐臂全走「畸形应答整面作废」口径) ----
+
+/** 合法 LSP 区间面(各 serve 面夹具共用) */
+const okRange = { start: { line: 1, character: 0 }, end: { line: 1, character: 3 } };
+
+/** 合法文档符号面(Rust document_symbols 同形) */
+const okSymbolFace = {
+  name: 'Properties',
+  detail: '',
+  kind: 'Class',
+  range: okRange,
+  selectionRange: okRange,
+  children: [] as unknown[]
+};
+
+const PY_URI = '/workspace/demo/scripts/cell/Avatar.py';
+const makePyDocument = (overrides: Record<string, unknown> = {}) =>
+  makeDocument({ uri: { fsPath: PY_URI }, languageId: 'python', ...overrides });
+
+describe('serveCompletionResolveFromRust(RUST-135 延迟补详情)', () => {
+  it('无门/ts 轨道/载荷缺 data:零开销直通 null', async () => {
+    setKodeCoreShadowGate(null);
+    await expect(
+      serveCompletionResolveFromRust({ label: 'hp', data: { label: 'hp' } })
+    ).resolves.toBeNull();
+    const tsClient = makeStubClient();
+    setKodeCoreShadowGate(makeGate(tsClient.client, 'ts').gate);
+    await expect(
+      serveCompletionResolveFromRust({ label: 'hp', data: { label: 'hp' } })
+    ).resolves.toBeNull();
+    expect(tsClient.client.calls).toEqual([]);
+    const rustClient = makeStubClient();
+    setKodeCoreShadowGate(makeGate(rustClient.client, 'rust').gate);
+    await expect(serveCompletionResolveFromRust({ label: 'hp' })).resolves.toBeNull();
+    // resolve 零镜像:不发 openDocument
+    expect(rustClient.client.calls.some(call => call.method === 'openDocument')).toBe(false);
+  });
+
+  it('文档面应答:documentation.value 串 → 原样透传 face', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('completionItem/resolve', {
+      documentation: { kind: 'markdown', value: '# hp\nUINT32 属性' },
+      detail: 'UINT32'
+    });
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const face = await serveCompletionResolveFromRust({
+      label: 'hp',
+      data: { label: 'hp', detail: 'int' }
+    });
+    expect(face).toEqual({
+      documentation: { kind: 'markdown', value: '# hp\nUINT32 属性' },
+      detail: 'UINT32'
+    });
+    expect(client.calls.some(call => call.method === 'request:completionItem/resolve')).toBe(true);
+  });
+
+  it('应答 null/非对象/documentation 缺 value:如实 null(条目保既有面)', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    responses.set('completionItem/resolve', null);
+    await expect(
+      serveCompletionResolveFromRust({ label: 'hp', data: { label: 'hp' } })
+    ).resolves.toBeNull();
+    responses.set('completionItem/resolve', 'plain');
+    await expect(
+      serveCompletionResolveFromRust({ label: 'hp', data: { label: 'hp' } })
+    ).resolves.toBeNull();
+    responses.set('completionItem/resolve', { documentation: { kind: 'markdown' } });
+    await expect(
+      serveCompletionResolveFromRust({ label: 'hp', data: { label: 'hp' } })
+    ).resolves.toBeNull();
+    responses.set('completionItem/resolve', {});
+    await expect(
+      serveCompletionResolveFromRust({ label: 'hp', data: { label: 'hp' } })
+    ).resolves.toBeNull();
+  });
+});
+
+describe('awaitWithInteractiveBudget(KBUG-TIME-02/03/04)', () => {
+  it('发起即取消:零 work 直通 null', async () => {
+    const ran = vi.fn();
+    const result = await awaitWithInteractiveBudget(async () => {
+      ran();
+      return 'x';
+    }, 1000, () => true);
+    expect(result).toBeNull();
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it('预算先到:work 悬挂,预算到期返回 null(计时器回收)', async () => {
+    const result = await awaitWithInteractiveBudget(
+      () => new Promise<string>(() => undefined),
+      20
+    );
+    expect(result).toBeNull();
+  });
+
+  it('取消探测先到:发起后才取消,轮询拍发现 → null', async () => {
+    let calls = 0;
+    const result = await awaitWithInteractiveBudget(
+      () => new Promise<string>(() => undefined),
+      5000,
+      () => {
+        calls += 1;
+        return calls >= 2;
+      }
+    );
+    expect(result).toBeNull();
+  });
+
+  it('work 胜出:结果原样返回', async () => {
+    const result = await awaitWithInteractiveBudget(async () => 42, 1000);
+    expect(result).toBe(42);
+  });
+
+  it('work 拒绝:race 拒绝被兜 null,且不产生未处理拒绝', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const result = await awaitWithInteractiveBudget(async () => {
+        throw new Error('rust down');
+      }, 1000);
+      expect(result).toBeNull();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(unhandled).toHaveLength(0);
+  });
+});
+
+describe('serveDocumentSymbolsFromRust(RUST-139)', () => {
+  it('rust 轨道:镜像 + 请求,合法符号面原样返回', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/documentSymbol', [okSymbolFace]);
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const faces = await serveDocumentSymbolsFromRust(makeDocument() as never);
+    expect(faces).toEqual([okSymbolFace]);
+    expect(client.calls.some(call => call.method === 'openDocument')).toBe(true);
+    expect(client.calls.some(call => call.method === 'request:textDocument/documentSymbol')).toBe(true);
+  });
+
+  it('非 .def 文档:零请求直通 null', async () => {
+    const { client } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(
+      serveDocumentSymbolsFromRust(makePyDocument() as never)
+    ).resolves.toBeNull();
+    expect(client.calls).toEqual([]);
+  });
+
+  it('非数组/含畸形成员:整面作废返回 null(不部分采用)', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    responses.set('textDocument/documentSymbol', null);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', 'nope');
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    // 形状闸逐臂:非对象/缺 name/缺 detail/kind 越表/range 缺/selectionRange 缺/children 缺/children 成员畸形
+    responses.set('textDocument/documentSymbol', [null]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', [{ ...okSymbolFace, name: 7 }]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', [{ ...okSymbolFace, detail: null }]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', [{ ...okSymbolFace, kind: 'Namespace' }]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', [
+      { ...okSymbolFace, range: { start: { line: 0 }, end: okRange.end } }
+    ]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', [
+      { ...okSymbolFace, selectionRange: { start: okRange.start, end: null } }
+    ]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', [{ ...okSymbolFace, children: 'no' }]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    responses.set('textDocument/documentSymbol', [
+      { ...okSymbolFace, children: [{ name: 'hp', detail: '', kind: 'Field', range: okRange, selectionRange: okRange }] }
+    ]);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toBeNull();
+    // 嵌套合法 children:递归校验通过
+    responses.set('textDocument/documentSymbol', [
+      { ...okSymbolFace, children: [{ ...okSymbolFace, name: 'hp', kind: 'Field' }] }
+    ]);
+    const faces = await serveDocumentSymbolsFromRust(makeDocument() as never);
+    expect(faces?.[0].children[0]).toMatchObject({ name: 'hp', kind: 'Field' });
+  });
+
+  it('镜像拒绝被吞且 Rust 符号面照常面世', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/documentSymbol', [okSymbolFace]);
+    const gate = makeGate(client, 'rust').gate;
+    gate.mirrorDocument = async () => {
+      throw new Error('mirror down');
+    };
+    setKodeCoreShadowGate(gate);
+    await expect(serveDocumentSymbolsFromRust(makeDocument() as never)).resolves.toEqual([okSymbolFace]);
+  });
+});
+
+describe('serveReferencesFromRust(RUST-138)', () => {
+  const okLocationFace = { uri: DEF_URI, range: okRange };
+
+  it('rust 轨道:镜像 + includeDeclaration 上下文,合法引用位数组 → locations 面', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/references', [okLocationFace]);
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const faces = await serveReferencesFromRust(makeDocument() as never, { line: 2, character: 4 }, true);
+    expect(faces).toEqual({ kind: 'locations', locations: [okLocationFace] });
+    expect(client.calls.some(call => call.method === 'openDocument')).toBe(true);
+    expect(client.calls.some(call => call.method === 'request:textDocument/references')).toBe(true);
+  });
+
+  it('非语料文档:零请求直通 unavailable', async () => {
+    const { client } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(
+      serveReferencesFromRust(makePyDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'unavailable' });
+    expect(client.calls).toEqual([]);
+  });
+
+  it('语义面如实 null(未知符号/运行时实体/别名)→ none,不误判为不可用', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/references', null);
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'none' });
+  });
+
+  it('非数组/位置面畸形成员:整面作废返回 unavailable', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    responses.set('textDocument/references', 42);
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'unavailable' });
+    // isLspLocationFace 逐臂:非对象/uri 非串/range 缺/start 缺 character
+    responses.set('textDocument/references', [null]);
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'unavailable' });
+    responses.set('textDocument/references', [{ range: okRange }]);
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'unavailable' });
+    responses.set('textDocument/references', [{ uri: DEF_URI }]);
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'unavailable' });
+    responses.set('textDocument/references', [
+      { uri: DEF_URI, range: { start: { line: 0, character: 'x' }, end: okRange.end } }
+    ]);
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'unavailable' });
+  });
+
+  it('请求失败(哨兵)与立即取消:预算壳 null 或 state failed → 不可用面,不误伤回退', async () => {
+    const { client } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    // 未给 textDocument/references 替身:request 抛错 → serveInRust 返哨兵 → state failed
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'unavailable' });
+    // 立即取消:预算壳 null
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 0, character: 0 }, false, () => true)
+    ).resolves.toEqual({ kind: 'unavailable' });
+  });
+});
+
+describe('serveWorkspaceSymbolsFromRust(RUST-139 批 4)', () => {
+  const okHit = {
+    symbolName: 'hp',
+    kind: 'property',
+    section: 'Type',
+    rootName: 'Avatar',
+    rootDefFile: 'Avatar.def',
+    defFile: 'Avatar.def',
+    line: 10
+  };
+
+  it('rust 轨道:合法命中束 → 命中面数组;不镜像文档(无文档上下文)', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('workspace/symbol', { symbols: [okHit] });
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toEqual([okHit]);
+    expect(client.calls.some(c => c.method === 'request:workspace/symbol')).toBe(true);
+    expect(client.calls.some(c => c.method === 'openDocument')).toBe(false);
+  });
+
+  it('非服务轨道/未装配门:零请求直通 null', async () => {
+    const { client } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'shadow').gate);
+    await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toBeNull();
+    expect(client.calls).toEqual([]);
+    setKodeCoreShadowGate(null);
+    await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toBeNull();
+  });
+
+  it('空集 {symbols:[]} 是合法应答(可解析无命中),照常返回', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('workspace/symbol', { symbols: [] });
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toEqual([]);
+  });
+
+  it('应答非对象/symbols 缺失或非数组/立即取消:整面作废返回 null', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    responses.set('workspace/symbol', null);
+    await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toBeNull();
+    responses.set('workspace/symbol', { hits: [okHit] });
+    await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toBeNull();
+    await expect(serveWorkspaceSymbolsFromRust('hp', () => true)).resolves.toBeNull();
+  });
+
+  it('isWorkspaceSymbolHitFace 形状闸逐臂:非对象/字段缺或类型错/kind 越界/section 越界/line 非整数或 <1', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const badMembers = [
+      null,
+      { ...okHit, symbolName: 7 },
+      { ...okHit, kind: 'class' },
+      { ...okHit, section: 3 },
+      { ...okHit, rootName: null },
+      { ...okHit, rootDefFile: null },
+      { ...okHit, defFile: null },
+      { ...okHit, line: '10' },
+      { ...okHit, line: 10.5 },
+      { ...okHit, line: 0 }
+    ];
+    for (const bad of badMembers) {
+      responses.set('workspace/symbol', { symbols: [bad] });
+      await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toBeNull();
+    }
+    // 合法束含 method 也是合法 kind
+    responses.set('workspace/symbol', { symbols: [{ ...okHit, kind: 'method' }] });
+    await expect(serveWorkspaceSymbolsFromRust('hp')).resolves.toEqual([
+      { ...okHit, kind: 'method' }
+    ]);
+  });
+});
+
+describe('servePrepareRenameFromRust(RUST-141 批 2)', () => {
+  it('rust 轨道:镜像 + 请求,候选区间+占位名返回;Rust null(不可重命名)如实透传 null', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/prepareRename', { range: okRange, placeholder: 'hp' });
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const face = await servePrepareRenameFromRust(makeDocument() as never, { line: 2, character: 3 });
+    expect(face).toEqual({ range: okRange, placeholder: 'hp' });
+    expect(client.calls.some(call => call.method === 'request:textDocument/prepareRename')).toBe(true);
+
+    responses.set('textDocument/prepareRename', null);
+    await expect(
+      servePrepareRenameFromRust(makeDocument() as never, { line: 2, character: 3 })
+    ).resolves.toBeNull();
+  });
+
+  it('非 .def 文档/畸形应答:直通或整面作废 null', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(
+      servePrepareRenameFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    expect(client.calls).toEqual([]);
+    responses.set('textDocument/prepareRename', { range: okRange });
+    await expect(
+      servePrepareRenameFromRust(makeDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/prepareRename', { placeholder: 'hp' });
+    await expect(
+      servePrepareRenameFromRust(makeDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/prepareRename', 7);
+    await expect(
+      servePrepareRenameFromRust(makeDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+  });
+});
+
+describe('serveRenameFromRust(RUST-141 批 2)', () => {
+  const okEditsFace = {
+    conflict: null,
+    closureConflict: null,
+    fileEdits: [{ filePath: DEF_URI, edits: [okRange] }]
+  };
+
+  it('rust 轨道:镜像 + newName 请求,编辑复算面返回', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/rename', okEditsFace);
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const face = await serveRenameFromRust(makeDocument() as never, { line: 2, character: 3 }, 'mp');
+    expect(face).toEqual(okEditsFace);
+    expect(client.calls.some(call => call.method === 'request:textDocument/rename')).toBe(true);
+  });
+
+  it('非 .def/Rust null/畸形应答:如实 null', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(
+      serveRenameFromRust(makePyDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    expect(client.calls).toEqual([]);
+    responses.set('textDocument/rename', null);
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    // conflict/closureConflict 非对象、fileEdits 缺、条目缺 filePath/edits、edits 成员畸形
+    responses.set('textDocument/rename', { conflict: {}, closureConflict: null, fileEdits: [] });
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    responses.set('textDocument/rename', {
+      conflict: null,
+      closureConflict: { surface: 'def', name: 1, line: 0, filePath: null }
+    });
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    responses.set('textDocument/rename', { conflict: null, closureConflict: null });
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    responses.set('textDocument/rename', { conflict: null, closureConflict: null, fileEdits: [null] });
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    responses.set('textDocument/rename', {
+      conflict: null,
+      closureConflict: null,
+      fileEdits: [{ edits: [okRange] }]
+    });
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    responses.set('textDocument/rename', {
+      conflict: null,
+      closureConflict: null,
+      fileEdits: [{ filePath: DEF_URI, edits: 'no' }]
+    });
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    responses.set('textDocument/rename', {
+      conflict: null,
+      closureConflict: null,
+      fileEdits: [{ filePath: DEF_URI, edits: [{ start: okRange.start }] }]
+    });
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 0, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    // 冲突面 filePath 双态:串与 null 都合法(合法面回归)
+    responses.set('textDocument/rename', {
+      conflict: { surface: 'def', name: 'hp', line: 3, filePath: '/w/Parent.def' },
+      closureConflict: { surface: 'closure', name: 'mp', line: 1, filePath: null },
+      fileEdits: []
+    });
+    const face = await serveRenameFromRust(makeDocument() as never, { line: 2, character: 3 }, 'mp');
+    expect(face?.conflict).toMatchObject({ surface: 'def', name: 'hp' });
+    expect(face?.closureConflict).toMatchObject({ surface: 'closure' });
+  });
+});
+
+describe('serveCodeActionsFromRust(RUST-143 批 3)', () => {
+  const okActionFace = {
+    kind: 'typeReplacement',
+    title: 'kbe.action.title',
+    edit: {
+      type: 'replaceRange',
+      file: DEF_URI,
+      range: { startLine: 1, startChar: 0, endLine: 1, endChar: 3 },
+      newText: 'UINT32'
+    },
+    diagnosticStartLine: 1,
+    titleParams: [] as string[]
+  };
+  const okInput = {
+    family: 'typeReplacement',
+    range: { start: { line: 1, character: 0 }, end: { line: 1, character: 3 } },
+    diagnostics: [
+      {
+        code: 'KBE-TYPE-001',
+        range: { start: { line: 1, character: 0 }, end: { line: 1, character: 3 } }
+      }
+    ],
+    registered: ['UINT32'],
+    snapshotText: null
+  };
+
+  it('rust 轨道:def 族在 .def 文档:镜像 + 请求,ActionFace 数组返回', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/codeAction', [okActionFace]);
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const faces = await serveCodeActionsFromRust(makeDocument() as never, okInput);
+    expect(faces).toEqual([okActionFace]);
+    expect(client.calls.some(call => call.method === 'request:textDocument/codeAction')).toBe(true);
+  });
+
+  it('族×文档类不匹配与未知族:零请求直通 null', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    // def 族在 py 文档
+    await expect(
+      serveCodeActionsFromRust(makePyDocument() as never, okInput)
+    ).resolves.toBeNull();
+    // py 族在 def 文档
+    await expect(
+      serveCodeActionsFromRust(
+        makeDocument() as never,
+        { ...okInput, family: 'receiverNone' }
+      )
+    ).resolves.toBeNull();
+    // 未知族直通
+    await expect(
+      serveCodeActionsFromRust(makePyDocument() as never, { ...okInput, family: 'ghost' })
+    ).resolves.toBeNull();
+    expect(client.calls).toEqual([]);
+    // py 族合法面:fixedDict 族在 py 文档应答正常(进入请求面)
+    responses.set('textDocument/codeAction', [okActionFace]);
+    const faces = await serveCodeActionsFromRust(
+      makePyDocument() as never,
+      { ...okInput, family: 'fixedDict' }
+    );
+    expect(faces).toEqual([okActionFace]);
+    expect(client.calls.some(call => call.method === 'request:textDocument/codeAction')).toBe(true);
+  });
+
+  it('非数组/ActionFace 畸形(edit 三态形状闸):整面作废 null', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    responses.set('textDocument/codeAction', 'nope');
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    responses.set('textDocument/codeAction', [null]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    // GateRange 面缺 endChar
+    responses.set('textDocument/codeAction', [
+      {
+        ...okActionFace,
+        edit: {
+          type: 'replaceRange',
+          file: DEF_URI,
+          range: { startLine: 1, startChar: 0, endLine: 1 },
+          newText: 'x'
+        }
+      }
+    ]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    // replaceRange 缺 newText
+    responses.set('textDocument/codeAction', [
+      {
+        ...okActionFace,
+        edit: {
+          type: 'replaceRange',
+          file: DEF_URI,
+          range: { startLine: 1, startChar: 0, endLine: 1, endChar: 3 }
+        }
+      }
+    ]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    // insertLine:合法与缺 text
+    responses.set('textDocument/codeAction', [
+      { ...okActionFace, edit: { type: 'insertLine', file: DEF_URI, line: 4, text: '\t' } }
+    ]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toEqual([
+      {
+        ...okActionFace,
+        edit: { type: 'insertLine', file: DEF_URI, line: 4, text: '\t' }
+      }
+    ]);
+    responses.set('textDocument/codeAction', [
+      { ...okActionFace, edit: { type: 'insertLine', file: DEF_URI, line: 'x' } }
+    ]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    // replaceLines:合法与缺 endLine
+    responses.set('textDocument/codeAction', [
+      {
+        ...okActionFace,
+        edit: { type: 'replaceLines', file: DEF_URI, startLine: 2, endLine: 4, text: 'a\nb' }
+      }
+    ]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toEqual([
+      {
+        ...okActionFace,
+        edit: { type: 'replaceLines', file: DEF_URI, startLine: 2, endLine: 4, text: 'a\nb' }
+      }
+    ]);
+    responses.set('textDocument/codeAction', [
+      { ...okActionFace, edit: { type: 'replaceLines', file: DEF_URI, startLine: 2 } }
+    ]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    // 未知 edit.type(default 臂)
+    responses.set('textDocument/codeAction', [
+      { ...okActionFace, edit: { type: 'teleport' } }
+    ]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    // 面级缺 kind/title/diagnosticStartLine/titleParams/titleParams 成员非串
+    responses.set('textDocument/codeAction', [{ ...okActionFace, kind: 7 }]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    responses.set('textDocument/codeAction', [{ ...okActionFace, title: null }]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    responses.set('textDocument/codeAction', [{ ...okActionFace, diagnosticStartLine: 'x' }]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    responses.set('textDocument/codeAction', [{ ...okActionFace, titleParams: 'no' }]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+    responses.set('textDocument/codeAction', [{ ...okActionFace, titleParams: [7] }]);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+  });
+
+  it('诊断入参 related* 缺省投影为 null;无门直通 null', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/codeAction', [okActionFace]);
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(
+      serveCodeActionsFromRust(makeDocument() as never, {
+        ...okInput,
+        diagnostics: [
+          {
+            code: 'KBE-TYPE-001',
+            range: okInput.diagnostics[0].range,
+            relatedFile: '/w/Parent.def',
+            relatedMessage: '声明在 Parent'
+          }
+        ]
+      })
+    ).resolves.toEqual([okActionFace]);
+    setKodeCoreShadowGate(null);
+    await expect(serveCodeActionsFromRust(makeDocument() as never, okInput)).resolves.toBeNull();
+  });
+});
+
+describe('serveSignatureHelpFromRust(RUST-140 批 3)', () => {
+  const okResultFace = {
+    signature: {
+      label: 'move(dst, speed)',
+      parameters: ['dst', 'speed'],
+      documentation: '移动实体',
+      definition: { file: '/w/entity_defs/Avatar.def', line: 10, section: 'CellMethods', exposed: true }
+    },
+    activeParameter: 1
+  };
+
+  it('rust 轨道:.py 文档镜像 + 请求,签名+活动形参返回', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/signatureHelp', okResultFace);
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    const face = await serveSignatureHelpFromRust(makePyDocument() as never, { line: 4, character: 10 });
+    expect(face).toEqual(okResultFace);
+    expect(client.calls.some(call => call.method === 'openDocument')).toBe(true);
+    expect(client.calls.some(call => call.method === 'request:textDocument/signatureHelp')).toBe(true);
+  });
+
+  it('非 .py 文档:零请求直通 null', async () => {
+    const { client } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    await expect(
+      serveSignatureHelpFromRust(makeDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    expect(client.calls).toEqual([]);
+  });
+
+  it('Rust null(无签名)与畸形应答:如实 null', async () => {
+    const { client, responses } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client, 'rust').gate);
+    responses.set('textDocument/signatureHelp', null);
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    // isSignatureHelpFace 逐臂:label 非串/parameters 非数组/成员非串/documentation 非串/definition 缺/字段畸形
+    responses.set('textDocument/signatureHelp', {
+      signature: { ...okResultFace.signature, label: 7 },
+      activeParameter: 0
+    });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/signatureHelp', {
+      signature: { ...okResultFace.signature, parameters: 'no' },
+      activeParameter: 0
+    });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/signatureHelp', {
+      signature: { ...okResultFace.signature, parameters: [7] },
+      activeParameter: 0
+    });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/signatureHelp', {
+      signature: { ...okResultFace.signature, documentation: null },
+      activeParameter: 0
+    });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/signatureHelp', {
+      signature: { ...okResultFace.signature, definition: null },
+      activeParameter: 0
+    });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/signatureHelp', {
+      signature: { ...okResultFace.signature, definition: { file: 7, line: 10, section: 's', exposed: true } },
+      activeParameter: 0
+    });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    // activeParameter 非数/非整数/负数
+    responses.set('textDocument/signatureHelp', { signature: okResultFace.signature, activeParameter: 'x' });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/signatureHelp', { signature: okResultFace.signature, activeParameter: 1.5 });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    responses.set('textDocument/signatureHelp', { signature: okResultFace.signature, activeParameter: -1 });
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 })
+    ).resolves.toBeNull();
+    // 空参签名 activeParameter=0 合法(clamp 零形参臂)
+    responses.set('textDocument/signatureHelp', {
+      signature: { ...okResultFace.signature, parameters: [] },
+      activeParameter: 0
+    });
+    const face = await serveSignatureHelpFromRust(makePyDocument() as never, { line: 0, character: 0 });
+    expect(face?.signature.parameters).toEqual([]);
+  });
+});
+
+// ---- 缺口臂四:五个 serve 面的镜像拒绝 .catch + 形状闸非对象 return-false 臂 ----
+
+describe('serve 面镜像拒绝被吞与形状闸非对象臂收尾', () => {
+  /** 镜像可编程拒绝的素面门(mirror .catch 行只在此形态命中) */
+  const makeMirrorRejectGate = (serveResult: unknown): KodeCoreGate =>
+    ({
+      serveFromRust: () => true,
+      mirrorDocument: async () => {
+        throw new Error('mirror down');
+      },
+      serveInRust: async () => serveResult,
+      compare: async () => ({ verdict: 'match' }),
+      closeMirroredDocument: () => undefined
+    }) as unknown as KodeCoreGate;
+
+  const codeActionInput = {
+    family: 'typeReplacement',
+    range: { start: { line: 1, character: 0 }, end: { line: 1, character: 3 } },
+    diagnostics: [] as { code: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }[],
+    registered: [] as string[],
+    snapshotText: null
+  };
+
+  it('references/prepareRename/rename/codeAction/signatureHelp:镜像拒绝被吞,结果照常面世', async () => {
+    const refLoc = { uri: DEF_URI, range: okRange };
+    setKodeCoreShadowGate(makeMirrorRejectGate([refLoc]));
+    await expect(
+      serveReferencesFromRust(makeDocument() as never, { line: 1, character: 0 }, false)
+    ).resolves.toEqual({ kind: 'locations', locations: [refLoc] });
+
+    const prepareFace = { range: okRange, placeholder: 'hp' };
+    setKodeCoreShadowGate(makeMirrorRejectGate(prepareFace));
+    await expect(
+      servePrepareRenameFromRust(makeDocument() as never, { line: 1, character: 0 })
+    ).resolves.toEqual(prepareFace);
+
+    const renameFace = { conflict: null, closureConflict: null, fileEdits: [] };
+    setKodeCoreShadowGate(makeMirrorRejectGate(renameFace));
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 1, character: 0 }, 'mp')
+    ).resolves.toEqual(renameFace);
+
+    const actionFace = {
+      kind: 'typeReplacement',
+      title: 't',
+      edit: { type: 'insertLine', file: DEF_URI, line: 1, text: '\t' },
+      diagnosticStartLine: 1,
+      titleParams: [] as string[]
+    };
+    setKodeCoreShadowGate(makeMirrorRejectGate([actionFace]));
+    await expect(
+      serveCodeActionsFromRust(makeDocument() as never, codeActionInput)
+    ).resolves.toEqual([actionFace]);
+
+    const sigFace = {
+      signature: {
+        label: 'f(x)',
+        parameters: ['x'],
+        documentation: 'd',
+        definition: { file: '/w/A.def', line: 1, section: 's', exposed: true }
+      },
+      activeParameter: 0
+    };
+    setKodeCoreShadowGate(makeMirrorRejectGate(sigFace));
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 1, character: 0 })
+    ).resolves.toEqual(sigFace);
+  });
+
+  it('形状闸非对象 return-false 臂:conflict/range/edit/signature/result 传标量照报 null', async () => {
+    // isDefRenameConflictFace:conflict 非对象非 null
+    setKodeCoreShadowGate(makeMirrorRejectGate({ conflict: 5, closureConflict: null, fileEdits: [] }));
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 1, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    // isDefRenameEditsFace:rename 结果非对象
+    setKodeCoreShadowGate(makeMirrorRejectGate(7));
+    await expect(
+      serveRenameFromRust(makeDocument() as never, { line: 1, character: 0 }, 'mp')
+    ).resolves.toBeNull();
+    // isCodeActionGateRangeFace:replaceRange 的 range 传标量
+    setKodeCoreShadowGate(makeMirrorRejectGate([
+      {
+        kind: 'typeReplacement',
+        title: 't',
+        edit: { type: 'replaceRange', file: DEF_URI, range: 5, newText: 'x' },
+        diagnosticStartLine: 1,
+        titleParams: [] as string[]
+      }
+    ]));
+    await expect(
+      serveCodeActionsFromRust(makeDocument() as never, codeActionInput)
+    ).resolves.toBeNull();
+    // isCodeActionEditFace:edit 传标量
+    setKodeCoreShadowGate(makeMirrorRejectGate([
+      { kind: 'typeReplacement', title: 't', edit: 5, diagnosticStartLine: 1, titleParams: [] as string[] }
+    ]));
+    await expect(
+      serveCodeActionsFromRust(makeDocument() as never, codeActionInput)
+    ).resolves.toBeNull();
+    // isSignatureHelpResultFace:结果传标量
+    setKodeCoreShadowGate(makeMirrorRejectGate(7));
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 1, character: 0 })
+    ).resolves.toBeNull();
+    // isSignatureHelpFace:signature 传标量
+    setKodeCoreShadowGate(makeMirrorRejectGate({ signature: 5, activeParameter: 0 }));
+    await expect(
+      serveSignatureHelpFromRust(makePyDocument() as never, { line: 1, character: 0 })
+    ).resolves.toBeNull();
+  });
 });
