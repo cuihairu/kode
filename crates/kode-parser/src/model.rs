@@ -179,16 +179,24 @@ pub fn extract_def(doc: &Document, raw_text: &str) -> DefFile {
                     // 条目首个非注释子节点的 getKey(trim(Value),xml.cpp:72-95/
                     // 113-119):文本形态取 trim 文本、元素形态取元素名(与
                     // KR-AUD-80 def_md5 同根;修前只取直文本,元素形态整体丢失)。
+                    // RUST-139 批 6:跳过纯空白文本节点,对齐生产
+                    // getReferenceTargetName(defRenamer.ts:673)——引擎 tinyxml
+                    // Blank() 分支丢弃元素间纯空白(tinyxmlparser.cpp:1204-1213),
+                    // 修前首个非注释子节点是换行缩进空白时取到空串,元素形态
+                    // `<interface>\n  <X/>\n</interface>` 整体丢失。
                     let entry = doc.element(iface).name.as_str();
                     if !matches!(entry, "interface" | "Interface" | "type" | "Type") {
                         continue;
                     }
-                    let first = doc
-                        .element(iface)
-                        .children
-                        .iter()
-                        .copied()
-                        .find(|&c| !matches!(doc.nodes[c].data, NodeData::Comment { .. }));
+                    let first = doc.element(iface).children.iter().copied().find(|&c| {
+                        match &doc.nodes[c].data {
+                            NodeData::Comment { .. } => false,
+                            NodeData::Text { decoded, .. } | NodeData::Cdata { decoded, .. } => {
+                                !decoded.trim().is_empty()
+                            }
+                            _ => true,
+                        }
+                    });
                     let name = match first {
                         Some(idx) => match &doc.nodes[idx].data {
                             NodeData::Element(e) => e.name.trim().to_string(),

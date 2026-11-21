@@ -11,7 +11,6 @@ import {
   DefElementNode,
   getDirectChildElement,
   getDirectChildElements,
-  getDirectChildElementsByName,
   getElementText,
   parseDefDocument
 } from '../src/backend/defParser';
@@ -249,6 +248,26 @@ const childText = (node: DefElementNode, tag: string): string => {
   return child ? getElementText(child).trim() : '';
 };
 
+// 引擎 loadInterfaces(entitydef.cpp:559-561)只认 wrapper {interface,Interface,
+// type,Type}(大小写敏感精确比对);接口名 = 首个非注释子节点,文本取文本、
+// 元素取标签名,并跳过元素间纯空白文本(引擎 tinyxml Blank() 分支同口径,
+// RUST-139 批 6 对齐生产 getReferenceTargetName)。
+const INTERFACE_WRAPPER_NAMES = new Set(['interface', 'Interface', 'type', 'Type']);
+
+const referenceTargetName = (node: DefElementNode): string => {
+  for (const child of node.children) {
+    if (child.kind === 'text') {
+      const text = child.text.trim();
+      if (text) {
+        return text;
+      }
+      continue;
+    }
+    return child.name.trim();
+  }
+  return '';
+};
+
 const interfacesOf = (file: CorpusFile): string[] => {
   const root = file.parsed.root;
   if (!root) {
@@ -258,9 +277,9 @@ const interfacesOf = (file: CorpusFile): string[] => {
   if (!node) {
     return [];
   }
-  // 语料口径:文本形态条目(parser KR-AUD-88 元素形态归 parser 面)。
-  return getDirectChildElementsByName(node, 'interface')
-    .map(node2 => getElementText(node2).trim())
+  return getDirectChildElements(node)
+    .filter(child => INTERFACE_WRAPPER_NAMES.has(child.name))
+    .map(child => referenceTargetName(child))
     .filter(name => name.length > 0);
 };
 
@@ -615,5 +634,67 @@ describe('kode2 Phase2 WorkspaceSymbol 快速搜索对拍(Rust golden ↔ defPar
         && !h.defFile.includes('/components/'))
     ).toBe(true);
     expect(universeHits.length).toBeGreaterThan(0);
+  });
+});
+
+// ---- RUST-139 批 6:接口条目元素形态(合成语料内联钉) ------------------------
+// 真实四语料只有文本形态 `<interface> X </interface>` 条目;元素形态
+// `<interface>\n  <X/>\n</interface>`(首个非注释子节点是元素,跳过元素间
+// 纯空白文本)是生产真实格式,语料盲区由本合成钉补齐:镜像 interfacesOf
+// 须按 referenceTargetName 取首元素标签名,折入接口符号。
+describe('RUST-139 批 6:接口条目元素形态(合成语料内联钉)', () => {
+  const synthetic = (file: string, kind: Kind, text: string): CorpusFile => ({
+    file,
+    kind,
+    text,
+    parsed: parseDefDocument(text)
+  });
+
+  const entityDef = [
+    '<root>',
+    '  <Properties>',
+    '    <gadgetOwn>',
+    '      <Type> UINT8 </Type>',
+    '    </gadgetOwn>',
+    '  </Properties>',
+    '  <Interfaces>',
+    '    <interface>',
+    '      <GadgetIface/>',
+    '    </interface>',
+    '  </Interfaces>',
+    '</root>',
+    ''
+  ].join('\n');
+  const ifaceDef = [
+    '<root>',
+    '  <Properties>',
+    '    <gadgetOnly>',
+    '      <Type> STRING </Type>',
+    '    </gadgetOnly>',
+    '  </Properties>',
+    '</root>',
+    ''
+  ].join('\n');
+  const entitiesXml = [
+    '<root>',
+    '  <ElemIface> scripts/entity_defs/ElemIface.def </ElemIface>',
+    '</root>',
+    ''
+  ].join('\n');
+
+  it('元素形态条目接口名=首元素标签名,折入接口符号', () => {
+    const corpus: CorpusFile[] = [
+      synthetic('synth-proj/scripts/entities.xml', 'entities', entitiesXml),
+      synthetic('synth-proj/scripts/entity_defs/ElemIface.def', 'def', entityDef),
+      synthetic('synth-proj/scripts/entity_defs/interfaces/GadgetIface.def', 'def', ifaceDef)
+    ];
+    const engine = buildEngine(corpus);
+    const hits = workspaceSymbols(engine, '');
+    const gadgetOnly = hits.filter(h => h.symbolName === 'gadgetOnly');
+    expect(gadgetOnly).toHaveLength(1);
+    expect(gadgetOnly[0].defFile).toBe('synth-proj/scripts/entity_defs/interfaces/GadgetIface.def');
+    expect(gadgetOnly[0].rootName).toBe('ElemIface');
+    // 自身 own 属性亦在场;接口符号经元素形态条目折入。
+    expect(hits.some(h => h.symbolName === 'gadgetOwn' && h.rootName === 'ElemIface')).toBe(true);
   });
 });

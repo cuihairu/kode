@@ -456,6 +456,25 @@ mod tests {
         \x20   </cfg>\n\
         \x20 </Properties>\n\
         </root>\n";
+    /// RUST-139 批 6:接口条目元素形态(首个非注释子节点是元素,跳过元素间
+    /// 纯空白文本)。接口名 = 首元素标签名 GadgetIface;接口 def 独有属性
+    /// gadgetOnly 经元素形态条目折入实体 root。修前 `<interface>` 内首个
+    /// 子节点是换行缩进空白文本 → 取到空串 → 条目整体丢失。
+    const A_ELEM_IFACE: &str = "<root>\n\
+        \x20 <Properties>\n\
+        \x20   <gadgetOwn>\n        <Type> UINT8 </Type>\n      </gadgetOwn>\n\
+        \x20 </Properties>\n\
+        \x20 <Interfaces>\n\
+        \x20   <interface>\n\
+        \x20     <GadgetIface/>\n\
+        \x20   </interface>\n\
+        \x20 </Interfaces>\n\
+        </root>\n";
+    const A_GADGET_IFACE: &str = "<root>\n\
+        \x20 <Properties>\n\
+        \x20   <gadgetOnly>\n        <Type> STRING </Type>\n      </gadgetOnly>\n\
+        \x20 </Properties>\n\
+        </root>\n";
     /// 跨 root 同名实体(root 隔离臂)。
     const B_ENTITIES: &str =
         "<root>\n  <Avatar> scripts/entity_defs/Avatar.def </Avatar>\n</root>\n";
@@ -475,10 +494,15 @@ mod tests {
             ("/proj-a/scripts/entity_defs/Mixed.def", A_MIXED),
             ("/proj-a/scripts/entity_defs/Dict.def", A_DICT),
             ("/proj-a/scripts/entity_defs/DictMixed.def", A_DICT_MIXED),
+            ("/proj-a/scripts/entity_defs/ElemIface.def", A_ELEM_IFACE),
             ("/proj-a/scripts/entity_defs/interfaces/ROLE.def", A_ROLE),
             (
                 "/proj-a/scripts/entity_defs/interfaces/DICTROLE.def",
                 A_DICT_INTERFACE,
+            ),
+            (
+                "/proj-a/scripts/entity_defs/interfaces/GadgetIface.def",
+                A_GADGET_IFACE,
             ),
             (
                 "/proj-a/scripts/entity_defs/components/Turret.def",
@@ -606,6 +630,7 @@ mod tests {
                 ("Avatar", "/proj-a/scripts/entity_defs/Avatar.def"),
                 ("Dict", "/proj-a/scripts/entity_defs/Dict.def"),
                 ("DictMixed", "/proj-a/scripts/entity_defs/DictMixed.def",),
+                ("ElemIface", "/proj-a/scripts/entity_defs/ElemIface.def"),
                 ("Mixed", "/proj-a/scripts/entity_defs/Mixed.def"),
                 ("Monster", "/proj-a/scripts/entity_defs/Monster.def"),
                 ("Avatar", "/proj-b/scripts/entity_defs/Avatar.def"),
@@ -784,6 +809,39 @@ mod tests {
                 .iter()
                 .any(|hit| hit.root_name == "DictMixed" && hit.symbol_name == "depth"),
             "败者接口子符号不虚报"
+        );
+    }
+
+    /// RUST-139 批 6:接口条目元素形态。`<interface>\n  <X/>\n</interface>`
+    /// 首个非注释子节点是换行缩进空白文本(修前取到空串 → 条目丢失)与
+    /// 元素 `<X/>`;修后接口名 = 首元素标签名 X,接口 def 属性折入实体。
+    /// 纯文本形态条目既有臂不回归(A_AVATAR ROLE)。
+    #[test]
+    fn element_child_interface_entry_folds_interface_symbols() {
+        let (_registry, engine) = build();
+        let elem = engine
+            .workspace_symbols_by_prefix("gadget")
+            .into_iter()
+            .filter(|hit| hit.root_name == "ElemIface")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            files_of(&elem),
+            vec![
+                "/proj-a/scripts/entity_defs/interfaces/GadgetIface.def",
+                "/proj-a/scripts/entity_defs/ElemIface.def",
+            ],
+            "gadgetOnly(元素形态接口折入)+gadgetOwn(own),按 symbolName 排序"
+        );
+        // 纯文本形态接口条目仍折入(未回归)。
+        let role = engine
+            .workspace_symbols_by_prefix("roleExtra")
+            .into_iter()
+            .filter(|hit| hit.root_name == "Avatar")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            files_of(&role),
+            vec!["/proj-a/scripts/entity_defs/interfaces/ROLE.def"],
+            "文本形态接口条目不回归"
         );
     }
 }
