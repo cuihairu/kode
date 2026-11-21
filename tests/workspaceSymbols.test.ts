@@ -36,6 +36,29 @@ const MONSTER_DEF = [
   '</root>'
 ].join('\n');
 
+// RUST-139 收口(嵌套属性符号面):属性级 <Properties> 子项 + ARRAY <Type><of>
+// 合成元素。行号:bagData=3,itemId=6,slots=11。
+const NESTED_AVATAR_DEF = [
+  '<root>',
+  '  <Properties>',
+  '    <bagData>',
+  '      <Type>FIXED_DICT</Type>',
+  '      <Properties>',
+  '        <itemId>',
+  '          <Type>UINT32</Type>',
+  '        </itemId>',
+  '      </Properties>',
+  '    </bagData>',
+  '    <slots>',
+  '      <Type>',
+  '        ARRAY',
+  '        <of>UINT8</of>',
+  '      </Type>',
+  '    </slots>',
+  '  </Properties>',
+  '</root>'
+].join('\n');
+
 const buildWorkspace = (): { root: string; avatarDef: string; monsterDef: string } => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav006-'));
   const put = (relative: string, content: string): string => {
@@ -137,6 +160,43 @@ describe('工作区符号前缀查询(IDE-NAV-006)', () => {
       const hits = manager.searchDefSymbolsByPrefix('');
       expect(hits.map(hit => hit.symbolName).sort()).toEqual(['hp', 'reqMove', 'reqPos']);
     });
+  });
+
+  it('嵌套属性符号面(RUST-139 收口):<Properties> 子项与 ARRAY <of> 元素各自独立符号,provider 面照出', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav006-nested-'));
+    const defPath = path.join(root, 'scripts', 'entity_defs', 'Avatar.def');
+    fs.mkdirSync(path.dirname(defPath), { recursive: true });
+    fs.writeFileSync(defPath, NESTED_AVATAR_DEF, 'utf-8');
+    const originalFindFiles = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    stubWorkspace.findFiles = (async (glob?: string) =>
+      glob === '**/*.def' ? [Uri.file(defPath)] : []) as typeof stubWorkspace.findFiles;
+    try {
+      const manager = await makeManager();
+      // 嵌套 FIXED_DICT 子项独立符号(行=自身声明行)
+      const nested = manager.searchDefSymbolsByPrefix('itemid');
+      expect(nested).toHaveLength(1);
+      expect(nested[0].symbolName).toBe('itemId');
+      expect(nested[0].kind).toBe('property');
+      expect(nested[0].rootName).toBe('Avatar');
+      expect(nested[0].line).toBe(6);
+      // ARRAY <of> 合成元素:名恒 value、行=父属性行
+      const elem = manager.searchDefSymbolsByPrefix('value');
+      expect(elem).toHaveLength(1);
+      expect(elem[0].symbolName).toBe('value');
+      expect(elem[0].line).toBe(11);
+      // provider 面照出(SymbolInformation 名/容器/落点;无门回 TS 链)
+      const provider = new KBEngineWorkspaceSymbolProvider(manager);
+      const symbols = await provider.provideWorkspaceSymbols('value', undefined);
+      expect(symbols).not.toBeNull();
+      expect(symbols!).toHaveLength(1);
+      expect(symbols![0].name).toBe('value');
+      expect(symbols![0].containerName).toBe('Avatar');
+      expect(symbols![0].location.uri.fsPath).toBe(defPath);
+    } finally {
+      stubWorkspace.findFiles = originalFindFiles;
+      stubWorkspace.workspaceFolders = [];
+    }
   });
 });
 
