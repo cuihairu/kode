@@ -178,6 +178,57 @@ describe('SCAN-RESUME-001 纯核(零 vscode)', () => {
     });
   });
 
+  /**
+   * 读写侧容错臂(2026-11-21 补,默认 io 真实 fs):stat 失败/空提交/非对象
+   * 条目/chunks 非数组/索引非整数。判例:断点只是加速,任何一侧读失败或
+   * 形状畸形只让该侧缺席/整体弃用,绝不抛错、不写半截。
+   */
+  it('recordChunk:幽灵路径 stat 失败 → 不入断点 → 全空不写 meta', () => {
+    const controller = new ScanProgressController(progressDir, 'v1');
+    controller.recordChunk(0, [{ path: p(fixture.root, 'ghost.py'), version: 1, parsed: realPy().parsed }]);
+    return controller.settle().then(() => {
+      expect(fs.existsSync(p(progressDir, 'chunk-0.json'))).toBe(false);
+      expect(fs.existsSync(p(progressDir, 'progress.json'))).toBe(false);
+    });
+  });
+
+  it('recordChunk:空提交臂 → 零写入', () => {
+    const controller = new ScanProgressController(progressDir, 'v1');
+    controller.recordChunk(0, []);
+    return controller.settle().then(() => {
+      expect(fs.existsSync(p(progressDir, 'chunk-0.json'))).toBe(false);
+    });
+  });
+
+  const expected = { schemaVersion: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1' };
+
+  it('readScanProgress:分块含非对象条目 → 整体弃用(不部分采纳)', () => {
+    const meta: ScanProgressMetaFile = {
+      schema: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1', chunks: [0], chunksDone: 1
+    };
+    fs.writeFileSync(p(progressDir, 'progress.json'), JSON.stringify(meta), 'utf8');
+    fs.writeFileSync(p(progressDir, 'chunk-0.json'), JSON.stringify([null]), 'utf8');
+    expect(readScanProgress(progressDir, expected, defaultScanProgressIo)).toBeNull();
+  });
+
+  it('readScanProgress:meta.chunks 非数组 → null', () => {
+    fs.writeFileSync(
+      p(progressDir, 'progress.json'),
+      JSON.stringify({ schema: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1', chunks: {}, chunksDone: 0 }),
+      'utf8'
+    );
+    expect(readScanProgress(progressDir, expected, defaultScanProgressIo)).toBeNull();
+  });
+
+  it('readScanProgress:chunks 索引非整数 → null', () => {
+    fs.writeFileSync(
+      p(progressDir, 'progress.json'),
+      JSON.stringify({ schema: SCAN_PROGRESS_SCHEMA_VERSION, kodeVersion: 'v1', chunks: ['a'], chunksDone: 1 }),
+      'utf8'
+    );
+    expect(readScanProgress(progressDir, expected, defaultScanProgressIo)).toBeNull();
+  });
+
   it('planResume:指纹匹配采纳/漂移照扫/新增照扫/已删文件不复用/stat 不可得照扫', () => {
     const entry = (file: string, mtimeMs: number, size: number): ScanProgressEntry => ({
       path: file, mtimeMs, size, version: 1,
