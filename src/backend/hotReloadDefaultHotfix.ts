@@ -24,7 +24,7 @@ import {
   type PackageDirProbe
 } from './httpRequests';
 import { DEFAULT_HTTP_TIMEOUT_MS, defaultTransport, type HttpTransport } from './httpRequestService';
-import { executeHttpRequest } from './httpRequestExecutor';
+import { executeHttpRequest, type HttpRequestOutcome } from './httpRequestExecutor';
 import { resolveModuleDualName } from './hotReloadTempEdit';
 
 export interface DefaultHotfixRequest {
@@ -64,12 +64,18 @@ export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfix
 /**
  * 单文件的默认热更请求:模板取内置示例,url/method/body 与示例同源,
  * 只把 ${module} 换成本文件解析出的模块名。
+ * HR-HTTP-002 第三参=调用方显式给定的模块身份(空串视同未给):给了就照用,
+ * 不重新推导——推导与给定两套口径不混,身份以调用方给的为准。
  */
 export function buildDefaultHotfixRequest(
   filePath: string,
-  deps: DefaultHotfixDeps = {}
+  deps: DefaultHotfixDeps = {},
+  moduleIdentity?: string
 ): DefaultHotfixRequest {
-  const module = resolveDefaultHotfixModule(filePath, deps);
+  const module =
+    moduleIdentity && moduleIdentity.length > 0
+      ? moduleIdentity
+      : resolveDefaultHotfixModule(filePath, deps);
   const dot = module.lastIndexOf('.');
   const vars = {
     ...buildTemplateVars(
@@ -88,6 +94,19 @@ export interface DefaultHotfixSendDeps extends DefaultHotfixDeps {
   readonly timeoutMs?: number;
   /** 每条真正发出的请求回调(装配把它落进状态栏日志通道) */
   readonly onRequest?: (request: DefaultHotfixRequest, file: string) => void;
+  /**
+   * HR-HTTP-002:逐文件模块身份(与 files 平行;缺省/空=按文件推导)。
+   * 显式给定=模块名以调用方为准,不重推——双名称面(HR-MOD-014)调用方
+   * 已知 fullModule,可直接给定,不必依赖推导路径。
+   */
+  readonly moduleIdentities?: readonly string[];
+  /** HR-HTTP-002:请求版本(结果回执关联用;线路不携带,只作关联) */
+  readonly revision?: string;
+  /**
+   * HR-HTTP-002:请求关联 id 种子。单文件=直接作该次执行关联 id;
+   * 多文件=`${seed}#${序号}`(唯一性保留);缺省=各次执行自生成。
+   */
+  readonly correlationId?: string;
 }
 
 export interface DefaultHotfixSendResult {
@@ -96,11 +115,22 @@ export interface DefaultHotfixSendResult {
   /** 失败原因(逐文件拼接);ok=true 时为空串 */
   readonly detail: string;
   readonly requests: DefaultHotfixRequest[];
+  /**
+   * HR-HTTP-002:逐文件结构化 outcome(与 requests 平行;分类+关联 id,
+   * 由执行器产物如实透传,不重分类不加工)
+   */
+  readonly outcomes: HttpRequestOutcome[];
+  /** HR-HTTP-002:请求关联 id 回执(未给种子=无;给了=种子原样) */
+  readonly correlationId?: string;
+  /** HR-HTTP-002:请求版本回执(结果↔版本关联) */
+  readonly revision?: string;
 }
 
 /**
  * 逐文件发送默认热更请求。传输错误与非 2xx 都算失败并如实带原因——
  * 引擎没起(ECONNREFUSED)时调用方据此报 failed,不假成功。
+ * HR-HTTP-002:逐文件结构化 outcome 与请求关联 id/版本一并回传(ok/detail
+ * 语义逐字不变,outcome 是附加数据不改成败判定)。
  */
 export async function sendDefaultHotfix(
   files: readonly string[],
@@ -108,14 +138,16 @@ export async function sendDefaultHotfix(
 ): Promise<DefaultHotfixSendResult> {
   const transport = deps.transport ?? defaultTransport;
   const timeoutMs = deps.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS;
+  const seed = deps.correlationId;
   const failures: string[] = [];
   const requests: DefaultHotfixRequest[] = [];
-  for (const file of files) {
-    const request = buildDefaultHotfixRequest(file, deps);
+  const outcomes: HttpRequestOutcome[] = [];
+  // 逐文件顺序发送(HR-HTTP-007 默认同目标串行;并发排队归后续有界队列面),
+  // 每文件一个结构化 outcome 如实收集,ok/detail 语义逐字不变。
+  for (const [index, file] of files.entries()) {
+    const request = buildDefaultHotfixRequest(file, deps, deps.moduleIdentities?.[index]);
     requests.push(request);
     deps.onRequest?.(request, file);
-    // HR-HTTP-001(HR-PR-03):发送走通用执行器(每文件一个关联 id),
-    // 失败分支仍按 transportOk=传输面原始 ok,detail 字符串逐字不变。
     const outcome = await executeHttpRequest(
       {
         url: request.url,
@@ -124,8 +156,9 @@ export async function sendDefaultHotfix(
         body: request.body,
         timeoutMs
       },
-      { transport }
+      { transport, correlationId: perFileCorrelationId(seed, index, files.length) }
     );
+    outcomes.push(outcome);
     if (!outcome.transportOk) {
       failures.push(`${file}: ${outcome.errorMessage ?? '未知错误'}`);
       continue;
@@ -134,5 +167,28 @@ export async function sendDefaultHotfix(
       failures.push(`${file}: HTTP ${outcome.status}`);
     }
   }
-  return { ok: failures.length === 0, detail: failures.join('; '), requests };
+  return {
+    ok: failures.length === 0,
+    detail: failures.join('; '),
+    requests,
+    outcomes,
+    ...(seed !== undefined && seed.length > 0 ? { correlationId: seed } : {}),
+    ...(deps.revision !== undefined && deps.revision.length > 0 ? { revision: deps.revision } : {})
+  };
+}
+
+/**
+ * HR-HTTP-002 关联 id 播种:单文件=种子原样;多文件=种子带序号后缀
+ * (保留逐次执行关联 id 的唯一性,HR-HTTP-014「每次执行一个 id」口径)。
+ * 未给种子=undefined,执行器逐次自生成(增量前行为)。
+ */
+function perFileCorrelationId(
+  seed: string | undefined,
+  index: number,
+  total: number
+): string | undefined {
+  if (!seed || seed.length === 0) {
+    return undefined;
+  }
+  return total === 1 ? seed : `${seed}#${index + 1}`;
 }

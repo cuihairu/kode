@@ -139,3 +139,106 @@ describe('sendDefaultHotfix(传输事实,不假成功)', () => {
     expect(result.detail).toContain('boom');
   });
 });
+
+describe('HR-HTTP-002(模块身份/版本/关联 id → 结构化 outcome)', () => {
+  it('显式模块身份:请求按调用方给定身份构造,不重新推导', async () => {
+    const seen: Array<{ url: string; body: string }> = [];
+    const result = await sendDefaultHotfix(['/ws/scripts/base/Account.py'], {
+      transport: request => {
+        seen.push({ url: request.url, body: request.body });
+        return Promise.resolve({ ok: true, status: 200, durationMs: 1, body: 'ok' });
+      },
+      moduleIdentities: ['custom.Mod']
+    });
+    expect(seen[0].url).toBe('http://127.0.0.1:8090/hotfix?module_name=custom.Mod');
+    expect(seen[0].body).toBe('module_name=custom.Mod');
+    expect(result.ok).toBe(true);
+  });
+
+  it('buildDefaultHotfixRequest 第三参:空串视同未给,仍走推导', () => {
+    const derived = buildDefaultHotfixRequest('/ws/scripts/base/Account.py');
+    const explicit = buildDefaultHotfixRequest('/ws/scripts/base/Account.py', {}, 'given.Mod');
+    const empty = buildDefaultHotfixRequest('/ws/scripts/base/Account.py', {}, '');
+    expect(explicit.body).toBe('module_name=given.Mod');
+    expect(explicit.url).toBe('http://127.0.0.1:8090/hotfix?module_name=given.Mod');
+    // 空串=未给:与不传第三参同口径(推导),不拿空串冒充身份
+    expect(empty.body).toBe(derived.body);
+  });
+
+  it('单文件关联 id 种子:该次执行直接用它,结果回执种子原样', async () => {
+    const result = await sendDefaultHotfix(['/a/One.py'], {
+      transport: () => Promise.resolve({ ok: true, status: 200, durationMs: 1, body: '' }),
+      correlationId: 'seed-abc'
+    });
+    expect(result.correlationId).toBe('seed-abc');
+    expect(result.outcomes).toHaveLength(1);
+    expect(result.outcomes[0].correlationId).toBe('seed-abc');
+  });
+
+  it('多文件关联 id 种子:序号后缀保唯一,回执仍为种子', async () => {
+    const seeded = await sendDefaultHotfix(['/a/One.py', '/a/Two.py', '/a/Three.py'], {
+      transport: () => Promise.resolve({ ok: true, status: 200, durationMs: 1, body: '' }),
+      correlationId: 'batch'
+    });
+    expect(seeded.correlationId).toBe('batch');
+    expect(seeded.outcomes.map(o => o.correlationId)).toEqual(['batch#1', 'batch#2', 'batch#3']);
+  });
+
+  it('未给种子:各次执行自生成且互不相同,结果不回执关联 id', async () => {
+    const result = await sendDefaultHotfix(['/a/One.py', '/a/Two.py'], {
+      transport: () => Promise.resolve({ ok: true, status: 200, durationMs: 1, body: '' })
+    });
+    expect(result.correlationId).toBeUndefined();
+    expect(result.outcomes).toHaveLength(2);
+    expect(result.outcomes[0].correlationId.length).toBeGreaterThan(0);
+    expect(result.outcomes[1].correlationId.length).toBeGreaterThan(0);
+    expect(result.outcomes[0].correlationId).not.toBe(result.outcomes[1].correlationId);
+  });
+
+  it('结构化 outcome 按传输事实分类(ok/非 2xx/连接拒绝),ok-detail 语义不变', async () => {
+    const ok = await sendDefaultHotfix(['/a/One.py'], {
+      transport: () => Promise.resolve({ ok: true, status: 200, durationMs: 1, body: 'fine' })
+    });
+    expect(ok.outcomes[0]).toMatchObject({ kind: 'ok', transportOk: true, status: 200 });
+
+    const non2xx = await sendDefaultHotfix(['/a/One.py'], {
+      transport: () => Promise.resolve({ ok: true, status: 503, durationMs: 1, body: 'nope' })
+    });
+    expect(non2xx.outcomes[0]).toMatchObject({
+      kind: 'non-2xx',
+      transportOk: true,
+      errorCategory: 'http-status'
+    });
+    expect(non2xx.ok).toBe(false);
+    expect(non2xx.detail).toContain('503');
+
+    const refused = await sendDefaultHotfix(['/a/One.py'], {
+      transport: () =>
+        Promise.resolve({
+          ok: false,
+          status: 0,
+          durationMs: 1,
+          body: '',
+          error: 'connect ECONNREFUSED 127.0.0.1:8090'
+        })
+    });
+    expect(refused.outcomes[0]).toMatchObject({
+      kind: 'network-error',
+      transportOk: false,
+      errorCategory: 'connection-refused'
+    });
+    expect(refused.detail).toContain('ECONNREFUSED');
+  });
+
+  it('版本回执:给了就原样回,不给则不携带', async () => {
+    const withRevision = await sendDefaultHotfix(['/a/One.py'], {
+      transport: () => Promise.resolve({ ok: true, status: 200, durationMs: 1, body: '' }),
+      revision: 'rev-42'
+    });
+    expect(withRevision.revision).toBe('rev-42');
+    const without = await sendDefaultHotfix(['/a/One.py'], {
+      transport: () => Promise.resolve({ ok: true, status: 200, durationMs: 1, body: '' })
+    });
+    expect(without.revision).toBeUndefined();
+  });
+});

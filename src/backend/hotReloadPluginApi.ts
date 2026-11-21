@@ -20,6 +20,7 @@
  */
 
 import { hashDefContent, negotiateEngineDigest, type DefContentHash, type DefDigestHandshake } from './hotReloadDefHash';
+import type { HttpRequestOutcome } from './httpRequestExecutor';
 import { semanticFingerprintReport, type SemanticFingerprintReport } from './hotReloadDefStructure';
 import { resolveFingerprintProfile, type FingerprintProfile } from './hotReloadFingerprintCompare';
 
@@ -50,16 +51,36 @@ export const defaultHotReloadFingerprintProvider: FingerprintProvider = {
   profileLabel: engineDigest => resolveFingerprintProfile(engineDigest)
 };
 
-/** 发送结果(transport-faithful:实现透传自身通道的 ok/detail,本核不解释) */
+/**
+ * 发送结果(transport-faithful:实现透传自身通道的 ok/detail,本核不解释)。
+ * HR-HTTP-002 增量为可选字段:HTTP 通道实现透传逐文件结构化 outcome,
+ * 其他通道(如有)不产即缺省——apiVersion 不递增(向后兼容)。
+ */
 export interface HotReloadProviderSendResult {
   readonly ok: boolean;
   readonly detail?: string;
+  /** HR-HTTP-002:逐文件结构化 outcome(分类+关联 id;缺省=实现不产) */
+  readonly outcomes?: readonly HttpRequestOutcome[];
+  /** HR-HTTP-002:请求关联 id 回执(结果↔请求关联;未给=无) */
+  readonly correlationId?: string;
+  /** HR-HTTP-002:请求版本回执(结果↔版本关联,HR-HTTP-013 CAS 底座) */
+  readonly revision?: string;
 }
 
-/** 发送请求(目标+文件集合;编排由实现自定,形状版本化) */
+/**
+ * 发送请求(目标+文件集合;编排由实现自定,形状版本化)。
+ * HR-HTTP-002 增量=可选字段(module identity/revision/correlation id),
+ * 缺省行为与增量前逐字一致:实现自推模块名、逐次执行自生关联 id。
+ */
 export interface HotReloadProviderSendRequest {
   readonly targetId: string;
   readonly files: readonly string[];
+  /** HR-HTTP-002:逐文件模块身份(与 files 平行;缺省/空=实现按文件推导) */
+  readonly moduleIdentities?: readonly string[];
+  /** HR-HTTP-002:请求版本(结果关联用;线路是否携带由通道实现自定) */
+  readonly revision?: string;
+  /** HR-HTTP-002:请求关联 id(缺省=实现逐次执行自生成) */
+  readonly correlationId?: string;
 }
 
 /** HR-PR-08 热更发送插槽(实现=具体通道;默认无实现,如实 null) */
