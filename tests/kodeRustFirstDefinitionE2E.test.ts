@@ -175,4 +175,10 @@ const wordPosition = (content: string, marker: string, symbol: string): Position
       'scripts/entity_defs/types.xml', '<ITEM_DESC>', 'ITEM_DESC',
       'scripts/entity_defs/types.xml', '<ITEM_DESC>');
   }, 60_000);
+
+  it('⑧ implementedBy 值词 → py 符号行(Rust null 不挡 TS 链,RUST-137 ③ py 边)', async () => {
+    await probeLanding(
+      'scripts/entity_defs/types.xml', '<implementedBy>', 'SKILL_SLOT_DATA',
+      'scripts/user_type/SKILL_SLOT_DATA.py', 'weapon_skill_slot_list_inst =');
+  }, 60_000);
 });
