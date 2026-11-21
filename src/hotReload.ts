@@ -29,6 +29,7 @@ import { applyAcceptedReceipt } from './backend/hotReloadReceipt';
 import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt } from './backend/hotReloadAppliedCheck';
 import { createDefStructuralGate, type DefStructuralGate } from './backend/hotReloadDefGate';
 import { checkHotReloadConfigFiles, isHotReloadConfigFile } from './backend/hotReloadConfigGate';
+import { analyzeTypesImpact, formatTypesImpactReport } from './backend/hotReloadTypesImpact';
 import { sendFilesViaReloadChannel } from './backend/hotReloadChannelSend';
 import { sendDefaultHotfix } from './backend/hotReloadDefaultHotfix';
 import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './backend/hotReloadNotice';
@@ -80,6 +81,15 @@ export { HOT_RELOAD_TOGGLE_COMMAND } from './hotReloadToggle';
 // 无回执仍记 sent-unverified——传输成功≠应用成功,不宣称热更成功。
 
 export const HOT_RELOAD_DEFAULT_DEBOUNCE_MS = 500;
+
+/**
+ * RUST-398:批内 types.xml 判定(KBEngine 类型表文件名,任意目录;与
+ * isHotReloadConfigFile 同路径形状口径,不猜项目布局)。
+ */
+const isTypesXmlBasename = (file: string): boolean => {
+  const norm = file.replace(/\\/g, '/');
+  return norm.slice(norm.lastIndexOf('/') + 1).toLowerCase() === 'types.xml';
+};
 /** 派生 glob 的尾段:热更只处理 .py(非 py 走旁路,不进投递) */
 export const HOT_RELOAD_DERIVED_GLOB_SUFFIX = '**/*.py';
 /** 缺根补救指路(状态栏 tooltip 与诊断日志同源,不静默全扫) */
@@ -471,6 +481,15 @@ export interface SetupHotReloadOptions {
     readonly createWatcher: DiskWatcherFactory;
     readonly onDiagnostic?: (diagnostic: DiskWatchDiagnostic) => void;
   };
+  /**
+   * RUST-398(HR-HASH-011):types.xml 变化影响报告用的 .def 收集口。注入即
+   * 在批内 types.xml 变化时对「变更前/后内容」做 reverse-dependency 影响
+   * 分析(analyzeTypesImpact),报告并入需重启理由——受影响 .def 按 RUST-397
+   * 同判据需重启,不作为普通 Python reload 自动发送;types.xml 本身属配置,
+   * 永不自动应用。收集器返回工作区内全部 .def(名+原文);不注入 = 如实跳过
+   * 分析(报告点名「未收集 .def,影响面未知」)。
+   */
+  readonly collectDefsForTypesImpact?: () => Promise<ReadonlyArray<{ name: string; text: string }>>;
 }
 
 /**
@@ -1095,6 +1114,42 @@ export function setupHotReload(
         auditLine('拦截:配置变更需重启', triggers, `未发送——${reasonText}`);
         warnRestart(`配置文件变更不走模块热更,需重启引擎生效: ${reasonText}`);
       };
+      // RUST-398(HR-HASH-011):types.xml 变化影响报告——会话基线:该文件
+      // 首次在本会话经管道见到即建档(变更面自下次起报告),此后变化做
+      // before/after reverse-dependency 分析。types.xml 属配置,永不自动
+      // 应用;受影响 .def 按 RUST-397 同判据需重启,报告并入需重启理由。
+      const buildTypesImpact = async (): Promise<string | null> => {
+        const typesXmlFiles = configFiles.filter(isTypesXmlBasename);
+        if (typesXmlFiles.length === 0) {
+          return null;
+        }
+        const readConfig = options.targetState?.readFileContent;
+        if (!readConfig) {
+          return 'types.xml 变更:无内容读取通道,影响报告未生成(如实跳过)';
+        }
+        const defs = (await options.collectDefsForTypesImpact?.()) ?? [];
+        const lines: string[] = [];
+        for (const file of typesXmlFiles) {
+          const after = await readConfig(file);
+          if (after === null || after === undefined) {
+            lines.push(`${file}: 内容不可读,影响报告未生成(如实跳过)`);
+            continue;
+          }
+          const before = typesXmlBaselines.get(file);
+          typesXmlBaselines.set(file, after);
+          if (before === undefined) {
+            lines.push(`${file}: 本次会话首次见到,已建档为基线(变更面自下次起报告)`);
+            continue;
+          }
+          const report = analyzeTypesImpact({ beforeTypesXml: before, afterTypesXml: after, defs });
+          lines.push(
+            defs.length === 0
+              ? `${file}: ${formatTypesImpactReport(report)};未收集 .def,影响面未知`
+              : `${file}: ${formatTypesImpactReport(report)}`
+          );
+        }
+        return lines.join(';');
+      };
       // RUST-336:批内配置文件内容校验(良构+types.xml 值域/一致性);
       // 有致命发现拦下报校验失败,零发现走需重启面(配置永不走普通通道)
       const gateConfig = (then: () => void): void => {
@@ -1110,9 +1165,18 @@ export function setupHotReload(
         void checkHotReloadConfigFiles(triggers, readConfig).then(verdict => {
           if (verdict.reasons.length > 0) {
             blockConfig(verdict.reasons);
+            // 影响报告是事实面(内容有问题也如实报影响),不阻塞校验失败面
+            void buildTypesImpact().then(line => {
+              if (line) {
+                status.log(`types.xml 影响报告: ${line}`);
+              }
+            });
             return;
           }
-          blockConfigRestart('内容校验通过');
+          // 影响报告并入需重启理由(受影响 .def 同判据需重启,不自动热更)
+          void buildTypesImpact().then(line => {
+            blockConfigRestart(line ? `内容校验通过;${line}` : '内容校验通过');
+          });
         });
       };
       if (!hasDef) {
@@ -1293,6 +1357,10 @@ export function setupHotReload(
   const settleHandles = new Set<unknown>();
   // IDE-REV-024 def 结构基线:上次闸门见到的 .def 内容(会话内存,逐次滚动)
   const defBaselines = new Map<string, string>();
+  // RUST-398:types.xml 会话基线(名 → 最近一次经管道见到的原文)。首见建档,
+  // 再次变化才前后对比出影响报告;会话级(与 def 基线册同生命周期,fire 间
+  // 不重置)——每批 fire 内建的基线册会因「首见即建档」永不产生前后对比。
+  const typesXmlBaselines = new Map<string, string>();
   // RT-3:判定面共用(hotReloadDefGate)——注入的闸实例优先(与重试侧同一基
   // 线册),否则本装配自建(基线册私有,重试侧拿不到)
   const defGate =

@@ -32,6 +32,7 @@ import { ensureDefaultDeploymentProfile } from '../ensureDefaultProfile';
 import { runHotReloadBatchSummaryCommand } from '../backend/hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from '../backend/hotReloadRetryCommand';
 import { createDefStructuralGate } from '../backend/hotReloadDefGate';
+import { findFilesAcrossRoots } from '../scanRoots';
 import { runHotReloadRevisionEvidenceCommand } from '../backend/hotReloadRevisionEvidenceCommand';
 import { HotReloadEngineDigestRegister } from '../backend/hotReloadRevisionEvidence';
 import { HotReloadTargetStateStore } from '../backend/hotReloadTargetState';
@@ -427,6 +428,24 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,
+    // RUST-398(HR-HASH-011):types.xml 变化影响报告——工作区全量 .def 名+
+    // 原文供 reverse-dependency 分析(types.xml 变化罕见,全量收集代价可
+    // 接受);读不到的文件如实跳过(影响报告按已读面出,不虚构)。
+    collectDefsForTypesImpact: async () => {
+      const readContent = hotReloadTargetStateWiring.readFileContent;
+      if (!readContent) {
+        return [];
+      }
+      const defUris = await findFilesAcrossRoots('**/*.def');
+      const defs: Array<{ name: string; text: string }> = [];
+      for (const defUri of defUris) {
+        const text = await readContent(defUri.fsPath);
+        if (text !== null && text !== undefined) {
+          defs.push({ name: path.basename(defUri.fsPath), text });
+        }
+      }
+      return defs;
+    },
     // 默认热更请求(用户令 2026-11-06):未配 actionName 时保存即 POST
     // http://127.0.0.1:8090/hotfix?module_name=<模块名>,body 同带
     // module_name=<模块名>(query 与 body 双带,兼容不同服务端)。包探针与
