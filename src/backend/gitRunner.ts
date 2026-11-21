@@ -14,8 +14,8 @@
  * 全部外部依赖(spawn/定时器)注入,测试用假子进程即可覆盖全部失败路径。
  */
 
-import { spawn as nodeSpawn } from 'child_process';
 import { pathApiFor } from './workspacePath';
+import { spawnProcess } from './processManager';
 
 /** 取消令牌(结构兼容 vscode.CancellationToken;缺省回调时仅结算点轮询)。 */
 export interface GitCancellationToken {
@@ -43,7 +43,7 @@ export interface GitExecutorDeps {
 export function defaultGitExecutorDeps(): GitExecutorDeps {
   return {
     spawn: (command, args, options) =>
-      nodeSpawn(command, [...args], { ...options, windowsHide: true }) as unknown as GitChildProcess,
+      spawnProcess(command, [...args], { ...options, windowsHide: true }) as unknown as GitChildProcess,
     setTimeout: (handler, timeoutMs) => setTimeout(handler, timeoutMs),
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   };

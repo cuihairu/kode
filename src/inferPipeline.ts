@@ -26,6 +26,7 @@ import {
 import { kbeStubDir, readManagedDirSetting, readStubDirSetting, resolveManagedDirName, resolveStubDir } from './pythonStubExport';
 import { processStubRoot, pythonProcessFromPath } from './backend/pythonProcess';
 import { generatedStubPath } from './backend/inferredEnrichment';
+import { spawnProcess } from './backend/processManager';
 
 // ---------------------------------------------------------------------------
 // 设置键（package.json contributes.configuration 同步）
@@ -133,9 +134,8 @@ export const fileSystemInferDeps: InferPipelineDeps = {
   findGitRoot: (startDir) => walkUpFor(startDir, '.git'),
   findSvnRoot: (startDir) => walkUpFor(startDir, '.svn'),
   spawn: async (command, args, options) => {
-    const { spawn } = await import('child_process');
     return await new Promise((resolve) => {
-      const child = spawn(command, [...args], { cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawnProcess(command, [...args], { cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
       child.stdout?.on('data', (chunk: Buffer) => {
