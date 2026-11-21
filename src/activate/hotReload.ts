@@ -23,6 +23,7 @@ import {
   type HotReloadSendOptions,
   type HotReloadTargetStateWiring,
 } from '../hotReload';
+import { FingerprintStats } from '../backend/hotReloadFingerprintStats';
 import { HotReloadStatusController } from '../hotReloadStatus';
 import { createFileChangeRouter } from '../backend/fileChangeBypass';
 import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
@@ -59,6 +60,8 @@ export interface HotReloadDeps {
   hotReloadVersionRefresh: { refresh?: (forceRender?: boolean) => void };
   httpRequestChannel: vscode.OutputChannel;
   fileChangeMetaResolver: FileChangeMetaResolver;
+  /** RUST-403 共享指纹统计:types.xml 依赖遍历命中也记进同一账(不传=不记账) */
+  fingerprintStats?: FingerprintStats;
 }
 
 /** L6 共享句柄:rust 文件变化消费者接线经此消费(fileChangeRouter 原文返回) */
@@ -67,7 +70,7 @@ export interface HotReloadShared {
 }
 
 export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
-  const { context, quickActionManager, hotReloadStateViewRefresh, hotReloadVersionRefresh, httpRequestChannel, fileChangeMetaResolver } = deps;
+  const { context, quickActionManager, hotReloadStateViewRefresh, hotReloadVersionRefresh, httpRequestChannel, fileChangeMetaResolver, fingerprintStats } = deps;
 
   // HR-PR-06 接线批:热更历史视图(树+面板+搜索)。台账是事实源——store
   // 的 onRecord 逐条投影进历史库(树标题 fullModule,tooltip 双名;requestId
@@ -433,6 +436,8 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,
+    // RUST-403:共享指纹统计(types.xml 依赖闭包命中数入账;组合根同账)
+    fingerprintStats,
     // RUST-398(HR-HASH-011):types.xml 变化影响报告——工作区全量 .def 名+
     // 原文供 reverse-dependency 分析(types.xml 变化罕见,全量收集代价可
     // 接受);读不到的文件如实跳过(影响报告按已读面出,不虚构)。

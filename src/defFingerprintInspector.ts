@@ -29,6 +29,7 @@ import {
   type DefFingerprintLedgerStorage,
   type DefFingerprintSnapshot
 } from './backend/hotReloadDefFingerprintLedger';
+import { FingerprintStats } from './backend/hotReloadFingerprintStats';
 import type { FingerprintTriVerdict } from './backend/hotReloadFingerprintCompare';
 import { HOT_RELOAD_PLUGIN_API_VERSION } from './backend/hotReloadPluginApi';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
@@ -256,9 +257,12 @@ export function setupDefFingerprintInspector(
     onConclusion?: (line: string) => void;
     /** RUST-401 持久化面;缺省=context.workspaceState(Memento 结构兼容) */
     storage?: DefFingerprintLedgerStorage;
+    /** RUST-403 增量统计;缺省=本装配内部实例(生命周期随装配) */
+    stats?: FingerprintStats;
   } = {}
-): { ledger: DefFingerprintLedger } {
+): { ledger: DefFingerprintLedger; stats: FingerprintStats } {
   const deps = opts.deps ?? defaultDefFingerprintDeps(() => null);
+  const stats = opts.stats ?? new FingerprintStats();
   const ledger = new DefFingerprintLedger(opts.storage ?? context.workspaceState);
   // 通道惰性建(与 defMd5Check 同口径):激活零开销,也避免装配期抢建
   // 同名通道让「首个同名通道」断言面拿到空壳。
@@ -272,6 +276,9 @@ export function setupDefFingerprintInspector(
     if (snapshot === null) {
       return null;
     }
+    // RUST-403:变更触发面每次计算记账(字节+重算文件数);显示面(CodeLens)
+    // 只读不重算基线,不进此账——统计口径=触发面的增量工作量。
+    stats.recordCompute(snapshot.byteLength);
     const { last, verdict } = evaluateDefFingerprintChange(ledger, fsPath, snapshot);
     return { snapshot, verdict, firstSeen: last === null };
   };
@@ -319,5 +326,5 @@ export function setupDefFingerprintInspector(
     opts.onConclusion?.(line);
   });
   context.subscriptions.push(saveSubscription);
-  return { ledger };
+  return { ledger, stats };
 }

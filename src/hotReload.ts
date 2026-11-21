@@ -30,6 +30,7 @@ import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt
 import { createDefStructuralGate, type DefStructuralGate } from './backend/hotReloadDefGate';
 import { checkHotReloadConfigFiles, isHotReloadConfigFile } from './backend/hotReloadConfigGate';
 import { analyzeTypesImpact, formatTypesImpactReport } from './backend/hotReloadTypesImpact';
+import { FingerprintStats } from './backend/hotReloadFingerprintStats';
 import {
   analyzeEntitiesImpact,
   formatEntitiesImpactReport
@@ -503,6 +504,11 @@ export interface SetupHotReloadOptions {
    * 分析(报告点名「未收集 .def,影响面未知」)。
    */
   readonly collectDefsForTypesImpact?: () => Promise<ReadonlyArray<{ name: string; text: string }>>;
+  /**
+   * RUST-403 指纹增量统计:types.xml 变化的 reverse-dependency 闭包命中数
+   * 记进 affectedDependencyNodes(依赖图节点面;不注入 = 不记账)。
+   */
+  readonly fingerprintStats?: FingerprintStats;
 }
 
 /**
@@ -1155,6 +1161,9 @@ export function setupHotReload(
             continue;
           }
           const report = analyzeTypesImpact({ beforeTypesXml: before, afterTypesXml: after, defs });
+          // RUST-403:依赖图闭包命中数记账(受影响 .def 数;影响分析是唯一
+          // 依赖遍历面,统计口径=实际遍历到的节点数)
+          options.fingerprintStats?.recordDependencyTraversal(report.affectedDefCount);
           lines.push(
             defs.length === 0
               ? `${file}: ${formatTypesImpactReport(report)};未收集 .def,影响面未知`

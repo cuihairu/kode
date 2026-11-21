@@ -15,6 +15,7 @@ import { ensureActiveProfileEngineRoot } from './engineRootAutoFill';
 import { setJumpLogEnabled } from './navigationLog';
 import { setAnnotationSourceLogEnabled } from './backend/annotationSourceLog';
 import { activateInfrastructure } from './activate/infrastructure';
+import { FingerprintStats } from './backend/hotReloadFingerprintStats';
 
 import { OperationStatus } from './languageServiceMetrics';
 import { releaseAllDocumentSnapshots, releaseDocument, updateDocumentSnapshot } from './backend/documentStore';
@@ -160,6 +161,10 @@ export function activate(context: vscode.ExtensionContext) {
   // KODE_ACTIVATE_PROFILE_OUT(输出文件路径)时有行为,未设置时全部调用
   // 零开销直通(常态门禁与生产零影响)。段名与下方装配层序一一对应。
   markActivateStage('enter');
+  // RUST-403 共享指纹统计台账:组合根持有,Inspector 保存触发/指纹命令与
+  // 热更 types.xml 依赖遍历两处记同一账(bytes read / rehashed files /
+  // affected dependency nodes 累计可观测;会话生命周期,不落盘)。
+  const fingerprintStats = new FingerprintStats();
   // SRC-001 L0 基础设施层(KODE-ARCH 纯移动):启动占位视图、引擎 API 目录、
   // 只读虚拟文档 provider、日志开关、kode core 门、文档选择器与文档形态谓词
   // 装配在 src/activate/infrastructure.ts,装配顺序由本调用点保持(activate
@@ -179,7 +184,7 @@ export function activate(context: vscode.ExtensionContext) {
     isAliasXmlDocument,
     isPythonDocument,
     isProcessTopologyManifestDocument
-  } = activateInfrastructure({ context });
+  } = activateInfrastructure({ context, fingerprintStats });
   context.subscriptions.push(...infrastructureDisposables);
   markActivateStage('l0-infrastructure');
 
@@ -1477,7 +1482,9 @@ export function activate(context: vscode.ExtensionContext) {
     hotReloadStateViewRefresh,
     hotReloadVersionRefresh,
     httpRequestChannel,
-    fileChangeMetaResolver
+    fileChangeMetaResolver,
+    // RUST-403:共享指纹统计(types.xml 依赖遍历命中数入同一账)
+    fingerprintStats
   });
 
   // SRC-001 L7:生成器/项目层(Python 生态接线/桩导出、debug.json 引导与

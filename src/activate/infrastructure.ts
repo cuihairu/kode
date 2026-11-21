@@ -31,6 +31,7 @@ import { setupProtocolSchemaSync } from '../protocolSchemaSync';
 import { setupProtocolPcapActions } from '../protocolPcapActions';
 import { getLastDefMd5CheckOutcome, setupDefMd5Check } from '../defMd5Check';
 import { defaultDefFingerprintDeps, setupDefFingerprintInspector } from '../defFingerprintInspector';
+import { FingerprintStats } from '../backend/hotReloadFingerprintStats';
 import {
   defaultDefFingerprintCodeLensDeps,
   setupDefFingerprintCodeLens
@@ -41,6 +42,8 @@ let annotationSourceChannel: vscode.OutputChannel | undefined;
 
 export interface InfrastructureDeps {
   context: vscode.ExtensionContext;
+  /** RUST-403 共享指纹统计:与热更配置门同账(不传=装配内部实例) */
+  fingerprintStats?: FingerprintStats;
 }
 
 /** L0 产出的共享实例/选择器/谓词——后续抽象层经组合根注入消费 */
@@ -201,8 +204,10 @@ export function activateInfrastructure(
   // 读面 deps(VFS 字节复用,不为显示重读磁盘)。CodeLens 懒加载(只算
   // 当前可见 .def 文档,零全项目预计算);根元素行挂 sha256+语义短 hash,
   // 点击开 Inspector。注册随 context 拆。
+  // RUST-403:增量统计台账经组合根注入(与热更配置门同账);不传=装配
+  // 内部实例(仍记账,只是组合根读不到)。
   const fingerprintDeps = defaultDefFingerprintDeps(getLastDefMd5CheckOutcome);
-  setupDefFingerprintInspector(context, { deps: fingerprintDeps });
+  setupDefFingerprintInspector(context, { deps: fingerprintDeps, stats: deps.fingerprintStats });
   setupDefFingerprintCodeLens(context, defaultDefFingerprintCodeLensDeps(fingerprintDeps));
   // KODE-CFG-009:门接线后即预取 core 配置解析(`$/kode/config/resolve`),
   // 同步消费面(dbInterface/合成树/别名开关)读消费缓存不阻塞宿主。

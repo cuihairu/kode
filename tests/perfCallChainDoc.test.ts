@@ -431,8 +431,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 492/600 → 495/605(真位重探),出处随 baseline 锁步。
   // 2026-11-22(QA-001b):extension.ts 三处接线(解构+1/打开+2/变更+2)
   // → 495/605 → 498/610(真位重探),出处随 baseline 锁步。
-  ['src/extension.ts', 498, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 610, 'flushQueued()'],
+  // 2026-11-22(RUST-403):extension.ts 顶部 import +1(hotReloadFingerprintStats)
+  // + activate 头段指纹统计台账 +4(注释 3 + const 1,均在锚点前)→ 叠加 QA-001a/b
+  // → 498/610 → 503/615,真位重探;出处随 baseline 锁步(2026-baseline.md 同步)。
+  ['src/extension.ts', 503, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 615, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
