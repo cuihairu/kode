@@ -389,9 +389,6 @@ describe('KSEM-CELL-05 sweep: 转义解码族与形态容错臂', () => {
   });
 });
 
-  });
-});
-
 // ---------------------------------------------------------------------------
 // 转义解引族(decodeStringLiteral):CELL-05 键字面量解引的四族转义(八进制/
 // 十六进制/Unicode/非法)——本批前零覆盖。诚实边界:decodeEscape 的
@@ -492,3 +489,5 @@ describe('parseCellDataKeyAccess 边界面', () => {
   it('get 首实参为调用 pick():括号抬深度不误切逗号,动态键不跳转', () => {
     const res = parse('a = self.cellData.get(pick(), 0)');
     expect(res).toMatchObject({ key: null, keyLiteral: false, rawKey: 'pick()', defaultExpr: '0' });
+  });
+});

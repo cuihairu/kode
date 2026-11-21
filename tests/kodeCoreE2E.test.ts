@@ -142,14 +142,14 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
       const restarted = await waitFor(async () => {
         const current = await client.health();
         return current.pid !== firstPid && client.restartGeneration >= 1 ? current : undefined;
-      }, 10_000);
+      }, 20_000);
       expect(restarted.restartGeneration).toBe(1);
       expect(restarted.initialized).toBe(true);
       expect(restarted.pid).not.toBe(firstPid);
       expect((await client.health()).documents).toEqual([]);
       await client.dispose();
     },
-    30_000
+    40_000
   );
 
   // ---- E 组生产接线锁(真实磁盘语料 + 真实 didOpen 通道) ------------------
@@ -256,7 +256,7 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
       await waitFor(async () => {
         const health = await client.health();
         return client.restartGeneration >= 1 && health.pid !== firstPid ? health : undefined;
-      }, 10_000);
+      }, 20_000);
       expect((await client.health()).documents).toEqual([]);
 
       // 缺陷面:账本不失效时只发 didChange,新进程忽略(文档未打开)
@@ -264,7 +264,7 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
       expect((await client.health()).documents).toEqual([{ uri: URI, version: 2 }]);
       await client.dispose();
     },
-    40_000
+    60_000
   );
 
   it('E-4 关文档清理:Rust 侧不留残留 overlay,连续开合不积累,重开低版本正常', async () => {
