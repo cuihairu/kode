@@ -286,3 +286,47 @@ tsc -p tsconfig.mocha.json 0/eslint tests/truthCorpus.test.ts 2 error 系第九�
 第十一族旧债(:94 flagsGroundingText/:133 cellDataGroundingText 未用变量,本族
 零新增;CI lint 仅覆盖 src/)。本批零 src/ 零 Rust 改动(仅语料+执行门+README+
 todo);语料 30 族 264 条(29→30 族,+10;基线 254=第三十增量 249+peer 检查面批 f4654be0 +2/cb5e1510 +3)。
+
+## bots-module-face 族(2026-11-22 第三十一族)
+
+依据:docs/knowledge/api-bots.md(**KB-API-007**,fork HEAD **6d12b8f**,grounding
+base c2a3b8f;档 §1 六位装配表=§2.1 八函数+§2.2 十一 fork-only 共 19 模块函数
++§3 回调/属性表+§4 PyBots/ClientObject+§5 Entity+§6 偏差表)。10 例,执行门=
+**processApiSymbols('bots') 直钉 + ENGINE_SPI_METHODS 名册面**(36 符号表
+存在性+kind+签名三标量;探针实测后写值,drift 即红)。臂形:正例 5(19 模块
+函数+7 属性常量+Entity/EntityComponent 类型三族名册/SPI 二回调
+components+required 旗/addBots 签名逐字钉)+**分歧登记 3**:①误导方向=
+addBots arity-2(fork __py_addBots bots.cpp:344-390 PyTuple_Size 只收 1 或 3,
+arity 2 抛 TypeError,而 kode 签名 (total, tickCount=0, tickTime=0.0) 双默认
+收 2)②漏报方向=entities 属性(fork clientapp.cpp:266
+registerPyObjectToScript("entities", pEntities_) 而 kode bots 表缺席,仅
+ClientObject 成员有)③误导方向=共享 class 七行(EntityCall/
+EntityComponentCall 仅前向声明 entity.h:22/clientobjectbase.h:26-27,
+MemoryStream 仅 PythonApp python_app.cpp:271,bots 不经 PythonApp,Vector2/3/4
+装顶层 Math script.cpp:291,FixedArray 全树 GC/pickle 内部引用——七名皆非
+bots 模块面注册;同 family-29 判例归各族核)+unknown 2(Entities 模板类型
+实例 type 名暴露未取证/onTargetChanged wired-but-dead)。
+
+**判例=wired-but-dead 不冒充可驱**:档 §6 称 onTargetChanged 为「real
+entry-script callback」,fork 接线已证(ClientApp::onTargetChanged
+clientapp.cpp:455-470 调 getEntryScript().onTargetChanged(targetID_),Bots
+继承 ClientApp bots.h:40)但唯一触发 ClientObjectBase::setTargetID
+(clientobjectbase.h:388-391)在 kbe/src 全树零调用——回调虽接线但运行期从不
+被驱动(dormant);kode ENGINE_SPI_METHODS 无 bots onTargetChanged(family-19
+钉 bots=2 同向,engineSpiCodeLens.ts 头注注释明示剔除),按未核钉不冒充修复。
+**判例=跨族对账解封 family-12**:process-module-surface 族(第十二族)
+proc-bots-subset-absent 的六项缺席(address/executeRawDatabaseCommand/
+addWatcher/time/reloadScript/registerReadFileDescriptor)由本族全枚举解封
+——逐项确认皆非引擎 bots 注册函数(bots.cpp:174-182+clientapp.cpp:191-215/
+233-268 注册表实读),对账注记随本族落彼族 reason,彼族 unknown 历史口径保留
+不冒充改写。
+
+门禁=定向 101/101(93+8 新增 it)/prove-red 八咬(八臂 perturb family-31,各红
+一次,sha256 e3199d95 字节还原复绿)/tsc -p ./ 0/tsc -p tsconfig.mocha.json 0/
+eslint tests/truthCorpus.test.ts 2 error 系第九族与第十一族旧债(:94
+flagsGroundingText/:133 cellDataGroundingText 未用变量,本族零新增;CI lint 仅
+覆盖 src/)/全量 12350 passed|4 skip|1 failed(remoteConnection.test.ts 端口断言
+5678 vs 实得 ephemeral 41655/41615——victim 文件不在本批改动集、本批零 src,
+基线红非本批引入,判例=受害者文件归属)。本批零 src/ 零 Rust 改动(仅语料+
+执行门+README+todo);语料 31 族 274 条(30→31 族,+10;基线 264=第三十一增量
+254+10)。

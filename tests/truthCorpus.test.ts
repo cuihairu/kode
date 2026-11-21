@@ -1966,3 +1966,103 @@ describe('truth-corpus: cellapp-module-face 族执行闸(cell 模块面探针)',
     expect(entry.reason).toBeTruthy();
   });
 });
+
+// ── 第三十一族 bots-module-face(KB-API-007 bots 模块面)────────────
+// bots 符号表(36)存在性+kind+签名直钉;19 模块函数/7 属性常量/Entity+EntityComponent
+// 类型对齐;addBots 双形态签名+arity 2 误导分歧;entities 属性漏报分歧;共享 class 超集
+// 七行误导分歧按现状钉——kode 侧收编或收窄即红,触发重钉,不冒充修复。onTargetChanged
+// wired-but-dead(fork clientapp.cpp:455 接线但 setTargetID 全树零调用)按未核钉;family-12
+// proc-bots-subset-absent 的六项缺席由本族全枚举解封(对账注记随本族,不冒充改写彼族)。
+interface BotsFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      functions?: string[];
+      variables?: string[];
+      types?: string[];
+      signature?: string;
+      names?: string[];
+      requiredFlags?: Record<string, boolean>;
+      presentInKode?: boolean;
+      arityAccepted?: number[];
+      classNames?: string[];
+    };
+  };
+}
+const botsFaceFamily = families.find(f => f.family === 'bots-module-face')!;
+const botsFaceEntries = botsFaceFamily.entries as unknown as BotsFaceEntry[];
+const botsFaceSymbols = new Map(processApiSymbols('bots').map(s => [s.name, s]));
+describe('truth-corpus: bots-module-face 族执行闸(bots 模块面探针)', () => {
+  it('登记点名册臂:19 模块函数+7 属性常量=function/variable 行;Entity+EntityComponent=class 行', () => {
+    for (const entry of botsFaceEntries) {
+      if (entry.kode.status !== 'pinned' || !entry.input.roster || entry.input.roster === 'spi' || entry.input.roster === 'classes') { continue; }
+      const a = entry.kode.analysis!;
+      for (const name of a.functions ?? []) {
+        expect(botsFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.variables ?? []) {
+        expect(botsFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'variable' });
+      }
+      for (const name of a.types ?? []) {
+        expect(botsFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'class' });
+      }
+    }
+  });
+
+  it('SPI 名册臂:bots 入口回调 onInit+onFinish 名册+required 旗(family-19 同向)', () => {
+    const entry = botsFaceEntries.find(e => e.input.roster === 'spi')!;
+    const a = entry.kode.analysis!;
+    expect(a.names!.length).toBe(2);
+    for (const n of a.names!) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain('bots');
+      expect(ENGINE_SPI_METHODS[n].required, n).toBe(a.requiredFlags![n]);
+    }
+  });
+
+  it('addBots 签名臂:三参两默认逐字钉(与 fork 1/3 arity 双形态同向)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'pos-addBots-signature')!;
+    expect((botsFaceSymbols.get('addBots') as { signature: string }).signature).toBe(entry.kode.analysis!.signature);
+  });
+
+  it('addBots arity 误导臂:引擎只收 1/3 而 kode 双默认收 2(签名默认参数数=2 即红)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'div-addBots-arity-2')!;
+    const sig = (botsFaceSymbols.get('addBots') as { signature: string }).signature;
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    const defCount = (sig.split('->')[0].match(/=/g) || []).length;
+    expect(defCount).toBe(entry.kode.analysis!.arityAccepted!.length - 1);
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('entities 漏报臂:引擎注册而 kode bots 表缺席(补全即红)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'div-entities-attr-absent')!;
+    expect(botsFaceSymbols.has('entities')).toBe(false);
+    expect(entry.kode.analysis!.presentInKode).toBe(false);
+    expect(entry.finding).toContain('漏报方向');
+  });
+
+  it('共享 class 超集臂:七条 class 行在场,引擎 bots 面只注册 Entity+EntityComponent(收窄即红)', () => {
+    const entry = botsFaceEntries.find(e => e.input.roster === 'classes')!;
+    for (const name of entry.kode.analysis!.classNames!) {
+      expect(botsFaceSymbols.get(name), name).toMatchObject({ kind: 'class' });
+    }
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('Entities 类型未知臂:class 行在场+reason 在(诚实缺口,实例类型名暴露未取证)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'unk-entities-class-type')!;
+    expect(botsFaceSymbols.get('Entities')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.status).toBe('unverified');
+    expect(entry.reason).toBeTruthy();
+  });
+
+  it('onTargetChanged 休眠臂:kode SPI 表 client-only 排除 bots(family-19 同向)+reason 在', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'unk-onTargetChanged-dormant')!;
+    expect(entry.kode.status).toBe('unverified');
+    expect(entry.reason).toBeTruthy();
+    const spi = ENGINE_SPI_METHODS['onTargetChanged'];
+    expect(spi).toBeDefined();
+    expect(spi.components).toContain('client');
+    expect(spi.components).not.toContain('bots');
+  });
+});
