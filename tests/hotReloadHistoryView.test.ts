@@ -260,6 +260,34 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
     expect(html).not.toContain('发送: ');
   });
 
+  it('HR-UI-004 实时队列面:注入 pipelineQueue 快照→面板三阶段列文件(计数+文件名+全路径 title)', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), {
+      core: new HotReloadHistoryCore(),
+      resolveNames: resolver,
+      pipelineQueue: () => ({ pending: [FILE_A], previewHeld: [FILE_B], wave: [] })
+    });
+    feed.handle(recordOf());
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const html = panelRegistry.panels[panelRegistry.panels.length - 1].webview.html;
+    expect(html).toContain('实时队列');
+    expect(html).toContain('归并中(1)');
+    expect(html).toContain('预览滞留(1)');
+    expect(html).toContain('本波已定稿未发出(0)');
+    expect(html).toContain('FightAI.py');
+    expect(html).toContain('Spawner.py');
+    expect(html).toContain(`title="${FILE_A}"`);
+    expect(html).toContain(`title="${FILE_B}"`);
+  });
+
+  it('HR-UI-004 实时队列面:不注入 pipelineQueue=如实空三队列,面板照常开', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const html = panelRegistry.panels[panelRegistry.panels.length - 1].webview.html;
+    expect(html).toContain('实时队列');
+    expect(html).toContain('归并中(0)');
+    expect(html).toContain('(空)');
+  });
+
   it('过滤消息(HR-UI-010):模块子串/状态过滤重渲染,计数随过滤更新;清除筛选拉全量', async () => {
     const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     feed.handle(recordOf({ file: FILE_A }));
@@ -436,5 +464,22 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
     expect(html).toContain('class="st-sent-unverified">已发送(未确认)');
     expect(html).toContain('boom');
     expect(html).toContain('t1');
+  });
+
+  it('HR-UI-004 实时队列面:快照三阶段计数+文件名如实;文件名 HTML 转义(文本与 title 全路径双面)', () => {
+    const html = renderHistoryPanelHtml({
+      state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
+      rows: [],
+      total: 0,
+      hasMore: false,
+      pageSize: 50,
+      queue: { pending: ['/x/<evil>&.py', '/x/A.py'], previewHeld: [], wave: [] }
+    });
+    expect(html).toContain('归并中(2)');
+    expect(html).toContain('预览滞留(0)');
+    expect(html).toContain('本波已定稿未发出(0)');
+    expect(html).toContain('title="/x/&lt;evil&gt;&amp;.py"');
+    expect(html).toContain('&lt;evil&gt;&amp;.py');
+    expect(html).not.toContain('<evil>&.py');
   });
 });

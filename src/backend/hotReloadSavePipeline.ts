@@ -214,6 +214,16 @@ export function isWatchableScriptFile(fsPath: string, options: WatchableFileOpti
 }
 
 /** 热更保存事件流水线(纯核;事件绑定与发送消费由装配接线) */
+/** 三队列一快照(HR-UI-004 实时队列面;UI 消费口单次取全,免三次往返) */
+export interface SavePipelineQueueSnapshot {
+  /** 归并中(同文件事件合并未定稿) */
+  readonly pending: readonly string[];
+  /** 预览滞留(HR-WATCH-016 批量预览未放行) */
+  readonly previewHeld: readonly string[];
+  /** 本波已定稿未发出 */
+  readonly wave: readonly string[];
+}
+
 export class HotReloadSavePipeline {
   private readonly debounceMs: number;
   private readonly maxDelayMs: number;
@@ -275,6 +285,15 @@ export class HotReloadSavePipeline {
   /** 自省:本波已定稿未发出的文件 */
   waveFiles(): string[] {
     return this.wave.map(event => event.uri);
+  }
+
+  /** 自省:三队列一快照(HR-UI-004 实时队列面单次取全) */
+  queueSnapshot(): SavePipelineQueueSnapshot {
+    return {
+      pending: this.pendingFiles(),
+      previewHeld: this.previewHeldFiles(),
+      wave: this.waveFiles()
+    };
   }
 
   /** 自省:文件当前版本号(HR-WATCH-011 响应面快照用;未定稿过=0) */

@@ -46,6 +46,7 @@ import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } 
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { resolveModuleDualName } from '../backend/hotReloadTempEdit';
 import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY } from '../hotReloadHistoryView';
+import type { SavePipelineQueueSnapshot } from '../backend/hotReloadSavePipeline';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../backend/hotReloadHistoryCore';
 import type { HotReloadDeliveryRecord } from '../backend/hotReloadTargetState';
 import type { DiskWatcherFactory } from '../backend/hotReloadDiskWatch';
@@ -96,6 +97,12 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     }
     return { fullModule: dualName.fullModule, requestModule: dualName.requestModule };
   };
+  // HR-UI-004 实时队列面:历史面板与流水线分居两个装配点,经此共享句柄
+  // 接起来——setupHotReload 在流水线上线时置入读当前实例的闭锁,面板按
+  // 渲染时刻读快照(未上线=如实空队列)。
+  const hotReloadPipelineQueueRef: { current: (() => SavePipelineQueueSnapshot) | null } = {
+    current: null
+  };
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({
     now: () => Date.now(),
     onRecorded: () => {
@@ -118,6 +125,8 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       watchMode: readHotReloadSettings(hotReloadSectionReader()).triggerMode,
       target: ''
     }),
+    pipelineQueue: () =>
+      hotReloadPipelineQueueRef.current?.() ?? { pending: [], previewHeld: [], wave: [] },
     persist: {
       // 宿主无 workspaceState(测试替身语境)时如实退化为不持久化,不炸激活
       load: () => context.workspaceState?.get(HOT_RELOAD_HISTORY_STATE_KEY),
@@ -442,6 +451,8 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   };
   setupHotReload(context, runQuickActionForHotReload, {
     fileChangeRouter,
+    // HR-UI-004 实时队列面:历史面板经此句柄读流水线三队列自省快照
+    pipelineQueue: hotReloadPipelineQueueRef,
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,

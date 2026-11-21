@@ -38,6 +38,7 @@ import {
   type HotReloadHistoryStatus
 } from './backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
+import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
 
 /** workspaceState 持久化键(HR-MOD-014;宿主适配面用) */
 export const HOT_RELOAD_HISTORY_STATE_KEY = 'kbengine.hotReload.history';
@@ -89,6 +90,8 @@ export function renderHistoryPanelHtml(input: {
   total: number;
   hasMore: boolean;
   pageSize: number;
+  /** HR-UI-004 实时队列快照(缺省=空三队列,如实显示「(空)」) */
+  queue?: SavePipelineQueueSnapshot;
 }): string {
   const esc = (text: string): string =>
     text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -112,12 +115,31 @@ export function renderHistoryPanelHtml(input: {
     })
     .join('\n');
   const filter = input.state.filter;
+  // HR-UI-004 实时队列面:三队列一快照(缺省空,如实「(空)」;文件名 esc,
+  // 标题带全路径便于诊断)
+  const queue = input.queue ?? { pending: [], previewHeld: [], wave: [] };
+  const queueCell = (files: readonly string[]): string =>
+    files.length === 0
+      ? '(空)'
+      : files.map(f => `<code title="${esc(f)}">${esc(path.basename(f))}</code>`).join(' ');
+  const queueRows = (
+    [
+      ['归并中', queue.pending],
+      ['预览滞留', queue.previewHeld],
+      ['本波已定稿未发出', queue.wave]
+    ] as Array<[string, readonly string[]]>
+  )
+    .map(([label, files]) => `      <tr><th>${esc(label)}(${files.length})</th><td>${queueCell(files)}</td></tr>`)
+    .join('\n');
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><style>
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 12px; }
   h2 { margin: 0 0 8px; }
+  h3 { margin: 14px 0 4px; }
   .header { color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
+  table.queue { margin-bottom: 12px; }
+  table.queue th { width: 130px; }
   form.filter { margin-bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
   form.filter input, form.filter select { min-width: 140px; }
   table { border-collapse: collapse; width: 100%; }
@@ -134,6 +156,13 @@ export function renderHistoryPanelHtml(input: {
 <body>
   <h2>热更历史</h2>
   <div class="header">监听模式: ${esc(input.state.feedStatus.watchMode || '(未配置)')} | 目标: ${esc(input.state.feedStatus.target || '(默认)')} | 显示 ${input.rows.length}/${input.total} 行</div>
+  <h3>实时队列</h3>
+  <div class="header">快照时点=面板渲染时刻,随台账事件/筛选/分页重渲染刷新</div>
+  <table class="queue">
+    <tbody>
+${queueRows}
+    </tbody>
+  </table>
   <form class="filter">
     <input id="f-module" placeholder="模块包含…" value="${esc(filter.fullModuleContains ?? '')}">
     <input id="f-target" placeholder="目标 id…" value="${esc(filter.targetId ?? '')}">
@@ -184,6 +213,8 @@ export interface HotReloadHistoryViewOptions {
   resolveNames: HotReloadNamesResolver;
   /** feed 页头状态(如实;缺省全空串) */
   feedStatus?: () => HotReloadFeedStatus;
+  /** HR-UI-004 实时队列快照(如实;缺省=空三队列,面板显示「(空)」) */
+  pipelineQueue?: () => SavePipelineQueueSnapshot;
   /** 重渲染节流窗 ms(HR-UI-007;缺省 500) */
   refreshWindowMs?: number;
   /** 树「最近更新」组行数上限=面板分页页大小(HR-UI-007;缺省 50) */
@@ -234,6 +265,10 @@ export function setupHotReloadHistoryView(
   const refreshWindowMs = opts.refreshWindowMs ?? 500;
   const pageSize = opts.pageSize ?? 50;
   const feedStatus = opts.feedStatus ?? (() => ({ watchMode: '', target: '' }));
+  // HR-UI-004 实时队列面:未注入=如实空队列(面板显示「(空)」),不猜
+  const pipelineQueue =
+    opts.pipelineQueue ??
+    (() => ({ pending: [], previewHeld: [], wave: [] }) as SavePipelineQueueSnapshot);
 
   // 启动回载(HR-MOD-014):形状不符的条目如实丢弃,不猜不全量吞
   if (opts.persist) {
@@ -372,7 +407,8 @@ export function setupHotReloadHistoryView(
       rows,
       total: filtered.length,
       hasMore: rows.length < filtered.length,
-      pageSize
+      pageSize,
+      queue: pipelineQueue()
     });
   };
   const panelCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND, () => {

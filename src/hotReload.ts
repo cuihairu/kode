@@ -44,7 +44,11 @@ import { normalizeFileIdentity } from './backend/pathIdentity';
 import type { ReloadTransport } from './backend/hotReloadTransport';
 import type { HttpTransport } from './backend/httpRequestService';
 import type { PackageDirProbe } from './backend/httpRequests';
-import { HotReloadSavePipeline, isStaleResponse } from './backend/hotReloadSavePipeline';
+import {
+  HotReloadSavePipeline,
+  isStaleResponse,
+  type SavePipelineQueueSnapshot
+} from './backend/hotReloadSavePipeline';
 import type { FileSnapshot, SyntaxCheck } from './backend/hotReloadSavePipeline';
 import {
   createHotReloadProviderHost,
@@ -424,6 +428,13 @@ export interface SetupHotReloadOptions {
     /** HR-WATCH-012 语法闸替身(真实现=解释器 compile 门,fail-open) */
     readonly syntaxCheck?: SyntaxCheck;
   };
+  /**
+   * HR-UI-004 实时队列面:装配方(热更历史面板)经此句柄读流水线三队列
+   * (pending/previewHeld/wave)自省快照。setupHotReload 在流水线上线时置为
+   * 读当前实例的闭锁(闭锁 `let pipeline` 变量,随 apply 重建仍指当前实例,
+   * 与 HR-WATCH-016 预览放行命令同口径);不注入=面板如实显示空队列。
+   */
+  readonly pipelineQueue?: { current: (() => SavePipelineQueueSnapshot) | null };
   /**
    * HR-PR-08 fork 侧发送 provider 实现(注册时机=装配时,应答序=注入序
    * 先到先应答,注入实现排在内置实现之前):重复 id/apiVersion 不符的
@@ -1289,6 +1300,14 @@ export function setupHotReload(
     runFire(triggers);
   }, timers);
   let pipeline: HotReloadSavePipeline | undefined;
+  if (options.pipelineQueue) {
+    // HR-UI-004 实时队列面:置一次闭锁(读 `let pipeline` 当前实例),随
+    // apply 重建仍指现行流水线;流水线未建时如实空队列,不猜。
+    options.pipelineQueue.current = () =>
+      pipeline
+        ? pipeline.queueSnapshot()
+        : { pending: [], previewHeld: [], wave: [] };
+  }
   // RUST-002 判据③:热更语法闸是最高频的 Python 脚本执行面(每次定稿一次),
   // 原来每次 spawn 一个新解释器进程。改用常驻执行服务承载:一个解释器进程跑
   // 任意多次 compile(),只在故障/超时后重建。失败语义两路分叉(纯核

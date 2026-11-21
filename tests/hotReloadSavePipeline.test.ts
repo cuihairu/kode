@@ -509,6 +509,19 @@ describe('波次归集(同窗多文件合成一批)', () => {
     expect(h.pipeline.waveFiles()).toHaveLength(0);
   });
 
+  it('queueSnapshot(HR-UI-004 实时队列面):三队列一快照如实聚合,与三自省方法不分叉', async () => {
+    const h = makePipeline();
+    h.pipeline.offer('/ws/a.py', 'save');
+    // 归并窗内:文件在 pending 归并中,wave 尚未定稿
+    expect(h.pipeline.queueSnapshot()).toEqual({ pending: ['/ws/a.py'], previewHeld: [], wave: [] });
+    await h.clock.advance(100);
+    const snapshot = h.pipeline.queueSnapshot();
+    expect(snapshot).toEqual({ pending: [], previewHeld: [], wave: ['/ws/a.py'] });
+    expect(snapshot.pending).toEqual(h.pipeline.pendingFiles());
+    expect(snapshot.previewHeld).toEqual(h.pipeline.previewHeldFiles());
+    expect(snapshot.wave).toEqual(h.pipeline.waveFiles());
+  });
+
   it('batchFlushMs=0 定稿即发:不起归集窗,去抖到期当拍直接出批(接线默认形态)', async () => {
     const h = makePipeline({ batchFlushMs: 0 });
     h.pipeline.offer('/ws/a.py', 'save');
