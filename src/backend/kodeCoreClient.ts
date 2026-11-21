@@ -55,6 +55,17 @@ export interface KodeCoreClientOptions {
   onTrace?: (line: string) => void;
   /** 生命周期取证行回调(spawned/ready/exit/重启循环;默认丢弃;WARM-VISIBILITY-004 刀 B) */
   onLifecycle?: (line: string) => void;
+  /**
+   * 服务器通知回调(RUST-142 接线:PR-003 扩展位落消费面)。仅当通知携带
+   * method+params 时触发;通知与响应按 id 有无分叉,此回调不经 pending。
+   */
+  onNotification?: (notification: ServerNotificationMessage) => void;
+}
+
+/** 服务器通知帧面(无 id;method + 可选 params)。 */
+export interface ServerNotificationMessage {
+  method: string;
+  params?: unknown;
 }
 
 export interface KodeCoreInitializeParams {
@@ -231,8 +242,17 @@ export class KodeCoreClient {
     return this.frameWriter.pendingFrames;
   }
 
+  /** 通知消费面(PR-003 扩展位;构造期默认取 options.onNotification,可后置) */
+  private notificationHandler: ((notification: ServerNotificationMessage) => void) | null;
+
   constructor(private readonly options: KodeCoreClientOptions) {
     this.initParams = options.initializeParams ?? { processId: process.pid, capabilities: {} };
+    this.notificationHandler = options.onNotification ?? null;
+  }
+
+  /** 后置通知消费面(RUST-142 接线:gate 延迟装配,客户端懒建后可再设)。 */
+  setNotificationHandler(handler: ((notification: ServerNotificationMessage) => void) | null): void {
+    this.notificationHandler = handler;
   }
 
   /** 当前服务器子进程(测试/探针用;可能为 null) */
@@ -653,7 +673,13 @@ export class KodeCoreClient {
   }
 
   private dispatchMessage(body: Buffer): void {
-    let message: { id?: number | string | null; result?: unknown; error?: { code: number; message: string } };
+    let message: {
+      id?: number | string | null;
+      method?: string;
+      params?: unknown;
+      result?: unknown;
+      error?: { code: number; message: string };
+    };
     try {
       message = JSON.parse(body.toString('utf8'));
     } catch {
@@ -661,7 +687,14 @@ export class KodeCoreClient {
       return;
     }
     if (message.id === undefined || message.id === null) {
-      return; // 服务器通知:PR-003 暂无消费者,留 onNotification 扩展位
+      // 服务器通知(RUST-142 接线:PR-003 扩展位落消费面)。
+      if (typeof message.method === 'string') {
+        this.notificationHandler?.({
+          method: message.method,
+          ...(message.params !== undefined ? { params: message.params } : {})
+        });
+      }
+      return;
     }
     const pending = this.pending.get(Number(message.id));
     if (!pending) {

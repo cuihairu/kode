@@ -1,4 +1,9 @@
-import { KodeCoreClient, KodeCoreTransportError, type KodeCoreInitializeParams } from './kodeCoreClient';
+import {
+  KodeCoreClient,
+  KodeCoreTransportError,
+  type KodeCoreInitializeParams,
+  type ServerNotificationMessage
+} from './kodeCoreClient';
 import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
 import { indexLog } from './indexLog';
 
@@ -230,6 +235,10 @@ export interface ShadowClientLike {
   beginBackgroundScan?(total: number): Promise<unknown>;
   scanComplete?(done: number, failed: number): Promise<unknown>;
   scanCancel?(): Promise<unknown>;
+  /** 服务器通知消费面(RUST-142 可选):gate 延迟装配,客户端懒建后可再设 */
+  setNotificationHandler?(
+    handler: ((notification: ServerNotificationMessage) => void) | null
+  ): void;
 }
 
 export interface KodeCoreGateOptions {
@@ -257,6 +266,9 @@ export class KodeCoreGate {
   private clientServerPath = '';
   /** initialize 握手参数(KBUG-ROOT:多工作区文件夹根归属);未设置 = 默认参数 */
   private initializeParams: KodeCoreInitializeParams | undefined;
+  /** 服务器通知消费面(RUST-142 接线):懒建客户端时透传,客户端已在
+   * (ensureClient 之后后置装配)即刻改挂;null = 无消费者(通知丢弃)。 */
+  private notificationHandler: ((notification: ServerNotificationMessage) => void) | null = null;
   private nextAttemptAt = 0;
   /** 语料镜像账:uri → 已镜像版本(shadow 会话内;kill-switch 清空) */
   private mirroredVersions = new Map<string, number>();
@@ -287,6 +299,14 @@ export class KodeCoreGate {
    */
   setInitializeParams(params: KodeCoreInitializeParams): void {
     this.initializeParams = params;
+  }
+
+  /** 服务器通知消费面(RUST-142):先存后挂(客户端已建即刻改挂,未建懒建时透传)。 */
+  setNotificationHandler(
+    handler: ((notification: ServerNotificationMessage) => void) | null
+  ): void {
+    this.notificationHandler = handler;
+    this.client?.setNotificationHandler?.(handler);
   }
 
   setConfig(config: KodeCoreGateConfig): void {
@@ -473,6 +493,9 @@ export class KodeCoreGate {
           // 重启循环取证进统一「KBEngine Index」通道。
           onLifecycle: line => { indexLog('server', line); },
         });
+      // RUST-142:通知消费面透传(handler 先于客户端装配已设置时,改挂;
+      // 客户端懒建后置装配走 setNotificationHandler 的 client 改挂)。
+      this.client.setNotificationHandler?.(this.notificationHandler);
       this.clientServerPath = this.config.serverPath;
       return this.client;
     } catch (error) {

@@ -123,10 +123,11 @@ import {
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager, pythonScriptDomain } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
+import { getKodeCoreShadowGate } from '../backend/kodeCoreShadowFaces';
 import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
 import { readSharedFileSnapshot, readSharedFileSnapshotAsync } from '../sharedFileSnapshot';
-import { isPythonMroJumpEnabled, validateAliasXmlDocument, validateDocument, validateEntitiesXmlDocument, validateTypesXmlDocument } from '../languageProviders';
+import { isPythonMroJumpEnabled, validateAliasXmlDocument, validateDocument, validateEntitiesXmlDocument, validateTypesXmlDocument, wireDiagnosticsPush } from '../languageProviders';
 import { DiagnosticScheduler, getDiagnosticScheduler } from '../backend/diagnosticScheduler';
 import { validateProcessTopologyInRust } from '../backend/processTopologyRust';
 import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from '../backend/processTopologyDiagnostics';
@@ -607,6 +608,14 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
   // 注册诊断检查器
   const diagnostics = vscode.languages.createDiagnosticCollection('kbengine');
   context.subscriptions.push(diagnostics);
+
+  // RUST-142:服务器 push 消费面接线(localSyntax 层 findings 并入主 collection,
+  // 与 pull 腿同幂等;gate 未装配/非服务轨道零开销——setNotificationHandler
+  // 空转,通知在 gate 侧无消费者时丢弃)。
+  const pushGate = getKodeCoreShadowGate();
+  if (pushGate) {
+    wireDiagnosticsPush(pushGate, diagnostics, () => vscode.workspace.textDocuments);
+  }
 
   // 配置契约检查诊断(docs/analysis/intranet-env-audit.md §4/§5,用户会话
   // 建议序 #2):工作区「配置层」(.kbengine/debug.json / extraPaths /

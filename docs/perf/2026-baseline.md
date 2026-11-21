@@ -85,6 +85,7 @@
 > 2026-11-14(KSEM-DATA-02):共享数据键位补全接线——completion.ts 顶部 +4 导入、KBEngineCompletionProvider ctor +4 注入、数据字典键位分支 +12、provideDataDictKeyCompletions 方法块 +56(均在 PythonCompletionProvider 之前)→ PythonCompletionProvider.provideCompletionItems 897→973(净 +76,出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-15(RUST-004-W2):pythonDefinition.ts 预算竞速抽共享核 raceColdIndexReadiness + awaitSpaceDataIndexReady 面净 +41(均在 provideDefinitionTracedImpl 之前)→ 三锚真位重探 413/1001/1107→454/1042/1148;completion.ts spaceData 键位分支预算/marked/isIncomplete 面净 +12(均在 PythonCompletionProvider 之前)→ provideCompletionItems 真位重探 1073→1086(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-17(RUST-177/KBE-007):types.xml 结构诊断与 def Persistent×ENTITYCALL 诊断接线真位重探——diagnostics.ts import 组并入既有行(打点锚 +3:201/214→204/217,新增 types 打点与调度器块在锚之后)、extension.ts 五调用点累计 +4/+10(onDidChangeTextDocument 472→476,flushQueued 571→581)、validation.ts types 面两函数前插(validateDocument 14→20、shadowObserveDefDocument 调用 38→44、validateEntitiesXmlDocument 256→265、entities-analysis 266→278)(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-22(RUST-142 批 3):diagnostics.ts 顶部 import +1(wireDiagnosticsPush,装配块在全部锚点之后)→打点锚 216/229→217/230,叠加并发会话 QA-001a +9 与 QA-001b +9 后真位 **235/248**(累计 +19);validation.ts mergeRustDefFindings 后插推送消费面 +64 →validateEntitiesXmlDocument 265→329、entities-analysis 278→342(均真位重探,出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-15(RUST-004-W3):冷索引竞速核抽 src/coldIndexReadiness.ts 共享模块(事件索引面接入,三面同判据)——pythonDefinition.ts 净 −80(删竞速核/预算解析/类型块 87 行、补共享模块 import +7,均在三锚之前)→ 三锚真位重探 454/1042/1148→374/962/1068;completion.ts/eventApi.ts/workspaceIndex.ts 零锚面变化(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-14(KSEM-DATA-04):provideDataDictKeyCompletions 进程域收窄重写(+16:域闸与族内域内访问点过滤/detail 域内计数重排,均在 PythonCompletionProvider 之前)→ PythonCompletionProvider.provideCompletionItems 973→989;hover.ts 数据字典面改动全在 provideHover(:313)之后无位移(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 >
@@ -249,9 +250,9 @@ flowchart TD
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:234 / entities 侧 :247"]
+  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:235 / entities 侧 :248"]
   VD["validateDocument(languageProviders/validation.ts:20)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders/validation.ts:20,批92)"]
-  VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:265)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:278,A6-3)"]
+  VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:329)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:342,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]
   DS["文档解析(document-parse 打点)<br/>documentStore 同版本只解析一次(PR2)"]
   PUB["diagnostics.set(uri, items) 发布"]

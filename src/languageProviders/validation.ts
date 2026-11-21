@@ -256,6 +256,70 @@ export function mergeRustDefFindings(
   return out;
 }
 
+// ---- RUST-142 推送消费面 ---------------------------------------------------
+// 服务器 push 面 `$/kode/publishDiagnostics` 携带 finding 形载荷(与
+// analyzeDef 同形;uri = 镜像腿原串 = document.uri.fsPath)。桥 onNotification
+// 扩展位(PR-003)落此消费面。路由按 layer:localSyntax(唯一有 Rust 真源
+// 的层)经 mergeRustDefFindings 并入主 collection(与 pull 腿同幂等/同版本
+// 护栏);semantic/engineCompat/runtimeConfig 三族归各自车道接线后入表
+// (诚实边界)。C-19(def-method-missing-in-python)输入在 TS 侧现采,
+// Rust push 以缺省 parity 输入跑不产出,仍由 observeRustDefFindings 的
+// pull 腿覆盖(push/pull 同键幂等,不双报)。
+
+/** `$/kode/publishDiagnostics` 载荷面(Rust 侧 ServerNotification.params)。 */
+export interface RustDiagnosticsPushParams {
+  /** 客户端原串(镜像腿 = document.uri.fsPath) */
+  uri: string;
+  version: number | null;
+  layer: string;
+  findings: DefAnalysisFinding[];
+}
+
+/** push 消费面:文档在场 + 版本护栏内按归并公式落 collection(幂等)。 */
+export function applyRustDiagnosticsPush(
+  params: RustDiagnosticsPushParams,
+  diagnostics: vscode.DiagnosticCollection,
+  textDocuments: readonly vscode.TextDocument[]
+): void {
+  if (params.layer !== 'localSyntax' || typeof params.version !== 'number') {
+    return;
+  }
+  const document = textDocuments.find(doc => doc.uri.fsPath === params.uri);
+  if (!document || document.version !== params.version) {
+    return; // 已关闭/晚到旧版丢弃(与 pull 腿版本护栏同口径)。
+  }
+  const existing = diagnostics.get(document.uri) ?? [];
+  const rustDiags = mergeRustDefFindings(document, params.findings, existing);
+  if (rustDiags.length > 0) {
+    diagnostics.set(document.uri, [...existing, ...rustDiags]);
+  }
+}
+
+/**
+ * 桥面装配:gate 通知回调 → localSyntax findings 并入主 collection。
+ * textDocuments 注入(vscode.workspace.textDocuments;测试替身可注入)。
+ */
+export function wireDiagnosticsPush(
+  gate: {
+    setNotificationHandler(
+      handler: ((notification: { method: string; params?: unknown }) => void) | null
+    ): void;
+  },
+  diagnostics: vscode.DiagnosticCollection,
+  textDocuments: () => readonly vscode.TextDocument[]
+): void {
+  gate.setNotificationHandler(notification => {
+    if (notification.method !== '$/kode/publishDiagnostics') {
+      return;
+    }
+    const params = notification.params as RustDiagnosticsPushParams | undefined;
+    if (!params) {
+      return;
+    }
+    applyRustDiagnosticsPush(params, diagnostics, textDocuments());
+  });
+}
+
 // entities.xml 清单诊断(source-analysis 设计 D3):同名重复条目引擎按首条
 // 静默合并(entitydef.cpp:255-262),这里是文档事件联动的落 collection 面,
 // 开关与 validateDocument 共用 kbengine.enableDiagnostics。

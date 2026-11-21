@@ -74,6 +74,21 @@ fn recover_id(value: &serde_json::Value) -> Option<RequestId> {
         .and_then(|id| serde_json::from_value(id.clone()).ok())
 }
 
+/// RUST-142:诊断管线 flush(脏文档 → 四层核 → publishDiagnostics 通知)。
+/// 与索引 flush 同刻调起:空脏集零开销直通(flush_diagnostics_pipeline
+/// 内早退);有产出即写 stdout(通知帧与响应帧同链,帧内不交错)。
+/// RESP-001:同索引切片双界(条数+墙钟)——lint 不可抢占,一次排空全量
+/// 脏集会阻塞主循环数秒,health/hover 回合被排队;界外余量回脏集,
+/// 后续空闲 tick 追平。
+fn flush_diagnostics(state: &mut ServerState) {
+    let deadline = std::time::Instant::now()
+        + Duration::from_millis(kode_server::server::DIAGNOSTIC_FLUSH_BUDGET_MS);
+    let out = kode_server::server::flush_diagnostics_pipeline(state, deadline);
+    if !out.is_empty() {
+        write_outgoing(&out);
+    }
+}
+
 /// 写出站消息到 stdout。
 fn write_outgoing(outgoing: &[Outgoing]) {
     let mut stdout = std::io::stdout().lock();
@@ -321,6 +336,10 @@ fn main() {
                     // 切片 + 请求排水(freshen 自文件优先)——交互帧永不
                     // 为后台解析买单,洪水在静默期追平(CORE-006 不永久
                     // 推迟:空闲切片恒推进)。
+                    // RUST-142:帧路径不跑诊断 flush(RESP-001 验收实测:
+                    // 切片单任务 lint 超支不可抢占——连续 didOpen 洪水下
+                    // 后续帧被逐片排队);诊断 flush 走空闲 tick(静默期
+                    // 追平,交互帧永不为后台 lint 买单,同 ingest 口径)。
                     state.index.flush_due(std::time::Instant::now());
                 }
                 Ok(None) | Err(RecvTimeoutError::Disconnected) => eof = true,
@@ -329,6 +348,7 @@ fn main() {
                     // (CORE-006 后台不可永久推迟;DEPENDENCY_UPDATE 优先级
                     // 恒交互级,冷却不适用)。RESP-001:同样叠墙钟界。
                     state.index.flush_due(std::time::Instant::now());
+                    flush_diagnostics(&mut state);
                     state.index.pump_budgeted_until(
                         64,
                         std::time::Instant::now()

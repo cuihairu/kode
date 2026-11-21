@@ -393,8 +393,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // → 两处打点锚点 +9(216/229 → 225/238,真位重探),出处随 baseline 锁步。
   // 2026-11-22(QA-001b):proxySession 导入块(+6)与两处接口条目(+3)
   // → 两处打点锚点 +9(225/238 → 234/247,真位重探),出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 234, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 247, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-22(RUST-142 批 3):diagnostics.ts 顶部 import 再 +1
+  // (wireDiagnosticsPush)→ 叠加 QA-001b 后累计 +10,两处打点锚点 225/238 →
+  // 235/248(真位重探;wire 装配块在全部锚点之后不再位移);出处随 baseline 锁步。
+  ['src/activate/diagnostics.ts', 235, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 248, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -524,7 +527,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-08(诊断面切流):validateDocument 后插入 rust 服务腿块
   // (serveRustDiagnosticsFace/mergeRustDiagnosticsFace/lspSeverityToVscode,
   // 约 +105 行),其后锚点真位重探 165→255,出处随 baseline 锁步。
-  ['src/languageProviders/validation.ts', 265, 'validateEntitiesXmlDocument'],
+  // 2026-11-22(RUST-142 批 3):mergeRustDefFindings 后插推送消费面
+  // (RustDiagnosticsPushParams/applyRustDiagnosticsPush/wireDiagnosticsPush,
+  // +64 行),validateEntitiesXmlDocument 真位重探 265→329('entities-analysis'
+  // 命名空间缓存 278→342);出处随 baseline 锁步。
+  ['src/languageProviders/validation.ts', 329, 'validateEntitiesXmlDocument'],
   // 2026-11-06(十六):IDE-DB-001 持久字段容量说明——languageProviders.ts
   // describeTypeStorageShape 各形态分支附容量行,2776 后 +11;其后锚点
   // 随之 +11(真位重探 4741/5162/5268/7112;2005 前不受影响;出处随 baseline

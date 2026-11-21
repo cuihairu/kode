@@ -10,7 +10,7 @@
 //!   full/ranged 双模式 change、根注册与最长前缀归属。
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -228,6 +228,15 @@ pub struct ServerState {
     /// (健康面 `ingest` 键恒在);didOpen/didChange/didClose 入队,主循环
     /// 空闲切片 + 请求入口 freshen 自键驱动(打开文档小范围交互 > 局部刷新)。
     pub index: crate::index_queue::IndexQueue,
+    /// RUST-142:诊断分级装配线(didChange → 四层调度核 → publishDiagnostics)。
+    /// 层核为批 1 回放核 + 批 2 决策表;生产接线后由主循环空闲 tick 排空
+    /// (flush_diagnostics_pipeline)。恒装配(健康面不暴露,纯内部面)。
+    pub diagnostics_pipelines: crate::diagnostic_layering::LayeredSchedulers,
+    /// RUST-142:待 flush 的脏文档(客户端 uri 原串 → 最新 didChange 版本,
+    /// 与 store 的 DocumentKey 同根同 uri 但保留客户端原串供通知回显)。
+    /// didOpen/didChange 标记,didClose 摘除;主循环 flush 排空并发射
+    /// `$/kode/publishDiagnostics` 通知(空集零开销直通)。
+    pub diagnostics_dirty: BTreeMap<String, i64>,
 }
 
 impl ServerState {
@@ -300,6 +309,8 @@ impl ServerState {
             pool_stats: None,
             warm: crate::warm_gate::WarmGate::new(),
             index: index_queue,
+            diagnostics_pipelines: crate::diagnostic_layering::LayeredSchedulers::new(),
+            diagnostics_dirty: BTreeMap::new(),
         }
     }
 }
@@ -1295,6 +1306,135 @@ fn handle_workspace_symbol(state: &mut ServerState, request: Request) -> Respons
     Response::success(request.id, serde_json::json!({ "symbols": hits }))
 }
 
+/// RUST-142/RESP-001:诊断 flush 切片预算——至多这么多脏文档**且**不越墙钟界。
+/// 与索引 `pump_budgeted_until` 同源双界:lint 解析不可抢占,条数约束不了
+/// 响应时间(30×200KB 脏集一次排空=数秒主循环阻塞,health 回合被排队),
+/// 故与索引切片同宽(16ms)。
+pub const DIAGNOSTIC_FLUSH_BUDGET_MS: u64 = 16;
+/// 单次诊断切片的文档条数上界(墙钟界的第二道:极小文档批量)。
+pub const DIAGNOSTIC_FLUSH_MAX_DOCS: usize = 8;
+
+/// RUST-142:诊断管线 flush——排空脏文档,经四层调度核计算/节流并发射
+/// `$/kode/publishDiagnostics` 通知。主循环空闲 tick 调用;返回待写出的
+/// 通知(write_outgoing 落 stdout)。空脏集零开销直通。
+///
+/// RESP-001:诊断 lint 与 ingest 同为不可抢占的单任务——按
+/// `DIAGNOSTIC_FLUSH_MAX_DOCS` + `deadline` 双界切片;界外余量原样回脏集,
+/// 由后续空闲 tick 追平(洪水在静默期追平)。切片起始 `deadline` 恒在将来,
+/// 故每次切片至少处理首条:CORE-006 不永久推迟。
+///
+/// 发射面 = 层核 sink 的「本 flush 已请求的 (layer, uri) 最新记录」(换代
+/// 后旧 items 不虚报,批 1 语义;跨 flush 旧记录因「本 flush 未请求」被
+/// 跳过,不重放)。findings 本体在调用方留存((uri, layer) → Vec<Finding>),
+/// 调度器只记账索引(TaskSpec.items 是 bucket 下标,计算在调用方)。
+/// C-19(def↔Python 一致性)输入在 TS 侧现采,本面以缺省 parity 输入跑
+/// (零产出)——诚实边界:C-19 仍走 TS pull 腿,本面不重复发射。
+pub fn flush_diagnostics_pipeline(state: &mut ServerState, deadline: Instant) -> Vec<Outgoing> {
+    use crate::diagnostic_pipeline::{DiagnosticLayer, PublishRecord, TaskSpec};
+    use crate::lint::{analyze_def_with_python, Finding, InheritedNames, PythonParityInput};
+
+    let dirty: Vec<(String, i64)> = state
+        .diagnostics_dirty
+        .iter()
+        .map(|(uri, version)| (uri.clone(), *version))
+        .collect();
+    state.diagnostics_dirty.clear();
+    if dirty.is_empty() {
+        return Vec::new();
+    }
+    // 已知类型语料(引擎实体 + types.xml/alias.xml 自定义;unknown-type-
+    // reference 规则的 known 集,与 golden dump 同口径)。
+    let type_ctx = state.hover.borrow().type_context();
+    let known: Vec<&str> = type_ctx
+        .entity_types
+        .iter()
+        .chain(type_ctx.custom_types.iter())
+        .map(|s| s.as_str())
+        .collect();
+    let mut resolved: BTreeMap<(String, DiagnosticLayer), Vec<Finding>> = BTreeMap::new();
+    let mut requested: BTreeSet<(String, DiagnosticLayer)> = BTreeSet::new();
+    for (index, (uri_string, version)) in dirty.iter().enumerate() {
+        if index >= DIAGNOSTIC_FLUSH_MAX_DOCS || Instant::now() >= deadline {
+            // 界外余量回脏集(版本原样),由后续空闲 tick 追平。
+            for (rest_uri, rest_version) in dirty[index..].iter() {
+                state.diagnostics_dirty.insert(rest_uri.clone(), *rest_version);
+            }
+            break;
+        }
+        let Ok(uri) = CanonicalUri::parse(uri_string) else {
+            continue;
+        };
+        let root = state.session.root_for(&uri);
+        let key = DocumentKey::new(root, uri);
+        let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
+            continue;
+        };
+        let text = buffer.text().to_string();
+        let Ok(findings) = analyze_def_with_python(
+            &text,
+            &InheritedNames::default(),
+            &known,
+            PythonParityInput::default(),
+        ) else {
+            continue;
+        };
+        let routed = crate::diagnostic_layering::route_findings(findings);
+        for layer in DiagnosticLayer::ALL {
+            let bucket = routed.bucket(layer);
+            if bucket.is_empty() {
+                continue;
+            }
+            resolved.insert((uri_string.clone(), layer), bucket.clone());
+            requested.insert((uri_string.clone(), layer));
+            let items: Vec<u32> = (0..bucket.len() as u32).collect();
+            state.diagnostics_pipelines.core(layer).request(
+                uri_string,
+                Some(*version),
+                TaskSpec {
+                    items,
+                    async_id: None,
+                    side_effects: Vec::new(),
+                },
+            );
+        }
+    }
+    // 合流 → 每 (layer, uri) 最新记录(层名字节序 + 层内请求序,末位最新)。
+    let mut latest: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
+    for record in state.diagnostics_pipelines.merged_publish() {
+        if let PublishRecord::Publish { layer, uri, items } = record {
+            latest.insert((layer.as_str().to_string(), uri.clone()), items.clone());
+        }
+    }
+    let mut out = Vec::new();
+    for ((layer_name, uri), items) in latest {
+        let layer = DiagnosticLayer::parse(&layer_name).expect("layer name");
+        if !requested.contains(&(uri.clone(), layer)) {
+            // 本 flush 未请求该 (layer, uri):跨 flush 旧记录,不重放。
+            continue;
+        }
+        let mut findings: Vec<Finding> = Vec::new();
+        for index in items {
+            if let Some(finding) = resolved
+                .get(&(uri.clone(), layer))
+                .and_then(|bucket| bucket.get(index as usize))
+            {
+                findings.push(finding.clone());
+            }
+        }
+        let version = dirty.iter().find(|(u, _)| *u == uri).map(|(_, v)| *v);
+        out.push(Outgoing::Notification(ServerNotification::new(
+            "$/kode/publishDiagnostics",
+            Some(serde_json::json!({
+                "uri": uri,
+                "version": version,
+                "layer": layer_name,
+                "findings": findings,
+            })),
+        )));
+    }
+    out
+}
+
 /// textDocument/diagnostic(Phase2 首片,LSP pull 诊断 full 报告形):
 /// `{kind:"full", items:[DiagnosticFace...]}`。文档须已打开;未打开回
 /// 空 items(不报错不阻塞)。面 = TS validateDocument 语料子集。
@@ -1362,6 +1502,12 @@ fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
         // RUST-125:打开触达解析缓存(驱逐缓刑;「当前打开文件优先」)。
         state.index.note_buffer_open(&key);
         state.index.request_open(&key, version);
+        // RUST-142:打开即标记诊断脏(主循环 flush 计算并发射该版本诊断;
+        // 与索引风暴缓冲独立,层核节流面)。uri 用客户端原串(通知回显可对账)。
+        state.diagnostics_dirty.insert(
+            params.text_document.uri.clone(),
+            params.text_document.version,
+        );
     }
 }
 
@@ -1404,6 +1550,12 @@ fn handle_did_change(state: &mut ServerState, params: Option<serde_json::Value>)
     // 保打开文档请求即新鲜。
     let version = u64::try_from(params.text_document.version).unwrap_or(0);
     state.index.record_change(&key, version);
+    // RUST-142:版本转移成功即标记诊断脏(独立于索引风暴缓冲;层核节流由
+    // 主循环 flush 驱动,版本换代即重算发布,同版跳过语义在层核内)。
+    state.diagnostics_dirty.insert(
+        params.text_document.uri.clone(),
+        params.text_document.version,
+    );
 }
 
 /// didClose → 移除 overlay,文档回落磁盘真相(VFS-003 close 转移)。
@@ -1424,6 +1576,15 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
     // 与打开/编辑的 Some(version) 不同键:close 后必让位重入队,不合并
     // (close 不过风暴窗:状态转移)。
     state.index.request_close(&key);
+    // RUST-142:关闭即摘脏 + 四层释放(层核 releasedDropped 记账;晚到
+    // 异步以自己版本发布/关闭代守卫不虚报——批 1 语义继承)。
+    state.diagnostics_dirty.remove(&params.text_document.uri);
+    for layer in crate::diagnostic_pipeline::DiagnosticLayer::ALL {
+        state
+            .diagnostics_pipelines
+            .core(layer)
+            .release_document(&params.text_document.uri);
+    }
 }
 
 /// RUST-131-W:workspace/didDeleteFiles(生产文件事件)——旧 URI 全链撤销:
