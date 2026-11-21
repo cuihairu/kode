@@ -55,6 +55,16 @@ export interface HotReloadDeliveryRecord {
    * 或 actionName:<名>(quick action 回落通道);未提供=通道未记录。
    */
   channel?: string;
+  /**
+   * 完整模块名(HR-MOD-014 双名同存:用户看到的名字=entities.fight.FightAI);
+   * 与 requestModule 成对,缺省=该记录无模块名(如实未给,不猜包结构)。
+   */
+  fullModule?: string;
+  /**
+   * 请求模块名(HR-MOD-014 双名同存:实际发送的名字=fight.FightAI)。
+   * 双名同存是排查「用户看到的名字 ≠ 请求名字」的唯一现场依据。
+   */
+  requestModule?: string;
 }
 
 /**
@@ -78,6 +88,10 @@ export interface HotReloadFileVersionEvent {
   digest8?: string;
   rootId?: string;
   targetId?: string;
+  /** delivery 专属:完整模块名(HR-MOD-014 双名同存,来源=发送记录) */
+  fullModule?: string;
+  /** delivery 专属:请求模块名(HR-MOD-014 双名同存,来源=发送记录) */
+  requestModule?: string;
 }
 
 export interface HotReloadFileVersionState {
@@ -114,6 +128,13 @@ export interface HotReloadTargetStateDeps {
    * 接线方据此把台账事实投影进历史面板,不再轮询。
    */
   onRecord?: (record: HotReloadDeliveryRecord) => void;
+  /**
+   * 模块双名解析口(HR-MOD-014):按 file 求「用户看到的完整名/实际请求名」
+   * 落进投递记录与版本事件日志(排查「看到的名称 ≠ 请求名字」)。返回
+   * undefined=双名不可解(如实不写,不回落 stem 冒充);未提供解析口=
+   * 不落双名。零 IO,纯字符串解析;接线方注入,本面不读配置。
+   */
+  resolveModuleNames?(file: string): { fullModule: string; requestModule: string } | undefined;
 }
 
 /**
@@ -124,6 +145,7 @@ export class HotReloadTargetStateStore {
   private readonly now: () => number;
   private readonly onRecorded?: () => void;
   private readonly onRecord?: (record: HotReloadDeliveryRecord) => void;
+  private readonly resolveModuleNames?: (file: string) => { fullModule: string; requestModule: string } | undefined;
   private readonly targets = new Map<string, Map<string, Map<string, HotReloadDeliveryRecord>>>();
   /** IDE-AUD-005:发送代际计数——(rootId::targetId::file) → 已发生的发送次数 */
   private readonly attempts = new Map<string, number>();
@@ -139,6 +161,7 @@ export class HotReloadTargetStateStore {
     this.now = deps.now;
     this.onRecorded = deps.onRecorded;
     this.onRecord = deps.onRecord;
+    this.resolveModuleNames = deps.resolveModuleNames;
   }
 
   /**
@@ -152,7 +175,7 @@ export class HotReloadTargetStateStore {
     key: HotReloadTargetKey,
     file: string,
     outcome: HotReloadDeliveryOutcome,
-    options: { detail?: string; now?: number; attempt?: number; sentDigest?: string; source?: string; channel?: string } = {}
+    options: { detail?: string; now?: number; attempt?: number; sentDigest?: string; source?: string; channel?: string; fullModule?: string; requestModule?: string } = {}
   ): HotReloadDeliveryRecord | undefined {
     const attemptKey = `${buildHotReloadTargetKeyId(key)}${HOT_RELOAD_TARGET_KEY_SEPARATOR}${file}`;
     const current = this.get(key, file);
@@ -184,6 +207,13 @@ export class HotReloadTargetStateStore {
       if (options.channel !== undefined) {
         updated.channel = options.channel;
       }
+      // HR-MOD-014 双名:与 source/channel 同模式,提供了才覆写,未提供保留旧值。
+      if (options.fullModule !== undefined) {
+        updated.fullModule = options.fullModule;
+      }
+      if (options.requestModule !== undefined) {
+        updated.requestModule = options.requestModule;
+      }
       this.noteDeliveryEvent(file, current, updated, 'receipt');
       this.put(key, file, updated);
       this.onRecorded?.();
@@ -213,6 +243,18 @@ export class HotReloadTargetStateStore {
     }
     if (options.channel !== undefined) {
       record.channel = options.channel;
+    }
+    // HR-MOD-014 双名同存:显式给定优先,否则走注入解析口(file→双名);
+    // 都不可得=该记录无双名字段(如实未给,不回落 stem 冒充包结构)。
+    if (options.fullModule !== undefined && options.requestModule !== undefined) {
+      record.fullModule = options.fullModule;
+      record.requestModule = options.requestModule;
+    } else {
+      const names = this.resolveModuleNames?.(file);
+      if (names) {
+        record.fullModule = names.fullModule;
+        record.requestModule = names.requestModule;
+      }
     }
     this.noteDeliveryEvent(file, undefined, record, 'send');
     this.put(key, file, record);
@@ -359,7 +401,11 @@ export class HotReloadTargetStateStore {
       attempt: next.attempt,
       ...(next.sentDigest !== undefined ? { digest8: next.sentDigest.slice(0, 8) } : {}),
       rootId: next.rootId,
-      targetId: next.targetId
+      targetId: next.targetId,
+      // HR-MOD-014 双名同存:版本事件日志与投递记录同源盖章,排查
+      // 「看到的名称 ≠ 请求名字」的现场(无双名=该事件如实验证未给)。
+      ...(next.fullModule !== undefined ? { fullModule: next.fullModule } : {}),
+      ...(next.requestModule !== undefined ? { requestModule: next.requestModule } : {})
     });
   }
 

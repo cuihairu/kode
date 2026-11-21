@@ -80,6 +80,22 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   const hotReloadHistoryFeedRef: { current: { handle(record: HotReloadDeliveryRecord): void } | null } = {
     current: null
   };
+  // HR-MOD-014 双名同存:投递台账/版本事件日志与历史树用同一解析面(脚本根
+  // 可解→完整名/请求名;不可解→undefined 如实不写,不回落 stem 冒充包结构)。
+  // 与历史 feed 的 stem 回落展示口径分离(展示可降级,台账不可伪造)。
+  const resolveHotReloadModuleNames = (file: string): { fullModule: string; requestModule: string } | undefined => {
+    const scriptRoot = readTempEditReloadSettings(
+      tempEditSectionReader(vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined))
+    ).scriptRoot;
+    if (scriptRoot.length === 0) {
+      return undefined;
+    }
+    const dualName = resolveModuleDualName(file, scriptRoot);
+    if ('unsupported' in dualName) {
+      return undefined;
+    }
+    return { fullModule: dualName.fullModule, requestModule: dualName.requestModule };
+  };
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({
     now: () => Date.now(),
     onRecorded: () => {
@@ -87,24 +103,17 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       // applied 回执落账 → 重采盘上版本并结算基线追平(单号/双号跟住回执)
       hotReloadVersionRefresh.refresh?.();
     },
-    onRecord: record => hotReloadHistoryFeedRef.current?.handle(record)
+    onRecord: record => hotReloadHistoryFeedRef.current?.handle(record),
+    resolveModuleNames: resolveHotReloadModuleNames
   });
   const hotReloadHistoryFeed = setupHotReloadHistoryView(context, {
     core: new HotReloadHistoryCore(),
-    resolveNames: file => {
-      const scriptRoot = readTempEditReloadSettings(
-        tempEditSectionReader(vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined))
-      ).scriptRoot;
-      if (scriptRoot.length > 0) {
-        const dualName = resolveModuleDualName(file, scriptRoot);
-        if (!('unsupported' in dualName)) {
-          return { fullModule: dualName.fullModule, requestModule: dualName.requestModule };
-        }
-      }
-      // 未配脚本根/解析不支持:双名如实不可解,回落文件 stem(不猜包结构)
-      const stem = path.basename(file).replace(/\.py$/, '');
-      return { fullModule: stem, requestModule: stem };
-    },
+    resolveNames: file =>
+      resolveHotReloadModuleNames(file) ?? (() => {
+        // 展示面降级:历史树标题缺脚本根时回落文件 stem(台账侧如实不写,不伪造)
+        const stem = path.basename(file).replace(/\.py$/, '');
+        return { fullModule: stem, requestModule: stem };
+      })(),
     feedStatus: () => ({
       watchMode: readHotReloadSettings(hotReloadSectionReader()).triggerMode,
       target: ''

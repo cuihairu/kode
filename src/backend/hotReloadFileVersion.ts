@@ -138,6 +138,9 @@ const renderVersionEvent = (event: HotReloadFileVersionEvent): string => {
       if (event.targetId !== undefined) {
         parts.push(`target=${event.targetId}`);
       }
+      if (event.fullModule !== undefined && event.requestModule !== undefined) {
+        parts.push(`module=${event.fullModule}(${event.requestModule})`);
+      }
       return parts.join(' ');
     }
     default:
