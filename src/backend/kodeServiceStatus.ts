@@ -15,6 +15,9 @@
  *   MCP 扩展 API 注册服务器定义(kodeMcpHost.ts,默认 kbengine.mcp.enabled=
  *   true),状态栏项点击即启停;三可见态=已构建(二进制在位+开启)/未构建
  *   (开启但二进制缺)/已关闭(用户关)。
+ * - 核心 tooltip 另带「引擎版本」行(RUST-136 增量⑤):引擎版本属环境事实,
+ *   不是 hover 面(增量④ 已作废),故落状态栏;装配层传入 engineVersionDetect
+ *   链的探测结果,null=未检出显式「未检测到」。
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -50,9 +53,24 @@ function indexFormatSchemaLine(): string {
   );
 }
 
-/** 核心 tooltip:当前服务轨道与依据(路径/降级原因)+ 固定索引格式行 */
-export function coreStatusBarTooltip(state: KodeCoreStateLite | null): string {
-  return `${coreStatusBarTooltipBody(state)}\n${indexFormatSchemaLine()}`;
+/**
+ * 引擎版本行(RUST-136 增量⑤):数据源=既有 engineVersionDetect 检测链
+ * (findEngineRoot + readEngineVersionMarker,见 ../activate 装配)。null=
+ * 未检出/探测失败,显式「未检测到」不猜;绝不回落 kbengine.engineVersion
+ * 设置值(那是用户声明口径,不是引擎树里的标记事实)。
+ */
+export function engineVersionLine(engineVersion: string | null): string {
+  return engineVersion
+    ? l10nText('KBEngine engine version: {version}', { version: engineVersion })
+    : l10nText('KBEngine engine version: not detected (no version marker readable in the engine tree)');
+}
+
+/** 核心 tooltip:当前服务轨道与依据(路径/降级原因)+ 引擎版本行 + 固定索引格式行 */
+export function coreStatusBarTooltip(
+  state: KodeCoreStateLite | null,
+  engineVersion?: string | null
+): string {
+  return `${coreStatusBarTooltipBody(state)}\n${engineVersionLine(engineVersion ?? null)}\n${indexFormatSchemaLine()}`;
 }
 
 function coreStatusBarTooltipBody(state: KodeCoreStateLite | null): string {

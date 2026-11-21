@@ -91,7 +91,7 @@ Kode owns up to nine items on the right side of the status bar (VS Code sorts by
 | 97 | Interpreter | Selected Python interpreter; click → `Select Python Interpreter`. **Yields when `ms-python.python` is installed** (its own selector wins; selection/venv creation still works from the Command Palette) |
 | 96 | Hot-reload channel | Which channel (machined/HTTP) hot reload rides |
 | 95 | Log tail | Live console log tail state |
-| 94 | Kode core | kode-server lane (Rust / Rust-fallback-TS / TS / shadow). Click → shadow-diff log. Settings: `kbengine.core.backend`, `kbengine.core.serverPath` |
+| 94 | Kode core | kode-server lane (Rust / Rust-fallback-TS / TS / shadow). Click → shadow-diff log. Tooltip also carries an **engine version** row (source = engine tree version-marker probe chain; explicit "not detected" when absent; never fabricated). Settings: `kbengine.core.backend`, `kbengine.core.serverPath`, `kbengine.engineRoot` (re-probes on change) |
 | 93 | Kode MCP | Built-in MCP server state (built / not built / off). Click toggles. Setting: `kbengine.mcp.enabled` (default on) |
 | 92 | Kode 索引 | Index lifecycle: `$(check) 就绪` / `$(sync~spin) 运行 n 排队 n` / `$(error) 失败 n` / `$(circle-slash) 未知` (four faces, judged in that fixed order — there is deliberately no "partial" face because the scheduler has no such data). In the ready face the tooltip adds the last build's completion time (local time) and duration; no line before a build has ever completed. Click opens Project Doctor |
 

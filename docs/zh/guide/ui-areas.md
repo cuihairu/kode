@@ -91,7 +91,7 @@ Kode 在状态栏右侧最多占九项（VS Code 按优先级排序；Kode 有�
 | 97 | 解释器 | 选定的 Python 解释器；点击 → `Select Python Interpreter`。**装了 `ms-python.python` 即让位**（对方自己的选择器出镜；选择/创建 venv 仍可走命令面板） |
 | 96 | 热更通道 | 热更换乘哪条通道（machined/HTTP） |
 | 95 | 日志 tail | 控制台日志尾随状态 |
-| 94 | Kode 核心 | kode-server 车道（Rust / Rust 降级 TS / TS / 对拍）。点击看对拍差异日志。配置：`kbengine.core.backend`、`kbengine.core.serverPath` |
+| 94 | Kode 核心 | kode-server 车道（Rust / Rust 降级 TS / TS / 对拍）。点击看对拍差异日志。tooltip 另含**引擎版本**行（数据源=引擎树版本标记探测链，未检出显式「未检测到」，绝不编造）。配置：`kbengine.core.backend`、`kbengine.core.serverPath`、`kbengine.engineRoot`（引擎版本行随其变化重探） |
 | 93 | Kode MCP | 内建 MCP 服务器状态（已构建 / 未构建 / 已关闭）。点击启停。配置：`kbengine.mcp.enabled`（默认开） |
 | 92 | Kode 索引 | 索引生命周期：`$(check) 就绪` / `$(sync~spin) 运行 n 排队 n` / `$(error) 失败 n` / `$(circle-slash) 未知`（四态，固定判定顺序——刻意没有「部分索引」态，因为调度器没有这个数据面）。就绪态 tooltip 附最近一轮建立完成时刻（本地时间）与耗时；从未建完不加该行。点击打开 Project Doctor |
 

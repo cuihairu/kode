@@ -639,6 +639,8 @@
   "$(circuit-board) Kode LSP: Rust": "$(circuit-board) Kode LSP: Rust",
   "$(warning) Kode LSP: Rust fallback TS": "$(warning) Kode LSP: Rust 降级 TS",
   "Index format schema={version} (kode index data compat key, unrelated to the KBEngine engine version)": "索引格式 schema={version}(kode 索引数据兼容键,与 KBEngine 引擎版本无关)",
+  "KBEngine engine version: {version}": "KBEngine 引擎版本:{version}",
+  "KBEngine engine version: not detected (no version marker readable in the engine tree)": "KBEngine 引擎版本:未检测到(引擎目录内无可读的版本标记)",
   "$(circuit-board) Kode LSP: TS": "$(circuit-board) Kode LSP: TS",
   "Kode core not initialized": "Kode 核心未初始化",
   "kode-server dual-track shadow comparison (shadow mode)": "kode-server 双轨影子比对(shadow 模式)",

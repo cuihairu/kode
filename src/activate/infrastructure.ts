@@ -6,7 +6,13 @@
 // 形态:deps 显式注入,共享实例与销毁句柄一并返回,销毁所有权仍由组合根
 // 统一登记(activation 顺序由组合根调用点保持——本层必须是 activate 最前)。
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { resolveActiveProfile } from '../activeProfile';
 import { setAnnotationSourceLogEnabled, setAnnotationSourceLogSink } from '../backend/annotationSourceLog';
+import { findEngineRoot } from '../backend/engineCompatibility';
+import { hasEngineTreeMarker, readEngineVersionMarker } from '../backend/engineApiMetadata';
+import { detectEngineVersionMarker } from '../backend/engineVersionDetect';
 import { KBENGINE_DATABASE_SIMULATION_SCHEME, KBEngineDatabaseSimulationProvider } from '../databaseSimulator';
 import { setPythonDataDictIndexEnabled, setPythonMroJumpEnabled } from '../languageProviders';
 import { setSpaceDataIndexEnabled } from '../spaceDataIndex';
@@ -118,9 +124,50 @@ export function activateInfrastructure(
   // 2026-11-10 用户令「如何提示 lsp 和 mcp 的状态是否开启」:Kode 核心(LSP
   // 服务轨道)与 Kode MCP 状态栏两项。核心读门状态(mode/serverPath),MCP 只
   // 做二进制在位探测(扩展不托管 MCP,未集成见 tooltip)。
+  // RUST-136 增量⑤:tooltip 引擎版本行数据源=既有 engineVersionDetect 检测
+  // 链(与 databaseWiring 的 KB-VER-004 探测同口径:profile/设置显式根 → 向上
+  // 找引擎根 → 读 version.h/kbeversion.h 宏)。显式根兼容「引擎仓 kbe/ 目录」
+  // 形态(projectWizard 同款归一);任何失败静默回落 null(状态栏显式
+  // 「未检测到」),绝不编造版本值,不阻塞激活。
+  const probeStatusBarEngineVersion = (): string | null => {
+    const folders = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
+    if (!folders.length) return null;
+    const explicitRoot =
+      resolveActiveProfile(context.workspaceState)?.engineRoot?.trim() ||
+      vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', '').trim() ||
+      undefined;
+    const readMarker = (root: string): string | null =>
+      readEngineVersionMarker(root, probe => fs.readFileSync(probe, 'utf8'));
+    const normalizeExplicit = (explicit: string): string | undefined => {
+      if (hasEngineTreeMarker(explicit, probe => fs.existsSync(probe))) return explicit;
+      if (
+        path.basename(explicit) === 'kbe' &&
+        hasEngineTreeMarker(path.dirname(explicit), probe => fs.existsSync(probe))
+      ) {
+        return path.dirname(explicit);
+      }
+      return undefined;
+    };
+    try {
+      const probe = {
+        findRoot: (root: string, explicit?: string): string | null => {
+          const normalized = explicit ? normalizeExplicit(explicit) : undefined;
+          return normalized ?? findEngineRoot(root);
+        },
+        readMarker
+      };
+      const detected =
+        detectEngineVersionMarker(folders, explicitRoot, probe) ??
+        (explicitRoot ? detectEngineVersionMarker(folders, undefined, probe) : null);
+      return detected ? detected.version : null;
+    } catch {
+      return null;
+    }
+  };
   setupKodeServiceStatusBar(context, {
     getGateState: () => kodeCoreGate.state,
-    probeMcpBinary: () => discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp')
+    probeMcpBinary: () => discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp'),
+    detectEngineVersion: probeStatusBarEngineVersion
   });
   // 2026-11-13 用户令「内置 mcp,点击开启,默认开启」:内建 MCP 服务器定义
   // 注册(原生 MCP API feature-detect,VS Code ≥1.101;老宿主静默回落)+

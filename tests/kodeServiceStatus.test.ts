@@ -11,6 +11,7 @@ import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import {
   coreStatusBarText,
   coreStatusBarTooltip,
+  engineVersionLine,
   mcpStatusBarText,
   mcpStatusBarTooltip
 } from '../src/backend/kodeServiceStatus';
@@ -74,6 +75,37 @@ describe('mcp status bar (pure)', () => {
     expect(mcpStatusBarTooltip(true, true)).toContain('click to disable');
     expect(mcpStatusBarTooltip(false, true)).toContain('build the binary');
     expect(mcpStatusBarTooltip(true, false)).toContain('click to enable');
+  });
+});
+
+describe('engine version line (RUST-136 增量⑤)', () => {
+  it('shows detected version verbatim, never guesses a value (en default)', () => {
+    // 探测命中:如实显示标记值
+    expect(
+      coreStatusBarTooltip({ mode: 'rust', serverPath: '/x/kode-server' }, '2.5.10')
+    ).toContain('KBEngine engine version: 2.5.10');
+    // 未检出(null)= 显式「未检测到」,绝不回落 kbengine.engineVersion 设置值
+    expect(
+      coreStatusBarTooltip({ mode: 'rust', serverPath: '/x/kode-server' }, null)
+    ).toContain('not detected');
+    // 单参调用(测试旧签名/未接线)= 同口径「未检测到」
+    expect(coreStatusBarTooltip({ mode: 'rust', serverPath: '/x/kode-server' })).toContain(
+      'not detected'
+    );
+  });
+
+  it('empty probe result (defensive) also renders not-detected', () => {
+    expect(engineVersionLine('')).toContain('not detected');
+  });
+
+  it('renders zh-cn translations when bundle injected', () => {
+    setL10nBundle(zhCnBundle);
+    expect(
+      coreStatusBarTooltip({ mode: 'rust', serverPath: '/x/kode-server' }, '2.5.10')
+    ).toContain('KBEngine 引擎版本:2.5.10');
+    expect(
+      coreStatusBarTooltip({ mode: 'rust', serverPath: '/x/kode-server' }, null)
+    ).toContain('未检测到');
   });
 });
 

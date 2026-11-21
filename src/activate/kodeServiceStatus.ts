@@ -11,7 +11,8 @@
 //   经 kodeMcpHost 的 onDidChange 同步刷新)。
 // 刷新:激活时一次 + kbengine.core.backend/serverPath 与 kbengine.mcp.enabled
 // 配置变化重读(门状态只随配置变;kode-server 进程启停不改变「是否开启」
-// 语义,不做轮询)。
+// 语义,不做轮询)。引擎版本行(RUST-136 增量⑤)另随 kbengine.engineRoot
+// 变化重探一次,其余刷新复用缓存。
 
 import * as vscode from 'vscode';
 import {
@@ -31,6 +32,11 @@ export interface KodeServiceStatusDeps {
   getGateState: () => KodeCoreStateLite | null;
   /** kode-mcp 二进制路径;'' = 未构建/未发现 */
   probeMcpBinary: () => string;
+  /**
+   * 引擎版本标记探测(engineVersionDetect 链)。null=未检出/探测失败,
+   * 状态栏显式「未检测到」,绝不编造版本值。
+   */
+  detectEngineVersion: () => string | null;
 }
 
 export function setupKodeServiceStatusBar(
@@ -49,10 +55,19 @@ export function setupKodeServiceStatusBar(
   mcpItem.command = KODE_MCP_TOGGLE_COMMAND;
   context.subscriptions.push(coreItem, mcpItem);
 
+  // RUST-136 增量⑤:引擎版本行数据=检测链探测结果,一次探测缓存,引擎根配置
+  // 变化才重探(FS 读不随每次 refresh 反复执行)。
+  let engineVersion: string | null = null;
+  let engineVersionProbed = false;
+
   const refresh = (): void => {
     const state = deps.getGateState();
+    if (!engineVersionProbed) {
+      engineVersion = deps.detectEngineVersion();
+      engineVersionProbed = true;
+    }
     coreItem.text = coreStatusBarText(state);
-    coreItem.tooltip = coreStatusBarTooltip(state);
+    coreItem.tooltip = coreStatusBarTooltip(state, engineVersion);
     coreItem.show();
     const mcpFound = deps.probeMcpBinary() !== '';
     const mcpEnabled = vscode.workspace
@@ -69,6 +84,10 @@ export function setupKodeServiceStatusBar(
       event.affectsConfiguration('kbengine.core.serverPath') ||
       event.affectsConfiguration(KODE_MCP_ENABLED_SETTING)
     ) {
+      refresh();
+    }
+    if (event.affectsConfiguration('kbengine.engineRoot')) {
+      engineVersionProbed = false;
       refresh();
     }
   });

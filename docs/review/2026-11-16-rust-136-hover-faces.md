@@ -67,3 +67,43 @@ clippy --workspace --all-targets -D warnings = 0;cargo test --workspace
 RC=0(167 suites ok,hover_units 29 例);pnpm lint 0;pnpm compile 0;
 vitest 全量 10348 + 8 skipped RC=0(含 kodeHoverParity 4 例);xvfb-run -a
 npm run test:demo:editor RC=0。
+
+## 增量⑤:引擎版本行落状态栏 tooltip(2026-11-21 用户拍板改道)
+
+背景:增量④ 裁定 hover 版本行无消费者(任务书「Hover…版本」措辞溯源
+KODE_2_COMPLETE_TODO.md 整合书,非用户逐字需求)→ 作废不做;改道=引擎版本
+属**环境信息**,落 kodeServiceStatus 状态栏 tooltip(数据源=既有
+engineVersionDetect 检测链,未检出显式「未检测到」,绝不编造)。
+
+1. **纯函数面**(`src/backend/kodeServiceStatus.ts`):新增
+   `engineVersionLine(version: string | null)`;`coreStatusBarTooltip(state,
+   engineVersion?)` 增中间行,tooltip 三行=服务轨道依据 / 引擎版本行 / 索引
+   格式 schema 行(ENGINE-WORDING-006 两行相邻,措辞分词)。`engineVersion`
+   取真值即版本串,`null`/`undefined`/空串一律显式「未检测到(no version
+   marker readable in the engine tree)」;**绝不回落 `kbengine.engineVersion`
+   设置值**(那是用户声明口径,不是引擎树里的标记事实)。两个 l10n 源串入
+   en/zh 包(categoryI18n 正反向双门)。
+2. **装配面**(`src/activate/kodeServiceStatus.ts`):deps 增
+   `detectEngineVersion: () => string | null`;一次探测缓存(状态栏刷新不反复
+   读 FS),`kbengine.engineRoot` 配置变化才重探并刷新。
+3. **数据源接线**(`src/activate/infrastructure.ts`):活动 profile 引擎根 →
+   `kbengine.engineRoot` 设置根 → `findEngineRoot` 向上找 →
+   `readEngineVersionMarker` 读 `version.h`/`kbeversion.h` 宏;与
+   databaseWiring 的 KB-VER-004 探测同口径。显式根兼容「引擎仓 kbe/ 目录」
+   形态(projectWizard 同款归一:本层有引擎树标记即用,`kbe/` 子目录形态退到
+   父层);显式根探不到标记时回落向上找。任何异常静默回落 `null`(状态栏显式
+   「未检测到」),不阻塞激活、不编造版本值。
+
+RUST-113 验收口径同步:版本**展示**归环境面(状态栏 tooltip),RUST-113
+metadata 域仍只按四类 seed(引擎 API/回调/内建对象/常量)按版本供给,本增量
+不为其立设置供给通道——hover/元数据面继续不消费 `kbengine.engineVersion`。
+
+诚实边界:MCP 灯 tooltip 不加引擎版本行。MCP tooltip 只承载内建托管事实与
+点击启停语义(点击=`kbengine.mcp.toggle`),引擎版本是全局环境事实,落核心
+灯(点击开 `kbengine.core.showShadowDiffLog`)。
+
+## 增量⑤ 门禁
+
+vitest 定向 `tests/kodeServiceStatus.test.ts` + `tests/categoryI18n.test.ts`
+22 例全绿(引擎版本行 en/zh 三态 + 空串防御臂 + ENGINE-WORDING-006 既有断言
+零扰动);`tsc -p ./` 0;eslint 本批三文件 0。纯 TS 面,零 Rust 改动。
