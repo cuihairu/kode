@@ -143,7 +143,69 @@ interface MirrorProperty {
   name: string;
   line: number;
   flags: string[];
+  /** TS fullPath 同构(递归前缀;Rust 递归层仅作遍历线索,命中名=叶名)。 */
+  fullPath: string;
+  children: MirrorProperty[];
+  arrayElement: MirrorProperty | null;
 }
+
+// parser "flags" | "clientflags" 双标签并入;`|` 分词,trim + 大写,保序去重。
+const flagsOf = (prop: DefElementNode): string[] => {
+  const tokens: string[] = [];
+  for (const tag of ['Flags', 'ClientFlags']) {
+    const node = getDirectChildElement(prop, tag);
+    if (!node) {
+      continue;
+    }
+    for (const token of getElementText(node).split('|')) {
+      const normalized = token.trim().toUpperCase();
+      if (normalized && !tokens.includes(normalized)) {
+        tokens.push(normalized);
+      }
+    }
+  }
+  return tokens;
+};
+
+const propertyOf = (file: CorpusFile, prop: DefElementNode, fullPath: string): MirrorProperty => {
+  const line = offsetToLine1(file, prop.tagStart);
+  const flags = flagsOf(prop);
+  const result: MirrorProperty = {
+    name: prop.name,
+    line,
+    flags,
+    fullPath,
+    children: [],
+    arrayElement: null
+  };
+  // 嵌套 `<Properties>` 子属性(FIXED_DICT 子项;TS children 同构)。
+  const childPropsNode = getDirectChildElement(prop, 'Properties');
+  if (childPropsNode) {
+    result.children = getDirectChildElements(childPropsNode).map(child =>
+      propertyOf(file, child, `${fullPath}.${child.name}`));
+  }
+  // ARRAY `<of>` → 合成 `value` 元素(TS arrayElement 同构:名恒 value,
+  // line=父行,旗标继承父,children 取 `<Type>` 内嵌 `<Properties>`)。
+  const typeNode = getDirectChildElement(prop, 'Type');
+  const arrayOfType = typeNode ? childText(typeNode, 'of') : '';
+  if (arrayOfType) {
+    const element: MirrorProperty = {
+      name: 'value',
+      line,
+      flags,
+      fullPath: `${fullPath}[]`,
+      children: [],
+      arrayElement: null
+    };
+    const nestedArrayProps = typeNode ? getDirectChildElement(typeNode, 'Properties') : undefined;
+    if (nestedArrayProps) {
+      element.children = getDirectChildElements(nestedArrayProps).map(child =>
+        propertyOf(file, child, `${fullPath}[].${child.name}`));
+    }
+    result.arrayElement = element;
+  }
+  return result;
+};
 
 const propertiesOf = (file: CorpusFile): MirrorProperty[] => {
   const root = file.parsed.root;
@@ -154,23 +216,7 @@ const propertiesOf = (file: CorpusFile): MirrorProperty[] => {
   if (!propsNode) {
     return [];
   }
-  return getDirectChildElements(propsNode).map(prop => {
-    // parser "flags" | "clientflags" 双标签并入;`|` 分词,trim + 大写,保序去重。
-    const tokens: string[] = [];
-    for (const tag of ['Flags', 'ClientFlags']) {
-      const node = getDirectChildElement(prop, tag);
-      if (!node) {
-        continue;
-      }
-      for (const token of getElementText(node).split('|')) {
-        const normalized = token.trim().toUpperCase();
-        if (normalized && !tokens.includes(normalized)) {
-          tokens.push(normalized);
-        }
-      }
-    }
-    return { name: prop.name, line: offsetToLine1(file, prop.tagStart), flags: tokens };
-  });
+  return getDirectChildElements(propsNode).map(prop => propertyOf(file, prop, prop.name));
 };
 
 interface MirrorMethod {
@@ -366,6 +412,35 @@ interface SymbolHit {
   line: number;
 }
 
+/** 属性子树命中入列(TS pushProperty 递归序:self → children → arrayElement;
+ * 递归层无去重;命中符号名 = 叶名、行 = 叶声明行)。 */
+const pushPropertyHits = (
+  hits: SymbolHit[],
+  prop: MirrorProperty,
+  rootName: string,
+  rootDefFile: string,
+  defFile: string,
+  needle: string
+): void => {
+  if (!needle || prop.name.toLowerCase().startsWith(needle)) {
+    hits.push({
+      symbolName: prop.name,
+      kind: 'property',
+      section: null,
+      rootName,
+      rootDefFile,
+      defFile,
+      line: prop.line
+    });
+  }
+  for (const child of prop.children) {
+    pushPropertyHits(hits, child, rootName, rootDefFile, defFile, needle);
+  }
+  if (prop.arrayElement) {
+    pushPropertyHits(hits, prop.arrayElement, rootName, rootDefFile, defFile, needle);
+  }
+};
+
 const pushFoldHits = (
   engine: Engine,
   hits: SymbolHit[],
@@ -382,23 +457,13 @@ const pushFoldHits = (
       break;
     }
     for (const prop of propertiesOf(file)) {
-      const key = `${prop.name}\u0001${[...prop.flags].sort().join('\u0002')}`;
+      const key = `${prop.fullPath}\u0001${[...prop.flags].sort().join('\u0002')}`;
       if (seenProps.has(key)) {
+        // 败者整树吞并:子树不产符号(TS effectivePropertyMap 首条遮蔽同构)。
         continue;
       }
       seenProps.add(key);
-      if (needle && !prop.name.toLowerCase().startsWith(needle)) {
-        continue;
-      }
-      hits.push({
-        symbolName: prop.name,
-        kind: 'property',
-        section: null,
-        rootName,
-        rootDefFile,
-        defFile: defPath,
-        line: prop.line
-      });
+      pushPropertyHits(hits, prop, rootName, rootDefFile, defPath, needle);
     }
     for (const method of methodsOf(file)) {
       const key = `${method.section}\u0001${method.name}`;

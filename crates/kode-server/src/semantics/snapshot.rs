@@ -395,6 +395,8 @@ mod tests {
             persistent: None,
             sensitive: false,
             extra_tags: vec![],
+            children: vec![],
+            array_element: None,
         }
     }
 

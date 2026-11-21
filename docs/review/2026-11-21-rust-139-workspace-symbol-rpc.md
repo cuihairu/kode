@@ -43,3 +43,74 @@
 - **rootName = def basename**:与 entities.xml 实体名异名的登记册场景未建模(语料恒同);
 - `limit`(LSP 可选分页参数)不入 Rust 面:结果集由决策核全量产出,截断归 TS 请求侧,服务端不猜分页口径;
 - `defFile`/`rootDefFile` 走语料键(已打开档的 canonical 路径),未打开档不入语料 ⇒ 检索面依赖 didOpen 入库,与 documentSymbol 同源。
+
+---
+
+# 批 5:嵌套属性符号面(kode-parser PropertyDef 扩展 + workspace_symbols 递归)
+
+2026-11-21。承接批 2 登记的「嵌套属性符号面(parser `PropertyDef` 无
+children/arrayElement)」,本批把 TS `parseProperties`/`pushProperty` 的
+递归语义落到 Rust 两侧。
+
+## 交付面
+
+- **kode-parser model.rs**:`PropertyDef` 加 `children: Vec<PropertyDef>`
+  (嵌套 `<Properties>` 子属性,FIXED_DICT 子项,TS `DefinitionProperty.children`
+  同构)与 `array_element: Option<Box<PropertyDef>>`(ARRAY `<of>` 合成
+  `value` 元素:名恒 `value`,`typeName=<of>` 文本,`line=父属性行`,旗标/
+  持久/detailLevel/databaseLength 继承父,default/identifier/sensitive 清空,
+  `arrayElement` 不再下钻,`children` 取 `<Type>` 内嵌 `<Properties>`)。
+  新增 `extract_properties_list` helper;多 `<Properties>` 段并列逐段追加
+  (初版整段覆盖吞前段——真实回归,depGraph parity 场景 A 抓到,语料单段
+  自洽盲区)。
+- **workspace_symbols.rs**:`push_property_hits` 递归(`self → children`
+  声明序 → `arrayElement`);顶层 first-wins **整树吞并**(败者子树不产
+  符号,TS `effectivePropertyMap` 首条遮蔽同构),递归层无去重;`fullPath`
+  仅作遍历线索(命中符号名 = 叶名,落点 = 声明 def,行 = 叶声明行)。
+  `PropertyHitContext` 收敛四个恒定参数(clippy 8/7 → 5)。
+- **golden** `workspace-symbols-parity.json` 重生成:53→54 符号 / 81→83
+  探针 / 317→335 命中 / 全集 108→114(`+6 value` = 语料三 ARRAY-of 源
+  × 2 root;`value` 行 = 父行,与 TS arrayElement 口径逐点相等)。
+- **TS 镜像** `kodeWorkspaceSymbolsParity.test.ts`:`propertiesOf` 改递归
+  (children/arrayElement 同构),`pushFoldHits` 顶层键改 `fullPath::flags`。
+
+## 新钉
+
+- workspace_symbols 2 例:`nested_property_symbols_recurse_in_push_order`
+  (FIXED_DICT 子属性 + arrayElement + 元素子属性落点/行号)、
+  `losing_property_subtree_is_wholly_discarded`(own cfg 压接口 cfg,败者
+  depth 整树吞并不产符号)。
+- kode-parser/tests/nested_properties.rs 6 例:多段追加 / 嵌套子属性 /
+  arrayElement 合成继承 / 空 `<of>` 不合成 / `<Type>/<Properties>` 内嵌
+  子属性 / 标量零嵌套。
+
+## prove-red 四靶
+
+1. 删 children 递归 → nested 钉 + losing 钉双红(width/height/pos 缺失)。
+2. 删 arrayElement 递归 → nested 钉红(value/pos 缺失)。
+3. 败者仍递归 → losing 钉红(接口 depth 虚报)。
+4. 多段覆盖复现 → parser multi 钉红(left `["rival"]` vs `["pets","rival"]`)。
+
+## 坑账
+
+- **`out.properties = ...` 整段覆盖吞前段**:初版把 `for ... push` 改写成
+  赋值 helper,depGraph parity 场景 A(每属性一段的合成形态)当场红——
+  语料单 `<Properties>` 自洽,合成 fixture 才是盲区。判例:改写为 helper
+  必须先确认原语义(追加 vs 覆盖)。
+- **workspace_symbols 命中序是全局排序,不是递归序**:递归序在
+  (rootName, symbolName, line) 排序后不可见,断言须以同键排序后集合
+  比对(递归序本身由 TS 对拍 golden 钉)。
+- **前缀过滤会吃掉子符号**:`"cfg"` 前缀下子符号 `width` 不在结果里,
+  整树断言必须用空前缀 + root 过滤。
+
+## 门禁
+
+- clippy 0;rustfmt 本批文件净(crate 整体非规范漂移 = 预存,禁全包 fmt);
+- tsc 0;eslint 本批 0;
+- 全量 vitest 红 = 2 真实回归(depGraphParity / rstR2IndexInventory)已修 +
+  余负载抖动族(隔离复跑绿,含 kodeCoreE2E respawn 墙钟 20s);
+- parser fixtures_golden 逐字节不变(7 字段序列化,嵌套面不进 golden)。
+
+## 余界
+
+entities.xml 异名 root 与接口条目元素形态留接线批。

@@ -12,11 +12,11 @@
 //! rootName → symbolName → line(语料全 ASCII,字节序=locale 序)。
 //!
 //! 诚实边界(登记,不冒充):TS effectivePropertyKey =
-//! `fullPath::sortedFlagDomains`,本面按 `name + 排序旗标` 同构去重;
-//! TS pushProperty 递归 children/arrayElement(嵌套 FIXED_DICT 子项/数组
-//! 元素独立符号),kode-parser PropertyDef 是顶层模型无嵌套字段——嵌套
-//! 符号面归 parser 模型扩展批。TS rootName 来自 entities.xml 实体名,本面
-//! 取 def basename(语料两值恒同;异名登记册场景归接线批)。
+//! `fullPath::sortedFlagDomains`,去重发生在 effective 合并层(顶层属性
+//! 粒度,first-wins 整树吞并——败者的子树整体不产符号),本面同构:顶层
+//! 按 `name + 排序旗标` 键去重(语料顶层 fullPath=name),胜者子树递归
+//! 不再去重(TS pushProperty 无递归去重)。TS rootName 来自 entities.xml
+//! 实体名,本面取 def basename(语料两值恒同;异名登记册场景归接线批)。
 //!
 //! LSP 接线(textDocument/workspaceSymbol server.rs/rpc.rs)留接线批,
 //! 本批零接 server.rs 纯库不变。
@@ -25,7 +25,9 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::hover::{Category, HoverEngine, category_of};
+use kode_parser::model::PropertyDef;
+
+use crate::hover::{category_of, Category, HoverEngine};
 
 /// 三段取数器(DefFile 字段直读)。
 type SectionMethods = fn(&kode_parser::model::DefFile) -> &Vec<kode_parser::model::MethodDef>;
@@ -54,6 +56,15 @@ pub struct WorkspaceSymbolHit {
     pub def_file: String,
     /// 1-based 声明行(defParser/LineMap 同口径)。
     pub line: u32,
+}
+
+/// 属性子树递归上下文:根名/根落点/声明落点/needle 对同一属性树恒定
+/// (递归仅 prop/full_path 变化)。
+struct PropertyHitContext<'a> {
+    root_name: &'a str,
+    root_def: &'a str,
+    def_file: &'a str,
+    needle: &'a str,
 }
 
 impl HoverEngine {
@@ -123,9 +134,11 @@ impl HoverEngine {
         hits
     }
 
-    /// 一次折叠闭包(first-wins 去重按 `name + 排序旗标`/`段+name`)的
-    /// 命中入列。属性键 TS effectivePropertyKey(`fullPath::sortedFlagDomains`)
-    /// 同构——语料顶层 fullPath=name;方法键 = 段 + 方法名(TS
+    /// 一次折叠闭包(first-wins 去重按顶层属性 `name + 排序旗标`/`段+name`)
+    /// 的命中入列。属性键 TS effectivePropertyKey
+    /// (`fullPath::sortedFlagDomains`)同构——语料顶层 fullPath=name,去重
+    /// 在 effective 合并层(顶层属性粒度),胜者子树递归不再去重
+    /// (TS pushProperty 无递归去重);方法键 = 段 + 方法名(TS
     /// effectiveMethodMaps 同构)。去重发生在前缀过滤之前(先折叠后过滤,
     /// 两者对同名符号等价)。
     fn push_fold_hits(
@@ -147,20 +160,17 @@ impl HoverEngine {
                 domains.sort();
                 let key = format!("{}\u{1}{}", prop.name, domains.join("\u{2}"));
                 if !seen_props.insert(key) {
+                    // 败者整树吞并:子树不产符号(TS effectivePropertyMap
+                    // 首条遮蔽同构)。
                     continue;
                 }
-                if !symbol_matches_prefix(&prop.name, needle) {
-                    continue;
-                }
-                hits.push(WorkspaceSymbolHit {
-                    symbol_name: prop.name.clone(),
-                    kind: "property",
-                    section: None,
-                    root_name: root_name.to_string(),
-                    root_def_file: root_def.to_string(),
-                    def_file: path.clone(),
-                    line: prop.line as u32,
-                });
+                let ctx = PropertyHitContext {
+                    root_name,
+                    root_def,
+                    def_file: &path,
+                    needle,
+                };
+                self.push_property_hits(hits, &ctx, prop, &prop.name);
             }
             for (section, methods) in METHOD_SECTIONS {
                 for method in (methods)(cdef) {
@@ -182,6 +192,37 @@ impl HoverEngine {
                     });
                 }
             }
+        }
+    }
+
+    /// 属性子树命中入列(TS pushProperty 递归序:self → children 按声明序
+    /// → arrayElement;递归层不去重,全路径仅作 TS fullPath 同构的遍历
+    /// 线索,命中符号名 = 叶名、落点 = 声明 def、行 = 叶声明行)。
+    fn push_property_hits(
+        &self,
+        hits: &mut Vec<WorkspaceSymbolHit>,
+        ctx: &PropertyHitContext<'_>,
+        prop: &PropertyDef,
+        full_path: &str,
+    ) {
+        if symbol_matches_prefix(&prop.name, ctx.needle) {
+            hits.push(WorkspaceSymbolHit {
+                symbol_name: prop.name.clone(),
+                kind: "property",
+                section: None,
+                root_name: ctx.root_name.to_string(),
+                root_def_file: ctx.root_def.to_string(),
+                def_file: ctx.def_file.to_string(),
+                line: prop.line as u32,
+            });
+        }
+        for child in &prop.children {
+            let child_path = format!("{full_path}.{}", child.name);
+            self.push_property_hits(hits, ctx, child, &child_path);
+        }
+        if let Some(element) = &prop.array_element {
+            let element_path = format!("{full_path}[]");
+            self.push_property_hits(hits, ctx, element, &element_path);
         }
     }
 }
@@ -254,7 +295,7 @@ fn derive_probes(universe: &[WorkspaceSymbolHit]) -> Vec<String> {
 }
 
 pub fn dump_workspace_symbols_golden(repo_root: &Path) -> String {
-    use kode_parser::json::{PARITY_CORPORA, collect_corpus};
+    use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let registry = crate::golden_corpus::corpus_registry();
@@ -369,6 +410,52 @@ mod tests {
         \x20   <range>\n        <Type> FLOAT </Type>\n      </range>\n\
         \x20 </Properties>\n\
         </root>\n";
+    /// 嵌套面合成语料:FIXED_DICT 子属性(`cfg` 的 `<Properties>`)+ ARRAY
+    /// `<of>` 合成 value(`slots` 的 `<Type>/<of>`;元素子属性取自
+    /// `<Type>/<Properties>`,TS parseProperties 同构)。
+    const A_DICT: &str = "<root>\n\
+        \x20 <Properties>\n\
+        \x20   <cfg>\n\
+        \x20     <Type> FIXED_DICT </Type>\n\
+        \x20     <Properties>\n\
+        \x20       <width>\n        <Type> UINT32 </Type>\n      </width>\n\
+        \x20       <height>\n        <Type> UINT32 </Type>\n      </height>\n\
+        \x20     </Properties>\n\
+        \x20   </cfg>\n\
+        \x20   <slots>\n\
+        \x20     <Type>\n        ARRAY\n        <of> SLOT </of>\n\
+        \x20       <Properties>\n\
+        \x20         <pos>\n        <Type> INT32 </Type>\n      </pos>\n\
+        \x20       </Properties>\n\
+        \x20     </Type>\n\
+        \x20   </slots>\n\
+        \x20 </Properties>\n\
+        </root>\n";
+    /// 接口:cfg 子属性 depth(实体 own cfg 胜出时应整树吞并——败者子树
+    /// 不产符号)。
+    const A_DICT_INTERFACE: &str = "<root>\n\
+        \x20 <Properties>\n\
+        \x20   <cfg>\n\
+        \x20     <Type> FIXED_DICT </Type>\n\
+        \x20     <Properties>\n\
+        \x20       <depth>\n        <Type> UINT8 </Type>\n      </depth>\n\
+        \x20     </Properties>\n\
+        \x20   </cfg>\n\
+        \x20 </Properties>\n\
+        </root>\n";
+    /// own cfg(子属性 width)压接口 cfg(子属性 depth):胜者子树在场,
+    /// 败者子树整树吞并。
+    const A_DICT_MIXED: &str = "<root>\n\
+        \x20 <Interfaces>\n    <interface> DICTROLE </interface>\n  </Interfaces>\n\
+        \x20 <Properties>\n\
+        \x20   <cfg>\n\
+        \x20     <Type> FIXED_DICT </Type>\n\
+        \x20     <Properties>\n\
+        \x20       <width>\n        <Type> UINT32 </Type>\n      </width>\n\
+        \x20     </Properties>\n\
+        \x20   </cfg>\n\
+        \x20 </Properties>\n\
+        </root>\n";
     /// 跨 root 同名实体(root 隔离臂)。
     const B_ENTITIES: &str =
         "<root>\n  <Avatar> scripts/entity_defs/Avatar.def </Avatar>\n</root>\n";
@@ -386,7 +473,13 @@ mod tests {
             ("/proj-a/scripts/entity_defs/Avatar.def", A_AVATAR),
             ("/proj-a/scripts/entity_defs/Monster.def", A_MONSTER),
             ("/proj-a/scripts/entity_defs/Mixed.def", A_MIXED),
+            ("/proj-a/scripts/entity_defs/Dict.def", A_DICT),
+            ("/proj-a/scripts/entity_defs/DictMixed.def", A_DICT_MIXED),
             ("/proj-a/scripts/entity_defs/interfaces/ROLE.def", A_ROLE),
+            (
+                "/proj-a/scripts/entity_defs/interfaces/DICTROLE.def",
+                A_DICT_INTERFACE,
+            ),
             (
                 "/proj-a/scripts/entity_defs/components/Turret.def",
                 A_TURRET,
@@ -511,6 +604,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 ("Avatar", "/proj-a/scripts/entity_defs/Avatar.def"),
+                ("Dict", "/proj-a/scripts/entity_defs/Dict.def"),
+                ("DictMixed", "/proj-a/scripts/entity_defs/DictMixed.def",),
                 ("Mixed", "/proj-a/scripts/entity_defs/Mixed.def"),
                 ("Monster", "/proj-a/scripts/entity_defs/Monster.def"),
                 ("Avatar", "/proj-b/scripts/entity_defs/Avatar.def"),
@@ -585,12 +680,10 @@ mod tests {
     #[test]
     fn root_removal_drops_hits_and_keeps_other_roots() {
         let (registry, mut engine) = build();
-        assert!(
-            engine
-                .workspace_symbols_by_prefix("hp")
-                .iter()
-                .any(|hit| hit.root_def_file.starts_with("/proj-b"))
-        );
+        assert!(engine
+            .workspace_symbols_by_prefix("hp")
+            .iter()
+            .any(|hit| hit.root_def_file.starts_with("/proj-b")));
         let root = registry.root_for(&CanonicalUri::from_path("/proj-b/scripts/entities.xml"));
         engine.invalidate_root(root);
         let after = engine.workspace_symbols_by_prefix("hp");
@@ -600,11 +693,9 @@ mod tests {
                 .all(|hit| !hit.root_def_file.starts_with("/proj-b")),
             "撤根后陈旧 root 命中整个消失"
         );
-        assert!(
-            after
-                .iter()
-                .any(|hit| hit.root_def_file == "/proj-a/scripts/entity_defs/Avatar.def")
-        );
+        assert!(after
+            .iter()
+            .any(|hit| hit.root_def_file == "/proj-a/scripts/entity_defs/Avatar.def"));
     }
 
     /// RUST-149 横切(stale 替位):同路径 def 换代即换命中(不虚报旧符号),
@@ -624,6 +715,75 @@ mod tests {
                 .any(|hit| hit.root_def_file.starts_with("/proj-b") && hit.symbol_name == "hp"),
             "换代后旧符号不虚报"
         );
-        assert!(hits.iter().any(|hit| hit.root_def_file.starts_with("/proj-b") && hit.symbol_name == "renamed"));
+        assert!(hits
+            .iter()
+            .any(|hit| hit.root_def_file.starts_with("/proj-b") && hit.symbol_name == "renamed"));
+    }
+
+    /// 嵌套面递归(TS pushProperty 同构):FIXED_DICT 子属性在场、ARRAY
+    /// `<of>` 合成 value 在场且行=父行、元素子属性取自 `<Type>/<Properties>`。
+    /// 命中经全局排序(rootName → symbolName → line),断言以同键排序后
+    /// 集合比对(递归序本身由 TS 对拍 golden 钉)。
+    #[test]
+    fn nested_property_symbols_recurse_in_push_order() {
+        let (_registry, engine) = build();
+        let mut dict = engine
+            .workspace_symbols_by_prefix("")
+            .into_iter()
+            .filter(|hit| hit.root_name == "Dict")
+            .map(|hit| (hit.symbol_name.clone(), hit.def_file.clone(), hit.line))
+            .collect::<Vec<_>>();
+        let dict_def = "/proj-a/scripts/entity_defs/Dict.def";
+        let mut expected = vec![
+            ("cfg".to_string(), dict_def.to_string(), 3),
+            ("width".to_string(), dict_def.to_string(), 6),
+            ("height".to_string(), dict_def.to_string(), 9),
+            ("slots".to_string(), dict_def.to_string(), 14),
+            // value = 合成元素:名恒 value,行 = 父行(slots),元素子属性
+            // pos 取自 `<Type>/<Properties>`。
+            ("value".to_string(), dict_def.to_string(), 14),
+            ("pos".to_string(), dict_def.to_string(), 19),
+        ];
+        dict.sort();
+        expected.sort();
+        assert_eq!(
+            dict, expected,
+            "递归 self → children → arrayElement;arrayElement 行=父行"
+        );
+    }
+
+    /// 败者整树吞并:own cfg(子属性 width)压接口 cfg(子属性 depth),
+    /// 胜者子树在场、败者子树整体不产符号(TS effectivePropertyMap
+    /// 首条遮蔽同构——去重发生在 effective 合并层而非递归层)。
+    #[test]
+    fn losing_property_subtree_is_wholly_discarded() {
+        let (_registry, engine) = build();
+        let dict_mixed = engine
+            .workspace_symbols_by_prefix("")
+            .into_iter()
+            .filter(|hit| hit.root_name == "DictMixed")
+            .map(|hit| (hit.symbol_name.clone(), hit.def_file.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            dict_mixed,
+            vec![
+                (
+                    "cfg".to_string(),
+                    "/proj-a/scripts/entity_defs/DictMixed.def".to_string()
+                ),
+                (
+                    "width".to_string(),
+                    "/proj-a/scripts/entity_defs/DictMixed.def".to_string()
+                ),
+            ],
+            "败者接口 cfg 子树(depth)整体不产符号"
+        );
+        assert!(
+            !engine
+                .workspace_symbols_by_prefix("")
+                .iter()
+                .any(|hit| hit.root_name == "DictMixed" && hit.symbol_name == "depth"),
+            "败者接口子符号不虚报"
+        );
     }
 }

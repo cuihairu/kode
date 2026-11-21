@@ -1,10 +1,10 @@
 {
   "generator": "kode-server dump-workspace-symbols-golden",
   "rootCount": 15,
-  "symbolCount": 53,
-  "probeCount": 81,
-  "hitCount": 317,
-  "universeCount": 108,
+  "symbolCount": 54,
+  "probeCount": 83,
+  "hitCount": 335,
+  "universeCount": 114,
   "probes": [
     {
       "prefix": "",
@@ -359,6 +359,33 @@
           "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
           "defFile": "tests/fixtures/parity-project/scripts/entity_defs/components/Inventory.def",
           "line": 3
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/components/Inventory.def",
+          "line": 8
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "line": 13
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "line": 38
         },
         {
           "symbolName": "broken",
@@ -782,6 +809,33 @@
           "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Monster.def",
           "defFile": "tests/fixtures/parity-project/scripts/entity_defs/components/Inventory.def",
           "line": 3
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/components/Inventory.def",
+          "line": 8
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "line": 13
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "line": 38
         },
         {
           "symbolName": "spaceIndex",
@@ -3255,6 +3309,124 @@
           "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Critical.def",
           "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Critical.def",
           "line": 2
+        }
+      ]
+    },
+    {
+      "prefix": "va",
+      "hits": [
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/components/Inventory.def",
+          "line": 8
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "line": 13
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "line": 38
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/components/Inventory.def",
+          "line": 8
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "line": 13
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "line": 38
+        }
+      ]
+    },
+    {
+      "prefix": "value",
+      "hits": [
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/components/Inventory.def",
+          "line": 8
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "line": 13
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Avatar",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "line": 38
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/components/Inventory.def",
+          "line": 8
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/parity-project/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/parity-project/scripts/entity_defs/Avatar.def",
+          "line": 13
+        },
+        {
+          "symbolName": "value",
+          "kind": "property",
+          "section": null,
+          "rootName": "Monster",
+          "rootDefFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Monster.def",
+          "defFile": "tests/fixtures/kbengine-demo-assets/scripts/entity_defs/Avatar.def",
+          "line": 38
         }
       ]
     },

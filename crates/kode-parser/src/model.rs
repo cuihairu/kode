@@ -80,6 +80,15 @@ pub struct PropertyDef {
     pub sensitive: bool,
     /// 未知子标签(保留名 + span;SYNTAX-005)。
     pub extra_tags: Vec<(String, Span)>,
+    /// 嵌套 `<Properties>` 子属性(FIXED_DICT 子项;TS
+    /// `DefinitionProperty.children` 同构)。语料无此形态时恒空(RUST-139
+    /// 嵌套符号面消费)。不进 def golden(serialize 面零扰动)。
+    pub children: Vec<PropertyDef>,
+    /// ARRAY 属性的 `<of>` 元素符号(TS parseProperties 的 arrayElement 同构:
+    /// name 恒 `value`,typeName = `<of>` 文本,line = 父属性行,旗标/持久/
+    /// detailLevel/databaseLength 继承父,`children` 取 `<Type>` 内嵌
+    /// `<Properties>`)。非 ARRAY 属性恒 None。
+    pub array_element: Option<Box<PropertyDef>>,
 }
 
 /// 方法声明(Base/Cell/Client 段内)。
@@ -197,9 +206,10 @@ pub fn extract_def(doc: &Document, raw_text: &str) -> DefFile {
             }
             "volatile" => out.volatile = doc.truthy_child(root, &e.name),
             "properties" => {
-                for prop in doc.child_elements(child) {
-                    out.properties.push(extract_property(doc, prop, &lines));
-                }
+                // 多 `<Properties>` 段并列(每属性一段的合成形态)逐段追加,
+                // 不可整段覆盖(后段吞前段)。
+                out.properties
+                    .extend(extract_properties_list(doc, child, &lines));
             }
             "components" => {
                 for comp in doc.child_elements(child) {
@@ -230,6 +240,14 @@ pub fn extract_def(doc: &Document, raw_text: &str) -> DefFile {
     out
 }
 
+/// 段/嵌套共用的属性列表提取(`Properties` 容器元素 → 逐属性)。
+fn extract_properties_list(doc: &Document, section: usize, lines: &LineMap) -> Vec<PropertyDef> {
+    doc.child_elements(section)
+        .into_iter()
+        .map(|prop| extract_property(doc, prop, lines))
+        .collect()
+}
+
 fn extract_property(doc: &Document, idx: usize, lines: &LineMap) -> PropertyDef {
     let e = doc.element(idx);
     let mut prop = PropertyDef {
@@ -248,18 +266,34 @@ fn extract_property(doc: &Document, idx: usize, lines: &LineMap) -> PropertyDef 
         persistent: None,
         sensitive: false,
         extra_tags: Vec::new(),
+        children: Vec::new(),
+        array_element: None,
     };
+    // RUST-139 嵌套面:`<of>` 元素 span(合成 value 元素锚点)+ `<Type>`
+    // 内嵌 `<Properties>`(ARRAY of FIXED_DICT 的元素子属性)。
+    let mut of_name_span: Option<Span> = None;
+    let mut array_children: Option<Vec<PropertyDef>> = None;
     for child in doc.child_elements(idx) {
         let ce = doc.element(child);
         match canonical_tag(&ce.name).as_str() {
             "type" => {
                 let refs = collect_type_refs(doc, child);
                 prop.type_name = ce.first_text_token(doc);
-                prop.of_ref = doc
-                    .child_element(child, "of")
-                    .map(|o| doc.element(o).text(doc).trim().to_string())
-                    .filter(|s| !s.is_empty());
+                if let Some(o) = doc.child_element(child, "of") {
+                    let text = doc.element(o).text(doc).trim().to_string();
+                    if !text.is_empty() {
+                        prop.of_ref = Some(text);
+                        of_name_span = Some(doc.element(o).name_span);
+                    }
+                }
+                if let Some(props) = doc.child_element(child, "Properties") {
+                    array_children = Some(extract_properties_list(doc, props, lines));
+                }
                 prop.type_refs = refs;
+            }
+            "properties" => {
+                // FIXED_DICT 子属性(TS parseProperties 嵌套 `<Properties>` 递归同构)。
+                prop.children = extract_properties_list(doc, child, lines);
             }
             "flags" | "clientflags" => {
                 let raw = ce.text(doc).trim().to_string();
@@ -306,6 +340,32 @@ fn extract_property(doc: &Document, idx: usize, lines: &LineMap) -> PropertyDef 
             "sensitive" => prop.sensitive = doc.truthy_child(idx, &ce.name) || prop.sensitive,
             _ => prop.extra_tags.push((ce.name.clone(), ce.name_span)),
         }
+    }
+    // RUST-139 嵌套面:ARRAY `<of>` → 合成 `value` 元素(TS arrayElement 同构:
+    // 名恒 value,typeName = `<of>` 文本,line = 父行,旗标/持久/detailLevel/
+    // databaseLength 继承父,default/identifier/sensitive 清空,arrayElement 不再
+    // 下钻(TS arrayElement: undefined)。children = `<Type>` 内嵌 `<Properties>`。
+    if let Some(of_span) = of_name_span {
+        let children = array_children.take().unwrap_or_default();
+        prop.array_element = Some(Box::new(PropertyDef {
+            name: "value".to_string(),
+            name_span: of_span,
+            line: prop.line,
+            type_name: prop.of_ref.clone(),
+            type_refs: Vec::new(),
+            of_ref: None,
+            flags_raw: prop.flags_raw.clone(),
+            flags: prop.flags.clone(),
+            default_value: None,
+            detail_level: prop.detail_level.clone(),
+            database_length: prop.database_length.clone(),
+            identifier: None,
+            persistent: prop.persistent,
+            sensitive: false,
+            extra_tags: Vec::new(),
+            children,
+            array_element: None,
+        }));
     }
     prop
 }

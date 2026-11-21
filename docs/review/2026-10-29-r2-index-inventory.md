@@ -17,7 +17,7 @@
 逐字段(字段名与 model.rs 定义一致):
 
 - `DefFile`:root_tag parent interfaces volatile properties components base_methods cell_methods client_methods extra_sections diagnostics
-- `PropertyDef`:name name_span line type_name type_refs of_ref flags_raw flags default_value detail_level database_length identifier persistent sensitive extra_tags(type_refs 与 TS collectTypeReferences 同口径;persistent truthy 语义同 TS;of_ref = `<Type>` 的 `<of>` 元素,RUST-136 hover fullType 消费,不进 parser golden)
+- `PropertyDef`:name name_span line type_name type_refs of_ref flags_raw flags default_value detail_level database_length identifier persistent sensitive extra_tags children array_element(type_refs 与 TS collectTypeReferences 同口径;persistent truthy 语义同 TS;of_ref = `<Type>` 的 `<of>` 元素,RUST-136 hover fullType 消费,不进 parser golden;children = 嵌套 `<Properties>` 子属性(FIXED_DICT 子项,TS DefinitionProperty.children 同构),array_element = ARRAY `<of>` 合成 `value` 元素(TS parseProperties arrayElement 同构,行=父行/旗标继承/`<Type>/<Properties>` 内嵌子属性),RUST-139 嵌套符号面消费,均不进 parser golden)
 - `MethodDef`:name name_span line args arg_type_refs return_type exposed——只保留这七个字段(name/name_span/line/args/arg_type_refs/return_type/exposed;RUST-108 补逐 Arg 类型引用与 ReturnType 直文本声明,均不进 parser golden;见 §4 缺失)
 - `ComponentDef`:name name_span line component_type persistent
 - `EntityEntry`:name name_span line attributes(hasBase/hasCell/hasClient 等,文档顺序;root 伪条目排除)
