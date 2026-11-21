@@ -37,6 +37,7 @@
 | KBE-PY-020 | cellData 回调入口访问（onGetCell 内读已删属性必抛，base 侧） | 已实现（KSEM-CELL-12）：onGetCell 是唯一确定窗口——引擎先 destroyCellData（baseapp/entity.cpp:1024）再调脚本回调（:1030），回调内先读 self.cellData 必抛 AttributeError；方法内普通赋值重建属性后读取静默，del 之后再读重新可报，下标/`.get`/迭代/别名都按读取算；仅 base 角色实体脚本，其余回调一律不分析 | `kbengine.cellDataLifecycle`；`cellDataCallbackCheck.ts` |
 | KBE-PY-021 | FIXED_DICT 构造点校验(缺声明字段/未知键/字段值结构错配) | 已实现(KSEM-STRUCT-04):整段 dict 字面量赋给 FIXED_DICT 型目标(`self.<属性> = {…}` / `self.<属性>['<键>']… = {…}`,键链复用 STRUCT-02 解析)按 types.xml 声明字段集校验——键全字面量且无 `**` 展开/动态键时缺字段报 Warning(开括号位),字面量键不在声明集报 Warning(键段,宇宙开放也报),内置标量字段的字面量值按 CELL-08 同一引擎标量真源裁结构错配(值段);普通 dict(裸名目标/属性不可解析或非 FD 型/增强赋值/比较/调用 RHS)不接管,标量范围面归范围车道,嵌套 dict 字面量不下钻 | `kbengine.fixedDictConstruct`;`fixedDictConstructCheck.ts`(发布 `activate/diagnostics.ts` 独立集合) |
 | KBE-PY-022 | def 属性标量赋值校验(结构错配/整数值越引擎标量范围) | 已实现(KSEM-STRUCT-05):整行字面量赋给可解析为引擎标量的目标时在赋值点裁定——`self.<属性> = <字面量>` 根形态(含沿 types.xml aliasType 注册表链下钻的别名)、`self.<属性>["<键>"]… = <字面量>` FD 字段形态(末键经 STRUCT-02 解析)、`self.<属性>[<整数>] = <字面量>` 数组元素形态(元素类型取注册表内联 `of` 节点)——按 CELL-08 同一引擎标量真源报结构错配与整数越界(BigInt 精确边界),消息附声明来源(`Avatar.def:5`/`types.xml:30` 形);引擎标量名注册表层裁定不凭 Python 类型名,`bool` 按 `int` 放行,dict 字面量归构造面,名字/调用 RHS/增强赋值/`==`/不可解析目标/FD 容器/数组 FD 元素/混合链一律不报 | `kbengine.scalarAssign`;`scalarAssignCheck.ts`(发布 `activate/diagnostics.ts` 独立集合) |
+| KBE-PY-029 | 实体脚本基类面（类名一致性 + 基类合法性） | 已实现（QA-001a）：实体模块文件（`{EntityName}.py`）必须暴露与模块名同名的类（类名闸，引擎 `GetAttrString`），实体类必须派生自组件名册任一基类（基类闸，引擎 `isSubClass`；cellapp=Entity/EntityComponent，baseapp=Entity/Proxy/EntityComponent）。只报可证形态——类名闸对模块命名空间绑定名放行（定义类/模块级实例赋值/import 任一，`GetAttrString` 取得到即过），基类闸只报「无任何直接基类 + 名册非空」；client 名册未取证与面歧义不猜 | `kbengine.entityScriptBaseClass`；`entityScriptBaseClassDiagnostics.ts`（发布 `activate/diagnostics.ts` 独立集合） |
 | KBE-DEF-001 | 未知 Type、Flags、DetailLevel | 已有实时校验；未知 Type 有稳定 code | `kbengine.unknownType`；`languageProviders.ts` |
 | KBE-DEF-002 | 将多个 Flags 用 `\|` 拼接成组合值 | 已有未知 Flags 校验 | 引擎按单个映射值解析；分析器的容错拆分不代表引擎接受 |
 | KBE-DEF-003 | 同域重复定义、缺少/重复必需字段 | 已有结构诊断（发布时**不带诊断 code**，与其余规则不同；受结构开关与重复/必需字段子开关共同控制） | `validateSectionStructure`、`validatePropertyStructure`；`kbengine.enableStructureDiagnostics`/`checkDuplicateDefinitions`/`checkMissingPropertyFields` |
@@ -190,6 +191,7 @@ hover 面：FIXED_DICT 形态的 def 属性（`self.<属性>` 悬停）附 KB-00
 - RPC 实参数量诊断：`kbengine.rpcArgCountDiagnostics=true`，默认开启，与 receiver/attr 同通道（集合 `kbengine`）发布；关闭只停止提示，不改变引擎行为。
 - 角色错用诊断：`kbengine.roleMisuseDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-role-misuse`）；关闭只停止提示，不改变引擎行为。
 - 销毁后访问诊断：`kbengine.postDestroyDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-post-destroy`）；关闭只停止提示，不改变引擎行为。
+- 实体脚本基类面诊断：`kbengine.entityScriptBaseClassDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-entity-script-base-class`）；关闭只停止提示，不改变引擎行为。
 - `.def` 优化/继承冲突分析：按需运行分析入口，见 `defAnalyzer.ts` 和[语言能力](./language.md)。按需分析有规则不代表每次输入都会自动 lint。
 - Hover、签名、inlay、CodeLens 是说明或导航界面；有提示内容不代表相应规则已做诊断。
 

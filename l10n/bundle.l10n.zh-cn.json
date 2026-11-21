@@ -769,5 +769,7 @@
   "Docs": "文档",
   "Configs": "配置",
   "Logs": "日志",
-  "Process scripts": "进程脚本"
+  "Process scripts": "进程脚本",
+  "Entity script module must define a class named {entityName} (the engine loads {fileName} as the entity module and requires a class of the same name via GetAttrString; classes defined in this module: {classes})": "实体脚本模块必须定义与模块名同名的类 {entityName}(引擎把 {fileName} 装载为实体模块,经 GetAttrString 要求同名类;本模块定义的类:{classes})",
+  "Entity class {entityName} has no base class; the {face} component requires the entity class to derive from one of {roster} (engine isSubClass against the component roster rejects a class with no base)": "实体类 {entityName} 没有任何基类;{face} 组件要求实体类派生自 {roster} 之一(引擎 isSubClass 对组件名册,无基类的类会被拒载)"
 }

@@ -447,6 +447,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/spaceDataProtectedKeyCheck.ts'
   },
+  {
+    id: 'KBE-PY-029', code: 'kbengine.entityScriptBaseClass',
+    title: '实体脚本基类面(类名一致性 + 基类合法性,引擎双硬闸;只报可证形态)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.entityScriptBaseClassDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/entityScriptBaseClassDiagnostics.ts'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

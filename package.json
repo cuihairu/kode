@@ -1690,6 +1690,11 @@
             "default": true,
             "markdownDescription": "%kbengine.config.roleMisuseDiagnostics.description%"
           },
+          "kbengine.entityScriptBaseClassDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.entityScriptBaseClassDiagnostics.description%"
+          },
           "kbengine.rpcArgCountDiagnostics": {
             "type": "boolean",
             "default": true,

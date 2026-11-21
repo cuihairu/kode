@@ -46,6 +46,7 @@ import {
 import { collectUserTypeContractStatuses } from '../src/backend/userTypeContractSource';
 import { linearizeC3 } from '../src/backend/pythonClassIndex';
 import { parsePythonFile } from '../src/backend/pythonParser';
+import { findEntityScriptBaseClassFindings } from '../src/backend/entityScriptBaseClassDiagnostics';
 import { lookupApiDoc } from '../src/backend/pythonApiHoverDocs';
 import { computeReceiverNoneFindingsAsync, renderReceiverNoneMessage } from '../src/backend/receiverNoneDiagnostics';
 import type { PythonClassDef } from '../src/backend/pythonParser';
@@ -1182,30 +1183,43 @@ const entityBaseClassOf = (
 };
 
 describe('truth-corpus: entity-script-base-class 族执行闸(实体脚本基类面探针)', () => {
-  it('类名闸臂:engine 要求类名==模块名;kode parse 面见类名,一致性检查面缺席(缺口登记)', () => {
+  // QA-001a 检查面(纯)对语料如实产出:输入 roleFace + 实体名(fileName 词干)
+  const runCheckFace = (entry: EntityBaseClassEntry) =>
+    findEntityScriptBaseClassFindings(
+      entry.input.script ?? '',
+      entry.input.fileName ?? 'Avatar.py',
+      (entry.input.fileName ?? 'Avatar.py').replace(/\.py$/, ''),
+      (entry.input as { roleFace?: 'cellapp' | 'baseapp' | 'client' }).roleFace ?? null
+    );
+
+  it('类名闸臂:engine 要求类名==模块名;QA-001a 检查面已收编,同类名不一致报 Warning', () => {
     const entry = entityBaseEntries.find(e => e.id === 'entity-class-name-gate')!;
     const cls = entityBaseClassOf(entry.input, entry.kode.analysis?.className);
     expect(cls?.name).toBe(entry.kode.analysis!.className);
-    expect(entry.kode.status).toBe('not-analyzed');
-    expect(entry.kode.finding).toContain('类名必须与实体模块名一致');
+    expect(entry.kode.status).toBe('pinned');
+    expect(entry.kode.finding).toContain('类名一致性检查面已收编');
+    // 检查面如实产出类名闸发现(不再漏报)
+    expect(runCheckFace(entry).map(f => f.kind)).toEqual(['class-name-gate']);
   });
 
-  it('合法基类臂:bases 表达式被 parse 面如实捕获(含 import 来源)', () => {
+  it('合法基类臂:bases 表达式被 parse 面如实捕获(含 import 来源);检查面零产出', () => {
     const entry = entityBaseEntries.find(e => e.id === 'entity-class-legal-base')!;
     const cls = entityBaseClassOf(entry.input);
     expect(cls?.bases).toEqual(entry.kode.analysis!.bases);
     expect(entry.kode.status).toBe('pinned');
+    expect(runCheckFace(entry)).toHaveLength(0);
   });
 
-  it('无基类臂:engine 对名册全假拒载;kode parse 见空 bases 且零验证面(漏报缺口登记)', () => {
+  it('无基类臂:engine 对名册全假拒载;QA-001a 基类闸已收编,报 Warning', () => {
     const entry = entityBaseEntries.find(e => e.id === 'entity-class-no-base')!;
     const cls = entityBaseClassOf(entry.input);
     expect(cls?.bases).toEqual(entry.kode.analysis!.bases);
-    expect(entry.kode.finding).toContain('漏报方向缺口登记');
-    expect(entry.kode.finding).toContain('isSubClass');
+    expect(entry.kode.status).toBe('pinned');
+    expect(entry.kode.finding).toContain('基类合法性检查面已收编');
+    expect(runCheckFace(entry).map(f => f.kind)).toEqual(['base-class-gate']);
   });
 
-  it('间接基类臂:engine MRO 间接子类过闸;kode 直取基类表达式+linearizeC3 全链可算', () => {
+  it('间接基类臂:engine MRO 间接子类过闸;kode 直取基类表达式+linearizeC3 全链可算;检查面零产出', () => {
     const entry = entityBaseEntries.find(e => e.id === 'entity-class-indirect-base')!;
     const cls = entityBaseClassOf(entry.input);
     expect(cls?.bases).toEqual(entry.kode.analysis!.directBases);
@@ -1222,13 +1236,31 @@ describe('truth-corpus: entity-script-base-class 族执行闸(实体脚本基类
       return [];
     };
     expect(linearizeC3('Avatar', resolver)).toEqual(entry.kode.analysis!.mro);
+    expect(runCheckFace(entry)).toHaveLength(0);
   });
 
-  it('组件名册 unknown:引擎名册分立已钉,kode 组件域验证面未建模诚实缺口', () => {
+  it('baseapp 组件域臂:无基类 + baseapp 名册(含 Proxy)→ 基类闸报,名册与引擎一致', () => {
+    const entry = entityBaseEntries.find(e => e.id === 'entity-base-gate-baseapp-no-base')!;
+    expect(entry.kind).toBe('negative');
+    const findings = runCheckFace(entry);
+    expect(findings.map(f => f.kind)).toEqual(['base-class-gate']);
+    expect(findings[0].roster).toEqual(entry.kode.analysis!.roster);
+    expect(entry.kode.analysis!.roster).toContain('KBEngine.Proxy');
+  });
+
+  it('组件名册映射:QA-001a 经 SCRIPT_BASE_ROSTER 收编,cellapp/baseapp 钉', () => {
     const entry = entityBaseEntries.find(e => e.id === 'entity-base-roster-component-scope')!;
     expect(entry.kind).toBe('unknown');
+    expect(entry.kode.status).toBe('pinned');
+    expect(entry.kode.analysis!.roleFace).toContain('SCRIPT_BASE_ROSTER');
+    expect((entry.reason ?? '').length).toBeGreaterThan(0);
+  });
+
+  it('client 名册未取证:基类闸不跑(不猜),类名闸照跑', () => {
+    const entry = entityBaseEntries.find(e => e.id === 'entity-base-roster-client-unverified')!;
+    expect(entry.kind).toBe('unknown');
     expect(entry.kode.status).toBe('unverified');
-    expect(entry.kode.analysis!.roleFace).toBe('pythonProcessFromPath(脚本角色路径矩阵,family-8 已钉)');
+    expect(entry.kode.analysis!.roster).toBe('null(未取证)');
     expect((entry.reason ?? '').length).toBeGreaterThan(0);
   });
 });

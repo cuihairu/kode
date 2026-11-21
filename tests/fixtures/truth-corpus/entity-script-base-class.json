@@ -10,6 +10,7 @@
       "kind": "negative",
       "input": {
         "face": "类名与模块名不一致",
+        "roleFace": "cellapp",
         "fileName": "Avatar.py",
         "script": "class Player(Base):\n    def onEnterSpace(self):\n        pass\n"
       },
@@ -22,11 +23,12 @@
         "EntityDef::initialize: Could not find EntityClass[{}]"
       ],
       "kode": {
-        "status": "not-analyzed",
+        "status": "pinned",
         "analysis": {
-          "className": "Player"
+          "className": "Player",
+          "roleFace": "cellapp"
         },
-        "finding": "漏报方向缺口登记:引擎有「类名必须与实体模块名一致」硬闸而 kode 无一致性检查面(parse 面如实见类名 Player,无任何诊断);检查面收编归独立批,本族只登记不冒充修复。"
+        "finding": "QA-001a 类名一致性检查面已收编(entityScriptBaseClassDiagnostics):实体模块 {entityName}.py 未暴露同名类 → 类名闸 Warning(引擎 Could not find EntityClass 同口径);模块命名空间绑定名(定义类/实例赋值/import 任一)放行,别名/import 形态绝不误报。"
       }
     },
     {
@@ -59,6 +61,7 @@
       "kind": "negative",
       "input": {
         "face": "无基类(普通 Python 类冒充实体的 classes)",
+        "roleFace": "cellapp",
         "fileName": "Avatar.py",
         "script": "class Avatar:\n    def onCreated(self):\n        pass\n"
       },
@@ -71,11 +74,12 @@
         "EntityDef::initialize: EntityClass {} is not derived from KBEngine.[{}]"
       ],
       "kode": {
-        "status": "not-analyzed",
+        "status": "pinned",
         "analysis": {
-          "bases": []
+          "bases": [],
+          "roleFace": "cellapp"
         },
-        "finding": "漏报方向缺口登记:引擎有基类合法性硬闸(isSubClass 对组件名册)而 kode 无对应诊断面(parse 面见 bases=[] 但零诊断);依赖图 inheritance 边是结构建模非验证面,检查面收编归独立批。"
+        "finding": "QA-001a 基类合法性检查面已收编(entityScriptBaseClassDiagnostics):实体类无任何直接基类 + 名册非空(cellapp/baseapp)→ 基类闸 Warning(引擎 isSubClass 对组件名册同口径);有基类(含未解析内建别名的间接子类)不报——无法证明非法,绝不误报。"
       }
     },
     {
@@ -102,6 +106,34 @@
       }
     },
     {
+      "id": "entity-base-gate-baseapp-no-base",
+      "kind": "negative",
+      "input": {
+        "face": "baseapp 组件域:无基类",
+        "roleFace": "baseapp",
+        "fileName": "Avatar.py",
+        "script": "class Avatar:\n    def onCreated(self):\n        pass\n"
+      },
+      "engine": {
+        "load": "reject",
+        "truth": "baseapp 名册=Entity+Proxy+EntityComponent;无基类 → 对名册全假 → not derived from KBEngine.[Entity/Proxy/EntityComponent] → 装载失败。"
+      },
+      "evidence": [
+        "registerScript(Entity::getScriptType());",
+        "registerScript(Proxy::getScriptType());",
+        "registerScript(EntityComponent::getScriptType());"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "bases": [],
+          "roleFace": "baseapp",
+          "roster": ["KBEngine.Entity", "KBEngine.Proxy", "KBEngine.EntityComponent"]
+        },
+        "finding": "QA-001a 基类闸组件域分支:baseapp 名册含 Proxy,无基类形态同样报 Warning(组件名册按面分立映射,与引擎 baseapp.cpp:414-416 一致)。"
+      }
+    },
+    {
       "id": "entity-base-roster-component-scope",
       "kind": "unknown",
       "input": { "face": "组件名册在 kode 组件角色面的映射" },
@@ -116,12 +148,32 @@
         "**空名册空转**:基类表为空时循环体不执行,`valid` 保持 false 但清单为空串 → 返回空串 = 检查通过。dbmgr 即此形态(见 §4)。"
       ],
       "kode": {
-        "status": "unverified",
+        "status": "pinned",
         "analysis": {
-          "roleFace": "pythonProcessFromPath(脚本角色路径矩阵,family-8 已钉)"
+          "roleFace": "SCRIPT_BASE_ROSTER(组件名册映射已建模:cellapp/baseapp 钉,client null 不断言基类闸,dbmgr 不在此面表)"
         }
       },
-      "reason": "引擎组件名册已钉,但 kode 无基类验证面故无组件域映射可探;若未来收编检查面,名册须按 pythonProcessFromPath 角色分立(cellapp/baseapp 名册不同,dbmgr 空转=跳过),组件域语义未建模=诚实缺口,取证前提=检查面立项。"
+      "reason": "QA-001a 检查面落地后组件名册映射经 SCRIPT_BASE_ROSTER 收编(cellapp/baseapp 钉,基类闸只报无基类形态);client 名册未取证与 dbmgr 空转留诚实缺口,见 entity-base-roster-client-unverified。"
+    },
+    {
+      "id": "entity-base-roster-client-unverified",
+      "kind": "unknown",
+      "input": { "face": "client 组件名册未取证" },
+      "engine": {
+        "load": "accept",
+        "truth": "client 端装载实体类同样经 registerScript 机制(客户端 EntityDef 装载),但组件名册清单内容未取证(浅查口径);类名闸(GetAttrString)在 client 同样生效。"
+      },
+      "evidence": [
+        "PyObject_GetAttrString(pyModule, const_cast<char *>(moduleName.c_str()));"
+      ],
+      "kode": {
+        "status": "unverified",
+        "analysis": {
+          "roleFace": "client",
+          "roster": "null(未取证)"
+        }
+      },
+      "reason": "client 名册未取证 → SCRIPT_BASE_ROSTER.client=null → 基类闸在 client 面不跑(不猜),类名闸照跑(引擎每个进程装载实体都查类名)。取证前提=引擎 client 脚本装载源码再探。"
     }
   ]
 }

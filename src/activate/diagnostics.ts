@@ -52,6 +52,12 @@ import { READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, readOnlyWriteDiagnosticItem
 import { buildReadOnlyWriteItemsWithRust } from '../backend/readOnlyWriteRust';
 import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync, type RoleMisuseDiagnosticItem } from '../backend/roleMisuseDiagnostics';
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
+import {
+  ENTITY_SCRIPT_BASE_CLASS_DIAGNOSTICS_ENABLED_DEFAULT,
+  entityScriptBaseClassFindingsToItems,
+  findEntityScriptBaseClassFindings,
+  type EntityScriptBaseClassDiagnosticItem
+} from '../backend/entityScriptBaseClassDiagnostics';
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
 import { CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, analyzeCellDataFieldWrites, cellDataWriteFindingToItem, type CellDataWriteDiagnosticItem } from '../backend/cellDataWriteCheck';
 import { SPACE_DATA_PROTECTED_KEY_DIAGNOSTICS_ENABLED_DEFAULT, analyzeSpaceDataProtectedKeys, type SpaceDataProtectedKeyDiagnosticItem } from '../backend/spaceDataProtectedKeyCheck';
@@ -169,6 +175,7 @@ export interface DiagnosticsShared {
   scheduleReadOnlyWriteDiagnostics: ScheduleDiagnostics;
   scheduleRoleMisuseDiagnostics: ScheduleDiagnostics;
   schedulePostDestroyDiagnostics: ScheduleDiagnostics;
+  scheduleEntityScriptBaseClassDiagnostics: ScheduleDiagnostics;
   scheduleCellDataWriteDiagnostics: ScheduleDiagnostics;
   scheduleSpaceDataProtectedKeyDiagnostics: ScheduleDiagnostics;
   scheduleFixedDictConstructDiagnostics: ScheduleDiagnostics;
@@ -186,6 +193,8 @@ export interface DiagnosticsShared {
   roleMisuseScheduler: DiagnosticScheduler;
   postDestroyDiagnostics: vscode.DiagnosticCollection;
   postDestroyScheduler: DiagnosticScheduler;
+  entityScriptBaseClassDiagnostics: vscode.DiagnosticCollection;
+  entityScriptBaseClassScheduler: DiagnosticScheduler;
   cellDataWriteDiagnostics: vscode.DiagnosticCollection;
   cellDataWriteScheduler: DiagnosticScheduler;
   spaceDataProtectedKeyDiagnostics: vscode.DiagnosticCollection;
@@ -1321,6 +1330,79 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
       postDestroyScheduler.request(document, options);
     }
   };
+  // QA-001a:实体脚本基类面(类名一致性 + 基类合法性,独立集合,与同族
+  // 生命周期一致)。只在实体模块文件(basename==实体名)上跑;类名闸对
+  // 模块命名空间绑定名放行(定义类/实例赋值/import 任一,GetAttrString
+  // 取得到即过);基类闸只报「无任何直接基类 + 名册非空」可证非法形态,
+  // client 名册未取证与面歧义不猜。
+  const entityScriptBaseClassDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-entity-script-base-class'
+  );
+  context.subscriptions.push(entityScriptBaseClassDiagnostics);
+  const entityScriptBaseClassScheduler = new DiagnosticScheduler();
+  const scheduleEntityScriptBaseClassDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly EntityScriptBaseClassDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>(
+            'entityScriptBaseClassDiagnostics',
+            ENTITY_SCRIPT_BASE_CLASS_DIAGNOSTICS_ENABLED_DEFAULT
+          );
+        if (!enabled) {
+          return [];
+        }
+        const fsPath = document.uri.fsPath;
+        const mapping = entityMappingManager.getMappingForPythonFile(fsPath);
+        // 非实体脚本 → 不接管(普通 Python 类不猜)
+        if (!mapping) {
+          return [];
+        }
+        const entityName = mapping.name;
+        const fileName = fsPath.split(/[\\/]/).pop() ?? '';
+        // 类名闸只对实体模块文件生效(引擎装载的就是 {entityName}.py);
+        // 实体名下其余附属文件(基类助手等)不查。
+        if (fileName !== `${entityName}.py`) {
+          return [];
+        }
+        const faces = await entityMappingManager.getEntityComponentFacesForPythonFile(fsPath);
+        const face = faces && faces.length === 1 ? faces[0] : null;
+        return entityScriptBaseClassFindingsToItems(
+          findEntityScriptBaseClassFindings(document.getText(), fileName, entityName, face)
+        );
+      },
+      publish: (items: readonly EntityScriptBaseClassDiagnosticItem[]) => {
+        entityScriptBaseClassDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      entityScriptBaseClassScheduler.requestQueued(document, options);
+    } else {
+      entityScriptBaseClassScheduler.request(document, options);
+    }
+  };
 
   // KSEM-CELL-08:cellData 已知字段写入类型校验(独立集合,键宇宙与读型提示
   // 同源 CELL-04)。已知键的字面量赋值按声明类型校验引擎标量结构(datatypes.cpp
@@ -2121,6 +2203,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleReadOnlyWriteDiagnostics,
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
+    scheduleEntityScriptBaseClassDiagnostics,
     scheduleCellDataWriteDiagnostics,
     scheduleSpaceDataProtectedKeyDiagnostics,
     scheduleFixedDictConstructDiagnostics,
@@ -2141,6 +2224,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     roleMisuseScheduler,
     postDestroyDiagnostics,
     postDestroyScheduler,
+    entityScriptBaseClassDiagnostics,
+    entityScriptBaseClassScheduler,
     cellDataWriteDiagnostics,
     cellDataWriteScheduler,
     spaceDataProtectedKeyDiagnostics,

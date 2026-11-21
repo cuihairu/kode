@@ -769,5 +769,7 @@
   "Docs": "Docs",
   "Configs": "Configs",
   "Logs": "Logs",
-  "Process scripts": "Process scripts"
+  "Process scripts": "Process scripts",
+  "Entity script module must define a class named {entityName} (the engine loads {fileName} as the entity module and requires a class of the same name via GetAttrString; classes defined in this module: {classes})": "Entity script module must define a class named {entityName} (the engine loads {fileName} as the entity module and requires a class of the same name via GetAttrString; classes defined in this module: {classes})",
+  "Entity class {entityName} has no base class; the {face} component requires the entity class to derive from one of {roster} (engine isSubClass against the component roster rejects a class with no base)": "Entity class {entityName} has no base class; the {face} component requires the entity class to derive from one of {roster} (engine isSubClass against the component roster rejects a class with no base)"
 }

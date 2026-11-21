@@ -240,6 +240,7 @@ describe('extension activate 装配', () => {
       'kbengine-readonly-write',
       'kbengine-role-misuse',
       'kbengine-post-destroy',
+      'kbengine-entity-script-base-class',
       'kbengine-celldata-write',
       'kbengine-space-data-protected-key',
       'kbengine-fixeddict-construct',
