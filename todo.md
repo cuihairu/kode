@@ -737,7 +737,7 @@
 
 #### 19.5 HTTP 适配、调度、幂等与成功确认（HR-HTTP）
 - [x] RUST-343 （旧 HR-HTTP-001） 从现有 Quick Requests 抽取可复用 RequestExecutor；不可破坏普通通用 HTTP 功能。(HR-PR-03,21cc4848,新纯核 src/backend/httpRequestExecutor.ts:快捷请求 HttpRequestService.runEntry 与默认热更 sendDefaultHotfix 统一走 executeHttpRequest+交换状态机,不再各带一套传输分支;服务层分支仍读 transportOk=传输面原始 ok 布尔,日志行/错误弹窗/布尔返回逐字不变=通用 HTTP 零回归,tests/httpRequestService.test.ts 既有钉全绿)
-- [ ] RUST-344 （旧 HR-HTTP-002） `HotReloadProvider` 接受 module identity、target、revision、request correlation id，产生结构化 outcome。
+- [x] RUST-344 （旧 HR-HTTP-002） `HotReloadProvider` 接受 module identity、target、revision、request correlation id，产生结构化 outcome。（2026-11-22 收口;载体 2d5b49b1;契约=HotReloadProviderSendRequest 增可选 moduleIdentities(逐文件,与 files 平行)/revision/correlationId,SendResult 增可选 outcomes(HttpRequestOutcome[] 逐文件)/correlationId/revision 回执——全部可选字段向后兼容,apiVersion 不递增;HTTP 通道实现=createHttpHotfixSendProvider 逐项透传进 sendDefaultHotfix(缺省字段=行为与增量前逐字一致);sendDefaultHotfix=显式模块身份照用不重推(buildDefaultHotfixRequest 第三参,空串视同未给)/关联 id 播种(单文件=种子原样,多文件=种子#序号保唯一,未给=各次执行自生成)/逐文件顺序发送保持(HR-HTTP-007 默认同目标串行不并发)/outcomes 如实透传执行器产物不重分类,ok/detail 语义逐字不变;prove-red=摘除模块身份覆写两测试红还原复绿;验收=hotReloadDefaultHotfix 15 例+providerAssembly 8 例+相关族 85 例+全量 12367 过 1 红(remoteConnection 端口 5678 环境红,pristine HEAD 同红);tsc 主/mocha 双 0+eslint 0）
 - [ ] RUST-345 （旧 HR-HTTP-003） 保持自定义 URL/method/headers/body/变量模板，处理 URL query encoding、JSON escaping 与 HTTP method semantics。
 - [x] RUST-346 （旧 HR-HTTP-004） HTTP 字段拼写口径：2026-11-06 用户令更正为 `http://127.0.0.1:8090/hotfix` + `module_name=`，旧错误拼写全仓清零（`tests/hotfixSpellingGate.test.ts` 门断言）。
 - [ ] RUST-347 （旧 HR-HTTP-005） 所有自动 HTTP 请求仅能发送到用户明确批准的 target endpoint；Workspaces 未信任时禁止发送。
