@@ -256,6 +256,26 @@ describe('HotReloadStatusController(渲染与节流)', () => {
     expect(clock.pending()).toBeGreaterThan(0);
   });
 
+  it('RUST-400:setRestartRequired 把需重启原因叠进 tooltip;clearRestartNote 清除,无附注零动作', () => {
+    const clock = makeTimers();
+    const fake = makeStatus(clock.timers);
+    settle(clock);
+
+    fake.controller.setRestartRequired(['Avatar.def: Parent 结构变化'], ['/ws/Avatar.def']);
+    settle(clock);
+    expect(fake.bar.tooltip).toContain('需重启(结构变更未热更): Avatar.def: Parent 结构变化');
+
+    // 清除后 tooltip 不再带附注
+    fake.controller.clearRestartNote();
+    settle(clock);
+    expect(fake.bar.tooltip).not.toContain('需重启(结构变更未热更)');
+
+    // 无附注再清 = 零动作(不渲染不刷窗)
+    const pendingBefore = clock.pending();
+    fake.controller.clearRestartNote();
+    expect(clock.pending()).toBe(pendingBefore);
+  });
+
   it('同态内容变了照记(来源/模式上屏 §11.4),逐字重复压掉(防配置抖动刷屏)', () => {
     const clock = makeTimers();
     const fake = makeStatus(clock.timers);

@@ -31,6 +31,10 @@ import { setupProtocolSchemaSync } from '../protocolSchemaSync';
 import { setupProtocolPcapActions } from '../protocolPcapActions';
 import { getLastDefMd5CheckOutcome, setupDefMd5Check } from '../defMd5Check';
 import { defaultDefFingerprintDeps, setupDefFingerprintInspector } from '../defFingerprintInspector';
+import {
+  defaultDefFingerprintCodeLensDeps,
+  setupDefFingerprintCodeLens
+} from '../defFingerprintCodeLens';
 
 // IDE-REV-037:注解来源日志的输出通道(懒建,首条日志到达才创建)
 let annotationSourceChannel: vscode.OutputChannel | undefined;
@@ -193,7 +197,13 @@ export function activateInfrastructure(
   setupDefMd5Check(context);
   // HR-HASH-007/008 接线批:def 指纹 Inspector 命令 + .def 保存触发的三路
   // 判定(台账存底;通道与「KBEngine Def 分析」同名合并);句柄自入 subscriptions。
-  setupDefFingerprintInspector(context, { deps: defaultDefFingerprintDeps(getLastDefMd5CheckOutcome) });
+  // RUST-400(HR-HASH-013)①:.def 编辑器 CodeLens 与 Inspector 共用同一
+  // 读面 deps(VFS 字节复用,不为显示重读磁盘)。CodeLens 懒加载(只算
+  // 当前可见 .def 文档,零全项目预计算);根元素行挂 sha256+语义短 hash,
+  // 点击开 Inspector。注册随 context 拆。
+  const fingerprintDeps = defaultDefFingerprintDeps(getLastDefMd5CheckOutcome);
+  setupDefFingerprintInspector(context, { deps: fingerprintDeps });
+  setupDefFingerprintCodeLens(context, defaultDefFingerprintCodeLensDeps(fingerprintDeps));
   // KODE-CFG-009:门接线后即预取 core 配置解析(`$/kode/config/resolve`),
   // 同步消费面(dbInterface/合成树/别名开关)读消费缓存不阻塞宿主。
   void ensureConfigResolved().catch(() => {});

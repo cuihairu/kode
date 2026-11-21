@@ -314,6 +314,11 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       hotReloadStatus.log(
         `def 结构基线重建(重启确认):${confirmed} 个文件基线已对齐当前内容,${cleared} 个被拦文件解除需重启标记(结构性变更仍会在下次发送前拦下)`
       );
+      // RUST-400:重启确认 = 结构变更已由引擎加载,状态栏「需重启」tooltip
+      // 附注随之清除(无附注时零动作)。
+      if (cleared > 0) {
+        hotReloadStatus.clearRestartNote();
+      }
       void Promise.resolve(
         vscode.window.showInformationMessage(
           `def 结构基线已对齐当前内容(${confirmed} 个文件);${cleared} 个文件的「需重启」标记已清除`

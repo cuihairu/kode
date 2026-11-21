@@ -154,6 +154,8 @@ export class HotReloadStatusController {
   private lastChangeLog: string | undefined;
   /** 状态附注(来源/glob/缺根补救等):只叠 tooltip,不改状态脸面 */
   private tooltipNote: string | undefined;
+  /** RUST-400:需重启附注(结构变更未热更):只叠 tooltip,重启确认后清除 */
+  private restartNote: string | undefined;
   private windowOpen = false;
   private pendingKind: HotReloadStatusKind | undefined;
   private windowHandle: unknown;
@@ -251,9 +253,21 @@ export class HotReloadStatusController {
 
   /** IDE-REV-024 结构性 def 变更:整批不发普通 reload,状态回落就绪(不是失败),日志记需重启原因 */
   setRestartRequired(reasons: string[], triggers: string[]): void {
+    // RUST-400:需重启原因叠进状态栏 tooltip(悬停可查为什么拦下),
+    // 与日志同源;重启确认(confirmDefBaseline)后 clearRestartNote 清除。
+    this.restartNote = `需重启(结构变更未热更): ${reasons.join(';')}`;
     this.setState('ready');
     const triggerText = triggers.length > 0 ? triggers.join(', ') : '(无文件路径)';
     this.log(`结构性 def 变更需重启,不作为普通 reload 发送: ${reasons.join(';')} | 触发: ${triggerText}`);
+  }
+
+  /** 重启确认后清除需重启 tooltip 附注(confirmDefBaseline 调用;无附注零动作) */
+  clearRestartNote(): void {
+    if (this.restartNote === undefined) {
+      return;
+    }
+    this.restartNote = undefined;
+    this.render(this.kind);
   }
 
   /** 开日志通道(既有各命令面共用,只开通道不加工) */
@@ -420,9 +434,11 @@ export class HotReloadStatusController {
     const pending = source?.pending() ?? [];
     this.bar.text =
       badge === undefined ? face.text : `${face.text} ${formatHotReloadVersionSuffix(badge.baseline, badge.current)}`;
-    // 状态 tooltip 的来源/模式附注(§11.4)与版本块叠在一起,两个口径都保留
+    // 状态 tooltip 的来源/模式附注(§11.4)与版本块叠在一起,两个口径都保留;
+    // RUST-400:需重启附注也叠(与来源附注同层,不抢脸面)
     const base = this.tooltipNote ? `${face.tooltip};${this.tooltipNote}` : face.tooltip;
-    this.bar.tooltip = this.buildTooltip(base, badge, pending);
+    const withRestart = this.restartNote ? `${base};${this.restartNote}` : base;
+    this.bar.tooltip = this.buildTooltip(withRestart, badge, pending);
     this.kickRefresh();
   }
 

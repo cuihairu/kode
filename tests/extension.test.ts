@@ -194,8 +194,9 @@ describe('extension activate 装配', () => {
     // PROC-TAG-001 进程归属镜注册已随 PROC-BREADCRUMB-001 移除(面包屑改面);
     // FILE-TIME-001 起文件顶部修改时间镜再加一份注册;
     // KODE-CFG-015 起引擎 SPI 函数标注镜再加一份注册;
-    // MRO-CHAIN 起 mixin 执行链镜再加一份注册(resolveMroMethodChains 链序)
-    expect(languagesRegistry.codeLensRegistrations).toHaveLength(11);
+    // MRO-CHAIN 起 mixin 执行链镜再加一份注册(resolveMroMethodChains 链序);
+    // RUST-400 起 .def 指纹镜再加一份注册(sha256+语义短 hash,点击开 Inspector)
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(12);
     // 批154:python 侧 types.xml 数据类型 inlay hints 一份注册;内建属性行内
     // `: <type>` inlay 另一份独立注册(2026-10-21 形态升级单,独立开关);
     // 任务2(2026-10-27)def 定义点形参 inlay 再一份独立注册;
@@ -877,11 +878,12 @@ describe('extension activate 装配', () => {
       // 变更各 fire 一次;generatedSource 两实例与 generatedEntitySource 不订阅
       // 配置变更,计数不动;IDE-HOT-100 文件热更状态点同口径 fire
       // (PROC-BREADCRUMB-001 移除 processOwnership 镜链后 11→10 注册,
-      // MRO-CHAIN 起再加一份回到 11)
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0]);
+      // MRO-CHAIN 起再加一份回到 11);RUST-400 .def 指纹镜不订阅配置
+      // 变更(配置无关),计数不动,前置为注册序首
+      expect(lensFires.map(read => read())).toEqual([0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0]);
       // 外层 guard:不影响 kbengine 段时不 fire(计数不动)
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0]);
+      expect(lensFires.map(read => read())).toEqual([0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0]);
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });
