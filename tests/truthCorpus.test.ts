@@ -2066,3 +2066,125 @@ describe('truth-corpus: bots-module-face 族执行闸(bots 模块面探针)', ()
     expect(spi.components).not.toContain('bots');
   });
 });
+
+// ── 第三十二族 interfaces-module-face(KB-API-005 interfaces 模块面)────────────
+// interfaces 裸 PythonApp(interfaces.h:24,不经 EntityApp):73 符号表存在性+kind+签名直钉;
+// 20 模块函数/38 错误码/MemoryStream 类/component 值对齐;SERVER_ERR_MAX+DatabaseCommand*
+// TypeAlias+chargeResponse 越界码三误导分歧按现状钉——kode 侧收编或收窄即红,触发重钉,不冒充
+// 修复。addWatcher/delWatcher 文档 §1「all script-bearing apps」口径被 fork 仲裁推翻
+// (initializePyWatcher 仅 entity_app.h:414 EntityApp 调,interfaces 不经 EntityApp)=负例对齐钉。
+// urlopen 四形态+回调 headers str 站 fork 侧(材料 dict 口径被 fork 推翻)=正例。
+interface InterfacesFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      functions?: string[];
+      present?: boolean;
+      value?: string;
+      errCodes?: string[];
+      types?: string[];
+      signature?: string;
+      overloadCount?: number;
+      thirdArgType?: string;
+      callbackHeadersType?: string;
+      names?: string[];
+      requiredFlags?: Record<string, boolean>;
+      kind?: string;
+      presentInKode?: boolean;
+      aliasNames?: string[];
+      kodeCellType?: string;
+      forkCellType?: string;
+      absentNames?: string[];
+      errorCodeType?: string;
+      forkDiscardsAt?: number;
+    };
+  };
+}
+const interfacesFaceFamily = families.find(f => f.family === 'interfaces-module-face')!;
+const interfacesFaceEntries = interfacesFaceFamily.entries as unknown as InterfacesFaceEntry[];
+const interfacesFaceSymbols = new Map(processApiSymbols('interfaces').map(s => [s.name, s]));
+describe('truth-corpus: interfaces-module-face 族执行闸(interfaces 模块面探针)', () => {
+  it('登记点名册臂:20 模块函数=function 行;38 错误码=variable 行;MemoryStream=class 行', () => {
+    for (const entry of interfacesFaceEntries) {
+      if (entry.kode.status !== 'pinned' || !entry.input.roster || entry.input.roster === 'spi') { continue; }
+      const a = entry.kode.analysis!;
+      for (const name of a.functions ?? []) {
+        expect(interfacesFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.errCodes ?? []) {
+        expect(interfacesFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'variable' });
+      }
+      for (const name of a.types ?? []) {
+        expect(interfacesFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'class' });
+      }
+    }
+  });
+
+  it('SPI 名册臂:五入口回调 components 含 interfaces+required 全 true', () => {
+    const entry = interfacesFaceEntries.find(e => e.input.roster === 'spi')!;
+    const a = entry.kode.analysis!;
+    expect(a.names!.length).toBe(5);
+    for (const n of a.names!) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain('interfaces');
+      expect(ENGINE_SPI_METHODS[n].required, n).toBe(a.requiredFlags![n]);
+    }
+  });
+
+  it('component 值臂:Literal[\'interfaces\'] 逐字钉', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-component-attr')!;
+    expect(entry.kode.analysis!.value).toBe("Literal['interfaces']");
+    const sym = interfacesFaceSymbols.get('component')!;
+    expect(sym.kind).toBe('variable');
+    expect(sym.signature).toContain("'interfaces'");
+  });
+
+  it('addTimer 签名臂:三参零默认逐字钉(与 fork ffO 必需口径一致)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-addtimer-signature')!;
+    expect((interfacesFaceSymbols.get('addTimer') as { signature: string }).signature).toBe(entry.kode.analysis!.signature);
+  });
+
+  it('urlopen 形态臂:四 overload+回调 headers str+3 参 Union[bytes,Dict] 逐字钉(站 fork 侧)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-urlopen-shape')!;
+    const sig = (interfacesFaceSymbols.get('urlopen') as { signature: string }).signature;
+    const overloadCount = sig.split('def urlopen(').length - 1;
+    expect(overloadCount).toBe(entry.kode.analysis!.overloadCount);
+    expect(sig).toContain(entry.kode.analysis!.thirdArgType!);
+    expect(sig).toContain('Callable[[int, str, str, bool, str], Any]');
+    expect(entry.kode.analysis!.callbackHeadersType).toBe('str');
+  });
+
+  it('SERVER_ERR_MAX 误导臂:引擎循环界不装而 kode 表有 variable 行(收窄即红)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'neg-server-err-max')!;
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(interfacesFaceSymbols.get('SERVER_ERR_MAX')).toMatchObject({ kind: 'variable' });
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('executeRawDatabaseCommand 单元格类型误导臂:kode TypeAlias str vs 引擎 bytes(收窄即红)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'div-executedb-result-cells-str')!;
+    expect(entry.kode.analysis!.kodeCellType).toBe('str');
+    expect(entry.kode.analysis!.forkCellType).toBe('bytes');
+    const aliasSig = (interfacesFaceSymbols.get('DatabaseCommandResult') as { signature: string }).signature;
+    expect(aliasSig).toContain('list[list[str]]');
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('addWatcher 缺席对齐臂:interfaces 表无 addWatcher/delWatcher(fork 仲裁档 §1 口径不采)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'neg-addwatcher-absent')!;
+    expect(entry.kind).toBe('negative');
+    expect(entry.kode.analysis!.presentInKode).toBe(false);
+    expect(interfacesFaceSymbols.has('addWatcher')).toBe(false);
+    expect(interfacesFaceSymbols.has('delWatcher')).toBe(false);
+  });
+
+  it('chargeResponse 越界码误导臂:errorCode:int 无界 vs 引擎 >=38 静默丢弃(收窄即红)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'div-chargeresponse-errcode-range')!;
+    const sig = (interfacesFaceSymbols.get('chargeResponse') as { signature: string }).signature;
+    expect(sig).toContain('__errorCode: int');
+    expect(sig).not.toContain('Literal');
+    expect(entry.kode.analysis!.errorCodeType).toBe('int');
+    expect(entry.kode.analysis!.forkDiscardsAt).toBe(38);
+    expect(entry.finding).toContain('误导方向');
+  });
+});

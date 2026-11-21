@@ -330,3 +330,47 @@ flagsGroundingText/:133 cellDataGroundingText 未用变量,本族零新增;CI li
 基线红非本批引入,判例=受害者文件归属)。本批零 src/ 零 Rust 改动(仅语料+
 执行门+README+todo);语料 31 族 274 条(30→31 族,+10;基线 264=第三十一增量
 254+10)。
+
+## interfaces-module-face 族(2026-11-22 第三十二族)
+
+依据:docs/knowledge/api-interfaces.md(**KB-API-005**,fork HEAD **6d12b8f**,
+grounding base c2a3b8f;档 §1 四层装配表=interfaces.cpp:176-190 四方法+38
+错误码循环+python_app.cpp:271-296/:329-334 共享层+解释器层 pyurl.cpp:23/
+script.cpp:248/:258/pywatcher.cpp:184-185+absent 清单;§2 7 函数;§3 五回调;
+§4 错误码面;§6 偏差表)。11 例,执行门=**processApiSymbols('interfaces') 直钉
++ ENGINE_SPI_METHODS 名册面**(73 符号表存在性+kind+签名三标量;探针实测后
+写值,drift 即红)。臂形:正例 7(20 模块函数名册=4 专属+共享+解释器/38 错误码
+名册 SERVER_SUCCESS..SERVER_ERR_VERSION_NOT_MATCH 逐名 variable/component
+Literal['interfaces'] 值/addTimer 三参零默认与 fork ffO 必需口径一致/urlopen
+四形态+回调 headers str+3 参 Union[bytes,Dict] 站 fork 侧/MemoryStream
+PythonApp 链在场/SPI 五回调 components 含 interfaces+required 全 true)+
+**分歧登记 3**:①误导方向=SERVER_ERR_MAX(引擎 interfaces.cpp:176-184 循环界
+只装 SERVER_ERR_STR[0..37],MAX 非表项;同 family-29 判例归各族核)②误导方向=
+executeRawDatabaseCommand 结果单元格(fork PyBytes_FromStringAndSize
+interfaces.cpp:391 成 bytes 而 kode DatabaseCommandResult TypeAlias 声明
+list[list[str]] str;另 DatabaseCommandCallback/Result 系 kode 自造 TypeAlias
+名 kbe/src 零命中)③误导方向=chargeResponse errorCode 越界码(fork
+__py_chargeResponse 守卫 errCode<SERVER_ERR_MAX 才转发,>=38 静默丢弃
+interfaces.cpp:851-855 而 kode 签名 errorCode:int 无界)+负例 1(addWatcher/
+delWatcher 缺席对齐,见下判例)。
+
+**判例=档 §1 表口径被 fork 仲裁推翻(第二十九族判例延伸=档内张力须源码仲裁)**:
+档 §1 第三层称「Interpreter layer (all script-bearing apps) … addWatcher/
+delWatcher」(pywatcher.cpp:184-185),而 fork 实读 initializePyWatcher
+(pywatcher.cpp:181-188)全树唯一调用点 entity_app.h:414(EntityApp::
+installPyModules 内),interfaces 裸 PythonApp(interfaces.h:24)不经 EntityApp
+→interfaces 面无 addWatcher/delWatcher,文档「all script-bearing apps」口径
+不采,kode 同席缺席=负例对齐钉。**MemoryStream 反例对照判例**:interfaces 真走
+PythonApp::installPyModules(python_app.cpp:271)故 MemoryStream 在场,与
+baseapp/cellapp EntityApp 链缺席(续82 判例 2)相反——「模块面有无 X」按实际
+继承链,同名符号不同进程可异真值。
+
+门禁=定向 110/110(101+9 新增 it)/prove-red 九咬(九臂 perturb family-32,各红
+一次,sha256 6d620c3e 字节还原复绿)/tsc -p ./ 0/tsc -p tsconfig.mocha.json 0/
+eslint tests/truthCorpus.test.ts 2 error 系第九族与第十一族旧债(:94
+flagsGroundingText/:133 cellDataGroundingText 未用变量,本族零新增;CI lint 仅
+覆盖 src/)/全量 6 failed=remoteConnection 端口基线红延续(非本批引入)+5 超时类
+负载抖动(硬时间预算臂 processTopologyPerf KODE-PERF-006 solo 三连绿 5/5;
+victim 文件零本批改动、本批零 src/ 零 Rust,判例=受害者文件归属非连跑次数),CI 权威。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);语料 32 族 285 条(31→32
+族,+11;基线 274=第三十二增量 264+10)。
