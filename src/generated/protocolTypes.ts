@@ -64,6 +64,7 @@ export interface KodeProtocol {
   text_document_sync_options: TextDocumentSyncOptions;
   versioned_text_document_identifier: VersionedTextDocumentIdentifier;
   workspace_folder: WorkspaceFolder;
+  workspace_symbol_params: WorkspaceSymbolParams;
 }
 /**
  * codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。
@@ -356,6 +357,10 @@ export interface ServerCapabilities {
    */
   signatureHelpProvider?: boolean;
   textDocumentSync: TextDocumentSyncOptions;
+  /**
+   * RUST-139 批 4:workspace/symbol 能力声明(def 符号前缀检索面)。
+   */
+  workspaceSymbolProvider?: boolean;
 }
 /**
  * 全量同步(openClose + change=1)。
@@ -447,4 +452,10 @@ export interface ServerNotification {
 export interface SignatureHelpParams {
   position: Position;
   textDocument: TextDocumentIdentifier;
+}
+/**
+ * `workspace/symbol` 参数(RUST-139 批 4):Ctrl+T 快速搜索的前缀查询串。 LSP `limit` 可选参数不入 Rust 面——结果集由决策核全量产出后由 TS 侧 薄壳截断(vscode 请求侧行为,服务端不猜分页口径)。
+ */
+export interface WorkspaceSymbolParams {
+  query: string;
 }

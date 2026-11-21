@@ -1042,6 +1042,72 @@ export async function serveSignatureHelpFromRust(
   return result;
 }
 
+/** 根范围 def 符号命中面(workspace_symbols::WorkspaceSymbolHit 同形,行 1 起) */
+export interface WorkspaceSymbolHitFace {
+  symbolName: string;
+  /** "property" | "method" */
+  kind: string;
+  /** 仅 method 在场(Rust Option<&str>);属性无段 */
+  section: string | null;
+  rootName: string;
+  rootDefFile: string;
+  defFile: string;
+  line: number;
+}
+
+const isWorkspaceSymbolHitFace = (value: unknown): value is WorkspaceSymbolHitFace => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const hit = value as Record<string, unknown>;
+  return (
+    typeof hit.symbolName === 'string' &&
+    typeof hit.kind === 'string' &&
+    (hit.kind === 'property' || hit.kind === 'method') &&
+    (hit.section === null || typeof hit.section === 'string') &&
+    typeof hit.rootName === 'string' &&
+    typeof hit.rootDefFile === 'string' &&
+    typeof hit.defFile === 'string' &&
+    typeof hit.line === 'number' &&
+    Number.isInteger(hit.line) &&
+    hit.line >= 1
+  );
+};
+
+/**
+ * workspace/symbol 检索面 rust 服务(RUST-139 批 4 接线):服务轨道下请求
+ * kode-server workspace/symbol。Rust 面 = 语料 entity 类 def root 集 +
+ * effective 折叠闭包(first-wins 去重)+ 组件槽独立面 + 前缀大小写不敏感/
+ * trim + rootName→symbolName→line 三键排序;回 {symbols:[命中面]}。语料由
+ * didOpen 入库,检索面不镜像文档(无文档上下文)。
+ * 诚实边界:vscode.SymbolInformation/Location/Position 构造归 TS 薄壳;
+ * 结果集截断(LSP limit)归 TS 请求侧。非服务轨道/未装配门/取消/任何失败/
+ * 应答畸形 → null,调用方回 TS 既有 searchDefSymbolsByPrefix 链(不部分采用);
+ * 空集 {symbols:[]} 是合法应答(可解析但无命中),照常返回。
+ */
+export async function serveWorkspaceSymbolsFromRust(
+  query: string,
+  isCancelled?: () => boolean
+): Promise<WorkspaceSymbolHitFace[] | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  const result = await awaitWithInteractiveBudget(
+    opts => gate.serveInRust<unknown>('workspace/symbol', { query }, null, opts),
+    INTERACTIVE_SERVE_BUDGET_MS,
+    isCancelled
+  );
+  if (result === null || !result || typeof result !== 'object') {
+    return null;
+  }
+  const symbols = (result as { symbols?: unknown }).symbols;
+  if (!Array.isArray(symbols) || !symbols.every(isWorkspaceSymbolHitFace)) {
+    return null;
+  }
+  return symbols;
+}
+
 /**
  * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
  * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值

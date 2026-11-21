@@ -18,7 +18,7 @@ import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchC
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDataKeyAccesses } from '../backend/cellDataKeyAccess';
 import { findEntityScriptFile, findDefinitionFileByCategory } from '../definitionWorkspace';
 import { buildDefProcessBreadcrumb } from '../backend/processOwnershipLens';
-import { serveDocumentSymbolsFromRust, serveReferencesFromRust } from '../backend/kodeCoreShadowFaces';
+import { serveDocumentSymbolsFromRust, serveReferencesFromRust, serveWorkspaceSymbolsFromRust } from '../backend/kodeCoreShadowFaces';
 import type { LspDocumentSymbolFace } from '../backend/kodeCoreShadowFaces';
 
 /**
@@ -573,6 +573,29 @@ export class KBEngineWorkspaceSymbolProvider implements vscode.WorkspaceSymbolPr
   ): Promise<vscode.SymbolInformation[] | null> {
     if (token?.isCancellationRequested) {
       return null;
+    }
+    // RUST-139 批 4:检索决策面 rust 服务优先(语料 entity 类 def root 集 +
+    // effective 折叠闭包 + 组件槽独立面,rootName→symbolName→line 三键排序);
+    // 无门/门关/取消/应答畸形/serve 抛错 → null 回 TS searchDefSymbolsByPrefix
+    // 既有链(不部分采用),空集 {symbols:[]} 是合法应答照用。
+    // vscode.SymbolInformation/Location/Position 构造留本侧薄壳。
+    const rustHits = await serveWorkspaceSymbolsFromRust(
+      query,
+      () => token?.isCancellationRequested === true
+    );
+    if (rustHits) {
+      if (token?.isCancellationRequested) {
+        return null;
+      }
+      return rustHits.map(hit => new vscode.SymbolInformation(
+        hit.symbolName,
+        hit.kind === 'property' ? vscode.SymbolKind.Field : vscode.SymbolKind.Method,
+        hit.section ? `${hit.rootName} · ${hit.section}` : hit.rootName,
+        new vscode.Location(
+          vscode.Uri.file(hit.defFile),
+          new vscode.Position(Math.max(0, hit.line - 1), 0)
+        )
+      ));
     }
     const hits = this.entityMappingManager.searchDefSymbolsByPrefix(query, token);
     if (token?.isCancellationRequested) {

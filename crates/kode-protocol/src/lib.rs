@@ -211,6 +211,9 @@ pub struct ServerCapabilities {
     /// RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。
     #[serde(default)]
     pub signature_help_provider: bool,
+    /// RUST-139 批 4:workspace/symbol 能力声明(def 符号前缀检索面)。
+    #[serde(default)]
+    pub workspace_symbol_provider: bool,
     /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
@@ -487,6 +490,15 @@ pub struct CodeActionParams {
 pub struct SignatureHelpParams {
     pub text_document: TextDocumentIdentifier,
     pub position: Position,
+}
+
+/// `workspace/symbol` 参数(RUST-139 批 4):Ctrl+T 快速搜索的前缀查询串。
+/// LSP `limit` 可选参数不入 Rust 面——结果集由决策核全量产出后由 TS 侧
+/// 薄壳截断(vscode 请求侧行为,服务端不猜分页口径)。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSymbolParams {
+    pub query: String,
 }
 
 // ---------------------------------------------------------------------------

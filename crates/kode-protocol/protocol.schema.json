@@ -797,6 +797,11 @@
         },
         "textDocumentSync": {
           "$ref": "#/definitions/TextDocumentSyncOptions"
+        },
+        "workspaceSymbolProvider": {
+          "default": false,
+          "description": "RUST-139 批 4:workspace/symbol 能力声明(def 符号前缀检索面)。",
+          "type": "boolean"
         }
       },
       "required": [
@@ -941,6 +946,18 @@
         "uri"
       ],
       "type": "object"
+    },
+    "WorkspaceSymbolParams": {
+      "description": "`workspace/symbol` 参数(RUST-139 批 4):Ctrl+T 快速搜索的前缀查询串。 LSP `limit` 可选参数不入 Rust 面——结果集由决策核全量产出后由 TS 侧 薄壳截断(vscode 请求侧行为,服务端不猜分页口径)。",
+      "properties": {
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
     }
   },
   "description": "kode2 协议 wire DTO 全集(RUST-055 单一真源)。",
@@ -1076,6 +1093,9 @@
     },
     "workspace_folder": {
       "$ref": "#/definitions/WorkspaceFolder"
+    },
+    "workspace_symbol_params": {
+      "$ref": "#/definitions/WorkspaceSymbolParams"
     }
   },
   "required": [
@@ -1122,7 +1142,8 @@
     "text_document_item",
     "text_document_sync_options",
     "versioned_text_document_identifier",
-    "workspace_folder"
+    "workspace_folder",
+    "workspace_symbol_params"
   ],
   "title": "KodeProtocol",
   "type": "object",

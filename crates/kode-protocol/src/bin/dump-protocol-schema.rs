@@ -62,6 +62,7 @@ struct ProtocolSchemaRoot {
     code_action_params: CodeActionParams,
     code_action_diagnostic: CodeActionDiagnostic,
     signature_help_params: SignatureHelpParams,
+    workspace_symbol_params: WorkspaceSymbolParams,
     health_report: HealthReport,
     core_resources: CoreResources,
     document_summary: DocumentSummary,

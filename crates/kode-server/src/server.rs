@@ -23,7 +23,7 @@ use kode_protocol::{
     HealthReport, HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification,
     PrepareRenameParams, ReferenceParams, RenameFilesParams, RenameParams, RenamedFile, Request,
     RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification, SignatureHelpParams,
-    TextDocumentSyncOptions, PROTOCOL_VERSION,
+    TextDocumentSyncOptions, WorkspaceSymbolParams, PROTOCOL_VERSION,
 };
 use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, TextChange};
@@ -435,6 +435,9 @@ fn handle_request_inner(
         "textDocument/signatureHelp" => {
             vec![Outgoing::Response(handle_signature_help(state, request))]
         }
+        // RUST-139 批 4:workspace/symbol def 符号前缀检索面(决策核
+        // workspace_symbols.rs 批 2;todo/评审文档记作 textDocument/workspaceSymbol)。
+        "workspace/symbol" => vec![Outgoing::Response(handle_workspace_symbol(state, request))],
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
         // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
         "$/kode/workspace/rootAdded" => {
@@ -559,6 +562,8 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             // RUST-143 批 3:textDocument/codeAction(四族装配面)。
             code_action_provider: true,
             signature_help_provider: true,
+            // RUST-139 批 4:workspace/symbol(def 符号前缀检索面)。
+            workspace_symbol_provider: true,
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
@@ -682,6 +687,18 @@ fn drain_index_for_request(state: &mut ServerState, key: &DocumentKey) {
     // freshen 即可执行它——打开文档请求即新鲜。
     state.index.take_buffered(&identity);
     state.index.freshen(&identity);
+    state.index.pump_budgeted_until(
+        crate::index_queue::REQUEST_DRAIN_BUDGET,
+        std::time::Instant::now()
+            + std::time::Duration::from_millis(crate::index_queue::REQUEST_DRAIN_BUDGET_MS),
+    );
+}
+
+/// 无文档上下文的请求入口刷新(RUST-139 批 4:workspace/symbol):检索面
+/// 不带文档键,无键可 freshen,只做有界追赶——否则 didOpen 的入库任务还
+/// 在队列里时语料视图未就绪,检索面恒空集(与 documentSymbol 等按文档键
+/// 刷新的臂不同源)。
+fn drain_index_for_global_request(state: &mut ServerState) {
     state.index.pump_budgeted_until(
         crate::index_queue::REQUEST_DRAIN_BUDGET,
         std::time::Instant::now()
@@ -1248,6 +1265,32 @@ fn handle_signature_help(state: &mut ServerState, request: Request) -> Response 
     )
 }
 
+/// workspace/symbol(RUST-139 批 4 接线;LSP 规范方法名,todo/评审文档
+/// 记作 textDocument/workspaceSymbol):Ctrl+T def 符号前缀检索面。决策核 =
+/// workspace_symbols.rs 批 2(语料 entity 类 def root 集 + effective 折叠
+/// 闭包 + 组件槽独立面,rootName→symbolName→line 三键排序),本臂零决策输入。
+/// 应答 `{symbols:[WorkspaceSymbolHit...]}`;空前缀=全集,无命中回空集不回
+/// null(与 documentSymbol「空集=可解析无符号段」区分同口径)。
+fn handle_workspace_symbol(state: &mut ServerState, request: Request) -> Response {
+    let params: WorkspaceSymbolParams =
+        match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+            Some(params) => params,
+            None => {
+                return Response::error(
+                    Some(request.id),
+                    error_codes::INVALID_PARAMS,
+                    "invalid workspace/symbol params",
+                );
+            }
+        };
+    // 检索面无文档键,只追赶积压入库(见 drain_index_for_global_request)。
+    drain_index_for_global_request(state);
+    let hits = state
+        .hover
+        .borrow()
+        .workspace_symbols_by_prefix(&params.query);
+    Response::success(request.id, serde_json::json!({ "symbols": hits }))
+}
 
 /// textDocument/diagnostic(Phase2 首片,LSP pull 诊断 full 报告形):
 /// `{kind:"full", items:[DiagnosticFace...]}`。文档须已打开;未打开回
