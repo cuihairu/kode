@@ -62,3 +62,19 @@ initialize 广播 renameProvider;prepareRename 命中(区间+占位名)/不命�
 - `tsc --noEmit`(主工程 + tsconfig.mocha)0;eslint 改动文件 0;
 - vitest 全量 11425 绿,7 红与本批前 detached-HEAD 基线逐一相同(configMarkdownDescription×3/docsCommands/extensionWorkspaceGate×2/cancellationTokenBatch3,均为 infer.enabled·stubCopy·watcher 既有债);
 - protocolSchema + protocolContract(真二进制)20/20 绿。
+
+## 结案(2026-11-21)
+
+RUST-141 收口:批 1 def 重命名四纯面(2026-11-16)+批 2 集成批
+(2026-11-20 rename_dispatch 11/11,prepareRename/provider 切流/闭包冲突/
+open-buffer 优先)全部完成;rename 全工作区可编辑范围分析 + 同名符号冲突
+面无剩余实现工作。余两项均为诚实边界:
+
+- **python self 访问改写面**:`applyPythonRewrite`(NAV-010 手势输入记账 +
+  entityMapping self 访问/receiver 调用追加编辑 + AUD-027 四道复核)在 TS
+  已是生产路径,rust 臂与 TS 回退臂共用同一私有方法;非欠账。
+- **preview 合成面**:rename preview 合成(VS Code WorkspaceEdit 已提供原生
+  预览)未见需求方,不改不装(如实登记)。
+
+复验:rename_dispatch 11/11 全绿,零代码改动(仅结案注记)。todo.md
+RUST-141 整行勾销。
