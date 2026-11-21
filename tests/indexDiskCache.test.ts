@@ -374,3 +374,86 @@ describe('BG-WARM discovery 落盘恢复(EntityMappingManager 面)', () => {
     expect(manager.isInitialScanComplete()).toBe(true);
   }, 120_000);
 });
+
+/**
+ * 读侧容错臂(2026-11-21 补):默认 io 的 readText 失败臂 + meta 损坏/缺键
+ * 臂 + 产物缺席/坏 JSON 的 parseJsonArray 容错臂。判例:缓存只是挪时机,
+ * 任何一侧读失败/畸形只让该侧缺席(调用方照旧全扫),绝不抛错、绝不部分
+ * 复活。默认 io 走真实文件系统(注入 io 会绕过 defaultIndexCacheIo 的
+ * readText 失败臂 84)。
+ */
+describe('索引磁盘缓存读侧容错臂(默认 io 真实 fs)', () => {
+  let dir = '';
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-idx-cache-fault-'));
+  });
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const metaWithDiscoverySha = (sha: string): string =>
+    JSON.stringify({
+      schemaVersion: INDEX_CACHE_SCHEMA_VERSION,
+      kodeVersion: '0.2.0',
+      savedAt: 0,
+      sha: { discovery: sha },
+      discoveryCount: 0,
+      eventIndexCount: 0
+    });
+
+  it('缓存目录不存在:默认 io readText 失败臂 → null,不抛', () => {
+    expect(
+      readIndexCache(path.join(dir, 'absent'), {
+        schemaVersion: INDEX_CACHE_SCHEMA_VERSION,
+        kodeVersion: '0.2.0'
+      })
+    ).toBeNull();
+  });
+
+  it('meta.json 非法 JSON → null(解析 catch 臂)', () => {
+    fs.writeFileSync(path.join(dir, 'meta.json'), '{not json', 'utf8');
+    expect(
+      readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0' })
+    ).toBeNull();
+  });
+
+  it('meta.schemaVersion 非字符串 → null(版本门形状臂)', () => {
+    fs.writeFileSync(
+      path.join(dir, 'meta.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        kodeVersion: '0.2.0',
+        savedAt: 0,
+        sha: {},
+        discoveryCount: 0,
+        eventIndexCount: 0
+      }),
+      'utf8'
+    );
+    expect(
+      readIndexCache(dir, { schemaVersion: INDEX_CACHE_SCHEMA_VERSION, kodeVersion: '0.2.0' })
+    ).toBeNull();
+  });
+
+  it('产物缺席(readText null)→ 该侧缺席,meta 仍回', () => {
+    fs.rmSync(path.join(dir, 'discovery.json'), { force: true });
+    fs.writeFileSync(path.join(dir, 'meta.json'), metaWithDiscoverySha('abc'), 'utf8');
+    const loaded = readIndexCache(dir, {
+      schemaVersion: INDEX_CACHE_SCHEMA_VERSION,
+      kodeVersion: '0.2.0'
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded?.payload.discovery).toBeUndefined();
+  });
+
+  it('产物坏 JSON → 该侧缺席(catch 臂),meta 仍回', () => {
+    fs.writeFileSync(path.join(dir, 'discovery.json'), '[broken', 'utf8');
+    fs.writeFileSync(path.join(dir, 'meta.json'), metaWithDiscoverySha('abc'), 'utf8');
+    const loaded = readIndexCache(dir, {
+      schemaVersion: INDEX_CACHE_SCHEMA_VERSION,
+      kodeVersion: '0.2.0'
+    });
+    expect(loaded).not.toBeNull();
+    expect(loaded?.payload.discovery).toBeUndefined();
+  });
+});
