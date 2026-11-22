@@ -371,7 +371,7 @@ const zh = {
       `监听模式: ${watchMode} | 目标: ${target} | 显示 ${shown}/${total} 行`,
     notConfigured: '(未配置)',
     headerTargetDefault: '(默认)',
-    defaultTarget: '(default)',
+    defaultTarget: '(默认)',
     defaultRoot: '(未记录)',
     queueHeading: '实时队列',
     queueMerging: '归并中',
@@ -408,7 +408,10 @@ const zh = {
     loadMore: (pageSize: number) => `加载更多(每页 ${pageSize} 行)`,
     sentModulePrefix: '发送: ',
     locateFilePrefix: '定位文件 ',
-    rowTitle: '点击或回车定位文件'
+    rowTitle: '点击或回车定位文件',
+    queueRegionLabel: '实时队列',
+    filterGroupLabel: '历史筛选',
+    tableLabel: '热更历史表'
   }
 };
 
@@ -803,7 +806,10 @@ const en: typeof zh = {
     loadMore: (pageSize: number) => `Load more (${pageSize} rows per page)`,
     sentModulePrefix: 'Sent: ',
     locateFilePrefix: 'Locate file ',
-    rowTitle: 'Click or press Enter to locate the file'
+    rowTitle: 'Click or press Enter to locate the file',
+    queueRegionLabel: 'Live queue',
+    filterGroupLabel: 'History filters',
+    tableLabel: 'Hot reload history table'
   }
 };
 

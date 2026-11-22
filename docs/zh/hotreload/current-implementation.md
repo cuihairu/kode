@@ -427,3 +427,16 @@
 - **结构钉** `tests/hotReloadProviderSchedulingIsolation.test.ts`(3 钉,扫 `src/` 下生产 .ts):①语言服务模块(`languageProviders` 桶+hover/definition 入口+`languageService*` 激活面)零引用派发 token;②四个 hover/definition 入口(`languageProviders/hover.ts`、`pythonDefinition.ts`、`navigation.ts`、`languageProviders.ts`)零导入 provider 面(`hotReloadPluginApi`/`hotReloadProviderAssembly`/`hotReloadProviderExamples`);③派发 token 生产调用点只在 `src/hotReload.ts` 与 `src/backend/*`——别处即红。prove-red:向 `hover.ts` 注入 `resolveSendProvider` 注释后 ①③ 两钉转红;恢复 3/3 绿。
 - **实证臂** `tests/perf/hotReloadProviderImpact.bench.ts`(bench lane,`vitest.bench.config.ts`,与主 unit 门无交集):同一批真实盘上脚本(gen-perf-assets `large`)+ 同一份实时索引,warm 尾延迟(p50/p95/p99/max)覆盖悬停(`KBEngineHoverProvider.provideHover`,coldHover 测量面)与定义(`PythonClassIndex.resolveSelfMethodCandidates`,unblockedDefinition 语义核——避开 Rust-first RPC 面对真实二进制的依赖),两臂对照——**H0** 无 provider host(基线)vs **HN** 20 个计数 adapter 注册进活跃 `HotReloadProviderHost`。结构断言:整轮测量派发计数恒 0(宿主就绪但从不被语言服务调用);墙钟只记录不进断言(阈值化属 RUST-414 批)。
 - 记录运行(`docs/perf/hot-reload-provider-impact-run.txt`,追加制,`KODE_HPI_OUT` 可覆盖;旋钮 `KODE_HPI_FILES/WARM/ADAPTERS`):files=400 warm=40 adapters=20——H0 悬停 p50=0.97ms/p95=5.83ms vs HN p50=1.03ms/p95=2.23ms;H0 定义 p50=0.69ms/p95=9.09ms vs HN p50=0.97ms/p95=4.99ms。两臂落同一噪声带(HN 尾部反而略低——注册 20 个 provider 对 hover/definition 路径零增加),与结构钉一致。
+
+## 31. HR-UI-013 面板无障碍/主题完整性（2026-11-22,RUST-384 批B+批C）
+
+注:批B 的 ZH 文档节此前未落(主文档只在 EN §33 记),本节把批B+批C 一起对账;批C 载体 feat commit 438de4e7。
+
+- **批B(已落,EN §33)**:两热更面板文案走既有 webviewStrings 表(`strings(locale).hotReloadSettings/hotReloadHistory`,en/zh 全量同形,纯渲染面注入 t/lang,渲染纯函数不依赖 vscode),宿主面(树三组/定位命令标题/搜索 prompt/通知)走 l10nText(bundle.l10n.{en,zh-cn}.json 786 键 parity);主题面既有 `var(--vscode-*)` 令牌。
+- **批C(本节载体 438de4e7)在批B 基础上补无障碍完整性与主题硬化**:
+  - 主题硬化:面板 `body` 补 `background: var(--vscode-editor-background)`,加 `:focus-visible` 焦点环(2px `var(--vscode-focusBorder, #3794ff)`),不引固定 Dark+ 调色板(仍全走 `--vscode-*` 令牌);
+  - screen reader:实时队列包稳定 live 区(`#queue-region` role=status aria-live=polite,label=queueRegionLabel,`queueChanged` 只换内层行、live 区本身不重建,屏幕阅读器可听到队列变化);过滤表单 role=search(label=filterGroupLabel),五控件各配 sr-only 关联标签(文本=列标签),虚拟/非虚拟双表 aria-label(tableLabel);
+  - 键盘:apply 改 type=submit,脚本挂 form submit 处理器(`event.preventDefault()` 后应用)——任一过滤控件回车即应用;clear/加载更多保持 type=button;
+  - zh 文案残差修复:批B 留下 zh 表 `defaultTarget='(default)'` 英文占位(页头 `headerTargetDefault` 本已是「(默认)」),批C 改 `'(默认)'`;两键仍分开(页头/行格),只修 zh 拼写;另加三个 a11y 标签键(queueRegionLabel/filterGroupLabel/tableLabel)zh/en 同形。
+- 测试:`tests/hotReloadHistoryI18nA11y.test.ts` 11 例(纯渲染两态:主题令牌+不引固定 Dark+ 调色板/队列 live 区 zh/en/页头 live 区/表单 role=search+五 sr-only 标签+.sr-only CSS/双表 aria-label 含虚拟分支(行数超 `VIRTUAL_SCROLL_THRESHOLD`)/submit/clear/more 钮型+form submit 处理器/zh「(默认)」vs en「(default)」行格/三新键 zh/en 同形/`<html lang>` 按 locale);`tests/hotReloadHistoryView.test.ts` 面板钉更新:zh 目标格现「(默认)」(原「(default)」)。
+- 残差不变(同 EN §33):en locale 下错误类别下拉与 errorSummary 列仍中文(纯核 `HOT_RELOAD_ERROR_REASON_LABELS`,label 穿线是独立架构改动,诚实不装已做)。
