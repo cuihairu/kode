@@ -454,7 +454,6 @@ describe('RUST-414 热更各段耗时统计(过滤/哈希/语法/队列+丢弃�
     // 合并即防抖,非性能回归面,不作界表面;网络耗时须单独统计不混本地性能(§19.10)。
     const records = Array.from({ length: 500 }, (_unused, index) => {
       const file = scriptPath(index);
-      const stem = path.basename(file, '.py');
       return {
         rootId: 'r1',
         targetId: '',
