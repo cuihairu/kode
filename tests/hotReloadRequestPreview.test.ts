@@ -60,7 +60,8 @@ describe('buildRequestPreviewRows(只构造不发送)', () => {
 
     const defaultFace = rows[2];
     expect(defaultFace.name).toBe('零配置默认热更面');
-    expect(defaultFace.url).toContain('module_name=entities.fight.FightAI');
+    // RUST-440:预览与真实发送同源(发送名=短名);三名并列里 fullModule 照给 UI 面
+    expect(defaultFace.url).toContain('module_name=fight.FightAI');
   });
 
   it('无活动文件:空行集(不猜文件);未配 scriptRoot:双名如实空串,legacy 照常', () => {

@@ -4,6 +4,7 @@ import {
   resolveDefaultHotfixModule,
   sendDefaultHotfix
 } from '../src/backend/hotReloadDefaultHotfix';
+import { resolveModuleDualName } from '../src/backend/hotReloadTempEdit';
 import type { HttpTransport } from '../src/backend/httpRequestService';
 
 // 默认热更请求(用户令 2026-11-06):新工作区零配置时保存 .py 即 POST
@@ -43,11 +44,18 @@ describe('buildDefaultHotfixRequest(默认端点与参数名)', () => {
     expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI');
   });
 
-  it('配了脚本资源根:按 resolveModuleDualName 全名口径(书 §19.1)', () => {
+  it('配了脚本资源根:请求只送短名(RUST-440 HR-DOD-001,书 §19.1 发送名=requestModule)', () => {
+    // HR-DOD-001:自动模式启用后改 scripts/entities/fight/FightAI.py 只送 fight.FightAI;
+    // fullModule(entities.fight.FightAI) 是 UI 展示名,绝不进请求(module_name).
     const request = buildDefaultHotfixRequest('/ws/scripts/entities/fight/FightAI.py', {
       scriptRoot: '/ws/scripts'
     });
-    expect(request.body).toBe('module_name=entities.fight.FightAI');
+    expect(request.body).toBe('module_name=fight.FightAI');
+    expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=fight.FightAI');
+    // 同文件双名:UI=fullModule,请求=short name(两面并存不混用)
+    expect(resolveDefaultHotfixModule('/ws/scripts/entities/fight/FightAI.py', { scriptRoot: '/ws/scripts' })).toBe(
+      'fight.FightAI'
+    );
     // 文件不在脚本根内时如实回落包边界扫描,不编造名字
     expect(resolveDefaultHotfixModule('/elsewhere/base/Avatar.py', { scriptRoot: '/ws/scripts' })).toBe(
       'Avatar'
@@ -78,6 +86,27 @@ describe('buildDefaultHotfixRequest(默认端点与参数名)', () => {
     });
     expect(request.body).toBe('module_name=Foo');
     expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=Foo');
+  });
+
+  it('RUST-440(HR-DOD-001)自动模式端到端:只送短名;双名契约两面并存', async () => {
+    // 自动模式发送面=sendDefaultHotfix(装配 fire 路径,hotReload.ts:749 同款):
+    // 改 scripts/entities/fight/FightAI.py,请求体/URL 只送 fight.FightAI。
+    const seen: Array<{ url: string; method: string; body: string }> = [];
+    const result = await sendDefaultHotfix(['/ws/scripts/entities/fight/FightAI.py'], {
+      transport: okTransport(seen),
+      scriptRoot: '/ws/scripts'
+    });
+    expect(result.ok).toBe(true);
+    expect(seen[0].body).toBe('module_name=fight.FightAI');
+    expect(seen[0].url).toContain('module_name=fight.FightAI');
+    // UI 展示名=fullModule(entities.fight.FightAI),与请求名绝不混用:
+    // fileChangeMeta/hotReloadHistoryView 两处 UI 面均以此名钉住(不重做)。
+    const dual = resolveModuleDualName('/ws/scripts/entities/fight/FightAI.py', '/ws/scripts');
+    if ('unsupported' in dual) {
+      throw new Error(`unexpected unsupported: ${dual.unsupported}`);
+    }
+    expect(dual.fullModule).toBe('entities.fight.FightAI');
+    expect(dual.requestModule).toBe('fight.FightAI');
   });
 });
 

@@ -488,3 +488,15 @@ RUST-430 要求一份按四维——target、engine profile、文件类型、触
 - 生产(非 demo)外部接收器语义:`unknown`——demo 回环桥+xreload+参考接收器覆盖契约,非生产级第三方接收器。
 - 引擎摘要算法协商与 applied-revision 轮询:`unknown`/无——真实引擎交叉对拍在摘要握手前永久拒绝。
 - 跨主机真实网络(SSH/DevContainer/WSL):纯核由 RUST-423 矩阵覆盖;跨机真机确认仍挂(RUST-423 残余)。
+
+## 34. HR-DOD-001 发送路径双名切换（2026-11-23,RUST-440,自动模式只送短名）
+
+自动模式现在发送**短名**,UI 继续展示**全名**。`resolveDefaultHotfixModule`(`src/backend/hotReloadDefaultHotfix.ts`)双名分支原先返回 `dualName.fullModule`,请求体与 query 带的是 `entities.fight.FightAI`;现返回 `dualName.requestModule`:
+
+- `scripts/entities/fight/FightAI.py`(脚本根 `scripts`)→ 请求 `module_name=fight.FightAI`;UI 面(`fileChangeMeta.moduleName`、历史树标题/tooltip)不变→`entities.fight.FightAI`。
+- **为什么短名是发送名**:`HotReloadModuleIdentity` 契约把 `requestModule` 定义为*实际发送名*(书 §19.1),且引擎模块注册表按脚本根为键——带 `scripts.` 前缀的名字被明确标注为服务端认不出(`src/backend/httpRequests.ts`,`allowRootLevelStem` 的缘由)。
+- **同一文件、各面发送名一致**:插件生命周期缺省槽早已取 `moduleIdentities: [identity.requestModule]`(§28),故自动/手动热更/请求预览三态现在都认短名。本切换前,直发 `sendDefaultHotfix` 路径与 provider 路径是分歧的。
+
+**未触碰**——legacy `${module}` 占位保持 `__init__.py` 包边界语义(`buildTemplateVars.module`→`resolvePythonModulePath`),那是另一张脸,零回归(HR-MOD-012 决策);双名经 `${reloadModule}` / `${fullModule}` 占位携带。回落链(未配根/根外/根下拒→包边界扫描)不变。
+
+**证据**:`tests/hotReloadDefaultHotfix.test.ts` 增 RUST-440 钉——自动发送端到端面(注入 transport 的 `sendDefaultHotfix`)body 与 query 都送 `module_name=fight.FightAI`,同文件双名契约并列(`fullModule=entities.fight.FightAI`,`requestModule=fight.FightAI`);请求预览缺省面随之翻转(preview ≡ send)。消费面门:defaultHotfix/requestPreview/moduleIdentity/tempEdit/fileChangeMeta/providerWiring/providerAssembly/pluginApi/providerExamples/historyView——10 文件 214 例绿。

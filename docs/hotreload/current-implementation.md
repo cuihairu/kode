@@ -568,3 +568,15 @@ RUST-430 asks for a completion matrix signed off **item by item** across four di
 - Production (non-demo) external receiver semantics: `unknown` — the demo loopback bridge + xreload + reference receiver cover the contract, not a production-grade third-party receiver.
 - Engine digest algorithm negotiation and applied-revision polling: `unknown` / no — cross-comparison with a real engine is permanently refused until a digest handshake exists.
 - Real-network behaviors across hosts (SSH / DevContainer / WSL): covered by RUST-423 matrix for the pure core; cross-machine real-device confirmation still pending (RUST-423 residual).
+
+## 46. HR-DOD-001 send-path dual-name switch (2026-11-23, RUST-440, auto mode sends only the short name)
+
+Auto mode now sends the **short** module name and the UI keeps showing the **full** one. `resolveDefaultHotfixModule` (`src/backend/hotReloadDefaultHotfix.ts`) used to return `dualName.fullModule` for the dual-name branch, so the request body and query carried `entities.fight.FightAI`. It now returns `dualName.requestModule`:
+
+- `scripts/entities/fight/FightAI.py` (script root `scripts`) → request `module_name=fight.FightAI`; UI faces (`fileChangeMeta.moduleName`, history tree title/tooltip) unchanged → `entities.fight.FightAI`.
+- **Why the short name is the send name**: the `HotReloadModuleIdentity` contract names `requestModule` the *actual* send name (书 §19.1), and the engine's module registry is keyed relative to the script root — a `scripts.`-prefixed name is explicitly called out as unrecognized by the server side (`src/backend/httpRequests.ts`, the `allowRootLevelStem` rationale).
+- **Same file, one send name across faces**: the plugin lifecycle default slot already took `moduleIdentities: [identity.requestModule]` (§28), so auto / manual hot reload / request preview now agree on the short name. Before this switch the direct `sendDefaultHotfix` path diverged from the provider path.
+
+**Not touched** — the legacy `${module}` placeholder keeps its `__init__.py` package-boundary semantics (`buildTemplateVars.module` → `resolvePythonModulePath`), which is a different face and stays zero-regression (HR-MOD-012 decision); the dual names travel through the `${reloadModule}` / `${fullModule}` placeholders. The fallback chain (no script root / out-of-root / root-level refusal → package-boundary scan) is unchanged.
+
+**Evidence**: `tests/hotReloadDefaultHotfix.test.ts` gains the RUST-440 pin — the end-to-end auto-send face (`sendDefaultHotfix` with an injected transport) sends `module_name=fight.FightAI` in both body and query, plus the dual-name contract for the same file (`fullModule = entities.fight.FightAI`, `requestModule = fight.FightAI`); the request-preview default face flips with it (`preview ≡ send`). Consumer gate: defaultHotfix / requestPreview / moduleIdentity / tempEdit / fileChangeMeta / providerWiring / providerAssembly / pluginApi / providerExamples / historyView — 10 files, 214 tests green.
