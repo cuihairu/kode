@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
   HotReloadSavePipeline,
@@ -15,6 +15,13 @@ import {
 } from '../src/hotReloadHistoryView';
 import { commandRegistry, windowState } from './helpers/vscodeStub';
 import { messages, treeRegistrations } from './fake-vscode/windowState';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
+
+// RUST-384 批B:清史通知走 l10nText(en 默认源串/setL10nBundle 注入 zh-cn)。
+afterEach(() => {
+  setL10nBundle(null);
+});
 
 // HR-STATE-011 接口四臂:流水线 cancel/pause/resume + 历史 clear-history。
 // retry/retry-all-failed 由 RUST-381 收口(重试面已齐=hotReloadRetry 纯核
@@ -396,6 +403,10 @@ describe('HR-STATE-011 历史清空命令(装配)', () => {
     });
     void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_CLEAR_COMMAND);
     expect(saves).toHaveLength(0);
-    expect(messages.info.some(message => message.includes('已为空'))).toBe(true);
+    expect(messages.info.some(message => message.includes('Hot reload history is already empty'))).toBe(true);
+    setL10nBundle(zhCnBundle);
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_CLEAR_COMMAND);
+    expect(messages.info.some(message => message.includes('热更历史已为空'))).toBe(true);
+    setL10nBundle(null);
   });
 });

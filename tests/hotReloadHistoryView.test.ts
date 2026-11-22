@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -18,11 +18,25 @@ import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../src/backend
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from '../src/backend/hotReloadTargetState';
 import { messages, panelRegistry, windowState } from './helpers/vscodeStub';
 import { treeRegistrations } from './fake-vscode/windowState';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
+import { htmlLang, strings } from '../src/webviewStrings';
 
 // HR-PR-06 装配钉:台账记录→历史行翻译(requestId 同执行稳定/状态三态如实
 // 不拔高)+树三组(最近/按文件/按目标,同路径不同 target 分行)+搜索过滤+
 // 节流刷新(窗内合并,面板开即时)+历史面板(过滤/分页/加载更多)+持久化
 // 回载(形状不符如实丢弃)+面板关闭不停 feed(HR-UI-012)+dispose 清钟。
+// RUST-384 批B:面板文案走 webviewStrings(注入 t/lang,两态),树组/通知走
+// l10nText(nlsRuntime bundle 两态;setL10nBundle 注入 zh-cn)。
+
+afterEach(() => {
+  setL10nBundle(null);
+});
+
+const th = strings('zh').hotReloadHistory;
+const thEn = strings('en').hotReloadHistory;
+const renderPanel = (opts: Omit<Parameters<typeof renderHistoryPanelHtml>[0], 't' | 'lang'>): string =>
+  renderHistoryPanelHtml({ t: th, lang: htmlLang('zh'), ...opts });
 
 interface TestNode {
   kind: string;
@@ -180,8 +194,19 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     expect(treeRegistrations[0].viewId).toBe('kbengine.hotReloadHistory');
     const provider = lastProvider();
     const root = provider.getChildren();
-    expect(root.map(node => node.label)).toEqual(['最近更新', '按文件', '按目标']);
+    expect(root.map(node => node.label)).toEqual(['Recent', 'By file', 'By target']);
     expect(root.map(node => node.kind)).toEqual(['group', 'group', 'group']);
+  });
+
+  it('RUST-384 批B:树三组标签走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', () => {
+    const provider = (): TestProvider => {
+      setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      return lastProvider();
+    };
+    expect(provider().getChildren().map(node => node.label)).toEqual(['Recent', 'By file', 'By target']);
+    setL10nBundle(zhCnBundle);
+    expect(provider().getChildren().map(node => node.label)).toEqual(['最近更新', '按文件', '按目标']);
+    setL10nBundle(null);
   });
 
   it('最近更新组最新在前;行节点标题=fullModule,description 带状态与目标,tooltip 双名/file/target/requestId', () => {
@@ -611,7 +636,7 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
       { ...base, status: 'failed', errorSummary: 'boom' },
       { ...base, status: 'sent-unverified' }
     ];
-    const html = renderHistoryPanelHtml({
+    const html = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows,
       total: 3,
@@ -626,7 +651,7 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
   });
 
   it('HR-UI-004 实时队列面:快照三阶段计数+文件名如实;文件名 HTML 转义(文本与 title 全路径双面)', () => {
-    const html = renderHistoryPanelHtml({
+    const html = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows: [],
       total: 0,
@@ -640,6 +665,36 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
     expect(html).toContain('title="/x/&lt;evil&gt;&amp;.py"');
     expect(html).toContain('&lt;evil&gt;&amp;.py');
     expect(html).not.toContain('<evil>&.py');
+  });
+
+  it('RUST-384 批B:面板文案 en 注入走英文,zh 中文;类别下拉仍中文(纯核 label 残差,两态)', () => {
+    const rows: HotReloadHistoryEntry[] = [
+      {
+        requestId: 'r1//A.py#1',
+        fullModule: 'm.A',
+        requestModule: 'm.A',
+        fileUri: FILE_A,
+        targetId: 't1',
+        time: 1700000000000,
+        status: 'applied'
+      }
+    ];
+    const state = { feedStatus: { watchMode: 'onDiskChange', target: 'login_role' }, filter: {}, page: 1 };
+    const en = renderHistoryPanelHtml({
+      state, rows, total: 1, hasMore: true, pageSize: 50, t: thEn, lang: htmlLang('en')
+    });
+    expect(en).toContain('<html lang="en">');
+    expect(en).toContain(`<h2>${thEn.title}</h2>`);
+    expect(en).toContain(thEn.headerStatus('onDiskChange', 'login_role', 1, 1));
+    expect(en).toContain('<th>Module</th><th>File</th>');
+    expect(en).toContain('class="st-applied">Applied');
+    expect(en).toContain(thEn.loadMore(50));
+    // 残差:错误类别下拉走纯核 HOT_RELOAD_ERROR_REASON_LABELS(零 vscode),en 下仍中文
+    expect(en).toContain('>配置错误</option>');
+    const zh = renderPanel({ state, rows, total: 1, hasMore: true, pageSize: 50 });
+    expect(zh).toContain('<html lang="zh-CN">');
+    expect(zh).toContain(`class="st-applied">${th.statusApplied}`);
+    expect(zh).toContain(th.headerStatus('onDiskChange', 'login_role', 1, 1));
   });
 });
 
@@ -662,7 +717,9 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
       total: rows.length,
       hasMore: false,
       pageSize: 50,
-      virtualize
+      virtualize,
+      t: th,
+      lang: htmlLang('zh')
     });
 
   it('行数超阈值:只渲染视口窗口行(非全量),滚动条按内容总高', () => {
@@ -689,7 +746,7 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
     expect(small).not.toContain('id="vlist"');
     // 150 行全量渲染(非虚拟路径无 JS 镜像行字面量,行数即渲染数)
     expect((small.match(/\n {8}<td class="module">/g) || []).length).toBe(150);
-    const noOpt = renderHistoryPanelHtml({
+    const noOpt = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows: makeRows(205),
       total: 205,
@@ -732,7 +789,7 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
   });
 
   it('面板列头恰 10 列,空态 colspan 与之一致', () => {
-    const html = renderHistoryPanelHtml({
+    const html = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows: [],
       total: 0,
@@ -991,8 +1048,22 @@ describe('RUST-381 失败点击定位文件', () => {
     const recent = provider.getChildren(provider.getChildren()[0]);
     const item = provider.getTreeItem(recent[0]);
     expect(item.command?.command).toBe(HOT_RELOAD_LOCATE_FILE_COMMAND);
-    expect(item.command?.title).toBe('定位文件');
+    expect(item.command?.title).toBe('Locate File');
     expect(item.command?.arguments).toEqual([FILE_A]);
+  });
+
+  it('RUST-384 批B:定位命令标题走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', () => {
+    const titleOf = (): unknown => {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A }));
+      const provider = lastProvider();
+      const recent = provider.getChildren(provider.getChildren()[0]);
+      return provider.getTreeItem(recent[0]).command?.title;
+    };
+    expect(titleOf()).toBe('Locate File');
+    setL10nBundle(zhCnBundle);
+    expect(titleOf()).toBe('定位文件');
+    setL10nBundle(null);
   });
 
   it('定位命令:合法路径打开文件(fsPath=路径)', async () => {
@@ -1007,8 +1078,19 @@ describe('RUST-381 失败点击定位文件', () => {
     setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, '');
     await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, undefined);
-    expect(messages.error).toEqual(['定位文件:路径缺失', '定位文件:路径缺失']);
+    expect(messages.error).toEqual(['Locate file: missing path', 'Locate file: missing path']);
     expect(windowState.showTextDocumentCalls).toHaveLength(0);
+  });
+
+  it('RUST-384 批B:路径缺失通知走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', async () => {
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, '');
+    expect(messages.error).toEqual(['Locate file: missing path']);
+    windowState.reset();
+    setL10nBundle(zhCnBundle);
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, '');
+    expect(messages.error).toEqual(['定位文件:路径缺失']);
+    setL10nBundle(null);
   });
 
   it('面板行带 data-file 与行级委托脚本(虚拟+非虚拟共用)', () => {
