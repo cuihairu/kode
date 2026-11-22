@@ -244,4 +244,47 @@ describe('setupHotReload revision 消费面(HR-WATCH-011 响应面)', () => {
     expect(latest?.outcome).toBe('sent-unverified');
     expect(latest?.detail ?? '').not.toContain('响应过期');
   });
+
+  it('RUST-443(HR-DOD-004)连续保存 100 次:每版本恰请求一次,旧回执不作当前结果', async () => {
+    let content = 'v0';
+    const sentVersions: string[] = [];
+    const outcomes: string[] = [];
+    const respond: Array<(result: HttpExecutionResult) => void> = [];
+    const { clock, fireChange } = boot({
+      transport: () => {
+        sentVersions.push(content);
+        return new Promise(resolve => respond.push(resolve));
+      },
+      snapshotContent: () => content,
+      outcomes
+    });
+    const save = async (): Promise<void> => {
+      fireChange('/ws/scripts/A.py');
+      clock.tick();
+      await flush();
+      clock.tick();
+      await flush();
+    };
+    for (let i = 1; i <= 100; i++) {
+      content = `v${i}`;
+      await save();
+    }
+    // 同一旧版本不无限请求:100 次保存=100 个不同内容定稿,恰 100 次请求
+    expect(respond).toHaveLength(100);
+    expect(new Set(sentVersions).size).toBe(100);
+    // 回执乱序落地:最新代先落地,99 条旧回执随后落地
+    respond[99]({ ok: true, status: 200, body: '', durationMs: 1 });
+    await flush();
+    for (let i = 0; i < 99; i++) {
+      respond[i]({ ok: true, status: 200, body: '', durationMs: 1 });
+    }
+    await flush();
+    // 旧回执不作当前结果:仅最新代能置「已发送(未确认)」,旧 99 条全注解过期
+    expect(outcomes).toEqual(['sent-unverified']);
+    const stale = statusCalls.filter(line => line.includes('响应过期'));
+    expect(stale).toHaveLength(99);
+    // 同内容再保存:指纹去重,零新增请求
+    await save();
+    expect(respond).toHaveLength(100);
+  }, 20_000);
 });
