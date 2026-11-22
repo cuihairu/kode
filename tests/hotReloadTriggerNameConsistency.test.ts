@@ -170,8 +170,10 @@ describe('HR-DOD-002 三触发面短名/全名一致性(RUST-441)', () => {
     expect(saveFace.capture.seen).toHaveLength(1);
 
     // onDiskChange 面:外部写盘磁盘监视面(根派生递归 watcher,按 pattern 识别)
+    // RUST-329(HR-WATCH-005)后 watch 面按部署 target 的脚本根收窄——配了
+    // tempEdit.scriptRoot 即按该根监听(pattern=脚本根派生),非工作区根派生形。
     const diskFace = await boot('onDiskChange');
-    const diskWatcher = allFileSystemWatchers.find(watcher => watcher.pattern === '/ws/**/*.py');
+    const diskWatcher = allFileSystemWatchers.find(watcher => watcher.pattern === `${ROOT}/**/*.py`);
     expect(diskWatcher).toBeDefined();
     diskWatcher!.fireChange({ fsPath: FILE } as never);
     expect(diskFace.clock.tick()).toBe(2);
