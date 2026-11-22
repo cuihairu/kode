@@ -36,7 +36,7 @@
    八型出口=RUST-341 诊断面板(逐事件一行落通道,用户按时间线复查)。
 4. **HTTP→回执→UI 三段未覆盖(诚实边界)**:队列→HTTP→回执→UI 属装配面
    (httpRequestService/发送与回执消费),随接线批与 kode5 分项(HTTP 区+UI 区);
-   网络耗时须单独统计不混为本地性能(§19.10 纪律),本车道测不到。
+   网络耗时的**分离计数纪律已建**(§19.10,见第 7 条),真网络绝对值本车道测不到。
 5. **阈值化待建**:本批只记录 P95/P99/max 不钉阈值;若后续纳入夜间门,应走
    KODE_PERF_BOUND_* 同款宽松上界纪律(RUST-027),不直接钉绝对值。
 6. **S7 同步段有界非秒级(RUST-416 面)**:500 事件 watcher burst 的纯同步段
@@ -44,3 +44,12 @@
    异步不占主线程——「UI 不冻结」的纯核面成立(4.3s@50k 是异步读盘排队非同步
    阻塞);S7 的语义断言=500 全入队零丢失+同步段零发出,墙钟只观测。UI 线程面
    (装配)属接线批。
+7. **§19.10 网络/本地分离计数(2026-11-23,RUST-414)**:网络面指标与本地段不得
+   混计——网络面指标=发送面 ledger 的 `durationMs`(HR-STATE-007,
+   hotReloadChannelSend.ts:146-148,传输等待/回环,非本地 pipeline 计算)。
+   纪律三件在 `tests/perf/hotReloadSegmentBounds.ts`:①`segmentFaceOf` 分类
+   (`durationMs`→network,余→local)②`localBoundFaceViolations` 守卫(网络面键
+   进本地界表即被揪出)③`aggregateNetworkDurations` 网络桶聚合
+   (n/p50/p95/p99/max,零样本如实 0)。三类均钉在 `hotReloadSegmentBounds.test.ts`
+   (7 用例绿,2026-11-23)。诚实边界:本车道只建计数纪律,真网络绝对值仍属真机/
+   接线批面(回环≠网络);聚合面随接线批消费。
