@@ -21,6 +21,7 @@ import {
   buildOfficialVariableContext,
   buildTemplateVars,
   resolvePythonModulePath,
+  type HttpRequestEntry,
   type PackageDirProbe
 } from './httpRequests';
 import { DEFAULT_HTTP_TIMEOUT_MS, defaultTransport, type HttpTransport } from './httpRequestService';
@@ -66,11 +67,15 @@ export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfix
  * 只把 ${module} 换成本文件解析出的模块名。
  * HR-HTTP-002 第三参=调用方显式给定的模块身份(空串视同未给):给了就照用,
  * 不重新推导——推导与给定两套口径不混,身份以调用方给的为准。
+ * HR-EXT-006 第四参=模板条目(缺省=内置示例):模板即 runtime adapter 的
+ * 实现,用户自定义条目就是一份可替换实现,不与内置绑死——reload URL 只
+ * 活在模板里(TS 侧单一真源),Rust Core 不写死。
  */
 export function buildDefaultHotfixRequest(
   filePath: string,
   deps: DefaultHotfixDeps = {},
-  moduleIdentity?: string
+  moduleIdentity?: string,
+  entry: HttpRequestEntry = BUILTIN_HTTP_REQUEST_EXAMPLE
 ): DefaultHotfixRequest {
   const module =
     moduleIdentity && moduleIdentity.length > 0
@@ -85,13 +90,19 @@ export function buildDefaultHotfixRequest(
     module,
     moduleBasename: dot === -1 ? module : module.slice(dot + 1)
   };
-  const built = buildHttpRequest(BUILTIN_HTTP_REQUEST_EXAMPLE, vars, buildOfficialVariableContext({ filePath }));
+  const built = buildHttpRequest(entry, vars, buildOfficialVariableContext({ filePath }));
   return { url: built.url, method: built.method, headers: built.headers, body: built.body };
 }
 
 export interface DefaultHotfixSendDeps extends DefaultHotfixDeps {
   readonly transport?: HttpTransport;
   readonly timeoutMs?: number;
+  /**
+   * HR-EXT-006:模板条目=runtime adapter 的一个实现(用户自定义可替换)。
+   * 缺省=内置示例(行为与增量前逐字一致);给了就整条用该模板的
+   * url/method/headers/body,reload URL 不再绑死内置。
+   */
+  readonly template?: HttpRequestEntry;
   /** 每条真正发出的请求回调(装配把它落进状态栏日志通道) */
   readonly onRequest?: (request: DefaultHotfixRequest, file: string) => void;
   /**
@@ -151,7 +162,7 @@ export async function sendDefaultHotfix(
   // 逐文件顺序发送(HR-HTTP-007 默认同目标串行;并发排队归后续有界队列面),
   // 每文件一个结构化 outcome 如实收集,ok/detail 语义逐字不变。
   for (const [index, file] of files.entries()) {
-    const request = buildDefaultHotfixRequest(file, deps, deps.moduleIdentities?.[index]);
+    const request = buildDefaultHotfixRequest(file, deps, deps.moduleIdentities?.[index], deps.template);
     requests.push(request);
     deps.onRequest?.(request, file);
     const outcome = await executeHttpRequest(
