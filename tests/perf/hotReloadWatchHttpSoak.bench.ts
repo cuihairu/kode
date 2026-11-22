@@ -98,7 +98,7 @@ describe(`RUST-428 watch/http soak(${SOAK_SECONDS}s,泄漏/风暴/存活四闸)`
   let createdWatchers = 0;
   let disposedWatchers = 0;
   /** 在役句柄(释放即移出;事件由窗内触发,驱动真实控制器→过滤→offer 链) */
-  let liveHandles: { fire: (file: string) => void }[] = [];
+  const liveHandles: { fire: (file: string) => void }[] = [];
 
   // 每窗观测
   let offered = 0;
@@ -183,10 +183,7 @@ describe(`RUST-428 watch/http soak(${SOAK_SECONDS}s,泄漏/风暴/存活四闸)`
     // 真实回环接收端:applied 回执(逐字回显 file+sha256 形态的 64hex+递增 revision)
     let revision = 0;
     receiver = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', chunk => {
-        body += chunk;
-      });
+      req.resume(); // 排空请求体(soak 不读 body,只回 applied 回执)
       req.on('end', () => {
         const digest = 'a'.repeat(64);
         res.writeHead(200, { 'content-type': 'application/json' });
