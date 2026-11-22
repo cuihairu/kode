@@ -370,3 +370,11 @@
 - 缺省槽 `createDefaultHotReloadLifecycleSlots` 组合既有核,不自创解析、不自创错误分类:`resolveModule` 委托 `resolveHotReloadModuleIdentity`(scriptRoots/allowRootLevelStem 装配面默认,逐调用可覆盖,不跨调用粘滞);`prepareRequest` 透传既有发送请求形状(files=[fileUri]、moduleIdentities=[requestModule]、可选 revision/correlationId 如实不带,不冒充空);`interpretResponse` 委托 `classifyHotReloadErrorReason`(七类,ok 透传);`queryAppliedRevision`=如实 `null`(未接线,绝不编造运行时版本)。
 - 注册表 `HotReloadProviderRegistry.resolveLifecycle(profile)`:按 profile 选发送 provider(同 resolveSendProvider:第一个 canSend 应答者胜),再把 provider 自带的四个插槽与缺省槽合成——实现自带槽优先,缺槽回落缺省,返回 `{provider, slots}` 非半态。无人应答/null profile=如实 `null`(不回落默认,同发送面口径)。
 - 测试:`tests/hotReloadPluginApi.test.ts` 7 钉——缺省槽 resolveModule 唯一根命中返回身份(双名)、无根候选诚实 no-root(不猜不回落)、prepareRequest 形状(逐项透传/缺省 revision/correlationId 如实不带)、interpretResponse 七类(HTTP 500→apply-failed、未知 detail→unknown、ok 透传)、queryAppliedRevision 未接线=如实 null、registry.resolveLifecycle 自定义槽优先+缺槽回落缺省、纯发送 provider 缺槽全回落+无人应答/null profile=如实 null。prove-red:中和 queryAppliedRevision 为伪造引擎版本+prepareRequest 丢 moduleIdentities 后 3 钉转红(含缺槽回落钉),逆向恢复 16/16 绿。
+
+
+## 24. HR-EXT-002 版本化指纹契约（2026-11-22,RUST-406,compare/fetchEngineDigest 可选槽）
+
+- `FingerprintProvider` 面在既有计算面(fileHash/semanticFingerprint/negotiateDigest/profileLabel)之外加两个**可选**槽:`compare`(三路对拍)与 `fetchEngineDigest`(引擎 Digest 获取)。可选=缺省槽回落既有核/如实 not-wired,增量前实现(只有原四方法)形状不变——向后兼容,`apiVersion` 不递增(与 HR-HTTP-002/HR-EXT-001 增量字段同纪律)。
+- 缺省槽 `defaultHotReloadFingerprintProvider`: `compare` 委托既有 `compareFingerprints` 核(文件/语义/已应用三路判定,不自创对拍逻辑);`fetchEngineDigest`=纯核零 IO 如实 not-wired `null`(绝不编造引擎摘要)。真实引擎摘要获取与 tier/verified/compatible 可信度结论在装配面 RUST-404 `defMd5Check`(那里引擎证据是 IO 面);本面只声明「取摘要」边界,不重复声明可信度——可信度抽象既有(RUST-404),不建平行面。
+- 算法版本声明=既有 `apiVersion`('1',FingerprintProvider 钉接口形状);可信度声明=既有 RUST-404 `EngineDigestCompatibility`(tier/verified/compatible),两处都非本批新增,只在账。
+- 测试:`tests/hotReloadPluginApi.test.ts` 4 钉(缺省槽 compare 委托三路对拍:变化/一致如实;同值 unchanged+未协商算法=applied unknown+点名原因不跨类比;fetchEngineDigest 纯核零 IO=not-wired null;可选槽可缺省=不含两槽的纯计算形态仍合规+apiVersion=1)。prove-red:中和 compare 恒 unchanged+fetchEngineDigest 伪造摘要后 3 钉转红(含委托/not-wired 钉),逆向恢复 20/20 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 48 例绿;tsc -p ./ 与 eslint src 双绿。
