@@ -600,3 +600,48 @@ victim 文件零本批改动,truthCorpus 本批 130/130 全程绿;solo 轮 globa
 33→63 抬升期,CI 权威),CI 权威。本批零 src/ 零 Rust 改动(仅语料+执行门+README+
 todo);语料 36 族 351 条(35→36 族,+11;基线 340=第三十七增量 traps 落地后
 297+37)。
+## 第三十七族: bigworld-guard(BigWorld API 明确不整合守卫)
+
+依据 `docs/knowledge/bigworld-legacy-status.md`(KB-API-009 决策记录:
+五份 `bigworld/` 源料 stub 是 **BigWorld-Engine-14.4.1**(商业上游)的
+提取笔记,非 KBEngine;决策=**明确不整合**,KB-API-001..008 是完整
+KBEngine API 参考,bigworld 不向其添加任何 KBEngine 内容;engineHead
+c2a3b8f)。本族为**守卫族**:探针实测 kode 三个可探针面均零 BigWorld,
+钉现状(不冒充整合);3 条全部 negative+reject-silent+无 finding(只
+守卫零整合决策,非登记缺陷)。
+
+**零整合守卫三臂**——apiDocs 面(`API_DOC_ENTRIES` 225 条全量扫描)
+BigWorld/bwpersonality 命中 0;钩子名册(`KBENGINE_HOOKS` 36 条)BigWorld
+回调命中 0(文档§3 引擎面 `/*~` 47 项 callback 组属 BigWorld 面,非
+KBEngine 引擎派发回调);BigWorld.Base 类缺席(文档§3 `base.hpp:38`
+`/*~ class BigWorld.Base`,BigWorld-Engine baseapp 基类,非 KBEngine 面)。
+
+**compat 注记(非语料分歧,README 声明)**:kode 代码里有两处 BigWorld
+字样,均为 **compat 识别/解析特性,非 API 参考整合**——①
+`src/backend/flowCallResolver.ts:794` 把 `args.chain[0]==='BigWorld'`
+当作 native 面根(与 KBEngine 并列的解析兼容,非 KBEngine API 条目);
+② `src/definitionWorkspace.ts:672` 「BigWorld/old-style alias discovery」
+读 `scripts/entity_defs/alias.xml`(引擎 DataType::initAliases 兼容路径)。
+两者不违反零整合决策(文档§1.2「No kode consumer targets BigWorld」措辞
+对 API 参考成立,对解析兼容特性不含,此处注明)。
+
+探针=探针实测后钉:python 解析 API_DOC_ENTRIES 225 条+KBENGINE_HOOKS
+36 条,bigworld/bwpersonality 大小写不敏感全量扫描零命中;再 grep 引擎
+c2a3b8f 档内源码面确认(文档§3 计数即引擎面真值)。执行闸三臂:
+apiDocs 零 BigWorld 臂(成员+字符串双计数)/钩子名册零 BigWorld 臂/
+BigWorld.Base 类缺席臂(计数+归属双钉)。
+
+prove-red 三咬(①perturb apiDocsBigWorldMemberCount/StringCount→1 两
+计数臂红;②perturb hooksBigWorldCount→1 钩子臂红;③perturb
+apiDocsBaseClassCount→1+BaseOwnerPresent→true 类缺席臂红;均 sha256
+字节还原复绿 283050e7)。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo,探针只读
+API_DOC_ENTRIES/KBENGINE_HOOKS);语料 37 族 354 条(36→37 族,+3;
+基线 351=第三十八增量 hook-sequencing-edges 落地后)。
+
+**peer 对账注记**:并发会话在第三十八增量注记曾评估 bigworld-legacy-
+status「无可钉 kode 探针面,跳过不建族」——该评估针对**正例钉**面(无
+可整合的 BigWorld API 条目);本族是**负例守卫族**(钉零整合现状),探
+针面=缺席扫描本身(API_DOC_ENTRIES/KBENGINE_HOOKS 全量命中 0),决策
+记录档恰是守卫族的最佳依据。故建族不与 peer 评估矛盾,并在此注明:
+余族候选池维持 2 份(python-version-baseline/startup-flow-and-stack)。

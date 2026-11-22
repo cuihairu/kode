@@ -2470,3 +2470,46 @@ describe('truth-corpus: hook-sequencing-edges 族执行闸(时序锚/边探针)'
     expect(sequencingForHook('onEnterSpace')).toBeDefined();
   });
 });
+
+// ============ 第三十七族: bigworld-guard(BigWorld API 明确不整合守卫) ============
+interface BigWorldGuardEntry extends TruthEntryBase {
+  input: { path: string; surface?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      apiDocsBigWorldMemberCount?: number; apiDocsBigWorldStringCount?: number;
+      hooksBigWorldCount?: number; apiDocsBaseClassCount?: number;
+      apiDocsBaseClassOwnerPresent?: boolean;
+    };
+  };
+}
+const bigworldGuardFamily = families.find(f => f.family === 'bigworld-guard')!;
+const bigworldGuardEntries = bigworldGuardFamily.entries as unknown as BigWorldGuardEntry[];
+const bigworldEntry = (id: string) => bigworldGuardEntries.find(e => e.id === id)!;
+const apiDocBigWorldHits = API_DOC_ENTRIES.filter(e => {
+  const blob = [e.member, e.owner, e.domain, e.summaryEn, e.summaryZh, e.page].join('\n');
+  return /bigworld|bwpersonality/i.test(blob);
+});
+describe('truth-corpus: bigworld-guard 族执行闸(BigWorld API 明确不整合守卫)', () => {
+  it('apiDocs 面零 BigWorld:无 BigWorld/bwpersonality 成员或归属(明确不整合持守)', () => {
+    const trap = bigworldEntry('neg-bigworld-api-docs-absent');
+    expect(trap.kind).toBe('negative');
+    expect(trap.engine.load).toBe('reject-silent');
+    expect(apiDocBigWorldHits.length, 'apiDocs BigWorld 命中 0').toBe(0);
+    expect(trap.kode.analysis!.apiDocsBigWorldMemberCount).toBe(0);
+    expect(trap.kode.analysis!.apiDocsBigWorldStringCount).toBe(0);
+  });
+  it('钩子名册零 BigWorld 回调', () => {
+    const trap = bigworldEntry('neg-bigworld-hooks-absent');
+    const hits = KBENGINE_HOOKS.filter(h =>
+      /bigworld|bwpersonality/i.test(`${h.name} ${h.category} ${h.description} ${h.signature}`));
+    expect(hits.length, 'hooks BigWorld 命中 0').toBe(0);
+    expect(trap.kode.analysis!.hooksBigWorldCount).toBe(0);
+  });
+  it('BigWorld.Base 类缺席:apiDocs 无该类条目', () => {
+    const trap = bigworldEntry('neg-bigworld-base-class-absent');
+    const base = API_DOC_ENTRIES.filter(e => /bigworld/i.test(e.member + e.owner));
+    expect(base.length, 'BigWorld 成员/归属 0').toBe(0);
+    expect(trap.kode.analysis!.apiDocsBaseClassCount).toBe(0);
+    expect(trap.kode.analysis!.apiDocsBaseClassOwnerPresent).toBe(false);
+  });
+});
