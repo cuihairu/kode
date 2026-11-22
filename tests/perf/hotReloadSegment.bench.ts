@@ -1,7 +1,9 @@
 /**
  * RUST-414 热更各段耗时统计(HR-QA-002,纯核段):Watch→过滤→哈希→语法检查→
- * 队列→HTTP→回执→UI 八段,本车道测前四段(纯核面),HTTP→回执→UI 三段为
- * 装配面(接线批/kode5 分项,诚实未覆盖注记)。
+ * 队列→HTTP→回执→UI 八段,本车道测纯核面;HTTP→回执段由 HR-STATE-007
+ * durationMs 逐发送记录于台账(hotReloadChannelSend.ts:146-148,非本车道钉域);
+ * UI 显示段(S8)纯核可测入本车道,500ms 节流窗为设计常数(HR-UI-007 已钉),
+ * 网络耗时须单独统计不混本地性能(§19.10)。
  *   S1 过滤段:isWatchableScriptFile 逐事件纯词法(Watch→过滤);
  *   S2 哈希段:readSnapshot 读盘+sha256(过滤→哈希);
  *   S3 语法段:checkSyntax 判定(哈希→语法检查);
@@ -32,6 +34,14 @@ import {
   type SavePipelineDiagnostic,
   type SavePipelineDiagnosticType
 } from '../../src/backend/hotReloadSavePipeline';
+import {
+  renderHistoryPanelHtml,
+  translateDeliveryRecord,
+  type HotReloadNamesResolver
+} from '../../src/hotReloadHistoryView';
+import { HotReloadHistoryCore } from '../../src/backend/hotReloadHistoryCore';
+import type { HotReloadDeliveryRecord } from '../../src/backend/hotReloadTargetState';
+import { htmlLang, strings } from '../../src/webviewStrings';
 
 const ASSETS_OUT = process.env.KODE_SEG_ASSETS_OUT
   ?? path.join(os.tmpdir(), 'kode-seg-assets');
@@ -431,6 +441,103 @@ describe('RUST-414 热更各段耗时统计(过滤/哈希/语法/队列+丢弃�
       'HRS-NOTE S7 500 事件 burst 同步段:filter+offer 观测几十毫秒(含负载波动),' +
       '非秒级饿死;500 全入队零丢失,读盘在 libuv 线程池异步不占主线程(UI 不冻结' +
       '纯核面);UI 线程面随接线批(装配面)'
+    );
+  }, 120000);
+
+  it('S8 回执→UI 显示段:逐回执入账+逐页面板渲染 p50/p95/p99(RUST-414 UI 段)', () => {
+    // RUST-414(旧 HR-QA-002)八段的最后一节:回执落账→树/面板显示。链路在 main
+    // 且已钉(translateDeliveryRecord 九要素/回执幂等替换 HR-STATE-007、节流刷新
+    // 窗内合并 HR-UI-007、RUST-372 风暴限频前沿+尾帧 2 次全量渲染);此处补纯核
+    // 成本:逐回执翻译+入账(s8Ledger)、逐页面板渲染(非虚拟 50 行页 + >200 行
+    // 虚拟滚动路径,s8Render 取较重者)。
+    // 诚实边界:显示段 wall 另含 refreshWindowMs(缺省 500ms)设计节流窗——窗内
+    // 合并即防抖,非性能回归面,不作界表面;网络耗时须单独统计不混本地性能(§19.10)。
+    const records = Array.from({ length: 500 }, (_unused, index) => {
+      const file = scriptPath(index);
+      const stem = path.basename(file, '.py');
+      return {
+        rootId: 'r1',
+        targetId: '',
+        file,
+        outcome: index % 5 === 0 ? 'failed' : index % 3 === 0 ? 'accepted' : 'applied',
+        recordedAt: 1700000000000 + index * 1000,
+        attempt: 1,
+        ...(index % 7 === 0 ? { detail: 'HTTP 状态 500:非 2xx 不算送达' } : {})
+      } as HotReloadDeliveryRecord;
+    });
+    const resolver: HotReloadNamesResolver = file => ({
+      fullModule: `entities.${path.basename(file, '.py')}`,
+      requestModule: path.basename(file, '.py')
+    });
+    const entries = records.map(record => translateDeliveryRecord(record, resolver));
+    const core = new HotReloadHistoryCore();
+    const ledgerSamples: number[] = [];
+    for (const entry of entries) {
+      const started = performance.now();
+      core.record(entry);
+      ledgerSamples.push(performance.now() - started);
+    }
+    // 缺省容量 200 环形淘汰(全量 ≤200 行口径):500 回执→200 行,逐条淘汰
+    // 走 O(容量) 索引重建,超容量回执的入账成本即含此重建(本面实测)
+    expect(core.size()).toBe(200);
+    // capacity 调高才激活虚拟滚动路径(默认配置不引入虚拟路径)
+    const deepCore = new HotReloadHistoryCore({ capacity: 500 });
+    for (const entry of entries) {
+      deepCore.record(entry);
+    }
+    expect(deepCore.size()).toBe(500);
+    const th = strings('zh').hotReloadHistory;
+    const lang = htmlLang('zh');
+    const state = { feedStatus: { watchMode: 'auto', target: 'local' }, filter: {}, page: 0 };
+    const renderSamples: number[] = [];
+    for (let round = 0; round < 20; round += 1) {
+      const started = performance.now();
+      renderHistoryPanelHtml({
+        state,
+        rows: core.entries().slice(0, 50),
+        total: core.size(),
+        hasMore: true,
+        pageSize: 50,
+        t: th,
+        lang
+      });
+      renderSamples.push(performance.now() - started);
+    }
+    const virtualSamples: number[] = [];
+    for (let round = 0; round < 20; round += 1) {
+      const started = performance.now();
+      renderHistoryPanelHtml({
+        state,
+        rows: deepCore.entries(),
+        total: deepCore.size(),
+        hasMore: false,
+        pageSize: 50,
+        virtualize: { rowHeightPx: 26, viewportHeightPx: 480, overscanRows: 5 },
+        t: th,
+        lang
+      });
+      virtualSamples.push(performance.now() - started);
+    }
+    once('S8.ledger.perRecordP50', percentile(ledgerSamples, 0.5));
+    once('S8.ledger.perRecordP99', percentile(ledgerSamples, 0.99));
+    once('S8.render.page50P50', percentile(renderSamples, 0.5));
+    once('S8.render.page50P99', percentile(renderSamples, 0.99));
+    once('S8.render.virtual500P50', percentile(virtualSamples, 0.5));
+    once('S8.render.virtual500P99', percentile(virtualSamples, 0.99));
+    once('S8.render.virtualRows', deepCore.size());
+    pooled('S8.ledger', ledgerSamples);
+    pooled('S8.renderPage50', renderSamples);
+    pooled('S8.renderVirtual500', virtualSamples);
+    violations.push(
+      ...segmentViolations(resolveSegmentBounds(), {
+        s8LedgerP99Ms: percentile(ledgerSamples, 0.99),
+        s8RenderP99Ms: percentile(virtualSamples, 0.99)
+      })
+    );
+    emit(
+      'HRS-NOTE S8 回执→UI 显示段:逐回执翻译+入账、逐页面板渲染(50 行页 + 500 行' +
+      '虚拟滚动路径)皆亚毫秒级;显示段 wall 另含 refreshWindowMs 缺省 500ms 设计' +
+      '节流窗(HR-UI-007 窗内合并已钉,非性能回归面);网络耗时须单独统计不混本地性能(§19.10)'
     );
   }, 120000);
 
