@@ -490,6 +490,12 @@ interface ChannelProbeNote {
   readonly ok: boolean;
   readonly detail: string;
   readonly stateKey: string;
+  /**
+   * RUST-357(HR-HTTP-015)来源:'probe'=连通性测试(既有红/绿探活);
+   * 'send'=实际发送断连/重连自动观察(端点健康随发送事实更新)。
+   * 缺省 'probe'(既有 note 语义不变)。
+   */
+  readonly source?: 'probe' | 'send';
 }
 
 /**
@@ -525,6 +531,17 @@ export class HotReloadChannelQuickSwitch {
       // profile 或通道配置身份已变:旧探活结论不再适用
       this.note = undefined;
     }
+    this.render();
+  }
+
+  /**
+   * RUST-357(HR-HTTP-015):发送面端点健康观察(断连/重连自动更新通道灯)。
+   * 归属与探活 note 同一模型:stateKey 取当前「激活 profile + 通道配置身份」,
+   * profile 切换/配置变更后 refresh 即作废;health success 只说明端点可达,
+   * 不冒充任何模块已更新成功(灯只红/绿,投递结果在台账/发送态灯)。
+   */
+  noteEndpointHealth(channel: ReloadTransportKind, ok: boolean, detail: string): void {
+    this.note = { channel, ok, detail, stateKey: this.stateKey(), source: 'send' };
     this.render();
   }
 
@@ -665,15 +682,24 @@ export class HotReloadChannelQuickSwitch {
 
   private render(): void {
     // 状态栏文字只显示**当前已配置**的通道(探活失败时配置没动,就还是原通道);
-    // 红标 + tooltip 才说明最近一次试的通道不通——未落盘的通道绝不冒充当前状态
+    // 红标 + tooltip 才说明最近一次试的通道不通——未落盘的通道绝不冒充当前状态。
+    // RUST-357:红/绿 note 分两源——'probe'=探活结论(既有文案),'send'=发送
+    // 断连/重连自动观察(端点健康随发送事实更新,文案点名断连/可达)。
     const failed = this.note !== undefined && !this.note.ok;
     this.bar.text = `${failed ? '$(error)' : '$(plug)'} 热更:${shortChannelLabel(this.currentChannel)}`;
-    this.bar.tooltip =
-      failed && this.note
-        ? `热更通道探活不通: 试的 ${CHANNEL_LABEL[this.note.channel]} — ${this.note.detail}(点击三选切换,或高级配置核对参数)`
-        : this.note?.ok && this.note.channel === this.currentChannel
-          ? `热更通道探活通过: ${this.note.detail}(点击三选切换通道)`
-          : '点击切换热更通道(三选一键,选中即探活)';
+    if (failed && this.note) {
+      this.bar.tooltip =
+        this.note.source === 'send'
+          ? `热更通道断连: ${CHANNEL_LABEL[this.note.channel]} — ${this.note.detail}(点击三选切换,或高级配置核对参数)`
+          : `热更通道探活不通: 试的 ${CHANNEL_LABEL[this.note.channel]} — ${this.note.detail}(点击三选切换,或高级配置核对参数)`;
+    } else if (this.note?.ok && this.note.channel === this.currentChannel) {
+      this.bar.tooltip =
+        this.note.source === 'send'
+          ? `热更通道可达: ${this.note.detail}`
+          : `热更通道探活通过: ${this.note.detail}(点击三选切换通道)`;
+    } else {
+      this.bar.tooltip = '点击切换热更通道(三选一键,选中即探活)';
+    }
     this.bar.backgroundColor = failed ? this.dangerBackgroundColor : undefined;
   }
 }

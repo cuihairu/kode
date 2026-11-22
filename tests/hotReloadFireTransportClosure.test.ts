@@ -293,7 +293,8 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
   it('源锁:装配层真装配经 resolveActiveProfile+resolveReloadTransport 解出通道,fire 与重试共用', () => {
     // SRC-001 L6:装配位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
     const source = readFileSync('src/extension.ts', 'utf8') + readFileSync('src/activate/hotReload.ts', 'utf8');
-    expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload);');
+    // RUST-357(HR-HTTP-015):解出口带健康观察口(发送断连/重连自动更新通道灯)
+    expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload, { healthObserver });');
     // 用户令 2026-11-10:无 profile/无 hotReload 段不再回落 actionName,走默认
     // http 通道(createDefaultHotReloadChannel 内置模板,targetId='default')
     expect(source).toContain('createDefaultHotReloadChannel()');

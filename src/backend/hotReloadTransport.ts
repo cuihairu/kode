@@ -22,6 +22,7 @@
 
 import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from './httpRequestService';
 import { formatReloadTransportThrownError } from './hotReloadTransportErrors';
+import { sendErrorToEndpointHealth, sendStatusToEndpointHealth } from './hotReloadEndpointHealth';
 import type { HttpRequestEntry } from './httpRequests';
 import { BUILTIN_HTTP_REQUEST_EXAMPLE } from './httpRequests';
 import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
@@ -137,10 +138,22 @@ export interface ReloadHttpResponse {
 
 export type ReloadHttpRunner = (request: ReloadHttpRequest) => Promise<ReloadHttpResponse>;
 
+/**
+ * RUST-357(HR-HTTP-015)端点健康观察口:传输层每次发送的可达性事实上报
+ * (断连/重连自动更新 endpoint health)。事实只有 ok/detail——刻意不带
+ * 任何模块投递字段(health success ≠ 任何模块已更新成功),健康展示面
+ * (通道状态栏灯)与投递结果面(台账/回执)各走各的轴。
+ */
+export interface EndpointHealthObserver {
+  noteEndpointHealth(kind: ReloadTransportKind, ok: boolean, detail: string): void;
+}
+
 export interface ReloadHttpDeps {
   run: ReloadHttpRunner;
   /** 既有变量表上下文(${module}/${filename}/... 等);缺省空 */
   context?: VariableContext;
+  /** RUST-357:发送面健康观察;注入即逐发送上报,不注入=零行为变化 */
+  healthObserver?: EndpointHealthObserver;
 }
 
 /** 默认 HTTP 执行器:复用 httpRequestService 的纯 node http/https 传输面 */
@@ -276,6 +289,15 @@ export class HttpReloadTransport implements ReloadTransport {
     private readonly deps: ReloadHttpDeps
   ) {}
 
+  /**
+   * RUST-357(HR-HTTP-015):上报本次发送的端点健康事实(断连/重连)。未注入
+   * 观察口=零行为变化(既有通道零注入不回归)。health ok/detail 只述传输层
+   * 可达性,不携带任何模块投递结论。
+   */
+  private noteEndpointHealth(kind: ReloadTransportKind, ok: boolean, detail: string): void {
+    this.deps.healthObserver?.noteEndpointHealth(kind, ok, detail);
+  }
+
   async probe(): Promise<{ ok: boolean; detail: string }> {
     const url = substituteReloadVariables(this.entry.url, [], this.deps.context);
     try {
@@ -383,7 +405,10 @@ export class HttpReloadTransport implements ReloadTransport {
       response = await this.deps.run(request);
     } catch (error) {
       // RUST-419:传输异常分类输出可用错误(逐文件 failed 回执同因)
-      const reason = formatReloadTransportThrownError(error);
+      // RUST-357:断连——无响应即端点不可达(健康观察口按同一可用错误上报)
+      const health = sendErrorToEndpointHealth(error);
+      this.noteEndpointHealth(this.kind, health.ok, health.detail);
+      const reason = health.detail;
       const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
       for (const receipt of receipts) {
         onReceipt(receipt);
@@ -391,6 +416,8 @@ export class HttpReloadTransport implements ReloadTransport {
       return { kind: this.kind, receipts };
     }
     if (response.status < 200 || response.status >= 300) {
+      // RUST-357:有响应但非 2xx——端点可达但通道不健康
+      this.noteEndpointHealth(this.kind, false, sendStatusToEndpointHealth(response.status).detail);
       const reason = `HTTP ${response.status}:非 2xx 送达失败`;
       const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
       for (const receipt of receipts) {
@@ -398,6 +425,9 @@ export class HttpReloadTransport implements ReloadTransport {
       }
       return { kind: this.kind, receipts };
     }
+    // RUST-357:2xx——端点可达/重连(health success 只说明端点可达,不代表
+    // 任何模块已更新成功:模块投递结果另在回执/台账轴)
+    this.noteEndpointHealth(this.kind, true, sendStatusToEndpointHealth(response.status).detail);
     // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝
     const receipts = response.bodyTruncated
       ? fileSet.map(file => ({ status: 'sent' as const, file, detail: '响应体已截断，未能核验回执' }))
@@ -646,6 +676,8 @@ export interface ReloadChannelConfig {
 export interface ReloadTransportDeps {
   http?: ReloadHttpDeps;
   official?: ReloadOfficialDeps;
+  /** RUST-357(HR-HTTP-015):透传给 HTTP 通道的发送面健康观察口 */
+  healthObserver?: EndpointHealthObserver;
 }
 
 /**
@@ -680,7 +712,11 @@ export function resolveReloadTransport(
     return null;
   }
   if (config.channel === 'http' && config.http) {
-    return new HttpReloadTransport(config.http, deps.http ?? { run: defaultReloadHttpRunner });
+    const httpDeps: ReloadHttpDeps = {
+      ...(deps.http ?? { run: defaultReloadHttpRunner }),
+      ...(deps.healthObserver !== undefined ? { healthObserver: deps.healthObserver } : {})
+    };
+    return new HttpReloadTransport(config.http, httpDeps);
   }
   if (config.channel === 'kbengine-official' && config.official) {
     return new KbengineOfficialTransport(config.official, deps.official ?? {});

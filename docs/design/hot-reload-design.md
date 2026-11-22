@@ -428,6 +428,14 @@ interface ReloadTransport {
 4. Structural def batches enter no hot-reload channel (they go to
    IDE-HOT-005's restart path).
 5. `probe()` connectivity test: HTTP = endpoint reachable; official =
+
+   - **Endpoint-health auto face (RUST-357 / HR-HTTP-015)**: every real send also
+     reports its transport-level fact to the channel light — disconnect = no response
+     thrown (endpoint unreachable), reconnect = 2xx reachable, non-2xx = reachable but
+     unhealthy (`src/backend/hotReloadEndpointHealth.ts` pure records; observer
+     `healthObserver` injected via `ReloadTransportDeps`). A health success only means
+     the endpoint is reachable — it never poses as any module having been reloaded;
+     delivery results stay on the receipt/ledger axis.
    console connectable.
 
 ## 5. IDE-HOT-102 [P2] Reload configuration and audit

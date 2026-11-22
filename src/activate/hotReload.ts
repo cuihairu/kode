@@ -28,7 +28,7 @@ import { HotReloadStatusController } from '../hotReloadStatus';
 import { createFileChangeRouter } from '../backend/fileChangeBypass';
 import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
 import { HotReloadVersionTracker, matchesHotReloadGlob } from '../backend/hotReloadFileVersion';
-import { resolveReloadTransport, createDefaultHotReloadChannel, type ReloadTransport } from '../backend/hotReloadTransport';
+import { resolveReloadTransport, createDefaultHotReloadChannel, type ReloadTransport, type ReloadTransportKind } from '../backend/hotReloadTransport';
 import { ensureDefaultDeploymentProfile } from '../ensureDefaultProfile';
 import { runHotReloadBatchSummaryCommand } from '../backend/hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from '../backend/hotReloadRetryCommand';
@@ -417,8 +417,14 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   const DEFAULT_CHANNEL_TARGET_ID = 'default';
   const resolveHotReloadChannelTransport = (configuredOnly = false): { transport: ReloadTransport; targetId: string } | null => {
     const activeProfile = resolveActiveProfile(context.workspaceState);
+    // RUST-357(HR-HTTP-015):发送面端点健康观察口——传输层每次发送的断连/
+    // 重连事实直接更新通道状态栏灯的 note(与探活 note 同一归属模型)。
+    const healthObserver = {
+      noteEndpointHealth: (kind: ReloadTransportKind, ok: boolean, detail: string) =>
+        hotReloadChannelSwitch.noteEndpointHealth(kind, ok, detail)
+    };
     if (activeProfile?.hotReload) {
-      const transport = resolveReloadTransport(activeProfile.hotReload);
+      const transport = resolveReloadTransport(activeProfile.hotReload, { healthObserver });
       if (transport) {
         return { transport, targetId: activeProfile.id };
       }
@@ -429,7 +435,7 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     // 默认 http 通道(用户令 2026-11-10):无 profile/无 hotReload 段不回落
     // actionName,走 createDefaultHotReloadChannel 内置模板(与零配置自动
     // 热更同源端点,enabled 显式 true)。targetId 用稳定 'default'。
-    const transport = resolveReloadTransport(createDefaultHotReloadChannel());
+    const transport = resolveReloadTransport(createDefaultHotReloadChannel(), { healthObserver });
     return transport ? { transport, targetId: DEFAULT_CHANNEL_TARGET_ID } : null;
   };
   // §11.2 非 py 旁路通道的公共扩展口:这里持有路由表并交给装配——默认
