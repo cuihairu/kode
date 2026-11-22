@@ -273,6 +273,9 @@ export function activateHttpRequestViews(deps: HttpRequestViewsDeps): HttpReques
       parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests')),
     // RUST-422(HR-QA-010):装配注入信任探针,执行时读(用户可随「信任工作区」变化)
     isWorkspaceTrusted: () => vscode.workspace.isTrusted,
+    // RUST-420(HR-QA-008):非 loopback 端点显式授权,执行时读(与信任闸同口径)
+    allowNonLoopback: () =>
+      vscode.workspace.getConfiguration('kbengine').get<boolean>('http.allowNonLoopback', false),
     log: line => httpRequestChannel.appendLine(line),
     notifyError: message => {
       void vscode.window.showErrorMessage(message);

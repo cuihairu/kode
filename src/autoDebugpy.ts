@@ -465,6 +465,14 @@ export interface DebugpyAutoInjectOptions {
   readyTimeoutMs?: number;
   deps?: DebugpyInjectDeps;
   schedule?(ms: number): Promise<void>;
+  /**
+   * RUST-422(HR-QA-010)工作区信任闸:注入目标 telnet 主机来自工作区配置
+   * (kbengine.telnet.host 或元件 kbengine.xml),不受信工作区里注入即配置驱动
+   * 网络出站+python 命令下发(debugpy.listen)——未信任跳过探测与注入,状态板
+   * 据「未注入」如实呈现;用户信任工作区后重启组件即恢复。缺省未注入=视为
+   * 可信(零配置不回归),与 HTTP 快捷请求/telnet 信任闸同口径。
+   */
+  isWorkspaceTrusted?: () => boolean;
 }
 
 export function autoDebugpyEnabled(): boolean {
@@ -496,6 +504,16 @@ export async function injectDebugpyAfterStart(
 ): Promise<void> {
   if (!autoDebugpyEnabled()) {
     return; // 默认关:零动作零日志(不惊扰没开这功能的用户)
+  }
+  // RUST-422(HR-QA-010)信任闸:未信任工作区跳过注入——注入目标 telnet 主机
+  // 来自不受信配置,注入=配置驱动网络出站+python 命令下发(debugpy.listen),
+  // 不发探测包不发命令;状态板据「未注入」如实呈现,信任后重启组件即恢复。
+  if (options.isWorkspaceTrusted?.() === false) {
+    for (const injectTarget of targets) {
+      const component = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
+      options.log(component, 'warning', 'autoDebugpy:未信任工作区,跳过注入(目标 telnet 主机来自工作区配置)');
+    }
+    return;
   }
   const probe = options.probe ??
     (async (host, port) => {

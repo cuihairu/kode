@@ -13,6 +13,7 @@ import * as http from 'http';
 import * as https from 'https';
 import { executeHttpRequest } from './httpRequestExecutor';
 import { createHttpTargetQueue, type HttpTargetQueue } from './httpRequestQueue';
+import { decideHttpEndpoint } from './httpEndpointPolicy';
 import {
   buildHttpRequest,
   buildOfficialVariableContext,
@@ -244,6 +245,14 @@ export interface HttpRequestServiceDeps {
    * 变化,以执行时刻为准(与 HR-HTTP-005 自动热更信任闸同模式)。
    */
   isWorkspaceTrusted?: () => boolean;
+  /**
+   * RUST-420(HR-QA-008)非 loopback 端点显式授权:默认只放行确认的 loopback
+   * 目标(本机引擎);返回 true=用户已显式授权(kbengine.http.allowNonLoopback),
+   * 非 loopback 逐次落安全警告后放行。缺省不注入=未授权(非 loopback 一律
+   * 阻止)——端点越界是危险面,安全默认必须收紧,与信任闸「缺省视为可信」
+   * 相反。执行时读(与信任闸同口径,授权可随设置变化)。
+   */
+  allowNonLoopback?: () => boolean;
 }
 
 /** HR-HTTP-007:快捷请求面共享队列——同端点用户请求串行,异端点并发,全局封顶 */
@@ -316,6 +325,19 @@ export class HttpRequestService {
     // 批152:官方变量族(${workspaceFolder}/${fileBasenameNoExtension}/
     // ${env:NAME} 等)与自定义占位单趟合并插值
     const request = buildHttpRequest(entry, vars, buildOfficialVariableContext(editorContext));
+    // RUST-420(HR-QA-008)端点闸:模板插值后的真实 URL 在请求发出前过端点
+    // 策略——默认只放行 loopback;非 loopback 未授权一律阻止(不发请求,落
+    // 用户可审查的阻止行+弹窗),已授权则逐次落安全警告再放行。放在 ▶ 行
+    // 之前:阻止的请求不留「已发出」假象。
+    const endpoint = decideHttpEndpoint(request.url, this.deps.allowNonLoopback?.() ?? false);
+    if (endpoint.action === 'block') {
+      this.deps.log(`⛔ [${entry.name}] ${endpoint.message}`);
+      this.deps.notifyError(`HTTP 快捷请求「${entry.name}」已阻止:${endpoint.message}`);
+      return false;
+    }
+    if (endpoint.message !== null) {
+      this.deps.log(endpoint.message);
+    }
     this.deps.log(`▶ [${entry.name}] ${request.method} ${request.url}`);
 
     // HR-HTTP-001(HR-PR-03):传输走通用执行器(关联 id + 结构化分类

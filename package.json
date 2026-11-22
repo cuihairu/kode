@@ -2529,6 +2529,11 @@
             "scope": "resource",
             "markdownDescription": "%kbengine.config.gitHistory.enabled.description%"
           },
+          "kbengine.http.allowNonLoopback": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.http.allowNonLoopback.description%"
+          },
           "kbengine.httpRequests": {
             "type": "array",
             "default": [
