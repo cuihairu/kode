@@ -1,0 +1,75 @@
+{
+  "family": "hot-reload-receipt-protocol",
+  "version": 1,
+  "grounding": {
+    "doc": "docs/design/hot-reload-design.md",
+    "receiptCore": "src/backend/hotReloadReceipt.ts",
+    "appliedCheck": "src/backend/hotReloadAppliedCheck.ts",
+    "receiver": "scripts/hot-reload-receiver/referenceReceiver.mjs"
+  },
+  "requestBody": {
+    "description": "JSON 对象体(transport 对对象体自动附带 targetId/sender_digests):files 必填,其余可选",
+    "required": ["files"],
+    "fields": {
+      "files": { "type": "array", "items": "string", "note": "所发文件绝对路径,逐字" },
+      "targetId": { "type": "string", "optional": true, "note": "目标服务实例;回执逐字回显" },
+      "sender_digests": { "type": "object", "optional": true, "note": "file → sha256 hex,发送时点冻结基准" }
+    }
+  },
+  "receipts": {
+    "accepted": {
+      "description": "接收端已收下并暂存副本,应用尚未发生:仅注解,等待 HOT-004 applied 核验;绝不携带应用证据字段(digest/revision)",
+      "required": ["status", "file"],
+      "fields": {
+        "status": { "const": "accepted" },
+        "file": { "type": "string", "note": "与所发文件逐字一致的回显" },
+        "targetId": { "type": "string", "optional": true, "note": "请求体给了就逐字回显" }
+      }
+    },
+    "applied": {
+      "description": "应用真实发生:接收端自己写产物(独占自建+原子替换)后重算 sha256 与 sender_digest 一致才回 applied",
+      "required": ["status", "file", "digest", "revision"],
+      "fields": {
+        "status": { "const": "applied" },
+        "file": { "type": "string", "note": "与所发文件逐字一致的回显" },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$", "note": "产物 sha256 hex,等于发送时点冻结基准" },
+        "revision": { "type": "integer", "minimum": 1, "note": "本次应用的全局递增版本号(接收端自增)" },
+        "targetId": { "type": "string", "optional": true, "note": "请求体给了就逐字回显" }
+      }
+    },
+    "failed": {
+      "description": "暂存/应用失败,带原因(不 claim applied)",
+      "required": ["status", "file", "reason"],
+      "fields": {
+        "status": { "const": "failed" },
+        "file": { "type": "string" },
+        "reason": { "type": "string" },
+        "targetId": { "type": "string", "optional": true }
+      }
+    }
+  },
+  "batchRule": {
+    "description": "回包体形状按文件数分:1 文件=单 JSON 对象回执;多文件=JSON 数组,逐条按文件序",
+    "singleFile": "single JSON object",
+    "multiFile": "JSON array, per-file in files order"
+  },
+  "negative": {
+    "nonJson200": {
+      "description": "200 但回包体非 JSON:已送达无协议回执,保持未确认,不 claim applied",
+      "example": "receiver said ok, move along"
+    },
+    "non2xx": {
+      "description": "非 2xx:送达失败,状态 failed",
+      "exampleStatus": 500
+    },
+    "noFilesBody": {
+      "description": "body 无 files 数组 → 400,回执 failed 带 reason",
+      "example": { "status": "failed", "reason": "body 无 files 数组" }
+    }
+  },
+  "honesty": {
+    "stageNeverApplied": "stage 模式只在暂存命名空间收副本,永不写产物,故 accepted 绝不携带 digest/revision 应用证据;仅 apply 模式(接收端自己写产物+哈希核验)才产 applied",
+    "externalCommandDegradesToAccepted": "外部应用命令副作用不可证实,退出 0 也最多 accepted,绝不 applied",
+    "acceptedCarriesNoApplicationClaim": "accepted 形状不含 digest/revision 字段,不可冒充 applied"
+  }
+}

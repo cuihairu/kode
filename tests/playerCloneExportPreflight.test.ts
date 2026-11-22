@@ -3,6 +3,7 @@ import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
 import type { CloneMysqlModule } from '../src/backend/playerDataCloneMysql';
 import {
+  CLONE_PROBE_TIMEOUT_MS_DEFAULT,
   CLONE_SUMMARY_SAVE,
   cloneBackendProbe,
   cloneSourceConnectionProbe,
@@ -231,4 +232,78 @@ it('cloneSourceConnectionProbe reports the raw failure reason without leaking a 
     ({ createConnection: async () => { throw new Error('ECONNREFUSED 127.0.0.1:3306'); } }) as unknown as CloneMysqlModule;
   const probe = cloneSourceConnectionProbe(loadModule);
   await expect(probe(sourceConfig)).resolves.toEqual({ ok: false, reason: 'ECONNREFUSED 127.0.0.1:3306' });
+});
+
+// ---------------------------------------------------------------------------
+// UX-2026-11-22 整改2:探针独立短超时档(不占导出执行侧长超时)
+// ---------------------------------------------------------------------------
+
+it('probe default deadline is the documented 5s (kbengine.clone.probeTimeoutMs default)', () => {
+  expect(CLONE_PROBE_TIMEOUT_MS_DEFAULT).toBe(5000);
+});
+
+it('probe with a large deadline and a live session resolves ok without spurious timeout', async () => {
+  const queries: string[] = [];
+  const connection = {
+    query: async (sql: string) => {
+      queries.push(sql);
+      return sql.includes('SELECT VERSION()') ? [[{ v: '8.0.36' }]] : [[]];
+    },
+    end: async () => undefined
+  };
+  const loadModule = async () =>
+    ({ createConnection: async () => connection }) as unknown as CloneMysqlModule;
+  const probe = cloneSourceConnectionProbe(loadModule, () => 100_000);
+  await expect(probe(sourceConfig)).resolves.toEqual({ ok: true });
+});
+
+it('probe times out after the configured short deadline and reports the timeout reason', async () => {
+  // createConnection 永不落定:模拟「连不上/挂死」;短档把体感从长超时(120s)
+  // 压到配置档,失败立即回给重试/配置弹窗。
+  const hangModule = async () =>
+    ({ createConnection: async () => new Promise(() => undefined) }) as unknown as CloneMysqlModule;
+  const probe = cloneSourceConnectionProbe(hangModule, () => 25);
+  await expect(probe(sourceConfig)).resolves.toEqual({
+    ok: false,
+    reason: 'source connection probe timed out after 25ms'
+  });
+});
+
+it('probe deadline is read at fire time (config change between calls is honored)', async () => {
+  const queries: string[] = [];
+  const connection = {
+    query: async (sql: string) => {
+      queries.push(sql);
+      return sql.includes('SELECT VERSION()') ? [[{ v: '8.0.36' }]] : [[]];
+    },
+    end: async () => undefined
+  };
+  const loadModule = async () =>
+    ({ createConnection: async () => connection }) as unknown as CloneMysqlModule;
+  let deadline = 100_000;
+  const probe = cloneSourceConnectionProbe(loadModule, () => deadline);
+  await expect(probe(sourceConfig)).resolves.toEqual({ ok: true });
+  // 收紧档:同一探针实例,下一次调用即按新档超时——证明读发生在 fire time。
+  deadline = 1;
+  const hangModule = async () =>
+    ({ createConnection: async () => new Promise(() => undefined) }) as unknown as CloneMysqlModule;
+  const probe2 = cloneSourceConnectionProbe(hangModule, () => deadline);
+  await expect(probe2(sourceConfig)).resolves.toEqual({
+    ok: false,
+    reason: 'source connection probe timed out after 1ms'
+  });
+});
+
+it('probe timeout surfaces into the existing retry/configure dialog (no hang, no entity pick)', async () => {
+  const hangModule = async () =>
+    ({ createConnection: async () => new Promise(() => undefined) }) as unknown as CloneMysqlModule;
+  const deps = baseDeps({ probeSourceConnection: cloneSourceConnectionProbe(hangModule, () => 25) });
+  await runExportCloneCommand(deps);
+  expect(deps.showWarningMessage).toHaveBeenCalledWith(
+    'Source connection test failed: source connection probe timed out after 25ms',
+    'Retry connection test',
+    'Configure source connection'
+  );
+  expect(deps.showQuickPick).not.toHaveBeenCalled();
+  expect(deps.showInputBox).not.toHaveBeenCalled();
 });

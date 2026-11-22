@@ -671,6 +671,12 @@ export function setupHotReload(
     ],
     onRejection: rejection => {
       status.log(`热更 provider 注册被拒: ${rejection.providerId} (${rejection.reason})`);
+    },
+    onProviderError: providerError => {
+      // RUST-426 崩溃隔离:插件崩溃如实落审计(不静默吞),核心/主线程不被打断
+      const message =
+        providerError.error instanceof Error ? providerError.error.message : String(providerError.error);
+      status.log(`热更 provider 崩溃已隔离: ${providerError.providerId} (${message})`);
     }
   });
   // HR-PR-04 接线:发送编排入口由「全局去抖 fire」改为「保存流水线波次出口」
