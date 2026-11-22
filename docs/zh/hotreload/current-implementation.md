@@ -378,3 +378,76 @@
 - 缺省槽 `defaultHotReloadFingerprintProvider`: `compare` 委托既有 `compareFingerprints` 核(文件/语义/已应用三路判定,不自创对拍逻辑);`fetchEngineDigest`=纯核零 IO 如实 not-wired `null`(绝不编造引擎摘要)。真实引擎摘要获取与 tier/verified/compatible 可信度结论在装配面 RUST-404 `defMd5Check`(那里引擎证据是 IO 面);本面只声明「取摘要」边界,不重复声明可信度——可信度抽象既有(RUST-404),不建平行面。
 - 算法版本声明=既有 `apiVersion`('1',FingerprintProvider 钉接口形状);可信度声明=既有 RUST-404 `EngineDigestCompatibility`(tier/verified/compatible),两处都非本批新增,只在账。
 - 测试:`tests/hotReloadPluginApi.test.ts` 4 钉(缺省槽 compare 委托三路对拍:变化/一致如实;同值 unchanged+未协商算法=applied unknown+点名原因不跨类比;fetchEngineDigest 纯核零 IO=not-wired null;可选槽可缺省=不含两槽的纯计算形态仍合规+apiVersion=1)。prove-red:中和 compare 恒 unchanged+fetchEngineDigest 伪造摘要后 3 钉转红(含委托/not-wired 钉),逆向恢复 20/20 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 48 例绿;tsc -p ./ 与 eslint src 双绿。
+
+
+## 25. HR-EXT-003 资格判定规则（2026-11-22,RUST-407,auto/manual/restart 保守序）
+
+- 新版本化扩展面 `HotReloadEligibilityRule`(plugin-api 核内):按 engine profile、root、文件类型、上下文四要素判定 `auto`(可自动发送)/`manual`(人工确认)/`restart`(需重启)。fork/第三方引擎=换 rule 实现整面接管分类;缺省规则只做保守组合判定,不自创结构分析。
+- 缺省规则 `createDefaultHotReloadEligibilityRule` 保守序:①restart 最强——`context.structuralReasons` 非空(既有 RUST-397 def 结构闸 verdict 的产物,规则**只消费闸结论不重算结构**)即判 restart,优先于一切;②auto 须四要素齐备——`.py` 文件+root 已配+引擎版本已知(`EngineProfile.engineVersion !== null`)+触发源 `watcher-auto` 且非用户显式动作,任何一缺=manual(绝不自动发未知引擎/未知根/非 py/人工链);③其余=manual(安全缺省)。
+- 与既有面不重复:pipeline 的 `SavePipelineEmitMode='auto'|'preview-release'` 是发送管线的出口判定,def 闸 `restart_required` 是结构分析;本规则是**资格分类的扩展面**(fork 接管点),组合消费两者的结论,不建平行判定逻辑。
+- 测试:`tests/hotReloadPluginApi.test.ts` 4 钉——restart 最强(结构 reasons 非空即使 auto 要素全齐)、auto 四要素齐备、任何一要素缺=保守 manual(root null/引擎版本 null/非 py/command 触发/userInitiated/全缺)、fork 可换 rule 整面接管+apiVersion 钉 1。prove-red:中和结构闸消费支路(false)+判 auto 分支(恒 true)后 2 钉转红(restart 钉+保守 manual 钉),逆向恢复 24/24 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare+defGate+fileState 6 文件 109 例绿;tsc -p ./ 与 eslint src 双绿。
+
+## 26. HR-EXT-004 权限声明（2026-11-22,RUST-408,workspace/network/exec 最小权限）
+
+- plugin-api 核内新版本化声明面:`HotReloadProviderPermission = 'workspace' | 'network' | 'exec'`,配 `HotReloadProvider.permissions?`(可选)。第三方 provider **必须声明**所需能力,宿主据此判定能否挂到能力面。可选=最小权限声明面:未声明者不获任何敏感面授权(增量可选槽纪律,`apiVersion` 不递增,同 HR-EXT-001/002)。
+- 缺省策略 `createDefaultHotReloadPermissionPolicy`(`kbengine.default-permission`),面→可满足声明集:`send` 必声明 `network`;`fetch-digest` 声明 `workspace` **或** `network` 任一即可(取摘要走文件读或走引擎查询,两条通道皆可);`read-workspace` 必声明 `workspace`;`spawn-process` 必声明 `exec`。`check` 取缺失最少的声明集,给 `granted`/`missing`/点名 provider id 的 `reason`;未声明者对四面一律 `granted=false` 且缺失点名——绝不静默放行。
+- 跨面不挪用权限(`network` 不覆盖 `read-workspace`);fork=换整个 `HotReloadPermissionPolicy` 整面接管判定(同 HR-EXT-003 rule 的接管形状)。
+- 分层不重复:本面只声明**能力**、答「该 provider 能否挂到此面」;宿主在挂载期显式调用策略,`HotReloadProviderRegistry.resolve*` 保持无权限假设,增量前未声明 permissions 的 provider 照旧解析(策略判定是宿主侧的独立闸)。运行时目的地控制仍归 HR-HTTP-001 端点策略(RUST-420,loopback 白名单)与工作区信任闸(RUST-422)——互补,非平行检查。
+- 内置 `createHttpHotfixSendProvider`(`kbengine.http-hotfix`)同样声明 `['workspace', 'network']`——它 POST 联网+`${module}` 回落面包边界探针读工作区;不做特权豁免,只是以身作则证明声明。
+- 测试:`tests/hotReloadPluginApi.test.ts` 9 钉——未声明者四面一律拒且缺失点名、声明 network/workspace/exec 各自授权对应面、fetch-digest 两可(任一通道合格/皆缺拒)、跨面不挪用、重复/空声明处理、`acceptableDeclarations` 表+apiVersion 钉 1、fork 换策略整面接管、向后兼容(无 permissions 的 provider 仍类型合规+仍注册+仍解析——权限面不改解析序)、内置 provider 四面对账(send/read-workspace/fetch-digest 过,spawn-process 因未声明 exec 拒)。prove-red:强制放行(`if (true)`)后 6 钉转红,逆向恢复 33/33 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 61 例绿;tsc -p ./ 与 eslint 双绿。
+
+## 27. HR-EXT-005 隔离 Worker 贡献面（2026-11-22,RUST-409,预算化派发+背压有界）
+
+- plugin-api 核内新版本化贡献面:`HotReloadWorkerAdapter`——Python 插件/fork 把 **eligibility** 和/或 **response** adapter 跑在隔离 Worker(独立线程/进程,不占 extension host 主线程)。本核只定义协议与预算;真实 worker 线程装配由接线批注入 `dispatch`。
+- 版本化消息协议:`HotReloadWorkerTask`(`kind`+`input`,eligibility 用 `HotReloadEligibilityInput`/response 用 `HotReloadProviderInterpretInput`,可选 `correlationId`)→`HotReloadWorkerResult`(`ok=true` 带判定/解释产物,`ok=false` 带 worker 自身错误);`HotReloadWorkerOutcome` 如实三态:`resolved`/`timed-out`/`rejected`。
+- **hot path 不允许无界阻塞**——两道界:①`dispatchWorkerWithBudget` 把 worker 与 `budgetMs` 计时器赛跑,绝不等过预算;预算后仍慢=报告 `timed-out`,其迟回结果被丢弃(槽位按预算释放,挂死的 worker 占不住容量、也堵不住保存事件管线)。②`createHotReloadWorkerHost` 施 `maxInFlight` 背压:在途达上限=新任务 `rejected` `worker backpressure`,不无界排队。`dispose` 后新派发一律拒。
+- 按 kind 选 adapter 首见胜;未贡献该 kind 的 adapter=`rejected` `no adapter contributes <kind>`——宿主绝不静默回落,worker 面只在真有人贡献时用(否则走宿主既有面)。
+- 超时保守产物:eligibility→`WORKER_TIMEOUT_ELIGIBILITY_FALLBACK = 'manual'`(同 HR-EXT-003 保守序——慢 worker 绝不升级为 auto);response 超时=与既有 HR-EXT-001 缺省 `interpretResponse`(七类核)组合,不新造错误枚举。
+- 测试:`tests/hotReloadPluginApi.test.ts` 7 钉——预算内 resolved/派发拒绝带 worker 错误、timed-out 不等慢 worker(耗时 < worker 自身延迟)、预算释放槽位后新派发照常、no-adapter 拒(kind 不匹配+空宿主两臂)、背压在 `maxInFlight`、`declaredTimeoutMs` 覆盖宿主缺省预算、dispose+apiVersion 钉 1+eligibility 超时产物 manual。prove-red:把 `budgetMs` 计时器换成 100000ms 后 3 钉转红(全部 timed-out 钉),逆向恢复 40/40 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 68 例绿;tsc -p ./ 与 eslint 双绿。
+
+## 28. HR-EXT-006 模板=runtime adapter 实现（2026-11-22,RUST-410,用户可替换,Rust Core 不写死 reload URL）
+
+- HTTP 请求模板现在是**参数化的 runtime adapter 实现**而非写死常量:`buildDefaultHotfixRequest(filePath, deps, moduleIdentity?, entry = BUILTIN_HTTP_REQUEST_EXAMPLE)` 把模板作为第四参,`DefaultHotfixSendDeps.template?` 透传进 `sendDefaultHotfix`。用户自己的 `HttpRequestEntry`(`kbengine.httpRequests` 形态:url/method/headers/body)就是一份可替换实现——`reload` URL 只活在模板里(TS 侧单一真源),Rust Core 永不写死。
+- 新工厂 `createTemplateHotfixSendProvider(entry, deps)` 从任意模板构建 `HotReloadProvider`;内置 `createHttpHotfixSendProvider(deps)` 现在是该工厂的薄封装(规范 id `kbengine.http-hotfix`+展示名)——内置只是内置示例模板的 adapter,不是特殊通道。用户模板可整体替换(注册序=应答序,先注册的 fork 侧模板先应答)。
+- 权限:模板 adapter 与内置同声明 `['workspace', network]`(可能探包目录补 `${module}` + 联网发送)——无特权豁免,同 HR-EXT-004 纪律。
+- Rust Core 保证:`crates/` 是索引/语义/DB 面,不做热更 HTTP。由 `tests/rustCoreReloadUrlGuard.test.ts` 钉死:遍历 `crates/**/src/**/*.rs` 断言 `8090`/`hotfix` 字面量零命中——谁把 reload URL 写进 Rust 此门红。
+- 测试:`tests/hotReloadProviderAssembly.test.ts` 4 钉——用户模板 adapter 整条模板进请求(url `http://engine.internal:9990/reload?mod=${module}` 替换/`PUT` 方法/头值 token 替换/体替换)非内置形态、缺省路径仍是内置 `127.0.0.1:8090/hotfix?module_name=` 形态、模板 adapter 声明 workspace+network 且 id 按模板名生成+无 transport 如实不接单、用户模板可替换内置(先注册先应答,仅内置=解析内置 id);另 `tests/rustCoreReloadUrlGuard.test.ts` 1 钉(Rust 树 8090/hotfix 字面量零命中)。prove-red:把 `buildDefaultHotfixRequest` 强制回落内置常量后用户模板钉转红,逆向恢复 29/29 绿;消费者门=pluginApi+providerAssembly+defaultHotfix+rustCoreReloadUrlGuard+providerWiring 5 文件 79 例绿;tsc -p ./ 与 eslint 双绿。
+
+## 29. HR-EXT-007 provider SDK 示例（2026-11-22,RUST-411,stub+mock HTTP,集成与权限用例）
+
+- 新示例模块 `src/backend/hotReloadProviderExamples.ts`:第三方写 `HotReloadProvider` 的两条最短路径,纯逻辑零 vscode——示例即代码,也是集成测试对象。
+- **stub provider** `createStubHotReloadProvider()`:零 IO 记录型——`canSend` 恒 true(能应答占位,不分派 profile),每次 send 把原始请求逐字记进 `calls`,回 `{ok:true, detail:''}`,不联网不读盘不起进程;**零权限声明**(最小权限:不使用任何能力),故缺省策略对敏感面一律拒且点名缺失。
+- **mock HTTP provider** `createMockHttpHotfixProvider(options?)`:同一 `createTemplateHotfixSendProvider` 工厂(HR-EXT-006)+ 脚本化 `HttpTransport`——send 走完整 `sendDefaultHotfix → executeHttpRequest → transport` 链,transport 记录每条出口请求(url/method/headers/body)并回放脚本 `HttpExecutionResult`(越界调用回退 `defaultResponse`,缺省 200 ok);`entry`/`sendDeps` 对应 `HttpRequestEntry`/`DefaultHotfixSendDeps`,可端到端演练用户模板(HR-EXT-006);mock 声明 `['workspace','network']`——与内置 HTTP provider 同契约,无特权豁免。
+- 分层非一道闸:`registry.resolve*` 不含权限假设(注册序=应答序),权限判定是宿主挂载期另一道显式闸。示例分别钉两半——stub 照常解析并发送,而 `policy.check(stub,'send')` granted=false(missing network)、`policy.check(mock,'send')` granted=true;解析序≠授权。
+- 测试:tests/hotReloadProviderExamples.test.ts 10 钉——stub 逐字记账+canSend 恒真+宿主注册表集成;mock 缺省模板展开 8090/hotfix 形态、用户模板整条进请求(PUT engine.internal:9990/reload、头 token、body)、脚本 ECONNREFUSED 与 HTTP 500 均进 ok=false 且 detail 点名、宿主集成产出一条结构化 outcome 且回执关联 id;权限用例钉 stub send/spawn 一律拒且点名缺失、mock send 授而 spawn 拒(缺 exec)、permissions 等于 [workspace,network]、解析/权限分层(stub 能解析但不获授权)。prove-red:中和 mock 权限声明后 2 钉转红(授予+声明契约),逆向恢复 10/10 绿;消费者门=examples+providerAssembly+pluginApi 3 文件绿;tsc -p ./ 与 eslint 双绿。
+
+## 30. HR-EXT-008 调度隔离+provider 影响基准（2026-11-22,RUST-412,provider 不进语言服务调用图）
+
+- **命题**:新增 hot-reload provider 不得拖累 hover/definition 尾延迟。provider 派发面(`resolveSendProvider`/`HotReloadProviderHost`)只活在保存事件管线(`src/hotReload.ts`)与后端装配层(`src/backend/*`),零进入语言服务调用图。
+- **结构钉** `tests/hotReloadProviderSchedulingIsolation.test.ts`(3 钉,扫 `src/` 下生产 .ts):①语言服务模块(`languageProviders` 桶+hover/definition 入口+`languageService*` 激活面)零引用派发 token;②四个 hover/definition 入口(`languageProviders/hover.ts`、`pythonDefinition.ts`、`navigation.ts`、`languageProviders.ts`)零导入 provider 面(`hotReloadPluginApi`/`hotReloadProviderAssembly`/`hotReloadProviderExamples`);③派发 token 生产调用点只在 `src/hotReload.ts` 与 `src/backend/*`——别处即红。prove-red:向 `hover.ts` 注入 `resolveSendProvider` 注释后 ①③ 两钉转红;恢复 3/3 绿。
+- **实证臂** `tests/perf/hotReloadProviderImpact.bench.ts`(bench lane,`vitest.bench.config.ts`,与主 unit 门无交集):同一批真实盘上脚本(gen-perf-assets `large`)+ 同一份实时索引,warm 尾延迟(p50/p95/p99/max)覆盖悬停(`KBEngineHoverProvider.provideHover`,coldHover 测量面)与定义(`PythonClassIndex.resolveSelfMethodCandidates`,unblockedDefinition 语义核——避开 Rust-first RPC 面对真实二进制的依赖),两臂对照——**H0** 无 provider host(基线)vs **HN** 20 个计数 adapter 注册进活跃 `HotReloadProviderHost`。结构断言:整轮测量派发计数恒 0(宿主就绪但从不被语言服务调用);墙钟只记录不进断言(阈值化属 RUST-414 批)。
+- 记录运行(`docs/perf/hot-reload-provider-impact-run.txt`,追加制,`KODE_HPI_OUT` 可覆盖;旋钮 `KODE_HPI_FILES/WARM/ADAPTERS`):files=400 warm=40 adapters=20——H0 悬停 p50=0.97ms/p95=5.83ms vs HN p50=1.03ms/p95=2.23ms;H0 定义 p50=0.69ms/p95=9.09ms vs HN p50=0.97ms/p95=4.99ms。两臂落同一噪声带(HN 尾部反而略低——注册 20 个 provider 对 hover/definition 路径零增加),与结构钉一致。
+
+## 31. HR-UI-013 面板无障碍/主题完整性（2026-11-22,RUST-384 批B+批C）
+
+注:批B 的 ZH 文档节此前未落(主文档只在 EN §33 记),本节把批B+批C 一起对账;批C 载体 feat commit 438de4e7。
+
+- **批B(已落,EN §33)**:两热更面板文案走既有 webviewStrings 表(`strings(locale).hotReloadSettings/hotReloadHistory`,en/zh 全量同形,纯渲染面注入 t/lang,渲染纯函数不依赖 vscode),宿主面(树三组/定位命令标题/搜索 prompt/通知)走 l10nText(bundle.l10n.{en,zh-cn}.json 786 键 parity);主题面既有 `var(--vscode-*)` 令牌。
+- **批C(本节载体 438de4e7)在批B 基础上补无障碍完整性与主题硬化**:
+  - 主题硬化:面板 `body` 补 `background: var(--vscode-editor-background)`,加 `:focus-visible` 焦点环(2px `var(--vscode-focusBorder, #3794ff)`),不引固定 Dark+ 调色板(仍全走 `--vscode-*` 令牌);
+  - screen reader:实时队列包稳定 live 区(`#queue-region` role=status aria-live=polite,label=queueRegionLabel,`queueChanged` 只换内层行、live 区本身不重建,屏幕阅读器可听到队列变化);过滤表单 role=search(label=filterGroupLabel),五控件各配 sr-only 关联标签(文本=列标签),虚拟/非虚拟双表 aria-label(tableLabel);
+  - 键盘:apply 改 type=submit,脚本挂 form submit 处理器(`event.preventDefault()` 后应用)——任一过滤控件回车即应用;clear/加载更多保持 type=button;
+  - zh 文案残差修复:批B 留下 zh 表 `defaultTarget='(default)'` 英文占位(页头 `headerTargetDefault` 本已是「(默认)」),批C 改 `'(默认)'`;两键仍分开(页头/行格),只修 zh 拼写;另加三个 a11y 标签键(queueRegionLabel/filterGroupLabel/tableLabel)zh/en 同形。
+- 测试:`tests/hotReloadHistoryI18nA11y.test.ts` 11 例(纯渲染两态:主题令牌+不引固定 Dark+ 调色板/队列 live 区 zh/en/页头 live 区/表单 role=search+五 sr-only 标签+.sr-only CSS/双表 aria-label 含虚拟分支(行数超 `VIRTUAL_SCROLL_THRESHOLD`)/submit/clear/more 钮型+form submit 处理器/zh「(默认)」vs en「(default)」行格/三新键 zh/en 同形/`<html lang>` 按 locale);`tests/hotReloadHistoryView.test.ts` 面板钉更新:zh 目标格现「(默认)」(原「(default)」)。
+- 残差不变(同 EN §33):en locale 下错误类别下拉与 errorSummary 列仍中文(纯核 `HOT_RELOAD_ERROR_REASON_LABELS`,label 穿线是独立架构改动,诚实不装已做)。
+
+## 32. HR-EXT-008 provider 派发调度隔离（2026-11-23,RUST-412,§30 命题的时序面）
+
+承接 §30(结构面:派发面零进入语言服务调用图)。§30 钉的是**闲置** provider host——它不会被 hover/definition 调到;§30 的基准(H0 vs HN)宿主全程从不 fire,故量不到另一面:**热更真派发那一跳的派发工作,原先跑在合并窗 fire 回调的同步段里**,与同事件循环上的 hover/definition 抢时间。本节收口该残差。
+
+- **收口点**:键开(`sendViaProviders`)时,fire 回调原先**同步**解析注册表——逐个跑每个已注册 provider 的 `canSend`,而那是第三方同步代码。这份工作占住 fire 回调的同步段,把同批登记的语言服务侧定时回调(hover 预算、索引泵)垫高。现把解析与「无人应答回落默认热更」整段挪进微任务,fire 回调即回,同批兄弟定时回调先于派发工作执行。
+- **机制(单点收编,不造轮子)**:fire 回调 `actionName.length === 0` 分支的键开路径把 `resolveSendProvider` + `runViaProvider` / `runDefaultHotfix` 包进 `Promise.resolve().then(...)`,与同文件既有信道发送、provider `send` 的延跳惯用法一致。键关路径逐字保留同步 `runDefaultHotfix()`:零配置用户零延迟变化。结果映射(sent-unverified + `provider:<id>` 审计行、failed/throw + HR-WATCH-008 指纹撤回)、单弹通知、`updateStatus` 批/流水线门控全在未改动的 `runViaProvider` / `runDefaultHotfix` 体内,`status.setSending` 仍同步。
+- **微任务窗为何安全**:微任务在当前宏任务返回后、任何新定时器/事件前清空;`latestBatch` 只在 `runFire` 内同步前进,`pipeline` 只在 apply/rebuild 变——两者都不可能插进该窗口,`batch === latestBatch && pipeline === pipelineAtFire` 双等门控不可被破。
+- **基准** `tests/perf/providerIsolation.bench.ts`(bench lane,输出 `docs/perf/provider-isolation-run.txt` 追加制):P1 fire 切片在 0 vs 24 个 provider 下持平(p50 0.15ms vs 0.14ms,4800 次 `canSend` 全部记账在微任务——fire 同步段零次);P1b **同批兄弟定时回调**不被垫高(p50 0.14ms ≡ 0.14ms)——这正是 todo 命题的机制面(hover 预算/索引泵定时器即同批兄弟回调);P2/P3 记录端到端 hover 与 `.def`→py definition 尾延迟(两臂均 200/200 命中),诚实 `ISOL-NOTE`:残余 N24−N0 ≈ +4.8ms 是派发微任务与 hover 续延同队列交错(受 provider 数×spin 有界),非同步切片阻塞。
+- **测试钉** `tests/hotReloadProviderWiring.test.ts` 增四钉:双 provider fire(fire 同步段零 `canSend` 零 `send`,微任务后两次 `canSend` + 一次 `send` 全发生)、五 provider 风暴(遍历成本全在微任务,每 fire 恰一次接单)、键开全不应答(内置 `kbengine.http-hotfix` 兜底同样只在微任务后接单——同步段零默认 transport)、键关(fire tick 后无 flush 即已调 transport,证明同步路径未动)。既有钉全部只在 `flush()` 后断言,多一跳微任务不破任何既有用例。
+- **无新配置键**:`sendViaProviders` 未变,manifest/NLS/设置面板面零触碰,docsCommands 配置门不因本增量触发。

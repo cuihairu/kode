@@ -167,6 +167,8 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
         }
       },
       transportDeps: {
+        // RUST-420:测试 URL 是 10.0.0.8(非 loopback 假主机),显式授权放行
+        allowNonLoopback: () => true,
         http: {
           run: async request => {
             requests.push({ ...request });
@@ -274,6 +276,8 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
         }
       },
       transportDeps: {
+        // RUST-420:非 loopback 已授权(否则本例会被端点策略闸拦,而非信任闸)
+        allowNonLoopback: () => true,
         http: {
           run: async request => {
             requests.push({ ...request });
@@ -294,7 +298,10 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     // SRC-001 L6:装配位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
     const source = readFileSync('src/extension.ts', 'utf8') + readFileSync('src/activate/hotReload.ts', 'utf8');
     // RUST-357(HR-HTTP-015):解出口带健康观察口(发送断连/重连自动更新通道灯)
-    expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload, { healthObserver });');
+    expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload, {');
+    expect(source).toContain('healthObserver,');
+    // RUST-420(HR-QA-008):解出口透传非 loopback 端点授权(执行时读,与快捷请求同设置)
+    expect(source).toContain('allowNonLoopback: readHttpAllowNonLoopback');
     // 用户令 2026-11-10:无 profile/无 hotReload 段不再回落 actionName,走默认
     // http 通道(createDefaultHotReloadChannel 内置模板,targetId='default')
     expect(source).toContain('createDefaultHotReloadChannel()');

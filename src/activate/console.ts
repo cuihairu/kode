@@ -52,7 +52,11 @@ export function activateConsole(deps: ConsoleDeps): void {
       // 默认开:配置缺失也开,显式 false 才关(用户令,热更/门控同类口径)
       enabled: consoleConfig.get<boolean>('consoleLogTail.enabled', true),
       components: consoleConfig.get<string[]>('consoleLogTail.components', [])
-    })
+    }),
+    // RUST-422(HR-QA-010)信任闸:日志长连目标(logger 经 machined 发现,发现
+    // 主机 console.discoveryHost 来自工作区配置)未信任工作区不建;装配注入
+    // vscode.workspace.isTrusted,与 HTTP 快捷请求/telnet 信任闸同口径。
+    isWorkspaceTrusted: () => vscode.workspace.isTrusted
   });
   if (consoleConfig.get<boolean>('consoleLogTail.enabled', true)) {
     tailController.start();

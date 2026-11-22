@@ -267,11 +267,14 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
                 }
                 noteSentDigest(rootId, file);
                 if (receipt.digest !== undefined && receipt.digest === sentDigest) {
+                  // RUST-420:已授权非 loopback 的安全警告经 receipt.detail 追加
+                  // (无警告=缺省不带,detail 串与既有逐字一致,零回归)
                   recordOutcome(
                     rootId,
                     file,
                     'applied',
-                    `applied 回执 digest 核验一致(指纹前 12 位 ${sentDigest.slice(0, 12)})`
+                    `applied 回执 digest 核验一致(指纹前 12 位 ${sentDigest.slice(0, 12)})` +
+                      (receipt.detail !== undefined ? ` | ${receipt.detail}` : '')
                   );
                   break;
                 }
@@ -291,11 +294,14 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
                 // 成功;注解结算口(noteStillUnverified)两路径一致只认
                 // sent-unverified,accepted 不排注解结算(派生状态机按
                 // recordedAt+窗口把过期 accepted 结算为 FAILED,两路径同语义)
+                // RUST-420:已授权非 loopback 的安全警告经 receipt.detail 追加
+                // (无警告=缺省不带,注解串与既有逐字一致,零回归)
                 recordOutcome(
                   rootId,
                   file,
                   'accepted',
-                  receipt.note ?? '回执 accepted:应用仍需核验,仍等 applied(HOT-003)'
+                  (receipt.note ?? '回执 accepted:应用仍需核验,仍等 applied(HOT-003)') +
+                    (receipt.detail !== undefined ? ` | ${receipt.detail}` : '')
                 );
                 noteSentDigest(rootId, file);
                 break;

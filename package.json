@@ -1407,6 +1407,21 @@
           "command": "kbengine.git.openVersionContent",
           "when": "view == kbengine.gitHistory && viewItem == gitCommit",
           "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.locateFile",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.showLog",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.hotReload.retryFailed",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [
@@ -2418,6 +2433,21 @@
               "%kbengine.config.hotReload.triggerMode.onDiskChange%"
             ]
           },
+          "kbengine.hotReload.notify": {
+            "type": "string",
+            "enum": [
+              "silent",
+              "errors",
+              "summary"
+            ],
+            "default": "errors",
+            "markdownDescription": "%kbengine.config.hotReload.notify.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.hotReload.notify.silent%",
+              "%kbengine.config.hotReload.notify.errors%",
+              "%kbengine.config.hotReload.notify.summary%"
+            ]
+          },
           "kbengine.protocol.cliPath": {
             "type": "string",
             "default": "",
@@ -2535,6 +2565,11 @@
             "default": true,
             "scope": "resource",
             "markdownDescription": "%kbengine.config.gitHistory.enabled.description%"
+          },
+          "kbengine.http.allowNonLoopback": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.http.allowNonLoopback.description%"
           },
           "kbengine.httpRequests": {
             "type": "array",

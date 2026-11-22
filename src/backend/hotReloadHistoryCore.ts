@@ -38,6 +38,10 @@ export interface HotReloadHistoryInput {
   readonly fileUri: string;
   /** 目标环境 id(行身份的一部分:同文件不同目标=两行,HR-UI-010/014) */
   readonly targetId: string;
+  /** HR-UI-014 工作区根 fsPath(resolveRootId 产物):同模块多 workspace
+   *  归属区分维度(行身份已含于 requestId 前缀);可选=旧持久化行无此
+   *  字段(渲染占位不丢行),活记录恒非空 */
+  readonly rootId?: string;
   /** 时钟毫秒 */
   readonly time: number;
   readonly status: HotReloadHistoryStatus;
@@ -84,6 +88,8 @@ export interface HotReloadHistoryFilter {
   /** HR-STATE-007 requestModule 子串(大小写不敏):发送名与显示名分开可查 */
   readonly requestModuleContains?: string;
   readonly targetId?: string;
+  /** HR-UI-014 按工作区根精确过滤(同 targetId 口径:命中即等于) */
+  readonly rootId?: string;
   readonly fileUri?: string;
   readonly status?: HotReloadHistoryStatus;
   /** 时间范围含边界 [from,to];undefined=不限 */
@@ -117,6 +123,8 @@ export interface HotReloadHistoryExportRow {
   readonly requestModule: string;
   readonly fileUri: string;
   readonly targetId: string;
+  /** HR-UI-014 工作区根(显式入白名单:新字段默认被白名单静默排除) */
+  readonly rootId?: string;
   readonly time: number;
   readonly status: HotReloadHistoryStatus;
   readonly errorSummary?: string;
@@ -232,6 +240,9 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
   lines.push(`module: ${entry.fullModule || entry.requestModule}`);
   lines.push(`file: ${entry.fileUri}`);
   lines.push(`target: ${entry.targetId || '(default)'}`);
+  // HR-UI-014 工作区根(缺失根无「默认根」概念,如实报 unrecorded;
+  // 活记录恒非空,占位只现于旧持久化行)
+  lines.push(`root: ${entry.rootId || '(unrecorded)'}`);
   lines.push(`time: ${new Date(entry.time).toISOString()}`);
   lines.push(`requestId: ${entry.requestId}`);
   lines.push(`status: ${entry.status}`);
@@ -266,6 +277,7 @@ export function redactHistoryEntry(entry: HotReloadHistoryEntry): HotReloadHisto
     requestModule: entry.requestModule,
     fileUri: entry.fileUri,
     targetId: entry.targetId,
+    ...(entry.rootId !== undefined ? { rootId: entry.rootId } : {}),
     time: entry.time,
     status: entry.status,
     ...(entry.errorSummary !== undefined ? { errorSummary: entry.errorSummary } : {}),
@@ -424,6 +436,9 @@ export class HotReloadHistoryCore {
       if (query.targetId !== undefined && entry.targetId !== query.targetId) {
         return false;
       }
+      if (query.rootId !== undefined && entry.rootId !== query.rootId) {
+        return false;
+      }
       if (query.fileUri !== undefined && entry.fileUri !== query.fileUri) {
         return false;
       }
@@ -493,6 +508,11 @@ export class HotReloadHistoryCore {
   /** HR-UI-002/014 按目标分组:同路径不同 target 落不同组 */
   static groupByTarget(rows: readonly HotReloadHistoryEntry[]): Map<string, HotReloadHistoryEntry[]> {
     return HotReloadHistoryCore.groupBy(rows, entry => entry.targetId);
+  }
+
+  /** HR-UI-014 按工作区根分组:同模块多 workspace 落不同组 */
+  static groupByRoot(rows: readonly HotReloadHistoryEntry[]): Map<string, HotReloadHistoryEntry[]> {
+    return HotReloadHistoryCore.groupBy(rows, entry => entry.rootId ?? '');
   }
 
   private static groupBy(

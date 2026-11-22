@@ -21,6 +21,7 @@
  */
 
 import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from './httpRequestService';
+import { decideHttpEndpoint } from './httpEndpointPolicy';
 import { formatReloadTransportThrownError } from './hotReloadTransportErrors';
 import { sendErrorToEndpointHealth, sendStatusToEndpointHealth } from './hotReloadEndpointHealth';
 import type { HttpRequestEntry } from './httpRequests';
@@ -51,6 +52,11 @@ export type ReloadReceipt =
       note?: string;
       /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
       targetId?: string;
+      /**
+       * RUST-420(HR-QA-008):端点策略安全警告(已授权非 loopback 时随回执
+       * 携带,台账逐次可见)。缺省不带;与协议侧 note 分开,不互混。
+       */
+      detail?: string;
     }
   | {
       status: 'applied';
@@ -59,6 +65,11 @@ export type ReloadReceipt =
       revision?: number;
       /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
       targetId?: string;
+      /**
+       * RUST-420(HR-QA-008):端点策略安全警告(同 accepted——applied 无协议
+       * 文本字段,安全警告经此携带)。缺省不带。
+       */
+      detail?: string;
     }
   | { status: 'failed'; file?: string; reason: string; targetId?: string };
 
@@ -229,6 +240,26 @@ export interface ReloadHttpDeps {
   context?: VariableContext;
   /** RUST-357:发送面健康观察;注入即逐发送上报,不注入=零行为变化 */
   healthObserver?: EndpointHealthObserver;
+  /**
+   * RUST-420(HR-QA-008)非 loopback 端点显式授权:默认只放行确认的 loopback
+   * 目标(本机引擎);返回 true=用户已显式授权(kbengine.http.allowNonLoopback),
+   * 非 loopback 逐次落安全警告后放行。缺省不注入=未授权(非 loopback 一律
+   * 阻止)——端点越界是危险面,安全默认必须收紧,与信任闸「缺省视为可信」
+   * 相反。执行时读(授权可随设置变化,与信任闸同口径)。
+   */
+  allowNonLoopback?: () => boolean;
+}
+
+/**
+ * RUST-420(HR-QA-008)非 loopback 已授权时的安全警告随回执逐次落账:
+ * 贴到每条回执的 reason/detail(台账是通道的逐次记录面,逐次可见)。
+ */
+function appendEndpointWarnToReceipt(receipt: ReloadReceipt, message: string): ReloadReceipt {
+  if (receipt.status === 'failed') {
+    return { ...receipt, reason: `${message} | ${receipt.reason}` };
+  }
+  const detail = receipt.detail !== undefined ? `${receipt.detail} | ${message}` : message;
+  return { ...receipt, detail };
 }
 
 /** 默认 HTTP 执行器:复用 httpRequestService 的纯 node http/https 传输面 */
@@ -375,6 +406,16 @@ export class HttpReloadTransport implements ReloadTransport {
 
   async probe(): Promise<{ ok: boolean; detail: string }> {
     const url = substituteReloadVariables(this.entry.url, [], this.deps.context);
+    // RUST-420(HR-QA-008)端点策略闸:探测同样过闸(探测也发 HTTP GET 到配置
+    // 声明的目的地)。阻止=如实报不可达+原因(不发请求);已授权=放行但逐次
+    // 落安全警告(附在 detail 上,探活结果如实呈现)。执行时读(授权可随
+    // 设置变化),缺省未注入=未授权(安全默认收紧)。
+    const endpoint = decideHttpEndpoint(url, this.deps.allowNonLoopback?.() ?? false);
+    if (endpoint.action === 'block') {
+      return { ok: false, detail: endpoint.message ?? '非 loopback 端点已阻止' };
+    }
+    const warnNote =
+      endpoint.action === 'warn' && endpoint.message !== null ? ` · ${endpoint.message}` : '';
     try {
       // 无副作用探测(KODE-AUD-009):probe 与真实 fire 请求分离——连通性
       // 测试发 GET 无体请求(HTTP 安全方法),不携带重载载荷(不用配置的
@@ -391,13 +432,14 @@ export class HttpReloadTransport implements ReloadTransport {
       const ok = response.status >= 200 && response.status < 300;
       return {
         ok,
-        detail: ok
-          ? `端点可达(HTTP ${response.status})`
-          : `端点不可达(HTTP ${response.status} 非 2xx)`
+        detail:
+          (ok
+            ? `端点可达(HTTP ${response.status})`
+            : `端点不可达(HTTP ${response.status} 非 2xx)`) + warnNote
       };
     } catch (error) {
       // RUST-419:探测失败分类输出可用错误(endpoint/证书/代理/中断)
-      return { ok: false, detail: formatReloadTransportThrownError(error) };
+      return { ok: false, detail: formatReloadTransportThrownError(error) + warnNote };
     }
   }
 
@@ -430,6 +472,34 @@ export class HttpReloadTransport implements ReloadTransport {
       this.deps.context,
       senderDigests
     );
+    // RUST-420(HR-QA-008)端点策略闸:profile 部署通道的真实目的地(模板插值
+    // 后 URL)在发出前过端点策略——默认只放行 loopback;非 loopback 未授权
+    // 一律阻止(不发请求,逐文件 failed 回执携带阻止原因),已授权放行但逐次
+    // 落安全警告(贴在回执上,台账逐次可见)。执行时读(授权可随设置变化),
+    // 缺省未注入=未授权(安全默认收紧,与信任闸「缺省可信」相反)。
+    const endpoint = decideHttpEndpoint(request.url, this.deps.allowNonLoopback?.() ?? false);
+    if (endpoint.action === 'block') {
+      const receipts = fileSet.map(file => ({
+        status: 'failed' as const,
+        file,
+        reason: endpoint.message ?? '非 loopback 端点已阻止'
+      }));
+      for (const receipt of receipts) {
+        onReceipt(receipt);
+      }
+      return { kind: this.kind, receipts };
+    }
+    const warnMessage = endpoint.action === 'warn' ? endpoint.message : null;
+    // RUST-420:已授权非 loopback → warn:安全警告贴在每条回执上(推送面与
+    // 返回汇总同批同形,不各说各话)。
+    const finish = (receipts: ReloadReceipt[]): ReloadSendSummary => {
+      const wrapped =
+        warnMessage === null ? receipts : receipts.map(r => appendEndpointWarnToReceipt(r, warnMessage));
+      for (const receipt of wrapped) {
+        onReceipt(receipt);
+      }
+      return { kind: this.kind, receipts: wrapped };
+    };
     let response: ReloadHttpResponse;
     try {
       response = await this.deps.run(request);
@@ -438,34 +508,28 @@ export class HttpReloadTransport implements ReloadTransport {
       // RUST-357:断连——无响应即端点不可达(健康观察口按同一可用错误上报)
       const health = sendErrorToEndpointHealth(error);
       this.noteEndpointHealth(this.kind, health.ok, health.detail);
-      const reason = health.detail;
-      const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
-      for (const receipt of receipts) {
-        onReceipt(receipt);
-      }
-      return { kind: this.kind, receipts };
+      return finish(fileSet.map(file => ({ status: 'failed' as const, file, reason: health.detail })));
     }
     if (response.status < 200 || response.status >= 300) {
       // RUST-357:有响应但非 2xx——端点可达但通道不健康
       this.noteEndpointHealth(this.kind, false, sendStatusToEndpointHealth(response.status).detail);
-      const reason = `HTTP ${response.status}:非 2xx 送达失败`;
-      const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
-      for (const receipt of receipts) {
-        onReceipt(receipt);
-      }
-      return { kind: this.kind, receipts };
+      return finish(
+        fileSet.map(file => ({
+          status: 'failed' as const,
+          file,
+          reason: `HTTP ${response.status}:非 2xx 送达失败`
+        }))
+      );
     }
     // RUST-357:2xx——端点可达/重连(health success 只说明端点可达,不代表
     // 任何模块已更新成功:模块投递结果另在回执/台账轴)
     this.noteEndpointHealth(this.kind, true, sendStatusToEndpointHealth(response.status).detail);
     // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝
-    const receipts = response.bodyTruncated
-      ? fileSet.map(file => ({ status: 'sent' as const, file, detail: '响应体已截断，未能核验回执' }))
-      : parseReloadHttpReceipts(response.body, fileSet, target.targetId);
-    for (const receipt of receipts) {
-      onReceipt(receipt);
-    }
-    return { kind: this.kind, receipts };
+    return finish(
+      response.bodyTruncated
+        ? fileSet.map(file => ({ status: 'sent' as const, file, detail: '响应体已截断，未能核验回执' }))
+        : parseReloadHttpReceipts(response.body, fileSet, target.targetId)
+    );
   }
 }
 
@@ -708,6 +772,11 @@ export interface ReloadTransportDeps {
   official?: ReloadOfficialDeps;
   /** RUST-357(HR-HTTP-015):透传给 HTTP 通道的发送面健康观察口 */
   healthObserver?: EndpointHealthObserver;
+  /**
+   * RUST-420(HR-QA-008):透传给 HTTP 通道的非 loopback 端点显式授权(执行时读)。
+   * 缺省不注入=未授权(非 loopback 一律阻止,安全默认收紧)。
+   */
+  allowNonLoopback?: () => boolean;
 }
 
 /**
@@ -744,7 +813,8 @@ export function resolveReloadTransport(
   if (config.channel === 'http' && config.http) {
     const httpDeps: ReloadHttpDeps = {
       ...(deps.http ?? { run: defaultReloadHttpRunner }),
-      ...(deps.healthObserver !== undefined ? { healthObserver: deps.healthObserver } : {})
+      ...(deps.healthObserver !== undefined ? { healthObserver: deps.healthObserver } : {}),
+      ...(deps.allowNonLoopback !== undefined ? { allowNonLoopback: deps.allowNonLoopback } : {})
     };
     return new HttpReloadTransport(config.http, httpDeps);
   }

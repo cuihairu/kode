@@ -1,0 +1,6 @@
+HPI-ENV node=v24.21.0 cpus=14 files=400 warm=40 adapters=20
+HPI-METRIC HPI-H0.warmHover n=40 p50=0.97ms p95=5.83ms p99=45.04ms max=45.04221499999994ms
+HPI-METRIC HPI-H0.warmDefinition n=40 p50=0.69ms p95=9.09ms p99=21.98ms max=21.97813700000006ms
+HPI-METRIC HPI-HN.warmHover n=40 p50=1.03ms p95=2.23ms p99=4.1ms max=4.099216999999953ms
+HPI-METRIC HPI-HN.warmDefinition n=40 p50=0.97ms p95=4.99ms p99=5.2ms max=5.195103999999901ms
+HPI-METRIC HPI-HN.registeredAdapters n=1 20

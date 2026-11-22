@@ -477,7 +477,11 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
         await injectDebugpyAfterStart([injectTarget], () => telnetService.getTargets(), {
           log,
           report: (serverKey, outcome, detail, port) =>
-            recordInjection(serverKey, { outcome, detail, port })
+            recordInjection(serverKey, { outcome, detail, port }),
+          // RUST-422(HR-QA-010)信任闸:注入目标 telnet 主机来自工作区配置,未
+          // 信任工作区不发探测包不发 debugpy.listen 命令;装配注入
+          // vscode.workspace.isTrusted,与 telnet 探测/会话信任闸同口径。
+          isWorkspaceTrusted: () => vscode.workspace.isTrusted
         });
         // RUST-009 兜底:autoDebugpy 自动注入链任何未预期失败不再成为未处理
         // rejection;走同一 log/recordInjection 面如实留痕(不弹窗打断用户)。

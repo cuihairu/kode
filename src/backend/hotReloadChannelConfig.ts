@@ -18,6 +18,7 @@ import {
   type ReloadChannelConfig,
   type ReloadHttpRequest,
   type ReloadTarget,
+  type ReloadTransportDeps,
   type ReloadTransportKind
 } from './hotReloadTransport';
 
@@ -38,8 +39,17 @@ export interface HotReloadChannelConfigDeps {
    * 连通性测试:给定配置返回 probe 结果。缺省经 resolveReloadTransport 建
    * 真实通道调 probe();未配/字段缺失返回 ok:false 如实说明。测试注入为
    * 探真 transport.probe,不触碰 profile(探测不保存)。
+   * RUST-420:第二参=端点策略(缺省未授权,非 loopback 探活被阻止)。
    */
-  probe?(config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }>;
+  probe?(
+    config: ReloadChannelConfig,
+    policy?: Pick<ReloadTransportDeps, 'allowNonLoopback'>
+  ): Promise<{ ok: boolean; detail: string }>;
+  /**
+   * RUST-420(HR-QA-008)非 loopback 端点显式授权(执行时读):探活/发送走
+   * HTTP 通道时透传给通道。缺省不注入=未授权(非 loopback 一律阻止)。
+   */
+  allowNonLoopback?: () => boolean;
   /**
    * RUST-358(HR-HTTP-016):预览将要发送的精确请求(不发送、零副作用)。
    * 缺省走 defaultPreviewRequest(经 buildReloadHttpRequest 构造);未配/非
@@ -90,9 +100,15 @@ export const DEFAULT_OFFICIAL_PORT = 40000;
 /** Engine kbengine_defaults.xml baseapp/telnet_service; custom deployments override it. */
 export const DEFAULT_OFFICIAL_PASSWORD = 'pwd123456';
 
-/** 默认连通性探测:经真实 transport.probe();不配/畸形如实 ok:false */
-export const defaultProbe = async (config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }> => {
-  const transport = resolveReloadTransport(config);
+/**
+ * 默认连通性探测:经真实 transport.probe();不配/畸形如实 ok:false。
+ * RUST-420:第二参=端点策略(透传给通道;缺省未授权,非 loopback 探活被阻止)。
+ */
+export const defaultProbe = async (
+  config: ReloadChannelConfig,
+  policy?: Pick<ReloadTransportDeps, 'allowNonLoopback'>
+): Promise<{ ok: boolean; detail: string }> => {
+  const transport = resolveReloadTransport(config, policy);
   if (!transport) {
     return { ok: false, detail: '通道配置不完整,无法探测' };
   }
@@ -400,7 +416,9 @@ async function runAdvancedChannelFlow(
         await deps.ui.showInformationMessage('未配通道:无通道可探测(将回落 actionName 通道)');
         return false;
       }
-      const result = await (deps.probe ?? defaultProbe)(config);
+      const result = await (deps.probe ?? defaultProbe)(config, {
+        allowNonLoopback: deps.allowNonLoopback
+      });
       if (result.ok) {
         await deps.ui.showInformationMessage(`连通性测试通过: ${result.detail}`);
       } else {
@@ -486,7 +504,9 @@ export async function runHotReloadChannelConfigCommand(
     presetPick.preset === 'http-receiver'
       ? buildHttpPresetConfig(existing)
       : buildOfficialPresetConfig(existing);
-  const result = await (deps.probe ?? defaultProbe)(config);
+  const result = await (deps.probe ?? defaultProbe)(config, {
+    allowNonLoopback: deps.allowNonLoopback
+  });
   if (!result.ok) {
     await deps.ui.showErrorMessage(
       `[${profile.displayName}] 预设探活不通,未启用: ${CHANNEL_LABEL[config.channel]} — ${result.detail}` +
@@ -541,8 +561,16 @@ export interface HotReloadChannelSwitchDeps {
   createStatusBarItem(): ChannelStatusItemLike;
   registerCommand(command: string, handler: () => unknown): { dispose(): void };
   ui: HotReloadChannelSwitchUi;
-  /** 连通性探测;缺省走 defaultProbe(真实通道) */
-  probe?(config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }>;
+  /** 连通性探测;缺省走 defaultProbe(真实通道)。RUST-420:第二参=端点策略 */
+  probe?(
+    config: ReloadChannelConfig,
+    policy?: Pick<ReloadTransportDeps, 'allowNonLoopback'>
+  ): Promise<{ ok: boolean; detail: string }>;
+  /**
+   * RUST-420(HR-QA-008)非 loopback 端点显式授权(执行时读):探活/发送走
+   * HTTP 通道时透传给通道。缺省不注入=未授权(非 loopback 一律阻止)。
+   */
+  allowNonLoopback?: () => boolean;
   /** 一键修:带 profile id 直达该 profile 的高级配置流程,返回是否写盘成功 */
   runAdvancedConfig?(profileId: string): Promise<boolean>;
   /**
@@ -693,7 +721,9 @@ export class HotReloadChannelQuickSwitch {
     let probeDetail = '';
     if (config) {
       // 探活期间 profile/通道被改即判过期(与选择前冻结的同一把身份键),作废不落账
-      const result = await (this.deps.probe ?? defaultProbe)(config);
+      const result = await (this.deps.probe ?? defaultProbe)(config, {
+        allowNonLoopback: this.deps.allowNonLoopback
+      });
       probeDetail = result.detail;
       if (stateKeyAtOpen !== this.stateKey()) {
         await this.deps.ui.showInformationMessage(

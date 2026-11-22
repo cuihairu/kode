@@ -654,7 +654,7 @@ describe('RUST-422(HR-QA-010)未信任工作区:telnet 探测/会话双闸', () 
 
   it('未信任不发探测包:probeOne 零调用,灯面 closed,不反复发事件', async () => {
     let probeCalls = 0;
-    const trusted = false;
+    let trusted = false;
     const service = new TelnetService({
       getTargets: () => [target(31000)],
       probeOne: async () => {
@@ -698,7 +698,7 @@ describe('RUST-422(HR-QA-010)未信任工作区:telnet 探测/会话双闸', () 
 
   it('执行时刻读:已开灯在未信任轮回落 closed,「信任工作区」后下一轮恢复 open', async () => {
     let trusted = true;
-    const open = true;
+    let open = true;
     const service = new TelnetService({
       getTargets: () => [target(33000)],
       probeOne: async () => open,
@@ -730,7 +730,7 @@ describe('RUST-422(HR-QA-010)未信任工作区:telnet 探测/会话双闸', () 
       });
       socket.write('password:');
     });
-    const trusted = false;
+    let trusted = false;
     const service = new TelnetService({
       getTargets: () => [target(port)],
       probeOne: async () => false,

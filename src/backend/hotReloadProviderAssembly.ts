@@ -22,25 +22,37 @@ import {
   type HotReloadProviderError,
   type HotReloadRegistryRejection
 } from './hotReloadPluginApi';
+import {
+  BUILTIN_HTTP_REQUEST_EXAMPLE,
+  type HttpRequestEntry
+} from './httpRequests';
 import { sendDefaultHotfix, type DefaultHotfixSendDeps } from './hotReloadDefaultHotfix';
 
 /** 内置 fork 侧 provider id(与注册表重复 id 拒绝对账) */
 export const KBENGINE_HTTP_HOTFIX_PROVIDER_ID = 'kbengine.http-hotfix';
 
 /**
- * 内置 HTTP hotfix provider:委托 sendDefaultHotfix,transport 未注入时如实不接单。
- * HR-HTTP-002:请求上的模块身份/版本/关联 id 逐项透传(缺省=行为与增量前一致),
- * 结构化 outcome 随结果回传(接口可选字段,HTTP 通道即产)。
+ * HR-EXT-006:模板→runtime adapter 实现。任何用户模板条目都是一份可替换的
+ * HTTP 发送 adapter(委托 sendDefaultHotfix,模板整条进请求构造:reload URL
+ * 只活在模板里,不与内置绑死)。用户自定义条目=一份实现,可替换内置——
+ * 注册序=解析应答序(装配面),fork 侧模板可先注册优先。
+ * HR-EXT-004:模板 adapter 同样显式声明能力(模板可能读工作区做 ${module}
+ * 探针 + 联网发送),与内置同口径,不做特权豁免。
  */
-export function createHttpHotfixSendProvider(deps: DefaultHotfixSendDeps): HotReloadProvider {
+export function createTemplateHotfixSendProvider(
+  entry: HttpRequestEntry,
+  deps: DefaultHotfixSendDeps
+): HotReloadProvider {
   return {
-    providerId: KBENGINE_HTTP_HOTFIX_PROVIDER_ID,
+    providerId: `kbengine.template-hotfix:${entry.name}`,
     apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
-    displayName: 'KBEngine HTTP hotfix',
+    displayName: `KBEngine HTTP hotfix (${entry.name})`,
+    permissions: ['workspace', 'network'],
     canSend: () => deps.transport !== undefined,
     send: request =>
       sendDefaultHotfix([...request.files], {
         ...deps,
+        template: entry,
         ...(request.moduleIdentities !== undefined
           ? { moduleIdentities: request.moduleIdentities }
           : {}),
@@ -51,6 +63,24 @@ export function createHttpHotfixSendProvider(deps: DefaultHotfixSendDeps): HotRe
           ? { correlationId: request.correlationId }
           : {})
       })
+  };
+}
+
+/**
+ * 内置 HTTP hotfix provider:委托 sendDefaultHotfix,transport 未注入时如实不接单。
+ * HR-HTTP-002:请求上的模块身份/版本/关联 id 逐项透传(缺省=行为与增量前一致),
+ * 结构化 outcome 随结果回传(接口可选字段,HTTP 通道即产)。
+ * HR-EXT-004:内置 provider 同样显式声明能力(network=POST 发送,
+ * workspace=${module} 回落面包边界探针读工作区),不做特权豁免——
+ * 声明即对账,缺省策略判定与第三方同口径。
+ * HR-EXT-006:内置 provider=内置示例模板的 adapter 实现(同一工厂,
+ * 不是特殊通道);用户模板走 createTemplateHotfixSendProvider 可整体替换。
+ */
+export function createHttpHotfixSendProvider(deps: DefaultHotfixSendDeps): HotReloadProvider {
+  return {
+    ...createTemplateHotfixSendProvider(BUILTIN_HTTP_REQUEST_EXAMPLE, deps),
+    providerId: KBENGINE_HTTP_HOTFIX_PROVIDER_ID,
+    displayName: 'KBEngine HTTP hotfix'
   };
 }
 
