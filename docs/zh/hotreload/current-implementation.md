@@ -386,3 +386,29 @@
 - 缺省规则 `createDefaultHotReloadEligibilityRule` 保守序:①restart 最强——`context.structuralReasons` 非空(既有 RUST-397 def 结构闸 verdict 的产物,规则**只消费闸结论不重算结构**)即判 restart,优先于一切;②auto 须四要素齐备——`.py` 文件+root 已配+引擎版本已知(`EngineProfile.engineVersion !== null`)+触发源 `watcher-auto` 且非用户显式动作,任何一缺=manual(绝不自动发未知引擎/未知根/非 py/人工链);③其余=manual(安全缺省)。
 - 与既有面不重复:pipeline 的 `SavePipelineEmitMode='auto'|'preview-release'` 是发送管线的出口判定,def 闸 `restart_required` 是结构分析;本规则是**资格分类的扩展面**(fork 接管点),组合消费两者的结论,不建平行判定逻辑。
 - 测试:`tests/hotReloadPluginApi.test.ts` 4 钉——restart 最强(结构 reasons 非空即使 auto 要素全齐)、auto 四要素齐备、任何一要素缺=保守 manual(root null/引擎版本 null/非 py/command 触发/userInitiated/全缺)、fork 可换 rule 整面接管+apiVersion 钉 1。prove-red:中和结构闸消费支路(false)+判 auto 分支(恒 true)后 2 钉转红(restart 钉+保守 manual 钉),逆向恢复 24/24 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare+defGate+fileState 6 文件 109 例绿;tsc -p ./ 与 eslint src 双绿。
+
+## 26. HR-EXT-004 权限声明（2026-11-22,RUST-408,workspace/network/exec 最小权限）
+
+- plugin-api 核内新版本化声明面:`HotReloadProviderPermission = 'workspace' | 'network' | 'exec'`,配 `HotReloadProvider.permissions?`(可选)。第三方 provider **必须声明**所需能力,宿主据此判定能否挂到能力面。可选=最小权限声明面:未声明者不获任何敏感面授权(增量可选槽纪律,`apiVersion` 不递增,同 HR-EXT-001/002)。
+- 缺省策略 `createDefaultHotReloadPermissionPolicy`(`kbengine.default-permission`),面→可满足声明集:`send` 必声明 `network`;`fetch-digest` 声明 `workspace` **或** `network` 任一即可(取摘要走文件读或走引擎查询,两条通道皆可);`read-workspace` 必声明 `workspace`;`spawn-process` 必声明 `exec`。`check` 取缺失最少的声明集,给 `granted`/`missing`/点名 provider id 的 `reason`;未声明者对四面一律 `granted=false` 且缺失点名——绝不静默放行。
+- 跨面不挪用权限(`network` 不覆盖 `read-workspace`);fork=换整个 `HotReloadPermissionPolicy` 整面接管判定(同 HR-EXT-003 rule 的接管形状)。
+- 分层不重复:本面只声明**能力**、答「该 provider 能否挂到此面」;宿主在挂载期显式调用策略,`HotReloadProviderRegistry.resolve*` 保持无权限假设,增量前未声明 permissions 的 provider 照旧解析(策略判定是宿主侧的独立闸)。运行时目的地控制仍归 HR-HTTP-001 端点策略(RUST-420,loopback 白名单)与工作区信任闸(RUST-422)——互补,非平行检查。
+- 内置 `createHttpHotfixSendProvider`(`kbengine.http-hotfix`)同样声明 `['workspace', 'network']`——它 POST 联网+`${module}` 回落面包边界探针读工作区;不做特权豁免,只是以身作则证明声明。
+- 测试:`tests/hotReloadPluginApi.test.ts` 9 钉——未声明者四面一律拒且缺失点名、声明 network/workspace/exec 各自授权对应面、fetch-digest 两可(任一通道合格/皆缺拒)、跨面不挪用、重复/空声明处理、`acceptableDeclarations` 表+apiVersion 钉 1、fork 换策略整面接管、向后兼容(无 permissions 的 provider 仍类型合规+仍注册+仍解析——权限面不改解析序)、内置 provider 四面对账(send/read-workspace/fetch-digest 过,spawn-process 因未声明 exec 拒)。prove-red:强制放行(`if (true)`)后 6 钉转红,逆向恢复 33/33 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 61 例绿;tsc -p ./ 与 eslint 双绿。
+
+## 27. HR-EXT-005 隔离 Worker 贡献面（2026-11-22,RUST-409,预算化派发+背压有界）
+
+- plugin-api 核内新版本化贡献面:`HotReloadWorkerAdapter`——Python 插件/fork 把 **eligibility** 和/或 **response** adapter 跑在隔离 Worker(独立线程/进程,不占 extension host 主线程)。本核只定义协议与预算;真实 worker 线程装配由接线批注入 `dispatch`。
+- 版本化消息协议:`HotReloadWorkerTask`(`kind`+`input`,eligibility 用 `HotReloadEligibilityInput`/response 用 `HotReloadProviderInterpretInput`,可选 `correlationId`)→`HotReloadWorkerResult`(`ok=true` 带判定/解释产物,`ok=false` 带 worker 自身错误);`HotReloadWorkerOutcome` 如实三态:`resolved`/`timed-out`/`rejected`。
+- **hot path 不允许无界阻塞**——两道界:①`dispatchWorkerWithBudget` 把 worker 与 `budgetMs` 计时器赛跑,绝不等过预算;预算后仍慢=报告 `timed-out`,其迟回结果被丢弃(槽位按预算释放,挂死的 worker 占不住容量、也堵不住保存事件管线)。②`createHotReloadWorkerHost` 施 `maxInFlight` 背压:在途达上限=新任务 `rejected` `worker backpressure`,不无界排队。`dispose` 后新派发一律拒。
+- 按 kind 选 adapter 首见胜;未贡献该 kind 的 adapter=`rejected` `no adapter contributes <kind>`——宿主绝不静默回落,worker 面只在真有人贡献时用(否则走宿主既有面)。
+- 超时保守产物:eligibility→`WORKER_TIMEOUT_ELIGIBILITY_FALLBACK = 'manual'`(同 HR-EXT-003 保守序——慢 worker 绝不升级为 auto);response 超时=与既有 HR-EXT-001 缺省 `interpretResponse`(七类核)组合,不新造错误枚举。
+- 测试:`tests/hotReloadPluginApi.test.ts` 7 钉——预算内 resolved/派发拒绝带 worker 错误、timed-out 不等慢 worker(耗时 < worker 自身延迟)、预算释放槽位后新派发照常、no-adapter 拒(kind 不匹配+空宿主两臂)、背压在 `maxInFlight`、`declaredTimeoutMs` 覆盖宿主缺省预算、dispose+apiVersion 钉 1+eligibility 超时产物 manual。prove-red:把 `budgetMs` 计时器换成 100000ms 后 3 钉转红(全部 timed-out 钉),逆向恢复 40/40 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 68 例绿;tsc -p ./ 与 eslint 双绿。
+
+## 28. HR-EXT-006 模板=runtime adapter 实现（2026-11-22,RUST-410,用户可替换,Rust Core 不写死 reload URL）
+
+- HTTP 请求模板现在是**参数化的 runtime adapter 实现**而非写死常量:`buildDefaultHotfixRequest(filePath, deps, moduleIdentity?, entry = BUILTIN_HTTP_REQUEST_EXAMPLE)` 把模板作为第四参,`DefaultHotfixSendDeps.template?` 透传进 `sendDefaultHotfix`。用户自己的 `HttpRequestEntry`(`kbengine.httpRequests` 形态:url/method/headers/body)就是一份可替换实现——`reload` URL 只活在模板里(TS 侧单一真源),Rust Core 永不写死。
+- 新工厂 `createTemplateHotfixSendProvider(entry, deps)` 从任意模板构建 `HotReloadProvider`;内置 `createHttpHotfixSendProvider(deps)` 现在是该工厂的薄封装(规范 id `kbengine.http-hotfix`+展示名)——内置只是内置示例模板的 adapter,不是特殊通道。用户模板可整体替换(注册序=应答序,先注册的 fork 侧模板先应答)。
+- 权限:模板 adapter 与内置同声明 `['workspace', network]`(可能探包目录补 `${module}` + 联网发送)——无特权豁免,同 HR-EXT-004 纪律。
+- Rust Core 保证:`crates/` 是索引/语义/DB 面,不做热更 HTTP。由 `tests/rustCoreReloadUrlGuard.test.ts` 钉死:遍历 `crates/**/src/**/*.rs` 断言 `8090`/`hotfix` 字面量零命中——谁把 reload URL 写进 Rust 此门红。
+- 测试:`tests/hotReloadProviderAssembly.test.ts` 4 钉——用户模板 adapter 整条模板进请求(url `http://engine.internal:9990/reload?mod=${module}` 替换/`PUT` 方法/头值 token 替换/体替换)非内置形态、缺省路径仍是内置 `127.0.0.1:8090/hotfix?module_name=` 形态、模板 adapter 声明 workspace+network 且 id 按模板名生成+无 transport 如实不接单、用户模板可替换内置(先注册先应答,仅内置=解析内置 id);另 `tests/rustCoreReloadUrlGuard.test.ts` 1 钉(Rust 树 8090/hotfix 字面量零命中)。prove-red:把 `buildDefaultHotfixRequest` 强制回落内置常量后用户模板钉转红,逆向恢复 29/29 绿;消费者门=pluginApi+providerAssembly+defaultHotfix+rustCoreReloadUrlGuard+providerWiring 5 文件 79 例绿;tsc -p ./ 与 eslint 双绿。

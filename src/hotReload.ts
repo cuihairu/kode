@@ -143,7 +143,18 @@ export interface HotReloadSettings {
   /** HR-MOD-008 根下单层回退:开=true 根直下 Foo.py 解析裸短名;
    *  false=默认拒(书 §19.1),零配置行为不变 */
   readonly allowRootLevelStem: boolean;
+  /** HR-UI-013 通知模式:silent=全程无弹窗(成功/失败/摘要都不弹,信息
+   *  照旧落审计/状态栏/历史不丢)/errors=失败弹窗+成功静默(缺省,保持
+   *  既有动作失败与 def 拦截警告弹窗,发送失败每批一条)/summary=每批
+   *  完成弹一条批量结果摘要(成功也弹,含失败明细)。防风暴=每批一条,
+   *  不逐文件刷屏。 */
+  readonly notify: HotReloadNotifyMode;
 }
+
+/** HR-UI-013 通知模式(与 package.json kbengine.hotReload.notify 枚举锁同步) */
+export type HotReloadNotifyMode = 'silent' | 'errors' | 'summary';
+
+export const HOT_RELOAD_DEFAULT_NOTIFY: HotReloadNotifyMode = 'errors';
 
 /** HR-WATCH-001 触发源模式(与 package.json kbengine.hotReload.triggerMode 枚举锁同步) */
 export type HotReloadTriggerMode = 'onSave' | 'onDiskChange';
@@ -191,6 +202,7 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
   );
   const sendViaProviders = reader.get<boolean>('sendViaProviders', false);
   const allowRootLevelStem = reader.get<boolean>('allowRootLevelStem', false);
+  const notify = reader.get<string>('notify', HOT_RELOAD_DEFAULT_NOTIFY);
   const { globs, globsSpec } = readGlobs(reader.get<unknown>('globs', undefined));
   return {
     enabled: typeof enabled === 'boolean' ? enabled : true,
@@ -212,7 +224,10 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
         : HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD,
     sendViaProviders: typeof sendViaProviders === 'boolean' ? sendViaProviders : false,
     // HR-MOD-008 同一布尔容忍口径:非布尔一律回落 false=默认拒,零配置不变
-    allowRootLevelStem: typeof allowRootLevelStem === 'boolean' ? allowRootLevelStem : false
+    allowRootLevelStem: typeof allowRootLevelStem === 'boolean' ? allowRootLevelStem : false,
+    // HR-UI-013 容忍式:枚举外的写法(含写坏类型)一律回落默认 errors
+    // (失败提示),不猜半态;silent/summary 原样读出
+    notify: notify === 'silent' || notify === 'summary' ? notify : HOT_RELOAD_DEFAULT_NOTIFY
   };
 }
 
@@ -593,6 +608,29 @@ export function setupHotReload(
     channel: vscode.window.createOutputChannel(HOT_RELOAD_DIAGNOSTICS_CHANNEL_NAME),
     formatTime: formatHotReloadTime
   });
+  // RUST-386(HR-UI-013)通知模式:配置在弹窗发生点即时读(与 noticeState
+  // 同法,不闭包进 apply)。silent=全静默(成功/失败/摘要都不弹,信息照旧
+  // 落审计/状态栏/历史不丢);errors(缺省)=失败弹窗+成功静默;summary=
+  // 每批完成一条批量结果摘要(成功也弹,含失败明细)。防风暴=发送完成点
+  // 各报一次,绝不逐文件刷屏;同一完成不双弹(actionName 失败面只走
+  // reportActionError,其余路径只走 notifyBatchResult)。
+  const notifyMode = (): HotReloadNotifyMode =>
+    readHotReloadSettings(hotReloadSectionReader()).notify;
+  const notifyBatchResult = (text: string, failed: boolean): void => {
+    const mode = notifyMode();
+    if (mode === 'silent' || (mode === 'errors' && !failed)) {
+      return;
+    }
+    try {
+      void Promise.resolve(
+        failed
+          ? vscode.window.showErrorMessage(text)
+          : vscode.window.showInformationMessage(text)
+      ).catch(() => undefined);
+    } catch {
+      // VS Code 关闭期间提示 API 可能不可用,不制造新的未处理异常。
+    }
+  };
   const reportActionError = (error: unknown): void => {
     if (options.onActionError) {
       try {
@@ -600,6 +638,10 @@ export function setupHotReload(
       } catch {
         // 异常报告器也位于 watcher 事件边界内,不能制造新的未处理异常。
       }
+      return;
+    }
+    if (notifyMode() === 'silent') {
+      // HR-UI-013:silent 全静默;失败事实照旧落审计/状态栏/历史,不丢。
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -709,14 +751,18 @@ export function setupHotReload(
           annotateStaleResponses(triggers);
           if (result.ok) {
             updateStatus(() => status.setSentUnverified());
+            notifyBatchResult(`已发送${result.detail.length > 0 ? `——${result.detail}` : ''}`, false);
             return;
           }
           triggers.forEach(forgetSentFailed);
           updateStatus(() => status.setFailed(result.detail.length > 0 ? result.detail : '默认热更请求失败'));
+          notifyBatchResult(`失败${result.detail.length > 0 ? `——${result.detail}` : ''}`, true);
         },
         (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
           triggers.forEach(forgetSentFailed);
-          updateStatus(() => status.setFailed(error instanceof Error ? error.message : String(error)));
+          updateStatus(() => status.setFailed(message));
+          notifyBatchResult(`失败——${message}`, true);
         }
       );
     };
@@ -750,17 +796,20 @@ export function setupHotReload(
           if (result.ok) {
             updateStatus(() => status.setSentUnverified());
             auditLine(`provider:${provider.providerId}`, triggers, `已发送${result.detail ? `——${result.detail}` : ''}`);
+            notifyBatchResult(`已发送${result.detail ? `——${result.detail}` : ''}`, false);
             return;
           }
           triggers.forEach(forgetSentFailed);
           updateStatus(() => status.setFailed(result.detail && result.detail.length > 0 ? result.detail : `provider ${provider.providerId} 发送失败`));
           auditLine(`provider:${provider.providerId}`, triggers, `失败${result.detail ? `——${result.detail}` : ''}`);
+          notifyBatchResult(`失败${result.detail ? `——${result.detail}` : ''}`, true);
         },
         (error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
           triggers.forEach(forgetSentFailed);
           updateStatus(() => status.setFailed(message));
           auditLine(`provider:${provider.providerId}`, triggers, `失败——${message}`);
+          notifyBatchResult(`失败——${message}`, true);
         }
       );
     };
@@ -781,6 +830,13 @@ export function setupHotReload(
         // HR-WATCH-008:脚本/命令动作整批一果,失败即整批撤回指纹(同内容照发)
         if (outcome === 'failed') {
           triggers.forEach(forgetSentFailed);
+        }
+        // RUST-386(HR-UI-013):成功结果摘要(通知面独立于台账,无
+        // targetState/无目标也照实报)。失败面不在此弹——actionName 失败
+        // 只走 reportActionError,其余发送路径只走 notifyBatchResult,
+        // 同一完成不双弹。
+        if (outcome !== 'failed') {
+          notifyBatchResult('已发送(未校验业务回执)', false);
         }
         const wiring = options.targetState;
         if (!wiring || targetId === null) {
@@ -908,6 +964,11 @@ export function setupHotReload(
           // F4:通道审计行带目标标识(状态/审计面区分目标;通道名仍是
           // transport.kind,通道=前缀断言不受影响)
           auditLine(`${transport.kind} 目标=${channelTargetId}`, triggers, result);
+          // RUST-386:通道成功摘要(失败面下方 reportActionError 已报,
+          // 不双弹)
+          if (failedCount === 0) {
+            notifyBatchResult(result, false);
+          }
           if (failedCount > 0 && sentCount === 0) {
             updateStatus(() => status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`));
           } else if (allApplied) {
@@ -1144,6 +1205,10 @@ export function setupHotReload(
     // RT-3:判定面抽到 hotReloadDefGate,fail 与失败目标重试共用同一实例与
     // 同一基线册(可注入),重试不复用判定就会让结构性 def 经重试通道下发。
     const warnRestart = (text: string): void => {
+      if (notifyMode() === 'silent') {
+        // HR-UI-013:silent 全静默;拦截事实照旧落审计/状态栏/历史,不丢。
+        return;
+      }
       try {
         void Promise.resolve(vscode.window.showWarningMessage(text)).catch(() => undefined);
       } catch {

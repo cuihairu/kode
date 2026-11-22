@@ -124,7 +124,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
       sendViaProviders: false,
-      allowRootLevelStem: false
+      allowRootLevelStem: false,
+      notify: 'errors'
     });
     // §11.1:未写 globs 不再回落裸 `**/*.py`(旧默认会全工作区扫),
     // 空表 + spec=unset 交给 assetsRoot 派生(见 hotReloadAssetsRootWatch)
@@ -153,7 +154,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
       sendViaProviders: false,
-      allowRootLevelStem: false
+      allowRootLevelStem: false,
+      notify: 'errors'
     });
   });
 
@@ -179,7 +181,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
       sendViaProviders: false,
-      allowRootLevelStem: false
+      allowRootLevelStem: false,
+      notify: 'errors'
     });
     // 非数字不硬转:字符串去抖值同样回落默认
     expect(readHotReloadSettings(readerOf({ debounceMs: '500' }))).toMatchObject({
@@ -211,7 +214,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
       sendViaProviders: false,
-      allowRootLevelStem: false
+      allowRootLevelStem: false,
+      notify: 'errors'
     });
     // 用户碰过 globs 字段(哪怕全是空项)= 显式空 → 不监视,既不回落旧默认
     // `**/*.py`,也不交给 assetsRoot 派生(§11.1 empty-globs 关法)
@@ -227,7 +231,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
       sendViaProviders: false,
-      allowRootLevelStem: false
+      allowRootLevelStem: false,
+      notify: 'errors'
     });
   });
 
