@@ -500,3 +500,14 @@ RUST-430 要求一份按四维——target、engine profile、文件类型、触
 **未触碰**——legacy `${module}` 占位保持 `__init__.py` 包边界语义(`buildTemplateVars.module`→`resolvePythonModulePath`),那是另一张脸,零回归(HR-MOD-012 决策);双名经 `${reloadModule}` / `${fullModule}` 占位携带。回落链(未配根/根外/根下拒→包边界扫描)不变。
 
 **证据**:`tests/hotReloadDefaultHotfix.test.ts` 增 RUST-440 钉——自动发送端到端面(注入 transport 的 `sendDefaultHotfix`)body 与 query 都送 `module_name=fight.FightAI`,同文件双名契约并列(`fullModule=entities.fight.FightAI`,`requestModule=fight.FightAI`);请求预览缺省面随之翻转(preview ≡ send)。消费面门:defaultHotfix/requestPreview/moduleIdentity/tempEdit/fileChangeMeta/providerWiring/providerAssembly/pluginApi/providerExamples/historyView——10 文件 214 例绿。
+
+## 35. HR-DOD-002 触发面命名一致性（2026-11-23,RUST-441,同一模块——各面同一对短名/全名）
+
+手动命令、onSave、onDiskChange 对同一模块必须生成**完全一致**的短名/全名。§46 发送路径切换之后这一点是结构成立的:三张触发面都汇入同一条两级 fire 链,模块名只在下游单一字符串核心(`resolveModuleDualName`,HR-MOD-005)推导——触发面本身不参与命名。`tests/hotReloadTriggerNameConsistency.test.ts` 钉住这条边界:
+
+- **线上同名(onSave vs onDiskChange)**:同一文件经真实 `setupHotReload` 装配两次 fire——一次显式 glob 保存 watcher、一次根派生磁盘 watcher——送出的请求逐字节一致(body 与 query 都是 `module_name=fight.FightAI`,URL 相同)。
+- **命令/身份面同名**:HR-MOD-001 身份解析器(手动命令与 provider 所走的面)给出的 `requestModule`/`fullModule` 与线上发送名、预览/模板面逐字相等。
+- **开关透传**:`allowRootLevelStem` 在发送面与身份面同值透传——键开:两面都是 `Lone`;键关:发送面如实回落包边界扫描(`scripts.Lone`),身份面如实报 `root-level` unresolved。键关两行为是有意不同的契约(尽力给名 vs 如实报拒),不是分叉。
+- **两名真不同名**:嵌套文件的短名≠全名;全名是 UI 面,短名是唯一进 `module_name` 的名。
+
+**未触碰**——双名模型本体(HR-MOD-005 套件)、legacy `${module}` 语义(HR-MOD-012)、发送事实面各有既有套件;本节只补跨面一致性钉。门=新套件 4/4,tsc/eslint 双净。
