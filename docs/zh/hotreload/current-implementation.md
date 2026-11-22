@@ -395,3 +395,12 @@
 - 分层不重复:本面只声明**能力**、答「该 provider 能否挂到此面」;宿主在挂载期显式调用策略,`HotReloadProviderRegistry.resolve*` 保持无权限假设,增量前未声明 permissions 的 provider 照旧解析(策略判定是宿主侧的独立闸)。运行时目的地控制仍归 HR-HTTP-001 端点策略(RUST-420,loopback 白名单)与工作区信任闸(RUST-422)——互补,非平行检查。
 - 内置 `createHttpHotfixSendProvider`(`kbengine.http-hotfix`)同样声明 `['workspace', 'network']`——它 POST 联网+`${module}` 回落面包边界探针读工作区;不做特权豁免,只是以身作则证明声明。
 - 测试:`tests/hotReloadPluginApi.test.ts` 9 钉——未声明者四面一律拒且缺失点名、声明 network/workspace/exec 各自授权对应面、fetch-digest 两可(任一通道合格/皆缺拒)、跨面不挪用、重复/空声明处理、`acceptableDeclarations` 表+apiVersion 钉 1、fork 换策略整面接管、向后兼容(无 permissions 的 provider 仍类型合规+仍注册+仍解析——权限面不改解析序)、内置 provider 四面对账(send/read-workspace/fetch-digest 过,spawn-process 因未声明 exec 拒)。prove-red:强制放行(`if (true)`)后 6 钉转红,逆向恢复 33/33 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 61 例绿;tsc -p ./ 与 eslint 双绿。
+
+## 27. HR-EXT-005 隔离 Worker 贡献面（2026-11-22,RUST-409,预算化派发+背压有界）
+
+- plugin-api 核内新版本化贡献面:`HotReloadWorkerAdapter`——Python 插件/fork 把 **eligibility** 和/或 **response** adapter 跑在隔离 Worker(独立线程/进程,不占 extension host 主线程)。本核只定义协议与预算;真实 worker 线程装配由接线批注入 `dispatch`。
+- 版本化消息协议:`HotReloadWorkerTask`(`kind`+`input`,eligibility 用 `HotReloadEligibilityInput`/response 用 `HotReloadProviderInterpretInput`,可选 `correlationId`)→`HotReloadWorkerResult`(`ok=true` 带判定/解释产物,`ok=false` 带 worker 自身错误);`HotReloadWorkerOutcome` 如实三态:`resolved`/`timed-out`/`rejected`。
+- **hot path 不允许无界阻塞**——两道界:①`dispatchWorkerWithBudget` 把 worker 与 `budgetMs` 计时器赛跑,绝不等过预算;预算后仍慢=报告 `timed-out`,其迟回结果被丢弃(槽位按预算释放,挂死的 worker 占不住容量、也堵不住保存事件管线)。②`createHotReloadWorkerHost` 施 `maxInFlight` 背压:在途达上限=新任务 `rejected` `worker backpressure`,不无界排队。`dispose` 后新派发一律拒。
+- 按 kind 选 adapter 首见胜;未贡献该 kind 的 adapter=`rejected` `no adapter contributes <kind>`——宿主绝不静默回落,worker 面只在真有人贡献时用(否则走宿主既有面)。
+- 超时保守产物:eligibility→`WORKER_TIMEOUT_ELIGIBILITY_FALLBACK = 'manual'`(同 HR-EXT-003 保守序——慢 worker 绝不升级为 auto);response 超时=与既有 HR-EXT-001 缺省 `interpretResponse`(七类核)组合,不新造错误枚举。
+- 测试:`tests/hotReloadPluginApi.test.ts` 7 钉——预算内 resolved/派发拒绝带 worker 错误、timed-out 不等慢 worker(耗时 < worker 自身延迟)、预算释放槽位后新派发照常、no-adapter 拒(kind 不匹配+空宿主两臂)、背压在 `maxInFlight`、`declaredTimeoutMs` 覆盖宿主缺省预算、dispose+apiVersion 钉 1+eligibility 超时产物 manual。prove-red:把 `budgetMs` 计时器换成 100000ms 后 3 钉转红(全部 timed-out 钉),逆向恢复 40/40 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 68 例绿;tsc -p ./ 与 eslint 双绿。
