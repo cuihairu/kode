@@ -493,11 +493,17 @@ const server = createServer((request, response) => {
     let files;
     let targetId;
     let senderDigests;
+    let requestId;
     try {
       const parsed = JSON.parse(raw);
       files = Array.isArray(parsed) ? parsed : parsed.files;
       if (!Array.isArray(parsed) && parsed && typeof parsed === 'object' && typeof parsed.targetId === 'string') {
         targetId = parsed.targetId;
+      }
+      // F5(关联 id):发送方逐发送生成;接收端按契约逐字回显在每条回执上,
+      // 发送侧据此把回执精确归到所属发送(乱序/迟到回执不再靠 targetId+file 猜)。
+      if (!Array.isArray(parsed) && parsed && typeof parsed === 'object' && typeof parsed.request_id === 'string') {
+        requestId = parsed.request_id;
       }
       // F3 三轮:发送方冻结 digest 随报文下发(file → sha256 hex 字符串)
       if (
@@ -518,7 +524,13 @@ const server = createServer((request, response) => {
       response.end(JSON.stringify({ status: 'failed', reason: 'body 无 files 数组' }));
       return;
     }
-    const withTarget = receipt => (targetId !== undefined ? { ...receipt, targetId } : receipt);
+    // F4/F5 回显:给了 targetId 逐字回显 targetId;给了 request_id 逐字回显
+    // request_id(两条回显都逐字,与接收端契约「逐字回显」口径一致)。
+    const withMeta = receipt => {
+      let r = targetId !== undefined ? { ...receipt, targetId } : receipt;
+      if (requestId !== undefined) r = { ...r, request_id: requestId };
+      return r;
+    };
     const receipts = [];
     // F3 五轮(2026-11-06 复审硬化):产物路径不再只用 basename——按报文内
     // 相对路径映射到 --artifact-dir 子结构,不同目录同名文件各归各的子路径,
@@ -612,7 +624,7 @@ const server = createServer((request, response) => {
     }
     if (batchRejectReason !== undefined) {
       for (const file of stringFiles) {
-        receipts.push(withTarget({ status: 'failed', file, reason: batchRejectReason }));
+        receipts.push(withMeta({ status: 'failed', file, reason: batchRejectReason }));
       }
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify(receipts.length === 1 ? receipts[0] : receipts));
@@ -627,7 +639,7 @@ const server = createServer((request, response) => {
       try {
         content = readFileSync(file, 'utf8');
       } catch {
-        receipts.push(withTarget({ status: 'failed', file, reason: '接收端读不到所发文件' }));
+        receipts.push(withMeta({ status: 'failed', file, reason: '接收端读不到所发文件' }));
         continue;
       }
       const digest = sha256Hex(content);
@@ -646,7 +658,7 @@ const server = createServer((request, response) => {
           // 修后任一不过即拒绝本文件暂存(残余 realpath→copy 一瞬窗口如实记录)
           if (safeStagingTarget(staged, realpathSync(root), root) === undefined) {
             receipts.push(
-              withTarget({
+              withMeta({
                 status: 'failed',
                 file,
                 reason: `接收端暂存路径经符号链接解析后逃逸暂存根或含符号链接组件(${staged}):拒绝暂存`
@@ -660,7 +672,7 @@ const server = createServer((request, response) => {
       } catch (error) {
         // F3:暂存失败如实回 failed,不再静默忽略后继续自称已收下
         receipts.push(
-          withTarget({
+          withMeta({
             status: 'failed',
             file,
             reason: `接收端暂存副本失败:${error instanceof Error ? error.message : String(error)}`
@@ -669,7 +681,7 @@ const server = createServer((request, response) => {
         continue;
       }
       if (mode !== 'apply') {
-        receipts.push(withTarget({ status: 'accepted', file }));
+        receipts.push(withMeta({ status: 'accepted', file }));
         continue;
       }
       // F3 四轮:外部命令模式降级——命令仍会执行(真实副作用),但接收端无法
@@ -695,7 +707,7 @@ const server = createServer((request, response) => {
         });
         if (result.error) {
           receipts.push(
-            withTarget({
+            withMeta({
               status: 'failed',
               file,
               reason: `应用命令执行失败:${result.error.message}`
@@ -706,7 +718,7 @@ const server = createServer((request, response) => {
         if (result.status !== 0) {
           const stderrTail = (result.stderr ?? '').trim().split('\n').slice(-1)[0] ?? '';
           receipts.push(
-            withTarget({
+            withMeta({
               status: 'failed',
               file,
               reason: `应用命令失败(exit ${result.status})${stderrTail ? `:${stderrTail}` : ''}`
@@ -715,7 +727,7 @@ const server = createServer((request, response) => {
           continue;
         }
         receipts.push(
-          withTarget({
+          withMeta({
             status: 'accepted',
             file,
             note: '外部应用命令的副作用不可证实(产物非接收端所写,证明不了是本次命令写的):降级 accepted,不自称 applied'
@@ -727,7 +739,7 @@ const server = createServer((request, response) => {
       // 产物,如实 accepted(仅暂存,未应用),绝不自称 applied
       if (artifactDir === undefined) {
         receipts.push(
-          withTarget({
+          withMeta({
             status: 'accepted',
             file,
             note: '接收端未配置引擎产物目录(--artifact-dir),只暂存未应用,不自称 applied'
@@ -739,7 +751,7 @@ const server = createServer((request, response) => {
         senderDigests !== undefined && typeof senderDigests[file] === 'string' ? senderDigests[file] : undefined;
       if (senderDigest === undefined) {
         receipts.push(
-          withTarget({
+          withMeta({
             status: 'failed',
             file,
             reason: '报文缺 sender_digest(发送方冻结 digest),接收端自写产物无比对基准:不写盘不自称 applied'
@@ -756,7 +768,7 @@ const server = createServer((request, response) => {
       // 拒绝。报错不写不删,绝不把产物经链接落到引擎目录外
       if (safeArtifactTarget(artifact) === undefined) {
         receipts.push(
-          withTarget({
+          withMeta({
             status: 'failed',
             file,
             reason: `产物路径经符号链接解析后逃逸引擎目录或最终组件为符号链接(${artifact}):拒绝写入不落盘`
@@ -784,7 +796,7 @@ const server = createServer((request, response) => {
             ? preReadFailure.code
             : 'unknown';
         receipts.push(
-          withTarget({
+          withMeta({
             status: 'failed',
             file,
             reason: `读旧产物失败(${preReadCode}):非 ENOENT,按预存在产物对待,拒绝写入且不删除`
@@ -843,7 +855,7 @@ const server = createServer((request, response) => {
       }
       if (tempWriteError !== undefined) {
         const reasonBase = `应用产物落盘失败:${tempWriteError instanceof Error ? tempWriteError.message : String(tempWriteError)}`;
-        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, tempCreated, tempCreatedStat)));
+        receipts.push(withMeta(tempCleanupReceipt(file, tempArtifact, reasonBase, tempCreated, tempCreatedStat)));
         continue;
       }
       // 写后重算产物 sha256(按原始字节,在临时文件上与发送方冻结基准比对,
@@ -853,7 +865,7 @@ const server = createServer((request, response) => {
         artifactDigest = sha256Hex(readFileSync(tempArtifact));
       } catch {
         receipts.push(
-          withTarget(
+          withMeta(
             tempCleanupReceipt(
               file,
               tempArtifact,
@@ -868,7 +880,7 @@ const server = createServer((request, response) => {
       if (artifactDigest !== senderDigest) {
         // 哈希不符:清理临时文件即可——既有产物从未被触碰(无需还原)
         receipts.push(
-          withTarget(
+          withMeta(
             tempCleanupReceipt(file, tempArtifact, '应用产物 sha256 与 sender_digest 不一致', true, tempCreatedStat)
           )
         );
@@ -891,7 +903,7 @@ const server = createServer((request, response) => {
       }
       if (renameError !== undefined) {
         const reasonBase = `应用产物原子替换失败:${renameError instanceof Error ? renameError.message : String(renameError)}`;
-        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, true, tempCreatedStat)));
+        receipts.push(withMeta(tempCleanupReceipt(file, tempArtifact, reasonBase, true, tempCreatedStat)));
         continue;
       }
       appliedRevision += 1;
@@ -908,7 +920,7 @@ const server = createServer((request, response) => {
         // 台账落盘失败不影响回执协议证据本身(revision 已递增)
       }
       receipts.push(
-        withTarget({
+        withMeta({
           status: 'applied',
           file,
           digest: scenario === 'digest-mismatch' ? artifactDigest.replace(/^./, d => (d === '0' ? '1' : '0')) : artifactDigest,

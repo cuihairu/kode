@@ -7,7 +7,7 @@ import {
   type SavePipelineDiagnostic
 } from '../src/backend/hotReloadSavePipeline';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../src/backend/hotReloadHistoryCore';
-import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from '../src/backend/hotReloadTargetState';
+import type { HotReloadDeliveryRecord } from '../src/backend/hotReloadTargetState';
 import {
   HOT_RELOAD_HISTORY_CLEAR_COMMAND,
   setupHotReloadHistoryView,

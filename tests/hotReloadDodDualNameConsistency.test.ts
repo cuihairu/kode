@@ -62,8 +62,11 @@ describe('RUST-441 DOD-002:三触发面短名/全名一致性(同一模块同一
       ok: true,
       identity: { requestModule: REQUEST_MODULE, fullModule: FULL_MODULE }
     });
-    // 默认热更面(键关 wire 面)与自动面同源
-    expect(resolveDefaultHotfixModule(FIGHT_AI, { scriptRoot: SCRIPT_ROOT })).toBe(FULL_MODULE);
+    // 默认热更面(键关 wire 面)与自动面同源:线路名=短名 requestModule
+    // (HR-DOD-001 收口后默认面走 requestModule——scripts/entities 不在引擎
+    //  sys.path,全名收下不应用;与 ${module}/${reloadModule} 同值,${fullModule}
+    //  只进 UI 展示面。04eac56e 对账:对拍期望从 pre-fix 的 fullModule 翻正)
+    expect(resolveDefaultHotfixModule(FIGHT_AI, { scriptRoot: SCRIPT_ROOT })).toBe(REQUEST_MODULE);
   });
 
   it('根下单层 + HR-MOD-008 键开:三面对齐同一裸短名(收口前手动面漏 allowRootLevelStem)', () => {

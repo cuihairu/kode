@@ -350,7 +350,6 @@ describe('HR-EXT-003 资格判定规则(auto/manual/restart 保守序)', () => {
 describe('HR-EXT-004 权限声明(workspace/network/exec,最小权限缺省)', () => {
   const policy = createDefaultHotReloadPermissionPolicy();
   const undeclared = { providerId: 'fork.undeclared' };
-  const faces: HotReloadProviderFace[] = ['send', 'fetch-digest', 'read-workspace', 'spawn-process'];
 
   it('未声明 permissions:对全部需声明面一律 granted=false 且缺失点名(不静默放行)', () => {
     expect(policy.check(undeclared, 'send').granted).toBe(false);

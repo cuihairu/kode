@@ -44,7 +44,7 @@ export interface ReloadTarget {
  * 解析(回包体逐字回显所发文件才认);'failed'=送达失败。
  */
 export type ReloadReceipt =
-  | { status: 'sent'; file?: string; detail: string }
+  | { status: 'sent'; file?: string; detail: string; requestId?: string }
   | {
       status: 'accepted';
       file: string;
@@ -57,6 +57,8 @@ export type ReloadReceipt =
        * 携带,台账逐次可见)。缺省不带;与协议侧 note 分开,不互混。
        */
       detail?: string;
+      /** F5(关联 id):该回执所属发送请求的关联标识(发送侧逐发送生成) */
+      requestId?: string;
     }
   | {
       status: 'applied';
@@ -70,8 +72,10 @@ export type ReloadReceipt =
        * 文本字段,安全警告经此携带)。缺省不带。
        */
       detail?: string;
+      /** F5(关联 id):该回执所属发送请求的关联标识(发送侧逐发送生成) */
+      requestId?: string;
     }
-  | { status: 'failed'; file?: string; reason: string; targetId?: string };
+  | { status: 'failed'; file?: string; reason: string; targetId?: string; requestId?: string };
 
 export interface ReloadSendSummary {
   readonly kind: ReloadTransportKind;
@@ -150,18 +154,32 @@ export interface ReloadHttpResponse {
 export type ReloadHttpRunner = (request: ReloadHttpRequest) => Promise<ReloadHttpResponse>;
 
 /**
+ * F5(关联 id):发送侧逐发送生成的关联标识。JSON 对象请求体自动附加
+ * request_id(模板已显式给出则不覆盖);接收端按契约逐字回显,发送侧据此
+ * 把回执精确归到所属那次发送(跨发送乱序/迟到回执不再靠 targetId+file
+ * 猜)。单调序列+时钟+随机尾,唯一下界=同一进程生命周期内不重复。
+ */
+let nextRequestSeq = 0;
+export function generateReloadRequestId(): string {
+  nextRequestSeq += 1;
+  return `req-${Date.now().toString(36)}-${nextRequestSeq.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * HTTP 通道请求构造单一来源(RUST-358/HR-HTTP-016):send 与 preview 共用
  * 同一构造,预览与实际发送逐字节同形(防漂移)。${targetId} 占位先于变量
  * 替换替换为发送目标标识;JSON 对象请求体自动附加 targetId(F4 二轮)与
  * sender_digests(F3 三轮,模板已显式给出则不覆盖;未给 digests 时如实
- * 不附加——预览无基准 digest 就不伪造该字段)。
+ * 不附加——预览无基准 digest 就不伪造该字段)。request_id(F5 关联 id)
+ * 同形附加:未给(预览零发送)就不附加,不伪造关联。
  */
 export function buildReloadHttpRequest(
   entry: HttpRequestEntry,
   target: ReloadTarget,
   fileSet: readonly string[],
   context?: VariableContext,
-  senderDigests?: ReadonlyMap<string, string>
+  senderDigests?: ReadonlyMap<string, string>,
+  requestId?: string
 ): ReloadHttpRequest {
   const substitute = (text: string): string =>
     substituteReloadVariables(
@@ -179,6 +197,25 @@ export function buildReloadHttpRequest(
         !('targetId' in (parsed as Record<string, unknown>))
       ) {
         return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
+      }
+    } catch {
+      // 非 JSON:无处附加,保持原样
+    }
+    return text;
+  };
+  const autoAttachRequestId = (text: string): string => {
+    if (requestId === undefined) {
+      return text;
+    }
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        !('request_id' in (parsed as Record<string, unknown>))
+      ) {
+        return JSON.stringify({ ...(parsed as Record<string, unknown>), request_id: requestId });
       }
     } catch {
       // 非 JSON:无处附加,保持原样
@@ -219,7 +256,7 @@ export function buildReloadHttpRequest(
     headers: Object.fromEntries(
       Object.entries(entry.headers).map(([key, value]) => [key, substitute(value)])
     ),
-    body: autoAttachSenderDigests(autoAttachTargetId(substitute(entry.body))),
+    body: autoAttachRequestId(autoAttachSenderDigests(autoAttachTargetId(substitute(entry.body)))),
     ...(entry.maxResponseBytes !== undefined ? { maxResponseBytes: entry.maxResponseBytes } : {})
   };
 }
@@ -293,12 +330,16 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
  * - F4:expectedTargetId 给定时,条目显式携带的 targetId 必须与之一致,
  *   不一致的回执整条拒绝(该文件落 'sent',不 claim applied)——回执带
  *   错误 targetId 不得当作该目标的 accepted/applied 证据。
+ * - F5(关联 id):expectedRequestId 给定时,条目显式携带的 request_id 必须
+ *   与之一致,不一致的回执整条拒绝——把回执精确归到所属发送(乱序/迟到
+ *   回执不归本次发送,不 claim applied)。
  * - 未认到的文件补 'sent'(送达成功但无匹配回执,不 claim applied)。
  */
 export function parseReloadHttpReceipts(
   body: string,
   fileSet: readonly string[],
-  expectedTargetId?: string
+  expectedTargetId?: string,
+  expectedRequestId?: string
 ): ReloadReceipt[] {
   let parsed: unknown;
   try {
@@ -313,7 +354,8 @@ export function parseReloadHttpReceipts(
   const items = Array.isArray(parsed) ? parsed : [parsed];
   const receipts: ReloadReceipt[] = [];
   const seen = new Set<string>();
-  const mismatched = new Set<string>();
+  // 被拒文件 → 真实拒绝原因(整条拒回的真相,targetId/request_id 分列)。
+  const mismatched = new Map<string, string>();
   for (const item of items) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {
       continue;
@@ -334,7 +376,29 @@ export function parseReloadHttpReceipts(
       malformedTargetId ||
       (expectedTargetId !== undefined && receiptTargetId !== undefined && receiptTargetId !== expectedTargetId)
     ) {
-      mismatched.add(file);
+      mismatched.set(
+        file,
+        `回执 targetId 与目标 ${expectedTargetId} 不一致:整条拒绝该回执(不 claim applied)`
+      );
+      continue;
+    }
+    // F5(关联 id):回执显式 request_id 与本次发送的关联标识不一致 → 整条
+    // 拒绝(该回执不归本次发送,不认状态/不 claim applied)——把回执精确归
+    // 到所属发送,跨发送乱序/迟到回执不再靠 targetId+file 猜。畸形与未提供
+    // 口径同 targetId:显式「非字符串」是畸形整条拒绝,缺失才是未提供。
+    const hasRequestIdField = 'request_id' in record;
+    const receiptRequestId = typeof record.request_id === 'string' ? record.request_id : undefined;
+    const malformedRequestId = hasRequestIdField && receiptRequestId === undefined;
+    if (
+      malformedRequestId ||
+      (expectedRequestId !== undefined &&
+        receiptRequestId !== undefined &&
+        receiptRequestId !== expectedRequestId)
+    ) {
+      mismatched.set(
+        file,
+        `回执 request_id 与本次发送关联标识${expectedRequestId ?? ''}不一致:整条拒绝该回执(不 claim applied)`
+      );
       continue;
     }
     const digest = typeof record.digest === 'string' ? record.digest : undefined;
@@ -348,7 +412,8 @@ export function parseReloadHttpReceipts(
         file,
         ...(digest !== undefined ? { digest } : {}),
         ...(note !== undefined ? { note } : {}),
-        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {}),
+        ...(receiptRequestId !== undefined ? { requestId: receiptRequestId } : {})
       });
     } else if (status === 'applied') {
       seen.add(file);
@@ -357,7 +422,8 @@ export function parseReloadHttpReceipts(
         file,
         ...(digest !== undefined ? { digest } : {}),
         ...(revision !== undefined ? { revision } : {}),
-        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {}),
+        ...(receiptRequestId !== undefined ? { requestId: receiptRequestId } : {})
       });
     } else if (status === 'failed') {
       seen.add(file);
@@ -365,16 +431,18 @@ export function parseReloadHttpReceipts(
         status: 'failed',
         file,
         reason: typeof record.reason === 'string' ? record.reason : '回执 failed 无原因',
-        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {}),
+        ...(receiptRequestId !== undefined ? { requestId: receiptRequestId } : {})
       });
     }
   }
   for (const file of fileSet) {
-    if (mismatched.has(file)) {
+    const mismatchReason = mismatched.get(file);
+    if (mismatchReason !== undefined) {
       receipts.push({
         status: 'sent',
         file,
-        detail: `回执 targetId 与目标 ${expectedTargetId} 不一致:整条拒绝该回执(不 claim applied)`
+        detail: mismatchReason
       });
     } else if (!seen.has(file)) {
       receipts.push({
@@ -463,14 +531,20 @@ export class HttpReloadTransport implements ReloadTransport {
     onReceipt: (receipt: ReloadReceipt) => void,
     senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
+    // F5(关联 id):逐发送生成关联标识——进请求体(request_id 自动附加)与
+    // 回执(本次发送产生的每条回执都带,不论来自线上回显还是本地合成),
+    // 消费方据此把回执精确归到所属发送。
+    const requestId = generateReloadRequestId();
     // F4:${targetId} 占位、F4 二轮 body 自动附加 targetId、F3 三轮
-    // sender_digests 全在 buildReloadHttpRequest(预览/发送单一来源)
+    // sender_digests、F5 request_id 全在 buildReloadHttpRequest(预览/发送
+    // 单一来源;预览不传 requestId=零发送不伪造关联)。
     const request = buildReloadHttpRequest(
       this.entry,
       target,
       fileSet,
       this.deps.context,
-      senderDigests
+      senderDigests,
+      requestId
     );
     // RUST-420(HR-QA-008)端点策略闸:profile 部署通道的真实目的地(模板插值
     // 后 URL)在发出前过端点策略——默认只放行 loopback;非 loopback 未授权
@@ -491,10 +565,12 @@ export class HttpReloadTransport implements ReloadTransport {
     }
     const warnMessage = endpoint.action === 'warn' ? endpoint.message : null;
     // RUST-420:已授权非 loopback → warn:安全警告贴在每条回执上(推送面与
-    // 返回汇总同批同形,不各说各话)。
+    // 返回汇总同批同形,不各说各话)。F5:所有回执统一盖本次发送的关联标识
+    // (wire 回显已匹配的按同值盖,本地合成的补盖——逐发送可精确归账)。
     const finish = (receipts: ReloadReceipt[]): ReloadSendSummary => {
+      const stamped = receipts.map(r => ({ ...r, requestId }));
       const wrapped =
-        warnMessage === null ? receipts : receipts.map(r => appendEndpointWarnToReceipt(r, warnMessage));
+        warnMessage === null ? stamped : stamped.map(r => appendEndpointWarnToReceipt(r, warnMessage));
       for (const receipt of wrapped) {
         onReceipt(receipt);
       }
@@ -524,11 +600,12 @@ export class HttpReloadTransport implements ReloadTransport {
     // RUST-357:2xx——端点可达/重连(health success 只说明端点可达,不代表
     // 任何模块已更新成功:模块投递结果另在回执/台账轴)
     this.noteEndpointHealth(this.kind, true, sendStatusToEndpointHealth(response.status).detail);
-    // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝
+    // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝;
+    // F5:关联 id 传入——显式 request_id 与本次发送不一致的回执整条拒绝。
     return finish(
       response.bodyTruncated
         ? fileSet.map(file => ({ status: 'sent' as const, file, detail: '响应体已截断，未能核验回执' }))
-        : parseReloadHttpReceipts(response.body, fileSet, target.targetId)
+        : parseReloadHttpReceipts(response.body, fileSet, target.targetId, requestId)
     );
   }
 }
