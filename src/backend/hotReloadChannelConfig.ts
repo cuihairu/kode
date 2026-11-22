@@ -13,8 +13,11 @@
 
 import type { ProjectProfile } from '../projectProfiles';
 import {
+  HttpReloadTransport,
   resolveReloadTransport,
   type ReloadChannelConfig,
+  type ReloadHttpRequest,
+  type ReloadTarget,
   type ReloadTransportKind
 } from './hotReloadTransport';
 
@@ -37,6 +40,13 @@ export interface HotReloadChannelConfigDeps {
    * 探真 transport.probe,不触碰 profile(探测不保存)。
    */
   probe?(config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }>;
+  /**
+   * RUST-358(HR-HTTP-016):预览将要发送的精确请求(不发送、零副作用)。
+   * 缺省走 defaultPreviewRequest(经 buildReloadHttpRequest 构造);未配/非
+   * HTTP 通道返回 ok:false 如实说明。files 为代表性文件集——缺省空集,
+   * 注入方(激活层)可带当前活动文件让预览更具体。预览不写 profile。
+   */
+  previewRequest?(config: ReloadChannelConfig, target: ReloadTarget, files?: readonly string[]): ChannelRequestPreview;
   /**
    * 零 profile 兜底(用户令 2026-11-10「创建默认的」):空列表时先自动创建
    * 并激活默认 profile,返回新档;已有 profile 或不适用返回 null。缺省
@@ -91,6 +101,57 @@ export const defaultProbe = async (config: ReloadChannelConfig): Promise<{ ok: b
   } catch (error) {
     return { ok: false, detail: error instanceof Error ? error.message : String(error) };
   }
+};
+
+/**
+ * RUST-358(HR-HTTP-016):预览结果。ok:false = 无 HTTP 请求可预览(未配/非
+ * HTTP 通道);ok:true 时 request 为将要发送的精确报文(与 send 同形),
+ * detail 为可读呈现(方法/URL/headers/body)。
+ */
+export interface ChannelRequestPreview {
+  readonly ok: boolean;
+  readonly detail: string;
+  readonly request?: ReloadHttpRequest;
+}
+
+/** 请求的可读呈现(确认时逐项可见:方法/URL/headers/body) */
+export function formatChannelRequestPreview(request: ReloadHttpRequest): string {
+  const headerLines = Object.entries(request.headers)
+    .map(([key, value]) => `    ${key}: ${value}`)
+    .join('\n');
+  const lines = [`${request.method} ${request.url}`];
+  if (headerLines !== '') {
+    lines.push(headerLines);
+  }
+  lines.push(request.body);
+  return lines.join('\n');
+}
+
+/**
+ * 默认预览:经真实通道 resolveReloadTransport + transport.preview 构造与
+ * send 逐字节同形的请求(零副作用——不执行、不写 profile)。只支持自研接收器
+ * (HTTP)通道——官方通道经引擎控制台,无 HTTP 请求可预览。files 缺省空集
+ * (预览如实显示无文件载荷,不伪造文件路径);未给 senderDigests 时 detail
+ * 注明发送时按文件冻结 digest 自动附加。
+ */
+export const defaultPreviewRequest = (
+  config: ReloadChannelConfig,
+  target: ReloadTarget,
+  files: readonly string[] = []
+): ChannelRequestPreview => {
+  const transport = resolveReloadTransport(config);
+  if (!(transport instanceof HttpReloadTransport)) {
+    return {
+      ok: false,
+      detail: '预览只支持自研接收器(HTTP)通道(官方通道经引擎控制台,无 HTTP 请求可预览)'
+    };
+  }
+  const request = transport.preview(target, files);
+  const detail =
+    `${files.length > 0 ? `代表性文件: ${files.join(', ')}\n` : ''}` +
+    `${formatChannelRequestPreview(request)}\n` +
+    '(本次预览不含 sender_digests:发送时按文件冻结 digest 自动附加)';
+  return { ok: true, detail, request };
 };
 
 /**
@@ -250,15 +311,16 @@ async function collectHttpConfig(
   };
 }
 
-/** 保存/探测/取消三选一 quick-pick */
+/** 保存/探测/预览/取消 quick-pick(RUST-358 起预览先行:确认精确请求才启用自动热更) */
 interface FinalChoice {
   readonly label: string;
-  readonly action: 'save' | 'probe' | 'cancel';
+  readonly action: 'save' | 'probe' | 'preview' | 'cancel';
 }
 
 const FINAL_OPTIONS: FinalChoice[] = [
-  { label: '保存通道配置', action: 'save' },
+  { label: '预览请求(不发送)', action: 'preview' },
   { label: '测试连通性(不保存)', action: 'probe' },
+  { label: '保存通道配置(确认并启用自动热更)', action: 'save' },
   { label: '取消(不保存)', action: 'cancel' }
 ];
 
@@ -311,24 +373,43 @@ async function runAdvancedChannelFlow(
       return false;
     }
   }
-  const finalPick = await deps.ui.showQuickPick(FINAL_OPTIONS, { title: '热更通道:下一步' });
-  if (!finalPick || finalPick.action === 'cancel') {
-    return false;
-  }
-  if (finalPick.action === 'probe') {
-    if (!config) {
-      await deps.ui.showInformationMessage('未配通道:无通道可探测(将回落 actionName 通道)');
+  // RUST-358(HR-HTTP-016):预览→确认循环。预览给出将要发送的精确请求
+  // (URL/method/参数,不发送),回到同一张「下一步」单:用户确认后保存即
+  // 启用自动热更;再预览/再探测皆可,取消不写 profile。
+  for (;;) {
+    const finalPick = await deps.ui.showQuickPick(FINAL_OPTIONS, { title: '热更通道:下一步' });
+    if (!finalPick || finalPick.action === 'cancel') {
       return false;
     }
-    const result = await (deps.probe ?? defaultProbe)(config);
-    if (result.ok) {
-      await deps.ui.showInformationMessage(`连通性测试通过: ${result.detail}`);
-    } else {
-      await deps.ui.showErrorMessage(`连通性测试失败: ${result.detail}`);
+    if (finalPick.action === 'preview') {
+      if (!config) {
+        await deps.ui.showInformationMessage('未配通道:无请求可预览(将回落 actionName 通道)');
+        continue;
+      }
+      const target: ReloadTarget = { rootId: profile.assetsRoot, targetId: profile.id };
+      const preview = (deps.previewRequest ?? defaultPreviewRequest)(config, target);
+      if (preview.ok) {
+        await deps.ui.showInformationMessage(`将发送的请求(确认后保存即启用自动热更):\n${preview.detail}`);
+      } else {
+        await deps.ui.showErrorMessage(preview.detail);
+      }
+      continue;
     }
-    return false;
+    if (finalPick.action === 'probe') {
+      if (!config) {
+        await deps.ui.showInformationMessage('未配通道:无通道可探测(将回落 actionName 通道)');
+        return false;
+      }
+      const result = await (deps.probe ?? defaultProbe)(config);
+      if (result.ok) {
+        await deps.ui.showInformationMessage(`连通性测试通过: ${result.detail}`);
+      } else {
+        await deps.ui.showErrorMessage(`连通性测试失败: ${result.detail}`);
+      }
+      return false;
+    }
+    return persistChannelConfig(deps, profile, config);
   }
-  return persistChannelConfig(deps, profile, config);
 }
 
 /** 命令入口选项(状态栏「一键修」与快捷键共用同一命令) */

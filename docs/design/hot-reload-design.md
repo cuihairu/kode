@@ -436,6 +436,18 @@ interface ReloadTransport {
      `healthObserver` injected via `ReloadTransportDeps`). A health success only means
      the endpoint is reachable — it never poses as any module having been reloaded;
      delivery results stay on the receipt/ledger axis.
+   - **Preview request (RUST-358 / HR-HTTP-016)**: the advanced config face's final
+     step adds 「预览请求(不发送)」 — it constructs the exact request that a real
+     send would produce (method/URL/headers/body, `${targetId}` and `${files}`
+     resolved, JSON object body auto-attached with `targetId`) and shows it, then
+     loops back to the same next-step pick: confirming with 「保存通道配置」 arms
+     auto hot-reload, cancel writes nothing. Construction and send share
+     `buildReloadHttpRequest` (`HttpReloadTransport.preview`, zero side effects —
+     no send, no probe, no profile write), so the preview is byte-identical to what
+     would be sent. HTTP channel only; the official channel has no HTTP request to
+     preview. The preview states it excludes `sender_digests` (attached at send time
+     per frozen file digest). Representative files: the active Python file when open,
+     else empty (never fabricates a path).
    console connectable.
 
 ## 5. IDE-HOT-102 [P2] Reload configuration and audit

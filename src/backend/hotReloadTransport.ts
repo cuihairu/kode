@@ -139,6 +139,81 @@ export interface ReloadHttpResponse {
 export type ReloadHttpRunner = (request: ReloadHttpRequest) => Promise<ReloadHttpResponse>;
 
 /**
+ * HTTP 通道请求构造单一来源(RUST-358/HR-HTTP-016):send 与 preview 共用
+ * 同一构造,预览与实际发送逐字节同形(防漂移)。${targetId} 占位先于变量
+ * 替换替换为发送目标标识;JSON 对象请求体自动附加 targetId(F4 二轮)与
+ * sender_digests(F3 三轮,模板已显式给出则不覆盖;未给 digests 时如实
+ * 不附加——预览无基准 digest 就不伪造该字段)。
+ */
+export function buildReloadHttpRequest(
+  entry: HttpRequestEntry,
+  target: ReloadTarget,
+  fileSet: readonly string[],
+  context?: VariableContext,
+  senderDigests?: ReadonlyMap<string, string>
+): ReloadHttpRequest {
+  const substitute = (text: string): string =>
+    substituteReloadVariables(
+      text.split(RELOAD_TARGET_ID_PLACEHOLDER).join(target.targetId),
+      fileSet,
+      context
+    );
+  const autoAttachTargetId = (text: string): string => {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        !('targetId' in (parsed as Record<string, unknown>))
+      ) {
+        return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
+      }
+    } catch {
+      // 非 JSON:无处附加,保持原样
+    }
+    return text;
+  };
+  const autoAttachSenderDigests = (text: string): string => {
+    const entries =
+      senderDigests !== undefined
+        ? [...senderDigests.entries()].filter(
+            ([file, digest]) => fileSet.includes(file) && typeof digest === 'string' && digest.length > 0
+          )
+        : [];
+    if (entries.length === 0) {
+      return text;
+    }
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        !('sender_digests' in (parsed as Record<string, unknown>))
+      ) {
+        return JSON.stringify({
+          ...(parsed as Record<string, unknown>),
+          sender_digests: Object.fromEntries(entries)
+        });
+      }
+    } catch {
+      // 非 JSON:无处附加,保持原样
+    }
+    return text;
+  };
+  return {
+    url: substitute(entry.url),
+    method: entry.method,
+    headers: Object.fromEntries(
+      Object.entries(entry.headers).map(([key, value]) => [key, substitute(value)])
+    ),
+    body: autoAttachSenderDigests(autoAttachTargetId(substitute(entry.body))),
+    ...(entry.maxResponseBytes !== undefined ? { maxResponseBytes: entry.maxResponseBytes } : {})
+  };
+}
+
+/**
  * RUST-357(HR-HTTP-015)端点健康观察口:传输层每次发送的可达性事实上报
  * (断连/重连自动更新 endpoint health)。事实只有 ok/detail——刻意不带
  * 任何模块投递字段(health success ≠ 任何模块已更新成功),健康展示面
@@ -326,80 +401,35 @@ export class HttpReloadTransport implements ReloadTransport {
     }
   }
 
+  /**
+   * RUST-358(HR-HTTP-016):构造将要发出的精确请求(不发送、零副作用)。与
+   * send 共用 buildReloadHttpRequest——URL/method/headers/body 逐字节同形,
+   * 用户确认的正是实际会发的那份报文。未给 senderDigests 时不附加
+   * sender_digests(真实发送按文件冻结 digest 附加,预览不伪造)。
+   */
+  preview(
+    target: ReloadTarget,
+    fileSet: readonly string[],
+    senderDigests?: ReadonlyMap<string, string>
+  ): ReloadHttpRequest {
+    return buildReloadHttpRequest(this.entry, target, fileSet, this.deps.context, senderDigests);
+  }
+
   async send(
     target: ReloadTarget,
     fileSet: readonly string[],
     onReceipt: (receipt: ReloadReceipt) => void,
     senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
-    // F4:${targetId} 占位先于变量替换替换为发送目标标识(请求侧区分/寻址
-    // 目标实例;未知占位原样保留的批量口径不受影响)
-    const substitute = (text: string): string =>
-      substituteReloadVariables(
-        text.split(RELOAD_TARGET_ID_PLACEHOLDER).join(target.targetId),
-        fileSet,
-        this.deps.context
-      );
-    // F4 二轮:JSON 对象请求体自动附加 targetId 字段——目标寻址不依赖模板
-    // 作者记得写 ${targetId} 占位符;模板已显式给出(占位符替换产物或写死)
-    // 则不覆盖;非 JSON 对象(数组/纯文本)无处附加,如实保持原样。
-    const autoAttachTargetId = (text: string): string => {
-      try {
-        const parsed: unknown = JSON.parse(text);
-        if (
-          parsed !== null &&
-          typeof parsed === 'object' &&
-          !Array.isArray(parsed) &&
-          !('targetId' in (parsed as Record<string, unknown>))
-        ) {
-          return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
-        }
-      } catch {
-        // 非 JSON:无处附加,保持原样
-      }
-      return text;
-    };
-    // F3 三轮:JSON 对象请求体自动附带 sender_digests——发送方冻结 digest
-    // 随报文下发,接收端对应用产物核验后才回 applied(协议级防假应用)。
-    // 模板已显式给出 sender_digests 字段则不覆盖;非 JSON 对象(数组/纯文本)
-    // 无处附加,如实保持原样。digest 缺失(基准不可读)的文件不进字段。
-    const autoAttachSenderDigests = (text: string): string => {
-      const entries =
-        senderDigests !== undefined
-          ? [...senderDigests.entries()].filter(
-              ([file, digest]) => fileSet.includes(file) && typeof digest === 'string' && digest.length > 0
-            )
-          : [];
-      if (entries.length === 0) {
-        return text;
-      }
-      try {
-        const parsed: unknown = JSON.parse(text);
-        if (
-          parsed !== null &&
-          typeof parsed === 'object' &&
-          !Array.isArray(parsed) &&
-          !('sender_digests' in (parsed as Record<string, unknown>))
-        ) {
-          return JSON.stringify({
-            ...(parsed as Record<string, unknown>),
-            sender_digests: Object.fromEntries(entries)
-          });
-        }
-      } catch {
-        // 非 JSON:无处附加,保持原样
-      }
-      return text;
-    };
-    const request: ReloadHttpRequest = {
-      url: substitute(this.entry.url),
-      method: this.entry.method,
-      headers: Object.fromEntries(
-        Object.entries(this.entry.headers).map(([key, value]) => [key, substitute(value)])
-      ),
-      body: autoAttachSenderDigests(autoAttachTargetId(substitute(this.entry.body))),
-      ...(this.entry.maxResponseBytes !== undefined ? { maxResponseBytes: this.entry.maxResponseBytes } : {})
-    };
+    // F4:${targetId} 占位、F4 二轮 body 自动附加 targetId、F3 三轮
+    // sender_digests 全在 buildReloadHttpRequest(预览/发送单一来源)
+    const request = buildReloadHttpRequest(
+      this.entry,
+      target,
+      fileSet,
+      this.deps.context,
+      senderDigests
+    );
     let response: ReloadHttpResponse;
     try {
       response = await this.deps.run(request);

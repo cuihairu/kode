@@ -26,7 +26,7 @@ import {
 import { FingerprintStats } from '../backend/hotReloadFingerprintStats';
 import { HotReloadStatusController } from '../hotReloadStatus';
 import { createFileChangeRouter } from '../backend/fileChangeBypass';
-import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
+import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, defaultPreviewRequest, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
 import { HotReloadVersionTracker, matchesHotReloadGlob } from '../backend/hotReloadFileVersion';
 import { resolveReloadTransport, createDefaultHotReloadChannel, type ReloadTransport, type ReloadTransportKind } from '../backend/hotReloadTransport';
 import { ensureDefaultDeploymentProfile } from '../ensureDefaultProfile';
@@ -68,6 +68,19 @@ export interface HotReloadDeps {
 /** L6 共享句柄:rust 文件变化消费者接线经此消费(fileChangeRouter 原文返回) */
 export interface HotReloadShared {
   fileChangeRouter: FileChangeRouter;
+}
+
+/**
+ * RUST-358(HR-HTTP-016):预览的代表性文件——当前活动的 Python 文件(绝对
+ * 路径,与发送面同一路径口径);无活动 Python 文件返回空集,预览如实显示
+ * 无文件载荷(不伪造一个文件路径当样张)。
+ */
+function activeHotReloadPreviewFiles(): string[] {
+  const uri = vscode.window.activeTextEditor?.document.uri;
+  if (!uri || !uri.path.endsWith('.py')) {
+    return [];
+  }
+  return [path.resolve(uri.path)];
 }
 
 export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
@@ -568,6 +581,10 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
         listProfiles: () => profileStore.list(),
         saveHotReload: (id, config) => profileStore.saveHotReload(id, config),
         ensureDefaultProfile: ensureDefaultProfileDep,
+        // RUST-358(HR-HTTP-016):预览带当前活动 Python 文件(更具体的精确
+        // 请求);无活动 Python 文件走空集(预览如实显示无文件载荷,不伪造)。
+        previewRequest: (config, target) =>
+          defaultPreviewRequest(config, target, activeHotReloadPreviewFiles()),
         ui: {
           showQuickPick: (items, options) => Promise.resolve(vscode.window.showQuickPick(items, { title: options.title })),
           showInputBox: options =>
