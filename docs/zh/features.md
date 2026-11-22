@@ -520,6 +520,7 @@
 | `kbengine.telnet.configXmlPath` | `""` | 可选：元件 kbengine.xml 路径，作 telnet 端口/密码回落（支持 ${workspaceFolder}） |
 | `kbengine.telnet.probeIntervalSeconds` | `5` | telnet 端口探测轮询间隔（秒，低频） |
 | `kbengine.httpRequests` | （含一条热更示例） | HTTP 快捷请求列表；`${module}` 按 `__init__.py` 包边界解析 |
+| `kbengine.http.allowNonLoopback` | `false` | HTTP 快捷请求是否允许发往非 loopback 端点（RUST-420）：默认阻止一切非 loopback 主机（SSRF/数据外带防护）并落可审查阻止行；开启后放行但逐次落安全警告 |
 | `kbengine.python.interpreterPath` | `""` | Python 解释器路径，项目 profile 连来源一并记录（本设置存在才采用，否则工作区深扫已验证环境，再取 PATH 的 python3/python，再没有记缺失状态） |
 | `kbengine.python.venvDirectories` | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单（单段目录名）：快速执行动作启用 venv 且未写 `venv.path` 时按此清单在动作目录与配置根逐名探测；解释器链在 `interpreterPath` 为空时把清单作为工作区环境深扫的同深度优先提示；非数组或全无效回落默认 |
 | `kbengine.python.extraPathsSync` | `true` | 自动把发现的 KBEngine scripts 根以 `${workspaceFolder}/...` 变量形态写入 python.analysis.extraPaths（只管自己那段；存量绝对路径自动迁移） |
