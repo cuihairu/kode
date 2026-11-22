@@ -678,3 +678,53 @@ RUST-430 (HR-QA-018) asks for the security-and-functional completion matrix sign
 - The close-out threads `allowRootLevelStem` through `TemplateEditorContext` → `buildTemplateVars` → `resolveModuleDualName`, and supplies it at every producer: `views.ts` `getTemplateContext` (the manual-command runtime), `hotReloadRequestPreview.ts` (preview configured entries), and `hotReloadDefaultHotfix.ts` (the default-hotfix template's `${fullModule}`/`${reloadModule}` alongside `${module}`). Key-off / unset is unchanged (`undefined !== true`), so no existing resolution result moves. `tests/hotReloadDodDualNameConsistency.test.ts` (4 pins) drives the three-surface agreement: (1) nested FightAI — manual vars `{requestModule:'fight.FightAI', fullModule:'entities.fight.FightAI'}` equal the auto lifecycle identity and `resolveDefaultHotfixModule`; (2) root-level + key on — manual vars and auto faces all resolve `Lone`/`Lone` (the prove-red pin: pre-fix the manual face returned `''`/`''`); (3) root-level + key off — all three consistently judge unresolved (manual empty strings, auto `root-level` code), and fall back to the legacy `${module}` package scan identically; (4) no script root — manual and auto both yield no module name (`''` / `no-root`), never mixing in a fallback.
 - Boundary (honest): this asserts **name-resolution consistency** across surfaces; it does not change which name each surface puts on the wire (that is DOD-001's send face, closed separately). The legacy `${module}` package-scan fallback (HR-AUDIT-004 / RUST-322 compat ruling) is preserved and asserted to be identical across surfaces as the third name, not conflated with the dual-name pair. The prove-red evidence was the pre-fix state: arm (2) failed with the manual face resolving `''` where the auto face resolved `Lone`, and went green after threading the option.
 
+## 53. PH7-03 known limitations and hot-reload performance comparison (2026-11-23, RUST-273 partial)
+
+Two of RUST-273's four deliverables are stable and landable now — this section is them. The other two are deliberately **not** written here (see the boundary), so that the line stays `[ ]`.
+
+### 53.1 Known limitations (what is asserted, and what is not yet asserted)
+
+Every item below is a pinned-where-possible arm with an honest "not yet asserted" boundary. Nothing here is claimed as verified.
+
+- **Live remote-SSH / DevContainer / WSL end-to-end** — the mechanism is pinned (path-shape canonicalization makes remote keys identical to local ones, `tests/hotReloadModuleIdentity.test.ts:9-38`, four fsPath shapes; `tests/hotReloadModuleIdentity.test.ts:226-258` production matrix). What is **not** asserted: a live SSH session with real remote-fs latency, cross-platform real-machine runs (`RUST-413` remote arm, `RUST-423`), and localhost-from-remote-host resolution against a real remote host (`RUST-419` needs real-service verification, HR-AUDIT-009).
+- **Live UI-thread non-freeze** (`RUST-416` residual) — the pure-core evidence says the disk read and hash run in the libuv thread pool rather than on the event loop (S7: 500-event burst, sync segment ~30 ms @ load 58, read/hash out of the sync path). What is **not** asserted: a real UI thread under a real renderer.
+- **The receipt→UI-display timing segment has no instrumentation anchor** (`RUST-414` residual) — the `durationMs` field that `src/backend/hotReloadHistoryCore.ts` carries, renders, and filters on (`:60`/`:132`/`:253-254`/`:471-478`) is the **HTTP→receipt** arm's HR-STATE-007 anchor (`src/backend/hotReloadChannelSend.ts:146-148`). There is no second anchor for the display segment itself, so it cannot be closed as a pure verification.
+- **Engine-profile configuration surface does not exist** — `buildEngineProfile` is called with an **empty input** (`src/hotReload.ts:1249`), so the multi-root priority ordering (`RUST-315`) and the capability / allowlist / denylist rules (`RUST-337`) have no configuration to read. This is absent code, not a deferred arm.
+- **Watch lifecycle is root-dimensional only** — `watchRoots(roots: readonly string[])` (`src/backend/hotReloadDiskWatch.ts:95`) takes a flat path array with no target dimension, while the ledger is keyed `{rootId, targetId}`; per-deploy-target root binding (`RUST-329` residual) is absent code.
+- **Parity is not complete** (`RUST-267`) — the acceptance matrix covers 30 faces; the two fixture legs pass 30/30 and stay in the regression net, the real-engine leg has 3 green / 3 partial / 24 not walked; explicitly unverified are the full server lifecycle (start / hot-reload / shutdown), the macOS full leg (compile-only today), the Windows pure-TS package, and screen-reader accessibility.
+- **Release-gated faces** — the QA-001..017 suite with a 48-hour real-project trial and cross-platform packaging (`RUST-271`) has not been run; the 2.0 stable release (`RUST-275`) is gated and, per the version-freeze standing rule, must not be produced by the agent.
+- **Awaiting user input** — `SEM-016` (export reports `t_account` not found; two rounds of code-side archaeology found no `t_`-prefix producer anywhere in Kode or the engine, so the candidate causes are narrowed to the user's own database origin) and `PYLANCE-CRASH-001` (Pylance coexistence crash) both need the user's exact error text / versions.
+- **Hot-reload performance arms asserted only at the mechanism level** (`RUST-447`) — arm ①'s wall-clock is recorded but not thresholded (the bench lane only records, and thresholding is the `RUST-414` batch); arm ②'s UI-thread-face wall-clock is not measured (assembly face); arm ③ is a serial single-client face against a fake HTTP server — multi-client concurrent pools and real RSS are uncovered.
+
+### 53.2 Performance comparison (hot-reload against the language-service baseline)
+
+All numbers below come from committed run artifacts under `docs/perf/`; they are recorded, not thresholded.
+
+| Face | Source | Reading | Verdict |
+|---|---|---|---|
+| Provider fire sync slice | `docs/perf/provider-isolation.md` | N24 p50 0.14 ms ≡ N0 0.15 ms; **all 4800 `canSend` calls land in microtasks** (zero `canSend` in the fire sync segment); same-batch sibling timer callback offset p50 0.14 ≡ 0.14 | Slice-level isolation proven — a new provider does **not** drag up existing language-service tails |
+| Hover / definition tails under send storm | `docs/perf/provider-isolation.md` | P2/P3 tail delta N24 − N0 ≈ **+4.8 ms**, bounded by provider count × spin | Bounded residual from microtask interleave, **not** a sync-slice block |
+| Per-file absorb (200 / 2k / 10k / 50k) | `docs/perf/hot-reload-scale.md` | 0.18 ms → 0.09 ms, **converging** with scale (no super-linear growth); 50k burst absorb 4.31 s | The 4.31 s is **libuv thread-pool read queuing** (readLatency p50 3.28 s is queue wait, not single-read cost), not an event-loop long block |
+| Sustained single-file save | `docs/perf/hot-reload-scale.md` | save→queue p50 1.51 ms / **p95 1.82 ms**, revision 1..100 monotonic | One order below the 30 ms candidate line |
+| Uncontended segment | `docs/perf/hot-reload-segment.md` | S6 totalCpu(save→queue) p50 2 ms / p95 5 ms / p99 7 ms; local pipeline CPU **p95 1.67 ms** | One order below the 15 ms candidate line; S2/S4 burst numbers (hash p50 28.23 ms, queue p50 4.85 ms) include burst queuing and must be read separately from the S6 net cost |
+| 500-event watcher burst | `docs/perf/hot-reload-segment.md` | filter + offer sync wall ~30 ms @ load 58 (idle 10–20 ms), perEvent 0.03–0.04 ms; 500 all enqueued, zero loss; sync segment emits nothing | The sync segment is bounded; read/hash is off the main thread |
+| Git checkout 500 / write storm | `docs/perf/hot-reload-scale.md` | M3: production config holds all 500 in preview, **0 auto sends**, `releasePreview` 0.66 ms; M4: 100×(save + disk) coalesce to **100 sends not 200** | No full-repo storm; the batch-preview gate is what prevents it |
+
+### 53.3 Leak / connection / watcher invariants (RUST-428 soak, unit gate)
+
+Pinned in the nightly unit gate at `tests/hotReloadSoak.test.ts`:
+
+- Across **200 rebuild loops**, watcher create count ≡ destroy count + live count, with live bounded at the root count; `dispose` returns to zero.
+- Ledger is **key-replacing**, not event-appending: 500 operations on one file → 1 entry; 500 files → 500.
+- History store evicts at ring capacity; `requestId` is idempotent-replace, not duplicate-row.
+- HTTP **keepAlive connection count stays 1** across 300 serial successes *and* 300 non-2xx responses.
+- Error retry storm: exactly **2** sends for 2 failing targets, no amplification; cancel stops; the second call re-sends only the still-failing side.
+
+Gate for §53.2/§53.3: `hotReloadSoak + hotReloadProviderSchedulingIsolation + hotReloadDiskWatchWiring + hotReloadSavePipeline`, directed 75/75 green.
+
+### 53.4 What is deliberately not in this section
+
+- **Version notes are not advanced.** `CHANGELOG.md` stops at 0.1.1 (2026-10-20). 0.2.0 is unreleased and `RUST-275` is gated; writing notes for a version that has not shipped would state the released rather than the implemented.
+- **Migration configuration docs are withheld.** The `${module}` → `${fullModule}` migration is documented (`docs/guide/commands.md:1049-1054`, HR-MOD-013) and `docs/guide/migration.md` exists, but the HR-MOD wiring lane (`RUST-432` / `RUST-433`) is in flight; rewriting migration config against a moving surface would produce churn.
+- **Performance thresholding is the `RUST-414` batch** — the bound tables (`tests/perf/hotReloadScaleBounds.ts` 10 faces, `hotReloadSegmentBounds.ts` 12 faces) gate violations in the bench lane only, env-gated so they cannot flake CI.
+
