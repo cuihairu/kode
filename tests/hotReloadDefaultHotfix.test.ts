@@ -83,6 +83,33 @@ describe('buildDefaultHotfixRequest(默认端点与参数名)', () => {
     expect(request.body).toBe('module_name=Foo');
     expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=Foo');
   });
+
+  it('HR-MOD-006 多根优先级:唯一最小秩根裁决,歧义拒绝回落包边界扫描', () => {
+    // 根下单层文件:所选根不同则 requestModule 不同(根=root→entities.Foo;
+    // 根=entities→裸名 Foo),以此真区分优先级裁决所选的根
+    const file = '/ws/scripts/entities/Foo.py';
+    const allowRoot = true;
+    // 显式排序 [entities, root]:entities 索小=优先 → 根=entities → 根下单层裸名
+    const nestedFirst = resolveDefaultHotfixModule(file, {
+      scriptRoots: ['/ws/scripts', '/ws/scripts/entities'],
+      rootPriority: ['/ws/scripts/entities', '/ws/scripts'],
+      allowRootLevelStem: allowRoot
+    });
+    expect(nestedFirst).toBe('Foo');
+    // 显式排序 [root, entities]:root 优先 → 根=root → entities.Foo
+    const rootFirst = resolveDefaultHotfixModule(file, {
+      scriptRoots: ['/ws/scripts', '/ws/scripts/entities'],
+      rootPriority: ['/ws/scripts', '/ws/scripts/entities'],
+      allowRootLevelStem: allowRoot
+    });
+    expect(rootFirst).toBe('entities.Foo');
+    // 歧义(未给优先级):拒绝 → 回落 ${module} 包边界扫描(不编造,不猜)
+    const ambiguous = resolveDefaultHotfixModule(file, {
+      scriptRoots: ['/ws/scripts', '/ws/scripts/entities'],
+      allowRootLevelStem: allowRoot
+    });
+    expect(ambiguous).toBe('Foo');
+  });
 });
 
 describe('sendDefaultHotfix(传输事实,不假成功)', () => {

@@ -72,6 +72,19 @@ export interface HotReloadShared {
 }
 
 /**
+ * HR-MOD-006 有序脚本根(kbengine.hotReload.tempEdit.scriptRoots)容忍式读取:
+ * 数组取 trimmed 非空串(保序=优先级,索引小=优先);没写/写坏类型一律空表
+ * ——单根路径行为不变,配置写坏不拖垮装配。
+ */
+const readScriptRootsConfig = (raw: unknown): readonly string[] =>
+  Array.isArray(raw)
+    ? raw
+        .filter((item): item is string => typeof item === 'string')
+        .map(item => item.trim())
+        .filter(item => item.length > 0)
+    : [];
+
+/**
  * RUST-358(HR-HTTP-016):预览的代表性文件——当前活动的 Python 文件(绝对
  * 路径,与发送面同一路径口径);无活动 Python 文件返回空集,预览如实显示
  * 无文件载荷(不伪造一个文件路径当样张)。
@@ -544,6 +557,12 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       isPackageDir: dirPath => fs.existsSync(path.join(dirPath, '__init__.py')),
       resolveScriptRoot: () =>
         vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '') ?? '',
+      // HR-MOD-006 有序多根(tempEdit.scriptRoots,dotted 读取与单根便捷形态
+      // 同域):未配=空表,单根行为不变;配了=有序即优先级
+      resolveScriptRoots: () =>
+        readScriptRootsConfig(
+          vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload.tempEdit.scriptRoots', undefined)
+        ),
       // HR-MOD-008 根下单层回退(kbengine.hotReload.allowRootLevelStem,默认
       // 拒):读同一容忍口径(readHotReloadSettings),配置写坏回落关
       resolveAllowRootLevelStem: () => readHotReloadSettings(hotReloadSectionReader()).allowRootLevelStem

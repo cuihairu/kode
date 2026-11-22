@@ -152,6 +152,9 @@ export interface HotReloadProviderResolveInput {
   readonly rootId?: string;
   /** 覆盖装配面默认根候选;缺省=用装配面默认 */
   readonly scriptRoots?: readonly string[];
+  /** HR-MOD-006 显式优先级(索引小=优先,与 scriptRoots 同序);多根命中>1 时
+   * 唯一最小秩候选才赢;未给=既有不猜拒绝。 */
+  readonly rootPriority?: readonly string[];
   /** 覆盖装配面默认 single-level fallback;缺省=用装配面默认 */
   readonly allowRootLevelStem?: boolean;
   /** 用户显式模块名覆盖(透传既有 HR-MOD-007 语义) */
@@ -250,6 +253,7 @@ export function createDefaultHotReloadLifecycleSlots(input?: {
         workspaceId: resolveInput.workspaceId,
         rootId: resolveInput.rootId,
         ...(effectiveRoots !== undefined ? { scriptRoots: effectiveRoots } : {}),
+        ...(resolveInput.rootPriority !== undefined ? { rootPriority: resolveInput.rootPriority } : {}),
         ...(effectiveAllowRoot !== undefined ? { allowRootLevelStem: effectiveAllowRoot } : {}),
         ...(resolveInput.userOverrideModule !== undefined
           ? { userOverrideModule: resolveInput.userOverrideModule }

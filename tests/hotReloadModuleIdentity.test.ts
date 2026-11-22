@@ -124,6 +124,66 @@ describe('resolveHotReloadModuleIdentity(HR-MOD-001 DTO+HR-MOD-002 纯解析器)
     expect(distinctStillAmbiguous).toMatchObject({ ok: false, diagnostics: [{ code: 'ambiguous-root' }] });
   });
 
+  it('HR-MOD-006 显式优先级:唯一最小秩候选赢;未排不被提升;全未排/并列拒绝不猜', () => {
+    const file = `${ROOT}/entities/fight/FightAI.py`;
+    const nested = `${ROOT}/entities`;
+    // 显式排序 [nested, ROOT]:文件在两根内,nested 索引小=优先 → 根=nested
+    const nestedFirst = resolveHotReloadModuleIdentity({
+      fileUri: file,
+      scriptRoots: [ROOT, nested],
+      rootPriority: [nested, ROOT]
+    });
+    expect(nestedFirst.ok).toBe(true);
+    if (nestedFirst.ok) {
+      expect(nestedFirst.identity.requestModule).toBe('fight.FightAI');
+      expect(nestedFirst.identity.fullModule).toBe('fight.FightAI'); // 根=nested → 无 entities 前缀
+    }
+    // 显式排序 [ROOT, nested]:ROOT 优先 → 根=ROOT
+    const rootFirst = resolveHotReloadModuleIdentity({
+      fileUri: file,
+      scriptRoots: [ROOT, nested],
+      rootPriority: [ROOT, nested]
+    });
+    expect(rootFirst.ok).toBe(true);
+    if (rootFirst.ok) {
+      expect(rootFirst.identity.requestModule).toBe('fight.FightAI');
+      expect(rootFirst.identity.fullModule).toBe('entities.fight.FightAI');
+    }
+    // 未排根不被提升:两根都命中,只排 nested → nested(排过)赢,ROOT(未排)不赢
+    const unrankedLoses = resolveHotReloadModuleIdentity({
+      fileUri: file,
+      scriptRoots: [ROOT, nested],
+      rootPriority: [nested]
+    });
+    expect(unrankedLoses.ok).toBe(true);
+    if (unrankedLoses.ok) {
+      expect(unrankedLoses.identity.fullModule).toBe('fight.FightAI'); // 根=nested
+    }
+    // 全未排(优先级清单不含任何命中根)→ 拒绝,与既有歧义同码同消息
+    const allUnranked = resolveHotReloadModuleIdentity({
+      fileUri: file,
+      scriptRoots: [ROOT, nested],
+      rootPriority: ['/unrelated/root']
+    });
+    expect(allUnranked).toMatchObject({ ok: false, diagnostics: [{ code: 'ambiguous-root' }] });
+    // 未配置优先级 → 拒绝(与既有逐字同,不因优先级字段存在而改变)
+    const unconfigured = resolveHotReloadModuleIdentity({
+      fileUri: file,
+      scriptRoots: [ROOT, nested]
+    });
+    expect(unconfigured).toMatchObject({ ok: false, diagnostics: [{ code: 'ambiguous-root' }] });
+    // 单命中恒赢:文件只在 ROOT 内(nested 不含),优先级只排未命中的 nested
+    const singleHitWins = resolveHotReloadModuleIdentity({
+      fileUri: `${ROOT}/base/Avatar.py`,
+      scriptRoots: [ROOT, nested],
+      rootPriority: [nested]
+    });
+    expect(singleHitWins.ok).toBe(true);
+    if (singleHitWins.ok) {
+      expect(singleHitWins.identity.requestModule).toBe('Avatar');
+    }
+  });
+
   it('相邻目录假包含不命中:/ws/scripts2 不得顶替 /ws/scripts', () => {
     const result = resolveHotReloadModuleIdentity({
       fileUri: '/ws/scripts2/base/Avatar.py',

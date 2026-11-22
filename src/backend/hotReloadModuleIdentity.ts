@@ -75,6 +75,10 @@ export interface HotReloadModuleIdentityInput {
   readonly scriptRoot?: string;
   /** 多根候选集(HR-MOD-006:未唯一确定根则拒绝,不猜) */
   readonly scriptRoots?: readonly string[];
+  /** HR-MOD-006 显式优先级(索引小=优先):只在多根命中>1 时生效,唯一最小秩
+   * 候选才赢(用户显式排序=配置,非猜测);未给/空=既有不猜拒绝;不在清单里
+   * 的根秩=+∞,绝不因优先级被提升。 */
+  readonly rootPriority?: readonly string[];
   /** 用户显式指定模块名:合法则替换 fullModule/requestModule,非法则拒绝(不静默回落) */
   readonly userOverrideModule?: string;
   /** HR-MOD-008 显式 single-level fallback;默认关=根下单层脚本 unresolved */
@@ -169,6 +173,64 @@ const validateOverrideModule = (value: string): string | null => {
 /** 短名健壮性(HR-MOD-015 URL encoding/Unicode 面):空白与点不入模块名;Unicode 字母合法(PEP 3130) */
 const stemIsRepresentable = (stem: string): boolean => !/[\s.]/.test(stem);
 
+/** 根候选选择产物:唯一根 / 三拒绝态(不猜,列全候选) */
+export type ScriptRootSelection =
+  | { readonly kind: 'root'; readonly root: string }
+  | { readonly kind: 'no-root' }
+  | { readonly kind: 'out-of-root' }
+  | { readonly kind: 'ambiguous-root'; readonly candidates: readonly string[] };
+
+/**
+ * 根候选选择(HR-MOD-002/006 纯核,零 IO):roots 须已规范化+保序去重。
+ * 多根命中>1 且给了显式优先级时,唯一有限最小秩候选才赢(索引小=优先,
+ * 用户显式排序=配置非猜测);未给优先级/全未排/并列一律拒绝列全候选
+ * (既有不猜口径)。不在清单里的根秩=+∞,绝不因优先级被提升。单根命中
+ * 恒赢(与是否配置优先级无关)。
+ */
+export function selectScriptRoot(
+  canonical: string,
+  roots: readonly string[],
+  priority?: readonly string[]
+): ScriptRootSelection {
+  if (roots.length === 0) {
+    return { kind: 'no-root' };
+  }
+  const candidates = roots.filter(root => canonical !== root && canonical.startsWith(`${root}/`));
+  if (candidates.length === 0) {
+    return { kind: 'out-of-root' };
+  }
+  if (candidates.length === 1) {
+    return { kind: 'root', root: candidates[0] };
+  }
+  // >1 命中:显式优先级裁决(唯一最小秩才赢;否则既有拒绝)
+  const ranked = priority
+    ? [...new Set(priority.map(canonicalizeScriptFilePath).filter(root => root.length > 0))]
+    : [];
+  if (ranked.length > 0) {
+    const rankOf = (root: string): number => {
+      const index = ranked.indexOf(root);
+      return index < 0 ? Number.POSITIVE_INFINITY : index;
+    };
+    let minRank = Number.POSITIVE_INFINITY;
+    let winner: string | null = null;
+    let tied = false;
+    for (const candidate of candidates) {
+      const rank = rankOf(candidate);
+      if (rank < minRank) {
+        minRank = rank;
+        winner = candidate;
+        tied = false;
+      } else if (rank === minRank) {
+        tied = true;
+      }
+    }
+    if (minRank !== Number.POSITIVE_INFINITY && !tied && winner !== null) {
+      return { kind: 'root', root: winner };
+    }
+  }
+  return { kind: 'ambiguous-root', candidates };
+}
+
 /**
  * 纯解析器(HR-MOD-002):根候选选择 → 委托 resolveModuleDualName →
  * 诊断映射/override/DTO 组装。多根歧义(>1 候选含此文件)一律拒绝并
@@ -194,7 +256,8 @@ export function resolveHotReloadModuleIdentity(
   ]
     .filter(root => root.length > 0)
     .filter((root, index, self) => self.indexOf(root) === index);
-  if (roots.length === 0) {
+  const selection = selectScriptRoot(canonical, roots, input.rootPriority);
+  if (selection.kind === 'no-root') {
     return {
       ok: false,
       diagnostics: [
@@ -202,8 +265,7 @@ export function resolveHotReloadModuleIdentity(
       ]
     };
   }
-  const candidates = roots.filter(root => canonical !== root && canonical.startsWith(`${root}/`));
-  if (candidates.length === 0) {
+  if (selection.kind === 'out-of-root') {
     return {
       ok: false,
       diagnostics: [
@@ -211,18 +273,18 @@ export function resolveHotReloadModuleIdentity(
       ]
     };
   }
-  if (candidates.length > 1) {
+  if (selection.kind === 'ambiguous-root') {
     return {
       ok: false,
       diagnostics: [
         {
           code: 'ambiguous-root',
-          message: `文件命中多个脚本资源根,未唯一确定前拒绝解析(HR-MOD-006 不猜): ${canonical} ∈ [${candidates.join(', ')}]`
+          message: `文件命中多个脚本资源根,未唯一确定前拒绝解析(HR-MOD-006 不猜): ${canonical} ∈ [${selection.candidates.join(', ')}]`
         }
       ]
     };
   }
-  const root = candidates[0];
+  const root = selection.root;
   const dual = resolveModuleDualName(canonical, root, { allowRootLevelStem: input.allowRootLevelStem });
   if ('unsupported' in dual) {
     const code = REASON_TO_CODE[dual.reason];
