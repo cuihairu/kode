@@ -32,10 +32,10 @@ const FIXTURE_PATH = path.join('tests', 'fixtures', 'protocol', 'hot-reload-wire
 describe('RUST-427 协议 fixture 固化:双侧对拍冻结线形', () => {
   let fixture: {
     canonical_sample: { content: string; sha256: string };
-    request: { example: { files: string[]; targetId: string; sender_digests: Record<string, string> } };
+    request: { example: { files: string[]; targetId: string; request_id: string; sender_digests: Record<string, string> } };
     responses: {
-      accepted: { example: { status: string; file: string } };
-      applied: { example: { status: string; file: string; digest: string; revision: number } };
+      accepted: { example: { status: string; file: string; request_id: string } };
+      applied: { example: { status: string; file: string; digest: string; revision: number; request_id: string } };
       batch: { example: unknown[] };
       unrecognized: { examples: Record<string, unknown> };
     };
@@ -76,7 +76,10 @@ describe('RUST-427 协议 fixture 固化:双侧对拍冻结线形', () => {
 
   it('解析器对 fixture 例形一致:accepted 例形→accepted,applied 例形→applied', () => {
     const accepted = fixture.responses.accepted.example;
-    const verdict = parseHotReloadAcceptedReceipt(JSON.stringify(accepted), { file: accepted.file });
+    const verdict = parseHotReloadAcceptedReceipt(JSON.stringify(accepted), {
+      file: accepted.file,
+      requestId: accepted.request_id
+    });
     expect(verdict.kind).toBe('accepted');
 
     const applied = fixture.responses.applied.example;
@@ -119,10 +122,11 @@ describe('RUST-427 协议 fixture 固化:双侧对拍冻结线形', () => {
     const file = path.join(receiver.root, 'Avatar.py');
     writeFileSync(file, fixture.canonical_sample.content, 'utf8');
 
-    // 按 fixture 请求例形发(路径换真值;targetId 按文档可选回显)
+    // 按 fixture 请求例形发(路径换真值;targetId/request_id 按文档可选回显)
     const body = {
       files: [file],
       targetId: fixture.request.example.targetId,
+      request_id: fixture.request.example.request_id,
       sender_digests: { [file]: fixture.canonical_sample.sha256 }
     };
     const response = await harness.postReload(receiver.port, body);
@@ -132,7 +136,12 @@ describe('RUST-427 协议 fixture 固化:双侧对拍冻结线形', () => {
     expect(Object.keys(parsed).sort()).toEqual(
       [...Object.keys(fixture.responses.accepted.example), 'targetId'].sort()
     );
-    expect(parsed).toEqual({ status: 'accepted', file, targetId: fixture.request.example.targetId });
+    expect(parsed).toEqual({
+      status: 'accepted',
+      file,
+      targetId: fixture.request.example.targetId,
+      request_id: fixture.request.example.request_id
+    });
   });
 
   it('受控真实服务对 fixture 例形一致(applied 场景 live 回环:自写产物+digest 双证)', async () => {
@@ -145,6 +154,7 @@ describe('RUST-427 协议 fixture 固化:双侧对拍冻结线形', () => {
     const body = {
       files: [file],
       targetId: fixture.request.example.targetId,
+      request_id: fixture.request.example.request_id,
       sender_digests: { [file]: fixture.canonical_sample.sha256 }
     };
     const response = await harness.postReload(receiver.port, body);
@@ -159,7 +169,8 @@ describe('RUST-427 协议 fixture 固化:双侧对拍冻结线形', () => {
       file,
       digest: fixture.canonical_sample.sha256,
       revision: expect.any(Number),
-      targetId: fixture.request.example.targetId
+      targetId: fixture.request.example.targetId,
+      request_id: fixture.request.example.request_id
     });
     // 接收端自写产物落引擎目录(与所发内容逐字一致)
     const engineFile = path.join(engineDir, 'Avatar.py');

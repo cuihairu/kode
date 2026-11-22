@@ -33,6 +33,26 @@ describe('parseHotReloadAcceptedReceipt(已记录协议)', () => {
     expect(wrong.kind).toBe('not-accepted');
   });
 
+  it('F5 关联 id:request_id 给了且一致 → accepted;不一致 → 保留未确认;缺失 → 未提供不拦截', () => {
+    const ok = parseHotReloadAcceptedReceipt(
+      JSON.stringify({ status: 'accepted', file: EXPECTATION.file, request_id: 'req-1' }),
+      { ...EXPECTATION, requestId: 'req-1' }
+    );
+    expect(ok.kind).toBe('accepted');
+
+    const wrong = parseHotReloadAcceptedReceipt(
+      JSON.stringify({ status: 'accepted', file: EXPECTATION.file, request_id: 'req-other' }),
+      { ...EXPECTATION, requestId: 'req-1' }
+    );
+    expect(wrong.kind).toBe('not-accepted');
+
+    const absent = parseHotReloadAcceptedReceipt(
+      JSON.stringify({ status: 'accepted', file: EXPECTATION.file }),
+      { ...EXPECTATION, requestId: 'req-1' }
+    );
+    expect(absent.kind).toBe('accepted');
+  });
+
   it('额外未知字段忽略(只认已记录字段)', () => {
     const verdict = parseHotReloadAcceptedReceipt(
       JSON.stringify({ status: 'accepted', file: EXPECTATION.file, engineVersion: '2.5.0' }),

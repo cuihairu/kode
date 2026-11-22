@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import * as net from 'net';
 import {
+  buildReloadHttpRequest,
   createDefaultHotReloadChannel,
   defaultReloadTelnetConnector,
   defaultReloadWaitForReady,
+  generateReloadRequestId,
   HttpReloadTransport,
   KbengineOfficialTransport,
   normalizeReloadChannelConfig,
@@ -143,8 +145,8 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
     const transport = new HttpReloadTransport(entry(), { run: runStub({ status: 500, body: 'err' }) });
     const summary = await transport.send(target, files, () => undefined);
     expect(summary.receipts).toEqual([
-      { status: 'failed', file: files[0], reason: expect.stringContaining('500') },
-      { status: 'failed', file: files[1], reason: expect.stringContaining('500') }
+      { status: 'failed', file: files[0], reason: expect.stringContaining('500'), requestId: expect.any(String) },
+      { status: 'failed', file: files[1], reason: expect.stringContaining('500'), requestId: expect.any(String) }
     ]);
   });
 
@@ -169,7 +171,8 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
     expect(summary.receipts).toEqual(files.map(file => ({
       file,
       status: 'sent',
-      detail: expect.stringContaining('截断')
+      detail: expect.stringContaining('截断'),
+      requestId: expect.any(String)
     })));
   });
 
@@ -181,8 +184,8 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
     });
     const summary = await transport.send(target, files, () => undefined);
     expect(summary.receipts).toEqual([
-      { status: 'failed', file: files[0], reason: '传输失败:见原始原因(原始:connection refused)' },
-      { status: 'failed', file: files[1], reason: '传输失败:见原始原因(原始:connection refused)' }
+      { status: 'failed', file: files[0], reason: '传输失败:见原始原因(原始:connection refused)', requestId: expect.any(String) },
+      { status: 'failed', file: files[1], reason: '传输失败:见原始原因(原始:connection refused)', requestId: expect.any(String) }
     ]);
   });
 });
@@ -430,6 +433,184 @@ describe('F4 回归:HTTP 通道透传并核验 targetId', () => {
     await transport.send(target, files, r => pushed.push(r));
     expect(pushed.some(r => r.status === 'applied')).toBe(false);
     expect(pushed[0]).toMatchObject({ status: 'sent', file: files[0] });
+  });
+});
+
+// F5(关联 id,RUST-433):发送侧逐发送生成关联标识——请求体自动附加
+// request_id、接收端逐字回显、回执 request_id 与本次发送不一致的整条拒绝。
+// 修后:跨发送乱序/迟到回执不再靠 targetId+file 猜,按关联标识精确归账。
+describe('F5 关联 id:HTTP 通道逐发送关联标识', () => {
+  it('generateReloadRequestId:逐调用唯一,形如 req-<时钟>-<序列>-<随机尾>', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i += 1) {
+      const id = generateReloadRequestId();
+      expect(id).toMatch(/^req-[0-9a-z]+-[0-9a-z]+-[0-9a-z]{6}$/);
+      expect(seen.has(id)).toBe(false);
+      seen.add(id);
+    }
+  });
+
+  it('回执显式 request_id 与本次发送一致 → 接受并回显 requestId', () => {
+    const receipts = parseReloadHttpReceipts(
+      JSON.stringify({ status: 'applied', file: files[0], digest: 'd'.repeat(64), request_id: 'req-1' }),
+      files,
+      'baseapp',
+      'req-1'
+    );
+    expect(receipts[0]).toEqual({
+      status: 'applied',
+      file: files[0],
+      digest: 'd'.repeat(64),
+      requestId: 'req-1'
+    });
+  });
+
+  it('回执显式 request_id 与本次发送不一致 → 整条拒绝,该文件落 sent(不归本次发送)', () => {
+    const receipts = parseReloadHttpReceipts(
+      JSON.stringify([
+        // 迟到/乱序回执:属于上一次发送的关联标识
+        { status: 'applied', file: files[0], digest: 'd'.repeat(64), request_id: 'req-older' },
+        { status: 'accepted', file: files[1], request_id: 'req-now' }
+      ]),
+      files,
+      'baseapp',
+      'req-now'
+    );
+    expect(receipts[0]).toEqual({ status: 'accepted', file: files[1], requestId: 'req-now' });
+    expect(receipts[1]).toMatchObject({ status: 'sent', file: files[0] });
+    expect(JSON.stringify(receipts[1])).toContain('request_id');
+  });
+
+  it('回执未提供 request_id → 不影响接收(可选字段,缺失才是未提供)', () => {
+    const receipts = parseReloadHttpReceipts(
+      JSON.stringify({ status: 'accepted', file: files[0] }),
+      files,
+      'baseapp',
+      'req-now'
+    );
+    expect(receipts[0]).toEqual({ status: 'accepted', file: files[0] });
+  });
+
+  it('显式非字符串 request_id(null/数字/对象)→ 整条拒绝,不当「未提供」处理', () => {
+    for (const bad of [null, 42, { id: 'req-1' }]) {
+      const receipts = parseReloadHttpReceipts(
+        JSON.stringify({ status: 'applied', file: files[0], digest: 'd'.repeat(64), request_id: bad }),
+        files,
+        'baseapp',
+        'req-1'
+      );
+      // 畸形回执绝不按未提供处理而接受 applied
+      expect(receipts.some(r => r.status === 'applied' || r.status === 'accepted')).toBe(false);
+      expect(receipts[0]).toMatchObject({ status: 'sent', file: files[0] });
+      expect(JSON.stringify(receipts[0])).toContain('request_id');
+    }
+  });
+
+  it('send 自动附加 request_id 进 JSON 请求体,且逐发送唯一', async () => {
+    const captured: Array<{ body: string }> = [];
+    const transport = new HttpReloadTransport(
+      entry({ body: '{"files":${files}}' }),
+      {
+        run: async request => {
+          captured.push(request);
+          return { status: 200, body: 'ok' };
+        }
+      }
+    );
+    await transport.send(target, files, () => undefined);
+    await transport.send(target, files, () => undefined);
+    const first = JSON.parse(captured[0].body) as { request_id: string };
+    const second = JSON.parse(captured[1].body) as { request_id: string };
+    expect(typeof first.request_id).toBe('string');
+    expect(first.request_id.length).toBeGreaterThan(0);
+    // 逐发送唯一:两次发送的关联标识不同(乱序回执可区分归属)
+    expect(second.request_id).not.toBe(first.request_id);
+  });
+
+  it('请求体已有显式 request_id 字段 → 不覆盖', async () => {
+    const captured: Array<{ body: string }> = [];
+    const transport = new HttpReloadTransport(
+      entry({ body: '{"request_id":"template-req","files":${files}}' }),
+      {
+        run: async request => {
+          captured.push(request);
+          return { status: 200, body: 'ok' };
+        }
+      }
+    );
+    await transport.send(target, files, () => undefined);
+    const parsed = JSON.parse(captured[0].body) as Record<string, unknown>;
+    expect(parsed.request_id).toBe('template-req');
+  });
+
+  it('preview 不附加 request_id(零发送不伪造关联)', () => {
+    const transport = new HttpReloadTransport(entry({ body: '{"files":${files}}' }), {
+      run: async () => ({ status: 200, body: 'ok' })
+    });
+    const preview = transport.preview(target, files);
+    const parsed = JSON.parse(preview.body) as Record<string, unknown>;
+    expect('request_id' in parsed).toBe(false);
+    // buildReloadHttpRequest 不给 requestId 同形(同一构造单一来源)
+    const built = buildReloadHttpRequest(entry({ body: '{"files":${files}}' }), target, files);
+    expect('request_id' in JSON.parse(built.body)).toBe(false);
+  });
+
+  it('本次发送的每条回执(sent/failed 含)都盖同一关联标识', async () => {
+    // 回包非 JSON → 全 sent;每条 sent 也带本次关联标识(本地合成回执补盖)
+    const transport = new HttpReloadTransport(entry(), {
+      run: runStub({ status: 200, body: 'not a json' })
+    });
+    const summary = await transport.send(target, files, () => undefined);
+    const ids = new Set<string>();
+    for (const receipt of summary.receipts) {
+      expect(receipt.status).toBe('sent');
+      ids.add(receipt.requestId ?? '(missing)');
+    }
+    expect(ids.size).toBe(1);
+    expect([...ids][0]).not.toBe('(missing)');
+  });
+
+  it('端到端:回包 applied 带不匹配 request_id → 通道不产生 applied 回执', async () => {
+    const transport = new HttpReloadTransport(entry(), {
+      run: async () => ({
+        status: 200,
+        body: JSON.stringify({
+          status: 'applied',
+          file: files[0],
+          digest: 'd'.repeat(64),
+          request_id: 'req-from-another-send'
+        })
+      })
+    });
+    const pushed: ReloadReceipt[] = [];
+    await transport.send(target, files, r => pushed.push(r));
+    expect(pushed.some(r => r.status === 'applied')).toBe(false);
+    expect(pushed[0]).toMatchObject({ status: 'sent', file: files[0] });
+  });
+
+  it('端到端:回包 applied 带本次 request_id → applied 回执带 requestId(精确归账)', async () => {
+    let seenBody = '';
+    const transport = new HttpReloadTransport(entry(), {
+      run: async request => {
+        seenBody = request.body;
+        const requestId = (JSON.parse(request.body) as { request_id: string }).request_id;
+        return {
+          status: 200,
+          body: JSON.stringify({
+            status: 'applied',
+            file: files[0],
+            digest: 'd'.repeat(64),
+            targetId: 'baseapp',
+            request_id: requestId
+          })
+        };
+      }
+    });
+    const pushed: ReloadReceipt[] = [];
+    await transport.send(target, files, r => pushed.push(r));
+    const sent = JSON.parse(seenBody) as { request_id: string };
+    expect(pushed[0].status).toBe('applied');
+    expect(pushed[0].requestId).toBe(sent.request_id);
   });
 });
 
@@ -841,7 +1022,12 @@ describe('createDefaultHotReloadChannel(默认部署通道,用户令 2026-11-10)
     const result = await transport.send({ rootId: '/ws', targetId: 'default' }, [files[0]], () => undefined, new Map([[files[0], digest]]));
     const request = requests[0] as { url: string; body: string; headers: Record<string, string> };
     expect(request.url).toBe('http://127.0.0.1:8090/hotfix');
-    expect(JSON.parse(request.body)).toEqual({ files: [files[0]], targetId: 'default', sender_digests: { [files[0]]: digest } });
+    const parsedBody = JSON.parse(request.body) as Record<string, unknown>;
+    expect(parsedBody.files).toEqual([files[0]]);
+    expect(parsedBody.targetId).toBe('default');
+    expect(parsedBody.sender_digests).toEqual({ [files[0]]: digest });
+    // F5:默认部署通道的发送也带逐发送关联标识(请求侧自动附加)
+    expect(typeof parsedBody.request_id).toBe('string');
     expect(result.receipts[0].status).toBe('applied');
   });
 });

@@ -95,7 +95,15 @@ describe('buildReloadHttpRequest(send 与预览共用单一构造)', () => {
     let captured: unknown;
     await transport.send(target, files, () => undefined, digests);
     const previewed = transport.preview(target, files, digests);
-    expect(previewed).toEqual(captured);
+    // F5(关联 id):request_id 是逐发送生成的发送作用域标识——真实发送有,
+    // 预览(零发送)不伪造。剥离该发送作用域字段后,预览与实际发出报文
+    // 逐字节同形(RUST-358 口径不变)。
+    const sent = captured as { url: string; method: string; headers: Record<string, string>; body: string };
+    const sentBody = JSON.parse(sent.body) as Record<string, unknown>;
+    const { request_id: _requestId, ...sentRest } = sentBody;
+    expect({ ...sent, body: JSON.stringify(sentRest) }).toEqual(previewed);
+    expect(typeof sentBody.request_id).toBe('string');
+    expect('request_id' in JSON.parse(previewed.body)).toBe(false);
     // 再验一份:preview 不带 digests ≠ 带 digests(证明 preview 确实走同构造,
     // 而非一个写死的常量——避免只对上了空集形状)
     const plain = transport.preview(target, files);

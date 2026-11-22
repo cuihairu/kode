@@ -1,7 +1,8 @@
 /**
  * 解析单目标 accepted 回执(IDE-HOT-003):已记录协议=JSON 对象
  * {"status":"accepted","file":"<与所发文件逐字一致的回显>"},可选
- * "targetId"(给了就必须与目标一致);额外字段忽略,只认已记录字段。
+ * "targetId"(给了就必须与目标一致)、"request_id"(F5 关联 id,给了就
+ * 必须与本次发送的关联标识一致);额外字段忽略,只认已记录字段。
  * 只有逐字段符合该契约才把台账记录升格 accepted;未知结构(非 JSON/
  * JSON 非对象/状态值不是 'accepted'/file 回显缺失或不一致)与其他
  * 状态值('applied' 是 HOT-004 的核验面、'ok'/'queued' 未记录)一律
@@ -15,6 +16,8 @@ export interface HotReloadReceiptExpectation {
   file: string;
   /** 目标实例 id;回执给了 targetId 就必须一致 */
   targetId?: string;
+  /** F5 关联 id:本次发送的关联标识;回执给了 request_id 就必须一致 */
+  requestId?: string;
 }
 
 export type HotReloadReceiptParse =
@@ -47,6 +50,9 @@ export function parseHotReloadAcceptedReceipt(
   }
   if (receipt.targetId !== undefined && receipt.targetId !== expected.targetId) {
     return { kind: 'not-accepted', reason: '回执 targetId 与目标不一致:不升格' };
+  }
+  if (receipt.request_id !== undefined && receipt.request_id !== expected.requestId) {
+    return { kind: 'not-accepted', reason: '回执 request_id 与本次发送关联标识不一致:不升格' };
   }
   return { kind: 'accepted', file: receipt.file };
 }
