@@ -862,7 +862,7 @@
 - [ ] RUST-440 （旧 HR-DOD-001） 更改 `scripts/entities/fight/FightAI.py`：自动模式启用后只送 `fight.FightAI`；UI 展示 `entities.fight.FightAI`。
 - [ ] RUST-441 （旧 HR-DOD-002） 手动命令、onSave 和 onDiskChange 对同一模块生成完全一致的短名/全名。
 - [ ] RUST-442 （旧 HR-DOD-003） 在 HTTP 返回 200 但未提供可验证应用回执时 UI **不显示已热更新成功**。
-- [ ] RUST-443 （旧 HR-DOD-004） 连续保存 100 次不会导致同一旧版本无限请求或把旧回执当作当前结果。
+- [ ] RUST-443 （旧 HR-DOD-004） 连续保存 100 次不会导致同一旧版本无限请求或把旧回执当作当前结果。(进行中:4314caca 连续保存 100 次规模臂已落 tests/hotReloadRevisionGate.test.ts=100 保存恰 100 请求+请求版本集无重复(同版本不无限请求)+100 条回执乱序落地仅最新代置 sent-unverified、99 条旧回执全注解「响应过期」(旧回执不作当前结果)+同内容再保存零新增请求(指纹去重);既有覆盖叠加=10k soak 10000 offer→1000 定稿恰一次+同内容不重发臂;门禁=同族 6 文件 85 例 solo 绿;差=真机 100 次保存实测(真实 IDE+引擎)未做)
 - [ ] RUST-444 （旧 HR-DOD-005） 关闭自动更新、未知根/特殊脚本、未知协议或不可信 workspace 均不产生自动 HTTP。
 - [ ] RUST-445 （旧 HR-DOD-006） `.def` 编辑器能查看 File Hash / Semantic Hash / Engine Digest（不可得时明确标识），结构变化默认不自动应用。
 - [ ] RUST-446 （旧 HR-DOD-007） 跨目标、多 root、远端 SSH 不串数据、不串状态、不误发 HTTP。
