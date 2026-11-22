@@ -531,3 +531,40 @@ Deferred with reasons (ledger lines stay unchecked, no fake completion):
 - **Bench** (`tests/perf/providerIsolation.bench.ts`, `docs/perf/provider-isolation.md` + append-only `provider-isolation-run.txt`): P1 the fire slice is flat across 0 vs 24 providers (p50 0.15ms vs 0.14ms, with all 4800 `canSend` calls accounted for in the microtask — the fire sync slice performs zero); P1b the *sibling timer callbacks in the same batch* are not delayed (p50 0.14ms ≡ 0.14ms) — that is the mechanism face of the todo claim, since hover budgets and index pumps are exactly those sibling callbacks; P2/P3 record the end-to-end hover and `.def`→py definition tails (200/200 hits both arms) with an honest `ISOL-NOTE`: the residual N24−N0 ≈ +4.8ms is the dispatch microtask interleaving with the hover's continuation hops, bounded by providers×spin, not a synchronous-slice block.
 - Tests: `tests/hotReloadProviderWiring.test.ts` gains four dispatch-isolation pins — a two-provider fire (fire sync slice performs zero `canSend` and zero `send`; after the microtask both `canSend` calls and the single `send` have happened), a five-provider storm (traversal cost entirely in the microtask, exactly one send per fire), a key-on all-refuse arm (the built-in `kbengine.http-hotfix` fallback also lands only after the microtask — zero default transport in the sync slice), and a key-off arm (`transport` already called immediately after the fire tick with no flush, proving the synchronous path is untouched). Every pre-existing pin asserts only after `flush()`, so the extra microtask hop breaks none of them.
 - **No new config key**: `sendViaProviders` is unchanged and no manifest/NLS/settings-panel surface is touched, so the docsCommands configuration gate is not triggered by this increment.
+
+## 45. HR-QA-018 security & functionality completion matrix (2026-11-23, RUST-430, four-dimension sign-off)
+
+RUST-430 asks for a completion matrix signed off **item by item** across four dimensions — target, engine profile, file type, trigger mode. Two halves: the functional classification (which cell may auto-send) is the `HotReloadEligibilityRule` face (§34, HR-EXT-003) consumed by the assembly; the security gates live on the target/transport side. This section signs both halves off cell by cell and marks residual unknowns honestly — no cell is claimed without evidence.
+
+### Matrix A — functional classification (file type × trigger, four elements)
+
+`auto` requires all four: `.py` + configured root + known engine version + trigger `watcher-auto` and not user-initiated. Verdicts are for the default rule; a fork swaps the whole rule (§34).
+
+| File type \ trigger | `watcher-auto`, not user-initiated | `command` / `temp-edit` / `retry` | user-initiated | structural reasons non-empty |
+|---|---|---|---|---|
+| `.py` (engine known + root set) | **auto** | manual | manual | restart |
+| `.py` (unknown engine **or** unset root) | manual | manual | manual | restart |
+| `.def` | manual | manual | manual | restart |
+| non-`.py` (`.xml`, …) / no file | manual | manual | manual | restart |
+
+- **`.def` is not special-cased by the rule** — the rule reads the four elements only; a `.def` change arrives with the def structural gate's verdict as `context.structuralReasons`, so `.def` → `restart` when the gate found structural change and `manual` otherwise. The rule **consumes the gate's conclusion and never recomputes structure**.
+- **Any single missing element → `manual`** (never auto-send to an unknown engine / unknown root / non-py file / human chain). `restart` dominates everything, including a cell whose four auto elements all hold.
+
+**Evidence**: `tests/hotReloadEligibilityMatrix.test.ts` 3 pins — an exhaustive walk of 3 profiles × 2 roots × 4 file shapes × 5 trigger states × 2 user-initiated × 2 structural states = **480 cells** checked against an **independently re-derived oracle** (restart ⟺ structural reasons non-empty; auto ⟺ all four elements; else manual), plus the no-throw / no-fourth-verdict guard. Cell counts pin `auto` = exactly 1 and `restart` = exactly half the cells. The pre-existing HR-EXT-003 pins spot-check the same contract; this matrix is the completeness half.
+
+### Matrix B — target security gates
+
+| Target \ gate | loopback allowlist (RUST-420) | workspace trust (RUST-422) | provider permissions (RUST-408) | structural gate (RUST-397) |
+|---|---|---|---|---|
+| Self-hosted HTTP receiver | enforced per send (`decideHttpEndpoint`, not-injected = **block**) | enforced on the auto-send face | `send` requires `network` | consumed by the eligibility rule → restart |
+| KBEngine official (engine `reloadScript`, console path) | N/A — console path, not HTTP | enforced (telnet probe/session) | `send` requires `network` | consumed by the eligibility rule → restart |
+| Unconfigured | no send at all (honest unconfigured) | n/a | n/a | n/a |
+
+- **Loopback default is safe-side**: `allowNonLoopback` not injected = non-loopback blocked (dangerous endpoint escapes are denied); a user-visible warning is attached to each receipt when an authorized non-loopback target is used. Injected from `kbengine.http.allowNonLoopback` (default `false`).
+- **Trust default is permissive-side** (deliberate): `isWorkspaceTrusted` not injected = treated as trusted (zero-config regression-free); injected in the assembly from `vscode.workspace.isTrusted`. Both gates are read at execution time, so a setting change applies to the next send.
+
+### Residual unknowns (honest, per §3 carry-over)
+
+- Production (non-demo) external receiver semantics: `unknown` — the demo loopback bridge + xreload + reference receiver cover the contract, not a production-grade third-party receiver.
+- Engine digest algorithm negotiation and applied-revision polling: `unknown` / no — cross-comparison with a real engine is permanently refused until a digest handshake exists.
+- Real-network behaviors across hosts (SSH / DevContainer / WSL): covered by RUST-423 matrix for the pure core; cross-machine real-device confirmation still pending (RUST-423 residual).

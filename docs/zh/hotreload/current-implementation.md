@@ -451,3 +451,40 @@
 - **基准** `tests/perf/providerIsolation.bench.ts`(bench lane,输出 `docs/perf/provider-isolation-run.txt` 追加制):P1 fire 切片在 0 vs 24 个 provider 下持平(p50 0.15ms vs 0.14ms,4800 次 `canSend` 全部记账在微任务——fire 同步段零次);P1b **同批兄弟定时回调**不被垫高(p50 0.14ms ≡ 0.14ms)——这正是 todo 命题的机制面(hover 预算/索引泵定时器即同批兄弟回调);P2/P3 记录端到端 hover 与 `.def`→py definition 尾延迟(两臂均 200/200 命中),诚实 `ISOL-NOTE`:残余 N24−N0 ≈ +4.8ms 是派发微任务与 hover 续延同队列交错(受 provider 数×spin 有界),非同步切片阻塞。
 - **测试钉** `tests/hotReloadProviderWiring.test.ts` 增四钉:双 provider fire(fire 同步段零 `canSend` 零 `send`,微任务后两次 `canSend` + 一次 `send` 全发生)、五 provider 风暴(遍历成本全在微任务,每 fire 恰一次接单)、键开全不应答(内置 `kbengine.http-hotfix` 兜底同样只在微任务后接单——同步段零默认 transport)、键关(fire tick 后无 flush 即已调 transport,证明同步路径未动)。既有钉全部只在 `flush()` 后断言,多一跳微任务不破任何既有用例。
 - **无新配置键**:`sendViaProviders` 未变,manifest/NLS/设置面板面零触碰,docsCommands 配置门不因本增量触发。
+
+## 33. HR-QA-018 安全与功能完成矩阵（2026-11-23,RUST-430,四维逐格签收）
+
+RUST-430 要求一份按四维——target、engine profile、文件类型、触发方式——**逐格签收**的完成矩阵。两半:功能分类(哪格可自动发送)=`HotReloadEligibilityRule` 面(§25,HR-EXT-003)由装配消费;安全门在 target/传输侧。本节两半逐格签收,残余 unknown 如实标注——无证据的格子绝不主张。
+
+### 矩阵 A — 功能分类(文件类型 × 触发方式,四要素)
+
+`auto` 须四要素齐备:`.py`+root 已配+引擎版本已知+触发 `watcher-auto` 且非用户显式。下表为缺省规则;fork 换整面接管(§25)。
+
+| 文件类型 \ 触发方式 | `watcher-auto` 且非用户显式 | `command` / `temp-edit` / `retry` | 用户显式 | 结构因非空 |
+|---|---|---|---|---|
+| `.py`(引擎已知+root 已配) | **auto** | manual | manual | restart |
+| `.py`(引擎未知 **或** root 未配) | manual | manual | manual | restart |
+| `.def` | manual | manual | manual | restart |
+| 非 `.py`(`.xml` 等)/无文件 | manual | manual | manual | restart |
+
+- **`.def` 不被规则特判**——规则只读四要素;`.def` 变更随 def 结构闸 verdict 以 `context.structuralReasons` 到达,故闸判结构变=restart,否则=manual。规则**只消费闸结论,不重算结构**。
+- **任一要素缺=manual**(绝不自动发未知引擎/未知根/非 py/人工链)。`restart` 优先于一切,包括四要素全齐的格子。
+
+**证据**:`tests/hotReloadEligibilityMatrix.test.ts` 3 钉——穷举 3 档案形态 × 2 根 × 4 文件形态 × 5 触发态 × 2 用户显式 × 2 结构态 = **480 格**,逐格对照**独立重导 oracle**(restart ⟺ 结构因非空;auto ⟺ 四要素齐备;否则 manual),外加不抛错/无第四结论守卫。计数钉 `auto`=恰 1 格、`restart`=恰半数格。既有 HR-EXT-003 四钉抽查同契约;本矩阵是完备性半。
+
+### 矩阵 B — target 安全门
+
+| Target \ 门 | loopback 白名单(RUST-420) | workspace trust(RUST-422) | provider 权限(RUST-408) | 结构闸(RUST-397) |
+|---|---|---|---|---|
+| 自研 HTTP 接收器 | 逐发送强制(`decideHttpEndpoint`,未注入=**阻止**) | 自动发送面强制 | `send` 须 `network` | 由资格规则消费→restart |
+| KBEngine 官方(引擎 `reloadScript`,控制台路径) | N/A——控制台路径非 HTTP | 强制(telnet 探测/会话) | `send` 须 `network` | 由资格规则消费→restart |
+| 未配置 | 完全不发送(如实未配置) | n/a | n/a | n/a |
+
+- **loopback 缺省为安全侧**:`allowNonLoopback` 未注入=非 loopback 阻止(危险端点越界一律拒);显式授权非 loopback 时每条回执贴安全警告。注入自 `kbengine.http.allowNonLoopback`(缺省 `false`)。
+- **trust 缺省为宽松侧**(有意):`isWorkspaceTrusted` 未注入=视为可信(零配置零回归);装配注入自 `vscode.workspace.isTrusted`。两门均执行时刻读,设置变更即作用于下一次发送。
+
+### 残余 unknown(如实,承 §3 结转)
+
+- 生产(非 demo)外部接收器语义:`unknown`——demo 回环桥+xreload+参考接收器覆盖契约,非生产级第三方接收器。
+- 引擎摘要算法协商与 applied-revision 轮询:`unknown`/无——真实引擎交叉对拍在摘要握手前永久拒绝。
+- 跨主机真实网络(SSH/DevContainer/WSL):纯核由 RUST-423 矩阵覆盖;跨机真机确认仍挂(RUST-423 残余)。
