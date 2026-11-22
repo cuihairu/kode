@@ -24,7 +24,11 @@
  *   不回落默认——热更是写引擎内存的动作,回落=拿默认实现冒充用户环境);
  * - EngineProfile 版本化:{apiVersion, engineVersion(探测产物或 null),
  *   fingerprint: FingerprintProfile}——engineVersion null=未知如实,
- *   不编造(engineVersionDetect 同口径)。
+ *   不编造(engineVersionDetect 同口径);
+ * - HR-EXT-003 资格判定规则(HotReloadEligibilityRule):按 engine profile/
+ *   root/文件类型/上下文判 auto/manual/restart;缺省规则只做保守组合判定
+ *   (restart 消费既有 def 闸结论,不重算结构;auto 须四要素齐备,缺一
+ *   manual),fork=换 rule 实现整面接管分类。
  * 纯逻辑零 vscode;真实扩展宿主装配(注册时机/生命周期)随接线批。
  */
 
@@ -273,6 +277,75 @@ export function buildEngineProfile(input: {
     apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
     engineVersion: input.engineVersion ?? null,
     fingerprint: resolveFingerprintProfile(input.engineDigest)
+  };
+}
+
+/** HR-EXT-003 资格判定结论:auto=可自动发送;manual=人工确认;restart=需重启 */
+export type HotReloadEligibilityDecision = 'auto' | 'manual' | 'restart';
+
+/** HR-EXT-003 判定上下文:触发源+def 结构判定+是否用户显式动作 */
+export interface HotReloadEligibilityContext {
+  /** 触发源(watcher-auto=自动面;command/temp-edit/retry=人工链) */
+  readonly trigger?: 'watcher-auto' | 'command' | 'temp-edit' | 'retry';
+  /**
+   * def 结构闸 verdict 的 reasons(RUST-397 createDefStructuralGate.check 产物,
+   * 非空=结构性变更需重启);规则不重算结构判定,只消费闸的结论。
+   */
+  readonly structuralReasons?: readonly string[];
+  /** 用户显式动作(命令/临时编辑)=人工链,不判 auto */
+  readonly userInitiated?: boolean;
+}
+
+/** HR-EXT-003 资格判定输入(四要素:engine profile、root、文件类型、上下文) */
+export interface HotReloadEligibilityInput {
+  /** 引擎档案(版本化);null/未知版本=保守 manual,不自动发未知引擎 */
+  readonly profile?: EngineProfile | null;
+  /** 脚本资源根;空/缺=模块解析不可用,保守 manual */
+  readonly root?: string | null;
+  /** 文件 URI(文件类型判据:.py=可热更;其余保守 manual) */
+  readonly fileUri?: string;
+  readonly context?: HotReloadEligibilityContext;
+}
+
+/**
+ * HR-EXT-003 资格判定规则(版本化扩展面):按 engine profile、root、文件类型、
+ * 上下文判定 auto/manual/restart。fork/第三方引擎=换 rule 实现整面接管分类;
+ * 默认实现只做保守组合判定,不自创结构分析(restart 消费既有 def 闸结论)。
+ */
+export interface HotReloadEligibilityRule {
+  readonly providerId: string;
+  readonly apiVersion: typeof HOT_RELOAD_PLUGIN_API_VERSION;
+  decide(input: HotReloadEligibilityInput): HotReloadEligibilityDecision;
+}
+
+/**
+ * HR-EXT-003 缺省资格判定规则(保守序):
+ * ① restart 最强:结构闸 reasons 非空(既有 def 闸结论,不重算);
+ * ② auto 须四要素齐备:.py 文件+root 已配+引擎版本已知+触发源 watcher-auto
+ *    且非用户显式动作——任何一缺=manual,绝不自动发未知引擎/未知根/非 py;
+ * ③ 其余=manual(人工确认,安全缺省)。
+ */
+export function createDefaultHotReloadEligibilityRule(): HotReloadEligibilityRule {
+  return {
+    providerId: 'kbengine.default-eligibility',
+    apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+    decide: input => {
+      const context = input.context;
+      // ① def 结构变(闸结论)=restart,优先于一切
+      if (context?.structuralReasons !== undefined && context.structuralReasons.length > 0) {
+        return 'restart';
+      }
+      // ② 四要素齐备才 auto;缺一保守 manual
+      const isPython = /\.py$/i.test(input.fileUri ?? '');
+      const rootKnown = (input.root ?? '').length > 0;
+      const engineKnown = input.profile !== null && input.profile !== undefined && input.profile.engineVersion !== null;
+      const autoTrigger = context?.trigger === 'watcher-auto' && context?.userInitiated !== true;
+      if (isPython && rootKnown && engineKnown && autoTrigger) {
+        return 'auto';
+      }
+      // ③ 安全缺省
+      return 'manual';
+    }
   };
 }
 

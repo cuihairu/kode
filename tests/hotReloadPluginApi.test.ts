@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildEngineProfile,
+  createDefaultHotReloadEligibilityRule,
   createDefaultHotReloadLifecycleSlots,
   defaultHotReloadFingerprintProvider,
   HOT_RELOAD_PLUGIN_API_VERSION,
   HotReloadProviderRegistry,
   type FingerprintProvider,
+  type HotReloadEligibilityRule,
   type HotReloadProvider
 } from '../src/backend/hotReloadPluginApi';
 import type { HotReloadModuleIdentity } from '../src/backend/hotReloadModuleIdentity';
@@ -15,7 +17,8 @@ import type { HotReloadModuleIdentity } from '../src/backend/hotReloadModuleIden
 // 重复 id/版本不符如实拒;resolve 应答者胜无人应答 null 不回落。
 // HR-EXT-001 生命周期槽(resolveModule/prepareRequest/interpretResponse/
 // queryAppliedRevision 可选+缺槽回落);HR-EXT-002 指纹槽(compare/
-// fetchEngineDigest 可选+缺省委托既有对拍核/not-wired)。
+// fetchEngineDigest 可选+缺省委托既有对拍核/not-wired);
+// HR-EXT-003 资格判定规则(auto/manual/restart 保守序+fork 换 rule 接管)。
 
 const ENGINE_MD5 = 'd41d8cd98f00b204e9800998ecf8427e'; // 32 位摘要形(协商判定=长度 32)
 
@@ -289,5 +292,50 @@ describe('HR-EXT-002 版本化指纹契约(compare/fetchEngineDigest 可选槽)'
     // 最小形态未实现两槽(可选):如实 undefined,不冒充空实现
     expect(minimalFingerprintProvider.compare).toBeUndefined();
     expect(minimalFingerprintProvider.fetchEngineDigest).toBeUndefined();
+  });
+});
+
+describe('HR-EXT-003 资格判定规则(auto/manual/restart 保守序)', () => {
+  const makeRule = () => createDefaultHotReloadEligibilityRule();
+  const profile = () => buildEngineProfile({ engineVersion: '2.5.10' });
+  const autoInput = (overrides: Record<string, unknown> = {}) => ({
+    profile: profile(),
+    root: '/ws/scripts',
+    fileUri: '/ws/scripts/entities/fight/FightAI.py',
+    context: { trigger: 'watcher-auto' as const },
+    ...overrides
+  });
+
+  it('restart 最强:def 结构闸 reasons 非空=需重启(即使 auto 要素全齐)', () => {
+    const rule = makeRule();
+    expect(
+      rule.decide(autoInput({ context: { trigger: 'watcher-auto', structuralReasons: ['字段类型变更'] } }))
+    ).toBe('restart');
+  });
+
+  it('auto 须四要素齐备:.py+root+引擎版本已知+watcher-auto 触发', () => {
+    const rule = makeRule();
+    expect(rule.decide(autoInput())).toBe('auto');
+  });
+
+  it('任何一要素缺=保守 manual(不自动发未知根/未知引擎/非 py/人工链)', () => {
+    const rule = makeRule();
+    expect(rule.decide(autoInput({ root: null }))).toBe('manual');
+    expect(rule.decide(autoInput({ profile: buildEngineProfile({}) }))).toBe('manual'); // engineVersion null
+    expect(rule.decide(autoInput({ fileUri: '/ws/scripts/data.xml' }))).toBe('manual');
+    expect(rule.decide(autoInput({ context: { trigger: 'command' } }))).toBe('manual');
+    expect(rule.decide(autoInput({ context: { trigger: 'watcher-auto', userInitiated: true } }))).toBe('manual');
+    expect(rule.decide({})).toBe('manual'); // 全缺
+  });
+
+  it('fork 可换 rule 实现整面接管分类;apiVersion 钉 1', () => {
+    const forkRule: HotReloadEligibilityRule = {
+      providerId: 'kbengine.fork-eligibility',
+      apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+      decide: () => 'auto' // fork 全自动(示例;真实 fork 自定判定面)
+    };
+    expect(forkRule.decide({})).toBe('auto');
+    expect(makeRule().apiVersion).toBe('1');
+    expect(forkRule.apiVersion).toBe('1');
   });
 });
