@@ -270,7 +270,7 @@
 
 - 磁盘侧进料已接线（`src/hotReload.ts` + `src/activate/hotReload.ts`）：装配注入真 `vscode.createFileSystemWatcher` 适配（`hotReloadDiskWatcherFactory`，薄 `DiskWatcherHandle` 包装，uri→fsPath）到 `setupHotReload` 新增的 `diskWatch` 选项。`setupHotReload` 每次 `apply()` 建 `HotReloadDiskWatchController`：每声明根一条 `根/**/*.py` watcher（HR-WATCH-004），change/create 规范化后以 `disk-change` 进同一两级触发链（同一进料流水线+合并窗），delete 不进管线（只记诊断），创建后立即 `arm()`——apply 块是同步的，真事件只能在后续宏任务到达，HR-WATCH-015 基线窗漏不进启动文件。不注入 `diskWatch` =原装配行为不变（全部既有测试不受影响）。
 - 范围同界：磁盘面绝不比既有热更域更宽。装配内范围闸（`diskOfferInScope`）镜像同一 plan——派生模式=assetsRoot 前缀（两侧均规范化），显式模式=对 workspace 相对路径跑 `matchesHotReloadGlob`（与版本徽章同一匹配器，不造第二套 glob 语义）。域外磁盘事件在闸处丢弃、不记诊断：控制器自身过滤层已对扩展名/目录/备份名报 `filtered`，闸在其上（双重上报会双计数）。
-- 生命周期（HR-WATCH-005）：控制器随每次 `apply()` 重建——配置/根/签名变更本就重跑 apply;旧控制器 dispose 全部 watcher,新控制器取当前 folder roots（`filterOptions.roots` 永不陈旧）。plan 关/错 → 旧控制器 dispose,不建新面。扩展释放随装配其余件一并清理。
+- 生命周期（HR-WATCH-005）：控制器随每次 `apply()` 重建——配置/根/签名变更本就重跑 apply;旧控制器 dispose 全部 watcher,新控制器取当前 target 脚本根（`tempEdit.scriptRoots`/`scriptRoot` 配了即收窄到 target 根,未配回落 folder roots;`filterOptions.roots` 永不陈旧）。plan 关/错 → 旧控制器 dispose,不建新面。扩展释放随装配其余件一并清理。
 - 诊断路由：生命周期类（`watch-created` / `dropped-before-arm` / `disposed`）进热更通道日志;`filtered` / `delete-ignored` 不逐事件 live 记录——git checkout 爆发数百条 delete 会淹没审计通道;其语义留在纯核测试里钉死。
 - 重叠去重上线（HR-WATCH-003）：两面喂同一条流水线,编辑器保存同时以磁盘写形式浮现时归并为单条 pending（`disk-save-overlap`,单批）——手册的「两入口一流水线」模型。
 - 测试:`tests/hotReloadDiskWatchWiring.test.ts` 8 例——不注入行为不变/按根 pattern+单批触发/save+disk 重叠单批/delete 忽略带诊断/显式收窄 globs 不放大/配置关拆面/context dispose 静默/真适配源锁。
