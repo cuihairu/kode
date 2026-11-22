@@ -270,10 +270,10 @@
 
 - 磁盘侧进料已接线（`src/hotReload.ts` + `src/activate/hotReload.ts`）：装配注入真 `vscode.createFileSystemWatcher` 适配（`hotReloadDiskWatcherFactory`，薄 `DiskWatcherHandle` 包装，uri→fsPath）到 `setupHotReload` 新增的 `diskWatch` 选项。`setupHotReload` 每次 `apply()` 建 `HotReloadDiskWatchController`：每声明根一条 `根/**/*.py` watcher（HR-WATCH-004），change/create 规范化后以 `disk-change` 进同一两级触发链（同一进料流水线+合并窗），delete 不进管线（只记诊断），创建后立即 `arm()`——apply 块是同步的，真事件只能在后续宏任务到达，HR-WATCH-015 基线窗漏不进启动文件。不注入 `diskWatch` =原装配行为不变（全部既有测试不受影响）。
 - 范围同界：磁盘面绝不比既有热更域更宽。装配内范围闸（`diskOfferInScope`）镜像同一 plan——派生模式=assetsRoot 前缀（两侧均规范化），显式模式=对 workspace 相对路径跑 `matchesHotReloadGlob`（与版本徽章同一匹配器，不造第二套 glob 语义）。域外磁盘事件在闸处丢弃、不记诊断：控制器自身过滤层已对扩展名/目录/备份名报 `filtered`，闸在其上（双重上报会双计数）。
-- 生命周期（HR-WATCH-005）：控制器随每次 `apply()` 重建——配置/根/签名变更本就重跑 apply;旧控制器 dispose 全部 watcher,新控制器取当前 target 脚本根（`tempEdit.scriptRoots`/`scriptRoot` 配了即收窄到 target 根,未配回落 folder roots;`filterOptions.roots` 永不陈旧）。plan 关/错 → 旧控制器 dispose,不建新面。扩展释放随装配其余件一并清理。
+- 生命周期（HR-WATCH-005）：控制器随每次 `apply()` 重建——配置/根/签名变更本就重跑 apply;旧控制器 dispose 全部 watcher,新控制器取当前 target 脚本根（`tempEdit.scriptRoots`/`scriptRoot` 配了即收窄到 target 根,未配回落 folder roots;`filterOptions.roots` 永不陈旧）。RUST-329 增量补第三路触发：`onTargetChanged`（激活面接 `onDidChangeActiveProfile`）——profile 切换既不派发配置事件也不派发文件夹事件,而活动 profile 即部署 target（`targetId=profile.id`）,其 `assetsRoot` 入签名,故按签名判据重建评估;评估微任务延后一拍——同次派发里写 `activeProfileScanRoot` 的索引输入订阅注册序在后（`activateHotReload` 先于 `activateGenerators`）,同步订阅跑完才排,读到的才是新 target 根。范围闸基座（`diskScope.roots`）恒为工作区根,不随 watch 面收窄——显式 globs 是工作区相对契约（与 save 面同语义）,基座随收窄变 target 根会让 `scripts/**/*.py` 这类带路径段 glob 漏匹配（根内相对路径已无 scripts/ 前缀）;收窄只落在 watch 面（watcher 模式+过滤层）。plan 关/错 → 旧控制器 dispose,不建新面。扩展释放随装配其余件一并清理。
 - 诊断路由：生命周期类（`watch-created` / `dropped-before-arm` / `disposed`）进热更通道日志;`filtered` / `delete-ignored` 不逐事件 live 记录——git checkout 爆发数百条 delete 会淹没审计通道;其语义留在纯核测试里钉死。
 - 重叠去重上线（HR-WATCH-003）：两面喂同一条流水线,编辑器保存同时以磁盘写形式浮现时归并为单条 pending（`disk-save-overlap`,单批）——手册的「两入口一流水线」模型。
-- 测试:`tests/hotReloadDiskWatchWiring.test.ts` 8 例——不注入行为不变/按根 pattern+单批触发/save+disk 重叠单批/delete 忽略带诊断/显式收窄 globs 不放大/配置关拆面/context dispose 静默/真适配源锁。
+- 测试:`tests/hotReloadDiskWatchWiring.test.ts` 20 例——不注入行为不变/按根 pattern+单批触发/save+disk 重叠单批/delete 忽略带诊断/显式收窄 globs 不放大/配置关拆面/context dispose 静默/真适配源锁/target 脚本根收窄（RUST-329:配了/单根形态/空表回退）/范围闸基座保持工作区根（RUST-329 增量,带路径段 glob 不漏匹配）/目标切换按签名判据重建+同根不重建（RUST-329 增量）/目标接线源锁（RUST-329 增量）。
 - 仍暂缓:余下流水线配置键(稳定窗/语法闸/波次窗/预览阈注入)与 revision 消费(stale 应答闸)。(模式选择面 2026-11-13 同日落——见 §14。)
 
 ## 14. HR-WATCH-001/002 增量（2026-11-13,触发源模式配置面）
