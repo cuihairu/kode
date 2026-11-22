@@ -542,6 +542,7 @@
 | `kbengine.hotReload.globs` | 未设 → 按 `kbengine.assetsRoot` 派生 | 监视的文件匹配模式（每模式一个 watcher）；未设时派生 `<assetsRoot>/**/*.py`，只盯 .py（绝不全工作区扫） |
 | `kbengine.hotReload.debounceMs` | `500` | 触发前去抖毫秒数（0 = 不去抖） |
 | `kbengine.hotReload.triggerMode` | `"onSave"` | 热更触发源模式（HR-WATCH-001）：`onSave` = watcher 写盘事件驱动热更（编辑器保存/自动保存即发，未保存的缓冲编辑永不进链）——默认推荐；`onDiskChange` = 另建按已声明根的原生文件监视，外部改动/生成文件/Git checkout 也触发热更（与保存事件在同一流水线内重叠去重不双发；监视范围绝不比热更域宽） |
+| `kbengine.hotReload.notify` | `"errors"` | 通知模式（HR-UI-013）：`silent` = 成功/失败/摘要全程无弹窗（信息照旧落审计/状态栏/历史不丢）；`errors` = 失败弹窗+成功静默（缺省，保持既有行为）；`summary` = 每批完成弹一条批量结果摘要（成功也弹，含失败明细）。防风暴=每批一条，绝不逐文件刷屏 |
 | `kbengine.hotReload.stabilityWindowMs` | `0` | 写入稳定窗（HR-WATCH-007）：窗内两拍快照一致才发送；探测超上限如实发送并标注 unstable。`0` = 不做稳定等待（现有时序不变） |
 | `kbengine.hotReload.syntaxGate` | `false` | 语法闸（HR-WATCH-012）：定稿内容先经解释器 `compile()` 全量语法检查再发送（只编译不执行）；检查器自身故障放行并记日志，绝不拦热更 |
 | `kbengine.hotReload.batchFlushMs` | `0` | 波次冲口（HR-WATCH-013）：同窗定稿文件归集成批发送；`0` = 定稿即汇入合并池（现有时序） |
