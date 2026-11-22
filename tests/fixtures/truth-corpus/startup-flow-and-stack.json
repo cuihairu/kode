@@ -1,0 +1,94 @@
+{
+  "family": "startup-flow-and-stack",
+  "grounding": {
+    "doc": "docs/knowledge/startup-flow-and-stack.md",
+    "engineHead": "55a6655"
+  },
+  "entries": [
+    {
+      "id": "pos-oninit-dualpath-scope",
+      "kind": "positive",
+      "input": { "path": "engine-spi", "name": "onInit" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onInit 双路径:启动路径 isReload=0(baseapp.cpp:3601-3604/cellapp initprogress_handler.cpp:137-140)+重载路径 isReload=1(entity_app.h:1460/python_app.cpp:709 仅 reloadScript 内,非冷启);冷启仅 baseapp/cellapp/bots/client 四组件收到,loginapp/dbmgr/interfaces/logger 冷启首个回调是各自 onXxxReady。kode ENGINE_SPI_METHODS.onInit={components:['baseapp','cellapp','bots','client'],required:true,trigger:'首回调,0=启动 1=热载'}——组件冷启范围+双路 trigger 与 fork 一致"
+      },
+      "evidence": [
+        "**`onInit` has two very different call paths.**",
+        "`onInit(isReload)` — `0` on the startup path, `1` on the reload path",
+        "never receive `onInit` on a cold"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "engine-spi-methods",
+          "method": "onInit",
+          "components": ["baseapp", "cellapp", "bots", "client"],
+          "required": true,
+          "trigger": "首回调,0=启动 1=热载"
+        }
+      }
+    },
+    {
+      "id": "pos-onreadyforlogin-poll",
+      "kind": "positive",
+      "input": { "path": "engine-spi", "name": "onReadyForLogin" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 P5 登录门是轮询非事件:InitProgressHandler::process 每 tick 调 onReadyForLogin 并转 float(initprogress_handler.cpp:217),仅 v>=0.9999(:244) 标 completed 并删 handler(:256-260)。kode ENGINE_SPI_METHODS.onReadyForLogin.trigger='轮询 ≥0.9999 放行登录'——轮询阈值语义与 fork 一致"
+      },
+      "evidence": [
+        "the handler polls until the return value reaches ≥ 0.9999",
+        "`v >= 0.9999` (`:244`) marks `completed`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "engine-spi-methods",
+          "method": "onReadyForLogin",
+          "trigger": "轮询 ≥0.9999 放行登录"
+        }
+      }
+    },
+    {
+      "id": "pos-onbaseappshutdown-staged",
+      "kind": "positive",
+      "input": { "path": "engine-spi", "name": "onBaseAppShutDown" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实关停仅 baseapp 三段式:onBaseAppShutDown 三调用点 args 0/1/2(baseapp.cpp:327/:342/:389),其余组件单发 onXxxShutDown(loginapp.cpp:62 等)。kode ENGINE_SPI_METHODS.onBaseAppShutDown.trigger='三段式关停 0/1/2'——阶段语义与 fork 一致"
+      },
+      "evidence": [
+        "**Shutdown is three-stage for baseapp only** (`state = 0/1/2`,"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "engine-spi-methods",
+          "method": "onBaseAppShutDown",
+          "trigger": "三段式关停 0/1/2"
+        }
+      }
+    },
+    {
+      "id": "pos-apidocs-oninit-signature",
+      "kind": "positive",
+      "input": { "path": "api-docs", "name": "onInit" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onInit 签名 onInit(isReload)(baseapp.cpp:3601 启动/isReload=0,reloadScript 重载/isReload=1)。kode API_DOC_ENTRIES 两 onInit 条目(base :950/cell :1994)signature 均 'onInit(isReload)'——签名与 fork 一致"
+      },
+      "evidence": [
+        "`onInit(isReload)` — `0` on the startup path, `1` on the reload path"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "api-docs",
+          "method": "onInit",
+          "signature": "onInit(isReload)"
+        }
+      }
+    }
+  ]
+}

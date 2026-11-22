@@ -2511,5 +2511,46 @@ describe('truth-corpus: bigworld-guard 族执行闸(BigWorld API 明确不整合
     expect(base.length, 'BigWorld 成员/归属 0').toBe(0);
     expect(trap.kode.analysis!.apiDocsBaseClassCount).toBe(0);
     expect(trap.kode.analysis!.apiDocsBaseClassOwnerPresent).toBe(false);
+// ============ 第三十八族: startup-flow-and-stack(SPI 触发语义/冷启范围) ============
+interface StartupFlowEntry extends TruthEntryBase {
+  input: { path: string; name: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      face?: string;
+      method?: string;
+      components?: string[];
+      required?: boolean;
+      trigger?: string;
+      signature?: string;
+    };
+  };
+}
+const startupFlowFamily = families.find(f => f.family === 'startup-flow-and-stack')!;
+const startupFlowEntries = startupFlowFamily.entries as unknown as StartupFlowEntry[];
+describe('truth-corpus: startup-flow-and-stack 族执行闸(SPI 触发语义/冷启范围)', () => {
+  it('SPI 面:onInit 冷启组件范围+双路 trigger 逐字钉(ENGINE_SPI_METHODS)', () => {
+    const entry = startupFlowEntries.find(e => e.id === 'pos-oninit-dualpath-scope')!;
+    const spi = ENGINE_SPI_METHODS[entry.input.name];
+    expect(spi, 'onInit 未收录').toBeDefined();
+    expect(spi.components, entry.id).toEqual(entry.kode.analysis!.components);
+    expect(spi.required, entry.id).toBe(entry.kode.analysis!.required);
+    expect(spi.trigger, entry.id).toBe(entry.kode.analysis!.trigger);
+  });
+
+  it('SPI 面:轮询/三段式 trigger 逐字钉(onReadyForLogin/onBaseAppShutDown)', () => {
+    for (const entry of startupFlowEntries.filter(e => e.kode.analysis?.trigger && e.input.path === 'engine-spi' && e.input.name !== 'onInit')) {
+      const spi = ENGINE_SPI_METHODS[entry.input.name];
+      expect(spi, `${entry.id}:${entry.input.name} 未收录`).toBeDefined();
+      expect(spi.trigger, entry.id).toBe(entry.kode.analysis!.trigger);
+    }
+  });
+
+  it('apiDocs 面:onInit 双条目(base/cell)签名均 onInit(isReload)', () => {
+    const entry = startupFlowEntries.find(e => e.id === 'pos-apidocs-oninit-signature')!;
+    const onInitDocs = API_DOC_ENTRIES.filter(d => d.member === entry.input.name);
+    expect(onInitDocs.length, entry.id).toBeGreaterThanOrEqual(2);
+    for (const doc of onInitDocs) {
+      expect(doc.signature, `${entry.id}:${doc.domain ?? doc.member}`).toBe(entry.kode.analysis!.signature);
+    }
   });
 });

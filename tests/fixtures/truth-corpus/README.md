@@ -645,3 +645,46 @@ status「无可钉 kode 探针面,跳过不建族」——该评估针对**正�
 针面=缺席扫描本身(API_DOC_ENTRIES/KBENGINE_HOOKS 全量命中 0),决策
 记录档恰是守卫族的最佳依据。故建族不与 peer 评估矛盾,并在此注明:
 余族候选池维持 2 份(python-version-baseline/startup-flow-and-stack)。
+
+## 第三十八族: startup-flow-and-stack(SPI 触发语义/冷启范围)
+
+依据 `docs/knowledge/startup-flow-and-stack.md`(启动七段 P0-P7 + 14 层栈,
+machine-readable 核=档「Notes that matter」五注;engineHead 55a6655=fork 本机检出)。
+4 例全为正例,**对齐族零分歧**:档的引擎内部段(P0-P7 分段/14 层栈帧)无 kode 探针面,
+可钉的只有 SPI 触发语义面。全族零 src/ 零 Rust 改动。
+
+**分工判例=名册族钉存在性,本族钉触发语义**:第九族钉的是 `ENGINE_SPI_METHODS`
+**名册存在性+可选旗**(八组件方法计数 baseapp 12/cellapp 9/… + 可选四件),
+第二十九族精确钉 `onReadyForShutDown` components=['baseapp','dbmgr','logger'];
+二者皆**存在性粒度**。本族钉的是**同一张表的 `trigger` 语义串**(此前无任何族钉)
++ onInit 冷启组件范围 + apiDocs 签名:①onInit 双路语义
+`首回调,0=启动 1=热载`(档 onInit 双调用路径)+ 冷启组件范围
+components 精确 ['baseapp','cellapp','bots','client'](档「loginapp / dbmgr /
+interfaces / logger never receive `onInit` on a cold start」的 kode 编码面);
+②onReadyForLogin `轮询 ≥0.9999 放行登录`(档 P5 门=轮询非事件,v>=0.9999 标
+completed);③onBaseAppShutDown `三段式关停 0/1/2`(档 baseapp 独有三段)。
+fork 实证:三段式 args 实读 baseapp.cpp:327/:342/:389 传 0/1/2 三次;
+onReadyForShutDown 仅 baseapp.cpp:275/logger.cpp:176/dbmgr.cpp:78 三调用点
+(loginapp 侧无,仅 loginapp.cpp:62 发 onLoginAppShutDown)=档与 kode 同向。
+
+**判例=行号引用须按 engineHead 版本化,跨 HEAD 陈旧非缺陷**:onInit 调用点在 fork
+各提交间位移 c2a3b8f:3602 → 6d12b8f:3641 → 55a6655:3701(文件随 fork 提交增长),
+故 api-baseapp.md 引 `baseapp.cpp:3636-3647` 在**其自身锚 6d12b8f 内含调用点 3641**
+=锚内正确,相对语料 HEAD 55a6655(实际 3701)仅陈旧;startup-flow 档引 3601 亦锚内
+正确。**跨档行号差异非分歧,以各档 engineHead 为准**——本族据此不登记 apiDocs
+sourceRefs 为行号漂移,仅钉 onInit(isReload) 签名(该签名跨 HEAD 稳定)。
+
+门禁=定向 136/136(133+3 新增 it;与 peer 第三十七族 bigworld-guard 合载后同测)/
+prove-red 三咬(①onInit trigger 截去双路尾段
+②onBaseAppShutDown trigger 补阶段 3 ③apiDocs 双 onInit 签名 onInit(isReload)→
+onInit(reload);各红一次,sha256 99b60904/d6849a95 字节还原复绿)/tsc -p ./ 0/
+eslint tests 旧债 2 项(flagsGroundingText:97/cellDataGroundingText:136 未用变量,
+非本批新增)/全量 failed=18 超时类负载抖动(load 92,全为硬时间预算臂 5s/200ms:
+typeStorageColdBuildPhased F13=Test timed out in 5000ms 非断言失败/
+globalDataIndex watcher+noteSaved/execModesBaseline/categoryI18n/hotfixSpellingGate/
+mroChainLens/logHub/hoverBudget/hoverDeadlineContext/hoverGapArms/nativeSmokeRetry/
+processTopologyPerf/traceCapture/entityWizard/databaseDrift;victim 文件零本批改动
+(git status 仅 truthCorpus.test.ts+README+fixture,零 src/ 零 Rust),solo 复跑
+4/6 绿(typeStorageColdBuildPhased/globalDataIndex solo 仍红但=5000ms 超时非断言,
+5s 预算在 load 92 下确定性超),5678 端口空(非 debugpy 占用),CI 权威)。本批零 src/
+零 Rust 改动(仅语料+执行门+README+todo);语料 38 族 358 条(37→38 族,+4;基线 354=peer 第三十九增量 bigworld-guard 落地后 351+3);余族候选池=1 份(python-version-baseline 已评估=版本口径全系引擎+Python 侧真值,kode 从不对其断言=无 kode 探针面,诚实收线;startup-flow-and-stack 已由本族收割;bigworld-legacy-status 已由 peer 第三十七族 bigworld-guard 收割)。
