@@ -7,7 +7,9 @@
  * - 端点与参数名取自内置示例(BUILTIN_HTTP_REQUEST_EXAMPLE,测试锁同步),
  *   两处不各写一份,避免默认值漂移;query 的 `?module_name=` 与 body 的
  *   `module_name=` 同源于该示例,双带口径不在此另写;
- * - 模块名优先 resolveModuleDualName 口径(书 §19.1,file-change-meta 同源);
+ * - 模块名优先 resolveModuleDualName 口径(书 §19.1,file-change-meta 同源),
+ *   取 requestModule 作线路名(HR-DOD-001:全名 fullModule 只供 UI 展示,
+ *   scripts/entities 这类容器不在引擎 sys.path 上,送全名=收下却重载不到);
  *   未配脚本资源根(kbengine.hotReload.tempEdit.scriptRoot)或解析不支持时,
  *   回落 ${module} 的 __init__.py 包边界扫描——与默认示例模板同一占位来源,
  *   不新造占位;
@@ -47,7 +49,14 @@ export interface DefaultHotfixDeps {
   readonly allowRootLevelStem?: boolean;
 }
 
-/** 单文件的默认热更模块名:双名称优先,回落 ${module} 包边界扫描 */
+/**
+ * 单文件的默认热更模块名:双名称优先,回落 ${module} 包边界扫描。
+ * HR-DOD-001:双名称面取 requestModule(线路名)——fullModule 是全名口径(UI
+ * 展示用),scripts/entities 这类容器不在引擎 sys.path 上,全名送出去引擎收下
+ * 却重载不到(与角色目录 base/cell/client/bots 同一类「收下不应用」形态);
+ * requestModule 才是引擎能 import 的短名。回落面(未配脚本资源根)保持
+ * ${module} 包边界扫描语义,不在此改动。
+ */
 export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfixDeps = {}): string {
   const scriptRoot = deps.scriptRoot ?? '';
   if (scriptRoot.length > 0) {
@@ -55,7 +64,7 @@ export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfix
       ...(deps.allowRootLevelStem === true ? { allowRootLevelStem: true } : {})
     });
     if (!('unsupported' in dualName)) {
-      return dualName.fullModule;
+      return dualName.requestModule;
     }
   }
   return resolvePythonModulePath(filePath, deps.isPackageDir);

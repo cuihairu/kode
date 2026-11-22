@@ -60,7 +60,12 @@ describe('buildRequestPreviewRows(只构造不发送)', () => {
 
     const defaultFace = rows[2];
     expect(defaultFace.name).toBe('零配置默认热更面');
-    expect(defaultFace.url).toContain('module_name=entities.fight.FightAI');
+    // HR-DOD-001:默认热更面线路=requestModule 短名(引擎能 import 的名字);
+    // fullModule 全名只出现在展示面(双名并列),线路与展示不混。
+    expect(defaultFace.url).toContain('module_name=fight.FightAI');
+    expect(defaultFace.body).toContain('module_name=fight.FightAI');
+    expect(defaultFace.moduleNames.fullModule).toBe('entities.fight.FightAI');
+    expect(defaultFace.moduleNames.requestModule).toBe('fight.FightAI');
   });
 
   it('无活动文件:空行集(不猜文件);未配 scriptRoot:双名如实空串,legacy 照常', () => {

@@ -43,11 +43,15 @@ describe('buildDefaultHotfixRequest(默认端点与参数名)', () => {
     expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI');
   });
 
-  it('配了脚本资源根:按 resolveModuleDualName 全名口径(书 §19.1)', () => {
+  it('配了脚本资源根:线路送 requestModule 短名(fight.FightAI),UI 展示 fullModule 全名(HR-DOD-001)', () => {
     const request = buildDefaultHotfixRequest('/ws/scripts/entities/fight/FightAI.py', {
       scriptRoot: '/ws/scripts'
     });
-    expect(request.body).toBe('module_name=entities.fight.FightAI');
+    // HR-DOD-001:scripts/entities 不在引擎 sys.path 上,全名=收下却重载不到;
+    // 线路只送 requestModule 短名,fullModule 全名仅供 UI 展示(双名不混)。
+    // 双带口径(query 与 body 各一份)同送短名,缺一即红。
+    expect(request.body).toBe('module_name=fight.FightAI');
+    expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=fight.FightAI');
     // 文件不在脚本根内时如实回落包边界扫描,不编造名字
     expect(resolveDefaultHotfixModule('/elsewhere/base/Avatar.py', { scriptRoot: '/ws/scripts' })).toBe(
       'Avatar'
