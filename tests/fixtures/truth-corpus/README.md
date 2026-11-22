@@ -509,3 +509,46 @@ sha256 f0b74c4c 字节还原复绿;②perturb onLoseCell present→true→在场
 多会话共树期不做 src 扰动,咬合自明)/定向 truthCorpus 121/121(前 118+3
 新增 it)。本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);语料
 34 族 334 条(33→34 族,+37;基线 297=第三十五增量 翻案批落地后)。
+
+## 第三十五族: traps-index-surface(语义陷阱 kode 面对拍)
+
+依据 `docs/knowledge/traps-index.md`(语义陷阱索引:每条陷阱行指向承载
+现象/根因/正确姿势的目标篇;本页不引入目标篇未锚定的新主张;engineHead
+6d12b8f)。本族取索引中**kode 可探针面**(apiDocs hover 面
+`src/generated/apiDocs.ts` 的 `API_DOC_ENTRIES`+钩子名册 `src/hooks.ts`
+的 `KBENGINE_HOOKS`)能对拍的陷阱,共 6 条(1 误导+5 正确钉/缺席钉);
+纯引擎面陷阱(teleport/迁移/garbages/EntityCall 语义)无 kode 对拍面,
+不入族(留索引原文,README 注记)。
+
+**登记 1 误导(delTimer 失效 id)**——陷阱行「`delTimer` with a stale id
+expecting an error|Returns `-1` silently (fork)」:引擎实体面 `delTimer`
+对已失效 id **不抛异常**(错误路径 PyErr_Format+PyErr_PrintEx 清除后
+`return -1`,entity_macro.h:1478-1482),而 kode apiDocs 面
+(entity.delTimer,page=api-baseapp-entity)summaryEn 宣称「already-removed
+id raises」+「invalid id path :1478 (...returns false → error)」——与引擎
+及 kode 自家知识库(api-cellapp-entity.md:199 偏离表「Returns -1
+silently; no Python exception raised」)双面矛盾。negative+reject-silent+
+finding 误导现状钉;修复归后续批(修 apiDocs 源料+再生成,语料按翻案
+流程翻正)。
+
+**正确钉/缺席钉**(无 finding,只钉现状):trackEntity/turnToYaw 缺席
+(fork 零命中,apiDocs 无条目——正确)/KBEngine.findEntity 缺席(apiDocs
+诚实负例文档「no registration point」——正确)/KBEngine.login/
+createAccount 缺席(插件层,引擎仓外,apiDocs 无条目——正确)/
+onReadyForLogin 返回契约(True/>=0.9999/无回调三要素与 fork 一致——
+正确)/onDestroy 客户端面缺席(名册条目仅 baseapp/cellapp 锚,无
+client_lib 面,与第三十四族对账同源一致——正确)。
+
+探针=探针实测后钉:python 解析 API_DOC_ENTRIES 225 条+KBENGINE_HOOKS
+36 条,逐陷阱名对拍(含 grep 引擎 6d12b8f 验证缺席/返回真值,非照抄
+知识档)。执行闸五臂:delTimer 误导现状臂(条目全文钉 toBe 钉值+误导
+标记)/缺席臂(trackEntity/turnToYaw/login/createAccount 零条目)/
+findEntity 诚实负例臂/onReadyForLogin 契约臂/onDestroy 客户端缺席臂
+(含对账族34 sourceLocation 同源一致)。
+
+prove-red 五咬(①perturb delTimer claimsRaise→false 误导臂红;
+②perturb trackEntity→true 缺席臂红;③perturb negativeDoc→false
+findEntity 臂红;④perturb has09999→false 契约臂红;⑤perturb
+clientFaceAbsent→false onDestroy 臂红;均 sha256 字节还原复绿)。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo,探针只读
+API_DOC_ENTRIES);语料 35 族 340 条(34→35 族,+6)。

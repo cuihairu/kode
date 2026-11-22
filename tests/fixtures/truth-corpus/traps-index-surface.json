@@ -1,0 +1,160 @@
+{
+  "family": "traps-index-surface",
+  "grounding": {
+    "doc": "docs/knowledge/traps-index.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "neg-deltimer-stale-id-raise-claim",
+      "kind": "negative",
+      "input": {
+        "path": "api-docs",
+        "member": "delTimer",
+        "owner": "entity"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "引擎实体面 delTimer 对已失效/已移除 id 不抛异常:错误路径 PyErr_Format 后 PyErr_PrintEx(0) 清除并 return -1(entity_macro.h:1478-1482 无效 id;参数形状错同型 :1415-1428),静默返回 -1,无 Python 异常到达脚本。"
+      },
+      "evidence": [
+        "`delTimer` with a stale id expecting an error",
+        "Returns `-1` silently (fork); the 3.7 material claims an error"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "claimsRaise": true,
+          "summaryEn": "Removes a timer (\"All\" string removes all). Single-shot timers self-remove — delTimer on an already-removed id raises. entity_macro.h:18, impl :1407; invalid id path :1478 (ScriptTimersUtil::delTimer returns false → error).",
+          "page": "api-baseapp-entity"
+        }
+      },
+      "finding": "误导:kode apiDocs 面(entity.delTimer,page=api-baseapp-entity)summaryEn 宣称「delTimer on an already-removed id raises」+「invalid id path :1478 (ScriptTimersUtil::delTimer returns false → error)」——与引擎(静默返回 -1,无异常到达脚本,entity_macro.h:1478-1482)及 kode 自家知识库(api-cellapp-entity.md:199 偏离表「Returns -1 silently; no Python exception raised」)双面矛盾,kode 表面冒充引擎不存在的行为。修复归后续批。"
+    },
+    {
+      "id": "neg-trackentity-turntoyaw-absent",
+      "kind": "negative",
+      "input": {
+        "path": "api-docs",
+        "members": [
+          "trackEntity",
+          "turnToYaw"
+        ]
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 无 trackEntity/turnToYaw 方法(6d12b8f git grep kbe/src 零命中);正确替代=moveToEntity/addYawRotator。"
+      },
+      "evidence": [
+        "`trackEntity` / `turnToYaw`",
+        "No such methods in the fork"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "trackEntity": false,
+          "turnToYaw": false
+        }
+      }
+    },
+    {
+      "id": "neg-findentity-no-registration",
+      "kind": "negative",
+      "input": {
+        "path": "api-docs",
+        "member": "findEntity"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "KBEngine.findEntity 无任何脚本注册点(6d12b8f kbe/src 无 SCRIPT_METHOD 声明;entity_app.h:729 仅 AUTO_SCOPED_PROFILE 性能串非注册);客户端查实体=KBEngine.entities[entityID]。"
+      },
+      "evidence": [
+        "`KBEngine.findEntity(id)`",
+        "No such registration"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": false,
+          "negativeDoc": true,
+          "summaryEn": "**no registration point in client_lib at all** — client-side lookup in-script is spelled KBEngine.entities[entityID] against the fork-registered entities object (§3)"
+        }
+      }
+    },
+    {
+      "id": "neg-client-login-createaccount-plugin-layer",
+      "kind": "negative",
+      "input": {
+        "path": "api-docs",
+        "members": [
+          "login",
+          "createAccount"
+        ]
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "KBEngine.login/createAccount 不在 kbe/src 任何 Python 面注册(插件层,引擎仓外);6d12b8f grep kbe/src 零注册点。"
+      },
+      "evidence": [
+        "Not registered on any Python surface in `kbe/src`",
+        "plugin-layer, outside this repo"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "login": false,
+          "createAccount": false
+        }
+      }
+    },
+    {
+      "id": "pos-onreadyforlogin-return-semantics",
+      "kind": "positive",
+      "input": {
+        "path": "api-docs",
+        "member": "onReadyForLogin",
+        "face": "cellapp"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "返回契约:True→就绪;浮点在 >=0.9999 视为完成;未定义回调→立即完成(initprogress_handler.cpp:163-196)。"
+      },
+      "evidence": [
+        "`True` → ready; float completes at `>= 0.9999`; no callback → immediately complete"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "hasTrueContract": true,
+          "has09999": true,
+          "hasNoCallback": true
+        }
+      }
+    },
+    {
+      "id": "neg-ondestroy-client-face",
+      "kind": "negative",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onDestroy",
+        "face": "client"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "内嵌客户端实体 onDestroy 从不分发(空 C++ override;远端销毁 callScript=false);服务端 baseapp/cellapp onDestroy 正常分发。"
+      },
+      "evidence": [
+        "`onDestroy` on the embedded client",
+        "Never dispatched (empty C++ override, `callScript=false` on remote destroy)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "rosterServerOnly": true,
+          "clientFaceAbsent": true
+        }
+      }
+    }
+  ]
+}

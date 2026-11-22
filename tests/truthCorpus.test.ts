@@ -35,6 +35,7 @@ import type { EntityMapping } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { KBENGINE_HOOKS, getHookByName } from '../src/hooks';
+import { API_DOC_ENTRIES } from '../src/generated/apiDocs';
 import { buildEntityPartPythonContent } from '../src/backend/entityWizard';
 import {
   USER_TYPE_CONTRACT_CONSEQUENCE,
@@ -2331,5 +2332,86 @@ describe('truth-corpus: hook-sequencing-presence 族执行闸(实体回调在场
   });
   it('名册规模钉:KBENGINE_HOOKS 恰 36 条(37 档记载回调-1 漏报)', () => {
     expect(KBENGINE_HOOKS.length).toBe(36);
+  });
+});
+
+// ============ 第三十五族: traps-index-surface(语义陷阱 kode 面对拍) ============
+interface TrapSurfaceEntry extends TruthEntryBase {
+  input: {
+    path: string; member?: string; owner?: string; members?: string[];
+    name?: string; face?: string;
+  };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      present?: boolean; claimsRaise?: boolean; summaryEn?: string; page?: string;
+      trackEntity?: boolean; turnToYaw?: boolean; negativeDoc?: boolean;
+      login?: boolean; createAccount?: boolean;
+      hasTrueContract?: boolean; has09999?: boolean; hasNoCallback?: boolean;
+      rosterServerOnly?: boolean; clientFaceAbsent?: boolean;
+    };
+  };
+}
+const trapSurfaceFamily = families.find(f => f.family === 'traps-index-surface')!;
+const trapSurfaceEntries = trapSurfaceFamily.entries as unknown as TrapSurfaceEntry[];
+const apiDocByMember = (member: string) => API_DOC_ENTRIES.filter(e => e.member === member);
+describe('truth-corpus: traps-index-surface 族执行闸(语义陷阱 kode 面对拍)', () => {
+  it('delTimer 失效 id 误导现状钉——apiDocs 实体面宣称 raises(引擎静默返回 -1)', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'neg-deltimer-stale-id-raise-claim')!;
+    expect(trap.kind).toBe('negative');
+    expect(trap.engine.load).toBe('reject-silent');
+    expect(trap.finding, trap.id).toContain('误导');
+    const entries = apiDocByMember('delTimer').filter(e => e.owner === 'entity');
+    expect(entries.length, 'entity delTimer 条目恰 1').toBe(1);
+    const doc = entries[0];
+    expect(doc.page).toBe(trap.kode.analysis!.page);
+    expect(doc.summaryEn, '误导现状钉:与钉值全文一致(修复后翻红,按翻案流程翻正)')
+      .toBe(trap.kode.analysis!.summaryEn);
+    expect(doc.summaryEn).toContain('already-removed id raises');
+    expect(doc.summaryEn).toContain('returns false → error');
+    expect(trap.kode.analysis!.claimsRaise).toBe(true);
+  });
+  it('引擎不存在方法缺席钉:apiDocs 无 trackEntity/turnToYaw/login/createAccount 条目', () => {
+    for (const member of ['trackEntity', 'turnToYaw', 'login', 'createAccount']) {
+      expect(apiDocByMember(member).length, `member=${member}`).toBe(0);
+    }
+    const pair = trapSurfaceEntries.find(e => e.id === 'neg-trackentity-turntoyaw-absent')!;
+    expect(pair.kode.analysis!.trackEntity).toBe(false);
+    expect(pair.kode.analysis!.turnToYaw).toBe(false);
+    const plug = trapSurfaceEntries.find(e => e.id === 'neg-client-login-createaccount-plugin-layer')!;
+    expect(plug.kode.analysis!.login).toBe(false);
+    expect(plug.kode.analysis!.createAccount).toBe(false);
+  });
+  it('findEntity 诚实负例文档钉:条目在场且 summary 明示 no registration point', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'neg-findentity-no-registration')!;
+    const entries = apiDocByMember('findEntity');
+    expect(entries.length).toBe(1);
+    expect(entries[0].summaryEn).toContain('no registration point');
+    expect(trap.kode.analysis!.negativeDoc).toBe(true);
+    expect(trap.kode.analysis!.present).toBe(false);
+  });
+  it('onReadyForLogin 返回契约钉:cellapp 条目 True/0.9999/无回调三要素齐', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'pos-onreadyforlogin-return-semantics')!;
+    expect(trap.kind).toBe('positive');
+    expect(trap.engine.load).toBe('accept');
+    const cell = apiDocByMember('onReadyForLogin').filter(e => e.page === 'api-cellapp');
+    expect(cell.length).toBe(1);
+    const s = cell[0].summaryEn;
+    expect(s).toContain('True → ready');
+    expect(s).toContain('>= 0.9999');
+    expect(s).toContain('no callback');
+    expect(trap.kode.analysis!.hasTrueContract, '钉值与 live 一致').toBe(s.includes('True → ready'));
+    expect(trap.kode.analysis!.has09999, '钉值与 live 一致').toBe(s.includes('>= 0.9999'));
+    expect(trap.kode.analysis!.hasNoCallback, '钉值与 live 一致').toBe(s.includes('no callback'));
+  });
+  it('onDestroy 客户端面缺席钉:名册条目仅服务端锚,无 client_lib 面(对账族34)', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'neg-ondestroy-client-face')!;
+    const hook = getHookByName('onDestroy');
+    expect(hook, 'onDestroy 名册在场(服务端)').toBeDefined();
+    expect(hook!.sourceLocation).not.toContain('client_lib');
+    expect(trap.kode.analysis!.clientFaceAbsent).toBe(true);
+    // 跨族对账:第三十四族 hook-sequencing-presence 已钉 onDestroy sourceLocation,两族同源一致。
+    const f34 = hookPresenceRoster.find(e => e.input.name === 'onDestroy')!;
+    expect(f34.kode.analysis!.present).toBe(true);
+    expect(f34.kode.analysis!.sourceLocation).toBe(hook!.sourceLocation);
   });
 });
