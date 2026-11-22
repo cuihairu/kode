@@ -225,3 +225,85 @@ describe('HotReloadTargetStateStore(双维隔离台账)', () => {
     expect(fired).toBe(3);
   });
 });
+
+describe('HR-STATE-007 发送耗时(HR-STATE-007 可检索历史「duration」)', () => {
+  const key = { rootId: 'r', targetId: 't' };
+  const file = '/x.py';
+
+  it('新发送带 durationMs 落账;回执写回同模式覆写,未提供保留旧值', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const first = store.record(key, file, 'sent-unverified', { durationMs: 12 });
+    expect(first?.durationMs).toBe(12);
+    // 回执写回:提供了才覆写(真实耗时来源),旧值不被抹掉
+    store.record(key, file, 'applied', { attempt: first?.attempt, durationMs: 45 });
+    expect(store.get(key, file)?.durationMs).toBe(45);
+    store.record(key, file, 'applied', { attempt: first?.attempt });
+    expect(store.get(key, file)?.durationMs).toBe(45);
+  });
+
+  it('未提供 durationMs 如实缺省(发送前基准冻结路径不冒充 0)', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const record = store.record(key, file, 'sent-unverified', { sentDigest: 'a'.repeat(64) });
+    expect(record?.durationMs).toBeUndefined();
+    expect('durationMs' in (record ?? {})).toBe(false);
+  });
+});
+
+describe('HR-MOD-014(双名同存:投递记录与版本事件日志)', () => {
+  const key = { rootId: 'r', targetId: 't' };
+  const file = '/ws/assets/scripts/entities/fight/FightAI.py';
+  const NAMES = { fullModule: 'entities.fight.FightAI', requestModule: 'fight.FightAI' };
+
+  const deliveryEvents = (store: HotReloadTargetStateStore): Record<string, unknown>[] =>
+    store.fileVersions().flatMap(state => state.events.filter(e => e.kind === 'delivery'));
+
+  it('显式给定双名:记录与版本事件日志都存全名/请求名', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const record = store.record(key, file, 'sent-unverified', {
+      fullModule: NAMES.fullModule,
+      requestModule: NAMES.requestModule
+    });
+    expect(record?.fullModule).toBe(NAMES.fullModule);
+    expect(record?.requestModule).toBe(NAMES.requestModule);
+    const events = deliveryEvents(store);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ fullModule: NAMES.fullModule, requestModule: NAMES.requestModule });
+  });
+
+  it('注入解析口未显式给:自动按 file 盖双名(台账与事件同源)', () => {
+    const store = new HotReloadTargetStateStore({
+      now: () => 1000,
+      resolveModuleNames: f => (f === file ? NAMES : undefined)
+    });
+    store.record(key, file, 'sent-unverified');
+    expect(store.get(key, file)).toMatchObject(NAMES);
+    expect(deliveryEvents(store)[0]).toMatchObject(NAMES);
+  });
+
+  it('解析口不可解/未注入:如实不写双名,不回落 stem 冒充', () => {
+    const unresolved = new HotReloadTargetStateStore({
+      now: () => 1000,
+      resolveModuleNames: () => undefined
+    });
+    unresolved.record(key, file, 'sent-unverified');
+    expect(unresolved.get(key, file)?.fullModule).toBeUndefined();
+    expect(unresolved.get(key, file)?.requestModule).toBeUndefined();
+
+    const noResolver = new HotReloadTargetStateStore({ now: () => 1000 });
+    noResolver.record(key, file, 'sent-unverified');
+    expect(noResolver.get(key, file)?.fullModule).toBeUndefined();
+    expect(deliveryEvents(noResolver)[0]).not.toHaveProperty('fullModule');
+  });
+
+  it('回执写回保留首次发送的双名(不动);显式再给则覆写', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const first = store.record(key, file, 'sent-unverified', NAMES);
+    const applied = store.record(key, file, 'applied', { attempt: first?.attempt });
+    expect(applied?.fullModule).toBe(NAMES.fullModule);
+    expect(applied?.requestModule).toBe(NAMES.requestModule);
+    const events = deliveryEvents(store);
+    // 发送+回执各一条,双名都在
+    expect(events).toHaveLength(2);
+    expect(events.every(e => e.fullModule === NAMES.fullModule && e.requestModule === NAMES.requestModule)).toBe(true);
+  });
+});

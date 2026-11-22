@@ -1,0 +1,206 @@
+{
+  "family": "usage-stats-callback-classification",
+  "grounding": {
+    "doc": "docs/knowledge/api-usage-stats.md",
+    "engineHead": "55a6655"
+  },
+  "entries": [
+    {
+      "id": "pos-movement-onmove",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onMove", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §Callbacks 把 onMove 列为 project-defined(项目代码调用,非引擎回调);fork 仲裁推翻——cellapp Entity::onMove(:2939 签名 / :2946 bufferOrExeCallback)由引擎移动控制器驱动派发脚本 onMove,是引擎回调,非项目代码调用。kode 名册 category=movement,与 fork 一致"
+      },
+      "evidence": [
+        "- **project-defined**: `onMove`/`onMoveFailure`/`onMoveOver` 6 each,"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "movement",
+          "signature": "def onMove(self, controllerID, userArg=None):",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2946"
+        }
+      }
+    },
+    {
+      "id": "pos-movement-onmoveover",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onMoveOver", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "同 onMove:档列为 project-defined,fork 仲裁推翻——cellapp Entity::onMoveOver(:2951 签名 / :2964 bufferOrExeCallback)派发脚本 onMoveOver,引擎移动控制器回调"
+      },
+      "evidence": [
+        "- **project-defined**: `onMove`/`onMoveFailure`/`onMoveOver` 6 each,"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "movement",
+          "signature": "def onMoveOver(self, controllerID, userArg=None):",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2964"
+        }
+      }
+    },
+    {
+      "id": "pos-movement-onmovefailure",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onMoveFailure", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "同 onMove:档列为 project-defined,fork 仲裁推翻——cellapp Entity::onMoveFailure(:2969 签名 / :2982 bufferOrExeCallback)派发脚本 onMoveFailure,引擎移动控制器回调"
+      },
+      "evidence": [
+        "- **project-defined**: `onMove`/`onMoveFailure`/`onMoveOver` 6 each,"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "movement",
+          "signature": "def onMoveFailure(self, controllerID, userArg=None):",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2982"
+        }
+      }
+    },
+    {
+      "id": "neg-ontick-not-engine",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "onTick", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "档 §Callbacks 把 onTick 列为 entry script SPI(引擎入口脚本回调);fork 仲裁推翻——kbe/src 全树零处 \"onTick\" 脚本派发;树内 onTick(kbemain.py:25 等)是脚本自身 addTimer 的定时器处理器约定,非引擎回调。kode 名册无 onTick,与 fork 一致"
+      },
+      "evidence": [
+        "- **entry script SPI**: `onInit` 6, `onTick` 6, `onReadyForShutDown` 4,"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "pos-onlosecell-baseapp-gap",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onLoseCell", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §Callbacks 列 onLoseCell 为 engine-known(entity lifecycle);fork 证实 baseapp Entity::onLoseCell(:1052 签名 / :1065 CALL_COMPONENTS_AND_ENTITY_METHOD ... \"onLoseCell\")派发脚本 onLoseCell,是基座侧实体回调"
+      },
+      "evidence": [
+        "- **entity lifecycle**: `onDestroy` 4, `onGetCell` 4, `onLoseCell` 4,"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": false,
+          "note": "KBENGINE_HOOKS 36 条名册无 onLoseCell;hookSequencing.ts:110 另补录 onLoseCell 为时序锚——kode 内部已认知该回调,但主钩子表未收编"
+        }
+      },
+      "finding": "漏报:引擎 baseapp 实调脚本 onLoseCell(baseapp/entity.cpp:1065),kode KBENGINE_HOOKS 名册缺该条目"
+    },
+    {
+      "id": "pos-onenterworld-clientlib-gap",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onEnterWorld", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §Callbacks 列 onEnterWorld 为 engine-known(entity lifecycle);fork 证实脚本 onEnterWorld 唯一派发在 client_lib Entity::onEnterWorld(:561 签名 / :566 CALL_ENTITY_AND_COMPONENTS_METHOD ... \"onEnterWorld\"),是客户端(含 bots)实体回调;cellapp 无任何 onEnterWorld 脚本派发(SpaceMemory::onEnterWorld(:435)是 witness 广播的 C++ 内部函数,非脚本回调)"
+      },
+      "evidence": [
+        "  `onEnterSpace` 4, `onLeaveSpace` 4, `onEnterWorld` 2"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": false,
+          "note": "KBENGINE_HOOKS 36 条名册无 onEnterWorld;client 类目 5 条(onClientEnabled/onLogOnAttempt/onClientDeath/onClientGetCell/onStreamComplete)全为基座代理侧回调,无 client_lib 实体回调"
+        }
+      },
+      "finding": "漏报:引擎 client_lib 客户端实体实调脚本 onEnterWorld(client_lib/entity.cpp:566),kode KBENGINE_HOOKS 名册缺该条目(客户端实体回调未收编)"
+    },
+    {
+      "id": "div-onenterworld-wizard-cellpart",
+      "kind": "negative",
+      "input": { "path": "entity-wizard-cell-template", "name": "onEnterWorld", "roster": false },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 中 cellapp 无任何 onEnterWorld 脚本派发(全树唯一派发在 client_lib/entity.cpp:566);cell 侧\"进入世界\"的脚本回调是 onEnterSpace(cellapp/entity.cpp:3823),非 onEnterWorld。kode 实体向导 buildEntityPartPythonContent 在 cell 段生成 def onEnterWorld(entityWizard.ts:252)并注\"进入世界时调用(仅 Cell 段实体)\"(:255)——误导用户实现一个 cell 引擎永不调用的回调"
+      },
+      "evidence": [
+        "  `onEnterSpace` 4, `onLeaveSpace` 4, `onEnterWorld` 2"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "face": "entity-wizard-cell-template",
+          "behavior": "buildEntityPartPythonContent(cell) 生成 def onEnterWorld + def onLeaveWorld(entityWizard.ts:252/259)"
+        }
+      },
+      "finding": "误导:kode 实体向导在 cell 段生成 onEnterWorld/onLeaveWorld(entityWizard.ts:252/259,注\"仅 Cell 段实体\"),但 fork 中这两个回调仅 client_lib 客户端实体调用,cell 引擎从不相调;cell 侧对应回调是 onEnterSpace/onLeaveSpace"
+    },
+    {
+      "id": "neg-onhpchanged-project",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "onHPChanged", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "档 §Callbacks 列 onHPChanged 为 project-defined(游戏逻辑处理器);fork 证实 kbe/src 全树零处 \"onHPChanged\" 脚本派发,确认非引擎回调"
+      },
+      "evidence": [
+        "  `onHPChanged`, `onLevelUp`, `onLoginOK` 4 each, and 16 more at 2 each —"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "neg-onlevelup-project",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "onLevelUp", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "同 onHPChanged:档列 project-defined,fork 零处 \"onLevelUp\" 脚本派发,确认非引擎回调"
+      },
+      "evidence": [
+        "  `onHPChanged`, `onLevelUp`, `onLoginOK` 4 each, and 16 more at 2 each —"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "neg-onloginok-project",
+      "kind": "negative",
+      "input": { "path": "hooks-roster", "name": "onLoginOK", "roster": false },
+      "engine": {
+        "load": "reject",
+        "truth": "同 onHPChanged:档列 project-defined,fork 零处 \"onLoginOK\" 脚本派发,确认非引擎回调"
+      },
+      "evidence": [
+        "  `onHPChanged`, `onLevelUp`, `onLoginOK` 4 each, and 16 more at 2 each —"
+      ],
+      "kode": { "status": "pinned", "analysis": { "resolved": false } }
+    },
+    {
+      "id": "pos-onenterspace-control",
+      "kind": "positive",
+      "input": { "path": "hooks-roster", "name": "onEnterSpace", "roster": false },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §Callbacks 列 onEnterSpace 为 engine-known(entity lifecycle);fork 证实 cellapp Entity::onEnterSpace(:3819 签名 / :3823 bufferOrExeCallback)派发脚本 onEnterSpace,kode 名册正确收编(space 类目)——正例对照:档的 engine-known 分组在这条成立,与 onLoseCell/onEnterWorld 的两条漏报对照"
+      },
+      "evidence": [
+        "  `onEnterSpace` 4, `onLeaveSpace` 4, `onEnterWorld` 2"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "resolved": true,
+          "category": "space",
+          "signature": "def onEnterSpace(self):",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3823"
+        }
+      }
+    }
+  ]
+}

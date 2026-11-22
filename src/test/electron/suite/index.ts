@@ -55,6 +55,8 @@ export function run(): Promise<void> {
                 ? file === 'liveObservation.test.js' || file === 'consoleLive.test.js'
                 : suite === 'dbglive'
                   ? file === 'debugpyInjectLive.test.js'
+                  : suite === 'exec008'
+                    ? file === 'exec008Live.test.js'
                   : suite === 'pylance'
                     ? file === 'pylanceStubPriority.test.js'
                   : suite === 'pylancewire'

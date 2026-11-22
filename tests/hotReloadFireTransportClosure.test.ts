@@ -97,6 +97,8 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     hotReload: Record<string, unknown> | undefined;
     transportDeps: Parameters<typeof resolveReloadTransport>[1];
     readFileContent?: (file: string) => Promise<string | null>;
+    isWorkspaceTrusted?: () => boolean;
+    actionName?: string;
   }): Promise<{ store: HotReloadTargetStateStore; runCalls: string[]; targetId: string }> => {
     const clock = makeTimers();
     const store = new HotReloadTargetStateStore({ now: () => 7 });
@@ -111,7 +113,7 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     } as never);
     await setActiveProfile(memento, profile.id);
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: options.actionName ?? '热更', debounceMs: 100 }
     });
     // 生产装配的解出口(extension.ts resolveHotReloadChannelTransport 同构,
     // 源锁测试钉住真装配):profile 读回 → resolveReloadTransport 校验/建
@@ -127,6 +129,13 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     setupHotReload(makeContext(), name => void runCalls.push(name), {
       timers: clock.timers,
       resolveChannelTransport,
+      defaultHotfix: {
+        transport: async request => {
+          runCalls.push(request.url);
+          return { ok: true, status: 200, body: '', durationMs: 0 };
+        }
+      },
+      ...(options.isWorkspaceTrusted ? { isWorkspaceTrusted: options.isWorkspaceTrusted } : {}),
       targetState: {
         store,
         resolveTargetId: () => 't1',
@@ -140,10 +149,11 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     return { store, runCalls, targetId: profile.id };
   };
 
-  it('HTTP 通道真发:profile 持久化读回→通道解出→占位替换进请求→applied 双证核验落台账', async () => {
+  it.each(['', '热更'])('HTTP 通道优先于 actionName=%j，并核验回执', async actionName => {
     const requests: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
     const content = 'print("hello engine")';
     const { store, runCalls, targetId } = await fireViaActiveProfile({
+      actionName,
       hotReload: {
         channel: 'http',
         http: {
@@ -157,6 +167,8 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
         }
       },
       transportDeps: {
+        // RUST-420:测试 URL 是 10.0.0.8(非 loopback 假主机),显式授权放行
+        allowNonLoopback: () => true,
         http: {
           run: async request => {
             requests.push({ ...request });
@@ -248,10 +260,48 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     expect(record?.channel).toBe('actionName:热更');
   });
 
+  it('HR-HTTP-005:工作区未信任时自动发送一律阻止(不发请求、不回落动作、落阻止日志)', async () => {
+    const requests: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
+    const { runCalls } = await fireViaActiveProfile({
+      hotReload: {
+        channel: 'http',
+        http: {
+          name: 'engine-reload',
+          url: 'http://10.0.0.8:32000/reload',
+          method: 'POST',
+          headers: {},
+          body: '{"files":${files}}',
+          enabled: true,
+          keybinding: ''
+        }
+      },
+      transportDeps: {
+        // RUST-420:非 loopback 已授权(否则本例会被端点策略闸拦,而非信任闸)
+        allowNonLoopback: () => true,
+        http: {
+          run: async request => {
+            requests.push({ ...request });
+            return { status: 200, body: '{}' };
+          }
+        }
+      },
+      readFileContent: async () => 'print("x")',
+      isWorkspaceTrusted: () => false
+    });
+    // 未信任:一次发送都不发生,也不回落 actionName,状态栏不进入发送假象
+    expect(requests).toHaveLength(0);
+    expect(runCalls).toEqual([]);
+    expect(channels.some(channel => channel.lines.some(line => line.includes('工作区未信任')))).toBe(true);
+  });
+
   it('源锁:装配层真装配经 resolveActiveProfile+resolveReloadTransport 解出通道,fire 与重试共用', () => {
     // SRC-001 L6:装配位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
     const source = readFileSync('src/extension.ts', 'utf8') + readFileSync('src/activate/hotReload.ts', 'utf8');
-    expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload);');
+    // RUST-357(HR-HTTP-015):解出口带健康观察口(发送断连/重连自动更新通道灯)
+    expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload, {');
+    expect(source).toContain('healthObserver,');
+    // RUST-420(HR-QA-008):解出口透传非 loopback 端点授权(执行时读,与快捷请求同设置)
+    expect(source).toContain('allowNonLoopback: readHttpAllowNonLoopback');
     // 用户令 2026-11-10:无 profile/无 hotReload 段不再回落 actionName,走默认
     // http 通道(createDefaultHotReloadChannel 内置模板,targetId='default')
     expect(source).toContain('createDefaultHotReloadChannel()');

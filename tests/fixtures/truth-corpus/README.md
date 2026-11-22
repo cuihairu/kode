@@ -236,7 +236,7 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 
 ## entity-lifecycle-hook-roster 族(2026-11-20 第二十七族)
 
-依据:docs/knowledge/entity-lifecycle-reference.md(fork HEAD **3082ab5**,档内自证「Line numbers below … verified at `kbengine@3082ab5`」;Cell state table 逐行钉脚本回调列+Timers 节 onTimer 缓冲回调+RestoreEntityHandler 回放 onRestore+「引擎无 isOnCell/isOnDB/isPersisted 谓词」与基座属性面七项清单)。11 例,执行门=**KBEngine_HOOKS/getHookByName 直钉**(36 条名册的解析面=存在性/分类/签名/引擎调用点四标量;探针实测后写值,drift 即红)。臂形:正例 5(onDestroy/onTimer/onRestore/onGetCell/onCreateCellFailure 逐标量钉,含签名默认值形态 `userArg=None` 与双调用点 sourceLocation)+名册臂 1(lifecycle 分类名单逐项=三条,改名/改分类/新收录即红)+负例 4(isOnCell/isOnDB/isPersisted=引擎明示无谓词族,onRestoreCell=档内 restoring 态只派生 onRestore、restoreCell 系引擎内部 C++ 入口不派生脚本回调)+unknown 1(onRestore 引擎实参集合档内未取证——签名已解析但按未核钉,下一步读 restore_entity_handler.cpp:173/266 调用点格式串)。**分工注记**:`onLoseCell` 不进本族——它已被 HOOK-TIMING-001 以「corroborated-but-unregistered」形态登记在 hooks.ts 收录缺口 + hook-sequencing.ts 补录面,本族不重复登记同一缺口;谓词族三例补的是「KSEM-CELL-11 判据只有 entity.cell」的**名册面**护栏(kode 从不把这些假谓词当引擎回调提示)。本族为 QA-001 语料扩族第 27 例:钩子名册解析面首入语料护栏(此前 roster 族皆钉 SPI/内建属性/时序面,签名+调用点双面钉首次)。
+依据:docs/knowledge/entity-lifecycle-reference.md(fork HEAD **3082ab5**,档内自证「Line numbers below … verified at `kbengine@3082ab5`」;Cell state table 逐行钉脚本回调列+Timers 节 onTimer 缓冲回调+RestoreEntityHandler 回放 onRestore+「引擎无 isOnCell/isOnDB/isPersisted 谓词」与基座属性面七项清单)。11 例,执行门=**KBEngine_HOOKS/getHookByName 直钉**(36 条名册的解析面=存在性/分类/签名/引擎调用点四标量;探针实测后写值,drift 即红)。臂形:正例 5(onDestroy/onTimer/onRestore/onGetCell/onCreateCellFailure 逐标量钉,含签名默认值形态 `userArg=None` 与双调用点 sourceLocation)+名册臂 1(lifecycle 分类名单逐项=三条,改名/改分类/新收录即红)+负例 4(isOnCell/isOnDB/isPersisted=引擎明示无谓词族,onRestoreCell=档内 restoring 态只派生 onRestore、restoreCell 系引擎内部 C++ 入口不派生脚本回调)+实参臂 1(原 unknown 1 于 2026-11-22 取证收口:onRestore 实参集合=**零参**——handler :173/:266 经 Entity::onRestore :1077 走 SCRIPT_OBJECT_CALL_ARGS0→`PyObject_CallMethod(obj, "onRestore", "")` 格式串空串(py_macros.h:657-668),组件面 hasBase 筛选同一零参调用,缺 onRestore 脚本 HasAttrString 静默跳过;kode 名册签名 `def onRestore(self):` 与引擎对齐,unknown 翻 pinned)。**分工注记**:`onLoseCell` 不进本族——它已被 HOOK-TIMING-001 以「corroborated-but-unregistered」形态登记在 hooks.ts 收录缺口 + hook-sequencing.ts 补录面,本族不重复登记同一缺口;谓词族三例补的是「KSEM-CELL-11 判据只有 entity.cell」的**名册面**护栏(kode 从不把这些假谓词当引擎回调提示)。本族为 QA-001 语料扩族第 27 例:钩子名册解析面首入语料护栏(此前 roster 族皆钉 SPI/内建属性/时序面,签名+调用点双面钉首次)。
 
 ## baseapp-module-face 族(2026-11-20 第二十八族)
 
@@ -245,3 +245,446 @@ KBENGINE_ENTRY_HOOKS roster+签名双钉,范围漂移即红。
 ## loginapp-dbmgr-logger-face 族(2026-11-21 第二十九族)
 
 依据:docs/knowledge/api-loginapp-dbmgr-logger.md(**KB-API-006**,fork HEAD **6d12b8f**,grounding base c2a3b8f,档内 2026-11-04 自证;§1 装配表=python_app.cpp:230-349 共享层九函数+LOG_TYPE_*/NEXT_ONLY+addTimer/delTimer+描述符四件+MemoryStream(:271)+script.cpp:248/258/286 component/genUUID64/urlopen;§2-§4 三面 24 名录;偏差表 D1 ffO 回调必需/D2 SERVER_ERR_* loginapp·dbmgr 有 logger 无/D4 delTimer TypeError/D6 onLogWrote 返回语义/D8 urlopen 三面同形)。9 例,执行门=**processApiSymbols 三面直钉 + ENGINE_SPI_METHODS 名册面**(loginapp 67/dbmgr 68/logger 28 符号表存在性+kind+签名三标量;探针实测后写值,drift 即红)。臂形:正例 5(§1 共享面 24 名三面逐名钉 kind+urlopen 回调五参元组入签名/D2 SERVER_ERR 38 表名 loginapp+dbmgr 逐值钉=SERVER_SUCCESS 0..SERVER_ERR_ACCOUNT_LOGIN_ANOTHER_SERVER 37,fork server_errors.h:57+ 表序实读核值,直接收割第二十八族 unknown 的「下一步」/dbmgr executeRawDatabaseCommand 独占钉+签名默认接口 'default'/loginapp SPI 六回调 required:true/components 含 loginapp/dbmgr+logger SPI 名册钉+onReadyForShutDown components 精确=['baseapp','dbmgr','logger'] required:false+onLogWrote required:false/D1 三面 addTimer/delTimer 精确签名钉——kode 签名无 callbackObj 默认值,与 fork ffO 必需口径一致)+**分歧登记 2(皆误导方向)**:①SERVER_ERR_MAX=引擎从不登记的模块面名字(登记循环 for i<SERVER_ERR_MAX 只走 SERVER_ERR_STR[0..37],MAX 系 #define 循环界非表项,fork 实读)而 kode loginapp/dbmgr 带 `SERVER_ERR_MAX: int = 38` 行②Vector2/3/4+FixedArray=引擎 KBEngine 面皆无(Vector 三名由 script.cpp:291 math::installModule(\"Math\") 装进顶层 Math 模块,FixedArray 全树仅 GC/pickle 内部引用)而 kode 三面各带四条 class 行;两向只钉现状,收窄(typings 双侧+Rust 同嵌)归独立批+负例 1(D2 logger 面:SERVER_*/SERVER_SUCCESS 全缺席,kode logger 表同步缺席=对齐钉,loginapp 表全集反查 logger 零命中)。**判例=fork 树在场则档内张力须源码仲裁**:§1 正文称「SERVER_ERR_* registered only by EntityApp::installPyModules」与偏差表 D2「loginapp/dbmgr 各自有登记循环」互斥——fork 实读 loginapp.cpp:195-206/dbmgr.cpp:343-352 两循环在场、logger 零命中,D2 胜,语料按 D2 钉;Vector/FixedArray 跨族观察=kode 七面(base/cell/client/bots/interfaces/loginapp/dbmgr/logger 之全部探及面)同形,本族只钉三工具面,其余五面归各族各自核。门禁=定向/prove-red/tsc/lint/mocha/全量对基线(数字以提交时实测为准);语料 29 族 249 条。余族=Math 模块面(档 §1 未覆盖,kode 亦无此面,双双缺席非分歧)+entry scripts 缺席致回调运行期不可实测(档 §1 末自证,留部署侧)。
+
+## cellapp-module-face 族(2026-11-22 第三十族)
+
+依据:docs/knowledge/api-cellapp.md(**KB-API-004**,fork HEAD **6d12b8f**,grounding
+base c2a3b8f;档 §1 五层装配表=cellapp.cpp:172-189 cell-specific 18 方法+
+entity_app.h:423-453 共享 11 方法+python_app.cpp/pyscript 解释器层;§2 33 函数
+含 spaceData 契约与 createSpace 缺席行;§3 九回调;§4 属性表)。10 例,执行门=
+**processApiSymbols('cell') 直钉 + ENGINE_SPI_METHODS 名册面**(94 符号表的
+存在性+kind+签名三标量;探针实测后写值,drift 即红)。臂形:正例 6(site1
+十八名逐名 function/共享十五 function+属性常量十 variable/SPI 九回调
+components+required 旗/spaceData 三签名逐字钉 Iss·Is 同向/raycast 双 overload
+对齐/address 单符号)+**分歧登记 2**:①误导方向=MemoryStream(引擎 cell
+EntityApp 链无注册——Cellapp::installPyModules 调 EntityApp::installPyModules
+返回,EntityApp 直承 ServerApp 非基 PythonApp,MemoryStream 仅
+PythonApp::installPyModules 注册 python_app.cpp:271;档 §1 行头
+「Interpreter-layer (all apps)」与实际链不符=档内张力,fork 仲裁)而 kode
+cell 表含 class 行②漏报方向=APP_FLAGS_*(fork cellapp.cpp:165-171
+createAppFlagsMaps 循环注册,同 baseapp.cpp:419-424 形状)而 kode cell 表缺席
++负例 1(createSpace 两侧皆缺席=对齐;空间创建走 baseapp→cellappmgr
+cellapp.cpp:875)+unknown 1(createEntity 运行期 TypeError 三条件无编辑期面,
+待读 fork cellapp.cpp:471-533)。
+
+**判例=跨族对账翻案须 fork 仲裁且两族同刻翻正**:process-module-surface 族
+(第十二族)曾按 api-core-concepts §1.7「cellapp has no `address`」把 cell
+address 登记为 divergence(官方 3.7 材料口径);fork 实读 cellapp.cpp:187
+`__py_address` 登记在场(Cellapp::installPyModules cell-specific 块,实现
+:1870)——官方材料口径不适用于 fork,翻案=address 在 cellapp 模块面,第十二
+族 proc-cell-address-absent-divergence 条目与 proc-cell-shared-utility-present
+清单同刻翻正(kind→positive/load→accept/present 清单补 address),翻案注记
+随本族落地。执行闸 address 翻案臂同时咬两族(本族正钉+第十二族翻正态),
+回翻即红。**raycast 双 overload 判例**:档 §2 行文只写四参形
+`raycast(spaceID, layer, src, dst)`,fork `__py_raycast`(cellapp.cpp:2215 起)
+按 currargsSize==3("IOO")与 ==4("IiOO")双形态解析——kode 两 overload 与
+fork 同向非超集,语料按双形态钉(档行文缺 3 参形,fork 补全)。
+
+门禁=定向 93/93(84+9 新增 it)/prove-red 九咬(八臂 perturb family-30+一臂
+回翻 family-12,各红一次,sha256 765d60e4/54a1e9d7 字节还原复绿)/tsc -p ./ 0/
+tsc -p tsconfig.mocha.json 0/eslint tests/truthCorpus.test.ts 2 error 系第九族与
+第十一族旧债(:94 flagsGroundingText/:133 cellDataGroundingText 未用变量,本族
+零新增;CI lint 仅覆盖 src/)。本批零 src/ 零 Rust 改动(仅语料+执行门+README+
+todo);语料 30 族 264 条(29→30 族,+10;基线 254=第三十增量 249+peer 检查面批 f4654be0 +2/cb5e1510 +3)。
+
+## bots-module-face 族(2026-11-22 第三十一族)
+
+依据:docs/knowledge/api-bots.md(**KB-API-007**,fork HEAD **6d12b8f**,grounding
+base c2a3b8f;档 §1 六位装配表=§2.1 八函数+§2.2 十一 fork-only 共 19 模块函数
++§3 回调/属性表+§4 PyBots/ClientObject+§5 Entity+§6 偏差表)。10 例,执行门=
+**processApiSymbols('bots') 直钉 + ENGINE_SPI_METHODS 名册面**(36 符号表
+存在性+kind+签名三标量;探针实测后写值,drift 即红)。臂形:正例 5(19 模块
+函数+7 属性常量+Entity/EntityComponent 类型三族名册/SPI 二回调
+components+required 旗/addBots 签名逐字钉)+**分歧登记 3**:①误导方向=
+addBots arity-2(fork __py_addBots bots.cpp:344-390 PyTuple_Size 只收 1 或 3,
+arity 2 抛 TypeError,而 kode 签名 (total, tickCount=0, tickTime=0.0) 双默认
+收 2)②漏报方向=entities 属性(fork clientapp.cpp:266
+registerPyObjectToScript("entities", pEntities_) 而 kode bots 表缺席,仅
+ClientObject 成员有)③误导方向=共享 class 七行(EntityCall/
+EntityComponentCall 仅前向声明 entity.h:22/clientobjectbase.h:26-27,
+MemoryStream 仅 PythonApp python_app.cpp:271,bots 不经 PythonApp,Vector2/3/4
+装顶层 Math script.cpp:291,FixedArray 全树 GC/pickle 内部引用——七名皆非
+bots 模块面注册;同 family-29 判例归各族核)+unknown 2(Entities 模板类型
+实例 type 名暴露未取证/onTargetChanged wired-but-dead)。
+
+**判例=wired-but-dead 不冒充可驱**:档 §6 称 onTargetChanged 为「real
+entry-script callback」,fork 接线已证(ClientApp::onTargetChanged
+clientapp.cpp:455-470 调 getEntryScript().onTargetChanged(targetID_),Bots
+继承 ClientApp bots.h:40)但唯一触发 ClientObjectBase::setTargetID
+(clientobjectbase.h:388-391)在 kbe/src 全树零调用——回调虽接线但运行期从不
+被驱动(dormant);kode ENGINE_SPI_METHODS 无 bots onTargetChanged(family-19
+钉 bots=2 同向,engineSpiCodeLens.ts 头注注释明示剔除),按未核钉不冒充修复。
+**判例=跨族对账解封 family-12**:process-module-surface 族(第十二族)
+proc-bots-subset-absent 的六项缺席(address/executeRawDatabaseCommand/
+addWatcher/time/reloadScript/registerReadFileDescriptor)由本族全枚举解封
+——逐项确认皆非引擎 bots 注册函数(bots.cpp:174-182+clientapp.cpp:191-215/
+233-268 注册表实读),对账注记随本族落彼族 reason,彼族 unknown 历史口径保留
+不冒充改写。
+
+门禁=定向 101/101(93+8 新增 it)/prove-red 八咬(八臂 perturb family-31,各红
+一次,sha256 e3199d95 字节还原复绿)/tsc -p ./ 0/tsc -p tsconfig.mocha.json 0/
+eslint tests/truthCorpus.test.ts 2 error 系第九族与第十一族旧债(:94
+flagsGroundingText/:133 cellDataGroundingText 未用变量,本族零新增;CI lint 仅
+覆盖 src/)/全量 12350 passed|4 skip|1 failed(remoteConnection.test.ts 端口断言
+5678 vs 实得 ephemeral 41655/41615——victim 文件不在本批改动集、本批零 src,
+基线红非本批引入,判例=受害者文件归属)。本批零 src/ 零 Rust 改动(仅语料+
+执行门+README+todo);语料 31 族 274 条(30→31 族,+10;基线 264=第三十一增量
+254+10)。
+
+## interfaces-module-face 族(2026-11-22 第三十二族)
+
+依据:docs/knowledge/api-interfaces.md(**KB-API-005**,fork HEAD **6d12b8f**,
+grounding base c2a3b8f;档 §1 四层装配表=interfaces.cpp:176-190 四方法+38
+错误码循环+python_app.cpp:271-296/:329-334 共享层+解释器层 pyurl.cpp:23/
+script.cpp:248/:258/pywatcher.cpp:184-185+absent 清单;§2 7 函数;§3 五回调;
+§4 错误码面;§6 偏差表)。11 例,执行门=**processApiSymbols('interfaces') 直钉
++ ENGINE_SPI_METHODS 名册面**(73 符号表存在性+kind+签名三标量;探针实测后
+写值,drift 即红)。臂形:正例 7(20 模块函数名册=4 专属+共享+解释器/38 错误码
+名册 SERVER_SUCCESS..SERVER_ERR_VERSION_NOT_MATCH 逐名 variable/component
+Literal['interfaces'] 值/addTimer 三参零默认与 fork ffO 必需口径一致/urlopen
+四形态+回调 headers str+3 参 Union[bytes,Dict] 站 fork 侧/MemoryStream
+PythonApp 链在场/SPI 五回调 components 含 interfaces+required 全 true)+
+**分歧登记 3**:①误导方向=SERVER_ERR_MAX(引擎 interfaces.cpp:176-184 循环界
+只装 SERVER_ERR_STR[0..37],MAX 非表项;同 family-29 判例归各族核)②误导方向=
+executeRawDatabaseCommand 结果单元格(fork PyBytes_FromStringAndSize
+interfaces.cpp:391 成 bytes 而 kode DatabaseCommandResult TypeAlias 声明
+list[list[str]] str;另 DatabaseCommandCallback/Result 系 kode 自造 TypeAlias
+名 kbe/src 零命中)③误导方向=chargeResponse errorCode 越界码(fork
+__py_chargeResponse 守卫 errCode<SERVER_ERR_MAX 才转发,>=38 静默丢弃
+interfaces.cpp:851-855 而 kode 签名 errorCode:int 无界)+负例 1(addWatcher/
+delWatcher 缺席对齐,见下判例)。
+
+**判例=档 §1 表口径被 fork 仲裁推翻(第二十九族判例延伸=档内张力须源码仲裁)**:
+档 §1 第三层称「Interpreter layer (all script-bearing apps) … addWatcher/
+delWatcher」(pywatcher.cpp:184-185),而 fork 实读 initializePyWatcher
+(pywatcher.cpp:181-188)全树唯一调用点 entity_app.h:414(EntityApp::
+installPyModules 内),interfaces 裸 PythonApp(interfaces.h:24)不经 EntityApp
+→interfaces 面无 addWatcher/delWatcher,文档「all script-bearing apps」口径
+不采,kode 同席缺席=负例对齐钉。**MemoryStream 反例对照判例**:interfaces 真走
+PythonApp::installPyModules(python_app.cpp:271)故 MemoryStream 在场,与
+baseapp/cellapp EntityApp 链缺席(续82 判例 2)相反——「模块面有无 X」按实际
+继承链,同名符号不同进程可异真值。
+
+门禁=定向 110/110(101+9 新增 it)/prove-red 九咬(九臂 perturb family-32,各红
+一次,sha256 6d620c3e 字节还原复绿)/tsc -p ./ 0/tsc -p tsconfig.mocha.json 0/
+eslint tests/truthCorpus.test.ts 2 error 系第九族与第十一族旧债(:94
+flagsGroundingText/:133 cellDataGroundingText 未用变量,本族零新增;CI lint 仅
+覆盖 src/)/全量 6 failed=remoteConnection 端口基线红延续(非本批引入)+5 超时类
+负载抖动(硬时间预算臂 processTopologyPerf KODE-PERF-006 solo 三连绿 5/5;
+victim 文件零本批改动、本批零 src/ 零 Rust,判例=受害者文件归属非连跑次数),CI 权威。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);语料 32 族 285 条(31→32
+族,+11;基线 274=第三十二增量 264+10)。
+
+## 第三十三族: usage-stats-callback-classification(回调分类探针)
+
+依据 `docs/knowledge/api-usage-stats.md`(KB-001 bucket ③ 调查档,scan 生成的使用
+频率统计,非引擎 API 参考档;engineHead 55a6655=fork 本机检出)。该档 §Callbacks
+按「engine-known vs project-defined」分类回调——正是 kode 的钩子识别面
+(KBENGINE_HOOKS/getHookByName)+实体向导 cell 段模板所探测的能力。11 例=正例 6
+(含漏报 2)+负例 5(含误导 1)。全族零 src/ 零 Rust 改动。
+
+**判例 1=档 project-defined 分类被 fork 仲裁推翻**(movement 组):档 §Callbacks 把
+`onMove`/`onMoveFailure`/`onMoveOver` 列为「project-defined … 非引擎回调」;
+fork 实读 cellapp `Entity::onMove`(:2939 签名/:2946 bufferOrExeCallback)、
+`onMoveOver`(:2951/:2964)、`onMoveFailure`(:2969/:2982)——均由引擎移动控制器
+驱动派发脚本回调,是引擎回调非项目代码调用。档的「命名约定陷阱」断言在这组
+方向错了:项目树里的 onMove 定义是回调实现,不是项目自调。kode 名册 category=
+movement 与 fork 一致=正例。
+
+**判例 2=档 onTick 归类被 fork 仲裁推翻**(entry script SPI 组):档把 `onTick` 列
+entry script SPI;fork 实读 kbe/src 全树**零处** `"onTick"` 脚本派发;树内
+`onTick`(kbemain.py:25 等)是脚本自身 addTimer 的定时器处理器约定,非引擎回调。
+kode 名册无 onTick=正确(负例)。
+
+**判例 3=onLoseCell 漏报**:fork 实读 baseapp `Entity::onLoseCell`(:1052 签名/
+:1065 CALL_COMPONENTS_AND_ENTITY_METHOD ... "onLoseCell")派发脚本回调(基座侧,
+cell 失去时经 BaseappInterface::onLoseCell 消息驱动);kode KBENGINE_HOOKS 36 条
+名册**缺该条目**(hookSequencing.ts:110 另补录 onLoseCell 为时序锚——kode 内部已
+认知该回调,主钩子表未收编)=漏报方向分歧。
+
+**判例 4=onEnterWorld 漏报+向导误导双面**:fork 实读脚本 `onEnterWorld` **唯一**
+派发在 client_lib `Entity::onEnterWorld`(:561 签名/:566 CALL_ENTITY_AND_
+COMPONENTS_METHOD ... "onEnterWorld"),是客户端(含 bots)实体回调;cellapp **无**
+任何 onEnterWorld 脚本派发(`SpaceMemory::onEnterWorld`:435 是 witness 广播的
+C++ 内部函数,非脚本回调)。kode KBENGINE_HOOKS 36 条名册缺 onEnterWorld(client
+类目 5 条全为基座代理侧回调,无 client_lib 实体回调)=漏报;且 kode 实体向导
+`buildEntityPartPythonContent` 在 **cell 段**生成 `def onEnterWorld`/`def
+onLeaveWorld`(entityWizard.ts:252/259,注「仅 Cell 段实体」)——误导用户实现一个
+cell 引擎永不调用的回调(cell 侧真回调是 `onEnterSpace`/`onLeaveSpace`
+cellapp/entity.cpp:3823/:3831)。
+
+**判例 5=对照锚**:`onEnterSpace` 正例对照(档 engine-known 成立,fork
+cellapp/entity.cpp:3819/:3823 派发,kode 正确收编 space 类目),与判例 3/4 两条漏报
+同档对照——档的 entity-lifecycle engine-known 组在 onEnterSpace/onDestroy/
+onGetCell 上成立、在 onLoseCell/onEnterWorld 上 kode 缺收编;`onHPChanged`/
+`onLevelUp`/`onLoginOK` 零派发确认 project-defined(档正确,kode 正确缺席)。
+
+门禁=定向 115/115(110+5 新增 it)/prove-red 五咬(perturb:①onMove category
+movement→space ②onTurn→onTick ③onTurn→onLoseCell ④entityWizard.ts:252 清空行
+⑤onEnterSpace category space→lifecycle;各红一次,sha256 0d8b3bd0 字节还原复绿)/
+tsc -p ./ 0/tsc -p tsconfig.mocha.json 0/eslint tests/truthCorpus.test.ts 2 error
+系第九族与第十一族旧债(:95 flagsGroundingText/:134 cellDataGroundingText 未用
+变量,本族零新增;CI lint 仅覆盖 src/)/全量 2 failed 超时类负载抖动(硬时间预算臂
+categoryI18n「bundle 无死键」+ hotfixSpellingGate「全仓零命中」,均 5000ms 超时;
+victim 文件零本批改动、本批零 src/ 零 Rust,判例=受害者文件归属非连跑次数,
+solo 三连绿 14/14),CI 权威。本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);
+语料 33 族 296 条(32→33 族,+11;基线 285=第三十三增量 264+21)。
+
+## MemoryStream 跨族对账翻案(2026-11-22 增量 35)
+
+对账目标:MemoryStream 模块面真值跨四族同步。fork HEAD **6d12b8f** 实读
+**四链皆把 MemoryStream 注册为模块级函数**(非脚本类型):
+baseapp/cellapp 经 `EntityApp::installEntityDef`(`entity_app.h:330-335`)→
+`EntityDef::installScript`(`entitydef.cpp:2448-2467`)以
+`APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new,
+METH_VARARGS, 0)` 注册(`entitydef.cpp:2455`);bots 经 `ClientApp::
+installEntityDef`(`clientapp.cpp:179-184`→`:181`);interfaces 经裸
+`PythonApp::installPyModules`(`python_app.cpp:271`,同宏)。`PyMemoryStream`
+类型本身仅 type-only(`entitydef.cpp:2453` `installScript(NULL)`)。
+
+**原判三处皆假阴性/误判**:
+①baseapp/cellapp `div-memoryStream`(误导方向)系**读错区域**——只枚举
+`entity_app.h:407-453`=installPyModules,遗漏 `installEntityDef`→
+`EntityDef::installScript`;②bots `div-shared-class-rows` 把 MemoryStream
+判入「class 误导超集」系**漏枚举**——只看 `python_app.cpp:271` PythonApp
+路径,遗漏 `clientapp.cpp:181` installEntityDef 路径;③interfaces
+`pos-registered-types` 误把模块级函数当「引擎唯一脚本类型」,并断言
+「baseapp/cellapp EntityApp 链缺席」(续 82 判例 2 口径)——该断言与①②同源
+假。
+
+**翻案动作(四族同刻)**:
+- baseapp/cellapp:`div-memoryStream`→`pos-memoryStream-fork-arbitration`
+  (kind positive/load accept,真实分歧=kind 分歧:引擎 function/kode class);
+- bots:`div-shared-class-rows` classNames 去 MemoryStream(7→6),另立
+  `pos-memoryStream-fork-arbitration`;`pos-module-functions` 计数 19→20;
+- interfaces:`pos-registered-types`→`pos-memoryStream-fork-arbitration`
+  (kind 分歧);`pos-module-functions` 计数 20→21(20 名册+MemoryStream 另立);
+- 档:api-baseapp.md/api-cellapp.md/api-bots.md 已改;api-interfaces.md 补
+  MemoryStream=模块级函数注(档 §1 PythonApp 行原已列其为函数,仅补 type-only
+  澄清)。
+
+**判例=同名符号跨进程真值可异,但同源注册路径真值同**:
+「模块面有无 X」按实际继承链(续 82 判例 2 对:baseapp/cellapp/bots 各经
+EntityApp/ClientApp/PythonApp 链而 MemoryStream 同源注册,interfaces 亦
+PythonApp)——四链皆注册 MemoryStream 为模块函数,故**四族同步翻正**,只翻
+一族即语料自相矛盾(跨族对账规则)。
+
+门禁=定向 truthCorpus 118/118+apiDocsParity 同测 122/122(重基第三十三族后
+全数同测;本批新增 3 it:bots MemoryStream 分歧臂+interfaces MemoryStream
+分歧臂+跨族对账臂)/prove-red 两咬(perturb family-31 条目 id
+回 `div-memoryStream` 与 family-32 条目 id 回 `pos-registered-types`,各红
+2(本族分歧臂+跨族对账臂),sha256 e78896f8/c91c0b00 字节还原复绿)/tsc -p ./
+0/tsc -p tsconfig.mocha.json 0/eslint src 0(tests 2 error 系第九族与第十一族
+旧债,本批零新增;CI lint 仅覆盖 src/)/mocha 烟测 12 passing;全量 vitest
+红集归因=满载负载抖动(本机 6 会话并发 load 66-72,首轮 22 failed 的受害者
+文件零本批改动,可证 perf victim execModesBaseline solo 绿;本批消费面七文件
+(pythonApiHoverDocs/apiDocsRustParity/apiDocsParity/traceCapture/
+settingsGrouping/truthCorpus/perfCallChainDoc)定向 168/168 全绿),CI 权威。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo+api-docs 生成产物
+再生成,apiDocsRustParity 双侧同步再生成故 parity 保持);语料 33 族 297 条
+(bots +1;base/cell/interfaces 条目净零:改名翻正,不增删;基线 296=第三十三族
+usage-stats 落地后)。
+## 第三十四族: hook-sequencing-presence(实体回调在场探针)
+
+依据 `docs/knowledge/hook-sequencing.md`(实体回调时序图,machine-readable 核=
+`src/backend/hookSequencing.ts`;档头明示所有引擎 file:line 系逐字搬运自
+`src/hooks.ts` sourceLocation 或既定锚,不新铸锚;engineHead 6d12b8f)。本族
+把档内全部 37 个实体回调逐名钉到 `KBENGINE_HOOKS` 名册:36 正例在场
+(category/sourceLocation 双钉——`sourceLocation` 钉住 live 钩锚点与档一致,
+日后 hooks.ts 锚点漂移即红)+1 漏报 `onLoseCell`(档头自明
+corroborated-but-unregistered:HOOK_SEQUENCING 图收录而名册不收录,
+positive+accept+finding 漏报现状钉,与第三十三族 usage-stats 同源漏报跨族
+对账一致)。
+
+探针=探针实测后钉:从 `src/hooks.ts` 提取 name/category/sourceLocation
+36 条,与档内 37 回调逐名对拍——全部在场钩锚点与档一致,零误导(名册无
+档外回调)。执行闸三臂:在场正例臂(present=36,逐名
+getHookByName 在场+category+sourceLocation 三钉)/onLoseCell 漏报臂(名册
+undefined+finding 漏报)/名册规模臂(KBENGINE_HOOKS 恰 36,37-1 漏报——
+直钉 src 常量,日后新增钩子即红须回填本族)。
+
+prove-red 两咬(①perturb onGetCell sourceLocation 钉值→在场臂红,
+sha256 f0b74c4c 字节还原复绿;②perturb onLoseCell present→true→在场臂
++漏报臂双红,字节还原复绿;③名册规模臂系 src 常量直等,扰动类=src 编辑,
+多会话共树期不做 src 扰动,咬合自明)/定向 truthCorpus 121/121(前 118+3
+新增 it)。本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);语料
+34 族 334 条(33→34 族,+37;基线 297=第三十五增量 翻案批落地后)。
+
+## 第三十五族: traps-index-surface(语义陷阱 kode 面对拍)
+
+依据 `docs/knowledge/traps-index.md`(语义陷阱索引:每条陷阱行指向承载
+现象/根因/正确姿势的目标篇;本页不引入目标篇未锚定的新主张;engineHead
+6d12b8f)。本族取索引中**kode 可探针面**(apiDocs hover 面
+`src/generated/apiDocs.ts` 的 `API_DOC_ENTRIES`+钩子名册 `src/hooks.ts`
+的 `KBENGINE_HOOKS`)能对拍的陷阱,共 6 条(1 误导+5 正确钉/缺席钉);
+纯引擎面陷阱(teleport/迁移/garbages/EntityCall 语义)无 kode 对拍面,
+不入族(留索引原文,README 注记)。
+
+**登记 1 误导(delTimer 失效 id)**——陷阱行「`delTimer` with a stale id
+expecting an error|Returns `-1` silently (fork)」:引擎实体面 `delTimer`
+对已失效 id **不抛异常**(错误路径 PyErr_Format+PyErr_PrintEx 清除后
+`return -1`,entity_macro.h:1478-1482),而 kode apiDocs 面
+(entity.delTimer,page=api-baseapp-entity)summaryEn 宣称「already-removed
+id raises」+「invalid id path :1478 (...returns false → error)」——与引擎
+及 kode 自家知识库(api-cellapp-entity.md:199 偏离表「Returns -1
+silently; no Python exception raised」)双面矛盾。negative+reject-silent+
+finding 误导现状钉;修复归后续批(修 apiDocs 源料+再生成,语料按翻案
+流程翻正)。
+
+**正确钉/缺席钉**(无 finding,只钉现状):trackEntity/turnToYaw 缺席
+(fork 零命中,apiDocs 无条目——正确)/KBEngine.findEntity 缺席(apiDocs
+诚实负例文档「no registration point」——正确)/KBEngine.login/
+createAccount 缺席(插件层,引擎仓外,apiDocs 无条目——正确)/
+onReadyForLogin 返回契约(True/>=0.9999/无回调三要素与 fork 一致——
+正确)/onDestroy 客户端面缺席(名册条目仅 baseapp/cellapp 锚,无
+client_lib 面,与第三十四族对账同源一致——正确)。
+
+探针=探针实测后钉:python 解析 API_DOC_ENTRIES 225 条+KBENGINE_HOOKS
+36 条,逐陷阱名对拍(含 grep 引擎 6d12b8f 验证缺席/返回真值,非照抄
+知识档)。执行闸五臂:delTimer 误导现状臂(条目全文钉 toBe 钉值+误导
+标记)/缺席臂(trackEntity/turnToYaw/login/createAccount 零条目)/
+findEntity 诚实负例臂/onReadyForLogin 契约臂/onDestroy 客户端缺席臂
+(含对账族34 sourceLocation 同源一致)。
+
+prove-red 五咬(①perturb delTimer claimsRaise→false 误导臂红;
+②perturb trackEntity→true 缺席臂红;③perturb negativeDoc→false
+findEntity 臂红;④perturb has09999→false 契约臂红;⑤perturb
+clientFaceAbsent→false onDestroy 臂红;均 sha256 字节还原复绿)。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo,探针只读
+API_DOC_ENTRIES);语料 35 族 340 条(34→35 族,+6)。
+## 第三十六族: hook-sequencing-edges(时序锚/边探针)
+
+依据 `docs/knowledge/hook-sequencing.md`(回调时序图档,machine-readable 核=
+`src/backend/hookSequencing.ts` HOOK_SEQUENCING 36 钩+补录 onLoseCell;engineHead
+55a6655=fork 本机检出)。该档正是 kode 时序面(`sequencingForHook`)所探测的能力。
+11 例=正例 8(双站点/顺序锚)+负例 3(误导)。全族零 src/ 零 Rust 改动。
+
+**判例 1=双站点锚全数 fork 实证**(8 正例):档标注的双站点派发锚逐行 fork 实读——
+onWriteToDB(baseapp/entity.cpp:1405 调用点 :1305 + cellapp/entity.cpp:1262 调用点
+:1238)/onClientDeath(entity.cpp:1048 调用点 baseapp.cpp:4288 + proxy.cpp:237 调用
+点 baseapp.cpp:822)/onTeleportSuccess(cellapp:3814 调用点 :3533/:3709、
+cellapp.cpp:2058 + baseapp:1567 调用点 :1544)/onTeleportFailure(baseapp:1558 调用
+点 :1550 + cellapp:3797 调用点 :3474..:3772、cellapp.cpp:2163)/onWitnessed
+(cellapp:1486 addWitnessed 首个 witness 入 + :1531 onDelWitnessed 末个出——无独立
+Entity::onWitnessed() 函数,派发内联)/onTimer(cellapp:4358 + baseapp:1662,唯一
+调用者=宏生成 EntityScriptTimerHandler::handleTimeout entity_macro.h:1377)/
+onRestore(baseapp:1083 调用点 restore_entity_handler.cpp:173/:266 + cellapp:3871
+调用点 cellapp.cpp:1068/:1232)/onPreArchive 顺序(baseapp onCellWriteToDBCompleted
+:1294 先派发 onPreArchive :1298 再调 onWriteToDB :1305→:1405)。kode side/anchors
+与 fork 全一致。
+
+**判例 2=cell 附件链四回调全死(误导)**:fork case-insensitive 全树全文件类型检索
+`onEnteringCell`/`onEnteredCell`/`onLeavingCell`/`onLeftCell`——除 entity.h:222-225
+声明+entity.cpp:3835/:3843/:3851/:3859 定义+各自 bufferOrExeCallback 派发行外**零
+调用者**:派发函数从不被引擎调用,四个脚本回调从不触发。档第 41-42 行的
+「enter: before → after / leave: before → after」时序边描述的是死路径。kode
+HOOK_SEQUENCING 同样把这四条列为活时序(onEnteringCell.after=['onEnteredCell'] 等)
+=误导(引擎无此行为,kode 有此断言)。
+
+**判例 3=onLeaveTrapID 死分支(误导)**:fork 全树检索 onLeaveTrapID 仅
+entity.h:456 声明+entity.cpp:1773 定义+1777 派发,零调用者——脚本 onLeaveTrapID
+从不触发;对照 onLeaveTrap 活(proximity_controller.cpp:81)。kode
+HOOK_SEQUENCING.onEnterTrap.after=['onLeaveTrap','onLeaveTrapID'] 仍含死分支。
+判例=「零调用者」检索须含宏生成代码(onTimer 的调用者在 entity_macro.h:1377,
+只扫 server 目录会误判死);死回调检索则须排除声明+定义+派发三处自引用。
+
+门禁=定向 130/130(126+4 新增 it;重基增量 37 traps 族后同测,增量 37 基线 126
+121)/prove-red 四咬(perturb:①onWriteToDB 锚
+1405→1406 ②onPreArchive.after 清空 ③onLeaveTrapID 锚 1777→1778 ④onLeaveTrap 键
+改名;各红一次,sha256 23dbf5a1 字节还原复绿)/tsc -p ./ 0/tsc -p tsconfig.mocha.json
+0/eslint src 0/全量两轮 failed=7→13 超时类负载抖动(硬时间预算臂
+nativeSmokeRetry spawn 重试/globalDataIndex noteSaved 预算/processTopologyPerf RPC
+round-trip/receiverNoneAsyncSharedParse worker 派发/interactiveDeadlineMeasure 等;
+victim 文件零本批改动,truthCorpus 本批 130/130 全程绿;solo 轮 globalDataIndex
+61/61+processTopologyPerf 5/5+receiverNone 5/5+nativeSmokeRetry 5/5 全绿;负载
+33→63 抬升期,CI 权威),CI 权威。本批零 src/ 零 Rust 改动(仅语料+执行门+README+
+todo);语料 36 族 351 条(35→36 族,+11;基线 340=第三十七增量 traps 落地后
+297+37)。
+## 第三十七族: bigworld-guard(BigWorld API 明确不整合守卫)
+
+依据 `docs/knowledge/bigworld-legacy-status.md`(KB-API-009 决策记录:
+五份 `bigworld/` 源料 stub 是 **BigWorld-Engine-14.4.1**(商业上游)的
+提取笔记,非 KBEngine;决策=**明确不整合**,KB-API-001..008 是完整
+KBEngine API 参考,bigworld 不向其添加任何 KBEngine 内容;engineHead
+c2a3b8f)。本族为**守卫族**:探针实测 kode 三个可探针面均零 BigWorld,
+钉现状(不冒充整合);3 条全部 negative+reject-silent+无 finding(只
+守卫零整合决策,非登记缺陷)。
+
+**零整合守卫三臂**——apiDocs 面(`API_DOC_ENTRIES` 225 条全量扫描)
+BigWorld/bwpersonality 命中 0;钩子名册(`KBENGINE_HOOKS` 36 条)BigWorld
+回调命中 0(文档§3 引擎面 `/*~` 47 项 callback 组属 BigWorld 面,非
+KBEngine 引擎派发回调);BigWorld.Base 类缺席(文档§3 `base.hpp:38`
+`/*~ class BigWorld.Base`,BigWorld-Engine baseapp 基类,非 KBEngine 面)。
+
+**compat 注记(非语料分歧,README 声明)**:kode 代码里有两处 BigWorld
+字样,均为 **compat 识别/解析特性,非 API 参考整合**——①
+`src/backend/flowCallResolver.ts:794` 把 `args.chain[0]==='BigWorld'`
+当作 native 面根(与 KBEngine 并列的解析兼容,非 KBEngine API 条目);
+② `src/definitionWorkspace.ts:672` 「BigWorld/old-style alias discovery」
+读 `scripts/entity_defs/alias.xml`(引擎 DataType::initAliases 兼容路径)。
+两者不违反零整合决策(文档§1.2「No kode consumer targets BigWorld」措辞
+对 API 参考成立,对解析兼容特性不含,此处注明)。
+
+探针=探针实测后钉:python 解析 API_DOC_ENTRIES 225 条+KBENGINE_HOOKS
+36 条,bigworld/bwpersonality 大小写不敏感全量扫描零命中;再 grep 引擎
+c2a3b8f 档内源码面确认(文档§3 计数即引擎面真值)。执行闸三臂:
+apiDocs 零 BigWorld 臂(成员+字符串双计数)/钩子名册零 BigWorld 臂/
+BigWorld.Base 类缺席臂(计数+归属双钉)。
+
+prove-red 三咬(①perturb apiDocsBigWorldMemberCount/StringCount→1 两
+计数臂红;②perturb hooksBigWorldCount→1 钩子臂红;③perturb
+apiDocsBaseClassCount→1+BaseOwnerPresent→true 类缺席臂红;均 sha256
+字节还原复绿 283050e7)。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo,探针只读
+API_DOC_ENTRIES/KBENGINE_HOOKS);语料 37 族 354 条(36→37 族,+3;
+基线 351=第三十八增量 hook-sequencing-edges 落地后)。
+
+**peer 对账注记**:并发会话在第三十八增量注记曾评估 bigworld-legacy-
+status「无可钉 kode 探针面,跳过不建族」——该评估针对**正例钉**面(无
+可整合的 BigWorld API 条目);本族是**负例守卫族**(钉零整合现状),探
+针面=缺席扫描本身(API_DOC_ENTRIES/KBENGINE_HOOKS 全量命中 0),决策
+记录档恰是守卫族的最佳依据。故建族不与 peer 评估矛盾,并在此注明:
+余族候选池维持 2 份(python-version-baseline/startup-flow-and-stack)。
+
+## 第三十八族: startup-flow-and-stack(SPI 触发语义/冷启范围)
+
+依据 `docs/knowledge/startup-flow-and-stack.md`(启动七段 P0-P7 + 14 层栈,
+machine-readable 核=档「Notes that matter」五注;engineHead 55a6655=fork 本机检出)。
+4 例全为正例,**对齐族零分歧**:档的引擎内部段(P0-P7 分段/14 层栈帧)无 kode 探针面,
+可钉的只有 SPI 触发语义面。全族零 src/ 零 Rust 改动。
+
+**分工判例=名册族钉存在性,本族钉触发语义**:第九族钉的是 `ENGINE_SPI_METHODS`
+**名册存在性+可选旗**(八组件方法计数 baseapp 12/cellapp 9/… + 可选四件),
+第二十九族精确钉 `onReadyForShutDown` components=['baseapp','dbmgr','logger'];
+二者皆**存在性粒度**。本族钉的是**同一张表的 `trigger` 语义串**(此前无任何族钉)
++ onInit 冷启组件范围 + apiDocs 签名:①onInit 双路语义
+`首回调,0=启动 1=热载`(档 onInit 双调用路径)+ 冷启组件范围
+components 精确 ['baseapp','cellapp','bots','client'](档「loginapp / dbmgr /
+interfaces / logger never receive `onInit` on a cold start」的 kode 编码面);
+②onReadyForLogin `轮询 ≥0.9999 放行登录`(档 P5 门=轮询非事件,v>=0.9999 标
+completed);③onBaseAppShutDown `三段式关停 0/1/2`(档 baseapp 独有三段)。
+fork 实证:三段式 args 实读 baseapp.cpp:327/:342/:389 传 0/1/2 三次;
+onReadyForShutDown 仅 baseapp.cpp:275/logger.cpp:176/dbmgr.cpp:78 三调用点
+(loginapp 侧无,仅 loginapp.cpp:62 发 onLoginAppShutDown)=档与 kode 同向。
+
+**判例=行号引用须按 engineHead 版本化,跨 HEAD 陈旧非缺陷**:onInit 调用点在 fork
+各提交间位移 c2a3b8f:3602 → 6d12b8f:3641 → 55a6655:3701(文件随 fork 提交增长),
+故 api-baseapp.md 引 `baseapp.cpp:3636-3647` 在**其自身锚 6d12b8f 内含调用点 3641**
+=锚内正确,相对语料 HEAD 55a6655(实际 3701)仅陈旧;startup-flow 档引 3601 亦锚内
+正确。**跨档行号差异非分歧,以各档 engineHead 为准**——本族据此不登记 apiDocs
+sourceRefs 为行号漂移,仅钉 onInit(isReload) 签名(该签名跨 HEAD 稳定)。
+
+门禁=定向 136/136(133+3 新增 it;与 peer 第三十七族 bigworld-guard 合载后同测)/
+prove-red 三咬(①onInit trigger 截去双路尾段
+②onBaseAppShutDown trigger 补阶段 3 ③apiDocs 双 onInit 签名 onInit(isReload)→
+onInit(reload);各红一次,sha256 99b60904/d6849a95 字节还原复绿)/tsc -p ./ 0/
+eslint tests 旧债 2 项(flagsGroundingText:97/cellDataGroundingText:136 未用变量,
+非本批新增)/全量 failed=18 超时类负载抖动(load 92,全为硬时间预算臂 5s/200ms:
+typeStorageColdBuildPhased F13=Test timed out in 5000ms 非断言失败/
+globalDataIndex watcher+noteSaved/execModesBaseline/categoryI18n/hotfixSpellingGate/
+mroChainLens/logHub/hoverBudget/hoverDeadlineContext/hoverGapArms/nativeSmokeRetry/
+processTopologyPerf/traceCapture/entityWizard/databaseDrift;victim 文件零本批改动
+(git status 仅 truthCorpus.test.ts+README+fixture,零 src/ 零 Rust),solo 复跑
+4/6 绿(typeStorageColdBuildPhased/globalDataIndex solo 仍红但=5000ms 超时非断言,
+5s 预算在 load 92 下确定性超),5678 端口空(非 debugpy 占用),CI 权威)。本批零 src/
+零 Rust 改动(仅语料+执行门+README+todo);语料 38 族 358 条(37→38 族,+4;基线 354=peer 第三十九增量 bigworld-guard 落地后 351+3);余族候选池=1 份(python-version-baseline 已评估=版本口径全系引擎+Python 侧真值,kode 从不对其断言=无 kode 探针面,诚实收线;startup-flow-and-stack 已由本族收割;bigworld-legacy-status 已由 peer 第三十七族 bigworld-guard 收割)。

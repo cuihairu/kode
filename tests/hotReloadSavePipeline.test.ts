@@ -6,7 +6,8 @@ import {
   isWatchableScriptFile,
   type FileChanged,
   type HotReloadSavePipelineOptions,
-  type SavePipelineDiagnostic
+  type SavePipelineDiagnostic,
+  type SavePipelineDiagnosticType
 } from '../src/backend/hotReloadSavePipeline';
 
 // HR-PR-04(HR-WATCH-004/006/007/009/010/011/014/016):保存事件流水线
@@ -509,6 +510,19 @@ describe('波次归集(同窗多文件合成一批)', () => {
     expect(h.pipeline.waveFiles()).toHaveLength(0);
   });
 
+  it('queueSnapshot(HR-UI-004 实时队列面):三队列一快照如实聚合,与三自省方法不分叉', async () => {
+    const h = makePipeline();
+    h.pipeline.offer('/ws/a.py', 'save');
+    // 归并窗内:文件在 pending 归并中,wave 尚未定稿
+    expect(h.pipeline.queueSnapshot()).toEqual({ pending: ['/ws/a.py'], previewHeld: [], wave: [] });
+    await h.clock.advance(100);
+    const snapshot = h.pipeline.queueSnapshot();
+    expect(snapshot).toEqual({ pending: [], previewHeld: [], wave: ['/ws/a.py'] });
+    expect(snapshot.pending).toEqual(h.pipeline.pendingFiles());
+    expect(snapshot.previewHeld).toEqual(h.pipeline.previewHeldFiles());
+    expect(snapshot.wave).toEqual(h.pipeline.waveFiles());
+  });
+
   it('batchFlushMs=0 定稿即发:不起归集窗,去抖到期当拍直接出批(接线默认形态)', async () => {
     const h = makePipeline({ batchFlushMs: 0 });
     h.pipeline.offer('/ws/a.py', 'save');
@@ -877,5 +891,84 @@ describe('缺省装配面(未注入的定时器与备份形态第二道闸)', ()
     expect(isWatchableScriptFile('/ws/a.py.swo', { extensions: ['.swo'] })).toBe(false);
     expect(isWatchableScriptFile('/ws/a.py.bak', { extensions: ['.bak'] })).toBe(false);
     expect(isWatchableScriptFile('/ws/a.py.tmp', { extensions: ['.tmp'] })).toBe(false);
+  });
+});
+
+// RUST-415(旧 HR-QA-003)连续保存 100 次同一文件:去抖归并、最终版本提交、
+// 不无限请求、拦截不占版本号。装配面(每版恰一请求+旧回执不作当前结果)已在
+// tests/hotReloadRevisionGate.test.ts RUST-443 节钉,本节补纯核归并面——
+// 既有 HR-WATCH-006 归并用例只钉计数(3/4 发)且跑在缺省空哈希装配上,
+// 无内容面;此处断言归并后读末版快照、发出哈希=末版(最终版本提交)。
+describe('RUST-415 连续保存 100 次同一文件:归并+最终版本提交+不无限请求', () => {
+  const FILE = '/ws/scripts/base/Avatar.py';
+  const diagCount = (h: Harness, type: SavePipelineDiagnosticType): number =>
+    h.diagnostics.filter(d => d.type === type).length;
+  const settleFlush = async (h: Harness): Promise<void> => {
+    await h.clock.advance(100); // 去抖尾窗到期→单拍定稿
+    await h.clock.advance(50); // 波次冲口
+  };
+  const burst = (h: Harness, version: number): void => {
+    for (let i = 1; i <= version; i++) {
+      h.disk.set(FILE, { hash: `h${i}`, content: `v${i}` });
+      h.pipeline.offer(FILE, 'save');
+    }
+  };
+
+  it('窗口内 100 连发不同内容:恰 1 发,diskHash=末版,revision=1,归并后单读', async () => {
+    const h = makePipeline({}, { withSnapshot: true, withChecker: true });
+    burst(h, 100);
+    expect(h.emitted).toHaveLength(0); // 尾窗内绝不先发中间版
+    await settleFlush(h);
+    expect(h.emitted).toHaveLength(1);
+    const event = h.emitted[0].events[0];
+    expect(event.diskHash).toBe('h100'); // 最终版本提交:末版哈希,非首版/中间版
+    expect(event.revision).toBe(1); // 100 连发不虚增版本号
+    expect(event.coalesced).toBe(100); // 全窗归并为一条
+    expect(event.source).toBe('save');
+    expect(h.readCalls).toEqual([FILE]); // 归并后单读,无中间版 IO
+    expect(diagCount(h, 'trigger')).toBe(1);
+    expect(diagCount(h, 'debounced')).toBe(99);
+    expect(diagCount(h, 'flushed')).toBe(1);
+  });
+
+  it('窗外续保存:再定稿再发,revision=2 提交新末版(不丢版)', async () => {
+    const h = makePipeline({}, { withSnapshot: true, withChecker: true });
+    burst(h, 100);
+    await settleFlush(h);
+    expect(h.emitted).toHaveLength(1);
+    h.disk.set(FILE, { hash: 'h101', content: 'v101' });
+    h.pipeline.offer(FILE, 'save');
+    await settleFlush(h);
+    expect(h.emitted).toHaveLength(2);
+    expect(h.emitted[1].events[0].revision).toBe(2);
+    expect(h.emitted[1].events[0].diskHash).toBe('h101');
+  });
+
+  it('同内容 100 连发+同内容再保存:归并 1 发,指纹去重零新增(不无限请求)', async () => {
+    const h = makePipeline({}, { withSnapshot: true, withChecker: true });
+    h.disk.set(FILE, { hash: 'same', content: 'same' });
+    for (let i = 0; i < 100; i++) {
+      h.pipeline.offer(FILE, 'save');
+    }
+    await settleFlush(h);
+    expect(h.emitted).toHaveLength(1);
+    expect(h.emitted[0].events[0].diskHash).toBe('same');
+    h.pipeline.offer(FILE, 'save');
+    await settleFlush(h);
+    expect(h.emitted).toHaveLength(1); // 同内容零新增请求
+    expect(diagCount(h, 'deduped')).toBe(1);
+  });
+
+  it('100 连发后语法拦:零发半成品,拦截不占版本号(不出现错误成功态)', async () => {
+    const h = makePipeline({}, { withSnapshot: true, withChecker: true });
+    h.syntaxVerdict = { ok: false, errors: ['def broken(:'] };
+    h.disk.set(FILE, { hash: 'broken', content: 'broken' });
+    for (let i = 0; i < 100; i++) {
+      h.pipeline.offer(FILE, 'save');
+    }
+    await settleFlush(h);
+    expect(h.emitted).toHaveLength(0); // 半成品零发
+    expect(diagCount(h, 'blocked')).toBe(1);
+    expect(h.pipeline.revisionOf(FILE)).toBe(0); // 拦截不占版本号
   });
 });

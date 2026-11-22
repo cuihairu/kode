@@ -346,9 +346,8 @@ impl KnowledgeIndex {
         // 串行化手动 build 与后台 worker(KODE-FULL-005)。
         let _gate = self.reconcile_gate.lock().expect("reconcile gate");
         let started = std::time::Instant::now();
-        // 本轮已见的 dirty 快照:结束时只清这批——扫描窗内新到的事件留给
-        // 下一轮(全清会吞掉对账期间的变更,索引停在旧代)。
-        let seen_dirty: HashSet<String> = self.dirty.lock().expect("dirty lock").clone();
+        // 取走本轮批次，扫描期间同一路径的新事件也能进入下一轮。
+        self.dirty.lock().expect("dirty lock").clear();
         let view = self.scan_files();
         let entries = view.entries;
         let disk: HashSet<String> = entries.iter().map(|e| e.rel_path.clone()).collect();
@@ -549,11 +548,6 @@ impl KnowledgeIndex {
         // Config catalog nodes: indexed once, never from disk.
         self.ensure_catalog_nodes();
 
-        // 只清本轮快照:扫描窗内新到的事件留给下一轮(KODE-FULL-005)。
-        self.dirty
-            .lock()
-            .expect("dirty lock")
-            .retain(|d| !seen_dirty.contains(d));
         stats.elapsed_ms = started.elapsed().as_millis();
         *self.last_stats.lock().expect("stats lock") = stats.clone();
         stats
@@ -716,12 +710,11 @@ impl KnowledgeIndex {
                     return;
                 }
                 for path in &event.paths {
-                    if path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .map(extract::is_indexable_ext)
-                        .unwrap_or(false)
-                        && !is_skip_component(path)
+                    if !is_skip_component(path)
+                        && (path.file_name().is_some_and(|name| name == ".gitignore")
+                            || path.extension()
+                                .and_then(|e| e.to_str())
+                                .is_some_and(extract::is_indexable_ext))
                     {
                         let rel = crate::nodes::rel_path(&root, path);
                         dirty.lock().expect("dirty lock").insert(rel);

@@ -34,6 +34,7 @@
   ],
   "activationEvents": [
     "onCommand:kbengine.hotReload.showFileState",
+    "onCommand:kbengine.hotReload.locateFile",
     "onCommand:kbengine.hotReload.filterByState",
     "onStartupFinished",
     "onLanguage:kbengine-def",
@@ -133,6 +134,9 @@
     "onCommand:kbengine.def.fingerprintInspector",
     "onCommand:kbengine.hotReload.historyPanel",
     "onCommand:kbengine.hotReload.historySearch",
+    "onCommand:kbengine.hotReload.historyClear",
+    "onCommand:kbengine.hotReload.historyExport",
+    "onCommand:kbengine.hotReload.settingsPanel",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.project.wizard",
     "onCommand:kbengine.symbolReferences.show",
@@ -192,6 +196,9 @@
     "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.hotReload.materializeGlobs",
     "onCommand:kbengine.hotReload.releasePreview",
+    "onCommand:kbengine.hotReload.pause",
+    "onCommand:kbengine.hotReload.resume",
+    "onCommand:kbengine.hotReload.cancel",
     "onCommand:kbengine.hotReload.showDiagnostics",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.resetStubs",
@@ -856,6 +863,21 @@
         "category": "KBEngine"
       },
       {
+        "command": "kbengine.hotReload.historyClear",
+        "title": "%kbengine.command.hotReload.historyClear.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.historyExport",
+        "title": "%kbengine.command.hotReload.historyExport.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.settingsPanel",
+        "title": "%kbengine.command.hotReload.settingsPanel.title%",
+        "category": "KBEngine"
+      },
+      {
         "command": "kbengine.project.doctor",
         "title": "%kbengine.command.project.doctor.title%",
         "icon": "$(checklist)"
@@ -1092,6 +1114,21 @@
         "title": "%kbengine.command.hotReload.retryFailed.title%"
       },
       {
+        "command": "kbengine.hotReload.pause",
+        "title": "%kbengine.command.hotReload.pause.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.resume",
+        "title": "%kbengine.command.hotReload.resume.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.cancel",
+        "title": "%kbengine.command.hotReload.cancel.title%",
+        "category": "KBEngine"
+      },
+      {
         "command": "kbengine.hotReload.showRevisionEvidence",
         "title": "%kbengine.command.hotReload.showRevisionEvidence.title%"
       },
@@ -1102,6 +1139,10 @@
       {
         "command": "kbengine.hotReload.showFileState",
         "title": "%kbengine.command.hotReload.showFileState.title%"
+      },
+      {
+        "command": "kbengine.hotReload.locateFile",
+        "title": "%kbengine.command.hotReload.locateFile.title%"
       },
       {
         "command": "kbengine.processOwnership.openCell",
@@ -1472,6 +1513,21 @@
         "command": "kbengine.hotReload.configureChannel",
         "key": "ctrl+alt+r",
         "mac": "cmd+alt+r"
+      },
+      {
+        "command": "kbengine.hotReload.historyPanel",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
+        "command": "kbengine.hotReload.showDiagnostics",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
+      {
+        "command": "kbengine.hotReload.settingsPanel",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
       },
       {
         "command": "kbengine.processOwnership.openCell",
@@ -2473,6 +2529,11 @@
             "scope": "resource",
             "markdownDescription": "%kbengine.config.gitHistory.enabled.description%"
           },
+          "kbengine.http.allowNonLoopback": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.http.allowNonLoopback.description%"
+          },
           "kbengine.httpRequests": {
             "type": "array",
             "default": [
@@ -2514,6 +2575,12 @@
                 "body": {
                   "type": "string",
                   "description": "%kbengine.config.httpRequests.items.body.description%"
+                },
+                "maxResponseBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991,
+                  "description": "%kbengine.config.httpRequests.items.maxResponseBytes.description%"
                 },
                 "enabled": {
                   "type": "boolean",

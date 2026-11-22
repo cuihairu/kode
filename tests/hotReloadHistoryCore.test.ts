@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
+  buildHistoryExport,
   coalesceHistoryUpdates,
+  computeVirtualScrollWindow,
   HotReloadHistoryCore,
-  type HotReloadHistoryEntry,
+  redactHistoryEntry,
   type HotReloadHistoryInput
 } from '../src/backend/hotReloadHistoryCore';
 
@@ -20,7 +22,12 @@ const makeEntry = (overrides: Partial<HotReloadHistoryInput> = {}): HotReloadHis
   targetId: overrides.targetId ?? 'cellapp-1',
   time: overrides.time ?? 1000,
   status: overrides.status ?? 'sent-unverified',
-  ...(overrides.errorSummary !== undefined ? { errorSummary: overrides.errorSummary } : {})
+  ...(overrides.errorSummary !== undefined ? { errorSummary: overrides.errorSummary } : {}),
+  // HR-STATE-007 九要素其余四要素:缺省如实不给(不伪造占位)
+  ...(overrides.trigger !== undefined ? { trigger: overrides.trigger } : {}),
+  ...(overrides.durationMs !== undefined ? { durationMs: overrides.durationMs } : {}),
+  ...(overrides.errorCategory !== undefined ? { errorCategory: overrides.errorCategory } : {}),
+  ...(overrides.hash !== undefined ? { hash: overrides.hash } : {})
 });
 
 const makeCore = (capacity?: number): HotReloadHistoryCore =>
@@ -140,6 +147,73 @@ describe('过滤(HR-UI-010)', () => {
     expect(core.filter({ fileUri: '/ws/scripts/fight/FightAI.py' })).toHaveLength(2);
     expect(core.filter({ fullModuleContains: 'fight', status: 'failed' })).toHaveLength(0);
   });
+
+  it('HR-STATE-007 按触发源/错误七类过滤(全条件 AND;缺省字段行不命中)', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', trigger: 'watcher-auto' }),
+      makeEntry({ requestId: 'r2', trigger: 'command' }),
+      makeEntry({ requestId: 'r3', status: 'failed', errorSummary: 'HTTP 状态 500:非 2xx 不算送达', errorCategory: 'apply-failed' }),
+      makeEntry({ requestId: 'r4', status: 'failed', errorSummary: '端点不可达(拒绝连接)', errorCategory: 'target-unreachable' }),
+      // r5 失败但未定类(unknown 不入字段):errorCategory 过滤不命中
+      makeEntry({ requestId: 'r5', status: 'failed', errorSummary: '自定义失败文本' })
+    ]);
+    expect(core.filter({ trigger: 'watcher-auto' }).map(e => e.requestId)).toEqual(['r1']);
+    expect(core.filter({ trigger: 'command' }).map(e => e.requestId)).toEqual(['r2']);
+    // 无 trigger 字段的行不命中 trigger 过滤(如实不猜)
+    expect(core.filter({ trigger: 'retry' })).toHaveLength(0);
+    expect(core.filter({ errorCategory: 'apply-failed' }).map(e => e.requestId)).toEqual(['r3']);
+    expect(core.filter({ errorCategory: 'target-unreachable' }).map(e => e.requestId)).toEqual(['r4']);
+    // 未定类失败行不被任何 errorCategory 过滤命中
+    expect(core.filter({ errorCategory: 'unknown' })).toHaveLength(0);
+    // 组合 AND:同一 target 的失败按类分拣
+    expect(core.filter({ status: 'failed', errorCategory: 'apply-failed', targetId: 'cellapp-1' })).toHaveLength(1);
+  });
+});
+
+describe('HR-STATE-007 可检索九要素字段面', () => {
+  it('新四要素(trigger/durationMs/errorCategory/hash)记录后在行上原样可读', () => {
+    const core = makeCore();
+    core.record(
+      makeEntry({
+        requestId: 'r1',
+        status: 'failed',
+        errorSummary: 'HTTP 状态 500:非 2xx 不算送达',
+        errorCategory: 'apply-failed',
+        trigger: 'watcher-auto',
+        durationMs: 1234,
+        hash: 'a'.repeat(64)
+      })
+    );
+    const row = core.entries()[0];
+    expect(row.trigger).toBe('watcher-auto');
+    expect(row.durationMs).toBe(1234);
+    expect(row.errorCategory).toBe('apply-failed');
+    expect(row.hash).toBe('a'.repeat(64));
+  });
+
+  it('tooltip 投影:新要素各占安全前缀行,缺省不伪造占位', () => {
+    const full = buildHistoryEntryTooltipLines(
+      makeEntry({ trigger: 'command', durationMs: 42, errorCategory: 'target-unreachable', hash: 'cafecafecafecafe' })
+    );
+    expect(full.filter(line => /^(trigger|duration|hash|errorCategory):/.test(line))).toEqual([
+      'trigger: command',
+      'duration: 42ms',
+      'hash: cafecafecafecafe',
+      'errorCategory: target-unreachable'
+    ]);
+    const bare = buildHistoryEntryTooltipLines(makeEntry());
+    expect(bare.some(line => /^(trigger|duration|hash|errorCategory):/.test(line))).toBe(false);
+  });
+
+  it('幂等替换保留新字段:requestId 重记录整体覆盖', () => {
+    const core = makeCore();
+    core.record(makeEntry({ requestId: 'r1', trigger: 'retry', hash: 'old' }));
+    core.record(makeEntry({ requestId: 'r1', status: 'applied', trigger: 'retry', hash: 'new' }));
+    const row = core.entries()[0];
+    expect(row.hash).toBe('new');
+    expect(row.trigger).toBe('retry');
+  });
 });
 
 describe('分页窗口(HR-UI-007 虚拟滚动数据面)', () => {
@@ -241,5 +315,225 @@ describe('HR-UI-006 名称投影(完整名 vs 发送名)', () => {
       makeEntry({ fullModule: 'fight.FightAI', requestModule: 'fight.FightAI' })
     );
     expect(same.some(l => l.startsWith('requestModule:'))).toBe(false);
+  });
+});
+
+describe('HR-UI-007 虚拟滚动窗口(computeVirtualScrollWindow 纯决策)', () => {
+  it('初始视口:scrollTop=0 从首行起,窗口=视口行数+上下 overscan', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 1000, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 0, overscanRows: 5
+    });
+    expect(w.startIndex).toBe(0);
+    // ceil(520/26)=20 视口行 + 5 overscan = 25
+    expect(w.endIndex).toBe(25);
+    expect(w.totalHeightPx).toBe(26000);
+  });
+
+  it('滚动中段:首行随 scrollTop 前移,overscan 向上扩', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 1000, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 2600, overscanRows: 5
+    });
+    // floor(2600/26)=100 - 5 = 95;100+20+5=125
+    expect(w.startIndex).toBe(95);
+    expect(w.endIndex).toBe(125);
+  });
+
+  it('滚过尾:first/end 都夹到 totalRows=尾后空窗,不产倒挂窗口', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 1000, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 30000, overscanRows: 5
+    });
+    expect(w.endIndex).toBe(1000);
+    expect(w.startIndex).toBe(1000);
+  });
+
+  it('夹紧防御:零行如实空窗,负值/零行高/零视口不产非法窗口', () => {
+    const empty = computeVirtualScrollWindow({
+      totalRows: 0, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 0, overscanRows: 5
+    });
+    expect(empty.startIndex).toBe(0);
+    expect(empty.endIndex).toBe(0);
+    expect(empty.totalHeightPx).toBe(0);
+
+    const clamped = computeVirtualScrollWindow({
+      totalRows: -3, rowHeightPx: 0, viewportHeightPx: -10, scrollTopPx: -100, overscanRows: -2
+    });
+    expect(clamped.startIndex).toBe(0);
+    expect(clamped.endIndex).toBe(0);
+    expect(clamped.totalHeightPx).toBe(0);
+  });
+
+  it('overscan 超总量时 endIndex=totalRows、startIndex=0(小列表不越界)', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 3, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 0, overscanRows: 50
+    });
+    expect(w.startIndex).toBe(0);
+    expect(w.endIndex).toBe(3);
+    expect(w.totalHeightPx).toBe(78);
+  });
+});
+
+describe('HR-STATE-007 残差检索键(requestModule 子串/哈希前缀/耗时区间)', () => {
+  it('requestModuleContains 子串(大小写不敏),与 fullModule 检索互不串台', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', fullModule: 'entities.fight.FightAI', requestModule: 'fight.FightAI' }),
+      makeEntry({ requestId: 'r2', fullModule: 'entities.spawn.Spawner', requestModule: 'spawn.Spawner' })
+    ]);
+    expect(core.filter({ requestModuleContains: 'SPAWN' }).map(e => e.requestId)).toEqual(['r2']);
+    expect(core.filter({ requestModuleContains: 'fight' }).map(e => e.requestId)).toEqual(['r1']);
+  });
+
+  it('hash 前缀匹配;空串=不限定(与子串字段同口径);未知前缀零命中', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', hash: 'abcdef1234567890' }),
+      makeEntry({ requestId: 'r2', hash: 'fedcba0987654321' }),
+      makeEntry({ requestId: 'r3' })
+    ]);
+    expect(core.filter({ hash: 'abcdef' }).map(e => e.requestId)).toEqual(['r1']);
+    expect(core.filter({ hash: 'f' }).map(e => e.requestId)).toEqual(['r2']);
+    expect(core.filter({ hash: 'zzz' })).toHaveLength(0);
+    // 空哈希串不作过滤(与 fullModuleContains 同口径)
+    expect(core.filter({ hash: '' })).toHaveLength(3);
+  });
+
+  it('耗时区间含边界命中;无耗时行(基准冻结/未记录)不命中区间,不计 0 也不计 ∞', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r-fast', durationMs: 12 }),
+      makeEntry({ requestId: 'r-mid', durationMs: 300 }),
+      makeEntry({ requestId: 'r-slow', durationMs: 900 }),
+      makeEntry({ requestId: 'r-no-dur' })
+    ]);
+    expect(core.filter({ durationFrom: 10, durationTo: 300 }).map(e => e.requestId)).toEqual(['r-fast', 'r-mid']);
+    expect(core.filter({ durationTo: 900 }).map(e => e.requestId)).toEqual(['r-fast', 'r-mid', 'r-slow']);
+    expect(core.filter({ durationFrom: 900 }).map(e => e.requestId)).toEqual(['r-slow']);
+    // 无耗时行被区间查询排除
+    expect(core.filter({ durationFrom: 0 })).toHaveLength(3);
+  });
+
+  it('残差键与既有键全 AND 正交叠加', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'a', trigger: 'command', hash: 'aaa111', durationMs: 50, targetId: 'cellapp-1' }),
+      makeEntry({ requestId: 'b', trigger: 'command', hash: 'aaa222', durationMs: 50, targetId: 'cellapp-2' }),
+      makeEntry({ requestId: 'c', trigger: 'watcher-auto', hash: 'aaa111', durationMs: 900, targetId: 'cellapp-1' }),
+      makeEntry({ requestId: 'd', trigger: 'command', hash: 'bbb111', durationMs: 900, targetId: 'cellapp-1' })
+    ]);
+    expect(
+      core.filter({ trigger: 'command', hash: 'aaa', durationTo: 500 }).map(e => e.requestId)
+    ).toEqual(['a', 'b']);
+    expect(
+      core.filter({ trigger: 'command', hash: 'aaa', durationTo: 500, targetId: 'cellapp-1' }).map(e => e.requestId)
+    ).toEqual(['a']);
+    // 全条目 requestModule 缺省 'fight.FightAI':子串命中全部,再叠耗时区间
+    expect(core.filter({ requestModuleContains: 'fight', durationFrom: 900 }).map(e => e.requestId)).toEqual(['c', 'd']);
+  });
+});
+
+describe('RUST-368 保留时间限额与脱敏导出', () => {
+  it('pruneExpired 按政策淘汰超龄行;索引同步(淘汰行推进 false,保留行 true)', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    seed(core, [
+      makeEntry({ requestId: 'r1', time: 1000 }),
+      makeEntry({ requestId: 'r2', time: 1500 }),
+      makeEntry({ requestId: 'r3', time: 2500 })
+    ]);
+    // now=3000,cutoff=2000:r1/r2 早于→淘汰;r3>=保留
+    expect(core.pruneExpired(3000)).toBe(2);
+    expect(core.entries().map(e => e.requestId)).toEqual(['r3']);
+    expect(core.updateStatus('r1', 'applied')).toBe(false);
+    expect(core.updateStatus('r3', 'applied')).toBe(true);
+  });
+
+  it('边界含:time==now-maxAge 保留(>=cutoff);再 prune 无新淘汰', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    seed(core, [makeEntry({ requestId: 'r1', time: 2000 }), makeEntry({ requestId: 'r2', time: 1999 })]);
+    expect(core.pruneExpired(3000)).toBe(1);
+    expect(core.entries().map(e => e.requestId)).toEqual(['r1']);
+    expect(core.pruneExpired(3000)).toBe(0);
+  });
+
+  it('乱序 time 保序淘汰(不假设 time 有序)', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    // 插入序 old,new,mid:old 超龄淘汰,新/中间两行(2500/2100>=2000)保留且保插入序
+    seed(core, [
+      makeEntry({ requestId: 'old', time: 500 }),
+      makeEntry({ requestId: 'new', time: 2500 }),
+      makeEntry({ requestId: 'mid', time: 2100 })
+    ]);
+    expect(core.pruneExpired(3000)).toBe(1);
+    expect(core.entries().map(e => e.requestId)).toEqual(['new', 'mid']);
+  });
+
+  it('未启用 maxAgeMs(缺省)=prune 如实 no-op(0)', () => {
+    const core = makeCore();
+    seed(core, [makeEntry({ requestId: 'r1', time: 1 })]);
+    expect(core.pruneExpired(Date.now())).toBe(0);
+    expect(core.size()).toBe(1);
+  });
+
+  it('redactHistoryEntry 白名单投影:安全字段齐,缺省如实缺省', () => {
+    const row = redactHistoryEntry(
+      makeEntry({
+        status: 'failed',
+        errorSummary: 'HTTP 500',
+        trigger: 'command',
+        durationMs: 42,
+        errorCategory: 'apply-failed',
+        hash: 'abc'
+      })
+    );
+    expect(row).toEqual({
+      requestId: 'req-1',
+      fullModule: 'entities.fight.FightAI',
+      requestModule: 'fight.FightAI',
+      fileUri: '/ws/scripts/fight/FightAI.py',
+      targetId: 'cellapp-1',
+      time: 1000,
+      status: 'failed',
+      errorSummary: 'HTTP 500',
+      trigger: 'command',
+      durationMs: 42,
+      errorCategory: 'apply-failed',
+      hash: 'abc'
+    });
+    const bare = redactHistoryEntry(makeEntry());
+    expect(bare.errorSummary).toBeUndefined();
+    expect(bare.trigger).toBeUndefined();
+    expect(bare.durationMs).toBeUndefined();
+    expect(bare.errorCategory).toBeUndefined();
+    expect(bare.hash).toBeUndefined();
+    // 恰好七安全字段+双名+file+requestId 的白名单七键
+    expect(Object.keys(bare)).toEqual([
+      'requestId',
+      'fullModule',
+      'requestModule',
+      'fileUri',
+      'targetId',
+      'time',
+      'status'
+    ]);
+  });
+
+  it('redactHistoryEntry 白名单外键一律不进(未来 body/header 也不漏)', () => {
+    const input = { ...makeEntry(), httpBody: '{"secret":"x"}', authorization: 'Bearer tok' };
+    const row = redactHistoryEntry(input);
+    expect(row).not.toHaveProperty('httpBody');
+    expect(row).not.toHaveProperty('authorization');
+  });
+
+  it('buildHistoryExport:文档形状/计数/全行脱敏', () => {
+    const doc = buildHistoryExport(
+      [makeEntry({ requestId: 'a' }), makeEntry({ requestId: 'b', status: 'failed', errorSummary: 'HTTP 500' })],
+      { exportedAt: 999 }
+    );
+    expect(doc.schemaVersion).toBe(1);
+    expect(doc.exportedAt).toBe(999);
+    expect(doc.count).toBe(2);
+    expect(doc.entries).toHaveLength(2);
+    expect(doc.entries[0].requestId).toBe('a');
+    expect(doc.entries[1].errorSummary).toBe('HTTP 500');
+    expect(doc.entries[1]).not.toHaveProperty('httpBody');
   });
 });

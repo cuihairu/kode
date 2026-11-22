@@ -35,6 +35,9 @@ import type { EntityMapping } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { KBENGINE_HOOKS, getHookByName } from '../src/hooks';
+import { API_DOC_ENTRIES } from '../src/generated/apiDocs';
+import { buildEntityPartPythonContent } from '../src/backend/entityWizard';
+import { sequencingForHook } from '../src/backend/hookSequencing';
 import {
   USER_TYPE_CONTRACT_CONSEQUENCE,
   USER_TYPE_CONTRACT_METHODS,
@@ -1621,10 +1624,14 @@ describe('truth-corpus: entity-lifecycle-hook-roster 族执行闸(脚本回调�
     }
   });
 
-  it('未知臂:onRestore 签名已解析但引擎实参集合未取证,保持 unverified 不冒充已核', () => {
-    const entry = lifecycleRosterEntries.find(e => e.kode.status === 'unverified')!;
-    expect(getHookByName(entry.input.name)).toBeDefined();
-    expect(entry.reason).toBeTruthy();
+  it('实参臂:onRestore 引擎实参集合已取证=零参(格式串空串,签名与引擎对齐)', () => {
+    const entry = lifecycleRosterEntries.find(e => e.id === 'pos-onrestore-script-args')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.kode.status).toBe('pinned');
+    expect(entry.engine.truth).toContain('零实参');
+    const hook = getHookByName(entry.input.name)!;
+    expect(hook.signature).toBe('def onRestore(self):');
+    expect(entry.evidence.join(' ')).toContain('PyObject_CallMethod(obj, "onRestore", "")');
   });
 });
 
@@ -1682,11 +1689,14 @@ describe('truth-corpus: baseapp-module-face 族执行闸(baseapp 模块面探针
     expect(entry.finding).toContain('漏报方向');
   });
 
-  it('误导分歧臂:MemoryStream 引擎 baseapp 链无注册而 kode 表有 class 行(收窄即红)', () => {
+  it('MemoryStream 分歧臂:引擎 baseapp 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
     const entry = moduleFaceEntries.find(e => e.input.name === 'MemoryStream')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
     expect(baseFaceSymbols.get(entry.input.name!)).toBe(entry.kode.analysis!.kind);
+    expect(entry.kode.analysis!.kind).toBe('class');
     expect(entry.kode.analysis!.presentInKode).toBe(true);
-    expect(entry.finding).toContain('误导方向');
+    expect(entry.finding).toContain('跨族对账翻案');
   });
 
   it('负例臂:onFini/onDelBaseAppData 名册不进 SPI 表;引擎真名 onBaseAppDataDel 在场', () => {
@@ -1849,5 +1859,700 @@ describe('truth-corpus: loginapp-dbmgr-logger-face 族执行闸(三工具面探�
     }
     // D1 对齐面:kode 签名无 callbackObj 默认值,与 fork "ffO" 必需口径一致
     expect(a.addTimerSignature).not.toContain('callbackObj=');
+  });
+});
+
+// ── 第三十族 cellapp-module-face(KB-API-004 cell 模块面)────────────
+// cellapp 符号表(94)存在性+kind+签名直钉;SPI 名册九回调 components/required 钉;
+// MemoryStream 误导分歧与 APP_FLAGS 漏报分歧按现状钉——kode 侧收编或收窄即红,
+// 触发重钉,不冒充修复。address 跨族翻案:process-module-surface 族的 cell address
+// 负例 divergence 被 fork cellapp.cpp:187 源码仲裁推翻(官方 3.7 材料口径不适用
+// fork),两族条目同刻翻正;raycast 双 overload 对齐 fork currargsSize 3/4 双形态。
+interface CellFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      site1Names?: string[];
+      functions?: string[];
+      variables?: string[];
+      signatures?: string[];
+      absentNames?: string[];
+      presentInKode?: boolean;
+      overloadCount?: number;
+      resolved?: boolean;
+      names?: string[];
+      requiredFlags?: Record<string, boolean>;
+    };
+  };
+}
+const cellFaceFamily = families.find(f => f.family === 'cellapp-module-face')!;
+const cellFaceEntries = cellFaceFamily.entries as unknown as CellFaceEntry[];
+const cellFaceSymbols = new Map(processApiSymbols('cell').map(s => [s.name, s]));
+describe('truth-corpus: cellapp-module-face 族执行闸(cell 模块面探针)', () => {
+  it('登记点名册臂:site1 十八名+共享十五名=function 行;属性常量十名=variable 行', () => {
+    for (const entry of cellFaceEntries) {
+      if (entry.kode.status !== 'pinned' || !entry.input.roster || entry.input.roster === 'spi') { continue; }
+      const a = entry.kode.analysis!;
+      for (const name of a.site1Names ?? []) {
+        expect(cellFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.functions ?? []) {
+        expect(cellFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.variables ?? []) {
+        expect(cellFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'variable' });
+      }
+    }
+  });
+
+  it('SPI 名册臂:九回调 components 含 cellapp;required 旗逐名钉(onReadyForLogin 唯一可选)', () => {
+    const entry = cellFaceEntries.find(e => e.input.roster === 'spi')!;
+    const a = entry.kode.analysis!;
+    expect(a.names!.length).toBe(9);
+    for (const n of a.names!) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain('cellapp');
+      expect(ENGINE_SPI_METHODS[n].required, n).toBe(a.requiredFlags![n]);
+    }
+  });
+
+  it('spaceData 签名臂:三函数 str 注解签名逐字钉(Iss/Is 契约同向,drift 即红)', () => {
+    const entry = cellFaceEntries.find(e => e.id === 'pos-spacedata-str-signatures')!;
+    for (const sig of entry.kode.analysis!.signatures!) {
+      const name = sig.slice('def '.length, sig.indexOf('('));
+      expect((cellFaceSymbols.get(name) as { signature: string }).signature, name).toBe(sig);
+    }
+  });
+
+  it('raycast 双 overload 臂:恰 2 签名且 3 参/4 参形都在(fork currargsSize 3/4 同向)', () => {
+    const entry = cellFaceEntries.find(e => e.id === 'pos-raycast-dual-overload')!;
+    const a = entry.kode.analysis!;
+    const sigs = (cellFaceSymbols.get('raycast') as { signature: string }).signature.split('\n');
+    expect(sigs.length).toBe(a.overloadCount);
+    for (const sig of a.signatures!) { expect(sigs).toContain(sig); }
+  });
+
+  it('address 翻案臂:fork 登记在场,kode=function 行;第十二族 cell 负例条目已翻正', () => {
+    const entry = cellFaceEntries.find(e => e.id === 'pos-address-fork-arbitration')!;
+    expect(cellFaceSymbols.get('address')).toMatchObject({ kind: 'function' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('跨族对账翻案');
+    const flipped = procSurfaceFamily.entries.find(
+      e => (e as ProcSurfaceEntry).id === 'proc-cell-address-absent-divergence'
+    ) as ProcSurfaceEntry;
+    expect(flipped.kind).toBe('positive');
+    expect(flipped.engine.load).toBe('accept');
+  });
+
+  it('MemoryStream 分歧臂:引擎 cell 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
+    const entry = cellFaceEntries.find(e => e.input.name === 'MemoryStream')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
+    expect(cellFaceSymbols.get('MemoryStream')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('跨族对账翻案');
+  });
+
+  it('APP_FLAGS 漏报臂:引擎注册的 APP_FLAGS_* 常量在 kode 表缺席(收编即红)', () => {
+    const entry = cellFaceEntries.find(e => (e.kode.analysis?.absentNames?.length ?? 0) > 0)!;
+    for (const name of entry.kode.analysis!.absentNames!) {
+      expect(cellFaceSymbols.has(name), name).toBe(false);
+    }
+    expect(entry.finding).toContain('漏报方向');
+  });
+
+  it('createSpace 负例臂:两侧皆缺席(对齐钉,混入即红)', () => {
+    const entry = cellFaceEntries.find(e => e.input.name === 'createSpace')!;
+    expect(entry.kind).toBe('negative');
+    expect(cellFaceSymbols.has('createSpace')).toBe(false);
+    expect(entry.kode.analysis!.presentInKode).toBe(false);
+  });
+
+  it('未知臂:createEntity 三运行期 TypeError 条件未核,按未核钉不冒充已核', () => {
+    const entry = cellFaceEntries.find(e => e.kode.status === 'unverified')!;
+    expect(cellFaceSymbols.get(entry.input.name!)).toBeDefined();
+    expect(entry.reason).toBeTruthy();
+  });
+});
+
+// ── 第三十一族 bots-module-face(KB-API-007 bots 模块面)────────────
+// bots 符号表(36)存在性+kind+签名直钉;20 模块函数(19 进名册+MemoryStream kind 分歧另立)/
+// 7 属性常量/Entity+EntityComponent 类型对齐;addBots 双形态签名+arity 2 误导分歧;entities
+// 属性漏报分歧;共享 class 超集六行误导分歧按现状钉——kode 侧收编或收窄即红,触发重钉,不冒充
+// 修复。MemoryStream 原判入 class 超集系漏枚举假阴性(clientapp.cpp:181→entitydef.cpp:2455
+// 模块级函数),2026-11-22 跨族对账翻案四族同刻翻正(base/cell/bots/interfaces)。onTargetChanged
+// wired-but-dead(fork clientapp.cpp:455 接线但 setTargetID 全树零调用)按未核钉;family-12
+// proc-bots-subset-absent 的六项缺席由本族全枚举解封(对账注记随本族,不冒充改写彼族)。
+interface BotsFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      functions?: string[];
+      variables?: string[];
+      types?: string[];
+      signature?: string;
+      names?: string[];
+      requiredFlags?: Record<string, boolean>;
+      presentInKode?: boolean;
+      arityAccepted?: number[];
+      classNames?: string[];
+    };
+  };
+}
+const botsFaceFamily = families.find(f => f.family === 'bots-module-face')!;
+const botsFaceEntries = botsFaceFamily.entries as unknown as BotsFaceEntry[];
+const botsFaceSymbols = new Map(processApiSymbols('bots').map(s => [s.name, s]));
+describe('truth-corpus: bots-module-face 族执行闸(bots 模块面探针)', () => {
+  it('登记点名册臂:19 模块函数+7 属性常量=function/variable 行;Entity+EntityComponent=class 行', () => {
+    for (const entry of botsFaceEntries) {
+      if (entry.kode.status !== 'pinned' || !entry.input.roster || entry.input.roster === 'spi' || entry.input.roster === 'classes') { continue; }
+      const a = entry.kode.analysis!;
+      for (const name of a.functions ?? []) {
+        expect(botsFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.variables ?? []) {
+        expect(botsFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'variable' });
+      }
+      for (const name of a.types ?? []) {
+        expect(botsFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'class' });
+      }
+    }
+  });
+
+  it('SPI 名册臂:bots 入口回调 onInit+onFinish 名册+required 旗(family-19 同向)', () => {
+    const entry = botsFaceEntries.find(e => e.input.roster === 'spi')!;
+    const a = entry.kode.analysis!;
+    expect(a.names!.length).toBe(2);
+    for (const n of a.names!) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain('bots');
+      expect(ENGINE_SPI_METHODS[n].required, n).toBe(a.requiredFlags![n]);
+    }
+  });
+
+  it('addBots 签名臂:三参两默认逐字钉(与 fork 1/3 arity 双形态同向)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'pos-addBots-signature')!;
+    expect((botsFaceSymbols.get('addBots') as { signature: string }).signature).toBe(entry.kode.analysis!.signature);
+  });
+
+  it('addBots arity 误导臂:引擎只收 1/3 而 kode 双默认收 2(签名默认参数数=2 即红)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'div-addBots-arity-2')!;
+    const sig = (botsFaceSymbols.get('addBots') as { signature: string }).signature;
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    const defCount = (sig.split('->')[0].match(/=/g) || []).length;
+    expect(defCount).toBe(entry.kode.analysis!.arityAccepted!.length - 1);
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('entities 漏报臂:引擎注册而 kode bots 表缺席(补全即红)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'div-entities-attr-absent')!;
+    expect(botsFaceSymbols.has('entities')).toBe(false);
+    expect(entry.kode.analysis!.presentInKode).toBe(false);
+    expect(entry.finding).toContain('漏报方向');
+  });
+
+  it('共享 class 超集臂:六条 class 行在场,引擎 bots 面只注册 Entity+EntityComponent(收窄即红)', () => {
+    const entry = botsFaceEntries.find(e => e.input.roster === 'classes')!;
+    for (const name of entry.kode.analysis!.classNames!) {
+      expect(botsFaceSymbols.get(name), name).toMatchObject({ kind: 'class' });
+    }
+    expect(entry.finding).toContain('误导方向');
+    expect(entry.kode.analysis!.classNames!).not.toContain('MemoryStream');
+  });
+
+  it('MemoryStream 分歧臂:引擎 bots 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'pos-memoryStream-fork-arbitration')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
+    expect(botsFaceSymbols.get('MemoryStream')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('跨族对账翻案');
+  });
+
+  it('跨族对账臂:MemoryStream 四族(base/cell/bots/interfaces)同刻翻正,单族回翻或回加旧误导条目即红', () => {
+    interface SyncEntry {
+      id: string;
+      kind: string;
+      engine: { load: string };
+      kode: { status: string; analysis?: { kind?: string; presentInKode?: boolean } };
+    }
+    const assertMs = (label: string, family: { entries: unknown[] }) => {
+      const arr = family.entries as unknown as SyncEntry[];
+      expect(arr.some(e => e.id === 'div-memoryStream'), `${label} 旧误导条目应已翻案`).toBe(false);
+      const e = arr.find(x => x.id === 'pos-memoryStream-fork-arbitration')!;
+      expect(e, `${label} 翻案条目应在`).toBeDefined();
+      expect(e.kind, label).toBe('positive');
+      expect(e.engine.load, label).toBe('accept');
+      expect(e.kode.analysis!.presentInKode, label).toBe(true);
+      return e.kode.analysis!.kind;
+    };
+    const kinds = [
+      assertMs('baseapp', moduleFaceFamily),
+      assertMs('cellapp', cellFaceFamily),
+      assertMs('bots', botsFaceFamily),
+      assertMs('interfaces', interfacesFaceFamily),
+    ];
+    expect(kinds).toEqual(['class', 'class', 'class', 'class']);
+  });
+
+  it('Entities 类型未知臂:class 行在场+reason 在(诚实缺口,实例类型名暴露未取证)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'unk-entities-class-type')!;
+    expect(botsFaceSymbols.get('Entities')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.status).toBe('unverified');
+    expect(entry.reason).toBeTruthy();
+  });
+
+  it('onTargetChanged 休眠臂:kode SPI 表 client-only 排除 bots(family-19 同向)+reason 在', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'unk-onTargetChanged-dormant')!;
+    expect(entry.kode.status).toBe('unverified');
+    expect(entry.reason).toBeTruthy();
+    const spi = ENGINE_SPI_METHODS['onTargetChanged'];
+    expect(spi).toBeDefined();
+    expect(spi.components).toContain('client');
+    expect(spi.components).not.toContain('bots');
+  });
+});
+
+// ── 第三十二族 interfaces-module-face(KB-API-005 interfaces 模块面)────────────
+// interfaces 裸 PythonApp(interfaces.h:24,不经 EntityApp):73 符号表存在性+kind+签名直钉;
+// 20 模块函数/38 错误码/component 值对齐(MemoryStream=模块级函数 vs kode class,分歧臂另立);
+// SERVER_ERR_MAX+DatabaseCommand*
+// TypeAlias+chargeResponse 越界码三误导分歧按现状钉——kode 侧收编或收窄即红,触发重钉,不冒充
+// 修复。addWatcher/delWatcher 文档 §1「all script-bearing apps」口径被 fork 仲裁推翻
+// (initializePyWatcher 仅 entity_app.h:414 EntityApp 调,interfaces 不经 EntityApp)=负例对齐钉。
+// urlopen 四形态+回调 headers str 站 fork 侧(材料 dict 口径被 fork 推翻)=正例。
+interface InterfacesFaceEntry extends TruthEntryBase {
+  input: { path: string; process: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      functions?: string[];
+      present?: boolean;
+      value?: string;
+      errCodes?: string[];
+      types?: string[];
+      signature?: string;
+      overloadCount?: number;
+      thirdArgType?: string;
+      callbackHeadersType?: string;
+      names?: string[];
+      requiredFlags?: Record<string, boolean>;
+      kind?: string;
+      presentInKode?: boolean;
+      aliasNames?: string[];
+      kodeCellType?: string;
+      forkCellType?: string;
+      absentNames?: string[];
+      errorCodeType?: string;
+      forkDiscardsAt?: number;
+    };
+  };
+}
+const interfacesFaceFamily = families.find(f => f.family === 'interfaces-module-face')!;
+const interfacesFaceEntries = interfacesFaceFamily.entries as unknown as InterfacesFaceEntry[];
+const interfacesFaceSymbols = new Map(processApiSymbols('interfaces').map(s => [s.name, s]));
+describe('truth-corpus: interfaces-module-face 族执行闸(interfaces 模块面探针)', () => {
+  it('登记点名册臂:20 模块函数=function 行;38 错误码=variable 行(MemoryStream 见分歧臂)', () => {
+    for (const entry of interfacesFaceEntries) {
+      if (entry.kode.status !== 'pinned' || !entry.input.roster || entry.input.roster === 'spi') { continue; }
+      const a = entry.kode.analysis!;
+      for (const name of a.functions ?? []) {
+        expect(interfacesFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'function' });
+      }
+      for (const name of a.errCodes ?? []) {
+        expect(interfacesFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'variable' });
+      }
+      for (const name of a.types ?? []) {
+        expect(interfacesFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'class' });
+      }
+    }
+  });
+
+  it('MemoryStream 分歧臂:引擎 interfaces 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-memoryStream-fork-arbitration')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
+    expect(interfacesFaceSymbols.get('MemoryStream')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('跨族对账翻案');
+  });
+
+  it('SPI 名册臂:五入口回调 components 含 interfaces+required 全 true', () => {
+    const entry = interfacesFaceEntries.find(e => e.input.roster === 'spi')!;
+    const a = entry.kode.analysis!;
+    expect(a.names!.length).toBe(5);
+    for (const n of a.names!) {
+      expect(ENGINE_SPI_METHODS[n], n).toBeDefined();
+      expect(ENGINE_SPI_METHODS[n].components, n).toContain('interfaces');
+      expect(ENGINE_SPI_METHODS[n].required, n).toBe(a.requiredFlags![n]);
+    }
+  });
+
+  it('component 值臂:Literal[\'interfaces\'] 逐字钉', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-component-attr')!;
+    expect(entry.kode.analysis!.value).toBe("Literal['interfaces']");
+    const sym = interfacesFaceSymbols.get('component')!;
+    expect(sym.kind).toBe('variable');
+    expect(sym.signature).toContain("'interfaces'");
+  });
+
+  it('addTimer 签名臂:三参零默认逐字钉(与 fork ffO 必需口径一致)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-addtimer-signature')!;
+    expect((interfacesFaceSymbols.get('addTimer') as { signature: string }).signature).toBe(entry.kode.analysis!.signature);
+  });
+
+  it('urlopen 形态臂:四 overload+回调 headers str+3 参 Union[bytes,Dict] 逐字钉(站 fork 侧)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-urlopen-shape')!;
+    const sig = (interfacesFaceSymbols.get('urlopen') as { signature: string }).signature;
+    const overloadCount = sig.split('def urlopen(').length - 1;
+    expect(overloadCount).toBe(entry.kode.analysis!.overloadCount);
+    expect(sig).toContain(entry.kode.analysis!.thirdArgType!);
+    expect(sig).toContain('Callable[[int, str, str, bool, str], Any]');
+    expect(entry.kode.analysis!.callbackHeadersType).toBe('str');
+  });
+
+  it('SERVER_ERR_MAX 误导臂:引擎循环界不装而 kode 表有 variable 行(收窄即红)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'neg-server-err-max')!;
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(interfacesFaceSymbols.get('SERVER_ERR_MAX')).toMatchObject({ kind: 'variable' });
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('executeRawDatabaseCommand 单元格类型误导臂:kode TypeAlias str vs 引擎 bytes(收窄即红)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'div-executedb-result-cells-str')!;
+    expect(entry.kode.analysis!.kodeCellType).toBe('str');
+    expect(entry.kode.analysis!.forkCellType).toBe('bytes');
+    const aliasSig = (interfacesFaceSymbols.get('DatabaseCommandResult') as { signature: string }).signature;
+    expect(aliasSig).toContain('list[list[str]]');
+    expect(entry.finding).toContain('误导方向');
+  });
+
+  it('addWatcher 缺席对齐臂:interfaces 表无 addWatcher/delWatcher(fork 仲裁档 §1 口径不采)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'neg-addwatcher-absent')!;
+    expect(entry.kind).toBe('negative');
+    expect(entry.kode.analysis!.presentInKode).toBe(false);
+    expect(interfacesFaceSymbols.has('addWatcher')).toBe(false);
+    expect(interfacesFaceSymbols.has('delWatcher')).toBe(false);
+  });
+
+  it('chargeResponse 越界码误导臂:errorCode:int 无界 vs 引擎 >=38 静默丢弃(收窄即红)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'div-chargeresponse-errcode-range')!;
+    const sig = (interfacesFaceSymbols.get('chargeResponse') as { signature: string }).signature;
+    expect(sig).toContain('__errorCode: int');
+    expect(sig).not.toContain('Literal');
+    expect(entry.kode.analysis!.errorCodeType).toBe('int');
+    expect(entry.kode.analysis!.forkDiscardsAt).toBe(38);
+    expect(entry.finding).toContain('误导方向');
+  });
+});
+
+// ============ 第三十三族: usage-stats-callback-classification(回调分类探针) ============
+interface StatsCallbackEntry extends TruthEntryBase {
+  input: { path: string; process?: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      resolved?: boolean;
+      category?: string;
+      signature?: string;
+      face?: string;
+      behavior?: string;
+    };
+  };
+}
+const statsCallbackFamily = families.find(f => f.family === 'usage-stats-callback-classification')!;
+const statsCallbackEntries = statsCallbackFamily.entries as unknown as StatsCallbackEntry[];
+const statsCallbackRoster = statsCallbackEntries.filter(e => e.input.path === 'hooks-roster');
+const statsCallbackWizard = statsCallbackEntries.find(e => e.input.path === 'entity-wizard-cell-template')!;
+describe('truth-corpus: usage-stats-callback-classification 族执行闸(回调分类探针)', () => {
+  it('档 project-defined / 非引擎回调在 KBENGINE_HOOKS 名册缺席(onTick/onHPChanged/onLevelUp/onLoginOK)', () => {
+    for (const entry of statsCallbackRoster.filter(e => e.kind === 'negative')) {
+      expect(getHookByName(entry.input.name!), `${entry.id}:${entry.input.name}`).toBeUndefined();
+      expect(entry.kode.analysis!.resolved, entry.id).toBe(false);
+    }
+  });
+
+  it('档 engine-known 正例在 KBENGINE_HOOKS 正确收编(movement 三 + space 一)', () => {
+    for (const entry of statsCallbackRoster.filter(e => e.kind === 'positive' && e.kode.analysis!.resolved === true)) {
+      const hook = getHookByName(entry.input.name!);
+      expect(hook, `${entry.id}:${entry.input.name}`).toBeDefined();
+      expect(hook!.category, entry.id).toBe(entry.kode.analysis!.category);
+    }
+  });
+
+  it('档 engine-known 但 kode 名册缺收编(onLoseCell/onEnterWorld)——漏报缺口现状钉', () => {
+    for (const entry of statsCallbackRoster.filter(e => e.kind === 'positive' && e.kode.analysis!.resolved === false)) {
+      expect(getHookByName(entry.input.name!), `${entry.id}:${entry.input.name}`).toBeUndefined();
+      expect(entry.finding, entry.id).toContain('漏报');
+    }
+  });
+
+  it('kode 实体向导 cell 段生成 onEnterWorld/onLeaveWorld(注"仅 Cell 段实体")——误导现状钉', () => {
+    expect(statsCallbackWizard.finding).toContain('误导');
+    const cellContent = buildEntityPartPythonContent(
+      { name: 'Probe', hasBase: true, hasCell: true, hasClient: false, generateClientStub: false, propertyTemplate: 'simple' },
+      'cell'
+    );
+    expect(cellContent).toContain('def onEnterWorld');
+    expect(cellContent).toContain('def onLeaveWorld');
+    expect(cellContent).toContain('仅 Cell 段实体');
+  });
+
+  it('onEnterWorld 客户端实体回调 vs cell 侧 onEnterSpace 对照(fork 仲裁)', () => {
+    expect(getHookByName('onEnterWorld')).toBeUndefined();
+    expect(getHookByName('onEnterSpace')?.category).toBe('space');
+  });
+});
+
+// ============ 第三十四族: hook-sequencing-presence(实体回调在场探针) ============
+interface HookPresenceEntry extends TruthEntryBase {
+  input: { path: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { present?: boolean; category?: string; sourceLocation?: string };
+  };
+}
+const hookPresenceFamily = families.find(f => f.family === 'hook-sequencing-presence')!;
+const hookPresenceEntries = hookPresenceFamily.entries as unknown as HookPresenceEntry[];
+const hookPresenceRoster = hookPresenceEntries.filter(e => e.input.path === 'hooks-roster');
+describe('truth-corpus: hook-sequencing-presence 族执行闸(实体回调在场探针)', () => {
+  it('档 engine-known 回调在 KBENGINE_HOOKS 名册在场(36 条),category/sourceLocation 与钉值一致', () => {
+    const present = hookPresenceRoster.filter(e => e.kode.analysis!.present === true);
+    expect(present.length, '在场正例数').toBe(36);
+    for (const entry of present) {
+      const hook = getHookByName(entry.input.name!);
+      expect(hook, `${entry.id}:${entry.input.name}`).toBeDefined();
+      expect(hook!.category, entry.id).toBe(entry.kode.analysis!.category);
+      expect(hook!.sourceLocation, entry.id).toBe(entry.kode.analysis!.sourceLocation);
+    }
+  });
+  it('onLoseCell 漏报(corroborated-but-unregistered)现状钉——名册无此条目', () => {
+    const miss = hookPresenceRoster.find(e => e.input.name === 'onLoseCell')!;
+    expect(miss.kind).toBe('positive');
+    expect(miss.engine.load).toBe('accept');
+    expect(miss.finding, miss.id).toContain('漏报');
+    expect(miss.kode.analysis!.present).toBe(false);
+    expect(getHookByName('onLoseCell')).toBeUndefined();
+  });
+  it('名册规模钉:KBENGINE_HOOKS 恰 36 条(37 档记载回调-1 漏报)', () => {
+    expect(KBENGINE_HOOKS.length).toBe(36);
+  });
+});
+
+// ============ 第三十五族: traps-index-surface(语义陷阱 kode 面对拍) ============
+interface TrapSurfaceEntry extends TruthEntryBase {
+  input: {
+    path: string; member?: string; owner?: string; members?: string[];
+    name?: string; face?: string;
+  };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      present?: boolean; claimsRaise?: boolean; summaryEn?: string; page?: string;
+      trackEntity?: boolean; turnToYaw?: boolean; negativeDoc?: boolean;
+      login?: boolean; createAccount?: boolean;
+      hasTrueContract?: boolean; has09999?: boolean; hasNoCallback?: boolean;
+      rosterServerOnly?: boolean; clientFaceAbsent?: boolean;
+    };
+  };
+}
+const trapSurfaceFamily = families.find(f => f.family === 'traps-index-surface')!;
+const trapSurfaceEntries = trapSurfaceFamily.entries as unknown as TrapSurfaceEntry[];
+const apiDocByMember = (member: string) => API_DOC_ENTRIES.filter(e => e.member === member);
+describe('truth-corpus: traps-index-surface 族执行闸(语义陷阱 kode 面对拍)', () => {
+  it('delTimer 失效 id 误导现状钉——apiDocs 实体面宣称 raises(引擎静默返回 -1)', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'neg-deltimer-stale-id-raise-claim')!;
+    expect(trap.kind).toBe('negative');
+    expect(trap.engine.load).toBe('reject-silent');
+    expect(trap.finding, trap.id).toContain('误导');
+    const entries = apiDocByMember('delTimer').filter(e => e.owner === 'entity');
+    expect(entries.length, 'entity delTimer 条目恰 1').toBe(1);
+    const doc = entries[0];
+    expect(doc.page).toBe(trap.kode.analysis!.page);
+    expect(doc.summaryEn, '误导现状钉:与钉值全文一致(修复后翻红,按翻案流程翻正)')
+      .toBe(trap.kode.analysis!.summaryEn);
+    expect(doc.summaryEn).toContain('already-removed id raises');
+    expect(doc.summaryEn).toContain('returns false → error');
+    expect(trap.kode.analysis!.claimsRaise).toBe(true);
+  });
+  it('引擎不存在方法缺席钉:apiDocs 无 trackEntity/turnToYaw/login/createAccount 条目', () => {
+    for (const member of ['trackEntity', 'turnToYaw', 'login', 'createAccount']) {
+      expect(apiDocByMember(member).length, `member=${member}`).toBe(0);
+    }
+    const pair = trapSurfaceEntries.find(e => e.id === 'neg-trackentity-turntoyaw-absent')!;
+    expect(pair.kode.analysis!.trackEntity).toBe(false);
+    expect(pair.kode.analysis!.turnToYaw).toBe(false);
+    const plug = trapSurfaceEntries.find(e => e.id === 'neg-client-login-createaccount-plugin-layer')!;
+    expect(plug.kode.analysis!.login).toBe(false);
+    expect(plug.kode.analysis!.createAccount).toBe(false);
+  });
+  it('findEntity 诚实负例文档钉:条目在场且 summary 明示 no registration point', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'neg-findentity-no-registration')!;
+    const entries = apiDocByMember('findEntity');
+    expect(entries.length).toBe(1);
+    expect(entries[0].summaryEn).toContain('no registration point');
+    expect(trap.kode.analysis!.negativeDoc).toBe(true);
+    expect(trap.kode.analysis!.present).toBe(false);
+  });
+  it('onReadyForLogin 返回契约钉:cellapp 条目 True/0.9999/无回调三要素齐', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'pos-onreadyforlogin-return-semantics')!;
+    expect(trap.kind).toBe('positive');
+    expect(trap.engine.load).toBe('accept');
+    const cell = apiDocByMember('onReadyForLogin').filter(e => e.page === 'api-cellapp');
+    expect(cell.length).toBe(1);
+    const s = cell[0].summaryEn;
+    expect(s).toContain('True → ready');
+    expect(s).toContain('>= 0.9999');
+    expect(s).toContain('no callback');
+    expect(trap.kode.analysis!.hasTrueContract, '钉值与 live 一致').toBe(s.includes('True → ready'));
+    expect(trap.kode.analysis!.has09999, '钉值与 live 一致').toBe(s.includes('>= 0.9999'));
+    expect(trap.kode.analysis!.hasNoCallback, '钉值与 live 一致').toBe(s.includes('no callback'));
+  });
+  it('onDestroy 客户端面缺席钉:名册条目仅服务端锚,无 client_lib 面(对账族34)', () => {
+    const trap = trapSurfaceEntries.find(e => e.id === 'neg-ondestroy-client-face')!;
+    const hook = getHookByName('onDestroy');
+    expect(hook, 'onDestroy 名册在场(服务端)').toBeDefined();
+    expect(hook!.sourceLocation).not.toContain('client_lib');
+    expect(trap.kode.analysis!.clientFaceAbsent).toBe(true);
+    // 跨族对账:第三十四族 hook-sequencing-presence 已钉 onDestroy sourceLocation,两族同源一致。
+    const f34 = hookPresenceRoster.find(e => e.input.name === 'onDestroy')!;
+    expect(f34.kode.analysis!.present).toBe(true);
+    expect(f34.kode.analysis!.sourceLocation).toBe(hook!.sourceLocation);
+  });
+});
+
+// ============ 第三十六族: hook-sequencing-edges(时序锚/边探针) ============
+interface HookSeqEntry extends TruthEntryBase {
+  input: { path: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      face?: string;
+      hook?: string;
+      phase?: string;
+      side?: string;
+      before?: string[];
+      after?: string[];
+      anchors?: string[];
+    };
+  };
+}
+const hookSeqFamily = families.find(f => f.family === 'hook-sequencing-edges')!;
+const hookSeqEntries = hookSeqFamily.entries as unknown as HookSeqEntry[];
+const hookSeqLive = hookSeqEntries.filter(e => e.kind === 'positive');
+const hookSeqDead = hookSeqEntries.filter(e => e.kind === 'negative');
+describe('truth-corpus: hook-sequencing-edges 族执行闸(时序锚/边探针)', () => {
+  it('双站点活回调在 HOOK_SEQUENCING 收编且 phase/side/anchors 正确(8 正例)', () => {
+    for (const entry of hookSeqLive) {
+      const s = sequencingForHook(entry.input.name!);
+      expect(s, `${entry.id}:${entry.input.name} 未收录`).toBeDefined();
+      expect(s!.phase, entry.id).toBe(entry.kode.analysis!.phase);
+      expect(s!.side, entry.id).toBe(entry.kode.analysis!.side);
+      expect(s!.anchors, entry.id).toEqual(entry.kode.analysis!.anchors);
+    }
+  });
+
+  it('归档序 onPreArchive→onWriteToDB 前后关系与引擎一致(顺序锚)', () => {
+    const pre = sequencingForHook('onPreArchive')!;
+    const wdb = sequencingForHook('onWriteToDB')!;
+    expect(pre.after).toContain('onWriteToDB');
+    expect(wdb.before).toContain('onPreArchive');
+  });
+
+  it('误导钉:kode 仍列死回调 onEnteringCell/onLeavingCell/onLeaveTrapID(引擎全树零调用者)', () => {
+    for (const entry of hookSeqDead) {
+      const s = sequencingForHook(entry.input.name!);
+      expect(s, `${entry.id}:${entry.input.name} 未收录`).toBeDefined();
+      expect(s!.anchors, entry.id).toEqual(entry.kode.analysis!.anchors);
+      expect(s!.before, entry.id).toEqual(entry.kode.analysis!.before);
+      expect(s!.after, entry.id).toEqual(entry.kode.analysis!.after);
+      expect(entry.finding, entry.id).toContain('误导');
+    }
+  });
+
+  it('死回调对照:活配对仍在序(onLeaveTrap/onEnterSpace 收编,死条目是例外非规则)', () => {
+    expect(sequencingForHook('onLeaveTrap')).toBeDefined();
+    expect(sequencingForHook('onEnterSpace')).toBeDefined();
+  });
+});
+
+// ============ 第三十七族: bigworld-guard(BigWorld API 明确不整合守卫) ============
+interface BigWorldGuardEntry extends TruthEntryBase {
+  input: { path: string; surface?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      apiDocsBigWorldMemberCount?: number; apiDocsBigWorldStringCount?: number;
+      hooksBigWorldCount?: number; apiDocsBaseClassCount?: number;
+      apiDocsBaseClassOwnerPresent?: boolean;
+    };
+  };
+}
+const bigworldGuardFamily = families.find(f => f.family === 'bigworld-guard')!;
+const bigworldGuardEntries = bigworldGuardFamily.entries as unknown as BigWorldGuardEntry[];
+const bigworldEntry = (id: string) => bigworldGuardEntries.find(e => e.id === id)!;
+const apiDocBigWorldHits = API_DOC_ENTRIES.filter(e => {
+  const blob = [e.member, e.owner, e.domain, e.summaryEn, e.summaryZh, e.page].join('\n');
+  return /bigworld|bwpersonality/i.test(blob);
+});
+describe('truth-corpus: bigworld-guard 族执行闸(BigWorld API 明确不整合守卫)', () => {
+  it('apiDocs 面零 BigWorld:无 BigWorld/bwpersonality 成员或归属(明确不整合持守)', () => {
+    const trap = bigworldEntry('neg-bigworld-api-docs-absent');
+    expect(trap.kind).toBe('negative');
+    expect(trap.engine.load).toBe('reject-silent');
+    expect(apiDocBigWorldHits.length, 'apiDocs BigWorld 命中 0').toBe(0);
+    expect(trap.kode.analysis!.apiDocsBigWorldMemberCount).toBe(0);
+    expect(trap.kode.analysis!.apiDocsBigWorldStringCount).toBe(0);
+  });
+  it('钩子名册零 BigWorld 回调', () => {
+    const trap = bigworldEntry('neg-bigworld-hooks-absent');
+    const hits = KBENGINE_HOOKS.filter(h =>
+      /bigworld|bwpersonality/i.test(`${h.name} ${h.category} ${h.description} ${h.signature}`));
+    expect(hits.length, 'hooks BigWorld 命中 0').toBe(0);
+    expect(trap.kode.analysis!.hooksBigWorldCount).toBe(0);
+  });
+  it('BigWorld.Base 类缺席:apiDocs 无该类条目', () => {
+    const trap = bigworldEntry('neg-bigworld-base-class-absent');
+    const base = API_DOC_ENTRIES.filter(e => /bigworld/i.test(e.member + e.owner));
+    expect(base.length, 'BigWorld 成员/归属 0').toBe(0);
+    expect(trap.kode.analysis!.apiDocsBaseClassCount).toBe(0);
+    expect(trap.kode.analysis!.apiDocsBaseClassOwnerPresent).toBe(false);
+  });
+});
+// ============ 第三十八族: startup-flow-and-stack(SPI 触发语义/冷启范围) ============
+interface StartupFlowEntry extends TruthEntryBase {
+  input: { path: string; name: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      face?: string;
+      method?: string;
+      components?: string[];
+      required?: boolean;
+      trigger?: string;
+      signature?: string;
+    };
+  };
+}
+const startupFlowFamily = families.find(f => f.family === 'startup-flow-and-stack')!;
+const startupFlowEntries = startupFlowFamily.entries as unknown as StartupFlowEntry[];
+describe('truth-corpus: startup-flow-and-stack 族执行闸(SPI 触发语义/冷启范围)', () => {
+  it('SPI 面:onInit 冷启组件范围+双路 trigger 逐字钉(ENGINE_SPI_METHODS)', () => {
+    const entry = startupFlowEntries.find(e => e.id === 'pos-oninit-dualpath-scope')!;
+    const spi = ENGINE_SPI_METHODS[entry.input.name];
+    expect(spi, 'onInit 未收录').toBeDefined();
+    expect(spi.components, entry.id).toEqual(entry.kode.analysis!.components);
+    expect(spi.required, entry.id).toBe(entry.kode.analysis!.required);
+    expect(spi.trigger, entry.id).toBe(entry.kode.analysis!.trigger);
+  });
+
+  it('SPI 面:轮询/三段式 trigger 逐字钉(onReadyForLogin/onBaseAppShutDown)', () => {
+    for (const entry of startupFlowEntries.filter(e => e.kode.analysis?.trigger && e.input.path === 'engine-spi' && e.input.name !== 'onInit')) {
+      const spi = ENGINE_SPI_METHODS[entry.input.name];
+      expect(spi, `${entry.id}:${entry.input.name} 未收录`).toBeDefined();
+      expect(spi.trigger, entry.id).toBe(entry.kode.analysis!.trigger);
+    }
+  });
+
+  it('apiDocs 面:onInit 双条目(base/cell)签名均 onInit(isReload)', () => {
+    const entry = startupFlowEntries.find(e => e.id === 'pos-apidocs-oninit-signature')!;
+    const onInitDocs = API_DOC_ENTRIES.filter(d => d.member === entry.input.name);
+    expect(onInitDocs.length, entry.id).toBeGreaterThanOrEqual(2);
+    for (const doc of onInitDocs) {
+      expect(doc.signature, `${entry.id}:${doc.domain ?? doc.member}`).toBe(entry.kode.analysis!.signature);
+    }
   });
 });

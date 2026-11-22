@@ -503,6 +503,70 @@ describe('热更通道状态栏快捷开关', () => {
   });
 });
 
+// RUST-357(HR-HTTP-015):发送面端点健康观察(断连/重连自动更新通道灯)。
+// 灯只红/绿述传输层可达性;health success 不冒充任何模块已更新成功(投递
+// 结果在台账/发送态灯,灯面无任何模块字段)。
+describe('noteEndpointHealth(发送断连/重连更新端点健康)', () => {
+  it('发送断连 → 灯转红($(error)+红底),tooltip 点名断连通道+可用错误', () => {
+    const { bar, controller } = build(HTTP_ACTIVE);
+    controller.noteEndpointHealth('http', false, '端点不可达:检查地址/端口与目标服务是否在监听(原始:connect ECONNREFUSED)');
+
+    expect(bar.text).toBe('$(error) 热更:自研HTTP');
+    expect(bar.backgroundColor).toEqual({ id: 'statusBarItem.errorBackground' });
+    const tooltip = String(bar.tooltip);
+    expect(tooltip).toContain('断连');
+    expect(tooltip).toContain('自研接收器');
+    expect(tooltip).toContain('ECONNREFUSED');
+    // 发送源健康报告不冒充探活文案(两源文案可辨)
+    expect(tooltip).not.toContain('探活');
+  });
+
+  it('发送重连(2xx)→ 灯转绿(默认底),tooltip 述「可达」不带模块投递词', () => {
+    const { bar, controller } = build(HTTP_ACTIVE);
+    controller.noteEndpointHealth('http', true, '端点可达(HTTP 200)');
+
+    expect(bar.text).toBe('$(plug) 热更:自研HTTP');
+    expect(bar.backgroundColor).toBeUndefined();
+    const tooltip = String(bar.tooltip);
+    expect(tooltip).toContain('端点可达(HTTP 200)');
+    // health success 不冒充模块已更新成功:tooltip 无 applied/已应用字样
+    expect(tooltip).not.toContain('applied');
+    expect(tooltip).not.toContain('已应用');
+    // 发送源不冒充探活文案
+    expect(tooltip).not.toContain('探活');
+  });
+
+  it('重连 note 通道与当前配置不一致 → 不冒领绿标(回落默认 tooltip)', () => {
+    const officialActive = { profile: profile('p1', { channel: 'kbengine-official', official: { host: '127.0.0.1', port: 2560 } }) };
+    const { bar, controller } = build(officialActive);
+    controller.noteEndpointHealth('http', true, '端点可达(HTTP 200)');
+
+    expect(bar.text).toBe('$(plug) 热更:KBEngine官方');
+    expect(String(bar.tooltip)).toBe('点击切换热更通道(三选一键,选中即探活)');
+  });
+
+  it('断连 note 同样受身份键归属:profile 配置一变 refresh 即作废', () => {
+    const { harness, bar, controller } = build(HTTP_ACTIVE);
+    controller.noteEndpointHealth('http', false, '端点不可达(原始:connect ECONNREFUSED)');
+    expect(bar.text).toBe('$(error) 热更:自研HTTP');
+
+    // 同 profile 改通道参数(身份键变)→ 旧断连结论作废,灯回落
+    harness.active = { profile: profile('p1', { channel: 'http', http: { ...HTTP_CONFIG.http!, url: 'http://127.0.0.1:9999/x' } }) };
+    controller.refresh();
+    expect(bar.text).toBe('$(plug) 热更:自研HTTP');
+    expect(bar.backgroundColor).toBeUndefined();
+    expect(String(bar.tooltip)).not.toContain('断连');
+  });
+
+  it('探活 note 文案不回归(缺省 source=probe 走既有探活措辞)', async () => {
+    const { harness, bar, controller } = build(HTTP_ACTIVE);
+    harness.picks = ['http'];
+    await controller.run();
+    expect(String(bar.tooltip)).toContain('探活通过');
+    expect(String(bar.tooltip)).not.toContain('断连');
+  });
+});
+
 describe('热更快捷键与命令声明(package.json)', () => {
   interface Pkg {
     activationEvents: string[];

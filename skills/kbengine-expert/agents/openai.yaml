@@ -1,0 +1,4 @@
+interface:
+  display_name: "KBEngine 引擎专家"
+  short_description: "KBEngine source analysis for Python 3.7.3"
+  default_prompt: "使用 $kbengine-expert，基于 Python 3.7.3 和 KBEngine 2.5.12 源码定位这条引擎调用链。"

@@ -6,6 +6,7 @@ import {
   newCorrelationId,
   type HttpRequestOutcome
 } from '../src/backend/httpRequestExecutor';
+import { createHttpTargetQueue } from '../src/backend/httpRequestQueue';
 import type { HttpTransport, OutgoingHttpRequest } from '../src/backend/httpRequestService';
 
 // 通用 HTTP 请求执行器(HR-PR-03):HR-HTTP-010 结果六分类+错误细类、
@@ -36,6 +37,7 @@ describe('classifyExecution(HR-HTTP-010 结果分类,传输事实决定不猜)',
   it('错误信息映射:自有 transport 确定性标记+node 网络错误码;其余如实 unknown', () => {
     const cases: ReadonlyArray<readonly [string, string, string]> = [
       ['请求超时(10000ms)', 'timeout', 'timeout'],
+      ['请求已取消(调用方中止)', 'cancelled', 'cancelled'],
       ['URL 无法解析: not-a-url', 'invalid-url', 'invalid-url'],
       ['不支持的协议: ftp:', 'unsupported-protocol', 'unsupported-protocol'],
       ['connect ECONNREFUSED 127.0.0.1:8090', 'network-error', 'connection-refused'],
@@ -156,6 +158,29 @@ describe('executeHttpRequest(单次执行,不重试)', () => {
     expect(outcome.errorCategory).toBe('connection-refused');
   });
 
+  it('HR-HTTP-009(RUST-351):超时(状态未知)同样恰一次,不自动重试(重发=状态未知时冒充恢复)', async () => {
+    let calls = 0;
+    const transport: HttpTransport = async () => {
+      calls += 1;
+      return { ok: false, status: 0, durationMs: 1000, body: '', error: '请求超时(1000ms)' };
+    };
+    const outcome = await executeHttpRequest(req('http://127.0.0.1:8090/hotfix'), { transport });
+    expect(calls).toBe(1);
+    expect(outcome.kind).toBe('timeout');
+    expect(outcome.errorCategory).toBe('timeout');
+  });
+
+  it('HR-HTTP-009(RUST-351):已取消同样恰一次,不自动重试(取消≠远端撤销,重发=未知重复投递)', async () => {
+    let calls = 0;
+    const transport: HttpTransport = async () => {
+      calls += 1;
+      return { ok: false, status: 0, durationMs: 1, body: '', error: '请求已取消(调用方中止)' };
+    };
+    const outcome = await executeHttpRequest(req('http://127.0.0.1:8090/hotfix'), { transport });
+    expect(calls).toBe(1);
+    expect(outcome.kind).toBe('cancelled');
+  });
+
   it('outcome 形状:成功全字段齐,失败按有无 error 收放(分类附加不改服务层行为)', async () => {
     const transport: HttpTransport = async () => ({ ok: true, status: 204, durationMs: 5, body: '' });
     const outcome: HttpRequestOutcome = await executeHttpRequest(req('http://127.0.0.1/ok'), { transport });
@@ -165,6 +190,19 @@ describe('executeHttpRequest(单次执行,不重试)', () => {
     expect('errorCategory' in outcome).toBe(false);
     expect('errorMessage' in outcome).toBe(false);
   });
+
+  it('HR-HTTP-008(RUST-350):deps.signal 透传传输面;缺省无 signal 字段(既有行为不变)', async () => {
+    const seen: Array<OutgoingHttpRequest['signal']> = [];
+    const controller = new AbortController();
+    const transport: HttpTransport = async request => {
+      seen.push(request.signal);
+      return { ok: true, status: 200, durationMs: 1, body: '' };
+    };
+    await executeHttpRequest(req('http://127.0.0.1/sig'), { transport, signal: controller.signal });
+    await executeHttpRequest(req('http://127.0.0.1/plain'), { transport });
+    expect(seen[0]).toBe(controller.signal);
+    expect(seen[1]).toBeUndefined();
+  });
 });
 
 const req = (url: string): OutgoingHttpRequest => ({
@@ -173,4 +211,111 @@ const req = (url: string): OutgoingHttpRequest => ({
   headers: {},
   body: '',
   timeoutMs: 1000
+});
+
+/** HR-HTTP-007 接线面辅助:手动闸门与微任务排空 */
+const makeGate = (): { gate: Promise<void>; open: () => void } => {
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>(resolve => {
+    open = resolve;
+  });
+  return { gate, open };
+};
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+};
+
+describe('executeHttpRequest × HttpTargetQueue(HR-HTTP-007 按目标有界并发接线)', () => {
+  it('同 origin 串行:共用队列下,第二次传输在第一次结算后才起跑', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 4 });
+    const first = makeGate();
+    const events: string[] = [];
+    const p1 = executeHttpRequest(req('http://eng-a:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('first-transport-start');
+        await first.gate;
+        events.push('first-transport-end');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p2 = executeHttpRequest(req('http://eng-a:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('second-transport-start');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    await flush();
+    expect(events).toEqual(['first-transport-start']);
+    first.open();
+    await Promise.all([p1, p2]);
+    expect(events).toEqual(['first-transport-start', 'first-transport-end', 'second-transport-start']);
+  });
+
+  it('异 origin 独立并发:互不排队,两传输都立即起跑', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 4 });
+    const first = makeGate();
+    const events: string[] = [];
+    const p1 = executeHttpRequest(req('http://eng-a:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('a-start');
+        await first.gate;
+        events.push('a-end');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p2 = executeHttpRequest(req('http://eng-b:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('b-start');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    await flush();
+    expect(events).toEqual(['a-start', 'b-start']);
+    first.open();
+    await Promise.all([p1, p2]);
+    expect(events).toEqual(['a-start', 'b-start', 'a-end']);
+  });
+
+  it('全局上限:跨 origin 在途达上限后,第三执行排队等槽', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 2 });
+    const g1 = makeGate();
+    const g2 = makeGate();
+    let thirdStarted = false;
+    const p1 = executeHttpRequest(req('http://eng-a:8090/x'), {
+      queue,
+      transport: async () => {
+        await g1.gate;
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p2 = executeHttpRequest(req('http://eng-b:8090/x'), {
+      queue,
+      transport: async () => {
+        await g2.gate;
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p3 = executeHttpRequest(req('http://eng-c:8090/x'), {
+      queue,
+      transport: async () => {
+        thirdStarted = true;
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    await flush();
+    expect(thirdStarted).toBe(false);
+    g1.open();
+    await p1;
+    await flush();
+    expect(thirdStarted).toBe(true);
+    g2.open();
+    await p2;
+    await p3;
+  });
 });

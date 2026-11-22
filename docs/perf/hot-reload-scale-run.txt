@@ -1,0 +1,37 @@
+HRS-ENV node=v24.21.0 platform=linux cpus=14 scales=200,2000,10000,50000 largest=50000 assets=/tmp/kode-hrs-assets
+HRS-METRIC M1.filter.200.wall n=1 5.17ms
+HRS-METRIC M1.filter.200.perEvent n=1 0.03ms
+HRS-METRIC M1.filter.200.accepted n=1 200 files
+HRS-METRIC M1.absorb.200.wall n=1 36.35ms
+HRS-METRIC M1.absorb.200.perFile n=1 0.18ms
+HRS-METRIC M1.absorb.200.throughput n=1 5501.69 files/s
+HRS-METRIC M1.absorb.200.readLatency n=200 p50=25.29ms p95=26.03ms p99=26.14ms max=26.17ms
+HRS-METRIC M1.filter.2000.wall n=1 17.09ms
+HRS-METRIC M1.filter.2000.perEvent n=1 0.01ms
+HRS-METRIC M1.filter.2000.accepted n=1 2000 files
+HRS-METRIC M1.absorb.2000.wall n=1 198.77ms
+HRS-METRIC M1.absorb.2000.perFile n=1 0.1ms
+HRS-METRIC M1.absorb.2000.throughput n=1 10062.04 files/s
+HRS-METRIC M1.absorb.2000.readLatency n=2000 p50=145.71ms p95=151.02ms p99=151.29ms max=151.46ms
+HRS-METRIC M1.filter.10000.wall n=1 104.22ms
+HRS-METRIC M1.filter.10000.perEvent n=1 0.01ms
+HRS-METRIC M1.filter.10000.accepted n=1 10000 files
+HRS-METRIC M1.absorb.10000.wall n=1 961.64ms
+HRS-METRIC M1.absorb.10000.perFile n=1 0.1ms
+HRS-METRIC M1.absorb.10000.throughput n=1 10398.86 files/s
+HRS-METRIC M1.absorb.10000.readLatency n=10000 p50=697.86ms p95=729.83ms p99=733.88ms max=734.38ms
+HRS-METRIC M1.filter.50000.wall n=1 376.21ms
+HRS-METRIC M1.filter.50000.perEvent n=1 0.01ms
+HRS-METRIC M1.filter.50000.accepted n=1 50000 files
+HRS-METRIC M1.absorb.50000.wall n=1 4313.68ms
+HRS-METRIC M1.absorb.50000.perFile n=1 0.09ms
+HRS-METRIC M1.absorb.50000.throughput n=1 11591.02 files/s
+HRS-METRIC M1.absorb.50000.readLatency n=50000 p50=3280.45ms p95=3307.09ms p99=3321.75ms max=3322.14ms
+HRS-METRIC M2.sustained.wall n=1 180.56ms
+HRS-METRIC M2.sustained.throughput n=1 553.83 saves/s
+HRS-METRIC M2.saveToQueue n=100 p50=1.51ms p95=1.82ms p99=2.59ms max=15.96ms
+HRS-METRIC M3.previewHold.wall n=1 1038.57ms
+HRS-METRIC M3.releasePreview.wall n=1 0.66ms
+HRS-METRIC M4.storm.wall n=1 1008.78ms
+HRS-METRIC M5.canonicalize.100k n=1 283.4ms
+HRS-NOTE M5 远端端到端延迟未覆盖:需活 SSH 会话+远端文件系统延迟,纯核基准无此面;远端路径规范化已由本例覆盖,键口径与本地一致,端到端随接线批

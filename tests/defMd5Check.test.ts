@@ -15,10 +15,12 @@ import {
   DEF_MD5_CHANNEL_NAME,
   DEF_MD5_CHECK_COMMAND,
   collectDefMd5Inputs,
+  deriveEngineDigestCompatibility,
   findEngineSdkStamps,
   renderDefMd5CheckReport,
   runDefMd5Check,
   setupDefMd5Check,
+  verifyEngineDigestCompatibility,
   type DefMd5CheckDeps
 } from '../src/defMd5Check';
 import { computeDefMd5InRust } from '../src/backend/defMd5Rust';
@@ -359,6 +361,13 @@ describe('AUDIT-003:runDefMd5Check(match/mismatch/unverifiable,不猜)', () => {
       expect(outcome.stamps).toEqual([
         { path: path.join(root, 'js_sdk', 'kbengine.js'), stamp: MD5_A, verdict: 'match' }
       ]);
+      // RUST-404:match = 真实引擎摘要对拍一致(盖章常量即引擎 EntityDef::md5)
+      expect(outcome.compatibility).toMatchObject({
+        tier: 'real-engine',
+        verified: true,
+        compatible: true
+      });
+      expect(renderDefMd5CheckReport(outcome)).toContain('对拍一致');
     } finally {
       cleanup();
     }
@@ -370,6 +379,13 @@ describe('AUDIT-003:runDefMd5Check(match/mismatch/unverifiable,不猜)', () => {
       const outcome = await runDefMd5Check(makeDeps(root), async () => ({ md5: MD5_B }));
       expect(outcome.workspaceMd5).toBe(MD5_B);
       expect(outcome.stamps[0]?.verdict).toBe('mismatch');
+      // RUST-404:mismatch = 有真实引擎证据但失配(不宣称已同步)
+      expect(outcome.compatibility).toMatchObject({
+        tier: 'real-engine',
+        verified: true,
+        compatible: false
+      });
+      expect(renderDefMd5CheckReport(outcome)).toContain('不宣称已同步');
     } finally {
       cleanup();
     }
@@ -388,6 +404,13 @@ describe('AUDIT-003:runDefMd5Check(match/mismatch/unverifiable,不猜)', () => {
       expect(report).toContain('工作区闭包 MD5: 未知');
       expect(report).toContain('无法比对');
       expect(report).toContain('Digest 协商: 未协商');
+      // RUST-404:Rust 不可用 → 无真实引擎摘要,明示不可用(不宣称已同步)
+      expect(outcome.compatibility).toMatchObject({
+        tier: 'spec-derived',
+        verified: false,
+        compatible: null
+      });
+      expect(report).toContain('不宣称已同步');
     } finally {
       cleanup();
     }
@@ -416,6 +439,49 @@ describe('AUDIT-003:runDefMd5Check(match/mismatch/unverifiable,不猜)', () => {
   });
 });
 
+// --------------------------------------------------------- RUST-404 引擎 Digest 兼容性
+
+describe('RUST-404:verifyEngineDigestCompatibility(对真实引擎实现验证)', () => {
+  it('no real-engine digest → 明示不可用(spec-derived,不宣称已同步)', () => {
+    const verdict = verifyEngineDigestCompatibility(MD5_A, undefined);
+    expect(verdict).toMatchObject({ tier: 'spec-derived', verified: false, compatible: null });
+    expect(verdict.reason).toContain('无真实引擎摘要证据');
+    expect(verdict.reason).toContain('不宣称已同步');
+  });
+
+  it('real-engine digest matches ours → real-engine verified compatible', () => {
+    const verdict = verifyEngineDigestCompatibility(MD5_A, MD5_A);
+    expect(verdict).toMatchObject({ tier: 'real-engine', verified: true, compatible: true });
+    expect(verdict.reason).toContain('对拍一致');
+  });
+
+  it('real-engine digest differs → verified but incompatible, never claims sync', () => {
+    const verdict = verifyEngineDigestCompatibility(MD5_B, MD5_A);
+    expect(verdict).toMatchObject({ tier: 'real-engine', verified: true, compatible: false });
+    expect(verdict.reason).toContain('不兼容');
+    expect(verdict.reason).toContain('不宣称已同步');
+    expect(verdict.reason).toContain(MD5_B);
+    expect(verdict.reason).toContain(MD5_A);
+  });
+
+  it('derive: no stamps → spec-derived(无真实引擎证据,即便有工作区 MD5)', () => {
+    expect(deriveEngineDigestCompatibility([], MD5_A)).toMatchObject({
+      tier: 'spec-derived',
+      verified: false,
+      compatible: null
+    });
+  });
+
+  it('derive: all stamps unverifiable (Rust unknown) → spec-derived, no fake verdict', () => {
+    expect(
+      deriveEngineDigestCompatibility(
+        [{ path: '/w/kbengine.js', stamp: MD5_A, verdict: 'unverifiable' }],
+        null
+      )
+    ).toMatchObject({ tier: 'spec-derived', verified: false, compatible: null });
+  });
+});
+
 // --------------------------------------------------------- 报告渲染
 
 describe('AUDIT-003:renderDefMd5CheckReport(逐行可断言)', () => {
@@ -423,6 +489,7 @@ describe('AUDIT-003:renderDefMd5CheckReport(逐行可断言)', () => {
     const report = renderDefMd5CheckReport({
       workspaceMd5: MD5_A,
       handshake: negotiateEngineDigest(MD5_A),
+      compatibility: deriveEngineDigestCompatibility([], MD5_A),
       notes: [],
       stamps: []
     });
@@ -435,6 +502,10 @@ describe('AUDIT-003:renderDefMd5CheckReport(逐行可断言)', () => {
     const report = renderDefMd5CheckReport({
       workspaceMd5: MD5_B,
       handshake: negotiateEngineDigest(MD5_B),
+      compatibility: deriveEngineDigestCompatibility(
+        [{ path: '/w/js_sdk/kbengine.js', stamp: MD5_A, verdict: 'mismatch' }],
+        MD5_B
+      ),
       notes: ['entity_defs/types.xml: 缺失(以空串入流)'],
       stamps: [{ path: '/w/js_sdk/kbengine.js', stamp: MD5_A, verdict: 'mismatch' }]
     });
@@ -464,7 +535,8 @@ describe('AUDIT-003:setupDefMd5Check(命令接线)', () => {
       expect(channel).toBeDefined();
       expect(channel?.lines.join('')).toContain('引擎 def MD5 一致性核查');
       expect(channel?.lines.join('')).toContain('一致');
-      expect(messages.info.some((msg) => msg.includes('1 处 SDK 盖章全部一致'))).toBe(true);
+      // RUST-404:match = 与真实引擎摘要对拍一致(单列结论,非「已同步」)
+      expect(messages.info.some((msg) => msg.includes('对拍一致'))).toBe(true);
       // 句柄自进 subscriptions
       expect(context.subscriptions.length).toBeGreaterThanOrEqual(1);
     } finally {

@@ -185,10 +185,15 @@ export function resolveHotReloadModuleIdentity(
       diagnostics: [{ code: 'not-python', message: 'fileUri 为空,拒绝解析' }]
     };
   }
+  // RUST-424 重复根矩阵:同一规范化根出现多次(scriptRoots 重复项或 scriptRoot
+  // 与 scriptRoots 同根)只算一个候选——重复配置是用户侧同一根,≠HR-MOD-006
+  // 的多根歧义,必须去重后再判命中(否则同一根自造假 ambiguous)。保序去重。
   const roots = [
     ...(input.scriptRoots ?? []).map(canonicalizeScriptFilePath),
     ...(input.scriptRoot !== undefined ? [canonicalizeScriptFilePath(input.scriptRoot)] : [])
-  ].filter(root => root.length > 0);
+  ]
+    .filter(root => root.length > 0)
+    .filter((root, index, self) => self.indexOf(root) === index);
   if (roots.length === 0) {
     return {
       ok: false,

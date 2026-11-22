@@ -43,6 +43,14 @@ constants, the interfaces process registers its own copy of the
 `SERVER_ERR_*` block at `interfaces.cpp:178-184` — same string table,
 same values (`server_errors.h:57`).
 
+Of the shared `PythonApp` surface, `MemoryStream` is a module-level
+**function** (`APPEND_SCRIPT_MODULE_METHOD(module, MemoryStream, ...)` at
+`python_app.cpp:271`), not a script type — the `PyMemoryStream` type is
+type-only (`entitydef.cpp:2453` `installScript(NULL)`). The same function
+is registered on the baseapp/cellapp EntityApp chain at `entitydef.cpp:2455`
+and on the bots ClientApp chain at `clientapp.cpp:181` →
+`EntityDef::installScript`.
+
 The **entry script** is configured per-process:
 `kbengine_defaults.xml → interfaces → entryScriptFile`, default `kbemain`
 (`kbe/res/server/kbengine_defaults.xml:234-238`); the engine imports it as

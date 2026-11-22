@@ -21,7 +21,9 @@
  */
 
 import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from './httpRequestService';
+import { decideHttpEndpoint } from './httpEndpointPolicy';
 import { formatReloadTransportThrownError } from './hotReloadTransportErrors';
+import { sendErrorToEndpointHealth, sendStatusToEndpointHealth } from './hotReloadEndpointHealth';
 import type { HttpRequestEntry } from './httpRequests';
 import { BUILTIN_HTTP_REQUEST_EXAMPLE } from './httpRequests';
 import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
@@ -50,6 +52,11 @@ export type ReloadReceipt =
       note?: string;
       /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
       targetId?: string;
+      /**
+       * RUST-420(HR-QA-008):端点策略安全警告(已授权非 loopback 时随回执
+       * 携带,台账逐次可见)。缺省不带;与协议侧 note 分开,不互混。
+       */
+      detail?: string;
     }
   | {
       status: 'applied';
@@ -58,6 +65,11 @@ export type ReloadReceipt =
       revision?: number;
       /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
       targetId?: string;
+      /**
+       * RUST-420(HR-QA-008):端点策略安全警告(同 accepted——applied 无协议
+       * 文本字段,安全警告经此携带)。缺省不带。
+       */
+      detail?: string;
     }
   | { status: 'failed'; file?: string; reason: string; targetId?: string };
 
@@ -126,19 +138,128 @@ export interface ReloadHttpRequest {
   method: string;
   headers: Record<string, string>;
   body: string;
+  maxResponseBytes?: number;
 }
 
 export interface ReloadHttpResponse {
   status: number;
   body: string;
+  bodyTruncated?: true;
 }
 
 export type ReloadHttpRunner = (request: ReloadHttpRequest) => Promise<ReloadHttpResponse>;
+
+/**
+ * HTTP 通道请求构造单一来源(RUST-358/HR-HTTP-016):send 与 preview 共用
+ * 同一构造,预览与实际发送逐字节同形(防漂移)。${targetId} 占位先于变量
+ * 替换替换为发送目标标识;JSON 对象请求体自动附加 targetId(F4 二轮)与
+ * sender_digests(F3 三轮,模板已显式给出则不覆盖;未给 digests 时如实
+ * 不附加——预览无基准 digest 就不伪造该字段)。
+ */
+export function buildReloadHttpRequest(
+  entry: HttpRequestEntry,
+  target: ReloadTarget,
+  fileSet: readonly string[],
+  context?: VariableContext,
+  senderDigests?: ReadonlyMap<string, string>
+): ReloadHttpRequest {
+  const substitute = (text: string): string =>
+    substituteReloadVariables(
+      text.split(RELOAD_TARGET_ID_PLACEHOLDER).join(target.targetId),
+      fileSet,
+      context
+    );
+  const autoAttachTargetId = (text: string): string => {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        !('targetId' in (parsed as Record<string, unknown>))
+      ) {
+        return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
+      }
+    } catch {
+      // 非 JSON:无处附加,保持原样
+    }
+    return text;
+  };
+  const autoAttachSenderDigests = (text: string): string => {
+    const entries =
+      senderDigests !== undefined
+        ? [...senderDigests.entries()].filter(
+            ([file, digest]) => fileSet.includes(file) && typeof digest === 'string' && digest.length > 0
+          )
+        : [];
+    if (entries.length === 0) {
+      return text;
+    }
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        !('sender_digests' in (parsed as Record<string, unknown>))
+      ) {
+        return JSON.stringify({
+          ...(parsed as Record<string, unknown>),
+          sender_digests: Object.fromEntries(entries)
+        });
+      }
+    } catch {
+      // 非 JSON:无处附加,保持原样
+    }
+    return text;
+  };
+  return {
+    url: substitute(entry.url),
+    method: entry.method,
+    headers: Object.fromEntries(
+      Object.entries(entry.headers).map(([key, value]) => [key, substitute(value)])
+    ),
+    body: autoAttachSenderDigests(autoAttachTargetId(substitute(entry.body))),
+    ...(entry.maxResponseBytes !== undefined ? { maxResponseBytes: entry.maxResponseBytes } : {})
+  };
+}
+
+/**
+ * RUST-357(HR-HTTP-015)端点健康观察口:传输层每次发送的可达性事实上报
+ * (断连/重连自动更新 endpoint health)。事实只有 ok/detail——刻意不带
+ * 任何模块投递字段(health success ≠ 任何模块已更新成功),健康展示面
+ * (通道状态栏灯)与投递结果面(台账/回执)各走各的轴。
+ */
+export interface EndpointHealthObserver {
+  noteEndpointHealth(kind: ReloadTransportKind, ok: boolean, detail: string): void;
+}
 
 export interface ReloadHttpDeps {
   run: ReloadHttpRunner;
   /** 既有变量表上下文(${module}/${filename}/... 等);缺省空 */
   context?: VariableContext;
+  /** RUST-357:发送面健康观察;注入即逐发送上报,不注入=零行为变化 */
+  healthObserver?: EndpointHealthObserver;
+  /**
+   * RUST-420(HR-QA-008)非 loopback 端点显式授权:默认只放行确认的 loopback
+   * 目标(本机引擎);返回 true=用户已显式授权(kbengine.http.allowNonLoopback),
+   * 非 loopback 逐次落安全警告后放行。缺省不注入=未授权(非 loopback 一律
+   * 阻止)——端点越界是危险面,安全默认必须收紧,与信任闸「缺省视为可信」
+   * 相反。执行时读(授权可随设置变化,与信任闸同口径)。
+   */
+  allowNonLoopback?: () => boolean;
+}
+
+/**
+ * RUST-420(HR-QA-008)非 loopback 已授权时的安全警告随回执逐次落账:
+ * 贴到每条回执的 reason/detail(台账是通道的逐次记录面,逐次可见)。
+ */
+function appendEndpointWarnToReceipt(receipt: ReloadReceipt, message: string): ReloadReceipt {
+  if (receipt.status === 'failed') {
+    return { ...receipt, reason: `${message} | ${receipt.reason}` };
+  }
+  const detail = receipt.detail !== undefined ? `${receipt.detail} | ${message}` : message;
+  return { ...receipt, detail };
 }
 
 /** 默认 HTTP 执行器:复用 httpRequestService 的纯 node http/https 传输面 */
@@ -148,7 +269,8 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
     method: request.method,
     headers: request.headers,
     body: request.body,
-    timeoutMs: DEFAULT_HTTP_TIMEOUT_MS
+    timeoutMs: DEFAULT_HTTP_TIMEOUT_MS,
+    maxResponseBytes: request.maxResponseBytes
   }).then(result => {
     // RUST-419:失败结果(ECONNREFUSED/证书/代理/超时等真实原因在 error 字段)
     // 必须以 throw 送达 send/probe 的 catch 面分类输出——原先 ok:false 被折成
@@ -156,7 +278,11 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
     if (!result.ok) {
       throw new Error(result.error ?? `HTTP ${result.status} 请求失败`);
     }
-    return { status: result.status, body: result.body };
+    return {
+      status: result.status,
+      body: result.body,
+      ...(result.bodyTruncated ? { bodyTruncated: result.bodyTruncated } : {})
+    };
   });
 
 /**
@@ -269,8 +395,27 @@ export class HttpReloadTransport implements ReloadTransport {
     private readonly deps: ReloadHttpDeps
   ) {}
 
+  /**
+   * RUST-357(HR-HTTP-015):上报本次发送的端点健康事实(断连/重连)。未注入
+   * 观察口=零行为变化(既有通道零注入不回归)。health ok/detail 只述传输层
+   * 可达性,不携带任何模块投递结论。
+   */
+  private noteEndpointHealth(kind: ReloadTransportKind, ok: boolean, detail: string): void {
+    this.deps.healthObserver?.noteEndpointHealth(kind, ok, detail);
+  }
+
   async probe(): Promise<{ ok: boolean; detail: string }> {
     const url = substituteReloadVariables(this.entry.url, [], this.deps.context);
+    // RUST-420(HR-QA-008)端点策略闸:探测同样过闸(探测也发 HTTP GET 到配置
+    // 声明的目的地)。阻止=如实报不可达+原因(不发请求);已授权=放行但逐次
+    // 落安全警告(附在 detail 上,探活结果如实呈现)。执行时读(授权可随
+    // 设置变化),缺省未注入=未授权(安全默认收紧)。
+    const endpoint = decideHttpEndpoint(url, this.deps.allowNonLoopback?.() ?? false);
+    if (endpoint.action === 'block') {
+      return { ok: false, detail: endpoint.message ?? '非 loopback 端点已阻止' };
+    }
+    const warnNote =
+      endpoint.action === 'warn' && endpoint.message !== null ? ` · ${endpoint.message}` : '';
     try {
       // 无副作用探测(KODE-AUD-009):probe 与真实 fire 请求分离——连通性
       // 测试发 GET 无体请求(HTTP 安全方法),不携带重载载荷(不用配置的
@@ -281,19 +426,35 @@ export class HttpReloadTransport implements ReloadTransport {
         url,
         method: 'GET',
         headers: this.entry.headers,
-        body: ''
+        body: '',
+        ...(this.entry.maxResponseBytes !== undefined ? { maxResponseBytes: this.entry.maxResponseBytes } : {})
       });
       const ok = response.status >= 200 && response.status < 300;
       return {
         ok,
-        detail: ok
-          ? `端点可达(HTTP ${response.status})`
-          : `端点不可达(HTTP ${response.status} 非 2xx)`
+        detail:
+          (ok
+            ? `端点可达(HTTP ${response.status})`
+            : `端点不可达(HTTP ${response.status} 非 2xx)`) + warnNote
       };
     } catch (error) {
       // RUST-419:探测失败分类输出可用错误(endpoint/证书/代理/中断)
-      return { ok: false, detail: formatReloadTransportThrownError(error) };
+      return { ok: false, detail: formatReloadTransportThrownError(error) + warnNote };
     }
+  }
+
+  /**
+   * RUST-358(HR-HTTP-016):构造将要发出的精确请求(不发送、零副作用)。与
+   * send 共用 buildReloadHttpRequest——URL/method/headers/body 逐字节同形,
+   * 用户确认的正是实际会发的那份报文。未给 senderDigests 时不附加
+   * sender_digests(真实发送按文件冻结 digest 附加,预览不伪造)。
+   */
+  preview(
+    target: ReloadTarget,
+    fileSet: readonly string[],
+    senderDigests?: ReadonlyMap<string, string>
+  ): ReloadHttpRequest {
+    return buildReloadHttpRequest(this.entry, target, fileSet, this.deps.context, senderDigests);
   }
 
   async send(
@@ -302,99 +463,73 @@ export class HttpReloadTransport implements ReloadTransport {
     onReceipt: (receipt: ReloadReceipt) => void,
     senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
-    // F4:${targetId} 占位先于变量替换替换为发送目标标识(请求侧区分/寻址
-    // 目标实例;未知占位原样保留的批量口径不受影响)
-    const substitute = (text: string): string =>
-      substituteReloadVariables(
-        text.split(RELOAD_TARGET_ID_PLACEHOLDER).join(target.targetId),
-        fileSet,
-        this.deps.context
-      );
-    // F4 二轮:JSON 对象请求体自动附加 targetId 字段——目标寻址不依赖模板
-    // 作者记得写 ${targetId} 占位符;模板已显式给出(占位符替换产物或写死)
-    // 则不覆盖;非 JSON 对象(数组/纯文本)无处附加,如实保持原样。
-    const autoAttachTargetId = (text: string): string => {
-      try {
-        const parsed: unknown = JSON.parse(text);
-        if (
-          parsed !== null &&
-          typeof parsed === 'object' &&
-          !Array.isArray(parsed) &&
-          !('targetId' in (parsed as Record<string, unknown>))
-        ) {
-          return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
-        }
-      } catch {
-        // 非 JSON:无处附加,保持原样
+    // F4:${targetId} 占位、F4 二轮 body 自动附加 targetId、F3 三轮
+    // sender_digests 全在 buildReloadHttpRequest(预览/发送单一来源)
+    const request = buildReloadHttpRequest(
+      this.entry,
+      target,
+      fileSet,
+      this.deps.context,
+      senderDigests
+    );
+    // RUST-420(HR-QA-008)端点策略闸:profile 部署通道的真实目的地(模板插值
+    // 后 URL)在发出前过端点策略——默认只放行 loopback;非 loopback 未授权
+    // 一律阻止(不发请求,逐文件 failed 回执携带阻止原因),已授权放行但逐次
+    // 落安全警告(贴在回执上,台账逐次可见)。执行时读(授权可随设置变化),
+    // 缺省未注入=未授权(安全默认收紧,与信任闸「缺省可信」相反)。
+    const endpoint = decideHttpEndpoint(request.url, this.deps.allowNonLoopback?.() ?? false);
+    if (endpoint.action === 'block') {
+      const receipts = fileSet.map(file => ({
+        status: 'failed' as const,
+        file,
+        reason: endpoint.message ?? '非 loopback 端点已阻止'
+      }));
+      for (const receipt of receipts) {
+        onReceipt(receipt);
       }
-      return text;
-    };
-    // F3 三轮:JSON 对象请求体自动附带 sender_digests——发送方冻结 digest
-    // 随报文下发,接收端对应用产物核验后才回 applied(协议级防假应用)。
-    // 模板已显式给出 sender_digests 字段则不覆盖;非 JSON 对象(数组/纯文本)
-    // 无处附加,如实保持原样。digest 缺失(基准不可读)的文件不进字段。
-    const autoAttachSenderDigests = (text: string): string => {
-      const entries =
-        senderDigests !== undefined
-          ? [...senderDigests.entries()].filter(
-              ([file, digest]) => fileSet.includes(file) && typeof digest === 'string' && digest.length > 0
-            )
-          : [];
-      if (entries.length === 0) {
-        return text;
+      return { kind: this.kind, receipts };
+    }
+    const warnMessage = endpoint.action === 'warn' ? endpoint.message : null;
+    // RUST-420:已授权非 loopback → warn:安全警告贴在每条回执上(推送面与
+    // 返回汇总同批同形,不各说各话)。
+    const finish = (receipts: ReloadReceipt[]): ReloadSendSummary => {
+      const wrapped =
+        warnMessage === null ? receipts : receipts.map(r => appendEndpointWarnToReceipt(r, warnMessage));
+      for (const receipt of wrapped) {
+        onReceipt(receipt);
       }
-      try {
-        const parsed: unknown = JSON.parse(text);
-        if (
-          parsed !== null &&
-          typeof parsed === 'object' &&
-          !Array.isArray(parsed) &&
-          !('sender_digests' in (parsed as Record<string, unknown>))
-        ) {
-          return JSON.stringify({
-            ...(parsed as Record<string, unknown>),
-            sender_digests: Object.fromEntries(entries)
-          });
-        }
-      } catch {
-        // 非 JSON:无处附加,保持原样
-      }
-      return text;
-    };
-    const request: ReloadHttpRequest = {
-      url: substitute(this.entry.url),
-      method: this.entry.method,
-      headers: Object.fromEntries(
-        Object.entries(this.entry.headers).map(([key, value]) => [key, substitute(value)])
-      ),
-      body: autoAttachSenderDigests(autoAttachTargetId(substitute(this.entry.body)))
+      return { kind: this.kind, receipts: wrapped };
     };
     let response: ReloadHttpResponse;
     try {
       response = await this.deps.run(request);
     } catch (error) {
       // RUST-419:传输异常分类输出可用错误(逐文件 failed 回执同因)
-      const reason = formatReloadTransportThrownError(error);
-      const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
-      for (const receipt of receipts) {
-        onReceipt(receipt);
-      }
-      return { kind: this.kind, receipts };
+      // RUST-357:断连——无响应即端点不可达(健康观察口按同一可用错误上报)
+      const health = sendErrorToEndpointHealth(error);
+      this.noteEndpointHealth(this.kind, health.ok, health.detail);
+      return finish(fileSet.map(file => ({ status: 'failed' as const, file, reason: health.detail })));
     }
     if (response.status < 200 || response.status >= 300) {
-      const reason = `HTTP ${response.status}:非 2xx 送达失败`;
-      const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
-      for (const receipt of receipts) {
-        onReceipt(receipt);
-      }
-      return { kind: this.kind, receipts };
+      // RUST-357:有响应但非 2xx——端点可达但通道不健康
+      this.noteEndpointHealth(this.kind, false, sendStatusToEndpointHealth(response.status).detail);
+      return finish(
+        fileSet.map(file => ({
+          status: 'failed' as const,
+          file,
+          reason: `HTTP ${response.status}:非 2xx 送达失败`
+        }))
+      );
     }
+    // RUST-357:2xx——端点可达/重连(health success 只说明端点可达,不代表
+    // 任何模块已更新成功:模块投递结果另在回执/台账轴)
+    this.noteEndpointHealth(this.kind, true, sendStatusToEndpointHealth(response.status).detail);
     // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝
-    const receipts = parseReloadHttpReceipts(response.body, fileSet, target.targetId);
-    for (const receipt of receipts) {
-      onReceipt(receipt);
-    }
-    return { kind: this.kind, receipts };
+    return finish(
+      response.bodyTruncated
+        ? fileSet.map(file => ({ status: 'sent' as const, file, detail: '响应体已截断，未能核验回执' }))
+        : parseReloadHttpReceipts(response.body, fileSet, target.targetId)
+    );
   }
 }
 
@@ -635,6 +770,13 @@ export interface ReloadChannelConfig {
 export interface ReloadTransportDeps {
   http?: ReloadHttpDeps;
   official?: ReloadOfficialDeps;
+  /** RUST-357(HR-HTTP-015):透传给 HTTP 通道的发送面健康观察口 */
+  healthObserver?: EndpointHealthObserver;
+  /**
+   * RUST-420(HR-QA-008):透传给 HTTP 通道的非 loopback 端点显式授权(执行时读)。
+   * 缺省不注入=未授权(非 loopback 一律阻止,安全默认收紧)。
+   */
+  allowNonLoopback?: () => boolean;
 }
 
 /**
@@ -669,7 +811,12 @@ export function resolveReloadTransport(
     return null;
   }
   if (config.channel === 'http' && config.http) {
-    return new HttpReloadTransport(config.http, deps.http ?? { run: defaultReloadHttpRunner });
+    const httpDeps: ReloadHttpDeps = {
+      ...(deps.http ?? { run: defaultReloadHttpRunner }),
+      ...(deps.healthObserver !== undefined ? { healthObserver: deps.healthObserver } : {}),
+      ...(deps.allowNonLoopback !== undefined ? { allowNonLoopback: deps.allowNonLoopback } : {})
+    };
+    return new HttpReloadTransport(config.http, httpDeps);
   }
   if (config.channel === 'kbengine-official' && config.official) {
     return new KbengineOfficialTransport(config.official, deps.official ?? {});
@@ -722,6 +869,10 @@ export function normalizeReloadChannelConfig(value: unknown): ReloadChannelConfi
       headers,
       body: typeof http.body === 'string' ? http.body : '',
       enabled: typeof http.enabled === 'boolean' ? http.enabled : true,
+      ...(typeof http.maxResponseBytes === 'number' &&
+      Number.isSafeInteger(http.maxResponseBytes) && http.maxResponseBytes > 0
+        ? { maxResponseBytes: http.maxResponseBytes }
+        : {}),
       keybinding: typeof http.keybinding === 'string' ? http.keybinding : ''
     };
     return { channel, http: entry };

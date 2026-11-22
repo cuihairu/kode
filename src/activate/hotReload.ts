@@ -26,9 +26,9 @@ import {
 import { FingerprintStats } from '../backend/hotReloadFingerprintStats';
 import { HotReloadStatusController } from '../hotReloadStatus';
 import { createFileChangeRouter } from '../backend/fileChangeBypass';
-import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
+import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, defaultPreviewRequest, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
 import { HotReloadVersionTracker, matchesHotReloadGlob } from '../backend/hotReloadFileVersion';
-import { resolveReloadTransport, createDefaultHotReloadChannel, type ReloadTransport } from '../backend/hotReloadTransport';
+import { resolveReloadTransport, createDefaultHotReloadChannel, type ReloadTransport, type ReloadTransportKind } from '../backend/hotReloadTransport';
 import { ensureDefaultDeploymentProfile } from '../ensureDefaultProfile';
 import { runHotReloadBatchSummaryCommand } from '../backend/hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from '../backend/hotReloadRetryCommand';
@@ -45,7 +45,9 @@ import { resolveAssetsRootForWorkspace } from '../scanRoots';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { resolveModuleDualName } from '../backend/hotReloadTempEdit';
-import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY } from '../hotReloadHistoryView';
+import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY, HOT_RELOAD_HISTORY_MAX_AGE_MS } from '../hotReloadHistoryView';
+import { setupHotReloadSettingsPanel, type HotReloadSettingsFormKey } from '../hotReloadSettingsPanel';
+import type { SavePipelineQueueSnapshot } from '../backend/hotReloadSavePipeline';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../backend/hotReloadHistoryCore';
 import type { HotReloadDeliveryRecord } from '../backend/hotReloadTargetState';
 import type { DiskWatcherFactory } from '../backend/hotReloadDiskWatch';
@@ -69,6 +71,19 @@ export interface HotReloadShared {
   fileChangeRouter: FileChangeRouter;
 }
 
+/**
+ * RUST-358(HR-HTTP-016):预览的代表性文件——当前活动的 Python 文件(绝对
+ * 路径,与发送面同一路径口径);无活动 Python 文件返回空集,预览如实显示
+ * 无文件载荷(不伪造一个文件路径当样张)。
+ */
+function activeHotReloadPreviewFiles(): string[] {
+  const uri = vscode.window.activeTextEditor?.document.uri;
+  if (!uri || !uri.path.endsWith('.py')) {
+    return [];
+  }
+  return [path.resolve(uri.path)];
+}
+
 export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   const { context, quickActionManager, hotReloadStateViewRefresh, hotReloadVersionRefresh, httpRequestChannel, fileChangeMetaResolver, fingerprintStats } = deps;
 
@@ -80,6 +95,28 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   const hotReloadHistoryFeedRef: { current: { handle(record: HotReloadDeliveryRecord): void } | null } = {
     current: null
   };
+  // HR-MOD-014 双名同存:投递台账/版本事件日志与历史树用同一解析面(脚本根
+  // 可解→完整名/请求名;不可解→undefined 如实不写,不回落 stem 冒充包结构)。
+  // 与历史 feed 的 stem 回落展示口径分离(展示可降级,台账不可伪造)。
+  const resolveHotReloadModuleNames = (file: string): { fullModule: string; requestModule: string } | undefined => {
+    const scriptRoot = readTempEditReloadSettings(
+      tempEditSectionReader(vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined))
+    ).scriptRoot;
+    if (scriptRoot.length === 0) {
+      return undefined;
+    }
+    const dualName = resolveModuleDualName(file, scriptRoot);
+    if ('unsupported' in dualName) {
+      return undefined;
+    }
+    return { fullModule: dualName.fullModule, requestModule: dualName.requestModule };
+  };
+  // HR-UI-004 实时队列面:历史面板与流水线分居两个装配点,经此共享句柄
+  // 接起来——setupHotReload 在流水线上线时置入读当前实例的闭锁,面板按
+  // 渲染时刻读快照(未上线=如实空队列)。
+  const hotReloadPipelineQueueRef: { current: (() => SavePipelineQueueSnapshot) | null } = {
+    current: null
+  };
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({
     now: () => Date.now(),
     onRecorded: () => {
@@ -87,28 +124,26 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       // applied 回执落账 → 重采盘上版本并结算基线追平(单号/双号跟住回执)
       hotReloadVersionRefresh.refresh?.();
     },
-    onRecord: record => hotReloadHistoryFeedRef.current?.handle(record)
+    onRecord: record => hotReloadHistoryFeedRef.current?.handle(record),
+    resolveModuleNames: resolveHotReloadModuleNames
   });
   const hotReloadHistoryFeed = setupHotReloadHistoryView(context, {
-    core: new HotReloadHistoryCore(),
-    resolveNames: file => {
-      const scriptRoot = readTempEditReloadSettings(
-        tempEditSectionReader(vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined))
-      ).scriptRoot;
-      if (scriptRoot.length > 0) {
-        const dualName = resolveModuleDualName(file, scriptRoot);
-        if (!('unsupported' in dualName)) {
-          return { fullModule: dualName.fullModule, requestModule: dualName.requestModule };
-        }
-      }
-      // 未配脚本根/解析不支持:双名如实不可解,回落文件 stem(不猜包结构)
-      const stem = path.basename(file).replace(/\.py$/, '');
-      return { fullModule: stem, requestModule: stem };
-    },
+    // RUST-368 保留时间限额政策(7 天):核心与视图同值——回载/落账前淘汰
+    // 超龄行,历史不越攒越大(容量环形淘汰之外的时域上限)。
+    core: new HotReloadHistoryCore({ maxAgeMs: HOT_RELOAD_HISTORY_MAX_AGE_MS }),
+    maxAgeMs: HOT_RELOAD_HISTORY_MAX_AGE_MS,
+    resolveNames: file =>
+      resolveHotReloadModuleNames(file) ?? (() => {
+        // 展示面降级:历史树标题缺脚本根时回落文件 stem(台账侧如实不写,不伪造)
+        const stem = path.basename(file).replace(/\.py$/, '');
+        return { fullModule: stem, requestModule: stem };
+      })(),
     feedStatus: () => ({
       watchMode: readHotReloadSettings(hotReloadSectionReader()).triggerMode,
       target: ''
     }),
+    pipelineQueue: () =>
+      hotReloadPipelineQueueRef.current?.() ?? { pending: [], previewHeld: [], wave: [] },
     persist: {
       // 宿主无 workspaceState(测试替身语境)时如实退化为不持久化,不炸激活
       load: () => context.workspaceState?.get(HOT_RELOAD_HISTORY_STATE_KEY),
@@ -118,6 +153,24 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     }
   });
   hotReloadHistoryFeedRef.current = hotReloadHistoryFeed;
+  // RUST-378 配置界面批:设置表单面板(webview 表单)。channel 面(root/target/
+  // 网络超时)由既有 configureChannel 覆盖不重复;「敏感操作警告」无对应设
+  // 置键,工作区信任闸(HR-HTTP-005/RUST-422)是既有安全门,不新造键。
+  // 写盘点串键单键 update(不覆盖同段兄弟键),target 同 materializeGlobs 口
+  // 径(有 folder=工作区,无 folder=全局)。
+  setupHotReloadSettingsPanel(context, {
+    readSettings: () => readHotReloadSettings(hotReloadSectionReader()),
+    save: (key: HotReloadSettingsFormKey, value: unknown) =>
+      vscode.workspace
+        .getConfiguration('kbengine')
+        .update(
+          `hotReload.${key}`,
+          value,
+          (vscode.workspace.workspaceFolders ?? []).length > 0
+            ? vscode.ConfigurationTarget.Workspace
+            : vscode.ConfigurationTarget.Global
+        )
+  });
   // HOT-VER:文件版本簿(状态栏版本号)。台账独立于 watcher——监视范围只看
   // globs(与 enabled 开关正交),采样口缺省走 fs.stat 的 mtimeMs:size;watcher
   // 事件、回执落账、手动触发(showFileState/retryFailed/手动跑动作)都写同一份
@@ -177,7 +230,12 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     }
     return created;
   };
+  // RUST-420(HR-QA-008)非 loopback 端点显式授权(执行时读;缺省 false=未授权):
+  // 部署通道发送/探活与 HTTP 快捷请求共用同一设置(kbengine.http.allowNonLoopback)。
+  const readHttpAllowNonLoopback = () =>
+    vscode.workspace.getConfiguration('kbengine').get<boolean>('http.allowNonLoopback', false);
   const hotReloadChannelSwitch = new HotReloadChannelQuickSwitch({
+    allowNonLoopback: readHttpAllowNonLoopback,
     getActiveProfile: () => {
       const activeProfile = resolveActiveProfile(context.workspaceState);
       return activeProfile ? { profile: activeProfile } : null;
@@ -397,18 +455,33 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   // 'default'(台账键 + 回执核验基准;无 profile 身份可漂移,固定串最稳)。
   // 显式 profile 配了通道仍优先(配置显式 > 默认)。
   const DEFAULT_CHANNEL_TARGET_ID = 'default';
-  const resolveHotReloadChannelTransport = (): { transport: ReloadTransport; targetId: string } | null => {
+  const resolveHotReloadChannelTransport = (configuredOnly = false): { transport: ReloadTransport; targetId: string } | null => {
     const activeProfile = resolveActiveProfile(context.workspaceState);
+    // RUST-357(HR-HTTP-015):发送面端点健康观察口——传输层每次发送的断连/
+    // 重连事实直接更新通道状态栏灯的 note(与探活 note 同一归属模型)。
+    const healthObserver = {
+      noteEndpointHealth: (kind: ReloadTransportKind, ok: boolean, detail: string) =>
+        hotReloadChannelSwitch.noteEndpointHealth(kind, ok, detail)
+    };
     if (activeProfile?.hotReload) {
-      const transport = resolveReloadTransport(activeProfile.hotReload);
+      const transport = resolveReloadTransport(activeProfile.hotReload, {
+        healthObserver,
+        allowNonLoopback: readHttpAllowNonLoopback
+      });
       if (transport) {
         return { transport, targetId: activeProfile.id };
       }
     }
+    if (configuredOnly) {
+      return null;
+    }
     // 默认 http 通道(用户令 2026-11-10):无 profile/无 hotReload 段不回落
     // actionName,走 createDefaultHotReloadChannel 内置模板(与零配置自动
     // 热更同源端点,enabled 显式 true)。targetId 用稳定 'default'。
-    const transport = resolveReloadTransport(createDefaultHotReloadChannel());
+    const transport = resolveReloadTransport(createDefaultHotReloadChannel(), {
+      healthObserver,
+      allowNonLoopback: readHttpAllowNonLoopback
+    });
     return transport ? { transport, targetId: DEFAULT_CHANNEL_TARGET_ID } : null;
   };
   // §11.2 非 py 旁路通道的公共扩展口:这里持有路由表并交给装配——默认
@@ -433,6 +506,12 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   };
   setupHotReload(context, runQuickActionForHotReload, {
     fileChangeRouter,
+    // HR-HTTP-005(RUST-347):自动热更发送前过工作区信任闸——未信任工作区
+    // 禁止任何自动发送(装配注入真实 vscode.workspace.isTrusted;fire 时读)
+    isWorkspaceTrusted: () => vscode.workspace.isTrusted,
+    // HR-UI-004 实时队列面:历史面板经此句柄读流水线三队列自省快照
+    pipelineQueue: hotReloadPipelineQueueRef,
+    onPipelineQueueChanged: hotReloadHistoryFeed.queueChanged,
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,
@@ -535,6 +614,11 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
         listProfiles: () => profileStore.list(),
         saveHotReload: (id, config) => profileStore.saveHotReload(id, config),
         ensureDefaultProfile: ensureDefaultProfileDep,
+        allowNonLoopback: readHttpAllowNonLoopback,
+        // RUST-358(HR-HTTP-016):预览带当前活动 Python 文件(更具体的精确
+        // 请求);无活动 Python 文件走空集(预览如实显示无文件载荷,不伪造)。
+        previewRequest: (config, target) =>
+          defaultPreviewRequest(config, target, activeHotReloadPreviewFiles()),
         ui: {
           showQuickPick: (items, options) => Promise.resolve(vscode.window.showQuickPick(items, { title: options.title })),
           showInputBox: options =>

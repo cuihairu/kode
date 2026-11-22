@@ -279,7 +279,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.console.discoveryHost` | string | `127.0.0.1` | machined 发现广播目标：`127.0.0.1` 保持链路 localhost-only（同机直查）；跨机联验需显式填 `255.255.255.255`（广播）或目标机 IP——安全边界：发现应答对 CONSOLE_TYPE 请求绕过 uid 过滤，跨机=交出整个集群控制面，须知情配置 |
-| `kbengine.consoleLogTail.enabled` | boolean | `true` | 实时日志 tail（702 → 65501 长连推流）总开关。配置缺失视为开，只有显式 `false` 才关（与热更/门控同类口径）。状态栏项显示连接中/已连/退避重连态；断线按指数退避自动重连（1s 起翻倍，封顶 30s） |
+| `kbengine.consoleLogTail.enabled` | boolean | `true` | 实时日志 tail（702 → 65501 长连推流）总开关。配置缺失视为开，只有显式 `false` 才关（与热更/门控同类口径）。状态栏项显示连接中/已连/退避重连态；断线按指数退避自动重连（1s 起翻倍，封顶 30s）。工作区信任闸(RUST-422):tail 长连经 machined 发现到 logger,发现广播目标来自 `kbengine.console.discoveryHost`(工作区配置),未信任工作区里 tail 不建立连接(状态灯如实隐藏);信任工作区后下一轮发现即恢复连接。闸为执行时刻读,与 telnet 信任闸同口径 |
 | `kbengine.consoleLogTail.components` | string[] | `[]` | tail 组件过滤：只保留数组内组件类型名的日志行（引擎 `COMPONENT_NAME`：`cellapp`、`baseapp`、`logger` 等），空数组 = 不过滤。改数组后下一次 tail 重连（开关一次）即生效 |
 | `kbengine.componentStatusPanel.refreshSeconds` | number | `5` | 共享 hub 的 machined 发现轮询间隔（秒）——同时供面板行与 tail 的 logger 地址 |
 | `kbengine.componentStatusPanel.cpuThresholdPercent` | number | `90` | 组件广播 `cpu` 超过该百分比时面板红色标记；进程消失与 state 非运行态（关停值 2/3/4）同样红色（0=INIT/1=RUN 是常态——真机 machine/bots 恒报 INIT） |
@@ -293,7 +293,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | --- | --- | --- | --- |
 | `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表,`Attach to Remote Component` 的目标选择源;`Update launch.json` 把它们以 debugpy `connect` 形式追加进 `launch.json` |
 | `kbengine.jsoncAssociation` | boolean | `true` | 自动把 debug.json 的 glob 键写成 `jsonc` 写进工作区 `.vscode/settings.json` 的 `files.associations`(WorkspaceFolder 级)——debug.json 是 JSONC(带注释),按 json 处理注释会划红线。只动自己那一个键:已有值(用户手填 json/json5/任何值)永不覆盖;关闭时激活只说明不动手。`kbengine.jsoncAssociation.off` 命令把开关翻成 false 并只回收本扩展写入的键(你后来改过值的键原样保留) |
-| `kbengine.debug.autoDebugpy` | boolean | `false` | 组件启动成功后,kode 经该组件 telnet 的 `:python` 层注入 `debugpy.listen`(自建短命客户端;逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682,只绑 127.0.0.1,避开 31000-51000 telnet 段)。命名实例(同组件多开)从该组件 8 槽窗口各取独立口(baseapp 5700/cellapp 5708/loginapp 5716/dbmgr 5724/logger 5732,首闲分配;同组件命名实例超过 8 个,多出的记 warning 跳过)。单组件失败只记日志,绝不阻塞启动。注入前先对所选解释器(`kbengine.python.interpreterPath`→工作区 venv→PATH 链)做 debugpy 预检:缺解释器/缺包/版本过老提前给可操作状态(解释器路径+安装命令),不等注入阶段才报未知失败;资产树已同步过包则照常注入(引擎导入的是资产树包,不依赖本机解释器)。要求组件已开 telnet;端口表外组件(machine/interfaces/bots)跳过。开启后 `Update launch.json` 会为每组件生成一条 debugpy `connect` 附加配置(localRoot=工作区根),并为每个运行中的命名实例追加一条 `component#实例` 条目指向其独立口。首次使用先跑 `kbengine.python.debugpySync` 把系统 debugpy 复制进 `<assets>/scripts/common/debugpy`(引擎模块搜索路径第一位,python_app.cpp:167)。局限如实写明:注入走 telnet,entitydef 装载与早期 config 阶段已过——早期断点由下方独立的启动等待模式覆盖 |
+| `kbengine.debug.autoDebugpy` | boolean | `false` | 组件启动成功后,kode 经该组件 telnet 的 `:python` 层注入 `debugpy.listen`(自建短命客户端;逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682,只绑 127.0.0.1,避开 31000-51000 telnet 段)。命名实例(同组件多开)从该组件 8 槽窗口各取独立口(baseapp 5700/cellapp 5708/loginapp 5716/dbmgr 5724/logger 5732,首闲分配;同组件命名实例超过 8 个,多出的记 warning 跳过)。单组件失败只记日志,绝不阻塞启动。注入前先对所选解释器(`kbengine.python.interpreterPath`→工作区 venv→PATH 链)做 debugpy 预检:缺解释器/缺包/版本过老提前给可操作状态(解释器路径+安装命令),不等注入阶段才报未知失败;资产树已同步过包则照常注入(引擎导入的是资产树包,不依赖本机解释器)。要求组件已开 telnet;端口表外组件(machine/interfaces/bots)跳过。开启后 `Update launch.json` 会为每组件生成一条 debugpy `connect` 附加配置(localRoot=工作区根),并为每个运行中的命名实例追加一条 `component#实例` 条目指向其独立口。首次使用先跑 `kbengine.python.debugpySync` 把系统 debugpy 复制进 `<assets>/scripts/common/debugpy`(引擎模块搜索路径第一位,python_app.cpp:167)。局限如实写明:注入走 telnet,entitydef 装载与早期 config 阶段已过——早期断点由下方独立的启动等待模式覆盖。工作区信任闸(RUST-422):注入目标是该组件 telnet 端点(工作区配置声明),未信任工作区里跳过注入(不发探测包不发 `debugpy.listen` 命令,调试状态板如实呈现该组件「未注入」);信任工作区并重启组件即恢复注入 |
 | `kbengine.debug.pythonTarget` | string | `""` | 引擎目标 Python 三段版本(如 `3.7.3`),debugpy 安装/同步/预检兼容策略的唯一依据(3.7 严格锁 `1.7.0`——debugpy 1.8.0 起要求 Python ≥3.8;3.8 → `1.8.1` 线;3.9 → `1.8.13` 线;3.10+ 下限 `1.8.0`;无已核实支持线的版本绝不盲装)。留空 = 从活动项目的引擎二进制自动判定(`kbe/bin/server` 版本串跨二进制投票);仍判不出 = 诚实未知:自动安装/同步拒绝盲动,预检只报装没装 |
 | `kbengine.debug.debugpyInject` | boolean | `true` | 一键注入命令 `kbengine.debug.debugpyInject` 的总闸（KODE-DBG-001）：选中运行中组件后，经其 telnet 的 `:python` 层发送 `debugpy.listen`（逐组件端口表，表外回落 5678，只绑 `127.0.0.1`），监听就绪即走端口模式附加（探端口→connect；监听起不来如实报错，不硬附加）。复用资产树 debugpy 包同步与短命 telnet 客户端，不起第二条注入通路。关闭后命令只提示不动作。启动最早期断点不在此覆盖——用 `kbengine.debug.waitAtStartup` |
 | `kbengine.debug.waitAtStartup` | boolean | `false` | 显式 opt-in 的启动等待模式(on/off 命令在入口脚本 `scripts/kbengine.py` 插入/移除带标记的引导块,移除逐字节还原)。引导块读 `KODE_DEBUGPY_WAIT_PORT`(启动器为表内组件的默认实例按分配表口下发)并在最早的 Python 处执行 `debugpy.listen` + `wait_for_client()`,组件停在早期断点之前,直到 VS Code 附加对应的 debugpy attach 配置。无环境变量、没有 debugpy 包或任何异常都静默放行,绝不阻塞启动。边界:命名实例仍走 telnet 注入路径(逐实例口来自启动联动窗口,等待模式暂不覆盖);开启期间默认实例的 telnet 注入跳过并记一条日志 |
@@ -391,11 +391,14 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 | `kbengine.telnet.configXmlPath` | string | 空 | 显式指定元件 `kbengine.xml`(支持 `${workspaceFolder}`),优先于自动探测;设置显式端口 >0 时端口以设置为准 |
 | `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒),低于 1 按 1 秒执行 |
 
+工作区信任闸(RUST-422):目标主机来自工作区配置,未信任工作区里 telnet 探测不连任何配置声明的主机、不建持久会话(状态灯如实关闭;信任工作区后下一轮探测恢复)。闸为执行时刻读,与 HTTP 快捷请求信任闸同口径。
+
 ### HTTP 快捷请求
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表(默认含一条停用示例) |
+| `kbengine.http.allowNonLoopback` | boolean | `false` | HTTP 快捷请求与热更部署通道是否允许发往非 loopback 端点。默认关闭:只放行确认的 loopback 目标(本机引擎:`localhost` / `*.localhost` / `127.0.0.0/8` / `[::1]`,按 host 字面量分类,不做 DNS 解析);非 loopback 目标(内网/公网主机、云元数据地址如 `169.254.169.254`)在请求发出前一律阻止,落可审查的 `⛔` 阻止行+错误弹窗(SSRF/数据外带防护)。开启后非 loopback 放行但逐次先落 `⚠` 安全警告——仅在你信任该主机时使用 |
 
 类型:array;默认含一条停用的示例(热更新示例,`enabled: false`),按默认热更新端点形态给出(`POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`,body `module_name=<模块名>`)——`module_name` 刻意在 query 与 body 各带一份,兼容不同服务端实现(读 query 还是读 body 都取得到),同值重复无害——等价于命令行:
 
@@ -442,6 +445,8 @@ curl -X POST 'http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI' -
 ```
 
 执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」:`▶` 请求行 → `✓` 状态码 · 耗时 → 回包(超 4000 字符截断标注全长);失败以 `✗` 标记 + 错误弹窗呈现。
+
+端点策略(RUST-420,与工作区信任闸互补):模板变量插值后的真实 URL 必须指向本机确认的 loopback 端点才发出。非 loopback 主机被阻止(请求不出本机;落 `⛔` 阻止行+错误弹窗,点名主机与 `kbengine.http.allowNonLoopback` 设置),除非显式开启该设置——开启后逐次先落 `⚠` 安全警告再放行。未信任工作区更早被信任闸拦,与本闸无关。分类只认 host 字面量——名字恰好解析到 loopback 的公网域名仍按非 loopback 拦(可显式授权放行);`file://` 等非 HTTP URL 过本闸后由传输面按协议拒绝。同一端点策略也闸 profile 化热更部署通道(`HttpReloadTransport`):其发送与探活都在请求发出前过本策略——非 loopback 未授权一律阻止(逐文件 `failed` 回执带阻止原因,不发请求),已授权逐次把 `⚠` 安全警告贴在回执上(台账逐次可见)。该通道默认模板端点是 `127.0.0.1:8090`,loopback 恒放行。
 
 ### 自动热重载
 

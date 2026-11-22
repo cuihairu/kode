@@ -339,7 +339,7 @@
 - 新侧栏视图 `kbengine.hotReloadHistory`(package.json 声明在「快速执行」与「服务器」之间,`%kbengine.view.hotReloadHistory%`):投递台账(`HotReloadTargetStateStore`)是事实源——新 `onRecord` 依赖把每次发送/回执升级/注解写回即时投影进 `HotReloadHistoryCore`,历史绝不重读过期快照。行键=「目标键/文件#代际」(`buildHotReloadTargetKeyId`+文件名+attempt):同一次执行的回执升级幂等原位替换,新代际=新行。
 - 状态三态如实映射:台账 `accepted`(回执中段,未核验)呈现为「已发送(未确认)」,绝不拔高成「已应用」;`applied`/`failed` 逐字透传并带错误摘要。
 - 树面(HR-UI-002/010/014):根三组——最近更新(最新在前,页大小封顶)、按文件、按目标——键组下再套行,同路径不同目标天然分行。行标题=`buildHistoryEntryLabel`(fullModule,HR-MOD-011),description=状态·目标,tooltip=双名+file+target+时间+requestId。台账事件重渲染走合并窗节流(缺省 500 ms,HR-UI-007);无 `createTreeView` 的受限宿主退化为 `registerTreeDataProvider`(与既有侧栏视图同契约)。
-- 新命令:`kbengine.hotReload.historySearch`(树面 fullModule 子串过滤,大小写不敏,留空清除,取消不动)与 `kbengine.hotReload.historyPanel`(普通 `createWebviewPanel`,不新造框架):页头=监听模式/目标/显示 N/M 行(未配置如实占位 `(未配置)`/`(默认)`),过滤表单(模块子串/目标 id/状态),最新在前表格,行=fullModule(双名不同时并列 `发送: requestModule`,HR-UI-006)+file+target+状态+时间+requestId(HR-HTTP-014 展示面)+错误摘要,「加载更多」逐页增量拉满为止(HR-UI-007)。
+- 新命令:`kbengine.hotReload.historySearch`(树面 fullModule 子串过滤,大小写不敏,留空清除,取消不动)与 `kbengine.hotReload.historyPanel`(普通 `createWebviewPanel`,不新造框架):页头=监听模式/目标/显示 N/M 行(未配置如实占位 `(未配置)`/`(默认)`),过滤表单(模块子串/目标 id/状态),最新在前表格,行=fullModule(双名不同时并列 `发送: requestModule`,HR-UI-006)+file+target+状态+时间+requestId(HR-HTTP-014 展示面)+错误摘要,「加载更多」逐页增量拉满为止(HR-UI-007);可见行超虚拟滚动阈值(200,即缺省容量调高后才触发)时,表格只渲染视口窗口行(computeVirtualScrollWindow),顶/底 spacer 把滚动条撑到内容总高,webview 在滚动时用同公式的 JS 镜像重渲窗口行——不走全量重渲往返,滚动位置不重置。
 - feed 独立(HR-UI-012):面板关闭不停任何服务——只清面板引用;feed 与树照常入账,重开面板见全量历史。全部句柄进 `context.subscriptions`;dispose 清节流 pending 钟,拆除后不再 fire。
 - 持久化(HR-MOD-014):`persist` 注入面,装配侧以 `context.workspaceState` 适配、键 `kbengine.hotReload.history`——每次投影落全量行,启动回载,形状不符的条目如实丢弃(绝不硬造成行)。无 `workspaceState` 的宿主(测试替身)经可选链如实退化为不持久化——激活绝不因缺面而崩。
 - 启动视图契约保持:新 id 进 `KBENGINE_SIDEBAR_VIEW_IDS`(占位先行注册,装配时真 provider 接管),占位契约闸保持 13 视图 × 2 登记。
@@ -362,3 +362,27 @@
 - 不静默篡改是结构性的:纯核零配置写入面;改写只动确认条目的模板字符串(`${module}` → `${fullModule}`),其余条目逐字保留(拼接数组里同一引用,未知自定义字段原样),确认两次后才经 `ConfigurationTarget.Workspace` 整体写回。未配置 `kbengine.hotReload.tempEdit.scriptRoot` 时拒绝迁移并点名原因(`${fullModule}` 会展开空串——先配脚本资源根),绝不给一个自己知道会断链的改写建议。
 - 注册位于 `activateHttpRequestViews`,与既有 HTTP 快捷请求命令同侧;严格命令奇偶闸(每声明 id 必注册,每注册 id 必声明)覆盖装配面,NLS 标题双语言齐。
 - 测试:`tests/hotReloadRequestPreview.test.ts` 7 钉——预览行(替换后形状/三名字并列/停用条目带原因列出)、空文件如实、未配 scriptRoot 双名如实空串而 legacy 值照常、HR-MOD-008 开关进默认面预览、原始条目分析逐字段计数、无占位/未配置如实、改写其余字段逐字保留、拼接保留兄弟条目同一引用。prove-red:迁移改写中和为 no-op 后改写钉转红;默认面开关硬写 `false` 后 HR-MOD-008 预览钉转红——逆向 sed 恢复,7/7 绿。
+
+
+## 23. HR-EXT-001 版本化生命周期契约（2026-11-22,RUST-405,生命周期插槽）
+
+- `HotReloadProvider` 面在既有发送面(canSend/send)之外加四个**可选**生命周期插槽:`resolveModule`(文件→模块身份)、`prepareRequest`(目标+身份→请求)、`interpretResponse`(发送结果→七类分类解释)、`queryAppliedRevision`(已应用版本查询)。可选=缺省槽回落(组合既有核),增量前实现(只有 canSend/send)形状不变——向后兼容,`apiVersion` 不递增(与 HR-HTTP-002 增量字段同纪律,绝不因加可选成员升版本)。
+- 缺省槽 `createDefaultHotReloadLifecycleSlots` 组合既有核,不自创解析、不自创错误分类:`resolveModule` 委托 `resolveHotReloadModuleIdentity`(scriptRoots/allowRootLevelStem 装配面默认,逐调用可覆盖,不跨调用粘滞);`prepareRequest` 透传既有发送请求形状(files=[fileUri]、moduleIdentities=[requestModule]、可选 revision/correlationId 如实不带,不冒充空);`interpretResponse` 委托 `classifyHotReloadErrorReason`(七类,ok 透传);`queryAppliedRevision`=如实 `null`(未接线,绝不编造运行时版本)。
+- 注册表 `HotReloadProviderRegistry.resolveLifecycle(profile)`:按 profile 选发送 provider(同 resolveSendProvider:第一个 canSend 应答者胜),再把 provider 自带的四个插槽与缺省槽合成——实现自带槽优先,缺槽回落缺省,返回 `{provider, slots}` 非半态。无人应答/null profile=如实 `null`(不回落默认,同发送面口径)。
+- 测试:`tests/hotReloadPluginApi.test.ts` 7 钉——缺省槽 resolveModule 唯一根命中返回身份(双名)、无根候选诚实 no-root(不猜不回落)、prepareRequest 形状(逐项透传/缺省 revision/correlationId 如实不带)、interpretResponse 七类(HTTP 500→apply-failed、未知 detail→unknown、ok 透传)、queryAppliedRevision 未接线=如实 null、registry.resolveLifecycle 自定义槽优先+缺槽回落缺省、纯发送 provider 缺槽全回落+无人应答/null profile=如实 null。prove-red:中和 queryAppliedRevision 为伪造引擎版本+prepareRequest 丢 moduleIdentities 后 3 钉转红(含缺槽回落钉),逆向恢复 16/16 绿。
+
+
+## 24. HR-EXT-002 版本化指纹契约（2026-11-22,RUST-406,compare/fetchEngineDigest 可选槽）
+
+- `FingerprintProvider` 面在既有计算面(fileHash/semanticFingerprint/negotiateDigest/profileLabel)之外加两个**可选**槽:`compare`(三路对拍)与 `fetchEngineDigest`(引擎 Digest 获取)。可选=缺省槽回落既有核/如实 not-wired,增量前实现(只有原四方法)形状不变——向后兼容,`apiVersion` 不递增(与 HR-HTTP-002/HR-EXT-001 增量字段同纪律)。
+- 缺省槽 `defaultHotReloadFingerprintProvider`: `compare` 委托既有 `compareFingerprints` 核(文件/语义/已应用三路判定,不自创对拍逻辑);`fetchEngineDigest`=纯核零 IO 如实 not-wired `null`(绝不编造引擎摘要)。真实引擎摘要获取与 tier/verified/compatible 可信度结论在装配面 RUST-404 `defMd5Check`(那里引擎证据是 IO 面);本面只声明「取摘要」边界,不重复声明可信度——可信度抽象既有(RUST-404),不建平行面。
+- 算法版本声明=既有 `apiVersion`('1',FingerprintProvider 钉接口形状);可信度声明=既有 RUST-404 `EngineDigestCompatibility`(tier/verified/compatible),两处都非本批新增,只在账。
+- 测试:`tests/hotReloadPluginApi.test.ts` 4 钉(缺省槽 compare 委托三路对拍:变化/一致如实;同值 unchanged+未协商算法=applied unknown+点名原因不跨类比;fetchEngineDigest 纯核零 IO=not-wired null;可选槽可缺省=不含两槽的纯计算形态仍合规+apiVersion=1)。prove-red:中和 compare 恒 unchanged+fetchEngineDigest 伪造摘要后 3 钉转红(含委托/not-wired 钉),逆向恢复 20/20 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 48 例绿;tsc -p ./ 与 eslint src 双绿。
+
+
+## 25. HR-EXT-003 资格判定规则（2026-11-22,RUST-407,auto/manual/restart 保守序）
+
+- 新版本化扩展面 `HotReloadEligibilityRule`(plugin-api 核内):按 engine profile、root、文件类型、上下文四要素判定 `auto`(可自动发送)/`manual`(人工确认)/`restart`(需重启)。fork/第三方引擎=换 rule 实现整面接管分类;缺省规则只做保守组合判定,不自创结构分析。
+- 缺省规则 `createDefaultHotReloadEligibilityRule` 保守序:①restart 最强——`context.structuralReasons` 非空(既有 RUST-397 def 结构闸 verdict 的产物,规则**只消费闸结论不重算结构**)即判 restart,优先于一切;②auto 须四要素齐备——`.py` 文件+root 已配+引擎版本已知(`EngineProfile.engineVersion !== null`)+触发源 `watcher-auto` 且非用户显式动作,任何一缺=manual(绝不自动发未知引擎/未知根/非 py/人工链);③其余=manual(安全缺省)。
+- 与既有面不重复:pipeline 的 `SavePipelineEmitMode='auto'|'preview-release'` 是发送管线的出口判定,def 闸 `restart_required` 是结构分析;本规则是**资格分类的扩展面**(fork 接管点),组合消费两者的结论,不建平行判定逻辑。
+- 测试:`tests/hotReloadPluginApi.test.ts` 4 钉——restart 最强(结构 reasons 非空即使 auto 要素全齐)、auto 四要素齐备、任何一要素缺=保守 manual(root null/引擎版本 null/非 py/command 触发/userInitiated/全缺)、fork 可换 rule 整面接管+apiVersion 钉 1。prove-red:中和结构闸消费支路(false)+判 auto 分支(恒 true)后 2 钉转红(restart 钉+保守 manual 钉),逆向恢复 24/24 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare+defGate+fileState 6 文件 109 例绿;tsc -p ./ 与 eslint src 双绿。

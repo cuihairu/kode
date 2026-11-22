@@ -13,8 +13,12 @@
 
 import type { ProjectProfile } from '../projectProfiles';
 import {
+  HttpReloadTransport,
   resolveReloadTransport,
   type ReloadChannelConfig,
+  type ReloadHttpRequest,
+  type ReloadTarget,
+  type ReloadTransportDeps,
   type ReloadTransportKind
 } from './hotReloadTransport';
 
@@ -35,8 +39,24 @@ export interface HotReloadChannelConfigDeps {
    * 连通性测试:给定配置返回 probe 结果。缺省经 resolveReloadTransport 建
    * 真实通道调 probe();未配/字段缺失返回 ok:false 如实说明。测试注入为
    * 探真 transport.probe,不触碰 profile(探测不保存)。
+   * RUST-420:第二参=端点策略(缺省未授权,非 loopback 探活被阻止)。
    */
-  probe?(config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }>;
+  probe?(
+    config: ReloadChannelConfig,
+    policy?: Pick<ReloadTransportDeps, 'allowNonLoopback'>
+  ): Promise<{ ok: boolean; detail: string }>;
+  /**
+   * RUST-420(HR-QA-008)非 loopback 端点显式授权(执行时读):探活/发送走
+   * HTTP 通道时透传给通道。缺省不注入=未授权(非 loopback 一律阻止)。
+   */
+  allowNonLoopback?: () => boolean;
+  /**
+   * RUST-358(HR-HTTP-016):预览将要发送的精确请求(不发送、零副作用)。
+   * 缺省走 defaultPreviewRequest(经 buildReloadHttpRequest 构造);未配/非
+   * HTTP 通道返回 ok:false 如实说明。files 为代表性文件集——缺省空集,
+   * 注入方(激活层)可带当前活动文件让预览更具体。预览不写 profile。
+   */
+  previewRequest?(config: ReloadChannelConfig, target: ReloadTarget, files?: readonly string[]): ChannelRequestPreview;
   /**
    * 零 profile 兜底(用户令 2026-11-10「创建默认的」):空列表时先自动创建
    * 并激活默认 profile,返回新档;已有 profile 或不适用返回 null。缺省
@@ -80,9 +100,15 @@ export const DEFAULT_OFFICIAL_PORT = 40000;
 /** Engine kbengine_defaults.xml baseapp/telnet_service; custom deployments override it. */
 export const DEFAULT_OFFICIAL_PASSWORD = 'pwd123456';
 
-/** 默认连通性探测:经真实 transport.probe();不配/畸形如实 ok:false */
-export const defaultProbe = async (config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }> => {
-  const transport = resolveReloadTransport(config);
+/**
+ * 默认连通性探测:经真实 transport.probe();不配/畸形如实 ok:false。
+ * RUST-420:第二参=端点策略(透传给通道;缺省未授权,非 loopback 探活被阻止)。
+ */
+export const defaultProbe = async (
+  config: ReloadChannelConfig,
+  policy?: Pick<ReloadTransportDeps, 'allowNonLoopback'>
+): Promise<{ ok: boolean; detail: string }> => {
+  const transport = resolveReloadTransport(config, policy);
   if (!transport) {
     return { ok: false, detail: '通道配置不完整,无法探测' };
   }
@@ -91,6 +117,57 @@ export const defaultProbe = async (config: ReloadChannelConfig): Promise<{ ok: b
   } catch (error) {
     return { ok: false, detail: error instanceof Error ? error.message : String(error) };
   }
+};
+
+/**
+ * RUST-358(HR-HTTP-016):预览结果。ok:false = 无 HTTP 请求可预览(未配/非
+ * HTTP 通道);ok:true 时 request 为将要发送的精确报文(与 send 同形),
+ * detail 为可读呈现(方法/URL/headers/body)。
+ */
+export interface ChannelRequestPreview {
+  readonly ok: boolean;
+  readonly detail: string;
+  readonly request?: ReloadHttpRequest;
+}
+
+/** 请求的可读呈现(确认时逐项可见:方法/URL/headers/body) */
+export function formatChannelRequestPreview(request: ReloadHttpRequest): string {
+  const headerLines = Object.entries(request.headers)
+    .map(([key, value]) => `    ${key}: ${value}`)
+    .join('\n');
+  const lines = [`${request.method} ${request.url}`];
+  if (headerLines !== '') {
+    lines.push(headerLines);
+  }
+  lines.push(request.body);
+  return lines.join('\n');
+}
+
+/**
+ * 默认预览:经真实通道 resolveReloadTransport + transport.preview 构造与
+ * send 逐字节同形的请求(零副作用——不执行、不写 profile)。只支持自研接收器
+ * (HTTP)通道——官方通道经引擎控制台,无 HTTP 请求可预览。files 缺省空集
+ * (预览如实显示无文件载荷,不伪造文件路径);未给 senderDigests 时 detail
+ * 注明发送时按文件冻结 digest 自动附加。
+ */
+export const defaultPreviewRequest = (
+  config: ReloadChannelConfig,
+  target: ReloadTarget,
+  files: readonly string[] = []
+): ChannelRequestPreview => {
+  const transport = resolveReloadTransport(config);
+  if (!(transport instanceof HttpReloadTransport)) {
+    return {
+      ok: false,
+      detail: '预览只支持自研接收器(HTTP)通道(官方通道经引擎控制台,无 HTTP 请求可预览)'
+    };
+  }
+  const request = transport.preview(target, files);
+  const detail =
+    `${files.length > 0 ? `代表性文件: ${files.join(', ')}\n` : ''}` +
+    `${formatChannelRequestPreview(request)}\n` +
+    '(本次预览不含 sender_digests:发送时按文件冻结 digest 自动附加)';
+  return { ok: true, detail, request };
 };
 
 /**
@@ -250,15 +327,16 @@ async function collectHttpConfig(
   };
 }
 
-/** 保存/探测/取消三选一 quick-pick */
+/** 保存/探测/预览/取消 quick-pick(RUST-358 起预览先行:确认精确请求才启用自动热更) */
 interface FinalChoice {
   readonly label: string;
-  readonly action: 'save' | 'probe' | 'cancel';
+  readonly action: 'save' | 'probe' | 'preview' | 'cancel';
 }
 
 const FINAL_OPTIONS: FinalChoice[] = [
-  { label: '保存通道配置', action: 'save' },
+  { label: '预览请求(不发送)', action: 'preview' },
   { label: '测试连通性(不保存)', action: 'probe' },
+  { label: '保存通道配置(确认并启用自动热更)', action: 'save' },
   { label: '取消(不保存)', action: 'cancel' }
 ];
 
@@ -311,24 +389,45 @@ async function runAdvancedChannelFlow(
       return false;
     }
   }
-  const finalPick = await deps.ui.showQuickPick(FINAL_OPTIONS, { title: '热更通道:下一步' });
-  if (!finalPick || finalPick.action === 'cancel') {
-    return false;
-  }
-  if (finalPick.action === 'probe') {
-    if (!config) {
-      await deps.ui.showInformationMessage('未配通道:无通道可探测(将回落 actionName 通道)');
+  // RUST-358(HR-HTTP-016):预览→确认循环。预览给出将要发送的精确请求
+  // (URL/method/参数,不发送),回到同一张「下一步」单:用户确认后保存即
+  // 启用自动热更;再预览/再探测皆可,取消不写 profile。
+  for (;;) {
+    const finalPick = await deps.ui.showQuickPick(FINAL_OPTIONS, { title: '热更通道:下一步' });
+    if (!finalPick || finalPick.action === 'cancel') {
       return false;
     }
-    const result = await (deps.probe ?? defaultProbe)(config);
-    if (result.ok) {
-      await deps.ui.showInformationMessage(`连通性测试通过: ${result.detail}`);
-    } else {
-      await deps.ui.showErrorMessage(`连通性测试失败: ${result.detail}`);
+    if (finalPick.action === 'preview') {
+      if (!config) {
+        await deps.ui.showInformationMessage('未配通道:无请求可预览(将回落 actionName 通道)');
+        continue;
+      }
+      const target: ReloadTarget = { rootId: profile.assetsRoot, targetId: profile.id };
+      const preview = (deps.previewRequest ?? defaultPreviewRequest)(config, target);
+      if (preview.ok) {
+        await deps.ui.showInformationMessage(`将发送的请求(确认后保存即启用自动热更):\n${preview.detail}`);
+      } else {
+        await deps.ui.showErrorMessage(preview.detail);
+      }
+      continue;
     }
-    return false;
+    if (finalPick.action === 'probe') {
+      if (!config) {
+        await deps.ui.showInformationMessage('未配通道:无通道可探测(将回落 actionName 通道)');
+        return false;
+      }
+      const result = await (deps.probe ?? defaultProbe)(config, {
+        allowNonLoopback: deps.allowNonLoopback
+      });
+      if (result.ok) {
+        await deps.ui.showInformationMessage(`连通性测试通过: ${result.detail}`);
+      } else {
+        await deps.ui.showErrorMessage(`连通性测试失败: ${result.detail}`);
+      }
+      return false;
+    }
+    return persistChannelConfig(deps, profile, config);
   }
-  return persistChannelConfig(deps, profile, config);
 }
 
 /** 命令入口选项(状态栏「一键修」与快捷键共用同一命令) */
@@ -405,7 +504,9 @@ export async function runHotReloadChannelConfigCommand(
     presetPick.preset === 'http-receiver'
       ? buildHttpPresetConfig(existing)
       : buildOfficialPresetConfig(existing);
-  const result = await (deps.probe ?? defaultProbe)(config);
+  const result = await (deps.probe ?? defaultProbe)(config, {
+    allowNonLoopback: deps.allowNonLoopback
+  });
   if (!result.ok) {
     await deps.ui.showErrorMessage(
       `[${profile.displayName}] 预设探活不通,未启用: ${CHANNEL_LABEL[config.channel]} — ${result.detail}` +
@@ -460,8 +561,16 @@ export interface HotReloadChannelSwitchDeps {
   createStatusBarItem(): ChannelStatusItemLike;
   registerCommand(command: string, handler: () => unknown): { dispose(): void };
   ui: HotReloadChannelSwitchUi;
-  /** 连通性探测;缺省走 defaultProbe(真实通道) */
-  probe?(config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }>;
+  /** 连通性探测;缺省走 defaultProbe(真实通道)。RUST-420:第二参=端点策略 */
+  probe?(
+    config: ReloadChannelConfig,
+    policy?: Pick<ReloadTransportDeps, 'allowNonLoopback'>
+  ): Promise<{ ok: boolean; detail: string }>;
+  /**
+   * RUST-420(HR-QA-008)非 loopback 端点显式授权(执行时读):探活/发送走
+   * HTTP 通道时透传给通道。缺省不注入=未授权(非 loopback 一律阻止)。
+   */
+  allowNonLoopback?: () => boolean;
   /** 一键修:带 profile id 直达该 profile 的高级配置流程,返回是否写盘成功 */
   runAdvancedConfig?(profileId: string): Promise<boolean>;
   /**
@@ -490,6 +599,12 @@ interface ChannelProbeNote {
   readonly ok: boolean;
   readonly detail: string;
   readonly stateKey: string;
+  /**
+   * RUST-357(HR-HTTP-015)来源:'probe'=连通性测试(既有红/绿探活);
+   * 'send'=实际发送断连/重连自动观察(端点健康随发送事实更新)。
+   * 缺省 'probe'(既有 note 语义不变)。
+   */
+  readonly source?: 'probe' | 'send';
 }
 
 /**
@@ -525,6 +640,17 @@ export class HotReloadChannelQuickSwitch {
       // profile 或通道配置身份已变:旧探活结论不再适用
       this.note = undefined;
     }
+    this.render();
+  }
+
+  /**
+   * RUST-357(HR-HTTP-015):发送面端点健康观察(断连/重连自动更新通道灯)。
+   * 归属与探活 note 同一模型:stateKey 取当前「激活 profile + 通道配置身份」,
+   * profile 切换/配置变更后 refresh 即作废;health success 只说明端点可达,
+   * 不冒充任何模块已更新成功(灯只红/绿,投递结果在台账/发送态灯)。
+   */
+  noteEndpointHealth(channel: ReloadTransportKind, ok: boolean, detail: string): void {
+    this.note = { channel, ok, detail, stateKey: this.stateKey(), source: 'send' };
     this.render();
   }
 
@@ -595,7 +721,9 @@ export class HotReloadChannelQuickSwitch {
     let probeDetail = '';
     if (config) {
       // 探活期间 profile/通道被改即判过期(与选择前冻结的同一把身份键),作废不落账
-      const result = await (this.deps.probe ?? defaultProbe)(config);
+      const result = await (this.deps.probe ?? defaultProbe)(config, {
+        allowNonLoopback: this.deps.allowNonLoopback
+      });
       probeDetail = result.detail;
       if (stateKeyAtOpen !== this.stateKey()) {
         await this.deps.ui.showInformationMessage(
@@ -665,15 +793,24 @@ export class HotReloadChannelQuickSwitch {
 
   private render(): void {
     // 状态栏文字只显示**当前已配置**的通道(探活失败时配置没动,就还是原通道);
-    // 红标 + tooltip 才说明最近一次试的通道不通——未落盘的通道绝不冒充当前状态
+    // 红标 + tooltip 才说明最近一次试的通道不通——未落盘的通道绝不冒充当前状态。
+    // RUST-357:红/绿 note 分两源——'probe'=探活结论(既有文案),'send'=发送
+    // 断连/重连自动观察(端点健康随发送事实更新,文案点名断连/可达)。
     const failed = this.note !== undefined && !this.note.ok;
     this.bar.text = `${failed ? '$(error)' : '$(plug)'} 热更:${shortChannelLabel(this.currentChannel)}`;
-    this.bar.tooltip =
-      failed && this.note
-        ? `热更通道探活不通: 试的 ${CHANNEL_LABEL[this.note.channel]} — ${this.note.detail}(点击三选切换,或高级配置核对参数)`
-        : this.note?.ok && this.note.channel === this.currentChannel
-          ? `热更通道探活通过: ${this.note.detail}(点击三选切换通道)`
-          : '点击切换热更通道(三选一键,选中即探活)';
+    if (failed && this.note) {
+      this.bar.tooltip =
+        this.note.source === 'send'
+          ? `热更通道断连: ${CHANNEL_LABEL[this.note.channel]} — ${this.note.detail}(点击三选切换,或高级配置核对参数)`
+          : `热更通道探活不通: 试的 ${CHANNEL_LABEL[this.note.channel]} — ${this.note.detail}(点击三选切换,或高级配置核对参数)`;
+    } else if (this.note?.ok && this.note.channel === this.currentChannel) {
+      this.bar.tooltip =
+        this.note.source === 'send'
+          ? `热更通道可达: ${this.note.detail}`
+          : `热更通道探活通过: ${this.note.detail}(点击三选切换通道)`;
+    } else {
+      this.bar.tooltip = '点击切换热更通道(三选一键,选中即探活)';
+    }
     this.bar.backgroundColor = failed ? this.dangerBackgroundColor : undefined;
   }
 }

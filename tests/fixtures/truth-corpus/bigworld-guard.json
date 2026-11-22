@@ -1,0 +1,76 @@
+{
+  "family": "bigworld-guard",
+  "grounding": {
+    "doc": "docs/knowledge/bigworld-legacy-status.md",
+    "engineHead": "c2a3b8f"
+  },
+  "entries": [
+    {
+      "id": "neg-bigworld-api-docs-absent",
+      "kind": "negative",
+      "input": {
+        "path": "api-docs",
+        "surface": "KBEngine API reference"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "bigworld/ 五份 stub 是 BigWorld-Engine-14.4.1(商业上游)的源料,非 KBEngine;KB-API-001..008 是完整 KBEngine API 参考,bigworld 不向其添加任何 KBEngine 内容。"
+      },
+      "evidence": [
+        "integrated into any KBEngine API article",
+        "not KBEngine",
+        "bigworld adds no"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "apiDocsBigWorldMemberCount": 0,
+          "apiDocsBigWorldStringCount": 0
+        }
+      }
+    },
+    {
+      "id": "neg-bigworld-hooks-absent",
+      "kind": "negative",
+      "input": {
+        "path": "hooks-roster",
+        "surface": "KBENGINE_HOOKS"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "BigWorld 回调(/*~ 47 项 callback 组)是 BigWorld-Engine-14.4.1 面,非 KBEngine 引擎回调;kode 钩子名册只收 KBEngine 引擎派发回调。"
+      },
+      "evidence": [
+        "No kode consumer targets BigWorld."
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "hooksBigWorldCount": 0
+        }
+      }
+    },
+    {
+      "id": "neg-bigworld-base-class-absent",
+      "kind": "negative",
+      "input": {
+        "path": "api-docs",
+        "surface": "BigWorld.Base class"
+      },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "BigWorld.Base 是 BigWorld-Engine-14.4.1 baseapp 基类(submodule base.hpp:38,gitlink 3d3cc16),非 KBEngine 面;不进入 kode KBEngine API 参考。"
+      },
+      "evidence": [
+        "`/*~ class BigWorld.Base` at **base.hpp:38**"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "apiDocsBaseClassCount": 0,
+          "apiDocsBaseClassOwnerPresent": false
+        }
+      }
+    }
+  ]
+}

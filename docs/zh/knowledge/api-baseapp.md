@@ -204,12 +204,16 @@ baseapp 注册 `baseapp.cpp:441-444` →
 ### `KBEngine.MemoryStream()`
 
 3.7 源料在 baseapp 模块下列出该构造器（按引擎打包规则的二进制序列化
-对象）。**baseapp 面待取证**：该构造器注册于 `PythonApp` 系工具
-（`kbe/src/lib/server/python_app.cpp:271`，`PyMemoryStream::py_new`），
-但 baseapp 所在的 `EntityApp::installPyModules` 链（`entity_app.h:407-453`）
-无 `MemoryStream` 注册，也未找到面向 baseapp 的
-`PyMemoryStream::installScript` 调用。取证路径：在 baseapp 入口脚本执行
-`KBEngine.MemoryStream()` 并记录结果；在此之前该源料断言视为未证实。
+对象）。**已对 fork HEAD `6d12b8f` 裁定**：`MemoryStream` 是模块级**函数**，由
+`EntityDef::installScript` 追加（`kbe/src/lib/entitydef/entitydef.cpp:2448-2467`，
+`:2455` 处 `APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream,
+script::PyMemoryStream::py_new, METH_VARARGS, 0)`），baseapp 链经
+`EntityApp::installEntityDef`（`entity_app.h:330-335` →
+`EntityDef::installScript(this->getScript().getModule())`）达。`PyMemoryStream`
+**类型**仅 type-only（`entitydef.cpp:2453` `installScript(NULL)`）。此前读
+`EntityApp::installPyModules`（`entity_app.h:407-453`）未见注册系**假阴性**——该函数走
+`installEntityDef` 而非 `installPyModules`。真机跑 `KBEngine.MemoryStream()` 仍可
+复核实例化语义，但模块面归属已静态裁定。
 
 ## 7. `genUUID64`
 
@@ -287,7 +291,7 @@ global order 处于 1..65535，否则首次调用告警
 | `onFini` | 引擎正式关服后触发 | HEAD 无此挂钩；全库只有 client_lib/bots 的 `onFinish` | Fork | `grep -rn onFini kbe/src` = 0 命中；`server/tools/bots/bots.cpp:125`（`onFinish`） |
 | `onReadyForLogin` 返回值 | 返回 ≥ 1.0 即就绪 | `True` → 就绪（v=100）；数值返回与 `0.9999` 比较（非 1.0），且数值本身作为进度百分比上报 | Fork | `initprogress_handler.cpp:213-246` |
 | `genUUID64` 唯一性来源 | 依赖 baseapp 启动参数 `gus` | 守卫检查 `g_componentGlobalOrder` ∈ 1..65535（仅告警一次）；id = 时间戳 + 每秒计数器 | Fork | `lib/pyscript/script.cpp:91-108`；`lib/common/platform.h:738-770` |
-| baseapp 上的 `KBEngine.MemoryStream()` | 列为 baseapp 模块构造器 | `EntityApp` 链无注册；仅 `PythonApp` 系工具注册——运行时**待取证** | Fork | `lib/server/python_app.cpp:271` 存在；`entity_app.h:407-453` 不存在 |
+| baseapp 上的 `KBEngine.MemoryStream()` | 列为 baseapp 模块构造器 | 引擎 baseapp 链**有**注册：`EntityApp::installEntityDef` → `EntityDef::installScript` 把 `MemoryStream` 装成模块级**函数**（非 class；类型仅 type-only）——源料以「构造器」口径描述系高估 | Fork | `entitydef.cpp:2448-2467`（`:2455` 装函数）；`entity_app.h:330-335` |
 | `baseAppData` 删除回调名 | 属性正文写 "See: KBEngine.onBaseAppData and KBEngine.onDelBaseAppData" | 注册的回调名是 `onBaseAppDataDel`——源料的 `onDelBaseAppData` 不存在 | Fork | `baseapp.cpp:3688` |
 | `roundTripTime` 仅 Linux 生效的说法 | "only takes effect under Linux" | 未能证实/证伪 | — | **待取证**：核对 `Proxy::pyGetRoundTripTime`（`proxy.cpp:445`）与预处理器守卫后再归类 |
 | 本面的 3.7→3.12 脚本层差异 | — | 本面不触及 3.8–3.12 变更的 str/bytes/int 语义；python-version-baseline §4 已验证项按引用适用 | Python | [What's New 3.12](https://docs.python.org/3/whatsnew/3.12.html)；见 python-version-baseline §4 |

@@ -148,6 +148,31 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
     ]);
   });
 
+  it('profile 的响应体上限传入执行器，截断回包只记送达', async () => {
+    const config = normalizeReloadChannelConfig({
+      channel: 'http',
+      http: entry({ maxResponseBytes: 512 })
+    });
+    const transport = resolveReloadTransport(config, {
+      http: {
+        run: async request => {
+          expect(request.maxResponseBytes).toBe(512);
+          return {
+            status: 200,
+            body: JSON.stringify({ file: files[0], status: 'applied', digest: 'a'.repeat(64) }),
+            bodyTruncated: true
+          };
+        }
+      }
+    })!;
+    const summary = await transport.send(target, files, () => undefined);
+    expect(summary.receipts).toEqual(files.map(file => ({
+      file,
+      status: 'sent',
+      detail: expect.stringContaining('截断')
+    })));
+  });
+
   it('执行器抛错 → 全 failed(不吞异常;RUST-419 原因带分类前缀)', async () => {
     const transport = new HttpReloadTransport(entry(), {
       run: async () => {
@@ -159,6 +184,132 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
       { status: 'failed', file: files[0], reason: '传输失败:见原始原因(原始:connection refused)' },
       { status: 'failed', file: files[1], reason: '传输失败:见原始原因(原始:connection refused)' }
     ]);
+  });
+});
+
+// RUST-420(HR-QA-008)端点策略闸:profile 部署通道的 HTTP 目的地(配置声明
+// 的 URL)发出前过端点策略——默认只放行 loopback;非 loopback 未授权一律
+// 阻止(不发请求,逐文件 failed 回执携带阻止原因),已授权放行但逐次落
+// 安全警告。与 httpRequestService 快捷请求闸同判据(安全默认收紧)。
+describe('HttpReloadTransport 端点策略闸(RUST-420)', () => {
+  const nonLoopbackEntry = (): HttpRequestEntry =>
+    entry({ url: 'http://10.0.0.8:32000/reload' });
+
+  it('loopback 目标:放行(零警告,请求照发)', async () => {
+    const captured: string[] = [];
+    const transport = new HttpReloadTransport(entry(), {
+      run: async request => {
+        captured.push(request.url);
+        return { status: 200, body: '{}' };
+      }
+    });
+    const summary = await transport.send(target, files, () => undefined);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain('127.0.0.1');
+    // 无回执协议,只记送达;零安全警告(loopback 本意)
+    expect(summary.receipts[0].status).toBe('sent');
+    if (summary.receipts[0].status === 'sent') {
+      expect(summary.receipts[0].detail).not.toContain('非 loopback');
+    }
+  });
+
+  it('非 loopback 未授权(缺省不注入):一律阻止,零 runner 调用,全 failed 带原因', async () => {
+    let calls = 0;
+    const transport = new HttpReloadTransport(nonLoopbackEntry(), {
+      run: async () => {
+        calls += 1;
+        return { status: 200, body: '{}' };
+      }
+    });
+    const summary = await transport.send(target, files, () => undefined);
+    expect(calls).toBe(0);
+    expect(summary.receipts).toHaveLength(files.length);
+    for (const receipt of summary.receipts) {
+      expect(receipt.status).toBe('failed');
+      if (receipt.status === 'failed') {
+        expect(receipt.reason).toContain('非 loopback 端点已阻止');
+        expect(receipt.reason).toContain('10.0.0.8');
+      }
+    }
+  });
+
+  it('非 loopback 显式授权:放行,逐次安全警告贴回执', async () => {
+    const captured: string[] = [];
+    const transport = new HttpReloadTransport(nonLoopbackEntry(), {
+      allowNonLoopback: () => true,
+      run: async request => {
+        captured.push(request.url);
+        return { status: 200, body: '{}' };
+      }
+    });
+    const summary = await transport.send(target, files, () => undefined);
+    expect(captured).toHaveLength(1);
+    expect(summary.receipts[0].status).toBe('sent');
+    if (summary.receipts[0].status === 'sent') {
+      expect(summary.receipts[0].detail).toContain('非 loopback 端点');
+      expect(summary.receipts[0].detail).toContain('已显式授权');
+    }
+  });
+
+  it('授权执行时刻读:未授权阻止,同一调用点授权后恢复发送', async () => {
+    let authorized = false;
+    let calls = 0;
+    const transport = new HttpReloadTransport(nonLoopbackEntry(), {
+      allowNonLoopback: () => authorized,
+      run: async () => {
+        calls += 1;
+        return { status: 200, body: '{}' };
+      }
+    });
+    const blocked = await transport.send(target, files, () => undefined);
+    expect(calls).toBe(0);
+    expect(blocked.receipts[0].status).toBe('failed');
+    authorized = true;
+    const allowed = await transport.send(target, files, () => undefined);
+    expect(calls).toBe(1);
+    expect(allowed.receipts[0].status).not.toBe('failed');
+  });
+
+  it('probe 非 loopback 未授权:阻止,如实报不可达+原因,零 runner 调用', async () => {
+    let calls = 0;
+    const transport = new HttpReloadTransport(nonLoopbackEntry(), {
+      run: async () => {
+        calls += 1;
+        return { status: 200, body: '' };
+      }
+    });
+    const result = await transport.probe();
+    expect(calls).toBe(0);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('非 loopback 端点已阻止');
+    expect(result.detail).toContain('10.0.0.8');
+  });
+
+  it('probe 非 loopback 已授权:放行,安全警告附 detail', async () => {
+    const transport = new HttpReloadTransport(nonLoopbackEntry(), {
+      allowNonLoopback: () => true,
+      run: async () => ({ status: 200, body: '' })
+    });
+    const result = await transport.probe();
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain('端点可达');
+    expect(result.detail).toContain('非 loopback 端点');
+    expect(result.detail).toContain('已显式授权');
+  });
+
+  it('resolveReloadTransport 顶层 allowNonLoopback 透传给 HTTP 通道', async () => {
+    const config = normalizeReloadChannelConfig({
+      channel: 'http',
+      http: nonLoopbackEntry()
+    });
+    const transport = resolveReloadTransport(config, {
+      allowNonLoopback: () => true,
+      http: {
+        run: async () => ({ status: 200, body: '{}' })
+      }
+    })!;
+    const summary = await transport.send(target, files, () => undefined);
+    expect(summary.receipts[0].status).not.toBe('failed');
   });
 });
 

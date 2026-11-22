@@ -101,6 +101,29 @@ describe('resolveHotReloadModuleIdentity(HR-MOD-001 DTO+HR-MOD-002 纯解析器)
     }
   });
 
+  it('RUST-424 重复根矩阵:scriptRoots 含同一根两次(或 scriptRoot 与 scriptRoots 同根)须去重唯一解析,不得假 ambiguous(同根≠多根)', () => {
+    const dupRoots = resolveHotReloadModuleIdentity({
+      fileUri: `${ROOT}/entities/fight/FightAI.py`,
+      scriptRoots: [ROOT, ROOT]
+    });
+    expect(dupRoots.ok).toBe(true);
+    if (dupRoots.ok) {
+      expect(dupRoots.identity.requestModule).toBe('fight.FightAI');
+      expect(dupRoots.identity.fullModule).toBe('entities.fight.FightAI');
+    }
+    const mergedDup = resolveHotReloadModuleIdentity({
+      fileUri: `${ROOT}/base/Avatar.py`,
+      scriptRoot: ROOT,
+      scriptRoots: [ROOT]
+    });
+    expect(mergedDup.ok).toBe(true);
+    const distinctStillAmbiguous = resolveHotReloadModuleIdentity({
+      fileUri: `${ROOT}/entities/fight/FightAI.py`,
+      scriptRoots: [ROOT, `${ROOT}/entities`]
+    });
+    expect(distinctStillAmbiguous).toMatchObject({ ok: false, diagnostics: [{ code: 'ambiguous-root' }] });
+  });
+
   it('相邻目录假包含不命中:/ws/scripts2 不得顶替 /ws/scripts', () => {
     const result = resolveHotReloadModuleIdentity({
       fileUri: '/ws/scripts2/base/Avatar.py',
@@ -197,5 +220,46 @@ describe('resolveHotReloadModuleIdentity(HR-MOD-001 DTO+HR-MOD-002 纯解析器)
     expect(
       resolveHotReloadModuleIdentity({ fileUri: `${ROOT}/base/Avatar.py`, scriptRoot: '' })
     ).toMatchObject({ ok: false, diagnostics: [{ code: 'no-root' }] });
+  });
+});
+
+describe('RUST-423(HR-QA-011)生产形态路径矩阵:SSH/DevContainer fsPath 与 WSL UNC 唯一解析', () => {
+  it('SSH fsPath(远端宿主绝对路径)与 DevContainer fsPath(容器绝对路径)唯一解析', () => {
+    const ssh = resolveHotReloadModuleIdentity({
+      fileUri: '/home/u/proj/scripts/entities/fight/FightAI.py',
+      scriptRoot: '/home/u/proj/scripts'
+    });
+    expect(ssh.ok).toBe(true);
+    if (ssh.ok) {
+      expect(ssh.identity.requestModule).toBe('fight.FightAI');
+      expect(ssh.identity.fullModule).toBe('entities.fight.FightAI');
+    }
+    const container = resolveHotReloadModuleIdentity({
+      fileUri: '/workspaces/proj/scripts/base/Avatar.py',
+      scriptRoot: '/workspaces/proj/scripts'
+    });
+    expect(container.ok).toBe(true);
+    if (container.ok) {
+      expect(container.identity.requestModule).toBe('Avatar');
+    }
+  });
+
+  it('WSL UNC(//wsl$)与 Windows 反斜杠形态唯一解析', () => {
+    const wsl = resolveHotReloadModuleIdentity({
+      fileUri: '//wsl$/Ubuntu-22.04/home/u/scripts/base/Avatar.py',
+      scriptRoot: '//wsl$/Ubuntu-22.04/home/u/scripts'
+    });
+    expect(wsl.ok).toBe(true);
+    if (wsl.ok) {
+      expect(wsl.identity.requestModule).toBe('Avatar');
+    }
+    const win = resolveHotReloadModuleIdentity({
+      fileUri: 'c:\\ws\\scripts\\entities\\fight\\FightAI.py',
+      scriptRoot: 'C:\\ws\\scripts'
+    });
+    expect(win.ok).toBe(true);
+    if (win.ok) {
+      expect(win.identity.requestModule).toBe('fight.FightAI');
+    }
   });
 });

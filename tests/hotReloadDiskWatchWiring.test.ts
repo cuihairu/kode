@@ -211,6 +211,28 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(diagnostics).toHaveLength(1);
   });
 
+  it('远程 URI(HR-WATCH-018):vscode-remote 工作区按 fsPath 派生根与进链,不因 scheme 误滤', async () => {
+    // 远程 SSH 工作区:根与文件 URI 均 vscode-remote://,装配只取 fsPath 驱动,
+    // scheme 不是屏障(否则远程编辑会被误滤成域外)。
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: '/home/dev/ws', scheme: 'vscode-remote' } as never, name: 'remote', index: 0 }
+    ];
+    const { clock, runCalls } = boot();
+    // 远程根按同法派生递归 glob(与本地根同形)
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      '**/*.py',
+      '/home/dev/ws/**/*.py'
+    ]);
+    lastFileSystemWatcher.current!.fireChange({
+      fsPath: '/home/dev/ws/scripts/base/Avatar.py',
+      scheme: 'vscode-remote',
+      authority: 'ssh-remote+host'
+    } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+  });
+
   it('磁盘+save 重叠:同文件单批不双发(HR-WATCH-003 live)', async () => {
     const { clock, runCalls } = boot();
     const saveWatcher = allFileSystemWatchers[0];
@@ -281,6 +303,46 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(clock.tick()).toBe(0);
     await flush();
     expect(runCalls).toEqual([]);
+  });
+
+  it('工作区根变更:foldersChanged 即按新根重建磁盘面(RUST-385 HR-UI-012)', async () => {
+    const { clock, runCalls } = boot();
+    const oldDiskWatcher = allFileSystemWatchers[1];
+    expect(allFileSystemWatchers).toHaveLength(2);
+
+    // 多根会话加/删文件夹:不派发 kbengine 配置事件,只派发 foldersChanged
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: '/ws2' } as never, name: 'ws2', index: 0 }
+    ];
+    workspaceEvents.foldersChanged.fire({
+      added: [{ uri: { fsPath: '/ws2' } }],
+      removed: [{ uri: { fsPath: '/ws' } }]
+    });
+    await flush();
+
+    // 旧根 watcher 随重建 dispose 失效;apply 重建=热更面+磁盘面各一,
+    // 磁盘面按当次工作区根派生模式
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      '**/*.py',
+      '/ws/**/*.py',
+      '**/*.py',
+      '/ws2/**/*.py'
+    ]);
+    oldDiskWatcher.fireChange({ fsPath: '/ws2/scripts/A.py' } as never);
+    expect(clock.tick()).toBe(0);
+    await flush();
+    expect(runCalls).toEqual([]);
+    allFileSystemWatchers[3]!.fireChange({ fsPath: '/ws2/scripts/A.py' } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+  });
+
+  it('foldersChanged 无根变化:签名不变不重建(RUST-385 HR-UI-012)', async () => {
+    boot();
+    workspaceEvents.foldersChanged.fire({ added: [], removed: [] });
+    await flush();
+    expect(allFileSystemWatchers).toHaveLength(2);
   });
 
   it('源锁:装配层真适配接了磁盘面(vscode.createFileSystemWatcher 薄适配)', () => {

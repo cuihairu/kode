@@ -22,6 +22,7 @@ import {
   type HttpTransport,
   type OutgoingHttpRequest
 } from './httpRequestService';
+import type { HttpTargetQueue } from './httpRequestQueue';
 
 /** 单次交换生命周期状态:单向推进,无回退 */
 export type HttpExchangeState = 'idle' | 'in-flight' | 'settled';
@@ -91,14 +92,15 @@ export function createHttpExchangeMachine(): HttpExchangeMachine {
   };
 }
 
-/** HR-HTTP-010 结果六分类(传输事实决定,不猜) */
+/** HR-HTTP-010 结果分类(传输事实决定,不猜);HR-HTTP-008 增取消类 */
 export type HttpOutcomeKind =
   | 'ok'
   | 'non-2xx'
   | 'timeout'
   | 'network-error'
   | 'invalid-url'
-  | 'unsupported-protocol';
+  | 'unsupported-protocol'
+  | 'cancelled';
 
 /** 错误细类(对齐 HR-STATE-010 可操作原因面;推不出=unknown) */
 export type HttpErrorCategory =
@@ -109,6 +111,7 @@ export type HttpErrorCategory =
   | 'invalid-url'
   | 'unsupported-protocol'
   | 'http-status'
+  | 'cancelled'
   | 'unknown';
 
 export interface HttpRequestOutcome {
@@ -120,6 +123,7 @@ export interface HttpRequestOutcome {
   readonly status: number;
   readonly durationMs: number;
   readonly body: string;
+  readonly bodyTruncated?: true;
   readonly errorCategory?: HttpErrorCategory;
   readonly errorMessage?: string;
 }
@@ -139,6 +143,9 @@ const classifyTransportError = (error?: string): {
   category: HttpErrorCategory;
 } => {
   const message = error ?? '';
+  if (message.includes('请求已取消(')) {
+    return { kind: 'cancelled', category: 'cancelled' };
+  }
   if (message.includes('请求超时(')) {
     return { kind: 'timeout', category: 'timeout' };
   }
@@ -186,6 +193,7 @@ export function classifyExecution(
     status: result.status,
     durationMs: result.durationMs,
     body: result.body,
+    ...(result.bodyTruncated ? { bodyTruncated: result.bodyTruncated } : {}),
     ...(ok ? {} : { errorCategory: 'http-status' as const })
   };
 }
@@ -195,12 +203,44 @@ export interface HttpExecuteDeps {
   readonly transport?: HttpTransport;
   /** 外部给定关联 id(调用方串自己的链路);缺省本函数生成 */
   readonly correlationId?: string;
+  /**
+   * HR-HTTP-007(RUST-349)按目标有界并发队列(注入才限流:同目标串行、
+   * 不同目标独立并发、全局上限兜底)。缺省不套队列——自动热更 fire 路径
+   * 有既有钉死的「重叠波次在途+代际守卫」契约(HR-WATCH-011,旧响应不得
+   * 冒充新版本,tests/hotReloadRevisionGate),全局强串行会废掉该守卫的
+   * 实路径并拖慢新版发送(旧请求挂到超时,新版本排队等满额预算);谁要
+   * 有界并发谁注入(快捷请求面已接),不在执行器层替全体调用方定死。
+   */
+  readonly queue?: HttpTargetQueue;
+  /**
+   * HR-HTTP-008(RUST-350)取消信号透传给传输面:中止在途请求,结算
+   * kind='cancelled'(取消≠远端撤销,调用方按 uncertain 口径展示)。
+   * 缺省无信号=不可取消(既有行为不变)。
+   */
+  readonly signal?: AbortSignal;
 }
 
+/** 队列目标键:URL origin(协议+主机+端口);URL 无法解析时按原样键(分组不靠猜) */
+const targetKeyOf = (url: string): string => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+};
+
 /**
- * 单次执行:生成关联 id → 交换机 send → 传输 → 沉降 → 分类。
+ * 单次执行:生成关联 id → 交换机 send → (注入队列则按目标有界并发)→ 传输 → 沉降 → 分类。
  * 状态机由本函数独占推进,send/settle 拒绝即实现 bug(显式抛,不静默);
- * 传输一次一发,不重试(HR-HTTP-009 默认不自动重试状态未知的非幂等更新)。
+ * 传输一次一发,不重试(HR-HTTP-009 默认不自动重试状态未知的非幂等更新;
+ * 取消/超时/连接拒绝/未知状态一律恰一次,不自动重发——重发对非幂等更新
+ * 是重复投递,状态未知时冒充恢复即谎报)。
+ * 重试开启仅剩一条门:服务端提供 idempotency key(接收端契约)→有界退避
+ * 重试。该门当前无端点满足——engine 热更端点无幂等契约,而 Idempotency-Key
+ * 请求头=线路字节变更,与 HR-HTTP-014 请求头贯穿同界(HR-AUDIT-009 接收端
+ * 契约解冻后以显式开关交付)。故本层零自动重试是当前唯一真实路径,不建
+ * 闲置重试抽象(「只收编残差,不建抽象」口径);
+ * 队列只约束发起时刻,不改传输语义——排队等待不计入请求超时预算。
  */
 export async function executeHttpRequest(
   request: OutgoingHttpRequest,
@@ -213,13 +253,19 @@ export async function executeHttpRequest(
   if (!send.ok) {
     throw new Error(`执行器状态机拒绝 send: ${send.reason}`);
   }
-  const result = await transport({
-    url: request.url,
-    method: request.method,
-    headers: request.headers,
-    body: request.body,
-    timeoutMs: request.timeoutMs
-  });
+  const sendOnce = (): Promise<HttpExecutionResult> =>
+    transport({
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      timeoutMs: request.timeoutMs,
+      ...(request.maxResponseBytes !== undefined ? { maxResponseBytes: request.maxResponseBytes } : {}),
+      ...(deps.signal !== undefined ? { signal: deps.signal } : {})
+    });
+  const result = deps.queue
+    ? await deps.queue.run(targetKeyOf(request.url), sendOnce)
+    : await sendOnce();
   const settle = machine.advance('settle');
   if (!settle.ok) {
     throw new Error(`执行器状态机拒绝 settle: ${settle.reason}`);

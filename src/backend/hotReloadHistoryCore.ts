@@ -15,10 +15,14 @@
  * - HR-UI-007 高频合并:同 requestId 在合并窗内的多次更新合并为一条取末态
  *   (纯决策,UI 适配面拿合并结果决定重渲染节流),容量有界环形淘汰最旧;
  * - 分页窗口(offset/pageSize+total/hasMore)给虚拟滚动与增量加载用;
- * - 分组(recent/byFile/byTarget)供 HR-UI-002 树视图:组内保持最新在前。
+ * - 分组(recent/byFile/byTarget)供 HR-UI-002 树视图:组内保持最新在前;
+ * - RUST-368 保留时间限额(maxAgeMs+pruneExpired,纯机制)与脱敏导出
+ *   (redactHistoryEntry 白名单投影+buildHistoryExport,零 body/header)。
  *
  * 装配接线(TreeView/面板注册、i18n 渲染、a11y、生命周期绑定)不在本核。
  */
+
+import type { HotReloadErrorReason } from './hotReloadErrorReason';
 
 /** HR-UI-009 状态口径(与 hotReloadStatus 同语义,独立枚举不引 vscode 面) */
 export type HotReloadHistoryStatus = 'sent-unverified' | 'applied' | 'failed';
@@ -39,6 +43,29 @@ export interface HotReloadHistoryInput {
   readonly status: HotReloadHistoryStatus;
   /** 失败/拦截摘要(如 HTTP 状态、错误分类;密钥/header 一律不落) */
   readonly errorSummary?: string;
+  /**
+   * 触发源(HR-STATE-007 九要素「trigger」,同 IDE-HOT-102 审计「谁」):
+   * watcher-auto / command / retry / temp-edit;未提供=来源未记录(如实
+   * 缺省,不猜来源)。
+   */
+  readonly trigger?: string;
+  /**
+   * 发送耗时毫秒(HR-STATE-007 九要素「duration」):发送发起锚点到落账时刻;
+   * 发送前的基准冻结记录无耗时(如实缺省,不冒充 0)。
+   */
+  readonly durationMs?: number;
+  /**
+   * 错误原因七类定性(HR-STATE-007 九要素「errorCategory」,HR-STATE-010
+   * 同源分类):与 errorSummary 自由文本互补——summary 是带建议的原文,
+   * 这里是可过滤的定性枚举。
+   */
+  readonly errorCategory?: HotReloadErrorReason;
+  /**
+   * 发送时点冻结的内容 sha256(HR-STATE-007 九要素「hash」):与投递台账
+   * sentDigest 同源,是「这次发出去的到底哪份内容」的可复核依据;读取失败
+   * =如实缺省。
+   */
+  readonly hash?: string;
 }
 
 /** 历史行(只读视图;状态更新经 updateStatus,外部不可变改) */
@@ -54,12 +81,23 @@ const ALLOWED_TRANSITIONS: Readonly<Record<HotReloadHistoryStatus, readonly HotR
 export interface HotReloadHistoryFilter {
   /** fullModule 大小写不敏子串匹配 */
   readonly fullModuleContains?: string;
+  /** HR-STATE-007 requestModule 子串(大小写不敏):发送名与显示名分开可查 */
+  readonly requestModuleContains?: string;
   readonly targetId?: string;
   readonly fileUri?: string;
   readonly status?: HotReloadHistoryStatus;
   /** 时间范围含边界 [from,to];undefined=不限 */
   readonly timeFrom?: number;
   readonly timeTo?: number;
+  /** HR-STATE-007 按触发源过滤(watcher-auto/command/retry/temp-edit) */
+  readonly trigger?: string;
+  /** HR-STATE-007 按错误七类定性过滤(HR-STATE-010 同源枚举) */
+  readonly errorCategory?: HotReloadErrorReason;
+  /** HR-STATE-007 内容哈希前缀过滤(短前缀即辨来源;空串=不限定) */
+  readonly hash?: string;
+  /** HR-STATE-007 送达耗时范围含边界 [from,to](ms);无耗时行不命中 */
+  readonly durationFrom?: number;
+  readonly durationTo?: number;
 }
 
 export interface HotReloadHistoryPage<T> {
@@ -68,9 +106,43 @@ export interface HotReloadHistoryPage<T> {
   readonly hasMore: boolean;
 }
 
+/**
+ * RUST-368 脱敏导出行:显式安全字段白名单(九要素+双名+file+requestId)。
+ * 与「无需持久化所有 HTTP body」同源——这里只投影清单字段,任何新增字段
+ * (HTTP body/header/令牌)默认不进导出,不靠事后抹除。
+ */
+export interface HotReloadHistoryExportRow {
+  readonly requestId: string;
+  readonly fullModule: string;
+  readonly requestModule: string;
+  readonly fileUri: string;
+  readonly targetId: string;
+  readonly time: number;
+  readonly status: HotReloadHistoryStatus;
+  readonly errorSummary?: string;
+  readonly trigger?: string;
+  readonly durationMs?: number;
+  readonly errorCategory?: HotReloadErrorReason;
+  readonly hash?: string;
+}
+
+/** RUST-368 脱敏导出文档(schemaVersion 钉形状,便于日后演进) */
+export interface HotReloadHistoryExport {
+  readonly schemaVersion: 1;
+  readonly exportedAt: number;
+  readonly count: number;
+  readonly entries: HotReloadHistoryExportRow[];
+}
+
 export interface HotReloadHistoryOptions {
   /** 容量(缺省 200):超出淘汰最旧(HR-UI-007 上千记录靠分页+淘汰,不全量驻留) */
   readonly capacity?: number;
+  /**
+   * 保留时间限额 ms(RUST-368;缺省不启用=纯核不擅自定政策):pruneExpired
+   * 淘汰 time 早于 nowMs-maxAgeMs 的行。政策值由装配面给(view 的
+   * HOT_RELOAD_HISTORY_MAX_AGE_MS),核心只管机制。
+   */
+  readonly maxAgeMs?: number;
 }
 
 /** 合并输入:同 requestId 在窗内的更新序列 */
@@ -108,6 +180,44 @@ export function coalesceHistoryUpdates(
   return out;
 }
 
+/**
+ * HR-UI-007 虚拟滚动窗口(纯决策,面板渲染面据此只渲染视口行):
+ * - 输入全部夹紧(负值如实取 0/1,不产负窗口),totalRows=0 如实空窗;
+ * - overscan 上下各扩 N 行,滚动时视口边缘不露白;
+ * - totalHeightPx = 行数×行高,滚动条按内容区总高给(不因只渲染窗口行而缩)。
+ * webview 侧滚动更新用同一公式的 JS 镜像(本函数是规格,TS 测试钉住)。
+ */
+export interface VirtualScrollWindow {
+  /** 首个渲染行(含) */
+  readonly startIndex: number;
+  /** 渲染终止行(不含;clamp 后恒 ≥ startIndex) */
+  readonly endIndex: number;
+  /** 内容区总高(px;滚动条依据) */
+  readonly totalHeightPx: number;
+}
+
+export function computeVirtualScrollWindow(opts: {
+  totalRows: number;
+  rowHeightPx: number;
+  viewportHeightPx: number;
+  scrollTopPx: number;
+  overscanRows: number;
+}): VirtualScrollWindow {
+  const totalRows = Math.max(0, Math.floor(opts.totalRows));
+  const rowHeightPx = Math.max(1, opts.rowHeightPx);
+  const viewportHeightPx = Math.max(0, opts.viewportHeightPx);
+  const scrollTopPx = Math.max(0, opts.scrollTopPx);
+  const overscanRows = Math.max(0, Math.floor(opts.overscanRows));
+  // 滚过尾:first 也夹到 totalRows(越尾=尾后空窗,不产 start>end 的倒挂窗口)
+  const first = Math.min(totalRows, Math.max(0, Math.floor(scrollTopPx / rowHeightPx) - overscanRows));
+  const last = Math.min(totalRows, Math.ceil((scrollTopPx + viewportHeightPx) / rowHeightPx) + overscanRows);
+  return {
+    startIndex: first,
+    endIndex: Math.max(first, last),
+    totalHeightPx: totalRows * rowHeightPx
+  };
+}
+
 /** HR-UI-006 树节点标题投影:fullModule 优先,缺如实占位 */
 export function buildHistoryEntryLabel(entry: HotReloadHistoryEntry): string {
   return entry.fullModule.length > 0 ? entry.fullModule : entry.requestModule || '(unknown module)';
@@ -125,26 +235,120 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
   lines.push(`time: ${new Date(entry.time).toISOString()}`);
   lines.push(`requestId: ${entry.requestId}`);
   lines.push(`status: ${entry.status}`);
+  // HR-STATE-007 可检索九要素的其余四要素(缺省如实不呈现,不伪造占位)
+  if (entry.trigger !== undefined) {
+    lines.push(`trigger: ${entry.trigger}`);
+  }
+  if (entry.durationMs !== undefined) {
+    lines.push(`duration: ${entry.durationMs}ms`);
+  }
+  if (entry.hash !== undefined) {
+    lines.push(`hash: ${entry.hash}`);
+  }
+  if (entry.errorCategory !== undefined) {
+    lines.push(`errorCategory: ${entry.errorCategory}`);
+  }
   if (entry.errorSummary) {
     lines.push(`error: ${entry.errorSummary}`);
   }
   return lines;
 }
 
+/**
+ * RUST-368 脱敏投影(白名单):逐字段显式拷贝,缺省如实缺省(不伪造空值)。
+ * 白名单外的键(未来若出现的 body/header/令牌等)一律不进导出。
+ */
+export function redactHistoryEntry(entry: HotReloadHistoryEntry): HotReloadHistoryExportRow {
+  // 逐字段显式拷贝(缺省如实缺省,不伪造空值);白名单外键一律不进。
+  return {
+    requestId: entry.requestId,
+    fullModule: entry.fullModule,
+    requestModule: entry.requestModule,
+    fileUri: entry.fileUri,
+    targetId: entry.targetId,
+    time: entry.time,
+    status: entry.status,
+    ...(entry.errorSummary !== undefined ? { errorSummary: entry.errorSummary } : {}),
+    ...(entry.trigger !== undefined ? { trigger: entry.trigger } : {}),
+    ...(entry.durationMs !== undefined ? { durationMs: entry.durationMs } : {}),
+    ...(entry.errorCategory !== undefined ? { errorCategory: entry.errorCategory } : {}),
+    ...(entry.hash !== undefined ? { hash: entry.hash } : {})
+  };
+}
+
+/**
+ * RUST-368 脱敏导出文档:全量行按记录序逐行投影+元信息(count 与
+ * entries.length 恒等,如实报数量);序列化(JSON.stringify)交给调用方。
+ */
+export function buildHistoryExport(
+  entries: readonly HotReloadHistoryEntry[],
+  meta: { exportedAt: number }
+): HotReloadHistoryExport {
+  return {
+    schemaVersion: 1,
+    exportedAt: meta.exportedAt,
+    count: entries.length,
+    entries: entries.map(entry => redactHistoryEntry(entry))
+  };
+}
+
 /** 热更历史库(纯核):记录/推进/过滤/分组/分页 */
 export class HotReloadHistoryCore {
   private readonly capacity: number;
+  private readonly maxAgeMs: number | undefined;
   /** 插入序即新旧序(append-only;requestId 替换原位不动序) */
   private readonly rows: HotReloadHistoryEntry[] = [];
   private readonly indexByRequest = new Map<string, number>();
 
   constructor(options: HotReloadHistoryOptions = {}) {
     this.capacity = options.capacity ?? 200;
+    this.maxAgeMs = options.maxAgeMs;
   }
 
   /** 自省:当前行数(测试/装配面核查) */
   size(): number {
     return this.rows.length;
+  }
+
+  /**
+   * HR-STATE-011 clear-history:清空全部历史(行+按 requestId 索引一并
+   * 丢弃)。只清内存,持久化清空由调用方(persist.save([]))负责——本核
+   * 无持久化知识,不越界猜宿主的落盘面。
+   */
+  clear(): void {
+    this.rows.length = 0;
+    this.indexByRequest.clear();
+  }
+
+  /**
+   * RUST-368 保留时间限额淘汰:剔除 time 早于 nowMs-maxAgeMs 的行,保序
+   * 重排索引,返回淘汰数。未启用 maxAgeMs=如实 no-op(0);边界含
+   * time==nowMs-maxAgeMs(>= 保留)。不假设 time 有序(乱序插入也如实保序)。
+   */
+  pruneExpired(nowMs: number): number {
+    if (this.maxAgeMs === undefined) {
+      return 0;
+    }
+    const cutoff = nowMs - this.maxAgeMs;
+    const kept: HotReloadHistoryEntry[] = [];
+    let dropped = 0;
+    for (const row of this.rows) {
+      if (row.time < cutoff) {
+        dropped += 1;
+      } else {
+        kept.push(row);
+      }
+    }
+    if (dropped === 0) {
+      return 0;
+    }
+    this.rows.length = 0;
+    this.rows.push(...kept);
+    this.indexByRequest.clear();
+    kept.forEach((row, index) => {
+      this.indexByRequest.set(row.requestId, index);
+    });
+    return dropped;
   }
 
   /**
@@ -206,8 +410,15 @@ export class HotReloadHistoryCore {
   /** HR-UI-010 过滤:全条件 AND;fullModule 子串大小写不敏 */
   filter(query: HotReloadHistoryFilter): HotReloadHistoryEntry[] {
     const needle = query.fullModuleContains?.toLowerCase();
+    const requestNeedle = query.requestModuleContains?.toLowerCase();
     return this.rows.filter(entry => {
       if (needle && !entry.fullModule.toLowerCase().includes(needle)) {
+        return false;
+      }
+      if (
+        requestNeedle &&
+        !entry.requestModule.toLowerCase().includes(requestNeedle)
+      ) {
         return false;
       }
       if (query.targetId !== undefined && entry.targetId !== query.targetId) {
@@ -223,6 +434,33 @@ export class HotReloadHistoryCore {
         return false;
       }
       if (query.timeTo !== undefined && entry.time > query.timeTo) {
+        return false;
+      }
+      if (query.trigger !== undefined && entry.trigger !== query.trigger) {
+        return false;
+      }
+      if (query.errorCategory !== undefined && entry.errorCategory !== query.errorCategory) {
+        return false;
+      }
+      if (
+        query.hash !== undefined &&
+        query.hash.length > 0 &&
+        !(entry.hash ?? '').startsWith(query.hash)
+      ) {
+        return false;
+      }
+      // 耗时区间:无耗时(发送前基准冻结/未记录)不命中区间查询,
+      // 不计 0 也不计 ∞(如实缺省)
+      if (
+        (query.durationFrom !== undefined || query.durationTo !== undefined) &&
+        entry.durationMs === undefined
+      ) {
+        return false;
+      }
+      if (query.durationFrom !== undefined && (entry.durationMs ?? 0) < query.durationFrom) {
+        return false;
+      }
+      if (query.durationTo !== undefined && (entry.durationMs ?? 0) > query.durationTo) {
         return false;
       }
       return true;

@@ -855,17 +855,53 @@ The flow graph panel supports:
 ### `kbengine.hotReload.historyPanel`
 
 - Title: `Open Hot Reload History Panel`
+- Default keybinding: `ctrl+alt+p` (macOS `cmd+alt+p`) — RUST-384 无障碍快捷键; `ctrl+alt+h` (the documented `kbengine.httpRequest.run` example) and `ctrl+alt+r` (configureChannel) are avoided
 - Purpose: open the hot reload history panel — header (watch mode / target / shown-vs-total counts), filter bar (fullModule substring / target id / status), and a latest-first table (module shown as `fullModule` with the sent `requestModule` listed when the two differ, file, target, status, time, request id, error summary) with "load more" paging
 - Behavior:
   - Data comes from the delivery ledger via the per-record projection (the ledger is the source of truth; the panel never fabricates rows)
   - Closing the panel does not stop the hot reload pipeline — the feed keeps recording and the tree keeps its throttled refresh
   - Filter/load-more buttons talk to the assembly via webview messages and re-render from the ledger-backed history core
+  - Screen-reader/键盘面 (RUST-384): the header count is a live region (`role="status" aria-live="polite"`), and each history row is keyboard-reachable (`tabindex="0"`, Enter/Space opens the row's file via the locate command) in addition to the mouse click — the virtual-scroll path mirrors the same attributes
+  - Panel copy is locale-aware (RUST-384 批B): the webview strings come from the `webviewStrings` `hotReloadHistory` namespace (follows `kbengine.webviewLocale` / `vscode.env.language`, en/zh full tables); the tree groups (`Recent`/`By file`/`By target`), the locate command title, the search prompt, and all notifications go through `l10nText` (zh-cn `bundle.l10n.zh-cn.json`, English source fallback). The error-category dropdown and the errorSummary column still render Chinese in an English locale (pure-core reason labels — a separate label-threading change, not faked here)
 
 ### `kbengine.hotReload.historySearch`
 
 - Title: `Search Hot Reload History`
 - Purpose: filter the history tree view by a `fullModule` substring (case-insensitive); an empty input clears the filter
 - Behavior: applies to the three tree groups (recent updates / by file / by target); rows whose module differs only by target stay separate rows
+
+### `kbengine.hotReload.historyClear`
+
+- Title: `Clear Hot Reload History`
+- Purpose: clear the delivery history (the HR-MOD-014 persisted store) from the command palette
+- Behavior:
+  - Empties both the in-memory history core and the persisted record; an already-empty history reports 热更历史已为空 and changes nothing
+  - The history tree and any open panel refresh so the cleared state is visible immediately
+
+### `kbengine.hotReload.historyExport`
+
+- Title: `Export Hot Reload History (Redacted JSON)`
+- Purpose: export the full delivery history as a redacted JSON file for sharing/debugging
+- Behavior:
+  - Every row passes through a whitelist projection (九要素 + dual names + file/requestId); HTTP body, headers, and tokens are never included in the export, regardless of what future fields may appear on the row shape
+  - An empty history reports 热更历史已为空 and writes nothing
+  - The save dialog defaults to a workspace folder when available, with a timestamped filename (`hot-reload-history-<stamp>.json`); cancelling the dialog writes nothing
+  - The JSON document carries `schemaVersion: 1`, `exportedAt`, `count`, and the row list; the write uses atomic replace so an interrupted export never leaves a half-written file
+  - A failed write surfaces the file path and error instead of a bare command failure
+
+### `kbengine.hotReload.settingsPanel`
+
+- Title: `Hot Reload Settings`
+- Default keybinding: `ctrl+alt+s` (macOS `cmd+alt+s`) — RUST-384 无障碍快捷键
+- Purpose: open a webview form to edit the frequently-toggled hot-reload workspace settings
+- Behavior:
+  - The status line is a live region (`role="status" aria-live="polite"`) so save results are announced to screen readers (RUST-384)
+  - Panel copy is locale-aware (RUST-384 批B): all form strings (title/labels/buttons/saved/validation messages) come from the `webviewStrings` `hotReloadSettings` namespace (follows `kbengine.webviewLocale` / `vscode.env.language`, en/zh full tables); status coloring keys off a semantic `noteState` rather than a Chinese prefix
+  - The form edits nine keys: `enabled` (启用自动更新), `triggerMode` (监听模式: `onSave`/`onDiskChange`), `debounceMs` (去抖), `syntaxGate` (语法检查), `sendViaProviders` (经 Provider 发送), `allowRootLevelStem` (根下单层回退), `batchFlushMs` (波次冲口), `batchPreviewThreshold` (批量预览阈值), `stabilityWindowMs` (写入稳定窗)
+  - Channel settings (root/target/网络超时) stay in the existing `kbengine.hotReload.configureChannel` flow; this panel does not duplicate them. 「敏感操作警告」has no corresponding settings key — workspace trust (HR-HTTP-005/RUST-422) is the existing security gate, and no key is invented here
+  - The host validates every submitted value before writing: booleans must be boolean, numbers finite non-negative integers, `triggerMode` in the enum; an invalid value is reported by field name and nothing is written (the form never silently clamps)
+  - Each key is written individually via a dotted-path update (`hotReload.<key>`), so a save never clobbers sibling keys like `globs` or `actionName`; the target is `Workspace` when a folder is open, `Global` otherwise
+  - Reopening the command reveals an existing panel; Cancel disposes it
 
 ## Snippet Generation
 
@@ -1063,6 +1099,7 @@ The flow graph panel supports:
 ### `kbengine.hotReload.showDiagnostics`
 
 - Title: `Show Hot Reload Diagnostics`
+- Default keybinding: `ctrl+alt+l` (macOS `cmd+alt+l`) — RUST-384 无障碍快捷键
 - Purpose: open the 「KBEngine 热更诊断」 OUTPUT channel — the user-reviewable timeline of every hot-reload save-pipeline diagnostic event (RUST-341 / HR-WATCH-017)
 - Behavior:
   - All eight diagnostic kinds land in the channel, one line per event — trigger / filtered / debounced / deduped / blocked (syntax gate) / scheduled / preview (batch hold) / flushed — each line formatted `[time] label file: detail`; nothing is aggregated or filtered out (presentation is the full account: an event blocked by the gate is just as visible as one that shipped)
@@ -1089,6 +1126,30 @@ The flow graph panel supports:
   - The re-send resolves the action by reverse lookup on the quick-action tree (named registered actions and scanned scripts first; index-aligned `@http:` entries last); a target with no resolvable action is reported honestly (找不到以 … 为接收方的动作) and skipped without invoking anything
   - Ledger accounting goes through the same existing faces as the fire path: no-response-face actions record sent-unverified / failed; real HTTP responses are classified by transport fact (2xx = delivered-unverified, non-2xx = failed); a 2xx body is run through the accepted/applied upgrade and the settle window — so a successful retry turns the ledger page instead of leaving a stale failed record
   - The report (resent / not-resent / cancelled counts plus per-target lines with the re-send result) is written to the 「KBEngine 热更新」 channel and the channel opens; an empty ledger reports 无投递记录，没有可重试的目标 honestly
+
+### `kbengine.hotReload.pause`
+
+- Title: `Pause Hot Reload Pipeline`
+- Purpose: hold the save pipeline's emit side (HR-STATE-011) — events keep arriving and accumulate in the debounce/coalescing queue, the wave buffer and the preview hold, but nothing goes out until resume
+- Behavior:
+  - Pause only gates the wave collection: the explicit `kbengine.hotReload.releasePreview` still releases a held batch, because releasing is the user asking "send this batch now", which does not conflict with "hold off on automatic sends"
+  - Nothing is dropped while paused, so `resume` flushes exactly what accumulated; repeated pause is an idempotent state flag
+
+### `kbengine.hotReload.resume`
+
+- Title: `Resume Hot Reload Pipeline`
+- Purpose: clear the pause flag and immediately flush the wave that accumulated while paused
+- Behavior:
+  - Repeated resume is idempotent — with an already-empty wave it is a no-op
+
+### `kbengine.hotReload.cancel`
+
+- Title: `Cancel Pending Hot Reload for Active File`
+- Purpose: drop the not-yet-sent side of the active editor's file from the pipeline and report which queue it came from
+- Behavior:
+  - Removes the entry from the coalescing queue (clearing its debounce timer), the preview hold, or the wave buffer, naming which one in the notice; for a file that is settling right now the cancel is marked and the settle is dropped before it reaches the wave
+  - Reports honestly when there is nothing to cancel (当前文件无待发热更) — a batch already handed to the send side is never recalled (send-side idempotency belongs to the receipt/ledger contract, not to a pipeline recall)
+  - Requires an active editor with a file; without one the command reports the missing piece instead of guessing a target
 
 ### `kbengine.hotReload.showRevisionEvidence`
 
@@ -1118,6 +1179,15 @@ The flow graph panel supports:
   - The status dot (CodeLens) is derived from the same ledger-derived state machine: CLEAN (no badge) / DIRTY (orange) / SENT (blue) / APPLIED (green) / FAILED (red) / RESTART_REQUIRED (purple)
   - A file in the workspace root shows one line per target with its state, baseline hash prefix, send generation, and detail; a file outside any root reports 不在工作区根内 honestly
   - RESTART_REQUIRED is the HOT-005 structural-def gate: a structural def change blocks the whole batch and is surfaced as restart-required (a conservative hold, never a fake failure) — the reason text names the gate
+
+### `kbengine.hotReload.locateFile`
+
+- Title: `Hot Reload: Locate File`
+- Purpose: open the file backing a hot-reload history row in the editor (RUST-381 失败点击定位文件; invoked from the history tree row click and the history panel webview row click)
+- Behavior:
+  - The history tree entry rows and the history panel rows carry the source file path; clicking a row invokes this command with that path
+  - The command opens the file via the editor (`showTextDocument`); a missing path reports 定位文件:路径缺失 and nothing opens; a failed open surfaces the path and the error
+  - Retry from a failed row is the existing `kbengine.hotReload.retryFailed` flow (RUST-381 可选择重试面); the open log surface is the existing `kbengine.hotReload.showDiagnostics` channel; the HTTP summary is the row tooltip (module/file/target/trigger/duration/hash) — history rows carry no HTTP body/headers/tokens, so there is no secret to mask (masking is structural, not a transform)
 
 ### `kbengine.hotReload.configureChannel`
 

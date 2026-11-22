@@ -166,23 +166,23 @@
       }
     },
     {
-      "id": "div-memoryStream",
-      "kind": "negative",
+      "id": "pos-memoryStream-fork-arbitration",
+      "kind": "positive",
       "input": { "path": "module-face", "process": "base", "name": "MemoryStream" },
       "engine": {
-        "load": "reject-silent",
-        "truth": "baseapp(EntityApp)链无 MemoryStream 注册,仅 PythonApp 工具在 python_app.cpp:271 注册;档把运行期结论标为待取证(证据路径=跑一个带 KBEngine.MemoryStream() 的 baseapp 入口脚本)"
+        "load": "accept",
+        "truth": "fork 实读 EntityApp::installEntityDef(entity_app.h:330-335)→EntityDef::installScript(entitydef.cpp:2448-2467)在 :2455 以 APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0) 把 MemoryStream 注册为模块级函数;PyMemoryStream 类型仅 type-only(entitydef.cpp:2453 installScript(NULL))——引擎 baseapp 模块面有 MemoryStream=可调用函数(非 class)"
       },
       "evidence": [
-        "No registration on the baseapp (`EntityApp`) chain; only `PythonApp` tools register it — **待取证** at runtime",
-        "contains no `MemoryStream` registration, and no `PyMemoryStream::installScript`",
-        "`lib/server/python_app.cpp:271` present; `entity_app.h:407-453` absent"
+        "`MemoryStream` module function (via `APPEND_SCRIPT_MODULE_METHOD` at `:2455`); the `PyMemoryStream` type is type-only (`installScript(NULL)` at `:2453`)",
+        "`EntityDef::installScript`, reached from `EntityApp::installEntityDef` at `entity_app.h:330-335`",
+        "`kbe/src/lib/entitydef/entitydef.cpp:2448-2467`"
       ],
       "kode": {
         "status": "pinned",
         "analysis": { "kind": "class", "presentInKode": true }
       },
-      "finding": "divergence 登记(误导方向)=引擎 baseapp 模块面无 MemoryStream 而 kode base 符号表含 class MemoryStream 行:补全/类型面会给运行期 AttributeError 的名字;档自身标待取证(运行期实测=独立步),只钉现状不冒充修复;收窄或取证归独立批"
+      "finding": "跨族对账翻案(2026-11-22,fork 仲裁):原登记为误导方向=引擎 baseapp 链无 MemoryStream 而 kode 表有 class 行,系读错区域(entity_app.h:407-453=installPyModules,遗漏 installEntityDef→EntityDef::installScript)的假阴性;fork 实读真值=引擎有 MemoryStream 作模块级函数(entitydef.cpp:2455,经 entity_app.h:335 达),PyMemoryStream 类型仅 type-only,故两族同步翻正为 positive/accept;真实分歧=kind 分歧(引擎 function / kode class),kode 若以 class 收编会与引擎函数形态不符;只钉现状不冒充修复"
     },
     {
       "id": "unk-serverErrValues",

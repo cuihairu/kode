@@ -209,12 +209,89 @@ export async function findEngineSdkStamps(
  * MD5 未知(无法比对,保留 unknown 不猜)。 */
 export type StampVerdict = 'match' | 'mismatch' | 'unverifiable';
 
+// ---------------------------------------------------------------- RUST-404
+// 引擎 Digest 兼容性证据层级(旧 HR-HASH-017)。铁律:兼容性结论只可能来自
+// 「真实引擎摘要对拍」——即把客户端经 Rust 重算的引擎格式 MD5 与同一工作
+// 区闭包下真实引擎产出的摘要比较;缺真实引擎证据(无 SDK 盖章/盖章不可用)
+// 时一律明示「不可用/未验证」,绝不拿 C-18 规范推导冒充「已同步」。
+
+/** 证据层级:real-engine=与真实引擎摘要(同一工作区闭包)做过对拍;
+ * spec-derived=仅 C-18 规范推导,无真实引擎摘要可比。 */
+export type EngineDigestEvidenceTier = 'real-engine' | 'spec-derived';
+
+/** 引擎 Digest 兼容性结论(RUST-404)。compatible 三态:true=与真实引擎一
+ * 致;false=与真实引擎不一致(有真实证据但失配);null=无真实证据不可判。 */
+export interface EngineDigestCompatibility {
+  readonly tier: EngineDigestEvidenceTier;
+  /** 是否与真实引擎摘要做过对拍(real-engine 恒 true;spec-derived 恒 false) */
+  readonly verified: boolean;
+  readonly compatible: boolean | null;
+  /** 一句话结论(报告/通知同源;无证据时明示不可用,绝不宣称已同步) */
+  readonly reason: string;
+}
+
+/**
+ * 真实引擎摘要对拍原语(纯函数):ours=客户端经 Rust 重算的引擎格式 MD5,
+ * realEngineDigest=同一工作区闭包下真实引擎产出的摘要(kbcmd 生成 SDK 盖章
+ * 或外部提供)。缺 realEngineDigest → 明示不可用(spec-derived,不猜不编)。
+ */
+export function verifyEngineDigestCompatibility(
+  ours: string,
+  realEngineDigest: string | undefined
+): EngineDigestCompatibility {
+  if (realEngineDigest === undefined) {
+    return {
+      tier: 'spec-derived',
+      verified: false,
+      compatible: null,
+      reason: '无真实引擎摘要证据(SDK 盖章未检出/不可用);仅 C-18 规范推导,未对真实引擎实现验证,不宣称已同步'
+    };
+  }
+  if (ours === realEngineDigest) {
+    return {
+      tier: 'real-engine',
+      verified: true,
+      compatible: true,
+      reason: '与真实引擎 EntityDef::md5() 摘要对拍一致:客户端 Rust 重算复现了引擎摘要(同一工作区闭包)'
+    };
+  }
+  return {
+    tier: 'real-engine',
+    verified: true,
+    compatible: false,
+    reason: `与真实引擎摘要不一致(Rust 重算 ${ours} ≠ 引擎摘要 ${realEngineDigest}):不兼容,不宣称已同步`
+  };
+}
+
+/**
+ * 从逐章对拍面派生兼容性结论(RUST-404)。match 是真实引擎证据(盖章常量 =
+ * kbcmd 生成时点的引擎 EntityDef::md5,与该工作区闭包同源;Rust 重算等于它
+ * 即复现了真实引擎);mismatch 是有真实证据但失配;否则无证据不可判。
+ */
+export function deriveEngineDigestCompatibility(
+  stamps: Array<EngineSdkStamp & { verdict: StampVerdict }>,
+  workspaceMd5: string | null
+): EngineDigestCompatibility {
+  const match = stamps.find((stamp) => stamp.verdict === 'match');
+  if (match && workspaceMd5 !== null) {
+    return verifyEngineDigestCompatibility(workspaceMd5, match.stamp);
+  }
+  const mismatch = stamps.find((stamp) => stamp.verdict === 'mismatch');
+  if (mismatch && workspaceMd5 !== null) {
+    return verifyEngineDigestCompatibility(workspaceMd5, mismatch.stamp);
+  }
+  return verifyEngineDigestCompatibility(workspaceMd5 ?? '', undefined);
+}
+
 export interface DefMd5CheckOutcome {
   /** 工作区闭包引擎 MD5;Rust 不可用为 null(未知面,不猜)。 */
   workspaceMd5: string | null;
   /** Digest 协商(AUDIT-004 接线):由 workspaceMd5 经 negotiateEngineDigest
    * 协商;Rust 不可用退化为 unknown/未协商,不猜、不与客户端 sha256 互比。 */
   handshake: DefDigestHandshake;
+  /** 引擎 Digest 兼容性证据层级(RUST-404):真实引擎对拍一致 / 无证据明示
+   * 不可用;绝不把规范推导宣称成「已同步」。 */
+  compatibility: EngineDigestCompatibility;
   /** 输入收集备注(缺文件入流等,逐条如实)。 */
   notes: string[];
   stamps: Array<EngineSdkStamp & { verdict: StampVerdict }>;
@@ -235,6 +312,7 @@ export async function runDefMd5Check(
     return {
       workspaceMd5: null,
       handshake: negotiateEngineDigest(),
+      compatibility: verifyEngineDigestCompatibility('', undefined),
       notes: [],
       stamps: [],
       unavailableReason: collected.reason
@@ -244,14 +322,16 @@ export async function runDefMd5Check(
   const stamps = await findEngineSdkStamps(deps, notes);
   const computed = await compute(collected.params);
   const workspaceMd5 = computed?.md5 ?? null;
+  const stampVerdicts: Array<EngineSdkStamp & { verdict: StampVerdict }> = stamps.map((stamp) => ({
+    ...stamp,
+    verdict: workspaceMd5 === null ? 'unverifiable' : stamp.stamp === workspaceMd5 ? 'match' : 'mismatch'
+  }));
   return {
     workspaceMd5,
     handshake: negotiateEngineDigest(workspaceMd5 ?? undefined),
+    compatibility: deriveEngineDigestCompatibility(stampVerdicts, workspaceMd5),
     notes,
-    stamps: stamps.map((stamp) => ({
-      ...stamp,
-      verdict: workspaceMd5 === null ? 'unverifiable' : stamp.stamp === workspaceMd5 ? 'match' : 'mismatch'
-    }))
+    stamps: stampVerdicts
   };
 }
 
@@ -287,6 +367,9 @@ export function renderDefMd5CheckReport(outcome: DefMd5CheckOutcome): string {
       lines.push(`  - ${stamp.path}: ${face}`);
     }
   }
+  // RUST-404:引擎 Digest 兼容性单列一行——是否经真实引擎实现验证逐字如实,
+  // 无真实引擎证据时明示不可用,不拿规范推导冒充实已同步。
+  lines.push(`引擎兼容性: ${outcome.compatibility.reason}`);
   for (const note of outcome.notes) {
     lines.push(`备注: ${note}`);
   }
@@ -341,9 +424,10 @@ export function setupDefMd5Check(
     } else if (mismatches > 0) {
       void vscode.window.showWarningMessage(`KBEngine def MD5 核查完成:${mismatches} 处 SDK 盖章与工作区闭包不一致(def 在 SDK 生成后改动过)`);
     } else if (outcome.stamps.length === 0) {
-      void vscode.window.showInformationMessage('KBEngine def MD5 核查完成:未检出 SDK 盖章面,无从比对');
+      void vscode.window.showInformationMessage(`KBEngine def MD5 核查完成:${outcome.compatibility.reason}`);
     } else {
-      void vscode.window.showInformationMessage(`KBEngine def MD5 核查完成:${outcome.stamps.length} 处 SDK 盖章全部一致`);
+      // RUST-404:兼容性结论单列(对拍一致才说「已对拍一致」,绝不说「已同步」)
+      void vscode.window.showInformationMessage(`KBEngine def MD5 核查完成:${outcome.compatibility.reason}`);
     }
   });
   context.subscriptions.push(command);

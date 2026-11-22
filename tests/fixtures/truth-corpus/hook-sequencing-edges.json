@@ -1,0 +1,276 @@
+{
+  "family": "hook-sequencing-edges",
+  "grounding": {
+    "doc": "docs/knowledge/hook-sequencing.md",
+    "engineHead": "55a6655"
+  },
+  "entries": [
+    {
+      "id": "pos-onwritetodb-dualsite",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onWriteToDB" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onWriteToDB 脚本回调在两侧派发且都在活路径上:baseapp Entity::onWriteToDB 派发(baseapp/entity.cpp:1405,由 Entity::onCellWriteToDBCompleted 的 onWriteToDB()(:1305)调用)+cellapp Entity::onWriteToDB 派发(cellapp/entity.cpp:1262,由 cellapp/entity.cpp:1238 onWriteToDB() 调用)——双站点活回调。kode HOOK_SEQUENCING.onWriteToDB side=both、锚含 baseapp:1405+cellapp:1262,与 fork 一致"
+      },
+      "evidence": [
+        "onPreArchive :1298 → onWriteToDB :1405 (base) / :1262 (cell)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onWriteToDB",
+          "phase": "persistence",
+          "side": "both",
+          "before": ["onPreArchive"],
+          "after": [],
+          "anchors": ["kbe/src/server/baseapp/entity.cpp:1405; kbe/src/server/cellapp/entity.cpp:1262(src/hooks.ts)"]
+        }
+      }
+    },
+    {
+      "id": "pos-onprearchive-order",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onPreArchive" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 归档完成流 baseapp Entity::onCellWriteToDBCompleted(entity.cpp:1294)先派发 onPreArchive(:1298)再调 onWriteToDB()(:1305→:1405 派发)——onPreArchive 在 onWriteToDB 之前,顺序与 kode 前后关系一致。单站点(base 侧)活回调"
+      },
+      "evidence": [
+        "onPreArchive :1298 → onWriteToDB :1405 (base) / :1262 (cell)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onPreArchive",
+          "phase": "persistence",
+          "side": "base",
+          "before": [],
+          "after": ["onWriteToDB"],
+          "anchors": ["kbe/src/server/baseapp/entity.cpp:1298(src/hooks.ts)"]
+        }
+      }
+    },
+    {
+      "id": "pos-onclientdeath-dualsite",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onClientDeath" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onClientDeath 在基座实体与代理双派发:baseapp Entity::onClientDeath 派发(entity.cpp:1048,调用点 baseapp.cpp:4288)+baseapp Proxy::onClientDeath 派发(proxy.cpp:237,调用点 baseapp.cpp:822)——双站点活回调(客户端断开)。kode HOOK_SEQUENCING.onClientDeath side=both、锚含 entity.cpp:1048+proxy.cpp:237,与 fork 一致"
+      },
+      "evidence": [
+        "onClientDeath   entity.cpp:1048 / proxy.cpp:237 → onLogOnAttempt proxy.cpp:189,205"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onClientDeath",
+          "phase": "client-link",
+          "side": "both",
+          "before": [],
+          "after": ["onLogOnAttempt"],
+          "anchors": ["kbe/src/server/baseapp/entity.cpp:1048; kbe/src/server/baseapp/proxy.cpp:237(src/hooks.ts)"]
+        }
+      }
+    },
+    {
+      "id": "pos-onteleportsuccess-dualsite",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onTeleportSuccess" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onTeleportSuccess 在 cellapp 与 baseapp 双派发:cellapp Entity::onTeleportSuccess 派发(entity.cpp:3814,调用点 entity.cpp:3533/:3709、cellapp.cpp:2058)+baseapp Entity::onTeleportSuccess 派发(baseapp/entity.cpp:1567,调用点 :1544)——双站点活回调(传送成功收尾)。kode HOOK_SEQUENCING.onTeleportSuccess side=both、锚含 cellapp:3814+baseapp:1567,与 fork 一致"
+      },
+      "evidence": [
+        "onTeleport :3786 → onTeleportSuccess :3814 | onTeleportFailure :1558/3797"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onTeleportSuccess",
+          "phase": "teleport",
+          "side": "both",
+          "before": ["onTeleport", "teleport-新space就位"],
+          "after": [],
+          "anchors": ["kbe/src/server/cellapp/entity.cpp:3814; kbe/src/server/baseapp/entity.cpp:1567(src/hooks.ts)"]
+        }
+      }
+    },
+    {
+      "id": "pos-onteleportfailure-dualsite",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onTeleportFailure" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onTeleportFailure 在 baseapp 与 cellapp 双派发:baseapp Entity::onTeleportFailure 派发(baseapp/entity.cpp:1558,调用点 :1550)+cellapp Entity::onTeleportFailure 派发(cellapp/entity.cpp:3797,调用点 entity.cpp:3474/3484/3493/3525/3547/3560/3594/3772、cellapp.cpp:2163)——双站点活回调(传送失败分支端)。kode HOOK_SEQUENCING.onTeleportFailure side=both、锚含 baseapp:1558+cellapp:3797,与 fork 一致"
+      },
+      "evidence": [
+        "onTeleport :3786 → onTeleportSuccess :3814 | onTeleportFailure :1558/3797"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onTeleportFailure",
+          "phase": "teleport",
+          "side": "both",
+          "before": ["onTeleport"],
+          "after": [],
+          "anchors": ["kbe/src/server/baseapp/entity.cpp:1558; kbe/src/server/cellapp/entity.cpp:3797(src/hooks.ts)"]
+        }
+      }
+    },
+    {
+      "id": "pos-onwitnessed-dualsite",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onWitnessed" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onWitnessed 是观察状态翻转双派发:cellapp Entity::addWitnessed(entity.cpp:1486,首个 witness 进入 → onWitnessed(True))+Entity::onDelWitnessed(entity.cpp:1531,末个 witness 离开 → onWitnessed(False))——双站点活回调(无独立 Entity::onWitnessed() 函数,派发内联于 addWitnessed/onDelWitnessed)。kode HOOK_SEQUENCING.onWitnessed 锚含 cellapp:1486+1531,与 fork 一致"
+      },
+      "evidence": [
+        "onWitnessed      :1486,1531   isWitnessed flips"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onWitnessed",
+          "phase": "witness-view",
+          "side": "cell",
+          "before": [],
+          "after": [],
+          "anchors": ["kbe/src/server/cellapp/entity.cpp:1486; kbe/src/server/cellapp/entity.cpp:1531(src/hooks.ts)"]
+        }
+      }
+    },
+    {
+      "id": "pos-ontimer-dualsite",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onTimer" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onTimer 定时到期双派发:EntityScriptTimerHandler::handleTimeout(entity_macro.h:1377)超时调 pEntity_->onTimer(id,...),cellapp 派发(cellapp/entity.cpp:4358)+baseapp 派发(baseapp/entity.cpp:1662)——双站点活回调(宏生成处理器是唯一调用者,故直接 grep 服务器目录找不到调用点)。kode HOOK_SEQUENCING.onTimer side=both、锚含 cellapp:4358+baseapp:1662,与 fork 一致"
+      },
+      "evidence": [
+        "onTimer   cellapp:4358 / baseapp:1662   any phase; addTimer holds no strong"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onTimer",
+          "phase": "cross-cutting",
+          "side": "both",
+          "before": ["定时器-无强引用"],
+          "after": [],
+          "anchors": ["kbe/src/server/cellapp/entity.cpp:4358; kbe/src/server/baseapp/entity.cpp:1662(src/hooks.ts)"]
+        }
+      }
+    },
+    {
+      "id": "pos-onrestore-dualsite",
+      "kind": "positive",
+      "input": { "path": "hook-sequencing", "name": "onRestore" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 证实 onRestore 在 baseapp 崩溃恢复双派发:baseapp Entity::onRestore 派发(baseapp/entity.cpp:1083,调用点 restore_entity_handler.cpp:173/:266)+cellapp Entity::onRestore 派发(cellapp/entity.cpp:3871,调用点 cellapp.cpp:1068/:1232)——双站点活回调(恢复的 cell 到达后)。kode HOOK_SEQUENCING.onRestore side=base、锚含 cellapp:3871+baseapp:1083,与 fork 一致"
+      },
+      "evidence": [
+        "restore_cell到达 → onRestore :1083 (cellapp side :3871)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onRestore",
+          "phase": "persistence",
+          "side": "base",
+          "before": ["restore-cell到达"],
+          "after": [],
+          "anchors": ["kbe/src/server/cellapp/entity.cpp:3871; kbe/src/server/baseapp/entity.cpp:1083(src/hooks.ts);docs/knowledge/entity-lifecycle-reference.md Cell state table(onRestore 在 cell 到达后)"]
+        }
+      }
+    },
+    {
+      "id": "neg-onenteringcell-dead",
+      "kind": "negative",
+      "input": { "path": "hook-sequencing", "name": "onEnteringCell" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 证实 cellapp Entity::onEnteringCell 派发函数全树零调用者(整树仅 entity.h:223 声明+entity.cpp:3843 定义+3847 派发行,case-insensitive 全文件类型检索零引用)——脚本 onEnteringCell 从不触发。kode HOOK_SEQUENCING.onEnteringCell 列 after=['onEnteredCell'] 把死回调当活时序"
+      },
+      "evidence": [
+        "onEnteringCell :3847 → onEnteredCell :3839     (enter: before → after)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onEnteringCell",
+          "phase": "cell-attach",
+          "side": "cell",
+          "before": [],
+          "after": ["onEnteredCell"],
+          "anchors": ["kbe/src/server/cellapp/entity.cpp:3847(src/hooks.ts)"]
+        }
+      },
+      "finding": "误导:fork cellapp Entity::onEnteringCell 派发函数全树零调用者(仅 entity.h:223 声明+entity.cpp:3843 定义+3847 派发行),脚本 onEnteringCell 从不触发;kode HOOK_SEQUENCING 仍把 onEnteringCell 列为 after=['onEnteredCell'] 的活时序回调"
+    },
+    {
+      "id": "neg-onleavingcell-dead",
+      "kind": "negative",
+      "input": { "path": "hook-sequencing", "name": "onLeavingCell" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 证实 cellapp Entity::onLeavingCell 派发函数全树零调用者(整树仅 entity.h:224 声明+entity.cpp:3851 定义+3855 派发行)——脚本 onLeavingCell 从不触发。kode HOOK_SEQUENCING.onLeavingCell 列 after=['onLeftCell'] 把死回调当活时序"
+      },
+      "evidence": [
+        "onLeavingCell  :3855 → onLeftCell   :3863     (leave: before → after)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onLeavingCell",
+          "phase": "cell-attach",
+          "side": "cell",
+          "before": [],
+          "after": ["onLeftCell"],
+          "anchors": ["kbe/src/server/cellapp/entity.cpp:3855(src/hooks.ts)"]
+        }
+      },
+      "finding": "误导:fork cellapp Entity::onLeavingCell 派发函数全树零调用者(仅 entity.h:224 声明+entity.cpp:3851 定义+3855 派发行),脚本 onLeavingCell 从不触发;kode HOOK_SEQUENCING 仍把 onLeavingCell 列为 after=['onLeftCell'] 的活时序回调"
+    },
+    {
+      "id": "neg-onleavetrapid-dead",
+      "kind": "negative",
+      "input": { "path": "hook-sequencing", "name": "onLeaveTrapID" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 证实 cellapp Entity::onLeaveTrapID 派发函数全树零调用者(整树仅 entity.h:456 声明+entity.cpp:1773 定义+1777 派发行)——脚本 onLeaveTrapID 从不触发;对照 onLeaveTrap 活(proximity_controller.cpp:81 调用)。kode HOOK_SEQUENCING.onEnterTrap.after 含 onLeaveTrapID,把死分支当活"
+      },
+      "evidence": [
+        "onEnterTrap :1759 → onLeaveTrap :1768 | onLeaveTrapID :1777"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "face": "hook-sequencing",
+          "hook": "onLeaveTrapID",
+          "phase": "trap",
+          "side": "cell",
+          "before": ["onEnterTrap"],
+          "after": [],
+          "anchors": ["kbe/src/server/cellapp/entity.cpp:1777(src/hooks.ts)"]
+        }
+      },
+      "finding": "误导:fork cellapp Entity::onLeaveTrapID 派发函数全树零调用者(仅 entity.h:456 声明+entity.cpp:1773 定义+1777 派发行),脚本 onLeaveTrapID 从不触发;仅 onLeaveTrap 活(proximity_controller.cpp:81);kode HOOK_SEQUENCING onEnterTrap.after=['onLeaveTrap','onLeaveTrapID'] 仍含死分支 onLeaveTrapID"
+    }
+  ]
+}

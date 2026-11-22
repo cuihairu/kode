@@ -67,6 +67,14 @@ export interface ConsoleLogTailDeps {
   backoffBaseMs?: number;
   backoffMaxMs?: number;
   tickIntervalMs?: number;
+  /**
+   * RUST-422(HR-QA-010)工作区信任闸:日志长连目标=logger 组件(经 machined
+   * 发现,发现主机 kbengine.console.discoveryHost 来自工作区配置),不受信
+   * 工作区里连即配置驱动网络出站(注册帧 702+保活 701 下行);未信任不建
+   * 长连,灯面如实隐藏;用户信任工作区后下一轮 hub 变化即恢复连接。缺省
+   * 未注入=视为可信(零配置不回归),与 HTTP 快捷请求/telnet 信任闸同口径。
+   */
+  isWorkspaceTrusted?: () => boolean;
 }
 
 export interface TailJumpTarget {
@@ -258,6 +266,12 @@ export class ConsoleLogTailController {
 
   private async attemptConnect(): Promise<void> {
     if (!this.started || this.state === 'connected' || this.state === 'connecting') {
+      return;
+    }
+    // RUST-422(HR-QA-010)信任闸:未信任工作区不建立日志长连(目标 logger 经
+    // machined 发现,发现主机 kbengine.console.discoveryHost 来自工作区配置)
+    // ——不发注册帧不收流,灯面如实隐藏;信任后下一轮 hub 变化即恢复。
+    if (this.deps.isWorkspaceTrusted?.() === false) {
       return;
     }
     if (this.deps.hub.getMachinedState() === 'unreachable') {

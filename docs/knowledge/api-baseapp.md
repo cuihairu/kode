@@ -19,12 +19,13 @@
 
 ## 1. How the module face is assembled
 
-The script-visible `KBEngine` module on baseapp is assembled from five
+The script-visible `KBEngine` module on baseapp is assembled from six
 registration sites:
 
 | Site | Registers |
 | --- | --- |
 | `kbe/src/server/baseapp/baseapp.cpp:430-451` (`Baseapp::installPyModules` block, app-specific methods) | `time`, `createEntity`, `createEntityLocally`, `createEntityAnywhere`, `createEntityRemotely`, `createEntityFromDBID`, `createEntityAnywhereFromDBID`, `createEntityRemotelyFromDBID`, `executeRawDatabaseCommand`, `quantumPassedPercent`, `charge`, `registerReadFileDescriptor`, `registerWriteFileDescriptor`, `deregisterReadFileDescriptor`, `deregisterWriteFileDescriptor`, `reloadScript`, `isShuttingDown`, `address`, `deleteEntityByDBID`, `lookUpEntityByDBID`, `setAppFlags`, `getAppFlags` |
+| `kbe/src/lib/entitydef/entitydef.cpp:2448-2467` (`EntityDef::installScript`, reached from `EntityApp::installEntityDef` at `entity_app.h:330-335`) | `MemoryStream` module function (via `APPEND_SCRIPT_MODULE_METHOD` at `:2455`); the `PyMemoryStream` type is type-only (`installScript(NULL)` at `:2453`) |
 | `kbe/src/lib/server/entity_app.h:423-453` (`EntityApp::installPyModules`, shared by all EntityApps) | `kbassert`, `publish`, `scriptLogType`, `getResFullPath`, `hasRes`, `open`, `listPathRes`, `matchPath`, `getWatcher`, `getWatcherDir`, `debugTracing`; int constants `LOG_TYPE_*`, `NEXT_ONLY`, `SERVER_ERR_*` |
 | `kbe/src/lib/pyscript/pywatcher.cpp:184-185` | `addWatcher`, `delWatcher` |
 | `kbe/src/lib/pyscript/script.cpp:248,258` (`Script::install`) | `component` string attr, `genUUID64` |
@@ -220,15 +221,22 @@ fires on readability / writability. Baseapp registration
 
 ### `KBEngine.MemoryStream()`
 
-The 3.7 source material lists a `KBEngine.MemoryStream` constructor (binary
-serializer following engine packing rules). **待取证 / to be evidenced on the
-baseapp face**: the constructor is registered for `PythonApp`-based tools at
-`kbe/src/lib/server/python_app.cpp:271` (`PyMemoryStream::py_new`), but
-`EntityApp::installPyModules` (the baseapp chain, `entity_app.h:407-453`)
-contains no `MemoryStream` registration, and no `PyMemoryStream::installScript`
-caller was found for baseapp. Evidence path: run a baseapp with
-`KBEngine.MemoryStream()` in its entry script and record the result; treat the
-docs claim as unverified until then.
+Binary serializer following engine packing rules. **Resolved against the fork
+at HEAD `6d12b8f`** (no runtime probe needed): `MemoryStream` is a module-level
+**function** appended by `EntityDef::installScript`
+(`kbe/src/lib/entitydef/entitydef.cpp:2448-2467`,
+`APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0)`
+at `:2455`), reached on the baseapp chain from `EntityApp::installEntityDef`
+(`kbe/src/lib/server/entity_app.h:330-335` →
+`EntityDef::installScript(this->getScript().getModule())`). The `PyMemoryStream`
+**type** is registered type-only (`PyMemoryStream::installScript(NULL)` at
+`entitydef.cpp:2453`) — it is not a module class. So `KBEngine.MemoryStream` on
+baseapp is a callable function returning a stream; `KBEngine.MemoryStream()`
+constructs one. The earlier read (only `PythonApp` tools register it, and
+`entity_app.h:407-453` contains no registration) was a **false negative**:
+`:407-453` is `EntityApp::installPyModules`, but the registration happens in
+`installEntityDef` (a site the earlier read did not enumerate); `PythonApp`
+tools register it too (`python_app.cpp:271`).
 
 ## 7. `genUUID64`
 
@@ -307,7 +315,7 @@ process. `kbe/src/lib/pyscript/script.cpp:248`.
 | `onFini` | Callback fires after the engine is officially shut down | No `onFini` hook exists at HEAD; only client_lib/bots know an `onFinish` | Fork | `grep -rn onFini kbe/src` = 0 hits; `server/tools/bots/bots.cpp:125` (`onFinish`) |
 | `onReadyForLogin` return | Return ≥ 1.0 means ready | `True` → ready (v=100); a numeric return is compared against `0.9999`, not 1.0, and is otherwise reported as progress percent | Fork | `initprogress_handler.cpp:213-246` |
 | `genUUID64` uniqueness source | Depends on baseapp startup parameter `gus` | Guard checks `g_componentGlobalOrder` ∈ 1..65535 (warn once); id = timestamp + per-second counter | Fork | `lib/pyscript/script.cpp:91-108`; `lib/common/platform.h:738-770` |
-| `KBEngine.MemoryStream()` on baseapp | Listed as a baseapp-module constructor | No registration on the baseapp (`EntityApp`) chain; only `PythonApp` tools register it — **待取证** at runtime | Fork | `lib/server/python_app.cpp:271` present; `entity_app.h:407-453` absent |
+| `KBEngine.MemoryStream()` on baseapp | Listed as a baseapp-module constructor | Registered as a module **function** on the baseapp (`EntityApp`) chain via `EntityApp::installEntityDef` → `EntityDef::installScript`; `PythonApp` tools register it too | Fork | `lib/server/entity_app.h:335`; `lib/entitydef/entitydef.cpp:2455`; `lib/server/python_app.cpp:271` |
 | `baseAppData` delete-callback name | Attribute text says "See: KBEngine.onBaseAppData and KBEngine.onDelBaseAppData" | The registered callback name is `onBaseAppDataDel` — the source text's `onDelBaseAppData` does not exist | Fork | `baseapp.cpp:3688` |
 | `roundTripTime` Linux-only claim | "only takes effect under Linux" | Not verified either way | — | **待取证**: read `Proxy::pyGetRoundTripTime` (`proxy.cpp:445`) against preprocessor guards, then re-classify |
 | 3.7→3.12 script-layer deltas for this face | — | Nothing in this face touches str/bytes/int semantics changed by 3.8–3.12; verified items in python-version-baseline §4 apply by reference | Python | [What's New 3.12](https://docs.python.org/3/whatsnew/3.12.html); see python-version-baseline §4 |
@@ -315,7 +323,8 @@ process. `kbe/src/lib/pyscript/script.cpp:248`.
 ## References
 
 - Registration map: `kbe/src/server/baseapp/baseapp.cpp:419-476,504-519`,
-  `kbe/src/lib/server/entity_app.h:407-487`,
+  `kbe/src/lib/server/entity_app.h:330-335,407-487`,
+  `kbe/src/lib/entitydef/entitydef.cpp:2448-2467`,
   `kbe/src/lib/pyscript/{pywatcher.cpp:184-185, script.cpp:248,258,
   pyurl.cpp:23, py_gc.cpp:224}`,
   `kbe/src/lib/server/{py_file_descriptor.cpp:22-35, python_app.cpp:271}`

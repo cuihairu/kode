@@ -1,0 +1,860 @@
+{
+  "family": "hook-sequencing-presence",
+  "grounding": {
+    "doc": "docs/knowledge/hook-sequencing.md",
+    "engineHead": "6d12b8f"
+  },
+  "entries": [
+    {
+      "id": "pos-hook-ongetcell",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onGetCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onGetCell 为实体脚本回调(baseapp/entity.cpp:1032),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=cell,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "    ├── onGetCell              :1032  — cell landed; cellData attribute deleted (:1024)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "cell",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:1032"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onclientgetcell",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onClientGetCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onClientGetCell 为实体脚本回调(baseapp/proxy.cpp:248),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=client,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "    │     └── onClientGetCell  proxy.cpp:248 — client about to be handed to the cell"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "client",
+          "sourceLocation": "kbe/src/server/baseapp/proxy.cpp:248"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-oncreatecellfailure",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onCreateCellFailure"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onCreateCellFailure 为实体脚本回调(baseapp/entity.cpp:884),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=cell,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "    └── onCreateCellFailure    :884   — branch end, no cell"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "cell",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:884"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onenteringcell",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onEnteringCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onEnteringCell 为实体脚本回调(cellapp/entity.cpp:3847),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=cell,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "  onEnteringCell :3847 → onEnteredCell :3839     (enter: before → after)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "cell",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3847"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onenteredcell",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onEnteredCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onEnteredCell 为实体脚本回调(cellapp/entity.cpp:3839),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=cell,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "  onEnteringCell :3847 → onEnteredCell :3839     (enter: before → after)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "cell",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3839"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onleavingcell",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLeavingCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLeavingCell 为实体脚本回调(cellapp/entity.cpp:3855),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=cell,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "  onLeavingCell  :3855 → onLeftCell   :3863     (leave: before → after)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "cell",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3855"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onleftcell",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLeftCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLeftCell 为实体脚本回调(cellapp/entity.cpp:3863),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=cell,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "  onLeavingCell  :3855 → onLeftCell   :3863     (leave: before → after)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "cell",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3863"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onenterspace",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onEnterSpace"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onEnterSpace 为实体脚本回调(cellapp/entity.cpp:3823),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=space,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onEnterSpace  cellapp/entity.cpp:3823   after the cell entity enters a space"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "space",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3823"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onleavespace",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLeaveSpace"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLeaveSpace 为实体脚本回调(cellapp/entity.cpp:3831),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=space,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onLeaveSpace  cellapp/entity.cpp:3831   before leaving"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "space",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3831"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onspacegone",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onSpaceGone"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onSpaceGone 为实体脚本回调(cellapp/entity.cpp:387),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=space,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onSpaceGone   cellapp/entity.cpp:387    the space itself is destroyed"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "space",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:387"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-ongetwitness",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onGetWitness"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onGetWitness 为实体脚本回调(cellapp/entity.cpp:2180),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=witness,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onGetWitness :2180 → onUpdateBegin ⇄ onUpdateEnd (per sync round) → onLoseWitness :2218"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "witness",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2180"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onupdatebegin",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onUpdateBegin"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onUpdateBegin 为实体脚本回调(cellapp/witness.cpp:753),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=witness,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onGetWitness :2180 → onUpdateBegin ⇄ onUpdateEnd (per sync round) → onLoseWitness :2218"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "witness",
+          "sourceLocation": "kbe/src/server/cellapp/witness.cpp:753"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onupdateend",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onUpdateEnd"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onUpdateEnd 为实体脚本回调(cellapp/witness.cpp:899),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=witness,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onGetWitness :2180 → onUpdateBegin ⇄ onUpdateEnd (per sync round) → onLoseWitness :2218"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "witness",
+          "sourceLocation": "kbe/src/server/cellapp/witness.cpp:899"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onlosewitness",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLoseWitness"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLoseWitness 为实体脚本回调(cellapp/entity.cpp:2218),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=witness,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onGetWitness :2180 → onUpdateBegin ⇄ onUpdateEnd (per sync round) → onLoseWitness :2218"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "witness",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2218"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onwitnessed",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onWitnessed"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onWitnessed 为实体脚本回调(cellapp/entity.cpp:1486,1531),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=witness,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onWitnessed      :1486,1531   isWitnessed flips"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "witness",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:1486; kbe/src/server/cellapp/entity.cpp:1531"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onenteredview",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onEnteredView"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onEnteredView 为实体脚本回调(cellapp/entity.cpp:1786),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=witness,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onEnteredView    :1786        entity enters a witness's view"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "witness",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:1786"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onlosecontrolledby",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLoseControlledBy"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLoseControlledBy 为实体脚本回调(cellapp/entity.cpp:1513),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=control,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onLoseControlledBy :1513      controlledBy binding released"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "control",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:1513"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onmove",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onMove"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onMove 为实体脚本回调(cellapp/entity.cpp:2946),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=movement,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onMove :2946 → onMoveOver :2964 | onMoveFailure :2982    (branch ends)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "movement",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2946"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onmoveover",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onMoveOver"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onMoveOver 为实体脚本回调(cellapp/entity.cpp:2964),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=movement,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onMove :2946 → onMoveOver :2964 | onMoveFailure :2982    (branch ends)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "movement",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2964"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onmovefailure",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onMoveFailure"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onMoveFailure 为实体脚本回调(cellapp/entity.cpp:2982),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=movement,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onMove :2946 → onMoveOver :2964 | onMoveFailure :2982    (branch ends)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "movement",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:2982"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onturn",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onTurn"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onTurn 为实体脚本回调(cellapp/entity.cpp:3098),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=movement,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onTurn :3098"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "movement",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3098"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onteleport",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onTeleport"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onTeleport 为实体脚本回调(cellapp/entity.cpp:3786),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=teleport,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onTeleport :3786 → onTeleportSuccess :3814 | onTeleportFailure :1558/3797"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "teleport",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3786"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onteleportsuccess",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onTeleportSuccess"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onTeleportSuccess 为实体脚本回调(cellapp/entity.cpp:3814),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=teleport,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onTeleport :3786 → onTeleportSuccess :3814 | onTeleportFailure :1558/3797"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "teleport",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3814; kbe/src/server/baseapp/entity.cpp:1567"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onteleportfailure",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onTeleportFailure"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onTeleportFailure 为实体脚本回调(baseapp/entity.cpp:1558/cellapp/entity.cpp:3797),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=teleport,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onTeleport :3786 → onTeleportSuccess :3814 | onTeleportFailure :1558/3797"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "teleport",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:1558; kbe/src/server/cellapp/entity.cpp:3797"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onentertrap",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onEnterTrap"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onEnterTrap 为实体脚本回调(cellapp/entity.cpp:1759),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=trap,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onEnterTrap :1759 → onLeaveTrap :1768 | onLeaveTrapID :1777"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "trap",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:1759"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onleavetrap",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLeaveTrap"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLeaveTrap 为实体脚本回调(cellapp/entity.cpp:1768),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=trap,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onEnterTrap :1759 → onLeaveTrap :1768 | onLeaveTrapID :1777"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "trap",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:1768"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onleavetrapid",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLeaveTrapID"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLeaveTrapID 为实体脚本回调(cellapp/entity.cpp:1777),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=trap,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onEnterTrap :1759 → onLeaveTrap :1768 | onLeaveTrapID :1777"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "trap",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:1777"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onrestore",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onRestore"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onRestore 为实体脚本回调(cellapp/entity.cpp:3871/baseapp/entity.cpp:1083),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=lifecycle,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "  restore_cell到达 → onRestore :1083 (cellapp side :3871)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "lifecycle",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:3871; kbe/src/server/baseapp/entity.cpp:1083"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onprearchive",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onPreArchive"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onPreArchive 为实体脚本回调(baseapp/entity.cpp:1298),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=database,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "  onPreArchive :1298 → onWriteToDB :1405 (base) / :1262 (cell)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "database",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:1298"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onwritetodb",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onWriteToDB"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onWriteToDB 为实体脚本回调(baseapp/entity.cpp:1405/cellapp/entity.cpp:1262),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=database,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "  onPreArchive :1298 → onWriteToDB :1405 (base) / :1262 (cell)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "database",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:1405; kbe/src/server/cellapp/entity.cpp:1262"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onclientenabled",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onClientEnabled"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onClientEnabled 为实体脚本回调(baseapp/proxy.cpp:178),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=client,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onClientEnabled proxy.cpp:178"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "client",
+          "sourceLocation": "kbe/src/server/baseapp/proxy.cpp:178"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onclientdeath",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onClientDeath"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onClientDeath 为实体脚本回调(baseapp/entity.cpp:1048/proxy.cpp:237),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=client,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onClientDeath   entity.cpp:1048 / proxy.cpp:237 → onLogOnAttempt proxy.cpp:189,205"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "client",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:1048; kbe/src/server/baseapp/proxy.cpp:237"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onlogonattempt",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLogOnAttempt"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLogOnAttempt 为实体脚本回调(proxy.cpp:189,205),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=client,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onClientDeath   entity.cpp:1048 / proxy.cpp:237 → onLogOnAttempt proxy.cpp:189,205"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "client",
+          "sourceLocation": "kbe/src/server/baseapp/proxy.cpp:189; kbe/src/server/baseapp/proxy.cpp:205"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onstreamcomplete",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onStreamComplete"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onStreamComplete 为实体脚本回调(proxy.cpp:832),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=client,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onStreamComplete proxy.cpp:832"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "client",
+          "sourceLocation": "kbe/src/server/baseapp/proxy.cpp:832"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-ontimer",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onTimer"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onTimer 为实体脚本回调(cellapp/entity.cpp:4358/baseapp/entity.cpp:1662),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=lifecycle,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onTimer   cellapp:4358 / baseapp:1662   any phase; addTimer holds no strong"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "lifecycle",
+          "sourceLocation": "kbe/src/server/cellapp/entity.cpp:4358; kbe/src/server/baseapp/entity.cpp:1662"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-ondestroy",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onDestroy"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onDestroy 为实体脚本回调(baseapp/entity.cpp:169/cellapp/entity.cpp:211),锚点系引擎调用点;kode KBENGINE_HOOKS 名册收录该回调,category=lifecycle,sourceLocation 与档一致"
+      },
+      "evidence": [
+        "onDestroy baseapp:169 / cellapp:211     before teardown, both sides"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": true,
+          "category": "lifecycle",
+          "sourceLocation": "kbe/src/server/baseapp/entity.cpp:169; kbe/src/server/cellapp/entity.cpp:211"
+        }
+      }
+    },
+    {
+      "id": "pos-hook-onlosecell",
+      "kind": "positive",
+      "input": {
+        "path": "hooks-roster",
+        "name": "onLoseCell"
+      },
+      "engine": {
+        "load": "accept",
+        "truth": "档 hook-sequencing.md 记载 onLoseCell 为实体回调(cell released S_RELEASE,baseapp/entity.cpp:1059,1065),但注明 corroborated-but-unregistered——HOOK_SEQUENCING 图收录而 KBENGINE_HOOKS 名册不收录"
+      },
+      "evidence": [
+        "corroborated-but-unregistered `onLoseCell`). Every engine `file:line` below is",
+        "    │     ├── onLoseCell       :1059,1065 — cell released (S_RELEASE), base alive;"
+      ],
+      "finding": "漏报方向:引擎 baseapp/entity.cpp:1059,1065 派发 onLoseCell,kode KBENGINE_HOOKS 名册(36 条)无此条目——corroborated-but-unregistered 现状钉,非引擎无此回调;与第三十三族 usage-stats onLoseCell 漏报同源,跨族对账一致",
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "present": false
+        }
+      }
+    }
+  ]
+}

@@ -64,6 +64,53 @@ describe('verifyAppliedReceipt(可信 digest 或已验证回执才 applied)', ()
     expect(store.get(KEY, FILE)?.outcome).toBe('accepted');
   });
 
+  it('RUST-353(HR-HTTP-011):引擎实际回执形状(实返 revision/process/method)digest 一致 → applied,额外通道不破坏指纹闸', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    store.record(KEY, FILE, 'accepted');
+    // KodeHotReload.py 实际回执形状:applied 时带 revision(服务端单调计数)/
+    // process(引擎 role)/method + targetId 回显——额外通道如实存在,指纹闸门
+    // (digest 与所发内容一致)仍 govern 显示已应用。
+    const verdict = verifyAppliedReceipt(
+      store,
+      KEY,
+      FILE,
+      JSON.stringify({
+        status: 'applied',
+        file: FILE,
+        digest: DIGEST,
+        revision: 42,
+        process: 'cell',
+        method: 'xreload',
+        targetId: KEY.targetId
+      }),
+      { sentContent: CONTENT, now: 9 }
+    );
+    expect(verdict.kind).toBe('applied');
+    expect(store.get(KEY, FILE)?.outcome).toBe('applied');
+  });
+
+  it('RUST-353(HR-HTTP-011):引擎回执带完整通道但 digest 与所发不符(引擎应用了别的内容)→ 不显示已应用', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    store.record(KEY, FILE, 'accepted');
+    const verdict = verifyAppliedReceipt(
+      store,
+      KEY,
+      FILE,
+      JSON.stringify({
+        status: 'applied',
+        file: FILE,
+        digest: 'f'.repeat(64),
+        revision: 42,
+        process: 'cell',
+        method: 'xreload',
+        targetId: KEY.targetId
+      }),
+      { sentContent: CONTENT, now: 9 }
+    );
+    expect(verdict.kind).toBe('not-applied');
+    expect(store.get(KEY, FILE)?.outcome).toBe('accepted');
+  });
+
   it('状态不是 applied(accepted/未知值/非 JSON)→ 不升格', () => {
     const store = new HotReloadTargetStateStore({ now: () => 1 });
     store.record(KEY, FILE, 'sent-unverified');

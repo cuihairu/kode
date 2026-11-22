@@ -24,14 +24,30 @@ import { sendDefaultHotfix, type DefaultHotfixSendDeps } from './hotReloadDefaul
 /** 内置 fork 侧 provider id(与注册表重复 id 拒绝对账) */
 export const KBENGINE_HTTP_HOTFIX_PROVIDER_ID = 'kbengine.http-hotfix';
 
-/** 内置 HTTP hotfix provider:委托 sendDefaultHotfix,transport 未注入时如实不接单 */
+/**
+ * 内置 HTTP hotfix provider:委托 sendDefaultHotfix,transport 未注入时如实不接单。
+ * HR-HTTP-002:请求上的模块身份/版本/关联 id 逐项透传(缺省=行为与增量前一致),
+ * 结构化 outcome 随结果回传(接口可选字段,HTTP 通道即产)。
+ */
 export function createHttpHotfixSendProvider(deps: DefaultHotfixSendDeps): HotReloadProvider {
   return {
     providerId: KBENGINE_HTTP_HOTFIX_PROVIDER_ID,
     apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
     displayName: 'KBEngine HTTP hotfix',
     canSend: () => deps.transport !== undefined,
-    send: request => sendDefaultHotfix([...request.files], deps)
+    send: request =>
+      sendDefaultHotfix([...request.files], {
+        ...deps,
+        ...(request.moduleIdentities !== undefined
+          ? { moduleIdentities: request.moduleIdentities }
+          : {}),
+        ...(request.revision !== undefined && request.revision.length > 0
+          ? { revision: request.revision }
+          : {}),
+        ...(request.correlationId !== undefined && request.correlationId.length > 0
+          ? { correlationId: request.correlationId }
+          : {})
+      })
   };
 }
 

@@ -38,7 +38,8 @@ Reading order for any "is this API really available on cellapp?" question:
 | Shared entity methods (baseapp+cellapp) | `addTimer`, `delTimer`, `writeToDB`, `destroy`, `registerEvent`, `deregisterEvent`, `fireEvent`, `getComponent`; getsets `id`, `isDestroyed`, `className` | `kbe/src/lib/entitydef/entity_macro.h:12-40` (macro block spliced into the same table) |
 | Cellapp `KBEngine` module functions | `time`, `createEntity`, `executeRawDatabaseCommand`, `reloadScript`, `registerReadFileDescriptor`/`Write` (+`deregister…`), `addSpaceGeometryMapping`, `getSpaceGeometryMapping`, `setSpaceData`, `getSpaceData`, `delSpaceData`, `isShuttingDown`, `address`, `raycast`, `setAppFlags`, `getAppFlags` | `kbe/src/server/cellapp/cellapp.cpp:172-189`; plus `cellAppData` object at `cellapp.cpp:199` |
 | Shared server-app module face | `kbassert`(private), `publish`, `scriptLogType`, `getResFullPath`, `hasRes`, `open`, `listPathRes`, `matchPath`, `getWatcher`, `getWatcherDir`, `debugTracing`, `globalData` object | `kbe/src/lib/server/entity_app.h:423-453`, `:418-419` (`globalData` registration) |
-| Interpreter-layer (all apps) | `MemoryStream` (`python_app.cpp:271`), `NEXT_ONLY` constant (`:323`), module-level `addTimer`/`delTimer` (`:329-330`), `component` string (`lib/pyscript/script.cpp:248`), `genUUID64` (`:258`), `addWatcher`/`delWatcher` (`lib/pyscript/pywatcher.cpp:184-185`), `urlopen` (`lib/pyscript/pyurl.cpp:23`) | as cited |
+| Interpreter-layer (all apps) | `NEXT_ONLY` constant (`python_app.cpp:323`), module-level `addTimer`/`delTimer` (`:329-330`), `component` string (`lib/pyscript/script.cpp:248`), `genUUID64` (`:258`), `addWatcher`/`delWatcher` (`lib/pyscript/pywatcher.cpp:184-185`), `urlopen` (`lib/pyscript/pyurl.cpp:23`) | as cited |
+| `EntityDef::installScript` (via `EntityApp::installEntityDef`) | `MemoryStream` module function (`APPEND_SCRIPT_MODULE_METHOD` `entitydef.cpp:2455`); `PyMemoryStream` type is type-only (`:2453`) | `lib/entitydef/entitydef.cpp:2448-2467`; `lib/server/entity_app.h:335` |
 
 The `Entity` class **attribute** face on cellapp: `base`, `client`,
 `allClients`, `otherClients`, `isWitnessed`, `hasWitness`, `isOnGround`,
@@ -84,7 +85,7 @@ actually provides them. "Layer" values: **cell** = `cellapp.cpp:172-189`,
 | `genUUID64()` | interp `script.cpp:258`, impl `:91-106` | 64-bit UUID; **emits a warning** when the process's global order is outside 0~65535 (`script.cpp:99`) because cross-process uniqueness then degrades to per-process |
 | `addWatcher(path, dataType, getFunction)` / `delWatcher(path)` | interp `pywatcher.cpp:184-185` | Register/remove a watched variable |
 | `urlopen(url, callback, postData, headers)` | interp `pyurl.cpp:23`, impl `:69+` | Async HTTP(S); raises `AssertionError` on bad headers/postData/callback (`pyurl.cpp:98`, `:116`, `:162`, `:174`) |
-| `MemoryStream()` | interp `python_app.cpp:271` | KBEngine-serialization byte buffer |
+| `MemoryStream()` | `EntityDef::installScript` `entitydef.cpp:2455` (via `EntityApp::installEntityDef` `entity_app.h:335`) | KBEngine-serialization byte buffer; module **function** (not class — the `PyMemoryStream` type is type-only at `:2453`) |
 | `createSpace` | — | **Absent**: the cellapp source material does not document it, and the fork registers no cellapp-side `createSpace` (grep over `server/cellapp/` + `lib/server/` = 0 hits). Space creation happens via the baseapp→cellappmgr path (`Cellapp::onCreateCellEntityInNewSpaceFromBaseapp` handles the resulting entity creation, `cellapp.cpp:875`) |
 
 Source-material functions accounted for elsewhere: the material's intro
@@ -213,7 +214,8 @@ Entity-face deviations (`delTimer` stale id, `cancelController("Type")`,
 ## References
 
 - Registration maps: `server/cellapp/cellapp.cpp:172-199`,
-  `lib/server/entity_app.h:410-453`, `lib/server/python_app.cpp:271-334`,
+  `lib/server/entity_app.h:330-335,410-453`, `lib/entitydef/entitydef.cpp:2448-2467`,
+  `lib/server/python_app.cpp:271-334`,
   `lib/pyscript/script.cpp:248-258`, `lib/pyscript/pywatcher.cpp:184-185`,
   `lib/pyscript/pyurl.cpp:23`;
   Entity-face registration maps on the

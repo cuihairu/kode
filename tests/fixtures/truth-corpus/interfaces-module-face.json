@@ -1,0 +1,213 @@
+{
+  "family": "interfaces-module-face",
+  "grounding": { "doc": "docs/knowledge/api-interfaces.md", "engineHead": "6d12b8f" },
+  "entries": [
+    {
+      "id": "pos-module-functions",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "interfaces", "roster": "site1" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1 装配表+§2:21 模块函数全部注册——interfaces.cpp:186-189 四件(chargeResponse/accountLoginResponse/createAccountResponse/executeRawDatabaseCommand)+python_app.cpp:271-296/:329-334 共享十五件(MemoryStream 于 python_app.cpp:271 经 APPEND_SCRIPT_MODULE_METHOD 注册为模块级函数,kode 侧为 class 行故另立 pos-memoryStream-fork-arbitration 分歧条目,不进本名册;余十四件=publish scriptLogType getResFullPath hasRes open listPathRes matchPath debugTracing addTimer delTimer registerReadFileDescriptor registerWriteFileDescriptor deregisterReadFileDescriptor deregisterWriteFileDescriptor)+解释器层两件(script.cpp:258 genUUID64/pyurl.cpp:23 urlopen;component 为 variable 行非函数;addWatcher/delWatcher 缺席单独成条目)——本名册 20 件=四件+十四件+两件"
+      },
+      "evidence": [
+        "`chargeResponse`, `accountLoginResponse`, `createAccountResponse`, `executeRawDatabaseCommand`",
+        "`MemoryStream`, `publish`, `scriptLogType`, `getResFullPath`, `hasRes`, `open`, `listPathRes`, `matchPath`, `debugTracing`, module-level `addTimer`/`delTimer`, `registerReadFileDescriptor`/`registerWriteFileDescriptor` (+`deregister…`)",
+        "`urlopen`, `component` string, `genUUID64`, `addWatcher`/`delWatcher`",
+        "All 7 functions from the source material, with fork-verified semantics."
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "functions": ["accountLoginResponse", "addTimer", "chargeResponse", "createAccountResponse", "debugTracing", "delTimer", "deregisterReadFileDescriptor", "deregisterWriteFileDescriptor", "executeRawDatabaseCommand", "genUUID64", "getResFullPath", "hasRes", "listPathRes", "matchPath", "open", "publish", "registerReadFileDescriptor", "registerWriteFileDescriptor", "scriptLogType", "urlopen"]
+        }
+      }
+    },
+    {
+      "id": "pos-component-attr",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "interfaces", "name": "component" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §1 解释器层:component 字符串常量(script.cpp:248 COMPONENT_NAME_EX);interfaces 进程字面值 'interfaces';kode Literal['interfaces'] 同向"
+      },
+      "evidence": [
+        "`urlopen`, `component` string, `genUUID64`, `addWatcher`/`delWatcher`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "present": true, "value": "Literal['interfaces']" }
+      }
+    },
+    {
+      "id": "pos-server-err-roster",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "interfaces", "roster": "errcodes" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §4:SERVER_ERR_STR 全 38 项(interfaces.cpp:178-184 循环 for i<SERVER_ERR_MAX,value=index)装成模块 int——SERVER_SUCCESS=0 加 SERVER_ERR_* 37 项(SERVER_ERR_MAX 系循环界不在表内,单独成条目)"
+      },
+      "evidence": [
+        "int constants `SERVER_ERR_*` (38 of them, loop over `SERVER_ERR_STR`)",
+        "all 38 entries",
+        "- `SERVER_ERR_LOCAL_PROCESSING = 35` (`server_errors.h:52`): the"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "errCodes": ["SERVER_SUCCESS", "SERVER_ERR_ACCOUNT_CREATE_FAILED", "SERVER_ERR_ACCOUNT_DEADLINE", "SERVER_ERR_ACCOUNT_IS_ONLINE", "SERVER_ERR_ACCOUNT_LOCK", "SERVER_ERR_ACCOUNT_LOGIN_ANOTHER", "SERVER_ERR_ACCOUNT_LOGIN_ANOTHER_SERVER", "SERVER_ERR_ACCOUNT_NOT_ACTIVATED", "SERVER_ERR_ACCOUNT_REGISTER_NOT_AVAILABLE", "SERVER_ERR_ACCOUNT_RESET_PASSWORD_NOT_AVAILABLE", "SERVER_ERR_BUSY", "SERVER_ERR_CANNOT_USE_MAIL", "SERVER_ERR_DB", "SERVER_ERR_ENTITYDEFS_NOT_MATCH", "SERVER_ERR_ILLEGAL_LOGIN", "SERVER_ERR_IN_SHUTTINGDOWN", "SERVER_ERR_LOCAL_PROCESSING", "SERVER_ERR_NAME", "SERVER_ERR_NAME_MAIL", "SERVER_ERR_NAME_PASSWORD", "SERVER_ERR_NOT_FOUND_ACCOUNT", "SERVER_ERR_OP_FAILED", "SERVER_ERR_PASSWORD", "SERVER_ERR_PROXY_DESTROYED", "SERVER_ERR_SRV_NO_READY", "SERVER_ERR_SRV_OVERLOAD", "SERVER_ERR_SRV_STARTING", "SERVER_ERR_USER1", "SERVER_ERR_USER10", "SERVER_ERR_USER2", "SERVER_ERR_USER3", "SERVER_ERR_USER4", "SERVER_ERR_USER5", "SERVER_ERR_USER6", "SERVER_ERR_USER7", "SERVER_ERR_USER8", "SERVER_ERR_USER9", "SERVER_ERR_VERSION_NOT_MATCH"]
+        }
+      }
+    },
+    {
+      "id": "pos-memoryStream-fork-arbitration",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "interfaces", "name": "MemoryStream" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 实读 PythonApp::installPyModules(python_app.cpp:271)以 APPEND_SCRIPT_MODULE_METHOD(module, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0) 把 MemoryStream 注册为模块级函数——interfaces 裸 PythonApp(interfaces.h:24)真走此链;PyMemoryStream 类型仅 type-only(entitydef.cpp:2453 installScript(NULL))。原判「engine KBEngine 面仅此一类脚本类型」误把模块级函数当脚本类型,且断言「baseapp/cellapp EntityApp 链缺席」系漏枚举假阴性(entity_app.h:335→entitydef.cpp:2455 亦注册);interfaces 引擎面无模块类脚本类型(各类型注册均 type-only)"
+      },
+      "evidence": [
+        "`MemoryStream` is a module-level",
+        "**function** (`APPEND_SCRIPT_MODULE_METHOD(module, MemoryStream, ...)` at",
+        "type-only (`entitydef.cpp:2453` `installScript(NULL)`). The same function",
+        "`kbe/src/lib/server/python_app.cpp:271-296`, `:329-334`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "kind": "class", "presentInKode": true }
+      },
+      "finding": "跨族对账翻案(2026-11-22,fork 仲裁):原 pos-registered-types 把 MemoryStream 判为「引擎唯一脚本类型」并把 baseapp/cellapp EntityApp 链判为「缺席」,二者皆假——fork 实读 python_app.cpp:271 以 APPEND_SCRIPT_MODULE_METHOD 注册 MemoryStream 为模块级函数(与 baseapp/cellapp entitydef.cpp:2455、bots clientapp.cpp:181 同源同形态),PyMemoryStream 类型仅 type-only;四族(base/cell/bots/interfaces)同刻翻正为 positive/accept;真实分歧=kind 分歧(引擎 function / kode class),kode 若以 class 收编会与引擎函数形态不符;只钉现状不冒充修复"
+    },
+    {
+      "id": "pos-addtimer-signature",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "interfaces", "name": "addTimer" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §2+§6#1:fork 解析串 \"ffO\"(python_app.cpp:726)三参全必需,材料默认值 repeatOffset=0/callbackObj=None 不存在,2 参调用 TypeError;回调形态 callbackObj(timerID);kode 签名三参零默认与 fork 同向"
+      },
+      "evidence": [
+        "All three arguments required; 2-arg call raises `TypeError`",
+        "`PyArg_ParseTuple(args, \"ffO\", …)`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "signature": "def addTimer(__initialOffset: float, __repeatOffset: float, __callbackObj: TimerCallback) -> int"
+        }
+      }
+    },
+    {
+      "id": "pos-urlopen-shape",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "interfaces", "name": "urlopen" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §2+§6#3/#8:fork 四形态——1 参(url)/2 参(url,callback)/3 参(第三参 dict 则 headers,bytes 则 postData,否则 AssertionError)/4 参(postData bytes+headers dict);回调 5 元组 (httpcode,data,headers,success,url) 且 headers 是原始头块 str 非材料所稙 dict;kode 四 overload+3 参 Union[bytes,Dict[str,str]]+回调 headers 位 str 与 fork 同向(材料 dict 口径被 fork 推翻,kode 站 fork 侧)"
+      },
+      "evidence": [
+        "3-arg form: third arg is `headers` if `dict`, `postData` if `bytes`, else `AssertionError`",
+        "**Raw header block as `str`**"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "overloadCount": 4, "thirdArgType": "Union[bytes, Dict[str, str]]", "callbackHeadersType": "str" }
+      }
+    },
+    {
+      "id": "pos-spi-roster",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "interfaces", "roster": "spi" },
+      "engine": {
+        "load": "accept",
+        "truth": "档 §3:五入口脚本回调全部派发在 getEntryScript()(onInterfaceAppReady initializeEnd :151-158/onInterfaceAppShutDown onShutdownBegin :73-80/onRequestCreateAccount \"ssy#\" :525-532/onRequestAccountLogin \"ssy#\" :636-643/onRequestCharge \"sKy#\" ordersID str+entityDBID uint64 :750-758);缺回调 SCRIPT_ERROR_CHECK 打 traceback 进程继续"
+      },
+      "evidence": [
+        "All 5 are dispatched on the entry-script module (`getEntryScript()`).",
+        "`onInterfaceAppReady()`",
+        "`onInterfaceAppShutDown()`",
+        "`onRequestCreateAccount(registerName, password, datas)`",
+        "`onRequestAccountLogin(loginName, password, datas)`",
+        "`onRequestCharge(ordersID, entityDBID, datas)`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": {
+          "names": ["onInterfaceAppReady", "onInterfaceAppShutDown", "onRequestCreateAccount", "onRequestAccountLogin", "onRequestCharge"],
+          "requiredFlags": { "onInterfaceAppReady": true, "onInterfaceAppShutDown": true, "onRequestCreateAccount": true, "onRequestAccountLogin": true, "onRequestCharge": true }
+        }
+      }
+    },
+    {
+      "id": "neg-server-err-max",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "interfaces", "name": "SERVER_ERR_MAX" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 实读 Interfaces::onInstallPyModules(interfaces.cpp:176-184):循环 for(int i=0;i<SERVER_ERR_MAX;i++) 只装 SERVER_ERR_STR[0..37],SERVER_ERR_MAX 系 #define 循环界非表项,interfaces 面从不登记该名"
+      },
+      "evidence": [
+        "- `SERVER_ERR_MAX = 38` is the table sentinel — it is **not** installed"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "kind": "variable", "presentInKode": true }
+      },
+      "finding": "divergence 登记(误导方向)=引擎 interfaces 面循环界只装 SERVER_ERR_STR[0..37] 而 kode interfaces 表带 SERVER_ERR_MAX 行:补全/类型面会暴露运行期 AttributeError 的名字;family-29 判例(loginapp/dbmgr/logger 三面 SERVER_ERR_MAX 同形)归各族核,本族钉 interfaces 面;只钉现状不冒充修复,收窄归独立批"
+    },
+    {
+      "id": "div-executedb-result-cells-str",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "interfaces", "name": "DatabaseCommandResult" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 实读 Interfaces::onExecuteRawDatabaseCommandCb:结果集单元格 PyBytes_FromStringAndSize(interfaces.cpp:391)成 bytes,SQL NULL 映射 None(:380-384);DatabaseCommandCallback/DatabaseCommandResult 两名在 kbe/src 全树零命中=kode 自造 TypeAlias,非引擎模块属性名"
+      },
+      "evidence": [
+        "Cells are **`bytes`** (decode yourself); SQL `NULL` → `None`",
+        "list of **`bytes`** cells"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "aliasNames": ["DatabaseCommandCallback", "DatabaseCommandResult"], "kodeCellType": "str", "forkCellType": "bytes" }
+      },
+      "finding": "divergence 登记(误导方向)=引擎回调结果单元格是 bytes(interfaces.cpp:391)而 kode DatabaseCommandResult TypeAlias 声明 list[list[str]] | None 单元格 str:补全/类型面会引导脚本把 bytes 当 str 处理解码自担;另 DatabaseCommandCallback/DatabaseCommandResult 系 kode 自造 TypeAlias 名(kbe/src 零命中)作为 variable 行暴露在模块面=同一误导面;只钉现状不冒充修复,类型面收窄归独立批"
+    },
+    {
+      "id": "neg-addwatcher-absent",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "interfaces", "name": "addWatcher" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 仲裁(2026-11-22)推翻档 §1 表「Interpreter layer (all script-bearing apps) … addWatcher/delWatcher」:initializePyWatcher(pywatcher.cpp:181-188)全树唯一调用点 entity_app.h:414(EntityApp::installPyModules 内),interfaces 裸 PythonApp(interfaces.h:24)不经 EntityApp→interfaces 面无 addWatcher/delWatcher;kode 同席缺席=对齐,文档口径不采"
+      },
+      "evidence": [
+        "`urlopen`, `component` string, `genUUID64`, `addWatcher`/`delWatcher`"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "presentInKode": false, "absentNames": ["addWatcher", "delWatcher"] }
+      }
+    },
+    {
+      "id": "div-chargeresponse-errcode-range",
+      "kind": "negative",
+      "input": { "path": "module-face", "process": "interfaces", "name": "chargeResponse" },
+      "engine": {
+        "load": "reject-silent",
+        "truth": "fork 实读 __py_chargeResponse(interfaces.cpp:851-855):守卫 errCode<SERVER_ERR_MAX 才转发,>=38 静默丢弃(order 驻留回调不到 baseapp)——且 SERVER_ERR_MAX 本身不在模块面(neg-server-err-max 条目),脚本无法从模块面推得界值"
+      },
+      "evidence": [
+        "Values `>= SERVER_ERR_MAX`(38) are silently discarded; the order stays pending",
+        "makes the whole call a **silent no-op**",
+        "out-of-range \"custom\" error code you invent is discarded. (§6 #7)"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "kind": "function", "presentInKode": true, "errorCodeType": "int", "forkDiscardsAt": 38 }
+      },
+      "finding": "divergence 登记(误导方向)=引擎 errorCode>=SERVER_ERR_MAX(38) 静默丢弃而 kode 签名 errorCode:int 无界:补全/类型面会引导脚本传引擎静默丢弃的越界码;只钉现状不冒充修复,Literal/IntRange 收窄归独立批"
+    }
+  ]
+}

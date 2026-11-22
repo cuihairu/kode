@@ -20,6 +20,7 @@
 import { createHash } from 'crypto';
 
 import { settleAppliedStatus, type AppliedSettleStatus } from './hotReloadAppliedCheck';
+import { formatHotReloadErrorReason } from './hotReloadErrorReason';
 import {
   buildHotReloadTargetKeyId,
   HOT_RELOAD_TARGET_KEY_SEPARATOR,
@@ -37,6 +38,28 @@ export type HotReloadFileLifecycleState =
   | 'FAILED'
   | 'RESTART_REQUIRED';
 
+/**
+ * HR-STATE-002 四个 hash 各司其职,不混用(每个都是独立事实,只从自己的
+ * 事实源来,缺哪个如实 undefined 不拿别的顶替):
+ * - lastRequestedHash:最近一次发送请求的内容 sha256(台账 sentDigest,
+ *   IDE-AUD-006 发送时点冻结基准)。只代表「发出过什么」,不代表服务端收没
+ *   收——发出≠接受;
+ * - lastAcceptedHash:最近一次被回执 accepted 的内容 sha256(accepted 回执
+ *   确认服务端已取走该内容;applied 隐含 accepted,故 applied 也在此列)。
+ *   sent-unverified/failed/超时=如实 undefined,不拿请求 hash 冒充接受 hash;
+ * - lastVerifiedAppliedHash:最近一次已核实生效的内容 sha256(verifyAppliedReceipt
+ *   双证通过才赋值)。**会话基线册首见 hash(从未 applied 的干净起点)不属此列**,
+ *   不冒充「已核实生效」——那是基线口径,不是核验口径;
+ * - currentDiskHash:当前磁盘内容 sha256(实时读)。与发送无关——发送后磁盘
+ *   可再变,拿它核验回执=混用(IDE-AUD-006 红线的反面,回执核验只用冻结基准)。
+ */
+export interface HotReloadHashSet {
+  readonly lastRequestedHash?: string;
+  readonly lastAcceptedHash?: string;
+  readonly lastVerifiedAppliedHash?: string;
+  readonly currentDiskHash?: string;
+}
+
 /** 单 (rootId,targetId,file) 的状态视图:态 + 判定依据 + 透传台账明细 */
 export interface HotReloadFileStateView {
   /** 状态所属文件(绝对路径,过滤/角标渲染用) */
@@ -46,6 +69,8 @@ export interface HotReloadFileStateView {
   currentDigest?: string;
   /** 基线 hash(最近一次 APPLIED 所发 hash,或会话基线册首见 hash) */
   baselineDigest?: string;
+  /** HR-STATE-002:四 hash 区分投影(各司其职,不混用;恒随视图派生) */
+  hashSet: HotReloadHashSet;
   /** 最近一次投递 detail(透传台账,原样不加工) */
   detail?: string;
   /** 最近一次投递时刻(透传台账 recordedAt,注入时钟,ms;呈现面渲染成时间) */
@@ -63,11 +88,51 @@ export const sha256Hex = (content: string): string =>
   createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
 
 /**
+ * HR-STATE-002 四 hash 区分投影(纯):只从各自事实源取值——请求 hash 取
+ * 台账 sentDigest(冻结基准),接受 hash 取同值但仅当回执升格 accepted/applied,
+ * 核验 hash 仅当 settle=applied(双证通过),磁盘 hash 取实时读值。会话基线册
+ * 首见 hash 一律不进 lastVerifiedAppliedHash(基线口径≠核验口径,不混用)。
+ */
+export function deriveHotReloadHashSet(input: {
+  record: HotReloadDeliveryRecord | undefined;
+  currentDigest: string | undefined;
+  /** settleAppliedStatus=applied(双证核验通过) */
+  verifiedApplied: boolean;
+}): HotReloadHashSet {
+  const sentDigest = input.record?.sentDigest;
+  const set: { -readonly [K in keyof HotReloadHashSet]: HotReloadHashSet[K] } = {};
+  if (sentDigest !== undefined) {
+    set.lastRequestedHash = sentDigest;
+  }
+  if (
+    sentDigest !== undefined &&
+    (input.record?.outcome === 'accepted' || input.record?.outcome === 'applied')
+  ) {
+    set.lastAcceptedHash = sentDigest;
+  }
+  if (input.verifiedApplied && sentDigest !== undefined) {
+    set.lastVerifiedAppliedHash = sentDigest;
+  }
+  if (input.currentDigest !== undefined) {
+    set.currentDiskHash = input.currentDigest;
+  }
+  return set;
+}
+
+/**
  * 纯派生状态表(类方法读台账并算 settle 后落到这里):结构性 def 拦下最
  * 先(保守拦下优先于一切投递态);无台账记录按基线 CLEAN/DIRTY;有记录按
  * settle 结算——applied 后内容再偏离=新 DIRTY,failed 如实 FAILED(内容
  * 再改=新编辑回落 DIRTY),超时未确认如实 FAILED 不冒充 applied,窗口内
  * pending 一律 SENT(accepted 只是注解)。
+ *
+ * HR-STATE-003 applied 来源纪律:applied 只从两个合法来源赋值——(a)可信
+ * applied 回执(settle=applied,digest 双证);(b)引擎状态查询与发送时点冻结
+ * hash 一致(engineAppliedDigest === record.sentDigest)。两者是来源并集(非
+ * 否决):有可信回执就以回执为准(引擎不一致只注解不翻判);无可信回执但引擎
+ * 权威确认已应用该内容,按引擎侧赋值 applied。引擎查询未提供=无可判依据,
+ * 不凭空赋值 applied(与超时不冒充 applied 同一诚实纪律)。两来源任一确认
+ * applied 后内容再偏离=新 DIRTY(旧版已应用且磁盘又修改)。
  */
 export function deriveHotReloadFileState(input: {
   record: HotReloadDeliveryRecord | undefined;
@@ -77,9 +142,28 @@ export function deriveHotReloadFileState(input: {
   restartRequired: boolean;
   /** settleAppliedStatus 结算;record 为空时不参与(无记录分支先行) */
   settle: AppliedSettleStatus;
+  /**
+   * 引擎状态查询结果(HR-STATE-003 第二来源):引擎侧权威已应用 digest。
+   * undefined=无引擎状态证据(当前生产面仅回执证据,/status 轮询面仍属
+   * HR-AUDIT-010);给出且与 record.sentDigest 一致=引擎确认已应用。
+   */
+  engineAppliedDigest?: string;
 }): HotReloadFileStateView {
-  const { record, file, currentDigest, baselineDigest, restartRequired, settle } = input;
-  const view: HotReloadFileStateView = { file, state: 'CLEAN' };
+  const { record, file, currentDigest, baselineDigest, restartRequired, settle, engineAppliedDigest } = input;
+  // 引擎状态查询与发送时点冻结 hash 一致:引擎权威确认已应用(第二来源)。
+  const engineConfirmsApplied =
+    engineAppliedDigest !== undefined &&
+    record?.sentDigest !== undefined &&
+    engineAppliedDigest === record.sentDigest;
+  const view: HotReloadFileStateView = {
+    file,
+    state: 'CLEAN',
+    hashSet: deriveHotReloadHashSet({
+      record,
+      currentDigest,
+      verifiedApplied: settle === 'applied' || engineConfirmsApplied
+    })
+  };
   if (currentDigest !== undefined) {
     view.currentDigest = currentDigest;
   }
@@ -95,11 +179,22 @@ export function deriveHotReloadFileState(input: {
       view.detail = record.detail;
     }
   }
+  // HR-STATE-005 文件不可读(已删除/移走/改名)=ghost:无内容可判、无待办可
+  // 发,不冒充存活态(APPLIED/SENT/FAILED/RESTART_REQUIRED 都意味着一个存在
+  // 的文件)——如实 CLEAN+注解,旧 UI 不再假显示成功。与无记录不可读分支
+  // (「无可判依据,如实 CLEAN」)同口径。hashSet 仍按事实源投影(交付史是
+  // 事实,不因文件消失而抹掉,HR-STATE-002 各司其职)。
+  if (currentDigest === undefined) {
+    view.state = 'CLEAN';
+    view.annotation = '文件不可读(已删除/移走/改名):热更状态不跟踪,无待办;交付史保留在台账';
+    return view;
+  }
   // 结构性 def 变更被 HOT-005 闸拦下:普通 reload 不发,需重启进程后再应用。
   // 是保守拦下不是失败,单独着色不与 FAILED 混用。
   if (restartRequired) {
     view.state = 'RESTART_REQUIRED';
-    view.reason = '结构性 def 变更,普通 reload 被拦,需重启进程后再应用';
+    // HR-STATE-010:需重启类原因加可操作标签(消息已内嵌动作,不叠建议)
+    view.reason = formatHotReloadErrorReason('结构性 def 变更,普通 reload 被拦,需重启进程后再应用');
     return view;
   }
   if (record === undefined) {
@@ -110,8 +205,26 @@ export function deriveHotReloadFileState(input: {
     return view;
   }
   if (settle === 'applied') {
-    // applied 已核验:基线=所发 hash(IDE-AUD-006 冻结基准);内容再偏离=新一次偏离
+    // applied 已核验(可信回执):基线=所发 hash(IDE-AUD-006 冻结基准);内容再
+    // 偏离=新一次偏离(旧版已应用且磁盘又改=DIRTY)。引擎查询不一致是来源
+    // 并集下的如实注解(回执仍是合法来源,不翻判),供呈现面知悉引擎侧待核。
     view.state = currentDigest !== undefined && currentDigest !== baselineDigest ? 'DIRTY' : 'APPLIED';
+    if (
+      engineAppliedDigest !== undefined &&
+      record?.sentDigest !== undefined &&
+      engineAppliedDigest !== record.sentDigest
+    ) {
+      view.annotation = `引擎状态查询显示已应用其他内容(引擎 ${engineAppliedDigest.slice(0, 12)}… ≠ 所发 ${record.sentDigest.slice(0, 12)}…):以回执 applied 为准,引擎侧待核`;
+    }
+    return view;
+  }
+  if (engineConfirmsApplied) {
+    // HR-STATE-003 第二来源:无可信 applied 回执(回执丢失/仅 accepted),但引擎
+    // 状态查询与所发冻结 hash 一致=引擎权威已应用,按引擎侧赋值 applied(不
+    // 冒充回执,来源如实注解);一致后磁盘再改=新 DIRTY(旧版已应用且磁盘又改)。
+    view.state =
+      currentDigest !== undefined && currentDigest !== record?.sentDigest ? 'DIRTY' : 'APPLIED';
+    view.annotation = '引擎状态查询与所发 hash 一致:已应用(无 applied 回执,凭引擎侧权威)';
     return view;
   }
   if (settle === 'failed') {
@@ -122,7 +235,8 @@ export function deriveHotReloadFileState(input: {
       return view;
     }
     view.state = 'FAILED';
-    view.reason = record.detail ?? '投递失败';
+    // HR-STATE-010:失败原因过七类可操作分类(未知如实原样透传,不猜类别)
+    view.reason = formatHotReloadErrorReason(record.detail ?? '投递失败');
     return view;
   }
   if (settle === 'unconfirmed-timeout') {
@@ -149,12 +263,31 @@ export interface HotReloadFileStateMachineDeps {
   now(): number;
   /** applied 核验超时窗口 ms(与 HOT_RELOAD_APPLIED_SETTLE_MS 同值) */
   timeoutWindowMs: number;
+  /**
+   * HR-STATE-003 第二来源:引擎侧权威已应用 digest 查询(按目标+文件)。
+   * 未提供=无引擎状态证据(当前生产面仅回执证据,/status 轮询面仍属
+   * HR-AUDIT-010),状态机回落到仅可信回执来源。
+   */
+  engineAppliedDigestFor?(key: HotReloadTargetKey, file: string): string | undefined;
 }
 
 /**
  * 文件热更状态机:会话基线册 + 结构性 def 拦下集 + 派生视图。台账
  * (HotReloadTargetStateStore)是事实源,本类只在其上派生生命周期态,
  * 键同形(rootId×targetId×file)不另立身份。
+ *
+ * HR-STATE-004 分区=(workspaceId,rootId,targetId,uri)四维:rootId 是工作区
+ * 根目录路径、file 是 uri 的 fsPath 绝对路径(键内两维齐);workspaceId 维度
+ * 由纯内存台账/基线册的进程隔离承担(每窗口独立扩展宿主,跨窗口无共享
+ * 持久层,无需入键)。状态机因此天然隔离——切换目标后新目标是独立记录,
+ * 旧目标的 applied 绿不会被新目标复用(基线册按键入册,不跨目标串)。
+ *
+ * HR-STATE-005 文件不可读(已删除/移走/改名)=ghost 口径:内容读不到=文件
+ * 不在(与 HR-WATCH-003/007「读不到=已删除」同判据),派生视图不冒充存活
+ * 态(APPLIED/SENT/FAILED/RESTART_REQUIRED 都意味着一个存在的文件),如实
+ * CLEAN+注解,旧 UI 不假显示成功。tombstone 清理=结构性闸拦下标记随 ghost
+ * 清除(重生成文件不继承旧闸);台账记录/会话基线保留(交付史是事实源,
+ * 重生成与旧基线比较才判得准)。hashSet 仍按事实源投影,不因文件消失抹史。
  */
 export class HotReloadFileStateMachine {
   private readonly deps: HotReloadFileStateMachineDeps;
@@ -217,10 +350,29 @@ export class HotReloadFileStateMachine {
     const record = ledger.get(key, file);
     const currentDigest = currentContent === undefined ? undefined : sha256Hex(currentContent);
     const keyId = this.keyOf(key, file);
+    // HR-STATE-005 tombstone:文件不可读(已删除/移走/改名)=ghost,结构性闸
+    // 拦下标记随之清除——重生成文件不继承旧闸(否则健康重生成的文件被旧
+    // RESTART_REQUIRED 误拦,假显示需重启)。台账记录/会话基线保留:交付史
+    // 是事实源,重生成与旧基线比较才判得准(同内容回 CLEAN、异内容 DIRTY),
+    // 派生视图已按 ghost 口径 CLEAN(纯函数分支),不假显示成功。
+    if (currentContent === undefined) {
+      this.restartReasons.delete(keyId);
+    }
+    // HR-STATE-003:引擎权威已应用 digest(第二来源);与所发冻结 hash 一致才算
+    const engineAppliedDigest = this.deps.engineAppliedDigestFor?.(key, file);
+    const engineConfirmsApplied =
+      engineAppliedDigest !== undefined &&
+      record?.sentDigest !== undefined &&
+      engineAppliedDigest === record.sentDigest;
     let baseline = this.resolveBaseline(ledger, key, file);
     if (record?.outcome === 'applied' && record.sentDigest !== undefined) {
       // 基线滚动:applied 即基线=所发 hash(设计 §3.2),会话册同步留档,
       // 后续重试覆盖台账时基线不丢
+      baseline = record.sentDigest;
+      this.baselines.set(keyId, record.sentDigest);
+    } else if (engineConfirmsApplied && record.sentDigest !== undefined) {
+      // 引擎查询确认已应用:基线同口径滚到所发 hash(可信回执与引擎权威
+      // 两个来源对基线/核验口径一致,不因来源不同而分叉)
       baseline = record.sentDigest;
       this.baselines.set(keyId, record.sentDigest);
     } else if (record === undefined && baseline === undefined && currentDigest !== undefined) {
@@ -244,7 +396,9 @@ export class HotReloadFileStateMachine {
       currentDigest,
       baselineDigest: baseline,
       restartRequired,
-      settle
+      settle,
+      // HR-STATE-003:引擎权威已应用 digest(有则作为第二来源参与 applied 判定)
+      engineAppliedDigest
     });
   }
 

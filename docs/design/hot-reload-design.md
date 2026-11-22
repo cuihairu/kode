@@ -428,6 +428,26 @@ interface ReloadTransport {
 4. Structural def batches enter no hot-reload channel (they go to
    IDE-HOT-005's restart path).
 5. `probe()` connectivity test: HTTP = endpoint reachable; official =
+
+   - **Endpoint-health auto face (RUST-357 / HR-HTTP-015)**: every real send also
+     reports its transport-level fact to the channel light — disconnect = no response
+     thrown (endpoint unreachable), reconnect = 2xx reachable, non-2xx = reachable but
+     unhealthy (`src/backend/hotReloadEndpointHealth.ts` pure records; observer
+     `healthObserver` injected via `ReloadTransportDeps`). A health success only means
+     the endpoint is reachable — it never poses as any module having been reloaded;
+     delivery results stay on the receipt/ledger axis.
+   - **Preview request (RUST-358 / HR-HTTP-016)**: the advanced config face's final
+     step adds 「预览请求(不发送)」 — it constructs the exact request that a real
+     send would produce (method/URL/headers/body, `${targetId}` and `${files}`
+     resolved, JSON object body auto-attached with `targetId`) and shows it, then
+     loops back to the same next-step pick: confirming with 「保存通道配置」 arms
+     auto hot-reload, cancel writes nothing. Construction and send share
+     `buildReloadHttpRequest` (`HttpReloadTransport.preview`, zero side effects —
+     no send, no probe, no profile write), so the preview is byte-identical to what
+     would be sent. HTTP channel only; the official channel has no HTTP request to
+     preview. The preview states it excludes `sender_digests` (attached at send time
+     per frozen file digest). Representative files: the active Python file when open,
+     else empty (never fabricates a path).
    console connectable.
 
 ## 5. IDE-HOT-102 [P2] Reload configuration and audit

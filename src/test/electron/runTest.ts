@@ -167,6 +167,36 @@ async function main(): Promise<void> {
   // --locale=zh-cn 拉起真 VS Code,断言该键解析结果=默认包文案(回落),
   // 未删键的对照键=zh-cn 文案(locale 生效证明)。--manifestnls 的无残留
   // 断言在此副本上继续有效。
+  // EXEC-008 固定扩展完整调试链真机验收:工作区=KODE_EXEC008_WORKSPACE
+  // (含目标脚本 entity_debug.py + .vscode/launch.json 的临时工作区),
+  // 固定调试器扩展目录=KODE_EXEC008_EXTENSIONS_DIR(默认 ~/.vscode/extensions,
+  // 指向装有 ms-python.debugpy@2024.0.0 + ms-python.python@2024.0.1 的目录),
+  // 证据出=KODE_EXEC008_OUT;目标解释器 debugpy.listen 须已在本机运行(:5678)。
+  const exec008Mode = process.argv.includes('--exec008');
+  if (exec008Mode) {
+    process.env.KODE_ELECTRON_SUITE = 'exec008';
+    workspacePath = process.env.KODE_EXEC008_WORKSPACE || workspacePath;
+    const exec008UserData = path.join(extensionDevelopmentPath, '.vscode-test', 'exec008-user-data');
+    // 验收对象是「固定版本」的扩展:VS Code 的扩展自动更新会在会话期间把
+    // ms-python.debugpy@2024.0.0 / ms-python.python@2024.0.1 换成最新版
+    // (test-electron 只禁 app 更新,不禁扩展自动更新),换版会使固定版本链
+    // 不可复现且实测把 debugpy adapter 打断在 initialize 上。故这里预写
+    // user-data 设置禁掉扩展自动更新与检查。
+    const exec008UserSettings = path.join(exec008UserData, 'User', 'settings.json');
+    fs.mkdirSync(path.dirname(exec008UserSettings), { recursive: true });
+    fs.writeFileSync(exec008UserSettings, JSON.stringify({
+      'extensions.autoUpdate': false,
+      'extensions.autoCheckUpdates': false,
+      'python.terminal.activateEnvironment': false
+    }, null, 2) + '\n');
+    dbgLaunchArgs = [
+      '--extensions-dir',
+      process.env.KODE_EXEC008_EXTENSIONS_DIR
+        ?? path.join(os.homedir(), '.vscode', 'extensions'),
+      '--user-data-dir',
+      exec008UserData
+    ];
+  }
   const manifestFallbackMode = process.argv.includes('--manifestfallback');
   // UX-REVIEW-010f 运行时 bundle(vscode.l10n)缺 key 回退真机验证:临时扩展
   // 副本连 l10n/ 目录一起复制,删掉 zh-cn 运行时 bundle 一个键,以

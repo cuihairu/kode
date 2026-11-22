@@ -86,7 +86,10 @@ describe('字符串表完整性', () => {
       'entityFlow',
       'defCallChain',
       'errorScan',
-      'configVisualizer'
+      'configVisualizer',
+      // RUST-384 批B:热更两面板文案命名空间
+      'hotReloadSettings',
+      'hotReloadHistory'
     ]) {
       expect(Object.keys(table[ns]).length, `namespace ${ns}`).toBeGreaterThan(0);
     }

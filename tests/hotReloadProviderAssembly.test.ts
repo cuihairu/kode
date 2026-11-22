@@ -48,6 +48,45 @@ describe('hotReloadProviderAssembly(HR-PR-08 接线批装配核)', () => {
     expect(seen[0].body).toContain('goods.A');
   });
 
+  it('HR-HTTP-002:请求上的模块身份/版本/关联 id 透传,outcomes 结构化回传', async () => {
+    const seen: Array<{ url: string; body: string }> = [];
+    const provider = createHttpHotfixSendProvider({
+      transport: async request => {
+        seen.push({ url: request.url, body: request.body });
+        return { ok: true, status: 200, durationMs: 1, body: 'ok' };
+      }
+    });
+    const result = await provider.send({
+      targetId: 'cellapp#1',
+      files: ['/ws/scripts/base/Account.py', '/ws/scripts/base/Bot.py'],
+      moduleIdentities: ['custom.Account', 'custom.Bot'],
+      revision: 'rev-9',
+      correlationId: 'req-1'
+    });
+    // 模块身份照调用方给定,不按文件推导
+    expect(seen[0].url).toContain('module_name=custom.Account');
+    expect(seen[1].url).toContain('module_name=custom.Bot');
+    // 请求关联 id/版本回执,结构化 outcome 逐文件(平行)
+    expect(result.ok).toBe(true);
+    expect(result.correlationId).toBe('req-1');
+    expect(result.revision).toBe('rev-9');
+    expect(result.outcomes).toHaveLength(2);
+    expect(result.outcomes?.[0].correlationId).toBe('req-1#1');
+    expect(result.outcomes?.[1].correlationId).toBe('req-1#2');
+    expect(result.outcomes?.[0].kind).toBe('ok');
+  });
+
+  it('HR-HTTP-002:增量前形状照常可发(缺省字段=行为与增量前一致)', async () => {
+    const provider = createHttpHotfixSendProvider({
+      transport: async () => ({ ok: true, status: 200, durationMs: 1, body: '' })
+    });
+    const result = await provider.send({ targetId: 'x', files: ['/ws/scripts/base/Account.py'] });
+    expect(result.ok).toBe(true);
+    expect(result.correlationId).toBeUndefined();
+    expect(result.revision).toBeUndefined();
+    expect(result.outcomes).toHaveLength(1);
+  });
+
   it('宿主:应答序=注入序先到先应答,无人应答如实 null', () => {
     const calls: string[] = [];
     const first = makeProvider({
