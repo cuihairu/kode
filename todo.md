@@ -861,7 +861,7 @@
 #### 19.12 专项 Definition of Done（逐条不可跳过）
 - [ ] RUST-440 （旧 HR-DOD-001） 更改 `scripts/entities/fight/FightAI.py`：自动模式启用后只送 `fight.FightAI`；UI 展示 `entities.fight.FightAI`。
 - [ ] RUST-441 （旧 HR-DOD-002） 手动命令、onSave 和 onDiskChange 对同一模块生成完全一致的短名/全名。
-- [ ] RUST-442 （旧 HR-DOD-003） 在 HTTP 返回 200 但未提供可验证应用回执时 UI **不显示已热更新成功**。
+- [x] RUST-442 （旧 HR-DOD-003） 在 HTTP 返回 200 但未提供可验证应用回执时 UI **不显示已热更新成功**。（收口 2026-11-23 复核:已全覆盖,零新代码(纯验证闭合)。applied 判定硬条件=RUST-427 协议 fixture(tests/fixtures/hot-reload-protocol/receipts.json):applied={status,file,digest(64hex),revision≥1}且 accepted 绝不携带应用声明;200 回包无协议回执/非 JSON→parseReloadHttpReceipts 回 sent(已送达无协议回执,不 claim applied)。装配面=tests/hotReloadChannelWiring.test.ts:122/:142 sent→sent-unverified(未确认)、:147 全部回执失败→结果=失败记录 failed;tests/hotReload.test.ts:473 发出面只到「已发送(未确认)」,绝不标已生效。门=hotReload.test.ts+hotReloadReceiptProtocolFixture.test.ts 31/31 绿。判例=「未显式勾但已被邻面钉死」:DOD-003 语义恰为 RUST-418(200 无回执→未确认)+RUST-427(fixture 冻结 applied 硬条件)的合取面,复核两锚在库即勾,不重做不虚构。）
 - [ ] RUST-443 （旧 HR-DOD-004） 连续保存 100 次不会导致同一旧版本无限请求或把旧回执当作当前结果。(进行中:4314caca 连续保存 100 次规模臂已落 tests/hotReloadRevisionGate.test.ts=100 保存恰 100 请求+请求版本集无重复(同版本不无限请求)+100 条回执乱序落地仅最新代置 sent-unverified、99 条旧回执全注解「响应过期」(旧回执不作当前结果)+同内容再保存零新增请求(指纹去重);既有覆盖叠加=10k soak 10000 offer→1000 定稿恰一次+同内容不重发臂;门禁=同族 6 文件 85 例 solo 绿;差=真机 100 次保存实测(真实 IDE+引擎)未做)
 - [ ] RUST-444 （旧 HR-DOD-005） 关闭自动更新、未知根/特殊脚本、未知协议或不可信 workspace 均不产生自动 HTTP。
 - [ ] RUST-445 （旧 HR-DOD-006） `.def` 编辑器能查看 File Hash / Semantic Hash / Engine Digest（不可得时明确标识），结构变化默认不自动应用。
