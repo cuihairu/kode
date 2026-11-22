@@ -20,6 +20,7 @@
 import { createHash } from 'crypto';
 
 import { settleAppliedStatus, type AppliedSettleStatus } from './hotReloadAppliedCheck';
+import { formatHotReloadErrorReason } from './hotReloadErrorReason';
 import {
   buildHotReloadTargetKeyId,
   HOT_RELOAD_TARGET_KEY_SEPARATOR,
@@ -192,7 +193,8 @@ export function deriveHotReloadFileState(input: {
   // 是保守拦下不是失败,单独着色不与 FAILED 混用。
   if (restartRequired) {
     view.state = 'RESTART_REQUIRED';
-    view.reason = '结构性 def 变更,普通 reload 被拦,需重启进程后再应用';
+    // HR-STATE-010:需重启类原因加可操作标签(消息已内嵌动作,不叠建议)
+    view.reason = formatHotReloadErrorReason('结构性 def 变更,普通 reload 被拦,需重启进程后再应用');
     return view;
   }
   if (record === undefined) {
@@ -233,7 +235,8 @@ export function deriveHotReloadFileState(input: {
       return view;
     }
     view.state = 'FAILED';
-    view.reason = record.detail ?? '投递失败';
+    // HR-STATE-010:失败原因过七类可操作分类(未知如实原样透传,不猜类别)
+    view.reason = formatHotReloadErrorReason(record.detail ?? '投递失败');
     return view;
   }
   if (settle === 'unconfirmed-timeout') {

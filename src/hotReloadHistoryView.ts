@@ -39,6 +39,7 @@ import {
   type HotReloadHistoryStatus
 } from './backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
+import { formatHotReloadErrorReason } from './backend/hotReloadErrorReason';
 import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
 
 /** workspaceState 持久化键(HR-MOD-014;宿主适配面用) */
@@ -86,7 +87,7 @@ export function translateDeliveryRecord(
     targetId: record.targetId,
     time: record.recordedAt,
     status,
-    ...(record.detail !== undefined ? { errorSummary: record.detail } : {})
+    ...(record.detail !== undefined ? { errorSummary: formatHotReloadErrorReason(record.detail) } : {})
   };
 }
 
