@@ -26,13 +26,13 @@
 | C6 | 非 `.py` × 任意 | `tests/hotReloadModuleIdentity.test.ts`(not-python 诊断码) | 解析器拒,诊断码透传 |
 | C7 | 多 target(多 profile) | `tests/hotReloadChannelConfig.test.ts`(多 profile 预设流) | target=profile.id;多档并存不互混 |
 | C8 | 安全 × 密钥不泄出 | `tests/hotReloadSecretLeakGuard.test.ts`(history DTO 无密钥形状字段) | header/token 只允许在出站传输 DTO(RUST-421) |
+| C10 | 插件 × 0/5/20 × 崩溃隔离 | `tests/hotReloadPluginLoad.test.ts`(0/5/20 注册/应答序/清册 + canSend 崩溃隔离) | load 成本有界(应答短路/全不应答线性);崩溃插件隔离跳过并如实上报,不打断核心解析(RUST-426) |
 
 ## 被拦单元(依赖未完成子任务,暂不可签收)
 
 | id | 单元 | 阻断任务 | 原因 |
 | --- | --- | --- | --- |
 | C9 | `.py` × profile 切换 × UI 完整名 | RUST-424 | HTTP 正确传短名且 UI 永远完整名的装配面(接线批 HR-PR-02/03 收官后验) |
-| C10 | 插件 × 0/5/20 × 崩溃隔离 | RUST-426 | 热更新插件 load test 与崩溃隔离未建 |
 | C11 | Watch/HTTP × 24h soak | RUST-428 | 24h 长稳未跑(watcher 泄漏/状态增长/连接泄漏/重试风暴) |
 | C12 | 跨平台真机 × 路径/localhost | RUST-423 | 真机实测未做;纯核路径矩阵已落(376ec986),localhost 指向已钉 |
 

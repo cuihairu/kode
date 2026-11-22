@@ -82,13 +82,17 @@ const SIGNED_CELLS: Array<{ id: string; file: string; test: string }> = [
     id: 'C8',
     file: 'hotReloadSecretLeakGuard.test.ts',
     test: 'history 输入/条目字段集无密钥形状字段(header/token 只允许在出站传输 DTO)'
+  },
+  {
+    id: 'C10',
+    file: 'hotReloadPluginLoad.test.ts',
+    test: '0/5/20 插件注册:注册数如实、应答序先到先应答、dispose 清册不半态'
   }
 ];
 
 /** 被拦单元:依赖未完成子任务,无法签收。与文档「被拦」节一致。 */
 const BLOCKED_CELLS: Array<{ id: string; task: string; reason: string }> = [
   { id: 'C9', task: 'RUST-424', reason: 'HTTP 正确传短名且 UI 永远完整名装配面(接线批 HR-PR-02/03 收官后验)' },
-  { id: 'C10', task: 'RUST-426', reason: '热更新插件 0/5/20 个 load test 与崩溃隔离未建' },
   { id: 'C11', task: 'RUST-428', reason: '24h Watch/HTTP soak 未跑' },
   { id: 'C12', task: 'RUST-423', reason: '真机跨平台(WSL/SSH/DevContainer/macOS/Windows)实测未做;纯核路径矩阵已落' }
 ];
@@ -121,22 +125,28 @@ describe('RUST-430 安全与功能完成矩阵签收守门', () => {
 
   it('②证据存活:每个已签收单元的证据(test 文件+it 名)真实存在', () => {
     const doc = readFileSync(docPath, 'utf8');
+    const blockedIds = new Set(BLOCKED_CELLS.map(c => c.id));
     for (const cell of SIGNED_CELLS) {
       const source = readTest(cell.file);
       expect(source, `证据测试 ${cell.file} 应含 it 名「${cell.test}」`).toContain(cell.test);
       expect(doc, `文档应引用已签收单元 ${cell.id}`).toContain(cell.id);
+      // 互斥:已签收单元不得同时列被拦(「已签收又列被拦」是同步漂移)
+      expect(blockedIds.has(cell.id), `已签收单元 ${cell.id} 不得同时被拦`).toBe(false);
     }
   });
 
   it('③被拦单元诚实:被拦集合与文档「被拦」节一致,且每个被拦单元都有未完成子任务', () => {
     const doc = readFileSync(docPath, 'utf8');
     expect(BLOCKED_CELLS.length).toBeGreaterThan(0);
+    const signedIds = new Set(SIGNED_CELLS.map(c => c.id));
     for (const cell of BLOCKED_CELLS) {
       expect(doc, `文档「被拦」节应列出 ${cell.id}(${cell.task})`).toContain(cell.id);
       expect(doc).toContain(cell.task);
       // 每个被拦单元必须带一个未完成子任务(不能空泛被拦)
       expect(cell.task, `被拦单元 ${cell.id} 应关联一个任务 id`).toMatch(/^RUST-\d+$/);
       expect(cell.reason, `被拦单元 ${cell.id} 应说明原因`).not.toHaveLength(0);
+      // 互斥:被拦单元不得同时已签收(单元被解决后须从被拦节移出,同表同现=漂移)
+      expect(signedIds.has(cell.id), `被拦单元 ${cell.id} 不得同时已签收`).toBe(false);
     }
   });
 

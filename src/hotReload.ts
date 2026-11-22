@@ -629,6 +629,12 @@ export function setupHotReload(
     ],
     onRejection: rejection => {
       status.log(`热更 provider 注册被拒: ${rejection.providerId} (${rejection.reason})`);
+    },
+    // HR-QA-014:插件运行期崩溃如实上日志(不静默吞);该插件被隔离跳过,
+    // 核心解析照常进行——崩溃不影响主线程。
+    onProviderCrash: crash => {
+      const detail = crash.error instanceof Error ? crash.error.message : String(crash.error);
+      status.log(`热更 provider 运行期崩溃(已隔离): ${crash.providerId} (${crash.stage}) ${detail}`);
     }
   });
   // HR-PR-04 接线:发送编排入口由「全局去抖 fire」改为「保存流水线波次出口」

@@ -17,6 +17,7 @@ import {
   HOT_RELOAD_PLUGIN_API_VERSION,
   HotReloadProviderRegistry,
   type HotReloadProvider,
+  type HotReloadProviderCrash,
   type HotReloadRegistryRejection
 } from './hotReloadPluginApi';
 import { sendDefaultHotfix, type DefaultHotfixSendDeps } from './hotReloadDefaultHotfix';
@@ -56,6 +57,8 @@ export interface HotReloadProviderHostInput {
   readonly providers?: readonly HotReloadProvider[];
   /** 注册被拒(重复 id/apiVersion 不符)如实上报面;不静默收编 */
   readonly onRejection?: (rejection: HotReloadRegistryRejection) => void;
+  /** HR-QA-014:插件运行期崩溃(如 canSend 抛异常)如实上报面;不注入=不上报,隔离照常 */
+  readonly onProviderCrash?: (crash: HotReloadProviderCrash) => void;
 }
 
 export interface HotReloadProviderHost {
@@ -66,7 +69,9 @@ export interface HotReloadProviderHost {
 
 /** 宿主装配:注册表创建+按序注册+被拒如实上报;dispose 清册不半态 */
 export function createHotReloadProviderHost(input: HotReloadProviderHostInput = {}): HotReloadProviderHost {
-  const registry = new HotReloadProviderRegistry();
+  const registry = new HotReloadProviderRegistry(
+    input.onProviderCrash !== undefined ? { onProviderCrash: input.onProviderCrash } : {}
+  );
   for (const provider of input.providers ?? []) {
     const rejection = registry.registerSendProvider(provider);
     if (rejection) {

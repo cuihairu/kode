@@ -113,6 +113,27 @@ export function buildEngineProfile(input: {
   };
 }
 
+/** Provider 运行期崩溃阶段(HR-QA-014:崩溃如实上报,不静默吞) */
+export type HotReloadProviderCrashStage = 'canSend';
+
+/**
+ * Provider 运行期崩溃上报(HR-QA-014 插件崩溃不影响核心与主线程):
+ * 崩溃插件只隔离自己,如实上报阶段与原因,不静默吞、不打断核心解析。
+ */
+export interface HotReloadProviderCrash {
+  readonly providerId: string;
+  readonly stage: HotReloadProviderCrashStage;
+  readonly error: unknown;
+}
+
+export interface HotReloadProviderRegistryOptions {
+  /**
+   * 崩溃上报面(装配面接日志;缺省不上报,隔离照常生效)。单个插件
+   * canSend 崩溃只隔离该插件,不打断 resolve——核心与主线程不受影响。
+   */
+  readonly onProviderCrash?: (crash: HotReloadProviderCrash) => void;
+}
+
 /** 注册表拒绝原因(如实可审) */
 export type HotReloadRegistryRejectReason = 'duplicate-id' | 'api-version-mismatch';
 
@@ -129,6 +150,8 @@ export interface HotReloadRegistryRejection {
 export class HotReloadProviderRegistry {
   private readonly sendProviders = new Map<string, HotReloadProvider>();
 
+  constructor(private readonly options: HotReloadProviderRegistryOptions = {}) {}
+
   registerSendProvider(provider: HotReloadProvider): HotReloadRegistryRejection | null {
     if (provider.apiVersion !== HOT_RELOAD_PLUGIN_API_VERSION) {
       return { providerId: provider.providerId, reason: 'api-version-mismatch' };
@@ -140,13 +163,29 @@ export class HotReloadProviderRegistry {
     return null;
   }
 
-  /** 解析发送 provider:第一个 canSend 应答者胜;无人应答/null profile=null */
+  /**
+   * 解析发送 provider:第一个 canSend 应答者胜;无人应答/null profile=null。
+   * HR-QA-014:单个插件 canSend 崩溃只隔离该插件(如实上报后跳过,继续问
+   * 后续),不让它打断解析——插件崩溃不影响核心与主线程;崩溃插件的注册
+   * 关系不受损,dispose 照常清册。
+   */
   resolveSendProvider(profile: EngineProfile | null): HotReloadProvider | null {
     if (!profile || profile.apiVersion !== HOT_RELOAD_PLUGIN_API_VERSION) {
       return null;
     }
     for (const provider of this.sendProviders.values()) {
-      if (provider.canSend(profile)) {
+      let answers: boolean;
+      try {
+        answers = provider.canSend(profile);
+      } catch (error) {
+        this.options.onProviderCrash?.({
+          providerId: provider.providerId,
+          stage: 'canSend',
+          error
+        });
+        continue;
+      }
+      if (answers) {
         return provider;
       }
     }
