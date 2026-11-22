@@ -552,3 +552,51 @@ findEntity 臂红;④perturb has09999→false 契约臂红;⑤perturb
 clientFaceAbsent→false onDestroy 臂红;均 sha256 字节还原复绿)。
 本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo,探针只读
 API_DOC_ENTRIES);语料 35 族 340 条(34→35 族,+6)。
+## 第三十六族: hook-sequencing-edges(时序锚/边探针)
+
+依据 `docs/knowledge/hook-sequencing.md`(回调时序图档,machine-readable 核=
+`src/backend/hookSequencing.ts` HOOK_SEQUENCING 36 钩+补录 onLoseCell;engineHead
+55a6655=fork 本机检出)。该档正是 kode 时序面(`sequencingForHook`)所探测的能力。
+11 例=正例 8(双站点/顺序锚)+负例 3(误导)。全族零 src/ 零 Rust 改动。
+
+**判例 1=双站点锚全数 fork 实证**(8 正例):档标注的双站点派发锚逐行 fork 实读——
+onWriteToDB(baseapp/entity.cpp:1405 调用点 :1305 + cellapp/entity.cpp:1262 调用点
+:1238)/onClientDeath(entity.cpp:1048 调用点 baseapp.cpp:4288 + proxy.cpp:237 调用
+点 baseapp.cpp:822)/onTeleportSuccess(cellapp:3814 调用点 :3533/:3709、
+cellapp.cpp:2058 + baseapp:1567 调用点 :1544)/onTeleportFailure(baseapp:1558 调用
+点 :1550 + cellapp:3797 调用点 :3474..:3772、cellapp.cpp:2163)/onWitnessed
+(cellapp:1486 addWitnessed 首个 witness 入 + :1531 onDelWitnessed 末个出——无独立
+Entity::onWitnessed() 函数,派发内联)/onTimer(cellapp:4358 + baseapp:1662,唯一
+调用者=宏生成 EntityScriptTimerHandler::handleTimeout entity_macro.h:1377)/
+onRestore(baseapp:1083 调用点 restore_entity_handler.cpp:173/:266 + cellapp:3871
+调用点 cellapp.cpp:1068/:1232)/onPreArchive 顺序(baseapp onCellWriteToDBCompleted
+:1294 先派发 onPreArchive :1298 再调 onWriteToDB :1305→:1405)。kode side/anchors
+与 fork 全一致。
+
+**判例 2=cell 附件链四回调全死(误导)**:fork case-insensitive 全树全文件类型检索
+`onEnteringCell`/`onEnteredCell`/`onLeavingCell`/`onLeftCell`——除 entity.h:222-225
+声明+entity.cpp:3835/:3843/:3851/:3859 定义+各自 bufferOrExeCallback 派发行外**零
+调用者**:派发函数从不被引擎调用,四个脚本回调从不触发。档第 41-42 行的
+「enter: before → after / leave: before → after」时序边描述的是死路径。kode
+HOOK_SEQUENCING 同样把这四条列为活时序(onEnteringCell.after=['onEnteredCell'] 等)
+=误导(引擎无此行为,kode 有此断言)。
+
+**判例 3=onLeaveTrapID 死分支(误导)**:fork 全树检索 onLeaveTrapID 仅
+entity.h:456 声明+entity.cpp:1773 定义+1777 派发,零调用者——脚本 onLeaveTrapID
+从不触发;对照 onLeaveTrap 活(proximity_controller.cpp:81)。kode
+HOOK_SEQUENCING.onEnterTrap.after=['onLeaveTrap','onLeaveTrapID'] 仍含死分支。
+判例=「零调用者」检索须含宏生成代码(onTimer 的调用者在 entity_macro.h:1377,
+只扫 server 目录会误判死);死回调检索则须排除声明+定义+派发三处自引用。
+
+门禁=定向 130/130(126+4 新增 it;重基增量 37 traps 族后同测,增量 37 基线 126
+121)/prove-red 四咬(perturb:①onWriteToDB 锚
+1405→1406 ②onPreArchive.after 清空 ③onLeaveTrapID 锚 1777→1778 ④onLeaveTrap 键
+改名;各红一次,sha256 23dbf5a1 字节还原复绿)/tsc -p ./ 0/tsc -p tsconfig.mocha.json
+0/eslint src 0/全量两轮 failed=7→13 超时类负载抖动(硬时间预算臂
+nativeSmokeRetry spawn 重试/globalDataIndex noteSaved 预算/processTopologyPerf RPC
+round-trip/receiverNoneAsyncSharedParse worker 派发/interactiveDeadlineMeasure 等;
+victim 文件零本批改动,truthCorpus 本批 130/130 全程绿;solo 轮 globalDataIndex
+61/61+processTopologyPerf 5/5+receiverNone 5/5+nativeSmokeRetry 5/5 全绿;负载
+33→63 抬升期,CI 权威),CI 权威。本批零 src/ 零 Rust 改动(仅语料+执行门+README+
+todo);语料 36 族 351 条(35→36 族,+11;基线 340=第三十七增量 traps 落地后
+297+37)。

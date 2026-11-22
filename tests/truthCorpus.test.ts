@@ -37,6 +37,7 @@ import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { KBENGINE_HOOKS, getHookByName } from '../src/hooks';
 import { API_DOC_ENTRIES } from '../src/generated/apiDocs';
 import { buildEntityPartPythonContent } from '../src/backend/entityWizard';
+import { sequencingForHook } from '../src/backend/hookSequencing';
 import {
   USER_TYPE_CONTRACT_CONSEQUENCE,
   USER_TYPE_CONTRACT_METHODS,
@@ -2413,5 +2414,59 @@ describe('truth-corpus: traps-index-surface 族执行闸(语义陷阱 kode 面�
     const f34 = hookPresenceRoster.find(e => e.input.name === 'onDestroy')!;
     expect(f34.kode.analysis!.present).toBe(true);
     expect(f34.kode.analysis!.sourceLocation).toBe(hook!.sourceLocation);
+  });
+});
+
+// ============ 第三十六族: hook-sequencing-edges(时序锚/边探针) ============
+interface HookSeqEntry extends TruthEntryBase {
+  input: { path: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      face?: string;
+      hook?: string;
+      phase?: string;
+      side?: string;
+      before?: string[];
+      after?: string[];
+      anchors?: string[];
+    };
+  };
+}
+const hookSeqFamily = families.find(f => f.family === 'hook-sequencing-edges')!;
+const hookSeqEntries = hookSeqFamily.entries as unknown as HookSeqEntry[];
+const hookSeqLive = hookSeqEntries.filter(e => e.kind === 'positive');
+const hookSeqDead = hookSeqEntries.filter(e => e.kind === 'negative');
+describe('truth-corpus: hook-sequencing-edges 族执行闸(时序锚/边探针)', () => {
+  it('双站点活回调在 HOOK_SEQUENCING 收编且 phase/side/anchors 正确(8 正例)', () => {
+    for (const entry of hookSeqLive) {
+      const s = sequencingForHook(entry.input.name!);
+      expect(s, `${entry.id}:${entry.input.name} 未收录`).toBeDefined();
+      expect(s!.phase, entry.id).toBe(entry.kode.analysis!.phase);
+      expect(s!.side, entry.id).toBe(entry.kode.analysis!.side);
+      expect(s!.anchors, entry.id).toEqual(entry.kode.analysis!.anchors);
+    }
+  });
+
+  it('归档序 onPreArchive→onWriteToDB 前后关系与引擎一致(顺序锚)', () => {
+    const pre = sequencingForHook('onPreArchive')!;
+    const wdb = sequencingForHook('onWriteToDB')!;
+    expect(pre.after).toContain('onWriteToDB');
+    expect(wdb.before).toContain('onPreArchive');
+  });
+
+  it('误导钉:kode 仍列死回调 onEnteringCell/onLeavingCell/onLeaveTrapID(引擎全树零调用者)', () => {
+    for (const entry of hookSeqDead) {
+      const s = sequencingForHook(entry.input.name!);
+      expect(s, `${entry.id}:${entry.input.name} 未收录`).toBeDefined();
+      expect(s!.anchors, entry.id).toEqual(entry.kode.analysis!.anchors);
+      expect(s!.before, entry.id).toEqual(entry.kode.analysis!.before);
+      expect(s!.after, entry.id).toEqual(entry.kode.analysis!.after);
+      expect(entry.finding, entry.id).toContain('误导');
+    }
+  });
+
+  it('死回调对照:活配对仍在序(onLeaveTrap/onEnterSpace 收编,死条目是例外非规则)', () => {
+    expect(sequencingForHook('onLeaveTrap')).toBeDefined();
+    expect(sequencingForHook('onEnterSpace')).toBeDefined();
   });
 });
