@@ -1637,9 +1637,9 @@ export function setupHotReload(
   // HR-PR-05 磁盘侧接线面(HR-WATCH-003/005/015):注入 watcher 工厂才建。
   // 事件与 save 同链汇流(版本簿→流水线→合并窗),source='disk-change' 与
   // save 的重叠去重在流水线纯核归并(同 pending 单条,不双发);控制器随
-  // apply 重建(每次新实例:filterOptions 的 roots 声明取当次工作区根,不
-  // 留陈根;arm 窗在同步块内关,重建不产生可滑入的事件空档),范围闸与既有
-  // watcher 面同口径(diskOfferInScope,见 apply)。
+  // apply 重建(每次新实例:filterOptions 的 roots 声明取当次 target 脚本根
+  // (配了)否则工作区根,不留陈根;arm 窗在同步块内关,重建不产生可滑入的事件
+  // 空档),范围闸与既有 watcher 面同口径(diskOfferInScope,见 apply)。
   let diskWatch: HotReloadDiskWatchController | undefined;
   let diskDebounceMs = 0;
   /** 磁盘 offer 的热更域范围闸输入(apply 按最新计划落盘;关/错面=null 不收) */
@@ -1897,12 +1897,27 @@ export function setupHotReload(
     // watcher 面);模式属 kbengine 段,配置变更即 apply 重建,切回即拆。
     if (options.diskWatch && settings.triggerMode === 'onDiskChange') {
       const folderRoots = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
+      // HR-WATCH-005 target 维根绑定:配了热更脚本根(tempEdit.scriptRoots 有序
+      // 多根在前+tempEdit.scriptRoot 单根便捷形态在后,HR-MOD-006 同域,同解析核
+      // 保序去重)即按部署 target 的脚本根监听——watch 面与过滤闸同界收窄到
+      // target 根;未配=空,回落工作区根(既有行为逐字不变)。
+      const configuredRoots = options.defaultHotfix
+        ? [
+            ...(options.defaultHotfix.resolveScriptRoots?.() ?? []),
+            options.defaultHotfix.resolveScriptRoot?.() ?? ''
+          ]
+        : [];
+      const scriptRoots = configuredRoots
+        .map(canonicalizeScriptFilePath)
+        .filter(root => root.length > 0)
+        .filter((root, index, self) => self.indexOf(root) === index);
+      const watchRoots = scriptRoots.length > 0 ? scriptRoots : folderRoots;
       diskDebounceMs = settings.debounceMs;
       diskScope = {
         mode: source === 'explicit' ? 'explicit' : 'derived',
         globs: [...plan.globs],
         assetsRoot: canonicalizeScriptFilePath(assetsRoot),
-        roots: folderRoots.map(root => canonicalizeScriptFilePath(root))
+        roots: watchRoots.map(root => canonicalizeScriptFilePath(root))
       };
       diskWatch = new HotReloadDiskWatchController({
         offer: (file, diskSource) => {
@@ -1919,9 +1934,9 @@ export function setupHotReload(
           ? { onDiagnostic: options.diskWatch.onDiagnostic }
           : {}),
         // HR-WATCH-004 深层防御:watcher 模式管根界,过滤层再拦排除目录/备份名
-        filterOptions: { roots: folderRoots.map(root => canonicalizeScriptFilePath(root)) }
+        filterOptions: { roots: watchRoots.map(root => canonicalizeScriptFilePath(root)) }
       });
-      diskWatch.watchRoots(folderRoots);
+      diskWatch.watchRoots(watchRoots);
       diskWatch.arm();
     }
   };
