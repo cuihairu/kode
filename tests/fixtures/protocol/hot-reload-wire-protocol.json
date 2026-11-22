@@ -1,0 +1,63 @@
+{
+  "$comment": "热更新 accepted/applied wire 协议冻结 fixture(RUST-427 / HR-QA-015)。本文件是协议唯一数据基准:改协议须先改本 fixture 再过对应测试(fixture 与实现单侧漂移=测试红,协议静默漂移从机制上封死)。受控真实测试服务=scripts/hot-reload-receiver/referenceReceiver.mjs(零依赖 node:http 真回环);语义联调(tests/hotReloadReceiverRoundtrip.test.ts)覆盖行为证据,本 fixture 固化其线形(经 tests/hotReloadWireProtocolFixture.test.ts 双侧对拍)。",
+  "canonical_sample": {
+    "content": "class Avatar:\n    HP = 100\n",
+    "sha256": "55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317"
+  },
+  "request": {
+    "description": "发送方→接收端 POST /reload 请求体。JSON 对象体由通道自动附带 targetId(F4 二轮)与 sender_digests(F3 三轮,模板已显式给出则不覆盖);裸 ${files} 数组体不自动附带。接收端只读已记录字段:files(所发文件绝对路径数组)/targetId(可选,给则回显)/sender_digests(file→内容 sha256 hex,applied 核验基准)。",
+    "example": {
+      "files": ["/ws/scripts/entities/fight/FightAI.py"],
+      "targetId": "baseapp-1",
+      "sender_digests": {
+        "/ws/scripts/entities/fight/FightAI.py": "55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317"
+      }
+    }
+  },
+  "responses": {
+    "accepted": {
+      "description": "已接收:file 须与所发文件绝对路径逐字回显;targetId 可选,给了须与发送目标一致;applied 仍需 HOT-004 digest 核验(接受非终态)。单文件=单对象,批量=JSON 数组。",
+      "example": {
+        "status": "accepted",
+        "file": "/ws/scripts/entities/fight/FightAI.py"
+      }
+    },
+    "applied": {
+      "description": "已应用:digest=canonical_sample.sha256(发送时点冻结基准,IDE-AUD-006);revision=接收端全局递增版本号(HOT-008 标签,解析级不核验)。单文件=单对象,批量=JSON 数组。",
+      "example": {
+        "status": "applied",
+        "file": "/ws/scripts/entities/fight/FightAI.py",
+        "digest": "55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317",
+        "revision": 7
+      }
+    },
+    "batch": {
+      "description": "批量=JSON 数组,逐条为 accepted/applied 形态,每条独立核验;无匹配回执的文件落 sent(已送达,不 claim applied)。",
+      "example": [
+        { "status": "accepted", "file": "/ws/scripts/entities/A.py" },
+        { "status": "applied", "file": "/ws/scripts/entities/B.py", "digest": "55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317", "revision": 8 }
+      ]
+    },
+    "unrecognized": {
+      "description": "以下线形一律保留未确认(不 claim applied):非 JSON/JSON 数组/status 非 accepted·applied/file 回显缺失或不一致/digest 缺失或与所发内容不符/响应体截断。",
+      "examples": {
+        "notJson": "not a json",
+        "array": [1, 2],
+        "unknownStatus": { "status": "ok", "file": "/ws/scripts/entities/A.py" },
+        "missingFile": { "status": "applied", "digest": "55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317" },
+        "missingDigest": { "status": "applied", "file": "/ws/scripts/entities/A.py" }
+      }
+    }
+  },
+  "parsing": {
+    "accepted_rule": "只认 status='accepted' 且 file 与所发文件逐字一致(可选 targetId 须一致);其余保留未确认不升格(src/backend/hotReloadReceipt.ts parseHotReloadAcceptedReceipt)",
+    "applied_rule": "只认 status='applied' 且 file 逐字一致 且 digest 与发送时点冻结内容 sha256 一致(双证;src/backend/hotReloadAppliedCheck.ts verifyAppliedReceipt);revision 是 HOT-008 标签面,解析级不核验",
+    "sent_rule": "HTTP 通道对无匹配回执/响应体截断/非 JSON 回包的文件补 sent(已送达,不 claim applied)",
+    "failed_rule": "非 2xx/传输失败/接收端如实 failed=回执 failed(带原因)"
+  },
+  "receiver": {
+    "reference_impl": "scripts/hot-reload-receiver/referenceReceiver.mjs",
+    "apply_path": "接收端自写产物('wx' 独占自建+temp+rename 原子替换),写后重算 sha256 与报文 sender_digests[file] 比对一致才回 applied;不符或写失败如实 failed 且已写产物回滚",
+    "digest_basis": "applied 核验基准=发送方冻结 digest(报文 sender_digests),接收端不 re-read 源文件(发送方冻结语义 IDE-AUD-006)"
+  }
+}

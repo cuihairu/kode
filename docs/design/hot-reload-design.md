@@ -448,6 +448,20 @@ interface ReloadTransport {
      preview. The preview states it excludes `sender_digests` (attached at send time
      per frozen file digest). Representative files: the active Python file when open,
      else empty (never fabricates a path).
+   - **Protocol fixture freeze (RUST-427 / HR-QA-015)**: the accepted/applied
+     wire shapes are frozen as the single data baseline in
+     `tests/fixtures/protocol/hot-reload-wire-protocol.json` (canonical sample
+     + request/response examples + unrecognized shapes + parsing rules +
+     receiver contract). `tests/hotReloadWireProtocolFixture.test.ts`
+     double-checks both sides against it — fixture self-certification (the
+     canonical content's sha256 must equal the frozen digest, and the request's
+     `sender_digests` / the applied example's `digest` must reference it),
+     parser verdicts against the examples, and the controlled receiver
+     (`scripts/hot-reload-receiver/referenceReceiver.mjs`) real-loopback
+     conformance (key set = example key set + the documented `targetId` echo).
+     Changing the protocol requires changing the fixture first; a one-sided
+     drift (implementation vs fixture) turns the test red, so the wire format
+     cannot drift silently.
    console connectable.
 
 ## 5. IDE-HOT-102 [P2] Reload configuration and audit
