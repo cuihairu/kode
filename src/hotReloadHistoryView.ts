@@ -135,6 +135,8 @@ export function translateDeliveryRecord(
     requestModule: names.requestModule,
     fileUri: record.file,
     targetId: record.targetId,
+    // HR-UI-014 工作区根(活记录恒非空;行身份 requestId 已含,此处补投影)
+    rootId: record.rootId,
     time: record.recordedAt,
     status,
     ...(record.detail !== undefined ? { errorSummary: formatHotReloadErrorReason(record.detail) } : {}),
@@ -215,6 +217,7 @@ export function renderHistoryPanelHtml(input: {
     return `      <tr data-file="${esc(entry.fileUri)}" tabindex="0" aria-label="${esc(t.locateFilePrefix + path.basename(entry.fileUri))}" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="${esc(t.rowTitle)}">
         <td class="module">${moduleCell}</td>
         <td><code title="${esc(entry.fileUri)}">${esc(path.basename(entry.fileUri))}</code></td>
+        <td>${esc(entry.rootId && entry.rootId.length > 0 ? entry.rootId : t.defaultRoot)}</td>
         <td>${esc(entry.targetId.length > 0 ? entry.targetId : t.defaultTarget)}</td>
         <td>${esc(entry.trigger ?? '')}</td>
         <td class="st-${entry.status}">${statusLabel(entry.status)}</td>
@@ -256,11 +259,11 @@ export function renderHistoryPanelHtml(input: {
     : null;
   // RUST-384 批B:表头与空表注记文案(虚拟/非虚拟两分支共用,防重复散串)
   const headerCells =
-    `<th>${esc(t.colModule)}</th><th>${esc(t.colFile)}</th><th>${esc(t.colTarget)}</th>` +
+    `<th>${esc(t.colModule)}</th><th>${esc(t.colFile)}</th><th>${esc(t.colRoot)}</th><th>${esc(t.colTarget)}</th>` +
     `<th>${esc(t.colTrigger)}</th><th>${esc(t.colStatus)}</th><th>${esc(t.colDuration)}</th>` +
     `<th>${esc(t.colHash)}</th><th>${esc(t.colTime)}</th><th>${esc(t.colRequestId)}</th>` +
     `<th>${esc(t.colError)}</th>`;
-  const noMatchRow = `      <tr><td colspan="10">${esc(t.noMatchRows)}</td></tr>`;
+  const noMatchRow = `      <tr><td colspan="11">${esc(t.noMatchRows)}</td></tr>`;
   return `<!DOCTYPE html>
 <html lang="${input.lang}">
 <head><meta charset="UTF-8"><style>
@@ -301,6 +304,7 @@ ${queueRows}
   <form class="filter">
     <input id="f-module" placeholder="${esc(t.modulePlaceholder)}" value="${esc(filter.fullModuleContains ?? '')}">
     <input id="f-target" placeholder="${esc(t.targetPlaceholder)}" value="${esc(filter.targetId ?? '')}">
+    <input id="f-root" placeholder="${esc(t.rootPlaceholder)}" value="${esc(filter.rootId ?? '')}">
     <select id="f-status">
       <option value="">${esc(t.statusAll)}</option>
       <option value="sent-unverified" ${filter.status === 'sent-unverified' ? 'selected' : ''}>${esc(t.statusSentUnverified)}</option>
@@ -352,6 +356,7 @@ ${body || noMatchRow}
         type: 'filter',
         fullModuleContains: document.getElementById('f-module').value,
         targetId: document.getElementById('f-target').value,
+        rootId: document.getElementById('f-root').value,
         status: document.getElementById('f-status').value,
         trigger: document.getElementById('f-trigger').value,
         errorCategory: document.getElementById('f-category').value
@@ -361,6 +366,7 @@ ${body || noMatchRow}
     document.getElementById('clear').addEventListener('click', () => {
       document.getElementById('f-module').value = '';
       document.getElementById('f-target').value = '';
+      document.getElementById('f-root').value = '';
       document.getElementById('f-status').value = '';
       document.getElementById('f-trigger').value = '';
       document.getElementById('f-category').value = '';
@@ -388,6 +394,7 @@ ${
     const LOCATE_PREFIX = ${JSON.stringify(t.locateFilePrefix)};
     const ROW_TITLE = ${JSON.stringify(t.rowTitle)};
     const DEFAULT_TARGET = ${JSON.stringify(t.defaultTarget)};
+    const DEFAULT_ROOT = ${JSON.stringify(t.defaultRoot)};
     const DATA = ${virtualData};
     const ROW_H = ${virtualize.rowHeightPx};
     const OVERSCAN = ${virtualize.overscanRows};
@@ -409,6 +416,7 @@ ${
       return '<tr data-file="' + escJs(entry.fileUri) + '" tabindex="0" aria-label="' + rowLabel + '" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="' + escJs(ROW_TITLE) + '">' +
         '<td class="module">' + moduleCell + '</td>' +
         '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
+        '<td>' + escJs(entry.rootId && entry.rootId.length > 0 ? entry.rootId : DEFAULT_ROOT) + '</td>' +
         '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : DEFAULT_TARGET) + '</td>' +
         '<td>' + escJs(entry.trigger || '') + '</td>' +
         '<td class="st-' + entry.status + '">' + statusLabelJs(entry.status) + '</td>' +
@@ -468,10 +476,10 @@ export interface HotReloadHistoryViewOptions {
   maxAgeMs?: number;
 }
 
-/** 树节点:顶层组(recent/file/target)/键组(具体文件或目标)/历史行 */
+/** 树节点:顶层组(recent/file/target/root)/键组(具体文件/目标/根)/历史行 */
 type TreeNode =
-  | { kind: 'group'; groupKind: 'recent' | 'file' | 'target'; label: string }
-  | { kind: 'keyGroup'; groupKind: 'file' | 'target'; label: string; rows: HotReloadHistoryEntry[] }
+  | { kind: 'group'; groupKind: 'recent' | 'file' | 'target' | 'root'; label: string }
+  | { kind: 'keyGroup'; groupKind: 'file' | 'target' | 'root'; label: string; rows: HotReloadHistoryEntry[] }
   | { kind: 'entry'; entry: HotReloadHistoryEntry };
 
 const isHistoryEntryShape = (value: unknown): value is HotReloadHistoryEntry => {
@@ -540,7 +548,7 @@ export function setupHotReloadHistoryView(
   // HR-UI-010:搜索过滤状态(搜索命令改;作用于树)
   // HR-UI-010/HR-STATE-007:搜索过滤状态(搜索命令改;作用于树)。命中=
   // 任一可检索文本字段包含关键词(fullModule/requestModule/fileUri/targetId/
-  // trigger/hash/errorCategory/errorSummary),大小写不敏;空关键词=全量。
+  // rootId/trigger/hash/errorCategory/errorSummary),大小写不敏;空关键词=全量。
   let treeFilterText = '';
   const treeEntries = (): readonly HotReloadHistoryEntry[] => {
     const all = opts.core.newestFirst();
@@ -554,6 +562,7 @@ export function setupHotReloadHistoryView(
         entry.requestModule,
         entry.fileUri,
         entry.targetId,
+        entry.rootId ?? '',
         entry.trigger ?? '',
         entry.hash ?? '',
         entry.errorCategory ?? '',
@@ -571,7 +580,7 @@ export function setupHotReloadHistoryView(
         const entry = node.entry;
         const item = new vscode.TreeItem(buildHistoryEntryLabel(entry));
         item.tooltip = buildHistoryEntryTooltipLines(entry).join('\n');
-        item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}`;
+        item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}${entry.rootId && entry.rootId.length > 0 ? ` · ${entry.rootId}` : ''}`;
         item.contextValue = 'kbengineHotReloadHistoryEntry';
         // RUST-381 失败点击定位文件:树行点击打开文件(命令参数=行文件路径;
         // 任意行可定位,失败行照用同一动作)
@@ -595,21 +604,24 @@ export function setupHotReloadHistoryView(
         return [
           { kind: 'group', groupKind: 'recent', label: l10nText('Recent') },
           { kind: 'group', groupKind: 'file', label: l10nText('By file') },
-          { kind: 'group', groupKind: 'target', label: l10nText('By target') }
+          { kind: 'group', groupKind: 'target', label: l10nText('By target') },
+          { kind: 'group', groupKind: 'root', label: l10nText('By root') }
         ];
       }
       if (node.kind === 'group') {
         if (node.groupKind === 'recent') {
           return entries.slice(0, pageSize).map(entry => ({ kind: 'entry', entry }));
         }
-        // file/target 顶层组 → 键组(动态分组;同路径不同 target 分行)
+        // file/target/root 顶层组 → 键组(动态分组;同路径不同 target/根分行)
         const grouped =
           node.groupKind === 'file'
             ? HotReloadHistoryCore.groupByFile([...entries])
-            : HotReloadHistoryCore.groupByTarget([...entries]);
+            : node.groupKind === 'target'
+              ? HotReloadHistoryCore.groupByTarget([...entries])
+              : HotReloadHistoryCore.groupByRoot([...entries]);
         return [...grouped.entries()].map(([label, groupRows]) => ({
           kind: 'keyGroup' as const,
-          groupKind: node.groupKind as 'file' | 'target',
+          groupKind: node.groupKind as 'file' | 'target' | 'root',
           label,
           rows: groupRows
         }));
@@ -841,6 +853,8 @@ export function setupHotReloadHistoryView(
         const fullModuleContains =
           typeof message.fullModuleContains === 'string' ? message.fullModuleContains.trim() : '';
         const targetId = typeof message.targetId === 'string' ? message.targetId.trim() : '';
+        // HR-UI-014 工作区根过滤:同 targetId 口径(精确等值,值不对只是零命中)
+        const rootId = typeof message.rootId === 'string' ? message.rootId.trim() : '';
         const status =
           message.status === 'sent-unverified' || message.status === 'applied' || message.status === 'failed'
             ? (message.status as HotReloadHistoryStatus)
@@ -859,6 +873,7 @@ export function setupHotReloadHistoryView(
           filter: {
             ...(fullModuleContains.length > 0 ? { fullModuleContains } : {}),
             ...(targetId.length > 0 ? { targetId } : {}),
+            ...(rootId.length > 0 ? { rootId } : {}),
             ...(status !== undefined ? { status } : {}),
             ...(trigger.length > 0 ? { trigger } : {}),
             ...(errorCategory !== undefined ? { errorCategory } : {})

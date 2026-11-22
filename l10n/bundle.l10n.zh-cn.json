@@ -777,6 +777,7 @@
   "Recent": "最近更新",
   "By file": "按文件",
   "By target": "按目标",
+  "By root": "按根",
   "Locate File": "定位文件",
   "Filter hot reload history by module name (fullModule substring; leave empty to clear)": "按模块名过滤热更历史(fullModule 子串,留空清除)",
   "Hot reload history is already empty": "热更历史已为空",

@@ -777,6 +777,7 @@
   "Recent": "Recent",
   "By file": "By file",
   "By target": "By target",
+  "By root": "By root",
   "Locate File": "Locate File",
   "Filter hot reload history by module name (fullModule substring; leave empty to clear)": "Filter hot reload history by module name (fullModule substring; leave empty to clear)",
   "Hot reload history is already empty": "Hot reload history is already empty",
