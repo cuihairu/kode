@@ -98,7 +98,13 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
   };
 
   const boot = (
-    options: { globs?: string[]; withDisk?: boolean; triggerMode?: string } = {}
+    options: {
+      globs?: string[];
+      withDisk?: boolean;
+      triggerMode?: string;
+      scriptRoots?: string[];
+      scriptRoot?: string;
+    } = {}
   ): {
     clock: ReturnType<typeof makeTimers>;
     context: vscode.ExtensionContext;
@@ -122,6 +128,18 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     const runCalls: string[] = [];
     setupHotReload(context, name => void runCalls.push(name), {
       timers: clock.timers,
+      ...(options.scriptRoots !== undefined || options.scriptRoot !== undefined
+        ? {
+            defaultHotfix: {
+              ...(options.scriptRoots !== undefined
+                ? { resolveScriptRoots: () => options.scriptRoots! }
+                : {}),
+              ...(options.scriptRoot !== undefined
+                ? { resolveScriptRoot: () => options.scriptRoot! }
+                : {})
+            }
+          }
+        : {}),
       ...(options.withDisk === false
         ? {}
         : {
@@ -228,6 +246,43 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
       scheme: 'vscode-remote',
       authority: 'ssh-remote+host'
     } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+  });
+
+  it('target 维根绑定(HR-WATCH-005):配了脚本根即按 target 根监听,不再监听全工作区', async () => {
+    const { clock, diagnostics, runCalls } = boot({ scriptRoots: ['/ws/scripts'] });
+    // 磁盘面收窄到 target 脚本根(不是 /ws/**/*.py);显式 glob 面不变
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      '**/*.py',
+      '/ws/scripts/**/*.py'
+    ]);
+    expect(diagnostics[0]?.detail).toBe('/ws/scripts/**/*.py');
+    // target 根下事件照常进链
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/Avatar.py' } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+    // 收窄=工作区根不再有磁盘 watcher 面(域外事件无从产生)
+    expect(allFileSystemWatchers.some(watcher => watcher.pattern === '/ws/**/*.py')).toBe(false);
+  });
+
+  it('target 维根绑定单根形态(HR-MOD-006 同域):scriptRoot 便捷形态同样收窄', () => {
+    boot({ scriptRoot: '/ws/scripts' });
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      '**/*.py',
+      '/ws/scripts/**/*.py'
+    ]);
+  });
+
+  it('target 维根绑定回退(HR-WATCH-005):未配脚本根(空表)回落工作区根,既有行为逐字不变', async () => {
+    const { clock, runCalls } = boot({ scriptRoots: [] });
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      '**/*.py',
+      '/ws/**/*.py'
+    ]);
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/Avatar.py' } as never);
     expect(clock.tick()).toBe(2);
     await flush();
     expect(runCalls).toEqual(['热更']);
