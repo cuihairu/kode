@@ -4,13 +4,18 @@ import {
   createDefaultHotReloadEligibilityRule,
   createDefaultHotReloadLifecycleSlots,
   createDefaultHotReloadPermissionPolicy,
+  createHotReloadWorkerHost,
   defaultHotReloadFingerprintProvider,
+  dispatchWorkerWithBudget,
   HOT_RELOAD_PLUGIN_API_VERSION,
   HotReloadProviderRegistry,
+  WORKER_TIMEOUT_ELIGIBILITY_FALLBACK,
   type FingerprintProvider,
   type HotReloadEligibilityRule,
   type HotReloadProvider,
-  type HotReloadProviderFace
+  type HotReloadProviderFace,
+  type HotReloadWorkerAdapter,
+  type HotReloadWorkerTask
 } from '../src/backend/hotReloadPluginApi';
 import type { HotReloadModuleIdentity } from '../src/backend/hotReloadModuleIdentity';
 
@@ -437,5 +442,109 @@ describe('HR-EXT-004 权限声明(workspace/network/exec,最小权限缺省)', (
     expect(policy.check(builtin, 'fetch-digest').granted).toBe(true);
     expect(policy.check(builtin, 'spawn-process').granted).toBe(false);
     expect(policy.check(builtin, 'spawn-process').missing).toEqual(['exec']);
+  });
+});
+
+describe('HR-EXT-005 隔离 Worker 贡献面(预算化派发+背压有界)', () => {
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+  const eligibilityTask: HotReloadWorkerTask = {
+    kind: 'eligibility',
+    input: { fileUri: '/ws/scripts/a.py', root: '/ws/scripts' }
+  };
+  const makeAdapter = (overrides: Partial<HotReloadWorkerAdapter> = {}): HotReloadWorkerAdapter => ({
+    adapterId: 'fork.worker-adapter',
+    apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+    contributes: ['eligibility', 'response'],
+    dispatch: async () => ({ ok: true, value: 'manual' as const }),
+    ...overrides
+  });
+
+  it('预算内回包=resolved 带值;dispatch 拒绝=rejected 如实带错误', async () => {
+    const fast = makeAdapter();
+    const resolved = await dispatchWorkerWithBudget(fast, eligibilityTask, 2000);
+    expect(resolved.state).toBe('resolved');
+    if (resolved.state === 'resolved') {
+      expect(resolved.result.ok).toBe(true);
+    }
+    const failing = makeAdapter({
+      dispatch: async () => {
+        throw new Error('worker crashed');
+      }
+    });
+    const rejected = await dispatchWorkerWithBudget(failing, eligibilityTask, 2000);
+    expect(rejected.state).toBe('rejected');
+    if (rejected.state === 'rejected') {
+      expect(rejected.error).toContain('worker crashed');
+    }
+  });
+
+  it('预算内未回=timed-out(不等慢 worker;hot path 无界阻塞的落点)', async () => {
+    const slow = makeAdapter({
+      dispatch: () => sleep(400).then(async () => ({ ok: true, value: 'auto' as const }))
+    });
+    const started = Date.now();
+    const outcome = await dispatchWorkerWithBudget(slow, eligibilityTask, 40);
+    expect(outcome.state).toBe('timed-out');
+    expect(Date.now() - started).toBeLessThan(350); // 没等满 400ms 的慢 worker
+  });
+
+  it('超时后槽位按预算释放:迟回结果被丢弃,后续派发照常', async () => {
+    const slow = makeAdapter({ dispatch: () => sleep(300).then(async () => ({ ok: true, value: 'auto' as const })) });
+    const host = createHotReloadWorkerHost({ adapters: [slow], maxInFlight: 1, defaultBudgetMs: 40 });
+    expect((await host.dispatch(eligibilityTask)).state).toBe('timed-out');
+    expect(host.inFlightCount()).toBe(0); // 预算释放,不占槽
+    // 慢 adapter 还在跑;换快 adapter 的新宿主照常 resolved(迟回结果被丢弃)
+    const host2 = createHotReloadWorkerHost({ adapters: [makeAdapter()], maxInFlight: 1 });
+    expect((await host2.dispatch(eligibilityTask)).state).toBe('resolved');
+  });
+
+  it('宿主选 adapter:未贡献该 kind=rejected no-adapter(不静默回落)', async () => {
+    const eligibilityOnly = makeAdapter({ contributes: ['eligibility'] });
+    const host = createHotReloadWorkerHost({ adapters: [eligibilityOnly] });
+    const response = await host.dispatch({ kind: 'response', input: { ok: true } });
+    expect(response.state).toBe('rejected');
+    if (response.state === 'rejected') {
+      expect(response.error).toContain('no adapter contributes response');
+    }
+    // 空宿主同口径
+    const empty = createHotReloadWorkerHost({});
+    expect((await empty.dispatch(eligibilityTask)).state).toBe('rejected');
+  });
+
+  it('背压有界:在途达上限=新任务 rejected backpressure,不无界排队', async () => {
+    const slow = makeAdapter({ dispatch: () => sleep(120).then(async () => ({ ok: true, value: 'auto' as const })) });
+    const host = createHotReloadWorkerHost({ adapters: [slow], maxInFlight: 1, defaultBudgetMs: 2000 });
+    const first = host.dispatch(eligibilityTask); // 占住唯一槽
+    expect(host.inFlightCount()).toBe(1);
+    const second = await host.dispatch(eligibilityTask);
+    expect(second.state).toBe('rejected');
+    if (second.state === 'rejected') {
+      expect(second.error).toContain('backpressure');
+    }
+    await first; // 收尾
+    expect(host.inFlightCount()).toBe(0);
+  });
+
+  it('adapter 声明预算优先于宿主缺省预算', async () => {
+    const slow = makeAdapter({
+      declaredTimeoutMs: 40,
+      dispatch: () => sleep(300).then(async () => ({ ok: true, value: 'auto' as const }))
+    });
+    const host = createHotReloadWorkerHost({ adapters: [slow], defaultBudgetMs: 5000 });
+    const outcome = await host.dispatch(eligibilityTask);
+    expect(outcome.state).toBe('timed-out'); // 用 adapter 的 40ms 而非宿主 5000ms
+  });
+
+  it('dispose 后新派发一律 rejected disposed;apiVersion 钉 1;超时保守产物=manual', async () => {
+    const host = createHotReloadWorkerHost({ adapters: [makeAdapter()] });
+    expect((await host.dispatch(eligibilityTask)).state).toBe('resolved');
+    host.dispose();
+    const after = await host.dispatch(eligibilityTask);
+    expect(after.state).toBe('rejected');
+    if (after.state === 'rejected') {
+      expect(after.error).toContain('disposed');
+    }
+    expect(makeAdapter().apiVersion).toBe('1');
+    expect(WORKER_TIMEOUT_ELIGIBILITY_FALLBACK).toBe('manual');
   });
 });

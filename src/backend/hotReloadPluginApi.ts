@@ -35,7 +35,13 @@
  *   面一律 granted=false(如实拒,不静默放行:第三方不得未声明即截获保存
  *   事件/联网/起进程)。本核只定义声明形状与判定策略;真实拒绝点在宿主装配
  *   挂载期(策略由宿主调用,resolve* 解析序保持无权限假设),与 HR-HTTP-001
- *   端点策略(RUST-420,只管请求目的地)互补不重复。
+ *   端点策略(RUST-420,只管请求目的地)互补不重复;
+ * - HR-EXT-005 隔离 Worker 贡献面(HotReloadWorkerAdapter):Python 插件经
+ *   隔离 Worker 贡献 eligibility/response adapter;预算化派发
+ *   (dispatchWorkerWithBudget:超时=timed-out 不无界等,槽位按预算释放)+
+ *   背压有界(在途上限,满则 rejected 不排队)——hot path 绝不无界阻塞;
+ *   资格超时保守产物=manual(与 HR-EXT-003 保守序同口径)。真实 worker 线程
+ *   装配由接线批注入 dispatch,本核只定义协议与预算。
  * 纯逻辑零 vscode;真实扩展宿主装配(注册时机/生命周期)随接线批。
  */
 
@@ -440,6 +446,155 @@ export function createDefaultHotReloadPermissionPolicy(): HotReloadPermissionPol
         missing: bestMissing,
         reason: `provider ${provider.providerId} 未声明 ${bestMissing.join('/')} 权限,不得挂到 ${face} 面`
       };
+    }
+  };
+}
+
+/**
+ * HR-EXT-005 贡献面:Python 插件经隔离 Worker 可贡献的 adapter 种类。
+ * eligibility=资格判定(HR-EXT-003 的 worker 侧实现);response=发送结果解释
+ * (HR-EXT-001 interpretResponse 的 worker 侧实现)。隔离=实现跑在独立线程/
+ * 进程,不占 extension host 主线程;本核只定义协议与预算,真实 worker 装配
+ * 由接线批注入 dispatch。
+ */
+export type HotReloadWorkerContributionKind = 'eligibility' | 'response';
+
+/**
+ * HR-EXT-005 Worker 任务(版本化消息协议):kind + 对应输入。
+ * eligibility 输入=HotReloadEligibilityInput;response 输入=HotReloadProviderInterpretInput。
+ */
+export interface HotReloadWorkerTask {
+  readonly kind: HotReloadWorkerContributionKind;
+  readonly input: HotReloadEligibilityInput | HotReloadProviderInterpretInput;
+  /** 任务关联 id(结果↔任务回执用;缺省=无) */
+  readonly correlationId?: string;
+}
+
+/**
+ * HR-EXT-005 Worker 结果(版本化):ok=true 带 value(kind 对应的判定/解释产物),
+ * ok=false 带 error(worker 侧如实错误)。
+ */
+export type HotReloadWorkerResult =
+  | { readonly ok: true; readonly value: HotReloadEligibilityDecision | HotReloadProviderInterpretation }
+  | { readonly ok: false; readonly error?: string };
+
+/**
+ * HR-EXT-005 派发结局(预算化三态如实):resolved=预算内拿到结果;
+ * timed-out=预算内未回(worker 可能仍慢,结果被丢弃,槽位按预算释放);
+ * rejected=无适配器/背压/派发拒绝。
+ */
+export type HotReloadWorkerOutcome =
+  | { readonly state: 'resolved'; readonly result: HotReloadWorkerResult }
+  | { readonly state: 'timed-out' }
+  | { readonly state: 'rejected'; readonly error: string };
+
+/**
+ * HR-EXT-005 版本化 Worker adapter 贡献面(fork/Python 插件=实现+注册):
+ * 声明自己贡献的 kind(只接自声明 kind,未声明的任务=no-adapter 语义),
+ * 声明自身预算(缺省=宿主 defaultBudgetMs),dispatch=送任务到隔离 worker。
+ */
+export interface HotReloadWorkerAdapter {
+  readonly adapterId: string;
+  readonly apiVersion: typeof HOT_RELOAD_PLUGIN_API_VERSION;
+  readonly contributes: readonly HotReloadWorkerContributionKind[];
+  /** 声明自身预算(毫秒);缺省=宿主 defaultBudgetMs;超时=timed-out 不无界等 */
+  readonly declaredTimeoutMs?: number;
+  dispatch(task: HotReloadWorkerTask): Promise<HotReloadWorkerResult>;
+}
+
+/**
+ * HR-EXT-005 预算化派发(核心非阻塞原语):hot path 绝不等 worker 超过
+ * budgetMs。超时=timed-out(调用方回落保守,不阻塞管线——这正是
+ * 「不允许在热路径无界阻塞」的落点);dispatch 拒绝=rejected 如实;
+ * 预算内拿到=resolved。底层 dispatch 超时后仍可能迟回,其结果被丢弃,
+ * 但调用方已按预算继续(不泄漏等待)。
+ */
+export async function dispatchWorkerWithBudget(
+  adapter: Pick<HotReloadWorkerAdapter, 'adapterId' | 'dispatch'>,
+  task: HotReloadWorkerTask,
+  budgetMs: number
+): Promise<HotReloadWorkerOutcome> {
+  return await new Promise<HotReloadWorkerOutcome>(resolve => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      resolve({ state: 'timed-out' });
+    }, budgetMs);
+    void adapter.dispatch(task).then(
+      result => {
+        if (settled) return; // 已超时:结果被丢弃
+        clearTimeout(timer);
+        resolve({ state: 'resolved', result });
+      },
+      error => {
+        if (settled) return;
+        clearTimeout(timer);
+        resolve({ state: 'rejected', error: String((error as Error)?.message ?? error) });
+      }
+    );
+  });
+}
+
+/**
+ * HR-EXT-005 资格判定超时保守产物:worker 未在预算内判定时,hot path 回落
+ * manual(不自动发——与 HR-EXT-003 保守序同口径,绝不因 worker 慢而越权 auto)。
+ */
+export const WORKER_TIMEOUT_ELIGIBILITY_FALLBACK: HotReloadEligibilityDecision = 'manual';
+
+/** HR-EXT-005 Worker 宿主输入:adapter 集+缺省预算+背压上限 */
+export interface HotReloadWorkerHostInput {
+  readonly adapters?: readonly HotReloadWorkerAdapter[];
+  /** 缺省预算(adapter 未声明 declaredTimeoutMs 时用);缺省 2000ms */
+  readonly defaultBudgetMs?: number;
+  /** 在途硬上限(背压):满则新任务 rejected=worker backpressure,不无界排队 */
+  readonly maxInFlight?: number;
+}
+
+/** HR-EXT-005 Worker 宿主:按 kind 选 adapter,预算化派发,背压有界 */
+export interface HotReloadWorkerHost {
+  dispatch(task: HotReloadWorkerTask): Promise<HotReloadWorkerOutcome>;
+  /** 自省:当前在途任务数(测试/装配面核查) */
+  readonly inFlightCount: () => number;
+  /** 生命周期:拒绝后续派发(装配面挂 dispose;重建即新宿主) */
+  dispose(): void;
+}
+
+/**
+ * HR-EXT-005 Worker 宿主:适配器按 kind 首见胜(contributes 含该 kind);
+ * 无适配器=rejected no-adapter(如实,不静默回落——worker 面有贡献才可用,
+ * 未贡献=保守走宿主既有面);在途达上限=rejected backpressure(有界排队,
+ * 绝不在 hot path 无界堆积);派发=预算化(adapter 声明预算或宿主缺省)。
+ * dispose 置位后新派发一律 rejected disposed。
+ */
+export function createHotReloadWorkerHost(input: HotReloadWorkerHostInput = {}): HotReloadWorkerHost {
+  const adapters = [...(input.adapters ?? [])];
+  const defaultBudgetMs = input.defaultBudgetMs ?? 2000;
+  const maxInFlight = input.maxInFlight ?? 8;
+  let active = 0;
+  let disposed = false;
+  const dispatch = async (task: HotReloadWorkerTask): Promise<HotReloadWorkerOutcome> => {
+    if (disposed) {
+      return { state: 'rejected', error: 'worker host disposed' };
+    }
+    const adapter = adapters.find(a => a.contributes.includes(task.kind));
+    if (!adapter) {
+      return { state: 'rejected', error: `no adapter contributes ${task.kind}` };
+    }
+    if (active >= maxInFlight) {
+      return { state: 'rejected', error: 'worker backpressure' };
+    }
+    active += 1;
+    try {
+      return await dispatchWorkerWithBudget(adapter, task, adapter.declaredTimeoutMs ?? defaultBudgetMs);
+    } finally {
+      active -= 1;
+    }
+  };
+  return {
+    dispatch,
+    inFlightCount: () => active,
+    dispose: () => {
+      disposed = true;
     }
   };
 }
