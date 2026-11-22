@@ -862,6 +862,7 @@ The flow graph panel supports:
   - Closing the panel does not stop the hot reload pipeline — the feed keeps recording and the tree keeps its throttled refresh
   - Filter/load-more buttons talk to the assembly via webview messages and re-render from the ledger-backed history core
   - Screen-reader/键盘面 (RUST-384): the header count is a live region (`role="status" aria-live="polite"`), and each history row is keyboard-reachable (`tabindex="0"`, Enter/Space opens the row's file via the locate command) in addition to the mouse click — the virtual-scroll path mirrors the same attributes
+  - Panel copy is locale-aware (RUST-384 批B): the webview strings come from the `webviewStrings` `hotReloadHistory` namespace (follows `kbengine.webviewLocale` / `vscode.env.language`, en/zh full tables); the tree groups (`Recent`/`By file`/`By target`), the locate command title, the search prompt, and all notifications go through `l10nText` (zh-cn `bundle.l10n.zh-cn.json`, English source fallback). The error-category dropdown and the errorSummary column still render Chinese in an English locale (pure-core reason labels — a separate label-threading change, not faked here)
 
 ### `kbengine.hotReload.historySearch`
 
@@ -895,6 +896,7 @@ The flow graph panel supports:
 - Purpose: open a webview form to edit the frequently-toggled hot-reload workspace settings
 - Behavior:
   - The status line is a live region (`role="status" aria-live="polite"`) so save results are announced to screen readers (RUST-384)
+  - Panel copy is locale-aware (RUST-384 批B): all form strings (title/labels/buttons/saved/validation messages) come from the `webviewStrings` `hotReloadSettings` namespace (follows `kbengine.webviewLocale` / `vscode.env.language`, en/zh full tables); status coloring keys off a semantic `noteState` rather than a Chinese prefix
   - The form edits nine keys: `enabled` (启用自动更新), `triggerMode` (监听模式: `onSave`/`onDiskChange`), `debounceMs` (去抖), `syntaxGate` (语法检查), `sendViaProviders` (经 Provider 发送), `allowRootLevelStem` (根下单层回退), `batchFlushMs` (波次冲口), `batchPreviewThreshold` (批量预览阈值), `stabilityWindowMs` (写入稳定窗)
   - Channel settings (root/target/网络超时) stay in the existing `kbengine.hotReload.configureChannel` flow; this panel does not duplicate them. 「敏感操作警告」has no corresponding settings key — workspace trust (HR-HTTP-005/RUST-422) is the existing security gate, and no key is invented here
   - The host validates every submitted value before writing: booleans must be boolean, numbers finite non-negative integers, `triggerMode` in the enum; an invalid value is reported by field name and nothing is written (the form never silently clamps)
