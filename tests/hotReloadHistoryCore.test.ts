@@ -20,6 +20,8 @@ const makeEntry = (overrides: Partial<HotReloadHistoryInput> = {}): HotReloadHis
   requestModule: overrides.requestModule ?? 'fight.FightAI',
   fileUri: overrides.fileUri ?? '/ws/scripts/fight/FightAI.py',
   targetId: overrides.targetId ?? 'cellapp-1',
+  // HR-UI-014 工作区根:缺省如实给根(过滤/分组钉需确定性根)
+  rootId: overrides.rootId ?? 'cellapp-root',
   time: overrides.time ?? 1000,
   status: overrides.status ?? 'sent-unverified',
   ...(overrides.errorSummary !== undefined ? { errorSummary: overrides.errorSummary } : {}),
@@ -136,6 +138,19 @@ describe('过滤(HR-UI-010)', () => {
     expect(core.filter({ targetId: 'cellapp-2' }).map(e => e.requestId)).toEqual(['r2']);
     // 全量里同文件两行并存不合并
     expect(core.entries().filter(e => e.fullModule === 'entities.fight.FightAI')).toHaveLength(2);
+  });
+
+  it('HR-UI-014 按工作区根过滤各归各(同 targetId 精确等值口径)', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', rootId: 'ws-a' }),
+      makeEntry({ requestId: 'r2', rootId: 'ws-b' }),
+      makeEntry({ requestId: 'r3', rootId: 'ws-a' })
+    ]);
+    expect(core.filter({ rootId: 'ws-a' }).map(e => e.requestId)).toEqual(['r1', 'r3']);
+    expect(core.filter({ rootId: 'ws-b' }).map(e => e.requestId)).toEqual(['r2']);
+    // 未知根=零命中(不冒充匹配到别的根)
+    expect(core.filter({ rootId: 'ws-c' })).toHaveLength(0);
   });
 
   it('状态+时间范围组合 AND 过滤(含边界)', () => {
@@ -259,6 +274,18 @@ describe('分组(HR-UI-002 树视图)', () => {
     expect([...groups.keys()]).toEqual(['cellapp-2', 'cellapp-1']);
     expect(groups.get('cellapp-1')!).toHaveLength(1);
     expect(groups.get('cellapp-2')!).toHaveLength(1);
+  });
+
+  it('groupByRoot:同模块多 workspace 落不同组(HR-UI-014)', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', rootId: 'ws-a' }),
+      makeEntry({ requestId: 'r2', rootId: 'ws-b', fileUri: '/ws/scripts/fight/FightAI.py' })
+    ]);
+    const groups = HotReloadHistoryCore.groupByRoot(core.newestFirst());
+    expect([...groups.keys()]).toEqual(['ws-b', 'ws-a']);
+    expect(groups.get('ws-a')!).toHaveLength(1);
+    expect(groups.get('ws-b')!).toHaveLength(1);
   });
 });
 
@@ -490,6 +517,7 @@ describe('RUST-368 保留时间限额与脱敏导出', () => {
       requestModule: 'fight.FightAI',
       fileUri: '/ws/scripts/fight/FightAI.py',
       targetId: 'cellapp-1',
+      rootId: 'cellapp-root',
       time: 1000,
       status: 'failed',
       errorSummary: 'HTTP 500',
@@ -504,13 +532,14 @@ describe('RUST-368 保留时间限额与脱敏导出', () => {
     expect(bare.durationMs).toBeUndefined();
     expect(bare.errorCategory).toBeUndefined();
     expect(bare.hash).toBeUndefined();
-    // 恰好七安全字段+双名+file+requestId 的白名单七键
+    // 恰好八安全字段(含 rootId,HR-UI-014 显式入白名单)+双名+file+requestId
     expect(Object.keys(bare)).toEqual([
       'requestId',
       'fullModule',
       'requestModule',
       'fileUri',
       'targetId',
+      'rootId',
       'time',
       'status'
     ]);

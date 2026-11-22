@@ -23,7 +23,7 @@ import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { htmlLang, strings } from '../src/webviewStrings';
 
 // HR-PR-06 装配钉:台账记录→历史行翻译(requestId 同执行稳定/状态三态如实
-// 不拔高)+树三组(最近/按文件/按目标,同路径不同 target 分行)+搜索过滤+
+// 不拔高)+树四组(最近/按文件/按目标/按根,同路径不同 target/根分行)+搜索过滤+
 // 节流刷新(窗内合并,面板开即时)+历史面板(过滤/分页/加载更多)+持久化
 // 回载(形状不符如实丢弃)+面板关闭不停 feed(HR-UI-012)+dispose 清钟。
 // RUST-384 批B:面板文案走 webviewStrings(注入 t/lang,两态),树组/通知走
@@ -114,6 +114,8 @@ describe('translateDeliveryRecord(HR-PR-06 台账→历史行翻译)', () => {
     expect(sent.fullModule).toBe('entities.fight.FightAI');
     expect(sent.requestModule).toBe('fight.FightAI');
     expect(sent.fileUri).toBe(FILE_A);
+    // HR-UI-014 工作区根随台账投影进历史行(活记录恒非空)
+    expect(sent.rootId).toBe('r1');
     expect(sent.time).toBe(1700000000000);
     expect(sent.errorSummary).toBeUndefined();
 
@@ -188,24 +190,24 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     panelRegistry.reset();
   });
 
-  it('受限宿主退化为 registerTreeDataProvider:视图登记;根三组=最近/按文件/按目标', () => {
+  it('受限宿主退化为 registerTreeDataProvider:视图登记;根四组=最近/按文件/按目标/按根', () => {
     setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     expect(treeRegistrations).toHaveLength(1);
     expect(treeRegistrations[0].viewId).toBe('kbengine.hotReloadHistory');
     const provider = lastProvider();
     const root = provider.getChildren();
-    expect(root.map(node => node.label)).toEqual(['Recent', 'By file', 'By target']);
-    expect(root.map(node => node.kind)).toEqual(['group', 'group', 'group']);
+    expect(root.map(node => node.label)).toEqual(['Recent', 'By file', 'By target', 'By root']);
+    expect(root.map(node => node.kind)).toEqual(['group', 'group', 'group', 'group']);
   });
 
-  it('RUST-384 批B:树三组标签走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', () => {
+  it('RUST-384 批B:树四组标签走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', () => {
     const provider = (): TestProvider => {
       setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
       return lastProvider();
     };
-    expect(provider().getChildren().map(node => node.label)).toEqual(['Recent', 'By file', 'By target']);
+    expect(provider().getChildren().map(node => node.label)).toEqual(['Recent', 'By file', 'By target', 'By root']);
     setL10nBundle(zhCnBundle);
-    expect(provider().getChildren().map(node => node.label)).toEqual(['最近更新', '按文件', '按目标']);
+    expect(provider().getChildren().map(node => node.label)).toEqual(['最近更新', '按文件', '按目标', '按根']);
     setL10nBundle(null);
   });
 
@@ -219,18 +221,22 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     const item = provider.getTreeItem(recent[0]);
     expect(item.label).toBe('entities.spawn.Spawner');
     expect(item.description).toContain('sent-unverified');
+    // HR-UI-014 同模块多 workspace:根维度进行 description 与 tooltip
+    expect(item.description).toContain(' · r1');
     const tooltip = String(item.tooltip);
     expect(tooltip).toContain('requestModule: spawn.Spawner');
     expect(tooltip).toContain(`file: ${FILE_B}`);
     expect(tooltip).toContain('target: (default)');
+    expect(tooltip).toContain('root: r1');
     expect(tooltip).toContain('requestId: ');
   });
 
-  it('按文件/按目标键组:同路径不同 target 分行(HR-UI-010/014),键组内行数入账', () => {
+  it('按文件/按目标/按根键组:同路径不同 target/根分行(HR-UI-010/014),键组内行数入账', () => {
     const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     feed.handle(recordOf({ file: FILE_A, targetId: '' }));
     feed.handle(recordOf({ file: FILE_A, targetId: 'cell-1' }));
     feed.handle(recordOf({ file: FILE_B, targetId: '' }));
+    feed.handle(recordOf({ file: FILE_B, targetId: '', rootId: 'r2' }));
     const provider = lastProvider();
     const root = provider.getChildren();
     const fileGroups = provider.getChildren(root[1]);
@@ -242,6 +248,14 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     const cellGroup = targetGroups.find(node => node.label === 'cell-1');
     expect(cellGroup?.rows).toHaveLength(1);
     expect(cellGroup?.rows?.[0].targetId).toBe('cell-1');
+    // HR-UI-014 按根键组:r1/r2 各自成组(同模块多 workspace 分行)
+    const rootGroups = provider.getChildren(root[3]);
+    expect(rootGroups.map(node => node.label).sort()).toEqual(['r1', 'r2'].sort());
+    const r1Group = rootGroups.find(node => node.label === 'r1');
+    expect(r1Group?.rows).toHaveLength(3);
+    const r2Group = rootGroups.find(node => node.label === 'r2');
+    expect(r2Group?.rows).toHaveLength(1);
+    expect(r2Group?.rows?.[0].rootId).toBe('r2');
   });
 
   it('节流刷新(HR-UI-007):窗内多次台账事件合并一次 fire;dispose 清 pending 钟', () => {
@@ -502,6 +516,32 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
     expect(html).toContain('Spawner.py');
   });
 
+  it('HR-UI-014 过滤消息:按工作区根过滤重渲染,各根各归各;清除拉全量', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A, rootId: 'r1' }));
+    feed.handle(recordOf({ file: FILE_B, rootId: 'r2' }));
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const fire = (message: unknown): void => {
+      for (const listener of panel.messageListeners) {
+        listener(message);
+      }
+    };
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', rootId: 'r1', status: '' });
+    let html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).not.toContain('Spawner.py');
+    expect(html).toContain('显示 1/1 行');
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', rootId: 'r2', status: '' });
+    html = panel.webview.html;
+    expect(html).toContain('Spawner.py');
+    expect(html).not.toContain('FightAI.py');
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', rootId: '', status: '' });
+    html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).toContain('Spawner.py');
+  });
+
   it('分页(HR-UI-007):超页大小出「加载更多」,loadMore 增量拉满后按钮消失', async () => {
     const feed = setupHotReloadHistoryView(contextOf(), {
       core: new HotReloadHistoryCore(),
@@ -687,6 +727,7 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
     expect(en).toContain(`<h2>${thEn.title}</h2>`);
     expect(en).toContain(thEn.headerStatus('onDiskChange', 'login_role', 1, 1));
     expect(en).toContain('<th>Module</th><th>File</th>');
+    expect(en).toContain('<th>File</th><th>Root</th><th>Target</th>');
     expect(en).toContain('class="st-applied">Applied');
     expect(en).toContain(thEn.loadMore(50));
     // 残差:错误类别下拉走纯核 HOT_RELOAD_ERROR_REASON_LABELS(零 vscode),en 下仍中文
@@ -771,7 +812,7 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
     panelRegistry.reset();
   });
 
-  it('面板 10 列:触发/耗时/内容哈希列渲染(哈希 12 字符前缀,title 含全值)', async () => {
+  it('面板 11 列:根/触发/耗时/内容哈希列渲染(哈希 12 字符前缀,title 含全值)', async () => {
     const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     feed.handle(
       recordOf({ outcome: 'failed', source: 'command', sentDigest: 'deadbeef1234567890', detail: 'HTTP 状态 500:非 2xx', durationMs: 320 })
@@ -779,6 +820,9 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
     await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
     const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
     const html = panel.webview.html;
+    // HR-UI-014 根列在文件与目标之间,行值=工作区根
+    expect(html).toContain('<th>根</th>');
+    expect(html).toContain('<td>r1</td>');
     expect(html).toContain('<th>触发</th>');
     expect(html).toContain('<th>耗时</th>');
     expect(html).toContain('<th>内容哈希</th>');
@@ -788,7 +832,7 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
     expect(html).toContain('>deadbeef1234…</code>');
   });
 
-  it('面板列头恰 10 列,空态 colspan 与之一致', () => {
+  it('面板列头恰 11 列(根在文件与目标之间),空态 colspan 与之一致', () => {
     const html = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows: [],
@@ -796,9 +840,9 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
       hasMore: false,
       pageSize: 50
     });
-    expect(html).toContain('colspan="10"');
+    expect(html).toContain('colspan="11"');
     expect(html).toContain(
-      '<th>模块</th><th>文件</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th>'
+      '<th>模块</th><th>文件</th><th>根</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th>'
     );
   });
 
@@ -813,6 +857,9 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
     expect(html).toContain('id="f-category"');
     expect(html).toContain('>配置错误</option>');
     expect(html).toContain('>需重启</option>');
+    // HR-UI-014 根过滤输入框(f-root)随表单渲染
+    expect(html).toContain('id="f-root"');
+    expect(html).toContain('placeholder="根路径…"');
   });
 
   it('面板过滤消息:触发源/错误类别精确过滤重渲染;非法类别忽略;清除拉全量', async () => {

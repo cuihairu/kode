@@ -36,6 +36,7 @@ const makeEntry = (overrides: Partial<HotReloadHistoryInput> = {}): HotReloadHis
   requestModule: 'fight.FightAI',
   fileUri: '/ws/scripts/entities/fight/FightAI.py',
   targetId: 'target-1',
+  rootId: 'root-1',
   time: 1700000000000,
   status: 'applied',
   ...overrides
@@ -55,19 +56,20 @@ describe('RUST-421 密钥不泄出:history DTO 结构面', () => {
   it('history 输入/条目字段集无密钥形状字段(header/token 只允许在出站传输 DTO)', () => {
     const entry = makeEntry({
       errorSummary: 'HTTP 404',
-      // HR-STATE-007 九要素补齐后全字段集:12 字段,加字段须有意识改此测
+      // HR-STATE-007 九要素补齐后全字段集:13 字段,加字段须有意识改此测
+      // (RUST-387 HR-UI-014 补 rootId 工作区根维度)
       trigger: 'command',
       durationMs: 42,
       errorCategory: 'apply-failed',
       hash: 'deadbeef'
     });
     assertNoSecretKeys('HotReloadHistoryEntry', entry);
-    // 钉住字段集本身:安全十二字段(HR-STATE-007 九要素+requestId/fileUri),
+    // 钉住字段集本身:安全十三字段(HR-STATE-007 九要素+requestId/fileUri/rootId),
     // 不多不少(加字段须有意识改此测)
     expect(Object.keys(entry).sort()).toEqual(
       [
         'fileUri', 'fullModule', 'requestId', 'requestModule', 'status', 'targetId', 'time',
-        'errorSummary', 'trigger', 'durationMs', 'errorCategory', 'hash'
+        'rootId', 'errorSummary', 'trigger', 'durationMs', 'errorCategory', 'hash'
       ].sort()
     );
   });
@@ -86,7 +88,7 @@ describe('RUST-421 密钥不泄出:UI tooltip 投影面', () => {
     const lines = buildHistoryEntryTooltipLines(
       makeEntry({ errorSummary: 'HTTP 404: Not Found' })
     );
-    const SAFE_PREFIX = /^(requestModule:|module:|file:|target:|time:|requestId:|status:|error:|trigger:|duration:|hash:|errorCategory:)/;
+    const SAFE_PREFIX = /^(requestModule:|module:|file:|target:|root:|time:|requestId:|status:|error:|trigger:|duration:|hash:|errorCategory:)/;
     for (const line of lines) {
       expect(line).toMatch(SAFE_PREFIX);
       expect(SECRET_KEY_PATTERN.test(line.split(':')[0]), `tooltip 行含密钥形状标签: ${line}`).toBe(false);
@@ -100,6 +102,7 @@ describe('RUST-421 密钥不泄出:UI tooltip 投影面', () => {
       'module: entities.fight.FightAI',
       'file: /ws/scripts/entities/fight/FightAI.py',
       'target: target-1',
+      'root: root-1',
       'time: 2023-11-14T22:13:20.000Z',
       'requestId: req-1',
       'status: applied'
@@ -112,7 +115,7 @@ describe('RUST-421 密钥不泄出:UI tooltip 投影面', () => {
     const lines = buildHistoryEntryTooltipLines(makeEntry({ errorSummary: 'Connection refused' }));
     const errorLines = lines.filter(line => line.startsWith('error:'));
     expect(errorLines).toEqual(['error: Connection refused']);
-    expect(lines.length).toBe(8); // 7 安全字段行 + 1 error 行
+    expect(lines.length).toBe(9); // 8 安全字段行(含 root) + 1 error 行
   });
 
   it('HR-STATE-007 九要素投影=已知安全行集(trigger/duration/hash/errorCategory 缺省不呈现)', () => {
@@ -130,6 +133,7 @@ describe('RUST-421 密钥不泄出:UI tooltip 投影面', () => {
       'module: entities.fight.FightAI',
       'file: /ws/scripts/entities/fight/FightAI.py',
       'target: target-1',
+      'root: root-1',
       'time: 2023-11-14T22:13:20.000Z',
       'requestId: req-1',
       'status: applied',
