@@ -404,3 +404,11 @@
 - 按 kind 选 adapter 首见胜;未贡献该 kind 的 adapter=`rejected` `no adapter contributes <kind>`——宿主绝不静默回落,worker 面只在真有人贡献时用(否则走宿主既有面)。
 - 超时保守产物:eligibility→`WORKER_TIMEOUT_ELIGIBILITY_FALLBACK = 'manual'`(同 HR-EXT-003 保守序——慢 worker 绝不升级为 auto);response 超时=与既有 HR-EXT-001 缺省 `interpretResponse`(七类核)组合,不新造错误枚举。
 - 测试:`tests/hotReloadPluginApi.test.ts` 7 钉——预算内 resolved/派发拒绝带 worker 错误、timed-out 不等慢 worker(耗时 < worker 自身延迟)、预算释放槽位后新派发照常、no-adapter 拒(kind 不匹配+空宿主两臂)、背压在 `maxInFlight`、`declaredTimeoutMs` 覆盖宿主缺省预算、dispose+apiVersion 钉 1+eligibility 超时产物 manual。prove-red:把 `budgetMs` 计时器换成 100000ms 后 3 钉转红(全部 timed-out 钉),逆向恢复 40/40 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 68 例绿;tsc -p ./ 与 eslint 双绿。
+
+## 28. HR-EXT-006 模板=runtime adapter 实现（2026-11-22,RUST-410,用户可替换,Rust Core 不写死 reload URL）
+
+- HTTP 请求模板现在是**参数化的 runtime adapter 实现**而非写死常量:`buildDefaultHotfixRequest(filePath, deps, moduleIdentity?, entry = BUILTIN_HTTP_REQUEST_EXAMPLE)` 把模板作为第四参,`DefaultHotfixSendDeps.template?` 透传进 `sendDefaultHotfix`。用户自己的 `HttpRequestEntry`(`kbengine.httpRequests` 形态:url/method/headers/body)就是一份可替换实现——`reload` URL 只活在模板里(TS 侧单一真源),Rust Core 永不写死。
+- 新工厂 `createTemplateHotfixSendProvider(entry, deps)` 从任意模板构建 `HotReloadProvider`;内置 `createHttpHotfixSendProvider(deps)` 现在是该工厂的薄封装(规范 id `kbengine.http-hotfix`+展示名)——内置只是内置示例模板的 adapter,不是特殊通道。用户模板可整体替换(注册序=应答序,先注册的 fork 侧模板先应答)。
+- 权限:模板 adapter 与内置同声明 `['workspace', network]`(可能探包目录补 `${module}` + 联网发送)——无特权豁免,同 HR-EXT-004 纪律。
+- Rust Core 保证:`crates/` 是索引/语义/DB 面,不做热更 HTTP。由 `tests/rustCoreReloadUrlGuard.test.ts` 钉死:遍历 `crates/**/src/**/*.rs` 断言 `8090`/`hotfix` 字面量零命中——谁把 reload URL 写进 Rust 此门红。
+- 测试:`tests/hotReloadProviderAssembly.test.ts` 4 钉——用户模板 adapter 整条模板进请求(url `http://engine.internal:9990/reload?mod=${module}` 替换/`PUT` 方法/头值 token 替换/体替换)非内置形态、缺省路径仍是内置 `127.0.0.1:8090/hotfix?module_name=` 形态、模板 adapter 声明 workspace+network 且 id 按模板名生成+无 transport 如实不接单、用户模板可替换内置(先注册先应答,仅内置=解析内置 id);另 `tests/rustCoreReloadUrlGuard.test.ts` 1 钉(Rust 树 8090/hotfix 字面量零命中)。prove-red:把 `buildDefaultHotfixRequest` 强制回落内置常量后用户模板钉转红,逆向恢复 29/29 绿;消费者门=pluginApi+providerAssembly+defaultHotfix+rustCoreReloadUrlGuard+providerWiring 5 文件 79 例绿;tsc -p ./ 与 eslint 双绿。
