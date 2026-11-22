@@ -452,43 +452,110 @@
 - **测试钉** `tests/hotReloadProviderWiring.test.ts` 增四钉:双 provider fire(fire 同步段零 `canSend` 零 `send`,微任务后两次 `canSend` + 一次 `send` 全发生)、五 provider 风暴(遍历成本全在微任务,每 fire 恰一次接单)、键开全不应答(内置 `kbengine.http-hotfix` 兜底同样只在微任务后接单——同步段零默认 transport)、键关(fire tick 后无 flush 即已调 transport,证明同步路径未动)。既有钉全部只在 `flush()` 后断言,多一跳微任务不破任何既有用例。
 - **无新配置键**:`sendViaProviders` 未变,manifest/NLS/设置面板面零触碰,docsCommands 配置门不因本增量触发。
 
-## 33. HR-QA-018 安全与功能完成矩阵（2026-11-23,RUST-430,四维逐格签收）
+## 33. 按 target / engine profile / 文件类型 / 触发方式的安全与功能完成矩阵(2026-11-23,RUST-430)
 
-RUST-430 要求一份按四维——target、engine profile、文件类型、触发方式——**逐格签收**的完成矩阵。两半:功能分类(哪格可自动发送)=`HotReloadEligibilityRule` 面(§25,HR-EXT-003)由装配消费;安全门在 target/传输侧。本节两半逐格签收,残余 unknown 如实标注——无证据的格子绝不主张。
+RUST-430(HR-QA-018)要求**按四个维度逐项签收**安全与功能完成矩阵。§2(RUST-431)把同一份证据按**区域**汇总;本节沿任务点名的四个维度重切。状态图例:
 
-### 矩阵 A — 功能分类(文件类型 × 触发方式,四要素)
+- **签收** — 本仓库内的行为钉或结构钉断言了该格,附锚点。
+- **真机待验** — 无法只凭本仓库验证(活 SSH 会话、活引擎、活网络、真工作区信任对话框)。这是 RUST-430 的残差;任何 `真机待验` 格都未声称已签收。
+- **unknown** — 两面都无证据;故意不签(§2 审计本就记为 unknown)。
 
-`auto` 须四要素齐备:`.py`+root 已配+引擎版本已知+触发 `watcher-auto` 且非用户显式。下表为缺省规则;fork 换整面接管(§25)。
+### 33.1 target 维度
 
-| 文件类型 \ 触发方式 | `watcher-auto` 且非用户显式 | `command` / `temp-edit` / `retry` | 用户显式 | 结构因非空 |
-|---|---|---|---|---|
-| `.py`(引擎已知+root 已配) | **auto** | manual | manual | restart |
-| `.py`(引擎未知 **或** root 未配) | manual | manual | manual | restart |
-| `.def` | manual | manual | manual | restart |
-| 非 `.py`(`.xml` 等)/无文件 | manual | manual | manual | restart |
+| 格 | 状态 | 锚点 |
+| --- | --- | --- |
+| loopback 字面量(127.0.0.0/8、`::1`、`::ffff:127.x`、`localhost`/`*.localhost`),零 DNS | 签收 | `tests/httpEndpointPolicy.test.ts:14,21,28` — host 字面量分类 |
+| 非 loopback,未授权 | 签收 | `:98` — 阻止,消息点名设置键 |
+| 非 loopback,已授权 | 签收 | `:106` — 逐次放行 + 每次落安全警告 |
+| 云元数据端点(SSRF 经典目标) | 签收 | `:114` — 阻止 |
+| 非 loopback 发送:工作区信任闸在前 | 签收 | `tests/httpRequestService.test.ts:568`(RUST-422)未信任即拦;`:643`(RUST-420)默认只放行 loopback |
+| `localhost` 解析在扩展宿主进程所在机器 | 签收 | `:619`(RUST-423) |
+| 跨 target 回执回显(`targetId`) | 签收 | `tests/hotReloadReceiptProtocolFixture.test.ts:149` — targetId 逐字回显,数组逐条 |
+| 跨 target / 跨根台账行 | 签收 | `tests/hotReloadHistoryView.test.ts:276` — 同路径不同 target/根分行(HR-UI-010/014) |
+| 远程 SSH / DevContainer `fsPath` target | 真机待验 | 解析面已钉 `tests/hotReloadModuleIdentity.test.ts:227`(fsPath 唯一解析);真实远程会话上的实际发送不在本仓库 |
+| WSL UNC / Windows 反斜杠形态 | 签收 | `:247` |
+| Telnet 探测/会话 target | 签收 | `tests/telnetService.test.ts:644,655,699` — 未信任工作区不发探测包、灯面 closed;信任在执行时刻读,恢复信任后下一轮恢复 open |
 
-- **`.def` 不被规则特判**——规则只读四要素;`.def` 变更随 def 结构闸 verdict 以 `context.structuralReasons` 到达,故闸判结构变=restart,否则=manual。规则**只消费闸结论,不重算结构**。
-- **任一要素缺=manual**(绝不自动发未知引擎/未知根/非 py/人工链)。`restart` 优先于一切,包括四要素全齐的格子。
+### 33.2 engine profile 维度
 
-**证据**:`tests/hotReloadEligibilityMatrix.test.ts` 3 钉——穷举 3 档案形态 × 2 根 × 4 文件形态 × 5 触发态 × 2 用户显式 × 2 结构态 = **480 格**,逐格对照**独立重导 oracle**(restart ⟺ 结构因非空;auto ⟺ 四要素齐备;否则 manual),外加不抛错/无第四结论守卫。计数钉 `auto`=恰 1 格、`restart`=恰半数格。既有 HR-EXT-003 四钉抽查同契约;本矩阵是完备性半。
+| 格 | 状态 | 锚点 |
+| --- | --- | --- |
+| `apiVersion` 钉死 `"1"`;默认 provider 声明同版本 | 签收 | `tests/hotReloadPluginApi.test.ts:33` |
+| 默认指纹 provider 委托既有核 | 签收 | `:40,47` — fileHash sha256+字节数;语义指纹结构式 |
+| 注册表:重复 id 拒且原实现不被替换 | 签收 | `:87` |
+| `apiVersion` 不符拒 | 签收 | `:97` |
+| `resolve`:首个 `canSend` 应答者胜;无人应答 → `null`,不回落 | 签收 | `:104` |
+| null / 版本不符 profile → resolve `null` | 签收 | `:124` |
+| 引擎版本未知 → profile `null`,不编造 | 签收 | `:66` |
+| `queryAppliedRevision` 未接线 → 如实 `null` | 签收 | `:205` |
+| 崩溃隔离:`canSend` 抛错跳过 + 上报 + 继续问下一家 | 签收 | `tests/hotReloadPluginLoad.test.ts:141,170,183` |
+| 崩溃隔离:`send` 抛错误进 reject 分支,核心继续 | 签收 | `:202` |
+| 0 / 5 / 20 插件:首应答者胜,成本 = 位置 | 签收 | `:71,77,97,112` |
+| 真实引擎 profile 协商(`negotiateDigest`、applied-revision) | 真机待验 | md5 桩 + `defMd5Check` 对比已在;与活引擎的算法约定为 `unknown`(§2 记录) |
 
-### 矩阵 B — target 安全门
+### 33.3 文件类型维度
 
-| Target \ 门 | loopback 白名单(RUST-420) | workspace trust(RUST-422) | provider 权限(RUST-408) | 结构闸(RUST-397) |
-|---|---|---|---|---|
-| 自研 HTTP 接收器 | 逐发送强制(`decideHttpEndpoint`,未注入=**阻止**) | 自动发送面强制 | `send` 须 `network` | 由资格规则消费→restart |
-| KBEngine 官方(引擎 `reloadScript`,控制台路径) | N/A——控制台路径非 HTTP | 强制(telnet 探测/会话) | `send` 须 `network` | 由资格规则消费→restart |
-| 未配置 | 完全不发送(如实未配置) | n/a | n/a | n/a |
+| 格 | 状态 | 锚点 |
+| --- | --- | --- |
+| `.py` 非结构编辑照常 reload | 签收 | `tests/hotReloadSavePipeline.test.ts:168,240`(HR-WATCH-006/003/009 事件源归并) |
+| `.def` 非结构(注释 / 换行) | 签收 | `tests/hotReloadDefFingerprintDimensions.test.ts:72,95`(fileHash 变、语义指纹不变);`tests/hotReloadDefGateWiring.test.ts:220`(重启基线后照发) |
+| `.def` 结构性(Type / Parent / Persistent) | 签收 | `tests/hotReloadDefFingerprintDimensions.test.ts:113`(两路都变);`tests/hotReloadDefGateWiring.test.ts:151,321,340`(不发 reload、重启警告、审计行) |
+| 被拦批次不前滚基线 | 签收 | `tests/hotReloadDefGateBatchSnapshot.test.ts:39,63,69` — 令牌只认领自己那一批 |
+| 纯 Python 批不经 def 闸 | 签收 | `tests/hotReloadDefGateWiring.test.ts:243` |
+| 混批(py + 结构性 def) | 签收 | `:251` — 整批拦下,py 也不发 |
+| def 内容不可读 → 保守不发 | 签收 | `:267,294` |
+| 指纹与路径无关(维度①) | 签收 | `tests/hotReloadDefFingerprintDimensions.test.ts:48` |
+| `types.xml` 变化不改 `.def` 自身指纹 | 签收 | `:164` |
+| `types.xml` 符号导航 | 签收 | `tests/batch129TypesXmlSymbolNavigation.test.ts:216,247` — implementedBy 引用按文件路径+符号匹配 |
+| 引擎 Digest 交叉对比 | unknown | md5 桩 + 命令已在;与真实引擎的约定为 `unknown`(§2) |
 
-- **loopback 缺省为安全侧**:`allowNonLoopback` 未注入=非 loopback 阻止(危险端点越界一律拒);显式授权非 loopback 时每条回执贴安全警告。注入自 `kbengine.http.allowNonLoopback`(缺省 `false`)。
-- **trust 缺省为宽松侧**(有意):`isWorkspaceTrusted` 未注入=视为可信(零配置零回归);装配注入自 `vscode.workspace.isTrusted`。两门均执行时刻读,设置变更即作用于下一次发送。
+### 33.4 触发方式维度
 
-### 残余 unknown(如实,承 §3 结转)
+| 格 | 状态 | 锚点 |
+| --- | --- | --- |
+| 缺省 `onSave`:不建磁盘面 | 签收 | `tests/hotReloadDiskWatchWiring.test.ts:142`(HR-WATCH-001 默认) |
+| `onDiskChange`:配置变更即建面;切回 `onSave` 即拆 | 签收 | `:147` |
+| 未保存的编辑不触发 | 签收 | `:187`(HR-WATCH-002) |
+| 磁盘 + save 重叠:同文件单批不双发 | 签收 | `:236`(HR-WATCH-003) |
+| delete 不进管线;记 delete-ignored 诊断 | 签收 | `:249` |
+| 收窄 globs 不放大热更范围 | 签收 | `:262` |
+| 配置关:重建拆磁盘面 | 签收 | `:276`(HR-WATCH-005) |
+| dispose 全清:磁盘事件不再进链 | 签收 | `:298` |
+| 工作区根变更按新根重建 | 签收 | `:308,341`(RUST-385) |
+| 远程 URI(vs-remote 工作区)按 `fsPath` 派生根 | 签收 | `:214`(HR-WATCH-018) |
+| 每文件去抖尾窗 + max-delay 封顶 | 签收 | `tests/hotReloadSavePipeline.test.ts:168` |
+| 写入稳定:两拍一致才发 | 签收 | `:268`(HR-WATCH-007) |
+| 去重(canonical URI + targetId + 内容哈希) | 签收 | `:326`(HR-WATCH-010) |
+| 投递指纹生命周期:失败不永久跳过 | 签收 | `:379`(HR-WATCH-008) |
+| 语法闸 拦 / 放行 / 关 | 签收 | `tests/hotReloadConfigFaces.test.ts:186,205,219`;`tests/hotReloadSavePipeline.test.ts:425`(HR-WATCH-012) |
+| 稳定窗 关 / 开 | 签收 | `tests/hotReloadConfigFaces.test.ts:150,166`(HR-WATCH-007) |
+| 波次归集(同窗多文件合成一批) | 签收 | `:234`(HR-WATCH-013);`tests/hotReloadSavePipeline.test.ts:498` |
+| 批量预览阈值 + 显式放行命令 | 签收 | `tests/hotReloadConfigFaces.test.ts:248,266`(HR-WATCH-016) |
+| 通知模式(silent / errors / summary) | 签收 | `:290,304,314,330,345`(RUST-386,HR-UI-013) |
+| dispose 清空待提交队列 | 签收 | `tests/hotReloadSavePipeline.test.ts:536`(HR-WATCH-014) |
+| 可监听文件词法过滤 | 签收 | `:582`(HR-WATCH-004) |
+| 关 Watch 后手动快捷请求照发 | 签收 | `tests/httpRequestWiring.test.ts`(RUST-429 钉) |
+| 手动发送面与热更配置零耦合 | 签收 | `tests/hotReloadWatchOffFallback.test.ts` |
+| provider 派发调度隔离(fire 同步段零 `canSend`) | 签收 | `tests/hotReloadProviderWiring.test.ts:380,418,447,469`(RUST-412) |
+| 活引擎上的真磁盘 watch 端到端 | 真机待验 | 单元钉注入 watch 适配器;源锁 `tests/hotReloadDiskWatchWiring.test.ts:348` 断言真 `vscode.createFileSystemWatcher` 适配器已接,但真磁盘时序不在门内 |
 
-- 生产(非 demo)外部接收器语义:`unknown`——demo 回环桥+xreload+参考接收器覆盖契约,非生产级第三方接收器。
-- 引擎摘要算法协商与 applied-revision 轮询:`unknown`/无——真实引擎交叉对拍在摘要握手前永久拒绝。
-- 跨主机真实网络(SSH/DevContainer/WSL):纯核由 RUST-423 矩阵覆盖;跨机真机确认仍挂(RUST-423 残余)。
+### 33.5 安全横切
 
+| 格 | 状态 | 锚点 |
+| --- | --- | --- |
+| 端点策略按 host 字面量分类(不 DNS) | 签收 | `tests/httpEndpointPolicy.test.ts` |
+| 密钥不泄出:history DTO 字段集 | 签收 | `tests/hotReloadSecretLeakGuard.test.ts:56,77` — 无 header/token 形状字段 |
+| 密钥不泄出:UI tooltip 投影面 | 签收 | `:87,94,98,114,121` — 每行都来自安全字段前缀 |
+| 密钥不泄出:输出服务层流水行(行为面) | 签收 | `tests/httpRequestService.test.ts:729`(RUST-421)— Authorization/X-Token 的**值与键名**都不出现在任何日志/错误行 |
+| 密钥不泄出:trace 面 | 签收 | `tests/httpRequestService.test.ts` RUST-421 第三钉 — HTTP 路径零 `onTrace\|kodeCoreClient` |
+| 传输错误五分类(不吞证据) | 签收 | `tests/hotReloadTransportErrors.test.ts:24,37,49,60,71,76`(RUST-419) |
+| 部分节点成功:逐文件明细带分类 | 签收 | `:153` |
+| 发送耗时落账(HR-STATE-007) | 签收 | `:195` |
+| telnet 探测/会话信任闸 | 签收 | `tests/telnetService.test.ts:644,655,699`(RUST-422) |
+| 关 Watch 手动回退:零热更配置读 | 签收 | `tests/hotReloadWatchOffFallback.test.ts` |
+| 未信任的活 SSH / 活引擎环境行为 | 真机待验 | 闸在执行时刻读 `isWorkspaceTrusted`;本仓库以注入读取器钉闸,非真工作区信任对话框 |
+
+**残差**:`真机待验` 各格恰好就是 HR-AUDIT-010 族(活网络、活引擎、活远程会话、真工作区信任对话框、真磁盘时序),也是 RUST-430 保持未勾的原因。`unknown` 各格保持不签,因为 §2 记其为 unknown,而库内证据未改变这一点。
 ## 34. HR-DOD-001 发送路径双名切换（2026-11-23,RUST-440,自动模式只送短名）
 
 自动模式现在发送**短名**,UI 继续展示**全名**。`resolveDefaultHotfixModule`(`src/backend/hotReloadDefaultHotfix.ts`)双名分支原先返回 `dualName.fullModule`,请求体与 query 带的是 `entities.fight.FightAI`;现返回 `dualName.requestModule`:
@@ -511,3 +578,7 @@ RUST-430 要求一份按四维——target、engine profile、文件类型、触
 - **两名真不同名**:嵌套文件的短名≠全名;全名是 UI 面,短名是唯一进 `module_name` 的名。
 
 **未触碰**——双名模型本体(HR-MOD-005 套件)、legacy `${module}` 语义(HR-MOD-012)、发送事实面各有既有套件;本节只补跨面一致性钉。门=新套件 4/4,tsc/eslint 双净。
+
+## 36. HR-QA-018 资格契约矩阵(2026-11-23,RUST-430,从属工件——见 §33)
+
+§33 的签收矩阵是 RUST-430 的管辖记录。本节保留钉住资格规则本身的契约完备性工件:`tests/hotReloadEligibilityMatrix.test.ts`(3 钉,载体 ba7833d5)穷举 **480 格**——3 档案×2 根×4 文件形态×5 触发态×2 用户显式×2 结构态——逐格对照独立重导 oracle(restart⟺结构因非空且主导;auto⟺四要素齐备;否则 manual),断言不抛错/无第四结论,另 auto=恰 1 格、restart=恰半数格。`.def` 不被规则特判(def 闸供结构因,规则只消费不重算)。target 安全门覆盖(loopback 白名单/workspace trust/provider 权限/结构闸按 target)已折入 §33.1 与 §33.5;本节旧稿表格被该逐维度签收取代,不再复述。

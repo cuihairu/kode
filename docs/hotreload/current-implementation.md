@@ -532,43 +532,110 @@ Deferred with reasons (ledger lines stay unchecked, no fake completion):
 - Tests: `tests/hotReloadProviderWiring.test.ts` gains four dispatch-isolation pins — a two-provider fire (fire sync slice performs zero `canSend` and zero `send`; after the microtask both `canSend` calls and the single `send` have happened), a five-provider storm (traversal cost entirely in the microtask, exactly one send per fire), a key-on all-refuse arm (the built-in `kbengine.http-hotfix` fallback also lands only after the microtask — zero default transport in the sync slice), and a key-off arm (`transport` already called immediately after the fire tick with no flush, proving the synchronous path is untouched). Every pre-existing pin asserts only after `flush()`, so the extra microtask hop breaks none of them.
 - **No new config key**: `sendViaProviders` is unchanged and no manifest/NLS/settings-panel surface is touched, so the docsCommands configuration gate is not triggered by this increment.
 
-## 45. HR-QA-018 security & functionality completion matrix (2026-11-23, RUST-430, four-dimension sign-off)
+## 45. Security & functional completion matrix by target / engine profile / file type / trigger mode (2026-11-23, RUST-430)
 
-RUST-430 asks for a completion matrix signed off **item by item** across four dimensions — target, engine profile, file type, trigger mode. Two halves: the functional classification (which cell may auto-send) is the `HotReloadEligibilityRule` face (§34, HR-EXT-003) consumed by the assembly; the security gates live on the target/transport side. This section signs both halves off cell by cell and marks residual unknowns honestly — no cell is claimed without evidence.
+RUST-430 (HR-QA-018) asks for the security-and-functional completion matrix signed off **item by item across four dimensions**. §2 (RUST-431) summarizes the same evidence *by area*; this section re-cuts it along the four dimensions the task names. Status legend:
 
-### Matrix A — functional classification (file type × trigger, four elements)
+- **签收** — a behavioural or structural pin inside this repo asserts the cell; anchor cited.
+- **真机待验** — cannot be verified from the repository alone (live SSH session, live engine, live network, real workspace-trust dialog). These are the RUST-430 residual; no `真机待验` cell is claimed signed.
+- **unknown** — no evidence either way; deliberately not signed (the §2 audit already records it as such).
 
-`auto` requires all four: `.py` + configured root + known engine version + trigger `watcher-auto` and not user-initiated. Verdicts are for the default rule; a fork swaps the whole rule (§34).
+### 45.1 Target dimension
 
-| File type \ trigger | `watcher-auto`, not user-initiated | `command` / `temp-edit` / `retry` | user-initiated | structural reasons non-empty |
-|---|---|---|---|---|
-| `.py` (engine known + root set) | **auto** | manual | manual | restart |
-| `.py` (unknown engine **or** unset root) | manual | manual | manual | restart |
-| `.def` | manual | manual | manual | restart |
-| non-`.py` (`.xml`, …) / no file | manual | manual | manual | restart |
+| Cell | Status | Anchor |
+| --- | --- | --- |
+| Loopback literal (127.0.0.0/8, `::1`, `::ffff:127.x`, `localhost`/`*.localhost`) — zero DNS | 签收 | `tests/httpEndpointPolicy.test.ts:14,21,28` — host literal classification |
+| Non-loopback, unauthorized | 签收 | `:98` — blocked, message names the setting key |
+| Non-loopback, authorized | 签收 | `:106` — allowed once, security warning every time |
+| Cloud metadata endpoint (SSRF classic) | 签收 | `:114` — blocked |
+| Non-loopback send: workspace-trust gate first | 签收 | `tests/httpRequestService.test.ts:568` (RUST-422) — untrusted blocks; `:643` (RUST-420) default loopback-only |
+| `localhost` resolves on the extension-host machine | 签收 | `:619` (RUST-423) |
+| Receipt echo across targets (`targetId`) | 签收 | `tests/hotReloadReceiptProtocolFixture.test.ts:149` — targetId echoed verbatim, arrays per-entry |
+| Cross-target / cross-root ledger rows | 签收 | `tests/hotReloadHistoryView.test.ts:276` — same path under different target/root splits rows (HR-UI-010/014) |
+| Remote SSH / DevContainer `fsPath` target | 真机待验 | resolution face pinned `tests/hotReloadModuleIdentity.test.ts:227` (unique fsPath resolution); actual send over a live remote session is not in the repo |
+| WSL UNC / Windows backslash forms | 签收 | `:247` |
+| Telnet probe/session targets | 签收 | `tests/telnetService.test.ts:644,655,699` — untrusted workspace sends no probe packets, lamp closed; trust read at execution time, recovers next round |
 
-- **`.def` is not special-cased by the rule** — the rule reads the four elements only; a `.def` change arrives with the def structural gate's verdict as `context.structuralReasons`, so `.def` → `restart` when the gate found structural change and `manual` otherwise. The rule **consumes the gate's conclusion and never recomputes structure**.
-- **Any single missing element → `manual`** (never auto-send to an unknown engine / unknown root / non-py file / human chain). `restart` dominates everything, including a cell whose four auto elements all hold.
+### 45.2 Engine profile dimension
 
-**Evidence**: `tests/hotReloadEligibilityMatrix.test.ts` 3 pins — an exhaustive walk of 3 profiles × 2 roots × 4 file shapes × 5 trigger states × 2 user-initiated × 2 structural states = **480 cells** checked against an **independently re-derived oracle** (restart ⟺ structural reasons non-empty; auto ⟺ all four elements; else manual), plus the no-throw / no-fourth-verdict guard. Cell counts pin `auto` = exactly 1 and `restart` = exactly half the cells. The pre-existing HR-EXT-003 pins spot-check the same contract; this matrix is the completeness half.
+| Cell | Status | Anchor |
+| --- | --- | --- |
+| `apiVersion` pinned `"1"`; default provider declares it | 签收 | `tests/hotReloadPluginApi.test.ts:33` |
+| Default fingerprint provider delegates the existing core | 签收 | `:40,47` — fileHash sha256+bytes; semantic fingerprint structural |
+| Registry: duplicate id refused, original kept | 签收 | `:87` |
+| `apiVersion` mismatch refused | 签收 | `:97` |
+| `resolve`: first `canSend` responder wins; nobody → `null`, no fallback | 签收 | `:104` |
+| null / mismatched profile → resolve `null` | 签收 | `:124` |
+| Engine version unknown → profile `null`, not fabricated | 签收 | `:66` |
+| `queryAppliedRevision` unwired → `null` honestly | 签收 | `:205` |
+| Crash isolation: `canSend` throw skipped + reported + next asked | 签收 | `tests/hotReloadPluginLoad.test.ts:141,170,183` |
+| Crash isolation: `send` throw lands in reject branch, core continues | 签收 | `:202` |
+| 0 / 5 / 20 plugins: first responder wins, cost = position | 签收 | `:71,77,97,112` |
+| Real-engine profile negotiation (`negotiateDigest`, applied-revision) | 真机待验 | md5 stub + `defMd5Check` comparison exist; algorithm agreement with a live engine is `unknown` (records §2) |
 
-### Matrix B — target security gates
+### 45.3 File type dimension
 
-| Target \ gate | loopback allowlist (RUST-420) | workspace trust (RUST-422) | provider permissions (RUST-408) | structural gate (RUST-397) |
-|---|---|---|---|---|
-| Self-hosted HTTP receiver | enforced per send (`decideHttpEndpoint`, not-injected = **block**) | enforced on the auto-send face | `send` requires `network` | consumed by the eligibility rule → restart |
-| KBEngine official (engine `reloadScript`, console path) | N/A — console path, not HTTP | enforced (telnet probe/session) | `send` requires `network` | consumed by the eligibility rule → restart |
-| Unconfigured | no send at all (honest unconfigured) | n/a | n/a | n/a |
+| Cell | Status | Anchor |
+| --- | --- | --- |
+| `.py` non-structural edit reloads | 签收 | `tests/hotReloadSavePipeline.test.ts:168,240` (HR-WATCH-006/003/009 event-source merge) |
+| `.def` non-structural (comment / newline) | 签收 | `tests/hotReloadDefFingerprintDimensions.test.ts:72,95` (fileHash changes, semantic fingerprint unchanged); `tests/hotReloadDefGateWiring.test.ts:220` (sent normally after restart baseline) |
+| `.def` structural (Type / Parent / Persistent) | 签收 | `tests/hotReloadDefFingerprintDimensions.test.ts:113` (both paths change); `tests/hotReloadDefGateWiring.test.ts:151,321,340` (no reload, restart warning, audit row) |
+| Blocked batch does not advance baseline | 签收 | `tests/hotReloadDefGateBatchSnapshot.test.ts:39,63,69` — token commits only its own batch |
+| Pure-python batch bypasses the def gate | 签收 | `tests/hotReloadDefGateWiring.test.ts:243` |
+| Mixed batch (py + structural def) | 签收 | `:251` — whole batch blocked, py not sent either |
+| def content unreadable → conservative no-send | 签收 | `:267,294` |
+| Fingerprint is path-independent (dimension ①) | 签收 | `tests/hotReloadDefFingerprintDimensions.test.ts:48` |
+| `types.xml` change does not alter a `.def`'s own fingerprint | 签收 | `:164` |
+| `types.xml` symbol navigation | 签收 | `tests/batch129TypesXmlSymbolNavigation.test.ts:216,247` — implementedBy reference matched by file path + symbol |
+| Engine digest cross-comparison | unknown | md5 stub + command exist; agreement with a real engine `unknown` (§2) |
 
-- **Loopback default is safe-side**: `allowNonLoopback` not injected = non-loopback blocked (dangerous endpoint escapes are denied); a user-visible warning is attached to each receipt when an authorized non-loopback target is used. Injected from `kbengine.http.allowNonLoopback` (default `false`).
-- **Trust default is permissive-side** (deliberate): `isWorkspaceTrusted` not injected = treated as trusted (zero-config regression-free); injected in the assembly from `vscode.workspace.isTrusted`. Both gates are read at execution time, so a setting change applies to the next send.
+### 45.4 Trigger mode dimension
 
-### Residual unknowns (honest, per §3 carry-over)
+| Cell | Status | Anchor |
+| --- | --- | --- |
+| Default `onSave`: no disk-watch face built | 签收 | `tests/hotReloadDiskWatchWiring.test.ts:142` (HR-WATCH-001 default) |
+| `onDiskChange`: config change builds face; back to `onSave` tears it down | 签收 | `:147` |
+| Unsaved edits do not trigger | 签收 | `:187` (HR-WATCH-002) |
+| Disk + save overlap: same file one batch, no double send | 签收 | `:236` (HR-WATCH-003) |
+| delete event not pipelined; delete-ignored diagnostic | 签收 | `:249` |
+| Narrowing globs does not widen reload scope | 签收 | `:262` |
+| Config off: rebuild tears the disk face | 签收 | `:276` (HR-WATCH-005) |
+| dispose clears: disk events no longer enter the chain | 签收 | `:298` |
+| Workspace root change rebuilds by new root | 签收 | `:308,341` (RUST-385) |
+| Remote URI (vs-remote workspace) derives root by `fsPath` | 签收 | `:214` (HR-WATCH-018) |
+| Per-file debounce trailing window + max-delay cap | 签收 | `tests/hotReloadSavePipeline.test.ts:168` |
+| Write stability: two consistent beats | 签收 | `:268` (HR-WATCH-007) |
+| Dedup (canonical URI + targetId + content hash) | 签收 | `:326` (HR-WATCH-010) |
+| Delivery fingerprint lifecycle: failure does not permanently skip | 签收 | `:379` (HR-WATCH-008) |
+| Syntax gate blocks / passes / off | 签收 | `tests/hotReloadConfigFaces.test.ts:186,205,219`; `tests/hotReloadSavePipeline.test.ts:425` (HR-WATCH-012) |
+| Stability window off / on | 签收 | `tests/hotReloadConfigFaces.test.ts:150,166` (HR-WATCH-007) |
+| Wave coalescing (same window, multiple files, one batch) | 签收 | `:234` (HR-WATCH-013); `tests/hotReloadSavePipeline.test.ts:498` |
+| Batch preview threshold + explicit release command | 签收 | `tests/hotReloadConfigFaces.test.ts:248,266` (HR-WATCH-016) |
+| Notification modes (silent / errors / summary) | 签收 | `:290,304,314,330,345` (RUST-386, HR-UI-013) |
+| dispose clears the pending queue | 签收 | `tests/hotReloadSavePipeline.test.ts:536` (HR-WATCH-014) |
+| Watchable-file lexical filter | 签收 | `:582` (HR-WATCH-004) |
+| Manual quick request when watch is off | 签收 | `tests/httpRequestWiring.test.ts` (RUST-429 pin) |
+| Manual send surface independent of hot-reload config | 签收 | `tests/hotReloadWatchOffFallback.test.ts` |
+| Provider dispatch isolation (sync slice zero `canSend`) | 签收 | `tests/hotReloadProviderWiring.test.ts:380,418,447,469` (RUST-412) |
+| Real-disk watch end-to-end on a live engine | 真机待验 | unit pins inject a watch adapter; the source lock `tests/hotReloadDiskWatchWiring.test.ts:348` asserts the real `vscode.createFileSystemWatcher` adapter is wired, but real-disk timing is not in the gate |
 
-- Production (non-demo) external receiver semantics: `unknown` — the demo loopback bridge + xreload + reference receiver cover the contract, not a production-grade third-party receiver.
-- Engine digest algorithm negotiation and applied-revision polling: `unknown` / no — cross-comparison with a real engine is permanently refused until a digest handshake exists.
-- Real-network behaviors across hosts (SSH / DevContainer / WSL): covered by RUST-423 matrix for the pure core; cross-machine real-device confirmation still pending (RUST-423 residual).
+### 45.5 Security cross-cut
 
+| Cell | Status | Anchor |
+| --- | --- | --- |
+| Endpoint policy by host literal (no DNS) | 签收 | `tests/httpEndpointPolicy.test.ts` |
+| Secret leak: history DTO field set | 签收 | `tests/hotReloadSecretLeakGuard.test.ts:56,77` — no header/token-shaped fields |
+| Secret leak: UI tooltip projection | 签收 | `:87,94,98,114,121` — every line from a safe-field prefix |
+| Secret leak: output service lines (behavioural) | 签收 | `tests/httpRequestService.test.ts:729` (RUST-421) — Authorization/X-Token value **and** key absent from every log/error line |
+| Secret leak: trace surface | 签收 | `tests/httpRequestService.test.ts` RUST-421 pin 3 — HTTP path zero `onTrace\|kodeCoreClient` |
+| Transport error classification (five families, evidence not swallowed) | 签收 | `tests/hotReloadTransportErrors.test.ts:24,37,49,60,71,76` (RUST-419) |
+| Partial-node success: per-file detail classified | 签收 | `:153` |
+| Send duration ledger (HR-STATE-007) | 签收 | `:195` |
+| Trust gate on telnet probe/session | 签收 | `tests/telnetService.test.ts:644,655,699` (RUST-422) |
+| Watch-off manual fallback: zero hot-reload config read | 签收 | `tests/hotReloadWatchOffFallback.test.ts` |
+| Untrusted live-SSH / live-engine environment behaviour | 真机待验 | gate reads `isWorkspaceTrusted` at execution time; the repo pins it with an injected reader, not a real workspace-trust dialog |
+
+**Residual**: the `真机待验` cells are exactly the HR-AUDIT-010 family (live network, live engine, live remote sessions, real workspace-trust dialog, real-disk timing). They are what keeps RUST-430 open. The `unknown` cells stay unsigned because §2 records them as `unknown` and no repo evidence has changed that.
 ## 46. HR-DOD-001 send-path dual-name switch (2026-11-23, RUST-440, auto mode sends only the short name)
 
 Auto mode now sends the **short** module name and the UI keeps showing the **full** one. `resolveDefaultHotfixModule` (`src/backend/hotReloadDefaultHotfix.ts`) used to return `dualName.fullModule` for the dual-name branch, so the request body and query carried `entities.fight.FightAI`. It now returns `dualName.requestModule`:
@@ -591,3 +658,7 @@ Manual command, onSave and onDiskChange must produce **completely consistent** s
 - **Two real names**: for a nested file the short name ≠ full name; the full name is the UI face, the short name is the only one that enters `module_name`.
 
 **Not touched** — the dual-name model itself (HR-MOD-005 suites), the legacy `${module}` semantics (HR-MOD-012), and the send-facts faces all keep their existing suites; this section only adds the cross-face consistency pin. Gate: the new suite 4/4, tsc and eslint clean.
+
+## 48. HR-QA-018 eligibility contract matrix (2026-11-23, RUST-430, subordinate artifact — see §45)
+
+The sign-off matrix in §45 is the governing RUST-430 record. This section preserves the contract-completeness artifact that pinned the eligibility rule itself: `tests/hotReloadEligibilityMatrix.test.ts` (3 pins, carrier `ba7833d5`) walks **480 cells** — 3 profiles × 2 roots × 4 file shapes × 5 trigger states × 2 user-initiated × 2 structural states — against an independently re-derived oracle (restart ⟺ structural reasons non-empty and dominant; auto ⟺ all four auto elements; else manual), asserting no throw / no fourth verdict, plus `auto` = exactly 1 cell and `restart` = exactly half the cells. `.def` is not special-cased by the rule (the def gate supplies the structural reason; the rule only consumes it). Target-gate coverage (loopback allowlist / workspace trust / provider permissions / structural gate per target) is folded into §45.1 and §45.5; the tables from the earlier draft of this section were superseded by that per-dimension sign-off and are not re-stated.
