@@ -45,7 +45,7 @@ import { resolveAssetsRootForWorkspace } from '../scanRoots';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { resolveModuleDualName } from '../backend/hotReloadTempEdit';
-import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY } from '../hotReloadHistoryView';
+import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY, HOT_RELOAD_HISTORY_MAX_AGE_MS } from '../hotReloadHistoryView';
 import type { SavePipelineQueueSnapshot } from '../backend/hotReloadSavePipeline';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../backend/hotReloadHistoryCore';
 import type { HotReloadDeliveryRecord } from '../backend/hotReloadTargetState';
@@ -127,7 +127,10 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     resolveModuleNames: resolveHotReloadModuleNames
   });
   const hotReloadHistoryFeed = setupHotReloadHistoryView(context, {
-    core: new HotReloadHistoryCore(),
+    // RUST-368 保留时间限额政策(7 天):核心与视图同值——回载/落账前淘汰
+    // 超龄行,历史不越攒越大(容量环形淘汰之外的时域上限)。
+    core: new HotReloadHistoryCore({ maxAgeMs: HOT_RELOAD_HISTORY_MAX_AGE_MS }),
+    maxAgeMs: HOT_RELOAD_HISTORY_MAX_AGE_MS,
     resolveNames: file =>
       resolveHotReloadModuleNames(file) ?? (() => {
         // 展示面降级:历史树标题缺脚本根时回落文件 stem(台账侧如实不写,不伪造)

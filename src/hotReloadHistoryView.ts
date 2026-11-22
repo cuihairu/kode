@@ -25,6 +25,12 @@
 //!   哈希列显 12 字符前缀(title 含全值)。
 //! - **持久化(HR-MOD-014)**:persist 注入面(宿主用 workspaceState 适配)
 //!   每次台账投影后落全量行;启动时回载,行形状不符的条目如实丢弃。
+//! - **保留时间限额(RUST-368)**:maxAgeMs 注入(装配面给
+//!   HOT_RELOAD_HISTORY_MAX_AGE_MS)——回载后与每次落账前 pruneExpired
+//!   淘汰超龄行,持久化同步收缩(不越攒越大)。
+//! - **导出命令(kbengine.hotReload.historyExport,RUST-368)**:全量行经
+//!   buildHistoryExport 白名单脱敏(HTTP body/header/令牌一律不进)后
+//!   JSON 落盘(原子写);取消=如实不写,写失败如实报错。
 //! - **生命周期(HR-UI-012)**:全部句柄进 context.subscriptions;面板/树
 //!   关闭不停热更服务(feed 独立于面板生命周期,只清引用)。
 //! - 编排纯函数化(翻译/渲染可独立断言),vscode 面只留薄壳。
@@ -34,6 +40,7 @@ import * as vscode from 'vscode';
 import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
+  buildHistoryExport,
   computeVirtualScrollWindow,
   HotReloadHistoryCore,
   type HotReloadHistoryEntry,
@@ -41,6 +48,7 @@ import {
   type HotReloadHistoryInput,
   type HotReloadHistoryStatus
 } from './backend/hotReloadHistoryCore';
+import { writeFileAtomic } from './backend/atomicFileWrite';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
 import { classifyHotReloadErrorReason, formatHotReloadErrorReason, HOT_RELOAD_ERROR_REASON_LABELS, type HotReloadErrorReason } from './backend/hotReloadErrorReason';
 import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
@@ -52,6 +60,14 @@ export const HOT_RELOAD_HISTORY_PANEL_COMMAND = 'kbengine.hotReload.historyPanel
 export const HOT_RELOAD_HISTORY_SEARCH_COMMAND = 'kbengine.hotReload.historySearch';
 /** HR-STATE-011 clear-history:清空持久化交付史(命令面板可达) */
 export const HOT_RELOAD_HISTORY_CLEAR_COMMAND = 'kbengine.hotReload.historyClear';
+/** RUST-368 export-history:全量行脱敏 JSON 落盘(命令面板可达) */
+export const HOT_RELOAD_HISTORY_EXPORT_COMMAND = 'kbengine.hotReload.historyExport';
+/**
+ * RUST-368 保留时间限额政策(7 天):装配面注入 HotReloadHistoryCore 与
+ * 本视图面——回载/落账前淘汰超龄行,历史不越攒越大(容量环形淘汰之外
+ * 的时域上限)。测试注入显式小值,缺省不注入=不启用(纯核中立)。
+ */
+export const HOT_RELOAD_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * 虚拟滚动激活阈值(HR-UI-007):超过才走窗口化渲染。缺省容量 200(核心
@@ -395,6 +411,11 @@ export interface HotReloadHistoryViewOptions {
     load(): unknown;
     save(entries: readonly HotReloadHistoryEntry[]): void;
   };
+  /**
+   * RUST-368 保留时间限额 ms(与注入 core 的 maxAgeMs 同值;缺省不启用):
+   * 启用后回载完成与每次落账前淘汰超龄行(淘汰了才回写持久化)。
+   */
+  maxAgeMs?: number;
 }
 
 /** 树节点:顶层组(recent/file/target)/键组(具体文件或目标)/历史行 */
@@ -449,6 +470,12 @@ export function setupHotReloadHistoryView(
         }
       }
     }
+  }
+
+  // RUST-368 保留时间限额:回载完成后按政策淘汰超龄行;淘汰了才回写
+  // (持久化同步收缩,不越攒越大)。未启用(缺省)=不 prune,纯核中立。
+  if (opts.maxAgeMs !== undefined && opts.core.pruneExpired(Date.now()) > 0) {
+    opts.persist?.save(opts.core.entries());
   }
 
   // HR-UI-007:树视图重渲染节流(queueChanged 路径)——窗内多次事件只刷一次
@@ -563,6 +590,11 @@ export function setupHotReloadHistoryView(
       flushDirty = true;
       return;
     }
+    // RUST-368 保留时间限额:落账前按政策淘汰超龄行(随新记录时间前进,
+    // 前沿落账一次即够——窗内尾帧只补渲染,行时间不变)。
+    if (opts.maxAgeMs !== undefined) {
+      opts.core.pruneExpired(Date.now());
+    }
     opts.persist?.save(opts.core.entries());
     if (panelState.panel !== null) {
       renderPanel();
@@ -625,6 +657,42 @@ export function setupHotReloadHistoryView(
     void vscode.window.showInformationMessage(`已清空热更历史(${had} 条)`);
   });
   context.subscriptions.push(clearCommand);
+
+  // RUST-368 export-history:全量行经 buildHistoryExport 白名单脱敏后 JSON
+  // 落盘(HTTP body/header/令牌不进导出)。空史如实报空不写垃圾文件;
+  // 取消=如实不写;写失败如实报错(原子写,不留半截文件)。
+  const exportCommand = vscode.commands.registerCommand(
+    HOT_RELOAD_HISTORY_EXPORT_COMMAND,
+    async (): Promise<void> => {
+      const entries = opts.core.entries();
+      if (entries.length === 0) {
+        void vscode.window.showInformationMessage('热更历史已为空');
+        return;
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const defaultName = `hot-reload-history-${stamp}.json`;
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const uri = await vscode.window.showSaveDialog({
+        ...(root !== undefined ? { defaultUri: vscode.Uri.file(path.join(root, defaultName)) } : {}),
+        filters: { JSON: ['json'] }
+      });
+      if (uri === undefined) {
+        return;
+      }
+      try {
+        writeFileAtomic(
+          uri.fsPath,
+          JSON.stringify(buildHistoryExport(entries, { exportedAt: Date.now() }), null, 2)
+        );
+        void vscode.window.showInformationMessage(`已导出热更历史(脱敏,${entries.length} 条)到 ${uri.fsPath}`);
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          `导出热更历史失败:${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(exportCommand);
 
   // 面板状态(HR-UI-010 过滤 + HR-UI-007 分页)
   const panelState: { state: HotReloadHistoryPanelState | null; panel: vscode.WebviewPanel | null } = {

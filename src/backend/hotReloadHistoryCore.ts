@@ -15,7 +15,9 @@
  * - HR-UI-007 高频合并:同 requestId 在合并窗内的多次更新合并为一条取末态
  *   (纯决策,UI 适配面拿合并结果决定重渲染节流),容量有界环形淘汰最旧;
  * - 分页窗口(offset/pageSize+total/hasMore)给虚拟滚动与增量加载用;
- * - 分组(recent/byFile/byTarget)供 HR-UI-002 树视图:组内保持最新在前。
+ * - 分组(recent/byFile/byTarget)供 HR-UI-002 树视图:组内保持最新在前;
+ * - RUST-368 保留时间限额(maxAgeMs+pruneExpired,纯机制)与脱敏导出
+ *   (redactHistoryEntry 白名单投影+buildHistoryExport,零 body/header)。
  *
  * 装配接线(TreeView/面板注册、i18n 渲染、a11y、生命周期绑定)不在本核。
  */
@@ -104,9 +106,43 @@ export interface HotReloadHistoryPage<T> {
   readonly hasMore: boolean;
 }
 
+/**
+ * RUST-368 脱敏导出行:显式安全字段白名单(九要素+双名+file+requestId)。
+ * 与「无需持久化所有 HTTP body」同源——这里只投影清单字段,任何新增字段
+ * (HTTP body/header/令牌)默认不进导出,不靠事后抹除。
+ */
+export interface HotReloadHistoryExportRow {
+  readonly requestId: string;
+  readonly fullModule: string;
+  readonly requestModule: string;
+  readonly fileUri: string;
+  readonly targetId: string;
+  readonly time: number;
+  readonly status: HotReloadHistoryStatus;
+  readonly errorSummary?: string;
+  readonly trigger?: string;
+  readonly durationMs?: number;
+  readonly errorCategory?: HotReloadErrorReason;
+  readonly hash?: string;
+}
+
+/** RUST-368 脱敏导出文档(schemaVersion 钉形状,便于日后演进) */
+export interface HotReloadHistoryExport {
+  readonly schemaVersion: 1;
+  readonly exportedAt: number;
+  readonly count: number;
+  readonly entries: HotReloadHistoryExportRow[];
+}
+
 export interface HotReloadHistoryOptions {
   /** 容量(缺省 200):超出淘汰最旧(HR-UI-007 上千记录靠分页+淘汰,不全量驻留) */
   readonly capacity?: number;
+  /**
+   * 保留时间限额 ms(RUST-368;缺省不启用=纯核不擅自定政策):pruneExpired
+   * 淘汰 time 早于 nowMs-maxAgeMs 的行。政策值由装配面给(view 的
+   * HOT_RELOAD_HISTORY_MAX_AGE_MS),核心只管机制。
+   */
+  readonly maxAgeMs?: number;
 }
 
 /** 合并输入:同 requestId 在窗内的更新序列 */
@@ -218,15 +254,55 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
   return lines;
 }
 
+/**
+ * RUST-368 脱敏投影(白名单):逐字段显式拷贝,缺省如实缺省(不伪造空值)。
+ * 白名单外的键(未来若出现的 body/header/令牌等)一律不进导出。
+ */
+export function redactHistoryEntry(entry: HotReloadHistoryEntry): HotReloadHistoryExportRow {
+  // 逐字段显式拷贝(缺省如实缺省,不伪造空值);白名单外键一律不进。
+  return {
+    requestId: entry.requestId,
+    fullModule: entry.fullModule,
+    requestModule: entry.requestModule,
+    fileUri: entry.fileUri,
+    targetId: entry.targetId,
+    time: entry.time,
+    status: entry.status,
+    ...(entry.errorSummary !== undefined ? { errorSummary: entry.errorSummary } : {}),
+    ...(entry.trigger !== undefined ? { trigger: entry.trigger } : {}),
+    ...(entry.durationMs !== undefined ? { durationMs: entry.durationMs } : {}),
+    ...(entry.errorCategory !== undefined ? { errorCategory: entry.errorCategory } : {}),
+    ...(entry.hash !== undefined ? { hash: entry.hash } : {})
+  };
+}
+
+/**
+ * RUST-368 脱敏导出文档:全量行按记录序逐行投影+元信息(count 与
+ * entries.length 恒等,如实报数量);序列化(JSON.stringify)交给调用方。
+ */
+export function buildHistoryExport(
+  entries: readonly HotReloadHistoryEntry[],
+  meta: { exportedAt: number }
+): HotReloadHistoryExport {
+  return {
+    schemaVersion: 1,
+    exportedAt: meta.exportedAt,
+    count: entries.length,
+    entries: entries.map(entry => redactHistoryEntry(entry))
+  };
+}
+
 /** 热更历史库(纯核):记录/推进/过滤/分组/分页 */
 export class HotReloadHistoryCore {
   private readonly capacity: number;
+  private readonly maxAgeMs: number | undefined;
   /** 插入序即新旧序(append-only;requestId 替换原位不动序) */
   private readonly rows: HotReloadHistoryEntry[] = [];
   private readonly indexByRequest = new Map<string, number>();
 
   constructor(options: HotReloadHistoryOptions = {}) {
     this.capacity = options.capacity ?? 200;
+    this.maxAgeMs = options.maxAgeMs;
   }
 
   /** 自省:当前行数(测试/装配面核查) */
@@ -242,6 +318,37 @@ export class HotReloadHistoryCore {
   clear(): void {
     this.rows.length = 0;
     this.indexByRequest.clear();
+  }
+
+  /**
+   * RUST-368 保留时间限额淘汰:剔除 time 早于 nowMs-maxAgeMs 的行,保序
+   * 重排索引,返回淘汰数。未启用 maxAgeMs=如实 no-op(0);边界含
+   * time==nowMs-maxAgeMs(>= 保留)。不假设 time 有序(乱序插入也如实保序)。
+   */
+  pruneExpired(nowMs: number): number {
+    if (this.maxAgeMs === undefined) {
+      return 0;
+    }
+    const cutoff = nowMs - this.maxAgeMs;
+    const kept: HotReloadHistoryEntry[] = [];
+    let dropped = 0;
+    for (const row of this.rows) {
+      if (row.time < cutoff) {
+        dropped += 1;
+      } else {
+        kept.push(row);
+      }
+    }
+    if (dropped === 0) {
+      return 0;
+    }
+    this.rows.length = 0;
+    this.rows.push(...kept);
+    this.indexByRequest.clear();
+    kept.forEach((row, index) => {
+      this.indexByRequest.set(row.requestId, index);
+    });
+    return dropped;
   }
 
   /**
