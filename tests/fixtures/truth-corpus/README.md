@@ -374,3 +374,58 @@ flagsGroundingText/:133 cellDataGroundingText 未用变量,本族零新增;CI li
 victim 文件零本批改动、本批零 src/ 零 Rust,判例=受害者文件归属非连跑次数),CI 权威。
 本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);语料 32 族 285 条(31→32
 族,+11;基线 274=第三十二增量 264+10)。
+
+## 第三十三族: usage-stats-callback-classification(回调分类探针)
+
+依据 `docs/knowledge/api-usage-stats.md`(KB-001 bucket ③ 调查档,scan 生成的使用
+频率统计,非引擎 API 参考档;engineHead 55a6655=fork 本机检出)。该档 §Callbacks
+按「engine-known vs project-defined」分类回调——正是 kode 的钩子识别面
+(KBENGINE_HOOKS/getHookByName)+实体向导 cell 段模板所探测的能力。11 例=正例 6
+(含漏报 2)+负例 5(含误导 1)。全族零 src/ 零 Rust 改动。
+
+**判例 1=档 project-defined 分类被 fork 仲裁推翻**(movement 组):档 §Callbacks 把
+`onMove`/`onMoveFailure`/`onMoveOver` 列为「project-defined … 非引擎回调」;
+fork 实读 cellapp `Entity::onMove`(:2939 签名/:2946 bufferOrExeCallback)、
+`onMoveOver`(:2951/:2964)、`onMoveFailure`(:2969/:2982)——均由引擎移动控制器
+驱动派发脚本回调,是引擎回调非项目代码调用。档的「命名约定陷阱」断言在这组
+方向错了:项目树里的 onMove 定义是回调实现,不是项目自调。kode 名册 category=
+movement 与 fork 一致=正例。
+
+**判例 2=档 onTick 归类被 fork 仲裁推翻**(entry script SPI 组):档把 `onTick` 列
+entry script SPI;fork 实读 kbe/src 全树**零处** `"onTick"` 脚本派发;树内
+`onTick`(kbemain.py:25 等)是脚本自身 addTimer 的定时器处理器约定,非引擎回调。
+kode 名册无 onTick=正确(负例)。
+
+**判例 3=onLoseCell 漏报**:fork 实读 baseapp `Entity::onLoseCell`(:1052 签名/
+:1065 CALL_COMPONENTS_AND_ENTITY_METHOD ... "onLoseCell")派发脚本回调(基座侧,
+cell 失去时经 BaseappInterface::onLoseCell 消息驱动);kode KBENGINE_HOOKS 36 条
+名册**缺该条目**(hookSequencing.ts:110 另补录 onLoseCell 为时序锚——kode 内部已
+认知该回调,主钩子表未收编)=漏报方向分歧。
+
+**判例 4=onEnterWorld 漏报+向导误导双面**:fork 实读脚本 `onEnterWorld` **唯一**
+派发在 client_lib `Entity::onEnterWorld`(:561 签名/:566 CALL_ENTITY_AND_
+COMPONENTS_METHOD ... "onEnterWorld"),是客户端(含 bots)实体回调;cellapp **无**
+任何 onEnterWorld 脚本派发(`SpaceMemory::onEnterWorld`:435 是 witness 广播的
+C++ 内部函数,非脚本回调)。kode KBENGINE_HOOKS 36 条名册缺 onEnterWorld(client
+类目 5 条全为基座代理侧回调,无 client_lib 实体回调)=漏报;且 kode 实体向导
+`buildEntityPartPythonContent` 在 **cell 段**生成 `def onEnterWorld`/`def
+onLeaveWorld`(entityWizard.ts:252/259,注「仅 Cell 段实体」)——误导用户实现一个
+cell 引擎永不调用的回调(cell 侧真回调是 `onEnterSpace`/`onLeaveSpace`
+cellapp/entity.cpp:3823/:3831)。
+
+**判例 5=对照锚**:`onEnterSpace` 正例对照(档 engine-known 成立,fork
+cellapp/entity.cpp:3819/:3823 派发,kode 正确收编 space 类目),与判例 3/4 两条漏报
+同档对照——档的 entity-lifecycle engine-known 组在 onEnterSpace/onDestroy/
+onGetCell 上成立、在 onLoseCell/onEnterWorld 上 kode 缺收编;`onHPChanged`/
+`onLevelUp`/`onLoginOK` 零派发确认 project-defined(档正确,kode 正确缺席)。
+
+门禁=定向 115/115(110+5 新增 it)/prove-red 五咬(perturb:①onMove category
+movement→space ②onTurn→onTick ③onTurn→onLoseCell ④entityWizard.ts:252 清空行
+⑤onEnterSpace category space→lifecycle;各红一次,sha256 0d8b3bd0 字节还原复绿)/
+tsc -p ./ 0/tsc -p tsconfig.mocha.json 0/eslint tests/truthCorpus.test.ts 2 error
+系第九族与第十一族旧债(:95 flagsGroundingText/:134 cellDataGroundingText 未用
+变量,本族零新增;CI lint 仅覆盖 src/)/全量 2 failed 超时类负载抖动(硬时间预算臂
+categoryI18n「bundle 无死键」+ hotfixSpellingGate「全仓零命中」,均 5000ms 超时;
+victim 文件零本批改动、本批零 src/ 零 Rust,判例=受害者文件归属非连跑次数,
+solo 三连绿 14/14),CI 权威。本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);
+语料 33 族 296 条(32→33 族,+11;基线 285=第三十三增量 264+21)。

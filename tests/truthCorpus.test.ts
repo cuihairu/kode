@@ -35,6 +35,7 @@ import type { EntityMapping } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { ENGINE_SPI_METHODS } from '../src/engineSpiCodeLens';
 import { KBENGINE_HOOKS, getHookByName } from '../src/hooks';
+import { buildEntityPartPythonContent } from '../src/backend/entityWizard';
 import {
   USER_TYPE_CONTRACT_CONSEQUENCE,
   USER_TYPE_CONTRACT_METHODS,
@@ -2186,5 +2187,62 @@ describe('truth-corpus: interfaces-module-face 族执行闸(interfaces 模块面
     expect(entry.kode.analysis!.errorCodeType).toBe('int');
     expect(entry.kode.analysis!.forkDiscardsAt).toBe(38);
     expect(entry.finding).toContain('误导方向');
+  });
+});
+
+// ============ 第三十三族: usage-stats-callback-classification(回调分类探针) ============
+interface StatsCallbackEntry extends TruthEntryBase {
+  input: { path: string; process?: string; roster?: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: {
+      resolved?: boolean;
+      category?: string;
+      signature?: string;
+      face?: string;
+      behavior?: string;
+    };
+  };
+}
+const statsCallbackFamily = families.find(f => f.family === 'usage-stats-callback-classification')!;
+const statsCallbackEntries = statsCallbackFamily.entries as unknown as StatsCallbackEntry[];
+const statsCallbackRoster = statsCallbackEntries.filter(e => e.input.path === 'hooks-roster');
+const statsCallbackWizard = statsCallbackEntries.find(e => e.input.path === 'entity-wizard-cell-template')!;
+describe('truth-corpus: usage-stats-callback-classification 族执行闸(回调分类探针)', () => {
+  it('档 project-defined / 非引擎回调在 KBENGINE_HOOKS 名册缺席(onTick/onHPChanged/onLevelUp/onLoginOK)', () => {
+    for (const entry of statsCallbackRoster.filter(e => e.kind === 'negative')) {
+      expect(getHookByName(entry.input.name!), `${entry.id}:${entry.input.name}`).toBeUndefined();
+      expect(entry.kode.analysis!.resolved, entry.id).toBe(false);
+    }
+  });
+
+  it('档 engine-known 正例在 KBENGINE_HOOKS 正确收编(movement 三 + space 一)', () => {
+    for (const entry of statsCallbackRoster.filter(e => e.kind === 'positive' && e.kode.analysis!.resolved === true)) {
+      const hook = getHookByName(entry.input.name!);
+      expect(hook, `${entry.id}:${entry.input.name}`).toBeDefined();
+      expect(hook!.category, entry.id).toBe(entry.kode.analysis!.category);
+    }
+  });
+
+  it('档 engine-known 但 kode 名册缺收编(onLoseCell/onEnterWorld)——漏报缺口现状钉', () => {
+    for (const entry of statsCallbackRoster.filter(e => e.kind === 'positive' && e.kode.analysis!.resolved === false)) {
+      expect(getHookByName(entry.input.name!), `${entry.id}:${entry.input.name}`).toBeUndefined();
+      expect(entry.finding, entry.id).toContain('漏报');
+    }
+  });
+
+  it('kode 实体向导 cell 段生成 onEnterWorld/onLeaveWorld(注"仅 Cell 段实体")——误导现状钉', () => {
+    expect(statsCallbackWizard.finding).toContain('误导');
+    const cellContent = buildEntityPartPythonContent(
+      { name: 'Probe', hasBase: true, hasCell: true, hasClient: false, generateClientStub: false, propertyTemplate: 'simple' },
+      'cell'
+    );
+    expect(cellContent).toContain('def onEnterWorld');
+    expect(cellContent).toContain('def onLeaveWorld');
+    expect(cellContent).toContain('仅 Cell 段实体');
+  });
+
+  it('onEnterWorld 客户端实体回调 vs cell 侧 onEnterSpace 对照(fork 仲裁)', () => {
+    expect(getHookByName('onEnterWorld')).toBeUndefined();
+    expect(getHookByName('onEnterSpace')?.category).toBe('space');
   });
 });
