@@ -412,3 +412,15 @@
 - 权限:模板 adapter 与内置同声明 `['workspace', network]`(可能探包目录补 `${module}` + 联网发送)——无特权豁免,同 HR-EXT-004 纪律。
 - Rust Core 保证:`crates/` 是索引/语义/DB 面,不做热更 HTTP。由 `tests/rustCoreReloadUrlGuard.test.ts` 钉死:遍历 `crates/**/src/**/*.rs` 断言 `8090`/`hotfix` 字面量零命中——谁把 reload URL 写进 Rust 此门红。
 - 测试:`tests/hotReloadProviderAssembly.test.ts` 4 钉——用户模板 adapter 整条模板进请求(url `http://engine.internal:9990/reload?mod=${module}` 替换/`PUT` 方法/头值 token 替换/体替换)非内置形态、缺省路径仍是内置 `127.0.0.1:8090/hotfix?module_name=` 形态、模板 adapter 声明 workspace+network 且 id 按模板名生成+无 transport 如实不接单、用户模板可替换内置(先注册先应答,仅内置=解析内置 id);另 `tests/rustCoreReloadUrlGuard.test.ts` 1 钉(Rust 树 8090/hotfix 字面量零命中)。prove-red:把 `buildDefaultHotfixRequest` 强制回落内置常量后用户模板钉转红,逆向恢复 29/29 绿;消费者门=pluginApi+providerAssembly+defaultHotfix+rustCoreReloadUrlGuard+providerWiring 5 文件 79 例绿;tsc -p ./ 与 eslint 双绿。
+## 29. HR-UI-013 面板无障碍/主题完整性（2026-11-22,RUST-384 批B+批C）
+
+注:批B 的 ZH 文档节此前未落(主文档只在 EN §33 记),本节把批B+批C 一起对账;批C 载体 feat commit 179495ec。
+
+- **批B(已落,EN §33)**:两热更面板文案走既有 webviewStrings 表(`strings(locale).hotReloadSettings/hotReloadHistory`,en/zh 全量同形,纯渲染面注入 t/lang,渲染纯函数不依赖 vscode),宿主面(树三组/定位命令标题/搜索 prompt/通知)走 l10nText(bundle.l10n.{en,zh-cn}.json 786 键 parity);主题面既有 `var(--vscode-*)` 令牌。
+- **批C(本节载体 179495ec)在批B 基础上补无障碍完整性与主题硬化**:
+  - 主题硬化:面板 `body` 补 `background: var(--vscode-editor-background)`,加 `:focus-visible` 焦点环(2px `var(--vscode-focusBorder, #3794ff)`),不引固定 Dark+ 调色板(仍全走 `--vscode-*` 令牌);
+  - screen reader:实时队列包稳定 live 区(`#queue-region` role=status aria-live=polite,label=queueRegionLabel,`queueChanged` 只换内层行、live 区本身不重建,屏幕阅读器可听到队列变化);过滤表单 role=search(label=filterGroupLabel),五控件各配 sr-only 关联标签(文本=列标签),虚拟/非虚拟双表 aria-label(tableLabel);
+  - 键盘:apply 改 type=submit,脚本挂 form submit 处理器(`event.preventDefault()` 后应用)——任一过滤控件回车即应用;clear/加载更多保持 type=button;
+  - zh 文案残差修复:批B 留下 zh 表 `defaultTarget='(default)'` 英文占位(页头 `headerTargetDefault` 本已是「(默认)」),批C 改 `'(默认)'`;两键仍分开(页头/行格),只修 zh 拼写;另加三个 a11y 标签键(queueRegionLabel/filterGroupLabel/tableLabel)zh/en 同形。
+- 测试:`tests/hotReloadHistoryI18nA11y.test.ts` 11 例(纯渲染两态:主题令牌+不引固定 Dark+ 调色板/队列 live 区 zh/en/页头 live 区/表单 role=search+五 sr-only 标签+.sr-only CSS/双表 aria-label 含虚拟分支(行数超 `VIRTUAL_SCROLL_THRESHOLD`)/submit/clear/more 钮型+form submit 处理器/zh「(默认)」vs en「(default)」行格/三新键 zh/en 同形/`<html lang>` 按 locale);`tests/hotReloadHistoryView.test.ts` 面板钉更新:zh 目标格现「(默认)」(原「(default)」)。
+- 残差不变(同 EN §33):en locale 下错误类别下拉与 errorSummary 列仍中文(纯核 `HOT_RELOAD_ERROR_REASON_LABELS`,label 穿线是独立架构改动,诚实不装已做)。
