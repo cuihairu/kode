@@ -649,3 +649,6 @@ RUST-273 四件交付中,两件现可稳定落地并在此呈现——本文即�
 - **迁移配置文档暂缓。** `${module}` → `${fullModule}` 迁移已记(`docs/guide/commands.md:1049-1054`,HR-MOD-013),`docs/guide/migration.md` 也在;但 HR-MOD 接线车道(`RUST-432` / `RUST-433`)在途,对着移动面改迁移配置会产 churn。
 - **性能阈值化属 `RUST-414` 批** —— 界表(`tests/perf/hotReloadScaleBounds.ts` 10 面、`hotReloadSegmentBounds.ts` 12 面)仅在 bench 车道门控违规,环境门控故不会 flaky CI。
 
+## 42. HR-QA-018 资格契约矩阵
+
+§33 的签收矩阵是 RUST-430 的管辖记录。本节保留钉住资格规则本身的契约完备性工件:`tests/hotReloadEligibilityMatrix.test.ts`(3 钉,载体 ba7833d5)穷举 **480 格**——3 档案×2 根×4 文件形态×5 触发态×2 用户显式×2 结构态——逐格对照独立重导 oracle(restart⟺结构因非空且主导;auto⟺四要素齐备;否则 manual),断言不抛错/无第四结论,另 auto=恰 1 格、restart=恰半数格。`.def` 不被规则特判(def 闸供结构因,规则只消费不重算)。target 安全门覆盖(loopback 白名单/workspace trust/provider 权限/结构闸按 target)已折入 §33.1 与 §33.5;本节旧稿表格被该逐维度签收取代,不再复述。

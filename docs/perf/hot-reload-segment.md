@@ -46,6 +46,7 @@
    非法值诚实回退缺省),纯 resolver 钉在主 unit 门;bench 侧逐面比对,违规即
    红(合并阻塞面)。S8 两面(s8LedgerP99Ms 缺省 100ms / s8RenderP99Ms 缺省
    1000ms)按同纪律入表。
+   KODE_PERF_BOUND_* 同款宽松上界纪律(RUST-027),不直接钉绝对值。
 6. **S7 同步段有界非秒级(RUST-416 面)**:500 事件 watcher burst 的纯同步段
    (filter+offer)墙钟 ~30ms(load 58;空载 ~10-20ms),读盘/哈希在 libuv 线程池
    异步不占主线程——「UI 不冻结」的纯核面成立(4.3s@50k 是异步读盘排队非同步
@@ -56,3 +57,13 @@
    窗内合并即防抖(HR-UI-007 已钉),非性能回归面,故 S8 不含该窗。缺省容量 200
    环形淘汰下全量 ≤200 行走既有分页路径,虚拟滚动只在 capacity 调高(千级记录)
    时激活——S8 两径并测,报告值取较重者。
+
+8. **§19.10 网络/本地分离计数(2026-11-23,RUST-414)**:网络面指标与本地段不得
+   混计——网络面指标=发送面 ledger 的 `durationMs`(HR-STATE-007,
+   hotReloadChannelSend.ts:146-148,传输等待/回环,非本地 pipeline 计算)。
+   纪律三件在 `tests/perf/hotReloadSegmentBounds.ts`:①`segmentFaceOf` 分类
+   (`durationMs`→network,余→local)②`localBoundFaceViolations` 守卫(网络面键
+   进本地界表即被揪出)③`aggregateNetworkDurations` 网络桶聚合
+   (n/p50/p95/p99/max,零样本如实 0)。三类均钉在 `hotReloadSegmentBounds.test.ts`
+   (7 用例绿,2026-11-23)。诚实边界:本车道只建计数纪律,真网络绝对值仍属真机/
+   接线批面(回环≠网络);聚合面随接线批消费。

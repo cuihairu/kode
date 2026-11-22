@@ -65,6 +65,61 @@ const BOUND_DEFAULTS: SegmentBounds = {
   s8RenderP99Ms: 1000
 };
 
+/**
+ * §19.10 网络/本地分离纪律:网络面指标与本地段不得混计。网络面指标=发送面
+ * ledger 的 durationMs(HR-STATE-007,hotReloadChannelSend.ts:146-148,锚点已立
+ * 才有耗时)——它是传输等待(网络/回环),不是本地 pipeline 计算。本地界表
+ * (SegmentBounds)只约束本地各段,网络面键进界表=违反 §19.10。
+ * 诚实边界:本模块只实现「分离计数」纪律(分类+聚合+守卫),真网络绝对值
+ * 本车道测不到(segment doc 原注),仍属真机/接线批面。
+ */
+export const NETWORK_FACING_METRICS: readonly string[] = ['durationMs'];
+
+export type SegmentFace = 'local' | 'network';
+
+/** 度量键→面分类:网络面键=ledger durationMs,其余=本地段 */
+export function segmentFaceOf(metricKey: string): SegmentFace {
+  return NETWORK_FACING_METRICS.includes(metricKey) ? 'network' : 'local';
+}
+
+/** 本地界表守卫:任一网络面键进了本地界表=违反 §19.10(返回违规清单,空=过) */
+export function localBoundFaceViolations(bounds: SegmentBounds): string[] {
+  const violations: string[] = [];
+  for (const key of Object.keys(bounds)) {
+    if (segmentFaceOf(key) === 'network') {
+      violations.push(
+        `${key} is network-facing and must not be in the local bounds (per §19.10)`
+      );
+    }
+  }
+  return violations;
+}
+
+export interface DurationStats {
+  n: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  max: number;
+}
+
+/**
+ * 网络桶聚合:各发送 durationMs → n/p50/p95/p99/max,与本地段分开统计
+ * (不混本地性能,§19.10)。纯函数,入主 unit 门;零样本如实 0 不猜。
+ */
+export function aggregateNetworkDurations(durationsMs: number[]): DurationStats {
+  const n = durationsMs.length;
+  if (n === 0) {
+    return { n, p50: 0, p95: 0, p99: 0, max: 0 };
+  }
+  const sorted = [...durationsMs].sort((a, b) => a - b);
+  const percentile = (rank: number): number => {
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(rank * sorted.length) - 1));
+    return Math.round(sorted[index] * 100) / 100;
+  };
+  return { n, p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99), max: percentile(1) };
+}
+
 const boundEnvName = (key: string): string =>
   `KODE_SEG_BOUND_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`;
 

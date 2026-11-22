@@ -1,0 +1,5 @@
+HRSOAK-ENV node=v24.21.0 cpus=14 files=101 seconds=30 windowMs=5000 receiverPort=37443 failPort=34363
+HRSOAK-METRIC heapGrowthMb n=1 -2.15 heapGrowthGcMb=-2.44 gcApplied=1
+HRSOAK-METRIC sockets n=5 p50=1 p95=1 p99=1 max=1
+HRSOAK-SUMMARY windows=5 wall=30408ms watchersLive=1 watchersCreated=5 watchersDisposed=4 offered=100 emitted=100 okReceipts=100 failReceipts=25 heapGrowthGcMb=-2.44 socketBaseline=0 maxIdleSockets=1
+HRSOAK-ENV node=v24.21.0 cpus=14 files=201 seconds=86400 windowMs=5000 receiverPort=41669 failPort=34371
