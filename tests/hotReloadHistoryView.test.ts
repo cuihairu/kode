@@ -8,6 +8,7 @@ import {
   HOT_RELOAD_HISTORY_PANEL_COMMAND,
   HOT_RELOAD_HISTORY_SEARCH_COMMAND,
   HOT_RELOAD_HISTORY_STATE_KEY,
+  HOT_RELOAD_LOCATE_FILE_COMMAND,
   renderHistoryPanelHtml,
   setupHotReloadHistoryView,
   translateDeliveryRecord,
@@ -15,7 +16,7 @@ import {
 } from '../src/hotReloadHistoryView';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../src/backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from '../src/backend/hotReloadTargetState';
-import { panelRegistry, windowState } from './helpers/vscodeStub';
+import { messages, panelRegistry, windowState } from './helpers/vscodeStub';
 import { treeRegistrations } from './fake-vscode/windowState';
 
 // HR-PR-06 装配钉:台账记录→历史行翻译(requestId 同执行稳定/状态三态如实
@@ -974,5 +975,63 @@ describe('RUST-368 导出与保留时间限额', () => {
     expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(1);
     expect(saved[saved.length - 1]).toHaveLength(1);
     expect(saved[saved.length - 1][0].requestId).toBe('recent');
+  });
+});
+
+describe('RUST-381 失败点击定位文件', () => {
+  beforeEach(() => {
+    windowState.reset();
+    panelRegistry.reset();
+  });
+
+  it('树行点击=定位命令(参数=行文件路径,标题定位文件)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    const provider = lastProvider();
+    const recent = provider.getChildren(provider.getChildren()[0]);
+    const item = provider.getTreeItem(recent[0]);
+    expect(item.command?.command).toBe(HOT_RELOAD_LOCATE_FILE_COMMAND);
+    expect(item.command?.title).toBe('定位文件');
+    expect(item.command?.arguments).toEqual([FILE_A]);
+  });
+
+  it('定位命令:合法路径打开文件(fsPath=路径)', async () => {
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, FILE_A);
+    expect(windowState.showTextDocumentCalls).toHaveLength(1);
+    const call = windowState.showTextDocumentCalls[0] as { document: { fsPath: string } };
+    expect(call.document.fsPath).toBe(FILE_A);
+  });
+
+  it('定位命令:路径缺失如实报错不打开', async () => {
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, '');
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, undefined);
+    expect(messages.error).toEqual(['定位文件:路径缺失', '定位文件:路径缺失']);
+    expect(windowState.showTextDocumentCalls).toHaveLength(0);
+  });
+
+  it('面板行带 data-file 与行级委托脚本(虚拟+非虚拟共用)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    expect(panel.webview.html).toContain(`data-file="${FILE_A}"`);
+    expect(panel.webview.html).toContain("tr[data-file]");
+    expect(panel.webview.html).toContain("type: 'openFile'");
+  });
+
+  it('面板行点击消息→host 调定位命令打开文件', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    panelRegistry.fireMessage(panel, { type: 'openFile', file: FILE_A });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    expect(windowState.showTextDocumentCalls.length).toBeGreaterThanOrEqual(1);
+    const last = windowState.showTextDocumentCalls[windowState.showTextDocumentCalls.length - 1] as {
+      document: { fsPath: string };
+    };
+    expect(last.document.fsPath).toBe(FILE_A);
   });
 });
