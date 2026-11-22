@@ -386,3 +386,12 @@
 - 缺省规则 `createDefaultHotReloadEligibilityRule` 保守序:①restart 最强——`context.structuralReasons` 非空(既有 RUST-397 def 结构闸 verdict 的产物,规则**只消费闸结论不重算结构**)即判 restart,优先于一切;②auto 须四要素齐备——`.py` 文件+root 已配+引擎版本已知(`EngineProfile.engineVersion !== null`)+触发源 `watcher-auto` 且非用户显式动作,任何一缺=manual(绝不自动发未知引擎/未知根/非 py/人工链);③其余=manual(安全缺省)。
 - 与既有面不重复:pipeline 的 `SavePipelineEmitMode='auto'|'preview-release'` 是发送管线的出口判定,def 闸 `restart_required` 是结构分析;本规则是**资格分类的扩展面**(fork 接管点),组合消费两者的结论,不建平行判定逻辑。
 - 测试:`tests/hotReloadPluginApi.test.ts` 4 钉——restart 最强(结构 reasons 非空即使 auto 要素全齐)、auto 四要素齐备、任何一要素缺=保守 manual(root null/引擎版本 null/非 py/command 触发/userInitiated/全缺)、fork 可换 rule 整面接管+apiVersion 钉 1。prove-red:中和结构闸消费支路(false)+判 auto 分支(恒 true)后 2 钉转红(restart 钉+保守 manual 钉),逆向恢复 24/24 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare+defGate+fileState 6 文件 109 例绿;tsc -p ./ 与 eslint src 双绿。
+
+## 26. HR-EXT-004 权限声明（2026-11-22,RUST-408,workspace/network/exec 最小权限）
+
+- plugin-api 核内新版本化声明面:`HotReloadProviderPermission = 'workspace' | 'network' | 'exec'`,配 `HotReloadProvider.permissions?`(可选)。第三方 provider **必须声明**所需能力,宿主据此判定能否挂到能力面。可选=最小权限声明面:未声明者不获任何敏感面授权(增量可选槽纪律,`apiVersion` 不递增,同 HR-EXT-001/002)。
+- 缺省策略 `createDefaultHotReloadPermissionPolicy`(`kbengine.default-permission`),面→可满足声明集:`send` 必声明 `network`;`fetch-digest` 声明 `workspace` **或** `network` 任一即可(取摘要走文件读或走引擎查询,两条通道皆可);`read-workspace` 必声明 `workspace`;`spawn-process` 必声明 `exec`。`check` 取缺失最少的声明集,给 `granted`/`missing`/点名 provider id 的 `reason`;未声明者对四面一律 `granted=false` 且缺失点名——绝不静默放行。
+- 跨面不挪用权限(`network` 不覆盖 `read-workspace`);fork=换整个 `HotReloadPermissionPolicy` 整面接管判定(同 HR-EXT-003 rule 的接管形状)。
+- 分层不重复:本面只声明**能力**、答「该 provider 能否挂到此面」;宿主在挂载期显式调用策略,`HotReloadProviderRegistry.resolve*` 保持无权限假设,增量前未声明 permissions 的 provider 照旧解析(策略判定是宿主侧的独立闸)。运行时目的地控制仍归 HR-HTTP-001 端点策略(RUST-420,loopback 白名单)与工作区信任闸(RUST-422)——互补,非平行检查。
+- 内置 `createHttpHotfixSendProvider`(`kbengine.http-hotfix`)同样声明 `['workspace', 'network']`——它 POST 联网+`${module}` 回落面包边界探针读工作区;不做特权豁免,只是以身作则证明声明。
+- 测试:`tests/hotReloadPluginApi.test.ts` 9 钉——未声明者四面一律拒且缺失点名、声明 network/workspace/exec 各自授权对应面、fetch-digest 两可(任一通道合格/皆缺拒)、跨面不挪用、重复/空声明处理、`acceptableDeclarations` 表+apiVersion 钉 1、fork 换策略整面接管、向后兼容(无 permissions 的 provider 仍类型合规+仍注册+仍解析——权限面不改解析序)、内置 provider 四面对账(send/read-workspace/fetch-digest 过,spawn-process 因未声明 exec 拒)。prove-red:强制放行(`if (true)`)后 6 钉转红,逆向恢复 33/33 绿;消费者门=pluginApi+providerAssembly+providerWiring+fingerprintCompare 4 文件 61 例绿;tsc -p ./ 与 eslint 双绿。
