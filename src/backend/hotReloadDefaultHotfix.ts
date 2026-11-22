@@ -29,6 +29,7 @@ import {
 import { DEFAULT_HTTP_TIMEOUT_MS, defaultTransport, type HttpTransport } from './httpRequestService';
 import { executeHttpRequest, type HttpRequestOutcome } from './httpRequestExecutor';
 import { resolveModuleDualName } from './hotReloadTempEdit';
+import { canonicalizeScriptFilePath, selectScriptRoot } from './hotReloadModuleIdentity';
 
 export interface DefaultHotfixRequest {
   url: string;
@@ -40,6 +41,11 @@ export interface DefaultHotfixRequest {
 export interface DefaultHotfixDeps {
   /** 脚本资源根(双名称解析起点);空串 = 未配置,回落包边界扫描 */
   readonly scriptRoot?: string;
+  /** HR-MOD-006 多根候选集(与 scriptRoot 并入同一候选集,保序去重);空=未配 */
+  readonly scriptRoots?: readonly string[];
+  /** HR-MOD-006 显式优先级(索引小=优先):多根命中>1 时唯一最小秩候选才赢;
+   * 未给=既有不猜拒绝(多根歧义回落包边界扫描)。 */
+  readonly rootPriority?: readonly string[];
   /** Python 包目录探针(目录含 __init__.py 判定),${module} 回落面用 */
   readonly isPackageDir?: PackageDirProbe;
   /**
@@ -60,12 +66,26 @@ export interface DefaultHotfixDeps {
  */
 export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfixDeps = {}): string {
   const scriptRoot = deps.scriptRoot ?? '';
-  if (scriptRoot.length > 0) {
-    const dualName = resolveModuleDualName(filePath, scriptRoot, {
-      ...(deps.allowRootLevelStem === true ? { allowRootLevelStem: true } : {})
-    });
-    if (!('unsupported' in dualName)) {
-      return dualName.requestModule;
+  // HR-MOD-006 多根:与解析核同一候选集构造(scriptRoots 在前、单根便捷形
+  // 态在后)+同一保序去重,同一 selectScriptRoot 裁决(显式优先级唯一最小秩
+  // 才赢);拒绝态(no-root/out-of-root/歧义)回落 ${module} 包边界扫描,
+  // 不在此另写第二套根选择。
+  const roots = [
+    ...(deps.scriptRoots ?? []),
+    ...(scriptRoot.length > 0 ? [scriptRoot] : [])
+  ]
+    .map(canonicalizeScriptFilePath)
+    .filter(root => root.length > 0)
+    .filter((root, index, self) => self.indexOf(root) === index);
+  if (roots.length > 0) {
+    const selection = selectScriptRoot(canonicalizeScriptFilePath(filePath), roots, deps.rootPriority);
+    if (selection.kind === 'root') {
+      const dualName = resolveModuleDualName(filePath, selection.root, {
+        ...(deps.allowRootLevelStem === true ? { allowRootLevelStem: true } : {})
+      });
+      if (!('unsupported' in dualName)) {
+        return dualName.requestModule;
+      }
     }
   }
   return resolvePythonModulePath(filePath, deps.isPackageDir);

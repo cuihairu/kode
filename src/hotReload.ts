@@ -482,6 +482,9 @@ export interface SetupHotReloadOptions {
     readonly isPackageDir?: PackageDirProbe;
     /** 双名称解析的脚本资源根(kbengine.hotReload.tempEdit.scriptRoot) */
     readonly resolveScriptRoot?: () => string;
+    /** HR-MOD-006 有序脚本根列表(kbengine.hotReload.tempEdit.scriptRoots,索引
+     * 小=优先):多根命中>1 时唯一最小秩候选才赢;未配=空表(单根行为不变)。 */
+    readonly resolveScriptRoots?: () => readonly string[];
     /** HR-MOD-008 根下单层回退开关(kbengine.hotReload.allowRootLevelStem;缺省关) */
     readonly resolveAllowRootLevelStem?: () => boolean;
   };
@@ -667,6 +670,10 @@ export function setupHotReload(
             createHttpHotfixSendProvider({
               transport: options.defaultHotfix.transport,
               scriptRoot: options.defaultHotfix.resolveScriptRoot?.(),
+              // HR-MOD-006:有序多根(索引小=优先,单根便捷形态殿后并入)与
+              // 解析核同一裁决;拒绝态回落包边界扫描
+              scriptRoots: options.defaultHotfix.resolveScriptRoots?.(),
+              rootPriority: options.defaultHotfix.resolveScriptRoots?.(),
               isPackageDir: options.defaultHotfix.isPackageDir,
               allowRootLevelStem: options.defaultHotfix.resolveAllowRootLevelStem?.()
             })
@@ -809,13 +816,22 @@ export function setupHotReload(
       void Promise.resolve()
         .then(() => {
           const scriptRoot = options.defaultHotfix?.resolveScriptRoot?.() ?? '';
+          const scriptRoots = options.defaultHotfix?.resolveScriptRoots?.() ?? [];
+          // HR-MOD-006:多根=scriptRoots 在前 + 单根便捷形态在后,同解析核保序
+          // 去重;有序即优先级(索引小=优先),>1 才附 rootPriority——单根路径
+          // 逐字不变(只传 scriptRoots 单元素)。
+          const ordered = [...scriptRoots, ...(scriptRoot.length > 0 ? [scriptRoot] : [])]
+            .map(canonicalizeScriptFilePath)
+            .filter(root => root.length > 0)
+            .filter((root, index, self) => self.indexOf(root) === index);
           const allowRootLevelStem = options.defaultHotfix?.resolveAllowRootLevelStem?.() ?? false;
           const moduleIdentities: string[] = [];
           let anyDual = false;
           for (const file of triggers) {
             const resolution = lifecycle.slots.resolveModule({
               fileUri: file,
-              ...(scriptRoot.length > 0 ? { scriptRoots: [scriptRoot] } : {}),
+              ...(ordered.length > 0 ? { scriptRoots: ordered } : {}),
+              ...(ordered.length > 1 ? { rootPriority: ordered } : {}),
               ...(options.defaultHotfix?.resolveAllowRootLevelStem !== undefined ? { allowRootLevelStem } : {})
             });
             if ('ok' in resolution && resolution.ok) {

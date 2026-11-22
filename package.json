@@ -2420,6 +2420,13 @@
             "default": "",
             "markdownDescription": "%kbengine.config.hotReload.tempEdit.scriptRoot.description%"
           },
+          "kbengine.hotReload.tempEdit.scriptRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "markdownDescription": "%kbengine.config.hotReload.tempEdit.scriptRoots.description%"
+          },
           "kbengine.hotReload.triggerMode": {
             "type": "string",
             "enum": [
