@@ -369,3 +369,62 @@ describe('HR-UI-007 虚拟滚动窗口(computeVirtualScrollWindow 纯决策)', (
     expect(w.totalHeightPx).toBe(78);
   });
 });
+
+describe('HR-STATE-007 残差检索键(requestModule 子串/哈希前缀/耗时区间)', () => {
+  it('requestModuleContains 子串(大小写不敏),与 fullModule 检索互不串台', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', fullModule: 'entities.fight.FightAI', requestModule: 'fight.FightAI' }),
+      makeEntry({ requestId: 'r2', fullModule: 'entities.spawn.Spawner', requestModule: 'spawn.Spawner' })
+    ]);
+    expect(core.filter({ requestModuleContains: 'SPAWN' }).map(e => e.requestId)).toEqual(['r2']);
+    expect(core.filter({ requestModuleContains: 'fight' }).map(e => e.requestId)).toEqual(['r1']);
+  });
+
+  it('hash 前缀匹配;空串=不限定(与子串字段同口径);未知前缀零命中', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', hash: 'abcdef1234567890' }),
+      makeEntry({ requestId: 'r2', hash: 'fedcba0987654321' }),
+      makeEntry({ requestId: 'r3' })
+    ]);
+    expect(core.filter({ hash: 'abcdef' }).map(e => e.requestId)).toEqual(['r1']);
+    expect(core.filter({ hash: 'f' }).map(e => e.requestId)).toEqual(['r2']);
+    expect(core.filter({ hash: 'zzz' })).toHaveLength(0);
+    // 空哈希串不作过滤(与 fullModuleContains 同口径)
+    expect(core.filter({ hash: '' })).toHaveLength(3);
+  });
+
+  it('耗时区间含边界命中;无耗时行(基准冻结/未记录)不命中区间,不计 0 也不计 ∞', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r-fast', durationMs: 12 }),
+      makeEntry({ requestId: 'r-mid', durationMs: 300 }),
+      makeEntry({ requestId: 'r-slow', durationMs: 900 }),
+      makeEntry({ requestId: 'r-no-dur' })
+    ]);
+    expect(core.filter({ durationFrom: 10, durationTo: 300 }).map(e => e.requestId)).toEqual(['r-fast', 'r-mid']);
+    expect(core.filter({ durationTo: 900 }).map(e => e.requestId)).toEqual(['r-fast', 'r-mid', 'r-slow']);
+    expect(core.filter({ durationFrom: 900 }).map(e => e.requestId)).toEqual(['r-slow']);
+    // 无耗时行被区间查询排除
+    expect(core.filter({ durationFrom: 0 })).toHaveLength(3);
+  });
+
+  it('残差键与既有键全 AND 正交叠加', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'a', trigger: 'command', hash: 'aaa111', durationMs: 50, targetId: 'cellapp-1' }),
+      makeEntry({ requestId: 'b', trigger: 'command', hash: 'aaa222', durationMs: 50, targetId: 'cellapp-2' }),
+      makeEntry({ requestId: 'c', trigger: 'watcher-auto', hash: 'aaa111', durationMs: 900, targetId: 'cellapp-1' }),
+      makeEntry({ requestId: 'd', trigger: 'command', hash: 'bbb111', durationMs: 900, targetId: 'cellapp-1' })
+    ]);
+    expect(
+      core.filter({ trigger: 'command', hash: 'aaa', durationTo: 500 }).map(e => e.requestId)
+    ).toEqual(['a', 'b']);
+    expect(
+      core.filter({ trigger: 'command', hash: 'aaa', durationTo: 500, targetId: 'cellapp-1' }).map(e => e.requestId)
+    ).toEqual(['a']);
+    // 全条目 requestModule 缺省 'fight.FightAI':子串命中全部,再叠耗时区间
+    expect(core.filter({ requestModuleContains: 'fight', durationFrom: 900 }).map(e => e.requestId)).toEqual(['c', 'd']);
+  });
+});

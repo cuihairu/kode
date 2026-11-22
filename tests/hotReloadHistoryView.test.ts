@@ -702,3 +702,118 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
     expect(html).toContain('list.addEventListener(\'scroll\', renderWindow)');
   });
 });
+
+describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)', () => {
+  beforeEach(() => {
+    windowState.reset();
+    panelRegistry.reset();
+  });
+
+  it('面板 10 列:触发/耗时/内容哈希列渲染(哈希 12 字符前缀,title 含全值)', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(
+      recordOf({ outcome: 'failed', source: 'command', sentDigest: 'deadbeef1234567890', detail: 'HTTP 状态 500:非 2xx', durationMs: 320 })
+    );
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const html = panel.webview.html;
+    expect(html).toContain('<th>触发</th>');
+    expect(html).toContain('<th>耗时</th>');
+    expect(html).toContain('<th>内容哈希</th>');
+    expect(html).toContain('<td>command</td>');
+    expect(html).toContain('<td>320ms</td>');
+    expect(html).toContain('title="deadbeef1234567890"');
+    expect(html).toContain('>deadbeef1234…</code>');
+  });
+
+  it('面板列头恰 10 列,空态 colspan 与之一致', () => {
+    const html = renderHistoryPanelHtml({
+      state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
+      rows: [],
+      total: 0,
+      hasMore: false,
+      pageSize: 50
+    });
+    expect(html).toContain('colspan="10"');
+    expect(html).toContain(
+      '<th>模块</th><th>文件</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th>'
+    );
+  });
+
+  it('面板过滤表单:触发源/错误类别下拉渲染(触发四值+类别八值)', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const html = panel.webview.html;
+    expect(html).toContain('id="f-trigger"');
+    expect(html).toContain('value="watcher-auto"');
+    expect(html).toContain('value="temp-edit"');
+    expect(html).toContain('id="f-category"');
+    expect(html).toContain('>配置错误</option>');
+    expect(html).toContain('>需重启</option>');
+  });
+
+  it('面板过滤消息:触发源/错误类别精确过滤重渲染;非法类别忽略;清除拉全量', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A, outcome: 'failed', source: 'command', detail: 'HTTP 状态 500:非 2xx' }));
+    feed.handle(recordOf({ file: FILE_B, outcome: 'failed', source: 'watcher-auto', detail: '语法检查未通过' }));
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const fire = (message: unknown): void => {
+      for (const listener of panel.messageListeners) {
+        listener(message);
+      }
+    };
+
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: 'command', errorCategory: '' });
+    let html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).not.toContain('Spawner.py');
+    expect(html).toContain('显示 1/1 行');
+
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: '', errorCategory: 'syntax-error' });
+    html = panel.webview.html;
+    expect(html).toContain('Spawner.py');
+    expect(html).not.toContain('FightAI.py');
+
+    // 七类之外的值忽略(不伪造不存在的类别):过滤面清空回全量
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: '', errorCategory: 'not-a-category' });
+    html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).toContain('Spawner.py');
+
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: '', errorCategory: '' });
+    html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).toContain('Spawner.py');
+  });
+
+  it('树搜索多字段:按触发源/哈希前缀等任一可检索字段命中(大小写不敏)', async () => {
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const originalInputBox = savedWindow.showInputBox;
+    try {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A, source: 'command', sentDigest: 'abc999' }));
+      feed.handle(recordOf({ file: FILE_B, source: 'watcher-auto', sentDigest: 'def888' }));
+      const provider = lastProvider();
+
+      // 哈希前缀命中 FILE_A 行
+      savedWindow.showInputBox = async () => 'abc999';
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND);
+      expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(1);
+      expect(provider.getChildren(provider.getChildren()[0])[0].entry?.fileUri).toBe(FILE_A);
+
+      // 触发源命中 FILE_B 行
+      savedWindow.showInputBox = async () => 'WATCHER-AUTO';
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND);
+      expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(1);
+      expect(provider.getChildren(provider.getChildren()[0])[0].entry?.fileUri).toBe(FILE_B);
+
+      savedWindow.showInputBox = async () => '';
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND);
+      expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(2);
+    } finally {
+      savedWindow.showInputBox = originalInputBox;
+    }
+  });
+});
