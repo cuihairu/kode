@@ -556,7 +556,32 @@ RUST-430(HR-QA-018)要求**按四个维度逐项签收**安全与功能完成矩
 | 未信任的活 SSH / 活引擎环境行为 | 真机待验 | 闸在执行时刻读 `isWorkspaceTrusted`;本仓库以注入读取器钉闸,非真工作区信任对话框 |
 
 **残差**:`真机待验` 各格恰好就是 HR-AUDIT-010 族(活网络、活引擎、活远程会话、真工作区信任对话框、真磁盘时序),也是 RUST-430 保持未勾的原因。`unknown` 各格保持不签,因为 §2 记其为 unknown,而库内证据未改变这一点。
-## 34. HR-DOD-001 发送路径双名切换（2026-11-23,RUST-440,自动模式只送短名）
+
+## 34. HR-QA-016 watch/http 浸泡不变量(2026-11-22,RUST-428)
+
+- 24h 浸泡的四项性质在 `tests/hotReloadSoak.test.ts`(9 钉)中被钉为**确定性不变量**(与负载无关、非墙钟):(1) **watcher 泄漏** — 对计数工厂跑 200 次 `rebuild` 循环:创建 ≡ 销毁 + 存活,存活数在循环中保持有界(== 根数),`dispose()` 后为 0(先销毁后重建成立,无累积);已销毁的控制器不再布防或重建 watcher。(2) **无界状态增长** — 投递台账按 `root×target×file` 键并替换,故 500 次写回同一文件只留 1 条记录,500 个不同文件留 500 条(线性于文件数而非操作数);历史按容量环有界(`≤ capacity`)且 requestId 幂等替换(500 条同 id 记录 → 1 行),另有 `pruneExpired` 年龄淘汰;版本簿按文件有界。(3) **连接泄漏** — HR-HTTP-006 keep-alive 池:对进程内 HTTP 服务器 300 次顺序真实 `defaultTransport` 发送复用单条连接(服务器 `connection` 计数保持 1),200 与非 2xx 路径皆是 — 无每请求新 socket、无累积。(4) **重试风暴** — `retryFailedHotReloadTargets` 每个失败目标每次调用恰好发送一次(2 失败 + 1 确认 → 2 次发送,无放大),已确认目标跳过,取消停止后续发送且不冒充已发送,第二遍只重发仍失败的目标(有界、无风暴)。
+- 边界(诚实):**字面 24h 墙钟浸泡本批未跑** — 不变量正是 24h 浸泡应当观察到的性质,K 迭代等价证明无需依赖 24h 窗口或共享 runner 的负载(与 RUST-425 的算法性非墙钟调用同一纪律;真正过夜运行需专用低负载窗口)。keep-alive 池是单主机复用优化(按协议懒单例)— 跨主机 socket 增长由 agent 池面有界,超出单引擎浸泡范围。传输层 `ok` 标志意为"收到响应"(500 是 `ok:true status:500`;非 2xx 由投递层判 `failed`),如此记录使该臂读起来诚实。
+
+## 35. HR-QA-017 关 Watch 降级 + 手动回退 + 状态保持(2026-11-23,RUST-429)
+
+- watch 面只是**触发源**,绝不是手动发送路径的依赖 — 这个边界正是降级梯诚实的前提。`tests/hotReloadWatchFallback.test.ts`(5 钉)经真实配置往返驱动 `setupHotReload`:(1) **关闭拆除** — `enabled:false` 重新布防 `apply()`,它销毁每个存活 watcher(HR-WATCH-005),不建替代品,状态栏置于"关"面并输出"未开启"日志行;此后**已销毁**的 watcher 再触发不调度也不发送(自动源完全静默,而非仅仅无声)。(2) **可恢复** — 同一装配实例内翻回 `enabled:true` 重建**新** watcher(新对象身份),状态栏回"就绪",恢复的 watcher 上的一次变更重新调度并触发动作。(3) **无状态损坏** — 经 `targetState` 注入的投递台账存储(一次性创建于 `src/activate/hotReload.ts:120`)**不被** `apply()` 重建 — 关闭/开启循环保留循环前的记录,重启用后的发送落在**同一**存储实例,故降级梯不损失数据。(4)/(5) **手动快捷请求正交** — watch 关闭时,一个启用的设置 HTTP 请求仍被列出且仍可经 `QuickActionManager` 运行,手动面在 watch 开/关时逐项一致。
+- 边界(诚实):手动/自动切分有**两个不同轴上的独立开关** — `kbengine.hotReload.enabled` 门控自动触发源,而每请求 `enabled` 标志过滤快捷动作*列表*(`src/quickActions.ts:573`)。关 watch 无法隐藏手动请求,禁用一个请求只把它从列表隐藏。`runByName('@http:settings:<i>')` 按索引读设置表,故直接寻址也能到达已禁用项;这是既有索引运行语义,在此如实记录而非标记为修复。既有的 `enabled:false` 启动与模式切换拆除臂(`tests/hotReloadAssetsRootWatch.test.ts`、`tests/hotReloadDiskWatchWiring.test.ts` HR-WATCH-005)在此不重跑;本 lane 增加单生命周期内的开→关→开往返、拆除后事件隔离、以及台账跨它的存活。
+
+## 36. RUST-430 可执行夹具伴生(2026-11-23,RUST-430,EN §45 伴生)
+
+- **EN §45(zh §33)的伴生而非替代**:EN §45(zh §33)是文档矩阵(70 格,手工锚定,4 格真机待验残差);本节(对应 EN §48)是同一任务的可执行切面 — 冻结夹具加防漂移门禁。两者承载同一诚实残差(活机器 / HR-AUDIT-010 族),在此记为 3 个显式越界缺口。
+
+- 四维度在冻结矩阵夹具中**逐格签收**:`tests/fixtures/hot-reload-completion-matrix.json`(版本 1)声明维度取值集(`target` = default-action-name / http-quick-request / script-quick-action / profile-channel / provider-host;`engineProfile` = builtin-default / explicit-channel / provider-supplied;`fileType` = py / def / types-xml / config-file / non-py-bypass;`trigger` = watch-save / watch-disk-change / manual-quick-request / retry-failed / external-apply),19 个已签格、6 个横切安全不变量、3 个显式越界缺口(各带理由)。
+- 门禁 `tests/hotReloadCompletionMatrix.test.ts`(5 钉)保持矩阵**不漂移**:每个声明的维度值必须被至少一个已签格引用(无人签的值变红);每格判定必须自洽 — `covered-test` 证据必须是*真实*测试文件、`covered-src` 必须是*真实* src 文件(不得凭记忆签收);每个越界缺口必须带理由;且一项安全性质由**门禁自身直接验证** — HTTP 发送链(`src/backend/httpRequestService.ts`、`src/backend/hotReloadTransport.ts`)不 import `child_process`,故未来发送路径出现 `spawn` 会变红而非静默通过。
+- 边界(诚实):门禁钉的是**矩阵↔现实一致性**,不重跑各格子套件(各自独立 lane,引为证据)。`no-child-process` 验证器把 `hotReloadTransport` 的 `exec(...)` 文本当作终端命令回退*标签*,而非 `child_process` 调用 — 命令/脚本发送面刻意经托管进程面,且另受信任闸(RUST-422)。签收一个维度值需一个已签格或显式越界理由;新增维度值而无其一则门禁变红。
+
+## 37. HR-DOD-001 双名发送面收口(2026-11-23,RUST-440,用户裁定:限定双名发送面收口)
+
+- 书 §19.1 双名契约(`src/backend/hotReloadModuleIdentity.ts:31-34`)是 DOD-001 断言的不变量:`fullModule` = **UI 显示名**(`entities.fight.FightAI`)、`requestModule` = **实际线上名**(`fight.FightAI`)。本 lane 之前自动发送从不填充 `moduleIdentities` — `runViaProvider`(`src/hotReload.ts`)把裸 `{ targetId, files }` 交给 provider,故内建 HTTP provider 把**显示**名推到线上(`module_name=entities.fight.FightAI`),正是 DOD 指出的缺口。
+- 收口把自动发送接进**生命周期槽**:发送路径现在调用 `resolveLifecycle(profile)`(provider + 组合槽,`src/backend/hotReloadPluginApi.ts:347`),每文件跑 `slots.resolveModule → slots.prepareRequest`,产出 `moduleIdentities=[requestModule]`(`hotReloadPluginApi.ts:238`)— 线上只承载短名,绝不承载显示名。`tests/hotReloadDodDualName.test.ts`(4 钉)端到端驱动书 §19.1 FightAI 场景:(1) **缝** — provider 请求携带 `moduleIdentities=['fight.FightAI']` 而非 `entities.fight.FightAI`;(2) **线上** — 经内建 provider 的 HTTP `module_name=fight.FightAI`,且即使遗留 `__init__.py` 包走查本会产出显示名,它也不出现在 URL;(3) **UI** — 同一解析器供历史流得 `{fullModule:'entities.fight.FightAI', requestModule:'fight.FightAI'}`,`buildHistoryEntryLabel` 按显示名作标题,而 tooltip 投影 `requestModule: fight.FightAI` 为已发送名;(4) **零配置零漂移** — 无脚本根时生命周期无法解析根,故 provider 请求保持改动前精确形状(`{ targetId, files }`,无 `moduleIdentities`),文件不被丢弃。
+- 边界(诚实,按裁定):这收口**仅双名发送面**(`sendViaProviders` 路径)。零配置默认热修保持记录的遗留 `${module}` 语义(HR-AUDIT-004 / RUST-322 兼容裁定);生命周期无法解析的文件(无根 / 歧义 / 非 `py` / `__init__`)经空 `moduleIdentities` 条目回退到既有推导面(HR-HTTP-002"空 = 未给定"),故收口从不丢文件、从不改零配置行为。证红证据是修复前状态:臂(1)/(2)在 `module_name=entities.fight.FightAI`(显示名)上失败,生命周期接线后转绿。
+
+## 38. HR-DOD-001 发送路径双名切换 (lane 36e67cca — parallel to §37)（2026-11-23,RUST-440,自动模式只送短名）
 
 自动模式现在发送**短名**,UI 继续展示**全名**。`resolveDefaultHotfixModule`(`src/backend/hotReloadDefaultHotfix.ts`)双名分支原先返回 `dualName.fullModule`,请求体与 query 带的是 `entities.fight.FightAI`;现返回 `dualName.requestModule`:
 
@@ -568,7 +593,7 @@ RUST-430(HR-QA-018)要求**按四个维度逐项签收**安全与功能完成矩
 
 **证据**:`tests/hotReloadDefaultHotfix.test.ts` 增 RUST-440 钉——自动发送端到端面(注入 transport 的 `sendDefaultHotfix`)body 与 query 都送 `module_name=fight.FightAI`,同文件双名契约并列(`fullModule=entities.fight.FightAI`,`requestModule=fight.FightAI`);请求预览缺省面随之翻转(preview ≡ send)。消费面门:defaultHotfix/requestPreview/moduleIdentity/tempEdit/fileChangeMeta/providerWiring/providerAssembly/pluginApi/providerExamples/historyView——10 文件 214 例绿。
 
-## 35. HR-DOD-002 触发面命名一致性（2026-11-23,RUST-441,同一模块——各面同一对短名/全名）
+## 39. HR-DOD-002 触发面命名一致性 (lane fe02ecb4)（2026-11-23,RUST-441,同一模块——各面同一对短名/全名）
 
 手动命令、onSave、onDiskChange 对同一模块必须生成**完全一致**的短名/全名。§46 发送路径切换之后这一点是结构成立的:三张触发面都汇入同一条两级 fire 链,模块名只在下游单一字符串核心(`resolveModuleDualName`,HR-MOD-005)推导——触发面本身不参与命名。`tests/hotReloadTriggerNameConsistency.test.ts` 钉住这条边界:
 
@@ -579,6 +604,6 @@ RUST-430(HR-QA-018)要求**按四个维度逐项签收**安全与功能完成矩
 
 **未触碰**——双名模型本体(HR-MOD-005 套件)、legacy `${module}` 语义(HR-MOD-012)、发送事实面各有既有套件;本节只补跨面一致性钉。门=新套件 4/4,tsc/eslint 双净。
 
-## 36. HR-QA-018 资格契约矩阵(2026-11-23,RUST-430,从属工件——见 §33)
+## 40. HR-QA-018 资格契约矩阵 (lane ba7833d5, subordinate — see §33)(2026-11-23,RUST-430,从属工件——见 §33)
 
 §33 的签收矩阵是 RUST-430 的管辖记录。本节保留钉住资格规则本身的契约完备性工件:`tests/hotReloadEligibilityMatrix.test.ts`(3 钉,载体 ba7833d5)穷举 **480 格**——3 档案×2 根×4 文件形态×5 触发态×2 用户显式×2 结构态——逐格对照独立重导 oracle(restart⟺结构因非空且主导;auto⟺四要素齐备;否则 manual),断言不抛错/无第四结论,另 auto=恰 1 格、restart=恰半数格。`.def` 不被规则特判(def 闸供结构因,规则只消费不重算)。target 安全门覆盖(loopback 白名单/workspace trust/provider 权限/结构闸按 target)已折入 §33.1 与 §33.5;本节旧稿表格被该逐维度签收取代,不再复述。
