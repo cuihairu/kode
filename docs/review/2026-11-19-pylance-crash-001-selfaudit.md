@@ -90,6 +90,10 @@ kode 侧五面自查全部干净+真机复跑绿,但**崩溃定性仍缺原文**
 
 ## 4. 临时绕过指引(取证期间)
 
+> 注:本节基于 2026-11-19 的默认态(stubCopy 默认关)。2026-11-20 用户裁定
+> `kbengine.python.stubCopy` 默认**开**、`kbengine.infer.enabled` 默认**开**
+> 后,本节前提已过时,默认态接触面清单与绕过指引以 §6 为准。
+
 两项写入面默认已是关态(本记录 §2 核实):`kbengine.python.stubCopy`
 default false(不自动往工作区复制桩包)、`kbengine.semanticTokens.enabled`
 default false。若用户曾手动开过请先关;默认态下 kode 对 Pylance 的接触面
@@ -102,3 +106,61 @@ kode 侧自查:五耦合面零命中已知崩溃模式(循环 import/超长路�
 诊断双注册/监听环/settings churn),真机复跑当前 main 三段全绿。崩溃定性
 挂起等用户 crash 原文——若最终定性为 Pylance 自身 bug 与 kode 无关,将按
 任务书第 4 步落版本对+复现步骤的独立记录。
+
+## 6. 默认态复验(2026-11-23)——stubCopy/infer 默认翻后新接触面
+
+### 前提更正(§4 已过时)
+
+2026-11-20 用户裁定:`kbengine.python.stubCopy` 默认**开**(17570cb5 落地)、
+`kbengine.infer.enabled` 默认**开**(77021bd6 落地);`kbengine.semanticTokens.enabled`
+仍默认**关**。工作树实测:stubCopy default true(package.json:2096-2099)、
+infer.enabled default true(:1941-1944)、semanticTokens default false
+(:1789-1792)。§4「两项写入面默认已是关态」前提作废,默认态下 kode 对
+Pylance 的接触面比 §4 所述**更大**:多出激活期桩包复制与 infer 生成桩两条
+写盘面。本复验把这两条新面纳入环分析。
+
+### 新接触面 A——激活期桩包复制(默认开)
+
+`exportKbeStubs`(src/pythonStubExport.ts:386)双闸:总闸
+`kbengine.python.stubExport`(默认开)先行,窄闸 `kbengine.python.stubCopy`
+(默认开,非 manual 时)其次——默认态激活期 silent 复制确实走。复制实现
+`copyTemplateIntoFolder`(:326)=**copy-if-absent 铁律**:目标已存在直接
+`continue`(:360),零覆盖零删;唯一删=旧单文件 KBEngine.pyi 带 kode 生成
+标记的一次性迁移(:346-352),迁移后不再出现,单回合收敛。行为锚:
+`tests/pythonStubExport.test.ts:259`「copy-if-absent 铁律:目标已存在
+零字节动(用户魔改保留),缺的补上」,2026-11-23 复跑 25/25 绿。
+
+### 新接触面 B——infer 生成桩车道(默认开)
+
+`runInfer`(src/inferPipeline.ts:445)先核 `kbengine.infer.enabled`,再
+`discoverPyrefly`;`kbengine.infer.pyreflyPath` 默认空串且未安装时静默
+`status:'not-found'` 返回(:456-463),零写零崩——**默认开但未装 pyrefly 时
+infer 是 no-op**。生成的 `.pyi` 由 **pyrefly 子进程**写
+(:538 `spawn(pyreflyPath,['stubgen',...])`):pyrefly 是 Pylance 同源工具,
+产物格式 Pylance 原生可解析,**格式面排除「生成 .pyi 崩 Pylance」**。
+`infer.sourceWrite` 默认 "managed"(写权限闸 `assertWritable` 限 managed 域)。
+
+### 环断证明(关键)——无 kode↔Pylance 自持环
+
+托管目录 watcher(`**/.kbengine`+`**/.kbengine/**`,src/activate/generators.ts:222-236)
+**只挂 `onDidDelete`**(:229)——全仓唯一 `.kbengine` watcher,无任何
+onDidCreate/onDidChange 挂点,故 kode 往 `.kbengine` 的**写**永不触发 kode
+重导。`generatePythonStubs`(generators.ts:60,watcher 重导入口)调
+**`exportKbeStubs`(copy-if-absent,零删)** 而非 `resetKbeStubs`;
+`resetKbeStubs`(delete+rewrite,src/pythonStubExport.ts:479)**仅**显式命令
+`kbengine.python.resetStubs`+用户确认(generators.ts:102-111)触发。
+`exportPythonTypeStubs`/`exportEntityTypeStubs` 零删(源码 grep 无
+deleteFile)。→「删→重导→删」环需要重导路径删文件,而 watcher 路径的重导
+(copy-if-absent)不删;**结构上无自持环**。Pylance 只读消费 kode 输出
+(pyrightconfig.json 实读,RUST-263 裁定)不写回——互触发环需要两边都写,
+构造不成立。
+
+### 结论
+
+当前默认态下 kode 侧无自持写/删环,§4「默认态只剩 settings 差分写入+聚合
+provider」表述按新默认态修正为:settings 差分写入+激活期桩包复制
+(copy-if-absent 零覆盖)+infer 生成桩(pyrefly 原生格式)+聚合 provider。
+若用户怀疑 kode 面,可关 `kbengine.python.stubCopy`/`kbengine.infer.enabled`
+(semanticTokens 已默认关)作交叉排除。**崩溃定性仍挂等用户报错原文+三
+版本号**——本行不勾,待用户回帖后按原文定性(Pylance 自身 crash loop vs
+kode 挤轧)再定修复批。
