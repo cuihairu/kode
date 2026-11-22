@@ -85,6 +85,8 @@ describe('setupHotReload 流水线注入面配置(HR-PR-04 配置子批)', () =>
     syntaxGate?: boolean;
     batchFlushMs?: number;
     batchPreviewThreshold?: number;
+    notify?: string;
+    actionRunner?: (name: string) => void | Promise<unknown>;
     readSnapshot?: (file: string) => Promise<FileSnapshot | null>;
     syntaxCheck?: SyntaxCheck;
   } = {}): {
@@ -105,7 +107,8 @@ describe('setupHotReload 流水线注入面配置(HR-PR-04 配置子批)', () =>
         ...(options.batchFlushMs !== undefined ? { batchFlushMs: options.batchFlushMs } : {}),
         ...(options.batchPreviewThreshold !== undefined
           ? { batchPreviewThreshold: options.batchPreviewThreshold }
-          : {})
+          : {}),
+        ...(options.notify !== undefined ? { notify: options.notify } : {})
       }
     });
     statusCalls.length = 0;
@@ -113,7 +116,8 @@ describe('setupHotReload 流水线注入面配置(HR-PR-04 配置子批)', () =>
     const context = makeContext();
     contexts.push(context);
     const runCalls: string[] = [];
-    setupHotReload(context, name => void runCalls.push(name), {
+    const runner = options.actionRunner ?? ((name: string): void => void runCalls.push(name));
+    setupHotReload(context, runner, {
       timers: clock.timers,
       status: {
         log: (text: string) => void statusCalls.push(text),
@@ -277,4 +281,79 @@ describe('setupHotReload 流水线注入面配置(HR-PR-04 配置子批)', () =>
     await flush();
     expect(runCalls).toEqual([]);
   });
+
+// RUST-386(HR-UI-013)通知模式三态装配钉:成功静默(errors/silent 成功批
+// 不弹)/失败提示(errors 缺省=动作失败照弹)/批量摘要(summary 每批一条,
+// 成功也弹含明细)。防风暴=每批一条不逐文件;同一完成不双弹(actionName
+// 失败面只走动作失败弹窗)。silent 全静默(信息照旧落审计/状态面)。
+describe('RUST-386 通知模式(HR-UI-013)', () => {
+  it('成功静默:errors 缺省与 silent 下成功批次不弹窗(零配置行为不变)', async () => {
+    for (const notify of ['errors', 'silent'] as const) {
+      messages.info.length = 0;
+      messages.error.length = 0;
+      const { clock, fireChange } = boot({ notify });
+      fireChange('/ws/scripts/A.py');
+      expect(clock.tick()).toBe(2);
+      await flush();
+      await flush();
+      expect(messages.info).toEqual([]);
+      expect(messages.error).toEqual([]);
+    }
+  });
+
+  it('批量结果摘要:summary 下成功批次弹一条已发送摘要(每批一条)', async () => {
+    messages.info.length = 0;
+    const { clock, fireChange } = boot({ notify: 'summary' });
+    fireChange('/ws/scripts/A.py');
+    expect(clock.tick()).toBe(2);
+    await flush();
+    await flush();
+    expect(messages.info).toEqual(['已发送(未校验业务回执)']);
+  });
+
+  it('失败提示:errors 缺省下失败批次弹动作失败一条(带原因)', async () => {
+    messages.error.length = 0;
+    messages.info.length = 0;
+    const { clock, fireChange } = boot({
+      notify: 'errors',
+      actionRunner: () => Promise.reject(new Error('ECONNREFUSED 8090'))
+    });
+    fireChange('/ws/scripts/A.py');
+    expect(clock.tick()).toBe(2);
+    await flush();
+    await flush();
+    expect(messages.error).toHaveLength(1); // 单条,不双弹不逐文件
+    expect(messages.error[0]).toContain('自动热重载动作失败');
+    expect(messages.error[0]).toContain('ECONNREFUSED 8090');
+  });
+
+  it('silent 全静默:失败批次也不弹(信息照旧落状态/审计面)', async () => {
+    messages.error.length = 0;
+    messages.info.length = 0;
+    const { clock, fireChange } = boot({
+      notify: 'silent',
+      actionRunner: () => Promise.reject(new Error('boom'))
+    });
+    fireChange('/ws/scripts/A.py');
+    expect(clock.tick()).toBe(2);
+    await flush();
+    await flush();
+    expect(messages.error).toEqual([]);
+    expect(messages.info).toEqual([]);
+  });
+
+  it('summary 失败批:动作失败弹窗照弹(失败面不静默,单条)', async () => {
+    messages.error.length = 0;
+    const { clock, fireChange } = boot({
+      notify: 'summary',
+      actionRunner: () => Promise.reject(new Error('ECONNREFUSED 8090'))
+    });
+    fireChange('/ws/scripts/A.py');
+    expect(clock.tick()).toBe(2);
+    await flush();
+    await flush();
+    expect(messages.error).toHaveLength(1);
+    expect(messages.error[0]).toContain('自动热重载动作失败');
+  });
+});
 });

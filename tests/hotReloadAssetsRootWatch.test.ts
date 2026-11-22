@@ -263,7 +263,8 @@ describe('readHotReloadSettings globs 口径', () => {
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
       sendViaProviders: false,
-      allowRootLevelStem: false
+      allowRootLevelStem: false,
+      notify: 'errors'
     });
   });
 
@@ -504,7 +505,7 @@ describe('装配(§11.1/§11.4 watcher 生命周期)', () => {
   });
 
   it('显式宽 glob:非 py/非 def 不进投递(只走旁路),.py/.def 仍在热更域(§11.2)', async () => {
-    const { root, assets } = makeFixture();
+    const { assets } = makeFixture();
     fs.mkdirSync(path.join(assets, 'entity_defs'), { recursive: true });
     fs.writeFileSync(path.join(assets, 'entity_defs', 'Avatar.def'), '<root/>\n');
     configurationOverrides.set('kbengine', {

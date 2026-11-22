@@ -37,6 +37,7 @@ const baseSettings = (overrides: Partial<HotReloadSettings> = {}): HotReloadSett
   batchPreviewThreshold: 50,
   sendViaProviders: true,
   allowRootLevelStem: false,
+  notify: 'errors',
   ...overrides
 });
 
@@ -49,7 +50,8 @@ const validValues = {
   allowRootLevelStem: true,
   batchFlushMs: 200,
   batchPreviewThreshold: 10,
-  stabilityWindowMs: 500
+  stabilityWindowMs: 500,
+  notify: 'errors'
 };
 
 const contextOf = (): vscode.ExtensionContext =>
@@ -73,7 +75,7 @@ beforeEach(() => {
 });
 
 describe('RUST-378 设置表单渲染', () => {
-  it('表单字段齐(九键)且当前值一致(勾选/数值/枚举)', () => {
+  it('表单字段齐(十键)且当前值一致(勾选/数值/枚举)', () => {
     const html = render({ settings: baseSettings() });
     for (const key of HOT_RELOAD_SETTINGS_FORM_KEYS) {
       expect(html, `字段 ${key} 缺` ).toContain(`id="f-${key}"`);
@@ -87,16 +89,27 @@ describe('RUST-378 设置表单渲染', () => {
     // 监听模式枚举按当前值选中
     expect(html).toContain('<option value="onSave" selected>');
     expect(html).toContain('<option value="onDiskChange">');
+    // 通知模式枚举按当前值选中(RUST-386)
+    expect(html).toContain('<option value="errors" selected>');
+    expect(html).toContain('<option value="silent">');
+    expect(html).toContain('<option value="summary">');
   });
 
   it('渲染如实:另一组设置(关/磁盘变更)字段值随之变', () => {
     const html = render({
-      settings: baseSettings({ enabled: false, triggerMode: 'onDiskChange', debounceMs: 250 })
+      settings: baseSettings({
+        enabled: false,
+        triggerMode: 'onDiskChange',
+        debounceMs: 250,
+        notify: 'summary'
+      })
     });
     expect(html).not.toContain('id="f-enabled" checked');
     expect(html).toContain('id="f-debounceMs" value="250"');
     expect(html).toContain('<option value="onDiskChange" selected>');
     expect(html).toContain('<option value="onSave">');
+    expect(html).toContain('<option value="summary" selected>');
+    expect(html).toContain('<option value="errors">');
   });
 
   it('状态条按语义上色(已保存=ok,错误=error,空=无)', () => {
@@ -125,6 +138,21 @@ describe('RUST-378 设置表单渲染', () => {
     expect(enHtml).not.toContain('启用自动更新');
     expect(render({ settings: baseSettings() })).toContain('<html lang="zh-CN">');
     expect(render({ settings: baseSettings() })).toContain(`<h2>${t.title}</h2>`);
+  });
+
+  it('RUST-386:通知模式枚举两态(zh 默认中文/en 英文;按当前值选中)', () => {
+    const enHtml = renderHotReloadSettingsPanelHtml({
+      settings: baseSettings({ notify: 'silent' }),
+      t: tEn,
+      lang: htmlLang('en')
+    });
+    expect(enHtml).toContain('<span>Notification mode</span>');
+    expect(enHtml).toContain('>All silent (silent)</option>');
+    expect(enHtml).toContain('<option value="silent" selected>');
+    const zhHtml = render({ settings: baseSettings({ notify: 'summary' }) });
+    expect(zhHtml).toContain(`<span>${t.notify}</span>`);
+    expect(zhHtml).toContain('>批量摘要(summary)</option>');
+    expect(zhHtml).toContain('<option value="summary" selected>');
   });
 
   it('RUST-384 批B:校验错误文案经 t(en/zh 两态)', () => {
@@ -175,6 +203,20 @@ describe('RUST-378 host 侧验证(不信任 webview)', () => {
     });
     expect(validate('nope')).toEqual({ ok: false, error: t.errNotObject });
     expect(validate(undefined)).toEqual({ ok: false, error: t.errNotObject });
+  });
+
+  it('RUST-386:通知模式枚举外如实报字段名;三值原样收', () => {
+    expect(validate({ ...validValues, notify: 'loud' })).toEqual({
+      ok: false,
+      error: t.errNotify(t.notify)
+    });
+    for (const mode of ['silent', 'errors', 'summary'] as const) {
+      const verdict = validate({ ...validValues, notify: mode });
+      expect(verdict.ok).toBe(true);
+      if (verdict.ok) {
+        expect(verdict.values.notify).toBe(mode);
+      }
+    }
   });
 });
 
