@@ -391,6 +391,8 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 | `kbengine.telnet.configXmlPath` | string | 空 | 显式指定元件 `kbengine.xml`(支持 `${workspaceFolder}`),优先于自动探测;设置显式端口 >0 时端口以设置为准 |
 | `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒),低于 1 按 1 秒执行 |
 
+工作区信任闸(RUST-422):目标主机来自工作区配置,未信任工作区里 telnet 探测不连任何配置声明的主机、不建持久会话(状态灯如实关闭;信任工作区后下一轮探测恢复)。闸为执行时刻读,与 HTTP 快捷请求信任闸同口径。
+
 ### HTTP 快捷请求
 
 | 配置项 | 类型 | 默认值 | 说明 |
