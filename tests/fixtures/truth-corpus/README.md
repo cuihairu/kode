@@ -484,3 +484,28 @@ settingsGrouping/truthCorpus/perfCallChainDoc)定向 168/168 全绿),CI 权威�
 再生成,apiDocsRustParity 双侧同步再生成故 parity 保持);语料 33 族 297 条
 (bots +1;base/cell/interfaces 条目净零:改名翻正,不增删;基线 296=第三十三族
 usage-stats 落地后)。
+## 第三十四族: hook-sequencing-presence(实体回调在场探针)
+
+依据 `docs/knowledge/hook-sequencing.md`(实体回调时序图,machine-readable 核=
+`src/backend/hookSequencing.ts`;档头明示所有引擎 file:line 系逐字搬运自
+`src/hooks.ts` sourceLocation 或既定锚,不新铸锚;engineHead 6d12b8f)。本族
+把档内全部 37 个实体回调逐名钉到 `KBENGINE_HOOKS` 名册:36 正例在场
+(category/sourceLocation 双钉——`sourceLocation` 钉住 live 钩锚点与档一致,
+日后 hooks.ts 锚点漂移即红)+1 漏报 `onLoseCell`(档头自明
+corroborated-but-unregistered:HOOK_SEQUENCING 图收录而名册不收录,
+positive+accept+finding 漏报现状钉,与第三十三族 usage-stats 同源漏报跨族
+对账一致)。
+
+探针=探针实测后钉:从 `src/hooks.ts` 提取 name/category/sourceLocation
+36 条,与档内 37 回调逐名对拍——全部在场钩锚点与档一致,零误导(名册无
+档外回调)。执行闸三臂:在场正例臂(present=36,逐名
+getHookByName 在场+category+sourceLocation 三钉)/onLoseCell 漏报臂(名册
+undefined+finding 漏报)/名册规模臂(KBENGINE_HOOKS 恰 36,37-1 漏报——
+直钉 src 常量,日后新增钩子即红须回填本族)。
+
+prove-red 两咬(①perturb onGetCell sourceLocation 钉值→在场臂红,
+sha256 f0b74c4c 字节还原复绿;②perturb onLoseCell present→true→在场臂
++漏报臂双红,字节还原复绿;③名册规模臂系 src 常量直等,扰动类=src 编辑,
+多会话共树期不做 src 扰动,咬合自明)/定向 truthCorpus 121/121(前 118+3
+新增 it)。本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);语料
+34 族 334 条(33→34 族,+37;基线 297=第三十五增量 翻案批落地后)。

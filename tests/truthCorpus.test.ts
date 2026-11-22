@@ -2299,3 +2299,37 @@ describe('truth-corpus: usage-stats-callback-classification 族执行闸(回调�
     expect(getHookByName('onEnterSpace')?.category).toBe('space');
   });
 });
+
+// ============ 第三十四族: hook-sequencing-presence(实体回调在场探针) ============
+interface HookPresenceEntry extends TruthEntryBase {
+  input: { path: string; name?: string };
+  kode: TruthEntryBase['kode'] & {
+    analysis?: { present?: boolean; category?: string; sourceLocation?: string };
+  };
+}
+const hookPresenceFamily = families.find(f => f.family === 'hook-sequencing-presence')!;
+const hookPresenceEntries = hookPresenceFamily.entries as unknown as HookPresenceEntry[];
+const hookPresenceRoster = hookPresenceEntries.filter(e => e.input.path === 'hooks-roster');
+describe('truth-corpus: hook-sequencing-presence 族执行闸(实体回调在场探针)', () => {
+  it('档 engine-known 回调在 KBENGINE_HOOKS 名册在场(36 条),category/sourceLocation 与钉值一致', () => {
+    const present = hookPresenceRoster.filter(e => e.kode.analysis!.present === true);
+    expect(present.length, '在场正例数').toBe(36);
+    for (const entry of present) {
+      const hook = getHookByName(entry.input.name!);
+      expect(hook, `${entry.id}:${entry.input.name}`).toBeDefined();
+      expect(hook!.category, entry.id).toBe(entry.kode.analysis!.category);
+      expect(hook!.sourceLocation, entry.id).toBe(entry.kode.analysis!.sourceLocation);
+    }
+  });
+  it('onLoseCell 漏报(corroborated-but-unregistered)现状钉——名册无此条目', () => {
+    const miss = hookPresenceRoster.find(e => e.input.name === 'onLoseCell')!;
+    expect(miss.kind).toBe('positive');
+    expect(miss.engine.load).toBe('accept');
+    expect(miss.finding, miss.id).toContain('漏报');
+    expect(miss.kode.analysis!.present).toBe(false);
+    expect(getHookByName('onLoseCell')).toBeUndefined();
+  });
+  it('名册规模钉:KBENGINE_HOOKS 恰 36 条(37 档记载回调-1 漏报)', () => {
+    expect(KBENGINE_HOOKS.length).toBe(36);
+  });
+});
