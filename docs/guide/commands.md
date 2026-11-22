@@ -867,6 +867,14 @@ The flow graph panel supports:
 - Purpose: filter the history tree view by a `fullModule` substring (case-insensitive); an empty input clears the filter
 - Behavior: applies to the three tree groups (recent updates / by file / by target); rows whose module differs only by target stay separate rows
 
+### `kbengine.hotReload.historyClear`
+
+- Title: `Clear Hot Reload History`
+- Purpose: clear the delivery history (the HR-MOD-014 persisted store) from the command palette
+- Behavior:
+  - Empties both the in-memory history core and the persisted record; an already-empty history reports 热更历史已为空 and changes nothing
+  - The history tree and any open panel refresh so the cleared state is visible immediately
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`
@@ -1089,6 +1097,30 @@ The flow graph panel supports:
   - The re-send resolves the action by reverse lookup on the quick-action tree (named registered actions and scanned scripts first; index-aligned `@http:` entries last); a target with no resolvable action is reported honestly (找不到以 … 为接收方的动作) and skipped without invoking anything
   - Ledger accounting goes through the same existing faces as the fire path: no-response-face actions record sent-unverified / failed; real HTTP responses are classified by transport fact (2xx = delivered-unverified, non-2xx = failed); a 2xx body is run through the accepted/applied upgrade and the settle window — so a successful retry turns the ledger page instead of leaving a stale failed record
   - The report (resent / not-resent / cancelled counts plus per-target lines with the re-send result) is written to the 「KBEngine 热更新」 channel and the channel opens; an empty ledger reports 无投递记录，没有可重试的目标 honestly
+
+### `kbengine.hotReload.pause`
+
+- Title: `Pause Hot Reload Pipeline`
+- Purpose: hold the save pipeline's emit side (HR-STATE-011) — events keep arriving and accumulate in the debounce/coalescing queue, the wave buffer and the preview hold, but nothing goes out until resume
+- Behavior:
+  - Pause only gates the wave collection: the explicit `kbengine.hotReload.releasePreview` still releases a held batch, because releasing is the user asking "send this batch now", which does not conflict with "hold off on automatic sends"
+  - Nothing is dropped while paused, so `resume` flushes exactly what accumulated; repeated pause is an idempotent state flag
+
+### `kbengine.hotReload.resume`
+
+- Title: `Resume Hot Reload Pipeline`
+- Purpose: clear the pause flag and immediately flush the wave that accumulated while paused
+- Behavior:
+  - Repeated resume is idempotent — with an already-empty wave it is a no-op
+
+### `kbengine.hotReload.cancel`
+
+- Title: `Cancel Pending Hot Reload for Active File`
+- Purpose: drop the not-yet-sent side of the active editor's file from the pipeline and report which queue it came from
+- Behavior:
+  - Removes the entry from the coalescing queue (clearing its debounce timer), the preview hold, or the wave buffer, naming which one in the notice; for a file that is settling right now the cancel is marked and the settle is dropped before it reaches the wave
+  - Reports honestly when there is nothing to cancel (当前文件无待发热更) — a batch already handed to the send side is never recalled (send-side idempotency belongs to the receipt/ledger contract, not to a pipeline recall)
+  - Requires an active editor with a file; without one the command reports the missing piece instead of guessing a target
 
 ### `kbengine.hotReload.showRevisionEvidence`
 
