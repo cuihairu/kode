@@ -45,7 +45,8 @@ import { resolveAssetsRootForWorkspace } from '../scanRoots';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { resolveModuleDualName } from '../backend/hotReloadTempEdit';
-import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY } from '../hotReloadHistoryView';
+import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY, HOT_RELOAD_HISTORY_MAX_AGE_MS } from '../hotReloadHistoryView';
+import { setupHotReloadSettingsPanel, type HotReloadSettingsFormKey } from '../hotReloadSettingsPanel';
 import type { SavePipelineQueueSnapshot } from '../backend/hotReloadSavePipeline';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../backend/hotReloadHistoryCore';
 import type { HotReloadDeliveryRecord } from '../backend/hotReloadTargetState';
@@ -127,7 +128,10 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     resolveModuleNames: resolveHotReloadModuleNames
   });
   const hotReloadHistoryFeed = setupHotReloadHistoryView(context, {
-    core: new HotReloadHistoryCore(),
+    // RUST-368 保留时间限额政策(7 天):核心与视图同值——回载/落账前淘汰
+    // 超龄行,历史不越攒越大(容量环形淘汰之外的时域上限)。
+    core: new HotReloadHistoryCore({ maxAgeMs: HOT_RELOAD_HISTORY_MAX_AGE_MS }),
+    maxAgeMs: HOT_RELOAD_HISTORY_MAX_AGE_MS,
     resolveNames: file =>
       resolveHotReloadModuleNames(file) ?? (() => {
         // 展示面降级:历史树标题缺脚本根时回落文件 stem(台账侧如实不写,不伪造)
@@ -149,6 +153,24 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     }
   });
   hotReloadHistoryFeedRef.current = hotReloadHistoryFeed;
+  // RUST-378 配置界面批:设置表单面板(webview 表单)。channel 面(root/target/
+  // 网络超时)由既有 configureChannel 覆盖不重复;「敏感操作警告」无对应设
+  // 置键,工作区信任闸(HR-HTTP-005/RUST-422)是既有安全门,不新造键。
+  // 写盘点串键单键 update(不覆盖同段兄弟键),target 同 materializeGlobs 口
+  // 径(有 folder=工作区,无 folder=全局)。
+  setupHotReloadSettingsPanel(context, {
+    readSettings: () => readHotReloadSettings(hotReloadSectionReader()),
+    save: (key: HotReloadSettingsFormKey, value: unknown) =>
+      vscode.workspace
+        .getConfiguration('kbengine')
+        .update(
+          `hotReload.${key}`,
+          value,
+          (vscode.workspace.workspaceFolders ?? []).length > 0
+            ? vscode.ConfigurationTarget.Workspace
+            : vscode.ConfigurationTarget.Global
+        )
+  });
   // HOT-VER:文件版本簿(状态栏版本号)。台账独立于 watcher——监视范围只看
   // globs(与 enabled 开关正交),采样口缺省走 fs.stat 的 mtimeMs:size;watcher
   // 事件、回执落账、手动触发(showFileState/retryFailed/手动跑动作)都写同一份

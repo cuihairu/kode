@@ -370,4 +370,123 @@ describe('setupHotReload 发送 provider 宿主接线(HR-PR-08)', () => {
     expect(urls).toHaveLength(1); // 内置实现照常应答
     expect(statusCalls.some(line => line.includes('provider:fork-test'))).toBe(false);
   });
+
+  // RUST-412(HR-EXT-008)调度隔离钉:键开时的注册表解析(canSend 是第三方同步
+  // 代码)与回落默认热更整段挪进微任务,不占 fire 回调同步段——provider 每多
+  // 一个只多一次微任务内 canSend,fire 同步切片零增长(语言服务 hover/
+  // definition 同事件循环,尾延迟不被派发决议吃掉)。键关分支逐字保留=默认
+  // 热更仍在同步段进链,行为与既有完全一致。基准见
+  // tests/perf/providerIsolation.bench.ts(P1 fire 切片 / P2 hover 尾延迟)。
+  describe('RUST-412 provider 派发调度隔离(fire 同步段零 canSend)', () => {
+    it('键开:fire 同步段零 canSend 零 send,微任务后才决议并接单', async () => {
+      let canSendCount = 0;
+      const sends: string[][] = [];
+      const { clock, fireChange } = boot({
+        sendViaProviders: true,
+        providers: [
+          makeProvider({
+            providerId: 'iso-first',
+            canSend: () => {
+              canSendCount += 1;
+              return false;
+            }
+          }),
+          makeProvider({
+            providerId: 'iso-second',
+            canSend: () => {
+              canSendCount += 1;
+              return true;
+            },
+            send: request => {
+              sends.push([...request.files]);
+              return { ok: true, detail: 'iso channel ok' };
+            }
+          })
+        ]
+      });
+      fireChange('/ws/scripts/A.py');
+      expect(clock.tick()).toBe(2);
+      await flush();
+      expect(clock.tick()).toBe(1); // 合并窗 fire 同步段
+      expect(canSendCount).toBe(0); // 决议不占同步段
+      expect(sends).toHaveLength(0);
+      await flush();
+      expect(canSendCount).toBe(2); // 首拒+次应答,遍历完整发生在微任务
+      expect(sends).toEqual([['/ws/scripts/A.py']]);
+    });
+
+    it('键开多 provider 风暴:遍历成本全在微任务,每 fire 恰一次接单', async () => {
+      let canSendCount = 0;
+      const sends: string[][] = [];
+      const providers = [
+        0, 1, 2, 3, 4
+      ].map(index =>
+        makeProvider({
+          providerId: `iso-storm-${index}`,
+          canSend: () => {
+            canSendCount += 1;
+            return index === 4;
+          },
+          send: request => {
+            sends.push([...request.files]);
+            return { ok: true };
+          }
+        })
+      );
+      const { clock, fireChange } = boot({ sendViaProviders: true, providers });
+      fireChange('/ws/scripts/A.py');
+      expect(clock.tick()).toBe(2);
+      await flush();
+      expect(clock.tick()).toBe(1);
+      expect(canSendCount).toBe(0); // 5 个 canSend 一个都不在同步段
+      await flush();
+      expect(canSendCount).toBe(5); // 应答者在前 4 个之后,遍历走满
+      expect(sends).toEqual([['/ws/scripts/A.py']]);
+    });
+
+    it('键开外部实现全不应答:内置兜底也在微任务内接单,同步段零 transport', async () => {
+      const urls: string[] = [];
+      const { clock, fireChange } = boot({
+        sendViaProviders: true,
+        transportUrls: urls,
+        providers: [
+          makeProvider({
+            providerId: 'iso-refuse-all',
+            canSend: () => false
+          })
+        ]
+      });
+      fireChange('/ws/scripts/A.py');
+      expect(clock.tick()).toBe(2);
+      await flush();
+      expect(clock.tick()).toBe(1);
+      expect(urls).toHaveLength(0); // 默认 transport 尚未被调(在微任务)
+      await flush();
+      expect(urls).toHaveLength(1); // 注册表解析后内置兜底委托默认 transport
+      expect(statusCalls.some(line => line.includes('provider:kbengine.http-hotfix'))).toBe(true);
+    });
+
+    it('键关:默认热更同步进链,零微任务延迟(行为不变)', async () => {
+      const urls: string[] = [];
+      const sends: string[][] = [];
+      const { clock, fireChange } = boot({
+        transportUrls: urls,
+        providers: [
+          makeProvider({
+            send: request => {
+              sends.push([...request.files]);
+              return { ok: true };
+            }
+          })
+        ]
+      });
+      fireChange('/ws/scripts/A.py');
+      expect(clock.tick()).toBe(2);
+      await flush();
+      expect(clock.tick()).toBe(1); // fire
+      expect(urls).toHaveLength(1); // 无 flush 已调 transport=键关路径未延跳
+      expect(sends).toHaveLength(0); // provider 仍不被问
+      expect(statusCalls.some(line => line.includes('provider:'))).toBe(false);
+    });
+  });
 });

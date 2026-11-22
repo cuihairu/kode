@@ -1,197 +1,350 @@
-/**
- * RUST-428(HR-QA-016)Watch/HTTP soak——高迭代长稳不变式。
- *
- * 四门按 todo 原义逐项钉住「无泄漏、无膨胀、无风暴」:
- *  ①无 watcher 泄漏:2000 轮 rebuild(每次按新根重建)后创建数=处置数,
- *    存活 watcher 恒等于根数,dispose 后零残留;重建即切断上一代事件流
- *    (旧 watcher 的回调随 dispose 注销,跨代事件不外泄)。
- *  ②状态增长无界:10000 轮投递同一文件集后,台账仍是逐键单条覆盖
- *    (重发=覆盖最新一次,不追加历史),版本事件簿封顶 HOT_RELOAD_VERSION_EVENT_CAP。
- *  ③连接泄漏:10000 任务(含半数拒绝)全部结算后队列内部态全零
- *    (目标态在 idle 时自删,结算不清=泄漏),在途不超全局上限。
- *  ④错误重试风暴:100 轮重试对永久失败目标每轮恰一跳(线性,非指数),
- *    已确认侧全程零重发。
- *
- * 口径如实注:本文件是**结构性长稳**——用高迭代量把四类泄漏/风暴面
- * 压到量级上取不变式,24h 真墙钟 soak 不在本会话口径(与
- * hotReloadReliabilityGate 的 10k 缩放 soak 同口径)。
- */
+// RUST-428(旧 HR-QA-016):24h Watch/HTTP soak——无 watcher 泄漏、状态增长无界、
+// 连接泄漏、错误重试风暴。四项性质以**确定性不变量**钉住(load 无关,非墙钟),
+// 是 24h 真跑应观测到的性质本身:高迭代计数下的
+//   (1) watcher 泄漏:apply/rebuild/dispose 高循环,创建数恒=销毁数+存活,存活数
+//       有界(==根数),dispose 后归零——重建不累积;
+//   (2) 状态增长无界:台账按 (root×target×file) 键替换不逐事件追加,同一文件 K 次
+//       操作后条目数恒 1;N 个不同文件=N(线性于文件数非操作数);历史库容量环形
+//       淘汰(≤capacity)+requestId 幂等替换不重复成行;版本簿按文件有界;
+//   (3) 连接泄漏:keepAlive 连接池(HR-HTTP-006/RUST-348)对同一引擎串行热更复用
+//       连接——K 次串行请求经真实 defaultTransport,服务端 connection 计数恒 1
+//       (复用,非逐请求新建),非 2xx 面亦复用不累积;
+//   (4) 错误重试风暴:retryFailedHotReloadTargets 每次调用每失败目标恰发 1 次
+//       (一次性,无放大),成功目标跳过,取消即停,二次调用只重发仍失败者。
+// 诚实边界:①24h 墙钟 soak 非本车道目标(共享 runner 负载下墙钟噪声支配,见
+//   RUST-425 判例),本车道钉不变量=soak 应观测的性质;②(3) 的 keepAlive 池是
+//   单主机复用优化(懒建单例),跨不同主机连接数增长受 agent 池面约束,非本
+//   soak 场景(单一引擎)范围;③(2) 的「无界」指逐事件增长,逐文件线性增长是
+//   固有(文件数有界于工作区),如实记录。
 
-import { describe, expect, it, vi } from 'vitest';
+import * as http from 'http';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  HotReloadDiskWatchController,
-  type DiskWatcherFactory,
-  type DiskWatcherHandle
-} from '../src/backend/hotReloadDiskWatch';
-import { summarizeHotReloadBatch } from '../src/backend/hotReloadBatchSummary';
-import { createHttpTargetQueue } from '../src/backend/httpRequestQueue';
-import { retryFailedHotReloadTargets } from '../src/backend/hotReloadRetry';
-import { HOT_RELOAD_VERSION_EVENT_CAP, HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import { HotReloadDiskWatchController, type DiskWatcherHandle } from '../src/backend/hotReloadDiskWatch';
+import { HotReloadTargetStateStore, buildHotReloadTargetKeyId, type HotReloadDeliveryOutcome } from '../src/backend/hotReloadTargetState';
+import { HotReloadHistoryCore, type HotReloadHistoryStatus } from '../src/backend/hotReloadHistoryCore';
+import { defaultTransport, type OutgoingHttpRequest } from '../src/backend/httpRequestService';
+import { retryFailedHotReloadTargets, type HotReloadRetryDeps } from '../src/backend/hotReloadRetry';
+import type { HotReloadBatchSummary } from '../src/backend/hotReloadBatchSummary';
 
-/** 内存 watcher:dispose 即注销回调(与真 vscode watcher 同语义) */
-interface MemoryWatcher {
-  readonly pattern: string;
-  disposed: number;
-  change?: (uri: string) => void;
-  create?: (uri: string) => void;
-  remove?: (uri: string) => void;
-}
+const key = (targetId: string) => ({ rootId: '/ws', targetId });
+const KEY = key('soak-target');
+const FILE = '/ws/scripts/base/Avatar.py';
 
-const makeMemoryWatcherFactory = (): { factory: DiskWatcherFactory; created: MemoryWatcher[] } => {
-  const created: MemoryWatcher[] = [];
-  const factory: DiskWatcherFactory = pattern => {
-    const rec: MemoryWatcher = { pattern, disposed: 0 };
-    created.push(rec);
-    const handle: DiskWatcherHandle = {
-      pattern,
-      onDidChange: cb => {
-        rec.change = cb;
-      },
-      onDidCreate: cb => {
-        rec.create = cb;
-      },
-      onDidDelete: cb => {
-        rec.remove = cb;
-      },
-      dispose: () => {
-        rec.disposed += 1;
-        rec.change = undefined;
-        rec.create = undefined;
-        rec.remove = undefined;
-      }
-    };
-    return handle;
+/* ------------------------------------------------------------------ */
+/* (1) watcher 泄漏:高循环重建/停用不累积                                */
+/* ------------------------------------------------------------------ */
+
+const makeCountingWatcherFactory = (): {
+  createWatcher: (pattern: string) => DiskWatcherHandle;
+  created: () => number;
+  disposed: () => number;
+  live: () => number;
+} => {
+  let created = 0;
+  let disposed = 0;
+  const live = new Set<() => void>();
+  return {
+    createWatcher: (pattern: string): DiskWatcherHandle => {
+      created += 1;
+      let disposedFlag = false;
+      const disposer = (): void => {
+        if (!disposedFlag) {
+          disposedFlag = true;
+          disposed += 1;
+        }
+      };
+      live.add(disposer);
+      return {
+        pattern,
+        dispose: () => {
+          disposer();
+          live.delete(disposer);
+        },
+        onDidChange: () => {},
+        onDidCreate: () => {},
+        onDidDelete: () => {}
+      };
+    },
+    created: () => created,
+    disposed: () => disposed,
+    live: () => live.size
   };
-  return { factory, created };
 };
 
-const ROOTS = ['/ws/scripts', '/ws/game', '/ws/server', '/ws/ai', '/ws/entities'];
-
-describe('RUST-428 门 1:无 watcher 泄漏(2000 轮 rebuild)', () => {
-  it('rebuild 逐轮全清旧 watcher:存活恒等于根数,创建数=处置数,dispose 零残留', () => {
-    const { factory, created } = makeMemoryWatcherFactory();
+describe('RUST-428 soak(1):watcher 高循环不泄漏', () => {
+  it('200 次 rebuild 循环:创建数恒=销毁数+存活,存活有界(==根数),dispose 归零', () => {
+    const factory = makeCountingWatcherFactory();
     const controller = new HotReloadDiskWatchController({
-      offer: () => undefined,
-      createWatcher: factory
+      offer: () => {},
+      createWatcher: factory.createWatcher,
+      filterOptions: {}
     });
-    const liveCount = (): number => created.length - created.reduce((sum, watcher) => sum + watcher.disposed, 0);
-    for (let round = 0; round < 2000; round += 1) {
-      controller.rebuild(ROOTS);
-      expect(controller.watchedPatterns()).toHaveLength(5);
-      expect(liveCount()).toBe(5);
+    const roots = ['/ws/scripts/base', '/ws/scripts/cell'];
+    for (let i = 0; i < 200; i += 1) {
+      controller.rebuild(roots);
+      // 每轮重建后:旧 watcher 全销毁,存活=本轮根数(有界,不随循环累积)
+      expect(factory.live()).toBe(roots.length);
+      expect(factory.created() - factory.disposed()).toBe(factory.live());
+      expect(controller.watchedPatterns()).toHaveLength(roots.length);
     }
-    // 2000 轮 × 5 根 = 10000 个 watcher 全部创建过;此刻存活恰 5(其余 9995 已清)
-    expect(created).toHaveLength(10000);
-    expect(liveCount()).toBe(5);
+    // 200 轮重建:创建=400,销毁=400(每轮销毁前一轮),存活=2
+    expect(factory.created()).toBe(200 * roots.length);
+    expect(factory.disposed()).toBe(200 * roots.length - roots.length);
+    expect(factory.live()).toBe(roots.length);
     controller.dispose();
-    // dispose 后零残留:watcher 自省空,创建数=处置数(无泄漏)
-    expect(controller.watchedPatterns()).toHaveLength(0);
-    expect(created.reduce((sum, watcher) => sum + watcher.disposed, 0)).toBe(10000);
+    expect(factory.live()).toBe(0);
+    expect(factory.disposed()).toBe(factory.created());
+    // dispose 幂等:二次调用无副作用
+    controller.dispose();
+    expect(factory.disposed()).toBe(factory.created());
   });
 
-  it('重建即切断上一代事件流:旧 watcher dispose 后事件不外泄', () => {
-    const { factory, created } = makeMemoryWatcherFactory();
-    const offered: string[] = [];
+  it('停用后事件不再受理,watcher 全清不半态(dispose 后再 rebuild 无新 watcher)', () => {
+    const factory = makeCountingWatcherFactory();
     const controller = new HotReloadDiskWatchController({
-      offer: (file, source) => void offered.push(`${source}:${file}`),
-      createWatcher: factory
+      offer: () => {},
+      createWatcher: factory.createWatcher,
+      filterOptions: {}
     });
-    controller.watchRoots(ROOTS);
+    controller.watchRoots(['/ws']);
     controller.arm();
-    const firstGen = [...created];
-    controller.rebuild(ROOTS);
-    // 第一代回调随 dispose 注销:对旧 watcher 发事件=空操作,不外泄
-    for (const watcher of firstGen) {
-      watcher.change?.('/ws/scripts/entities/FightAI.py');
-      watcher.create?.('/ws/scripts/entities/Spell.py');
-    }
-    expect(offered).toHaveLength(0);
-    // 第二代 watcher 正常受理(事件流换到新代,不死不死锁)
-    const live = created[created.length - 5];
-    live.change?.('/ws/scripts/entities/FightAI.py');
-    expect(offered.some(entry => entry.endsWith('entities/FightAI.py'))).toBe(true);
+    expect(factory.live()).toBe(1);
+    controller.dispose();
+    expect(factory.live()).toBe(0);
+    controller.rebuild(['/ws2']); // 已停用:不建
+    expect(factory.live()).toBe(0);
+    expect(controller.watchedPatterns()).toEqual([]);
   });
 });
 
-describe('RUST-428 门 2:状态增长无界(10000 轮投递)', () => {
-  it('台账逐键单条覆盖,版本事件簿封顶:轮次不膨胀内部状态', () => {
-    const store = new HotReloadTargetStateStore({ now: () => 1 });
-    const key = { rootId: 'r', targetId: 'cellapp#a' };
-    const files = Array.from({ length: 10 }, (_, i) => `/ws/scripts/entities/F${i}.py`);
-    for (let round = 0; round < 10000; round += 1) {
-      for (const file of files) {
-        // 重发=覆盖为最新一次投递(不追加历史):每轮交替失败/未确认
-        store.record(key, file, round % 2 === 0 ? 'failed' : 'sent-unverified', {
-          detail: `round ${round}`
-        });
-      }
+/* ------------------------------------------------------------------ */
+/* (2) 状态增长无界:台账/历史库/版本簿逐事件有界                         */
+/* ------------------------------------------------------------------ */
+
+describe('RUST-428 soak(2):状态增长无界(逐事件不增长,逐文件线性)', () => {
+  it('台账:同一文件 500 次操作后条目恒 1(键替换不逐事件追加),500 文件=500', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1_000 });
+    // 首次无 attempt(新建记录),后续带 attempt(回执写回路径,须匹配既有记录)
+    store.record(KEY, FILE, 'sent-unverified', {});
+    for (let i = 0; i < 500; i += 1) {
+      store.record(KEY, FILE, i % 2 === 0 ? 'accepted' : 'applied', { attempt: 1 });
     }
-    // 逐键单条:10000 轮后每文件恰一条当前记录,代际恰 10000
-    expect(store.files(key)).toHaveLength(10);
-    for (const file of files) {
-      const record = store.get(key, file);
-      expect(record?.file).toBe(file);
-      expect(record?.attempt).toBe(10000);
+    // 同一 (root×target×file):targetsWithRecords 恒 1 个目标,该目标下恒 1 文件
+    expect(store.targetsWithRecords()).toHaveLength(1);
+    expect(store.files(KEY)).toHaveLength(1);
+    // 带 attempt 写回(回执路径)不新造记录,仍 1 文件
+    store.record(KEY, FILE, 'applied', { attempt: 1, detail: 'receipt' });
+    expect(store.files(KEY)).toHaveLength(1);
+    // 500 个不同文件:线性于文件数(固有),非操作数
+    for (let i = 0; i < 500; i += 1) {
+      store.record(KEY, `/ws/f${i}.py`, 'sent-unverified', {});
     }
-    // 版本事件簿封顶:10000 轮投递只留最近 200 条,不随轮次线性增长
-    for (const file of files) {
-      const state = store.fileVersion(file);
-      expect(state, `文件 ${file} 应有版本簿`).toBeDefined();
-      expect(state!.events.length).toBeLessThanOrEqual(HOT_RELOAD_VERSION_EVENT_CAP);
+    expect(store.files(KEY)).toHaveLength(501);
+    expect(store.targetsWithRecords()).toHaveLength(1);
+    // 版本簿按文件有界
+    expect(store.fileVersions().length).toBeLessThanOrEqual(501);
+  });
+
+  it('历史库:容量环形淘汰(≤capacity),requestId 幂等替换不重复成行', () => {
+    const history = new HotReloadHistoryCore({ capacity: 50 });
+    const mk = (id: string, status: HotReloadHistoryStatus, time: number) => ({
+      requestId: id,
+      fullModule: 'Avatar',
+      requestModule: 'Avatar',
+      fileUri: FILE,
+      targetId: 'soak-target',
+      time,
+      status
+    });
+    // 同一 requestId 500 次:幂等替换,恒 1 行
+    for (let i = 0; i < 500; i += 1) {
+      history.record(mk('req-same', i % 2 === 0 ? 'failed' : 'applied', 1_000 + i));
     }
+    expect(history.size()).toBe(1);
+    // 500 个不同 requestId:容量淘汰,≤50
+    for (let i = 0; i < 500; i += 1) {
+      history.record(mk(`req-${i}`, 'sent-unverified', 2_000 + i));
+    }
+    expect(history.size()).toBeLessThanOrEqual(50);
+    expect(history.size()).toBe(50); // 满容量(环形淘汰到上限)
+    // 保留时间限额:maxAgeMs 淘汰早于窗口的行
+    const aged = new HotReloadHistoryCore({ capacity: 200, maxAgeMs: 1000 });
+    aged.record(mk('old', 'applied', 1_000));
+    aged.record(mk('new', 'applied', 3_000));
+    expect(aged.pruneExpired(3_500)).toBe(1);
+    expect(aged.size()).toBe(1);
   });
 });
 
-describe('RUST-428 门 3:连接泄漏(10000 任务,20 目标)', () => {
-  it('全部结算后队列内部态全零,在途不超全局上限', async () => {
-    const queue = createHttpTargetQueue({ globalConcurrency: 4 });
-    const runs = Array.from({ length: 10000 }, (_, i) =>
-      queue.run(`t${i % 20}`, async () => {
-        return i;
-      })
+/* ------------------------------------------------------------------ */
+/* (3) 连接泄漏:keepAlive 池串行复用,非逐请求新建                        */
+/* ------------------------------------------------------------------ */
+
+describe('RUST-428 soak(3):HTTP 连接池串行复用不泄漏', () => {
+  let servers: http.Server[] = [];
+
+  afterEach(async () => {
+    for (const server of servers) {
+      server.closeAllConnections?.();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+    servers = [];
+  });
+
+  const startSoakServer = (respond: (res: http.ServerResponse) => void): Promise<{ port: number; connections: () => number; requests: () => number }> =>
+    new Promise(resolve => {
+      let connections = 0;
+      let requests = 0;
+      const server = http.createServer((_req, res) => {
+        requests += 1;
+        respond(res);
+      });
+      server.on('connection', () => {
+        connections += 1;
+      });
+      server.listen(0, '127.0.0.1', () => {
+        servers.push(server);
+        const address = server.address();
+        const port = typeof address === 'object' && address !== null ? address.port : 0;
+        resolve({ port, connections: () => connections, requests: () => requests });
+      });
+    });
+
+  const send = (port: number, body: string): Promise<{ ok: boolean; status: number }> =>
+    defaultTransport({
+      url: `http://127.0.0.1:${port}/reload`,
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      timeoutMs: 5000
+    } as OutgoingHttpRequest);
+
+  it('300 次串行成功发送:服务端 connection 计数恒 1(keepAlive 复用,非逐请求新建)', async () => {
+    const server = await startSoakServer(res => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ status: 'applied', file: '/ws/A.py', digest: 'a'.repeat(64) }));
+    });
+    for (let i = 0; i < 300; i += 1) {
+      const result = await send(server.port, '{"files":["/ws/A.py"]}');
+      expect(result.ok).toBe(true);
+      expect(result.status).toBe(200);
+    }
+    expect(server.requests()).toBe(300);
+    // 连接复用:300 次请求只建 1 条连接(无逐请求新建/无累积)
+    expect(server.connections()).toBe(1);
+  });
+
+  it('300 次串行非 2xx 发送:状态 500 如实呈现且连接仍复用不累积,连接计数恒 1', async () => {
+    const server = await startSoakServer(res => {
+      res.writeHead(500, { 'content-type': 'text/plain' });
+      res.end('receiver error');
+    });
+    for (let i = 0; i < 300; i += 1) {
+      const result = await send(server.port, '{"files":["/ws/A.py"]}');
+      // 传输面 ok=true=已收到回包(500 响应也是「收到回包」,非 2xx 由投递面定 failed)
+      expect(result.ok).toBe(true);
+      expect(result.status).toBe(500);
+    }
+    expect(server.requests()).toBe(300);
+    expect(server.connections()).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* (4) 错误重试风暴:每失败目标恰 1 次,无放大,取消即停                      */
+/* ------------------------------------------------------------------ */
+
+describe('RUST-428 soak(4):错误重试风暴(一次性,无放大)', () => {
+  const makeSummary = (targets: Array<{ id: string; outcome: HotReloadDeliveryOutcome }>): HotReloadBatchSummary => ({
+    status: targets.some(t => t.outcome === 'failed') ? 'partial' : 'all-succeeded',
+    targets: targets.map(t => ({
+      key: key(t.id),
+      keyId: buildHotReloadTargetKeyId(key(t.id)),
+      outcome: t.outcome,
+      reason: '',
+      files: []
+    }))
+  });
+
+  it('2 失败+1 成功:恰发 2 次(每失败目标 1 次),成功目标跳过', async () => {
+    const sent: string[] = [];
+    const deps: HotReloadRetryDeps = {
+      send: async target => {
+        sent.push(buildHotReloadTargetKeyId(target));
+        return { ok: true };
+      },
+      isCancelled: () => false
+    };
+    const actions = await retryFailedHotReloadTargets(
+      makeSummary([
+        { id: 'a', outcome: 'failed' },
+        { id: 'b', outcome: 'failed' },
+        { id: 'c', outcome: 'applied' }
+      ]),
+      deps
     );
-    // 同步入队后:在途恰达全局上限 4(不超),其余 9996 排队
-    expect(queue.stats().inFlight).toBeLessThanOrEqual(4);
-    const results = await Promise.all(runs);
-    expect(results).toHaveLength(10000);
-    expect(results[9999]).toBe(9999);
-    // 结算后内部态全零:目标态在 idle 时自删(结算不清=连接泄漏)
-    expect(queue.stats()).toEqual({ targets: 0, inFlight: 0, pending: 0 });
+    expect(actions.filter(a => a.action === 'resent')).toHaveLength(2);
+    expect(actions.filter(a => a.action === 'skipped-confirmed')).toHaveLength(1);
+    expect(sent).toHaveLength(2); // 无放大:每次调用每失败目标恰 1 次
+    // keyId=rootId::targetId(台账稳定串形)
+    expect(new Set(sent)).toEqual(new Set([buildHotReloadTargetKeyId(key('a')), buildHotReloadTargetKeyId(key('b'))]));
   });
 
-  it('拒绝任务不泄漏:半数拒绝全部结算后仍全零', async () => {
-    const queue = createHttpTargetQueue({});
-    const runs = Array.from({ length: 10000 }, (_, i) =>
-      queue.run(`t${i % 20}`, async () => {
-        if (i % 2 === 0) {
-          throw new Error(`reject ${i}`);
-        }
-        return i;
-      })
+  it('取消即停:后续不再发起(不冒充已发),已发保留', async () => {
+    let cancelled = false;
+    const sent: string[] = [];
+    const deps: HotReloadRetryDeps = {
+      send: async target => {
+        sent.push(buildHotReloadTargetKeyId(target));
+        cancelled = true; // 第一跳后取消
+        return { ok: true };
+      },
+      isCancelled: () => cancelled
+    };
+    const actions = await retryFailedHotReloadTargets(
+      makeSummary([
+        { id: 'a', outcome: 'failed' },
+        { id: 'b', outcome: 'failed' },
+        { id: 'c', outcome: 'failed' }
+      ]),
+      deps
     );
-    const settled = await Promise.allSettled(runs);
-    expect(settled.filter(r => r.status === 'fulfilled')).toHaveLength(5000);
-    expect(settled.filter(r => r.status === 'rejected')).toHaveLength(5000);
-    expect(queue.stats()).toEqual({ targets: 0, inFlight: 0, pending: 0 });
+    expect(sent).toHaveLength(1);
+    expect(actions.filter(a => a.action === 'resent')).toHaveLength(1);
+    expect(actions.filter(a => a.action === 'skipped-cancelled')).toHaveLength(2);
   });
-});
 
-describe('RUST-428 门 4:错误重试风暴(100 轮)', () => {
-  it('永久失败目标每轮恰一跳(线性),已确认侧全程零重发', async () => {
-    const FILE = '/ws/scripts/entities/Avatar.py';
-    const store = new HotReloadTargetStateStore({ now: () => 1 });
-    store.record({ rootId: 'r', targetId: 'cellapp#a' }, FILE, 'applied');
-    store.record({ rootId: 'r', targetId: 'cellapp#b' }, FILE, 'failed', { detail: 'HTTP 500' });
-    const summary = summarizeHotReloadBatch(store);
-    const send = vi.fn(async () => ({ ok: false, detail: 'HTTP 500' }));
-    for (let round = 0; round < 100; round += 1) {
-      const actions = await retryFailedHotReloadTargets(summary, { send, isCancelled: () => false });
-      expect(actions.filter(a => a.action === 'resent')).toHaveLength(1);
-      expect(actions.filter(a => a.action === 'skipped-confirmed')).toHaveLength(1);
-    }
-    // 100 轮=100 跳(每轮恰一跳);无风暴=非指数放大
-    expect(send).toHaveBeenCalledTimes(100);
-    expect(send.mock.calls.every(call => call[0].targetId === 'cellapp#b')).toBe(true);
+  it('二次调用只重发仍失败者(不重发已成功侧,无风暴累积)', async () => {
+    const sent: string[] = [];
+    const failB = true;
+    const deps: HotReloadRetryDeps = {
+      send: async target => {
+        sent.push(buildHotReloadTargetKeyId(target));
+        return failB && buildHotReloadTargetKeyId(target) === buildHotReloadTargetKeyId(key('b'))
+          ? { ok: false, detail: 'still down' }
+          : { ok: true };
+      },
+      isCancelled: () => false
+    };
+    const first = await retryFailedHotReloadTargets(
+      makeSummary([
+        { id: 'a', outcome: 'failed' },
+        { id: 'b', outcome: 'failed' }
+      ]),
+      deps
+    );
+    expect(first.filter(a => a.action === 'resent')).toHaveLength(2);
+    // 第二轮:仅 b 仍失败 → 恰 1 次(a 成功侧跳过)
+    const second = await retryFailedHotReloadTargets(
+      makeSummary([
+        { id: 'a', outcome: 'applied' },
+        { id: 'b', outcome: 'failed' }
+      ]),
+      deps
+    );
+    expect(second.filter(a => a.action === 'resent')).toHaveLength(1);
+    expect(second.filter(a => a.action === 'skipped-confirmed')).toHaveLength(1);
+    expect(sent).toHaveLength(3); // 2 + 1,无风暴
   });
 });

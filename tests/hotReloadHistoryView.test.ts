@@ -1,9 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
+  HOT_RELOAD_HISTORY_EXPORT_COMMAND,
   HOT_RELOAD_HISTORY_PANEL_COMMAND,
   HOT_RELOAD_HISTORY_SEARCH_COMMAND,
   HOT_RELOAD_HISTORY_STATE_KEY,
+  HOT_RELOAD_LOCATE_FILE_COMMAND,
   renderHistoryPanelHtml,
   setupHotReloadHistoryView,
   translateDeliveryRecord,
@@ -11,13 +16,27 @@ import {
 } from '../src/hotReloadHistoryView';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../src/backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from '../src/backend/hotReloadTargetState';
-import { panelRegistry, windowState } from './helpers/vscodeStub';
+import { messages, panelRegistry, windowState } from './helpers/vscodeStub';
 import { treeRegistrations } from './fake-vscode/windowState';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
+import { htmlLang, strings } from '../src/webviewStrings';
 
 // HR-PR-06 装配钉:台账记录→历史行翻译(requestId 同执行稳定/状态三态如实
-// 不拔高)+树三组(最近/按文件/按目标,同路径不同 target 分行)+搜索过滤+
+// 不拔高)+树四组(最近/按文件/按目标/按根,同路径不同 target/根分行)+搜索过滤+
 // 节流刷新(窗内合并,面板开即时)+历史面板(过滤/分页/加载更多)+持久化
 // 回载(形状不符如实丢弃)+面板关闭不停 feed(HR-UI-012)+dispose 清钟。
+// RUST-384 批B:面板文案走 webviewStrings(注入 t/lang,两态),树组/通知走
+// l10nText(nlsRuntime bundle 两态;setL10nBundle 注入 zh-cn)。
+
+afterEach(() => {
+  setL10nBundle(null);
+});
+
+const th = strings('zh').hotReloadHistory;
+const thEn = strings('en').hotReloadHistory;
+const renderPanel = (opts: Omit<Parameters<typeof renderHistoryPanelHtml>[0], 't' | 'lang'>): string =>
+  renderHistoryPanelHtml({ t: th, lang: htmlLang('zh'), ...opts });
 
 interface TestNode {
   kind: string;
@@ -95,6 +114,8 @@ describe('translateDeliveryRecord(HR-PR-06 台账→历史行翻译)', () => {
     expect(sent.fullModule).toBe('entities.fight.FightAI');
     expect(sent.requestModule).toBe('fight.FightAI');
     expect(sent.fileUri).toBe(FILE_A);
+    // HR-UI-014 工作区根随台账投影进历史行(活记录恒非空)
+    expect(sent.rootId).toBe('r1');
     expect(sent.time).toBe(1700000000000);
     expect(sent.errorSummary).toBeUndefined();
 
@@ -169,14 +190,25 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     panelRegistry.reset();
   });
 
-  it('受限宿主退化为 registerTreeDataProvider:视图登记;根三组=最近/按文件/按目标', () => {
+  it('受限宿主退化为 registerTreeDataProvider:视图登记;根四组=最近/按文件/按目标/按根', () => {
     setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     expect(treeRegistrations).toHaveLength(1);
     expect(treeRegistrations[0].viewId).toBe('kbengine.hotReloadHistory');
     const provider = lastProvider();
     const root = provider.getChildren();
-    expect(root.map(node => node.label)).toEqual(['最近更新', '按文件', '按目标']);
-    expect(root.map(node => node.kind)).toEqual(['group', 'group', 'group']);
+    expect(root.map(node => node.label)).toEqual(['Recent', 'By file', 'By target', 'By root']);
+    expect(root.map(node => node.kind)).toEqual(['group', 'group', 'group', 'group']);
+  });
+
+  it('RUST-384 批B:树四组标签走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', () => {
+    const provider = (): TestProvider => {
+      setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      return lastProvider();
+    };
+    expect(provider().getChildren().map(node => node.label)).toEqual(['Recent', 'By file', 'By target', 'By root']);
+    setL10nBundle(zhCnBundle);
+    expect(provider().getChildren().map(node => node.label)).toEqual(['最近更新', '按文件', '按目标', '按根']);
+    setL10nBundle(null);
   });
 
   it('最近更新组最新在前;行节点标题=fullModule,description 带状态与目标,tooltip 双名/file/target/requestId', () => {
@@ -189,18 +221,64 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     const item = provider.getTreeItem(recent[0]);
     expect(item.label).toBe('entities.spawn.Spawner');
     expect(item.description).toContain('sent-unverified');
+    // HR-UI-014 同模块多 workspace:根维度进行 description 与 tooltip
+    expect(item.description).toContain(' · r1');
     const tooltip = String(item.tooltip);
     expect(tooltip).toContain('requestModule: spawn.Spawner');
     expect(tooltip).toContain(`file: ${FILE_B}`);
     expect(tooltip).toContain('target: (default)');
+    expect(tooltip).toContain('root: r1');
     expect(tooltip).toContain('requestId: ');
   });
 
-  it('按文件/按目标键组:同路径不同 target 分行(HR-UI-010/014),键组内行数入账', () => {
+  it('RUST-381 残差收编:失败行 contextValue 分叉(Failed)+定位命令带 fileUri;非失败行保持原 Entry', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A, recordedAt: 1000, outcome: 'failed', detail: 'HTTP 500' }));
+    feed.handle(recordOf({ file: FILE_B, recordedAt: 2000 }));
+    const provider = lastProvider();
+    const recent = provider.getChildren(provider.getChildren()[0]);
+    const failed = recent.find(node => node.entry?.fileUri === FILE_A);
+    const ok = recent.find(node => node.entry?.fileUri === FILE_B);
+    expect(failed).toBeDefined();
+    expect(ok).toBeDefined();
+    const failedItem = provider.getTreeItem(failed!);
+    const okItem = provider.getTreeItem(ok!);
+    // 分叉:失败行给 Failed contextValue(右键菜单 when 靠 viewItem 区分),非失败行原值
+    expect(failedItem.contextValue).toBe('kbengineHotReloadHistoryEntryFailed');
+    expect(okItem.contextValue).toBe('kbengineHotReloadHistoryEntry');
+    // 两行都带定位命令,参数=行文件路径(任意行可定位,失败行照用同一动作)
+    expect(failedItem.command?.command).toBe(HOT_RELOAD_LOCATE_FILE_COMMAND);
+    expect(failedItem.command?.arguments).toEqual([FILE_A]);
+    expect(okItem.command?.command).toBe(HOT_RELOAD_LOCATE_FILE_COMMAND);
+    expect(okItem.command?.arguments).toEqual([FILE_B]);
+  });
+
+  it('RUST-381 残差收编:package.json 失败行右键三动作(定位文件/打开日志/重试),when 按 Failed viewItem 分叉', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
+      contributes: { menus: Record<string, Array<{ command: string; when?: string; group?: string }>> };
+    };
+    const whenFailed = (entry: { command: string; when?: string; group?: string }): boolean =>
+      entry.when === 'view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed';
+    const menu = pkg.contributes.menus['view/item/context'] ?? [];
+    const failedMenu = menu.filter(whenFailed);
+    const byCommand = new Map(failedMenu.map(entry => [entry.command, entry]));
+    expect(byCommand.get('kbengine.hotReload.locateFile')?.group).toBe('navigation@0');
+    expect(byCommand.get('kbengine.hotReload.showLog')?.group).toBe('navigation@1');
+    expect(byCommand.get('kbengine.hotReload.retryFailed')?.group).toBe('navigation@2');
+    // 菜单只在 Failed viewItem 亮:无任何用非失败 Entry viewItem 挂的历史行动作
+    const nonFailedMenu = menu.filter(
+      entry => entry.when === 'view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntry'
+    );
+    expect(nonFailedMenu).toHaveLength(0);
+  });
+
+
+  it('按文件/按目标/按根键组:同路径不同 target/根分行(HR-UI-010/014),键组内行数入账', () => {
     const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     feed.handle(recordOf({ file: FILE_A, targetId: '' }));
     feed.handle(recordOf({ file: FILE_A, targetId: 'cell-1' }));
     feed.handle(recordOf({ file: FILE_B, targetId: '' }));
+    feed.handle(recordOf({ file: FILE_B, targetId: '', rootId: 'r2' }));
     const provider = lastProvider();
     const root = provider.getChildren();
     const fileGroups = provider.getChildren(root[1]);
@@ -212,6 +290,14 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     const cellGroup = targetGroups.find(node => node.label === 'cell-1');
     expect(cellGroup?.rows).toHaveLength(1);
     expect(cellGroup?.rows?.[0].targetId).toBe('cell-1');
+    // HR-UI-014 按根键组:r1/r2 各自成组(同模块多 workspace 分行)
+    const rootGroups = provider.getChildren(root[3]);
+    expect(rootGroups.map(node => node.label).sort()).toEqual(['r1', 'r2'].sort());
+    const r1Group = rootGroups.find(node => node.label === 'r1');
+    expect(r1Group?.rows).toHaveLength(3);
+    const r2Group = rootGroups.find(node => node.label === 'r2');
+    expect(r2Group?.rows).toHaveLength(1);
+    expect(r2Group?.rows?.[0].rootId).toBe('r2');
   });
 
   it('节流刷新(HR-UI-007):窗内多次台账事件合并一次 fire;dispose 清 pending 钟', () => {
@@ -286,7 +372,8 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
     expect(html).toContain('entities.fight.FightAI');
     expect(html).toContain('发送: fight.FightAI');
     expect(html).toContain(`title="${FILE_A}"`);
-    expect(html).toContain('(default)');
+    // RUST-384 批C:zh defaultTarget 残差修复(批B 留了英文占位)——zh 面板目标格=(默认)
+    expect(html).toContain('(默认)');
     expect(html).toContain('已发送(未确认)');
     expect(html).toContain(new Date(1700000000000).toISOString());
     expect(html).toContain(`${buildHotReloadTargetKeyId({ rootId: 'r1', targetId: '' })}/FightAI.py#1`);
@@ -472,6 +559,32 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
     expect(html).toContain('Spawner.py');
   });
 
+  it('HR-UI-014 过滤消息:按工作区根过滤重渲染,各根各归各;清除拉全量', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A, rootId: 'r1' }));
+    feed.handle(recordOf({ file: FILE_B, rootId: 'r2' }));
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const fire = (message: unknown): void => {
+      for (const listener of panel.messageListeners) {
+        listener(message);
+      }
+    };
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', rootId: 'r1', status: '' });
+    let html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).not.toContain('Spawner.py');
+    expect(html).toContain('显示 1/1 行');
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', rootId: 'r2', status: '' });
+    html = panel.webview.html;
+    expect(html).toContain('Spawner.py');
+    expect(html).not.toContain('FightAI.py');
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', rootId: '', status: '' });
+    html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).toContain('Spawner.py');
+  });
+
   it('分页(HR-UI-007):超页大小出「加载更多」,loadMore 增量拉满后按钮消失', async () => {
     const feed = setupHotReloadHistoryView(contextOf(), {
       core: new HotReloadHistoryCore(),
@@ -606,7 +719,7 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
       { ...base, status: 'failed', errorSummary: 'boom' },
       { ...base, status: 'sent-unverified' }
     ];
-    const html = renderHistoryPanelHtml({
+    const html = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows,
       total: 3,
@@ -621,7 +734,7 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
   });
 
   it('HR-UI-004 实时队列面:快照三阶段计数+文件名如实;文件名 HTML 转义(文本与 title 全路径双面)', () => {
-    const html = renderHistoryPanelHtml({
+    const html = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows: [],
       total: 0,
@@ -635,6 +748,37 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
     expect(html).toContain('title="/x/&lt;evil&gt;&amp;.py"');
     expect(html).toContain('&lt;evil&gt;&amp;.py');
     expect(html).not.toContain('<evil>&.py');
+  });
+
+  it('RUST-384 批B:面板文案 en 注入走英文,zh 中文;类别下拉仍中文(纯核 label 残差,两态)', () => {
+    const rows: HotReloadHistoryEntry[] = [
+      {
+        requestId: 'r1//A.py#1',
+        fullModule: 'm.A',
+        requestModule: 'm.A',
+        fileUri: FILE_A,
+        targetId: 't1',
+        time: 1700000000000,
+        status: 'applied'
+      }
+    ];
+    const state = { feedStatus: { watchMode: 'onDiskChange', target: 'login_role' }, filter: {}, page: 1 };
+    const en = renderHistoryPanelHtml({
+      state, rows, total: 1, hasMore: true, pageSize: 50, t: thEn, lang: htmlLang('en')
+    });
+    expect(en).toContain('<html lang="en">');
+    expect(en).toContain(`<h2>${thEn.title}</h2>`);
+    expect(en).toContain(thEn.headerStatus('onDiskChange', 'login_role', 1, 1));
+    expect(en).toContain('<th>Module</th><th>File</th>');
+    expect(en).toContain('<th>File</th><th>Root</th><th>Target</th>');
+    expect(en).toContain('class="st-applied">Applied');
+    expect(en).toContain(thEn.loadMore(50));
+    // 残差:错误类别下拉走纯核 HOT_RELOAD_ERROR_REASON_LABELS(零 vscode),en 下仍中文
+    expect(en).toContain('>配置错误</option>');
+    const zh = renderPanel({ state, rows, total: 1, hasMore: true, pageSize: 50 });
+    expect(zh).toContain('<html lang="zh-CN">');
+    expect(zh).toContain(`class="st-applied">${th.statusApplied}`);
+    expect(zh).toContain(th.headerStatus('onDiskChange', 'login_role', 1, 1));
   });
 });
 
@@ -657,7 +801,9 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
       total: rows.length,
       hasMore: false,
       pageSize: 50,
-      virtualize
+      virtualize,
+      t: th,
+      lang: htmlLang('zh')
     });
 
   it('行数超阈值:只渲染视口窗口行(非全量),滚动条按内容总高', () => {
@@ -684,7 +830,7 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
     expect(small).not.toContain('id="vlist"');
     // 150 行全量渲染(非虚拟路径无 JS 镜像行字面量,行数即渲染数)
     expect((small.match(/\n {8}<td class="module">/g) || []).length).toBe(150);
-    const noOpt = renderHistoryPanelHtml({
+    const noOpt = renderPanel({
       state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
       rows: makeRows(205),
       total: 205,
@@ -700,5 +846,393 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
     expect(html).toContain('const DATA = [');
     expect(html).toContain('"requestId":"r100"');
     expect(html).toContain('list.addEventListener(\'scroll\', renderWindow)');
+  });
+});
+
+describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)', () => {
+  beforeEach(() => {
+    windowState.reset();
+    panelRegistry.reset();
+  });
+
+  it('面板 11 列:根/触发/耗时/内容哈希列渲染(哈希 12 字符前缀,title 含全值)', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(
+      recordOf({ outcome: 'failed', source: 'command', sentDigest: 'deadbeef1234567890', detail: 'HTTP 状态 500:非 2xx', durationMs: 320 })
+    );
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const html = panel.webview.html;
+    // HR-UI-014 根列在文件与目标之间,行值=工作区根
+    expect(html).toContain('<th>根</th>');
+    expect(html).toContain('<td>r1</td>');
+    expect(html).toContain('<th>触发</th>');
+    expect(html).toContain('<th>耗时</th>');
+    expect(html).toContain('<th>内容哈希</th>');
+    expect(html).toContain('<td>command</td>');
+    expect(html).toContain('<td>320ms</td>');
+    expect(html).toContain('title="deadbeef1234567890"');
+    expect(html).toContain('>deadbeef1234…</code>');
+  });
+
+  it('面板列头恰 11 列(根在文件与目标之间),空态 colspan 与之一致', () => {
+    const html = renderPanel({
+      state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
+      rows: [],
+      total: 0,
+      hasMore: false,
+      pageSize: 50
+    });
+    expect(html).toContain('colspan="11"');
+    expect(html).toContain(
+      '<th>模块</th><th>文件</th><th>根</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th>'
+    );
+  });
+
+  it('面板过滤表单:触发源/错误类别下拉渲染(触发四值+类别八值)', async () => {
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const html = panel.webview.html;
+    expect(html).toContain('id="f-trigger"');
+    expect(html).toContain('value="watcher-auto"');
+    expect(html).toContain('value="temp-edit"');
+    expect(html).toContain('id="f-category"');
+    expect(html).toContain('>配置错误</option>');
+    expect(html).toContain('>需重启</option>');
+    // HR-UI-014 根过滤输入框(f-root)随表单渲染
+    expect(html).toContain('id="f-root"');
+    expect(html).toContain('placeholder="根路径…"');
+  });
+
+  it('面板过滤消息:触发源/错误类别精确过滤重渲染;非法类别忽略;清除拉全量', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A, outcome: 'failed', source: 'command', detail: 'HTTP 状态 500:非 2xx' }));
+    feed.handle(recordOf({ file: FILE_B, outcome: 'failed', source: 'watcher-auto', detail: '语法检查未通过' }));
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    const fire = (message: unknown): void => {
+      for (const listener of panel.messageListeners) {
+        listener(message);
+      }
+    };
+
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: 'command', errorCategory: '' });
+    let html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).not.toContain('Spawner.py');
+    expect(html).toContain('显示 1/1 行');
+
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: '', errorCategory: 'syntax-error' });
+    html = panel.webview.html;
+    expect(html).toContain('Spawner.py');
+    expect(html).not.toContain('FightAI.py');
+
+    // 七类之外的值忽略(不伪造不存在的类别):过滤面清空回全量
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: '', errorCategory: 'not-a-category' });
+    html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).toContain('Spawner.py');
+
+    fire({ type: 'filter', fullModuleContains: '', targetId: '', status: '', trigger: '', errorCategory: '' });
+    html = panel.webview.html;
+    expect(html).toContain('FightAI.py');
+    expect(html).toContain('Spawner.py');
+  });
+
+  it('树搜索多字段:按触发源/哈希前缀等任一可检索字段命中(大小写不敏)', async () => {
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const originalInputBox = savedWindow.showInputBox;
+    try {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A, source: 'command', sentDigest: 'abc999' }));
+      feed.handle(recordOf({ file: FILE_B, source: 'watcher-auto', sentDigest: 'def888' }));
+      const provider = lastProvider();
+
+      // 哈希前缀命中 FILE_A 行
+      savedWindow.showInputBox = async () => 'abc999';
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND);
+      expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(1);
+      expect(provider.getChildren(provider.getChildren()[0])[0].entry?.fileUri).toBe(FILE_A);
+
+      // 触发源命中 FILE_B 行
+      savedWindow.showInputBox = async () => 'WATCHER-AUTO';
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND);
+      expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(1);
+      expect(provider.getChildren(provider.getChildren()[0])[0].entry?.fileUri).toBe(FILE_B);
+
+      savedWindow.showInputBox = async () => '';
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND);
+      expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(2);
+    } finally {
+      savedWindow.showInputBox = originalInputBox;
+    }
+  });
+});
+
+describe('RUST-368 导出与保留时间限额', () => {
+  const tmpPath = (): string =>
+    path.join(os.tmpdir(), `kode-hr-export-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+
+  const rawEntry = (requestId: string, time: number): HotReloadHistoryEntry => ({
+    requestId,
+    fullModule: 'entities.fight.FightAI',
+    requestModule: 'fight.FightAI',
+    fileUri: FILE_A,
+    targetId: 't1',
+    time,
+    status: 'applied'
+  });
+
+  it('导出命令:白名单脱敏 JSON 落盘(九要素齐,无 body/header)', async () => {
+    const target = tmpPath();
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const original = savedWindow.showSaveDialog;
+    try {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A, outcome: 'applied', source: 'command', sentDigest: 'abc999', durationMs: 42 }));
+      savedWindow.showSaveDialog = async () => ({ fsPath: target });
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      const doc = JSON.parse(fs.readFileSync(target, 'utf8')) as {
+        schemaVersion: number;
+        exportedAt: number;
+        count: number;
+        entries: Array<Record<string, unknown>>;
+      };
+      expect(doc.schemaVersion).toBe(1);
+      expect(typeof doc.exportedAt).toBe('number');
+      expect(doc.count).toBe(1);
+      const row = doc.entries[0];
+      expect(row.fullModule).toBe('entities.fight.FightAI');
+      expect(row.trigger).toBe('command');
+      expect(row.hash).toBe('abc999');
+      expect(row.durationMs).toBe(42);
+      expect(row).not.toHaveProperty('httpBody');
+      expect(row).not.toHaveProperty('authorization');
+    } finally {
+      savedWindow.showSaveDialog = original;
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+    }
+  });
+
+  it('导出命令:空史如实报空,不写文件', async () => {
+    const target = tmpPath();
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const original = savedWindow.showSaveDialog;
+    try {
+      setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      savedWindow.showSaveDialog = async () => ({ fsPath: target });
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      expect(fs.existsSync(target)).toBe(false);
+    } finally {
+      savedWindow.showSaveDialog = original;
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+    }
+  });
+
+  it('导出命令:取消=如实不写', async () => {
+    const target = tmpPath();
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const original = savedWindow.showSaveDialog;
+    try {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A }));
+      savedWindow.showSaveDialog = async () => undefined;
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      expect(fs.existsSync(target)).toBe(false);
+    } finally {
+      savedWindow.showSaveDialog = original;
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+    }
+  });
+
+  it('保留限额落账:超龄行淘汰,仅新行持久化(缺省不启用=不淘汰)', () => {
+    const saved: Array<readonly HotReloadHistoryEntry[]> = [];
+    const timers = makeTimers();
+    const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+    const feed = setupHotReloadHistoryView(context, {
+      core: new HotReloadHistoryCore({ maxAgeMs: 1000 }),
+      resolveNames: resolver,
+      maxAgeMs: 1000,
+      timers,
+      persist: {
+        load: () => undefined,
+        save: entries => {
+          saved.push(entries);
+        }
+      }
+    });
+    const now = Date.now();
+    feed.handle(recordOf({ file: FILE_A, recordedAt: now - 5000 }));
+    feed.handle(recordOf({ file: FILE_B, recordedAt: now }));
+    timers.advance();
+    expect(saved[saved.length - 1].map(e => e.fileUri)).toEqual([FILE_B]);
+  });
+
+  it('未启用保留限额=不淘汰(缺省行为不变)', () => {
+    const saved: Array<readonly HotReloadHistoryEntry[]> = [];
+    const timers = makeTimers();
+    const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+    const feed = setupHotReloadHistoryView(context, {
+      core: new HotReloadHistoryCore(),
+      resolveNames: resolver,
+      timers,
+      persist: {
+        load: () => undefined,
+        save: entries => {
+          saved.push(entries);
+        }
+      }
+    });
+    const now = Date.now();
+    feed.handle(recordOf({ file: FILE_A, recordedAt: now - 5000 }));
+    feed.handle(recordOf({ file: FILE_B, recordedAt: now }));
+    timers.advance();
+    expect(saved[saved.length - 1]).toHaveLength(2);
+  });
+
+  it('保留限额回载:超龄行淘汰并回写持久化(落盘同步收缩)', () => {
+    const saved: Array<readonly HotReloadHistoryEntry[]> = [];
+    const context = {
+      subscriptions: [],
+      workspaceState: {
+        get: (): unknown => [rawEntry('old', Date.now() - 5000), rawEntry('recent', Date.now())],
+        update: async (_key: string, _value: unknown): Promise<void> => {}
+      }
+    } as unknown as vscode.ExtensionContext;
+    setupHotReloadHistoryView(context, {
+      core: new HotReloadHistoryCore({ maxAgeMs: 1000 }),
+      resolveNames: resolver,
+      maxAgeMs: 1000,
+      persist: {
+        load: (): unknown => context.workspaceState.get(HOT_RELOAD_HISTORY_STATE_KEY),
+        save: entries => {
+          saved.push(entries);
+          void context.workspaceState.update(HOT_RELOAD_HISTORY_STATE_KEY, entries);
+        }
+      }
+    });
+    const provider = lastProvider();
+    expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(1);
+    expect(saved[saved.length - 1]).toHaveLength(1);
+    expect(saved[saved.length - 1][0].requestId).toBe('recent');
+  });
+});
+
+describe('RUST-381 失败点击定位文件', () => {
+  beforeEach(() => {
+    windowState.reset();
+    panelRegistry.reset();
+  });
+
+  it('树行点击=定位命令(参数=行文件路径,标题定位文件)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    const provider = lastProvider();
+    const recent = provider.getChildren(provider.getChildren()[0]);
+    const item = provider.getTreeItem(recent[0]);
+    expect(item.command?.command).toBe(HOT_RELOAD_LOCATE_FILE_COMMAND);
+    expect(item.command?.title).toBe('Locate File');
+    expect(item.command?.arguments).toEqual([FILE_A]);
+  });
+
+  it('RUST-384 批B:定位命令标题走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', () => {
+    const titleOf = (): unknown => {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A }));
+      const provider = lastProvider();
+      const recent = provider.getChildren(provider.getChildren()[0]);
+      return provider.getTreeItem(recent[0]).command?.title;
+    };
+    expect(titleOf()).toBe('Locate File');
+    setL10nBundle(zhCnBundle);
+    expect(titleOf()).toBe('定位文件');
+    setL10nBundle(null);
+  });
+
+  it('定位命令:合法路径打开文件(fsPath=路径)', async () => {
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, FILE_A);
+    expect(windowState.showTextDocumentCalls).toHaveLength(1);
+    const call = windowState.showTextDocumentCalls[0] as { document: { fsPath: string } };
+    expect(call.document.fsPath).toBe(FILE_A);
+  });
+
+  it('定位命令:路径缺失如实报错不打开', async () => {
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, '');
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, undefined);
+    expect(messages.error).toEqual(['Locate file: missing path', 'Locate file: missing path']);
+    expect(windowState.showTextDocumentCalls).toHaveLength(0);
+  });
+
+  it('RUST-384 批B:路径缺失通知走 l10nText(en 默认源串 / zh-cn 注入中文,两态)', async () => {
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, '');
+    expect(messages.error).toEqual(['Locate file: missing path']);
+    windowState.reset();
+    setL10nBundle(zhCnBundle);
+    await vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, '');
+    expect(messages.error).toEqual(['定位文件:路径缺失']);
+    setL10nBundle(null);
+  });
+
+  it('面板行带 data-file 与行级委托脚本(虚拟+非虚拟共用)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    expect(panel.webview.html).toContain(`data-file="${FILE_A}"`);
+    expect(panel.webview.html).toContain("tr[data-file]");
+    expect(panel.webview.html).toContain("type: 'openFile'");
+  });
+
+  it('面板行点击消息→host 调定位命令打开文件', async () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    panelRegistry.fireMessage(panel, { type: 'openFile', file: FILE_A });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    expect(windowState.showTextDocumentCalls.length).toBeGreaterThanOrEqual(1);
+    const last = windowState.showTextDocumentCalls[windowState.showTextDocumentCalls.length - 1] as {
+      document: { fsPath: string };
+    };
+    expect(last.document.fsPath).toBe(FILE_A);
+  });
+});
+
+describe('RUST-384 历史面板无障碍面', () => {
+  beforeEach(() => {
+    windowState.reset();
+    panelRegistry.reset();
+  });
+
+  const lastPanel = (): (typeof panelRegistry.panels)[number] =>
+    panelRegistry.panels[panelRegistry.panels.length - 1];
+
+  it('页头计数=live 区(screen reader 播报行计数变化)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    expect(lastPanel().webview.html).toContain('<div class="header" role="status" aria-live="polite">');
+  });
+
+  it('行可键盘聚焦+aria-label+回车/空格定位(与鼠标点击同走 openRow)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const html = lastPanel().webview.html;
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('aria-label="定位文件 FightAI.py"');
+    expect(html).toContain("onkeydown=");
+    expect(html).toContain("openRow(this)");
+    expect(html).toContain('const openRow = (tr) =>');
   });
 });

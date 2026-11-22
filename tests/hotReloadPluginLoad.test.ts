@@ -1,224 +1,243 @@
-/**
- * RUST-426(HR-QA-014)插件 load test + 崩溃隔离:
- * - 0/5/20 个插件(provider)分别注册→注册数如实、应答序先到先应答、清册不半态;
- * - 解析成本有界(应答即短路不问后续;全不应答恰 N 次,无隐藏重试/无重复询问)
- *   ——结构性负载界,非墙钟竞速(时序断言是本仓已知负载抖动族,不设紧预算);
- * - 插件崩溃不影响核心与主线程:canSend 抛异常的插件只隔离自己(如实上报后
- *   跳过,继续问后续),send 抛异常/拒绝经核心如实落 failed 不污染注册表,
- *   崩溃插件注册关系不受损、dispose 照常清册、宿主可重建。
- */
-
 import { describe, expect, it } from 'vitest';
 import {
   buildEngineProfile,
   HOT_RELOAD_PLUGIN_API_VERSION,
   HotReloadProviderRegistry,
   type HotReloadProvider,
-  type HotReloadProviderCrash
+  type HotReloadProviderError
 } from '../src/backend/hotReloadPluginApi';
 import { createHotReloadProviderHost } from '../src/backend/hotReloadProviderAssembly';
 
-const PROFILE = buildEngineProfile({});
+// RUST-426(HR-QA-014):热更新插件 0/5/20 个分别做 load test,插件崩溃不影响
+// 核心与主线程。
+//   * 0/5/20 数量面:解析正确性(第一个 canSend 应答者胜/注册序保持/无人应
+//     答 null/dispose 清全册)在 0/5/20 档全部成立;
+//   * 成本模型(load scaling):resolve 的 canSend 调用数=首应答者位置(首答
+//     应早=不全量扫,20 全不应答=逐个问完),无 O(n²)/无「答早也扫全」回退
+//     ——插件数线性加在「首应答前的问询」,非整册重扫;
+//   * 崩溃隔离(canSend):任一位(首/中/末)canSend 抛错的插件被如实上报
+//     (onProviderError)并跳过,解析继续问下一个应答者,绝不向调用方传播
+//     (核心/主线程不被打断);全员崩溃=如实 null+逐条上报;
+//   * 崩溃隔离(send):发送编排 Promise 工厂模式(同步抛错也落拒绝分支)在
+//     插件 send 抛错时不向核心传播(与 hotReload.ts runViaProvider 同形);
+//   * 装配面接线:createHotReloadProviderHost 把 onProviderError 透传进注册表。
+// 注:每次 resolve 只调一次(canSend 有副作用=计数/上报,双调会把上报翻倍)。
 
-const makeProvider = (
-  id: string,
-  answers: boolean,
-  overrides: Partial<HotReloadProvider> = {}
-): HotReloadProvider => ({
+const profile = buildEngineProfile({});
+
+const makeProvider = (id: string): HotReloadProvider => ({
   providerId: id,
   apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
-  displayName: id,
-  canSend: () => answers,
-  send: () => ({ ok: true }),
-  ...overrides
+  displayName: `provider-${id}`,
+  canSend: () => true,
+  send: () => ({ ok: true })
 });
 
-describe('RUST-426 插件 load test(0/5/20 个)', () => {
-  it('0/5/20 插件注册:注册数如实、应答序先到先应答、dispose 清册不半态', () => {
-    for (const count of [0, 5, 20]) {
-      // 第 2 个(下标 1)应答,其余不应答——验证先到先应答且不因规模漂移
-      const providers = Array.from({ length: count }, (_, i) => makeProvider(`p${i}`, i === 1));
-      const host = createHotReloadProviderHost({ providers });
-      expect(host.registry.registeredSendProviderIds()).toHaveLength(count);
-      if (count === 0) {
-        expect(host.registry.resolveSendProvider(PROFILE)).toBeNull();
-      } else {
-        expect(host.registry.resolveSendProvider(PROFILE)?.providerId).toBe('p1');
+type ProbeProvider = HotReloadProvider & { count: { value: number } };
+
+/** 可数 canSend 调用 + 可编程应答/崩溃的夹具(count 挂在返回值上供断言) */
+const makeProbe = (
+  id: string,
+  opts: { responds?: boolean; crash?: Error } = {}
+): ProbeProvider => {
+  const responds = opts.responds ?? true;
+  const probe: ProbeProvider = {
+    providerId: id,
+    apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+    displayName: `probe-${id}`,
+    count: { value: 0 },
+    canSend: () => {
+      probe.count.value += 1;
+      if (opts.crash) {
+        throw opts.crash;
       }
-      // 清册:dispose 后自省空、解析 null(不半态,不残留崩溃/应答者)
-      host.dispose();
-      expect(host.registry.registeredSendProviderIds()).toHaveLength(0);
-      expect(host.registry.resolveSendProvider(PROFILE)).toBeNull();
-    }
-  });
+      return responds;
+    },
+    send: () => ({ ok: true })
+  };
+  return probe;
+};
 
-  it('load:解析成本有界——应答即短路不问后续;全不应答恰走 N 次(线性无隐藏重试)', () => {
+/** 单次解析(canSend 有副作用,双调会把计数/上报翻倍):不抛+取回结果 */
+const resolveOnce = (registry: HotReloadProviderRegistry): HotReloadProvider | null => {
+  let resolved: HotReloadProvider | null = null;
+  expect(() => {
+    resolved = registry.resolveSendProvider(profile);
+  }).not.toThrow();
+  return resolved;
+};
+
+describe('RUST-426 插件 0/5/20 load test:数量面解析正确性', () => {
+  it('0 插件:resolve 如实 null(不回落默认)', () => {
     const registry = new HotReloadProviderRegistry();
-    const asked: string[] = [];
-    registry.registerSendProvider(
-      makeProvider('a', true, {
-        canSend: () => {
-          asked.push('a');
-          return true;
-        }
-      })
-    );
-    registry.registerSendProvider(
-      makeProvider('b', true, {
-        canSend: () => {
-          asked.push('b');
-          return true;
-        }
-      })
-    );
-    expect(registry.resolveSendProvider(PROFILE)?.providerId).toBe('a');
-    // 短路:第一个应答者胜,后续不再被问(20 插件规模不会重复询问)
-    expect(asked).toEqual(['a']);
-    // 全不应答:恰 N 次线性(每个注册插件恰被问一次,无 O(N²)/隐藏重试)
-    const registry2 = new HotReloadProviderRegistry();
-    const asked2: string[] = [];
-    for (let i = 0; i < 20; i += 1) {
-      registry2.registerSendProvider(
-        makeProvider(`p${i}`, false, {
-          canSend: () => {
-            asked2.push(`p${i}`);
-            return false;
-          }
-        })
-      );
-    }
-    expect(registry2.resolveSendProvider(PROFILE)).toBeNull();
-    expect(asked2).toHaveLength(20);
-    expect(new Set(asked2).size).toBe(20);
+    expect(registry.registeredSendProviderIds()).toEqual([]);
+    expect(resolveOnce(registry)).toBeNull();
   });
 
-  it('load:20 插件规模扫描无病理增长(宽松墙钟反回归,非竞速门)', () => {
-    const started = performance.now();
-    for (let round = 0; round < 50; round += 1) {
-      const host = createHotReloadProviderHost({
-        providers: Array.from({ length: 20 }, (_, i) => makeProvider(`p${i}`, i === round % 20))
-      });
-      expect(host.registry.resolveSendProvider(PROFILE)).not.toBeNull();
-      host.dispose();
+  it('5 插件:第一个 canSend 应答者胜,注册序保持,成本=首应答位置', () => {
+    const registry = new HotReloadProviderRegistry();
+    const a = makeProbe('a', { responds: false });
+    const b = makeProbe('b', { responds: false });
+    const c = makeProbe('c', { responds: true });
+    const d = makeProbe('d', { responds: true });
+    const e = makeProbe('e');
+    for (const p of [a, b, c, d, e]) {
+      registry.registerSendProvider(p);
     }
-    // 50 轮 × 20 注册/解析 + 50 次 dispose 全部在宽松预算内(纯内存 map 迭代,
-    // 微秒级;预算只为抓病理级退路/死循环,不设紧界防负载抖动族误伤)
-    expect(performance.now() - started).toBeLessThan(1000);
+    expect(registry.registeredSendProviderIds()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(resolveOnce(registry)?.providerId).toBe('c');
+    // 首应答前逐个问(c 是第 3 个),应答后不再多问——成本=首应答位置
+    expect(a.count.value).toBe(1);
+    expect(b.count.value).toBe(1);
+    expect(c.count.value).toBe(1);
+    expect(d.count.value).toBe(0);
+    expect(e.count.value).toBe(0);
+  });
+
+  it('20 插件:全部不应答=逐个问完如实 null(线性成本,每家恰好 1 次)', () => {
+    const registry = new HotReloadProviderRegistry();
+    const probes: ProbeProvider[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      const p = makeProbe(`p${i}`, { responds: false });
+      probes.push(p);
+      registry.registerSendProvider(p);
+    }
+    expect(registry.registeredSendProviderIds()).toHaveLength(20);
+    expect(resolveOnce(registry)).toBeNull();
+    for (const p of probes) {
+      expect(p.count.value).toBe(1);
+    }
+  });
+
+  it('20 插件:第 3 位应答者胜,其后 17 家未被问(成本=位置非全册)', () => {
+    const registry = new HotReloadProviderRegistry();
+    const probes: ProbeProvider[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      const p = makeProbe(`p${i}`, { responds: i === 2 });
+      probes.push(p);
+      registry.registerSendProvider(p);
+    }
+    expect(resolveOnce(registry)?.providerId).toBe('p2');
+    for (let i = 0; i < 3; i += 1) {
+      expect(probes[i].count.value).toBe(1);
+    }
+    for (let i = 3; i < 20; i += 1) {
+      expect(probes[i].count.value).toBe(0);
+    }
+  });
+
+  it('dispose(clear)清全册:20 插件清后 0,重注册即重建不半态', () => {
+    const host = createHotReloadProviderHost({
+      providers: Array.from({ length: 20 }, (_, i) => makeProvider(`p${i}`))
+    });
+    expect(host.registry.registeredSendProviderIds()).toHaveLength(20);
+    host.dispose();
+    expect(host.registry.registeredSendProviderIds()).toEqual([]);
+    expect(resolveOnce(host.registry)).toBeNull();
   });
 });
 
-describe('RUST-426 插件崩溃不影响核心与主线程', () => {
-  it('canSend 抛异常:只隔离该插件并如实上报,后续插件照常应答,不打断解析', () => {
-    const crashes: HotReloadProviderCrash[] = [];
-    const host = createHotReloadProviderHost({
-      providers: [
-        makeProvider('bad', true, {
-          canSend: () => {
-            throw new Error('plugin exploded');
-          }
-        }),
-        makeProvider('good', true)
-      ],
-      onProviderCrash: crash => void crashes.push(crash)
-    });
-    const resolved = host.registry.resolveSendProvider(PROFILE);
-    // 崩溃插件被隔离跳过,好插件照常应答——核心不受影响
-    expect(resolved?.providerId).toBe('good');
-    // 崩溃如实上报(不静默吞),阶段与原因可审
-    expect(crashes).toHaveLength(1);
-    expect(crashes[0]).toMatchObject({ providerId: 'bad', stage: 'canSend' });
-    // 崩溃插件的注册关系不受损,清册仍能一次清空
-    expect(host.registry.registeredSendProviderIds()).toHaveLength(2);
-    host.dispose();
-    expect(host.registry.registeredSendProviderIds()).toHaveLength(0);
+describe('RUST-426 插件崩溃隔离:canSend 抛错不向核心传播', () => {
+  it('首位插件崩溃:跳过+上报+继续问下一个应答者,不抛', () => {
+    const reported: HotReloadProviderError[] = [];
+    const registry = new HotReloadProviderRegistry({ onProviderError: e => reported.push(e) });
+    const boom = makeProbe('boom', { crash: new Error('boom-canSend') });
+    const good = makeProbe('good', { responds: true });
+    registry.registerSendProvider(boom);
+    registry.registerSendProvider(good);
+    expect(resolveOnce(registry)?.providerId).toBe('good');
+    expect(reported).toHaveLength(1);
+    expect(reported[0].providerId).toBe('boom');
+    expect((reported[0].error as Error).message).toBe('boom-canSend');
+    expect(boom.count.value).toBe(1);
   });
 
-  it('无上报面注入时隔离照常生效(缺省不炸,好插件仍应答)', () => {
-    const host = createHotReloadProviderHost({
-      providers: [
-        makeProvider('bad', true, {
-          canSend: () => {
-            throw new Error('boom');
-          }
-        }),
-        makeProvider('good', true)
-      ]
-    });
-    expect(host.registry.resolveSendProvider(PROFILE)?.providerId).toBe('good');
+  it('崩溃插件在首应答者之后:未被问(成本=位置语义),无上报', () => {
+    const reported: HotReloadProviderError[] = [];
+    const registry = new HotReloadProviderRegistry({ onProviderError: e => reported.push(e) });
+    const good0 = makeProbe('good0');
+    const boom1 = makeProbe('boom1', { crash: new Error('boom-mid') });
+    const boom2 = makeProbe('boom2', { crash: new Error('boom-last') });
+    registry.registerSendProvider(good0);
+    registry.registerSendProvider(boom1);
+    registry.registerSendProvider(boom2);
+    expect(resolveOnce(registry)?.providerId).toBe('good0');
+    expect(reported).toEqual([]);
+    expect(boom1.count.value).toBe(0);
+    expect(boom2.count.value).toBe(0);
   });
 
-  it('多个崩溃插件:逐个隔离跳过,最末好插件仍应答,崩溃全数如实上报', () => {
-    const crashes: HotReloadProviderCrash[] = [];
-    const host = createHotReloadProviderHost({
-      providers: [
-        makeProvider('bad1', true, {
-          canSend: () => {
-            throw new Error('boom1');
-          }
-        }),
-        makeProvider('bad2', true, {
-          canSend: () => {
-            throw new Error('boom2');
-          }
-        }),
-        makeProvider('good', true)
-      ],
-      onProviderCrash: crash => void crashes.push(crash)
-    });
-    expect(host.registry.resolveSendProvider(PROFILE)?.providerId).toBe('good');
-    expect(crashes.map(c => c.providerId)).toEqual(['bad1', 'bad2']);
+  it('崩溃插件在应答位之前:上报+跳过+后继应答者胜(多崩溃逐条上报)', () => {
+    const reported: HotReloadProviderError[] = [];
+    const registry = new HotReloadProviderRegistry({ onProviderError: e => reported.push(e) });
+    registry.registerSendProvider(makeProbe('boom0', { crash: new Error('boom-first') }));
+    registry.registerSendProvider(makeProbe('good1', { responds: false }));
+    registry.registerSendProvider(makeProbe('boom2', { crash: new Error('boom-second') }));
+    registry.registerSendProvider(makeProbe('good3', { responds: true }));
+    expect(resolveOnce(registry)?.providerId).toBe('good3');
+    expect(reported).toHaveLength(2);
+    expect(reported.map(r => r.providerId)).toEqual(['boom0', 'boom2']);
+    expect(reported.map(r => (r.error as Error).message)).toEqual(['boom-first', 'boom-second']);
   });
 
-  it('send 抛异常/拒绝:经核心如实落失败,注册表不受污染,后续解析照常', async () => {
-    const host = createHotReloadProviderHost({
-      providers: [
-        makeProvider('thrower', true, {
-          send: () => {
-            throw new Error('send exploded');
-          }
-        }),
-        makeProvider('rejecter', true, {
-          send: () => Promise.reject(new Error('send rejected'))
-        })
-      ]
-    });
-    // 同步抛:如实拒绝(不静默成功,不产生未处理拒绝)
-    const thrower = host.registry.resolveSendProvider(PROFILE);
-    expect(thrower?.providerId).toBe('thrower');
-    await expect(Promise.resolve().then(() => thrower!.send({ targetId: 't', files: [] }))).rejects.toThrow(
-      'send exploded'
-    );
-    // 异步拒绝:同口径如实拒绝
-    const rejecterHost = createHotReloadProviderHost({
-      providers: [
-        makeProvider('rejecter', true, {
-          send: () => Promise.reject(new Error('send rejected'))
-        })
-      ]
-    });
-    const rejecter = rejecterHost.registry.resolveSendProvider(PROFILE);
-    expect(rejecter?.providerId).toBe('rejecter');
-    await expect(Promise.resolve(rejecter!.send({ targetId: 't', files: [] }))).rejects.toThrow('send rejected');
-    // 核心未受污染:清册完好、dispose 照常
-    expect(host.registry.registeredSendProviderIds()).toHaveLength(2);
-    host.dispose();
-    expect(host.registry.registeredSendProviderIds()).toHaveLength(0);
-    rejecterHost.dispose();
-    expect(rejecterHost.registry.registeredSendProviderIds()).toHaveLength(0);
+  it('全员崩溃=逐条上报+如实 null,不抛(不静默吞)', () => {
+    const reported: HotReloadProviderError[] = [];
+    const registry = new HotReloadProviderRegistry({ onProviderError: e => reported.push(e) });
+    registry.registerSendProvider(makeProbe('boom0', { crash: new Error('x') }));
+    registry.registerSendProvider(makeProbe('boom1', { crash: new Error('y') }));
+    expect(resolveOnce(registry)).toBeNull();
+    expect(reported).toHaveLength(2);
+    expect(reported.map(r => r.providerId)).toEqual(['boom0', 'boom1']);
   });
 
-  it('崩溃插件不半态:宿主可重建,新宿主解析照常', () => {
-    const host = createHotReloadProviderHost({
-      providers: [
-        makeProvider('bad', true, {
-          canSend: () => {
-            throw new Error('x');
-          }
-        })
-      ]
+  it('未接 onProviderError 的注册表:崩溃仍隔离(跳过不抛),仅无上报面', () => {
+    const registry = new HotReloadProviderRegistry();
+    registry.registerSendProvider(makeProbe('boom0', { crash: new Error('x') }));
+    registry.registerSendProvider(makeProbe('good1', { responds: true }));
+    expect(resolveOnce(registry)?.providerId).toBe('good1');
+  });
+});
+
+describe('RUST-426 插件崩溃隔离:send 抛错不向核心传播(编排 Promise 工厂)', () => {
+  it('同步抛错的 send 落拒绝分支(与 runViaProvider 同形),核心继续', async () => {
+    const registry = new HotReloadProviderRegistry();
+    registry.registerSendProvider({
+      providerId: 'boom-send',
+      apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+      displayName: 'boom-send',
+      canSend: () => true,
+      send: () => {
+        throw new Error('boom-send');
+      }
     });
-    host.dispose();
-    const rebuilt = createHotReloadProviderHost({ providers: [makeProvider('ok', true)] });
-    expect(rebuilt.registry.resolveSendProvider(PROFILE)?.providerId).toBe('ok');
+    const provider = resolveOnce(registry);
+    expect(provider?.providerId).toBe('boom-send');
+    // 编排模式:Promise 工厂起调把同步抛错也落拒绝分支(不向调用方传播)
+    let outcome: 'ok' | 'error' | 'none' = 'none';
+    await Promise.resolve()
+      .then(() => provider!.send({ targetId: '', files: [] }))
+      .then(
+        () => {
+          outcome = 'ok';
+        },
+        () => {
+          outcome = 'error';
+        }
+      );
+    expect(outcome).toBe('error');
+  });
+});
+
+describe('RUST-426 装配面接线:createHotReloadProviderHost 透传 onProviderError', () => {
+  it('宿主把崩溃上报面接进注册表:插件崩溃经宿主上报', () => {
+    const reported: HotReloadProviderError[] = [];
+    const host = createHotReloadProviderHost({
+      providers: [makeProbe('boom', { crash: new Error('host-crash') })],
+      onProviderError: e => reported.push(e)
+    });
+    expect(resolveOnce(host.registry)).toBeNull();
+    expect(reported).toHaveLength(1);
+    expect(reported[0].providerId).toBe('boom');
+    expect((reported[0].error as Error).message).toBe('host-crash');
   });
 });

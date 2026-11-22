@@ -773,5 +773,18 @@
   "Entity script module must define a class named {entityName} (the engine loads {fileName} as the entity module and requires a class of the same name via GetAttrString; classes defined in this module: {classes})": "Entity script module must define a class named {entityName} (the engine loads {fileName} as the entity module and requires a class of the same name via GetAttrString; classes defined in this module: {classes})",
   "Entity class {entityName} has no base class; the {face} component requires the entity class to derive from one of {roster} (engine isSubClass against the component roster rejects a class with no base)": "Entity class {entityName} has no base class; the {face} component requires the entity class to derive from one of {roster} (engine isSubClass against the component roster rejects a class with no base)",
   "onLogOnAttempt returns LOG_ON_WAIT_FOR_DESTROY: the current engine does not implement a queued-login flow for this value (baseapp.cpp:4020-4021 shares the default branch, effectively a rejection); only LOG_ON_ACCEPT / LOG_ON_REJECT are stable return values": "onLogOnAttempt returns LOG_ON_WAIT_FOR_DESTROY: the current engine does not implement a queued-login flow for this value (baseapp.cpp:4020-4021 shares the default branch, effectively a rejection); only LOG_ON_ACCEPT / LOG_ON_REJECT are stable return values",
-  "giveClientTo(self): the caller itself is the target, a giveClientTo pre-check violation (the engine raises onGiveClientToFailure for this, not a mid-migration network failure)": "giveClientTo(self): the caller itself is the target, a giveClientTo pre-check violation (the engine raises onGiveClientToFailure for this, not a mid-migration network failure)"
+  "giveClientTo(self): the caller itself is the target, a giveClientTo pre-check violation (the engine raises onGiveClientToFailure for this, not a mid-migration network failure)": "giveClientTo(self): the caller itself is the target, a giveClientTo pre-check violation (the engine raises onGiveClientToFailure for this, not a mid-migration network failure)",
+  "Recent": "Recent",
+  "By file": "By file",
+  "By target": "By target",
+  "By root": "By root",
+  "Locate File": "Locate File",
+  "Filter hot reload history by module name (fullModule substring; leave empty to clear)": "Filter hot reload history by module name (fullModule substring; leave empty to clear)",
+  "Hot reload history is already empty": "Hot reload history is already empty",
+  "Cleared hot reload history ({count} entries)": "Cleared hot reload history ({count} entries)",
+  "Locate file: missing path": "Locate file: missing path",
+  "Cannot open file {file}: {error}": "Cannot open file {file}: {error}",
+  "Exported hot reload history (redacted, {count} entries) to {path}": "Exported hot reload history (redacted, {count} entries) to {path}",
+  "Failed to export hot reload history: {error}": "Failed to export hot reload history: {error}",
+  "Select the entity to export (last: {entity})": "Select the entity to export (last: {entity})"
 }

@@ -12,16 +12,25 @@
 //!   buildHistoryEntryTooltipLines(双名/file/target/时间/requestId);
 //!   台账事件→重渲染经合并窗节流(HR-UI-007),受限宿主无 createTreeView
 //!   退化为 registerTreeDataProvider(与既有视图同口径)。
-//! - **搜索命令(kbengine.hotReload.historySearch)**:fullModule 子串过滤
-//!   作用于树(HR-UI-010)。
+//! - **搜索命令(kbengine.hotReload.historySearch)**:多字段子串过滤作用于
+//!   树(HR-UI-010/HR-STATE-007):任一可检索文本字段(fullModule/
+//!   requestModule/fileUri/targetId/trigger/hash/errorCategory/errorSummary)
+//!   命中即留。
 //! - **历史面板命令(kbengine.hotReload.historyPanel)**:webview 单列面板
 //!   (既有 createWebviewPanel 模式,不新造框架,HR-UI-004)——页头(监听
-//!   模式/目标/计数)、过滤(fullModule 子串/target/状态)、表格(最新在前,
-//!   「加载更多」分页增量,HR-UI-007)、行字段=fullModule(requestModule
-//!   异时并列,HR-UI-006)+file+target+状态+时间+requestId(HR-HTTP-014
-//!   展示面)+错误摘要。
+//!   模式/目标/计数)、过滤(fullModule 子串/target/状态/触发源/错误类别)、
+//!   表格(最新在前,「加载更多」分页增量,HR-UI-007)、行字段=fullModule
+//!   (requestModule 异时并列,HR-UI-006)+file+target+触发+状态+耗时+
+//!   内容哈希+时间+requestId(HR-HTTP-014 展示面)+错误摘要(HR-STATE-007)。
+//!   哈希列显 12 字符前缀(title 含全值)。
 //! - **持久化(HR-MOD-014)**:persist 注入面(宿主用 workspaceState 适配)
 //!   每次台账投影后落全量行;启动时回载,行形状不符的条目如实丢弃。
+//! - **保留时间限额(RUST-368)**:maxAgeMs 注入(装配面给
+//!   HOT_RELOAD_HISTORY_MAX_AGE_MS)——回载后与每次落账前 pruneExpired
+//!   淘汰超龄行,持久化同步收缩(不越攒越大)。
+//! - **导出命令(kbengine.hotReload.historyExport,RUST-368)**:全量行经
+//!   buildHistoryExport 白名单脱敏(HTTP body/header/令牌一律不进)后
+//!   JSON 落盘(原子写);取消=如实不写,写失败如实报错。
 //! - **生命周期(HR-UI-012)**:全部句柄进 context.subscriptions;面板/树
 //!   关闭不停热更服务(feed 独立于面板生命周期,只清引用)。
 //! - 编排纯函数化(翻译/渲染可独立断言),vscode 面只留薄壳。
@@ -31,6 +40,7 @@ import * as vscode from 'vscode';
 import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
+  buildHistoryExport,
   computeVirtualScrollWindow,
   HotReloadHistoryCore,
   type HotReloadHistoryEntry,
@@ -38,9 +48,12 @@ import {
   type HotReloadHistoryInput,
   type HotReloadHistoryStatus
 } from './backend/hotReloadHistoryCore';
+import { writeFileAtomic } from './backend/atomicFileWrite';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
-import { classifyHotReloadErrorReason, formatHotReloadErrorReason } from './backend/hotReloadErrorReason';
+import { classifyHotReloadErrorReason, formatHotReloadErrorReason, HOT_RELOAD_ERROR_REASON_LABELS, type HotReloadErrorReason } from './backend/hotReloadErrorReason';
 import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
+import { l10nText } from './nlsRuntime';
+import { htmlLang, resolvePanelLocale, strings, type WebviewStrings } from './webviewStrings';
 
 /** workspaceState 持久化键(HR-MOD-014;宿主适配面用) */
 export const HOT_RELOAD_HISTORY_STATE_KEY = 'kbengine.hotReload.history';
@@ -49,6 +62,16 @@ export const HOT_RELOAD_HISTORY_PANEL_COMMAND = 'kbengine.hotReload.historyPanel
 export const HOT_RELOAD_HISTORY_SEARCH_COMMAND = 'kbengine.hotReload.historySearch';
 /** HR-STATE-011 clear-history:清空持久化交付史(命令面板可达) */
 export const HOT_RELOAD_HISTORY_CLEAR_COMMAND = 'kbengine.hotReload.historyClear';
+/** RUST-368 export-history:全量行脱敏 JSON 落盘(命令面板可达) */
+export const HOT_RELOAD_HISTORY_EXPORT_COMMAND = 'kbengine.hotReload.historyExport';
+/** RUST-381 失败点击定位文件:历史行/树行点击打开文件(接线下半,树+webview 共用) */
+export const HOT_RELOAD_LOCATE_FILE_COMMAND = 'kbengine.hotReload.locateFile';
+/**
+ * RUST-368 保留时间限额政策(7 天):装配面注入 HotReloadHistoryCore 与
+ * 本视图面——回载/落账前淘汰超龄行,历史不越攒越大(容量环形淘汰之外
+ * 的时域上限)。测试注入显式小值,缺省不注入=不启用(纯核中立)。
+ */
+export const HOT_RELOAD_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * 虚拟滚动激活阈值(HR-UI-007):超过才走窗口化渲染。缺省容量 200(核心
@@ -62,6 +85,27 @@ export const VIRTUAL_ROW_HEIGHT_PX = 26;
 export const VIRTUAL_VIEWPORT_HEIGHT_PX = 480;
 /** 面板虚拟滚动上下预渲染行数(滚动时视口边缘不露白) */
 export const VIRTUAL_OVERSCAN_ROWS = 5;
+
+/**
+ * HR-STATE-007 面板触发源下拉(台账已知四源)。只列已知值——出现未列出
+ * 的来源时不假装可选,树搜索按字面命中。标签文案走 webviewStrings
+ * (hotReloadHistory.triggerAuto/Command/Retry/TempEdit)。
+ */
+const PANEL_TRIGGER_VALUES = ['watcher-auto', 'command', 'retry', 'temp-edit'] as const;
+
+/** 面板文案类型(webviewStrings.hotReloadHistory;装配面注入,渲染纯) */
+export type HotReloadHistoryPanelStrings = WebviewStrings['hotReloadHistory'];
+
+/** 触发源 → 标签文案(RUST-384 批B;键面不变,仅标签双语) */
+function triggerOptions(t: HotReloadHistoryPanelStrings): ReadonlyArray<readonly [string, string]> {
+  const labels: Record<(typeof PANEL_TRIGGER_VALUES)[number], string> = {
+    'watcher-auto': t.triggerAuto,
+    command: t.triggerCommand,
+    retry: t.triggerRetry,
+    'temp-edit': t.triggerTempEdit
+  };
+  return PANEL_TRIGGER_VALUES.map(value => [value, labels[value]] as const);
+}
 
 /** 模块双名解析面(注入;解析不了如实回落,不猜) */
 export type HotReloadNamesResolver = (file: string) => { fullModule: string; requestModule: string };
@@ -91,6 +135,8 @@ export function translateDeliveryRecord(
     requestModule: names.requestModule,
     fileUri: record.file,
     targetId: record.targetId,
+    // HR-UI-014 工作区根(活记录恒非空;行身份 requestId 已含,此处补投影)
+    rootId: record.rootId,
     time: record.recordedAt,
     status,
     ...(record.detail !== undefined ? { errorSummary: formatHotReloadErrorReason(record.detail) } : {}),
@@ -116,16 +162,16 @@ export interface HotReloadHistoryPanelState {
 const esc = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function renderQueueRows(queue: SavePipelineQueueSnapshot): string {
+function renderQueueRows(queue: SavePipelineQueueSnapshot, t: HotReloadHistoryPanelStrings): string {
   const queueCell = (files: readonly string[]): string =>
     files.length === 0
-      ? '(空)'
+      ? t.empty
       : files.map(f => `<code title="${esc(f)}">${esc(path.basename(f))}</code>`).join(' ');
   return (
     [
-      ['归并中', queue.pending],
-      ['预览滞留', queue.previewHeld],
-      ['本波已定稿未发出', queue.wave]
+      [t.queueMerging, queue.pending],
+      [t.queuePreviewHeld, queue.previewHeld],
+      [t.queueWave, queue.wave]
     ] as Array<[string, readonly string[]]>
   )
     .map(([label, files]) => `      <tr><th>${esc(label)}(${files.length})</th><td>${queueCell(files)}</td></tr>`)
@@ -138,38 +184,52 @@ function renderQueueRows(queue: SavePipelineQueueSnapshot): string {
  * 只渲染视口窗口行(computeVirtualScrollWindow),webview 内嵌 DATA 在滚动时用
  * 同公式 JS 镜像重渲窗口行(不走 postMessage 全量重渲,防滚动位置重置);滚动条
  * 按 totalHeightPx 给,不因只渲染窗口行而缩。缺省容量 200 下行数不超阈值,
- * 虚拟模式仅在 capacity 调高(上千记录)时激活——与「分页+淘汰不全量驻留」口径一致。 */
+ * 虚拟模式仅在 capacity 调高(上千记录)时激活——与「分页+淘汰不全量驻留」口径一致。
+ * RUST-384 批B:文案经 t/lang 注入(webviewStrings),渲染纯函数不依赖 vscode。 */
 export function renderHistoryPanelHtml(input: {
   state: HotReloadHistoryPanelState;
   rows: readonly HotReloadHistoryEntry[];
   total: number;
   hasMore: boolean;
   pageSize: number;
-  /** HR-UI-004 实时队列快照(缺省=空三队列,如实显示「(空)」) */
+  /** HR-UI-004 实时队列快照(缺省=空三队列,如实显示空注记) */
   queue?: SavePipelineQueueSnapshot;
   /** 虚拟滚动参数;缺省=不虚拟(既有分页路径)。 */
   virtualize?: { rowHeightPx: number; viewportHeightPx: number; overscanRows: number };
+  /** RUST-384 批B 面板文案(装配面注入 strings(resolvePanelLocale()).hotReloadHistory) */
+  t: HotReloadHistoryPanelStrings;
+  /** webview <html lang>(htmlLang(locale)) */
+  lang: string;
 }): string {
+  const t = input.t;
   const statusLabel = (status: HotReloadHistoryStatus): string =>
-    status === 'applied' ? '已应用' : status === 'failed' ? '失败' : '已发送(未确认)';
+    status === 'applied' ? t.statusApplied : status === 'failed' ? t.statusFailed : t.statusSentUnverified;
   // 行渲染(纯;非虚拟与虚拟初始窗口共用,webview JS 有镜像公式,两处同构)
   const renderRow = (entry: HotReloadHistoryEntry): string => {
     const moduleCell =
       entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
-        ? `${esc(entry.fullModule)}<span class="req">发送: ${esc(entry.requestModule)}</span>`
+        ? `${esc(entry.fullModule)}<span class="req">${esc(t.sentModulePrefix)}${esc(entry.requestModule)}</span>`
         : esc(entry.fullModule || entry.requestModule);
-    return `      <tr>
+    // HR-STATE-007 哈希列显 12 字符前缀(title 含全 64 值),面板不铺满
+    const hashCell = entry.hash
+      ? `<code title="${esc(entry.hash)}">${esc(entry.hash.slice(0, 12))}…</code>`
+      : '';
+    return `      <tr data-file="${esc(entry.fileUri)}" tabindex="0" aria-label="${esc(t.locateFilePrefix + path.basename(entry.fileUri))}" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="${esc(t.rowTitle)}">
         <td class="module">${moduleCell}</td>
         <td><code title="${esc(entry.fileUri)}">${esc(path.basename(entry.fileUri))}</code></td>
-        <td>${esc(entry.targetId.length > 0 ? entry.targetId : '(default)')}</td>
+        <td>${esc(entry.rootId && entry.rootId.length > 0 ? entry.rootId : t.defaultRoot)}</td>
+        <td>${esc(entry.targetId.length > 0 ? entry.targetId : t.defaultTarget)}</td>
+        <td>${esc(entry.trigger ?? '')}</td>
         <td class="st-${entry.status}">${statusLabel(entry.status)}</td>
+        <td>${entry.durationMs !== undefined ? `${entry.durationMs}ms` : ''}</td>
+        <td>${hashCell}</td>
         <td>${esc(new Date(entry.time).toISOString())}</td>
         <td><code>${esc(entry.requestId)}</code></td>
         <td>${entry.errorSummary ? esc(entry.errorSummary) : ''}</td>
       </tr>`;
   };
   const filter = input.state.filter;
-  const queueRows = renderQueueRows(input.queue ?? { pending: [], previewHeld: [], wave: [] });
+  const queueRows = renderQueueRows(input.queue ?? { pending: [], previewHeld: [], wave: [] }, t);
   const virtualize = input.virtualize;
   const useVirtual =
     virtualize !== undefined && input.rows.length > VIRTUAL_SCROLL_THRESHOLD;
@@ -197,10 +257,19 @@ export function renderHistoryPanelHtml(input: {
   const virtualData = useVirtual
     ? JSON.stringify(input.rows)
     : null;
+  // RUST-384 批B:表头与空表注记文案(虚拟/非虚拟两分支共用,防重复散串)
+  const headerCells =
+    `<th>${esc(t.colModule)}</th><th>${esc(t.colFile)}</th><th>${esc(t.colRoot)}</th><th>${esc(t.colTarget)}</th>` +
+    `<th>${esc(t.colTrigger)}</th><th>${esc(t.colStatus)}</th><th>${esc(t.colDuration)}</th>` +
+    `<th>${esc(t.colHash)}</th><th>${esc(t.colTime)}</th><th>${esc(t.colRequestId)}</th>` +
+    `<th>${esc(t.colError)}</th>`;
+  const noMatchRow = `      <tr><td colspan="11">${esc(t.noMatchRows)}</td></tr>`;
   return `<!DOCTYPE html>
-<html>
+<html lang="${input.lang}">
 <head><meta charset="UTF-8"><style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 12px; }
+  /* RUST-384 批C 主题:面板色全走 --vscode-* 语义令牌(跟随用户配色);补
+     editor-background 底与 :focus-visible 焦点环,不引固定 Dark+ 调色板。 */
+  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 12px; }
   h2 { margin: 0 0 8px; }
   h3 { margin: 14px 0 4px; }
   .header { color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
@@ -219,50 +288,77 @@ export function renderHistoryPanelHtml(input: {
   .more { margin-top: 8px; }
   code { word-break: break-all; }
   .vscroll { overflow-y: auto; border: 1px solid var(--vscode-panel-border); }
+  /* RUST-384 批C 无障碍:键盘焦点环(跟随主题强调色)+ 视障隐藏关联标签 */
+  :focus-visible { outline: 2px solid var(--vscode-focusBorder, #3794ff); outline-offset: 1px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 </style></head>
 <body>
-  <h2>热更历史</h2>
-  <div class="header">监听模式: ${esc(input.state.feedStatus.watchMode || '(未配置)')} | 目标: ${esc(input.state.feedStatus.target || '(默认)')} | 显示 ${input.rows.length}/${input.total} 行</div>
-  <h3>实时队列</h3>
-  <table class="queue">
-    <tbody id="queue-rows">
+  <h2>${esc(t.title)}</h2>
+  <div class="header" role="status" aria-live="polite">${esc(t.headerStatus(
+    input.state.feedStatus.watchMode || t.notConfigured,
+    input.state.feedStatus.target || t.headerTargetDefault,
+    input.rows.length,
+    input.total
+  ))}</div>
+  <h3>${esc(t.queueHeading)}</h3>
+  <!-- RUST-384 批C:实时队列包稳定 live 区(queueChanged 只换内层行,屏幕阅读器可听到队列变化) -->
+  <div id="queue-region" role="status" aria-live="polite" aria-label="${esc(t.queueRegionLabel)}">
+    <table class="queue">
+      <tbody id="queue-rows">
 ${queueRows}
-    </tbody>
-  </table>
-  <form class="filter">
-    <input id="f-module" placeholder="模块包含…" value="${esc(filter.fullModuleContains ?? '')}">
-    <input id="f-target" placeholder="目标 id…" value="${esc(filter.targetId ?? '')}">
+      </tbody>
+    </table>
+  </div>
+  <form class="filter" id="filter-form" role="search" aria-label="${esc(t.filterGroupLabel)}">
+    <label class="sr-only" for="f-module">${esc(t.colModule)}</label>
+    <input id="f-module" placeholder="${esc(t.modulePlaceholder)}" value="${esc(filter.fullModuleContains ?? '')}">
+    <label class="sr-only" for="f-target">${esc(t.colTarget)}</label>
+    <input id="f-target" placeholder="${esc(t.targetPlaceholder)}" value="${esc(filter.targetId ?? '')}">
+    <input id="f-root" placeholder="${esc(t.rootPlaceholder)}" value="${esc(filter.rootId ?? '')}">
+    <label class="sr-only" for="f-status">${esc(t.colStatus)}</label>
     <select id="f-status">
-      <option value="">全部状态</option>
-      <option value="sent-unverified" ${filter.status === 'sent-unverified' ? 'selected' : ''}>已发送(未确认)</option>
-      <option value="applied" ${filter.status === 'applied' ? 'selected' : ''}>已应用</option>
-      <option value="failed" ${filter.status === 'failed' ? 'selected' : ''}>失败</option>
+      <option value="">${esc(t.statusAll)}</option>
+      <option value="sent-unverified" ${filter.status === 'sent-unverified' ? 'selected' : ''}>${esc(t.statusSentUnverified)}</option>
+      <option value="applied" ${filter.status === 'applied' ? 'selected' : ''}>${esc(t.statusApplied)}</option>
+      <option value="failed" ${filter.status === 'failed' ? 'selected' : ''}>${esc(t.statusFailed)}</option>
     </select>
-    <button type="button" id="apply">应用筛选</button>
-    <button type="button" id="clear">清除筛选</button>
+    <label class="sr-only" for="f-trigger">${esc(t.colTrigger)}</label>
+    <select id="f-trigger">
+      <option value="">${esc(t.triggerAll)}</option>
+${triggerOptions(t).map(([value, label]) => `      <option value="${value}" ${filter.trigger === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
+    </select>
+    <label class="sr-only" for="f-category">${esc(t.colError)}</label>
+    <select id="f-category">
+      <option value="">${esc(t.categoryAll)}</option>
+${Object.entries(HOT_RELOAD_ERROR_REASON_LABELS).map(([value, label]) => `      <option value="${value}" ${filter.errorCategory === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
+    </select>
+    <!-- RUST-384 批C:apply 即 submit 钮,任一过滤控件回车即应用 -->
+    <button type="submit" id="apply">${esc(t.applyFilter)}</button>
+    <button type="button" id="clear">${esc(t.clearFilter)}</button>
   </form>
 ${
   useVirtual
     ? `  <div id="vlist" class="vscroll" style="height: ${virtualize.viewportHeightPx}px">
     <div id="vtop" style="height: ${virtualTopPx}px"></div>
-    <table>
-      <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>状态</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
+    <table aria-label="${esc(t.tableLabel)}">
+      <thead><tr>${headerCells}</tr></thead>
       <tbody id="vbody">
-${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
+${body || noMatchRow}
       </tbody>
     </table>
     <div id="vbot" style="height: ${virtualBottomPx}px"></div>
   </div>`
-    : `  <table>
-    <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>状态</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
+    : `  <table aria-label="${esc(t.tableLabel)}">
+    <thead><tr>${headerCells}</tr></thead>
     <tbody>
-${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
+${body || noMatchRow}
     </tbody>
   </table>`
 }
-  ${input.hasMore ? `<div class="more"><button type="button" id="more">加载更多(每页 ${input.pageSize} 行)</button></div>` : ''}
+  ${input.hasMore ? `<div class="more"><button type="button" id="more">${esc(t.loadMore(input.pageSize))}</button></div>` : ''}
   <script>
     const vscode = acquireVsCodeApi();
+    const openRow = (tr) => vscode.postMessage({ type: 'openFile', file: tr.getAttribute('data-file') });
     window.addEventListener('message', event => {
       if (event.data?.type === 'queueChanged') {
         document.getElementById('queue-rows').innerHTML = event.data.rows;
@@ -274,22 +370,50 @@ ${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
         type: 'filter',
         fullModuleContains: document.getElementById('f-module').value,
         targetId: document.getElementById('f-target').value,
-        status: document.getElementById('f-status').value
+        rootId: document.getElementById('f-root').value,
+        status: document.getElementById('f-status').value,
+        trigger: document.getElementById('f-trigger').value,
+        errorCategory: document.getElementById('f-category').value
       });
     };
-    document.getElementById('apply').addEventListener('click', apply);
+    // RUST-384 批C 无障碍快捷键:过滤表单 submit=任一过滤控件回车即应用(键盘可达,
+    // 不再只能鼠标点「应用筛选」);apply 钮即 submit 钮
+    document.getElementById('filter-form').addEventListener('submit', event => {
+      event.preventDefault();
+      apply();
+    });
     document.getElementById('clear').addEventListener('click', () => {
       document.getElementById('f-module').value = '';
       document.getElementById('f-target').value = '';
+      document.getElementById('f-root').value = '';
       document.getElementById('f-status').value = '';
+      document.getElementById('f-trigger').value = '';
+      document.getElementById('f-category').value = '';
       apply();
     });
     const more = document.getElementById('more');
     if (more) { more.addEventListener('click', () => vscode.postMessage({ type: 'loadMore' })); }
+    // RUST-381 失败点击定位文件:行级委托(虚拟滚动行随窗口重渲,委托挂
+    // body 不随行重建丢监听)——命中 data-file 行即回传 host 打开文件。
+    // RUST-384 a11y:鼠标与键盘(Enter/空格行内处理)同走 openRow 单点。
+    document.body.addEventListener('click', e => {
+      const target = e.target;
+      const tr = target && target.closest ? target.closest('tr[data-file]') : null;
+      if (tr) { openRow(tr); }
+    });
 ${
   useVirtual
     ? `    // 虚拟滚动(HR-UI-007):滚动时只重渲窗口行(JS 镜像 computeVirtualScrollWindow);
     // 不走 postMessage 全量重渲,滚动位置不重置;滚动条按内容总高。
+    // RUST-384 批B:状态/前缀/定位文案经 JSON.stringify 注入(JS 镜像同构)。
+    const STATUS_APPLIED = ${JSON.stringify(t.statusApplied)};
+    const STATUS_FAILED = ${JSON.stringify(t.statusFailed)};
+    const STATUS_SENT = ${JSON.stringify(t.statusSentUnverified)};
+    const SENT_PREFIX = ${JSON.stringify(t.sentModulePrefix)};
+    const LOCATE_PREFIX = ${JSON.stringify(t.locateFilePrefix)};
+    const ROW_TITLE = ${JSON.stringify(t.rowTitle)};
+    const DEFAULT_TARGET = ${JSON.stringify(t.defaultTarget)};
+    const DEFAULT_ROOT = ${JSON.stringify(t.defaultRoot)};
     const DATA = ${virtualData};
     const ROW_H = ${virtualize.rowHeightPx};
     const OVERSCAN = ${virtualize.overscanRows};
@@ -298,17 +422,25 @@ ${
     const botSp = document.getElementById('vbot');
     const vbody = document.getElementById('vbody');
     const escJs = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    const statusLabelJs = (status) => status === 'applied' ? '已应用' : status === 'failed' ? '失败' : '已发送(未确认)';
+    const statusLabelJs = (status) => status === 'applied' ? STATUS_APPLIED : status === 'failed' ? STATUS_FAILED : STATUS_SENT;
     const rowHtml = (entry) => {
       const moduleCell = entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
-        ? escJs(entry.fullModule) + '<span class="req">发送: ' + escJs(entry.requestModule) + '</span>'
+        ? escJs(entry.fullModule) + '<span class="req">' + escJs(SENT_PREFIX) + escJs(entry.requestModule) + '</span>'
         : escJs(entry.fullModule || entry.requestModule);
       const fileName = entry.fileUri.split('/').pop();
-      return '<tr>' +
+      const hashCell = entry.hash
+        ? '<code title="' + escJs(entry.hash) + '">' + escJs(entry.hash.slice(0, 12)) + '…</code>'
+        : '';
+      const rowLabel = escJs(LOCATE_PREFIX) + escJs(entry.fileUri.split('/').pop());
+      return '<tr data-file="' + escJs(entry.fileUri) + '" tabindex="0" aria-label="' + rowLabel + '" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="' + escJs(ROW_TITLE) + '">' +
         '<td class="module">' + moduleCell + '</td>' +
         '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
-        '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : '(default)') + '</td>' +
+        '<td>' + escJs(entry.rootId && entry.rootId.length > 0 ? entry.rootId : DEFAULT_ROOT) + '</td>' +
+        '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : DEFAULT_TARGET) + '</td>' +
+        '<td>' + escJs(entry.trigger || '') + '</td>' +
         '<td class="st-' + entry.status + '">' + statusLabelJs(entry.status) + '</td>' +
+        '<td>' + (entry.durationMs !== undefined ? entry.durationMs + 'ms' : '') + '</td>' +
+        '<td>' + hashCell + '</td>' +
         '<td>' + escJs(new Date(entry.time).toISOString()) + '</td>' +
         '<td><code>' + escJs(entry.requestId) + '</code></td>' +
         '<td>' + (entry.errorSummary ? escJs(entry.errorSummary) : '') + '</td>' +
@@ -356,12 +488,17 @@ export interface HotReloadHistoryViewOptions {
     load(): unknown;
     save(entries: readonly HotReloadHistoryEntry[]): void;
   };
+  /**
+   * RUST-368 保留时间限额 ms(与注入 core 的 maxAgeMs 同值;缺省不启用):
+   * 启用后回载完成与每次落账前淘汰超龄行(淘汰了才回写持久化)。
+   */
+  maxAgeMs?: number;
 }
 
-/** 树节点:顶层组(recent/file/target)/键组(具体文件或目标)/历史行 */
+/** 树节点:顶层组(recent/file/target/root)/键组(具体文件/目标/根)/历史行 */
 type TreeNode =
-  | { kind: 'group'; groupKind: 'recent' | 'file' | 'target'; label: string }
-  | { kind: 'keyGroup'; groupKind: 'file' | 'target'; label: string; rows: HotReloadHistoryEntry[] }
+  | { kind: 'group'; groupKind: 'recent' | 'file' | 'target' | 'root'; label: string }
+  | { kind: 'keyGroup'; groupKind: 'file' | 'target' | 'root'; label: string; rows: HotReloadHistoryEntry[] }
   | { kind: 'entry'; entry: HotReloadHistoryEntry };
 
 const isHistoryEntryShape = (value: unknown): value is HotReloadHistoryEntry => {
@@ -412,6 +549,12 @@ export function setupHotReloadHistoryView(
     }
   }
 
+  // RUST-368 保留时间限额:回载完成后按政策淘汰超龄行;淘汰了才回写
+  // (持久化同步收缩,不越攒越大)。未启用(缺省)=不 prune,纯核中立。
+  if (opts.maxAgeMs !== undefined && opts.core.pruneExpired(Date.now()) > 0) {
+    opts.persist?.save(opts.core.entries());
+  }
+
   // HR-UI-007:树视图重渲染节流(queueChanged 路径)——窗内多次事件只刷一次
   let pendingHandle: unknown = null;
   const cancelPending = (): void => {
@@ -422,6 +565,9 @@ export function setupHotReloadHistoryView(
   };
 
   // HR-UI-010:搜索过滤状态(搜索命令改;作用于树)
+  // HR-UI-010/HR-STATE-007:搜索过滤状态(搜索命令改;作用于树)。命中=
+  // 任一可检索文本字段包含关键词(fullModule/requestModule/fileUri/targetId/
+  // rootId/trigger/hash/errorCategory/errorSummary),大小写不敏;空关键词=全量。
   let treeFilterText = '';
   const treeEntries = (): readonly HotReloadHistoryEntry[] => {
     const all = opts.core.newestFirst();
@@ -429,7 +575,19 @@ export function setupHotReloadHistoryView(
       return all;
     }
     const needle = treeFilterText.toLowerCase();
-    return all.filter(entry => entry.fullModule.toLowerCase().includes(needle));
+    return all.filter(entry =>
+      [
+        entry.fullModule,
+        entry.requestModule,
+        entry.fileUri,
+        entry.targetId,
+        entry.rootId ?? '',
+        entry.trigger ?? '',
+        entry.hash ?? '',
+        entry.errorCategory ?? '',
+        entry.errorSummary ?? ''
+      ].some(field => field.toLowerCase().includes(needle))
+    );
   };
 
   const emitter = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -441,8 +599,18 @@ export function setupHotReloadHistoryView(
         const entry = node.entry;
         const item = new vscode.TreeItem(buildHistoryEntryLabel(entry));
         item.tooltip = buildHistoryEntryTooltipLines(entry).join('\n');
-        item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}`;
-        item.contextValue = 'kbengineHotReloadHistoryEntry';
+        item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}${entry.rootId && entry.rootId.length > 0 ? ` · ${entry.rootId}` : ''}`;
+        // RUST-381 失败点击定位文件:树行点击打开文件(命令参数=行文件路径;
+        // 任意行可定位,失败行照用同一动作)。右键面按状态分叉:失败行给
+        // 「定位文件/打开日志/重试」三动作(contextValue 分叉,菜单 when 靠
+        // viewItem 区分——沿用 gitCommit 先例),非失败行保持原 contextValue。
+        item.contextValue =
+          entry.status === 'failed' ? 'kbengineHotReloadHistoryEntryFailed' : 'kbengineHotReloadHistoryEntry';
+        item.command = {
+          command: HOT_RELOAD_LOCATE_FILE_COMMAND,
+          title: l10nText('Locate File'),
+          arguments: [entry.fileUri]
+        };
         return item;
       }
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
@@ -456,23 +624,26 @@ export function setupHotReloadHistoryView(
       const entries = treeEntries();
       if (node === undefined) {
         return [
-          { kind: 'group', groupKind: 'recent', label: '最近更新' },
-          { kind: 'group', groupKind: 'file', label: '按文件' },
-          { kind: 'group', groupKind: 'target', label: '按目标' }
+          { kind: 'group', groupKind: 'recent', label: l10nText('Recent') },
+          { kind: 'group', groupKind: 'file', label: l10nText('By file') },
+          { kind: 'group', groupKind: 'target', label: l10nText('By target') },
+          { kind: 'group', groupKind: 'root', label: l10nText('By root') }
         ];
       }
       if (node.kind === 'group') {
         if (node.groupKind === 'recent') {
           return entries.slice(0, pageSize).map(entry => ({ kind: 'entry', entry }));
         }
-        // file/target 顶层组 → 键组(动态分组;同路径不同 target 分行)
+        // file/target/root 顶层组 → 键组(动态分组;同路径不同 target/根分行)
         const grouped =
           node.groupKind === 'file'
             ? HotReloadHistoryCore.groupByFile([...entries])
-            : HotReloadHistoryCore.groupByTarget([...entries]);
+            : node.groupKind === 'target'
+              ? HotReloadHistoryCore.groupByTarget([...entries])
+              : HotReloadHistoryCore.groupByRoot([...entries]);
         return [...grouped.entries()].map(([label, groupRows]) => ({
           kind: 'keyGroup' as const,
-          groupKind: node.groupKind as 'file' | 'target',
+          groupKind: node.groupKind as 'file' | 'target' | 'root',
           label,
           rows: groupRows
         }));
@@ -510,6 +681,11 @@ export function setupHotReloadHistoryView(
       flushDirty = true;
       return;
     }
+    // RUST-368 保留时间限额:落账前按政策淘汰超龄行(随新记录时间前进,
+    // 前沿落账一次即够——窗内尾帧只补渲染,行时间不变)。
+    if (opts.maxAgeMs !== undefined) {
+      opts.core.pruneExpired(Date.now());
+    }
     opts.persist?.save(opts.core.entries());
     if (panelState.panel !== null) {
       renderPanel();
@@ -545,7 +721,7 @@ export function setupHotReloadHistoryView(
 
   const searchCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND, async () => {
     const input = await vscode.window.showInputBox({
-      prompt: '按模块名过滤热更历史(fullModule 子串,留空清除)',
+      prompt: l10nText('Filter hot reload history by module name (fullModule substring; leave empty to clear)'),
       value: treeFilterText
     });
     if (input === undefined) {
@@ -562,16 +738,84 @@ export function setupHotReloadHistoryView(
   const clearCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_CLEAR_COMMAND, () => {
     const had = opts.core.size();
     if (had === 0) {
-      void vscode.window.showInformationMessage('热更历史已为空');
+      void vscode.window.showInformationMessage(l10nText('Hot reload history is already empty'));
       return;
     }
     opts.core.clear();
     opts.persist?.save([]);
     refresh();
     postQueue();
-    void vscode.window.showInformationMessage(`已清空热更历史(${had} 条)`);
+    void vscode.window.showInformationMessage(
+      l10nText('Cleared hot reload history ({count} entries)', { count: had })
+    );
   });
   context.subscriptions.push(clearCommand);
+
+  // RUST-381 失败点击定位文件:历史行/树行点击打开文件(路径缺失如实报错,
+  // 打开失败如实报错——不静默吞)。
+  const locateCommand = vscode.commands.registerCommand(
+    HOT_RELOAD_LOCATE_FILE_COMMAND,
+    async (file: unknown): Promise<void> => {
+      if (typeof file !== 'string' || file.length === 0) {
+        void vscode.window.showErrorMessage(l10nText('Locate file: missing path'));
+        return;
+      }
+      try {
+        await vscode.window.showTextDocument(vscode.Uri.file(file));
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          l10nText('Cannot open file {file}: {error}', {
+            file,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+      }
+    }
+  );
+  context.subscriptions.push(locateCommand);
+
+  // RUST-368 export-history:全量行经 buildHistoryExport 白名单脱敏后 JSON
+  // 落盘(HTTP body/header/令牌不进导出)。空史如实报空不写垃圾文件;
+  // 取消=如实不写;写失败如实报错(原子写,不留半截文件)。
+  const exportCommand = vscode.commands.registerCommand(
+    HOT_RELOAD_HISTORY_EXPORT_COMMAND,
+    async (): Promise<void> => {
+      const entries = opts.core.entries();
+      if (entries.length === 0) {
+        void vscode.window.showInformationMessage(l10nText('Hot reload history is already empty'));
+        return;
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const defaultName = `hot-reload-history-${stamp}.json`;
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const uri = await vscode.window.showSaveDialog({
+        ...(root !== undefined ? { defaultUri: vscode.Uri.file(path.join(root, defaultName)) } : {}),
+        filters: { JSON: ['json'] }
+      });
+      if (uri === undefined) {
+        return;
+      }
+      try {
+        writeFileAtomic(
+          uri.fsPath,
+          JSON.stringify(buildHistoryExport(entries, { exportedAt: Date.now() }), null, 2)
+        );
+        void vscode.window.showInformationMessage(
+          l10nText('Exported hot reload history (redacted, {count} entries) to {path}', {
+            count: entries.length,
+            path: uri.fsPath
+          })
+        );
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          l10nText('Failed to export hot reload history: {error}', {
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+      }
+    }
+  );
+  context.subscriptions.push(exportCommand);
 
   // 面板状态(HR-UI-010 过滤 + HR-UI-007 分页)
   const panelState: { state: HotReloadHistoryPanelState | null; panel: vscode.WebviewPanel | null } = {
@@ -581,7 +825,7 @@ export function setupHotReloadHistoryView(
   const postQueue = (): void => {
     void panelState.panel?.webview.postMessage({
       type: 'queueChanged',
-      rows: renderQueueRows(pipelineQueue())
+      rows: renderQueueRows(pipelineQueue(), strings(resolvePanelLocale()).hotReloadHistory)
     });
   };
   const renderPanel = (): void => {
@@ -590,6 +834,7 @@ export function setupHotReloadHistoryView(
     if (state === null || panel === null) {
       return;
     }
+    const locale = resolvePanelLocale();
     const filtered = opts.core.filter(state.filter);
     const newestFirst = [...filtered].reverse();
     const visibleCount = state.page * pageSize;
@@ -605,14 +850,16 @@ export function setupHotReloadHistoryView(
         rowHeightPx: VIRTUAL_ROW_HEIGHT_PX,
         viewportHeightPx: VIRTUAL_VIEWPORT_HEIGHT_PX,
         overscanRows: VIRTUAL_OVERSCAN_ROWS
-      }
+      },
+      t: strings(locale).hotReloadHistory,
+      lang: htmlLang(locale)
     });
   };
   const panelCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND, () => {
     panelState.state = { feedStatus: feedStatus(), filter: {}, page: 1 };
     panelState.panel = vscode.window.createWebviewPanel(
       'kbengineHotReloadHistory',
-      '热更历史',
+      strings(resolvePanelLocale()).hotReloadHistory.title,
       vscode.ViewColumn.Beside,
       { enableScripts: true }
     );
@@ -628,9 +875,19 @@ export function setupHotReloadHistoryView(
         const fullModuleContains =
           typeof message.fullModuleContains === 'string' ? message.fullModuleContains.trim() : '';
         const targetId = typeof message.targetId === 'string' ? message.targetId.trim() : '';
+        // HR-UI-014 工作区根过滤:同 targetId 口径(精确等值,值不对只是零命中)
+        const rootId = typeof message.rootId === 'string' ? message.rootId.trim() : '';
         const status =
           message.status === 'sent-unverified' || message.status === 'applied' || message.status === 'failed'
             ? (message.status as HotReloadHistoryStatus)
+            : undefined;
+        // HR-STATE-007 触发源过滤:webview 传回的字面原样用(精确匹配,值不对
+        // 只是零命中,不冒充匹配到别的源)
+        const trigger = typeof message.trigger === 'string' ? message.trigger.trim() : '';
+        // 错误类别是枚举字段:不在七类内的值忽略(不伪造一个不存在的类别)
+        const errorCategory =
+          typeof message.errorCategory === 'string' && message.errorCategory in HOT_RELOAD_ERROR_REASON_LABELS
+            ? (message.errorCategory as HotReloadErrorReason)
             : undefined;
         panelState.state = {
           ...panelState.state,
@@ -638,7 +895,10 @@ export function setupHotReloadHistoryView(
           filter: {
             ...(fullModuleContains.length > 0 ? { fullModuleContains } : {}),
             ...(targetId.length > 0 ? { targetId } : {}),
-            ...(status !== undefined ? { status } : {})
+            ...(rootId.length > 0 ? { rootId } : {}),
+            ...(status !== undefined ? { status } : {}),
+            ...(trigger.length > 0 ? { trigger } : {}),
+            ...(errorCategory !== undefined ? { errorCategory } : {})
           }
         };
         renderPanel();
@@ -647,6 +907,11 @@ export function setupHotReloadHistoryView(
       if (message?.type === 'loadMore') {
         panelState.state = { ...panelState.state, page: panelState.state.page + 1 };
         renderPanel();
+        return;
+      }
+      // RUST-381 失败点击定位文件:webview 行点击回传文件路径 → 打开文件
+      if (message?.type === 'openFile') {
+        void vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, message.file);
       }
     }, undefined, context.subscriptions);
     panelState.panel.onDidDispose(() => {

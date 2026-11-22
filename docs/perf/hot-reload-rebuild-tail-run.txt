@@ -1,0 +1,19 @@
+REBUILD-TAIL-METRIC steady.definition n=100 p50=6.89ms p95=13.58ms p99=15.98ms max=21.14ms
+REBUILD-TAIL-METRIC steady.completion n=100 p50=7.97ms p95=12.21ms p99=21ms max=34.92ms
+REBUILD-TAIL-METRIC steady.diagnostic n=100 p50=7.74ms p95=17.42ms p99=20.43ms max=29.05ms
+REBUILD-TAIL-METRIC rebuild.queuedAtBarrier n=1 8192 tasks
+REBUILD-TAIL-METRIC rebuild.rejectedQueueFullAtBarrier n=1 293 tasks
+REBUILD-TAIL-METRIC rebuild.floodEnqueuedMs n=1 50555.2ms
+REBUILD-TAIL-METRIC rebuild.queuedAtServingEnd n=1 7882 tasks
+REBUILD-TAIL-METRIC rebuild.queuedAtHotEnd n=1 7864 tasks
+REBUILD-TAIL-METRIC rebuild.coldWhileWarming n=1 0 requests
+REBUILD-TAIL-METRIC rebuild.queuedAtDrainTimeout n=1 7864 tasks
+REBUILD-TAIL-METRIC rebuild.definition n=100 p50=11.58ms p95=18.77ms p99=27.03ms max=59.24ms
+REBUILD-TAIL-METRIC rebuild.completion n=100 p50=12.05ms p95=19.54ms p99=26.99ms max=28.83ms
+REBUILD-TAIL-METRIC rebuild.diagnostic n=100 p50=11.9ms p95=21.29ms p99=29.52ms max=52.23ms
+REBUILD-TAIL-METRIC rebuild.hotReloadFresh n=3 p50=41.7ms p95=80.46ms p99=80.46ms max=80.46ms
+REBUILD-TAIL-METRIC rebuild.drainTotal n=1 56562.63ms
+REBUILD-TAIL-METRIC rebuild.pureDrain n=1 342.66ms
+REBUILD-TAIL-METRIC rebuild.executed n=1 359 tasks
+REBUILD-TAIL-METRIC rebuild.enqueued n=1 8224 tasks
+REBUILD-TAIL-SUMMARY violations=0 all-bounds-met

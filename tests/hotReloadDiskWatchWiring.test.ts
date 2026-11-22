@@ -305,6 +305,46 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(runCalls).toEqual([]);
   });
 
+  it('工作区根变更:foldersChanged 即按新根重建磁盘面(RUST-385 HR-UI-012)', async () => {
+    const { clock, runCalls } = boot();
+    const oldDiskWatcher = allFileSystemWatchers[1];
+    expect(allFileSystemWatchers).toHaveLength(2);
+
+    // 多根会话加/删文件夹:不派发 kbengine 配置事件,只派发 foldersChanged
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: '/ws2' } as never, name: 'ws2', index: 0 }
+    ];
+    workspaceEvents.foldersChanged.fire({
+      added: [{ uri: { fsPath: '/ws2' } }],
+      removed: [{ uri: { fsPath: '/ws' } }]
+    });
+    await flush();
+
+    // 旧根 watcher 随重建 dispose 失效;apply 重建=热更面+磁盘面各一,
+    // 磁盘面按当次工作区根派生模式
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      '**/*.py',
+      '/ws/**/*.py',
+      '**/*.py',
+      '/ws2/**/*.py'
+    ]);
+    oldDiskWatcher.fireChange({ fsPath: '/ws2/scripts/A.py' } as never);
+    expect(clock.tick()).toBe(0);
+    await flush();
+    expect(runCalls).toEqual([]);
+    allFileSystemWatchers[3]!.fireChange({ fsPath: '/ws2/scripts/A.py' } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+  });
+
+  it('foldersChanged 无根变化:签名不变不重建(RUST-385 HR-UI-012)', async () => {
+    boot();
+    workspaceEvents.foldersChanged.fire({ added: [], removed: [] });
+    await flush();
+    expect(allFileSystemWatchers).toHaveLength(2);
+  });
+
   it('源锁:装配层真适配接了磁盘面(vscode.createFileSystemWatcher 薄适配)', () => {
     const source = readFileSync(path.join(__dirname, '..', 'src', 'activate', 'hotReload.ts'), 'utf8');
     expect(source).toContain('const hotReloadDiskWatcherFactory: DiskWatcherFactory');

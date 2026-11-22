@@ -86,12 +86,12 @@ const SIGNED_CELLS: Array<{ id: string; file: string; test: string }> = [
   {
     id: 'C10',
     file: 'hotReloadPluginLoad.test.ts',
-    test: '0/5/20 插件注册:注册数如实、应答序先到先应答、dispose 清册不半态'
+    test: '20 插件:第 3 位应答者胜,其后 17 家未被问(成本=位置非全册)'
   },
   {
     id: 'C11',
     file: 'hotReloadSoak.test.ts',
-    test: 'rebuild 逐轮全清旧 watcher:存活恒等于根数,创建数=处置数,dispose 零残留'
+    test: '200 次 rebuild 循环:创建数恒=销毁数+存活,存活有界(==根数),dispose 归零'
   }
 ];
 

@@ -482,6 +482,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.hotReload.globs` | string[] | 未设 → 按 `kbengine.assetsRoot` 派生 | 监视模式(VS Code glob),每个模式各建一个文件监视。未设时派生 `<assetsRoot>/**/*.py`(只盯 .py,绝不全工作区扫);显式填空数组 = 不建监视 |
 | `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
 | `kbengine.hotReload.triggerMode` | string 枚举 | `onSave` | 触发源模式(HR-WATCH-001):`onSave` = watcher 写盘事件驱动热更(编辑器保存/自动保存即发,未保存的缓冲编辑永不进链)——默认;`onDiskChange` = 另建按已声明根的原生文件监视,外部改动/生成文件/Git checkout 也触发热更(与保存事件在同一流水线内重叠去重不双发) |
+| `kbengine.hotReload.notify` | string 枚举 | `errors` | 通知模式(HR-UI-013):`silent` = 成功/失败/摘要全程无弹窗(信息照旧落审计/状态栏/历史不丢);`errors` = 失败弹窗+成功静默(缺省,保持既有行为);`summary` = 每批完成弹一条批量结果摘要(成功也弹,含失败明细)。防风暴=每批一条,绝不逐文件刷屏 |
 | `kbengine.hotReload.stabilityWindowMs` | number | `0` | 写入稳定窗(HR-WATCH-007):事件后先做两拍快照比对,两拍内容一致才判定写稳并发送;探测超上限仍不稳则如实发送并标注 unstable。`0` = 不做稳定等待(现有时序不变);设为如 `200` 启用(毫秒) |
 | `kbengine.hotReload.syntaxGate` | boolean | `false` | 语法闸(HR-WATCH-012):定稿内容先经解释器 `compile()` 全量语法检查(只编译不执行)再发送,语法错的内容被拦下且不占版本号。检查器自身故障(解释器缺失/超时)一律放行并记一次日志,绝不因检查器不可用拦热更 |
 | `kbengine.hotReload.batchFlushMs` | number | `0` | 波次冲口(HR-WATCH-013):同窗定稿的文件在波尾归集成一批(延迟=定稿后最多再加本窗)。`0` = 定稿即汇入合并池(现有时序);设为如 `300` 让同窗文件合成单批(也是批量预览阈值生效的前提——阈值按批计数) |
@@ -580,6 +581,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.clone.archiveEncryption` | `"encrypted" \| "plain"` | `"encrypted"` | 玩家数据克隆归档的加密默认值。`encrypted`（默认）= 导出写 chacha20poly1305 加密归档，密钥存本机 globalStorage `clone-keys/`（0600）——归档移机后须回原机取钥；`plain` = 导出写明文归档（敏感列仍脱敏），适合需要跨机转移的场景。该值只是默认：导出确认页每次可切换。逐项取舍见设置的 `markdownEnumDescriptions`；运维与密钥处理见 [玩家数据克隆运维与安全](/player-clone/ops-and-security)（英文站页） |
+| `kbengine.clone.probeTimeoutMs` | number | `5000` | 玩家数据克隆导出源连接探针的独立超时毫秒数。探针只回答「现在连不连得上」：超时立即以失败进重试/配置弹窗，不占用导出执行侧的长超时档（默认 120s）——源连不上时这是体感最大的卡点。导出执行（读表/写档）超时不受此配置影响 |
 
 ### AI(自愿开启的底座,AI-001)
 

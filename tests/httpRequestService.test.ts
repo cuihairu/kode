@@ -1,4 +1,6 @@
 import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_HTTP_TIMEOUT_MS,
@@ -12,6 +14,10 @@ import { createHttpTargetQueue } from '../src/backend/httpRequestQueue';
 // HttpRequestService 执行层:注入 transport 的流水/回执语义 + 默认 transport
 // 的真 TCP localhost 行为(成功/连接拒绝/坏 URL/非 http 协议/POST 体/大回包
 // 截顶/超时/响应中断)。OUTPUT 通道无着色,失败以 ✗ 标记+错误弹窗如实呈现。
+
+/** RUST-421 结构钉的源码读取器(SRC 相对路径) */
+const readSrc = (rel: string): string =>
+  fs.readFileSync(path.join(__dirname, '..', 'src', rel), 'utf8');
 
 const servers: http.Server[] = [];
 
@@ -717,5 +723,88 @@ describe('RUST-420(HR-QA-008)非 loopback 端点闸:默认只放行 loopback,非
     expect(logs.some(line => line.includes('不支持的协议'))).toBe(true);
     expect(logs.some(line => line.includes('⛔'))).toBe(false);
     expect(errors.some(message => message.includes('不支持的协议'))).toBe(true);
+  });
+});
+
+describe('RUST-421 密钥不泄出:输出服务层流水行(行为面)', () => {
+  // 残差臂「output 服务层流水行」:tests/hotReloadSecretLeakGuard.test.ts 的 DTO
+  // 字段集钉只防数据形态,防不住日后有人给日志模板加
+  // `${JSON.stringify(request.headers)}`。此处钉**日志字符串本身**——真实发送
+  // 后全部流水行/错误行都不得出现 header 的键与值。
+  // 自证臂:seen 里必须真有该 header(空 header 会让本组测试恒绿)。
+  const SECRET_VALUE = 'sk-live-421-secret-token';
+  const HEADER_KEYS = ['Authorization', 'X-Token'];
+
+  /** 全部行的泄露面:值或键命中即算漏(header 值经模板替换后落在行里) */
+  const leaks = (lines: string[]): string[] =>
+    lines.filter(
+      line =>
+        line.toLowerCase().includes(SECRET_VALUE.toLowerCase()) ||
+        HEADER_KEYS.some(key => line.includes(key))
+    );
+
+  it('成功路径:Authorization/Bearer 等密钥形状 header 不落任何流水行', async () => {
+    const seen: OutgoingHttpRequest[] = [];
+    const { service, logs, errors } = makeService([entry({
+      url: 'http://127.0.0.1:8090/hotfix?module_name=${module}',
+      headers: { Authorization: `Bearer ${SECRET_VALUE}`, 'X-Token': SECRET_VALUE }
+    })], {
+      transport: async request => {
+        seen.push(request);
+        return { ok: true, status: 200, durationMs: 9, body: 'ack' };
+      },
+      getTemplateContext: () => ({
+        filePath: '/ws/entities/fight/FightAI.py',
+        cursorLineZeroBased: 9,
+        selection: '',
+        workspaceRoots: ['/ws']
+      }),
+      isPackageDir: () => true
+    });
+
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    // 自证臂:header 确实在发(否则空 header 会让断言恒绿)
+    expect(seen).toHaveLength(1);
+    expect(seen[0].headers.Authorization).toBe(`Bearer ${SECRET_VALUE}`);
+    expect(leaks([...logs, ...errors])).toEqual([]);
+  });
+
+  it('失败路径:✗ 行与错误弹窗同样不落 header 键值', async () => {
+    const seen: OutgoingHttpRequest[] = [];
+    const { service, logs, errors } = makeService([entry({
+      url: 'http://127.0.0.1:8090/hotfix',
+      headers: { Authorization: `Bearer ${SECRET_VALUE}` }
+    })], {
+      transport: async request => {
+        seen.push(request);
+        return { ok: false, status: 0, durationMs: 5, errorMessage: 'boom' };
+      }
+    });
+
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(seen).toHaveLength(1);
+    expect(leaks([...logs, ...errors])).toEqual([]);
+    // 失败仍要如实呈现(不静默):✗ 行在,只是不带 header
+    expect(logs.some(line => line.includes('✗'))).toBe(true);
+  });
+
+  it('trace 面:HTTP 请求/热更发送路径与核心 RPC trace 零耦合(header 无入口)', () => {
+    // trace 面 = kodeCoreClient 的 onTrace(Rust 核心 RPC 帧:request <id>
+    // <method> send/cancel/done,span=...)。HTTP 请求/热更发送路径零引用该面
+    // 与 kodeCoreClient → header/token 无入口(结构级保证)。
+    const HTTP_PATH = [
+      'backend/httpRequestService.ts',
+      'backend/httpRequestExecutor.ts',
+      'backend/httpRequestQueue.ts',
+      'backend/hotReloadTransport.ts'
+    ];
+    const traceTokens = ['onTrace', 'kodeCoreClient'];
+    const coupled = HTTP_PATH.filter(rel =>
+      traceTokens.some(token => readSrc(rel).includes(token))
+    );
+    expect(coupled, 'HTTP 路径不得触核心 RPC trace:header 会随 onTrace 泄出').toEqual([]);
+
+    // 自证臂:trace 面确实活在 kodeCoreClient(否则探针空转恒绿)
+    expect(readSrc('backend/kodeCoreClient.ts')).toContain('onTrace');
   });
 });

@@ -34,6 +34,7 @@
   ],
   "activationEvents": [
     "onCommand:kbengine.hotReload.showFileState",
+    "onCommand:kbengine.hotReload.locateFile",
     "onCommand:kbengine.hotReload.filterByState",
     "onStartupFinished",
     "onLanguage:kbengine-def",
@@ -134,6 +135,8 @@
     "onCommand:kbengine.hotReload.historyPanel",
     "onCommand:kbengine.hotReload.historySearch",
     "onCommand:kbengine.hotReload.historyClear",
+    "onCommand:kbengine.hotReload.historyExport",
+    "onCommand:kbengine.hotReload.settingsPanel",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.project.wizard",
     "onCommand:kbengine.symbolReferences.show",
@@ -865,6 +868,16 @@
         "category": "KBEngine"
       },
       {
+        "command": "kbengine.hotReload.historyExport",
+        "title": "%kbengine.command.hotReload.historyExport.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.settingsPanel",
+        "title": "%kbengine.command.hotReload.settingsPanel.title%",
+        "category": "KBEngine"
+      },
+      {
         "command": "kbengine.project.doctor",
         "title": "%kbengine.command.project.doctor.title%",
         "icon": "$(checklist)"
@@ -1126,6 +1139,10 @@
       {
         "command": "kbengine.hotReload.showFileState",
         "title": "%kbengine.command.hotReload.showFileState.title%"
+      },
+      {
+        "command": "kbengine.hotReload.locateFile",
+        "title": "%kbengine.command.hotReload.locateFile.title%"
       },
       {
         "command": "kbengine.processOwnership.openCell",
@@ -1390,6 +1407,21 @@
           "command": "kbengine.git.openVersionContent",
           "when": "view == kbengine.gitHistory && viewItem == gitCommit",
           "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.locateFile",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.showLog",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.hotReload.retryFailed",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [
@@ -1496,6 +1528,21 @@
         "command": "kbengine.hotReload.configureChannel",
         "key": "ctrl+alt+r",
         "mac": "cmd+alt+r"
+      },
+      {
+        "command": "kbengine.hotReload.historyPanel",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
+        "command": "kbengine.hotReload.showDiagnostics",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
+      {
+        "command": "kbengine.hotReload.settingsPanel",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
       },
       {
         "command": "kbengine.processOwnership.openCell",
@@ -2206,6 +2253,13 @@
               "%kbengine.config.clone.archiveEncryption.enum.1%"
             ]
           },
+          "kbengine.clone.probeTimeoutMs": {
+            "type": "number",
+            "default": 5000,
+            "minimum": 100,
+            "scope": "window",
+            "markdownDescription": "%kbengine.config.clone.probeTimeoutMs.description%"
+          },
           "kbengine.console.discoveryHost": {
             "type": "string",
             "default": "127.0.0.1",
@@ -2377,6 +2431,21 @@
             "markdownEnumDescriptions": [
               "%kbengine.config.hotReload.triggerMode.onSave%",
               "%kbengine.config.hotReload.triggerMode.onDiskChange%"
+            ]
+          },
+          "kbengine.hotReload.notify": {
+            "type": "string",
+            "enum": [
+              "silent",
+              "errors",
+              "summary"
+            ],
+            "default": "errors",
+            "markdownDescription": "%kbengine.config.hotReload.notify.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.hotReload.notify.silent%",
+              "%kbengine.config.hotReload.notify.errors%",
+              "%kbengine.config.hotReload.notify.summary%"
             ]
           },
           "kbengine.protocol.cliPath": {

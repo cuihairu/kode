@@ -172,6 +172,34 @@ describe('kbengine.httpRequests 命令装配', () => {
     }
   });
 
+  it('RUST-429 关 Watch 后手动快捷请求照发:hotReload.enabled=false 不闸手动面', async () => {
+    let seenUrl = '';
+    const port = await listen((req, res) => {
+      seenUrl = req.url ?? '';
+      res.end('done');
+    });
+    // 自动热更总开关显式关(planHotReloadWatch→watchOff:'disabled',状态栏
+    // toggle 写回此键):手动快捷请求是独立命令族(httpRequestService 只按
+    // 条目自身 enabled 过滤,零读 kbengine.hotReload.enabled)——性能不达标
+    // 关 Watch 后的回退路径必须照发,不因总开关误伤。
+    configurationOverrides.set('kbengine', { hotReload: { enabled: false } });
+    try {
+      const context = makeContext();
+      activate(context);
+      setEntries([entry({ url: `http://127.0.0.1:${port}/manual` })]);
+
+      await commands.executeCommand('kbengine.httpRequest.run', { name: '热更' });
+
+      expect(seenUrl).toBe('/manual');
+      deactivate();
+      for (const disposable of context.subscriptions) {
+        disposable.dispose();
+      }
+    } finally {
+      configurationOverrides.clear();
+    }
+  });
+
   it('无工作区(workspaceFolders 未定义):${module} 如实退文件名,请求照发', async () => {
     let seenUrl = '';
     const port = await listen((req, res) => {

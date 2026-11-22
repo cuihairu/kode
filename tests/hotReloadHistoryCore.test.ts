@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
+  buildHistoryExport,
   coalesceHistoryUpdates,
   computeVirtualScrollWindow,
   HotReloadHistoryCore,
+  redactHistoryEntry,
   type HotReloadHistoryInput
 } from '../src/backend/hotReloadHistoryCore';
 
@@ -18,6 +20,8 @@ const makeEntry = (overrides: Partial<HotReloadHistoryInput> = {}): HotReloadHis
   requestModule: overrides.requestModule ?? 'fight.FightAI',
   fileUri: overrides.fileUri ?? '/ws/scripts/fight/FightAI.py',
   targetId: overrides.targetId ?? 'cellapp-1',
+  // HR-UI-014 工作区根:缺省如实给根(过滤/分组钉需确定性根)
+  rootId: overrides.rootId ?? 'cellapp-root',
   time: overrides.time ?? 1000,
   status: overrides.status ?? 'sent-unverified',
   ...(overrides.errorSummary !== undefined ? { errorSummary: overrides.errorSummary } : {}),
@@ -134,6 +138,19 @@ describe('过滤(HR-UI-010)', () => {
     expect(core.filter({ targetId: 'cellapp-2' }).map(e => e.requestId)).toEqual(['r2']);
     // 全量里同文件两行并存不合并
     expect(core.entries().filter(e => e.fullModule === 'entities.fight.FightAI')).toHaveLength(2);
+  });
+
+  it('HR-UI-014 按工作区根过滤各归各(同 targetId 精确等值口径)', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', rootId: 'ws-a' }),
+      makeEntry({ requestId: 'r2', rootId: 'ws-b' }),
+      makeEntry({ requestId: 'r3', rootId: 'ws-a' })
+    ]);
+    expect(core.filter({ rootId: 'ws-a' }).map(e => e.requestId)).toEqual(['r1', 'r3']);
+    expect(core.filter({ rootId: 'ws-b' }).map(e => e.requestId)).toEqual(['r2']);
+    // 未知根=零命中(不冒充匹配到别的根)
+    expect(core.filter({ rootId: 'ws-c' })).toHaveLength(0);
   });
 
   it('状态+时间范围组合 AND 过滤(含边界)', () => {
@@ -258,6 +275,18 @@ describe('分组(HR-UI-002 树视图)', () => {
     expect(groups.get('cellapp-1')!).toHaveLength(1);
     expect(groups.get('cellapp-2')!).toHaveLength(1);
   });
+
+  it('groupByRoot:同模块多 workspace 落不同组(HR-UI-014)', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', rootId: 'ws-a' }),
+      makeEntry({ requestId: 'r2', rootId: 'ws-b', fileUri: '/ws/scripts/fight/FightAI.py' })
+    ]);
+    const groups = HotReloadHistoryCore.groupByRoot(core.newestFirst());
+    expect([...groups.keys()]).toEqual(['ws-b', 'ws-a']);
+    expect(groups.get('ws-a')!).toHaveLength(1);
+    expect(groups.get('ws-b')!).toHaveLength(1);
+  });
 });
 
 describe('高频合并(HR-UI-007 呈现层节流决策)', () => {
@@ -367,5 +396,173 @@ describe('HR-UI-007 虚拟滚动窗口(computeVirtualScrollWindow 纯决策)', (
     expect(w.startIndex).toBe(0);
     expect(w.endIndex).toBe(3);
     expect(w.totalHeightPx).toBe(78);
+  });
+});
+
+describe('HR-STATE-007 残差检索键(requestModule 子串/哈希前缀/耗时区间)', () => {
+  it('requestModuleContains 子串(大小写不敏),与 fullModule 检索互不串台', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', fullModule: 'entities.fight.FightAI', requestModule: 'fight.FightAI' }),
+      makeEntry({ requestId: 'r2', fullModule: 'entities.spawn.Spawner', requestModule: 'spawn.Spawner' })
+    ]);
+    expect(core.filter({ requestModuleContains: 'SPAWN' }).map(e => e.requestId)).toEqual(['r2']);
+    expect(core.filter({ requestModuleContains: 'fight' }).map(e => e.requestId)).toEqual(['r1']);
+  });
+
+  it('hash 前缀匹配;空串=不限定(与子串字段同口径);未知前缀零命中', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', hash: 'abcdef1234567890' }),
+      makeEntry({ requestId: 'r2', hash: 'fedcba0987654321' }),
+      makeEntry({ requestId: 'r3' })
+    ]);
+    expect(core.filter({ hash: 'abcdef' }).map(e => e.requestId)).toEqual(['r1']);
+    expect(core.filter({ hash: 'f' }).map(e => e.requestId)).toEqual(['r2']);
+    expect(core.filter({ hash: 'zzz' })).toHaveLength(0);
+    // 空哈希串不作过滤(与 fullModuleContains 同口径)
+    expect(core.filter({ hash: '' })).toHaveLength(3);
+  });
+
+  it('耗时区间含边界命中;无耗时行(基准冻结/未记录)不命中区间,不计 0 也不计 ∞', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r-fast', durationMs: 12 }),
+      makeEntry({ requestId: 'r-mid', durationMs: 300 }),
+      makeEntry({ requestId: 'r-slow', durationMs: 900 }),
+      makeEntry({ requestId: 'r-no-dur' })
+    ]);
+    expect(core.filter({ durationFrom: 10, durationTo: 300 }).map(e => e.requestId)).toEqual(['r-fast', 'r-mid']);
+    expect(core.filter({ durationTo: 900 }).map(e => e.requestId)).toEqual(['r-fast', 'r-mid', 'r-slow']);
+    expect(core.filter({ durationFrom: 900 }).map(e => e.requestId)).toEqual(['r-slow']);
+    // 无耗时行被区间查询排除
+    expect(core.filter({ durationFrom: 0 })).toHaveLength(3);
+  });
+
+  it('残差键与既有键全 AND 正交叠加', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'a', trigger: 'command', hash: 'aaa111', durationMs: 50, targetId: 'cellapp-1' }),
+      makeEntry({ requestId: 'b', trigger: 'command', hash: 'aaa222', durationMs: 50, targetId: 'cellapp-2' }),
+      makeEntry({ requestId: 'c', trigger: 'watcher-auto', hash: 'aaa111', durationMs: 900, targetId: 'cellapp-1' }),
+      makeEntry({ requestId: 'd', trigger: 'command', hash: 'bbb111', durationMs: 900, targetId: 'cellapp-1' })
+    ]);
+    expect(
+      core.filter({ trigger: 'command', hash: 'aaa', durationTo: 500 }).map(e => e.requestId)
+    ).toEqual(['a', 'b']);
+    expect(
+      core.filter({ trigger: 'command', hash: 'aaa', durationTo: 500, targetId: 'cellapp-1' }).map(e => e.requestId)
+    ).toEqual(['a']);
+    // 全条目 requestModule 缺省 'fight.FightAI':子串命中全部,再叠耗时区间
+    expect(core.filter({ requestModuleContains: 'fight', durationFrom: 900 }).map(e => e.requestId)).toEqual(['c', 'd']);
+  });
+});
+
+describe('RUST-368 保留时间限额与脱敏导出', () => {
+  it('pruneExpired 按政策淘汰超龄行;索引同步(淘汰行推进 false,保留行 true)', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    seed(core, [
+      makeEntry({ requestId: 'r1', time: 1000 }),
+      makeEntry({ requestId: 'r2', time: 1500 }),
+      makeEntry({ requestId: 'r3', time: 2500 })
+    ]);
+    // now=3000,cutoff=2000:r1/r2 早于→淘汰;r3>=保留
+    expect(core.pruneExpired(3000)).toBe(2);
+    expect(core.entries().map(e => e.requestId)).toEqual(['r3']);
+    expect(core.updateStatus('r1', 'applied')).toBe(false);
+    expect(core.updateStatus('r3', 'applied')).toBe(true);
+  });
+
+  it('边界含:time==now-maxAge 保留(>=cutoff);再 prune 无新淘汰', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    seed(core, [makeEntry({ requestId: 'r1', time: 2000 }), makeEntry({ requestId: 'r2', time: 1999 })]);
+    expect(core.pruneExpired(3000)).toBe(1);
+    expect(core.entries().map(e => e.requestId)).toEqual(['r1']);
+    expect(core.pruneExpired(3000)).toBe(0);
+  });
+
+  it('乱序 time 保序淘汰(不假设 time 有序)', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    // 插入序 old,new,mid:old 超龄淘汰,新/中间两行(2500/2100>=2000)保留且保插入序
+    seed(core, [
+      makeEntry({ requestId: 'old', time: 500 }),
+      makeEntry({ requestId: 'new', time: 2500 }),
+      makeEntry({ requestId: 'mid', time: 2100 })
+    ]);
+    expect(core.pruneExpired(3000)).toBe(1);
+    expect(core.entries().map(e => e.requestId)).toEqual(['new', 'mid']);
+  });
+
+  it('未启用 maxAgeMs(缺省)=prune 如实 no-op(0)', () => {
+    const core = makeCore();
+    seed(core, [makeEntry({ requestId: 'r1', time: 1 })]);
+    expect(core.pruneExpired(Date.now())).toBe(0);
+    expect(core.size()).toBe(1);
+  });
+
+  it('redactHistoryEntry 白名单投影:安全字段齐,缺省如实缺省', () => {
+    const row = redactHistoryEntry(
+      makeEntry({
+        status: 'failed',
+        errorSummary: 'HTTP 500',
+        trigger: 'command',
+        durationMs: 42,
+        errorCategory: 'apply-failed',
+        hash: 'abc'
+      })
+    );
+    expect(row).toEqual({
+      requestId: 'req-1',
+      fullModule: 'entities.fight.FightAI',
+      requestModule: 'fight.FightAI',
+      fileUri: '/ws/scripts/fight/FightAI.py',
+      targetId: 'cellapp-1',
+      rootId: 'cellapp-root',
+      time: 1000,
+      status: 'failed',
+      errorSummary: 'HTTP 500',
+      trigger: 'command',
+      durationMs: 42,
+      errorCategory: 'apply-failed',
+      hash: 'abc'
+    });
+    const bare = redactHistoryEntry(makeEntry());
+    expect(bare.errorSummary).toBeUndefined();
+    expect(bare.trigger).toBeUndefined();
+    expect(bare.durationMs).toBeUndefined();
+    expect(bare.errorCategory).toBeUndefined();
+    expect(bare.hash).toBeUndefined();
+    // 恰好八安全字段(含 rootId,HR-UI-014 显式入白名单)+双名+file+requestId
+    expect(Object.keys(bare)).toEqual([
+      'requestId',
+      'fullModule',
+      'requestModule',
+      'fileUri',
+      'targetId',
+      'rootId',
+      'time',
+      'status'
+    ]);
+  });
+
+  it('redactHistoryEntry 白名单外键一律不进(未来 body/header 也不漏)', () => {
+    const input = { ...makeEntry(), httpBody: '{"secret":"x"}', authorization: 'Bearer tok' };
+    const row = redactHistoryEntry(input);
+    expect(row).not.toHaveProperty('httpBody');
+    expect(row).not.toHaveProperty('authorization');
+  });
+
+  it('buildHistoryExport:文档形状/计数/全行脱敏', () => {
+    const doc = buildHistoryExport(
+      [makeEntry({ requestId: 'a' }), makeEntry({ requestId: 'b', status: 'failed', errorSummary: 'HTTP 500' })],
+      { exportedAt: 999 }
+    );
+    expect(doc.schemaVersion).toBe(1);
+    expect(doc.exportedAt).toBe(999);
+    expect(doc.count).toBe(2);
+    expect(doc.entries).toHaveLength(2);
+    expect(doc.entries[0].requestId).toBe('a');
+    expect(doc.entries[1].errorSummary).toBe('HTTP 500');
+    expect(doc.entries[1]).not.toHaveProperty('httpBody');
   });
 });

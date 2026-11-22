@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   createHotReloadProviderHost,
   createHttpHotfixSendProvider,
+  createTemplateHotfixSendProvider,
   KBENGINE_HTTP_HOTFIX_PROVIDER_ID
 } from '../src/backend/hotReloadProviderAssembly';
+import { type HttpRequestEntry } from '../src/backend/httpRequests';
 import {
   buildEngineProfile,
   HOT_RELOAD_PLUGIN_API_VERSION,
@@ -146,5 +148,70 @@ describe('hotReloadProviderAssembly(HR-PR-08 接线批装配核)', () => {
     host.dispose();
     expect(host.registry.registeredSendProviderIds()).toEqual([]);
     expect(host.registry.resolveSendProvider(buildEngineProfile({}))).toBeNull();
+  });
+});
+
+describe('HR-EXT-006 模板=runtime adapter 实现(用户可替换,不绑死内置)', () => {
+  const customEntry: HttpRequestEntry = {
+    name: '自定义引擎',
+    url: 'http://engine.internal:9990/reload?mod=${module}',
+    method: 'PUT',
+    headers: { Authorization: 'Bearer tok-${moduleBasename}' },
+    body: 'path=${module}',
+    enabled: true,
+    keybinding: ''
+  };
+  const okTransport = async () => ({ ok: true, status: 200, durationMs: 1, body: 'ok' });
+
+  it('用户模板 adapter:整条模板进请求(url/method/headers/body),非内置形态', async () => {
+    const seen: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
+    const provider = createTemplateHotfixSendProvider(customEntry, {
+      scriptRoot: '/ws/scripts',
+      transport: async request => {
+        seen.push({ url: request.url, method: request.method, headers: request.headers, body: request.body });
+        return { ok: true, status: 200, durationMs: 1, body: 'ok' };
+      }
+    });
+    const result = await provider.send({ targetId: '', files: ['/ws/scripts/goods/A.py'] });
+    expect(result.ok).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].url).toBe('http://engine.internal:9990/reload?mod=goods.A');
+    expect(seen[0].method).toBe('PUT');
+    expect(seen[0].headers.Authorization).toBe('Bearer tok-A');
+    expect(seen[0].body).toBe('path=goods.A');
+  });
+
+  it('缺省=内置:不传模板的 sendDefaultHotfix 路径与增量前一致(8090/hotfix 形态)', async () => {
+    const seen: Array<{ url: string }> = [];
+    const provider = createHttpHotfixSendProvider({
+      scriptRoot: '/ws/scripts',
+      transport: async request => {
+        seen.push({ url: request.url });
+        return { ok: true, status: 200, durationMs: 1, body: 'ok' };
+      }
+    });
+    await provider.send({ targetId: '', files: ['/ws/scripts/goods/A.py'] });
+    expect(seen[0].url).toContain('http://127.0.0.1:8090/hotfix?module_name=goods.A');
+  });
+
+  it('模板 adapter 声明 workspace+network(同内置口径,无特权豁免);id 按模板名生成', () => {
+    const provider = createTemplateHotfixSendProvider(customEntry, {});
+    expect(provider.permissions).toEqual(['workspace', 'network']);
+    expect(provider.providerId).toBe('kbengine.template-hotfix:自定义引擎');
+    expect(provider.apiVersion).toBe(HOT_RELOAD_PLUGIN_API_VERSION);
+    expect(provider.canSend(buildEngineProfile({}))).toBe(false); // 无 transport 如实不接单
+  });
+
+  it('用户模板可替换内置:注册序=应答序,先注册的用户模板先应答', () => {
+    const userAdapter = createTemplateHotfixSendProvider(customEntry, { transport: okTransport });
+    const builtin = createHttpHotfixSendProvider({ transport: okTransport });
+    const host = createHotReloadProviderHost({ providers: [userAdapter, builtin] });
+    const resolved = host.registry.resolveSendProvider(buildEngineProfile({ engineVersion: '2.5.10' }));
+    expect(resolved?.providerId).toBe('kbengine.template-hotfix:自定义引擎');
+    // 只注册内置=内置应答(缺省行为不变)
+    const builtinOnly = createHotReloadProviderHost({ providers: [builtin] });
+    expect(
+      builtinOnly.registry.resolveSendProvider(buildEngineProfile({ engineVersion: '2.5.10' }))?.providerId
+    ).toBe(KBENGINE_HTTP_HOTFIX_PROVIDER_ID);
   });
 });

@@ -812,6 +812,25 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 - 作用：按 `fullModule` 子串过滤热更历史树(大小写不敏);留空清除过滤
 - 行为：作用于树的三组(最近更新 / 按文件 / 按目标);仅目标不同的行保持分行
 
+### `kbengine.hotReload.historyClear`
+
+- 标题：`清空热更历史`
+- 作用：从命令面板清空投递历史(HR-MOD-014 持久化台账)
+- 行为：
+  - 同时清空内存历史库与持久化记录;已为空的历史如实报「热更历史已为空」且不改任何东西
+  - 历史树与已打开的面板立即刷新,清空态当场可见
+
+### `kbengine.hotReload.historyExport`
+
+- 标题：`导出热更历史(脱敏 JSON)`
+- 作用：把全量投递历史导出为脱敏 JSON 文件,便于共享/排查
+- 行为：
+  - 每行都过白名单投影(九要素+双名+file/requestId);HTTP body、header 与令牌绝不进导出,无论未来行形状新增什么字段
+  - 历史为空如实报「热更历史已为空」且不写文件
+  - 保存对话框缺省落工作区文件夹,带时间戳文件名(`hot-reload-history-<stamp>.json`);取消对话框不写任何东西
+  - JSON 文档携带 `schemaVersion: 1`、`exportedAt`、`count` 与行列表;写入走原子替换,导出中断绝不留半截文件
+  - 写入失败报文件路径与原因,不裸抛命令错误
+
 ## 代码片段生成
 
 ### `kbengine.snippets.generateFromSelection`
