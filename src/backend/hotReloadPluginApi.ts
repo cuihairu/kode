@@ -7,6 +7,11 @@
  *   纯委托既有已证核(hashDefContent/semanticFingerprintReport/
  *   negotiateEngineDigest),不自创哈希、不替引擎猜算法(HR-HASH-005/006
  *   纪律原样继承);fork/版本差异=换 provider 实现,默认实现只认默认引擎;
+ *   HR-EXT-002 再加两个**可选**槽:compare(委托 compareFingerprints 三路
+ *   对拍,不自创判定)+fetchEngineDigest(纯核零 IO,缺省如实 not-wired
+ *   =null;真实获取与 tier/verified/compatible 可信度结论在装配面
+ *   RUST-404 defMd5Check,本面不重复声明可信度)——向后兼容,
+ *   apiVersion 不递增;
  * - HotReloadProvider 面:transport-faithful 发送(canSend 探测+send 透传
  *   发送结果),发送编排本身仍归 tempEdit/executor 既有面,本核只定义
  *   插槽形状与注册表解析;HR-EXT-001 再加四个**可选**生命周期插槽
@@ -26,7 +31,13 @@
 import { hashDefContent, negotiateEngineDigest, type DefContentHash, type DefDigestHandshake } from './hotReloadDefHash';
 import type { HttpRequestOutcome } from './httpRequestExecutor';
 import { semanticFingerprintReport, type SemanticFingerprintReport } from './hotReloadDefStructure';
-import { resolveFingerprintProfile, type FingerprintProfile } from './hotReloadFingerprintCompare';
+import {
+  compareFingerprints,
+  resolveFingerprintProfile,
+  type FingerprintProfile,
+  type FingerprintTriCompareInput,
+  type FingerprintTriVerdict
+} from './hotReloadFingerprintCompare';
 import {
   resolveHotReloadModuleIdentity,
   type HotReloadModuleIdentity,
@@ -36,6 +47,12 @@ import { classifyHotReloadErrorReason, type HotReloadErrorReason } from './hotRe
 
 /** 插件 API 版本:接口形状变更(不兼容)时递增 */
 export const HOT_RELOAD_PLUGIN_API_VERSION = '1';
+
+/** HR-EXT-002 引擎 Digest 获取输入(工作区/根身份;实现按自身通道取) */
+export interface FingerprintEngineDigestInput {
+  readonly workspaceId?: string;
+  readonly rootId?: string;
+}
 
 /** HR-HASH-006 指纹插槽(版本化;默认实现委托既有核) */
 export interface FingerprintProvider {
@@ -49,6 +66,18 @@ export interface FingerprintProvider {
   semanticFingerprint(text: string): SemanticFingerprintReport;
   /** profile 标签(协商出算法=算法名,否则 not available) */
   profileLabel(engineDigest?: string): FingerprintProfile;
+  /**
+   * HR-EXT-002 三路对拍(委托 compareFingerprints 语义;实现可按 fork 换判定面)。
+   * 可选=缺省槽回落既有 compareFingerprints 核,不自创对拍逻辑。
+   */
+  readonly compare?: (input: FingerprintTriCompareInput) => FingerprintTriVerdict;
+  /**
+   * HR-EXT-002 引擎 Digest 获取(声明插槽形状;实现=按自身通道取真实引擎摘要)。
+   * 纯核零 IO:缺省如实 not-wired=null(不编造引擎摘要);真实获取在装配面
+   * (RUST-404 defMd5Check,那里同时给出 tier/verified/compatible 可信度结论),
+   * 本槽只声明「取摘要」边界,不重复声明可信度。
+   */
+  readonly fetchEngineDigest?: (input?: FingerprintEngineDigestInput) => Promise<string | null>;
 }
 
 /** 默认指纹实现:纯委托 hashDefContent/semanticFingerprintReport/negotiateEngineDigest */
@@ -58,7 +87,9 @@ export const defaultHotReloadFingerprintProvider: FingerprintProvider = {
   negotiateDigest: engineDigest => negotiateEngineDigest(engineDigest),
   fileHash: content => hashDefContent(content),
   semanticFingerprint: text => semanticFingerprintReport(text),
-  profileLabel: engineDigest => resolveFingerprintProfile(engineDigest)
+  profileLabel: engineDigest => resolveFingerprintProfile(engineDigest),
+  compare: input => compareFingerprints(input),
+  fetchEngineDigest: async () => null
 };
 
 /**

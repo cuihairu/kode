@@ -5,6 +5,7 @@ import {
   defaultHotReloadFingerprintProvider,
   HOT_RELOAD_PLUGIN_API_VERSION,
   HotReloadProviderRegistry,
+  type FingerprintProvider,
   type HotReloadProvider
 } from '../src/backend/hotReloadPluginApi';
 import type { HotReloadModuleIdentity } from '../src/backend/hotReloadModuleIdentity';
@@ -12,6 +13,9 @@ import type { HotReloadModuleIdentity } from '../src/backend/hotReloadModuleIden
 // HR-PR-08(plugin-api):版本化热更插件 API 纯核测试。
 // 接口形状版本化(apiVersion='1');默认指纹实现纯委托既有核;注册表
 // 重复 id/版本不符如实拒;resolve 应答者胜无人应答 null 不回落。
+// HR-EXT-001 生命周期槽(resolveModule/prepareRequest/interpretResponse/
+// queryAppliedRevision 可选+缺槽回落);HR-EXT-002 指纹槽(compare/
+// fetchEngineDigest 可选+缺省委托既有对拍核/not-wired)。
 
 const ENGINE_MD5 = 'd41d8cd98f00b204e9800998ecf8427e'; // 32 位摘要形(协商判定=长度 32)
 
@@ -231,5 +235,59 @@ describe('HR-EXT-001 版本化生命周期契约(resolveModule/prepareRequest/in
     const noneHandle = new HotReloadProviderRegistry();
     noneHandle.registerSendProvider({ ...makeSendProvider('a'), canSend: () => false });
     expect(noneHandle.resolveLifecycle(profile)).toBeNull();
+  });
+});
+
+describe('HR-EXT-002 版本化指纹契约(compare/fetchEngineDigest 可选槽)', () => {
+  // 类型级钉:不含 compare/fetchEngineDigest 的纯计算形态仍合规(FingerprintProvider
+  // 两个 HR-EXT-002 槽均可选,不强制实现;tsc 校验此字面量可赋值即证明可选)。
+  const minimalFingerprintProvider: FingerprintProvider = {
+    providerId: 'kbengine.minimal-fingerprint',
+    apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+    negotiateDigest: engineDigest => defaultHotReloadFingerprintProvider.negotiateDigest(engineDigest),
+    fileHash: content => defaultHotReloadFingerprintProvider.fileHash(content),
+    semanticFingerprint: text => defaultHotReloadFingerprintProvider.semanticFingerprint(text),
+    profileLabel: engineDigest => defaultHotReloadFingerprintProvider.profileLabel(engineDigest)
+  };
+
+  it('缺省槽 compare 委托 compareFingerprints 三路对拍:文件/语义变化+已应用一致如实', () => {
+    const verdict = defaultHotReloadFingerprintProvider.compare?.({
+      lastLocalFileHash: 'aaa',
+      currentFileHash: 'bbb',
+      lastSemanticHash: 's1',
+      currentSemanticHash: 's2',
+      engineMd5: ENGINE_MD5,
+      serverAppliedDigest: 'abc',
+      localRecomputedMd5: 'abc'
+    });
+    expect(verdict?.fileChanged).toBe('changed');
+    expect(verdict?.semanticChanged).toBe('changed');
+    expect(verdict?.appliedConsistency).toBe('consistent');
+  });
+
+  it('缺省槽 compare:同值=unchanged;未协商引擎算法=applied unknown+点名原因(不跨类比)', () => {
+    const verdict = defaultHotReloadFingerprintProvider.compare?.({
+      lastLocalFileHash: 'aaa',
+      currentFileHash: 'aaa',
+      lastSemanticHash: 's1',
+      currentSemanticHash: 's1'
+    });
+    expect(verdict?.fileChanged).toBe('unchanged');
+    expect(verdict?.semanticChanged).toBe('unchanged');
+    expect(verdict?.appliedConsistency).toBe('unknown');
+    expect(verdict?.reasons.join(' ')).toContain('未协商');
+  });
+
+  it('缺省槽 fetchEngineDigest 纯核零 IO=如实 not-wired null(不编造引擎摘要)', async () => {
+    expect(await defaultHotReloadFingerprintProvider.fetchEngineDigest?.({ workspaceId: 'ws-1' })).toBeNull();
+  });
+
+  it('可选槽缺省=默认实现仍提供两槽(合规形态),算法版本声明 apiVersion=1', () => {
+    expect(typeof defaultHotReloadFingerprintProvider.compare).toBe('function');
+    expect(typeof defaultHotReloadFingerprintProvider.fetchEngineDigest).toBe('function');
+    expect(minimalFingerprintProvider.apiVersion).toBe('1');
+    // 最小形态未实现两槽(可选):如实 undefined,不冒充空实现
+    expect(minimalFingerprintProvider.compare).toBeUndefined();
+    expect(minimalFingerprintProvider.fetchEngineDigest).toBeUndefined();
   });
 });
