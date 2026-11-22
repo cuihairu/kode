@@ -358,4 +358,51 @@ describe('RUST-414 热更各段耗时统计(过滤/哈希/语法/队列+丢弃�
     pooled('S6.totalCpu', totalSamples);
     once('S6.saves', 50, ' saves');
   }, 120000);
+
+  it('S7 500 事件 burst 同步段:filter+offer 不饿死事件循环(RUST-416 面)', async () => {
+    // RUST-416(旧 HR-QA-004)500 文件同时变动:批次确认/限流由 HR-WATCH-016
+    // 滞留(单文件测试)与 M3 规模面(500 全滞留 auto=0)钉;此处钉纯核同步段
+    // ——watcher burst 的 filter+offer 同步成本有界(观测几十毫秒,非秒级),
+    // 读盘/哈希在 libuv 线程池异步不占主线程(UI 不冻结的纯核面)。断言只有
+    // 同步段语义(500 全入队零丢失、同步段零发出);墙钟只观测不进断言。
+    const paths = firstScripts(500);
+    const filterSamples: number[] = [];
+    let accepted = 0;
+    const filterStart = performance.now();
+    for (const p of paths) {
+      const started = performance.now();
+      if (isWatchableScriptFile(p, { roots: [ASSETS_OUT] })) {
+        accepted += 1;
+      }
+      filterSamples.push(performance.now() - started);
+    }
+    const filterWall = performance.now() - filterStart;
+    expect(accepted).toBe(500);
+    const { pipeline, emitted } = buildPipeline({
+      debounceMs: 0,
+      batchFlushMs: 0,
+      stabilityWindowMs: 0,
+      checkSyntax: PASS_SYNTAX,
+      readSnapshot
+    });
+    const offerStart = performance.now();
+    for (const p of paths) {
+      pipeline.offer(p, 'save');
+    }
+    const offerWall = performance.now() - offerStart;
+    // 同步段语义:500 全入队无丢失;定稿在异步面,同步段零发出
+    expect(emitted).toHaveLength(0);
+    expect(pipeline.pendingFiles()).toHaveLength(500);
+    pipeline.dispose();
+    once('S7.burst500.filterWall', filterWall);
+    once('S7.burst500.filterPerEvent', filterWall / 500);
+    once('S7.burst500.offerWall', offerWall);
+    once('S7.burst500.offerPerEvent', offerWall / 500);
+    pooled('S7.burst500.filterSamples', filterSamples);
+    emit(
+      'HRS-NOTE S7 500 事件 burst 同步段:filter+offer 观测几十毫秒(含负载波动),' +
+      '非秒级饿死;500 全入队零丢失,读盘在 libuv 线程池异步不占主线程(UI 不冻结' +
+      '纯核面);UI 线程面随接线批(装配面)'
+    );
+  }, 120000);
 });

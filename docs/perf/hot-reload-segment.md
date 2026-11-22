@@ -19,6 +19,7 @@
 | S4 队列(并发) | 定稿→波次→发出,派生=(flushed-scheduled)-hash-syntax | p50 4.85ms / p95 5.56ms / p99 5.98ms | 200 样本 |
 | S5 丢弃原因 | 归并/去重/语法拦/批量滞留 | debounced 1 / deduped 1 / blocked 1 / preview 1 | 四主因计数逐一相等 |
 | **S6 无竞争段(顺序)** | 单文件 50 次顺序保存,逐保存 await 上一笔发出 | **hash p50 0.45ms / p95 3.4ms**;syntax 0ms;**queue p50 1.48ms / p95 1.67ms**;**totalCpu(Save→队列)p50 2ms / p95 5ms / p99 7ms / max 7ms** | 逐保存诊断三连 trigger/scheduled/flushed;hash+syntax 各 50 |
+| S7 500 burst 同步段(RUST-416 面) | 500 文件 watcher 一窗,filter+offer 纯同步段(零 IO 读盘在异步面) | filterWall 17.7ms / perEvent 0.04ms;offerWall 12.57ms / perEvent 0.03ms;filter p50 0.02ms(load 58.75) | 500 全入队零丢失;同步段零发出 |
 
 ## 读法与诚实边界
 
@@ -38,3 +39,8 @@
    网络耗时须单独统计不混为本地性能(§19.10 纪律),本车道测不到。
 5. **阈值化待建**:本批只记录 P95/P99/max 不钉阈值;若后续纳入夜间门,应走
    KODE_PERF_BOUND_* 同款宽松上界纪律(RUST-027),不直接钉绝对值。
+6. **S7 同步段有界非秒级(RUST-416 面)**:500 事件 watcher burst 的纯同步段
+   (filter+offer)墙钟 ~30ms(load 58;空载 ~10-20ms),读盘/哈希在 libuv 线程池
+   异步不占主线程——「UI 不冻结」的纯核面成立(4.3s@50k 是异步读盘排队非同步
+   阻塞);S7 的语义断言=500 全入队零丢失+同步段零发出,墙钟只观测。UI 线程面
+   (装配)属接线批。
