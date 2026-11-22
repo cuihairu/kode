@@ -12,14 +12,17 @@
 //!   buildHistoryEntryTooltipLines(双名/file/target/时间/requestId);
 //!   台账事件→重渲染经合并窗节流(HR-UI-007),受限宿主无 createTreeView
 //!   退化为 registerTreeDataProvider(与既有视图同口径)。
-//! - **搜索命令(kbengine.hotReload.historySearch)**:fullModule 子串过滤
-//!   作用于树(HR-UI-010)。
+//! - **搜索命令(kbengine.hotReload.historySearch)**:多字段子串过滤作用于
+//!   树(HR-UI-010/HR-STATE-007):任一可检索文本字段(fullModule/
+//!   requestModule/fileUri/targetId/trigger/hash/errorCategory/errorSummary)
+//!   命中即留。
 //! - **历史面板命令(kbengine.hotReload.historyPanel)**:webview 单列面板
 //!   (既有 createWebviewPanel 模式,不新造框架,HR-UI-004)——页头(监听
-//!   模式/目标/计数)、过滤(fullModule 子串/target/状态)、表格(最新在前,
-//!   「加载更多」分页增量,HR-UI-007)、行字段=fullModule(requestModule
-//!   异时并列,HR-UI-006)+file+target+状态+时间+requestId(HR-HTTP-014
-//!   展示面)+错误摘要。
+//!   模式/目标/计数)、过滤(fullModule 子串/target/状态/触发源/错误类别)、
+//!   表格(最新在前,「加载更多」分页增量,HR-UI-007)、行字段=fullModule
+//!   (requestModule 异时并列,HR-UI-006)+file+target+触发+状态+耗时+
+//!   内容哈希+时间+requestId(HR-HTTP-014 展示面)+错误摘要(HR-STATE-007)。
+//!   哈希列显 12 字符前缀(title 含全值)。
 //! - **持久化(HR-MOD-014)**:persist 注入面(宿主用 workspaceState 适配)
 //!   每次台账投影后落全量行;启动时回载,行形状不符的条目如实丢弃。
 //! - **生命周期(HR-UI-012)**:全部句柄进 context.subscriptions;面板/树
@@ -39,7 +42,7 @@ import {
   type HotReloadHistoryStatus
 } from './backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
-import { classifyHotReloadErrorReason, formatHotReloadErrorReason } from './backend/hotReloadErrorReason';
+import { classifyHotReloadErrorReason, formatHotReloadErrorReason, HOT_RELOAD_ERROR_REASON_LABELS, type HotReloadErrorReason } from './backend/hotReloadErrorReason';
 import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
 
 /** workspaceState 持久化键(HR-MOD-014;宿主适配面用) */
@@ -62,6 +65,17 @@ export const VIRTUAL_ROW_HEIGHT_PX = 26;
 export const VIRTUAL_VIEWPORT_HEIGHT_PX = 480;
 /** 面板虚拟滚动上下预渲染行数(滚动时视口边缘不露白) */
 export const VIRTUAL_OVERSCAN_ROWS = 5;
+
+/**
+ * HR-STATE-007 面板触发源下拉(台账已知四源)。只列已知值——出现未列出
+ * 的来源时不假装可选,树搜索按字面命中。
+ */
+const PANEL_TRIGGER_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['watcher-auto', '自动(watcher)'],
+  ['command', '手动命令'],
+  ['retry', '重试'],
+  ['temp-edit', '临时编辑']
+];
 
 /** 模块双名解析面(注入;解析不了如实回落,不猜) */
 export type HotReloadNamesResolver = (file: string) => { fullModule: string; requestModule: string };
@@ -158,11 +172,18 @@ export function renderHistoryPanelHtml(input: {
       entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
         ? `${esc(entry.fullModule)}<span class="req">发送: ${esc(entry.requestModule)}</span>`
         : esc(entry.fullModule || entry.requestModule);
+    // HR-STATE-007 哈希列显 12 字符前缀(title 含全 64 值),面板不铺满
+    const hashCell = entry.hash
+      ? `<code title="${esc(entry.hash)}">${esc(entry.hash.slice(0, 12))}…</code>`
+      : '';
     return `      <tr>
         <td class="module">${moduleCell}</td>
         <td><code title="${esc(entry.fileUri)}">${esc(path.basename(entry.fileUri))}</code></td>
         <td>${esc(entry.targetId.length > 0 ? entry.targetId : '(default)')}</td>
+        <td>${esc(entry.trigger ?? '')}</td>
         <td class="st-${entry.status}">${statusLabel(entry.status)}</td>
+        <td>${entry.durationMs !== undefined ? `${entry.durationMs}ms` : ''}</td>
+        <td>${hashCell}</td>
         <td>${esc(new Date(entry.time).toISOString())}</td>
         <td><code>${esc(entry.requestId)}</code></td>
         <td>${entry.errorSummary ? esc(entry.errorSummary) : ''}</td>
@@ -238,6 +259,14 @@ ${queueRows}
       <option value="applied" ${filter.status === 'applied' ? 'selected' : ''}>已应用</option>
       <option value="failed" ${filter.status === 'failed' ? 'selected' : ''}>失败</option>
     </select>
+    <select id="f-trigger">
+      <option value="">全部触发</option>
+${PANEL_TRIGGER_OPTIONS.map(([value, label]) => `      <option value="${value}" ${filter.trigger === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
+    </select>
+    <select id="f-category">
+      <option value="">全部类别</option>
+${Object.entries(HOT_RELOAD_ERROR_REASON_LABELS).map(([value, label]) => `      <option value="${value}" ${filter.errorCategory === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
+    </select>
     <button type="button" id="apply">应用筛选</button>
     <button type="button" id="clear">清除筛选</button>
   </form>
@@ -246,17 +275,17 @@ ${
     ? `  <div id="vlist" class="vscroll" style="height: ${virtualize.viewportHeightPx}px">
     <div id="vtop" style="height: ${virtualTopPx}px"></div>
     <table>
-      <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>状态</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
+      <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
       <tbody id="vbody">
-${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
+${body || '      <tr><td colspan="10">(无匹配行)</td></tr>'}
       </tbody>
     </table>
     <div id="vbot" style="height: ${virtualBottomPx}px"></div>
   </div>`
     : `  <table>
-    <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>状态</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
+    <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
     <tbody>
-${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
+${body || '      <tr><td colspan="10">(无匹配行)</td></tr>'}
     </tbody>
   </table>`
 }
@@ -274,7 +303,9 @@ ${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
         type: 'filter',
         fullModuleContains: document.getElementById('f-module').value,
         targetId: document.getElementById('f-target').value,
-        status: document.getElementById('f-status').value
+        status: document.getElementById('f-status').value,
+        trigger: document.getElementById('f-trigger').value,
+        errorCategory: document.getElementById('f-category').value
       });
     };
     document.getElementById('apply').addEventListener('click', apply);
@@ -282,6 +313,8 @@ ${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
       document.getElementById('f-module').value = '';
       document.getElementById('f-target').value = '';
       document.getElementById('f-status').value = '';
+      document.getElementById('f-trigger').value = '';
+      document.getElementById('f-category').value = '';
       apply();
     });
     const more = document.getElementById('more');
@@ -304,11 +337,17 @@ ${
         ? escJs(entry.fullModule) + '<span class="req">发送: ' + escJs(entry.requestModule) + '</span>'
         : escJs(entry.fullModule || entry.requestModule);
       const fileName = entry.fileUri.split('/').pop();
+      const hashCell = entry.hash
+        ? '<code title="' + escJs(entry.hash) + '">' + escJs(entry.hash.slice(0, 12)) + '…</code>'
+        : '';
       return '<tr>' +
         '<td class="module">' + moduleCell + '</td>' +
         '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
         '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : '(default)') + '</td>' +
+        '<td>' + escJs(entry.trigger || '') + '</td>' +
         '<td class="st-' + entry.status + '">' + statusLabelJs(entry.status) + '</td>' +
+        '<td>' + (entry.durationMs !== undefined ? entry.durationMs + 'ms' : '') + '</td>' +
+        '<td>' + hashCell + '</td>' +
         '<td>' + escJs(new Date(entry.time).toISOString()) + '</td>' +
         '<td><code>' + escJs(entry.requestId) + '</code></td>' +
         '<td>' + (entry.errorSummary ? escJs(entry.errorSummary) : '') + '</td>' +
@@ -422,6 +461,9 @@ export function setupHotReloadHistoryView(
   };
 
   // HR-UI-010:搜索过滤状态(搜索命令改;作用于树)
+  // HR-UI-010/HR-STATE-007:搜索过滤状态(搜索命令改;作用于树)。命中=
+  // 任一可检索文本字段包含关键词(fullModule/requestModule/fileUri/targetId/
+  // trigger/hash/errorCategory/errorSummary),大小写不敏;空关键词=全量。
   let treeFilterText = '';
   const treeEntries = (): readonly HotReloadHistoryEntry[] => {
     const all = opts.core.newestFirst();
@@ -429,7 +471,18 @@ export function setupHotReloadHistoryView(
       return all;
     }
     const needle = treeFilterText.toLowerCase();
-    return all.filter(entry => entry.fullModule.toLowerCase().includes(needle));
+    return all.filter(entry =>
+      [
+        entry.fullModule,
+        entry.requestModule,
+        entry.fileUri,
+        entry.targetId,
+        entry.trigger ?? '',
+        entry.hash ?? '',
+        entry.errorCategory ?? '',
+        entry.errorSummary ?? ''
+      ].some(field => field.toLowerCase().includes(needle))
+    );
   };
 
   const emitter = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -632,13 +685,23 @@ export function setupHotReloadHistoryView(
           message.status === 'sent-unverified' || message.status === 'applied' || message.status === 'failed'
             ? (message.status as HotReloadHistoryStatus)
             : undefined;
+        // HR-STATE-007 触发源过滤:webview 传回的字面原样用(精确匹配,值不对
+        // 只是零命中,不冒充匹配到别的源)
+        const trigger = typeof message.trigger === 'string' ? message.trigger.trim() : '';
+        // 错误类别是枚举字段:不在七类内的值忽略(不伪造一个不存在的类别)
+        const errorCategory =
+          typeof message.errorCategory === 'string' && message.errorCategory in HOT_RELOAD_ERROR_REASON_LABELS
+            ? (message.errorCategory as HotReloadErrorReason)
+            : undefined;
         panelState.state = {
           ...panelState.state,
           page: 1,
           filter: {
             ...(fullModuleContains.length > 0 ? { fullModuleContains } : {}),
             ...(targetId.length > 0 ? { targetId } : {}),
-            ...(status !== undefined ? { status } : {})
+            ...(status !== undefined ? { status } : {}),
+            ...(trigger.length > 0 ? { trigger } : {}),
+            ...(errorCategory !== undefined ? { errorCategory } : {})
           }
         };
         renderPanel();

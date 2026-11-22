@@ -79,6 +79,8 @@ const ALLOWED_TRANSITIONS: Readonly<Record<HotReloadHistoryStatus, readonly HotR
 export interface HotReloadHistoryFilter {
   /** fullModule 大小写不敏子串匹配 */
   readonly fullModuleContains?: string;
+  /** HR-STATE-007 requestModule 子串(大小写不敏):发送名与显示名分开可查 */
+  readonly requestModuleContains?: string;
   readonly targetId?: string;
   readonly fileUri?: string;
   readonly status?: HotReloadHistoryStatus;
@@ -89,6 +91,11 @@ export interface HotReloadHistoryFilter {
   readonly trigger?: string;
   /** HR-STATE-007 按错误七类定性过滤(HR-STATE-010 同源枚举) */
   readonly errorCategory?: HotReloadErrorReason;
+  /** HR-STATE-007 内容哈希前缀过滤(短前缀即辨来源;空串=不限定) */
+  readonly hash?: string;
+  /** HR-STATE-007 送达耗时范围含边界 [from,to](ms);无耗时行不命中 */
+  readonly durationFrom?: number;
+  readonly durationTo?: number;
 }
 
 export interface HotReloadHistoryPage<T> {
@@ -296,8 +303,15 @@ export class HotReloadHistoryCore {
   /** HR-UI-010 过滤:全条件 AND;fullModule 子串大小写不敏 */
   filter(query: HotReloadHistoryFilter): HotReloadHistoryEntry[] {
     const needle = query.fullModuleContains?.toLowerCase();
+    const requestNeedle = query.requestModuleContains?.toLowerCase();
     return this.rows.filter(entry => {
       if (needle && !entry.fullModule.toLowerCase().includes(needle)) {
+        return false;
+      }
+      if (
+        requestNeedle &&
+        !entry.requestModule.toLowerCase().includes(requestNeedle)
+      ) {
         return false;
       }
       if (query.targetId !== undefined && entry.targetId !== query.targetId) {
@@ -319,6 +333,27 @@ export class HotReloadHistoryCore {
         return false;
       }
       if (query.errorCategory !== undefined && entry.errorCategory !== query.errorCategory) {
+        return false;
+      }
+      if (
+        query.hash !== undefined &&
+        query.hash.length > 0 &&
+        !(entry.hash ?? '').startsWith(query.hash)
+      ) {
+        return false;
+      }
+      // 耗时区间:无耗时(发送前基准冻结/未记录)不命中区间查询,
+      // 不计 0 也不计 ∞(如实缺省)
+      if (
+        (query.durationFrom !== undefined || query.durationTo !== undefined) &&
+        entry.durationMs === undefined
+      ) {
+        return false;
+      }
+      if (query.durationFrom !== undefined && (entry.durationMs ?? 0) < query.durationFrom) {
+        return false;
+      }
+      if (query.durationTo !== undefined && (entry.durationMs ?? 0) > query.durationTo) {
         return false;
       }
       return true;
