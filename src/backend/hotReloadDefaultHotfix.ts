@@ -48,15 +48,7 @@ export interface DefaultHotfixDeps {
   readonly allowRootLevelStem?: boolean;
 }
 
-/**
- * 单文件的默认热更模块名:双名称优先取**发送名**(requestModule,书 §19.1 /
- * HotReloadModuleIdentity「请求模块名(实际发送名)」:scripts/entities/fight/
- * FightAI.py → fight.FightAI),回落 ${module} 包边界扫描。
- * RUST-440(HR-DOD-001)发送路径双名切换:请求只送短名;fullModule
- * (entities.fight.FightAI) 是 UI 展示名(fileChangeMeta/历史树同口径),两者
- * 不得混用。与插件生命周期 prepareRequest 缺省槽(moduleIdentities 取
- * identity.requestModule)同口径——同一文件的自动/手动/预览三态发送名一致。
- */
+/** 单文件的默认热更模块名:双名称优先,回落 ${module} 包边界扫描 */
 export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfixDeps = {}): string {
   const scriptRoot = deps.scriptRoot ?? '';
   if (scriptRoot.length > 0) {
@@ -64,7 +56,7 @@ export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfix
       ...(deps.allowRootLevelStem === true ? { allowRootLevelStem: true } : {})
     });
     if (!('unsupported' in dualName)) {
-      return dualName.requestModule;
+      return dualName.fullModule;
     }
   }
   return resolvePythonModulePath(filePath, deps.isPackageDir);
@@ -92,7 +84,14 @@ export function buildDefaultHotfixRequest(
   const dot = module.lastIndexOf('.');
   const vars = {
     ...buildTemplateVars(
-      { filePath, scriptRoot: deps.scriptRoot && deps.scriptRoot.length > 0 ? deps.scriptRoot : undefined },
+      {
+        filePath,
+        scriptRoot: deps.scriptRoot && deps.scriptRoot.length > 0 ? deps.scriptRoot : undefined,
+        // RUST-441/HR-DOD-002:模板双名占位与 ${module} 同参——${module} 走
+        // resolveDefaultHotfixModule(带 allowRootLevelStem),${fullModule}/
+        // ${reloadModule} 亦须带,否则同一模板内两个名字互不一致
+        allowRootLevelStem: deps.allowRootLevelStem
+      },
       deps.isPackageDir
     ),
     module,

@@ -176,6 +176,13 @@ export interface TemplateEditorContext {
   workspaceRoots?: readonly string[];
   /** 脚本资源根(HR-MOD-012 双名面 ${reloadModule}/${fullModule} 起点;缺省=未知,两值如实空串) */
   scriptRoot?: string;
+  /**
+   * HR-MOD-008 根下单层回退(RUST-441/HR-DOD-002 三触发面一致性):双名解析
+   * 与自动面(onSave/onDiskChange 同一 fire 路径)同参——根直下 `Foo.py` 键开
+   * 回落裸短名,键关/缺省=未解析。缺省 false 与既有行为逐字一致(不因本
+   * 字段的加入改变任何既有解析结果)。
+   */
+  allowRootLevelStem?: boolean;
   /** 通道/目标标签(HR-MOD-012 ${targetId});快速请求面通常无 target,缺省空串 */
   targetId?: string;
 }
@@ -223,7 +230,11 @@ export function buildTemplateVars(
   const module = resolvePythonModulePath(filePath, isPackageDir);
   const dot = module.lastIndexOf('.');
   const scriptRoot = context.scriptRoot ?? '';
-  const dual = scriptRoot.length > 0 ? resolveModuleDualName(filePath, scriptRoot) : undefined;
+  const dual = scriptRoot.length > 0
+    ? resolveModuleDualName(filePath, scriptRoot, {
+        ...(context.allowRootLevelStem === true ? { allowRootLevelStem: true } : {})
+      })
+    : undefined;
   const dualOk = dual !== undefined && !('unsupported' in dual);
   const posixPath = toPosix(filePath);
   const workspaceRoot = (context.workspaceRoots ?? [])

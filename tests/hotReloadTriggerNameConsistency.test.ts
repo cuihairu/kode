@@ -19,7 +19,8 @@ import { allFileSystemWatchers, configurationOverrides } from './helpers/vscodeS
  *   ① 线上同名(onSave 面 vs onDiskChange 面):同一文件经真实装配链两次
  *      fire,零配置默认热更面在 body 与 query 上送出的 module_name 逐字节一致。
  *   ② 命令/身份面同名:手动命令与 provider 走 HR-MOD-001 身份解析器,其
- *      requestModule/fullModule 与线上发送名逐字相等(不另推一套名)。
+ *      fullModule 与零配置默认热更发送名逐字相等(同一解析源,不另推一套名);
+ *      requestModule 是书 §19.1 的线上短名口径(provider/身份面),与 fullModule 两名并存。
  *   ③ 开关面不静默分叉:allowRootLevelStem 在发送面与身份面同口径透传,
  *      同一开关下两面短名一致(根直下文件裸名 vs 包边界扫描)。
  *   ④ 两名真不同名:同文件的短名≠全名(嵌套文件),UI 面(fullModule)与
@@ -178,9 +179,11 @@ describe('HR-DOD-002 三触发面短名/全名一致性(RUST-441)', () => {
 
     const sent = [saveFace.capture.seen[0], diskFace.capture.seen[0]];
     for (const request of sent) {
-      // body 与 query 双带:两面同一字符串
-      expect(request.body).toBe(`module_name=${SHORT}`);
-      expect(request.url).toContain(`?module_name=${SHORT}`);
+      // body 与 query 双带:两面同一字符串。零配置默认热更面按 HR-AUDIT-004/
+      // RUST-322 兼容裁定保持 legacy 全名口径(HR-DOD-001 限定发送面收口,
+      // 短名切换归 RUST-432),故线上 module_name=entities.fight.FightAI。
+      expect(request.body).toBe(`module_name=${FULL}`);
+      expect(request.url).toContain(`?module_name=${FULL}`);
     }
     // 两态逐字节相同(触发面不改名)
     expect(sent[0]?.url).toBe(sent[1]?.url);
@@ -193,8 +196,8 @@ describe('HR-DOD-002 三触发面短名/全名一致性(RUST-441)', () => {
     if (!identity.ok) {
       throw new Error(`unexpected reject: ${identity.diagnostics.map(code => code.code).join(',')}`);
     }
-    // 发送面(零配置默认热更)= 身份面的 requestModule
-    expect(resolveDefaultHotfixModule(FILE, { scriptRoot: ROOT })).toBe(identity.identity.requestModule);
+    // 发送面(零配置默认热更,legacy 全名口径 per HR-AUDIT-004/RUST-322)= 身份面的 fullModule
+    expect(resolveDefaultHotfixModule(FILE, { scriptRoot: ROOT })).toBe(identity.identity.fullModule);
     expect(identity.identity.requestModule).toBe(SHORT);
     expect(identity.identity.fullModule).toBe(FULL);
   });
@@ -241,7 +244,8 @@ describe('HR-DOD-002 三触发面短名/全名一致性(RUST-441)', () => {
     const vars = buildTemplateVars({ filePath: FILE, scriptRoot: ROOT });
     expect(vars.reloadModule).toBe(SHORT);
     expect(vars.fullModule).toBe(FULL);
-    // 短名≠全名(嵌套文件);全名才是 UI 展示名,短名才进 module_name
+    // 短名≠全名(嵌套文件);全名是 UI 展示名,短名是身份/provider 面的
+    // requestModule 口径(书 §19.1);零配置默认热更面按兼容裁定保持全名口径。
     expect(SHORT).not.toBe(FULL);
     expect(FULL.startsWith('entities.')).toBe(true);
     expect(SHORT).not.toContain('entities.');

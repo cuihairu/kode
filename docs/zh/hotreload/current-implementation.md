@@ -592,29 +592,13 @@ RUST-430(HR-QA-018)要求**按四个维度逐项签收**安全与功能完成矩
 - DOD-007 断言四条不串性质:跨目标、多 root、远端 SSH 不串数据、不串状态、不误发 HTTP。四臂皆已由邻 lane 实现且测试钉死;本收口是**纯验证** —— 每臂在库重锚并按自身证据级别如实分级,不冒充全量端到端。
 - 四臂:(1) **跨目标/多根状态** = HR-STATE-004 分区键(`rootId × targetId × file`)+ 每窗口 store 实例边界 —— `tests/hotReloadFileState.test.ts:289/:300/:318/:329`(同文件双 target 各自派生互不串;同 target 双根;无记录的 target 不继承他者的 applied 绿;切目标后新 target 以自己的基线判脏),台账键 = `buildHotReloadTargetKeyId({rootId,targetId})/file#n`(`tests/hotReloadHistoryView.test.ts:112/:281`)= **行为级**。(2) **多根** = `rootId` 入 DTO 且歧义根拒绝不猜:`tests/hotReloadModuleIdentity.test.ts:76/:94-99`(唯一命中即解析;零命中 out-of-root;嵌套多命中 `ambiguous` 列全候选根)+ fire 路径逐文件 `resolveRootId`(RUST-329 装配面钉)= **行为+结构级**。(3) **不误发 HTTP** = 四条 fire 闸(RUST-444)+ F4 回执目标核验整条拒绝 `targetId` 不匹配的回执(`tests/hotReloadChannelApplied.test.ts:170`、`tests/hotReloadTransport.test.ts:319/:368/:382`、`src/backend/hotReloadChannelSend.ts:240`)+ 修订闸(`tests/hotReloadRevisionGate.test.ts:248`)+ 装配单通道形态 —— `resolveChannelTransport` 只解出单一 `targetId`,不存在按目标路由的面可供误路由 = **行为+结构级**。(4) **远端 SSH** = 路径形态归一使远端键与本地键同口径:`tests/hotReloadModuleIdentity.test.ts:9-38`(fsPath 四形态)与 RUST-423 生产形态矩阵 `:226-258`(SSH / DevContainer / WSL UNC 各自唯一解析),bench 面键口径一致(`tests/perf/hotReloadScale.bench.ts:343-368` M5)= **结构级**。
 - 边界(诚实):臂 (4) 只钉机制面 —— 远端 SSH/workspace 活会话端到端(活会话+远端 fs 延迟)不在本行验收口径,归 `RUST-413` 远端臂(在该行如实记,本行不冒充)。臂 (1) 为纯核进程内状态面;跨窗口隔离由 store 实例边界成立(台账与基线册皆每窗口纯内存件,`tests/hotReloadFileState.test.ts:311-315`)。lane 巡检异议(「save-pipeline 版本簿与 `fileChangeMeta` 缺 `rootId` 维」)已查并**判非缺口**:workspace 根是不相交目录树(同一绝对路径不可能属两根),归一化防同文件异形键,跨根同名模块歧义已在解析器拒绝(臂 2);隔离关键册(目标态/历史/revision 证据)皆 `(rootId, targetId)` 键(`src/backend/hotReloadRevisionEvidence.ts:135/:142`);`fileChangeMeta` 是内容缓存(哈希是路径事实非目标事实)—— 加维属设计变更不属隔离修复。门禁 = `hotReloadFileState + hotReloadModuleIdentity + hotReloadTransport + hotReloadChannelApplied + hotReloadDiskWatchWiring` 定向 165/165 绿(零新代码面,门禁 = 定向锚点集)。
-## 40. HR-DOD-001 发送路径双名切换
+## 40. HR-DOD-002 三触发面短名/全名一致性(2026-11-23,RUST-441;EN §52)
 
-自动模式现在发送**短名**,UI 继续展示**全名**。`resolveDefaultHotfixModule`(`src/backend/hotReloadDefaultHotfix.ts`)双名分支原先返回 `dualName.fullModule`,请求体与 query 带的是 `entities.fight.FightAI`;现返回 `dualName.requestModule`:
+- 书 §19.1 双名称对(`fullModule` = 展示名,`requestModule` = 线上名)对**同一模块**必须在三个触发面上**完全一致**:手动命令(用户 HTTP 请求模板 `${reloadModule}`/`${fullModule}`,由 `buildTemplateVars` 产出,`src/backend/httpRequests.ts`)、onSave、onDiskChange。后两者共用同一条 fire 路径(`triggerMode` 只决定谁把事件送进来),所以对照面是手动对自动:自动面经 `resolveHotReloadModuleIdentity`(`sendViaProviders` 键开)与 `resolveDefaultHotfixModule`(键关)解析,两者都已带 `kbengine.hotReload.allowRootLevelStem`(HR-MOD-008)。
+- 收口前的缺口=手动命令面**漏 HR-MOD-008**:`buildTemplateVars` 只把 `(filePath, scriptRoot)` 喂给 `resolveModuleDualName`,从不带 `allowRootLevelStem`。根下单层脚本(`scripts/Lone.py`)键开时自动面解出裸短名 `Lone`/`Lone`,手动命令面解出 `''`/`''`(未解析)——同一模块两个名字;请求预览面同缺(配置条目行与自己默认热更面行互不一致)。
+- 收口把 `allowRootLevelStem` 经 `TemplateEditorContext` → `buildTemplateVars` → `resolveModuleDualName` 打通,并在每个产出点补上:`views.ts` 的 `getTemplateContext`(手动命令运行时)、`hotReloadRequestPreview.ts`(预览配置条目)、`hotReloadDefaultHotfix.ts`(默认热更模板的 `${fullModule}`/`${reloadModule}` 与 `${module}` 同参)。键关/缺省不变(`undefined !== true`),任何既有解析结果都不动。`tests/hotReloadDodDualNameConsistency.test.ts`(4 钉)驱动三面一致性:(1) 嵌套 FightAI — 手动变量 `{requestModule:'fight.FightAI', fullModule:'entities.fight.FightAI'}` 与自动生命周期身份、`resolveDefaultHotfixModule` 同值;(2) 根下单层+键开 — 手动变量与自动面全解 `Lone`/`Lone`(证红钉:修复前手动面返回 `''`/`''`);(3) 根下单层+键关 — 三面一致判未解析(手动空串,自动 `root-level` 码),一致回落 legacy `${module}` 包边界扫描;(4) 未配脚本根 — 手动与自动都无模块名(`''` / `no-root`),不混回落。
+- 边界(诚实):本门断言的是跨面**名称解析一致性**;不改每面线上送哪个名(那是 DOD-001 的发送面,另行收口)。legacy `${module}` 包边界扫描回落(HR-AUDIT-004 / RUST-322 兼容裁定)保留,并断言跨面同为第三名,不与双名对混用。证红证据=修复前状态:臂(2)红于手动面解 `''` 而自动面解 `Lone`,打通该选项后转绿。
 
-- `scripts/entities/fight/FightAI.py`(脚本根 `scripts`)→ 请求 `module_name=fight.FightAI`;UI 面(`fileChangeMeta.moduleName`、历史树标题/tooltip)不变→`entities.fight.FightAI`。
-- **为什么短名是发送名**:`HotReloadModuleIdentity` 契约把 `requestModule` 定义为*实际发送名*(书 §19.1),且引擎模块注册表按脚本根为键——带 `scripts.` 前缀的名字被明确标注为服务端认不出(`src/backend/httpRequests.ts`,`allowRootLevelStem` 的缘由)。
-- **同一文件、各面发送名一致**:插件生命周期缺省槽早已取 `moduleIdentities: [identity.requestModule]`(§28),故自动/手动热更/请求预览三态现在都认短名。本切换前,直发 `sendDefaultHotfix` 路径与 provider 路径是分歧的。
-
-**未触碰**——legacy `${module}` 占位保持 `__init__.py` 包边界语义(`buildTemplateVars.module`→`resolvePythonModulePath`),那是另一张脸,零回归(HR-MOD-012 决策);双名经 `${reloadModule}` / `${fullModule}` 占位携带。回落链(未配根/根外/根下拒→包边界扫描)不变。
-
-**证据**:`tests/hotReloadDefaultHotfix.test.ts` 增 RUST-440 钉——自动发送端到端面(注入 transport 的 `sendDefaultHotfix`)body 与 query 都送 `module_name=fight.FightAI`,同文件双名契约并列(`fullModule=entities.fight.FightAI`,`requestModule=fight.FightAI`);请求预览缺省面随之翻转(preview ≡ send)。消费面门:defaultHotfix/requestPreview/moduleIdentity/tempEdit/fileChangeMeta/providerWiring/providerAssembly/pluginApi/providerExamples/historyView——10 文件 214 例绿。
-
-## 41. HR-DOD-002 触发面命名一致性
-
-手动命令、onSave、onDiskChange 对同一模块必须生成**完全一致**的短名/全名。§46 发送路径切换之后这一点是结构成立的:三张触发面都汇入同一条两级 fire 链,模块名只在下游单一字符串核心(`resolveModuleDualName`,HR-MOD-005)推导——触发面本身不参与命名。`tests/hotReloadTriggerNameConsistency.test.ts` 钉住这条边界:
-
-- **线上同名(onSave vs onDiskChange)**:同一文件经真实 `setupHotReload` 装配两次 fire——一次显式 glob 保存 watcher、一次根派生磁盘 watcher——送出的请求逐字节一致(body 与 query 都是 `module_name=fight.FightAI`,URL 相同)。
-- **命令/身份面同名**:HR-MOD-001 身份解析器(手动命令与 provider 所走的面)给出的 `requestModule`/`fullModule` 与线上发送名、预览/模板面逐字相等。
-- **开关透传**:`allowRootLevelStem` 在发送面与身份面同值透传——键开:两面都是 `Lone`;键关:发送面如实回落包边界扫描(`scripts.Lone`),身份面如实报 `root-level` unresolved。键关两行为是有意不同的契约(尽力给名 vs 如实报拒),不是分叉。
-- **两名真不同名**:嵌套文件的短名≠全名;全名是 UI 面,短名是唯一进 `module_name` 的名。
-
-**未触碰**——双名模型本体(HR-MOD-005 套件)、legacy `${module}` 语义(HR-MOD-012)、发送事实面各有既有套件;本节只补跨面一致性钉。门=新套件 4/4,tsc/eslint 双净。
-
-## 42. HR-QA-018 资格契约矩阵
+## 41. HR-QA-018 资格契约矩阵
 
 §33 的签收矩阵是 RUST-430 的管辖记录。本节保留钉住资格规则本身的契约完备性工件:`tests/hotReloadEligibilityMatrix.test.ts`(3 钉,载体 ba7833d5)穷举 **480 格**——3 档案×2 根×4 文件形态×5 触发态×2 用户显式×2 结构态——逐格对照独立重导 oracle(restart⟺结构因非空且主导;auto⟺四要素齐备;否则 manual),断言不抛错/无第四结论,另 auto=恰 1 格、restart=恰半数格。`.def` 不被规则特判(def 闸供结构因,规则只消费不重算)。target 安全门覆盖(loopback 白名单/workspace trust/provider 权限/结构闸按 target)已折入 §33.1 与 §33.5;本节旧稿表格被该逐维度签收取代,不再复述。
