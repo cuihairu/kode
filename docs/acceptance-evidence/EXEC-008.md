@@ -62,3 +62,32 @@
 本验收闭掉的是「真实 VS Code + 固定版本扩展 + Python 3.7.x 解释器」的完整调试链。todo.md EXEC-008 剩余两臂不在本机可闭,须用户真机:
 1. **Python 3.7.3 引擎内上下文**:口径基线记录的手搓 CPython 3.7.3 listen exit 139 未破案;本机系统 3.7.17 可用但不等价于「引擎内 3.7.3」——真机引擎(KBEngine 内嵌 Python)中的 listen/附加须在引擎机复验
 2. **升级后独立复验**:固定扩展/包升级后的独立复验轮须在真机升级场景执行(本机固定链仅证明当前固定组合可用)
+
+## 6. 引擎内臂 一键取证工具(attach 侧)
+
+「引擎内上下文」臂的 attach 侧工具:`scripts/exec008-engine-probe.py`(自包含纯 stdlib,裸 DAP 客户端)。引擎机**不必装 VS Code**——目标脚本进程已 `debugpy.listen(("127.0.0.1", PORT))` + `debugpy.wait_for_client()` 后,在该机执行:
+
+```bash
+python3 scripts/exec008-engine-probe.py \
+  --port 5678 --source <引擎内脚本绝对路径> \
+  --breakpoint-line <断点行> --step-line <单步行> \
+  --expect-a 21 --expect-b 2 \
+  --out docs/acceptance-evidence/evidence/EXEC-008-real-machine-probe.log
+```
+
+全链断言(断点命中→顶帧断点行→evaluate a=期望值→断点行 b 未定义=NameError 前态正确→Locals 变量→单步至单步行→evaluate b=期望值→断连)通过退出 0 并逐行时间戳留证;任一步失败/超时退出 1 并写 FAIL 行;目标不可达退出 1(CONNECT-FAIL)。与套件互补:套件走 vscode.debug API(需真机 VS Code+固定扩展),探针走裸 DAP(仅需目标侧 debugpy),覆盖「引擎内 listen/断点」臂。
+
+- 本地验证:3.7.17+debugpy 1.7.0 目标(同目标文件)全链 EXIT=0,证据见下;目标不可达负例 EXIT=1(CONNECT-FAIL 如实红)。
+- 协议要点同 §3:attach 响应延后到 configurationDone 之后、断点须在 `initialized` 窗口下发(探针在收到 initialized 事件后立即 setBreakpoints/setExceptionBreakpoints/configurationDone,不等 attach 响应)。
+
+```
+[01:35:45Z] PROBE-START source=/home/cui/workspaces/kode5/.vscode-test/exec008/target/entity_debug.py port=5678
+[01:35:45Z] EVENT: initialized
+[01:35:45Z] EVENT: stopped reason=breakpoint threadId=1
+[01:35:46Z] STACK: top=onEnterWorld line=9 frameId=2
+[01:35:46Z] EVAL-a: 21
+[01:35:46Z] EVAL-b-before-step: <NameError> (断点行 b 未定义=NameError 前态正确)
+[01:35:46Z] VARIABLES[Locals]: a=21, delta=1, self=<__main__.KBEntity object at 0x7611180a1050>
+[01:35:46Z] EVAL-b-after-step: 2 (line 10)
+[01:35:46Z] CHAIN-DONE: initialize/attach/breakpoint/stop/step/variables/disconnect 全链断言通过
+```
