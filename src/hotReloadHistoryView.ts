@@ -40,6 +40,7 @@ import {
 } from './backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
 import { formatHotReloadErrorReason } from './backend/hotReloadErrorReason';
+import { classifyReloadTransportError } from './backend/hotReloadTransportErrors';
 import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
 
 /** workspaceState 持久化键(HR-MOD-014;宿主适配面用) */
@@ -73,7 +74,9 @@ export interface HotReloadFeedStatus {
 /** 台账记录 → 历史行翻译(纯;requestId 同执行稳定,回执升级幂等替换) */
 export function translateDeliveryRecord(
   record: HotReloadDeliveryRecord,
-  resolveNames: HotReloadNamesResolver
+  resolveNames: HotReloadNamesResolver,
+  /** HR-STATE-007 观察时钟(ms);缺省=无时钟,时长如实不写 */
+  nowMs?: number
 ): HotReloadHistoryInput {
   const names = resolveNames(record.file);
   // accepted 只是回执中段(未到 applied 核验),历史三态如实按 sent-unverified
@@ -87,7 +90,17 @@ export function translateDeliveryRecord(
     targetId: record.targetId,
     time: record.recordedAt,
     status,
-    ...(record.detail !== undefined ? { errorSummary: formatHotReloadErrorReason(record.detail) } : {})
+    ...(record.detail !== undefined ? { errorSummary: formatHotReloadErrorReason(record.detail) } : {}),
+    // HR-STATE-007 操作史九字段补齐(各从自己事实源,缺哪个如实不写不猜):
+    // trigger=触发源(IDE-HOT-102「谁」)/hash=发送时点冻结指纹(IDE-AUD-006)
+    ...(record.source !== undefined ? { trigger: record.source } : {}),
+    ...(record.sentDigest !== undefined ? { hash: record.sentDigest } : {}),
+    // duration=发送→本次观察墙钟差(recordedAt 恒为发送时点,跨回执写回不
+    // 变);无时钟注入=无可判依据,如实不写;时钟倒退钳 0(时长无负值语义)
+    ...(nowMs !== undefined ? { durationMs: Math.max(0, nowMs - record.recordedAt) } : {}),
+    // errorCategory=失败行的传输五分类(非失败行无错误,如实不写;分类只做
+    // 定性不吞原始原因,原始 detail 仍在 errorSummary)
+    ...(status === 'failed' ? { errorCategory: classifyReloadTransportError(record.detail ?? '').kind } : {})
   };
 }
 
@@ -336,6 +349,11 @@ export interface HotReloadHistoryViewOptions {
   pageSize?: number;
   /** 节流定时器(注入;缺省真 setTimeout;测试给假钟) */
   timers?: { set(callback: () => void, ms: number): unknown; clear(handle: unknown): void };
+  /**
+   * HR-STATE-007 观察时钟(时长字段来源):handle 翻译时点墙钟,与台账/节流
+   * 钟同源注入;缺省=无时钟,时长字段如实不写(与核心「无可判依据不写」同口径)。
+   */
+  now?: () => number;
   /** 持久化面(HR-MOD-014;宿主用 context.workspaceState 适配;缺省不落) */
   persist?: {
     load(): unknown;
@@ -644,8 +662,9 @@ export function setupHotReloadHistoryView(
       }
     },
     handle: (record: HotReloadDeliveryRecord): void => {
-      // 台账记录立即入 store(O(1)),渲染/落账/树刷新全走批处理窗(RUST-372)
-      opts.core.record(translateDeliveryRecord(record, opts.resolveNames));
+      // 台账记录立即入 store(O(1)),渲染/落账/树刷新全走批处理窗(RUST-372)。
+      // HR-STATE-007:观察时钟注入则时长=发送→本次观察差;未注入如实不写。
+      opts.core.record(translateDeliveryRecord(record, opts.resolveNames, opts.now?.()));
       scheduleFlush();
     }
   };

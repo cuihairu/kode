@@ -9,7 +9,11 @@ import {
   translateDeliveryRecord,
   type HotReloadNamesResolver
 } from '../src/hotReloadHistoryView';
-import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../src/backend/hotReloadHistoryCore';
+import {
+  HotReloadHistoryCore,
+  buildHistoryEntryTooltipLines,
+  type HotReloadHistoryEntry
+} from '../src/backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from '../src/backend/hotReloadTargetState';
 import { panelRegistry, windowState } from './helpers/vscodeStub';
 import { treeRegistrations } from './fake-vscode/windowState';
@@ -129,6 +133,92 @@ describe('translateDeliveryRecord(HR-PR-06 台账→历史行翻译)', () => {
     // 未知类别:裸 HTTP 500 无可辨信号 → 原样透传,不猜不污染
     const bare = translateDeliveryRecord(recordOf({ outcome: 'failed', detail: 'HTTP 500' }), resolver);
     expect(bare.errorSummary).toBe('HTTP 500');
+  });
+});
+
+describe('HR-STATE-007 操作史九字段(trigger/duration/errorCategory/hash)', () => {
+  it('触发源与内容指纹从事实源透传:source→trigger,sentDigest→hash;未记录如实不写', () => {
+    const withFields = translateDeliveryRecord(
+      recordOf({ source: 'watcher-auto', sentDigest: 'a'.repeat(64) }),
+      resolver
+    );
+    expect(withFields.trigger).toBe('watcher-auto');
+    expect(withFields.hash).toBe('a'.repeat(64));
+
+    const bare = translateDeliveryRecord(recordOf(), resolver);
+    expect(bare.trigger).toBeUndefined();
+    expect(bare.hash).toBeUndefined();
+  });
+
+  it('时长=发送→观察墙钟差;无时钟如实不写;时钟倒退钳 0', () => {
+    const withNow = translateDeliveryRecord(recordOf(), resolver, 1700000001500);
+    expect(withNow.durationMs).toBe(1500);
+
+    const sendMoment = translateDeliveryRecord(recordOf(), resolver, 1700000000000);
+    expect(sendMoment.durationMs).toBe(0);
+
+    const noClock = translateDeliveryRecord(recordOf(), resolver);
+    expect(noClock.durationMs).toBeUndefined();
+
+    const regressed = translateDeliveryRecord(recordOf(), resolver, 1699999999000);
+    expect(regressed.durationMs).toBe(0);
+  });
+
+  it('错误分类只对失败行:传输五分类定性;非失败行如实不写;原始 detail 仍留 errorSummary', () => {
+    const refused = translateDeliveryRecord(recordOf({ outcome: 'failed', detail: 'ECONNREFUSED' }), resolver);
+    expect(refused.errorCategory).toBe('endpoint-unreachable');
+    expect(refused.errorSummary).toBe('ECONNREFUSED');
+
+    const cert = translateDeliveryRecord(recordOf({ outcome: 'failed', detail: 'self signed certificate' }), resolver);
+    expect(cert.errorCategory).toBe('certificate');
+
+    const unknown = translateDeliveryRecord(recordOf({ outcome: 'failed', detail: 'HTTP 500' }), resolver);
+    expect(unknown.errorCategory).toBe('unknown');
+
+    const applied = translateDeliveryRecord(recordOf({ outcome: 'applied' }), resolver);
+    expect(applied.errorCategory).toBeUndefined();
+
+    const sent = translateDeliveryRecord(recordOf({ outcome: 'accepted' }), resolver);
+    expect(sent.errorCategory).toBeUndefined();
+  });
+
+  it('tooltip 字段投影:四新字段在即列,缺如实不列(不拼空行)', () => {
+    const entry = translateDeliveryRecord(
+      recordOf({ source: 'retry', sentDigest: 'b'.repeat(64), outcome: 'failed', detail: 'ETIMEDOUT' }),
+      resolver,
+      1700000000500
+    );
+    const lines = buildHistoryEntryTooltipLines(entry);
+    expect(lines).toContain('trigger: retry');
+    expect(lines).toContain('duration: 500ms');
+    expect(lines).toContain('errorCategory: endpoint-unreachable');
+    expect(lines).toContain(`hash: ${'b'.repeat(64)}`);
+
+    const bareLines = buildHistoryEntryTooltipLines(translateDeliveryRecord(recordOf(), resolver));
+    expect(bareLines.some(line => line.startsWith('trigger:'))).toBe(false);
+    expect(bareLines.some(line => line.startsWith('duration:'))).toBe(false);
+    expect(bareLines.some(line => line.startsWith('errorCategory:'))).toBe(false);
+    expect(bareLines.some(line => line.startsWith('hash:'))).toBe(false);
+  });
+
+  it('装配 handle 经注入 now 落时长;未注入如实不写(与核心同口径)', () => {
+    const core = new HotReloadHistoryCore();
+    const feed = setupHotReloadHistoryView(contextOf(), {
+      core,
+      resolveNames: resolver,
+      now: () => 1700000002000
+    });
+    feed.handle(recordOf({ outcome: 'failed', detail: 'ECONNREFUSED' }));
+    const entry = core.entries()[0];
+    expect(entry.durationMs).toBe(2000);
+    expect(entry.trigger).toBeUndefined();
+    expect(entry.hash).toBeUndefined();
+    expect(entry.errorCategory).toBe('endpoint-unreachable');
+
+    const bareCore = new HotReloadHistoryCore();
+    const bareFeed = setupHotReloadHistoryView(contextOf(), { core: bareCore, resolveNames: resolver });
+    bareFeed.handle(recordOf({ outcome: 'failed', detail: 'ECONNREFUSED' }));
+    expect(bareCore.entries()[0].durationMs).toBeUndefined();
   });
 });
 
