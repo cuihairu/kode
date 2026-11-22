@@ -1,0 +1,16 @@
+# KBEngine 官方文档索引
+
+[官方文档目录](https://kbengine.github.io/docs/)涵盖下列各组。按任务打开相关页。API 先按宿主查，再用目标版本的绑定、实际派发和脚本模板确认。官方网页跨越多个版本，文档中的进程旧称、目录和示例须与目标 checkout 对齐。需要判断适用性时，引用 [官方 2.5.12 发布页](https://github.com/kbengine/kbengine/releases/tag/2.5.12)和[版本与源码来源](provenance.md)。
+
+| 主题 | 官方入口 |
+| --- | --- |
+| 构建、部署和升级 | [构建](https://kbengine.github.io/docs/build.html) · [安装](https://kbengine.github.io/docs/installation.html) · [卸载](https://kbengine.github.io/docs/uninstallation.html) · [升级](https://kbengine.github.io/docs/updating.html) · [启动与关闭](https://kbengine.github.io/docs/startup_shutdown.html) · [引擎概览](https://kbengine.github.io/docs/documentations/kbengine_overview.html) · [FAQ](https://kbengine.github.io/docs/faq.html) |
+| 配置 | [引擎默认配置](https://kbengine.github.io/docs/configuration/kbengine_defaults.html) · [项目覆盖配置](https://kbengine.github.io/docs/configuration/kbengine.html) · [实体注册](https://kbengine.github.io/docs/configuration/entities.html) · [错误码](https://kbengine.github.io/docs/configuration/server_errors_defaults.html) · [固定消息 ID](https://kbengine.github.io/docs/configuration/messages_fixed_defaults.html) · [邮件服务](https://kbengine.github.io/docs/configuration/email_service_defaults.html) · [日志配置](https://kbengine.github.io/docs/configuration/log4cxx_properties.html) |
+| 运维工具 | [工具概览](https://kbengine.github.io/docs/tools/) · [Installer](https://kbengine.github.io/docs/tools/installer.html) · [PyCluster](https://kbengine.github.io/docs/tools/pycluster.html) · [GUIConsole](https://kbengine.github.io/docs/tools/guiconsole.html) |
+| 架构和目录 | [服务器布局与进程职责](https://kbengine.github.io/docs/concepts/layout.html) · [目录结构](https://kbengine.github.io/docs/concepts/directorys.html) |
+| 脚本和实体 | [脚本 API 入口](https://kbengine.github.io/docs/programming/apidocs.html) · [中文 API](https://kbengine.github.io/assets/other/kbengine_api_cn.html) · [自定义类型](https://kbengine.github.io/docs/programming/types.html) · [类型重实现](https://kbengine.github.io/docs/programming/customtypes.html) · [定义实体](https://kbengine.github.io/docs/programming/entitydef.html) |
+| 引擎和客户端 | [通信协议格式](https://kbengine.github.io/docs/programming/kbe_message_format.html) · [服务器引擎编程](https://kbengine.github.io/docs/programming/serverengineprogramming.html) · [客户端 SDK 编程](https://kbengine.github.io/docs/programming/clientsdkprogramming.html) |
+| 调试与 Linux | [在线调试](https://kbengine.github.io/docs/documentations/onlinedebugging.html) · [压测](https://kbengine.github.io/docs/documentations/stresstest.html) · [运行日志](https://kbengine.github.io/docs/documentations/getlogs.html) · [Linux 性能配置](https://kbengine.github.io/docs/documentations/linuxosconfig.html) · [Linux 防火墙](https://kbengine.github.io/docs/documentations/linuxfirewall.html) |
+| 项目示例 | [创建最小项目](https://kbengine.github.io/docs/documentations/minimum_project.html) · [多人 RPG](https://kbengine.github.io/docs/documentations/rpggameexample.html) · [房间游戏](https://kbengine.github.io/docs/documentations/roomgameexample.html) · [RTS](https://kbengine.github.io/docs/documentations/rtsgameexample.html) |
+
+官方文档中的项目示例链接到示例工程或资料包。离线时可先看随附的 [服务器 Python 资产模板](source/kbe/res/sdk_templates/server/python_assets/) 和 [源码导航](source-map.md)。官方目录用于定位文档，技能内的源码快照用于复核目标版本行为。 [官方文档许可](https://creativecommons.org/licenses/by/3.0/)

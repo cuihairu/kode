@@ -1,12 +1,14 @@
 ---
 name: kbengine-expert
-description: 基于 KBEngine 官方 2.5.12 和嵌入式 CPython 3.7.3 分析游戏服务端源码，定位进程、实体、代理、组件及客户端的生命周期钩子，以及实体定义、Mailbox/RPC、AOI、脚本绑定、持久化和热重载。适用于 KBEngine 引擎及游戏脚本的设计、诊断、评审与修改。
+description: 基于 KBEngine 官方文档、2.5.12 源码与嵌入式 CPython 3.7.3，设计游戏模块、实体、组件和进程协作，核对生命周期、Mailbox/RPC、AOI、持久化和热重载。适用于 KBEngine 引擎及游戏脚本的设计、诊断、评审与修改。
 ---
 
 # KBEngine 引擎专家
 
 本技能以官方 KBEngine `2.5.12`、提交 `7d379b9f943d2731b09c45398855f98efe74d046` 和嵌入式 CPython `3.7.3` 为基线。随附 [源码快照](references/source/) 保留上游相对路径。针对用户的 fork 或业务资产修改时，以目标 checkout、实际运行组件及其 ABI 为准，并说明与官方基线的差异。
 
+- 查官方文档时，按 [官方文档索引](references/official-docs.md) 选专题，再用目标版本源码核对运行语义。
+- 新增模块、组件、独立实体或分析进程关系时，读 [模块、实体与进程选型](references/module-and-entity-design.md)。
 - 查进程、实体、RPC、AOI 或数据落库时，先读 [源码导航](references/source-map.md)，沿相关入口定位到具体函数。
 - 查钩子的宿主、签名和先后条件时，读 [生命周期钩子](references/lifecycle-hooks.md)，在目标版本运行派发点检索并追查调用分支。
 - 查 `cellData`、实体回收、传送、登录、Flags 或落库语义时，读 [引擎机制与常见误判](references/engine-knowledge.md)。
