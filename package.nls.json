@@ -150,6 +150,7 @@
   "kbengine.command.hotReload.showRevisionEvidence.title": "Show Hot Reload Revision Evidence",
   "kbengine.command.hotReload.filterByState.title": "Hot Reload: Show Changed Files (Dirty/Sent)",
   "kbengine.command.hotReload.showFileState.title": "Hot Reload: Show File State",
+  "kbengine.command.hotReload.locateFile.title": "Hot Reload: Locate File",
   "kbengine.command.hotReload.configureChannel.title": "Hot Reload: Configure Deployment Channel",
   "kbengine.command.hotReload.switchChannel.title": "Hot Reload: Switch Channel (Status Bar Quick Switch)",
   "kbengine.command.hotReload.confirmDefBaseline.title": "Hot Reload: Confirm Restart (Rebuild def Structure Baselines)",

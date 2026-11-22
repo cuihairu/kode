@@ -150,6 +150,7 @@
   "kbengine.command.hotReload.showRevisionEvidence.title": "查看热更修订证据",
   "kbengine.command.hotReload.filterByState.title": "热更: 显示已改动文件(未发送/已发送)",
   "kbengine.command.hotReload.showFileState.title": "热更: 查看文件状态",
+  "kbengine.command.hotReload.locateFile.title": "热更: 定位文件",
   "kbengine.command.hotReload.configureChannel.title": "热更: 配置部署通道",
   "kbengine.command.hotReload.switchChannel.title": "热更: 切换通道(状态栏快速切换)",
   "kbengine.command.hotReload.confirmDefBaseline.title": "热更: 确认重启(重建 def 结构基线)",

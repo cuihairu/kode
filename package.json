@@ -34,6 +34,7 @@
   ],
   "activationEvents": [
     "onCommand:kbengine.hotReload.showFileState",
+    "onCommand:kbengine.hotReload.locateFile",
     "onCommand:kbengine.hotReload.filterByState",
     "onStartupFinished",
     "onLanguage:kbengine-def",
@@ -1138,6 +1139,10 @@
       {
         "command": "kbengine.hotReload.showFileState",
         "title": "%kbengine.command.hotReload.showFileState.title%"
+      },
+      {
+        "command": "kbengine.hotReload.locateFile",
+        "title": "%kbengine.command.hotReload.locateFile.title%"
       },
       {
         "command": "kbengine.processOwnership.openCell",

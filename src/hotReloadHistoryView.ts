@@ -62,6 +62,8 @@ export const HOT_RELOAD_HISTORY_SEARCH_COMMAND = 'kbengine.hotReload.historySear
 export const HOT_RELOAD_HISTORY_CLEAR_COMMAND = 'kbengine.hotReload.historyClear';
 /** RUST-368 export-history:全量行脱敏 JSON 落盘(命令面板可达) */
 export const HOT_RELOAD_HISTORY_EXPORT_COMMAND = 'kbengine.hotReload.historyExport';
+/** RUST-381 失败点击定位文件:历史行/树行点击打开文件(接线下半,树+webview 共用) */
+export const HOT_RELOAD_LOCATE_FILE_COMMAND = 'kbengine.hotReload.locateFile';
 /**
  * RUST-368 保留时间限额政策(7 天):装配面注入 HotReloadHistoryCore 与
  * 本视图面——回载/落账前淘汰超龄行,历史不越攒越大(容量环形淘汰之外
@@ -192,7 +194,7 @@ export function renderHistoryPanelHtml(input: {
     const hashCell = entry.hash
       ? `<code title="${esc(entry.hash)}">${esc(entry.hash.slice(0, 12))}…</code>`
       : '';
-    return `      <tr>
+    return `      <tr data-file="${esc(entry.fileUri)}" title="点击定位文件">
         <td class="module">${moduleCell}</td>
         <td><code title="${esc(entry.fileUri)}">${esc(path.basename(entry.fileUri))}</code></td>
         <td>${esc(entry.targetId.length > 0 ? entry.targetId : '(default)')}</td>
@@ -335,6 +337,13 @@ ${body || '      <tr><td colspan="10">(无匹配行)</td></tr>'}
     });
     const more = document.getElementById('more');
     if (more) { more.addEventListener('click', () => vscode.postMessage({ type: 'loadMore' })); }
+    // RUST-381 失败点击定位文件:行级委托(虚拟滚动行随窗口重渲,委托挂
+    // body 不随行重建丢监听)——命中 data-file 行即回传 host 打开文件。
+    document.body.addEventListener('click', e => {
+      const target = e.target;
+      const tr = target && target.closest ? target.closest('tr[data-file]') : null;
+      if (tr) { vscode.postMessage({ type: 'openFile', file: tr.getAttribute('data-file') }); }
+    });
 ${
   useVirtual
     ? `    // 虚拟滚动(HR-UI-007):滚动时只重渲窗口行(JS 镜像 computeVirtualScrollWindow);
@@ -356,7 +365,7 @@ ${
       const hashCell = entry.hash
         ? '<code title="' + escJs(entry.hash) + '">' + escJs(entry.hash.slice(0, 12)) + '…</code>'
         : '';
-      return '<tr>' +
+      return '<tr data-file="' + escJs(entry.fileUri) + '" title="点击定位文件">' +
         '<td class="module">' + moduleCell + '</td>' +
         '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
         '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : '(default)') + '</td>' +
@@ -523,6 +532,13 @@ export function setupHotReloadHistoryView(
         item.tooltip = buildHistoryEntryTooltipLines(entry).join('\n');
         item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}`;
         item.contextValue = 'kbengineHotReloadHistoryEntry';
+        // RUST-381 失败点击定位文件:树行点击打开文件(命令参数=行文件路径;
+        // 任意行可定位,失败行照用同一动作)
+        item.command = {
+          command: HOT_RELOAD_LOCATE_FILE_COMMAND,
+          title: '定位文件',
+          arguments: [entry.fileUri]
+        };
         return item;
       }
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
@@ -658,6 +674,26 @@ export function setupHotReloadHistoryView(
   });
   context.subscriptions.push(clearCommand);
 
+  // RUST-381 失败点击定位文件:历史行/树行点击打开文件(路径缺失如实报错,
+  // 打开失败如实报错——不静默吞)。
+  const locateCommand = vscode.commands.registerCommand(
+    HOT_RELOAD_LOCATE_FILE_COMMAND,
+    async (file: unknown): Promise<void> => {
+      if (typeof file !== 'string' || file.length === 0) {
+        void vscode.window.showErrorMessage('定位文件:路径缺失');
+        return;
+      }
+      try {
+        await vscode.window.showTextDocument(vscode.Uri.file(file));
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          `无法打开文件 ${file}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(locateCommand);
+
   // RUST-368 export-history:全量行经 buildHistoryExport 白名单脱敏后 JSON
   // 落盘(HTTP body/header/令牌不进导出)。空史如实报空不写垃圾文件;
   // 取消=如实不写;写失败如实报错(原子写,不留半截文件)。
@@ -778,6 +814,11 @@ export function setupHotReloadHistoryView(
       if (message?.type === 'loadMore') {
         panelState.state = { ...panelState.state, page: panelState.state.page + 1 };
         renderPanel();
+        return;
+      }
+      // RUST-381 失败点击定位文件:webview 行点击回传文件路径 → 打开文件
+      if (message?.type === 'openFile') {
+        void vscode.commands.executeCommand(HOT_RELOAD_LOCATE_FILE_COMMAND, message.file);
       }
     }, undefined, context.subscriptions);
     panelState.panel.onDidDispose(() => {
