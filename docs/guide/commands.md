@@ -886,6 +886,16 @@ The flow graph panel supports:
   - The JSON document carries `schemaVersion: 1`, `exportedAt`, `count`, and the row list; the write uses atomic replace so an interrupted export never leaves a half-written file
   - A failed write surfaces the file path and error instead of a bare command failure
 
+### `kbengine.hotReload.historyRevealFile`
+
+- Title: `Locate File`
+- Purpose: locate the file of a failed hot-reload history entry (失败点击定位文件, RUST-381/HR-UI-008)
+- Behavior:
+  - Invoked from the history tree: clicking a failed row, or the row context menu's first action; the entry's `fileUri` is passed as the command argument (palette-hidden — it is a click action, not a palette command)
+  - A missing/absent argument is reported honestly (热更历史条缺少文件路径) instead of pretending to locate
+  - An unopenable file (moved/deleted/locked) is reported honestly with the path; nothing is silently fabricated
+  - The failed-row context menu also offers 打开输出日志 (`kbengine.hotReload.showLog`) and 重试 (`kbengine.hotReload.retryFailed`); non-failed rows keep the plain (unclickable) row behavior
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`

@@ -62,6 +62,9 @@ export const HOT_RELOAD_HISTORY_SEARCH_COMMAND = 'kbengine.hotReload.historySear
 export const HOT_RELOAD_HISTORY_CLEAR_COMMAND = 'kbengine.hotReload.historyClear';
 /** RUST-368 export-history:全量行脱敏 JSON 落盘(命令面板可达) */
 export const HOT_RELOAD_HISTORY_EXPORT_COMMAND = 'kbengine.hotReload.historyExport';
+// RUST-381 (HR-UI-008):失败条点击定位文件——历史树失败行点击打开该文件;
+// 文件已不在(移动/删除)如实提示,不静默假装定位成功。
+export const HOT_RELOAD_HISTORY_REVEAL_FILE_COMMAND = 'kbengine.hotReload.historyRevealFile';
 /**
  * RUST-368 保留时间限额政策(7 天):装配面注入 HotReloadHistoryCore 与
  * 本视图面——回载/落账前淘汰超龄行,历史不越攒越大(容量环形淘汰之外
@@ -522,7 +525,19 @@ export function setupHotReloadHistoryView(
         const item = new vscode.TreeItem(buildHistoryEntryLabel(entry));
         item.tooltip = buildHistoryEntryTooltipLines(entry).join('\n');
         item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}`;
-        item.contextValue = 'kbengineHotReloadHistoryEntry';
+        // RUST-381:失败行=可点定位文件(命令带该条 fileUri),右键面给
+        // 「定位文件/打开日志/重试」三动作;contextValue 按状态分叉,右键菜单
+        // 只对失败行亮(viewItem == kbengineHotReloadHistoryEntryFailed)。
+        if (entry.status === 'failed') {
+          item.contextValue = 'kbengineHotReloadHistoryEntryFailed';
+          item.command = {
+            command: HOT_RELOAD_HISTORY_REVEAL_FILE_COMMAND,
+            arguments: [entry.fileUri],
+            title: '定位文件'
+          };
+        } else {
+          item.contextValue = 'kbengineHotReloadHistoryEntry';
+        }
         return item;
       }
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
@@ -693,6 +708,25 @@ export function setupHotReloadHistoryView(
     }
   );
   context.subscriptions.push(exportCommand);
+
+  // RUST-381 (HR-UI-008):失败条点击定位文件。fileUri 缺失=如实提示不定位;
+  // 打开失败(文件已移/删)=如实提示,不静默假装定位成功。
+  const revealFileCommand = vscode.commands.registerCommand(
+    HOT_RELOAD_HISTORY_REVEAL_FILE_COMMAND,
+    async (fileUri?: string): Promise<void> => {
+      if (typeof fileUri !== 'string' || fileUri.length === 0) {
+        void vscode.window.showInformationMessage('热更历史条缺少文件路径,无法定位');
+        return;
+      }
+      try {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(fileUri));
+        await vscode.window.showTextDocument(document, { preview: true });
+      } catch {
+        void vscode.window.showInformationMessage(`文件不存在或无法打开: ${fileUri}`);
+      }
+    }
+  );
+  context.subscriptions.push(revealFileCommand);
 
   // 面板状态(HR-UI-010 过滤 + HR-UI-007 分页)
   const panelState: { state: HotReloadHistoryPanelState | null; panel: vscode.WebviewPanel | null } = {

@@ -135,6 +135,7 @@
     "onCommand:kbengine.hotReload.historySearch",
     "onCommand:kbengine.hotReload.historyClear",
     "onCommand:kbengine.hotReload.historyExport",
+    "onCommand:kbengine.hotReload.historyRevealFile",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.project.wizard",
     "onCommand:kbengine.symbolReferences.show",
@@ -871,6 +872,11 @@
         "category": "KBEngine"
       },
       {
+        "command": "kbengine.hotReload.historyRevealFile",
+        "title": "%kbengine.command.hotReload.historyRevealFile.title%",
+        "category": "KBEngine"
+      },
+      {
         "command": "kbengine.project.doctor",
         "title": "%kbengine.command.project.doctor.title%",
         "icon": "$(checklist)"
@@ -1396,11 +1402,30 @@
           "command": "kbengine.git.openVersionContent",
           "when": "view == kbengine.gitHistory && viewItem == gitCommit",
           "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.historyRevealFile",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.showLog",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.hotReload.retryFailed",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [
         {
           "command": "kbengine.hotReload.showLog",
+          "when": "false"
+        },
+        {
+          "command": "kbengine.hotReload.historyRevealFile",
           "when": "false"
         },
         {
