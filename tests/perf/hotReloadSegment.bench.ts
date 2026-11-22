@@ -9,8 +9,9 @@
  *      (语法检查→队列→发出;总 CPU=flushed-scheduled 即「本地 pipeline CPU」);
  *   S5 排队/丢弃原因:debounced(归并)/deduped(去重)/blocked(语法拦)/
  *      preview(批量滞留)各自计数(丢弃原因全量在 RUST-341 诊断面板,此处统计)。
- * 只观测不改行为;断言=语义计数命中面,墙钟一律不进断言(P95/P99/max 只记录,
- * 阈值化归后续)。输出 HRS-ENV/HRS-METRIC/HRS-NOTE 落
+ * 只观测不改行为;断言=语义计数命中面+宽松上界表(hotReloadSegmentBounds:
+ * KODE_SEG_BOUND_* 可覆盖,只捕数量级回退不跨机器比绝对值;P95/P99/max 全记录)。
+ * 输出 HRS-ENV/HRS-METRIC/HRS-NOTE 落
  * docs/perf/hot-reload-segment-run.txt(追加制,KODE_SEG_OUT 可覆盖),与主
  * unit 门无交集(.bench.ts 独立 lane)。
  *
@@ -22,6 +23,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { resolveSegmentBounds, segmentViolations } from './hotReloadSegmentBounds';
 import {
   HotReloadSavePipeline,
   isWatchableScriptFile,
@@ -116,6 +118,8 @@ const firstScripts = (count: number): string[] =>
   Array.from({ length: count }, (_unused, index) => scriptPath(index));
 
 describe('RUST-414 热更各段耗时统计(过滤/哈希/语法/队列+丢弃原因)', () => {
+  const violations: string[] = [];
+
   beforeAll(() => {
     fs.rmSync(ASSETS_OUT, { recursive: true, force: true });
     const scriptsRoot = path.join(ASSETS_OUT, 'scripts');
@@ -213,6 +217,15 @@ describe('RUST-414 热更各段耗时统计(过滤/哈希/语法/队列+丢弃�
     once('S4.queue.count', queueSamples.length, ' samples');
     pooled('S4.totalCpu', totalSamples);
     once('S4.totalCpu.count', totalSamples.length, ' samples');
+    violations.push(
+      ...segmentViolations(resolveSegmentBounds(), {
+        s1FilterP99Ms: percentile(filterSamples, 0.99),
+        s2HashP99Ms: percentile(hashSamples, 0.99),
+        s3SyntaxP99Ms: percentile(syntaxSamples, 0.99),
+        s4QueueP99Ms: percentile(queueSamples, 0.99),
+        s4TotalCpuP99Ms: percentile(totalSamples, 0.99)
+      })
+    );
   }, 600000);
 
   it('S5 排队与丢弃原因:归并/去重/语法拦/批量滞留各自计数', async () => {
@@ -357,14 +370,22 @@ describe('RUST-414 热更各段耗时统计(过滤/哈希/语法/队列+丢弃�
     pooled('S6.queue', queueSamples);
     pooled('S6.totalCpu', totalSamples);
     once('S6.saves', 50, ' saves');
+    violations.push(
+      ...segmentViolations(resolveSegmentBounds(), {
+        s6HashP99Ms: percentile(hashSamples, 0.99),
+        s6SyntaxP99Ms: percentile(syntaxSamples, 0.99),
+        s6QueueP99Ms: percentile(queueSamples, 0.99),
+        s6TotalCpuP99Ms: percentile(totalSamples, 0.99)
+      })
+    );
   }, 120000);
 
   it('S7 500 事件 burst 同步段:filter+offer 不饿死事件循环(RUST-416 面)', async () => {
     // RUST-416(旧 HR-QA-004)500 文件同时变动:批次确认/限流由 HR-WATCH-016
     // 滞留(单文件测试)与 M3 规模面(500 全滞留 auto=0)钉;此处钉纯核同步段
     // ——watcher burst 的 filter+offer 同步成本有界(观测几十毫秒,非秒级),
-    // 读盘/哈希在 libuv 线程池异步不占主线程(UI 不冻结的纯核面)。断言只有
-    // 同步段语义(500 全入队零丢失、同步段零发出);墙钟只观测不进断言。
+    // 读盘/哈希在 libuv 线程池异步不占主线程(UI 不冻结的纯核面)。断言=同步段
+    // 语义(500 全入队零丢失、同步段零发出)+同步段墙钟宽松上界(界表)。
     const paths = firstScripts(500);
     const filterSamples: number[] = [];
     let accepted = 0;
@@ -399,10 +420,24 @@ describe('RUST-414 热更各段耗时统计(过滤/哈希/语法/队列+丢弃�
     once('S7.burst500.offerWall', offerWall);
     once('S7.burst500.offerPerEvent', offerWall / 500);
     pooled('S7.burst500.filterSamples', filterSamples);
+    violations.push(
+      ...segmentViolations(resolveSegmentBounds(), {
+        s7BurstFilterP99Ms: percentile(filterSamples, 0.99),
+        s7BurstFilterWallMs: filterWall,
+        s7BurstOfferWallMs: offerWall
+      })
+    );
     emit(
       'HRS-NOTE S7 500 事件 burst 同步段:filter+offer 观测几十毫秒(含负载波动),' +
       '非秒级饿死;500 全入队零丢失,读盘在 libuv 线程池异步不占主线程(UI 不冻结' +
       '纯核面);UI 线程面随接线批(装配面)'
     );
   }, 120000);
+
+  it('gate:各段界收口(任一面超界=红=合并阻塞面)', () => {
+    emit(
+      `HRS-BOUND violations=${violations.length} bounds=${JSON.stringify(resolveSegmentBounds())}`
+    );
+    expect(violations).toEqual([]);
+  });
 });

@@ -17,9 +17,9 @@
  *      键口径与本地一致)+ 端到端诚实未覆盖注记(需活 SSH 会话+远端文件系统
  *      延迟,纯核基准无此面)。
  *
- * 只观测不改行为;断言只有语义命中面(确定性的 hits/计数),墙钟一律不进断言
- * (只捕数量级回退的阈值属 RUST-414 后续批次;本批先建测量)。输出
- * HRS-ENV/HRS-METRIC/HRS-NOTE 落 docs/perf/hot-reload-scale-run.txt(追加制,
+ * 只观测不改行为;断言=语义命中面(确定性的 hits/计数)+宽松上界表
+ * (hotReloadScaleBounds:KODE_HRS_BOUND_* 可覆盖,只捕数量级回退不跨机器比
+ * 绝对值)。输出 HRS-ENV/HRS-METRIC/HRS-NOTE 落 docs/perf/hot-reload-scale-run.txt(追加制,
  * KODE_HRS_OUT 可覆盖),与主 unit 门无交集(.bench.ts 独立 lane,仅
  * vitest.bench.config.ts 收录)。
  *
@@ -31,6 +31,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { resolveScaleBounds, scaleViolations } from './hotReloadScaleBounds';
 import {
   HotReloadSavePipeline,
   isWatchableScriptFile,
@@ -154,6 +155,8 @@ const firstScripts = (count: number): string[] =>
   Array.from({ length: count }, (_unused, index) => scriptPath(index));
 
 describe('RUST-413 热更新规模基准(文件数矩阵/持续保存/checkout 爆发/写入风暴/远端)', () => {
+  const violations: string[] = [];
+
   beforeAll(() => {
     // 确定性内容:每文件唯一类名,重复生成一致(与 generate-perf-assets 同纪律)
     fs.rmSync(ASSETS_OUT, { recursive: true, force: true });
@@ -214,6 +217,18 @@ describe('RUST-413 热更新规模基准(文件数矩阵/持续保存/checkout �
       // 每文件读延迟含全爆发并发排队(50k readFile 挤 libuv 线程池),
       // 非单读固有成本;固有成本=wall/N(perFile)
       pooled(`M1.absorb.${n}.readLatency`, timedSnapshot.samples);
+      violations.push(
+        ...scaleViolations(resolveScaleBounds(), {
+          m1FilterPerEventMs: filterWall / n,
+          m1AbsorbPerFileMs: absorbWall / n,
+          ...(n === LARGEST
+            ? {
+                m1Absorb50kWallMs: absorbWall,
+                m1ReadLatency50kP99Ms: percentile(timedSnapshot.samples, 0.99)
+              }
+            : {})
+        })
+      );
       expect(emitted.length).toBe(n);
       expect(emitted.every(event => event.revision === 1)).toBe(true);
       pipeline.dispose();
@@ -246,6 +261,12 @@ describe('RUST-413 热更新规模基准(文件数矩阵/持续保存/checkout �
     once('M2.sustained.wall', wall);
     once('M2.sustained.throughput', 100 / (wall / 1000), ' saves/s');
     pooled('M2.saveToQueue', perSave);
+    violations.push(
+      ...scaleViolations(resolveScaleBounds(), {
+        m2SustainedWallMs: wall,
+        m2SaveToQueueP99Ms: percentile(perSave, 0.99)
+      })
+    );
     expect(emitted.length).toBe(100);
     expect(emitted.map(event => event.revision)).toEqual([...Array(100).keys()].map(k => k + 1));
     expect(emitted.every(event => event.source === 'save')).toBe(true);
@@ -267,14 +288,22 @@ describe('RUST-413 热更新规模基准(文件数矩阵/持续保存/checkout �
     }
     // 波次归集窗 500ms + 批量冲口 500ms 后,500 文件合成一批 → 超阈值 50 滞留
     await waitFor(() => pipeline.previewHeldFiles().length === 500, 30000, 'M3 preview hold');
-    once('M3.previewHold.wall', performance.now() - burstStart);
+    const holdWall = performance.now() - burstStart;
+    once('M3.previewHold.wall', holdWall);
     expect(auto.length).toBe(0);
     expect(pipeline.previewHeldFiles().length).toBe(500);
     // 显式放行(HR-WATCH-016):才以 preview-release 模式发出
     const releaseStart = performance.now();
     pipeline.releasePreview();
     await waitFor(() => preview.length > 0, 10000, 'M3 release');
-    once('M3.releasePreview.wall', performance.now() - releaseStart);
+    const releaseWall = performance.now() - releaseStart;
+    once('M3.releasePreview.wall', releaseWall);
+    violations.push(
+      ...scaleViolations(resolveScaleBounds(), {
+        m3PreviewHoldWallMs: holdWall,
+        m3ReleasePreviewWallMs: releaseWall
+      })
+    );
     expect(preview.flat().length).toBe(500);
     expect(preview[0].every(event => event.revision === 1)).toBe(true);
     pipeline.dispose();
@@ -298,7 +327,13 @@ describe('RUST-413 热更新规模基准(文件数矩阵/持续保存/checkout �
       pipeline.offer(p, 'disk-change');
     }
     await waitFor(() => emitted.length === 100, 30000, 'M4 absorb');
-    once('M4.storm.wall', performance.now() - stormStart);
+    const stormWall = performance.now() - stormStart;
+    once('M4.storm.wall', stormWall);
+    violations.push(
+      ...scaleViolations(resolveScaleBounds(), {
+        m4StormWallMs: stormWall
+      })
+    );
     expect(emitted.length).toBe(100);
     expect(emitted.every(event => event.coalesced === 2)).toBe(true);
     expect(emitted.every(event => event.coalesceReason.includes('disk-save-overlap'))).toBe(true);
@@ -321,10 +356,23 @@ describe('RUST-413 热更新规模基准(文件数矩阵/持续保存/checkout �
     for (let i = 0; i < 100000; i++) {
       canonicalizeScriptFilePath('//wsl$/Ubuntu/home/user/scripts/base/Avatar.py');
     }
-    once('M5.canonicalize.100k', performance.now() - canonicalStart);
+    const canonicalWall = performance.now() - canonicalStart;
+    once('M5.canonicalize.100k', canonicalWall);
+    violations.push(
+      ...scaleViolations(resolveScaleBounds(), {
+        m5Canonicalize100kMs: canonicalWall
+      })
+    );
     emit(
       'HRS-NOTE M5 远端端到端延迟未覆盖:需活 SSH 会话+远端文件系统延迟,纯核基准' +
       '无此面;远端路径规范化已由本例覆盖,键口径与本地一致,端到端随接线批'
     );
   }, 600000);
+
+  it('gate:规模界收口(任一面超界=红=合并阻塞面)', () => {
+    emit(
+      `HRS-BOUND violations=${violations.length} bounds=${JSON.stringify(resolveScaleBounds())}`
+    );
+    expect(violations).toEqual([]);
+  });
 });
