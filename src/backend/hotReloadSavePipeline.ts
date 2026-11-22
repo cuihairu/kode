@@ -251,6 +251,18 @@ export class HotReloadSavePipeline {
   private waveTimer: unknown;
   /** 本波是否已开冲口:避免每文件各起一个冲口,波尾被反复拉长 */
   private waveArmed = false;
+  /**
+   * HR-STATE-011 暂停:入口照常收(事件在 pending/波次内累积),出口(波次
+   * 归集)按住不放,恢复时一次放出。pause 只挡波次归集,不挡显式预览放行
+   * (放行本身是用户点出来的「就发这批」,与「先都别自动发」不冲突)。
+   */
+  private paused = false;
+  /**
+   * HR-STATE-011 取消:定稿在途(settling)的文件此刻还摘不干净,定稿落到
+   * 波次前按此集丢弃;同文件再 offer 的全新 pending 条目不受旧标记影响
+   * (标记在定稿丢弃时消费,旧定稿先落先消费,同 uri 定稿不并行)。
+   */
+  private readonly cancelled = new Set<string>();
   private disposed = false;
 
   constructor(options: HotReloadSavePipelineOptions) {
@@ -364,6 +376,69 @@ export class HotReloadSavePipeline {
     this.onEmit(held, 'preview-release');
     this.markSent(held);
     this.diagnostic({ type: 'flushed', detail: `预览放行 ${held.length} 文件` });
+  }
+
+  /**
+   * HR-STATE-011 暂停:按住波次归集(已定稿/在途事件继续在 pending/波次/预览
+   * 滞留内累积),恢复时由 resume 一次放出。重复暂停是幂等的(状态位)。
+   */
+  pause(): void {
+    this.paused = true;
+  }
+
+  /** 暂停中的波次是否被按住(队列面自省,呈现「已暂停,待发 N 文件」用) */
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  /**
+   * HR-STATE-011 恢复:清状态位并立刻冲一次波次(暂停期间归集好的批次
+   * 当场放出,不等下一个冲口)。重复恢复幂等(波次已空则无动作)。
+   */
+  resume(): void {
+    this.paused = false;
+    this.flushWave();
+  }
+
+  /**
+   * HR-STATE-011 取消:摘掉单个文件尚未发出的那一侧,返回摘到的队列(调用
+   * 面照实报「从哪摘的」,「未找到」如实 none,不假装取消)。已发出的批次
+   * 不召回(发送面已持有,幂等靠回执口径,不由本核回卷)。
+   */
+  cancel(file: string): 'pending' | 'preview-held' | 'wave' | 'in-flight' | 'none' {
+    const uri = canonicalizeScriptFilePath(file);
+    if (uri.length === 0) {
+      return 'none';
+    }
+    const entry = this.pending.get(uri);
+    if (entry !== undefined) {
+      if (entry.timer !== undefined) {
+        this.timers.clear(entry.timer);
+      }
+      this.pending.delete(uri);
+      this.cancelled.delete(uri);
+      this.diagnostic({ type: 'filtered', uri, detail: '已取消,丢弃待发事件' });
+      return 'pending';
+    }
+    const heldBefore = this.previewEvents.length;
+    this.previewEvents = this.previewEvents.filter(event => event.uri !== uri);
+    if (this.previewEvents.length !== heldBefore) {
+      this.diagnostic({ type: 'filtered', uri, detail: '已取消,丢弃预览滞留事件' });
+      return 'preview-held';
+    }
+    const waveBefore = this.wave.length;
+    this.wave = this.wave.filter(event => event.uri !== uri);
+    if (this.wave.length !== waveBefore) {
+      this.diagnostic({ type: 'filtered', uri, detail: '已取消,丢弃波次内事件' });
+      return 'wave';
+    }
+    if (this.settling.has(uri)) {
+      // 定稿在途:此刻摘不到,标记后由 settle 在入波前丢弃
+      this.cancelled.add(uri);
+      this.diagnostic({ type: 'filtered', uri, detail: '定稿在途,标记取消待入波前丢弃' });
+      return 'in-flight';
+    }
+    return 'none';
   }
 
   /**
@@ -540,6 +615,14 @@ export class HotReloadSavePipeline {
       this.diagnostic({ type: 'deduped', uri, detail: '同内容同目标,不重复发送' });
       return;
     }
+    // HR-STATE-011 取消:定稿在途被 cancel 标记,入波前丢弃。检查放语法闸
+    // 与去重之后——异步语法闸等待期间(真解释器编译)用户取消必须照收;
+    // 标记消费时点删除,同文件再 offer 的全新条目不受旧标记影响(同 uri
+    // 定稿不并行,旧定稿先消费)。不占版本号:未发出的内容不递增。
+    if (this.cancelled.delete(uri)) {
+      this.diagnostic({ type: 'filtered', uri, detail: '已取消,定稿不入波次' });
+      return;
+    }
     // 去重指纹不在此记录:本核不知投递成败,指纹在批次实际发出时
     // 由 recordSent 记录(否则一次失败就永久跳过同内容,HR-WATCH-008)。
     // 版本号只随「实际发出的新内容版本」递增:去重/拦截不占号,否则在途的
@@ -581,9 +664,9 @@ export class HotReloadSavePipeline {
     return reasons.length > 0 ? reasons.join(';') : 'single';
   }
 
-  /** 波尾归集:同窗定稿文件合成一批发出 */
+  /** 波尾归集:同窗定稿文件合成一批发出;HR-STATE-011 暂停时按住不放 */
   private flushWave(): void {
-    if (this.disposed || this.wave.length === 0) {
+    if (this.disposed || this.wave.length === 0 || this.paused) {
       return;
     }
     const events = this.wave;

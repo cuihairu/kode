@@ -1442,6 +1442,42 @@ export function setupHotReload(
     }
   );
 
+  // HR-STATE-011 队列控制:暂停/恢复/取消(命令面板可达;闭锁 pipeline 变量,
+  // 随 apply 重建仍操作当前实例,与 releasePreview 同口径)。
+  const pauseCommand = vscode.commands.registerCommand('kbengine.hotReload.pause', () => {
+    if (!pipeline) {
+      void vscode.window.showInformationMessage('热更流水线未启用');
+      return;
+    }
+    pipeline.pause();
+    void vscode.window.showInformationMessage('已暂停热更流水线(新事件仍累积,恢复时一次放出)');
+  });
+
+  const resumeCommand = vscode.commands.registerCommand('kbengine.hotReload.resume', () => {
+    if (!pipeline) {
+      void vscode.window.showInformationMessage('热更流水线未启用');
+      return;
+    }
+    pipeline.resume();
+    void vscode.window.showInformationMessage('已恢复热更流水线');
+  });
+
+  const cancelCommand = vscode.commands.registerCommand('kbengine.hotReload.cancel', () => {
+    const file = vscode.window.activeTextEditor?.document.uri.fsPath;
+    if (!file || !pipeline) {
+      void vscode.window.showInformationMessage('活动编辑器无文件或热更流水线未启用');
+      return;
+    }
+    const hit = pipeline.cancel(file);
+    if (hit === 'none') {
+      void vscode.window.showInformationMessage(`当前文件无待发热更:${file}`);
+      return;
+    }
+    const where =
+      hit === 'pending' ? '归并中' : hit === 'preview-held' ? '预览滞留' : hit === 'wave' ? '波次内' : '定稿在途';
+    void vscode.window.showInformationMessage(`已取消待发热更(${where}):${file}`);
+  });
+
   // RUST-341:诊断审查入口——打开「KBEngine 热更诊断」通道(八型事件
   // 时间线,见 buildPipeline 的 onDiagnostic 全量落账)。命令随复合
   // disposable 一并释放(与 releasePreview 同口径)。
@@ -1756,6 +1792,9 @@ export function setupHotReload(
   context.subscriptions.push({
     dispose: (): void => {
       releasePreviewCommand.dispose();
+      pauseCommand.dispose();
+      resumeCommand.dispose();
+      cancelCommand.dispose();
       showDiagnosticsCommand.dispose();
       diagnosticsPanel.dispose();
       subscription.dispose();

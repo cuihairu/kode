@@ -186,6 +186,16 @@ export class HotReloadHistoryCore {
   }
 
   /**
+   * HR-STATE-011 clear-history:清空全部历史(行+按 requestId 索引一并
+   * 丢弃)。只清内存,持久化清空由调用方(persist.save([]))负责——本核
+   * 无持久化知识,不越界猜宿主的落盘面。
+   */
+  clear(): void {
+    this.rows.length = 0;
+    this.indexByRequest.clear();
+  }
+
+  /**
    * 记录一次发送。同 requestId 已存在 → 原位幂等替换(不重复成行,顺序
    * 不动);新 id 追加到最新位,超容量淘汰最旧并如实清其索引。
    */

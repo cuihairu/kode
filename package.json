@@ -133,6 +133,7 @@
     "onCommand:kbengine.def.fingerprintInspector",
     "onCommand:kbengine.hotReload.historyPanel",
     "onCommand:kbengine.hotReload.historySearch",
+    "onCommand:kbengine.hotReload.historyClear",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.project.wizard",
     "onCommand:kbengine.symbolReferences.show",
@@ -192,6 +193,9 @@
     "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.hotReload.materializeGlobs",
     "onCommand:kbengine.hotReload.releasePreview",
+    "onCommand:kbengine.hotReload.pause",
+    "onCommand:kbengine.hotReload.resume",
+    "onCommand:kbengine.hotReload.cancel",
     "onCommand:kbengine.hotReload.showDiagnostics",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.resetStubs",
@@ -856,6 +860,11 @@
         "category": "KBEngine"
       },
       {
+        "command": "kbengine.hotReload.historyClear",
+        "title": "%kbengine.command.hotReload.historyClear.title%",
+        "category": "KBEngine"
+      },
+      {
         "command": "kbengine.project.doctor",
         "title": "%kbengine.command.project.doctor.title%",
         "icon": "$(checklist)"
@@ -1090,6 +1099,21 @@
       {
         "command": "kbengine.hotReload.retryFailed",
         "title": "%kbengine.command.hotReload.retryFailed.title%"
+      },
+      {
+        "command": "kbengine.hotReload.pause",
+        "title": "%kbengine.command.hotReload.pause.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.resume",
+        "title": "%kbengine.command.hotReload.resume.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.cancel",
+        "title": "%kbengine.command.hotReload.cancel.title%",
+        "category": "KBEngine"
       },
       {
         "command": "kbengine.hotReload.showRevisionEvidence",

@@ -47,6 +47,8 @@ export const HOT_RELOAD_HISTORY_STATE_KEY = 'kbengine.hotReload.history';
 
 export const HOT_RELOAD_HISTORY_PANEL_COMMAND = 'kbengine.hotReload.historyPanel';
 export const HOT_RELOAD_HISTORY_SEARCH_COMMAND = 'kbengine.hotReload.historySearch';
+/** HR-STATE-011 clear-history:清空持久化交付史(命令面板可达) */
+export const HOT_RELOAD_HISTORY_CLEAR_COMMAND = 'kbengine.hotReload.historyClear';
 
 /**
  * 虚拟滚动激活阈值(HR-UI-007):超过才走窗口化渲染。缺省容量 200(核心
@@ -540,6 +542,23 @@ export function setupHotReloadHistoryView(
     refresh();
   });
   context.subscriptions.push(searchCommand);
+
+  // HR-STATE-011 clear-history:清空交付史(内存+持久化一并;空史如实报空,
+  // 不假装清了)。核心无持久化知识,清空落盘由本装配面负责(persist.save
+  // 空数组);未注入 persist(测试替身面)就只清内存。
+  const clearCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_CLEAR_COMMAND, () => {
+    const had = opts.core.size();
+    if (had === 0) {
+      void vscode.window.showInformationMessage('热更历史已为空');
+      return;
+    }
+    opts.core.clear();
+    opts.persist?.save([]);
+    refresh();
+    postQueue();
+    void vscode.window.showInformationMessage(`已清空热更历史(${had} 条)`);
+  });
+  context.subscriptions.push(clearCommand);
 
   // 面板状态(HR-UI-010 过滤 + HR-UI-007 分页)
   const panelState: { state: HotReloadHistoryPanelState | null; panel: vscode.WebviewPanel | null } = {
