@@ -208,7 +208,12 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     }
     return created;
   };
+  // RUST-420(HR-QA-008)非 loopback 端点显式授权(执行时读;缺省 false=未授权):
+  // 部署通道发送/探活与 HTTP 快捷请求共用同一设置(kbengine.http.allowNonLoopback)。
+  const readHttpAllowNonLoopback = () =>
+    vscode.workspace.getConfiguration('kbengine').get<boolean>('http.allowNonLoopback', false);
   const hotReloadChannelSwitch = new HotReloadChannelQuickSwitch({
+    allowNonLoopback: readHttpAllowNonLoopback,
     getActiveProfile: () => {
       const activeProfile = resolveActiveProfile(context.workspaceState);
       return activeProfile ? { profile: activeProfile } : null;
@@ -437,7 +442,10 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
         hotReloadChannelSwitch.noteEndpointHealth(kind, ok, detail)
     };
     if (activeProfile?.hotReload) {
-      const transport = resolveReloadTransport(activeProfile.hotReload, { healthObserver });
+      const transport = resolveReloadTransport(activeProfile.hotReload, {
+        healthObserver,
+        allowNonLoopback: readHttpAllowNonLoopback
+      });
       if (transport) {
         return { transport, targetId: activeProfile.id };
       }
@@ -448,7 +456,10 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     // 默认 http 通道(用户令 2026-11-10):无 profile/无 hotReload 段不回落
     // actionName,走 createDefaultHotReloadChannel 内置模板(与零配置自动
     // 热更同源端点,enabled 显式 true)。targetId 用稳定 'default'。
-    const transport = resolveReloadTransport(createDefaultHotReloadChannel(), { healthObserver });
+    const transport = resolveReloadTransport(createDefaultHotReloadChannel(), {
+      healthObserver,
+      allowNonLoopback: readHttpAllowNonLoopback
+    });
     return transport ? { transport, targetId: DEFAULT_CHANNEL_TARGET_ID } : null;
   };
   // §11.2 非 py 旁路通道的公共扩展口:这里持有路由表并交给装配——默认
@@ -581,6 +592,7 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
         listProfiles: () => profileStore.list(),
         saveHotReload: (id, config) => profileStore.saveHotReload(id, config),
         ensureDefaultProfile: ensureDefaultProfileDep,
+        allowNonLoopback: readHttpAllowNonLoopback,
         // RUST-358(HR-HTTP-016):预览带当前活动 Python 文件(更具体的精确
         // 请求);无活动 Python 文件走空集(预览如实显示无文件载荷,不伪造)。
         previewRequest: (config, target) =>

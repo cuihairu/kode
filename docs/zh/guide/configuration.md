@@ -398,7 +398,7 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表(默认含一条停用示例) |
-| `kbengine.http.allowNonLoopback` | boolean | `false` | HTTP 快捷请求是否允许发往非 loopback 端点。默认关闭:只放行确认的 loopback 目标(本机引擎:`localhost` / `*.localhost` / `127.0.0.0/8` / `[::1]`,按 host 字面量分类,不做 DNS 解析);非 loopback 目标(内网/公网主机、云元数据地址如 `169.254.169.254`)在请求发出前一律阻止,落可审查的 `⛔` 阻止行+错误弹窗(SSRF/数据外带防护)。开启后非 loopback 放行但逐次先落 `⚠` 安全警告——仅在你信任该主机时使用 |
+| `kbengine.http.allowNonLoopback` | boolean | `false` | HTTP 快捷请求与热更部署通道是否允许发往非 loopback 端点。默认关闭:只放行确认的 loopback 目标(本机引擎:`localhost` / `*.localhost` / `127.0.0.0/8` / `[::1]`,按 host 字面量分类,不做 DNS 解析);非 loopback 目标(内网/公网主机、云元数据地址如 `169.254.169.254`)在请求发出前一律阻止,落可审查的 `⛔` 阻止行+错误弹窗(SSRF/数据外带防护)。开启后非 loopback 放行但逐次先落 `⚠` 安全警告——仅在你信任该主机时使用 |
 
 类型:array;默认含一条停用的示例(热更新示例,`enabled: false`),按默认热更新端点形态给出(`POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`,body `module_name=<模块名>`)——`module_name` 刻意在 query 与 body 各带一份,兼容不同服务端实现(读 query 还是读 body 都取得到),同值重复无害——等价于命令行:
 
@@ -446,7 +446,7 @@ curl -X POST 'http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI' -
 
 执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」:`▶` 请求行 → `✓` 状态码 · 耗时 → 回包(超 4000 字符截断标注全长);失败以 `✗` 标记 + 错误弹窗呈现。
 
-端点策略(RUST-420,与工作区信任闸互补):模板变量插值后的真实 URL 必须指向本机确认的 loopback 端点才发出。非 loopback 主机被阻止(请求不出本机;落 `⛔` 阻止行+错误弹窗,点名主机与 `kbengine.http.allowNonLoopback` 设置),除非显式开启该设置——开启后逐次先落 `⚠` 安全警告再放行。未信任工作区更早被信任闸拦,与本闸无关。分类只认 host 字面量——名字恰好解析到 loopback 的公网域名仍按非 loopback 拦(可显式授权放行);`file://` 等非 HTTP URL 过本闸后由传输面按协议拒绝。profile 化热更部署通道(`HttpReloadTransport`)的发送不经本设置。
+端点策略(RUST-420,与工作区信任闸互补):模板变量插值后的真实 URL 必须指向本机确认的 loopback 端点才发出。非 loopback 主机被阻止(请求不出本机;落 `⛔` 阻止行+错误弹窗,点名主机与 `kbengine.http.allowNonLoopback` 设置),除非显式开启该设置——开启后逐次先落 `⚠` 安全警告再放行。未信任工作区更早被信任闸拦,与本闸无关。分类只认 host 字面量——名字恰好解析到 loopback 的公网域名仍按非 loopback 拦(可显式授权放行);`file://` 等非 HTTP URL 过本闸后由传输面按协议拒绝。同一端点策略也闸 profile 化热更部署通道(`HttpReloadTransport`):其发送与探活都在请求发出前过本策略——非 loopback 未授权一律阻止(逐文件 `failed` 回执带阻止原因,不发请求),已授权逐次把 `⚠` 安全警告贴在回执上(台账逐次可见)。该通道默认模板端点是 `127.0.0.1:8090`,loopback 恒放行。
 
 ### 自动热重载
 
