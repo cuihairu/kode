@@ -608,3 +608,27 @@ describe('RUST-422(HR-QA-010)工作区信任闸', () => {
     expect(errors).toHaveLength(0);
   });
 });
+
+describe('RUST-423(HR-QA-011)localhost 指向:请求在扩展宿主进程所在机器发起', () => {
+  it('localhost 到达宿主进程 loopback(非经代理/隧道);远端工作区即远端机器 loopback', async () => {
+    let seenHost = '';
+    const port = await listen((req, res) => {
+      seenHost = req.headers.host ?? '';
+      res.end('ok');
+    });
+    const { service } = makeService([entry({ url: `http://localhost:${port}/probe` })]);
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(seenHost).toBe(`localhost:${port}`);
+  });
+
+  it('localhost 与 127.0.0.1 同指宿主进程 loopback(扩展宿主在容器/SSH 主机时即该机)', async () => {
+    let seenHost = '';
+    const port = await listen((req, res) => {
+      seenHost = req.headers.host ?? '';
+      res.end('ok');
+    });
+    const { service } = makeService([entry({ url: `http://127.0.0.1:${port}/probe` })]);
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(seenHost).toBe(`127.0.0.1:${port}`);
+  });
+});
