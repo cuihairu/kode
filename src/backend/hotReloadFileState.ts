@@ -178,6 +178,16 @@ export function deriveHotReloadFileState(input: {
       view.detail = record.detail;
     }
   }
+  // HR-STATE-005 文件不可读(已删除/移走/改名)=ghost:无内容可判、无待办可
+  // 发,不冒充存活态(APPLIED/SENT/FAILED/RESTART_REQUIRED 都意味着一个存在
+  // 的文件)——如实 CLEAN+注解,旧 UI 不再假显示成功。与无记录不可读分支
+  // (「无可判依据,如实 CLEAN」)同口径。hashSet 仍按事实源投影(交付史是
+  // 事实,不因文件消失而抹掉,HR-STATE-002 各司其职)。
+  if (currentDigest === undefined) {
+    view.state = 'CLEAN';
+    view.annotation = '文件不可读(已删除/移走/改名):热更状态不跟踪,无待办;交付史保留在台账';
+    return view;
+  }
   // 结构性 def 变更被 HOT-005 闸拦下:普通 reload 不发,需重启进程后再应用。
   // 是保守拦下不是失败,单独着色不与 FAILED 混用。
   if (restartRequired) {
@@ -268,6 +278,13 @@ export interface HotReloadFileStateMachineDeps {
  * 由纯内存台账/基线册的进程隔离承担(每窗口独立扩展宿主,跨窗口无共享
  * 持久层,无需入键)。状态机因此天然隔离——切换目标后新目标是独立记录,
  * 旧目标的 applied 绿不会被新目标复用(基线册按键入册,不跨目标串)。
+ *
+ * HR-STATE-005 文件不可读(已删除/移走/改名)=ghost 口径:内容读不到=文件
+ * 不在(与 HR-WATCH-003/007「读不到=已删除」同判据),派生视图不冒充存活
+ * 态(APPLIED/SENT/FAILED/RESTART_REQUIRED 都意味着一个存在的文件),如实
+ * CLEAN+注解,旧 UI 不假显示成功。tombstone 清理=结构性闸拦下标记随 ghost
+ * 清除(重生成文件不继承旧闸);台账记录/会话基线保留(交付史是事实源,
+ * 重生成与旧基线比较才判得准)。hashSet 仍按事实源投影,不因文件消失抹史。
  */
 export class HotReloadFileStateMachine {
   private readonly deps: HotReloadFileStateMachineDeps;
@@ -330,6 +347,14 @@ export class HotReloadFileStateMachine {
     const record = ledger.get(key, file);
     const currentDigest = currentContent === undefined ? undefined : sha256Hex(currentContent);
     const keyId = this.keyOf(key, file);
+    // HR-STATE-005 tombstone:文件不可读(已删除/移走/改名)=ghost,结构性闸
+    // 拦下标记随之清除——重生成文件不继承旧闸(否则健康重生成的文件被旧
+    // RESTART_REQUIRED 误拦,假显示需重启)。台账记录/会话基线保留:交付史
+    // 是事实源,重生成与旧基线比较才判得准(同内容回 CLEAN、异内容 DIRTY),
+    // 派生视图已按 ghost 口径 CLEAN(纯函数分支),不假显示成功。
+    if (currentContent === undefined) {
+      this.restartReasons.delete(keyId);
+    }
     // HR-STATE-003:引擎权威已应用 digest(第二来源);与所发冻结 hash 一致才算
     const engineAppliedDigest = this.deps.engineAppliedDigestFor?.(key, file);
     const engineConfirmsApplied =

@@ -349,6 +349,80 @@ describe('HR-STATE-004: 分区=(workspaceId,rootId,targetId,uri),切换目标不
   });
 });
 
+describe('HR-STATE-005: 文件不可读(已删除/移走/改名)=ghost,tombstone 清理;旧 UI 不假显示成功', () => {
+  // 内容读不到(undefined)=文件不在(与 HR-WATCH-003/007「读不到=已删除」同
+  // 判据)。派生视图不冒充存活态——APPLIED/SENT/FAILED/RESTART_REQUIRED 都
+  // 意味着一个存在的文件,ghost 如实 CLEAN+注解;hashSet/台账保留(交付史
+  // 是事实源,不因文件消失抹史)。
+
+  it('applied 记录 + ghost → CLEAN 非 APPLIED(不假显示成功),交付史保留', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    const view = sm.derive(store, KEY, FILE, undefined);
+    expect(view.state).toBe('CLEAN');
+    expect(view.annotation).toContain('已删除/移走');
+    // 交付史是事实:台账记录保留,核验 hash 仍在(HR-STATE-002 各司其职)
+    expect(store.get(KEY, FILE)?.outcome).toBe('applied');
+    expect(view.hashSet.lastVerifiedAppliedHash).toBe(DIGEST_A);
+  });
+
+  it('sent-unverified 记录 + ghost → CLEAN 非 SENT(不假显示在途)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A });
+    expect(sm.derive(store, KEY, FILE, undefined).state).toBe('CLEAN');
+  });
+
+  it('failed 记录 + ghost → CLEAN 非 FAILED(不假显示失败文件)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'failed', { sentDigest: DIGEST_A, detail: '连接被拒' });
+    expect(sm.derive(store, KEY, FILE, undefined).state).toBe('CLEAN');
+  });
+
+  it('RESTART_REQUIRED + ghost → CLEAN 非需重启,闸拦下标记随之清除(重生成不继承旧闸)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    sm.markRestartRequired(KEY, [FILE], ['结构性 def 变更']);
+    expect(sm.derive(store, KEY, FILE, undefined).state).toBe('CLEAN');
+    expect(sm.restartRequiredFiles(KEY)).toEqual([]); // tombstone:旧闸已清
+    // 重生成健康文件(同内容)→ 不继承旧 RESTART_REQUIRED,首见基线回 CLEAN
+    expect(sm.derive(store, KEY, FILE, CONTENT_A).state).toBe('CLEAN');
+  });
+
+  it('baseline-only(无记录)ghost → CLEAN;重生成与旧基线比较判得准(同回 CLEAN/异回 DIRTY)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    sm.derive(store, KEY, FILE, CONTENT_A); // 首见注册基线 A
+    expect(sm.derive(store, KEY, FILE, undefined).state).toBe('CLEAN');
+    // 重生成同内容=回基线 CLEAN;异内容=偏离基线 DIRTY(旧基线保留判得准)
+    expect(sm.derive(store, KEY, FILE, CONTENT_A).state).toBe('CLEAN');
+    expect(sm.derive(store, KEY, FILE, CONTENT_B).state).toBe('DIRTY');
+  });
+
+  it('注意力集过滤不含 ghost:applied+ghost 的文件不进「改了还没重载」', async () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    const views = await sm.filesByState(store, KEY, HOT_RELOAD_ATTENTION_STATES, () => undefined);
+    expect(views).toEqual([]);
+  });
+
+  it('纯函数口径:记录在 + currentDigest undefined → CLEAN+注解,不冒充存活态', () => {
+    const view = deriveHotReloadFileState({
+      record: { rootId: KEY.rootId, targetId: KEY.targetId, file: FILE, outcome: 'applied', attempt: 1, recordedAt: 1000, sentDigest: DIGEST_A },
+      file: FILE,
+      currentDigest: undefined,
+      baselineDigest: DIGEST_A,
+      restartRequired: false,
+      settle: 'applied'
+    });
+    expect(view.state).toBe('CLEAN');
+    expect(view.annotation).toContain('已删除/移走');
+  });
+});
+
 describe('展示辅助:严重度聚合与注意力集', () => {
   it('worstHotReloadState 按严重度取最重(干净最轻,需重启最重)', () => {
     expect(worstHotReloadState(['CLEAN', 'DIRTY', 'APPLIED'])).toBe('DIRTY');
@@ -393,7 +467,9 @@ describe('filesByState 候选:被拦文件不靠台账记录也能筛出', () =>
     const sm = makeState();
     const store = makeStore();
     sm.markRestartRequired(KEY, [FILE], ['拦下原因A']);
-    const views = await sm.filesByState(store, KEY, ['RESTART_REQUIRED'], () => undefined);
+    // 文件存在可读(非 ghost)——HR-STATE-005:不可读=ghost 回 CLEAN,闸拦下
+    // 只对存在文件生效;这里给可读内容验证被拦文件按 RESTART_REQUIRED 筛出
+    const views = await sm.filesByState(store, KEY, ['RESTART_REQUIRED'], () => CONTENT_A);
     expect(views.map(view => view.file)).toEqual([FILE]);
     expect(views[0].state).toBe('RESTART_REQUIRED');
     // 实跑对账:RESTART_REQUIRED 视图的 reason 是派生面固定文案,写入的
