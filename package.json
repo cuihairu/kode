@@ -2238,6 +2238,13 @@
               "%kbengine.config.clone.archiveEncryption.enum.1%"
             ]
           },
+          "kbengine.clone.probeTimeoutMs": {
+            "type": "number",
+            "default": 5000,
+            "minimum": 100,
+            "scope": "window",
+            "markdownDescription": "%kbengine.config.clone.probeTimeoutMs.description%"
+          },
           "kbengine.console.discoveryHost": {
             "type": "string",
             "default": "127.0.0.1",

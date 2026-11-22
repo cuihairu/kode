@@ -575,6 +575,7 @@ The credentials must be stored in plaintext (`<encrypt>false</encrypt>`). The en
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.clone.archiveEncryption` | `"encrypted" \| "plain"` | `"encrypted"` | Player-clone archive encryption default. `encrypted` (default) = exports write chacha20poly1305-encrypted archives, the key stored in this machine's globalStorage `clone-keys/` (0600) — move the archive to another machine and you must fetch the key from the original one; `plain` = exports write plaintext archives (sensitive columns still masked), for archives that must cross machines. This is only the default: the export confirm step can toggle it per run. Per-option trade-offs live in the setting's `markdownEnumDescriptions`; ops and key handling: see [Player Data Clone Ops & Security](/player-clone/ops-and-security) |
+| `kbengine.clone.probeTimeoutMs` | number | `5000` | Independent short deadline in ms for the player-clone export source-connection probe (the "is it reachable right now" check). The probe answers within this budget and fails straight into the existing retry/configure dialog instead of waiting on the export-side long deadline (120s default) — this is the biggest felt hang when the source is unreachable. Export execution (table reads / archive write) keeps its own timeout and is not affected by this setting |
 
 ### AI (opt-in base, AI-001)
 
