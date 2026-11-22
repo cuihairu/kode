@@ -599,6 +599,56 @@ RUST-430(HR-QA-018)要求**按四个维度逐项签收**安全与功能完成矩
 - 收口把 `allowRootLevelStem` 经 `TemplateEditorContext` → `buildTemplateVars` → `resolveModuleDualName` 打通,并在每个产出点补上:`views.ts` 的 `getTemplateContext`(手动命令运行时)、`hotReloadRequestPreview.ts`(预览配置条目)、`hotReloadDefaultHotfix.ts`(默认热更模板的 `${fullModule}`/`${reloadModule}` 与 `${module}` 同参)。键关/缺省不变(`undefined !== true`),任何既有解析结果都不动。`tests/hotReloadDodDualNameConsistency.test.ts`(4 钉)驱动三面一致性:(1) 嵌套 FightAI — 手动变量 `{requestModule:'fight.FightAI', fullModule:'entities.fight.FightAI'}` 与自动生命周期身份、`resolveDefaultHotfixModule` 同值;(2) 根下单层+键开 — 手动变量与自动面全解 `Lone`/`Lone`(证红钉:修复前手动面返回 `''`/`''`);(3) 根下单层+键关 — 三面一致判未解析(手动空串,自动 `root-level` 码),一致回落 legacy `${module}` 包边界扫描;(4) 未配脚本根 — 手动与自动都无模块名(`''` / `no-root`),不混回落。
 - 边界(诚实):本门断言的是跨面**名称解析一致性**;不改每面线上送哪个名(那是 DOD-001 的发送面,另行收口)。legacy `${module}` 包边界扫描回落(HR-AUDIT-004 / RUST-322 兼容裁定)保留,并断言跨面同为第三名,不与双名对混用。证红证据=修复前状态:臂(2)红于手动面解 `''` 而自动面解 `Lone`,打通该选项后转绿。
 
-## 41. HR-QA-018 资格契约矩阵
+## 41. PH7-03 已知限制与热重载性能对照(2026-11-23,RUST-273 部分落地)
+
+RUST-273 四件交付中,两件现可稳定落地并在此呈现——本文即它们。另两件被**刻意**留在本节之外(见 41.4),故本行仍挂 `[ ]`。
+
+### 41.1 已知限制(断言了什么,以及还没断言什么)
+
+下面每一项都是带「尚未断言」边界的可钉臂,均诚实标注,无一条被当作已验证。
+
+- **活态远程 SSH / DevContainer / WSL 端到端** —— 机制已钉(`tests/hotReloadModuleIdentity.test.ts:9-38` 路径形状规范化使远程键与本地一致;`tests/hotReloadModuleIdentity.test.ts:226-258` 生产矩阵)。**尚未**断言:带真实远程 fs 延迟的活 SSH 会话、跨平台真机运行(`RUST-413` 远程臂,`RUST-423`)、以及远程主机名从远程向内解析回本机真服务(`RUST-419` 须真服务)。
+- **UI 线程不冻结**(`RUST-416` 残差)—— 纯核心证据说明盘读与哈希跑在 libuv 线程池而非事件循环(S7:500 事件突发,同步段 ~30 ms@load58)。**尚未**断言:真渲染器下的真 UI 线程。
+- **回执→UI 显示时段无插桩锚**(`RUST-414` 残差)—— `src/backend/hotReloadHistoryCore.ts` 渲染/过滤的 `durationMs` 字段(`:60`/`:132`/`:253-254`/`:471-478`)是 **HTTP→回执** 臂的 HR-STATE-007 锚(`src/backend/hotReloadChannelSend.ts:146-148`)。显示段本身无第二锚,故不能作纯验证收口。
+- **引擎画像配置面不存在** —— `buildEngineProfile` 以**空输入**调用(`src/hotReload.ts:1249`),故多根优先级排序(`RUST-315`)与能力/白名单/黑名单规则(`RUST-337`)无配置可读。这是缺代码,非延迟臂。
+- **watch 生命周期仅根维** —— `watchRoots(roots: readonly string[])`(`src/backend/hotReloadDiskWatch.ts:95`)取扁平路径数组,无目标维;而台账按 `{rootId, targetId}` 键。每部署目标根绑定(`RUST-329` 残差)为缺代码。
+- **覆盖未全**(`RUST-267`)—— 验收矩阵覆盖 30 面;两条 fixture 腿 30/30 通过并留在回归网,真引擎腿 3 绿/3 部分/24 未走;明确未验:全服务器生命周期(启动/热重载/关闭)、macOS 全腿(今日仅编译)、Windows 纯 TS 包、读屏辅助功能。
+- **发布门控面** —— QA-001..017 套件加 48 小时真实项目试用与跨平台打包(`RUST-271`)未跑;2.0 稳定版(`RUST-275`)门控,按版本冻结红线,agent 不得产出。
+- **待用户给输入** —— `SEM-016`(导出报 `t_account` 不存在;两侧代码侧考古全库+引擎皆无 `t_` 前缀产出者,候选因收窄到用户自身数据库来源)与 `PYLANCE-CRASH-001`(Pylance 共存崩溃)均需用户原报错/版本。
+- **热重载性能臂仅机制级断言**(`RUST-447`)—— 臂①墙钟有录无阈值(bench 车道只录,阈值化属 `RUST-414` 批);臂②UI 线程面墙钟未测(装配面);臂③为对假 HTTP 服务器的串行单客户端面——多客户端并发池与真 RSS 未覆盖。
+
+### 41.2 性能对照(热重载对标语言服务基线)
+
+以下数字均出自 `docs/perf/` 下已提交运行产物;为有录无阈值。
+
+| 面 | 来源 | 读数 | 判定 |
+|---|---|---|---|
+| 派发 fire 同步段 | `docs/perf/provider-isolation.md` | N24 p50 0.14 ms ≡ N0 0.15 ms;**全部 4800 次 `canSend` 落微任务**(fire 同步段零 `canSend`);同批兄弟定时器回调偏移 p50 0.14 ≡ 0.14 | 切片级隔离已证——新 provider **不**抬已有语言服务尾 |
+| 发送风暴下 hover/definition 尾 | `docs/perf/provider-isolation.md` | P2/P3 尾差 N24 − N0 ≈ **+4.8 ms**,有界于 provider 数 × spin | 微任务交错的有限残差,**非**同步段阻塞 |
+| per-file 吸收(200/2k/10k/50k) | `docs/perf/hot-reload-scale.md` | 0.18 ms → 0.09 ms,**收敛**(无超线性);50k 突发吸收 4.31 s | 4.31 s 是 **libuv 线程池读排队**(readLatency p50 3.28 s 为排队等待,非单次读代价),非事件循环长阻塞 |
+| 持续单文件 save | `docs/perf/hot-reload-scale.md` | save→queue p50 1.51 ms / **p95 1.82 ms**,revision 1..100 单调 | 低一个数量级于 30 ms 候选线 |
+| 非突发段 | `docs/perf/hot-reload-segment.md` | S6 totalCpu(save→queue) p50 2 ms / p95 5 ms / p99 7 ms;本地管线 CPU **p95 1.67 ms** | 低一个数量级于 15 ms 候选线;S2/S4 突发数(哈希 p50 28.23 ms,queue p50 4.85 ms)含突发排队,须与 S6 净成本分开读 |
+| 500 事件 watch 突发 | `docs/perf/hot-reload-segment.md` | filter+offer 同步墙 ~30 ms@load58(空闲 10–20 ms),perEvent 0.03–0.04 ms;500 全入队零丢;同步段零发 | 同步段有界;读/哈希离主线 |
+| Git checkout 500 / 写风暴 | `docs/perf/hot-reload-scale.md` | M3:生产配置下 500 全滞留预览,**0 自动发**,`releasePreview` 0.66 ms;M4:100×(save+disk)归并为 **100 发非 200** | 无全仓风暴;批预览闸即其防 |
+
+### 41.3 泄漏/连接/watch 不变量(RUST-428 soak,单测门)
+
+钉在 nightly 单测门 `tests/hotReloadSoak.test.ts`:
+
+- 跨 **200 重建循环**,watcher 建数 ≡ 销毁数 + 活数,活数有界于根数;`dispose` 归零。
+- 台账**键替换**非事件追加:单文件 500 操作 → 1 条;500 文件 → 500 条。
+- 历史存储环形满即淘汰;`requestId` 幂等替换非重复行。
+- HTTP **keepAlive 连接数恒 1**,跨 300 串行成功 *及* 300 非 2xx 响应。
+- 错误重试风暴:2 失败目标恰 **2** 发,无放大;取消即停;第二次调用只重发仍失败侧。
+
+41.2/41.3 门禁:`hotReloadSoak + hotReloadProviderSchedulingIsolation + hotReloadDiskWatchWiring + hotReloadSavePipeline`,定向 75/75 绿。
+
+### 41.4 本节刻意不写的内容
+
+- **版本说明不推进。** `CHANGELOG.md` 停在 0.1.1(2026-10-20)。0.2.0 未发布且 `RUST-275` 门控;为未发布版本写说明会把「已发布」写成「已实现」,违反对账规则。
+- **迁移配置文档暂缓。** `${module}` → `${fullModule}` 迁移已记(`docs/guide/commands.md:1049-1054`,HR-MOD-013),`docs/guide/migration.md` 也在;但 HR-MOD 接线车道(`RUST-432` / `RUST-433`)在途,对着移动面改迁移配置会产 churn。
+- **性能阈值化属 `RUST-414` 批** —— 界表(`tests/perf/hotReloadScaleBounds.ts` 10 面、`hotReloadSegmentBounds.ts` 12 面)仅在 bench 车道门控违规,环境门控故不会 flaky CI。
+
+## 42. HR-QA-018 资格契约矩阵
 
 §33 的签收矩阵是 RUST-430 的管辖记录。本节保留钉住资格规则本身的契约完备性工件:`tests/hotReloadEligibilityMatrix.test.ts`(3 钉,载体 ba7833d5)穷举 **480 格**——3 档案×2 根×4 文件形态×5 触发态×2 用户显式×2 结构态——逐格对照独立重导 oracle(restart⟺结构因非空且主导;auto⟺四要素齐备;否则 manual),断言不抛错/无第四结论,另 auto=恰 1 格、restart=恰半数格。`.def` 不被规则特判(def 闸供结构因,规则只消费不重算)。target 安全门覆盖(loopback 白名单/workspace trust/provider 权限/结构闸按 target)已折入 §33.1 与 §33.5;本节旧稿表格被该逐维度签收取代,不再复述。
