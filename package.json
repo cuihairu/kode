@@ -135,6 +135,7 @@
     "onCommand:kbengine.hotReload.historySearch",
     "onCommand:kbengine.hotReload.historyClear",
     "onCommand:kbengine.hotReload.historyExport",
+    "onCommand:kbengine.hotReload.settingsPanel",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.project.wizard",
     "onCommand:kbengine.symbolReferences.show",
@@ -868,6 +869,11 @@
       {
         "command": "kbengine.hotReload.historyExport",
         "title": "%kbengine.command.hotReload.historyExport.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.settingsPanel",
+        "title": "%kbengine.command.hotReload.settingsPanel.title%",
         "category": "KBEngine"
       },
       {
