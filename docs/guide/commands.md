@@ -875,6 +875,17 @@ The flow graph panel supports:
   - Empties both the in-memory history core and the persisted record; an already-empty history reports 热更历史已为空 and changes nothing
   - The history tree and any open panel refresh so the cleared state is visible immediately
 
+### `kbengine.hotReload.historyExport`
+
+- Title: `Export Hot Reload History (Redacted JSON)`
+- Purpose: export the full delivery history as a redacted JSON file for sharing/debugging
+- Behavior:
+  - Every row passes through a whitelist projection (九要素 + dual names + file/requestId); HTTP body, headers, and tokens are never included in the export, regardless of what future fields may appear on the row shape
+  - An empty history reports 热更历史已为空 and writes nothing
+  - The save dialog defaults to a workspace folder when available, with a timestamped filename (`hot-reload-history-<stamp>.json`); cancelling the dialog writes nothing
+  - The JSON document carries `schemaVersion: 1`, `exportedAt`, `count`, and the row list; the write uses atomic replace so an interrupted export never leaves a half-written file
+  - A failed write surfaces the file path and error instead of a bare command failure
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`
