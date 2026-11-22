@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
+  buildHistoryExport,
   coalesceHistoryUpdates,
   computeVirtualScrollWindow,
   HotReloadHistoryCore,
+  redactHistoryEntry,
   type HotReloadHistoryInput
 } from '../src/backend/hotReloadHistoryCore';
 
@@ -426,5 +428,112 @@ describe('HR-STATE-007 残差检索键(requestModule 子串/哈希前缀/耗时�
     ).toEqual(['a']);
     // 全条目 requestModule 缺省 'fight.FightAI':子串命中全部,再叠耗时区间
     expect(core.filter({ requestModuleContains: 'fight', durationFrom: 900 }).map(e => e.requestId)).toEqual(['c', 'd']);
+  });
+});
+
+describe('RUST-368 保留时间限额与脱敏导出', () => {
+  it('pruneExpired 按政策淘汰超龄行;索引同步(淘汰行推进 false,保留行 true)', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    seed(core, [
+      makeEntry({ requestId: 'r1', time: 1000 }),
+      makeEntry({ requestId: 'r2', time: 1500 }),
+      makeEntry({ requestId: 'r3', time: 2500 })
+    ]);
+    // now=3000,cutoff=2000:r1/r2 早于→淘汰;r3>=保留
+    expect(core.pruneExpired(3000)).toBe(2);
+    expect(core.entries().map(e => e.requestId)).toEqual(['r3']);
+    expect(core.updateStatus('r1', 'applied')).toBe(false);
+    expect(core.updateStatus('r3', 'applied')).toBe(true);
+  });
+
+  it('边界含:time==now-maxAge 保留(>=cutoff);再 prune 无新淘汰', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    seed(core, [makeEntry({ requestId: 'r1', time: 2000 }), makeEntry({ requestId: 'r2', time: 1999 })]);
+    expect(core.pruneExpired(3000)).toBe(1);
+    expect(core.entries().map(e => e.requestId)).toEqual(['r1']);
+    expect(core.pruneExpired(3000)).toBe(0);
+  });
+
+  it('乱序 time 保序淘汰(不假设 time 有序)', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 1000 });
+    // 插入序 old,new,mid:old 超龄淘汰,新/中间两行(2500/2100>=2000)保留且保插入序
+    seed(core, [
+      makeEntry({ requestId: 'old', time: 500 }),
+      makeEntry({ requestId: 'new', time: 2500 }),
+      makeEntry({ requestId: 'mid', time: 2100 })
+    ]);
+    expect(core.pruneExpired(3000)).toBe(1);
+    expect(core.entries().map(e => e.requestId)).toEqual(['new', 'mid']);
+  });
+
+  it('未启用 maxAgeMs(缺省)=prune 如实 no-op(0)', () => {
+    const core = makeCore();
+    seed(core, [makeEntry({ requestId: 'r1', time: 1 })]);
+    expect(core.pruneExpired(Date.now())).toBe(0);
+    expect(core.size()).toBe(1);
+  });
+
+  it('redactHistoryEntry 白名单投影:安全字段齐,缺省如实缺省', () => {
+    const row = redactHistoryEntry(
+      makeEntry({
+        status: 'failed',
+        errorSummary: 'HTTP 500',
+        trigger: 'command',
+        durationMs: 42,
+        errorCategory: 'apply-failed',
+        hash: 'abc'
+      })
+    );
+    expect(row).toEqual({
+      requestId: 'req-1',
+      fullModule: 'entities.fight.FightAI',
+      requestModule: 'fight.FightAI',
+      fileUri: '/ws/scripts/fight/FightAI.py',
+      targetId: 'cellapp-1',
+      time: 1000,
+      status: 'failed',
+      errorSummary: 'HTTP 500',
+      trigger: 'command',
+      durationMs: 42,
+      errorCategory: 'apply-failed',
+      hash: 'abc'
+    });
+    const bare = redactHistoryEntry(makeEntry());
+    expect(bare.errorSummary).toBeUndefined();
+    expect(bare.trigger).toBeUndefined();
+    expect(bare.durationMs).toBeUndefined();
+    expect(bare.errorCategory).toBeUndefined();
+    expect(bare.hash).toBeUndefined();
+    // 恰好七安全字段+双名+file+requestId 的白名单七键
+    expect(Object.keys(bare)).toEqual([
+      'requestId',
+      'fullModule',
+      'requestModule',
+      'fileUri',
+      'targetId',
+      'time',
+      'status'
+    ]);
+  });
+
+  it('redactHistoryEntry 白名单外键一律不进(未来 body/header 也不漏)', () => {
+    const input = { ...makeEntry(), httpBody: '{"secret":"x"}', authorization: 'Bearer tok' };
+    const row = redactHistoryEntry(input);
+    expect(row).not.toHaveProperty('httpBody');
+    expect(row).not.toHaveProperty('authorization');
+  });
+
+  it('buildHistoryExport:文档形状/计数/全行脱敏', () => {
+    const doc = buildHistoryExport(
+      [makeEntry({ requestId: 'a' }), makeEntry({ requestId: 'b', status: 'failed', errorSummary: 'HTTP 500' })],
+      { exportedAt: 999 }
+    );
+    expect(doc.schemaVersion).toBe(1);
+    expect(doc.exportedAt).toBe(999);
+    expect(doc.count).toBe(2);
+    expect(doc.entries).toHaveLength(2);
+    expect(doc.entries[0].requestId).toBe('a');
+    expect(doc.entries[1].errorSummary).toBe('HTTP 500');
+    expect(doc.entries[1]).not.toHaveProperty('httpBody');
   });
 });

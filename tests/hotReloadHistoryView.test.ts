@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
+  HOT_RELOAD_HISTORY_EXPORT_COMMAND,
   HOT_RELOAD_HISTORY_PANEL_COMMAND,
   HOT_RELOAD_HISTORY_SEARCH_COMMAND,
   HOT_RELOAD_HISTORY_STATE_KEY,
@@ -741,7 +745,7 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
   });
 
   it('面板过滤表单:触发源/错误类别下拉渲染(触发四值+类别八值)', async () => {
-    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
     const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
     const html = panel.webview.html;
@@ -815,5 +819,160 @@ describe('HR-STATE-007 残差展示与检索面(面板列/下拉/树多字段)',
     } finally {
       savedWindow.showInputBox = originalInputBox;
     }
+  });
+});
+
+describe('RUST-368 导出与保留时间限额', () => {
+  const tmpPath = (): string =>
+    path.join(os.tmpdir(), `kode-hr-export-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+
+  const rawEntry = (requestId: string, time: number): HotReloadHistoryEntry => ({
+    requestId,
+    fullModule: 'entities.fight.FightAI',
+    requestModule: 'fight.FightAI',
+    fileUri: FILE_A,
+    targetId: 't1',
+    time,
+    status: 'applied'
+  });
+
+  it('导出命令:白名单脱敏 JSON 落盘(九要素齐,无 body/header)', async () => {
+    const target = tmpPath();
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const original = savedWindow.showSaveDialog;
+    try {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A, outcome: 'applied', source: 'command', sentDigest: 'abc999', durationMs: 42 }));
+      savedWindow.showSaveDialog = async () => ({ fsPath: target });
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      const doc = JSON.parse(fs.readFileSync(target, 'utf8')) as {
+        schemaVersion: number;
+        exportedAt: number;
+        count: number;
+        entries: Array<Record<string, unknown>>;
+      };
+      expect(doc.schemaVersion).toBe(1);
+      expect(typeof doc.exportedAt).toBe('number');
+      expect(doc.count).toBe(1);
+      const row = doc.entries[0];
+      expect(row.fullModule).toBe('entities.fight.FightAI');
+      expect(row.trigger).toBe('command');
+      expect(row.hash).toBe('abc999');
+      expect(row.durationMs).toBe(42);
+      expect(row).not.toHaveProperty('httpBody');
+      expect(row).not.toHaveProperty('authorization');
+    } finally {
+      savedWindow.showSaveDialog = original;
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+    }
+  });
+
+  it('导出命令:空史如实报空,不写文件', async () => {
+    const target = tmpPath();
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const original = savedWindow.showSaveDialog;
+    try {
+      setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      savedWindow.showSaveDialog = async () => ({ fsPath: target });
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      expect(fs.existsSync(target)).toBe(false);
+    } finally {
+      savedWindow.showSaveDialog = original;
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+    }
+  });
+
+  it('导出命令:取消=如实不写', async () => {
+    const target = tmpPath();
+    const savedWindow = vscode.window as unknown as Record<string, unknown>;
+    const original = savedWindow.showSaveDialog;
+    try {
+      const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+      feed.handle(recordOf({ file: FILE_A }));
+      savedWindow.showSaveDialog = async () => undefined;
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      expect(fs.existsSync(target)).toBe(false);
+    } finally {
+      savedWindow.showSaveDialog = original;
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+    }
+  });
+
+  it('保留限额落账:超龄行淘汰,仅新行持久化(缺省不启用=不淘汰)', () => {
+    const saved: Array<readonly HotReloadHistoryEntry[]> = [];
+    const timers = makeTimers();
+    const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+    const feed = setupHotReloadHistoryView(context, {
+      core: new HotReloadHistoryCore({ maxAgeMs: 1000 }),
+      resolveNames: resolver,
+      maxAgeMs: 1000,
+      timers,
+      persist: {
+        load: () => undefined,
+        save: entries => {
+          saved.push(entries);
+        }
+      }
+    });
+    const now = Date.now();
+    feed.handle(recordOf({ file: FILE_A, recordedAt: now - 5000 }));
+    feed.handle(recordOf({ file: FILE_B, recordedAt: now }));
+    timers.advance();
+    expect(saved[saved.length - 1].map(e => e.fileUri)).toEqual([FILE_B]);
+  });
+
+  it('未启用保留限额=不淘汰(缺省行为不变)', () => {
+    const saved: Array<readonly HotReloadHistoryEntry[]> = [];
+    const timers = makeTimers();
+    const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+    const feed = setupHotReloadHistoryView(context, {
+      core: new HotReloadHistoryCore(),
+      resolveNames: resolver,
+      timers,
+      persist: {
+        load: () => undefined,
+        save: entries => {
+          saved.push(entries);
+        }
+      }
+    });
+    const now = Date.now();
+    feed.handle(recordOf({ file: FILE_A, recordedAt: now - 5000 }));
+    feed.handle(recordOf({ file: FILE_B, recordedAt: now }));
+    timers.advance();
+    expect(saved[saved.length - 1]).toHaveLength(2);
+  });
+
+  it('保留限额回载:超龄行淘汰并回写持久化(落盘同步收缩)', () => {
+    const saved: Array<readonly HotReloadHistoryEntry[]> = [];
+    const context = {
+      subscriptions: [],
+      workspaceState: {
+        get: (): unknown => [rawEntry('old', Date.now() - 5000), rawEntry('recent', Date.now())],
+        update: async (_key: string, _value: unknown): Promise<void> => {}
+      }
+    } as unknown as vscode.ExtensionContext;
+    setupHotReloadHistoryView(context, {
+      core: new HotReloadHistoryCore({ maxAgeMs: 1000 }),
+      resolveNames: resolver,
+      maxAgeMs: 1000,
+      persist: {
+        load: (): unknown => context.workspaceState.get(HOT_RELOAD_HISTORY_STATE_KEY),
+        save: entries => {
+          saved.push(entries);
+          void context.workspaceState.update(HOT_RELOAD_HISTORY_STATE_KEY, entries);
+        }
+      }
+    });
+    const provider = lastProvider();
+    expect(provider.getChildren(provider.getChildren()[0])).toHaveLength(1);
+    expect(saved[saved.length - 1]).toHaveLength(1);
+    expect(saved[saved.length - 1][0].requestId).toBe('recent');
   });
 });
