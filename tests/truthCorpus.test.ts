@@ -2511,6 +2511,8 @@ describe('truth-corpus: bigworld-guard 族执行闸(BigWorld API 明确不整合
     expect(base.length, 'BigWorld 成员/归属 0').toBe(0);
     expect(trap.kode.analysis!.apiDocsBaseClassCount).toBe(0);
     expect(trap.kode.analysis!.apiDocsBaseClassOwnerPresent).toBe(false);
+  });
+});
 // ============ 第三十八族: startup-flow-and-stack(SPI 触发语义/冷启范围) ============
 interface StartupFlowEntry extends TruthEntryBase {
   input: { path: string; name: string };
