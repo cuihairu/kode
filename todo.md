@@ -839,7 +839,7 @@
 - [ ] RUST-421 （旧 HR-QA-009） 确保 HTTP header/token 不出现在 output、trace、history、UI tooltip、导出数据中。
 - [ ] RUST-422 （旧 HR-QA-010） 阻止配置模板造成 SSRF/任意 file URI 泄露、路径穿越、恶意脚本执行；workspace trust 强制生效。
 - [ ] RUST-423 （旧 HR-QA-011） Windows/macOS/Linux/WSL/SSH/DevContainer 路径与 localhost 指向测试，明确 HTTP 请求运行在本地还是远端。
-- [ ] RUST-424 （旧 HR-QA-012） 模块名矩阵测试（根、两级、三级、`__init__`、Unicode、重复根），HTTP 正确传短名且 UI 永远完整名。
+- [ ] RUST-424 （旧 HR-QA-012） 模块名矩阵测试（根、两级、三级、`__init__`、Unicode、重复根），HTTP 正确传短名且 UI 永远完整名。进行中:矩阵六维纯核已落(tests/hotReloadModuleIdentity.test.ts,RUST-424 重复根矩阵用例)=根(Lone.py root-level/allowRootLevelStem)+两级(base/Avatar)+三级(entities/fight/FightAI,common/utils/math)+`__init__`(init-file)+Unicode(法术.py)+重复根(scriptRoots 重复项与 scriptRoot 同根,须去重唯一解析);**重复根去重为源码缺口修正**=同一规范化根出现多次只算一个候选(原 scriptRoots [ROOT,ROOT] 假 ambiguous-root,现 src/backend/hotReloadModuleIdentity.ts roots 保序去重),异根嵌套歧义不受影响;消费者门 8 文件 130 例绿+全量稳定子集绿(全门 3 环境失败=陈旧 kode-server 二进制重构建绿+负载超时 solo 绿,零接触本改动);差=HTTP 正确传短名且 UI 永远完整名装配面(接线批 HR-PR-02/03 收官后验)
 - [ ] RUST-425 （旧 HR-QA-013） Rust Core 正在重建索引时热更新可继续工作，CPU/线程池/锁不可导致语言服务 tail latency 大幅恶化。
 - [ ] RUST-426 （旧 HR-QA-014） 存在热更新插件 0/5/20 个分别做 load test，插件崩溃不影响核心与主线程。
 - [ ] RUST-427 （旧 HR-QA-015） 用受控真实测试服务验证“accepted”与“applied”语义并固化协议 fixture。

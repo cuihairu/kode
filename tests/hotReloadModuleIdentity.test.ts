@@ -101,6 +101,29 @@ describe('resolveHotReloadModuleIdentity(HR-MOD-001 DTO+HR-MOD-002 纯解析器)
     }
   });
 
+  it('RUST-424 重复根矩阵:scriptRoots 含同一根两次(或 scriptRoot 与 scriptRoots 同根)须去重唯一解析,不得假 ambiguous(同根≠多根)', () => {
+    const dupRoots = resolveHotReloadModuleIdentity({
+      fileUri: `${ROOT}/entities/fight/FightAI.py`,
+      scriptRoots: [ROOT, ROOT]
+    });
+    expect(dupRoots.ok).toBe(true);
+    if (dupRoots.ok) {
+      expect(dupRoots.identity.requestModule).toBe('fight.FightAI');
+      expect(dupRoots.identity.fullModule).toBe('entities.fight.FightAI');
+    }
+    const mergedDup = resolveHotReloadModuleIdentity({
+      fileUri: `${ROOT}/base/Avatar.py`,
+      scriptRoot: ROOT,
+      scriptRoots: [ROOT]
+    });
+    expect(mergedDup.ok).toBe(true);
+    const distinctStillAmbiguous = resolveHotReloadModuleIdentity({
+      fileUri: `${ROOT}/entities/fight/FightAI.py`,
+      scriptRoots: [ROOT, `${ROOT}/entities`]
+    });
+    expect(distinctStillAmbiguous).toMatchObject({ ok: false, diagnostics: [{ code: 'ambiguous-root' }] });
+  });
+
   it('相邻目录假包含不命中:/ws/scripts2 不得顶替 /ws/scripts', () => {
     const result = resolveHotReloadModuleIdentity({
       fileUri: '/ws/scripts2/base/Avatar.py',
