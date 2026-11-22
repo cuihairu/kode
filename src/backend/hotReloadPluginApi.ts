@@ -9,7 +9,11 @@
  *   纪律原样继承);fork/版本差异=换 provider 实现,默认实现只认默认引擎;
  * - HotReloadProvider 面:transport-faithful 发送(canSend 探测+send 透传
  *   发送结果),发送编排本身仍归 tempEdit/executor 既有面,本核只定义
- *   插槽形状与注册表解析;
+ *   插槽形状与注册表解析;HR-EXT-001 再加四个**可选**生命周期插槽
+ *   (resolveModule/prepareRequest/interpretResponse/queryAppliedRevision):
+ *   缺省槽组合既有核(解析核/请求形状/七类分类核,queryAppliedRevision
+ *   未接线=如实 null),实现自带槽优先——向后兼容,apiVersion 不递增
+ *   (与 HR-HTTP-002 增量字段同纪律);
  * - 注册表:按 id 注册(重复 id 如实拒),resolve 按 profile 依次问
  *   canHandle,第一个应答者胜;无人应答=null(如实无 provider,不猜
  *   不回落默认——热更是写引擎内存的动作,回落=拿默认实现冒充用户环境);
@@ -23,6 +27,12 @@ import { hashDefContent, negotiateEngineDigest, type DefContentHash, type DefDig
 import type { HttpRequestOutcome } from './httpRequestExecutor';
 import { semanticFingerprintReport, type SemanticFingerprintReport } from './hotReloadDefStructure';
 import { resolveFingerprintProfile, type FingerprintProfile } from './hotReloadFingerprintCompare';
+import {
+  resolveHotReloadModuleIdentity,
+  type HotReloadModuleIdentity,
+  type HotReloadModuleResolution
+} from './hotReloadModuleIdentity';
+import { classifyHotReloadErrorReason, type HotReloadErrorReason } from './hotReloadErrorReason';
 
 /** 插件 API 版本:接口形状变更(不兼容)时递增 */
 export const HOT_RELOAD_PLUGIN_API_VERSION = '1';
@@ -83,7 +93,67 @@ export interface HotReloadProviderSendRequest {
   readonly correlationId?: string;
 }
 
-/** HR-PR-08 热更发送插槽(实现=具体通道;默认无实现,如实 null) */
+/**
+ * HR-EXT-001 生命周期解析输入:模块身份解析(文件→模块名)。
+ * scriptRoots/allowRootLevelStem 缺省=用装配面构造缺省槽时的默认,
+ * 显式给=本调用覆盖(逐调用覆盖,不跨调用粘滞)。
+ */
+export interface HotReloadProviderResolveInput {
+  readonly fileUri: string;
+  readonly workspaceId?: string;
+  readonly rootId?: string;
+  /** 覆盖装配面默认根候选;缺省=用装配面默认 */
+  readonly scriptRoots?: readonly string[];
+  /** 覆盖装配面默认 single-level fallback;缺省=用装配面默认 */
+  readonly allowRootLevelStem?: boolean;
+  /** 用户显式模块名覆盖(透传既有 HR-MOD-007 语义) */
+  readonly userOverrideModule?: string;
+}
+
+/** 解析结果(复用既有解析核产物形状,如实 no-root/歧义诊断) */
+export type HotReloadProviderResolveResult = HotReloadModuleResolution;
+
+/** HR-EXT-001 生命周期准备输入:目标+已解析身份+版本/关联 id(可选) */
+export interface HotReloadProviderPrepareInput {
+  readonly targetId: string;
+  readonly identity: HotReloadModuleIdentity;
+  readonly revision?: string;
+  readonly correlationId?: string;
+}
+
+/** HR-EXT-001 生命周期解释输入:发送结果原样透传 */
+export interface HotReloadProviderInterpretInput {
+  readonly ok: boolean;
+  readonly detail?: string;
+}
+
+/** HR-EXT-001 解释产物:ok 透传;失败=七类原因分类+标签+提示 */
+export interface HotReloadProviderInterpretation {
+  readonly ok: boolean;
+  readonly reason?: HotReloadErrorReason;
+  readonly label?: string;
+  readonly hint?: string;
+}
+
+/** HR-EXT-001 已应用版本查询输入 */
+export interface HotReloadProviderRevisionQuery {
+  readonly targetId: string;
+  readonly identity: HotReloadModuleIdentity;
+}
+
+/** HR-EXT-001 已应用版本产物:来源如实标注(引擎回执/台账/回执面) */
+export interface HotReloadProviderAppliedRevision {
+  readonly revision: string;
+  readonly source: 'engine' | 'ledger' | 'receipt';
+}
+
+/**
+ * HR-PR-08 热更发送插槽(实现=具体通道;默认无实现,如实 null)。
+ * HR-EXT-001:发送面(canSend/send)之外加四个**可选**生命周期插槽
+ * (resolveModule/prepareRequest/interpretResponse/queryAppliedRevision),
+ * 可选=缺省槽回落(createDefaultHotReloadLifecycleSlots 组合既有核),
+ * 向后兼容:增量前实现(只有 canSend/send)形状不变,apiVersion 不递增。
+ */
 export interface HotReloadProvider {
   readonly providerId: string;
   readonly apiVersion: typeof HOT_RELOAD_PLUGIN_API_VERSION;
@@ -91,6 +161,68 @@ export interface HotReloadProvider {
   /** 该实现能否处理此 engine profile(fork/版本差异在此分派) */
   canSend(profile: EngineProfile): boolean;
   send(request: HotReloadProviderSendRequest): Promise<HotReloadProviderSendResult> | HotReloadProviderSendResult;
+  /** HR-EXT-001:文件→模块身份(实现可换解析面;缺省=委托既有解析核) */
+  readonly resolveModule?: (input: HotReloadProviderResolveInput) => HotReloadProviderResolveResult;
+  /** HR-EXT-001:目标+身份→请求(实现可换请求组装;缺省=透传既有发送请求形状) */
+  readonly prepareRequest?: (input: HotReloadProviderPrepareInput) => HotReloadProviderSendRequest;
+  /** HR-EXT-001:发送结果→分类解释(实现可换错误分类面;缺省=委托既有七类分类核) */
+  readonly interpretResponse?: (input: HotReloadProviderInterpretInput) => HotReloadProviderInterpretation;
+  /** HR-EXT-001:已应用版本查询(实现可接引擎回执;缺省=null 如实未接线) */
+  readonly queryAppliedRevision?: (input: HotReloadProviderRevisionQuery) => HotReloadProviderAppliedRevision | null;
+}
+
+/** HR-EXT-001 生命周期插槽全集(缺省槽形状=组合既有核) */
+export type HotReloadLifecycleSlots = Required<
+  Pick<HotReloadProvider, 'resolveModule' | 'prepareRequest' | 'interpretResponse' | 'queryAppliedRevision'>
+>;
+
+/**
+ * HR-EXT-001 缺省生命周期插槽:组合既有核(解析核/发送请求形状/七类分类核),
+ * 不自创解析、不自创错误分类。queryAppliedRevision=如实 null(未接线,不编造)。
+ */
+export function createDefaultHotReloadLifecycleSlots(input?: {
+  scriptRoots?: readonly string[];
+  allowRootLevelStem?: boolean;
+}): HotReloadLifecycleSlots {
+  const defaultRoots = input?.scriptRoots;
+  const defaultAllowRoot = input?.allowRootLevelStem;
+  return {
+    resolveModule: resolveInput => {
+      const effectiveRoots = resolveInput.scriptRoots ?? defaultRoots;
+      const effectiveAllowRoot = resolveInput.allowRootLevelStem ?? defaultAllowRoot;
+      return resolveHotReloadModuleIdentity({
+        fileUri: resolveInput.fileUri,
+        workspaceId: resolveInput.workspaceId,
+        rootId: resolveInput.rootId,
+        ...(effectiveRoots !== undefined ? { scriptRoots: effectiveRoots } : {}),
+        ...(effectiveAllowRoot !== undefined ? { allowRootLevelStem: effectiveAllowRoot } : {}),
+        ...(resolveInput.userOverrideModule !== undefined
+          ? { userOverrideModule: resolveInput.userOverrideModule }
+          : {})
+      });
+    },
+    prepareRequest: prepareInput => ({
+      targetId: prepareInput.targetId,
+      files: [prepareInput.identity.fileUri],
+      moduleIdentities: [prepareInput.identity.requestModule],
+      ...(prepareInput.revision !== undefined ? { revision: prepareInput.revision } : {}),
+      ...(prepareInput.correlationId !== undefined ? { correlationId: prepareInput.correlationId } : {})
+    }),
+    interpretResponse: interpretInput => {
+      if (interpretInput.ok) {
+        return { ok: true };
+      }
+      const info = classifyHotReloadErrorReason(interpretInput.detail ?? '');
+      return { ok: false, reason: info.category, label: info.label, hint: info.hint };
+    },
+    queryAppliedRevision: () => null
+  };
+}
+
+/** HR-EXT-001 已解析生命周期:provider + 其插槽(槽缺省已回落,非半态) */
+export interface HotReloadResolvedLifecycle {
+  readonly provider: HotReloadProvider;
+  readonly slots: HotReloadLifecycleSlots;
 }
 
 /** 引擎档案(版本化):探测版本+指纹档案;版本未知=null 如实 */
@@ -151,6 +283,28 @@ export class HotReloadProviderRegistry {
       }
     }
     return null;
+  }
+
+  /**
+   * HR-EXT-001 解析生命周期:按 profile 选发送 provider,再把它自带的四个生命周期
+   * 插槽与缺省槽合成(实现自带槽优先,缺槽回落缺省组合核)。
+   * 无人应答/null profile=如实 null(不回落默认,同 resolveSendProvider 口径)。
+   */
+  resolveLifecycle(profile: EngineProfile | null): HotReloadResolvedLifecycle | null {
+    const provider = this.resolveSendProvider(profile);
+    if (!provider) {
+      return null;
+    }
+    const defaults = createDefaultHotReloadLifecycleSlots();
+    return {
+      provider,
+      slots: {
+        resolveModule: provider.resolveModule ?? defaults.resolveModule,
+        prepareRequest: provider.prepareRequest ?? defaults.prepareRequest,
+        interpretResponse: provider.interpretResponse ?? defaults.interpretResponse,
+        queryAppliedRevision: provider.queryAppliedRevision ?? defaults.queryAppliedRevision
+      }
+    };
   }
 
   /** 自省:已注册 id 序(测试/装配面核查) */
