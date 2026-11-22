@@ -133,6 +133,7 @@
     "onCommand:kbengine.def.fingerprintInspector",
     "onCommand:kbengine.hotReload.historyPanel",
     "onCommand:kbengine.hotReload.historySearch",
+    "onCommand:kbengine.hotReload.historyExport",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.project.wizard",
     "onCommand:kbengine.symbolReferences.show",
@@ -853,6 +854,11 @@
       {
         "command": "kbengine.hotReload.historySearch",
         "title": "%kbengine.command.hotReload.historySearch.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.historyExport",
+        "title": "%kbengine.command.hotReload.historyExport.title%",
         "category": "KBEngine"
       },
       {

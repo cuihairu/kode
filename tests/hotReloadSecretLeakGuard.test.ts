@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
+  HOT_RELOAD_HISTORY_EXPORT_FIELDS,
+  projectHotReloadHistoryExportRow,
   type HotReloadHistoryEntry,
   type HotReloadHistoryInput
 } from '../src/backend/hotReloadHistoryCore';
@@ -14,7 +16,9 @@ import { type HttpRequestOutcome } from '../src/backend/httpRequestExecutor';
  * - tooltip 投影行全部来自安全字段(若未来有人给 tooltip 加 `headers:`/`token:`
  *   行,前缀守卫必红,须有意识改动——防静默泄出回归);
  * - 传输 outcome DTO(HttpRequestOutcome,进 OUTPUT 面板面)字段集无 header/token
- *   (header 只存在于 OutgoingHttpRequest 出站传输 DTO 的合法出站点)。
+ *   (header 只存在于 OutgoingHttpRequest 出站传输 DTO 的合法出站点);
+ * - 导出面(RUST-368 serializeHotReloadHistoryJson)白名单投影,行键集=固定
+ *   安全十二字段集,无 header/token/body(不整体透传,防 DTO 加字段自动漏出)。
  *
  * 未在本测覆盖面(随接线批/主席在途文件收口):output 面板服务层流水行、
  * trace 面、导出数据(RUST-368 尚未实现,无导出表面)。
@@ -53,12 +57,53 @@ const makeOutcome = (overrides: Partial<HttpRequestOutcome> = {}): HttpRequestOu
 
 describe('RUST-421 密钥不泄出:history DTO 结构面', () => {
   it('history 输入/条目字段集无密钥形状字段(header/token 只允许在出站传输 DTO)', () => {
-    const entry = makeEntry({ errorSummary: 'HTTP 404' });
+    // HR-STATE-007 补四字段(trigger/durationMs/errorCategory/hash)后全量行=12 字段
+    const entry = makeEntry({
+      errorSummary: 'HTTP 404',
+      trigger: 'retry',
+      durationMs: 50,
+      errorCategory: 'target-restart',
+      hash: 'a'.repeat(64)
+    });
     assertNoSecretKeys('HotReloadHistoryEntry', entry);
-    // 钉住字段集本身:安全八字段,不多不少(加字段须有意识改此测)
+    // 钉住字段集本身:安全十二字段,不多不少(加字段须有意识改此测)
     expect(Object.keys(entry).sort()).toEqual(
-      ['fileUri', 'fullModule', 'requestId', 'requestModule', 'status', 'targetId', 'time', 'errorSummary'].sort()
+      [
+        'fileUri',
+        'fullModule',
+        'requestId',
+        'requestModule',
+        'status',
+        'targetId',
+        'time',
+        'errorSummary',
+        'trigger',
+        'durationMs',
+        'errorCategory',
+        'hash'
+      ].sort()
     );
+  });
+
+  it('导出行(RUST-368)键集=安全十二字段白名单,无 header/token/body(不整体透传)', () => {
+    const entry = makeEntry({
+      errorSummary: 'HTTP 404',
+      trigger: 'retry',
+      durationMs: 50,
+      errorCategory: 'target-restart',
+      hash: 'a'.repeat(64)
+    });
+    const row = projectHotReloadHistoryExportRow(entry);
+    assertNoSecretKeys('export row', row);
+    expect(Object.keys(row).sort()).toEqual([...HOT_RELOAD_HISTORY_EXPORT_FIELDS].sort());
+    expect('body' in row).toBe(false);
+    // 白名单是闸:DTO 上额外密钥形状字段不透传进导出行
+    const polluted = entry as unknown as Record<string, unknown>;
+    polluted.header = 'Bearer x';
+    polluted.token = 'abc';
+    const clean = projectHotReloadHistoryExportRow(polluted as unknown as HotReloadHistoryEntry);
+    expect('header' in clean).toBe(false);
+    expect('token' in clean).toBe(false);
   });
 
   it('outcome DTO 字段集无密钥形状字段(进 OUTPUT 面板面不携带 header/token)', () => {
@@ -75,11 +120,32 @@ describe('RUST-421 密钥不泄出:UI tooltip 投影面', () => {
     const lines = buildHistoryEntryTooltipLines(
       makeEntry({ errorSummary: 'HTTP 404: Not Found' })
     );
-    const SAFE_PREFIX = /^(requestModule:|module:|file:|target:|time:|requestId:|status:|error:)/;
+    const SAFE_PREFIX = /^(requestModule:|module:|file:|target:|time:|requestId:|status:|error:|trigger:|duration:|errorCategory:|hash:)/;
     for (const line of lines) {
       expect(line).toMatch(SAFE_PREFIX);
       expect(SECRET_KEY_PATTERN.test(line.split(':')[0]), `tooltip 行含密钥形状标签: ${line}`).toBe(false);
     }
+  });
+
+  it('HR-STATE-007 四新字段 tooltip 行安全前缀,在即列且值如实', () => {
+    const lines = buildHistoryEntryTooltipLines(
+      makeEntry({
+        errorSummary: 'HTTP 404',
+        trigger: 'retry',
+        durationMs: 50,
+        errorCategory: 'endpoint-unreachable',
+        hash: 'a'.repeat(64)
+      })
+    );
+    const SAFE_PREFIX = /^(requestModule:|module:|file:|target:|time:|requestId:|status:|error:|trigger:|duration:|errorCategory:|hash:)/;
+    for (const line of lines) {
+      expect(line).toMatch(SAFE_PREFIX);
+      expect(SECRET_KEY_PATTERN.test(line.split(':')[0]), `tooltip 行含密钥形状标签: ${line}`).toBe(false);
+    }
+    expect(lines).toContain('trigger: retry');
+    expect(lines).toContain('duration: 50ms');
+    expect(lines).toContain('errorCategory: endpoint-unreachable');
+    expect(lines).toContain(`hash: ${'a'.repeat(64)}`);
   });
 
   it('规范条目投影=已知安全行集(缺 errorSummary 无 error 行;label=fullModule)', () => {

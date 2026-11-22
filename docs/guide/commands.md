@@ -867,6 +867,14 @@ The flow graph panel supports:
 - Purpose: filter the history tree view by a `fullModule` substring (case-insensitive); an empty input clears the filter
 - Behavior: applies to the three tree groups (recent updates / by file / by target); rows whose module differs only by target stay separate rows
 
+### `kbengine.hotReload.historyExport`
+
+- Title: `Export Hot Reload History (Masked JSON)`
+- Purpose: write the hot reload history as masked JSON via a save dialog
+- Behavior:
+  - Each row is projected through the export whitelist (request id, module names, file, target, time, status, error summary, trigger, duration, error category, hash) — no whole-object passthrough, so no HTTP header/token/body can leak into the export
+  - Cancelling the save dialog aborts without writing
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`

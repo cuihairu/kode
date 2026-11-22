@@ -33,6 +33,7 @@ import {
   buildHistoryEntryTooltipLines,
   computeVirtualScrollWindow,
   HotReloadHistoryCore,
+  serializeHotReloadHistoryJson,
   type HotReloadHistoryEntry,
   type HotReloadHistoryFilter,
   type HotReloadHistoryInput,
@@ -48,6 +49,8 @@ export const HOT_RELOAD_HISTORY_STATE_KEY = 'kbengine.hotReload.history';
 
 export const HOT_RELOAD_HISTORY_PANEL_COMMAND = 'kbengine.hotReload.historyPanel';
 export const HOT_RELOAD_HISTORY_SEARCH_COMMAND = 'kbengine.hotReload.historySearch';
+/** HR-STATE-008:导出脱敏 JSON(白名单投影,见 serializeHotReloadHistoryJson) */
+export const HOT_RELOAD_HISTORY_EXPORT_COMMAND = 'kbengine.hotReload.historyExport';
 
 /**
  * 虚拟滚动激活阈值(HR-UI-007):超过才走窗口化渲染。缺省容量 200(核心
@@ -558,6 +561,21 @@ export function setupHotReloadHistoryView(
     refresh();
   });
   context.subscriptions.push(searchCommand);
+
+  // HR-STATE-008:脱敏 JSON 导出(白名单投影,serializeHotReloadHistoryJson)。
+  // 全量行(最新在前)经白名单投影落盘;保存对话框取消=不落盘(如实返回)。
+  const exportCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND, async () => {
+    const content = serializeHotReloadHistoryJson(opts.core.entries());
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file('hot-reload-history.json'),
+      filters: { 'JSON Files': ['json'] }
+    });
+    if (uri === undefined) {
+      return;
+    }
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
+  });
+  context.subscriptions.push(exportCommand);
 
   // 面板状态(HR-UI-010 过滤 + HR-UI-007 分页)
   const panelState: { state: HotReloadHistoryPanelState | null; panel: vscode.WebviewPanel | null } = {

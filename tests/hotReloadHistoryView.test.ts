@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
+  HOT_RELOAD_HISTORY_EXPORT_COMMAND,
   HOT_RELOAD_HISTORY_PANEL_COMMAND,
   HOT_RELOAD_HISTORY_SEARCH_COMMAND,
   HOT_RELOAD_HISTORY_STATE_KEY,
@@ -11,12 +12,14 @@ import {
 } from '../src/hotReloadHistoryView';
 import {
   HotReloadHistoryCore,
+  HOT_RELOAD_HISTORY_EXPORT_FIELDS,
   buildHistoryEntryTooltipLines,
   type HotReloadHistoryEntry
 } from '../src/backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from '../src/backend/hotReloadTargetState';
 import { panelRegistry, windowState } from './helpers/vscodeStub';
 import { treeRegistrations } from './fake-vscode/windowState';
+import { memoryFileSystem } from './fake-vscode/workspaceState';
 
 // HR-PR-06 装配钉:台账记录→历史行翻译(requestId 同执行稳定/状态三态如实
 // 不拔高)+树三组(最近/按文件/按目标,同路径不同 target 分行)+搜索过滤+
@@ -760,4 +763,51 @@ describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)',
     expect(html).toContain('"requestId":"r100"');
     expect(html).toContain('list.addEventListener(\'scroll\', renderWindow)');
   });
+});
+
+describe('HR-STATE-008 导出脱敏 JSON(命令面)', () => {
+  const SAVE_PATH = '/tmp/kode-hot-reload-history-export.json';
+  const patchSaveDialog = (uri: { fsPath: string } | undefined): void => {
+    (vscode.window as unknown as { showSaveDialog: unknown }).showSaveDialog = async () => uri;
+  };
+
+  it('导出命令:保存对话框给路径→白名单投影 JSON 落盘;取消=不落盘', async () => {
+    memoryFileSystem.reset();
+    const core = new HotReloadHistoryCore();
+    const feed = setupHotReloadHistoryView(contextOf(), {
+      core,
+      resolveNames: resolver,
+      now: () => 1700000002000
+    });
+    feed.handle(
+      recordOf({
+        source: 'command',
+        sentDigest: 'a'.repeat(64),
+        outcome: 'failed',
+        detail: 'ECONNREFUSED'
+      })
+    );
+    const original = (vscode.window as unknown as { showSaveDialog: unknown }).showSaveDialog;
+    try {
+      patchSaveDialog({ fsPath: SAVE_PATH });
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      const written = memoryFileSystem.files.get(SAVE_PATH);
+      expect(written).toBeDefined();
+      const parsed = JSON.parse(Buffer.from(written as Uint8Array).toString('utf8'));
+      expect(parsed.schema).toBe('kbengine.hotReloadHistory');
+      expect(parsed.count).toBe(1);
+      expect(Object.keys(parsed.entries[0]).sort()).toEqual([...HOT_RELOAD_HISTORY_EXPORT_FIELDS].sort());
+      expect(parsed.entries[0].errorCategory).toBe('endpoint-unreachable');
+      expect(parsed.entries[0].trigger).toBe('command');
+      expect(JSON.stringify(parsed)).not.toMatch(/header|token/i);
+
+      patchSaveDialog(undefined);
+      memoryFileSystem.files.delete(SAVE_PATH);
+      await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_EXPORT_COMMAND);
+      expect(memoryFileSystem.files.has(SAVE_PATH)).toBe(false);
+    } finally {
+      patchSaveDialog(original);
+      memoryFileSystem.reset();
+    }
+  }, 10000);
 });
