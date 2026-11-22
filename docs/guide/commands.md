@@ -855,11 +855,13 @@ The flow graph panel supports:
 ### `kbengine.hotReload.historyPanel`
 
 - Title: `Open Hot Reload History Panel`
+- Default keybinding: `ctrl+alt+p` (macOS `cmd+alt+p`) — RUST-384 无障碍快捷键; `ctrl+alt+h` (the documented `kbengine.httpRequest.run` example) and `ctrl+alt+r` (configureChannel) are avoided
 - Purpose: open the hot reload history panel — header (watch mode / target / shown-vs-total counts), filter bar (fullModule substring / target id / status), and a latest-first table (module shown as `fullModule` with the sent `requestModule` listed when the two differ, file, target, status, time, request id, error summary) with "load more" paging
 - Behavior:
   - Data comes from the delivery ledger via the per-record projection (the ledger is the source of truth; the panel never fabricates rows)
   - Closing the panel does not stop the hot reload pipeline — the feed keeps recording and the tree keeps its throttled refresh
   - Filter/load-more buttons talk to the assembly via webview messages and re-render from the ledger-backed history core
+  - Screen-reader/键盘面 (RUST-384): the header count is a live region (`role="status" aria-live="polite"`), and each history row is keyboard-reachable (`tabindex="0"`, Enter/Space opens the row's file via the locate command) in addition to the mouse click — the virtual-scroll path mirrors the same attributes
 
 ### `kbengine.hotReload.historySearch`
 
@@ -889,8 +891,10 @@ The flow graph panel supports:
 ### `kbengine.hotReload.settingsPanel`
 
 - Title: `Hot Reload Settings`
+- Default keybinding: `ctrl+alt+s` (macOS `cmd+alt+s`) — RUST-384 无障碍快捷键
 - Purpose: open a webview form to edit the frequently-toggled hot-reload workspace settings
 - Behavior:
+  - The status line is a live region (`role="status" aria-live="polite"`) so save results are announced to screen readers (RUST-384)
   - The form edits nine keys: `enabled` (启用自动更新), `triggerMode` (监听模式: `onSave`/`onDiskChange`), `debounceMs` (去抖), `syntaxGate` (语法检查), `sendViaProviders` (经 Provider 发送), `allowRootLevelStem` (根下单层回退), `batchFlushMs` (波次冲口), `batchPreviewThreshold` (批量预览阈值), `stabilityWindowMs` (写入稳定窗)
   - Channel settings (root/target/网络超时) stay in the existing `kbengine.hotReload.configureChannel` flow; this panel does not duplicate them. 「敏感操作警告」has no corresponding settings key — workspace trust (HR-HTTP-005/RUST-422) is the existing security gate, and no key is invented here
   - The host validates every submitted value before writing: booleans must be boolean, numbers finite non-negative integers, `triggerMode` in the enum; an invalid value is reported by field name and nothing is written (the form never silently clamps)
@@ -1093,6 +1097,7 @@ The flow graph panel supports:
 ### `kbengine.hotReload.showDiagnostics`
 
 - Title: `Show Hot Reload Diagnostics`
+- Default keybinding: `ctrl+alt+l` (macOS `cmd+alt+l`) — RUST-384 无障碍快捷键
 - Purpose: open the 「KBEngine 热更诊断」 OUTPUT channel — the user-reviewable timeline of every hot-reload save-pipeline diagnostic event (RUST-341 / HR-WATCH-017)
 - Behavior:
   - All eight diagnostic kinds land in the channel, one line per event — trigger / filtered / debounced / deduped / blocked (syntax gate) / scheduled / preview (batch hold) / flushed — each line formatted `[time] label file: detail`; nothing is aggregated or filtered out (presentation is the full account: an event blocked by the gate is just as visible as one that shipped)
