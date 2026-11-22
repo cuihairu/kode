@@ -1407,6 +1407,21 @@
           "command": "kbengine.git.openVersionContent",
           "when": "view == kbengine.gitHistory && viewItem == gitCommit",
           "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.locateFile",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.hotReload.showLog",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.hotReload.retryFailed",
+          "when": "view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [

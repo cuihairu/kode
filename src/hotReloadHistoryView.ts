@@ -600,9 +600,12 @@ export function setupHotReloadHistoryView(
         const item = new vscode.TreeItem(buildHistoryEntryLabel(entry));
         item.tooltip = buildHistoryEntryTooltipLines(entry).join('\n');
         item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}${entry.rootId && entry.rootId.length > 0 ? ` · ${entry.rootId}` : ''}`;
-        item.contextValue = 'kbengineHotReloadHistoryEntry';
         // RUST-381 失败点击定位文件:树行点击打开文件(命令参数=行文件路径;
-        // 任意行可定位,失败行照用同一动作)
+        // 任意行可定位,失败行照用同一动作)。右键面按状态分叉:失败行给
+        // 「定位文件/打开日志/重试」三动作(contextValue 分叉,菜单 when 靠
+        // viewItem 区分——沿用 gitCommit 先例),非失败行保持原 contextValue。
+        item.contextValue =
+          entry.status === 'failed' ? 'kbengineHotReloadHistoryEntryFailed' : 'kbengineHotReloadHistoryEntry';
         item.command = {
           command: HOT_RELOAD_LOCATE_FILE_COMMAND,
           title: l10nText('Locate File'),

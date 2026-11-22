@@ -231,6 +231,48 @@ describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
     expect(tooltip).toContain('requestId: ');
   });
 
+  it('RUST-381 残差收编:失败行 contextValue 分叉(Failed)+定位命令带 fileUri;非失败行保持原 Entry', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A, recordedAt: 1000, outcome: 'failed', detail: 'HTTP 500' }));
+    feed.handle(recordOf({ file: FILE_B, recordedAt: 2000 }));
+    const provider = lastProvider();
+    const recent = provider.getChildren(provider.getChildren()[0]);
+    const failed = recent.find(node => node.entry?.fileUri === FILE_A);
+    const ok = recent.find(node => node.entry?.fileUri === FILE_B);
+    expect(failed).toBeDefined();
+    expect(ok).toBeDefined();
+    const failedItem = provider.getTreeItem(failed!);
+    const okItem = provider.getTreeItem(ok!);
+    // 分叉:失败行给 Failed contextValue(右键菜单 when 靠 viewItem 区分),非失败行原值
+    expect(failedItem.contextValue).toBe('kbengineHotReloadHistoryEntryFailed');
+    expect(okItem.contextValue).toBe('kbengineHotReloadHistoryEntry');
+    // 两行都带定位命令,参数=行文件路径(任意行可定位,失败行照用同一动作)
+    expect(failedItem.command?.command).toBe(HOT_RELOAD_LOCATE_FILE_COMMAND);
+    expect(failedItem.command?.arguments).toEqual([FILE_A]);
+    expect(okItem.command?.command).toBe(HOT_RELOAD_LOCATE_FILE_COMMAND);
+    expect(okItem.command?.arguments).toEqual([FILE_B]);
+  });
+
+  it('RUST-381 残差收编:package.json 失败行右键三动作(定位文件/打开日志/重试),when 按 Failed viewItem 分叉', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
+      contributes: { menus: Record<string, Array<{ command: string; when?: string; group?: string }>> };
+    };
+    const whenFailed = (entry: { command: string; when?: string; group?: string }): boolean =>
+      entry.when === 'view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntryFailed';
+    const menu = pkg.contributes.menus['view/item/context'] ?? [];
+    const failedMenu = menu.filter(whenFailed);
+    const byCommand = new Map(failedMenu.map(entry => [entry.command, entry]));
+    expect(byCommand.get('kbengine.hotReload.locateFile')?.group).toBe('navigation@0');
+    expect(byCommand.get('kbengine.hotReload.showLog')?.group).toBe('navigation@1');
+    expect(byCommand.get('kbengine.hotReload.retryFailed')?.group).toBe('navigation@2');
+    // 菜单只在 Failed viewItem 亮:无任何用非失败 Entry viewItem 挂的历史行动作
+    const nonFailedMenu = menu.filter(
+      entry => entry.when === 'view == kbengine.hotReloadHistory && viewItem == kbengineHotReloadHistoryEntry'
+    );
+    expect(nonFailedMenu).toHaveLength(0);
+  });
+
+
   it('按文件/按目标/按根键组:同路径不同 target/根分行(HR-UI-010/014),键组内行数入账', () => {
     const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     feed.handle(recordOf({ file: FILE_A, targetId: '' }));

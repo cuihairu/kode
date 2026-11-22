@@ -1187,7 +1187,8 @@ The flow graph panel supports:
 - Behavior:
   - The history tree entry rows and the history panel rows carry the source file path; clicking a row invokes this command with that path
   - The command opens the file via the editor (`showTextDocument`); a missing path reports 定位文件:路径缺失 and nothing opens; a failed open surfaces the path and the error
-  - Retry from a failed row is the existing `kbengine.hotReload.retryFailed` flow (RUST-381 可选择重试面); the open log surface is the existing `kbengine.hotReload.showDiagnostics` channel; the HTTP summary is the row tooltip (module/file/target/trigger/duration/hash) — history rows carry no HTTP body/headers/tokens, so there is no secret to mask (masking is structural, not a transform)
+  - Retry from a failed row is the existing `kbengine.hotReload.retryFailed` flow (RUST-381 可选择重试面); the open log surface is the existing `kbengine.hotReload.showLog` channel; the HTTP summary is the row tooltip (module/file/target/trigger/duration/hash) — history rows carry no HTTP body/headers/tokens, so there is no secret to mask (masking is structural, not a transform)
+  - Failed-row context menu (RUST-381 残差收编): a failed row carries `viewItem == kbengineHotReloadHistoryEntryFailed` and offers three actions — 定位文件 (`kbengine.hotReload.locateFile`, `navigation@0`), 打开日志 (`kbengine.hotReload.showLog`, `navigation@1`), and 重试 (`kbengine.hotReload.retryFailed`, `navigation@2`); non-failed rows keep the plain entry row (locate via click only). The 重试 item invokes the existing retry-all-failed command, which retries every failed target (not only the clicked row) — that is the current retry granularity
 
 ### `kbengine.hotReload.configureChannel`
 
