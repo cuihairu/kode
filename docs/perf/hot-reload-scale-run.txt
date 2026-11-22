@@ -35,3 +35,26 @@ HRS-METRIC M3.releasePreview.wall n=1 0.66ms
 HRS-METRIC M4.storm.wall n=1 1008.78ms
 HRS-METRIC M5.canonicalize.100k n=1 283.4ms
 HRS-NOTE M5 远端端到端延迟未覆盖:需活 SSH 会话+远端文件系统延迟,纯核基准无此面;远端路径规范化已由本例覆盖,键口径与本地一致,端到端随接线批
+HRS-ENV node=v24.21.0 platform=linux cpus=14 scales=200,2000 largest=2000 assets=/tmp/kode-hrs-assets
+HRS-METRIC M1.filter.200.wall n=1 4.52ms
+HRS-METRIC M1.filter.200.perEvent n=1 0.02ms
+HRS-METRIC M1.filter.200.accepted n=1 200 files
+HRS-METRIC M1.absorb.200.wall n=1 43.85ms
+HRS-METRIC M1.absorb.200.perFile n=1 0.22ms
+HRS-METRIC M1.absorb.200.throughput n=1 4561.38 files/s
+HRS-METRIC M1.absorb.200.readLatency n=200 p50=34.28ms p95=34.96ms p99=35ms max=36.33ms
+HRS-METRIC M1.filter.2000.wall n=1 28.4ms
+HRS-METRIC M1.filter.2000.perEvent n=1 0.01ms
+HRS-METRIC M1.filter.2000.accepted n=1 2000 files
+HRS-METRIC M1.absorb.2000.wall n=1 265.34ms
+HRS-METRIC M1.absorb.2000.perFile n=1 0.13ms
+HRS-METRIC M1.absorb.2000.throughput n=1 7537.5 files/s
+HRS-METRIC M1.absorb.2000.readLatency n=2000 p50=186.2ms p95=204.4ms p99=204.78ms max=208.13ms
+HRS-METRIC M2.sustained.wall n=1 180.56ms
+HRS-METRIC M2.sustained.throughput n=1 553.84 saves/s
+HRS-METRIC M2.saveToQueue n=100 p50=1.62ms p95=2.04ms p99=3.69ms max=4.27ms
+HRS-METRIC M3.previewHold.wall n=1 1039.29ms
+HRS-METRIC M3.releasePreview.wall n=1 0.93ms
+HRS-METRIC M4.storm.wall n=1 1012.84ms
+HRS-METRIC M5.canonicalize.100k n=1 348.54ms
+HRS-NOTE M5 远端端到端延迟未覆盖:需活 SSH 会话+远端文件系统延迟,纯核基准无此面;远端路径规范化已由本例覆盖,键口径与本地一致,端到端随接线批
