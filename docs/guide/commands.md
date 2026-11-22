@@ -1173,6 +1173,15 @@ The flow graph panel supports:
   - A file in the workspace root shows one line per target with its state, baseline hash prefix, send generation, and detail; a file outside any root reports 不在工作区根内 honestly
   - RESTART_REQUIRED is the HOT-005 structural-def gate: a structural def change blocks the whole batch and is surfaced as restart-required (a conservative hold, never a fake failure) — the reason text names the gate
 
+### `kbengine.hotReload.locateFile`
+
+- Title: `Hot Reload: Locate File`
+- Purpose: open the file backing a hot-reload history row in the editor (RUST-381 失败点击定位文件; invoked from the history tree row click and the history panel webview row click)
+- Behavior:
+  - The history tree entry rows and the history panel rows carry the source file path; clicking a row invokes this command with that path
+  - The command opens the file via the editor (`showTextDocument`); a missing path reports 定位文件:路径缺失 and nothing opens; a failed open surfaces the path and the error
+  - Retry from a failed row is the existing `kbengine.hotReload.retryFailed` flow (RUST-381 可选择重试面); the open log surface is the existing `kbengine.hotReload.showDiagnostics` channel; the HTTP summary is the row tooltip (module/file/target/trigger/duration/hash) — history rows carry no HTTP body/headers/tokens, so there is no secret to mask (masking is structural, not a transform)
+
 ### `kbengine.hotReload.configureChannel`
 
 - Title: `Hot Reload: Configure Deployment Channel`
