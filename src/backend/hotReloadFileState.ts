@@ -262,6 +262,12 @@ export interface HotReloadFileStateMachineDeps {
  * 文件热更状态机:会话基线册 + 结构性 def 拦下集 + 派生视图。台账
  * (HotReloadTargetStateStore)是事实源,本类只在其上派生生命周期态,
  * 键同形(rootId×targetId×file)不另立身份。
+ *
+ * HR-STATE-004 分区=(workspaceId,rootId,targetId,uri)四维:rootId 是工作区
+ * 根目录路径、file 是 uri 的 fsPath 绝对路径(键内两维齐);workspaceId 维度
+ * 由纯内存台账/基线册的进程隔离承担(每窗口独立扩展宿主,跨窗口无共享
+ * 持久层,无需入键)。状态机因此天然隔离——切换目标后新目标是独立记录,
+ * 旧目标的 applied 绿不会被新目标复用(基线册按键入册,不跨目标串)。
  */
 export class HotReloadFileStateMachine {
   private readonly deps: HotReloadFileStateMachineDeps;

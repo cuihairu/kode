@@ -307,6 +307,48 @@ describe('状态机派生视图:键同形(rootId×targetId×file),不另立身�
   });
 });
 
+describe('HR-STATE-004: 分区=(workspaceId,rootId,targetId,uri),切换目标不复用旧绿色', () => {
+  // workspaceId 维度=工作区实例隔离:台账/基线册都是纯内存件,每窗口独立
+  // 扩展宿主各持一份(store 实例即隔离边界,无跨窗口共享持久层);uri 维度=
+  // 键内 file 即 uri 的 fsPath 绝对路径。状态机键(rootId×targetId×file)
+  // 三维齐备,以下钉死「切换目标后不冒充旧绿色」的面。
+  const KEY_B: HotReloadTargetKey = { rootId: '/ws', targetId: 'baseapp#b' };
+
+  it('A 已 applied,切到无记录的 B(内容与 A 所发相同)→ B CLEAN,不复用 A 的绿', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    // 内容与 A 所发逐字相同——若基线册跨目标泄漏,B 会冒充 APPLIED
+    const viewB = sm.derive(store, KEY_B, FILE, CONTENT_A);
+    expect(viewB.state).toBe('CLEAN');
+    expect(viewB.baselineDigest).toBe(DIGEST_A); // B 自己的首见基线,不是 A 的 applied 基线冒充
+    expect(sm.derive(store, KEY, FILE, CONTENT_A).state).toBe('APPLIED'); // A 侧原样绿
+  });
+
+  it('切换目标后再编辑:B 以自己的基线判脏,不继承 A 的 applied 事实', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    sm.derive(store, KEY_B, FILE, CONTENT_A); // B 首见注册基线=当前内容(=A 所发内容)
+    // 编辑发生在切换到 B 之后:B=DIRTY(改了自己首见基线),A=DIRTY(applied 后内容再偏)
+    expect(sm.derive(store, KEY_B, FILE, CONTENT_B).state).toBe('DIRTY');
+    expect(sm.derive(store, KEY, FILE, CONTENT_B).state).toBe('DIRTY');
+    // 改回:B 回 CLEAN(回到自己基线),A 仍 DIRTY(偏离的是 A 的 applied 基线)
+    expect(sm.derive(store, KEY_B, FILE, CONTENT_A).state).toBe('CLEAN');
+    expect(sm.derive(store, KEY, FILE, CONTENT_A).state).toBe('APPLIED');
+  });
+
+  it('工作区实例隔离(同 rootId×targetId×file 两窗口):窗口二看不见窗口一的绿', () => {
+    const storeOne = makeStore();
+    const smOne = makeState();
+    const storeTwo = makeStore(); // 窗口二自己的台账(同键同内容,独立实例)
+    const smTwo = makeState();
+    storeOne.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    expect(smOne.derive(storeOne, KEY, FILE, CONTENT_A).state).toBe('APPLIED');
+    expect(smTwo.derive(storeTwo, KEY, FILE, CONTENT_A).state).toBe('CLEAN');
+  });
+});
+
 describe('展示辅助:严重度聚合与注意力集', () => {
   it('worstHotReloadState 按严重度取最重(干净最轻,需重启最重)', () => {
     expect(worstHotReloadState(['CLEAN', 'DIRTY', 'APPLIED'])).toBe('DIRTY');
