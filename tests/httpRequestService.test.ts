@@ -443,8 +443,9 @@ describe('HR-HTTP-007(RUST-349)快捷请求面有界并发(同端点串行/异�
     const events: string[] = [];
     const { service } = makeService(
       [
-        entry({ url: 'http://eng-a:8090/x' }),
-        entry({ name: '热更B', url: 'http://eng-b:8090/x' })
+        // RUST-420 端点闸后:异端点用异端口 loopback 表达(origin 不同即异 target)
+        entry({ url: 'http://127.0.0.1:9001/x' }),
+        entry({ name: '热更B', url: 'http://127.0.0.1:9002/x' })
       ],
       {
         queue,
@@ -466,7 +467,7 @@ describe('HR-HTTP-007(RUST-349)快捷请求面有界并发(同端点串行/异�
   it('缺省共享队列:模块级单例同样同端点串行(生产路径)', async () => {
     const gate = makeGate();
     const events: string[] = [];
-    const { service } = makeService([entry({ url: 'http://eng-s:8090/x' })], {
+    const { service } = makeService([entry({ url: 'http://127.0.0.1:9003/x' })], {
       transport: async () => {
         events.push('s-start');
         await gate.gate;
@@ -630,5 +631,91 @@ describe('RUST-423(HR-QA-011)localhost 指向:请求在扩展宿主进程所在�
     const { service } = makeService([entry({ url: `http://127.0.0.1:${port}/probe` })]);
     await expect(service.runByName('热更')).resolves.toBe(true);
     expect(seenHost).toBe(`127.0.0.1:${port}`);
+  });
+});
+
+describe('RUST-420(HR-QA-008)非 loopback 端点闸:默认只放行 loopback,非 loopback 需显式授权+警告', () => {
+  it('loopback(127.0.0.1/localhost)未授权也放行:传输面收到请求,回 true,无阻止行', async () => {
+    const transport = vi.fn(async () => ({ ok: true, status: 200, durationMs: 1, body: 'ok' }));
+    const { service, logs, errors } = makeService([entry({ url: 'http://127.0.0.1:8090/hotfix' })], { transport });
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(logs.join('\n')).not.toContain('非 loopback');
+    expect(errors).toHaveLength(0);
+  });
+
+  it('非 loopback 未授权=阻止:不发请求,落 ⛔ 阻止行+弹窗,回 false', async () => {
+    const transport = vi.fn(async () => ({ ok: true, status: 200, durationMs: 1, body: '' }));
+    const { service, logs, errors } = makeService([entry({ url: 'http://10.0.0.5:8080/x' })], {
+      transport,
+      allowNonLoopback: () => false
+    });
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(transport).not.toHaveBeenCalled();
+    expect(logs.some(line => line.includes('⛔') && line.includes('非 loopback 端点已阻止'))).toBe(true);
+    expect(errors.some(message => message.includes('已阻止'))).toBe(true);
+  });
+
+  it('缺省不注入 allowNonLoopback=未授权:非 loopback 一律阻止(安全默认收紧)', async () => {
+    const transport = vi.fn(async () => ({ ok: true, status: 200, durationMs: 1, body: '' }));
+    const { service } = makeService([entry({ url: 'http://192.168.1.50:8080/x' })], { transport });
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it('云元数据端点(169.254.169.254)未授权=阻止:SSRF 经典目标不发请求', async () => {
+    const transport = vi.fn(async () => ({ ok: true, status: 200, durationMs: 1, body: '' }));
+    const { service, logs } = makeService([entry({ url: 'http://169.254.169.254/latest/meta-data/' })], {
+      transport
+    });
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(transport).not.toHaveBeenCalled();
+    expect(logs.some(line => line.includes('169.254.169.254'))).toBe(true);
+  });
+
+  it('非 loopback 已显式授权=放行:逐次落安全警告后再发请求,回 true', async () => {
+    const transport = vi.fn(async () => ({ ok: true, status: 200, durationMs: 1, body: 'ok' }));
+    const { service, logs, errors } = makeService([entry({ url: 'http://10.0.0.5:8080/x' })], {
+      transport,
+      allowNonLoopback: () => true
+    });
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(logs.some(line => line.includes('⚠ 非 loopback 端点(已显式授权)'))).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('授权在请求发出前逐次读取:执行时 false 即阻止(授权可随设置变化)', async () => {
+    const transport = vi.fn(async () => ({ ok: true, status: 200, durationMs: 1, body: '' }));
+    let allowed = true;
+    const { service } = makeService([entry({ url: 'http://10.0.0.5:8080/x' })], {
+      transport,
+      allowNonLoopback: () => allowed
+    });
+    allowed = false;
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it('工作区未信任先挡(信任闸在端点闸前):未信任工作区里授权非 loopback 也不发', async () => {
+    const transport = vi.fn(async () => ({ ok: true, status: 200, durationMs: 1, body: '' }));
+    const { service, logs } = makeService([entry({ url: 'http://10.0.0.5:8080/x' })], {
+      transport,
+      isWorkspaceTrusted: () => false,
+      allowNonLoopback: () => true
+    });
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(transport).not.toHaveBeenCalled();
+    expect(logs.some(line => line.includes('工作区未信任'))).toBe(true);
+  });
+
+  it('非 http(s) URL(如 file://)不被端点闸拦,走真实路径交传输面按协议拒绝', async () => {
+    // 不注入 transport:defaultTransport 同步结算「不支持的协议」(零网络 IO)。
+    // 若误被端点闸拦,落 ⛔ 行且到不了传输面——用传输面的协议拒绝行反证放行。
+    const { service, logs, errors } = makeService([entry({ url: 'file:///etc/passwd' })]);
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(logs.some(line => line.includes('不支持的协议'))).toBe(true);
+    expect(logs.some(line => line.includes('⛔'))).toBe(false);
+    expect(errors.some(message => message.includes('不支持的协议'))).toBe(true);
   });
 });

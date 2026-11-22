@@ -817,7 +817,7 @@ describe('QuickActionManager.run backends', () => {
   it('IDE-AUD-054 @http:settings:runByName 透传 onHttpResponse', async () => {
     const { manager, seen } = makeObservedManager({ ok: true, status: 200, durationMs: 1, body: '{"status":"accepted"}' }, {
       getSettingHttpEntries: () => [
-        { name: 'reload', method: 'POST', url: 'http://s/reload', body: 'ok', headers: {}, enabled: true, keybinding: '' }
+        { name: 'reload', method: 'POST', url: 'http://127.0.0.1:21346/reload', body: 'ok', headers: {}, enabled: true, keybinding: '' }
       ]
     });
 
