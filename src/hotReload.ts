@@ -1778,16 +1778,31 @@ export function setupHotReload(
     }
   };
 
+  /** §11.4 签名判据(配置事件与工作区根变更共用):签名不变不重建 */
+  const applyIfWatchSignatureChanged = (): void => {
+    if (watchSignatureOf(readWatchInputs()) !== lastWatchSignature) {
+      apply();
+    }
+  };
+
   const subscription = vscode.workspace.onDidChangeConfiguration(event => {
     // §11.4:kbengine 段(含 kbengine.assetsRoot)一律重建;派生输入(assetsRoot/
     // 工作区根)变了但事件不认 kbengine 段时,按计划签名补一次重建——重建判据
     // 不只看 enabled/globs。
-    if (
-      event.affectsConfiguration('kbengine') ||
-      watchSignatureOf(readWatchInputs()) !== lastWatchSignature
-    ) {
+    if (event.affectsConfiguration('kbengine')) {
       apply();
+    } else {
+      applyIfWatchSignatureChanged();
     }
+  });
+
+  /** RUST-385(HR-UI-012)工作区根变更面:workspaceFolders 增删不派发
+   * onDidChangeConfiguration,§11.4 的签名兜底只在配置事件里才评估;这里
+   * 自订 folder 变更走同一判据——多根会话加/删文件夹即时按新根重建
+   * watcher/流水线。整工作区切换由宿主重启接管(deactivate 复合释放全清,
+   * activate 重跑 apply,历史按各自工作区 workspaceState 各自回载)。 */
+  const foldersSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    applyIfWatchSignatureChanged();
   });
   context.subscriptions.push({
     dispose: (): void => {
@@ -1798,6 +1813,7 @@ export function setupHotReload(
       showDiagnosticsCommand.dispose();
       diagnosticsPanel.dispose();
       subscription.dispose();
+      foldersSubscription.dispose();
       unsubscribeBypass();
       bypassMerger.dispose();
       diskWatch?.dispose();
