@@ -92,14 +92,15 @@ export function createHttpExchangeMachine(): HttpExchangeMachine {
   };
 }
 
-/** HR-HTTP-010 结果六分类(传输事实决定,不猜) */
+/** HR-HTTP-010 结果分类(传输事实决定,不猜);HR-HTTP-008 增取消类 */
 export type HttpOutcomeKind =
   | 'ok'
   | 'non-2xx'
   | 'timeout'
   | 'network-error'
   | 'invalid-url'
-  | 'unsupported-protocol';
+  | 'unsupported-protocol'
+  | 'cancelled';
 
 /** 错误细类(对齐 HR-STATE-010 可操作原因面;推不出=unknown) */
 export type HttpErrorCategory =
@@ -110,6 +111,7 @@ export type HttpErrorCategory =
   | 'invalid-url'
   | 'unsupported-protocol'
   | 'http-status'
+  | 'cancelled'
   | 'unknown';
 
 export interface HttpRequestOutcome {
@@ -141,6 +143,9 @@ const classifyTransportError = (error?: string): {
   category: HttpErrorCategory;
 } => {
   const message = error ?? '';
+  if (message.includes('请求已取消(')) {
+    return { kind: 'cancelled', category: 'cancelled' };
+  }
   if (message.includes('请求超时(')) {
     return { kind: 'timeout', category: 'timeout' };
   }
@@ -207,6 +212,12 @@ export interface HttpExecuteDeps {
    * 有界并发谁注入(快捷请求面已接),不在执行器层替全体调用方定死。
    */
   readonly queue?: HttpTargetQueue;
+  /**
+   * HR-HTTP-008(RUST-350)取消信号透传给传输面:中止在途请求,结算
+   * kind='cancelled'(取消≠远端撤销,调用方按 uncertain 口径展示)。
+   * 缺省无信号=不可取消(既有行为不变)。
+   */
+  readonly signal?: AbortSignal;
 }
 
 /** 队列目标键:URL origin(协议+主机+端口);URL 无法解析时按原样键(分组不靠猜) */
@@ -242,7 +253,8 @@ export async function executeHttpRequest(
       headers: request.headers,
       body: request.body,
       timeoutMs: request.timeoutMs,
-      ...(request.maxResponseBytes !== undefined ? { maxResponseBytes: request.maxResponseBytes } : {})
+      ...(request.maxResponseBytes !== undefined ? { maxResponseBytes: request.maxResponseBytes } : {}),
+      ...(deps.signal !== undefined ? { signal: deps.signal } : {})
     });
   const result = deps.queue
     ? await deps.queue.run(targetKeyOf(request.url), sendOnce)

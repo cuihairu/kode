@@ -483,3 +483,77 @@ describe('HR-HTTP-007(RUST-349)快捷请求面有界并发(同端点串行/异�
     expect(events).toEqual(['s-start', 's-end', 's-start', 's-end']);
   });
 });
+
+describe('HR-HTTP-008(RUST-350) 请求取消(取消≠远端撤销,后段状态 uncertain)', () => {
+  it('注入 transport 报已取消:uncertain 展示,不弹错窗,回 false', async () => {
+    const { service, logs, errors } = makeService([entry()], {
+      transport: async () => ({
+        ok: false,
+        status: 0,
+        durationMs: 3,
+        body: '',
+        error: '请求已取消(调用方中止)'
+      })
+    });
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(
+      logs.some(line => line.includes('⚠ [热更]') && line.includes('已取消') && line.includes('uncertain'))
+    ).toBe(true);
+    expect(errors).toHaveLength(0); // 不冒充失败:无错误弹窗
+  });
+
+  it('真 TCP 中途中止:已取消展示,服务端照常处理完成(取消≠远端撤销)', async () => {
+    let serverCompleted = false;
+    let resolveServed!: () => void;
+    const served = new Promise<void>(resolve => {
+      resolveServed = resolve;
+    });
+    const port = await listen((_req, res) => {
+      resolveServed();
+      // 客户端已中止,服务端仍照常走完远端应用逻辑——取消不撤销远端
+      setTimeout(() => {
+        serverCompleted = true;
+        try {
+          res.end('applied');
+        } catch {
+          /* 客户端已断开,响应写失败无碍(应用事实已落) */
+        }
+      }, 40);
+    });
+    const controller = new AbortController();
+    const { service, logs, errors } = makeService([entry()]);
+    const run = service.runEntry(
+      entry({ url: `http://127.0.0.1:${port}/cancel` }),
+      undefined,
+      undefined,
+      controller.signal
+    );
+    await served; // 请求已达服务端(可能已应用)
+    controller.abort(); // 中止在途请求
+    await expect(run).resolves.toBe(false);
+    expect(logs.some(line => line.includes('已取消') && line.includes('uncertain'))).toBe(true);
+    expect(errors).toHaveLength(0); // 不冒充失败:无错误弹窗
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(serverCompleted).toBe(true); // 远端照常完成,取消≠远端撤销
+  }, 10000);
+
+  it('调用前已中止:不发请求,直接如实取消(远端状态未知)', async () => {
+    let served = false;
+    const port = await listen(() => {
+      served = true;
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const { service, logs, errors } = makeService([entry()]);
+    const run = service.runEntry(
+      entry({ url: `http://127.0.0.1:${port}/pre` }),
+      undefined,
+      undefined,
+      controller.signal
+    );
+    await expect(run).resolves.toBe(false);
+    expect(served).toBe(false); // 未发出请求(调用即已中止)
+    expect(logs.some(line => line.includes('已取消'))).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+});

@@ -107,6 +107,12 @@ export interface DefaultHotfixSendDeps extends DefaultHotfixDeps {
    * 多文件=`${seed}#${序号}`(唯一性保留);缺省=各次执行自生成。
    */
   readonly correlationId?: string;
+  /**
+   * HR-HTTP-008(RUST-350)取消信号:中止逐文件发送(取消≠远端撤销,
+   * 已发出的请求可能已达远端,远端状态如实未知 uncertain)。缺省无信号=
+   * 不可取消(既有行为不变)。
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface DefaultHotfixSendResult {
@@ -156,9 +162,23 @@ export async function sendDefaultHotfix(
         body: request.body,
         timeoutMs
       },
-      { transport, correlationId: perFileCorrelationId(seed, index, files.length) }
+      {
+        transport,
+        correlationId: perFileCorrelationId(seed, index, files.length),
+        ...(deps.signal !== undefined ? { signal: deps.signal } : {})
+      }
     );
     outcomes.push(outcome);
+    // HR-HTTP-008(RUST-350):已取消——取消≠远端撤销,请求可能已达远端
+    // (甚至已应用),远端状态如实未知(uncertain);不冒充失败成因也不冒充
+    // 成功。信号已中止则逐文件发送到此为止(后续文件不会再真正发出)。
+    if (outcome.kind === 'cancelled') {
+      failures.push(`${file}: 已取消——远端状态未知(uncertain),取消≠远端撤销`);
+      if (deps.signal?.aborted) {
+        break;
+      }
+      continue;
+    }
     if (!outcome.transportOk) {
       failures.push(`${file}: ${outcome.errorMessage ?? '未知错误'}`);
       continue;

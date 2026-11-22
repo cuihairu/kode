@@ -138,6 +138,48 @@ describe('sendDefaultHotfix(传输事实,不假成功)', () => {
     expect(result.ok).toBe(false);
     expect(result.detail).toContain('boom');
   });
+
+  it('HR-HTTP-008(RUST-350):已取消——ok=false,detail 带 uncertain 文案(取消≠远端撤销)', async () => {
+    const controller = new AbortController();
+    const result = await sendDefaultHotfix(['/ws/scripts/base/Account.py'], {
+      signal: controller.signal,
+      transport: () =>
+        Promise.resolve({
+          ok: false,
+          status: 0,
+          durationMs: 2,
+          body: '',
+          error: '请求已取消(调用方中止)'
+        })
+    });
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('已取消');
+    expect(result.detail).toContain('uncertain');
+    expect(result.outcomes[0].kind).toBe('cancelled');
+    expect(result.outcomes[0].errorCategory).toBe('cancelled');
+  });
+
+  it('HR-HTTP-008(RUST-350):信号已中止——首个文件已取消后逐文件发送即停(不再发起)', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let calls = 0;
+    const result = await sendDefaultHotfix(['/a/One.py', '/a/Two.py'], {
+      signal: controller.signal,
+      transport: () => {
+        calls += 1;
+        return Promise.resolve({
+          ok: false,
+          status: 0,
+          durationMs: 1,
+          body: '',
+          error: '请求已取消(调用方中止)'
+        });
+      }
+    });
+    expect(calls).toBe(1); // 首个已取消即停,第二个不再发起
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('uncertain');
+  });
 });
 
 describe('HR-HTTP-002(模块身份/版本/关联 id → 结构化 outcome)', () => {

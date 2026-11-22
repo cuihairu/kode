@@ -37,6 +37,7 @@ describe('classifyExecution(HR-HTTP-010 结果分类,传输事实决定不猜)',
   it('错误信息映射:自有 transport 确定性标记+node 网络错误码;其余如实 unknown', () => {
     const cases: ReadonlyArray<readonly [string, string, string]> = [
       ['请求超时(10000ms)', 'timeout', 'timeout'],
+      ['请求已取消(调用方中止)', 'cancelled', 'cancelled'],
       ['URL 无法解析: not-a-url', 'invalid-url', 'invalid-url'],
       ['不支持的协议: ftp:', 'unsupported-protocol', 'unsupported-protocol'],
       ['connect ECONNREFUSED 127.0.0.1:8090', 'network-error', 'connection-refused'],
@@ -165,6 +166,19 @@ describe('executeHttpRequest(单次执行,不重试)', () => {
     expect(outcome.durationMs).toBe(5);
     expect('errorCategory' in outcome).toBe(false);
     expect('errorMessage' in outcome).toBe(false);
+  });
+
+  it('HR-HTTP-008(RUST-350):deps.signal 透传传输面;缺省无 signal 字段(既有行为不变)', async () => {
+    const seen: Array<OutgoingHttpRequest['signal']> = [];
+    const controller = new AbortController();
+    const transport: HttpTransport = async request => {
+      seen.push(request.signal);
+      return { ok: true, status: 200, durationMs: 1, body: '' };
+    };
+    await executeHttpRequest(req('http://127.0.0.1/sig'), { transport, signal: controller.signal });
+    await executeHttpRequest(req('http://127.0.0.1/plain'), { transport });
+    expect(seen[0]).toBe(controller.signal);
+    expect(seen[1]).toBeUndefined();
   });
 });
 

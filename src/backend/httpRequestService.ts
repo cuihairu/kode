@@ -49,6 +49,12 @@ export interface OutgoingHttpRequest {
    * 由条目 maxResponseBytes 透传;默认热更面不设,走缺省窗口。
    */
   maxResponseBytes?: number;
+  /**
+   * HR-HTTP-008(RUST-350)取消信号:中止当前请求(destroy),结算报「已取消」。
+   * 取消≠远端撤销:请求可能已达远端(甚至已应用),远端状态如实未知(uncertain),
+   * 不冒充失败也不冒充成功;缺省无信号=不可取消(既有行为不变)。
+   */
+  signal?: AbortSignal;
 }
 
 /** 可注入的执行通道(测试用脚本化应答) */
@@ -97,10 +103,27 @@ export const defaultTransport: HttpTransport = request =>
     // req.setTimeout 只是 socket 空闲超时,drip-feed 服务端(每隔小于
     // timeoutMs 发一字节且永不结束)永不触发空闲,请求可无限占住调用方。
     // 首次结算(finish)即清定时器;到点 destroy 沿用既有超时文案收口。
+    // HR-HTTP-008(RUST-350):取消信号中止即结算「已取消」——取消≠远端撤销,
+    // 请求可能已达远端(甚至已应用),远端状态如实未知(uncertain),不冒充
+    // 失败也不冒充成功;取消与响应/超时同走 finish,finish 里摘除监听
+    // (取消后再无副作用;到点超时先结算则取消监听自然失效)。
+    let removeAbortListener: (() => void) | undefined;
     const finish = (result: HttpExecutionResult): void => {
       clearTimeout(deadline);
+      removeAbortListener?.();
       resolve(result);
     };
+    // HR-HTTP-008:调用即已中止——不发请求,直接如实结算取消(远端状态未知)
+    if (request.signal?.aborted) {
+      resolve({
+        ok: false,
+        status: 0,
+        durationMs: Date.now() - startedAt,
+        body: '',
+        error: '请求已取消(调用方中止)'
+      });
+      return;
+    }
     const client = parsed.protocol === 'https:' ? https : http;
     const req = client.request(
       parsed,
@@ -179,6 +202,16 @@ export const defaultTransport: HttpTransport = request =>
         error: err.message
       });
     });
+    // HR-HTTP-008(RUST-350):取消信号→destroy 请求,错误面统一走「请求已取消」
+    // 文案(与超时同构,由 req.on('error') 收口结算);finish 摘除监听,取消后
+    // 再无副作用。同同步块内 pre-guard 已验过未中止,注册后无异步缺口。
+    if (request.signal) {
+      const onAbort = (): void => {
+        req.destroy(new Error('请求已取消(调用方中止)'));
+      };
+      request.signal.addEventListener('abort', onAbort, { once: true });
+      removeAbortListener = () => request.signal?.removeEventListener('abort', onAbort);
+    }
     if (request.body.length > 0) {
       req.write(request.body);
     }
@@ -237,11 +270,16 @@ export class HttpRequestService {
     return this.runEntry(entry);
   }
 
-  /** Execute a caller-selected entry after its source/index identity was resolved. */
+  /**
+   * Execute a caller-selected entry after its source/index identity was resolved.
+   * HR-HTTP-008(RUST-350):第四参=取消信号——中止在途请求,按「已取消·远端
+   * 状态未知(uncertain)」展示(取消≠远端撤销)。缺省无信号=不可取消。
+   */
   async runEntry(
     entry: HttpRequestEntry,
     execute?: () => Promise<void>,
-    onHttpResponse?: (response: { status: number; body: string }) => void
+    onHttpResponse?: (response: { status: number; body: string }) => void,
+    signal?: AbortSignal
   ): Promise<boolean> {
     if (!entry.enabled) {
       this.deps.notifyError(`HTTP 快捷请求「${entry.name}」不存在或已停用`);
@@ -274,13 +312,28 @@ export class HttpRequestService {
         timeoutMs: this.timeoutMs,
         ...(entry.maxResponseBytes !== undefined ? { maxResponseBytes: entry.maxResponseBytes } : {})
       },
-      { transport: this.transport, queue: this.queue }
+      {
+        transport: this.transport,
+        queue: this.queue,
+        ...(signal !== undefined ? { signal } : {})
+      }
     );
 
     // AUD-054(R2-F27):真实响应到达即上报观察者(回执解析面)——2xx/非 2xx/
     // 传输失败(status=0)都按真实事实回调,观察者分类落账不靠猜;仅 hook
     // 直连本服务时生效(execute 终端闭包路径拿不到 status/body,不回调)。
-    onHttpResponse?.({ status: outcome.status, body: outcome.bodyTruncated ? '' : outcome.body });
+    // HR-HTTP-008:取消不回调观察者(无真实响应可报),走 uncertain 分支。
+    if (outcome.kind !== 'cancelled') {
+      onHttpResponse?.({ status: outcome.status, body: outcome.bodyTruncated ? '' : outcome.body });
+    }
+
+    // HR-HTTP-008(RUST-350):已取消——取消≠远端撤销,请求可能已达远端
+    // (甚至已应用),远端状态如实未知(uncertain);不冒充失败(不弹错窗、
+    // 不标 ✗ 失败),也不冒充成功,如实记录「已取消·远端状态未知」。
+    if (outcome.kind === 'cancelled') {
+      this.deps.log(`⚠ [${entry.name}] ${request.method} ${request.url} · 已取消:远端状态未知(uncertain)——取消≠远端撤销`);
+      return false;
+    }
 
     if (outcome.transportOk) {
       this.deps.log(`✓ ${outcome.status} · ${outcome.durationMs}ms`);
