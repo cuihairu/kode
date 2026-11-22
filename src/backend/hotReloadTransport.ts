@@ -126,11 +126,13 @@ export interface ReloadHttpRequest {
   method: string;
   headers: Record<string, string>;
   body: string;
+  maxResponseBytes?: number;
 }
 
 export interface ReloadHttpResponse {
   status: number;
   body: string;
+  bodyTruncated?: true;
 }
 
 export type ReloadHttpRunner = (request: ReloadHttpRequest) => Promise<ReloadHttpResponse>;
@@ -148,7 +150,8 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
     method: request.method,
     headers: request.headers,
     body: request.body,
-    timeoutMs: DEFAULT_HTTP_TIMEOUT_MS
+    timeoutMs: DEFAULT_HTTP_TIMEOUT_MS,
+    maxResponseBytes: request.maxResponseBytes
   }).then(result => {
     // RUST-419:失败结果(ECONNREFUSED/证书/代理/超时等真实原因在 error 字段)
     // 必须以 throw 送达 send/probe 的 catch 面分类输出——原先 ok:false 被折成
@@ -156,7 +159,11 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
     if (!result.ok) {
       throw new Error(result.error ?? `HTTP ${result.status} 请求失败`);
     }
-    return { status: result.status, body: result.body };
+    return {
+      status: result.status,
+      body: result.body,
+      ...(result.bodyTruncated ? { bodyTruncated: result.bodyTruncated } : {})
+    };
   });
 
 /**
@@ -281,7 +288,8 @@ export class HttpReloadTransport implements ReloadTransport {
         url,
         method: 'GET',
         headers: this.entry.headers,
-        body: ''
+        body: '',
+        ...(this.entry.maxResponseBytes !== undefined ? { maxResponseBytes: this.entry.maxResponseBytes } : {})
       });
       const ok = response.status >= 200 && response.status < 300;
       return {
@@ -367,7 +375,8 @@ export class HttpReloadTransport implements ReloadTransport {
       headers: Object.fromEntries(
         Object.entries(this.entry.headers).map(([key, value]) => [key, substitute(value)])
       ),
-      body: autoAttachSenderDigests(autoAttachTargetId(substitute(this.entry.body)))
+      body: autoAttachSenderDigests(autoAttachTargetId(substitute(this.entry.body))),
+      ...(this.entry.maxResponseBytes !== undefined ? { maxResponseBytes: this.entry.maxResponseBytes } : {})
     };
     let response: ReloadHttpResponse;
     try {
@@ -390,7 +399,9 @@ export class HttpReloadTransport implements ReloadTransport {
       return { kind: this.kind, receipts };
     }
     // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝
-    const receipts = parseReloadHttpReceipts(response.body, fileSet, target.targetId);
+    const receipts = response.bodyTruncated
+      ? fileSet.map(file => ({ status: 'sent' as const, file, detail: '响应体已截断，未能核验回执' }))
+      : parseReloadHttpReceipts(response.body, fileSet, target.targetId);
     for (const receipt of receipts) {
       onReceipt(receipt);
     }
@@ -722,6 +733,10 @@ export function normalizeReloadChannelConfig(value: unknown): ReloadChannelConfi
       headers,
       body: typeof http.body === 'string' ? http.body : '',
       enabled: typeof http.enabled === 'boolean' ? http.enabled : true,
+      ...(typeof http.maxResponseBytes === 'number' &&
+      Number.isSafeInteger(http.maxResponseBytes) && http.maxResponseBytes > 0
+        ? { maxResponseBytes: http.maxResponseBytes }
+        : {}),
       keybinding: typeof http.keybinding === 'string' ? http.keybinding : ''
     };
     return { channel, http: entry };

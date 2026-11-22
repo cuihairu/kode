@@ -8,6 +8,15 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## 2026-11-22 热更与 MCP 索引审核
+
+- [x] KODE-HRMCP-001 [P1] 活动 profile 的热更通道优先于动作名和默认端点。`hotReloadFireTransportClosure.test.ts` 验证动作名留空和已配置时均投递到活动目标。
+- [x] KODE-HRMCP-002 [P1] MCP 在对账开始时清空待处理集合，扫描期间同一路径的新事件留给下一轮。真实进程复测中途删除文件，下一轮移除一条记录，精确搜索归零。
+- [x] KODE-HRMCP-003 [P2] MCP 监视范围内的 `.gitignore` 变更独立触发对账。`gitignore_change_alone_refreshes_the_index` 验证添加及删除规则时，已索引节点自动移除及恢复。
+- [x] KODE-HRMCP-004 [P2] 热更状态栏按最新发送批次更新，失败仅撤销本文件本次发送的指纹。`hotReloadRevisionGate.test.ts` 和 `hotReloadResponseReceiptWiring.test.ts` 覆盖新旧回执乱序及同内容再保存。
+- [x] KODE-HRMCP-005 [P2] 热更队列变化独立触发面板局部更新。`hotReloadHistoryView.test.ts` 验证预览滞留时无需回执即可刷新，筛选表单保留。
+- [x] KODE-HRMCP-006 [P2] HTTP 响应超过字节上限时结束读取，输出截断标记并保留 HTTP 状态。`httpRequestService.test.ts` 验证超过上限但不主动结束的响应，`hotReloadTransport.test.ts` 验证部分响应不参与回执核验。
+
 ## 2026-11-19 深度审核：扫描卡顿、调度阻塞与任务无响应
 
 > 审核对象为当前工作树（包含审核开始前已有的暂存改动），不是纯 HEAD；本轮只登记问题，不代表已修复。每项区分代码证据与实测，历史完成条目不撤勾。新增 10 项（P1 9 / P2 1），计数不并入后文历史快照。可重跑探针及验证边界见 [审核证据](docs/review/evidence/2026-11-19-responsiveness/README.md)；相关现有测试 4 文件 63 项通过。

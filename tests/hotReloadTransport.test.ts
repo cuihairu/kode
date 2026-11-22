@@ -148,6 +148,31 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
     ]);
   });
 
+  it('profile 的响应体上限传入执行器，截断回包只记送达', async () => {
+    const config = normalizeReloadChannelConfig({
+      channel: 'http',
+      http: entry({ maxResponseBytes: 512 })
+    });
+    const transport = resolveReloadTransport(config, {
+      http: {
+        run: async request => {
+          expect(request.maxResponseBytes).toBe(512);
+          return {
+            status: 200,
+            body: JSON.stringify({ file: files[0], status: 'applied', digest: 'a'.repeat(64) }),
+            bodyTruncated: true
+          };
+        }
+      }
+    })!;
+    const summary = await transport.send(target, files, () => undefined);
+    expect(summary.receipts).toEqual(files.map(file => ({
+      file,
+      status: 'sent',
+      detail: expect.stringContaining('截断')
+    })));
+  });
+
   it('执行器抛错 → 全 failed(不吞异常;RUST-419 原因带分类前缀)', async () => {
     const transport = new HttpReloadTransport(entry(), {
       run: async () => {

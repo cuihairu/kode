@@ -120,6 +120,7 @@ export interface HttpRequestOutcome {
   readonly status: number;
   readonly durationMs: number;
   readonly body: string;
+  readonly bodyTruncated?: true;
   readonly errorCategory?: HttpErrorCategory;
   readonly errorMessage?: string;
 }
@@ -186,6 +187,7 @@ export function classifyExecution(
     status: result.status,
     durationMs: result.durationMs,
     body: result.body,
+    ...(result.bodyTruncated ? { bodyTruncated: result.bodyTruncated } : {}),
     ...(ok ? {} : { errorCategory: 'http-status' as const })
   };
 }
@@ -218,7 +220,8 @@ export async function executeHttpRequest(
     method: request.method,
     headers: request.headers,
     body: request.body,
-    timeoutMs: request.timeoutMs
+    timeoutMs: request.timeoutMs,
+    ...(request.maxResponseBytes !== undefined ? { maxResponseBytes: request.maxResponseBytes } : {})
   });
   const settle = machine.advance('settle');
   if (!settle.ok) {

@@ -98,6 +98,7 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     transportDeps: Parameters<typeof resolveReloadTransport>[1];
     readFileContent?: (file: string) => Promise<string | null>;
     isWorkspaceTrusted?: () => boolean;
+    actionName?: string;
   }): Promise<{ store: HotReloadTargetStateStore; runCalls: string[]; targetId: string }> => {
     const clock = makeTimers();
     const store = new HotReloadTargetStateStore({ now: () => 7 });
@@ -112,7 +113,7 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     } as never);
     await setActiveProfile(memento, profile.id);
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: options.actionName ?? '热更', debounceMs: 100 }
     });
     // 生产装配的解出口(extension.ts resolveHotReloadChannelTransport 同构,
     // 源锁测试钉住真装配):profile 读回 → resolveReloadTransport 校验/建
@@ -128,6 +129,12 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     setupHotReload(makeContext(), name => void runCalls.push(name), {
       timers: clock.timers,
       resolveChannelTransport,
+      defaultHotfix: {
+        transport: async request => {
+          runCalls.push(request.url);
+          return { ok: true, status: 200, body: '', durationMs: 0 };
+        }
+      },
       ...(options.isWorkspaceTrusted ? { isWorkspaceTrusted: options.isWorkspaceTrusted } : {}),
       targetState: {
         store,
@@ -142,10 +149,11 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     return { store, runCalls, targetId: profile.id };
   };
 
-  it('HTTP 通道真发:profile 持久化读回→通道解出→占位替换进请求→applied 双证核验落台账', async () => {
+  it.each(['', '热更'])('HTTP 通道优先于 actionName=%j，并核验回执', async actionName => {
     const requests: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
     const content = 'print("hello engine")';
     const { store, runCalls, targetId } = await fireViaActiveProfile({
+      actionName,
       hotReload: {
         channel: 'http',
         http: {

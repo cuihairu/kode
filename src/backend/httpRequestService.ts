@@ -1,7 +1,8 @@
 /**
  * HTTP 快捷请求执行层(批105):
  * - 默认 transport 走 node http/https(URL 协议二选一,超时到点中止,
- *   回包截顶防大响应刷屏);
+ *   回包截顶防大响应刷屏;HR-HTTP-006/RUST-348:keepAlive 连接池复用
+ *   同目标连接 + 条目级最大响应体上限);
  * - 服务层:启停过滤、模板变量装配、OUTPUT 面板流水(▶ 请求行 /
  *   ✓ 成功状态·耗时·回包 / ✗ 失败标记)与失败错误弹窗。
  *   OUTPUT 通道无着色 API(engines 1.50 基线),失败以 ✗ 标记 + 错误弹窗
@@ -30,6 +31,7 @@ export interface HttpExecutionResult {
   status: number;
   durationMs: number;
   body: string;
+  bodyTruncated?: true;
   /** 失败原因(仅 ok=false 时有) */
   error?: string;
 }
@@ -40,10 +42,29 @@ export interface OutgoingHttpRequest {
   headers: Record<string, string>;
   body: string;
   timeoutMs: number;
+  /**
+   * HR-HTTP-006(RUST-348)最大响应体(字节):收到的回包截到此上限即止,
+   * 超出部分如实丢弃;缺省=既有截顶窗口(RESPONSE_PREVIEW_LIMIT×4)。
+   * 由条目 maxResponseBytes 透传;默认热更面不设,走缺省窗口。
+   */
+  maxResponseBytes?: number;
 }
 
 /** 可注入的执行通道(测试用脚本化应答) */
 export type HttpTransport = (request: OutgoingHttpRequest) => Promise<HttpExecutionResult>;
+
+/**
+ * HR-HTTP-006(RUST-348)连接池:keepAlive agent 复用同协议同主机连接。
+ * 默认 node 传输面无 agent 时每次请求新建 TCP 连接(逐条/逐文件重复握手);
+ * 同目标串行热更由此复用空闲连接。进程级懒建单例(http/https 各一),
+ * 随扩展宿主进程退出一并释放,无需显式销毁。
+ */
+let pooledHttpAgent: http.Agent | undefined;
+let pooledHttpsAgent: https.Agent | undefined;
+const pooledAgent = (protocol: string): http.Agent =>
+  protocol === 'https:'
+    ? (pooledHttpsAgent ??= new https.Agent({ keepAlive: true }))
+    : (pooledHttpAgent ??= new http.Agent({ keepAlive: true }));
 
 export const defaultTransport: HttpTransport = request =>
   new Promise<HttpExecutionResult>(resolve => {
@@ -79,25 +100,41 @@ export const defaultTransport: HttpTransport = request =>
       clearTimeout(deadline);
       resolve(result);
     };
-    const deadline = setTimeout(() => {
-      req.destroy(new Error(`请求超时(${request.timeoutMs}ms)`));
-    }, Math.max(1, request.timeoutMs));
-    deadline.unref?.();
     const client = parsed.protocol === 'https:' ? https : http;
     const req = client.request(
       parsed,
       {
         method: request.method,
-        headers: request.headers
+        headers: request.headers,
+        // HR-HTTP-006(RUST-348):keepAlive 连接池复用同目标连接(懒建单例)
+        agent: pooledAgent(parsed.protocol)
       },
       res => {
         const chunks: Buffer[] = [];
         let received = 0;
+        // HR-HTTP-006(RUST-348):接收窗口=条目级最大响应体,缺省=既有截顶窗口
+        const maxResponseBytes = request.maxResponseBytes ?? RESPONSE_PREVIEW_LIMIT * 4;
+        const finishResponse = (bodyTruncated?: true): void => {
+          finish({
+            ok: true,
+            status: res.statusCode ?? 0,
+            durationMs: Date.now() - startedAt,
+            body: Buffer.concat(chunks).toString('utf8'),
+            ...(bodyTruncated ? { bodyTruncated } : {})
+          });
+        };
         res.on('data', (chunk: Buffer) => {
-          // 接收窗口封顶:窗口内有多少收多少,末块裁剪(整块超窗也保住前段)
-          const room = RESPONSE_PREVIEW_LIMIT * 4 - received;
+          const room = maxResponseBytes - received;
+          if (chunk.length > room) {
+            if (room > 0) {
+              chunks.push(chunk.subarray(0, room));
+            }
+            finishResponse(true);
+            res.destroy();
+            return;
+          }
           if (room > 0) {
-            chunks.push(room < chunk.length ? chunk.subarray(0, room) : chunk);
+            chunks.push(chunk);
           }
           received += chunk.length;
         });
@@ -125,20 +162,13 @@ export const defaultTransport: HttpTransport = request =>
             error: err.message
           });
         });
-        // end 触发时响应头必已解析(statusCode 实况恒有值);类型上
-        // number|undefined 以解构默认值收口为 0(与失败路径的「无状态码」
-        // 语义一致),不引入覆盖率的 ?? 死臂。
-        res.on('end', () => {
-          const { statusCode = 0 } = res;
-          finish({
-            ok: true,
-            status: statusCode,
-            durationMs: Date.now() - startedAt,
-            body: Buffer.concat(chunks).toString('utf8')
-          });
-        });
+        res.on('end', () => finishResponse());
       }
     );
+    const deadline = setTimeout(() => {
+      req.destroy(new Error(`请求超时(${request.timeoutMs}ms)`));
+    }, Math.max(1, request.timeoutMs));
+    deadline.unref?.();
     req.on('error', (err: Error) => {
       finish({
         ok: false,
@@ -229,7 +259,8 @@ export class HttpRequestService {
         method: request.method,
         headers: request.headers,
         body: request.body,
-        timeoutMs: this.timeoutMs
+        timeoutMs: this.timeoutMs,
+        ...(entry.maxResponseBytes !== undefined ? { maxResponseBytes: entry.maxResponseBytes } : {})
       },
       { transport: this.transport }
     );
@@ -237,11 +268,11 @@ export class HttpRequestService {
     // AUD-054(R2-F27):真实响应到达即上报观察者(回执解析面)——2xx/非 2xx/
     // 传输失败(status=0)都按真实事实回调,观察者分类落账不靠猜;仅 hook
     // 直连本服务时生效(execute 终端闭包路径拿不到 status/body,不回调)。
-    onHttpResponse?.({ status: outcome.status, body: outcome.body });
+    onHttpResponse?.({ status: outcome.status, body: outcome.bodyTruncated ? '' : outcome.body });
 
     if (outcome.transportOk) {
       this.deps.log(`✓ ${outcome.status} · ${outcome.durationMs}ms`);
-      this.deps.log(this.previewBody(outcome.body));
+      this.deps.log(this.previewBody(outcome.body, outcome.bodyTruncated));
       return true;
     }
     this.deps.log(`✗ [${entry.name}] ${request.method} ${request.url} · ${outcome.durationMs}ms · ${outcome.errorMessage ?? '未知错误'}`);
@@ -249,10 +280,13 @@ export class HttpRequestService {
     return false;
   }
 
-  private previewBody(body: string): string {
-    if (body.length <= RESPONSE_PREVIEW_LIMIT) {
-      return body.length > 0 ? body : '(空回包)';
+  private previewBody(body: string, bodyTruncated = false): string {
+    const preview = body.slice(0, RESPONSE_PREVIEW_LIMIT);
+    if (bodyTruncated) {
+      return `${preview}${body.length > preview.length ? '…' : ''} (响应体已截断)`;
     }
-    return `${body.slice(0, RESPONSE_PREVIEW_LIMIT)}…(截断,共 ${body.length} 字符)`;
+    return body.length > preview.length
+      ? `${preview}…(截断,共 ${body.length} 字符)`
+      : preview || '(空回包)';
   }
 }

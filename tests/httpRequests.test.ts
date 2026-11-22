@@ -62,6 +62,17 @@ describe('parseHttpRequestEntries', () => {
     expect(parseHttpRequestEntries([{ name: 'x', url: 'http://a/', method: '  ' }])[0].method).toBe('GET');
   });
 
+  it('HR-HTTP-006(RUST-348):maxResponseBytes 仅收正整数,其余如实回落默认', () => {
+    expect(
+      parseHttpRequestEntries([{ name: 'x', url: 'http://a/', maxResponseBytes: 512 }])[0].maxResponseBytes
+    ).toBe(512);
+    for (const bad of [-1, 0, 1.5, 4096.5, '512', null, {}, []]) {
+      expect(
+        parseHttpRequestEntries([{ name: 'x', url: 'http://a/', maxResponseBytes: bad }])[0].maxResponseBytes
+      ).toBeUndefined();
+    }
+  });
+
   it('坏条目整条跳过:非对象/缺名/空名/缺 URL/空 URL', () => {
     const entries = parseHttpRequestEntries([
       42,

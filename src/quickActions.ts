@@ -10,8 +10,7 @@
  * 变量替换只作用在配置字面串上,未知变量直接报错中止(1.5 拒绝静默空串)。
  */
 
-import * as http from 'http';
-import * as https from 'https';
+import { defaultTransport } from './backend/httpRequestService';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
@@ -91,6 +90,7 @@ export interface HttpRunOptions {
 export interface HttpRunResult {
   status: number;
   body: string;
+  bodyTruncated?: true;
 }
 
 export type ScriptRunner = (options: ScriptRunOptions) => Promise<ScriptRunResult>;
@@ -223,7 +223,7 @@ export const terminalHttp: (request: HttpRequestConfig) => Promise<void> = reque
     void defaultLogHub?.[level]({
       source: 'process',
       component: `http:${request.name ?? request.url}`,
-      text: `${request.method} ${request.url} → ${result.status}\n${result.body}`
+      text: `${request.method} ${request.url} → ${result.status}\n${result.body}${result.bodyTruncated ? ' (响应体已截断)' : ''}`
     });
   });
 
@@ -231,47 +231,39 @@ export const terminalHttp: (request: HttpRequestConfig) => Promise<void> = reque
  * 默认 http 执行器:非 2xx 照实回状态码,由流水层判成败(不抛)。
  * timeoutMs 是给测试留的缝——本地热更默认 10 秒,用例不该真等 10 秒。
  */
-export const fetchHttp = (
+export const fetchHttp = async (
   options: HttpRunOptions,
   timeoutMs: number = QUICK_ACTION_TIMEOUT_MS
-): Promise<HttpRunResult> =>
-  new Promise<HttpRunResult>((resolve, reject) => {
-    let parsed: URL;
-    try {
-      parsed = new URL(options.url);
-    } catch {
-      reject(new Error(l10nText('Cannot parse URL: {url}', { url: options.url })));
-      return;
-    }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      reject(new Error(l10nText('Unsupported protocol: {protocol}', { protocol: parsed.protocol })));
-      return;
-    }
-    const client = parsed.protocol === 'https:' ? https : http;
-    const req = client.request(parsed, { method: options.method }, res => {
-      const chunks: Buffer[] = [];
-      let received = 0;
-      res.on('data', (chunk: Buffer) => {
-        // 接收窗口封顶:窗口内有多少收多少,窗口满后整段丢弃
-        const room = RESPONSE_PREVIEW_LIMIT - received;
-        if (room > 0) {
-          chunks.push(room < chunk.length ? chunk.subarray(0, room) : chunk);
-        }
-        received += chunk.length;
-      });
-      res.on('end', () =>
-        resolve({ status: res.statusCode as number, body: Buffer.concat(chunks).toString('utf8') })
-      );
-    });
-    req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(l10nText('Request timed out ({timeoutMs}ms)', { timeoutMs })));
-    });
-    req.on('error', (error: Error) => reject(error));
-    if (options.body !== undefined && options.body.length > 0) {
-      req.write(options.body);
-    }
-    req.end();
+): Promise<HttpRunResult> => {
+  let parsed: URL;
+  try {
+    parsed = new URL(options.url);
+  } catch {
+    throw new Error(l10nText('Cannot parse URL: {url}', { url: options.url }));
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(l10nText('Unsupported protocol: {protocol}', { protocol: parsed.protocol }));
+  }
+  const result = await defaultTransport({
+    url: options.url,
+    method: options.method,
+    headers: {},
+    body: options.body ?? '',
+    timeoutMs,
+    maxResponseBytes: RESPONSE_PREVIEW_LIMIT
   });
+  if (!result.ok) {
+    if (result.error?.startsWith('请求超时(')) {
+      throw new Error(l10nText('Request timed out ({timeoutMs}ms)', { timeoutMs }));
+    }
+    throw new Error(result.error);
+  }
+  return {
+    status: result.status,
+    body: result.body,
+    ...(result.bodyTruncated ? { bodyTruncated: result.bodyTruncated } : {})
+  };
+};
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -760,7 +752,7 @@ export class QuickActionManager {
     const result = await this.runHttp({ url: action.url, method: action.method, body: action.body });
     const ok = result.status >= 200 && result.status < 300;
     // IDE-REV-022:响应到达即上报观察者(回执解析面);脚本/命令动作无此回调
-    options.onHttpResponse?.({ status: result.status, body: result.body });
+    options.onHttpResponse?.({ status: result.status, body: result.bodyTruncated ? '' : result.body });
     if (!ok) {
       await vscode.window.showErrorMessage(
         l10nText('Quick action failed: {name} (HTTP {status})', { name: action.name, status: result.status })

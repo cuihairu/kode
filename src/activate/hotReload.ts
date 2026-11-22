@@ -415,13 +415,16 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   // 'default'(台账键 + 回执核验基准;无 profile 身份可漂移,固定串最稳)。
   // 显式 profile 配了通道仍优先(配置显式 > 默认)。
   const DEFAULT_CHANNEL_TARGET_ID = 'default';
-  const resolveHotReloadChannelTransport = (): { transport: ReloadTransport; targetId: string } | null => {
+  const resolveHotReloadChannelTransport = (configuredOnly = false): { transport: ReloadTransport; targetId: string } | null => {
     const activeProfile = resolveActiveProfile(context.workspaceState);
     if (activeProfile?.hotReload) {
       const transport = resolveReloadTransport(activeProfile.hotReload);
       if (transport) {
         return { transport, targetId: activeProfile.id };
       }
+    }
+    if (configuredOnly) {
+      return null;
     }
     // 默认 http 通道(用户令 2026-11-10):无 profile/无 hotReload 段不回落
     // actionName,走 createDefaultHotReloadChannel 内置模板(与零配置自动
@@ -456,6 +459,7 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     isWorkspaceTrusted: () => vscode.workspace.isTrusted,
     // HR-UI-004 实时队列面:历史面板经此句柄读流水线三队列自省快照
     pipelineQueue: hotReloadPipelineQueueRef,
+    onPipelineQueueChanged: hotReloadHistoryFeed.queueChanged,
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,

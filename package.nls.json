@@ -371,6 +371,7 @@
   "kbengine.config.httpRequests.items.method.description": "HTTP 方法，缺省 GET",
   "kbengine.config.httpRequests.items.headers.description": "请求头（值同样走模板替换）",
   "kbengine.config.httpRequests.items.body.description": "请求体（非空才随请求发送，同样走模板替换）",
+  "kbengine.config.httpRequests.items.maxResponseBytes.description": "Maximum response body size in bytes. Defaults to 16000.",
   "kbengine.config.httpRequests.items.enabled.description": "启停开关，缺省启用",
   "kbengine.config.httpRequests.items.keybinding.description": "键位展示串（quick pick 详情列显示）",
   "kbengine.command.bots.add.title": "KBEngine: Add Bots (telnet addBots)",

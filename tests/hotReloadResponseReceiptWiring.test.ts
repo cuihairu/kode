@@ -242,7 +242,7 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
     const read = (name: string): string => readFileSync(path.join(__dirname, '..', 'src', name), 'utf8');
     const quickActions = read('quickActions.ts');
     expect(quickActions).toContain('onHttpResponse?: (response: HttpActionResponse) => void');
-    expect(quickActions).toContain('options.onHttpResponse?.({ status: result.status, body: result.body })');
+    expect(quickActions).toContain("options.onHttpResponse?.({ status: result.status, body: result.bodyTruncated ? '' : result.body })");
 
     // SRC-001 L6:接线位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
     const assembly = read('extension.ts') + read('activate/hotReload.ts');
@@ -370,7 +370,7 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
     }
   });
 
-  it('HR-WATCH-011 响应面:滞代响应在台账注解「响应过期」(绑定本代),新代响应不注', async () => {
+  it.each([false, true])('HR-WATCH-011 回执按发送代际入账（新版先到=%s）', async newestFirst => {
     const clock = makeTimers();
     const store = new HotReloadTargetStateStore({ now: () => 7 });
     enableHotReload();
@@ -397,16 +397,24 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
     expect(captured).toHaveLength(2);
     expect(store.get(KEY, '/ws/a.py')).toBeUndefined(); // 响应未到,台账未落
 
-    captured[0]?.onHttpResponse?.({ status: 200, body: 'not-json' }); // 滞代响应#1
-    resolvers[0]?.(true);
-    await flush();
-    const staleRecord = store.get(KEY, '/ws/a.py');
-    expect(staleRecord?.outcome).toBe('sent-unverified');
-    expect(staleRecord?.detail ?? '').toContain('响应过期');
+    const respond = async (index: number, status: number) => {
+      captured[index]?.onHttpResponse?.({ status, body: 'not-json' });
+      resolvers[index]?.(true);
+      await flush();
+    };
+    if (newestFirst) {
+      await respond(1, 200);
+      const fresh = store.get(KEY, '/ws/a.py');
+      await respond(0, 500);
+      expect(store.get(KEY, '/ws/a.py')).toEqual(fresh);
+    } else {
+      await respond(0, 200);
+      const stale = store.get(KEY, '/ws/a.py');
+      expect(stale?.outcome).toBe('sent-unverified');
+      expect(stale?.detail ?? '').toContain('响应过期');
+      await respond(1, 200);
+    }
 
-    captured[1]?.onHttpResponse?.({ status: 200, body: 'not-json' }); // 新代响应#2
-    resolvers[1]?.(true);
-    await flush();
     const fresh = store.get(KEY, '/ws/a.py');
     expect(fresh?.outcome).toBe('sent-unverified');
     expect(fresh?.detail ?? '').not.toContain('响应过期'); // 新代不背旧响应的注解

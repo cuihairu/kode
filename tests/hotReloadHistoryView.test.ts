@@ -288,6 +288,29 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
     expect(html).toContain('(空)');
   });
 
+  it('预览队列变化无需投递回执即可刷新，且保留面板表单', async () => {
+    const timers = makeTimers();
+    let held: string[] = [];
+    const feed = setupHotReloadHistoryView(contextOf(), {
+      core: new HotReloadHistoryCore(),
+      resolveNames: resolver,
+      pipelineQueue: () => ({ pending: [], previewHeld: held, wave: [] }),
+      timers
+    });
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels.at(-1)!;
+    const panelHtml = panel.webview.html;
+    held = [FILE_A];
+    feed.queueChanged();
+    feed.queueChanged();
+    expect(timers.pendingCount()).toBe(1);
+    timers.advance();
+    expect(panel.webview.html).toBe(panelHtml);
+    expect(panel.webview.postedMessages).toEqual([
+      { message: { type: 'queueChanged', rows: expect.stringContaining('预览滞留(1)') } }
+    ]);
+  });
+
   it('过滤消息(HR-UI-010):模块子串/状态过滤重渲染,计数随过滤更新;清除筛选拉全量', async () => {
     const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     feed.handle(recordOf({ file: FILE_A }));

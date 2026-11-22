@@ -257,3 +257,31 @@ fn worker_consumes_dirty_and_publishes_model_same_generation() {
     let status = index.status();
     assert_eq!(status["autoReconcile"]["active"], serde_json::json!(true), "{status}");
 }
+
+#[test]
+fn gitignore_change_alone_refreshes_the_index() {
+    let fx = Fixture::new("watch-gitignore");
+    fx.git_init();
+    fx.write("scripts/entity_defs/Secret.def", SECRET_DEF);
+    let index = Arc::new(fx.index());
+    index.build();
+    assert!(!index.store().exact_lookup("Secret").is_empty());
+    index.start_watch().expect("watch fixture");
+    index.start_reconcile_worker();
+
+    let await_visibility = |expected: bool| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let visible = !index.store().exact_lookup("Secret").is_empty();
+            if visible == expected {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "{}", index.status());
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    };
+    fx.write(".gitignore", "scripts/entity_defs/Secret.def\n");
+    await_visibility(false);
+    std::fs::remove_file(fx.root.join(".gitignore")).unwrap();
+    await_visibility(true);
+}

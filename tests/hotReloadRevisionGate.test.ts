@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import type { HttpExecutionResult, HttpTransport } from '../src/backend/httpRequestService';
 import type { ReloadReceipt, ReloadTarget, ReloadTransport } from '../src/backend/hotReloadTransport';
 import { allFileSystemWatchers, configurationOverrides } from './helpers/vscodeStub';
 
@@ -76,13 +77,17 @@ describe('setupHotReload revision 消费面(HR-WATCH-011 响应面)', () => {
     transportUrls?: string[];
     channelTransport?: ReloadTransport;
     store?: HotReloadTargetStateStore;
+    transport?: HttpTransport;
+    snapshotContent?: () => string;
+    outcomes?: string[];
   } = {}): { clock: ReturnType<typeof makeTimers>; fireChange: (fsPath: string) => void } => {
     configurationOverrides.set('kbengine', {
       hotReload: {
         enabled: true,
         globs: ['**/*.py'],
         actionName: options.channelTransport ? '热更' : '',
-        debounceMs: 100
+        debounceMs: 100,
+        syntaxGate: options.snapshotContent !== undefined
       }
     });
     statusCalls.length = 0;
@@ -96,13 +101,22 @@ describe('setupHotReload revision 消费面(HR-WATCH-011 响应面)', () => {
         setWatchOff: () => undefined,
         setReady: () => undefined,
         setSending: () => undefined,
-        setSentUnverified: () => undefined,
-        setFailed: () => undefined,
+        setSentUnverified: () => void options.outcomes?.push('sent-unverified'),
+        setFailed: () => void options.outcomes?.push('failed'),
         setSkippedNoAction: () => undefined,
         setRestartRequired: () => undefined,
         dispose: () => undefined
       } as never,
-      ...(options.transportUrls
+      ...(options.snapshotContent ? {
+        pipelineFaces: {
+          readSnapshot: async () => {
+            const content = options.snapshotContent!();
+            return { content, hash: content };
+          },
+          syntaxCheck: async () => ({ ok: true })
+        }
+      } : {}),
+      ...(options.transport ? { defaultHotfix: { transport: options.transport } } : options.transportUrls
         ? {
             defaultHotfix: {
               transport: request => {
@@ -171,6 +185,35 @@ describe('setupHotReload revision 消费面(HR-WATCH-011 响应面)', () => {
     await flush();
     expect(transportUrls).toHaveLength(1);
     expect(statusCalls.some(line => line.includes('响应过期'))).toBe(false);
+  });
+
+  it('旧失败不会覆盖新响应或清除新版发送指纹', async () => {
+    let content = 'pass';
+    const outcomes: string[] = [];
+    const respond: Array<(result: HttpExecutionResult) => void> = [];
+    const { clock, fireChange } = boot({
+      transport: () => new Promise(resolve => respond.push(resolve)),
+      snapshotContent: () => content,
+      outcomes
+    });
+    const save = async () => {
+      fireChange('/ws/scripts/A.py');
+      clock.tick();
+      await flush();
+      clock.tick();
+      await flush();
+    };
+    await save();
+    content = 'print(2)';
+    await save();
+    expect(respond).toHaveLength(2);
+    respond[1]({ ok: true, status: 200, body: '', durationMs: 1 });
+    await flush();
+    respond[0]({ ok: false, status: 0, body: '', durationMs: 1, error: 'offline' });
+    await flush();
+    expect(outcomes).toEqual(['sent-unverified']);
+    await save();
+    expect(respond).toHaveLength(2);
   });
 
   it('通道面:滞代响应上「响应过期」日志;台账最新代不被注解(注解绑定本代,通道面只做日志)', async () => {

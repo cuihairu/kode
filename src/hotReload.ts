@@ -443,6 +443,7 @@ export interface SetupHotReloadOptions {
    * 与 HR-WATCH-016 预览放行命令同口径);不注入=面板如实显示空队列。
    */
   readonly pipelineQueue?: { current: (() => SavePipelineQueueSnapshot) | null };
+  readonly onPipelineQueueChanged?: () => void;
   /**
    * HR-PR-08 fork 侧发送 provider 实现(注册时机=装配时,应答序=注入序
    * 先到先应答,注入实现排在内置实现之前):重复 id/apiVersion 不符的
@@ -478,8 +479,9 @@ export interface SetupHotReloadOptions {
    * 标识(经 resolveReloadTransport 解出;未配返回 null)。注入即该次发送走
    * 部署通道(回执流直喂台账),不注入则回落既有 actionName 通道。
    * targetId 是通道目标的服务标识(如 profile id / 通道 kind),用于台账键。
+   * configuredOnly 为 true 时只查询活动 profile，保留无显式目标时的 provider 回落。
    */
-  readonly resolveChannelTransport?: () => { transport: ReloadTransport; targetId: string } | null;
+  readonly resolveChannelTransport?: (configuredOnly?: boolean) => { transport: ReloadTransport; targetId: string } | null;
   /** IDE-HOT-102 审计「触发源」(谁):默认 'watcher-auto' 自动监视 */
   readonly auditSource?: string;
   /**
@@ -631,6 +633,7 @@ export function setupHotReload(
   });
   // HR-PR-04 接线:发送编排入口由「全局去抖 fire」改为「保存流水线波次出口」
   // ——定稿文件清单作为参数进来,状态/审计/闸/通道面编排逐字保留。
+  let latestBatch = 0;
   const runFire = (triggers: string[]): void => {
     const settings = readHotReloadSettings(hotReloadSectionReader());
     // HR-HTTP-005(RUST-347):工作区未信任时自动热更发送一律禁止——热更会
@@ -645,6 +648,7 @@ export function setupHotReload(
       );
       return;
     }
+    const batch = ++latestBatch;
     status.setSending(triggers, settings.debounceMs);
     // HR-WATCH-011 响应面:发送时刻的版本快照——响应落地时该文件已又定稿
     // 新版本(isStaleResponse 真)则旧响应如实注解,绝不作为新版本的成功依据。
@@ -665,6 +669,11 @@ export function setupHotReload(
         isStaleResponse(sent, pipelineAtFire.revisionOf(file))
       );
     };
+    const updateStatus = (update: () => void): void => {
+      if (batch === latestBatch && pipeline === pipelineAtFire) {
+        update();
+      }
+    };
     const annotateStaleResponses = (files: readonly string[]): void => {
       const stale = files.filter(staleSinceFire);
       if (stale.length === 0) {
@@ -677,9 +686,10 @@ export function setupHotReload(
     // HR-WATCH-008:投递失败撤回去重指纹——同内容变更照发,不因一次失败
     // 永久跳过。指纹在批次交发送面那一刻记(核面),撤回只发生在如实失败的
     // 发送代际(成功代际不撤,去重仍有效)
-    const forgetSentFailed = (files: readonly string[]): void => {
-      for (const file of files) {
-        pipeline?.forgetSent(file);
+    const forgetSentFailed = (file: string): void => {
+      const revision = sentRevisions.get(file);
+      if (revision !== undefined) {
+        pipelineAtFire?.forgetSent(file, revision);
       }
     };
     // 默认热更请求(用户令 2026-11-06):未配动作名时保存即 POST
@@ -696,17 +706,17 @@ export function setupHotReload(
         onRequest: request => status.log(`默认热更: ${request.method} ${request.url} · body=${request.body}`)
       }).then(
         result => {
+          annotateStaleResponses(triggers);
           if (result.ok) {
-            annotateStaleResponses(triggers);
-            status.setSentUnverified();
+            updateStatus(() => status.setSentUnverified());
             return;
           }
-          forgetSentFailed(triggers);
-          status.setFailed(result.detail.length > 0 ? result.detail : '默认热更请求失败');
+          triggers.forEach(forgetSentFailed);
+          updateStatus(() => status.setFailed(result.detail.length > 0 ? result.detail : '默认热更请求失败'));
         },
         (error: unknown) => {
-          forgetSentFailed(triggers);
-          status.setFailed(error instanceof Error ? error.message : String(error));
+          triggers.forEach(forgetSentFailed);
+          updateStatus(() => status.setFailed(error instanceof Error ? error.message : String(error)));
         }
       );
     };
@@ -738,41 +748,28 @@ export function setupHotReload(
         result => {
           annotateStaleResponses(triggers);
           if (result.ok) {
-            status.setSentUnverified();
+            updateStatus(() => status.setSentUnverified());
             auditLine(`provider:${provider.providerId}`, triggers, `已发送${result.detail ? `——${result.detail}` : ''}`);
             return;
           }
-          forgetSentFailed(triggers);
-          status.setFailed(result.detail && result.detail.length > 0 ? result.detail : `provider ${provider.providerId} 发送失败`);
+          triggers.forEach(forgetSentFailed);
+          updateStatus(() => status.setFailed(result.detail && result.detail.length > 0 ? result.detail : `provider ${provider.providerId} 发送失败`));
           auditLine(`provider:${provider.providerId}`, triggers, `失败${result.detail ? `——${result.detail}` : ''}`);
         },
         (error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
-          forgetSentFailed(triggers);
-          status.setFailed(message);
+          triggers.forEach(forgetSentFailed);
+          updateStatus(() => status.setFailed(message));
           auditLine(`provider:${provider.providerId}`, triggers, `失败——${message}`);
         }
       );
     };
     const proceed = (): void => {
-      if (settings.actionName.length === 0) {
-        // 未配动作名不再空转(旧行为 setSkippedNoAction):改发默认热更请求。
-        // 走到这里说明 def 结构闸已放行本批,结构性 def 变更照旧拦下不发。
-        // HR-PR-08:键开时先问发送 provider 注册表(应答者胜),无人应答
-        // 才落默认热更面;键关=面不进链,行为与既有完全一致。
-        if (settings.sendViaProviders) {
-          const provider = providerHost.registry.resolveSendProvider(buildEngineProfile({}));
-          if (provider) {
-            runViaProvider(provider);
-            return;
-          }
-        }
-        runDefaultHotfix();
-        return;
-      }
       const fail = (error: unknown): void => {
-        status.setFailed(error instanceof Error ? error.message : String(error));
-        reportActionError(error);
+        updateStatus(() => {
+          status.setFailed(error instanceof Error ? error.message : String(error));
+          reportActionError(error);
+        });
       };
       // IDE-REV-021:该次发送逐文件落双维台账——targetId/rootId 解不到的
       // 维度如实不落;结果仍只有 sent-unverified/failed 两态(无回执管道,
@@ -783,13 +780,16 @@ export function setupHotReload(
       const recordOutcomes = (targetId: string | null, outcome: HotReloadDeliveryOutcome, detail?: string): void => {
         // HR-WATCH-008:脚本/命令动作整批一果,失败即整批撤回指纹(同内容照发)
         if (outcome === 'failed') {
-          forgetSentFailed(triggers);
+          triggers.forEach(forgetSentFailed);
         }
         const wiring = options.targetState;
         if (!wiring || targetId === null) {
           return;
         }
         for (const file of triggers) {
+          if (pipeline !== pipelineAtFire || staleSinceFire(file)) {
+            continue;
+          }
           const rootId = wiring.resolveRootId(file);
           if (rootId === null) {
             continue;
@@ -886,7 +886,7 @@ export function setupHotReload(
               const rootId = wiring.resolveRootId(file);
               const record = rootId == null ? undefined : wiring.store.get({ rootId, targetId: channelTargetId }, file);
               if (record?.outcome === 'failed') {
-                pipeline?.forgetSent(file);
+                forgetSentFailed(file);
                 if (firstFailedDetail === '' && record.detail) {
                   firstFailedDetail = record.detail.length > 160 ? `${record.detail.slice(0, 160)}…` : record.detail;
                 }
@@ -909,18 +909,18 @@ export function setupHotReload(
           // transport.kind,通道=前缀断言不受影响)
           auditLine(`${transport.kind} 目标=${channelTargetId}`, triggers, result);
           if (failedCount > 0 && sentCount === 0) {
-            status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`);
+            updateStatus(() => status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`));
           } else if (allApplied) {
-            status.setApplied(`目标=${channelTargetId}，${sentCount} 个文件，回执指纹一致`);
+            updateStatus(() => status.setApplied(`目标=${channelTargetId}，${sentCount} 个文件，回执指纹一致`));
           } else if (failedCount > 0) {
-            status.setFailed(`通道 ${transport.kind} 部分失败(${failedCount}/${triggers.length})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`);
+            updateStatus(() => status.setFailed(`通道 ${transport.kind} 部分失败(${failedCount}/${triggers.length})${firstFailedDetail ? `:${firstFailedDetail}` : ''}`));
           } else {
-            status.setSentUnverified();
+            updateStatus(() => status.setSentUnverified());
           }
           // 组内错误已在 catch 落账 failed,这里按汇总如实上报一次(部分
           // 失败也上报,动作名回落面的 fail() 同口径:失败即报)。
           if (failedCount > 0) {
-            reportActionError(new Error(`通道 ${transport.kind} 发送失败:${failedCount} 个文件未送达`));
+            updateStatus(() => reportActionError(new Error(`通道 ${transport.kind} 发送失败:${failedCount} 个文件未送达`)));
           }
         }, (error: unknown) => {
           // HR-WATCH-008:整批异常无法区分逐文件结果——无回执(未确认送达)
@@ -931,29 +931,33 @@ export function setupHotReload(
               const rootId = wiring?.resolveRootId(file);
               const record = rootId == null ? undefined : wiring?.store.get({ rootId, targetId: channelTargetId }, file);
               if (record === undefined || record.outcome === 'failed') {
-                pipeline?.forgetSent(file);
+                forgetSentFailed(file);
               }
             }
           } catch {
             for (const file of triggers) {
-              pipeline?.forgetSent(file);
+              forgetSentFailed(file);
             }
           }
-          status.setFailed(error instanceof Error ? error.message : String(error));
-          reportActionError(error);
+          updateStatus(() => {
+            status.setFailed(error instanceof Error ? error.message : String(error));
+            reportActionError(error);
+          });
         });
       };
       const start = (targetId: string | null): void => {
         // RT-10:applied 核验窗口统一锚定「发送发起时点」——与重试路径
         // (resendHotReloadTarget 的 sentAt)同语义,响应晚到不后移窗口。
         const sentAt = now();
-        // IDE-HOT-102:配置了部署通道则整批走通道(回执流直喂台账),不回落
-        // actionName 通道;未配(resolveChannelTransport 返回 null/未注入)走
-        // 既有 actionName 路径,行为与现状一致。
-        const channelHandle = options.resolveChannelTransport?.() ?? null;
-        if (channelHandle) {
-          sendViaChannel(channelHandle.transport, channelHandle.targetId);
-          return;
+        const wiring = options.targetState;
+        const attemptsAtSend = new Map<string, number | undefined>();
+        if (wiring && targetId !== null) {
+          for (const file of triggers) {
+            const rootId = wiring.resolveRootId(file);
+            if (rootId !== null) {
+              attemptsAtSend.set(file, wiring.store.get({ rootId, targetId }, file)?.attempt);
+            }
+          }
         }
         // IDE-REV-022:真实 HTTP 响应到达即回执面——recordHttpDelivery 按传输
         // 事实落账(2xx=未确认送达/非 2xx=failed),2xx 且有回包才尝试 accepted
@@ -982,8 +986,7 @@ export function setupHotReload(
         let responseSeen = false;
         const handleResponse = (response: HotReloadHttpResponse): void => {
           responseSeen = true;
-          const wiring = options.targetState;
-          if (!wiring || targetId === null) {
+          if (!wiring || targetId === null || pipeline !== pipelineAtFire) {
             return;
           }
           for (const file of triggers) {
@@ -992,6 +995,9 @@ export function setupHotReload(
               continue;
             }
             const key = { rootId, targetId };
+            if (staleSinceFire(file) && wiring.store.get(key, file)?.attempt !== attemptsAtSend.get(file)) {
+              continue;
+            }
             // IDE-REV-027:回包体喂引擎 digest 证据册(册内判协议与归属)
             options.noteEngineDigest?.(key, file, response.body);
             // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
@@ -999,7 +1005,7 @@ export function setupHotReload(
             // HR-WATCH-008:非 2xx=投递失败,撤回去重指纹(同内容变更照发,
             // 不因一次失败永久跳过)
             if (record.outcome === 'failed') {
-              pipeline?.forgetSent(file);
+              forgetSentFailed(file);
             }
             // IDE-AUD-005:该次发送的代际——回执/注解/核验结算全绑定它,旧代
             // 异步结果绝不改新代记录(晚到的第一次核验不翻第二次的失败)
@@ -1088,7 +1094,7 @@ export function setupHotReload(
               if (!responseSeen) {
                 recordOutcomes(targetId, 'sent-unverified');
               }
-              status.setSentUnverified();
+              updateStatus(() => status.setSentUnverified());
             },
             error => {
               if (!responseSeen) {
@@ -1104,6 +1110,26 @@ export function setupHotReload(
           fail(error);
         }
       };
+      const channelHandle = options.resolveChannelTransport?.(settings.actionName.length === 0);
+      if (channelHandle) {
+        void Promise.resolve().then(() => sendViaChannel(channelHandle.transport, channelHandle.targetId));
+        return;
+      }
+      if (settings.actionName.length === 0) {
+        // 未配动作名不再空转(旧行为 setSkippedNoAction):改发默认热更请求。
+        // 走到这里说明 def 结构闸已放行本批,结构性 def 变更照旧拦下不发。
+        // HR-PR-08:键开时先问发送 provider 注册表(应答者胜),无人应答
+        // 才落默认热更面;键关=面不进链,行为与既有完全一致。
+        if (settings.sendViaProviders) {
+          const provider = providerHost.registry.resolveSendProvider(buildEngineProfile({}));
+          if (provider) {
+            runViaProvider(provider);
+            return;
+          }
+        }
+        runDefaultHotfix();
+        return;
+      }
       if (options.targetState) {
         // 目标解析本身失败/拒绝:如实按无目标发送(不落台账),动作照常执行
         void Promise.resolve(options.targetState.resolveTargetId(settings.actionName)).then(start, () => start(null));
@@ -1134,7 +1160,7 @@ export function setupHotReload(
         return;
       }
       const block = (reasons: readonly string[]): void => {
-        status.setRestartRequired([...reasons], triggers);
+        updateStatus(() => status.setRestartRequired([...reasons], triggers));
         // IDE-HOT-100:拦下通知状态机标 RESTART_REQUIRED 呈现(与日志同源);
         // 拦下本身是 HOT-005 的既有面,这里只多一个呈现通知。
         options.onRestartRequired?.(settings.actionName, triggers, [...reasons]);
@@ -1159,7 +1185,7 @@ export function setupHotReload(
       // 通道本就是重启——按 def 闸同款需重启面呈现(状态机/审计/警告),
       // 校验通过让重启决策有依据。
       const blockConfigRestart = (reasonText: string): void => {
-        status.setRestartRequired([reasonText], triggers);
+        updateStatus(() => status.setRestartRequired([reasonText], triggers));
         options.onRestartRequired?.(settings.actionName, triggers, [reasonText]);
         auditLine('拦截:配置变更需重启', triggers, `未发送——${reasonText}`);
         warnRestart(`配置文件变更不走模块热更,需重启引擎生效: ${reasonText}`);
@@ -1317,16 +1343,17 @@ export function setupHotReload(
     if (triggers.length === 0) {
       return; // 定稿全被拦/去重时合并窗空转:如实不 fire 不推状态
     }
+    options.onPipelineQueueChanged?.();
     runFire(triggers);
   }, timers);
   let pipeline: HotReloadSavePipeline | undefined;
   if (options.pipelineQueue) {
     // HR-UI-004 实时队列面:置一次闭锁(读 `let pipeline` 当前实例),随
     // apply 重建仍指现行流水线;流水线未建时如实空队列,不猜。
-    options.pipelineQueue.current = () =>
-      pipeline
-        ? pipeline.queueSnapshot()
-        : { pending: [], previewHeld: [], wave: [] };
+    options.pipelineQueue.current = () => {
+      const snapshot = pipeline?.queueSnapshot() ?? { pending: [], previewHeld: [], wave: [] };
+      return { ...snapshot, wave: [...new Set([...snapshot.wave, ...pendingOut])] };
+    };
   }
   // RUST-002 判据③:热更语法闸是最高频的 Python 脚本执行面(每次定稿一次),
   // 原来每次 spawn 一个新解释器进程。改用常驻执行服务承载:一个解释器进程跑
@@ -1377,6 +1404,7 @@ export function setupHotReload(
       // RUST-341:八型诊断全量另落「KBEngine 热更诊断」通道(用户可审查
       // 时间线),主日志的既有可见性契约不因新面而丢
       onDiagnostic: diagnostic => {
+        options.onPipelineQueueChanged?.();
         diagnosticsPanel.push(diagnostic);
         if (diagnostic.type === 'preview') {
           status.log(`热更批量预览滞留: ${diagnostic.detail}`);
@@ -1619,6 +1647,7 @@ export function setupHotReload(
     const inputs = readWatchInputs();
     const { settings, workspaceRoot, assetsRoot } = inputs;
     pipeline = buildPipeline(settings);
+    options.onPipelineQueueChanged?.();
     lastWatchSignature = watchSignatureOf(inputs);
     const plan = planHotReloadWatch({
       enabled: settings.enabled,
@@ -1737,6 +1766,7 @@ export function setupHotReload(
       diskScope = null;
       providerHost.dispose();
       pipeline?.dispose();
+      pipeline = undefined;
       // RUST-002:常驻解释器随装配释放,不留孤儿进程
       execCompile?.dispose();
       execCompile = undefined;

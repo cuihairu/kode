@@ -243,7 +243,7 @@ export class HotReloadSavePipeline {
   /** 正在稳定等待/定稿中的 uri:防异步两拍快照期内同文件并行起第二个定稿 */
   private readonly settling = new Set<string>();
   private readonly revisionByUri = new Map<string, number>();
-  private readonly lastSentByUri = new Map<string, { targetId: string; hash: string }>();
+  private readonly lastSentByUri = new Map<string, { targetId: string; hash: string; revision: number }>();
   /** 预览滞留批次(HR-WATCH-016):存定稿事件,放行时原样发出 */
   private previewEvents: FileChanged[] = [];
   /** 波次缓冲:同一 debounce 窗内定稿的文件合成一批,冲口到期归集 */
@@ -371,8 +371,11 @@ export class HotReloadSavePipeline {
    * 指纹本身在批次交给发送面的那一刻记(见 emitBatch/releasePreview);
    * 本核不判投递成败,失败由装配按发送结果回调本方法。
    */
-  forgetSent(file: string): void {
-    this.lastSentByUri.delete(canonicalizeScriptFilePath(file));
+  forgetSent(file: string, revision?: number): void {
+    const uri = canonicalizeScriptFilePath(file);
+    if (revision === undefined || this.lastSentByUri.get(uri)?.revision === revision) {
+      this.lastSentByUri.delete(uri);
+    }
   }
 
   /** 批次已交发送面:此刻记指纹(同内容同目标不再重发) */
@@ -381,7 +384,8 @@ export class HotReloadSavePipeline {
       if (event.diskHash.length > 0) {
         this.lastSentByUri.set(event.uri, {
           targetId: this.targetOf(event.uri),
-          hash: event.diskHash
+          hash: event.diskHash,
+          revision: event.revision
         });
       }
     }

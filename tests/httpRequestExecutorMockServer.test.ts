@@ -29,7 +29,12 @@ const startServer = (
       resolve({
         url: `http://127.0.0.1:${port}`,
         hits: () => hits,
-        close: () => new Promise(done => server.close(() => done()))
+        close: () => {
+          // HR-HTTP-006:keepAlive 连接池保持空闲连接,close 等不到回调;
+          // 强制全断后回收(引擎 ≥18.2)
+          server.closeAllConnections();
+          return new Promise(done => server.close(() => done()));
+        }
       });
     });
   });

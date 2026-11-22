@@ -1,5 +1,5 @@
 import * as http from 'http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_HTTP_TIMEOUT_MS,
   HttpRequestService,
@@ -16,7 +16,12 @@ const servers: http.Server[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))
+    servers.splice(0).map(server => {
+      // HR-HTTP-006:keepAlive 连接池保持空闲连接,close 回调等不到连接关闭;
+      // 强制全断后 close 即时回收(引擎 ≥18.2)
+      server.closeAllConnections();
+      return new Promise<void>(resolve => server.close(() => resolve()));
+    })
   );
 });
 
@@ -263,7 +268,46 @@ describe('默认 transport(真 TCP localhost)', () => {
     const { service, logs } = makeService([entry({ url: `http://127.0.0.1:${port}/big` })]);
 
     await expect(service.runByName('热更')).resolves.toBe(true);
-    expect(logs[2]).toBe(`${'a'.repeat(RESPONSE_PREVIEW_LIMIT)}…(截断,共 ${RESPONSE_PREVIEW_LIMIT * 4} 字符)`);
+    expect(logs[2]).toBe(`${'a'.repeat(RESPONSE_PREVIEW_LIMIT)}… (响应体已截断)`);
+  });
+
+  it('HR-HTTP-006(RUST-348):条目级最大响应体——回包超上限即截,收到恰为上限', async () => {
+    const port = await listen((_req, res) => {
+      res.writeHead(200);
+      res.write('y'.repeat(512));
+      res.write('y');
+    });
+    const request = entry({ url: `http://127.0.0.1:${port}/cap`, maxResponseBytes: 512 });
+    const { service, logs } = makeService([request]);
+    const onResponse = vi.fn();
+    await expect(service.runEntry(request, undefined, onResponse)).resolves.toBe(true);
+    expect(logs[2]).toBe(`${'y'.repeat(512)} (响应体已截断)`);
+    expect(onResponse).toHaveBeenCalledWith({ status: 200, body: '' });
+  });
+
+  it('HR-HTTP-006(RUST-348):keepAlive 连接池——同目标串行两次请求复用一条 TCP', async () => {
+    let connections = 0;
+    let served = 0;
+    const port = await new Promise<number>(resolve => {
+      const server = http.createServer((_req, res) => {
+        served += 1;
+        res.end('ok-body');
+      });
+      server.on('connection', () => {
+        connections += 1;
+      });
+      server.listen(0, '127.0.0.1', () => {
+        servers.push(server);
+        resolve((server.address() as http.AddressInfo).port);
+      });
+    });
+    const { service } = makeService([entry({ url: `http://127.0.0.1:${port}/pool` })]);
+
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(served).toBe(2);
+    // 两次请求一次握手:keepAlive 连接池复用,不再逐请求新建 TCP
+    expect(connections).toBe(1);
   });
 
   it('失败结果缺 error 字段:日志与弹窗如实落「未知错误」', async () => {

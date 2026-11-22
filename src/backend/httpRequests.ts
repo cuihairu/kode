@@ -35,6 +35,13 @@ export interface HttpRequestEntry {
   /** 启停开关,缺省启用 */
   enabled: boolean;
   /**
+   * HR-HTTP-006(RUST-348)最大响应体(字节):收到的回包截到此上限即止,
+   * 超出部分如实丢弃(日志预览另按 RESPONSE_PREVIEW_LIMIT 截断标注);缺省=
+   * 既有截顶窗口(RESPONSE_PREVIEW_LIMIT×4)。用户配置面:条目级可配,
+   * 缺省/非正整数回落默认。
+   */
+  maxResponseBytes?: number;
+  /**
    * 键位展示串(quick pick 详情列显示)。VS Code 无运行时注册键位的 API,
    * 实际快捷键经「键盘快捷方式」为 kbengine.httpRequest.run 配 args.name
    * 绑定,此字段仅作展示与检索。
@@ -102,6 +109,12 @@ export function parseHttpRequestEntries(raw: unknown): HttpRequestEntry[] {
       headers,
       body: typeof item.body === 'string' ? item.body : '',
       enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
+      // HR-HTTP-006:仅收正整数;其余(负/零/小数/非数/字符串)如实回落默认
+      ...(typeof item.maxResponseBytes === 'number' &&
+      Number.isSafeInteger(item.maxResponseBytes) &&
+      item.maxResponseBytes > 0
+        ? { maxResponseBytes: item.maxResponseBytes }
+        : {}),
       keybinding: typeof item.keybinding === 'string' ? item.keybinding : ''
     });
   }

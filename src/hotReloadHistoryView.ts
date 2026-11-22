@@ -83,6 +83,25 @@ export interface HotReloadHistoryPanelState {
   readonly page: number;
 }
 
+const esc = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function renderQueueRows(queue: SavePipelineQueueSnapshot): string {
+  const queueCell = (files: readonly string[]): string =>
+    files.length === 0
+      ? '(空)'
+      : files.map(f => `<code title="${esc(f)}">${esc(path.basename(f))}</code>`).join(' ');
+  return (
+    [
+      ['归并中', queue.pending],
+      ['预览滞留', queue.previewHeld],
+      ['本波已定稿未发出', queue.wave]
+    ] as Array<[string, readonly string[]]>
+  )
+    .map(([label, files]) => `      <tr><th>${esc(label)}(${files.length})</th><td>${queueCell(files)}</td></tr>`)
+    .join('\n');
+}
+
 /** 面板体(纯字符串;过滤/加载更多按钮 postMessage 回装配改状态重渲染) */
 export function renderHistoryPanelHtml(input: {
   state: HotReloadHistoryPanelState;
@@ -93,8 +112,6 @@ export function renderHistoryPanelHtml(input: {
   /** HR-UI-004 实时队列快照(缺省=空三队列,如实显示「(空)」) */
   queue?: SavePipelineQueueSnapshot;
 }): string {
-  const esc = (text: string): string =>
-    text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const statusLabel = (status: HotReloadHistoryStatus): string =>
     status === 'applied' ? '已应用' : status === 'failed' ? '失败' : '已发送(未确认)';
   const body = input.rows
@@ -115,22 +132,7 @@ export function renderHistoryPanelHtml(input: {
     })
     .join('\n');
   const filter = input.state.filter;
-  // HR-UI-004 实时队列面:三队列一快照(缺省空,如实「(空)」;文件名 esc,
-  // 标题带全路径便于诊断)
-  const queue = input.queue ?? { pending: [], previewHeld: [], wave: [] };
-  const queueCell = (files: readonly string[]): string =>
-    files.length === 0
-      ? '(空)'
-      : files.map(f => `<code title="${esc(f)}">${esc(path.basename(f))}</code>`).join(' ');
-  const queueRows = (
-    [
-      ['归并中', queue.pending],
-      ['预览滞留', queue.previewHeld],
-      ['本波已定稿未发出', queue.wave]
-    ] as Array<[string, readonly string[]]>
-  )
-    .map(([label, files]) => `      <tr><th>${esc(label)}(${files.length})</th><td>${queueCell(files)}</td></tr>`)
-    .join('\n');
+  const queueRows = renderQueueRows(input.queue ?? { pending: [], previewHeld: [], wave: [] });
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><style>
@@ -157,9 +159,8 @@ export function renderHistoryPanelHtml(input: {
   <h2>热更历史</h2>
   <div class="header">监听模式: ${esc(input.state.feedStatus.watchMode || '(未配置)')} | 目标: ${esc(input.state.feedStatus.target || '(默认)')} | 显示 ${input.rows.length}/${input.total} 行</div>
   <h3>实时队列</h3>
-  <div class="header">快照时点=面板渲染时刻,随台账事件/筛选/分页重渲染刷新</div>
   <table class="queue">
-    <tbody>
+    <tbody id="queue-rows">
 ${queueRows}
     </tbody>
   </table>
@@ -184,6 +185,12 @@ ${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
   ${input.hasMore ? `<div class="more"><button type="button" id="more">加载更多(每页 ${input.pageSize} 行)</button></div>` : ''}
   <script>
     const vscode = acquireVsCodeApi();
+    window.addEventListener('message', event => {
+      if (event.data?.type === 'queueChanged') {
+        document.getElementById('queue-rows').innerHTML = event.data.rows;
+      }
+    });
+    vscode.postMessage({ type: 'queueReady' });
     const apply = () => {
       vscode.postMessage({
         type: 'filter',
@@ -257,7 +264,7 @@ const isHistoryEntryShape = (value: unknown): value is HotReloadHistoryEntry => 
 export function setupHotReloadHistoryView(
   context: vscode.ExtensionContext,
   opts: HotReloadHistoryViewOptions
-): { handle(record: HotReloadDeliveryRecord): void } {
+): { handle(record: HotReloadDeliveryRecord): void; queueChanged(): void } {
   const timers = opts.timers ?? {
     set: (callback, ms) => setTimeout(callback, ms),
     clear: handle => clearTimeout(handle as ReturnType<typeof setTimeout>)
@@ -362,6 +369,7 @@ export function setupHotReloadHistoryView(
     pendingHandle = timers.set(() => {
       pendingHandle = null;
       refresh();
+      postQueue();
     }, refreshWindowMs);
   };
 
@@ -392,6 +400,12 @@ export function setupHotReloadHistoryView(
     state: null,
     panel: null
   };
+  const postQueue = (): void => {
+    void panelState.panel?.webview.postMessage({
+      type: 'queueChanged',
+      rows: renderQueueRows(pipelineQueue())
+    });
+  };
   const renderPanel = (): void => {
     const state = panelState.state;
     const panel = panelState.panel;
@@ -421,6 +435,10 @@ export function setupHotReloadHistoryView(
     );
     panelState.panel.webview.onDidReceiveMessage(message => {
       if (panelState.state === null) {
+        return;
+      }
+      if (message?.type === 'queueReady') {
+        postQueue();
         return;
       }
       if (message?.type === 'filter') {
@@ -465,6 +483,11 @@ export function setupHotReloadHistoryView(
   });
 
   return {
+    queueChanged: (): void => {
+      if (panelState.panel !== null) {
+        scheduleRefresh();
+      }
+    },
     handle: (record: HotReloadDeliveryRecord): void => {
       opts.core.record(translateDeliveryRecord(record, opts.resolveNames));
       opts.persist?.save(opts.core.entries());
