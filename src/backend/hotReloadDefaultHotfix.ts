@@ -84,7 +84,14 @@ export function buildDefaultHotfixRequest(
   const dot = module.lastIndexOf('.');
   const vars = {
     ...buildTemplateVars(
-      { filePath, scriptRoot: deps.scriptRoot && deps.scriptRoot.length > 0 ? deps.scriptRoot : undefined },
+      {
+        filePath,
+        scriptRoot: deps.scriptRoot && deps.scriptRoot.length > 0 ? deps.scriptRoot : undefined,
+        // RUST-441/HR-DOD-002:模板双名占位与 ${module} 同参——${module} 走
+        // resolveDefaultHotfixModule(带 allowRootLevelStem),${fullModule}/
+        // ${reloadModule} 亦须带,否则同一模板内两个名字互不一致
+        allowRootLevelStem: deps.allowRootLevelStem
+      },
       deps.isPackageDir
     ),
     module,

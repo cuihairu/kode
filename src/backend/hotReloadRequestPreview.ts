@@ -73,7 +73,11 @@ export function buildRequestPreviewRows(input: RequestPreviewInput): RequestPrev
       scriptRoot: input.scriptRoot.length > 0 ? input.scriptRoot : undefined,
       cursorLineZeroBased: input.cursorLineZeroBased,
       selection: input.selection,
-      workspaceRoots: input.workspaceRoots
+      workspaceRoots: input.workspaceRoots,
+      // RUST-441/HR-DOD-002:预览面配置条目与默认热更面同一 allowRootLevelStem
+      // 口径(收口前配置条目 ${reloadModule}/${fullModule} 漏此参,root 下单层
+      // 键开时预览内两条目互不一致——配置条目空串,默认面裸短名)
+      allowRootLevelStem: input.allowRootLevelStem
     },
     input.isPackageDir
   );
