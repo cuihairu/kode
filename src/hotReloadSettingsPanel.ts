@@ -37,7 +37,8 @@ export const HOT_RELOAD_SETTINGS_FORM_KEYS = [
   'allowRootLevelStem',
   'batchFlushMs',
   'batchPreviewThreshold',
-  'stabilityWindowMs'
+  'stabilityWindowMs',
+  'notify'
 ] as const;
 
 export type HotReloadSettingsFormKey = (typeof HOT_RELOAD_SETTINGS_FORM_KEYS)[number];
@@ -56,6 +57,7 @@ export interface HotReloadSettingsSaveValues {
   readonly batchFlushMs: number;
   readonly batchPreviewThreshold: number;
   readonly stabilityWindowMs: number;
+  readonly notify: string;
 }
 
 /** 验证结果:ok=true 携带已验证值;ok=false 携带如实字段错误 */
@@ -85,7 +87,8 @@ export function validateHotReloadSettingsValues(
     allowRootLevelStem: t.allowRootLevelStem,
     batchFlushMs: t.batchFlushMs,
     batchPreviewThreshold: t.batchPreviewThreshold,
-    stabilityWindowMs: t.stabilityWindowMs
+    stabilityWindowMs: t.stabilityWindowMs,
+    notify: t.notify
   };
   for (const key of ['enabled', 'syntaxGate', 'sendViaProviders', 'allowRootLevelStem'] as const) {
     if (typeof v[key] !== 'boolean') {
@@ -100,6 +103,9 @@ export function validateHotReloadSettingsValues(
   if (v.triggerMode !== 'onSave' && v.triggerMode !== 'onDiskChange') {
     return { ok: false, error: t.errTriggerMode(labels.triggerMode) };
   }
+  if (v.notify !== 'silent' && v.notify !== 'errors' && v.notify !== 'summary') {
+    return { ok: false, error: t.errNotify(labels.notify) };
+  }
   return {
     ok: true,
     values: {
@@ -111,7 +117,8 @@ export function validateHotReloadSettingsValues(
       allowRootLevelStem: v.allowRootLevelStem as boolean,
       batchFlushMs: v.batchFlushMs as number,
       batchPreviewThreshold: v.batchPreviewThreshold as number,
-      stabilityWindowMs: v.stabilityWindowMs as number
+      stabilityWindowMs: v.stabilityWindowMs as number,
+      notify: v.notify as string
     }
   };
 }
@@ -171,6 +178,12 @@ ${checkbox('allowRootLevelStem', s.allowRootLevelStem, t.allowRootLevelStem)}
 ${numberInput('batchFlushMs', s.batchFlushMs, t.batchFlushMs)}
 ${numberInput('batchPreviewThreshold', s.batchPreviewThreshold, t.batchPreviewThreshold)}
 ${numberInput('stabilityWindowMs', s.stabilityWindowMs, t.stabilityWindowMs)}
+<label class="field"><span>${esc(t.notify)}</span>
+<select id="f-notify">
+  ${selectOption('silent', t.notifySilent, s.notify === 'silent')}
+  ${selectOption('errors', t.notifyErrors, s.notify === 'errors')}
+  ${selectOption('summary', t.notifySummary, s.notify === 'summary')}
+</select></label>
 <div class="actions">
   <button type="button" id="btn-save">${esc(t.save)}</button>
   <button type="button" id="btn-cancel">${esc(t.cancel)}</button>
@@ -190,7 +203,8 @@ ${numberInput('stabilityWindowMs', s.stabilityWindowMs, t.stabilityWindowMs)}
       allowRootLevelStem: document.getElementById('f-allowRootLevelStem').checked,
       batchFlushMs: Number(document.getElementById('f-batchFlushMs').value),
       batchPreviewThreshold: Number(document.getElementById('f-batchPreviewThreshold').value),
-      stabilityWindowMs: Number(document.getElementById('f-stabilityWindowMs').value)
+      stabilityWindowMs: Number(document.getElementById('f-stabilityWindowMs').value),
+      notify: document.getElementById('f-notify').value
     };
     vscode.postMessage({ type: 'save', values });
   };

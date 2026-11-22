@@ -347,8 +347,12 @@ const zh = {
     batchFlushMs: '波次冲口(ms)',
     batchPreviewThreshold: '批量预览阈值',
     stabilityWindowMs: '写入稳定窗(ms)',
+    notify: '通知模式',
     triggerOnSave: '保存时(onSave)',
     triggerOnDiskChange: '磁盘变更时(onDiskChange)',
+    notifySilent: '全静默(silent)',
+    notifyErrors: '失败提示(errors)',
+    notifySummary: '批量摘要(summary)',
     save: '保存',
     cancel: '取消',
     saved: '已保存',
@@ -356,7 +360,8 @@ const zh = {
     errNotObject: '配置值非对象',
     errMustBeSwitch: (field: string) => `${field}须为开关`,
     errMustBeNonNegativeInt: (field: string) => `${field}须为非负整数`,
-    errTriggerMode: (field: string) => `${field}须为 onSave 或 onDiskChange`
+    errTriggerMode: (field: string) => `${field}须为 onSave 或 onDiskChange`,
+    errNotify: (field: string) => `${field}须为 silent、errors 或 summary`
   },
   // RUST-384 批B:热更历史面板/树(RUST-381/HR-PR-06)文案——面板体走本表,
   // 树组标签/通知等宿主面字符串走 nlsRuntime(l10nText),见 hotReloadHistoryView。
@@ -736,8 +741,12 @@ const en: typeof zh = {
     batchFlushMs: 'Batch flush (ms)',
     batchPreviewThreshold: 'Batch preview threshold',
     stabilityWindowMs: 'Write stability window (ms)',
+    notify: 'Notification mode',
     triggerOnSave: 'On save (onSave)',
     triggerOnDiskChange: 'On disk change (onDiskChange)',
+    notifySilent: 'All silent (silent)',
+    notifyErrors: 'Show failures (errors)',
+    notifySummary: 'Batch summary (summary)',
     save: 'Save',
     cancel: 'Cancel',
     saved: 'Saved',
@@ -745,7 +754,8 @@ const en: typeof zh = {
     errNotObject: 'Configuration values are not an object',
     errMustBeSwitch: (field: string) => `${field} must be a switch`,
     errMustBeNonNegativeInt: (field: string) => `${field} must be a non-negative integer`,
-    errTriggerMode: (field: string) => `${field} must be onSave or onDiskChange`
+    errTriggerMode: (field: string) => `${field} must be onSave or onDiskChange`,
+    errNotify: (field: string) => `${field} must be silent, errors or summary`
   },
   hotReloadHistory: {
     title: 'Hot Reload History',

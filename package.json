@@ -2411,6 +2411,21 @@
               "%kbengine.config.hotReload.triggerMode.onDiskChange%"
             ]
           },
+          "kbengine.hotReload.notify": {
+            "type": "string",
+            "enum": [
+              "silent",
+              "errors",
+              "summary"
+            ],
+            "default": "errors",
+            "markdownDescription": "%kbengine.config.hotReload.notify.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.hotReload.notify.silent%",
+              "%kbengine.config.hotReload.notify.errors%",
+              "%kbengine.config.hotReload.notify.summary%"
+            ]
+          },
           "kbengine.protocol.cliPath": {
             "type": "string",
             "default": "",
