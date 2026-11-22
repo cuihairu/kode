@@ -23,6 +23,22 @@ export interface HttpTargetQueue {
    * 调用方 await 即获得与该任务自身执行相同的结算语义,只是发起时刻被排队。
    */
   run<T>(targetKey: string, task: () => Promise<T>): Promise<T>;
+  /**
+   * HR-QA-016 soak 自省:当前内部状态(目标键数/全局在途/排队数)。
+   * 全部任务结算后应全零——目标态在 idle 时自删(perTarget.delete),
+   * 结算不清=连接泄漏(soak 以此为不变式)。
+   */
+  stats(): HttpTargetQueueStats;
+}
+
+/** HR-QA-016 soak 自省形状:结算后全零=无残留(无连接泄漏) */
+export interface HttpTargetQueueStats {
+  /** 仍有状态的目标键数(结算完=0) */
+  readonly targets: number;
+  /** 全局在途(未结算)任务数 */
+  readonly inFlight: number;
+  /** 排队(已入队未起跑)任务数 */
+  readonly pending: number;
 }
 
 interface TargetState {
@@ -94,5 +110,13 @@ export function createHttpTargetQueue(options: HttpTargetQueueOptions = {}): Htt
       pump();
     });
 
-  return { run };
+  const stats = (): HttpTargetQueueStats => {
+    let pending = 0;
+    for (const state of perTarget.values()) {
+      pending += state.pending.length;
+    }
+    return { targets: perTarget.size, inFlight: globalActive, pending };
+  };
+
+  return { run, stats };
 }

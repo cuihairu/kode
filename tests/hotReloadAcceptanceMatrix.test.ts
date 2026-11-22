@@ -87,13 +87,17 @@ const SIGNED_CELLS: Array<{ id: string; file: string; test: string }> = [
     id: 'C10',
     file: 'hotReloadPluginLoad.test.ts',
     test: '0/5/20 插件注册:注册数如实、应答序先到先应答、dispose 清册不半态'
+  },
+  {
+    id: 'C11',
+    file: 'hotReloadSoak.test.ts',
+    test: 'rebuild 逐轮全清旧 watcher:存活恒等于根数,创建数=处置数,dispose 零残留'
   }
 ];
 
 /** 被拦单元:依赖未完成子任务,无法签收。与文档「被拦」节一致。 */
 const BLOCKED_CELLS: Array<{ id: string; task: string; reason: string }> = [
   { id: 'C9', task: 'RUST-424', reason: 'HTTP 正确传短名且 UI 永远完整名装配面(接线批 HR-PR-02/03 收官后验)' },
-  { id: 'C11', task: 'RUST-428', reason: '24h Watch/HTTP soak 未跑' },
   { id: 'C12', task: 'RUST-423', reason: '真机跨平台(WSL/SSH/DevContainer/macOS/Windows)实测未做;纯核路径矩阵已落' }
 ];
 

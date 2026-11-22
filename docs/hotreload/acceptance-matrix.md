@@ -27,13 +27,13 @@
 | C7 | 多 target(多 profile) | `tests/hotReloadChannelConfig.test.ts`(多 profile 预设流) | target=profile.id;多档并存不互混 |
 | C8 | 安全 × 密钥不泄出 | `tests/hotReloadSecretLeakGuard.test.ts`(history DTO 无密钥形状字段) | header/token 只允许在出站传输 DTO(RUST-421) |
 | C10 | 插件 × 0/5/20 × 崩溃隔离 | `tests/hotReloadPluginLoad.test.ts`(0/5/20 注册/应答序/清册 + canSend 崩溃隔离) | load 成本有界(应答短路/全不应答线性);崩溃插件隔离跳过并如实上报,不打断核心解析(RUST-426) |
+| C11 | Watch/HTTP × 长稳 soak | `tests/hotReloadSoak.test.ts`(watcher 2000 轮 rebuild 泄漏界/状态 10k 轮封顶/队列 10k 任务结算全零/重试 100 轮线性) | 四门不变式:无 watcher 泄漏(创建数=处置数,dispose 零残留)、状态增长无界(逐键单条覆盖+版本事件簿封顶)、无连接泄漏(结算后内部态全零)、无重试风暴(每轮恰一跳);24h 真墙钟不在门禁口径,与 `hotReloadReliabilityGate` 的 10k 缩放 soak 同口径(RUST-428) |
 
 ## 被拦单元(依赖未完成子任务,暂不可签收)
 
 | id | 单元 | 阻断任务 | 原因 |
 | --- | --- | --- | --- |
 | C9 | `.py` × profile 切换 × UI 完整名 | RUST-424 | HTTP 正确传短名且 UI 永远完整名的装配面(接线批 HR-PR-02/03 收官后验) |
-| C11 | Watch/HTTP × 24h soak | RUST-428 | 24h 长稳未跑(watcher 泄漏/状态增长/连接泄漏/重试风暴) |
 | C12 | 跨平台真机 × 路径/localhost | RUST-423 | 真机实测未做;纯核路径矩阵已落(376ec986),localhost 指向已钉 |
 
 ## 红线声明
