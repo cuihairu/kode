@@ -140,7 +140,10 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       );
       return targets;
     },
-    intervalMs: Math.max(1, vscode.workspace.getConfiguration('kbengine').get<number>('telnet.probeIntervalSeconds', 5)) * 1000
+    intervalMs: Math.max(1, vscode.workspace.getConfiguration('kbengine').get<number>('telnet.probeIntervalSeconds', 5)) * 1000,
+    // RUST-422(HR-QA-010):telnet 目标主机来自工作区配置,未信任工作区
+    // 不发探测/不建会话(执行时刻读,「信任工作区」后下一轮即恢复)
+    isWorkspaceTrusted: () => vscode.workspace.isTrusted
   });
   telnetService.start();
 

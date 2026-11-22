@@ -635,3 +635,151 @@ describe('TELNET-EZ-001 会话控制台模式:白名单 ↔ 自由 Python(服务
     service.dispose();
   });
 });
+
+// RUST-422(HR-QA-010)telnet 配置驱动面工作区信任闸:目标主机来自工作区配置
+// (kbengine.telnet.host / kbengine.xml),不受信工作区里自动探测与建会话
+// 都是配置驱动网络出站(SSRF 面)——未信任不发任何探测包、不握手不发密码,
+// 灯面如实回落 closed;缺省未注入=视为可信(零配置不回归),与 HTTP 快捷
+// 请求信任闸同口径。
+describe('RUST-422(HR-QA-010)未信任工作区:telnet 探测/会话双闸', () => {
+  const target = (port: number): TelnetTarget => ({
+    key: `127.0.0.1:${port}`,
+    label: 'dbmgr',
+    component: 'dbmgr',
+    host: '127.0.0.1',
+    port,
+    password: 'pwd123456',
+    enableCommands: []
+  });
+
+  it('未信任不发探测包:probeOne 零调用,灯面 closed,不反复发事件', async () => {
+    let probeCalls = 0;
+    let trusted = false;
+    const service = new TelnetService({
+      getTargets: () => [target(31000)],
+      probeOne: async () => {
+        probeCalls += 1;
+        return true;
+      },
+      intervalMs: 3600000,
+      isWorkspaceTrusted: () => trusted
+    });
+    const events: number[] = [];
+    let count = 0;
+    service.onDidChange(() => {
+      count += 1;
+      events.push(count);
+    });
+    service.start();
+    await service.probeOnce();
+    await service.probeOnce();
+    expect(probeCalls).toBe(0);
+    expect(service.getState('127.0.0.1:31000')).toBe('closed');
+    expect(service.getTargets()).toEqual([target(31000)]);
+    expect(events).toHaveLength(0);
+    service.dispose();
+  });
+
+  it('缺省未注入=视为可信(零配置不回归):探测照常', async () => {
+    let probeCalls = 0;
+    const service = new TelnetService({
+      getTargets: () => [target(32000)],
+      probeOne: async () => {
+        probeCalls += 1;
+        return true;
+      },
+      intervalMs: 3600000
+    });
+    service.start();
+    await until(() => service.getState('127.0.0.1:32000') === 'open');
+    expect(probeCalls).toBeGreaterThan(0);
+    service.dispose();
+  });
+
+  it('执行时刻读:已开灯在未信任轮回落 closed,「信任工作区」后下一轮恢复 open', async () => {
+    let trusted = true;
+    let open = true;
+    const service = new TelnetService({
+      getTargets: () => [target(33000)],
+      probeOne: async () => open,
+      intervalMs: 3600000,
+      isWorkspaceTrusted: () => trusted
+    });
+    // 不用 start():每轮 awaited probeOnce,避免 start 的隐式首探与后续互吞
+    await service.probeOnce();
+    await until(() => service.getState('127.0.0.1:33000') === 'open');
+
+    trusted = false;
+    await service.probeOnce();
+    expect(service.getState('127.0.0.1:33000')).toBe('closed');
+
+    trusted = true;
+    await service.probeOnce();
+    await until(() => service.getState('127.0.0.1:33000') === 'open');
+    service.dispose();
+  });
+
+  it('未信任拒绝建持久会话:真端口零握手零数据(不发密码)', async () => {
+    let connections = 0;
+    let received = '';
+    const port = await listen(socket => {
+      connections += 1;
+      socket.on('error', () => undefined);
+      socket.on('data', chunk => {
+        received += chunk.toString();
+      });
+      socket.write('password:');
+    });
+    let trusted = false;
+    const service = new TelnetService({
+      getTargets: () => [target(port)],
+      probeOne: async () => false,
+      intervalMs: 3600000,
+      isWorkspaceTrusted: () => trusted
+    });
+    service.start();
+    service.connectTarget(`127.0.0.1:${port}`);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(connections).toBe(0);
+    expect(received).toBe('');
+    expect(service.getState(`127.0.0.1:${port}`)).toBe('closed');
+    service.dispose();
+  });
+
+  it('已信任照常建会话;持久会话键不受未信任探测轮回落', async () => {
+    const port = await listen(socket => {
+      socket.on('error', () => undefined);
+      socket.on('end', () => socket.end());
+      socket.write('password:');
+      socket.on('data', chunk => {
+        if (chunk.toString().trim() === 'pwd123456') {
+          socket.write('Welcome dbmgr\r\n[dbmgr@python ~]# ');
+        }
+      });
+    });
+    let trusted = true;
+    let probeCalls = 0;
+    const service = new TelnetService({
+      getTargets: () => [target(port)],
+      probeOne: async () => {
+        probeCalls += 1;
+        return true;
+      },
+      intervalMs: 3600000,
+      isWorkspaceTrusted: () => trusted
+    });
+    const key = `127.0.0.1:${port}`;
+    service.start();
+    await service.probeOnce();
+    await until(() => service.getState(key) === 'open');
+    service.connectTarget(key);
+    await until(() => service.getState(key) === 'connected');
+    const callsBefore = probeCalls;
+
+    trusted = false;
+    await service.probeOnce();
+    expect(service.getState(key)).toBe('connected');
+    expect(probeCalls).toBe(callsBefore);
+    service.dispose();
+  });
+});

@@ -208,6 +208,15 @@ export interface TelnetServiceDeps {
   probeOne?(host: string, port: number): Promise<boolean>;
   /** 探测轮询间隔毫秒(默认 5000,低频) */
   intervalMs?: number;
+  /**
+   * RUST-422(HR-QA-010)工作区信任闸:telnet 目标主机来自工作区配置
+   * (kbengine.telnet.host 或元件 kbengine.xml),不受信工作区的配置由仓库
+   * 自带(如克隆的第三方工程),自动探测即配置驱动网络出站面。返回 false
+   * =未信任:跳过 TCP 探测、拒绝建持久会话,灯面如实回落 closed;用户「信任
+   * 工作区」后下一轮探测即恢复。缺省未注入=视为可信(零配置不回归),与
+   * HTTP 快捷请求信任闸同口径。
+   */
+  isWorkspaceTrusted?: () => boolean;
   timers?: {
     setInterval(callback: () => void, ms: number): unknown;
     clearInterval(handle: unknown): void;
@@ -334,6 +343,22 @@ export class TelnetService {
     if (this.disposed || this.probing) {
       return;
     }
+    // RUST-422(HR-QA-010)信任闸:未信任工作区不发任何探测包(目标主机来自
+    // 不受信配置,探测即配置驱动网络出站);灯面如实回落 closed,持久会话键
+    // 不受影响(有会话本就跳过探测)。用户信任工作区后下一轮即恢复探测。
+    if (this.deps.isWorkspaceTrusted?.() === false) {
+      let changed = false;
+      for (const [key, state] of this.states) {
+        if (state !== 'closed' && !this.clients.has(key)) {
+          this.states.set(key, 'closed');
+          changed = true;
+        }
+      }
+      if (changed) {
+        this._onDidChange.fire();
+      }
+      return;
+    }
     this.probing = true;
     try {
       this.targets = this.deps.getTargets();
@@ -379,6 +404,11 @@ export class TelnetService {
   /** 建立持久会话(自动握手登录);已存在则先断旧。会话控制台模式沿用
    *  目标键上的旧模式——断线/重连不丢(TELNET-EZ-001 保留契约) */
   connectTarget(key: string): void {
+    // RUST-422(HR-QA-010)信任闸:未信任工作区拒绝建持久会话——目标主机
+    // 同样来自不受信配置,与自动探测同闸(灯面 closed,不握手不发密码)。
+    if (this.deps.isWorkspaceTrusted?.() === false) {
+      return;
+    }
     const target = this.targets.find(item => item.key === key);
     if (!target || this.disposed) {
       return;
