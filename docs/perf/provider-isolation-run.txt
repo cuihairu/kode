@@ -1,0 +1,51 @@
+ISOL-ENV node=v24.21.0 cpus=14 largeFiles=24 providers=24 rounds=200 spinMs=0.15 avatarDefLine=5
+ISOL-METRIC P1.fireSlice.N0 n=200 p50=0.15ms p95=0.68ms p99=1.01ms max=2.72ms
+ISOL-METRIC P1.fires.N0 n=1 200 fires
+ISOL-METRIC P1.canSend.N0 n=1 0 calls
+ISOL-METRIC P1.fireSlice.N24 n=200 p50=0.11ms p95=0.5ms p99=1.02ms max=3.86ms
+ISOL-METRIC P1.fires.N24 n=1 200 fires
+ISOL-METRIC P1.canSend.N24 n=1 4800 calls
+ISOL-METRIC P2.hover.N0 n=200 p50=2.81ms p95=5.35ms p99=7.22ms max=15.26ms
+ISOL-METRIC P2.hoverHits.N0 n=1 200 hits
+ISOL-METRIC P2.hover.N24 n=200 p50=7.36ms p95=10.84ms p99=14.93ms max=21.8ms
+ISOL-METRIC P2.hoverHits.N24 n=1 200 hits
+ISOL-METRIC P3.definition.N0 n=200 p50=2.86ms p95=4.31ms p99=6.24ms max=25.4ms
+ISOL-METRIC P3.definitionHits.N0 n=1 200 hits
+ISOL-METRIC P3.definition.N24 n=200 p50=7.49ms p95=11.6ms p99=14.98ms max=18.28ms
+ISOL-METRIC P3.definitionHits.N24 n=1 200 hits
+ISOL-ENV node=v24.21.0 cpus=14 largeFiles=24 providers=24 rounds=200 spinMs=0.15 avatarDefLine=5
+ISOL-METRIC P1.fireSlice.N0 n=200 p50=0.15ms p95=0.22ms p99=0.49ms max=3ms
+ISOL-METRIC P1.siblingTimer.N0 n=200 p50=0.14ms p95=0.21ms p99=0.48ms max=2.99ms
+ISOL-METRIC P1.fires.N0 n=1 200 fires
+ISOL-METRIC P1.canSend.N0 n=1 0 calls
+ISOL-METRIC P1.fireSlice.N24 n=200 p50=0.14ms p95=0.24ms p99=0.64ms max=1.12ms
+ISOL-METRIC P1.siblingTimer.N24 n=200 p50=0.14ms p95=0.23ms p99=0.64ms max=1.12ms
+ISOL-METRIC P1.fires.N24 n=1 200 fires
+ISOL-METRIC P1.canSend.N24 n=1 4800 calls
+ISOL-METRIC P2.hover.N0 n=200 p50=2.79ms p95=7.01ms p99=10.01ms max=23.1ms
+ISOL-METRIC P2.hoverHits.N0 n=1 200 hits
+ISOL-METRIC P2.hover.N24 n=200 p50=7.57ms p95=12.02ms p99=14.43ms max=17.46ms
+ISOL-METRIC P2.hoverHits.N24 n=1 200 hits
+ISOL-NOTE P2 残余=N24−N0 为派发微任务与 hover 续延同队列交错,非切片阻塞;切片级归因看 P1.fireSlice/P1.siblingTimer
+ISOL-METRIC P3.definition.N0 n=200 p50=2.94ms p95=6.41ms p99=8.87ms max=12.08ms
+ISOL-METRIC P3.definitionHits.N0 n=1 200 hits
+ISOL-METRIC P3.definition.N24 n=200 p50=7.56ms p95=11.68ms p99=13.41ms max=19.65ms
+ISOL-METRIC P3.definitionHits.N24 n=1 200 hits
+ISOL-ENV node=v24.21.0 cpus=14 largeFiles=24 providers=24 rounds=200 spinMs=0.15 avatarDefLine=5
+ISOL-METRIC P1.fireSlice.N0 n=200 p50=0.11ms p95=0.19ms p99=0.79ms max=2.83ms
+ISOL-METRIC P1.siblingTimer.N0 n=200 p50=0.11ms p95=0.19ms p99=0.79ms max=2.82ms
+ISOL-METRIC P1.fires.N0 n=1 200 fires
+ISOL-METRIC P1.canSend.N0 n=1 0 calls
+ISOL-METRIC P1.fireSlice.N24 n=200 p50=0.12ms p95=0.18ms p99=0.26ms max=1.34ms
+ISOL-METRIC P1.siblingTimer.N24 n=200 p50=0.11ms p95=0.17ms p99=0.26ms max=1.34ms
+ISOL-METRIC P1.fires.N24 n=1 200 fires
+ISOL-METRIC P1.canSend.N24 n=1 4800 calls
+ISOL-METRIC P2.hover.N0 n=200 p50=2.82ms p95=4.07ms p99=4.49ms max=6.61ms
+ISOL-METRIC P2.hoverHits.N0 n=1 200 hits
+ISOL-METRIC P2.hover.N24 n=200 p50=6.14ms p95=7.18ms p99=8.43ms max=8.86ms
+ISOL-METRIC P2.hoverHits.N24 n=1 200 hits
+ISOL-NOTE P2 残余=N24−N0 为派发微任务与 hover 续延同队列交错,非切片阻塞;切片级归因看 P1.fireSlice/P1.siblingTimer
+ISOL-METRIC P3.definition.N0 n=200 p50=2.67ms p95=2.97ms p99=3.24ms max=5.72ms
+ISOL-METRIC P3.definitionHits.N0 n=1 200 hits
+ISOL-METRIC P3.definition.N24 n=200 p50=6.29ms p95=7.23ms p99=9.93ms max=11.84ms
+ISOL-METRIC P3.definitionHits.N24 n=1 200 hits

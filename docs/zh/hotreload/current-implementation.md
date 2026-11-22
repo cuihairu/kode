@@ -440,3 +440,14 @@
   - zh 文案残差修复:批B 留下 zh 表 `defaultTarget='(default)'` 英文占位(页头 `headerTargetDefault` 本已是「(默认)」),批C 改 `'(默认)'`;两键仍分开(页头/行格),只修 zh 拼写;另加三个 a11y 标签键(queueRegionLabel/filterGroupLabel/tableLabel)zh/en 同形。
 - 测试:`tests/hotReloadHistoryI18nA11y.test.ts` 11 例(纯渲染两态:主题令牌+不引固定 Dark+ 调色板/队列 live 区 zh/en/页头 live 区/表单 role=search+五 sr-only 标签+.sr-only CSS/双表 aria-label 含虚拟分支(行数超 `VIRTUAL_SCROLL_THRESHOLD`)/submit/clear/more 钮型+form submit 处理器/zh「(默认)」vs en「(default)」行格/三新键 zh/en 同形/`<html lang>` 按 locale);`tests/hotReloadHistoryView.test.ts` 面板钉更新:zh 目标格现「(默认)」(原「(default)」)。
 - 残差不变(同 EN §33):en locale 下错误类别下拉与 errorSummary 列仍中文(纯核 `HOT_RELOAD_ERROR_REASON_LABELS`,label 穿线是独立架构改动,诚实不装已做)。
+
+## 32. HR-EXT-008 provider 派发调度隔离（2026-11-23,RUST-412,§30 命题的时序面）
+
+承接 §30(结构面:派发面零进入语言服务调用图)。§30 钉的是**闲置** provider host——它不会被 hover/definition 调到;§30 的基准(H0 vs HN)宿主全程从不 fire,故量不到另一面:**热更真派发那一跳的派发工作,原先跑在合并窗 fire 回调的同步段里**,与同事件循环上的 hover/definition 抢时间。本节收口该残差。
+
+- **收口点**:键开(`sendViaProviders`)时,fire 回调原先**同步**解析注册表——逐个跑每个已注册 provider 的 `canSend`,而那是第三方同步代码。这份工作占住 fire 回调的同步段,把同批登记的语言服务侧定时回调(hover 预算、索引泵)垫高。现把解析与「无人应答回落默认热更」整段挪进微任务,fire 回调即回,同批兄弟定时回调先于派发工作执行。
+- **机制(单点收编,不造轮子)**:fire 回调 `actionName.length === 0` 分支的键开路径把 `resolveSendProvider` + `runViaProvider` / `runDefaultHotfix` 包进 `Promise.resolve().then(...)`,与同文件既有信道发送、provider `send` 的延跳惯用法一致。键关路径逐字保留同步 `runDefaultHotfix()`:零配置用户零延迟变化。结果映射(sent-unverified + `provider:<id>` 审计行、failed/throw + HR-WATCH-008 指纹撤回)、单弹通知、`updateStatus` 批/流水线门控全在未改动的 `runViaProvider` / `runDefaultHotfix` 体内,`status.setSending` 仍同步。
+- **微任务窗为何安全**:微任务在当前宏任务返回后、任何新定时器/事件前清空;`latestBatch` 只在 `runFire` 内同步前进,`pipeline` 只在 apply/rebuild 变——两者都不可能插进该窗口,`batch === latestBatch && pipeline === pipelineAtFire` 双等门控不可被破。
+- **基准** `tests/perf/providerIsolation.bench.ts`(bench lane,输出 `docs/perf/provider-isolation-run.txt` 追加制):P1 fire 切片在 0 vs 24 个 provider 下持平(p50 0.15ms vs 0.14ms,4800 次 `canSend` 全部记账在微任务——fire 同步段零次);P1b **同批兄弟定时回调**不被垫高(p50 0.14ms ≡ 0.14ms)——这正是 todo 命题的机制面(hover 预算/索引泵定时器即同批兄弟回调);P2/P3 记录端到端 hover 与 `.def`→py definition 尾延迟(两臂均 200/200 命中),诚实 `ISOL-NOTE`:残余 N24−N0 ≈ +4.8ms 是派发微任务与 hover 续延同队列交错(受 provider 数×spin 有界),非同步切片阻塞。
+- **测试钉** `tests/hotReloadProviderWiring.test.ts` 增四钉:双 provider fire(fire 同步段零 `canSend` 零 `send`,微任务后两次 `canSend` + 一次 `send` 全发生)、五 provider 风暴(遍历成本全在微任务,每 fire 恰一次接单)、键开全不应答(内置 `kbengine.http-hotfix` 兜底同样只在微任务后接单——同步段零默认 transport)、键关(fire tick 后无 flush 即已调 transport,证明同步路径未动)。既有钉全部只在 `flush()` 后断言,多一跳微任务不破任何既有用例。
+- **无新配置键**:`sendViaProviders` 未变,manifest/NLS/设置面板面零触碰,docsCommands 配置门不因本增量触发。

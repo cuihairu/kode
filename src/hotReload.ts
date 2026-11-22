@@ -1188,11 +1188,19 @@ export function setupHotReload(
         // HR-PR-08:键开时先问发送 provider 注册表(应答者胜),无人应答
         // 才落默认热更面;键关=面不进链,行为与既有完全一致。
         if (settings.sendViaProviders) {
-          const provider = providerHost.registry.resolveSendProvider(buildEngineProfile({}));
-          if (provider) {
-            runViaProvider(provider);
-            return;
-          }
+          // RUST-412:注册表解析(canSend 是第三方同步代码)与回落默认热更整段
+          // 挪进微任务,不占 fire 回调同步段——语言服务(hover/definition 同
+          // 事件循环)的尾延迟不该被派发决议吃掉;键开=本段延一跳,键关分支
+          // 逐字保留(下面 runDefaultHotfix 仍在同步段)。
+          void Promise.resolve().then(() => {
+            const provider = providerHost.registry.resolveSendProvider(buildEngineProfile({}));
+            if (provider) {
+              runViaProvider(provider);
+              return;
+            }
+            runDefaultHotfix();
+          });
+          return;
         }
         runDefaultHotfix();
         return;
