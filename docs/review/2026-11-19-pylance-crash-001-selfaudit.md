@@ -125,7 +125,7 @@ Pylance 的接触面比 §4 所述**更大**:多出激活期桩包复制与 infe
 `kbengine.python.stubExport`(默认开)先行,窄闸 `kbengine.python.stubCopy`
 (默认开,非 manual 时)其次——默认态激活期 silent 复制确实走。复制实现
 `copyTemplateIntoFolder`(:326)=**copy-if-absent 铁律**:目标已存在直接
-`continue`(:368),零覆盖零删;唯一删=旧单文件 KBEngine.pyi 带 kode 生成
+`continue`(:360),零覆盖零删;唯一删=旧单文件 KBEngine.pyi 带 kode 生成
 标记的一次性迁移(:346-352),迁移后不再出现,单回合收敛。行为锚:
 `tests/pythonStubExport.test.ts:259`「copy-if-absent 铁律:目标已存在
 零字节动(用户魔改保留),缺的补上」,2026-11-23 复跑 25/25 绿。
@@ -142,8 +142,8 @@ infer 是 no-op**。生成的 `.pyi` 由 **pyrefly 子进程**写
 
 ### 环断证明(关键)——无 kode↔Pylance 自持环
 
-托管目录 watcher(`**/.kbengine`+`**/.kbengine/**`,src/activate/generators.ts:216-237)
-**只挂 `onDidDelete`**(:232)——全仓唯一 `.kbengine` watcher,无任何
+托管目录 watcher(`**/.kbengine`+`**/.kbengine/**`,src/activate/generators.ts:222-236)
+**只挂 `onDidDelete`**(:229)——全仓唯一 `.kbengine` watcher,无任何
 onDidCreate/onDidChange 挂点,故 kode 往 `.kbengine` 的**写**永不触发 kode
 重导。`generatePythonStubs`(generators.ts:60,watcher 重导入口)调
 **`exportKbeStubs`(copy-if-absent,零删)** 而非 `resetKbeStubs`;
