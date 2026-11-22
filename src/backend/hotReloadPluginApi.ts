@@ -28,7 +28,14 @@
  * - HR-EXT-003 资格判定规则(HotReloadEligibilityRule):按 engine profile/
  *   root/文件类型/上下文判 auto/manual/restart;缺省规则只做保守组合判定
  *   (restart 消费既有 def 闸结论,不重算结构;auto 须四要素齐备,缺一
- *   manual),fork=换 rule 实现整面接管分类。
+ *   manual),fork=换 rule 实现整面接管分类;
+ * - HR-EXT-004 权限声明(HotReloadProviderPermission):第三方 provider 必须
+ *   声明所需能力(workspace 文件访问/network 联网/exec 进程)才能挂到对应
+ *   能力面——缺省策略=最小权限,未声明 permissions 的 provider 对所有需声明
+ *   面一律 granted=false(如实拒,不静默放行:第三方不得未声明即截获保存
+ *   事件/联网/起进程)。本核只定义声明形状与判定策略;真实拒绝点在宿主装配
+ *   挂载期(策略由宿主调用,resolve* 解析序保持无权限假设),与 HR-HTTP-001
+ *   端点策略(RUST-420,只管请求目的地)互补不重复。
  * 纯逻辑零 vscode;真实扩展宿主装配(注册时机/生命周期)随接线批。
  */
 
@@ -204,6 +211,13 @@ export interface HotReloadProvider {
   readonly interpretResponse?: (input: HotReloadProviderInterpretInput) => HotReloadProviderInterpretation;
   /** HR-EXT-001:已应用版本查询(实现可接引擎回执;缺省=null 如实未接线) */
   readonly queryAppliedRevision?: (input: HotReloadProviderRevisionQuery) => HotReloadProviderAppliedRevision | null;
+  /**
+   * HR-EXT-004:该 provider 声明所需能力(workspace/network/exec)。
+   * 可选=最小权限声明面:缺省/未声明=未声明任何能力,宿主按缺省权限策略
+   * 对其需声明面一律拒(不静默放行)。声明=宿主挂载期判定依据,不改变
+   * 本核 resolve* 解析序(权限判定由宿主显式调用策略)。
+   */
+  readonly permissions?: readonly HotReloadProviderPermission[];
 }
 
 /** HR-EXT-001 生命周期插槽全集(缺省槽形状=组合既有核) */
@@ -345,6 +359,87 @@ export function createDefaultHotReloadEligibilityRule(): HotReloadEligibilityRul
       }
       // ③ 安全缺省
       return 'manual';
+    }
+  };
+}
+
+/**
+ * HR-EXT-004 第三方 provider 能力声明(版本化):workspace=工作区文件访问,
+ * network=联网(发送/引擎查询),exec=进程(含隔离 Worker/RPython 插件)。
+ * 第三方必须显式声明所需能力,宿主按缺省最小权限策略判定能否挂载。
+ */
+export type HotReloadProviderPermission = 'workspace' | 'network' | 'exec';
+
+/**
+ * HR-EXT-004 需声明的能力面(未列面=纯逻辑面,无权限要求):
+ * send=发送热更(联网);fetch-digest=引擎摘要获取(读文件或查引擎);
+ * read-workspace=工作区文件访问;spawn-process=起进程/Worker。
+ */
+export type HotReloadProviderFace = 'send' | 'fetch-digest' | 'read-workspace' | 'spawn-process';
+
+/** HR-EXT-004 权限判定产物:granted=false 时点名缺失项与原因(可审不静默) */
+export interface HotReloadPermissionVerdict {
+  readonly granted: boolean;
+  readonly face: HotReloadProviderFace;
+  readonly missing: readonly HotReloadProviderPermission[];
+  readonly reason?: string;
+}
+
+/**
+ * HR-EXT-004 权限策略(版本化扩展面):按 provider 声明判定能否挂到能力面。
+ * acceptableDeclarations 返回该面任一「可满足声明集」(声明集⊆provider.permissions
+ * 即合格,多组=多通道皆可,fork 可换策略整面接管)。check 对 provider 求最优
+ * (缺失最少)声明集,granted=其缺失为空。
+ */
+export interface HotReloadPermissionPolicy {
+  readonly policyId: string;
+  readonly apiVersion: typeof HOT_RELOAD_PLUGIN_API_VERSION;
+  acceptableDeclarations(face: HotReloadProviderFace): readonly (readonly HotReloadProviderPermission[])[];
+  check(provider: Pick<HotReloadProvider, 'providerId' | 'permissions'>, face: HotReloadProviderFace): HotReloadPermissionVerdict;
+}
+
+/**
+ * HR-EXT-004 缺省权限策略(最小权限):
+ * - send=必声明 network(目的地另受 HR-HTTP-001 端点策略闸,本面只管能力);
+ * - fetch-digest=workspace 或 network 任一声明即可(取摘要走文件读或走引擎
+ *   查询,两条通道实现按自身选择,都声明也无妨);
+ * - read-workspace=必声明 workspace;
+ * - spawn-process=必声明 exec。
+ * 未声明 permissions(缺省/空)=对上述任何面都 granted=false 且缺失点名,
+ * 绝不静默放行——第三方不得未声明即截获保存事件/联网/起进程。
+ */
+export function createDefaultHotReloadPermissionPolicy(): HotReloadPermissionPolicy {
+  const table: Record<HotReloadProviderFace, readonly (readonly HotReloadProviderPermission[])[]> = {
+    send: [['network']],
+    'fetch-digest': [['workspace'], ['network']],
+    'read-workspace': [['workspace']],
+    'spawn-process': [['exec']]
+  };
+  return {
+    policyId: 'kbengine.default-permission',
+    apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+    acceptableDeclarations: face => table[face],
+    check: (provider, face) => {
+      const declared = [...new Set(provider.permissions ?? [])];
+      const alternatives = table[face];
+      let best: readonly HotReloadProviderPermission[] = alternatives[0] ?? [];
+      let bestMissing = best.filter(p => !declared.includes(p));
+      for (const candidate of alternatives.slice(1)) {
+        const missing = candidate.filter(p => !declared.includes(p));
+        if (missing.length < bestMissing.length) {
+          best = candidate;
+          bestMissing = missing;
+        }
+      }
+      if (bestMissing.length === 0) {
+        return { granted: true, face, missing: [] };
+      }
+      return {
+        granted: false,
+        face,
+        missing: bestMissing,
+        reason: `provider ${provider.providerId} 未声明 ${bestMissing.join('/')} 权限,不得挂到 ${face} 面`
+      };
     }
   };
 }

@@ -3,12 +3,14 @@ import {
   buildEngineProfile,
   createDefaultHotReloadEligibilityRule,
   createDefaultHotReloadLifecycleSlots,
+  createDefaultHotReloadPermissionPolicy,
   defaultHotReloadFingerprintProvider,
   HOT_RELOAD_PLUGIN_API_VERSION,
   HotReloadProviderRegistry,
   type FingerprintProvider,
   type HotReloadEligibilityRule,
-  type HotReloadProvider
+  type HotReloadProvider,
+  type HotReloadProviderFace
 } from '../src/backend/hotReloadPluginApi';
 import type { HotReloadModuleIdentity } from '../src/backend/hotReloadModuleIdentity';
 
@@ -337,5 +339,103 @@ describe('HR-EXT-003 资格判定规则(auto/manual/restart 保守序)', () => {
     expect(forkRule.decide({})).toBe('auto');
     expect(makeRule().apiVersion).toBe('1');
     expect(forkRule.apiVersion).toBe('1');
+  });
+});
+
+describe('HR-EXT-004 权限声明(workspace/network/exec,最小权限缺省)', () => {
+  const policy = createDefaultHotReloadPermissionPolicy();
+  const undeclared = { providerId: 'fork.undeclared' };
+  const faces: HotReloadProviderFace[] = ['send', 'fetch-digest', 'read-workspace', 'spawn-process'];
+
+  it('未声明 permissions:对全部需声明面一律 granted=false 且缺失点名(不静默放行)', () => {
+    expect(policy.check(undeclared, 'send').granted).toBe(false);
+    expect(policy.check(undeclared, 'send').missing).toEqual(['network']);
+    expect(policy.check(undeclared, 'read-workspace').missing).toEqual(['workspace']);
+    expect(policy.check(undeclared, 'spawn-process').missing).toEqual(['exec']);
+    // fetch-digest 两可:两个通道都缺时缺失取缺失最少的一组(此处单组等长,取首组)
+    const digest = policy.check(undeclared, 'fetch-digest');
+    expect(digest.granted).toBe(false);
+    expect(digest.missing.length).toBeGreaterThan(0);
+    expect(digest.reason).toContain('fork.undeclared');
+  });
+
+  it('声明即授权:各自声明 network/workspace/exec 后对应面 granted 且 missing 空', () => {
+    expect(policy.check({ providerId: 'p', permissions: ['network'] }, 'send').granted).toBe(true);
+    expect(policy.check({ providerId: 'p', permissions: ['network'] }, 'send').missing).toEqual([]);
+    expect(policy.check({ providerId: 'p', permissions: ['workspace'] }, 'read-workspace').granted).toBe(true);
+    expect(policy.check({ providerId: 'p', permissions: ['exec'] }, 'spawn-process').granted).toBe(true);
+  });
+
+  it('fetch-digest 两可:声明 workspace 或 network 任一即可;皆缺=拒', () => {
+    const byWorkspace = policy.check({ providerId: 'p', permissions: ['workspace'] }, 'fetch-digest');
+    expect(byWorkspace.granted).toBe(true);
+    const byNetwork = policy.check({ providerId: 'p', permissions: ['network'] }, 'fetch-digest');
+    expect(byNetwork.granted).toBe(true);
+    const both = policy.check({ providerId: 'p', permissions: ['workspace', 'network'] }, 'fetch-digest');
+    expect(both.granted).toBe(true);
+    const neither = policy.check({ providerId: 'p', permissions: ['exec'] }, 'fetch-digest');
+    expect(neither.granted).toBe(false);
+  });
+
+  it('跨面不挪用:声明 network 不够 read-workspace;声明 workspace 不够 spawn-process', () => {
+    const networkOnly = { providerId: 'p', permissions: ['network'] as const };
+    expect(policy.check(networkOnly, 'read-workspace').granted).toBe(false);
+    expect(policy.check(networkOnly, 'spawn-process').granted).toBe(false);
+    const workspaceOnly = { providerId: 'p', permissions: ['workspace'] as const };
+    expect(policy.check(workspaceOnly, 'spawn-process').granted).toBe(false);
+  });
+
+  it('重复声明去重不误判;permissions 为空数组=等同未声明(最小权限)', () => {
+    expect(policy.check({ providerId: 'p', permissions: ['network', 'network'] }, 'send').granted).toBe(true);
+    expect(policy.check({ providerId: 'p', permissions: [] }, 'send').granted).toBe(false);
+  });
+
+  it('acceptableDeclarations 逐面回显;policyId/apiVersion 钉 1', () => {
+    expect(policy.acceptableDeclarations('send')).toEqual([['network']]);
+    expect(policy.acceptableDeclarations('fetch-digest')).toEqual([['workspace'], ['network']]);
+    expect(policy.acceptableDeclarations('read-workspace')).toEqual([['workspace']]);
+    expect(policy.acceptableDeclarations('spawn-process')).toEqual([['exec']]);
+    expect(policy.policyId).toBe('kbengine.default-permission');
+    expect(policy.apiVersion).toBe('1');
+  });
+
+  it('fork 可换 permission policy 整面接管判定;同形状不同判定', () => {
+    const forkPolicy = {
+      ...policy,
+      policyId: 'fork.own-permission',
+      check: (provider: Pick<HotReloadProvider, 'providerId' | 'permissions'>, face: HotReloadProviderFace) => ({
+        granted: provider.providerId.startsWith('fork.'), // fork 自定判定面
+        face,
+        missing: provider.providerId.startsWith('fork.') ? [] : ['network']
+      })
+    };
+    expect(forkPolicy.check({ providerId: 'fork.x' }, 'send').granted).toBe(true);
+    expect(forkPolicy.check({ providerId: 'other.x' }, 'send').granted).toBe(false);
+  });
+
+  it('向后兼容:无 permissions 的纯发送 provider 形状仍合规,注册表解析序不受权限面影响', () => {
+    const minimalSendProvider: HotReloadProvider = {
+      providerId: 'fork.minimal',
+      apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
+      displayName: 'minimal',
+      canSend: () => true,
+      send: () => ({ ok: true })
+    };
+    const registry = new HotReloadProviderRegistry();
+    expect(registry.registerSendProvider(minimalSendProvider)).toBeNull();
+    // 权限未声明=策略面拒其敏感挂载;注册表解析序照常应答(两者解耦,不改既有解析语义)
+    expect(registry.resolveSendProvider(buildEngineProfile({ engineVersion: '2.5.10' }))?.providerId).toBe('fork.minimal');
+    expect(policy.check(minimalSendProvider, 'send').granted).toBe(false);
+  });
+
+  it('内置 HTTP provider 声明 workspace+network:send/read-workspace/fetch-digest 通过,spawn-process 拒(未声明 exec)', async () => {
+    const { createHttpHotfixSendProvider } = await import('../src/backend/hotReloadProviderAssembly');
+    const builtin = createHttpHotfixSendProvider({});
+    expect(builtin.permissions).toEqual(['workspace', 'network']);
+    expect(policy.check(builtin, 'send').granted).toBe(true);
+    expect(policy.check(builtin, 'read-workspace').granted).toBe(true);
+    expect(policy.check(builtin, 'fetch-digest').granted).toBe(true);
+    expect(policy.check(builtin, 'spawn-process').granted).toBe(false);
+    expect(policy.check(builtin, 'spawn-process').missing).toEqual(['exec']);
   });
 });

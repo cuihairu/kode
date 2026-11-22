@@ -28,12 +28,16 @@ export const KBENGINE_HTTP_HOTFIX_PROVIDER_ID = 'kbengine.http-hotfix';
  * 内置 HTTP hotfix provider:委托 sendDefaultHotfix,transport 未注入时如实不接单。
  * HR-HTTP-002:请求上的模块身份/版本/关联 id 逐项透传(缺省=行为与增量前一致),
  * 结构化 outcome 随结果回传(接口可选字段,HTTP 通道即产)。
+ * HR-EXT-004:内置 provider 同样显式声明能力(network=POST 发送,
+ * workspace=${module} 回落面包边界探针读工作区),不做特权豁免——
+ * 声明即对账,缺省策略判定与第三方同口径。
  */
 export function createHttpHotfixSendProvider(deps: DefaultHotfixSendDeps): HotReloadProvider {
   return {
     providerId: KBENGINE_HTTP_HOTFIX_PROVIDER_ID,
     apiVersion: HOT_RELOAD_PLUGIN_API_VERSION,
     displayName: 'KBEngine HTTP hotfix',
+    permissions: ['workspace', 'network'],
     canSend: () => deps.transport !== undefined,
     send: request =>
       sendDefaultHotfix([...request.files], {
