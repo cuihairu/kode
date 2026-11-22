@@ -74,3 +74,42 @@ HRS-METRIC S7.burst500.offerPerEvent n=1 0.01ms
 HRS-METRIC S7.burst500.filterSamples n=500 p50=0.01ms p95=0.02ms p99=0.16ms max=0.31ms
 HRS-NOTE S7 500 事件 burst 同步段:filter+offer 观测几十毫秒(含负载波动),非秒级饿死;500 全入队零丢失,读盘在 libuv 线程池异步不占主线程(UI 不冻结纯核面);UI 线程面随接线批(装配面)
 HRS-BOUND violations=0 bounds={"s1FilterP99Ms":20,"s2HashP99Ms":1500,"s3SyntaxP99Ms":50,"s4QueueP99Ms":400,"s4TotalCpuP99Ms":2000,"s6HashP99Ms":250,"s6SyntaxP99Ms":50,"s6QueueP99Ms":100,"s6TotalCpuP99Ms":250,"s7BurstFilterP99Ms":10,"s7BurstFilterWallMs":300,"s7BurstOfferWallMs":300}
+HRS-ENV node=v24.21.0 platform=linux cpus=14 load1=4.12 files=200 assets=/tmp/kode-seg-assets
+HRS-METRIC S1.filter n=200 p50=0.02ms p95=0.04ms p99=0.1ms max=0.88ms
+HRS-METRIC S1.filter.accepted n=1 200 files
+HRS-METRIC S2.hash n=200 p50=29.74ms p95=30.37ms p99=30.4ms max=30.51ms
+HRS-METRIC S3.syntax n=200 p50=0ms p95=0ms p99=0ms max=0ms
+HRS-METRIC S1.diag.trigger n=1 200 events
+HRS-METRIC S1.diag.flushed n=1 200 events
+HRS-METRIC S4.queue n=200 p50=4.49ms p95=5.82ms p99=5.85ms max=6.73ms
+HRS-METRIC S4.queue.count n=1 200 samples
+HRS-METRIC S4.totalCpu n=200 p50=34ms p95=36ms p99=36ms max=37ms
+HRS-METRIC S4.totalCpu.count n=1 200 samples
+HRS-METRIC S5.reason.deduped n=1 1 events
+HRS-METRIC S5.reason.blocked n=1 1 events
+HRS-METRIC S5.reason.debounced n=1 1 events
+HRS-METRIC S5.reason.preview n=1 1 events
+HRS-NOTE S5 队列/丢弃原因全量出口=RUST-341 诊断面板(八型全量落通道),本面只统计四主因计数;filtered(空路径/读不到)不在本面(属异常路径非稳态)
+HRS-METRIC S6.hash n=50 p50=0.47ms p95=0.56ms p99=0.69ms max=0.69ms
+HRS-METRIC S6.syntax n=50 p50=0ms p95=0ms p99=0ms max=0ms
+HRS-METRIC S6.queue n=50 p50=1.5ms p95=1.66ms p99=2.31ms max=2.31ms
+HRS-METRIC S6.totalCpu n=50 p50=2ms p95=2ms p99=3ms max=3ms
+HRS-METRIC S6.saves n=1 50 saves
+HRS-METRIC S7.burst500.filterWall n=1 6.41ms
+HRS-METRIC S7.burst500.filterPerEvent n=1 0.01ms
+HRS-METRIC S7.burst500.offerWall n=1 5.6ms
+HRS-METRIC S7.burst500.offerPerEvent n=1 0.01ms
+HRS-METRIC S7.burst500.filterSamples n=500 p50=0.01ms p95=0.02ms p99=0.05ms max=0.1ms
+HRS-NOTE S7 500 事件 burst 同步段:filter+offer 观测几十毫秒(含负载波动),非秒级饿死;500 全入队零丢失,读盘在 libuv 线程池异步不占主线程(UI 不冻结纯核面);UI 线程面随接线批(装配面)
+HRS-METRIC S8.ledger.perRecordP50 n=1 0.02ms
+HRS-METRIC S8.ledger.perRecordP99 n=1 0.11ms
+HRS-METRIC S8.render.page50P50 n=1 0.75ms
+HRS-METRIC S8.render.page50P99 n=1 3.81ms
+HRS-METRIC S8.render.virtual500P50 n=1 1.15ms
+HRS-METRIC S8.render.virtual500P99 n=1 1.87ms
+HRS-METRIC S8.render.virtualRows n=1 500ms
+HRS-METRIC S8.ledger n=500 p50=0.02ms p95=0.07ms p99=0.11ms max=1.15ms
+HRS-METRIC S8.renderPage50 n=20 p50=0.75ms p95=1.14ms p99=3.81ms max=3.81ms
+HRS-METRIC S8.renderVirtual500 n=20 p50=1.15ms p95=1.71ms p99=1.87ms max=1.87ms
+HRS-NOTE S8 回执→UI 显示段:逐回执翻译+入账、逐页面板渲染(50 行页 + 500 行虚拟滚动路径)皆亚毫秒级;显示段 wall 另含 refreshWindowMs 缺省 500ms 设计节流窗(HR-UI-007 窗内合并已钉,非性能回归面);网络耗时须单独统计不混本地性能(§19.10)
+HRS-BOUND violations=0 bounds={"s1FilterP99Ms":20,"s2HashP99Ms":1500,"s3SyntaxP99Ms":50,"s4QueueP99Ms":400,"s4TotalCpuP99Ms":2000,"s6HashP99Ms":250,"s6SyntaxP99Ms":50,"s6QueueP99Ms":100,"s6TotalCpuP99Ms":250,"s7BurstFilterP99Ms":10,"s7BurstFilterWallMs":300,"s7BurstOfferWallMs":300,"s8LedgerP99Ms":100,"s8RenderP99Ms":1000}

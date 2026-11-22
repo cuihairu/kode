@@ -9,8 +9,10 @@
  * 基线 docs/perf/hot-reload-segment-run.txt(200 文件档,load1 16.06 与 58.75
  * 两轮):界值取两轮更差者再留 ~10x 余量吸收共享 runner 抖动与 libuv 读盘排队
  * 方差(同面 p99 在两轮间漂移 4.5x,S2.hash 28.89→129.1ms 即实例)。
- *   诚实边界:HTTP→回执→UI 三段属装配面(接线批 UI 区),本界表不含;网络耗时
- *   须单独统计不混本地性能(§19.10),本表只约束本地各段。
+ *   诚实边界:HTTP→回执段无界表(HR-STATE-007 durationMs 逐发送记录于台账,
+ *   hotReloadChannelSend.ts:146-148,非本界表钉域);UI 显示段(S8)纯核可测,入
+ *   本界表(s8Ledger/s8Render);网络耗时须单独统计不混本地性能(§19.10),本表
+ *   只约束本地各段,不约束跨机网络。
  * 环境变量覆盖:KODE_SEG_BOUND_*(SNAKE 大写),非法值诚实回退缺省,不抛不猜
  * (与 resolveRebuildTailBounds 同语义)。
  */
@@ -40,6 +42,10 @@ export interface SegmentBounds {
   s7BurstFilterWallMs: number;
   /** S7 500 事件 burst 同步段-逐事件 offer 墙钟 */
   s7BurstOfferWallMs: number;
+  /** S8 回执→台账段(translateDeliveryRecord+core.record 逐回执)p99 */
+  s8LedgerP99Ms: number;
+  /** S8 台账→面板渲染段(renderHistoryPanelHtml 逐页)p99 */
+  s8RenderP99Ms: number;
 }
 
 const BOUND_DEFAULTS: SegmentBounds = {
@@ -54,7 +60,9 @@ const BOUND_DEFAULTS: SegmentBounds = {
   s6TotalCpuP99Ms: 250,
   s7BurstFilterP99Ms: 10,
   s7BurstFilterWallMs: 300,
-  s7BurstOfferWallMs: 300
+  s7BurstOfferWallMs: 300,
+  s8LedgerP99Ms: 100,
+  s8RenderP99Ms: 1000
 };
 
 /**

@@ -27,6 +27,8 @@ describe('hotReloadSegmentBounds resolver(RUST-414 各段耗时界)', () => {
     expect(bounds.s7BurstFilterP99Ms).toBe(10);
     expect(bounds.s7BurstFilterWallMs).toBe(300);
     expect(bounds.s7BurstOfferWallMs).toBe(300);
+    expect(bounds.s8LedgerP99Ms).toBe(100);
+    expect(bounds.s8RenderP99Ms).toBe(1000);
   });
 
   it('env 覆盖生效且不影响缺省表(每次解析独立)', () => {
