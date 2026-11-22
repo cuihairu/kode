@@ -311,6 +311,93 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
     ]);
   });
 
+  it('RUST-372 风暴限频(面板开):千级事件至多前沿+尾帧 2 次全量渲染,落账同窗批处理', async () => {
+    const timers = makeTimers();
+    const saves: number[] = [];
+    const feed = setupHotReloadHistoryView(contextOf(), {
+      core: new HotReloadHistoryCore(),
+      resolveNames: resolver,
+      timers,
+      persist: { load: () => undefined, save: entries => saves.push(entries.length) }
+    });
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    let renderCount = 0;
+    let currentHtml = panel.webview.html;
+    Object.defineProperty(panel.webview, 'html', {
+      get: (): string => currentHtml,
+      set: (value: string): void => {
+        renderCount += 1;
+        currentHtml = value;
+      }
+    });
+    // 1000 事件/秒:每条尝试代际不同 → 1000 条 requestId(容量 200 淘汰最旧)
+    for (let i = 0; i < 1000; i += 1) {
+      feed.handle(recordOf({ attempt: i + 1 }));
+    }
+    // 前沿:首事件即时渲染 1 次,其余 999 次窗内合并(只置 dirty)
+    expect(renderCount).toBe(1);
+    expect(saves).toHaveLength(1);
+    expect(saves[0]).toBe(1);
+    timers.advance();
+    // 窗末:尾帧 1 次读最新态(容量 200);1000 事件 → 共 2 次全量渲染、2 次落账
+    expect(renderCount).toBe(2);
+    expect(saves).toHaveLength(2);
+    expect(saves[1]).toBe(200);
+  });
+
+  it('RUST-372 面板开孤立事件:前沿即时渲染保持;窗末无后续事件不补帧', async () => {
+    const timers = makeTimers();
+    const feed = setupHotReloadHistoryView(contextOf(), {
+      core: new HotReloadHistoryCore(),
+      resolveNames: resolver,
+      timers
+    });
+    await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    let renderCount = 0;
+    let currentHtml = panel.webview.html;
+    Object.defineProperty(panel.webview, 'html', {
+      get: (): string => currentHtml,
+      set: (value: string): void => {
+        renderCount += 1;
+        currentHtml = value;
+      }
+    });
+    feed.handle(recordOf());
+    // 前沿即时(「面板打开时即时重渲染」语义保持)
+    expect(renderCount).toBe(1);
+    timers.advance();
+    // 窗内无后续事件:不补帧(前沿已渲),不产生无谓二次全量渲染
+    expect(renderCount).toBe(1);
+  });
+
+  it('RUST-372 树模式落账同窗批处理(前沿+尾帧各 1 次);dispose 清风暴限频钟', () => {
+    const timers = makeTimers();
+    const context = contextOf();
+    const saves: number[] = [];
+    const feed = setupHotReloadHistoryView(context, {
+      core: new HotReloadHistoryCore(),
+      resolveNames: resolver,
+      timers,
+      persist: { load: () => undefined, save: entries => saves.push(entries.length) }
+    });
+    feed.handle(recordOf({ attempt: 1 }));
+    feed.handle(recordOf({ attempt: 2 }));
+    feed.handle(recordOf({ attempt: 3 }));
+    // 树模式:前沿只落账 1 次(渲染合并进窗末 fire);单钟
+    expect(saves).toHaveLength(1);
+    expect(timers.pendingCount()).toBe(1);
+    timers.advance();
+    expect(saves).toHaveLength(2);
+    expect(saves[1]).toBe(3);
+    // dispose 清风暴限频钟(HR-UI-012)
+    for (const disposable of context.subscriptions) {
+      disposable.dispose();
+    }
+    expect(timers.pendingCount()).toBe(0);
+  });
+
   it('过滤消息(HR-UI-010):模块子串/状态过滤重渲染,计数随过滤更新;清除筛选拉全量', async () => {
     const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     feed.handle(recordOf({ file: FILE_A }));

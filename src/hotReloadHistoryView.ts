@@ -396,7 +396,7 @@ export function setupHotReloadHistoryView(
     }
   }
 
-  // HR-UI-007:重渲染节流——窗内多次台账事件只刷一次;面板打开时即时重渲染
+  // HR-UI-007:树视图重渲染节流(queueChanged 路径)——窗内多次事件只刷一次
   let pendingHandle: unknown = null;
   const cancelPending = (): void => {
     if (pendingHandle !== null) {
@@ -475,6 +475,44 @@ export function setupHotReloadHistoryView(
     }
     pendingHandle = timers.set(() => {
       pendingHandle = null;
+      refresh();
+      postQueue();
+    }, refreshWindowMs);
+  };
+
+  // RUST-372(HR-STATE-012):event store/UI 更新批处理限频——台账事件路径
+  // (handle)过此前沿+后沿窗:前沿即时落账,面板开则即时重渲染(保
+  // 「面板打开时即时重渲染」语义);窗内后续事件只置 dirty 合并,窗末按
+  // 分支补帧——树沿既有合并窗语义照常 fire(前沿只落账不 fire),面板开则
+  // dirty 才补尾帧(前沿已渲,避免窗末紧邻二次全量渲染)。风暴(千级事件/
+  // 秒)下每窗至多前沿+尾帧 2 次全量渲染+2 次全量序列化落账,不再每事件
+  // 放大成 1000 次完整 UI 渲染。
+  let flushHandle: unknown = null;
+  let flushDirty = false;
+  const scheduleFlush = (): void => {
+    if (flushHandle !== null) {
+      flushDirty = true;
+      return;
+    }
+    opts.persist?.save(opts.core.entries());
+    if (panelState.panel !== null) {
+      renderPanel();
+    }
+    flushHandle = timers.set(() => {
+      flushHandle = null;
+      if (panelState.panel !== null) {
+        // 面板开:前沿已即时渲染,窗内有后续事件才补一帧读最新态
+        if (!flushDirty) {
+          return;
+        }
+        flushDirty = false;
+        opts.persist?.save(opts.core.entries());
+        renderPanel();
+        return;
+      }
+      // 树:前沿只落账(窗内不逐事件 fire),窗末照常 fire 合并刷新
+      flushDirty = false;
+      opts.persist?.save(opts.core.entries());
       refresh();
       postQueue();
     }, refreshWindowMs);
@@ -591,6 +629,10 @@ export function setupHotReloadHistoryView(
   context.subscriptions.push({
     dispose: (): void => {
       cancelPending();
+      if (flushHandle !== null) {
+        timers.clear(flushHandle);
+        flushHandle = null;
+      }
     }
   });
 
@@ -601,14 +643,9 @@ export function setupHotReloadHistoryView(
       }
     },
     handle: (record: HotReloadDeliveryRecord): void => {
+      // 台账记录立即入 store(O(1)),渲染/落账/树刷新全走批处理窗(RUST-372)
       opts.core.record(translateDeliveryRecord(record, opts.resolveNames));
-      opts.persist?.save(opts.core.entries());
-      // 面板开着 → 即时重渲染(数据变了);树 → 节流刷新
-      if (panelState.panel !== null) {
-        renderPanel();
-      } else {
-        scheduleRefresh();
-      }
+      scheduleFlush();
     }
   };
 }
