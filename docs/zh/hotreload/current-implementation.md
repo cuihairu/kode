@@ -362,3 +362,11 @@
 - 不静默篡改是结构性的:纯核零配置写入面;改写只动确认条目的模板字符串(`${module}` → `${fullModule}`),其余条目逐字保留(拼接数组里同一引用,未知自定义字段原样),确认两次后才经 `ConfigurationTarget.Workspace` 整体写回。未配置 `kbengine.hotReload.tempEdit.scriptRoot` 时拒绝迁移并点名原因(`${fullModule}` 会展开空串——先配脚本资源根),绝不给一个自己知道会断链的改写建议。
 - 注册位于 `activateHttpRequestViews`,与既有 HTTP 快捷请求命令同侧;严格命令奇偶闸(每声明 id 必注册,每注册 id 必声明)覆盖装配面,NLS 标题双语言齐。
 - 测试:`tests/hotReloadRequestPreview.test.ts` 7 钉——预览行(替换后形状/三名字并列/停用条目带原因列出)、空文件如实、未配 scriptRoot 双名如实空串而 legacy 值照常、HR-MOD-008 开关进默认面预览、原始条目分析逐字段计数、无占位/未配置如实、改写其余字段逐字保留、拼接保留兄弟条目同一引用。prove-red:迁移改写中和为 no-op 后改写钉转红;默认面开关硬写 `false` 后 HR-MOD-008 预览钉转红——逆向 sed 恢复,7/7 绿。
+
+
+## 23. HR-EXT-001 版本化生命周期契约（2026-11-22,RUST-405,生命周期插槽）
+
+- `HotReloadProvider` 面在既有发送面(canSend/send)之外加四个**可选**生命周期插槽:`resolveModule`(文件→模块身份)、`prepareRequest`(目标+身份→请求)、`interpretResponse`(发送结果→七类分类解释)、`queryAppliedRevision`(已应用版本查询)。可选=缺省槽回落(组合既有核),增量前实现(只有 canSend/send)形状不变——向后兼容,`apiVersion` 不递增(与 HR-HTTP-002 增量字段同纪律,绝不因加可选成员升版本)。
+- 缺省槽 `createDefaultHotReloadLifecycleSlots` 组合既有核,不自创解析、不自创错误分类:`resolveModule` 委托 `resolveHotReloadModuleIdentity`(scriptRoots/allowRootLevelStem 装配面默认,逐调用可覆盖,不跨调用粘滞);`prepareRequest` 透传既有发送请求形状(files=[fileUri]、moduleIdentities=[requestModule]、可选 revision/correlationId 如实不带,不冒充空);`interpretResponse` 委托 `classifyHotReloadErrorReason`(七类,ok 透传);`queryAppliedRevision`=如实 `null`(未接线,绝不编造运行时版本)。
+- 注册表 `HotReloadProviderRegistry.resolveLifecycle(profile)`:按 profile 选发送 provider(同 resolveSendProvider:第一个 canSend 应答者胜),再把 provider 自带的四个插槽与缺省槽合成——实现自带槽优先,缺槽回落缺省,返回 `{provider, slots}` 非半态。无人应答/null profile=如实 `null`(不回落默认,同发送面口径)。
+- 测试:`tests/hotReloadPluginApi.test.ts` 7 钉——缺省槽 resolveModule 唯一根命中返回身份(双名)、无根候选诚实 no-root(不猜不回落)、prepareRequest 形状(逐项透传/缺省 revision/correlationId 如实不带)、interpretResponse 七类(HTTP 500→apply-failed、未知 detail→unknown、ok 透传)、queryAppliedRevision 未接线=如实 null、registry.resolveLifecycle 自定义槽优先+缺槽回落缺省、纯发送 provider 缺槽全回落+无人应答/null profile=如实 null。prove-red:中和 queryAppliedRevision 为伪造引擎版本+prepareRequest 丢 moduleIdentities 后 3 钉转红(含缺槽回落钉),逆向恢复 16/16 绿。
