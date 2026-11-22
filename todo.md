@@ -828,7 +828,7 @@
 
 > > 以下为**候选目标**，须用当前仓库真实基线和固定机器明确最终阈值：单文件 Save→队列（不含配置 debounce）P95≤30ms；热更新本地 pipeline CPU 时间 P95≤15ms；UI 单次状态更新节流后≤100ms；高频保存不导致 extension host 事件循环长阻塞；网络耗时单独统计，不混为本地性能。
 
-- [ ] RUST-413 （旧 HR-QA-001） 基准定义：文件数 200/2k/10k/50k；单文件持续保存、Git checkout 500 文件、写入风暴、远端 SSH/workspace。
+- [ ] RUST-413 （旧 HR-QA-001） 基准定义：文件数 200/2k/10k/50k；单文件持续保存、Git checkout 500 文件、写入风暴、远端 SSH/workspace。进行中:42e35d8b 热更规模基准车道已落(tests/perf/hotReloadScale.bench.ts,bench 独立 lane 不入 unit 门;docs/perf/hot-reload-scale.md 定义+首测/run.txt 追加制)=M1 矩阵 200/2k/10k/50k(每文件吸收 0.18→0.09ms 规模收敛;50k 爆发 4.31s=libuv 读盘排队非事件循环阻塞;过滤每事件 ~0.01ms)/M2 持续保存 100 次(Save→队列 p50 1.51ms p95 1.82ms,候选线 30ms 之下一个量级,revision 1..100 单调)/M3 checkout 500 爆发(生产配置→500 全滞留只预览 auto=0,放行 0.66ms)/M4 写入风暴 100×(save+disk-change)归并 100 发非 200/M5 远端路径规范化四形态键+2.8µs/次;实测判例=纯核 due() 只在 readSnapshot&&(窗>0||语法闸)才读盘,窗=0 无闸=空壳 settle 非生产形状,基准窗=0+透传闸=单读;isWatchableScriptFile 每调用重规范化 roots(50k 事件 376ms)观测归 RUST-414;差=远端端到端需活 SSH 会话纯核无此面(诚实未覆盖,随接线批)+阈值化归 RUST-414;全门 4 轮负载族轮换红(load 40→99 满载,受害者全计时/真二进制/spawn 臂零本批触碰,solo 复绿),CI 权威
 - [ ] RUST-414 （旧 HR-QA-002） 统计 Watch→过滤→哈希→语法检查→队列→HTTP→回执→UI 各段耗时、P95/P99/max、排队与丢弃原因。
 - [ ] RUST-415 （旧 HR-QA-003） 连续保存 100 次同一文件验证 debouncing、最终版本提交、不会无限请求或错误绿色状态。
 - [ ] RUST-416 （旧 HR-QA-004） 500 文件同时变动触发批次确认/限流机制，无全仓热更风暴；UI 不冻结。
