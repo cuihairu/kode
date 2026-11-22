@@ -211,6 +211,28 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(diagnostics).toHaveLength(1);
   });
 
+  it('远程 URI(HR-WATCH-018):vscode-remote 工作区按 fsPath 派生根与进链,不因 scheme 误滤', async () => {
+    // 远程 SSH 工作区:根与文件 URI 均 vscode-remote://,装配只取 fsPath 驱动,
+    // scheme 不是屏障(否则远程编辑会被误滤成域外)。
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: '/home/dev/ws', scheme: 'vscode-remote' } as never, name: 'remote', index: 0 }
+    ];
+    const { clock, runCalls } = boot();
+    // 远程根按同法派生递归 glob(与本地根同形)
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      '**/*.py',
+      '/home/dev/ws/**/*.py'
+    ]);
+    lastFileSystemWatcher.current!.fireChange({
+      fsPath: '/home/dev/ws/scripts/base/Avatar.py',
+      scheme: 'vscode-remote',
+      authority: 'ssh-remote+host'
+    } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+  });
+
   it('磁盘+save 重叠:同文件单批不双发(HR-WATCH-003 live)', async () => {
     const { clock, runCalls } = boot();
     const saveWatcher = allFileSystemWatchers[0];
