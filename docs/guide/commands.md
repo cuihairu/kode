@@ -886,6 +886,17 @@ The flow graph panel supports:
   - The JSON document carries `schemaVersion: 1`, `exportedAt`, `count`, and the row list; the write uses atomic replace so an interrupted export never leaves a half-written file
   - A failed write surfaces the file path and error instead of a bare command failure
 
+### `kbengine.hotReload.settingsPanel`
+
+- Title: `Hot Reload Settings`
+- Purpose: open a webview form to edit the frequently-toggled hot-reload workspace settings
+- Behavior:
+  - The form edits nine keys: `enabled` (启用自动更新), `triggerMode` (监听模式: `onSave`/`onDiskChange`), `debounceMs` (去抖), `syntaxGate` (语法检查), `sendViaProviders` (经 Provider 发送), `allowRootLevelStem` (根下单层回退), `batchFlushMs` (波次冲口), `batchPreviewThreshold` (批量预览阈值), `stabilityWindowMs` (写入稳定窗)
+  - Channel settings (root/target/网络超时) stay in the existing `kbengine.hotReload.configureChannel` flow; this panel does not duplicate them. 「敏感操作警告」has no corresponding settings key — workspace trust (HR-HTTP-005/RUST-422) is the existing security gate, and no key is invented here
+  - The host validates every submitted value before writing: booleans must be boolean, numbers finite non-negative integers, `triggerMode` in the enum; an invalid value is reported by field name and nothing is written (the form never silently clamps)
+  - Each key is written individually via a dotted-path update (`hotReload.<key>`), so a save never clobbers sibling keys like `globs` or `actionName`; the target is `Workspace` when a folder is open, `Global` otherwise
+  - Reopening the command reveals an existing panel; Cancel disposes it
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`
