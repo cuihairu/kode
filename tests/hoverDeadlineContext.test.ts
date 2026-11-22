@@ -64,12 +64,14 @@ afterEach(() => {
 
 describe('IDE-BUD-001:createHoverRequestDeadline', () => {
   it('到期是纯时间判定,不自动取消 token;remainingMs 单调递减', async () => {
-    const deadline = createHoverRequestDeadline(neverToken(), 15);
-    expect(deadline.budgetMs).toBe(15);
-    expect(deadline.remainingMs()).toBeLessThanOrEqual(15);
+    // 预算取 1500ms:15ms 在全量套件满载下创建与断言之间即可耗尽实录翻红
+    // (2026-11-18 hoverDeadlineContext:70);语义面不变——预算数值非断言对象
+    const deadline = createHoverRequestDeadline(neverToken(), 1500);
+    expect(deadline.budgetMs).toBe(1500);
+    expect(deadline.remainingMs()).toBeLessThanOrEqual(1500);
     expect(deadline.isExpired()).toBe(false);
 
-    await tick(20);
+    await tick(1600);
 
     expect(deadline.remainingMs()).toBeLessThanOrEqual(0);
     expect(deadline.isExpired()).toBe(true);
