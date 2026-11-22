@@ -46,6 +46,7 @@ import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } 
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { resolveModuleDualName } from '../backend/hotReloadTempEdit';
 import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY, HOT_RELOAD_HISTORY_MAX_AGE_MS } from '../hotReloadHistoryView';
+import { HOT_RELOAD_SETTINGS_COMMAND, openHotReloadSettingsPanel } from '../hotReloadSettingsPanel';
 import type { SavePipelineQueueSnapshot } from '../backend/hotReloadSavePipeline';
 import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../backend/hotReloadHistoryCore';
 import type { HotReloadDeliveryRecord } from '../backend/hotReloadTargetState';
@@ -893,6 +894,17 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     }
   );
   context.subscriptions.push(runTempEditReloadCommand);
+
+  // RUST-378 (HR-UI-005):配置编辑面板——表单化界面,覆盖既有
+  // kbengine.hotReload.* 工作区设置键(经 readHotReloadSettings 容忍式读,
+  // 表单所见=装配所用);写回走 workspace 作用域,复位=清键回默认。
+  // root/target/网络超时/敏感操作警告不是 package.json 设置键,表单不造键
+  // (这些维度由引擎 profile/运行时承担,见 RUST-378 注)。
+  context.subscriptions.push(
+    vscode.commands.registerCommand(HOT_RELOAD_SETTINGS_COMMAND, () =>
+      openHotReloadSettingsPanel()
+    )
+  );
 
   return {
     fileChangeRouter

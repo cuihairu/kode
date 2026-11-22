@@ -886,6 +886,17 @@ The flow graph panel supports:
   - The JSON document carries `schemaVersion: 1`, `exportedAt`, `count`, and the row list; the write uses atomic replace so an interrupted export never leaves a half-written file
   - A failed write surfaces the file path and error instead of a bare command failure
 
+### `kbengine.hotReload.settings`
+
+- Title: `Hot Reload Settings (Form)`
+- Purpose: open the hot-reload settings form panel (表单化界面) for editing the `kbengine.hotReload.*` workspace settings
+- Behavior:
+  - The form is pre-populated from the same tolerant read (`hotReloadSectionReader` + `readHotReloadSettings`) the assembly uses — 表单所见=装配所用, no second read path
+  - The editable surface is exactly the `HotReloadSettings` fields (enabled / triggerMode / actionName / globs / debounceMs / stabilityWindowMs / syntaxGate / batchFlushMs / batchPreviewThreshold / sendViaProviders / allowRootLevelStem); root, target, network timeout, and sensitive-operation warning are not package.json settings and are not invented on the form
+  - Save writes each field via `workspaceConfiguration.update('kbengine.hotReload.<key>', value, Workspace)` — a whitelist write, never a whole-object passthrough; incoming webview values are coerced (type/range fallback) before being trusted
+  - Reset clears each field's workspace override (`update(..., undefined)`) so the default resurfaces
+  - The panel is also reachable from the command palette under the `KBEngine` category
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`
