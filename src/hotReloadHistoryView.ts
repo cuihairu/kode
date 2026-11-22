@@ -267,7 +267,9 @@ export function renderHistoryPanelHtml(input: {
   return `<!DOCTYPE html>
 <html lang="${input.lang}">
 <head><meta charset="UTF-8"><style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 12px; }
+  /* RUST-384 批C 主题:面板色全走 --vscode-* 语义令牌(跟随用户配色);补
+     editor-background 底与 :focus-visible 焦点环,不引固定 Dark+ 调色板。 */
+  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 12px; }
   h2 { margin: 0 0 8px; }
   h3 { margin: 14px 0 4px; }
   .header { color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
@@ -286,6 +288,9 @@ export function renderHistoryPanelHtml(input: {
   .more { margin-top: 8px; }
   code { word-break: break-all; }
   .vscroll { overflow-y: auto; border: 1px solid var(--vscode-panel-border); }
+  /* RUST-384 批C 无障碍:键盘焦点环(跟随主题强调色)+ 视障隐藏关联标签 */
+  :focus-visible { outline: 2px solid var(--vscode-focusBorder, #3794ff); outline-offset: 1px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 </style></head>
 <body>
   <h2>${esc(t.title)}</h2>
@@ -296,37 +301,46 @@ export function renderHistoryPanelHtml(input: {
     input.total
   ))}</div>
   <h3>${esc(t.queueHeading)}</h3>
-  <table class="queue">
-    <tbody id="queue-rows">
+  <!-- RUST-384 批C:实时队列包稳定 live 区(queueChanged 只换内层行,屏幕阅读器可听到队列变化) -->
+  <div id="queue-region" role="status" aria-live="polite" aria-label="${esc(t.queueRegionLabel)}">
+    <table class="queue">
+      <tbody id="queue-rows">
 ${queueRows}
-    </tbody>
-  </table>
-  <form class="filter">
+      </tbody>
+    </table>
+  </div>
+  <form class="filter" id="filter-form" role="search" aria-label="${esc(t.filterGroupLabel)}">
+    <label class="sr-only" for="f-module">${esc(t.colModule)}</label>
     <input id="f-module" placeholder="${esc(t.modulePlaceholder)}" value="${esc(filter.fullModuleContains ?? '')}">
+    <label class="sr-only" for="f-target">${esc(t.colTarget)}</label>
     <input id="f-target" placeholder="${esc(t.targetPlaceholder)}" value="${esc(filter.targetId ?? '')}">
     <input id="f-root" placeholder="${esc(t.rootPlaceholder)}" value="${esc(filter.rootId ?? '')}">
+    <label class="sr-only" for="f-status">${esc(t.colStatus)}</label>
     <select id="f-status">
       <option value="">${esc(t.statusAll)}</option>
       <option value="sent-unverified" ${filter.status === 'sent-unverified' ? 'selected' : ''}>${esc(t.statusSentUnverified)}</option>
       <option value="applied" ${filter.status === 'applied' ? 'selected' : ''}>${esc(t.statusApplied)}</option>
       <option value="failed" ${filter.status === 'failed' ? 'selected' : ''}>${esc(t.statusFailed)}</option>
     </select>
+    <label class="sr-only" for="f-trigger">${esc(t.colTrigger)}</label>
     <select id="f-trigger">
       <option value="">${esc(t.triggerAll)}</option>
 ${triggerOptions(t).map(([value, label]) => `      <option value="${value}" ${filter.trigger === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
     </select>
+    <label class="sr-only" for="f-category">${esc(t.colError)}</label>
     <select id="f-category">
       <option value="">${esc(t.categoryAll)}</option>
 ${Object.entries(HOT_RELOAD_ERROR_REASON_LABELS).map(([value, label]) => `      <option value="${value}" ${filter.errorCategory === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
     </select>
-    <button type="button" id="apply">${esc(t.applyFilter)}</button>
+    <!-- RUST-384 批C:apply 即 submit 钮,任一过滤控件回车即应用 -->
+    <button type="submit" id="apply">${esc(t.applyFilter)}</button>
     <button type="button" id="clear">${esc(t.clearFilter)}</button>
   </form>
 ${
   useVirtual
     ? `  <div id="vlist" class="vscroll" style="height: ${virtualize.viewportHeightPx}px">
     <div id="vtop" style="height: ${virtualTopPx}px"></div>
-    <table>
+    <table aria-label="${esc(t.tableLabel)}">
       <thead><tr>${headerCells}</tr></thead>
       <tbody id="vbody">
 ${body || noMatchRow}
@@ -334,7 +348,7 @@ ${body || noMatchRow}
     </table>
     <div id="vbot" style="height: ${virtualBottomPx}px"></div>
   </div>`
-    : `  <table>
+    : `  <table aria-label="${esc(t.tableLabel)}">
     <thead><tr>${headerCells}</tr></thead>
     <tbody>
 ${body || noMatchRow}
@@ -362,7 +376,12 @@ ${body || noMatchRow}
         errorCategory: document.getElementById('f-category').value
       });
     };
-    document.getElementById('apply').addEventListener('click', apply);
+    // RUST-384 批C 无障碍快捷键:过滤表单 submit=任一过滤控件回车即应用(键盘可达,
+    // 不再只能鼠标点「应用筛选」);apply 钮即 submit 钮
+    document.getElementById('filter-form').addEventListener('submit', event => {
+      event.preventDefault();
+      apply();
+    });
     document.getElementById('clear').addEventListener('click', () => {
       document.getElementById('f-module').value = '';
       document.getElementById('f-target').value = '';
@@ -581,9 +600,12 @@ export function setupHotReloadHistoryView(
         const item = new vscode.TreeItem(buildHistoryEntryLabel(entry));
         item.tooltip = buildHistoryEntryTooltipLines(entry).join('\n');
         item.description = `${entry.status}${entry.targetId.length > 0 ? ` · ${entry.targetId}` : ''}${entry.rootId && entry.rootId.length > 0 ? ` · ${entry.rootId}` : ''}`;
-        item.contextValue = 'kbengineHotReloadHistoryEntry';
         // RUST-381 失败点击定位文件:树行点击打开文件(命令参数=行文件路径;
-        // 任意行可定位,失败行照用同一动作)
+        // 任意行可定位,失败行照用同一动作)。右键面按状态分叉:失败行给
+        // 「定位文件/打开日志/重试」三动作(contextValue 分叉,菜单 when 靠
+        // viewItem 区分——沿用 gitCommit 先例),非失败行保持原 contextValue。
+        item.contextValue =
+          entry.status === 'failed' ? 'kbengineHotReloadHistoryEntryFailed' : 'kbengineHotReloadHistoryEntry';
         item.command = {
           command: HOT_RELOAD_LOCATE_FILE_COMMAND,
           title: l10nText('Locate File'),
