@@ -316,7 +316,8 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
     expect(html).toContain('entities.fight.FightAI');
     expect(html).toContain('发送: fight.FightAI');
     expect(html).toContain(`title="${FILE_A}"`);
-    expect(html).toContain('(default)');
+    // RUST-384 批C:zh defaultTarget 残差修复(批B 留了英文占位)——zh 面板目标格=(默认)
+    expect(html).toContain('(默认)');
     expect(html).toContain('已发送(未确认)');
     expect(html).toContain(new Date(1700000000000).toISOString());
     expect(html).toContain(`${buildHotReloadTargetKeyId({ rootId: 'r1', targetId: '' })}/FightAI.py#1`);
