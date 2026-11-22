@@ -7,6 +7,7 @@ import {
   type OutgoingHttpRequest
 } from '../src/backend/httpRequestService';
 import { BUILTIN_HTTP_REQUEST_EXAMPLE } from '../src/backend/httpRequests';
+import { createHttpTargetQueue } from '../src/backend/httpRequestQueue';
 
 // HttpRequestService 执行层:注入 transport 的流水/回执语义 + 默认 transport
 // 的真 TCP localhost 行为(成功/连接拒绝/坏 URL/非 http 协议/POST 体/大回包
@@ -394,5 +395,91 @@ describe('内置示例默认停用(服务侧过滤兜底)', () => {
     expect(service.listEnabled()).toHaveLength(0);
     await expect(service.runByName(BUILTIN_HTTP_REQUEST_EXAMPLE.name)).resolves.toBe(false);
     expect(errors[0]).toContain('已停用');
+  });
+});
+
+/** HR-HTTP-007 快捷请求面并发测试辅助 */
+const makeGate = (): { gate: Promise<void>; open: () => void } => {
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>(resolve => {
+    open = resolve;
+  });
+  return { gate, open };
+};
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+};
+
+describe('HR-HTTP-007(RUST-349)快捷请求面有界并发(同端点串行/异端点并发)', () => {
+  it('同端点串行:前次未结算,后次起跑等待', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 4 });
+    const gate = makeGate();
+    const events: string[] = [];
+    const { service } = makeService([entry()], {
+      queue,
+      transport: async () => {
+        events.push('a-start');
+        await gate.gate;
+        events.push('a-end');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p1 = service.runByName('热更');
+    const p2 = service.runByName('热更');
+    await flush();
+    expect(events).toEqual(['a-start']);
+    gate.open();
+    await Promise.all([p1, p2]);
+    // 第二次起跑严格落在第一次结算之后(同端点串行);同一已开闸门使第二次
+    // 立即走完,故四事件
+    expect(events).toEqual(['a-start', 'a-end', 'a-start', 'a-end']);
+  });
+
+  it('异端点并发:互不排队,两请求都立即起跑', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 4 });
+    const gate = makeGate();
+    const events: string[] = [];
+    const { service } = makeService(
+      [
+        entry({ url: 'http://eng-a:8090/x' }),
+        entry({ name: '热更B', url: 'http://eng-b:8090/x' })
+      ],
+      {
+        queue,
+        transport: async () => {
+          events.push('start');
+          await gate.gate;
+          return { ok: true, status: 200, durationMs: 1, body: '' };
+        }
+      }
+    );
+    const p1 = service.runByName('热更');
+    const p2 = service.runByName('热更B');
+    await flush();
+    expect(events).toEqual(['start', 'start']);
+    gate.open();
+    await Promise.all([p1, p2]);
+  });
+
+  it('缺省共享队列:模块级单例同样同端点串行(生产路径)', async () => {
+    const gate = makeGate();
+    const events: string[] = [];
+    const { service } = makeService([entry({ url: 'http://eng-s:8090/x' })], {
+      transport: async () => {
+        events.push('s-start');
+        await gate.gate;
+        events.push('s-end');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p1 = service.runByName('热更');
+    const p2 = service.runByName('热更');
+    await flush();
+    expect(events).toEqual(['s-start']);
+    gate.open();
+    await Promise.all([p1, p2]);
+    expect(events).toEqual(['s-start', 's-end', 's-start', 's-end']);
   });
 });

@@ -12,6 +12,7 @@
 import * as http from 'http';
 import * as https from 'https';
 import { executeHttpRequest } from './httpRequestExecutor';
+import { createHttpTargetQueue, type HttpTargetQueue } from './httpRequestQueue';
 import {
   buildHttpRequest,
   buildOfficialVariableContext,
@@ -196,15 +197,26 @@ export interface HttpRequestServiceDeps {
   /** Python 包目录探针(含 __init__.py 判定),${module} 包边界扫描用(批153) */
   isPackageDir?: PackageDirProbe;
   timeoutMs?: number;
+  /**
+   * HR-HTTP-007(RUST-349)按目标有界并发队列(同目标默认串行、异目标独立、
+   * 全局上限);缺省=模块级单例(生产快捷请求面共用)。注入具名实例用于
+   * 测试确定性。
+   */
+  queue?: HttpTargetQueue;
 }
+
+/** HR-HTTP-007:快捷请求面共享队列——同端点用户请求串行,异端点并发,全局封顶 */
+const sharedHttpRequestQueue = createHttpTargetQueue();
 
 export class HttpRequestService {
   private readonly transport: HttpTransport;
   private readonly timeoutMs: number;
+  private readonly queue: HttpTargetQueue;
 
   constructor(private readonly deps: HttpRequestServiceDeps) {
     this.transport = deps.transport ?? defaultTransport;
     this.timeoutMs = deps.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS;
+    this.queue = deps.queue ?? sharedHttpRequestQueue;
   }
 
   /** 已启用条目(quick pick 面板数据源) */
@@ -262,7 +274,7 @@ export class HttpRequestService {
         timeoutMs: this.timeoutMs,
         ...(entry.maxResponseBytes !== undefined ? { maxResponseBytes: entry.maxResponseBytes } : {})
       },
-      { transport: this.transport }
+      { transport: this.transport, queue: this.queue }
     );
 
     // AUD-054(R2-F27):真实响应到达即上报观察者(回执解析面)——2xx/非 2xx/

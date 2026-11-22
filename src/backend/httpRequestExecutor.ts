@@ -22,6 +22,7 @@ import {
   type HttpTransport,
   type OutgoingHttpRequest
 } from './httpRequestService';
+import type { HttpTargetQueue } from './httpRequestQueue';
 
 /** 单次交换生命周期状态:单向推进,无回退 */
 export type HttpExchangeState = 'idle' | 'in-flight' | 'settled';
@@ -197,12 +198,31 @@ export interface HttpExecuteDeps {
   readonly transport?: HttpTransport;
   /** 外部给定关联 id(调用方串自己的链路);缺省本函数生成 */
   readonly correlationId?: string;
+  /**
+   * HR-HTTP-007(RUST-349)按目标有界并发队列(注入才限流:同目标串行、
+   * 不同目标独立并发、全局上限兜底)。缺省不套队列——自动热更 fire 路径
+   * 有既有钉死的「重叠波次在途+代际守卫」契约(HR-WATCH-011,旧响应不得
+   * 冒充新版本,tests/hotReloadRevisionGate),全局强串行会废掉该守卫的
+   * 实路径并拖慢新版发送(旧请求挂到超时,新版本排队等满额预算);谁要
+   * 有界并发谁注入(快捷请求面已接),不在执行器层替全体调用方定死。
+   */
+  readonly queue?: HttpTargetQueue;
 }
 
+/** 队列目标键:URL origin(协议+主机+端口);URL 无法解析时按原样键(分组不靠猜) */
+const targetKeyOf = (url: string): string => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+};
+
 /**
- * 单次执行:生成关联 id → 交换机 send → 传输 → 沉降 → 分类。
+ * 单次执行:生成关联 id → 交换机 send → (注入队列则按目标有界并发)→ 传输 → 沉降 → 分类。
  * 状态机由本函数独占推进,send/settle 拒绝即实现 bug(显式抛,不静默);
- * 传输一次一发,不重试(HR-HTTP-009 默认不自动重试状态未知的非幂等更新)。
+ * 传输一次一发,不重试(HR-HTTP-009 默认不自动重试状态未知的非幂等更新);
+ * 队列只约束发起时刻,不改传输语义——排队等待不计入请求超时预算。
  */
 export async function executeHttpRequest(
   request: OutgoingHttpRequest,
@@ -215,14 +235,18 @@ export async function executeHttpRequest(
   if (!send.ok) {
     throw new Error(`执行器状态机拒绝 send: ${send.reason}`);
   }
-  const result = await transport({
-    url: request.url,
-    method: request.method,
-    headers: request.headers,
-    body: request.body,
-    timeoutMs: request.timeoutMs,
-    ...(request.maxResponseBytes !== undefined ? { maxResponseBytes: request.maxResponseBytes } : {})
-  });
+  const sendOnce = (): Promise<HttpExecutionResult> =>
+    transport({
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      timeoutMs: request.timeoutMs,
+      ...(request.maxResponseBytes !== undefined ? { maxResponseBytes: request.maxResponseBytes } : {})
+    });
+  const result = deps.queue
+    ? await deps.queue.run(targetKeyOf(request.url), sendOnce)
+    : await sendOnce();
   const settle = machine.advance('settle');
   if (!settle.ok) {
     throw new Error(`执行器状态机拒绝 settle: ${settle.reason}`);

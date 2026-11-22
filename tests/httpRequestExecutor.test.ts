@@ -6,6 +6,7 @@ import {
   newCorrelationId,
   type HttpRequestOutcome
 } from '../src/backend/httpRequestExecutor';
+import { createHttpTargetQueue } from '../src/backend/httpRequestQueue';
 import type { HttpTransport, OutgoingHttpRequest } from '../src/backend/httpRequestService';
 
 // 通用 HTTP 请求执行器(HR-PR-03):HR-HTTP-010 结果六分类+错误细类、
@@ -173,4 +174,111 @@ const req = (url: string): OutgoingHttpRequest => ({
   headers: {},
   body: '',
   timeoutMs: 1000
+});
+
+/** HR-HTTP-007 接线面辅助:手动闸门与微任务排空 */
+const makeGate = (): { gate: Promise<void>; open: () => void } => {
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>(resolve => {
+    open = resolve;
+  });
+  return { gate, open };
+};
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+};
+
+describe('executeHttpRequest × HttpTargetQueue(HR-HTTP-007 按目标有界并发接线)', () => {
+  it('同 origin 串行:共用队列下,第二次传输在第一次结算后才起跑', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 4 });
+    const first = makeGate();
+    const events: string[] = [];
+    const p1 = executeHttpRequest(req('http://eng-a:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('first-transport-start');
+        await first.gate;
+        events.push('first-transport-end');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p2 = executeHttpRequest(req('http://eng-a:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('second-transport-start');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    await flush();
+    expect(events).toEqual(['first-transport-start']);
+    first.open();
+    await Promise.all([p1, p2]);
+    expect(events).toEqual(['first-transport-start', 'first-transport-end', 'second-transport-start']);
+  });
+
+  it('异 origin 独立并发:互不排队,两传输都立即起跑', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 4 });
+    const first = makeGate();
+    const events: string[] = [];
+    const p1 = executeHttpRequest(req('http://eng-a:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('a-start');
+        await first.gate;
+        events.push('a-end');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p2 = executeHttpRequest(req('http://eng-b:8090/hotfix'), {
+      queue,
+      transport: async () => {
+        events.push('b-start');
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    await flush();
+    expect(events).toEqual(['a-start', 'b-start']);
+    first.open();
+    await Promise.all([p1, p2]);
+    expect(events).toEqual(['a-start', 'b-start', 'a-end']);
+  });
+
+  it('全局上限:跨 origin 在途达上限后,第三执行排队等槽', async () => {
+    const queue = createHttpTargetQueue({ perTargetConcurrency: 1, globalConcurrency: 2 });
+    const g1 = makeGate();
+    const g2 = makeGate();
+    let thirdStarted = false;
+    const p1 = executeHttpRequest(req('http://eng-a:8090/x'), {
+      queue,
+      transport: async () => {
+        await g1.gate;
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p2 = executeHttpRequest(req('http://eng-b:8090/x'), {
+      queue,
+      transport: async () => {
+        await g2.gate;
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    const p3 = executeHttpRequest(req('http://eng-c:8090/x'), {
+      queue,
+      transport: async () => {
+        thirdStarted = true;
+        return { ok: true, status: 200, durationMs: 1, body: '' };
+      }
+    });
+    await flush();
+    expect(thirdStarted).toBe(false);
+    g1.open();
+    await p1;
+    await flush();
+    expect(thirdStarted).toBe(true);
+    g2.open();
+    await p2;
+    await p3;
+  });
 });
