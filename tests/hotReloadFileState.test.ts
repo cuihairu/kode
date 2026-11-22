@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
+import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../src/backend/hotReloadHistoryCore';
 import {
   deriveHotReloadFileState,
   deriveHotReloadHashSet,
@@ -566,5 +567,86 @@ describe('HR-STATE-002 四 hash 区分:各司其职,不混用', () => {
     expect(only).toEqual({ currentDiskHash: DIGEST_B });
     const none = deriveHotReloadHashSet({ record: undefined, currentDigest: undefined, verifiedApplied: false });
     expect(none).toEqual({});
+  });
+});
+
+// HR-STATE-009 历史快照与当前文件状态分离:唯一持久化面是历史日志
+// (HotReloadHistoryCore 条目经 workspaceState 回载),台账/会话基线册/状态机
+// 皆纯内存、每会话新实例。故重启后「当前文件状态」不从上一会话的 applied
+// 继承——除非可复核运行时 revision(HR-STATE-003 engineAppliedDigestFor 缝,
+// 且须有本会话台账记录作对账基准)。本 describe 钉两面分离与不自动信任。
+describe('HR-STATE-009 历史快照与当前文件状态分离:重启不自动信任上一会话 applied', () => {
+  /** 会话 A 的 applied 事实(会话内口径,acceptance 2 已钉),重启后被持久化的只是日志行 */
+  const PRIOR_APPLIED_ROW: HotReloadHistoryEntry = {
+    requestId: `${KEY.rootId}::${KEY.targetId}/${FILE}#1`,
+    fullModule: 'base.Avatar',
+    requestModule: 'Avatar',
+    fileUri: FILE,
+    targetId: KEY.targetId,
+    time: 1000,
+    status: 'applied'
+  };
+
+  it('会话内 applied 可信(前提钉):台账 applied 记录 + 内容一致 → APPLIED', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    store.record(KEY, FILE, 'applied', { attempt: 1, sentDigest: DIGEST_A });
+    expect(sm.derive(store, KEY, FILE, CONTENT_A).state).toBe('APPLIED');
+  });
+
+  it('重启(新台账+新状态机)→ 同内容首见回 CLEAN,不自动相信上一会话 applied', () => {
+    // 会话 A 走到 applied(前提钉),随后进程重启
+    const smA = makeState();
+    const storeA = makeStore();
+    storeA.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    storeA.record(KEY, FILE, 'applied', { attempt: 1, sentDigest: DIGEST_A });
+    expect(smA.derive(storeA, KEY, FILE, CONTENT_A).state).toBe('APPLIED');
+    // —— 重启 ——台账是事实源但纯内存(无共享持久层,HR-STATE-004);状态机的
+    // 会话基线册同为内存。两者都新实例,上一会话的 applied 无凭据可继承。
+    const smB = makeState(30_000);
+    const storeB = makeStore(30_000);
+    const view = smB.derive(storeB, KEY, FILE, CONTENT_A);
+    // 内容仍是所发内容也不回 APPLIED:本会话从未核验,首见注册回 CLEAN
+    expect(view.state).toBe('CLEAN');
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+    expect(view.updatedAt).toBeUndefined(); // 无本会话台账证据,不透传时刻
+  });
+
+  it('重启后离线改过的文件同样不冒充 applied/脏:首见基线按当前内容注册', () => {
+    // 重启期间磁盘已改成 B(≠ 上一会话所发 A)
+    const view = makeState(30_000).derive(makeStore(30_000), KEY, FILE, CONTENT_B);
+    // 不信任旧 applied 故不拿旧基线判脏:本会话首见=当前内容即基线,回 CLEAN
+    expect(view.state).toBe('CLEAN');
+    expect(view.baselineDigest).toBe(DIGEST_B);
+    expect(view.hashSet.lastRequestedHash).toBeUndefined();
+  });
+
+  it('复核缝无本会话台账记录也无法复活 applied:applied 须本会话证据承接', () => {
+    // 引擎复核缝(HR-STATE-003 第二来源,生产未接)声称运行时时仍是旧 applied 内容
+    const sm = new HotReloadFileStateMachine({
+      now: () => 30_000,
+      timeoutWindowMs: 10_000,
+      engineAppliedDigestFor: () => DIGEST_A
+    });
+    const view = sm.derive(makeStore(30_000), KEY, FILE, CONTENT_A);
+    // 引擎 digest 需与 record.sentDigest 对账才算复核;重启后台账空,无基准可核,
+    // 不凭空 applied(与超时不冒充 applied 同一诚实纪律)→ 首见基线回 CLEAN
+    expect(view.state).toBe('CLEAN');
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+  });
+
+  it('两面分离:日志保留 applied 行(交付史是事实),当前态不消费日志各自派生', () => {
+    // 会话 A 把 applied 事实落进历史日志(与生产 translateDeliveryRecord 同形)
+    const sessionA = new HotReloadHistoryCore();
+    sessionA.record(PRIOR_APPLIED_ROW);
+    // 重启:视图启动回载(HR-MOD-014)只回填日志核;当前态=新台账+新状态机
+    const reloaded = new HotReloadHistoryCore();
+    reloaded.record(PRIOR_APPLIED_ROW);
+    const view = makeState(30_000).derive(makeStore(30_000), KEY, FILE, CONTENT_A);
+    // 交付史不抹(日志行仍是 applied),当前态各判各的(derive 不读日志核)
+    expect(reloaded.newestFirst()[0]?.status).toBe('applied');
+    expect(view.state).toBe('CLEAN');
+    expect(view.state).not.toBe('APPLIED');
   });
 });
