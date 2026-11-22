@@ -127,6 +127,8 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     }),
     pipelineQueue: () =>
       hotReloadPipelineQueueRef.current?.() ?? { pending: [], previewHeld: [], wave: [] },
+    // HR-STATE-007:观察时钟与台账/节流同源(Date.now),时长字段据此落
+    now: () => Date.now(),
     persist: {
       // 宿主无 workspaceState(测试替身语境)时如实退化为不持久化,不炸激活
       load: () => context.workspaceState?.get(HOT_RELOAD_HISTORY_STATE_KEY),

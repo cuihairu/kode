@@ -6,6 +6,11 @@
  *   requestModule(HR-MOD-014)+fileUri/targetId/时间/请求 id/状态/错误摘要,
  *   树节点标题取 fullModule,tooltip 字段投影含 requestModule/URI/target/
  *   时间/请求 id——用户看到的名称与请求名称分开呈现(HR-UI-006);
+ * - HR-STATE-007 操作史九字段:time/trigger/fullModule/requestModule/target/
+ *   duration/result/errorCategory/hash——trigger(IDE-HOT-102「谁」)、duration
+ *   (发送→观察墙钟差,注入时钟)、errorCategory(失败行传输五分类)、hash
+ *   (发送时点冻结 sha256,IDE-AUD-006)四者按事实源如实不写不猜,与既有五
+ *   字段同存成行;tooltip 投影在字段在即列。
  * - HR-UI-010/014 同路径不同 target 是两条独立历史(targetId 是行身份的
  *   一部分),过滤按 fullModule 子串(大小写不敏)/targetId/状态/时间范围;
  * - HR-UI-009 状态语义与 hotReloadStatus 同口径:sent-unverified 是 2xx 无
@@ -39,6 +44,24 @@ export interface HotReloadHistoryInput {
   readonly status: HotReloadHistoryStatus;
   /** 失败/拦截摘要(如 HTTP 状态、错误分类;密钥/header 一律不落) */
   readonly errorSummary?: string;
+  /**
+   * HR-STATE-007 操作史九字段(触发源):IDE-HOT-102「谁」——watcher-auto/
+   * command/retry/temp-edit;未记录=如实不写,不猜。
+   */
+  readonly trigger?: string;
+  /**
+   * HR-STATE-007 操作史九字段(时长):发送→本次观察墙钟差(ms);无时钟注入=
+   * 无可判依据,如实不写。
+   */
+  readonly durationMs?: number;
+  /**
+   * HR-STATE-007 操作史九字段(错误分类):失败行的可操作分类。当前=传输
+   * 五分类 kind(hotReloadTransportErrors);HR-STATE-010 可操作七分类另立时
+   * 换接。非失败行无错误=如实不写。
+   */
+  readonly errorCategory?: string;
+  /** HR-STATE-007 操作史九字段(内容指纹):发送时点冻结 sha256(IDE-AUD-006) */
+  readonly hash?: string;
 }
 
 /** 历史行(只读视图;状态更新经 updateStatus,外部不可变改) */
@@ -165,6 +188,20 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
   lines.push(`status: ${entry.status}`);
   if (entry.errorSummary) {
     lines.push(`error: ${entry.errorSummary}`);
+  }
+  // HR-STATE-007 操作史九字段投影:新四字段(触发源/时长/错误分类/指纹)在
+  // 场即列,缺如实不列(不拼空行)。
+  if (entry.trigger !== undefined) {
+    lines.push(`trigger: ${entry.trigger}`);
+  }
+  if (entry.durationMs !== undefined) {
+    lines.push(`duration: ${entry.durationMs}ms`);
+  }
+  if (entry.errorCategory !== undefined) {
+    lines.push(`errorCategory: ${entry.errorCategory}`);
+  }
+  if (entry.hash !== undefined) {
+    lines.push(`hash: ${entry.hash}`);
   }
   return lines;
 }
