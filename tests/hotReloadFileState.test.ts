@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
 import {
+  deriveHotReloadFileState,
   deriveHotReloadHashSet,
   HotReloadFileStateMachine,
   sha256Hex,
@@ -83,6 +84,81 @@ describe('acceptance 2: 入发送集 → SENT;applied+digest 一致 → APPLIED(
     const store = makeStore();
     store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
     expect(sm.derive(store, KEY, FILE, CONTENT_B).state).toBe('DIRTY');
+  });
+});
+
+describe('HR-STATE-003: applied 来源纪律(可信回执|引擎查询一致),旧版已应用磁盘再改', () => {
+  // makeState 无 engineAppliedDigestFor:生产面未接 /status 轮询(HR-AUDIT-010)时
+  // 引擎查询来源不可用,状态机回落到仅可信回执来源(诚实不凭空 applied)。
+  const makeEngineState = (engineDigestFor: (key: HotReloadTargetKey, file: string) => string | undefined) =>
+    new HotReloadFileStateMachine({ now: () => 1000, timeoutWindowMs: 10_000, engineAppliedDigestFor: engineDigestFor });
+
+  it('无可信 applied 回执(仅 sent-unverified)但引擎查询与所发 hash 一致 → APPLIED(引擎权威)', () => {
+    const sm = makeEngineState(() => DIGEST_A);
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.state).toBe('APPLIED');
+    expect(view.annotation).toContain('引擎状态查询');
+    // HR-STATE-002 一致:引擎查询确认 applied 也是「已核实生效」,进核验 hash 列
+    expect(view.hashSet.lastVerifiedAppliedHash).toBe(DIGEST_A);
+  });
+
+  it('引擎查询一致后磁盘再改 → DIRTY(旧版已应用且磁盘又修改)', () => {
+    const sm = makeEngineState(() => DIGEST_A);
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    expect(sm.derive(store, KEY, FILE, CONTENT_A).state).toBe('APPLIED');
+    expect(sm.derive(store, KEY, FILE, CONTENT_B).state).toBe('DIRTY');
+  });
+
+  it('引擎查询与所发 hash 不符 → 不冒充 applied(回落到超时未确认 FAILED)', () => {
+    const sm = makeEngineState(() => DIGEST_B);
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.state).not.toBe('APPLIED');
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+  });
+
+  it('引擎查询未提供(生产面默认)→ 无 applied,回落到 SENT(不凭空 applied)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.state).toBe('SENT');
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+  });
+
+  it('可信 applied 回执 + 引擎查询不一致 → 仍 APPLIED(来源并集非否决,如实注解)', () => {
+    const sm = makeEngineState(() => DIGEST_B);
+    const store = makeStore();
+    store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A, detail: '回执 applied 且 digest 一致:已应用' });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.state).toBe('APPLIED');
+    expect(view.annotation).toContain('以回执 applied 为准');
+  });
+
+  it('纯函数:引擎查询一致直接置 applied(仅 accepted 记录也确认),hashSet 核验列入账', () => {
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    store.record(KEY, FILE, 'accepted', {
+      attempt: 1,
+      sentDigest: DIGEST_A,
+      detail: '回执 accepted:file 回显一致(应用仍需 HOT-004 核验)'
+    });
+    const view = deriveHotReloadFileState({
+      record: store.get(KEY, FILE),
+      file: FILE,
+      currentDigest: DIGEST_A,
+      baselineDigest: DIGEST_A,
+      restartRequired: false,
+      settle: 'pending',
+      engineAppliedDigest: DIGEST_A
+    });
+    expect(view.state).toBe('APPLIED');
+    expect(view.hashSet.lastVerifiedAppliedHash).toBe(DIGEST_A);
+    expect(view.annotation).toContain('引擎状态查询');
   });
 });
 

@@ -124,6 +124,14 @@ export function deriveHotReloadHashSet(input: {
  * settle 结算——applied 后内容再偏离=新 DIRTY,failed 如实 FAILED(内容
  * 再改=新编辑回落 DIRTY),超时未确认如实 FAILED 不冒充 applied,窗口内
  * pending 一律 SENT(accepted 只是注解)。
+ *
+ * HR-STATE-003 applied 来源纪律:applied 只从两个合法来源赋值——(a)可信
+ * applied 回执(settle=applied,digest 双证);(b)引擎状态查询与发送时点冻结
+ * hash 一致(engineAppliedDigest === record.sentDigest)。两者是来源并集(非
+ * 否决):有可信回执就以回执为准(引擎不一致只注解不翻判);无可信回执但引擎
+ * 权威确认已应用该内容,按引擎侧赋值 applied。引擎查询未提供=无可判依据,
+ * 不凭空赋值 applied(与超时不冒充 applied 同一诚实纪律)。两来源任一确认
+ * applied 后内容再偏离=新 DIRTY(旧版已应用且磁盘又修改)。
  */
 export function deriveHotReloadFileState(input: {
   record: HotReloadDeliveryRecord | undefined;
@@ -133,12 +141,27 @@ export function deriveHotReloadFileState(input: {
   restartRequired: boolean;
   /** settleAppliedStatus 结算;record 为空时不参与(无记录分支先行) */
   settle: AppliedSettleStatus;
+  /**
+   * 引擎状态查询结果(HR-STATE-003 第二来源):引擎侧权威已应用 digest。
+   * undefined=无引擎状态证据(当前生产面仅回执证据,/status 轮询面仍属
+   * HR-AUDIT-010);给出且与 record.sentDigest 一致=引擎确认已应用。
+   */
+  engineAppliedDigest?: string;
 }): HotReloadFileStateView {
-  const { record, file, currentDigest, baselineDigest, restartRequired, settle } = input;
+  const { record, file, currentDigest, baselineDigest, restartRequired, settle, engineAppliedDigest } = input;
+  // 引擎状态查询与发送时点冻结 hash 一致:引擎权威确认已应用(第二来源)。
+  const engineConfirmsApplied =
+    engineAppliedDigest !== undefined &&
+    record?.sentDigest !== undefined &&
+    engineAppliedDigest === record.sentDigest;
   const view: HotReloadFileStateView = {
     file,
     state: 'CLEAN',
-    hashSet: deriveHotReloadHashSet({ record, currentDigest, verifiedApplied: settle === 'applied' })
+    hashSet: deriveHotReloadHashSet({
+      record,
+      currentDigest,
+      verifiedApplied: settle === 'applied' || engineConfirmsApplied
+    })
   };
   if (currentDigest !== undefined) {
     view.currentDigest = currentDigest;
@@ -170,8 +193,26 @@ export function deriveHotReloadFileState(input: {
     return view;
   }
   if (settle === 'applied') {
-    // applied 已核验:基线=所发 hash(IDE-AUD-006 冻结基准);内容再偏离=新一次偏离
+    // applied 已核验(可信回执):基线=所发 hash(IDE-AUD-006 冻结基准);内容再
+    // 偏离=新一次偏离(旧版已应用且磁盘又改=DIRTY)。引擎查询不一致是来源
+    // 并集下的如实注解(回执仍是合法来源,不翻判),供呈现面知悉引擎侧待核。
     view.state = currentDigest !== undefined && currentDigest !== baselineDigest ? 'DIRTY' : 'APPLIED';
+    if (
+      engineAppliedDigest !== undefined &&
+      record?.sentDigest !== undefined &&
+      engineAppliedDigest !== record.sentDigest
+    ) {
+      view.annotation = `引擎状态查询显示已应用其他内容(引擎 ${engineAppliedDigest.slice(0, 12)}… ≠ 所发 ${record.sentDigest.slice(0, 12)}…):以回执 applied 为准,引擎侧待核`;
+    }
+    return view;
+  }
+  if (engineConfirmsApplied) {
+    // HR-STATE-003 第二来源:无可信 applied 回执(回执丢失/仅 accepted),但引擎
+    // 状态查询与所发冻结 hash 一致=引擎权威已应用,按引擎侧赋值 applied(不
+    // 冒充回执,来源如实注解);一致后磁盘再改=新 DIRTY(旧版已应用且磁盘又改)。
+    view.state =
+      currentDigest !== undefined && currentDigest !== record?.sentDigest ? 'DIRTY' : 'APPLIED';
+    view.annotation = '引擎状态查询与所发 hash 一致:已应用(无 applied 回执,凭引擎侧权威)';
     return view;
   }
   if (settle === 'failed') {
@@ -209,6 +250,12 @@ export interface HotReloadFileStateMachineDeps {
   now(): number;
   /** applied 核验超时窗口 ms(与 HOT_RELOAD_APPLIED_SETTLE_MS 同值) */
   timeoutWindowMs: number;
+  /**
+   * HR-STATE-003 第二来源:引擎侧权威已应用 digest 查询(按目标+文件)。
+   * 未提供=无引擎状态证据(当前生产面仅回执证据,/status 轮询面仍属
+   * HR-AUDIT-010),状态机回落到仅可信回执来源。
+   */
+  engineAppliedDigestFor?(key: HotReloadTargetKey, file: string): string | undefined;
 }
 
 /**
@@ -277,10 +324,21 @@ export class HotReloadFileStateMachine {
     const record = ledger.get(key, file);
     const currentDigest = currentContent === undefined ? undefined : sha256Hex(currentContent);
     const keyId = this.keyOf(key, file);
+    // HR-STATE-003:引擎权威已应用 digest(第二来源);与所发冻结 hash 一致才算
+    const engineAppliedDigest = this.deps.engineAppliedDigestFor?.(key, file);
+    const engineConfirmsApplied =
+      engineAppliedDigest !== undefined &&
+      record?.sentDigest !== undefined &&
+      engineAppliedDigest === record.sentDigest;
     let baseline = this.resolveBaseline(ledger, key, file);
     if (record?.outcome === 'applied' && record.sentDigest !== undefined) {
       // 基线滚动:applied 即基线=所发 hash(设计 §3.2),会话册同步留档,
       // 后续重试覆盖台账时基线不丢
+      baseline = record.sentDigest;
+      this.baselines.set(keyId, record.sentDigest);
+    } else if (engineConfirmsApplied && record.sentDigest !== undefined) {
+      // 引擎查询确认已应用:基线同口径滚到所发 hash(可信回执与引擎权威
+      // 两个来源对基线/核验口径一致,不因来源不同而分叉)
       baseline = record.sentDigest;
       this.baselines.set(keyId, record.sentDigest);
     } else if (record === undefined && baseline === undefined && currentDigest !== undefined) {
@@ -304,7 +362,9 @@ export class HotReloadFileStateMachine {
       currentDigest,
       baselineDigest: baseline,
       restartRequired,
-      settle
+      settle,
+      // HR-STATE-003:引擎权威已应用 digest(有则作为第二来源参与 applied 判定)
+      engineAppliedDigest
     });
   }
 
