@@ -1035,3 +1035,32 @@ describe('RUST-381 失败点击定位文件', () => {
     expect(last.document.fsPath).toBe(FILE_A);
   });
 });
+
+describe('RUST-384 历史面板无障碍面', () => {
+  beforeEach(() => {
+    windowState.reset();
+    panelRegistry.reset();
+  });
+
+  const lastPanel = (): (typeof panelRegistry.panels)[number] =>
+    panelRegistry.panels[panelRegistry.panels.length - 1];
+
+  it('页头计数=live 区(screen reader 播报行计数变化)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    expect(lastPanel().webview.html).toContain('<div class="header" role="status" aria-live="polite">');
+  });
+
+  it('行可键盘聚焦+aria-label+回车/空格定位(与鼠标点击同走 openRow)', () => {
+    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    feed.handle(recordOf({ file: FILE_A }));
+    void vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
+    const html = lastPanel().webview.html;
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('aria-label="定位文件 FightAI.py"');
+    expect(html).toContain("onkeydown=");
+    expect(html).toContain("openRow(this)");
+    expect(html).toContain('const openRow = (tr) =>');
+  });
+});

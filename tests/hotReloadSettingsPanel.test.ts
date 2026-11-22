@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import * as vscode from 'vscode';
 import {
   HOT_RELOAD_SETTINGS_PANEL_COMMAND,
@@ -95,7 +97,9 @@ describe('RUST-378 设置表单渲染', () => {
     expect(renderHotReloadSettingsPanelHtml({ settings: baseSettings(), note: '去抖(ms)须为非负整数' })).toContain(
       'class="error">去抖(ms)须为非负整数'
     );
-    expect(renderHotReloadSettingsPanelHtml({ settings: baseSettings() })).toContain('<span id="status" class="">');
+    expect(renderHotReloadSettingsPanelHtml({ settings: baseSettings() })).toContain(
+      '<span id="status" role="status" aria-live="polite" class="">'
+    );
   });
 });
 
@@ -206,5 +210,57 @@ describe('RUST-378 面板装配', () => {
     void vscode.commands.executeCommand(HOT_RELOAD_SETTINGS_PANEL_COMMAND);
     expect(panelRegistry.panels.length).toBe(1);
     expect(panelRegistry.panels[0].revealed).toBe(true);
+  });
+});
+
+describe('RUST-384 设置面板无障碍面', () => {
+  it('状态条=live 区(screen reader 播报保存/校验结果)', () => {
+    const html = renderHotReloadSettingsPanelHtml({ settings: baseSettings(), note: '已保存' });
+    expect(html).toContain('<span id="status" role="status" aria-live="polite"');
+  });
+});
+
+describe('RUST-384 热更快捷键(package.json 避撞锁)', () => {
+  interface Pkg {
+    contributes: {
+      keybindings: Array<{ command: string; key?: string; mac?: string; when?: string }>;
+    };
+  }
+  const pkg = JSON.parse(
+    readFileSync(join(__dirname, '..', 'package.json'), 'utf8')
+  ) as Pkg;
+  const bindingOf = (command: string): { key?: string; mac?: string; when?: string } | undefined =>
+    pkg.contributes.keybindings.find(entry => entry.command === command);
+
+  it('三命令默认键位齐(ctrl+alt+p/l/s),无收窄 when', () => {
+    const cases: Array<[string, string, string]> = [
+      ['kbengine.hotReload.historyPanel', 'ctrl+alt+p', 'cmd+alt+p'],
+      ['kbengine.hotReload.showDiagnostics', 'ctrl+alt+l', 'cmd+alt+l'],
+      ['kbengine.hotReload.settingsPanel', 'ctrl+alt+s', 'cmd+alt+s']
+    ];
+    for (const [command, key, mac] of cases) {
+      const binding = bindingOf(command);
+      expect(binding, `${command} 缺默认键位`).toBeDefined();
+      expect(binding!.key, `${command} 键位不符`).toBe(key);
+      expect(binding!.mac).toBe(mac);
+      expect(binding!.when).toBeUndefined();
+    }
+  });
+
+  it('新键位不撞仓库既有/文档既占键位(避撞锁)', () => {
+    // 文档示例键位(配置指南 kbengine.httpRequest.run)、telnet 面板键位、
+    // 通道配置键位、python 编辑器命令键位
+    const occupied = [
+      'ctrl+alt+h',
+      'ctrl+]',
+      'ctrl+d',
+      'ctrl+alt+r',
+      'ctrl+alt+shift+c',
+      'ctrl+alt+shift+b'
+    ];
+    for (const command of ['kbengine.hotReload.historyPanel', 'kbengine.hotReload.showDiagnostics', 'kbengine.hotReload.settingsPanel']) {
+      expect(occupied, `${command} 键位撞既有键位`).not.toContain(bindingOf(command)!.key);
+      expect(['ctrl+alt+h', 'ctrl+]', 'ctrl+d', 'ctrl+alt+r']).not.toContain(bindingOf(command)!.mac);
+    }
   });
 });
