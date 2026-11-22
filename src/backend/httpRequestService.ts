@@ -236,6 +236,14 @@ export interface HttpRequestServiceDeps {
    * 测试确定性。
    */
   queue?: HttpTargetQueue;
+  /**
+   * RUST-422(HR-QA-010)工作区信任探针:执行前逐次读取,未信任(返回 false)
+   * 禁止配置驱动快捷请求(SSRF/数据泄露/路径穿越面)并落可审查阻止行;
+   * 缺省不注入=视为可信(零配置不回归)。装配注入 `() => vscode.workspace
+   * .isTrusted`;执行时读而非装配时读——信任状态可随用户「信任工作区」
+   * 变化,以执行时刻为准(与 HR-HTTP-005 自动热更信任闸同模式)。
+   */
+  isWorkspaceTrusted?: () => boolean;
 }
 
 /** HR-HTTP-007:快捷请求面共享队列——同端点用户请求串行,异端点并发,全局封顶 */
@@ -281,6 +289,16 @@ export class HttpRequestService {
     onHttpResponse?: (response: { status: number; body: string }) => void,
     signal?: AbortSignal
   ): Promise<boolean> {
+    // RUST-422(HR-QA-010)工作区信任闸:未信任工作区里的配置驱动快捷请求
+    // 一律阻止——配置来自不受信工作区(如克隆仓库)时,其 URL 模板可能探测
+    // 内网/元数据端点或外带本地路径(SSRF/数据泄露面);trusted 工作区里
+    // 指向 localhost 引擎是本功能本意,不加白名单。fire 时读取(用户可随
+    // 「信任工作区」变化),缺省未注入=视为可信(零配置不回归)。
+    if (this.deps.isWorkspaceTrusted?.() === false) {
+      this.deps.log(`工作区未信任,HTTP 快捷请求「${entry.name}」已阻止(SSRF/数据泄露防护)`);
+      this.deps.notifyError(`当前工作区不受信任,HTTP 快捷请求「${entry.name}」已阻止`);
+      return false;
+    }
     if (!entry.enabled) {
       this.deps.notifyError(`HTTP 快捷请求「${entry.name}」不存在或已停用`);
       return false;

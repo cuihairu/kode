@@ -557,3 +557,54 @@ describe('HR-HTTP-008(RUST-350) 请求取消(取消≠远端撤销,后段状态 
     expect(errors).toHaveLength(0);
   });
 });
+
+describe('RUST-422(HR-QA-010)工作区信任闸', () => {
+  const serviceWithTrust = (
+    isWorkspaceTrusted: (() => boolean) | undefined,
+    seen: OutgoingHttpRequest[]
+  ): ReturnType<typeof makeService> =>
+    makeService([entry({ url: 'http://127.0.0.1:8090/hotfix' })], {
+      transport: async request => {
+        seen.push(request);
+        return { ok: true, status: 200, durationMs: 3, body: '' };
+      },
+      ...(isWorkspaceTrusted ? { isWorkspaceTrusted } : {})
+    });
+
+  it('未信任工作区:配置驱动快捷请求一律阻止(不发请求,落可审查阻止行+弹窗,回 false)', async () => {
+    const seen: OutgoingHttpRequest[] = [];
+    const { service, logs, errors } = serviceWithTrust(() => false, seen);
+
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(seen).toHaveLength(0);
+    expect(logs[0]).toBe('工作区未信任,HTTP 快捷请求「热更」已阻止(SSRF/数据泄露防护)');
+    expect(errors[0]).toBe('当前工作区不受信任,HTTP 快捷请求「热更」已阻止');
+    // execute 终端闭包路径同被闸(配置驱动面无例外通道)
+    await expect(
+      service.runEntry({ ...entry(), enabled: true } as never, async () => undefined)
+    ).resolves.toBe(false);
+    expect(errors).toHaveLength(2);
+  });
+
+  it('探针执行时刻读:先未信任被阻,「信任工作区」后再跑即放行(以执行时刻为准)', async () => {
+    const seen: OutgoingHttpRequest[] = [];
+    let trusted = false;
+    const { service } = serviceWithTrust(() => trusted, seen);
+
+    await expect(service.runByName('热更')).resolves.toBe(false);
+    expect(seen).toHaveLength(0);
+    trusted = true;
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('缺省未注入探针=视为可信(零配置不回归,无阻止行)', async () => {
+    const seen: OutgoingHttpRequest[] = [];
+    const { service, logs, errors } = serviceWithTrust(undefined, seen);
+
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(logs.some(line => line.includes('已阻止'))).toBe(false);
+    expect(errors).toHaveLength(0);
+  });
+});

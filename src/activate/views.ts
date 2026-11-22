@@ -271,6 +271,8 @@ export function activateHttpRequestViews(deps: HttpRequestViewsDeps): HttpReques
   const httpRequestService = new HttpRequestService({
     getEntries: () =>
       parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests')),
+    // RUST-422(HR-QA-010):装配注入信任探针,执行时读(用户可随「信任工作区」变化)
+    isWorkspaceTrusted: () => vscode.workspace.isTrusted,
     log: line => httpRequestChannel.appendLine(line),
     notifyError: message => {
       void vscode.window.showErrorMessage(message);
