@@ -108,6 +108,44 @@ export function coalesceHistoryUpdates(
   return out;
 }
 
+/**
+ * HR-UI-007 虚拟滚动窗口(纯决策,面板渲染面据此只渲染视口行):
+ * - 输入全部夹紧(负值如实取 0/1,不产负窗口),totalRows=0 如实空窗;
+ * - overscan 上下各扩 N 行,滚动时视口边缘不露白;
+ * - totalHeightPx = 行数×行高,滚动条按内容区总高给(不因只渲染窗口行而缩)。
+ * webview 侧滚动更新用同一公式的 JS 镜像(本函数是规格,TS 测试钉住)。
+ */
+export interface VirtualScrollWindow {
+  /** 首个渲染行(含) */
+  readonly startIndex: number;
+  /** 渲染终止行(不含;clamp 后恒 ≥ startIndex) */
+  readonly endIndex: number;
+  /** 内容区总高(px;滚动条依据) */
+  readonly totalHeightPx: number;
+}
+
+export function computeVirtualScrollWindow(opts: {
+  totalRows: number;
+  rowHeightPx: number;
+  viewportHeightPx: number;
+  scrollTopPx: number;
+  overscanRows: number;
+}): VirtualScrollWindow {
+  const totalRows = Math.max(0, Math.floor(opts.totalRows));
+  const rowHeightPx = Math.max(1, opts.rowHeightPx);
+  const viewportHeightPx = Math.max(0, opts.viewportHeightPx);
+  const scrollTopPx = Math.max(0, opts.scrollTopPx);
+  const overscanRows = Math.max(0, Math.floor(opts.overscanRows));
+  // 滚过尾:first 也夹到 totalRows(越尾=尾后空窗,不产 start>end 的倒挂窗口)
+  const first = Math.min(totalRows, Math.max(0, Math.floor(scrollTopPx / rowHeightPx) - overscanRows));
+  const last = Math.min(totalRows, Math.ceil((scrollTopPx + viewportHeightPx) / rowHeightPx) + overscanRows);
+  return {
+    startIndex: first,
+    endIndex: Math.max(first, last),
+    totalHeightPx: totalRows * rowHeightPx
+  };
+}
+
 /** HR-UI-006 树节点标题投影:fullModule 优先,缺如实占位 */
 export function buildHistoryEntryLabel(entry: HotReloadHistoryEntry): string {
   return entry.fullModule.length > 0 ? entry.fullModule : entry.requestModule || '(unknown module)';

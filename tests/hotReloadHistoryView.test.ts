@@ -280,7 +280,7 @@ describe('setupHotReloadHistoryView 历史面板(HR-UI-004/006/007/010)', () => 
   });
 
   it('HR-UI-004 实时队列面:不注入 pipelineQueue=如实空三队列,面板照常开', async () => {
-    const feed = setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
+    setupHotReloadHistoryView(contextOf(), { core: new HotReloadHistoryCore(), resolveNames: resolver });
     await vscode.commands.executeCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND);
     const html = panelRegistry.panels[panelRegistry.panels.length - 1].webview.html;
     expect(html).toContain('实时队列');
@@ -504,5 +504,70 @@ describe('renderHistoryPanelHtml 纯呈现面', () => {
     expect(html).toContain('title="/x/&lt;evil&gt;&amp;.py"');
     expect(html).toContain('&lt;evil&gt;&amp;.py');
     expect(html).not.toContain('<evil>&.py');
+  });
+});
+
+describe('renderHistoryPanelHtml 虚拟滚动(HR-UI-007 上千记录渲染面)', () => {
+  const makeRows = (count: number): HotReloadHistoryEntry[] =>
+    Array.from({ length: count }, (_, i) => ({
+      requestId: `r${i}`,
+      fullModule: `m.M${i}`,
+      requestModule: `m.M${i}`,
+      fileUri: `/repo/scripts/M${i}.py`,
+      targetId: '',
+      time: 1700000000000 + i,
+      status: 'sent-unverified' as const
+    }));
+  const virtualize = { rowHeightPx: 26, viewportHeightPx: 480, overscanRows: 5 };
+  const render = (rows: readonly HotReloadHistoryEntry[]) =>
+    renderHistoryPanelHtml({
+      state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
+      rows,
+      total: rows.length,
+      hasMore: false,
+      pageSize: 50,
+      virtualize
+    });
+
+  it('行数超阈值:只渲染视口窗口行(非全量),滚动条按内容总高', () => {
+    const rows = makeRows(205);
+    const html = render(rows);
+    expect(html).toContain('id="vlist"');
+    // 视口 480/26 → ceil=19 行 + overscan 5 → 窗口 24 行(script 内 JS 镜像的
+    // '<td class="module">' 字面量不带 8 空格缩进,不进渲染行计数)
+    expect((html.match(/\n {8}<td class="module">/g) || []).length).toBe(24);
+    // 窗口首行=第 0 行(M0),末窗口行=M23;越窗行(M100)只进 DATA 非 tbody 行
+    expect(html).toContain('M0.py');
+    expect(html).toContain('M23.py');
+    expect(html).not.toContain('<td class="module">m.M100</td>');
+    // 滚动条几何:内容总高经 spacer 撑出——底垫=(205-24)*26=4706px(全量内容
+    // 高在滚动几何里,不因只渲染窗口行而缩)
+    expect(html).toContain('4706px');
+    // JS 镜像窗口公式在 webview 脚本里
+    expect(html).toContain('windowFor');
+    expect(html).toContain('renderWindow');
+  });
+
+  it('行数未超阈值或未给 virtualize:走既有分页路径,无 vlist', () => {
+    const small = render(makeRows(150));
+    expect(small).not.toContain('id="vlist"');
+    // 150 行全量渲染(非虚拟路径无 JS 镜像行字面量,行数即渲染数)
+    expect((small.match(/\n {8}<td class="module">/g) || []).length).toBe(150);
+    const noOpt = renderHistoryPanelHtml({
+      state: { feedStatus: { watchMode: '', target: '' }, filter: {}, page: 1 },
+      rows: makeRows(205),
+      total: 205,
+      hasMore: false,
+      pageSize: 50
+    });
+    expect(noOpt).not.toContain('id="vlist"');
+  });
+
+  it('窗口内嵌全量 DATA 供滚动重渲(滚动不 postMessage 全量重渲)', () => {
+    const html = render(makeRows(205));
+    // DATA 全量 205 行内嵌(JSON),滚动 JS 据此窗口化
+    expect(html).toContain('const DATA = [');
+    expect(html).toContain('"requestId":"r100"');
+    expect(html).toContain('list.addEventListener(\'scroll\', renderWindow)');
   });
 });

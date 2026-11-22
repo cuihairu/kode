@@ -31,6 +31,7 @@ import * as vscode from 'vscode';
 import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
+  computeVirtualScrollWindow,
   HotReloadHistoryCore,
   type HotReloadHistoryEntry,
   type HotReloadHistoryFilter,
@@ -45,6 +46,19 @@ export const HOT_RELOAD_HISTORY_STATE_KEY = 'kbengine.hotReload.history';
 
 export const HOT_RELOAD_HISTORY_PANEL_COMMAND = 'kbengine.hotReload.historyPanel';
 export const HOT_RELOAD_HISTORY_SEARCH_COMMAND = 'kbengine.hotReload.historySearch';
+
+/**
+ * 虚拟滚动激活阈值(HR-UI-007):超过才走窗口化渲染。缺省容量 200(核心
+ * 环形淘汰)下全量 ≤200 行,走既有分页路径;capacity 调高(上千记录)后
+ * 激活——与「分页+淘汰不全量驻留」口径一致,默认配置不引入虚拟路径。
+ */
+export const VIRTUAL_SCROLL_THRESHOLD = 200;
+/** 面板虚拟滚动行高(px;与行 padding 4px×2+行高基线适配) */
+export const VIRTUAL_ROW_HEIGHT_PX = 26;
+/** 面板虚拟滚动视口高(px) */
+export const VIRTUAL_VIEWPORT_HEIGHT_PX = 480;
+/** 面板虚拟滚动上下预渲染行数(滚动时视口边缘不露白) */
+export const VIRTUAL_OVERSCAN_ROWS = 5;
 
 /** 模块双名解析面(注入;解析不了如实回落,不猜) */
 export type HotReloadNamesResolver = (file: string) => { fullModule: string; requestModule: string };
@@ -102,7 +116,13 @@ function renderQueueRows(queue: SavePipelineQueueSnapshot): string {
     .join('\n');
 }
 
-/** 面板体(纯字符串;过滤/加载更多按钮 postMessage 回装配改状态重渲染) */
+/** 面板体(纯字符串;过滤/加载更多按钮 postMessage 回装配改状态重渲染)。
+ * HR-UI-004 实时队列面:queue 快照三阶段如实列文件(缺省空三队列)。
+ * 虚拟滚动(HR-UI-007):rows 数超 VIRTUAL_SCROLL_THRESHOLD 且给 virtualize 时,
+ * 只渲染视口窗口行(computeVirtualScrollWindow),webview 内嵌 DATA 在滚动时用
+ * 同公式 JS 镜像重渲窗口行(不走 postMessage 全量重渲,防滚动位置重置);滚动条
+ * 按 totalHeightPx 给,不因只渲染窗口行而缩。缺省容量 200 下行数不超阈值,
+ * 虚拟模式仅在 capacity 调高(上千记录)时激活——与「分页+淘汰不全量驻留」口径一致。 */
 export function renderHistoryPanelHtml(input: {
   state: HotReloadHistoryPanelState;
   rows: readonly HotReloadHistoryEntry[];
@@ -111,16 +131,18 @@ export function renderHistoryPanelHtml(input: {
   pageSize: number;
   /** HR-UI-004 实时队列快照(缺省=空三队列,如实显示「(空)」) */
   queue?: SavePipelineQueueSnapshot;
+  /** 虚拟滚动参数;缺省=不虚拟(既有分页路径)。 */
+  virtualize?: { rowHeightPx: number; viewportHeightPx: number; overscanRows: number };
 }): string {
   const statusLabel = (status: HotReloadHistoryStatus): string =>
     status === 'applied' ? '已应用' : status === 'failed' ? '失败' : '已发送(未确认)';
-  const body = input.rows
-    .map(entry => {
-      const moduleCell =
-        entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
-          ? `${esc(entry.fullModule)}<span class="req">发送: ${esc(entry.requestModule)}</span>`
-          : esc(entry.fullModule || entry.requestModule);
-      return `      <tr>
+  // 行渲染(纯;非虚拟与虚拟初始窗口共用,webview JS 有镜像公式,两处同构)
+  const renderRow = (entry: HotReloadHistoryEntry): string => {
+    const moduleCell =
+      entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
+        ? `${esc(entry.fullModule)}<span class="req">发送: ${esc(entry.requestModule)}</span>`
+        : esc(entry.fullModule || entry.requestModule);
+    return `      <tr>
         <td class="module">${moduleCell}</td>
         <td><code title="${esc(entry.fileUri)}">${esc(path.basename(entry.fileUri))}</code></td>
         <td>${esc(entry.targetId.length > 0 ? entry.targetId : '(default)')}</td>
@@ -129,10 +151,36 @@ export function renderHistoryPanelHtml(input: {
         <td><code>${esc(entry.requestId)}</code></td>
         <td>${entry.errorSummary ? esc(entry.errorSummary) : ''}</td>
       </tr>`;
-    })
-    .join('\n');
+  };
   const filter = input.state.filter;
   const queueRows = renderQueueRows(input.queue ?? { pending: [], previewHeld: [], wave: [] });
+  const virtualize = input.virtualize;
+  const useVirtual =
+    virtualize !== undefined && input.rows.length > VIRTUAL_SCROLL_THRESHOLD;
+  // 虚拟窗口 + 顶/底 spacer 高度先算好(TS 收窄需显式非空判定;模板内只取标量)
+  const virtualWindow = useVirtual
+    ? computeVirtualScrollWindow({
+        totalRows: input.rows.length,
+        rowHeightPx: virtualize.rowHeightPx,
+        viewportHeightPx: virtualize.viewportHeightPx,
+        scrollTopPx: 0,
+        overscanRows: virtualize.overscanRows
+      })
+    : null;
+  const virtualTopPx =
+    useVirtual && virtualWindow ? virtualWindow.startIndex * virtualize.rowHeightPx : 0;
+  const virtualBottomPx =
+    useVirtual && virtualWindow
+      ? Math.max(0, virtualWindow.totalHeightPx - virtualWindow.endIndex * virtualize.rowHeightPx)
+      : 0;
+  const body =
+    useVirtual && virtualWindow
+      ? input.rows.slice(virtualWindow.startIndex, virtualWindow.endIndex).map(renderRow).join('\n')
+      : input.rows.map(renderRow).join('\n');
+  // 虚拟模式:内嵌 DATA(全量行,滚动时 JS 窗口化)给 webview
+  const virtualData = useVirtual
+    ? JSON.stringify(input.rows)
+    : null;
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><style>
@@ -154,6 +202,7 @@ export function renderHistoryPanelHtml(input: {
   .st-sent-unverified { color: var(--vscode-testing-iconQueued, #cca700); }
   .more { margin-top: 8px; }
   code { word-break: break-all; }
+  .vscroll { overflow-y: auto; border: 1px solid var(--vscode-panel-border); }
 </style></head>
 <body>
   <h2>热更历史</h2>
@@ -176,12 +225,25 @@ ${queueRows}
     <button type="button" id="apply">应用筛选</button>
     <button type="button" id="clear">清除筛选</button>
   </form>
-  <table>
+${
+  useVirtual
+    ? `  <div id="vlist" class="vscroll" style="height: ${virtualize.viewportHeightPx}px">
+    <div id="vtop" style="height: ${virtualTopPx}px"></div>
+    <table>
+      <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>状态</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
+      <tbody id="vbody">
+${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
+      </tbody>
+    </table>
+    <div id="vbot" style="height: ${virtualBottomPx}px"></div>
+  </div>`
+    : `  <table>
     <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>状态</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
     <tbody>
 ${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
     </tbody>
-  </table>
+  </table>`
+}
   ${input.hasMore ? `<div class="more"><button type="button" id="more">加载更多(每页 ${input.pageSize} 行)</button></div>` : ''}
   <script>
     const vscode = acquireVsCodeApi();
@@ -208,10 +270,55 @@ ${body || '      <tr><td colspan="7">(无匹配行)</td></tr>'}
     });
     const more = document.getElementById('more');
     if (more) { more.addEventListener('click', () => vscode.postMessage({ type: 'loadMore' })); }
+${
+  useVirtual
+    ? `    // 虚拟滚动(HR-UI-007):滚动时只重渲窗口行(JS 镜像 computeVirtualScrollWindow);
+    // 不走 postMessage 全量重渲,滚动位置不重置;滚动条按内容总高。
+    const DATA = ${virtualData};
+    const ROW_H = ${virtualize.rowHeightPx};
+    const OVERSCAN = ${virtualize.overscanRows};
+    const list = document.getElementById('vlist');
+    const topSp = document.getElementById('vtop');
+    const botSp = document.getElementById('vbot');
+    const vbody = document.getElementById('vbody');
+    const escJs = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const statusLabelJs = (status) => status === 'applied' ? '已应用' : status === 'failed' ? '失败' : '已发送(未确认)';
+    const rowHtml = (entry) => {
+      const moduleCell = entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
+        ? escJs(entry.fullModule) + '<span class="req">发送: ' + escJs(entry.requestModule) + '</span>'
+        : escJs(entry.fullModule || entry.requestModule);
+      const fileName = entry.fileUri.split('/').pop();
+      return '<tr>' +
+        '<td class="module">' + moduleCell + '</td>' +
+        '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
+        '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : '(default)') + '</td>' +
+        '<td class="st-' + entry.status + '">' + statusLabelJs(entry.status) + '</td>' +
+        '<td>' + escJs(new Date(entry.time).toISOString()) + '</td>' +
+        '<td><code>' + escJs(entry.requestId) + '</code></td>' +
+        '<td>' + (entry.errorSummary ? escJs(entry.errorSummary) : '') + '</td>' +
+        '</tr>';
+    };
+    const windowFor = (scrollTop, viewportH, total) => {
+      const first = Math.min(total, Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN));
+      const last = Math.min(total, Math.ceil((scrollTop + viewportH) / ROW_H) + OVERSCAN);
+      return { first: first, end: Math.max(first, last) };
+    };
+    const renderWindow = () => {
+      const total = DATA.length;
+      const w = windowFor(list.scrollTop, list.clientHeight, total);
+      vbody.innerHTML = DATA.slice(w.first, w.end).map(rowHtml).join('');
+      topSp.style.height = (w.first * ROW_H) + 'px';
+      botSp.style.height = Math.max(0, (total - w.end) * ROW_H) + 'px';
+    };
+    list.addEventListener('scroll', renderWindow);
+    renderWindow();`
+    : ''
+}
   </script>
 </body>
 </html>`;
 }
+
 
 /** 装配选项(注入面;测试给内存替身) */
 export interface HotReloadHistoryViewOptions {
@@ -422,7 +529,12 @@ export function setupHotReloadHistoryView(
       total: filtered.length,
       hasMore: rows.length < filtered.length,
       pageSize,
-      queue: pipelineQueue()
+      queue: pipelineQueue(),
+      virtualize: {
+        rowHeightPx: VIRTUAL_ROW_HEIGHT_PX,
+        viewportHeightPx: VIRTUAL_VIEWPORT_HEIGHT_PX,
+        overscanRows: VIRTUAL_OVERSCAN_ROWS
+      }
     });
   };
   const panelCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND, () => {

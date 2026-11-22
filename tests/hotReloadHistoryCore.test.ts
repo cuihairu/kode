@@ -3,8 +3,8 @@ import {
   buildHistoryEntryLabel,
   buildHistoryEntryTooltipLines,
   coalesceHistoryUpdates,
+  computeVirtualScrollWindow,
   HotReloadHistoryCore,
-  type HotReloadHistoryEntry,
   type HotReloadHistoryInput
 } from '../src/backend/hotReloadHistoryCore';
 
@@ -241,5 +241,59 @@ describe('HR-UI-006 名称投影(完整名 vs 发送名)', () => {
       makeEntry({ fullModule: 'fight.FightAI', requestModule: 'fight.FightAI' })
     );
     expect(same.some(l => l.startsWith('requestModule:'))).toBe(false);
+  });
+});
+
+describe('HR-UI-007 虚拟滚动窗口(computeVirtualScrollWindow 纯决策)', () => {
+  it('初始视口:scrollTop=0 从首行起,窗口=视口行数+上下 overscan', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 1000, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 0, overscanRows: 5
+    });
+    expect(w.startIndex).toBe(0);
+    // ceil(520/26)=20 视口行 + 5 overscan = 25
+    expect(w.endIndex).toBe(25);
+    expect(w.totalHeightPx).toBe(26000);
+  });
+
+  it('滚动中段:首行随 scrollTop 前移,overscan 向上扩', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 1000, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 2600, overscanRows: 5
+    });
+    // floor(2600/26)=100 - 5 = 95;100+20+5=125
+    expect(w.startIndex).toBe(95);
+    expect(w.endIndex).toBe(125);
+  });
+
+  it('滚过尾:first/end 都夹到 totalRows=尾后空窗,不产倒挂窗口', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 1000, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 30000, overscanRows: 5
+    });
+    expect(w.endIndex).toBe(1000);
+    expect(w.startIndex).toBe(1000);
+  });
+
+  it('夹紧防御:零行如实空窗,负值/零行高/零视口不产非法窗口', () => {
+    const empty = computeVirtualScrollWindow({
+      totalRows: 0, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 0, overscanRows: 5
+    });
+    expect(empty.startIndex).toBe(0);
+    expect(empty.endIndex).toBe(0);
+    expect(empty.totalHeightPx).toBe(0);
+
+    const clamped = computeVirtualScrollWindow({
+      totalRows: -3, rowHeightPx: 0, viewportHeightPx: -10, scrollTopPx: -100, overscanRows: -2
+    });
+    expect(clamped.startIndex).toBe(0);
+    expect(clamped.endIndex).toBe(0);
+    expect(clamped.totalHeightPx).toBe(0);
+  });
+
+  it('overscan 超总量时 endIndex=totalRows、startIndex=0(小列表不越界)', () => {
+    const w = computeVirtualScrollWindow({
+      totalRows: 3, rowHeightPx: 26, viewportHeightPx: 520, scrollTopPx: 0, overscanRows: 50
+    });
+    expect(w.startIndex).toBe(0);
+    expect(w.endIndex).toBe(3);
+    expect(w.totalHeightPx).toBe(78);
   });
 });
