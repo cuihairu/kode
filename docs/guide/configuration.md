@@ -391,6 +391,8 @@ telnet's presentation surface (standalone tree view, status lights, panel) appea
 | `kbengine.telnet.configXmlPath` | string | empty | Explicitly specifies the component `kbengine.xml` (`${workspaceFolder}` supported), taking priority over auto-probing; when the setting gives an explicit port >0, the port follows the setting |
 | `kbengine.telnet.probeIntervalSeconds` | number | `5` | Probe polling interval (seconds); values below 1 run at 1 second |
 
+Workspace-trust gate (RUST-422): the target host comes from workspace configuration, so in an untrusted workspace the telnet probe does not connect to any config-declared host and no persistent session is opened (status lights stay off; trusting the workspace resumes probing on the next round). The gate is fire-time read and mirrors the HTTP quick-request trust gate.
+
 ### HTTP Quick Requests
 
 | Setting | Type | Default | Purpose |
