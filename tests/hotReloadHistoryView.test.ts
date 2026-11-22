@@ -130,6 +130,37 @@ describe('translateDeliveryRecord(HR-PR-06 台账→历史行翻译)', () => {
     const bare = translateDeliveryRecord(recordOf({ outcome: 'failed', detail: 'HTTP 500' }), resolver);
     expect(bare.errorSummary).toBe('HTTP 500');
   });
+
+  it('HR-STATE-007 九要素补齐:source/durationMs/sentDigest/detail 定性逐项入行;未记录要素如实缺省', () => {
+    // 已知类别失败:detail → errorCategory(七类);unknown 不入字段
+    const classified = translateDeliveryRecord(
+      recordOf({
+        outcome: 'failed',
+        detail: 'HTTP 状态 500:非 2xx 不算送达',
+        source: 'watcher-auto',
+        durationMs: 87,
+        sentDigest: 'a'.repeat(64)
+      }),
+      resolver
+    );
+    expect(classified.trigger).toBe('watcher-auto');
+    expect(classified.durationMs).toBe(87);
+    expect(classified.hash).toBe('a'.repeat(64));
+    expect(classified.errorCategory).toBe('apply-failed');
+    // 未定类失败:无 errorCategory 字段(不把「其他」冒充已定类)
+    const unknown = translateDeliveryRecord(
+      recordOf({ outcome: 'failed', detail: 'HTTP 500', source: 'command', durationMs: 5, sentDigest: 'b'.repeat(64) }),
+      resolver
+    );
+    expect(unknown.errorCategory).toBeUndefined();
+    expect(unknown.trigger).toBe('command');
+    // 台账未记录要素:字段如实缺省(不伪造 0/空串占位)
+    const bare = translateDeliveryRecord(recordOf(), resolver);
+    expect(bare.trigger).toBeUndefined();
+    expect(bare.durationMs).toBeUndefined();
+    expect(bare.hash).toBeUndefined();
+    expect(bare.errorCategory).toBeUndefined();
+  });
 });
 
 describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {

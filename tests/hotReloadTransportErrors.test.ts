@@ -188,6 +188,71 @@ describe('部分节点成功:一组失败一组送达,逐文件明细带分类�
   });
 });
 
+// RUST-367(HR-STATE-007 可检索历史「duration」):发送耗时=发送锚点(KR-AUD-47
+// 同锚,transport.send 发起时点)到落账时刻;发送前的基准冻结路径无耗时
+// (sendAnchor 仍 null,如实不带 durationMs)。
+describe('发送耗时落账(HR-STATE-007 durationMs)', () => {
+  it('回执路径:durationMs=回执落账时刻-发送锚点', async () => {
+    let t = 1000;
+    const store = new HotReloadTargetStateStore({ now: () => t });
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (target: ReloadTarget, fileSet: readonly string[], onReceipt) => {
+        // 模拟网络往返:发送发起后时钟前进 500ms 回执才到
+        t += 500;
+        for (const file of fileSet) {
+          onReceipt({ status: 'sent', file, detail: '已送达:无匹配回执(不 claim applied)' } as ReloadReceipt);
+        }
+        return { kind: 'http', receipts: [] };
+      }
+    };
+    await sendFilesViaReloadChannel({
+      transport,
+      targetId: 'profile-1',
+      files: ['/ws/scripts/Avatar.py'],
+      resolveRootId: () => '/ws',
+      store,
+      readFileContent: async () => null,
+      timers: makeTimers(),
+      settleHandles: new Set(),
+      now: () => t,
+      source: 'watcher-auto'
+    });
+    const record = store.get({ rootId: '/ws', targetId: 'profile-1' }, '/ws/scripts/Avatar.py');
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.durationMs).toBe(500);
+  });
+
+  it('组异常路径:durationMs=异常落账时刻-发送锚点;无代际裸写同样带耗时', async () => {
+    let t = 2000;
+    const store = new HotReloadTargetStateStore({ now: () => t });
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async () => {
+        t += 700;
+        throw new Error('connect ECONNREFUSED 127.0.0.1:8090');
+      }
+    };
+    await sendFilesViaReloadChannel({
+      transport,
+      targetId: 'profile-1',
+      files: ['/ws/scripts/Monster.py'],
+      resolveRootId: () => '/ws',
+      store,
+      readFileContent: async () => null,
+      timers: makeTimers(),
+      settleHandles: new Set(),
+      now: () => t,
+      source: 'command'
+    });
+    const record = store.get({ rootId: '/ws', targetId: 'profile-1' }, '/ws/scripts/Monster.py');
+    expect(record?.outcome).toBe('failed');
+    expect(record?.durationMs).toBe(700);
+  });
+});
+
 // 通道发送缺口臂:根解析三态(null/''/命中)、冻结读取抛错、applied 负臂、
 // 超时注解二次结算早退。计时器手工 tick(生产定时器绝不同步触发),tick
 // 后保留回调以复触发——注解已在时二次结算必须早退(注解不重复堆叠)。

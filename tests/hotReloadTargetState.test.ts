@@ -226,6 +226,29 @@ describe('HotReloadTargetStateStore(双维隔离台账)', () => {
   });
 });
 
+describe('HR-STATE-007 发送耗时(HR-STATE-007 可检索历史「duration」)', () => {
+  const key = { rootId: 'r', targetId: 't' };
+  const file = '/x.py';
+
+  it('新发送带 durationMs 落账;回执写回同模式覆写,未提供保留旧值', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const first = store.record(key, file, 'sent-unverified', { durationMs: 12 });
+    expect(first?.durationMs).toBe(12);
+    // 回执写回:提供了才覆写(真实耗时来源),旧值不被抹掉
+    store.record(key, file, 'applied', { attempt: first?.attempt, durationMs: 45 });
+    expect(store.get(key, file)?.durationMs).toBe(45);
+    store.record(key, file, 'applied', { attempt: first?.attempt });
+    expect(store.get(key, file)?.durationMs).toBe(45);
+  });
+
+  it('未提供 durationMs 如实缺省(发送前基准冻结路径不冒充 0)', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const record = store.record(key, file, 'sent-unverified', { sentDigest: 'a'.repeat(64) });
+    expect(record?.durationMs).toBeUndefined();
+    expect('durationMs' in (record ?? {})).toBe(false);
+  });
+});
+
 describe('HR-MOD-014(双名同存:投递记录与版本事件日志)', () => {
   const key = { rootId: 'r', targetId: 't' };
   const file = '/ws/assets/scripts/entities/fight/FightAI.py';

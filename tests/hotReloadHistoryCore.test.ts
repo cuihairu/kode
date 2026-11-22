@@ -20,7 +20,12 @@ const makeEntry = (overrides: Partial<HotReloadHistoryInput> = {}): HotReloadHis
   targetId: overrides.targetId ?? 'cellapp-1',
   time: overrides.time ?? 1000,
   status: overrides.status ?? 'sent-unverified',
-  ...(overrides.errorSummary !== undefined ? { errorSummary: overrides.errorSummary } : {})
+  ...(overrides.errorSummary !== undefined ? { errorSummary: overrides.errorSummary } : {}),
+  // HR-STATE-007 九要素其余四要素:缺省如实不给(不伪造占位)
+  ...(overrides.trigger !== undefined ? { trigger: overrides.trigger } : {}),
+  ...(overrides.durationMs !== undefined ? { durationMs: overrides.durationMs } : {}),
+  ...(overrides.errorCategory !== undefined ? { errorCategory: overrides.errorCategory } : {}),
+  ...(overrides.hash !== undefined ? { hash: overrides.hash } : {})
 });
 
 const makeCore = (capacity?: number): HotReloadHistoryCore =>
@@ -139,6 +144,73 @@ describe('过滤(HR-UI-010)', () => {
     expect(core.filter({ status: 'applied', timeFrom: 3500 }).map(e => e.requestId)).toEqual(['r4']);
     expect(core.filter({ fileUri: '/ws/scripts/fight/FightAI.py' })).toHaveLength(2);
     expect(core.filter({ fullModuleContains: 'fight', status: 'failed' })).toHaveLength(0);
+  });
+
+  it('HR-STATE-007 按触发源/错误七类过滤(全条件 AND;缺省字段行不命中)', () => {
+    const core = makeCore();
+    seed(core, [
+      makeEntry({ requestId: 'r1', trigger: 'watcher-auto' }),
+      makeEntry({ requestId: 'r2', trigger: 'command' }),
+      makeEntry({ requestId: 'r3', status: 'failed', errorSummary: 'HTTP 状态 500:非 2xx 不算送达', errorCategory: 'apply-failed' }),
+      makeEntry({ requestId: 'r4', status: 'failed', errorSummary: '端点不可达(拒绝连接)', errorCategory: 'target-unreachable' }),
+      // r5 失败但未定类(unknown 不入字段):errorCategory 过滤不命中
+      makeEntry({ requestId: 'r5', status: 'failed', errorSummary: '自定义失败文本' })
+    ]);
+    expect(core.filter({ trigger: 'watcher-auto' }).map(e => e.requestId)).toEqual(['r1']);
+    expect(core.filter({ trigger: 'command' }).map(e => e.requestId)).toEqual(['r2']);
+    // 无 trigger 字段的行不命中 trigger 过滤(如实不猜)
+    expect(core.filter({ trigger: 'retry' })).toHaveLength(0);
+    expect(core.filter({ errorCategory: 'apply-failed' }).map(e => e.requestId)).toEqual(['r3']);
+    expect(core.filter({ errorCategory: 'target-unreachable' }).map(e => e.requestId)).toEqual(['r4']);
+    // 未定类失败行不被任何 errorCategory 过滤命中
+    expect(core.filter({ errorCategory: 'unknown' })).toHaveLength(0);
+    // 组合 AND:同一 target 的失败按类分拣
+    expect(core.filter({ status: 'failed', errorCategory: 'apply-failed', targetId: 'cellapp-1' })).toHaveLength(1);
+  });
+});
+
+describe('HR-STATE-007 可检索九要素字段面', () => {
+  it('新四要素(trigger/durationMs/errorCategory/hash)记录后在行上原样可读', () => {
+    const core = makeCore();
+    core.record(
+      makeEntry({
+        requestId: 'r1',
+        status: 'failed',
+        errorSummary: 'HTTP 状态 500:非 2xx 不算送达',
+        errorCategory: 'apply-failed',
+        trigger: 'watcher-auto',
+        durationMs: 1234,
+        hash: 'a'.repeat(64)
+      })
+    );
+    const row = core.entries()[0];
+    expect(row.trigger).toBe('watcher-auto');
+    expect(row.durationMs).toBe(1234);
+    expect(row.errorCategory).toBe('apply-failed');
+    expect(row.hash).toBe('a'.repeat(64));
+  });
+
+  it('tooltip 投影:新要素各占安全前缀行,缺省不伪造占位', () => {
+    const full = buildHistoryEntryTooltipLines(
+      makeEntry({ trigger: 'command', durationMs: 42, errorCategory: 'target-unreachable', hash: 'cafecafecafecafe' })
+    );
+    expect(full.filter(line => /^(trigger|duration|hash|errorCategory):/.test(line))).toEqual([
+      'trigger: command',
+      'duration: 42ms',
+      'hash: cafecafecafecafe',
+      'errorCategory: target-unreachable'
+    ]);
+    const bare = buildHistoryEntryTooltipLines(makeEntry());
+    expect(bare.some(line => /^(trigger|duration|hash|errorCategory):/.test(line))).toBe(false);
+  });
+
+  it('幂等替换保留新字段:requestId 重记录整体覆盖', () => {
+    const core = makeCore();
+    core.record(makeEntry({ requestId: 'r1', trigger: 'retry', hash: 'old' }));
+    core.record(makeEntry({ requestId: 'r1', status: 'applied', trigger: 'retry', hash: 'new' }));
+    const row = core.entries()[0];
+    expect(row.hash).toBe('new');
+    expect(row.trigger).toBe('retry');
   });
 });
 
