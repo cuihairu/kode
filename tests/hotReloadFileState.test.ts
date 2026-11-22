@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
 import {
+  deriveHotReloadHashSet,
   HotReloadFileStateMachine,
   sha256Hex,
   worstHotReloadState,
-  HOT_RELOAD_ATTENTION_STATES,
-  type HotReloadFileStateView
+  HOT_RELOAD_ATTENTION_STATES
 } from '../src/backend/hotReloadFileState';
 
 // IDE-HOT-100 脚本文件热更状态机:每个 (rootId,targetId,file) 一份
@@ -290,3 +290,87 @@ describe('filesByState 候选:被拦文件不靠台账记录也能筛出', () =>
 //   只经 keyOf 写入,keyOf = buildHotReloadTargetKeyId(key)(rootId::targetId,
 //   恒含一个 '::')+ '::' + file,任意键恒含 ≥2 个分隔符,两个 indexOf 恒 ≥0,
 //   从公共入口(knownKeys/filesByState/derive)不可达,属防御性分支。
+
+describe('HR-STATE-002 四 hash 区分:各司其职,不混用', () => {
+  it('发出≠接受:sent-unverified 只有 lastRequestedHash,接受/核验如实 undefined', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.hashSet.lastRequestedHash).toBe(DIGEST_A);
+    expect(view.hashSet.lastAcceptedHash).toBeUndefined();
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+    expect(view.hashSet.currentDiskHash).toBe(DIGEST_A);
+  });
+
+  it('accepted 回执 → lastAcceptedHash = 所发冻结基准(服务端确认取走该内容)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    store.record(KEY, FILE, 'accepted', { attempt: 1, sentDigest: DIGEST_A });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.hashSet.lastAcceptedHash).toBe(DIGEST_A);
+    // accepted ≠ 已核实生效:核验 hash 仍 undefined(仍等 applied 双证)
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+  });
+
+  it('applied 双证通过 → lastVerifiedAppliedHash 赋值(applied 隐含 accepted)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.hashSet.lastRequestedHash).toBe(DIGEST_A);
+    expect(view.hashSet.lastAcceptedHash).toBe(DIGEST_A);
+    expect(view.hashSet.lastVerifiedAppliedHash).toBe(DIGEST_A);
+  });
+
+  it('发送后磁盘再变:currentDiskHash ≠ lastRequestedHash,两值并陈不混用', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    // 发送后磁盘改成 B:所发基准仍是 A(冻结),磁盘如实 B——回执核验只认 A
+    const view = sm.derive(store, KEY, FILE, CONTENT_B);
+    expect(view.hashSet.lastRequestedHash).toBe(DIGEST_A);
+    expect(view.hashSet.lastVerifiedAppliedHash).toBe(DIGEST_A);
+    expect(view.hashSet.currentDiskHash).toBe(DIGEST_B);
+  });
+
+  it('回执超时未确认:lastRequestedHash 在,接受/核验如实 undefined(不冒充)', () => {
+    // 窗口 = 1000 + 10000 = 11000;now=20000 已过 → 超时结算
+    const sm = makeState(20000);
+    const store = makeStore(1000);
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.hashSet.lastRequestedHash).toBe(DIGEST_A);
+    expect(view.hashSet.lastAcceptedHash).toBeUndefined();
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+  });
+
+  it('会话基线首见 hash 不冒充核验 hash:从未发送的文件只有 currentDiskHash', () => {
+    const sm = makeState();
+    const view = sm.derive(makeStore(), KEY, FILE, CONTENT_A);
+    // 首见注册了会话基线(baselineDigest 在),但从未 applied → 核验 hash 如实 undefined
+    expect(view.baselineDigest).toBe(DIGEST_A);
+    expect(view.hashSet.lastVerifiedAppliedHash).toBeUndefined();
+    expect(view.hashSet.lastRequestedHash).toBeUndefined();
+    expect(view.hashSet.lastAcceptedHash).toBeUndefined();
+    expect(view.hashSet.currentDiskHash).toBe(DIGEST_A);
+  });
+
+  it('内容不可读:currentDiskHash 如实缺,其余按各自事实源照常', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'accepted', { sentDigest: DIGEST_A });
+    const view = sm.derive(store, KEY, FILE, undefined);
+    expect(view.hashSet.currentDiskHash).toBeUndefined();
+    expect(view.hashSet.lastRequestedHash).toBe(DIGEST_A);
+    expect(view.hashSet.lastAcceptedHash).toBe(DIGEST_A);
+  });
+
+  it('deriveHotReloadHashSet 纯投影:四字段只从各自事实源来(空记录=仅磁盘)', () => {
+    const only = deriveHotReloadHashSet({ record: undefined, currentDigest: DIGEST_B, verifiedApplied: false });
+    expect(only).toEqual({ currentDiskHash: DIGEST_B });
+    const none = deriveHotReloadHashSet({ record: undefined, currentDigest: undefined, verifiedApplied: false });
+    expect(none).toEqual({});
+  });
+});

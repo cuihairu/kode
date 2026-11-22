@@ -37,6 +37,28 @@ export type HotReloadFileLifecycleState =
   | 'FAILED'
   | 'RESTART_REQUIRED';
 
+/**
+ * HR-STATE-002 四个 hash 各司其职,不混用(每个都是独立事实,只从自己的
+ * 事实源来,缺哪个如实 undefined 不拿别的顶替):
+ * - lastRequestedHash:最近一次发送请求的内容 sha256(台账 sentDigest,
+ *   IDE-AUD-006 发送时点冻结基准)。只代表「发出过什么」,不代表服务端收没
+ *   收——发出≠接受;
+ * - lastAcceptedHash:最近一次被回执 accepted 的内容 sha256(accepted 回执
+ *   确认服务端已取走该内容;applied 隐含 accepted,故 applied 也在此列)。
+ *   sent-unverified/failed/超时=如实 undefined,不拿请求 hash 冒充接受 hash;
+ * - lastVerifiedAppliedHash:最近一次已核实生效的内容 sha256(verifyAppliedReceipt
+ *   双证通过才赋值)。**会话基线册首见 hash(从未 applied 的干净起点)不属此列**,
+ *   不冒充「已核实生效」——那是基线口径,不是核验口径;
+ * - currentDiskHash:当前磁盘内容 sha256(实时读)。与发送无关——发送后磁盘
+ *   可再变,拿它核验回执=混用(IDE-AUD-006 红线的反面,回执核验只用冻结基准)。
+ */
+export interface HotReloadHashSet {
+  readonly lastRequestedHash?: string;
+  readonly lastAcceptedHash?: string;
+  readonly lastVerifiedAppliedHash?: string;
+  readonly currentDiskHash?: string;
+}
+
 /** 单 (rootId,targetId,file) 的状态视图:态 + 判定依据 + 透传台账明细 */
 export interface HotReloadFileStateView {
   /** 状态所属文件(绝对路径,过滤/角标渲染用) */
@@ -46,6 +68,8 @@ export interface HotReloadFileStateView {
   currentDigest?: string;
   /** 基线 hash(最近一次 APPLIED 所发 hash,或会话基线册首见 hash) */
   baselineDigest?: string;
+  /** HR-STATE-002:四 hash 区分投影(各司其职,不混用;恒随视图派生) */
+  hashSet: HotReloadHashSet;
   /** 最近一次投递 detail(透传台账,原样不加工) */
   detail?: string;
   /** 最近一次投递时刻(透传台账 recordedAt,注入时钟,ms;呈现面渲染成时间) */
@@ -61,6 +85,38 @@ export interface HotReloadFileStateView {
 /** 内容 sha256(UTF-8 hex;与 applied 核验/def 指纹同源的现成 node:crypto 原语) */
 export const sha256Hex = (content: string): string =>
   createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+
+/**
+ * HR-STATE-002 四 hash 区分投影(纯):只从各自事实源取值——请求 hash 取
+ * 台账 sentDigest(冻结基准),接受 hash 取同值但仅当回执升格 accepted/applied,
+ * 核验 hash 仅当 settle=applied(双证通过),磁盘 hash 取实时读值。会话基线册
+ * 首见 hash 一律不进 lastVerifiedAppliedHash(基线口径≠核验口径,不混用)。
+ */
+export function deriveHotReloadHashSet(input: {
+  record: HotReloadDeliveryRecord | undefined;
+  currentDigest: string | undefined;
+  /** settleAppliedStatus=applied(双证核验通过) */
+  verifiedApplied: boolean;
+}): HotReloadHashSet {
+  const sentDigest = input.record?.sentDigest;
+  const set: { -readonly [K in keyof HotReloadHashSet]: HotReloadHashSet[K] } = {};
+  if (sentDigest !== undefined) {
+    set.lastRequestedHash = sentDigest;
+  }
+  if (
+    sentDigest !== undefined &&
+    (input.record?.outcome === 'accepted' || input.record?.outcome === 'applied')
+  ) {
+    set.lastAcceptedHash = sentDigest;
+  }
+  if (input.verifiedApplied && sentDigest !== undefined) {
+    set.lastVerifiedAppliedHash = sentDigest;
+  }
+  if (input.currentDigest !== undefined) {
+    set.currentDiskHash = input.currentDigest;
+  }
+  return set;
+}
 
 /**
  * 纯派生状态表(类方法读台账并算 settle 后落到这里):结构性 def 拦下最
@@ -79,7 +135,11 @@ export function deriveHotReloadFileState(input: {
   settle: AppliedSettleStatus;
 }): HotReloadFileStateView {
   const { record, file, currentDigest, baselineDigest, restartRequired, settle } = input;
-  const view: HotReloadFileStateView = { file, state: 'CLEAN' };
+  const view: HotReloadFileStateView = {
+    file,
+    state: 'CLEAN',
+    hashSet: deriveHotReloadHashSet({ record, currentDigest, verifiedApplied: settle === 'applied' })
+  };
   if (currentDigest !== undefined) {
     view.currentDigest = currentDigest;
   }

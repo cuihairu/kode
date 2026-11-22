@@ -48,7 +48,8 @@ describe('formatHotReloadStateLens(状态点文字)', () => {
       file: FILE,
       state: 'APPLIED',
       baselineDigest: DIGEST_A,
-      detail: '回执 applied 且 digest 一致:已应用'
+      detail: '回执 applied 且 digest 一致:已应用',
+      hashSet: { lastVerifiedAppliedHash: DIGEST_A, currentDiskHash: DIGEST_A }
     };
     const text = formatHotReloadStateLens(view);
     expect(text).toContain('APPLIED');
@@ -57,7 +58,12 @@ describe('formatHotReloadStateLens(状态点文字)', () => {
   });
 
   it('FAILED 用 reason 优先(不混叫 detail)', () => {
-    const view: HotReloadFileStateView = { file: FILE, state: 'FAILED', reason: 'HTTP 状态 500' };
+    const view: HotReloadFileStateView = {
+      file: FILE,
+      state: 'FAILED',
+      reason: 'HTTP 状态 500',
+      hashSet: {}
+    };
     expect(formatHotReloadStateLens(view)).toContain('HTTP 状态 500');
   });
 
@@ -68,7 +74,8 @@ describe('formatHotReloadStateLens(状态点文字)', () => {
       state: 'APPLIED',
       baselineDigest: DIGEST_A,
       updatedAt: epoch,
-      detail: '回执 applied 且 digest 一致'
+      detail: '回执 applied 且 digest 一致',
+      hashSet: { lastVerifiedAppliedHash: DIGEST_A, currentDiskHash: DIGEST_A }
     };
     const text = formatHotReloadStateLens(view);
     // 期望串按同一把格式同算(时区无关:两侧共用 formatHotReloadTime)
@@ -78,7 +85,7 @@ describe('formatHotReloadStateLens(状态点文字)', () => {
   });
 
   it('无记录(无 updatedAt)不出现时间,不填空位', () => {
-    const view: HotReloadFileStateView = { file: FILE, state: 'CLEAN' };
+    const view: HotReloadFileStateView = { file: FILE, state: 'CLEAN', hashSet: {} };
     expect(formatHotReloadStateLens(view)).not.toContain('上次');
   });
 });
