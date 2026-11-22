@@ -158,6 +158,29 @@ describe('executeHttpRequest(单次执行,不重试)', () => {
     expect(outcome.errorCategory).toBe('connection-refused');
   });
 
+  it('HR-HTTP-009(RUST-351):超时(状态未知)同样恰一次,不自动重试(重发=状态未知时冒充恢复)', async () => {
+    let calls = 0;
+    const transport: HttpTransport = async () => {
+      calls += 1;
+      return { ok: false, status: 0, durationMs: 1000, body: '', error: '请求超时(1000ms)' };
+    };
+    const outcome = await executeHttpRequest(req('http://127.0.0.1:8090/hotfix'), { transport });
+    expect(calls).toBe(1);
+    expect(outcome.kind).toBe('timeout');
+    expect(outcome.errorCategory).toBe('timeout');
+  });
+
+  it('HR-HTTP-009(RUST-351):已取消同样恰一次,不自动重试(取消≠远端撤销,重发=未知重复投递)', async () => {
+    let calls = 0;
+    const transport: HttpTransport = async () => {
+      calls += 1;
+      return { ok: false, status: 0, durationMs: 1, body: '', error: '请求已取消(调用方中止)' };
+    };
+    const outcome = await executeHttpRequest(req('http://127.0.0.1:8090/hotfix'), { transport });
+    expect(calls).toBe(1);
+    expect(outcome.kind).toBe('cancelled');
+  });
+
   it('outcome 形状:成功全字段齐,失败按有无 error 收放(分类附加不改服务层行为)', async () => {
     const transport: HttpTransport = async () => ({ ok: true, status: 204, durationMs: 5, body: '' });
     const outcome: HttpRequestOutcome = await executeHttpRequest(req('http://127.0.0.1/ok'), { transport });
