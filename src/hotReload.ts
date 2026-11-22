@@ -55,7 +55,11 @@ import {
   createHttpHotfixSendProvider,
   type HotReloadProviderHost
 } from './backend/hotReloadProviderAssembly';
-import { buildEngineProfile, type HotReloadProvider } from './backend/hotReloadPluginApi';
+import {
+  buildEngineProfile,
+  type HotReloadProvider,
+  type HotReloadResolvedLifecycle
+} from './backend/hotReloadPluginApi';
 import { createPythonSyntaxGate } from './backend/hotReloadSyntaxGate';
 import { createPythonExecService } from './backend/pythonExecService';
 import { createExecServiceCompile } from './backend/pythonExecSyntaxCompile';
@@ -794,30 +798,76 @@ export function setupHotReload(
     // HR-PR-08 provider 插槽发送面(键开才进链):应答者胜,结果如实映射
     // 既有状态/审计/指纹撤回面;无人应答(null=注册表空/全不应答)回落
     // 既有默认热更面,不冒充、不空转。
-    const runViaProvider = (provider: HotReloadProvider): void => {
-      // .then 工厂起调:实现同步抛错也落拒绝分支(不在事件边界裸抛)
-      void Promise.resolve().then(() => provider.send({ targetId: '', files: triggers })).then(
-        result => {
-          annotateStaleResponses(triggers);
-          if (result.ok) {
-            updateStatus(() => status.setSentUnverified());
-            auditLine(`provider:${provider.providerId}`, triggers, `已发送${result.detail ? `——${result.detail}` : ''}`);
-            notifyBatchResult(`已发送${result.detail ? `——${result.detail}` : ''}`, false);
-            return;
+    const runViaProvider = (lifecycle: HotReloadResolvedLifecycle): void => {
+      // .then 工厂起调:实现同步抛错也落拒绝分支(不在事件边界裸抛)。
+      // 双名发送面(HR-DOD-001/RUST-440):逐文件经生命周期槽 resolveModule→
+      // prepareRequest 解析出 requestModule(实际发送名,书 §19.1),经 send 的
+      // moduleIdentities 上线路——只送短名,UI 展示名(fullModule)不上线路。
+      // 解析不出(无根/歧义/非 py/__init__)该文件 moduleIdentities 置空串=视同
+      // 未给(HR-HTTP-002),走既有推导面,不因收口丢文件;全不可解析=请求形状与
+      // 增量前逐字一致(不带 moduleIdentities,零配置零漂移)。
+      void Promise.resolve()
+        .then(() => {
+          const scriptRoot = options.defaultHotfix?.resolveScriptRoot?.() ?? '';
+          const allowRootLevelStem = options.defaultHotfix?.resolveAllowRootLevelStem?.() ?? false;
+          const moduleIdentities: string[] = [];
+          let anyDual = false;
+          for (const file of triggers) {
+            const resolution = lifecycle.slots.resolveModule({
+              fileUri: file,
+              ...(scriptRoot.length > 0 ? { scriptRoots: [scriptRoot] } : {}),
+              ...(options.defaultHotfix?.resolveAllowRootLevelStem !== undefined ? { allowRootLevelStem } : {})
+            });
+            if ('ok' in resolution && resolution.ok) {
+              const request = lifecycle.slots.prepareRequest({ targetId: '', identity: resolution.identity });
+              moduleIdentities.push(request.moduleIdentities?.[0] ?? resolution.identity.requestModule);
+              anyDual = true;
+            } else {
+              moduleIdentities.push('');
+            }
           }
-          triggers.forEach(forgetSentFailed);
-          updateStatus(() => status.setFailed(result.detail && result.detail.length > 0 ? result.detail : `provider ${provider.providerId} 发送失败`));
-          auditLine(`provider:${provider.providerId}`, triggers, `失败${result.detail ? `——${result.detail}` : ''}`);
-          notifyBatchResult(`失败${result.detail ? `——${result.detail}` : ''}`, true);
-        },
-        (error: unknown) => {
-          const message = error instanceof Error ? error.message : String(error);
-          triggers.forEach(forgetSentFailed);
-          updateStatus(() => status.setFailed(message));
-          auditLine(`provider:${provider.providerId}`, triggers, `失败——${message}`);
-          notifyBatchResult(`失败——${message}`, true);
-        }
-      );
+          return lifecycle.provider.send({
+            targetId: '',
+            files: triggers,
+            ...(anyDual ? { moduleIdentities } : {})
+          });
+        })
+        .then(
+          result => {
+            annotateStaleResponses(triggers);
+            if (result.ok) {
+              updateStatus(() => status.setSentUnverified());
+              auditLine(
+                `provider:${lifecycle.provider.providerId}`,
+                triggers,
+                `已发送${result.detail ? `——${result.detail}` : ''}`
+              );
+              notifyBatchResult(`已发送${result.detail ? `——${result.detail}` : ''}`, false);
+              return;
+            }
+            triggers.forEach(forgetSentFailed);
+            updateStatus(() =>
+              status.setFailed(
+                result.detail && result.detail.length > 0
+                  ? result.detail
+                  : `provider ${lifecycle.provider.providerId} 发送失败`
+              )
+            );
+            auditLine(
+              `provider:${lifecycle.provider.providerId}`,
+              triggers,
+              `失败${result.detail ? `——${result.detail}` : ''}`
+            );
+            notifyBatchResult(`失败${result.detail ? `——${result.detail}` : ''}`, true);
+            },
+          (error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error);
+            triggers.forEach(forgetSentFailed);
+            updateStatus(() => status.setFailed(message));
+            auditLine(`provider:${lifecycle.provider.providerId}`, triggers, `失败——${message}`);
+            notifyBatchResult(`失败——${message}`, true);
+          }
+        );
     };
     const proceed = (): void => {
       const fail = (error: unknown): void => {
@@ -1192,10 +1242,13 @@ export function setupHotReload(
           // 挪进微任务,不占 fire 回调同步段——语言服务(hover/definition 同
           // 事件循环)的尾延迟不该被派发决议吃掉;键开=本段延一跳,键关分支
           // 逐字保留(下面 runDefaultHotfix 仍在同步段)。
+          // 双名发送面(HR-DOD-001/RUST-440):经 resolveLifecycle 合成生命周期槽
+          // (实现自带槽优先,缺槽回落缺省组合核)——provider 只是一个通道,双名
+          // 解析在槽上。
           void Promise.resolve().then(() => {
-            const provider = providerHost.registry.resolveSendProvider(buildEngineProfile({}));
-            if (provider) {
-              runViaProvider(provider);
+            const lifecycle = providerHost.registry.resolveLifecycle(buildEngineProfile({}));
+            if (lifecycle) {
+              runViaProvider(lifecycle);
               return;
             }
             runDefaultHotfix();

@@ -1,0 +1,371 @@
+{
+  "family": "hot-reload-completion-matrix",
+  "version": 1,
+  "grounding": {
+    "doc": "docs/hotreload/current-implementation.md",
+    "design": "docs/design/hot-reload-design.md"
+  },
+  "dimensions": {
+    "target": [
+      "default-action-name",
+      "http-quick-request",
+      "script-quick-action",
+      "profile-channel",
+      "provider-host"
+    ],
+    "engineProfile": [
+      "builtin-default",
+      "explicit-channel",
+      "provider-supplied"
+    ],
+    "fileType": [
+      "py",
+      "def",
+      "types-xml",
+      "config-file",
+      "non-py-bypass"
+    ],
+    "trigger": [
+      "watch-save",
+      "watch-disk-change",
+      "manual-quick-request",
+      "retry-failed",
+      "external-apply"
+    ]
+  },
+  "cells": [
+    {
+      "id": "tgt-default-action-name",
+      "axis": "target",
+      "value": "default-action-name",
+      "function": "fire 回落路径按 actionName 通道整批发送,逐文件落双维台账(sent-unverified/failed,绝不冒充 applied)",
+      "security": "未配 actionName 不空转:回落默认热更请求(与 HTTP 快捷请求同量级超时)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadChannelSettleParity.test.ts",
+        "tests/hotReloadWatchFallback.test.ts"
+      ],
+      "note": "fire 回落台账语义与通道发送对齐(KR-AUD-46/47);RUST-429 关 Watch 后同面仍落账"
+    },
+    {
+      "id": "tgt-http-quick-request",
+      "axis": "target",
+      "value": "http-quick-request",
+      "function": "@http: 目标经 QuickActionManager.runHttpRequestFrom 执行,onHttpResponse 直喂回执面",
+      "security": "HTTP 快捷请求工作区信任闸(执行时刻读 isWorkspaceTrusted,未信任阻止+OUTPUT 行+弹窗)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadResponseReceiptWiring.test.ts",
+        "tests/hotReloadWatchFallback.test.ts",
+        "tests/httpRequestService.test.ts"
+      ],
+      "note": "信任闸同 HR-HTTP-005 模式,收编不建新抽象"
+    },
+    {
+      "id": "tgt-script-quick-action",
+      "axis": "target",
+      "value": "script-quick-action",
+      "function": "@script: 目标经 runScannedScript 直跑批脚本,整批一果(failed 即整批撤回指纹)",
+      "security": "脚本动作走受管进程面(ProcessManager),非 HTTP 链;命令/脚本面与 HTTP 面信任口径分开闸",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadRetryCommand.test.ts",
+        "tests/quickActionManager.test.ts"
+      ],
+      "note": "重试命令的 @script: 目标解析 + 脚本执行面"
+    },
+    {
+      "id": "tgt-profile-channel",
+      "axis": "target",
+      "value": "profile-channel",
+      "function": "IDE-HOT-102 部署通道:resolveChannelTransport 解出 profile 传输面,targetId 进台账键,回执流直喂台账",
+      "security": "通道按声明的 profile 目标发送,未配(null)回落 actionName——不虚构目标实例",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadChannelWiring.test.ts",
+        "tests/hotReloadChannelApplied.test.ts"
+      ],
+      "note": "sends[0].target={rootId,targetId:profile-1} 逐字段断言"
+    },
+    {
+      "id": "tgt-provider-host",
+      "axis": "target",
+      "value": "provider-host",
+      "function": "HR-PR-08 发送 provider 注册表:canSend 应答者胜,无人应答回落默认热更面",
+      "security": "canSend/send 崩溃隔离(单家 try,抛错跳过继续问下一家,全员崩溃=null 回落,绝不传播)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadPluginLoad.test.ts",
+        "tests/hotReloadProviderAssembly.test.ts",
+        "tests/hotReloadProviderWiring.test.ts"
+      ],
+      "note": "0/5/20 档成本模型=首应答者位置;崩溃不打断核心/主线程"
+    },
+    {
+      "id": "prof-builtin-default",
+      "axis": "engineProfile",
+      "value": "builtin-default",
+      "function": "内置默认 profile(buildEngineProfile({})):零配置自动热更同源取内置模板",
+      "security": "零配置热更端点/参数名只此一处定义(单源),不造轮子",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadDefaultHotfix.test.ts",
+        "tests/hotReloadPluginLoad.test.ts"
+      ],
+      "note": "默认热更请求模板与 package.json 默认锁同步"
+    },
+    {
+      "id": "prof-explicit-channel",
+      "axis": "engineProfile",
+      "value": "explicit-channel",
+      "function": "显式 profile 通道(configuredOnly):只查活动 profile,保留无显式目标时 provider 回落",
+      "security": "configuredOnly 面不带未配置的隐形目标",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadChannelConfig.test.ts",
+        "tests/hotReloadChannelConfigGapArms.test.ts"
+      ],
+      "note": "通道配置面 + 缺口臂"
+    },
+    {
+      "id": "prof-provider-supplied",
+      "axis": "engineProfile",
+      "value": "provider-supplied",
+      "function": "provider 注册表按 engine profile 构建并解析首应答者",
+      "security": "dispose 清册,重注册即重建不半态",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadProviderAssembly.test.ts"
+      ],
+      "note": "装配层 host 透传 onProviderError"
+    },
+    {
+      "id": "ft-py",
+      "axis": "fileType",
+      "value": "py",
+      "function": ".py 走热更:watcher 事件→版本簿采样→流水线去抖/合并→发送",
+      "security": "域外/排除目录不放大热更范围;语法闸拦下按面呈现",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadSavePipeline.test.ts",
+        "tests/hotReloadAssetsRootWatch.test.ts",
+        "tests/hotReloadSyntaxGate.test.ts"
+      ],
+      "note": "save 流水线 + 派生 glob + 语法闸三面"
+    },
+    {
+      "id": "ft-def",
+      "axis": "fileType",
+      "value": "def",
+      "function": ".def 结构指纹对比:结构性变化整批不发普通 reload(需重启),非结构(注释/空白/顺序)照发",
+      "security": "无基线/内容不可读/无读取通道一律保守不发(证明不了无结构变化)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadDefGateWiring.test.ts",
+        "tests/hotReloadDefStructure.test.ts",
+        "tests/hotReloadDefGateBatchSnapshot.test.ts"
+      ],
+      "note": "判定面与失败目标重试共用同一闸实例与基线册"
+    },
+    {
+      "id": "ft-types-xml",
+      "axis": "fileType",
+      "value": "types-xml",
+      "function": "types.xml 变化做 before/after reverse-dependency 影响分析,受影响 .def 按需重启",
+      "security": "types.xml 属配置,永不自动应用;未收集 .def 时如实报告「影响面未知」",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadTypesImpactWiring.test.ts",
+        "tests/hotReloadFingerprintStats.test.ts"
+      ],
+      "note": "影响报告并入需重启理由"
+    },
+    {
+      "id": "ft-config-file",
+      "axis": "fileType",
+      "value": "config-file",
+      "function": "RUST-336 配置闸:内容校验通过的配置变更不发模块热更(引擎按 python 模块重载),按需重启面呈现",
+      "security": "校验失败=拦下不发普通 reload,不称需重启(修好再发),审计记「拦截:配置校验失败」",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadConfigGate.test.ts"
+      ],
+      "note": "配置闸与 def 闸共用五要素审计语义"
+    },
+    {
+      "id": "ft-non-py-bypass",
+      "axis": "fileType",
+      "value": "non-py-bypass",
+      "function": "非 py 变化只进旁路通道(零投递零状态跃迁);.py/.def 仍在热更域",
+      "security": "域外不进投递不推状态;rust 消费者经 $/kode/fileChanged 走 LSP stdio",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadAssetsRootWatch.test.ts",
+        "tests/hotReloadStatus.test.ts"
+      ],
+      "note": "显式宽 glob 下非 py/非 def 只走旁路"
+    },
+    {
+      "id": "trig-watch-save",
+      "axis": "trigger",
+      "value": "watch-save",
+      "function": "保存事件(watcher 热更域)→ 进料级去抖+合并窗 → 发送(同一台账)",
+      "security": "磁盘+save 重叠同文件单批不双发(纯核归并)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadSavePipeline.test.ts",
+        "tests/hotReloadAssetsRootWatch.test.ts"
+      ],
+      "note": "save 与 disk-change 重叠归并记 disk-save-overlap"
+    },
+    {
+      "id": "trig-watch-disk-change",
+      "axis": "trigger",
+      "value": "watch-disk-change",
+      "function": "onDiskChange 显式选中才建磁盘面:change/create 经规范化以 disk-change 进同一流水线",
+      "security": "HR-WATCH-015 基线窗:启动绝不把既有文件当变更;配置关/切回即拆(HR-WATCH-005)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadDiskWatchWiring.test.ts",
+        "tests/hotReloadDiskWatch.test.ts"
+      ],
+      "note": "缺省 onSave 不建磁盘面;delete 不进管线"
+    },
+    {
+      "id": "trig-manual-quick-request",
+      "axis": "trigger",
+      "value": "manual-quick-request",
+      "function": "手动 Quick Request 走 QuickActionManager(runByName),与 Watch 面零共享状态",
+      "security": "关 Watch(性能降级)不误伤手动面:启用请求仍列仍可跑,请求自身 enabled 是独立轴",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadWatchFallback.test.ts"
+      ],
+      "note": "RUST-429:手动面与 hotReload.enabled 正交"
+    },
+    {
+      "id": "trig-retry-failed",
+      "axis": "trigger",
+      "value": "retry-failed",
+      "function": "retryFailedHotReloadTargets 每失败目标恰发 1 次,成功跳过,取消即停,二次只重发仍失败者",
+      "security": "无放大(有界不风暴);与 def 闸共用同一实例(重试不复用判定会让结构性 def 经重试下发)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadRetry.test.ts",
+        "tests/hotReloadSoak.test.ts",
+        "tests/hotReloadRetryDefGate.test.ts"
+      ],
+      "note": "RUST-428 soak(4) 确定性不变量 + def 闸重试"
+    },
+    {
+      "id": "trig-external-apply",
+      "axis": "trigger",
+      "value": "external-apply",
+      "function": "外部应用命令副作用不可证实:退出 0 也最多 accepted,绝不 applied",
+      "security": "外部命令失败=如实 failed(副作用失败是真失败);空操作(退出 0 不写产物)=降级 accepted",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadReceiverApply.test.ts"
+      ],
+      "note": "F3 四轮回归:诚实不伪造应用"
+    },
+    {
+      "id": "tgt-default-action-name-ft-py-trig-watch-save",
+      "axis": "e2e",
+      "value": "target-x-fileType-x-trigger",
+      "function": "复合:默认目标×.py×保存触发=端到端真实接收端回环(accept/applied 语义)",
+      "security": "接收端根外路径整批拒绝;产物路径安全/符号链接逃逸/暂存别名",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadReceiverRoundtrip.test.ts",
+        "tests/hotReloadReceiverSafety.test.ts",
+        "tests/hotReloadReceiptProtocolFixture.test.ts"
+      ],
+      "note": "IDE-AUD-007 F3 七至九轮 + 协议 fixture 冻结"
+    }
+  ],
+  "security": [
+    {
+      "id": "sec-workspace-trust",
+      "invariant": "配置驱动自动出站面(HTTP 快捷请求/自动热更/telnet 自动探测)在工作区未信任时被闸",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/httpRequestService.test.ts",
+        "tests/hotReloadFireTransportClosure.test.ts",
+        "tests/telnetService.test.ts"
+      ],
+      "note": "RUST-422:执行时刻读 isWorkspaceTrusted;DB 查询面=显式命令面裁定不闸(用户拍板)"
+    },
+    {
+      "id": "sec-ssrf-arbitrary-uri",
+      "invariant": "未信任工作区配置模板探测内网/元数据端点被闸;trusted 工作区指向 localhost 引擎是本功能本意",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/httpRequestService.test.ts"
+      ],
+      "note": "trusted 场景指向 localhost 引擎不加白名单"
+    },
+    {
+      "id": "sec-path-traversal-module",
+      "invariant": "模块名解析拒路径穿越(resolveModuleDualName traversal 拒)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadModuleIdentity.test.ts"
+      ],
+      "note": "traversal 判定在 src/backend/hotReloadModuleIdentity.ts"
+    },
+    {
+      "id": "sec-artifact-path-escape",
+      "invariant": "接收端产物写入:根外路径拒绝,符号链接逃逸/暂存别名被拦(产物路径安全)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadReceiverSafety.test.ts"
+      ],
+      "note": "IDE-AUD-007 路径/别名安全证据"
+    },
+    {
+      "id": "sec-secret-redaction",
+      "invariant": "HTTP header/token 不出现在 output/trace/history/UI tooltip/导出数据表面(结构化遮蔽非变换)",
+      "verdict": "covered-test",
+      "evidence": [
+        "tests/hotReloadSecretLeakGuard.test.ts",
+        "tests/hotReloadHistoryCore.test.ts"
+      ],
+      "note": "RUST-421/368:历史行不携 body/headers/token"
+    },
+    {
+      "id": "sec-no-exec-in-http-chain",
+      "invariant": "HTTP 发送链是纯传输(无 child_process/exec/spawn/fork);命令/脚本动作走受管进程面与信任闸",
+      "verdict": "covered-src",
+      "evidence": [
+        "src/backend/httpRequestService.ts",
+        "src/backend/hotReloadTransport.ts"
+      ],
+      "verifier": "no-child-process",
+      "note": "hotReloadTransport 的 exec( 字样是终端命令回退的展示标签,非 child_process 调用"
+    }
+  ],
+  "out-of-scope": [
+    {
+      "id": "oos-cross-platform-real-machine",
+      "axis": "trigger",
+      "value": "watch-save",
+      "reason": "Windows/macOS/WSL/SSH/DevContainer 真机跨平台实测属 RUST-423 差项(纯核矩阵已落,真机确认另立)",
+      "verdict": "out-of-scope"
+    },
+    {
+      "id": "oos-24h-wallclock-soak",
+      "axis": "trigger",
+      "value": "retry-failed",
+      "reason": "字面 24h 墙钟 soak 未跑;确定性不变量(K 迭代等价)已证,真通宵跑须专用低负载窗(RUST-428 诚实边界)",
+      "verdict": "out-of-scope"
+    },
+    {
+      "id": "oos-cross-host-socket-growth",
+      "axis": "target",
+      "value": "profile-channel",
+      "reason": "keepAlive 池是单主机复用优化;跨主机连接增长受 agent 池面约束,非单一引擎范围(RUST-428 诚实边界)",
+      "verdict": "out-of-scope"
+    }
+  ]
+}
