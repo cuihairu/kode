@@ -539,6 +539,16 @@ export interface SetupHotReloadOptions {
     readonly onDiagnostic?: (diagnostic: DiskWatchDiagnostic) => void;
   };
   /**
+   * RUST-329 增量(HR-WATCH-005 target 生命周期):部署目标(活动 profile)
+   * 切换事件的订阅口。目标切换不派发配置/文件夹事件,注入即补上第三路触发
+   * ——按 §11.4 签名判据评估重建(签名含 assetsRoot,而 assetsRoot 随活动
+   * profile 解析:选定根在 resolveAssetsRootForWorkspace 优先),目标换根=
+   * 签名变=拆旧建新;目标根没变(两 profile 同根)签名不变不重建。返回的
+   * 订阅由本装配的复合 dispose 释放(调用方不另挂,避免双释)。不注入=不
+   * 订阅(既有装配行为不变)。
+   */
+  readonly onTargetChanged?: (handler: () => void) => { dispose(): void };
+  /**
    * RUST-398(HR-HASH-011):types.xml 变化影响报告用的 .def 收集口。注入即
    * 在批内 types.xml 变化时对「变更前/后内容」做 reverse-dependency 影响
    * 分析(analyzeTypesImpact),报告并入需重启理由——受影响 .def 按 RUST-397
@@ -1917,7 +1927,12 @@ export function setupHotReload(
         mode: source === 'explicit' ? 'explicit' : 'derived',
         globs: [...plan.globs],
         assetsRoot: canonicalizeScriptFilePath(assetsRoot),
-        roots: watchRoots.map(root => canonicalizeScriptFilePath(root))
+        // RUST-329 增量:范围闸基座恒为工作区根,不随 watch 面收窄——显式
+        // globs 是工作区相对契约(save 面 attachWatcher 同一语义),按工作区根
+        // 相对路径匹配;若基座随收窄变 scriptRoots,'scripts/**/*.py' 这类带
+        // 路径段的 glob 会漏匹配(根内文件相对路径已无 scripts/ 前缀),磁盘面
+        // 与 save 面同文件不同判。收窄只发生在 watch 面(watcher 模式+过滤层)。
+        roots: folderRoots.map(root => canonicalizeScriptFilePath(root))
       };
       diskWatch = new HotReloadDiskWatchController({
         offer: (file, diskSource) => {
@@ -1967,8 +1982,26 @@ export function setupHotReload(
   const foldersSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => {
     applyIfWatchSignatureChanged();
   });
+
+  /** RUST-329 增量(HR-WATCH-005 target 生命周期):部署目标(活动 profile)
+   * 切换不派发配置/文件夹事件,由宿主注入的订阅口接目标变更——同一 §11.4
+   * 签名判据评估重建。微任务延后一拍:目标切换的同一次派发里还有索引输入
+   * 订阅(generators 的 applyActiveProfileToIndexInput 写 activeProfileScanRoot,
+   * 注册序在本装配之后,extension.ts 先 activateHotReload 后 activateGenerators),
+   * 同步订阅跑完微任务才排——读到的才是新目标根;微任务先于下一事件,不引入
+   * 跨事件滑窗。disposed 守卫:排队中的评估在释放后落地只作废不重建。 */
+  let disposed = false;
+  const targetSubscription = options.onTargetChanged?.(() => {
+    queueMicrotask(() => {
+      if (disposed) {
+        return;
+      }
+      applyIfWatchSignatureChanged();
+    });
+  });
   context.subscriptions.push({
     dispose: (): void => {
+      disposed = true;
       releasePreviewCommand.dispose();
       pauseCommand.dispose();
       resumeCommand.dispose();
@@ -1977,6 +2010,7 @@ export function setupHotReload(
       diagnosticsPanel.dispose();
       subscription.dispose();
       foldersSubscription.dispose();
+      targetSubscription?.dispose();
       unsubscribeBypass();
       bypassMerger.dispose();
       diskWatch?.dispose();

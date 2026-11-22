@@ -1,15 +1,18 @@
-import { readFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import type { DiskWatchDiagnostic, DiskWatcherFactory } from '../src/backend/hotReloadDiskWatch';
+import { resetScanRootCache, setActiveProfileScanRoot } from '../src/scanRoots';
 import {
   allFileSystemWatchers,
   configurationOverrides,
   lastFileSystemWatcher,
   workspaceEvents
 } from './helpers/vscodeStub';
+import { RelativePattern } from './fake-vscode/core';
 
 // HR-PR-05 磁盘侧接线(装配面):注入 watcher 工厂才建磁盘监视面——按已声明
 // 根建 watcher(HR-WATCH-004)、change/create 以 'disk-change' 进同一两级触发
@@ -49,6 +52,16 @@ const flush = async (): Promise<void> => {
   await new Promise(resolve => setTimeout(resolve, 0));
 };
 
+/** RelativePattern 注册形态 → 可断言文本(base 是路径或 Uri 都吃) */
+const patternText = (pattern: unknown): string => {
+  if (pattern instanceof RelativePattern) {
+    const base = pattern.base as { fsPath?: string } | string;
+    const basePath = typeof base === 'string' ? base : (base.fsPath ?? String(base));
+    return `${basePath}/${pattern.pattern}`;
+  }
+  return String(pattern);
+};
+
 describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
   let workspaceFoldersBackup: typeof vscode.workspace.workspaceFolders;
   let contexts: vscode.ExtensionContext[] = [];
@@ -75,6 +88,9 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     configurationOverrides.clear();
     lastFileSystemWatcher.current = null;
     allFileSystemWatchers.length = 0;
+    // RUST-329 增量:目标切换用例设置的活动 profile 扫描根与发现记忆须复位
+    setActiveProfileScanRoot(null);
+    resetScanRootCache();
   });
 
   const makeContext = (): vscode.ExtensionContext =>
@@ -104,6 +120,10 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
       triggerMode?: string;
       scriptRoots?: string[];
       scriptRoot?: string;
+      /** RUST-329 增量:不写 globs(globsSpec=unset → source=derived) */
+      unsetGlobs?: boolean;
+      /** RUST-329 增量:捕获目标切换订阅口(活动 profile 事件) */
+      onTargetChanged?: (handler: () => void) => { dispose(): void };
     } = {}
   ): {
     clock: ReturnType<typeof makeTimers>;
@@ -114,7 +134,8 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     configurationOverrides.set('kbengine', {
       hotReload: {
         enabled: true,
-        globs: options.globs ?? ['**/*.py'],
+        // RUST-329 增量:不写 globs = 未配置派生面(assetsRoot 派生,不回落全工作区扫)
+        ...(options.unsetGlobs ? {} : { globs: options.globs ?? ['**/*.py'] }),
         actionName: '热更',
         debounceMs: 100,
         // 本文件专测磁盘面:一律显式选中 onDiskChange(缺省 onSave 不建,另行钉)
@@ -128,6 +149,7 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     const runCalls: string[] = [];
     setupHotReload(context, name => void runCalls.push(name), {
       timers: clock.timers,
+      ...(options.onTargetChanged ? { onTargetChanged: options.onTargetChanged } : {}),
       ...(options.scriptRoots !== undefined || options.scriptRoot !== undefined
         ? {
             defaultHotfix: {
@@ -288,6 +310,91 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(runCalls).toEqual(['热更']);
   });
 
+  it('RUST-329 增量:范围闸基座恒为工作区根,收窄只收 watch 面(显式带路径段 glob 不漏匹配)', async () => {
+    // 配了脚本根收窄到 /ws/scripts 时,显式 globs='scripts/entity/**/*.py' 仍是
+    // 工作区相对契约(save 面 attachWatcher 同一语义)——若范围闸基座随收窄变
+    // scriptRoots,根内文件相对路径已无 scripts/ 前缀会漏匹配,磁盘面与 save
+    // 面同文件不同判;基座保工作区根则两面对同一文件同判。
+    const { clock, diagnostics, runCalls } = boot({
+      globs: ['scripts/entity/**/*.py'],
+      scriptRoot: '/ws/scripts'
+    });
+    // watch 面已按 target 根收窄(不再监听全工作区)
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual([
+      'scripts/entity/**/*.py',
+      '/ws/scripts/**/*.py'
+    ]);
+    // 脚本根内且 glob 命中(按工作区根相对路径)→ 进链触发动作
+    allFileSystemWatchers[1]!.fireChange({ fsPath: '/ws/scripts/entity/Hero.py' } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+    // 脚本根内但 glob 未命中(工作区相对路径无 scripts/entity/ 前缀)→ 范围闸拦下
+    allFileSystemWatchers[1]!.fireChange({ fsPath: '/ws/scripts/other/Gone.py' } as never);
+    expect(clock.tick()).toBe(0);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+    expect(diagnostics.map(diagnostic => diagnostic.type)).toEqual(['watch-created']);
+  });
+
+  it('RUST-329 增量:目标切换按签名判据重建,换根即拆旧建新、同根不重建', async () => {
+    // 部署目标(活动 profile)切换不派发配置/文件夹事件,由订阅口接——
+    // 签名含 assetsRoot(随活动 profile 解析),换根=签名变=拆旧建新。
+    const root = mkdtempSync(path.join(os.tmpdir(), 'kode3-target-switch-'));
+    const assetsA = path.join(root, 'assets-a');
+    const assetsB = path.join(root, 'assets-b');
+    mkdirSync(assetsA, { recursive: true });
+    mkdirSync(assetsB, { recursive: true });
+    try {
+      vscode.workspace.workspaceFolders = [{ uri: { fsPath: root } as never, name: 'ws', index: 0 }];
+      setActiveProfileScanRoot(assetsA);
+      const handlers: Array<() => void> = [];
+      let subscriptionDisposes = 0;
+      const { clock, context, runCalls } = boot({
+        unsetGlobs: true,
+        onTargetChanged: handler => {
+          handlers.push(handler);
+          return { dispose: (): void => { subscriptionDisposes += 1; } };
+        }
+      });
+      // 派生面:save=目标资产根全扩展(RelativePattern),磁盘=工作区根(未配脚本根)
+      expect(patternText(allFileSystemWatchers[0]!.pattern)).toBe(
+        `${root.replace(/\\/g, '/')}/assets-a/**/*`
+      );
+      expect(allFileSystemWatchers[1]!.pattern).toBe(`${root.replace(/\\/g, '/')}/**/*.py`);
+
+      // 同根目标切换:签名不变不重建
+      handlers[0]!();
+      setActiveProfileScanRoot(assetsA);
+      await flush();
+      expect(allFileSystemWatchers).toHaveLength(2);
+
+      // 换根目标切换:签名变=拆旧建新(微任务延后一拍,读到的已是新目标根)
+      handlers[0]!();
+      setActiveProfileScanRoot(assetsB); // 模拟同次派发里后注册的索引输入订阅
+      await flush();
+      expect(allFileSystemWatchers).toHaveLength(4);
+      expect(patternText(allFileSystemWatchers[2]!.pattern)).toBe(
+        `${root.replace(/\\/g, '/')}/assets-b/**/*`
+      );
+      // 旧根 watcher 失效:事件不进链
+      allFileSystemWatchers[0]!.fireChange({ fsPath: path.join(assetsA, 'A.py') } as never);
+      expect(clock.tick()).toBe(0);
+      await flush();
+      expect(runCalls).toEqual([]);
+      // 新根 watcher 进链
+      allFileSystemWatchers[2]!.fireChange({ fsPath: path.join(assetsB, 'A.py') } as never);
+      expect(clock.tick()).toBe(2);
+      await flush();
+      expect(runCalls).toEqual(['热更']);
+      // 订阅口由 setupHotReload 复合 dispose 释放(不另挂 context.subscriptions)
+      context.subscriptions[0]?.dispose();
+      expect(subscriptionDisposes).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('磁盘+save 重叠:同文件单批不双发(HR-WATCH-003 live)', async () => {
     const { clock, runCalls } = boot();
     const saveWatcher = allFileSystemWatchers[0];
@@ -406,5 +513,18 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(source).toContain('vscode.workspace.createFileSystemWatcher(pattern)');
     expect(source).toContain('diskWatch: {');
     expect(source).toContain('createWatcher: hotReloadDiskWatcherFactory');
+  });
+
+  it('源锁:目标切换接线(activate 注入 profile 事件,setup 持有释放)(RUST-329)', () => {
+    const activate = readFileSync(
+      path.join(__dirname, '..', 'src', 'activate', 'hotReload.ts'),
+      'utf8'
+    );
+    // 真事件源=活动 profile 切换(targetId=profile.id);返回值交 setupHotReload
+    // 复合 dispose(不另挂 context.subscriptions,避免双释)
+    expect(activate).toContain('onTargetChanged: handler => onDidChangeActiveProfile(() => handler())');
+    const core = readFileSync(path.join(__dirname, '..', 'src', 'hotReload.ts'), 'utf8');
+    expect(core).toContain('targetSubscription?.dispose()');
+    expect(core).toContain('queueMicrotask(() => {');
   });
 });

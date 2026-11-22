@@ -586,6 +586,12 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
         }
       }
     },
+    // RUST-329 增量(HR-WATCH-005 target 生命周期):活动 profile(=部署目标)
+    // 切换即按 §11.4 签名判据评估重建——targetId=profile.id,profile 换根
+    // (applyActiveProfileToIndexInput 写 activeProfileScanRoot)后派生面的
+    // assetsRoot 随新目标解析,签名变=拆旧建新。onDidChangeActiveProfile 已在
+    // 本文件接线用于通道切换(281 行),此处同一事件源订阅目标根面。
+    onTargetChanged: handler => onDidChangeActiveProfile(() => handler()),
     noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
     // HOT-VER:watcher 事件 → 版本簿采样建档/跳号(版本簿的默认事件来源;
     // 手动触发路径不经这里,写同一台账同一实现,同 token 只 +1)
