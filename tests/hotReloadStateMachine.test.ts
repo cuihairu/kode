@@ -199,3 +199,82 @@ describe('HR-STATE-001 投影(既有四面→13 态)', () => {
     expect(projectStatusKind('failed')).toBe('failed');
   });
 });
+
+// RUST-373(HR-STATE-013)reducer 属性测试:五场景钉迁移表之外的行为属性——
+// 乱序返回不回退、重复回执幂等、失败后文件再编辑可重入、目标切换键隔离、
+// Core 重启清零(不自动相信上一会话 applied)。用 trySet(非抛 reducer 面)
+// 逐序列断言状态推进与如实拒绝。
+describe('RUST-373 reducer/property 五场景', () => {
+  it('乱序返回:晚回执不回退(已 applied 再收早代 sent_unverified 如实拒,状态原样)', () => {
+    const machine = new HotReloadStateMachine();
+    machine.set('k', 'sending', true);
+    expect(machine.trySet('k', 'sent_unverified')).toBe(true);
+    expect(machine.trySet('k', 'applied')).toBe(true); // 回执升级
+    // 乱序:更早执行的 sent_unverified 晚到——applied 不可回退,如实拒
+    expect(machine.trySet('k', 'sent_unverified')).toBe(false);
+    expect(machine.get('k')).toBe('applied'); // 不回退,原样
+  });
+
+  it('重复回执:同态回执幂等(第二次 applied 不报不退)', () => {
+    const machine = new HotReloadStateMachine();
+    machine.set('k', 'sending', true);
+    expect(machine.trySet('k', 'applied')).toBe(true);
+    // 重复回执(同回执二次送达):同态短路,幂等 true,状态不变
+    expect(machine.trySet('k', 'applied')).toBe(true);
+    expect(machine.get('k')).toBe('applied');
+    // 重复失败回执同样幂等
+    expect(machine.trySet('k', 'dirty')).toBe(true);
+    expect(machine.trySet('k', 'queued')).toBe(true);
+    machine.trySet('k', 'checking');
+    machine.trySet('k', 'sending');
+    expect(machine.trySet('k', 'failed')).toBe(true);
+    expect(machine.trySet('k', 'failed')).toBe(true);
+    expect(machine.get('k')).toBe('failed');
+  });
+
+  it('失败后文件再编辑:failed→dirty(重入热更链)不抛不拒', () => {
+    const machine = new HotReloadStateMachine();
+    machine.set('k', 'sending', true);
+    expect(machine.trySet('k', 'failed')).toBe(true);
+    // 再编辑 → dirty,失败态可重入
+    expect(machine.trySet('k', 'dirty')).toBe(true);
+    expect(machine.get('k')).toBe('dirty');
+  });
+
+  it('目标切换:键隔离——切目标(换键)不串状态,新目标如实 unknown 独立起链', () => {
+    const machine = new HotReloadStateMachine();
+    // 目标 1 走到 applied
+    machine.set('t1', 'idle', true);
+    machine.trySet('t1', 'dirty');
+    machine.trySet('t1', 'queued');
+    machine.trySet('t1', 'checking');
+    machine.trySet('t1', 'sending');
+    machine.trySet('t1', 'applied');
+    expect(machine.get('t1')).toBe('applied');
+    // 切目标:目标 2 键独立,不受 t1 状态串扰(不猜成 applied,如实 unknown)
+    expect(machine.get('t2')).toBe('unknown');
+    // 目标 2 独立起链(初始 force 置位),不影响 t1
+    machine.set('t2', 'idle', true);
+    expect(machine.get('t2')).toBe('idle');
+    expect(machine.get('t1')).toBe('applied');
+  });
+
+  it('Core 重启:clear 后全部键回落 unknown,不自动相信上一会话 applied(不 force 不可直达)', () => {
+    const machine = new HotReloadStateMachine();
+    machine.set('t1', 'idle', true);
+    machine.trySet('t1', 'dirty');
+    machine.trySet('t1', 'queued');
+    machine.trySet('t1', 'checking');
+    machine.trySet('t1', 'sending');
+    machine.trySet('t1', 'applied');
+    machine.set('t2', 'failed', true);
+    // Core 重启 = clear(新会话):全部回落 unknown,键清空
+    machine.clear();
+    expect(machine.keys()).toEqual([]);
+    expect(machine.get('t1')).toBe('unknown');
+    expect(machine.get('t2')).toBe('unknown');
+    // 重启后不自动相信上一会话的 applied:unknown 不可直达 applied(须重新走链核验)
+    expect(machine.trySet('t1', 'applied')).toBe(false);
+    expect(machine.get('t1')).toBe('unknown');
+  });
+});
