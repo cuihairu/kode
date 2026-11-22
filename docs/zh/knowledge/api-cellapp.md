@@ -33,7 +33,8 @@ cellapp 脚本面不是单一注册点，而是四层。回答「这个 API 在 
 | 共享实体方法（baseapp+cellapp） | `addTimer`, `delTimer`, `writeToDB`, `destroy`, `registerEvent`, `deregisterEvent`, `fireEvent`, `getComponent`；getset `id`, `isDestroyed`, `className` | `kbe/src/lib/entitydef/entity_macro.h:12-40`（宏块拼入同一张表） |
 | cellapp `KBEngine` 模块函数 | `time`, `createEntity`, `executeRawDatabaseCommand`, `reloadScript`, `registerReadFileDescriptor`/`Write`（+`deregister…`）, `addSpaceGeometryMapping`, `getSpaceGeometryMapping`, `setSpaceData`, `getSpaceData`, `delSpaceData`, `isShuttingDown`, `address`, `raycast`, `setAppFlags`, `getAppFlags` | `kbe/src/server/cellapp/cellapp.cpp:172-189`；另有 `cellAppData` 对象于 `cellapp.cpp:199` |
 | 共享 server-app 模块面 | `kbassert`（私有）, `publish`, `scriptLogType`, `getResFullPath`, `hasRes`, `open`, `listPathRes`, `matchPath`, `getWatcher`, `getWatcherDir`, `debugTracing`, `globalData` 对象 | `kbe/src/lib/server/entity_app.h:423-453`；`:418-419`（`globalData` 注册） |
-| 解释器层（所有 app 共用） | `MemoryStream`（`python_app.cpp:271`）、`NEXT_ONLY` 常量（`:323`）、模块级 `addTimer`/`delTimer`（`:329-330`）、`component` 字符串（`lib/pyscript/script.cpp:248`）、`genUUID64`（`:258`）、`addWatcher`/`delWatcher`（`lib/pyscript/pywatcher.cpp:184-185`）、`urlopen`（`lib/pyscript/pyurl.cpp:23`） | 如引 |
+| 解释器层（所有 app 共用） | `NEXT_ONLY` 常量（`:323`）、模块级 `addTimer`/`delTimer`（`:329-330`）、`component` 字符串（`lib/pyscript/script.cpp:248`）、`genUUID64`（`:258`）、`addWatcher`/`delWatcher`（`lib/pyscript/pywatcher.cpp:184-185`）、`urlopen`（`lib/pyscript/pyurl.cpp:23`） | 如引 |
+| `EntityDef::installScript`（经 `EntityApp::installEntityDef`） | `MemoryStream` 模块级函数（`APPEND_SCRIPT_MODULE_METHOD` `entitydef.cpp:2455`）；`PyMemoryStream` 类型仅 type-only（`:2453`） | `lib/entitydef/entitydef.cpp:2448-2467`；`lib/server/entity_app.h:335` |
 
 cellapp `Entity` 的**属性**面：`base`, `client`, `allClients`,
 `otherClients`, `isWitnessed`, `hasWitness`, `isOnGround`, `spaceID`
@@ -78,7 +79,7 @@ cellapp `Entity` 的**属性**面：`base`, `client`, `allClients`,
 | `genUUID64()` | interp `script.cpp:258`，实现 `:91-106` | 64 位 UUID；进程 global order 不在 0~65535 时**发运行时警告**（`script.cpp:99`），跨进程唯一性退化为进程内唯一 |
 | `addWatcher(path, dataType, getFunction)` / `delWatcher(path)` | interp `pywatcher.cpp:184-185` | 注册/删除观察变量 |
 | `urlopen(url, callback, postData, headers)` | interp `pyurl.cpp:23`，实现 `:69+` | 异步 HTTP(S)；headers/postData/callback 不合法抛 `AssertionError`（`pyurl.cpp:98`, `:116`, `:162`, `:174`） |
-| `MemoryStream()` | interp `python_app.cpp:271` | KBEngine 序列化字节缓冲 |
+| `MemoryStream()` | `EntityDef::installScript` `entitydef.cpp:2455`（经 `EntityApp::installEntityDef` `entity_app.h:335`） | KBEngine 序列化字节缓冲；模块级**函数**（非 class——`PyMemoryStream` 类型仅 type-only，`entitydef.cpp:2453`） |
 | `createSpace` | — | **不存在**：cellapp 源料未记载，fork 也没有 cellapp 侧 `createSpace` 注册（grep `server/cellapp/` + `lib/server/` = 0 命中）。空间创建走 baseapp→cellappmgr 路径（`Cellapp::onCreateCellEntityInNewSpaceFromBaseapp` 处理随后的实体创建，`cellapp.cpp:875`） |
 
 源料中他处交代的函数：源料引言提到 `KBEngine.createCellEntity`——那是

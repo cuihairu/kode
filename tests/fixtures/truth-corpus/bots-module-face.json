@@ -8,11 +8,11 @@
       "input": { "path": "module-face", "process": "bots", "roster": "site1" },
       "engine": {
         "load": "accept",
-        "truth": "档 §2.1+§2.2:19 模块函数(8 源材料记载+11 fork-only)全部注册——bots.cpp:182-185 两件(addBots/scriptLogType)+clientapp.cpp:191-215 共享十件(publish fireEvent player getSpaceData callback cancelCallback getWatcher getWatcherDir disconnect kbassert)+资源五件(getResFullPath hasRes open listPathRes matchPath)+script.cpp:258 genUUID64+pyurl.cpp:23 urlopen"
+        "truth": "档 §2.1+§2.2:20 模块函数(8 源材料记载+12 fork-only)全部注册——bots.cpp:182-185 两件(addBots/scriptLogType)+clientapp.cpp:191-215 共享十件(publish fireEvent player getSpaceData callback cancelCallback getWatcher getWatcherDir disconnect kbassert)+资源五件(getResFullPath hasRes open listPathRes matchPath)+script.cpp:258 genUUID64+pyurl.cpp:23 urlopen+clientapp.cpp:181→entitydef.cpp:2455 MemoryStream(模块级函数,kode 侧为 class 行故另立分歧条目不进本名册)"
       },
       "evidence": [
-        "19 module functions (8 documented + 11 fork-only)",
-        "The source material documents only 8 of the 19 module",
+        "20 module functions (8 documented + 12 fork-only)",
+        "source material documents only 8 of the 20 module",
         "all bound at `clientapp.cpp:191-215`",
         "`addBots(totalCount)` or `addBots(totalCount, tickCount, tickTime)`"
       ],
@@ -146,17 +146,39 @@
       "input": { "path": "module-face", "process": "bots", "roster": "classes" },
       "engine": {
         "load": "reject-silent",
-        "truth": "fork 实读 bots 链:Bots→ClientApp(clientapp.cpp:233-268)只 registerScript client::Entity+EntityComponent;EntityCall/EntityComponentCall 仅前向声明(entity.h:22/clientobjectbase.h:26-27)无注册;MemoryStream 仅 PythonApp::installPyModules(python_app.cpp:271),bots 不经 PythonApp;Vector2/3/4 装顶层 Math(script.cpp:291);FixedArray 全树 GC/pickle 内部引用——七名皆非 bots 模块面注册"
+        "truth": "fork 实读 bots 链:Bots→ClientApp(clientapp.cpp:233-268)只 registerScript client::Entity+EntityComponent;EntityCall/EntityComponentCall 仅前向声明(entity.h:22/clientobjectbase.h:26-27)无注册;Entities/EntityGarbages type-only(kbemain.h:108-109 installScript(NULL));Vector2/3/4 装顶层 Math(script.cpp:291→pyscript/math.cpp:12-16);FixedArray 全树 GC/pickle 内部引用——六名皆非 bots 模块面 class 注册。MemoryStream 原判「仅 PythonApp::installPyModules(python_app.cpp:271),bots 不经 PythonApp」系漏枚举假阴性(clientapp.cpp:181→EntityDef::installScript 于 entitydef.cpp:2455 亦注册 MemoryStream 为模块级函数),已翻案另立 pos-memoryStream-fork-arbitration 条目"
       },
       "evidence": [
         "registers the `client::Entity` and `EntityComponent` types (`:236-237`)",
-        "same C++ surfaces already documented in [api-client](api-client.md)"
+        "same C++ surfaces already documented in [api-client](api-client.md)",
+        "type-only (`kbemain.h:108-109` `installScript(NULL)`), and `EntityCall`,",
+        "(`entitydef.cpp:2456-2460` `installScript(NULL)`). `Vector2`/`Vector3`/`Vector4`",
+        "live on the `Math` module (`script.cpp:291` → `pyscript/math.cpp:12-16`), not on"
       ],
       "kode": {
         "status": "pinned",
-        "analysis": { "classNames": ["EntityCall", "EntityComponentCall", "MemoryStream", "Vector2", "Vector3", "Vector4", "FixedArray"] }
+        "analysis": { "classNames": ["EntityCall", "EntityComponentCall", "Vector2", "Vector3", "Vector4", "FixedArray"] }
       },
-      "finding": "divergence 登记(误导方向)=引擎 bots 模块面只注册 Entity+EntityComponent 两类型而 kode bots 符号表带 7 条 class 行(EntityCall/EntityComponentCall/MemoryStream/Vector2/3/4/FixedArray,源=_kbengine_shared 共享导入):补全/类型面会暴露运行期 AttributeError 的名字;family-29 判例(同一超集族)归各族核,本族钉 bots 面;只钉现状不冒充修复,收窄归独立批"
+      "finding": "divergence 登记(误导方向)=引擎 bots 模块面只注册 Entity+EntityComponent 两类型而 kode bots 符号表带 6 条 class 行(EntityCall/EntityComponentCall/Vector2/3/4/FixedArray,源=_kbengine_shared 共享导入):补全/类型面会暴露运行期 AttributeError 的名字;MemoryStream 原入本族 class 超集经 fork 实读翻案(entitydef.cpp:2455 模块级函数,引擎确在 bots 模块面注册,见 pos-memoryStream-fork-arbitration);family-29 判例(同一超集族)归各族核,本族钉 bots 面;只钉现状不冒充修复,收窄归独立批"
+    },
+    {
+      "id": "pos-memoryStream-fork-arbitration",
+      "kind": "positive",
+      "input": { "path": "module-face", "process": "bots", "name": "MemoryStream" },
+      "engine": {
+        "load": "accept",
+        "truth": "fork 实读 ClientApp::installEntityDef(clientapp.cpp:179-184)→EntityDef::installScript(entitydef.cpp:2448-2467)在 :2455 以 APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0) 把 MemoryStream 注册为模块级函数;PyMemoryStream 类型仅 type-only(:2453 installScript(NULL))——引擎 bots 模块面有 MemoryStream=可调用函数(非 class);原判「仅 PythonApp 注册,bots 不经 PythonApp」系漏枚举假阴性"
+      },
+      "evidence": [
+        "module function `MemoryStream` (via `EntityDef::installScript` at `:181` → `entitydef.cpp:2455`)",
+        "`clientapp.cpp:181` → `EntityDef::installScript` (`entitydef.cpp:2455`)",
+        "bound as a module **function** at"
+      ],
+      "kode": {
+        "status": "pinned",
+        "analysis": { "kind": "class", "presentInKode": true }
+      },
+      "finding": "跨族对账翻案(2026-11-22,fork 仲裁):bots(ClientApp 链)与 baseapp/cellapp(EntityApp 链)同源条目 MemoryStream 三族同步翻正为 positive/accept——引擎各面皆有 MemoryStream 作模块级函数(entitydef.cpp:2455,经 clientapp.cpp:181/entity_app.h:335 达),PyMemoryStream 类型仅 type-only;原 div-shared-class-rows 把 MemoryStream 判入「class 误导超集」系漏枚举(仅看 python_app.cpp:271 PythonApp 路径,遗漏 clientapp.cpp:181 installEntityDef 路径)的假阴性;真实分歧=kind 分歧(引擎 function / kode class),kode 若以 class 收编会与引擎函数形态不符;只钉现状不冒充修复"
     },
     {
       "id": "unk-entities-class-type",

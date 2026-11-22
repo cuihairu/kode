@@ -28,16 +28,27 @@ Entry point: `KBENGINE_MAIN` sets `g_componentType = BOTS_TYPE` and runs
 template installs the Python module under the name `KBEngine`
 (`kbe/src/lib/client_lib/kbemain.h:102`).
 
-The script face is assembled from six registration sites:
+The script face is assembled from seven registration sites:
 
 | Site | Registers |
 | --- | --- |
 | `kbe/src/server/tools/bots/bots.cpp:174-182` (`Bots::installPyModules`) | the `ClientObject` / `PyBots` script types (`:176-177`), the `bots` registry object (`:179-180`), module function `addBots` (`:182`) |
 | `bots.cpp:186-209` | int constants `LOG_TYPE_NORMAL/INFO/ERR/DBG/WAR` |
 | `bots.cpp:211-228` | imports the entry script from `scripts/bots/<name>.py` (`:222`) |
+| `clientapp.cpp:179-184` (`ClientApp::installEntityDef` head) | module function `MemoryStream` (via `EntityDef::installScript` at `:181` → `entitydef.cpp:2455`) |
 | `kbe/src/lib/client_lib/clientapp.cpp:186-217` (`ClientApp::installEntityDef`) | module functions `publish`, `fireEvent`, `player`, `getSpaceData`, `callback`, `cancelCallback`, `getWatcher`, `getWatcherDir`, `disconnect`, `kbassert` (`:191-200`), resource helpers `getResFullPath`, `hasRes`, `open`, `listPathRes`, `matchPath` (`:203-215`) |
 | `clientapp.cpp:233-268` (`ClientApp::installPyModules`) | registers the `client::Entity` and `EntityComponent` types (`:236-237`), `scriptLogType` (`:240`, duplicate of the bots-side registration at `bots.cpp:185`), `LOG_TYPE_*` ints (`:242-266`), the `entities` map object (`:266`) |
 | `kbe/src/lib/pyscript/script.cpp:247-258` + `kbe/src/lib/pyscript/pyurl.cpp:23` | `component` string attr (`script.cpp:247-251`), `genUUID64` (`:258`), `urlopen` (`pyurl.cpp:23`) |
+
+Module-object vs type-only on bots: `Entity` and `EntityComponent` are added to
+the `KBEngine` module as classes (`kbemain.h:106-107`
+`installScript(script.getModule())`), while `Entities` and `EntityGarbages` are
+type-only (`kbemain.h:108-109` `installScript(NULL)`), and `EntityCall`,
+`EntityComponentCall`, `FixedArray` are type-only too
+(`entitydef.cpp:2456-2460` `installScript(NULL)`). `Vector2`/`Vector3`/`Vector4`
+live on the `Math` module (`script.cpp:291` → `pyscript/math.cpp:12-16`), not on
+`KBEngine`. So a kode face listing those as `KBEngine` classes overstates the
+module surface.
 
 Process plumbing around the script face: a telnet console bound from config
 (`bots.cpp:85-95`), the game-tick timer at `gameUpdateHertz`
@@ -71,14 +82,18 @@ rate-limited by counting 0.1 s sub-ticks down to 0 (`:43-50`), then creating
 `<defaultAddBots>` (`bots.cpp:41-43`;
 `kbe/src/lib/server/serverconfig.cpp:1444-1463`).
 
-### 2.2 Fork-registered functions absent from the source material (11)
+### 2.2 Fork-registered functions absent from the source material (12)
 
 `publish`, `fireEvent` (module-level, string payload — see
 [api-client §2](api-client.md) for the payload caveat), `player`,
 `getSpaceData`, `disconnect`, `kbassert`, `getResFullPath`, `hasRes`, `open`,
 `listPathRes`, `matchPath` — all bound at `clientapp.cpp:191-215`, identical to
-the client face. The source material documents only 8 of the 19 module
-functions the bots process actually exposes.
+the client face — plus `MemoryStream`, bound as a module **function** at
+`clientapp.cpp:181` → `EntityDef::installScript` (`entitydef.cpp:2455`). The
+source material documents only 8 of the 20 module functions the bots process
+actually exposes; the 3.7 material's `KBEngine.MemoryStream` constructor claim
+overstates it as a class — the fork registers a callable function, and the
+`PyMemoryStream` type itself is type-only (`entitydef.cpp:2453`).
 
 ## 3. Entry-script callbacks and module attributes
 
@@ -163,7 +178,7 @@ Source-material deltas specific to the bots `Entity` page are in §6.
 | Item | Official 3.7-era source material says | Fork 3.12 actually does | Domain | Evidence |
 | --- | --- | --- | --- | --- |
 | `addBots` example ("add 5 robots … instantaneously") | implies bots appear immediately | `__py_addBots` only accumulates counters; clients spawn via the 1 s `CreateAndLoginHandler` timer with 0.1 s sub-tick rate limiting | Fork | `bots.cpp:344-387`; `create_and_login_handler.cpp:18-59` |
-| module functions documented for bots | 8 (`addBots callback cancelCallback genUUID64 getWatcher getWatcherDir scriptLogType urlopen`) | 19 registered; 11 undocumented (`publish fireEvent player getSpaceData disconnect kbassert getResFullPath hasRes open listPathRes matchPath`) | Fork | `bots.cpp:182-185`; `clientapp.cpp:191-215`; `script.cpp:258`; `pyurl.cpp:23` |
+| module functions documented for bots | 8 (`addBots callback cancelCallback genUUID64 getWatcher getWatcherDir scriptLogType urlopen`) | 20 registered; 12 undocumented (`publish fireEvent player getSpaceData disconnect kbassert getResFullPath hasRes open listPathRes matchPath MemoryStream`) | Fork | `bots.cpp:182-185`; `clientapp.cpp:191-215`; `script.cpp:258`; `pyurl.cpp:23`; `entitydef.cpp:2455` |
 | `Entity` member functions listed | 7 (omits timers) | `addTimer` / `delTimer` are also script-visible on the bots Entity | Fork | `entity.cpp:32-33` |
 | `Entity.isOnGround` attribute | read-write bool, synced | C++ member only (`entity.h:172-173`), updated from the network stream (`clientobjectbase.cpp:828-875`); **no script getter/setter declared** — as a script attribute it is plugin-layer | 待取证 / to be evidenced — evidence path: diff the official SDK plugin entity class | `entity.h:172-173`; no `SCRIPT_GET(SET)_DECLARE` for it |
 | `Entity.cellData` section | documented as a bots-Entity dict attribute | **no `cellData` anywhere in `client_lib`** (grep: 0 hits) — the section is server-Entity material leaked into the bots page | Fork | grep `cellData lib/client_lib`: 0 hits |
@@ -177,7 +192,7 @@ Source-material deltas specific to the bots `Entity` page are in §6.
 
 ## Coverage summary
 
-19 module functions (8 documented + 11 fork-only), 3 entry-script callbacks
+20 module functions (8 documented + 12 fork-only), 3 entry-script callbacks
 (2 documented + 1 fork-only), 7 module attributes/constants, the 5-member
 `PyBots` mapping, the 8-method / 2-getset client-object face, and the 9-method
 / 10-attribute / 5-callback `Entity` face — every item with a `file:line`
@@ -191,13 +206,13 @@ anchor at HEAD `6d12b8f`.
   `create_and_login_handler.cpp:18-59`, `clientobject.cpp:26-33`,
   `pybots.cpp:22-176`
 - Fork (shared client face): `kbe/src/lib/client_lib/` — `kbemain.h:102`,
-  `clientapp.h:41-48`, `clientapp.cpp:186-217`, `:233-268`, `:343-436`,
-  `:455-475`, `clientobjectbase.h:34`, `clientobjectbase.cpp:20-40`,
+  `clientapp.h:41-48`, `clientapp.cpp:179-184`, `:186-217`, `:233-268`,
+  `:343-436`, `:455-475`, `clientobjectbase.h:34`, `clientobjectbase.cpp:20-40`,
   `:2387-2448`, `entity.h:34`, `:172-173`, `entity.cpp:29-46`, `:561-594`,
   `:787-830`, `:894-898`
 - Fork (shared script layer): `kbe/src/lib/pyscript/script.cpp:247-258`,
   `pyurl.cpp:23`, `:162`; `kbe/src/lib/entitydef/entity_macro.h:45-49`,
-  `:56-64`; `kbe/src/lib/common/common.h:110`;
+  `:56-64`, `entitydef.cpp:2448-2467`; `kbe/src/lib/common/common.h:110`;
   `kbe/src/lib/server/serverconfig.cpp:1444-1463`
 - Source material (rewritten, not copied): kbengine
   `docs/api/kbengine/bots/KBEngine.md`, `Entity.md`, `PyClientApp.md`,

@@ -858,10 +858,11 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "method",
     "signature": "KBEngine.MemoryStream()",
     "qualifier": "",
-    "summaryEn": "The 3.7 source material lists a KBEngine.MemoryStream constructor (binary serializer following engine packing rules). **待取证 / to be evidenced on the baseapp face**: the constructor is registered for PythonApp-based tools at kbe/src/lib/server/python_app.cpp:271 (PyMemoryStream::py_new), but EntityApp::installPyModules (the baseapp chain, entity_app.h:407-453) contains no MemoryStream registration, and no PyMemoryStream::installScript caller was found for baseapp. Evidence path: run a baseapp with KBEngine.MemoryStream() in its entry script and record the result; treat the docs claim as unverif",
-    "summaryZh": "3.7 源料在 baseapp 模块下列出该构造器（按引擎打包规则的二进制序列化 对象）。**baseapp 面待取证**：该构造器注册于 PythonApp 系工具 （kbe/src/lib/server/python_app.cpp:271，PyMemoryStream::py_new）， 但 baseapp 所在的 EntityApp::installPyModules 链（entity_app.h:407-453） 无 MemoryStream 注册，也未找到面向 baseapp 的 PyMemoryStream::installScript 调用。取证路径：在 baseapp 入口脚本执行 KBEngine.MemoryStream() 并记录结果；在此之前该源料断言视为未证实。",
+    "summaryEn": "Binary serializer following engine packing rules. **Resolved against the fork at HEAD 6d12b8f** (no runtime probe needed): MemoryStream is a module-level **function** appended by EntityDef::installScript (kbe/src/lib/entitydef/entitydef.cpp:2448-2467, APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0) at :2455), reached on the baseapp chain from EntityApp::installEntityDef (kbe/src/lib/server/entity_app.h:330-335 → EntityDef::installScript(this->getScript().getModule())). The PyMemoryStream **type** is registered type-only (PyMemoryStream::installSc",
+    "summaryZh": "3.7 源料在 baseapp 模块下列出该构造器（按引擎打包规则的二进制序列化 对象）。**已对 fork HEAD 6d12b8f 裁定**：MemoryStream 是模块级**函数**，由 EntityDef::installScript 追加（kbe/src/lib/entitydef/entitydef.cpp:2448-2467， :2455 处 APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0)），baseapp 链经 EntityApp::installEntityDef（entity_app.h:330-335 → EntityDef::installScript(this->getScript().getModule())）达。PyMemoryStream **类型**仅 type-only（entitydef.cpp:2453 installScript(NULL)）。此前读 EntityApp::installPyModules（entity_app.h:407-453）未见注册系**假阴性**——该函数走 installEntityDef 而非 installPyModules。真机跑 KBEngine.Memory",
     "sourceRefs": [
-      "kbe/src/lib/server/python_app.cpp:271"
+      "kbe/src/lib/entitydef/entitydef.cpp:2448-2467",
+      "kbe/src/lib/server/entity_app.h:330-335"
     ],
     "page": "api-baseapp"
   },
@@ -1960,7 +1961,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "method",
     "signature": "MemoryStream()",
     "qualifier": "",
-    "summaryEn": "KBEngine-serialization byte buffer",
+    "summaryEn": "KBEngine-serialization byte buffer; module **function** (not class — the PyMemoryStream type is type-only at :2453)",
     "summaryZh": "",
     "sourceRefs": [],
     "page": "api-cellapp"

@@ -8,7 +8,7 @@
       "input": { "path": "module-face", "process": "interfaces", "roster": "site1" },
       "engine": {
         "load": "accept",
-        "truth": "档 §1 装配表+§2:20 模块函数全部注册——interfaces.cpp:186-189 四件(chargeResponse/accountLoginResponse/createAccountResponse/executeRawDatabaseCommand)+python_app.cpp:271-296/:329-334 共享十三件(MemoryStream 见类型条目;publish scriptLogType getResFullPath hasRes open listPathRes matchPath debugTracing addTimer delTimer registerReadFileDescriptor registerWriteFileDescriptor deregisterReadFileDescriptor deregisterWriteFileDescriptor)+解释器层三件(script.cpp:258 genUUID64/pyurl.cpp:23 urlopen;addWatcher/delWatcher 缺席单独成条目)"
+        "truth": "档 §1 装配表+§2:21 模块函数全部注册——interfaces.cpp:186-189 四件(chargeResponse/accountLoginResponse/createAccountResponse/executeRawDatabaseCommand)+python_app.cpp:271-296/:329-334 共享十五件(MemoryStream 于 python_app.cpp:271 经 APPEND_SCRIPT_MODULE_METHOD 注册为模块级函数,kode 侧为 class 行故另立 pos-memoryStream-fork-arbitration 分歧条目,不进本名册;余十四件=publish scriptLogType getResFullPath hasRes open listPathRes matchPath debugTracing addTimer delTimer registerReadFileDescriptor registerWriteFileDescriptor deregisterReadFileDescriptor deregisterWriteFileDescriptor)+解释器层两件(script.cpp:258 genUUID64/pyurl.cpp:23 urlopen;component 为 variable 行非函数;addWatcher/delWatcher 缺席单独成条目)——本名册 20 件=四件+十四件+两件"
       },
       "evidence": [
         "`chargeResponse`, `accountLoginResponse`, `createAccountResponse`, `executeRawDatabaseCommand`",
@@ -60,20 +60,24 @@
       }
     },
     {
-      "id": "pos-registered-types",
+      "id": "pos-memoryStream-fork-arbitration",
       "kind": "positive",
-      "input": { "path": "module-face", "process": "interfaces", "roster": "types" },
+      "input": { "path": "module-face", "process": "interfaces", "name": "MemoryStream" },
       "engine": {
         "load": "accept",
-        "truth": "档 §1 共享层:MemoryStream 由 PythonApp::installPyModules 注册(python_app.cpp:271)——interfaces 裸 PythonApp(interfaces.h:24)真走此链,故 MemoryStream 在场(与 baseapp/cellapp EntityApp 链缺席相反);engine KBEngine 面仅此一类脚本类型"
+        "truth": "fork 实读 PythonApp::installPyModules(python_app.cpp:271)以 APPEND_SCRIPT_MODULE_METHOD(module, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0) 把 MemoryStream 注册为模块级函数——interfaces 裸 PythonApp(interfaces.h:24)真走此链;PyMemoryStream 类型仅 type-only(entitydef.cpp:2453 installScript(NULL))。原判「engine KBEngine 面仅此一类脚本类型」误把模块级函数当脚本类型,且断言「baseapp/cellapp EntityApp 链缺席」系漏枚举假阴性(entity_app.h:335→entitydef.cpp:2455 亦注册);interfaces 引擎面无模块类脚本类型(各类型注册均 type-only)"
       },
       "evidence": [
-        "`MemoryStream`, `publish`, `scriptLogType`, `getResFullPath`, `hasRes`, `open`, `listPathRes`, `matchPath`, `debugTracing`, module-level `addTimer`/`delTimer`, `registerReadFileDescriptor`/`registerWriteFileDescriptor` (+`deregister…`)"
+        "`MemoryStream` is a module-level",
+        "**function** (`APPEND_SCRIPT_MODULE_METHOD(module, MemoryStream, ...)` at",
+        "type-only (`entitydef.cpp:2453` `installScript(NULL)`). The same function",
+        "`kbe/src/lib/server/python_app.cpp:271-296`, `:329-334`"
       ],
       "kode": {
         "status": "pinned",
-        "analysis": { "types": ["MemoryStream"] }
-      }
+        "analysis": { "kind": "class", "presentInKode": true }
+      },
+      "finding": "跨族对账翻案(2026-11-22,fork 仲裁):原 pos-registered-types 把 MemoryStream 判为「引擎唯一脚本类型」并把 baseapp/cellapp EntityApp 链判为「缺席」,二者皆假——fork 实读 python_app.cpp:271 以 APPEND_SCRIPT_MODULE_METHOD 注册 MemoryStream 为模块级函数(与 baseapp/cellapp entitydef.cpp:2455、bots clientapp.cpp:181 同源同形态),PyMemoryStream 类型仅 type-only;四族(base/cell/bots/interfaces)同刻翻正为 positive/accept;真实分歧=kind 分歧(引擎 function / kode class),kode 若以 class 收编会与引擎函数形态不符;只钉现状不冒充修复"
     },
     {
       "id": "pos-addtimer-signature",

@@ -429,3 +429,58 @@ categoryI18n「bundle 无死键」+ hotfixSpellingGate「全仓零命中」,均 
 victim 文件零本批改动、本批零 src/ 零 Rust,判例=受害者文件归属非连跑次数,
 solo 三连绿 14/14),CI 权威。本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo);
 语料 33 族 296 条(32→33 族,+11;基线 285=第三十三增量 264+21)。
+
+## MemoryStream 跨族对账翻案(2026-11-22 增量 35)
+
+对账目标:MemoryStream 模块面真值跨四族同步。fork HEAD **6d12b8f** 实读
+**四链皆把 MemoryStream 注册为模块级函数**(非脚本类型):
+baseapp/cellapp 经 `EntityApp::installEntityDef`(`entity_app.h:330-335`)→
+`EntityDef::installScript`(`entitydef.cpp:2448-2467`)以
+`APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new,
+METH_VARARGS, 0)` 注册(`entitydef.cpp:2455`);bots 经 `ClientApp::
+installEntityDef`(`clientapp.cpp:179-184`→`:181`);interfaces 经裸
+`PythonApp::installPyModules`(`python_app.cpp:271`,同宏)。`PyMemoryStream`
+类型本身仅 type-only(`entitydef.cpp:2453` `installScript(NULL)`)。
+
+**原判三处皆假阴性/误判**:
+①baseapp/cellapp `div-memoryStream`(误导方向)系**读错区域**——只枚举
+`entity_app.h:407-453`=installPyModules,遗漏 `installEntityDef`→
+`EntityDef::installScript`;②bots `div-shared-class-rows` 把 MemoryStream
+判入「class 误导超集」系**漏枚举**——只看 `python_app.cpp:271` PythonApp
+路径,遗漏 `clientapp.cpp:181` installEntityDef 路径;③interfaces
+`pos-registered-types` 误把模块级函数当「引擎唯一脚本类型」,并断言
+「baseapp/cellapp EntityApp 链缺席」(续 82 判例 2 口径)——该断言与①②同源
+假。
+
+**翻案动作(四族同刻)**:
+- baseapp/cellapp:`div-memoryStream`→`pos-memoryStream-fork-arbitration`
+  (kind positive/load accept,真实分歧=kind 分歧:引擎 function/kode class);
+- bots:`div-shared-class-rows` classNames 去 MemoryStream(7→6),另立
+  `pos-memoryStream-fork-arbitration`;`pos-module-functions` 计数 19→20;
+- interfaces:`pos-registered-types`→`pos-memoryStream-fork-arbitration`
+  (kind 分歧);`pos-module-functions` 计数 20→21(20 名册+MemoryStream 另立);
+- 档:api-baseapp.md/api-cellapp.md/api-bots.md 已改;api-interfaces.md 补
+  MemoryStream=模块级函数注(档 §1 PythonApp 行原已列其为函数,仅补 type-only
+  澄清)。
+
+**判例=同名符号跨进程真值可异,但同源注册路径真值同**:
+「模块面有无 X」按实际继承链(续 82 判例 2 对:baseapp/cellapp/bots 各经
+EntityApp/ClientApp/PythonApp 链而 MemoryStream 同源注册,interfaces 亦
+PythonApp)——四链皆注册 MemoryStream 为模块函数,故**四族同步翻正**,只翻
+一族即语料自相矛盾(跨族对账规则)。
+
+门禁=定向 truthCorpus 118/118+apiDocsParity 同测 122/122(重基第三十三族后
+全数同测;本批新增 3 it:bots MemoryStream 分歧臂+interfaces MemoryStream
+分歧臂+跨族对账臂)/prove-red 两咬(perturb family-31 条目 id
+回 `div-memoryStream` 与 family-32 条目 id 回 `pos-registered-types`,各红
+2(本族分歧臂+跨族对账臂),sha256 e78896f8/c91c0b00 字节还原复绿)/tsc -p ./
+0/tsc -p tsconfig.mocha.json 0/eslint src 0(tests 2 error 系第九族与第十一族
+旧债,本批零新增;CI lint 仅覆盖 src/)/mocha 烟测 12 passing;全量 vitest
+红集归因=满载负载抖动(本机 6 会话并发 load 66-72,首轮 22 failed 的受害者
+文件零本批改动,可证 perf victim execModesBaseline solo 绿;本批消费面七文件
+(pythonApiHoverDocs/apiDocsRustParity/apiDocsParity/traceCapture/
+settingsGrouping/truthCorpus/perfCallChainDoc)定向 168/168 全绿),CI 权威。
+本批零 src/ 零 Rust 改动(仅语料+执行门+README+todo+api-docs 生成产物
+再生成,apiDocsRustParity 双侧同步再生成故 parity 保持);语料 33 族 297 条
+(bots +1;base/cell/interfaces 条目净零:改名翻正,不增删;基线 296=第三十三族
+usage-stats 落地后)。

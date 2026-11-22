@@ -1687,11 +1687,14 @@ describe('truth-corpus: baseapp-module-face 族执行闸(baseapp 模块面探针
     expect(entry.finding).toContain('漏报方向');
   });
 
-  it('误导分歧臂:MemoryStream 引擎 baseapp 链无注册而 kode 表有 class 行(收窄即红)', () => {
+  it('MemoryStream 分歧臂:引擎 baseapp 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
     const entry = moduleFaceEntries.find(e => e.input.name === 'MemoryStream')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
     expect(baseFaceSymbols.get(entry.input.name!)).toBe(entry.kode.analysis!.kind);
+    expect(entry.kode.analysis!.kind).toBe('class');
     expect(entry.kode.analysis!.presentInKode).toBe(true);
-    expect(entry.finding).toContain('误导方向');
+    expect(entry.finding).toContain('跨族对账翻案');
   });
 
   it('负例臂:onFini/onDelBaseAppData 名册不进 SPI 表;引擎真名 onBaseAppDataDel 在场', () => {
@@ -1939,11 +1942,13 @@ describe('truth-corpus: cellapp-module-face 族执行闸(cell 模块面探针)',
     expect(flipped.engine.load).toBe('accept');
   });
 
-  it('MemoryStream 误导臂:引擎 cell 链无注册而 kode 表有 class 行(收窄即红)', () => {
+  it('MemoryStream 分歧臂:引擎 cell 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
     const entry = cellFaceEntries.find(e => e.input.name === 'MemoryStream')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
     expect(cellFaceSymbols.get('MemoryStream')).toMatchObject({ kind: 'class' });
     expect(entry.kode.analysis!.presentInKode).toBe(true);
-    expect(entry.finding).toContain('误导方向');
+    expect(entry.finding).toContain('跨族对账翻案');
   });
 
   it('APP_FLAGS 漏报臂:引擎注册的 APP_FLAGS_* 常量在 kode 表缺席(收编即红)', () => {
@@ -1969,9 +1974,11 @@ describe('truth-corpus: cellapp-module-face 族执行闸(cell 模块面探针)',
 });
 
 // ── 第三十一族 bots-module-face(KB-API-007 bots 模块面)────────────
-// bots 符号表(36)存在性+kind+签名直钉;19 模块函数/7 属性常量/Entity+EntityComponent
-// 类型对齐;addBots 双形态签名+arity 2 误导分歧;entities 属性漏报分歧;共享 class 超集
-// 七行误导分歧按现状钉——kode 侧收编或收窄即红,触发重钉,不冒充修复。onTargetChanged
+// bots 符号表(36)存在性+kind+签名直钉;20 模块函数(19 进名册+MemoryStream kind 分歧另立)/
+// 7 属性常量/Entity+EntityComponent 类型对齐;addBots 双形态签名+arity 2 误导分歧;entities
+// 属性漏报分歧;共享 class 超集六行误导分歧按现状钉——kode 侧收编或收窄即红,触发重钉,不冒充
+// 修复。MemoryStream 原判入 class 超集系漏枚举假阴性(clientapp.cpp:181→entitydef.cpp:2455
+// 模块级函数),2026-11-22 跨族对账翻案四族同刻翻正(base/cell/bots/interfaces)。onTargetChanged
 // wired-but-dead(fork clientapp.cpp:455 接线但 setTargetID 全树零调用)按未核钉;family-12
 // proc-bots-subset-absent 的六项缺席由本族全枚举解封(对账注记随本族,不冒充改写彼族)。
 interface BotsFaceEntry extends TruthEntryBase {
@@ -2042,12 +2049,48 @@ describe('truth-corpus: bots-module-face 族执行闸(bots 模块面探针)', ()
     expect(entry.finding).toContain('漏报方向');
   });
 
-  it('共享 class 超集臂:七条 class 行在场,引擎 bots 面只注册 Entity+EntityComponent(收窄即红)', () => {
+  it('共享 class 超集臂:六条 class 行在场,引擎 bots 面只注册 Entity+EntityComponent(收窄即红)', () => {
     const entry = botsFaceEntries.find(e => e.input.roster === 'classes')!;
     for (const name of entry.kode.analysis!.classNames!) {
       expect(botsFaceSymbols.get(name), name).toMatchObject({ kind: 'class' });
     }
     expect(entry.finding).toContain('误导方向');
+    expect(entry.kode.analysis!.classNames!).not.toContain('MemoryStream');
+  });
+
+  it('MemoryStream 分歧臂:引擎 bots 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
+    const entry = botsFaceEntries.find(e => e.id === 'pos-memoryStream-fork-arbitration')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
+    expect(botsFaceSymbols.get('MemoryStream')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('跨族对账翻案');
+  });
+
+  it('跨族对账臂:MemoryStream 四族(base/cell/bots/interfaces)同刻翻正,单族回翻或回加旧误导条目即红', () => {
+    interface SyncEntry {
+      id: string;
+      kind: string;
+      engine: { load: string };
+      kode: { status: string; analysis?: { kind?: string; presentInKode?: boolean } };
+    }
+    const assertMs = (label: string, family: { entries: unknown[] }) => {
+      const arr = family.entries as unknown as SyncEntry[];
+      expect(arr.some(e => e.id === 'div-memoryStream'), `${label} 旧误导条目应已翻案`).toBe(false);
+      const e = arr.find(x => x.id === 'pos-memoryStream-fork-arbitration')!;
+      expect(e, `${label} 翻案条目应在`).toBeDefined();
+      expect(e.kind, label).toBe('positive');
+      expect(e.engine.load, label).toBe('accept');
+      expect(e.kode.analysis!.presentInKode, label).toBe(true);
+      return e.kode.analysis!.kind;
+    };
+    const kinds = [
+      assertMs('baseapp', moduleFaceFamily),
+      assertMs('cellapp', cellFaceFamily),
+      assertMs('bots', botsFaceFamily),
+      assertMs('interfaces', interfacesFaceFamily),
+    ];
+    expect(kinds).toEqual(['class', 'class', 'class', 'class']);
   });
 
   it('Entities 类型未知臂:class 行在场+reason 在(诚实缺口,实例类型名暴露未取证)', () => {
@@ -2070,7 +2113,8 @@ describe('truth-corpus: bots-module-face 族执行闸(bots 模块面探针)', ()
 
 // ── 第三十二族 interfaces-module-face(KB-API-005 interfaces 模块面)────────────
 // interfaces 裸 PythonApp(interfaces.h:24,不经 EntityApp):73 符号表存在性+kind+签名直钉;
-// 20 模块函数/38 错误码/MemoryStream 类/component 值对齐;SERVER_ERR_MAX+DatabaseCommand*
+// 20 模块函数/38 错误码/component 值对齐(MemoryStream=模块级函数 vs kode class,分歧臂另立);
+// SERVER_ERR_MAX+DatabaseCommand*
 // TypeAlias+chargeResponse 越界码三误导分歧按现状钉——kode 侧收编或收窄即红,触发重钉,不冒充
 // 修复。addWatcher/delWatcher 文档 §1「all script-bearing apps」口径被 fork 仲裁推翻
 // (initializePyWatcher 仅 entity_app.h:414 EntityApp 调,interfaces 不经 EntityApp)=负例对齐钉。
@@ -2105,7 +2149,7 @@ const interfacesFaceFamily = families.find(f => f.family === 'interfaces-module-
 const interfacesFaceEntries = interfacesFaceFamily.entries as unknown as InterfacesFaceEntry[];
 const interfacesFaceSymbols = new Map(processApiSymbols('interfaces').map(s => [s.name, s]));
 describe('truth-corpus: interfaces-module-face 族执行闸(interfaces 模块面探针)', () => {
-  it('登记点名册臂:20 模块函数=function 行;38 错误码=variable 行;MemoryStream=class 行', () => {
+  it('登记点名册臂:20 模块函数=function 行;38 错误码=variable 行(MemoryStream 见分歧臂)', () => {
     for (const entry of interfacesFaceEntries) {
       if (entry.kode.status !== 'pinned' || !entry.input.roster || entry.input.roster === 'spi') { continue; }
       const a = entry.kode.analysis!;
@@ -2119,6 +2163,15 @@ describe('truth-corpus: interfaces-module-face 族执行闸(interfaces 模块面
         expect(interfacesFaceSymbols.get(name), `${entry.id}:${name}`).toMatchObject({ kind: 'class' });
       }
     }
+  });
+
+  it('MemoryStream 分歧臂:引擎 interfaces 链有模块级函数而 kode 表为 class 行(跨族对账翻案)', () => {
+    const entry = interfacesFaceEntries.find(e => e.id === 'pos-memoryStream-fork-arbitration')!;
+    expect(entry.kind).toBe('positive');
+    expect(entry.engine.load).toBe('accept');
+    expect(interfacesFaceSymbols.get('MemoryStream')).toMatchObject({ kind: 'class' });
+    expect(entry.kode.analysis!.presentInKode).toBe(true);
+    expect(entry.finding).toContain('跨族对账翻案');
   });
 
   it('SPI 名册臂:五入口回调 components 含 interfaces+required 全 true', () => {

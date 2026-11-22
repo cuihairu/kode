@@ -36,6 +36,12 @@ interfaces 进程是最小的 server-app Python 面。它是裸 `PythonApp`—�
 `interfaces.cpp:178-184` 自行注册了一份 `SERVER_ERR_*`——同一张字符串表、
 同一套值（`server_errors.h:57`）。
 
+在共享 `PythonApp` 面中，`MemoryStream` 是模块级**函数**（`APPEND_SCRIPT_MODULE_METHOD
+(module, MemoryStream, ...)` 于 `python_app.cpp:271`），不是脚本类型——
+`PyMemoryStream` 类型仅 type-only（`entitydef.cpp:2453` `installScript(NULL)`）。
+同一函数亦注册于 baseapp/cellapp EntityApp 链（`entitydef.cpp:2455`）与
+bots ClientApp 链（`clientapp.cpp:181` → `EntityDef::installScript`）。
+
 **入口脚本**按进程配置：`kbengine_defaults.xml → interfaces →
 entryScriptFile`，默认 `kbemain`（`kbe/res/server/kbengine_defaults.xml:234-238`）；
 引擎将其作为模块导入（`lib/server/python_app.cpp:338-342`），下文所有回调

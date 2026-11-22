@@ -194,7 +194,7 @@
       "evidence": [
         "bots has only a subset"
       ],
-      "reason": "缺口=档言 subset 但未枚举缺席成员;kode 实测缺席名单(address/executeRawDatabaseCommand/addWatcher/time/reloadScript/registerReadFileDescriptor)与 subset 语义相容,逐项归属需 bots/KBEngine.md 原文取证(另一档,超本族 grounding 面);补钉为逐项 positive/negative 条目归取证后批次。跨族对账(2026-11-22)=bots-module-face 族(第三十一族,grounding=api-bots.md)已全枚举 bots 模块面(19 函数+7 属性+Entity/EntityComponent 类型),缺席六项逐项确认——address/executeRawDatabaseCommand/addWatcher/time/reloadScript/registerReadFileDescriptor 皆非引擎 bots 注册函数(fork bots.cpp:174-182+clientapp.cpp:191-215/233-268 注册表实读);取证已完成,本族 unknown 历史口径保留不冒充改写,kode 缺席名单为现状钉,逐项条目见彼族。",
+      "reason": "缺口=档言 subset 但未枚举缺席成员;kode 实测缺席名单(address/executeRawDatabaseCommand/addWatcher/time/reloadScript/registerReadFileDescriptor)与 subset 语义相容,逐项归属需 bots/KBEngine.md 原文取证(另一档,超本族 grounding 面);补钉为逐项 positive/negative 条目归取证后批次。跨族对账(2026-11-22)=bots-module-face 族(第三十一族,grounding=api-bots.md)已全枚举 bots 模块面(20 函数+7 属性+Entity/EntityComponent 类型;MemoryStream 系模块级函数 entitydef.cpp:2455,kind 分歧另立 pos-memoryStream-fork-arbitration 条目,2026-11-22 跨族对账翻案),缺席六项逐项确认——address/executeRawDatabaseCommand/addWatcher/time/reloadScript/registerReadFileDescriptor 皆非引擎 bots 注册函数(fork bots.cpp:174-182+clientapp.cpp:191-215/233-268 注册表实读);取证已完成,本族 unknown 历史口径保留不冒充改写,kode 缺席名单为现状钉,逐项条目见彼族。",
       "kode": {
         "status": "pinned",
         "analysis": {

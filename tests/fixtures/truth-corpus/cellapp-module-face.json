@@ -209,22 +209,22 @@
       "finding": "跨族对账翻案(2026-11-22,fork 仲裁)=process-module-surface 族(第十二族)曾按 api-core-concepts §1.7「cellapp has no `address`」把 cell address 登记为 divergence(engine.load=reject,依据档=api-core-concepts,官方 3.7 材料口径);fork 实读 cellapp.cpp:187 __py_address 登记在场,官方材料口径不适用于 fork——fork 树在场则档内张力须源码仲裁(第二十九族判例),翻案=address 在 cellapp 模块面,第十二族该条目不冒充改写,翻案注记随本族落地,两族语料对齐为正向(皆 kind=positive/load=accept)"
     },
     {
-      "id": "div-memoryStream",
-      "kind": "negative",
+      "id": "pos-memoryStream-fork-arbitration",
+      "kind": "positive",
       "input": { "path": "module-face", "process": "cell", "name": "MemoryStream" },
       "engine": {
-        "load": "reject-silent",
-        "truth": "fork 实读 Cellapp::installPyModules(cellapp.cpp:151-192)调 EntityApp::installPyModules(entity_app.h:404-453)返回;EntityApp 链自含 kbassert..debugTracing+LOG_TYPE_*/NEXT_ONLY+SERVER_ERR 循环+entryScript 装载,不调 PythonApp::installPyModules;MemoryStream 仅 PythonApp::installPyModules 注册(python_app.cpp:271),PythonApp 非 Cellapp 基类(EntityApp:44 直承 ServerApp)——cell 模块面无 MemoryStream"
+        "load": "accept",
+        "truth": "fork 实读 Cellapp::installPyModules(cellapp.cpp:151-192)末行委托 EntityApp::installPyModules(entity_app.h:287→installEntityDef :330-335)→EntityDef::installScript(entitydef.cpp:2448-2467)在 :2455 以 APPEND_SCRIPT_MODULE_METHOD(mod, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0) 把 MemoryStream 注册为模块级函数;PyMemoryStream 类型仅 type-only(:2453 installScript(NULL))——引擎 cell 模块面有 MemoryStream=可调用函数(非 class);原登记误把 MemoryStream 归到 PythonApp 解释层(python_app.cpp:271),而 Cellapp 不经 PythonApp::installPyModules"
       },
       "evidence": [
-        "`MemoryStream()` | interp `python_app.cpp:271`",
-        "Interpreter-layer (all apps)"
+        "`MemoryStream` module function (`APPEND_SCRIPT_MODULE_METHOD` `entitydef.cpp:2455`); `PyMemoryStream` type is type-only (`:2453`)",
+        "`EntityDef::installScript` `entitydef.cpp:2455` (via `EntityApp::installEntityDef` `entity_app.h:335`)"
       ],
       "kode": {
         "status": "pinned",
         "analysis": { "kind": "class", "presentInKode": true }
       },
-      "finding": "divergence 登记(误导方向)=引擎 cell(EntityApp)链无 MemoryStream 注册而 kode cell 符号表含 class MemoryStream 行:补全/类型面会给运行期 AttributeError 的名字;档 §1 行 5 行头「Interpreter-layer (all apps)」与 EntityApp 实际链不符(档内张力,fork 仲裁同 second 十九族判例);只钉现状不冒充修复,收窄归独立批"
+      "finding": "跨族对账翻案(2026-11-22,fork 仲裁):原登记为误导方向=引擎 cell(EntityApp)链无 MemoryStream 而 kode 表有 class 行,系读错区域(entity_app.h:407-453=installPyModules,遗漏 installEntityDef→EntityDef::installScript;档 §1 行 5 行头「Interpreter-layer (all apps)」把 MemoryStream 误归 PythonApp 解释层)的假阴性;fork 实读真值=引擎有 MemoryStream 作模块级函数(entitydef.cpp:2455,经 entity_app.h:335 达),PyMemoryStream 类型仅 type-only,故与 baseapp 族同步翻正为 positive/accept;真实分歧=kind 分歧(引擎 function / kode class),只钉现状不冒充修复"
     },
     {
       "id": "div-appflags-absent",

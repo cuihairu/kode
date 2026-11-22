@@ -25,16 +25,25 @@ bots 是无渲染的客户端模拟器，用于对服务端做压测与浸泡测
 模板以 `KBEngine` 为名安装 Python 模块
 （`kbe/src/lib/client_lib/kbemain.h:102`）。
 
-脚本面由六个注册点组装：
+脚本面由七个注册点组装：
 
 | 注册点 | 注册内容 |
 | --- | --- |
 | `kbe/src/server/tools/bots/bots.cpp:174-182`（`Bots::installPyModules`） | `ClientObject` / `PyBots` 脚本类型（`:176-177`）、`bots` 注册表对象（`:179-180`）、模块函数 `addBots`（`:182`） |
 | `bots.cpp:186-209` | int 常量 `LOG_TYPE_NORMAL/INFO/ERR/DBG/WAR` |
 | `bots.cpp:211-228` | 从 `scripts/bots/<name>.py` 导入入口脚本（`:222`） |
+| `clientapp.cpp:179-184`（`ClientApp::installEntityDef` 头部） | 模块函数 `MemoryStream`（经 `EntityDef::installScript` 于 `:181` → `entitydef.cpp:2455`） |
 | `kbe/src/lib/client_lib/clientapp.cpp:186-217`（`ClientApp::installEntityDef`） | 模块函数 `publish`、`fireEvent`、`player`、`getSpaceData`、`callback`、`cancelCallback`、`getWatcher`、`getWatcherDir`、`disconnect`、`kbassert`（`:191-200`），资源辅助 `getResFullPath`、`hasRes`、`open`、`listPathRes`、`matchPath`（`:203-215`） |
 | `clientapp.cpp:233-268`（`ClientApp::installPyModules`） | 注册 `client::Entity` 与 `EntityComponent` 类型（`:236-237`）、`scriptLogType`（`:240`，与 bots 侧 `bots.cpp:185` 重复注册）、`LOG_TYPE_*` int（`:242-266`）、`entities` 映射对象（`:266`） |
 | `kbe/src/lib/pyscript/script.cpp:247-258` + `kbe/src/lib/pyscript/pyurl.cpp:23` | `component` 字符串属性（`script.cpp:247-251`）、`genUUID64`（`:258`）、`urlopen`（`pyurl.cpp:23`） |
+
+bots 上的模块对象 vs type-only：`Entity` 与 `EntityComponent` 作为类加入
+`KBEngine` 模块（`kbemain.h:106-107` `installScript(script.getModule())`），
+而 `Entities` 与 `EntityGarbages` 仅 type-only（`kbemain.h:108-109`
+`installScript(NULL)`），`EntityCall`、`EntityComponentCall`、`FixedArray` 亦仅
+type-only（`entitydef.cpp:2456-2460` `installScript(NULL)`）。`Vector2`/`Vector3`/
+`Vector4` 位于 `Math` 模块（`script.cpp:291` → `pyscript/math.cpp:12-16`），
+不在 `KBEngine`。故 kode 面把这些列为 `KBEngine` 类即高估模块面。
 
 脚本面周围的进程设施：按配置绑定的 telnet 控制台（`bots.cpp:85-95`）、
 `gameUpdateHertz` 频率的游戏 tick 定时器（`bots.cpp:72-74`，分发
@@ -66,13 +75,16 @@ bots 是无渲染的客户端模拟器，用于对服务端做压测与浸泡测
 `<defaultAddBots>`（`bots.cpp:41-43`；
 `kbe/src/lib/server/serverconfig.cpp:1444-1463`）。
 
-### 2.2 Fork 已注册而源料未记载的函数（11 个）
+### 2.2 Fork 已注册而源料未记载的函数（12 个）
 
 `publish`、`fireEvent`（模块级，字符串载荷——载荷限制见
 [api-client §2](api-client.md)）、`player`、`getSpaceData`、`disconnect`、
 `kbassert`、`getResFullPath`、`hasRes`、`open`、`listPathRes`、`matchPath`
-——全部绑定于 `clientapp.cpp:191-215`，与 client 面一致。源料只记载了
-bots 进程实际暴露的 19 个模块函数中的 8 个。
+——全部绑定于 `clientapp.cpp:191-215`，与 client 面一致——另有 `MemoryStream`，
+绑定为模块级**函数**于 `clientapp.cpp:181` → `EntityDef::installScript`
+（`entitydef.cpp:2455`）。源料只记载了 bots 进程实际暴露的 20 个模块函数中
+的 8 个；3.7 材料的 `KBEngine.MemoryStream` 构造器说法言过其实——fork 注册的
+是可调用函数，`PyMemoryStream` 类型本身仅 type-only（`entitydef.cpp:2453`）。
 
 ## 3. 入口脚本回调与模块属性
 
@@ -157,7 +169,7 @@ bots `Entity` 页源料特有的偏差见 §6。
 | 条目 | 官方 3.7 时代源料称 | fork 3.12 实际行为 | 域 | 证据 |
 | --- | --- | --- | --- | --- |
 | `addBots` 示例（"一次加 5 个……瞬时"） | 暗示机器人立即出现 | `__py_addBots` 只累加计数；客户端由 1 秒周期 `CreateAndLoginHandler` 定时器孵化，0.1 秒子 tick 限速 | Fork | `bots.cpp:344-387`；`create_and_login_handler.cpp:18-59` |
-| bots 模块函数记载 | 8 个（`addBots callback cancelCallback genUUID64 getWatcher getWatcherDir scriptLogType urlopen`） | 实际注册 19 个；11 个未记载（`publish fireEvent player getSpaceData disconnect kbassert getResFullPath hasRes open listPathRes matchPath`） | Fork | `bots.cpp:182-185`；`clientapp.cpp:191-215`；`script.cpp:258`；`pyurl.cpp:23` |
+| bots 模块函数记载 | 8 个（`addBots callback cancelCallback genUUID64 getWatcher getWatcherDir scriptLogType urlopen`） | 实际注册 20 个；12 个未记载（`publish fireEvent player getSpaceData disconnect kbassert getResFullPath hasRes open listPathRes matchPath MemoryStream`） | Fork | `bots.cpp:182-185`；`clientapp.cpp:191-215`；`script.cpp:258`；`pyurl.cpp:23`；`entitydef.cpp:2455` |
 | `Entity` 成员函数清单 | 7 个（漏计时器） | bots Entity 上 `addTimer` / `delTimer` 同样脚本可见 | Fork | `entity.cpp:32-33` |
 | `Entity.isOnGround` 属性 | 可读写 bool，同步 | 仅有 C++ 成员（`entity.h:172-173`），由网络流更新（`clientobjectbase.cpp:828-875`）；**未声明脚本 getter/setter**——作为脚本属性属于插件层 | 待取证 / to be evidenced——取证路径：对比官方 SDK 插件 Entity 类 | `entity.h:172-173`；无对应 `SCRIPT_GET(SET)_DECLARE` |
 | `Entity.cellData` 一节 | 记载为 bots Entity 的 dict 属性 | `client_lib` 中**根本没有 `cellData`**（grep：0 命中）——该节是服务端 Entity 内容泄入 bots 页 | Fork | grep `cellData lib/client_lib`：0 命中 |
@@ -171,7 +183,7 @@ bots `Entity` 页源料特有的偏差见 §6。
 
 ## 覆盖小结
 
-19 个模块函数（8 已记载 + 11 fork 独有）、3 个入口脚本回调（2 已记载 +
+20 个模块函数（8 已记载 + 12 fork 独有）、3 个入口脚本回调（2 已记载 +
 1 fork 独有）、7 个模块属性/常量、`PyBots` 映射的 5 个成员、客户端对象面的
 8 方法 / 2 getset，以及 `Entity` 面的 9 方法 / 10 属性 / 5 回调——全部带
 HEAD `6d12b8f` 的 `file:line` 锚点。
@@ -184,13 +196,13 @@ HEAD `6d12b8f` 的 `file:line` 锚点。
   `create_and_login_handler.cpp:18-59`、`clientobject.cpp:26-33`、
   `pybots.cpp:22-176`
 - Fork（共享 client 面）：`kbe/src/lib/client_lib/`——`kbemain.h:102`、
-  `clientapp.h:41-48`、`clientapp.cpp:186-217`、`:233-268`、`:343-436`、
-  `:455-475`、`clientobjectbase.h:34`、`clientobjectbase.cpp:20-40`、
+  `clientapp.h:41-48`、`clientapp.cpp:179-184`、`:186-217`、`:233-268`、
+  `:343-436`、`:455-475`、`clientobjectbase.h:34`、`clientobjectbase.cpp:20-40`、
   `:2387-2448`、`entity.h:34`、`:172-173`、`entity.cpp:29-46`、`:561-594`、
   `:787-830`、`:894-898`
 - Fork（共享脚本层）：`kbe/src/lib/pyscript/script.cpp:247-258`、
   `pyurl.cpp:23`、`:162`；`kbe/src/lib/entitydef/entity_macro.h:45-49`、
-  `:56-64`；`kbe/src/lib/common/common.h:110`；
+  `:56-64`、`entitydef.cpp:2448-2467`；`kbe/src/lib/common/common.h:110`；
   `kbe/src/lib/server/serverconfig.cpp:1444-1463`
 - 源料（重写，非照抄）：kbengine `docs/api/kbengine/bots/KBEngine.md`、
   `Entity.md`、`PyClientApp.md`、`index.md`（CHM 转换；词粘连排版）
