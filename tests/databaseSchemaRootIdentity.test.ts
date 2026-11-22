@@ -71,8 +71,17 @@ describe('IDE-AUD-055 schema 根身份贯穿 URI', () => {
 
   it('提供文本按各自根解析快照:A/B 同名实体各取各属性不串根', () => {
     const provider = new KBEngineDatabaseSchemaProvider();
-    const contentA = provider.provideTextDocumentContent(createDatabaseSchemaUri('Hero', rootA));
-    const contentB = provider.provideTextDocumentContent(createDatabaseSchemaUri('Hero', rootB));
+    // 剥掉各自根路径再断言:根 tmpdir 的随机后缀可能撞属性名子串(如
+    // -b-<suffix> 恰含 "hp"),路径是展示噪音不是断言对象——剥掉后断言纯
+    // 落在 schema 文本上,避免随机假红。
+    const contentA = provider
+      .provideTextDocumentContent(createDatabaseSchemaUri('Hero', rootA))
+      .split(rootA)
+      .join('<ROOT>');
+    const contentB = provider
+      .provideTextDocumentContent(createDatabaseSchemaUri('Hero', rootB))
+      .split(rootB)
+      .join('<ROOT>');
 
     expect(contentA).toContain('hp');
     expect(contentA).not.toContain('onlyB');
