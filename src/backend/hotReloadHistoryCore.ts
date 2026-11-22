@@ -20,6 +20,8 @@
  * 装配接线(TreeView/面板注册、i18n 渲染、a11y、生命周期绑定)不在本核。
  */
 
+import type { HotReloadErrorReason } from './hotReloadErrorReason';
+
 /** HR-UI-009 状态口径(与 hotReloadStatus 同语义,独立枚举不引 vscode 面) */
 export type HotReloadHistoryStatus = 'sent-unverified' | 'applied' | 'failed';
 
@@ -39,6 +41,29 @@ export interface HotReloadHistoryInput {
   readonly status: HotReloadHistoryStatus;
   /** 失败/拦截摘要(如 HTTP 状态、错误分类;密钥/header 一律不落) */
   readonly errorSummary?: string;
+  /**
+   * 触发源(HR-STATE-007 九要素「trigger」,同 IDE-HOT-102 审计「谁」):
+   * watcher-auto / command / retry / temp-edit;未提供=来源未记录(如实
+   * 缺省,不猜来源)。
+   */
+  readonly trigger?: string;
+  /**
+   * 发送耗时毫秒(HR-STATE-007 九要素「duration」):发送发起锚点到落账时刻;
+   * 发送前的基准冻结记录无耗时(如实缺省,不冒充 0)。
+   */
+  readonly durationMs?: number;
+  /**
+   * 错误原因七类定性(HR-STATE-007 九要素「errorCategory」,HR-STATE-010
+   * 同源分类):与 errorSummary 自由文本互补——summary 是带建议的原文,
+   * 这里是可过滤的定性枚举。
+   */
+  readonly errorCategory?: HotReloadErrorReason;
+  /**
+   * 发送时点冻结的内容 sha256(HR-STATE-007 九要素「hash」):与投递台账
+   * sentDigest 同源,是「这次发出去的到底哪份内容」的可复核依据;读取失败
+   * =如实缺省。
+   */
+  readonly hash?: string;
 }
 
 /** 历史行(只读视图;状态更新经 updateStatus,外部不可变改) */
@@ -60,6 +85,10 @@ export interface HotReloadHistoryFilter {
   /** 时间范围含边界 [from,to];undefined=不限 */
   readonly timeFrom?: number;
   readonly timeTo?: number;
+  /** HR-STATE-007 按触发源过滤(watcher-auto/command/retry/temp-edit) */
+  readonly trigger?: string;
+  /** HR-STATE-007 按错误七类定性过滤(HR-STATE-010 同源枚举) */
+  readonly errorCategory?: HotReloadErrorReason;
 }
 
 export interface HotReloadHistoryPage<T> {
@@ -163,6 +192,19 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
   lines.push(`time: ${new Date(entry.time).toISOString()}`);
   lines.push(`requestId: ${entry.requestId}`);
   lines.push(`status: ${entry.status}`);
+  // HR-STATE-007 可检索九要素的其余四要素(缺省如实不呈现,不伪造占位)
+  if (entry.trigger !== undefined) {
+    lines.push(`trigger: ${entry.trigger}`);
+  }
+  if (entry.durationMs !== undefined) {
+    lines.push(`duration: ${entry.durationMs}ms`);
+  }
+  if (entry.hash !== undefined) {
+    lines.push(`hash: ${entry.hash}`);
+  }
+  if (entry.errorCategory !== undefined) {
+    lines.push(`errorCategory: ${entry.errorCategory}`);
+  }
   if (entry.errorSummary) {
     lines.push(`error: ${entry.errorSummary}`);
   }
@@ -271,6 +313,12 @@ export class HotReloadHistoryCore {
         return false;
       }
       if (query.timeTo !== undefined && entry.time > query.timeTo) {
+        return false;
+      }
+      if (query.trigger !== undefined && entry.trigger !== query.trigger) {
+        return false;
+      }
+      if (query.errorCategory !== undefined && entry.errorCategory !== query.errorCategory) {
         return false;
       }
       return true;

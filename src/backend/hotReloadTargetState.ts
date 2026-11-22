@@ -51,6 +51,12 @@ export interface HotReloadDeliveryRecord {
    */
   source?: string;
   /**
+   * 发送耗时(HR-STATE-007 可检索历史九要素「duration」):发送发起锚点到
+   * 本条落账时刻的毫秒数(回执/失败路径);发送前的基准冻结路径无耗时
+   * (如实 undefined,不冒充 0)。
+   */
+  durationMs?: number;
+  /**
    * 通道(IDE-HOT-102 审计五要素「通道」):kbengine-official/http(部署通道)
    * 或 actionName:<名>(quick action 回落通道);未提供=通道未记录。
    */
@@ -175,7 +181,7 @@ export class HotReloadTargetStateStore {
     key: HotReloadTargetKey,
     file: string,
     outcome: HotReloadDeliveryOutcome,
-    options: { detail?: string; now?: number; attempt?: number; sentDigest?: string; source?: string; channel?: string; fullModule?: string; requestModule?: string } = {}
+    options: { detail?: string; now?: number; attempt?: number; sentDigest?: string; source?: string; channel?: string; fullModule?: string; requestModule?: string; durationMs?: number } = {}
   ): HotReloadDeliveryRecord | undefined {
     const attemptKey = `${buildHotReloadTargetKeyId(key)}${HOT_RELOAD_TARGET_KEY_SEPARATOR}${file}`;
     const current = this.get(key, file);
@@ -213,6 +219,11 @@ export class HotReloadTargetStateStore {
       }
       if (options.requestModule !== undefined) {
         updated.requestModule = options.requestModule;
+      }
+      // HR-STATE-007 发送耗时:回执写回是该次发送的真实耗时来源,同模式
+      // 提供了才覆写(未提供=发送前基准冻结路径无耗时,不冒充 0)。
+      if (options.durationMs !== undefined) {
+        updated.durationMs = options.durationMs;
       }
       this.noteDeliveryEvent(file, current, updated, 'receipt');
       this.put(key, file, updated);
@@ -255,6 +266,9 @@ export class HotReloadTargetStateStore {
         record.fullModule = names.fullModule;
         record.requestModule = names.requestModule;
       }
+    }
+    if (options.durationMs !== undefined) {
+      record.durationMs = options.durationMs;
     }
     this.noteDeliveryEvent(file, undefined, record, 'send');
     this.put(key, file, record);

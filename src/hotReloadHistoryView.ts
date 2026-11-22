@@ -39,7 +39,7 @@ import {
   type HotReloadHistoryStatus
 } from './backend/hotReloadHistoryCore';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
-import { formatHotReloadErrorReason } from './backend/hotReloadErrorReason';
+import { classifyHotReloadErrorReason, formatHotReloadErrorReason } from './backend/hotReloadErrorReason';
 import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
 
 /** workspaceState 持久化键(HR-MOD-014;宿主适配面用) */
@@ -81,6 +81,10 @@ export function translateDeliveryRecord(
   // accepted 只是回执中段(未到 applied 核验),历史三态如实按 sent-unverified
   const status: HotReloadHistoryStatus =
     record.outcome === 'applied' ? 'applied' : record.outcome === 'failed' ? 'failed' : 'sent-unverified';
+  // HR-STATE-007 错误七类定性:与 summary 同源分类(HR-STATE-010);unknown
+  // 如实不入字段(不把「其他」冒充成已定类)
+  const reasonInfo =
+    record.detail !== undefined ? classifyHotReloadErrorReason(record.detail) : undefined;
   return {
     requestId: `${buildHotReloadTargetKeyId({ rootId: record.rootId, targetId: record.targetId })}/${path.basename(record.file)}#${record.attempt}`,
     fullModule: names.fullModule,
@@ -89,7 +93,16 @@ export function translateDeliveryRecord(
     targetId: record.targetId,
     time: record.recordedAt,
     status,
-    ...(record.detail !== undefined ? { errorSummary: formatHotReloadErrorReason(record.detail) } : {})
+    ...(record.detail !== undefined ? { errorSummary: formatHotReloadErrorReason(record.detail) } : {}),
+    // HR-STATE-007 九要素补齐:trigger(审计「谁」)/durationMs(发送耗时)/
+    // hash(发送时点冻结 sha256)/errorCategory(七类定性);台账未记录的
+    // 要素如实缺省,不伪造占位
+    ...(record.source !== undefined ? { trigger: record.source } : {}),
+    ...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
+    ...(record.sentDigest !== undefined ? { hash: record.sentDigest } : {}),
+    ...(reasonInfo !== undefined && reasonInfo.category !== 'unknown'
+      ? { errorCategory: reasonInfo.category }
+      : {})
   };
 }
 

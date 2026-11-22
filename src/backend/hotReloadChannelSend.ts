@@ -122,6 +122,9 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
     list.push(file);
     groups.set(rootId, list);
   }
+  // HR-STATE-007 发送耗时锚点:各组 transport.send 发起时点(KR-AUD-47 同锚);
+  // 落账时刻减锚点=该次发送耗时。发送前为 null(基准冻结路径无耗时)。
+  let sendAnchor: number | null = null;
   const recordOutcome = (
     rootId: string,
     file: string,
@@ -140,6 +143,9 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
       ...(attempt !== undefined ? { attempt } : {}),
       ...(extra?.sentDigest !== undefined ? { sentDigest: extra.sentDigest } : {}),
       ...(deps.source !== undefined ? { source: deps.source } : {}),
+      // HR-STATE-007 发送耗时:发送锚点已立(transport.send 发起)才有耗时;
+      // 发送前的基准冻结落账(sendAnchor 仍为 null)如实不带,不冒充 0
+      ...(sendAnchor !== null ? { durationMs: Math.max(0, now() - sendAnchor) } : {}),
       channel: channelKind
     });
   };
@@ -204,6 +210,7 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
       // 分组/root 解析/冻结 digest 落账(同步但真实耗时)不占核验窗口;多根
       // 批次各组各取各的锚点
       const groupSendStartedAt = now();
+      sendAnchor = groupSendStartedAt;
       try {
         await transport.send(
           { rootId, targetId },
