@@ -650,3 +650,51 @@ describe('HR-STATE-009 历史快照与当前文件状态分离:重启不自动�
     expect(view.state).not.toBe('APPLIED');
   });
 });
+
+// HR-STATE-010 错误原因可操作:FAILED/RESTART_REQUIRED 的 reason 过七类
+// 分类(已知加 [标签] 前缀+原文保留,未知原样透传);装饰/镜头经 view.reason
+// 自动继承分类面。
+describe('HR-STATE-010 错误原因可操作:reason 过七类分类', () => {
+  it('FAILED reason 加 [目标不可达] 标签,原文(原始原因)保留', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(
+      KEY,
+      FILE,
+      'failed',
+      { sentDigest: DIGEST_A, detail: '端点不可达:检查地址/端口与目标服务是否在监听(原始:ECONNREFUSED)' }
+    );
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.state).toBe('FAILED');
+    expect(view.reason).toContain('[目标不可达]');
+    expect(view.reason).toContain('原始:ECONNREFUSED'); // 定性不吞原文
+  });
+
+  it('FAILED reason 不可辨(bare detail)原样透传,不猜类别', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'failed', { sentDigest: DIGEST_A, detail: 'HTTP 500' });
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.reason).toBe('HTTP 500');
+  });
+
+  it('RESTART_REQUIRED reason 加 [需重启] 标签(消息已内嵌动作不叠建议)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    sm.markRestartRequired(KEY, [FILE], ['def 结构变更']);
+    const view = sm.derive(store, KEY, FILE, CONTENT_A);
+    expect(view.state).toBe('RESTART_REQUIRED');
+    expect(view.reason).toContain('[需重启]');
+    expect(view.reason).toContain('需重启进程后再应用'); // 内嵌动作保留
+    expect(view.reason).not.toContain('建议:'); // 已内嵌,不叠
+  });
+
+  it('超时未确认 reason 保持原语义(不强行归类,如实透传)', () => {
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    const view = makeState(20_000, 10_000).derive(store, KEY, FILE, CONTENT_A);
+    expect(view.state).toBe('FAILED');
+    expect(view.reason).toContain('超时');
+    expect(view.reason).not.toContain('['); // 超时语义不冒充七类之一
+  });
+});

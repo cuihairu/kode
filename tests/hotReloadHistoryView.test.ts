@@ -117,6 +117,19 @@ describe('translateDeliveryRecord(HR-PR-06 台账→历史行翻译)', () => {
     expect(core.entries()[0].status).toBe('applied');
     expect(core.entries()[0].requestId).toBe(`${buildHotReloadTargetKeyId({ rootId: 'r1', targetId: '' })}/FightAI.py#1`);
   });
+
+  it('HR-STATE-010 错误摘要过七类分类:已知加标签+原文保留,未知原样透传', () => {
+    // 已知类别:回执不可信 → 加 [回执不可信] 标签,原文保留(定性不吞原文)
+    const untrusted = translateDeliveryRecord(
+      recordOf({ outcome: 'failed', detail: 'applied 回执不可信(digest 缺失或与所发内容不符):保持未确认' }),
+      resolver
+    );
+    expect(untrusted.errorSummary).toContain('[回执不可信]');
+    expect(untrusted.errorSummary).toContain('digest 缺失或与所发内容不符');
+    // 未知类别:裸 HTTP 500 无可辨信号 → 原样透传,不猜不污染
+    const bare = translateDeliveryRecord(recordOf({ outcome: 'failed', detail: 'HTTP 500' }), resolver);
+    expect(bare.errorSummary).toBe('HTTP 500');
+  });
 });
 
 describe('setupHotReloadHistoryView 树装配(HR-UI-002/010/014)', () => {
