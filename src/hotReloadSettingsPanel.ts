@@ -158,7 +158,7 @@ ${numberInput('stabilityWindowMs', s.stabilityWindowMs, FIELD_LABELS.stabilityWi
 <div class="actions">
   <button type="button" id="btn-save">保存</button>
   <button type="button" id="btn-cancel">取消</button>
-  <span id="status" class="${note.startsWith('已') ? 'ok' : note ? 'error' : ''}">${esc(note)}</span>
+  <span id="status" role="status" aria-live="polite" class="${note.startsWith('已') ? 'ok' : note ? 'error' : ''}">${esc(note)}</span>
 </div>
 </form>
 <script>

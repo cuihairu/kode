@@ -194,7 +194,7 @@ export function renderHistoryPanelHtml(input: {
     const hashCell = entry.hash
       ? `<code title="${esc(entry.hash)}">${esc(entry.hash.slice(0, 12))}…</code>`
       : '';
-    return `      <tr data-file="${esc(entry.fileUri)}" title="点击定位文件">
+    return `      <tr data-file="${esc(entry.fileUri)}" tabindex="0" aria-label="定位文件 ${esc(path.basename(entry.fileUri))}" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="点击或回车定位文件">
         <td class="module">${moduleCell}</td>
         <td><code title="${esc(entry.fileUri)}">${esc(path.basename(entry.fileUri))}</code></td>
         <td>${esc(entry.targetId.length > 0 ? entry.targetId : '(default)')}</td>
@@ -261,7 +261,7 @@ export function renderHistoryPanelHtml(input: {
 </style></head>
 <body>
   <h2>热更历史</h2>
-  <div class="header">监听模式: ${esc(input.state.feedStatus.watchMode || '(未配置)')} | 目标: ${esc(input.state.feedStatus.target || '(默认)')} | 显示 ${input.rows.length}/${input.total} 行</div>
+  <div class="header" role="status" aria-live="polite">监听模式: ${esc(input.state.feedStatus.watchMode || '(未配置)')} | 目标: ${esc(input.state.feedStatus.target || '(默认)')} | 显示 ${input.rows.length}/${input.total} 行</div>
   <h3>实时队列</h3>
   <table class="queue">
     <tbody id="queue-rows">
@@ -310,6 +310,7 @@ ${body || '      <tr><td colspan="10">(无匹配行)</td></tr>'}
   ${input.hasMore ? `<div class="more"><button type="button" id="more">加载更多(每页 ${input.pageSize} 行)</button></div>` : ''}
   <script>
     const vscode = acquireVsCodeApi();
+    const openRow = (tr) => vscode.postMessage({ type: 'openFile', file: tr.getAttribute('data-file') });
     window.addEventListener('message', event => {
       if (event.data?.type === 'queueChanged') {
         document.getElementById('queue-rows').innerHTML = event.data.rows;
@@ -339,10 +340,11 @@ ${body || '      <tr><td colspan="10">(无匹配行)</td></tr>'}
     if (more) { more.addEventListener('click', () => vscode.postMessage({ type: 'loadMore' })); }
     // RUST-381 失败点击定位文件:行级委托(虚拟滚动行随窗口重渲,委托挂
     // body 不随行重建丢监听)——命中 data-file 行即回传 host 打开文件。
+    // RUST-384 a11y:鼠标与键盘(Enter/空格行内处理)同走 openRow 单点。
     document.body.addEventListener('click', e => {
       const target = e.target;
       const tr = target && target.closest ? target.closest('tr[data-file]') : null;
-      if (tr) { vscode.postMessage({ type: 'openFile', file: tr.getAttribute('data-file') }); }
+      if (tr) { openRow(tr); }
     });
 ${
   useVirtual
@@ -365,7 +367,8 @@ ${
       const hashCell = entry.hash
         ? '<code title="' + escJs(entry.hash) + '">' + escJs(entry.hash.slice(0, 12)) + '…</code>'
         : '';
-      return '<tr data-file="' + escJs(entry.fileUri) + '" title="点击定位文件">' +
+      const rowLabel = '定位文件 ' + escJs(entry.fileUri.split('/').pop());
+      return '<tr data-file="' + escJs(entry.fileUri) + '" tabindex="0" aria-label="' + rowLabel + '" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="点击或回车定位文件">' +
         '<td class="module">' + moduleCell + '</td>' +
         '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
         '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : '(default)') + '</td>' +

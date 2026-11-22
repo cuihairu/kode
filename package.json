@@ -1515,6 +1515,21 @@
         "mac": "cmd+alt+r"
       },
       {
+        "command": "kbengine.hotReload.historyPanel",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
+        "command": "kbengine.hotReload.showDiagnostics",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
+      {
+        "command": "kbengine.hotReload.settingsPanel",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
+      },
+      {
         "command": "kbengine.processOwnership.openCell",
         "key": "ctrl+alt+shift+c",
         "mac": "cmd+alt+shift+c",
