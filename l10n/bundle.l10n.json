@@ -785,5 +785,6 @@
   "Locate file: missing path": "Locate file: missing path",
   "Cannot open file {file}: {error}": "Cannot open file {file}: {error}",
   "Exported hot reload history (redacted, {count} entries) to {path}": "Exported hot reload history (redacted, {count} entries) to {path}",
-  "Failed to export hot reload history: {error}": "Failed to export hot reload history: {error}"
+  "Failed to export hot reload history: {error}": "Failed to export hot reload history: {error}",
+  "Select the entity to export (last: {entity})": "Select the entity to export (last: {entity})"
 }

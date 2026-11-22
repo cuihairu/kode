@@ -35,6 +35,7 @@ import { runTablePreviewCommand } from './databaseTablePreviewCommand';
 import { createPreviewColumnSourceTableResolver } from './backend/databasePreviewColumnSource';
 import { runSchemaImpactCommand } from './databaseSchemaImpactCommand';
 import {
+  CLONE_PROBE_TIMEOUT_MS_DEFAULT,
   cloneBackendProbe,
   cloneSourceConnectionProbe,
   runConfigureCloneProfileCommand,
@@ -72,6 +73,15 @@ import {
 export interface DatabaseWiringDeps {
   databaseSchemaProvider: KBEngineDatabaseSchemaProvider;
 }
+
+/**
+ * UX-2026-11-22 整改2:探针独立短超时档读取(kbengine.clone.probeTimeoutMs,
+ * 缺省 5s)。导出执行面超时不受此配置影响(探针与执行各自独立档)。
+ */
+export const cloneProbeTimeoutMs = (): number =>
+  vscode.workspace
+    .getConfiguration('kbengine.clone')
+    .get<number>('probeTimeoutMs', CLONE_PROBE_TIMEOUT_MS_DEFAULT);
 
 export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWiringDeps): void {
   const { databaseSchemaProvider } = deps;
@@ -595,9 +605,10 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
         { ...options, location: vscode.ProgressLocation.Notification },
         (_progress, token) => Promise.resolve(task(token))
       ),
-    pickArchiveSavePath: async defaultName => {
+    pickArchiveSavePath: async (defaultName, defaultDir) => {
       const picked = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(defaultName),
+        // UX-2026-11-22 整改1:保存起点落在上次导出目录,不必每次从工作区根找。
+        defaultUri: vscode.Uri.file(defaultDir ? path.join(defaultDir, defaultName) : defaultName),
         filters: { 'KBEngine Player Data Clone': ['kdpclone'] }
       });
       return picked?.fsPath;
@@ -662,7 +673,35 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
     // UX-REVIEW-004b 导出预检:后端门轻探测 + 源连接真实建连测试(SELECT
     // VERSION() 即关)——都在实体/DBID 收集前如实给原因与恢复入口。
     probeCloneBackend: cloneBackendProbe(),
-    probeSourceConnection: cloneSourceConnectionProbe(),
+    // UX-2026-11-22 整改2:探针独立短超时档(kbengine.clone.probeTimeoutMs,
+    // 缺省 5s;探针档在 fire time 读配置);导出执行面超时不受此配置影响。
+    probeSourceConnection: cloneSourceConnectionProbe(undefined, cloneProbeTimeoutMs),
+    // UX-2026-11-22 整改1:上次成功导出选择记忆(workspaceState;同 profiles
+    // 机制的轻量单键,坏形状诚实判无历史)。
+    getLastExportSelection: () => {
+      const stored = context.workspaceState.get<unknown>('kode.playerClone.lastExport');
+      if (!stored || typeof stored !== 'object') {
+        return null;
+      }
+      const shape = stored as Record<string, unknown>;
+      if (
+        typeof shape.entityName !== 'string' ||
+        typeof shape.dbid !== 'string' ||
+        typeof shape.savePath !== 'string' ||
+        typeof shape.encrypt !== 'boolean'
+      ) {
+        return null;
+      }
+      return {
+        entityName: shape.entityName,
+        dbid: shape.dbid,
+        savePath: shape.savePath,
+        encrypt: shape.encrypt
+      };
+    },
+    rememberExportSelection: selection => {
+      void context.workspaceState.update('kode.playerClone.lastExport', selection);
+    },
     channel: playerCloneChannel,
     now: () => Date.now()
     };

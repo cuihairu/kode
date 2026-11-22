@@ -36,6 +36,7 @@ import {
   probePhysicalTables,
   testCloneConnection,
   uniqueValuesFromRows,
+  type CloneMysqlConnection,
   type CloneMysqlModule
 } from './playerDataCloneMysql';
 import {
@@ -92,8 +93,8 @@ export interface PlayerCloneCommandDeps {
     options: { title: string; cancellable: boolean },
     task: (token: { isCancellationRequested: boolean }) => Promise<R>
   ): Promise<R>;
-  /** 导出归档保存路径选择;取消 = undefined。 */
-  pickArchiveSavePath(defaultName: string): Promise<string | undefined>;
+  /** 导出归档保存路径选择;取消 = undefined。defaultDir=上次导出目录(保存起点预填)。 */
+  pickArchiveSavePath(defaultName: string, defaultDir?: string): Promise<string | undefined>;
   /** 导入归档选择;取消 = undefined。 */
   pickArchiveOpenPath(): Promise<string | undefined>;
   /** 审计落盘面;路径由调用方决定(工作区 .kode/clone-runs)。 */
@@ -129,12 +130,36 @@ export interface PlayerCloneCommandDeps {
     password?: string;
     database: string;
   }): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /**
+   * UX-2026-11-22 整改1:上次成功导出的选择记忆(workspaceState 面注入,
+   * databaseWiring 复用 kode.playerClone.profiles 同机制)。缺省=无记忆
+   * (零行为变化,测试替身/旧装配兼容)。只记成功,不记取消/失败。
+   */
+  getLastExportSelection?(): {
+    entityName: string;
+    dbid: string;
+    savePath: string;
+    encrypt: boolean;
+  } | null;
+  /** 成功导出后落记忆(仅成功路径调用)。 */
+  rememberExportSelection?(selection: {
+    entityName: string;
+    dbid: string;
+    savePath: string;
+    encrypt: boolean;
+  }): void;
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
   now(): number;
 }
 
 const PERSISTED_NOT_LIVE =
   'This is a persisted copy of the database, not the live online state.';
+
+/** 路径目录名(手写,免 node:path 依赖;只作保存起点预填)。 */
+function dirnameOf(p: string): string | undefined {
+  const sep = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return sep > 0 ? p.slice(0, sep) : undefined;
+}
 
 const noGateMessage =
   'Player Data Clone requires the Rust backend (kode-server) to be available: check the kode-core server configuration.';
@@ -152,6 +177,8 @@ const TOGGLE_ENCRYPTION_LABEL = 'Toggle encryption';
 /**
  * 导出确认页的加密选择循环:确认项文案携带当前加密态,切换项反复翻转,
  * 直至导出/取消。confirmed=false 即退出导出流程(取消/关窗)。
+ * previewSummary(UX-2026-11-22 整改3):计划预览摘要(表清单/行预算/missing)
+ * 并入占位文案,确认页即看即过;详情仍照写 OUTPUT 留档。
  */
 export async function pickExportEncryption(
   pick: (
@@ -160,7 +187,8 @@ export async function pickExportEncryption(
   ) => Promise<string | undefined>,
   queryCount: number,
   defaultEncrypt: boolean,
-  localize?: CloneL10n
+  localize?: CloneL10n,
+  previewSummary?: string
 ): Promise<{ confirmed: boolean; encrypt: boolean }> {
   const l10n: CloneL10n = localize ?? withL10nArgs;
   let encrypt = defaultEncrypt;
@@ -169,10 +197,9 @@ export async function pickExportEncryption(
     const confirmItem = `${l10n(EXPORT_CONFIRM_ITEM)},${encrypt ? l10n(ENCRYPTED_LABEL) : l10n(PLAIN_LABEL)}`;
     const toggleItem = `${l10n(TOGGLE_ENCRYPTION_LABEL)} → ${encrypt ? l10n(PLAIN_LABEL) : l10n(ENCRYPTED_LABEL)}`;
     const cancelItem = l10n(EXPORT_CANCEL_ITEM);
-    const picked = await pick(
-      [confirmItem, toggleItem, cancelItem],
-      { placeHolder: l10n('Export {count} read-only query results to the archive?', { count: queryCount }) }
-    );
+    const base = l10n('Export {count} read-only query results to the archive?', { count: queryCount });
+    const placeHolder = previewSummary ? `${base}\n\n${previewSummary}` : base;
+    const picked = await pick([confirmItem, toggleItem, cancelItem], { placeHolder });
     if (!picked || picked === cancelItem) {
       return { confirmed: false, encrypt };
     }
@@ -628,24 +655,67 @@ export function cloneBackendProbe(): NonNullable<PlayerCloneCommandDeps['probeCl
   return () => getKodeCoreShadowGate() !== null;
 }
 
+/**
+ * UX-2026-11-22 整改2:探针独立短超时档(可配 kbengine.clone.probeTimeoutMs,
+ * 缺省 5000)。探针只答「现在连不连得上」,不该让用户干等导出执行侧的
+ * 长超时(deadline 120s);超时立即以失败回给既有的重试/配置弹窗,交互
+ * 面不变。导出执行(openCloneSession/executeExportPlan)仍用原超时档。
+ */
+export const CLONE_PROBE_TIMEOUT_MS_DEFAULT = 5000;
+
 export function cloneSourceConnectionProbe(
-  loadModule: () => Promise<CloneMysqlModule> = loadMysqlModule
+  loadModule: () => Promise<CloneMysqlModule> = loadMysqlModule,
+  probeTimeoutMs: number | (() => number) = CLONE_PROBE_TIMEOUT_MS_DEFAULT
 ): NonNullable<PlayerCloneCommandDeps['probeSourceConnection']> {
   return async config => {
-    try {
-      const connection = await openCloneSession(config, {}, loadModule);
+    // 每次调用读档(门禁口径:配置/信任面在 fire time 读,装配后改动即时生效)。
+    const timeoutMs = typeof probeTimeoutMs === 'function' ? probeTimeoutMs() : probeTimeoutMs;
+    // 闭包可变引用用 holder:TS 无法跨 async IIFE 追踪直接赋值窄化。
+    const held: { session: CloneMysqlConnection | null } = { session: null };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const probeWork: Promise<{ ok: true } | { ok: false; reason: string }> = (async () => {
+      const conn = await openCloneSession(config, {}, loadModule);
+      held.session = conn;
       try {
-        const result = await testCloneConnection(connection);
-        return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+        const result = await testCloneConnection(conn);
+        if (result.ok) {
+          return { ok: true };
+        }
+        return { ok: false, reason: result.reason };
       } finally {
         try {
-          await connection.end();
+          await conn.end();
         } catch {
           // 与导出收尾同口径:探针关闭失败不覆盖探测结果。
         }
       }
+    })();
+    const timeoutOutcome = new Promise<{ ok: false; reason: string }>(resolve => {
+      timer = setTimeout(
+        () =>
+          resolve({
+            ok: false,
+            reason: `source connection probe timed out after ${timeoutMs}ms`
+          }),
+        timeoutMs
+      );
+    });
+    try {
+      return await Promise.race([probeWork, timeoutOutcome]);
     } catch (error) {
       return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      // 超时路径:晚到的会话必须销毁,短探针档不能漏连接。
+      if (held.session) {
+        try {
+          held.session.abort?.();
+        } catch {
+          // 已在关闭中的连接销毁失败无害。
+        }
+      }
     }
   };
 }
@@ -699,8 +769,18 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
       if (choice !== retry) { return; }
     }
   }
-  const entityName = await deps.showQuickPick(entityNames, {
-    placeHolder: l10n('Select the entity to export')
+  // UX-2026-11-22 整改1:记住上次选择——上次成功导出的实体置顶(回车即过),
+  // 占位文案带「last:」提示;无历史值时列表序与占位文案照旧(零行为变化)。
+  const lastExport = deps.getLastExportSelection?.() ?? null;
+  const lastEntity =
+    lastExport && entityNames.includes(lastExport.entityName) ? lastExport.entityName : null;
+  const orderedEntities = lastEntity
+    ? [lastEntity, ...entityNames.filter(name => name !== lastEntity)]
+    : entityNames;
+  const entityName = await deps.showQuickPick(orderedEntities, {
+    placeHolder: lastEntity
+      ? l10n('Select the entity to export (last: {entity})', { entity: lastEntity })
+      : l10n('Select the entity to export')
   });
   if (!entityName) {
     return;
@@ -716,13 +796,17 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
   }
   const dbidText = await deps.showInputBox({
     prompt: l10n('Root-table DBID (the entity primary key id)'),
+    value: lastExport?.dbid || undefined,
     validateInput: value => (/^\d+$/.test(value) ? null : l10n('DBID must be a number'))
   });
   if (dbidText === undefined) {
     return;
   }
 
-  const savePath = await deps.pickArchiveSavePath(`${entityName}-${dbidText}.kdpclone`);
+  const savePath = await deps.pickArchiveSavePath(
+    `${entityName}-${dbidText}.kdpclone`,
+    lastExport?.savePath ? dirnameOf(lastExport.savePath) : undefined
+  );
   if (!savePath) {
     return;
   }
@@ -743,23 +827,36 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
         );
         return;
       }
+      // UX-2026-11-22 整改3:计划预览弹窗化——摘要(表清单/行预算/missing)
+      // 并入加密确认 quickpick 占位文案,两步并一步;OUTPUT 照写留档不删。
+      const tablesLine = l10n('Tables: {tables}', {
+        tables: plan.result.queries.map(q => q.table).join(', ')
+      });
+      const budgetLine = l10n('Row budget: {budget}', { budget: plan.result.row_budget });
+      const missingLine =
+        plan.result.missing.length > 0
+          ? l10n('Missing in source: {tables}', { tables: plan.result.missing.join(', ') })
+          : null;
       const preview = [
         `[Player Clone Export] ${entityName} DBID=${dbidText}`,
-        l10n('Tables: {tables}', { tables: plan.result.queries.map(q => q.table).join(', ') }),
-        l10n('Row budget: {budget}', { budget: plan.result.row_budget })
+        tablesLine,
+        budgetLine
       ];
-      if (plan.result.missing.length > 0) {
-        preview.push(l10n('Missing in source: {tables}', { tables: plan.result.missing.join(', ') }));
+      if (missingLine) {
+        preview.push(missingLine);
       }
       preview.push(l10n(PERSISTED_NOT_LIVE));
       deps.channel.appendLine(preview.join('\n'));
       deps.channel.show(true);
 
+      const previewSummary = [tablesLine, budgetLine, ...(missingLine ? [missingLine] : [])].join('\n');
       const encryptionChoice = await pickExportEncryption(
         deps.showQuickPick,
         plan.result.queries.length,
-        (deps.getArchiveEncryptionDefault?.() ?? 'encrypted') === 'encrypted',
-        l10n
+        // 整改1:上次成功导出的加密位作初始态;无历史值回落设置(PDC-0609)。
+        lastExport ? lastExport.encrypt : (deps.getArchiveEncryptionDefault?.() ?? 'encrypted') === 'encrypted',
+        l10n,
+        previewSummary
       );
       if (!encryptionChoice.confirmed) {
         return;
@@ -804,6 +901,13 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
           persisted: l10n(PERSISTED_NOT_LIVE)
         })
       );
+      // 整改1:仅成功路径落记忆(取消/失败不污染下次预填)。
+      deps.rememberExportSelection?.({
+        entityName,
+        dbid: dbidText,
+        savePath,
+        encrypt: encryptionChoice.encrypt
+      });
     } finally {
       try {
         await connection.end();

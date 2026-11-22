@@ -785,5 +785,6 @@
   "Locate file: missing path": "定位文件:路径缺失",
   "Cannot open file {file}: {error}": "无法打开文件 {file}: {error}",
   "Exported hot reload history (redacted, {count} entries) to {path}": "已导出热更历史(脱敏,{count} 条)到 {path}",
-  "Failed to export hot reload history: {error}": "导出热更历史失败:{error}"
+  "Failed to export hot reload history: {error}": "导出热更历史失败:{error}",
+  "Select the entity to export (last: {entity})": "选择要导出的实体(上次: {entity})"
 }
