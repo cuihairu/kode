@@ -6,7 +6,9 @@
  *   {ok, detail};
  * - 宿主=createHotReloadProviderHost:注册表创建+批量注册(注册时机=
  *   宿主装配时),重复 id/apiVersion 不符经 onRejection 如实上报(不静默
- *   收编),dispose 清册(生命周期面;注册表可随宿主重建);
+ *   收编),dispose 清册(生命周期面;注册表可随宿主重建);运行时插件崩溃
+ *   (canSend 抛错)经 onProviderError 如实上报并跳过继续问下一个(RUST-426
+ *   崩溃隔离:单插件崩溃不打断核心/主线程);
  * - 解析序=注册序先到先应答:fork 侧注入实现在前、内置实现在后(装配面
  *   负责以该序注册,fork 专属通道优先于内置通用通道);
  * - 纯逻辑零 vscode;canSend 探测与 send 都不解释 profile 内容(版本闸
@@ -17,6 +19,7 @@ import {
   HOT_RELOAD_PLUGIN_API_VERSION,
   HotReloadProviderRegistry,
   type HotReloadProvider,
+  type HotReloadProviderError,
   type HotReloadRegistryRejection
 } from './hotReloadPluginApi';
 import { sendDefaultHotfix, type DefaultHotfixSendDeps } from './hotReloadDefaultHotfix';
@@ -56,6 +59,8 @@ export interface HotReloadProviderHostInput {
   readonly providers?: readonly HotReloadProvider[];
   /** 注册被拒(重复 id/apiVersion 不符)如实上报面;不静默收编 */
   readonly onRejection?: (rejection: HotReloadRegistryRejection) => void;
+  /** 运行时 provider 崩溃(canSend 抛错)如实上报面(RUST-426 崩溃隔离) */
+  readonly onProviderError?: (error: HotReloadProviderError) => void;
 }
 
 export interface HotReloadProviderHost {
@@ -66,7 +71,9 @@ export interface HotReloadProviderHost {
 
 /** 宿主装配:注册表创建+按序注册+被拒如实上报;dispose 清册不半态 */
 export function createHotReloadProviderHost(input: HotReloadProviderHostInput = {}): HotReloadProviderHost {
-  const registry = new HotReloadProviderRegistry();
+  const registry = new HotReloadProviderRegistry({
+    ...(input.onProviderError ? { onProviderError: input.onProviderError } : {})
+  });
   for (const provider of input.providers ?? []) {
     const rejection = registry.registerSendProvider(provider);
     if (rejection) {

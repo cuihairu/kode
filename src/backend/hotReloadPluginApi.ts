@@ -284,13 +284,27 @@ export interface HotReloadRegistryRejection {
   readonly reason: HotReloadRegistryRejectReason;
 }
 
+/** 运行时 provider 崩溃(HR-QA-014 RUST-426):canSend 抛错的如实上报面 */
+export interface HotReloadProviderError {
+  readonly providerId: string;
+  readonly error: unknown;
+}
+
 /**
  * Provider 注册表:重复 id 与 apiVersion 不符的注册如实拒(返回拒绝原因,
  * 不静默替换、不静默收编);resolve 按 profile 依次问 canSend,应答者胜,
  * 无人应答=null(不回落默认——热更是写引擎内存的动作)。
+ * 崩溃隔离(RUST-426):canSend 抛错的 provider 如实上报(onProviderError)
+ * 并跳过继续问下一个——单插件崩溃绝不向调用方传播(核心/主线程不被打断),
+ * 不静默吞(上报面必须接,装配面决定落审计/状态)。
  */
 export class HotReloadProviderRegistry {
   private readonly sendProviders = new Map<string, HotReloadProvider>();
+  private readonly onProviderError?: (error: HotReloadProviderError) => void;
+
+  constructor(input: { onProviderError?: (error: HotReloadProviderError) => void } = {}) {
+    this.onProviderError = input.onProviderError;
+  }
 
   registerSendProvider(provider: HotReloadProvider): HotReloadRegistryRejection | null {
     if (provider.apiVersion !== HOT_RELOAD_PLUGIN_API_VERSION) {
@@ -309,7 +323,16 @@ export class HotReloadProviderRegistry {
       return null;
     }
     for (const provider of this.sendProviders.values()) {
-      if (provider.canSend(profile)) {
+      let responds = false;
+      try {
+        responds = provider.canSend(profile);
+      } catch (error) {
+        // RUST-426 崩溃隔离:单插件 canSend 抛错=跳过+如实上报,绝不向调用方
+        // 传播(核心/主线程不被单插件崩溃打断),继续问下一个应答者。
+        this.onProviderError?.({ providerId: provider.providerId, error });
+        continue;
+      }
+      if (responds) {
         return provider;
       }
     }
