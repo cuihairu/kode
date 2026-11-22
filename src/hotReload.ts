@@ -1955,6 +1955,9 @@ export function setupHotReload(
       pipeline?.dispose();
       pipeline = undefined;
       // RUST-002:常驻解释器随装配释放,不留孤儿进程
+      // HR-WATCH-014 在途请求策略=自然完成(不建 abort 面):停用只清待提交队列
+      // 并停受理,已发出的 transport 请求不打断——回执照常落台账(UI 数据面),
+      // 旧代回执由代际结算(hotReloadChannelSend)挡住不冒当前。
       execCompile?.dispose();
       execCompile = undefined;
       trigger.dispose();
