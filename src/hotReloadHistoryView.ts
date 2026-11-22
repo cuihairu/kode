@@ -52,6 +52,8 @@ import { writeFileAtomic } from './backend/atomicFileWrite';
 import { buildHotReloadTargetKeyId, type HotReloadDeliveryRecord } from './backend/hotReloadTargetState';
 import { classifyHotReloadErrorReason, formatHotReloadErrorReason, HOT_RELOAD_ERROR_REASON_LABELS, type HotReloadErrorReason } from './backend/hotReloadErrorReason';
 import type { SavePipelineQueueSnapshot } from './backend/hotReloadSavePipeline';
+import { l10nText } from './nlsRuntime';
+import { htmlLang, resolvePanelLocale, strings, type WebviewStrings } from './webviewStrings';
 
 /** workspaceState 持久化键(HR-MOD-014;宿主适配面用) */
 export const HOT_RELOAD_HISTORY_STATE_KEY = 'kbengine.hotReload.history';
@@ -86,14 +88,24 @@ export const VIRTUAL_OVERSCAN_ROWS = 5;
 
 /**
  * HR-STATE-007 面板触发源下拉(台账已知四源)。只列已知值——出现未列出
- * 的来源时不假装可选,树搜索按字面命中。
+ * 的来源时不假装可选,树搜索按字面命中。标签文案走 webviewStrings
+ * (hotReloadHistory.triggerAuto/Command/Retry/TempEdit)。
  */
-const PANEL_TRIGGER_OPTIONS: ReadonlyArray<readonly [string, string]> = [
-  ['watcher-auto', '自动(watcher)'],
-  ['command', '手动命令'],
-  ['retry', '重试'],
-  ['temp-edit', '临时编辑']
-];
+const PANEL_TRIGGER_VALUES = ['watcher-auto', 'command', 'retry', 'temp-edit'] as const;
+
+/** 面板文案类型(webviewStrings.hotReloadHistory;装配面注入,渲染纯) */
+export type HotReloadHistoryPanelStrings = WebviewStrings['hotReloadHistory'];
+
+/** 触发源 → 标签文案(RUST-384 批B;键面不变,仅标签双语) */
+function triggerOptions(t: HotReloadHistoryPanelStrings): ReadonlyArray<readonly [string, string]> {
+  const labels: Record<(typeof PANEL_TRIGGER_VALUES)[number], string> = {
+    'watcher-auto': t.triggerAuto,
+    command: t.triggerCommand,
+    retry: t.triggerRetry,
+    'temp-edit': t.triggerTempEdit
+  };
+  return PANEL_TRIGGER_VALUES.map(value => [value, labels[value]] as const);
+}
 
 /** 模块双名解析面(注入;解析不了如实回落,不猜) */
 export type HotReloadNamesResolver = (file: string) => { fullModule: string; requestModule: string };
@@ -148,16 +160,16 @@ export interface HotReloadHistoryPanelState {
 const esc = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function renderQueueRows(queue: SavePipelineQueueSnapshot): string {
+function renderQueueRows(queue: SavePipelineQueueSnapshot, t: HotReloadHistoryPanelStrings): string {
   const queueCell = (files: readonly string[]): string =>
     files.length === 0
-      ? '(空)'
+      ? t.empty
       : files.map(f => `<code title="${esc(f)}">${esc(path.basename(f))}</code>`).join(' ');
   return (
     [
-      ['归并中', queue.pending],
-      ['预览滞留', queue.previewHeld],
-      ['本波已定稿未发出', queue.wave]
+      [t.queueMerging, queue.pending],
+      [t.queuePreviewHeld, queue.previewHeld],
+      [t.queueWave, queue.wave]
     ] as Array<[string, readonly string[]]>
   )
     .map(([label, files]) => `      <tr><th>${esc(label)}(${files.length})</th><td>${queueCell(files)}</td></tr>`)
@@ -170,34 +182,40 @@ function renderQueueRows(queue: SavePipelineQueueSnapshot): string {
  * 只渲染视口窗口行(computeVirtualScrollWindow),webview 内嵌 DATA 在滚动时用
  * 同公式 JS 镜像重渲窗口行(不走 postMessage 全量重渲,防滚动位置重置);滚动条
  * 按 totalHeightPx 给,不因只渲染窗口行而缩。缺省容量 200 下行数不超阈值,
- * 虚拟模式仅在 capacity 调高(上千记录)时激活——与「分页+淘汰不全量驻留」口径一致。 */
+ * 虚拟模式仅在 capacity 调高(上千记录)时激活——与「分页+淘汰不全量驻留」口径一致。
+ * RUST-384 批B:文案经 t/lang 注入(webviewStrings),渲染纯函数不依赖 vscode。 */
 export function renderHistoryPanelHtml(input: {
   state: HotReloadHistoryPanelState;
   rows: readonly HotReloadHistoryEntry[];
   total: number;
   hasMore: boolean;
   pageSize: number;
-  /** HR-UI-004 实时队列快照(缺省=空三队列,如实显示「(空)」) */
+  /** HR-UI-004 实时队列快照(缺省=空三队列,如实显示空注记) */
   queue?: SavePipelineQueueSnapshot;
   /** 虚拟滚动参数;缺省=不虚拟(既有分页路径)。 */
   virtualize?: { rowHeightPx: number; viewportHeightPx: number; overscanRows: number };
+  /** RUST-384 批B 面板文案(装配面注入 strings(resolvePanelLocale()).hotReloadHistory) */
+  t: HotReloadHistoryPanelStrings;
+  /** webview <html lang>(htmlLang(locale)) */
+  lang: string;
 }): string {
+  const t = input.t;
   const statusLabel = (status: HotReloadHistoryStatus): string =>
-    status === 'applied' ? '已应用' : status === 'failed' ? '失败' : '已发送(未确认)';
+    status === 'applied' ? t.statusApplied : status === 'failed' ? t.statusFailed : t.statusSentUnverified;
   // 行渲染(纯;非虚拟与虚拟初始窗口共用,webview JS 有镜像公式,两处同构)
   const renderRow = (entry: HotReloadHistoryEntry): string => {
     const moduleCell =
       entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
-        ? `${esc(entry.fullModule)}<span class="req">发送: ${esc(entry.requestModule)}</span>`
+        ? `${esc(entry.fullModule)}<span class="req">${esc(t.sentModulePrefix)}${esc(entry.requestModule)}</span>`
         : esc(entry.fullModule || entry.requestModule);
     // HR-STATE-007 哈希列显 12 字符前缀(title 含全 64 值),面板不铺满
     const hashCell = entry.hash
       ? `<code title="${esc(entry.hash)}">${esc(entry.hash.slice(0, 12))}…</code>`
       : '';
-    return `      <tr data-file="${esc(entry.fileUri)}" tabindex="0" aria-label="定位文件 ${esc(path.basename(entry.fileUri))}" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="点击或回车定位文件">
+    return `      <tr data-file="${esc(entry.fileUri)}" tabindex="0" aria-label="${esc(t.locateFilePrefix + path.basename(entry.fileUri))}" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="${esc(t.rowTitle)}">
         <td class="module">${moduleCell}</td>
         <td><code title="${esc(entry.fileUri)}">${esc(path.basename(entry.fileUri))}</code></td>
-        <td>${esc(entry.targetId.length > 0 ? entry.targetId : '(default)')}</td>
+        <td>${esc(entry.targetId.length > 0 ? entry.targetId : t.defaultTarget)}</td>
         <td>${esc(entry.trigger ?? '')}</td>
         <td class="st-${entry.status}">${statusLabel(entry.status)}</td>
         <td>${entry.durationMs !== undefined ? `${entry.durationMs}ms` : ''}</td>
@@ -208,7 +226,7 @@ export function renderHistoryPanelHtml(input: {
       </tr>`;
   };
   const filter = input.state.filter;
-  const queueRows = renderQueueRows(input.queue ?? { pending: [], previewHeld: [], wave: [] });
+  const queueRows = renderQueueRows(input.queue ?? { pending: [], previewHeld: [], wave: [] }, t);
   const virtualize = input.virtualize;
   const useVirtual =
     virtualize !== undefined && input.rows.length > VIRTUAL_SCROLL_THRESHOLD;
@@ -236,8 +254,15 @@ export function renderHistoryPanelHtml(input: {
   const virtualData = useVirtual
     ? JSON.stringify(input.rows)
     : null;
+  // RUST-384 批B:表头与空表注记文案(虚拟/非虚拟两分支共用,防重复散串)
+  const headerCells =
+    `<th>${esc(t.colModule)}</th><th>${esc(t.colFile)}</th><th>${esc(t.colTarget)}</th>` +
+    `<th>${esc(t.colTrigger)}</th><th>${esc(t.colStatus)}</th><th>${esc(t.colDuration)}</th>` +
+    `<th>${esc(t.colHash)}</th><th>${esc(t.colTime)}</th><th>${esc(t.colRequestId)}</th>` +
+    `<th>${esc(t.colError)}</th>`;
+  const noMatchRow = `      <tr><td colspan="10">${esc(t.noMatchRows)}</td></tr>`;
   return `<!DOCTYPE html>
-<html>
+<html lang="${input.lang}">
 <head><meta charset="UTF-8"><style>
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 12px; }
   h2 { margin: 0 0 8px; }
@@ -260,54 +285,59 @@ export function renderHistoryPanelHtml(input: {
   .vscroll { overflow-y: auto; border: 1px solid var(--vscode-panel-border); }
 </style></head>
 <body>
-  <h2>热更历史</h2>
-  <div class="header" role="status" aria-live="polite">监听模式: ${esc(input.state.feedStatus.watchMode || '(未配置)')} | 目标: ${esc(input.state.feedStatus.target || '(默认)')} | 显示 ${input.rows.length}/${input.total} 行</div>
-  <h3>实时队列</h3>
+  <h2>${esc(t.title)}</h2>
+  <div class="header" role="status" aria-live="polite">${esc(t.headerStatus(
+    input.state.feedStatus.watchMode || t.notConfigured,
+    input.state.feedStatus.target || t.headerTargetDefault,
+    input.rows.length,
+    input.total
+  ))}</div>
+  <h3>${esc(t.queueHeading)}</h3>
   <table class="queue">
     <tbody id="queue-rows">
 ${queueRows}
     </tbody>
   </table>
   <form class="filter">
-    <input id="f-module" placeholder="模块包含…" value="${esc(filter.fullModuleContains ?? '')}">
-    <input id="f-target" placeholder="目标 id…" value="${esc(filter.targetId ?? '')}">
+    <input id="f-module" placeholder="${esc(t.modulePlaceholder)}" value="${esc(filter.fullModuleContains ?? '')}">
+    <input id="f-target" placeholder="${esc(t.targetPlaceholder)}" value="${esc(filter.targetId ?? '')}">
     <select id="f-status">
-      <option value="">全部状态</option>
-      <option value="sent-unverified" ${filter.status === 'sent-unverified' ? 'selected' : ''}>已发送(未确认)</option>
-      <option value="applied" ${filter.status === 'applied' ? 'selected' : ''}>已应用</option>
-      <option value="failed" ${filter.status === 'failed' ? 'selected' : ''}>失败</option>
+      <option value="">${esc(t.statusAll)}</option>
+      <option value="sent-unverified" ${filter.status === 'sent-unverified' ? 'selected' : ''}>${esc(t.statusSentUnverified)}</option>
+      <option value="applied" ${filter.status === 'applied' ? 'selected' : ''}>${esc(t.statusApplied)}</option>
+      <option value="failed" ${filter.status === 'failed' ? 'selected' : ''}>${esc(t.statusFailed)}</option>
     </select>
     <select id="f-trigger">
-      <option value="">全部触发</option>
-${PANEL_TRIGGER_OPTIONS.map(([value, label]) => `      <option value="${value}" ${filter.trigger === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
+      <option value="">${esc(t.triggerAll)}</option>
+${triggerOptions(t).map(([value, label]) => `      <option value="${value}" ${filter.trigger === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
     </select>
     <select id="f-category">
-      <option value="">全部类别</option>
+      <option value="">${esc(t.categoryAll)}</option>
 ${Object.entries(HOT_RELOAD_ERROR_REASON_LABELS).map(([value, label]) => `      <option value="${value}" ${filter.errorCategory === value ? 'selected' : ''}>${esc(label)}</option>`).join('\n')}
     </select>
-    <button type="button" id="apply">应用筛选</button>
-    <button type="button" id="clear">清除筛选</button>
+    <button type="button" id="apply">${esc(t.applyFilter)}</button>
+    <button type="button" id="clear">${esc(t.clearFilter)}</button>
   </form>
 ${
   useVirtual
     ? `  <div id="vlist" class="vscroll" style="height: ${virtualize.viewportHeightPx}px">
     <div id="vtop" style="height: ${virtualTopPx}px"></div>
     <table>
-      <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
+      <thead><tr>${headerCells}</tr></thead>
       <tbody id="vbody">
-${body || '      <tr><td colspan="10">(无匹配行)</td></tr>'}
+${body || noMatchRow}
       </tbody>
     </table>
     <div id="vbot" style="height: ${virtualBottomPx}px"></div>
   </div>`
     : `  <table>
-    <thead><tr><th>模块</th><th>文件</th><th>目标</th><th>触发</th><th>状态</th><th>耗时</th><th>内容哈希</th><th>时间</th><th>请求 id</th><th>错误</th></tr></thead>
+    <thead><tr>${headerCells}</tr></thead>
     <tbody>
-${body || '      <tr><td colspan="10">(无匹配行)</td></tr>'}
+${body || noMatchRow}
     </tbody>
   </table>`
 }
-  ${input.hasMore ? `<div class="more"><button type="button" id="more">加载更多(每页 ${input.pageSize} 行)</button></div>` : ''}
+  ${input.hasMore ? `<div class="more"><button type="button" id="more">${esc(t.loadMore(input.pageSize))}</button></div>` : ''}
   <script>
     const vscode = acquireVsCodeApi();
     const openRow = (tr) => vscode.postMessage({ type: 'openFile', file: tr.getAttribute('data-file') });
@@ -350,6 +380,14 @@ ${
   useVirtual
     ? `    // 虚拟滚动(HR-UI-007):滚动时只重渲窗口行(JS 镜像 computeVirtualScrollWindow);
     // 不走 postMessage 全量重渲,滚动位置不重置;滚动条按内容总高。
+    // RUST-384 批B:状态/前缀/定位文案经 JSON.stringify 注入(JS 镜像同构)。
+    const STATUS_APPLIED = ${JSON.stringify(t.statusApplied)};
+    const STATUS_FAILED = ${JSON.stringify(t.statusFailed)};
+    const STATUS_SENT = ${JSON.stringify(t.statusSentUnverified)};
+    const SENT_PREFIX = ${JSON.stringify(t.sentModulePrefix)};
+    const LOCATE_PREFIX = ${JSON.stringify(t.locateFilePrefix)};
+    const ROW_TITLE = ${JSON.stringify(t.rowTitle)};
+    const DEFAULT_TARGET = ${JSON.stringify(t.defaultTarget)};
     const DATA = ${virtualData};
     const ROW_H = ${virtualize.rowHeightPx};
     const OVERSCAN = ${virtualize.overscanRows};
@@ -358,20 +396,20 @@ ${
     const botSp = document.getElementById('vbot');
     const vbody = document.getElementById('vbody');
     const escJs = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    const statusLabelJs = (status) => status === 'applied' ? '已应用' : status === 'failed' ? '失败' : '已发送(未确认)';
+    const statusLabelJs = (status) => status === 'applied' ? STATUS_APPLIED : status === 'failed' ? STATUS_FAILED : STATUS_SENT;
     const rowHtml = (entry) => {
       const moduleCell = entry.requestModule !== entry.fullModule && entry.fullModule.length > 0
-        ? escJs(entry.fullModule) + '<span class="req">发送: ' + escJs(entry.requestModule) + '</span>'
+        ? escJs(entry.fullModule) + '<span class="req">' + escJs(SENT_PREFIX) + escJs(entry.requestModule) + '</span>'
         : escJs(entry.fullModule || entry.requestModule);
       const fileName = entry.fileUri.split('/').pop();
       const hashCell = entry.hash
         ? '<code title="' + escJs(entry.hash) + '">' + escJs(entry.hash.slice(0, 12)) + '…</code>'
         : '';
-      const rowLabel = '定位文件 ' + escJs(entry.fileUri.split('/').pop());
-      return '<tr data-file="' + escJs(entry.fileUri) + '" tabindex="0" aria-label="' + rowLabel + '" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="点击或回车定位文件">' +
+      const rowLabel = escJs(LOCATE_PREFIX) + escJs(entry.fileUri.split('/').pop());
+      return '<tr data-file="' + escJs(entry.fileUri) + '" tabindex="0" aria-label="' + rowLabel + '" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRow(this); }" title="' + escJs(ROW_TITLE) + '">' +
         '<td class="module">' + moduleCell + '</td>' +
         '<td><code title="' + escJs(entry.fileUri) + '">' + escJs(fileName) + '</code></td>' +
-        '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : '(default)') + '</td>' +
+        '<td>' + escJs(entry.targetId.length > 0 ? entry.targetId : DEFAULT_TARGET) + '</td>' +
         '<td>' + escJs(entry.trigger || '') + '</td>' +
         '<td class="st-' + entry.status + '">' + statusLabelJs(entry.status) + '</td>' +
         '<td>' + (entry.durationMs !== undefined ? entry.durationMs + 'ms' : '') + '</td>' +
@@ -539,7 +577,7 @@ export function setupHotReloadHistoryView(
         // 任意行可定位,失败行照用同一动作)
         item.command = {
           command: HOT_RELOAD_LOCATE_FILE_COMMAND,
-          title: '定位文件',
+          title: l10nText('Locate File'),
           arguments: [entry.fileUri]
         };
         return item;
@@ -555,9 +593,9 @@ export function setupHotReloadHistoryView(
       const entries = treeEntries();
       if (node === undefined) {
         return [
-          { kind: 'group', groupKind: 'recent', label: '最近更新' },
-          { kind: 'group', groupKind: 'file', label: '按文件' },
-          { kind: 'group', groupKind: 'target', label: '按目标' }
+          { kind: 'group', groupKind: 'recent', label: l10nText('Recent') },
+          { kind: 'group', groupKind: 'file', label: l10nText('By file') },
+          { kind: 'group', groupKind: 'target', label: l10nText('By target') }
         ];
       }
       if (node.kind === 'group') {
@@ -649,7 +687,7 @@ export function setupHotReloadHistoryView(
 
   const searchCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_SEARCH_COMMAND, async () => {
     const input = await vscode.window.showInputBox({
-      prompt: '按模块名过滤热更历史(fullModule 子串,留空清除)',
+      prompt: l10nText('Filter hot reload history by module name (fullModule substring; leave empty to clear)'),
       value: treeFilterText
     });
     if (input === undefined) {
@@ -666,14 +704,16 @@ export function setupHotReloadHistoryView(
   const clearCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_CLEAR_COMMAND, () => {
     const had = opts.core.size();
     if (had === 0) {
-      void vscode.window.showInformationMessage('热更历史已为空');
+      void vscode.window.showInformationMessage(l10nText('Hot reload history is already empty'));
       return;
     }
     opts.core.clear();
     opts.persist?.save([]);
     refresh();
     postQueue();
-    void vscode.window.showInformationMessage(`已清空热更历史(${had} 条)`);
+    void vscode.window.showInformationMessage(
+      l10nText('Cleared hot reload history ({count} entries)', { count: had })
+    );
   });
   context.subscriptions.push(clearCommand);
 
@@ -683,14 +723,17 @@ export function setupHotReloadHistoryView(
     HOT_RELOAD_LOCATE_FILE_COMMAND,
     async (file: unknown): Promise<void> => {
       if (typeof file !== 'string' || file.length === 0) {
-        void vscode.window.showErrorMessage('定位文件:路径缺失');
+        void vscode.window.showErrorMessage(l10nText('Locate file: missing path'));
         return;
       }
       try {
         await vscode.window.showTextDocument(vscode.Uri.file(file));
       } catch (error) {
         void vscode.window.showErrorMessage(
-          `无法打开文件 ${file}: ${error instanceof Error ? error.message : String(error)}`
+          l10nText('Cannot open file {file}: {error}', {
+            file,
+            error: error instanceof Error ? error.message : String(error)
+          })
         );
       }
     }
@@ -705,7 +748,7 @@ export function setupHotReloadHistoryView(
     async (): Promise<void> => {
       const entries = opts.core.entries();
       if (entries.length === 0) {
-        void vscode.window.showInformationMessage('热更历史已为空');
+        void vscode.window.showInformationMessage(l10nText('Hot reload history is already empty'));
         return;
       }
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -723,10 +766,17 @@ export function setupHotReloadHistoryView(
           uri.fsPath,
           JSON.stringify(buildHistoryExport(entries, { exportedAt: Date.now() }), null, 2)
         );
-        void vscode.window.showInformationMessage(`已导出热更历史(脱敏,${entries.length} 条)到 ${uri.fsPath}`);
+        void vscode.window.showInformationMessage(
+          l10nText('Exported hot reload history (redacted, {count} entries) to {path}', {
+            count: entries.length,
+            path: uri.fsPath
+          })
+        );
       } catch (error) {
         void vscode.window.showErrorMessage(
-          `导出热更历史失败:${error instanceof Error ? error.message : String(error)}`
+          l10nText('Failed to export hot reload history: {error}', {
+            error: error instanceof Error ? error.message : String(error)
+          })
         );
       }
     }
@@ -741,7 +791,7 @@ export function setupHotReloadHistoryView(
   const postQueue = (): void => {
     void panelState.panel?.webview.postMessage({
       type: 'queueChanged',
-      rows: renderQueueRows(pipelineQueue())
+      rows: renderQueueRows(pipelineQueue(), strings(resolvePanelLocale()).hotReloadHistory)
     });
   };
   const renderPanel = (): void => {
@@ -750,6 +800,7 @@ export function setupHotReloadHistoryView(
     if (state === null || panel === null) {
       return;
     }
+    const locale = resolvePanelLocale();
     const filtered = opts.core.filter(state.filter);
     const newestFirst = [...filtered].reverse();
     const visibleCount = state.page * pageSize;
@@ -765,14 +816,16 @@ export function setupHotReloadHistoryView(
         rowHeightPx: VIRTUAL_ROW_HEIGHT_PX,
         viewportHeightPx: VIRTUAL_VIEWPORT_HEIGHT_PX,
         overscanRows: VIRTUAL_OVERSCAN_ROWS
-      }
+      },
+      t: strings(locale).hotReloadHistory,
+      lang: htmlLang(locale)
     });
   };
   const panelCommand = vscode.commands.registerCommand(HOT_RELOAD_HISTORY_PANEL_COMMAND, () => {
     panelState.state = { feedStatus: feedStatus(), filter: {}, page: 1 };
     panelState.panel = vscode.window.createWebviewPanel(
       'kbengineHotReloadHistory',
-      '热更历史',
+      strings(resolvePanelLocale()).hotReloadHistory.title,
       vscode.ViewColumn.Beside,
       { enableScripts: true }
     );

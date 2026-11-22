@@ -14,9 +14,14 @@
 //!   工作区(有 folder)或全局(无 folder),与既有 materializeGlobs 写口径
 //!   同源——不覆盖同段兄弟键。
 //! - **渲染纯函数化**(render/validate 可独立断言),vscode 面只留薄壳。
+//! - **i18n(RUST-384 批B)**:面板全部文案(含校验错误/按钮/JS 状态串)走
+//!   既有 webviewStrings 表(strings(locale).hotReloadSettings),纯渲染
+//!   函数由装配面注入 t/lang,不依赖 vscode——与其余 9 个 webview 面板
+//!   同机制,不新造轮子。
 
 import * as vscode from 'vscode';
 import type { HotReloadSettings } from './hotReload';
+import { htmlLang, resolvePanelLocale, strings, type WebviewStrings } from './webviewStrings';
 
 /** RUST-378 设置面板命令 */
 export const HOT_RELOAD_SETTINGS_PANEL_COMMAND = 'kbengine.hotReload.settingsPanel';
@@ -37,6 +42,9 @@ export const HOT_RELOAD_SETTINGS_FORM_KEYS = [
 
 export type HotReloadSettingsFormKey = (typeof HOT_RELOAD_SETTINGS_FORM_KEYS)[number];
 
+/** 面板文案类型(webviewStrings.hotReloadSettings;装配面注入,渲染纯) */
+export type HotReloadSettingsPanelStrings = WebviewStrings['hotReloadSettings'];
+
 /** 表单保存值(host 验证后的形状;webview 传回的是 unknown,须过验证) */
 export interface HotReloadSettingsSaveValues {
   readonly enabled: boolean;
@@ -55,40 +63,42 @@ export type HotReloadSettingsValidation =
   | { readonly ok: true; readonly values: HotReloadSettingsSaveValues }
   | { readonly ok: false; readonly error: string };
 
-const FIELD_LABELS: Readonly<Record<HotReloadSettingsFormKey, string>> = {
-  enabled: '启用自动更新',
-  triggerMode: '监听模式',
-  debounceMs: '去抖(ms)',
-  syntaxGate: '语法检查',
-  sendViaProviders: '经 Provider 发送',
-  allowRootLevelStem: '根下单层回退',
-  batchFlushMs: '波次冲口(ms)',
-  batchPreviewThreshold: '批量预览阈值',
-  stabilityWindowMs: '写入稳定窗(ms)'
-};
-
 const isFiniteNonNegative = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 /** RUST-378 host 侧验证(不信任 webview):布尔真布尔、数值有限非负整数、
- *  枚举在表;非法如实报字段名,不猜默认。 */
-export function validateHotReloadSettingsValues(values: unknown): HotReloadSettingsValidation {
+ *  枚举在表;非法如实报字段名,不猜默认。错误文案经 t(注入,双语)。 */
+export function validateHotReloadSettingsValues(
+  values: unknown,
+  t: HotReloadSettingsPanelStrings
+): HotReloadSettingsValidation {
   if (typeof values !== 'object' || values === null) {
-    return { ok: false, error: '配置值非对象' };
+    return { ok: false, error: t.errNotObject };
   }
   const v = values as Record<string, unknown>;
+  const labels: Record<HotReloadSettingsFormKey, string> = {
+    enabled: t.enabled,
+    triggerMode: t.triggerMode,
+    debounceMs: t.debounceMs,
+    syntaxGate: t.syntaxGate,
+    sendViaProviders: t.sendViaProviders,
+    allowRootLevelStem: t.allowRootLevelStem,
+    batchFlushMs: t.batchFlushMs,
+    batchPreviewThreshold: t.batchPreviewThreshold,
+    stabilityWindowMs: t.stabilityWindowMs
+  };
   for (const key of ['enabled', 'syntaxGate', 'sendViaProviders', 'allowRootLevelStem'] as const) {
     if (typeof v[key] !== 'boolean') {
-      return { ok: false, error: `${FIELD_LABELS[key]}须为开关` };
+      return { ok: false, error: t.errMustBeSwitch(labels[key]) };
     }
   }
   for (const key of ['debounceMs', 'batchFlushMs', 'batchPreviewThreshold', 'stabilityWindowMs'] as const) {
     if (!isFiniteNonNegative(v[key]) || !Number.isInteger(v[key])) {
-      return { ok: false, error: `${FIELD_LABELS[key]}须为非负整数` };
+      return { ok: false, error: t.errMustBeNonNegativeInt(labels[key]) };
     }
   }
   if (v.triggerMode !== 'onSave' && v.triggerMode !== 'onDiskChange') {
-    return { ok: false, error: `${FIELD_LABELS.triggerMode}须为 onSave 或 onDiskChange` };
+    return { ok: false, error: t.errTriggerMode(labels.triggerMode) };
   }
   return {
     ok: true,
@@ -109,13 +119,19 @@ export function validateHotReloadSettingsValues(values: unknown): HotReloadSetti
 const esc = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** RUST-378 设置表单渲染(纯;字段值与当前设置一致;note=状态条(空=无) */
+/** RUST-378 设置表单渲染(纯;字段值与当前设置一致;note=状态条(空=无;
+ *  noteState=语义着色,不靠中文前缀猜)。t/lang 由装配面注入(双语)。 */
 export function renderHotReloadSettingsPanelHtml(opts: {
   settings: HotReloadSettings;
   note?: string;
+  noteState?: 'ok' | 'error';
+  t: HotReloadSettingsPanelStrings;
+  lang: string;
 }): string {
   const s = opts.settings;
+  const t = opts.t;
   const note = opts.note ?? '';
+  const noteClass = opts.noteState === 'ok' ? 'ok' : opts.noteState === 'error' ? 'error' : '';
   const checkbox = (key: HotReloadSettingsFormKey, value: boolean, label: string): string =>
     `<label class="field"><input type="checkbox" id="f-${key}" ${value ? 'checked' : ''}> ${esc(label)}</label>`;
   const numberInput = (key: HotReloadSettingsFormKey, value: number, label: string): string =>
@@ -123,7 +139,7 @@ export function renderHotReloadSettingsPanelHtml(opts: {
   const selectOption = (value: string, label: string, selected: boolean): string =>
     `<option value="${value}"${selected ? ' selected' : ''}>${label}</option>`;
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${opts.lang}">
 <head>
 <meta charset="utf-8">
 <style>
@@ -140,25 +156,25 @@ button { padding: 4px 12px; }
 </style>
 </head>
 <body>
-<h2>热更配置</h2>
+<h2>${esc(t.title)}</h2>
 <form id="cfg">
-${checkbox('enabled', s.enabled, FIELD_LABELS.enabled)}
-<label class="field"><span>${FIELD_LABELS.triggerMode}</span>
+${checkbox('enabled', s.enabled, t.enabled)}
+<label class="field"><span>${esc(t.triggerMode)}</span>
 <select id="f-triggerMode">
-  ${selectOption('onSave', '保存时(onSave)', s.triggerMode === 'onSave')}
-  ${selectOption('onDiskChange', '磁盘变更时(onDiskChange)', s.triggerMode === 'onDiskChange')}
+  ${selectOption('onSave', t.triggerOnSave, s.triggerMode === 'onSave')}
+  ${selectOption('onDiskChange', t.triggerOnDiskChange, s.triggerMode === 'onDiskChange')}
 </select></label>
-${numberInput('debounceMs', s.debounceMs, FIELD_LABELS.debounceMs)}
-${checkbox('syntaxGate', s.syntaxGate, FIELD_LABELS.syntaxGate)}
-${checkbox('sendViaProviders', s.sendViaProviders, FIELD_LABELS.sendViaProviders)}
-${checkbox('allowRootLevelStem', s.allowRootLevelStem, FIELD_LABELS.allowRootLevelStem)}
-${numberInput('batchFlushMs', s.batchFlushMs, FIELD_LABELS.batchFlushMs)}
-${numberInput('batchPreviewThreshold', s.batchPreviewThreshold, FIELD_LABELS.batchPreviewThreshold)}
-${numberInput('stabilityWindowMs', s.stabilityWindowMs, FIELD_LABELS.stabilityWindowMs)}
+${numberInput('debounceMs', s.debounceMs, t.debounceMs)}
+${checkbox('syntaxGate', s.syntaxGate, t.syntaxGate)}
+${checkbox('sendViaProviders', s.sendViaProviders, t.sendViaProviders)}
+${checkbox('allowRootLevelStem', s.allowRootLevelStem, t.allowRootLevelStem)}
+${numberInput('batchFlushMs', s.batchFlushMs, t.batchFlushMs)}
+${numberInput('batchPreviewThreshold', s.batchPreviewThreshold, t.batchPreviewThreshold)}
+${numberInput('stabilityWindowMs', s.stabilityWindowMs, t.stabilityWindowMs)}
 <div class="actions">
-  <button type="button" id="btn-save">保存</button>
-  <button type="button" id="btn-cancel">取消</button>
-  <span id="status" role="status" aria-live="polite" class="${note.startsWith('已') ? 'ok' : note ? 'error' : ''}">${esc(note)}</span>
+  <button type="button" id="btn-save">${esc(t.save)}</button>
+  <button type="button" id="btn-cancel">${esc(t.cancel)}</button>
+  <span id="status" role="status" aria-live="polite" class="${noteClass}">${esc(note)}</span>
 </div>
 </form>
 <script>
@@ -184,10 +200,10 @@ ${numberInput('stabilityWindowMs', s.stabilityWindowMs, FIELD_LABELS.stabilityWi
     const msg = event.data;
     const status = document.getElementById('status');
     if (msg && msg.type === 'saved') {
-      status.textContent = '已保存';
+      status.textContent = ${JSON.stringify(t.saved)};
       status.className = 'ok';
     } else if (msg && msg.type === 'error') {
-      status.textContent = msg.message || '保存失败';
+      status.textContent = msg.message || ${JSON.stringify(t.saveFailed)};
       status.className = 'error';
     }
   });
@@ -210,11 +226,18 @@ export function setupHotReloadSettingsPanel(
   }
 ): { open(): void } {
   let panel: vscode.WebviewPanel | null = null;
-  const render = (note?: string): void => {
+  const render = (note?: string, noteState?: 'ok' | 'error'): void => {
     if (panel === null) {
       return;
     }
-    panel.webview.html = renderHotReloadSettingsPanelHtml({ settings: deps.readSettings(), note });
+    const locale = resolvePanelLocale();
+    panel.webview.html = renderHotReloadSettingsPanelHtml({
+      settings: deps.readSettings(),
+      note,
+      noteState,
+      t: strings(locale).hotReloadSettings,
+      lang: htmlLang(locale)
+    });
   };
   const open = (): void => {
     if (panel !== null) {
@@ -222,16 +245,22 @@ export function setupHotReloadSettingsPanel(
       render();
       return;
     }
-    panel = vscode.window.createWebviewPanel('kbengineHotReloadSettings', '热更配置', vscode.ViewColumn.Beside, {
-      enableScripts: true
-    });
+    panel = vscode.window.createWebviewPanel(
+      'kbengineHotReloadSettings',
+      strings(resolvePanelLocale()).hotReloadSettings.title,
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true
+      }
+    );
     panel.webview.onDidReceiveMessage(
       message => {
         if (panel === null) {
           return;
         }
         if (message?.type === 'save') {
-          const verdict = validateHotReloadSettingsValues(message.values);
+          const t = strings(resolvePanelLocale()).hotReloadSettings;
+          const verdict = validateHotReloadSettingsValues(message.values, t);
           if (!verdict.ok) {
             void panel.webview.postMessage({ type: 'error', message: verdict.error });
             return;
