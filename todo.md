@@ -756,7 +756,7 @@
 - [ ] RUST-360 （旧 HR-HTTP-018） 使用真实引擎侧服务联调，文档化实际回执字段；无法改服务端时 UI 明确显示未验证。
 
 #### 19.6 热更新生命周期状态与历史（HR-STATE）
-- [ ] RUST-361 （旧 HR-STATE-001） 定义 `disabled/idle/dirty/queued/checking/sending/accepted/applied/sent_unverified/failed/blocked/restart_required/unknown` 状态和迁移表。
+- [x] RUST-361 （旧 HR-STATE-001） 定义 disabled/idle/dirty/queued/checking/sending/accepted/applied/sent_unverified/failed/blocked/restart_required/unknown 状态和迁移表。(2026-11-22 收口;新纯核 src/backend/hotReloadStateMachine.ts 零 vscode 零 IO=13 态统一模型(HotReloadState,名字与 todo 行逐字一致)+状态中文标签(HOT_RELOAD_STATE_LABELS,只述已核实事实未确认不称成功)+迁移表(HOT_RELOAD_STATE_TRANSITIONS,from→合法 to[],收拢既有四面已证迁移:发送→未确认/接受/应用/失败/未知、回执升级 sent_unverified→accepted/applied/failed、再编辑→dirty、def 结构→restart_required、关/拆→disabled;非法迁移如实拒(canHotReloadTransition false,不猜不替代既有守卫))+每键状态机(HotReloadStateMachine:初始 unknown、set 校验迁移表非法拒抛 HotReloadStateTransitionError 可审 key/from/to、trySet 非抛、force 重置面、keys/clear)+两投影(projectDeliveryOutcome 台账四态→13 态/projectStatusKind 状态栏七态→13 态,ready 类归 idle);tests/hotReloadStateMachine.test.ts 19 例(13 态逐字/迁移表自洽/事实可达/非法拒/逐对核对/状态机初始非法幂等 force/投影);载体=375cec66)
 - [ ] RUST-362 （旧 HR-STATE-002） 区分 `lastRequestedHash`、`lastAcceptedHash`、`lastVerifiedAppliedHash`、`currentDiskHash`，不混用。
 - [ ] RUST-363 （旧 HR-STATE-003） `applied` 仅在可信回执或引擎状态查询一致时赋值；旧版本已应用且磁盘又修改时显示 `dirty`。
 - [ ] RUST-364 （旧 HR-STATE-004） 状态按 `(workspaceId, rootId, targetId, uri)` 分区，不允许切换目标后复用旧绿色状态。
