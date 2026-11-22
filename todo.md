@@ -777,7 +777,7 @@
 - [ ] RUST-370 （旧 HR-STATE-010） 错误原因可操作：配置错误、模块冲突、语法错误、目标不可达、应用失败、回执不可信、需重启。
 - [ ] RUST-371 （旧 HR-STATE-011） 接口支持 cancel、retry、retry-all-failed、pause、resume、clear-history；重试需要遵守幂等确认。
 - [x] RUST-372 （旧 HR-STATE-012） event store/UI 更新批处理并限制频率；1000 事件/秒不得产生 1000 次完整 UI 渲染。【2026-11-22 收口:面板开风暴限频已做,载体=feat: throttle hot reload history panel render frequency——前+后沿窗(缺省 500ms,同树节流窗):前沿即时落账+面板开即时重渲染(保「面板打开时即时重渲染」),窗内后续事件只置 dirty 合并,窗末树照常 fire/面板 dirty 才补尾帧;1000 事件/秒→每窗至多前沿+尾帧 2 次全量渲染+2 次全量序列化,不再每事件放大成 1000 次完整渲染;树模式落账由每事件改为窗缘;dispose 清双钟;测试钉=hotReloadHistoryView.test.ts 3 例(风暴上界 1000→2 渲染/2 落账/容量 200 行、孤立事件即时+窗末不补帧、树落账批处理+dispose),门禁稳定子集绿(唯一红=apiDocsRustParity 陈旧二进制早于语料真相翻转 7ac592f4,重建 kode-server 后 solo 绿收口)】
-- [ ] RUST-373 （旧 HR-STATE-013） reducer/property tests 覆盖乱序返回、重复回执、失败后文件再编辑、目标切换、Core 重启。
+- [x] RUST-373 （旧 HR-STATE-013） reducer/property tests 覆盖乱序返回、重复回执、失败后文件再编辑、目标切换、Core 重启。【2026-11-22 收口:载体=test: pin hot reload state machine reducer scenarios——hotReloadStateMachine.test.ts 新 describe 五场景(trySet 非抛 reducer 面逐序列断言):乱序返回(已 applied 再收早代 sent_unverified 如实拒,状态原样不回退)、重复回执(同态二次送达幂等 true 不退)、失败后文件再编辑(failed→dirty 可重入)、目标切换(换键独立,新目标如实 unknown 不串扰)、Core 重启(clear 后全部回落 unknown,不自动相信上一会话 applied——unknown 不可直达 applied 须重走链);纯测试零生产改动,门禁稳定子集绿(唯一红=eventIndexReadyBudget 初扫预算负载抖动族,与本批零重叠,solo 绿收口)】
 
 #### 19.7 热更新 UI / 可视反馈（HR-UI）
 - [x] RUST-374 （旧 HR-UI-001） 状态栏区分 `Watch Off`、`Ready`、`Sending`、`Sent (unverified)`、`Applied`、`Failed`、`Restart Required`。(live 面已齐=src/hotReloadStatus.ts 七态状态机 watch-off(按原因如实分 disabled/empty-globs 双注 §11.1)/ready(+error)/sending/sent-unverified/applied/failed/restart-required 全实现,依赖注入 StatusBarItemLike,pin tests/hotReloadStatus.test.ts;HR-PR-06 批核实勾)
