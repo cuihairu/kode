@@ -1,0 +1,21 @@
+HRS-ENV node=v24.21.0 platform=linux cpus=14 load1=16.06 files=200 assets=/tmp/kode-seg-assets
+HRS-METRIC S1.filter n=200 p50=0.02ms p95=0.05ms p99=0.12ms max=1.01ms
+HRS-METRIC S1.filter.accepted n=1 200 files
+HRS-METRIC S2.hash n=200 p50=28.23ms p95=28.86ms p99=28.89ms max=29.12ms
+HRS-METRIC S3.syntax n=200 p50=0ms p95=0ms p99=0ms max=0ms
+HRS-METRIC S1.diag.trigger n=1 200 events
+HRS-METRIC S1.diag.flushed n=1 200 events
+HRS-METRIC S4.queue n=200 p50=4.85ms p95=5.56ms p99=5.98ms max=6.47ms
+HRS-METRIC S4.queue.count n=1 200 samples
+HRS-METRIC S4.totalCpu n=200 p50=33ms p95=34ms p99=34ms max=34ms
+HRS-METRIC S4.totalCpu.count n=1 200 samples
+HRS-METRIC S5.reason.deduped n=1 1 events
+HRS-METRIC S5.reason.blocked n=1 1 events
+HRS-METRIC S5.reason.debounced n=1 1 events
+HRS-METRIC S5.reason.preview n=1 1 events
+HRS-NOTE S5 队列/丢弃原因全量出口=RUST-341 诊断面板(八型全量落通道),本面只统计四主因计数;filtered(空路径/读不到)不在本面(属异常路径非稳态)
+HRS-METRIC S6.hash n=50 p50=0.45ms p95=3.4ms p99=6.44ms max=6.44ms
+HRS-METRIC S6.syntax n=50 p50=0ms p95=0ms p99=0ms max=0ms
+HRS-METRIC S6.queue n=50 p50=1.48ms p95=1.67ms p99=1.73ms max=1.73ms
+HRS-METRIC S6.totalCpu n=50 p50=2ms p95=5ms p99=7ms max=7ms
+HRS-METRIC S6.saves n=1 50 saves
