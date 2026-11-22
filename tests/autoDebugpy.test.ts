@@ -591,6 +591,55 @@ describe('injectDebugpyAfterStart(启动联动编排)', () => {
 
     expect(reported).toEqual([]);
   });
+
+  // RUST-422(HR-QA-010)工作区信任闸:注入目标 telnet 主机来自工作区配置,
+  // 未信任工作区不发探测包不发 debugpy.listen 命令,状态板据「未注入」如实
+  it('未信任工作区:跳过探测与注入,记 warning,不回报', async () => {
+    configurationOverrides.set('kbengine', { 'debug.autoDebugpy': true });
+    const engine = await startFakeEngine();
+    let probeCalls = 0;
+    const reported: string[] = [];
+    await injectDebugpyAfterStart(['baseapp'], () => [target(engine.port)], {
+      log: recorder,
+      isWorkspaceTrusted: () => false,
+      probe: async () => {
+        probeCalls += 1;
+        return true;
+      },
+      report: serverKey => reported.push(serverKey)
+    });
+
+    expect(probeCalls).toBe(0);
+    expect(reported).toEqual([]);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ component: 'baseapp', level: 'warning' });
+    expect(logs[0].text).toContain('未信任工作区');
+  });
+
+  it('信任闸执行时刻读:未信任跳过,信任后同一调用点恢复注入', async () => {
+    configurationOverrides.set('kbengine', { 'debug.autoDebugpy': true });
+    const engine = await startFakeEngine();
+    let trusted = false;
+    let probeCalls = 0;
+    const opts = (): Parameters<typeof injectDebugpyAfterStart>[2] => ({
+      log: recorder,
+      isWorkspaceTrusted: () => trusted,
+      probe: async () => {
+        probeCalls += 1;
+        return true;
+      },
+      deps: { stepTimeoutMs: 4000 }
+    });
+    await injectDebugpyAfterStart(['baseapp'], () => [target(engine.port)], opts());
+    expect(probeCalls).toBe(0);
+    expect(logs).toHaveLength(1);
+
+    logs.length = 0;
+    trusted = true;
+    await injectDebugpyAfterStart(['baseapp'], () => [target(engine.port)], opts());
+    expect(probeCalls).toBe(1);
+    expect(logs[0].level).toBe('info');
+  });
 });
 
 describe('launch 生成(autoDebugpy 三件套之 c)', () => {

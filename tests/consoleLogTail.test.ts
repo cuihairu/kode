@@ -48,28 +48,38 @@ interface Harness {
   status: { item: { text: string; shows: number } };
   setLogger: (addr: { host: string; port: number } | null) => void;
   setMachined: (state: 'reachable' | 'unreachable') => void;
+  /** RUST-422 信任闸:可变可信标志,验证执行时刻读 */
+  setTrusted: (value: boolean) => void;
+  /** 触发 hub onDidChange(验证信任后下一轮变化恢复连接) */
+  fireHubChange: () => void;
   /** 可变配置,供测试改后验证下次重连生效 */
   config: { enabled: boolean; components: string[] };
 }
 
-const makeHarness = (overrides: Partial<{ components: string[]; enabled: boolean }> = {}): Harness => {
+const makeHarness = (overrides: Partial<{ components: string[]; enabled: boolean; trusted: boolean }> = {}): Harness => {
   const sockets: FakeSocket[] = [];
   const output = { lines: [] as string[], shown: false };
   const status = { item: { text: '', shows: 0 } };
   let loggerAddr: { host: string; port: number } | null = { host: '192.168.5.117', port: 30010 };
   let machined: 'reachable' | 'unreachable' = 'reachable';
+  // RUST-422 信任闸:默认可信;测试可置 false 验证未信任跳过连接
+  let trusted = overrides.trusted ?? true;
   // 可变配置:测试可在重连间改 config,验证 getConfig 每次重读(下次重连生效)
   const config = {
     enabled: overrides.enabled ?? true,
     components: overrides.components ?? []
   };
 
+  let hubChangeCb: (() => void) | null = null;
   const hubLike = {
     getLogger: () => (machined === 'reachable' && loggerAddr
       ? { intaddr: loggerAddr.host, intport: loggerAddr.port, uid: 1001, componentID: 900n }
       : undefined),
     getMachinedState: () => machined,
-    onDidChange: (_cb: () => void) => ({ dispose: () => undefined })
+    onDidChange: (cb: () => void) => {
+      hubChangeCb = cb;
+      return { dispose: () => undefined };
+    }
   };
 
   const controller = new ConsoleLogTailController({
@@ -110,7 +120,9 @@ const makeHarness = (overrides: Partial<{ components: string[]; enabled: boolean
     },
     backoffBaseMs: 1000,
     backoffMaxMs: 30000,
-    tickIntervalMs: 10000
+    tickIntervalMs: 10000,
+    // RUST-422 信任闸:执行时刻读,默认未注入=视为可信(零配置不回归)
+    isWorkspaceTrusted: () => trusted
   });
   return {
     controller,
@@ -123,6 +135,12 @@ const makeHarness = (overrides: Partial<{ components: string[]; enabled: boolean
     },
     setMachined: state => {
       machined = state;
+    },
+    setTrusted: value => {
+      trusted = value;
+    },
+    fireHubChange: () => {
+      hubChangeCb?.();
     }
   };
 };
@@ -181,6 +199,32 @@ describe('ConsoleLogTailController state machine', () => {
     const frame = h.sockets[0].writes[0];
     expect(frame.readUInt16LE(0)).toBe(702);
     expect(frame.subarray(4).equals(expected)).toBe(true);
+    h.controller.dispose();
+  });
+
+  // RUST-422(HR-QA-010)工作区信任闸:日志长连目标(logger 经 machined 发现,
+  // 发现主机 console.discoveryHost 来自工作区配置)未信任工作区不建长连
+  it('未信任工作区:不建立长连,零 socket,灯面如实隐藏', async () => {
+    const h = makeHarness({ trusted: false });
+    h.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sockets).toHaveLength(0);
+    expect(h.controller.getState()).toBe('disabled');
+    h.controller.dispose();
+  });
+
+  it('信任闸执行时刻读:未信任跳过,信任后下一轮 hub 变化恢复连接', async () => {
+    const h = makeHarness({ trusted: false });
+    h.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sockets).toHaveLength(0);
+    expect(h.controller.getState()).toBe('disabled');
+
+    h.setTrusted(true);
+    h.fireHubChange();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sockets).toHaveLength(1);
+    expect(h.controller.getState()).toBe('connected');
     h.controller.dispose();
   });
 
