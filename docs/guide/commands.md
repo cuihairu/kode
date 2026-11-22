@@ -875,6 +875,14 @@ The flow graph panel supports:
   - Empties both the in-memory history core and the persisted record; an already-empty history reports 热更历史已为空 and changes nothing
   - The history tree and any open panel refresh so the cleared state is visible immediately
 
+### `kbengine.hotReload.historyExport`
+
+- Title: `Export Hot Reload History (Masked JSON)`
+- Purpose: write the hot reload history as masked JSON via a save dialog
+- Behavior:
+  - Each row is projected through the export whitelist (request id, module names, file, target, time, status, error summary, trigger, duration, error category, hash) — no whole-object passthrough, so no HTTP header/token/body can leak into the export
+  - Cancelling the save dialog aborts without writing
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`

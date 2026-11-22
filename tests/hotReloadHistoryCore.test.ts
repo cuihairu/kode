@@ -5,6 +5,9 @@ import {
   coalesceHistoryUpdates,
   computeVirtualScrollWindow,
   HotReloadHistoryCore,
+  HOT_RELOAD_HISTORY_EXPORT_FIELDS,
+  projectHotReloadHistoryExportRow,
+  serializeHotReloadHistoryJson,
   type HotReloadHistoryInput
 } from '../src/backend/hotReloadHistoryCore';
 
@@ -426,5 +429,83 @@ describe('HR-STATE-007 残差检索键(requestModule 子串/哈希前缀/耗时�
     ).toEqual(['a']);
     // 全条目 requestModule 缺省 'fight.FightAI':子串命中全部,再叠耗时区间
     expect(core.filter({ requestModuleContains: 'fight', durationFrom: 900 }).map(e => e.requestId)).toEqual(['c', 'd']);
+  });
+});
+describe('HR-STATE-008 保留时间限额(maxAgeMs 剪除过期行)', () => {
+  it('配置 maxAgeMs:以每次记录时刻为参考,早于 (参考−maxAgeMs) 的行剪除;边界(=minTime)保留', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 10000 });
+    core.record(makeEntry({ requestId: 'r-old', time: 0 }));
+    core.record(makeEntry({ requestId: 'r-mid', time: 4000 }));
+    core.record(makeEntry({ requestId: 'r-new', time: 10000 }));
+    expect(core.size()).toBe(3);
+    // 参考=12000 → minTime=2000:time 0 剪除,4000/10000 保留(4000 仍 >2000)
+    core.record(makeEntry({ requestId: 'r-latest', time: 12000 }));
+    expect(core.size()).toBe(3);
+    expect(core.entries().map(e => e.time).sort((a, b) => a - b)).toEqual([4000, 10000, 12000]);
+    expect(core.entries().map(e => e.requestId).sort()).toEqual(['r-latest', 'r-mid', 'r-new']);
+  });
+
+  it('未配 maxAgeMs:只受容量限制,不随时间剪除', () => {
+    const core = new HotReloadHistoryCore({ capacity: 5 });
+    core.record(makeEntry({ requestId: 'a', time: 0 }));
+    core.record(makeEntry({ requestId: 'b', time: 1000000000 }));
+    expect(core.size()).toBe(2);
+  });
+
+  it('同 requestId 替换也触发保留参考滚动(索引随剪除重建,updateStatus 仍可寻址)', () => {
+    const core = new HotReloadHistoryCore({ maxAgeMs: 10000 });
+    core.record(makeEntry({ requestId: 'x', time: 0 }));
+    core.record(makeEntry({ requestId: 'y', time: 1000 }));
+    // 替换 x 推进参考到 12000 → minTime 2000:y@1000 剪除,x@12000 保留
+    core.record(makeEntry({ requestId: 'x', time: 12000 }));
+    expect(core.entries().map(e => e.requestId)).toEqual(['x']);
+    expect(core.updateStatus('y', 'applied')).toBe(false);
+    expect(core.updateStatus('x', 'failed')).toBe(true);
+  });
+});
+
+describe('HR-STATE-008 脱敏 JSON 导出(白名单投影)', () => {
+  const fullEntry = (): HotReloadHistoryInput => ({
+    requestId: 'req-1',
+    fullModule: 'entities.fight.FightAI',
+    requestModule: 'fight.FightAI',
+    fileUri: '/ws/fight/FightAI.py',
+    targetId: 'cellapp-1',
+    time: 1700000000000,
+    status: 'failed',
+    errorSummary: 'ECONNREFUSED',
+    trigger: 'retry',
+    durationMs: 120,
+    errorCategory: 'endpoint-unreachable',
+    hash: 'a'.repeat(64)
+  });
+
+  it('投影只取白名单在场字段:全字段行=12 键;缺省可选字段如实不落', () => {
+    const full = projectHotReloadHistoryExportRow(fullEntry());
+    expect(Object.keys(full).sort()).toEqual([...HOT_RELOAD_HISTORY_EXPORT_FIELDS].sort());
+    const partial = projectHotReloadHistoryExportRow(makeEntry({ requestId: 'p' }));
+    expect(Object.keys(partial).sort()).toEqual(['fileUri', 'fullModule', 'requestId', 'requestModule', 'status', 'targetId', 'time']);
+  });
+
+  it('白名单是脱敏闸:DTO 上额外密钥形状字段不透传(不整体 JSON.stringify)', () => {
+    const entry = fullEntry() as unknown as Record<string, unknown>;
+    entry.header = 'Bearer secret';
+    entry.token = 'abc123';
+    const row = projectHotReloadHistoryExportRow(entry as unknown as HotReloadHistoryInput);
+    expect('header' in row).toBe(false);
+    expect('token' in row).toBe(false);
+    const json = serializeHotReloadHistoryJson([entry as unknown as HotReloadHistoryInput]);
+    expect(json).not.toMatch(/header|token/i);
+  });
+
+  it('序列化:顶层 schema/version/count;entries 白名单投影;无 HTTP body 字段', () => {
+    const json = serializeHotReloadHistoryJson([fullEntry()]);
+    const parsed = JSON.parse(json);
+    expect(parsed.schema).toBe('kbengine.hotReloadHistory');
+    expect(parsed.version).toBe(1);
+    expect(parsed.count).toBe(1);
+    expect(Object.keys(parsed.entries[0]).sort()).toEqual([...HOT_RELOAD_HISTORY_EXPORT_FIELDS].sort());
+    expect('body' in parsed.entries[0]).toBe(false);
+    expect(parsed.entries[0].errorCategory).toBe('endpoint-unreachable');
   });
 });

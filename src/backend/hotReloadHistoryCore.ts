@@ -107,6 +107,12 @@ export interface HotReloadHistoryPage<T> {
 export interface HotReloadHistoryOptions {
   /** 容量(缺省 200):超出淘汰最旧(HR-UI-007 上千记录靠分页+淘汰,不全量驻留) */
   readonly capacity?: number;
+  /**
+   * HR-STATE-008 保留时间限额(ms):以每次记录时刻为参考(reference),丢弃
+   * 更早于 (reference − maxAgeMs) 的行。时间取注入的记录时刻(上游 Date.now
+   * 同源),本核不另取墙钟——参考轴单调确定可测。未配=不限保留(如实不猜)。
+   */
+  readonly maxAgeMs?: number;
 }
 
 /** 合并输入:同 requestId 在窗内的更新序列 */
@@ -221,12 +227,15 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
 /** 热更历史库(纯核):记录/推进/过滤/分组/分页 */
 export class HotReloadHistoryCore {
   private readonly capacity: number;
+  /** HR-STATE-008 保留时间限额 ms(undefined=不限保留) */
+  private readonly maxAgeMs: number | undefined;
   /** 插入序即新旧序(append-only;requestId 替换原位不动序) */
   private readonly rows: HotReloadHistoryEntry[] = [];
   private readonly indexByRequest = new Map<string, number>();
 
   constructor(options: HotReloadHistoryOptions = {}) {
     this.capacity = options.capacity ?? 200;
+    this.maxAgeMs = options.maxAgeMs;
   }
 
   /** 自省:当前行数(测试/装配面核查) */
@@ -252,10 +261,10 @@ export class HotReloadHistoryCore {
     const existing = this.indexByRequest.get(input.requestId);
     if (existing !== undefined) {
       this.rows[existing] = { ...input };
-      return;
+    } else {
+      this.rows.push({ ...input });
+      this.indexByRequest.set(input.requestId, this.rows.length - 1);
     }
-    this.rows.push({ ...input });
-    this.indexByRequest.set(input.requestId, this.rows.length - 1);
     while (this.rows.length > this.capacity) {
       const evicted = this.rows.shift();
       if (evicted) {
@@ -266,6 +275,33 @@ export class HotReloadHistoryCore {
         this.indexByRequest.set(id, index - 1);
       }
     }
+    // HR-STATE-008 保留时间限额:以本次记录时刻为参考剪除过期行(容量淘汰
+    // 与时间保留双闸,先容量后时间;时间轴单调参考,确定可测)
+    this.applyRetention(input.time);
+  }
+
+  /**
+   * HR-STATE-008 保留时间限额(内部):丢弃早于 (reference − maxAgeMs) 的行;
+   * 时间取自注入的记录时刻(上游 Date.now 同源),本核不另取墙钟。未配
+   * maxAgeMs=不限保留(如实不剪)。剪除后重建索引(容量小,O(n) 可接受)。
+   */
+  private applyRetention(referenceMs: number): void {
+    if (this.maxAgeMs === undefined) {
+      return;
+    }
+    const minTime = referenceMs - this.maxAgeMs;
+    const keep: HotReloadHistoryEntry[] = [];
+    for (const entry of this.rows) {
+      if (entry.time >= minTime) {
+        keep.push(entry);
+      }
+    }
+    if (keep.length === this.rows.length) {
+      return;
+    }
+    this.rows.splice(0, this.rows.length, ...keep);
+    this.indexByRequest.clear();
+    keep.forEach((entry, index) => this.indexByRequest.set(entry.requestId, index));
   }
 
   /**
@@ -404,4 +440,47 @@ export class HotReloadHistoryCore {
     }
     return groups;
   }
+}
+
+/**
+ * HR-STATE-008 导出字段白名单(脱敏面):只投显式列出的安全字段,不整体
+ * JSON.stringify 透传——未来 DTO 加字段(含密钥形状)不会自动漏进导出。
+ * 无 HTTP body 字段(历史只存投递元数据,HR-STATE-008「无需持久化所有
+ * HTTP body」),导出面同样无 body 字段。
+ */
+export const HOT_RELOAD_HISTORY_EXPORT_FIELDS = [
+  'requestId',
+  'fullModule',
+  'requestModule',
+  'fileUri',
+  'targetId',
+  'time',
+  'status',
+  'errorSummary',
+  'trigger',
+  'durationMs',
+  'errorCategory',
+  'hash'
+] as const;
+
+/** 白名单投影(纯):只取在场字段,undefined 不落;不整体透传(脱敏闸) */
+export function projectHotReloadHistoryExportRow(entry: HotReloadHistoryEntry): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  for (const field of HOT_RELOAD_HISTORY_EXPORT_FIELDS) {
+    const value = entry[field];
+    if (value !== undefined) {
+      row[field] = value;
+    }
+  }
+  return row;
+}
+
+/** HR-STATE-008 脱敏 JSON 导出(纯):白名单投影 + 顶层 schema/版本/计数 */
+export function serializeHotReloadHistoryJson(entries: readonly HotReloadHistoryEntry[]): string {
+  const rows = entries.map(projectHotReloadHistoryExportRow);
+  return `${JSON.stringify(
+    { schema: 'kbengine.hotReloadHistory', version: 1, count: rows.length, entries: rows },
+    null,
+    2
+  )}\n`;
 }
