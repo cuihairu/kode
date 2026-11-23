@@ -200,7 +200,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.configData.schemas` | object | `{}`(未声明) | 配置管理器对象(`config.getXXX()` / `config[key]`)的声明式类型:管理器对象表达式 → 表键集合;生成存根读该声明而非推断;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
 | `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径。未显式配置时(CFG-01):默认值在盘即生效,不在盘回落自动发现扫描,扫描也落空才由启动检查链报警 |
-| `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
+| `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现。Python/def 索引只扫 `{assetsRoot}/scripts`——详见下方 assetsRoot 细节 |
 | `kbengine.engineVersion` | string | `3.7.3` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此值做版本门控;`fork-` 前缀值还会对 fork 档 KBEngine API 参考条目抑制「需 fork」标注(补全与导出存根),自定义 fork 版本未带前缀则保留标注(保守口径——宁多提示不漏报);打开项目时若引擎安装目录版本标记与此值不同会给出设置建议(一键提供、绝不自动改、忽略按工作区记住) |
 | `kbengine.gitHistory.enabled` | boolean | `true` | 文件 Git 历史功能开关(IDE-GIT-001):开启时出现「查看文件历史 / 查看选中范围历史」入口(资源管理器/编辑器右键+命令面板),仅在用户点开入口时按需查询 Git(激活/打开文件/光标/选区变化绝不运行 Git,不预取不轮询);关闭后入口隐藏,直接调用命令也不运行任何 Git |
 
@@ -239,6 +239,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 - 批128 起自动发现:原值未过引擎装载探针(其下无 `res/server/kbengine.xml`)时,按 约定链 → 多候选记忆选择 → 深扫描唯一命中 兜底;发现出的根同样供 telnet 探测与最终配置视图取元件 `kbengine.xml`。约定链批129 起含工作区一级 `*_assets` 目录(如 `flyff_assets`)——目录名只是准入,命中仍以探针验收
 - 探针只验用户副本 `kbengine.xml`,不要求 `kbengine_defaults.xml` 在场:引擎对两份配置各在各的树里装载(kbemain.h:71-74 先载 defaults 再载用户副本覆盖;引擎注释 kbemain.h:133-137 示例即 defaults 在引擎 res 树、用户副本在资产树),资产根的锚点就是用户副本——引擎 `getPyUserResPath()` 也以 `matchRes("server/kbengine.xml")` 定位资产树。扩展同口径:defaults 从 binPath/引擎源码根推导(`deriveEngineDefaultsXmlPath`),用户副本从资产根找,两树独立
 - 启动前会校验:发现与显式都落空时空串、目录不存在、路径不是目录都会报错并中止启动;目录在而探针文件缺 → 输出通道留 `[WARN]` 不拦截(批127)
+- **索引扫描根(2026-11-23 用户令)**:Python/def 索引**只扫 `{assetsRoot}/scripts`**——脚本源是最小的有用范围,资产树其余部分(`res/`、`entity_defs/`…)对类/实体索引无用。`{assetsRoot}/scripts` 不存在时,索引扫描根列表为**空**(什么都不扫),**绝不回退**到 assetsRoot 本体或 workspace 顶层——那会把引擎仓/依赖树/构建产物扫进索引(2398 文件全盘扫即由此来)。调用方按「配置不对」处理空根而非静默全扫。显式配置但解析不出的资产根(配置值指向不存在的路径)同样是空扫描根——显式配置是意图不是猜测,不拿 workspace 顶替。只有真非 KBEngine 工作区(未配置且未发现资产根)保留旧 per-folder 工作区扫描(有 `scripts` 子目录时同样收窄到它)
 - 误配:指到仓库根而不是资产目录 → 探针不通过,自动发现接管;发现也落空时引擎在 `res`/`scripts` 子目录下找不到脚本,组件起不来;元件 `kbengine.xml` 定位不到时 telnet 与最终配置退回纯默认
 
 ### 最终配置视图
