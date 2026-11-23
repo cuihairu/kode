@@ -5,6 +5,7 @@ import {
   type ServerNotificationMessage
 } from './kodeCoreClient';
 import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
+import { resetInteractiveCircuit } from './kodeCoreShadowFaces';
 import { indexLog } from './indexLog';
 
 // kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
@@ -540,6 +541,8 @@ export class KodeCoreGate {
     }
     this.lastRestartGeneration = generation;
     this.mirroredVersions.clear();
+    // 熔断重置：新进程=新的成功机会（server-runtime 侧问题随旧进程消散）。
+    resetInteractiveCircuit(generation);
     // RUST-069-W:新进程根注册表是空的(握手只带 workspaceFolders)——
     // 运行期注册过的根(外部 assetsRoot / 运行期新增 folder)先补注册,
     // 再重放语料快照(文件根归属依赖根已注册,顺序不可倒置)。
