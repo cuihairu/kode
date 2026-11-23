@@ -589,15 +589,19 @@ async function resolveUserSelfAttributeFlowAnnotation(
   if (fromRust) {
     return fromRust.annotation;
   }
-  const options = await buildCellDataFlowOptions(document, versionKey);
+  const options = await buildCellDataFlowOptions(document);
   const flow = inferSelfAttributeFlow(documentLines, line, attr, options, versionKey);
   return flow?.annotation ?? null;
 }
 
 /** cellData 键类型回调注入(TS 流引擎用);非 cell/base 角色或无键 → undefined */
+/**
+ * 缓存键与既有 cellData 键面同源(本文件 collectCellDataReadHints 的
+ * `flowVersionKeyForDocument # defBufferStampForRoot`):入参不再收 versionKey——
+ * 文档流版本键即由本 document 派生,再收一份只是同值冗余。
+ */
 async function buildCellDataFlowOptions(
-  document: vscode.TextDocument,
-  versionKey?: string
+  document: vscode.TextDocument
 ): Promise<{ resolveSubscriptType: (target: string, key: string) => string | null } | undefined> {
   const role = cellScriptRoleAndEntity(document.fileName);
   if (!role) {
