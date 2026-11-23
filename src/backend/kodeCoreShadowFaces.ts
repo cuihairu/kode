@@ -16,6 +16,10 @@ let shadowGate: KodeCoreGate | null = null;
 
 /** 装配点注入(传 null 即拆除;扩展停用时调用) */
 export function setKodeCoreShadowGate(gate: KodeCoreGate | null): void {
+  if (shadowGate !== gate) {
+    // 换门（装配/重启/测试换桩）= 新的传输实例：熔断清零，给新门干净窗口。
+    resetInteractiveCircuit(Date.now());
+  }
   shadowGate = gate;
 }
 
@@ -223,6 +227,54 @@ const CANCEL_POLL_MS = 50;
  * rejection,迟到响应不改变已定结果(KBUG-TIME-03/04)。work 收到与预算
  * 同值的 timeoutMs,transport 层同步发 $/cancelRequest + 硬超时清理。
  */
+/**
+ * Rust 交互腿熔断（2026-11-23 用户报「def hover 恒 2 秒 loading」）：
+ * kode-server 起不来（二进制缺失/架构不符/握手卡死）时，rustPromise 会一直
+ * pending，每个请求都撞满预算才回落 TS——表现为每次 hover 固定 2s loading
+ * 且永不自愈。熔断规则：传输级硬失败（spawn 失败/进程退出/握手超时）当次即
+ * 熔断；预算超时连续累计 INTERACTIVE_TRIP_THRESHOLD 次（无任何一次成功）
+ * 也熔断。熔断只对当前扩展宿主会话生效，重启窗口（restartGeneration 变化）
+ * 自动重置。
+ */
+const INTERACTIVE_TRIP_THRESHOLD = 3;
+
+let interactiveCircuitOpen = false;
+let interactiveTimeoutStreak = 0;
+let interactiveCircuitGeneration = -1;
+
+/** 熔断状态查询（测试与状态栏诊断面用）。 */
+export function interactiveCircuitState(): {
+  open: boolean;
+  timeoutStreak: number;
+} {
+  return { open: interactiveCircuitOpen, timeoutStreak: interactiveTimeoutStreak };
+}
+
+/** 重启窗口/显式重置（restartGeneration 变化时由门同步调用）。 */
+export function resetInteractiveCircuit(generation: number): void {
+  if (interactiveCircuitGeneration !== generation) {
+    interactiveCircuitGeneration = generation;
+    interactiveCircuitOpen = false;
+    interactiveTimeoutStreak = 0;
+  }
+}
+
+function recordInteractiveFailure(kind: 'hard' | 'timeout'): void {
+  if (kind === 'hard') {
+    // 传输级硬失败当次熔断：spawn 错误/进程退出不会因重试而好转。
+    interactiveCircuitOpen = true;
+  } else {
+    interactiveTimeoutStreak += 1;
+    if (interactiveTimeoutStreak >= INTERACTIVE_TRIP_THRESHOLD) {
+      interactiveCircuitOpen = true;
+    }
+  }
+}
+
+function recordInteractiveSuccess(): void {
+  interactiveTimeoutStreak = 0;
+}
+
 export async function awaitWithInteractiveBudget<T>(
   work: (opts: { timeoutMs: number }) => Promise<T>,
   budgetMs: number,
@@ -231,12 +283,31 @@ export async function awaitWithInteractiveBudget<T>(
   if (isCancelled?.()) {
     return null;
   }
+  if (interactiveCircuitOpen) {
+    // 熔断开放：直通 null（调用方回落 TS 链），不再白等预算。
+    return null;
+  }
   let budgetTimer: NodeJS.Timeout | undefined;
   let pollTimer: NodeJS.Timeout | undefined;
+  let settled = false;
   const rustPromise = work({ timeoutMs: budgetMs });
-  rustPromise.catch(() => undefined);
+  rustPromise.then(
+    () => {
+      if (!settled) recordInteractiveSuccess();
+    },
+    err => {
+      // 硬失败（spawn/transport/握手）当次熔断；预算超时由 budget 分支计。
+      if (!settled) recordInteractiveFailure('hard');
+      if (err instanceof Error) {
+        err.message = `[kode-server interactive leg hard-failed, circuit opened] ${err.message}`;
+      }
+    }
+  );
   const budget = new Promise<null>(resolve => {
-    budgetTimer = setTimeout(() => resolve(null), budgetMs);
+    budgetTimer = setTimeout(() => {
+      if (!settled) recordInteractiveFailure('timeout');
+      resolve(null);
+    }, budgetMs);
   });
   const cancelled = new Promise<null>(resolve => {
     pollTimer = setInterval(() => {
@@ -246,8 +317,11 @@ export async function awaitWithInteractiveBudget<T>(
     }, CANCEL_POLL_MS);
   });
   try {
-    return await Promise.race([rustPromise, budget, cancelled]);
+    const winner = await Promise.race([rustPromise, budget, cancelled]);
+    settled = true;
+    return winner;
   } catch {
+    settled = true;
     return null;
   } finally {
     clearTimeout(budgetTimer);
