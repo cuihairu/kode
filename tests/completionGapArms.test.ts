@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { makeTextDocument, Position, Uri, workspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 import {
   KBEngineCompletionProvider,
   getAddSpaceGeometryStringPrefix,
@@ -171,8 +172,8 @@ describe('provideNavPathCompletions 补臂', () => {
     // provider 的 seen[508](该 continue 臂经上游去重后不可达,见文件头死臂)。
     // 本用例锁住「重复扫描结果不产生重复补全项」的对外行为。
     const dup = Uri.file('D:/ws/res/spaces/dup.navmesh');
-    workspace.findFiles = (async (pattern?: string) => {
-      if (typeof pattern === 'string' && pattern.includes('navmesh')) return [dup, dup];
+    workspace.findFiles = (async (raw?: unknown) => {
+      if (patternGlob(raw).includes('navmesh')) return [dup, dup];
       return [];
     }) as typeof workspace.findFiles;
     const provider = new KBEngineCompletionProvider();

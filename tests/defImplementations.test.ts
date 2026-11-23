@@ -6,6 +6,7 @@ import type * as vscode from 'vscode';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineImplementationProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-007:def 方法到 Python 的实现查询(Go to Implementations)。验收
 // 口径:按精确声明身份(名字+段)返回实现列表——绑定命中与段属主脚本同名
@@ -74,8 +75,10 @@ const buildWorkspace = (): { root: string; avatarDef: string; basePy: string; ce
 
 const withStubbedDefs = async <T>(avatarDef: string, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def') ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? [Uri.file(avatarDef)] : [];
+  }) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

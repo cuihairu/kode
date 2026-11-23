@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineReferencesProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-003:方法引用收录 receiver RPC 调用(self.cell.X( / self.base.X( /
 // self.client.X()。验收口径:Base/Cell/Client 同名方法按 receiver 段分开统计,
@@ -90,12 +91,14 @@ const makeManager = async (): Promise<EntityMappingManager> => {
 
 const withStubbedDefs = async <T>(avatarDef: string, monsterDef: boolean, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def')
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def')
       ? monsterDef
         ? [Uri.file(avatarDef), Uri.file(avatarDef.replace('Avatar.def', 'Monster.def'))]
         : [Uri.file(avatarDef)]
-      : []) as typeof stubWorkspace.findFiles;
+      : [];
+  }) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

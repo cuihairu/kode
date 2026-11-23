@@ -11,6 +11,7 @@ import {
   IndexTaskState
 } from '../src/backend/indexScheduler';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 对象级(类粒度)负缓存回归(审核发现):修复前负缓存只凭「映射表非空」就
 // 记录 miss——首扫尚未完成时,后续分块里的接口/组件类会经 ownerName 回溯
@@ -141,11 +142,11 @@ describe('EntityMappingManager 对象级负缓存(首扫未完不得凭表非空
     // 定点 glob 按同名返回;非 def glob 空。组件在 components/ 下,被扫描
     // 的 entities 过滤与定向解析的目录排除一并拒之门外(只能经回溯命中)。
     const defOrder = [...fillers.map(item => item.absolute), heroAbsolute];
-    stubWorkspace.findFiles = (async (pattern?: string) => {
-      const p = String(pattern ?? '');
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const p = patternGlob(raw);
       if (p.includes('*.py')) { return []; }
       if (p.endsWith('*.def')) { return defOrder.map(file => Uri.file(file)); }
-      const base = p.replace(/\*\*\//, '');
+      const base = p.includes('**/') ? p.slice(p.indexOf('**/') + 3) : p;
       if (base.endsWith('.def')) {
         const match = defOrder.find(file => path.basename(file) === base);
         return match ? [Uri.file(match)] : [];

@@ -20,6 +20,7 @@ import {
   workspace
 } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // def 函数形参 inlay(定义点,用户令 2026-10-27 任务2):entity 脚本区块内
 // `def foo(self, a, b):` 未标注形参后渲染 def <Arg> 类型,<ReturnType>
@@ -233,7 +234,10 @@ describe('DefParamInlayHintsProvider(真实索引装配)', () => {
       ''
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'defparam-inlay', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') || glob.endsWith(`/${path.basename(defFile)}`) ? [Uri.file(defFile)] : [];
+    };
     return cellPy;
   };
 

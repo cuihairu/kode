@@ -6,6 +6,7 @@ import { EntityMappingManager } from '../src/entityMapping';
 import { PythonDefinitionProvider, RpcCodeLensProvider } from '../src/languageProviders';
 import { Position, Uri, workspace } from './helpers/vscodeStub';
 import { makeTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 describe('跨 .def 文件解析 Python 接口方法', () => {
   const originalFolders = workspace.workspaceFolders;
@@ -41,8 +42,9 @@ describe('跨 .def 文件解析 Python 接口方法', () => {
       '    pass'
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'cross-def', index: 0 }];
-    workspace.findFiles = async (glob?: string) => {
+    workspace.findFiles = async (raw?: unknown) => {
       // 2026-11-23 收窄后索引发 scoped glob(scripts/**/*.def),桩按后缀命中
+      const glob = patternGlob(raw);
       if (!glob || !glob.endsWith('.def')) return [];
       return [Uri.file(defFile)];
     };

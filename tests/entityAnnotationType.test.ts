@@ -19,6 +19,7 @@ import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import type { EntityMapping } from '../src/entityMapping';
 import { configurationOverrides, Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 统一注解解析链(用户令 2026-10-21,一个底座三面复用):types.xml 自定义类型
 // 经 hover 断出具体类型而非 Any;def <Arg> 引用 types.xml 类型的正例;环/未知
@@ -64,7 +65,10 @@ const makeWorkspace = (typesXml: string): HoverFixture => {
 
 const makeManager = async (defFile: string): Promise<EntityMappingManager> => {
   const originalFindFiles = workspace.findFiles;
-  workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') ? [Uri.file(defFile)] : []);
+  workspace.findFiles = async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? [Uri.file(defFile)] : [];
+  };
   const manager = new EntityMappingManager({ subscriptions: [] } as never);
   await manager.waitForInitialScan();
   workspace.findFiles = originalFindFiles;

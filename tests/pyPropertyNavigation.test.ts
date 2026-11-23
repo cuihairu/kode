@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineReferencesProvider, PythonDefinitionProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 用户反馈(2026-11-04):def 声明 <arena_data><Type>JSON</Type></arena_data>(JSON 是
 // types.xml 自定义类型,一个 dict)。在 .py 里光标落在 self.arena_data 上:
@@ -67,14 +68,12 @@ const pyDoc = (heroPy: string) =>
 
 /** 按 glob 返回本工作区 def/types.xml(仿 defSymbolReferences 装配) */
 const mockFindFiles = (ws: { heroDef: string; defsDir: string }): typeof stubWorkspace.findFiles =>
-  (async (glob?: string) => {
-    if (typeof glob !== 'string') {
-      return [];
-    }
-    if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
+  (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    if (glob.endsWith('**/*.def')) {
       return [Uri.file(ws.heroDef)];
     }
-    if (typeof glob === 'string' && glob.endsWith('types.xml')) {
+    if (glob.endsWith('types.xml')) {
       return [Uri.file(path.join(ws.defsDir, 'types.xml'))];
     }
     return [];

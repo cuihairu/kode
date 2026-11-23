@@ -45,6 +45,7 @@ import { messages, windowState } from './fake-vscode/windowState';
 import { panelRegistry } from './fake-vscode/panelRegistry';
 import { configurationOverrides, workspace, workspaceEvents } from './fake-vscode/workspaceState';
 import { makeTextDocument, Uri, type ExtensionContext } from './fake-vscode/core';
+import { patternGlob } from './helpers/findPattern';
 
 let root = '';
 let extDir = '';
@@ -300,12 +301,13 @@ beforeAll(async () => {
   panelRegistry.reset();
   const rootUri = Uri.file(root);
   workspace.workspaceFolders = [{ uri: rootUri, name: 'ws', index: 0 }];
-  workspace.findFiles = async (pattern: string): Promise<Uri[]> => {
+  workspace.findFiles = async (raw?: unknown): Promise<Uri[]> => {
     // 2026-11-23 收窄后索引发 scoped glob(scripts/**/*.def),桩按后缀命中
-    if (pattern.endsWith('.def')) {
+    const glob = patternGlob(raw);
+    if (glob.endsWith('.def')) {
       return [Uri.file(path.join(root, 'scripts', 'entity_defs', 'Avatar.def'))];
     }
-    if (pattern.endsWith('.py')) {
+    if (glob.endsWith('.py')) {
       return [
         Uri.file(path.join(root, 'scripts', 'base', 'Avatar.py')),
         Uri.file(path.join(root, 'scripts', 'user_type', 'broken.py')),

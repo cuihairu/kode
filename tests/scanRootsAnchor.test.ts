@@ -63,9 +63,22 @@ describe('扫描根锚点腿(引擎默认布局)', () => {
    * 与生产语义同构 */
   const stubWorkspaceGlob = (): void => {
     workspace.findFiles = (async (pattern?: unknown) => {
-      const glob = String(pattern ?? '');
-      const prefix = glob.split('**')[0].replace(/\/+$/, '');
-      const base = prefix ? path.join(root, prefix) : root;
+      let glob: string;
+      let base: string;
+      if (pattern && typeof pattern === 'object') {
+        // RelativePattern(P1-3 收窄腿):钉在 base 内按 pattern 匹配;
+        // pattern 的字面前缀段同样收窄 walk 域(与字符串腿同构)
+        const rp = pattern as { base: string | { fsPath: string }; pattern: string };
+        glob = rp.pattern;
+        const rpBase = typeof rp.base === 'string' ? rp.base : rp.base.fsPath;
+        const rpPrefix = glob.split('**')[0].replace(/\/+$/, '');
+        base = rpPrefix ? path.join(rpBase, rpPrefix) : rpBase;
+      } else {
+        // 字符串 glob:首个双星号之前的字面前缀段是隐式子目录域
+        glob = String(pattern ?? '');
+        const prefix = glob.split('**')[0].replace(/\/+$/, '');
+        base = prefix ? path.join(root, prefix) : root;
+      }
       const match = glob.includes('entities.xml')
         ? (fsPath: string): boolean => path.basename(fsPath) === 'entities.xml'
         : glob.includes('entity_defs/*.def')

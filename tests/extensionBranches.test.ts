@@ -6,6 +6,7 @@ import { activate, deactivate } from '../src/extension';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
 import { messages, treeRegistrations, window as fakeWindow, windowState } from './fake-vscode/windowState';
+import { patternGlob } from './helpers/findPattern';
 import {
   workspace,
   workspaceEvents,
@@ -76,9 +77,10 @@ beforeEach(() => {
   panelRegistry.reset();
   workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
   workspace.textDocuments = [];
-  workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
+  workspace.findFiles = (async (raw?: unknown): Promise<Uri[]> => {
     // 2026-11-23 收窄后索引按扫描根发 scoped glob(scripts/**/*.def),桩按
     // 后缀命中而非精确 '**/*.def',否则定向首解析/全量扫全落空(didOpen=false)。
+    const pattern = patternGlob(raw);
     if (!pattern.endsWith('.def')) {
       return [];
     }

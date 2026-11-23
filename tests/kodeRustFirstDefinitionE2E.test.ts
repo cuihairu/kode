@@ -22,6 +22,7 @@ import { KBEngineDefinitionProvider } from '../src/languageProviders';
 import { KodeCoreGate, DEFAULT_CORE_GATE_CONFIG } from '../src/backend/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 const DEMO = path.join(__dirname, 'fixtures', 'kbengine-demo-assets');
 
@@ -70,13 +71,16 @@ const wordPosition = (content: string, marker: string, symbol: string): Position
 
   beforeAll(async () => {
     workspace.workspaceFolders = [{ uri: Uri.file(DEMO), name: 'kbengine-demo-assets', index: 0 }];
-    workspace.findFiles = (async (glob: string) => walkFiles().filter(uri => {
-      const name = path.basename(uri.fsPath);
-      return glob.includes('entities.xml') ? name === 'entities.xml'
-        : glob.includes('*.def') ? name.endsWith('.def')
-          : glob.includes('types.xml') ? name === 'types.xml'
-            : name.endsWith('.py');
-    })) as never;
+    workspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return walkFiles().filter(uri => {
+        const name = path.basename(uri.fsPath);
+        return glob.includes('entities.xml') ? name === 'entities.xml'
+          : glob.includes('*.def') ? name.endsWith('.def')
+            : glob.includes('types.xml') ? name === 'types.xml'
+              : name.endsWith('.py');
+      });
+    }) as never;
     const manager = new EntityMappingManager({ subscriptions: [] });
     provider = new KBEngineDefinitionProvider(manager);
     gate = new KodeCoreGate();

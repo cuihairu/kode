@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { findOwnerSelfPropertyAccesses } from '../src/backend/pythonSelfScope';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-AUD-028(R2-F05):属性引用按 owner 文件原文正则扫描,结果混入字符串、
 // 注释、同文件另一普通类、嵌套重绑 self 的 self.hp。本测试锁定词法/作用域
@@ -101,8 +102,10 @@ describe('getIncomingPythonPropertyAccesses 集成:owner 类作用域过滤(AUD-
     put('scripts/entity_defs/Other.def', '<root><Properties><hp><Type>UINT32</Type></hp></Properties></root>');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const originalFindFiles = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def') ? [Uri.file(heroDef)] : []) as typeof stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') ? [Uri.file(heroDef)] : [];
+    }) as typeof stubWorkspace.findFiles;
     try {
       const manager = new EntityMappingManager({ subscriptions: [] } as never);
       await (manager as unknown as { waitForInitialScan(): Promise<void> }).waitForInitialScan();

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineRenameProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-AUD-027(R2-F04):F2 版本检查早于异步 Python 引用查找——等待中目标
 // v1→v2、插入一行仍返回旧第 2 行编辑范围。验收:目标/依赖 def/Python 在途
@@ -102,8 +103,10 @@ const cursorAtWord = (text: string, word: string): Position => {
 
 const makeManager = async (defFiles: string[]): Promise<EntityMappingManager> => {
   const manager = new EntityMappingManager({ subscriptions: [] } as never);
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def') ? defFiles.map(file => Uri.file(file)) : []) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? defFiles.map(file => Uri.file(file)) : [];
+  }) as typeof stubWorkspace.findFiles;
   await (manager as unknown as { waitForInitialScan(): Promise<void> }).waitForInitialScan();
   return manager;
 };

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { normalizeFileIdentity } from '../src/backend/pathIdentity';
+import { patternGlob } from './helpers/findPattern';
 
 // C-19 交付①:entityMapping 查询面的 def↔Python 方法集合差。正向
 // (collectDefMethodImplementationGaps)只看 rootCategory='entity' 的根、只标
@@ -81,8 +82,10 @@ const withStubbedDefs = async <T>(
   run: () => Promise<T>
 ): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def') ? defFiles.map(file => Uri.file(file)) : []) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? defFiles.map(file => Uri.file(file)) : [];
+  }) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

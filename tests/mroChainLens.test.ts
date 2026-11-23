@@ -22,6 +22,7 @@ import {
 } from '../src/backend/mroChainLens';
 import { workspace, configurationOverrides } from './fake-vscode/workspaceState';
 import { makeTextDocument, Uri } from './fake-vscode/core';
+import { patternGlob } from './helpers/findPattern';
 
 const DEMO_SCRIPTS = path.resolve(__dirname, 'fixtures/kbengine-demo-assets/scripts');
 const execFileAsync = promisify(execFile);
@@ -44,8 +45,10 @@ const stubDemoScripts = (): void => {
     }
   };
   walk(DEMO_SCRIPTS);
-  workspace.findFiles = (async (glob: string) =>
-    glob.endsWith('.py') ? pyFiles.map(file => Uri.file(file)) : []) as typeof workspace.findFiles;
+  workspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.py') ? pyFiles.map(file => Uri.file(file)) : [];
+  }) as typeof workspace.findFiles;
 };
 
 const lineOf = (file: string, needle: string): number => {
@@ -216,7 +219,8 @@ describe('MRO-CHAIN 组合根视角(嵌套作用域 + def mixin 面)', () => {
         : pattern.includes('*.def') ? name.endsWith('.def')
           : pattern.includes('types.xml') ? name === 'types.xml'
             : name.endsWith('.py');
-    workspace.findFiles = (async (glob: string) => {
+    workspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
       const out: string[] = [];
       const walk = (dir: string): void => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -224,7 +228,7 @@ describe('MRO-CHAIN 组合根视角(嵌套作用域 + def mixin 面)', () => {
           if (entry.isDirectory()) {
             if (entry.name === '__pycache__') { return; }
             walk(full);
-          } else if (matches(String(glob), entry.name)) {
+          } else if (matches(glob, entry.name)) {
             out.push(full);
           }
         }

@@ -8,6 +8,7 @@ import {
   resolveDefSymbolReferenceTarget
 } from '../src/defSymbolReferences';
 import { KBEngineReferencesProvider } from '../src/languageProviders';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-018:def 内类型名/实体名/接口名引用查询(Shift+F12)。范围/验收:
 // <Type>/<Arg>/<of> 值(自定义类型→types.xml 使用处+声明;实体类型→
@@ -192,14 +193,12 @@ describe('provideDefSymbolReferences(工作区级引用查询)', () => {
     fs.writeFileSync(typesXmlPath, TYPES_XML);
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     stubWorkspace.textDocuments = [];
-    stubWorkspace.findFiles = (async (glob?: string) => {
-      if (typeof glob !== 'string') {
-        return [];
-      }
-      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      if (glob.endsWith('**/*.def')) {
         return [Uri.file(heroDefPath), Uri.file(monsterDefPath), Uri.file(imoveDefPath), Uri.file(cweaponDefPath)];
       }
-      if (typeof glob === 'string' && glob.endsWith('types.xml')) {
+      if (glob.endsWith('types.xml')) {
         return [Uri.file(typesXmlPath)];
       }
       return [];
@@ -348,8 +347,9 @@ describe('KR-AUD-77 interface reference sites cover all four wrapper spellings',
     fs.writeFileSync(imovePath, '<root>\n</root>');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     stubWorkspace.textDocuments = [];
-    stubWorkspace.findFiles = (async (glob?: string) => {
-      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      if (glob.endsWith('**/*.def')) {
         return [Uri.file(heroPath), Uri.file(imovePath)];
       }
       return [];
@@ -445,8 +445,9 @@ describe('defSymbolReferences 缺口臂(无元素/接口识别/扫描边界/取�
     return new Position(before.length - 1, before[before.length - 1].length - 1);
   };
   const stubScan = (defUris: ReturnType<typeof Uri.file>[]) => {
-    stubWorkspace.findFiles = (async (glob?: string) => {
-      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      if (glob.endsWith('**/*.def')) {
         return defUris;
       }
       return [];
@@ -484,7 +485,8 @@ describe('defSymbolReferences 缺口臂(无元素/接口识别/扫描边界/取�
     // 同一文件两路都可得时同位引用会重复入库,最终locations 面必须去重。
     const typesXmlPath = path.join(wsRoot, 'scripts', 'entity_defs', 'types.xml');
     fs.writeFileSync(typesXmlPath, '<root><Vec3><Properties><x><Type>Vec3</Type></x></Properties></Vec3></root>\n');
-    stubWorkspace.findFiles = (async (glob?: string) => {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
       if (glob.endsWith('.def') || glob.endsWith('**/types.xml')) {
         return [Uri.file(typesXmlPath)];
       }
@@ -520,12 +522,13 @@ describe('defSymbolReferences 缺口臂(无元素/接口识别/扫描边界/取�
       [IFACE_DEF, 'IMove']
     ] as Array<[string, string]>) {
       const cts = new CancellationTokenSource();
-      stubWorkspace.findFiles = (async (glob?: string) => {
+      stubWorkspace.findFiles = (async (raw?: unknown) => {
         cts.cancel(); // 文件枚举在途即取消 → 循环顶如实返回
-        if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
+        const glob = patternGlob(raw);
+        if (glob.endsWith('**/*.def')) {
           return [Uri.file(childDefPath)];
         }
-        if (typeof glob === 'string' && glob.endsWith('types.xml')) {
+        if (glob.endsWith('types.xml')) {
           return [Uri.file(typesXmlPath)];
         }
         return [];

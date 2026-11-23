@@ -15,6 +15,7 @@ import { buildEntityTypeStubPlan } from '../src/entityTypeStubs';
 import { getCustomTypeInfos } from '../src/definitionWorkspace';
 import { configurationOverrides, Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 新功能配置开关(用户令 2026-10-21:新功能都要配置开关,默认开启):
 // 五枚独立布尔键逐项正反各至少 1 例(默认值断言 + false 不接管/接管)。
@@ -168,7 +169,10 @@ describe('kbengine.entity.receiverSections(接收者段过滤)', () => {
     ].join('\n'));
     const cellPy = put('scripts/cell/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'receiver', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') || glob.endsWith(`/${path.basename(defFile)}`) ? [Uri.file(defFile)] : [];
+    };
     return { root, defFile, cellPy };
   };
 
@@ -418,7 +422,10 @@ describe('def 方法签名文本(审计遗留承诺:声明 <Arg><Type> 必须带
       ].join('\n'));
       const basePy = put('scripts/base/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'sig', index: 0 }];
-      workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
+      workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') || glob.endsWith(`/${path.basename(defFile)}`) ? [Uri.file(defFile)] : [];
+    };
 
       const manager = new EntityMappingManager({ subscriptions: [] } as never);
       managers.push(manager);

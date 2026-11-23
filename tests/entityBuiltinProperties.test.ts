@@ -29,6 +29,7 @@ import {
   workspace
 } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // Entity 内建属性提示(用户令 2026-10-21,报告 §4):三面分册属性表 +
 // 目录域/def 归属双判面 + Hover/补全接线。数据面零自创:类型对齐
@@ -208,7 +209,10 @@ describe('def 归属面解析(EntityMappingManager)', () => {
     const flatPy = put('scripts/Avatar.py', 'class Avatar:\n    pass\n');
     put('scripts/helper.py', 'import os\n');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'builtin', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') || glob.endsWith(`/${path.basename(defFile)}`) ? [Uri.file(defFile)] : [];
+    };
     return { root, basePy, flatPy };
   };
 

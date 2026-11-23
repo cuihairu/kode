@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { PythonCompletionProvider } from '../src/languageProviders';
+import { patternGlob } from './helpers/findPattern';
 import {
   CompletionList,
   makeTextDocument,
@@ -63,9 +64,10 @@ beforeAll(() => {
   put('a/scripts/entity_defs/Avatar.def', AVATAR_DEF);
   avatarPyPath = put('a/scripts/base/Avatar.py', AVATAR_PY);
   unrelatedPyPath = put('a/scripts/tools/helper.py', UNRELATED_PY);
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def') ? [Uri.file(path.join(root, 'a/scripts/entity_defs/Avatar.def'))] : []
-  ) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? [Uri.file(path.join(root, 'a/scripts/entity_defs/Avatar.def'))] : [];
+  }) as typeof stubWorkspace.findFiles;
 });
 
 afterAll(() => {

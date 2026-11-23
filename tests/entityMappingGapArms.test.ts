@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CancellationTokenSource, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { EntityMappingManager } from '../src/entityMapping';
 import { resetScanRootCache } from '../src/scanRoots';
+import { patternGlob } from './helpers/findPattern';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 
 // entityMapping 缺口臂(2026-11-09 覆盖率扫尾):PR4 取证面(getDependencyGraph/
@@ -136,10 +137,12 @@ const listDefFiles = (dir: string): string[] =>
 
 const stubDefScan = (root: string) => {
   const defsDir = path.join(root, 'scripts', 'entity_defs');
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def')
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def')
       ? listDefFiles(defsDir).map(file => Uri.file(file))
-      : []) as typeof stubWorkspace.findFiles;
+      : [];
+  }) as typeof stubWorkspace.findFiles;
 };
 
 const makeManager = async (): Promise<EntityMappingManager> => {
@@ -188,11 +191,12 @@ describe('entityMapping 缺口臂', () => {
     // 首查不等首扫,定向单文件解析应答(hover 永转 loading 根治语义)。
     // 首查落盘 cell 侧文件后二查:文件级未命中 → basename 回落命中已注册
     // 实体(同名义索引按名槽共享),两查都应答。
-    stubWorkspace.findFiles = (async (glob?: string) => {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
       if (glob.endsWith('**/Hero.def') || glob.endsWith('**/IFace.def')) {
         return glob.endsWith('**/Hero.def') ? [Uri.file(ws.heroDef)] : [];
       }
-      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
+      if (glob.endsWith('**/*.def')) {
         await new Promise(resolve => setTimeout(resolve, 80));
         return [Uri.file(ws.heroDef), Uri.file(ws.ifaceDef)];
       }

@@ -55,6 +55,7 @@ import {
 } from './fake-vscode/core';
 
 import { until, makeContext, disposeAll, watcherPatternKey, resetExtensionTestState } from './extensionTestShared';
+import { patternGlob } from './helpers/findPattern';
 
 beforeEach(resetExtensionTestState);
 
@@ -75,7 +76,7 @@ it('激活后从安装目录复制引擎桩，并按已索引的 def 生成实�
     fs.writeFileSync(typesFile, '<root><ENTITY_ID>UINT32</ENTITY_ID></root>');
     fs.writeFileSync(defFile, '<root><Properties><ownerId><Type>ENTITY_ID</Type><Flags>BASE</Flags></ownerId></Properties></root>');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'fixture', index: 0 }];
-    workspace.findFiles = async include => include.toString().includes('*.def') ? [Uri.file(defFile)] : [];
+    workspace.findFiles = async raw => patternGlob(raw).includes('*.def') ? [Uri.file(defFile)] : [];
 
     activate(context);
     const stubs = path.join(root, '.kbengine', 'stubs');
@@ -226,8 +227,10 @@ describe('extension activate 消息表类型注册表接线(AUD-060)', () => {
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     // 映射首扫经 findFilesAcrossRoots → workspace.findFiles;替身默认返回 [],
     // 这里让 Hero.def 被扫到(与 defAnalyzerCommand/defParamInlayHints 同式)
-    workspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def') ? [Uri.file(heroDef)] : []) as typeof workspace.findFiles;
+    workspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') ? [Uri.file(heroDef)] : [];
+    }) as typeof workspace.findFiles;
     const context = makeContext();
     try {
       activate(context);

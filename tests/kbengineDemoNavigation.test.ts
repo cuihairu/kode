@@ -5,6 +5,7 @@ import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineDefinitionProvider, PythonDefinitionProvider } from '../src/languageProviders';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 const DEMO = path.join(__dirname, 'fixtures', 'kbengine-demo-assets');
 const manifest = JSON.parse(fs.readFileSync(path.join(DEMO, 'navigation-cases.json'), 'utf8')) as {
@@ -52,13 +53,16 @@ describe('KBEngine demo navigation acceptance manifest', () => {
 
   beforeAll(async () => {
     workspace.workspaceFolders = [{ uri: Uri.file(DEMO), name: 'kbengine-demo-assets', index: 0 }];
-    workspace.findFiles = async (glob: string) => walkFiles().filter(uri => {
-      const name = path.basename(uri.fsPath);
-      return glob.includes('entities.xml') ? name === 'entities.xml'
-        : glob.includes('*.def') ? name.endsWith('.def')
-          : glob.includes('types.xml') ? name === 'types.xml'
-            : name.endsWith('.py');
-    });
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return walkFiles().filter(uri => {
+        const name = path.basename(uri.fsPath);
+        return glob.includes('entities.xml') ? name === 'entities.xml'
+          : glob.includes('*.def') ? name.endsWith('.def')
+            : glob.includes('types.xml') ? name === 'types.xml'
+              : name.endsWith('.py');
+      });
+    };
     const manager = new EntityMappingManager({ subscriptions: [] });
     // PR5:验收清单要求全量候选集(多 mixin 命中),先等全量扫描就绪再跑用例;
     // 生产 Definition 首查不等全量(冷启动首查耗时见 docs/perf/2026-pr5 报告)。

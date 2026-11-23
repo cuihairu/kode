@@ -9,6 +9,7 @@ import {
   setPythonMroJumpEnabled
 } from '../src/languageProviders';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
+import { patternGlob } from './helpers/findPattern';
 import { getPythonMemberAccessAtPosition } from '../src/backend/pythonLanguageUtils';
 import { makeTextDocument } from './helpers/vscodeStub';
 import { resetScanRootCache } from '../src/scanRoots';
@@ -35,11 +36,12 @@ beforeAll(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-member-access-'));
   resetScanRootCache();
   stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'workspace', index: 0 }];
-  stubWorkspace.findFiles = (async (pattern?: string) => {
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
     const out: Array<ReturnType<typeof Uri.file>> = [];
-    const ext = pattern?.includes('*.def')
+    const ext = glob.includes('*.def')
       ? '.def'
-      : pattern?.includes('*.py')
+      : glob.includes('*.py')
         ? '.py'
         : null;
     if (!ext) {

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { Uri } from './fake-vscode/core';
+import { patternGlob } from './helpers/findPattern';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { GlobalDataDictIndex } from '../src/globalDataIndex';
 import { getActiveOperationCounts } from '../src/languageServiceMetrics';
@@ -39,14 +40,14 @@ describe('KR-AUD-26 组合根派生连续让位 8 次后正确收尾', () => {
   it('fall-through 按最后快照落地:rootsMap 落地 + metrics end + rootsPromise 清理', async () => {
     const FIXTURE = path.join(__dirname, 'fixtures', 'kbengine-demo-assets');
     const ORIGINAL = stubWorkspace.findFiles;
-    const matcherFor = (pattern?: string): ((name: string) => boolean) =>
-      pattern && pattern.includes('entities.xml') ? (name => name === 'entities.xml')
-        : pattern && pattern.includes('*.def') ? (name => name.endsWith('.def'))
-          : pattern && pattern.includes('types.xml') ? (name => name === 'types.xml')
+    const matcherFor = (glob: string): ((name: string) => boolean) =>
+      glob.includes('entities.xml') ? (name => name === 'entities.xml')
+        : glob.includes('*.def') ? (name => name.endsWith('.def'))
+          : glob.includes('types.xml') ? (name => name === 'types.xml')
             : (name => name.endsWith('.py'));
-    stubWorkspace.findFiles = (async (pattern?: string): Promise<Uri[]> => {
+    stubWorkspace.findFiles = (async (raw?: unknown): Promise<Uri[]> => {
       const out: Uri[] = [];
-      const matches = matcherFor(pattern);
+      const matches = matcherFor(patternGlob(raw));
       const walk = (dir: string): void => {
         let entries: fs.Dirent[];
         try {

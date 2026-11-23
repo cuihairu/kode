@@ -48,6 +48,7 @@ import {
   windowState,
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // ---- 解析接缝(pythonClassIndexParseFailure.test.ts 同款):默认透传真实
 // parsePythonFileResponsive,按用例切成拒绝,复现「worker 停用/解析失败」路径。
@@ -90,8 +91,8 @@ const pointWorkspaceAt = (dir: string): void => {
 };
 
 const stubFindFiles = (routing: (pattern: string) => string[]): void => {
-  stubWorkspace.findFiles = (async (pattern?: unknown) =>
-    routing(String(pattern ?? '')).map(file => Uri.file(file))) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) =>
+    routing(patternGlob(raw)).map(file => Uri.file(file))) as typeof stubWorkspace.findFiles;
 };
 
 const waitFor = async (predicate: () => boolean, timeoutMs = 3000): Promise<void> => {
@@ -601,8 +602,8 @@ describe('pythonClassIndex 覆盖补齐', () => {
     pointWorkspaceAt(rootDirOf(paths['a.py']));
     // 元数据 glob 永不返回(组合根永远派生不完),py 发现照常
     const never = new Promise<never>(() => undefined);
-    stubWorkspace.findFiles = (async (pattern?: unknown) => {
-      if (String(pattern ?? '').includes('*.py')) {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      if (patternGlob(raw).includes('*.py')) {
         return [Uri.file(paths['a.py']), Uri.file(paths['b.py'])];
       }
       return never;

@@ -19,6 +19,7 @@ import {
 } from '../src/backend/pythonLanguageUtils';
 import { Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 接收者感知(用户令 2026-10-21):self.cell.X(...) → X 必须是 .def 的
 // CellMethods 段定义(仅此类候选通过),self.base.X → BaseMethods,self.client.X
@@ -128,7 +129,10 @@ describe('接收者段闸三面(真实索引装配)', () => {
     const basePy = put('scripts/base/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     put('scripts/cell/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'receiver', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') || glob.endsWith(`/${path.basename(defFile)}`) ? [Uri.file(defFile)] : [];
+    };
     return { root, defFile, basePy };
   };
 

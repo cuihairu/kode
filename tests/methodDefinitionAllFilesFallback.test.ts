@@ -7,6 +7,7 @@ import type { DefinitionSymbolIdentity } from '../src/entityMapping';
 import { resetScanRootCache } from '../src/scanRoots';
 import { Uri } from './helpers/vscodeStub';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
+import { patternGlob } from './helpers/findPattern';
 
 // 用户令(2026-10-20):.def <BaseMethods> 方法的实现不在同名 python 文件时,
 // 解析放宽到全项目 python——唯一命中才跳,多处命中静默(返回 null)。
@@ -147,10 +148,11 @@ beforeAll(() => {
     'scripts/base/typedOk.py',
     'scripts/base/typedWrong.py'
   ];
-  stubWorkspace.findFiles = (async (pattern?: string) => {
-    const want = typeof pattern === 'string' && pattern.includes('*.def')
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    const want = glob.includes('*.def')
       ? (name: string): boolean => name.endsWith('.def')
-      : typeof pattern === 'string' && pattern.includes('entities.xml')
+      : glob.includes('entities.xml')
         ? (name: string): boolean => name === 'entities.xml'
         : (name: string): boolean => name.endsWith('.py');
     return files.filter(item => want(item.split('/').pop()!)).map(item => Uri.file(p(root, ...item.split('/'))));

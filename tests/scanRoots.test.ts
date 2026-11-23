@@ -15,6 +15,7 @@ import {
 } from '../src/scanRoots';
 import * as discoveryModule from '../src/workspaceDiscovery';
 import * as configDeriveModule from '../src/configDerive';
+import { PY_SCAN_EXCLUDE } from '../src/backend/pythonScanRules';
 
 // 扫描根口径(用户 2026-10-16:「还有 assetsRoot」;2026-11-23:「只需要扫描
 // assetsRoot 目录」):扫描根 = assetsRoot(配置派生 scripts 根 → assetsRoot
@@ -475,6 +476,170 @@ describe('RUST-171 发现优先级:profile > 设置 > 自动发现;env 不参与
       if (savedRoot === undefined) delete process.env.KBENGINE_ROOT; else process.env.KBENGINE_ROOT = savedRoot;
       if (savedHome === undefined) delete process.env.KBENGINE_HOME; else process.env.KBENGINE_HOME = savedHome;
       stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
+});
+
+// P1 扫描面(2026-11-24 用户令):①多根工作区串 glob 泄漏其他项目;②
+// assetsRoot 误配仍退回 workspace 裸 glob 全盘扫。用例全部用真实临时目录,
+// 在两根中放置相同相对路径的文件,直接断言最终返回的绝对路径。
+describe('P1 扫描面:多根泄漏与误配兜底(真实临时目录)', () => {
+  /** 真实 vscode findFiles 语义替身:字符串 glob 对每个 workspace 文件夹各
+   * 匹配一遍(泄漏通道);RelativePattern 只在其 base 内匹配。清单 = 各根
+   * 实际落盘的 .py 相对路径。 */
+  const stubFindFilesRealSemantics = (
+    pyByRoot: Record<string, string[]>
+  ): void => {
+    const relGlobMatches = (glob: string, rel: string): boolean => {
+      const segs = glob.split('/');
+      const parts = rel.split(path.sep);
+      const match = (gi: number, si: number): boolean => {
+        if (gi === segs.length) {
+          return si === parts.length;
+        }
+        if (segs[gi] === '**') {
+          for (let k = si; k <= parts.length; k += 1) {
+            if (match(gi + 1, k)) {
+              return true;
+            }
+          }
+          return false;
+        }
+        if (si === parts.length) {
+          return false;
+        }
+        const re = new RegExp(
+          `^${segs[gi].replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*')}$`
+        );
+        return re.test(parts[si]) && match(gi + 1, si + 1);
+      };
+      return match(0, 0);
+    };
+    stubWorkspace.findFiles = (async (
+      pattern?: unknown
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ): Promise<any[]> => {
+      const out: any[] = [];
+      if (typeof pattern === 'string') {
+        for (const folder of stubWorkspace.workspaceFolders ?? []) {
+          for (const rel of pyByRoot[folder.uri.fsPath] ?? []) {
+            if (relGlobMatches(pattern, rel)) {
+              out.push(Uri.file(path.join(folder.uri.fsPath, rel)));
+            }
+          }
+        }
+        return out;
+      }
+      const rp = pattern as { base: string | { fsPath: string }; pattern: string };
+      const baseFs = typeof rp.base === 'string' ? rp.base : rp.base.fsPath;
+      for (const rel of pyByRoot[baseFs] ?? []) {
+        if (relGlobMatches(rp.pattern, rel)) {
+          out.push(Uri.file(path.join(baseFs, rel)));
+        }
+      }
+      return out;
+    }) as typeof stubWorkspace.findFiles;
+  };
+
+  it('P1-3 多根工作区:只 A 根入选,B 根同相对路径文件不得扫入(断言最终绝对路径)', async () => {
+    const base = makeTmpDir('multi');
+    const dirA = path.join(base, 'proj-a');
+    const dirB = path.join(base, 'proj-b');
+    const relPy = path.join('assets', 'scripts', 'space', 'mod.py');
+    for (const dir of [dirA, dirB]) {
+      fs.mkdirSync(path.join(dir, path.dirname(relPy)), { recursive: true });
+      fs.writeFileSync(path.join(dir, relPy), 'import KBEngine\n');
+    }
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [
+      { uri: Uri.file(dirA), name: 'proj-a', index: 0 },
+      { uri: Uri.file(dirB), name: 'proj-b', index: 1 }
+    ];
+    setAssetsRoot('${workspaceFolder}/assets');
+    stubFindFilesRealSemantics({
+      [dirA]: [relPy],
+      [dirB]: [relPy]
+    });
+    try {
+      resetScanRootCache();
+      // 前提:assetsRoot 按 ${workspaceFolder} 只锚到首根 → 扫描根只有 A 的
+      expect(getIndexScanRoots()).toEqual([path.join(dirA, 'assets', 'scripts')]);
+      const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
+      // 断言最终绝对路径:只允许 A 根的文件;B 根的同相对路径文件绝不入列
+      // (修前:收窄 glob 是字符串形态,跨全部文件夹匹配,B 文件以 A 根身份漏进)
+      expect(files.map(u => u.fsPath)).toEqual([path.join(dirA, relPy)]);
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFind;
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('P1-2 assetsRoot 指向不存在目录:配置无效不退回 workspace 裸 glob(零文件)', async () => {
+    const ws = makeTmpDir('misconfig');
+    fs.mkdirSync(path.join(ws, 'tools'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'tools', 'util.py'), 'x = 1\n');
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    setAssetsRoot('${workspaceFolder}/no-such-assets');
+    stubFindFilesRealSemantics({ [ws]: [path.join('tools', 'util.py')] });
+    try {
+      resetScanRootCache();
+      // 扫描根空(配置无效,锚点腿也定位不到),此时 workspace 腿必须零产出:
+      // 裸 glob 兜底会把 tools/ 全盘扫进来掩盖配置错误
+      const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
+      expect(files).toEqual([]);
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFind;
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('P1-2 assetsRoot 在而 scripts 缺:零文件(既有口径)', async () => {
+    const ws = makeTmpDir('assets-noscripts');
+    fs.mkdirSync(path.join(ws, 'assets', 'res'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'assets', 'res', 'ui.py'), 'x = 1\n');
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    setAssetsRoot('${workspaceFolder}/assets');
+    stubFindFilesRealSemantics({ [ws]: [path.join('assets', 'res', 'ui.py')] });
+    try {
+      resetScanRootCache();
+      const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
+      expect(files).toEqual([]);
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFind;
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('P1-2 未配置(普通 Python 工作区):scripts 收窄腿维持既有行为', async () => {
+    const ws = makeTmpDir('plain-py');
+    fs.mkdirSync(path.join(ws, 'scripts', 'pkg'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'scripts', 'pkg', 'app.py'), 'x = 1\n');
+    fs.mkdirSync(path.join(ws, 'tools'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'tools', 'util.py'), 'x = 1\n');
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    setAssetsRoot(undefined);
+    stubFindFilesRealSemantics({
+      [ws]: [path.join('scripts', 'pkg', 'app.py'), path.join('tools', 'util.py')]
+    });
+    try {
+      resetScanRootCache();
+      expect(getIndexScanRoots()).toEqual([path.join(ws, 'scripts')]);
+      const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
+      expect(files.map(u => u.fsPath)).toEqual([path.join(ws, 'scripts', 'pkg', 'app.py')]);
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFind;
       setAssetsRoot(undefined);
     }
   });

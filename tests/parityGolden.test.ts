@@ -12,6 +12,7 @@ import {
   validateEntitiesXmlDocument
 } from '../src/languageProviders';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
+import { patternGlob } from './helpers/findPattern';
 import { resetScanRootCache } from '../src/scanRoots';
 import {
   Diagnostic,
@@ -127,13 +128,16 @@ describe('PH0-02 parity golden: hover/definition/completion/diagnostics', () => 
 
   beforeAll(async () => {
     workspace.workspaceFolders = [{ uri: Uri.file(PROJECT), name: 'parity-project', index: 0 }];
-    workspace.findFiles = async (glob: string) => walkFiles(PROJECT).filter(uri => {
-      const name = path.basename(uri.fsPath);
-      return glob.includes('entities.xml') ? name === 'entities.xml'
-        : glob.includes('*.def') ? name.endsWith('.def')
-          : glob.includes('types.xml') ? name === 'types.xml'
-            : name.endsWith('.py');
-    });
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return walkFiles(PROJECT).filter(uri => {
+        const name = path.basename(uri.fsPath);
+        return glob.includes('entities.xml') ? name === 'entities.xml'
+          : glob.includes('*.def') ? name.endsWith('.def')
+            : glob.includes('types.xml') ? name === 'types.xml'
+              : name.endsWith('.py');
+      });
+    };
     resetScanRootCache();
     manager = new EntityMappingManager({ subscriptions: [] });
     pythonClassIndex = new PythonClassIndex();

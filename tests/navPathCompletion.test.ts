@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Position, Uri } from './fake-vscode/core';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 import { KBEngineCompletionProvider } from '../src/languageProviders';
 import { resetScanRootCache } from '../src/scanRoots';
 
@@ -22,11 +23,12 @@ describe('nav path completion in addSpaceGeometryMapping (SP-3)', () => {
   beforeEach(() => {
     resetScanRootCache();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('D:/ws'), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async (pattern?: string) => {
-      if (typeof pattern === 'string' && pattern.includes('navmesh')) {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      if (glob.includes('navmesh')) {
         return NAV_FILES.filter(f => f.endsWith('.navmesh')).map(Uri.file);
       }
-      if (typeof pattern === 'string' && pattern.includes('.tmx')) {
+      if (glob.includes('.tmx')) {
         return NAV_FILES.filter(f => f.endsWith('.tmx')).map(Uri.file);
       }
       return [];
@@ -94,9 +96,9 @@ describe('nav path completion in addSpaceGeometryMapping (SP-3)', () => {
   it('dedups a file surfaced by both scan patterns (dup guard)', async () => {
     // 同一文件被两条扫描模式(navmesh/tmx)各带回一次(跨根/跨模式重复):
     // seen 去重,同一 rel 只出一个条目。
-    stubWorkspace.findFiles = (async (pattern?: string) => {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
       const dup = Uri.file(NAV_FILES[0]);
-      return pattern?.includes('.tmx') ? [dup] : [dup, Uri.file(NAV_FILES[1])];
+      return patternGlob(raw).includes('.tmx') ? [dup] : [dup, Uri.file(NAV_FILES[1])];
     }) as typeof stubWorkspace.findFiles;
     const items = await complete('KBEngine.addSpaceGeometryMapping(0, None, "');
     const labels = items.map(item => String(item.label));

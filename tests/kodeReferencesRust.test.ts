@@ -19,6 +19,7 @@ import {
 } from '../src/backend/kodeCoreShadowFaces';
 import type { LspLocationFace } from '../src/backend/kodeCoreShadowFaces';
 import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { patternGlob } from './helpers/findPattern';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -308,8 +309,10 @@ describe('provider 切流(②Rust 命中/失败回落)', () => {
     const originalFolders = stubWorkspace.workspaceFolders;
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def') ? [Uri.file(avatarPath), Uri.file(monsterPath)] : []) as never;
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') ? [Uri.file(avatarPath), Uri.file(monsterPath)] : [];
+    }) as never;
     try {
       const doc = makeTextDocument(fs.readFileSync(avatarPath, 'utf8'), {
         fileName: avatarPath,
@@ -351,8 +354,10 @@ describe('provider 切流(②Rust 命中/失败回落)', () => {
     const originalFolders = stubWorkspace.workspaceFolders;
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def') ? [Uri.file(avatarPath), Uri.file(monsterPath)] : []) as never;
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') ? [Uri.file(avatarPath), Uri.file(monsterPath)] : [];
+    }) as never;
     try {
       const doc = makeTextDocument(fs.readFileSync(avatarPath, 'utf8'), {
         fileName: avatarPath,

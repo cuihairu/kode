@@ -15,6 +15,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
+import { patternGlob } from './helpers/findPattern';
 import { IndexScheduler, type IndexTaskHandle, type IndexTaskSpec } from '../src/backend/indexScheduler';
 import { parsePythonFile } from '../src/backend/pythonParser';
 import {
@@ -72,8 +73,10 @@ const makeFixture = (): Fixture => {
 const pointWorkspaceAt = (root: string, files: string[]): void => {
   stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'resume', index: 0 }];
   const original = stubWorkspace.findFiles;
-  stubWorkspace.findFiles = (async (pattern?: unknown) =>
-    String(pattern ?? '').includes('*.py') ? files.map(file => Uri.file(file)) : []) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.includes('*.py') ? files.map(file => Uri.file(file)) : [];
+  }) as typeof stubWorkspace.findFiles;
   void original;
 };
 

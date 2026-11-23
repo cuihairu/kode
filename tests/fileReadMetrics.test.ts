@@ -19,6 +19,7 @@ import {
 } from '../src/backend/fileReadMetrics';
 import { KBEngineHoverProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-MET-004:文件读取量与读取字节数记录。验收:一次普通 hover 可核对实际
 // 读盘范围(路径+字节,全在工作区语境内),关闭详细记录时开销有界(明细
@@ -51,10 +52,12 @@ describe('文件读取量与字节数记录(IDE-MET-004)', () => {
 
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(dir), name: 'ws', index: 0 }];
     const originalFindFiles = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def')
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def')
         ? [Uri.file(path.join(dir, 'scripts', 'entity_defs', 'Avatar.def'))]
-        : []) as typeof stubWorkspace.findFiles;
+        : [];
+    }) as typeof stubWorkspace.findFiles;
 
     try {
       const manager = new EntityMappingManager({ subscriptions: [] } as never);

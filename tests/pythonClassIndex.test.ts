@@ -16,6 +16,7 @@ import {
 import { EntityMappingManager } from '../src/entityMapping';
 import { PythonDefinitionProvider } from '../src/languageProviders';
 import { makeTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // mixin/跨类跳转根因修复:Python 类层级 + C3-MRO 解析。
 // 1) 夹具单测(常绿):解析类作用域、C3 线性化、self.<method> 归属。
@@ -119,8 +120,8 @@ describe('resolveSelfMethod(跨类唯一实现)', () => {
     fs.writeFileSync(file, FIXTURE_BASE, 'utf8');
 
     const original = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (pattern?: string) =>
-      pattern && pattern.includes('*.def') ? [] : [Uri.file(file)]) as typeof stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (raw?: unknown) =>
+      patternGlob(raw).includes('*.def') ? [] : [Uri.file(file)]) as typeof stubWorkspace.findFiles;
     try {
       const index = new PythonClassIndex();
       // 调用行:self.queryAllInterfaces 在 FIXTURE_BASE 0-based 第 13 行
@@ -150,8 +151,8 @@ describe('loadFileOnDemand(按需单文件缓存)', () => {
     const file = path.join(tmp, 'solo.py');
     fs.writeFileSync(file, 'class Solo:\n\tdef run(self):\n\t\tpass\n', 'utf8');
     const original = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (pattern?: string) =>
-      pattern && pattern.includes('*.def') ? [] : [Uri.file(file)]) as typeof stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (raw?: unknown) =>
+      patternGlob(raw).includes('*.def') ? [] : [Uri.file(file)]) as typeof stubWorkspace.findFiles;
     try {
       const index = new PythonClassIndex();
       // 首次:查询文件按需单文件解析入索引
@@ -227,8 +228,8 @@ describe.runIf(realAvailable)('真实 kbengine 跨类跳转(唯一实现)', () =
 
   it('3 个唯一实现全部跳到 Machines 定义', async () => {
     const original = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (pattern?: string) =>
-      pattern && pattern.includes('*.def')
+    stubWorkspace.findFiles = (async (raw?: unknown) =>
+      patternGlob(raw).includes('*.def')
         ? []
         : [Uri.file(REAL_CONTROLLER), Uri.file(REAL_MACHINES)]) as typeof stubWorkspace.findFiles;
     try {

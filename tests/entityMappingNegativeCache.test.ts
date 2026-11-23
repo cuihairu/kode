@@ -4,6 +4,7 @@ import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 负缓存回归(2026-10-16「加载很久」修复):已确认「无 .def 归属」的 .py
 // 再次跳转不得触发重扫——修复前每次跳转在 property/method 两处各全量重扫
@@ -22,11 +23,12 @@ describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     let defScans = 0;
     const targeted: string[] = [];
-    stubWorkspace.findFiles = (async (pattern?: string) => {
-      if (pattern && pattern.includes('*.def')) {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      if (glob.includes('*.def')) {
         defScans += 1;
       }
-      if (pattern && pattern.endsWith('.def') && !pattern.includes('*.def')) targeted.push(pattern);
+      if (glob.endsWith('.def') && !glob.includes('*.def')) targeted.push(glob);
       return [];
     }) as typeof stubWorkspace.findFiles;
 

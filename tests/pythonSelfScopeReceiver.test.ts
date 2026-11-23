@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { findOwnerSelfReceiverCalls } from '../src/backend/pythonSelfScope';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-AUD-029(R2-F06):receiver RPC 调用按 owner 文件原文正则扫描,结果混入
 // 字符串、注释、同文件另一普通类、嵌套重绑 self 的 self.cell.X(。本测试锁定
@@ -119,8 +120,10 @@ describe('getIncomingPythonReceiverCalls 集成:owner 类作用域过滤(AUD-029
     put('scripts/entity_defs/Other.def', '<root><CellMethods><sayHi></sayHi></CellMethods></root>');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const originalFindFiles = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def') ? [Uri.file(heroDef)] : []) as typeof stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') ? [Uri.file(heroDef)] : [];
+    }) as typeof stubWorkspace.findFiles;
     try {
       const manager = new EntityMappingManager({ subscriptions: [] } as never);
       await (manager as unknown as { waitForInitialScan(): Promise<void> }).waitForInitialScan();

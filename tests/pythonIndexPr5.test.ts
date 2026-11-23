@@ -26,6 +26,7 @@ import {
   resetLanguageServiceMetrics
 } from '../src/languageServiceMetrics';
 import { makeTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 const makeRoot = (files: Record<string, string>): { dir: string; paths: Record<string, string>; cleanup: () => void } => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pr5-'));
@@ -44,8 +45,8 @@ const pointWorkspaceAt = (dir: string): void => {
 };
 
 const stubFindFiles = (routing: (pattern: string) => string[]): void => {
-  stubWorkspace.findFiles = (async (pattern?: string) =>
-    routing(String(pattern ?? '')).map(file => Uri.file(file))) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) =>
+    routing(patternGlob(raw)).map(file => Uri.file(file))) as typeof stubWorkspace.findFiles;
 };
 
 const ASSET_FILES = {
@@ -435,10 +436,10 @@ describe('PR5 ② Definition 首查不阻塞全仓(快照命中/按需单文件/
     // 组合根三 glob(entities.xml/*.def/types.xml)挂起 → 派生永不收敛,逼出
     // 预算超时路径(而非派生成功路径);.py 发现/按需正常路由(静态 MRO 命中所需)。
     const never = new Promise<Uri[]>(() => undefined);
-    stubWorkspace.findFiles = (async (pattern?: string) => {
-      const p = String(pattern ?? '');
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const p = patternGlob(raw);
       if (!p.endsWith('.py')) { return never; }
-      const baseName = p.replace(/\*\*\/(.+)$/, '$1');
+      const baseName = p.includes('**/') ? p.slice(p.lastIndexOf('**/') + 3) : p;
       const all = [paths['a.py'], paths['b.py']];
       return (baseName === '*.py' ? all : all.filter(t => path.basename(t) === baseName))
         .map(file => Uri.file(file));
@@ -609,7 +610,7 @@ const routeWorkspacePy = (allPyPaths: string[]): void => {
     if (!patternText.endsWith('.py')) {
       return [];
     }
-    const baseName = patternText.replace(/\*\*\/(.+)$/, '$1');
+    const baseName = patternText.includes('**/') ? patternText.slice(patternText.lastIndexOf('**/') + 3) : patternText;
     if (baseName === '*.py') {
       return allPyPaths;
     }

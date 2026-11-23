@@ -6,6 +6,7 @@ import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineMethodImplementationCodeActionProvider } from '../src/languageProviders';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 import { CodeActionKind, makeTextDocument, Position, Range, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-014:为缺少实现的方法生成单个空方法。验收口径:Code Action 展示
 // 目标文件与插入点;已有同名实现时不重复生成(与 Go to Implementations
@@ -80,8 +81,10 @@ const buildWorkspace = (basePyContent: string): Fixture => {
 
 const withStubbedDefs = async <T>(avatarDef: string, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def') ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? [Uri.file(avatarDef)] : [];
+  }) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

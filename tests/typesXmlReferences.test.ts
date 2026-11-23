@@ -9,6 +9,7 @@ import {
   scanTypeReferencesInXml
 } from '../src/typesXmlReferences';
 import { KBEngineReferencesProvider } from '../src/languageProviders';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-017:types.xml 符号引用查询(Shift+F12)。范围/验收:types.xml 内
 // 符号的引用位覆盖 .def 中 <Type>/<Arg>/<of> 值使用处与实体属性类型引用;
@@ -135,14 +136,12 @@ describe('provideTypesXmlReferences(工作区级引用查询)', () => {
     fs.writeFileSync(typesXmlPath, TYPES_XML);
     fs.writeFileSync(avatarDefPath, DEF_WITH_GOLD);
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async (glob?: string) => {
-      if (typeof glob !== 'string') {
-        return [];
-      }
-      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      if (glob.endsWith('**/*.def')) {
         return [Uri.file(avatarDefPath)];
       }
-      if (typeof glob === 'string' && glob.endsWith('types.xml')) {
+      if (glob.endsWith('types.xml')) {
         return [Uri.file(typesXmlPath)];
       }
       return [];

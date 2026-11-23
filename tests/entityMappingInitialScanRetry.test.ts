@@ -11,6 +11,7 @@ import {
   IndexTaskState
 } from '../src/backend/indexScheduler';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 实体首扫失败重试回归(审核发现 :182):修复前 keyed 任务只启动真实扫描便
 // 宣告完成(单槽调度器下这是刻意设计——首扫分块要作为独立后台任务插队),
@@ -87,8 +88,8 @@ describe('EntityMappingManager 首扫失败重试(审核发现 :182)', () => {
     const oldFolders = stubWorkspace.workspaceFolders;
     const oldFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(dir), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async (pattern?: string) => {
-      const p = String(pattern ?? '');
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const p = patternGlob(raw);
       if (p.endsWith('*.def')) { return [Uri.file(heroAbsolute)]; }
       return [];
     }) as typeof stubWorkspace.findFiles;
@@ -128,8 +129,8 @@ describe('EntityMappingManager 首扫失败重试(审核发现 :182)', () => {
     const oldFolders = stubWorkspace.workspaceFolders;
     const oldFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(dir), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async (pattern?: string) => {
-      const p = String(pattern ?? '');
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const p = patternGlob(raw);
       if (p.endsWith('*.def')) { return [Uri.file(heroAbsolute)]; }
       return [];
     }) as typeof stubWorkspace.findFiles;

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineReferencesProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-002:属性引用收录 Python self 访问。验收口径:已确定实体归属的
 // self.hp 纳入 hp 引用(owner 文件面),无关实体同名属性不纳入(Monster.py
@@ -78,10 +79,12 @@ describe('属性引用收录 python self 访问(IDE-NAV-002)', () => {
   it('owner 文件 self.hp 进引用;无关实体同名不进;方法调用不混入', async () => {
     const ws = buildWorkspace();
     const originalFindFiles = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def')
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def')
         ? [Uri.file(ws.avatarDef), Uri.file(path.join(ws.root, 'scripts/entity_defs/Monster.def'))]
-        : []) as typeof stubWorkspace.findFiles;
+        : [];
+    }) as typeof stubWorkspace.findFiles;
     try {
       const manager = await makeManager();
       const accesses = await manager.getIncomingPythonPropertyAccesses(ws.avatarDef, 'hp');
@@ -194,10 +197,12 @@ describe('NAV-REF-PROP: def 属性 Shift+F12 场景核对(equip_track_list)', ()
   it('属性名位 Shift+F12 → owner Hero.py self.equip_track_list 使用处', async () => {
     const ws = buildHeroWorkspace();
     const originalFindFiles = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def')
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def')
         ? [Uri.file(ws.heroDef)]
-        : []) as typeof stubWorkspace.findFiles;
+        : [];
+    }) as typeof stubWorkspace.findFiles;
     try {
       const manager = await makeManager();
       // 直接链:别名 list 型属性同样按名收录(类型无关)
@@ -232,10 +237,12 @@ describe('NAV-REF-PROP: def 属性 Shift+F12 场景核对(equip_track_list)', ()
   it('光标在 <Type> 值行(EQUIP_TRACK_LIST)→ 回落类型引用面,不出 self 访问(位因)', async () => {
     const ws = buildHeroWorkspace();
     const originalFindFiles = stubWorkspace.findFiles;
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def')
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def')
         ? [Uri.file(ws.heroDef)]
-        : []) as typeof stubWorkspace.findFiles;
+        : [];
+    }) as typeof stubWorkspace.findFiles;
     try {
       const manager = await makeManager();
       const provider = new KBEngineReferencesProvider(manager);

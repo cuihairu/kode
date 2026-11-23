@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineRenameProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-011:属性重命名更新确定的 Python self 访问。验收口径:预览列出
 // def 编辑 + 已解析的 self.<属性> 访问(owner 注册面决定归属,NAV-002 同款),
@@ -65,8 +66,10 @@ const buildWorkspace = async (): Promise<void> => {
   monsterPy = write('scripts/base/Monster.py', MONSTER_PY);
   stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
   const originalFindFiles = stubWorkspace.findFiles;
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def') ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? [Uri.file(avatarDef)] : [];
+  }) as typeof stubWorkspace.findFiles;
   (globalThis as { __kodeOriginalFindFiles?: typeof stubWorkspace.findFiles }).__kodeOriginalFindFiles =
     originalFindFiles;
 };

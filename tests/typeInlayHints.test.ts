@@ -15,6 +15,7 @@ import {
   workspace
 } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // types.xml 数据类型 inlay hints(批154 用户令 todo:7):python 侧
 // self.<属性> 访问处原位渲染 def 声明的 <Type> 取值。解析走属性 F12 同一
@@ -259,7 +260,10 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
       '</root>'
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'rpc-inlay', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') || glob.endsWith(`/${path.basename(defFile)}`) ? [Uri.file(defFile)] : [];
+    };
     return basePy;
   };
 

@@ -253,6 +253,21 @@ export function getExternalScanRoots(): string[] {
   });
 }
 
+/**
+ * assetsRoot 显式配置意图(与 getIndexScanRoots 分支②同判据):配置原值
+ * 非空即 true;配置系统读取异常按显式配置处理(不可信不兜底)。P1-2:显式
+ * 配置落空 = 配置不对,调用方不得退回 workspace 裸 glob 兜底掩盖错误——
+ * 「配置无效」与「未配置的普通 Python 工作区」必须区分,后者才保留旧腿。
+ */
+export function hasExplicitAssetsRootConfig(): boolean {
+  try {
+    const raw = vscode.workspace.getConfiguration('kbengine').get<string>('assetsRoot', '') ?? '';
+    return raw.trim() !== '';
+  } catch {
+    return true;
+  }
+}
+
 /** 文件所属的扫描根(最长匹配):workspace 文件夹优先,外部 assetsRoot 兜底 */
 export function getScanRootForFile(filePath: string): string | null {
   const key = normalizeForCompare(filePath);
@@ -790,8 +805,11 @@ export async function findFilesAcrossRoots(
     } catch {
       assetsRootResolved = false;
     }
-    if (assetsRootResolved) {
-      // assetsRoot 在、scripts 缺 = 找不到 scripts 目录,不扫描(零文件)
+    // P1-2:assetsRoot 在而 scripts 缺 = 布局不对零文件;显式配置存在却解析
+    // 不出(指向不存在目录)= 配置不对,同样零文件——两者都不许退回裸
+    // workspace glob 全盘扫(把 tools/、依赖树扫进来掩盖错误)。只有「完全
+    // 未配置的真普通 Python 工作区」才维持旧裸 glob 腿。
+    if (assetsRootResolved || hasExplicitAssetsRootConfig()) {
       discovery.end('ok');
       return [];
     }
@@ -821,7 +839,15 @@ export async function findFilesAcrossRoots(
       }
       const rel = path.relative(folder.uri.fsPath, rootKey).split(path.sep).join('/');
       const scopedGlob = rel ? `${rel}/${glob}` : glob;
-      for (const uri of await vscode.workspace.findFiles(scopedGlob, exclude, undefined, token)) {
+      // P1-3:glob 必须挂 RelativePattern 钉在**本文件夹**——字符串形态的
+      // 收窄 glob 会被真实 vscode 对每个 workspace 文件夹各匹配一遍,其他
+      // 项目根的同相对路径文件以本根身份漏进结果(跨项目泄漏)。
+      for (const uri of await vscode.workspace.findFiles(
+        new vscode.RelativePattern(folder.uri, scopedGlob),
+        exclude,
+        undefined,
+        token
+      )) {
         // 收窄路径同样经 keepPath 后滤(引擎库/托管镜像/用户排除),与
         // else 分支的裸 glob 结果同口径——收窄 glob 只省 IO,不放宽过滤。
         if (!keepPath(uri.fsPath)) {

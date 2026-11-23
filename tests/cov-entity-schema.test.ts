@@ -49,6 +49,7 @@ import {
   workspaceState,
   type StubFileSystemWatcher
 } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // 补覆盖(对账 coverage/lcov.info DA:0 散点):entityMapping / databaseSchema /
 // diagnosticScheduler / workspaceIndex / entityTypeStubs 的守卫与早落分支。
@@ -852,9 +853,9 @@ describe('entityMapping 散点分支', () => {
     fs.symlinkSync('/nonexistent-kode-cov-target', p('scripts/broken.py'));
 
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'cov', index: 0 }];
-    stubWorkspace.findFiles = (async (pattern?: string) => {
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
       const results: never[] = [];
-      const suffix = String(pattern ?? '').endsWith('.def') ? '.def' : '.nomatch';
+      const suffix = patternGlob(raw).endsWith('.def') ? '.def' : '.nomatch';
       const walk = (dir: string): void => {
         let entries: fs.Dirent[];
         try {

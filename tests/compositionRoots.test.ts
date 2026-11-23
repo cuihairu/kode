@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { Position, Uri } from './fake-vscode/core';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 import {
   deriveCompositionRoots,
   parseDefComposition,
@@ -151,12 +152,13 @@ describe('组合根派生(纯函数)', () => {
 describe('组合根:真实夹具派生与收录', () => {
   const ORIGINAL = stubWorkspace.findFiles;
 
-  const realFindFiles = async (pattern?: string): Promise<Uri[]> => {
-    const matches = pattern && pattern.includes('entities.xml')
+  const realFindFiles = async (raw?: unknown): Promise<Uri[]> => {
+    const glob = patternGlob(raw);
+    const matches = glob.includes('entities.xml')
       ? (name: string): boolean => name === 'entities.xml'
-      : pattern && pattern.includes('*.def')
+      : glob.includes('*.def')
         ? (name: string): boolean => name.endsWith('.def')
-        : pattern && pattern.includes('types.xml')
+        : glob.includes('types.xml')
           ? (name: string): boolean => name === 'types.xml'
           : (name: string): boolean => name.endsWith('.py');
     const out: Uri[] = [];
@@ -213,12 +215,13 @@ describe('组合根:真实夹具派生与收录', () => {
 describe('组合根:≥2 实体 4 组端到端跳转', () => {
   const ORIGINAL = stubWorkspace.findFiles;
 
-  const realFindFiles = async (pattern?: string): Promise<Uri[]> => {
-    const matches = pattern && pattern.includes('entities.xml')
+  const realFindFiles = async (raw?: unknown): Promise<Uri[]> => {
+    const glob = patternGlob(raw);
+    const matches = glob.includes('entities.xml')
       ? (name: string): boolean => name === 'entities.xml'
-      : pattern && pattern.includes('*.def')
+      : glob.includes('*.def')
         ? (name: string): boolean => name.endsWith('.def')
-        : pattern && pattern.includes('types.xml')
+        : glob.includes('types.xml')
           ? (name: string): boolean => name === 'types.xml'
           : (name: string): boolean => name.endsWith('.py');
     const out: Uri[] = [];

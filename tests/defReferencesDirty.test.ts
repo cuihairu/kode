@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineReferencesProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-004:引用结果使用未保存文档。验收口径:新增或删除未保存调用点后,
 // 引用列表跟随当前版本(缓冲区),不是磁盘旧版。三条引用面同测:receiver RPC
@@ -71,8 +72,10 @@ const buildWorkspace = (): { root: string; avatarDef: string; avatarPy: string }
 
 const withStubbedDefs = async <T>(avatarDef: string, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
-  stubWorkspace.findFiles = (async (glob?: string) =>
-    glob.endsWith('.def') ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
+    return glob.endsWith('.def') ? [Uri.file(avatarDef)] : [];
+  }) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

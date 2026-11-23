@@ -27,6 +27,7 @@ import {
 import { locateInterpreterOnPath } from '../src/profileInterpreter';
 import { getOrParseDocumentSync } from '../src/backend/documentStore';
 import { getRootConfigGeneration, getRootConfigLastBumpReason } from '../src/rootConfigGeneration';
+import { patternGlob } from './helpers/findPattern';
 
 // 真实解释器(双平台):测试面板「运行」档会真实 spawn 它跑 pytest——
 // CI(ubuntu) 取 PATH 上 /usr/bin/python3,Windows 取 PATH 上真实 python。
@@ -227,8 +228,9 @@ afterAll(() => {
 const prepareWorkspace = (wsRoot: string, wsDefs: string): void => {
   workspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
   workspace.textDocuments = [];
-  workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
+  workspace.findFiles = (async (raw?: unknown): Promise<Uri[]> => {
     // 2026-11-23 收窄后索引按扫描根发 scoped glob,桩按后缀命中(同 extensionBranches)
+    const pattern = patternGlob(raw);
     if (!pattern.endsWith('.def')) {
       return [];
     }
@@ -843,7 +845,7 @@ describe('extension 激活链命令面(补测)', () => {
     fs.mkdirSync(path.join(path.dirname(stubFile), 'KBEngine'), { recursive: true });
     fs.writeFileSync(path.join(path.dirname(stubFile), 'KBEngine', 'Entity.pyi'), '# 用户魔改版\n', 'utf8');
     const findFiles = workspace.findFiles;
-    workspace.findFiles = async pattern => pattern.toString().includes('*.def')
+    workspace.findFiles = async raw => patternGlob(raw).includes('*.def')
       ? [Uri.file(path.join(defsRoot, 'Avatar.def'))]
       : [];
     try {

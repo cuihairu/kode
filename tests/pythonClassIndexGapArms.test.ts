@@ -6,6 +6,7 @@ import { PythonClassIndex, parsePythonFile } from '../src/backend/pythonClassInd
 import { IndexScheduler, IndexTaskPriority } from '../src/backend/indexScheduler';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import { makeTextDocument, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // pythonClassIndex.ts 缺口臂(2026-11-09 覆盖率扫尾,对齐 baseline 25 行):
 //   resolveSymbol 的 import 循环护栏/导入链落空臂、相对导入 (`..x`) 路径上卷、
@@ -113,8 +114,8 @@ const pointWorkspaceAt = (dir: string): void => {
 };
 
 const stubFindFiles = (routing: (pattern: string) => string[]): void => {
-  stubWorkspace.findFiles = (async (pattern?: unknown) =>
-    routing(String(pattern ?? '')).map(file => Uri.file(file))) as typeof stubWorkspace.findFiles;
+  stubWorkspace.findFiles = (async (raw?: unknown) =>
+    routing(patternGlob(raw)).map(file => Uri.file(file))) as typeof stubWorkspace.findFiles;
 };
 
 const ASSET_FILES = {
@@ -291,8 +292,8 @@ describe('pythonClassIndex 缺口臂:组合根派生缓冲面与让位风暴', (
     const index = new PythonClassIndex();
     const internals = asInternals(index);
     let mutation = 0;
-    stubWorkspace.findFiles = (async (pattern?: unknown) => {
-      const glob = String(pattern ?? '');
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
       if (glob.includes('entities.xml')) {
         // 每次派生尝试的发现阶段都改变赋值桥输入 → 输入指纹变化 → 让位
         mutation += 1;

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { Position, Uri } from './fake-vscode/core';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 import { EntityMappingManager } from '../src/entityMapping';
 import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../src/backend/pythonClassIndex';
 import { PythonDefinitionProvider } from '../src/languageProviders';
@@ -68,12 +69,13 @@ describe('真实 kbengine:assetsRoot 扫描根验收', () => {
     configurationOverrides.set('kbengine', { assetsRoot: ASSETS });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(TOOLS), name: 'tools', index: 0 }];
     // workspace 部分:按真实目录 walk 模拟 findFiles 的 workspace 域行为
-    stubWorkspace.findFiles = (async (pattern?: string) => {
-      const matches = pattern && pattern.includes('entities.xml')
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      const matches = glob.includes('entities.xml')
         ? (name: string): boolean => name === 'entities.xml'
-        : pattern && pattern.includes('*.def')
+        : glob.includes('*.def')
           ? (name: string): boolean => name.endsWith('.def')
-          : pattern && pattern.includes('types.xml')
+          : glob.includes('types.xml')
             ? (name: string): boolean => name === 'types.xml'
             : (name: string): boolean => name.endsWith('.py');
       return walkReal(TOOLS, matches).map(Uri.file);

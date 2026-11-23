@@ -56,6 +56,7 @@ import {
 } from './fake-vscode/core';
 
 import { until, makeContext, disposeAll, watcherPatternKey, resetExtensionTestState } from './extensionTestShared';
+import { patternGlob } from './helpers/findPattern';
 
 beforeEach(resetExtensionTestState);
 
@@ -103,7 +104,8 @@ describe('extension activate MRO 启动门控(P0-3e)', () => {
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const defUri = Uri.file(path.join(root, 'entities', 'Avatar.def'));
     const pyUri = Uri.file(path.join(root, 'scripts', 'base', 'Avatar.py'));
-    workspace.findFiles = (async (include: string) => {
+    workspace.findFiles = (async (raw?: unknown) => {
+      const include = patternGlob(raw);
       if (include.includes('*.def')) { return [defUri]; }
       if (include.includes('*.py')) { return [pyUri]; }
       return [];
@@ -323,7 +325,8 @@ describe('extension activate rust 轨道 pythonClassIndex 懒启动(RUST-TRACK-F
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const defUri = Uri.file(path.join(root, 'entities', 'Avatar.def'));
     const pyUri = Uri.file(path.join(root, 'scripts', 'base', 'Avatar.py'));
-    workspace.findFiles = (async (include: string) => {
+    workspace.findFiles = (async (raw?: unknown) => {
+      const include = patternGlob(raw);
       if (include.includes('*.def')) { return [defUri]; }
       if (include.includes('*.py')) { return [pyUri]; }
       return [];

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineWorkspaceSymbolProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // IDE-NAV-006:根范围工作区符号查询(Ctrl+T)。验收口径:按名称前缀查询
 // 已索引符号,返回 root/文件信息,不触发全仓扫描——查询面只读内存索引
@@ -78,7 +79,8 @@ const buildWorkspace = (): { root: string; avatarDef: string; monsterDef: string
 const withStubbedDefs = async <T>(avatarDef: string, monsterDef: string, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
   let findFilesCalls = 0;
-  stubWorkspace.findFiles = (async (glob?: string) => {
+  stubWorkspace.findFiles = (async (raw?: unknown) => {
+    const glob = patternGlob(raw);
     findFilesCalls += 1;
     return glob.endsWith('.def') ? [Uri.file(avatarDef), Uri.file(monsterDef)] : [];
   }) as typeof stubWorkspace.findFiles;
@@ -171,8 +173,10 @@ describe('工作区符号前缀查询(IDE-NAV-006)', () => {
     fs.writeFileSync(defPath, NESTED_AVATAR_DEF, 'utf-8');
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async (glob?: string) =>
-      glob.endsWith('.def') ? [Uri.file(defPath)] : []) as typeof stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') ? [Uri.file(defPath)] : [];
+    }) as typeof stubWorkspace.findFiles;
     try {
       const manager = await makeManager();
       // 嵌套 FIXED_DICT 子项独立符号(行=自身声明行)

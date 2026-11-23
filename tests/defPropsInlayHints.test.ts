@@ -19,6 +19,7 @@ import {
   workspace
 } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { patternGlob } from './helpers/findPattern';
 
 // C-22 交付③:def 属性只读视图 inlay(注释锚形态,重做版)。Python 侧
 // __init__ 之前引擎灌入的 def 属性在源码里不可见;在用户放置的整行注释锚
@@ -163,10 +164,12 @@ describe('DefPropsInlayHintsProvider(真实索引装配)', () => {
       ''
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'defprops-inlay', index: 0 }];
-    workspace.findFiles = async (glob?: string) =>
-      glob.endsWith('.def') || glob.endsWith('**/Avatar.def')
+    workspace.findFiles = async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      return glob.endsWith('.def') || glob.endsWith('**/Avatar.def')
         ? [Uri.file(path.join(root, 'scripts/entity_defs/Avatar.def'))]
         : [];
+    };
     void plainPy;
     return cellPy;
   };
