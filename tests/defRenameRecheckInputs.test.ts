@@ -103,7 +103,7 @@ const cursorAtWord = (text: string, word: string): Position => {
 const makeManager = async (defFiles: string[]): Promise<EntityMappingManager> => {
   const manager = new EntityMappingManager({ subscriptions: [] } as never);
   stubWorkspace.findFiles = (async (glob?: string) =>
-    glob === '**/*.def' ? defFiles.map(file => Uri.file(file)) : []) as typeof stubWorkspace.findFiles;
+    glob.endsWith('.def') ? defFiles.map(file => Uri.file(file)) : []) as typeof stubWorkspace.findFiles;
   await (manager as unknown as { waitForInitialScan(): Promise<void> }).waitForInitialScan();
   return manager;
 };

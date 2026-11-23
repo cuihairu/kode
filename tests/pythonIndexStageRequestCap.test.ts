@@ -61,7 +61,7 @@ describe('stageRequestFiles 按需补载截断(审核发现 :183)', () => {
     ].join('\n'), 'utf8');
     const oldFind = stubWorkspace.findFiles;
     stubWorkspace.findFiles = (async (glob: string) =>
-      glob === '**/*.py'
+      glob.endsWith('.py')
         ? [Uri.file(avatarFile), ...Object.values(paths).map(p => Uri.file(p))]
         : []) as typeof stubWorkspace.findFiles;
     try {

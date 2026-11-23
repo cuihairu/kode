@@ -218,6 +218,35 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
     }
   });
 
+  // 2026-11-23 用户复核(实测:配置 assetsRoot 后仍全盘扫描):扫描根全在
+  // workspace 之外时,workspace 腿不得再走裸 glob——裸 glob 按 workspace 全目录
+  // 匹配,workspace 文件会漏进结果。本例钉死:外部 assetsRoot 下 workspace 侧
+  // .py 零产出,结果只含扫描根(外部遍历)命中。
+  it('外部 assetsRoot:workspace 腿零产出(裸 workspace glob 是全盘扫主因)', async () => {
+    const ws = makeTmpDir('ext-narrow-ws');
+    const assets = makeTmpDir('ext-narrow-assets');
+    fs.mkdirSync(path.join(ws, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'scripts', 'base', 'WorkspaceNoise.py'), 'class WorkspaceNoise:\n    pass\n');
+    fs.mkdirSync(path.join(assets, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(assets, 'scripts', 'base', 'Account.py'), 'class Account:\n    pass\n');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.endsWith('.py')
+        ? [Uri.file(path.join(ws, 'scripts', 'base', 'WorkspaceNoise.py'))]
+        : []) as typeof stubWorkspace.findFiles;
+    try {
+      setAssetsRoot(assets);
+      const py = await findFilesAcrossRoots('**/*.py', null);
+      expect(py.map(u => u.fsPath), 'workspace 文件不得进结果(外部 assetsRoot)')
+        .toEqual([path.join(assets, 'scripts', 'base', 'Account.py')]);
+    } finally {
+      stubWorkspace.findFiles = original;
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
+
   it('托管目录(.kbengine/inferred)副本不进结果(防镜像双计,CFG-017)', async () => {
     const ws = makeTmpDir('mirror-ws');
     const original = Uri.file(path.join(ws, 'scripts', 'base', 'Account.py'));

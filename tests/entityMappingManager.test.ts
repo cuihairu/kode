@@ -990,7 +990,7 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
         '<root>\n  <BaseMethods>\n    <onX/>\n  </BaseMethods>\n</root>');
       write(extB, 'scripts/entity_defs/HeroExtB.def',
         '<root>\n  <BaseMethods>\n    <onY/>\n  </BaseMethods>\n</root>');
-      const aDef = p(wsA, 'scripts', 'entity_defs', 'HeroA.def');
+      const aDef = p(extA, 'scripts', 'entity_defs', 'HeroExtA.def');
       const bDef = p(extB, 'scripts', 'entity_defs', 'HeroExtB.def');
 
       const originalFolders = stubWorkspace.workspaceFolders;
@@ -1036,12 +1036,15 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
           (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
         // WIN-3:根索引键走 normalizeFileIdentity(win32 盘符路径全小写),
         // 大小写敏感的 endsWith 在 Windows 找不到键
-        const aKey = [...rootIndexes().keys()].find(key => key.toLowerCase().endsWith('heroa.def')) as string;
+        // 2026-11-23 收窄:assetsRoot=extA(外部)时只扫 extA/scripts,workspace
+        // 的 wsA/scripts/HeroA.def 不入索引(workspace 腿零产出)——断言改指外部根。
+        const aKey = [...rootIndexes().keys()].find(key => key.toLowerCase().endsWith('heroexta.def')) as string;
         const aIndexBefore = rootIndexes().get(aKey);
         expect(aIndexBefore).toBeDefined();
 
-        // 启动时外部根 extA 三件套已挂
-        const extADefPattern = watcherPatternKey(new RelativePattern(extA, '**/*.def'));
+        // 启动时外部根 extA 三件套已挂(2026-11-23 收窄:外部扫描根 =
+        // assetsRoot/scripts,watcher 挂 scripts 子根而非整 assetsRoot)
+        const extADefPattern = watcherPatternKey(new RelativePattern(path.join(extA, 'scripts'), '**/*.def'));
         const oldExtADef = watchersByPattern.get(extADefPattern);
         expect(oldExtADef).toBeDefined();
 
@@ -1053,11 +1056,11 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
         expect(typeof refresh).toBe('function');
         refresh!.call(manager);
 
-        // 新根三件套已挂(新对象,不是旧 watcher 复用)
-        const extBDefWatcher = watchersByPattern.get(watcherPatternKey(new RelativePattern(extB, '**/*.def')));
+        // 新根三件套已挂(新对象,不是旧 watcher 复用;根同收窄到 scripts)
+        const extBDefWatcher = watchersByPattern.get(watcherPatternKey(new RelativePattern(path.join(extB, 'scripts'), '**/*.def')));
         expect(extBDefWatcher).toBeDefined();
-        expect(watchersByPattern.get(watcherPatternKey(new RelativePattern(extB, '**/*.py')))).toBeDefined();
-        expect(watchersByPattern.get(watcherPatternKey(new RelativePattern(extB, '**/{types,alias}.xml')))).toBeDefined();
+        expect(watchersByPattern.get(watcherPatternKey(new RelativePattern(path.join(extB, 'scripts'), '**/*.py')))).toBeDefined();
+        expect(watchersByPattern.get(watcherPatternKey(new RelativePattern(path.join(extB, 'scripts'), '**/{types,alias}.xml')))).toBeDefined();
 
         // 旧外部根 watcher 已释放:fire 事件不再触达维护(工作区实体不动)
         oldExtADef!.fireDelete(Uri.file(aDef));
@@ -1300,11 +1303,14 @@ describe('KR-AUD-25 根重加入解除拉黑(removedRootKeys 过期)', () => {
         await until(() => rootIndexes().size >= 2, 'two-folder scan');
         expect(manager.getMapping('HeroB')).toBeDefined();
 
-        // 移除 B:整根摘除 + 拉黑(IDE-IDX-015/016 语义不变)
+        // 移除 B:整根摘除 + 拉黑(IDE-IDX-015/016 语义不变)。2026-11-23 收窄后
+        // 登记根身份 = {folder}/scripts(扫描根),removeRoot 按扫描根身份
+        // (生产侧 getExternalScanRoots/rootRemovals 同口径)——黑名单键与重登记
+        // 键同身份,重加入才能解除拉黑。
         stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsA), name: 'wsA', index: 0 }];
         stubWorkspace.findFiles = async () => walkRoots([wsA]);
         resetScanRootCache();
-        manager.removeRoot(wsB);
+        manager.removeRoot(path.join(wsB, 'scripts'));
         expect(manager.getMapping('HeroB')).toBeUndefined();
         // B 未重加入:重扫(A 单根)不得解除拉黑——只解除「重新登记」的根
         await rescan();

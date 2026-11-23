@@ -42,7 +42,8 @@ describe('跨 .def 文件解析 Python 接口方法', () => {
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'cross-def', index: 0 }];
     workspace.findFiles = async (glob?: string) => {
-      if (glob !== '**/*.def') return [];
+      // 2026-11-23 收窄后索引发 scoped glob(scripts/**/*.def),桩按后缀命中
+      if (!glob || !glob.endsWith('.def')) return [];
       return [Uri.file(defFile)];
     };
 

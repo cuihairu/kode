@@ -62,7 +62,7 @@ beforeAll(() => {
   avatarPyPath = put('a/scripts/base/Avatar.py', AVATAR_PY);
   unrelatedPyPath = put('a/scripts/tools/helper.py', UNRELATED_PY);
   stubWorkspace.findFiles = (async (glob?: string) =>
-    glob === '**/*.def' ? [Uri.file(path.join(root, 'a/scripts/entity_defs/Avatar.def'))] : []
+    glob.endsWith('.def') ? [Uri.file(path.join(root, 'a/scripts/entity_defs/Avatar.def'))] : []
   ) as typeof stubWorkspace.findFiles;
 });
 

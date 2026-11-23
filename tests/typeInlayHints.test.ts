@@ -259,7 +259,7 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
       '</root>'
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'rpc-inlay', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
     return basePy;
   };
 

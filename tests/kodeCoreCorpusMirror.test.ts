@@ -234,10 +234,10 @@ describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
     await writeCorpusFile(defPath, '<root/>\n');
     const { gate, calls } = makeFakeGate(true);
     const finder: CorpusFileFinder = async glob => {
-      if (glob === '**/types.xml') {
+      if (typeof glob === 'string' && glob.endsWith('types.xml')) {
         throw new Error('glob failed');
       }
-      return glob === '**/*.def' ? [Uri.file(defPath)] : [];
+      return glob.endsWith('.def') ? [Uri.file(defPath)] : [];
     };
     await expect(mirrorCorpusToRust(gate as KodeCoreGate, finder)).resolves.toBeUndefined();
     expect(calls.map(call => call.uri)).toEqual([defPath]);

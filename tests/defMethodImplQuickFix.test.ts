@@ -79,7 +79,7 @@ const buildWorkspace = (basePyContent: string): Fixture => {
 const withStubbedDefs = async <T>(avatarDef: string, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
   stubWorkspace.findFiles = (async (glob?: string) =>
-    glob === '**/*.def' ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
+    glob.endsWith('.def') ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

@@ -228,7 +228,8 @@ const prepareWorkspace = (wsRoot: string, wsDefs: string): void => {
   workspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
   workspace.textDocuments = [];
   workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
-    if (pattern !== '**/*.def') {
+    // 2026-11-23 收窄后索引按扫描根发 scoped glob,桩按后缀命中(同 extensionBranches)
+    if (!pattern.endsWith('.def')) {
       return [];
     }
     return [Uri.file(path.join(wsDefs, 'Avatar.def'))];

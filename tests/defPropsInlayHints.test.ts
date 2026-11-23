@@ -164,7 +164,7 @@ describe('DefPropsInlayHintsProvider(真实索引装配)', () => {
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'defprops-inlay', index: 0 }];
     workspace.findFiles = async (glob?: string) =>
-      glob === '**/*.def' || glob === '**/Avatar.def'
+      glob.endsWith('.def') || glob.endsWith('**/Avatar.def')
         ? [Uri.file(path.join(root, 'scripts/entity_defs/Avatar.def'))]
         : [];
     void plainPy;

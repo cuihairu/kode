@@ -79,7 +79,7 @@ describe('属性引用收录 python self 访问(IDE-NAV-002)', () => {
     const ws = buildWorkspace();
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def'
+      glob.endsWith('.def')
         ? [Uri.file(ws.avatarDef), Uri.file(path.join(ws.root, 'scripts/entity_defs/Monster.def'))]
         : []) as typeof stubWorkspace.findFiles;
     try {
@@ -120,7 +120,7 @@ describe('属性引用收录 python self 访问(IDE-NAV-002)', () => {
     const ws = buildWorkspace();
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def' ? [Uri.file(ws.avatarDef)] : []) as typeof stubWorkspace.findFiles;
+      glob.endsWith('.def') ? [Uri.file(ws.avatarDef)] : []) as typeof stubWorkspace.findFiles;
     try {
       const manager = await makeManager();
       const accesses = await manager.getIncomingPythonPropertyAccesses(ws.avatarDef, 'reqPos');
@@ -195,7 +195,7 @@ describe('NAV-REF-PROP: def 属性 Shift+F12 场景核对(equip_track_list)', ()
     const ws = buildHeroWorkspace();
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def'
+      glob.endsWith('.def')
         ? [Uri.file(ws.heroDef)]
         : []) as typeof stubWorkspace.findFiles;
     try {
@@ -233,7 +233,7 @@ describe('NAV-REF-PROP: def 属性 Shift+F12 场景核对(equip_track_list)', ()
     const ws = buildHeroWorkspace();
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def'
+      glob.endsWith('.def')
         ? [Uri.file(ws.heroDef)]
         : []) as typeof stubWorkspace.findFiles;
     try {

@@ -562,23 +562,43 @@ export async function findFilesAcrossRoots(
   // 的零文件早退已在上方 gate 处理)。
   let base: vscode.Uri[] = [];
   const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
-  const folderForRoot = workspaceFolders.find(folder =>
+  const hasRootInsideWorkspace = workspaceFolders.some(folder =>
     scanRootKeys.some(rootKey => isContained(normalizeForCompare(folder.uri.fsPath), rootKey))
   );
-  if (folderForRoot) {
-    const rootKey = scanRootKeys.find(rootKey =>
-      isContained(normalizeForCompare(folderForRoot!.uri.fsPath), rootKey)
-    );
-    if (rootKey) {
-      const rel = path.relative(folderForRoot.uri.fsPath, rootKey).split(path.sep).join('/');
+  if (hasRootInsideWorkspace) {
+    // 2026-11-23 修复:多文件夹工作区每个含扫描根的 folder 各自收窄
+    // (folderForRoot 原来只取第一个,其余 folder 的扫描根文件被静默漏掉)。
+    for (const folder of workspaceFolders) {
+      const folderKey = normalizeForCompare(folder.uri.fsPath);
+      const rootKey = scanRootKeys.find(rootKey => isContained(folderKey, rootKey));
+      if (!rootKey) {
+        continue;
+      }
+      const rel = path.relative(folder.uri.fsPath, rootKey).split(path.sep).join('/');
       const scopedGlob = rel ? `${rel}/${glob}` : glob;
-      base = await vscode.workspace.findFiles(scopedGlob, exclude, undefined, token);
+      for (const uri of await vscode.workspace.findFiles(scopedGlob, exclude, undefined, token)) {
+        // 收窄路径同样经 keepPath 后滤(引擎库/托管镜像/用户排除),与
+        // else 分支的裸 glob 结果同口径——收窄 glob 只省 IO,不放宽过滤。
+        if (!keepPath(uri.fsPath)) {
+          continue;
+        }
+        merged.set(normalizeForCompare(uri.fsPath), uri);
+      }
     }
-  } else {
-    // 扫描根全在 workspace 之外(外部 assetsRoot)或为空:workspace 腿维持裸
-    // glob(旧行为),外部根由 walkExternalRoot 补齐。
+  } else if (scanRootKeys.length === 0) {
+    // 扫描根为空且 assetsRoot 未解析出(真非 KBEngine 仓库):workspace 腿维持
+    // 裸 glob(通用 python/def 面不因收窄失去索引)。「assetsRoot 在而 scripts
+    // 缺」的零文件早退已在上方 gate 处理,不会走到这。
+    //
+    // 2026-11-23 用户复核(实测仍全盘扫描):扫描根非空但全在 workspace 之外
+    // (外部 assetsRoot)时**绝不**再走裸 workspace glob——裸 glob 按 workspace
+    // 全目录匹配,扫描根之外的文件照样进结果(全盘扫主因,上次修复 2644cb1c
+    // 只堵了「扫描根在 workspace 内」分支,漏了外部根)。外部根由下方
+    // walkExternalRoot(getExternalScanRoots)补齐,workspace 本体不扫。
     base = await vscode.workspace.findFiles(glob, exclude, undefined, token);
   }
+  // else: 扫描根非空且全在 workspace 之外 = 外部 assetsRoot,workspace 腿零
+  // 产出(扫描根由外部遍历覆盖),不再退化成全盘扫。
   stopWorkspaceGlob();
   for (const uri of base) {
     if (!keepPath(uri.fsPath)) {

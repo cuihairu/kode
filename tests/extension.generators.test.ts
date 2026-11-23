@@ -227,7 +227,7 @@ describe('extension activate 消息表类型注册表接线(AUD-060)', () => {
     // 映射首扫经 findFilesAcrossRoots → workspace.findFiles;替身默认返回 [],
     // 这里让 Hero.def 被扫到(与 defAnalyzerCommand/defParamInlayHints 同式)
     workspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def' ? [Uri.file(heroDef)] : []) as typeof workspace.findFiles;
+      glob.endsWith('.def') ? [Uri.file(heroDef)] : []) as typeof workspace.findFiles;
     const context = makeContext();
     try {
       activate(context);

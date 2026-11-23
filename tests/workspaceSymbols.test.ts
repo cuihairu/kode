@@ -78,7 +78,7 @@ const withStubbedDefs = async <T>(avatarDef: string, monsterDef: string, run: ()
   let findFilesCalls = 0;
   stubWorkspace.findFiles = (async (glob?: string) => {
     findFilesCalls += 1;
-    return glob === '**/*.def' ? [Uri.file(avatarDef), Uri.file(monsterDef)] : [];
+    return glob.endsWith('.def') ? [Uri.file(avatarDef), Uri.file(monsterDef)] : [];
   }) as typeof stubWorkspace.findFiles;
   try {
     return await run(findFilesCallCounter => {
@@ -170,7 +170,7 @@ describe('工作区符号前缀查询(IDE-NAV-006)', () => {
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def' ? [Uri.file(defPath)] : []) as typeof stubWorkspace.findFiles;
+      glob.endsWith('.def') ? [Uri.file(defPath)] : []) as typeof stubWorkspace.findFiles;
     try {
       const manager = await makeManager();
       // 嵌套 FIXED_DICT 子项独立符号(行=自身声明行)

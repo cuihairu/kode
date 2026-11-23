@@ -77,7 +77,7 @@ const makeDeps = (root: string, overrides: Partial<DefMd5CheckDeps> = {}): DefMd
     findFiles: async (glob: string) => {
       const all = walk(root);
       let matched: string[] = [];
-      if (glob === '**/*.def') {
+      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
         matched = all.filter((p) => p.endsWith('.def'));
       } else if (glob === '**/base/components/*.py') {
         matched = all.filter((p) => p.includes('/base/components/') && p.endsWith('.py'));

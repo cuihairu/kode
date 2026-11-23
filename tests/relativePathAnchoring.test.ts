@@ -96,11 +96,13 @@ describe('扫描根:相对 assetsRoot 的锚定', () => {
     try {
       setFolders([ws]);
       // 相对形式表达的 workspace 外目录:join(workspaceRoot, rel) 才能得到它
+      // (2026-11-23 收窄后索引根=assetsRoot/scripts:外部目录需含 scripts 子
+      // 目录才入列;断言与 getScanRootForFile 随之指向 scripts 子根)
+      fs.mkdirSync(path.join(ext, 'scripts'), { recursive: true });
       setConfig({ assetsRoot: path.relative(ws, ext) });
       const roots = getIndexScanRoots().map(root => path.resolve(root));
-      expect(roots).toContain(path.resolve(ws));
-      expect(roots, '相对 assetsRoot 锚定仓库根后应解析到外部目录').toContain(path.resolve(ext));
-      expect(getScanRootForFile(path.join(ext, 'scripts', 'a.py'))).toBe(ext);
+      expect(roots, '相对 assetsRoot 锚定仓库根后应解析到外部目录').toContain(path.resolve(path.join(ext, 'scripts')));
+      expect(getScanRootForFile(path.join(ext, 'scripts', 'a.py'))).toBe(path.join(ext, 'scripts'));
 
       setFolders([]);
       expect(getIndexScanRoots(), '无工作区 + 相对 assetsRoot → 不落 cwd、不失败').toEqual([]);

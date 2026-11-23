@@ -196,10 +196,10 @@ describe('provideDefSymbolReferences(工作区级引用查询)', () => {
       if (typeof glob !== 'string') {
         return [];
       }
-      if (glob === '**/*.def') {
+      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
         return [Uri.file(heroDefPath), Uri.file(monsterDefPath), Uri.file(imoveDefPath), Uri.file(cweaponDefPath)];
       }
-      if (glob === '**/types.xml') {
+      if (typeof glob === 'string' && glob.endsWith('types.xml')) {
         return [Uri.file(typesXmlPath)];
       }
       return [];
@@ -349,7 +349,7 @@ describe('KR-AUD-77 interface reference sites cover all four wrapper spellings',
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     stubWorkspace.textDocuments = [];
     stubWorkspace.findFiles = (async (glob?: string) => {
-      if (glob === '**/*.def') {
+      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
         return [Uri.file(heroPath), Uri.file(imovePath)];
       }
       return [];
@@ -446,7 +446,7 @@ describe('defSymbolReferences 缺口臂(无元素/接口识别/扫描边界/取�
   };
   const stubScan = (defUris: ReturnType<typeof Uri.file>[]) => {
     stubWorkspace.findFiles = (async (glob?: string) => {
-      if (glob === '**/*.def') {
+      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
         return defUris;
       }
       return [];
@@ -485,7 +485,7 @@ describe('defSymbolReferences 缺口臂(无元素/接口识别/扫描边界/取�
     const typesXmlPath = path.join(wsRoot, 'scripts', 'entity_defs', 'types.xml');
     fs.writeFileSync(typesXmlPath, '<root><Vec3><Properties><x><Type>Vec3</Type></x></Properties></Vec3></root>\n');
     stubWorkspace.findFiles = (async (glob?: string) => {
-      if (glob === '**/*.def' || glob === '**/types.xml') {
+      if (glob.endsWith('.def') || glob.endsWith('**/types.xml')) {
         return [Uri.file(typesXmlPath)];
       }
       return [];
@@ -522,10 +522,10 @@ describe('defSymbolReferences 缺口臂(无元素/接口识别/扫描边界/取�
       const cts = new CancellationTokenSource();
       stubWorkspace.findFiles = (async (glob?: string) => {
         cts.cancel(); // 文件枚举在途即取消 → 循环顶如实返回
-        if (glob === '**/*.def') {
+        if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
           return [Uri.file(childDefPath)];
         }
-        if (glob === '**/types.xml') {
+        if (typeof glob === 'string' && glob.endsWith('types.xml')) {
           return [Uri.file(typesXmlPath)];
         }
         return [];

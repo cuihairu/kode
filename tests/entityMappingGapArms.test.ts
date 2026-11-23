@@ -137,7 +137,7 @@ const listDefFiles = (dir: string): string[] =>
 const stubDefScan = (root: string) => {
   const defsDir = path.join(root, 'scripts', 'entity_defs');
   stubWorkspace.findFiles = (async (glob?: string) =>
-    glob === '**/*.def'
+    glob.endsWith('.def')
       ? listDefFiles(defsDir).map(file => Uri.file(file))
       : []) as typeof stubWorkspace.findFiles;
 };
@@ -189,10 +189,10 @@ describe('entityMapping 缺口臂', () => {
     // 首查落盘 cell 侧文件后二查:文件级未命中 → basename 回落命中已注册
     // 实体(同名义索引按名槽共享),两查都应答。
     stubWorkspace.findFiles = (async (glob?: string) => {
-      if (glob === '**/Hero.def' || glob === '**/IFace.def') {
-        return glob === '**/Hero.def' ? [Uri.file(ws.heroDef)] : [];
+      if (glob.endsWith('**/Hero.def') || glob.endsWith('**/IFace.def')) {
+        return glob.endsWith('**/Hero.def') ? [Uri.file(ws.heroDef)] : [];
       }
-      if (glob === '**/*.def') {
+      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
         await new Promise(resolve => setTimeout(resolve, 80));
         return [Uri.file(ws.heroDef), Uri.file(ws.ifaceDef)];
       }

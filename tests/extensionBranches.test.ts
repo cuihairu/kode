@@ -77,7 +77,9 @@ beforeEach(() => {
   workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
   workspace.textDocuments = [];
   workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
-    if (pattern !== '**/*.def') {
+    // 2026-11-23 收窄后索引按扫描根发 scoped glob(scripts/**/*.def),桩按
+    // 后缀命中而非精确 '**/*.def',否则定向首解析/全量扫全落空(didOpen=false)。
+    if (!pattern.endsWith('.def')) {
       return [];
     }
     return [Uri.file(path.join(defsRoot, 'Avatar.def'))];

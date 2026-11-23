@@ -61,6 +61,12 @@ beforeEach(resetExtensionTestState);
 describe('Python index lifecycle wiring', () => {
   it('watches external assets, refreshes changed files, and releases closed documents', async () => {
     const assets = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-external-watch-'));
+    // 2026-11-23 收窄:索引扫描根只认 assetsRoot/scripts(不退回 assetsRoot
+    // 本体或 workspace 顶层),外部 watcher 三件套改挂 base=scripts 根——测试
+    // 必须按收窄根建目录,否则 getExternalScanRoots() 为空、无索引 watcher,
+    // fireCreate 进不去索引面(只剩 hotReload 旁路同 base 的 watcher)。
+    const scripts = path.join(assets, 'scripts');
+    fs.mkdirSync(path.join(scripts, 'cell'), { recursive: true });
     const context = makeContext();
     const originalCreate = workspace.createFileSystemWatcher;
     const watches: Array<{ pattern: unknown; disposed: boolean; watcher: ReturnType<typeof originalCreate> }> = [];
@@ -78,7 +84,8 @@ describe('Python index lifecycle wiring', () => {
     configurationOverrides.set('kbengine', { assetsRoot: assets });
     try {
       activate(context);
-      const watch = watches.find(item => (item.pattern as { base?: string })?.base === assets);
+      // 收窄后外部索引 watcher 的 base 是扫描根 assetsRoot/scripts(非 assets 本体)
+      const watch = watches.find(item => (item.pattern as { base?: string })?.base === scripts);
       expect(watch, 'external assetsRoot has a RelativePattern watcher').toBeTruthy();
       const file = Uri.file(path.join(assets, 'scripts/cell/Avatar.py'));
       watch!.watcher.fireCreate(file);
@@ -95,12 +102,13 @@ describe('Python index lifecycle wiring', () => {
       const document = makeTextDocument('class Avatar: pass', { fileName: file.fsPath });
       workspaceEvents.documentClosed.fire(document);
       expect(closed).toHaveBeenCalledWith(document);
-      // assets 同 base 的活 watcher 数(扩展装配面 1 件+entityMapping 外部根
-      // 三件套,IDE-ACC-011 起后者也以 RelativePattern 注册)。测试内 manager
+      // 扫描根(assets/scripts)同 base 的活 watcher 数(扩展装配面 1 件+entityMapping
+      // 外部根三件套,IDE-ACC-011 起后者也以 RelativePattern 注册;2026-11-23
+      // 收窄后 base 由 assetsRoot 本体变为 assetsRoot/scripts)。测试内 manager
       // 单例在 import 期构造,彼时 kbengine 覆盖未生效,外部三件套由首个配置
       // 事件补挂——泄漏锁取「整组重建后再刷新,活集不增长」,不取首次前后等值
       const liveAssetsWatchers = (): number =>
-        watches.filter(item => (item.pattern as { base?: string })?.base === assets && !item.disposed).length;
+        watches.filter(item => (item.pattern as { base?: string })?.base === scripts && !item.disposed).length;
       const fireAssetsRootChanged = (): void => {
         workspaceEvents.configurationChanged.fire({ affectsConfiguration: section => section === 'kbengine' || section === 'kbengine.assetsRoot' });
       };

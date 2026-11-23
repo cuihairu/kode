@@ -102,7 +102,7 @@ describe('getIncomingPythonPropertyAccesses 集成:owner 类作用域过滤(AUD-
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def' ? [Uri.file(heroDef)] : []) as typeof stubWorkspace.findFiles;
+      glob.endsWith('.def') ? [Uri.file(heroDef)] : []) as typeof stubWorkspace.findFiles;
     try {
       const manager = new EntityMappingManager({ subscriptions: [] } as never);
       await (manager as unknown as { waitForInitialScan(): Promise<void> }).waitForInitialScan();

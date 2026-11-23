@@ -467,7 +467,13 @@ export class EntityMappingManager {
       // 只该拦「移除后尚未回归」的根,根回到扫描根集说明已重加入,过期项
       // 不清会永久拦 null(A→B→A 切换后索引永不恢复)。本循环在发现/解析
       // 之前执行,不影响同轮在途批次对已移除根的拦截语义。
-      this.removedRootKeys.delete(normalizeLookupPath(scanRoot));
+      // 2026-11-23 收窄配套:解除同时清父 folder 根(removeRoot 以 folder 根
+      // 入黑名单并连带 scripts 子根;这里反向一并清,键口径对齐)。
+      const normalizedScanRoot = normalizeLookupPath(scanRoot);
+      this.removedRootKeys.delete(normalizedScanRoot);
+      if (normalizedScanRoot.endsWith('/scripts')) {
+        this.removedRootKeys.delete(normalizedScanRoot.slice(0, -'/scripts'.length));
+      }
       this.semanticIndex.registerRoot(scanRoot);
     }
 
@@ -1285,7 +1291,12 @@ export class EntityMappingManager {
    */
   removeRoot(rootPath: string): void {
     const normalizedRoot = normalizeLookupPath(rootPath);
+    // 2026-11-23 收窄配套:移除 folder 根时,其下收窄扫描根(folder/scripts)
+    // 同步入黑名单——登记根(performScan 用 getIndexScanRoots)是收窄根,
+    // 只拉黑 folder 根会与重加入解除(清 scripts 根)对不上,拉黑永不过期。
+    const narrowedChild = `${normalizedRoot}/scripts`;
     this.removedRootKeys.add(normalizedRoot);
+    this.removedRootKeys.add(narrowedChild);
     for (const defFile of [...this.mappingIndexesByRoot.keys()]) {
       if (defFile.startsWith(`${normalizedRoot}/`)) {
         this.removeIndexByDefFile(defFile);

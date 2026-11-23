@@ -52,7 +52,7 @@ describe('文件读取量与字节数记录(IDE-MET-004)', () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(dir), name: 'ws', index: 0 }];
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def'
+      glob.endsWith('.def')
         ? [Uri.file(path.join(dir, 'scripts', 'entity_defs', 'Avatar.def'))]
         : []) as typeof stubWorkspace.findFiles;
 

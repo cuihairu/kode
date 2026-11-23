@@ -91,7 +91,7 @@ const makeManager = async (): Promise<EntityMappingManager> => {
 const withStubbedDefs = async <T>(avatarDef: string, monsterDef: boolean, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
   stubWorkspace.findFiles = (async (glob?: string) =>
-    glob === '**/*.def'
+    glob.endsWith('.def')
       ? monsterDef
         ? [Uri.file(avatarDef), Uri.file(avatarDef.replace('Avatar.def', 'Monster.def'))]
         : [Uri.file(avatarDef)]

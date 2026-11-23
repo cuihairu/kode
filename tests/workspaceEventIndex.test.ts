@@ -34,11 +34,13 @@ it('事件首扫包含外部 assetsRoot 并排除共享规则中的目录', asyn
   const workspaceRoot = path.join(root, 'workspace');
   const assetsRoot = path.join(root, 'assets');
   fs.mkdirSync(workspaceRoot);
-  fs.mkdirSync(path.join(assetsRoot, 'venv'), { recursive: true });
-  fs.mkdirSync(path.join(assetsRoot, 'third_party'));
-  fs.writeFileSync(path.join(assetsRoot, 'listener.py'), 'self.addEvent(EV, self.on_ev)');
-  fs.writeFileSync(path.join(assetsRoot, 'venv', 'excluded.py'), 'self.addEvent(BAD, self.on_ev)');
-  fs.writeFileSync(path.join(assetsRoot, 'third_party', 'excluded.py'), 'self.addEvent(BAD, self.on_ev)');
+  // 单脚本根契约:扫描根 = {assets}/scripts,外部根的文件须在 scripts 下
+  fs.mkdirSync(path.join(assetsRoot, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(assetsRoot, 'scripts', 'venv'), { recursive: true });
+  fs.mkdirSync(path.join(assetsRoot, 'scripts', 'third_party'));
+  fs.writeFileSync(path.join(assetsRoot, 'scripts', 'listener.py'), 'self.addEvent(EV, self.on_ev)');
+  fs.writeFileSync(path.join(assetsRoot, 'scripts', 'venv', 'excluded.py'), 'self.addEvent(BAD, self.on_ev)');
+  fs.writeFileSync(path.join(assetsRoot, 'scripts', 'third_party', 'excluded.py'), 'self.addEvent(BAD, self.on_ev)');
   const originalFolders = vscode.workspace.workspaceFolders;
   const originalFind = vscode.workspace.findFiles;
   const originalRead = vscode.workspace.fs.readFile;
@@ -51,7 +53,7 @@ it('事件首扫包含外部 assetsRoot 并排除共享规则中的目录', asyn
   try {
     const calls = await index.allEventCalls();
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ file: path.join(assetsRoot, 'listener.py'), call: { event: 'EV' } });
+    expect(calls[0]).toMatchObject({ file: path.join(assetsRoot, 'scripts', 'listener.py'), call: { event: 'EV' } });
   } finally {
     index.dispose();
     vscode.workspace.workspaceFolders = originalFolders;
@@ -415,6 +417,8 @@ describe('IDE-AUD-035 事件索引维护外部根 watcher 生命周期(R2-F11)',
     const workspaceRoot = path.join(root, 'workspace');
     fs.mkdirSync(workspaceRoot);
     fs.mkdirSync(assetsRoot, { recursive: true });
+    // 单脚本根契约:外部 assetsRoot 的扫描根 = {assets}/scripts,必须真实存在
+    fs.mkdirSync(path.join(assetsRoot, 'scripts'), { recursive: true });
     const originalFolders = vscode.workspace.workspaceFolders;
     const originalFind = vscode.workspace.findFiles;
     const originalRead = vscode.workspace.fs.readFile;
@@ -446,7 +450,7 @@ describe('IDE-AUD-035 事件索引维护外部根 watcher 生命周期(R2-F11)',
       await index.allEventCalls();
       const created = allFileSystemWatchers.slice(before);
       const external = created.find(w =>
-        w.pattern instanceof RelativePattern && w.pattern.base === root && w.pattern.pattern === '**/*.py'
+        w.pattern instanceof RelativePattern && w.pattern.base === path.join(root, 'scripts') && w.pattern.pattern === '**/*.py'
       );
       expect(external).toBeDefined();
     } finally {
@@ -460,14 +464,16 @@ describe('IDE-AUD-035 事件索引维护外部根 watcher 生命周期(R2-F11)',
     const assetsA = path.join(base, 'assetsA');
     const assetsB = path.join(base, 'assetsB');
     fs.mkdirSync(assetsA, { recursive: true });
-    fs.mkdirSync(assetsB, { recursive: true });
+    // 切根目标也要有 scripts 子目录:单脚本根契约下扫描根 = {assets}/scripts,
+    // scripts 缺 = 找不到 scripts 就不扫(无 watcher 可挂)
+    fs.mkdirSync(path.join(assetsB, 'scripts'), { recursive: true });
     const env = setupRoots(assetsA);
     const before = allFileSystemWatchers.length;
     const index = new WorkspaceIndex();
     try {
       await index.allEventCalls();
       const watcherA = allFileSystemWatchers.slice(before).find(w =>
-        w.pattern instanceof RelativePattern && w.pattern.base === assetsA);
+        w.pattern instanceof RelativePattern && w.pattern.base === path.join(assetsA, 'scripts'));
       expect(watcherA).toBeDefined();
       // 切根:assetsRoot A → B
       configurationOverrides.set('kbengine', { assetsRoot: assetsB });
@@ -475,10 +481,10 @@ describe('IDE-AUD-035 事件索引维护外部根 watcher 生命周期(R2-F11)',
       const beforeSwitch = allFileSystemWatchers.length;
       index.refreshExternalWatchers();
       const watcherB = allFileSystemWatchers.slice(beforeSwitch).find(w =>
-        w.pattern instanceof RelativePattern && w.pattern.base === assetsB);
+        w.pattern instanceof RelativePattern && w.pattern.base === path.join(assetsB, 'scripts'));
       expect(watcherB).toBeDefined();
-      // 新根 watcher 可触发:assetsB 下文件变更入缓存(事件驱动异步,轮询等待)
-      const bFile = path.join(assetsB, 'listener.py');
+      // 新根 watcher 可触发:assetsB/scripts 下文件变更入缓存(事件驱动异步,轮询等待)
+      const bFile = path.join(assetsB, 'scripts', 'listener.py');
       fs.writeFileSync(bFile, 'self.addEvent(B_EV, self.on_ev)');
       watcherB!.fireChange(vscode.Uri.file(bFile));
       let sawB = false;
@@ -488,7 +494,7 @@ describe('IDE-AUD-035 事件索引维护外部根 watcher 生命周期(R2-F11)',
       }
       expect(sawB).toBe(true);
       // 旧根 watcher 已释放:assetsA 下文件变更不再触发(不再入缓存)
-      const aFile = path.join(assetsA, 'listener.py');
+      const aFile = path.join(assetsA, 'scripts', 'listener.py');
       fs.writeFileSync(aFile, 'self.addEvent(A_EV, self.on_ev)');
       watcherA!.fireChange(vscode.Uri.file(aFile));
       expect((await index.allEventCalls()).map(c => c.call.event)).not.toContain('A_EV');

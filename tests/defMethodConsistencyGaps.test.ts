@@ -80,7 +80,7 @@ const withStubbedDefs = async <T>(
 ): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
   stubWorkspace.findFiles = (async (glob?: string) =>
-    glob === '**/*.def' ? defFiles.map(file => Uri.file(file)) : []) as typeof stubWorkspace.findFiles;
+    glob.endsWith('.def') ? defFiles.map(file => Uri.file(file)) : []) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

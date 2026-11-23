@@ -128,13 +128,19 @@ describe('Python index maintenance', () => {
       const externalBusiness = path.join(external, 'scripts', 'cell', 'Avatar.py');
       fs.mkdirSync(path.dirname(externalBusiness), { recursive: true });
       fs.writeFileSync(externalBusiness, 'def target():\n    pass\n');
-      for (const dir of PY_SCAN_EXCLUDED_DIRS) { write(`${dir}/Noise.py`); }
+      // 2026-11-23 收窄后:扫描根=assetsRoot/scripts(配置显式给出 assetsRoot
+      // 时 workspace 不再入列)。排除目录埋进 scripts 子树内——walk 从
+      // scripts 起步要能跳过它们,workspace 发现腿(findFiles)同口径剔除。
+      for (const dir of PY_SCAN_EXCLUDED_DIRS) { write(`scripts/${dir}/Noise.py`); }
       for (const dir of PY_SCAN_EXCLUDED_DIRS) {
-        fs.mkdirSync(path.join(external, dir), { recursive: true });
-        fs.writeFileSync(path.join(external, dir, 'Noise.py'), 'def target():\n    pass\n');
+        fs.mkdirSync(path.join(external, 'scripts', dir), { recursive: true });
+        fs.writeFileSync(path.join(external, 'scripts', dir, 'Noise.py'), 'def target():\n    pass\n');
       }
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-      workspace.findFiles = (async () => []) as typeof workspace.findFiles;
+      workspace.findFiles = (async (glob: string) =>
+        glob.endsWith('.py')
+          ? [Uri.file(business), Uri.file(externalBusiness)]
+          : []) as typeof workspace.findFiles;
       configurationOverrides.set('kbengine', { assetsRoot: external });
       resetScanRootCache();
       const manager = new EntityMappingManager({ subscriptions: [] } as never, undefined, { deferStartup: true });
@@ -144,7 +150,10 @@ describe('Python index maintenance', () => {
         handlePythonFileChanged(file: string): void;
       };
       const hits = await internal.performBuildPythonDefIndex();
-      expect(hits.get('target')?.map(hit => hit.filePath)).toEqual([business, externalBusiness]);
+      // 2026-11-23 收窄语义:配置 assetsRoot 后扫描根只有 {assetsRoot}/scripts
+      // (workspace 腿只在 assetsRoot 未配置时走)→ 首扫只收 externalBusiness;
+      // business 由后续 handlePythonFileChanged 单文件维护进来(见下方 changed)。
+      expect(hits.get('target')?.map(hit => hit.filePath)).toEqual([externalBusiness]);
       expect(PY_SCAN_EXCLUDE).toBe(`**/{${[...PY_SCAN_EXCLUDED_DIRS].join(',')}}/**`);
 
       // A save or deletion updates the published index without another tree walk.

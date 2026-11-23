@@ -301,10 +301,11 @@ beforeAll(async () => {
   const rootUri = Uri.file(root);
   workspace.workspaceFolders = [{ uri: rootUri, name: 'ws', index: 0 }];
   workspace.findFiles = async (pattern: string): Promise<Uri[]> => {
-    if (pattern === '**/*.def') {
+    // 2026-11-23 收窄后索引发 scoped glob(scripts/**/*.def),桩按后缀命中
+    if (pattern.endsWith('.def')) {
       return [Uri.file(path.join(root, 'scripts', 'entity_defs', 'Avatar.def'))];
     }
-    if (pattern === '**/*.py') {
+    if (pattern.endsWith('.py')) {
       return [
         Uri.file(path.join(root, 'scripts', 'base', 'Avatar.py')),
         Uri.file(path.join(root, 'scripts', 'user_type', 'broken.py')),

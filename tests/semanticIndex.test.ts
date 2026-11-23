@@ -406,8 +406,9 @@ describe('EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走�
       // 无 owner 归属 + 实体名大小写不符仍 miss(既有大小写敏感回落口径)
       expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'cell', 'hero.py'))).toBeUndefined();
       // 语义索引取证:根显式登记,实体条目挂扫描根 rootId
+      // (2026-11-23 收窄后登记根=assetsRoot/scripts 子根,断言随之收窄)
       const semantic = manager.getSemanticIndex();
-      expect(semantic.getRoots().map(item => item.rootId)).toContain(normalizeFileIdentity(root));
+      expect(semantic.getRoots().map(item => item.rootId)).toContain(normalizeFileIdentity(path.join(root, 'scripts')));
       // WIN-3:win32 归一化把整路径折小写(盘符口径延伸到 basename),断言同走大小写不敏感
       expect(semantic.findEntityByName('Hero')?.defFile?.toLowerCase()).toContain('hero.def');
     } finally {

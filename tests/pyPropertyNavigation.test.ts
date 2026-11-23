@@ -71,10 +71,10 @@ const mockFindFiles = (ws: { heroDef: string; defsDir: string }): typeof stubWor
     if (typeof glob !== 'string') {
       return [];
     }
-    if (glob === '**/*.def') {
+    if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
       return [Uri.file(ws.heroDef)];
     }
-    if (glob === '**/types.xml') {
+    if (typeof glob === 'string' && glob.endsWith('types.xml')) {
       return [Uri.file(path.join(ws.defsDir, 'types.xml'))];
     }
     return [];

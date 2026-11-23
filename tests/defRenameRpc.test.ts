@@ -65,7 +65,7 @@ const buildWorkspace = async (): Promise<void> => {
   stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
   originalFindFiles = stubWorkspace.findFiles;
   stubWorkspace.findFiles = (async (glob?: string) =>
-    glob === '**/*.def' ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
+    glob.endsWith('.def') ? [Uri.file(avatarDef)] : []) as typeof stubWorkspace.findFiles;
 };
 
 const cleanupWorkspace = (): void => {

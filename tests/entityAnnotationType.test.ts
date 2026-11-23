@@ -64,7 +64,7 @@ const makeWorkspace = (typesXml: string): HoverFixture => {
 
 const makeManager = async (defFile: string): Promise<EntityMappingManager> => {
   const originalFindFiles = workspace.findFiles;
-  workspace.findFiles = async (glob?: string) => (glob === '**/*.def' ? [Uri.file(defFile)] : []);
+  workspace.findFiles = async (glob?: string) => (glob.endsWith('.def') ? [Uri.file(defFile)] : []);
   const manager = new EntityMappingManager({ subscriptions: [] } as never);
   await manager.waitForInitialScan();
   workspace.findFiles = originalFindFiles;

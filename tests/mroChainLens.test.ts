@@ -45,7 +45,7 @@ const stubDemoScripts = (): void => {
   };
   walk(DEMO_SCRIPTS);
   workspace.findFiles = (async (glob: string) =>
-    glob === '**/*.py' ? pyFiles.map(file => Uri.file(file)) : []) as typeof workspace.findFiles;
+    glob.endsWith('.py') ? pyFiles.map(file => Uri.file(file)) : []) as typeof workspace.findFiles;
 };
 
 const lineOf = (file: string, needle: string): number => {

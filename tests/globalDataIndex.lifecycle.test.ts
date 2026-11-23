@@ -1286,8 +1286,10 @@ describe('AUD-071 根变化更新索引与 watcher(R4-F06)', () => {
     const ws = path.join(root, 'ws');
     const assets = path.join(root, 'assets');
     fs.mkdirSync(ws, { recursive: true });
-    fs.mkdirSync(assets, { recursive: true });
-    const assetsWriter = path.join(assets, 'writer.py');
+    // 单脚本根契约:外部 assetsRoot 的作用域根是 {assets}/scripts
+    const scripts = path.join(assets, 'scripts');
+    fs.mkdirSync(scripts, { recursive: true });
+    const assetsWriter = path.join(scripts, 'writer.py');
     fs.writeFileSync(assetsWriter, cfgWrite);
     const savedFind = vscode.workspace.findFiles;
     const savedRead = vscode.workspace.fs.readFile;
@@ -1301,12 +1303,14 @@ describe('AUD-071 根变化更新索引与 watcher(R4-F06)', () => {
     const index = new GlobalDataDictIndex();
     try {
       await index.ensureStarted();
-      expect(index.query('globalData', 'cfg', assets).map(s => s.kind)).toEqual(['write']);
-      // 外部根被移除(配置清空):整根撤回
+      expect(index.query('globalData', 'cfg', scripts).map(s => s.kind)).toEqual(['write']);
+      // 外部根被移除(配置清空):整根撤回。外部根的 removeRoot 通知携带的是
+      // **扫描根身份**(diffScanRoots 基于 getIndexScanRoots,即 {assets}/scripts),
+      // 不是 assetsRoot 本体——数据也按 {assets}/scripts 键,两者同一身份。
       configurationOverrides.set('kbengine', { assetsRoot: '' });
       resetScanRootCache();
-      index.removeRoot(assets);
-      expect(index.query('globalData', 'cfg', assets)).toEqual([]);
+      index.removeRoot(scripts);
+      expect(index.query('globalData', 'cfg', scripts)).toEqual([]);
       expect(index.query('globalData', 'cfg', '')).toEqual([]);
     } finally {
       index.dispose();

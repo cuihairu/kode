@@ -29,7 +29,7 @@ function fixture(sources: Record<string, string>) {
     files[name] = file;
   }
   workspace.findFiles = (async (glob: string) => Object.values(files)
-    .filter(file => glob === '**/*.py' ? file.endsWith('.py') : glob === '**/*.def' ? file.endsWith('.def') : file.endsWith(glob.slice(3)))
+    .filter(file => glob.endsWith('.py') ? file.endsWith('.py') : glob.endsWith('.def') ? file.endsWith('.def') : file.endsWith(glob.slice(3)))
     .map(file => Uri.file(file))) as typeof workspace.findFiles;
   return { files, index: new PythonClassIndex() };
 }

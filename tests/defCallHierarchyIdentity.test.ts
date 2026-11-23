@@ -87,7 +87,7 @@ const withIndexedDefs = async <T>(indexed: boolean, run: () => Promise<T>): Prom
   const originalFindFiles = stubWorkspace.findFiles;
   stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
   stubWorkspace.findFiles = (async (glob?: string) =>
-    indexed && glob === '**/*.def' ? [Uri.file(avatarDefPath)] : []) as typeof stubWorkspace.findFiles;
+    indexed && glob.endsWith('.def') ? [Uri.file(avatarDefPath)] : []) as typeof stubWorkspace.findFiles;
   try {
     return await run();
   } finally {

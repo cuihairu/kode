@@ -139,10 +139,10 @@ describe('provideTypesXmlReferences(工作区级引用查询)', () => {
       if (typeof glob !== 'string') {
         return [];
       }
-      if (glob === '**/*.def') {
+      if (typeof glob === 'string' && glob.endsWith('**/*.def')) {
         return [Uri.file(avatarDefPath)];
       }
-      if (glob === '**/types.xml') {
+      if (typeof glob === 'string' && glob.endsWith('types.xml')) {
         return [Uri.file(typesXmlPath)];
       }
       return [];

@@ -709,7 +709,9 @@ describe('extension activate 装配', () => {
       // 映射管理器经 findFiles 枚举 def 文件,默认桩返回空表;
       // 按真实落盘树应答,激活时的异步扫描才能建到 Avatar 索引
       workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
-        if (pattern !== '**/*.def') {
+        // 扫描根收窄(只扫 assetsRoot/scripts)后 def 发现走收窄 glob
+        // (scripts/**/*.def 等);凡 .def 形态统一应答真实落盘 def 树。
+        if (!pattern.endsWith('.def')) {
           return originalFindFiles(pattern);
         }
         return [Uri.file(path.join(defsRoot, 'Avatar.def'))];
@@ -1079,7 +1081,9 @@ describe('extension activate 装配', () => {
       );
 
       workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
-        if (pattern !== '**/*.def') {
+        // 扫描根收窄(只扫 assetsRoot/scripts)后 def 发现走收窄 glob
+        // (scripts/**/*.def 等);凡 .def 形态统一应答真实落盘 def 树。
+        if (!pattern.endsWith('.def')) {
           return originalFindFiles(pattern);
         }
         return [Uri.file(path.join(defsRoot, 'Avatar.def'))];

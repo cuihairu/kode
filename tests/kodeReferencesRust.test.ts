@@ -309,7 +309,7 @@ describe('provider 切流(②Rust 命中/失败回落)', () => {
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def' ? [Uri.file(avatarPath), Uri.file(monsterPath)] : []) as never;
+      glob.endsWith('.def') ? [Uri.file(avatarPath), Uri.file(monsterPath)] : []) as never;
     try {
       const doc = makeTextDocument(fs.readFileSync(avatarPath, 'utf8'), {
         fileName: avatarPath,
@@ -352,7 +352,7 @@ describe('provider 切流(②Rust 命中/失败回落)', () => {
     const originalFindFiles = stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async (glob?: string) =>
-      glob === '**/*.def' ? [Uri.file(avatarPath), Uri.file(monsterPath)] : []) as never;
+      glob.endsWith('.def') ? [Uri.file(avatarPath), Uri.file(monsterPath)] : []) as never;
     try {
       const doc = makeTextDocument(fs.readFileSync(avatarPath, 'utf8'), {
         fileName: avatarPath,
