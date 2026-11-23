@@ -18,7 +18,7 @@ import { ensureDefaultDeploymentProfile } from './ensureDefaultProfile';
 import { ENGINE_VERSION_PRESETS } from './engineVersion';
 import { hasEngineTreeMarker, readEngineVersionMarker } from './backend/engineApiMetadata';
 import { detectEngineVersionMarker } from './backend/engineVersionDetect';
-import { findEngineRoot } from './backend/engineCompatibility';
+import { findEngineRootInDefaultPlaces } from './backend/engineCompatibility';
 import {
   describeInterpreterState,
   locateInterpreterOnPath,
@@ -265,7 +265,9 @@ async function wizardStepEngineVersion(
   const detected = detectEngineVersionMarker(workspaceRoots as string[], explicitEngineRoot, {
     findRoot: (root, explicit) => {
       const normalized = explicit ? normalizeExplicit(explicit) : undefined;
-      return normalized ?? findEngineRoot(root);
+      // 2026-11-23 用户令:引擎根默认只找两处(当前目录/上一层下有 kbe 树),
+      // 都没有即探测不中,不向上多级递归
+      return normalized ?? findEngineRootInDefaultPlaces(root);
     },
     readMarker: root => readEngineVersionMarker(root, probe => fs.readFileSync(probe, 'utf8'))
   });

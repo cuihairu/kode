@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { ensureAnchorScanRoot, findFilesAcrossRoots, getIndexScanRoots } from '../scanRoots';
 import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
 import {
   collectConfigSchema,
@@ -800,7 +801,16 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           return;
         }
         const excluded = '{**/node_modules/**,**/out/**,**/.kbengine/**,**/venv/**,**/.venv/**,**/__pycache__/**}';
-        const uris = await vscode.workspace.findFiles('**/*.py', excluded, 20000);
+        // 2026-11-23 收窄令推广:KBEngine 扫描根存在时只扫 scripts(引擎源码
+        // 只认 {assets}/scripts,激活期逐文件 openTextDocument 的全量扫是
+        // 首索引慢的大头);无根(真非 KBEngine 工程)维持 workspace 全量,
+        // 行为不变。
+        // 锚点根先行(二段令):配置/派生/folder 顶层全缺席时按引擎默认布局
+        // 定位 scripts 根——KBEngine 工程不再落进 workspace 全量兜底腿。
+        await ensureAnchorScanRoot().catch(() => null);
+        const uris = getIndexScanRoots().length > 0
+          ? (await findFilesAcrossRoots('**/*.py', excluded)).slice(0, 20000)
+          : await vscode.workspace.findFiles('**/*.py', excluded, 20000);
         const sources: ConfigSourceInput[] = [];
         for (const uri of uris) {
           try {

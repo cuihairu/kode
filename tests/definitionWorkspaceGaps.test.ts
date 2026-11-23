@@ -52,6 +52,7 @@ import {
   getRegisteredCustomTypes,
   getRegisteredEntities
 } from '../src/definitionWorkspace';
+import { setActiveProfileScanRoot } from '../src/scanRoots';
 import { makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // definitionWorkspace 的守卫与枚举缺口:document 目标在无工作区时的
@@ -170,24 +171,22 @@ describe('workspace path joining branches', () => {
     expect(layout.entityDefsRoot?.includes('\\')).toBe(true);
   });
 
-  it('honours an absolute configured entity defs path verbatim', () => {
-    // 绝对配置路径直返(resolveWorkspacePath 不再 join);目录须真实存在
-    // 才能从候选里胜出,取 fixture 根下的绝对路径避免污染系统目录。
-    const absoluteRoot = path.join(root, 'custom_defs');
-    fs.mkdirSync(absoluteRoot, { recursive: true });
-    const original = stubWorkspace.getConfiguration;
-    stubWorkspace.getConfiguration = ((section?: string) => ({
-      get: <T>(key: string, defaultValue: T): T =>
-        section === 'kbengine' && key === 'entityDefsPath'
-          ? absoluteRoot as unknown as T
-          : defaultValue
-    })) as unknown as typeof stubWorkspace.getConfiguration;
+  it('honours an absolute assets root verbatim: defs resolve under its scripts/', () => {
+    // 2026-11-23 起 defs 路径无配置项,由 assetsRoot 计算(用户令:固定目录
+    // 不独立设配置);绝对资产根(profile 选定根,解析链首位)原样作基底,
+    // def 根=基底 scripts/entity_defs;目录须真实存在才能从候选里胜出。
+    const absoluteRoot = path.join(root, 'custom_assets');
+    fs.mkdirSync(path.join(absoluteRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(path.join(absoluteRoot, 'scripts', 'entity_defs', 'Avatar.def'), '<root/>');
+    setActiveProfileScanRoot(absoluteRoot);
 
     try {
       const layout = getDefinitionWorkspaceLayout(root);
-      expect(layout.entityDefsRoot).toBe(absoluteRoot);
+      expect(layout.entityDefsRoot).toBe(
+        path.join(absoluteRoot, 'scripts', 'entity_defs')
+      );
     } finally {
-      stubWorkspace.getConfiguration = original;
+      setActiveProfileScanRoot(null);
     }
   });
 });

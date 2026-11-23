@@ -319,11 +319,9 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       // 生效资产根走管理器口径(原值探针命中优先,否则发现兜底,批128)
       configPathEffective: serverManager.getConfigPath(),
       binPathSetting: config.get<string>('binPath', ''),
-      binPath: serverManager.getBinPath(),
-      entityDefsPathSetting: config.get<string>('entityDefsPath', ''),
-      entitiesXmlPathSetting: config.get<string>('entitiesXmlPath', ''),
-      // types.xml 无独立配置项,布局内硬编码候选链,显式配置恒空
-      typesXmlPathSetting: ''
+      binPath: serverManager.getBinPath()
+      // entityDefsPath/entitiesXmlPath 显式配置行已删(2026-11-23 用户令:
+      // 固定目录由 assetsRoot 计算);报告三面 explicit 槽恒空串
     };
     const report = buildDiscoveryReport(workspaceRoot, facts);
     discoveryReportChannel.clear();
@@ -1013,10 +1011,18 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // 诊断集合之后——集合创建序即注册表序,消费方按序取集合)
   wireConfigValueDiagnostics(context);
   const ruffLintDeps = {
-    getWorkspacePythonFiles: async () =>
-      (
+    getWorkspacePythonFiles: async () => {
+      // 2026-11-23 收窄令推广:KBEngine 扫描根存在时只收 scripts 下的 py;
+      // 无根(真非 KBEngine python 工程)维持 workspace 全量,ruff 通用面不变
+      if (getIndexScanRoots().length > 0) {
+        return (await findFilesAcrossRoots('**/*.py', '**/node_modules/**'))
+          .slice(0, RUFF_MAX_FILES + 1)
+          .map(uri => uri.fsPath);
+      }
+      return (
         await vscode.workspace.findFiles('**/*.py', '**/node_modules/**', RUFF_MAX_FILES + 1)
-      ).map(uri => uri.fsPath),
+      ).map(uri => uri.fsPath);
+    },
     getInterpreterPath: () => {
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       return resolveProfileInterpreter(root).interpreterPath || null;

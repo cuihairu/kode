@@ -13,9 +13,12 @@ const originalFindFiles = stubWorkspace.findFiles;
 
 describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
   it('重复 miss 复用负缓存，新文件定向发现但不重扫全仓', async () => {
-    // 扫描根按"目录真实存在"过滤 getIndexScanRoots,占位路径 /ws 在任何
-    // 平台上都不落盘 → 根集合为空、构造期扫描早退,负缓存断言无从谈起。
+    // 扫描根按"目录真实存在"过滤 getIndexScanRoots(2026-11-23 收窄:根下还须
+    // 有 scripts/,否则该文件夹不贡献根),占位路径 /ws 在任何平台上都不落盘
+    // → 根集合为空、构造期扫描早退,负缓存断言无从谈起。tmpdir 真目录 + 按收
+    // 窄根建 scripts/ 子目录,发现走 scoped glob(scripts/**/*.def)。
     const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-negcache-'));
+    fs.mkdirSync(path.join(wsRoot, 'scripts'), { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     let defScans = 0;
     const targeted: string[] = [];
@@ -49,7 +52,8 @@ describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
       // 另一个未见过的文件做定向发现，不重新全仓扫描。
       expect(await manager.resolveMethodDefinition('/nowhere/Other.py', 'run')).toBeNull();
       expect(defScans).toBe(afterFirst);
-      expect(targeted).toContain('**/Other.def');
+      // 收窄后定向发现发 scoped glob(scripts/**/Other.def),按实体名尾段匹配
+      expect(targeted.some(pattern => pattern.endsWith('/Other.def'))).toBe(true);
 
       manager.dispose();
     } finally {

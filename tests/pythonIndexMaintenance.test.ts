@@ -190,7 +190,10 @@ describe('Python index maintenance', () => {
 
   it('applies a save that arrives during the first method-index build before publishing results', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-python-race-'));
-    const file = path.join(root, 'Hero.py');
+    // 收窄后全扫只走 {root}/scripts:Hero.py 落进 scripts/,根下建 scripts/
+    // 让该文件夹贡献扫描根(2026-11-23 收窄语义)
+    fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
+    const file = path.join(root, 'scripts', 'Hero.py');
     fs.writeFileSync(file, 'def old_method():\n    pass\n');
     const oldFolders = workspace.workspaceFolders;
     const oldFindFiles = workspace.findFiles;

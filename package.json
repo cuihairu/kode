@@ -2161,16 +2161,6 @@
             "scope": "window",
             "markdownDescription": "%kbengine.config.engineVersion.description%"
           },
-          "kbengine.entitiesXmlPath": {
-            "type": "string",
-            "default": "scripts/entities.xml",
-            "markdownDescription": "%kbengine.config.entitiesXmlPath.description%"
-          },
-          "kbengine.entityDefsPath": {
-            "type": "string",
-            "default": "scripts/entity_defs",
-            "markdownDescription": "%kbengine.config.entityDefsPath.description%"
-          },
           "kbengine.configData": {
             "type": "object",
             "default": {

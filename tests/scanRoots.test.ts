@@ -39,14 +39,20 @@ const setAssetsRoot = (value: string | undefined): void => {
 };
 
 describe('getIndexScanRoots:只扫 {assets}/scripts(2026-11-23 用户令;找不到 scripts 就不扫)', () => {
-  it('无 assetsRoot 配置(真非 KBEngine)→ 回退 workspace 腿(旧回退保留)', () => {
+  it('无 assetsRoot 配置:文件夹根下有 scripts → 收窄到 scripts;没有 → 不贡献根(③ 收窄)', () => {
     const ws = makeTmpDir('ws-only');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     try {
       setAssetsRoot(undefined);
-      // 未配置、无发现 = 非 KBEngine 仓库:维持历史回退(workspace 文件夹);
-      // 用户令「找不到 scripts 就不扫」只约束 assetsRoot 场景,不吞非 KBEngine 仓
-      expect(getIndexScanRoots()).toEqual([ws]);
+      // 未配置、无发现:引擎只认 {assets}/scripts(resmgr/entitydef 派生链钉死),
+      // 根下无 scripts = 无 KBEngine 脚本源 → 不整文件夹兜底(2026-11-23 用户令)
+      expect(getIndexScanRoots()).toEqual([]);
+      expect(getExternalScanRoots()).toEqual([]);
+      // 根下有 scripts/ → 默认落点命中,收窄到该 scripts(workspace==assets 布局)
+      const ws2 = makeTmpDir('ws-assets-shape');
+      fs.mkdirSync(path.join(ws2, 'scripts'), { recursive: true });
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws2), name: 'ws', index: 0 }];
+      expect(getIndexScanRoots()).toEqual([path.join(ws2, 'scripts')]);
       expect(getExternalScanRoots()).toEqual([]);
     } finally {
       stubWorkspace.workspaceFolders = [];
@@ -137,7 +143,7 @@ describe('getIndexScanRoots:只扫 {assets}/scripts(2026-11-23 用户令;找不�
 
   it('自动发现抛错 → 兜底 null,不外抛(不打断索引扫描)', () => {
     // 约定链/深扫描抛错(只读枚举被拒等):发现结果置 null,不外抛也不打断
-    // 索引扫描;无配置时按非 KBEngine 处理走 workspace 腿(历史回退)。
+    // 索引扫描;无配置且根下无 scripts = 无 KBEngine 脚本源,③ 收窄不贡献根。
     const ws = makeTmpDir('disc-throw');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     const spy = vi.spyOn(discoveryModule, 'resolveDiscoveredConfigRoot').mockImplementation(() => {
@@ -145,7 +151,7 @@ describe('getIndexScanRoots:只扫 {assets}/scripts(2026-11-23 用户令;找不�
     });
     try {
       setAssetsRoot(undefined);
-      expect(getIndexScanRoots()).toEqual([ws]);
+      expect(getIndexScanRoots()).toEqual([]);
     } finally {
       spy.mockRestore();
       stubWorkspace.workspaceFolders = [];
@@ -463,8 +469,8 @@ describe('RUST-171 发现优先级:profile > 设置 > 自动发现;env 不参与
       setAssetsRoot(undefined);
       // 资产根合成序无 env 道:解析落空返回空串(工作区回退在 getIndexScanRoots 组合层)
       expect(resolveAssetsRootForWorkspace(ws)).toBe('');
-      // env 不入链 = 无配置无发现 → 非 KBEngine,走 workspace 腿(历史回退)
-      expect(getIndexScanRoots()).toEqual([ws]);
+      // env 不入链 = 无配置无发现,引擎树形状的根无 scripts → ③ 收窄不贡献根
+      expect(getIndexScanRoots()).toEqual([]);
     } finally {
       if (savedRoot === undefined) delete process.env.KBENGINE_ROOT; else process.env.KBENGINE_ROOT = savedRoot;
       if (savedHome === undefined) delete process.env.KBENGINE_HOME; else process.env.KBENGINE_HOME = savedHome;

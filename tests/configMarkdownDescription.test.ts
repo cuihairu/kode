@@ -179,9 +179,8 @@ describe('package.json configuration prompt contract', () => {
       'kbengine.hotReload.sendViaProviders': false,
       // HR-MOD-008 根下单层回退:默认关=默认拒(零配置行为不变)
       'kbengine.hotReload.allowRootLevelStem': false,
-      // definitionWorkspace.ts getDefinitionWorkspaceLayout 约定链
-      'kbengine.entityDefsPath': 'scripts/entity_defs',
-      'kbengine.entitiesXmlPath': 'scripts/entities.xml',
+      // entityDefsPath/entitiesXmlPath 已删(2026-11-23:无配置项,def 固定
+      // {assetsRoot}/scripts 布局由 definitionWorkspace.ts 计算,无默认值可对账)
       // telnetService.ts readTelnetSettings 回环兜底
       'kbengine.telnet.host': '127.0.0.1',
       // extension.ts 日志缓冲 maxLogEntries → logCollector 裁剪上限

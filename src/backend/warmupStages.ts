@@ -6,11 +6,13 @@
  *                      activate 已 ensureStartup,这里只等同一轮,不重起);
  * 2. eventIndex     —— WorkspaceIndex 全量 .py 事件/方法首扫(ensureStarted
  *                      幂等,复用在跑任务);
- * 3. dependencyGraph —— 依赖图 Rust 优先 + TS 兜底(与面板现算同源,产物
+ * 3. pythonClassIndex —— python 类索引全量首扫(waitForInitialScan 单飞幂等,
+ *                      2026-11-23 用户令「类索引进状态栏」);
+ * 4. dependencyGraph —— 依赖图 Rust 优先 + TS 兜底(与面板现算同源,产物
  *                      'dependencyGraph' 供面板只读缓存);
- * 4. definitionLayout —— 定义工作区布局预热(KR-AUD-36 热路径:面板/悬停
+ * 5. definitionLayout —— 定义工作区布局预热(KR-AUD-36 热路径:面板/悬停
  *                      首查不再付冷布局解析,只挪时机不改语义);
- * 5. flowGraphs     —— 逐实体架构流程图(mapWithConcurrency 有界并发,
+ * 6. flowGraphs     —— 逐实体架构流程图(mapWithConcurrency 有界并发,
  *                      KR-AUD-35 口径;产物 'flowGraph:<entity>')。
  *
  * deps 全注入:单元测试以替身驱动;extension.ts 装配真实实现。
@@ -34,6 +36,8 @@ export interface WarmupStageDeps {
   waitForDiscovery(onProgress?: (detail: string) => void): Promise<void>;
   /** 事件索引全量首扫(ensureStarted 幂等);onProgress 同上(N/M 文件) */
   ensureEventIndex(onProgress?: (detail: string) => void): Promise<void>;
+  /** python 类索引全量首扫(waitForInitialScan 单飞幂等);onProgress 同上 */
+  ensurePythonClassIndex(onProgress?: (detail: string) => void): Promise<void>;
   /** 依赖图计算(Rust 优先 TS 兜底,与面板现算同源) */
   buildDependencyGraph(): Promise<DependencyGraphSource>;
   /** 已注册实体清单(流程图阶段输入) */
@@ -60,6 +64,15 @@ export function createWarmupStages(deps: WarmupStageDeps): WarmupStageDef[] {
       label: '事件/方法索引',
       run: async () => {
         await deps.ensureEventIndex(detail => { deps.report?.(detail); });
+      }
+    },
+    {
+      // python 类索引全扫(2026-11-23 用户令「类索引进状态栏」):单飞幂等,
+      // 类索引已自起时这里只等同一轮并镜像其 N/M 明细
+      key: 'pythonClassIndex',
+      label: 'python 类索引',
+      run: async () => {
+        await deps.ensurePythonClassIndex(detail => { deps.report?.(detail); });
       }
     },
     {

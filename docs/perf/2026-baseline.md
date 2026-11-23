@@ -104,6 +104,7 @@
 > 2026-11-20(KODE-SYN-005 领域标记接线):languageServices.ts 顶部 import +1(setupKbengineDomainMarkers)+ 领域标记装配块 +7(在前四打点后、python completion 打点前)→ 五打点 226/299/398/145/936 → 227/300/399/146/944(前四 +1,936 +8,真位重探;M3 节点此前仍挂 003 批之前的 143/863,随本批一并校准)(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位(单飞字段块 +7、ensureDiscovered 重写 +22、覆盖式清表 +4,非均匀)→ CB2 import 绑定循环 :1236→1267、MRO :1572→1605、WAITC :767→774/打点 :773→781,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-19(RUST-149 批 3):取消令牌贯穿 inlay 四 provider(BuiltinType/InferredMirror/PropertyShadow/ProxyInternalAttr)——入口 cancelled() 闸 + def 归属/方向扫描束放行点复查,顶部累计 +9 → getDocumentLines 出处 inlay.ts 52→61,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-23(SCAN-ROOT 锚点放开腿批):pythonClassIndex.ts 顶部 import 块展开 +5(全部锚点前)、扫描根入行块 +5(1121 区)与锚点 await 块 +3(1268 区)落在二三锚点前 → WAITC :811→816(+5,打点 :817→822)、CB2 :1551→1564(+13)、MRO :1564 前的软指针 :1629 一并校准到 ①② 两段查询 注释行 1688(+13),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -166,14 +167,14 @@ flowchart TD
   STUB["内置桩文档(buildKbeStubDocument)"]
   CB{"class X(Base) 基类位?"}
   CB1["kbe from-import 桩"]
-  CB2["pythonClassIndex.resolveClassBase :1318<br/>(显式 import 绑定优先)"]
+  CB2["pythonClassIndex.resolveClassBase :1564<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
   L0["层0 接收者段闸(languageProviders/pythonDefinition.ts:962)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
-  MRO["PR5 两段方法解析(backend/pythonClassIndex.ts:1629)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
+  MRO["PR5 两段方法解析(backend/pythonClassIndex.ts:1688)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
   PASS2["pass2:①② 均落空才等全量收敛重查<br/>(ensureScanned,PR5 主路径首查不等这里)<br/>③ 反向形态:子类 MRO 反查 enclosing(精确身份)"]
   SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders/navigation.ts:47(fire-and-forget,不改返回值)"]
   END2["operation.end(hit|miss) → Location 或 Location 列表或 null"]
@@ -196,7 +197,7 @@ flowchart TD
   AD2 -.->|对拍| SHD
 
   WAITB("等待点 B:withInteractiveScanBudget 1s(首扫兜底最后一跳)<br/>languageProviders/pythonDefinition.ts:1088,属性探针增量索引未命中才等;命中直返不经过这里")
-  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:798,打点 :803)")
+  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:816,打点 :822)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
   MRO -.->|等待| WAITC
@@ -250,7 +251,7 @@ flowchart TD
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:235 / entities 侧 :248"]
+  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:236 / entities 侧 :249"]
   VD["validateDocument(languageProviders/validation.ts:20)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders/validation.ts:20,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:329)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:342,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]

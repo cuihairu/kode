@@ -682,9 +682,9 @@ export interface DiscoveryLayoutFacts {
   binPathSetting: string;
   /** 生效 binPath(装配层经管理器解析,含 kbe 源码根自动检测回落) */
   binPath: string;
-  entityDefsPathSetting: string;
-  entitiesXmlPathSetting: string;
-  typesXmlPathSetting: string;
+  // entityDefsPath/entitiesXmlPath 显式配置行已删(2026-11-23 用户令:目录
+  // 固定不设独立配置项,布局由 assetsRoot 计算);types.xml 本就无配置项。
+  // 三面 explicit 槽位恒传空串(报告不再有这三行的「显式配置」栏)。
 }
 
 const SOURCE_LABELS: Record<DiscoveryValueSource, string> = {
@@ -795,7 +795,7 @@ export function buildDiscoveryReport(
       workspaceRoot,
       DISCOVERY_CONVENTIONS.entityDefs,
       scan.entityDefs,
-      facts.entityDefsPathSetting,
+      '',
       facts.entityDefsRoot || null
     )
   );
@@ -806,7 +806,7 @@ export function buildDiscoveryReport(
       workspaceRoot,
       DISCOVERY_CONVENTIONS.entitiesXml,
       scan.entitiesXml,
-      facts.entitiesXmlPathSetting,
+      '',
       facts.entitiesXmlPath
     )
   );
@@ -817,7 +817,7 @@ export function buildDiscoveryReport(
       workspaceRoot,
       DISCOVERY_CONVENTIONS.typesXml,
       scan.typesXml,
-      facts.typesXmlPathSetting,
+      '',
       facts.typesXmlPath
     )
   );
@@ -983,9 +983,11 @@ function collectDiscoveryIssues(
 function remediationFor(field: DiscoveryFieldReport): string {
   switch (field.label) {
     case '实体定义目录 entity_defs':
-      return `设置 kbengine.entityDefsPath 指向实体 .def 所在目录;或让目录名为 entity_defs 且位于约定链内(${field.conventions.join(' / ')}),多候选时下次激活会只询问一次`;
+      // entityDefsPath 独立配置项已删(2026-11-23 用户令:目录固定,由
+      // assetsRoot 计算);补救面落在资产根与约定链
+      return `设置 kbengine.assetsRoot 指向资产根(def 固定在其 scripts/entity_defs);或让目录名为 entity_defs 且位于约定链内(${field.conventions.join(' / ')}),多候选时下次激活会只询问一次`;
     case 'entities.xml':
-      return '设置 kbengine.entitiesXmlPath 指向 entities.xml;或把它放在实体定义目录的同级/上级';
+      return 'entities.xml 无独立配置项:放在实体定义目录的同级/上级(资产根 scripts/ 下);缺失时先检查 assetsRoot 与实体定义目录是否解析正确';
     case 'types.xml':
       return 'types.xml 无独立配置项:放在实体定义目录之下即可被找到(约定链兜底);缺失时先检查 entity_defs 根是否解析正确';
     case '接口目录 interfaces':

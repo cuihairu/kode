@@ -2,17 +2,19 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as vscode from 'vscode';
 import {
   getDefinitionWorkspaceLayout,
   layoutCacheSizeForTests,
   resetDefinitionLayoutCacheForTests
 } from '../src/definitionWorkspace';
+import { setActiveProfileScanRoot } from '../src/scanRoots';
 import { bumpRootConfigGeneration, resetRootConfigGenerationForTests } from '../src/rootConfigGeneration';
 
 // KR-AUD-36(IDX-12):getDefinitionWorkspaceLayout 布局解析缓存——键=根+
-// rootConfigGeneration+布局配置读值;命中复核探针(已解析路径/首选候选存在性
-// +发现选择记忆)翻转即重算。prove-red:未修复实现每次调用全量重算。
+// rootConfigGeneration+布局输入 assetsBase(2026-11-23 起:entityDefsPath/
+// entitiesXmlPath 配置项删除,布局由 assetsRoot 计算);命中复核探针(已解析
+// 路径/首选候选存在性+发现选择记忆)翻转即重算。prove-red:未修复实现每次
+// 调用全量重算。
 
 const fsCounts = vi.hoisted(() => ({ existsSync: 0 }));
 
@@ -102,26 +104,26 @@ describe('KR-AUD-36 布局解析按 rootConfigGeneration 缓存', () => {
     }
   });
 
-  it('配置值直变(不经 bump)进新键重算:不被旧布局污染(审核轮 P1)', () => {
+  it('assetsBase 直变(不经 bump)进新键重算:不被旧布局污染(审核轮 P1)', () => {
+    // 布局输入已从 entityDefsPath 配置读值换成 assetsBase(2026-11-23 用户令:
+    // 目录固定由 assetsRoot 计算)——直变面用活动 profile 资产根驱动(解析链
+    // 首位,免配置 stub; setActiveProfileScanRoot 测试面与 profile 接线同源)
     const root = makeLayoutRoot();
-    const original = vscode.workspace.getConfiguration;
+    const altBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kraud36-alt-'));
+    fs.mkdirSync(path.join(altBase, 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(path.join(altBase, 'scripts', 'entity_defs', 'Avatar.def'), '<root/>');
     try {
       const first = getDefinitionWorkspaceLayout(root);
       expect(first.entityDefsRoot).toBe(path.join(root, 'scripts', 'entity_defs'));
-      // 直改配置读值(测试环境无 onDidChangeConfiguration 联动 bump)
-      const altRoot = path.join(root, 'scripts', 'entity_defs');
-      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = () =>
-        ({
-          get: (_key: string, fallback: string) =>
-            _key === 'entityDefsPath' ? altRoot : fallback
-        }) as never;
+      setActiveProfileScanRoot(altBase);
       const second = getDefinitionWorkspaceLayout(root);
-      // 新键重算(候选首项即 altRoot,结果一致但必须走重算面:探针+全量)
-      expect(second.entityDefsRoot).toBe(altRoot);
+      // 新键重算(assetsBase 入键,候选首项=altBase/scripts/entity_defs)
+      expect(second.entityDefsRoot).toBe(path.join(altBase, 'scripts', 'entity_defs'));
       expect(layoutCacheSizeForTests()).toBeGreaterThanOrEqual(1);
     } finally {
-      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = original;
+      setActiveProfileScanRoot(null);
       fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(altBase, { recursive: true, force: true });
     }
   });
 
@@ -139,28 +141,28 @@ describe('KR-AUD-36 布局解析按 rootConfigGeneration 缓存', () => {
     }
   });
 
-  it('非首项高优先候选后建出触发重算:首项持续缺失,建中位候选被采纳(三轮判别版)', () => {
+  it('非首项高优先候选后建出触发重算:首项持续缺失,建首项被采纳(三轮判别版)', () => {
+    // assetsBase=profile 根,候选序=[scripts/entity_defs(0), entity_defs(1), ...]
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kraud36c-'));
-    const original = vscode.workspace.getConfiguration;
+    const altBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kraud36d-'));
     try {
-      // 候选序=[cfgdefs(0,配置主), entity_defs(1), scripts/entity_defs(2), ...]
-      // 初态:首项 cfgdefs 持续缺失,仅 index2 存在 → 选中 index2
-      fs.mkdirSync(path.join(root, 'scripts', 'entity_defs'), { recursive: true });
-      fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'Avatar.def'), '<root/>');
-      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = () =>
-        ({ get: (_key: string, fallback: string) => (_key === 'entityDefsPath' ? 'cfgdefs' : fallback) }) as never;
+      // 初态:首项(altBase/scripts/entity_defs)缺失,仅 index1 存在 → 选中 index1
+      fs.mkdirSync(path.join(altBase, 'entity_defs'), { recursive: true });
+      fs.writeFileSync(path.join(altBase, 'entity_defs', 'Avatar.def'), '<root/>');
+      setActiveProfileScanRoot(altBase);
       const first = getDefinitionWorkspaceLayout(root);
-      expect(first.entityDefsRoot).toBe(path.join(root, 'scripts', 'entity_defs'));
-      // 后建 index1(比当前选中优先级更高、但非首项):一轮实现探针只含
-      // 已选路径+首项,均不翻转 → 该实现此断言红;全列表探针翻转重算
-      fs.mkdirSync(path.join(root, 'entity_defs'), { recursive: true });
-      fs.writeFileSync(path.join(root, 'entity_defs', 'Avatar.def'), '<root/>');
+      expect(first.entityDefsRoot).toBe(path.join(altBase, 'entity_defs'));
+      // 后建 index0(比当前选中优先级更高、但此前缺失):一轮实现探针只含
+      // 已选路径,不翻转 → 该实现此断言红;全列表探针翻转重算
+      fs.mkdirSync(path.join(altBase, 'scripts', 'entity_defs'), { recursive: true });
+      fs.writeFileSync(path.join(altBase, 'scripts', 'entity_defs', 'Avatar.def'), '<root/>');
       const second = getDefinitionWorkspaceLayout(root);
       expect(second).not.toBe(first);
-      expect(second.entityDefsRoot).toBe(path.join(root, 'entity_defs'));
+      expect(second.entityDefsRoot).toBe(path.join(altBase, 'scripts', 'entity_defs'));
     } finally {
-      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = original;
+      setActiveProfileScanRoot(null);
       fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(altBase, { recursive: true, force: true });
     }
   });
 
@@ -184,27 +186,27 @@ describe('KR-AUD-36 布局解析按 rootConfigGeneration 缓存', () => {
     }
   });
 
-  it('同代单槽:配置 A/B 反复切变条目数恒 ≤1(审核轮 P2 二轮)', () => {
+  it('同代单槽:assetsBase A/B 反复切变条目数恒 ≤1(审核轮 P2 二轮)', () => {
+    // 键内布局输入从配置读值换成 assetsBase(见上),切变面同换 profile 资产根
     const root = makeLayoutRoot();
-    const original = vscode.workspace.getConfiguration;
+    const altBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kraud36e-'));
+    fs.mkdirSync(path.join(altBase, 'scripts', 'entity_defs'), { recursive: true });
     try {
-      const withConfig = (defsPath: string): void => {
-        (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = () =>
-          ({ get: (_key: string, fallback: string) => (_key === 'entityDefsPath' ? defsPath : fallback) }) as never;
-      };
-      withConfig('scripts/entity_defs');
+      const withBase = (base: string | null): void => { setActiveProfileScanRoot(base); };
+      withBase(root);
       getDefinitionWorkspaceLayout(root);
       for (let i = 0; i < 3; i += 1) {
-        withConfig('entity_defs');
+        withBase(altBase);
         getDefinitionWorkspaceLayout(root);
         expect(layoutCacheSizeForTests()).toBe(1);
-        withConfig('scripts/entity_defs');
+        withBase(root);
         getDefinitionWorkspaceLayout(root);
         expect(layoutCacheSizeForTests()).toBe(1);
       }
     } finally {
-      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = original;
+      setActiveProfileScanRoot(null);
       fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(altBase, { recursive: true, force: true });
     }
   });
 });

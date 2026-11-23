@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ensureAnchorScanRoot, getExternalScanRoots } from './scanRoots';
 
 /**
  * 工作区门控(书 PR-002 / AUDIT-003 负案例):
@@ -60,6 +61,30 @@ export async function shouldStartKbEngineIndexing(): Promise<boolean> {
   const roots = (vscode.workspace.workspaceFolders ?? [])
     .map(folder => folder?.uri?.fsPath)
     .filter((fsPath): fsPath is string => typeof fsPath === 'string');
+  // 外部扫描根即 KBEngine 意图(2026-11-23):kbengine.assetsRoot 指向 workspace
+  // 之外时,下方信号 glob 的 workspace findFiles 搜不到任何特征 → 门恒关 →
+  // 预热管线(状态栏进度)从不启动,外部根工作区状态栏永远无进度。与
+  // generators 的外根感知同一判式:扫描根存在即放行,信号 glob 只服务
+  // 「无外部根」的工作区。解析异常不惩罚,照走信号探测(fail-open 不变)。
+  try {
+    if (getExternalScanRoots().length > 0) {
+      return true;
+    }
+  } catch {
+    // 落入下方信号 glob 探测
+  }
+  // 锚点感知(2026-11-23 二段令):配置/派生/folder 顶层全缺席但 workspace 里
+  // 有引擎默认布局(entities.xml/entity_defs)时,预热管线(状态栏进度)同样
+  // 放行——否则门恒关,状态栏进度与索引双缺位。与 findFilesAcrossRoots 的
+  // 锚点腿同一判式,探测失败不惩罚(fail-open:落信号探测)。
+  try {
+    const anchorRoot = await ensureAnchorScanRoot();
+    if (anchorRoot) {
+      return true;
+    }
+  } catch {
+    // 落入下方信号 glob 探测
+  }
   return detectKbEngineWorkspace({
     workspaceRoots: roots,
     findFiles: (include, maxResults) =>

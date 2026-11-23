@@ -342,6 +342,7 @@ describe('BG-WARM 审核整改:真实阶段管线 / 缓存失效口径', () => {
     const deps: WarmupStageDeps = {
       waitForDiscovery: async () => undefined,
       ensureEventIndex: async () => undefined,
+      ensurePythonClassIndex: async () => undefined,
       buildDependencyGraph: async () => ({ kind: 'ts', graph: depGraph() }),
       listFlowEntities: () => ['Hero'],
       buildFlowGraph: async () => {

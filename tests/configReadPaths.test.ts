@@ -176,7 +176,11 @@ describe('KSEM-CFG-01 config read path registry', () => {
     ) as Record<string, unknown>;
     expect(Object.keys(props).length).toBeGreaterThanOrEqual(140);
     expect(props['kbengine.assetsRoot']).toBeDefined();
-    expect(props['kbengine.entityDefsPath']).toBeDefined();
+    // 2026-11-23 起 entityDefsPath/entitiesXmlPath 配置项删除(def 固定
+    // {assetsRoot}/scripts 布局,引擎 entitydef.cpp 只认该位),负向漂移门:
+    // 两键重现即红。
+    expect(props['kbengine.entityDefsPath']).toBeUndefined();
+    expect(props['kbengine.entitiesXmlPath']).toBeUndefined();
     const entry = configReadPathByLane('extension-settings')!;
     expect(entry.layers[0].loadAnchor.includes('getConfiguration("kbengine")')).toBe(true);
   });

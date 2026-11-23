@@ -55,6 +55,9 @@ const HELPER_PY = [
 
 const buildWorkspace = (): { root: string; avatarDef: string; basePy: string; cellPy: string } => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav007-'));
+  // 2026-11-23 收窄:workspace 根下须有 scripts/ 才贡献扫描根(空根早退会让
+  // stub 发现整批落空);建空 scripts 目录,发现枚举仍由 findFiles stub 供给
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
   const put = (relative: string, content: string): string => {
     const file = path.join(root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });

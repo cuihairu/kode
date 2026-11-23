@@ -51,7 +51,9 @@ const originalCreateWatcher = stubWorkspace.createFileSystemWatcher;
 
 beforeAll(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav016-'));
-  stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+  // 2026-11-23 收窄:文件夹根须直含 scripts/ 才贡献扫描根——资产面在 root/a
+  // 下,工作区文件夹就指 root/a(扫描根=root/a/scripts,引擎默认布局同构)
+  stubWorkspace.workspaceFolders = [{ uri: Uri.file(path.join(root, 'a')), name: 'a', index: 0 }];
   const put = (relative: string, content: string): string => {
     const file = path.join(root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });

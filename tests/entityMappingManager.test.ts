@@ -602,7 +602,13 @@ describe('IDE-IDX-003 实体名查询携带调用文档根', () => {
       }
       const originalFolders = stubWorkspace.workspaceFolders;
       const originalFind = stubWorkspace.findFiles;
-      stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'dual', index: 0 }];
+      // 收窄后每 folder 各自收窄到自己的 scripts(2026-11-23):双资产工作区
+      // 建模为双 folder(root/a 与 root/b 各有 scripts),单 folder 根下无
+      // scripts 不贡献扫描根,双根索引无从建起
+      stubWorkspace.workspaceFolders = [
+        { uri: Uri.file(p(root, 'a')), name: 'a', index: 0 },
+        { uri: Uri.file(p(root, 'b')), name: 'b', index: 1 }
+      ];
       stubWorkspace.findFiles = async () => {
         const results: Uri[] = [];
         const walk = (dir: string) => {
@@ -764,7 +770,11 @@ describe('IDE-IDX-008 删除同名胜者保留其他根实体', () => {
       const bHeroPy = p(root, 'b', 'scripts', 'base', 'Hero.py');
       const originalFolders = stubWorkspace.workspaceFolders;
       const originalFind = stubWorkspace.findFiles;
-      stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'winner', index: 0 }];
+      // 收窄后每 folder 各自收窄到自己的 scripts(同 IDE-IDX-003 双资产建模)
+      stubWorkspace.workspaceFolders = [
+        { uri: Uri.file(p(root, 'a')), name: 'a', index: 0 },
+        { uri: Uri.file(p(root, 'b')), name: 'b', index: 1 }
+      ];
       stubWorkspace.findFiles = async () => {
         const results: Uri[] = [];
         const walk = (dir: string) => {

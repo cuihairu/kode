@@ -3,6 +3,7 @@ import * as fsp from 'node:fs/promises';
 import type { EntityMappingManager } from './entityMapping';
 import type { EventCall, EventCallIndex, EventCallsMarkedQuery } from './backend/eventIndexTypes';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
+import { ensureAnchorScanRoot, findFilesAcrossRoots, getIndexScanRoots } from './scanRoots';
 
 // 只认三种实参形态：标识符/点名（self.EV_X、on_ready）与字符串字面量；表达式保持沉默。
 const ARG_TOKEN = /(?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*|'[^'\n]*'|"[^"\n]*"/;
@@ -142,7 +143,14 @@ export async function eventDefinitionAt(document: vscode.TextDocument, position:
   }
   const selected = calls.find(c => offset >= c.eventOffset && offset <= c.eventOffset + c.event.length);
   if (!selected) return null;
-  const candidates = await vscode.workspace.findFiles('**/*.{py,def}', '**/{.git,node_modules}/**');
+  // 2026-11-23 收窄令推广:KBEngine 扫描根存在时只在 scripts 内找事件定义
+  // (F12 候选集不再跨全 workspace);无根维持 workspace 全量(行为不变)。
+  // 锚点根先行(二段令):配置/派生/folder 顶层全缺席时按引擎默认布局定位
+  // scripts 根——KBEngine 工程不落 workspace 全量兜底腿。
+  await ensureAnchorScanRoot().catch(() => null);
+  const candidates = getIndexScanRoots().length > 0
+    ? await findFilesAcrossRoots('**/*.{py,def}', '**/{.git,node_modules}/**')
+    : await vscode.workspace.findFiles('**/*.{py,def}', '**/{.git,node_modules}/**');
   const definitions: Array<{ location: vscode.Location; scope?: string }> = [];
   const sourcePrefix = text.slice(0, selected.eventOffset);
   const sourceClasses = [...sourcePrefix.matchAll(/^\s*class\s+(\w+)\b/gm)];

@@ -3,7 +3,12 @@ import * as path from 'path';
 import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from '../compositionRoots';
-import { findFilesAcrossRoots, resolveEngineSubtreeExclusions } from '../scanRoots';
+import {
+  ensureAnchorScanRoot,
+  findFilesAcrossRoots,
+  getIndexScanRoots,
+  resolveEngineSubtreeExclusions
+} from '../scanRoots';
 import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS, isEnginePythonLibPath } from './pythonScanRules';
 import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
@@ -352,13 +357,26 @@ export class PythonClassIndex {
     void this.ensureScanned();
   }
 
+  /** 全扫进度明细 sink(WARM-VISIBILITY-004 同形态):waitForInitialScan(onProgress)
+   * 注入,pyProgress 发射时现读;null = 无等待方,零开销。挂发到终态清空
+   * (身份比对防误清新等待方的注入)。 */
+  private scanDetailSink: ((detail: string) => void) | null = null;
+
   /**
    * 等待全量扫描完成(验收清单/测试面;对齐 EntityMappingManager.waitForInitialScan
    * 语义)。生产请求路径不调用它——Definition 首查不等全量,只有需要全仓口径
-   * 结果的调用方(验收断言/类名枚举)才等待。
+   * 结果的调用方(验收断言/类名枚举/后台预热阶段)才等待。onProgress 透传
+   * 「python 类索引 N/M」逐文件节流进度(2026-11-23 用户令:类索引进状态栏)。
    */
-  waitForInitialScan(): Promise<void> {
-    return this.ensureScanned();
+  waitForInitialScan(onProgress?: (detail: string) => void): Promise<void> {
+    if (onProgress) {
+      this.scanDetailSink = onProgress;
+    }
+    return this.ensureScanned().finally(() => {
+      if (this.scanDetailSink === onProgress) {
+        this.scanDetailSink = null;
+      }
+    });
   }
 
   private classKey(cls: PythonClassDef): string {
@@ -1103,12 +1121,21 @@ export class PythonClassIndex {
       // 「KBEngine Index」通道(常开;进度行复用 scanStageProgress 双闸节流);
       // ENGINE-LIB-SCAN-005 刀2:剔除面入行(任务书「范围变化可审计」)
       const engineExcludedRoots = resolveEngineSubtreeExclusions().length;
+      // 扫描根入行(2026-11-23 二段令,范围可审计):用户按行内根即可判
+      // 「扫的是 scripts 还是整棵 workspace」,不再靠症状反推。
+      const scanRootsLabel = getIndexScanRoots()
+        .map(root => root.replace(/\\/g, '/'))
+        .join(', ');
       indexLog('python-index',
-        `python 类索引全扫开始:${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length}${engineExcludedRoots > 0 ? `/已剔引擎仓子树 ${engineExcludedRoots} 处` : ''})`);
+        `python 类索引全扫开始:${files.length} 个文件,根=[${scanRootsLabel}](断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length}${engineExcludedRoots > 0 ? `/已剔引擎仓子树 ${engineExcludedRoots} 处` : ''})`);
       const pyProgress = createScanStageProgressReporter({
         label: 'python 类索引',
         total: files.length,
-        report: detail => { indexLog('python-index', detail); }
+        report: detail => {
+          indexLog('python-index', detail);
+          // 预热等待方在挂:同一明细镜像状态栏 message(类索引进状态栏)
+          this.scanDetailSink?.(detail);
+        }
       });
       // 分块入队:每块一个后台任务,块与块之间调度器可插队交互任务
       // (RequestLocal 单文件解析/当前文件更新),全量扫描不再独占主线程。
@@ -1241,6 +1268,9 @@ export class PythonClassIndex {
         promise: (async () => {
           // ENGINE-LIB-SCAN-005 刀1:引擎仓 python 标准库镜像(kbe/scripts/common/Lib)
           // 按路径形态剔出业务扫描——workspace glob 结果后滤 + 外部根遍历剪枝。
+          // 锚点根先行(2026-11-23 二段令):配置/派生/folder 顶层全缺席时按
+          // 引擎默认布局定位 scripts 根,裸 workspace glob 兜底不再触发。
+          await ensureAnchorScanRoot().catch(() => null);
           const files = await findFilesAcrossRoots(
             '**/*.py',
             PY_SCAN_EXCLUDE,

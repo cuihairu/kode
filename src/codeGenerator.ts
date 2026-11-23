@@ -305,12 +305,9 @@ export class KBEngineCodeGenerator {
       return findEntitiesXmlFile(profileAssetsRoot)
         || joinWorkspacePath(profileAssetsRoot, 'scripts', 'entities.xml');
     }
-    return findEntitiesXmlFile() || joinWorkspacePath(
-      workspaceRoot,
-      vscode.workspace
-        .getConfiguration('kbengine')
-        .get<string>('entitiesXmlPath', 'scripts/entities.xml')
-    );
+    // entitiesXmlPath 无独立配置项(2026-11-23 用户令:固定目录由 assetsRoot
+    // 计算,引擎口径 {assets}/scripts/entities.xml)
+    return findEntitiesXmlFile() || joinWorkspacePath(workspaceRoot, 'scripts', 'entities.xml');
   }
 
   /**

@@ -51,10 +51,6 @@ const factsFor = (binPath = ''): DiscoveryLayoutFacts => {
     componentsRoot: layout.componentsRoot,
     entitiesXmlPath: layout.entitiesXmlPath,
     typesXmlPath: layout.typesXmlPath,
-    entityDefsPathSetting: setting('entityDefsPath'),
-    entitiesXmlPathSetting: setting('entitiesXmlPath'),
-    // types.xml 无独立配置项,布局内硬编码候选链
-    typesXmlPathSetting: '',
     configPath: configSetting,
     configPathEffective:
       configSettingProbed
@@ -147,19 +143,12 @@ describe('buildDiscoveryReport(失败可见:此前静默的情形)', () => {
     const issue = report.issues.find(item => item.label === '实体定义目录 entity_defs');
     expect(issue).toBeDefined();
     expect(issue?.message).toContain(p('scripts/entity_defs'));
-    expect(issue?.remediation).toContain('kbengine.entityDefsPath');
+    expect(issue?.remediation).toContain('kbengine.assetsRoot');
   });
 
-  it('reports an explicit config that points nowhere', () => {
-    // 绝对路径形态:最终取用值与配置同基,来源标显式配置
-    configurationOverrides.set('kbengine', { entityDefsPath: p('ghost-defs') });
-
-    const entityDefs = fieldByLabel('实体定义目录 entity_defs');
-    expect(entityDefs?.explicitConfig).toBe(p('ghost-defs'));
-    expect(entityDefs?.explicitConfigExists).toBe(false);
-    expect(entityDefs?.status).toBe('missing');
-    expect(entityDefs?.source).toBe('explicit-config');
-  });
+  // 「reports an explicit config that points nowhere」已随 kbengine.entityDefsPath
+  // 配置项删除(2026-11-23 用户令:目录固定由 assetsRoot 计算);explicit 链
+  // 仍由 assetsRoot/binPath 两面覆盖。
 
   it('labels a resolved value outside every tracked source as fallback', () => {
     // facts 是调用方供给的(函数契约允许任意解析结果):装配层之外的未来
@@ -562,9 +551,11 @@ describe('renderDiscoveryReport(可复制回传的文本)', () => {
 
   it('renders explicit-config existence as a suffixed hint (present and absent)', () => {
     // 显式配置栏要能一眼看出"配了但指错地方":存在性后缀(存在)/(不存在)
-    mkdir('picked-defs');
+    // entityDefsPath 显式配置行已删(2026-11-23 用户令);存在性后缀面由
+    // assetsRoot/binPath 两 explicit 链覆盖
+    mkdir('picked-root/res/server');
     configurationOverrides.set('kbengine', {
-      entityDefsPath: p('picked-defs'),
+      assetsRoot: p('picked-root'),
       binPath: p('ghost-bin')
     });
 
@@ -576,7 +567,7 @@ describe('renderDiscoveryReport(可复制回传的文本)', () => {
     );
     const text = renderDiscoveryReport(report);
 
-    expect(text).toContain(`显式配置: ${p('picked-defs')} (存在)`);
+    expect(text).toContain(`显式配置: ${p('picked-root')} (存在)`);
     expect(text).toContain(`显式配置: ${p('ghost-bin')} (不存在)`);
   });
 

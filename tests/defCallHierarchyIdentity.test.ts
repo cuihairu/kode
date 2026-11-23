@@ -7,6 +7,7 @@ import {
   KBEngineCallHierarchyProvider,
   KBEngineDefinitionProvider
 } from '../src/languageProviders';
+import { configurationOverrides } from './fake-vscode/workspaceState';
 import { makeTextDocument, Position, Range, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // IDE-NAV-015:统一调用层次与 Definition 的符号身份。验收口径:相同
@@ -86,6 +87,9 @@ const defDocument = () => makeTextDocument(AVATAR_DEF, { fileName: avatarDefPath
 const withIndexedDefs = async <T>(indexed: boolean, run: () => Promise<T>): Promise<T> => {
   const originalFindFiles = stubWorkspace.findFiles;
   stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+  // 收窄后扫描根={assetsRoot}/scripts:资产根显式指向 root/a(真实 walk 面
+  // buildPythonDefIndex 按扫描根走,没配置就只看根下 scripts,走不到 a/scripts)
+  configurationOverrides.set('kbengine', { assetsRoot: path.join(root, 'a') });
   stubWorkspace.findFiles = (async (glob?: string) =>
     indexed && glob.endsWith('.def') ? [Uri.file(avatarDefPath)] : []) as typeof stubWorkspace.findFiles;
   try {
@@ -93,6 +97,7 @@ const withIndexedDefs = async <T>(indexed: boolean, run: () => Promise<T>): Prom
   } finally {
     stubWorkspace.findFiles = originalFindFiles;
     stubWorkspace.workspaceFolders = [];
+    configurationOverrides.delete('kbengine');
   }
 };
 

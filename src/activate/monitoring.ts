@@ -29,6 +29,7 @@ import { RuntimeQueryWebView } from '../runtimeQueryWebView';
 import { createWarmupStages } from '../backend/warmupStages';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from '../backend/kbengineProtocol';
 import { findEngineRoot, formatEngineCompatibilityReport, runCompatibilityCheck, ExtensionCompatibilityTarget } from '../backend/engineCompatibility';
+import { resolveBackendMode } from '../backend/kodeCoreGate';
 import { formatUnresolvedException, parseExceptionSourceLocation, resolveExceptionSource } from '../backend/exceptionSourceLocator';
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
 import { shouldStartKbEngineIndexing } from '../workspaceGate';
@@ -36,12 +37,14 @@ import { findMethodScriptLocationInDef } from '../languageProviders/navigation';
 import type { DefLutConventionResolver, EntityMappingManager } from '../entityMapping';
 import type { IndexScheduler } from '../backend/indexScheduler';
 import type { WorkspaceIndex } from '../workspaceIndex';
+import type { PythonClassIndex } from '../backend/pythonClassIndex';
 
 export interface MonitoringDeps {
   context: vscode.ExtensionContext;
   entityMappingManager: EntityMappingManager;
   indexScheduler: IndexScheduler;
   sharedWorkspaceIndex: WorkspaceIndex;
+  pythonClassIndex: PythonClassIndex;
 }
 
 export interface MonitoringShared {
@@ -53,7 +56,7 @@ export interface MonitoringShared {
 }
 
 export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
-  const { context, entityMappingManager, indexScheduler, sharedWorkspaceIndex } = deps;
+  const { context, entityMappingManager, indexScheduler, sharedWorkspaceIndex, pythonClassIndex } = deps;
   // DEF-LUT-001:约定链臂适配——LUT 后台重建需要「父 def/接口脚本里找实现」
   // (navigation 约定链),而 navigation 依赖 entityMapping(环),故此处开 def
   // 文档适配注入。落点转 1 基(与解析面同形);文档打不开/无实现 → null。
@@ -266,6 +269,33 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
             return; // 宿主收摊(调度器已 dispose):本轮随扩展一起止步,不算失败
           }
           // 真实首扫失败向上传播:阶段 failed、后续阶段不跑、不写完成标记
+          throw error;
+        }
+      },
+      // python 类索引全扫:直接等 waitForInitialScan(与发现链同法,不在调度器
+      // 里占槽等)——类索引内部分块解析本就经调度器 full-reindex 车道入队,若把
+      // 等待本身包成 NonInteractive 任务,单并发槽会被这条最低优任务占死,内部
+      // 分块任务排在它后面永远轮不上(调度器饿死,预热与拨开关路径双双卡死)。
+      // waitForInitialScan 单飞幂等:类索引已自起时只等同一轮,不重起第二套。
+      ensurePythonClassIndex: async onProgress => {
+        // 自启门控同口径(languageServices startKbEngineIndexing 唯一自启面):
+        // rust 轨道(pythonClassIndex 懒启动,RUST-TRACK-FREEZE-007 刀2)或
+        // enableMroJump=false(P0-3e)时预热不代起 TS 全扫——开关拨回由
+        // extension 配置路径接管,首个 TS 查询也仍幂等懒补。
+        const backendMode = resolveBackendMode(
+          vscode.workspace.getConfiguration('kbengine.core').get<string>('backend')
+        ).mode;
+        const mroJumpEnabled = vscode.workspace.getConfiguration('kbengine.python')
+          .get<boolean>('enableMroJump', true);
+        if (backendMode === 'rust' || !mroJumpEnabled) {
+          return;
+        }
+        try {
+          await pythonClassIndex.waitForInitialScan(onProgress);
+        } catch (error) {
+          if (warmupDisposing) {
+            return;
+          }
           throw error;
         }
       },

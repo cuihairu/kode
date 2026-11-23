@@ -71,6 +71,8 @@ export function resetScanRootCache(): void {
   discoveryMemo.clear();
   // 书 PR-002 ③:workspaceDiscovery 交互路径 Top3 memo 同级失效
   resetDiscoveryMemo();
+  // 锚点根记忆同级失效(默认布局后建/挪位时按新探测落地)
+  anchorScanRootMemo = null;
 }
 
 export function resolveAssetsRootForWorkspace(workspaceRoot: string): string {
@@ -181,23 +183,31 @@ export function getIndexScanRoots(): string[] {
     // 退回 assetsRoot 本体或 workspace 顶层)。空根就是「配置不对」的明确信号,
     // 由上层如实提示——本分支不再查派生根/workspace 腿,避免「assets 在而
     // scripts 缺」被别的兜底悄悄掩盖成一次全盘扫。
-    return [];
+    // 锚点放开腿(2026-11-23 二段令):默认落点缺席时唯一允许的放开 = 按
+    // 引擎默认布局(entities.xml/entity_defs)定位的 scripts 根——找的是默认
+    // 布局,不是 workspace 兜底;定位不到仍空根如实。
+    return anchorLegRoots();
   }
 
   // ② 配置读取失败或配置显式给出但解析不出:配置不对,不扫。显式配置存在
   // (哪怕指向不存在目录)说明用户有明确意图,落空是错误而非「没 KBEngine」,
   // 此时拿 workspace 兜底会掩盖错误(HEAD 前 ghost 配置回退 workspace 正是
   // 被用户否掉的「全盘扫」来源之一)。
+  // 锚点放开腿(2026-11-23 二段令):同上——配置错就按引擎默认布局定位,
+  // 定位不到如实空根,不拿 workspace 裸 glob 掩盖。
   if (configReadFailed || configuredRaw) {
-    return [];
+    return anchorLegRoots();
   }
 
-  // ③ assetsRoot 完全解析不出且无配置(真非 KBEngine 仓库):不算「找不到
-  // scripts」,workspace 腿维持旧行为——通用 python/def 面不因收窄失去索引
-  // (findFilesAcrossRoots 的空根门只对「assetsRoot 在而 scripts 缺」生效)。
-  // 同样只认 scripts 子目录(同一收窄纪律):有 scripts 的文件夹收窄到 scripts,
-  // 没有的按旧语义整文件夹(folder==root → rel='' → 裸 glob,与旧全 workspace
-  // 裸 glob 逐字节同)。多文件夹各留其根(多工程工作区不因首根收窄失去索引)。
+  // ③ assetsRoot 完全解析不出且无配置(真非 KBEngine 仓库):按默认布局
+  // 收窄——文件夹根下有 scripts/ 的收窄到该 scripts,没有的**不贡献扫描根**
+  // (2026-11-23 用户令:引擎源码钉死派生链,resmgr.cpp:489 getPyUserScriptsPath
+  // + entitydef.cpp:159/176-181——entities.xml/entity_defs/types.xml 只在
+  // {assets}/scripts 及其 entity_defs 下,引擎不存在「其他目录」;默认位置
+  // 没有就不扫,整文件夹兜底会把引擎仓/依赖树/构建产物全扫进来,全盘 694 即
+  // 由此来)。配置派生根(引擎根配置派生,等价 KBE_RES_PATH 指路)保留:那是
+  // 引擎唯一支持的「非默认落点」,属于合法放开;锚点腿(默认布局定位)兜其
+  // 后。多文件夹各留其 scripts(多工程工作区互不牵连)。
   const derivedRoot = getConfigDerivedScanRoot();
   if (derivedRoot) {
     return [derivedRoot];
@@ -221,9 +231,15 @@ export function getIndexScanRoots(): string[] {
     }
     seen.add(key);
     const workspaceScripts = path.join(folderPath, 'scripts');
-    roots.push(isDirectory(workspaceScripts) ? workspaceScripts : folderPath);
+    // 默认落点没有 scripts → 该文件夹不贡献扫描根(不整文件夹兜底,③ 注)
+    if (isDirectory(workspaceScripts)) {
+      roots.push(workspaceScripts);
+    }
   }
-  return roots;
+  // 锚点放开腿(2026-11-23 二段令):folder 顶层/派生根都缺席时,已探测到的
+  // 引擎默认布局锚点根并入(定位不到 = 空根如实)。异步面先 await
+  // ensureAnchorScanRoot() 再进入,同步面只认已记忆结果。
+  return anchorLegRoots(roots);
 }
 
 /** workspace 文件夹之外的扫描根(需手工遍历补齐的部分) */
@@ -251,6 +267,235 @@ export function getScanRootForFile(filePath: string): string | null {
     normalizeForCompare(right).length - normalizeForCompare(left).length;
   /* istanbul ignore stop */
   return matches.sort(byLongestPath)[0] ?? null;
+}
+
+/**
+ * 锚点扫描根(2026-11-23 用户令二段:「默认目录没有发现才放开范围去扫描」;
+ * 引擎源码核,resmgr.cpp:489 getPyUserScriptsPath + entitydef.cpp:159/176-181):
+ * 引擎只认 {scripts}/entities.xml 与 {scripts}/entity_defs 一处,不存在其他
+ * 候选目录。folder 顶层 scripts/ 与配置派生根都不在时,唯一允许的放开腿 =
+ * 按**引擎默认布局**定位 scripts 根——workspace 里哪处有 entities.xml 或
+ * entity_defs/*.def(两者取路径最浅),哪处就是 scripts 根。定位不到维持空根:
+ * 放开的是「找默认布局」,绝不是 workspace 裸 glob 兜底。
+ *
+ * 探测走异步 findFiles(单飞+按 workspace 根记忆),同步读面只认已记忆结果
+ * ——与配置派生根同一装配法(ensureConfigDerivedScanRoot):异步扫描入口
+ * 先 await 本函数,再调 getIndexScanRoots。
+ */
+let anchorScanRootMemo: { workspaceKey: string; root: string | null } | null = null;
+let anchorScanRootInflight: Promise<string | null> | null = null;
+
+function firstWorkspaceFolderPath(): string {
+  try {
+    return (vscode.workspace.workspaceFolders ?? [])[0]?.uri?.fsPath ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** 受管镜像根集合(与 findFilesAcrossRoots 的 KODE-RESP-008 口径一致) */
+function managedRootKeysForProbe(): string[] {
+  const managedDir = (() => {
+    try {
+      return resolveManagedDirName(
+        vscode.workspace.getConfiguration('kbengine').get<string>('managedDir')
+      ).name;
+    } catch {
+      return '.kbengine';
+    }
+  })();
+  const roots: string[] = [];
+  const seen = new Set<string>();
+  const push = (rootFsPath: string): void => {
+    const abs = normalizeForCompare(path.join(rootFsPath, managedDir));
+    if (abs && !seen.has(abs)) {
+      seen.add(abs);
+      roots.push(abs);
+    }
+  };
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    if (folder?.uri?.fsPath) {
+      push(folder.uri.fsPath);
+    }
+  }
+  for (const root of getExternalScanRoots()) {
+    push(root);
+  }
+  return roots;
+}
+
+/** 锚点探测的下潜上限与预算(有界深扫描,与 workspaceDiscovery 同口径) */
+const ANCHOR_PROBE_MAX_DEPTH = 6;
+const ANCHOR_PROBE_MAX_DIRS = 4000;
+/** 依赖树/构建产物/托管镜像/venv 不进入锚点定位 */
+const ANCHOR_PROBE_SKIP_DIRS = new Set([
+  '.git', 'node_modules', 'out', 'dist', 'build', 'venv', '.venv', '__pycache__', '.vscode'
+]);
+
+/**
+ * 锚点探测:从各 workspace 文件夹(及已配置的 assetsRoot)有界下潜,找引擎
+ * 默认布局落点——`<scripts>/entities.xml`(entitydef.cpp:176)或
+ * `<scripts>/entity_defs/`(entitydef.cpp:177)。找到哪个,哪个的父目录就是
+ * scripts 根;多候选取最浅(最贴近默认落点形态)。
+ *
+ * 走**真实文件系统**而非 `workspace.findFiles`:一是 glob 语义依赖调用方
+ * 兑现(形态守卫必须自理),二是发现面的调用方对 findFiles 有严格调用计数
+ * 口径(执行位分离/换代纪律),锚点探测若经它会给发现链记账。
+ */
+function probeAnchorScanRootSync(): string | null {
+  const starts: string[] = [];
+  const seenStarts = new Set<string>();
+  const pushStart = (dir: string): void => {
+    const key = normalizeForCompare(dir);
+    if (dir && isDirectory(dir) && !seenStarts.has(key)) {
+      seenStarts.add(key);
+      starts.push(dir);
+    }
+  };
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    try {
+      pushStart(folder?.uri?.fsPath ?? '');
+    } catch {
+      // 工作区根不可读=无该路可探
+    }
+  }
+  try {
+    pushStart(resolveAssetsRootForWorkspace(firstWorkspaceFolderPath()));
+  } catch {
+    // 配置链不可信=不参与探测起点
+  }
+  const engineExclusions = resolveEngineSubtreeExclusions();
+  const managedRootKeys = managedRootKeysForProbe();
+  const managedName = managedDirName();
+  const candidates: string[] = [];
+  const visited = new Set<string>();
+  const walk = (dir: string, depth: number, budget: { left: number }): void => {
+    if (budget.left <= 0 || depth > ANCHOR_PROBE_MAX_DEPTH) {
+      return;
+    }
+    budget.left -= 1;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (ANCHOR_PROBE_SKIP_DIRS.has(entry.name) || entry.name === managedName) {
+        continue;
+      }
+      const full = path.join(dir, entry.name);
+      const key = normalizeForCompare(full);
+      if (visited.has(key)) {
+        continue;
+      }
+      visited.add(key);
+      if (
+        engineExclusions.some(exclusionKey => isContained(exclusionKey, key)) ||
+        managedRootKeys.some(rootKey => isContained(rootKey, key))
+      ) {
+        continue;
+      }
+      // entity_defs 是 scripts 下的 def 落点(entitydef.cpp:177):命中即定根
+      if (entry.name === 'entity_defs') {
+        candidates.push(dir);
+        continue;
+      }
+      walk(full, depth + 1, budget);
+    }
+  };
+  for (const start of starts) {
+    const budget = { left: ANCHOR_PROBE_MAX_DIRS };
+    // start 本身按 scripts 落点形态校验:含 entities.xml 即命中
+    if (containsEntitiesXml(start)) {
+      candidates.push(start);
+    }
+    walk(start, 1, budget);
+  }
+  if (candidates.length === 0) {
+    return null;
+  }
+  const depth = (p: string): number => normalizeForCompare(p).split('/').length;
+  candidates.sort((left, right) =>
+    depth(left) - depth(right) || normalizeForCompare(left).localeCompare(normalizeForCompare(right))
+  );
+  return candidates[0];
+}
+
+function managedDirName(): string {
+  try {
+    return resolveManagedDirName(
+      vscode.workspace.getConfiguration('kbengine').get<string>('managedDir')
+    ).name;
+  } catch {
+    return '.kbengine';
+  }
+}
+
+function containsEntitiesXml(dir: string): boolean {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).some(entry =>
+      entry.name === 'entities.xml'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 锚点探测(异步面):结果按 workspace 根记忆,同步读面(getIndexScanRoots)
+ * 只认已记忆值。单飞仅护「探测在途」的重复盘读,不改变记忆口径。
+ */
+export async function ensureAnchorScanRoot(): Promise<string | null> {
+  const workspaceKey = normalizeForCompare(firstWorkspaceFolderPath());
+  if (anchorScanRootMemo && anchorScanRootMemo.workspaceKey === workspaceKey) {
+    return anchorScanRootMemo.root;
+  }
+  let root: string | null = null;
+  if (!anchorScanRootInflight) {
+    anchorScanRootInflight = (async () => {
+      const found = probeAnchorScanRootSync();
+      // 有界深扫描挪出调用方微任务边界:激活链不被盘读占住
+      await Promise.resolve();
+      return found;
+    })().finally(() => {
+      anchorScanRootInflight = null;
+    });
+  }
+  try {
+    root = await anchorScanRootInflight;
+  } catch {
+    root = null; // 探测异常 = 没放开(维持空根,上层如实提示)
+  }
+  anchorScanRootMemo = { workspaceKey, root };
+  return root;
+}
+
+/**
+ * 锚点放开腿:主腿(配置/派生/folder 顶层)已给出的根之外,把已记忆的锚点
+ * 根并入(不与既有根重含)。主腿全空且锚点未定位到 = 空根如实。
+ */
+function anchorLegRoots(roots: string[] = []): string[] {
+  const memo = anchorScanRootMemo;
+  // 记忆按 workspace 键持有:键已过期(workspace 换根/清空) = 同步读面
+  // 不认旧锚点,等异步入口按新键重探
+  if (
+    !memo ||
+    memo.workspaceKey !== normalizeForCompare(firstWorkspaceFolderPath()) ||
+    !memo.root ||
+    !isDirectory(memo.root)
+  ) {
+    return roots;
+  }
+  const anchorRoot = memo.root;
+  const anchorKey = normalizeForCompare(anchorRoot);
+  if (!roots.some(root => isContained(normalizeForCompare(root), anchorKey))) {
+    roots.push(anchorRoot);
+  }
+  return roots;
 }
 
 /**

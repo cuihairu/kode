@@ -20,6 +20,7 @@ import {
   resolveOutgoingPythonMethodCalls
 } from './backend/pythonMethodCallQueries';
 import {
+  ensureAnchorScanRoot,
   findFilesAcrossRoots,
   resolveEngineSubtreeExclusions,
   getExternalScanRoots,
@@ -456,6 +457,10 @@ export class EntityMappingManager {
     // loader 按全部根逐个解析 def(外部资产根下的 entities/接口/父链同样
     // 找得到)。空根集合(无工作区且无 assetsRoot)= 原空工作区早退,不失败。
     await ensureConfigDerivedScanRoot();
+    // 锚点根先行(2026-11-23 二段令):配置/派生/folder 顶层全缺席时按引擎
+    // 默认布局定位 scripts 根,后续 findFilesAcrossRoots 的 workspace 兜底腿
+    // 不再误触发。与 ensureConfigDerivedScanRoot 同一装配法。
+    await ensureAnchorScanRoot().catch(() => null);
     const scanRoots = getIndexScanRoots();
     if (scanRoots.length === 0) {
       return;
@@ -504,7 +509,11 @@ export class EntityMappingManager {
     // WARM-VISIBILITY-004 刀 B:起扫行进统一「KBEngine Index」通道(常开)
     // ENGINE-LIB-SCAN-005 刀2:引擎仓子树剔除面入起扫行(范围可审计)
     const engineExcludedRoots = resolveEngineSubtreeExclusions().length;
-    indexLog('discovery', `def 首扫开始:${defFiles.length} 个 .def(实体候选 ${entities.length}${engineExcludedRoots > 0 ? `/已剔引擎仓子树 ${engineExcludedRoots} 处` : ''})`);
+    // 扫描根入行(范围可审计):按行内根即可判「扫的是 scripts 还是整棵 workspace」
+    const scanRootsLabel = getIndexScanRoots()
+      .map(root => root.replace(/\\/g, '/'))
+      .join(', ');
+    indexLog('discovery', `def 首扫开始:${defFiles.length} 个 .def,根=[${scanRootsLabel}](实体候选 ${entities.length}${engineExcludedRoots > 0 ? `/已剔引擎仓子树 ${engineExcludedRoots} 处` : ''})`);
     // WARM-VISIBILITY-004 刀 A:def 逐文件节流进度(无 sink 时发射为 no-op)
     const defProgress = createScanStageProgressReporter({
       label: '实体发现链 def',
@@ -596,6 +605,10 @@ export class EntityMappingManager {
     entries: DefCacheDiskEntry[]
   ): Promise<{ injected: number; rejected: number; discovered: number }> {
     await ensureConfigDerivedScanRoot();
+    // 锚点根先行(2026-11-23 二段令):配置/派生/folder 顶层全缺席时按引擎
+    // 默认布局定位 scripts 根,后续 findFilesAcrossRoots 的 workspace 兜底腿
+    // 不再误触发。与 ensureConfigDerivedScanRoot 同一装配法。
+    await ensureAnchorScanRoot().catch(() => null);
     const scanRoots = getIndexScanRoots();
     if (scanRoots.length === 0) {
       return { injected: 0, rejected: 0, discovered: 0 };

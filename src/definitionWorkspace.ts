@@ -41,6 +41,7 @@ import { readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import { getSemanticIndex } from './backend/semanticIndex';
 import { normalizeFileIdentity } from './backend/pathIdentity';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
+import { resolveAssetsRootForWorkspace } from './scanRoots';
 import {
   ENTITIES_XML_SECTION_CLIENT_SERVER,
   ENTITIES_XML_SECTION_SERVER_ONLY
@@ -182,24 +183,25 @@ export function getWorkspaceRootForDocument(
 }
 
 export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionWorkspaceLayout {
-  // KR-AUD-36(IDX-12):布局解析按 rootConfigGeneration + 布局配置读值键控缓存
+  // KR-AUD-36(IDX-12):布局解析按 rootConfigGeneration + 布局输入键控缓存
   // ——悬停热路径(languageProviders 等)每次调用重算要 existsSync 一整串候选+
-  // 发现兜底扫描。代内配置读值(entityDefsPath/entitiesXmlPath)并入键:配置
-  // 变化即使未经 bump(如测试直改 getConfiguration)也不喂旧布局;getConfiguration
-  // 为内存读不触盘,键计算代价可忽略。bump(def-paths/assetsRoot/根集/profile
-  // 变化点)覆盖发现兜底记忆与盘上目录面。
-  const config = vscode.workspace.getConfiguration('kbengine');
+  // 发现兜底扫描。布局输入(assetsBase)并入键:assetsRoot 变化即使未经 bump
+  // 也不喂旧布局;解析为内存读不触盘,键计算代价可忽略。bump(assetsRoot/
+  // 根集/profile 变化点)覆盖发现兜底记忆与盘上目录面。
+  // 布局不再读 entityDefsPath/entitiesXmlPath 配置项(2026-11-23 用户令:目录
+  // 固定就不设独立配置项,由 assetsRoot 计算;引擎口径 entitydef.cpp:159/176
+  // 固定 {assets}/scripts/entity_defs、{assets}/scripts/entities.xml)。布局基 =
+  // 活动 assetsRoot(发现链同一解析口径),落空回落工作区根(demo 布局)。
   const layoutGeneration = getRootConfigGeneration();
-  const entityDefsPathConfig = config.get<string>('entityDefsPath', 'scripts/entity_defs');
-  const entitiesXmlPathConfig = config.get<string>('entitiesXmlPath', 'scripts/entities.xml');
-  const layoutCacheKey = `${workspaceRoot}\n${layoutGeneration}\n${entityDefsPathConfig}\n${entitiesXmlPathConfig}`;
+  const assetsBase = resolveAssetsRootForWorkspace(workspaceRoot) || workspaceRoot;
+  const layoutCacheKey = `${workspaceRoot}\n${layoutGeneration}\n${assetsBase}`;
   const cached = layoutCache.get(layoutCacheKey);
   if (cached && layoutCacheProbeValid(workspaceRoot, cached)) {
     return cached.layout;
   }
   const entityDefsCandidates = buildWorkspaceCandidates(
-    workspaceRoot,
-    config.get<string>('entityDefsPath', 'scripts/entity_defs'),
+    assetsBase,
+    'scripts/entity_defs',
     [
       'entity_defs',
       'scripts/entity_defs',
@@ -235,8 +237,8 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
     entityScriptsRoot ? joinWorkspacePath(entityScriptsRoot, 'entities.xml') : '',
     /* istanbul ignore stop */
     ...buildWorkspaceCandidates(
-      workspaceRoot,
-      config.get<string>('entitiesXmlPath', 'scripts/entities.xml'),
+      assetsBase,
+      'scripts/entities.xml',
       [
         'entities.xml',
         'scripts/entities.xml',
@@ -252,7 +254,7 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
     entityDefsRoot ? joinWorkspacePath(entityDefsRoot, 'types.xml') : '',
     /* istanbul ignore stop */
     ...buildWorkspaceCandidates(
-      workspaceRoot,
+      assetsBase,
       'scripts/entity_defs/types.xml',
       [
         'types.xml',
@@ -271,9 +273,9 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
     /* istanbul ignore start */
     entityScriptsRoot ? joinWorkspacePath(entityScriptsRoot, 'user_type') : '',
     /* istanbul ignore stop */
-    joinWorkspacePath(workspaceRoot, 'user_type'),
-    joinWorkspacePath(workspaceRoot, 'scripts/user_type'),
-    joinWorkspacePath(workspaceRoot, 'assets/scripts/user_type')
+    joinWorkspacePath(assetsBase, 'user_type'),
+    joinWorkspacePath(assetsBase, 'scripts/user_type'),
+    joinWorkspacePath(assetsBase, 'assets/scripts/user_type')
   ]);
 
   const layout: DefinitionWorkspaceLayout = {

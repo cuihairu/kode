@@ -20,6 +20,7 @@ const makeDeps = (overrides: Partial<WarmupStageDeps> = {}): DepsStub => {
   const base: WarmupStageDeps = {
     waitForDiscovery: async () => { calls.push('discovery'); },
     ensureEventIndex: async () => { calls.push('eventIndex'); },
+    ensurePythonClassIndex: async () => { calls.push('pythonClassIndex'); },
     buildDependencyGraph: async () => {
       calls.push('dependencyGraph');
       return { kind: 'ts' as const, graph: { nodes: [], edges: [], stats: {} } };
@@ -54,16 +55,31 @@ const runAll = async (deps: WarmupStageDeps, concurrency = 4): Promise<void> => 
 };
 
 describe('createWarmupStages 阶段构成', () => {
-  it('五阶段按序执行:发现链→事件索引→依赖图→布局预热→逐实体流程图', async () => {
+  it('六阶段按序执行:发现链→事件索引→python 类索引→依赖图→布局预热→逐实体流程图', async () => {
     const deps = makeDeps();
     await runAll(deps);
-    // 阶段序:discovery / eventIndex / dependencyGraph / layout 先于全部 flow
+    // 阶段序:discovery / eventIndex / pythonClassIndex / dependencyGraph / layout
     expect(deps.calls[0]).toBe('discovery');
     expect(deps.calls[1]).toBe('eventIndex');
-    expect(deps.calls[2]).toBe('dependencyGraph');
-    expect(deps.calls[3]).toBe('layout');
+    expect(deps.calls[2]).toBe('pythonClassIndex');
+    expect(deps.calls[3]).toBe('dependencyGraph');
+    expect(deps.calls[4]).toBe('layout');
     // flow 实体逐个建图(集合面断言,段内并发不保证条目序)
     expect(deps.flowGraphsBuilt.sort()).toEqual(['Hero', 'Monster', 'NPC']);
+  });
+
+  it('python 类索引阶段:等待方 onProgress 经 stage.report 推状态栏(类索引进状态栏)', async () => {
+    const seen: string[] = [];
+    const deps = makeDeps({
+      ensurePythonClassIndex: async onProgress => {
+        onProgress?.('python 类索引 2/3');
+      }
+    });
+    const stages = createWarmupStages({ ...deps, report: detail => { seen.push(detail); } });
+    const stage = stages.find(s => s.key === 'pythonClassIndex');
+    expect(stage).toBeDefined();
+    await stage!.run({ publish: () => undefined, declare: () => undefined } as never);
+    expect(seen).toEqual(['python 类索引 2/3']);
   });
 
   it('发现链只等一次:waitForDiscovery 单次调用(复用 activate 已起的首扫,不重起)', async () => {

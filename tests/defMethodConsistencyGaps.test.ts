@@ -58,6 +58,8 @@ interface Fixture {
 
 const buildWorkspace = (opts: { includeRoleDef?: boolean } = {}): Fixture => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-c19-'));
+  // 收窄:根下无 scripts 不贡献扫描根,建空 scripts 保 stub 发现链(同 nav007)
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
   const put = (relative: string, content: string): string => {
     const file = path.join(root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });

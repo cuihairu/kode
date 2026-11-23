@@ -95,7 +95,7 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     const memento = new MemoryMemento();
     await seedProfile(memento, assetsRoot, '');
     const result = await ensureActiveProfileEngineRoot(memento, {
-      probeWithSiblingsFn: () => base
+      probeEngineRootFn: () => base
     });
     expect(result.recorded).toBe(base);
     expect(result.stillMissing).toBe(false);
@@ -125,7 +125,7 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     const memento = new MemoryMemento();
     await seedProfile(memento, assetsRoot, '/user/filled/engine');
     const probe = vi.fn().mockReturnValue('/user/filled/engine');
-    const result = await ensureActiveProfileEngineRoot(memento, { probeWithSiblingsFn: probe });
+    const result = await ensureActiveProfileEngineRoot(memento, { probeEngineRootFn: probe });
     expect(probe, '已记录时不探测').not.toHaveBeenCalled();
     expect(result.recorded).toBeNull();
     expect(result.stillMissing).toBe(false);
@@ -139,19 +139,35 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     const explicit = path.join(base, 'kbe');
     const probe = vi.fn().mockReturnValue(explicit);
     const result = await ensureActiveProfileEngineRoot(memento, {
-      probeWithSiblingsFn: probe,
+      probeEngineRootFn: probe,
       explicitEngineRoot: () => explicit
     });
     expect(probe).toHaveBeenCalledWith(assetsRoot, explicit);
     expect(result.recorded).toBe(explicit);
   });
 
-  it('⑤ 兄弟目录布局:assets 同级 kbengine* 引擎仓(marker 命中)→ 自动补录', async () => {
+  it('⑤ 真实两处探测(2026-11-23 用户令):assetsRoot 上一层有 kbe 树 → 补录', async () => {
+    // 不注探测桩:probeEngineRoot 默认链真实探 [assetsRoot, 上一层] 两处
+    const { base, assetsRoot } = makeTree(true);
+    trees.push(base);
+    const memento = new MemoryMemento();
+    await seedProfile(memento, assetsRoot, '');
+    const result = await ensureActiveProfileEngineRoot(memento);
+    expect(result.recorded).toBe(base);
+    expect(result.stillMissing).toBe(false);
+    const persisted = new ProjectProfileStore(memento).get(
+      memento.get<string>(ACTIVE_PROFILE_STATE_KEY)!
+    );
+    expect(persisted?.engineRoot).toBe(base);
+  });
+
+  it('⑤b 兄弟仓克隆(assets 同级 kbengine*/ 名含 kbengine)不再自动探:如实缺不写', async () => {
+    // 2026-11-23 用户令:引擎根默认只找两处(当前目录/上一层),兄弟目录名
+    // 扫描废止——兄弟仓克隆布局须用户显式配置 kbengine.engineRoot
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-sibling-'));
     trees.push(base);
     const assetsRoot = path.join(base, 'assets');
     fs.mkdirSync(assetsRoot, { recursive: true });
-    // 兄弟引擎仓:目录名含 kbengine(marker 落在仓内 kbe/src/lib/common)
     const engineRoot = path.join(base, 'kbengine');
     const markerDir = path.join(engineRoot, 'kbe', 'src', 'lib', 'common');
     fs.mkdirSync(markerDir, { recursive: true });
@@ -161,14 +177,11 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
       'utf8'
     );
     const memento = new MemoryMemento();
-    await seedProfile(memento, assetsRoot, '');
+    const id = await seedProfile(memento, assetsRoot, '');
     const result = await ensureActiveProfileEngineRoot(memento);
-    expect(result.recorded).toBe(engineRoot);
-    expect(result.stillMissing).toBe(false);
-    const persisted = new ProjectProfileStore(memento).get(
-      memento.get<string>(ACTIVE_PROFILE_STATE_KEY)!
-    );
-    expect(persisted?.engineRoot).toBe(engineRoot);
+    expect(result.recorded).toBeNull();
+    expect(result.stillMissing).toBe(true);
+    expect(new ProjectProfileStore(memento).get(id)!.engineRoot).toBe('');
   });
 
   it('⑥ 兄弟目录无 marker / 目录名不含 kbengine → 不误认,如实缺', async () => {
@@ -201,7 +214,7 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     const probe = vi.fn().mockReturnValue('/x');
     const id = new ProjectProfileStore(m2).get(m2.get<string>(ACTIVE_PROFILE_STATE_KEY)!)!.id;
     await new ProjectProfileStore(m2).saveRoots(id, { assetsRoot: '' });
-    const result = await ensureActiveProfileEngineRoot(m2, { probeWithSiblingsFn: probe });
+    const result = await ensureActiveProfileEngineRoot(m2, { probeEngineRootFn: probe });
     expect(probe, '空基底不探(会以 cwd 误探)').not.toHaveBeenCalled();
     expect(result).toEqual({ stillMissing: true, recorded: null });
   });

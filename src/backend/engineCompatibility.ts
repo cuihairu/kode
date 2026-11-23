@@ -37,6 +37,26 @@ export function findEngineRoot(startDirectory: string, explicitRoot?: string): s
   return find(path.resolve(startDirectory));
 }
 
+/**
+ * 引擎根默认探测(2026-11-23 用户令):只找两处——当前目录下有 kbe 引擎树
+ * (双 marker 命中)或上一层目录下有;都没有 → null,由调用面走「提示用户
+ * 配置」链(显式配置沿用既有名字 kbengine.engineRoot / profile engineRoot,
+ * 不另造配置项)。不做多级向上递归:那类「工作区本身在引擎树深处」的辨认
+ * 是 findEngineRoot(引擎仓子树剔除/兼容性检查)的职责;配置自动补录只认
+ * 安装位两处,两个探测面分工不混。
+ */
+export function findEngineRootInDefaultPlaces(startDirectory: string): string | null {
+  const resolved = path.resolve(startDirectory);
+  const parent = path.dirname(resolved);
+  const candidates = parent === resolved ? [resolved] : [resolved, parent];
+  for (const candidate of candidates) {
+    if (hasEngineTreeMarker(candidate, probe => fs.existsSync(probe))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function readVersionMacro(engineRoot: string): string | null {
   // C-14: legacy single-macro file first, then the 2.5.10+ three-macro file
   // synthesized as major.minor.patch (unknown fallback inside).

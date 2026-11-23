@@ -396,8 +396,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-22(RUST-142 批 3):diagnostics.ts 顶部 import 再 +1
   // (wireDiagnosticsPush)→ 叠加 QA-001b 后累计 +10,两处打点锚点 225/238 →
   // 235/248(真位重探;wire 装配块在全部锚点之后不再位移);出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 235, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 248, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-23(SCAN-NARROW 批):diagnostics.ts 顶部 import +1(findFilesAcrossRoots
+  // /getIndexScanRoots)→ 两处打点锚点 +1(235/248 → 236/249,真位重探);
+  // 出处随 baseline 锁步。
+  ['src/activate/diagnostics.ts', 236, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 249, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -637,11 +640,19 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-20(ENGINE-LIB-SCAN-005 刀4):SCAN_CHUNK_SIZE 常量块扩写 +22(在
   // 全部锚点之前)+ 块前让路 +7(1481 之后,非均匀):776→798(+22)、
   // 1505→1534(+29)、1629→1658(+29)。出处随 baseline 锁步。
-  ['src/backend/pythonClassIndex.ts', 798, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1534, 'resolveClassBase'],
+  // 2026-11-23(SCAN-NARROW 批):pythonClassIndex.ts scanDetailSink 字段块 +5
+  // (355)、waitForInitialScan onProgress 注入面 +8(363/366,均在全部锚点前)
+  // + pyProgress 镜像块 +4(1124,二三锚点前)→ 非均匀:798→811(+13)、
+  // 1534→1551(+17)、1658→1675(+17)。出处随 baseline 锁步。
+  // 2026-11-23(锚点放开腿批):pythonClassIndex.ts 顶部 import 块展开 +5(全部
+  // 锚点前)、扫描根入行块 +5(1121 区)与锚点 await 块 +3(1268 区)落在二三锚
+  // 点前 → 811→816(+5)、1551→1564(+13)、1675→1688(+13),真位重探。
+  // 出处随 baseline 锁步。
+  ['src/backend/pythonClassIndex.ts', 816, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1564, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1658, '①② 两段查询'],
+  ['src/backend/pythonClassIndex.ts', 1688, '①② 两段查询'],
   // 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位——
   // 单飞字段块 +7、ensureDiscovered 重写 +22、零失败清表改覆盖式 +4(非均匀):
   // 767→774(+7)、1448→1481(+33)、1572→1605(+33)。出处随 baseline 锁步。
