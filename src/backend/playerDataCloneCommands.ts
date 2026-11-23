@@ -148,6 +148,17 @@ export interface PlayerCloneCommandDeps {
     savePath: string;
     encrypt: boolean;
   }): void;
+  /**
+   * 从引擎最终配置(dbmgr/databaseInterfaces/default)派生源连接(用户令:
+   * 导出优先读最终配置,不逼用户手输)。null = 最终配置不可用(无 kbengine.xml
+   * 且派生档案缺位)。password 为引擎 RSA 明文解出值;不可解 = undefined,
+   * 调用方按「密码读不到」如实降级。defaultsOnly = 只拿到引擎默认值
+   * (kbengine.xml 缺席,值非本项目实际配置,须如实告警)。
+   */
+  resolveFinalConfigSourceConnection?(): Promise<{
+    config: { host: string; port: number; user: string; password?: string; database: string };
+    defaultsOnly: boolean;
+  } | null>;
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
   now(): number;
 }
@@ -720,6 +731,100 @@ export function cloneSourceConnectionProbe(
   };
 }
 
+/** 源连接选择项文案(010d:比较与展示同值)。 */
+export const EXPORT_SOURCE_FINAL_ITEM_PREFIX = 'Final config';
+export const EXPORT_SOURCE_PROFILE_ITEM_PREFIX = 'Clone profile';
+
+/** 连接值单行展示(不回显密码,只报有无)。 */
+export function formatExportSourceConnectionItem(
+  prefix: string,
+  c: { host: string; port: number; user: string; database: string },
+  l10n: CloneL10n
+): string {
+  const pwdMark = l10n('password: stored');
+  return `${prefix}: ${c.host}:${c.port}  user=${c.user}  db=${c.database}  (${pwdMark})`;
+}
+
+/**
+ * UX-2026-11-23 用户令:导出源连接选择。
+ * 优先弹「从最终配置读取」(引擎 dbmgr/databaseInterfaces/default 派生,与只读
+ * 查询同链),项内展示实际值;另有克隆档案(旧链)与配置向导两项。最终配置不
+ * 可用(派生 null)且无档案 → 如实报「最终配置不可用」并给配置入口,不再静默
+ * 直落手输向导。返回 null = 用户取消/不可用且未配置。
+ */
+export async function resolveExportSourceConnection(
+  deps: PlayerCloneCommandDeps,
+  l10n: CloneL10n
+): Promise<{
+  host: string;
+  port: number;
+  user: string;
+  password?: string;
+  database: string;
+} | null> {
+  const finalConn = deps.resolveFinalConfigSourceConnection
+    ? await deps.resolveFinalConfigSourceConnection()
+    : null;
+  const profileConn = await deps.profiles.resolveConnection('source');
+  const finalItem = finalConn
+    ? formatExportSourceConnectionItem(
+        l10n(EXPORT_SOURCE_FINAL_ITEM_PREFIX),
+        finalConn.config,
+        l10n
+      )
+    : null;
+  const profileItem = profileConn
+    ? formatExportSourceConnectionItem(
+        l10n(EXPORT_SOURCE_PROFILE_ITEM_PREFIX),
+        profileConn,
+        l10n
+      )
+    : null;
+  const configureItem = l10n('Configure source connection');
+  if (!finalItem && !profileItem) {
+    // 最终配置不可用且无档案:保留旧告警链(如实报未配置 + 配置入口),
+    // 不再静默直落手输向导。
+    const choice = await deps.showWarningMessage(
+      l10n('Source connection is not configured.'),
+      configureItem
+    );
+    if (choice === configureItem) {
+      await runConfigureCloneProfileCommand(deps, 'source');
+      return await deps.profiles.resolveConnection('source');
+    }
+    return null;
+  }
+  const items = [finalItem, profileItem, configureItem].filter(
+    (x): x is string => typeof x === 'string'
+  );
+  const placeHolder = l10n(
+    'Select the export source connection (values shown are from the engine final config / saved profile)'
+  );
+  const picked = await deps.showQuickPick(items, { placeHolder });
+  if (!picked || picked === configureItem) {
+    if (picked === configureItem) {
+      await runConfigureCloneProfileCommand(deps, 'source');
+      return await deps.profiles.resolveConnection('source');
+    }
+    return null;
+  }
+  if (finalItem && picked === finalItem) {
+    if (!finalConn) { return null; }
+    if (finalConn.defaultsOnly) {
+      // defaults-only:值来自 kbengine_defaults.xml 而非本项目实际配置,如实告警。
+      await deps.showWarningMessage(l10n(playerCloneDefaultsOnlyWarning()));
+    }
+    return finalConn.config;
+  }
+  return profileConn;
+}
+
+/** defaults-only 告警(与只读查询同口径,但作用于导出源连接)。 */
+export const playerCloneDefaultsOnlyWarning = (): string =>
+  withL10nArgs(
+    'Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry.'
+  );
+
 export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promise<void> {
   const l10n: CloneL10n = (message, args) =>
     deps.localize?.(message, args) ?? withL10nArgs(message, args);
@@ -736,15 +841,12 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     await deps.showErrorMessage(l10n(noGateMessage));
     return;
   }
-  let config = await deps.profiles.resolveConnection('source');
+  // UX-2026-11-23 用户令:导出源连接优先读引擎最终配置——与只读查询同一
+  // 派生链(dbmgr/databaseInterfaces/default),不再无档案就直接弹手输向导。
+  // quickpick 每项展示实际值(host:port/db);选「克隆档案」才走旧向导链。
+  let config = await resolveExportSourceConnection(deps, l10n);
   if (!config) {
-    const message = l10n('Source connection is not configured.');
-    const action = l10n('Configure source connection');
-    const choice = await deps.showWarningMessage(message, action);
-    if (choice !== action) { return; }
-    await runConfigureCloneProfileCommand(deps, 'source');
-    config = await deps.profiles.resolveConnection('source');
-    if (!config) { return; }
+    return;
   }
   // UX-REVIEW-004b:源连接测试入口——配置在场但连不上时,实体/DBID 收集前
   // 如实给原因与重试/配置入口;探针通过才继续收集。

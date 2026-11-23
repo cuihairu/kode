@@ -69,7 +69,8 @@ const baseDeps = (extra: Partial<PlayerCloneCommandDeps> & {
       get: () => null,
       resolveConnection: async () => sourceConfig
     },
-    showQuickPick: vi.fn(async () => undefined),
+    resolveEntityTables: () => [{ name: 'tbl_Account' }],
+    showQuickPick: vi.fn(async (items: readonly string[]) => items[0]),
     showInputBox: vi.fn(async () => undefined),
     showWarningMessage: vi.fn(async () => undefined),
     showErrorMessage: vi.fn(async () => undefined),
@@ -102,10 +103,10 @@ it('backend probe true → flow proceeds to entity pick', async () => {
 it('connection probe ok → straight to entity pick after one probe', async () => {
   const deps = baseDeps({});
   await runExportCloneCommand(deps);
+  // 新流程首弹=源连接选择(Clone profile 项,值内联展示),探针带该值
   expect(deps.probeSourceConnection).toHaveBeenCalledTimes(1);
   expect(deps.probeSourceConnection).toHaveBeenCalledWith(sourceConfig);
   expect(deps.showQuickPick).toHaveBeenCalled();
-  expect(deps.showInputBox).not.toHaveBeenCalled();
 });
 
 it('connection probe fail → reason with retry/configure items; retry passes and flow resumes', async () => {
@@ -120,16 +121,17 @@ it('connection probe fail → reason with retry/configure items; retry passes an
     'Retry connection test',
     'Configure source connection'
   );
-  expect(deps.showQuickPick).toHaveBeenCalledTimes(1);
-  expect(deps.showInputBox).not.toHaveBeenCalled();
+  expect(deps.showQuickPick).toHaveBeenCalledTimes(2);
 });
 
 it('connection probe fail → configure entry runs wizard, re-probes and resumes', async () => {
   let configured = false;
   const inputs = ['localhost', '3306', 'user', 'secret', 'game'];
-  const pick = vi.fn(async (items: readonly string[]) =>
-    items.includes(CLONE_SUMMARY_SAVE) ? CLONE_SUMMARY_SAVE : undefined
-  );
+  const pick = vi.fn(async (items: readonly string[]) => {
+    if (items.includes(CLONE_SUMMARY_SAVE)) { return CLONE_SUMMARY_SAVE; }
+    const src = items.find(i => i.startsWith('Clone profile'));
+    return src ?? undefined;
+  });
   const probe = vi.fn(async () =>
     configured ? ({ ok: true } as const) : ({ ok: false, reason: 'Access denied' } as const)
   );
@@ -171,13 +173,16 @@ it('connection probe fail → configure declined inside wizard aborts without en
     },
     showWarningMessage: vi.fn(async (_m: string, ...items: string[]) => items[1] ?? items[0]),
     showInputBox: vi.fn(async () => undefined),
-    showQuickPick: vi.fn(async () => undefined),
+    showQuickPick: vi.fn(async (items: readonly string[]) =>
+      items.find(i => i.startsWith('Clone profile'))
+    ),
     showErrorMessage: vi.fn(async () => undefined),
     probeSourceConnection: probe
   } as unknown as PlayerCloneCommandDeps;
   await runExportCloneCommand(deps);
   expect(probe).toHaveBeenCalledTimes(1);
-  expect(deps.showQuickPick).not.toHaveBeenCalled();
+  // 实体 quickpick 未到(向导取消后终止);源连接选择弹了 1 次(新流程首弹)
+  expect(deps.showQuickPick).toHaveBeenCalledTimes(1);
 });
 
 it('connection probe fail → dismissing the dialog aborts without collecting inputs', async () => {
@@ -185,7 +190,6 @@ it('connection probe fail → dismissing the dialog aborts without collecting in
   vi.mocked(deps.showWarningMessage).mockResolvedValue(undefined);
   await runExportCloneCommand(deps);
   expect(deps.probeSourceConnection).toHaveBeenCalledTimes(1);
-  expect(deps.showQuickPick).not.toHaveBeenCalled();
   expect(deps.showInputBox).not.toHaveBeenCalled();
 });
 
@@ -304,6 +308,7 @@ it('probe timeout surfaces into the existing retry/configure dialog (no hang, no
     'Retry connection test',
     'Configure source connection'
   );
-  expect(deps.showQuickPick).not.toHaveBeenCalled();
+  // 实体选择未到(超时告警终止);源连接选择已弹过 1 次(新流程首弹)
+  expect(deps.showQuickPick).toHaveBeenCalledTimes(1);
   expect(deps.showInputBox).not.toHaveBeenCalled();
 });

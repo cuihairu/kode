@@ -56,7 +56,11 @@ import {
 import { readEngineVersionMarker } from './backend/engineApiMetadata';
 import { getEngineVersion } from './engineVersion';
 import { detectEngineVersionMarker, engineVersionSuggestion } from './backend/engineVersionDetect';
-import { type DatabaseInterfaceConfig } from './serverConfigMerge';
+import {
+  resolveDatabaseInterfaceConfig,
+  type DatabaseInterfaceConfig
+} from './serverConfigMerge';
+import { getDerivedDatabaseProfile } from './configDerive';
 import { ensureConfigResolved } from './serverConfigResolve';
 import { DatabaseConnectionRegistry, DatabaseQueryResultCache } from './backend/databaseConnectionRegistry';
 import {
@@ -701,6 +705,43 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
     },
     rememberExportSelection: selection => {
       void context.workspaceState.update('kode.playerClone.lastExport', selection);
+    },
+    // UX-2026-11-23 用户令:导出源连接可「从最终配置读取」——与只读查询同一
+    // 派生链(resolveDatabaseInterfaceConfig → getDerivedDatabaseProfile 回落),
+    // 值展示在 quickpick 项内;defaults-only(kbengine.xml 缺席)如实标注。
+    resolveFinalConfigSourceConnection: async () => {
+      const final = resolveDatabaseInterfaceConfig();
+      if (final) {
+        // defaults-only 判定按只读查询同口径:final 面本身即最终配置面,不在
+        // 此判 kbengine.xml 缺席(展示面由 playerDataCloneCommands defaultsOnly
+        // 标注派生档案回落场景)。
+        return {
+          config: {
+            host: final.host,
+            port: final.port,
+            user: final.username,
+            password: final.plainPassword,
+            database: final.databaseName
+          },
+          defaultsOnly: false
+        };
+      }
+      const profile = getDerivedDatabaseProfile();
+      if (!profile) {
+        return null;
+      }
+      return {
+        config: {
+          host: profile.host,
+          port: profile.port,
+          user: profile.username,
+          // 派生档案面无密码(明文密码只在 serverConfigMerge 就地读取);
+          // 无密码连接在 openCloneSession 期如实失败,不虚构。
+          password: undefined,
+          database: profile.databaseName
+        },
+        defaultsOnly: true
+      };
     },
     channel: playerCloneChannel,
     now: () => Date.now()
