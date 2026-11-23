@@ -239,7 +239,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 - 批128 起自动发现:原值未过引擎装载探针(其下无 `res/server/kbengine.xml`)时,按 约定链 → 多候选记忆选择 → 深扫描唯一命中 兜底;发现出的根同样供 telnet 探测与最终配置视图取元件 `kbengine.xml`。约定链批129 起含工作区一级 `*_assets` 目录(如 `flyff_assets`)——目录名只是准入,命中仍以探针验收
 - 探针只验用户副本 `kbengine.xml`,不要求 `kbengine_defaults.xml` 在场:引擎对两份配置各在各的树里装载(kbemain.h:71-74 先载 defaults 再载用户副本覆盖;引擎注释 kbemain.h:133-137 示例即 defaults 在引擎 res 树、用户副本在资产树),资产根的锚点就是用户副本——引擎 `getPyUserResPath()` 也以 `matchRes("server/kbengine.xml")` 定位资产树。扩展同口径:defaults 从 binPath/引擎源码根推导(`deriveEngineDefaultsXmlPath`),用户副本从资产根找,两树独立
 - 启动前会校验:发现与显式都落空时空串、目录不存在、路径不是目录都会报错并中止启动;目录在而探针文件缺 → 输出通道留 `[WARN]` 不拦截(批127)
-- **索引扫描根(2026-11-23 用户令)**:Python/def 索引**只扫 `{assetsRoot}/scripts`**——脚本源是最小的有用范围,资产树其余部分(`res/`、`entity_defs/`…)对类/实体索引无用。`{assetsRoot}/scripts` 不存在时,索引扫描根列表为**空**(什么都不扫),**绝不回退**到 assetsRoot 本体或 workspace 顶层——那会把引擎仓/依赖树/构建产物扫进索引(2398 文件全盘扫即由此来)。调用方按「配置不对」处理空根而非静默全扫。显式配置但解析不出的资产根(配置值指向不存在的路径)同样是空扫描根——显式配置是意图不是猜测,不拿 workspace 顶替。只有真非 KBEngine 工作区(未配置且未发现资产根)保留旧 per-folder 工作区扫描(有 `scripts` 子目录时同样收窄到它)
+- **索引扫描根(2026-11-23 用户令)**:Python/def 索引**只扫 `{assetsRoot}/scripts`**——脚本源是最小的有用范围,资产树其余部分(`res/`、`entity_defs/`…)对类/实体索引无用。`{assetsRoot}/scripts` 不存在时,索引扫描根列表为**空**(什么都不扫),**绝不回退**到 assetsRoot 本体或 workspace 顶层——那会把引擎仓/依赖树/构建产物扫进索引(2398 文件全盘扫即由此来)。调用方按「配置不对」处理空根而非静默全扫。显式配置但解析不出的资产根(配置值指向不存在的路径)同样是空扫描根——显式配置是意图不是猜测,不拿 workspace 顶替。只有真非 KBEngine 工作区(未配置且未发现资产根)保留旧 per-folder 工作区扫描(有 `scripts` 子目录时同样收窄到它)。扫描根落在工作区之外时(资产根在别的目录),工作区本体一概不扫:全工作区 glob 只在扫描根为空时跑,外部根另行遍历补齐;收窄 glob 的结果同样过排除过滤,收窄只省 IO 不放宽匹配范围
 - 误配:指到仓库根而不是资产目录 → 探针不通过,自动发现接管;发现也落空时引擎在 `res`/`scripts` 子目录下找不到脚本,组件起不来;元件 `kbengine.xml` 定位不到时 telnet 与最终配置退回纯默认
 
 ### 最终配置视图
