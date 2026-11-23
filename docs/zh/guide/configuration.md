@@ -195,31 +195,21 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录(实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出) |
 | `kbengine.configData` | object | `enabled: true`,3 个默认配置目录 glob、`*Config`/`*Data` 类名、`reload*`/`hotUpdate*` 热更入口、空 `mutationExclude` | 配置数据保护:配置绑定意外写诊断(`kbengine.configDataMutation`)+ 直读 schema 悬停;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
 | `kbengine.configData.schemas` | object | `{}`(未声明) | 配置管理器对象(`config.getXXX()` / `config[key]`)的声明式类型:管理器对象表达式 → 表键集合;生成存根读该声明而非推断;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
-| `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
 | `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径。未显式配置时(CFG-01):默认值在盘即生效,不在盘回落自动发现扫描,扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现。Python/def 索引只扫 `{assetsRoot}/scripts`——详见下方 assetsRoot 细节 |
 | `kbengine.engineVersion` | string | `3.7.3` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此值做版本门控;`fork-` 前缀值还会对 fork 档 KBEngine API 参考条目抑制「需 fork」标注(补全与导出存根),自定义 fork 版本未带前缀则保留标注(保守口径——宁多提示不漏报);打开项目时若引擎安装目录版本标记与此值不同会给出设置建议(一键提供、绝不自动改、忽略按工作区记住) |
 | `kbengine.gitHistory.enabled` | boolean | `true` | 文件 Git 历史功能开关(IDE-GIT-001):开启时出现「查看文件历史 / 查看选中范围历史」入口(资源管理器/编辑器右键+命令面板),仅在用户点开入口时按需查询 Git(激活/打开文件/光标/选区变化绝不运行 Git,不预取不轮询);关闭后入口隐藏,直接调用命令也不运行任何 Git |
 
-四个路径项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」(`kbengine.engineVersion` 是版本门控值,不走路径发现)。逐项细节:
+其余路径项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」(`kbengine.engineVersion` 是版本门控值,不走路径发现)。`kbengine.entityDefsPath`/`kbengine.entitiesXmlPath` 已删(2026-11-23):引擎对这两处布局是钉死的(`entitydef.cpp:159/176-181` 只认 `{assets}/scripts` 之下的 `entities.xml`、`entity_defs/`、`types.xml`),目录固定就不设独立配置项——两处均由 `kbengine.assetsRoot` 计算。逐项细节:
 
-#### `kbengine.entityDefsPath`
+#### def 侧固定布局(无配置项,由 `kbengine.assetsRoot` 计算)
 
-- 类型:string;默认 `scripts/entity_defs`(相对工作区根)
-- 用途:实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出
-- 批125 起未配置/默认路径不存在时自动发现(约定链 `entity_defs` → `scripts/entity_defs` → `assets/scripts/entity_defs` → `server_assets/scripts/entity_defs`(官方 newassets 布局) → 深扫描唯一命中 → 多候选激活期询问一次并记忆),配置只作覆盖
-- 变量展开:`${workspaceFolder}`/`${env:VAR}` 先展开再相对工作区根拼接(与 `kbengine.binPath` 同一路径模板单一真源)
-- 误配:指错目录则实体浏览器为空
-
-#### `kbengine.entitiesXmlPath`
-
-- 类型:string;默认 `scripts/entities.xml`
-- 用途:依赖图读取与实体注册。项目把注册文件放在自定义位置时改这项
-- 解析顺序:先取 `<def根>/entities.xml`(def 根同级),再按本配置与约定链 `entities.xml` → `scripts/entities.xml` → `assets/scripts/entities.xml` → `server_assets/scripts/entities.xml` 探测
-- 批125 起约定候选全 miss 时深扫描兜底(优先 def 根同父目录),配置只作覆盖
+- 实体定义目录:`{assetsRoot}/scripts/entity_defs`;`entities.xml`:`{assetsRoot}/scripts/entities.xml`;`types.xml`:`{assetsRoot}/scripts/entity_defs/types.xml`(2026-11-23:原 `kbengine.entityDefsPath`/`kbengine.entitiesXmlPath` 配置项删除——引擎只从这些固定位置装载,按目录单设配置项没有引擎支持的语义)
+- 用途:实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出、依赖图读取与实体注册
+- `kbengine.assetsRoot` 未配置时资产根回落工作区根(demo 布局);扩展内的约定候选与深扫描兜底仍作解析辅助,发现报告对缺失布局照常报问题、补救指向 `kbengine.assetsRoot`
+- 误配:`kbengine.assetsRoot` 指错则实体浏览器为空
 
 #### `kbengine.binPath`
 
@@ -228,6 +218,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 - 用途:① 启动/停止组件进程;② 推导引擎根(`KBE_ROOT`)与引擎默认配置路径——把路径末尾的 `kbe/bin/server` 换成 `kbe/res/server/kbengine_defaults.xml`
 - 三分支解析(CFG-01):用户显式配置值权威(显式值不在盘也原样保留,由启动检查链报警);未配置时默认值在盘即直接生效,不在盘回落自动发现扫描(引擎源码根锚点 → 兄弟目录 → `KBENGINE_HOME`),扫描也落空 `getBinPath` 返回空串,由启动检查链报「找不到引擎」
 - 误配:没指到 `kbe/bin/server` 这一级 → 服务器启动失败,最终配置视图和 defaults 数值回落也不可用;此时 `kbengine.config.showFinal` 会明示报错,激活自动打开则静默跳过
+- 引擎根默认探测(2026-11-23):自动补录/探测链(`kbengine.engineRoot`、profile `engineRoot`)只找两处——当前目录下有 `kbe` 引擎树,或上一层目录下有;都没查到就如实保持缺失,由 engine-missing 提示你配置 `kbengine.engineRoot`(沿用既有配置名;不做多级向上递归,也不按目录名猜兄弟)
 
 #### `kbengine.assetsRoot`
 
@@ -239,7 +230,8 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 - 批128 起自动发现:原值未过引擎装载探针(其下无 `res/server/kbengine.xml`)时,按 约定链 → 多候选记忆选择 → 深扫描唯一命中 兜底;发现出的根同样供 telnet 探测与最终配置视图取元件 `kbengine.xml`。约定链批129 起含工作区一级 `*_assets` 目录(如 `flyff_assets`)——目录名只是准入,命中仍以探针验收
 - 探针只验用户副本 `kbengine.xml`,不要求 `kbengine_defaults.xml` 在场:引擎对两份配置各在各的树里装载(kbemain.h:71-74 先载 defaults 再载用户副本覆盖;引擎注释 kbemain.h:133-137 示例即 defaults 在引擎 res 树、用户副本在资产树),资产根的锚点就是用户副本——引擎 `getPyUserResPath()` 也以 `matchRes("server/kbengine.xml")` 定位资产树。扩展同口径:defaults 从 binPath/引擎源码根推导(`deriveEngineDefaultsXmlPath`),用户副本从资产根找,两树独立
 - 启动前会校验:发现与显式都落空时空串、目录不存在、路径不是目录都会报错并中止启动;目录在而探针文件缺 → 输出通道留 `[WARN]` 不拦截(批127)
-- **索引扫描根(2026-11-23 用户令)**:Python/def 索引**只扫 `{assetsRoot}/scripts`**——脚本源是最小的有用范围,资产树其余部分(`res/`、`entity_defs/`…)对类/实体索引无用。`{assetsRoot}/scripts` 不存在时,索引扫描根列表为**空**(什么都不扫),**绝不回退**到 assetsRoot 本体或 workspace 顶层——那会把引擎仓/依赖树/构建产物扫进索引(2398 文件全盘扫即由此来)。调用方按「配置不对」处理空根而非静默全扫。显式配置但解析不出的资产根(配置值指向不存在的路径)同样是空扫描根——显式配置是意图不是猜测,不拿 workspace 顶替。只有真非 KBEngine 工作区(未配置且未发现资产根)保留旧 per-folder 工作区扫描(有 `scripts` 子目录时同样收窄到它)。扫描根落在工作区之外时(资产根在别的目录),工作区本体一概不扫:全工作区 glob 只在扫描根为空时跑,外部根另行遍历补齐;收窄 glob 的结果同样过排除过滤,收窄只省 IO 不放宽匹配范围
+- **索引扫描根(2026-11-23 用户令)**:Python/def 索引**只扫 `{assetsRoot}/scripts`**——脚本源是最小的有用范围,资产树其余部分(`res/`、`entity_defs/`…)对类/实体索引无用。`{assetsRoot}/scripts` 不存在时,索引扫描根列表为**空**(什么都不扫),**绝不回退**到 assetsRoot 本体或 workspace 顶层——那会把引擎仓/依赖树/构建产物扫进索引(2398 文件全盘扫即由此来)。调用方按「配置不对」处理空根而非静默全扫。显式配置但解析不出的资产根(配置值指向不存在的路径)同样是空扫描根——显式配置是意图不是猜测,不拿 workspace 顶替。无资产根的 workspace 只有文件夹根下**确有 `scripts` 子目录**(引擎钉死的默认落点)才贡献扫描根(收窄到该 `scripts`),没有就不贡献。扫描根落在工作区之外时(资产根在别的目录),工作区本体一概不扫:全工作区 glob 只在扫描根为空时跑,外部根另行遍历补齐;收窄 glob 的结果同样过排除过滤,收窄只省 IO 不放宽匹配范围。引擎 res 树(`{KBE_ROOT}/kbe/res/`)永不入索引:里面只有引擎默认配置(`kbengine_defaults.xml`、错误/消息/邮件 defaults——没有 `entities.xml`、没有 `entity_defs/`),引擎解析实体定义只走 `{assets}/scripts`(`resmgr.cpp` `getPyUserScriptsPath()`;`entitydef.cpp:159/176-181`),扩展因此把引擎子树整体剔出扫描
+- **收窄令覆盖所有 KBEngine 面(2026-11-23)**:configData 诊断、ruff 文件收集、eventApi F12 候选枚举三面复用同一扫描根——有 KBEngine 扫描根时收窄到 `scripts`,只在无 KBEngine 根的工作区(通用 Python 工程)维持原 workspace 全量行为;def md5 面此前已走扫描根。预热门探测(决定状态栏预热进度是否启动)同样把外部扫描根视作 KBEngine 信号——外部资产工作区的预热进度从此不再被恒关门挡住。预热管线新增「python 类索引」阶段:全扫 N/M 明细与发现链、事件索引阶段同形态镜像进状态栏 message
 - 误配:指到仓库根而不是资产目录 → 探针不通过,自动发现接管;发现也落空时引擎在 `res`/`scripts` 子目录下找不到脚本,组件起不来;元件 `kbengine.xml` 定位不到时 telnet 与最终配置退回纯默认
 
 ### 最终配置视图
@@ -369,7 +361,7 @@ kode 按进程导出独立桩包：`.kbengine/stubs/base`、`cell`、`bots`、`c
 | `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成的 `.def` 写到哪;默认值即发现出的 def 根,配置只作覆盖 |
 | `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成的 Python 写到哪;默认值时从发现出的 def 根父目录推导(如 `assets/scripts`),配置只作覆盖 |
 | `kbengine.generator.generatePython` | boolean | `true` | 向导/模板创建实体时是否同时生成 Python 文件 |
-| `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写入 `entities.xml`(写的是 `entitiesXmlPath` 指向的文件) |
+| `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写入 `entities.xml`(固定 `{assetsRoot}/scripts/entities.xml`) |
 
 #### `kbengine.clientSdk.outputDir`
 
@@ -736,7 +728,7 @@ AI 面的工作方式:
 
 发现链(按序取第一个命中):
 
-1. **显式配置**:`kbengine.entityDefsPath` / `kbengine.entitiesXmlPath` / `kbengine.binPath` 的设置值(支持 `${workspaceFolder}`);
+1. **显式配置**:`kbengine.binPath` / `kbengine.assetsRoot` 的设置值(支持 `${workspaceFolder}`);def 侧布局不再是配置项(由 `kbengine.assetsRoot` 计算,见上);
 2. **约定路径**:引擎/官方资产固定布局,如 `entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`;
 3. **有界深扫描**:约定全 miss 时扫工作区找锚点(目录名 `entity_defs`、文件名 `entities.xml`/`types.xml`/`messages_fixed.xml`/`messages_fixed_defaults.xml`(批129 双名)、引擎源码锚点 `entitydef.cpp`/`entity_table_mysql.cpp`),限深 7 层、限 2 万条目,剪掉 `node_modules`/`.git`/`out`/`dist`/点目录,结果按工作区缓存;
 4. **唯一命中即用,多候选不猜**:同步读路径只认唯一命中——多个候选时宁缺勿猜(猜测会连带改写 interfaces/components/user_type 全套根目录),改由激活期弹**一次** quick pick 让你选,选择按工作区记忆(`workspaceState`),之后不再询问。
@@ -751,8 +743,8 @@ AI 面的工作方式:
 
 | 配置项 | 现在怎么用 | 能否自动发现 | 处置 |
 | --- | --- | --- | --- |
-| `kbengine.entityDefsPath` | 显式配置 → 约定 4 布局 → 深扫描唯一命中 → 多候选 quick pick 记忆 | **能**(约定布局 + 深扫描) | **自动发现**,配置只作覆盖 |
-| `kbengine.entitiesXmlPath` | 同上链;另优先取 def 根同父目录 | **能** | **自动发现**,配置只作覆盖 |
+| `kbengine.entityDefsPath` | **已删(2026-11-23)**:按 `{assetsRoot}/scripts/entity_defs` 计算 | **能**(由 assetsRoot 推导) | **删除**;引擎固定布局无需按目录设配置 |
+| `kbengine.entitiesXmlPath` | **已删(2026-11-23)**:按 `{assetsRoot}/scripts/entities.xml` 计算 | **能** | **删除**;同上 |
 | `kbengine.binPath` | 显式配置(权威;显式值不在盘也保留,交启动检查链报)→ 默认 `${workspaceFolder}/kbe/bin/server` 在盘即用(CFG-01)→ 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量;全落空返回空串由启动检查链报警 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |

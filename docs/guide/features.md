@@ -201,7 +201,7 @@ Command details in [Commands and Panels](./commands.md); config keys and variabl
 - Definition form wizard (batch 139, inventory G7): beyond the entity wizard, generates one form per run — proxy (a Proxy def under `proxy_defs/` whose `Parent` points at the same-named Proxy), space (registers `hasBase` + `hasCell` in `entities.xml`), component (a def under `components/`, optionally mounting a `COMPONENT` property at the end of the entity's `<Properties>` block), fixed-dict type (written into `types.xml`). Existing files are not overwritten by default; duplicate registrations and malformed structures are reported plainly rather than force-inserted
 
 Notes:
-the generator is affected by the `kbengine.generator.*` and `kbengine.entitiesXmlPath` settings; the client entity SDK by `kbengine.clientSdk.outputDir`.
+the generator is affected by the `kbengine.generator.*` settings and writes `entities.xml` to the fixed `{assetsRoot}/scripts/entities.xml` location; the client entity SDK by `kbengine.clientSdk.outputDir`.
 
 ## Performance Analysis
 

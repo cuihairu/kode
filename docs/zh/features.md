@@ -482,10 +482,10 @@
 | `kbengine.semanticTokens.enabled` | `false` | Python 结构符号语义 token(class/function/method/parameter 名,跨行 def 签名同收且形参 span 落各自所在行,装饰器 macro,declaration/async 修饰;决策核与 Rust golden 对拍同源)。默认关闭——Python 语义高亮通常由 Pylance 提供,RUST-148 冲突矩阵裁定前按需开启 |
 | `kbengine.domainMarkers.enabled` | `false` | 可选试点(KODE-SYN-005):给**已解析**的 KBEngine 符号出轻量编辑器装饰,四面——def 声明命中的 `self.<属性>` 访问、`self.base/cell/client.<RPC>` 接收者调用(段闸分辨同名跨段,绝不按名字猜)、entity 脚本类体上声明且命中 36 条生命周期钩子表的 def 方法、索引里有真实写点的数据字典键;未解析接收者/属性与首扫未就绪一律零装饰不猜。装饰层叠在 Pylance 之上,不占用 semantic token 命名空间,RUST-148 默认关闭决策不受影响 |
 | `kbengine.inlayHints.propertyShadow` | `true` | 淡色内嵌提示(永不下划线):`self.y = self.cellData["x"]` 赋值行与裸的域外读取处渲染「复制属性 x: <类型> · <域位>」;`self.cellData["key"]` 访问后渲染 key 的 def 面(域位不含 cell 追加「不在 cellData」);受 `kbengine.propertyDirectionDiagnostics` 双控 |
-| `kbengine.entityDefsPath` | `"scripts/entity_defs"` | 实体定义文件默认路径 |
+| (已删) `kbengine.entityDefsPath` | — | 2026-11-23 删除:按 `{assetsRoot}/scripts/entity_defs` 计算(引擎固定布局) |
 | `kbengine.configData` | object（见配置指南） | 配置数据保护:Excel 生成的配置绑定/类在 `reload*`/`hotUpdate*` 热更入口与 `mutationExclude` 白名单之外的写点出意外写诊断(`kbengine.configDataMutation`),配置名悬停出直读 schema 类型;仅在 KBEngine 工作区激活 |
 | `kbengine.configData.schemas` | object（见配置指南） | 配置管理器对象(`config.getXXX()` / `config[key]`)的声明式类型:管理器表达式 → 表键集合(`keys`)+ 可选 Excel/配置类 `source`,由存根生成器消费,提示类型来自你的声明而非推断;畸形条目逐条跳过 |
-| `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | entities.xml 默认路径 |
+| (已删) `kbengine.entitiesXmlPath` | — | 2026-11-23 删除:按 `{assetsRoot}/scripts/entities.xml` 计算 |
 | `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR}。未显式配置时（CFG-01）默认值在盘即生效，不在盘回落自动发现扫描，扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | `""` | KBEngine 资产根（其下应有 res/server/kbengine.xml 与 scripts/）；留空走约定路径与深扫描自动发现 |
 | `kbengine.jumpLog` | `false` | 跳转决策路径日志打到 KBEngine Navigation 输出通道（关 = 零开销） |

@@ -16,7 +16,7 @@ Kode 内置实体代码生成器，用来快速创建 `.def` 和配套 Python �
 
 - 是否生成 Python 取决于 `kbengine.generator.generatePython`
 - 是否写入 `entities.xml` 取决于 `kbengine.generator.registerInEntitiesXml`
-- `entities.xml` 的目标位置会读取 `kbengine.entitiesXmlPath`
+- `entities.xml` 的目标位置固定为 `{assetsRoot}/scripts/entities.xml`（2026-11-23 起无 `kbengine.entitiesXmlPath` 配置项，由 `kbengine.assetsRoot` 计算）
 
 ## 相关命令
 

@@ -19,12 +19,9 @@ Kode provides an entity dependency graph for viewing entity inheritance structur
 
 ## Configuration
 
-The dependency graph reads these settings:
+The dependency graph reads the fixed layouts `{assetsRoot}/scripts/entities.xml` and `{assetsRoot}/scripts/entity_defs` (no per-directory settings since 2026-11-23 — the engine only loads these fixed locations; `kbengine.assetsRoot` computes both).
 
-- `kbengine.entitiesXmlPath`
-- `kbengine.entityDefsPath`
-
-If your project does not keep entity files under the default `scripts/` directory: unconfigured paths go through auto-discovery (explicit convention paths → bounded deep-scan fallback), and explicit configuration only overrides; when neither locates them, the failure is reported honestly instead of silently missing nodes.
+If the graph cannot locate them, the failure is reported honestly (discovery report/launch chain) instead of silently missing nodes.
 
 ## What the Graph Shows
 

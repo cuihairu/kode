@@ -182,9 +182,9 @@ ENTITY_CLIENT_DATA_FLAGS`,`entitydef.cpp:686-743`),并
 client}/<Name>.py` 同名类。
 
 - **D1 索引入口与路径发现**:入口文件 = 工作区内 entities.xml。发现顺序:
-  既有 `getDefinitionWorkspaceLayout` 的 entitiesXmlPath 候选
-  (src/definitionWorkspace.ts,现役逻辑)→ `findFiles('**/entities.xml')`
-  兜底。源码依据:entities.xml 恒在 `<userScripts>` 根
+  既有 `getDefinitionWorkspaceLayout` 的固定布局计算(2026-11-23 起
+  entitiesXmlPath 无配置项,`{assetsRoot}/scripts/entities.xml`,
+  src/definitionWorkspace.ts 现役逻辑)→ `findFiles('**/entities.xml')` 兜底。源码依据:entities.xml 恒在 `<userScripts>` 根
   (`resmgr.cpp:489-503`;`entitydef.cpp:176`;`scriptdef_module.cpp:345`),
  kode 无法拿到引擎资源根,只能按工作区形态枚举候选。
 - **D2 解析时机与缓存**:惰性首用构建(首次导航/补全/explorer 请求触发),

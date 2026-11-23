@@ -193,9 +193,10 @@ symbols in isolation and instead follow the same chain as the engine: entities.x
 same-named classes in `scripts/{base,cell, client}/<Name>.py`.
 
 - **D1 Index entry point and path discovery**: the entry file = the entities.xml inside the
-  workspace. Discovery order: the existing `getDefinitionWorkspaceLayout` entitiesXmlPath
-  candidates (src/definitionWorkspace.ts, the logic currently in force) →
-  `findFiles('**/entities.xml')` as a fallback. Source evidence: entities.xml always sits at the
+  workspace. Discovery order: the existing `getDefinitionWorkspaceLayout` fixed-layout
+  computation (since 2026-11-23 entitiesXmlPath has no setting; `{assetsRoot}/scripts/entities.xml`,
+  src/definitionWorkspace.ts, the logic currently in force) → `findFiles('**/entities.xml')` as a
+  fallback. Source evidence: entities.xml always sits at the
   `<userScripts>` root (`resmgr.cpp:489-503`; `entitydef.cpp:176`;
   `scriptdef_module.cpp:345`); kode cannot obtain the engine's resource root, so it can only
   enumerate candidates by the workspace's shape.

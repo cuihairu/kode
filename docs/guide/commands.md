@@ -1292,7 +1292,7 @@ The flow graph panel supports:
   - The three def-tree anchors (entity_defs / entities.xml / types.xml) and derived directories (interfaces / components): the final values in use and their sources (explicit config / remembered choice / convention chain / deep scan / first fallback candidate), the explicit config's original value and existence, convention-chain hits and misses, deep-scan hits, remembered choices
   - Assets root `kbengine.assetsRoot` (validated against the engine-loading probe `res/server/kbengine.xml`; since batch 129 the convention chain includes first-level `*_assets` directories like `flyff_assets`, and a hit is still accepted only by probe) and engine binary `kbengine.binPath` (including kbe source-root auto-detection), plus the engine message tables (batch 129 dual names: the user copy `messages_fixed.xml` and the default `messages_fixed_defaults.xml`, four priority levels aligned with the engine loading order — workspace user copy → engine source-root user copy → workspace default → engine source-root default; an assets-only workspace having neither is normal, the report marks it `informational` and counts no problem; only when an engine source root is found yet both copies are missing is a problem reported)
   - Bounded deep-scan metadata: entries visited, whether the cap truncated the scan (truncation is flagged 「命中集可能不全」 — the hit set may be incomplete)
-  - A problem list: each item with a one-line remedy suggestion (missing entities.xml → points at `kbengine.entitiesXmlPath`; assets root missing the probe file → points at the expected shape, etc.)
+  - A problem list: each item with a one-line remedy suggestion (missing entities.xml → points at `kbengine.assetsRoot` and the fixed `scripts/` layout; assets root missing the probe file → points at the expected shape, etc.)
 - Behavior:
   - With no workspace open it warns instead of spinning
   - With problems present it pops a warning pointing at the OUTPUT panel; when all is well, an info notice
@@ -1764,10 +1764,10 @@ The log protocol adaptation is not finished yet; when the watcher is unresponsiv
 
 Yes. Many commands read `kbengine.*` settings, for example:
 
-- Entity navigation reads `kbengine.entityDefsPath`
+- Entity navigation reads the fixed layout `{assetsRoot}/scripts/entity_defs` (no per-directory setting since 2026-11-23)
 - Server start reads `kbengine.autoStart`
 - The log panel reads `kbengine.loggerPort`
-- The dependency graph reads `kbengine.entitiesXmlPath` and `kbengine.entityDefsPath`
+- The dependency graph reads the fixed layouts `{assetsRoot}/scripts/entities.xml` and `{assetsRoot}/scripts/entity_defs` (no per-directory settings since 2026-11-23)
 - The generators read `kbengine.generator.*`
 
 Debugging is the exception. Local attach no longer reads the old `kbengine.pythonPath`, `kbengine.debugPort`, `kbengine.autoAttachDebug`; `.kbengine/debug.json` serves only `Start Debugging`'s instructions and `pathMappings`, and does not participate in telnet probing/panel/status lights. Remote attach (`kbengine.debug.attachRemote`) takes its target list from the setting `kbengine.debug.remoteTargets`.

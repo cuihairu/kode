@@ -1167,7 +1167,7 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
   - 三个 def 树锚点（entity_defs / entities.xml / types.xml）与派生目录（interfaces / components）：最终取用值及来源（显式配置 / 记忆选择 / 约定链 / 深扫描 / 回落候选首项）、显式配置原值与存在性、约定链命中与未命中、深扫描命中、记忆选择
   - 资产根 `kbengine.assetsRoot`（按引擎装载口径验 `res/server/kbengine.xml`，批129 起约定链含工作区一级 `*_assets` 目录如 `flyff_assets`，命中仍以探针验收）与引擎二进制 `kbengine.binPath`（含 kbe 源码根自动检测）、引擎消息表（批129 双名：用户副本 `messages_fixed.xml` 与缺省 `messages_fixed_defaults.xml`，四级优先级对齐引擎装载序——工作区用户副本 → 引擎源码根用户副本 → 工作区缺省 → 引擎源码根缺省；纯资产工作区两者皆无为常态，报告标 `informational` 不计入问题，只有找到引擎源码根却两份皆缺才报问题）
   - 有界深扫描元信息：访问条目数、是否触顶截断（截断即标注「命中集可能不全」）
-  - 问题清单：每项附一句补救建议（缺 entities.xml → 指 `kbengine.entitiesXmlPath`；资产根缺探针文件 → 指期望形态等）
+  - 问题清单：每项附一句补救建议（缺 entities.xml → 指 `kbengine.assetsRoot` 与固定 `scripts/` 布局；资产根缺探针文件 → 指期望形态等）
 - 行为：
   - 未打开工作区时警告提示，不空转
   - 存在问题时弹警告指路 OUTPUT 面板；全部正常时信息提示
@@ -1533,10 +1533,10 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 
 支持。很多命令会读取 `kbengine.*` 设置，例如：
 
-- 实体导航读取 `kbengine.entityDefsPath`
+- 实体导航读取固定布局 `{assetsRoot}/scripts/entity_defs`(2026-11-23 起无按目录配置项)
 - 服务器启动读取 `kbengine.autoStart`
 - 日志面板读取 `kbengine.loggerPort`
-- 依赖图读取 `kbengine.entitiesXmlPath` 和 `kbengine.entityDefsPath`
+- 依赖图读取固定布局 `{assetsRoot}/scripts/entities.xml` 与 `{assetsRoot}/scripts/entity_defs`(2026-11-23 起无按目录配置项)
 - 生成器读取 `kbengine.generator.*`
 
 调试流程是例外。本地附加不再读取旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug`；`.kbengine/debug.json` 只服务 `Start Debugging` 的提示语与 `pathMappings`，不参与 telnet 探测/面板/状态灯。远程附加（`kbengine.debug.attachRemote`）的目标列表来自设置 `kbengine.debug.remoteTargets`。

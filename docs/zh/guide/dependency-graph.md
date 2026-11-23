@@ -19,12 +19,9 @@ Kode 提供实体依赖关系图，用于查看实体继承结构和实体间引
 
 ## 配置联动
 
-依赖图会读取这些配置：
+依赖图读取固定布局 `{assetsRoot}/scripts/entities.xml` 与 `{assetsRoot}/scripts/entity_defs`（2026-11-23 起无按目录配置项——引擎只从这些固定位置装载，两处均由 `kbengine.assetsRoot` 计算）。
 
-- `kbengine.entitiesXmlPath`
-- `kbengine.entityDefsPath`
-
-如果你的项目没有把实体文件放在默认的 `scripts/` 目录下，未配置走自动发现（显式约定路径 → 有界深扫描兜底），显式配置只作覆盖；两者都定位不到时如实提示，不静默缺节点。
+定位不到时如实提示（发现报告/启动检查链），不静默缺节点。
 
 ## 图中展示内容
 

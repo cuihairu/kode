@@ -198,7 +198,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 定义形态向导（批139，盘点 G7）：实体向导之外一次生成一种形态——代理（`proxy_defs/` 下的 Proxy def，`Parent` 指向同名 Proxy）、空间（`entities.xml` 登记 `hasBase` + `hasCell`）、组件（`components/` 下 def，可选往实体 `<Properties>` 段末挂一条 `COMPONENT` 属性）、固定字典类型（写入 `types.xml`）。已存在的文件默认不覆盖，重复登记与结构异常都如实说明不硬插
 
 说明：
-生成器会受 `kbengine.generator.*` 和 `kbengine.entitiesXmlPath` 配置影响；客户端实体 SDK 受 `kbengine.clientSdk.outputDir` 影响。
+生成器受 `kbengine.generator.*` 配置影响，`entities.xml` 写入固定位置 `{assetsRoot}/scripts/entities.xml`；客户端实体 SDK 受 `kbengine.clientSdk.outputDir` 影响。
 
 ## 性能分析
 

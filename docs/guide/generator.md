@@ -16,7 +16,7 @@ In particular:
 
 - Whether Python is generated depends on `kbengine.generator.generatePython`
 - Whether `entities.xml` is written depends on `kbengine.generator.registerInEntitiesXml`
-- The target location of `entities.xml` reads `kbengine.entitiesXmlPath`
+- The target location of `entities.xml` is fixed at `{assetsRoot}/scripts/entities.xml` (no `kbengine.entitiesXmlPath` setting since 2026-11-23; computed from `kbengine.assetsRoot`)
 
 ## Related Commands
 
