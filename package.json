@@ -2392,6 +2392,13 @@
             },
             "markdownDescription": "%kbengine.config.hotReload.globs.description%"
           },
+          "kbengine.hotReload.pathAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "markdownDescription": "%kbengine.config.hotReload.pathAllowlist.description%"
+          },
           "kbengine.hotReload.sendViaProviders": {
             "type": "boolean",
             "default": false,

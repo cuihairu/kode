@@ -126,6 +126,8 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
       onTargetChanged?: (handler: () => void) => { dispose(): void };
       /** RUST-337 路径拒绝表(拒绝优先于根许可) */
       denylist?: string[];
+      /** RUST-337 路径许可表(非空=只收表内;拒绝优先于许可) */
+      pathAllowlist?: string[];
     } = {}
   ): {
     clock: ReturnType<typeof makeTimers>;
@@ -142,7 +144,8 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
         debounceMs: 100,
         // 本文件专测磁盘面:一律显式选中 onDiskChange(缺省 onSave 不建,另行钉)
         triggerMode: options.triggerMode ?? 'onDiskChange',
-        ...(options.denylist !== undefined ? { denylist: options.denylist } : {})
+        ...(options.denylist !== undefined ? { denylist: options.denylist } : {}),
+        ...(options.pathAllowlist !== undefined ? { pathAllowlist: options.pathAllowlist } : {})
       }
     });
     const clock = makeTimers();
@@ -466,6 +469,43 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(plain.clock.tick()).toBe(2);
     await flush();
     expect(plain.runCalls).toEqual(['热更']);
+  });
+
+  it('RUST-337 路径许可表:配置里 pathAllowlist 随装配进过滤层,表外路径在 save/磁盘两面均如实不进', async () => {
+    const { clock, diagnostics, runCalls } = boot({
+      pathAllowlist: ['/ws/scripts/base']
+    });
+    // save 面(显式 globs watcher)的表外路径:装配闸直接拦下,不进链(无定时排起)
+    allFileSystemWatchers[0].fireChange({ fsPath: '/ws/scripts/other/Avatar.py' } as never);
+    expect(clock.tick()).toBe(0);
+    expect(runCalls).toEqual([]);
+    // 磁盘面的表外路径:纯核过滤拦下(与空路径同口径,记 filtered 诊断)
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/other/Avatar.py' } as never);
+    expect(clock.tick()).toBe(0);
+    expect(runCalls).toEqual([]);
+    expect(diagnostics.map(diagnostic => diagnostic.type)).toEqual(['watch-created', 'filtered']);
+
+    // 表内路径照常进链触发动作
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/base/Avatar.py' } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+  });
+
+  it('RUST-337 控制面豁免:路径拒绝表不拦热更配置文件(闸只作用于脚本)', async () => {
+    const { clock } = boot({
+      denylist: ['/ws/scripts'],
+      pathAllowlist: ['/ws/generated']
+    });
+    // types.xml 既在拒绝表内又不在许可表内,但它是控制面(用户规则/类型表)→
+    // 不被路径闸拦:排起去抖窗即证明进了流水线(本 harness 未注入 readFileContent,
+    // 发送阶段的配置内容闸另行保守拦,不在本例断言)
+    allFileSystemWatchers[0].fireChange({ fsPath: '/ws/scripts/types.xml' } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    // 同拒绝表下的脚本照被路径闸拦下(豁免只给配置文件,无定时排起)
+    allFileSystemWatchers[0].fireChange({ fsPath: '/ws/scripts/Avatar.py' } as never);
+    expect(clock.tick()).toBe(0);
   });
 
   it('配置关:apply 重建拆磁盘面(旧 watcher 失效,不建新面)(HR-WATCH-005)', async () => {

@@ -118,6 +118,7 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: [],
       globsSpec: 'unset',
       denylist: [],
+      pathAllowlist: [],
       debounceMs: 500,
       triggerMode: 'onSave',
       stabilityWindowMs: 0,
@@ -149,6 +150,7 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: ['**/*.py', '**/*.def'],
       globsSpec: 'explicit',
       denylist: [],
+      pathAllowlist: [],
       debounceMs: 0,
       triggerMode: 'onSave',
       stabilityWindowMs: 0,
@@ -177,6 +179,7 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: [],
       globsSpec: 'unset',
       denylist: [],
+      pathAllowlist: [],
       debounceMs: 500,
       triggerMode: 'onSave',
       stabilityWindowMs: 0,
@@ -211,6 +214,7 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: ['**/*.def'],
       globsSpec: 'explicit',
       denylist: [],
+      pathAllowlist: [],
       debounceMs: 500,
       triggerMode: 'onSave',
       stabilityWindowMs: 0,
@@ -229,6 +233,7 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: [],
       globsSpec: 'explicit',
       denylist: [],
+      pathAllowlist: [],
       debounceMs: 500,
       triggerMode: 'onSave',
       stabilityWindowMs: 0,
@@ -239,6 +244,16 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       allowRootLevelStem: false,
       notify: 'errors'
     });
+  });
+
+  it('RUST-337 pathAllowlist 容忍式读取:非数组/非字符串项剔除,合法项保留,未写=空表', () => {
+    expect(
+      readHotReloadSettings(readerOf({ pathAllowlist: ['/ws/scripts/base', 7, '', '  /ws/scripts/other  '] }))
+    ).toMatchObject({ pathAllowlist: ['/ws/scripts/base', '/ws/scripts/other'] });
+    expect(readHotReloadSettings(readerOf({ pathAllowlist: 'not-an-array' }))).toMatchObject({
+      pathAllowlist: []
+    });
+    expect(readHotReloadSettings(readerOf({})).pathAllowlist).toEqual([]);
   });
 
   it('流水线注入面四键(HR-WATCH-007/012/013/016):容忍式读取,类型错/负值回落默认', () => {

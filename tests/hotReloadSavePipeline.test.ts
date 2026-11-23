@@ -644,6 +644,52 @@ describe('HR-WATCH-004 isWatchableScriptFile(纯词法过滤,零 IO)', () => {
     // 空表 = 行为逐字不变(无根集合时全收)
     expect(isWatchableScriptFile('/ws/scripts/generated/Avatar.py', { denyPaths: [] })).toBe(true);
   });
+
+  it('RUST-337 路径许可表:非空即只收表内(严格前缀+整段边界,拒绝优先于许可)', () => {
+    const options = { allowPaths: ['/ws/scripts/base'] };
+    expect(isWatchableScriptFile('/ws/scripts/base/Avatar.py', options)).toBe(true);
+    // 表外即不收(即使无根集合限制)
+    expect(isWatchableScriptFile('/ws/scripts/other/Avatar.py', options)).toBe(false);
+    // 整段边界:/ws/scripts/base2 不被 /ws/scripts/base 许可
+    expect(isWatchableScriptFile('/ws/scripts/base2/Avatar.py', options)).toBe(false);
+    // 许可表自身路径(目录非 .py,本就不收;此处钉许可语义不抬枪)
+    expect(isWatchableScriptFile('/ws/scripts/base', options)).toBe(false);
+    // 拒绝优先于许可:同文件既在许可表又在拒绝表=拒绝
+    expect(
+      isWatchableScriptFile('/ws/scripts/base/gen/Avatar.py', {
+        allowPaths: ['/ws/scripts/base'],
+        denyPaths: ['/ws/scripts/base/gen']
+      })
+    ).toBe(false);
+    expect(
+      isWatchableScriptFile('/ws/scripts/base/Avatar.py', {
+        allowPaths: ['/ws/scripts/base'],
+        denyPaths: ['/ws/scripts/base/gen']
+      })
+    ).toBe(true);
+    // 与根许可同用:根内且许可内才收
+    expect(
+      isWatchableScriptFile('/ws/scripts/base/Avatar.py', { roots: ['/ws/scripts'], allowPaths: ['/ws/scripts/base'] })
+    ).toBe(true);
+    expect(
+      isWatchableScriptFile('/ws/other/Avatar.py', { roots: ['/ws/scripts'], allowPaths: ['/ws/scripts'] })
+    ).toBe(false);
+    // Windows 形态与许可表走同一 canonical 化
+    expect(
+      isWatchableScriptFile('c:\\ws\\scripts\\base\\A.py', {
+        roots: ['c:/ws/scripts'],
+        allowPaths: ['c:/ws/scripts/base']
+      })
+    ).toBe(true);
+    expect(
+      isWatchableScriptFile('c:\\ws\\scripts\\other\\A.py', {
+        roots: ['c:/ws/scripts'],
+        allowPaths: ['c:/ws/scripts/base']
+      })
+    ).toBe(false);
+    // 空表 = 不限(行为逐字不变)
+    expect(isWatchableScriptFile('/ws/scripts/other/Avatar.py', { allowPaths: [] })).toBe(true);
+  });
 });
 
 describe('HR-WATCH-017 诊断事件(全量可注入观察)', () => {

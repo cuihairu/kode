@@ -131,6 +131,9 @@ export interface HotReloadSettings {
   readonly globsSpec: HotReloadGlobsSpec;
   /** RUST-337 路径拒绝表(严格前缀+整段边界,拒绝优先于根许可);未写=空表 */
   readonly denylist: string[];
+  /** RUST-337 路径许可表(严格前缀+整段边界;非空=只收表内,空表=不限);
+   * 拒绝优先于许可;未写=空表 */
+  readonly pathAllowlist: string[];
   readonly debounceMs: number;
   /** HR-WATCH-001 触发源模式:onSave(默认推荐,watcher 写盘事件)/
    *  onDiskChange(另建按根磁盘监视,外部改动/生成/Git checkout 进同一链) */
@@ -219,12 +222,21 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
         .map(item => item.trim())
         .filter(item => item.length > 0)
     : [];
+  // RUST-337 pathAllowlist 同 denylist 容忍式口径(非数组/非字符串项剔除)
+  const pathAllowlistRaw = reader.get<unknown>('pathAllowlist', undefined);
+  const pathAllowlist = Array.isArray(pathAllowlistRaw)
+    ? pathAllowlistRaw
+        .filter((item): item is string => typeof item === 'string')
+        .map(item => item.trim())
+        .filter(item => item.length > 0)
+    : [];
   return {
     enabled: typeof enabled === 'boolean' ? enabled : true,
     actionName: typeof actionName === 'string' ? actionName : '',
     globs,
     globsSpec,
     denylist,
+    pathAllowlist,
     debounceMs:
       typeof debounceMs === 'number' && debounceMs >= 0 ? debounceMs : HOT_RELOAD_DEFAULT_DEBOUNCE_MS,
     // 容忍式:枚举外的写法(含写坏类型)一律回落默认 onSave,不猜半态
@@ -1776,6 +1788,7 @@ export function setupHotReload(
       inputs.settings.globs,
       inputs.settings.globsSpec,
       inputs.settings.denylist,
+      inputs.settings.pathAllowlist,
       inputs.workspaceRoot,
       inputs.assetsRoot
     ]);
@@ -1894,9 +1907,25 @@ export function setupHotReload(
       const canonical = canonicalizeScriptFilePath(fsPath);
       return denyRoots.some(deny => canonical === deny || canonical.startsWith(`${deny}/`));
     };
+    // RUST-337 路径许可表(同 denylist 口径:装配期 canonical 化一次,严格
+    // 前缀+整段边界);非空=只收表内,空表=不限。拒绝优先于许可。
+    const allowRoots = settings.pathAllowlist
+      .map(path => canonicalizeScriptFilePath(path))
+      .filter(path => path.length > 0);
+    const isAllowedPath = (fsPath: string): boolean => {
+      if (allowRoots.length === 0) {
+        return true;
+      }
+      const canonical = canonicalizeScriptFilePath(fsPath);
+      return allowRoots.some(allow => canonical === allow || canonical.startsWith(`${allow}/`));
+    };
     const scheduleHot = (uri: vscode.Uri): void => {
-      if (isDeniedPath(uri.fsPath)) {
-        return;
+      // 热更配置文件是控制面(用户规则/实体定义),永不被路径规则拦——否则
+      // 一条 deny 手误锁死用户自己的规则(控制面豁免)。脚本才走路径闸。
+      if (!isHotReloadConfigFile(uri.fsPath)) {
+        if (isDeniedPath(uri.fsPath) || !isAllowedPath(uri.fsPath)) {
+          return;
+        }
       }
       // HOT-VER:watcher 热更域事件(.py/.def,含 create/change/delete)→ 版本簿
       // 采样(建档/跳号);与手动触发路径共用同一台账。域外文件不入台账。
@@ -1978,10 +2007,11 @@ export function setupHotReload(
           ? { onDiagnostic: options.diskWatch.onDiagnostic }
           : {}),
         // HR-WATCH-004 深层防御:watcher 模式管根界,过滤层再拦排除目录/备份名
-        // RUST-337 路径拒绝表(拒绝优先于根许可)同注入过滤层
+        // RUST-337 路径拒绝表/许可表(拒绝优先于许可)同注入过滤层
         filterOptions: {
           roots: watchRoots.map(root => canonicalizeScriptFilePath(root)),
-          denyPaths: inputs.settings.denylist
+          denyPaths: inputs.settings.denylist,
+          allowPaths: inputs.settings.pathAllowlist
         }
       });
       diskWatch.watchRoots(watchRoots);

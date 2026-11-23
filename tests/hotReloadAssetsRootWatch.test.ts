@@ -257,6 +257,7 @@ describe('readHotReloadSettings globs 口径', () => {
       globs: [],
       globsSpec: 'unset',
       denylist: [],
+      pathAllowlist: [],
       debounceMs: 500,
       triggerMode: 'onSave',
       stabilityWindowMs: 0,

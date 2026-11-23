@@ -180,6 +180,10 @@ export interface WatchableFileOptions {
    * canonical 化;拒绝优先于根许可——同文件既在许可根又在拒绝表=拒绝);
    * 缺省=空表(行为逐字不变)。 */
   readonly denyPaths?: readonly string[];
+  /** RUST-337 路径许可表:给出即只收表内文件(严格前缀+整段边界,与
+   * denyPaths/roots 同 canonical 化;拒绝优先于许可——同文件既在拒绝表
+   * 又在许可表=拒绝;空表=不限,行为逐字不变);缺省=空表。 */
+  readonly allowPaths?: readonly string[];
 }
 
 /**
@@ -210,13 +214,20 @@ export function isWatchableScriptFile(fsPath: string, options: WatchableFileOpti
     }
   }
   const roots = (options.roots ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
-  // RUST-337 路径拒绝表与根许可同 canonical 化同整段边界;拒绝优先。
+  // RUST-337 路径拒绝表/许可表与根许可同 canonical 化同整段边界;拒绝优先。
   const denyPaths = (options.denyPaths ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
-  if (denyPaths.length === 0 && roots.length === 0) {
+  const allowPaths = (options.allowPaths ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
+  if (denyPaths.length === 0 && roots.length === 0 && allowPaths.length === 0) {
     return true;
   }
   const canonical = canonicalizeScriptFilePath(posix);
   if (denyPaths.some(deny => canonical === deny || canonical.startsWith(`${deny}/`))) {
+    return false;
+  }
+  if (
+    allowPaths.length > 0 &&
+    !allowPaths.some(allow => canonical === allow || canonical.startsWith(`${allow}/`))
+  ) {
     return false;
   }
   if (roots.length === 0) {
