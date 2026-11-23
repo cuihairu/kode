@@ -1766,7 +1766,7 @@ Yes. Many commands read `kbengine.*` settings, for example:
 
 - Entity navigation reads the fixed layout `{assetsRoot}/scripts/entity_defs` (no per-directory setting since 2026-11-23)
 - Server start reads `kbengine.autoStart`
-- The log panel reads `kbengine.loggerPort`
+- The log panel connects to port 20022 (a hidden `kbengine.loggerPort` override still applies; the setting was retired from declared settings on 2026-11-23)
 - The dependency graph reads the fixed layouts `{assetsRoot}/scripts/entities.xml` and `{assetsRoot}/scripts/entity_defs` (no per-directory settings since 2026-11-23)
 - The generators read `kbengine.generator.*`
 

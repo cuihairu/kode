@@ -29,10 +29,6 @@ Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查�
 
 ## 相关配置
 
-### `kbengine.loggerPort`
-
-控制 logger 连接端口，默认 `20022`。
-
 ### `kbengine.logAutoConnect`
 
 启动服务器时是否自动连接日志端口。

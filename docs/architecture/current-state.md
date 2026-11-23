@@ -394,7 +394,7 @@
   component start/stop/restart). All inside the extension host process; no
   resident Core subprocess.
 - 【Fact】log: logHub.ts in-process EventEmitter batching (onBatch), sha256
-  fingerprint dedupe (:101), receives the port from loggerPort config;
+  fingerprint dedupe (:101), receives the port from the loggerPort hidden override (default 20022, no longer a declared setting since 2026-11-23);
   logWebView/monitoringWebView are webview surfaces. Log collection is the
   TCP/port-receiver shape, with connection lifecycle tied to the
   logAutoConnect configuration.

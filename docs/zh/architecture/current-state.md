@@ -171,7 +171,7 @@
 ## AUDIT-011 运行时边界(log/terminal/HTTP/telnet/watcher)
 
 - 【事实】进程:processManager.ts(child_process.spawn,进程表跟踪,SIGTERM→SIGKILL 降级)与 serverManager.ts(KBEngine 组件 start/stop/restart)。全部在扩展宿主进程内,无常驻 Core 子进程。
-- 【事实】log:logHub.ts 进程内 EventEmitter 批处理(onBatch),sha256 指纹去重(:101),loggerPort 配置接收端口;logWebView/monitoringWebView 为 webview 面。日志采集为 TCP/端口接收形态,连接生命周期与 logAutoConnect 配置联动。
+- 【事实】log:logHub.ts 进程内 EventEmitter 批处理(onBatch),sha256 指纹去重(:101),loggerPort 隐藏覆盖接收端口(默认 20022,2026-11-23 起不再声明为配置项);logWebView/monitoringWebView 为 webview 面。日志采集为 TCP/端口接收形态,连接生命周期与 logAutoConnect 配置联动。
 - 【事实】telnet:telnetClient.ts `net.connect` + SocketFactory 注入,状态机(connecting 等),telnetService 定时探测(`kbengine.telnet.probeIntervalSeconds`,0=按元件 kbengine.xml `<telnet_service>` 段回落引擎 defaults/内置端口表);自动握手密码不落日志。
 - 【事实】HTTP:仅出站客户端(httpRequestService.ts,默认超时 10,000ms,响应预览截断 4,000 字符);无内置 HTTP 服务器。
 - 【事实】watcher 清单(createFileSystemWatcher/onDidSave):entityMapping.ts×3(types.xml/alias.xml/实体文件失效联动)、extension.ts×3、hotReload.ts×1、pythonTypeStubs.ts×1(**/types.xml)、workspaceIndex.ts×1(py glob)、languageProviders.ts×1、debugConfig.ts×1。hotReload 显式 dispose/重建;其余经 subscriptions 释放。

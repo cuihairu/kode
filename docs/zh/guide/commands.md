@@ -1535,7 +1535,7 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 
 - 实体导航读取固定布局 `{assetsRoot}/scripts/entity_defs`(2026-11-23 起无按目录配置项)
 - 服务器启动读取 `kbengine.autoStart`
-- 日志面板读取 `kbengine.loggerPort`
+- 日志面板连接 20022 端口(隐藏 `kbengine.loggerPort` 覆盖仍生效;该键 2026-11-23 起不再声明为配置项)
 - 依赖图读取固定布局 `{assetsRoot}/scripts/entities.xml` 与 `{assetsRoot}/scripts/entity_defs`(2026-11-23 起无按目录配置项)
 - 生成器读取 `kbengine.generator.*`
 

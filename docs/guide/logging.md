@@ -29,10 +29,6 @@ See [Commands and Panels](./commands.md) for command details.
 
 ## Related Configuration
 
-### `kbengine.loggerPort`
-
-The logger connection port, default `20022`.
-
 ### `kbengine.logAutoConnect`
 
 Whether to auto-connect to the log port when starting the server.

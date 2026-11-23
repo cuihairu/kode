@@ -15,7 +15,7 @@ Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务�
 | 2 元件覆盖 | `kbengine.xml` | `kbengine.assetsRoot` 下的 `kbengine.xml` 与其 `res/server/kbengine.xml` 优先;未设或未命中时发现出的资产根(批128)参与;最后按约定路径探测工作区根:`kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`,取第一个存在的 |
 | 3 最终生效 | (合成,不落盘) | 第 1 层先载,第 2 层同键覆盖 |
 
-层的定位设置 `kbengine.binPath` 与 `kbengine.assetsRoot` 都是支持 VS Code 变量的目录:值先做变量展开(`${workspaceFolder}`/`${env:NAME}` 等),相对路径按工作区根拼接;展开为空串按「未配置」处理,照常走自动发现。
+层的定位设置 `kbengine.assetsRoot`(以及退役的二进制路径覆盖值,见下方退役注记)都是支持 VS Code 变量的目录:值先做变量展开(`${workspaceFolder}`/`${env:NAME}` 等),相对路径按工作区根拼接;展开为空串按「未配置」处理,照常走自动发现。
 
 覆盖口径:
 
@@ -197,12 +197,10 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | --- | --- | --- | --- |
 | `kbengine.configData` | object | `enabled: true`,3 个默认配置目录 glob、`*Config`/`*Data` 类名、`reload*`/`hotUpdate*` 热更入口、空 `mutationExclude` | 配置数据保护:配置绑定意外写诊断(`kbengine.configDataMutation`)+ 直读 schema 悬停;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
 | `kbengine.configData.schemas` | object | `{}`(未声明) | 配置管理器对象(`config.getXXX()` / `config[key]`)的声明式类型:管理器对象表达式 → 表键集合;生成存根读该声明而非推断;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
-| `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径。未显式配置时(CFG-01):默认值在盘即生效,不在盘回落自动发现扫描,扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现。Python/def 索引只扫 `{assetsRoot}/scripts`——详见下方 assetsRoot 细节 |
-| `kbengine.engineVersion` | string | `3.7.3` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此值做版本门控;`fork-` 前缀值还会对 fork 档 KBEngine API 参考条目抑制「需 fork」标注(补全与导出存根),自定义 fork 版本未带前缀则保留标注(保守口径——宁多提示不漏报);打开项目时若引擎安装目录版本标记与此值不同会给出设置建议(一键提供、绝不自动改、忽略按工作区记住) |
 | `kbengine.gitHistory.enabled` | boolean | `true` | 文件 Git 历史功能开关(IDE-GIT-001):开启时出现「查看文件历史 / 查看选中范围历史」入口(资源管理器/编辑器右键+命令面板),仅在用户点开入口时按需查询 Git(激活/打开文件/光标/选区变化绝不运行 Git,不预取不轮询);关闭后入口隐藏,直接调用命令也不运行任何 Git |
 
-其余路径项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」(`kbengine.engineVersion` 是版本门控值,不走路径发现)。`kbengine.entityDefsPath`/`kbengine.entitiesXmlPath` 已删(2026-11-23):引擎对这两处布局是钉死的(`entitydef.cpp:159/176-181` 只认 `{assets}/scripts` 之下的 `entities.xml`、`entity_defs/`、`types.xml`),目录固定就不设独立配置项——两处均由 `kbengine.assetsRoot` 计算。逐项细节:
+其余路径项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」。同日(2026-11-23)另有 4 项删除(读取面保留为隐藏覆盖,既有 `settings.json` 值继续生效):`kbengine.binPath`(二进制布局是引擎钉死的——`start_server.sh` 硬编码 `kbe/bin/server`,扩展经引擎根与自动发现推导)、`kbengine.engineVersion`(版本标记自动探测+项目向导预设,显式值仍生效)、`kbengine.loggerPort`(引擎 logger 的日志监听端口启动时才分配——引擎侧无 20022)、`kbengine.console.discoveryHost`(默认即 localhost-only;隐藏值保留作跨机逃生口)。引擎根默认探测(2026-11-23):自动补录/探测链(`kbengine.engineRoot`、profile `engineRoot`)只找两处——当前目录下有 `kbe` 引擎树,或上一层目录下有;都没查到就如实保持缺失,由 engine-missing 提示你配置 `kbengine.engineRoot`(不做多级向上递归,也不按目录名猜兄弟)。`kbengine.entityDefsPath`/`kbengine.entitiesXmlPath` 已删(2026-11-23):引擎对这两处布局是钉死的(`entitydef.cpp:159/176-181` 只认 `{assets}/scripts` 之下的 `entities.xml`、`entity_defs/`、`types.xml`),目录固定就不设独立配置项——两处均由 `kbengine.assetsRoot` 计算。逐项细节:
 
 #### def 侧固定布局(无配置项,由 `kbengine.assetsRoot` 计算)
 
@@ -210,15 +208,6 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 - 用途:实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出、依赖图读取与实体注册
 - `kbengine.assetsRoot` 未配置时资产根回落工作区根(demo 布局);扩展内的约定候选与深扫描兜底仍作解析辅助,发现报告对缺失布局照常报问题、补救指向 `kbengine.assetsRoot`
 - 误配:`kbengine.assetsRoot` 指错则实体浏览器为空
-
-#### `kbengine.binPath`
-
-- 类型:string;默认 `${workspaceFolder}/kbe/bin/server`(CFG-01:默认假设引擎在工作区自身内;旧默认 `${workspaceFolder}/../kbe/bin/server` 仍由兄弟目录扫描候选覆盖)
-- 支持占位符:`${workspaceFolder}`、`${env:VAR}`
-- 用途:① 启动/停止组件进程;② 推导引擎根(`KBE_ROOT`)与引擎默认配置路径——把路径末尾的 `kbe/bin/server` 换成 `kbe/res/server/kbengine_defaults.xml`
-- 三分支解析(CFG-01):用户显式配置值权威(显式值不在盘也原样保留,由启动检查链报警);未配置时默认值在盘即直接生效,不在盘回落自动发现扫描(引擎源码根锚点 → 兄弟目录 → `KBENGINE_HOME`),扫描也落空 `getBinPath` 返回空串,由启动检查链报「找不到引擎」
-- 误配:没指到 `kbe/bin/server` 这一级 → 服务器启动失败,最终配置视图和 defaults 数值回落也不可用;此时 `kbengine.config.showFinal` 会明示报错,激活自动打开则静默跳过
-- 引擎根默认探测(2026-11-23):自动补录/探测链(`kbengine.engineRoot`、profile `engineRoot`)只找两处——当前目录下有 `kbe` 引擎树,或上一层目录下有;都没查到就如实保持缺失,由 engine-missing 提示你配置 `kbengine.engineRoot`(沿用既有配置名;不做多级向上递归,也不按目录名猜兄弟)
 
 #### `kbengine.assetsRoot`
 
@@ -259,7 +248,6 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | 不带参数启动时拉起的组件。合法值取自组件注册表(`src/serverManager.ts`)——每个组件的取舍见设置的 `markdownEnumDescriptions`:`machine`、`logger`、`interfaces`、`dbmgr`、`baseappmgr`、`cellappmgr`、`loginapp`、`baseapp`、`cellapp`、`bots`。列表按组件声明序过滤后经依赖就绪图统一启动——machine 启动失败/未就绪时,依赖它的下游组件不再启动 |
-| `kbengine.loggerPort` | number | `20022` | 日志收集器连接端口,须与引擎 logger 的监听端口一致;不一致时面板连不上(内部按间隔重连) |
 | `kbengine.logAutoConnect` | boolean | `true` | 激活即尝试连接一次 logger;失败静默,走重连 |
 | `kbengine.webviewConsoleLogs` | boolean | `true` | 采集日志面板页面 `console` 输出与未捕获异常,并入同一日志流 |
 | `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview 面板显示语言;`auto` 跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文);`zh`/`en` 显式强制覆盖。只改面板文案,编辑器内诊断与悬停不受影响 |
@@ -271,8 +259,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.console.discoveryHost` | string | `127.0.0.1` | machined 发现广播目标：`127.0.0.1` 保持链路 localhost-only（同机直查）；跨机联验需显式填 `255.255.255.255`（广播）或目标机 IP——安全边界：发现应答对 CONSOLE_TYPE 请求绕过 uid 过滤，跨机=交出整个集群控制面，须知情配置 |
-| `kbengine.consoleLogTail.enabled` | boolean | `true` | 实时日志 tail（702 → 65501 长连推流）总开关。配置缺失视为开，只有显式 `false` 才关（与热更/门控同类口径）。状态栏项显示连接中/已连/退避重连态；断线按指数退避自动重连（1s 起翻倍，封顶 30s）。工作区信任闸(RUST-422):tail 长连经 machined 发现到 logger,发现广播目标来自 `kbengine.console.discoveryHost`(工作区配置),未信任工作区里 tail 不建立连接(状态灯如实隐藏);信任工作区后下一轮发现即恢复连接。闸为执行时刻读,与 telnet 信任闸同口径 |
+| `kbengine.consoleLogTail.enabled` | boolean | `true` | 实时日志 tail（702 → 65501 长连推流）总开关。配置缺失视为开，只有显式 `false` 才关（与热更/门控同类口径）。状态栏项显示连接中/已连/退避重连态；断线按指数退避自动重连（1s 起翻倍，封顶 30s）。工作区信任闸(RUST-422):tail 长连经 machined 发现到 logger,发现广播目标默认 127.0.0.1,未信任工作区里 tail 不建立连接(状态灯如实隐藏);信任工作区后下一轮发现即恢复连接。闸为执行时刻读,与 telnet 信任闸同口径 |
 | `kbengine.consoleLogTail.components` | string[] | `[]` | tail 组件过滤：只保留数组内组件类型名的日志行（引擎 `COMPONENT_NAME`：`cellapp`、`baseapp`、`logger` 等），空数组 = 不过滤。改数组后下一次 tail 重连（开关一次）即生效 |
 | `kbengine.componentStatusPanel.refreshSeconds` | number | `5` | 共享 hub 的 machined 发现轮询间隔（秒）——同时供面板行与 tail 的 logger 地址 |
 | `kbengine.componentStatusPanel.cpuThresholdPercent` | number | `90` | 组件广播 `cpu` 超过该百分比时面板红色标记；进程消失与 state 非运行态（关停值 2/3/4）同样红色（0=INIT/1=RUN 是常态——真机 machine/bots 恒报 INIT） |
@@ -728,7 +715,7 @@ AI 面的工作方式:
 
 发现链(按序取第一个命中):
 
-1. **显式配置**:`kbengine.binPath` / `kbengine.assetsRoot` 的设置值(支持 `${workspaceFolder}`);def 侧布局不再是配置项(由 `kbengine.assetsRoot` 计算,见上);
+1. **显式配置**:`kbengine.assetsRoot` 的设置值(支持 `${workspaceFolder}`;退役的 `kbengine.binPath` 仍作隐藏覆盖生效);def 侧布局不再是配置项(由 `kbengine.assetsRoot` 计算,见上);
 2. **约定路径**:引擎/官方资产固定布局,如 `entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`;
 3. **有界深扫描**:约定全 miss 时扫工作区找锚点(目录名 `entity_defs`、文件名 `entities.xml`/`types.xml`/`messages_fixed.xml`/`messages_fixed_defaults.xml`(批129 双名)、引擎源码锚点 `entitydef.cpp`/`entity_table_mysql.cpp`),限深 7 层、限 2 万条目,剪掉 `node_modules`/`.git`/`out`/`dist`/点目录,结果按工作区缓存;
 4. **唯一命中即用,多候选不猜**:同步读路径只认唯一命中——多个候选时宁缺勿猜(猜测会连带改写 interfaces/components/user_type 全套根目录),改由激活期弹**一次** quick pick 让你选,选择按工作区记忆(`workspaceState`),之后不再询问。
@@ -737,7 +724,7 @@ AI 面的工作方式:
 
 **三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
 
-### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 102 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
+### 全量配置项对照表(批125 盘点 32 项;此后持续增删,2026-11-23 对账声明配置 173 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
 
 `现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
 
@@ -745,7 +732,7 @@ AI 面的工作方式:
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | **已删(2026-11-23)**:按 `{assetsRoot}/scripts/entity_defs` 计算 | **能**(由 assetsRoot 推导) | **删除**;引擎固定布局无需按目录设配置 |
 | `kbengine.entitiesXmlPath` | **已删(2026-11-23)**:按 `{assetsRoot}/scripts/entities.xml` 计算 | **能** | **删除**;同上 |
-| `kbengine.binPath` | 显式配置(权威;显式值不在盘也保留,交启动检查链报)→ 默认 `${workspaceFolder}/kbe/bin/server` 在盘即用(CFG-01)→ 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量;全落空返回空串由启动检查链报警 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
+| `kbengine.binPath` | 显式配置(权威;显式值不在盘也保留,交启动检查链报)→ 默认 `${workspaceFolder}/kbe/bin/server` 在盘即用(CFG-01)→ 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量;全落空返回空串由启动检查链报警 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖(2026-11-23 起从声明配置退役——保留隐藏覆盖,行为不变) |
 | `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
 | `kbengine.assetsRoot` | 显式配置(默认空 = 自动发现);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`,批129 起含工作区一级 `*_assets` 目录如 `flyff_assets`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |
@@ -765,7 +752,7 @@ AI 面的工作方式:
 | `kbengine.showFinalConfigOnOpen` | 开关,默认开;定位不到 defaults 静默跳过 | 否 | **保留**,默认开零打扰 |
 | `kbengine.autoRefreshFinalConfig` | 开关,默认开 | 否 | **保留** |
 | `kbengine.autoStart` | 组件名列表,默认 `["machine","logger","dbmgr"]` | 否(启动策略是决策不是事实) | **保留**,默认即官方最小可跑组合 |
-| `kbengine.loggerPort` | 固定 20022(引擎 logger 监听端口) | 否(运行时网络端口,工作区无痕迹) | **保留**,默认值 = 引擎默认端口 |
+| `kbengine.loggerPort` | 默认固定 20022;隐藏覆盖仍生效(引擎 logger 的日志监听端口启动时分配——引擎侧无 20022) | 否(运行时网络端口,工作区无痕迹) | **已删**(2026-11-23);隐藏覆盖保留 |
 | `kbengine.logAutoConnect` | 开关,默认开 | 否 | **保留** |
 | `kbengine.webviewConsoleLogs` | 开关,默认开 | 否 | **保留**(页面诊断无须额外步骤即可到达) |
 | `kbengine.maxLogEntries` | 数值 10000 | 否 | **保留**(内存/历史的权衡偏好) |
@@ -777,7 +764,7 @@ AI 面的工作方式:
 | `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。2026-11-11 静态模板桩车道起,`kbengine.python.stubSourceMode` 与 `kbengine.python.stubEngineTypings` 退役,新增 `kbengine.python.proxyInternalAttrHints`(三项均已在总览分区表对账)。2026-11-16 起新增 `kbengine.python.stubCopy`,作为内置桩包复制这一步的窄闸(当前默认值见上方总览分区表)。
+计数(批125 盘点口径):**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做)。2026-11-23 更新:其后已删 6 项——`kbengine.entityDefsPath`/`kbengine.entitiesXmlPath`(引擎固定布局,由 `kbengine.assetsRoot` 计算)与 `kbengine.binPath`/`kbengine.engineVersion`/`kbengine.loggerPort`/`kbengine.console.discoveryHost`(引擎推导值或本就 localhost-only);各项读取均保留为隐藏覆盖,既有 `settings.json` 值继续生效;其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。2026-11-11 静态模板桩车道起,`kbengine.python.stubSourceMode` 与 `kbengine.python.stubEngineTypings` 退役,新增 `kbengine.python.proxyInternalAttrHints`(三项均已在总览分区表对账)。2026-11-16 起新增 `kbengine.python.stubCopy`,作为内置桩包复制这一步的窄闸(当前默认值见上方总览分区表)。
 
 ## 配置数据保护(kbengine.configData)
 

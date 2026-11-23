@@ -146,7 +146,7 @@
 
 - **KBEngine 桩包复制(静态模板,2026-11-11)** —— 插件内置静态模板随包发布在仓库顶层 `typings/`（派生自用户 fork 的 typings,钉点与再生成见 `typings/README.md`;`KBEngine/` 包一类一文件,`__init__.pyi` 重导出顺序裁决同名遮蔽）,在 `kbengine.python.stubCopy` 开启时复制到存根目录（默认 `<managedDir>/stubs/`）供 Pylance/pyright 解析 `import KBEngine`——默认**开**(激活期自动复制缺失的内置桩;2026-11-16 的默认关裁定已由生成-消费车道取代,设为 `false` 即停自动写入);copy-if-absent 零覆盖——已存在的文件一个字节不动（用户修改永久保留）,托管目录里带 kode 生成标记的旧单文件 `KBEngine.pyi` 一次性移除由桩包取代,覆盖只走显式重置命令且要用户确认;`kbengine.python.stubCopy` 开启才有激活期静默自动复制,手动导出+重置双命令入口不受限 ——（证据：package.json#configuration `kbengine.python.stubExport` + `kbengine.python.stubCopy`；package.json#contributes.commands `kbengine.python.exportStubs` + `kbengine.python.resetStubs`；typings/README.md；scripts/derive-kbengine-stub-typings.mjs；scripts/vsix-staging.mjs（VSIX stage 名单随包携带 `typings/`）；src/pythonStubExport.ts、tests/pythonStubExport.test.ts、tests/kbengineStubTemplate.test.ts）
 - **KBEngine API 参考的引擎版本分层(KB-VER-002)** —— 内置 KBEngine 模块索引每个条目都带显式引擎版本档(`baseline` / `fork` / `pending`),按 api-*.md 偏差表归属(缺省=官方 3.7.3 基线,当前版本档集合含 1 个非基线条目:`MemoryStream` = `pending`);非基线条目在补全文档与导出的存根体中标注——`pending` 标注「待取证」(归属在官方 3.7.3 基线与 fork 3.12 间尚未定案),`fork` 标注「需 fork」(fork-3.12 新增、官方 3.7.3 基线无此符号,如 bots 模块,留在 baseapp 作用域索引之外);把 `kbengine.engineVersion` 设为 `fork-` 前缀值(如 `fork-3.12`)则对该构建抑制「需 fork」标注,而自定义 fork 版本若省略前缀仍按保守口径标注(宁多提示不漏报) 
-  ——（证据：package.json#configuration `kbengine.engineVersion`；src/kbeModuleIndex.ts `EngineApiVersion`/`engineApiVersionAnnotation`/`kbeCompletionDocumentation`/`engineApiVersionStubNote`；src/languageProviders.ts 补全接线；src/engineVersion.ts；tests/kbeModuleIndex.test.ts `KB-VER-002 版本分层标注`）
+  ——（证据：src/engineVersion.ts 读取链（2026-11-23 起退役声明配置，保留隐藏覆盖）；src/kbeModuleIndex.ts `EngineApiVersion`/`engineApiVersionAnnotation`/`kbeCompletionDocumentation`/`engineApiVersionStubNote`；src/languageProviders.ts 补全接线；src/engineVersion.ts；tests/kbeModuleIndex.test.ts `KB-VER-002 版本分层标注`）
 - **kbe_types 分件 Python 类型桩** —— types.xml 自定义类型（FIXED_DICT→TypedDict、ARRAY、别名按依赖拓扑序发射）导出为分件 `.pyi` 并做别名解析 ——（证据：package.json#contributes.commands `kbengine.python.exportTypeStubs`；commit c445f8a、bfaff30；src/pythonTypeStubs.ts）
 - **类型预览树（RUST-167）** —— 资源管理器容器里的 `kbengine.typePreview` 视图,按活注册表现场回答四件事(不缓存状态;展开与刷新命令即重算,导出命令尾链亦调刷新):API 类型树（实体 → 属性/方法、自定义类型 → 字段）、typing 覆盖（`已解析/总数` 注解位与 Any 计数）、缺失映射（每一处落到 `Any` 的注解位及其真实源行跳转 + 被跳过的类型及原因——别名成环、同名拒注册）、来源跳转（叶子点击打开真实 `.def`/`types.xml` 定位到记录的 1 基行,与生成源 CodeLens 同一族判别——带 `customTypeLine` 跳 types.xml 否则跳实体 `.def`;真实路径解析不出如实不跳,绝不拿生成行号充当来源）——（证据：package.json#contributes.views `kbengine.typePreview` + 命令 `kbengine.typePreview.refresh`/`kbengine.typePreview.jump`；src/backend/typePreviewModel.ts、src/typePreviewView.ts、src/activate/generators.ts；tests/typePreviewModel.test.ts、tests/typePreviewView.test.ts）
 - **types.xml 变更自动重生成桩** —— didChange/didCreate/didDelete 三事件静默重导出类型桩 ——（证据：；src/pythonTypeStubs.ts `setupTypeStubRegeneration`）
@@ -264,7 +264,7 @@
 - **内建 Kode MCP 服务器（KODE-MCP-HOST）** —— 扩展以原生方式自带 MCP 服务器定义（2026-11-13 用户令「内置 mcp，点击开启，默认开启」，推翻 2026-11-10「不托管」口径）：经 `vscode.lm.registerMcpServerDefinitionProvider`（VS Code ≥1.101，激活时 feature-detect——老宿主保持仅状态栏回落，引擎基线 1.82 不动）按工作区文件夹逐个注册 `kode-mcp` stdio 服务器（command=扩展根 bin/ 或 target/{debug,release} 下发现的二进制、args=[资产根，与扫描器同一发现链]）；定义**默认**出现在 VS Code 原生 MCP 服务器列表（`kbengine.mcp.enabled` 默认 `true`），状态栏 `$(plug) Kode MCP` 项点击启停（三态如实：已构建/未构建/已关闭），原生列表经 provider 变化事件同步刷新；二进制缺失或资产根解析落空不注册不硬造，绝不静默拉起 MCP 进程——服务器只由 VS Code MCP 宿主启动
    ——（证据：package.json#contributes `mcpServerDefinitionProviders`（`kodeMcpServers`）+ `kbengine.mcp.toggle`；src/kodeMcpHost.ts、src/backend/kodeMcpDefinitions.ts、src/activate/kodeServiceStatus.ts、src/backend/kodeServiceStatus.ts；tests/kodeMcpDefinitions.test.ts、tests/kodeServiceStatus.test.ts）
 - **服务器监控面板** —— webview 可视化服务器性能与状态指标 ——（证据：package.json#contributes.commands `kbengine.monitoring.show`；src/monitoringCollector.ts、src/monitoringWebView.ts）
-- **日志查看器与收集器** —— 日志 webview、启动自动连接、清除/导出、增量合批推送带上限 ——（证据：package.json#contributes.commands `kbengine.logs.showViewer|connect|disconnect|clear|export`；package.json#configuration `kbengine.logAutoConnect|maxLogEntries|loggerPort`；src/backend/logHub.ts、src/logWebView.ts、src/logCollector.ts）
+- **日志查看器与收集器** —— 日志 webview、启动自动连接、清除/导出、增量合批推送带上限 ——（证据：package.json#contributes.commands `kbengine.logs.showViewer|connect|disconnect|clear|export`；package.json#configuration `kbengine.logAutoConnect|maxLogEntries`；src/backend/logHub.ts、src/logWebView.ts、src/logCollector.ts）
 - **原始日志 ERROR 扫描** —— 选文件/文件夹按「组件+归一签名」聚合 ERROR/CRITICAL，点击行开源文件定位 ——（证据：package.json#contributes.commands `kbengine.logs.scanErrors`；src/logErrorScan.ts）
 - **客户端实体 SDK 生成** —— 按 entities.xml 登记序生成 TypeScript、C# 与 Python 客户端 SDK，只收客户端可见属性、FIXED_DICT 伴随文件、默认不覆盖；固定辅助成员（entityId / onBaseOutgoing / onCellOutgoing，C# EntityId / OnBaseOutgoing / OnCellOutgoing，python entity_id / on_base_outgoing / on_cell_outgoing，加 baseCall*/cellCall* / base_call_*/cell_call_* 包装）先与业务成员预检，撞名即提前拒绝并点名实体、语言、成员与全部来源（AUD-062），绝不静默生成含重复成员的文件；TS 64 位整数（UINT64/INT64）映射为 `bigint`（精确覆盖 64 位全域，ES2020+ 编译目标与 BigInt 感知编解码在每个生成文件头部注明，AUD-063）；python 骨架纯标准库零依赖（无需引擎检出即可 import），另以独立 `client-sdk-gen` CLI 供 CI 使用
   ——（证据：package.json#contributes.commands `kbengine.clientSdk.generate`；package.json#configuration `kbengine.clientSdk.outputDir`；src/sdk-gen/clientSdkGenerator.ts、src/sdk-gen/clientSdkCodegen.ts、crates/kode-server/src/client_sdk/mod.rs）
@@ -361,7 +361,7 @@
 - **活动 profile 选择** —— 活动 profile 按稳定 ID 记忆（workspaceState），显示名改名不丢选择；每次真实切换（新 ID ≠ 旧 ID）恰发一次切换事件供其他功能订阅，重选同条不发；未知 ID 拒绝，选择对应的记录被删除后如实解析为 null——（证据：package.json#contributes.commands `kbengine.project.selectActive`；src/activeProfile.ts `setActiveProfile`/`onDidChangeActiveProfile`）
 - **profile 健康汇总** —— 活动 profile 的健康按四类问题汇总（根歧义=资产根不在盘、缺引擎仓路径=KBEngine 引擎仓根未记录或不在盘,只影响引擎 API/版本探测、不影响 kode 索引兼容、缺解释器=未记录或不在盘、缺语言服务=PRJ-005 判定非已激活），每类各带自己的定位入口（重导入命令 / 解释器设置 / 语言服务状态命令）；全部健康一条消息收场，有问题开选择器、选中一行跳对应入口——面板首行固定列出「索引格式 schema=index-cache/1」(kode 索引数据兼容键的正式展示位,与 KBEngine 引擎版本严格分词)——（证据：package.json#contributes.commands `kbengine.profile.health`；src/profileHealth.ts `collectProfileHealth`/`showProfileHealthSummary`）
 - **语言索引响应 profile 切换** —— 活动 profile 的资产根成为索引输入（优先于 `kbengine.assetsRoot` 设置与自动发现；选定根不在盘时如实落空走原链）；切换时旧外部根从各索引定向摘除（SNP-009 摘除路径），根配置 generation 前进——旧 profile 起步的在途扫描批次经代闸不再写入当前快照，新输入由新扫描重建——（证据：src/scanRoots.ts `setActiveProfileScanRoot`；src/entityMapping.ts `performScanEntityMappings` 代闸；extension.ts `onDidChangeActiveProfile` 接线）
-- **启动响应活动 profile** —— 下一次启动按活动 profile 解析引擎与配置根：engineRoot 推导 `kbe/bin/server` 作 bin 路径、assetsRoot 作配置根（优先于 `kbengine.binPath`/`kbengine.assetsRoot` 设置与自动发现；字段为空时该项如实回落设置链；profile 的配置根是权威输入，探针未通过也不静默回落工作区发现）；解析在启动时按稳定 ID 读（不缓存，切换无需重新接线），每个在册实例快照记录它实际启动时的 bin/配置根与 profile ID——切换 profile 不改动已运行实例的记录、pid 与进程本体；同键在册时再启动仍拒绝（已在运行），所选 profile 自下一次启动起生效
+- **启动响应活动 profile** —— 下一次启动按活动 profile 解析引擎与配置根：engineRoot 推导 `kbe/bin/server` 作 bin 路径、assetsRoot 作配置根（优先于 `kbengine.assetsRoot` 设置、退役的二进制路径覆盖值与自动发现；字段为空时该项如实回落设置链；profile 的配置根是权威输入，探针未通过也不静默回落工作区发现）；解析在启动时按稳定 ID 读（不缓存，切换无需重新接线），每个在册实例快照记录它实际启动时的 bin/配置根与 profile ID——切换 profile 不改动已运行实例的记录、pid 与进程本体；同键在册时再启动仍拒绝（已在运行），所选 profile 自下一次启动起生效
   ——（证据：src/serverManager.ts `getActiveProfileLaunchRoots`；src/serverManager.ts `RunningServer.binPath`/`configPath`/`profileId`）
 - **现有项目导入** —— 选择资产根后按同一约定链识别 entities/defs/scripts/engine 四面（未命中的面如实预览「未识别」），预览清单逐面列出识别结果，选「导入」确认才建立 profile；任一步取消零写入，四面全空的目录直接拒绝不出预览 ——（证据：package.json#contributes.commands `kbengine.project.import`；src/projectImport.ts `identifyProjectLayout`/`importExistingProject`）
 - **工作区 venv 自动发现、解释器状态栏与一键创建（PY-ENV 二期）** —— 工作区按深度封顶（3）扫描虚拟环境，依赖/构建目录（`node_modules`/`target`/`.git`…）一律剪枝；认环境只认证据——`pyvenv.cfg`（venv）或 `conda-meta/`（conda）加盘上真实的解释器二进制（`bin/python`，Windows 走 `Scripts/python.exe`），损坏目录（有标记没二进制/有二进制没标记）绝不认领，扫描面与 Python 源码扫描规则完全解耦；
@@ -412,7 +412,7 @@
 | `kbengine.ai.maxTokens` | `1024` | 单次回复最大 token 数；仅 OpenAI 兼容路线生效 |
 | `kbengine.ai.requestTimeoutMs` | `30000` | 单次请求超时毫秒数；超时中止不悬挂 |
 | `kbengine.ai.maxRetries` | `1` | 仅 429/5xx/网络错误设重试上限（`0` = 不重试）；其它 4xx 立即失败 |
-| `kbengine.console.discoveryHost` | `"127.0.0.1"` | console 链的 machined 发现目标；默认 localhost-only，跨机需显式填广播/IP（集群控制面安全边界） |
+| (已删) `kbengine.console.discoveryHost` | — | 2026-11-23 删除：console 链 machined 发现目标，本就 localhost-only 设计；隐藏覆盖保留作跨机逃生口 |
 | `kbengine.consoleLogTail.enabled` | `true` | 实时日志 tail 开关（guiconsole 链，KB-GC-001）：向发现到的 logger 注册 `Logger::registerLogWatcher`（702），把 65501 长连推流渲染进「KBEngine Console 日志」输出通道；配置缺失视为开，显式 `false` 才关；断线按指数退避自动重连；machined/logger 不在时如实提示不硬试 |
 | `kbengine.consoleLogTail.components` | `[]` | tail 组件过滤（按引擎组件类型名）；空 = 不过滤；下一次 tail 重连生效 |
 | `kbengine.componentStatusPanel.refreshSeconds` | `5` | 共享 machined 发现轮询间隔（秒），同时供组件状态视图与 tail 的 logger 地址 |
@@ -486,7 +486,7 @@
 | `kbengine.configData` | object（见配置指南） | 配置数据保护:Excel 生成的配置绑定/类在 `reload*`/`hotUpdate*` 热更入口与 `mutationExclude` 白名单之外的写点出意外写诊断(`kbengine.configDataMutation`),配置名悬停出直读 schema 类型;仅在 KBEngine 工作区激活 |
 | `kbengine.configData.schemas` | object（见配置指南） | 配置管理器对象(`config.getXXX()` / `config[key]`)的声明式类型:管理器表达式 → 表键集合(`keys`)+ 可选 Excel/配置类 `source`,由存根生成器消费,提示类型来自你的声明而非推断;畸形条目逐条跳过 |
 | (已删) `kbengine.entitiesXmlPath` | — | 2026-11-23 删除:按 `{assetsRoot}/scripts/entities.xml` 计算 |
-| `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR}。未显式配置时（CFG-01）默认值在盘即生效，不在盘回落自动发现扫描，扫描也落空才由启动检查链报警 |
+| (已删) `kbengine.binPath` | — | 2026-11-23 删除：由引擎根 + 自动发现推导（引擎钉死 `kbe/bin/server` 布局，start_server.sh:19）；隐藏覆盖仍生效 |
 | `kbengine.assetsRoot` | `""` | KBEngine 资产根（其下应有 res/server/kbengine.xml 与 scripts/）；留空走约定路径与深扫描自动发现 |
 | `kbengine.jumpLog` | `false` | 跳转决策路径日志打到 KBEngine Navigation 输出通道（关 = 零开销） |
 | `kbengine.showFinalConfigOnOpen` | `true` | 激活期能定位引擎默认配置时自动打开最终配置;打开哪种视图跟随 `kbengine.finalConfigView` |
@@ -504,7 +504,7 @@
 | `kbengine.debug.sessionEndBehavior` | `"detach"` | 调试会话结束时的行为：`detach`（默认）进程照跑、其他实例一律不动；`stop-process` 只停该会话附加的那个目标，按组件+实例精确定位（仅对扩展生成的 attach 条目生效，用户会话不受影响） |
 | `kbengine.debug.attachTimeoutMs` | `15000` | 附加调试的截止毫秒数：无人监听的端口到点即停（可取消的进度通知，本次不重试）；`0`/负值不限时 |
 | `kbengine.autoStart` | `["machine","logger","dbmgr"]` | 自动启动的组件列表 |
-| `kbengine.loggerPort` | `20022` | KBEngine Logger 端口（默认 20022） |
+| (已删) `kbengine.loggerPort` | — | 2026-11-23 删除：日志收集器保留 20022 默认；引擎 logger 日志监听端口启动时分配（隐藏覆盖仍生效） |
 | `kbengine.logAutoConnect` | `true` | 启动服务器时自动连接日志收集器 |
 | `kbengine.maxLogEntries` | `10000` | 最大日志条目数 |
 | `kbengine.webviewConsoleLogs` | `true` | 把 Logs 面板页面的 console 输出与未捕获异常收进 LogHub（src/webviewConsoleBridge.ts） |
@@ -571,7 +571,7 @@
 | `kbengine.infer.enabled` | `true` | 无标注函数 stub 推断管道。**开启时:工作区 scripts 树被复制到 `.kbengine/inferred` 镜像**,pyrefly infer 在副本上写注解(除非 `kbengine.infer.sourceWrite=user`,用户真码不改);默认开启(2026-11-20 用户裁定取代 2026-11-17 默认关令;复制只写镜像目录,用户真码不改;激活/`**/*.py` watcher/命令三条路同闸,盘上已有镜像保留至删除 `inferred/` 目录;设为 `false` 即整管道关停) — `src/inferPipeline.ts`、`src/backend/pyreflyInfer.ts` |
 | `kbengine.infer.pyreflyPath` | `""` | pyrefly 可执行路径（空 = PATH/pipx 发现）— `src/backend/pyreflyInfer.ts` |
 | `kbengine.infer.pythonVersion` | `"3.7"` | pyrefly infer `--python-version` 目标 — `src/backend/pyreflyInfer.ts` |
-| `kbengine.engineVersion` | `"3.7.3"` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此门控 — `src/engineVersion.ts` |
+| (已删) `kbengine.engineVersion` | — | 2026-11-23 删除：版本标记自动探测 + 向导预设；隐藏覆盖仍作知识库分层门控 — `src/engineVersion.ts` |
 | `kbengine.infer.sourceWrite` | `"managed"` | 写权限闸 scope（managed/user）— `src/backend/pyreflyInfer.ts` |
 | `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher 只管自己段；gitignore 条目走**建议**——弹询问、用户点击「加入」才追加，绝不擅自编辑、绝不创建；拒答/关闭同样写一次记忆（每 仓根×托管目录名 一次）——之后再缺失=用户已表态，不再重复弹；`kbengine.managedDir.syncExclusions` 命令是显式绕过入口）— `src/backend/managedDirExclusions.ts`、`src/inferPipeline.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
