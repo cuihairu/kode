@@ -97,20 +97,28 @@ export async function replaceFileSitesSliced(
   fsPath: string,
   previous: KbeDataDictAccess[],
   next: KbeDataDictAccess[],
-  accessSlice = EDIT_COMMIT_ACCESS_SLICE
+  accessSlice = EDIT_COMMIT_ACCESS_SLICE,
+  keysByFile?: Map<string, Set<string>>,
+  isStale?: () => boolean
 ): Promise<SlicedScanStats> {
   const root = resolveScopeRoot(fsPath);
   let sliceCount = 0;
   let maxSliceMs = 0;
-  for (let start = 0; start < previous.length; start += accessSlice) {
+  // P1-1:总撤数据源——有文件正向映射按映射扫净(覆盖任何在飞交错:同步提交/
+  // 撤根/失效清倒排后,本文件全部旧站点一次扫净,旧键不被复活);无簿记的
+  // 直接调用方回退 previous 列表。
+  const owned = keysByFile?.get(fsPath);
+  const removalKeys: string[] = owned
+    ? [...owned]
+    : previous
+        .filter(access => access.keySignature !== null)
+        .map(access => siteKey(root, access.dict, access.keySignature as string));
+  for (let start = 0; start < removalKeys.length; start += accessSlice) {
     const t0 = performance.now();
-    const end = Math.min(start + accessSlice, previous.length);
+    const end = Math.min(start + accessSlice, removalKeys.length);
     for (let i = start; i < end; i += 1) {
-      const access = previous[i];
-      if (access.keySignature === null) {
-        continue;
-      }
-      const key = siteKey(root, access.dict, access.keySignature);
+      const key = removalKeys[i];
+      owned?.delete(key);
       const sites = byKey.get(key);
       if (!sites) {
         continue;
@@ -124,9 +132,19 @@ export async function replaceFileSitesSliced(
     }
     sliceCount += 1;
     maxSliceMs = Math.max(maxSliceMs, performance.now() - t0);
-    if (end < previous.length) {
+    if (end < removalKeys.length) {
+      // P1-1:提交期间文本被取代(缩文件/新编辑)→ 停止续写旧分片。部分
+      // 已落站点已在 keysByFile 登记,留给下一次提交总撤,旧键不复活。
+      if (isStale?.()) {
+        return { sliceCount, maxSliceMs };
+      }
       await yieldToHost();
     }
+  }
+  let keys = keysByFile?.get(fsPath);
+  if (keysByFile && !keys) {
+    keys = new Set<string>();
+    keysByFile.set(fsPath, keys);
   }
   for (let start = 0; start < next.length; start += accessSlice) {
     const t0 = performance.now();
@@ -140,10 +158,14 @@ export async function replaceFileSitesSliced(
       const sites = byKey.get(key) ?? [];
       sites.push({ ...access, file: fsPath });
       byKey.set(key, sites);
+      keys?.add(key);
     }
     sliceCount += 1;
     maxSliceMs = Math.max(maxSliceMs, performance.now() - t0);
     if (end < next.length) {
+      if (isStale?.()) {
+        return { sliceCount, maxSliceMs };
+      }
       await yieldToHost();
     }
   }
@@ -169,6 +191,12 @@ export class GlobalDataDictIndex {
   private readonly cache = new Map<string, FileIndexEntry>();
   private readonly building = new Map<string, Promise<{ accesses: KbeDataDictAccess[] } | null>>();
   private readonly byKey = new Map<string, KbeDataDictSite[]>();
+  /**
+   * P1-1:文件 → 其当前贡献的全部倒排键(正向映射)。撤源以本表为准总撤,
+   * 不依赖 previous 访问列表——在飞分批提交与同步提交/撤根/失效交错的
+   * 任何窗口下,本文件旧站点一次扫净,删掉的键不被旧任务续写复活。
+   */
+  private readonly keysByFile = new Map<string, Set<string>>();
   /** 每文件 `def Fn` → return 表达式列表(函数调用键跨文件解析用) */
   private readonly fnDefsByFile = new Map<string, Map<string, string[]>>();
   /** 函数名 → 引用它的调用键文件集(函数定义变化时重扫这些文件) */
@@ -267,12 +295,12 @@ export class GlobalDataDictIndex {
         this.revisions.set(oldUri.fsPath, (this.revisions.get(oldUri.fsPath) ?? 0) + 1);
         this.revisions.set(newUri.fsPath, (this.revisions.get(newUri.fsPath) ?? 0) + 1);
         const entry = this.cache.get(oldUri.fsPath);
-        this.replaceFileSites(oldUri.fsPath, entry?.accesses ?? [], []);
+        this.replaceFileSites(oldUri.fsPath, []);
         this.cache.delete(oldUri.fsPath);
         if (newUri.fsPath.endsWith('.py')) {
           if (entry) {
             this.cache.set(newUri.fsPath, entry);
-            this.replaceFileSites(newUri.fsPath, [], entry.accesses);
+            this.replaceFileSites(newUri.fsPath, entry.accesses);
             // 函数定义表随文件移动;调用键依赖表键从旧路径改新路径
             const defs = this.fnDefsByFile.get(oldUri.fsPath);
             if (defs) {
@@ -316,8 +344,7 @@ export class GlobalDataDictIndex {
     });
     watcher.onDidDelete(uri => {
       this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
-      const entry = this.cache.get(uri.fsPath);
-      this.replaceFileSites(uri.fsPath, entry?.accesses ?? [], []);
+      this.replaceFileSites(uri.fsPath, []);
       this.cache.delete(uri.fsPath);
     });
     this.watchers.push(watcher);
@@ -372,6 +399,7 @@ export class GlobalDataDictIndex {
     this.watchers = [];
     this.cache.clear();
     this.byKey.clear();
+    this.keysByFile.clear();
     this.revisions.clear();
     this.dirtyDocs.clear();
     this.editBuffers.clear();
@@ -432,8 +460,7 @@ export class GlobalDataDictIndex {
         return this.cache.get(fsPath) ?? null;
       } catch {
         if ((this.revisions.get(fsPath) ?? 0) === revision) {
-          const entry = this.cache.get(fsPath);
-          this.replaceFileSites(fsPath, entry?.accesses ?? [], []);
+          this.replaceFileSites(fsPath, []);
           this.cache.delete(fsPath);
         }
         return null;
@@ -468,7 +495,7 @@ export class GlobalDataDictIndex {
     const previous = this.cache.get(fsPath);
     this.updateCallKeyDependents(fsPath, previous?.callFns ?? new Set<string>(), newCallFns);
     this.cache.set(fsPath, { accesses, callFns: newCallFns });
-    this.replaceFileSites(fsPath, previous?.accesses ?? [], accesses);
+    this.replaceFileSites(fsPath, accesses);
     this.reindexCallKeyDependents(changedFns, fsPath);
   }
 
@@ -573,6 +600,15 @@ export class GlobalDataDictIndex {
     // 持有旧文本于 editBuffers),缩为小文件改走同步路径时若不清,在飞循环
     // (runEditRecompute 顶部)重读 editBuffers 旧文本并回写,覆盖本处刚提交的
     // 新内容。清后:在飞循环下轮读 undefined 即返回,或提交前源复核不一致而跳过。
+    // P1-1:同文件在飞(大文件异步重扫未收敛)时同步提交会与在飞循环的分批
+    // 提交交错——同步提交清缓冲/总撤后,在飞循环剩余分片仍补写旧键复活。
+    // 改为登记缓冲交回在飞循环(覆盖旧快照),revision 已升使在飞提交的
+    // 片间复核判陈旧、弃余片;本循环下轮读新缓冲重扫,收敛最新文本。
+    // 提交自身不可中途取消,缓冲+revision 是唯一安全面。
+    if (this.editInProgress.has(document.uri.fsPath)) {
+      this.editBuffers.set(document.uri.fsPath, text);
+      return;
+    }
     this.editBuffers.delete(document.uri.fsPath);
     this.commitFile(document.uri.fsPath, text);
   }
@@ -662,7 +698,17 @@ export class GlobalDataDictIndex {
           this.byKey,
           fsPath,
           previous?.accesses ?? [],
-          scanned.accesses
+          scanned.accesses,
+          EDIT_COMMIT_ACCESS_SLICE,
+          this.keysByFile,
+          // P1-1:提交期间本代被取代(新编辑/盘变更/失效/撤根升了 revision 或
+          // 代际,或缓冲换文本)→ 停止续写旧分片。已落分片键都进了正向映射,
+          // 下轮(或取代方的总撤)一次扫净,旧键不复活。
+          () =>
+            this.disposed ||
+            (this.revisions.get(fsPath) ?? 0) !== revision ||
+            this.generation !== generation ||
+            this.editBuffers.get(fsPath) !== text
         );
         this.lastEditStats.maxSliceMs = Math.max(this.lastEditStats.maxSliceMs, committed.maxSliceMs);
         this.lastEditStats.commits += 1;
@@ -753,22 +799,10 @@ export class GlobalDataDictIndex {
       if (fsPath !== rootPath && !fsPath.startsWith(base)) {
         continue;
       }
-      // 撤回该文件在 rootPath 身份下的贡献(嵌套根文件本就不挂 rootPath 键,无项可撤)
-      for (const access of entry.accesses) {
-        if (access.keySignature === null) {
-          continue;
-        }
-        const key = siteKey(rootPath, access.dict, access.keySignature);
-        const sites = this.byKey.get(key);
-        if (sites) {
-          const kept = sites.filter(site => site.file !== fsPath);
-          if (kept.length === 0) {
-            this.byKey.delete(key);
-          } else {
-            this.byKey.set(key, kept);
-          }
-        }
-      }
+      // 撤回该文件在 rootPath 身份下的贡献(嵌套根文件本就不挂 rootPath 键,
+      // 无项可撤)。按文件正向映射总撤 + 根身份前缀过滤:与在飞分批提交
+      // 交错时,已落旧根站点不残留。
+      this.sweepFileSites(fsPath, rootPath);
       // 撤回调用键依赖与函数定义表贡献
       this.fnDefsByFile.delete(fsPath);
       for (const fn of entry.callFns) {
@@ -801,6 +835,7 @@ export class GlobalDataDictIndex {
     }
     this.generation += 1;
     this.byKey.clear();
+    this.keysByFile.clear();
     this.cache.clear();
     this.fnDefsByFile.clear();
     this.callKeyDependents.clear();
@@ -830,18 +865,22 @@ export class GlobalDataDictIndex {
     await this.drainPendingDependents();
   }
 
-  /** 文件重扫后替换其贡献的倒排项(先撤旧再进新)。 */
-  private replaceFileSites(
-    fsPath: string,
-    previous: KbeDataDictAccess[],
-    next: KbeDataDictAccess[]
-  ): void {
-    const root = resolveScopeRoot(fsPath);
-    for (const access of previous) {
-      if (access.keySignature === null) {
+  /**
+   * 按文件正向映射撤净该文件的倒排贡献(限 rootPrefix 身份时只撤该根身份
+   * 键)。P1-1:撤源不依赖 previous 访问列表——在飞分批提交只登记了部分
+   * 键时,previous 不全,按列表撤必残留;正向映射逐次登记,任何时刻都全。
+   */
+  private sweepFileSites(fsPath: string, rootPrefix: string | null): void {
+    const owned = this.keysByFile.get(fsPath);
+    if (!owned) {
+      return;
+    }
+    const prefix = rootPrefix === null ? null : `${rootPrefix}\u0000`;
+    for (const key of [...owned]) {
+      if (prefix !== null && !key.startsWith(prefix)) {
         continue;
       }
-      const key = siteKey(root, access.dict, access.keySignature);
+      owned.delete(key);
       const sites = this.byKey.get(key);
       if (!sites) {
         continue;
@@ -853,6 +892,20 @@ export class GlobalDataDictIndex {
         this.byKey.set(key, kept);
       }
     }
+    if (owned.size === 0) {
+      this.keysByFile.delete(fsPath);
+    }
+  }
+
+  /** 文件重扫后替换其贡献的倒排项(先撤旧再进新)。 */
+  private replaceFileSites(fsPath: string, next: KbeDataDictAccess[]): void {
+    const root = resolveScopeRoot(fsPath);
+    this.sweepFileSites(fsPath, null);
+    let keys = this.keysByFile.get(fsPath);
+    if (!keys) {
+      keys = new Set<string>();
+      this.keysByFile.set(fsPath, keys);
+    }
     for (const access of next) {
       if (access.keySignature === null) {
         continue;
@@ -861,6 +914,7 @@ export class GlobalDataDictIndex {
       const sites = this.byKey.get(key) ?? [];
       sites.push({ ...access, file: fsPath });
       this.byKey.set(key, sites);
+      keys.add(key);
     }
   }
 }

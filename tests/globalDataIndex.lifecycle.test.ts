@@ -2198,6 +2198,60 @@ describe('AUD-076 编辑重扫接入交互调度预算(R4-F11)', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   }, 60000);
+
+  it('P1-1 竞态:旧任务分批提交中被新版本取代,两任务收敛后旧键不复活', async () => {
+    const index = new GlobalDataDictIndex();
+    const originalSetImmediate = globalThis.setImmediate;
+    try {
+      // v1:2000 行 × 每行 10 写点 = 20000 访问(>64KiB 走异步路径;行数
+      // ≤4000 扫描单片,提交 8000 访问/片共 3 片——旧任务必然经过分批
+      // 提交让路点)。
+      const accessLines: string[] = [];
+      for (let line = 0; line < 2000; line += 1) {
+        const parts: string[] = [];
+        for (let i = 0; i < 10; i += 1) {
+          parts.push(`KBEngine.globalData["a${line * 10 + i}"] = 1`);
+        }
+        accessLines.push(parts.join('; '));
+      }
+      const v1 = `import KBEngine\n${accessLines.join('\n')}\n`;
+      expect(v1.length).toBeGreaterThan(64 * 1024);
+      const v2 = 'import KBEngine\nKBEngine.globalData["z"] = 42\n';
+      let yields = 0;
+      globalThis.setImmediate = ((fn: () => void, ...rest: unknown[]) => {
+        yields += 1;
+        if (yields === 2) {
+          // 第 2 次让路 = 旧任务分批提交第 1 片完成后的节拍(第 1 次是扫描
+          // 片尾)。此刻写入新版本 v2:修前同步提交与在飞提交交错,旧任务
+          // 续写剩余分片,已删旧键复活;修后同文件在飞改登记缓冲,旧提交
+          // 片间复核判陈旧停写,循环收敛最新文本。
+          index.noteSaved({ uri: { fsPath: '/r/race.py' }, getText: () => v2 } as never);
+        }
+        return originalSetImmediate(fn, ...rest);
+      }) as unknown as typeof globalThis.setImmediate;
+      index.noteSaved({ uri: { fsPath: '/r/race.py' }, getText: () => v1 } as never);
+      // 等待用补丁前的原始 setImmediate(不经计数补丁,组件让路计数不被
+      // 测试轮询污染,钩子时机保持确定性)。两任务都结束:在飞循环收敛
+      // (提交 v2)后释放编辑缓冲。
+      let settled = false;
+      for (let i = 0; i < 4000 && !settled; i += 1) {
+        await new Promise<void>(resolve => originalSetImmediate(resolve));
+        settled = index.editBufferEntryCountForTests() === 0;
+      }
+      expect(settled).toBe(true);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise<void>(resolve => originalSetImmediate(resolve));
+      expect(index.query('globalData', 'z').map(s => s.kind)).toEqual(['write']);
+      // 旧键全量消失:首批/次批/末批各抽一个(已落分片的键都留痕于文件
+      // 正向映射,提交总撤一次扫净,不依赖 previous 列表完整性)
+      expect(index.query('globalData', 'a0')).toEqual([]);
+      expect(index.query('globalData', 'a15000')).toEqual([]);
+      expect(index.query('globalData', 'a19999')).toEqual([]);
+    } finally {
+      globalThis.setImmediate = originalSetImmediate;
+      index.dispose();
+    }
+  }, 30000);
 });
 
 describe('KR-AUD-35 rebuild 并发上限(IDX-11)', () => {
