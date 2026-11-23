@@ -15,14 +15,16 @@ use kode_vfs::store::{DocumentKey, RootId};
 
 use crate::symbol::{def_entity_name, extract_records};
 
-/// 语料文件 → ParsedUnit(kind 字符串来自 collect_corpus)。
-fn parse_by_kind(kind: &str, text: &str) -> Option<ParsedUnit> {
+/// 语料文件 → ParsedUnit(kind 字符串来自 collect_corpus,只产
+/// def/entities/types/alias 四种)。未知 kind 不是数据形态而是语料发现
+/// 面契约失守 → fail-fast 断言面,不在产出路径里静默丢文件。
+fn parse_by_kind(kind: &str, text: &str) -> ParsedUnit {
     match kind {
-        "def" => Some(ParsedUnit::Def(parse_def(text))),
-        "entities" => Some(ParsedUnit::Entities(parse_entities(text))),
-        "types" => Some(ParsedUnit::Types(parse_types(text))),
-        "alias" => Some(ParsedUnit::Alias(parse_alias(text))),
-        _ => None,
+        "def" => ParsedUnit::Def(parse_def(text)),
+        "entities" => ParsedUnit::Entities(parse_entities(text)),
+        "types" => ParsedUnit::Types(parse_types(text)),
+        "alias" => ParsedUnit::Alias(parse_alias(text)),
+        other => unreachable!("collect_corpus 只产四种 kind,遇到 {other:?} 即语料发现面契约失守"),
     }
 }
 
@@ -38,9 +40,7 @@ pub fn dump_symbols(repo_root: &Path) -> String {
     let mut symbol_total = 0usize;
     // 先算总数(两遍遍历换取输出结构简单:总数在前)。
     for (path, (kind, text)) in &files {
-        let Some(unit) = parse_by_kind(kind, text) else {
-            continue;
-        };
+        let unit = parse_by_kind(kind, text);
         let key = DocumentKey::new(
             RootId::UNROOTED,
             kode_vfs::uri::CanonicalUri::from_path(path),
@@ -53,9 +53,7 @@ pub fn dump_symbols(repo_root: &Path) -> String {
     w.raw(",\"files\":[");
     let mut first_file = true;
     for (path, (kind, text)) in &files {
-        let Some(unit) = parse_by_kind(kind, text) else {
-            continue;
-        };
+        let unit = parse_by_kind(kind, text);
         let key = DocumentKey::new(
             RootId::UNROOTED,
             kode_vfs::uri::CanonicalUri::from_path(path),
@@ -118,18 +116,16 @@ mod tests {
     use super::{entity_of_file, parse_by_kind};
 
     /// ParsedUnit → 稳定标签(测试断言用;变体归属一目了然)。
-    fn unit_tag(unit: Option<ParsedUnit>) -> &'static str {
+    fn unit_tag(unit: ParsedUnit) -> &'static str {
         match unit {
-            Some(ParsedUnit::Def(_)) => "def",
-            Some(ParsedUnit::Entities(_)) => "entities",
-            Some(ParsedUnit::Types(_)) => "types",
-            Some(ParsedUnit::Alias(_)) => "alias",
-            None => "none",
+            ParsedUnit::Def(_) => "def",
+            ParsedUnit::Entities(_) => "entities",
+            ParsedUnit::Types(_) => "types",
+            ParsedUnit::Alias(_) => "alias",
         }
     }
 
-    /// kind 分派面:四种语料 kind 各自落到对应 ParsedUnit,未知 kind 显式 None
-    /// (collect_corpus 只产这四种,兜底分支是防御性断言面)。
+    /// kind 分派面:四种语料 kind 各自落到对应 ParsedUnit。
     #[test]
     fn parse_by_kind_dispatches_all_corpus_kinds() {
         assert_eq!(unit_tag(parse_by_kind("def", "<root/>")), "def");
@@ -140,16 +136,13 @@ mod tests {
             "alias",
             "alias kind 必须落 Alias 解析(语料含属性式 alias.xml)"
         );
-        assert_eq!(
-            unit_tag(parse_by_kind("unknown-kind", "<root/>")),
-            "none",
-            "未知 kind 必须显式 None"
-        );
-        assert_eq!(
-            unit_tag(parse_by_kind("", "<root/>")),
-            "none",
-            "空 kind 必须显式 None"
-        );
+    }
+
+    /// 未知 kind 是语料发现面契约失守:不静默丢文件,直接 fail-fast。
+    #[test]
+    #[should_panic(expected = "语料发现面契约失守")]
+    fn parse_by_kind_rejects_unknown_kind() {
+        let _ = parse_by_kind("unknown-kind", "<root/>");
     }
 
     /// entity_of_file 转发 def_entity_name:取文件茎,无茎路径返回 None。

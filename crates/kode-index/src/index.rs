@@ -272,24 +272,21 @@ impl SymbolIndex {
             .and_then(|entity| self.entity_parents.get(&(key.root, entity)).cloned());
         let had_old_records = self.by_file.contains_key(key);
         let (registry_report, unit) = self.registry.update(key.clone(), text);
-        if !registry_report.rebuilt {
+        // registry 不变式:rebuilt=true 恒带解析产物——负缓存命中与非声明
+        // 文件两条无产物路径都返回 rebuilt=false。故「重建但无产物」不可
+        // 表达,与指纹命中同出口早退(Identical,索引态零变异)。
+        let unit = if registry_report.rebuilt {
+            unit.as_deref()
+        } else {
+            None
+        };
+        let Some(unit) = unit else {
             return (
                 false,
                 ChangeCategory::Identical,
                 registry_report.error,
                 0,
                 0,
-            );
-        }
-        let Some(unit) = unit.as_deref() else {
-            // 无解析产物(非声明文件等负缓存路径):摘旧符号,保守 Signature。
-            let removed = self.detach_file(key);
-            return (
-                true,
-                ChangeCategory::Signature,
-                registry_report.error,
-                0,
-                removed,
             );
         };
         let (new_records, declaration) = extract_records(key, unit);
@@ -590,6 +587,7 @@ mod tests {
     use kode_vfs::uri::CanonicalUri;
 
     use super::{ChangeCategory, SymbolIndex};
+    use crate::symbol::SymbolKind;
 
     fn key(path: &str) -> DocumentKey {
         DocumentKey::new(RootId(1), CanonicalUri::from_path(path))
@@ -678,6 +676,39 @@ mod tests {
         );
     }
 
+    /// detach_file 两条防御臂:公共 API 下「by_file 条目 → 槽位恒占用、倒排
+    /// 恒含已附着 id」是不变量(attach/detach 同步维护),两臂只在内部状态
+    /// 被破坏时兜底——按仓库判例(防御臂以测试内状态构造直接验证)钉住
+    /// 「摘除不 panic、计数如实返回」。
+    #[test]
+    fn detach_file_defensive_arms_tolerate_broken_internal_state() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/A.def");
+        index.update(k.clone(), &def_with_property("UINT32"));
+        assert_eq!(index.symbol_count(), 2, "实体 + hp");
+
+        // 臂一:倒排丢失该名(槽位仍在)——摘除照常,计数如实。
+        assert!(index.by_name.remove("hp").is_some(), "先摘掉倒排键");
+        assert_eq!(index.detach_file(&k), 2);
+        assert!(index.lookup("hp").is_empty());
+
+        // 臂二:槽位悬空(by_file 条目仍在)——摘除跳过悬空 id。
+        index.update(k.clone(), &def_with_property("UINT16"));
+        let ids: Vec<usize> = index.symbols_in_file(&k).iter().map(|s| s.id).collect();
+        assert_eq!(ids.len(), 2);
+        index.slots[ids[0]] = None;
+        assert_eq!(
+            index.detach_file(&k),
+            2,
+            "悬空槽位不 panic,计数按 by_file 条目如实"
+        );
+        assert_eq!(index.tracked_files(), 0, "by_file 条目摘除");
+
+        // 未入库键摘除:let-else 早退零计数(remove 契约面)。
+        assert_eq!(index.detach_file(&key("/proj/ghost.def")), 0);
+        assert_eq!(index.remove(&key("/proj/ghost.def")), 0);
+    }
+
     #[test]
     fn parse_budget_preserves_lookup_correctness() {
         // 预算 1B:任何产物都超限,插入即驱逐——最保守形态下查询面必须完好。
@@ -702,6 +733,102 @@ mod tests {
         assert!(report.rebuilt, "被驱逐条目必须重建");
         let again = index.lookup("hp");
         assert_eq!(again.len(), 5, "重建后符号不重复");
+    }
+
+    // ---- 访问面与透传委托 ----
+
+    #[test]
+    fn change_category_as_str_is_stable_golden_literal() {
+        assert_eq!(ChangeCategory::Identical.as_str(), "identical");
+        assert_eq!(ChangeCategory::BodyOnly.as_str(), "body-only");
+        assert_eq!(ChangeCategory::Signature.as_str(), "signature");
+    }
+
+    #[test]
+    fn parse_budget_bytes_passthrough_none_when_unbounded() {
+        assert_eq!(SymbolIndex::new().parse_budget_bytes(), None);
+        assert_eq!(
+            SymbolIndex::with_parse_budget(4096).parse_budget_bytes(),
+            Some(4096),
+            "预算上限透传注册表观测面"
+        );
+    }
+
+    #[test]
+    fn negative_entries_list_non_declaration_files_sorted() {
+        let mut index = SymbolIndex::new();
+        let notes = key("/proj/notes.py");
+        let readme = key("/proj/readme.txt");
+        for k in [&notes, &readme] {
+            let report = index.update(k.clone(), "hello\n");
+            assert!(!report.rebuilt, "非声明文件零重建");
+            assert!(report.error.is_some(), "原因回执");
+            assert_eq!(report.change, ChangeCategory::Identical);
+        }
+        let entries = index.negative_entries();
+        assert_eq!(entries.len(), 2);
+        let keys: Vec<DocumentKey> = entries.iter().map(|(k, _)| k.clone()).collect();
+        assert_eq!(keys, vec![notes, readme], "按 (root, 路径) 字典序");
+        assert!(
+            entries.iter().all(|(_, reason)| !reason.is_empty()),
+            "负缓存原因透传"
+        );
+    }
+
+    #[test]
+    fn tracks_and_known_to_registry_cover_file_states() {
+        let mut index = SymbolIndex::new();
+        // 有符号文件:双面都认。
+        let avatar = key("/proj/entities/Avatar.def");
+        index.update(
+            avatar.clone(),
+            "<root>\n<Properties>\n<hp>\n<Type>UINT32</Type>\n</hp>\n</Properties>\n</root>\n",
+        );
+        assert!(index.tracks(&avatar));
+        assert!(index.known_to_registry(&avatar));
+
+        // 从未见过的键:双面都不认。
+        let ghost = key("/proj/Ghost.def");
+        assert!(!index.tracks(&ghost));
+        assert!(!index.known_to_registry(&ghost));
+
+        // 非声明文件:by_file 无条目、注册表无前向登记,双面都不认。
+        let notes = key("/proj/notes.py");
+        index.update(notes.clone(), "x = 1\n");
+        assert!(!index.tracks(&notes));
+        assert!(!index.known_to_registry(&notes));
+    }
+
+    #[test]
+    fn snapshot_query_delegations_mirror_index_surface() {
+        let mut index = SymbolIndex::new();
+        let avatar = key("/proj/entities/Avatar.def");
+        let monster = key("/proj/entities/Monster.def");
+        index.update(
+            avatar.clone(),
+            "<root>\n<Parent>Base</Parent>\n<Properties>\n<hp>\n<Type>UINT32</Type>\n</hp>\n</Properties>\n</root>\n",
+        );
+        index.update(
+            monster.clone(),
+            "<root>\n<Parent>Avatar</Parent>\n</root>\n",
+        );
+        let snapshot = index.read_snapshot();
+        // 名称+种类定向查找。
+        let hp = snapshot.lookup_kind("hp", SymbolKind::Property);
+        assert_eq!(hp.len(), 1);
+        assert_eq!(hp[0].file, avatar);
+        // 文件内符号:Avatar = 实体本体 + hp(文档序)。
+        let in_file = snapshot.symbols_in_file(&avatar);
+        assert_eq!(in_file.len(), 2);
+        assert_eq!(in_file[0].kind, SymbolKind::Entity);
+        // 反向受影响集:Monster 以 Parent 引用 Avatar。
+        assert_eq!(snapshot.dependents_of("Avatar"), vec![monster]);
+        // 未知名:三面全空。
+        assert!(snapshot
+            .lookup_kind("ghost", SymbolKind::Property)
+            .is_empty());
+        assert!(snapshot.symbols_in_file(&key("/proj/ghost.def")).is_empty());
+        assert!(snapshot.dependents_of("ghost").is_empty());
     }
 
     // ---- RUST-120-W 变化分类差异化失效 ----
