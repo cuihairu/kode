@@ -166,6 +166,11 @@ const makeDeps = (script: DepsScript = {}) => {
     showQuickPick: async (items, options) => {
       recorded.pickOptions.push({ placeHolder: options.placeHolder });
       void items;
+      // 导出源连接选择(UX-2026-11-23):测试固定走档案连接,不消费 picks 队列
+      // (队列首元素为实体选择,消费序与旧流程一致)。
+      if (options.placeHolder.includes('Select the export source connection')) {
+        return items[0];
+      }
       const next = picks.shift();
       if (typeof next === 'function') {
         return await next(options);

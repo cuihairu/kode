@@ -791,5 +791,8 @@
   "Final config": "Final config",
   "Clone profile": "Clone profile",
   "Select the export source connection (values shown are from the engine final config / saved profile)": "Select the export source connection (values shown are from the engine final config / saved profile)",
-  "Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry.": "Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry."
+  "Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry.": "Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry.",
+  "From config: {entity}": "From config: {entity}",
+  "{base} (config default: {value})": "{base} (config default: {value})",
+  "Archive encryption default (kbengine.clone.archiveEncryption): {value}": "Archive encryption default (kbengine.clone.archiveEncryption): {value}"
 }

@@ -2260,6 +2260,18 @@
             "scope": "window",
             "markdownDescription": "%kbengine.config.clone.probeTimeoutMs.description%"
           },
+          "kbengine.clone.defaultEntity": {
+            "type": "string",
+            "default": "",
+            "scope": "window",
+            "markdownDescription": "%kbengine.config.clone.defaultEntity.description%"
+          },
+          "kbengine.clone.defaultDbId": {
+            "type": "string",
+            "default": "",
+            "scope": "window",
+            "markdownDescription": "%kbengine.config.clone.defaultDbId.description%"
+          },
           "kbengine.console.discoveryHost": {
             "type": "string",
             "default": "127.0.0.1",

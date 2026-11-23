@@ -586,6 +586,8 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | --- | --- | --- | --- |
 | `kbengine.clone.archiveEncryption` | `"encrypted" \| "plain"` | `"encrypted"` | 玩家数据克隆归档的加密默认值。`encrypted`（默认）= 导出写 chacha20poly1305 加密归档，密钥存本机 globalStorage `clone-keys/`（0600）——归档移机后须回原机取钥；`plain` = 导出写明文归档（敏感列仍脱敏），适合需要跨机转移的场景。该值只是默认：导出确认页每次可切换。逐项取舍见设置的 `markdownEnumDescriptions`；运维与密钥处理见 [玩家数据克隆运维与安全](/player-clone/ops-and-security)（英文站页） |
 | `kbengine.clone.probeTimeoutMs` | number | `5000` | 玩家数据克隆导出源连接探针的独立超时毫秒数。探针只回答「现在连不连得上」：超时立即以失败进重试/配置弹窗，不占用导出执行侧的长超时档（默认 120s）——源连不上时这是体感最大的卡点。导出执行（读表/写档）超时不受此配置影响 |
+| `kbengine.clone.defaultEntity` | string | `""` | 玩家数据克隆导出的默认实体（`kbengine.clone.export`）。实体选择弹窗会在首位给一项「From config: <实体名>」，把配置值内联展示出来，回车即选中该实体；留空（默认）= 不出配置项，弹窗列表与旧版一致；填的实体名不在当前工程实体清单里 → 也不出配置项（kode 不猜实体名）。该值只是便捷入口：每次导出仍可改选 |
+| `kbengine.clone.defaultDbId` | string | `""` | 玩家数据克隆导出的默认根表 DBID。DBID 输入框会在提示行写明「config default: <值>」并预填（上次成功导出的 DBID 优先于配置值，与实体记忆口径一致），回车即接受配置值；留空（默认）= 提示行与预填与旧版一致。只填数字：导出链对 DBID 做正整数校验 |
 
 ### AI(自愿开启的底座,AI-001)
 

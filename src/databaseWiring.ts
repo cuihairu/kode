@@ -674,6 +674,16 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
       'plain'
         ? 'plain'
         : 'encrypted',
+    // UX-2026-11-23 用户令:导出弹窗「从配置读取」——kbengine.clone.defaultEntity /
+    // defaultDbId 生效值(与 archiveEncryption 同一设置层);空串 = 未配置,
+    // 调用方不出配置项(不猜)。trim 后空值如实归 undefined。
+    getCloneExportConfigDefaults: () => {
+      const cloneCfg = vscode.workspace.getConfiguration('kbengine.clone');
+      return {
+        defaultEntity: cloneCfg.get<string>('defaultEntity')?.trim() || undefined,
+        defaultDbId: cloneCfg.get<string>('defaultDbId')?.trim() || undefined
+      };
+    },
     // UX-REVIEW-004b 导出预检:后端门轻探测 + 源连接真实建连测试(SELECT
     // VERSION() 即关)——都在实体/DBID 收集前如实给原因与恢复入口。
     probeCloneBackend: cloneBackendProbe(),

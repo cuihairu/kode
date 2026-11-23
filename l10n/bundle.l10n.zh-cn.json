@@ -791,5 +791,8 @@
   "Final config": "最终配置",
   "Clone profile": "克隆档案",
   "Select the export source connection (values shown are from the engine final config / saved profile)": "选择导出源连接(展示值来自引擎最终配置/已存克隆档案)",
-  "Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry.": "未找到元件 kbengine.xml;以上值为引擎默认值(kbengine_defaults.xml),非最终合并配置。请把 kbengine.xml 放到 assetsRoot res/server/ 下(或检查 kbengine.assetsRoot 设置)后重试。"
+  "Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry.": "未找到元件 kbengine.xml;以上值为引擎默认值(kbengine_defaults.xml),非最终合并配置。请把 kbengine.xml 放到 assetsRoot res/server/ 下(或检查 kbengine.assetsRoot 设置)后重试。",
+  "From config: {entity}": "从配置读取：{entity}",
+  "{base} (config default: {value})": "{base}（配置默认值：{value}）",
+  "Archive encryption default (kbengine.clone.archiveEncryption): {value}": "归档加密默认值（kbengine.clone.archiveEncryption）：{value}"
 }

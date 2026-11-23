@@ -87,6 +87,10 @@ function makeDeps(
       if (options.placeHolder.includes('Select the entity to export')) {
         return 'Avatar';
       }
+      // 导出源连接选择(UX-2026-11-23):测试固定走档案连接,不占 confirmQueue。
+      if (options.placeHolder.includes('Select the export source connection')) {
+        return items[0];
+      }
       menus.push({ items, placeHolder: options.placeHolder });
       const next = confirmQueue.shift();
       return next ?? 'Cancel';
@@ -251,6 +255,10 @@ describe('runExportCloneCommand UX-2026-11-22(记住选择/计划预览弹窗化
       showQuickPick: async (items, options) => {
         if (options.placeHolder.includes('Select the entity to export')) {
           entityMenus.push({ items, placeHolder: options.placeHolder });
+          return items[0];
+        }
+        // 导出源连接选择(UX-2026-11-23):测试固定走档案连接,不占 confirmQueue。
+        if (options.placeHolder.includes('Select the export source connection')) {
           return items[0];
         }
         confirmMenus.push({ items, placeHolder: options.placeHolder });

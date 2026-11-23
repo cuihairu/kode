@@ -159,6 +159,12 @@ export interface PlayerCloneCommandDeps {
     config: { host: string; port: number; user: string; password?: string; database: string };
     defaultsOnly: boolean;
   } | null>;
+  /**
+   * 用户令 2026-11-23:导出弹窗「从配置读取」面 —— kbengine.clone.defaultEntity /
+   * defaultDbId 生效值(与 archiveEncryption 同一设置层)。缺省 = 无注入
+   * (测试替身/旧装配兼容,弹窗行为与旧版逐字节一致)。
+   */
+  getCloneExportConfigDefaults?(): { defaultEntity?: string; defaultDbId?: string };
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
   now(): number;
 }
@@ -879,14 +885,30 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
   const orderedEntities = lastEntity
     ? [lastEntity, ...entityNames.filter(name => name !== lastEntity)]
     : entityNames;
-  const entityName = await deps.showQuickPick(orderedEntities, {
+  // UX-2026-11-23 用户令:实体弹窗「从配置读取」——kbengine.clone.defaultEntity
+  // 生效值内联成首项(配置值可见,回车即选);配置为空、值不在当前语料实体清单
+  // (不猜实体名)或与上次成功导出同实体(已置顶,不重复出项) → 不出配置项,
+  // 列表与旧行为一致。
+  const cloneConfigDefaults = deps.getCloneExportConfigDefaults?.() ?? {};
+  const configEntity = (cloneConfigDefaults.defaultEntity ?? '').trim();
+  const configEntityKnown = configEntity !== '' && entityNames.includes(configEntity);
+  const configEntityItem =
+    configEntityKnown && configEntity !== lastEntity
+      ? l10n('From config: {entity}', { entity: configEntity })
+      : null;
+  const entityItems = configEntityItem
+    ? [configEntityItem, ...orderedEntities]
+    : orderedEntities;
+  const pickedEntity = await deps.showQuickPick(entityItems, {
     placeHolder: lastEntity
       ? l10n('Select the entity to export (last: {entity})', { entity: lastEntity })
       : l10n('Select the entity to export')
   });
-  if (!entityName) {
+  if (!pickedEntity) {
     return;
   }
+  const entityName =
+    configEntityItem && pickedEntity === configEntityItem ? configEntity : pickedEntity;
   // UX-REVIEW-004b:实体上下文(表结构推导)检查前置到 DBID 输入前——
   // 推导失败如实报错,不先丢已输入的 DBID。
   const derivationTables = deps.resolveEntityTables(entityName);
@@ -896,9 +918,17 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     );
     return;
   }
+  // UX-2026-11-23 用户令:DBID 输入框「从配置读取」——kbengine.clone.defaultDbId
+  // 生效值写进 prompt(配置值可见)并作预填;预填优先级 = 上次成功导出 > 配置
+  // (与实体弹窗记忆口径一致);配置为空时 prompt/预填与旧行为逐字节一致。
+  const configDbId = (cloneConfigDefaults.defaultDbId ?? '').trim();
+  const dbidBasePrompt = l10n('Root-table DBID (the entity primary key id)');
+  const dbidPrompt = configDbId
+    ? l10n('{base} (config default: {value})', { base: dbidBasePrompt, value: configDbId })
+    : dbidBasePrompt;
   const dbidText = await deps.showInputBox({
-    prompt: l10n('Root-table DBID (the entity primary key id)'),
-    value: lastExport?.dbid || undefined,
+    prompt: dbidPrompt,
+    value: lastExport?.dbid || (configDbId || undefined),
     validateInput: value => (/^\d+$/.test(value) ? null : l10n('DBID must be a number'))
   });
   if (dbidText === undefined) {
@@ -951,12 +981,25 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
       deps.channel.appendLine(preview.join('\n'));
       deps.channel.show(true);
 
-      const previewSummary = [tablesLine, budgetLine, ...(missingLine ? [missingLine] : [])].join('\n');
+      // UX-2026-11-23 用户令:加密确认弹窗「展示配置的值」——设置生效值
+      // (kbengine.clone.archiveEncryption)写进确认弹窗占位文案,初始态同源
+      // (PDC-0609:上次成功导出优先于配置缺省)。
+      const archiveEncryptionDefault = deps.getArchiveEncryptionDefault?.() ?? 'encrypted';
+      const encryptionDefaultLine = l10n(
+        'Archive encryption default (kbengine.clone.archiveEncryption): {value}',
+        { value: archiveEncryptionDefault }
+      );
+      const previewSummary = [
+        tablesLine,
+        budgetLine,
+        ...(missingLine ? [missingLine] : []),
+        encryptionDefaultLine
+      ].join('\n');
       const encryptionChoice = await pickExportEncryption(
         deps.showQuickPick,
         plan.result.queries.length,
         // 整改1:上次成功导出的加密位作初始态;无历史值回落设置(PDC-0609)。
-        lastExport ? lastExport.encrypt : (deps.getArchiveEncryptionDefault?.() ?? 'encrypted') === 'encrypted',
+        lastExport ? lastExport.encrypt : archiveEncryptionDefault === 'encrypted',
         l10n,
         previewSummary
       );
