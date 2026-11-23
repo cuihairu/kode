@@ -325,7 +325,7 @@ const zh = {
       `${sections} 段 · ${keys} 键 · 覆盖 ${overridden} · 新增 ${customOnly}`,
     loading: '正在解析配置…',
     emptyNoWorkspace: '未打开工作区,无法定位配置文件。',
-    emptyNoConfig: '未找到 kbengine_defaults.xml(检查 kbengine.binPath / kbengine.assetsRoot 设置)。',
+    emptyNoConfig: '未找到 kbengine_defaults.xml(检查 kbengine.assetsRoot / kbengine.engineRoot 设置)。',
     defaultsOnlyWarning:
       '未发现元件 kbengine.xml,以下各键均为引擎默认值(kbengine_defaults.xml)而非最终合成配置;若实际部署使用自定义配置,请把 kbengine.xml 放到 assetsRoot 的 res/server/ 下(或检查 kbengine.assetsRoot 设置)后点刷新。',
     errorState: '配置解析失败',
@@ -727,7 +727,7 @@ const en: typeof zh = {
       `${sections} sections · ${keys} keys · ${overridden} overridden · ${customOnly} custom`,
     loading: 'Resolving config…',
     emptyNoWorkspace: 'No workspace folder open; config files cannot be located.',
-    emptyNoConfig: 'kbengine_defaults.xml not found (check kbengine.binPath / kbengine.assetsRoot settings).',
+    emptyNoConfig: 'kbengine_defaults.xml not found (check the kbengine.assetsRoot / kbengine.engineRoot settings).',
     defaultsOnlyWarning:
       'No component kbengine.xml found; every value below is the engine default (kbengine_defaults.xml), not the final merged config. If your deployment uses a custom config, place kbengine.xml under assetsRoot\'s res/server/ (or check the kbengine.assetsRoot setting) and refresh.',
     errorState: 'Config resolution failed',

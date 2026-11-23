@@ -1604,11 +1604,6 @@
             "default": true,
             "markdownDescription": "%kbengine.config.logAutoConnect.description%"
           },
-          "kbengine.loggerPort": {
-            "type": "number",
-            "default": 20022,
-            "markdownDescription": "%kbengine.config.loggerPort.description%"
-          },
           "kbengine.maxLogEntries": {
             "type": "number",
             "default": 10000,
@@ -2124,11 +2119,6 @@
             "default": "",
             "markdownDescription": "%kbengine.config.assetsRoot.description%"
           },
-          "kbengine.binPath": {
-            "type": "string",
-            "default": "${workspaceFolder}/kbe/bin/server",
-            "markdownDescription": "%kbengine.config.binPath.description%"
-          },
           "kbengine.core.backend": {
             "type": "string",
             "enum": [
@@ -2154,12 +2144,6 @@
             "default": 2000,
             "minimum": 0,
             "markdownDescription": "%kbengine.config.core.shadow.timeoutMs.description%"
-          },
-          "kbengine.engineVersion": {
-            "type": "string",
-            "default": "3.7.3",
-            "scope": "window",
-            "markdownDescription": "%kbengine.config.engineVersion.description%"
           },
           "kbengine.configData": {
             "type": "object",
@@ -2261,11 +2245,6 @@
             "default": "",
             "scope": "window",
             "markdownDescription": "%kbengine.config.clone.defaultDbId.description%"
-          },
-          "kbengine.console.discoveryHost": {
-            "type": "string",
-            "default": "127.0.0.1",
-            "markdownDescription": "%kbengine.config.console.discoveryHost.description%"
           },
           "kbengine.databaseQueryTimeoutMs": {
             "type": "number",
