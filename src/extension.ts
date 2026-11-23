@@ -1476,7 +1476,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 共享对象;quickActionManager(views L5 返回句柄)/httpRequestChannel(views
   // Q1)/fileChangeMetaResolver(languageServices L2)经 deps 注入;
   // fileChangeRouter 返回给 rust 文件变化消费者接线。
-  const { fileChangeRouter } = activateHotReload({
+  const { fileChangeRouter, pipelineQueue } = activateHotReload({
     context,
     quickActionManager,
     hotReloadStateViewRefresh,
@@ -1802,6 +1802,7 @@ export function activate(context: vscode.ExtensionContext) {
         preview: previewOf(hover?.contents?.[0]).slice(0, 120)
       };
     },
+    hotReloadQueue: pipelineQueue,
     pendingWork: () => ({
       diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued +
         defMethodConsistencyScheduler.pendingWorkload().queued +

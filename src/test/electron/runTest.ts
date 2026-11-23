@@ -92,6 +92,10 @@ async function main(): Promise<void> {
   if (hrRenderMode) {
     process.env.KODE_ELECTRON_SUITE = 'hrrender';
   }
+  // RUST-416 真 UI 线程交互验证(500 文件突发面):真工作区 500 个 .py 依序
+  // 改写经真磁盘监视面进批量预览滞留,测量窗内采真渲染器命令往返与宿主
+  // 事件环延迟。套件在 src/test/electron/suite/hotReloadBurstUi.test.ts。
+  const hrBurstMode = process.argv.includes('--hrburst');
   // KODE-I18N-001 manifest %key% 真机解析:默认工作区即可,读解析后的
   // extension.packageJSON 断言无裸 token 残留(真机层唯一能触达 VS Code
   // 实际 locale 解析路径的面)
@@ -1052,6 +1056,42 @@ async function main(): Promise<void> {
     }, null, 2));
     process.env.KODE_ELECTRON_SUITE = 'pubbench';
     process.env.KODE_PUBBENCH_ROOT = temporaryRoot;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (hrBurstMode) {
+    // RUST-416 真 UI 线程交互验证(500 文件突发面):500 个既有 .py 依序改写
+    // 进真磁盘监视面(onDiskChange),batchPreviewThreshold=10 使整批只进
+    // 预览滞留(零真实发送=无外部服务依赖);套件在突发窗内采真渲染器命令
+    // 往返与扩展宿主事件环延迟。套件在 hotReloadBurstUi.test.ts。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-hrburst-'));
+    workspacePath = temporaryRoot;
+    const burstDir = path.join(temporaryRoot, 'scripts', 'entities', 'burst');
+    fs.mkdirSync(burstDir, { recursive: true });
+    for (let index = 0; index < 500; index += 1) {
+      fs.writeFileSync(
+        path.join(burstDir, `Burst${String(index).padStart(3, '0')}.py`),
+        [`class Burst${index}:`, '    def tick(self):', '        return 0'].join('\n') + '\n'
+      );
+    }
+    fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false,
+      'kbengine.assetsRoot': '.',
+      'kbengine.hotReload': {
+        'enabled': true,
+        'triggerMode': 'onDiskChange',
+        'globs': ['scripts/**/*.py'],
+        'debounceMs': 200,
+        // batchFlushMs 缺省 0=定稿即发(每文件各自成批,单批恒 ≤1 必在阈值下,
+        // 500 文件突发就永远进不了预览滞留)。显式给 300ms 波次归集窗,突发
+        // 才合成超阈值批次(HR-WATCH-016),只预览不自动发。
+        'batchFlushMs': 300,
+        'batchPreviewThreshold': 10
+      }
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'hrburst';
+    process.env.KODE_HRBURST_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   } else if (pylanceWireMode) {
     // 段1:demo 资产副本+探针;设置只关开窗提示——python.stubExport/

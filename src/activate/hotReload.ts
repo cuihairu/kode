@@ -69,6 +69,10 @@ export interface HotReloadDeps {
 /** L6 共享句柄:rust 文件变化消费者接线经此消费(fileChangeRouter 原文返回) */
 export interface HotReloadShared {
   fileChangeRouter: FileChangeRouter;
+  /** RUST-416 突发预览面(与 HR-UI-004 面板同源):渲染时刻读当前流水线快照,
+   * 未上线=空队列。测试经此确定性验「突发已进预览」(previewHeld≥阈值),
+   * 非轮询计时。 */
+  pipelineQueue: () => SavePipelineQueueSnapshot;
 }
 
 /**
@@ -130,6 +134,8 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   const hotReloadPipelineQueueRef: { current: (() => SavePipelineQueueSnapshot) | null } = {
     current: null
   };
+  const readPipelineQueue = (): SavePipelineQueueSnapshot =>
+    hotReloadPipelineQueueRef.current?.() ?? { pending: [], previewHeld: [], wave: [] };
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({
     now: () => Date.now(),
     onRecorded: () => {
@@ -155,8 +161,7 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       watchMode: readHotReloadSettings(hotReloadSectionReader()).triggerMode,
       target: ''
     }),
-    pipelineQueue: () =>
-      hotReloadPipelineQueueRef.current?.() ?? { pending: [], previewHeld: [], wave: [] },
+    pipelineQueue: readPipelineQueue,
     persist: {
       // 宿主无 workspaceState(测试替身语境)时如实退化为不持久化,不炸激活
       load: () => context.workspaceState?.get(HOT_RELOAD_HISTORY_STATE_KEY),
@@ -951,6 +956,7 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   context.subscriptions.push(runTempEditReloadCommand);
 
   return {
-    fileChangeRouter
+    fileChangeRouter,
+    pipelineQueue: readPipelineQueue
   };
 }

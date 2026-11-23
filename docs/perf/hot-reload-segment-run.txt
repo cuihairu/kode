@@ -113,3 +113,9 @@ HRS-METRIC S8.renderPage50 n=20 p50=0.75ms p95=1.14ms p99=3.81ms max=3.81ms
 HRS-METRIC S8.renderVirtual500 n=20 p50=1.15ms p95=1.71ms p99=1.87ms max=1.87ms
 HRS-NOTE S8 回执→UI 显示段:逐回执翻译+入账、逐页面板渲染(50 行页 + 500 行虚拟滚动路径)皆亚毫秒级;显示段 wall 另含 refreshWindowMs 缺省 500ms 设计节流窗(HR-UI-007 窗内合并已钉,非性能回归面);网络耗时须单独统计不混本地性能(§19.10)
 HRS-BOUND violations=0 bounds={"s1FilterP99Ms":20,"s2HashP99Ms":1500,"s3SyntaxP99Ms":50,"s4QueueP99Ms":400,"s4TotalCpuP99Ms":2000,"s6HashP99Ms":250,"s6SyntaxP99Ms":50,"s6QueueP99Ms":100,"s6TotalCpuP99Ms":250,"s7BurstFilterP99Ms":10,"s7BurstFilterWallMs":300,"s7BurstOfferWallMs":300,"s8LedgerP99Ms":100,"s8RenderP99Ms":1000}
+HRS-ENV node=v24.21.0 platform=linux cpus=14 load1=3.63 files=500 suite=hrburst
+HRS-METRIC RUST416.r1 files=500 heldDelta=500 samples=4 baseLoopP99=60.72 baseLoopMax=263.98 baseUiP50=89.18 baseUiP99=234.14 burstLoopP99=128.84 burstLoopMax=145.88 burstUiP50=78.73 burstUiP90=201.29 burstUiP99=201.29 burstUiMax=201.29 recLoopP99=53.12 recLoopMax=53.12 recUiP99=57.46
+HRS-METRIC RUST416.r2 files=500 heldDelta=500 samples=5 baseLoopP99=45.88 baseLoopMax=47.51 baseUiP50=45.70 baseUiP99=49.51 burstLoopP99=151.91 burstLoopMax=171.18 burstUiP50=51.26 burstUiP90=213.40 burstUiP99=213.40 burstUiMax=213.40 recLoopP99=52.66 recLoopMax=52.66 recUiP99=56.16
+HRS-METRIC RUST416.r3 files=500 heldDelta=500 samples=4 baseLoopP99=56.75 baseLoopMax=56.75 baseUiP50=54.92 baseUiP99=58.00 burstLoopP99=120.52 burstLoopMax=174.72 burstUiP50=101.75 burstUiP90=270.67 burstUiP99=270.67 burstUiMax=270.67 recLoopP99=41.75 recLoopMax=41.75 recUiP99=44.91
+HRS-METRIC RUST416.agg files=500 rounds=3 samples=13 burstUiP99=270.67 burstUiMax=270.67 burstLoopMax=174.72
+HRS-NOTE RUST416 真 UI 线程交互验证(500 文件突发):真编辑器宿主里 500 个 .py 依序改写经真磁盘监视面进批量预览滞留;①真渲染器命令往返(setContext 落工作台命令服务)量 UI 线程响应,②monitorEventLoopDelay 量扩展宿主事件环(突发前另采闲置基线窗作相对对照);突发写入由子进程执行,前置条件经 hotReloadQueue 确定性核验(预览滞留 Δ≥文件数),零真实发送无外部服务依赖;不冻结判据=无秒级停顿(burstLoopMax<1000ms)+渲染器保持可交互
