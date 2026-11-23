@@ -5,7 +5,11 @@ import {
   type ServerNotificationMessage
 } from './kodeCoreClient';
 import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
-import { resetInteractiveCircuit } from './kodeCoreShadowFaces';
+import {
+  noteInteractiveStartupFailure,
+  resetInteractiveCircuit,
+  resetInteractiveCircuitForManualRestart
+} from './kodeCoreShadowFaces';
 import { indexLog } from './indexLog';
 
 // kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
@@ -460,8 +464,17 @@ export class KodeCoreGate {
       this.noticeOnce(`rust 服务不可用(${method}): client 创建失败,回落 ts`);
       return fallback;
     }
+    // P1-4:启动面独立记账。启动失败此前与请求失败同笼,转成正常回落——
+    // 预算包装(awaitWithInteractiveBudget)把它记成一次成功,启动失败永不
+    // 熔断。现在如实记传输级硬失败(仍回落 ts,不误伤服务)。
     try {
       await client.start();
+    } catch (error) {
+      noteInteractiveStartupFailure();
+      this.noticeOnce(`rust 服务启动失败(${method}): ${(error as Error).message},回落 ts`);
+      return fallback;
+    }
+    try {
       this.syncRestartGeneration(client);
       return (await client.request(method, params, opts)) as T;
     } catch (error) {
@@ -911,5 +924,9 @@ export class KodeCoreGate {
    */
   restartCore(): void {
     this.stopClient();
+    // P1-4:手动重启 = 无条件复位窗口。若此后新进程启动再失败,握手对账
+    // (syncRestartGeneration → resetInteractiveCircuit)跑不到,熔断必须
+    // 在重启动作本身复位,否则后续请求仍被熔断挡住,重启等于无效。
+    resetInteractiveCircuitForManualRestart();
   }
 }

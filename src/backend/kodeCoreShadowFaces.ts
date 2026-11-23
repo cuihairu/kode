@@ -259,6 +259,26 @@ export function resetInteractiveCircuit(generation: number): void {
   }
 }
 
+/**
+ * P1-4:用户显式重启 Core = 无条件复位窗口。自动重启路径靠「代数变化」
+ * 触发 resetInteractiveCircuit,但手动重启后若新进程启动再失败,握手对账
+ * (syncRestartGeneration)永远跑不到,代数恒不变 → 熔断永不复位。手动
+ * 复位不比对代数,直接清零熔断与超时连续计数。
+ */
+export function resetInteractiveCircuitForManualRestart(): void {
+  interactiveCircuitOpen = false;
+  interactiveTimeoutStreak = 0;
+}
+
+/**
+ * P1-4:Rust 服务轨道启动失败(spawn/握手拒绝)如实记入熔断。此前
+ * serveInRust 把启动异常转成正常回落,本面在预算包装下把该次记成成功——
+ * 启动失败连续发生也永不熔断,交互腿每请求白等预算。
+ */
+export function noteInteractiveStartupFailure(): void {
+  recordInteractiveFailure('hard');
+}
+
 function recordInteractiveFailure(kind: 'hard' | 'timeout'): void {
   if (kind === 'hard') {
     // 传输级硬失败当次熔断：spawn 错误/进程退出不会因重试而好转。

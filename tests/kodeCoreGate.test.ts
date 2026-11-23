@@ -11,6 +11,12 @@ import {
   type ShadowClientLike,
 } from '../src/backend/kodeCoreGate';
 import { KodeCoreClient } from '../src/backend/kodeCoreClient';
+import {
+  awaitWithInteractiveBudget,
+  interactiveCircuitState,
+  resetInteractiveCircuit,
+  resetInteractiveCircuitForManualRestart
+} from '../src/backend/kodeCoreShadowFaces';
 
 // kode2 PR-012:双轨切流门单测。kill-switch 解析、rust serving 门禁、
 // shadow 影像比对四种 verdict、差异日志环形与订阅、compare 永不上浮。
@@ -687,5 +693,72 @@ describe('notifyWorkspaceFileEvent 通知面(RUST-131-W 生产文件事件)', ()
         files: [{ oldUri: 'file:///a', newUri: 'file:///b' }],
       })
     ).toBe(false);
+  });
+});
+
+// P1-4(2026-11-24 用户令):Rust 熔断漏记启动失败 + 手动重启不复位。
+// 启动失败此前与请求失败同笼转成正常回落,预算包装把它记成一次成功——
+// 启动失败永不熔断;手动重启只 stopClient,熔断状态不动,重启无效。
+describe('P1-4 Rust 熔断:启动失败如实记账 + 手动重启复位', () => {
+  it('serveInRust 启动失败记入熔断(仍回落 ts);restartCore 无条件复位;复位后如实再开', async () => {
+    // 隔离:模块级熔断状态按独立代清零
+    resetInteractiveCircuit(-77001);
+    expect(interactiveCircuitState().open).toBe(false);
+    const gate = new KodeCoreGate({
+      clientFactory: (): ShadowClientLike => ({
+        start: vi.fn(async () => {
+          throw new Error('spawn failed: binary missing');
+        }),
+        request: vi.fn(async () => ({})),
+        dispose: vi.fn(async () => undefined),
+      }),
+    });
+    gate.setConfig({ backend: 'rust', serverPath: 'broken-server', shadowTimeoutMs: 2000 });
+    try {
+      const out = await gate.serveInRust(
+        'textDocument/hover',
+        { textDocument: { uri: URI } },
+        'TS-FALLBACK',
+        { timeoutMs: 500 }
+      );
+      expect(out, '启动失败仍回落 ts(铁律:Rust 失败不误伤服务)').toBe('TS-FALLBACK');
+      expect(
+        interactiveCircuitState().open,
+        '启动失败必须记入熔断(修前被预算包装记成成功)'
+      ).toBe(true);
+      // 手动重启:无条件复位(修前只 stopClient,熔断不动,重启等于无效)
+      gate.restartCore();
+      expect(interactiveCircuitState().open, '手动重启必须复位熔断').toBe(false);
+      expect(interactiveCircuitState().timeoutStreak).toBe(0);
+      // 复位后下一请求不再被熔断直通挡住;再次启动失败如实再开
+      const out2 = await gate.serveInRust(
+        'textDocument/hover',
+        { textDocument: { uri: URI } },
+        'TS-FALLBACK',
+        { timeoutMs: 500 }
+      );
+      expect(out2).toBe('TS-FALLBACK');
+      expect(interactiveCircuitState().open, '复位后的启动失败如实再开熔断').toBe(true);
+    } finally {
+      await gate.dispose().catch(() => undefined);
+      resetInteractiveCircuitForManualRestart();
+    }
+  });
+
+  it('连续预算超时开熔断后,手动重启必须复位(修前后续请求仍被挡)', async () => {
+    resetInteractiveCircuit(-77002);
+    for (let round = 0; round < 3; round += 1) {
+      const face = await awaitWithInteractiveBudget(async () => {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return 'slow';
+      }, 10);
+      expect(face, '超预算降级 null').toBeNull();
+    }
+    expect(interactiveCircuitState().open, '连续 3 次超时熔断开放').toBe(true);
+    const gate = new KodeCoreGate();
+    gate.restartCore();
+    expect(interactiveCircuitState().open, '手动重启必须复位熔断(修前重启无效)').toBe(false);
+    expect(interactiveCircuitState().timeoutStreak).toBe(0);
+    resetInteractiveCircuitForManualRestart();
   });
 });
