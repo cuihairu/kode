@@ -85,6 +85,13 @@ async function main(): Promise<void> {
   if (panelOpenMode) {
     process.env.KODE_ELECTRON_SUITE = 'panelopen';
   }
+  // RUST-414 真 UI 线程墙钟:真 webview 渲染热更历史面板 HTML(导航→
+  // parse+layout / double-rAF paint),补 S8 纯核字符串生成面缺的真实渲染段。
+  // 默认工作区。套件在 src/test/electron/suite/historyRenderProbe.test.ts。
+  const hrRenderMode = process.argv.includes('--hrrender');
+  if (hrRenderMode) {
+    process.env.KODE_ELECTRON_SUITE = 'hrrender';
+  }
   // KODE-I18N-001 manifest %key% 真机解析:默认工作区即可,读解析后的
   // extension.packageJSON 断言无裸 token 残留(真机层唯一能触达 VS Code
   // 实际 locale 解析路径的面)

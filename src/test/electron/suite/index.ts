@@ -61,6 +61,8 @@ export function run(): Promise<void> {
                     ? file === 'pylanceStubPriority.test.js'
                   : suite === 'pylancewire'
                     ? file === 'pylanceWire.test.js'
+                    : suite === 'hrrender'
+                      ? file === 'historyRenderProbe.test.js'
                   : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
