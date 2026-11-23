@@ -827,7 +827,8 @@ describe('entityMapping 散点分支', () => {
       '        self.cell.tick()',
       ''
     ].join('\n'));
-    write('tools/Hero.py', [
+    // 单脚本根契约:索引只扫 {workspace}/scripts,「域外」= scripts 下非 base/cell 段
+    write('scripts/tools/Hero.py', [
       'class HeroTool(object):',
       '    def toolwork(self):',
       '        pass',
@@ -923,7 +924,7 @@ describe('entityMapping 散点分支', () => {
     const domainHit = await manager!.resolveMethodImplementationGlobally('ping', 'BaseMethods');
     expect(domainHit?.filePath).toBe(p('scripts/base/Hero.py'));
     const globalHit = await manager!.resolveMethodImplementationGlobally('toolwork');
-    expect(globalHit?.filePath).toBe(p('tools/Hero.py'));
+    expect(globalHit?.filePath).toBe(p('scripts/tools/Hero.py'));
     const logs = getRecentJumpLogs().join('\n');
     expect(logs).toContain('域内目录 base');
     expect(logs).toContain('全项目回退');
@@ -1017,6 +1018,8 @@ describe('entityMapping 散点分支', () => {
 
   it('首扫失败后的冷查询重触发:重试日志如实入账', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-cov-retry-'));
+    // 单脚本根契约:扫描要真发生(才能失败并记账),工作区须有 scripts 目录
+    fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
     const oldFolders = stubWorkspace.workspaceFolders;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(dir), name: 'bad', index: 0 }];
     stubWorkspace.findFiles = (async () => {

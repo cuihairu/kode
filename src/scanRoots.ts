@@ -1,10 +1,13 @@
 /**
- * 索引扫描根(用户 2026-10-16:「不是只扫描顶层吧,还有 assetsRoot」)。
+ * 索引扫描根(用户 2026-10-16:「不是只扫描顶层吧,还有 assetsRoot」;
+ * 2026-11-23:「只从 assetsRoot 起扫,找不到就不扫,不要退回 workspace」)。
  *
  * `workspace.findFiles` 的裸 glob 按 workspace 匹配,workspace 之外显式配置的
- * assetsRoot 扫不到;这里把扫描根定为 **workspace 顶层 ∪ assetsRoot**(可能指
- * 向不同目录,按路径去重并剔除被包含的冗余根),并为 workspace 外的根提供手工
- * 遍历补齐。assetsRoot 未配置/不存在/读取异常时回退 workspace,不外抛。
+ * assetsRoot 扫不到;这里把扫描根定为 **assetsRoot**(配置派生 scripts 根 →
+ * `assetsRoot` 设置 → 自动发现),并为 workspace 外的根提供手工遍历补齐。
+ * assetsRoot 未配置/不存在/读取异常 → **空数组**:不退回 workspace 顶层,
+ * 因为那会把引擎仓、依赖树、构建产物全扫进索引,是浪费而不是兜底——
+ * 空根就是「配置不对」的明确信号,由上层如实提示。不外抛。
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -113,66 +116,114 @@ export function resolveAssetsRootForWorkspace(workspaceRoot: string): string {
 }
 
 /**
- * 索引扫描根:workspace 全部文件夹 ∪ 有效 assetsRoot(配置原值 → 自动发现),
- * 路径去重 + 包含关系去重(assetsRoot 已在某 workspace 文件夹内时不重复入列),
- * 目录不存在的剔除。空工作区且无 assetsRoot → 空数组(调用方按「扫不到」处理,
- * 不抛错)。
+ * 索引扫描根:**只扫 assetsRoot/scripts**(2026-11-23 用户令)。
+ *
+ * 扫描根 = `{assets}/scripts`(脚本源);找不到 scripts 目录就返回**空数组**,
+ * 绝不退回 assetsRoot 本体或 workspace 顶层——那是全盘扫的来源。调用方按
+ * 「扫不到」处理,提示配置不对,不抛错。
+ *
+ * 旧语义(workspace 顶层 ∪ assetsRoot)让 assets 之外的引擎仓/依赖树全被
+ * 扫进索引(全盘 2398 文件),已按用户反复要求收窄到 scripts。
  */
 export function getIndexScanRoots(): string[] {
-  const candidates: string[] = [];
-  try {
-    for (const folder of vscode.workspace.workspaceFolders ?? []) {
-      if (folder?.uri?.fsPath) {
-        candidates.push(folder.uri.fsPath);
-      }
+  // 2026-11-23 用户令:**索引只从 assetsRoot/scripts 起扫,没有兜底**。
+  // scripts 是 KBEngine 的脚本源;assetsRoot 解析出但 scripts 目录缺 → 空数组
+  // (调用方按「扫不到」处理,提示配置不对),**绝不退回 assetsRoot 本体或
+  // workspace 顶层**——空根兜底会把引擎仓/依赖树/构建产物全扫进来(2398 文件
+  // 全盘扫即由此来),是浪费而非保险。workspace 根只用于解析 assetsRoot 的
+  // 相对路径与自动发现,自身永远不进 KBEngine 扫描根。
+  //
+  // 分支三分(与 HEAD 前的「assetsRoot 落空回退 workspace」历史行为对齐):
+  // ① assetsRoot 解析出(配置有效或自动发现命中)→ {assets}/scripts;scripts
+  //    缺 → 空数组(用户令:找不到 scripts 就不扫)。
+  // ② 配置读取失败或配置显式给出却解析不出(配置不对)→ 空数组(不退回
+  //    workspace 全盘扫;配置错了就如实提示,不拿 workspace 兜底掩盖)。
+  // ③ 无配置、无发现、无配置错误(真非 KBEngine 仓库)→ 维持旧 workspace
+  //    腿:有 scripts 的文件夹收窄到 scripts,没有的按旧语义整文件夹。这是
+  //    HEAD 前的回退行为,只在不涉及 assetsRoot 时生效。
+  const workspaceRoot = (() => {
+    try {
+      return (vscode.workspace.workspaceFolders ?? [])[0]?.uri?.fsPath ?? '';
+    } catch {
+      return '';
     }
-  } catch {
-    // workspace 读取异常 → 只剩 assetsRoot 兜底,不外抛
-  }
-  const workspaceRoot = candidates[0] ?? '';
-  // KODE-CFG-005:配置派生扫描根优先(CFG-004 链,经 ensureConfigDerivedScanRoot
-  // 刷新的缓存读取;`{assets}/res/server/kbengine.xml` → `{assets}/scripts`)。
-  // 缓存未就绪/RPC 失败/降级/目录不存在 → 派生根落空,自然走旧
-  // workspace∪assetsRoot 链兜底(设计 §6.2:旧链保留为兜底,派生结果优先)
-  const derivedRoot = getConfigDerivedScanRoot();
-  if (derivedRoot) {
-    candidates.push(derivedRoot);
-  }
+  })();
+
+  // 配置原值先读:显式配置但解析不出(如指向不存在目录)=「配置不对」,必须与
+  // 「完全未配置」区分开——后者才走 ③ 的 workspace 腿(历史回退)。
+  let configuredRaw = '';
+  let configReadFailed = false;
   try {
-    const assetsRoot = resolveAssetsRootForWorkspace(workspaceRoot);
-    // 审核发现修复:派生 scripts 根存在时仍把外部 assetsRoot 入列——否则
-    // scripts 之外的资源/定义文件(res/、entity_defs 等)不再被索引。包含去重
-    // 会留下更宽的 assetsRoot 并剔除被其包含的派生 scripts 根(不重复扫)。
-    if (assetsRoot) {
-      candidates.push(assetsRoot);
-    }
+    configuredRaw = (vscode.workspace.getConfiguration('kbengine').get<string>('assetsRoot', '') ?? '').trim();
   } catch {
-    // assetsRoot 解析异常 → 仅 workspace,不外抛
+    configReadFailed = true; // 配置系统异常 = 不可信,按配置不对处理(不扫)
   }
 
-  const picked: string[] = [];
+  const assetsRoot = (() => {
+    try {
+      return resolveAssetsRootForWorkspace(workspaceRoot);
+    } catch {
+      return ''; // 解析异常 = 配置不对,扫描根保持空,上层如实提示
+    }
+  })();
+
+  // ① 索引范围 = **assetsRoot 下的 scripts 目录**(比整棵 assetsRoot 更小)。
+  // scripts 才是 KBEngine 的脚本源(scripts/base|cell|client),assetsRoot 剩下
+  // 的 res/、entity_defs/ 等对类索引无用。显式拼路径而非依赖派生根:派生根需要
+  // 配置派生链先算成,而 assetsRoot/scripts 是直接可判的存在性。assetsRoot 为空
+  // 时不拼相对路径(会落到 cwd 上,禁用)。
+  if (assetsRoot) {
+    const scriptsRoot = path.join(assetsRoot, 'scripts');
+    if (isDirectory(scriptsRoot)) {
+      return [scriptsRoot];
+    }
+    // ② 用户令原话:**assetsRoot 找得到但 scripts 目录没有 → 不扫描**(绝不
+    // 退回 assetsRoot 本体或 workspace 顶层)。空根就是「配置不对」的明确信号,
+    // 由上层如实提示——本分支不再查派生根/workspace 腿,避免「assets 在而
+    // scripts 缺」被别的兜底悄悄掩盖成一次全盘扫。
+    return [];
+  }
+
+  // ② 配置读取失败或配置显式给出但解析不出:配置不对,不扫。显式配置存在
+  // (哪怕指向不存在目录)说明用户有明确意图,落空是错误而非「没 KBEngine」,
+  // 此时拿 workspace 兜底会掩盖错误(HEAD 前 ghost 配置回退 workspace 正是
+  // 被用户否掉的「全盘扫」来源之一)。
+  if (configReadFailed || configuredRaw) {
+    return [];
+  }
+
+  // ③ assetsRoot 完全解析不出且无配置(真非 KBEngine 仓库):不算「找不到
+  // scripts」,workspace 腿维持旧行为——通用 python/def 面不因收窄失去索引
+  // (findFilesAcrossRoots 的空根门只对「assetsRoot 在而 scripts 缺」生效)。
+  // 同样只认 scripts 子目录(同一收窄纪律):有 scripts 的文件夹收窄到 scripts,
+  // 没有的按旧语义整文件夹(folder==root → rel='' → 裸 glob,与旧全 workspace
+  // 裸 glob 逐字节同)。多文件夹各留其根(多工程工作区不因首根收窄失去索引)。
+  const derivedRoot = getConfigDerivedScanRoot();
+  if (derivedRoot) {
+    return [derivedRoot];
+  }
+  const roots: string[] = [];
   const seen = new Set<string>();
-  for (const root of candidates) {
-    if (!root || !isDirectory(root)) {
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    const folderPath = (() => {
+      try {
+        return folder?.uri?.fsPath ?? '';
+      } catch {
+        return '';
+      }
+    })();
+    if (!folderPath) {
       continue;
     }
-    const key = normalizeForCompare(root);
+    const key = normalizeForCompare(folderPath);
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
-    picked.push(root);
+    const workspaceScripts = path.join(folderPath, 'scripts');
+    roots.push(isDirectory(workspaceScripts) ? workspaceScripts : folderPath);
   }
-  // 包含去重:被别的根完全包含的根丢弃(assetsRoot 在 workspace 内时由
-  // workspace 的 findFiles 覆盖,无需重复入列)
-  return picked.filter(
-    (root, index) =>
-      !picked.some(
-        (other, otherIndex) =>
-          otherIndex !== index &&
-          isContained(normalizeForCompare(other), normalizeForCompare(root))
-      )
-  );
+  return roots;
 }
 
 /** workspace 文件夹之外的扫描根(需手工遍历补齐的部分) */
@@ -452,6 +503,15 @@ export async function findFilesAcrossRoots(
   // 刀3:用户排除 glob(minimatch)并入同一谓词——workspace glob 后滤 +
   // 外部遍历剪枝共用,目录命中整棵不下潜
   const userExcludeMatchers = getUserScanExcludeMatchers();
+  // 2026-11-23 用户令(反复数十次):建立索引只扫 assetsRoot/scripts——
+  // workspace findFiles 的裸 glob 按 workspace 全目录匹配,覆盖面 ⊋ 扫描根时
+  // 扫描根之外的文件照样进结果(全盘扫主因)。收窄不在这里做全局前缀剔:
+  // findFilesAcrossRoots 也服务非索引面(全仓拼写门、类型 xml 引用等),
+  // 前缀剔会静默缩小那些面的覆盖面。收窄落在两处:
+  // ① getIndexScanRoots 只给 scripts(② 派生根 ③ 找不到就不给),外部遍历
+  //    与引擎子树剔除因此只覆盖 scripts;
+  // ② 下方「扫描根在 workspace 文件夹内则把 glob 挂到该子路径」——workspace
+  //    腿按 scripts 子路径匹配,不再遍历整棵 workspace。
   /** 刀2 引擎子树(前缀)+ 刀3 用户 glob(minimatch)+ 调用方形态过滤器的合取 */
   const keepPath = (fsPath: string): boolean => {
     const key = normalizeForCompare(fsPath);
@@ -464,8 +524,61 @@ export async function findFilesAcrossRoots(
     return pathFilter ? pathFilter(fsPath) : true;
   };
   const merged = new Map<string, vscode.Uri>();
+  const scanRootKeys = getIndexScanRoots().map(normalizeForCompare);
+  // 用户令(2026-11-23,反复数十次):**assetsRoot 找得到但 scripts 目录没有 →
+  // 不扫描**——绝不退回 assetsRoot 本体或 workspace 顶层(res/、依赖树、构建
+  // 产物全扫进去是浪费而非保险)。只对「assetsRoot 已解析」生效:KBEngine 项目
+  // 的 assets 在而 scripts 缺 = 布局不对,空结果如实提示;assetsRoot 完全解析
+  // 不出(非 KBEngine 仓库)时不算「找不到 scripts」,workspace 腿维持旧裸 glob
+  // 行为,通用 python/def 面不因收窄失去索引。
+  if (scanRootKeys.length === 0) {
+    const workspaceRootForGate = (() => {
+      try {
+        return (vscode.workspace.workspaceFolders ?? [])[0]?.uri?.fsPath ?? '';
+      } catch {
+        return '';
+      }
+    })();
+    let assetsRootResolved = false;
+    try {
+      assetsRootResolved = resolveAssetsRootForWorkspace(workspaceRootForGate) !== '';
+    } catch {
+      assetsRootResolved = false;
+    }
+    if (assetsRootResolved) {
+      // assetsRoot 在、scripts 缺 = 找不到 scripts 目录,不扫描(零文件)
+      discovery.end('ok');
+      return [];
+    }
+  }
   const stopWorkspaceGlob = discovery.startSubPhase('workspace-glob');
-  const base = await vscode.workspace.findFiles(glob, exclude, undefined, token);
+  // 2026-11-23 用户令(只扫 assetsRoot/scripts)的性能面:扫描根若落在某个
+  // workspace 文件夹之内(典型:kbe 仓里 assets/scripts),glob 直接挂到该子路径
+  // ——`{folder}/{rel}/**/*.py`,而不是裸 `**/*.py` 遍历整棵 workspace 只为被
+  // keepPath 剔掉。裸 glob 扫 workspace 顶层正是 2398 文件盘扫的 IO 来源。
+  // 扫描根在 workspace 之外(外部 assetsRoot)时维持裸 glob + 外部遍历补齐;
+  // 扫描根为空且 assetsRoot 完全解析不出(非 KBEngine 仓库)时同样维持裸
+  // glob——通用 python/def 面不因收窄失去索引(「assetsRoot 在而 scripts 缺」
+  // 的零文件早退已在上方 gate 处理)。
+  let base: vscode.Uri[] = [];
+  const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+  const folderForRoot = workspaceFolders.find(folder =>
+    scanRootKeys.some(rootKey => isContained(normalizeForCompare(folder.uri.fsPath), rootKey))
+  );
+  if (folderForRoot) {
+    const rootKey = scanRootKeys.find(rootKey =>
+      isContained(normalizeForCompare(folderForRoot!.uri.fsPath), rootKey)
+    );
+    if (rootKey) {
+      const rel = path.relative(folderForRoot.uri.fsPath, rootKey).split(path.sep).join('/');
+      const scopedGlob = rel ? `${rel}/${glob}` : glob;
+      base = await vscode.workspace.findFiles(scopedGlob, exclude, undefined, token);
+    }
+  } else {
+    // 扫描根全在 workspace 之外(外部 assetsRoot)或为空:workspace 腿维持裸
+    // glob(旧行为),外部根由 walkExternalRoot 补齐。
+    base = await vscode.workspace.findFiles(glob, exclude, undefined, token);
+  }
   stopWorkspaceGlob();
   for (const uri of base) {
     if (!keepPath(uri.fsPath)) {

@@ -80,10 +80,10 @@ describe('真实 kbengine:assetsRoot 扫描根验收', () => {
     }) as typeof stubWorkspace.findFiles;
 
     try {
-      // ── ① 扫描根:workspace 顶层 ∪ assetsRoot(两者并列,assetsRoot 在 workspace 文件夹之外) ──
+      // ── ① 扫描根:只扫 assetsRoot(2026-11-23 令;workspace 顶层不入列) ──
       const roots = getIndexScanRoots();
-      expect(roots.map(normalize)).toContain(normalize(TOOLS));
-      expect(roots.map(normalize)).toContain(normalize(ASSETS));
+      expect(roots.map(normalize)).toEqual([normalize(ASSETS)]);
+      expect(roots.map(normalize)).not.toContain(normalize(TOOLS));
       expect(getExternalScanRoots().map(normalize)).toEqual([normalize(ASSETS)]);
 
       // ── ② 前提证据:kbe/tools 自身没有任何实体定义(索引内容只能来自 assetsRoot) ──

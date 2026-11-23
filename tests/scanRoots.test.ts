@@ -16,8 +16,11 @@ import {
 import * as discoveryModule from '../src/workspaceDiscovery';
 import * as configDeriveModule from '../src/configDerive';
 
-// 扫描根口径(用户 2026-10-16):workspace 顶层 ∪ assetsRoot,去重;
-// assetsRoot 未配置/不存在时回退 workspace,任何读取异常都不外抛。
+// 扫描根口径(用户 2026-10-16:「还有 assetsRoot」;2026-11-23:「只需要扫描
+// assetsRoot 目录」):扫描根 = assetsRoot(配置派生 scripts 根 → assetsRoot
+// 设置 → 自动发现),去重;assetsRoot 完全落空才回退 workspace 文件夹。
+// workspace 顶层不再并入——否则 assets 之外的引擎仓/依赖树全进索引(全盘扫)。
+// 任何读取异常都不外抛。
 
 const tmpRoots: string[] = [];
 const makeTmpDir = (label: string): string => {
@@ -35,12 +38,14 @@ const setAssetsRoot = (value: string | undefined): void => {
   resetScanRootCache();
 };
 
-describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () => {
-  it('仅工作区:无 assetsRoot 配置 → [workspace]', () => {
+describe('getIndexScanRoots:只扫 {assets}/scripts(2026-11-23 用户令;找不到 scripts 就不扫)', () => {
+  it('无 assetsRoot 配置(真非 KBEngine)→ 回退 workspace 腿(旧回退保留)', () => {
     const ws = makeTmpDir('ws-only');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     try {
       setAssetsRoot(undefined);
+      // 未配置、无发现 = 非 KBEngine 仓库:维持历史回退(workspace 文件夹);
+      // 用户令「找不到 scripts 就不扫」只约束 assetsRoot 场景,不吞非 KBEngine 仓
       expect(getIndexScanRoots()).toEqual([ws]);
       expect(getExternalScanRoots()).toEqual([]);
     } finally {
@@ -49,19 +54,20 @@ describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () 
     }
   });
 
-  it('配置了 workspace 外的 assetsRoot → 两个根都入列(外部根可被手工遍历)', () => {
+  it('配置了 assetsRoot + scripts 存在 → **只**返回 {assets}/scripts', () => {
     const ws = makeTmpDir('ws-ext');
     const assets = makeTmpDir('assets-ext');
+    const scripts = path.join(assets, 'scripts');
+    fs.mkdirSync(scripts, { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     try {
       setAssetsRoot(assets);
-      const roots = getIndexScanRoots();
-      expect(roots).toContain(ws);
-      expect(roots).toContain(assets);
-      expect(getExternalScanRoots()).toEqual([assets]);
-      // 文件归属:assetsRoot 下文件归 assetsRoot,工作区文件归工作区
-      expect(getScanRootForFile(path.join(assets, 'scripts', 'a.py'))).toBe(assets);
-      expect(getScanRootForFile(path.join(ws, 'scripts', 'a.py'))).toBe(ws);
+      expect(getIndexScanRoots()).toEqual([scripts]);
+      expect(getExternalScanRoots()).toEqual([scripts]);
+      // 文件归属:{assets}/scripts 下文件归 scripts 根;assets 其余部分/workspace 文件不入
+      expect(getScanRootForFile(path.join(scripts, 'base', 'a.py'))).toBe(scripts);
+      expect(getScanRootForFile(path.join(assets, 'res', 'x.py'))).toBeNull();
+      expect(getScanRootForFile(path.join(ws, 'scripts', 'a.py'))).toBeNull();
       expect(getScanRootForFile(path.join(makeTmpDir('outside'), 'x.py'))).toBeNull();
     } finally {
       stubWorkspace.workspaceFolders = [];
@@ -69,40 +75,41 @@ describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () 
     }
   });
 
-
-  it('assetsRoot 已包含在工作区内 → 包含去重,只留 workspace(不重复扫)', () => {
+  it('assetsRoot 在工作区内 → 仍只返回 {assets}/scripts(不再由 workspace 覆盖)', () => {
     const ws = makeTmpDir('ws-inner');
     const inner = path.join(ws, 'flyff_assets');
-    fs.mkdirSync(inner, { recursive: true });
+    const scripts = path.join(inner, 'scripts');
+    fs.mkdirSync(scripts, { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     try {
       setAssetsRoot(inner);
-      expect(getIndexScanRoots()).toEqual([ws]);
-      expect(getExternalScanRoots()).toEqual([]);
+      expect(getIndexScanRoots()).toEqual([scripts]);
     } finally {
       stubWorkspace.workspaceFolders = [];
       setAssetsRoot(undefined);
     }
   });
 
-  it('assetsRoot 指向不存在目录 → 回退 workspace(不失败)', () => {
+  it('assetsRoot 指向不存在目录 → 空数组(配置不对,不退回 workspace)', () => {
     const ws = makeTmpDir('ws-ghost');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     try {
       setAssetsRoot(path.join(ws, 'ghost-root'));
-      expect(getIndexScanRoots()).toEqual([ws]);
+      expect(getIndexScanRoots()).toEqual([]);
     } finally {
       stubWorkspace.workspaceFolders = [];
       setAssetsRoot(undefined);
     }
   });
 
-  it('无工作区 + 配置 assetsRoot → 只有 assetsRoot;两者皆无 → 空数组(不抛)', () => {
+  it('无工作区 + 配置 assetsRoot(scripts 存在)→ {assets}/scripts;两者皆无 → 空数组(不抛)', () => {
     const assets = makeTmpDir('assets-only');
+    const scripts = path.join(assets, 'scripts');
+    fs.mkdirSync(scripts, { recursive: true });
     try {
       stubWorkspace.workspaceFolders = [];
       setAssetsRoot(assets);
-      expect(getIndexScanRoots()).toEqual([assets]);
+      expect(getIndexScanRoots()).toEqual([scripts]);
       setAssetsRoot(path.join(os.tmpdir(), `kode-ghost-${Date.now()}`));
       expect(getIndexScanRoots()).toEqual([]);
     } finally {
@@ -110,27 +117,27 @@ describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () 
     }
   });
 
-  it('${workspaceFolder} 占位展开后参与判定', () => {
+  it('${workspaceFolder} 占位展开后参与判定(扫 {assets}/scripts)', () => {
     const base = makeTmpDir('expand');
     const ws = path.join(base, 'ws');
     const assets = path.join(base, 'ext_assets');
+    const scripts = path.join(assets, 'scripts');
     fs.mkdirSync(ws, { recursive: true });
-    fs.mkdirSync(assets, { recursive: true });
+    fs.mkdirSync(scripts, { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     try {
       setAssetsRoot('${workspaceFolder}/../ext_assets');
-      const roots = getIndexScanRoots();
-      expect(roots).toContain(ws);
-      expect(roots).toContain(assets);
+      // 只扫 scripts 令:占位展开后 {assets}/scripts 参与判定,workspace 顶层不入列
+      expect(getIndexScanRoots()).toEqual([scripts]);
     } finally {
       stubWorkspace.workspaceFolders = [];
       setAssetsRoot(undefined);
     }
   });
 
-  it('自动发现抛错 → 兜底 null,不外抛(101)', () => {
-    // 约定链/深扫描抛错(只读枚举被拒等):发现结果置 null,回退 workspace,
-    // 不打断索引扫描(与「读取异常不外抛」同口径)。
+  it('自动发现抛错 → 兜底 null,不外抛(不打断索引扫描)', () => {
+    // 约定链/深扫描抛错(只读枚举被拒等):发现结果置 null,不外抛也不打断
+    // 索引扫描;无配置时按非 KBEngine 处理走 workspace 腿(历史回退)。
     const ws = makeTmpDir('disc-throw');
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     const spy = vi.spyOn(discoveryModule, 'resolveDiscoveredConfigRoot').mockImplementation(() => {
@@ -146,22 +153,20 @@ describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () 
     }
   });
 
-  it('审核发现:派生 scripts 根存在时不排除外部 assetsRoot(scripts 之外仍被索引)', () => {
+  it('审核发现:派生 scripts 根与 {assets}/scripts 同目录 → 只入列一个(去重不重复扫)', () => {
     const base = makeTmpDir('derived-external');
     const ws = path.join(base, 'ws');
     const assets = path.join(base, 'ext_assets');
     const scripts = path.join(assets, 'scripts');
     fs.mkdirSync(scripts, { recursive: true });
-    fs.mkdirSync(assets, { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     const spy = vi.spyOn(configDeriveModule, 'getConfigDerivedScanRoot').mockReturnValue(scripts);
     try {
       setAssetsRoot(assets);
       const roots = getIndexScanRoots();
-      // 外部 assetsRoot 保留(scripts 之外的 res/entity_defs 仍被索引)
-      expect(roots).toContain(assets);
-      // 派生 scripts 根被 assetsRoot 包含 → 去重后不重复入列(不重复扫)
-      expect(roots).not.toContain(scripts);
+      // 只扫 scripts:assetsRoot 本体不入列,res/entity_defs 等不再被扫(用户 2026-11-23 收窄)
+      expect(roots).toEqual([scripts]);
+      expect(roots).not.toContain(assets);
     } finally {
       spy.mockRestore();
       stubWorkspace.workspaceFolders = [];
@@ -217,13 +222,18 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
     const ws = makeTmpDir('mirror-ws');
     const original = Uri.file(path.join(ws, 'scripts', 'base', 'Account.py'));
     const mirror = Uri.file(path.join(ws, '.kbengine', 'inferred', 'scripts', 'base', 'Account.py'));
+    // scripts 子目录真实存在(只扫 assetsRoot/scripts 令:isDirectory 判真)
+    fs.mkdirSync(path.join(ws, 'scripts', 'base'), { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async () => [original, mirror]) as typeof stubWorkspace.findFiles;
     try {
+      // 扫描根 = {ws}/scripts;镜像副本按受管根前缀剔出(CFG-017 口径不变)
+      setAssetsRoot(ws);
       const py = await findFilesAcrossRoots('**/*.py', null);
       expect(py.map(u => u.fsPath)).toEqual([original.fsPath]);
     } finally {
       stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
     }
   });
 
@@ -268,13 +278,17 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
     const wsB = makeTmpDir('r8-multi-wsB');
     const realA = Uri.file(path.join(wsA, 'scripts', 'Account.py'));
     const mirrorB = Uri.file(path.join(wsB, '.kbengine', 'inferred', 'scripts', 'Account.py'));
+    // 扫描根 = {wsA}/scripts(只扫 scripts 令):真实存在才判真
+    fs.mkdirSync(path.join(wsA, 'scripts'), { recursive: true });
     stubWorkspace.workspaceFolders = [
       { uri: Uri.file(wsA), name: 'wsA', index: 0 },
       { uri: Uri.file(wsB), name: 'wsB', index: 1 }
     ];
     stubWorkspace.findFiles = (async () => [realA, mirrorB]) as typeof stubWorkspace.findFiles;
     try {
-      setAssetsRoot(undefined);
+      // 扫描根 = 第一个 workspace 作为 assetsRoot;第二工作区不在扫描根内,
+      // 受管镜像副本照旧按受管根前缀剔出(旧版只登记首个根的缺口由 CFG-017 覆盖)
+      setAssetsRoot(wsA);
       const py = await findFilesAcrossRoots('**/*.py', null);
       expect(py.map(u => u.fsPath)).toEqual([realA.fsPath]);
     } finally {
@@ -310,8 +324,9 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
   it('外部根目录读取挂起期间可取消，取消后不继续遍历子目录', async () => {
     const ws = makeTmpDir('cancel-ws');
     const assets = makeTmpDir('cancel-assets');
-    fs.mkdirSync(path.join(assets, 'nested'));
-    fs.writeFileSync(path.join(assets, 'nested', 'Late.py'), 'class Late: pass\n');
+    // 扫描根 = {assets}/scripts:挂起与子目录都设在 scripts 下
+    fs.mkdirSync(path.join(assets, 'scripts', 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(assets, 'scripts', 'nested', 'Late.py'), 'class Late: pass\n');
     const originalFind = stubWorkspace.findFiles;
     const originalReaddir = fs.promises.readdir;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
@@ -323,8 +338,8 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
     const gate = new Promise<void>(resolve => { release = resolve; });
     let childReads = 0;
     fs.promises.readdir = (async (...args: Parameters<typeof originalReaddir>) => {
-      if (String(args[0]) === assets) { entered(); await gate; }
-      if (String(args[0]) === path.join(assets, 'nested')) { childReads += 1; }
+      if (String(args[0]) === path.join(assets, 'scripts')) { entered(); await gate; }
+      if (String(args[0]) === path.join(assets, 'scripts', 'nested')) { childReads += 1; }
       return originalReaddir(...args);
     }) as typeof fs.promises.readdir;
     const token = { isCancellationRequested: false } as { isCancellationRequested: boolean };
@@ -375,12 +390,14 @@ describe('RUST-171 发现优先级:profile > 设置 > 自动发现;env 不参与
     const ws = makeTmpDir('rust171-ws');
     const assets = makeTmpDir('rust171-assets');
     const profile = makeTmpDir('rust171-profile');
+    // 只扫 scripts 令:profile 根的扫描根 = {profile}/scripts
+    fs.mkdirSync(path.join(profile, 'scripts'), { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     try {
       setAssetsRoot(assets);
       setActiveProfileScanRoot(profile);
       expect(resolveAssetsRootForWorkspace(ws)).toBe(profile);
-      expect(getExternalScanRoots()).toEqual([profile]);
+      expect(getExternalScanRoots()).toEqual([path.join(profile, 'scripts')]);
     } finally {
       setActiveProfileScanRoot(null);
       stubWorkspace.workspaceFolders = [];
@@ -417,6 +434,7 @@ describe('RUST-171 发现优先级:profile > 设置 > 自动发现;env 不参与
       setAssetsRoot(undefined);
       // 资产根合成序无 env 道:解析落空返回空串(工作区回退在 getIndexScanRoots 组合层)
       expect(resolveAssetsRootForWorkspace(ws)).toBe('');
+      // env 不入链 = 无配置无发现 → 非 KBEngine,走 workspace 腿(历史回退)
       expect(getIndexScanRoots()).toEqual([ws]);
     } finally {
       if (savedRoot === undefined) delete process.env.KBENGINE_ROOT; else process.env.KBENGINE_ROOT = savedRoot;

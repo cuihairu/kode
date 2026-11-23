@@ -926,18 +926,25 @@ describe('scanRoots(回退与遍历边角)', () => {
       throw new Error('config exploded');
     }) as typeof stubWorkspace.getConfiguration;
     try {
-      expect(getIndexScanRoots()).toEqual([ws]);
+      expect(getIndexScanRoots(), 'assetsRoot 解析抛错 → 不扫(配置不对),不退回 workspace').toEqual([]);
     } finally {
       stubWorkspace.getConfiguration = original;
     }
   });
 
+  // 扫描根 = {assets}/scripts(2026-11-23 只扫 assetsRoot/scripts 令):业务
+  // 文件一律落 scripts/ 下,assetsRoot 本体的 res/ 等不进索引。这些用例仍
+  // 测「外部根的手工遍历」面——scripts 在 workspace 外(ws≠assets)时走
+  // walkExternalRoot 补齐。
   it('不认识的 glob 形状:不手工遍历外部根,只剩 workspace 结果', async () => {
     const ws = makeTmpDir('glob-unknown-ws');
     const assets = makeTmpDir('glob-unknown-assets');
     useWorkspace(ws);
     setAssetsRoot(assets);
-    writeFileSync(join(assets, 'keep.def'), '<r/>');
+    // scripts/src/keep.def 若被手工遍历(src/**/*.def 是未知形状,不手工走)
+    // 会被命中;断言空 → 证明未手工遍历外部根
+    mkdirSync(join(assets, 'scripts', 'src'), { recursive: true });
+    writeFileSync(join(assets, 'scripts', 'src', 'keep.def'), '<r/>');
     expect(await findFilesAcrossRoots('src/**/*.def')).toEqual([]);
   });
 
@@ -946,9 +953,10 @@ describe('scanRoots(回退与遍历边角)', () => {
     const assets = makeTmpDir('exclude-assets');
     useWorkspace(ws);
     setAssetsRoot(assets);
-    writeFileSync(join(assets, 'keep.def'), '<r/>');
-    mkdirSync(join(assets, 'node_modules'), { recursive: true });
-    writeFileSync(join(assets, 'node_modules', 'skip.def'), '<r/>');
+    mkdirSync(join(assets, 'scripts'), { recursive: true });
+    writeFileSync(join(assets, 'scripts', 'keep.def'), '<r/>');
+    mkdirSync(join(assets, 'scripts', 'node_modules'), { recursive: true });
+    writeFileSync(join(assets, 'scripts', 'node_modules', 'skip.def'), '<r/>');
     expect(await findFilesAcrossRoots('**/*.def', '**/node_modules/**')).toHaveLength(1);
   });
 
@@ -958,12 +966,14 @@ describe('scanRoots(回退与遍历边角)', () => {
     const assets = makeTmpDir('denied-assets');
     useWorkspace(ws);
     setAssetsRoot(assets);
-    writeFileSync(join(assets, 'a.def'), '<r/>');
-    chmodSync(assets, 0o000);
+    const scripts = join(assets, 'scripts');
+    mkdirSync(scripts, { recursive: true });
+    writeFileSync(join(scripts, 'a.def'), '<r/>');
+    chmodSync(scripts, 0o000);
     try {
       expect(await findFilesAcrossRoots('**/*.def')).toEqual([]);
     } finally {
-      chmodSync(assets, 0o755); // 还原权限便于清理
+      chmodSync(scripts, 0o755); // 还原权限便于清理
     }
   });
 
@@ -972,8 +982,9 @@ describe('scanRoots(回退与遍历边角)', () => {
     const assets = makeTmpDir('yield-assets');
     useWorkspace(ws);
     setAssetsRoot(assets);
+    mkdirSync(join(assets, 'scripts'), { recursive: true });
     for (let i = 0; i < 300; i += 1) {
-      writeFileSync(join(assets, `f${i}.def`), '<r/>');
+      writeFileSync(join(assets, 'scripts', `f${i}.def`), '<r/>');
     }
     expect(await findFilesAcrossRoots('**/*.def')).toHaveLength(300);
   }, 20_000);

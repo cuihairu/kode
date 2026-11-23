@@ -56,6 +56,11 @@ describe('active profile scan root precedence (IDE-PRJ-011)', () => {
     const ws = makeTmpDir('ws');
     const configured = makeTmpDir('configured');
     const profileRoot = makeTmpDir('profile');
+    // 只扫 assetsRoot/scripts 令:扫描根是选定根的 scripts 子目录
+    const configuredScripts = path.join(configured, 'scripts');
+    const profileScripts = path.join(profileRoot, 'scripts');
+    fs.mkdirSync(configuredScripts, { recursive: true });
+    fs.mkdirSync(profileScripts, { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     configurationOverrides.set('kbengine', { assetsRoot: configured });
     resetScanRootCache();
@@ -63,9 +68,9 @@ describe('active profile scan root precedence (IDE-PRJ-011)', () => {
       setActiveProfileScanRoot(profileRoot);
       expect(getActiveProfileScanRoot()).toBe(profileRoot);
       const roots = getIndexScanRoots();
-      // 输入切换:选定根入列,配置根被选定根取代(显式选择优先)
-      expect(roots).toContain(profileRoot);
-      expect(roots).not.toContain(configured);
+      // 输入切换:选定根的 scripts 入列,配置根被选定根取代(显式选择优先)
+      expect(roots).toContain(profileScripts);
+      expect(roots).not.toContain(configuredScripts);
     } finally {
       setActiveProfileScanRoot(null);
       configurationOverrides.delete('kbengine');
@@ -78,14 +83,19 @@ describe('active profile scan root precedence (IDE-PRJ-011)', () => {
     const ws = makeTmpDir('ws2');
     const configured = makeTmpDir('configured2');
     const profileRoot = makeTmpDir('profile2');
+    const configuredScripts = path.join(configured, 'scripts');
+    const profileScripts = path.join(profileRoot, 'scripts');
+    fs.mkdirSync(configuredScripts, { recursive: true });
+    fs.mkdirSync(profileScripts, { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     configurationOverrides.set('kbengine', { assetsRoot: configured });
     resetScanRootCache();
     try {
       setActiveProfileScanRoot(profileRoot);
-      expect(getIndexScanRoots()).not.toContain(configured);
+      expect(getIndexScanRoots()).not.toContain(configuredScripts);
       setActiveProfileScanRoot(null);
-      expect(getIndexScanRoots()).toContain(configured);
+      // 清选择后回落配置根(仍按 scripts 子目录扫)
+      expect(getIndexScanRoots()).toContain(configuredScripts);
     } finally {
       setActiveProfileScanRoot(null);
       configurationOverrides.delete('kbengine');
@@ -97,12 +107,15 @@ describe('active profile scan root precedence (IDE-PRJ-011)', () => {
   it('a selected root that is gone from disk is dropped honestly, the configured root stands', () => {
     const ws = makeTmpDir('ws3');
     const configured = makeTmpDir('configured3');
+    const configuredScripts = path.join(configured, 'scripts');
+    fs.mkdirSync(configuredScripts, { recursive: true });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
     configurationOverrides.set('kbengine', { assetsRoot: configured });
     resetScanRootCache();
     try {
       setActiveProfileScanRoot(path.join(os.tmpdir(), 'kode-prj11-not-there'));
-      expect(getIndexScanRoots()).toEqual([ws, configured]);
+      // 幽灵选定根如实落空 → 回落配置根的 scripts 子目录(只扫 scripts 令)
+      expect(getIndexScanRoots()).toEqual([configuredScripts]);
     } finally {
       setActiveProfileScanRoot(null);
       configurationOverrides.delete('kbengine');
@@ -137,10 +150,11 @@ describe('profile switch gates in-flight scan writes by generation (IDE-PRJ-011)
 
       const originalFolders = stubWorkspace.workspaceFolders;
       const originalFind = stubWorkspace.findFiles;
-      stubWorkspace.workspaceFolders = [
-        { uri: Uri.file(wsA), name: 'wsA', index: 0 },
-        { uri: Uri.file(wsB), name: 'wsB', index: 1 }
-      ];
+      // 初始扫描根 = profile A 的 scripts 根(2026-11-23 只扫 assetsRoot/scripts 令):
+      // 扫描根是 {profile}/scripts,不是整个 profile 或双工作区。
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsA), name: 'wsA', index: 0 }];
+      setActiveProfileScanRoot(wsA);
+      resetScanRootCache();
       const walkDirs = (bases: string[]): Uri[] => {
         const results: Uri[] = [];
         const walk = (dir: string): void => {
@@ -158,7 +172,7 @@ describe('profile switch gates in-flight scan writes by generation (IDE-PRJ-011)
       const discoveryGate = new Promise<void>(resolve => { releaseDiscovery = resolve; });
       let discoveryEntered = false;
       stubWorkspace.findFiles = (async () => {
-        const snapshot = walkDirs([wsA, wsB]);
+        const snapshot = walkDirs([wsA]);
         discoveryEntered = true;
         await discoveryGate;
         return snapshot;
@@ -167,9 +181,8 @@ describe('profile switch gates in-flight scan writes by generation (IDE-PRJ-011)
       const staleManager = new EntityMappingManager({ subscriptions: [] });
       try {
         await until(() => discoveryEntered, 'discovery snapshot taken');
-        // 扫描在途:切换到 profile A(输入只剩 A),generation 前进
-        stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsA), name: 'wsA', index: 0 }];
-        setActiveProfileScanRoot(wsA);
+        // 扫描在途:profile 切到 B(输入只剩 B),generation 前进
+        setActiveProfileScanRoot(wsB);
         resetScanRootCache();
         const generationBeforeSwitch = getRootConfigGeneration();
         bumpRootConfigGeneration('profile-switch');
@@ -178,21 +191,21 @@ describe('profile switch gates in-flight scan writes by generation (IDE-PRJ-011)
         await staleManager.waitForInitialScan();
         await new Promise(resolve => setImmediate(resolve));
 
-        // 旧 profile 的在途结果整体不写入:扫描按旧输入(含 B)起步,代已前进,
+        // 旧输入(A)的在途结果整体不写入:扫描按旧输入(仅 A)起步,代已前进,
         // A 与 B 都不落当前快照(新输入由新扫描重建)
-        expect(staleManager.getMapping('HeroB')).toBeUndefined();
         expect(staleManager.getMapping('HeroA')).toBeUndefined();
+        expect(staleManager.getMapping('HeroB')).toBeUndefined();
       } finally {
         staleManager.dispose();
       }
 
-      // 新扫描(新代起步,输入=选定根 A):A 正常建立
-      stubWorkspace.findFiles = (async () => walkDirs([wsA])) as typeof stubWorkspace.findFiles;
+      // 新扫描(新代起步,输入=选定根 B):B 正常建立
+      stubWorkspace.findFiles = (async () => walkDirs([wsB])) as typeof stubWorkspace.findFiles;
       const freshManager = new EntityMappingManager({ subscriptions: [] });
       try {
         await freshManager.waitForInitialScan();
         await new Promise(resolve => setImmediate(resolve));
-        expect(freshManager.getMapping('HeroA')).toBeDefined();
+        expect(freshManager.getMapping('HeroB')).toBeDefined();
       } finally {
         freshManager.dispose();
         stubWorkspace.findFiles = originalFind;
