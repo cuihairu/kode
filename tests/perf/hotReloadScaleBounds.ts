@@ -9,7 +9,8 @@
  * 基线 docs/perf/hot-reload-scale-run.txt(200/2k/10k/50k 四档):界值取记录
  * 更差者再留 ~10x 余量吸收共享 runner 抖动与 libuv 读盘排队方差(M1.absorb.
  * 50000.readLatency p99 3321.75ms 即 50k 档洪泛读盘排队,非事件循环阻塞)。
- *   诚实边界:远端 SSH/workspace 端到端(纯核无此面)不在本界表;M2.throughput
+ *   远端 SSH/workspace 端到端由 M5-SSH 臂覆盖(sshfs 自环=活 SSH 会话,首测
+ *   ×10 余量只捕数量级回退);M2.throughput
  *   是速率非成本(值越大越好),violations 只比上界故不纳入;M1 per-scale 动态
  *   键(200/2k/10k 档)以规模收敛面(perEvent/perFile,量级收敛)与最重档
  *   (50k)代表,中间档不重复设界。
@@ -37,6 +38,12 @@ export interface ScaleBounds {
   m4StormWallMs: number;
   /** M5 远端路径规范化-10 万次(283.4ms,四形态键) */
   m5Canonicalize100kMs: number;
+  /** M5-SSH 远端端到端-过滤每事件(挂载点为根,纯词法零 IO) */
+  m5sshFilterPerEventMs: number;
+  /** M5-SSH 远端端到端-吸收每文件(读盘经 SSH+sha256) */
+  m5sshAbsorbPerFileMs: number;
+  /** M5-SSH 远端端到端-读盘延迟 p99(SSH FUSE 通道) */
+  m5sshReadLatencyP99Ms: number;
 }
 
 const BOUND_DEFAULTS: ScaleBounds = {
@@ -49,7 +56,13 @@ const BOUND_DEFAULTS: ScaleBounds = {
   m3PreviewHoldWallMs: 12000,
   m3ReleasePreviewWallMs: 10,
   m4StormWallMs: 12000,
-  m5Canonicalize100kMs: 3000
+  m5Canonicalize100kMs: 3000,
+  // M5-SSH 首测(docs/perf/hot-reload-scale-run.txt 2026-11-23 sshfs 自环,
+  // 200 档)×10 余量:过滤面与 M1 同界(纯词法零 IO,实测 0.01ms),吸收/读盘面
+  // 首测 0.46ms / p99 86.74ms
+  m5sshFilterPerEventMs: 5,
+  m5sshAbsorbPerFileMs: 5,
+  m5sshReadLatencyP99Ms: 1000
 };
 
 const boundEnvName = (key: string): string =>

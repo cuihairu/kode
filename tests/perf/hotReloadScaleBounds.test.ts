@@ -18,6 +18,9 @@ describe('hotReloadScaleBounds resolver(RUST-413 规模基准界)', () => {
     expect(bounds.m3ReleasePreviewWallMs).toBe(10);
     expect(bounds.m4StormWallMs).toBe(12000);
     expect(bounds.m5Canonicalize100kMs).toBe(3000);
+    expect(bounds.m5sshFilterPerEventMs).toBe(5);
+    expect(bounds.m5sshAbsorbPerFileMs).toBe(5);
+    expect(bounds.m5sshReadLatencyP99Ms).toBe(1000);
   });
 
   it('env 覆盖生效且不影响缺省表(每次解析独立)', () => {

@@ -14,8 +14,8 @@
  *   M4 写入风暴 100 文件×(save+disk-change)重叠归并:同文件 save 后紧跟
  *      disk-change 归并为一发(HR-WATCH-003),100 发非 200;
  *   M5 远端 SSH/workspace:远端形态路径规范化面(canonicalizeScriptFilePath
- *      键口径与本地一致)+ 端到端诚实未覆盖注记(需活 SSH 会话+远端文件系统
- *      延迟,纯核基准无此面)。
+ *      键口径与本地一致)+ M5-SSH 端到端实测(sshfs 127.0.0.1 自环=活 SSH
+ *      会话,fuse 通道:过滤→吸收→读盘→哈希全链,指标与 M1 同口径并排)。
  *
  * 只观测不改行为;断言=语义命中面(确定性的 hits/计数)+宽松上界表
  * (hotReloadScaleBounds:KODE_HRS_BOUND_* 可覆盖,只捕数量级回退不跨机器比
@@ -44,6 +44,23 @@ const ASSETS_OUT = process.env.KODE_HRS_ASSETS_OUT
   ?? path.join(os.tmpdir(), 'kode-hrs-assets');
 const LARGEST = Number(process.env.KODE_HRS_FILES ?? '50000');
 const SCALES = [...new Set([200, 2000, 10000, LARGEST].filter(n => n > 0 && n <= LARGEST))].sort((a, b) => a - b);
+
+// M5-SSH 远端端到端面:挂载点=sshfs 自环(远端=本机 127.0.0.1 sshd),经它读写
+// 即真实 SSH 文件系统通道;路径形态本地,延迟与通道为真实 sshd/FUSE。
+const SSH_ROOT = process.env.KODE_HRS_SSH_ROOT
+  ?? path.join(os.homedir(), 'mnt-ssh-loop', 'kode-ssh-e2e', 'proj');
+const SSH_FILES = Math.max(200, Number(process.env.KODE_HRS_SSH_FILES ?? '200'));
+const sshScriptPath = (index: number): string =>
+  path.join(SSH_ROOT, 'scripts', `m${String(index).padStart(6, '0')}.py`);
+/** 挂载点不可达(如 CI 无 sshfs)=本臂无面,诚实跳过而非假绿 */
+const sshReachable = (): boolean => {
+  try {
+    fs.accessSync(SSH_ROOT, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const OUT_FILE = process.env.KODE_HRS_OUT
   ?? path.resolve(__dirname, '../../docs/perf/hot-reload-scale-run.txt');
@@ -364,9 +381,77 @@ describe('RUST-413 热更新规模基准(文件数矩阵/持续保存/checkout �
       })
     );
     emit(
-      'HRS-NOTE M5 远端端到端延迟未覆盖:需活 SSH 会话+远端文件系统延迟,纯核基准' +
-      '无此面;远端路径规范化已由本例覆盖,键口径与本地一致,端到端随接线批'
+      'HRS-NOTE M5 远端端到端已覆盖:sshfs 127.0.0.1 自环=活 SSH 会话,fuse 通道' +
+      '(M5-SSH 臂,读盘/哈希全链走真实 sshd 会话与 FUSE 延迟);vscode-remote 真形态' +
+      '另有 fsPath 钉 376ec986'
     );
+  }, 600000);
+
+  it('M5-SSH 远端端到端(sshfs 127.0.0.1 自环=活 SSH 会话):过滤→吸收→读盘→哈希全链实测', async () => {
+    if (!sshReachable()) {
+      // 无挂载环境(如 CI)诚实跳过:本臂不采数不设界,只留注记
+      emit(`HRS-NOTE M5-SSH 挂载点不可达(${SSH_ROOT}),本臂诚实跳过`);
+      return;
+    }
+    // 生成走挂载点=写盘即真实 SSH 通道;内容与 M1 同确定性生成器口径
+    const scriptsRoot = path.join(SSH_ROOT, 'scripts');
+    fs.mkdirSync(scriptsRoot, { recursive: true });
+    const sshPaths = Array.from({ length: SSH_FILES }, (_unused, index) => sshScriptPath(index));
+    for (const p of sshPaths) {
+      const index = Number(path.basename(p).slice(1, -3));
+      fs.writeFileSync(
+        p,
+        `class Bench${String(index).padStart(6, '0')}:\n    def onFoo(self, arg):\n        return arg\n`,
+        'utf8'
+      );
+    }
+    // (a) 前端过滤扫描(纯词法,零 IO):与 M1 同口径,roots 声明为挂载点
+    const filterStart = performance.now();
+    let accepted = 0;
+    for (const p of sshPaths) {
+      if (isWatchableScriptFile(p, { roots: [SSH_ROOT] })) {
+        accepted += 1;
+      }
+    }
+    const filterWall = performance.now() - filterStart;
+    once(`M5-SSH.filter.${SSH_FILES}.wall`, filterWall);
+    once(`M5-SSH.filter.${SSH_FILES}.perEvent`, filterWall / SSH_FILES);
+    once(`M5-SSH.filter.${SSH_FILES}.accepted`, accepted, ' files');
+    expect(accepted).toBe(SSH_FILES);
+    // (b) 吸收全链(读盘经 FUSE=SSH 通道+sha256):与 M1 同装配同口径,
+    // 每文件吸收成本即远端读盘+哈希真实成本
+    const timedSnapshot = makeTimedSnapshot();
+    const { pipeline, emitted } = buildPipeline({
+      debounceMs: 0,
+      batchFlushMs: 0,
+      stabilityWindowMs: 0,
+      checkSyntax: PASS_SYNTAX,
+      readSnapshot: timedSnapshot.read
+    });
+    const absorbStart = performance.now();
+    for (const p of sshPaths) {
+      pipeline.offer(p, 'save');
+    }
+    await waitFor(() => emitted.length === SSH_FILES, 600000, `M5-SSH absorb ${SSH_FILES}`);
+    const absorbWall = performance.now() - absorbStart;
+    once(`M5-SSH.absorb.${SSH_FILES}.wall`, absorbWall);
+    once(`M5-SSH.absorb.${SSH_FILES}.perFile`, absorbWall / SSH_FILES);
+    once(`M5-SSH.absorb.${SSH_FILES}.throughput`, SSH_FILES / (absorbWall / 1000), ' files/s');
+    pooled(`M5-SSH.absorb.${SSH_FILES}.readLatency`, timedSnapshot.samples);
+    violations.push(
+      ...scaleViolations(resolveScaleBounds(), {
+        m5sshFilterPerEventMs: filterWall / SSH_FILES,
+        m5sshAbsorbPerFileMs: absorbWall / SSH_FILES,
+        m5sshReadLatencyP99Ms: percentile(timedSnapshot.samples, 0.99)
+      })
+    );
+    expect(emitted.length).toBe(SSH_FILES);
+    expect(emitted.every(event => event.revision === 1)).toBe(true);
+    pipeline.dispose();
+    // 清生成的脚本文件(留 scripts/ 目录,挂载点本身不卸载)
+    for (const p of sshPaths) {
+      fs.rmSync(p, { force: true });
+    }
   }, 600000);
 
   it('gate:规模界收口(任一面超界=红=合并阻塞面)', () => {

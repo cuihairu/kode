@@ -73,3 +73,48 @@ HRS-METRIC M4.storm.wall n=1 1011.88ms
 HRS-METRIC M5.canonicalize.100k n=1 271.85ms
 HRS-NOTE M5 远端端到端延迟未覆盖:需活 SSH 会话+远端文件系统延迟,纯核基准无此面;远端路径规范化已由本例覆盖,键口径与本地一致,端到端随接线批
 HRS-BOUND violations=0 bounds={"m1FilterPerEventMs":5,"m1AbsorbPerFileMs":5,"m1Absorb50kWallMs":45000,"m1ReadLatency50kP99Ms":40000,"m2SustainedWallMs":2000,"m2SaveToQueueP99Ms":50,"m3PreviewHoldWallMs":12000,"m3ReleasePreviewWallMs":10,"m4StormWallMs":12000,"m5Canonicalize100kMs":3000}
+HRS-ENV node=v24.21.0 platform=linux cpus=14 scales=200,2000,10000,50000 largest=50000 assets=/tmp/kode-hrs-assets
+HRS-METRIC M1.filter.200.wall n=1 3.81ms
+HRS-METRIC M1.filter.200.perEvent n=1 0.02ms
+HRS-METRIC M1.filter.200.accepted n=1 200 files
+HRS-METRIC M1.absorb.200.wall n=1 34.27ms
+HRS-METRIC M1.absorb.200.perFile n=1 0.17ms
+HRS-METRIC M1.absorb.200.throughput n=1 5836.39 files/s
+HRS-METRIC M1.absorb.200.readLatency n=200 p50=23.81ms p95=24.57ms p99=24.64ms max=24.65ms
+HRS-METRIC M1.filter.2000.wall n=1 19.43ms
+HRS-METRIC M1.filter.2000.perEvent n=1 0.01ms
+HRS-METRIC M1.filter.2000.accepted n=1 2000 files
+HRS-METRIC M1.absorb.2000.wall n=1 190.49ms
+HRS-METRIC M1.absorb.2000.perFile n=1 0.1ms
+HRS-METRIC M1.absorb.2000.throughput n=1 10499.49 files/s
+HRS-METRIC M1.absorb.2000.readLatency n=2000 p50=144.35ms p95=150.43ms p99=151.45ms max=152.09ms
+HRS-METRIC M1.filter.10000.wall n=1 115.64ms
+HRS-METRIC M1.filter.10000.perEvent n=1 0.01ms
+HRS-METRIC M1.filter.10000.accepted n=1 10000 files
+HRS-METRIC M1.absorb.10000.wall n=1 1048.4ms
+HRS-METRIC M1.absorb.10000.perFile n=1 0.1ms
+HRS-METRIC M1.absorb.10000.throughput n=1 9538.31 files/s
+HRS-METRIC M1.absorb.10000.readLatency n=10000 p50=776.98ms p95=833.91ms p99=836.45ms max=836.77ms
+HRS-METRIC M1.filter.50000.wall n=1 430.63ms
+HRS-METRIC M1.filter.50000.perEvent n=1 0.01ms
+HRS-METRIC M1.filter.50000.accepted n=1 50000 files
+HRS-METRIC M1.absorb.50000.wall n=1 5458.45ms
+HRS-METRIC M1.absorb.50000.perFile n=1 0.11ms
+HRS-METRIC M1.absorb.50000.throughput n=1 9160.11 files/s
+HRS-METRIC M1.absorb.50000.readLatency n=50000 p50=4075.36ms p95=4137.69ms p99=4143.47ms max=4152.9ms
+HRS-METRIC M2.sustained.wall n=1 217.06ms
+HRS-METRIC M2.sustained.throughput n=1 460.7 saves/s
+HRS-METRIC M2.saveToQueue n=100 p50=1.69ms p95=3.27ms p99=5.9ms max=11.35ms
+HRS-METRIC M3.previewHold.wall n=1 1034.11ms
+HRS-METRIC M3.releasePreview.wall n=1 0.71ms
+HRS-METRIC M4.storm.wall n=1 1006.93ms
+HRS-METRIC M5.canonicalize.100k n=1 338.17ms
+HRS-NOTE M5 远端端到端已覆盖:sshfs 127.0.0.1 自环=活 SSH 会话,fuse 通道(M5-SSH 臂,读盘/哈希全链走真实 sshd 会话与 FUSE 延迟);vscode-remote 真形态另有 fsPath 钉 376ec986
+HRS-METRIC M5-SSH.filter.200.wall n=1 2.82ms
+HRS-METRIC M5-SSH.filter.200.perEvent n=1 0.01ms
+HRS-METRIC M5-SSH.filter.200.accepted n=1 200 files
+HRS-METRIC M5-SSH.absorb.200.wall n=1 91.88ms
+HRS-METRIC M5-SSH.absorb.200.perFile n=1 0.46ms
+HRS-METRIC M5-SSH.absorb.200.throughput n=1 2176.8 files/s
+HRS-METRIC M5-SSH.absorb.200.readLatency n=200 p50=81.13ms p95=86.52ms p99=86.74ms max=86.99ms
+HRS-BOUND violations=0 bounds={"m1FilterPerEventMs":5,"m1AbsorbPerFileMs":5,"m1Absorb50kWallMs":45000,"m1ReadLatency50kP99Ms":40000,"m2SustainedWallMs":2000,"m2SaveToQueueP99Ms":50,"m3PreviewHoldWallMs":12000,"m3ReleasePreviewWallMs":10,"m4StormWallMs":12000,"m5Canonicalize100kMs":3000,"m5sshFilterPerEventMs":5,"m5sshAbsorbPerFileMs":2000,"m5sshReadLatencyP99Ms":60000}
