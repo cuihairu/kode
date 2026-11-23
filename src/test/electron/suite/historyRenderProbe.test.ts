@@ -9,13 +9,16 @@
 // 产物,渲染引擎为真 VS Code webview(Chromium)——本测量目标即「webview 实
 // 渲染」成本,与数据来源无关;装配面其余段(命令打开/消息链路)不在此列。
 //
-// 环境判例(2026-11-23):webview 内容装载在高载 xvfb 宿主里进程级哑——实测
-// 14 跑 3 通,全败跑里 5+ 个全新面板均 visible=true/active=true 却零脚本执行
-// (连面板自身 queueReady 都不发,即内容没装载,非消息桥被吞)。固定 webview
-// service worker profile、豁免 --disable-gpu、元素挂载沉淀窗三招均不改判;
-// 主嫌疑=vscode-webview SW 注册/内容装载在高载宿主上的首发竞态,属真机装配面
-// 而非扩展代码。3 通跑证明测量设计成立(信号确实经真 Chromium 管线到达);
-// 故跑红时套件如实失败(不假绿),20+20 样本待宿主协同时采集。
+// 环境判例(2026-11-23,纠正+再实证):webview 文档装载在 xvfb 宿主里进程级哑
+// ——累计 23 跑 3 通,load 9.25(守卫内)亦 0/6 连败,非纯负载面;全败跑里 5+ 个
+// 全新面板均 visible=true/active=true 却零脚本执行(连面板自身 queueReady 都
+// 不发=文档未执行,非消息桥被吞)。固定 webview SW profile、豁免 --disable-gpu、
+// 元素挂载沉淀窗、持久 user-data-dir 四招均不改判;持久 UD 实证=Service Worker
+// 目录已建+ScriptCache 有条目(SW 确注册,内容层已服务)但文档脚本仍零执行,
+// 断点=SW 注册之后的 iframe 文档装载/脚本执行,非 SW 注册首发竞态;真机面
+// (imac)SSH 拒连暂不可达。3 通跑证明测量设计成立(信号确实经真 Chromium 管线
+// 到达);故跑红时套件如实失败(不假绿),20+20 样本待可协同宿主(真机或装载
+// 稳定的 xvfb)采集。
 import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
