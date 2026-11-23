@@ -480,6 +480,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.hotReload.enabled` | boolean | `true` | 总开关,**默认开启**;开时按 `globs` 各建一个文件监视(未设 `globs` 则范围按 `assetsRoot` 派生,见下),关则拆除 |
 | `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在;留空(默认)= 发默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`(body `module_name=<模块名>`,两处都带) |
 | `kbengine.hotReload.globs` | string[] | 未设 → 按 `kbengine.assetsRoot` 派生 | 监视模式(VS Code glob),每个模式各建一个文件监视。未设时派生 `<assetsRoot>/**/*.py`(只盯 .py,绝不全工作区扫);显式填空数组 = 不建监视 |
+| `kbengine.hotReload.denylist` | string[] | 空 | 路径拒绝表(RUST-337):路径前缀命中文件规范路径即不纳入热更(严格前缀+整段边界,与脚本资源根同 canonical 化;**拒绝优先于根许可**——同文件既在许可根又在拒绝表=拒绝)。未配置=空表(行为与既有一致) |
 | `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
 | `kbengine.hotReload.triggerMode` | string 枚举 | `onSave` | 触发源模式(HR-WATCH-001):`onSave` = watcher 写盘事件驱动热更(编辑器保存/自动保存即发,未保存的缓冲编辑永不进链)——默认;`onDiskChange` = 另建按已声明根的原生文件监视,外部改动/生成文件/Git checkout 也触发热更(与保存事件在同一流水线内重叠去重不双发) |
 | `kbengine.hotReload.notify` | string 枚举 | `errors` | 通知模式(HR-UI-013):`silent` = 成功/失败/摘要全程无弹窗(信息照旧落审计/状态栏/历史不丢);`errors` = 失败弹窗+成功静默(缺省,保持既有行为);`summary` = 每批完成弹一条批量结果摘要(成功也弹,含失败明细)。防风暴=每批一条,绝不逐文件刷屏 |

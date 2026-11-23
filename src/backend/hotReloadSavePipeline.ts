@@ -176,6 +176,10 @@ export interface WatchableFileOptions {
   readonly roots?: readonly string[];
   /** 额外排除目录段(与默认排除表并集);缺省只用默认表 */
   readonly excludedDirs?: readonly string[];
+  /** RUST-337 路径拒绝表:命中即不收(严格前缀+整段边界,与 roots 同
+   * canonical 化;拒绝优先于根许可——同文件既在许可根又在拒绝表=拒绝);
+   * 缺省=空表(行为逐字不变)。 */
+  readonly denyPaths?: readonly string[];
 }
 
 /**
@@ -206,10 +210,18 @@ export function isWatchableScriptFile(fsPath: string, options: WatchableFileOpti
     }
   }
   const roots = (options.roots ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
-  if (roots.length === 0) {
+  // RUST-337 路径拒绝表与根许可同 canonical 化同整段边界;拒绝优先。
+  const denyPaths = (options.denyPaths ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
+  if (denyPaths.length === 0 && roots.length === 0) {
     return true;
   }
   const canonical = canonicalizeScriptFilePath(posix);
+  if (denyPaths.some(deny => canonical === deny || canonical.startsWith(`${deny}/`))) {
+    return false;
+  }
+  if (roots.length === 0) {
+    return true;
+  }
   return roots.some(root => canonical === root || canonical.startsWith(`${root}/`));
 }
 

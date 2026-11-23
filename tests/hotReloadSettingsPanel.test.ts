@@ -29,6 +29,7 @@ const baseSettings = (overrides: Partial<HotReloadSettings> = {}): HotReloadSett
   actionName: 'hot_reload',
   globs: ['**/*.py'],
   globsSpec: 'explicit',
+  denylist: [],
   debounceMs: 150,
   triggerMode: 'onSave',
   stabilityWindowMs: 0,

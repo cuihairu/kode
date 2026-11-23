@@ -2373,6 +2373,13 @@
             "default": 500,
             "markdownDescription": "%kbengine.config.hotReload.debounceMs.description%"
           },
+          "kbengine.hotReload.denylist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "markdownDescription": "%kbengine.config.hotReload.denylist.description%"
+          },
           "kbengine.hotReload.enabled": {
             "type": "boolean",
             "default": true,

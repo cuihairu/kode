@@ -124,6 +124,8 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
       unsetGlobs?: boolean;
       /** RUST-329 增量:捕获目标切换订阅口(活动 profile 事件) */
       onTargetChanged?: (handler: () => void) => { dispose(): void };
+      /** RUST-337 路径拒绝表(拒绝优先于根许可) */
+      denylist?: string[];
     } = {}
   ): {
     clock: ReturnType<typeof makeTimers>;
@@ -139,7 +141,8 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
         actionName: '热更',
         debounceMs: 100,
         // 本文件专测磁盘面:一律显式选中 onDiskChange(缺省 onSave 不建,另行钉)
-        triggerMode: options.triggerMode ?? 'onDiskChange'
+        triggerMode: options.triggerMode ?? 'onDiskChange',
+        ...(options.denylist !== undefined ? { denylist: options.denylist } : {})
       }
     });
     const clock = makeTimers();
@@ -433,6 +436,36 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     expect(runCalls).toEqual(['热更']);
     // 域外文件被范围闸如实拦下,不产生 filtered 诊断(闸在纯核过滤之后)
     expect(diagnostics.map(diagnostic => diagnostic.type)).toEqual(['watch-created']);
+  });
+
+  it('RUST-337 路径拒绝表:配置里 denylist 随装配进过滤层,拒绝路径在 save/磁盘两面均如实不进', async () => {
+    const { clock, diagnostics, runCalls } = boot({
+      denylist: ['/ws/scripts/generated']
+    });
+    // save 面(显式 globs watcher)的拒绝路径事件:装配闸直接拦下,不进链
+    allFileSystemWatchers[0].fireChange({ fsPath: '/ws/scripts/generated/Avatar.py' } as never);
+    expect(clock.tick()).toBe(0);
+    expect(runCalls).toEqual([]);
+    // 磁盘面的拒绝路径事件:纯核过滤拦下(与空路径同口径,记 filtered 诊断)
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/generated/Avatar.py' } as never);
+    expect(clock.tick()).toBe(0);
+    expect(runCalls).toEqual([]);
+    expect(diagnostics.map(diagnostic => diagnostic.type)).toEqual(['watch-created', 'filtered']);
+
+    // 同根下非拒绝路径照常进链触发动作
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/base/Avatar.py' } as never);
+    expect(clock.tick()).toBe(2);
+    await flush();
+    expect(runCalls).toEqual(['热更']);
+
+    // 未配 denylist 时行为逐字不变(同路径照进链;两次 boot 的 watcher 面并存,
+    // 按 boot 前基址索引本 boot 的 save watcher)
+    const watcherBase = allFileSystemWatchers.length;
+    const plain = boot();
+    allFileSystemWatchers[watcherBase].fireChange({ fsPath: '/ws/scripts/generated/Avatar.py' } as never);
+    expect(plain.clock.tick()).toBe(2);
+    await flush();
+    expect(plain.runCalls).toEqual(['热更']);
   });
 
   it('配置关:apply 重建拆磁盘面(旧 watcher 失效,不建新面)(HR-WATCH-005)', async () => {

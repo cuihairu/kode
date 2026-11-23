@@ -627,6 +627,23 @@ describe('HR-WATCH-004 isWatchableScriptFile(纯词法过滤,零 IO)', () => {
     expect(isWatchableScriptFile('/')).toBe(false);
     expect(isWatchableScriptFile('Avatar.py')).toBe(true); // 无根集合时相对路径词法通过
   });
+
+  it('RUST-337 路径拒绝表:命中即不收(严格前缀+整段边界,拒绝优先于根许可)', () => {
+    const options = { roots: ['/ws/scripts'], denyPaths: ['/ws/scripts/generated'] };
+    expect(isWatchableScriptFile('/ws/scripts/base/Avatar.py', options)).toBe(true);
+    expect(isWatchableScriptFile('/ws/scripts/generated/Avatar.py', options)).toBe(false);
+    // 整段边界:/ws/scripts/generated2 不被 /ws/scripts/generated 拒
+    expect(isWatchableScriptFile('/ws/scripts/generated2/Avatar.py', options)).toBe(true);
+    // 拒绝优先:无根集合时仅凭拒绝表即拒
+    expect(isWatchableScriptFile('/ws/scripts/Avatar.py', { denyPaths: ['/ws/scripts'] })).toBe(false);
+    // 根自身路径恰等于拒绝表项(目录非 .py,本就不收;此处钉拒绝语义不抬枪)
+    expect(isWatchableScriptFile('/ws/scripts/generated', options)).toBe(false);
+    // Windows 形态与拒绝表走同一 canonical 化
+    expect(isWatchableScriptFile('c:\\ws\\scripts\\generated\\A.py', { roots: ['c:/ws/scripts'], denyPaths: ['c:/ws/scripts/generated'] })).toBe(false);
+    expect(isWatchableScriptFile('c:\\ws\\scripts\\base\\A.py', { roots: ['c:/ws/scripts'], denyPaths: ['c:/ws/scripts/generated'] })).toBe(true);
+    // 空表 = 行为逐字不变(无根集合时全收)
+    expect(isWatchableScriptFile('/ws/scripts/generated/Avatar.py', { denyPaths: [] })).toBe(true);
+  });
 });
 
 describe('HR-WATCH-017 诊断事件(全量可注入观察)', () => {
