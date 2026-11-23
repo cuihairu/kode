@@ -160,6 +160,7 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         (hit?.member || access.fullPath !== access.rootSymbol
           ? null
           : await resolveUserSelfAttributeFlowAnnotation(
+              document,
               documentLines,
               access.line,
               access.rootSymbol,
@@ -568,8 +569,15 @@ function isMemberCallAt(line: string, endColumn: number): boolean {
  * LANG-NAR-1:用户自管属性(非 .def 声明)的流敏感窄化注解。单段 self.<attr>
  * (fullPath===rootSymbol)才推;嵌套/推不出返回 null(能推才显)。收窄生效时
  * 显示守卫后的 expr 类型(无 None),否则显示收敛基类(可能含 None)。
+ *
+ * 2026-11-23 用户报:`self.spaceUType = self.cellData["spaceUType"]` 写点
+ * 无提示。写点 inlay 显示 RHS 类型,而 RHS 下标形态此前无解析分支 → 空。
+ * 这里给 TS 引擎注入 cellData 键类型回调(与 collectCellDataReadHints 同一
+ * 键宇宙:def 字段集 + 内建 + 组件槽,域位真值),base/cell 脚本按同一
+ * 键集推导(base 侧是副本,键集同源)。Rust 腿尚无下标分支 → 先走 TS 引擎。
  */
 async function resolveUserSelfAttributeFlowAnnotation(
+  document: vscode.TextDocument,
   documentLines: string[],
   line: number,
   attr: string,
@@ -581,6 +589,48 @@ async function resolveUserSelfAttributeFlowAnnotation(
   if (fromRust) {
     return fromRust.annotation;
   }
-  const flow = inferSelfAttributeFlow(documentLines, line, attr, undefined, versionKey);
+  const options = await buildCellDataFlowOptions(document, versionKey);
+  const flow = inferSelfAttributeFlow(documentLines, line, attr, options, versionKey);
   return flow?.annotation ?? null;
+}
+
+/** cellData 键类型回调注入(TS 流引擎用);非 cell/base 角色或无键 → undefined */
+async function buildCellDataFlowOptions(
+  document: vscode.TextDocument,
+  versionKey?: string
+): Promise<{ resolveSubscriptType: (target: string, key: string) => string | null } | undefined> {
+  const role = cellScriptRoleAndEntity(document.fileName);
+  if (!role) {
+    return undefined;
+  }
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  const cacheKey =
+    `${flowVersionKeyForDocument(document)}#${workspaceRoot ? defBufferStampForRoot(workspaceRoot) : ''}`;
+  let keys = cellDataKeysCache.get(cacheKey);
+  if (keys === undefined) {
+    const defs = collectCellDataDefUniverse(role.entity, (name, category) =>
+      findDefinitionTextByCategory(name, category, document));
+    keys = await fetchCellDataKeys(role.entity, defs);
+    if (cellDataKeysCache.size >= CELL_DATA_KEYS_CACHE_MAX) {
+      cellDataKeysCache.clear();
+    }
+    cellDataKeysCache.set(cacheKey, keys);
+  }
+  if (!keys) {
+    return undefined;
+  }
+  const byKey = new Map<string, string>();
+  for (const entry of keys) {
+    // typeLabel 是引擎给的可显示类型名;Any/空 → 不参与(能推才显)
+    const label = entry.typeLabel?.trim();
+    if (label && label !== 'Any' && label !== 'PYTHON') {
+      byKey.set(entry.key, label);
+    }
+  }
+  if (byKey.size === 0) {
+    return undefined;
+  }
+  return {
+    resolveSubscriptType: (target, key) => (target === 'cellData' ? byKey.get(key) ?? null : null)
+  };
 }

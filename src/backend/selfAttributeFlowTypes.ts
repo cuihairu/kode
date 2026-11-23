@@ -90,6 +90,14 @@ export interface SelfAttributeFlowOptions {
   resolveCallAnnotation?: (callee: string) => string | null;
   /** 裸名/属性末段注解(非调用形态):`TalentNode` → 'TalentNode' 等 */
   resolveNameAnnotation?: (name: string) => string | null;
+  /**
+   * 下标读注解:`self.cellData['spaceUType']` → 'str'。target=被下标的接收者
+   * 属性名('cellData'),key=字符串字面量键。2026-11-23 用户报:base 进程里
+   * `self.spaceUType = self.cellData['spaceUType']` 这类写点不出类型——此前
+   * typeOfExpr 无下标分支,RHS 推不出 → 写点 inlay 空。注入方(def 键类型面)
+   * 未注入/未解出 → null。
+   */
+  resolveSubscriptType?: (target: string, key: string) => string | null;
 }
 
 interface ClassSpan {
@@ -239,6 +247,15 @@ function typeOfExpr(expr: string, options?: SelfAttributeFlowOptions): Set<strin
   }
   if (text.startsWith('(') && text.endsWith(')')) {
     return new Set(['tuple']);
+  }
+  // 下标读:`self.cellData['spaceUType']` / `cellData["x"]`(别名/裸名接收者同样认)
+  // → 经回调取键类型。2026-11-23 用户报的正是这个形态推不出。
+  const subscript = /^([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\[\s*['"]([^'"]+)['"]\s*\]$/.exec(text);
+  if (subscript) {
+    const receiver = subscript[1].replace(/\s+/g, '');
+    const target = receiver.split('.').pop()!;
+    const annotation = options?.resolveSubscriptType?.(target, subscript[2]) ?? null;
+    return annotation ? new Set([annotation]) : new Set();
   }
   // 调用形态:name(...) / a.b.c(...) → 末段 callee 取返回注解
   const callMatch = /^([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\(/.exec(text);
@@ -510,6 +527,11 @@ function convergedBaseline(
     );
     baseline = result.state;
   }
+  // 注:2026-11-23 曾试过「跨方法写入聚合」(把其它方法的 `self.attr =` 并进
+  // 类级基线,让 onTeleportSuccess 等写点也能查到类型)。该形态与 Rust 对拍
+  // 引擎(Rust 侧未同构,parity 测试恒红)、越界(类体/空方法位查询被并进别
+  // 方法类型,应 null 却得值)且 O(方法×行) 拖慢万行级解析(>8s 预算)。真跨
+  // 方法写点索引需 Rust 侧同构落地后再做,本面保持 __init__/类级基线不动。
   return baseline;
 }
 
