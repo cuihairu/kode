@@ -24,12 +24,48 @@ export async function revealSourceCommand(
   const document = await vscode.workspace.openTextDocument(uriArg);
   const selection = options?.selection;
   const editor = await vscode.window.showTextDocument(document, selection ? { selection } : undefined);
-  if (selection && editor && typeof (editor as vscode.TextEditor).revealRange === 'function') {
+  // revealRange 的时机:编辑器必须在返回的这一帧完成 layout。后退(alt+←)后焦点
+  // 落回原位、tab 尚未真正激活/渲染完时,同一 tick 里的 revealRange 被忽略——
+  // 表现为「点一次没反应,得点两次」(2026-11-23 用户报 MRO 链跳转即此形)。
+  // 因此:首帧 reveal 一次,再在编辑器切换落定(onDidChangeActiveTextEditor)与
+  // 下一微任务各补一次,保证滚显真正生效;三次都在同一命令内,不引入延迟感。
+  const reveal = (editor: unknown): void => {
+    if (!selection || !editor || typeof (editor as vscode.TextEditor).revealRange !== 'function') {
+      return;
+    }
     // TextEditorRevealType 缺失(fake 环境/枚举未就绪)时退 0(Default),不炸
     const revealDefault =
       (vscode as unknown as { TextEditorRevealType?: { Default?: number } }).TextEditorRevealType?.Default ?? 0;
     (editor as vscode.TextEditor).revealRange(selection, revealDefault);
+  };
+  reveal(editor);
+  revealOnActiveEditorChange(reveal);
+  revealOnNextMicrotask(reveal);
+}
+
+/** 等编辑器切换落定后再滚显一次;落定即退订,不残留监听。 */
+function revealOnActiveEditorChange(reveal: (editor: unknown) => void): void {
+  if (!vscode.window?.onDidChangeActiveTextEditor) {
+    return;
   }
+  let settled = false;
+  const subscription = vscode.window.onDidChangeActiveTextEditor((active: unknown) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    reveal(active);
+    subscription.dispose();
+  });
+}
+
+/** 下一微任务再滚显一次:layout 晚于命令返回的常规情形。 */
+function revealOnNextMicrotask(reveal: (editor: unknown) => void): void {
+  const active = (): unknown => (vscode.window?.activeTextEditor as unknown) ?? null;
+  Promise.resolve().then(() => {
+    reveal(active());
+    setTimeout(() => reveal(active()), 0);
+  });
 }
 
 /** 开档预热(批159):开 Python 档即触发对应实体 .def 的定向首解析,首次
