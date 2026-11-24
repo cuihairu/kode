@@ -182,7 +182,7 @@ interface FileConfigNames {
   /** 本文件定义的配置绑定/类名(配置目录文件) */
   defined: Set<string>;
   /** 本文件 from-import 进来的配置名 → 别名集合 */
-  imported: Set<string>;
+  imports: Array<{ origin: string; alias: string }>;
   /** 配置文件里的定义语句行(定义本身不报):name → 行集合 */
   definitionLines: Map<string, Set<number>>;
 }
@@ -203,14 +203,12 @@ function indentWidth(line: string): number {
 
 /** 收集一个文件内的配置名面:定义(配置目录文件)+ from-import 别名 */
 function collectFileConfigNames(
-  file: string,
   maskedLines: readonly string[],
   isConfigFile: boolean,
-  classPatterns: readonly string[],
-  globalConfigNames: ReadonlySet<string>
+  classPatterns: readonly string[]
 ): FileConfigNames {
   const defined = new Set<string>();
-  const imported = new Set<string>();
+  const imports: FileConfigNames['imports'] = [];
   const definitionLines = new Map<string, Set<number>>();
   const addDefinition = (name: string, lineNo: number) => {
     defined.add(name);
@@ -259,12 +257,10 @@ function collectFileConfigNames(
       if (!origin || !/^[A-Za-z_]\w*$/.test(origin)) {
         continue;
       }
-      if (globalConfigNames.has(origin) || defined.has(origin)) {
-        imported.add(alias);
-      }
+      imports.push({ origin, alias });
     }
   }
-  return { defined, imported, definitionLines };
+  return { defined, imports, definitionLines };
 }
 
 /** 找到 lineNo 上文最近的、缩进更小的 def 名(容纳 reload 豁免判定) */
@@ -325,118 +321,181 @@ function writeFormFor(
   return null;
 }
 
+interface PreparedConfigSource {
+  source: ConfigSourceInput;
+  lines: string[];
+  isConfigFile: boolean;
+  names: FileConfigNames;
+}
+
+function prepareConfigSource(source: ConfigSourceInput, settings: ConfigDataSettings): PreparedConfigSource {
+  const lines = maskPythonNonCode(source.text).split(/\r?\n/);
+  const isConfigFile = anyGlobMatch(settings.configDirGlobs, source.file);
+  const names = collectFileConfigNames(lines, isConfigFile, settings.configClassPatterns);
+  return { source, lines, isConfigFile, names };
+}
+
+function collectDefinedNames(sources: Iterable<PreparedConfigSource>): Set<string> {
+  const defined = new Set<string>();
+  for (const source of sources) {
+    for (const name of source.names.defined) {
+      defined.add(name);
+    }
+  }
+  return defined;
+}
+
 export function computeConfigDataMutationFindings(
   sources: readonly ConfigSourceInput[],
   settings: ConfigDataSettings
 ): ConfigDataFinding[] {
-  if (!settings.enabled || sources.length === 0) {
+  if (!settings.enabled) {
     return [];
   }
-  const masked = sources.map(s => maskPythonNonCode(s.text));
-  const isConfigFile = sources.map(s => anyGlobMatch(settings.configDirGlobs, s.file));
-  // 第一遍:配置目录文件的定义名并集(供 from-import 名校验)
-  const globalConfigNames = new Set<string>();
-  const fileNames: FileConfigNames[] = sources.map((s, i) => {
-    const maskedLines = masked[i].split(/\r?\n/);
-    const names = collectFileConfigNames(s.file, maskedLines, isConfigFile[i], settings.configClassPatterns, new Set());
-    for (const name of names.defined) {
-      globalConfigNames.add(name);
-    }
-    return names;
-  });
-  // 第二遍:from-import 别名(需全局名集合就绪)
-  fileNames.forEach((names, i) => {
-    const lines = masked[i].split(/\r?\n/);
-    const imported = collectFileConfigNames(sources[i].file, lines, false, settings.configClassPatterns, globalConfigNames).imported;
-    names.imported = imported;
-  });
+  const prepared = sources.map(source => prepareConfigSource(source, settings));
+  const defined = collectDefinedNames(prepared);
+  return prepared.flatMap(source => computeConfigFileFindings(source, defined, settings));
+}
 
+function computeConfigFileFindings(
+  { source, lines, isConfigFile, names }: PreparedConfigSource,
+  defined: ReadonlySet<string>,
+  settings: ConfigDataSettings
+): ConfigDataFinding[] {
+  if (anyGlobMatch(settings.mutationExclude, source.file)) {
+    return [];
+  }
+  const imported = new Set(names.imports.filter(entry => defined.has(entry.origin)).map(entry => entry.alias));
+  const scanNames = [...imported, ...names.defined];
+  if (scanNames.length === 0) {
+    return [];
+  }
   const findings: ConfigDataFinding[] = [];
-  sources.forEach((source, i) => {
-    if (anyGlobMatch(settings.mutationExclude, source.file)) {
+  // def 名清单(reload 豁免判定;任意缩进 def 都计入——豁免看「最近的、
+  // 缩进更小的外层 def」,与定义层级无关)
+  const defLines: Array<{ line: number; indent: number; name: string }> = [];
+  lines.forEach((line, idx) => {
+    const m = /^(?:async\s+)?def\s+([A-Za-z_]\w*)/.exec(line.trim());
+    if (m) {
+      defLines.push({ line: idx, indent: indentWidth(line), name: m[1] });
+    }
+  });
+  // 本文件模块级遮蔽:配置名被模块级再绑定后,该名视为本地绑定
+  const shadowAt = new Map<string, number>();
+  for (const [name, defSet] of names.definitionLines) {
+    // 配置文件自身定义行不参与遮蔽(定义即绑定起点)
+    if (!isConfigFile) {
+      for (const lineNo of defSet) {
+        if (!shadowAt.has(name) || lineNo < shadowAt.get(name)!) {
+          shadowAt.set(name, lineNo);
+        }
+      }
+    }
+  }
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
       return;
     }
-    const lines = masked[i].split(/\r?\n/);
-    // def 名清单(reload 豁免判定;任意缩进 def 都计入——豁免看「最近的、
-    // 缩进更小的外层 def」,与定义层级无关)
-    const defLines: Array<{ line: number; indent: number; name: string }> = [];
-    lines.forEach((line, idx) => {
-      const m = /^(?:async\s+)?def\s+([A-Za-z_]\w*)/.exec(line.trim());
-      if (m) {
-        defLines.push({ line: idx, indent: indentWidth(line), name: m[1] });
+    const indent = indentWidth(line);
+    for (const base of scanNames) {
+      const hit = writeFormFor(line, base);
+      if (!hit) {
+        continue;
       }
-    });
-    // 本文件模块级遮蔽:配置名被模块级再绑定后,该名视为本地绑定
-    const shadowAt = new Map<string, number>();
-    for (const [name, defSet] of fileNames[i].definitionLines) {
-      // 配置文件自身定义行不参与遮蔽(定义即绑定起点)
-      if (!isConfigFile[i]) {
-        for (const lineNo of defSet) {
-          if (!shadowAt.has(name) || lineNo < shadowAt.get(name)!) {
-            shadowAt.set(name, lineNo);
-          }
+      // 定义语句本身(配置文件内的定义行)不报
+      const defSet = names.definitionLines.get(base);
+      if (defSet?.has(idx)) {
+        continue;
+      }
+      // 模块级遮蔽后再绑定行起的模块级写点 = 本地绑定
+      const shadowLine = shadowAt.get(base);
+      if (shadowLine !== undefined && idx > shadowLine && indent === 0) {
+        continue;
+      }
+      // 遮蔽绑定之后定义的函数体:其内写点也是本地绑定
+      if (shadowLine !== undefined) {
+        const enclosing = enclosingFunctionName(defLines, idx, indent);
+        const enclosingLine = enclosing
+          ? defLines.find(d => d.name === enclosing && d.line < idx && d.indent < indent)
+          : undefined;
+        if (enclosingLine && enclosingLine.line > shadowLine) {
+          continue;
+        }
+      }
+      // 热更新接口豁免
+      const enclosing = enclosingFunctionName(defLines, idx, indent);
+      if (enclosing && nameMatchesPattern(enclosing, settings.reloadFunctionPatterns)) {
+        continue;
+      }
+      findings.push({
+        code: CONFIG_DATA_MUTATION_CODE,
+        severity: 'Warning',
+        file: source.file,
+        line: idx,
+        // 列 = base 名在原始行内的字符偏移(Tab 计 1 列,评审三轮 P2)
+        character: hit.baseIndex,
+        baseName: base,
+        form: hit.form,
+        message:
+          `配置数据写点「${base}」不在热更新接口/白名单内,配置应由 reload 接口或 mutationExclude 白名单修改。` +
+          ` Config data write to "${base}" outside reload functions/exclusion list.`
+      });
+    }
+  });
+  return findings;
+}
+
+/** One entry per scanned file. Changes to a definition name only affect its importers. */
+export class ConfigDataIndex {
+  private readonly sources = new Map<string, PreparedConfigSource>();
+  private readonly schemas = new Map<string, ConfigSchemaEntry[]>();
+  private defined = new Set<string>();
+
+  constructor(private readonly settings: ConfigDataSettings) {}
+
+  get schema(): ConfigSchemaEntry[] {
+    return [...this.schemas.values()].flat();
+  }
+
+  update(changed: readonly ConfigSourceInput[], removed: readonly string[] = []): Map<string, ConfigDataFinding[]> {
+    const findings = new Map<string, ConfigDataFinding[]>();
+    if (!this.settings.enabled) {
+      return findings;
+    }
+    const affected = new Set<string>();
+    for (const file of removed) {
+      if (this.sources.delete(file)) {
+        this.schemas.delete(file);
+        findings.set(file, []);
+      }
+    }
+    for (const source of changed) {
+      if (this.sources.get(source.file)?.source.text === source.text) {
+        continue;
+      }
+      const prepared = prepareConfigSource(source, this.settings);
+      this.sources.set(source.file, prepared);
+      if (prepared.isConfigFile) {
+        this.schemas.set(source.file, collectConfigSchema([source], this.settings));
+      }
+      affected.add(source.file);
+    }
+    const defined = collectDefinedNames(this.sources.values());
+    if (defined.size !== this.defined.size || [...defined].some(name => !this.defined.has(name))) {
+      for (const [file, source] of this.sources) {
+        if (source.names.imports.some(({ origin }) => this.defined.has(origin) !== defined.has(origin))) {
+          affected.add(file);
         }
       }
     }
-
-    lines.forEach((line, idx) => {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        return;
-      }
-      const indent = indentWidth(line);
-      // 扫描名集合:from-import 别名 ∪ 配置文件自身定义名(评审二轮 P1:
-      // 只扫 imported 会漏配置文件自身的再写点;定义语句行本身仍豁免)
-      const scanNames = isConfigFile[i]
-        ? [...fileNames[i].imported, ...fileNames[i].defined]
-        : [...fileNames[i].imported];
-      for (const base of scanNames) {
-        const hit = writeFormFor(line, base);
-        if (!hit) {
-          continue;
-        }
-        // 定义语句本身(配置文件内的定义行)不报
-        const defSet = fileNames[i].definitionLines.get(base);
-        if (defSet?.has(idx)) {
-          continue;
-        }
-        // 模块级遮蔽后再绑定行起的模块级写点 = 本地绑定
-        const shadowLine = shadowAt.get(base);
-        if (shadowLine !== undefined && idx > shadowLine && indent === 0) {
-          continue;
-        }
-        // 遮蔽绑定之后定义的函数体:其内写点也是本地绑定
-        if (shadowLine !== undefined) {
-          const enclosing = enclosingFunctionName(defLines, idx, indent);
-          const enclosingLine = enclosing
-            ? defLines.find(d => d.name === enclosing && d.line < idx && d.indent < indent)
-            : undefined;
-          if (enclosingLine && enclosingLine.line > shadowLine) {
-            continue;
-          }
-        }
-        // 热更新接口豁免
-        const enclosing = enclosingFunctionName(defLines, idx, indent);
-        if (enclosing && nameMatchesPattern(enclosing, settings.reloadFunctionPatterns)) {
-          continue;
-        }
-        findings.push({
-          code: CONFIG_DATA_MUTATION_CODE,
-          severity: 'Warning',
-          file: source.file,
-          line: idx,
-          // 列 = base 名在原始行内的字符偏移(Tab 计 1 列,评审三轮 P2)
-          character: hit.baseIndex,
-          baseName: base,
-          form: hit.form,
-          message:
-            `配置数据写点「${base}」不在热更新接口/白名单内,配置应由 reload 接口或 mutationExclude 白名单修改。` +
-            ` Config data write to "${base}" outside reload functions/exclusion list.`
-        });
-      }
-    });
-  });
-  return findings;
+    this.defined = defined;
+    for (const file of affected) {
+      findings.set(file, computeConfigFileFindings(this.sources.get(file)!, defined, this.settings));
+    }
+    return findings;
+  }
 }
 
 // ---------------------------------------------------------------------------

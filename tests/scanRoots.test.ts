@@ -8,6 +8,7 @@ import {
   findFilesAcrossRoots,
   findFilesForKbengineSurfaces,
   getIndexScanRoots,
+  getKbengineScanScope,
   getExternalScanRoots,
   getScanRootForFile,
   resolveAssetsRootForWorkspace,
@@ -39,6 +40,29 @@ const setAssetsRoot = (value: string | undefined): void => {
   }
   resetScanRootCache();
 };
+
+it('matches incremental watcher paths inside external scripts without admitting unrelated workspace files', () => {
+  const workspaceRoot = makeTmpDir('watch-workspace');
+  const assetsRoot = makeTmpDir('watch-assets');
+  const scripts = path.join(assetsRoot, 'scripts');
+  fs.mkdirSync(scripts, { recursive: true });
+  const originalFolders = stubWorkspace.workspaceFolders;
+  stubWorkspace.workspaceFolders = [{ uri: Uri.file(workspaceRoot), name: 'watch', index: 0 }];
+  setAssetsRoot(assetsRoot);
+  resetScanRootCache();
+  try {
+    const scope = getKbengineScanScope(new Set(['node_modules']));
+    expect(scope.roots).toEqual([scripts]);
+    expect(scope.includes(path.join(scripts, 'base', 'new.py'))).toBe(true);
+    expect(scope.includes(path.join(scripts, 'node_modules', 'ignored.py'))).toBe(false);
+    expect(scope.includes(path.join(workspaceRoot, 'tools', 'ignored.py'))).toBe(false);
+    expect(scope.includes(path.join(assetsRoot, 'scripts-extra', 'ignored.py'))).toBe(false);
+  } finally {
+    stubWorkspace.workspaceFolders = originalFolders;
+    setAssetsRoot(undefined);
+    resetScanRootCache();
+  }
+});
 
 describe('getIndexScanRoots:只扫 {assets}/scripts(2026-11-23 用户令;找不到 scripts 就不扫)', () => {
   it('无 assetsRoot 配置:文件夹根下有 scripts → 收窄到 scripts;没有 → 不贡献根(③ 收窄)', () => {

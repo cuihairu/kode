@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import { interactiveActivityBeacon } from './backend/indexScheduler';
+import { KodeCoreTransportError } from './backend/kodeCoreClient';
 import type { KodeCoreGate } from './backend/kodeCoreGate';
 import { findFilesAcrossRoots, getIndexScanRoots } from './scanRoots';
 
@@ -200,6 +201,19 @@ export async function mirrorCorpusToRust(
   let mirrored = 0;
   let failed = 0;
   await gate.beginBackgroundScan(corpusUris.size).catch(() => undefined);
+  const sendDocument = async (file: string, languageId: string, version: number, text: string): Promise<boolean> => {
+    try {
+      await gate.mirrorDocument(file, languageId, version, text, { corpus: true });
+      mirrored += 1;
+    } catch (error) {
+      failed += 1;
+      if (error instanceof KodeCoreTransportError) {
+        if (!superseded()) { await gate.scanCancel().catch(() => undefined); }
+        return false;
+      }
+    }
+    return true;
+  };
   // 顺序去重(打开文档在 keys 集合中,前段已镜像后段跳过)。
   const seenFsPaths = new Set<string>();
   for (const fsPath of mirrorOrder) {
@@ -226,18 +240,9 @@ export async function mirrorCorpusToRust(
     }
     const open = openByFsPath.get(fsPath);
     if (open) {
-      try {
-        // RESP-007:发送前重查打开状态——枚举快照对象可能已被关闭/重开,
-        // 此刻在役就发活体文档(版本/内容以发送时点为准),已关闭则发快照
-        // 对象遗留内容(编辑器最后已知态);corpus 旗标保证 gate 侧只补位。
-        const live = findLiveDocument(fsPath) ?? open;
-        await gate.mirrorDocument(fsPath, live.languageId, live.version, live.getText(), {
-          corpus: true
-        });
-        mirrored += 1;
-      } catch {
-        failed += 1;
-      }
+      // 发送前重查打开状态，确保发送当前版本。
+      const live = findLiveDocument(fsPath) ?? open;
+      if (!await sendDocument(fsPath, live.languageId, live.version, live.getText())) { return; }
       continue;
     }
     let bytes: Uint8Array | null = null;
@@ -258,29 +263,12 @@ export async function mirrorCorpusToRust(
     // 重查打开状态,已打开发编辑器活体内容(未保存修订不被盘字节冲掉),
     // 未打开才发盘读字节;corpus 旗标保证 gate 侧在场即跳过、绝不降级。
     const live = findLiveDocument(fsPath);
-    if (live) {
-      try {
-        await gate.mirrorDocument(fsPath, live.languageId, live.version, live.getText(), {
-          corpus: true
-        });
-        mirrored += 1;
-      } catch {
-        failed += 1;
-      }
-      continue;
-    }
-    try {
-      await gate.mirrorDocument(
-        fsPath,
-        corpusMirrorLanguageId(fsPath),
-        1,
-        Buffer.from(bytes).toString('utf8'),
-        { corpus: true }
-      );
-      mirrored += 1;
-    } catch {
-      failed += 1;
-    }
+    if (!await sendDocument(
+      fsPath,
+      live?.languageId ?? corpusMirrorLanguageId(fsPath),
+      live?.version ?? 1,
+      live?.getText() ?? Buffer.from(bytes).toString('utf8')
+    )) { return; }
   }
   if (superseded()) {
     // 收尾前被顶替:旧轮不得替新轮记账 complete。

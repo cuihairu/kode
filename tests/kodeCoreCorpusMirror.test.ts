@@ -13,6 +13,7 @@ import {
   type CorpusFileFinder
 } from '../src/kodeCoreCorpusMirror';
 import { interactiveActivityBeacon } from '../src/backend/indexScheduler';
+import { KodeCoreTransportError } from '../src/backend/kodeCoreClient';
 import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
 
 // 2026-11-08 用户令「直接切到 rust」:服务轨道语料镜像。Rust 的类型/实体/
@@ -99,6 +100,23 @@ const writeCorpusFile = async (fsPath: string, content: string): Promise<void> =
 };
 
 describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
+  it('a transport failure stops the scan without retrying startup for every file', async () => {
+    const { gate, warm } = makeFakeGate();
+    const files = ['A.def', 'B.def'].map(file => path.join(tempRoot, file));
+    for (const file of files) {
+      await writeCorpusFile(file, '<root/>');
+    }
+    let attempts = 0;
+    gate.mirrorDocument = async () => {
+      attempts += 1;
+      throw new KodeCoreTransportError('spawn failed', 'EXITED');
+    };
+    await mirrorCorpusToRust(gate as KodeCoreGate, makeFinder({ '**/*.def': files }, []), () => []);
+    expect(attempts).toBe(1);
+    expect(warm.cancels).toBe(1);
+    expect(warm.completions).toEqual([]);
+  });
+
   it('语料 glob 集合:def + 三类 XML 全量发现', () => {
     expect(CORPUS_MIRROR_GLOBS).toEqual([
       '**/*.def',

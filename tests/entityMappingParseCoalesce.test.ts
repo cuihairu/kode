@@ -8,8 +8,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { EntityMappingManager } from '../src/entityMapping';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EntityMappingManager, type EntityMappingIndex } from '../src/entityMapping';
 import { Uri, workspace } from './helpers/vscodeStub';
 import { patternGlob } from './helpers/findPattern';
 
@@ -90,5 +90,51 @@ describe('parseDefFile 在途合并(同 .def 并发只解析一次)', () => {
     const afterReplay = manager.getDefParseCacheStats();
     expect(afterReplay.misses).toBe(afterConcurrent.misses);
     expect(afterReplay.hits).toBeGreaterThan(afterConcurrent.hits);
+  });
+
+  it('文件变更使旧解析失效，即使旧任务晚到也保留新索引', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-def-revision-'));
+    roots.push(root);
+    const dir = path.join(root, 'scripts', 'entity_defs');
+    fs.mkdirSync(dir, { recursive: true });
+    const defFile = path.join(dir, 'Monster.def');
+    const write = (method: string) => fs.writeFileSync(defFile, `<root><BaseMethods><${method}/></BaseMethods></root>`);
+    write('onOld');
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'revision', index: 0 }];
+
+    const manager = new EntityMappingManager({ subscriptions: [] }, undefined, { deferStartup: true });
+    managers.push(manager);
+    const internals = manager as unknown as {
+      parseDefFile(name: string, file: string): Promise<void>;
+      handleDefFileChanged(file: string, kind: 'change'): void;
+      buildIndex(...args: unknown[]): Promise<EntityMappingIndex | null>;
+      mappingIndexes: Map<string, EntityMappingIndex>;
+    };
+    let release!: () => void;
+    let firstRead!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const read = new Promise<void>(resolve => { firstRead = resolve; });
+    const build = internals.buildIndex.bind(manager);
+    const spy = vi.spyOn(internals, 'buildIndex').mockImplementationOnce(async (...args) => {
+      const result = await build(...args);
+      firstRead();
+      await barrier;
+      return result;
+    });
+    const first = internals.parseDefFile('Monster', defFile);
+    try {
+      await read;
+      write('onNewest');
+      internals.handleDefFileChanged(defFile, 'change');
+      await internals.parseDefFile('Monster', defFile);
+      expect(spy).toHaveBeenCalledTimes(2);
+      release();
+      await first;
+      expect(internals.mappingIndexes.get('Monster')?.methodDefinitions.map(method => method.identity.symbolName))
+        .toEqual(['onNewest']);
+    } finally {
+      release();
+      await first;
+    }
   });
 });

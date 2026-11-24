@@ -14,10 +14,37 @@ import { describe, expect, it } from 'vitest';
 import {
   computeConfigDataMutationFindings,
   collectConfigSchema,
+  ConfigDataIndex,
   CONFIG_DATA_SETTINGS_DEFAULT,
   type ConfigDataSettings,
   type ConfigSourceInput
 } from '../src/configDataMutation';
+
+describe('ConfigDataIndex', () => {
+  it('only rechecks changed sources and importers of added or removed names', () => {
+    const index = new ConfigDataIndex(CONFIG_DATA_SETTINGS_DEFAULT);
+    const definition = 'scripts/config/items.py';
+    const consumer = 'scripts/base/Avatar.py';
+    const unrelated = 'scripts/base/Other.py';
+    index.update([
+      { file: definition, text: 'ITEMS = {}' },
+      { file: consumer, text: 'from config.items import ITEMS as DATA\nDATA[0] = 1' },
+      { file: unrelated, text: 'from config.items import UNRELATED\nUNRELATED[0] = 1' },
+    ]);
+    const consumerEdit = { file: consumer, text: 'from config.items import ITEMS as DATA\nDATA[0] = 2' };
+    const edited = index.update([consumerEdit]);
+    expect([...edited.keys()]).toEqual([consumer]);
+    expect(edited.get(consumer)).toHaveLength(1);
+    expect(index.update([consumerEdit]).size).toBe(0);
+    expect([...index.update([{ file: definition, text: 'ITEMS = {1: 2}' }]).keys()]).toEqual([definition]);
+    expect(index.schema.map(entry => entry.name)).toEqual(['ITEMS']);
+    expect(index.update([], [definition])).toEqual(new Map([[definition, []], [consumer, []]]));
+    expect(index.schema).toEqual([]);
+    const restored = index.update([{ file: definition, text: 'ITEMS = {}' }]);
+    expect(restored.get(consumer)).toHaveLength(1);
+    expect(restored.has(unrelated)).toBe(false);
+  });
+});
 
 /** 配置源:Excel 生成面(scriptsd/data/config/items.py)——dict 表 + 类 */
 const itemsPy = `# generated from excel, do not edit

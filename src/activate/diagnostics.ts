@@ -11,12 +11,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { findFilesForKbengineSurfaces } from '../scanRoots';
+import {
+  ensureAnchorScanRoot, findFilesForKbengineSurfaces, getKbengineScanScope, resetScanRootCache
+} from '../scanRoots';
+import { normalizeFileIdentity } from '../backend/pathIdentity';
 import { readConfigScanSourceText } from '../backend/configDataScanSource';
 import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
 import {
-  collectConfigSchema,
-  computeConfigDataMutationFindings,
+  ConfigDataIndex,
   CONFIG_DATA_SETTINGS_DEFAULT,
   type ConfigDataFinding,
   type ConfigDataSettings,
@@ -761,161 +763,230 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }));
   }
 
-  // KODE-CFG-016 配置数据保护(Excel 配置类意外写检测+schema hover;764843d0
-  // checkpoint 事故删除后按 b5b750a1 逐字恢复,SRC-000「独立实现线在树」判定
-  // 经 2026-11-17 全树 grep 证伪——configDataMutation/configSchemaHover 无任何
-  // 后继实现线)。纯逻辑面 computeConfigDataMutationFindings /
-  // collectConfigSchema(零 vscode 依赖,tests/configDataMutation.test.ts 红先行),
-  // 独立 collection,配置 kbengine.configData(enabled 默认开;configDirGlobs /
-  // configClassPatterns / reloadFunctionPatterns / mutationExclude)。触发面 =
-  // 激活首扫 + py 文件编辑/保存/外部增删改(800ms 防抖合并;打开不触发:打开不改
-  // 索引输入,只走 per-file 诊断与预热)+ 配置变更即重算;配置目录
-  // 文件自身与 reload*/hotUpdate* 函数体、mutationExclude 白名单内写点不报。
-  // 门控改判(恢复批):原实现要求 .kbengine 托管目录在盘,但配置类住
-  // scripts/**,从未跑 infer 管线的正规 KBEngine 工程(如 demo 工作区)永远
-  // 不开——用户 2026-11-17 报「配置目录还是没有识别」的第二根因。改为每次
-  // 扫描内判定 KBEngine 工作区探针=entityDefsRoot 发现(def 布局家族同一
-  // 口径):非 KBEngine 纯 Python 工作区零噪声不变,正规工程即刻识别。
-  const configDataRoot = vscode.workspace.workspaceFolders?.[0];
-  if (configDataRoot) {
-    const configDataCollection = vscode.languages.createDiagnosticCollection(
-      'kbengine-config-data'
-    );
-    context.subscriptions.push(configDataCollection);
-    let configDataScanSeq = 0;
-    let configDataSchemaCache: readonly ConfigSchemaEntry[] = [];
+  // Config data diagnostics use file changes as inputs. Reading a source must never
+  // open a document or start the other document-open diagnostics.
+  if (vscode.workspace.workspaceFolders?.length) {
+    const collection = vscode.languages.createDiagnosticCollection('kbengine-config-data');
+    const directories = ['node_modules', 'out', '.kbengine', 'venv', '.venv', '__pycache__'];
+    const excluded = `**/{${directories.join(',')}}/**`;
+    const excludedDirectories = new Set(directories);
     const readConfigDataSettings = (): ConfigDataSettings => {
-      const raw = vscode.workspace
-        .getConfiguration('kbengine')
-        .get<Partial<ConfigDataSettings>>('configData');
+      const raw = vscode.workspace.getConfiguration('kbengine').get<Partial<ConfigDataSettings>>('configData');
       return { ...CONFIG_DATA_SETTINGS_DEFAULT, ...(raw ?? {}) };
     };
-    const scanConfigData = async (): Promise<void> => {
-      const seq = ++configDataScanSeq;
-      const root = configDataRoot.uri.fsPath;
+
+    type FileChange = { uri: vscode.Uri; deleted: boolean };
+    type ScannedFile = { uri: vscode.Uri; file: string };
+    const changes = new Map<string, FileChange>();
+    const edited = new Set<string>();
+    let files = new Map<string, ScannedFile>();
+    let index: ConfigDataIndex | undefined;
+    let schema: readonly ConfigSchemaEntry[] = [];
+    let scope: ReturnType<typeof getKbengineScanScope> | undefined;
+    let watchers: vscode.Disposable[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let running = false;
+    let disposed = false;
+    let needsDiscovery = true;
+    let projectReady = false;
+    let generation = 0;
+
+    const describeFile = (root: string, uri: vscode.Uri): ScannedFile => ({
+      uri,
+      file: path.relative(root, uri.fsPath).replace(/\\/g, '/')
+    });
+    const readSource = async ({ uri, file }: ScannedFile): Promise<ConfigSourceInput | null> => {
       try {
-        const settings = readConfigDataSettings();
-        if (!settings.enabled || !getDefinitionWorkspaceLayout(root).entityDefsRoot) {
-          // 开关关闭 / 非 KBEngine 工作区(def 布局家族口径):清空既有诊断,
-          // 零产出(configContract 开关关闭同款清空口径)
-          configDataCollection.clear();
-          configDataSchemaCache = [];
-          return;
-        }
-        const excluded = '{**/node_modules/**,**/out/**,**/.kbengine/**,**/venv/**,**/.venv/**,**/__pycache__/**}';
-        // 2026-11-23 收窄令推广:KBEngine 扫描根存在时只扫 scripts(引擎源码
-        // 只认 {assets}/scripts,激活期逐文件 openTextDocument 的全量扫是
-        // 首索引慢的大头);无根(真非 KBEngine 工程)维持 workspace 全量,
-        // 行为不变。
-        // P2 收口(2026-11-24):统一走 findFilesForKbengineSurfaces——锚点根
-        // 先行与误配零文件 gate 收编进共享入口;本地三元在误配时会跌回
-        // workspace 裸 glob 全盘扫,掩盖配置错误。legacyMaxResults 只作用于
-        // 旧裸 glob 腿(20000 上限既有语义),收窄腿截断由 slice 维持。
-        const uris = (await findFilesForKbengineSurfaces('**/*.py', excluded, { legacyMaxResults: 20000 })).slice(0, 20000);
-        const sources: ConfigSourceInput[] = [];
-        for (const uri of uris) {
-          try {
-            // 2026-11-24 Navigation 刷屏修复:全扫取文不再 openTextDocument
-            // ——open 会逐文件触发 onDidOpenTextDocument,openWatcher 对每个
-            // py 排单档诊断+导航预热,800ms 防抖又排一轮全扫(扫描自己给自己
-            // 供弹,49 文件样本=两轮 466 行)。已开档读缓冲,未开档直读盘,
-            // 零 open 事件。
-            const text = await readConfigScanSourceText(uri, vscode.workspace.textDocuments);
-            // 相对 posix 路径口径(与 configDirGlobs / mutationExclude 对齐)
-            const rel = path.relative(root, uri.fsPath).replace(/\\/g, '/');
-            sources.push({ file: rel, text });
-          } catch {
-            // 读不到的文件跳过(不猜)
-          }
-        }
-        const schema = collectConfigSchema(sources, settings);
-        const findings = computeConfigDataMutationFindings(sources, settings);
-        if (seq !== configDataScanSeq) {
-          // 过期扫描(更新的扫描已发起)丢弃,不回写缓存/集合
-          return;
-        }
-        configDataSchemaCache = schema;
-        const byFile = new Map<string, ConfigDataFinding[]>();
-        for (const finding of findings) {
-          const bucket = byFile.get(finding.file);
-          if (bucket) {
-            bucket.push(finding);
-          } else {
-            byFile.set(finding.file, [finding]);
-          }
-        }
-        configDataCollection.clear();
-        for (const [rel, fileFindings] of byFile) {
-          configDataCollection.set(
-            vscode.Uri.joinPath(configDataRoot.uri, rel),
-            fileFindings.map(f => new vscode.Diagnostic(
-              new vscode.Range(f.line, f.character, f.line, f.character + f.baseName.length),
-              f.message,
-              vscode.DiagnosticSeverity.Warning
-            ))
-          );
-        }
+        const text = await readConfigScanSourceText(uri, vscode.workspace.textDocuments);
+        return { file, text };
       } catch {
-        // 扫描失败保持既有诊断不清空(后台增强扫描不反噬激活/事件面,与
-        // 单文件读不到跳过同口径);下一触发轮自然重试
+        return null;
       }
     };
-    // ②强类型 hover:绑定/类名 hover 出直读类型文本;schema 缓存随扫描刷新;
-    // CFG-HOVER-FIX-002:成员链直读+空 schema 引导 notice(读同一设置快照)
-    const configSchemaHoverProviderImpl = new ConfigSchemaHoverProvider(
-      () => configDataSchemaCache,
-      readConfigDataSettings
-    );
-    const configSchemaHoverProvider = vscode.languages.registerHoverProvider(
-      // 同 activate/infrastructure.ts pythonDocumentSelector(python file 文档)
-      [{ language: 'python', scheme: 'file' }],
-      configSchemaHoverProviderImpl
-    );
-    context.subscriptions.push(configSchemaHoverProvider, configSchemaHoverProviderImpl);
-    // 800ms 防抖:py 编辑/保存/外部增删改合并重算(整工作区扫描,避免逐键逐存重算);
-  // 打开不接此路(见下方触发器分工注释)
-    let configDataTimer: ReturnType<typeof setTimeout> | undefined;
-    const scheduleConfigDataScan = (): void => {
-      if (configDataTimer !== undefined) {
-        clearTimeout(configDataTimer);
+    const publishFindings = (root: string, findings: Map<string, ConfigDataFinding[]>): void => {
+      for (const [file, items] of findings) {
+        const uri = vscode.Uri.file(path.resolve(root, file));
+        if (items.length === 0) {
+          collection.delete(uri);
+          continue;
+        }
+        collection.set(uri, items.map(finding => new vscode.Diagnostic(
+          new vscode.Range(finding.line, finding.character, finding.line, finding.character + finding.baseName.length),
+          finding.message,
+          vscode.DiagnosticSeverity.Warning
+        )));
       }
-      configDataTimer = setTimeout(() => {
-        configDataTimer = undefined;
-        void scanConfigData();
+    };
+    const scheduleUpdate = (): void => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => {
+        timer = undefined;
+        void updateConfigData();
       }, 800);
     };
-    // 2026-11-24 用户裁定(触发器分工):打开文件不改索引输入,不触发全扫
-    // ——打开面只有 per-file 诊断与预热(openWatcher),全扫只属于「输入变了」
-    // 的事件。此前 open 接进全扫 + 全扫自身逐文件 openTextDocument(已改
-    // 缓冲/直读)= 双重自供弹,Navigation 刷屏根因。
-    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
-      // 编辑防抖:同一计时器合并击键连发;未保存改动经「已开档读缓冲」进扫描
-      // (只读 event.document:与 openWatcher/annotationQueue 等同形)
-      if (event.document.languageId === 'python') {
-        scheduleConfigDataScan();
+    const queueChange = (uri: vscode.Uri, kind: 'change' | 'create' | 'delete'): boolean => {
+      if (uri.scheme !== 'file' || !uri.fsPath.endsWith('.py') || !scope?.includes(uri.fsPath)) {
+        return false;
       }
-    }));
-    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
-      if (document.languageId === 'python') {
-        scheduleConfigDataScan();
+      const key = normalizeFileIdentity(uri.fsPath);
+      if (kind === 'change' && changes.get(key)?.deleted) {
+        return false;
       }
-    }));
-    // 外部文件增删改(资源管理器/git 等不经编辑器路径):防抖重算
-    const configDataPyWatcher = vscode.workspace.createFileSystemWatcher('**/*.py');
+      changes.set(key, { uri, deleted: kind === 'delete' });
+      scheduleUpdate();
+      return true;
+    };
+    const watchRoots = (roots: readonly string[]): void => {
+      watchers.forEach(watcher => watcher.dispose());
+      watchers = roots.flatMap(root => {
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, '**/*.py'));
+        return [
+          watcher,
+          watcher.onDidChange(uri => queueChange(uri, 'change')),
+          watcher.onDidCreate(uri => queueChange(uri, 'create')),
+          watcher.onDidDelete(uri => queueChange(uri, 'delete'))
+        ];
+      });
+    };
+
+    const updateConfigData = async (): Promise<void> => {
+      if (running || disposed) {
+        return;
+      }
+      running = true;
+      const current = generation;
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      let discover = needsDiscovery || index === undefined;
+      needsDiscovery = false;
+      const batch = [...changes];
+      changes.clear();
+      try {
+        discover ||= Boolean(!projectReady && root && getDefinitionWorkspaceLayout(root).entityDefsRoot);
+        if (discover) {
+          const settings = readConfigDataSettings();
+          if (!root || !settings.enabled) {
+            scope = undefined;
+            watchRoots([]);
+            index = undefined;
+            projectReady = false;
+            files.clear();
+            schema = [];
+            collection.clear();
+            return;
+          }
+          await ensureAnchorScanRoot().catch(() => null);
+          if (disposed || current !== generation) {
+            return;
+          }
+          const nextFiles = new Map<string, ScannedFile>();
+          const sources: ConfigSourceInput[] = [];
+          scope = getKbengineScanScope(excludedDirectories);
+          watchRoots(scope.roots);
+          const hasLayout = Boolean(getDefinitionWorkspaceLayout(root).entityDefsRoot);
+          if (hasLayout) {
+            const uris = await findFilesForKbengineSurfaces('**/*.py', excluded, { legacyMaxResults: 20000 });
+            for (const uri of uris.slice(0, 20000)) {
+              if (disposed || current !== generation) {
+                return;
+              }
+              const file = describeFile(root, uri);
+              nextFiles.set(normalizeFileIdentity(uri.fsPath), file);
+              const source = await readSource(file);
+              if (source) { sources.push(source); }
+            }
+          }
+          if (disposed || current !== generation) {
+            return;
+          }
+          index = new ConfigDataIndex(settings);
+          projectReady = hasLayout;
+          files = nextFiles;
+          collection.clear();
+          publishFindings(root, index.update(sources));
+          schema = index.schema;
+          return;
+        }
+
+        if (!root || !index || !projectReady) {
+          return;
+        }
+        const updated: ConfigSourceInput[] = [];
+        const removed: string[] = [];
+        for (const [key, change] of batch) {
+          if (!scope?.includes(change.uri.fsPath)) {
+            continue;
+          }
+          const file = files.get(key) ?? describeFile(root, change.uri);
+          const source = change.deleted ? null : await readSource(file);
+          if (disposed || current !== generation) {
+            return;
+          }
+          if (source) {
+            if (files.has(key) || files.size < 20000) {
+              files.set(key, file);
+              updated.push(source);
+            }
+          } else if (change.deleted) {
+            files.delete(key);
+            removed.push(file.file);
+          }
+        }
+        publishFindings(root, index.update(updated, removed));
+        schema = index.schema;
+      } catch {
+        // Keep the previous diagnostics if discovery fails. The next input retries discovery.
+        if (discover) { index = undefined; }
+      } finally {
+        running = false;
+        if (!disposed && (needsDiscovery || changes.size > 0) && timer === undefined) {
+          scheduleUpdate();
+        }
+      }
+    };
+
+    const refreshScope = (): void => {
+      generation += 1;
+      needsDiscovery = true;
+      resetScanRootCache();
+      void updateConfigData();
+    };
+    const hover = new ConfigSchemaHoverProvider(() => schema, readConfigDataSettings);
     context.subscriptions.push(
-      configDataPyWatcher,
-      configDataPyWatcher.onDidChange(() => scheduleConfigDataScan()),
-      configDataPyWatcher.onDidCreate(() => scheduleConfigDataScan()),
-      configDataPyWatcher.onDidDelete(() => scheduleConfigDataScan())
+      collection,
+      hover,
+      vscode.languages.registerHoverProvider([{ language: 'python', scheme: 'file' }], hover),
+      vscode.workspace.onDidChangeTextDocument(event => {
+        if (event.contentChanges?.length !== 0 && queueChange(event.document.uri, 'change')) {
+          edited.add(normalizeFileIdentity(event.document.uri.fsPath));
+        }
+      }),
+      vscode.workspace.onDidSaveTextDocument(document => {
+        edited.delete(normalizeFileIdentity(document.uri.fsPath));
+        queueChange(document.uri, 'change');
+      }),
+      vscode.workspace.onDidCloseTextDocument(document => {
+        if (edited.delete(normalizeFileIdentity(document.uri.fsPath))) {
+          queueChange(document.uri, 'change');
+        }
+      }),
+      vscode.workspace.onDidChangeWorkspaceFolders(refreshScope),
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if ([
+          'kbengine.configData', 'kbengine.assetsRoot', 'kbengine.engineRoot',
+          'kbengine.managedDir', 'kbengine.index.scanExcludeGlobs'
+        ].some(key => event.affectsConfiguration(key))) {
+          refreshScope();
+        }
+      }),
+      { dispose: () => {
+        disposed = true;
+        if (timer !== undefined) { clearTimeout(timer); }
+        watchRoots([]);
+      } }
     );
-    // 配置变更即重算(含 enabled 开关切换:关→清集合零产出)
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('kbengine.configData')) {
-        void scanConfigData();
-      }
-    }));
-    // 激活首扫(fire-and-forget,不阻塞激活)
-    void scanConfigData();
+    void updateConfigData();
   }
 
   // C-19 交付①:def↔Python 方法一致性诊断。正向 def-method-missing-in-python

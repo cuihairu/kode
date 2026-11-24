@@ -789,6 +789,44 @@ export async function findFilesForKbengineSurfaces(
   return vscode.workspace.findFiles(glob, exclude ?? undefined, options?.legacyMaxResults, options?.token);
 }
 
+function managedScanRoots(externalRoots: readonly string[]): string[] {
+  const managedDir = resolveManagedDirName(
+    vscode.workspace.getConfiguration('kbengine').get<string>('managedDir')
+  ).name;
+  const folders = (vscode.workspace.workspaceFolders ?? []).flatMap(folder =>
+    folder?.uri?.fsPath ? [folder.uri.fsPath] : []
+  );
+  return [...new Set([...folders, ...externalRoots].map(root => normalizeForCompare(path.join(root, managedDir))))];
+}
+
+/** Match watcher events against the roots and exclusions used by KBEngine file discovery. */
+export function getKbengineScanScope(excludedDirectories: ReadonlySet<string>): {
+  roots: readonly string[];
+  includes(file: string): boolean;
+} {
+  const scanRoots = getIndexScanRoots();
+  const roots = scanRoots.length > 0
+    ? scanRoots
+    : bareGlobFallbackAllowedForWorkspace()
+      ? (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)
+      : [];
+  const rootKeys = roots.map(normalizeForCompare);
+  const exclusions = scanRoots.length > 0
+    ? [...resolveEngineSubtreeExclusions(), ...managedScanRoots(getExternalScanRoots())]
+    : [];
+  const patterns = scanRoots.length > 0 ? getUserScanExcludeMatchers() : [];
+  return {
+    roots,
+    includes(file) {
+      const key = normalizeForCompare(file);
+      return !exclusions.some(root => isContained(root, key))
+        && !patterns.some(pattern => pattern.test(key))
+        && rootKeys.some(root => isContained(root, key)
+          && !path.posix.relative(root, key).split('/').slice(0, -1).some(dir => excludedDirectories.has(dir)));
+    }
+  };
+}
+
 /**
  * 跨扫描根找文件:workspace 部分维持原裸 glob 调用(既有行为与测试口径不变),
  * 再为 workspace 外的 assetsRoot 手工遍历补齐,最终按文件路径去重。
@@ -925,26 +963,8 @@ export async function findFilesAcrossRoots(
   // 登记首个 workspace 根——第二工作区与外部根自己的镜像副本逃过过滤,且
   // 外部遍历在旧版的前置过滤之后跑,会把外部根的受管副本重新加回结果)。
   // 统一在收尾一次剔净;外部遍历另按该集合剪枝(受管子树零 readdir)。
-  const managedDir = resolveManagedDirName(
-    vscode.workspace.getConfiguration('kbengine').get<string>('managedDir')
-  ).name;
-  const managedRoots: string[] = [];
-  const seenManagedRoots = new Set<string>();
-  const pushManagedRoot = (rootFsPath: string): void => {
-    const abs = normalizeForCompare(path.join(rootFsPath, managedDir));
-    if (!seenManagedRoots.has(abs)) {
-      seenManagedRoots.add(abs);
-      managedRoots.push(abs);
-    }
-  };
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    if (folder?.uri?.fsPath) {
-      pushManagedRoot(folder.uri.fsPath);
-    }
-  }
-  for (const root of getExternalScanRoots()) {
-    pushManagedRoot(root);
-  }
+  const externalRoots = getExternalScanRoots();
+  const managedRoots = managedScanRoots(externalRoots);
   // 剪枝根集合=受管镜像根 ∪ 引擎仓子树(刀2):walkExternalRoot 按前缀整棵
   // 不下潜,收尾 filterManagedDirCopies 再对全部来源兜底剔一遍。
   const pruneRoots: string[] = [...managedRoots];
@@ -958,7 +978,7 @@ export async function findFilesAcrossRoots(
     if (match) {
       const skipDirs = excludeDirNames(exclude);
       const stopExternalWalk = discovery.startSubPhase('external-walk');
-      for (const root of getExternalScanRoots()) {
+      for (const root of externalRoots) {
         if (token?.isCancellationRequested) { break; }
         await walkExternalRoot(root, match, skipDirs, merged, token, keepPath, pruneRoots);
       }

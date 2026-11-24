@@ -224,31 +224,14 @@ export class KodeCoreClient {
    */
   private handshakeResult: KodeCoreInitializeResult | null = null;
   private handshakeGeneration = -1;
+  private starting: { child: ChildProcess; result: Promise<KodeCoreInitializeResult> } | null = null;
 
-  /**
-   * KODE-RESP-009:drain 感知帧写器——所有出站帧(请求/通知)串行经此写
-   * 入,管道满时等 drain 再写下一帧。写口/事件面每帧现取当前 child.stdin
-   * (重启换进程后自动指向新管道);进程死亡时 close/error 放行,链不悬挂。
-   */
-  private readonly frameWriter = new FrameWriter({
-    write: frame => {
-      const stdin = this.child?.stdin;
-      if (!stdin || !stdin.writable) {
-        return true;
-      }
-      return stdin.write(frame);
-    },
-    once: (event, listener) => {
-      this.child?.stdin?.once(event, listener);
-    },
-    off: (event, listener) => {
-      this.child?.stdin?.off(event, listener);
-    }
-  });
+  // One writer per pipe. Queued frames from an exited child must never reach its replacement.
+  private frameWriter: FrameWriter | null = null;
 
   /** 在队未写帧数(RESP-009 缓冲上界观测口;测试/可观测用) */
   get writeQueueDepth(): number {
-    return this.frameWriter.pendingFrames;
+    return this.frameWriter?.pendingFrames ?? 0;
   }
 
   /** 通知消费面(PR-003 扩展位;构造期默认取 options.onNotification,可后置) */
@@ -294,40 +277,94 @@ export class KodeCoreClient {
 
   /** spawn + initialize 握手。已启动则幂等返回既有握手结果(同代缓存,零 RPC)。 */
   async start(): Promise<KodeCoreInitializeResult> {
+    if (this.disposed) {
+      throw new KodeCoreTransportError('client disposed', 'DISPOSED');
+    }
     if (
-      !this.disposed &&
       this.child &&
       this.handshakeGeneration === this.restartGeneration &&
       this.handshakeResult
     ) {
       return this.handshakeResult;
     }
-    if (!this.child) {
-      this.spawnProcess();
+    const child = this.child ?? this.spawnProcess();
+    if (this.starting?.child === child) {
+      return this.starting.result;
     }
-    return this.initialize();
+    const result = this.initialize(child).catch(error => {
+      if (!this.disposed && this.clearProcess(child, error)) {
+        child.kill('SIGKILL');
+      }
+      throw error;
+    }).finally(() => {
+      if (this.starting?.child === child) {
+        this.starting = null;
+      }
+    });
+    this.starting = { child, result };
+    return result;
   }
 
-  private spawnProcess(): void {
-    this.child = spawn(this.options.binaryPath, this.options.args ?? [], {
+  private spawnProcess(): ChildProcess {
+    const child = spawn(this.options.binaryPath, this.options.args ?? [], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: this.options.env,
+      windowsHide: true,
     });
-    this.child.stdout!.on('data', (chunk: Buffer) => this.consumeStdout(chunk));
-    this.child.stderr!.on('data', (chunk: Buffer) => this.recordStderr(chunk));
+    this.child = child;
+    const stdin = child.stdin!;
+    this.frameWriter = new FrameWriter({
+      write: frame => this.child !== child || !stdin.writable || stdin.destroyed || stdin.write(frame),
+      once: (event, listener) => {
+        if (stdin.destroyed) {
+          queueMicrotask(listener);
+        } else {
+          stdin.once(event, listener);
+        }
+      },
+      off: (event, listener) => { stdin.off(event, listener); },
+    });
+    child.stdout!.on('data', (chunk: Buffer) => {
+      if (this.child === child) { this.consumeStdout(chunk); }
+    });
+    child.stderr!.on('data', (chunk: Buffer) => {
+      if (this.child === child) { this.recordStderr(chunk); }
+    });
     // stdin EPIPE (errno -32): SIGKILL 生效到 exit 事件到达之间存在窗口，
     // 此时 stdin.writable 仍为 true，sendRaw 往死管道 write 会以未处理
     // 'error' 事件炸掉整个测试进程（CI #418 实录）。这里必须吞掉：
     // in-flight 请求由 exit 事件的 rejectAll(EXITED) 统一拒绝，waitFor
     // 探针自然重试，CORE-015/016 重启语义不变。
-    this.child.stdin!.on('error', () => undefined);
-    this.child.on('error', error => this.rejectAll(new KodeCoreTransportError(`spawn failed: ${error.message}`, 'EXITED')));
-    this.child.on('exit', (_code, signal) => this.handleExit(_code, signal));
-    this.emitLifecycle(`spawned (pid ${this.child.pid ?? '?'})`);
+    child.stdin!.on('error', () => undefined);
+    child.on('error', error => {
+      const failure = new KodeCoreTransportError(`spawn failed: ${error.message}`, 'EXITED');
+      if (this.clearProcess(child, failure)) {
+        this.recordStderrLine(failure.message);
+        this.emitLifecycle(failure.message);
+      }
+    });
+    child.on('exit', (code, signal) => this.handleExit(child, code, signal));
+    child.on('spawn', () => {
+      if (this.child === child) { this.emitLifecycle(`spawned (pid ${child.pid ?? '?'})`); }
+    });
+    return child;
+  }
+
+  private clearProcess(child: ChildProcess, error: Error): boolean {
+    if (this.child !== child) {
+      return false;
+    }
+    this.child = null;
+    this.starting = null;
+    this.handshakeResult = null;
+    this.frameWriter = null;
+    this.buffer = Buffer.alloc(0);
+    this.rejectAll(error);
+    return true;
   }
 
   /** LSP initialize 握手(CORE-002);restartGeneration 经 initializationOptions 对账 */
-  private async initialize(): Promise<KodeCoreInitializeResult> {
+  private async initialize(child: ChildProcess): Promise<KodeCoreInitializeResult> {
     // RUST-TRACK-FREEZE-007 刀1:代际快照——握手在途期间进程崩溃重启时,
     // 迟到的旧代握手结果不得写入新代缓存。
     const generation = this.restartGeneration;
@@ -349,15 +386,13 @@ export class KodeCoreClient {
     // 后下一次 start() 自然恢复;gate 侧现有 catch 把本错误归入回落 TS 面。
     const serverVersion = result.serverInfo?.version;
     if (serverVersion !== KODE_PROTOCOL_VERSION) {
-      this.child?.kill();
-      this.child = null;
       throw new KodeCoreTransportError(
         `protocol version mismatch: extension expects ${KODE_PROTOCOL_VERSION}, ` +
         `kode-server reports ${serverVersion ?? 'unknown'}`,
         'PROTOCOL_VERSION_MISMATCH'
       );
     }
-    if (generation === this.restartGeneration) {
+    if (this.child === child && !this.disposed) {
       this.handshakeResult = result;
       this.handshakeGeneration = generation;
       this.emitLifecycle(`ready (generation ${generation}, server ${result.serverInfo?.version ?? '?'})`);
@@ -453,7 +488,7 @@ export class KodeCoreClient {
       return Promise.resolve();
     }
     this.sendRaw({ jsonrpc: '2.0', method, params });
-    return this.frameWriter.drained();
+    return this.frameWriter?.drained() ?? Promise.resolve();
   }
 
   /** 取消进行中的请求(CORE-007 最小版:$ /cancelRequest 通知) */
@@ -616,7 +651,7 @@ export class KodeCoreClient {
       // 已消费 exit 事件并置 child=null),once('exit') 注册在已发事件的进程
       // 上永不触发——用 exitCode/signalCode 守卫直接完成,避免末尾
       // `await exited` 永久挂起(子进程孤儿泄漏)。
-      if (child.exitCode !== null || child.signalCode !== null) {
+      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
         resolve();
         return;
       }
@@ -656,7 +691,7 @@ export class KodeCoreClient {
     // 等 drain,不再无限压进 Node 流内部缓冲)。字节计数仍在入队时点
     // (rpcTraffic 观测口径不变)。
     this.rpcBytesOut += body.length;
-    this.frameWriter.send(
+    this.frameWriter?.send(
       Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body])
     );
   }
@@ -765,11 +800,11 @@ export class KodeCoreClient {
   }
 
   /** 意外退出:重启窗口内自动 respawn + 重握手;超出放弃(CORE-015) */
-  private handleExit(_code: number | null, signal: string | null): void {
-    this.emitLifecycle(`exit (code=${_code ?? '?'}, signal=${signal ?? '?'})`);
-    this.rejectAll(new KodeCoreTransportError(`server exited (signal=${signal})`, 'EXITED'));
-    this.buffer = Buffer.alloc(0);
-    this.child = null;
+  private handleExit(child: ChildProcess, code: number | null, signal: string | null): void {
+    if (!this.clearProcess(child, new KodeCoreTransportError(`server exited (code=${code}, signal=${signal})`, 'EXITED'))) {
+      return;
+    }
+    this.emitLifecycle(`exit (code=${code ?? '?'}, signal=${signal ?? '?'})`);
     if (this.disposed) {
       return;
     }
@@ -786,24 +821,17 @@ export class KodeCoreClient {
     this.restartGeneration += 1;
     this.recordStderrLine(`restarting server (generation ${this.restartGeneration})`);
     this.emitLifecycle(`restarting server (generation ${this.restartGeneration})`);
-    this.spawnProcess();
-    this.initialize()
-      .then(() => this.options.onRestart?.(this.restartGeneration))
+    const generation = this.restartGeneration;
+    this.start()
+      .then(() => {
+        if (this.restartGeneration === generation && !this.disposed) {
+          this.options.onRestart?.(generation);
+        }
+      })
       .catch(error => {
         const message = `restart handshake failed: ${(error as Error).message}`;
         this.recordStderrLine(message);
         this.emitLifecycle(message);
-        // CORE-3:respawn 后握手失败的进程处于未初始化态,继续接单只会让
-        // 后续请求得到误导性 SERVER_ERROR(Rust 侧 -32002 SERVER_NOT_INITIALIZED)。
-        // 杀掉子进程并置 child=null,让请求走 EXITED 路径(服务不可用语义)。
-        // 摘掉 exit 监听再杀,避免触发 handleExit 无意义的二次 respawn。
-        const child = this.child;
-        this.child = null;
-        if (child) {
-          child.removeAllListeners('exit');
-          child.kill('SIGKILL');
-        }
-        this.rejectAll(new KodeCoreTransportError(message, 'EXITED'));
       });
   }
 }

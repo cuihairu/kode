@@ -913,6 +913,14 @@ describe('probeHealth 健康探针(2026-11-24 健康灯批)', () => {
   const makeProbeGate = (client: Partial<ShadowClientLike>) =>
     new KodeCoreGate({ clientFactory: () => client as ShadowClientLike });
 
+  it('TS 模式的健康探针不会拉起 Rust', async () => {
+    const start = vi.fn(async () => ({}));
+    const gate = makeProbeGate({ start });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    await gate.probeHealth();
+    expect(start).not.toHaveBeenCalled();
+  });
+
   it('健康 client:探针通过 ok:true(被动读口,不动熔断账)', async () => {
     const client = {
       start: async () => ({}),

@@ -310,8 +310,7 @@ export class EntityMappingManager {
    * 同路径在途解析合并(2026-11-24 Navigation 刷屏修复):.def 缓存只在解析
    * 完成后落账,同时到达的请求(激活期开档风暴的预热+定向、扫描与 watcher
    * 并发)会对同一 .def 重复全量解析。在途键=归一路径+rootCategory;
-   * forceReparse(py 变更路径)不合并,不让位旧结果。命中/未命中记账仍由
-   * 首次调用如实进行,合并不冒充缓存命中。
+   * 文件失效或 Python 变更会替换在途解析。旧任务完成时不得提交结果。
    */
   private defParseInFlight = new Map<string, Promise<void>>();
   /**
@@ -676,23 +675,32 @@ export class EntityMappingManager {
       await shared;
       return;
     }
-    const flight = this.parseDefFileOnce(entityName, defPath, loader, rootCategory, forceReparse);
+    const isCurrent = () => this.defParseInFlight.get(flightKey) === flight
+      && !this.isUnderRemovedRoot(defPath);
+    const flight: Promise<void> = Promise.resolve()
+      .then(() => this.parseDefFileOnce(entityName, defPath, loader, rootCategory, forceReparse, isCurrent))
+      .finally(() => {
+        const latest = this.defParseInFlight.get(flightKey);
+        if (latest === flight) {
+          this.defParseInFlight.delete(flightKey);
+        } else {
+          return latest;
+        }
+      });
     this.defParseInFlight.set(flightKey, flight);
-    try {
-      await flight;
-    } finally {
-      this.defParseInFlight.delete(flightKey);
-    }
+    await flight;
   }
 
   private async parseDefFileOnce(
     entityName: string,
     defPath: string,
-    loader?: ReturnType<typeof createDefinitionSemanticsLoader>,
-    rootCategory: DefinitionSemanticCategory = 'entity',
-    forceReparse = false
+    loader: ReturnType<typeof createDefinitionSemanticsLoader> | undefined,
+    rootCategory: DefinitionSemanticCategory,
+    forceReparse: boolean,
+    isCurrent: () => boolean
   ): Promise<void> {
     try {
+      if (!isCurrent()) { return; }
       // mtime 缓存复用(2026-10-22):未变更 .def 重扫不再重解析;python 变更
       // 路径(forceReparse)绕过缓存——py 内容不进 .def mtime 键。
       const cached = forceReparse ? undefined : this.defParseCache.get(normalizeLookupPath(defPath));
@@ -708,7 +716,8 @@ export class EntityMappingManager {
         return;
       }
       const parseStartedAt = Date.now();
-      const mapping = await this.buildIndex(entityName, defPath, loader, rootCategory);
+      const mapping = await this.buildIndex(entityName, defPath, loader, rootCategory, isCurrent);
+      if (!isCurrent()) { return; }
       const elapsedMs = Date.now() - parseStartedAt;
       if (elapsedMs >= 200) {
         // 慢解析记账(用户令「加计时日志实测,别猜」):>200ms 的单文件进日志
@@ -738,12 +747,13 @@ export class EntityMappingManager {
   private async buildIndex(
     entityName: string,
     defPath: string,
-    providedLoader?: ReturnType<typeof createDefinitionSemanticsLoader>,
-    rootCategory: DefinitionSemanticCategory = 'entity'
+    providedLoader: ReturnType<typeof createDefinitionSemanticsLoader> | undefined,
+    rootCategory: DefinitionSemanticCategory,
+    isCurrent: () => boolean
   ): Promise<EntityMappingIndex | null> {
     // IDE-IDX-016:根已移除的在途解析不产出——晚到结果不回写索引/缓存/
     // 依赖图/语义投影任何登记面(扫描清单在移除前已取走,B 的批照跑)。
-    if (this.isUnderRemovedRoot(defPath)) {
+    if (!isCurrent()) {
       return null;
     }
     // loader 回退链(2026-10-22):默认 loader 以 .def 所在目录当根,而
@@ -768,6 +778,7 @@ export class EntityMappingManager {
 
     const pythonOwnerFiles = this.collectPythonOwnerFiles(semantics);
     const pythonMethods = await collectPythonMethods(pythonOwnerFiles);
+    if (!isCurrent()) { return null; }
     const propertyDefinitions = this.collectPropertyDefinitions(semantics);
     const methodDefinitions = this.collectMethodDefinitions(semantics);
     bindPythonMethods(methodDefinitions, pythonMethods);
@@ -1283,7 +1294,7 @@ export class EntityMappingManager {
   /** def 变更定向失效:依赖图出计划 → 精确摘除索引/解析缓存/依赖边 */
   private handleDefFileChanged(defPath: string, changeKind: SemanticChangeKind): void {
     const plan = this.dependencyGraph.planInvalidation(defPath, changeKind);
-    for (const file of plan.invalidateFiles) {
+    for (const file of new Set([defPath, ...plan.invalidateFiles])) {
       this.removeIndexByDefFile(normalizeLookupPath(file));
     }
     // DEF-LUT-001:受影响 def 的 LUT 桶同步出表(条目级失效,代际推进)
@@ -1310,6 +1321,11 @@ export class EntityMappingManager {
    * 名字槽,无胜者才真删(IDE-IDX-008 口径)。
    */
   private removeIndexByDefFile(normalizedDefFile: string): void {
+    for (const key of this.defParseInFlight.keys()) {
+      if (key.startsWith(`${normalizedDefFile}\u0000`)) {
+        this.defParseInFlight.delete(key);
+      }
+    }
     const index = this.mappingIndexesByRoot.get(normalizedDefFile);
     if (index) {
       this.mappingIndexesByRoot.delete(normalizedDefFile);
@@ -1341,6 +1357,11 @@ export class EntityMappingManager {
     const narrowedChild = `${normalizedRoot}/scripts`;
     this.removedRootKeys.add(normalizedRoot);
     this.removedRootKeys.add(narrowedChild);
+    for (const key of this.defParseInFlight.keys()) {
+      if (key.startsWith(`${normalizedRoot}/`)) {
+        this.defParseInFlight.delete(key);
+      }
+    }
     for (const defFile of [...this.mappingIndexesByRoot.keys()]) {
       if (defFile.startsWith(`${normalizedRoot}/`)) {
         this.removeIndexByDefFile(defFile);
@@ -2875,6 +2896,7 @@ export class EntityMappingManager {
   }
 
   dispose(): void {
+    this.defParseInFlight.clear();
     this.pythonWatcher?.dispose();
     this.defWatcher?.dispose();
     for (const watcher of this.externalRootWatchers) {

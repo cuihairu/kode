@@ -46,6 +46,36 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     await client.dispose();
   }, 10_000);
 
+  it('启动失败释放子进程,同一客户端可报出重试的真实错误并恢复', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'kode-fake-spawn-'));
+    const options = { binaryPath: join(dir, 'missing.exe'), args: [FAKE_SERVER], startTimeoutMs: 1000 };
+    const client = tracked(new KodeCoreClient(options));
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await expect(client.start()).rejects.toMatchObject({ code: 'EXITED', message: expect.stringContaining('ENOENT') });
+        expect(client.childProcess).toBeNull();
+      }
+      options.binaryPath = process.execPath;
+      await expect(client.start()).resolves.toMatchObject({ serverInfo: { name: 'kode-fake-server' } });
+    } finally {
+      await client.dispose();
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it('握手超时清理挂死进程,并发重试只发一次 initialize', async () => {
+    const args = [FAKE_SERVER, 'silentInitialize'];
+    const options = { binaryPath: process.execPath, args, startTimeoutMs: 1000 };
+    const client = tracked(new KodeCoreClient(options));
+    await expect(client.start()).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(client.childProcess).toBeNull();
+    options.args = [FAKE_SERVER, 'countInitialize', 'delayInitialize=50'];
+    const [first, second] = await Promise.all([client.start(), client.start()]);
+    expect(second).toBe(first);
+    await expect(client.request('kode/initCount')).resolves.toEqual({ initializeRequests: 1 });
+    await client.dispose();
+  }, 10_000);
+
   it('RUST-008 版本门:握手回包版本不一致 → PROTOCOL_VERSION_MISMATCH,子进程被杀、client 可再 spawn', async () => {
     const client = tracked(makeClient({ args: [FAKE_SERVER, 'wrongVersion'] }));
     const error = await client.start().then(

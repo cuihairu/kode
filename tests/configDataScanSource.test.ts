@@ -71,16 +71,16 @@ describe('configData 全扫触发器分工契约(源级)', () => {
   );
 
   it('onDidOpenTextDocument 不再接 scheduleConfigDataScan', () => {
-    expect(/onDidOpenTextDocument\([\s\S]{0,200}?scheduleConfigDataScan/.test(source)).toBe(false);
+    expect(/onDidOpenTextDocument\([\s\S]{0,200}?queueChange/.test(source)).toBe(false);
   });
 
-  it('编辑与保存仍接防抖全扫(未保存改动经缓冲进扫描)', () => {
-    expect(source).toMatch(/onDidChangeTextDocument\([\s\S]{0,300}?scheduleConfigDataScan/);
-    expect(source).toMatch(/onDidSaveTextDocument\([\s\S]{0,200}?scheduleConfigDataScan/);
+  it('编辑与保存将当前文件交给增量队列', () => {
+    expect(source).toMatch(/onDidChangeTextDocument\([\s\S]{0,300}?queueChange\(event.document.uri/);
+    expect(source).toMatch(/onDidSaveTextDocument\([\s\S]{0,200}?queueChange\(document.uri/);
   });
 
   it('外部增删改有 FS watcher 腿(不经编辑器路径也重算)', () => {
-    expect(source).toMatch(/configDataPyWatcher[\s\S]{0,400}?onDidDelete/);
+    expect(source).toMatch(/createFileSystemWatcher\(new vscode.RelativePattern\(root, '\*\*\/\*\.py'\)\)[\s\S]{0,400}?onDidDelete/);
   });
 
   it('全扫取文走 readConfigScanSourceText,文件内零 openTextDocument 调用', () => {

@@ -500,6 +500,9 @@ export class KodeCoreGate {
    * EXITED/spawn 原文),预算耗尽臂 reason 缺省=预算内未决(疑似挂死)。
    */
   async probeHealth(timeoutMs = 2_000): Promise<CoreHealthProbeOutcome> {
+    if (this.mode === 'ts' || !this.config.serverPath) {
+      return { ok: false, latencyMs: 0 };
+    }
     const now = this.options.now ?? (() => Date.now());
     const started = now();
     let timer: ReturnType<typeof setTimeout> | undefined;
