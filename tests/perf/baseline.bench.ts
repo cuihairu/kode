@@ -21,6 +21,7 @@ import {
 import { EntityMappingManager } from '../../src/entityMapping';
 import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../../src/backend/pythonClassIndex';
 import {
+import { patternGlob } from '../helpers/findPattern';
   findFilesAcrossRoots,
   resetScanRootCache
 } from '../../src/scanRoots';
@@ -136,7 +137,7 @@ describe('PR1 基线七场景(fake-vscode + 真实索引实现)', () => {
       return found;
     };
     stubWorkspace.findFiles = async (pattern: unknown): Promise<Uri[]> => {
-      const glob = String(pattern);
+      const glob = patternGlob(pattern);
       const match = /\*\.(\w+)$/.exec(glob);
       if (!match) {
         return [];

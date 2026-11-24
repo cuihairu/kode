@@ -38,6 +38,7 @@ import { resetScanRootCache } from '../../src/scanRoots';
 import { createHotReloadProviderHost } from '../../src/backend/hotReloadProviderAssembly';
 import { HOT_RELOAD_PLUGIN_API_VERSION } from '../../src/backend/hotReloadPluginApi';
 import type { HotReloadProvider } from '../../src/backend/hotReloadPluginApi';
+import { patternGlob } from '../helpers/findPattern';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-hpi-assets');
 const FILES = Number(process.env.KODE_HPI_FILES ?? '400');
@@ -105,7 +106,7 @@ describe('书 HR-EXT-008:provider 存在/缺席两形态语言服务 warm 尾延
     resetScanRootCache();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async (pattern: unknown): Promise<Uri[]> => {
-      const glob = String(pattern);
+      const glob = patternGlob(pattern);
       const match = /\*\.(\w+)$/.exec(glob);
       if (!match) {
         return [];

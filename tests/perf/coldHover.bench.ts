@@ -23,6 +23,7 @@ import { EntityMappingManager } from '../../src/entityMapping';
 import { IndexScheduler } from '../../src/backend/indexScheduler';
 import { resetScanRootCache } from '../../src/scanRoots';
 import { preheatDiscoveryScan, resetDiscoveryState } from '../../src/workspaceDiscovery';
+import { patternGlob } from '../helpers/findPattern';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-perf-hover-assets');
 const LARGE_FILES = Number(process.env.KODE_PERF_LARGE_FILES ?? '30000');
@@ -67,7 +68,7 @@ describe('书 PR-002 ②:hover 冷启动(large 30k)', () => {
     resetScanRootCache();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(largeRoot), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async (pattern: unknown): Promise<Uri[]> => {
-      const glob = String(pattern);
+      const glob = patternGlob(pattern);
       const match = /\*\.(\w+)$/.exec(glob);
       if (!match) {
         return [];

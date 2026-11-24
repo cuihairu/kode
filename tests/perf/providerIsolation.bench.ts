@@ -52,6 +52,7 @@ import { KBEngineDefinitionProvider, KBEngineHoverProvider } from '../../src/lan
 import { EntityMappingManager } from '../../src/entityMapping';
 import { IndexScheduler } from '../../src/backend/indexScheduler';
 import { resetScanRootCache } from '../../src/scanRoots';
+import { patternGlob } from '../helpers/findPattern';
 
 const ASSETS_OUT = process.env.KODE_ISOL_ASSETS_OUT
   ?? path.join(os.tmpdir(), 'kode-isol-assets');
@@ -246,7 +247,7 @@ describe('RUST-412 provider 派发调度隔离基准', () => {
     resetScanRootCache();
     vscode.workspace.workspaceFolders = [{ uri: Uri.file(largeRoot), name: 'ws', index: 0 }];
     vscode.workspace.findFiles = (async (pattern: unknown): Promise<Uri[]> => {
-      const glob = String(pattern);
+      const glob = patternGlob(pattern);
       const match = /\*\.(\w+)$/.exec(glob);
       if (!match) {
         return [];

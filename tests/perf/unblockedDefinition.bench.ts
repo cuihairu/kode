@@ -19,6 +19,7 @@ import { workspace as stubWorkspace } from '../fake-vscode/workspaceState';
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { IndexScheduler } from '../../src/backend/indexScheduler';
 import { resetScanRootCache } from '../../src/scanRoots';
+import { patternGlob } from '../helpers/findPattern';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-perf-unblocked-assets');
 const LARGE_FILES = Number(process.env.KODE_PERF_LARGE_FILES ?? '30000');
@@ -64,7 +65,7 @@ describe('PR5 去全仓阻塞:冷启动 Definition 首查(large)', () => {
     resetScanRootCache();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(largeRoot), name: 'ws', index: 0 }];
     stubWorkspace.findFiles = (async (pattern: unknown): Promise<Uri[]> => {
-      const glob = String(pattern);
+      const glob = patternGlob(pattern);
       const match = /\*\.(\w+)$/.exec(glob);
       if (!match) {
         return [];

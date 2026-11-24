@@ -46,6 +46,7 @@ import { resetScanRootCache } from '../../src/scanRoots';
 import { resolveGateBounds } from './gateBounds';
 import { buildBaselineSnapshot, serializeBaselineSnapshot } from './perfBaseline';
 import { repeatStats } from './repeatStats';
+import { patternGlob } from '../helpers/findPattern';
 
 // RUST-023 存储介质轴:默认 tmpfs(os.tmpdir);KODE_PERF_ASSETS_OUT 可指向
 // 真实磁盘路径,同参数双跑即得 内存盘 vs 机械盘 分组对照。
@@ -317,7 +318,7 @@ const pointWorkspaceAtRoots = (roots: string[]): void => {
     return found;
   };
   stubWorkspace.findFiles = async (pattern: unknown): Promise<Uri[]> => {
-    const glob = String(pattern);
+    const glob = patternGlob(pattern);
     const match = /\*\.(\w+)$/.exec(glob);
     if (!match) {
       return [];

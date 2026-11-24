@@ -32,6 +32,7 @@ import {
 import { EntityMappingManager } from '../../src/entityMapping';
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../../src/scanRoots';
+import { patternGlob } from '../helpers/findPattern';
 
 const ASSETS_OUT = process.env.KODE_STORM_ASSETS_OUT
   ?? path.join(os.tmpdir(), 'kode-storm-assets');
@@ -145,7 +146,7 @@ const pointWorkspaceAtRoots = (roots: string[]): void => {
     return found;
   };
   stubWorkspace.findFiles = async (pattern: unknown): Promise<Uri[]> => {
-    const glob = String(pattern);
+    const glob = patternGlob(pattern);
     const match = /\*\.(\w+)$/.exec(glob);
     if (!match) {
       return [];

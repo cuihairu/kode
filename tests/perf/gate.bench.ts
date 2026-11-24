@@ -34,6 +34,7 @@ import {
 import { EntityMappingManager } from '../../src/entityMapping';
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../../src/scanRoots';
+import { patternGlob } from '../helpers/findPattern';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-perf-gate-assets');
 const LARGE_FILES = Number(process.env.KODE_PERF_LARGE_FILES ?? '30000');
@@ -159,7 +160,7 @@ describe('门 1 基准补齐:端到端冷/热多轮 + 内存 + 失效重查(larg
       return found;
     };
     stubWorkspace.findFiles = async (pattern: unknown): Promise<Uri[]> => {
-      const glob = String(pattern);
+      const glob = patternGlob(pattern);
       const match = /\*\.(\w+)$/.exec(glob);
       if (!match) {
         return [];

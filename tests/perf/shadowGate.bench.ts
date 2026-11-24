@@ -41,6 +41,7 @@ import { KodeCoreGate, ShadowDiffEntry, ShadowDiffLog, firstDiffPath } from '../
 import { KodeCoreClient } from '../../src/backend/kodeCoreClient';
 import { diagnosticsToLspFace, locationToLspFace } from '../../src/backend/kodeCoreShadowFaces';
 import { DiagnosticCollection } from '../fake-vscode/core';
+import { patternGlob } from '../helpers/findPattern';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-shadow-gate-assets');
 const LARGE_FILES = Number(process.env.KODE_PERF_LARGE_FILES ?? '30000');
@@ -214,7 +215,7 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
       return found;
     };
     stubWorkspace.findFiles = async (pattern: unknown): Promise<Uri[]> => {
-      const glob = String(pattern);
+      const glob = patternGlob(pattern);
       const match = /\*\.(\w+)$/.exec(glob);
       if (!match) {
         return [];
