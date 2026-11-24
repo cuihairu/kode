@@ -31,6 +31,10 @@ const HERO_DEF = [
   '      <Type>EQUIP_TRACK_LIST</Type>',
   '      <Flags>CELL_PUBLIC</Flags>',
   '    </equip_track_list>',
+  '    <funnel_list>',
+  '      <Type>FUNNEL_LIST</Type>',
+  '      <Flags>CELL_PUBLIC</Flags>',
+  '    </funnel_list>',
   '  </Properties>',
   '</root>'
 ].join('\n');
@@ -49,6 +53,20 @@ const TYPES_XML = [
   '      <name><Type>STRING</Type></name>',
   '    </Properties>',
   '  </EQUIP_INFO>',
+  // TYP-DICTGET:FIXED_DICT 全字段 FUNNEL → get 值并去重单型 FUNNEL
+  '  <FUNNEL_LIST>',
+  '    FIXED_DICT',
+  '    <Properties>',
+  '      <fontain><Type>FUNNEL</Type></fontain>',
+  '      <overflow><Type>FUNNEL</Type></overflow>',
+  '    </Properties>',
+  '  </FUNNEL_LIST>',
+  '  <FUNNEL>',
+  '    FIXED_DICT',
+  '    <Properties>',
+  '      <capacity><Type>UINT32</Type></capacity>',
+  '    </Properties>',
+  '  </FUNNEL>',
   '</root>'
 ].join('\n');
 
@@ -61,7 +79,11 @@ const HERO_PY = [
   '        for item in self.equip_track_list:',
   '            print(item)',
   '        first = self.equip_track_list[0]',
-  '        print(first)'
+  '        print(first)',
+  '',
+  '    def funnel(self, ident):',
+  '        funnel = self.funnel_list.get(ident)',
+  '        print(funnel)'
 ].join('\n');
 
 // `        for item in self.equip_track_list:` — equip_track_list 区间 [25,41]
@@ -70,6 +92,8 @@ const PROPERTY_POSITION = new Position(5, 30);
 const FOR_TARGET_POSITION = new Position(5, 14);
 // `        first = self.equip_track_list[0]` — first 区间 [8,13]
 const SUBSCRIPT_VAR_POSITION = new Position(7, 10);
+// `        funnel = self.funnel_list.get(ident)` — funnel 区间 [8,14]
+const DICTGET_VAR_POSITION = new Position(11, 10);
 
 const ORIGINAL_FOLDERS = stubWorkspace.workspaceFolders;
 const ORIGINAL_FIND_FILES = stubWorkspace.findFiles;
@@ -191,6 +215,47 @@ describe('TYP-ARRAY inlay: 数组元素类型行内提示(② 视觉面)', () =>
     // 容器面仍在(自属性 inlay 与元素面共存,不互斥)
     const containerHints = hints.filter(h => h.label === ': FixedArray[EQUIP_INFO]');
     expect(containerHints.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('TYP-DICTGET hover: dict.get() 赋值类型推导(2026-11-24 用户令)', () => {
+  it('funnel = self.funnel_list.get(ident) 悬停 funnel → FUNNEL 注解 + def 来源', async () => {
+    setupWorkspace();
+    const { provider } = makeProvider();
+    const result = await provider.provideHover(
+      makeTextDocument(HERO_PY, { fileName: pyPath, languageId: 'python' }),
+      DICTGET_VAR_POSITION
+    );
+    expect(result).not.toBeNull();
+    const text = JSON.stringify(result);
+    expect(text).toContain('funnel: FUNNEL');
+    expect(text).toContain('元素类型推导自');
+    expect(text).toContain('Hero.def');
+    // 诚实面:get 键可能不存在,值可能 None(非 Any 注记,不带「类型未解析」尾)
+    expect(text).toContain('None');
+    expect(text).not.toContain('类型未解析');
+  });
+
+  it('PY_DICT 属性 .get 赋值 → 无注解(不猜,落回普通链)', async () => {
+    setupWorkspace();
+    fs.mkdirSync(path.join(root, 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'scripts', 'entity_defs', 'Hero.def'),
+      HERO_DEF.replace('FUNNEL_LIST</Type>', 'PY_DICT</Type>').replace('<funnel_list>', '<py_map>').replace('</funnel_list>', '</py_map>')
+    );
+    const py = HERO_PY.replace('self.funnel_list.get(ident)', 'self.py_map.get(ident)');
+    fs.writeFileSync(pyPath, py);
+    const { provider } = makeProvider();
+    const result = await provider.provideHover(
+      makeTextDocument(py, { fileName: pyPath, languageId: 'python' }),
+      DICTGET_VAR_POSITION
+    );
+    // 内建 dict 无键值声明 → 诚实不推;普通链也无 def 属性容器注解(dict 非
+    // TypedDict 名,正常落回空 hover 或普通面,绝无 `py_map 值` 形态注解)
+    if (result !== null) {
+      const text = JSON.stringify(result);
+      expect(text).not.toContain('元素类型推导自');
+    }
   });
 });
 

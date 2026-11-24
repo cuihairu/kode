@@ -17,7 +17,14 @@ const DEF_PROPERTIES: Record<string, { typeName: string | null; line: number; de
   missing_attr: { typeName: 'NO_SUCH_TYPE', line: 15, defFile: '/ws/scripts/entity_defs/Hero.def' },
   single_attr: { typeName: 'int', line: 16, defFile: '/ws/scripts/entity_defs/Hero.def' },
   no_type_attr: { typeName: null, line: 17, defFile: '/ws/scripts/entity_defs/Hero.def' },
-  matrix: { typeName: 'EQUIP_TRACK_LIST_MATRIX', line: 18, defFile: '/ws/scripts/entity_defs/Hero.def' }
+  matrix: { typeName: 'EQUIP_TRACK_LIST_MATRIX', line: 18, defFile: '/ws/scripts/entity_defs/Hero.def' },
+  funnel_list: { typeName: 'FUNNEL_LIST', line: 19, defFile: '/ws/scripts/entity_defs/Hero.def' },
+  mixed_list: { typeName: 'MIXED_LIST', line: 20, defFile: '/ws/scripts/entity_defs/Hero.def' },
+  empty_dict: { typeName: 'EMPTY_DICT', line: 21, defFile: '/ws/scripts/entity_defs/Hero.def' },
+  string_map: { typeName: 'STRING_MAP', line: 22, defFile: '/ws/scripts/entity_defs/Hero.def' },
+  nested_map: { typeName: 'NESTED_MAP', line: 23, defFile: '/ws/scripts/entity_defs/Hero.def' },
+  track_dict: { typeName: 'TRACK_DICT', line: 24, defFile: '/ws/scripts/entity_defs/Hero.def' },
+  py_map: { typeName: 'PY_DICT', line: 25, defFile: '/ws/scripts/entity_defs/Hero.def' }
 };
 
 const locator = async (fullPath: string, _root: string) =>
@@ -30,11 +37,28 @@ const TYPES: Record<string, { annotation: string; reason: string | null }> = {
   EQUIP_TRACK_LIST_MATRIX: { annotation: 'FixedArray[FixedArray[EQUIP_INFO]]', reason: null },
   CYCLE_TYPE: { annotation: 'Any', reason: '别名链成环,无法排出依赖序,整链跳过' },
   NO_SUCH_TYPE: { annotation: 'Any', reason: '类型 NO_SUCH_TYPE 未在 types.xml/alias.xml 解析到,回退 Any' },
-  int: { annotation: 'int', reason: null }
+  int: { annotation: 'int', reason: null },
+  // FIXED_DICT → 注解落 TypedDict 类名本身(resolveTypeName 口径)
+  FUNNEL_LIST: { annotation: 'FUNNEL_LIST', reason: null },
+  MIXED_LIST: { annotation: 'MIXED_LIST', reason: null },
+  EMPTY_DICT: { annotation: 'EMPTY_DICT', reason: null },
+  STRING_MAP: { annotation: 'Dict[str, EQUIP_INFO]', reason: null },
+  NESTED_MAP: { annotation: 'Dict[str, FixedArray[EQUIP_INFO]]', reason: null },
+  TRACK_DICT: { annotation: 'TRACK_DICT', reason: null },
+  PY_DICT: { annotation: 'dict', reason: null }
 };
 
 const annotate = (raw: string): { annotation: string; reason: string | null } =>
   TYPES[raw] ?? { annotation: 'Any', reason: `类型 ${raw} 未在 types.xml/alias.xml 解析到,回退 Any` };
+
+// TYP-DICTGET 注入面:容器注解 → dict 值型(与 hover 接线 resolveEntityFixedDictMember
+// 'get' 面 `${union} | None` 剥 None 尾同形);非 FIXED_DICT 名 → null(诚实)
+const DICT_VALUES: Record<string, string> = {
+  FUNNEL_LIST: 'FUNNEL',
+  MIXED_LIST: 'FUNNEL | OTHER',
+  EMPTY_DICT: 'Any',
+  TRACK_DICT: 'FixedArray[EQUIP_INFO]'
+};
 
 const selfAccess = (fullPath: string): PythonSelfAccess => ({
   rootSymbol: fullPath.split('.')[0],
@@ -42,8 +66,15 @@ const selfAccess = (fullPath: string): PythonSelfAccess => ({
   fullPath
 });
 
-const run = (lines: string[], hoverLine: number, word: string, access: PythonSelfAccess | null) =>
-  resolveSelfPropertyAnnotation(lines, hoverLine, word, access, locator, annotate);
+const dictValue = (annotation: string): string | null => DICT_VALUES[annotation] ?? null;
+
+const run = (
+  lines: string[],
+  hoverLine: number,
+  word: string,
+  access: PythonSelfAccess | null,
+  getDictValue?: (annotation: string) => string | null
+) => resolveSelfPropertyAnnotation(lines, hoverLine, word, access, locator, annotate, getDictValue);
 
 describe('TYP-ARRAY def 属性类型推导(容器注解,①)', () => {
   it('self.<def 属性> → 声明类型别名断到内建(容器注解)', async () => {
@@ -190,6 +221,95 @@ describe('TYP-ARRAY 不接管面(能推才显)', () => {
 
   it('普通赋值非 def 来源(x = 5)→ null(不伪造)', async () => {
     const result = await run(['x = 5'], 0, 'x', null);
+    expect(result).toBeNull();
+  });
+});
+
+// TYP-DICTGET(2026-11-24 用户令):def 属性 dict.get() 赋值的类型推导——
+// `funnel = self.funnel_list.get(id)` → funnel 推 FUNNEL(FIXED_DICT 值并)。
+// prove-red:修复前 resolveExpr 只认下标后缀形态(splitSubscripts),.get(...)
+// 调用形态不认,hover 是空。
+describe('TYP-DICTGET dict.get() 赋值类型推导', () => {
+  it('funnel = self.funnel_list.get(id) → funnel 推 FUNNEL(FIXED_DICT 值并)', async () => {
+    const result = await run(['funnel = self.funnel_list.get(id)'], 0, 'funnel', null, dictValue);
+    expect(result).not.toBeNull();
+    expect(result!.annotation).toBe('FUNNEL');
+    expect(result!.kind).toBe('element');
+    expect(result!.expr).toBe('funnel');
+    expect(result!.propertyName).toBe('funnel_list');
+    expect(result!.defFile).toBe('/ws/scripts/entity_defs/Hero.def');
+    expect(result!.defLine).toBe(19);
+    // 诚实面:get 键可能不存在,值可能 None
+    expect(result!.reason).toContain('None');
+  });
+
+  it('Dict[K, V] 文本形态 → 取 V', async () => {
+    const result = await run(['info = self.string_map.get("k")'], 0, 'info', null, dictValue);
+    expect(result).not.toBeNull();
+    expect(result!.annotation).toBe('EQUIP_INFO');
+    expect(result!.kind).toBe('element');
+  });
+
+  it('Dict[K, V] 嵌套值型(顶层逗号不误切)→ 取 V 整体', async () => {
+    const result = await run(['tracks = self.nested_map.get("k")'], 0, 'tracks', null, dictValue);
+    expect(result).not.toBeNull();
+    expect(result!.annotation).toBe('FixedArray[EQUIP_INFO]');
+  });
+
+  it('组合形态 self.a.get(k)[0] → 值型再剥下标(与既有下标循环按序组合)', async () => {
+    const result = await run(['first = self.track_dict.get(k)[0]'], 0, 'first', null, dictValue);
+    expect(result).not.toBeNull();
+    expect(result!.annotation).toBe('EQUIP_INFO');
+    expect(result!.kind).toBe('element');
+  });
+
+  it('变量间接延续:items = self.funnel_list; funnel = items.get(id) → FUNNEL', async () => {
+    const result = await run(
+      ['items = self.funnel_list', 'funnel = items.get(id)'],
+      1,
+      'funnel',
+      null,
+      dictValue
+    );
+    expect(result).not.toBeNull();
+    expect(result!.annotation).toBe('FUNNEL');
+  });
+
+  it('异构字段值并(FUNNEL | OTHER)→ 推并集不猜单型', async () => {
+    const result = await run(['v = self.mixed_list.get(id)'], 0, 'v', null, dictValue);
+    expect(result).not.toBeNull();
+    expect(result!.annotation).toBe('FUNNEL | OTHER');
+  });
+
+  it('FIXED_DICT 无字段声明(值并 Any)→ Any + reason 诚实', async () => {
+    const result = await run(['v = self.empty_dict.get(id)'], 0, 'v', null, dictValue);
+    expect(result).not.toBeNull();
+    expect(result!.annotation).toBe('Any');
+    expect(result!.reason).toContain('None');
+  });
+
+  it('PY_DICT 负向(内建 dict 无键值声明)→ 诚实 null 不猜', async () => {
+    const result = await run(['v = self.py_map.get(id)'], 0, 'v', null, dictValue);
+    expect(result).toBeNull();
+  });
+
+  it('容器类型缺失(注解 Any)→ 诚实 null(不猜)', async () => {
+    const result = await run(['v = self.missing_attr.get(id)'], 0, 'v', null, dictValue);
+    expect(result).toBeNull();
+  });
+
+  it('注入缺失(不传 dictValue)→ .get 形态不接管,诚实 null', async () => {
+    const result = await run(['funnel = self.funnel_list.get(id)'], 0, 'funnel', null);
+    expect(result).toBeNull();
+  });
+
+  it('.get 非尾随调用(x = self.funnel_list.get)→ 不剥,诚实 null', async () => {
+    const result = await run(['x = self.funnel_list.get'], 0, 'x', null, dictValue);
+    expect(result).toBeNull();
+  });
+
+  it('.get 后接成员(x = self.funnel_list.get(k).name)→ 不接管(子成员面另管)', async () => {
+    const result = await run(['x = self.funnel_list.get(k).name'], 0, 'x', null, dictValue);
     expect(result).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import {
   formatEntityBuiltinPropertyHeadline,
   type EntityBuiltinPropertyHit
 } from './entityBuiltinProperties';
-import type { SelfPropertyResolved } from './selfPropertyTypeInference';
+import { PYTHON_TYPE_STUB_FALLBACK, type SelfPropertyResolved } from './selfPropertyTypeInference';
 
 /** def 声明方法/接收者调用共用输入:receiver 有值 = 接收者调用面(标题带
  * 接收者段),无值 = 声明面;签名/声明行/Exposed 尾段两面同构。 */
@@ -53,9 +53,13 @@ export function formatSelfPropertyTypeHover(resolved: SelfPropertyResolved): str
   const source = resolved.kind === 'element'
     ? `元素类型推导自 \`self.${resolved.propertyName}\`(\`${basename(resolved.defFile)}:${resolved.defLine}\`)`
     : `def 属性声明: \`${basename(resolved.defFile)}:${resolved.defLine}\``;
-  const reason = resolved.reason
-    ? `\n\n> ${resolved.reason}(类型未解析,如实 Any)`
-    : '';
+  // reason 两义(TYP-DICTGET):Any 诚实原因带「未解析」尾注;非 Any 时是
+  // 信息性注记(dict.get 键可能不存在),原样引述不加 Any 尾。
+  const reason = !resolved.reason
+    ? ''
+    : resolved.annotation === PYTHON_TYPE_STUB_FALLBACK
+      ? `\n\n> ${resolved.reason}(类型未解析,如实 Any)`
+      : `\n\n> ${resolved.reason}`;
   return `${headline}\n\n${source}${reason}`;
 }
 
