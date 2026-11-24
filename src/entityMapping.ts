@@ -1378,7 +1378,8 @@ export class EntityMappingManager {
   }
 
   private handlePythonFileChanged(pythonPath: string): void {
-    clearDefCallChainFileCache();
+    // 精确失效(2026-11-24 批 E):原文在共享缓存里,只失效这个文件的条目
+    clearDefCallChainFileCache(pythonPath);
     this.allPythonMethodHits.clear();
     // DEF-LUT-001:该 py 贡献的 LUT 条目精确出表(贡献者索引反查),重解析
     // 落定后重建补回(下)。

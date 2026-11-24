@@ -1,7 +1,8 @@
-import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { normalizeDocumentKey } from './documentStore';
 import { normalizeFileIdentity } from './pathIdentity';
+import { readFileSyncUtf8Recorded } from './fileReadMetrics';
+import { getSharedFileTextCache } from './sharedFileTextCache';
 import { findPythonReceiverCalls, PYTHON_RECEIVER_BY_SECTION } from './pythonLanguageUtils';
 import type { PythonReceiverCall, PythonReceiverSection } from './pythonLanguageUtils';
 import {
@@ -319,16 +320,16 @@ export function buildDefCallChain(
   };
 }
 
-interface PythonFileCacheEntry {
-  mtimeMs: number;
-  size: number;
-  content: string | null;
-}
-
-const pythonFileCache = new Map<string, PythonFileCacheEntry>();
-
-export function clearDefCallChainFileCache(): void {
-  pythonFileCache.clear();
+/**
+ * 2026-11-24 批 E:Python 原文改由共享原文缓存持有(见 readDiskPythonFile),
+ * 本钩子从「整清本面私有缓存」降为「按路径精确失效」。共享缓存的
+ * stat(mtimeMs+size) 双键校验仍是新鲜度兜底;无路径调用位不再需要清——
+ * 条目由 stat 校验按需重读,无需外部清表。
+ */
+export function clearDefCallChainFileCache(pythonPath?: string): void {
+  if (pythonPath !== undefined) {
+    getSharedFileTextCache().invalidate(pythonPath);
+  }
 }
 
 /**
@@ -338,7 +339,7 @@ export function clearDefCallChainFileCache(): void {
  *
  * 身份键用 canonical identity(`normalizeFileIdentity`,词法折叠 `..`、盘符/UNC
  * 大小写规则),非 `path.normalize`:后者不折叠 `..`、不套盘符规则,同一文件
- * 的不同拼法会形成两个条目,缓存命中率与失效判定同时失真。
+ * 的不同拼法会形成两个条目,命中率与失效判定同时失真。
  */
 function readPythonFileWithMtimeCache(filePath: string): string | null {
   const identity = normalizeFileIdentity(filePath);
@@ -349,23 +350,16 @@ function readPythonFileWithMtimeCache(filePath: string): string | null {
     return document.getText();
   }
   // 文件系统访问仍用原拼写 filePath——identity 已折叠 `..`/`.` 段,不是
-  // 必然存在的盘路径;identity 只作缓存键。
-  return readDiskPythonFile(filePath, identity);
+  // 必然存在的盘路径;identity 只作缓冲区匹配键。
+  return readDiskPythonFile(filePath);
 }
 
-function readDiskPythonFile(filePath: string, identity: string): string | null {
+function readDiskPythonFile(filePath: string): string | null {
   try {
-    const stat = fs.statSync(filePath);
-    const cached = pythonFileCache.get(identity);
-    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
-      return cached.content;
-    }
-
-    const content = fs.readFileSync(filePath, 'utf8');
-    pythonFileCache.set(identity, { mtimeMs: stat.mtimeMs, size: stat.size, content });
-    return content;
+    // 共享原文缓存记账入口(2026-11-24 批 E):同 stat(mtimeMs+size) 双键
+    // 校验、64MiB LRU 有界、跨面共享——替掉本面原有无界私有缓存。
+    return readFileSyncUtf8Recorded(filePath);
   } catch {
-    pythonFileCache.delete(identity);
     return null;
   }
 }
