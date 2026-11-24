@@ -17,6 +17,7 @@ pub mod read_node;
 pub mod semantic_model;
 pub mod server;
 pub mod store;
+pub mod vector_index;
 
 pub use kb::{AssetKnowledge, ParsedDef};
 pub use server::{run_stdio, run_stdio_probe, KodeMcpServer};

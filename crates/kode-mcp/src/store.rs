@@ -325,6 +325,21 @@ impl KbStore {
         .unwrap_or_default()
     }
 
+    /// All persisted nodes, deterministic order (the P3 vector table input).
+    /// No kind filter: the vector module must see every indexed node.
+    pub fn nodes_all(&self) -> Vec<IndexNode> {
+        let conn = self.conn.lock().expect("store lock");
+        let mut stmt = match conn.prepare(&format!(
+            "SELECT {NODE_COLS} FROM nodes ORDER BY file_path, id"
+        )) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map([], row_to_node)
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .unwrap_or_default()
+    }
+
     /// Nodes of the given kinds, deterministic order (excel reference rule and
     /// name-map inputs).
     pub fn nodes_of_kinds(&self, kinds: &[&str]) -> Vec<IndexNode> {

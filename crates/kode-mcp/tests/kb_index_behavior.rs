@@ -80,15 +80,63 @@ fn natural_language_query_reports_vector_seam_honestly() {
     let index = fx.index();
     index.build();
 
-    // 多词 CJK 短语 → NL 形态 → 走 P3 seam;未配置时如实回报 configured=false,
-    // 绝不伪装成 BM25 结果或静默丢字段。
+    // 多词 CJK 短语 → NL 形态 → 走 P3 缝;缝已挂确定性向量模块,如实回报
+    // configured + engine,绝不伪装成 BM25 结果或静默丢字段。
     let out = index
         .search("网关 转发 流程", &opts(10))
         .expect("nl search");
     assert_eq!(out["route"], "bm25");
-    assert_eq!(out["vector"]["configured"], false);
-    assert!(out["vector"]["deferred"].as_str().unwrap().contains("P3"));
+    assert_eq!(out["vector"]["configured"], true);
+    assert_eq!(out["vector"]["engine"], "deterministic-feature-hashing");
     assert_eq!(out["deterministic"], true);
+}
+
+/// P3 确定性向量模块端到端:共享特征的节点真的浮出来,无特征重叠的不混入。
+#[test]
+fn default_vector_module_fuses_shared_features_only() {
+    let fx = Fixture::new("vec-default");
+    fx.write("docs/gw.md", "# Gateway\n\n网关转发流程与端口配置\n");
+    fx.write("docs/db.md", "# Archive\n\n存档周期与备份策略\n");
+    let index = fx.index();
+    index.build();
+
+    let out = index
+        .search("网关 转发 流程", &opts(10))
+        .expect("default vector nl");
+    assert_eq!(out["vector"]["configured"], true);
+    let matches = out["matches"].as_array().unwrap();
+    let files: Vec<&str> = matches
+        .iter()
+        .map(|m| m["file"].as_str().unwrap())
+        .collect();
+    // 共享特征的节点浮出来且排最前(BM25 命中 + 向量融合双臂都指向它)。
+    assert_eq!(
+        files.first(),
+        Some(&"docs/gw.md"),
+        "shared-feature doc must lead: {files:?}"
+    );
+    // 阴性对照:db.md 与查询零特征重叠,不得出现。(catalog/ 内置知识节点
+    // 会融合进来是正确行为——其描述本来就含「网关/转发」字样,如 loginapp
+    // 「登录网关」、baseapp「登录转发」,属真共享特征而非哈希噪音。)
+    assert!(
+        files.iter().all(|f| *f != "docs/db.md"),
+        "db.md shares no features and must not surface: {files:?}"
+    );
+    // 向量档与 BM25 同口径:每行都带分数。
+    assert!(matches.iter().all(|m| m.get("score").is_some()));
+    // 噪音地板:融合行(非 BM25 榜单行)的 cosine 不得低于榜首向量的
+    // NOISE_FLOOR_RATIO 档——即不存在近零分混入。
+    let vector_rows: Vec<f64> = matches
+        .iter()
+        .filter_map(|m| m["score"].as_f64())
+        .filter(|s| *s <= 1.0)
+        .collect();
+    if let Some(&top) = vector_rows.first() {
+        assert!(
+            vector_rows.iter().all(|s| *s >= top * 0.25),
+            "fused cosine rows must clear the noise floor: {vector_rows:?}"
+        );
+    }
 }
 
 #[test]
@@ -99,11 +147,12 @@ fn configured_vector_retriever_fuses_missed_docs_into_nl_results() {
     let index = fx.index();
     index.build();
 
-    // NL 短语的 BM25 词面(与)只命中 net 节点;另取一个 BM25 够不到的
-    // 真实节点 id,交给 stub。
+    // BM25 词面只命中 net 节点(单 token、无空格 → 非 NL 形态 → 不触发向量
+    // 融合,断言确定性);另取一个 BM25 够不到的真实节点 id,交给 stub。
     let bm25 = index
-        .search("网关 转发 流程", &opts(10))
-        .expect("bm25 nl search");
+        .search("网关转发流程", &opts(10))
+        .expect("bm25 term search");
+    assert_eq!(bm25["route"], "bm25");
     assert!(bm25["matches"]
         .as_array()
         .unwrap()

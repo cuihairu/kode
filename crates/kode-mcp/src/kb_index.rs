@@ -5,8 +5,10 @@
 //! Routing (design doc §8): exact symbols / types / config keys hit the
 //! structure index (SQLite name lookup) with no BM25 scan; term queries hit
 //! the BM25 inverted index (Tantivy); natural-language queries would consult
-//! the pluggable vector module (P3, deferred) — a [`SemanticRetriever`] seam
-//! is left in place and honestly reports "not configured" when unset.
+//! the pluggable vector module — the [`SemanticRetriever`] seam is filled by
+//! `vector_index::DeterministicVectorRetriever` (feature hashing over the
+//! AST-derived nodes, registered at construction) and honestly reports
+//! "not configured" only if a caller clears it.
 //!
 //! Incremental updates (design doc §9): a notify watcher marks touched files
 //! (visible via `dirtyPending`), and each reconcile runs a bounded BLAKE3
@@ -50,8 +52,9 @@ const MAX_EXCEL_REF_EDGES: usize = 4000;
 pub const MAX_DEP_DEPTH: usize = 6;
 pub const MAX_DEP_NODES: usize = 256;
 
-/// P3 seam: pluggable vector semantic retrieval. Not built in P2; a caller
-/// may register one and NL queries will fuse its results with BM25.
+/// P3 seam: pluggable vector semantic retrieval. Filled by the
+/// deterministic feature-hashing module (registered at construction); a caller
+/// may replace it and NL queries fuse its results with BM25.
 pub trait SemanticRetriever: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &'static str;
     fn retrieve(&self, query: &str, limit: usize) -> Result<Vec<(String, f32)>, String>;
@@ -171,7 +174,8 @@ const WORKER_MAX_RETRIES: u32 = 3;
 pub struct KnowledgeIndex {
     root: PathBuf,
     project: String,
-    store: KbStore,
+    /// Arc: the P3 vector module holds a reader handle on the same store.
+    store: Arc<KbStore>,
     fts: FtsIndex,
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
     dirty: Arc<Mutex<HashSet<String>>>,
@@ -221,17 +225,18 @@ impl KnowledgeIndex {
 
     /// Open at an explicit directory (unit/integration tests control it).
     pub fn open_at(root: &Path, dir: &Path) -> Result<KnowledgeIndex, String> {
-        let store = KbStore::open(&dir.join("kb.sqlite")).or_else(|e| {
+        let store = Arc::new(KbStore::open(&dir.join("kb.sqlite")).or_else(|e| {
             // Read-only tree or unwritable temp: degrade to memory, honestly.
             KbStore::in_memory().map_err(|m| format!("{e}; memory fallback also failed: {m}"))
-        })?;
+        })?);
+        let vector_store = store.clone();
         let fts = FtsIndex::open(&dir.join("tantivy"))?;
         let project = root
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("project")
             .to_string();
-        Ok(KnowledgeIndex {
+        let index = KnowledgeIndex {
             root: root.to_path_buf(),
             project,
             store,
@@ -243,7 +248,15 @@ impl KnowledgeIndex {
             reconcile_gate: Mutex::new(()),
             model_cache: Mutex::new(None),
             auto: Mutex::new(AutoReconcileState::default()),
-        })
+        };
+        // P3 vector slot (design doc §12): registered at construction so every
+        // open index has it — no caller opt-in. Deterministic feature hashing
+        // over the AST-derived nodes: no model, no network, source never
+        // leaves the machine. See vector_index.rs for the honest boundary.
+        index.set_vector_retriever(Arc::new(
+            crate::vector_index::DeterministicVectorRetriever::new(vector_store),
+        ));
+        Ok(index)
     }
 
     pub fn root(&self) -> &Path {
@@ -864,7 +877,7 @@ impl KnowledgeIndex {
             "bm25"
         };
 
-        // Natural-language / fuzzy → vector seam (P3, deferred).
+        // Natural-language / fuzzy → vector seam (P3: deterministic feature hashing).
         let vector_info = if looks_natural_language(q) {
             let retriever = self.vector.lock().expect("vector lock").clone();
             match retriever {
