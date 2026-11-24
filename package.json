@@ -1618,7 +1618,12 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "%kbengine.config.metrics.fileReadDetail.description%"
+          },          "kbengine.metrics.detailed": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.metrics.detailed.description%"
           },
+
           "kbengine.runtimeQuery.enabled": {
             "type": "boolean",
             "default": false,
@@ -1861,7 +1866,12 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.hover.apiDocs.description%"
+          },          "kbengine.hover.behaviorNotes": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.behaviorNotes.description%"
           },
+
           "kbengine.hover.asyncBudgetMs": {
             "type": "number",
             "default": 2500,
@@ -2123,7 +2133,12 @@
             "type": "string",
             "default": "",
             "markdownDescription": "%kbengine.config.engineRoot.description%"
+          },          "kbengine.managedDir": {
+            "type": "string",
+            "default": ".kbengine",
+            "markdownDescription": "%kbengine.config.managedDir.description%"
           },
+
           "kbengine.assetsRoot": {
             "type": "string",
             "default": "",
@@ -2658,7 +2673,12 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.autoRefreshFinalConfig.description%"
+          },          "kbengine.annotationLog": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.annotationLog.description%"
           },
+
           "kbengine.finalConfigComments": {
             "type": "boolean",
             "default": true,
@@ -2756,6 +2776,7 @@
           "kbengine.ai.baseUrl": {
             "type": "string",
             "default": "",
+            "scope": "machine",
             "markdownDescription": "%kbengine.config.ai.baseUrl.description%"
           },
           "kbengine.ai.model": {

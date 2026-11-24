@@ -498,6 +498,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hover.defChain` | `true` | Show def property/method declaration chain (file & section origins) on hover |
 | `kbengine.hover.eventStats` | `true` | Show event constant registration/listening stats on hover |
 | `kbengine.hover.apiDocs` | `true` | Show KBEngine Python API docs on hover (`KBEngine.<api>` access, lifecycle callback `def` lines, builtin-property supplement) |
+| `kbengine.hover.behaviorNotes` | `true` | Append the entity behavior-notes section on hover (property/callback behavior hints from the knowledge-page extraction library) |
 | `kbengine.hover.serverConfig` | `true` | Show kbengine.xml server config values and explanations on hover |
 | `kbengine.hover.language` | `"auto"` | Hover text language: auto detects Chinese UI language/system locale or UTC+8 timezone, otherwise English; explicit `en`/`zh-cn` (server-config hover face wired) |
 | `kbengine.hover.startupScript` | `true` | Hover and completion docs for KBEngine startup parameters in `.sh`/`.bat` scripts — CLI params and env vars, bilingual with the engine source line cited (`--` prefix completes params, `KBE_` prefix completes env vars) |
@@ -526,6 +527,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.assetsRoot` | `""` | KBEngine assets root (res/server/kbengine.xml + scripts/ underneath); empty = convention-path and deep-scan auto-discovery |
 | `kbengine.engineRoot` | `""` | KBEngine engine install root (the `kbe` tree itself, anchor `<root>/res/server/kbengine_defaults.xml`, not the directory name); empty = auto probe chain (current dir / parent, unique structural hit only) |
 | `kbengine.jumpLog` | `false` | Navigation decision-path logging to the KBEngine Navigation output channel (off = zero cost) |
+| `kbengine.annotationLog` | `false` | Annotation-source logging: hover answers record which source (document bucket / disk snapshot) they used into the KBEngine Annotations output channel; off = zero cost |
 | `kbengine.showFinalConfigOnOpen` | `true` | Auto-open the final config on activation when the engine default config is locatable; which view opens follows `kbengine.finalConfigView` |
 | `kbengine.finalConfigView` | `"gui"` | Default view for the final config: `gui` = the config visualization panel (default), `text` = the synthesized read-only `kbengine-final.xml` text view; Show Final Config follows this, and `kbengine.config.showFinalText` always opens the text view |
 | `kbengine.autoRefreshFinalConfig` | `true` | Recompute the open final-config view when engine/component kbengine.xml files change |
@@ -598,7 +600,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.core.serverPath` | `""` | kode-server binary path (cargo build -p kode-server output); used by the `rust` serving track and the shadow comparison; empty auto-probes `target/{debug,release}/kode-server` under the extension root, and if discovery fails too `backend=rust` falls back to `ts` without spawning a process |
 | `kbengine.core.shadow.timeoutMs` | `2000` | Shadow compare mirror-request timeout in milliseconds; a timeout only logs rust-timeout and never affects the TS serving path |
 | `kbengine.mcp.enabled` | `true` | Built-in Kode MCP server definition via VS Code native MCP API (≥1.101): one `kode-mcp` stdio server per workspace folder (command = discovered binary, args = [assets root]); status bar item toggles; missing binary or older host = honest no-registration fallback — `src/kodeMcpHost.ts`, `src/backend/kodeMcpDefinitions.ts` |
-| `kbengine.managedDir` | `` `.kbengine` `` | Name of the kode-managed directory hosting debug.json and stubs (runtime-read key, not in contributes; auto-rebuild on rename) |
+| `kbengine.managedDir` | `".kbengine"` | Name of the kode-managed directory hosting debug.json and stubs (declared in contributes since 2026-11-25; auto-rebuild on rename; illegal path characters fall back to `.kbengine`) |
 | `kbengine.entity.builtinProperties` | `true` | Builtin entity property hover + `self.` completion (faces), and def-declared property type / array element type hover — `src/languageProviders.ts:400,561` |
 | `kbengine.entity.receiverSections` | `true` | Receiver-aware def-section gating on hover/F12/RPC lens — `src/languageProviders.ts:515,3374,3897` |
 | `kbengine.entity.methodStubBody` | `"pass"` | One-click generated method stub body (`pass`/`raise`) — `src/backend/defMethodConsistency.ts` (`buildMethodStubCode`), `src/languageProviders.ts` |
@@ -614,6 +616,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.types.aliasDiscovery` | `true` | `alias.xml` custom-type discovery — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default off keeps the panel to single manual queries) — `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | File-read audit detail (path+bytes, 256-entry ring shown by `kbengine.metrics.showSummary`; off keeps only cumulative counters) — `src/backend/fileReadMetrics.ts` |
+| `kbengine.metrics.detailed` | `false` | Per-sample language-service metric recording (one sample per operation, readable via `kbengine.metrics.showSummary`); off keeps only cumulative counters — bounded cost |
 | `kbengine.runtimeQuery.pollIntervalMs` | `2000` | Result subscription stream interval in ms for the Runtime Queries panel (floor 500; applies only when `kbengine.runtimeQuery.enabled` is on) — `src/runtimeQueryWebView.ts` |
 | `kbengine.clone.archiveEncryption` | `"encrypted"` | Player-clone archive encryption default (`encrypted` = chacha20poly1305 archive, machine-scoped key in globalStorage `clone-keys/`; `plain` = redacted plaintext archive for cross-machine transfer; toggled per run at the export confirm step) — `src/backend/playerDataCloneCommands.ts` |
 | `kbengine.clone.probeTimeoutMs` | `5000` | Independent short deadline in ms for the export source-connection probe (timeout goes straight into the retry/configure dialog; export execution keeps its own longer deadline) — `src/backend/playerDataCloneCommands.ts` |

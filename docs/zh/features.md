@@ -464,6 +464,7 @@
 | `kbengine.hover.defChain` | `true` | 悬停显示 def 属性/方法声明链（文件与区块来源） |
 | `kbengine.hover.eventStats` | `true` | 悬停显示事件常量注册/监听统计 |
 | `kbengine.hover.apiDocs` | `true` | 悬停显示 KBEngine Python API 文档(`KBEngine.<api>` 访问、生命周期回调 def 行、内建属性追加段) |
+| `kbengine.hover.behaviorNotes` | `true` | 悬停追加实体行为注记段(属性/回调的行为知识提示,文案取自知识页抽取库) |
 | `kbengine.hover.serverConfig` | `true` | 悬停显示 kbengine.xml 服务配置取值与说明 |
 | `kbengine.hover.language` | `"auto"` | 悬停文案语言:auto 探测中文界面语言/系统 locale 或 UTC+8 时区,否则英文;可显式 `en`/`zh-cn`(服务配置悬停面已接入) |
 | `kbengine.hover.startupScript` | `true` | .sh/.bat 启动脚本里 KBEngine 启动参数的悬浮/补全说明——CLI 参数与环境变量,双语附引擎源码行(`--` 补全参数、`KBE_` 补全环境变量) |
@@ -492,6 +493,7 @@
 | `kbengine.assetsRoot` | `""` | KBEngine 资产根（其下应有 res/server/kbengine.xml 与 scripts/）；留空走约定路径与深扫描自动发现 |
 | `kbengine.engineRoot` | `""` | KBEngine 引擎安装根(kbe 目录本身,结构锚 `<安装根>/res/server/kbengine_defaults.xml`,不看目录名);留空走自动探测链(当前目录/上一层,唯一结构命中才认) |
 | `kbengine.jumpLog` | `false` | 跳转决策路径日志打到 KBEngine Navigation 输出通道（关 = 零开销） |
+| `kbengine.annotationLog` | `false` | 注解来源日志:开启后 hover 推导答话把所用来源(文档桶/磁盘快照)落到 KBEngine Annotations 输出通道;关 = 零开销 |
 | `kbengine.showFinalConfigOnOpen` | `true` | 激活期能定位引擎默认配置时自动打开最终配置;打开哪种视图跟随 `kbengine.finalConfigView` |
 | `kbengine.finalConfigView` | `"gui"` | 最终配置默认视图:`gui`=配置合并可视化面板(默认),`text`=合成只读 `kbengine-final.xml` 文本视图;「查看最终服务器配置」跟随此项,`kbengine.config.showFinalText` 恒开文本视图 |
 | `kbengine.autoRefreshFinalConfig` | `true` | 引擎/元件 kbengine.xml 变更后自动重算并刷新已打开的最终配置视图 |
@@ -564,7 +566,7 @@
 | `kbengine.core.serverPath` | `""` | kode-server 二进制路径（cargo build -p kode-server 产物）；`rust` 服务轨道与影子比对共用；留空自动按扩展根下 target/{debug,release}/kode-server 探测，探测也落空时 backend=rust 回落 ts（不启动进程） |
 | `kbengine.core.shadow.timeoutMs` | `2000` | 影子比对镜像请求超时（毫秒）；超时只记差异日志 rust-timeout，不影响 TS 服务路径 |
 | `kbengine.mcp.enabled` | `true` | 内建 Kode MCP 服务器定义（VS Code 原生 MCP API，≥1.101）：每工作区文件夹一个 kode-mcp stdio 服务器（command=发现的二进制、args=[资产根]）；状态栏项点击切换；二进制缺失或老宿主=诚实不注册回落 —— `src/kodeMcpHost.ts`、`src/backend/kodeMcpDefinitions.ts` |
-| `kbengine.managedDir` | `` `.kbengine` `` | kode 托管目录名（运行时读取键，不在 contributes 中；改名后自动重建） |
+| `kbengine.managedDir` | `".kbengine"` | kode 托管目录名（2026-11-25 起在 contributes 声明；改名后自动重建；非法路径字符按 `.kbengine` 兜底） |
 | `kbengine.entity.builtinProperties` | `true` | 内建属性 hover + `self.` 补全（分面），以及 def 声明属性类型 / 数组元素类型 hover — `src/languageProviders.ts:400,561` |
 | `kbengine.entity.receiverSections` | `true` | hover/F12/RPC 镜的接收者段过滤 — `src/languageProviders.ts:515,3374,3897` |
 | `kbengine.entity.methodStubBody` | `"pass"` | 一键生成方法骨架的体(`pass`/`raise`) — `src/backend/defMethodConsistency.ts`(`buildMethodStubCode`)、`src/languageProviders.ts` |
@@ -580,6 +582,7 @@
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | 运行时查询面板操作面（watcher 观察清单增删与结果订阅流；默认关时面板只剩单次手动查询）— `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/backend/fileReadMetrics.ts` |
+| `kbengine.metrics.detailed` | `false` | 语言服务指标逐样本记账(每次操作记一条样本,`kbengine.metrics.showSummary` 可查);关=只累计计数,开销有界 |
 | `kbengine.runtimeQuery.pollIntervalMs` | `2000` | 运行时查询面板结果订阅流轮询间隔毫秒数（下限 500；仅在 `kbengine.runtimeQuery.enabled` 开启时生效）— `src/runtimeQueryWebView.ts` |
 | `kbengine.clone.archiveEncryption` | `"encrypted"` | 玩家数据克隆归档加密默认值（`encrypted` = chacha20poly1305 加密归档,密钥机器域存 globalStorage `clone-keys/`;`plain` = 脱敏明文归档,适合跨机转移;导出确认页每次可切换）— `src/backend/playerDataCloneCommands.ts` |
 | `kbengine.clone.probeTimeoutMs` | `5000` | 玩家数据克隆导出源连接探针的独立短超时（毫秒）。探针只答「现在连不连得上」：超时立即以失败进重试/配置弹窗；导出执行侧超时档不受此配置影响 — `src/backend/playerDataCloneCommands.ts` |

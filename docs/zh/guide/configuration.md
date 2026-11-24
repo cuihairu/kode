@@ -137,6 +137,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
 | `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名时的注册/触发统计 |
 | `kbengine.hover.apiDocs` | boolean | `true` | 悬停显示 KBEngine Python API 文档(`KBEngine.<api>` 访问、生命周期回调 def 行、内建属性追加段) |
+| `kbengine.hover.behaviorNotes` | boolean | `true` | 悬停追加实体行为注记段(属性/回调的行为知识提示,文案取自知识页抽取库) |
 | `kbengine.hover.serverConfig` | boolean | `true` | 悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 悬停面整体关断) |
 | `kbengine.hover.language` | string | `auto` | 悬停文案语言(IDE-I18N-002):`auto` 探测——VS Code 界面语言/系统 locale 为中文或 UTC+8 时区取中文,否则英文;亦可显式 `en`/`zh-cn`。服务配置悬停面已接入,其余悬停面逐步接入 |
 | `kbengine.hover.startupScript` | boolean | `true` | 悬停/补全 .sh/.bat 启动脚本里的 KBEngine 启动参数与说明——CLI 参数 `--cid`/`--gus`/`--hide`/`--KBE_ROOT`/`--KBE_RES_PATH`/`--KBE_BIN_PATH`、环境变量 `KBE_ROOT`/`KBE_RES_PATH`/`KBE_BIN_PATH`/`KBE_TIMING_METHOD`/`KBE_COMPONENTID`/`KBE_BOOTIDX_GLOBAL`/`KBE_BOOTIDX_GROUP`/`UID`/`UUID`(双语,附引擎源码行);`--` 前缀补全参数、`KBE_` 前缀补全环境变量;关闭即同时关断悬浮与补全两面 |
@@ -176,6 +177,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
+| `kbengine.annotationLog` | boolean | `false` | 注解来源日志:开启后 hover 推导答话把所用来源(文档桶/磁盘快照)落到 KBEngine Annotations 输出通道;关闭时零开销 |
 | `kbengine.index.syntaxGate` | boolean | `true` | Python 索引输入语法门(INDEX-DISCIPLINE-001):落盘重索引(保存/外部写盘经合并器收口)前做括号/引号/缩进单遍预检(零子进程);编辑中途保存的烂文件不入索引、索引保留上一次健康符号(诊断照常报语法错,编辑中导航不断);关闭后回到旧行为,烂文件照常入索引 |
 | `kbengine.index.scanExcludeGlobs` | string[] | `[]` | 业务索引的用户排除 glob 兜底(ENGINE-LIB-SCAN-005):每条 glob 经 minimatch(dot 开)编译,对规范化绝对路径匹配,命中的文件/目录不进业务索引——发现链 def、事件/方法索引、Python 类索引共用同一排除面。裸目录名简写(如 `kbe`)按「任意前缀/kbe/任意后缀」的双星 glob 形态解释;坏模式跳过不炸扫描。引擎仓子树由引擎树标记自动剔除(见上文「怎么看索引工作状态」),本键是额外兜底 |
 | `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
@@ -198,6 +200,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.configData` | object | `enabled: true`,3 个默认配置目录 glob、`*Config`/`*Data` 类名、`reload*`/`hotUpdate*` 热更入口、空 `mutationExclude` | 配置数据保护:配置绑定意外写诊断(`kbengine.configDataMutation`)+ 直读 schema 悬停;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
 | `kbengine.configData.schemas` | object | `{}`(未声明) | 配置管理器对象(`config.getXXX()` / `config[key]`)的声明式类型:管理器对象表达式 → 表键集合;生成存根读该声明而非推断;详见下方[配置数据保护](#配置数据保护kbengineconfigdata) |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现。Python/def 索引只扫 `{assetsRoot}/scripts`——详见下方 assetsRoot 细节 |
+| `kbengine.managedDir` | string | `".kbengine"` | 托管目录名(生成/派生产物落盘目录,相对工作区根);含非法路径字符时按 `.kbengine` 兜底 |
 | `kbengine.engineRoot` | string | `""` | KBEngine 引擎安装根(kbe 目录本身:res/bin/src/tools 的直接父目录,与引擎 KBE_ROOT「装载 res 的根」同语义;身份判定看结构锚 `<安装根>/res/server/kbengine_defaults.xml`,不看目录名)。用途:引擎树识别、引擎版本标记探测、引擎树从工作区扫描剔除、SDK 桩装配。显式值经结构锚校验通过才认(防误配整树误剔);留空走自动补录/探测链(当前目录/上一层目录唯一结构命中才认,歧义不猜)——详见下方 engineRoot 细节 |
 | `kbengine.gitHistory.enabled` | boolean | `true` | 文件 Git 历史功能开关(IDE-GIT-001):开启时出现「查看文件历史 / 查看选中范围历史」入口(资源管理器/编辑器右键+命令面板),仅在用户点开入口时按需查询 Git(激活/打开文件/光标/选区变化绝不运行 Git,不预取不轮询);关闭后入口隐藏,直接调用命令也不运行任何 Git |
 
@@ -498,6 +501,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | --- | --- | --- | --- |
 | `kbengine.runtimeQuery.enabled` | boolean | `false` | 操作面总开关（观察清单增删与结果订阅流）；关闭时面板只剩单次手动查询 |
 | `kbengine.metrics.fileReadDetail` | boolean | `false` | 记录文件读取明细（路径+字节数，环形缓冲 256 条，经 `kbengine.metrics.showSummary` 查看）；关闭时只保留累计读取次数与字节数（开销有界） |
+| `kbengine.metrics.detailed` | boolean | `false` | 语言服务指标逐样本记账(每次操作记一条样本,经 `kbengine.metrics.showSummary` 查看);关闭时只保留累计计数(开销有界) |
 | `kbengine.runtimeQuery.pollIntervalMs` | number | `2000` | 结果订阅流轮询间隔毫秒数；仅在 `kbengine.runtimeQuery.enabled` 开启时生效 |
 
 行为规则：
