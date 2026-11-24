@@ -108,6 +108,7 @@ Construction-site history: from SRC-001 L4 the server/telnet/player-data/remote-
 |---|---|---|---|---|
 | HotReloadFileDecorationProvider | hotReloadFileDecorations.ts:35 | :4446 | HotReloadFileStateMachine derived view aggregated by (rootId,targetId,file), colored by worst state | Pure read; refresh() via the onDidChangeFileDecorations event |
 | FolderColorDecorationProvider | folderColorDecorations.ts:40 | activate/folderColors.ts (wired from activate/views.ts, FOLDER-COLOR-001) | folderColorRules pure core: first-match-wins rule table (config `kbengine.folderColors.rules`, `{assetsRoot}` from the active profile) → single-letter badge + ThemeColor; dual gate (switch + KBEngine theme family) off = zero output; directories never decorated (no folder-background API) | Pure read (workspace.fs.stat for directory check); refresh() via the onDidChangeFileDecorations event on config/theme change |
+| ExplorerRootDecorationProvider | explorerRootDecorations.ts:85 | activate/explorerRoots.ts (wired from activate/views.ts) | active-profile engine/assets roots (profile fields first, empty axis falls back to `kbengine.engineRoot`/`kbengine.assetsRoot` settings) → badge K blue / A orange / KA blue on the root directory itself; root missing on disk = no decoration; no on/off gate (recorded facts, not decoration preference) | Pure read (fs.statSync for existence); refresh() on profile switch and on either root setting change |
 
 ## 3. Diagnostics surface
 

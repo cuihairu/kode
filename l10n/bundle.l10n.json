@@ -447,6 +447,8 @@
   "Quick action failed: {name} (HTTP {status})": "Quick action failed: {name} (HTTP {status})",
   "Action \"{name}\" enables venv, but no virtual environment directory was found; set venv.path or create one under kbengine.python.venvDirectories (default .venv/venv/.kbenv)": "Action \"{name}\" enables venv, but no virtual environment directory was found; set venv.path or create one under kbengine.python.venvDirectories (default .venv/venv/.kbenv)",
   "KBEngine Player Data (read-only)": "KBEngine Player Data (read-only)",
+  "KBEngine engine root": "KBEngine engine root",
+  "KBEngine assets root": "KBEngine assets root",
   "Retry": "Retry",
   "View details": "View details",
   "Read-only query needs the engine database config (derived from dbmgr/databaseInterfaces/default; unrelated to clone Source/Target profiles) — not found.": "Read-only query needs the engine database config (derived from dbmgr/databaseInterfaces/default; unrelated to clone Source/Target profiles) — not found.",

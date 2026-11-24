@@ -770,6 +770,8 @@
   "Configs": "配置",
   "Logs": "日志",
   "Process scripts": "进程脚本",
+  "KBEngine engine root": "KBEngine 引擎安装根",
+  "KBEngine assets root": "KBEngine 资产根",
   "Entity script module must define a class named {entityName} (the engine loads {fileName} as the entity module and requires a class of the same name via GetAttrString; classes defined in this module: {classes})": "实体脚本模块必须定义与模块名同名的类 {entityName}(引擎把 {fileName} 装载为实体模块,经 GetAttrString 要求同名类;本模块定义的类:{classes})",
   "Entity class {entityName} has no base class; the {face} component requires the entity class to derive from one of {roster} (engine isSubClass against the component roster rejects a class with no base)": "实体类 {entityName} 没有任何基类;{face} 组件要求实体类派生自 {roster} 之一(引擎 isSubClass 对组件名册,无基类的类会被拒载)",
   "onLogOnAttempt returns LOG_ON_WAIT_FOR_DESTROY: the current engine does not implement a queued-login flow for this value (baseapp.cpp:4020-4021 shares the default branch, effectively a rejection); only LOG_ON_ACCEPT / LOG_ON_REJECT are stable return values": "onLogOnAttempt 返回 LOG_ON_WAIT_FOR_DESTROY:当前引擎未为该值落地排队等待流程(baseapp.cpp:4020-4021 与 default 同支,实际同拒绝);真正稳定的返回值只有 LOG_ON_ACCEPT / LOG_ON_REJECT",

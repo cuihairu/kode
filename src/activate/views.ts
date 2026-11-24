@@ -38,6 +38,7 @@ import { ConfigVisualizerPanel } from '../configVisualizerPanel';
 import {
   findEntityDefinitionFile,
 } from '../definitionWorkspace';
+import { activateExplorerRootDecorations } from './explorerRoots';
 import {
   GIT_HISTORY_CONTEXT_KEY,
   GIT_HISTORY_ENABLED_SETTING,
@@ -179,6 +180,8 @@ export function activateEntityExplorerViews(deps: EntityExplorerViewsDeps): void
     context,
     onGateChanged: () => entityExplorerProvider.refresh()
   });
+  // 双根角标(2026-11-24):Explorer 里标记活动 profile 的 engineRoot/assetsRoot 目录
+  activateExplorerRootDecorations(context);
 
   // 刷新实体浏览器的命令
   const refreshCommand = vscode.commands.registerCommand(
