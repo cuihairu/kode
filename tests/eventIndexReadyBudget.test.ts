@@ -15,6 +15,9 @@
  *    就绪面全量 / 弃置广播。
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { EventCodeLensProvider } from '../src/eventApi';
 import { WorkspaceIndex } from '../src/workspaceIndex';
@@ -44,6 +47,7 @@ describe('RUST-004-W3 事件索引竞速(allEventCallsMarked 三态+partial-real
   let originalFind: typeof vscode.workspace.findFiles | undefined;
   let originalRead: typeof vscode.workspace.fs.readFile | undefined;
   let releaseScan: (() => void) | null = null;
+  let tmpDir: string;
   let uri: vscode.Uri;
   let warmDoc: vscode.TextDocument;
 
@@ -61,10 +65,17 @@ describe('RUST-004-W3 事件索引竞速(allEventCallsMarked 三态+partial-real
   beforeEach(() => {
     originalFind = vscode.workspace.findFiles;
     originalRead = vscode.workspace.fs.readFile;
-    uri = vscode.Uri.file('/ws/scan.py');
-    warmDoc = makeTextDocument(WARM_TEXT, { fileName: '/ws/warm.py', languageId: 'python' }) as unknown as vscode.TextDocument;
-    vscode.workspace.fs.readFile = async file =>
-      file.fsPath === '/ws/scan.py' ? Buffer.from(SCAN_TEXT) : Buffer.from(WARM_TEXT);
+    // 共享原文缓存(2026-11-24 批 1)经 vscode 读缝直读真实 fs:内容种进
+    // 真临时文件,readFile 桩只做真盘转发(不走 fake 的 memoryFileSystem)
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-evidx-'));
+    fs.writeFileSync(path.join(tmpDir, 'scan.py'), SCAN_TEXT);
+    fs.writeFileSync(path.join(tmpDir, 'warm.py'), WARM_TEXT);
+    uri = vscode.Uri.file(path.join(tmpDir, 'scan.py'));
+    warmDoc = makeTextDocument(WARM_TEXT, {
+      fileName: path.join(tmpDir, 'warm.py'),
+      languageId: 'python'
+    }) as unknown as vscode.TextDocument;
+    vscode.workspace.fs.readFile = async file => fs.promises.readFile(file.fsPath);
     process.env.KODE_DATA_DICT_READY_BUDGET_MS = '40';
   });
 
@@ -78,6 +89,7 @@ describe('RUST-004-W3 事件索引竞速(allEventCallsMarked 三态+partial-real
       vscode.workspace.fs.readFile = originalRead;
     }
     delete process.env.KODE_DATA_DICT_READY_BUDGET_MS;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
     await tick(60);
   });
 
@@ -189,6 +201,7 @@ describe('RUST-004-W3 消费端(CodeLens pending/取消/失败/刷新)', () => {
   let originalFind: typeof vscode.workspace.findFiles | undefined;
   let originalRead: typeof vscode.workspace.fs.readFile | undefined;
   let releaseScan: (() => void) | null = null;
+  let tmpDir: string;
   let uri: vscode.Uri;
   let warmDoc: vscode.TextDocument;
   let emitDoc: vscode.TextDocument;
@@ -207,8 +220,17 @@ describe('RUST-004-W3 消费端(CodeLens pending/取消/失败/刷新)', () => {
   beforeEach(() => {
     originalFind = vscode.workspace.findFiles;
     originalRead = vscode.workspace.fs.readFile;
-    uri = vscode.Uri.file('/ws/scan.py');
-    warmDoc = makeTextDocument(WARM_TEXT, { fileName: '/ws/warm.py', languageId: 'python' }) as unknown as vscode.TextDocument;
+    // 共享原文缓存(2026-11-24 批 1)经 vscode 读缝直读真实 fs:内容种进
+    // 真临时文件,readFile 桩只做真盘转发(不走 fake 的 memoryFileSystem)
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-evidx-'));
+    fs.writeFileSync(path.join(tmpDir, 'scan.py'), SCAN_TEXT);
+    fs.writeFileSync(path.join(tmpDir, 'warm.py'), WARM_TEXT);
+    uri = vscode.Uri.file(path.join(tmpDir, 'scan.py'));
+    warmDoc = makeTextDocument(WARM_TEXT, {
+      fileName: path.join(tmpDir, 'warm.py'),
+      languageId: 'python'
+    }) as unknown as vscode.TextDocument;
+    vscode.workspace.fs.readFile = async file => fs.promises.readFile(file.fsPath);
     // 发射文档:本地回调镜(def on_a 被回调)+监听镜(emitEvent)双面
     emitDoc = makeTextDocument(
       [
@@ -221,10 +243,8 @@ describe('RUST-004-W3 消费端(CodeLens pending/取消/失败/刷新)', () => {
         '        self.emitEvent("EV_A")',
         ''
       ].join('\n'),
-      { fileName: '/ws/emit.py', languageId: 'python' }
+      { fileName: path.join(tmpDir, 'emit.py'), languageId: 'python' }
     ) as unknown as vscode.TextDocument;
-    vscode.workspace.fs.readFile = async file =>
-      file.fsPath === '/ws/scan.py' ? Buffer.from(SCAN_TEXT) : Buffer.from(WARM_TEXT);
     process.env.KODE_DATA_DICT_READY_BUDGET_MS = '40';
   });
 
@@ -238,6 +258,7 @@ describe('RUST-004-W3 消费端(CodeLens pending/取消/失败/刷新)', () => {
       vscode.workspace.fs.readFile = originalRead;
     }
     delete process.env.KODE_DATA_DICT_READY_BUDGET_MS;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
     await tick(60);
   });
 

@@ -648,11 +648,14 @@ const ANCHORS: Array<[string, number, string]> = [
   // 锚点前)、扫描根入行块 +5(1121 区)与锚点 await 块 +3(1268 区)落在二三锚
   // 点前 → 811→816(+5)、1551→1564(+13)、1675→1688(+13),真位重探。
   // 出处随 baseline 锁步。
-  ['src/backend/pythonClassIndex.ts', 816, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1564, 'resolveClassBase'],
+  // 2026-11-24(共享原文缓存批):pythonClassIndex.ts 共享缓存 import +1(全部
+  // 锚点前)、两处盘腿读改走缓存各 +4(~641/~1430)→ 816→821(+5)、
+  // 1564→1572(+8)、1688→1696(+8),真位重探。
+  ['src/backend/pythonClassIndex.ts', 821, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1572, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1688, '①② 两段查询'],
+  ['src/backend/pythonClassIndex.ts', 1696, '①② 两段查询'],
   // 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位——
   // 单飞字段块 +7、ensureDiscovered 重写 +22、零失败清表改覆盖式 +4(非均匀):
   // 767→774(+7)、1448→1481(+33)、1572→1605(+33)。出处随 baseline 锁步。

@@ -518,8 +518,16 @@ describe('workspaceIndex 守卫分支', () => {
       const watcher = allFileSystemWatchers[allFileSystemWatchers.length - 1];
       watcher.fireCreate(racy);
       watcher.fireCreate(trigger);
-      await new Promise(resolve => setImmediate(() => setImmediate(() => setImmediate(resolve))));
-      const calls = await index.allEventCalls();
+      // 2026-11-24(共享原文缓存批):读缝前多了 stat 探测的微任务跳,让出相序
+      // 整体后移,固定三跳不再兜住全结算;改有界轮询等两个任务走到终态
+      // (racy 弃/trigger 入账),删除恰插两次让出之间的编排由 stub 的
+      // setImmediate 结构保持不变。
+      let calls: Awaited<ReturnType<WorkspaceIndex['allEventCalls']>> = [];
+      for (let i = 0; i < 40; i += 1) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+        calls = await index.allEventCalls();
+        if (calls.length >= 1) break;
+      }
       expect(calls).toHaveLength(1);
       expect(calls[0].file).toBe('/ws/trigger.py');
     } finally {

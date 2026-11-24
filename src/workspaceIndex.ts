@@ -7,6 +7,7 @@ import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './backend/pythonScanRules';
 import { createScanStageProgressReporter } from './backend/scanStageProgress';
 import { indexLog } from './backend/indexLog';
+import { getSharedFileTextCache } from './backend/sharedFileTextCache';
 import type { EventIndexDiskEntry } from './backend/indexDiskCache';
 
 // 本地索引缓存（用户令 2026-10-20：跳转/CodeLens 不得每次全仓重扫）。
@@ -403,7 +404,19 @@ export class WorkspaceIndex implements EventCallIndex {
     const holder: { task: Promise<IndexedFile | null> } = { task: Promise.resolve(null) };
     holder.task = (async () => {
       try {
-        const bytes = await vscode.workspace.fs.readFile(uri);
+        // 2026-11-24:读盘走共享原文缓存(读一次、扇出多次)——与 python 类索引
+        // /def 归属链共享同一份原文;命中免读,失败原样抛由下方既有 catch 收口。
+        // loader 闭包原 uri(保留 scheme,远端/虚拟工作区不被改道);stat 不可得
+        // 时缓存纯透传,读缝仍是 vscode.workspace.fs。fresh=true:弃置重建
+        // (noteDocumentAbandoned)要求这次真读,不并入在途旧读(本面并发已由
+        // building 表按路径去重,旧读在途时盘上内容可能已变)。
+        const text = (
+          await getSharedFileTextCache().readThroughAsync(
+            uri.fsPath,
+            () => vscode.workspace.fs.readFile(uri).then(bytes => Buffer.from(bytes).toString('utf8')),
+            { fresh: true }
+          )
+        ).text;
         if (this.disposed) return null;
         if ((this.revisions.get(uri.fsPath) ?? 0) !== revision) return this.cache.get(uri.fsPath) ?? null;
         const dirty = preferDisk
@@ -413,7 +426,6 @@ export class WorkspaceIndex implements EventCallIndex {
           this.noteSaved(dirty);
           return this.cache.get(uri.fsPath) ?? null;
         }
-        const text = Buffer.from(bytes).toString('utf8');
         // 让出边界后重验:让出窗口内的保存/销毁按既有口径处置(弃旧解析,
         // 不覆盖新数据),窗口本身不引入行为差。让出按时间切片节流。
         await yieldToHostIfDue();

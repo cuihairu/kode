@@ -23,6 +23,7 @@ import {
 } from './scanProgress';
 import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from '../hoverBudget';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
+import { getSharedFileTextCache } from './sharedFileTextCache';
 import { indexLog } from './indexLog';
 import { createScanStageProgressReporter } from './scanStageProgress';
 import {
@@ -635,7 +636,11 @@ export class PythonClassIndex {
       const open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
       let text: string;
       try {
-        text = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
+        // 2026-11-24:盘腿走共享原文缓存(读一次、扇出多次);失败原样抛由
+        // 下方既有 catch 收口为空文本(缺档口径不变)。
+        text = open
+          ? open.getText()
+          : (await getSharedFileTextCache().readThroughAsync(filePath, p => fs.promises.readFile(p, 'utf8'))).text;
       } catch {
         // 读不到(外部删档竞态等):交给 loadFile 的既有缺档口径,不在此拦
         text = '';
@@ -1423,7 +1428,10 @@ export class PythonClassIndex {
     let content: string;
     try {
       open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
-      content = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
+      // 2026-11-24:盘腿走共享原文缓存;失败原样抛,读失败/解析失败分流不变。
+      content = open
+        ? open.getText()
+        : (await getSharedFileTextCache().readThroughAsync(filePath, p => fs.promises.readFile(p, 'utf8'))).text;
     } catch {
       // A removed/unreadable file must not leave navigable stale classes.
       // PR5:从未入索引的文件(staging 探测的候选路径不存在等)只记录版本,

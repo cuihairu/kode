@@ -7,7 +7,7 @@
 // types.xml/alias.xml、python def 全树 walk)统一换 readFileUtf8Recorded*
 // 记账;测试/审计面用 resetFileReadMetrics + getRecentFileReads 对账。
 
-import * as fs from 'fs';
+import { getSharedFileTextCache } from './sharedFileTextCache';
 
 export interface FileReadRecord {
   path: string;
@@ -56,23 +56,32 @@ export function getRecentFileReads(): readonly FileReadRecord[] {
   return ring;
 }
 
-/** 清零(测试与单次操作审计用:reset → 操作 → 对账) */
+/** 清零(测试与单次操作审计用:reset → 操作 → 对账)。共享原文缓存一并清:
+ * reset 后的第一次读必须真落盘,审计口径「reset 后操作可对账」不被跨用例
+ * 缓存命中污染。 */
 export function resetFileReadMetrics(): void {
   totalReads = 0;
   totalBytes = 0;
   ring = [];
+  getSharedFileTextCache().clear();
 }
 
-/** 同步读盘入口:读成功才记账,异常原样抛出 */
+/** 同步读盘入口:读成功才记账,异常原样抛出。2026-11-24 起走共享原文缓存
+ * (stat 校验命中免读,命中不入账=未读盘;失败清条目原样抛)。 */
 export function readFileSyncUtf8Recorded(path: string): string {
-  const content = fs.readFileSync(path, 'utf8');
-  recordFileRead(path, Buffer.byteLength(content, 'utf8'));
-  return content;
+  const read = getSharedFileTextCache().readThroughSync(path);
+  if (!read.fromCache) {
+    recordFileRead(path, read.bytes);
+  }
+  return read.text;
 }
 
-/** 异步读盘入口(全树 walk 等协路径):读成功才记账 */
+/** 异步读盘入口(全树 walk 等协路径):读成功才记账。同走共享缓存(同路径
+ * 并发并入单飞,并入方不重复入账)。 */
 export async function readFileUtf8Recorded(path: string): Promise<string> {
-  const content = await fs.promises.readFile(path, 'utf8');
-  recordFileRead(path, Buffer.byteLength(content, 'utf8'));
-  return content;
+  const read = await getSharedFileTextCache().readThroughAsync(path);
+  if (!read.fromCache) {
+    recordFileRead(path, read.bytes);
+  }
+  return read.text;
 }
