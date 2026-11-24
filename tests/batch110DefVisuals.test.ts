@@ -233,8 +233,10 @@ describe('批110 验收走查:def 语义导航与悬停', () => {
     const manager = {
       resolveDefinitionSymbolAtPosition: () =>
         Promise.resolve({ ownerName: 'Hero', symbolName: 'onKill' }),
-      resolveMethodImplementationByIdentity: () =>
-        Promise.resolve({ filePath: p(wsRoot, 'manager', 'Impl.py'), line: 7, character: 4 })
+      // 2026-11-24 臂序定谳:慢链绑定臂=纯绑定面 listMethodImplementationsByIdentity
+      // (与 LUT implementations 同一查询面);fused 面(含内联全局回退)不再进跳转链
+      listMethodImplementationsByIdentity: () =>
+        Promise.resolve([{ filePath: p(wsRoot, 'manager', 'Impl.py'), line: 7, character: 4 }])
     } as unknown as EntityMappingManager;
     const managedProvider = new KBEngineDefinitionProvider(manager);
 

@@ -465,7 +465,7 @@ describe('根修令管理器回落:索引未收录非标准布局,仍走 def 相
     const manager = {
       resolveDefinitionSymbolAtPosition: () =>
         Promise.resolve({ ownerName: 'Ship', symbolName: 'onSail' }),
-      resolveMethodImplementationByIdentity: () => Promise.resolve(null)
+      listMethodImplementationsByIdentity: () => Promise.resolve([])
     } as unknown as EntityMappingManager;
     const managedProvider = new KBEngineDefinitionProvider(manager);
 
@@ -481,7 +481,7 @@ describe('根修令管理器回落:索引未收录非标准布局,仍走 def 相
   it('N2 索引未收录符号 → 同样落 cell 脚本 def 行', async () => {
     const manager = {
       resolveDefinitionSymbolAtPosition: () => Promise.resolve(null),
-      resolveMethodImplementationByIdentity: () => Promise.resolve(null)
+      listMethodImplementationsByIdentity: () => Promise.resolve([])
     } as unknown as EntityMappingManager;
     const managedProvider = new KBEngineDefinitionProvider(manager);
 

@@ -274,7 +274,10 @@ describe('管理器路径:约定链落空弹提示、约定链命中真落点', 
   ): EntityMappingManager =>
     ({
       resolveDefinitionSymbolAtPosition: () => Promise.resolve(identity),
-      resolveMethodImplementationByIdentity: () => Promise.resolve(reference)
+      // 2026-11-24 臂序定谳:慢链绑定臂=纯绑定面 listMethodImplementationsByIdentity
+      // (reference 形状=Location 单元素数组或空数组)
+      listMethodImplementationsByIdentity: () =>
+        Promise.resolve(reference ? [reference] : [])
     }) as unknown as EntityMappingManager;
 
   const onTickDef = () => p(wsRoot, 'server_assets', 'scripts', 'entity_defs', 'Tick.def');

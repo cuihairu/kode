@@ -16,6 +16,7 @@ import { findCustomTypeDeclarationInfo, findCustomTypeInfo, findCustomTypePython
 import { parseDefFileSemantics } from '../backend/defRenamer';
 import { KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { jumpLog, logNavigation } from '../navigationLog';
+import { findMethodLocationsInPythonBaseChain } from '../backend/pythonBaseChain';
 import { SymbolHoverInfo, buildSymbolHoverInfo } from './hover';
 import { CustomTypeResolution, KBEngineSectionName, METHOD_SECTIONS, getDefNodeAtPosition, getDefNodeAtWord, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst } from './shared';
 /** LSP 落点面(规范路径 uri)→ vscode.Location(Rust 面与 shadow 同形)。 */
@@ -1093,11 +1094,38 @@ export async function resolveDefMethodPythonTarget(
   manager: EntityMappingManager,
   identity: DefinitionSymbolIdentity | null
 ): Promise<{ filePath: string; line: number; character: number } | null> {
+  // 臂序(2026-11-24 定谳):**绑定 → 父类链 → 约定 → 全局唯一名**。
+  // 绑定臂必须只取纯绑定面 listMethodImplementationsByIdentity(与 LUT
+  // implementations 同一查询面,钉子④同源):不得走
+  // resolveMethodImplementationByIdentity——其落空臂内联全项目唯一名回退,
+  // 方法名在同域目录唯一时会抢在继承证据前命中**无关类**的同名方法
+  // (defMethodBaseChainJump 钉住:落 Other.py 而非父类)。
   if (identity) {
-    const bound = await manager.resolveMethodImplementationByIdentity(identity);
+    const bound = (await manager.listMethodImplementationsByIdentity(identity))[0];
     if (bound) {
       const adjusted = adjustMethodTargetToOpenBuffer(bound, methodName);
       logNavigation(`方法落点(索引${adjusted === bound ? '' : ',缓冲重定'}) ${adjusted.filePath}:${adjusted.line - 1}`);
+      return adjusted;
+    }
+  }
+
+  // 父类链臂(2026-11-24 用户报「提了无数次」:实现常落在父类/公共模块,真实
+  // 继承链经 import 解析;绑定/约定两臂都只读属主自身)。LUT 重建在
+  // implementations 落空臂插同位臂(两脸同序,LUT 不改变真相)。
+  // 候选首项=本实体段脚本(不存在时链走不动,如实落空到下一臂)。
+  const chainRole = METHOD_SECTION_SCRIPT_ROLES[section];
+  const ownerScript = chainRole ? collectMethodCandidateScripts(document, chainRole)[0] : undefined;
+  if (ownerScript) {
+    const entityName = path.basename(document.fileName, '.def');
+    const chainHit = findMethodLocationsInPythonBaseChain(ownerScript, entityName, methodName)[0];
+    if (chainHit) {
+      const adjusted = adjustMethodTargetToOpenBuffer(
+        { filePath: chainHit.filePath, line: chainHit.line + 1, character: chainHit.character },
+        methodName
+      );
+      logNavigation(
+        `方法落点(父类链 ${chainHit.className}) ${adjusted.filePath}:${adjusted.line - 1}`
+      );
       return adjusted;
     }
   }

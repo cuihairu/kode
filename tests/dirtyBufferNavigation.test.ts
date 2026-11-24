@@ -118,15 +118,15 @@ describe('IDE-ACC-013:def→python 落点读取优先脏缓冲', () => {
 });
 
 describe('IDE-ACC-013:索引臂(identity)落点同样优先脏缓冲', () => {
-  // 宿主内 def→python F12 主臂=映射索引(resolveMethodImplementationByIdentity,
+  // 宿主内 def→python F12 主臂=映射索引(绑定面 listMethodImplementationsByIdentity,
   // 扫描期磁盘行);落点经 adjustMethodTargetToOpenBuffer 在脏缓冲在场时重定行。
   const identityManagerStub = {
     resolveDefinitionSymbolAtPosition: async () => ({
       entityName: 'DirtyEntity', section: 'BaseMethods', methodName: 'onSpin'
     }),
-    resolveMethodImplementationByIdentity: async () => ({
-      filePath: scriptPath, line: ON_SPIN_DISK_LINE + 1, character: 4
-    }),
+    listMethodImplementationsByIdentity: async () => [
+      { filePath: scriptPath, line: ON_SPIN_DISK_LINE + 1, character: 4 }
+    ],
     resolveMethodImplementationGlobally: async () => null
   } as unknown as EntityMappingManager;
   const defProvider = new KBEngineDefinitionProvider(identityManagerStub);

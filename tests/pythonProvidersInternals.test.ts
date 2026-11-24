@@ -257,10 +257,11 @@ describe('KBEngineCallHierarchyProvider', () => {
         identities.push({ file, line, symbol, section });
         return Promise.resolve(identity);
       },
-      resolveMethodImplementationByIdentity: (received: unknown) =>
+      // 2026-11-24 臂序定谳:慢链绑定臂=纯绑定面 listMethodImplementationsByIdentity
+      listMethodImplementationsByIdentity: (received: unknown) =>
         Promise.resolve(received === identity
-          ? { filePath: '/tmp/ws/Hero.py', methodName: 'onKill', line: 10, character: 4 }
-          : null)
+          ? [{ filePath: '/tmp/ws/Hero.py', line: 10, character: 4 }]
+          : [])
     } as unknown as EntityMappingManager;
     const provider = new KBEngineCallHierarchyProvider(manager);
     const { document, position } = defDoc([
@@ -320,7 +321,7 @@ describe('KBEngineCallHierarchyProvider', () => {
     const manager = {
       resolveDefinitionSymbolAtPosition: () =>
         Promise.resolve({ ownerKind: 'entity', ownerName: 'Hero', symbolName: 'onKill' }),
-      resolveMethodImplementationByIdentity: () => Promise.resolve(null)
+      listMethodImplementationsByIdentity: () => Promise.resolve([])
     } as unknown as EntityMappingManager;
     const provider = new KBEngineCallHierarchyProvider(manager);
     const { document, position } = defDoc([

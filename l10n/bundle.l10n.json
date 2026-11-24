@@ -831,5 +831,10 @@
   "backend={mode}, serverPath missing": "backend={mode}, serverPath missing",
   "Core health: {kind}": "Core health: {kind}",
   "Core health light actions": "Core health light actions",
-  "Failed to switch the Core track: {error}": "Failed to switch the Core track: {error}"
+  "Failed to switch the Core track: {error}": "Failed to switch the Core track: {error}",
+  "Implementation": "Implementation",
+  "implemented in own class `{className}`": "implemented in own class `{className}`",
+  "inherited from `{className}`": "inherited from `{className}`",
+  "{count} implementations on the chain, showing the nearest": "{count} implementations on the chain, showing the nearest",
+  "Inheritance chain": "Inheritance chain"
 }

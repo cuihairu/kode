@@ -523,7 +523,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // (serveSignatureHelpFromRust),其后 provideHover 真位重探 315→316,
   // 出处随 baseline 锁步。
   ['src/languageProviders/hover.ts', 316, 'provideHover('],
-  ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
+  ['src/languageProviders/navigation.ts', 48, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
   // 出处随 baseline 锁步。
@@ -653,11 +653,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-24(共享原文缓存批):pythonClassIndex.ts 共享缓存 import +1(全部
   // 锚点前)、两处盘腿读改走缓存各 +4(~641/~1430)→ 816→821(+5)、
   // 1564→1572(+8)、1688→1696(+8),真位重探。
-  ['src/backend/pythonClassIndex.ts', 821, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1572, 'resolveClassBase'],
+  ['src/backend/pythonClassIndex.ts', 832, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1583, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1696, '①② 两段查询'],
+  ['src/backend/pythonClassIndex.ts', 1707, '①② 两段查询'],
   // 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位——
   // 单飞字段块 +7、ensureDiscovered 重写 +22、零失败清表改覆盖式 +4(非均匀):
   // 767→774(+7)、1448→1481(+33)、1572→1605(+33)。出处随 baseline 锁步。

@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { DefElementNode, findDeepestElementAtOffset, findTextNodeAtOffset, getDirectChildElement, getScalarChildValue, getScalarChildValues, hasTruthyChildTag } from '../backend/defParser';
 import { buildDefChain } from '../backend/defChain';
+import { findMethodLocationsInPythonBaseChain, walkPythonBaseChain } from '../backend/pythonBaseChain';
 import { defFullTypeTable, fullTypeOfDefDeclaration, fullTypeOfDefProperty, type DefFullTypeDecl } from '../backend/defFullType';
 import { describePropertyDatabaseStoragePublished, getTypeStorageShape, TypeStorageShape } from '../databaseSchema';
 import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from '../databaseSimulator';
@@ -18,8 +19,10 @@ import { HOOK_CATEGORY_NAMES } from '../hooks';
 import { renderHookSequencingSection, renderEntrySpiSequencingSection, TIMING_ANCHORS } from '../backend/hookSequencing';
 import { engineApiVersionAnnotation, summaryForLanguage, renderKbeParamsSection, renderKbeReturnsSection } from '../kbeModuleIndex';
 import { getEngineVersion } from '../engineVersion';
-import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, getSectionLabel, parseDefAst } from './shared';
-import { describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, isPositionInsideTagValue } from './navigation';
+import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, getSectionLabel, getSymbolNodeInfo, parseDefAst } from './shared';
+import { METHOD_SECTION_SCRIPT_ROLES, describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, isPositionInsideTagValue } from './navigation';
+import { formatDefMethodSignature } from './completion';
+import { l10nText } from '../nlsRuntime';
 
 export interface SymbolHoverInfo {
   name: string;
@@ -646,6 +649,81 @@ export function getDefChainHover(
   }
   if (info.parentChain.length === 0 && info.interfaces.length === 0 && info.components.length === 0) {
     markdown.appendMarkdown('无 Parent、接口与组件声明。');
+  }
+
+  return new vscode.Hover(markdown);
+}
+
+// def 方法父类链实现面(2026-11-24 用户问「hover 中是不是实现对应的继承关系」):
+// 悬停 def 方法声明时呈现三件——签名、实现落点(自身类/最近声明祖先,与跳转
+// 同一条父类链)、继承链。全链无实现不接管(缺实现的脸归
+// def-method-missing-in-python 诊断,悬停不与诊断抢);根级 <Parent> 归
+// getDefChainHover(先于本面,且根级元素 getSymbolNodeInfo 取不到段,双保险)。
+// 开关同 hover.defChain(链语义面),不新增设置门。
+export function getDefMethodInheritanceHover(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.Hover | null {
+  const fileName = document.fileName.toLowerCase();
+  if (document.languageId !== 'kbengine-def' && !fileName.endsWith('.def')) {
+    return null;
+  }
+
+  const ast = parseDefAst(document);
+  const root = ast?.root;
+  if (!root) {
+    return null;
+  }
+
+  const offset = document.offsetAt(position);
+  const node = findTextNodeAtOffset(root, offset)?.parent
+    || findDeepestElementAtOffset(root, offset);
+  const symbolInfo = getSymbolNodeInfo(node);
+  if (!symbolInfo) {
+    return null;
+  }
+  const role = METHOD_SECTION_SCRIPT_ROLES[symbolInfo.section];
+  if (!role) {
+    return null; // 非方法段(属性/标识符/加载器等)不吃这张脸
+  }
+
+  const methodName = symbolInfo.symbolNode.name;
+  const entityName = path.basename(document.fileName, '.def');
+  const ownerScript = findEntityScriptFile(entityName, role, document);
+  if (!ownerScript) {
+    return null; // 段脚本缺失与 parity 同口径:不判不悬
+  }
+
+  const hits = findMethodLocationsInPythonBaseChain(ownerScript, entityName, methodName);
+  if (hits.length === 0) {
+    return null; // 全链无实现 → 缺实现归诊断面
+  }
+
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  const nearest = hits[0];
+  // pythonBaseChain 落点是 0-based,展示/跳转口径一律 +1(entityMapping 同式)
+  const location = `\`${formatWorkspaceRelativePath(nearest.filePath, workspaceRoot)}:${nearest.line + 1}\``;
+  const implText = nearest.filePath === ownerScript
+    ? l10nText('implemented in own class `{className}`', { className: nearest.className })
+    : l10nText('inherited from `{className}`', { className: nearest.className });
+
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown(
+    `**${formatDefMethodSignature(workspaceRoot ?? undefined, methodName, getScalarChildValues(symbolInfo.symbolNode, 'Arg'))}**\n\n`
+  );
+  markdown.appendMarkdown(`**${l10nText('Implementation')}**: ${implText} — ${location}\n\n`);
+  if (hits.length > 1) {
+    markdown.appendMarkdown(
+      `${l10nText('{count} implementations on the chain, showing the nearest', { count: hits.length })}\n\n`
+    );
+  }
+
+  // 继承链(自身在前,声明序 BFS):只把解析到的类成链;基类全为引擎内建
+  // (纯自身)不出链行——没解析到继承关系就不画空链。
+  const chain = walkPythonBaseChain(ownerScript, entityName);
+  if (chain.length >= 2) {
+    const chainText = chain.map(link => `\`${link.className}\``).join(' → ');
+    markdown.appendMarkdown(`**${l10nText('Inheritance chain')}**: ${chainText}\n`);
   }
 
   return new vscode.Hover(markdown);

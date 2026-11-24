@@ -831,5 +831,10 @@
   "backend={mode}, serverPath missing": "backend={mode},serverPath 未配置",
   "Core health: {kind}": "Core 健康:{kind}",
   "Core health light actions": "Core 健康灯动作",
-  "Failed to switch the Core track: {error}": "切换 Core 轨道失败:{error}"
+  "Failed to switch the Core track: {error}": "切换 Core 轨道失败:{error}",
+  "Implementation": "实现",
+  "implemented in own class `{className}`": "自身类 `{className}` 已实现",
+  "inherited from `{className}`": "继承自父类 `{className}`",
+  "{count} implementations on the chain, showing the nearest": "链上共 {count} 处实现,显示最近一处",
+  "Inheritance chain": "继承链"
 }

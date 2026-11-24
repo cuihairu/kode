@@ -16,6 +16,7 @@
 import * as path from 'path';
 
 import { parsePythonFile } from './pythonParser';
+import { collectPythonBaseChainMethodNames } from './pythonBaseChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS, PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 
@@ -108,9 +109,13 @@ export function collectDefPythonParityInput(defFile: string): PythonParityInput 
     if (!cls) {
       continue;
     }
+    // 父类链已实现=已实现(2026-11-24 用户报「提了无数次」):KBEngine 实体常把
+    // def 方法实现在共享父类(经 import 解析的真实继承链),同名类自身没有
+    // ≠运行时缺实现。继承语义在采集面并入,Rust 规则的集合差判定不变;
+    // 解析不到的基类(引擎内建)不贡献方法——父类也没有才算真缺。
     input[section] = {
       pythonFile,
-      implementedMethods: [...cls.methods.keys()]
+      implementedMethods: [...collectPythonBaseChainMethodNames(pythonFile, entityName)]
     };
   }
   return input;

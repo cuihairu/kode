@@ -800,7 +800,8 @@ describe('def method implementation jumps', () => {
     implementation: unknown
   ): EntityMappingManager => ({
     resolveDefinitionSymbolAtPosition: () => Promise.resolve(identity),
-    resolveMethodImplementationByIdentity: () => Promise.resolve(implementation)
+    listMethodImplementationsByIdentity: () =>
+      Promise.resolve(implementation == null ? [] : [implementation])
   } as unknown as EntityMappingManager);
 
   const defineOnKill = async (

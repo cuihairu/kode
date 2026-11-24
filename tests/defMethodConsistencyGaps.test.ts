@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { normalizeFileIdentity } from '../src/backend/pathIdentity';
@@ -127,6 +127,37 @@ describe('collectDefMethodImplementationGaps(正向:def 有 Python 无)', () => 
       expect(onTick.ownerFile.length).toBeGreaterThan(0);
       const reqPos = gaps.find(gap => gap.name === 'reqPos');
       expect(reqPos).toBeUndefined();
+    });
+  });
+
+  it('父类链已实现 = 已实现(用户报「提了无数次」的误报面):def 方法在共享父类 → 零缺口', async () => {
+    const ws = buildWorkspace();
+    roots.push(ws.root);
+    const commonDir = path.join(ws.root, 'a/scripts/common');
+    fs.mkdirSync(commonDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(commonDir, 'base_common.py'),
+      ['class Monster(object):', '    def onTick(self):', '        pass', ''].join('\n'),
+      'utf8'
+    );
+    // def 的两个方法都在: reqPos 自身实现, onTick 由父类 Monster 实现
+    fs.writeFileSync(
+      ws.basePy,
+      [
+        'import kbe',
+        'from common.base_common import Monster',
+        '',
+        'class Avatar(Monster):',
+        '    def reqPos(self, stamp, pos):',
+        '        pass',
+        ''
+      ].join('\n'),
+      'utf8'
+    );
+    await withStubbedDefs([ws.avatarDef], async () => {
+      const manager = await makeManager();
+      const gaps = await manager.collectDefMethodImplementationGaps(ws.avatarDef);
+      expect(gaps.map(gap => gap.name)).toEqual([]);
     });
   });
 

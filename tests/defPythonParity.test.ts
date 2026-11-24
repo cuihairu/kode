@@ -172,6 +172,29 @@ describe('pythonParity 采集(C-19)', () => {
     expect(input.pythonClass).toBe('Avatar');
     expect(input.base).toBeUndefined();
   });
+
+  it('父类链已实现并入已实现集(用户报「提了无数次」的误报面)', () => {
+    // def 声明的 onDeath 只由共享父类 Monster 实现:集合差必须归零,不再误报
+    const ws = buildWorkspace([
+      'import kbe',
+      'from common.base_common import Monster',
+      '',
+      'class Avatar(Monster):',
+      '    def reqPos(self, stamp, pos):',
+      '        pass',
+      ''
+    ].join('\n'));
+    roots.push(ws.root);
+    const commonDir = path.join(ws.root, 'a/scripts/common');
+    fs.mkdirSync(commonDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(commonDir, 'base_common.py'),
+      ['class Monster(object):', '    def onDeath(self, arg0):', '        pass', ''].join('\n'),
+      'utf-8'
+    );
+    const input = collectDefPythonParityInput(ws.avatarDef);
+    expect(input!.base!.implementedMethods.sort()).toEqual(['onDeath', 'reqPos']);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@ import {
   getScanRootForFile
 } from './scanRoots';
 import { DefMethodSection } from './backend/defParser';
+import { hasMethodImplementationInBaseChain, findMethodLocationsInPythonBaseChain } from './backend/pythonBaseChain';
 import type { DefMethodGap, PythonMethodNotInDefGap } from './backend/defMethodConsistency';
 import { getHookByName } from './hooks';
 import { clearDefCallChainFileCache } from './backend/defCallChain';
@@ -748,8 +749,12 @@ export class EntityMappingManager {
     entityName: string,
     defPath: string,
     providedLoader: ReturnType<typeof createDefinitionSemanticsLoader> | undefined,
-    rootCategory: DefinitionSemanticCategory,
-    isCurrent: () => boolean
+    // 缺省恢复 'entity':直接驱动(测试/工具)按两参调用依赖旧缺省;
+    // 生产调用点(parseDefFileOnce)恒显式传参,缺省不改变其行为
+    rootCategory: DefinitionSemanticCategory = 'entity',
+    // 缺省「恒在途」:生产面唯一调用点(parseDefFileOnce)恒传在途闭包;
+    // 直接驱动(测试/工具)无在途账本,按当前语义放行(改前本面无此守卫)
+    isCurrent: () => boolean = () => true
   ): Promise<EntityMappingIndex | null> {
     // IDE-IDX-016:根已移除的在途解析不产出——晚到结果不回写索引/缓存/
     // 依赖图/语义投影任何登记面(扫描清单在移除前已取走,B 的批照跑)。
@@ -1927,6 +1932,17 @@ export class EntityMappingManager {
       if (ownerFiles.some(file => hasMethodImplementationInSnapshot(file, method.identity.symbolName))) {
         continue;
       }
+      // 父类链已实现=不算缺(2026-11-24 用户报「提了无数次」):实现常落在
+      // 父类/公共模块的 py 里(真实继承链),同名实体类自身没有≠运行时缺实现
+      // ——引擎按 Python MRO 调得到。链解析与 parity 采集同源(pythonBaseChain,
+      // import 候选口径同索引 staging),解析不到的基类不贡献方法(零误放)。
+      if (
+        ownerFiles.some(file =>
+          hasMethodImplementationInBaseChain(file, method.identity.ownerName, method.identity.symbolName)
+        )
+      ) {
+        continue;
+      }
       gaps.push({
         name: method.identity.symbolName,
         line: method.line,
@@ -2034,30 +2050,53 @@ export class EntityMappingManager {
           continue;
         }
         const isGap = gapKeys.has(`${method.section}::${method.identity.symbolName}`.toLowerCase());
+        // 父类链臂(2026-11-24 用户报「提了无数次」):继承实现先于 identity/唯一名
+        // 猜测——慢链 resolveDefMethodPythonTarget 同序(LUT 不改变真相);
+        // 缺口判定同源(gaps 走 pythonBaseChain)。链上 own-first:自身实现时
+        // 与 identity 臂同文件同落点,不改变既有答案。
+        let chainHit: { filePath: string; line: number; character: number; className: string } | undefined;
+        if (!isGap) {
+          const ownerFiles = await this.listOwnerScriptFilesForIdentity(method.identity);
+          chainHit = ownerFiles
+            .map(file =>
+              findMethodLocationsInPythonBaseChain(file, method.identity.ownerName, method.identity.symbolName)[0]
+            )
+            .find(hit => hit !== undefined);
+        }
         const implementations = isGap
           ? []
           : await this.listMethodImplementationsByIdentity(method.identity);
         const mroImplementations: Array<{ filePath: string; line: number; character: number }> = [];
         if (implementations.length === 0) {
-          // 臂序=慢链逐字段一致(钉子④):identity 路径内部先走全项目唯一名回退
-          // (resolveMethodImplementationByIdentity 的落空臂),约定链只在其后
-          // (resolveDefMethodPythonTarget 同序)——两侧臂序不同时同名方法可能
-          // 拿到不同落点列,LUT 不得改变真相。
-          const defSection =
-            method.section === 'BaseMethods' || method.section === 'CellMethods' ? method.section : undefined;
-          const declaredArgTypes =
-            method.declaredArgs && method.declaredArgs.length > 0 ? method.declaredArgs : undefined;
-          const global = await this.resolveMethodImplementationGlobally(
-            method.identity.symbolName,
-            defSection,
-            declaredArgTypes
-          );
-          if (global) {
-            mroImplementations.push(global);
-          } else if (resolver) {
-            const byConvention = await resolver(defPath, method.identity.symbolName, method.section);
-            if (byConvention) {
-              mroImplementations.push(byConvention);
+          // 链命中(含自身实现)时与 identity 臂同文件同落点;只补 implementations
+          // 为空的 mro 面,不改变既有 consumers 的形状(老口径:mro 仅兜底)
+          if (chainHit) {
+            mroImplementations.push({
+              filePath: chainHit.filePath,
+              line: chainHit.line + 1,
+              character: chainHit.character
+            });
+          } else {
+            // 臂序与慢链一致(钉子④):慢链=父类链(上方已试)→ identity(内含
+            // 全局唯一名回退)→ 约定链;此处 implementations 为空时父类链已落空,
+            // 接全局唯一名回退,约定链殿后——两侧臂序不同时同名方法可能拿到
+            // 不同落点列,LUT 不得改变真相。
+            const defSection =
+              method.section === 'BaseMethods' || method.section === 'CellMethods' ? method.section : undefined;
+            const declaredArgTypes =
+              method.declaredArgs && method.declaredArgs.length > 0 ? method.declaredArgs : undefined;
+            const global = await this.resolveMethodImplementationGlobally(
+              method.identity.symbolName,
+              defSection,
+              declaredArgTypes
+            );
+            if (global) {
+              mroImplementations.push(global);
+            } else if (resolver) {
+              const byConvention = await resolver(defPath, method.identity.symbolName, method.section);
+              if (byConvention) {
+                mroImplementations.push(byConvention);
+              }
             }
           }
         }

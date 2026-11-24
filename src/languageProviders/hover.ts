@@ -1310,6 +1310,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       if (defChainHover) {
         return defChainHover;
       }
+      // def 方法父类链实现面(实现落点+继承链),与 Parent 链面同开关
+      const methodInheritanceHover = getDefMethodInheritanceHover(document, position);
+      if (methodInheritanceHover) {
+        return methodInheritanceHover;
+      }
     }
 
     if (featureConfig.hoverShowValueDocs) {
@@ -1582,6 +1587,7 @@ import {
   describeImplementationForHover,
   getCustomTypeHover,
   getDefChainHover,
+  getDefMethodInheritanceHover,
   getEntityRegistrationHover,
   getImplementedByReverseHover,
   getSymbolHover,
@@ -1603,6 +1609,7 @@ export {
   describeTypeStorageShape,
   getCustomTypeHover,
   getDefChainHover,
+  getDefMethodInheritanceHover,
   getEntityRegistrationHover,
   getEntityRuntimeHoverLines,
   getEntityUtypeLine,

@@ -93,10 +93,16 @@ describe('extension activate 工作区门控(书 PR-002)', () => {
       // infer 镜像 watcher(`**/scripts/**/*.py`,infer.enabled 默认开,不受
       // 本门控管)是非根前缀的独立件,不在本负例的被测面内。
       await new Promise(resolve => setTimeout(resolve, 500));
-      const managerPythonWatcher = patterns.find(
+      // 判据换真(2026-11-24):config 数据面 watcher 增量化后也带根前缀
+      // (RelativePattern(root,'**/*.py')),根前缀 py pattern 不再是管理器
+      // 专属代理。管理器零启动仍由「def watcher 零 + {types,alias}.xml
+      // watcher 零 + 根前缀 py watcher 恰一件(config 数据面)」锁定。
+      expect(patterns.some(p => p.startsWith('/ws/plain-py') && p.endsWith('/**/*.def'))).toBe(false);
+      expect(patterns.some(p => p.includes('{types,alias}.xml'))).toBe(false);
+      const rootPyWatchers = patterns.filter(
         p => p.startsWith('/ws/plain-py') && p.endsWith('/**/*.py')
       );
-      expect(managerPythonWatcher).toBeUndefined();
+      expect(rootPyWatchers).toHaveLength(1);
       // 静置再确认:不会迟到的启动
       const countAtSettle = patterns.length;
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -126,9 +132,15 @@ describe('extension activate 工作区门控(书 PR-002)', () => {
         () => patterns.some(p => p.startsWith('/ws/kbe') && p.endsWith('/**/*.py')),
         'gate-promoted manager watchers'
       );
-      const pythonIndex = patterns.findIndex(
-        p => p.startsWith('/ws/kbe') && p.endsWith('/**/*.py')
-      );
+      // 判据换真(2026-11-24):config 数据面 py watcher 激活即建且在管理器
+      // 三件套之前,findIndex 会先撞到它;管理器的 python watcher 取「最后
+      // 一件根前缀 py」,仍钉「三件套内最后创建」的既有次序契约。
+      let pythonIndex = -1;
+      patterns.forEach((p, i) => {
+        if (p.startsWith('/ws/kbe') && p.endsWith('/**/*.py')) {
+          pythonIndex = i;
+        }
+      });
       const defIndex = patterns.findIndex(p => p.endsWith('/**/*.def') && p.startsWith('/ws/kbe'));
       const typesIndex = patterns.findIndex(p => p.includes('{types,alias}.xml'));
       expect(defIndex).toBeGreaterThan(-1);

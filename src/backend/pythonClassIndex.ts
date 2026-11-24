@@ -54,6 +54,42 @@ export { parsePythonFile, isPythonCodePosition, getPythonBaseExpressionAtPositio
 export type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 
 /** C3 线性化(Python3 真实 MRO):l(X) = X + merge(l(B1), l(B2), …, [B1,B2,…]) */
+/**
+ * import 模块名 → 候选文件路径(单一事实源,原为类私有方法;2026-11-24 提出
+ * 供 pythonBaseChain 同口径复用——父类链解析与索引 staging 不得漂移)。
+ * 相对导入从文件目录起解;绝对导入依次试:文件目录 → scripts 同角色目录 →
+ * scripts/common → scripts/user_type → scripts → 逐级祖先目录。每根给
+ * `<module>.py` 与 `<module>/__init__.py` 两候选,保序。
+ */
+export function pythonImportModuleCandidates(filePath: string, rawModuleName: string): string[] {
+  let moduleName = rawModuleName;
+  const roots: string[] = [];
+  const relative = /^\.+/.exec(moduleName)?.[0].length ?? 0;
+  if (relative) {
+    let root = path.dirname(filePath);
+    for (let i = 1; i < relative; i += 1) { root = path.dirname(root); }
+    roots.push(root);
+    moduleName = moduleName.slice(relative);
+  } else {
+    roots.push(path.dirname(filePath));
+    const scripts = filePath.replace(/\\/g, '/').match(/^(.*\/scripts)(?:\/|$)/)?.[1];
+    if (scripts) {
+      const role = filePath.slice(scripts.length).split(/[\\/]/)[1];
+      roots.push(path.join(scripts, role), path.join(scripts, 'common'), path.join(scripts, 'user_type'), scripts);
+    }
+    for (let root = path.dirname(filePath); ; root = path.dirname(root)) {
+      roots.push(root);
+      if (root === path.dirname(root)) { break; }
+    }
+  }
+  const targets: string[] = [];
+  for (const root of [...new Set(roots)]) {
+    const modulePath = path.join(root, ...moduleName.split('.').filter(Boolean));
+    targets.push(modulePath + '.py', path.join(modulePath, '__init__.py'));
+  }
+  return targets;
+}
+
 export function linearizeC3(name: string, resolve: (base: string) => PythonClassDef[]): string[] {
   const c3merge = (lists: string[][]): string[] => {
     const out: string[] = [];
@@ -443,32 +479,7 @@ export class PythonClassIndex {
 
   /** import 模块名 → 候选文件路径(解析与按需 staging 共用同一口径,保序) */
   private importModuleCandidates(filePath: string, rawModuleName: string): string[] {
-    let moduleName = rawModuleName;
-    const roots: string[] = [];
-    const relative = /^\.+/.exec(moduleName)?.[0].length ?? 0;
-    if (relative) {
-      let root = path.dirname(filePath);
-      for (let i = 1; i < relative; i += 1) { root = path.dirname(root); }
-      roots.push(root);
-      moduleName = moduleName.slice(relative);
-    } else {
-      roots.push(path.dirname(filePath));
-      const scripts = filePath.replace(/\\/g, '/').match(/^(.*\/scripts)(?:\/|$)/)?.[1];
-      if (scripts) {
-        const role = filePath.slice(scripts.length).split(/[\\/]/)[1];
-        roots.push(path.join(scripts, role), path.join(scripts, 'common'), path.join(scripts, 'user_type'), scripts);
-      }
-      for (let root = path.dirname(filePath); ; root = path.dirname(root)) {
-        roots.push(root);
-        if (root === path.dirname(root)) { break; }
-      }
-    }
-    const targets: string[] = [];
-    for (const root of [...new Set(roots)]) {
-      const modulePath = path.join(root, ...moduleName.split('.').filter(Boolean));
-      targets.push(modulePath + '.py', path.join(modulePath, '__init__.py'));
-    }
-    return targets;
+    return pythonImportModuleCandidates(filePath, rawModuleName);
   }
 
   private mroClasses(cls: PythonClassDef): PythonClassDef[] {
