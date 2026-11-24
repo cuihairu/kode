@@ -3040,4 +3040,12 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - TS 轨:collectDefMethodImplementationGaps → listMethodImplementationsByIdentity 只查属主注册面(绑定身份+属主文件内方法行),不查 Python 基类链;
 - Rust 轨:collectDefPythonParityInput 只收同名实体类自身 cls.methods.keys(),父类(含跨文件 import 的父类)不进集合;Rust 规则 def_python_parity.rs 只做集合差,无继承语义。
 既有可复用面:pythonClassIndex.mroClasses/resolveSymbol/importModuleCandidates(C3 线性化+KBEngine scripts 布局 import 解析),F12 跳转 LUT 已有 mroImplementations 臂(全项目唯一名+约定链)但诊断面没接。
-- [ ] 修复:两轨判定面前置「祖先链已实现=不算缺」——TS 轨 gap 判定接 MRO;Rust 轨 parity 采集沿基类链(import 解析)扩 implementedMethods。误报消除且不放过真缺(父类也没有才算缺)。
+- [x] 修复:两轨判定面前置「祖先链已实现=不算缺」(38d6e015,2026-11-24;TS 轨全落地+跳转+悬停三面同批)。TS 轨:新增 src/backend/pythonBaseChain.ts(声明序 BFS 沿基类链,import 解析含绝对/相对/包路径/别名,环守卫,上限 64 类/32 文件;includeSelf 只控入链不控遍历——首版 links.length 判首致 includeSelf:false 整链返空,单测逮住改独立 processed 标记);collectDefMethodImplementationGaps 落空分支先查祖先链(父类实现→不算缺,implementedMethods 带 {name,file,className,line},父类也没有才真报)。Rust 轨:collectDefPythonParityInput 沿基类链扩集(同链语义,shadow 不弃)。跳转面:F12 臂序定谳=绑定 listMethodImplementationsByIdentity(纯绑定面,与 LUT 同查询面)→父类链→约定链→全局唯一名——旧序 fused 面内联全局回退抢先,把跳转劫到无关同名类(defMethodBaseChainJump 逮住);resolveMethodImplementationByIdentity 是裁定合同(references/flowSwimlane 在用)不改语义,四+二处测试桩迁新契约。悬停面:getDefMethodInheritanceHover(hoverDefChain 开关内):签名+Implementation(自身类/继承自 X+file:line)+链上多处取最近+Inheritance chain A→B;l10n 五新键(838/838)。门:全量 vitest 13045 过/4 skip(3 轮红集全数收口:3 真红=Codex buildIndex 缺省参回归×1+watcher 代理判据过时×2,已修;余=负载族 solo 绿定谳);mocha 12/12;vsix 4/4;tsc+eslint 变更面 0。
+
+## 2026-11-24 createNamespace 提示缺口(用户:「一次也没有看到」)
+
+地面真值(2026-11-24 实测):
+- 「crateNamespace」这个函数名在全库 0 命中(源码/文档/todo 全扫)——名字不存在,无从提示;
+- 引擎真 API 是 `createNamespace`(KBEngine `kbe/src/lib/entitydef/entity_macro.h:391`,KBEngineComponent 命名空间注册面);
+- KSEM-CREATE-05 的检查器在 crates/kode-server/src/semantics/create_params.rs(`check_params` :239,707 行含 15+ 单测)——**全库零生产调用点**(仅 mod.rs 声明+自身测试):纯库交付,从未接线进诊断面。这就是用户从未见过提示的根因。
+- [ ] 可点火:CREATE-05 接线批——把 check_params 接进 Python 诊断生产链(createNamespace 调用点的 params 字面量逐键检查:参数名存在性+类型按 ParamFields 目录),含 crateNamespace→createNamespace 名称纠偏记录;接线前不改 check_params 语义(裁定面);独立小批,依赖诊断四层生产接线(RUST-142)既有通道。
