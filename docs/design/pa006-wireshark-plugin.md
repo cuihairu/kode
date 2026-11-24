@@ -75,6 +75,11 @@ group/world-writable 时 Wireshark 拒扫（安全加固，实测 775 被拒，�
   升级走显式对拍。
 - 构建矩阵 = OS × Wireshark 版本，产物量随宿主版本线增长；nightly
   每日构建面（允许的交付面）覆盖主版本线即可，冷门版本线按需补。
+  (Status 2026-11-24: 已落地——nightly.yml `wireshark-plugin` job，OS×4.6
+  主版本线双腿 GitHub 托管 runner，装→验→删闭环为上传门，产物单独挂
+  `wireshark-plugin-{linux,windows}-x64` artifact、不进七包发布面；载
+  体 5f32ed64+a00a246f。ABI 声明实证=libwireshark WANT_MAJOR/MINOR 取
+  sys VERSION（构建宿主探测），非源码写死。）
 - GPL-2.0-or-later 传染面：插件独立 crate（license 不得混入本仓库
   Apache VSIX/其余 crates）；解析核心复用本仓库 `kode-kbengine-protocol`
   属 Apache 侧——**边界协议**：插件 crate 以依赖方式引入解析核心需
