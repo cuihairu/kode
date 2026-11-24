@@ -21,9 +21,18 @@
  *   面(inlay resolveFixedDictMember)管,此处不接管(诚实返回 null)。
  * - 元素型本身是 FIXED_DICT 时注解落其 TypedDict 类名(如 EQUIP_INFO),不做
  *   成员面展开——元素成员访问是另一条推导链,不在本任务验收面。
+ *
+ * TYP-DICTGET(2026-11-24 用户令):赋值 RHS 的 `EXPR.get(...)` 调用形态剥
+ * 调用层取 dict 值型——`funnel = self.funnel_list.get(id)` → funnel 推
+ * FUNNEL(FIXED_DICT TypedDict 值并,经注入面剥 `| None`;`Dict[K, V]` 文本
+ * 形态取 V)。get 键可能不存在(值可能 None),变量推导标值型,reason 注明
+ * 诚实面。容器注解读不出值型(内建 `dict`/PY_DICT 无键值声明)→ null 不猜。
  */
 import { PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
 import type { PythonSelfAccess } from './pythonLanguageUtils';
+
+/** hoverMarkdown 纯格式化层判 Any 用(hoverMarkdown 不 import vscode 侧链) */
+export { PYTHON_TYPE_STUB_FALLBACK };
 
 /** def 属性定位结果(.def 声明面) */
 export interface DefPropertyLocation {
@@ -41,11 +50,19 @@ export type DefPropertyLocator = (
 /** 类型名 → Python 注解 + 诚实 Any 原因(调用方注入 workspace 注册表快照) */
 export type AnnotationResolver = (raw: string) => { annotation: string; reason: string | null };
 
+/**
+ * 容器注解 → dict 值型注解(TYP-DICTGET `.get(...)` 值面):容器注解是
+ * FIXED_DICT TypedDict 类名时取字段值并(调用方经 resolveEntityFixedDictMember
+ * 'get' 面 `${union} | None` 剥 None 尾);非 FIXED_DICT/内建 dict → null
+ * (诚实不猜)。`Dict[K, V]` 文本形态由本模块直取 V,不走注入。
+ */
+export type DictValueResolver = (containerAnnotation: string) => string | null;
+
 /** 解析结果(容器或元素) */
 export interface SelfPropertyResolved {
   /** 最终 Python 注解(容器或元素) */
   annotation: string;
-  /** 诚实 Any 原因(④);非 Any 恒 null */
+  /** 诚实 Any 原因(④);或 dict.get 值面的「键可能不存在」注记;其余非 Any 恒 null */
   reason: string | null;
   /** def-property=容器注解;element=<of> 元素注解 */
   kind: 'def-property' | 'element';
@@ -76,7 +93,8 @@ export async function resolveSelfPropertyAnnotation(
   word: string,
   selfAccess: PythonSelfAccess | null,
   locator: DefPropertyLocator,
-  annotate: AnnotationResolver
+  annotate: AnnotationResolver,
+  resolveDictValue?: DictValueResolver
 ): Promise<SelfPropertyResolved | null> {
   // 悬停词是 self.<属性> 段 → 容器注解(①;下标后缀属外层表达式,悬停基名
   // 恒给容器型,元素型由变量延续面给——两义不猜,给基名本身的类型)。
@@ -94,16 +112,16 @@ export async function resolveSelfPropertyAnnotation(
   if (write.kind === 'for') {
     // `for word in ITER:` → ITER 容器注解后取 <of> 元素
     const container = await resolveExpr(
-      write.iterable, 0, lines, write.line, locator, annotate
+      write.iterable, 0, lines, write.line, locator, annotate, resolveDictValue
     );
     if (!container) {
       return null;
     }
     return takeElement(container, word);
   }
-  // `word = RHS` → RHS 自身注解(下标后缀在 RHS 里解析);来源标注表达式
-  // 用悬停目标词本身(非 RHS 文本),展示位与用户悬停一致。
-  const resolved = await resolveExpr(write.rhs, 0, lines, write.line, locator, annotate);
+  // `word = RHS` → RHS 自身注解(下标后缀/.get 调用层在 RHS 里解析);来源
+  // 标注表达式用悬停目标词本身(非 RHS 文本),展示位与用户悬停一致。
+  const resolved = await resolveExpr(write.rhs, 0, lines, write.line, locator, annotate, resolveDictValue);
   if (!resolved) {
     return null;
   }
@@ -155,7 +173,8 @@ async function resolveExpr(
   lines: readonly string[],
   searchLine: number,
   locator: DefPropertyLocator,
-  annotate: AnnotationResolver
+  annotate: AnnotationResolver,
+  resolveDictValue?: DictValueResolver
 ): Promise<SelfPropertyResolved | null> {
   if (depth > MAX_VAR_INDIRECTION) {
     return null;
@@ -164,7 +183,13 @@ async function resolveExpr(
   if (!base) {
     return null;
   }
-  const baseResolved = await resolveBase(base, depth, lines, searchLine, locator, annotate);
+  // TYP-DICTGET:`EXPR.get(...)` 调用形态先剥调用层解容器再取 dict 值型;
+  // 组合形态 `self.a.get(x)[i]` 经 splitSubscripts 剥下标后此处剥 get,与
+  // 既有下标循环按序组合。非 get 调用尾照走 resolveBase。
+  const getContainer = peelGetCall(base);
+  const baseResolved = getContainer !== null
+    ? await resolveDictGet(getContainer, depth, lines, searchLine, locator, annotate, resolveDictValue)
+    : await resolveBase(base, depth, lines, searchLine, locator, annotate);
   if (!baseResolved) {
     return null;
   }
@@ -187,7 +212,8 @@ async function resolveBase(
   lines: readonly string[],
   searchLine: number,
   locator: DefPropertyLocator,
-  annotate: AnnotationResolver
+  annotate: AnnotationResolver,
+  resolveDictValue?: DictValueResolver
 ): Promise<SelfPropertyResolved | null> {
   const selfMatch = /^self\.(\w+(?:\.\w+)*)$/.exec(base);
   if (selfMatch) {
@@ -205,13 +231,126 @@ async function resolveBase(
     return null;
   }
   if (write.kind === 'for') {
-    const container = await resolveExpr(write.iterable, depth + 1, lines, write.line, locator, annotate);
+    const container = await resolveExpr(write.iterable, depth + 1, lines, write.line, locator, annotate, resolveDictValue);
     if (!container) {
       return null;
     }
     return takeElement(container, base);
   }
-  return resolveExpr(write.rhs, depth + 1, lines, write.line, locator, annotate);
+  return resolveExpr(write.rhs, depth + 1, lines, write.line, locator, annotate, resolveDictValue);
+}
+
+/**
+ * `EXPR.get(...)` 调用形态 → 容器表达式 EXPR(TYP-DICTGET 剥调用层)。只认
+ * 尾随 `.get(` 配对括号形态;括号配对错位(字符串内括号等)或调用者不是
+ * `.get` 方法段 → null(诚实,同 splitSubscripts 无字符串感知口径,误配
+ * 只漏推不错推)。悬停 `.get` 方法名本身/无调用的 `d.get` 不剥(方法面归
+ * FIXED_DICT_DICT_METHODS 链)。
+ */
+function peelGetCall(expr: string): string | null {
+  if (!expr.endsWith(')')) {
+    return null;
+  }
+  let depth = 0;
+  for (let i = expr.length - 1; i >= 0; i -= 1) {
+    const ch = expr[i];
+    if (ch === ')') {
+      depth += 1;
+    } else if (ch === '(') {
+      depth -= 1;
+      if (depth === 0) {
+        const head = expr.slice(0, i);
+        if (!/\.get$/.test(head)) {
+          return null;
+        }
+        const container = head.slice(0, -'.get'.length).trimEnd();
+        return container.length > 0 ? container : null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * `.get(...)` 调用值面(TYP-DICTGET,`funnel = self.funnel_list.get(id)` →
+ * funnel 推 FUNNEL):容器表达式先按既有链解注解,容器注解读出 dict 值型
+ * (Dict[K, V] 文本取 V / FIXED_DICT TypedDict 名经注入面取值并)→ 值型注解
+ * (kind 仍 'element' 同级值面,不为展示加第三态)。get 键可能不存在(值
+ * 可能 None),变量推导标值型,reason 注明诚实面。容器解析不到/值型认不出
+ * (内建 `dict`/PY_DICT 无键值声明)→ null(能推才显,绝不猜)。
+ */
+async function resolveDictGet(
+  containerExpr: string,
+  depth: number,
+  lines: readonly string[],
+  searchLine: number,
+  locator: DefPropertyLocator,
+  annotate: AnnotationResolver,
+  resolveDictValue?: DictValueResolver
+): Promise<SelfPropertyResolved | null> {
+  if (!resolveDictValue) {
+    // 值型注入缺失 → 不接管(诚实,与 locator 注入缺失同口径)
+    return null;
+  }
+  const container = await resolveExpr(
+    containerExpr, depth, lines, searchLine, locator, annotate, resolveDictValue
+  );
+  if (!container) {
+    return null;
+  }
+  const value = dictValueAnnotation(container.annotation, resolveDictValue);
+  if (!value) {
+    return null;
+  }
+  return {
+    annotation: value,
+    reason: value === PYTHON_TYPE_STUB_FALLBACK
+      ? 'dict 值型解析为 Any,回退 Any(dict.get 键可能不存在,亦可能 None)'
+      : 'dict.get 键可能不存在,值可能为 None(此处按值型标注)',
+    kind: 'element',
+    propertyName: container.propertyName,
+    defFile: container.defFile,
+    defLine: container.defLine,
+    expr: container.expr
+  };
+}
+
+/** 容器注解 → dict 值型:`Dict[K, V]` 文本取 V(顶层逗号切分,嵌套括号不
+ *  误切);其余形态交注入面(TypedDict 名 → 值并)。认不出 → null(诚实)。 */
+function dictValueAnnotation(
+  containerAnnotation: string,
+  resolveDictValue: DictValueResolver
+): string | null {
+  const dictGeneric = /^Dict\[(.+)\]$/.exec(containerAnnotation.trim());
+  if (dictGeneric) {
+    const parts = splitTopLevelComma(dictGeneric[1]);
+    if (parts.length !== 2) {
+      return null;
+    }
+    const value = parts[1].trim();
+    return value.length > 0 ? value : null;
+  }
+  return resolveDictValue(containerAnnotation.trim());
+}
+
+/** 顶层逗号切分(括号嵌套深度归零处才切;无字符串感知,误切只漏推不错推) */
+function splitTopLevelComma(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '[' || ch === '(' || ch === '{') {
+      depth += 1;
+    } else if (ch === ']' || ch === ')' || ch === '}') {
+      depth -= 1;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
 }
 
 /** 最近一次对 target 的写入(for-target 或赋值),自 fromLine 向上,跨作用域即止 */

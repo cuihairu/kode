@@ -6,7 +6,7 @@ import { documentEventCacheKey, findEventCallsCached } from '../eventApi';
 import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../backend/documentStore';
 import { getTypeStorageShape } from '../databaseSchema';
-import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, resolveEntityFixedDictMember, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { renderDefPropertyTimingNote } from '../backend/hookSequencing';
@@ -1087,13 +1087,25 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         workspaceRoot
           ? resolveEntityAnnotationTypeWithReason(workspaceRoot, raw)
           : resolveAnnotationTypeWithReason(raw, []);
+      // TYP-DICTGET:FIXED_DICT TypedDict 名 → get 值并(与悬浮 .get 方法面
+      // 同源 resolveEntityFixedDictMember,`${union} | None` 剥 None 尾即值型;
+      // 非 FIXED_DICT/无 workspace root → null 诚实不猜)
+      const dictValue = (containerAnnotation: string) => {
+        const withNone = workspaceRoot
+          ? resolveEntityFixedDictMember(workspaceRoot, containerAnnotation, 'get', true)
+          : null;
+        return withNone !== null && withNone.endsWith(' | None')
+          ? withNone.slice(0, -' | None'.length)
+          : null;
+      };
       resolved = await resolveSelfPropertyAnnotation(
         getDocumentLines(document),
         position.line,
         word,
         selfAccess,
         locator,
-        annotate
+        annotate,
+        dictValue
       );
     } finally { stopMapping?.(); }
     if (!resolved) {
