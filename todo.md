@@ -3073,3 +3073,20 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [ ] 批 C 缓存键归一 identity:缓存内部键 normalizeFileIdentity(同文件不同拼写/符号链接→单条目免重复 stat);先证归一函数对不存在路径稳定再动。**2026-11-24 裁定:不点火**(见「批 B/C 裁定不点火」行——无重复条目实测证据,动的是缓存契约面)。
 - [ ] 批 D watcher 主动失效:记录不点火(stat-on-read 已保正确,invalidate 只省 stat 本身,价值低)。
 - [x] 判例入账:涉及共享读层先 grep 桩缝+先核「该面是否已在缓存上」再谈迁移——本对答自纠「快照面不缓存」误判,教训=答架构面问题前先追读链到底(readDiskFile 缺省依赖=记账入口=缓存入口,三层一线,断在中间层就是错判)。
+
+## 2026-11-24 索引构建顺序对账+定序点火(用户问「启动时有没有最佳索引顺序?」「顺序应该倒序吧」)
+
+对账地面真值(2026-11-24 实测,引擎侧读源码,kode 侧双代理+自查):
+- **引擎真实序(单遍 eager)**:types.xml 最先(`entitydef.cpp:181` `DataTypes::initialize`,早于 entities.xml 被打开 :192、早于任何 .def :204)→ 按 entities.xml **声明序**逐个加载 .def → 每 .def 内部序 interfaces(:354) → components(:363) → parentClass(:372) → detailLevel → volatile。父类层不是全局拓扑预排序,是**按需递归**(`loadParentClass` :890-920 现场开 `parent+.def` 再递归 loadDefInfo)。故引擎序 = entities.xml 枚举序 + Parent 边深度优先,叶子(types.xml)已预建。
+- **本 fork 无多文件 types 链**:`base_types/common_attribs/account_types/cell_types/server_types/data_default.xml/db_scripts.xml` 在引擎源码与 kode 全仓(sources/docs/schemas/resources/tests)**零命中**;3.x 这版 types.xml 单文件,"types.xml 依赖 user_types"这层边在当前引擎不存在。
+- **kode 现状=顺序任意(非缺陷,机制决定)**:发现=`findFilesAcrossRoots('**/*.def')` glob(entityMapping.ts:511)→ Map 插入序(=workspace.findFiles 序 + 外部 readdir 序),**无排序**;批次 8 个按数组序,单道 FIFO 消费(indexScheduler.ts:388-405)。**关键**:def 解析期**根本不解析类型**(buildIndex 只记 Parent/interfaces/components;`resolveEntityAnnotationType` 在 entityMapping.ts 零命中),类型注册表是**查询期懒建**快照(单份 types.xml + 单份 alias.xml),只有 alias.xml 输同名去重的 tie-break(definitionWorkspace.ts:457-475)。引擎单遍 eager 遇未知类型硬失败→顺序必须对;kode 解析期不解析→顺序天然无关。**这就是「最佳索引顺序」在静态索引里消失的机制**。
+- **已有「先收集后求值」面**(=用户说的做法,顺序无关的正确形态):defReferenceGraph.ts:140/182/203-255 按路径排序先建全表 byPath 再 resolveLinks,未解析记 dangling 只报告不修复;entityDependency.ts:102-131 显式两遍(pass1 全建实体表故 `entities.has()` 恒真);Rust 侧 kode-kbengine-schema/layout.rs:44-59 `collect_raw_types`「先收集后求值」→ resolve_alias_map/resolve_ref(:164-216,深度受限、环/缺失→`WireType::Unresolved`)。
+- **共享缓存之后「倒序」还剩什么**:①读盘去重=**已拿到且与顺序无关**(同 stat 双键命中免读,任何序每文件只读一次;引擎按需递归那种反复重开父 .def 在 kode 侧不存在,因 def 面不递归解析父类)→ 该腿顺序收益=0。②LRU 局部性=唯一与倒序真相关的收益,触发条件是**语料文本 > 64MiB**(`SHARED_FILE_TEXT_BUDGET_BYTES`),而 `snapshotStats()/evictions` 此前**零消费者**=生产上根本测不出有没有淘汰。③确定性=与依赖无关但收益最实:非确定性解析序是基准锚点对拍噪音源。
+
+点火裁定(用户令「记录,然后开火」):
+- [x] 稳定性排序点火(2026-11-24 完成,55abf553):def 首扫实体候选按 `normalizeLookupPath` **码点**升序排定(entityMapping.ts:513 后)。码点比较而非 localeCompare(后者依赖平台 locale,跨机器不稳);只排实体候选(interfaces/components 分件另路发现,不在此处);只动扫描入口,不引 entities.xml 枚举器、不动 findFilesAcrossRoots 契约、不影响磁盘缓存序无关性(defParseCache 是 Map 注入+按 defPath 校验,本就序无关)。测试=新 tests/entityMappingScanOrder.test.ts(stub findFiles 故意反序返回 Zebra/alpha/Middle → 断言实体入表序为 Middle/Zebra/alpha=与发现序无关;**prove-red=摘掉 sort 恰红**,发现序原样泄入入表序,恢复复绿)。
+- [x] LRU 淘汰计数接出口点火(2026-11-24 完成,55abf553):共享原文缓存对账行进 `getLanguageServiceSummaryReport`(languageServiceMetrics.ts)=`shared text cache: entries/hits/misses/evictions/failures budget=64MiB bytes`,随既有命令面板 `kbengine.metrics.showSummary` 输出到 'Kode Language Service Metrics' 通道(无新命令、无新配置键、无用户可见文案=报告本就「无用户文本」约定,故不涉 l10n 双包闸)。判例入账:**先让它可观测再谈要不要拓扑序**——「倒序值不值」的前提量此前不可观测,给看不见的收益造复杂度是本批拒做项。
+- [x] 门(2026-11-24):tsc 0+eslint 变更面 0+定向 4 文件 24 例绿+prove-red 恰红+全量 vitest 1016 文件过/1 跳/13053 例过/0 红;跑前清 tests/fixtures 下 __pycache__(毒化拼写门)。
+- [ ] 全量拓扑序(entities.xml 枚举驱动):**不点火**。def 面不解析类型→加序换不来正确性,却要动 findFilesAcrossRoots 返回契约 + 批次切分 + 磁盘缓存序无关性论证。**重启条件**:出现 utype 对齐的用户可见缺陷(引擎 utype = 在 entities.xml 里的出现序,docs/source-analysis.md:44-58;kode 用 glob 序复现不出=唯一有牙口的顺序差异)。
+- [ ] 多 types 文件发现面(补「user_types 先」那层):**待用户确认**。现状 kode 只认**一份** types.xml(`layout.typesXmlPath` 单路径,definitionWorkspace.ts:663-671),不枚举多文件——这是覆盖面缺口不是顺序问题。若用户工程确有多 types 文件再立项,否则是给不存在的面造抽象。
+- [x] 判例入账:①答「有没有最佳顺序」类问题,先分清**解析期解析与否**——eager 单遍(引擎)顺序承重,懒解析+查询期求值(kode)顺序退化不敏感,两形态的「最佳序」问题不同;②缓存共用后排序收益要重算:去重收益已被缓存吃掉(序无关),剩 LRU 局部性(需语料>预算)与确定性;**先接可观测再裁拓扑序**,与批 B/C「无实测证据不点火」同纪律。
