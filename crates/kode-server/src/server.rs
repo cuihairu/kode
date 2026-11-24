@@ -705,15 +705,22 @@ fn drain_index_for_request(state: &mut ServerState, key: &DocumentKey) {
     );
 }
 
+/// 检索面追赶的墙钟护栏(秒):远大于任何单次查询的合理等待,只防死等——
+/// 隔离由条数界(REQUEST_DRAIN_BUDGET)保证,不由墙钟保证。
+const GLOBAL_REQUEST_DRAIN_GUARD_SECS: u64 = 30;
+
 /// 无文档上下文的请求入口刷新(RUST-139 批 4:workspace/symbol):检索面
-/// 不带文档键,无键可 freshen,只做有界追赶——否则 didOpen 的入库任务还
-/// 在队列里时语料视图未就绪,检索面恒空集(与 documentSymbol 等按文档键
-/// 刷新的臂不同源)。
+/// 不带文档键,无键可 freshen,只能追赶入库队列——否则 didOpen 的入库任务
+/// 还在队列里时语料视图未就绪,检索面恒空集(与 documentSymbol 等按文档键
+/// 刷新的臂不同源)。追赶是**纯条数界**:检索面的错答是空集而非慢答——
+/// didOpen 入库没走完就答,用户会以为工程里没有该符号(2026-11-24 复现:
+/// llvm-cov 仪表化负载下 4ms 墙钟界必然提前收工,CI workspace_symbol_dispatch
+/// 三例恒空,本地未仪表化恒绿=负载族)。最坏无响应间隔仍由条数界 + 单任务
+/// 解析时长封顶(RESP-001b 读盘已离线),按文档键的臂不动仍走 4ms 墙钟界。
 fn drain_index_for_global_request(state: &mut ServerState) {
     state.index.pump_budgeted_until(
         crate::index_queue::REQUEST_DRAIN_BUDGET,
-        std::time::Instant::now()
-            + std::time::Duration::from_millis(crate::index_queue::REQUEST_DRAIN_BUDGET_MS),
+        std::time::Instant::now() + std::time::Duration::from_secs(GLOBAL_REQUEST_DRAIN_GUARD_SECS),
     );
 }
 
