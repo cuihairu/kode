@@ -68,6 +68,26 @@ describe('ProcessManager', () => {
     manager.dispose();
   });
 
+  it('stop 组信号树杀路径:signal 终局报 exited 不误报 error', async () => {
+    // 树杀组信号主路径不经 child.kill(组外回落才碰),child.killed 恒 false
+    // ——旧实现只看 killed,同一次 stop 主路径报 error、回落路径报 exited。
+    // kill 静默的子进程模拟「信号已由组路径送达」:不置 killed 不自发 exit。
+    class SilentChild extends FakeChild {
+      kill(): boolean { return true; }
+    }
+    const child = new SilentChild();
+    const states: string[] = [];
+    const manager = new ProcessManager(() => child);
+    manager.onState(event => states.push(event.state));
+    manager.start({ id: 'svc', command: 'server', readyAfterMs: 1 });
+    const stopped = manager.stop('svc');
+    // 组信号送达:exit 以 signal 终局(killed 仍 false)
+    queueMicrotask(() => child.emit('exit', null, 'SIGTERM'));
+    await expect(stopped).resolves.toBe(true);
+    expect(states).toEqual(['starting', 'stopping', 'exited']);
+    manager.dispose();
+  });
+
   it('reports process errors and exits without leaving reusable state', async () => {
     const child = new FakeChild();
     const states: string[] = [];

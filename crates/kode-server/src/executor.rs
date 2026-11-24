@@ -428,6 +428,18 @@ fn remove_queued(queue: &mut VecDeque<Job>, id: &RequestId) -> Option<Job> {
 /// 后刷新;cell 只在队列锁内短持,健康路径只持 cell 锁,无反向持锁)。
 /// RUST-076-W:交互在飞经 WorkerPoolGate interactive 口径呈现,LaneGate
 /// 的 Interactive 记数不重复出表;io/cpu 两泳道由 LaneGate 直接对账。
+/// KR-AUD-22 同族(scheduler.rs panic_to_error 同口径):handler panic 消息
+/// 转 Err 文案,按 Failed 终态落账。
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        format!("dispatch panicked: {s}")
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        format!("dispatch panicked: {s}")
+    } else {
+        "dispatch panicked".to_string()
+    }
+}
+
 fn bump_stats(cell: &Mutex<PoolStats>, state: &ExecState, f: impl FnOnce(&mut PoolStats)) {
     if let Ok(mut stats) = cell.lock() {
         stats.interactive_running = state.gate.interactive_running();
@@ -565,9 +577,16 @@ fn worker_loop(shared: Arc<ExecShared>) {
             JobStatus::Cancelled
         } else {
             // 纯 handler 执行(锁外;worker 零共享状态)。
-            match shared.snapshot.dispatch(&job.method, job.params) {
-                Ok(value) => JobStatus::Done(value),
-                Err(msg) => JobStatus::Failed(msg),
+            // KR-AUD-22 同族(catch_unwind 收敛,照 scheduler.rs 先例):worker
+            // 只 spawn 一次不重生,handler panic 掀翻线程会让本 job 的 gate
+            // 配额与泳道位永不释放(计数泄漏楔死准入),请求方也无终态回包。
+            let dispatched = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                shared.snapshot.dispatch(&job.method, job.params)
+            }));
+            match dispatched {
+                Ok(Ok(value)) => JobStatus::Done(value),
+                Ok(Err(msg)) => JobStatus::Failed(msg),
+                Err(payload) => JobStatus::Failed(panic_message(payload)),
             }
         };
         // 结算段:释放记账 + 终态计数 + 回包(在途取消在此丢弃结果)。
@@ -1337,6 +1356,37 @@ mod tests {
             Some(-32800),
             "handler 自报取消映射 -32800"
         );
+        drop(executor);
+    }
+
+    #[test]
+    fn panicking_handler_settles_failed_and_releases_gate() {
+        // KR-AUD-22 同族:handler panic 按 Failed 终态落账(catch_unwind 收敛)。
+        // worker 只 spawn 一次不重生——不收敛就掀翻线程:gate 配额与泳道位
+        // 永不释放(计数泄漏楔死准入),请求方也拿不到终态回包。
+        fn panicking_handler(_params: Value) -> Result<Value, String> {
+            panic!("handler exploded");
+        }
+        let mut reg = RpcRegistry::new();
+        reg.register("$/kode/test/boom", panicking_handler);
+        let (executor, rx) = PoolExecutor::spawn(reg.snapshot(), PoolBudget::from_total(1));
+        executor.submit(job(911, "$/kode/test/boom", PoolLane::Interactive));
+        let outcome = recv_outcome(&rx);
+        let JobStatus::Failed(message) = outcome.status else {
+            panic!("panic 应落 Failed 终态,实际 {outcome:?}");
+        };
+        assert!(
+            message.contains("handler exploded"),
+            "panic 消息应可定位,实际 {message:?}"
+        );
+        // 配额已释放:终态后泳道占用排空,失败计数入账
+        let stats = stats_of(&executor);
+        assert_eq!(stats.interactive_running, 0, "终态后交互占用应排空");
+        assert_eq!(stats.jobs_failed, 1, "panic 按失败计数");
+        // 线程未被掀翻:同一 worker 照常处理下一个 job
+        executor.submit(job(912, "$/kode/test/boom", PoolLane::Interactive));
+        let second = recv_outcome(&rx);
+        assert!(matches!(second.status, JobStatus::Failed(_)));
         drop(executor);
     }
 

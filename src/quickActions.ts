@@ -182,6 +182,9 @@ export const terminalScript: ScriptRunner = options => {
   // sendText 静默丢弃),按名重建新实例。名字含动作名+脚本名,不同动作互不串。
   let terminal = actionTerminals.get(name);
   if (!terminal || terminal.exitStatus !== undefined) {
+    // 死壳先 dispose 再替换:已退出终端不 dispose 会一直留在终端面板,
+    // 同名动作反复跑就反复堆积死条目
+    terminal?.dispose();
     terminal = vscode.window.createTerminal({
       name,
       hideFromUser: true,

@@ -98,17 +98,6 @@ impl FrameParser {
     /// 错误后 condemn 通道,调用方应重开解析器或换策略;绝不在坏状态上继续。
     pub fn feed(&mut self, chunk: &[u8]) -> Result<Vec<Frame>, DecodeError> {
         self.buf.extend_from_slice(chunk);
-        // 防失控:待解析缓冲超上限(等价于一条不允许的最大帧也放不下)→ 复位。
-        if self.buf.len() - self.consumed > self.cfg.max_message_len as usize + 8 {
-            let len = self.buf.len() - self.consumed;
-            self.reset();
-            return Err(DecodeError::new(
-                DecodeErrorKind::MemoryLimit,
-                self.abs_base.saturating_sub(len),
-                "framing.buffer",
-                format!("pending buffer {len} > cap {}", self.cfg.max_message_len),
-            ));
-        }
         let mut out = Vec::new();
         loop {
             match self.try_one_frame() {
@@ -120,11 +109,28 @@ impl FrameParser {
                 }
             }
         }
+        // 防失控:上限只约束「尚未解析出的余量」——先把完整合法帧解出来再判。
+        // 先判总缓冲会把一整块合法帧序列(如 1.2 MiB 的 loginapp 动态导入流)
+        // 因总字节超过一条最大帧就整体作废,合法数据静默丢失。
+        if self.buf.len() - self.consumed > self.cfg.max_message_len as usize + 8 {
+            let len = self.buf.len() - self.consumed;
+            self.reset();
+            return Err(DecodeError::new(
+                DecodeErrorKind::MemoryLimit,
+                self.abs_base.saturating_sub(len),
+                "framing.buffer",
+                format!("pending buffer {len} > cap {}", self.cfg.max_message_len),
+            ));
+        }
         self.compact();
         Ok(out)
     }
 
     fn reset(&mut self) {
+        // 复位丢弃整个缓冲(已解出但随 Err 丢弃的帧 + 未成帧残留),丢弃段
+        // 同步推进 abs_base(与 compact 同账):否则恢复后的 stream_offset
+        // 从旧基点重新计数,系统性少报流内位置。
+        self.abs_base += self.buf.len();
         self.buf.clear();
         self.consumed = 0;
     }

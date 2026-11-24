@@ -621,12 +621,15 @@ fn framing_fixed_and_variable_declared_rejected_by_cap() {
     assert_eq!(e.kind, DecodeErrorKind::MemoryLimit);
     assert!(e.message.contains("declared len 9 > cap 8"));
 
-    // 待解析缓冲超上限(一条最大帧也放不下)→ 复位 + MemoryLimit
+    // 垃圾块(Fail 策略):解析循环先于缓冲上限给出更精确的错因(未知 id),
+    // 复位语义不变。旧实现此处先报 pending-buffer MemoryLimit(「先判上限」
+    // 的副作用:合法多帧块会因总字节超限被整块作废),已随「先解帧后判
+    // 余量」修正改变——上限分支现约束解帧后的残留(见 framing_fuzz 的
+    // multi_frame/oversized 用例与 reset 的 abs_base 折算)。
     let mut p = FrameParser::new(cfg(std::collections::BTreeMap::new(), 8, false));
     let garbage = [0xA5u8; 32];
     let e = p.feed(&garbage).unwrap_err();
-    assert_eq!(e.kind, DecodeErrorKind::MemoryLimit);
-    assert!(e.message.contains("pending buffer 32 > cap 8"));
+    assert_eq!(e.kind, DecodeErrorKind::UnknownMessageId);
     assert_eq!(p.pending_buffer_len(), 0, "状态机复位");
 
     // 错误后 parser 可继续用(复位语义:重开分析,不在坏状态上继续)

@@ -67,6 +67,20 @@ describe('listRemoteProcesses', () => {
     expect(listing.reason).toContain('runner blew up');
   });
 
+  it('目标声明非法(前导 -):不 spawn ssh,按清单失败报原因', async () => {
+    let spawned = 0;
+    const listing = await listRemoteProcesses(
+      { host: '-oProxyCommand=evil' },
+      async () => {
+        spawned += 1;
+        return { stdout: '', stderr: '', exitCode: 0 };
+      }
+    );
+    expect(listing.ok).toBe(false);
+    expect(spawned).toBe(0); // 注入目标绝不落到真实 ssh 进程
+    expect(listing.reason).toContain('ssh 目标声明非法');
+  });
+
   it('成功但空输出:空清单(远端真没有可见进程,不是失败)', async () => {
     const listing = await listRemoteProcesses(
       { host: 'gamesrv' },

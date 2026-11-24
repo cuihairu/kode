@@ -33,9 +33,9 @@ export async function listRemoteProcesses(
   runner: SpawnRunner = defaultSpawnRunner,
   timeoutMs = 8000
 ): Promise<RemoteProcessListing> {
-  const args = buildSshExecArgs(entry, REMOTE_PS_ARGS);
   try {
-    const run = await runner('ssh', args, timeoutMs);
+    // 参数构建在 try 内:目标声明非法(前导 '-'/控制字符)按清单失败如实报
+    const run = await runner('ssh', buildSshExecArgs(entry, REMOTE_PS_ARGS), timeoutMs);
     if (run.exitCode !== 0) {
       const tail = `${run.stdout} ${run.stderr}`.trim().slice(-200);
       return {

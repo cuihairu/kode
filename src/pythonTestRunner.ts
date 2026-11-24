@@ -8,7 +8,7 @@
  * 器没有 pytest 时如实 errored 一条指明缺口,不冒充测试失败。
  */
 
-import { spawnProcess } from './backend/processManager';
+import { killProcessTree, spawnProcess } from './backend/processManager';
 
 /** 一个待跑条目(来自 TSK-004 的发现面) */
 export interface PythonTestRunItem {
@@ -301,7 +301,11 @@ export function spawnTestProcess(
 ): Promise<PythonTestExecResult> {
   const timeoutMs = options.timeoutMs ?? PYTEST_PROCESS_TIMEOUT_MS;
   return new Promise(resolve => {
-    const child = spawnProcess(request.command, request.args, { cwd: request.cwd });
+    // detached(POSIX):pytest 派生的子进程独立成组,超时按 RUN-007 树杀收净
+    const child = spawnProcess(request.command, request.args, {
+      cwd: request.cwd,
+      detached: process.platform !== 'win32'
+    });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -323,7 +327,9 @@ export function spawnTestProcess(
     });
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      // 树杀:pytest 超时后其派生的 worker 子进程会变孤儿继续跑(吃 CPU/IO);
+      // killProcessTree 的 R2-F23 闸对无效 pid 不落信号(补 R2-F23 注记)
+      void killProcessTree(child.pid ?? 0, 'SIGKILL', child);
     }, timeoutMs);
     child.on('error', error => {
       clearTimeout(timer);

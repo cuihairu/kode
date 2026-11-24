@@ -5,7 +5,8 @@ import {
   openSshTunnel,
   pickFreeLocalPort,
   readSshHosts,
-  resolveComponentConnection
+  resolveComponentConnection,
+  validateSshEntry
 } from '../src/backend/remoteConnection';
 
 // IDE-PDBG-004 远程连接分派:声明优先级(组件>全局>视图选中>本地)、ssh
@@ -72,6 +73,30 @@ describe('ssh 命令拼装', () => {
       '-N',
       '-L', '15678:127.0.0.1:5678'
     ]);
+  });
+
+  // ssh 位置参数注入防线:目标/跳板来自半信任输入(.kbengine/debug.json、
+  // ssh config),`-oProxyCommand=…` 形状会被 ssh 解析成本地执行的选项,
+  // 空白/控制字符切出额外 token——前导 '-' 与空白/控制字符一律拒收。
+  it('注入防线:前导 - 的 host/user/proxyJump 拒收且带原因', () => {
+    expect(validateSshEntry({ host: '-oProxyCommand=touch/tmp/x' }))
+      .toContain("以 '-' 开头");
+    expect(validateSshEntry({ host: 'gamesrv', user: '-oBatchMode=no' }))
+      .toContain('user');
+    expect(validateSshEntry({ host: 'gamesrv', proxyJump: '-J evil' }))
+      .toContain('proxyJump');
+    expect(() => buildSshExecArgs({ host: '-oProxyCommand=evil' }, ['true']))
+      .toThrow(/ssh 目标声明非法/);
+    expect(() => buildSshTunnelArgs({ host: '-oProxyCommand=evil' }, 1, 2))
+      .toThrow(/ssh 目标声明非法/);
+  });
+
+  it('注入防线:空白与控制字符拒收,正常 host 不误伤', () => {
+    expect(validateSshEntry({ host: 'gamesrv extra' })).toContain('空白或控制字符');
+    expect(validateSshEntry({ host: 'gamesrv\n' })).toContain('空白或控制字符');
+    expect(validateSshEntry({ host: '' })).toContain('为空');
+    expect(validateSshEntry({ host: 'gamesrv', user: 'ops', proxyJump: 'jump1,jump2' }))
+      .toBeNull();
   });
 });
 

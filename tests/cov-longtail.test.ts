@@ -606,7 +606,10 @@ describe('remoteConnection(端口回退/默认隧道工厂)', () => {
   });
 
   it('openSshTunnel 缺省 spawn 面:ssh 进程起不来如实失败(不朝空隧道附加)', async () => {
-    const outcome = await openSshTunnel({ host: '--kode-not-an-option' }, 5678, {
+    // host 用保证不可解析的合法名(.invalid 保留 TLD):旧 fixture 曾用
+    // '--kode-not-an-option' 让 ssh 立即退出,该形状现被 ssh 位置参数注入
+    // 防线拒收(前导 '-' 非法主机声明),失败路径须走合法目标
+    const outcome = await openSshTunnel({ host: 'kode-no-such-host.invalid' }, 5678, {
       probe: async () => ({ open: false }),
       waitMs: 1200
     });

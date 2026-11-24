@@ -158,6 +158,51 @@ fn oversized_extended_length_rejected_by_cap() {
 }
 
 #[test]
+fn multi_frame_chunk_totaling_over_cap_still_parses_all_frames() {
+    // 上限约束的是「解完帧后的余量」而非总缓冲:一整块合法帧序列合计超过
+    // max_message_len+8 时,旧实现(先判总缓冲)整块作废,合法数据静默丢失;
+    // 新实现先解出全部完整帧,再对残留判上限。
+    let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
+    let mut map2 = map.clone();
+    map2.insert_spec(903, "Demo::fixed60k".into(), MessageLength::Fixed(60_000));
+    let mut p = FrameParser::new(config_with(&map2, false)); // cap = 1 MiB
+    let mut bytes = Vec::new();
+    for _ in 0..18 {
+        bytes.extend_from_slice(&903u16.to_le_bytes());
+        bytes.extend_from_slice(&vec![0xAB; 60_000]);
+    }
+    assert!(bytes.len() > (1 << 20) + 8, "fixture 须真超限");
+    let frames = p.feed(&bytes).unwrap();
+    assert_eq!(frames.len(), 18);
+    assert_eq!(p.pending_buffer_len(), 0);
+}
+
+#[test]
+fn error_reset_folds_discarded_bytes_into_stream_offset() {
+    // 错误复位丢弃的字节(含已解出但随 Err 丢弃的帧 + 未成帧的残留)必须
+    // 同步推进 abs_base:否则恢复后的 stream_offset 从旧基点重新计数,
+    // 系统性少报(违背「本 parser 生命周期内累计」契约)。
+    let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
+    let mut p = FrameParser::new(config_with(&map, false));
+    // feed1:两帧 id=5(各 2B),offsets 0/2;compact 后 abs_base=4
+    let frames = p
+        .feed(&[5u16.to_le_bytes(), 5u16.to_le_bytes()].concat())
+        .unwrap();
+    assert_eq!(
+        frames.iter().map(|f| f.stream_offset).collect::<Vec<_>>(),
+        vec![0, 2]
+    );
+    // feed2:一帧好帧(进 out)+ 坏帧(unknown id)→ Err,好帧随 Err 丢弃
+    let mut chunk = 5u16.to_le_bytes().to_vec();
+    chunk.extend_from_slice(&60000u16.to_le_bytes());
+    chunk.extend_from_slice(&[1, 2, 3, 4]);
+    assert!(p.feed(&chunk).is_err());
+    // feed3:恢复帧的 offset 必须越过 feed2 全部 8 字节(feed1 的 4 + feed2 的 8 = 12)
+    let frames = p.feed(&5u16.to_le_bytes()).unwrap();
+    assert_eq!(frames[0].stream_offset, 12);
+}
+
+#[test]
 fn unknown_id_policy_fail_is_default() {
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
     let mut p = FrameParser::new(config_with(&map, false));

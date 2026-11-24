@@ -248,10 +248,15 @@ export class ProcessManager {
         component,
         text: `进程退出: code=${exitCode}, signal=${signal}`
       });
+      // 终局语义按管理器自身账判:stop()/dispose() 树杀走组信号主路径时不经
+      // child.kill,child.killed 仍为 false——只看它会把我们主动停掉的进程
+      // 误报成 error(回落路径却报 exited,同动作两语义)。stopping 账在册
+      // =主动停止,signal 终局也算 exited;进程自己带信号死掉才是 error。
+      const stopping = this.states.get(request.id) === 'stopping';
       this.emitState({
         id: request.id,
         component,
-        state: exitCode === 0 || child.killed ? 'exited' : 'error',
+        state: exitCode === 0 || stopping || child.killed ? 'exited' : 'error',
         exitCode,
         signal
       });
@@ -460,6 +465,11 @@ export class ProcessManager {
 
   async dispose(): Promise<void> {
     const managed = Array.from(this.processes.values());
+    // 主动销毁先落 stopping 账:exit 事件终局语义(见 exit 处理)据此判
+    // exited 而非 error,与 stop() 同口径
+    for (const item of managed) {
+      this.states.set(item.id, 'stopping');
+    }
     await Promise.all(managed.map(item => {
       // RUN-007:dispose 同样树杀,不留孙进程
       void killProcessTree(item.pid, 'SIGKILL', item.process);

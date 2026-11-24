@@ -41,8 +41,42 @@ export function resolveComponentConnection(
   return { ssh: entry ?? { host: declared } };
 }
 
+/**
+ * ssh 位置参数注入防线:目标/跳板来自项目共享的半信任输入
+ * (.kbengine/debug.json、~/.ssh/config)。ssh 位置参数不依赖 shell 词法,
+ * `-oProxyCommand=…` 形状的目标会被解析成本地执行的选项而非主机名,
+ * 空白与控制字符同样切出额外 token。前导 '-' 与空白/控制字符一律拒收。
+ */
+function sshTokenProblem(token: string, label: string): string | null {
+  if (token.length === 0) { return `${label} 为空`; }
+  if (token.startsWith('-')) { return `${label} 以 '-' 开头(会被 ssh 当选项解析):${token}`; }
+  // 码点判定(不用字符类正则,eslint no-control-regex):空白切 token、
+  // C0/DEL 控制字符进 ssh 位置参数无意义且有注入形态风险
+  let control = false;
+  for (const ch of token) {
+    const code = ch.charCodeAt(0);
+    if (/\s/.test(ch) || code < 32 || code === 127) { control = true; break; }
+  }
+  if (control) { return `${label} 含空白或控制字符:${token}`; }
+  return null;
+}
+
+/** 目标声明非法时非 null;合法返回 null */
+export function validateSshEntry(entry: SshHostEntry): string | null {
+  const problems = [
+    sshTokenProblem(entry.host, 'host'),
+    entry.user ? sshTokenProblem(entry.user, 'user') : null,
+    entry.proxyJump ? sshTokenProblem(entry.proxyJump, 'proxyJump') : null
+  ].filter((problem): problem is string => problem !== null);
+  return problems.length > 0 ? problems.join('; ') : null;
+}
+
 /** ssh 公共旗标:BatchMode 免交互(密钥/agent 就绪才连得上,卡密码就是失败) */
 function sshCommonArgs(entry: SshHostEntry): string[] {
+  const problem = validateSshEntry(entry);
+  if (problem) {
+    throw new RangeError(`ssh 目标声明非法:${problem}`);
+  }
   const args = ['-o', 'BatchMode=yes'];
   if (entry.proxyJump) {
     args.push('-J', entry.proxyJump);

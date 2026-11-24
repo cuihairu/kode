@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -356,6 +356,36 @@ describe('spawnTestProcess(KR-AUD-05 挂死兜底与输出上限)', () => {
     expect(result.code).toBeNull();
     expect(result.signal).toBe('SIGKILL');
   }, 10000);
+
+  it('超时树杀:pytest 派生的 worker 子进程不残留(按 RUN-007 进程组收净)', async () => {
+    // 父进程派生一个永挂孙进程并写其 pid 文件;父收到 SIGKILL 后孙进程
+    // 若没被组信号收掉会变孤儿继续跑——验证 pid 已死
+    const dir = mkdtempSync(join(tmpdir(), 'kode-pytree-'));
+    const grandchild = join(dir, 'grandchild.js');
+    writeFileSync(grandchild, 'setTimeout(() => {}, 60000);');
+    const pidFile = join(dir, 'grandchild.pid');
+    const script = join(dir, 'parent.js');
+    writeFileSync(
+      script,
+      `const { spawn } = require('child_process');
+      const fs = require('fs');
+      const g = spawn(process.execPath, [${JSON.stringify(grandchild)}], { stdio: 'ignore' });
+      g.unref();
+      fs.writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));
+      setInterval(() => {}, 60000);`
+    );
+    const result = await spawnTestProcess(
+      { command: process.execPath, args: [script], cwd: dir },
+      { timeoutMs: 800 }
+    );
+    expect(result.timedOut).toBe(true);
+    expect(result.signal).toBe('SIGKILL');
+    // 等组信号送达孙进程(异步投递)
+    await new Promise(resolve => setTimeout(resolve, 600));
+    const grandchildPid = Number(readFileSync(pidFile, 'utf8'));
+    expect(() => process.kill(grandchildPid, 0)).toThrow(); // ESRCH=已死
+    rmSync(dir, { recursive: true, force: true });
+  }, 20000);
 
   it('输出超上限被截断并带标记,未超时正常退出', async () => {
     const result = await spawnTestProcess(

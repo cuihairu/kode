@@ -1108,8 +1108,19 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       const connection = debugConfigManager.getConnectionFor(component.name);
       const isRemote = connection !== 'local';
       const runner = isRemote
-        ? (command: string, args: string[], timeoutMs: number) =>
-            defaultSpawnRunner('ssh', buildSshExecArgs(connection.ssh, [command, ...args]), timeoutMs)
+        ? (command: string, args: string[], timeoutMs: number) => {
+            // 目标声明非法(前导 '-'/控制字符,ssh 注入防线)按一次失败命令
+            // 记账:SpawnRunner 契约是不抛,异常归 stderr/exitCode=null
+            try {
+              return defaultSpawnRunner(
+                'ssh',
+                buildSshExecArgs(connection.ssh, [command, ...args]),
+                timeoutMs
+              );
+            } catch (error) {
+              return Promise.resolve({ stdout: '', stderr: String(error), exitCode: null });
+            }
+          }
         : defaultSpawnRunner;
       const hostPrefix = isRemote ? `[${connection.ssh.host}] ` : '';
       const uiFace = {

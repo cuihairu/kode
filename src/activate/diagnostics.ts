@@ -935,8 +935,11 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         }
         publishFindings(root, index.update(updated, removed));
         schema = index.schema;
-      } catch {
-        // Keep the previous diagnostics if discovery fails. The next input retries discovery.
+      } catch (error) {
+        // 发现/更新失败保留旧诊断;本轮已消费的 needsDiscovery/changes 不回填
+        // (不自动重排全扫——2026-11-24 Navigation 刷屏批裁定),下次输入经
+        // index === undefined / changes 再触发。失败落日志,诊断缺失可定位。
+        console.log(`[kbengine configData] discovery/update failed, keeping previous diagnostics: ${String(error)}`);
         if (discover) { index = undefined; }
       } finally {
         running = false;
