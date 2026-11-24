@@ -3050,3 +3050,23 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - 引擎真 API 是 `createNamespace`(KBEngine `kbe/src/lib/entitydef/entity_macro.h:391`,KBEngineComponent 命名空间注册面);
 - KSEM-CREATE-05 的检查器在 crates/kode-server/src/semantics/create_params.rs(`check_params` :239,707 行含 15+ 单测)——**全库零生产调用点**(仅 mod.rs 声明+自身测试):纯库交付,从未接线进诊断面。这就是用户从未见过提示的根因。
 - [ ] 可点火:CREATE-05 接线批——把 check_params 接进 Python 诊断生产链(createNamespace 调用点的 params 字面量逐键检查:参数名存在性+类型按 ParamFields 目录),含 crateNamespace→createNamespace 名称纠偏记录;接线前不改 check_params 语义(裁定面);独立小批,依赖诊断四层生产接线(RUST-142)既有通道。
+
+## 2026-11-24 CI workspace_symbol_dispatch 三例恒空红收口(检索面追赶墙钟界提前收工)
+
+- [x] 修复(dc310a54 推 main,复跑 run 45408465060 全腿绿定谳):run 45397518531 仅 rust-coverage 腿 workspace_symbol_dispatch 三例恒空;绿(481c170d)↔红(f83a229e)两提交 crates/ 字节同(crates-diff=0)=非本批引入,是负载场暴露的既有缺陷。根因=drain_index_for_global_request 用 pump_budgeted_until(16 条,now+4ms),4ms 墙钟界在 llvm-cov 仪表化负载下必然提前收工,didOpen 入库还在队列里就作答=答空集(检索面的错答是空集而非慢答,用户会以为工程里没有该符号)。修=检索面臂改纯条数界(16 条预算不变=隔离保证),墙钟改 30s 防死等护栏(GLOBAL_REQUEST_DRAIN_GUARD_SECS);按文档键臂(drain_index_for_request)不动仍走 4ms 墙钟界(错答语义不同=缺页非空集)。门=clippy -D warnings 0+cargo workspace 全绿+llvm-cov 插桩 8/8;HEAD 旧码 stash 对拍本地也绿(本地 4ms 内追得完)=负载族只有 CI 场能复现,CI 复跑定谳。
+- [x] 判例:pump_budgeted_until 是时间预算泵非完成保证(RESP-001)——「检索面恒空」两成因(无追赶腿/追赶墙钟界太短)同归「负臂假绿」族;本地绿≠CI 绿,仪表化把负载放大一档,时序敏感臂判「非回归」前先核负载场差。
+
+## 2026-11-24 TS 文件读取缓存面对账+收口方案(用户问「rust 是统一的读取缓存,ts 呢?」→「拆分为 todo」)
+
+对账地面真值(2026-11-24 实测,含误判纠正):
+- 读语义面已统一:readSharedFileSnapshot(33 调用点)缓冲优先/磁盘兜底,与 Rust DocumentStore.snapshot 同构;Rust 侧本身也非字面全统一(索引/入库面经 IndexQueue::snapshot 网关统一,改名面/client_sdk 散点直读),两侧形态一致;
+- **快照面盘腿已在缓存上**(误判纠正:首答「快照面 fresh 读不缓存」是错的)——e4fb2a28 起 readDiskFile 缺省依赖=readFileSyncUtf8Recorded→getSharedFileTextCache().readThroughSync(src/sharedFileSnapshot.ts:74),异步臂 readFileUtf8Recorded 同链(:206);打开文档腿零 IO 不碰缓存(缓冲事实优先);「写盘即生效」语义由 mtime+size 双键 stat 校验保住(C-19 换态测试绿为证);
+- 真差距:①热面裸直读未穿记账/缓存入口 ②快照面盘腿一次读两次 stat(缓存校验一次+版本身份一次) ③缓存键=原始路径串未归一 identity ④watcher 主动失效 invalidate 预挂未接。
+
+可点火拆分(用户令):
+- [ ] 批 A-0 热面审计:对 ~20 个裸 readFileSync 生产模块逐点标注「读时机×次数×文件量级」,分热/冷/半热三档(判据:查询链路 per-request 重复读=热→迁;启动一次性/脚手架生成=冷→不迁,迁移徒增面=禁止;命令期语料级=半热→视对账定)。已可预判:冷=serverConfigResolve/demoGameTemplate/engineCompatibility/projectWizard/pythonProcessConfig;热候选=entityMapping(属主解析/形参闸,hover 链)/definitionWorkspace(types.xml/alias.xml)/databaseWiring/references/traceCaptureRun。
+- [ ] 批 A-1 热面迁移:审计判热模块直读换 readFile*Utf8Recorded(签名兼容,string 直返)。**每面迁移前核桩缝**(最大工程风险=迁移绕过测试桩→假绿或读真盘→假红;参照 e4fb2a28 双桩缝判例:缓存只共享「存什么」不收编「怎么读」,迁移走 readFile*Utf8Recorded 记账入口而非直接挂缓存)。验收=resetFileReadMetrics→操作→getFileReadTotals 对账(热面同路径读盘 ≤1)+C-19 换态 fresh 读保持绿。
+- [ ] 批 B 快照面双 stat 合并:cache hit 时复用缓存条目自带 fingerprint({mtimeMs,size})当快照版本身份,免第二次 statDiskFile;version 口径不变(仍磁盘 mtimeMs),语义零变化。跟 A-1 顺手做,单做收益小。
+- [ ] 批 C 缓存键归一 identity:缓存内部键 normalizeFileIdentity(同文件不同拼写/符号链接→单条目免重复 stat);先证归一函数对不存在路径稳定再动。
+- [ ] 批 D watcher 主动失效:记录不点火(stat-on-read 已保正确,invalidate 只省 stat 本身,价值低)。
+- [x] 判例入账:涉及共享读层先 grep 桩缝+先核「该面是否已在缓存上」再谈迁移——本对答自纠「快照面不缓存」误判,教训=答架构面问题前先追读链到底(readDiskFile 缺省依赖=记账入口=缓存入口,三层一线,断在中间层就是错判)。
