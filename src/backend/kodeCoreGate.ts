@@ -485,6 +485,41 @@ export class KodeCoreGate {
   }
 
   /**
+   * 健康探针(2026-11-24 健康灯批):ensureClient→start→`$/kode/health`,
+   * 整个探针体与 timeoutMs 预算竞速——server 进程楔死时 start() 自身也可能
+   * 挂(START_TIMEOUT_MS 10s 级),探针必须无条件按时应答。任何失败如实报
+   * ok:false。被动读口:不计熔断 streak、不弹 notice(判活是观测面,不是
+   * 故障面,不驱动任何回落决策)。
+   */
+  async probeHealth(timeoutMs = 2_000): Promise<{ ok: boolean; latencyMs: number }> {
+    const now = this.options.now ?? (() => Date.now());
+    const started = now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const budget = new Promise<{ ok: boolean; latencyMs: number }>(resolve => {
+      timer = setTimeout(() => resolve({ ok: false, latencyMs: now() - started }), timeoutMs);
+    });
+    const outcome = (async () => {
+      const client = this.ensureClient();
+      if (!client) {
+        throw new Error('client unavailable');
+      }
+      await client.start();
+      await client.request('$/kode/health', undefined, { timeoutMs });
+    })();
+    try {
+      return await Promise.race([
+        outcome.then(
+          () => ({ ok: true, latencyMs: now() - started }),
+          () => ({ ok: false, latencyMs: now() - started })
+        ),
+        budget,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * serving 面(2026-11-08 用户令「直接切」):Rust 服务轨道时把 LSP 方法
    * (textDocument/definition 等)直发给 kode-server,返回 Rust 结果;任何
    * Rust 侧失败(缺 serverPath/启动失败/请求失败/超时)一律返回 fallback

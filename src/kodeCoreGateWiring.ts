@@ -3,6 +3,10 @@ import { discoverNativeBinary } from './backend/nativeBinary';
 
 import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './backend/kodeCoreGate';
 import { cancelCorpusMirrorRuns, mirrorCorpusToRust } from './kodeCoreCorpusMirror';
+import {
+  KodeCoreHealthLightController,
+  type CoreHealthGateSnapshot,
+} from './kodeCoreHealthLight';
 import { getIndexScanRoots, resetScanRootCache } from './scanRoots';
 import { setKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 
@@ -218,6 +222,35 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
     );
   });
 
+  // Core 健康灯(2026-11-24 用户令「server 死了我怎么去判断,这个问题不
+  // 解决,这个插件根本没有办法使用」):状态栏常驻 kode-server 活性灯,
+  // 10s 探针(2s 预算,探针永不悬挂);点击 = 诊断详情 + 可选重启。灯面
+  // 只观测不驱动回落;off 态(backend=ts)整灯隐藏零噪音。
+  const healthLight = new KodeCoreHealthLightController({
+    createStatusBarItem: (alignment, priority) =>
+      vscode.window.createStatusBarItem(alignment, priority),
+    registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
+    timers: {
+      set: (callback, delayMs) => setTimeout(callback, delayMs),
+      clear: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    },
+    snapshot: (): CoreHealthGateSnapshot => ({
+      backendMode: gate.mode,
+      serverPathPresent: gate.state.serverPath !== '',
+      clientAlive: gate.state.clientAlive,
+      commandCircuit: gate.commandCircuitState(),
+    }),
+    probe: () => gate.probeHealth(),
+    showMessage: text => {
+      void vscode.window.showInformationMessage(text);
+    },
+    pickAction: async labels =>
+      await vscode.window.showQuickPick([...labels], { placeHolder: 'Core 健康灯动作' }),
+    restartCore: () => {
+      void vscode.commands.executeCommand('kbengine.core.restart');
+    },
+  });
+
   const configWatcher = vscode.workspace.onDidChangeConfiguration(event => {
     if (
       event.affectsConfiguration('kbengine.core.backend') ||
@@ -244,6 +277,7 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
     renamedFilesWatcher,
     deletedFilesWatcher,
     showDiffLogCommand,
+    healthLight,
     unsubscribe
   );
   // Phase2 首片:把门交给定义/诊断 provider 的影子对拍入口(默认 ts 下

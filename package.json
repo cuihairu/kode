@@ -211,6 +211,7 @@
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
     "onCommand:kbengine.core.restart",
+    "onCommand:kbengine.core.healthPanel",
     "onCommand:kbengine.source.reveal",
     "onCommand:kbengine.infer.run",
     "onCommand:kbengine.managedDir.syncExclusions",
@@ -1008,6 +1009,10 @@
       {
         "command": "kbengine.core.restart",
         "title": "%kbengine.command.core.restart.title%"
+      },
+      {
+        "command": "kbengine.core.healthPanel",
+        "title": "%kbengine.command.core.healthPanel.title%"
       },
       {
         "command": "kbengine.discovery.report",

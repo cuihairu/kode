@@ -23,6 +23,15 @@ const DISPOSE_SHUTDOWN_TIMEOUT_MS_DEFAULT = 5_000;
 const START_TIMEOUT_MS_DEFAULT = 10_000;
 
 /**
+ * 请求预算兜底(2026-11-24 真机楔死批):request() 未传 opts.timeoutMs 时
+ * 统一按此封顶——先前 rootAdded/scanComplete/warmState/health 等直呼腿无
+ * 预算,server 楔死时每条都悬挂 10s 级,索引/跳转/CodeLens 链整体停摆且
+ * 用户无从判断。显式预算(交互面 1-5s、扫描面 30s+)优先;0 或负数(显式
+ * 传 opts.timeoutMs <= 0)= 主动放弃预算(仅限确知永不悬挂的面)。
+ */
+export const DEFAULT_RPC_TIMEOUT_MS = 10_000;
+
+/**
  * RUST-008 判据①:自有协议版本化。TS 侧期望版本,与 Rust 侧
  * `crates/kode-protocol/src/lib.rs` 的 `PROTOCOL_VERSION` **钉死同步**(两侧
  * 同批改:RPC 形状漂移的任何一侧改动都必须同时推进两侧常量)。握手回包
@@ -356,7 +365,10 @@ export class KodeCoreClient {
     return result;
   }
 
-  /** 发送请求并等待响应;opts.timeoutMs 超时先发 $/cancelRequest 再硬超时 */
+  /** 发送请求并等待响应;超时先发 $/cancelRequest 再硬超时。opts.timeoutMs
+   * 显式预算优先;未传走 DEFAULT_RPC_TIMEOUT_MS 兜底(2026-11-24 用户真机
+   * 病灶:楔死 server 面前任何未封顶腿都是悬挂——rootAdded/scanComplete/
+   * warmState 等直呼腿此前无预算,server 楔死时索引/跳转链整体停摆)。 */
   request(method: string, params?: unknown, opts?: { timeoutMs?: number }): KodeCoreRequest {
     if (this.disposed) {
       return rejectedRequest(new KodeCoreTransportError('client disposed', 'DISPOSED'));
@@ -367,6 +379,7 @@ export class KodeCoreClient {
         new KodeCoreTransportError('server process not running', 'EXITED')
       );
     }
+    const effectiveTimeoutMs = opts?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
     const id = this.nextId++;
     // RUST-068-W:信封级 span(`$/kode/rpc` 顶层 spanId;浅拷贝不碰调用方
     // 对象,内层 params 原样——worker handler 契约零感知)。其余 method 不注
@@ -384,13 +397,13 @@ export class KodeCoreClient {
       // 硬超时:cancel 之后服务器仍不回(挂死)时兜底拒绝
       let hardTimer: NodeJS.Timeout | undefined;
       let cancelTimer: NodeJS.Timeout | undefined;
-      if (opts?.timeoutMs) {
-        cancelTimer = setTimeout(() => this.cancelRequest(id), opts.timeoutMs);
+      if (effectiveTimeoutMs > 0) {
+        cancelTimer = setTimeout(() => this.cancelRequest(id), effectiveTimeoutMs);
         hardTimer = setTimeout(() => {
           clearTimeout(cancelTimer);
           this.pending.delete(id);
-          reject(new KodeCoreTransportError(`${method} timed out after ${opts.timeoutMs}ms`, 'TIMEOUT'));
-        }, opts.timeoutMs + 2000);
+          reject(new KodeCoreTransportError(`${method} timed out after ${effectiveTimeoutMs}ms`, 'TIMEOUT'));
+        }, effectiveTimeoutMs + 2000);
       }
       this.pending.set(id, {
         resolve: value => {

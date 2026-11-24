@@ -73,17 +73,19 @@ describe('compiled extension activation smoke', () => {
   });
 
   it('creates the status bar items with the configured alignment', () => {
-    // 九盏灯各归其位(2026-11-06 盘点五盏 + KB-GC-001 console 日志 tail 灯,
-    // 2026-11-10 LSP/MCP 服务状态灯,2026-11-17 语言服务灯 RUST-219):
+    // 十盏灯各归其位(2026-11-06 盘点五盏 + KB-GC-001 console 日志 tail 灯,
+    // 2026-11-10 LSP/MCP 服务状态灯,2026-11-17 语言服务灯 RUST-219,
+    // 2026-11-24 Core 健康灯=91,探活 kode-server):
     // 100=服务器运行计数,99=telnet 探测,98=热更发送态,97=Python 解释器
     // (PY-ENV),96=热更通道快捷切换,95=console 日志 tail(console.ts,文本随
     // machined 发现状态变化,可视性时序相关故不断言),94=Kode 核心(LSP 服务
-    // 轨道),93=Kode MCP 二进制在位,92=语言服务状态(点击开 Project Doctor)。
-    // 每盏只建一次(装配期构造,刷新只改文本/显隐),故总数必须恒为 9——
+    // 轨道),93=Kode MCP 二进制在位,92=语言服务状态(点击开 Project Doctor),
+    // 91=Core 健康灯(探活 kode-server,点击开诊断详情面板)。
+    // 每盏只建一次(装配期构造,刷新只改文本/显隐),故总数必须恒为 10——
     // 多建=装配抖动,少建=某条装配路被砍,两种都算回归。
-    assert.strictEqual(stub.windowState.statusBars.length, 9);
+    assert.strictEqual(stub.windowState.statusBars.length, 10);
     const priorities = stub.windowState.statusBars.map(bar => bar.priority).sort((a, b) => b - a);
-    assert.deepStrictEqual(priorities, [100, 99, 98, 97, 96, 95, 94, 93, 92]);
+    assert.deepStrictEqual(priorities, [100, 99, 98, 97, 96, 95, 94, 93, 92, 91]);
     // 全部右对齐,不与 VS Code 内建左槽抢位
     for (const bar of stub.windowState.statusBars) {
       assert.strictEqual(bar.alignment, stub.StatusBarAlignment.Right, `priority ${bar.priority} 应右对齐`);
@@ -131,6 +133,12 @@ describe('compiled extension activation smoke', () => {
     const languageService = stub.windowState.statusBars.find(bar => bar.priority === 92);
     assert.ok(languageService);
     assert.strictEqual(languageService.command, 'kbengine.profile.health');
+    // Core 健康灯(2026-11-24):探活 kode-server,点击开诊断详情面板;
+    // 激活瞬间的探针结果不作竞速断言,只钉形状与入口
+    const coreHealth = stub.windowState.statusBars.find(bar => bar.priority === 91);
+    assert.ok(coreHealth);
+    assert.strictEqual(coreHealth.command, 'kbengine.core.healthPanel');
+    assert.strictEqual(coreHealth.visible, true);
   });
 
   it('dispatches a compiled command end to end', async () => {

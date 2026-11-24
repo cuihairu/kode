@@ -1273,6 +1273,15 @@ The flow graph panel supports:
   - The shadow diff log is preserved across restarts (same policy as disposal) so rollback-drill evidence is not lost
   - Use cases: a suspected hung or wedged Core process, or picking up a freshly built kode-server binary without reloading the window
 
+### `kbengine.core.healthPanel`
+
+- Title: `Kode: Core Health Light (probe kode-server, details and restart)`
+- Purpose: the status-bar health light (2026-11-24 user order "if the server dies, how do I tell?" — before this batch a wedged kode-server produced no visible signal at all; index/jump/CodeLens chains just slowed down or stalled). The light probes kode-server every 10s with a 2s budget (the probe itself races the budget and can never hang), and the lamp shows one of six states: `off` (backend=ts, hidden entirely — zero noise), `bypassed` (rust/shadow configured but no kode-server binary found, silently serving TS — highlighted), `unresponsive` (probe failed: process not started / exited / wedged — highlighted), `degraded` (probe passes but command legs have timed out, command-level features fall back to TS), `ok` (probe passes, command legs clean), `idle` (track configured, first probe not back yet)
+- Behavior:
+  - Clicking the light shows an honest detail line (current state, backend/serverPath, latest probe result with latency, command-leg circuit state) and offers 「重启核心服务」 (restart core) via QuickPick when a Rust track is configured; restarting goes through `kbengine.core.restart`
+  - The light is observation only: it never drives any serving decision or fallback by itself
+  - The status bar item is always present on the right (priority 91, below the existing nine lights) except in `off` state
+
 ### `kbengine.mcp.toggle`
 
 - Title: `Toggle Kode MCP`
