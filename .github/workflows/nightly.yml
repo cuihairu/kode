@@ -183,6 +183,112 @@ jobs:
     permissions:
       contents: read
 
+  # PA-006 Wireshark 插件(GPL-3.0-or-later,独立于 Apache VSIX 分发面,
+  # 许可边界见 plugins/wireshark-kbengine/Cargo.toml)。设计文档跨系统矩阵:
+  # 「构建矩阵=OS×Wireshark 版本,nightly 每日构建面覆盖主版本线即可」——
+  # 本 job 即该面。ABI 声明随构建宿主 Wireshark 版本探测(libwireshark
+  # WANT_MAJOR/MINOR=sys VERSION),故两腿都锁 4.6 主版本线。验收门=
+  # 装→验→删闭环(tshark -G plugins 列出 + 样例 pcap -Y kbengine 6/6),
+  # 不过不上传 artifact。产物单独挂 artifact,不进 build-and-release 的
+  # 七包发布面(Release 页面归用户拍板)。Wireshark 依赖重,走 GitHub
+  # 托管 runner,不吃 CI_RUNNER 自托管路由。
+  wireshark-plugin:
+    name: Wireshark plugin (${{ matrix.artifact }})
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: wireshark-plugin-linux-x64
+            bin: libwireshark_kbengine.so
+          - os: windows-latest
+            artifact: wireshark-plugin-windows-x64
+            bin: wireshark_kbengine.dll
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: plugins/wireshark-kbengine
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      # Wireshark 4.6 宿主:版本探测决定产物 ABI,锁主版本线,拿不到就红。
+      - name: Install Wireshark 4.6 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:wireshark-dev/stable
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tshark
+          tshark -v | head -1
+          tshark -v | grep -E 'Wireshark\) 4\.6\.' || { echo 'expected Wireshark 4.6 line on runner'; exit 1; }
+      - name: Install Wireshark 4.6.4 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://2.na.dl.wireshark.org/win64/Wireshark-4.6.4-x64.exe'
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\ws-installer.exe"
+          Start-Process -Wait -FilePath "$env:RUNNER_TEMP\ws-installer.exe" -ArgumentList '/S'
+          & 'C:\Program Files\Wireshark\tshark.exe' -v | Select-Object -First 1
+          if (-not (& 'C:\Program Files\Wireshark\tshark.exe' -v | Select-String 'Wireshark\) 4\.6\.')) { Write-Host 'expected Wireshark 4.6 line on runner'; exit 1 }
+      # Windows 导入库生成路径(libwireshark-sys 用 llvm-readobj 从 DLL 导出表
+      # 生成 .lib);windows-latest 带 LLVM,拿不到就 choco 兜底。
+      - name: Ensure llvm-readobj (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Get-Command llvm-readobj -ErrorAction SilentlyContinue)) { choco install -y llvm }
+          llvm-readobj --version | Select-Object -First 1
+
+      # 构建:rust-toolchain.toml pin 随目录树上溯生效;clippy 门与本地口径一致。
+      - name: Build plugin (release)
+        run: cargo build --release
+      - name: Clippy gate
+        run: cargo clippy --all-targets -- --deny warnings
+
+      # 装→验→删闭环(验收门):装载列出 + 样例 pcap 6/6 命中,不过即红、
+      # 不上传。pcap 复制到临时目录再读(实证口径:绕开宿主对仓库路径的
+      # 读取限制)。Linux 装全局 epan 目录(设计文档:AppArmor 拦个人目录)。
+      - name: Load acceptance (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          EPAN="$(tshark -G folders | grep -i 'Global Plugins' | tr -d '\t' | sed 's/.*: *//')/epan"
+          sudo mkdir -p "$EPAN"
+          sudo cp "target/release/${{ matrix.bin }}" "$EPAN/"
+          tshark -G plugins | grep -i kbengine
+          cp ../../docs/samples/kbengine-wire-samples/kbengine-login-flow.pcap /tmp/kbe-login.pcap
+          HITS="$(tshark -r /tmp/kbe-login.pcap -o kbengine.loginapp_port:2001 -Y kbengine | wc -l)"
+          echo "kbengine frames: $HITS"
+          test "$HITS" -eq 6
+          sudo rm "$EPAN/libwireshark_kbengine.so"
+      - name: Load acceptance (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $epan = Join-Path $env:APPDATA 'Wireshark\plugins\4.6\epan'
+          New-Item -ItemType Directory -Force -Path $epan | Out-Null
+          Copy-Item "target\release\${{ matrix.bin }}" $epan
+          & 'C:\Program Files\Wireshark\tshark.exe' -G plugins | Select-String kbengine
+          Copy-Item ..\..\docs\samples\kbengine-wire-samples\kbengine-login-flow.pcap "$env:TEMP\kbe-login.pcap"
+          $hits = (& 'C:\Program Files\Wireshark\tshark.exe' -r "$env:TEMP\kbe-login.pcap" -o kbengine.loginapp_port:2001 -Y kbengine | Measure-Object -Line).Lines
+          Write-Host "kbengine frames: $hits"
+          if ($hits -ne 6) { exit 1 }
+          Remove-Item (Join-Path $epan 'wireshark_kbengine.dll')
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            plugins/wireshark-kbengine/target/release/${{ matrix.bin }}
+            plugins/wireshark-kbengine/README.md
+          if-no-files-found: error
+          retention-days: 90
+
   build-and-release:
     name: Publish nightly after all seven packages pass
     needs: [validate, packages]
