@@ -283,7 +283,12 @@ under-recalls or the query is natural language. The vector semantic index is
 a **pluggable module**, enabled after real queries demonstrate the need — not
 built up-front. Excel parsing (calamine), the full Tantivy+SQLite layer, the
 knowledge graph and the vector module are all honestly deferred to later
-phases.
+phases. (Status 2026-11-24: the Tantivy+SQLite layer (P2), Excel parsing and
+the `query_excel`/`get_dependencies` tools (P4), and the vector module (P3,
+deterministic feature hashing, b78459fd) have landed; the knowledge-graph
+cross-format trace remains as written. The P3 fill is deterministic feature
+hashing — a real vector slot plus hybrid fusion, not a learned embedding;
+the seam still accepts a learned module.)
 
 ## 12. Phased roadmap
 
@@ -295,7 +300,7 @@ phases.
   storage dep. Accepts the existing 15-tool set unchanged.
 - **P2**: Tantivy + SQLite persistence, BM25/trigram tokenizers, incremental
   update (notify + BLAKE3 + git), `search` unification, Chinese tokenizer.
-- **P3**: pluggable vector module (on-demand), hybrid fusion.
+- **P3** (landed 2026-11-24, b78459fd): pluggable vector module (on-demand), hybrid fusion — filled by deterministic feature hashing over the AST-derived nodes, registered at construction and fused on natural-language queries; a learned-embedding module can still replace it via the `SemanticRetriever` seam.
 - **P4**: Excel (`calamine`), knowledge graph, `query_excel`, `get_dependencies`
   full cross-format trace.
 - **KB-003 (2026-11-10, user-directed)**: AI/nav JSON configs (path-key
