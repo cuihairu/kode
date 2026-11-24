@@ -399,8 +399,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-23(SCAN-NARROW 批):diagnostics.ts 顶部 import +1(findFilesAcrossRoots
   // /getIndexScanRoots)→ 两处打点锚点 +1(235/248 → 236/249,真位重探);
   // 出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 236, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 249, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-24(Navigation 刷屏修复批):diagnostics.ts 顶部 import +1
+  // (configDataScanSource)→ 两处打点锚点 +1(236/249 → 237/250,真位重探)。
+  ['src/activate/diagnostics.ts', 237, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 250, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的

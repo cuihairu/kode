@@ -307,6 +307,14 @@ export class EntityMappingManager {
   private defParseCacheHits = 0;
   private defParseCacheMisses = 0;
   /**
+   * 同路径在途解析合并(2026-11-24 Navigation 刷屏修复):.def 缓存只在解析
+   * 完成后落账,同时到达的请求(激活期开档风暴的预热+定向、扫描与 watcher
+   * 并发)会对同一 .def 重复全量解析。在途键=归一路径+rootCategory;
+   * forceReparse(py 变更路径)不合并,不让位旧结果。命中/未命中记账仍由
+   * 首次调用如实进行,合并不冒充缓存命中。
+   */
+  private defParseInFlight = new Map<string, Promise<void>>();
+  /**
    * IDE-SNP-008:共享文件事件合并器(实例自持,消费索引间互不串线)。
    * watcher 三件套的原始通知先入此合并,同 URI 同 kind 的重复通知(同一
    * 保存多 watcher/多段通知)只应用一次;窗口内 kind 变化补投终态。
@@ -655,6 +663,29 @@ export class EntityMappingManager {
   }
 
   private async parseDefFile(
+    entityName: string,
+    defPath: string,
+    loader?: ReturnType<typeof createDefinitionSemanticsLoader>,
+    rootCategory: DefinitionSemanticCategory = 'entity',
+    forceReparse = false
+  ): Promise<void> {
+    const flightKey = `${normalizeLookupPath(defPath)}\u0000${rootCategory}`;
+    const shared = forceReparse ? undefined : this.defParseInFlight.get(flightKey);
+    if (shared) {
+      // 在途同行:等首次解析落缓存即可,不重复全量解析
+      await shared;
+      return;
+    }
+    const flight = this.parseDefFileOnce(entityName, defPath, loader, rootCategory, forceReparse);
+    this.defParseInFlight.set(flightKey, flight);
+    try {
+      await flight;
+    } finally {
+      this.defParseInFlight.delete(flightKey);
+    }
+  }
+
+  private async parseDefFileOnce(
     entityName: string,
     defPath: string,
     loader?: ReturnType<typeof createDefinitionSemanticsLoader>,

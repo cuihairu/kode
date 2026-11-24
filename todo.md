@@ -2989,3 +2989,18 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - 更根本:楔死族不是 Windows 盲区,是测试网从来没网住过——kode-server 派遣泵在测试里早表现出同族症状(并行每轮恰 1 例受害者轮换,当时定性「负载假红」用串行 --test-threads=1 调绿)。那不是假红,是产品缺陷(时间预算泵不保证完成)在测试里的投影;门禁绿了,缺陷本体没修。真机「进程活着但派遣全哑」即它。
 - CI 零墙钟活性断言(「空闲机器上 server 须 N ms 内应答」),用户规模语料+Windows 文件系统时序+扩展请求模式三条 CI 都没有。
 - 下一个可点火批(Rust 侧):派遣泵完成保证/让位请求 + 墙钟活性测试(扫描波次在飞时 health 必须毫秒级应答,泵饿死即红)。
+
+## 2026-11-24 codex 报「Windows 包里 core 是 Linux 版本」核验(打包面地面真值)
+
+- [x] 现行打包闭环实证(核验当日 nightly 45351436194 的 win32-x64 产物,解包逐文件 `file` 验尸):bin/ 三二进制全 PE32+ x86-64(manifest.json 身份=target/rustTarget/commit 四方对账)。打包链=platform-vsix.mjs 按 matrix target 原生交叉编译 → bin/ 重建(仓库 bin/ 未跟踪,不漏 Linux 残留)→ smokeBinaries 原生真执行(LSP 生命周期+CLI+MCP 握手,Linux ELF 在 Windows runner 上无法过)→ verify-platform-vsix 解包真 ZIP 再原生执行+sha256+exec 位校验;七平台 job 全绿。滚动 nightly release 资产=七平台包+pure-ts+SBOM+SHA256SUMS,无历史残留通用包。
+- [x] 历史面:2026-10-25(用户机器安装版本时点)nightly 还是 ubuntu 通用 kode-nightly.vsix(90b01f3f 11-08 才改六平台原生门),且 bin/ 当时未被 git 跟踪=通用包内零二进制;「Windows 包内含 Linux core」不可能来自任何历史发布面。用户机器上的 Linux core 来源(WSL 远程扩展目录混装/手工拷贝/拿错平台文件)需现场状态确证(用户亦令「内网开发机的 Rust 启动失败还需要看现场状态」)。
+- [ ] 可点火候选(小批):二进制平台魔数守门——discoverNativeBinary 的 bin/ 面加镜像格式校验(win32 期望 MZ/linux 期望 \x7fELF/darwin 期望 Mach-O,错格式视为缺失不 spawn)+错配原因如实上报(「安装的平台包与当前系统不匹配,请装 win32-x64 包」),Core/MCP 探针 tooltip 直显;杜绝错平台二进制落盘后预算未决/连超时的哑挂形状。
+
+## 2026-11-24 Navigation 刷屏修复(用户带现场证据:cron 链自供弹,49 文件样本两轮 466 行;正式代码此前零改动)
+
+病灶链(用户隔离副本实证:改后同项目只扫一轮,Navigation 466→9 行,F12 仍跳):配置数据诊断启动全扫逐文件 `openTextDocument` → 每次 open 触发 onDidOpenTextDocument → openWatcher 对每个 py 排单档诊断+导航预热 → 800ms 防抖又排一轮全扫 → 第二轮因文档已开不再发事件才收敛(扫描自己给自己供弹)。且 .def 解析缓存只在完成后落账,同时到达的请求对同一 .def 重复全量解析。Rust/TS 双模式同链。
+
+- [x] 全扫取文换道 src/backend/configDataScanSource.ts readConfigScanSourceText:已开档读缓冲(所见即所诊,含未保存改动),未开档走共享原文缓存 readFileUtf8Recorded 直读盘;盘读剥 BOM(文档面 getText 无 BOM,行列/正则口径不变);零 openTextDocument=零 open 事件,根因断链。scanConfigData 接线(diagnostics.ts)。单测 4 例:缓冲命中不触盘/盘读剥 BOM/uri toString 全等匹配/盘读失败上抛(调用面 catch 跳过不猜)。
+- [x] .def 解析在途合并 entityMapping.ts:defParseInFlight Map(键=归一路径+rootCategory,forceReparse 不合并不让位),并发同路径等首次航班;命中/未命中记账仍由首次调用如实进行,合并不冒充缓存命中。parseDefFile 变包装+parseDefFileOnce 原体(catch-all 不 reject,合并不吞错)。
+- [x] 并发测试 tests/entityMappingParseCoalesce.test.ts:首扫空清单后注入新 def(保证并发真落解析层),Promise.all 两定向请求 misses 恰 +1;索引表失效后顺序重放(hoverBudget 同款,公开 API 热索引短路语义)hits +1 且 misses 不涨。
+- [ ] 用户侧残留:真机(iMac Windows+内网开发机)升级到含本批的 nightly 后复测 Navigation 行数与首扫轮数;内网临时面 kbengine.configData.enabled=false 工作区开关仍有效(本批后通常不再需要)。

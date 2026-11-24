@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { findFilesForKbengineSurfaces } from '../scanRoots';
+import { readConfigScanSourceText } from '../backend/configDataScanSource';
 import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
 import {
   collectConfigSchema,
@@ -813,7 +814,12 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         const sources: ConfigSourceInput[] = [];
         for (const uri of uris) {
           try {
-            const text = (await vscode.workspace.openTextDocument(uri)).getText();
+            // 2026-11-24 Navigation 刷屏修复:全扫取文不再 openTextDocument
+            // ——open 会逐文件触发 onDidOpenTextDocument,openWatcher 对每个
+            // py 排单档诊断+导航预热,800ms 防抖又排一轮全扫(扫描自己给自己
+            // 供弹,49 文件样本=两轮 466 行)。已开档读缓冲,未开档直读盘,
+            // 零 open 事件。
+            const text = await readConfigScanSourceText(uri, vscode.workspace.textDocuments);
             // 相对 posix 路径口径(与 configDirGlobs / mutationExclude 对齐)
             const rel = path.relative(root, uri.fsPath).replace(/\\/g, '/');
             sources.push({ file: rel, text });
