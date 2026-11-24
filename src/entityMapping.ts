@@ -672,6 +672,19 @@ export class EntityMappingManager {
     return { injected, rejected, discovered: entities.length };
   }
 
+  /**
+   * .def 内容代(mtimeMs+size):在途合并的变更核对键(:3058)。
+   * 读不到 = null(无法核对,不触发重试——文件消失由既有失效面处理)。
+   */
+  private defFileGeneration(defPath: string): string | null {
+    try {
+      const st = fs.statSync(defPath);
+      return `${st.mtimeMs}\u0000${st.size}`;
+    } catch {
+      return null;
+    }
+  }
+
   private async parseDefFile(
     entityName: string,
     defPath: string,
@@ -682,8 +695,16 @@ export class EntityMappingManager {
     const flightKey = `${normalizeLookupPath(defPath)}\u0000${rootCategory}`;
     const shared = forceReparse ? undefined : this.defParseInFlight.get(flightKey);
     if (shared) {
-      // 在途同行:等首次解析落缓存即可,不重复全量解析
+      // 在途同行:等首次解析落缓存即可,不重复全量解析。
+      // 但合并只去重「同一份内容的解析」,不能吞掉合并等待期间发生的变更
+      // (:3058 用户受控测试复现):核对内容代(mtimeMs+size),变了就再排
+      // 一轮——forceReparse 绕开 mtime 缓存真重解,且该臂恒不合并(shared
+      // 恒 undefined),故重试不递归。
+      const generation = this.defFileGeneration(defPath);
       await shared;
+      if (generation !== null && this.defFileGeneration(defPath) !== generation) {
+        await this.parseDefFile(entityName, defPath, loader, rootCategory, true);
+      }
       return;
     }
     const isCurrent = () => this.defParseInFlight.get(flightKey) === flight

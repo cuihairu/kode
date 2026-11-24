@@ -92,6 +92,53 @@ describe('parseDefFile 在途合并(同 .def 并发只解析一次)', () => {
     expect(afterReplay.hits).toBeGreaterThan(afterConcurrent.hits);
   });
 
+  it('合并等待期间文件又变:核对内容代再排一轮真重解(:3058)', async () => {
+    // 不走 watcher 失效路径(那是另一条防护):合并命中者在共享航班落定后
+    // 必须自己核对内容代——在途账没被清的窗口里,变更不能被合并吞掉。
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-coalesce-gen-'));
+    roots.push(root);
+    const dir = path.join(root, 'scripts', 'entity_defs');
+    fs.mkdirSync(dir, { recursive: true });
+    const defFile = path.join(dir, 'Monster.def');
+    const write = (method: string) => fs.writeFileSync(defFile, `<root><BaseMethods><${method}/></BaseMethods></root>`);
+    write('onOld');
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'coalesce-gen', index: 0 }];
+
+    const manager = new EntityMappingManager({ subscriptions: [] }, undefined, { deferStartup: true });
+    managers.push(manager);
+    const internals = manager as unknown as {
+      parseDefFile(name: string, file: string): Promise<void>;
+      buildIndex(...args: unknown[]): Promise<EntityMappingIndex | null>;
+      mappingIndexes: Map<string, EntityMappingIndex>;
+    };
+    let release!: () => void;
+    let firstRead!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const read = new Promise<void>(resolve => { firstRead = resolve; });
+    const build = internals.buildIndex.bind(manager);
+    const spy = vi.spyOn(internals, 'buildIndex').mockImplementationOnce(async (...args) => {
+      const result = await build(...args);
+      firstRead();
+      await barrier;
+      return result;
+    });
+    const first = internals.parseDefFile('Monster', defFile);
+    try {
+      await read; // 首航班已读旧内容,停在屏障上
+      // 合并命中:内容代在调用点同步取样(此刻还是旧代),随后挂到首航班上
+      const second = internals.parseDefFile('Monster', defFile);
+      write('onNewest'); // 变更落在「取样之后、共享航班落定之前」的窗口内
+      release(); // 首航班落定(旧索引入表+缓存),在途账清空
+      await second; // 重试臂须检测到内容代变化并 forceReparse 真重解
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(internals.mappingIndexes.get('Monster')?.methodDefinitions.map(method => method.identity.symbolName))
+        .toEqual(['onNewest']);
+    } finally {
+      release();
+      await first;
+    }
+  });
+
   it('文件变更使旧解析失效，即使旧任务晚到也保留新索引', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-def-revision-'));
     roots.push(root);

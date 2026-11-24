@@ -3055,8 +3055,8 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 
 - [x] 打开文件 Navigation 刷屏:真机确认已修复(打开已从全扫触发器移除;49 文件样本 Navigation 降到 Rust 9 行/TS 7 行,两模式 F12 都通过)。
 - [ ] 可点火:增量面(用户确认「文件变化只更新受影响内容还没做到」——编辑/保存/外部变更仍是 800ms 防抖后一轮全扫;理想态=只增量更新变化文件+配置定义变化时重查受影响引用闭包,需 configData schema 依赖跟踪,独立小批)。
-- [ ] 可点火:.def 在途解析合并吞变更(用户受控测试复现:解析途中修改 .def,watcher 发起的新解析被合并进旧任务,这次变更漏处理)——defParseInFlight(8b032840)只按路径去重,未对「在途期间文件又变了」的落地结果做版本核对;修复方向=合并命中者拿到结果后核对文件 mtime/内容代,变了就再排一轮。
-- [ ] 可点火:watcher 范围(configDataPyWatcher 监听整个工作区 '**/*.py',扫描范围之外的 Python 文件也能触发全扫;工作区外的 assetsRoot 又没接入这个监听——外部根的增删改走不到重算面)。
+- [x] .def 在途解析合并吞变更:合并命中分支内容代核对(mtimeMs+size 快照→落定复比→变了 forceReparse 再排一轮,该臂恒不合并故不递归)+回归钉(首航班读旧内容→合并挂上→窗口内写入→落定检测真重解)。与 watcher 失效路径(handleDefFileChanged→清在途账→排新航班)正交互补;证据=tests/entityMappingParseCoalesce.test.ts 第三例(prove-red 咬合验过)。定向门 entityMappingParseCoalesce 3/3 绿(prove-red 咬合验过)。
+- [x] watcher 范围:已闭合(2026-11-23 索引收窄批,零新代码)——watchers 挂 scope.roots=getIndexScanRoots()={assets}/scripts 含外部根;queueChange 事件面 scope?.includes 门;scanRoots.test.ts:44-65 两半已钉死。
 - [ ] 可点火:缺失二进制 respawn 缺陷(用户对照实验:用缺失的 .exe,首次立即报 ENOENT,第二次没有重新拉起进程,最后变成握手超时)——ensureClient 对 spawn ENOENT 的失败账似被记成「已尝试」,二连请求不再走 start 臂;需现场确认内网机同形。相关既有候选:二进制平台魔数守门(错格式视为缺失不 spawn+如实上报)。增:2026-11-25 复现实验证伪 client 层推测——child.on('error')→clearProcess 置空后第二次 start() 走 `this.child ?? this.spawnProcess()` 正常 respawn(tests/kodeCoreClientRespawn.test.ts 回归钉:两连 'spawn failed' 各计 1);「失败账记成已尝试」未复现,gate 层待现场,保持未勾(回归钉载体 **a865e68a**)。
 - [x] Windows 包核验:三 .exe 全 PE32+ x64、校验值匹配、真机握手 187ms(打包面无恙,与 2026-11-24 地面真值核验一致)。
 
