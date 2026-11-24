@@ -339,6 +339,15 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     enqueueReindex: file => { void pythonClassIndex.onFileChanged(file); }
   });
   context.subscriptions.push({ dispose: () => indexEventCoalescer.dispose() });
+  // C-19-MRO(2026-11-24 用户令「父类已实现还报警」):def 缺实现判存的 MRO
+  // 臂接线——entityMapping 构造序先于 pythonClassIndex,依赖经装配层回填
+  // (setter)。属主类文件本地优先(不等全仓),链口径走
+  // resolveMroImplementationOutcome(预算内等全仓收敛,超时 resolved=false
+  // =臂不生效照报现状,不编造)。
+  entityMappingManager.setDefMethodMroOutcomeResolver(
+    async (ownerFile, ownerClassName, methodName) =>
+      pythonClassIndex.resolveMroImplementationOutcome(ownerFile, ownerClassName, methodName)
+  );
   // 书 PR-002 门控启动面:特征确认后 entityMapping 首扫 + python 后台全量扫描
   // 一起放行(与门控前激活期行为一致);负案例(无特征)两者都不启动。
   const startKbEngineIndexing = (): void => {

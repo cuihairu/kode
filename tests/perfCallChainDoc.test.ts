@@ -325,11 +325,14 @@ const ANCHORS: Array<[string, number, string]> = [
   // (setupKbengineDomainMarkers)、领域标记装配块 +7(在前四打点后、python
   // completion 打点前)→ 226/299/398/145 → 227/300/399/146,936 → 944
   // (真位重探,startLanguageServiceOperation 内容双面确认)。出处随 baseline 锁步。
+  // 2026-11-24(C-19-MRO):languageServices.ts MRO 判存臂接线块 +9
+  // (indexEventCoalescer 后、两打点前;300/227/146 不动)→ 399→408、944→953,
+  // 真位重探。
   ['src/activate/languageServices.ts', 227, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 300, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 399, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 408, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 146, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 944, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 953, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -651,11 +654,13 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-24(共享原文缓存批):pythonClassIndex.ts 共享缓存 import +1(全部
   // 锚点前)、两处盘腿读改走缓存各 +4(~641/~1430)→ 816→821(+5)、
   // 1564→1572(+8)、1688→1696(+8),真位重探。
-  ['src/backend/pythonClassIndex.ts', 821, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1572, 'resolveClassBase'],
+  // 2026-11-24(C-19-MRO):pythonClassIndex.ts MroImplementationOutcome 注入面
+  // 类型块 +14(全部锚点前)→ 821→835、1572→1586、1696→1710,真位重探。
+  ['src/backend/pythonClassIndex.ts', 835, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1586, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1696, '①② 两段查询'],
+  ['src/backend/pythonClassIndex.ts', 1710, '①② 两段查询'],
   // 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位——
   // 单飞字段块 +7、ensureDiscovered 重写 +22、零失败清表改覆盖式 +4(非均匀):
   // 767→774(+7)、1448→1481(+33)、1572→1605(+33)。出处随 baseline 锁步。

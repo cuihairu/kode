@@ -1,8 +1,12 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
+import type { DefMethodMroOutcome } from '../src/entityMapping';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
+import { collectDefMethodMissingItems } from '../src/backend/defMethodConsistency';
+import { resetScanRootCache } from '../src/scanRoots';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 import { patternGlob } from './helpers/findPattern';
@@ -176,6 +180,157 @@ describe('collectDefMethodImplementationGaps(正向:def 有 Python 无)', () => 
         .toBe(normalizeFileIdentity(ws.avatarDef));
       expect(manager.getDefFileForPythonFile(path.join(ws.root, 'unrelated.py'))).toBeUndefined();
     });
+  });
+});
+
+// C-19-MRO(2026-11-24 用户令「父类已实现还报警」):判存臂按继承链查实现。
+// 三态口径:链上有实现 → 消 gap;链查过无实现 → 照报并注明已查链;臂未生效
+// (注入缺失/类或链解析不出)→ 照报现状不注明(不编造)。注入面经 setter
+// 回填(构造序:entityMapping 先于 pythonClassIndex),真索引集成用例走
+// resolveMroImplementationOutcome 实链(Python 解析面 C3 与 entityMapping 判存
+// 两缝都在验收内)。
+describe('collectDefMethodImplementationGaps C-19-MRO 臂(继承链判存)', () => {
+  beforeEach(() => {
+    // 扫描根缓存按 workspaceFolders 记忆,每用例换 mkdtemp 根,先清(同 selfPropertyHover)
+    resetScanRootCache();
+  });
+
+  /** 继承形态夹具:base/Avatar.py 类继承 Parent(onTick 实现与否分态) */
+  const mroOutcome = (outcome: Partial<DefMethodMroOutcome>): DefMethodMroOutcome => ({
+    resolved: false,
+    classNames: [],
+    implementations: [],
+    ...outcome
+  });
+
+  it('链上有实现(父类定义)→ gap 不产出(诊断不报)', async () => {
+    const ws = buildWorkspace();
+    roots.push(ws.root);
+    await withStubbedDefs([ws.avatarDef], async () => {
+      const manager = await makeManager();
+      manager.setDefMethodMroOutcomeResolver(async () => mroOutcome({
+        resolved: true,
+        classNames: ['Avatar', 'Parent'],
+        implementations: [{ className: 'Parent', filePath: '/x/parent.py', line: 3 }]
+      }));
+      const gaps = await manager.collectDefMethodImplementationGaps(ws.avatarDef);
+      expect(gaps.map(gap => gap.name)).not.toContain('onTick');
+      expect(gaps.map(gap => gap.name)).not.toContain('reqPos');
+    });
+  });
+
+  it('链查过无实现 → 照报并注明已查链(gap 带 mroChainClassNames,消息带说明)', async () => {
+    const ws = buildWorkspace();
+    roots.push(ws.root);
+    await withStubbedDefs([ws.avatarDef], async () => {
+      const manager = await makeManager();
+      manager.setDefMethodMroOutcomeResolver(async () => mroOutcome({
+        resolved: true,
+        classNames: ['Avatar', 'Parent']
+      }));
+      const gaps = await manager.collectDefMethodImplementationGaps(ws.avatarDef);
+      const onTick = gaps.find(gap => gap.name === 'onTick');
+      expect(onTick).toBeDefined();
+      expect(onTick!.mroChainClassNames).toEqual(['Avatar', 'Parent']);
+      const items = collectDefMethodMissingItems(fs.readFileSync(ws.avatarDef, 'utf8'), gaps);
+      const message = items.find(item => item.message.includes('onTick'))!.message;
+      expect(message).toContain('继承链 Avatar → Parent 亦无实现');
+    });
+  });
+
+  it('臂未生效(类解析不出 resolved=false)→ 照报现状,不注链(不编造)', async () => {
+    const ws = buildWorkspace();
+    roots.push(ws.root);
+    await withStubbedDefs([ws.avatarDef], async () => {
+      const manager = await makeManager();
+      manager.setDefMethodMroOutcomeResolver(async () => mroOutcome({ resolved: false }));
+      const gaps = await manager.collectDefMethodImplementationGaps(ws.avatarDef);
+      const onTick = gaps.find(gap => gap.name === 'onTick');
+      expect(onTick).toBeDefined();
+      expect(onTick!.mroChainClassNames).toBeUndefined();
+      const items = collectDefMethodMissingItems(fs.readFileSync(ws.avatarDef, 'utf8'), gaps);
+      const message = items.find(item => item.message.includes('onTick'))!.message;
+      expect(message).not.toContain('亦无实现');
+    });
+  });
+
+  it('注入缺失 → 照报现状(旧口径逐字不变)', async () => {
+    const ws = buildWorkspace();
+    roots.push(ws.root);
+    await withStubbedDefs([ws.avatarDef], async () => {
+      const manager = await makeManager();
+      const gaps = await manager.collectDefMethodImplementationGaps(ws.avatarDef);
+      const onTick = gaps.find(gap => gap.name === 'onTick');
+      expect(onTick).toBeDefined();
+      expect(onTick!.mroChainClassNames).toBeUndefined();
+      const items = collectDefMethodMissingItems(fs.readFileSync(ws.avatarDef, 'utf8'), gaps);
+      const message = items.find(item => item.message.includes('onTick'))!.message;
+      expect(message).not.toContain('亦无实现');
+    });
+  });
+
+  it('真索引集成:父类 mixin 已实现 → 不报;父类也无 → 报且注明实链(验收两态)', async () => {
+    const ws = buildWorkspace();
+    roots.push(ws.root);
+    // 继承形态:Avatar(Parent) 不实现 onTick;Parent 实现与否写两态
+    const avatarPy = [
+      'from parent_mixin import Parent',
+      '',
+      'class Avatar(Parent):',
+      '    def reqPos(self, stamp, pos):',
+      '        pass',
+      ''
+    ].join('\n');
+    const parentWith = [
+      'class Parent:',
+      '    def onTick(self):',
+      '        pass',
+      ''
+    ].join('\n');
+    const parentWithout = [
+      'class Parent:',
+      '    pass',
+      ''
+    ].join('\n');
+    fs.writeFileSync(ws.basePy, avatarPy, 'utf8');
+    const parentPy = path.join(path.dirname(ws.basePy), 'parent_mixin.py');
+    const pyFiles = [ws.basePy, ws.cellPy, parentPy];
+    // findFiles 桩:.def glob 给 def,.py glob 给 py(真索引发现链走同一桩)
+    const originalFindFiles = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (raw?: unknown) => {
+      const glob = patternGlob(raw);
+      if (glob.endsWith('.def')) { return [Uri.file(ws.avatarDef)]; }
+      if (glob.endsWith('.py')) { return pyFiles.map(file => Uri.file(file)); }
+      return [];
+    }) as typeof stubWorkspace.findFiles;
+    const originalFolders = stubWorkspace.workspaceFolders;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws.root), name: 'ws', index: 0 }];
+    try {
+      // 态①:父类实现 onTick → 诊断不报
+      fs.writeFileSync(parentPy, parentWith, 'utf8');
+      const manager = await makeManager();
+      const index = new PythonClassIndex();
+      manager.setDefMethodMroOutcomeResolver((ownerFile, ownerClassName, methodName) =>
+        index.resolveMroImplementationOutcome(ownerFile, ownerClassName, methodName));
+      let gaps = await manager.collectDefMethodImplementationGaps(ws.avatarDef);
+      expect(gaps.map(gap => gap.name)).not.toContain('onTick');
+
+      // 态②:父类也无实现 → 照报,注明真实查过的链(Avatar → Parent)
+      fs.writeFileSync(parentPy, parentWithout, 'utf8');
+      // py 变更须走真实失效链(pythonClassIndex 按盘读缓存,mtime+大小变化才重解析)
+      await index.onFileChanged(parentPy);
+      gaps = await manager.collectDefMethodImplementationGaps(ws.avatarDef);
+      const onTick = gaps.find(gap => gap.name === 'onTick');
+      expect(onTick).toBeDefined();
+      expect(onTick!.mroChainClassNames).toEqual(['Avatar', 'Parent']);
+      const items = collectDefMethodMissingItems(fs.readFileSync(ws.avatarDef, 'utf8'), gaps);
+      expect(items.find(item => item.message.includes('onTick'))!.message)
+        .toContain('继承链 Avatar → Parent 亦无实现');
+    } finally {
+      stubWorkspace.findFiles = originalFindFiles;
+      stubWorkspace.workspaceFolders = originalFolders;
+      resetScanRootCache();
+    }
   });
 });
 

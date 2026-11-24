@@ -114,6 +114,31 @@ export type DefLutConventionResolver = (
 ) => Promise<{ filePath: string; line: number; character: number } | null>;
 
 /**
+ * C-19-MRO:MRO 判存注入面(装配层 → collectDefMethodImplementationGaps 臂)。
+ * entityMapping 在装配序里先于 pythonClassIndex 构造(coreServices Layer 1 /
+ * languageServices Layer 2),依赖方向只能由装配层回填(setter)。语义三态:
+ * resolved=false=属主类或其 MRO 链解析不出(索引缺失/预算到期)→ 判存臂不
+ * 生效,gap 照报现状(不编造);resolved=true 且 implementations 非空=继承
+ * 链上有真实实现(父类已定义)→ gap 不产出;resolved=true 且空=全链查过
+ * 无实现 → 照报并注明已查链(classNames 只含真实查过的链类名)。
+ */
+export interface DefMethodMroOutcome {
+  readonly resolved: boolean;
+  readonly classNames: ReadonlyArray<string>;
+  readonly implementations: ReadonlyArray<{
+    readonly className: string;
+    readonly filePath: string;
+    readonly line: number;
+  }>;
+}
+
+export type DefMethodMroOutcomeResolver = (
+  ownerFile: string,
+  ownerClassName: string,
+  methodName: string
+) => Promise<DefMethodMroOutcome>;
+
+/**
  * 属性声明的完整面(批135 属性访问 CodeLens 用):声明位置之上再带 <Type>
  * 直文本、Flags 位集推导的可见域与持久化标记。域位与属性判重复用 defAnalyzer
  * 同一份旗标真值,不另写一份映射。
@@ -320,6 +345,13 @@ export class EntityMappingManager {
   private readonly defMethodLut = new DefMethodLut();
   /** DEF-LUT-001:约定链臂(装配层注入;失效触发的重建复用最近一次注入) */
   private defLutConventionResolver: DefLutConventionResolver | undefined;
+  /** C-19-MRO:MRO 判存臂(装配层回填;缺省 undefined=臂跳过,gap 判定仍完整) */
+  private defMethodMroResolver: DefMethodMroOutcomeResolver | undefined;
+
+  /** C-19-MRO:装配层回填 pythonClassIndex 的 MRO 判存面(构造序倒挂的缝) */
+  setDefMethodMroOutcomeResolver(resolver: DefMethodMroOutcomeResolver): void {
+    this.defMethodMroResolver = resolver;
+  }
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -1875,16 +1907,65 @@ export class EntityMappingManager {
       if (ownerFiles.some(file => hasMethodImplementationInSnapshot(file, method.identity.symbolName))) {
         continue;
       }
+      // C-19-MRO 臂(2026-11-24 用户令「父类已实现还报警」):判存走继承链——
+      // 属主类 mroClasses() 全链逐类查实现,命中即消 gap。臂不生效(注入缺失/
+      // 类或链解析不出)照报现状;链查过无实现照报并注明已查链(不编造)。
+      const mroOutcome =
+        await this.resolveDefMethodMroOutcome(method.identity, ownerFiles, token);
+      if (mroOutcome && mroOutcome.implementations.length > 0) {
+        continue;
+      }
       gaps.push({
         name: method.identity.symbolName,
         line: method.line,
         section: method.section,
         declaredArgs: method.declaredArgs ?? [],
         ownerName: method.identity.ownerName,
-        ownerFile: ownerFiles[0] ?? ''
+        ownerFile: ownerFiles[0] ?? '',
+        ...(mroOutcome && mroOutcome.classNames.length > 0
+          ? { mroChainClassNames: [...mroOutcome.classNames] }
+          : {})
       });
     }
     return gaps;
+  }
+
+  /**
+   * C-19-MRO:属主脚本 × 注入面求判存结果(属主类与脚本同名是标准布局,
+   * 类名不一致的脚本臂不生效照报,不猜命名形态)。任一属主脚本链上命中
+   * 实现 → 消 gap;全部解析不出 → null(臂未生效,照报现状);链查过无
+   * 实现 → 返回无实现结果(classNames 供「已查链」注记)。注入臂异常同
+   * 解析不出处理(不编造「已实现」)。
+   */
+  private async resolveDefMethodMroOutcome(
+    identity: DefinitionSymbolIdentity,
+    ownerFiles: string[],
+    token?: vscode.CancellationToken
+  ): Promise<DefMethodMroOutcome | null> {
+    const resolver = this.defMethodMroResolver;
+    if (!resolver || ownerFiles.length === 0) {
+      return null;
+    }
+    let checked: DefMethodMroOutcome | null = null;
+    for (const ownerFile of ownerFiles) {
+      if (token?.isCancellationRequested) {
+        return null;
+      }
+      let single: DefMethodMroOutcome;
+      try {
+        single = await resolver(ownerFile, identity.ownerName, identity.symbolName);
+      } catch {
+        return null;
+      }
+      if (!single || !single.resolved) {
+        continue;
+      }
+      if (single.implementations.length > 0) {
+        return single;
+      }
+      checked = single;
+    }
+    return checked;
   }
 
   // ─── DEF-LUT-001:def→py 方法跳转反查表(2026-11-18 用户拍板「执行」)──────

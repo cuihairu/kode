@@ -169,6 +169,20 @@ export interface MroMethodChain {
 }
 
 /**
+ * C-19-MRO:def 缺实现判存的 MRO 结果(诚实面三态)。resolved=false=属主类
+ * 或其 MRO 链解析不出(索引未收敛/预算到期)→ 消费方照报现状,不得编造;
+ * resolved=true 且 implementations 非空=继承链上有真实实现(消 gap);
+ * resolved=true 且空=全链查过无实现(照报,classNames 供「已查链」注记)。
+ */
+export interface MroImplementationOutcome {
+  readonly resolved: boolean;
+  /** 链类名(MRO 序,含属主自身;resolved=true 时给) */
+  readonly classNames: ReadonlyArray<string>;
+  /** 链上该方法的实现位置(MRO 序) */
+  readonly implementations: ReadonlyArray<MroChainEntry>;
+}
+
+/**
  * 工作区 Python 类索引:按需扫描 *.py 建 className → 定义列表,
  * 变更时按文件失效。所有查询走缓存,不在热点路径重复解析。
  *
@@ -1931,6 +1945,61 @@ export class PythonClassIndex {
       }
     }
     return chains;
+  }
+
+  /**
+   * C-19-MRO(用户反复投诉「父类已实现还报警」):属主类自身 MRO 全链上的
+   * 方法实现面(def 缺实现判存用)。只查「该类 mroClasses() 链」——组合根/
+   * 反向后代视角是 lens 面,不进判存(子类实现不消父类实体的缺实现)。
+   * 等待节拍与 resolveMroMethodChains 同(预算内等全仓收敛;残缺解析态下
+   * 间接基类会解析成 null 被剔除且 mroCache 不随后续解析失效——首次残缺
+   * MRO 会被永久缓存,故全仓口径起算);超预算 → resolved=false,消费方
+   * 照报现状,不作权威负结论。类解析不出 → resolved=false(照报,不编造)。
+   */
+  async resolveMroImplementationOutcome(
+    ownerFile: string,
+    ownerClassName: string,
+    methodName: string,
+    token?: vscode.CancellationToken,
+    budgetMs: number = INTERACTIVE_INDEX_WAIT_MS
+  ): Promise<MroImplementationOutcome> {
+    const unresolved: MroImplementationOutcome = { resolved: false, classNames: [], implementations: [] };
+    if (token?.isCancellationRequested) { return unresolved; }
+    await this.ensureBufferFresh(ownerFile);
+    this.scheduleBackgroundScan();
+    // 属主类文件本地先找(按需单文件解析,不等全仓);实体类与属主脚本
+    // 同名是标准布局,miss(类名不一致等)再全仓口径兜底。
+    let cached = this.fileCache.get(ownerFile);
+    if (!cached) {
+      await this.loadFileOnDemand(ownerFile);
+      cached = this.fileCache.get(ownerFile);
+    }
+    const local = cached?.parsed.classes.find(cls => cls.name === ownerClassName);
+    const enclosing = local
+      ?? await raceWithBudget('definition:python-index',
+        this.ensureScanned().then(() =>
+          (this.byName.get(ownerClassName) ?? [])
+            .find(cls => cls.filePath.replace(/\\/g, '/').toLowerCase()
+              === ownerFile.replace(/\\/g, '/').toLowerCase()) ?? null),
+        budgetMs, token);
+    if (token?.isCancellationRequested || !enclosing) { return unresolved; }
+    await this.stageRequestFiles(ownerFile, token);
+    // mroCache 残缺缓存红线:链计算前先等全仓收敛(与 resolveMroMethodChains
+    // 注释同口径);超预算不动链(照报现状),不留残缺链给后续查询。
+    const scanReady = await raceWithBudget('definition:python-index',
+      this.ensureScanned().then(() => true), budgetMs, token);
+    if (token?.isCancellationRequested || !scanReady) { return unresolved; }
+    const chain = this.mroClasses(enclosing);
+    const implementations: MroChainEntry[] = [];
+    for (const cls of chain) {
+      const loc = cls.methods.get(methodName);
+      if (loc) {
+        implementations.push({
+          className: cls.name, filePath: cls.filePath, line: loc.line, character: loc.character
+        });
+      }
+    }
+    return { resolved: true, classNames: chain.map(cls => cls.name), implementations };
   }
 }
 
