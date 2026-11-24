@@ -189,8 +189,9 @@ jobs:
   # 本 job 即该面。ABI 声明随构建宿主 Wireshark 版本探测(libwireshark
   # WANT_MAJOR/MINOR=sys VERSION),故两腿都锁 4.6 主版本线。验收门=
   # 装→验→删闭环(tshark -G plugins 列出 + 样例 pcap -Y kbengine 6/6),
-  # 不过不上传 artifact。产物单独挂 artifact,不进 build-and-release 的
-  # 七包发布面(Release 页面归用户拍板)。Wireshark 依赖重,走 GitHub
+  # 不过不上传 artifact。产物先挂 artifact;2026-11-25 用户拍板挂进 nightly
+  # 滚动 Release(build-and-release 在腿绿时打包上传,腿红如实缺位并在
+  # release 说明注明,不卡七包面)。Wireshark 依赖重,走 GitHub
   # 托管 runner,不吃 CI_RUNNER 自托管路由。
   wireshark-plugin:
     name: Wireshark plugin (${{ matrix.artifact }})
@@ -297,7 +298,14 @@ jobs:
 
   build-and-release:
     name: Publish nightly after all seven packages pass
-    needs: [validate, packages]
+    # needs 含 wireshark-plugin 只为读 needs.*.result 控制插件资产面;
+    # if 用 always() + 两主面显式 success:插件腿红不卡七包滚动发布,
+    # 插件资产如实缺位并在 release 说明注明(2026-11-25 用户拍板形态)。
+    needs: [validate, packages, wireshark-plugin]
+    if: >-
+      always() &&
+      needs.validate.result == 'success' &&
+      needs.packages.result == 'success'
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -312,6 +320,31 @@ jobs:
           pattern: platform-vsix-*
           path: dist
           merge-multiple: true
+      # 插件资产挂进 nightly release(2026-11-25 用户拍板):腿绿(含装→验→
+      # 删验收门 6/6)才下载打包上传;腿红则缺位并在 release 说明注明,不卡
+      # 七包面。zip 内带 README.md(安装目录表 + AppArmor 加固注意)。
+      - name: Download Wireshark plugin artifacts
+        if: needs.wireshark-plugin.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wireshark-plugin-*
+          path: dist/plugin
+      - name: Package Wireshark plugin assets
+        if: needs.wireshark-plugin.result == 'success'
+        run: |
+          set -euo pipefail
+          mkdir -p dist/plugin-zip
+          for d in dist/plugin/wireshark-plugin-*; do
+            [ -d "$d" ] || continue
+            os="${d##*/wireshark-plugin-}"
+            stage="dist/plugin-stage/wireshark-kbengine-plugin-$os"
+            mkdir -p "$stage"
+            find "$d" -type f \( -name '*.so' -o -name '*.dll' \) -exec cp {} "$stage/" \;
+            find "$d" -type f -name 'README.md' -exec cp {} "$stage/" \;
+            [ -n "$(find "$stage" \( -name '*.so' -o -name '*.dll' \) -print -quit)" ] || { echo "no plugin binary staged for $os"; exit 1; }
+            (cd dist/plugin-stage && zip -qr "../plugin-zip/wireshark-kbengine-plugin-$os.zip" "wireshark-kbengine-plugin-$os")
+          done
+          ls -l dist/plugin-zip/
       - name: Verify all seven packages and generate checksums
         run: node scripts/verify-platform-set.mjs dist
 
@@ -337,6 +370,12 @@ jobs:
           COMMIT_SHA=$(git rev-parse --short HEAD)
           COMMIT_MSG=$(git log -1 --pretty=%s)
           COMMIT_URL="https://github.com/cuihairu/kode/commit/$(git rev-parse HEAD)"
+          # 插件资产行:zip 在=验收过挂出;zip 缺(腿红)=如实注明缺位。
+          if compgen -G "dist/plugin-zip/*.zip" > /dev/null; then
+            PLUGIN_ROWS='| wireshark-kbengine-plugin-linux-x64.zip / wireshark-kbengine-plugin-windows-x64.zip | Linux / Windows（Wireshark 4.6） | KBEngine 线协议 Wireshark dissector 插件（GPL-3.0-or-later 独立许可，不随 VSIX 分发）；已过装→验→删验收门（tshark 装载列出 + 样例 pcap 6/6 命中），zip 内 README 含安装目录表 |'
+          else
+            PLUGIN_ROWS='| （Wireshark 插件资产） | Linux / Windows | 本夜插件构建未过验收门，资产缺位；见 wireshark-plugin job 日志 |'
+          fi
           cat <<EOF > release-body.md
           # Kode Nightly Build
 
@@ -353,6 +392,7 @@ jobs:
           | kode-*-pure-ts.vsix | 通用纯 TS | 无二进制，默认 TS 后端；Rust 独有工具能力受限 |
           | SHA256SUMS | 全平台 | 下载完整性校验 |
           | sbom/*.cdx.json | Rust 二进制 | kode-server/kode-kbengine/kode-mcp 的 CycloneDX 1.5 依赖清单（RUST-060 来源审计） |
+          ${PLUGIN_ROWS}
 
           每个平台均通过原生 Rust 单元测试、CLI 集成测试、二进制发现测试，
           并从最终 VSIX 解出二进制完成 LSP 生命周期与 CLI 启动验证。
@@ -372,6 +412,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ASSETS=(dist/*.vsix dist/SHA256SUMS dist/sbom/*.cdx.json)
+          for plugin_zip in dist/plugin-zip/*.zip; do
+            if [ -e "$plugin_zip" ]; then ASSETS+=("$plugin_zip"); fi
+          done
           if gh release view nightly --repo cuihairu/kode >/dev/null 2>&1; then
             gh release edit nightly --repo cuihairu/kode \
               --title "Kode Nightly (rolling)" \
@@ -402,6 +445,11 @@ jobs:
         run: |
           while IFS= read -r asset; do
             if [[ "$asset" == kode-*.vsix ]] && [ ! -f "dist/$asset" ]; then
+              gh release delete-asset nightly "$asset" --repo cuihairu/kode --yes
+            fi
+            # 插件 zip 缺位夜(腿红)要撤上一夜的旧插件 zip:release 资产集
+            # 与本 commit 构建对齐,不留过时资产(body 说明同步注明缺位)。
+            if [[ "$asset" == wireshark-kbengine-plugin-*.zip ]] && [ ! -f "dist/plugin-zip/$asset" ]; then
               gh release delete-asset nightly "$asset" --repo cuihairu/kode --yes
             fi
           done < <(gh release view nightly --repo cuihairu/kode --json assets --jq '.assets[].name')
