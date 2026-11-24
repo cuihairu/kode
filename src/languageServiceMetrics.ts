@@ -11,6 +11,10 @@ import {
   getRecentFileReads,
   isFileReadVerbose
 } from './backend/fileReadMetrics';
+import {
+  SHARED_FILE_TEXT_BUDGET_BYTES,
+  getSharedFileTextCache
+} from './backend/sharedFileTextCache';
 
 export type LanguageServiceEventName =
   | 'hover'
@@ -235,8 +239,16 @@ export function getLanguageServiceSummaryReport(): string {
     `file reads: ${readTotals.reads} total / ${readTotals.bytes} bytes ` +
     `(detail ring ${getRecentFileReads().length}/${FILE_READ_RING_LIMIT}, ` +
     `verbose ${isFileReadVerbose() ? 'on' : 'off'})`;
+  // 共享原文缓存对账面(2026-11-24 索引序节):evictions 此前零消费者,
+  // LRU 是否在真跑(语料文本 > 预算)无从判断,「倒序索引值不值」无从裁。
+  // 预算同报,便于直接读「evictions>0 是否由预算太小引起」。
+  const cacheStats = getSharedFileTextCache().snapshotStats();
+  const cacheLine =
+    `shared text cache: entries=${cacheStats.entries} hits=${cacheStats.hits} ` +
+    `misses=${cacheStats.misses} evictions=${cacheStats.evictions} ` +
+    `failures=${cacheStats.failures} budget=${SHARED_FILE_TEXT_BUDGET_BYTES} bytes`;
   if (all.length === 0) {
-    return `No language service metrics recorded yet.\n${fileReadLine}\n`;
+    return `No language service metrics recorded yet.\n${fileReadLine}\n${cacheLine}\n`;
   }
   const lines = all.map(summary =>
     `${summary.name.padEnd(NAME_WIDTH)}  count=${String(summary.count).padStart(6)}` +
@@ -253,6 +265,7 @@ export function getLanguageServiceSummaryReport(): string {
     `p50/p95/p99/max/avg over recent window when samples were dropped, counts cumulative)`,
     ...lines,
     fileReadLine,
+    cacheLine,
     ''
   ].join('\n');
 }

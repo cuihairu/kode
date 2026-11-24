@@ -514,6 +514,16 @@ export class EntityMappingManager {
       const normalized = normalizeLookupPath(defFile.fsPath);
       return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
     });
+    // 索引序对账(2026-11-24):发现序原为 findFilesAcrossRoots 的 Map 插入序
+    // (=workspace.findFiles 序 + 外部 readdir 序),跨次启动/跨机器不稳定 →
+    // 首扫批次与磁盘缓存快照不可复现,基准锚点对拍因此带噪音。按规范化路径
+    // 码点排序取得确定性;码点比较而非 localeCompare(后者依赖平台 locale)。
+    // 只排实体候选(interfaces/components 分件另路发现,不在此处)。
+    entities.sort((left, right) => {
+      const a = normalizeLookupPath(left.fsPath);
+      const b = normalizeLookupPath(right.fsPath);
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
     // WARM-VISIBILITY-004 刀 B:起扫行进统一「KBEngine Index」通道(常开)
     // ENGINE-LIB-SCAN-005 刀2:引擎仓子树剔除面入起扫行(范围可审计)
     const engineExcludedRoots = resolveEngineSubtreeExclusions().length;

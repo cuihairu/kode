@@ -111,6 +111,10 @@ describe('languageServiceMetrics 汇总报告', () => {
     const report = getLanguageServiceSummaryReport();
     expect(report).toContain('semantic-query');
     expect(report).toContain('p50=      3.5ms');
+    // 共享原文缓存对账面(2026-11-24 索引序节):evictions 原先零消费者,
+    // LRU 是否真在淘汰无从判断,倒序索引的收益无从裁。
+    expect(report).toContain('shared text cache:');
+    expect(report).toContain('evictions=');
     expect(getAllOperationSummaries()).toHaveLength(1);
   });
 
