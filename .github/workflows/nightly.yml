@@ -223,15 +223,21 @@ jobs:
           set -euo pipefail
           sudo add-apt-repository -y ppa:wireshark-dev/stable
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tshark
+          # libwireshark-dev 提供 libwireshark.so dev symlink(build.rs 只探无版本
+          # 后缀路径;只装 tshark 得到的是 libwireshark.so.19,链不上)。
+          sudo apt-get install -y --no-install-recommends tshark libwireshark-dev
           tshark -v | head -1
           tshark -v | grep -E 'Wireshark\) 4\.6\.' || { echo 'expected Wireshark 4.6 line on runner'; exit 1; }
       - name: Install Wireshark 4.6.4 (Windows)
         if: runner.os == 'Windows'
         run: |
           $ErrorActionPreference = 'Stop'
-          $url = 'https://2.na.dl.wireshark.org/win64/Wireshark-4.6.4-x64.exe'
+          $url = 'https://2.na.dl.wireshark.org/win64/all-versions/Wireshark-4.6.4-x64.exe'
           Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\ws-installer.exe"
+          # MZ 头校验:站点对缺失文件返回 200+HTML 404 页,不校验会把 HTML
+          # 当安装器静默装失败(首跑实犯,判例)。
+          $bytes = [System.IO.File]::ReadAllBytes("$env:RUNNER_TEMP\ws-installer.exe")[0..1]
+          if ([System.Text.Encoding]::ASCII.GetString($bytes) -ne 'MZ') { Write-Host 'downloaded file is not a PE binary'; exit 1 }
           Start-Process -Wait -FilePath "$env:RUNNER_TEMP\ws-installer.exe" -ArgumentList '/S'
           & 'C:\Program Files\Wireshark\tshark.exe' -v | Select-Object -First 1
           if (-not (& 'C:\Program Files\Wireshark\tshark.exe' -v | Select-String 'Wireshark\) 4\.6\.')) { Write-Host 'expected Wireshark 4.6 line on runner'; exit 1 }
