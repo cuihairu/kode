@@ -8,6 +8,30 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## 2026-11-25 全仓复审修复批(用户令:「分析完成需要把发现的问题一一修复掉」;五 agent 审计 → 逐锚回原文复核后修复)
+
+已修(载体 **ba4cda18**,TS 门=全量 vitest 13061 绿+定向门+tsc+eslint;Rust 门=protocol 74+kode-server 全量单线程绿+clippy -D warnings+fmt):
+- [x] ssh 位置参数注入防线:`-oProxyCommand=…` 形状 host/user/proxyJump 会被 ssh 当本地选项执行——`validateSshEntry` 拒前导 '-' 与空白/控制字符(码点循环判定,eslint no-control-regex 拦字符类正则),`sshCommonArgs` throw RangeError;remoteProcessList 的 buildSshExecArgs 移入 try;serverControls pyspy 闭包 catch 归 CommandRunResult 形状;cov-longtail 既有 fixture 原用注入形状测失败路径,改用 `.invalid` 保留 TLD 真不可达主机同路径。
+- [x] pytest 超时树杀:pythonTestRunner spawn 加 `detached`(非 win32)+超时 `killProcessTree(child.pid,'SIGKILL')`——此前只杀父进程孙进程成孤儿;回归钉=parent 挂死 grandchild 写 pid 文件,超时后 ESRCH。
+- [x] quickActions 死终端替换前 `dispose()`,防终端面板死条目堆积。
+- [x] diagnostics configData catch 静默吞错→落 console.log 并更正注释(不自动重排全扫是 2026-11-24 Navigation 刷屏批裁定,下次输入经 changes 再触发)。
+- [x] ProcessManager stop 误判:POSIX 组信号主路径不经 child.kill(child.killed 恒 false),外部 emit exit 非零曾被记 'error'——终态改按管理器自身 `stopping` 账;dispose 先置 stopping。
+- [x] executor.rs 派发 handler panic 复位:get_entry 本 spawn 一次不重生,panic 令 gate 配额/泳道位永不释放楔死准入——catch_unwind 归 `JobStatus::Failed(panic_message)`,测试钉 interactive_running 归零+后继 job 照常。
+- [x] framing.rs 两条真缺陷:①上限先判总缓冲会把一整块合法帧序列(合计>cap)整体作废静默丢数据→改「先解帧后判余量」;②错误复位丢弃段(含随 Err 丢弃的已解帧+未成帧残留)不同步推进 abs_base→恢复后 stream_offset 系统性少报;reset 折算 `abs_base += buf.len()`(不变量 abs_base+buf.len()=本 parser 累计字节数,含 consumed);Fail 策略垃圾块现报更精确 UnknownMessageId,coverage_units 旧钉按新语义诚实更新。
+- [x] 配置对账缺口+AI 面闸(载体 **48e59a98**):annotationLog/metrics.detailed/hover.behaviorNotes/managedDir 四键补 contributes+双语 nls+guide 中英总览表+features Settings 表(五处对账闸全过,docsCommands 钉);`kbengine.ai.baseUrl` 加 `scope: machine`——不受信工作区 `.vscode/settings.json` 无法把 AI 请求改指他机(用户源码外发红线);**裁定:不接 decideHttpEndpoint**——AI endpoint 本就面向外部服务(loopback-only 会杀核心用途),lm 回退路线同无闸,机器作用域已断工作区注入向量,接闸是假对称。
+- [x] wire-protocol 双语文档补 §15 Wireshark 插件使用指南(载体 **3e8f7874**,用户令「wireshark的插件如何使用记得更新到文档中」)。
+
+证伪/刻意设计(审计报告经回原文复核不成立,零代码):
+- [x] kb_index 按 pid 键库=审计报 HIGH,实为**文档明示的刻意设计**(防跨进程 SQLite 争用);真残差=temp 目录累积,注记待办不属缺陷修复。
+- [x] diagnostics「重试条件永假」=误报——queueChange 运行中可回填 changes,重试路径活;只补了静默日志面。
+- [x] 大文件拆分裁定(用户令「大文件拆的合理些」):self_flow.rs **不拆**——单 LANG-NAR-1 迁移单元,按状态机段硬切会把共享契约拉裂成七处同步;entityMapping.ts 外提**缓拆**——领域表内聚,外提只搬行数不减复杂度。落注记不做机械拆分。
+
+待点火(审计发现按预算呈报,未修):
+- [ ] 插件面 HIGH:wireshark 插件 per-frame summaries/trees 表无界增长(长抓包内存爬升)——需 cap+ring 策略小批。
+- [ ] CI 面 MED 五条:nightly edit-before-upload 时序窗/verify-platform-set 漏插件 zip/ci.yml if-no-files-found 恒绿缝/engine-integration 空转绿/cleanup 进程替换吞错。
+- [ ] kb_index temp 累积残差(刻意设计的代价面,需清理策略小批)。
+- [ ] ⑧ 同族残余:`kbengine.ai.model` 等五键仍工作区可覆盖(非网络目的地,低危,随下一批顺手收编)。
+
 ## 2026-11-22 热更与 MCP 索引审核
 
 - [x] KODE-HRMCP-001 [P1] 活动 profile 的热更通道优先于动作名和默认端点。`hotReloadFireTransportClosure.test.ts` 验证动作名留空和已配置时均投递到活动目标。
@@ -2996,7 +3020,7 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 
 - [x] 现行打包闭环实证(核验当日 nightly 45351436194 的 win32-x64 产物,解包逐文件 `file` 验尸):bin/ 三二进制全 PE32+ x86-64(manifest.json 身份=target/rustTarget/commit 四方对账)。打包链=platform-vsix.mjs 按 matrix target 原生交叉编译 → bin/ 重建(仓库 bin/ 未跟踪,不漏 Linux 残留)→ smokeBinaries 原生真执行(LSP 生命周期+CLI+MCP 握手,Linux ELF 在 Windows runner 上无法过)→ verify-platform-vsix 解包真 ZIP 再原生执行+sha256+exec 位校验;七平台 job 全绿。滚动 nightly release 资产=七平台包+pure-ts+SBOM+SHA256SUMS,无历史残留通用包。
 - [x] 历史面:2026-10-25(用户机器安装版本时点)nightly 还是 ubuntu 通用 kode-nightly.vsix(90b01f3f 11-08 才改六平台原生门),且 bin/ 当时未被 git 跟踪=通用包内零二进制;「Windows 包内含 Linux core」不可能来自任何历史发布面。用户机器上的 Linux core 来源(WSL 远程扩展目录混装/手工拷贝/拿错平台文件)需现场状态确证(用户亦令「内网开发机的 Rust 启动失败还需要看现场状态」)。
-- [ ] 可点火候选(小批):二进制平台魔数守门——discoverNativeBinary 的 bin/ 面加镜像格式校验(win32 期望 MZ/linux 期望 \x7fELF/darwin 期望 Mach-O,错格式视为缺失不 spawn)+错配原因如实上报(「安装的平台包与当前系统不匹配,请装 win32-x64 包」),Core/MCP 探针 tooltip 直显;杜绝错平台二进制落盘后预算未决/连超时的哑挂形状。
+- [x] 可点火候选(小批):二进制平台魔数守门——discoverNativeBinary 的 bin/ 面加镜像格式校验(win32 期望 MZ/linux 期望 \x7fELF/darwin 期望 Mach-O,错格式视为缺失不 spawn)+错配原因如实上报(「安装的平台包与当前系统不匹配,请装 win32-x64 包」),Core/MCP 探针 tooltip 直显;杜绝错平台二进制落盘后预算未决/连超时的哑挂形状。(2026-11-25 落地,载体 **c6bf51c6**:discoverNativeBinaryReport 魔数校验+rejectedReason,状态栏 tooltip 直显;tests/nativeBinary.test.ts 错平台回落/三魔数/manifest 对拍全绿;dev 构建 target/* 面不属本门不校验)
 
 ## 2026-11-24 Navigation 刷屏修复(用户带现场证据:cron 链自供弹,49 文件样本两轮 466 行;正式代码此前零改动)
 
@@ -3033,7 +3057,7 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [ ] 可点火:增量面(用户确认「文件变化只更新受影响内容还没做到」——编辑/保存/外部变更仍是 800ms 防抖后一轮全扫;理想态=只增量更新变化文件+配置定义变化时重查受影响引用闭包,需 configData schema 依赖跟踪,独立小批)。
 - [ ] 可点火:.def 在途解析合并吞变更(用户受控测试复现:解析途中修改 .def,watcher 发起的新解析被合并进旧任务,这次变更漏处理)——defParseInFlight(8b032840)只按路径去重,未对「在途期间文件又变了」的落地结果做版本核对;修复方向=合并命中者拿到结果后核对文件 mtime/内容代,变了就再排一轮。
 - [ ] 可点火:watcher 范围(configDataPyWatcher 监听整个工作区 '**/*.py',扫描范围之外的 Python 文件也能触发全扫;工作区外的 assetsRoot 又没接入这个监听——外部根的增删改走不到重算面)。
-- [ ] 可点火:缺失二进制 respawn 缺陷(用户对照实验:用缺失的 .exe,首次立即报 ENOENT,第二次没有重新拉起进程,最后变成握手超时)——ensureClient 对 spawn ENOENT 的失败账似被记成「已尝试」,二连请求不再走 start 臂;需现场确认内网机同形。相关既有候选:二进制平台魔数守门(错格式视为缺失不 spawn+如实上报)。
+- [ ] 可点火:缺失二进制 respawn 缺陷(用户对照实验:用缺失的 .exe,首次立即报 ENOENT,第二次没有重新拉起进程,最后变成握手超时)——ensureClient 对 spawn ENOENT 的失败账似被记成「已尝试」,二连请求不再走 start 臂;需现场确认内网机同形。相关既有候选:二进制平台魔数守门(错格式视为缺失不 spawn+如实上报)。增:2026-11-25 复现实验证伪 client 层推测——child.on('error')→clearProcess 置空后第二次 start() 走 `this.child ?? this.spawnProcess()` 正常 respawn(tests/kodeCoreClientRespawn.test.ts 回归钉:两连 'spawn failed' 各计 1);「失败账记成已尝试」未复现,gate 层待现场,保持未勾(回归钉载体 **a865e68a**)。
 - [x] Windows 包核验:三 .exe 全 PE32+ x64、校验值匹配、真机握手 187ms(打包面无恙,与 2026-11-24 地面真值核验一致)。
 
 ## 2026-11-24 def↔py 一致性误报:父类已实现仍报警(用户报告「提了无数次依然没有修复」——最高优先)
