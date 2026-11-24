@@ -79,7 +79,8 @@ const threeDistinctPorts = async (): Promise<[number, number, number]> => {
 
 /** 引擎 defaults 落任意目录(dbmgr 连接要素带指定端口) */
 const writeEngineDefaultsAt = (dir: string, host: string, port: number): void => {
-  const engine = path.join(dir, 'kbe', 'res', 'server');
+  // dir 即引擎安装根(2026-11-24 语义:kbe 目录本身)
+  const engine = path.join(dir, 'res', 'server');
   fs.mkdirSync(engine, { recursive: true });
   fs.writeFileSync(
     path.join(engine, 'kbengine_defaults.xml'),
@@ -108,7 +109,7 @@ const writeEngineDefaultsAt = (dir: string, host: string, port: number): void =>
 /** 落一份引擎 defaults(dbmgr 连接要素)+ binPath 覆盖,让引擎配置读得到 */
 const writeEngineDefaults = (host: string, port: number): void => {
   writeEngineDefaultsAt(root, host, port);
-  configurationOverrides.set('kbengine', { binPath: `${root}/kbe/bin/server` });
+  configurationOverrides.set('kbengine', { binPath: `${root}/bin/server` });
 };
 
 const activateAndWait = async (workspaceState?: unknown): Promise<ExtensionContext> => {

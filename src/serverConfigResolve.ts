@@ -441,13 +441,18 @@ async function refresh(
 
 /** 由 kbengine.binPath 推导引擎 defaults 文件路径(自 telnetService 迁入:
  * KODE-CFG-009 起 telnetService 消费本模块,实现居此避免环;telnetService
- * 按原名对外)。后缀不在或剥完为空 → null。 */
+ * 按原名对外)。后缀不在/剥完为空/相对路径 → null。root 为引擎安装根
+ * (binPath 剥掉 bin/server 尾段,2026-11-24 语义 = kbe 目录本身),
+ * defaults 在其下 res/server/。 */
 export function deriveEngineDefaultsXmlPath(binPath: string): string | null {
   if (!binPath) {
     return null;
   }
   const normalized = path.normalize(binPath);
-  const suffix = path.normalize(path.join('kbe', 'bin', 'server'));
+  if (!path.isAbsolute(normalized)) {
+    return null;
+  }
+  const suffix = path.normalize(path.join('bin', 'server'));
   if (!normalized.endsWith(suffix)) {
     return null;
   }
@@ -455,5 +460,5 @@ export function deriveEngineDefaultsXmlPath(binPath: string): string | null {
   if (root.length === 0) {
     return null;
   }
-  return path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml');
+  return path.join(root, 'res', 'server', 'kbengine_defaults.xml');
 }

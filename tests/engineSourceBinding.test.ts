@@ -34,14 +34,17 @@ const realDeps = {
 
 const makeEngineTree = (): { root: string; pyiFile: string; headerFile: string; cppLine: number } => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engine-src-'));
-  fs.mkdirSync(path.join(root, 'kbe', 'src', 'lib', 'common'), { recursive: true });
+  // 2026-11-24 语义:身份锚 res/server/kbengine_defaults.xml(findEngineRoot 向上验锚)
+  fs.mkdirSync(path.join(root, 'res', 'server'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'res', 'server', 'kbengine_defaults.xml'), '<r>\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'src', 'lib', 'common'), { recursive: true });
   fs.mkdirSync(path.join(root, 'typings'), { recursive: true });
   const pad = (line: number, text: string): string =>
     `${Array.from({ length: line - 1 }, () => '# pad').join('\n')}\n${text}\n`;
-  fs.writeFileSync(path.join(root, 'kbe', 'src', 'lib', 'common', 'kbeversion.h'), pad(1, '#define KBE_VERSION_MAJOR 2'), 'utf8');
+  fs.writeFileSync(path.join(root, 'src', 'lib', 'common', 'kbeversion.h'), pad(1, '#define KBE_VERSION_MAJOR 2'), 'utf8');
   const pyiFile = path.join(root, 'typings', '_KBEngine_common.pyi');
   fs.writeFileSync(pyiFile, pad(67, 'class Entity:'), 'utf8');
-  const headerFile = path.join(root, 'kbe', 'src', 'lib', 'pyscript', 'vector3.h');
+  const headerFile = path.join(root, 'src', 'lib', 'pyscript', 'vector3.h');
   fs.mkdirSync(path.dirname(headerFile), { recursive: true });
   fs.writeFileSync(headerFile, pad(12, 'class ScriptVector3 : public PyObject'), 'utf8');
   return { root, pyiFile, headerFile, cppLine: 12 };
@@ -60,6 +63,25 @@ describe('resolveEnginePythonDefinition(RUST-174)', () => {
     const tree = makeEngineTree();
     const hit = resolveEnginePythonDefinition(entityEntry(), tree.root, realDeps);
     expect(hit).toEqual({ kind: 'engine-typings', file: tree.pyiFile, line: 67 });
+  });
+
+  it('typings 在仓库根(安装根兄弟位,用户自己的引擎 stub)→ 兄弟候选命中', () => {
+    // 2026-11-24 用户令:typings 是用户自己的引擎 stub 包,fork 布局在仓库根
+    // (安装根的父目录);engineRoot=kbe 目录本身后锚点从兄弟位解析
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engine-sibtyp-'));
+    const root = path.join(repo, 'kbe');
+    fs.mkdirSync(root, { recursive: true });
+    fs.mkdirSync(path.join(repo, 'typings'), { recursive: true });
+    const pad = (line: number, text: string): string =>
+      `${Array.from({ length: line - 1 }, () => '# pad').join('\n')}\n${text}\n`;
+    const pyiFile = path.join(repo, 'typings', '_KBEngine_common.pyi');
+    fs.writeFileSync(pyiFile, pad(67, 'class Entity:'), 'utf8');
+    try {
+      const hit = resolveEnginePythonDefinition(entityEntry(), root, realDeps);
+      expect(hit).toEqual({ kind: 'engine-typings', file: pyiFile, line: 67 });
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 
   it('文件在而锚点行漂移 → drifted 只给文件,不声称行号', () => {
@@ -89,7 +111,7 @@ describe('resolveEnginePythonDefinition(RUST-174)', () => {
     const hit = resolveEnginePythonDefinition(
       entityEntry({
         name: 'Vector3',
-        sourceFile: 'kbe/src/lib/pyscript/vector3.h',
+        sourceFile: 'src/lib/pyscript/vector3.h',
         sourceLine: 12,
         cppClassName: 'ScriptVector3'
       }),
@@ -127,8 +149,8 @@ describe('resolveEngineCppDefinition(RUST-174)', () => {
 
   it('确定性:字母序目录先命中胜出(不随 readdir 序漂移)', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engine-cpp-'));
-    const early = path.join(root, 'kbe', 'src', 'lib', 'aaa');
-    const late = path.join(root, 'kbe', 'src', 'lib', 'zzz');
+    const early = path.join(root, 'src', 'lib', 'aaa');
+    const late = path.join(root, 'src', 'lib', 'zzz');
     fs.mkdirSync(early, { recursive: true });
     fs.mkdirSync(late, { recursive: true });
     fs.writeFileSync(path.join(early, 'first.h'), 'class ScriptVector3 : public PyObject\n', 'utf8');
@@ -159,8 +181,8 @@ describe('resolveEngineCppDefinition(RUST-174)', () => {
     expect(resolveEngineCppDefinition({ cppClassName: 'ScriptFoo' } as CppEntry, tree.root, scanDeps)).toEqual({ kind: 'cpp-not-found' });
     const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engine-bare-'));
     expect(resolveEngineCppDefinition({ cppClassName: 'ScriptVector3' } as CppEntry, bare, scanDeps)).toEqual({ kind: 'cpp-not-found' });
-    fs.mkdirSync(path.join(bare, 'kbe', 'src', 'lib'), { recursive: true });
-    fs.writeFileSync(path.join(bare, 'kbe', 'src', 'lib', 'vector3.cpp'), 'class ScriptVector3 : public PyObject\n', 'utf8');
+    fs.mkdirSync(path.join(bare, 'src', 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(bare, 'src', 'lib', 'vector3.cpp'), 'class ScriptVector3 : public PyObject\n', 'utf8');
     expect(resolveEngineCppDefinition({ cppClassName: 'ScriptVector3' } as CppEntry, bare, scanDeps)).toEqual({ kind: 'cpp-not-found' });
   });
 });

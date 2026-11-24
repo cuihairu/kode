@@ -24,8 +24,9 @@ export interface ExtensionCompatibilityTarget {
 }
 
 export function findEngineRoot(startDirectory: string, explicitRoot?: string): string | null {
-  // C-14: dual marker probe (version.h legacy | kbeversion.h 2.5.10+), same
-  // acceptance as src/engineApiMetadata.ts findEngineRoot.
+  // 身份验收同 src/engineApiMetadata.ts:安装根下 res/server/kbengine_defaults.xml
+  // (2026-11-24 用户令,结构特征不认目录名);向上走逐层验身份锚,工作区在
+  // 引擎安装根深处(如 <engine>/src/lib/common)时命中所在安装根。
   if (explicitRoot) {
     return hasEngineTreeMarker(explicitRoot, probe => fs.existsSync(probe)) ? explicitRoot : null;
   }
@@ -38,23 +39,46 @@ export function findEngineRoot(startDirectory: string, explicitRoot?: string): s
 }
 
 /**
- * 引擎根默认探测(2026-11-23 用户令):只找两处——当前目录下有 kbe 引擎树
- * (双 marker 命中)或上一层目录下有;都没有 → null,由调用面走「提示用户
- * 配置」链(显式配置沿用既有名字 kbengine.engineRoot / profile engineRoot,
- * 不另造配置项)。不做多级向上递归:那类「工作区本身在引擎树深处」的辨认
- * 是 findEngineRoot(引擎仓子树剔除/兼容性检查)的职责;配置自动补录只认
- * 安装位两处,两个探测面分工不混。
+ * 引擎根默认探测(2026-11-23 用户令两处;2026-11-24 语义改版):身份看结构
+ * 锚 res/server/kbengine_defaults.xml(不认目录名,kbe 改名照样认),安装位
+ * 仍只找两处——
+ *   ① 起始目录本身就是安装根;
+ *   ② 起始目录的一层孩子里有引擎安装根(典型:<repo>/assets 打开,<repo>/kbe);
+ *   ③ 上一层目录的一层孩子里有引擎安装根(典型:<repo> 打开,<repo>/kbe)。
+ * 同一处命中多个引擎安装根 → 视为歧义不写(如实缺失,不猜);都没有 →
+ * null,由调用面走「提示用户配置」链(显式配置沿用既有名字
+ * kbengine.engineRoot / profile engineRoot,不另造配置项)。不做多级向上
+ * 递归:「工作区本身在引擎树深处」的辨认是 findEngineRoot(引擎仓子树剔除/
+ * 兼容性检查)的职责;配置自动补录只认安装位两处,两个探测面分工不混。
  */
 export function findEngineRootInDefaultPlaces(startDirectory: string): string | null {
   const resolved = path.resolve(startDirectory);
-  const parent = path.dirname(resolved);
-  const candidates = parent === resolved ? [resolved] : [resolved, parent];
-  for (const candidate of candidates) {
-    if (hasEngineTreeMarker(candidate, probe => fs.existsSync(probe))) {
-      return candidate;
+  const exists = (probe: string): boolean => fs.existsSync(probe);
+  const engineChildren = (directory: string): string[] => {
+    let entries: Array<{ name: string; isDirectory(): boolean }>;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return [];
     }
+    return entries
+      .filter(entry => entry.isDirectory())
+      .map(entry => path.join(directory, entry.name))
+      .filter(dir => hasEngineTreeMarker(dir, exists));
+  };
+  if (hasEngineTreeMarker(resolved, exists)) {
+    return resolved;
   }
-  return null;
+  const here = engineChildren(resolved);
+  if (here.length === 1) {
+    return here[0];
+  }
+  const parent = path.dirname(resolved);
+  if (parent === resolved) {
+    return null;
+  }
+  const there = engineChildren(parent);
+  return there.length === 1 ? there[0] : null;
 }
 
 function readVersionMacro(engineRoot: string): string | null {

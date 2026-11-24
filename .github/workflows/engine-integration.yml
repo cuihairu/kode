@@ -65,9 +65,10 @@ jobs:
             fi
             git clone --depth 1 --filter=blob:none --no-checkout \
               https://github.com/cuihairu/kbengine.git "$RUNNER_TEMP/kbengine"
-            # 只拉套件所需子路径:typings(.pyi 导出)、entitydef + common(探针 marker)
+            # 只拉套件所需子路径:typings(.pyi 导出)、entitydef + common(探针
+            # marker)、kbe/res/server(引擎身份锚,2026-11-24 语义)
             git -C "$RUNNER_TEMP/kbengine" sparse-checkout set --no-cone \
-              typings kbe/src/lib/entitydef kbe/src/lib/common
+              typings kbe/src/lib/entitydef kbe/src/lib/common kbe/res/server
             git -C "$RUNNER_TEMP/kbengine" checkout HEAD
             echo "KBENGINE_ROOT=$RUNNER_TEMP/kbengine" >> "$GITHUB_ENV"
             echo "kbengine root: sparse clone at $RUNNER_TEMP/kbengine"

@@ -257,7 +257,7 @@ describe('pythonTargetDeps(生产真盘面:kbe/bin/server 与二进制头部)', 
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  const serverDir = (): string => path.join(root, 'kbe', 'bin', 'server');
+  const serverDir = (): string => path.join(root, 'bin', 'server');
 
   it('listServerBinaries:目录文件按名确定序(跨平台无后缀过滤),子目录不入', () => {
     const dir = serverDir();
@@ -438,7 +438,7 @@ describe('生产默认依赖(真实文件系统)', () => {
     const os = await import('os');
     const path = await import('path');
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pytarget-'));
-    const bin = path.join(root, 'kbe', 'bin', 'server');
+    const bin = path.join(root, 'bin', 'server');
     fs.mkdirSync(bin, { recursive: true });
     fs.writeFileSync(path.join(bin, 'b_engine'), 'x');
     fs.writeFileSync(path.join(bin, 'a_engine'), 'y');

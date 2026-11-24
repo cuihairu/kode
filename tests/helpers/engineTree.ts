@@ -3,25 +3,23 @@ import * as path from 'path';
 import { describe } from 'vitest';
 
 import {
-  ENGINE_MARKER_KBEVERSION,
-  ENGINE_MARKER_LEGACY,
+  ENGINE_IDENTITY_MARKER,
   hasEngineTreeMarker
 } from '../../src/backend/engineApiMetadata';
 
 // V-07·a(C-8):真引擎源码树探测 + 无树 skipIf。
-// 探测口径与产品侧 src/engineApiMetadata.ts 的 findEngineRoot 保持一致
-// (双标记 version.h | kbeversion.h,C-14;KBENGINE_ROOT=off 显式关;
-// 环境变量优先,其次 <起始目录>/../kbengine 兄弟目录)——测试跳过的条件
-// 与产品报 unknown 的条件同源,不会出现「产品找得到、测试却跳过」的错位。
-// C-9 的 fantasydemo 真实样例批挂在 describeWithEngineTree 之下。
+// 探测口径与产品侧 src/engineApiMetadata.ts 保持一致:2026-11-24 语义,
+// 引擎根 = 引擎安装根(kbe 目录本身),身份锚 = <根>/res/server/kbengine_defaults.xml
+// (结构特征,不认目录名);KBENGINE_ROOT=off 显式关。环境变量优先,
+// 其次 <起始目录>/../kbengine 兄弟仓(仓库根本身或其 kbe/ 安装根两形态)
+// ——测试跳过的条件与产品报 engine-absent 的条件同源,不会出现
+// 「产品找得到、测试却跳过」的错位。C-9 的 fantasydemo 真实样例批挂在
+// describeWithEngineTree 之下。
 
-/** 旧口径标记(version.h 单宏树);C-14 起与 kbeversion.h 双标记并存 */
-export const ENGINE_TREE_MARKER = path.join(...ENGINE_MARKER_LEGACY);
-/** C-14: 真树双标记(2.5.10+ 真树只有 kbeversion.h,version.h 从未存在) */
-export const ENGINE_TREE_MARKERS = [
-  path.join(...ENGINE_MARKER_LEGACY),
-  path.join(...ENGINE_MARKER_KBEVERSION)
-];
+/** 身份锚相对形态(res/server/kbengine_defaults.xml) */
+export const ENGINE_TREE_MARKER = path.join(...ENGINE_IDENTITY_MARKER);
+/** 与 ENGINE_TREE_MARKER 同形单元素数组(历史双 marker 出口,收拢为一) */
+export const ENGINE_TREE_MARKERS = [path.join(...ENGINE_IDENTITY_MARKER)];
 
 export interface EngineTreeProbe {
   root: string | null;
@@ -44,21 +42,32 @@ export function detectEngineTree(options: EngineTreeProbeOptions = {}): EngineTr
     return { root: null, reason: 'KBENGINE_ROOT=off explicitly disables the engine tree' };
   }
   if (env.KBENGINE_ROOT) {
-    if (hasEngineTreeMarker(env.KBENGINE_ROOT, exists)) {
-      return { root: env.KBENGINE_ROOT, reason: '' };
+    // KBENGINE_ROOT 双形态兼容:安装根本身(2026-11-24 语义)或其仓库根
+    // (engine-integration sparse clone 布局,安装根在 kbe/ 孩子)
+    const direct = env.KBENGINE_ROOT;
+    if (hasEngineTreeMarker(direct, exists)) {
+      return { root: direct, reason: '' };
+    }
+    const nested = path.join(direct, 'kbe');
+    if (hasEngineTreeMarker(nested, exists)) {
+      return { root: nested, reason: '' };
     }
     return {
       root: null,
-      reason: `KBENGINE_ROOT=${env.KBENGINE_ROOT} has none of the engine tree markers: ${ENGINE_TREE_MARKERS.join(' | ')}`
+      reason: `KBENGINE_ROOT=${direct} has none of the engine tree markers: ${ENGINE_TREE_MARKERS.join(' | ')}`
     };
   }
   const sibling = path.resolve(startDirectory, '..', 'kbengine');
-  if (hasEngineTreeMarker(sibling, exists)) {
-    return { root: sibling, reason: '' };
+  // 兄弟仓两形态:仓库根(旧布局)/其 kbe 安装根(2026-11-24 语义根)
+  const candidates = [sibling, path.join(sibling, 'kbe')];
+  for (const candidate of candidates) {
+    if (hasEngineTreeMarker(candidate, exists)) {
+      return { root: candidate, reason: '' };
+    }
   }
   return {
     root: null,
-    reason: 'no engine tree: set KBENGINE_ROOT or place kbengine next to the repo (no ../kbengine sibling found)'
+    reason: 'no engine tree: set KBENGINE_ROOT (engine install root holding res/server/kbengine_defaults.xml) or place kbengine next to the repo (no ../kbengine sibling found)'
   };
 }
 

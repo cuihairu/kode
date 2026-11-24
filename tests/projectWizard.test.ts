@@ -63,6 +63,9 @@ function buildProjectTree(): { base: string; assetsRoot: string; engineRepoParen
   fs.mkdirSync(path.join(assetsRoot, 'scripts', 'entity_defs'), { recursive: true });
   fs.writeFileSync(path.join(assetsRoot, 'scripts', 'entities.xml'), '<root>\n</root>\n', 'utf8');
   fs.writeFileSync(path.join(assetsRoot, 'scripts', 'entity_defs', 'types.xml'), '<root>\n</root>\n', 'utf8');
+  // 2026-11-24 语义:安装根 = base/kbe,身份锚 + 版本宏都在安装根下
+  fs.mkdirSync(path.join(base, 'kbe', 'res', 'server'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'kbe', 'res', 'server', 'kbengine_defaults.xml'), '<r>\n', 'utf8');
   fs.mkdirSync(path.join(base, 'kbe', 'src', 'lib', 'entitydef'), { recursive: true });
   fs.writeFileSync(path.join(base, 'kbe', 'src', 'lib', 'entitydef', 'entitydef.cpp'), '', 'utf8');
   fs.mkdirSync(path.join(base, 'kbe', 'src', 'lib', 'common'), { recursive: true });
@@ -155,7 +158,7 @@ describe('project wizard 纯构造面(RUST-172)', () => {
 
   it('buildStartupFacts:bin/config 推导路径与 autoStart 现值', () => {
     const facts = buildStartupFacts({ engineRoot: '/eng', assetsRoot: '/a', autoStart: ['machine'] });
-    expect(facts[0]).toContain(path.join('/eng', 'kbe', 'bin', 'server'));
+    expect(facts[0]).toContain(path.join('/eng', 'bin', 'server'));
     expect(facts[1]).toContain('/a');
     expect(facts[2]).toContain('machine');
     const empty = buildStartupFacts({ engineRoot: null, assetsRoot: null, autoStart: [] });

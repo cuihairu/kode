@@ -106,16 +106,16 @@ describe('buildTelnetTargets(settings 半)', () => {
 });
 
 describe('deriveEngineDefaultsXmlPath(批112:binPath 推导引擎 defaults)', () => {
-  it('kbe/bin/server 后缀 → <引擎根>/kbe/res/server/kbengine_defaults.xml', () => {
+  it('bin/server 后缀 → <引擎安装根>/res/server/kbengine_defaults.xml', () => {
     // WIN-3:推导用平台 path,输入与期望都用 path.join 生成平台原生形态,
     // 断言推导逻辑(bin→res 换根)而非分隔符风格
-    const input = path.join('/opt/kbengine', 'kbe', 'bin', 'server');
-    const expected = path.join('/opt/kbengine', 'kbe', 'res', 'server', 'kbengine_defaults.xml');
+    const input = path.join('/opt/kbengine', 'bin', 'server');
+    const expected = path.join('/opt/kbengine', 'res', 'server', 'kbengine_defaults.xml');
     expect(deriveEngineDefaultsXmlPath(input)).toBe(expected);
   });
 
-  it('后缀不在/剥完为空/空串 → null(与 serverManager.detectKbeRoot 同口径)', () => {
-    expect(deriveEngineDefaultsXmlPath('/opt/kbengine/kbe/bin')).toBeNull();
+  it('后缀不在/剥完为空/相对路径/空串 → null(与 serverManager.detectKbeRoot 同口径)', () => {
+    expect(deriveEngineDefaultsXmlPath('/opt/kbengine/bin')).toBeNull();
     expect(deriveEngineDefaultsXmlPath('kbe/bin/server')).toBeNull();
     expect(deriveEngineDefaultsXmlPath('')).toBeNull();
   });

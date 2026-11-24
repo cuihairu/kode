@@ -61,7 +61,7 @@ export function profileConfigResolveOverrides(
   profile: ProfileDatabaseRoots | null
 ): ConfigResolveOverrides {
   return {
-    binPath: profile?.engineRoot ? path.join(profile.engineRoot, 'kbe', 'bin', 'server') : undefined,
+    binPath: profile?.engineRoot ? path.join(profile.engineRoot, 'bin', 'server') : undefined,
     configRoot: (profile?.assetsRoot || undefined) as string | undefined
   };
 }

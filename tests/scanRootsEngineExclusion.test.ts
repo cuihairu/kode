@@ -17,19 +17,17 @@ import { configurationOverrides, workspace as stubWorkspace } from './helpers/vs
 //   - 剔除=绝对路径前缀,三面(workspace glob 后滤+外部遍历剪枝+收尾兜底);
 //   - 无标记=零剔除,行为与刀2 前一致(不按目录名全局剔,普通项目自有
 //     Lib 目录不受影响——刀1 的形态锚定同纪律);
-//   - 标记=hasEngineTreeMarker 双标记(version.h 旧树 | kbeversion.h 2.5.10+)。
+//   - 标记=2026-11-24 语义身份锚 <引擎安装根>/res/server/kbengine_defaults.xml
+//     (结构特征,目录名不参与判定,改名引擎目录照样认)。
 
 const write = (file: string, content: string): void => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content, 'utf8');
 };
 
-/** 在 root 下造一棵带引擎标记的最小树(kbe/src/lib/common/<marker>) */
-const makeEngineTree = (root: string, marker: 'version.h' | 'kbeversion.h' = 'version.h'): void => {
-  write(
-    path.join(root, 'kbe', 'src', 'lib', 'common', marker),
-    marker === 'version.h' ? '#define KBE_VERSION "2.5.10"\n' : '#define KBE_VERSION_MAJOR 2\n'
-  );
+/** 在 root 下造一棵带身份锚的最小引擎安装根(res/server/kbengine_defaults.xml) */
+const makeEngineTree = (root: string): void => {
+  write(path.join(root, 'res', 'server', 'kbengine_defaults.xml'), '<r>\n');
 };
 
 const originalFindFiles = stubWorkspace.findFiles;
@@ -88,13 +86,13 @@ describe('引擎仓子树剔除(ENGINE-LIB-SCAN-005 刀2)', () => {
     expect(exclusions[0].endsWith('kbe-engine')).toBe(true);
   });
 
-  it('二层内嵌(vendor/kbengine)与新标记 kbeversion.h 同样被剔', async () => {
+  it('二层内嵌(vendor/engine-2.5.10 改名目录)身份锚同样被剔', async () => {
     const root = makeRoot('kode-engex-nested-');
     const assets = path.join(root, 'assets');
-    // 引擎仓作为扫描根的二层孩子(probe 探一二层)
-    const engineNested = path.join(assets, 'scripts', 'vendor', 'kbengine');
-    makeEngineTree(engineNested, 'kbeversion.h');
-    const engineDef = path.join(engineNested, 'kbe', 'res', 'entity_defs', 'Gate.def');
+    // 引擎安装根作为扫描根的二层孩子(probe 探一二层);改名目录照样认
+    const engineNested = path.join(assets, 'scripts', 'vendor', 'engine-2.5.10');
+    makeEngineTree(engineNested);
+    const engineDef = path.join(engineNested, 'res', 'entity_defs', 'Gate.def');
     write(engineDef, '<root/>');
 
     setWorkspace(root);

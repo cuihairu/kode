@@ -113,15 +113,15 @@ export interface PythonTargetDeps {
   configValue(): string | undefined;
   /** 活动 profile 的引擎根(判不出/未选 profile = null) */
   engineRoot(): string | null;
-  /** 引擎根下的服务二进制列表(生产 = kbe/bin/server 文件,确定序) */
+  /** 引擎根下的服务二进制列表(生产 = <引擎根>/bin/server 文件,确定序) */
   listServerBinaries(root: string): string[];
   /** 读二进制头部字节;读不了(权限/不存在)如实 null */
   readBinaryHead(candidate: string, maxBytes: number): Buffer | null;
 }
 
-/** 生产面:kbe/bin/server 目录文件按名确定序(跨平台无后缀过滤) */
+/** 生产面:引擎安装根下 bin/server 目录文件按名确定序(跨平台无后缀过滤) */
 export const defaultListServerBinaries = (root: string): string[] => {
-  const dir = path.join(root, 'kbe', 'bin', 'server');
+  const dir = path.join(root, 'bin', 'server');
   try {
     return fs
       .readdirSync(dir, { withFileTypes: true })

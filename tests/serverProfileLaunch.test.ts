@@ -80,7 +80,7 @@ const makeManager = (memento?: vscode.Memento): KBEngineServerManager => {
   return manager;
 };
 
-const engineBin = (engineRoot: string): string => path.join(engineRoot, 'kbe', 'bin', 'server');
+const engineBin = (engineRoot: string): string => path.join(engineRoot, 'bin', 'server');
 
 /** 在引擎布局根下生成假组件可执行文件(echoLines 先打印再常驻) */
 const writeEngineExecutable = (engineRoot: string, name: string, echoLines: string[] = []): string => {

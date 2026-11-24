@@ -371,7 +371,12 @@ describe.skipIf(!engineRoot)('kbe 符号索引 vs 引擎 typings 源码', () => 
       // Vector2/3/4 的 Python 暴露名(Vector3)≠ C++ 类名(ScriptVector3),
       // 锚点行按 C++ 类名匹配 `class ScriptVector3`(cppClassName 字段)。
       const declName = entry.cppClassName ?? entry.aliasOf ?? entry.name;
-      const stubPath = path.join(engineRoot!, entry.sourceFile);
+      // 基座分层(2026-11-24 语义):typings/(用户自己的引擎 stub 包)相对
+      // 仓库根;src/lib/(引擎源码)相对安装根 = 仓库根下 kbe 目录
+      const base = entry.sourceFile.startsWith('typings/')
+        ? engineRoot!
+        : path.join(engineRoot!, 'kbe');
+      const stubPath = path.join(base, entry.sourceFile);
       const lines = fs.readFileSync(stubPath, 'utf8').split('\n');
       const declLine = lines[entry.sourceLine - 1];
       expect(

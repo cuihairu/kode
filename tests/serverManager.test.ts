@@ -168,22 +168,23 @@ describe('KBEngineServerManager path resolution', () => {
     const binPath = path.join(root, 'kbengine', 'kbe', 'bin', 'server');
 
     expect(impl.detectBinPath()).toBe(binPath);
-    expect(impl.detectKbeRoot(binPath)).toBe(path.join(root, 'kbengine'));
-    // 不以 kbe/bin/server 结尾的路径剥不出根
+    // 2026-11-24 语义:剥 bin/server 尾段 = 引擎安装根(kbe 目录本身)
+    expect(impl.detectKbeRoot(binPath)).toBe(path.join(root, 'kbengine', 'kbe'));
+    // 不以 bin/server 结尾的路径剥不出根
     expect(impl.detectKbeRoot('/usr/bin')).toBe('');
   });
 
   it('builds component environments with kbe root resources', () => {
     const impl = internals(makeManager());
-    const kbeRoot = path.join(root, 'kbengine');
-    const binPath = path.join(kbeRoot, 'kbe', 'bin', 'server');
+    const kbeRoot = path.join(root, 'kbengine', 'kbe');
+    const binPath = path.join(kbeRoot, 'bin', 'server');
     const configPath = path.join(root, 'ws', 'kbengine_defaults.xml');
 
     const env = impl.buildComponentEnvironment(configPath, binPath);
 
     expect(env.KBE_ROOT).toBe(kbeRoot);
     expect(env.KBE_RES_PATH).toBe([
-      path.join(kbeRoot, 'kbe', 'res'),
+      path.join(kbeRoot, 'res'),
       configPath,
       path.join(configPath, 'res'),
       path.join(configPath, 'scripts')

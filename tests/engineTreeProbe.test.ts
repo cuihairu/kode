@@ -19,8 +19,9 @@ let treeFixture = '';
 
 beforeAll(() => {
   treeFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-enginetree-'));
-  fs.mkdirSync(path.join(treeFixture, 'kbe/src/lib/common'), { recursive: true });
-  fs.writeFileSync(path.join(treeFixture, 'kbe/src/lib/common/version.h'), '#define KBE_VERSION "2.5.10"\n');
+  // 2026-11-24 语义:身份锚 = <安装根>/res/server/kbengine_defaults.xml
+  fs.mkdirSync(path.join(treeFixture, 'res/server'), { recursive: true });
+  fs.writeFileSync(path.join(treeFixture, 'res/server/kbengine_defaults.xml'), '<r>\n');
 });
 
 afterAll(() => {
@@ -34,12 +35,15 @@ describe('engine tree probe', () => {
     expect(probe.reason).toBe('');
   });
 
-  it('accepts a 2.5.10+ tree that only ships kbeversion.h (C-14)', () => {
+  it('accepts a renamed install root shipping only kbeversion.h (identity by structure, C-14)', () => {
     const kbeversionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-enginetree-kbeversion-'));
     try {
-      fs.mkdirSync(path.join(kbeversionRoot, 'kbe/src/lib/common'), { recursive: true });
+      // 改名引擎目录(engine-2.5.10)身份照认:结构锚不认目录名
+      fs.mkdirSync(path.join(kbeversionRoot, 'res/server'), { recursive: true });
+      fs.writeFileSync(path.join(kbeversionRoot, 'res/server/kbengine_defaults.xml'), '<r>\n');
+      fs.mkdirSync(path.join(kbeversionRoot, 'src/lib/common'), { recursive: true });
       fs.writeFileSync(
-        path.join(kbeversionRoot, 'kbe/src/lib/common/kbeversion.h'),
+        path.join(kbeversionRoot, 'src/lib/common/kbeversion.h'),
         '#define KBE_VERSION_MAJOR 2\n#define KBE_VERSION_MINOR 5\n#define KBE_VERSION_PATCH 10\n'
       );
       const probe = detectEngineTree({ env: { KBENGINE_ROOT: kbeversionRoot } });
@@ -56,7 +60,7 @@ describe('engine tree probe', () => {
       const probe = detectEngineTree({ env: { KBENGINE_ROOT: emptyDir } });
       expect(probe.root).toBeNull();
       expect(probe.reason).toContain(`KBENGINE_ROOT=${emptyDir}`);
-      // C-14: 缺任一标记都要点名(旧 version.h 与新 kbeversion.h)
+      // 身份锚点名(res/server/kbengine_defaults.xml)
       for (const marker of ENGINE_TREE_MARKERS) {
         expect(probe.reason).toContain(marker);
       }
@@ -71,9 +75,9 @@ describe('engine tree probe', () => {
     expect(probe.reason).toContain('KBENGINE_ROOT=off');
   });
 
-  it('falls back to the ../kbengine sibling of the start directory', () => {
+  it('falls back to the ../kbengine sibling install root of the start directory', () => {
     const sibling = path.resolve('/repo/proj', '..', 'kbengine');
-    const marker = path.join(sibling, 'kbe/src/lib/common/version.h');
+    const marker = path.join(sibling, 'res/server/kbengine_defaults.xml');
     const probe = detectEngineTree({
       env: {},
       startDirectory: '/repo/proj',
@@ -94,9 +98,9 @@ describe('engine tree probe', () => {
 describe('engine tree process probe (this environment)', () => {
   it('keeps root and reason mutually exclusive', () => {
     if (ENGINE_TREE_ROOT === null) {
-      // KBENGINE_ROOT 指向真目录但标记文件缺席时,reason 报的是缺哪个标记
-      // (如 'KBENGINE_ROOT=... has no kbe/src/lib/common/version.h'),不是笼统
-      // 'no engine tree';此处只锁不变量:root 为 null 时 reason 必须是可见提示
+      // KBENGINE_ROOT 指向真目录但身份锚缺席时,reason 报的是缺哪个锚
+      // (如 '... res/server/kbengine_defaults.xml'),不是笼统 'no engine tree';
+      // 此处只锁不变量:root 为 null 时 reason 必须是可见提示
       expect(ENGINE_TREE_REASON.length).toBeGreaterThan(0);
     } else {
       expect(path.isAbsolute(ENGINE_TREE_ROOT)).toBe(true);

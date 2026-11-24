@@ -548,7 +548,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class FixedArray(Generic[T])',
     summary: 'def ARRAY 属性的运行时容器(script::Sequence):元素类型受检,append/extend/insert/remove 返回 bool,pop 返回被弹出元素。',
     summaryEn: 'Runtime container for def ARRAY properties (script::Sequence): element types are checked, append/extend/insert/remove return bool, pop returns the popped element.',
-    sourceFile: 'kbe/src/lib/entitydef/fixedarray.h',
+    sourceFile: 'src/lib/entitydef/fixedarray.h',
     sourceLine: 13
   },
   {
@@ -557,7 +557,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class FixedDict(Mapping[str, Any])',
     summary: 'def FIXED_DICT 属性的运行时容器(script::Map):键集合按 def 固定,属性注解用 TypedDict 精确表达,本类是它的容器基面。',
     summaryEn: 'Runtime container for def FIXED_DICT properties (script::Map): the key set is fixed by def; the property annotation is expressed precisely as a TypedDict; this class is its container base surface.',
-    sourceFile: 'kbe/src/lib/entitydef/fixeddict.h',
+    sourceFile: 'src/lib/entitydef/fixeddict.h',
     sourceLine: 15
   },
   {
@@ -566,7 +566,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class Vector2',
     summary: 'KBEngine 二维向量(ScriptVector2,pyscript/vector2.h):x/y 分量、length/lengthSquared 只读、distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR2 属性注解用本类。',
     summaryEn: 'KBEngine 2D vector (ScriptVector2, pyscript/vector2.h): x/y components, read-only length/lengthSquared, distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set, sequence and arithmetic protocols. def VECTOR2 property annotations use this class.',
-    sourceFile: 'kbe/src/lib/pyscript/vector2.h',
+    sourceFile: 'src/lib/pyscript/vector2.h',
     sourceLine: 12,
     cppClassName: 'ScriptVector2'
   },
@@ -576,7 +576,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class Vector3',
     summary: 'KBEngine 三维向量(ScriptVector3,pyscript/vector3.h):x/y/z 分量、length/lengthSquared 只读、flatDistTo/flatDistSqrTo/distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR3 属性注解用本类。',
     summaryEn: 'KBEngine 3D vector (ScriptVector3, pyscript/vector3.h): x/y/z components, read-only length/lengthSquared, flatDistTo/flatDistSqrTo/distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set, sequence and arithmetic protocols. def VECTOR3 property annotations use this class.',
-    sourceFile: 'kbe/src/lib/pyscript/vector3.h',
+    sourceFile: 'src/lib/pyscript/vector3.h',
     sourceLine: 12,
     cppClassName: 'ScriptVector3'
   },
@@ -586,7 +586,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class Vector4',
     summary: 'KBEngine 四维向量(ScriptVector4,pyscript/vector4.h):x/y/z/w 分量、length/lengthSquared 只读、distTo/distSqrTo/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR4 属性注解用本类。',
     summaryEn: 'KBEngine 4D vector (ScriptVector4, pyscript/vector4.h): x/y/z/w components, read-only length/lengthSquared, distTo/distSqrTo/dot/scale/normalise/tuple/list/set, sequence and arithmetic protocols. def VECTOR4 property annotations use this class.',
-    sourceFile: 'kbe/src/lib/pyscript/vector4.h',
+    sourceFile: 'src/lib/pyscript/vector4.h',
     sourceLine: 12,
     cppClassName: 'ScriptVector4'
   }

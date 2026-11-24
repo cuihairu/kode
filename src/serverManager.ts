@@ -357,9 +357,10 @@ export class KBEngineServerManager {
   /**
    * 活动 profile 的启动覆盖(PRJ-012):按稳定 ID 读当前选择(读时解析,
    * 不缓存——profile 切换后下一次启动自然生效,已运行实例不受影响)。
-   * engineRoot 非空 → kbe/bin/server 推导 binPath;assetsRoot 非空 →
-   * 配置根;字段为空不覆盖该项,如实回落设置/发现链。无选择/极简装配
-   * 无 memento/记录已删(陈旧选择)都返回 null。
+   * engineRoot 非空 → bin/server 推导 binPath(engineRoot 即引擎安装根,
+   * 2026-11-24 语义:kbe 目录本身);assetsRoot 非空 → 配置根;字段为空不覆盖
+   * 该项,如实回落设置/发现链。无选择/极简装配无 memento/记录已删(陈旧
+   * 选择)都返回 null。
    */
   private getActiveProfileLaunchRoots(): { profileId: string; binPath?: string; configPath?: string } | null {
     const profile = resolveActiveProfile(this.context.workspaceState);
@@ -368,7 +369,7 @@ export class KBEngineServerManager {
     }
     return {
       profileId: profile.id,
-      binPath: profile.engineRoot ? path.join(profile.engineRoot, 'kbe', 'bin', 'server') : undefined,
+      binPath: profile.engineRoot ? path.join(profile.engineRoot, 'bin', 'server') : undefined,
       configPath: profile.assetsRoot || undefined
     };
   }
@@ -511,7 +512,10 @@ export class KBEngineServerManager {
     }
 
     const normalized = path.normalize(binPath);
-    const suffix = path.normalize(path.join('kbe', 'bin', 'server'));
+    if (!path.isAbsolute(normalized)) {
+      return '';
+    }
+    const suffix = path.normalize(path.join('bin', 'server'));
     if (normalized.endsWith(suffix)) {
       return normalized.slice(0, -(suffix.length + 1));
     }
@@ -524,9 +528,11 @@ export class KBEngineServerManager {
     const kbeRoot = this.detectKbeRoot(binPath);
 
     if (kbeRoot) {
+      // KBE_ROOT = 引擎安装根(kbe 目录本身,2026-11-24 语义):引擎按此
+      // 装载 res。显式 KBE_ROOT 环境变量优先(上面 detectKbeRoot 已取)。
       env.KBE_ROOT = kbeRoot;
       env.KBE_RES_PATH = [
-        joinWorkspacePath(kbeRoot, 'kbe', 'res'),
+        joinWorkspacePath(kbeRoot, 'res'),
         configPath,
         joinWorkspacePath(configPath, 'res'),
         joinWorkspacePath(configPath, 'scripts')

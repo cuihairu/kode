@@ -12,9 +12,17 @@
  * - 已记录非空 → 不重探(不覆盖用户手填);
  * - 显式配置 kbengine.engineRoot 优先于自动探测;
  * - 探测不中 → **不写**(如实保持缺失,不伪造路径),engine-missing 仍照报。
+ *
+ * 语义迁移(2026-11-24 用户令):engineRoot 语义从「kbe 的仓库根」改为
+ * 「kbe 目录本身(引擎安装根)」,身份锚 = <根>/res/server/kbengine_defaults.xml。
+ * 旧语义记下的仓库根在新锚下必然验不过——只此一种情况放行迁移:记录值验
+ * 身份锚不过,且其一**唯一**一层孩子验过 → 下移写入;零命中/多命中(歧义)
+ * 都不写,保持原值由健康面/版本面如实降级。这不是重探(不碰合法记录值),
+ * 是字段语义变更下保用户原意的一次性下移。
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ProjectProfileStore } from './projectProfiles';
 import { resolveActiveProfile } from './activeProfile';
@@ -31,6 +39,33 @@ export interface EngineRootAutoFillResult {
 /** 显式 > 自动探测:已记录的引擎根原样不动(幂等,不覆盖用户手填) */
 function keepExisting(root: string): string | null {
   return root.trim() ? root : null;
+}
+
+/**
+ * 旧语义记录值迁移(2026-11-24 语义改版,见文件头):记录值验身份锚不过时,
+ * 唯一一层结构孩子验过才下移;已合规返回 null(无需迁移),零/多命中返回
+ * null(缺失如实、歧义不猜)。
+ */
+export function migrateLegacyEngineRoot(root: string): string | null {
+  const trimmed = root.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const exists = (probe: string): boolean => fs.existsSync(probe);
+  if (hasEngineTreeMarker(trimmed, exists)) {
+    return null;
+  }
+  let entries: Array<{ name: string; isDirectory(): boolean }>;
+  try {
+    entries = fs.readdirSync(trimmed, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const hits = entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => path.join(trimmed, entry.name))
+    .filter(dir => hasEngineTreeMarker(dir, exists));
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /**
@@ -76,7 +111,13 @@ export async function ensureActiveProfileEngineRoot(
   }
   const kept = keepExisting(profile.engineRoot);
   if (kept) {
-    return { stillMissing: false, recorded: null };
+    // 语义迁移:旧语义记录值在新身份锚下验不过且唯一结构孩子在 → 下移写入
+    const migrated = migrateLegacyEngineRoot(kept);
+    if (!migrated) {
+      return { stillMissing: false, recorded: null };
+    }
+    const moved = await new ProjectProfileStore(memento).saveRoots(profile.id, { engineRoot: migrated });
+    return moved ? { stillMissing: false, recorded: migrated } : { stillMissing: true, recorded: null };
   }
   if (!profile.assetsRoot) {
     // 空基底 join 出相对路径会拿进程 cwd 误探(ensureDefaultProfile 同口径)

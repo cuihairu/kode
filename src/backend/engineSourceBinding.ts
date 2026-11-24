@@ -1,13 +1,30 @@
 // RUST-174 API metadata 与真实 engine source 绑定:把策展 KBE 符号解析到
 // 真实引擎检出上的定义锚(Python=引擎 typings .pyi 的声明行,与
 // tests/kbeModuleIndex.test.ts 引擎源码条件用例同一验收口径;C++=按
-// cppClassName 在 kbe/src/lib 头文件里有界扫描 `class X` 声明行)。
+// cppClassName 在 src/lib 头文件里有界扫描 `class X` 声明行)。
 // 锚点漂移只给文件不给假行,引擎缺席/扫描未见/无锚名各自如实分型,
 // 绝不编造位置。version constraints 复用 engineApiVersionAnnotation。
 // 纯模块,不 import vscode;fs 由 deps 注入。
 
 import * as path from 'path';
 import { engineApiVersionAnnotation, type KbeSymbolEntry } from '../kbeModuleIndex';
+
+/**
+ * 引擎 typings 锚点候选(sourceFile 相对路径如 typings/_KBEngine_common.pyi):
+ * typings 是**用户自己的引擎 stub 包**(2026-11-24 用户令),fork 里位于
+ * 仓库根(引擎安装根的兄弟位),不在安装根内。engineRoot 语义 = kbe 目录
+ * 本身,故候选两处:安装根内 typings/ 优先,退仓库根(安装根父目录)的
+ * typings/。纯路径函数不做盘探测——首命中由调用面按 deps.existsSync 选,
+ * 皆不存在时落首候选形态(existsSync 判 engine-absent,不编造存在)。
+ */
+export function resolveEngineTypingsCandidates(engineRoot: string, relativePath: string): string[] {
+  const direct = path.join(engineRoot, relativePath);
+  if (!relativePath.startsWith('typings/')) {
+    return [direct];
+  }
+  const sibling = path.join(path.dirname(engineRoot), relativePath);
+  return sibling === direct ? [direct] : [direct, sibling];
+}
 
 /** Python 定义解析:三种诚实形态,无一伪造。 */
 export type EnginePythonDefinition =
@@ -37,7 +54,8 @@ export function resolveEnginePythonDefinition(
   if (!engineRoot) {
     return { kind: 'engine-absent' };
   }
-  const file = path.join(engineRoot, entry.sourceFile);
+  const candidates = resolveEngineTypingsCandidates(engineRoot, entry.sourceFile);
+  const file = candidates.find(candidate => deps.existsSync(candidate)) ?? candidates[0];
   if (!deps.existsSync(file)) {
     return { kind: 'engine-absent' };
   }
@@ -88,7 +106,7 @@ export function resolveEngineCppDefinition(
     return { kind: 'no-cpp-anchor' };
   }
   const prefix = `class ${anchorName}`;
-  const searchRoot = path.join(engineRoot, 'kbe', 'src', 'lib');
+  const searchRoot = path.join(engineRoot, 'src', 'lib');
   if (!deps.existsSync(searchRoot)) {
     return { kind: 'cpp-not-found' };
   }

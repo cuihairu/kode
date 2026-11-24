@@ -43,19 +43,16 @@ class MemoryMemento implements vscode.Memento {
   }
 }
 
-/** 建一棵工作区:assetsRoot 在其下,引擎树(marker)落在上层或指定层 */
+/** 建一棵工作区:assetsRoot 在其下,引擎安装根(marker)落在上层孩子位 */
 function makeTree(withMarker: boolean): { base: string; assetsRoot: string } {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-autofill-'));
   const assetsRoot = path.join(base, 'proj');
   fs.mkdirSync(assetsRoot, { recursive: true });
   if (withMarker) {
-    const markerDir = path.join(base, 'kbe', 'src', 'lib', 'common');
-    fs.mkdirSync(markerDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(markerDir, 'kbeversion.h'),
-      '#define KBE_VERSION_MAJOR 2\n#define KBE_VERSION_MINOR 5\n#define KBE_VERSION_PATCH 10\n',
-      'utf8'
-    );
+    // 2026-11-24 语义:安装根 = base/kbe(kbe 目录本身),身份锚在其下
+    const installRoot = path.join(base, 'kbe');
+    fs.mkdirSync(path.join(installRoot, 'res', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(installRoot, 'res', 'server', 'kbengine_defaults.xml'), '<r>\n', 'utf8');
   }
   return { base, assetsRoot };
 }
@@ -146,36 +143,49 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     expect(result.recorded).toBe(explicit);
   });
 
-  it('⑤ 真实两处探测(2026-11-23 用户令):assetsRoot 上一层有 kbe 树 → 补录', async () => {
-    // 不注探测桩:probeEngineRoot 默认链真实探 [assetsRoot, 上一层] 两处
+  it('⑤ 真实两处探测(2026-11-24 语义):上一层下有引擎安装根 → 补录安装根', async () => {
+    // 不注探测桩:probeEngineRoot 默认链真实探 [自身, 一层孩子 / 上层一层孩子]
     const { base, assetsRoot } = makeTree(true);
     trees.push(base);
     const memento = new MemoryMemento();
     await seedProfile(memento, assetsRoot, '');
     const result = await ensureActiveProfileEngineRoot(memento);
-    expect(result.recorded).toBe(base);
+    expect(result.recorded).toBe(path.join(base, 'kbe'));
     expect(result.stillMissing).toBe(false);
     const persisted = new ProjectProfileStore(memento).get(
       memento.get<string>(ACTIVE_PROFILE_STATE_KEY)!
     );
-    expect(persisted?.engineRoot).toBe(base);
+    expect(persisted?.engineRoot).toBe(path.join(base, 'kbe'));
   });
 
-  it('⑤b 兄弟仓克隆(assets 同级 kbengine*/ 名含 kbengine)不再自动探:如实缺不写', async () => {
-    // 2026-11-23 用户令:引擎根默认只找两处(当前目录/上一层),兄弟目录名
-    // 扫描废止——兄弟仓克隆布局须用户显式配置 kbengine.engineRoot
+  it('⑤b 改名引擎目录(engine-2.5.10)结构照认:身份锚不认目录名(2026-11-24 回归钉)', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-renamed-'));
+    trees.push(base);
+    const assetsRoot = path.join(base, 'assets');
+    fs.mkdirSync(assetsRoot, { recursive: true });
+    const installRoot = path.join(base, 'engine-2.5.10');
+    fs.mkdirSync(path.join(installRoot, 'res', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(installRoot, 'res', 'server', 'kbengine_defaults.xml'), '<r>\n', 'utf8');
+    const memento = new MemoryMemento();
+    await seedProfile(memento, assetsRoot, '');
+    const result = await ensureActiveProfileEngineRoot(memento);
+    expect(result.recorded).toBe(installRoot);
+    const persisted = new ProjectProfileStore(memento).get(
+      memento.get<string>(ACTIVE_PROFILE_STATE_KEY)!
+    );
+    expect(persisted?.engineRoot).toBe(installRoot);
+  });
+
+  it('⑤c 兄弟仓克隆(assets 同级 kbengine 仓根,安装根再下一层)不自动探:如实缺不写', async () => {
+    // 2026-11-23 用户令两处位 + 2026-11-24 结构锚:探测只到上一层的一层孩子,
+    // 仓根(无身份锚)与仓内安装根(再下一层)都不在候选,须用户显式配置
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-sibling-'));
     trees.push(base);
     const assetsRoot = path.join(base, 'assets');
     fs.mkdirSync(assetsRoot, { recursive: true });
-    const engineRoot = path.join(base, 'kbengine');
-    const markerDir = path.join(engineRoot, 'kbe', 'src', 'lib', 'common');
-    fs.mkdirSync(markerDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(markerDir, 'kbeversion.h'),
-      '#define KBE_VERSION_MAJOR 2\n#define KBE_VERSION_MINOR 5\n#define KBE_VERSION_PATCH 10\n',
-      'utf8'
-    );
+    const installRoot = path.join(base, 'kbengine', 'kbe');
+    fs.mkdirSync(path.join(installRoot, 'res', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(installRoot, 'res', 'server', 'kbengine_defaults.xml'), '<r>\n', 'utf8');
     const memento = new MemoryMemento();
     const id = await seedProfile(memento, assetsRoot, '');
     const result = await ensureActiveProfileEngineRoot(memento);
@@ -184,23 +194,66 @@ describe('活动 profile 引擎根自动补录(故障 A)', () => {
     expect(new ProjectProfileStore(memento).get(id)!.engineRoot).toBe('');
   });
 
-  it('⑥ 兄弟目录无 marker / 目录名不含 kbengine → 不误认,如实缺', async () => {
+  it('⑥ 同层随机名目录(无身份锚)不误认,如实缺', async () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-sibneg-'));
     trees.push(base);
     const assetsRoot = path.join(base, 'assets');
     fs.mkdirSync(assetsRoot, { recursive: true });
-    // 同级有随机名目录(无 marker)与 marker 目录但名不含 kbengine —— 都不是候选
+    // 同级有随机名目录(无身份锚)——名字不再参与判定,缺结构锚即非引擎
     const plain = path.join(base, 'neighbor');
-    fs.mkdirSync(plain, { recursive: true });
-    const markerDir = path.join(base, 'engine-src', 'kbe', 'src', 'lib', 'common');
-    fs.mkdirSync(markerDir, { recursive: true });
-    fs.writeFileSync(path.join(markerDir, 'kbeversion.h'), '#define KBE_VERSION_MAJOR 2\n', 'utf8');
+    fs.mkdirSync(path.join(plain, 'res'), { recursive: true });
     const memento = new MemoryMemento();
     const id = await seedProfile(memento, assetsRoot, '');
     const result = await ensureActiveProfileEngineRoot(memento);
     expect(result.recorded).toBeNull();
     expect(result.stillMissing).toBe(true);
     expect(new ProjectProfileStore(memento).get(id)!.engineRoot).toBe('');
+  });
+
+  it('⑦ 语义迁移:旧语义记录值(仓库根)在新锚下验不过 + 唯一结构孩子 → 下移写入', async () => {
+    const { base, assetsRoot } = makeTree(true);
+    trees.push(base);
+    const memento = new MemoryMemento();
+    // 旧语义:记录值是仓库根(base),安装根是其 kbe 孩子
+    await seedProfile(memento, assetsRoot, base);
+    const result = await ensureActiveProfileEngineRoot(memento);
+    expect(result.recorded).toBe(path.join(base, 'kbe'));
+    const persisted = new ProjectProfileStore(memento).get(
+      memento.get<string>(ACTIVE_PROFILE_STATE_KEY)!
+    );
+    expect(persisted?.engineRoot).toBe(path.join(base, 'kbe'));
+  });
+
+  it('⑦b 歧义(记录值下有两个结构孩子)→ 不迁移不猜', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-engineroof-ambig-'));
+    trees.push(base);
+    const assetsRoot = path.join(base, 'proj');
+    fs.mkdirSync(assetsRoot, { recursive: true });
+    for (const name of ['kbe', 'engine-2.5.10']) {
+      const installRoot = path.join(base, name);
+      fs.mkdirSync(path.join(installRoot, 'res', 'server'), { recursive: true });
+      fs.writeFileSync(path.join(installRoot, 'res', 'server', 'kbengine_defaults.xml'), '<r>\n', 'utf8');
+    }
+    const memento = new MemoryMemento();
+    const id = await seedProfile(memento, assetsRoot, base);
+    const result = await ensureActiveProfileEngineRoot(memento);
+    expect(result.recorded).toBeNull();
+    expect(result.stillMissing).toBe(false);
+    expect(new ProjectProfileStore(memento).get(id)!.engineRoot).toBe(base);
+  });
+
+  it('⑦c 已合规记录值(身份锚过)→ 零写零迁移', async () => {
+    const { base, assetsRoot } = makeTree(true);
+    trees.push(base);
+    const memento = new MemoryMemento();
+    const installRoot = path.join(base, 'kbe');
+    await seedProfile(memento, assetsRoot, installRoot);
+    const result = await ensureActiveProfileEngineRoot(memento);
+    expect(result).toEqual({ stillMissing: false, recorded: null });
+    const persisted = new ProjectProfileStore(memento).get(
+      memento.get<string>(ACTIVE_PROFILE_STATE_KEY)!
+    );
+    expect(persisted?.engineRoot).toBe(installRoot);
   });
 
   it('无活动 profile / 无 assetsRoot → 如实缺,零写入', async () => {

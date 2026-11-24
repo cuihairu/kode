@@ -236,12 +236,14 @@ describe('kbe root and component environment gaps', () => {
     }
   });
 
-  it('derives KBE_ROOT from a kbe/bin/server suffix and rejects other shapes', () => {
+  it('derives KBE_ROOT from a bin/server suffix and rejects other shapes', () => {
     delete process.env.KBE_ROOT;
     const manager = makeManager();
     const detect = (binPath: string): string => internals(manager).detectKbeRoot(binPath);
 
-    expect(detect(path.join(root, 'kbe', 'bin', 'server'))).toBe(root);
+    // 2026-11-24 语义:binPath 剥 bin/server 尾段 = 引擎安装根(KBE_ROOT)
+    expect(detect(path.join(root, 'bin', 'server'))).toBe(root);
+    expect(detect(path.join(root, 'kbe', 'bin', 'server'))).toBe(path.join(root, 'kbe'));
     expect(detect(path.join(root, 'bin'))).toBe('');
     expect(detect('')).toBe('');
   });
@@ -249,12 +251,12 @@ describe('kbe root and component environment gaps', () => {
   it('assembles KBE_ROOT and KBE_RES_PATH when a root is available', () => {
     delete process.env.KBE_ROOT;
     const configPath = path.join(root, 'ws', 'cfg');
-    const binPath = path.join(root, 'kbe', 'bin', 'server');
+    const binPath = path.join(root, 'bin', 'server');
     const env = internals(makeManager()).buildComponentEnvironment(configPath, binPath);
 
     expect(env.KBE_ROOT).toBe(root);
     expect((env.KBE_RES_PATH ?? '').split(path.delimiter)).toEqual([
-      path.join(root, 'kbe', 'res'),
+      path.join(root, 'res'),
       configPath,
       path.join(configPath, 'res'),
       path.join(configPath, 'scripts')

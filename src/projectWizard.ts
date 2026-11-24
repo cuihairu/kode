@@ -161,7 +161,7 @@ export function buildStartupFacts(profile: {
 }): string[] {
   const facts: string[] = [];
   facts.push(l10nText('binPath (derived): {p}', {
-    p: profile.engineRoot ? path.join(profile.engineRoot, 'kbe', 'bin', 'server') : l10nText('not set')
+    p: profile.engineRoot ? path.join(profile.engineRoot, 'bin', 'server') : l10nText('not set')
   }));
   facts.push(l10nText('configPath (derived): {p}', { p: profile.assetsRoot || l10nText('not set') }));
   facts.push(l10nText('autoStart components: {list}', { list: profile.autoStart.join(', ') || l10nText('none') }));
@@ -251,15 +251,12 @@ async function wizardStepEngineVersion(
   currentVersion: string
 ): Promise<WizardStepOutcome> {
   // 与 databaseWiring 同一探测链(findEngineRoot + readEngineVersionMarker)。
-  // profile.engineRoot 的形态是引擎仓的 kbe/ 目录本身(identifyProjectLayout
-  // 口径),而 findEngineRoot 的 marker 探测只认引擎仓根(含 kbe/ 的那层)
-  // ——两种形态先归一,形态不符时回落向上找,探测不中即 null 不伪造。
+  // 2026-11-24 语义统一:engineRoot = 引擎安装根(kbe 目录本身),身份锚
+  // res/server/kbengine_defaults.xml 直接验记录值;验不过不归一不伪造,
+  // 回落两处默认探测。
   const exists = (candidate: string): boolean => fs.existsSync(candidate);
   const normalizeExplicit = (explicit: string): string | undefined => {
     if (hasEngineTreeMarker(explicit, exists)) return explicit;
-    if (path.basename(explicit) === 'kbe' && hasEngineTreeMarker(path.dirname(explicit), exists)) {
-      return path.dirname(explicit);
-    }
     return undefined;
   };
   const detected = detectEngineVersionMarker(workspaceRoots as string[], explicitEngineRoot, {

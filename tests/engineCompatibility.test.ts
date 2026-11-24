@@ -15,8 +15,11 @@ let engineRoot = '';
 beforeAll(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-compat-'));
   engineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-engine-'));
-  fs.mkdirSync(path.join(engineRoot, 'kbe/src/lib/common'), { recursive: true });
-  fs.writeFileSync(path.join(engineRoot, 'kbe/src/lib/common/version.h'), '#define KBE_VERSION "2.5.10"\n');
+  // 2026-11-24 语义:引擎根=安装根,身份锚 res/server/kbengine_defaults.xml
+  fs.mkdirSync(path.join(engineRoot, 'res/server'), { recursive: true });
+  fs.writeFileSync(path.join(engineRoot, 'res/server/kbengine_defaults.xml'), '<r>\n');
+  fs.mkdirSync(path.join(engineRoot, 'src/lib/common'), { recursive: true });
+  fs.writeFileSync(path.join(engineRoot, 'src/lib/common/version.h'), '#define KBE_VERSION "2.5.10"\n');
   fs.mkdirSync(path.join(root, 'out'), { recursive: true });
   fs.writeFileSync(path.join(root, 'out/extension.js'), '');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
@@ -48,9 +51,11 @@ describe('engine compatibility check', () => {
   it('accepts a 2.5.10+ tree with only kbeversion.h and reads the synthesized version (C-14)', () => {
     const kbeversionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-engine-kbeversion-'));
     try {
-      fs.mkdirSync(path.join(kbeversionRoot, 'kbe/src/lib/common'), { recursive: true });
+      fs.mkdirSync(path.join(kbeversionRoot, 'res/server'), { recursive: true });
+      fs.writeFileSync(path.join(kbeversionRoot, 'res/server/kbengine_defaults.xml'), '<r>\n');
+      fs.mkdirSync(path.join(kbeversionRoot, 'src/lib/common'), { recursive: true });
       fs.writeFileSync(
-        path.join(kbeversionRoot, 'kbe/src/lib/common/kbeversion.h'),
+        path.join(kbeversionRoot, 'src/lib/common/kbeversion.h'),
         '#define KBE_VERSION_MAJOR 2\n#define KBE_VERSION_MINOR 5\n#define KBE_VERSION_PATCH 10\n'
       );
       expect(findEngineRoot(root, kbeversionRoot)).toBe(kbeversionRoot);
@@ -89,9 +94,11 @@ describe('engine compatibility check', () => {
     const equalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-engine-equal-'));
     const manifestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-compat-equal-'));
     try {
-      fs.mkdirSync(path.join(equalRoot, 'kbe/src/lib/common'), { recursive: true });
+      fs.mkdirSync(path.join(equalRoot, 'res/server'), { recursive: true });
+      fs.writeFileSync(path.join(equalRoot, 'res/server/kbengine_defaults.xml'), '<r>\n');
+      fs.mkdirSync(path.join(equalRoot, 'src/lib/common'), { recursive: true });
       fs.writeFileSync(
-        path.join(equalRoot, 'kbe/src/lib/common/version.h'),
+        path.join(equalRoot, 'src/lib/common/version.h'),
         '#define KBE_VERSION "2.5.10"\n'
       );
       fs.writeFileSync(path.join(manifestDir, 'package.json'), JSON.stringify({
