@@ -3004,3 +3004,10 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [x] .def 解析在途合并 entityMapping.ts:defParseInFlight Map(键=归一路径+rootCategory,forceReparse 不合并不让位),并发同路径等首次航班;命中/未命中记账仍由首次调用如实进行,合并不冒充缓存命中。parseDefFile 变包装+parseDefFileOnce 原体(catch-all 不 reject,合并不吞错)。
 - [x] 并发测试 tests/entityMappingParseCoalesce.test.ts:首扫空清单后注入新 def(保证并发真落解析层),Promise.all 两定向请求 misses 恰 +1;索引表失效后顺序重放(hoverBudget 同款,公开 API 热索引短路语义)hits +1 且 misses 不涨。
 - [ ] 用户侧残留:真机(iMac Windows+内网开发机)升级到含本批的 nightly 后复测 Navigation 行数与首扫轮数;内网临时面 kbengine.configData.enabled=false 工作区开关仍有效(本批后通常不再需要)。
+
+### 触发器分工落地(用户裁定:两个需求不该接同一个触发器;打开不改索引输入,没必要触发全扫)
+
+- [x] 打开文件不再接 configData 全扫(diagnostics.ts):打开=per-file 诊断/预热面(openWatcher 既有职责不动),全扫只属于「输入变了」——编辑(onDidChangeTextDocument 防抖,同一计时器合并击键,未保存改动经「已开档读缓冲」进扫描)/保存(防抖全扫)/外部增删改(新增 '**/*.py' FS watcher 三事件防抖重算,补上不经编辑器路径的盲区)/激活首扫/配置变更,五入口分工明确。
+- [x] 源级契约守卫 4 例(tests/configDataScanSource.test.ts 防回植):onDidOpenTextDocument 不再接 scheduleConfigDataScan/didChange+save 仍接/configDataPyWatcher 腿在/全扫取文走 readConfigScanSourceText 且全文件零 `.openTextDocument(` 调用(守卫首轮抓出 3 处均为注释提及,收窄为调用形状后绿)。
+- [ ] 增量面(裁定理想态,未落,可点火候选):保存/外部变更目前仍是防抖一轮全扫(共享缓存直读,自供弹已断,成本=一轮后台扫);「只增量更新变化文件,配置定义变化时再重查受影响引用」需要 configData schema 依赖跟踪(文件→受影响引用闭包),属独立小批。
+- [x] 依赖图文档对账(providerDataSourceDoc 门):src/activate/diagnostics.ts 新增 1 处 createFileSystemWatcher → docs/architecture/provider-data-sources.md 与 docs/zh/architecture/provider-data-sources.md 的 watcher 分布清单行同步(src/diagnostics.ts=1→2,合计 18→19 处调用位,按既有出处条款风格补记本批 +1 的原因)。

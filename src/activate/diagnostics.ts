@@ -882,8 +882,14 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         void scanConfigData();
       }, 800);
     };
-    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
-      if (document.languageId === 'python') {
+    // 2026-11-24 用户裁定(触发器分工):打开文件不改索引输入,不触发全扫
+    // ——打开面只有 per-file 诊断与预热(openWatcher),全扫只属于「输入变了」
+    // 的事件。此前 open 接进全扫 + 全扫自身逐文件 openTextDocument(已改
+    // 缓冲/直读)= 双重自供弹,Navigation 刷屏根因。
+    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
+      // 编辑防抖:同一计时器合并击键连发;未保存改动经「已开档读缓冲」进扫描
+      // (只读 event.document:与 openWatcher/annotationQueue 等同形)
+      if (event.document.languageId === 'python') {
         scheduleConfigDataScan();
       }
     }));
@@ -892,6 +898,14 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         scheduleConfigDataScan();
       }
     }));
+    // 外部文件增删改(资源管理器/git 等不经编辑器路径):防抖重算
+    const configDataPyWatcher = vscode.workspace.createFileSystemWatcher('**/*.py');
+    context.subscriptions.push(
+      configDataPyWatcher,
+      configDataPyWatcher.onDidChange(() => scheduleConfigDataScan()),
+      configDataPyWatcher.onDidCreate(() => scheduleConfigDataScan()),
+      configDataPyWatcher.onDidDelete(() => scheduleConfigDataScan())
+    );
     // 配置变更即重算(含 enabled 开关切换:关→清集合零产出)
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('kbengine.configData')) {

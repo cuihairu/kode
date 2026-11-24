@@ -4,6 +4,8 @@
  * 事件面(扫描自己给自己供弹的根因),故本策略层零 vscode open 依赖——
  * uri 匹配只对已开文档列表做 toString 比对,盘读走共享原文缓存。
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { readConfigScanSourceText } from '../src/backend/configDataScanSource';
 import { readFileUtf8Recorded } from '../src/backend/fileReadMetrics';
@@ -54,5 +56,36 @@ describe('readConfigScanSourceText 取文策略', () => {
     await expect(
       readConfigScanSourceText(uri('/gone/X.py', 'file:///gone/X.py'), [])
     ).rejects.toThrow('ENOENT');
+  });
+});
+
+/**
+ * 触发器分工契约(2026-11-24 用户裁定,源级守卫防回植):
+ * 打开文件=per-file 诊断/预热面,不得触发 configData 全扫;
+ * 全扫只属于「输入变了」:编辑/保存/外部增删改/激活/配置变更;
+ * 全扫取文不得经 openTextDocument(会自制造 open 事件自供弹)。
+ */
+describe('configData 全扫触发器分工契约(源级)', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../src/activate/diagnostics.ts'), 'utf8'
+  );
+
+  it('onDidOpenTextDocument 不再接 scheduleConfigDataScan', () => {
+    expect(/onDidOpenTextDocument\([\s\S]{0,200}?scheduleConfigDataScan/.test(source)).toBe(false);
+  });
+
+  it('编辑与保存仍接防抖全扫(未保存改动经缓冲进扫描)', () => {
+    expect(source).toMatch(/onDidChangeTextDocument\([\s\S]{0,300}?scheduleConfigDataScan/);
+    expect(source).toMatch(/onDidSaveTextDocument\([\s\S]{0,200}?scheduleConfigDataScan/);
+  });
+
+  it('外部增删改有 FS watcher 腿(不经编辑器路径也重算)', () => {
+    expect(source).toMatch(/configDataPyWatcher[\s\S]{0,400}?onDidDelete/);
+  });
+
+  it('全扫取文走 readConfigScanSourceText,文件内零 openTextDocument 调用', () => {
+    expect(source).toMatch(/const text = await readConfigScanSourceText\(uri, vscode\.workspace\.textDocuments\)/);
+    // 调用形状守卫(注释里提及历史不红):任何 .openTextDocument( 调用即红
+    expect(/\.openTextDocument\(/.test(source)).toBe(false);
   });
 });
