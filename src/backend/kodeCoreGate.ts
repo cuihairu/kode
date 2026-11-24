@@ -96,6 +96,13 @@ export function resolveBackendMode(rawBackend: string | undefined): {
   return { mode: 'ts', rustServingGated: false };
 }
 
+/** probeHealth 结果:reason=快速失败臂原错误词;预算耗尽臂(疑似挂死)缺省 */
+export interface CoreHealthProbeOutcome {
+  ok: boolean;
+  latencyMs: number;
+  reason?: string;
+}
+
 /** 规范化:对象按键名排序后比较(数组保序),屏蔽序列化键序差异 */
 export function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -489,13 +496,14 @@ export class KodeCoreGate {
    * 整个探针体与 timeoutMs 预算竞速——server 进程楔死时 start() 自身也可能
    * 挂(START_TIMEOUT_MS 10s 级),探针必须无条件按时应答。任何失败如实报
    * ok:false。被动读口:不计熔断 streak、不弹 notice(判活是观测面,不是
-   * 故障面,不驱动任何回落决策)。
+   * 故障面,不驱动任何回落决策)。reason=快速失败臂的原错误词(TIMEOUT/
+   * EXITED/spawn 原文),预算耗尽臂 reason 缺省=预算内未决(疑似挂死)。
    */
-  async probeHealth(timeoutMs = 2_000): Promise<{ ok: boolean; latencyMs: number }> {
+  async probeHealth(timeoutMs = 2_000): Promise<CoreHealthProbeOutcome> {
     const now = this.options.now ?? (() => Date.now());
     const started = now();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const budget = new Promise<{ ok: boolean; latencyMs: number }>(resolve => {
+    const budget = new Promise<CoreHealthProbeOutcome>(resolve => {
       timer = setTimeout(() => resolve({ ok: false, latencyMs: now() - started }), timeoutMs);
     });
     const outcome = (async () => {
@@ -510,7 +518,11 @@ export class KodeCoreGate {
       return await Promise.race([
         outcome.then(
           () => ({ ok: true, latencyMs: now() - started }),
-          () => ({ ok: false, latencyMs: now() - started })
+          (error: unknown) => ({
+            ok: false as const,
+            latencyMs: now() - started,
+            reason: String((error as Error | undefined)?.message ?? error).slice(0, 160),
+          })
         ),
         budget,
       ]);
