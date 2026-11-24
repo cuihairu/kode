@@ -906,3 +906,70 @@ describe('runInRust 命令腿超时封顶 + 熔断(2026-11-24 真机病灶)', ()
     expect((client.request as ReturnType<typeof vi.fn>).mock.calls.length).toBe(5);
   });
 });
+
+describe('probeHealth 健康探针(2026-11-24 健康灯批)', () => {
+  const tick = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+  const makeProbeGate = (client: Partial<ShadowClientLike>) =>
+    new KodeCoreGate({ clientFactory: () => client as ShadowClientLike });
+
+  it('健康 client:探针通过 ok:true(被动读口,不动熔断账)', async () => {
+    const client = {
+      start: async () => ({}),
+      request: async () => ({}),
+      dispose: async () => undefined,
+    };
+    const gate = makeProbeGate(client);
+    gate.setConfig({ backend: 'rust', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const outcome = await gate.probeHealth(500);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(outcome.reason).toBeUndefined();
+    expect(gate.commandCircuitState()).toEqual({ open: false, timeoutStreak: 0 });
+  });
+
+  it('快速失败臂:reason=原错误词(退出/spawn 原文)', async () => {
+    const client = {
+      start: async () => ({}),
+      request: async () => {
+        throw new Error('server process exited (code 1)');
+      },
+      dispose: async () => undefined,
+    };
+    const gate = makeProbeGate(client);
+    gate.setConfig({ backend: 'rust', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const outcome = await gate.probeHealth(500);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.reason).toContain('server process exited (code 1)');
+  });
+
+  it('超时臂:reason 带 timed out 原词', async () => {
+    const client = {
+      start: async () => ({}),
+      request: async () => {
+        throw Object.assign(new Error('$/kode/health timed out after 2000ms'), { code: 'TIMEOUT' });
+      },
+      dispose: async () => undefined,
+    };
+    const gate = makeProbeGate(client);
+    gate.setConfig({ backend: 'rust', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const outcome = await gate.probeHealth(500);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.reason).toContain('timed out after');
+  });
+
+  it('start 挂死:探针按时应答(预算臂),reason 缺省=疑似挂死;残 promise 不炸', async () => {
+    const client = {
+      start: () => new Promise<unknown>(() => undefined),
+      request: async () => ({}),
+      dispose: async () => undefined,
+    };
+    const gate = makeProbeGate(client);
+    gate.setConfig({ backend: 'rust', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const outcome = await gate.probeHealth(30);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.reason).toBeUndefined();
+    expect(outcome.latencyMs).toBeLessThan(500);
+    await tick(20);
+  });
+});

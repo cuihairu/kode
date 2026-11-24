@@ -143,7 +143,7 @@ interface Harness {
   bar: ReturnType<typeof makeBar>;
   timers: ReturnType<typeof makeTimers>;
   probeCalls: () => number;
-  setProbeOutcome: (outcome: { ok: boolean; latencyMs: number } | 'throw') => void;
+  setProbeOutcome: (outcome: { ok: boolean; latencyMs: number; reason?: string } | 'throw') => void;
   messages: () => string[];
   pickPrompts: () => string[][];
   resolvePicks: (label: string | undefined) => void;
@@ -159,7 +159,10 @@ const makeHarness = (overrides?: {
 }): Harness => {
   const bar = makeBar();
   const timers = makeTimers();
-  let probeOutcome: { ok: boolean; latencyMs: number } | 'throw' = { ok: true, latencyMs: 5 };
+  let probeOutcome: { ok: boolean; latencyMs: number; reason?: string } | 'throw' = {
+    ok: true,
+    latencyMs: 5,
+  };
   let probeCount = 0;
   const messages: string[] = [];
   const pickPrompts: string[][] = [];
@@ -282,6 +285,36 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
     h.resolvePicks('重启核心服务');
     await tick();
     expect(h.restarts(), '选中才重启').toBe(1);
+    h.controller.dispose();
+  });
+
+  it('面板:失败详情带原因词(快速失败臂=原错误词,预算未决臂=疑似挂死)', async () => {
+    const h = makeHarness();
+    await tick();
+    h.setProbeOutcome({ ok: false, latencyMs: 31, reason: 'server process exited (code 1)' });
+    h.timers.fireAll();
+    await tick();
+    h.firePanel();
+    expect(h.messages()[0]).toContain('失败原因:server process exited (code 1)');
+    expect(h.messages()[0]).toContain('31ms');
+    h.resolvePicks(undefined);
+    // 预算未决臂(reason 缺省)→ 疑似挂死措辞
+    h.setProbeOutcome({ ok: false, latencyMs: 2000 });
+    h.timers.fireAll();
+    await tick();
+    h.firePanel();
+    expect(h.messages()[1]).toContain('失败原因:探针预算内未决(疑似挂死)');
+    h.controller.dispose();
+  });
+
+  it('面板:熔断开放时详情注明新命令已瞬时回落(76 连超时波次不再误导为仍在等待)', async () => {
+    const h = makeHarness({
+      snapshot: { commandCircuit: { open: true, timeoutStreak: 76 } },
+    });
+    await tick();
+    h.firePanel();
+    expect(h.messages()[0]).toContain('连续超时 76 次');
+    expect(h.messages()[0]).toContain('瞬时回落 TS');
     h.controller.dispose();
   });
 

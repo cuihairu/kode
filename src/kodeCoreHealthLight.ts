@@ -31,10 +31,12 @@ export type CoreHealthLightKind =
   | 'ok'
   | 'idle';
 
-/** 探针快照(最近一轮;null = 尚未探过) */
+/** 探针快照(最近一轮;null = 尚未探过)。reason=快速失败臂原错误词
+ * (TIMEOUT/EXITED/spawn 原文);缺省=探针预算内未决(疑似挂死) */
 export interface CoreHealthProbeResult {
   ok: boolean;
   latencyMs: number;
+  reason?: string;
 }
 
 /** 门侧可观测快照(与 KodeCoreGate.state/commandCircuitState 同源形状) */
@@ -232,16 +234,22 @@ export class KodeCoreHealthLightController {
     const probeLine = this.lastProbe
       ? `最近探针:${this.lastProbe.ok ? '通过' : '失败'}(${this.lastProbe.latencyMs}ms)`
       : '最近探针:尚未返回';
+    const reasonLine =
+      this.lastProbe && !this.lastProbe.ok
+        ? this.lastProbe.reason
+          ? `失败原因:${this.lastProbe.reason}`
+          : '失败原因:探针预算内未决(疑似挂死)'
+        : '';
     const circuit = snapshot.commandCircuit;
     const circuitLine = circuit.open
-      ? `命令腿熔断:已开放(连续超时 ${circuit.timeoutStreak} 次)`
+      ? `命令腿熔断:已开放(连续超时 ${circuit.timeoutStreak} 次,新命令已瞬时回落 TS 不再等待)`
       : `命令腿熔断:未开放(连续超时 ${circuit.timeoutStreak} 次)`;
     const backendLine =
       snapshot.backendMode === 'ts'
         ? 'backend=ts(纯 TS 轨道)'
         : `backend=${snapshot.backendMode},serverPath ${snapshot.serverPathPresent ? '已配置' : '未配置'}`;
     const kindLabel = CORE_HEALTH_LIGHT_FACES[kind].text.replace(/^\$\([^)]+\)\s*/, '');
-    const detail = `Core 健康:${kindLabel};${backendLine};${probeLine};${circuitLine}`;
+    const detail = `Core 健康:${kindLabel};${backendLine};${probeLine};${reasonLine ? `${reasonLine};` : ''}${circuitLine}`;
     this.deps.showMessage(detail);
     if (snapshot.backendMode === 'ts' || !this.deps.restartCore) {
       return;
