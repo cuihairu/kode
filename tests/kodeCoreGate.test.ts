@@ -833,3 +833,76 @@ describe('P1 复审:旧客户端启动失败不得打开新会话熔断', () => 
     }
   });
 });
+
+describe('runInRust 命令腿超时封顶 + 熔断(2026-11-24 真机病灶)', () => {
+  // 病灶:def 首扫逐实体调 $/kode/python/symbols,runInRust 不传超时 =
+  // transport 层无限等,server 每请求拖 ~10s 时 21 个实体拖成 241s。
+  const timeoutError = (): Error =>
+    Object.assign(new Error('$/kode/rpc timed out after 10000ms'), { code: 'TIMEOUT' });
+
+  const makeGate = (requestImpl: () => Promise<unknown>) => {
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(requestImpl),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    return { gate, client };
+  };
+
+  it('未传 timeoutMs 的命令级 RPC 默认封顶 10s;显式预算照传', async () => {
+    let captured: { timeoutMs?: number } | undefined;
+    const { gate } = makeGate(async (_method: string, _params: unknown, opts?: { timeoutMs?: number }) => {
+      captured = opts;
+      return {};
+    });
+    await gate.runInRust('$/kode/echo', {});
+    expect(captured).toEqual({ timeoutMs: 10000 });
+    await gate.runInRust('$/kode/echo', {}, { timeoutMs: 1234 });
+    expect(captured).toEqual({ timeoutMs: 1234 });
+  });
+
+  it('连续 3 次超时开闸:后续直通回落不再驱动 client,重启 Core 复位', async () => {
+    const { gate, client } = makeGate(async () => { throw timeoutError(); });
+    for (let i = 0; i < 3; i += 1) {
+      const result = await gate.runInRust('$/kode/echo', {});
+      expect(result.ok).toBe(false);
+    }
+    expect(gate.commandCircuitState().open).toBe(true);
+    const before = (client.request as ReturnType<typeof vi.fn>).mock.calls.length;
+    const fourth = await gate.runInRust('$/kode/echo', {});
+    expect(fourth.ok).toBe(false);
+    expect((fourth as { reason: string }).reason).toContain('circuit open');
+    expect((client.request as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+    gate.restartCore();
+    expect(gate.commandCircuitState()).toEqual({ open: false, timeoutStreak: 0 });
+  });
+
+  it('成功清零连续计数:偶发超时不误开闸', async () => {
+    let fail = true;
+    const { gate } = makeGate(async () => {
+      if (fail) { throw timeoutError(); }
+      return {};
+    });
+    await gate.runInRust('$/kode/echo', {});
+    await gate.runInRust('$/kode/echo', {});
+    expect(gate.commandCircuitState().timeoutStreak).toBe(2);
+    fail = false;
+    await gate.runInRust('$/kode/echo', {});
+    expect(gate.commandCircuitState().timeoutStreak).toBe(0);
+    fail = true;
+    await gate.runInRust('$/kode/echo', {});
+    await gate.runInRust('$/kode/echo', {});
+    expect(gate.commandCircuitState().open).toBe(false);
+  });
+
+  it('非超时硬失败不计数(spawn/退出类快速回落,显式命令不被熔断挡死)', async () => {
+    const { gate, client } = makeGate(async () => { throw new Error('process exited'); });
+    for (let i = 0; i < 5; i += 1) {
+      await gate.runInRust('$/kode/echo', {});
+    }
+    expect(gate.commandCircuitState()).toEqual({ open: false, timeoutStreak: 0 });
+    expect((client.request as ReturnType<typeof vi.fn>).mock.calls.length).toBe(5);
+  });
+});

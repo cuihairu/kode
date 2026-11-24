@@ -378,6 +378,14 @@ export async function buildPythonCallGraphInRust(
 }
 
 /**
+ * 符号面预算(2026-11-24 真机病灶):def 首扫逐实体走本面,此前不传超时 =
+ * transport 层无限等——server 每请求拖 ~10s 时 21 个实体拖成 241s。健康
+ * server 同 Interactive 预算量级毫秒级应答;2s 封顶 + 命令腿熔断(连续 3 次
+ * 超时开闸,后续直通回落 TS)把索引期最坏停滞压到 ~6s 而非分钟级。
+ */
+export const PYTHON_SYMBOLS_RUST_TIMEOUT_MS = 2000;
+
+/**
  * 符号表(经 Rust):文件集 → 每文件 AST 符号表(含每方法自身调用);Rust 不可用/
  * 失败/形状不合规返回 null(C-19 回退 TS 自建)。
  */
@@ -390,7 +398,8 @@ export async function buildPythonSymbolsInRust(
   }
   const response = await gate.runInRust<PythonSymbolsRustResult>(
     '$/kode/python/symbols',
-    { files }
+    { files },
+    { timeoutMs: PYTHON_SYMBOLS_RUST_TIMEOUT_MS }
   );
   if (!response.ok) {
     return null;

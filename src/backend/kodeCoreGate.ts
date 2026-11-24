@@ -62,6 +62,22 @@ export const DEFAULT_CORE_GATE_CONFIG: KodeCoreGateConfig = {
 const SPAWN_COOLDOWN_MS = 30_000;
 
 /**
+ * 命令级 RPC 缺省超时(2026-11-24 真机病灶):runInRust 此前不传超时 =
+ * transport 层不起定时器、无限等——server 进程楔死/变慢时 def 首扫逐实体
+ * 调 $/kode/python/symbols 每请求白等 ~10s,21 个实体拖成 241s。所有命令级
+ * RPC 一律封顶;确需更久/更短预算的调用方显式传 timeoutMs 覆盖。
+ */
+export const COMMAND_RPC_TIMEOUT_MS_DEFAULT = 10_000;
+/**
+ * 命令腿熔断阈值:连续超时(期间无任何成功)达到即开闸,后续 runInRust
+ * 直通 ok:false 由调用方回落 TS(与交互腿熔断同判式:超时 = server 楔死
+ * 信号,重试不好转;非超时失败不计数——spawn/退出类硬失败本就快速回落,
+ * 用户显式命令不该被永久挡住)。复位 = 进程更换(stopClient/restartCore/
+ * 自动重启对账),新进程 = 新的成功机会。
+ */
+export const COMMAND_TRIP_THRESHOLD = 3;
+
+/**
  * kill-switch 解析:仅 'shadow' 与 'rust' 两个字面量改变模式,其余(含
  * undefined/空串/拼错)一律回落 'ts' —— 开关异常时安全侧是 TS 真相。
  * 'rust' = 服务轨道(2026-11-08 用户令「直接切」,serving 门禁解除);
@@ -286,6 +302,9 @@ export class KodeCoreGate {
   private registeredRoots = new Set<string>();
   /** 上次见到的重启代数(null = 尚未对账;变化即判定自动重启) */
   private lastRestartGeneration: number | null = null;
+  /** 命令腿熔断账:连续超时计数(成功即清零)与开闸位(进程更换即复位) */
+  private commandTimeoutStreak = 0;
+  private commandCircuitOpen = false;
   private readonly notices: string[] = [];
   private readonly now: () => number;
   private readonly options: KodeCoreGateOptions;
@@ -425,7 +444,14 @@ export class KodeCoreGate {
     method: string,
     params?: unknown,
     opts?: { timeoutMs?: number }
-  ): Promise<{ ok: true; result: T } | { ok: false; reason: string }> {
+  ): Promise<{ ok: true; result: T } | { ok: false, reason: string }> {
+    // 熔断开放:直通回落(调用方走 TS),不再拉起进程白等预算
+    if (this.commandCircuitOpen) {
+      return {
+        ok: false,
+        reason: 'rust command circuit open: consecutive timeouts (server wedging?), ts fallback'
+      };
+    }
     if (!this.config.serverPath) {
       return { ok: false, reason: 'no serverPath' };
     }
@@ -435,11 +461,27 @@ export class KodeCoreGate {
     }
     try {
       await client.start();
-      const result = (await client.request('$/kode/rpc', { method, params }, opts)) as T;
+      const timeoutMs = opts?.timeoutMs ?? COMMAND_RPC_TIMEOUT_MS_DEFAULT;
+      const result = (await client.request('$/kode/rpc', { method, params }, { timeoutMs })) as T;
+      this.commandTimeoutStreak = 0;
       return { ok: true, result };
     } catch (error) {
+      if ((error as { code?: string }).code === 'TIMEOUT') {
+        this.commandTimeoutStreak += 1;
+        if (this.commandTimeoutStreak >= COMMAND_TRIP_THRESHOLD) {
+          this.commandCircuitOpen = true;
+          this.noticeOnce(
+            `rust 命令级 RPC 连续超时 ${this.commandTimeoutStreak} 次,熔断开放(本进程周期内命令走 TS 回落;重启 Core 复位)`
+          );
+        }
+      }
       return { ok: false, reason: (error as Error).message };
     }
+  }
+
+  /** 命令腿熔断现状(诊断面/测试用) */
+  commandCircuitState(): { open: boolean; timeoutStreak: number } {
+    return { open: this.commandCircuitOpen, timeoutStreak: this.commandTimeoutStreak };
   }
 
   /**
@@ -540,6 +582,10 @@ export class KodeCoreGate {
     this.mirrorSnapshots.clear();
     this.registeredRoots.clear();
     this.lastRestartGeneration = null;
+    // 进程更换(kill-switch/换二进制/手动重启同路径):命令腿熔断复位,
+    // 新进程 = 新的成功机会(与交互腿手动复位同判式)
+    this.commandCircuitOpen = false;
+    this.commandTimeoutStreak = 0;
     if (client) {
       void client.dispose().catch(() => undefined);
     }
@@ -567,6 +613,9 @@ export class KodeCoreGate {
     this.mirroredVersions.clear();
     // 熔断重置：新进程=新的成功机会（server-runtime 侧问题随旧进程消散）。
     resetInteractiveCircuit(generation);
+    // 命令腿熔断同规则复位(自动重启对账点;与 stopClient 手动路径双覆盖)
+    this.commandCircuitOpen = false;
+    this.commandTimeoutStreak = 0;
     // RUST-069-W:新进程根注册表是空的(握手只带 workspaceFolders)——
     // 运行期注册过的根(外部 assetsRoot / 运行期新增 folder)先补注册,
     // 再重放语料快照(文件根归属依赖根已注册,顺序不可倒置)。
