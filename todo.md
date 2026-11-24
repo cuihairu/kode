@@ -3013,3 +3013,31 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [x] 依赖图文档对账(providerDataSourceDoc 门):src/activate/diagnostics.ts 新增 1 处 createFileSystemWatcher → docs/architecture/provider-data-sources.md 与 docs/zh/architecture/provider-data-sources.md 的 watcher 分布清单行同步(src/diagnostics.ts=1→2,合计 18→19 处调用位,按既有出处条款风格补记本批 +1 的原因)。
 - [x] CI 假红归因与加固(tests/eventIndexReadyBudget.test.ts 快扫描臂):push run 45367339344 红(build 24.x,vitest --coverage)而**同 SHA** run 45367339709 绿=非确定性,非回归。红臂=「初扫在预算内完成→ready:true」用的是 beforeEach 的 **40ms 墙钟预算**,CI 带 coverage 插桩 + 1012 isolate workers 下首扫(真临时文件盘读)随时超 40ms→竞速判 pending→ready:false 假红。修=该臂显式传生产缺省预算 `DATA_DICT_READY_DEFAULT_BUDGET_MS`(1500ms)——契约不变(钉的是「快扫描落在预算内」这条语义,不是绝对墙钟),40ms 挂死臂继续钉 pending(预算耗尽面),两面都在;同族 space/dataDict 的 ready 臂走 undefined token=离线等全量语义,不涉墙钟竞态故不动。
 - [x] 同源陈旧注释对账:diagnostics.ts 两处仍写「py 文件打开/保存」触发全扫(KODE-CFG-016 模块 doc 的触发面条款 + 800ms 防抖注释),与本批分工已不符,改为编辑/保存/外部增删改并点明「打开不触发」。
+
+## 2026-11-24 Core 灯 i18n 收口 + 点击切轨(用户令「core 的位置如果降级了就展示降级」+「你这国际化都不做了吗?就这么敷衍吗?」)
+
+批 1(六态灯+探针+面板)的六态脸面/动作/面板文案硬编中文,被用户点名批评敷衍。本批把整张灯面走 l10n 合同,并按用户选定范围「降级文案 + 点击切换」给灯加切轨动作(不新增灯位:statusBar 已太多信息,降级就亮在这盏灯上)。
+
+- [x] 全灯面 i18n(src/kodeCoreHealthLight.ts):六态脸面/tooltip 改英文源串键+运行时 l10nText 取词(coreHealthLightFaces() 函数化,不再是模块级常量);面板动作改语义项(restart/ts/rust/shadow)+文案与回查都经 coreHealthActionLabel(coreHealthActionFromLabel 按当前语言取词回查——若直存中文字符串常量做映射,英文系统下选中项会被判成未识别);面板详情行(探针账/失败原因/熔断措辞/backend 行/kindLabel 剥图标前缀防「Core health: Core: ok」重复)全 l10n 化;bypassed 脸面重写为「降级(未接入)」语义(tooltip 点明实际在跑 TS 轨道+点击可切轨)。l10n 双包 +29 键(804→833,键集全等,占位符核对)。
+- [x] 切轨后端 src/kodeCoreBackendSwitch.ts:readCoreBackendMode(缺省 rust/非法值诚实回落,raw 保留原文)+writeCoreBackendMode(有工作区文件夹写工作区级否则用户级——hotReloadToggle 同源作用域判据;写后核对生效值,被别的作用域压住如实抛错不谎报成功)。接线 kodeCoreGateWiring:setBackend 注入(失败走 l10n 化错误通知),QuickPick placeHolder l10n 化。切换走既有 onDidChangeConfiguration→gate.setConfig 链即时重装配轨道,不重载窗口。
+- [x] 测试:kodeCoreHealthLight 19 例(重写英文断言;新增脸面/动作双态 i18n 测试——en 源串/zh 包译文两态+动作回查「中文 locale 下英文源串判 undefined」防硬编映射回植;动作矩阵测试 7 组;切轨动作经 harness setBackend 记账与生产同形;ts 轨道只给切轨项);kodeCoreBackendSwitch 新 4 例(读归一 3 臂/写作用域 2 臂/冻结配置如实抛错/非法值拒绝零写回)。
+- [x] 判例:l10n 键必须是单行完整字面量——categoryI18n 死键门按「源码里能找到键原文」反向对账,跨行 '+' 拼接的键(bypassed/unresponsive/degraded 三条 tooltip)在源码里拼不出原文被判死键;改单行后绿。
+- [x] 文档对账:docs/guide/ui-areas.md+zh(灯 91 行:六态新措辞+点击动作矩阵+l10n 说明)、docs/guide/configuration.md+zh(core.backend 行补「Core 健康灯也可写此项,即时重装配不重载窗口」)。
+- [x] 门禁:全量 vitest 13015 过/4 skip/0 红(首轮 2 红:死键门=真红已修;E-2 影子账本=满载负载假红,solo 8/8 绿定谳非本批——本批零改 ledger 路径);mocha CI 口径 12/12;vsix smoke 4/4;tsc 0;eslint 变更面 0。
+
+## 2026-11-24 真机复查回执(Nightly b5315792,iMac Windows;用户报告逐条入账)
+
+- [x] 打开文件 Navigation 刷屏:真机确认已修复(打开已从全扫触发器移除;49 文件样本 Navigation 降到 Rust 9 行/TS 7 行,两模式 F12 都通过)。
+- [ ] 可点火:增量面(用户确认「文件变化只更新受影响内容还没做到」——编辑/保存/外部变更仍是 800ms 防抖后一轮全扫;理想态=只增量更新变化文件+配置定义变化时重查受影响引用闭包,需 configData schema 依赖跟踪,独立小批)。
+- [ ] 可点火:.def 在途解析合并吞变更(用户受控测试复现:解析途中修改 .def,watcher 发起的新解析被合并进旧任务,这次变更漏处理)——defParseInFlight(8b032840)只按路径去重,未对「在途期间文件又变了」的落地结果做版本核对;修复方向=合并命中者拿到结果后核对文件 mtime/内容代,变了就再排一轮。
+- [ ] 可点火:watcher 范围(configDataPyWatcher 监听整个工作区 '**/*.py',扫描范围之外的 Python 文件也能触发全扫;工作区外的 assetsRoot 又没接入这个监听——外部根的增删改走不到重算面)。
+- [ ] 可点火:缺失二进制 respawn 缺陷(用户对照实验:用缺失的 .exe,首次立即报 ENOENT,第二次没有重新拉起进程,最后变成握手超时)——ensureClient 对 spawn ENOENT 的失败账似被记成「已尝试」,二连请求不再走 start 臂;需现场确认内网机同形。相关既有候选:二进制平台魔数守门(错格式视为缺失不 spawn+如实上报)。
+- [x] Windows 包核验:三 .exe 全 PE32+ x64、校验值匹配、真机握手 187ms(打包面无恙,与 2026-11-24 地面真值核验一致)。
+
+## 2026-11-24 def↔py 一致性误报:父类已实现仍报警(用户报告「提了无数次依然没有修复」——最高优先)
+
+病灶:def 中定义的方法,对应 py 文件中的类继承的父类已经实现,def-method-missing-in-python 仍报警。两轨同盲:
+- TS 轨:collectDefMethodImplementationGaps → listMethodImplementationsByIdentity 只查属主注册面(绑定身份+属主文件内方法行),不查 Python 基类链;
+- Rust 轨:collectDefPythonParityInput 只收同名实体类自身 cls.methods.keys(),父类(含跨文件 import 的父类)不进集合;Rust 规则 def_python_parity.rs 只做集合差,无继承语义。
+既有可复用面:pythonClassIndex.mroClasses/resolveSymbol/importModuleCandidates(C3 线性化+KBEngine scripts 布局 import 解析),F12 跳转 LUT 已有 mroImplementations 臂(全项目唯一名+约定链)但诊断面没接。
+- [ ] 修复:两轨判定面前置「祖先链已实现=不算缺」——TS 轨 gap 判定接 MRO;Rust 轨 parity 采集沿基类链(import 解析)扩 implementedMethods。误报消除且不放过真缺(父类也没有才算缺)。

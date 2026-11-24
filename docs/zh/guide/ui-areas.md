@@ -94,7 +94,7 @@ Kode 在状态栏右侧最多占十项（VS Code 按优先级排序；Kode 有�
 | 94 | Kode 核心 | kode-server 车道（Rust / Rust 降级 TS / TS / 对拍）。点击看对拍差异日志。tooltip 另含**引擎版本**行（数据源=引擎树版本标记探测链，未检出显式「未检测到」，绝不编造）。配置：`kbengine.core.backend`、`kbengine.core.serverPath`、`kbengine.engineRoot`（引擎版本行随其变化重探） |
 | 93 | Kode MCP | 内建 MCP 服务器状态（已关闭 / 未构建 / 已构建 / 正常 / 无应答——末两态是活性探针脸：激活后与配置变化时各跑一轮 `kode-mcp --probe` 握手探活，不做轮询；「已构建」只说明二进制在位，「正常」=真能拉起并应答 MCP 握手）。点击启停。配置：`kbengine.mcp.enabled`（默认开） |
 | 92 | Kode 索引 | 索引生命周期：`$(check) 就绪` / `$(sync~spin) 运行 n 排队 n` / `$(error) 失败 n` / `$(circle-slash) 未知`（四态，固定判定顺序——刻意没有「部分索引」态，因为调度器没有这个数据面）。就绪态 tooltip 附最近一轮建立完成时刻（本地时间）与耗时；从未建完不加该行。点击打开 Project Doctor |
-| 91 | Core 健康 | kode-server 活性灯，六态：关（backend=ts，整灯隐藏）/ 未接入（配了 rust/shadow 但二进制落空）/ 无响应 / 降级 / 正常 / 待探活；无响应与未接入带错误底色。10s 自续探针（`$/kode/health`，2s 预算竞速——探针自身永不悬挂）驱动脸面；只观测，不驱动回落。点击 = 详情（探针结果 + 失败原因词 + 命令腿熔断连超次数）+ QuickPick，选「重启核心服务」才真重启 |
+| 91 | Core 健康 | kode-server 活性灯，六态：关（backend=ts，整灯隐藏）/ 降级(未接入)（配了 rust/shadow 但二进制落空，实际在跑 TS 轨道）/ 无响应 / 降级 / 正常 / 待探活；无响应与未接入带错误底色。10s 自续探针（`$/kode/health`，2s 预算竞速——探针自身永不悬挂）驱动脸面；只观测，不驱动回落。点击 = 详情（探针结果 + 失败原因词 + 命令腿熔断连超次数）+ QuickPick（动作项同样按当前语言渲染）：重启核心服务（只在有 Rust 进程可重启时出，即非 ts 轨道）与切轨道 ts / rust / shadow——切换写 `kbengine.core.backend`（开着工作区文件夹写工作区级，否则用户级），既有配置变更链即时重装配轨道，不重载窗口。灯文案、tooltip 与面板措辞都走 `l10nText`（英文源串为 key，中文取 `l10n/bundle.l10n.zh-cn.json`） |
 
 截图：待补（已登记 todo）。
 

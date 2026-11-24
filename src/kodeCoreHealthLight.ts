@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { HotReloadTimerDeps } from './hotReload';
+import { l10nText } from './nlsRuntime';
 
 // Core 健康灯(2026-11-24 用户令「server 死了我怎么去判断,这个问题不解决,
 // 这个插件根本没有办法使用」):状态栏常驻 kode-server 活性灯 + 定期探针。
@@ -17,7 +18,9 @@ import type { HotReloadTimerDeps } from './hotReload';
 //
 // 探针节奏:首探在装配时,之后自续(schedule→探→完→再 schedule)。单飞:
 // 在途探针期间不叠加;每轮预算 2s(gate.probeHealth 内部竞速,探针永不悬
-// 挂)。状态栏点击 = QuickPick(重启 Core / 查看诊断详情)。
+// 挂)。状态栏点击 = QuickPick(重启 Core / 切换轨道 ts|rust|shadow /
+// 查看诊断详情);切换写配置面(kbengine.core.backend),既有配置事件链
+// 即时重装配轨道,不重载窗口。不新增灯位:降级就亮在这盏灯上。
 
 export const CORE_HEALTH_PANEL_COMMAND = 'kbengine.core.healthPanel';
 export const CORE_HEALTH_PROBE_INTERVAL_MS = 10_000;
@@ -51,43 +54,58 @@ export interface CoreHealthLightInputs extends CoreHealthGateSnapshot {
   probe: CoreHealthProbeResult | null;
 }
 
-/** 六态脸面;文案只描述已核实的事实 */
-export const CORE_HEALTH_LIGHT_FACES: Record<
-  CoreHealthLightKind,
-  { text: string; tooltip: string; errorBackground?: boolean }
-> = {
-  off: {
-    text: '$(circle-slash) Core: 关',
-    tooltip: 'kbengine.core.backend=ts,纯 TS 轨道,无 Rust Core 进程。'
-  },
-  bypassed: {
-    text: '$(plug) Core: 未接入',
-    tooltip:
-      'kbengine.core.backend 配置为 rust/shadow,但未找到 kode-server 二进制' +
-      '(kbengine.core.serverPath 未配置且自动发现落空),当前静默走 TS 轨道。',
-    errorBackground: true
-  },
-  unresponsive: {
-    text: '$(error) Core: 无响应',
-    tooltip:
-      'kode-server 健康探针失败(进程未启动、已退出或挂死)。索引/跳转/CodeLens ' +
-      '将退 TS 或停摆。建议点击本灯选择「重启核心服务」。',
-    errorBackground: true
-  },
-  degraded: {
-    text: '$(warning) Core: 降级',
-    tooltip:
-      'Core 探针通过,但命令腿最近出现超时(连续超时会熔断,命令级功能走 TS 回落)。' +
-      '可点击本灯查看详情或重启。'
-  },
-  ok: {
-    text: '$(check) Core: 正常',
-    tooltip: 'kode-server 健康探针通过。点击本灯查看详情。'
-  },
-  idle: {
-    text: '$(pulse) Core: 待探活',
-    tooltip: 'Core 轨道已配置,健康探针尚未返回(启动窗口内属正常)。'
+export interface CoreHealthLightFace {
+  text: string;
+  tooltip: string;
+  errorBackground?: boolean;
+}
+
+/** 六态脸面文案键(英文源串;zh-cn 译文在 l10n/bundle.l10n.zh-cn.json) */
+const CORE_HEALTH_FACE_TEXT: Record<CoreHealthLightKind, string> = {
+  off: '$(circle-slash) Core: off',
+  bypassed: '$(plug) Core: degraded (not attached)',
+  unresponsive: '$(error) Core: no response',
+  degraded: '$(warning) Core: degraded',
+  ok: '$(check) Core: ok',
+  idle: '$(pulse) Core: probing'
+};
+
+// 注意:键必须是单行完整字面量——categoryI18n 死键门按「源码里能找到键原文」
+// 反向对账,跨行 '+' 拼接的键在源码里拼不出原文会被判死键(2026-11-24 判例)。
+const CORE_HEALTH_FACE_TOOLTIP: Record<CoreHealthLightKind, string> = {
+  off: 'kbengine.core.backend is ts (pure TS track); there is no Rust Core process to probe.',
+  bypassed:
+    'kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks.',
+  unresponsive:
+    'kode-server health probe failed (process not started, exited, or hung). Index/jump/CodeLens will fall back to TS or stall.',
+  degraded:
+    'Core probe passed, but the command leg recently timed out (enough consecutive timeouts opens the circuit and routes commands to the TS fallback).',
+  ok: 'kode-server health probe passed. Click this item for details.',
+  idle: 'Core track configured; the health probe has not returned yet (normal during startup).'
+};
+
+/**
+ * 六态脸面(运行时取词,故用函数而非模块级常量):英文系统返回源串,中文系统
+ * 返回 zh-cn 包译文;缺 key 回落源串,不空串不裸键。
+ */
+export function coreHealthLightFaces(): Record<CoreHealthLightKind, CoreHealthLightFace> {
+  const faces = {} as Record<CoreHealthLightKind, CoreHealthLightFace>;
+  for (const kind of Object.keys(CORE_HEALTH_FACE_TEXT) as CoreHealthLightKind[]) {
+    faces[kind] = {
+      text: l10nText(CORE_HEALTH_FACE_TEXT[kind]),
+      tooltip: l10nText(CORE_HEALTH_FACE_TOOLTIP[kind]),
+      errorBackground: CORE_HEALTH_LIGHT_FACE_ERROR_BACKGROUND[kind]
+    };
   }
+  return faces;
+}
+
+/** 高危底色脸面(与六态脸面同表;bypassed/unresponsive 用 errorBackground 提示) */
+const CORE_HEALTH_LIGHT_FACE_ERROR_BACKGROUND: Partial<
+  Record<CoreHealthLightKind, boolean>
+> = {
+  bypassed: true,
+  unresponsive: true
 };
 
 /**
@@ -112,6 +130,64 @@ export function resolveCoreHealthLight(inputs: CoreHealthLightInputs): CoreHealt
     return 'degraded';
   }
   return 'ok';
+}
+
+// 点击面板动作(2026-11-24 用户令:点击灯可切换 Core 轨道)。动作是语义项
+// (restart/ts/rust/shadow),展示文案经 l10nText 取词;选中回查也走同一
+// 取词——若直存中文字符串常量做映射,中文 locale 下选中项会被判成未识别。
+export type CoreHealthPanelAction = 'restart' | 'ts' | 'rust' | 'shadow';
+
+/** 动作文案键(英文源串;zh-cn 译文在 l10n/bundle.l10n.zh-cn.json) */
+const CORE_HEALTH_ACTION_TEXT: Record<CoreHealthPanelAction, string> = {
+  restart: 'Restart core service',
+  ts: 'Switch to ts track',
+  rust: 'Switch to rust track',
+  shadow: 'Switch to shadow track'
+};
+
+/** 动作展示文案(英文系统=源串,中文系统=包译文) */
+export function coreHealthActionLabel(action: CoreHealthPanelAction): string {
+  return l10nText(CORE_HEALTH_ACTION_TEXT[action]);
+}
+
+/**
+ * 点击面板动作列表(纯函数,可矩阵测):重启项只在有 Rust 进程可重启时出
+ * (backend=ts 如实没有);切换项按当前轨道排除自身,能力面缺失(接线层未注入
+ * 对应 dep)时不出——面板宁少一项,不谎报能做的事。
+ */
+export function resolveCoreHealthPanelActions(
+  backendMode: 'ts' | 'rust' | 'shadow',
+  canRestart: boolean,
+  canSwitch: boolean
+): CoreHealthPanelAction[] {
+  const actions: CoreHealthPanelAction[] = [];
+  if (canRestart && backendMode !== 'ts') {
+    actions.push('restart');
+  }
+  if (canSwitch) {
+    if (backendMode !== 'ts') {
+      actions.push('ts');
+    }
+    if (backendMode !== 'rust') {
+      actions.push('rust');
+    }
+    if (backendMode !== 'shadow') {
+      actions.push('shadow');
+    }
+  }
+  return actions;
+}
+
+/** 选中文案 → 动作(undefined/null=取消或未识别文案,调用方不做事) */
+export function coreHealthActionFromLabel(
+  label: string | undefined | null
+): CoreHealthPanelAction | undefined {
+  if (label === undefined || label === null) {
+    return undefined;
+  }
+  return (Object.keys(CORE_HEALTH_ACTION_TEXT) as CoreHealthPanelAction[]).find(
+    action => coreHealthActionLabel(action) === label
+  );
 }
 
 /** 状态栏项最小面(与 hotReloadStatus.StatusBarItemLike 同形,另加背景色;
@@ -148,6 +224,8 @@ export interface KodeCoreHealthLightDeps {
   pickAction(labels: readonly string[]): Promise<string | undefined>;
   /** 重启动作(接线层注既有 kbengine.core.restart 逻辑;缺省=面板不提供重启项) */
   readonly restartCore?: () => void;
+  /** 轨道切换动作(接线层注 writeCoreBackendMode;缺省=面板不提供切换项) */
+  readonly setBackend?: (mode: 'ts' | 'rust' | 'shadow') => void;
 }
 
 export const CORE_ERROR_BACKGROUND_COLOR_ID = 'statusBarItem.errorBackground';
@@ -213,7 +291,7 @@ export class KodeCoreHealthLightController {
     const snapshot = this.deps.snapshot();
     const kind = resolveCoreHealthLight({ ...snapshot, probe: this.lastProbe });
     this.lastKind = kind;
-    const face = CORE_HEALTH_LIGHT_FACES[kind];
+    const face = coreHealthLightFaces()[kind];
     this.bar.text = face.text;
     this.bar.tooltip = face.tooltip;
     this.bar.command = CORE_HEALTH_PANEL_COMMAND;
@@ -227,38 +305,71 @@ export class KodeCoreHealthLightController {
     this.bar.show();
   }
 
-  /** 点击面板:诊断详情即时可得(当前态+探针账+配置);重启必须用户选择 */
+  /** 点击面板:诊断详情即时可得(当前态+探针账+配置);重启与切轨必须用户选择 */
   private showPanel(): void {
     const snapshot = this.deps.snapshot();
     const kind = resolveCoreHealthLight({ ...snapshot, probe: this.lastProbe });
     const probeLine = this.lastProbe
-      ? `最近探针:${this.lastProbe.ok ? '通过' : '失败'}(${this.lastProbe.latencyMs}ms)`
-      : '最近探针:尚未返回';
+      ? l10nText(
+          this.lastProbe.ok
+            ? 'Last probe: passed ({ms}ms)'
+            : 'Last probe: failed ({ms}ms)',
+          { ms: this.lastProbe.latencyMs }
+        )
+      : l10nText('Last probe: no result yet');
     const reasonLine =
       this.lastProbe && !this.lastProbe.ok
         ? this.lastProbe.reason
-          ? `失败原因:${this.lastProbe.reason}`
-          : '失败原因:探针预算内未决(疑似挂死)'
+          ? l10nText('Failure reason: {reason}', { reason: this.lastProbe.reason })
+          : l10nText('Failure reason: probe inconclusive within budget (likely hung)')
         : '';
     const circuit = snapshot.commandCircuit;
     const circuitLine = circuit.open
-      ? `命令腿熔断:已开放(连续超时 ${circuit.timeoutStreak} 次,新命令已瞬时回落 TS 不再等待)`
-      : `命令腿熔断:未开放(连续超时 ${circuit.timeoutStreak} 次)`;
+      ? l10nText(
+          'Command circuit: open ({streak} consecutive timeouts; new commands fall back to TS immediately)',
+          { streak: circuit.timeoutStreak }
+        )
+      : l10nText('Command circuit: closed ({streak} consecutive timeouts)', {
+          streak: circuit.timeoutStreak
+        });
     const backendLine =
       snapshot.backendMode === 'ts'
-        ? 'backend=ts(纯 TS 轨道)'
-        : `backend=${snapshot.backendMode},serverPath ${snapshot.serverPathPresent ? '已配置' : '未配置'}`;
-    const kindLabel = CORE_HEALTH_LIGHT_FACES[kind].text.replace(/^\$\([^)]+\)\s*/, '');
-    const detail = `Core 健康:${kindLabel};${backendLine};${probeLine};${reasonLine ? `${reasonLine};` : ''}${circuitLine}`;
+        ? l10nText('backend=ts (pure TS track)')
+        : snapshot.serverPathPresent
+          ? l10nText('backend={mode}, serverPath configured', { mode: snapshot.backendMode })
+          : l10nText('backend={mode}, serverPath missing', { mode: snapshot.backendMode });
+    // 剥图标与「Core:」前缀取纯状态词,避免详情行出现「Core health: Core: ok」重复
+    const kindLabel = coreHealthLightFaces()[kind].text.replace(/^\$\([^)]+\)\s*Core:\s*/, '');
+    const detail = [
+      l10nText('Core health: {kind}', { kind: kindLabel }),
+      backendLine,
+      probeLine,
+      ...(reasonLine ? [reasonLine] : []),
+      circuitLine
+    ].join('; ');
     this.deps.showMessage(detail);
-    if (snapshot.backendMode === 'ts' || !this.deps.restartCore) {
+    const actions = resolveCoreHealthPanelActions(
+      snapshot.backendMode,
+      Boolean(this.deps.restartCore),
+      Boolean(this.deps.setBackend)
+    );
+    if (actions.length === 0) {
       return;
     }
-    void this.deps.pickAction(['重启核心服务']).then(label => {
-      if (label === '重启核心服务') {
-        this.deps.restartCore?.();
-      }
+    void this.deps.pickAction(actions.map(coreHealthActionLabel)).then(label => {
+      this.applyPanelAction(coreHealthActionFromLabel(label));
     });
+  }
+
+  /** 面板选中项分派:重启走既有命令;切换项写配置面(实时切轨,不重载窗口) */
+  private applyPanelAction(action: CoreHealthPanelAction | undefined): void {
+    if (action === 'restart') {
+      this.deps.restartCore?.();
+      return;
+    }
+    if (action === 'ts' || action === 'rust' || action === 'shadow') {
+      this.deps.setBackend?.(action);
+    }
   }
 
   dispose(): void {

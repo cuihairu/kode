@@ -7,6 +7,8 @@ import {
   KodeCoreHealthLightController,
   type CoreHealthGateSnapshot,
 } from './kodeCoreHealthLight';
+import { writeCoreBackendMode } from './kodeCoreBackendSwitch';
+import { l10nText } from './nlsRuntime';
 import { getIndexScanRoots, resetScanRootCache } from './scanRoots';
 import { setKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 
@@ -245,9 +247,23 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
       void vscode.window.showInformationMessage(text);
     },
     pickAction: async labels =>
-      await vscode.window.showQuickPick([...labels], { placeHolder: 'Core 健康灯动作' }),
+      await vscode.window.showQuickPick([...labels], {
+        placeHolder: l10nText('Core health light actions')
+      }),
     restartCore: () => {
       void vscode.commands.executeCommand('kbengine.core.restart');
+    },
+    // 点击灯切轨:写配置面(不是内存开关)——既有 onDidChangeConfiguration →
+    // gate.setConfig 即时重装配轨道,不必重载窗口;写后未生效如实报错上报
+    // (作用域被覆盖压住时不谎报成功)
+    setBackend: mode => {
+      void writeCoreBackendMode(mode).catch(error => {
+        void vscode.window.showErrorMessage(
+          l10nText('Failed to switch the Core track: {error}', {
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+      });
     },
   });
 

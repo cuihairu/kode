@@ -6,15 +6,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CORE_ERROR_BACKGROUND_COLOR_ID,
-  CORE_HEALTH_LIGHT_FACES,
   CORE_HEALTH_PANEL_COMMAND,
   CoreHealthGateSnapshot,
   CoreHealthLightKind,
   CoreHealthStatusBarItemLike,
   KodeCoreHealthLightController,
   KodeCoreHealthLightDeps,
+  coreHealthActionFromLabel,
+  coreHealthActionLabel,
+  coreHealthLightFaces,
   resolveCoreHealthLight,
+  resolveCoreHealthPanelActions,
 } from '../src/kodeCoreHealthLight';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
+import { setL10nBundle } from './fake-vscode/l10n';
 
 const baseSnapshot = (): CoreHealthGateSnapshot => ({
   backendMode: 'rust',
@@ -80,16 +85,54 @@ describe('resolveCoreHealthLight 六态仲裁', () => {
     expect(resolveCoreHealthLight({ ...baseSnapshot(), probe: { ok: true, latencyMs: 7 } })).toBe('ok');
   });
 
+  it('点击面板动作矩阵:重启只在有 Rust 进程时出,切轨按当前轨道排除自身', () => {
+    expect(resolveCoreHealthPanelActions('rust', true, true)).toEqual(['restart', 'ts', 'shadow']);
+    expect(resolveCoreHealthPanelActions('shadow', true, true)).toEqual(['restart', 'ts', 'rust']);
+    // backend=ts 如实没有 Rust 进程可重启,只给切轨项
+    expect(resolveCoreHealthPanelActions('ts', true, true)).toEqual(['rust', 'shadow']);
+    expect(resolveCoreHealthPanelActions('ts', true, false)).toEqual([]);
+    // 能力面缺失(接线层未注入对应 dep)→ 不出该项,不谎报能做的事
+    expect(resolveCoreHealthPanelActions('rust', false, false)).toEqual([]);
+    expect(resolveCoreHealthPanelActions('rust', false, true)).toEqual(['ts', 'shadow']);
+  });
+
   it('六态脸面齐全(文案与高危底色标记)', () => {
     const kinds: CoreHealthLightKind[] = ['off', 'bypassed', 'unresponsive', 'degraded', 'ok', 'idle'];
+    const faces = coreHealthLightFaces();
     for (const kind of kinds) {
-      const face = CORE_HEALTH_LIGHT_FACES[kind];
-      expect(face.text.length, `${kind} 有状态栏文案`).toBeGreaterThan(0);
-      expect(face.tooltip.length, `${kind} 有 tooltip`).toBeGreaterThan(0);
+      expect(faces[kind].text.length, `${kind} 有状态栏文案`).toBeGreaterThan(0);
+      expect(faces[kind].tooltip.length, `${kind} 有 tooltip`).toBeGreaterThan(0);
     }
-    expect(CORE_HEALTH_LIGHT_FACES.unresponsive.errorBackground).toBe(true);
-    expect(CORE_HEALTH_LIGHT_FACES.bypassed.errorBackground).toBe(true);
-    expect(CORE_HEALTH_LIGHT_FACES.ok.errorBackground).toBeFalsy();
+    expect(faces.unresponsive.errorBackground).toBe(true);
+    expect(faces.bypassed.errorBackground).toBe(true);
+    expect(faces.ok.errorBackground).toBeFalsy();
+  });
+
+  it('脸面文案经 l10n 双态:英文系统=英文源串,中文系统=zh-cn 包译文', () => {
+    try {
+      expect(coreHealthLightFaces().ok.text).toBe('$(check) Core: ok');
+      setL10nBundle(zhCnBundle);
+      const faces = coreHealthLightFaces();
+      expect(faces.ok.text).toBe('$(check) Core: 正常');
+      expect(faces.bypassed.text).toBe('$(plug) Core: 降级(未接入)');
+      expect(faces.bypassed.tooltip).toContain('实际回落 TS 轨道');
+    } finally {
+      setL10nBundle(null);
+    }
+  });
+
+  it('点击面板动作文案双态:回查按当前语言取词,硬编中文常量在此红', () => {
+    try {
+      expect(coreHealthActionLabel('restart')).toBe('Restart core service');
+      expect(coreHealthActionFromLabel('Switch to rust track')).toBe('rust');
+      setL10nBundle(zhCnBundle);
+      expect(coreHealthActionLabel('restart')).toBe('重启核心服务');
+      expect(coreHealthActionFromLabel('重启核心服务')).toBe('restart');
+      // 中文 locale 下英文源串必须判成未识别(回查按语言取词,禁字面量映射)
+      expect(coreHealthActionFromLabel('Switch to rust track')).toBeUndefined();
+    } finally {
+      setL10nBundle(null);
+    }
   });
 });
 
@@ -148,6 +191,7 @@ interface Harness {
   pickPrompts: () => string[][];
   resolvePicks: (label: string | undefined) => void;
   restarts: () => number;
+  switches: () => Array<'ts' | 'rust' | 'shadow'>;
   firePanel: () => void;
 }
 
@@ -168,6 +212,7 @@ const makeHarness = (overrides?: {
   const pickPrompts: string[][] = [];
   let pickResolver: ((label: string | undefined) => void) | null = null;
   let restartCount = 0;
+  const backendSwitches: Array<'ts' | 'rust' | 'shadow'> = [];
   let panelHandler: (() => void) | null = null;
   const snapshot: CoreHealthGateSnapshot = { ...baseSnapshot(), ...overrides?.snapshot };
   const deps: KodeCoreHealthLightDeps = {
@@ -195,6 +240,10 @@ const makeHarness = (overrides?: {
     restartCore: () => {
       restartCount += 1;
     },
+    // 与生产接线同形:切轨动作写配置面(这里记账,接线层注 writeCoreBackendMode)
+    setBackend: mode => {
+      backendSwitches.push(mode);
+    },
   };
   const controller = new KodeCoreHealthLightController(deps);
   return {
@@ -212,6 +261,7 @@ const makeHarness = (overrides?: {
       pickResolver = null;
     },
     restarts: () => restartCount,
+    switches: () => backendSwitches,
     firePanel: () => {
       panelHandler?.();
     },
@@ -228,7 +278,7 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
     await tick();
     expect(h.probeCalls()).toBe(1);
     expect(h.controller.kind).toBe('ok');
-    expect(h.bar.text).toBe('$(check) Core: 正常');
+    expect(h.bar.text).toBe('$(check) Core: ok');
     expect(h.bar.command).toBe(CORE_HEALTH_PANEL_COMMAND);
     expect(h.bar.backgroundColor).toBeUndefined();
     expect(h.bar.calls).toContain('show');
@@ -253,7 +303,7 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
     h.timers.fireAll();
     await tick();
     expect(h.controller.kind).toBe('unresponsive');
-    expect(h.bar.text).toBe('$(error) Core: 无响应');
+    expect(h.bar.text).toBe('$(error) Core: no response');
     expect(h.bar.backgroundColor?.id).toBe(CORE_ERROR_BACKGROUND_COLOR_ID);
     h.controller.dispose();
   });
@@ -272,17 +322,19 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
   it('面板:点击出详情 + QuickPick 选「重启核心服务」才真重启', async () => {
     const h = makeHarness();
     await tick();
-    h.resolvePicks(undefined);
     h.firePanel();
     expect(h.messages()).toHaveLength(1);
-    expect(h.messages()[0]).toContain('正常');
+    expect(h.messages()[0]).toContain('Core health: ok');
     expect(h.messages()[0]).toContain('5ms');
-    expect(h.pickPrompts()).toEqual([['重启核心服务']]);
+    // 动作是语义项,按当前语言渲染成文案:rust 轨道=重启 + 切 ts/shadow
+    expect(h.pickPrompts()).toEqual([
+      ['Restart core service', 'Switch to ts track', 'Switch to shadow track']
+    ]);
     // 面板未决的选择先撤销,再驱动新面板(同一 resolver 槽位)
     h.resolvePicks(undefined);
     expect(h.restarts(), '取消选择不重启').toBe(0);
     h.firePanel();
-    h.resolvePicks('重启核心服务');
+    h.resolvePicks('Restart core service');
     await tick();
     expect(h.restarts(), '选中才重启').toBe(1);
     h.controller.dispose();
@@ -295,7 +347,7 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
     h.timers.fireAll();
     await tick();
     h.firePanel();
-    expect(h.messages()[0]).toContain('失败原因:server process exited (code 1)');
+    expect(h.messages()[0]).toContain('Failure reason: server process exited (code 1)');
     expect(h.messages()[0]).toContain('31ms');
     h.resolvePicks(undefined);
     // 预算未决臂(reason 缺省)→ 疑似挂死措辞
@@ -303,7 +355,7 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
     h.timers.fireAll();
     await tick();
     h.firePanel();
-    expect(h.messages()[1]).toContain('失败原因:探针预算内未决(疑似挂死)');
+    expect(h.messages()[1]).toContain('Failure reason: probe inconclusive within budget (likely hung)');
     h.controller.dispose();
   });
 
@@ -313,17 +365,22 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
     });
     await tick();
     h.firePanel();
-    expect(h.messages()[0]).toContain('连续超时 76 次');
-    expect(h.messages()[0]).toContain('瞬时回落 TS');
+    expect(h.messages()[0]).toContain('76 consecutive timeouts');
+    expect(h.messages()[0]).toContain('fall back to TS immediately');
     h.controller.dispose();
   });
 
-  it('面板:backend=ts 不提供重启项(如实没有 Rust 进程可重启)', async () => {
+  it('面板:backend=ts 不提供重启项,只给切轨项(如实没有 Rust 进程可重启)', async () => {
     const h = makeHarness({ snapshot: { backendMode: 'ts' } });
     await tick();
     h.firePanel();
-    expect(h.messages()[0]).toContain('ts(纯 TS 轨道)');
-    expect(h.pickPrompts(), 'ts 轨道不提供重启动作').toHaveLength(0);
+    expect(h.messages()[0]).toContain('backend=ts (pure TS track)');
+    expect(h.pickPrompts(), 'ts 轨道不提供重启动作').toEqual([
+      ['Switch to rust track', 'Switch to shadow track']
+    ]);
+    h.resolvePicks('Switch to rust track');
+    await tick();
+    expect(h.switches(), '选中才切轨').toEqual(['rust']);
     h.controller.dispose();
   });
 
