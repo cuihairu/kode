@@ -768,7 +768,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
   // collectConfigSchema(零 vscode 依赖,tests/configDataMutation.test.ts 红先行),
   // 独立 collection,配置 kbengine.configData(enabled 默认开;configDirGlobs /
   // configClassPatterns / reloadFunctionPatterns / mutationExclude)。触发面 =
-  // 激活首扫 + py 文件打开/保存(800ms 防抖合并)+ 配置变更即重算;配置目录
+  // 激活首扫 + py 文件编辑/保存/外部增删改(800ms 防抖合并;打开不触发:打开不改
+  // 索引输入,只走 per-file 诊断与预热)+ 配置变更即重算;配置目录
   // 文件自身与 reload*/hotUpdate* 函数体、mutationExclude 白名单内写点不报。
   // 门控改判(恢复批):原实现要求 .kbengine 托管目录在盘,但配置类住
   // scripts/**,从未跑 infer 管线的正规 KBEngine 工程(如 demo 工作区)永远
@@ -871,7 +872,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
       configSchemaHoverProviderImpl
     );
     context.subscriptions.push(configSchemaHoverProvider, configSchemaHoverProviderImpl);
-    // 800ms 防抖:py 打开/保存合并重算(整工作区扫描,避免逐键逐存重算)
+    // 800ms 防抖:py 编辑/保存/外部增删改合并重算(整工作区扫描,避免逐键逐存重算);
+  // 打开不接此路(见下方触发器分工注释)
     let configDataTimer: ReturnType<typeof setTimeout> | undefined;
     const scheduleConfigDataScan = (): void => {
       if (configDataTimer !== undefined) {

@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { DATA_DICT_READY_DEFAULT_BUDGET_MS } from '../src/coldIndexReadiness';
 import { EventCodeLensProvider } from '../src/eventApi';
 import { WorkspaceIndex } from '../src/workspaceIndex';
 import { makeTextDocument } from './fake-vscode/core';
@@ -97,7 +98,11 @@ describe('RUST-004-W3 事件索引竞速(allEventCallsMarked 三态+partial-real
     setupReadyScan();
     const index = new WorkspaceIndex();
     try {
-      const marked = await index.allEventCallsMarked(stubToken);
+      // 预算显式取生产缺省(1500ms):本臂钉的是「快扫描落在预算内 → ready」的
+      // 契约,不是绝对墙钟——beforeEach 的 40ms 墙钟预算在 CI 带 coverage 跑
+      // 时随负载抖动会假红(2026-11-24 判例:同 SHA 一轮绿一轮红,40ms 挂死臂
+      // 仍靠预算耗尽钉 pending,两面都在)。
+      const marked = await index.allEventCallsMarked(stubToken, DATA_DICT_READY_DEFAULT_BUDGET_MS);
       expect(marked).not.toBeNull();
       expect(marked!.ready).toBe(true);
       expect(marked!.calls.map(call => call.call.event)).toEqual(['EV_A']);
