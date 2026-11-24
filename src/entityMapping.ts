@@ -28,7 +28,7 @@ import {
   getScanRootForFile
 } from './scanRoots';
 import { DefMethodSection } from './backend/defParser';
-import { hasMethodImplementationInBaseChain, findMethodLocationsInPythonBaseChain } from './backend/pythonBaseChain';
+import { resolvePythonBaseChainMethodOutcome, findMethodLocationsInPythonBaseChain } from './backend/pythonBaseChain';
 import type { DefMethodGap, PythonMethodNotInDefGap } from './backend/defMethodConsistency';
 import { getHookByName } from './hooks';
 import { clearDefCallChainFileCache } from './backend/defCallChain';
@@ -1936,20 +1936,30 @@ export class EntityMappingManager {
       // 父类/公共模块的 py 里(真实继承链),同名实体类自身没有≠运行时缺实现
       // ——引擎按 Python MRO 调得到。链解析与 parity 采集同源(pythonBaseChain,
       // import 候选口径同索引 staging),解析不到的基类不贡献方法(零误放)。
-      if (
-        ownerFiles.some(file =>
-          hasMethodImplementationInBaseChain(file, method.identity.ownerName, method.identity.symbolName)
+      // 诚实三态(合并收编 lane C-19-MRO 注明残差,机制留 pythonBaseChain 同源
+      // 四面):链解析不出→照报现状不注明;链查过无实现→照报并注明已查链
+      //(只写真实查过的链类名,最近优先含属主自身)。
+      const chainOutcomes = ownerFiles.map(file =>
+        resolvePythonBaseChainMethodOutcome(
+          file,
+          method.identity.ownerName,
+          method.identity.symbolName
         )
-      ) {
+      );
+      if (chainOutcomes.some(outcome => outcome.implemented)) {
         continue;
       }
+      const mroOutcome = chainOutcomes.find(outcome => outcome.resolved);
       gaps.push({
         name: method.identity.symbolName,
         line: method.line,
         section: method.section,
         declaredArgs: method.declaredArgs ?? [],
         ownerName: method.identity.ownerName,
-        ownerFile: ownerFiles[0] ?? ''
+        ownerFile: ownerFiles[0] ?? '',
+        ...(mroOutcome && mroOutcome.classNames.length > 0
+          ? { mroChainClassNames: [...mroOutcome.classNames] }
+          : {})
       });
     }
     return gaps;

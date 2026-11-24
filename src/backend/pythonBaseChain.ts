@@ -143,6 +143,35 @@ export function hasMethodImplementationInBaseChain(
   );
 }
 
+/** 缺口判定的诚实三态结果(C-19-MRO):
+ * resolved=false=链解析不出(消费方照报现状,不注明不编造);
+ * resolved=true 且 implemented=true=链上有实现(消 gap);
+ * resolved=true 且 implemented=false=全链查过无实现(classNames 供「已查链」注明)。 */
+export interface PythonBaseChainMethodOutcome {
+  readonly resolved: boolean;
+  /** 链类名(最近优先,含属主自身;resolved=true 时给) */
+  readonly classNames: string[];
+  readonly implemented: boolean;
+}
+
+/** 全链(含自身)一次走链同时给判存与类名——缺口判定臂用(收编 lane C-19-MRO
+ * 注明残差,机制与 parity/跳转/悬停同源)。链空(属主脚本解析不出)=resolved=false。 */
+export function resolvePythonBaseChainMethodOutcome(
+  pythonFile: string,
+  className: string,
+  methodName: string
+): PythonBaseChainMethodOutcome {
+  const links = walkPythonBaseChain(pythonFile, className);
+  if (links.length === 0) {
+    return { resolved: false, classNames: [], implemented: false };
+  }
+  return {
+    resolved: true,
+    classNames: links.map(link => link.className),
+    implemented: links.some(link => link.cls.methods.has(methodName))
+  };
+}
+
 /** 链上声明该方法的环节(自身在前,近祖先后):跳转落点用,最近声明者优先 */
 export function findMethodLocationsInPythonBaseChain(
   pythonFile: string,

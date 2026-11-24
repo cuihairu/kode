@@ -325,6 +325,9 @@ const ANCHORS: Array<[string, number, string]> = [
   // (setupKbengineDomainMarkers)、领域标记装配块 +7(在前四打点后、python
   // completion 打点前)→ 226/299/398/145 → 227/300/399/146,936 → 944
   // (真位重探,startLanguageServiceOperation 内容双面确认)。出处随 baseline 锁步。
+  // 2026-11-24(C-19-MRO):languageServices.ts MRO 判存臂接线块 lane 侧曾 +9
+  // (399→408、944→953);同题双裁弃该接线块(机制留 pythonBaseChain 同源),
+  // languageServices 回 38d6e015 形态 → 锚点回 399/944,真位重探核实。
   ['src/activate/languageServices.ts', 227, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 300, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 399, "startLanguageServiceOperation('definition'"],
@@ -653,6 +656,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-24(共享原文缓存批):pythonClassIndex.ts 共享缓存 import +1(全部
   // 锚点前)、两处盘腿读改走缓存各 +4(~641/~1430)→ 816→821(+5)、
   // 1564→1572(+8)、1688→1696(+8),真位重探。
+  // 2026-11-24(lane/typ-dictget 合并):lane 侧 MroImplementationOutcome 注入面
+  // 类型块(+14)与 resolveMroImplementationOutcome(+69)按同题双裁弃用(机制留
+  // pythonBaseChain 同源,收编其注明残差进 entityMapping/pythonBaseChain),
+  // pythonClassIndex 回 38d6e015 形态 → 锚点维持 832/1583/1707,真位重探核实。
   ['src/backend/pythonClassIndex.ts', 832, 'ensureCompositionRoots'],
   ['src/backend/pythonClassIndex.ts', 1583, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块

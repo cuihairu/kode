@@ -79,6 +79,12 @@ export interface DefMethodGap {
   declaredArgs: string[];
   ownerName: string;
   ownerFile: string;
+  /**
+   * C-19-MRO:MRO 臂已查过的继承链类名(MRO 序,含属主自身)。臂生效且链上
+   * 无实现才给(说明只写真实查过的链);臂未生效(注入缺失/链解析不出)不带,
+   * 诊断保持现状口径。
+   */
+  mroChainClassNames?: string[];
 }
 
 /** 缺实现诊断项(纯数据,接线侧转 vscode.Diagnostic) */
@@ -121,9 +127,15 @@ export function collectDefMethodMissingItems(
     const lineEnd = lineStarts[lineIndex + 1] ?? defText.length;
     const sectionLabel = SECTION_LABELS[gap.section] ?? gap.section;
     const fileBase = basenameOf(gap.ownerFile);
+    // C-19-MRO:臂查过继承链且无实现时注明已查链(父类也无实现的说明),
+    // 链类名按 MRO 序;臂未生效时消息与旧口径逐字一致。
+    const mroNote =
+      gap.mroChainClassNames && gap.mroChainClassNames.length > 0
+        ? `;继承链 ${gap.mroChainClassNames.join(' → ')} 亦无实现`
+        : '';
     const message =
       `方法 ${gap.name} 声明于 ${sectionLabel} 段,但实体类 ${gap.ownerName} 的 ` +
-      `Python 脚本未实现(目标 ${fileBase} 无 def ${gap.name})——运行时调用无处理函数,` +
+      `Python 脚本未实现(目标 ${fileBase} 无 def ${gap.name}${mroNote})——运行时调用无处理函数,` +
       `可一键生成实现骨架`;
     const match = new RegExp(`<${escapeRegExp(gap.name)}[\\s/>]`).exec(
       defText.slice(lineStart, lineEnd)
