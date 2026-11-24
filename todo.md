@@ -3090,3 +3090,30 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [ ] 全量拓扑序(entities.xml 枚举驱动):**不点火**。def 面不解析类型→加序换不来正确性,却要动 findFilesAcrossRoots 返回契约 + 批次切分 + 磁盘缓存序无关性论证。**重启条件**:出现 utype 对齐的用户可见缺陷(引擎 utype = 在 entities.xml 里的出现序,docs/source-analysis.md:44-58;kode 用 glob 序复现不出=唯一有牙口的顺序差异)。
 - [ ] 多 types 文件发现面(补「user_types 先」那层):**待用户确认**。现状 kode 只认**一份** types.xml(`layout.typesXmlPath` 单路径,definitionWorkspace.ts:663-671),不枚举多文件——这是覆盖面缺口不是顺序问题。若用户工程确有多 types 文件再立项,否则是给不存在的面造抽象。
 - [x] 判例入账:①答「有没有最佳顺序」类问题,先分清**解析期解析与否**——eager 单遍(引擎)顺序承重,懒解析+查询期求值(kode)顺序退化不敏感,两形态的「最佳序」问题不同;②缓存共用后排序收益要重算:去重收益已被缓存吃掉(序无关),剩 LRU 局部性(需语料>预算)与确定性;**先接可观测再裁拓扑序**,与批 B/C「无实测证据不点火」同纪律。
+
+## 2026-11-24 检索/索引算法面对账(用户问「用的是什么算法?Trigram 还是 BM25?」「AST vector RAG」)
+
+**审计结案,零新码**(2026-11-24):两问皆为架构面追问,核后如实对账,不点火、不造面。全仓证据面=grep + 源码直读(非代理转述)。
+
+**三轴真值**:
+- **AST=骨架且是唯一诚实的分块源**:`crates/kode-mcp/src/extract.rs` 原则明写 "never a second heuristic"——Python → **kode-python AST 符号(与 IDE 面同一套抽取)**;def/types.xml/alias → 已解析 `AssetKnowledge` 内存模型**照索引不重推**;Markdown → pulldown-cmark 标题走查;config → 精选目录;Excel → calamine。`semantic_model.rs` 把 def+types.xml+.py 统一成可查语义模型,**置信度三态**(确定/推断/未知,绝不把动态类型当确定返回);编辑器侧 ruff AST(`class_spans_from_ast`/`type_of_expr`/赋值走查)同族。**AST 分块能力已在了,粒度是符号级不是文本窗口级**。
+- **Vector=无,且是设计里明确推后的**(审计时点真值;**2026-11-24 已按用户令点火并落地,载体 b78459fd**,见本节末 P3 勾行):全仓 vector 命中**全是** KBEngine 线型(Vector2/3/4)与 buffer chunk,**零 embedding/零 cosine/零 rerank**。`docs/design/kode-mcp-knowledge-index.md` :30-31 默认**不是** embedding→vector DB→相似度检索、:188 vector DB(Qdrant/Milvus)不需要、:233 触发条件=自然语言模糊/词面失配/精确 under-recall、:278-282 档位矩阵(Enhanced=轻量+可选向量;Semantic-first=混合检索+向量 rerank,**推荐默认确定性**)、:298 **P3=pluggable vector module(on-demand)+hybrid fusion**。运行时诚实:自然语言短语报 **vector-deferred**(P3 未建就明说,不假装能答)。
+- **RAG=无向量 RAG,但有「无向量的检索增强」形态**:`search` → 路由 exact(结构索引**不扫 BM25**)或 bm25 → `read_node` **按需回读全文**(`nodes.rs:194` "Bounded content indexed for BM25; full content is read on demand")=RAG 形状(取有界片段→按需取全文),只是第一跳用 BM25/精确而非 embedding;`explain.rs`/`config_qa.rs` 架在该检索面上。
+
+**检索/相似性算法三面对账**(承接上问 Trigram vs BM25):
+- **编辑器符号索引(kode-index SymbolIndex + TS 12 面)=两者都不用**:六种符号 kind + **名字倒排(精确等值键)** + generation + entity_chain + dependents_of;TS 面全精确键 Map + 结构化分析。**无打分函数=无东西可排序**。唯一模糊面是过滤非检索:def 符号走**前缀查询**(IDE-NAV-006)。
+- **BM25 真存在,只在 kode-mcp 知识索引**:`crates/kode-mcp/src/fts.rs` Tantivy,Scoring=Tantivy BM25,并列按 doc id 定序。三分词器(**trigram 只挂路径字段**,正文不挂):
+
+| 分词器 | 范围 | 挂载字段 |
+|---|---|---|
+| `cjk` | **1..2 n-gram**(unigram+bigram) | 正文(text/text_cjk) |
+| `trigram` | **3..3 n-gram** | **只挂 `path_tri`=文件路径子串搜索** |
+| SimpleTokenizer | 拉丁 | 默认 |
+
+- 路由确定性(`kb_index.rs`):标识符形状且精确命中已知 node → 结构索引 **route=exact 不扫 BM25**;否则 → BM25 倒排 route=bm25。字段 name/text/text_cjk/path_tri。
+- **两个「看着像」的相似性算法实为判重/纠错非搜索**:`serverConfigCommentText.ts:47-90` `bigramCoverage`(双向二元组覆盖率都≥阈值才判**内容重复**);`cellDataWrongKey.ts:65` `Levenshtein`(带公共前后缀修剪,**键名错拼建议**)。
+
+**判例入账**:
+- [x] 「用的是什么算法」类问题**必须先 grep 关键词全仓(TS+Rust+docs)再答**——本批首答倾向「两者都不是」,实测**差点答错**:BM25 真存在但在另一个面(kode-mcp),trigram 真存在但只挂路径字段。教训=检索算法面常**按面分离**(编辑器精确符号表 vs MCP 全文索引),答「全局用哪个算法」是伪命题。
+- [x] **AST/vector/RAG 三轴要分开答**:AST 有且是骨架(符号级分块已具)、vector 无但**已设计 P3 插拔位**(默认之外的可选档,触发条件=精确 under-recall 或自然语言)、RAG 无向量但有按需回读形态。别把「没有向量」答成「没有检索增强」——`read_node` 按需回读全文就是 RAG 形状。
+- [x] **P3 可插拔向量模块(hybrid fusion)**:已点火并落地(载体 **b78459fd**)。缝(`SemanticRetriever` trait + `vector: Mutex<Option<Arc<dyn SemanticRetriever>>>` + NL 融合链)P2 就已建好,本件**只填不建**——按「收编残差,不建抽象」。**三项决策(2026-11-24 用户裁定)**:①**确定性伪向量**(feature hashing,非 learned embedding);②**内存暴力扫描**(256 维 + 有界节点集,设计文档 §8 本地精确查询为主,不引向量 DB 新依赖);③**只 MCP 知识索引面**(编辑器符号索引面不接)。实现=`crates/kode-mcp/src/vector_index.rs`:FNV-1a 特征哈希(bucket=h%dims,符号取最高位,signed 降碰撞偏置)、L2 归一(零向量防 NaN cosine)、特征形状**镜像 Tantivy cjk 分词器**(拉丁 run 小写+`_`、CJK unigram+bigram,两面同口径)、name 权重 3×、tie 按 node id asc(与 BM25 doc id 约定一致)、**不可提取查询答空不硬答**、表缓存键=node count。接线:`store.rs` 新增 `nodes_all()`、`kb_index.rs` `store: Arc<KbStore>` + **构造期注册**(每个 index 天生有,无调用方 opt-in)、`server.rs` 工具描述/query 描述同步改为诚实新文案。**诚实边界(必须留在工具描述与 payload)**:feature hashing **不是 learned embedding,不桥接近义词/复述**,那个仍是要上模型的升级;无模型权重、无网络、**内容不出机器**(云端 embedding=同族 exfiltration,项目红线排除)。**判例**:(a) **噪音地板是必需不是可选项**——signed 随机投影下长文档约半数得小幅正 cosine,`dot>0` 挡不住,融合行会灌满 limit;`rank()` 加 `NOISE_FLOOR_RATIO=0.25`(相对榜首)收口。(b) **断言「内置 catalog 节点不该出现」是错前提**:catalog 描述本来就含「网关/转发」(`config_catalog.rs:24` baseapp「登录转发」、`:1923` loginapp「登录网关」),向量面把它们捞出来是**正确行为**;阴性对照要用真无重叠的自建 fixture(测试改用 db.md「存档周期与备份策略」当阴性锚)。(c) BM25 分数无界(本例 48.75)而向量 cosine ∈(0,1],看行形态即可区分来源。剩余诚实残差:表缓存键=node count,**同数内容编辑**下次 count 变化或进程重启才刷新(已写进注释与描述)。(d) 判例级门禁:纯 Rust 批 fmt+clippy -D warnings+workspace test 全绿,`kb_index_behavior` 19/19(含新增 `default_vector_module_fuses_shared_features_only`)。
