@@ -524,6 +524,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | (removed) `kbengine.entitiesXmlPath` | — | Removed 2026-11-23: computed as `{assetsRoot}/scripts/entities.xml` |
 | (removed) `kbengine.binPath` | — | Removed 2026-11-23: derived from the engine root + auto-discovery (the engine pins `kbe/bin/server`, start_server.sh:19); hidden override still honored |
 | `kbengine.assetsRoot` | `""` | KBEngine assets root (res/server/kbengine.xml + scripts/ underneath); empty = convention-path and deep-scan auto-discovery |
+| `kbengine.engineRoot` | `""` | KBEngine engine install root (the `kbe` tree itself, anchor `<root>/res/server/kbengine_defaults.xml`, not the directory name); empty = auto probe chain (current dir / parent, unique structural hit only) |
 | `kbengine.jumpLog` | `false` | Navigation decision-path logging to the KBEngine Navigation output channel (off = zero cost) |
 | `kbengine.showFinalConfigOnOpen` | `true` | Auto-open the final config on activation when the engine default config is locatable; which view opens follows `kbengine.finalConfigView` |
 | `kbengine.finalConfigView` | `"gui"` | Default view for the final config: `gui` = the config visualization panel (default), `text` = the synthesized read-only `kbengine-final.xml` text view; Show Final Config follows this, and `kbengine.config.showFinalText` always opens the text view |

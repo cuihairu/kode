@@ -2119,6 +2119,11 @@
         "title": "%kbengine.configuration.engine.title%",
         "order": 5,
         "properties": {
+          "kbengine.engineRoot": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.engineRoot.description%"
+          },
           "kbengine.assetsRoot": {
             "type": "string",
             "default": "",

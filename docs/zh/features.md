@@ -490,6 +490,7 @@
 | (已删) `kbengine.entitiesXmlPath` | — | 2026-11-23 删除:按 `{assetsRoot}/scripts/entities.xml` 计算 |
 | (已删) `kbengine.binPath` | — | 2026-11-23 删除：由引擎根 + 自动发现推导（引擎钉死 `kbe/bin/server` 布局，start_server.sh:19）；隐藏覆盖仍生效 |
 | `kbengine.assetsRoot` | `""` | KBEngine 资产根（其下应有 res/server/kbengine.xml 与 scripts/）；留空走约定路径与深扫描自动发现 |
+| `kbengine.engineRoot` | `""` | KBEngine 引擎安装根(kbe 目录本身,结构锚 `<安装根>/res/server/kbengine_defaults.xml`,不看目录名);留空走自动探测链(当前目录/上一层,唯一结构命中才认) |
 | `kbengine.jumpLog` | `false` | 跳转决策路径日志打到 KBEngine Navigation 输出通道（关 = 零开销） |
 | `kbengine.showFinalConfigOnOpen` | `true` | 激活期能定位引擎默认配置时自动打开最终配置;打开哪种视图跟随 `kbengine.finalConfigView` |
 | `kbengine.finalConfigView` | `"gui"` | 最终配置默认视图:`gui`=配置合并可视化面板(默认),`text`=合成只读 `kbengine-final.xml` 文本视图;「查看最终服务器配置」跟随此项,`kbengine.config.showFinalText` 恒开文本视图 |

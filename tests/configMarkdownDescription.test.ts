@@ -195,7 +195,10 @@ describe('package.json configuration prompt contract', () => {
       'kbengine.entity.methodStubBody': 'pass',
       // 2026-11-08 用户令「直接切」:core.backend 默认 ts → rust(实现与
       // package.json 双轨同步,本表是两轨对账面)。
-      'kbengine.core.backend': 'rust'
+      'kbengine.core.backend': 'rust',
+      // 2026-11-24 声明补录:engineRoot 此前 6 处读取但零声明(settings UI
+      // 灰色 Unknown);声明默认空=自动发现链口径。
+      'kbengine.engineRoot': ''
     };
     const drifted: string[] = [];
     for (const [key, want] of Object.entries(expected)) {

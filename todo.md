@@ -2969,3 +2969,22 @@ codex 席位二次复审:上轮四 P1 原始用例已过,但修复未覆盖相�
 - [x] 接线:kodeCoreGateWiring 装配(gate.mode/state/commandCircuitState 快照+probeHealth 注入,subscriptions 收 dispose)。
 - [x] 测试 14 例(tests/kodeCoreHealthLight.test.ts):六态仲裁矩阵(ts 不翻案/bypassed 双臂/idle/失败如实/熔断两臂/ok/脸面齐全+高危底色标记)+控制器假依赖面(装配即首探·ok 脸上屏/off 整灯隐藏/探针转败下一轮起 unresponsive+底色/探针抛异常不炸控制器/面板详情+选「重启核心服务」才真重启·取消不重启/ts 不提供重启项/dispose 撤定时器命令状态栏且不再探活)。定向门 16 文件 367 例绿(.kodeCore* 全族+docsCommands+cloneCommandsCoverage+covWiringCommands),tsc 0,eslint 变更 5 文件 0。
 - [x] 真机取证增量:失败原因词(载体=本批 feat commit)——用户真机回报「灯一直红无响应+命令腿连续超时 76 次」后补:gate.probeHealth 失败臂带 reason(原错误词 TIMEOUT/EXITED/spawn 原文,截 160 字),预算耗尽臂 reason 缺省=「探针预算内未决(疑似挂死)」;面板详情失败时附「失败原因」行,熔断开放措辞注明「新命令已瞬时回落 TS 不再等待」(76 连超时=闸开前窗口一次扫描波次的并发在途账,非闸失效,入口短路在位);测试 5 例新增(灯面板 reason 双臂+熔断措辞+gate probeHealth 四臂=健康/快速失败/超时/start 挂死预算应答)。
+
+## 2026-11-24 MCP 活性灯 + 预算审计(接「server 会死,lsp mcp 这些呢」面)+ engineRoot 声明补录
+
+MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关闭),「已构建」≠「能拉起能应答」——真实 MCP 服务进程归 VS Code 原生 MCP 宿主管,扩展侧零活性观测。Core 健康灯同日落地后,MCP 面补对称活性灯 + 全请求面预算审计。
+
+- [x] Rust --probe 探活模式(crates/kode-mcp):main.rs 解析 --probe 旗标(位参照旧:资产根+额外知识路径),run_stdio_probe=KnowledgeIndex::open(不 build)+AssetKnowledge::default()(跳过全量语料解析)+无 watcher/无对账 worker,直入 rmcp serve 握手面;空库上工具调用如实空结果不 panic。真二进制合同 tests/probe_mode.rs(mock-vs-wire Rust 腿):rmcp 客户端完整握手+tools 列表在位+夹具有 Avatar 而探活模式 search_entities 必空(证明没走 AssetKnowledge::load)+空库调用零 panic;两次 spawn+握手全程 0.02s=毫秒级判活实证。
+- [x] TS 探针 src/kodeMcpHealthProbe.ts:spawn(binary,['--probe',assetsRoot]) 换行 JSON-RPC 握手(initialize→应答→initialized+tools/list→应答即判活),stderr stdio ignore(防服务端日志写满管道壁反咬);整轮与 3s 预算竞速(预算臂 reason 缺省=未决疑似挂死,与 Core probeHealth 同约定);spawn 失败/提前退出=快速失败臂带原错误词;finally 无条件 kill 子进程(三臂都不留孤儿,自拉自收不与真实宿主管的 MCP 进程相干);纯 node 模块零 vscode 依赖。
+- [x] MCP 状态栏活性脸(backend/kodeServiceStatus.ts 纯面+activate 装配):built+enabled 时探针有账才翻脸——ok=`$(plug) Kode MCP: ok` / 失败=`$(error) Kode MCP: no reply`;tooltip 附探针行四口吻(通过带延迟/快速失败原词/预算未决疑似挂死/在途首探);off/未构建臂不吃探针账。探针节奏=激活后一轮+mcp.enabled 等配置变化重探一轮,单飞在途不叠加,不做周期轮询(结果=最近一轮,tooltip 如实);点击仍=kbengine.mcp.toggle 不变。l10n 四串双包(en+zh)。装配 probeMcpLiveness 注入:资产根同 MCP 服务器定义解析链(首工作区 resolveAssetsRootForWorkspace,无工作区 '.' 兜底——握手判活与根无关)。
+- [x] 测试:TS 假进程 5 例(成功臂时序钉 initialize 先发/应答后才发 initialized+tools/list、提前退出带原词、spawn 失败、预算未决 reason 缺省仍 kill、非 JSON 日志混流跳过)+纯面 4 例(built 保持/ok·no reply 翻脸/off·未构建不吃账/tooltip 四口吻+zh 译文);Rust probe_mode 2 例;cargo test -p kode-mcp 全绿(含 e2e 6 例),fmt/clippy 0。
+- [x] 预算审计证据表(结论:请求面全部有界,零新码)——search_docs/search_symbols 走 spawn_blocking+bounded_scan.collect(文件上限+entry_limit=limit×100,全非匹配扩展名也截断,有回归钉);git_state 批量探测 PROBE_DEADLINE=30s 墙钟到点 kill+wait 降级(管道死锁回归钉在案);get_dependencies MAX_DEP_DEPTH/MAX_DEP_NODES 常数帽;read_node 行数帽;search/index Tantivy limit×4;余下全同步面=内存语料短读守卫(KODE-FULL-005 注记)。真无界面=启动语料装载与后台对账(设计如此,探活模式正是为跳过它而生)。宿主侧 VS Code 原生 MCP 拥有进程与调用超时,扩展面 Blast radius=单次失败调用。
+- [x] engineRoot 声明补录(用户报「配置了都是灰色的」):kbengine.engineRoot 此前 6 处读取(scanRoots/engineRootAutoFill/databaseWiring/infrastructure/monitoring)但 package.json configuration 零声明——settings UI 标灰+Unknown Configuration Setting,运行时却生效(未声明键可读),视觉与事实相悖。补:package.json engine 分区声明(string,default "")+NLS 双包描述(结构锚 <安装根>/res/server/kbengine_defaults.xml 判身份不看目录名/显式值锚校验通过才认/留空走两处探测链)+configuration.md 总览表 en/zh 行+features.md Settings 表 en/zh 行+configMarkdownDescription 对账表锁默认值;docsCommands 双向对账门(configMarkdownDescription+docsCommands 34 例)绿。
+- [x] 门禁与交付面:全量 vitest 12982 过/4 skip/0 红(中途两轮红均为本批新面自身:l10n 对账闸抓 en 包漏键→补;预算臂断言 30ms timer 舍入读 29→下沿放宽 25 带注记),tsc 0,eslint 变更面 0,mocha 12/12(跑前 tsc -p tsconfig.mocha.json+pnpm compile 双编译)。
+
+### Windows 测试网为何没网到楔死族(用户问「Windows 下那么多测试都没有发现这个问题吗」)
+
+- Windows 腿有且跑真测试,但很窄:platform-vsix.yml win32-x64(windows-2025)/win32-arm64(windows-11-arm)两腿跑 13 个 Rust crate --lib 单测+cli_acceptance+windows_document_uri+3 个二进制发现 vitest;全量 vitest/mocha/集成门全在 ubuntu;kode-mcp 测试不在 Windows 腿。
+- 更根本:楔死族不是 Windows 盲区,是测试网从来没网住过——kode-server 派遣泵在测试里早表现出同族症状(并行每轮恰 1 例受害者轮换,当时定性「负载假红」用串行 --test-threads=1 调绿)。那不是假红,是产品缺陷(时间预算泵不保证完成)在测试里的投影;门禁绿了,缺陷本体没修。真机「进程活着但派遣全哑」即它。
+- CI 零墙钟活性断言(「空闲机器上 server 须 N ms 内应答」),用户规模语料+Windows 文件系统时序+扩展请求模式三条 CI 都没有。
+- 下一个可点火批(Rust 侧):派遣泵完成保证/让位请求 + 墙钟活性测试(扫描波次在飞时 health 必须毫秒级应答,泵饿死即红)。
