@@ -470,8 +470,19 @@ export class KodeCoreGate {
     try {
       await client.start();
     } catch (error) {
-      noteInteractiveStartupFailure();
-      this.noticeOnce(`rust 服务启动失败(${method}): ${(error as Error).message},回落 ts`);
+      // P1(复审 2026-11-24):启动失败只记当前客户端。挂起中的旧 client
+      // 在重启/换配置后才拒绝,其失败属已消亡会话——无条件记账会打开
+      // 新会话的熔断,下一次交互直通 null。
+      if (this.client === client) {
+        noteInteractiveStartupFailure();
+        this.noticeOnce(`rust 服务启动失败(${method}): ${(error as Error).message},回落 ts`);
+      }
+      return fallback;
+    }
+    // 同窗口:start 挂起期间已换人(重启/换 serverPath),本帧不得再驱动
+    // 旧 client(syncRestartGeneration 会把熔断代数倒回旧代,请求打进
+    // 已 dispose 的进程)。
+    if (this.client !== client) {
       return fallback;
     }
     try {

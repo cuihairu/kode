@@ -762,3 +762,74 @@ describe('P1-4 Rust 熔断:启动失败如实记账 + 手动重启复位', () =>
     resetInteractiveCircuitForManualRestart();
   });
 });
+
+// P1(复审 2026-11-24):旧客户端挂起启动在重启后才失败,记账必须校验
+// 客户端身份——修前 catch 无条件 noteInteractiveStartupFailure,已消亡
+// 会话的失败会打开新会话的熔断,下一次交互直通 null。
+describe('P1 复审:旧客户端启动失败不得打开新会话熔断', () => {
+  it('挂起旧 start → 重启且新客户端成功服务 → 旧 start 才拒绝:熔断不得开放', async () => {
+    resetInteractiveCircuit(-77003);
+    expect(interactiveCircuitState().open).toBe(false);
+    let releaseOldStart: (error: Error) => void = () => undefined;
+    let created = 0;
+    const gate = new KodeCoreGate({
+      clientFactory: (): ShadowClientLike => {
+        created += 1;
+        if (created === 1) {
+          // 旧客户端:start 挂起(用户交互先落在慢握手上),由用例稍后拒绝
+          return {
+            start: vi.fn(
+              () =>
+                new Promise<never>((_resolve, reject) => {
+                  releaseOldStart = (error: Error) => reject(error);
+                })
+            ),
+            request: vi.fn(async () => ({})),
+            dispose: vi.fn(async () => undefined),
+          };
+        }
+        return {
+          start: vi.fn(async () => ({})),
+          request: vi.fn(async () => 'NEW-OK'),
+          dispose: vi.fn(async () => undefined),
+        };
+      },
+    });
+    gate.setConfig({ backend: 'rust', serverPath: 'server-a', shadowTimeoutMs: 2000 });
+    try {
+      const oldInteraction = gate.serveInRust(
+        'textDocument/hover',
+        { textDocument: { uri: URI } },
+        'TS-FALLBACK',
+        { timeoutMs: 500 }
+      );
+      // 旧 start 挂起中:用户重启,新客户端启动成功并正常服务
+      gate.restartCore();
+      const newInteraction = gate.serveInRust(
+        'textDocument/hover',
+        { textDocument: { uri: URI } },
+        'TS-FALLBACK',
+        { timeoutMs: 500 }
+      );
+      expect(await newInteraction, '新客户端必须正常服务').toBe('NEW-OK');
+      // 此刻旧 start 才拒绝(进程已亡):失败属已消亡会话
+      releaseOldStart(new Error('stale handshake failed after restart'));
+      expect(await oldInteraction, '旧帧仍回落 ts').toBe('TS-FALLBACK');
+      expect(
+        interactiveCircuitState().open,
+        '旧会话的启动失败不得打开新会话熔断(修前被旧帧记账打开)'
+      ).toBe(false);
+      // 新会话继续可用:熔断未被旧帧污染
+      const again = await gate.serveInRust(
+        'textDocument/hover',
+        { textDocument: { uri: URI } },
+        'TS-FALLBACK',
+        { timeoutMs: 500 }
+      );
+      expect(again, '新会话后续交互不被旧帧失败挡住').toBe('NEW-OK');
+    } finally {
+      await gate.dispose().catch(() => undefined);
+      resetInteractiveCircuitForManualRestart();
+    }
+  });
+});
