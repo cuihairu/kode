@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { readFileUtf8Recorded } from './fileReadMetrics';
 import * as path from 'path';
 
 import { recordLanguageServiceOperation } from '../languageServiceMetrics';
@@ -710,7 +711,8 @@ async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: A
     while (!token.isCancellationRequested && nextFile < files.length) {
       const i = nextFile++;
       try {
-        sources[i] = await fs.promises.readFile(files[i], 'utf8');
+        // 共享原文缓存记账入口(2026-11-24 缓存收口批):推断语料与定义/引用链共享缓存原文
+        sources[i] = await readFileUtf8Recorded(files[i]);
       } catch {
         // 单个不可读文件不影响其他文件。
       }

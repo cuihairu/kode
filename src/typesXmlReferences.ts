@@ -21,7 +21,7 @@
  */
 
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import { readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import {
   DefDocument,
   DefElementNode,
@@ -190,7 +190,9 @@ export function resolveTypesXmlSymbolName(content: string, offset: number): stri
  */
 function readFileContentForScan(filePath: string): string {
   const openDocument = vscode.workspace.textDocuments.find(doc => doc.fileName === filePath);
-  return openDocument ? openDocument.getText() : fs.readFileSync(filePath, 'utf8');
+  // 磁盘腿走共享原文缓存记账入口(2026-11-24 缓存收口批):未打开文件的
+  // 全量引用扫描与 hover/定义链共享同一份缓存原文,读盘不再逐面重复。
+  return openDocument ? openDocument.getText() : readFileSyncUtf8Recorded(filePath);
 }
 
 /**

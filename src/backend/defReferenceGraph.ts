@@ -2,6 +2,7 @@
 // Reuses the engine-aligned rename parser so graph consumers and F2 edits
 // share one definition of declarations, references and inheritance edges.
 import * as fs from 'fs';
+import { readFileUtf8Recorded } from './fileReadMetrics';
 import * as path from 'path';
 import {
   collectRenameEditsInText,
@@ -98,7 +99,8 @@ const yieldToHost = (): Promise<void> => new Promise<void>(resolve => setImmedia
 
 async function readFile(filePath: string): Promise<string | null> {
   try {
-    return await fs.promises.readFile(filePath, 'utf8');
+    // 共享原文缓存记账入口(2026-11-24 缓存收口批):引用图构建与定义/引用链共享缓存原文
+    return await readFileUtf8Recorded(filePath);
   } catch {
     return null;
   }

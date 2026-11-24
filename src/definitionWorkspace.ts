@@ -1303,7 +1303,9 @@ export function findDefinitionTextByCategory(
     return open.getText();
   }
   try {
-    return fs.readFileSync(filePath, 'utf8');
+    // 共享原文缓存记账入口(2026-11-24 缓存收口批):定义文件正文与 types.xml/
+    // alias.xml 读取链共享同一份缓存原文,hover/引用链路不再逐面重读。
+    return readFileSyncUtf8Recorded(filePath);
   } catch {
     return null;
   }

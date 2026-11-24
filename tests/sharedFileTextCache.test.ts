@@ -13,6 +13,12 @@ import {
   type SharedFileTextCacheDeps
 } from '../src/backend/sharedFileTextCache';
 import { getSharedFileTextCache, resetSharedFileTextCacheForTests } from '../src/backend/sharedFileTextCache';
+import {
+  getFileReadTotals,
+  readFileUtf8Recorded,
+  readFileSyncUtf8Recorded,
+  resetFileReadMetrics
+} from '../src/backend/fileReadMetrics';
 
 const makeDeps = (overrides: Partial<SharedFileTextCacheDeps> = {}): SharedFileTextCacheDeps => ({
   statAsync: vi.fn(async () => ({ mtimeMs: 100, size: 6 })),
@@ -206,6 +212,31 @@ describe('SharedFileTextCache 读一次扇出多次', () => {
       expect(getSharedFileTextCache().readThroughSync(file).fromCache).toBe(false);
     } finally {
       vscode.workspace.fs.stat = originalStat;
+    }
+  });
+
+  it('热面收口验收:同步腿与异步腿(两热面同一读缝)读同一文件只读盘一次(2026-11-24 批 A-1)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-cache-faces-'));
+    const file = path.join(dir, 'same-face-file.txt');
+    fs.writeFileSync(file, 'abcdef', 'utf8');
+    // 异步腿的 stat 缝走 vscode.workspace.fs.stat(缺省依赖),桩工作区查不到
+    // 真临时文件 → 指纹不可得 = 纯透传不入缓存。接真盘 stat 才验缓存共享。
+    const originalStat = vscode.workspace.fs.stat;
+    vscode.workspace.fs.stat = async (uri: { fsPath: string }) => {
+      const s = await fs.promises.stat(uri.fsPath);
+      return { type: 1, ctime: s.birthtimeMs, mtime: s.mtimeMs, size: s.size };
+    };
+    try {
+      resetFileReadMetrics(); // 一并清共享缓存
+      const syncText = readFileSyncUtf8Recorded(file);
+      const asyncText = await readFileUtf8Recorded(file);
+      expect(syncText).toBe(asyncText);
+      expect(getFileReadTotals().reads, '同一文件跨同步/异步腿只读盘一次').toBe(1);
+      expect(getFileReadTotals().bytes).toBe(6);
+    } finally {
+      vscode.workspace.fs.stat = originalStat;
+      resetFileReadMetrics();
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

@@ -2,6 +2,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { readFileSyncUtf8Recorded } from '../backend/fileReadMetrics';
 import { parsePythonFile, isPythonCodePosition } from '../backend/pythonClassIndex';
 import { DefElementNode, getLineNumberAt } from '../backend/defParser';
 import { EntityMappingManager, EntityMethodSection } from '../entityMapping';
@@ -129,7 +130,8 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
               return null;
             }
             try {
-              return fs.readFileSync(filePath, 'utf8');
+              // 走共享原文缓存记账入口(2026-11-24 缓存收口批):cellData def 全集与 types.xml/定义链共享原文
+              return readFileSyncUtf8Recorded(filePath);
             } catch {
               return null; // 读失败 = 缺席贡献,不猜
             }
@@ -147,7 +149,7 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
                 scriptText = document.getText();
               } else {
                 try {
-                  scriptText = fs.readFileSync(scriptPath, 'utf8');
+                  scriptText = readFileSyncUtf8Recorded(scriptPath);
                 } catch {
                   scriptText = null;
                 }

@@ -19,7 +19,7 @@
  */
 
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import { readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import {
   DefDocument,
   DefElementNode,
@@ -117,10 +117,10 @@ export function resolveDefSymbolReferenceTarget(
   return null;
 }
 
-/** 读取文件内容,优先开着的文档缓冲(与导航落点同口径) */
+/** 读取文件内容,优先开着的文档缓冲(与导航落点同口径);磁盘腿走共享原文缓存记账入口(2026-11-24 缓存收口批) */
 function readFileContentForScan(filePath: string): string {
   const openDocument = vscode.workspace.textDocuments.find(doc => doc.fileName === filePath);
-  return openDocument ? openDocument.getText() : fs.readFileSync(filePath, 'utf8');
+  return openDocument ? openDocument.getText() : readFileSyncUtf8Recorded(filePath);
 }
 
 function walkElements(node: DefElementNode, visit: (el: DefElementNode) => void): void {

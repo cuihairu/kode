@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import { readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { l10nText } from '../nlsRuntime';
 import * as path from 'path';
 import {
@@ -394,7 +394,8 @@ const MAX_LISTED_SOURCES = 3;
 
 const readFileOrNull = (filePath: string): string | null => {
   try {
-    return fs.readFileSync(filePath, 'utf8');
+    // 共享原文缓存记账入口(2026-11-24 缓存收口批):定义分析与定义/引用链共享缓存原文
+    return readFileSyncUtf8Recorded(filePath);
   } catch {
     return null;
   }

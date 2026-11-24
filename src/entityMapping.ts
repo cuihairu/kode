@@ -2292,7 +2292,9 @@ export class EntityMappingManager {
     if (!filePath.toLowerCase().endsWith('.py') ||
         filePath.split(/[\\/]/).some(part => PY_SCAN_EXCLUDED_DIRS.has(part))) { return; }
     let text: string;
-    try { text = await fs.promises.readFile(filePath, 'utf8'); }
+    // 共享原文缓存记账入口(2026-11-24 缓存收口批):Python def 索引按文件
+    // 事件重读,与 hover/定义链共享缓存原文;stat 双键校验保住事件驱动的新鲜度。
+    try { text = await readFileUtf8Recorded(filePath); }
     catch {
       this.pythonDefFileOrder.delete(filePath);
       return; // deletion or unreadable file: its old hits are already gone

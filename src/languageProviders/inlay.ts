@@ -1,9 +1,9 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
-import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { EntityMappingManager, pythonScriptDomain } from '../entityMapping';
 import { l10nText } from '../nlsRuntime';
 import { getDocumentLines } from '../backend/documentStore';
+import { readFileSyncUtf8Recorded } from '../backend/fileReadMetrics';
 import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { getLanguageFeatureConfig } from './shared';
 import { diffGeneratedStubAnnotations } from '../backend/inferredEnrichment';
@@ -268,7 +268,9 @@ export class KBEngineProxyInternalAttrHintsProvider implements vscode.InlayHints
     const declarationLines: Partial<Record<typeof PROXY_INTERNAL_ATTR_NAMES[number], number>> = {};
     if (pyiPath) {
       try {
-        const content = (this.deps?.readFile ?? ((candidate: string): string => fs.readFileSync(candidate, 'utf8')))(pyiPath);
+        // 缺省缝走共享原文缓存记账入口(2026-11-24 缓存收口批);测试注入缝不受影响
+        // (缓存只共享「存什么」,不收编「怎么读」)
+        const content = (this.deps?.readFile ?? readFileSyncUtf8Recorded)(pyiPath);
         const lines = content.split('\n');
         for (const attr of PROXY_INTERNAL_ATTR_NAMES) {
           const index = lines.findIndex(line => line.trim() === `${attr}: str`);
