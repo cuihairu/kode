@@ -41,6 +41,11 @@ export interface KodeServiceStatusDeps {
   /** kode-mcp 二进制路径;'' = 未构建/未发现 */
   probeMcpBinary: () => string;
   /**
+   * bin/ 面找到了同名文件但镜像格式与当前平台不符时的用户可读原因
+   * (:2999 魔数守门);不注入 = 零变化(向后兼容既有调用点)。
+   */
+  probeMcpBinaryReason?: () => string | null;
+  /**
    * 引擎版本标记探测(engineVersionDetect 链)。null=未检出/探测失败,
    * 状态栏显式「未检测到」,绝不编造版本值。
    */
@@ -84,7 +89,11 @@ export function setupKodeServiceStatusBar(
     const mcpFound = deps.probeMcpBinary() !== '';
     const mcpEnabled = readMcpEnabled();
     mcpItem.text = mcpStatusBarText(mcpFound, mcpEnabled, mcpProbe);
-    mcpItem.tooltip = mcpStatusBarTooltip(mcpFound, mcpEnabled, mcpProbe);
+    // 错平台包直显(:2999):bin/ 面有同名文件但魔数不符时,发现链已按缺失
+    // 处理,状态栏不能再呈现「未构建」的错因,把真实原因接在提示后面。
+    const mismatchReason = !mcpFound ? deps.probeMcpBinaryReason?.() ?? null : null;
+    const baseTooltip = mcpStatusBarTooltip(mcpFound, mcpEnabled, mcpProbe);
+    mcpItem.tooltip = mismatchReason ? `${baseTooltip}\n${mismatchReason}` : baseTooltip;
     mcpItem.show();
   };
 

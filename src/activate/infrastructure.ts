@@ -23,7 +23,7 @@ import { setupKodeServiceStatusBar } from './kodeServiceStatus';
 import { setupKodeMcpHost, toggleKodeMcpEnabled, KODE_MCP_TOGGLE_COMMAND } from '../kodeMcpHost';
 import { probeKodeMcpHealth, realKodeMcpProbeDeps } from '../kodeMcpHealthProbe';
 import { resolveAssetsRootForWorkspace } from '../scanRoots';
-import { discoverNativeBinary } from '../backend/nativeBinary';
+import { discoverNativeBinary, discoverNativeBinaryReport } from '../backend/nativeBinary';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument, kbeStubProcessFromQuery } from '../kbeModuleIndex';
 import { setJumpLogEnabled } from '../navigationLog';
 import { ensureConfigResolved } from '../serverConfigResolve';
@@ -176,6 +176,9 @@ export function activateInfrastructure(
   setupKodeServiceStatusBar(context, {
     getGateState: () => kodeCoreGate.state,
     probeMcpBinary: () => discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp'),
+    // :2999 魔数守门:错平台包落盘按缺失处理,状态栏直显原因而非「未构建」假象。
+    probeMcpBinaryReason: () =>
+      discoverNativeBinaryReport(context.extensionUri.fsPath, 'kode-mcp').rejectedReason,
     detectEngineVersion: probeStatusBarEngineVersion,
     // MCP 活性探针(2026-11-24 活性灯批):kode-mcp --probe 自拉自收,毫秒
     // 级握手判活;资产根同 MCP 服务器定义解析链(首工作区),无工作区以当前
