@@ -114,6 +114,11 @@ export async function replaceFileSitesSliced(
         .filter(access => access.keySignature !== null)
         .map(access => siteKey(root, access.dict, access.keySignature as string));
   for (let start = 0; start < removalKeys.length; start += accessSlice) {
+    // P1(复审 2026-11-24):让路恢复点先复核再写。修前检查只在写后,
+    // 让出节拍期间文本被删/被换时,恢复首片必先漏写一片才停。
+    if (isStale?.()) {
+      return { sliceCount, maxSliceMs };
+    }
     const t0 = performance.now();
     const end = Math.min(start + accessSlice, removalKeys.length);
     for (let i = start; i < end; i += 1) {
@@ -147,6 +152,11 @@ export async function replaceFileSitesSliced(
     keysByFile.set(fsPath, keys);
   }
   for (let start = 0; start < next.length; start += accessSlice) {
+    // P1(复审 2026-11-24):同恢复点复核——删除落在让路窗口时,续写
+    // 新增分片前必须停,否则已删文件的键整片漏回倒排。
+    if (isStale?.()) {
+      return { sliceCount, maxSliceMs };
+    }
     const t0 = performance.now();
     const end = Math.min(start + accessSlice, next.length);
     for (let i = start; i < end; i += 1) {
@@ -297,6 +307,9 @@ export class GlobalDataDictIndex {
         const entry = this.cache.get(oldUri.fsPath);
         this.replaceFileSites(oldUri.fsPath, []);
         this.cache.delete(oldUri.fsPath);
+        // P1(复审 2026-11-24):与删除同族——旧路径缓冲不清,重算循环
+        // 会把已移走文件的全键以旧路径重新提交。
+        this.editBuffers.delete(oldUri.fsPath);
         if (newUri.fsPath.endsWith('.py')) {
           if (entry) {
             this.cache.set(newUri.fsPath, entry);
@@ -346,6 +359,9 @@ export class GlobalDataDictIndex {
       this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
       this.replaceFileSites(uri.fsPath, []);
       this.cache.delete(uri.fsPath);
+      // P1(复审 2026-11-24):删除必须清编辑缓冲——缓冲残留时在飞重算
+      // 循环会以新代次重读旧文本,把已删文件的全键重新提交(旧键复活)。
+      this.editBuffers.delete(uri.fsPath);
     });
     this.watchers.push(watcher);
     const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);

@@ -2252,6 +2252,75 @@ describe('AUD-076 编辑重扫接入交互调度预算(R4-F11)', () => {
       index.dispose();
     }
   }, 30000);
+
+  it('P1(复审 2026-11-24):大文件分批提交中文件被删,续写分片与缓冲重算都不得复活旧键', async () => {
+    const index = new GlobalDataDictIndex();
+    const originalSetImmediate = globalThis.setImmediate;
+    const originalFind = vscode.workspace.findFiles;
+    const originalWatcher = vscode.workspace.createFileSystemWatcher;
+    try {
+      // 零文件起步:索引内容全走 noteSaved 事件驱动面
+      vscode.workspace.findFiles = async () => [];
+      const deleteListeners: Array<(uri: { fsPath: string }) => void> = [];
+      vscode.workspace.createFileSystemWatcher = (((): unknown => ({
+        onDidCreate: () => ({ dispose: () => undefined }),
+        onDidChange: () => ({ dispose: () => undefined }),
+        onDidDelete: (l: (uri: { fsPath: string }) => void) => {
+          deleteListeners.push(l);
+          return { dispose: () => undefined };
+        },
+        dispose: () => undefined
+      })) as unknown) as typeof originalWatcher;
+      await index.ensureStarted();
+
+      // v1:2000 行 × 每行 10 写点 = 20000 访问(>64KiB 走异步路径;提交
+      // 8000 访问/片共 3 片,删除落在第 1 片提交完成后的让路窗口)
+      const accessLines: string[] = [];
+      for (let line = 0; line < 2000; line += 1) {
+        const parts: string[] = [];
+        for (let i = 0; i < 10; i += 1) {
+          parts.push(`KBEngine.globalData["a${line * 10 + i}"] = 1`);
+        }
+        accessLines.push(parts.join('; '));
+      }
+      const v1 = `import KBEngine\n${accessLines.join('\n')}\n`;
+      expect(v1.length).toBeGreaterThan(64 * 1024);
+      const target = '/r/deleted-mid-commit.py';
+      let yields = 0;
+      globalThis.setImmediate = ((fn: () => void, ...rest: unknown[]) => {
+        yields += 1;
+        if (yields === 2) {
+          // 第 2 次让路 = 第 1 片提交完成后的节拍(第 1 次是扫描片尾)。此刻
+          // 文件被删:修前恢复点不复核,旧任务续写第 2 片;且删除不清编辑
+          // 缓冲,重算循环以新代次重读旧文本全量重提交——旧键成批复活。
+          // 修后恢复点先复核停写,删除清缓冲后循环收敛为空。
+          for (const listener of deleteListeners) {
+            listener({ fsPath: target });
+          }
+        }
+        return originalSetImmediate(fn, ...rest);
+      }) as unknown as typeof globalThis.setImmediate;
+      index.noteSaved({ uri: { fsPath: target }, getText: () => v1 } as never);
+      let settled = false;
+      for (let i = 0; i < 4000 && !settled; i += 1) {
+        await new Promise<void>(resolve => originalSetImmediate(resolve));
+        settled = index.editBufferEntryCountForTests() === 0;
+      }
+      expect(settled).toBe(true);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise<void>(resolve => originalSetImmediate(resolve));
+      // 三带全部不可复活:第 1 片(a0,删除时同步总撤)/第 2 片(a10000,
+      // 让路窗口续写漏网)/末片(a19999,缓冲重算全量复活)
+      expect(index.query('globalData', 'a0')).toEqual([]);
+      expect(index.query('globalData', 'a10000')).toEqual([]);
+      expect(index.query('globalData', 'a19999')).toEqual([]);
+    } finally {
+      globalThis.setImmediate = originalSetImmediate;
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.createFileSystemWatcher = originalWatcher;
+      index.dispose();
+    }
+  }, 30000);
 });
 
 describe('KR-AUD-35 rebuild 并发上限(IDX-11)', () => {
