@@ -22,6 +22,7 @@
 
 import { l10nText } from '../nlsRuntime';
 import { INDEX_CACHE_SCHEMA_VERSION } from './indexDiskCache';
+import type { KodeMcpProbeResult } from '../kodeMcpHealthProbe';
 
 export interface KodeCoreStateLite {
   mode: 'ts' | 'rust' | 'shadow';
@@ -88,22 +89,70 @@ function coreStatusBarTooltipBody(state: KodeCoreStateLite | null): string {
   return l10nText('kbengine.core.backend=ts (pure TS service)');
 }
 
-/** MCP 状态栏文案:$(plug) built / not built / off(内建 MCP 三可见态) */
-export function mcpStatusBarText(binaryFound: boolean, enabled: boolean): string {
+/** MCP 活性探针面(2026-11-24 MCP 活性灯批;装配层维护的最近一轮快照):
+ * probing=在途;last=null=尚未探过(激活窗口);last=最近一轮结果 */
+export interface KodeMcpProbeFace {
+  probing: boolean;
+  last: KodeMcpProbeResult | null;
+}
+
+/**
+ * MCP 状态栏文案:$(plug) built / not built / off(内建 MCP 三可见态)+
+ * 活性两态(已构建+已开启时探针有账才翻脸):ok=探活通过;no reply=探活
+ * 失败(进程拉不起来/握手无应答——「已构建」只说明二进制在位,不代表能
+ * 拉起能应答)。
+ */
+export function mcpStatusBarText(
+  binaryFound: boolean,
+  enabled: boolean,
+  probe?: KodeMcpProbeFace
+): string {
   if (!enabled) {
     return l10nText('$(plug) Kode MCP: off');
   }
-  return binaryFound
-    ? l10nText('$(plug) Kode MCP: built')
-    : l10nText('$(plug) Kode MCP: not built');
+  if (!binaryFound) {
+    return l10nText('$(plug) Kode MCP: not built');
+  }
+  if (probe?.last) {
+    return probe.last.ok
+      ? l10nText('$(plug) Kode MCP: ok')
+      : l10nText('$(error) Kode MCP: no reply');
+  }
+  return l10nText('$(plug) Kode MCP: built');
 }
 
-/** MCP tooltip:内建托管事实 + 点击启停提示(点击=kbengine.mcp.toggle) */
-export function mcpStatusBarTooltip(binaryFound: boolean, enabled: boolean): string {
+/** 活性探针行(已构建+已开启才探;probing/未探/通过/失败四口吻如实) */
+function mcpProbeLine(probe: KodeMcpProbeFace): string {
+  if (probe.last?.ok) {
+    return l10nText(
+      'Liveness probe passed ({latency}ms): kode-mcp --probe answered the MCP handshake',
+      { latency: probe.last.latencyMs }
+    );
+  }
+  if (probe.last) {
+    return probe.last.reason
+      ? l10nText('Liveness probe failed: {reason}', { reason: probe.last.reason })
+      : l10nText('Liveness probe failed: no answer within budget (suspected hang)');
+  }
+  return l10nText('Liveness probe: running (first probe after activation)');
+}
+
+/** MCP tooltip:内建托管事实 + 点击启停提示(点击=kbengine.mcp.toggle)+
+ * 活性探针行(已构建+已开启时;结果=最近一轮,不做周期轮询) */
+export function mcpStatusBarTooltip(
+  binaryFound: boolean,
+  enabled: boolean,
+  probe?: KodeMcpProbeFace
+): string {
   if (!enabled) {
     return l10nText('Kode MCP is disabled; click to enable the built-in MCP server');
   }
-  return binaryFound
-    ? l10nText('kode-mcp binary present; built-in MCP server definition registered (VS Code native MCP); click to disable')
-    : l10nText('kode-mcp not built (source in crates/kode-mcp); build the binary to enable the built-in MCP server; click toggles enable state');
+  if (!binaryFound) {
+    return l10nText('kode-mcp not built (source in crates/kode-mcp); build the binary to enable the built-in MCP server; click toggles enable state');
+  }
+  const body = l10nText('kode-mcp binary present; built-in MCP server definition registered (VS Code native MCP); click to disable');
+  if (!probe || (!probe.probing && !probe.last)) {
+    return body;
+  }
+  return `${body}\n${mcpProbeLine(probe)}`;
 }

@@ -1,18 +1,24 @@
 // SRC-001 抽象层:Kode 核心(LSP kode-server)与 Kode MCP 状态栏项装配
 // (2026-11-10 用户令「如何提示 lsp 和 mcp 的状态是否开启呢」,选「状态栏
 // 两项」;2026-11-13 用户令「内置 mcp,点击开启,默认开启」——MCP 项升级为
-// 内建托管态+点击启停,注册面见 ../kodeMcpHost.ts)。
+// 内建托管态+点击启停,注册面见 ../kodeMcpHost.ts;2026-11-24 MCP 活性灯批
+// ——MCP 项加活性探针:已构建≠能拉起能应答,kode-mcp --probe 毫秒级握手
+// 判活,见 ../kodeMcpHealthProbe.ts)。
 // 状态栏两项(右侧,核心 94 / MCP 93,不抢 100/99/98/97/96/95 既有位:
 // 100 server/99 telnet/98 热更状态/97 解释器/96 热更通道/95 日志 tail)。
 // - 核心:显示 kode-server 服务轨道(Rust/Rust 降级 TS/TS/Shadow 对拍),点击
 //   开 kbengine.core.showShadowDiffLog(后端模式汇总 + 差异日志);
 // - Kode MCP:内建 MCP 三可见态(已构建/未构建/已关闭,kbengine.mcp.enabled
-//   默认 true),点击 = kbengine.mcp.toggle(翻转启用态;原生 MCP 服务器列表
-//   经 kodeMcpHost 的 onDidChange 同步刷新)。
+//   默认 true)+ 活性两态(ok=探活通过/no reply=探活失败),点击 =
+//   kbengine.mcp.toggle(翻转启用态;原生 MCP 服务器列表经 kodeMcpHost 的
+//   onDidChange 同步刷新)。
 // 刷新:激活时一次 + kbengine.core.backend/serverPath 与 kbengine.mcp.enabled
 // 配置变化重读(门状态只随配置变;kode-server 进程启停不改变「是否开启」
 // 语义,不做轮询)。引擎版本行(RUST-136 增量⑤)另随 kbengine.engineRoot
 // 变化重探一次,其余刷新复用缓存。
+// MCP 活性探针节奏:激活后一轮 + kbengine.mcp.enabled 等配置变化重探一轮;
+// 不做周期轮询(结果=「最近一轮」如实展示,tooltip 注明)。探针自拉自收
+// (kode-mcp --probe 子进程应答即杀,不留孤儿),与真实 MCP 服务进程互不相干。
 
 import * as vscode from 'vscode';
 import {
@@ -20,8 +26,10 @@ import {
   coreStatusBarTooltip,
   mcpStatusBarText,
   mcpStatusBarTooltip,
-  type KodeCoreStateLite
+  type KodeCoreStateLite,
+  type KodeMcpProbeFace
 } from '../backend/kodeServiceStatus';
+import type { KodeMcpProbeResult } from '../kodeMcpHealthProbe';
 import { KODE_MCP_ENABLED_SETTING, KODE_MCP_TOGGLE_COMMAND } from '../kodeMcpHost';
 
 export const KODE_CORE_STATUS_PRIORITY = 94;
@@ -37,6 +45,11 @@ export interface KodeServiceStatusDeps {
    * 状态栏显式「未检测到」,绝不编造版本值。
    */
   detectEngineVersion: () => string | null;
+  /**
+   * MCP 活性探针一轮(kode-mcp --probe 握手;接线层解析二进制与资产根,
+   * 内部自带预算竞速永不悬挂)。只在二进制在位+开启时被调。
+   */
+  probeMcpLiveness: () => Promise<KodeMcpProbeResult>;
 }
 
 export function setupKodeServiceStatusBar(
@@ -60,6 +73,21 @@ export function setupKodeServiceStatusBar(
   let engineVersion: string | null = null;
   let engineVersionProbed = false;
 
+  // MCP 活性探针账(最近一轮;单飞:在途不叠加)。
+  let mcpProbe: KodeMcpProbeFace = { probing: false, last: null };
+  let mcpProbeInFlight = false;
+
+  const readMcpEnabled = (): boolean =>
+    vscode.workspace.getConfiguration('kbengine').get<boolean>('mcp.enabled', true);
+
+  const renderMcp = (): void => {
+    const mcpFound = deps.probeMcpBinary() !== '';
+    const mcpEnabled = readMcpEnabled();
+    mcpItem.text = mcpStatusBarText(mcpFound, mcpEnabled, mcpProbe);
+    mcpItem.tooltip = mcpStatusBarTooltip(mcpFound, mcpEnabled, mcpProbe);
+    mcpItem.show();
+  };
+
   const refresh = (): void => {
     const state = deps.getGateState();
     if (!engineVersionProbed) {
@@ -69,13 +97,30 @@ export function setupKodeServiceStatusBar(
     coreItem.text = coreStatusBarText(state);
     coreItem.tooltip = coreStatusBarTooltip(state, engineVersion);
     coreItem.show();
-    const mcpFound = deps.probeMcpBinary() !== '';
-    const mcpEnabled = vscode.workspace
-      .getConfiguration('kbengine')
-      .get<boolean>('mcp.enabled', true);
-    mcpItem.text = mcpStatusBarText(mcpFound, mcpEnabled);
-    mcpItem.tooltip = mcpStatusBarTooltip(mcpFound, mcpEnabled);
-    mcpItem.show();
+    renderMcp();
+  };
+
+  /** 单轮探活:只对「已构建+已开启」探;在途不叠加;账到手回渲染。 */
+  const runMcpProbeOnce = (): void => {
+    if (mcpProbeInFlight || deps.probeMcpBinary() === '' || !readMcpEnabled()) {
+      return;
+    }
+    mcpProbeInFlight = true;
+    mcpProbe = { probing: true, last: mcpProbe.last };
+    renderMcp();
+    void deps
+      .probeMcpLiveness()
+      .then(result => {
+        mcpProbe = { probing: false, last: result };
+      })
+      .catch(() => {
+        // 探针永不炸装配面:抛异常按失败一轮记账(无 reason=如实缺省)
+        mcpProbe = { probing: false, last: { ok: false, latencyMs: -1 } };
+      })
+      .finally(() => {
+        mcpProbeInFlight = false;
+        renderMcp();
+      });
   };
 
   const configListener = vscode.workspace.onDidChangeConfiguration(event => {
@@ -85,6 +130,9 @@ export function setupKodeServiceStatusBar(
       event.affectsConfiguration(KODE_MCP_ENABLED_SETTING)
     ) {
       refresh();
+      // mcp.enabled 翻开(或伴随配置面变化)时重探一轮;关态/未构建由
+      // runMcpProbeOnce 自守门拒绝。
+      runMcpProbeOnce();
     }
     if (event.affectsConfiguration('kbengine.engineRoot')) {
       engineVersionProbed = false;
@@ -94,4 +142,5 @@ export function setupKodeServiceStatusBar(
   context.subscriptions.push(configListener);
 
   refresh();
+  runMcpProbeOnce();
 }

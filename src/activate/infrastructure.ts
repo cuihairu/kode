@@ -21,6 +21,8 @@ import { buildEngineApiCatalog } from '../backend/engineApiMetadata';
 import { setupKodeCoreGate } from '../kodeCoreGateWiring';
 import { setupKodeServiceStatusBar } from './kodeServiceStatus';
 import { setupKodeMcpHost, toggleKodeMcpEnabled, KODE_MCP_TOGGLE_COMMAND } from '../kodeMcpHost';
+import { probeKodeMcpHealth, realKodeMcpProbeDeps } from '../kodeMcpHealthProbe';
+import { resolveAssetsRootForWorkspace } from '../scanRoots';
 import { discoverNativeBinary } from '../backend/nativeBinary';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument, kbeStubProcessFromQuery } from '../kbeModuleIndex';
 import { setJumpLogEnabled } from '../navigationLog';
@@ -174,7 +176,17 @@ export function activateInfrastructure(
   setupKodeServiceStatusBar(context, {
     getGateState: () => kodeCoreGate.state,
     probeMcpBinary: () => discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp'),
-    detectEngineVersion: probeStatusBarEngineVersion
+    detectEngineVersion: probeStatusBarEngineVersion,
+    // MCP 活性探针(2026-11-24 活性灯批):kode-mcp --probe 自拉自收,毫秒
+    // 级握手判活;资产根同 MCP 服务器定义解析链(首工作区),无工作区以当前
+    // 目录兜底(握手判活与根无关)。
+    probeMcpLiveness: async () => {
+      const binary = discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp');
+      const folders = vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [];
+      const root =
+        folders.length > 0 ? resolveAssetsRootForWorkspace(folders[0]) || '.' : '.';
+      return await probeKodeMcpHealth(realKodeMcpProbeDeps(), binary, root);
+    }
   });
   // 2026-11-13 用户令「内置 mcp,点击开启,默认开启」:内建 MCP 服务器定义
   // 注册(原生 MCP API feature-detect,VS Code ≥1.101;老宿主静默回落)+

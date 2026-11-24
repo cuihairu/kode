@@ -712,7 +712,8 @@ impl KnowledgeIndex {
                 for path in &event.paths {
                     if !is_skip_component(path)
                         && (path.file_name().is_some_and(|name| name == ".gitignore")
-                            || path.extension()
+                            || path
+                                .extension()
                                 .and_then(|e| e.to_str())
                                 .is_some_and(extract::is_indexable_ext))
                     {
@@ -737,7 +738,6 @@ impl KnowledgeIndex {
     pub fn dirty_pending(&self) -> usize {
         self.dirty.lock().expect("dirty lock").len()
     }
-
 
     /// 挂接模型缓存:对账全量发布成功后同代刷新(KODE-FULL-005)——工具面
     /// 的 def/type 语义与结构/全文索引不再各走各的旧代。

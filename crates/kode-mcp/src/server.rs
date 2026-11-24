@@ -152,8 +152,7 @@ impl KodeMcpServer {
             }
             "index_status" => {
                 // P1 语义面 + P2 存储面合并;P1 键保持原样(不破坏既有断言)。
-                let mut status =
-                    crate::semantic_model::index_status(&knowledge, &self.assets_root);
+                let mut status = crate::semantic_model::index_status(&knowledge, &self.assets_root);
                 status["storage"] = self.index.status();
                 Ok(status)
             }
@@ -601,6 +600,28 @@ pub async fn run_stdio(
     index.start_reconcile_worker();
     let server = KodeMcpServer {
         knowledge,
+        assets_root: root,
+        extra_paths,
+        index,
+    };
+    let running = server.serve(stdio()).await?;
+    running.waiting().await?;
+    Ok(())
+}
+
+/// 探活模式(--probe):跳过语料装载(`AssetKnowledge::load` 全量解析
+/// py/def/表格)与索引构建,空库直接服务握手面。TS 健康探针用它毫秒级验证
+/// 「二进制可拉起 + MCP 协议可应答」,不等整库解析(全新 spawn 在大语料上
+/// 建索引是秒级,探针预算吃不起)。探活模式不承诺工具调用有数据(index 未
+/// build、knowledge 空库),探针客户端拿到 tools/list 应答即收进程;空库上
+/// 工具调用如实返回空结果,不 panic。
+pub async fn run_stdio_probe(
+    root: std::path::PathBuf,
+    extra_paths: Vec<std::path::PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let index = Arc::new(crate::kb_index::KnowledgeIndex::open(&root)?);
+    let server = KodeMcpServer {
+        knowledge: Arc::new(RwLock::new(AssetKnowledge::default())),
         assets_root: root,
         extra_paths,
         index,

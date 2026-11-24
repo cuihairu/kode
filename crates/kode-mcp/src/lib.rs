@@ -19,4 +19,4 @@ pub mod server;
 pub mod store;
 
 pub use kb::{AssetKnowledge, ParsedDef};
-pub use server::{run_stdio, KodeMcpServer};
+pub use server::{run_stdio, run_stdio_probe, KodeMcpServer};

@@ -23,8 +23,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(tag: &str) -> Fixture {
-        let root =
-            std::env::temp_dir().join(format!("kode-mcp-kbri-{tag}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("kode-mcp-kbri-{tag}-{}", std::process::id()));
         let index_dir =
             std::env::temp_dir().join(format!("kode-mcp-kbri-idx-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -72,7 +71,11 @@ impl Drop for Fixture {
 }
 
 fn bm25_opts() -> SearchOptions {
-    SearchOptions { limit: 10, route: Route::Bm25, ..Default::default() }
+    SearchOptions {
+        limit: 10,
+        route: Route::Bm25,
+        ..Default::default()
+    }
 }
 
 const NORMAL_DEF: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
@@ -117,7 +120,10 @@ fn scan_truncation_keeps_stored_nodes_and_reports_incomplete() {
     fx.write("scripts/zz_marker.py", "class Marker:\n    pass\n");
     let index = fx.index();
     index.build();
-    assert!(!index.store().exact_lookup("Marker").is_empty(), "基线:marker 已收录");
+    assert!(
+        !index.store().exact_lookup("Marker").is_empty(),
+        "基线:marker 已收录"
+    );
 
     // 5001 个洪水文件(a* 排序在 zz 前):py 收集必被 5000 上限截断。
     let scripts = fx.root.join("scripts");
@@ -133,7 +139,8 @@ fn scan_truncation_keeps_stored_nodes_and_reports_incomplete() {
     );
     let status = index.status();
     assert_eq!(
-        status["lastReconcile"]["coverageIncomplete"], serde_json::json!(true),
+        status["lastReconcile"]["coverageIncomplete"],
+        serde_json::json!(true),
         "状态面如实报覆盖不完整"
     );
 
@@ -142,7 +149,10 @@ fn scan_truncation_keeps_stored_nodes_and_reports_incomplete() {
     std::fs::create_dir_all(&scripts).unwrap();
     let stats = index.reconcile();
     assert!(stats.removed >= 1, "真实消失的文件必须逐出");
-    assert!(index.store().exact_lookup("Marker").is_empty(), "确认删除后节点移除");
+    assert!(
+        index.store().exact_lookup("Marker").is_empty(),
+        "确认删除后节点移除"
+    );
 }
 
 /// KODE-FULL-008 场景 A:首轮就带 .gitignore——被忽略 def 不进索引、不进
@@ -158,13 +168,19 @@ fn git_ignored_def_is_excluded_from_index_and_model_from_start() {
     let stats = index.build();
     assert!(stats.git_available, "fixture 是 git 仓库");
     assert!(stats.ignored_by_git >= 1);
-    assert!(!index.store().exact_lookup("Normal").is_empty(), "正常 def 收录");
+    assert!(
+        !index.store().exact_lookup("Normal").is_empty(),
+        "正常 def 收录"
+    );
     assert!(
         index.store().exact_lookup("Secret").is_empty(),
         "被忽略 def 不得入结构索引"
     );
     assert!(
-        !index.store().file_hashes().contains_key("scripts/entity_defs/Secret.def"),
+        !index
+            .store()
+            .file_hashes()
+            .contains_key("scripts/entity_defs/Secret.def"),
         "被忽略 def 不得登记哈希"
     );
     let hit = index.search("Secret", &bm25_opts()).unwrap();
@@ -197,11 +213,17 @@ fn newly_ignored_def_is_evicted_and_not_reindexed_by_model_rebuild() {
     fx.write("scripts/entity_defs/Secret.def", SECRET_DEF);
     let index = fx.index();
     index.build();
-    assert!(!index.store().exact_lookup("Secret").is_empty(), "基线:Secret 已收录");
+    assert!(
+        !index.store().exact_lookup("Secret").is_empty(),
+        "基线:Secret 已收录"
+    );
 
     // 加忽略 + 同时改正常 def(触发模型整体重建——旧口径会把 Secret 写回)。
     fx.write(".gitignore", "scripts/entity_defs/Secret.def\n");
-    fx.write("scripts/entity_defs/Normal.def", &NORMAL_DEF.replace("UINT32", "INT64"));
+    fx.write(
+        "scripts/entity_defs/Normal.def",
+        &NORMAL_DEF.replace("UINT32", "INT64"),
+    );
     let stats = index.reconcile();
     assert!(stats.removed >= 1, "已收录变忽略必须显式逐出");
     assert!(
@@ -209,7 +231,10 @@ fn newly_ignored_def_is_evicted_and_not_reindexed_by_model_rebuild() {
         "逐出后结构面无 Secret"
     );
     assert!(
-        !index.store().file_hashes().contains_key("scripts/entity_defs/Secret.def"),
+        !index
+            .store()
+            .file_hashes()
+            .contains_key("scripts/entity_defs/Secret.def"),
         "逐出后哈希面无 Secret"
     );
     assert!(
@@ -255,7 +280,11 @@ fn worker_consumes_dirty_and_publishes_model_same_generation() {
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
     let status = index.status();
-    assert_eq!(status["autoReconcile"]["active"], serde_json::json!(true), "{status}");
+    assert_eq!(
+        status["autoReconcile"]["active"],
+        serde_json::json!(true),
+        "{status}"
+    );
 }
 
 #[test]

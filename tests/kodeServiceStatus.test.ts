@@ -78,6 +78,83 @@ describe('mcp status bar (pure)', () => {
   });
 });
 
+describe('mcp liveness face (2026-11-24 MCP 活性灯批)', () => {
+  it('probing/未探时保持 built 文案;探针有账才翻 ok / no reply (en default)', () => {
+    expect(mcpStatusBarText(true, true, { probing: false, last: null })).toContain('built');
+    expect(mcpStatusBarText(true, true, { probing: true, last: null })).toContain('built');
+    expect(
+      mcpStatusBarText(true, true, { probing: false, last: { ok: true, latencyMs: 12 } })
+    ).toContain('Kode MCP: ok');
+    expect(
+      mcpStatusBarText(true, true, { probing: false, last: { ok: false, latencyMs: 3000 } })
+    ).toContain('no reply');
+    expect(
+      mcpStatusBarText(true, true, {
+        probing: false,
+        last: { ok: false, latencyMs: 30, reason: 'spawn failed: ENOENT' }
+      })
+    ).toContain('no reply');
+  });
+
+  it('off / not built 臂不吃探针账(关态/缺二进制时探活无意义)', () => {
+    expect(
+      mcpStatusBarText(false, true, { probing: false, last: { ok: true, latencyMs: 1 } })
+    ).toContain('not built');
+    expect(
+      mcpStatusBarText(true, false, { probing: false, last: { ok: false, latencyMs: 1 } })
+    ).toContain('off');
+  });
+
+  it('tooltip 探针行四口吻如实:通过带延迟/快速失败带原词/预算未决疑似挂死/在途', () => {
+    expect(
+      mcpStatusBarTooltip(true, true, { probing: false, last: { ok: true, latencyMs: 12 } })
+    ).toContain('Liveness probe passed (12ms)');
+    expect(
+      mcpStatusBarTooltip(true, true, {
+        probing: false,
+        last: {
+          ok: false,
+          latencyMs: 40,
+          reason: 'kode-mcp probe process exited before answering (code 1)'
+        }
+      })
+    ).toContain('Liveness probe failed: kode-mcp probe process exited');
+    expect(
+      mcpStatusBarTooltip(true, true, { probing: false, last: { ok: false, latencyMs: 3000 } })
+    ).toContain('no answer within budget (suspected hang)');
+    expect(
+      mcpStatusBarTooltip(true, true, { probing: true, last: null })
+    ).toContain('running (first probe after activation)');
+    // 未探(probe 缺省或全空账)= 既有托管事实,不带探针行(两参旧签名同口径)
+    expect(mcpStatusBarTooltip(true, true)).not.toContain('Liveness probe');
+    expect(mcpStatusBarTooltip(true, true, { probing: false, last: null })).toContain(
+      'built-in MCP server definition registered'
+    );
+  });
+
+  it('renders zh-cn translations when bundle injected', () => {
+    setL10nBundle(zhCnBundle);
+    expect(
+      mcpStatusBarText(true, true, { probing: false, last: { ok: true, latencyMs: 9 } })
+    ).toContain('正常');
+    expect(
+      mcpStatusBarText(true, true, { probing: false, last: { ok: false, latencyMs: 9 } })
+    ).toContain('无应答');
+    expect(
+      mcpStatusBarTooltip(true, true, { probing: false, last: { ok: true, latencyMs: 9 } })
+    ).toContain('探活通过(9ms)');
+    expect(
+      mcpStatusBarTooltip(true, true, { probing: false, last: { ok: false, latencyMs: 9 } })
+    ).toContain('探活失败:预算内未决(疑似挂死)');
+    expect(
+      mcpStatusBarTooltip(true, true, {
+        probing: false,
+        last: { ok: false, latencyMs: 9, reason: 'spawn failed: ENOENT' }
+      })
+    ).toContain('探活失败:spawn failed: ENOENT');
+  });
+});
+
 describe('engine version line (RUST-136 增量⑤)', () => {
   it('shows detected version verbatim, never guesses a value (en default)', () => {
     // 探测命中:如实显示标记值
