@@ -11,7 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { ensureAnchorScanRoot, findFilesAcrossRoots, getIndexScanRoots } from '../scanRoots';
+import { findFilesForKbengineSurfaces } from '../scanRoots';
 import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
 import {
   collectConfigSchema,
@@ -805,12 +805,11 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         // 只认 {assets}/scripts,激活期逐文件 openTextDocument 的全量扫是
         // 首索引慢的大头);无根(真非 KBEngine 工程)维持 workspace 全量,
         // 行为不变。
-        // 锚点根先行(二段令):配置/派生/folder 顶层全缺席时按引擎默认布局
-        // 定位 scripts 根——KBEngine 工程不再落进 workspace 全量兜底腿。
-        await ensureAnchorScanRoot().catch(() => null);
-        const uris = getIndexScanRoots().length > 0
-          ? (await findFilesAcrossRoots('**/*.py', excluded)).slice(0, 20000)
-          : await vscode.workspace.findFiles('**/*.py', excluded, 20000);
+        // P2 收口(2026-11-24):统一走 findFilesForKbengineSurfaces——锚点根
+        // 先行与误配零文件 gate 收编进共享入口;本地三元在误配时会跌回
+        // workspace 裸 glob 全盘扫,掩盖配置错误。legacyMaxResults 只作用于
+        // 旧裸 glob 腿(20000 上限既有语义),收窄腿截断由 slice 维持。
+        const uris = (await findFilesForKbengineSurfaces('**/*.py', excluded, { legacyMaxResults: 20000 })).slice(0, 20000);
         const sources: ConfigSourceInput[] = [];
         for (const uri of uris) {
           try {

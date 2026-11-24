@@ -54,7 +54,7 @@ import {
 } from '../backend/entitiesRegistrationAudit';
 import { execFile } from 'child_process';
 import type { ChildProcess } from 'child_process';
-import { findFilesAcrossRoots } from '../scanRoots';
+import { findFilesAcrossRoots, findFilesForKbengineSurfaces } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';
 import { getAnnotationBuildWorkload, getPendingDocumentUpdateCount, getReturnAnnotationCacheGauge, resetPythonReturnAnnotationCache } from '../backend/pythonReturnTypeInference';
 import { clearDatabaseSchemaCache, getDatabaseSchemaCacheGauge, getPendingTypeStorageColdBuildCount } from '../databaseSchema';
@@ -1013,15 +1013,16 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   const ruffLintDeps = {
     getWorkspacePythonFiles: async () => {
       // 2026-11-23 收窄令推广:KBEngine 扫描根存在时只收 scripts 下的 py;
-      // 无根(真非 KBEngine python 工程)维持 workspace 全量,ruff 通用面不变
-      if (getIndexScanRoots().length > 0) {
-        return (await findFilesAcrossRoots('**/*.py', '**/node_modules/**'))
-          .slice(0, RUFF_MAX_FILES + 1)
-          .map(uri => uri.fsPath);
-      }
-      return (
-        await vscode.workspace.findFiles('**/*.py', '**/node_modules/**', RUFF_MAX_FILES + 1)
-      ).map(uri => uri.fsPath);
+      // 无根(真非 KBEngine python 工程)维持 workspace 全量,ruff 通用面不变。
+      // P2 收口(2026-11-24):统一走 findFilesForKbengineSurfaces——锚点根
+      // 先行与误配零文件 gate 收编进共享入口;本地三元在误配时会跌回
+      // workspace 裸 glob 全盘扫,掩盖配置错误。legacyMaxResults 只作用于
+      // 旧裸 glob 腿(RUFF_MAX_FILES+1 既有语义),收窄腿截断由 slice 维持。
+      return (await findFilesForKbengineSurfaces('**/*.py', '**/node_modules/**', {
+        legacyMaxResults: RUFF_MAX_FILES + 1
+      }))
+        .slice(0, RUFF_MAX_FILES + 1)
+        .map(uri => uri.fsPath);
     },
     getInterpreterPath: () => {
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;

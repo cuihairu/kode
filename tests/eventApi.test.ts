@@ -1,7 +1,11 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { EventCodeLensProvider, eventDefinitionAt, findEventCalls } from '../src/eventApi';
 import { WorkspaceIndex } from '../src/workspaceIndex';
+import { resetScanRootCache } from '../src/scanRoots';
 import { configurationOverrides, makeTextDocument } from './helpers/vscodeStub';
 
 describe('KBEngine event API parsing', () => {
@@ -188,6 +192,36 @@ it('keeps the call without callback when the callback is an expression', () => {
     } finally {
       vscode.workspace.findFiles = originalFindFiles;
       vscode.workspace.openTextDocument = originalOpen;
+    }
+  });
+
+  it('P2 assetsRoot 误配(显式配置指向不存在目录):F12 不退回 workspace 裸 glob(零候选)', async () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-eventapi-misconfig-'));
+    const originalFolders = vscode.workspace.workspaceFolders;
+    const originalFindFiles = vscode.workspace.findFiles;
+    const originalOpen = vscode.workspace.openTextDocument;
+    let bareGlobCalls = 0;
+    let opens = 0;
+    const target = vscode.Uri.file(path.join(ws, 'tools', 'events.py'));
+    vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file(ws), name: 'ws', index: 0 } as never];
+    vscode.workspace.findFiles = async () => { bareGlobCalls += 1; return [target]; };
+    vscode.workspace.openTextDocument = async () => { opens += 1; return makeTextDocument('PLAYER_EVENT = "player_ready"', { fileName: target.fsPath, languageId: 'python' }) as vscode.TextDocument; };
+    configurationOverrides.set('kbengine', { assetsRoot: path.join(ws, 'no-such-assets') });
+    try {
+      resetScanRootCache();
+      const doc = makeTextDocument('self.emitEvent(PLAYER_EVENT)', { fileName: path.join(ws, 'use.py'), languageId: 'python' }) as vscode.TextDocument;
+      // 修前:扫描根空(误配)+ 本地三元跌回 workspace 裸 glob → tools/events.py
+      // 进候选,F12 跳到 scripts 之外的文件;统一入口零文件如实,不掩盖配置错误
+      expect(await eventDefinitionAt(doc, new vscode.Position(0, 17))).toBeNull();
+      expect(bareGlobCalls).toBe(0);
+      expect(opens).toBe(0);
+    } finally {
+      vscode.workspace.workspaceFolders = originalFolders;
+      vscode.workspace.findFiles = originalFindFiles;
+      vscode.workspace.openTextDocument = originalOpen;
+      configurationOverrides.delete('kbengine');
+      resetScanRootCache();
+      fs.rmSync(ws, { recursive: true, force: true });
     }
   });
 

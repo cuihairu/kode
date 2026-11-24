@@ -268,6 +268,30 @@ export function hasExplicitAssetsRootConfig(): boolean {
   }
 }
 
+/**
+ * 「扫描根为空时是否允许退回 workspace 裸 glob」(P1-2 gate 共用化):assetsRoot
+ * 已解析(assets 在而 scripts 缺 = 布局不对)或显式配置存在(指向不存在目录 =
+ * 配置不对)→ false,零文件如实,不拿 workspace 兜底掩盖;真非 KBEngine 工作区
+ * (未配置且解析不出)→ true,维持旧裸 glob 腿。findFilesAcrossRoots 顶 gate 与
+ * KBEngine 面统一发现入口(findFilesForKbengineSurfaces)共用同一判据,不各写一份。
+ */
+export function bareGlobFallbackAllowedForWorkspace(): boolean {
+  const workspaceRoot = (() => {
+    try {
+      return (vscode.workspace.workspaceFolders ?? [])[0]?.uri?.fsPath ?? '';
+    } catch {
+      return '';
+    }
+  })();
+  let assetsRootResolved = false;
+  try {
+    assetsRootResolved = resolveAssetsRootForWorkspace(workspaceRoot) !== '';
+  } catch {
+    assetsRootResolved = false;
+  }
+  return !(assetsRootResolved || hasExplicitAssetsRootConfig());
+}
+
 /** 文件所属的扫描根(最长匹配):workspace 文件夹优先,外部 assetsRoot 兜底 */
 export function getScanRootForFile(filePath: string): string | null {
   const key = normalizeForCompare(filePath);
@@ -738,6 +762,34 @@ async function walkExternalRoot(
 }
 
 /**
+ * KBEngine 面统一发现入口(P2 收口):事件 F12 / ruff lint / 配置数据诊断
+ * 三面原各写「扫描根存在 ? findFilesAcrossRoots : workspace 裸 glob」本地
+ * 三元——误配(显式 assetsRoot 解析不出 / assets 在而 scripts 缺)时扫描根
+ * 为空,本地三元各自跌回裸 glob 全盘扫(tools/、依赖树全进来掩盖配置错误),
+ * 绕过了 findFilesAcrossRoots 的零文件早退。统一收编为:
+ * ① 锚点根先行(ensureAnchorScanRoot,与三面原调用序一致:配置/派生/folder
+ *    顶层全缺席时按引擎默认布局定位 scripts 根);
+ * ② 扫描根存在 → findFilesAcrossRoots(收窄腿,过滤口径与索引面完全一致);
+ * ③ 扫描根空且误配 → [](零文件如实,与共享入口同 gate);
+ * ④ 真非 KBEngine 工作区 → workspace 裸 glob(旧腿;legacyMaxResults 只作用
+ *    于本腿,收窄腿的截断由调用方按业务上限自行 slice,与既有语义一致)。
+ */
+export async function findFilesForKbengineSurfaces(
+  glob: string,
+  exclude?: vscode.GlobPattern | null,
+  options?: { legacyMaxResults?: number; token?: vscode.CancellationToken }
+): Promise<vscode.Uri[]> {
+  await ensureAnchorScanRoot().catch(() => null);
+  if (getIndexScanRoots().length > 0) {
+    return findFilesAcrossRoots(glob, exclude, options?.token);
+  }
+  if (!bareGlobFallbackAllowedForWorkspace()) {
+    return [];
+  }
+  return vscode.workspace.findFiles(glob, exclude ?? undefined, options?.legacyMaxResults, options?.token);
+}
+
+/**
  * 跨扫描根找文件:workspace 部分维持原裸 glob 调用(既有行为与测试口径不变),
  * 再为 workspace 外的 assetsRoot 手工遍历补齐,最终按文件路径去重。
  */
@@ -792,24 +844,12 @@ export async function findFilesAcrossRoots(
   // 不出(非 KBEngine 仓库)时不算「找不到 scripts」,workspace 腿维持旧裸 glob
   // 行为,通用 python/def 面不因收窄失去索引。
   if (scanRootKeys.length === 0) {
-    const workspaceRootForGate = (() => {
-      try {
-        return (vscode.workspace.workspaceFolders ?? [])[0]?.uri?.fsPath ?? '';
-      } catch {
-        return '';
-      }
-    })();
-    let assetsRootResolved = false;
-    try {
-      assetsRootResolved = resolveAssetsRootForWorkspace(workspaceRootForGate) !== '';
-    } catch {
-      assetsRootResolved = false;
-    }
     // P1-2:assetsRoot 在而 scripts 缺 = 布局不对零文件;显式配置存在却解析
     // 不出(指向不存在目录)= 配置不对,同样零文件——两者都不许退回裸
     // workspace glob 全盘扫(把 tools/、依赖树扫进来掩盖错误)。只有「完全
-    // 未配置的真普通 Python 工作区」才维持旧裸 glob 腿。
-    if (assetsRootResolved || hasExplicitAssetsRootConfig()) {
+    // 未配置的真普通 Python 工作区」才维持旧裸 glob 腿(判据见
+    // bareGlobFallbackAllowedForWorkspace)。
+    if (!bareGlobFallbackAllowedForWorkspace()) {
       discovery.end('ok');
       return [];
     }

@@ -6,6 +6,7 @@ import { Uri } from './fake-vscode/core';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import {
   findFilesAcrossRoots,
+  findFilesForKbengineSurfaces,
   getIndexScanRoots,
   getExternalScanRoots,
   getScanRootForFile,
@@ -484,7 +485,7 @@ describe('RUST-171 发现优先级:profile > 设置 > 自动发现;env 不参与
 // P1 扫描面(2026-11-24 用户令):①多根工作区串 glob 泄漏其他项目;②
 // assetsRoot 误配仍退回 workspace 裸 glob 全盘扫。用例全部用真实临时目录,
 // 在两根中放置相同相对路径的文件,直接断言最终返回的绝对路径。
-describe('P1 扫描面:多根泄漏与误配兜底(真实临时目录)', () => {
+describe('P1/P2 扫描面:多根泄漏与误配兜底 + KBEngine 面统一发现入口(真实临时目录)', () => {
   /** 真实 vscode findFiles 语义替身:字符串 glob 对每个 workspace 文件夹各
    * 匹配一遍(泄漏通道);RelativePattern 只在其 base 内匹配。清单 = 各根
    * 实际落盘的 .py 相对路径。 */
@@ -637,6 +638,87 @@ describe('P1 扫描面:多根泄漏与误配兜底(真实临时目录)', () => {
       expect(getIndexScanRoots()).toEqual([path.join(ws, 'scripts')]);
       const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
       expect(files.map(u => u.fsPath)).toEqual([path.join(ws, 'scripts', 'pkg', 'app.py')]);
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFind;
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('P2 统一入口:assetsRoot 误配 → 零文件(不跌回 workspace 裸 glob)', async () => {
+    const ws = makeTmpDir('p2-misconfig');
+    fs.mkdirSync(path.join(ws, 'tools'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'tools', 'util.py'), 'x = 1\n');
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    setAssetsRoot('${workspaceFolder}/no-such-assets');
+    stubFindFilesRealSemantics({ [ws]: [path.join('tools', 'util.py')] });
+    try {
+      resetScanRootCache();
+      // 修前:事件 F12/ruff/配置数据三面本地三元在扫描根空时各自跌回裸
+      // glob,tools/ 全进候选掩盖配置错误;统一入口与 findFilesAcrossRoots
+      // 顶 gate 同判据(bareGlobFallbackAllowedForWorkspace),零文件如实
+      const files = await findFilesForKbengineSurfaces('**/*.py', PY_SCAN_EXCLUDE);
+      expect(files).toEqual([]);
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFind;
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('P2 统一入口:未配置真普通 Python 工作区(根下无 scripts)→ 旧裸 glob 腿,legacyMaxResults 透传', async () => {
+    const ws = makeTmpDir('p2-plain-legacy');
+    fs.mkdirSync(path.join(ws, 'tools'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'tools', 'util.py'), 'x = 1\n');
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    setAssetsRoot(undefined);
+    stubFindFilesRealSemantics({ [ws]: [path.join('tools', 'util.py')] });
+    // 裸 glob 调用参数记录器:只关心 maxResults 是否原样透传
+    const seenMaxResults: Array<number | undefined> = [];
+    const innerFind = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (
+      pattern?: unknown,
+      _exclude?: unknown,
+      maxResults?: number
+    ) => {
+      seenMaxResults.push(maxResults);
+      return innerFind(pattern);
+    }) as typeof stubWorkspace.findFiles;
+    try {
+      resetScanRootCache();
+      // 根下无 scripts/、未配置、无发现、锚点空 = 真非 KBEngine 工作区:
+      // 统一口径维持旧 workspace 裸 glob 腿(ruff 通用面不因收窄失去)
+      const files = await findFilesForKbengineSurfaces('**/*.py', PY_SCAN_EXCLUDE, { legacyMaxResults: 7 });
+      expect(files.map(u => u.fsPath)).toEqual([path.join(ws, 'tools', 'util.py')]);
+      expect(seenMaxResults).toEqual([7]);
+    } finally {
+      stubWorkspace.workspaceFolders = originalFolders;
+      stubWorkspace.findFiles = originalFind;
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('P2 统一入口:扫描根存在 → 收窄腿(findFilesAcrossRoots 同口径,scripts 外不入)', async () => {
+    const ws = makeTmpDir('p2-narrowed');
+    fs.mkdirSync(path.join(ws, 'assets', 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'assets', 'scripts', 'base', 'a.py'), 'x = 1\n');
+    fs.mkdirSync(path.join(ws, 'tools'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'tools', 'util.py'), 'x = 1\n');
+    const originalFolders = stubWorkspace.workspaceFolders;
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    setAssetsRoot('${workspaceFolder}/assets');
+    stubFindFilesRealSemantics({
+      [ws]: [path.join('assets', 'scripts', 'base', 'a.py'), path.join('tools', 'util.py')]
+    });
+    try {
+      resetScanRootCache();
+      const files = await findFilesForKbengineSurfaces('**/*.py', PY_SCAN_EXCLUDE);
+      expect(files.map(u => u.fsPath)).toEqual([path.join(ws, 'assets', 'scripts', 'base', 'a.py')]);
     } finally {
       stubWorkspace.workspaceFolders = originalFolders;
       stubWorkspace.findFiles = originalFind;

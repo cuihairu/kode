@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ensureAnchorScanRoot,
   findFilesAcrossRoots,
+  findFilesForKbengineSurfaces,
   getIndexScanRoots,
   resetScanRootCache
 } from '../src/scanRoots';
@@ -118,6 +119,28 @@ describe('扫描根锚点腿(引擎默认布局)', () => {
       const scannedPy = (await findFilesAcrossRoots('**/*.py', null)).map(uri => normalize(uri.fsPath));
       expect(scannedPy).toEqual([normalize(path.join(scripts, 'Avatar.py'))]);
       expect(scannedPy, 'scripts 之外的诱饵不入扫描').not.toContain(
+        normalize(path.join(root, 'proj', 'tools', 'Decoy.py'))
+      );
+    } finally {
+      workspace.findFiles = ORIGINAL;
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('P2 统一入口 findFilesForKbengineSurfaces:锚点根先行内建于入口(F12/ruff/配置数据三面)', async () => {
+    const scripts = makeDefaultLayout();
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    stubWorkspaceGlob();
+    try {
+      // 探测前主腿为空;统一入口内部先 ensureAnchorScanRoot 再取根——调用方
+      // 不再自持「锚点先行 + 收窄/裸 glob 三元」的本地装配(三面各写一份
+      // 正是误配时各自跌回裸 glob 的来源)
+      const files = (await findFilesForKbengineSurfaces('**/*.py', null)).map(uri =>
+        normalize(uri.fsPath)
+      );
+      expect(files).toEqual([normalize(path.join(scripts, 'Avatar.py'))]);
+      expect(files, 'scripts 之外的诱饵不入扫描').not.toContain(
         normalize(path.join(root, 'proj', 'tools', 'Decoy.py'))
       );
     } finally {
