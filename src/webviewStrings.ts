@@ -412,6 +412,31 @@ const zh = {
     queueRegionLabel: '实时队列',
     filterGroupLabel: '历史筛选',
     tableLabel: '热更历史表'
+  },
+  // 内存监控面板:数字卡/图例/按钮/状态点文案(canvas 内不用这些,只用字面色)
+  memoryMonitor: {
+    title: '内存监控',
+    cardRss: '当前 RSS',
+    cardPeak: '窗口峰值',
+    cardPeakHint: '进程生命周期最高',
+    cardEntities: '实体总数',
+    cardHz: '采样频率',
+    chartTitle: (seconds: number) => `近 ${seconds} 秒`,
+    legendRss: '内存 RSS',
+    legendEntities: '实体数',
+    legendPeak: '峰值',
+    emptyChart: '等待采样数据…',
+    leaksTitle: '对象计数(debugTracing)',
+    pausedBadge: '已暂停',
+    pause: '暂停',
+    resume: '继续',
+    clear: '清空',
+    noTargets: '未发现可采样的 telnet 目标(先启动引擎或配置端口)',
+    statusConnected: '采样中',
+    statusBackoff: '重连中',
+    statusIdle: '待连接',
+    statusNoProcess: '无此进程',
+    deltaLabel: '环比'
   }
 };
 
@@ -810,6 +835,31 @@ const en: typeof zh = {
     queueRegionLabel: 'Live queue',
     filterGroupLabel: 'History filters',
     tableLabel: 'Hot reload history table'
+  },
+  // Memory monitor panel: cards / legend / buttons / status dot wording
+  memoryMonitor: {
+    title: 'Memory Monitor',
+    cardRss: 'Current RSS',
+    cardPeak: 'Window Peak',
+    cardPeakHint: 'Highest in process lifetime',
+    cardEntities: 'Entities',
+    cardHz: 'Sample Rate',
+    chartTitle: (seconds: number) => `Last ${seconds}s`,
+    legendRss: 'RSS',
+    legendEntities: 'Entities',
+    legendPeak: 'Peak',
+    emptyChart: 'Waiting for samples…',
+    leaksTitle: 'Object counters (debugTracing)',
+    pausedBadge: 'Paused',
+    pause: 'Pause',
+    resume: 'Resume',
+    clear: 'Clear',
+    noTargets: 'No telnet targets to sample (start the engine or configure a port)',
+    statusConnected: 'sampling',
+    statusBackoff: 'reconnecting',
+    statusIdle: 'idle',
+    statusNoProcess: 'no process',
+    deltaLabel: 'delta'
   }
 };
 

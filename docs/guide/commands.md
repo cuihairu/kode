@@ -950,6 +950,17 @@ The flow graph panel supports:
   - Cancelling the pick does nothing further, honestly
 - Session console modes (TELNET-EZ-001 ①, in-panel): the session area carries a mode toggle — whitelist mode (default: the safe read-only shortcut set plus user `kbengine.telnet.enableCommands`) ↔ free Python mode ("Enter Python REPL", warning-colored badge "runs Python directly on the engine", `>>>` primary prompt with `…` continuation hint). Mode is a per-target session property: it survives disconnects and reconnects. Free mode sends arbitrary Python expressions engine-side; empty commands and `:quit` are refused in both modes. The quick-button set is expanded with read-only `entities` / `globalData` / `KBEngine.debug` expressions (entity type distribution, global data snapshot, engine debug info)
 
+### `kbengine.memoryMonitor.show`
+
+- Title: `Show Memory Monitor`
+- Purpose: open the memory monitor panel (right-column webview) — per-process RSS / entity count / debugTracing object counters sampled over the existing telnet face (no new channel), 60-second canvas chart + number cards + leak counter chips
+- Entries: command palette
+- Behavior:
+  - Top-bar buttons switch the sampled process; targets expand from the same telnet target derivation chain as the telnet panel (port/password same source; same-named instances #2/#3), each with a status dot (green = sampling, yellow = process alive but reconnecting with exponential backoff 1s→30s, red = the discovery face reports no such process)
+  - Switching drops the old telnet session, connects the new target and clears the data window; pause stops sampling and keeps the curves; clear drops the data
+  - Any leak counter type staying nonzero for 3 consecutive samples fires one VS Code warning (deduplicated until it returns to zero); nonzero chips carry a red border
+  - Sampling frequency follows `kbengine.memoryMonitor.sampleHz`, read fresh every beat; with telnet off the panel has nothing to sample
+
 ### `kbengine.bots.add`
 
 - Title: `KBEngine: Add Bots (telnet addBots)`

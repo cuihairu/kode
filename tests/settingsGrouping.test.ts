@@ -1,8 +1,8 @@
 /**
  * RUST-228 设置分组对账锁。
  *
- * contributes.configuration 从单块 153 键拆为 8 个带标题分组块
- * (performance/semantic/python/typings/engine/runtime/tools/general),
+ * contributes.configuration 从单块 153 键拆为 10 个带标题分组块
+ * (performance/semantic/python/typings/engine/runtime/tools/general/ai/memoryMonitor),
  * VS Code 设置页按块标题出目录分组,解决 153 键单列表的导航性问题。
  * 本锁钉:块结构/标题 nls 双语/order 递增/键集合不丢不重/分组归属抽检/
  * plugins 不造空组(PLUG 202..217 家族判例:无插件子系统不立分组)。
@@ -42,16 +42,17 @@ const EXPECTED_GROUPS: Array<{ key: string; en: string; zh: string }> = [
   { key: 'kbengine.configuration.runtime.title', en: 'Runtime & Hot Reload', zh: '运行时与热更' },
   { key: 'kbengine.configuration.tools.title', en: 'Generator & Tools', zh: '生成与工具' },
   { key: 'kbengine.configuration.general.title', en: 'General & Views', zh: '通用与视图' },
-  { key: 'kbengine.configuration.ai.title', en: 'AI', zh: 'AI' }
+  { key: 'kbengine.configuration.ai.title', en: 'AI', zh: 'AI' },
+  { key: 'kbengine.configuration.memoryMonitor.title', en: 'Memory Monitor', zh: '内存监控' }
 ];
 
 describe('RUST-228 设置分组', () => {
-  it('configuration 拆为 9 个带标题块,order 递增,标题走 nls 双语(AI-001 起)', () => {
-    expect(blocks).toHaveLength(9);
+  it('configuration 拆为 10 个带标题块,order 递增,标题走 nls 双语(AI-001 起)', () => {
+    expect(blocks).toHaveLength(10);
     expect(blocks.map(block => unwrapNlsKey(block.title))).toEqual(
       EXPECTED_GROUPS.map(group => group.key)
     );
-    expect(blocks.map(block => block.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(blocks.map(block => block.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     for (const group of EXPECTED_GROUPS) {
       expect(nls[group.key]).toBe(group.en);
       expect(nlsZh[group.key]).toBe(group.zh);

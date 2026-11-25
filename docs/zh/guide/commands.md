@@ -876,6 +876,17 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
   - 取消选择如实返回，不空转
 - 会话控制台模式（TELNET-EZ-001 ①，面板内）：会话区带模式切换钮——白名单模式（默认：安全只读快捷集 + 用户 `kbengine.telnet.enableCommands`）↔ 自由 Python 模式（「进入 Python 交互」，警示色徽章「直接执行引擎侧 Python」，`>>>` 主提示符与 `…` 续行提示）。模式是目标键上的会话属性：断线保留、重连沿用。自由模式任意 Python 表达式直接在引擎侧执行；空命令与 `:quit` 两模式恒拒。快捷钮扩充只读 `entities` / `globalData` / `KBEngine.debug` 表达式（实体类型分布 / 全局数据快照 / 引擎调试信息）
 
+### `kbengine.memoryMonitor.show`
+
+- 标题：`打开内存监控面板`
+- 作用：打开内存监控面板（右栏 webview）——经既有 telnet 通道采样各进程 RSS / 实体数 / debugTracing 对象计数（不新造通道），60 秒 canvas 折线图 + 数字卡 + 泄漏计数 chip
+- 入口：命令面板
+- 行为：
+  - 顶栏按钮切换采样进程；目标从与 telnet 面同一条派生链展开（端口/密码同源；同名实例 #2/#3），各带状态点（绿=采样中，黄=进程在但指数退避重连 1s→30s，红=发现面无此进程）
+  - 切换即断开旧 telnet 会话、连接新目标并清空数据窗口；暂停停采样保留曲线；清空清数据
+  - 任一泄漏计数类型连续 3 个采样周期非零弹一次 VS Code 警告（回零前不重复）；非零 chip 带红框
+  - 采样频率跟随 `kbengine.memoryMonitor.sampleHz`，每拍现读；telnet 未开启时面板无可采样目标
+
 ### `kbengine.bots.add`
 
 - 标题：`KBEngine: Add Bots (telnet addBots)`

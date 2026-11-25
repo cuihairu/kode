@@ -81,6 +81,7 @@ import { setDefaultScriptRuntime } from '../quickActions';
 import { readDerivedTelnetTargets } from '../telnetDeriveTargets';
 import { makeProbeOne, TelnetService, updateTelnetStatusBar } from '../telnetService';
 import { TelnetWebView } from '../telnetWebView';
+import { MemoryMonitorPanel, MEMORY_MONITOR_COMMAND } from '../memoryMonitorPanel';
 import { runPythonConsoleEntry } from '../telnetPythonConsole';
 import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '../backend/botsControl';
 import { TelnetTreeProvider } from '../telnetTree';
@@ -733,6 +734,14 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
   });
   context.subscriptions.push(telnetStateSubscription);
   updateTelnetStatusBar(telnetService, telnetStatusBarItem);
+
+  // Memory monitor panel (right-column webview): per-process RSS / entity
+  // count / debugTracing counters sampled over the existing telnet face
+  const memoryMonitorPanel = new MemoryMonitorPanel(context);
+  const showMemoryMonitorCommand = vscode.commands.registerCommand(MEMORY_MONITOR_COMMAND, () => {
+    memoryMonitorPanel.show();
+  });
+  context.subscriptions.push(showMemoryMonitorCommand, memoryMonitorPanel);
 
   // 机器人控制(IDE-BOT-001 A 案:本地单机闭环):经 bots 进程 telnet
   // python 层 addBots/计数;引擎无逐个减员 API,减员=停进程(编排层与

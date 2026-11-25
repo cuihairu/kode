@@ -950,6 +950,11 @@
         "icon": "$(debug-disconnect)"
       },
       {
+        "command": "kbengine.memoryMonitor.show",
+        "title": "%kbengine.command.memoryMonitor.show.title%",
+        "icon": "$(graph)"
+      },
+      {
         "command": "kbengine.bots.add",
         "title": "%kbengine.command.bots.add.title%"
       },
@@ -2810,6 +2815,23 @@
             "type": "number",
             "default": 1,
             "markdownDescription": "%kbengine.config.ai.maxRetries.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.memoryMonitor.title%",
+        "order": 10,
+        "properties": {
+          "kbengine.memoryMonitor.sampleHz": {
+            "type": "number",
+            "enum": [0.5, 1, 2],
+            "default": 1,
+            "markdownDescription": "%kbengine.config.memoryMonitor.sampleHz.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.memoryMonitor.sampleHz.enum.0%",
+              "%kbengine.config.memoryMonitor.sampleHz.enum.1%",
+              "%kbengine.config.memoryMonitor.sampleHz.enum.2%"
+            ]
           }
         }
       }

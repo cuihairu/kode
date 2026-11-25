@@ -379,6 +379,14 @@ telnet's presentation surface (standalone tree view, status lights, panel) appea
 
 Workspace-trust gate (RUST-422): the target host comes from workspace configuration, so in an untrusted workspace the telnet probe does not connect to any config-declared host and no persistent session is opened (status lights stay off; trusting the workspace resumes probing on the next round). The gate is fire-time read and mirrors the HTTP quick-request trust gate.
 
+### Memory Monitor
+
+The memory monitor panel (`kbengine.memoryMonitor.show`, right-column webview) samples each KBEngine process (cellapp/baseapp/loginapp/dbmgr/machine...) over the existing telnet face — no new channel: each sample period sends one exec command that prints current RSS (`/proc/self/statm`), peak RSS (`ru_maxrss`), and the entity count, then calls `KBEngine.debugTracing()` for object counters. The panel shows number cards (current RSS / window peak / entities / sample rate, each with a period-over-period delta), a 60-second canvas line chart (cyan RSS line + purple dashed entity line on a right axis + gray dashed peak line), and leak counter chips (nonzero chips get a red border; any type staying nonzero for 3 consecutive samples fires one VS Code warning, deduplicated until it returns to zero). Top-bar buttons switch the sampled process (green dot = sampling, yellow = process alive but reconnecting with exponential backoff 1s→30s, red = the discovery face reports no such process); pause stops sampling and keeps the curves, clear drops the data. Targets come from the same telnet target derivation chain as the telnet panel (port/password same source); the panel has nothing to sample when telnet is off.
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.memoryMonitor.sampleHz` | number | `1` | Sampling frequency (Hz); `0.5` = one sample every 2 seconds, `2` = two per second. Changes take effect from the next sample period |
+
 ### HTTP Quick Requests
 
 | Setting | Type | Default | Purpose |

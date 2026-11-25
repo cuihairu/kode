@@ -836,5 +836,6 @@
   "implemented in own class `{className}`": "implemented in own class `{className}`",
   "inherited from `{className}`": "inherited from `{className}`",
   "{count} implementations on the chain, showing the nearest": "{count} implementations on the chain, showing the nearest",
-  "Inheritance chain": "Inheritance chain"
+  "Inheritance chain": "Inheritance chain",
+  "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.": "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak."
 }

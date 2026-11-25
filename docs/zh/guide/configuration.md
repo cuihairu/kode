@@ -377,6 +377,14 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 
 工作区信任闸(RUST-422):目标主机来自工作区配置,未信任工作区里 telnet 探测不连任何配置声明的主机、不建持久会话(状态灯如实关闭;信任工作区后下一轮探测恢复)。闸为执行时刻读,与 HTTP 快捷请求信任闸同口径。
 
+### 内存监控
+
+内存监控面板(`kbengine.memoryMonitor.show`,右栏 webview)经既有 telnet 通道采样各 KBEngine 进程(cellapp/baseapp/loginapp/dbmgr/machine…),不新造通道:每个采样周期发一条 exec,打印当前 RSS(`/proc/self/statm`)、峰值 RSS(`ru_maxrss`)与实体数,并调 `KBEngine.debugTracing()` 出对象计数。面板展示数字卡(当前 RSS / 窗口峰值 / 实体总数 / 采样频率,各带环比 delta)、60 秒 canvas 折线图(青色 RSS 主线 + 紫色虚线实体数右轴 + 灰色虚线峰值线)与泄漏计数 chip(非零红框;任一类型连续 3 个采样周期非零弹一次 VS Code 警告,回零前不重复)。顶栏按钮切换采样进程(绿点=采样中,黄点=进程在但退避重连 1s→30s,红点=发现面无此进程);暂停停采样保留曲线,清空清数据。目标取自与 telnet 面同一条派生链(端口/密码同源),telnet 未开启时面板无可采样目标。
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.memoryMonitor.sampleHz` | number | `1` | 采样频率(Hz);`0.5` = 每 2 秒一次,`2` = 每秒两次。改动从下一个采样周期生效 |
+
 ### HTTP 快捷请求
 
 | 配置项 | 类型 | 默认值 | 说明 |
