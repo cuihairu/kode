@@ -168,6 +168,17 @@ fn watcher_marks_dirty_and_reconcile_folds_the_change() {
 
     let stats = index.reconcile();
     assert_eq!(stats.changed, 1, "{stats:?}");
+    // A late notify for the same edit can land after the drain: settle it with a
+    // deadline instead of asserting a single-shot zero (CI watcher timing flake).
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while index.dirty_pending() != 0 {
+        assert!(
+            Instant::now() < deadline,
+            "dirty set did not settle within 30s"
+        );
+        index.reconcile();
+        std::thread::sleep(Duration::from_millis(50));
+    }
     assert_eq!(index.dirty_pending(), 0, "reconcile folds the dirty set");
     assert_eq!(
         count_of(
