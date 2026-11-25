@@ -9,7 +9,8 @@ import {
 } from '../src/backend/hotReloadFileState';
 import {
   formatHotReloadStateLens,
-  HotReloadFileStateCodeLensProvider
+  HotReloadFileStateCodeLensProvider,
+  type HotReloadFileStateLensDeps
 } from '../src/hotReloadFileStateLens';
 import { formatHotReloadTime } from '../src/hotReloadStatus';
 
@@ -25,20 +26,28 @@ const DIGEST_A = sha256Hex(CONTENT_A);
 
 const makeState = (): HotReloadFileStateMachine => new HotReloadFileStateMachine({ now: () => 1000, timeoutWindowMs: 10_000 });
 
-const makeProvider = (): { provider: HotReloadFileStateCodeLensProvider; stateMachine: HotReloadFileStateMachine; ledger: HotReloadTargetStateStore } => {
+const makeProvider = (extra: Partial<Pick<HotReloadFileStateLensDeps, 'stat' | 'now'>> = {}): { provider: HotReloadFileStateCodeLensProvider; stateMachine: HotReloadFileStateMachine; ledger: HotReloadTargetStateStore } => {
   const stateMachine = makeState();
   const ledger = new HotReloadTargetStateStore({ now: () => 1000 });
   const provider = new HotReloadFileStateCodeLensProvider({
     stateMachine,
     ledger,
     resolveRootId: file => (file.startsWith(`${ROOT}/`) ? ROOT : null),
-    targetsForRoot: () => [KEY.targetId]
+    targetsForRoot: () => [KEY.targetId],
+    ...extra
   });
   return { provider, stateMachine, ledger };
 };
 
-const lensOf = async (provider: HotReloadFileStateCodeLensProvider, text: string): Promise<unknown[]> => {
+const lensOf = async (
+  provider: HotReloadFileStateCodeLensProvider,
+  text: string,
+  options: { dirty?: boolean } = {}
+): Promise<unknown[]> => {
   const document = makeTextDocument(text, { fileName: FILE, languageId: 'python' }) as MinimalTextDocument;
+  if (options.dirty) {
+    (document as { isDirty?: boolean }).isDirty = true;
+  }
   return provider.provideCodeLenses(document as unknown as vscode.TextDocument, new vscode.CancellationToken());
 };
 
@@ -138,5 +147,56 @@ describe('HotReloadFileStateCodeLensProvider(文件顶部状态点)', () => {
     });
     provider.refresh();
     expect(fired).toBe(1);
+  });
+});
+
+// FILE-TIME-001 并入段(2026-11-25 用户裁定首行一条完整热更信息):盘上
+// mtime 一次 stat 拼在热更段尾(· 分隔),失败/缺省不带段不编造;独立
+// 修改时间 provider 已退役,呈现面用例落此处。
+describe('修改时间段并入(FILE-TIME-001 → 热更状态镜)', () => {
+  // 固定钟:今天=2026-11-25 20:15:09 本地时间;mtime 同日 14:05:01
+  const NOW = new Date(2026, 10, 25, 20, 15, 9).getTime();
+  const MTIME = new Date(2026, 10, 25, 14, 5, 1).getTime();
+
+  const titleOf = async (provider: HotReloadFileStateCodeLensProvider, options: { dirty?: boolean } = {}): Promise<string> => {
+    const lenses = (await lensOf(provider, CONTENT_A, options)) as { command?: { title: string } }[];
+    return lenses[0]?.command?.title ?? '';
+  };
+
+  it('stat 命中:热更段尾拼「修改 HH:MM:SS」(· 分隔),状态段照旧', async () => {
+    const { provider, ledger } = makeProvider({
+      stat: async () => ({ mtimeMs: MTIME }),
+      now: () => NOW
+    });
+    ledger.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    const title = await titleOf(provider);
+    expect(title).toContain('APPLIED');
+    expect(title).toContain('· $(clock) 修改 14:05:01');
+  });
+
+  it('缓冲区未保存:mtime 段显式注记,不改写盘上时间', async () => {
+    const { provider } = makeProvider({
+      stat: async () => ({ mtimeMs: MTIME }),
+      now: () => NOW
+    });
+    expect(await titleOf(provider, { dirty: true })).toContain('$(clock) 修改 14:05:01(未保存)');
+  });
+
+  it('stat 失败(删除/不可及):只出热更段,不编造时间', async () => {
+    const { provider, ledger } = makeProvider({
+      stat: async () => {
+        throw new Error('ENOENT');
+      },
+      now: () => NOW
+    });
+    ledger.record(KEY, FILE, 'applied', { sentDigest: DIGEST_A });
+    const title = await titleOf(provider);
+    expect(title).toContain('APPLIED');
+    expect(title).not.toContain('修改');
+  });
+
+  it('缺省无 stat 注入:不带修改段(装配面未接时旧行为)', async () => {
+    const { provider } = makeProvider();
+    expect(await titleOf(provider)).not.toContain('修改');
   });
 });

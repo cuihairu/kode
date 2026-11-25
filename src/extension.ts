@@ -257,7 +257,6 @@ export function activate(context: vscode.ExtensionContext) {
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
     mroChainCodeLensProviderImpl,
-    fileModifiedTimeCodeLensProviderImpl,
     engineSpiCodeLensProviderImpl,
     eventCodeLensProviderImpl,
     typesXmlCodeLensProviderImpl
@@ -792,7 +791,6 @@ export function activate(context: vscode.ExtensionContext) {
       propertyCodeLensProviderImpl.fireConfigurationChanged();
       mroChainCodeLensProviderImpl.fireConfigurationChanged();
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
-      fileModifiedTimeCodeLensProviderImpl.fireConfigurationChanged();
       engineSpiCodeLensProviderImpl.fireConfigurationChanged();
     }
 

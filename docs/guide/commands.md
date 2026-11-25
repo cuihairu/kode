@@ -149,6 +149,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Title: `Kode: Open Same-Name Cell File`
 - Default keybinding: `ctrl+alt+shift+c` (macOS `cmd+alt+shift+c`), `when: editorLangId == python`
 - Purpose: from the active baseapp-side entity script jump to the same-named cellapp file (FILE-TIME-001, 2026-11-17 user order — a keyboard path alongside the process breadcrumb root, PROC-TAG-001/PROC-BREADCRUMB-001)
+- Carriers (PROC-BREADCRUMB-002, 2026-11-25): an editor title-bar arrow icon in the `editor/title` menu, gated by the `kbengine.processOwnership.canOpenCell` context key, plus a line-zero CodeLens button `跳 cell →` laid out beside the hot-reload state dot — both call this same command
 - Behavior:
   - Resolves the active file's process ownership with the same `scripts/<role>` decision chain as the breadcrumb root; a shared dir like `common` reports 判不出进程归属(需 `scripts/<role>` 目录),无法切换 honestly — never guessed
   - Opens `scripts/cell/<same-name>` with `{ preview: false }` when it exists; reports 未找到同名 cellapp 对应文件 when it does not
@@ -159,6 +160,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Title: `Kode: Open Same-Name Base File`
 - Default keybinding: `ctrl+alt+shift+b` (macOS `cmd+alt+shift+b`), `when: editorLangId == python`
 - Purpose: the mirror direction — from the active cellapp-side entity script jump to the same-named baseapp file (FILE-TIME-001)
+- Carriers (PROC-BREADCRUMB-002, 2026-11-25): an editor title-bar arrow icon gated by the `kbengine.processOwnership.canOpenBase` context key, plus a line-zero CodeLens button `跳 base →` — both call this same command
 - Behavior:
   - Same decision chain and honest messages as `openCell`, targeting `scripts/base/<same-name>`
   - Silent no-op with no active editor

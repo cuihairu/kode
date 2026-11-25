@@ -2,12 +2,8 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PythonClassIndex } from '../src/backend/pythonClassIndex';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
-import { setActiveProfile } from '../src/activeProfile';
-import { getRootConfigGeneration, getRootConfigLastBumpReason } from '../src/rootConfigGeneration';
-import { getActiveProfileScanRoot, resetScanRootCache, setActiveProfileScanRoot } from '../src/scanRoots';
 import { patternGlob } from './helpers/findPattern';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import {
@@ -18,26 +14,17 @@ import {
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot
 } from '../src/backend/pythonReturnTypeInference';
-import {
-  getOperationSummary,
-  resetLanguageServiceMetrics
-} from '../src/languageServiceMetrics';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
 import { createDatabaseSchemaUri, parseDatabaseSchemaRoot } from '../src/databaseSchemaPresentation';
 import { getDiagnosticScheduler } from '../src/backend/diagnosticScheduler';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
-import { parseDebugConfigText } from '../src/backend/debugConfigBootstrap';
 import { setKodeCoreShadowGate, getKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
 import { ENGINE_DEFAULT_TELNET_PORTS, makeContractGate } from './helpers/configCoreContract';
-import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
 import { messages, treeRegistrations, window as fakeWindow, windowState } from './fake-vscode/windowState';
-import { RelativePattern } from './fake-vscode/core';
 import {
-  lastFileSystemWatcher,
-  memoryFileSystem,
   workspace,
   workspaceEvents,
   workspaceState,
@@ -56,7 +43,7 @@ import {
   type ExtensionContext
 } from './fake-vscode/core';
 
-import { until, makeContext, disposeAll, watcherPatternKey, declared, BAD_DEF, resetExtensionTestState } from './extensionTestShared';
+import { until, makeContext, disposeAll, declared, BAD_DEF, resetExtensionTestState } from './extensionTestShared';
 
 beforeEach(resetExtensionTestState);
 
@@ -886,17 +873,19 @@ describe('extension activate 装配', () => {
         affectsConfiguration: (section: string) =>
           section === 'kbengine' || section === 'kbengine.codeLens'
       });
-      // 配置敏感镜链(rpc/callChain/property/fileModifiedTime/
+      // 配置敏感镜链(rpc/callChain/property/
       // KODE-CFG-015 engineSpi/event/typesXml/MRO-CHAIN mroChain)kbengine 段
       // 变更各 fire 一次;generatedSource 两实例与 generatedEntitySource 不订阅
       // 配置变更,计数不动;IDE-HOT-100 文件热更状态点同口径 fire
       // (PROC-BREADCRUMB-001 移除 processOwnership 镜链后 11→10 注册,
-      // MRO-CHAIN 起再加一份回到 11);RUST-400 .def 指纹镜不订阅配置
+      // MRO-CHAIN 起再加一份回到 11;2026-11-25 FILE-TIME-001 修改时间镜
+      // 并入热更状态镜退役,PROC-BREADCRUMB-002 行首切换镜顶其注册序位——
+      // 该镜配置不敏感且无 emitter,恒 0);RUST-400 .def 指纹镜不订阅配置
       // 变更(配置无关),计数不动,前置为注册序首
-      expect(lensFires.map(read => read())).toEqual([0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0]);
+      expect(lensFires.map(read => read())).toEqual([0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0]);
       // 外层 guard:不影响 kbengine 段时不 fire(计数不动)
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
-      expect(lensFires.map(read => read())).toEqual([0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0]);
+      expect(lensFires.map(read => read())).toEqual([0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0]);
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });

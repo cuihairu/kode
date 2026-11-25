@@ -105,6 +105,7 @@
 > 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位(单飞字段块 +7、ensureDiscovered 重写 +22、覆盖式清表 +4,非均匀)→ CB2 import 绑定循环 :1236→1267、MRO :1572→1605、WAITC :767→774/打点 :773→781,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-19(RUST-149 批 3):取消令牌贯穿 inlay 四 provider(BuiltinType/InferredMirror/PropertyShadow/ProxyInternalAttr)——入口 cancelled() 闸 + def 归属/方向扫描束放行点复查,顶部累计 +9 → getDocumentLines 出处 inlay.ts 52→61,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-23(SCAN-ROOT 锚点放开腿批):pythonClassIndex.ts 顶部 import 块展开 +5(全部锚点前)、扫描根入行块 +5(1121 区)与锚点 await 块 +3(1268 区)落在二三锚点前 → WAITC :811→816(+5,打点 :817→822)、CB2 :1551→1564(+13)、MRO :1564 前的软指针 :1629 一并校准到 ①② 两段查询 注释行 1688(+13),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-25(PROC-BREADCRUMB-002 + FILE-TIME-001 并入收口):languageServices.ts 标题栏上下文键装配块 +4 与行首切换镜装配块 +4(589 区,在前四打点后)→ completion python 语境打点 :944→948;extension.ts 退役 fileModifiedTime 解构与 fire 两行(260/795)→ WATCH :503→502、FL 源锚 :615→614(其余锚不动),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -213,7 +214,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["activate/languageServices.ts:146 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :944 一路)"]
+  M3["activate/languageServices.ts:146 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :948 一路)"]
   CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:1134"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
@@ -243,10 +244,10 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:503 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:502 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>backend/diagnosticScheduler.ts:228"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:615 → backend/diagnosticScheduler.ts:258"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:614 → backend/diagnosticScheduler.ts:258"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}

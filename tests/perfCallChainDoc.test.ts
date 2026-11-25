@@ -328,11 +328,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-24(C-19-MRO):languageServices.ts MRO 判存臂接线块 lane 侧曾 +9
   // (399→408、944→953);同题双裁弃该接线块(机制留 pythonBaseChain 同源),
   // languageServices 回 38d6e015 形态 → 锚点回 399/944,真位重探核实。
+  // 2026-11-25(PROC-BREADCRUMB-002 + FILE-TIME-001 并入收口):languageServices.ts
+  // 标题栏上下文键装配块 +4 与行首切换镜装配块 +4(589 区,在前四打点后)→
+  // completion python 语境打点 944 → 948;extension.ts 退役 fileModifiedTime
+  // 解构与 fire 两行(260/795)→ 其后锚 503/615 → 502/614(diagnosticScheduler
+  // 228/258 与其余锚不动)。出处随 baseline 锁步。
   ['src/activate/languageServices.ts', 227, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 300, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 399, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 146, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 944, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 948, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -445,8 +450,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-22(RUST-403):extension.ts 顶部 import +1(hotReloadFingerprintStats)
   // + activate 头段指纹统计台账 +4(注释 3 + const 1,均在锚点前)→ 叠加 QA-001a/b
   // → 498/610 → 503/615,真位重探;出处随 baseline 锁步(2026-baseline.md 同步)。
-  ['src/extension.ts', 503, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 615, 'flushQueued()'],
+  ['src/extension.ts', 502, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 614, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
