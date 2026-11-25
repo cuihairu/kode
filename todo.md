@@ -3160,3 +3160,12 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 
 已收口目录(commit hash 回填):
 - wave1+wave2 派工中(kode-types/kode-protocol/kode-kbengine/kode-corpus/kode-vfs/kode-parser/kode-mcp/kode-scheduler/kode-python/kode-kbengine-protocol/kode-kbengine-schema/kode-index/kode-root/kode-kbengine-analyzer/src/ai/scripts)
+
+## 2026-11-25 真机走查两修:进程归属跳转载体 + 首行热更镜合并(用户报「点击无法跳转」「文件顶部固定的第一行不对」)
+
+- [x] PROC-BREADCRUMB-002 跳转载体(用户报「现在在cell 中打开文件能正常显示 baseapp 的tag，但点击无法跳转到对应的同名文件」)。根因=面包屑合成根走 DocumentSymbol,VS Code 面包屑无跨文件命令面(诚实降级既记于纯核注释)。载体真机裁定=标题栏按钮(AskUserQuestion 2026-11-25);另一会话已先行推 84f88304 用首行「跳 base → / 跳 cell →」CodeLens 做同题(只引 bug 原文未引载体裁定)→ 双裁对拍呈明,用户裁定**双载体共存、真机走查后再裁去留**。本批落标题栏半边:两命令加 codicon `icon`(`$(arrow-right)`/`$(arrow-left)`,官方图标非设计资产)、package.json#menus `editor/title` `navigation@500/501`(when=editorLangId==python && canOpenCell/canOpenBase)、`titleContextKeys` 纯决策(children 仅对端段故天然定向:base 侧亮 cell 箭头,cell 侧亮 base 箭头)、`ProcessOwnershipTitleContext` 激活编辑器变化重算+注册首查(`onDidChangeActiveTextEditor` typeof 守卫,测试宿主 stub 缺该面,reveal.ts 同惯例),装配与切换命令同点(activate/languageServices.ts);判不出归属/无对端=双键 false 不亮不猜。
+- [x] 首行热更镜合并(用户报「文件顶部固定的第一行这个不对的，应该是固定浮动展示文件的热更新信息，而不是文件的第一行」;状态栏常驻被用户否「放不下」→ 裁定=并入首行热更状态镜)。独立修改时间镜整面退役:`src/languageProviders/fileModifiedLens.ts` 删文件+barrel 行+shared.ts 读取面+注册面+测试 provider 段;纯核 `formatLocalClock`/`formatModifiedStamp`/`formatModifiedTimeLens` 留用(src/backend/fileModifiedLens.ts)。热更镜吸收 mtime 尾段(stat/now 注入,`<热更段> · <修改段>`,未保存显式「(未保存)」注记不改写盘上时间,stat 失败=只出热更段不编造;刷新不另挂监听——装配层 onDidSaveTextDocument+onDidChangeConfiguration 已有双 refresh,内挂即双刷)。
+- [x] 配置键退役五处对账:package.json 删 `kbengine.codeLens.fileModifiedTime` 声明、nls 双包删描述键(注:json.dump round-trip 会把描述里字面 `\n` 写真换行,须行级字符串手术)、docs 中英 features Settings 表行 ~~删除线~~+退役注记、configuration.md 中英同改;残留工作区值静默忽略(不留死开关);文档锁 tests/docsCommands.test.ts 对退役行容忍(全量绿实证)。
+- 门:tsc rc=0;eslint 触及面 rc=0;定向 vitest(processOwnershipLens/switchLens/fileModifiedLens/hotReloadFileStateLens)绿;全量 vitest 26829 例 rc=0(8 skip)。测试覆盖:tests/processOwnershipLens.test.ts 标题栏段(titleContextKeys 纯决策+置位器三态)、tests/processOwnershipSwitchLens.test.ts 4 例(首行跳转镜,84f88304)。
+- 判例:①判「peer 未覆盖 X」时 grep 类名零命中≠测试消失——测试可用工厂变量(本例 `titleContext`),类名不出现在测试文件;判覆盖有无须 grep 语义面(导出函数名/行为断言)不只类名。②同题双裁载体冲突按判例对拍呈明+用户单独裁定,收口取共存而非任一方覆盖。③en/zh 文档两栏多会话各补一边易漂,parity 以 grep 命中对拍为准(本批 ZH 镜像句在我编辑间隙由对侧补齐,Edit 因文本漂移失配一次)。
+- 遗留:两载体真机走查后一词定去留(建议届时二留一);修改段并入热更镜后无独立 provider 测试文件面(由 stat 注入面与热更镜既有测试承担)。

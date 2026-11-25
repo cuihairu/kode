@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import { formatLocalClock, formatModifiedStamp, formatModifiedTimeLens } from '../src/backend/fileModifiedLens';
 import {
-  FileModifiedTimeCodeLensProvider,
   KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND,
   KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND,
   registerProcessOwnershipSwitchCommands
@@ -13,32 +12,20 @@ import {
 import {
   commandRegistry,
   commands,
-  configurationOverrides,
-  memoryFileSystem,
-  makeTextDocument,
   messages,
   window as stubWindow,
-  windowState,
-  workspaceEvents
+  windowState
 } from './helpers/vscodeStub';
 
 // FILE-TIME-001(用户令 2026-11-17):「在文件顶部显示修改的时间」+
-// base↔cell 同名文件快捷键切换。纯核半边=盘上 mtime 格式化(mtime 是盘上
-// 事实,缓冲区未落盘只注记不重排);provider 半边=独立开关闸/stat 注入/
-// 保存即刷新;命令半边=复用 buildProcessOwnershipSpec 同一条判定链。
-
-interface CodeLensLike {
-  range: { start: { line: number; character: number } };
-  command?: { title: string; command?: string; tooltip?: string };
-}
+// base↔cell 同名文件快捷键切换。2026-11-25 修改时间镜并入热更状态镜
+// (用户裁定首行一条完整热更信息):独立 provider 退役,本文件留纯核
+// 格式化半边 + 切换命令半边;mtime 呈现面用例在 hotReloadFileStateLens。
 
 // 固定钟:今天=2026-11-17 10:20:30 本地时间,格式断言不随真时钟漂移。
 const NOW = new Date(2026, 10, 17, 10, 20, 30).getTime();
 const TODAY_90501 = new Date(2026, 10, 17, 9, 5, 1).getTime();
 const YESTERDAY_235959 = new Date(2026, 10, 16, 23, 59, 59).getTime();
-
-const pythonDoc = (fileName: string): ReturnType<typeof makeTextDocument> =>
-  makeTextDocument('class Hero:\n    pass\n', { fileName, languageId: 'python' });
 
 describe('formatModifiedTimeLens(纯核:mtime → 镜文字)', () => {
   it('同日只出钟点,零填充', () => {
@@ -57,125 +44,6 @@ describe('formatModifiedTimeLens(纯核:mtime → 镜文字)', () => {
   it('盘上时间原样出镜;缓冲区未保存只追加注记,不改写时间', () => {
     expect(formatModifiedTimeLens(TODAY_90501, false, NOW)).toBe('$(clock) 修改 09:05:01');
     expect(formatModifiedTimeLens(TODAY_90501, true, NOW)).toBe('$(clock) 修改 09:05:01(未保存)');
-  });
-});
-
-describe('FileModifiedTimeCodeLensProvider', () => {
-  afterEach(() => {
-    configurationOverrides.delete('kbengine');
-  });
-
-  it('stat 注入:line 0 单镜,tooltip 指向热更状态点(热更时间不重复出镜)', async () => {
-    const provider = new FileModifiedTimeCodeLensProvider({
-      stat: async () => ({ mtimeMs: TODAY_90501 }),
-      now: () => NOW
-    });
-    const lenses = (await provider.provideCodeLenses(
-      pythonDoc('/ws/scripts/base/Hero.py') as unknown as vscode.TextDocument
-    )) as unknown as CodeLensLike[];
-    expect(lenses).toHaveLength(1);
-    expect(lenses[0].range.start.line).toBe(0);
-    expect(lenses[0].command?.title).toBe('$(clock) 修改 09:05:01');
-    expect(lenses[0].command?.tooltip).toContain('热更状态点');
-    provider.dispose();
-  });
-
-  it('kbengine.codeLens.fileModifiedTime 关闭整类不出镜(批154 惯例:每类镜一枚开关)', async () => {
-    const provider = new FileModifiedTimeCodeLensProvider({
-      stat: async () => ({ mtimeMs: TODAY_90501 }),
-      now: () => NOW
-    });
-    const document = pythonDoc('/ws/scripts/base/Hero.py') as unknown as vscode.TextDocument;
-    expect(await provider.provideCodeLenses(document)).toHaveLength(1);
-    configurationOverrides.set('kbengine', { 'codeLens.fileModifiedTime': false });
-    try {
-      expect(await provider.provideCodeLenses(document)).toEqual([]);
-    } finally {
-      configurationOverrides.delete('kbengine');
-    }
-    provider.dispose();
-  });
-
-  it('stat 失败(删除/不可及)不出镜,不编造时间', async () => {
-    const provider = new FileModifiedTimeCodeLensProvider({
-      stat: async () => {
-        throw new Error('ENOENT');
-      },
-      now: () => NOW
-    });
-    const lenses = await provider.provideCodeLenses(
-      pythonDoc('/ws/scripts/base/Gone.py') as unknown as vscode.TextDocument
-    );
-    expect(lenses).toEqual([]);
-    provider.dispose();
-  });
-
-  it('defaultStat 缺省链:stat 命中但无 mtime 字段 → 镜文 null 不出镜', async () => {
-    // 不注入 stat:defaultStat 走 fake workspace.fs.stat(返回 {type,size},
-    // 无 mtime 字段)→ mtimeMs undefined → 镜文 null → 不出镜不编造时间。
-    memoryFileSystem.set('/ws/scripts/base/Hero.py', 'class Hero:\n');
-    const provider = new FileModifiedTimeCodeLensProvider({ now: () => NOW });
-    const lenses = await provider.provideCodeLenses(
-      pythonDoc('/ws/scripts/base/Hero.py') as unknown as vscode.TextDocument
-    );
-    expect(lenses).toEqual([]);
-    provider.dispose();
-  });
-
-  it('fireConfigurationChanged:配置变更即发重询事件', () => {
-    const provider = new FileModifiedTimeCodeLensProvider({
-      stat: async () => ({ mtimeMs: TODAY_90501 }),
-      now: () => NOW
-    });
-    let fired = 0;
-    const subscription = provider.onDidChangeCodeLenses(() => {
-      fired += 1;
-    });
-    provider.fireConfigurationChanged();
-    expect(fired).toBe(1);
-    subscription.dispose();
-    provider.dispose();
-  });
-
-  it('取消令牌/已关文档:早退零查询零出镜', async () => {
-    const provider = new FileModifiedTimeCodeLensProvider({
-      stat: async () => ({ mtimeMs: TODAY_90501 }),
-      now: () => NOW
-    });
-    const document = pythonDoc('/ws/scripts/base/Hero.py') as unknown as vscode.TextDocument;
-    const cancelled = { isCancellationRequested: true } as never;
-    expect(await provider.provideCodeLenses(document, cancelled)).toEqual([]);
-    const closed = { uri: { fsPath: '/ws/scripts/base/Hero.py' }, isClosed: true } as never;
-    expect(await provider.provideCodeLenses(closed)).toEqual([]);
-    provider.dispose();
-  });
-
-  it('isDirty:镜文含「(未保存)」注记', async () => {
-    const provider = new FileModifiedTimeCodeLensProvider({
-      stat: async () => ({ mtimeMs: TODAY_90501 }),
-      now: () => NOW
-    });
-    const document = pythonDoc('/ws/scripts/base/Hero.py') as unknown as vscode.TextDocument;
-    (document as { isDirty?: boolean }).isDirty = true;
-    const lenses = (await provider.provideCodeLenses(document)) as unknown as CodeLensLike[];
-    expect(lenses[0].command?.title).toBe('$(clock) 修改 09:05:01(未保存)');
-    provider.dispose();
-  });
-
-  it('保存事件触发重询(盘上 mtime 只在落盘时变)', () => {
-    const provider = new FileModifiedTimeCodeLensProvider({
-      stat: async () => ({ mtimeMs: TODAY_90501 }),
-      now: () => NOW
-    });
-    let fired = 0;
-    const subscription = provider.onDidChangeCodeLenses(() => {
-      fired += 1;
-    });
-    workspaceEvents.documentSaved.fire({ fileName: '/ws/scripts/base/Hero.py' });
-    expect(fired).toBe(1);
-    subscription.dispose();
-    provider.dispose();
-    expect(fired).toBe(1); // dispose 后不再收事件
   });
 });
 

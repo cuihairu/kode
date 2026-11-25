@@ -49,6 +49,7 @@ import {
   ProcessBreadcrumbPythonSymbolProvider,
   ProcessOwnershipSwitchCodeLensProvider,
   registerProcessOwnershipSwitchCommands,
+  registerProcessOwnershipTitleContext,
   MroChainCodeLensProvider,
   PropertyCodeLensProvider,
   PythonCompletionProvider,
@@ -587,6 +588,9 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   // base↔cell 快捷键切换命令(FILE-TIME-001 批,用户令 2026-11-17):与
   // 面包屑同一条判定链,键位在 package.json keybindings(ctrl+alt+shift+b/c)
   registerProcessOwnershipSwitchCommands(context);
+  // 标题栏对端跳转按钮(PROC-BREADCRUMB-002 标题栏载体,用户裁定):置
+  // canOpenCell/canOpenBase 上下文键,editor/title 菜单 when 消费
+  registerProcessOwnershipTitleContext(context);
   // 面包屑对端跳转按钮(PROC-BREADCRUMB-002,用户令 2026-11-25「点击无法
   // 跳转到对应的同名文件」):DocumentSymbol 无 command 面,首行 CodeLens
   // 按钮执行已注册的 openCell/openBase;与热更状态镜同行平铺

@@ -1151,11 +1151,13 @@
       },
       {
         "command": "kbengine.processOwnership.openCell",
-        "title": "%kbengine.command.processOwnership.openCell.title%"
+        "title": "%kbengine.command.processOwnership.openCell.title%",
+        "icon": "$(arrow-right)"
       },
       {
         "command": "kbengine.processOwnership.openBase",
-        "title": "%kbengine.command.processOwnership.openBase.title%"
+        "title": "%kbengine.command.processOwnership.openBase.title%",
+        "icon": "$(arrow-left)"
       },
       {
         "command": "kbengine.hotReload.configureChannel",
@@ -1341,6 +1343,16 @@
           "command": "kbengine.quickActions.show",
           "when": "editorLangId == python || editorLangId == xml",
           "group": "navigation"
+        },
+        {
+          "command": "kbengine.processOwnership.openCell",
+          "when": "editorLangId == python && kbengine.processOwnership.canOpenCell",
+          "group": "navigation@500"
+        },
+        {
+          "command": "kbengine.processOwnership.openBase",
+          "when": "editorLangId == python && kbengine.processOwnership.canOpenBase",
+          "group": "navigation@501"
         },
         {
           "command": "kbengine.workbench.show",
@@ -1826,11 +1838,6 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.codeLens.eventCallbacks.description%"
-          },
-          "kbengine.codeLens.fileModifiedTime": {
-            "type": "boolean",
-            "default": true,
-            "markdownDescription": "%kbengine.config.codeLens.fileModifiedTime.description%"
           },
           "kbengine.codeLens.mroChain": {
             "type": "boolean",

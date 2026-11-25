@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildDefProcessBreadcrumb,
   buildProcessOwnershipSpec,
@@ -6,8 +6,14 @@ import {
   processFromDefSections,
   resolveScriptRole
 } from '../src/backend/processOwnershipLens';
-import { ProcessBreadcrumbPythonSymbolProvider } from '../src/languageProviders';
-import { makeTextDocument, SymbolKind } from './helpers/vscodeStub';
+import {
+  KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE,
+  KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_CELL,
+  ProcessBreadcrumbPythonSymbolProvider,
+  ProcessOwnershipTitleContext,
+  titleContextKeys
+} from '../src/languageProviders';
+import { makeTextDocument, SymbolKind, window as stubWindow } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // PROC-TAG-001(用户令 2026-11-13)→ PROC-BREADCRUMB-001 改面(2026-11-18):
@@ -208,5 +214,85 @@ describe('ProcessBreadcrumbPythonSymbolProvider(python 面符号输出)', () => 
     const provider = new ProcessBreadcrumbPythonSymbolProvider({ fileExists: () => true });
     expect(provider.provideDocumentSymbols(pyDoc('/ws/scripts/common/util.py') as never, undefined)).toBeNull();
     expect(provider.provideDocumentSymbols(pyDoc('/ws/lib/Hero.py') as never, undefined)).toBeNull();
+  });
+});
+
+describe('标题栏对端跳转载体(PROC-BREADCRUMB-002,2026-11-25 用户裁定)', () => {
+  // 双载体共存(行首跳转镜 + 标题栏按钮),真机走查后再裁去留;本面只测
+  // 上下文键纯决策与置位路径,注入 fileExists/setContext 零 IO。
+  let recorded: Record<string, boolean>;
+  let titleContext: ProcessOwnershipTitleContext;
+
+  const setActiveEditor = (fileName: string): void => {
+    (stubWindow as { activeTextEditor?: unknown }).activeTextEditor = {
+      document: { fileName }
+    };
+  };
+
+  const makeTitleContext = (fileExists: (path: string) => boolean): void => {
+    titleContext = new ProcessOwnershipTitleContext({
+      fileExists,
+      setContext: (key, value) => {
+        recorded[key] = value;
+      }
+    });
+  };
+
+  beforeEach(() => {
+    recorded = {};
+  });
+
+  afterEach(() => {
+    delete (stubWindow as { activeTextEditor?: unknown }).activeTextEditor;
+    titleContext?.dispose();
+  });
+
+  it('titleContextKeys 纯决策:对端存在且方向可跳才亮该向按钮', () => {
+    expect(titleContextKeys(buildPythonProcessBreadcrumb('/ws/scripts/cell/Hero.py', () => true))).toEqual({
+      canOpenCell: false,
+      canOpenBase: true
+    });
+    expect(titleContextKeys(buildPythonProcessBreadcrumb('/ws/scripts/base/Hero.py', () => true))).toEqual({
+      canOpenCell: true,
+      canOpenBase: false
+    });
+  });
+
+  it('spec 判不出 → 双键 false,按钮不亮不猜', () => {
+    expect(titleContextKeys(null)).toEqual({ canOpenCell: false, canOpenBase: false });
+  });
+
+  it('cell 侧激活 → canOpenBase 亮 / canOpenCell 灭', () => {
+    makeTitleContext(path => path.endsWith('base/Hero.py'));
+    setActiveEditor('/ws/scripts/cell/Hero.py');
+    titleContext.update();
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE]).toBe(true);
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_CELL]).toBe(false);
+  });
+
+  it('base 侧激活 → 反向(canOpenCell 亮)', () => {
+    makeTitleContext(path => path.endsWith('cell/Hero.py'));
+    setActiveEditor('/ws/scripts/base/Hero.py');
+    titleContext.update();
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_CELL]).toBe(true);
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE]).toBe(false);
+  });
+
+  it('无对端同名文件 → 双键 false', () => {
+    makeTitleContext(() => false);
+    setActiveEditor('/ws/scripts/cell/Hero.py');
+    titleContext.update();
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_CELL]).toBe(false);
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE]).toBe(false);
+  });
+
+  it('判不出归属(scripts 根级)/无活动编辑器 → 双键 false', () => {
+    makeTitleContext(() => true);
+    setActiveEditor('/ws/scripts/Loose.py');
+    titleContext.update();
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_CELL]).toBe(false);
+    delete (stubWindow as { activeTextEditor?: unknown }).activeTextEditor;
+    titleContext.update();
+    expect(recorded[KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE]).toBe(false);
   });
 });

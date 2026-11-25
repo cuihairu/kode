@@ -44,9 +44,6 @@ export function getLanguageFeatureConfig() {
     // 独立开关(关访问镜不关装载语义提示)
     codeLensPropertyInitOrder: config.get<boolean>('codeLens.propertyInitOrder', true),
     codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true),
-    // FILE-TIME-001:文件顶部修改时间镜一枚独立开关(热更时间半边归
-    // IDE-HOT-100 状态点,不重复出镜)
-    codeLensFileModifiedTime: config.get<boolean>('codeLens.fileModifiedTime', true),
     // KODE-CFG-015:引擎 SPI 函数标注镜(方法名匹配 KODE-CFG-012 的 36 方法
     // 表,组件角色由配置派生定),独立开关,默认开
     codeLensEngineSpi: config.get<boolean>('codeLens.engineSpi', true),

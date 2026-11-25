@@ -161,7 +161,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.codeLens.propertyInitOrder` | boolean | `true` | 实体类 `__init__` 声明处标「属性先于 __init__ 装载 · 来自 <实体>.def」(IDE-PROP-001;引擎在 __init__ 前装载 Entity.def 属性,脚本未必有同名赋值;点击回 def) |
 | `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
 | `kbengine.codeLens.engineSpi` | boolean | `true` | 引擎经 `getEntryScript()` 以 SPI 模式调用的入口模块级函数标引擎 SPI 镜(KODE-CFG-012 36 方法表,标题带触发时机;组件角色由配置派生定,普通函数与表外方法不出镜) |
-| `kbengine.codeLens.fileModifiedTime` | boolean | `true` | Python 脚本顶部文件修改时间 CodeLens(FILE-TIME-001:盘上 mtime 一次 stat 渲染为 `$(clock) 修改 <时间>`,保存即刷新;缓冲区未落盘只加注记不改写盘上时间;热更投递时间仍在热更状态点) |
+| ~~`kbengine.codeLens.fileModifiedTime`~~ | boolean | 2026-11-25 退役 | 已退役:独立文件修改时间镜并入热更状态镜(mtime 段现挂首行状态点尾部);键不再出现在设置面板(残留工作区值被静默忽略) |
 | `kbengine.codeLens.mroChain` | boolean | `true` | mixin 链执行序镜：Python 方法 `def` 声明行显示「链 N: A → B → C」——所在类与各组合根 MRO 上定义了该方法的全部类按序排列，即 `for cls in type(self).__mro__` 遍历与 `super()` 接力在运行时的真实执行顺序（C3 完全由基类声明序决定，静态可推导；≥2 定义者才出镜，单定义者无顺序可言；点击按执行位次列出全部链落点，含多根视角）
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |

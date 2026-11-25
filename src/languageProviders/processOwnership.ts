@@ -6,7 +6,11 @@
 // processOwnership 设置项连同声明一并删除,不留死开关)。
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { buildPythonProcessBreadcrumb } from '../backend/processOwnershipLens';
+import {
+  buildPythonProcessBreadcrumb,
+  type ProcessBreadcrumbSpec,
+  type ProcessName
+} from '../backend/processOwnershipLens';
 
 /**
  * python 面包屑合成根(第二刀):scripts/<role>/ 目录布局命中才返回节点
@@ -39,14 +43,14 @@ export class ProcessBreadcrumbPythonSymbolProvider implements vscode.DocumentSym
     );
     const root = new vscode.DocumentSymbol(
       spec.name,
-      `当前进程:${spec.processes[0]}(scripts/<role> 目录判定);其余=同名对端文件,行首「跳 base/cell →」按钮或 ctrl+alt+shift+b/c 切换。`,
+      `当前进程:${spec.processes[0]}(scripts/<role> 目录判定);其余=同名对端文件,行首「跳 base/cell →」/右上角箭头按钮或 ctrl+alt+shift+b/c 切换。`,
       vscode.SymbolKind.Namespace,
       fullDocument,
       fileHead
     );
     root.children = spec.children.map(child => new vscode.DocumentSymbol(
       child.process,
-      `对端同名文件:${child.siblingPath ?? ''};行首「跳 base/cell →」按钮或 ctrl+alt+shift+b/c 切换`,
+      `对端同名文件:${child.siblingPath ?? ''};行首「跳 base/cell →」/右上角箭头按钮或 ctrl+alt+shift+b/c 切换`,
       vscode.SymbolKind.Event,
       fullDocument,
       fileHead
@@ -128,4 +132,71 @@ export function registerProcessOwnershipSwitchCommands(context: vscode.Extension
     vscode.commands.registerCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND, openSibling('cellapp')),
     vscode.commands.registerCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND, openSibling('baseapp'))
   );
+}
+
+/**
+ * 标题栏对端跳转按钮上下文键(PROC-BREADCRUMB-002 标题栏载体,2026-11-25
+ * 用户裁定载体=编辑器标题栏按钮;与行首跳转镜双载体共存,真机走查后再裁
+ * 去留):激活编辑器变化时经纯核判「对端同名文件存在且方向可跳」,置
+ * canOpenCell/canOpenBase 两枚上下文键(package.json editor/title 菜单
+ * when 消费,group=navigation 图标化)。判不出归属/无对端=双键 false,
+ * 按钮不亮不猜。事件面用 typeof 守卫(测试宿主 stub 缺
+ * onDidChangeActiveTextEditor,与 reveal.ts 同惯例)。
+ */
+export const KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_CELL = 'kbengine.processOwnership.canOpenCell';
+export const KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE = 'kbengine.processOwnership.canOpenBase';
+
+/** 双键纯决策(测试直测;spec 判不出=null → 双 false) */
+export function titleContextKeys(
+  spec: ProcessBreadcrumbSpec | null
+): { canOpenCell: boolean; canOpenBase: boolean } {
+  const canOpen = (process: ProcessName): boolean =>
+    spec?.children.some(child => child.process === process && child.siblingPath !== null) ?? false;
+  return { canOpenCell: canOpen('cellapp'), canOpenBase: canOpen('baseapp') };
+}
+
+export class ProcessOwnershipTitleContext {
+  private readonly fileExists: (path: string) => boolean;
+  private readonly setContext: (key: string, value: boolean) => void;
+  private readonly unsubscribe: () => void;
+
+  constructor(deps: {
+    fileExists?: (path: string) => boolean;
+    setContext?: (key: string, value: boolean) => void;
+  } = {}) {
+    this.fileExists = deps.fileExists ?? ((path: string) => fs.existsSync(path));
+    this.setContext =
+      deps.setContext ??
+      ((key, value) => {
+        void vscode.commands.executeCommand('setContext', key, value);
+      });
+    if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
+      const subscription = vscode.window.onDidChangeActiveTextEditor(() => this.update());
+      this.unsubscribe = () => subscription.dispose();
+    } else {
+      this.unsubscribe = () => {};
+    }
+  }
+
+  /** 重算双键并置位(激活编辑器变化与注册首查同一路径) */
+  update(): void {
+    const editor = vscode.window.activeTextEditor;
+    const spec = editor
+      ? buildPythonProcessBreadcrumb(editor.document.fileName, this.fileExists)
+      : null;
+    const keys = titleContextKeys(spec);
+    this.setContext(KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_CELL, keys.canOpenCell);
+    this.setContext(KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE, keys.canOpenBase);
+  }
+
+  dispose(): void {
+    this.unsubscribe();
+  }
+}
+
+/** 标题栏载体装配(与切换命令同批注册;subscriptions 统一交 context) */
+export function registerProcessOwnershipTitleContext(context: vscode.ExtensionContext): void {
+  const titleContext = new ProcessOwnershipTitleContext();
+  titleContext.update();
+  context.subscriptions.push(titleContext);
 }
