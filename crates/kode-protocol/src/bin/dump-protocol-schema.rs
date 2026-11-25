@@ -1,25 +1,28 @@
-//! RUST-055:协议 schema 单一真源导出器。
+//! RUST-055: single-source-of-truth exporter for the protocol schema.
 //!
-//! 把 kode-protocol 全部 wire DTO 聚合成一份 JSON Schema(根对象字段即
-//! 类型清单,`$defs` 收全部子类型),stdout 输出;入库为
-//! `crates/kode-protocol/protocol.schema.json`,TS 侧类型由该文件生成
-//! (`pnpm gen:protocol`)。三锁链:
-//! Rust 类型 →(本 bin)→ schema 文件 →(json-schema-to-typescript)→ TS 类型,
-//! tests/protocolSchema.test.ts 逐级字节对账,任一侧漂移即红。
+//! Aggregates every kode-protocol wire DTO into one JSON Schema (the root object's fields are the
+//! type inventory, `$defs` collects all sub-types), printed to stdout; checked in as
+//! `crates/kode-protocol/protocol.schema.json`, from which the TS types are generated
+//! (`pnpm gen:protocol`). Three-lock chain:
+//! Rust types -> (this bin) -> schema file -> (json-schema-to-typescript) -> TS types,
+//! with tests/protocolSchema.test.ts doing byte-level parity at each hop; any drift on either side
+//! goes red.
 //!
-//! 刻意不进 schema 的面:FrameDecoder/FrameOutcome(编解码内部态,非 wire
-//! 形状);`$/kode/*` 32 方法 handler 类型(.kode-server 模块内,行为面由
-//! protocolContract.test.ts SURFACE_PINS 钉真二进制观测)。
+//! Faces deliberately kept out of the schema: the `Content-Length` frame codec (delegated to the
+//! `lsp-server` crate, held by kode-server, so there is no in-repo codec type to describe here); the
+//! `$/kode/*` 32-method handler types (inside the .kode-server module; the behavioural face is
+//! pinned by protocolContract.test.ts SURFACE_PINS against real binary observation).
 
 use kode_protocol::*;
 use schemars::JsonSchema;
 
-// 聚合根:让 schema_for! 把全部 wire DTO 收进同一份 schema 的 `definitions`。
-// 字段名即类型清单(小写蛇形,生成 TS 根接口的属性名);只被 derive 消费
-// 不被运行时读取,dead_code 是本 bin 的形态而非遗漏。
-// (用 // 而非 ///:机制说明不进 schema description。)
+// Aggregation root: lets schema_for! collect every wire DTO into the `definitions` of one schema.
+// The field names are the type inventory (lower_snake_case, becoming the generated TS root
+// interface's property names); consumed only by the derive, never read at runtime, so dead_code is
+// this bin's shape rather than an omission.
+// (// instead of ///: mechanism notes that must not end up in the schema description.)
 #[allow(dead_code)]
-/// kode2 协议 wire DTO 全集(RUST-055 单一真源)。
+/// The full set of kode2 protocol wire DTOs (RUST-055 single source of truth).
 #[derive(JsonSchema)]
 struct ProtocolSchemaRoot {
     request: Request,
@@ -72,8 +75,8 @@ struct ProtocolSchemaRoot {
 fn main() {
     let mut schema =
         serde_json::to_value(schemars::schema_for!(ProtocolSchemaRoot)).expect("schema 可导出");
-    // 版本元数据:与 PROTOCOL_VERSION 常量同源写入,TS 门对账三方一致
-    // (Rust 常量 / TS KODE_PROTOCOL_VERSION / schema 头)。
+    // Version metadata: written from the same source as the PROTOCOL_VERSION constant; the TS gate
+    // checks all three agree (Rust constant / TS KODE_PROTOCOL_VERSION / schema header).
     schema["title"] = "KodeProtocol".into();
     schema["x-kode-protocol-version"] = PROTOCOL_VERSION.into();
     println!(

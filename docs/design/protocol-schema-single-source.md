@@ -62,7 +62,9 @@ restored byte-identical afterwards.
   Rust doc comments flow into schema `description`s and on into the generated
   TS — the spec is self-documenting.
 - **Not in the schema**:
-  - `FrameDecoder` / `FrameOutcome` — codec internals, not wire shapes;
+  - frame framing itself — `Content-Length` header + JSON body encode/decode is
+    delegated to the `lsp-server` crate (held by `crates/kode-server`), not
+    reimplemented here; there is no in-repo codec type to describe;
   - the 32 `$/kode/*` request methods' handler types — they live in
     `crates/kode-server` modules and are covered by the **behavioral** gate
     (`protocolContract.test.ts` SURFACE_PINS: observed response shapes of the

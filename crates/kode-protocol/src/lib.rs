@@ -1,44 +1,38 @@
-//! kode-protocol — kode2 LSP 协议层(书 §3 crates/kode-protocol)。
+//! kode-protocol — kode2 LSP protocol layer (book §3, crates/kode-protocol).
 //!
-//! 范围(PR-003 最小集,书 §4):
-//! - CORE-001 stdio LSP framed JSON-RPC:`Content-Length` 帧编码/增量解码,
-//!   正确处理短读、分包、非法帧(报错后重同步,不吞后续帧)。
-//! - CORE-002 `initialize` 协商 DTO:capabilities / serverInfo。
-//! - CORE-003 request_id 贯穿:`RequestId` 贯穿请求/响应/取消/健康报告。
+//! Scope (PR-003 minimal set, book §4):
+//! - CORE-001 stdio LSP framed JSON-RPC DTOs (the message shapes). Frame encoding/decoding is
+//!   delegated to the `lsp-server` crate (held by kode-server): this crate carries only the
+//!   JSON-RPC data shapes, never hand-rolled byte framing.
+//! - CORE-002 `initialize` negotiation DTO: capabilities / serverInfo.
+//! - CORE-003 request_id threading: `RequestId` threads through request/response/cancel/health
+//!   report.
 //!
-//! 故意不做的:async IO、服务器状态机(在 kode-server)。本 crate 保持纯数据 +
-//! 纯编解码,可无 IO 单测。
+//! Deliberately out of scope: async IO and the server state machine (live in kode-server). This
+//! crate stays pure data + pure codec, unit-testable without IO.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// 协议/服务器版本;ADR-001 语义下两侧握手时交换,不匹配由 TS 侧提示(BUILD-015 后续 PR)。
+/// Protocol/server version; exchanged by both sides at handshake per ADR-001, mismatch surfaced by the TS side (BUILD-015 follow-up PR).
 pub const PROTOCOL_VERSION: &str = "0.2.0";
 
-/// LSP 标准帧头结束符。
-pub const HEADER_DELIMITER: &[u8] = b"\r\n\r\n";
-
-/// 帧头长度上限:超过仍无分隔符视为非法流,丢弃并重同步(防残留字节撑爆内存)。
-pub const MAX_HEADER_BYTES: usize = 64 * 1024;
-
-/// 单帧 body 上限:LSP 消息不该到 64MB;超过视为非法帧丢弃(CORE-012 的第一道闸)。
-pub const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
-
-/// JSON-RPC 2.0 / LSP 标准错误码(书 CORE-001/002 用到子集)。
+/// JSON-RPC 2.0 / LSP standard error codes (the subset used by book CORE-001/002).
 pub mod error_codes {
     pub const PARSE_ERROR: i64 = -32700;
     pub const INVALID_REQUEST: i64 = -32600;
     pub const METHOD_NOT_FOUND: i64 = -32601;
     pub const INVALID_PARAMS: i64 = -32602;
     pub const INTERNAL_ERROR: i64 = -32603;
-    /// 服务器未完成 initialize 时收到其他请求(LSP 规范)。
+    /// Request other than initialize received before the server finished initializing (LSP spec).
     pub const SERVER_NOT_INITIALIZED: i64 = -32002;
-    /// 请求被 $/cancelRequest 取消(LSP 规范)。
+    /// Request cancelled by $/cancelRequest (LSP spec).
     pub const REQUEST_CANCELLED: i64 = -32800;
 }
 
-/// JSON-RPC 请求/响应 id。CORE-003:request_id 贯穿扩展↔Core↔后台任务,
-/// 数字与字符串两种形态都要保真(禁止归一化成一种)。
+/// JSON-RPC request/response id. CORE-003: request_id threads through extension<->Core<->background
+/// tasks; both number and string forms must be preserved faithfully (normalizing to one form is
+/// forbidden).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RequestId {
@@ -55,7 +49,7 @@ impl std::fmt::Display for RequestId {
     }
 }
 
-/// 入站消息:请求(带 id)或通知(无 id)。untagged 按字段区分。
+/// Inbound message: request (with id) or notification (no id). Untagged, distinguished by fields.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum IncomingMessage {
@@ -63,7 +57,7 @@ pub enum IncomingMessage {
     Notification(Notification),
 }
 
-/// JSON-RPC 请求。
+/// JSON-RPC request.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Request {
     pub jsonrpc: String,
@@ -73,7 +67,7 @@ pub struct Request {
     pub params: Option<serde_json::Value>,
 }
 
-/// JSON-RPC 通知。
+/// JSON-RPC notification.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Notification {
     pub jsonrpc: String,
@@ -82,7 +76,7 @@ pub struct Notification {
     pub params: Option<serde_json::Value>,
 }
 
-/// JSON-RPC 响应。`id: None` 仅用于 id 不可知的解析错误(规范允许 null)。
+/// JSON-RPC response. `id: None` is only for parse errors where the id is unknowable (the spec allows null).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Response {
     pub jsonrpc: &'static str,
@@ -117,7 +111,7 @@ impl Response {
     }
 }
 
-/// JSON-RPC 错误对象。
+/// JSON-RPC error object.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ResponseError {
     pub code: i64,
@@ -126,7 +120,7 @@ pub struct ResponseError {
     pub data: Option<serde_json::Value>,
 }
 
-/// 出站通知(服务器 → 客户端)。
+/// Outbound notification (server -> client).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ServerNotification {
     pub jsonrpc: &'static str,
@@ -146,10 +140,10 @@ impl ServerNotification {
 }
 
 // ---------------------------------------------------------------------------
-// CORE-002 initialize 协商 DTO(最小集;capabilities 随后续 PR 逐项扩充)
+// CORE-002 initialize negotiation DTO (minimal set; capabilities grow item by item in follow-up PRs)
 // ---------------------------------------------------------------------------
 
-/// `initialize` 请求参数(只取本切片关心的字段,其余透传丢弃)。
+/// `initialize` request params (only the fields this slice cares about; the rest pass through and are dropped).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
@@ -157,18 +151,18 @@ pub struct InitializeParams {
     pub process_id: Option<u64>,
     #[serde(default)]
     pub root_uri: Option<String>,
-    /// LSP 多工作区文件夹(VFS-009/KBUG-ROOT):逐个注册为资源根,跨根同名
-    /// 实体隔离的归属依据;缺省只落 rootUri。
+    /// LSP multi-workspace folders (VFS-009/KBUG-ROOT): registered one by one as resource roots,
+    /// the basis for attributing same-named entities across roots; defaults to only rootUri.
     #[serde(default)]
     pub workspace_folders: Option<Vec<WorkspaceFolder>>,
     #[serde(default)]
     pub capabilities: Option<serde_json::Value>,
-    /// kode2 扩展位:restartGeneration 等客户端状态经此传入(CORE-015 对账)。
+    /// kode2 extension slot: client state such as restartGeneration is passed in here (CORE-015 parity comparison).
     #[serde(default)]
     pub initialization_options: Option<serde_json::Value>,
 }
 
-/// LSP 工作区文件夹(initialize.workspaceFolders 条目;uri 必需)。
+/// LSP workspace folder (an initialize.workspaceFolders entry; uri is required).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceFolder {
@@ -177,7 +171,7 @@ pub struct WorkspaceFolder {
     pub name: Option<String>,
 }
 
-/// `initialize` 响应。
+/// `initialize` response.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
@@ -185,50 +179,50 @@ pub struct InitializeResult {
     pub server_info: ServerInfo,
 }
 
-/// 服务器 capabilities(最小集:full 文本同步 + hover + completion)。
+/// Server capabilities (minimal set: full text sync + hover + completion).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
     pub text_document_sync: TextDocumentSyncOptions,
-    /// LSP-003 / PH1-03(PR-010):hover provider 能力声明。
+    /// LSP-003 / PH1-03 (PR-010): hover provider capability declaration.
     #[serde(default)]
     pub hover_provider: bool,
-    /// Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。
+    /// Phase2 first slice: textDocument/definition capability declaration (declaration landing site).
     #[serde(default)]
     pub definition_provider: bool,
-    /// RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。
+    /// RUST-139 batch 3: textDocument/documentSymbol capability declaration (def segment-symbol face).
     #[serde(default)]
     pub document_symbol_provider: bool,
-    /// RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。
+    /// RUST-138 batch 3: textDocument/references capability declaration (declaration + reference-site face).
     #[serde(default)]
     pub references_provider: bool,
-    /// RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。
+    /// RUST-141 batch 2: textDocument/rename+prepareRename capability declaration (def rename face).
     #[serde(default)]
     pub rename_provider: bool,
-    /// RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。
+    /// RUST-143 batch 3: textDocument/codeAction capability declaration (four-family assembly face).
     #[serde(default)]
     pub code_action_provider: bool,
-    /// RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。
+    /// RUST-140 batch 3: textDocument/signatureHelp capability declaration (def method signature face).
     #[serde(default)]
     pub signature_help_provider: bool,
-    /// RUST-139 批 4:workspace/symbol 能力声明(def 符号前缀检索面)。
+    /// RUST-139 batch 4: workspace/symbol capability declaration (def symbol prefix-search face).
     #[serde(default)]
     pub workspace_symbol_provider: bool,
-    /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
+    /// LSP-005 / PR-011: completion provider capability declaration (trigger character `<`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
 }
 
-/// 全量同步(openClose + change=1)。
+/// Full sync (openClose + change=1).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TextDocumentSyncOptions {
     pub open_close: bool,
-    /// 1 = Full:didChange 每次带全文(PH1 切片够用,增量同步在 VFS PR-004)。
+    /// 1 = Full: didChange always carries the full text (enough for the PH1 slice; incremental sync is VFS PR-004).
     pub change: u8,
 }
 
-/// serverInfo:TS 侧握手时校验名字/版本(BUILD-015 版本不匹配提示的输入)。
+/// serverInfo: the TS side validates name/version at handshake (input for the BUILD-015 version-mismatch notice).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerInfo {
@@ -269,14 +263,14 @@ pub struct VersionedTextDocumentIdentifier {
     pub version: i64,
 }
 
-/// LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
+/// LSP position (character counted in UTF-16 code units; semantics per kode-vfs VFS-004).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Position {
     pub line: u32,
     pub character: u32,
 }
 
-/// LSP 区间。
+/// LSP range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Range {
     pub start: Position,
@@ -286,8 +280,8 @@ pub struct Range {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentChangeEvent {
-    /// Full sync(change=1)下恒为 None;增量同步(change=2)带 range,
-    /// 由 kode-vfs 做精确坐标转换(VFS-004)。
+    /// Always None under full sync (change=1); incremental sync (change=2) carries a range,
+    /// with exact coordinate conversion done by kode-vfs (VFS-004).
     #[serde(default)]
     pub range: Option<Range>,
     pub text: String,
@@ -306,10 +300,10 @@ pub struct DidCloseTextDocumentIdentifier {
 }
 
 // ---------------------------------------------------------------------------
-// workspace/didRenameFiles / didDeleteFiles DTO(RUST-131-W 生产文件事件)
+// workspace/didRenameFiles / didDeleteFiles DTO (RUST-131-W production file events)
 // ---------------------------------------------------------------------------
 
-/// LSP `WorkspaceFileRename`:一条重命名事件(old → new)。
+/// LSP `WorkspaceFileRename`: one rename event (old -> new).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RenamedFile {
@@ -317,27 +311,27 @@ pub struct RenamedFile {
     pub new_uri: String,
 }
 
-/// LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。
+/// LSP `RenameFilesParams` (only files[].oldUri/newUri is consumed).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameFilesParams {
     pub files: Vec<RenamedFile>,
 }
 
-/// LSP `DeleteFilesParams` 条目(仅消费 files[].uri)。
+/// LSP `DeleteFilesParams` entry (only files[].uri is consumed).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeletedFile {
     pub uri: String,
 }
 
-/// LSP `DeleteFilesParams`。
+/// LSP `DeleteFilesParams`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteFilesParams {
     pub files: Vec<DeletedFile>,
 }
 
 // ---------------------------------------------------------------------------
-// textDocument/hover DTO(PR-010:HOVER-001 请求入口)
+// textDocument/hover DTO (PR-010: HOVER-001 request entry)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -346,7 +340,7 @@ pub struct TextDocumentIdentifier {
     pub uri: String,
 }
 
-/// hover 请求参数:文档身份 + UTF-16 位置(语义同 Position)。
+/// hover request params: document identity + UTF-16 position (same semantics as Position).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverParams {
@@ -355,11 +349,11 @@ pub struct HoverParams {
 }
 
 // ---------------------------------------------------------------------------
-// textDocument/completion DTO(PR-011:补全请求链路基础版)
+// textDocument/completion DTO (PR-011: baseline completion request path)
 // ---------------------------------------------------------------------------
 
-/// completion 请求参数:文档身份 + UTF-16 位置(触发上下文由服务端从
-/// 光标前文本推导,与 TS 行前缀判面同口径)。
+/// completion request params: document identity + UTF-16 position (the trigger context is derived
+/// server-side from the text before the cursor, same contract as the TS line-prefix face).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionParams {
@@ -367,20 +361,20 @@ pub struct CompletionParams {
     pub position: Position,
 }
 
-/// completion 能力声明(triggerCharacters 供客户端决定何时发请求)。
+/// completion capability declaration (triggerCharacters lets the client decide when to request).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionOptions {
     pub trigger_characters: Vec<String>,
-    /// RUST-135:completionItem/resolve 延迟补详情面(文档/来源按需补)。
+    /// RUST-135: completionItem/resolve lazy detail face (docs/source filled in on demand).
     pub resolve_provider: bool,
 }
 
 // ---------------------------------------------------------------------------
-// textDocument/definition DTO(Phase2 首片:定义落点请求链路)
+// textDocument/definition DTO (Phase2 first slice: declaration landing-site request path)
 // ---------------------------------------------------------------------------
 
-/// definition 请求参数:文档身份 + UTF-16 位置(与 hover 同一定位基建)。
+/// definition request params: document identity + UTF-16 position (same locating foundation as hover).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DefinitionParams {
@@ -388,7 +382,7 @@ pub struct DefinitionParams {
     pub position: Position,
 }
 
-/// definition 请求的文档身份(与 hover 同形,单独类型保 LSP 语义清晰)。
+/// Document identity for the definition request (same shape as hover; a separate type keeps LSP semantics clear).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentDiagnosticParams {
@@ -396,20 +390,21 @@ pub struct DocumentDiagnosticParams {
 }
 
 // ---------------------------------------------------------------------------
-// textDocument/documentSymbol DTO(RUST-139 批 3:Outline 段符号面下沉接线)
+// textDocument/documentSymbol DTO (RUST-139 batch 3: Outline segment-symbol face sunk into the wiring)
 // ---------------------------------------------------------------------------
 
-/// documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本
-/// 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。
+/// documentSymbol request params: document identity only (the Outline face is recomputed server-side
+/// from the synced document text; no position/context input; a separate type keeps LSP semantics
+/// clear).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentSymbolParams {
     pub text_document: TextDocumentIdentifier,
 }
 
-/// references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。
-/// `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP
-/// ReferenceContext 语义一致;客户端可只送文档与位置)。
+/// references request params: document identity + UTF-16 position + reference context (RUST-138 batch 3).
+/// `context`/`includeDeclaration` may both be omitted (omitted = no exact declaration, matching LSP
+/// ReferenceContext semantics; the client may send just the document and position).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReferenceParams {
@@ -419,8 +414,9 @@ pub struct ReferenceParams {
     pub context: ReferenceContext,
 }
 
-/// 引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字
-/// 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。
+/// Reference context: `includeDeclaration` decides whether the exact declaration (that symbol's name
+/// span inside the def) counts toward the result. The types.xml face has no declaration site at all,
+/// so this flag has no effect on that face.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReferenceContext {
@@ -428,8 +424,9 @@ pub struct ReferenceContext {
     pub include_declaration: bool,
 }
 
-/// prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置——
-/// 可重命名符号解析与候选名区间由服务端从已同步文档复算。
+/// prepareRename request params (RUST-141 batch 2): document identity + UTF-16 position --
+/// renamable-symbol resolution and the candidate-name range are recomputed server-side from the
+/// synced document.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PrepareRenameParams {
@@ -437,8 +434,9 @@ pub struct PrepareRenameParams {
     pub position: Position,
 }
 
-/// rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。
-/// def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。
+/// rename request params (RUST-141 batch 2): document identity + UTF-16 position + target name.
+/// The def-face edit and closure-conflict pre-check are recomputed server-side (the python self-access
+/// rewrite face is not part of this face).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameParams {
@@ -447,26 +445,29 @@ pub struct RenameParams {
     pub new_name: String,
 }
 
-/// codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成
-/// 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。
+/// codeAction diagnostic input face (RUST-143 batch 3): the TS side collapses vscode.Diagnostic into
+/// pure data (code/range/related location face); the assembly decision core filters by the code gate
+/// and range intersection.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CodeActionDiagnostic {
     pub code: String,
     pub range: Range,
-    /// relatedInformation[0].location.uri.fsPath(parity 族定位面;无则缺省)。
+    /// relatedInformation[0].location.uri.fsPath (parity-family location face; omitted when absent).
     #[serde(default)]
     pub related_file: Option<String>,
-    /// relatedInformation[0].message(目标类名;空串时服务端按 def 文件名兜底)。
+    /// relatedInformation[0].message (target class name; the server falls back to the def file name
+    /// when it is empty).
     #[serde(default)]
     pub related_message: Option<String>,
 }
 
-/// codeAction 请求参数(RUST-143 批 3):装配族分派 + 族输入(registered
-/// 近拼宇宙=TS getKnownTypeContext 装配;snapshotText=parity 族目标 python
-/// 快照,TS readSharedFileSnapshot 打开缓冲区优先)+ 诊断面数组。四族
-/// (typeReplacement/parityMethod/receiverNone/fixedDict)各自装配,产出
-/// ActionFace 描述符数组(vscode 对象构造与 l10n 标题归 TS 薄壳)。
+/// codeAction request params (RUST-143 batch 3): assembly-family dispatch + family inputs
+/// (registered = the near-miss universe from TS getKnownTypeContext assembly; snapshotText = the
+/// parity-family target python snapshot, TS readSharedFileSnapshot preferring the open buffer) + the
+/// diagnostic face array. The four families (typeReplacement/parityMethod/receiverNone/fixedDict) are
+/// assembled independently, producing an ActionFace descriptor array (vscode object construction and
+/// l10n titles stay with the TS thin shell).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CodeActionParams {
@@ -481,10 +482,11 @@ pub struct CodeActionParams {
     pub diagnostics: Vec<CodeActionDiagnostic>,
 }
 
-/// signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自
-/// 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构)
-/// → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册
-/// 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。
+/// signatureHelp request params (RUST-140 batch 3): python document + cursor. Starting from the
+/// inline text, the server runs call-site lexing (python_call_at, isomorphic to TS
+/// getPythonCallAtPosition) -> the inheritance-chain closure signature decision (signature_help) in
+/// this domain, with zero TS decision input throughout; the runtime entity registry chain
+/// (EntityMappingManager) does not cross this face -- signatures come from the corpus def view.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SignatureHelpParams {
@@ -492,9 +494,10 @@ pub struct SignatureHelpParams {
     pub position: Position,
 }
 
-/// `workspace/symbol` 参数(RUST-139 批 4):Ctrl+T 快速搜索的前缀查询串。
-/// LSP `limit` 可选参数不入 Rust 面——结果集由决策核全量产出后由 TS 侧
-/// 薄壳截断(vscode 请求侧行为,服务端不猜分页口径)。
+/// `workspace/symbol` params (RUST-139 batch 4): the prefix query string for Ctrl+T quick search.
+/// The LSP optional `limit` param does not enter the Rust face -- the decision core produces the full
+/// result set, which the TS thin shell then truncates (that is vscode request-side behaviour; the
+/// server does not guess the paging contract).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSymbolParams {
@@ -502,11 +505,11 @@ pub struct WorkspaceSymbolParams {
 }
 
 // ---------------------------------------------------------------------------
-// CORE-016 健康探针 DTO
+// CORE-016 health probe DTO
 // ---------------------------------------------------------------------------
 
-/// `$/kode/health` 响应:启动探针/健康状态/可观察恢复原因(CORE-016)。
-/// `restart_generation` 由 TS 侧传入增长,崩溃重启后客户端可对账。
+/// `$/kode/health` response: startup probe / health status / observable recovery reason (CORE-016).
+/// `restart_generation` grows on the TS side so the client can reconcile after a crash restart.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthReport {
@@ -518,12 +521,13 @@ pub struct HealthReport {
     pub shutdown_requested: bool,
     pub restart_generation: u64,
     pub documents: Vec<DocumentSummary>,
-    /// RUST-026 Core 进程资源观测;非 Linux 或 /proc 解析失败 = None 诚实降级
+    /// RUST-026 Core process resource observation; non-Linux or /proc parse failure = None (honest
+    /// degradation)
     #[serde(default)]
     pub resources: Option<CoreResources>,
 }
 
-/// Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。
+/// Core process resource snapshot (RUST-026): RSS / thread count / cumulative disk IO.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreResources {
@@ -531,12 +535,12 @@ pub struct CoreResources {
     pub threads: u32,
     pub disk_read_bytes: u64,
     pub disk_write_bytes: u64,
-    /// 进程累计 CPU 时间 ms(utime+stime,CLK_TCK=100 Linux 标准假设);
-    /// 调用方两次采样差分得速率
+    /// Cumulative process CPU time in ms (utime+stime, assuming the Linux-standard CLK_TCK=100);
+    /// the caller diffs two samples to get a rate
     pub cpu_time_ms: u64,
 }
 
-/// 打开文档摘要(只含 uri+version,不带正文)。
+/// Open-document summary (uri + version only, no text body).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentSummary {
@@ -545,197 +549,43 @@ pub struct DocumentSummary {
 }
 
 // ---------------------------------------------------------------------------
-// CORE-001 帧编解码
+// `$/kode/fileChanged` notification (hot-reload bypass face §11.3): non-py file changes forwarded to rust on demand
 // ---------------------------------------------------------------------------
 
-/// 解码产出的单条结果:要么一条消息,要么一个帧级错误(非法头/非法 body)。
-#[derive(Debug, Clone)]
-pub enum FrameOutcome {
-    Message(serde_json::Value),
-    /// 非法帧头(缺 Content-Length/数值非法/超限)。
-    InvalidHeader(String),
-    /// 帧头合法但 body 不是合法 JSON → 上层回 PARSE_ERROR。
-    InvalidBody,
-}
-
-/// 增量帧解码器:喂任意大小的字节块,吐出完整帧。
-/// 处理:短读(帧未到齐先缓存)、分包(一次 chunk 多帧/一帧跨多 chunk)、
-/// 非法帧(报 `InvalidHeader` 后向前重同步到下一帧候选头,不丢合法后续帧)。
-#[derive(Debug, Default)]
-pub struct FrameDecoder {
-    buf: Vec<u8>,
-    /// 重同步模式:帧头非法后为真,跳垃圾字节直到下一个帧候选头。
-    resync: bool,
-}
-
-impl FrameDecoder {
-    pub fn new() -> Self {
-        FrameDecoder {
-            buf: Vec::new(),
-            resync: false,
-        }
-    }
-
-    /// 当前缓冲内积压字节数(测试/诊断用)。
-    pub fn buffered_len(&self) -> usize {
-        self.buf.len()
-    }
-
-    /// 喂入一个字节块,返回本轮解出的全部帧结果。
-    pub fn push(&mut self, chunk: &[u8]) -> Vec<FrameOutcome> {
-        self.buf.extend_from_slice(chunk);
-        let mut out = Vec::new();
-        while let Some(outcome) = self.try_next_frame() {
-            out.push(outcome);
-        }
-        self.compact();
-        out
-    }
-
-    /// 尝试解出一个帧;解不出(数据不足)返回 None。
-    fn try_next_frame(&mut self) -> Option<FrameOutcome> {
-        // 重同步模式:上一次帧头非法,跳过垃圾字节直到下一个 Content-Length: 候选。
-        if self.resync {
-            match find_subslice(&self.buf, b"Content-Length:") {
-                Some(pos) => {
-                    self.buf.drain(..pos);
-                    self.resync = false;
-                }
-                None => {
-                    // 没找到候选头:保留尾部若干字节(可能是被截断的下一个头)。
-                    let keep_from = self.buf.len().saturating_sub(b"Content-Length:".len() - 1);
-                    self.buf.drain(..keep_from);
-                    return None;
-                }
-            }
-        }
-
-        let header_end = match find_subslice(&self.buf, HEADER_DELIMITER) {
-            Some(pos) => pos + HEADER_DELIMITER.len(),
-            None => {
-                if self.buf.len() > MAX_HEADER_BYTES {
-                    self.buf.clear();
-                    self.resync = true;
-                    return Some(FrameOutcome::InvalidHeader(
-                        "header delimiter not found within limit".to_string(),
-                    ));
-                }
-                return None; // 短读:头未到齐
-            }
-        };
-
-        let content_length = match parse_content_length(&self.buf[..header_end]) {
-            Ok(len) => len,
-            Err(err) => {
-                self.buf.drain(..header_end);
-                // 帧头非法:其 body 也是垃圾,进入重同步跳到下一帧候选。
-                self.resync = true;
-                return Some(FrameOutcome::InvalidHeader(err));
-            }
-        };
-        if content_length > MAX_BODY_BYTES {
-            self.buf.drain(..header_end);
-            // body 超限且长度不可信,直接进入重同步。
-            self.resync = true;
-            return Some(FrameOutcome::InvalidHeader(format!(
-                "content-length {content_length} exceeds limit {MAX_BODY_BYTES}"
-            )));
-        }
-
-        if self.buf.len() < header_end + content_length {
-            return None; // 短读:body 未到齐
-        }
-        let body: Vec<u8> = self.buf.drain(..header_end + content_length).collect();
-        let body = &body[header_end..];
-        match serde_json::from_slice::<serde_json::Value>(body) {
-            Ok(value) => Some(FrameOutcome::Message(value)),
-            Err(_) => Some(FrameOutcome::InvalidBody),
-        }
-    }
-
-    /// 丢弃已消费的前缀,防缓冲无限增长。
-    fn compact(&mut self) {
-        if self.buf.capacity() > 1024 * 1024 && self.buf.len() < 64 * 1024 {
-            self.buf.shrink_to_fit();
-        }
-    }
-}
-
-/// 编码一条消息为 LSP stdio 帧(`Content-Length` 头 + body)。
-pub fn encode_frame(body: &serde_json::Value) -> std::io::Result<Vec<u8>> {
-    let body = serde_json::to_vec(body)?;
-    let mut frame = Vec::with_capacity(body.len() + 64);
-    frame.extend_from_slice(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
-    frame.extend_from_slice(&body);
-    Ok(frame)
-}
-
-/// 从帧头字节里解析 Content-Length(允许其他头字段,大小写不敏感)。
-fn parse_content_length(header: &[u8]) -> Result<usize, String> {
-    let text = std::str::from_utf8(header).map_err(|_| "header is not valid UTF-8".to_string())?;
-    let mut found = None;
-    for line in text.split("\r\n") {
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
-        if name.trim().eq_ignore_ascii_case("content-length") {
-            let value = value.trim();
-            found = Some(
-                value
-                    .parse::<usize>()
-                    .map_err(|_| format!("invalid Content-Length value {value:?}"))?,
-            );
-        }
-    }
-    found.ok_or_else(|| "missing Content-Length header".to_string())
-}
-
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return None;
-    }
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-// ---------------------------------------------------------------------------
-// `$/kode/fileChanged` 通知(热更旁路面 §11.3):非 py 文件变化按需转发 rust
-// ---------------------------------------------------------------------------
-
-/// `$/kode/fileChanged` 通知方法名(客户端 → 服务器,单向通知,无回执)。
+/// `$/kode/fileChanged` notification method name (client -> server, one-way, no acknowledgment).
 ///
-/// TS 侧监视到 assetsRoot 下的非 py 文件变化、且消费者注册表里注册了 rust
-/// 消费者时,经现有 LSP stdio 发这一帧;**不改任何请求/响应语义**。服务器对
-/// 未知通知按 LSP 规范静默丢弃(kode-server `handle_notification` 的未知分支),
-/// 故 rust 侧尚未实现该通知时零副作用、静默降级。
+/// When the TS side watches a non-py file change under assetsRoot and a rust consumer is registered
+/// in the consumer registry, it sends this frame over the existing LSP stdio; **no
+/// request/response semantics change**. The server silently drops unknown notifications per the LSP
+/// spec (the unknown branch of kode-server `handle_notification`), so until the rust side implements
+/// this notification there is zero side effect -- a silent degradation.
 ///
-/// 与 TS `src/fileChangeBypass.ts` 的 `KODE_FILE_CHANGED_METHOD` 逐字互证
-/// (两侧各有一把跨语言对账锁)。
+/// Cross-checked character for character with TS `src/fileChangeBypass.ts`
+/// `KODE_FILE_CHANGED_METHOD` (each side carries one cross-language parity lock).
 pub const FILE_CHANGED_NOTIFICATION: &str = "$/kode/fileChanged";
 
-/// `$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust
-/// 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构
-/// (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。
+/// `$/kode/fileChanged` notification params: pure data, no vscode binding -- when watch is sunk
+/// into rust later, TS is just a consumer and the protocol stays character for character. Fields are
+/// isomorphic to TS `NonPythonChangeEvent` (fsPath/identity/kind/version/fileName/ext/sha256/handledBy).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChangedParams {
-    /// 原样路径
+    /// Path as-is
     pub fs_path: String,
-    /// 归一身份键(斜杠/点段归一)
+    /// Normalized identity key (slash / dot-segment normalization)
     pub identity: String,
     /// "create" | "change" | "delete"
     pub kind: String,
-    /// 盘上版本 token `${mtimeMs}:${size}`;拿不到为 None(不编造)
+    /// On-disk version token `${mtimeMs}:${size}`; None when unavailable (never fabricated)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     pub file_name: String,
-    /// 小写含点扩展名(`.def`);无扩展名为空串
+    /// Lowercase extension with the leading dot (`.def`); empty string when there is no extension
     pub ext: String,
-    /// 内容 sha256 hex;删除或读不到为 None(不编造)
+    /// Content sha256 hex; None on deletion or when unreadable (never fabricated)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
-    /// "python" | "rust" | "unrouted"(路由命中的处理方)
+    /// "python" | "rust" | "unrouted" (the handler the route resolved to)
     pub handled_by: String,
 }
 
@@ -745,7 +595,7 @@ mod file_changed_notification {
 
     #[test]
     fn method_name_matches_ts_constant() {
-        // 跨语言对账锁:TS 侧 KODE_FILE_CHANGED_METHOD 与本常量逐字一致
+        // Cross-language parity lock: TS KODE_FILE_CHANGED_METHOD matches this constant verbatim
         let ts = include_str!("../../../src/backend/fileChangeBypass.ts");
         assert_eq!(FILE_CHANGED_NOTIFICATION, "$/kode/fileChanged");
         assert!(
@@ -771,7 +621,8 @@ mod file_changed_notification {
         assert_eq!(json["fileName"], "types.xml");
         assert_eq!(json["handledBy"], "rust");
         assert_eq!(json["version"], "1730000000000:9");
-        // 缺省字段(拿不到的版本/摘要)不占位,前端不必判 null
+        // Optional fields (version/digest unavailable) are omitted rather than null, so the
+        // front end need not check for null
         let minimal = FileChangedParams {
             version: None,
             sha256: None,

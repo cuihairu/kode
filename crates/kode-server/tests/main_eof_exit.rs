@@ -180,6 +180,76 @@ fn wait_poll_pumps_cancel_and_defers_trailing_frames() {
     assert!(status.success(), "EOF 收尾应正常退出: {status}");
 }
 
+/// Regression for the hand-rolled codec's resync wedge: a legal frame whose
+/// payload text happens to contain `Content-Length:` must be served intact.
+/// (The old decoder hunted that bare substring while resynchronizing and
+/// mis-read the quoted digits as a body length, wedging the stream.)
+#[test]
+fn legal_frame_with_content_length_text_in_params_still_served() {
+    let mut proc = spawn_server();
+    handshake(&mut proc);
+    send(
+        &mut proc,
+        &request(
+            2,
+            "$/kode/health",
+            json!({ "note": "Content-Length: 9\r\n\r\nnope" }),
+        ),
+    );
+    let health = wait_response(&proc, 2, Duration::from_secs(30));
+    assert!(health.get("result").is_some(), "合法帧应照常回包: {health}");
+
+    // Force a crash-faced exit quirk check on the same process (kill is fine
+    // here; the coverage discipline only matters for coverage collection).
+    drop(proc.stdin.take());
+    let status = proc.child.wait().expect("server EOF exit");
+    assert!(status.success(), "EOF 收尾应正常退出: {status}");
+}
+
+/// Regression for the wedge itself: a malformed frame now fails the reader
+/// fast — the process exits (crash-faced, client restarts) instead of hanging
+/// forever with the stream silently stuck.
+#[test]
+fn malformed_frame_fails_reader_and_exits() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kode-server"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn kode-server");
+    {
+        let stdin = child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(b"JUNK\r\n\r\nnope").expect("write garbage");
+        stdin.flush().expect("flush garbage");
+    }
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        match child.try_wait().expect("try_wait") {
+            Some(status) => break status,
+            None => {
+                assert!(
+                    Instant::now() < deadline,
+                    "malformed frame must not wedge the stream"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+    assert!(
+        status.success(),
+        "reader error exits via EOF path: {status}"
+    );
+    let stderr_bytes = child
+        .wait_with_output()
+        .map(|out| out.stderr)
+        .unwrap_or_default();
+    let stderr = String::from_utf8_lossy(&stderr_bytes);
+    assert!(
+        stderr.contains("exited without shutdown"),
+        "crash-faced trace expected: {stderr}"
+    );
+}
+
 /// `--version` 握手校验臂:打印版本即退(不进 stdio 泵)。
 #[test]
 fn version_arg_prints_and_exits() {
