@@ -2928,6 +2928,7 @@
     "vitepress": "2.0.0-alpha.17",
     "vitepress-plugin-mermaid": "^2.0.17",
     "vitest": "^5.1.0",
+    "vscode-jsonrpc": "10.0.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   },

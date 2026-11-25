@@ -1,77 +1,113 @@
 import { ChildProcess, spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 
+import {
+  CancellationTokenSource,
+  createMessageConnection,
+  Disposable,
+  ResponseError,
+  StreamMessageReader,
+  WriteableStreamMessageWriter,
+  type ContentTypeDecoder,
+  type ContentTypeDecoderOptions,
+  type ContentTypeEncoder,
+  type ContentTypeEncoderOptions,
+  type Message,
+  type MessageConnection
+} from 'vscode-jsonrpc/node';
+
 import { FrameWriter } from './frameWriter';
 
-// kode2 Rust Core 统一 transport(BUILD-005 最小版,书 §3/§4/§15 PH1-02):
-// spawn kode-server 二进制 + LSP stdio 帧读写 + initialize 握手 + 请求取消 +
-// 崩溃重启(CORE-015 最小版)。PR-003 只交付 transport 本体;Provider 接线在
-// PR-010 双轨切换时进行,不影响现有 TS 行为(2827 基线不回归)。
+// kode2 Rust Core unified transport (BUILD-005 minimal version, book
+// §3/§4/§15 PH1-02):
+// spawns the kode-server binary + LSP stdio frame read/write + initialize
+// handshake + request cancellation + crash restart (CORE-015 minimal version).
+// PR-003 delivers the transport itself only; Provider wiring happens at the
+// PR-010 dual-track switchover and does not affect existing TS behavior (the
+// 2827 baseline does not regress).
 
-/** 默认重启策略:10s 窗口内最多 3 次崩溃重启,超出判定持续失败停止重启 */
+/** default restart policy: at most 3 crash restarts within a 10s window;
+ * beyond that it is judged a persistent failure and restarting stops */
 const RESTART_WINDOW_MS_DEFAULT = 10_000;
 const RESTART_MAX_DEFAULT = 3;
 
-/** dispose 优雅关闭上限:shutdown 回包等待超过即判定服务器挂死,直接 SIGKILL(CORE-1) */
+/** graceful dispose limit: if waiting for the shutdown reply exceeds this, the
+ * server is judged hung and gets SIGKILL'd directly (CORE-1) */
 const DISPOSE_SHUTDOWN_TIMEOUT_MS_DEFAULT = 5_000;
 
 /**
- * initialize 握手预算(KBUG-TIME-02):进程存活但不回 initialize 时 start()
- * 原本无限挂起,后续所有请求排队堆积。10s 供慢启动/排队;交互面另有更短
- * 端到端预算(如 localReturnType 面自行 race),此处是 transport 层兜底。
+ * initialize handshake budget (KBUG-TIME-02): when the process is alive but
+ * never answers initialize, start() used to hang forever and every later
+ * request piled up in the queue. 10s covers slow starts / queueing; the
+ * interactive surface has its own shorter end-to-end budget (e.g. the
+ * localReturnType surface races on its own), and this is the transport-layer
+ * backstop.
  */
 const START_TIMEOUT_MS_DEFAULT = 10_000;
 
 /**
- * 请求预算兜底(2026-11-24 真机楔死批):request() 未传 opts.timeoutMs 时
- * 统一按此封顶——先前 rootAdded/scanComplete/warmState/health 等直呼腿无
- * 预算,server 楔死时每条都悬挂 10s 级,索引/跳转/CodeLens 链整体停摆且
- * 用户无从判断。显式预算(交互面 1-5s、扫描面 30s+)优先;0 或负数(显式
- * 传 opts.timeoutMs <= 0)= 主动放弃预算(仅限确知永不悬挂的面)。
+ * request budget backstop (2026-11-24 on-machine wedging batch): when
+ * request() is not given opts.timeoutMs, everything is capped at this value —
+ * previously direct-call legs such as rootAdded/scanComplete/warmState/health
+ * had no budget, so with a wedged server each one hung for 10s and the
+ * index/jump/CodeLens chain stopped altogether with no way for the user to tell
+ * why. Explicit budgets (1-5s on the interactive surface, 30s+ on the scan
+ * surface) take priority; 0 or negative (explicitly passing
+ * opts.timeoutMs <= 0) = giving up the budget deliberately (only for surfaces
+ * known never to hang).
  */
 export const DEFAULT_RPC_TIMEOUT_MS = 10_000;
 
 /**
- * RUST-008 判据①:自有协议版本化。TS 侧期望版本,与 Rust 侧
- * `crates/kode-protocol/src/lib.rs` 的 `PROTOCOL_VERSION` **钉死同步**(两侧
- * 同批改:RPC 形状漂移的任何一侧改动都必须同时推进两侧常量)。握手回包
- * serverInfo.version 不一致 = 两侧形状可能互不认识,拒绝以旧形状对讲。
+ * RUST-008 criterion (1): our own protocol is versioned. The TS-side expected
+ * version must be **pinned in sync** with the Rust side's `PROTOCOL_VERSION` in
+ * `crates/kode-protocol/src/lib.rs` (both sides change together: any one-sided
+ * change that drifts the RPC shape must advance both constants at once). A
+ * mismatching serverInfo.version in the handshake reply means the two sides
+ * may not recognize each other's shape, so talking on the old shape is refused.
  */
 export const KODE_PROTOCOL_VERSION = '0.2.0';
 
 export interface KodeCoreClientOptions {
-  /** kode-server 二进制路径(cargo build 产物) */
+  /** path to the kode-server binary (a cargo build artifact) */
   binaryPath: string;
-  /** 传给二进制的额外参数 */
+  /** extra arguments passed to the binary */
   args?: string[];
   env?: NodeJS.ProcessEnv;
-  /** 崩溃重启策略;不传用默认(10s 窗口 3 次) */
+  /** crash restart policy; defaults to the built-in one (10s window, 3 times) */
   restart?: { maxRestarts?: number; windowMs?: number };
-  /** dispose 时 shutdown 回包等待上限(ms);默认 5000,超时判定挂死并 SIGKILL(CORE-1) */
+  /** upper bound on waiting for the shutdown reply during dispose (ms); default
+   * 5000 — beyond that the server is judged hung and SIGKILL'd (CORE-1) */
   shutdownTimeoutMs?: number;
   /**
-   * initialize 握手预算(ms);默认 10000。超时 start() 以 TIMEOUT 拒绝,
-   * pending/计时器照常清理(KBUG-TIME-02/05:存活不响应不得无限挂起)。
+   * initialize handshake budget (ms); default 10000. On timeout start() rejects
+   * with TIMEOUT, and pending requests/timers are cleaned up as usual
+   * (KBUG-TIME-02/05: being alive but unresponsive must not hang forever).
    */
   startTimeoutMs?: number;
-  /** initialize 参数;不传用最小集 */
+  /** initialize parameters; the minimal set is used when omitted */
   initializeParams?: KodeCoreInitializeParams;
-  /** 重启完成回调(测试/可观测用) */
+  /** restart-completed callback (for tests/observability) */
   onRestart?: (generation: number) => void;
-  /** stderr 诊断行回调(默认丢弃;CORE-016 可观察恢复原因的入口) */
+  /** stderr diagnostic line callback (discarded by default; the entry point for
+   * observing recovery reasons, CORE-016) */
   onStderr?: (line: string) => void;
-  /** RUST-068-W 客户端追踪行回调(发送/响应/取消,带 span;默认丢弃) */
+  /** RUST-068-W client trace-line callback (send/response/cancel, carrying the
+   * span; discarded by default) */
   onTrace?: (line: string) => void;
-  /** 生命周期取证行回调(spawned/ready/exit/重启循环;默认丢弃;WARM-VISIBILITY-004 刀 B) */
+  /** lifecycle evidence-line callback (spawned/ready/exit/restart loop;
+   * discarded by default; WARM-VISIBILITY-004 blade B) */
   onLifecycle?: (line: string) => void;
   /**
-   * 服务器通知回调(RUST-142 接线:PR-003 扩展位落消费面)。仅当通知携带
-   * method+params 时触发;通知与响应按 id 有无分叉,此回调不经 pending。
+   * server notification callback (RUST-142 wiring: the PR-003 extension slot
+   * becomes the consumer surface). Fired only when the notification carries
+   * method+params; notifications and responses are distinguished by whether an id
+   * is present, and this callback bypasses pending.
    */
   onNotification?: (notification: ServerNotificationMessage) => void;
 }
 
-/** 服务器通知帧面(无 id;method + 可选 params)。 */
+/** server notification frame surface (no id; method + optional params). */
 export interface ServerNotificationMessage {
   method: string;
   params?: unknown;
@@ -80,7 +116,8 @@ export interface ServerNotificationMessage {
 export interface KodeCoreInitializeParams {
   processId?: number;
   rootUri?: string;
-  /** LSP 多工作区文件夹(KBUG-ROOT 根归属);缺省只落 rootUri。 */
+  /** LSP multi workspace folders (KBUG-ROOT root attribution); when omitted only
+   * rootUri is set. */
   workspaceFolders?: { uri: string; name?: string }[];
   capabilities?: Record<string, unknown>;
   initializationOptions?: Record<string, unknown>;
@@ -105,52 +142,58 @@ export interface KodeCoreHealth {
   shutdownRequested: boolean;
   restartGeneration: number;
   documents: { uri: string; version: number }[];
-  /** RUST-026 Core 进程资源快照;非 Linux/解析失败=null 诚实降级 */
+  /** RUST-026 Core process resource snapshot; non-Linux / parse failure = null
+   * as an honest degradation */
   resources?: {
     rssBytes: number;
     threads: number;
     diskReadBytes: number;
     diskWriteBytes: number;
-    /** 累计 CPU 时间 ms;两次采样差分得速率;0 是合法读数(年轻进程) */
+    /** cumulative CPU time in ms; a rate comes from differencing two samples;
+     * 0 is a legal reading (young process) */
     cpuTimeMs: number;
   } | null;
-  /** RUST-078-W:服务端驻留维护观测(idle aging + 内存压力主动回收);恒装配 */
+  /** RUST-078-W: server-side residency maintenance observation (idle aging +
+   * memory-pressure proactive reclaim); always present */
   maintenance: {
     agedTerminal: number;
     pressureReclaims: number;
-    /** 最近一次压力采样 RSS;从未采样/非 Linux=null 诚实降级 */
+    /** RSS from the most recent pressure sample; never sampled / non-Linux =
+     * null as an honest degradation */
     lastRssBytes: number | null;
   };
-  /** RUST-070/071/073:索引刷新队列观测(ingest 装配线记账);恒装配 */
+  /** RUST-070/071/073: index refresh queue observation (the ingest pipeline's
+   * ledger); always present */
   ingest: {
-    /** 当前在队条数 */
+    /** entries currently queued */
     queued: number;
-    /** 累计入队(让位重入队计入) */
+    /** cumulative enqueue count (yield re-enqueues are included) */
     enqueued: number;
-    /** 同文件同版本合并 */
+    /** merges of the same file at the same version */
     merged: number;
-    /** 过期版本丢弃 */
+    /** drops of stale versions */
     staleDropped: number;
-    /** 队列满拒绝 */
+    /** rejections because the queue is full */
     rejectedQueueFull: number;
-    /** 累计执行成功 */
+    /** cumulative successful executions */
     executed: number;
-    /** 撤根清除的待执行条目 */
+    /** pending entries cleared by a root removal */
     purged: number;
-    /** RUST-082:didChange 进入风暴缓冲的累计事件数 */
+    /** RUST-082: cumulative didChange events entering the storm buffer */
     stormSeen: number;
-    /** 风暴缓冲内同文件并一吸收的事件数 */
+    /** events absorbed by same-file coalescing inside the storm buffer */
     stormMerged: number;
-    /** 当前仍在缓冲内的条数 */
+    /** entries still buffered right now */
     stormBuffered: number;
-    /** 窗口到期整批移交次数(max latency 兑现记账) */
+    /** handoffs of a whole batch when the window expires (max-latency promise
+     * accounting) */
     stormDeadlineFlushes: number;
-    /** 缓冲超限强制落批次数 */
+    /** forced flushes because the buffer exceeded its limit */
     stormForcedFlushes: number;
   };
 }
 
-/** transport 层错误:进程退出/重启放弃/协议损坏 */
+/** transport-layer error: process exit / restart given up / corrupt protocol */
 export class KodeCoreTransportError extends Error {
   constructor(
     message: string,
@@ -173,54 +216,76 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   method: string;
-  /** RUST-068-W:请求 span(信封级透传 + 追踪行/取消行回捞) */
+  /** RUST-068-W: request span (envelope-level passthrough + retrieval for trace
+   * lines / cancel lines) */
   span: string;
+  /**
+   * cancellation handle the library turns into a $/cancelRequest notification
+   * for the wire id it assigned. Cancelled after the response arrived it is a
+   * no-op (the library already disposed its listener; CORE-2).
+   */
+  tokenSource: CancellationTokenSource;
 }
 
-/** request() 返回值:普通 promise + cancel() 句柄(CORE-007 客户端入口) */
+/** request() return value: a plain promise plus a cancel() handle (the CORE-007
+ * client entry point) */
 export interface KodeCoreRequest extends Promise<unknown> {
   cancel: () => void;
 }
 
-/** 构造已失败的 KodeCoreRequest(cancel 为 no-op) */
+/** builds an already-rejected KodeCoreRequest (cancel is a no-op) */
 function rejectedRequest(error: KodeCoreTransportError): KodeCoreRequest {
   const promise = Promise.reject(error) as KodeCoreRequest;
   promise.cancel = () => undefined;
   return promise;
 }
 
-/** 帧头:Content-Length 值 */
-const HEADER_PATTERN = /^Content-Length: (\d+)\r\n\r\n/;
-
-/** RUST-068-W:请求 span 生成(8 字节随机 hex;跨进程唯一,无语义不含敏感面) */
+/** RUST-068-W: request span generation (8 random bytes in hex; unique across
+ * processes, semantically meaningless and free of sensitive surfaces) */
 function newSpanId(): string {
   return randomBytes(8).toString('hex');
 }
+
+/** the writable-stream face the library writer consumes (RAL.WritableStream;
+ * aliased via the constructor so no extra type import is needed) */
+type LibraryWritableStream = ConstructorParameters<typeof WriteableStreamMessageWriter>[0];
+
+/** headerless-stream watchdog bound: raw bytes with no decodable frame header
+ * past this bound trip the `illegal frame stream` diagnostic (the old
+ * consumeStdout dropped the bytes at the same point) */
+const ILLEGAL_STREAM_BYTES = 64 * 1024;
 
 export class KodeCoreClient {
   private child: ChildProcess | null = null;
   private pending = new Map<number, PendingRequest>();
   private nextId = 1;
-  private buffer: Buffer = Buffer.alloc(0);
   private disposed = false;
   private restartTimestamps: number[] = [];
   private initParams: KodeCoreInitializeParams;
   private stderrTail: string[] = [];
-  // RUST-025 RPC 消息字节数(JSON body 双向累计,不含 LSP 帧头常量开销;
-  // 跨重启累加,观测进程生命周期总量口径)
+  // RUST-025 RPC message byte counts (JSON body accumulated in both directions,
+  // excluding the constant LSP frame-header overhead; accumulated across
+  // restarts, so the observation is the process-lifetime total)
   private rpcBytesIn = 0;
   private rpcBytesOut = 0;
 
-  /** 崩溃重启代数:每次意外退出+成功重启 +1(CORE-015 对账字段) */
+  /** crash restart generation: +1 per unexpected exit followed by a successful
+   * restart (the CORE-015 reconciliation field) */
   restartGeneration = 0;
 
   /**
-   * RUST-TRACK-FREEZE-007 刀1:握手结果按代缓存。镜像洪水(mirrorCorpusToRust
-   * 逐文件 start())与 serveInRust 每请求 start()此前每次都重发完整 initialize
-   * 握手——数千 def/xml 镜像=数千次握手往返压在扩展主线程 await 链上(用户报
-   * 「切 rust 越来越卡」主因之一)。同代存活进程的重复 start() 直接返回既有
-   * 握手结果;崩溃重启代际递增,缓存自动失效,重启重握手语义(CORE-002/015)
-   * 不变。initialize() 写缓存(start() 与 handleExit 重启路径共用同一入口)。
+   * RUST-TRACK-FREEZE-007 blade 1: the handshake result is cached per
+   * generation. The mirror flood (mirrorCorpusToRust calling start() per file)
+   * and serveInRust's per-request start() each re-sent a full initialize
+   * handshake before — thousands of def/xml mirrors = thousands of handshake
+   * round trips stacked on the extension main thread's await chain (one of
+   * the main causes behind the user report "switching to rust gets
+   * progressively laggier"). A repeated start() on the surviving same-generation
+   * process now returns the existing handshake result directly; a crash restart
+   * increments the generation, the cache invalidates automatically, and the
+   * restart re-handshake semantics (CORE-002/015) are unchanged.
+   * initialize() writes the cache (start() and handleExit's restart path share
+   * the same entry point).
    */
   private handshakeResult: KodeCoreInitializeResult | null = null;
   private handshakeGeneration = -1;
@@ -229,12 +294,30 @@ export class KodeCoreClient {
   // One writer per pipe. Queued frames from an exited child must never reach its replacement.
   private frameWriter: FrameWriter | null = null;
 
-  /** 在队未写帧数(RESP-009 缓冲上界观测口;测试/可观测用) */
+  /**
+   * one library connection per child (KODE-RPC-LIB-001: framing + JSON-RPC
+   * dispatch are owned by vscode-jsonrpc's StreamMessageReader /
+   * WriteableStreamMessageWriter / createMessageConnection; the client keeps
+   * only trace/span/timer/cancel bookkeeping around it). Nulled and disposed
+   * in clearProcess, so an exited child's connection can never dispatch into
+   * its replacement's pending entries.
+   */
+  private connection: MessageConnection | null = null;
+
+  // headerless-stream watchdog state (diagnostic only; see createStdoutWatchdog).
+  // Reset per spawn and per decoded frame.
+  private watchdogBytes = 0;
+  private watchdogTail = '';
+  private watchdogHeaderSeen = false;
+
+  /** number of queued unwritten frames (the RESP-009 buffer-upper-bound
+   * observation port; for tests/observability) */
   get writeQueueDepth(): number {
     return this.frameWriter?.pendingFrames ?? 0;
   }
 
-  /** 通知消费面(PR-003 扩展位;构造期默认取 options.onNotification,可后置) */
+  /** notification consumer surface (the PR-003 extension slot; defaults to
+   * options.onNotification at construction and may be set later) */
   private notificationHandler: ((notification: ServerNotificationMessage) => void) | null;
 
   constructor(private readonly options: KodeCoreClientOptions) {
@@ -242,40 +325,46 @@ export class KodeCoreClient {
     this.notificationHandler = options.onNotification ?? null;
   }
 
-  /** 后置通知消费面(RUST-142 接线:gate 延迟装配,客户端懒建后可再设)。 */
+  /** late notification consumer surface (RUST-142 wiring: the gate wires it
+   * lazily, so it can be set again once the client is built on demand). */
   setNotificationHandler(handler: ((notification: ServerNotificationMessage) => void) | null): void {
     this.notificationHandler = handler;
   }
 
-  /** 当前服务器子进程(测试/探针用;可能为 null) */
+  /** the current server child process (for tests/probes; may be null) */
   get childProcess(): ChildProcess | null {
     return this.child;
   }
 
-  /** 在途请求数(测试用;KBUG-TIME-05 清理验收读口) */
+  /** number of in-flight requests (for tests; the KBUG-TIME-05 cleanup
+   * acceptance read port) */
   pendingCountForTests(): number {
     return this.pending.size;
   }
 
   /**
-   * 重启代数读口(E-2):下游账本(如切流门的语料镜像账)据此感知自动重启,
-   * 新进程是空库,旧账本必须随重启失效。
+   * restart generation read port (E-2): downstream ledgers (such as the
+   * switchover gate's corpus mirror ledger) use this to notice an automatic
+   * restart — the new process has an empty corpus, so the old ledger must be
+   * invalidated with the restart.
    */
   getRestartGeneration(): number {
     return this.restartGeneration;
   }
 
-  /** 最近 stderr 行(崩溃诊断留痕,最多 50 行) */
+  /** recent stderr lines (crash-diagnostics trace, at most 50 lines) */
   get recentStderr(): readonly string[] {
     return this.stderrTail;
   }
 
-  /** RPC 消息字节流量(RUST-025;JSON body 双向,不含帧头) */
+  /** RPC message byte traffic (RUST-025; JSON body in both directions,
+   * excluding frame headers) */
   get rpcTraffic(): { bytesIn: number; bytesOut: number } {
     return { bytesIn: this.rpcBytesIn, bytesOut: this.rpcBytesOut };
   }
 
-  /** spawn + initialize 握手。已启动则幂等返回既有握手结果(同代缓存,零 RPC)。 */
+  /** spawn + initialize handshake. If already started, idempotently returns the
+   * existing handshake result (same-generation cache, zero RPC). */
   async start(): Promise<KodeCoreInitializeResult> {
     if (this.disposed) {
       throw new KodeCoreTransportError('client disposed', 'DISPOSED');
@@ -313,6 +402,10 @@ export class KodeCoreClient {
     });
     this.child = child;
     const stdin = child.stdin!;
+    // KODE-RESP-009: the drain-aware FIFO writer stays as the write sink. The
+    // library writes its own Content-Length header through the adapter below,
+    // so backpressure (frame truly left the pipe) still gates notifyDrained
+    // producers — no hand framing anywhere, bytes pass through untouched.
     this.frameWriter = new FrameWriter({
       write: frame => this.child !== child || !stdin.writable || stdin.destroyed || stdin.write(frame),
       once: (event, listener) => {
@@ -324,17 +417,38 @@ export class KodeCoreClient {
       },
       off: (event, listener) => { stdin.off(event, listener); },
     });
-    child.stdout!.on('data', (chunk: Buffer) => {
-      if (this.child === child) { this.consumeStdout(chunk); }
+    const writer = new WriteableStreamMessageWriter(this.createDrainAwareWritable(stdin), {
+      charset: 'utf-8',
+      contentTypeEncoder: this.createBodyEncoder(),
     });
+    // headerless-stream watchdog (diagnostic only; framing decisions stay
+    // inside the library reader)
+    const watchdog = this.createStdoutWatchdog();
+    child.stdout!.on('data', (chunk: Buffer) => {
+      if (this.child === child) { watchdog(chunk); }
+    });
+    const reader = new StreamMessageReader(child.stdout!, {
+      charset: 'utf-8',
+      contentTypeDecoder: this.createBodyDecoder(),
+    });
+    this.markFrameDecoded();
+    const connection = createMessageConnection(reader, writer);
+    this.connection = connection;
+    connection.onNotification((method, params) => {
+      if (this.child !== child) { return; }
+      this.notificationHandler?.(params === undefined ? { method } : { method, params });
+    });
+    connection.listen();
     child.stderr!.on('data', (chunk: Buffer) => {
       if (this.child === child) { this.recordStderr(chunk); }
     });
-    // stdin EPIPE (errno -32): SIGKILL 生效到 exit 事件到达之间存在窗口，
-    // 此时 stdin.writable 仍为 true，sendRaw 往死管道 write 会以未处理
-    // 'error' 事件炸掉整个测试进程（CI #418 实录）。这里必须吞掉：
-    // in-flight 请求由 exit 事件的 rejectAll(EXITED) 统一拒绝，waitFor
-    // 探针自然重试，CORE-015/016 重启语义不变。
+    // stdin EPIPE (errno -32): there is a window between SIGKILL taking effect
+    // and the exit event arriving, during which stdin.writable is still true and
+    // a write into the dead pipe blows up the whole test process as an
+    // unhandled 'error' event (recorded in CI #418). It must be swallowed here:
+    // in-flight requests are rejected uniformly by the exit event's
+    // rejectAll(EXITED), the waitFor probe retries naturally, and the
+    // CORE-015/016 restart semantics are unchanged.
     child.stdin!.on('error', () => undefined);
     child.on('error', error => {
       const failure = new KodeCoreTransportError(`spawn failed: ${error.message}`, 'EXITED');
@@ -350,6 +464,135 @@ export class KodeCoreClient {
     return child;
   }
 
+  /**
+   * KODE-RPC-LIB-001: RAL.WritableStream adapter over child.stdin that keeps
+   * the RESP-009 drain-aware FIFO (FrameWriter) as the write sink. The library
+   * hands each message here split into a header string ('ascii') and the
+   * encoded body; both go through the FIFO in order and the returned promise
+   * resolves only once the bytes truly left the pipe (drain waited when it
+   * filled), so awaiting library writes = the old notifyDrained semantics.
+   * No framing happens here — the library built the header.
+   */
+  private createDrainAwareWritable(stdin: NonNullable<ChildProcess['stdin']>): LibraryWritableStream {
+    const frameWriter = (): FrameWriter => {
+      // resolved lazily: clearProcess nulls the field on exit, and writes that
+      // race the exit are dropped exactly like the old sendRaw did
+      return this.frameWriter as FrameWriter;
+    };
+    return {
+      onClose: listener => {
+        if (stdin.destroyed) {
+          queueMicrotask(listener);
+          return Disposable.create(() => undefined);
+        }
+        stdin.once('close', listener);
+        return Disposable.create(() => stdin.off('close', listener));
+      },
+      onError: listener => {
+        stdin.once('error', listener);
+        return Disposable.create(() => stdin.off('error', listener));
+      },
+      onEnd: listener => {
+        stdin.once('end', listener);
+        return Disposable.create(() => stdin.off('end', listener));
+      },
+      write: (data: Uint8Array | string, encoding?: 'ascii' | 'utf-8'): Promise<void> => {
+        const frame =
+          typeof data === 'string'
+            ? Buffer.from(data, encoding ?? 'utf-8')
+            : Buffer.isBuffer(data)
+              ? data
+              : Buffer.from(data);
+        frameWriter()?.send(frame);
+        return frameWriter()?.drained() ?? Promise.resolve();
+      },
+      end: () => {
+        try {
+          stdin.end();
+        } catch {
+          // already destroyed — nothing to end
+        }
+      },
+    };
+  }
+
+  /**
+   * JSON body codec handed to the library writer: serializes the message body
+   * exactly as the old hand-rolled sendRaw did (compact JSON, utf-8) and
+   * tallies outbound body bytes for rpcTraffic. The library owns the
+   * Content-Length header; this codec never sees framing.
+   */
+  private createBodyEncoder(): ContentTypeEncoder {
+    return {
+      name: 'application/json',
+      encode: (message: Message, options: ContentTypeEncoderOptions): Promise<Uint8Array> => {
+        const body = Buffer.from(JSON.stringify(message), options.charset);
+        this.rpcBytesOut += body.length;
+        return Promise.resolve(body);
+      },
+    };
+  }
+
+  /**
+   * JSON body codec handed to the library reader: tallies inbound body bytes
+   * (same accounting as the old consumeStdout, before parse) and maps a
+   * corrupt body to the historical `bad json frame body` diagnostic. The
+   * channel stays alive: the library surfaces the parse failure via onError
+   * without closing the connection.
+   */
+  private createBodyDecoder(): ContentTypeDecoder {
+    return {
+      name: 'application/json',
+      decode: (buffer: Uint8Array, options: ContentTypeDecoderOptions): Promise<Message> => {
+        const byteLength = buffer.byteLength;
+        this.rpcBytesIn += byteLength;
+        this.markFrameDecoded();
+        const text = Buffer.from(buffer.buffer, buffer.byteOffset, byteLength).toString(options.charset);
+        try {
+          return Promise.resolve(JSON.parse(text) as Message);
+        } catch {
+          this.recordStderrLine(`bad json frame body: ${byteLength} bytes`);
+          return Promise.reject(new Error(`bad json frame body: ${byteLength} bytes`));
+        }
+      },
+    };
+  }
+
+  /**
+   * Headerless-stream watchdog (KODE-RPC-LIB-001 parity): the old
+   * consumeStdout dropped >64KB of bytes that never formed a parseable frame
+   * header; the library reader never drops (it just keeps buffering — it is
+   * designed for well-behaved peers). This tap only diagnoses: it counts raw
+   * bytes since the last decodable frame, or since a `Content-Length:` sighting
+   * (which proves a legal frame — possibly with a very large body — is in
+   * flight), and records the `illegal frame stream` stderr line past the same
+   * 64KB bound. No framing decisions are made here.
+   */
+  private createStdoutWatchdog(): (chunk: Buffer) => void {
+    return (chunk: Buffer) => {
+      if (this.watchdogHeaderSeen) {
+        return;
+      }
+      this.watchdogBytes += chunk.length;
+      this.watchdogTail = (this.watchdogTail + chunk.toString('latin1')).slice(-1024);
+      if (/content-length:/i.test(this.watchdogTail)) {
+        this.watchdogHeaderSeen = true;
+        return;
+      }
+      if (this.watchdogBytes > ILLEGAL_STREAM_BYTES) {
+        this.recordStderrLine(`illegal frame stream, ${this.watchdogBytes} bytes without a frame header`);
+        this.watchdogBytes = 0;
+      }
+    };
+  }
+
+  /** watchdog progress signal: a framed body arrived (parse outcome irrelevant) */
+  private markFrameDecoded(): void {
+    this.watchdogBytes = 0;
+    this.watchdogTail = '';
+    this.watchdogHeaderSeen = false;
+  }
+
   private clearProcess(child: ChildProcess, error: Error): boolean {
     if (this.child !== child) {
       return false;
@@ -358,15 +601,26 @@ export class KodeCoreClient {
     this.starting = null;
     this.handshakeResult = null;
     this.frameWriter = null;
-    this.buffer = Buffer.alloc(0);
+    const connection = this.connection;
+    this.connection = null;
+    if (connection) {
+      try {
+        connection.dispose();
+      } catch {
+        // already disposed/closed — nothing left to release
+      }
+    }
     this.rejectAll(error);
     return true;
   }
 
-  /** LSP initialize 握手(CORE-002);restartGeneration 经 initializationOptions 对账 */
+  /** LSP initialize handshake (CORE-002); restartGeneration is reconciled through
+   * initializationOptions */
   private async initialize(child: ChildProcess): Promise<KodeCoreInitializeResult> {
-    // RUST-TRACK-FREEZE-007 刀1:代际快照——握手在途期间进程崩溃重启时,
-    // 迟到的旧代握手结果不得写入新代缓存。
+    // RUST-TRACK-FREEZE-007 blade 1: take a generation snapshot — while the
+    // handshake is in flight, if the process crashes and restarts, a late
+    // old-generation handshake result must not be written into the new
+    // generation's cache.
     const generation = this.restartGeneration;
     const params: KodeCoreInitializeParams = {
       ...this.initParams,
@@ -375,15 +629,20 @@ export class KodeCoreClient {
         restartGeneration: this.restartGeneration,
       },
     };
-    // KBUG-TIME-02:握手带预算(存活不响应时 start() 以 TIMEOUT 拒绝,
-    // 不无限挂起;重启路径的握手失败语义不变,走既有 catch 处理)
+    // KBUG-TIME-02: the handshake carries a budget (when alive but unresponsive,
+    // start() rejects with TIMEOUT instead of hanging forever; the restart path's
+    // handshake-failure semantics are unchanged and go through the existing
+    // catch)
     const startTimeoutMs = this.options.startTimeoutMs ?? START_TIMEOUT_MS_DEFAULT;
     const result = (await this.request('initialize', params, {
       timeoutMs: startTimeoutMs
     })) as KodeCoreInitializeResult;
-    // RUST-008 判据①:协议版本不一致 = 两侧 RPC 形状可能互不认识,拒绝对讲。
-    // 杀掉子进程但保留 client 可再 spawn——版本对上(如用户原地换了二进制)
-    // 后下一次 start() 自然恢复;gate 侧现有 catch 把本错误归入回落 TS 面。
+    // RUST-008 criterion (1): a protocol version mismatch means the two sides'
+    // RPC shapes may not recognize each other, so the conversation is refused.
+    // The child process is killed but the client is kept so it can spawn again —
+    // once the versions line up (e.g. the user swapped the binary in place), the
+    // next start() recovers naturally; the gate's existing catch classifies this
+    // error into the TS fallback surface.
     const serverVersion = result.serverInfo?.version;
     if (serverVersion !== KODE_PROTOCOL_VERSION) {
       throw new KodeCoreTransportError(
@@ -400,25 +659,32 @@ export class KodeCoreClient {
     return result;
   }
 
-  /** 发送请求并等待响应;超时先发 $/cancelRequest 再硬超时。opts.timeoutMs
-   * 显式预算优先;未传走 DEFAULT_RPC_TIMEOUT_MS 兜底(2026-11-24 用户真机
-   * 病灶:楔死 server 面前任何未封顶腿都是悬挂——rootAdded/scanComplete/
-   * warmState 等直呼腿此前无预算,server 楔死时索引/跳转链整体停摆)。 */
+  /** sends a request and waits for the response; on timeout it first sends
+   * $/cancelRequest, then hard-times-out. An explicit opts.timeoutMs budget
+   * takes priority; when omitted, DEFAULT_RPC_TIMEOUT_MS is the backstop
+   * (2026-11-24 on-machine defect: in front of a wedged server, every
+   * uncapped leg hangs — the direct-call legs rootAdded/scanComplete/
+   * warmState and the like previously carried no budget, so with a wedged
+   * server the whole index/jump chain ground to a halt). */
   request(method: string, params?: unknown, opts?: { timeoutMs?: number }): KodeCoreRequest {
     if (this.disposed) {
       return rejectedRequest(new KodeCoreTransportError('client disposed', 'DISPOSED'));
     }
     if (!this.child) {
-      // 重启放弃/未启动:立即失败,不让请求悬挂
+      // restart given up / not started: fail immediately instead of letting the
+      // request hang
       return rejectedRequest(
         new KodeCoreTransportError('server process not running', 'EXITED')
       );
     }
     const effectiveTimeoutMs = opts?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
     const id = this.nextId++;
-    // RUST-068-W:信封级 span(`$/kode/rpc` 顶层 spanId;浅拷贝不碰调用方
-    // 对象,内层 params 原样——worker handler 契约零感知)。其余 method 不注
-    // 入(LSP 标准面零污染;追踪行仍带 span 供端到端对账)。
+    // RUST-068-W: envelope-level span (the top-level spanId of `$/kode/rpc`;
+    // a shallow copy that does not touch the caller's object, with inner params
+    // passed as-is — zero awareness for the worker handler contract). Other
+    // methods do not get it injected (the standard LSP surface stays
+    // unpolluted; trace lines still carry the span for end-to-end
+    // reconciliation).
     const span = newSpanId();
     let wireParams = params;
     if (method === '$/kode/rpc') {
@@ -428,8 +694,10 @@ export class KodeCoreClient {
           : params;
     }
     this.trace(`request ${id} ${method} send (span=${span})`);
+    const tokenSource = new CancellationTokenSource();
     const promise = new Promise<unknown>((resolve, reject) => {
-      // 硬超时:cancel 之后服务器仍不回(挂死)时兜底拒绝
+      // hard timeout: a backstop rejection for when the server still hasn't
+      // answered after the cancel (hung)
       let hardTimer: NodeJS.Timeout | undefined;
       let cancelTimer: NodeJS.Timeout | undefined;
       if (effectiveTimeoutMs > 0) {
@@ -445,8 +713,9 @@ export class KodeCoreClient {
           if (hardTimer) {
             clearTimeout(hardTimer);
           }
-          // CORE-2:请求正常完成后同时清理 cancelTimer,避免对已完成 id
-          // 发送迟到的 $/cancelRequest 通知
+          // CORE-2: once the request completes normally, clear cancelTimer
+          // as well, avoiding a late $/cancelRequest notification for an
+          // already-completed id
           if (cancelTimer) {
             clearTimeout(cancelTimer);
           }
@@ -463,51 +732,161 @@ export class KodeCoreClient {
         },
         method,
         span,
+        tokenSource,
       });
-      this.sendRaw({ jsonrpc: '2.0', id, method, params: wireParams });
     }) as KodeCoreRequest;
-    // 取消句柄挂在 promise 上:调用方无需知道内部数字 id
+    this.dispatchRequest(id, method, wireParams, tokenSource);
+    // the cancel handle rides on the promise: callers never need to know the
+    // internal numeric id
     promise.cancel = () => this.cancelRequest(id);
     return promise;
   }
 
-  /** 发送通知(无响应,失败不抛) */
+  /**
+   * KODE-RPC-LIB-001: hands the request to the library connection and routes
+   * the outcome back into the pending entry. The library owns framing, wire
+   * ids, response correlation and $/cancelRequest emission (via the
+   * cancellation token); the entry carries only our trace id, span, timers and
+   * the token handle. params shapes hit the wire byte-for-byte as the old
+   * sendRaw did: omitted when undefined (no params argument), passed through
+   * as-is when an object (ParameterStructures.auto leaves object literals
+   * untouched).
+   */
+  private dispatchRequest(id: number, method: string, params: unknown, tokenSource: CancellationTokenSource): void {
+    const entry = (): PendingRequest | undefined => this.pending.get(id);
+    const connection = this.connection;
+    if (!connection) {
+      // exit race: the process died between the running-process guard and the
+      // dispatch
+      entry()?.reject(new KodeCoreTransportError(`server exited before ${method} was sent`, 'EXITED'));
+      return;
+    }
+    let libPromise: Promise<unknown>;
+    try {
+      libPromise =
+        params === undefined
+          ? connection.sendRequest(method, tokenSource.token)
+          : connection.sendRequest(method, params, tokenSource.token);
+    } catch (error) {
+      // connection already closed/disposed (exit race window): the library
+      // throws synchronously instead of rejecting
+      entry()?.reject(new KodeCoreTransportError(`${method} not sent: ${(error as Error).message}`, 'EXITED'));
+      return;
+    }
+    libPromise.then(
+      value => {
+        // settle = leave the map, exactly as the old dispatchMessage did;
+        // a late library settle after the hard timer finds no entry and is
+        // ignored
+        const pending = entry();
+        this.pending.delete(id);
+        if (pending) {
+          this.trace(`request ${id} ${pending.method} done (span=${pending.span})`);
+          pending.resolve(value);
+        }
+      },
+      error => {
+        const pending = entry();
+        this.pending.delete(id);
+        const code = error instanceof ResponseError ? error.code : undefined;
+        if (pending) {
+          // RUST-068-W: leave a trace on the error face (cancellations and
+          // server errors both carry the same span)
+          this.trace(`request ${id} ${pending.method} failed ${code ?? 'unknown'} (span=${pending.span})`);
+          pending.reject(this.toTransportError(method, code, error));
+        }
+      }
+    );
+  }
+
+  /** maps a library sendRequest rejection onto the transport error face
+   * (REQUEST_CANCELLED for the JSON-RPC -32800 cancellation code) */
+  private toTransportError(method: string, code: number | undefined, error: unknown): KodeCoreTransportError {
+    const message = error instanceof Error ? error.message : String(error);
+    if (code === -32800) {
+      return new KodeCoreTransportError(`${method} failed (-32800): ${message}`, 'REQUEST_CANCELLED');
+    }
+    return new KodeCoreTransportError(
+      `${method} failed (${code ?? 'unknown'}): ${message}`,
+      'SERVER_ERROR'
+    );
+  }
+
+  /** sends a notification (no response; failures do not throw) */
   notify(method: string, params?: unknown): void {
     if (this.disposed) {
       return;
     }
-    this.sendRaw({ jsonrpc: '2.0', method, params });
+    this.sendNotificationNow(method, params);
   }
 
   /**
-   * KODE-RESP-009:通知入队并等本帧写完(drain 感知)——生产端 await 即
-   * 背压;帧序仍 FIFO(先入队先写,与请求的相对顺序不破坏)。
+   * fire-and-forget notification that bypasses the disposed guard (the dispose
+   * path sends `exit` after disposed=true, mirroring the old sendRaw which had
+   * no disposed check either). Write failures (exit race EPIPE window) are
+   * swallowed; failure semantics belong to the exit path's uniform rejection.
    */
-  private notifyDrained(method: string, params?: unknown): Promise<void> {
-    if (this.disposed) {
-      return Promise.resolve();
+  private sendNotificationNow(method: string, params?: unknown): void {
+    const connection = this.connection;
+    if (!connection) {
+      return;
     }
-    this.sendRaw({ jsonrpc: '2.0', method, params });
-    return this.frameWriter?.drained() ?? Promise.resolve();
+    const send =
+      params === undefined ? connection.sendNotification(method) : connection.sendNotification(method, params);
+    send.catch(() => undefined);
   }
 
-  /** 取消进行中的请求(CORE-007 最小版:$ /cancelRequest 通知) */
+  /**
+   * KODE-RESP-009: the notification is enqueued and awaited until this frame is
+   * written (drain-aware) — awaiting it on the producer side is backpressure;
+   * frame order stays FIFO (first enqueued, first written, without breaking
+   * the relative order against requests).
+   */
+  private async notifyDrained(method: string, params?: unknown): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    const connection = this.connection;
+    if (!connection) {
+      return;
+    }
+    try {
+      // resolves once the library writer flushed the whole frame through the
+      // drain-aware adapter (headers + body written, drain waited when the
+      // pipe filled) — the RESP-009 backpressure face, unchanged
+      await (params === undefined
+        ? connection.sendNotification(method)
+        : connection.sendNotification(method, params));
+    } catch {
+      // write failure (exit race EPIPE window): swallowed, like the old
+      // FrameWriter chain; the exit path rejects in-flight requests uniformly
+    }
+  }
+
+  /** cancels an in-flight request (CORE-007 minimal version: a
+   * $/cancelRequest notification) */
   cancelRequest(id: number): void {
-    const span = this.pending.get(id)?.span;
-    this.trace(`request ${id} cancel sent (span=${span ?? '-'})`);
-    this.notify('$/cancelRequest', { id });
+    const pending = this.pending.get(id);
+    this.trace(`request ${id} cancel sent (span=${pending?.span ?? '-'})`);
+    // the library turns the token into a $/cancelRequest notification for the
+    // wire id it assigned; after the response arrived its listener is gone, so
+    // a late cancel sends nothing (CORE-2)
+    pending?.tokenSource.cancel();
   }
 
-  /** 健康探针(CORE-016) */
+  /** health probe (CORE-016) */
   async health(): Promise<KodeCoreHealth> {
     return (await this.request('$/kode/health')) as KodeCoreHealth;
   }
 
   /**
-   * KODE-RESP-009:文档通知入队并等本帧真正写完(含必要时等 drain)才完成
-   * ——语料镜像生产端逐帧 await 即被管道背压限速,客户端缓冲有硬上界;
-   * 旧版 fire-and-forget 写在慢消费端把帧无限堆进 Node 流内部缓冲。
-   * 不 await 的调用方(编辑器流 fire-and-forget 镜像)语义不变(仅入队)。
+   * KODE-RESP-009: the document notification is enqueued and only completes once
+   * this frame is truly written (waiting for drain when needed) — awaiting each
+   * frame on the corpus mirror producer side is rate-limited by pipe backpressure,
+   * and the client buffer has a hard upper bound; the old fire-and-forget write
+   * pushed frames without limit into Node's internal stream buffer on a slow
+   * consumer. Callers that do not await (the editor stream's fire-and-forget
+   * mirroring) keep their semantics unchanged (enqueue only).
    */
   openDocument(uri: string, languageId: string, version: number, text: string): Promise<void> {
     return this.notifyDrained('textDocument/didOpen', {
@@ -527,8 +906,9 @@ export class KodeCoreClient {
   }
 
   /**
-   * RUST-069-W 根生命周期:新增根注册(幂等,同路径重复注册返回既有 id)。
-   * 请求面带回执(根 id),装配/测试可断言根身份。
+   * RUST-069-W root lifecycle: adds a root registration (idempotent —
+   * re-registering the same path returns the existing id). The request surface
+   * carries a receipt (the root id), so wiring/tests can assert root identity.
    */
   async addWorkspaceRoot(fsPath: string): Promise<{ root: number }> {
     return (await this.request('$/kode/workspace/rootAdded', { path: fsPath })) as {
@@ -537,9 +917,11 @@ export class KodeCoreClient {
   }
 
   /**
-   * RUST-069-W 根生命周期:根移除——服务端撤注册并扇出共享缓存清理
-   * (镜像/符号/解析候选),已注册根回执带每消费面清除数(document-store /
-   * hover-engine 按登记序);未知根 removed:false(不扇出)。
+   * RUST-069-W root lifecycle: root removal — the server side unregisters it and
+   * fans out shared-cache cleanup (mirrors/symbols/parse candidates); for a
+   * registered root the receipt carries each consumer surface's cleared count
+   * (document-store / hover-engine, in registration order); an unknown root
+   * yields removed:false (no fan-out).
    */
   async removeWorkspaceRoot(fsPath: string): Promise<{
     removed: boolean;
@@ -554,8 +936,9 @@ export class KodeCoreClient {
   }
 
   /**
-   * RUST-074-W 暖门:首扫开始——server 侧 keyed 状态机入队(Warming)。
-   * 进行中复用(同 scanId);失败/取消后重开 decision=recovered。
+   * RUST-074-W warm gate: first scan begins — the server-side keyed state
+   * machine is enqueued (Warming). An in-progress scan is reused (same
+   * scanId); after a failure/cancellation it reopens with decision=recovered.
    */
   async beginBackgroundScan(total: number): Promise<{
     state: string;
@@ -569,7 +952,8 @@ export class KodeCoreClient {
     };
   }
 
-  /** RUST-074-W 暖门:首扫完成——泵至 Warm;无进行中首扫 -32602(迟到回执) */
+  /** RUST-074-W warm gate: first scan finished — pumps to Warm; with no
+   * in-progress first scan it answers -32602 (a late receipt) */
   async scanComplete(done: number, failed: number): Promise<{
     state: string;
     done: number;
@@ -582,12 +966,14 @@ export class KodeCoreClient {
     };
   }
 
-  /** RUST-074-W 暖门:首扫取消(镜像中断)——回 Idle 不留假 pending;幂等 */
+  /** RUST-074-W warm gate: first scan cancelled (a mirror interruption) — goes
+   * back to Idle without leaving a false pending; idempotent */
   async scanCancel(): Promise<{ state: string }> {
     return (await this.request('$/kode/index/scanCancel')) as { state: string };
   }
 
-  /** RUST-074-W 暖门:暖态观测(state/coldWhileWarming/done/failed/total) */
+  /** RUST-074-W warm gate: warm-state observation
+   * (state/coldWhileWarming/done/failed/total) */
   async warmState(): Promise<{
     state: string;
     coldWhileWarming: number;
@@ -604,7 +990,8 @@ export class KodeCoreClient {
     };
   }
 
-  /** 优雅停止:shutdown → exit → 宽限后 SIGKILL;in-flight 请求以 DISPOSED 拒绝 */
+  /** graceful stop: shutdown -> exit -> SIGKILL after a grace period; in-flight
+   * requests are rejected with DISPOSED */
   async dispose(): Promise<void> {
     if (this.disposed) {
       return;
@@ -616,10 +1003,12 @@ export class KodeCoreClient {
       return;
     }
     this.rejectAll(new KodeCoreTransportError('client disposed', 'DISPOSED'));
-    // CORE-1 挂起路径 1:shutdown 回包原本无超时,server 存活但挂死(handler
-    // 死循环/背压)时 dispose 永久挂起,后面的 exit/KILL 清理永远走不到。
-    // 包一层超时:超时判定挂死,直接 SIGKILL;rawRequest promise 自身保持
-    // 挂 catch,避免 exit 竞态迟到的 rejectAll 变成 unhandled rejection。
+    // CORE-1 hang path 1: the shutdown reply originally had no timeout, so with
+    // a server alive but hung (handler infinite loop / backpressure) dispose
+    // hung forever and the exit/KILL cleanup after it was never reached.
+    // Wrapped in a timeout: timing out means hung, so SIGKILL directly; the
+    // rawRequest promise itself keeps a catch attached, so a late rejectAll from
+    // an exit race does not turn into an unhandled rejection.
     const shutdownTimeoutMs = this.options.shutdownTimeoutMs ?? DISPOSE_SHUTDOWN_TIMEOUT_MS_DEFAULT;
     let shutdownTimedOut = false;
     try {
@@ -640,17 +1029,20 @@ export class KodeCoreClient {
         );
       });
     } catch {
-      // 服务器已死也继续走 exit/kill;挂死则立即 SIGKILL,不再等宽限
+      // continue to exit/kill even if the server is already dead; if hung,
+      // SIGKILL immediately instead of waiting out the grace period
       if (shutdownTimedOut && child.exitCode === null) {
         child.kill('SIGKILL');
       }
     }
-    this.sendRaw({ jsonrpc: '2.0', method: 'exit' });
+    this.sendNotificationNow('exit');
     const exited = new Promise<void>(resolve => {
-      // CORE-1 挂起路径 2:shutdown 等待期间子进程已自行退出时(handleExit
-      // 已消费 exit 事件并置 child=null),once('exit') 注册在已发事件的进程
-      // 上永不触发——用 exitCode/signalCode 守卫直接完成,避免末尾
-      // `await exited` 永久挂起(子进程孤儿泄漏)。
+      // CORE-1 hang path 2: if the child process exited on its own during the
+      // shutdown wait (handleExit already consumed the exit event and set
+      // child=null), once('exit') registered on a process whose event already
+      // fired never triggers — complete directly via the exitCode/signalCode
+      // guard, so the trailing `await exited` cannot hang forever (leaking an
+      // orphaned child process).
       if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
         resolve();
         return;
@@ -666,104 +1058,19 @@ export class KodeCoreClient {
     this.child = null;
   }
 
-  // -- 内部 ------------------------------------------------------------------
+  // -- internal --------------------------------------------------------------
 
   private rawRequest(method: string, params?: unknown): Promise<unknown> {
-    // dispose 路径绕过 disposed 检查
+    // the dispose path bypasses the disposed check
     const id = this.nextId++;
     const span = newSpanId();
     this.trace(`request ${id} ${method} send (span=${span})`);
+    const tokenSource = new CancellationTokenSource();
     const promise = new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, method, span });
+      this.pending.set(id, { resolve, reject, method, span, tokenSource });
     });
-    this.sendRaw({ jsonrpc: '2.0', id, method, params });
+    this.dispatchRequest(id, method, params, tokenSource);
     return promise;
-  }
-
-  private sendRaw(payload: Record<string, unknown>): void {
-    const child = this.child;
-    const stdin = child?.stdin;
-    if (!child || !stdin || !stdin.writable) {
-      return;
-    }
-    const body = Buffer.from(JSON.stringify(payload), 'utf8');
-    // KODE-RESP-009:帧经 drain 感知写器入队(串行 FIFO;管道满时下一帧
-    // 等 drain,不再无限压进 Node 流内部缓冲)。字节计数仍在入队时点
-    // (rpcTraffic 观测口径不变)。
-    this.rpcBytesOut += body.length;
-    this.frameWriter?.send(
-      Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body])
-    );
-  }
-
-  private consumeStdout(chunk: Buffer): void {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    for (;;) {
-      const headerMatch = HEADER_PATTERN.exec(this.buffer.toString('ascii', 0, Math.min(this.buffer.length, 512)));
-      if (!headerMatch) {
-        if (this.buffer.length > 64 * 1024) {
-          // 非法流:丢弃并记录(BAD_FRAME)
-          this.recordStderrLine(`illegal frame stream, dropped ${this.buffer.length} bytes`);
-          this.buffer = Buffer.alloc(0);
-        }
-        return;
-      }
-      const headerEnd = headerMatch[0].length;
-      const bodyLength = Number(headerMatch[1]);
-      if (this.buffer.length < headerEnd + bodyLength) {
-        return; // 短读:等下一个 chunk
-      }
-      const body = this.buffer.subarray(headerEnd, headerEnd + bodyLength);
-      this.buffer = Buffer.from(this.buffer.subarray(headerEnd + bodyLength));
-      this.rpcBytesIn += body.length;
-      this.dispatchMessage(body);
-    }
-  }
-
-  private dispatchMessage(body: Buffer): void {
-    let message: {
-      id?: number | string | null;
-      method?: string;
-      params?: unknown;
-      result?: unknown;
-      error?: { code: number; message: string };
-    };
-    try {
-      message = JSON.parse(body.toString('utf8'));
-    } catch {
-      this.recordStderrLine(`bad json frame body: ${body.length} bytes`);
-      return;
-    }
-    if (message.id === undefined || message.id === null) {
-      // 服务器通知(RUST-142 接线:PR-003 扩展位落消费面)。
-      if (typeof message.method === 'string') {
-        this.notificationHandler?.({
-          method: message.method,
-          ...(message.params !== undefined ? { params: message.params } : {})
-        });
-      }
-      return;
-    }
-    const pending = this.pending.get(Number(message.id));
-    if (!pending) {
-      return;
-    }
-    this.pending.delete(Number(message.id));
-    if (message.error) {
-      // RUST-068-W:错误面留痕(取消/服务错误都带同一 span)。
-      this.trace(
-        `request ${message.id} ${pending.method} failed ${message.error.code} (span=${pending.span})`
-      );
-      pending.reject(
-        new KodeCoreTransportError(
-          `${pending.method} failed (${message.error.code}): ${message.error.message}`,
-          message.error.code === -32800 ? 'REQUEST_CANCELLED' : 'SERVER_ERROR'
-        )
-      );
-    } else {
-      this.trace(`request ${message.id} ${pending.method} done (span=${pending.span})`);
-      pending.resolve(message.result);
-    }
   }
 
   private recordStderr(chunk: Buffer): void {
@@ -774,7 +1081,7 @@ export class KodeCoreClient {
     }
   }
 
-  /** RUST-068-W:客户端追踪行(onTrace 回调;默认丢弃) */
+  /** RUST-068-W: client trace line (the onTrace callback; discarded by default) */
   private trace(line: string): void {
     this.options.onTrace?.(line);
   }
@@ -787,7 +1094,8 @@ export class KodeCoreClient {
     this.options.onStderr?.(line);
   }
 
-  /** 生命周期取证行(WARM-VISIBILITY-004 刀 B:kode-server 存活心跳进统一通道) */
+  /** lifecycle evidence line (WARM-VISIBILITY-004 blade B: the kode-server
+   * liveness heartbeat goes into the unified channel) */
   private emitLifecycle(line: string): void {
     this.options.onLifecycle?.(line);
   }
@@ -799,7 +1107,8 @@ export class KodeCoreClient {
     this.pending.clear();
   }
 
-  /** 意外退出:重启窗口内自动 respawn + 重握手;超出放弃(CORE-015) */
+  /** unexpected exit: automatic respawn + re-handshake within the restart
+   * window; beyond it, give up (CORE-015) */
   private handleExit(child: ChildProcess, code: number | null, signal: string | null): void {
     if (!this.clearProcess(child, new KodeCoreTransportError(`server exited (code=${code}, signal=${signal})`, 'EXITED'))) {
       return;

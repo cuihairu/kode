@@ -107,6 +107,42 @@ describe('RespDecoder', () => {
     expect(second).toEqual([{ kind: 'bulk', value: 'hello' }]);
   });
 
+  it('KODE-RPC-LIB-001: 非 ASCII bulk——长度按字节计,载荷按字节切再 utf8 解码', () => {
+    const decoder = new RespDecoder();
+    // '中文' = 6 bytes utf8; header carries the byte length, not the char count
+    const frame = Buffer.concat([
+      Buffer.from('$6\r\n', 'latin1'),
+      Buffer.from('中文', 'utf8'),
+      Buffer.from('\r\n', 'latin1')
+    ]);
+    expect(decoder.push(frame)).toEqual([{ kind: 'bulk', value: '中文' }]);
+    // chunk split INSIDE a multibyte char: the decoder must hold the payload
+    // until the full byte count arrives (no premature utf8 decode of a
+    // partial character)
+    const split = Buffer.concat([
+      Buffer.from('$6\r\n', 'latin1'),
+      Buffer.from('中文', 'utf8').subarray(0, 4)
+    ]);
+    expect(decoder.push(split)).toEqual([]);
+    const rest = Buffer.from('中文', 'utf8').subarray(4);
+    expect(decoder.push(Buffer.concat([rest, Buffer.from('\r\n', 'latin1')])))
+      .toEqual([{ kind: 'bulk', value: '中文' }]);
+  });
+
+  it('KODE-RPC-LIB-001: encodeCommand 非 ASCII 参数按字节计长度', () => {
+    const arg = '中文键名';
+    const bytes = Buffer.from(arg, 'utf8');
+    expect(encodeCommand(['HGETALL', arg])).toEqual(
+      Buffer.concat([
+        Buffer.from('*2\r\n$7\r\nHGETALL\r\n', 'latin1'),
+        Buffer.from(`$${bytes.length}\r\n`, 'latin1'),
+        bytes,
+        Buffer.from('\r\n', 'latin1')
+      ])
+    );
+    expect(bytes.length).toBe(12);
+  });
+
   it('解码非法前缀抛 RedisProtocolError', () => {
     const decoder = new RespDecoder();
     expect(() => decoder.push(Buffer.from('?wat\r\n', 'latin1'))).toThrow(RedisProtocolError);

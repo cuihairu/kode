@@ -10,6 +10,11 @@
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "vscode-jsonrpc": ["node_modules/vscode-jsonrpc/lib/common/api.d.ts"],
+      "vscode-jsonrpc/node": ["node_modules/vscode-jsonrpc/lib/node/main.d.ts"]
+    },
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,

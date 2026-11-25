@@ -336,6 +336,17 @@ export function buildFixedFrame(messageId: number, body: Buffer): Buffer {
   return buffer;
 }
 
+/**
+ * KODE-RPC-LIB-001: KBEngine's console/watcher protocol is a private binary
+ * wire format defined by the engine sources themselves (kbe/src/lib/network,
+ * console_helper.h) — no general-purpose library implements it, so this
+ * framing cannot be delegated the way the LSP surface delegates to
+ * lsp-server/vscode-jsonrpc. It stays consolidated in this single codec
+ * module: every C-string on the wire must go through here so the utf8
+ * encoding and the trailing NUL stay in one place (Content-Length-style
+ * byte accounting is done by the caller via Buffer.concat, length prefix
+ * frames use buildFrame/buildFixedFrame).
+ */
 export function buildCString(value: string): Buffer {
   return Buffer.concat([Buffer.from(value, 'utf8'), Buffer.from([0])]);
 }

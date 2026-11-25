@@ -20,11 +20,17 @@
 //     countInitialize — RUST-TRACK-FREEZE-007:统计本进程收到的 initialize
 //                       请求数,kode/initCount 可查(测握手按代缓存后
 //                       重复 start() 不再重发 initialize)
+//     funkyFrames   — KODE-RPC-LIB-001 boundary frames: every reply rotates
+//                       through three legal header shapes (extra Content-Type
+//                       header / lowercase content-length / extra lowercase
+//                       headers). kode/funkyEcho additionally answers with a
+//                       Chinese body and echoes Chinese params, pinning both
+//                       byte-length framing directions.
 'use strict';
 
 const fs = require('fs');
 
-const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash', 'silentRpc', 'silentInitialize', 'echoParams', 'countInitialize'];
+const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash', 'silentRpc', 'silentInitialize', 'echoParams', 'countInitialize', 'funkyFrames'];
 const args = process.argv.slice(2);
 const crashMethod = args.find(a => !MODE_TOKENS.includes(a) && !a.startsWith('markerPath=') && !a.startsWith('delayRpc=') && !a.startsWith('delayInitialize=')) || null;
 const hangShutdown = args.includes('hangShutdown');
@@ -40,6 +46,26 @@ const echoParams = args.includes('echoParams');
 const countInitialize = args.includes('countInitialize');
 const delayInitializeMs = msArg(args, 'delayInitialize=');
 const markerPath = (args.find(a => a.startsWith('markerPath=')) || '').slice('markerPath='.length) || null;
+const funkyFrames = args.includes('funkyFrames');
+
+// KODE-RPC-LIB-001: legal header variants a compliant peer may send. The old
+// hand-rolled client rejected every one of them with "illegal frame stream";
+// the vscode-jsonrpc reader accepts all three.
+let frameStyle = 0;
+function sendFunky(obj) {
+  const body = Buffer.from(JSON.stringify(obj), 'utf8');
+  const style = frameStyle % 3;
+  frameStyle += 1;
+  let head;
+  if (style === 0) {
+    head = `Content-Type: application/vscode-jsonrpc; charset=utf-8\r\nContent-Length: ${body.length}\r\n\r\n`;
+  } else if (style === 1) {
+    head = `content-length: ${body.length}\r\n\r\n`;
+  } else {
+    head = `content-type: text/plain\r\ncontent-length: ${body.length}\r\n\r\n`;
+  }
+  process.stdout.write(Buffer.concat([Buffer.from(head, 'ascii'), body]));
+}
 
 /** delayXxx=<ms> 解析;无令牌返回 null(未启用该模式) */
 function msArg(list, prefix) {
@@ -59,6 +85,9 @@ const cancelTrace = new Set();
 const initializeCount = { received: 0 };
 
 function send(obj) {
+  if (funkyFrames) {
+    return sendFunky(obj);
+  }
   const body = Buffer.from(JSON.stringify(obj), 'utf8');
   process.stdout.write(
     Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body])
@@ -204,6 +233,11 @@ function handle(msg) {
       return reply(msg.id, { pid: process.pid });
     case 'kode/initCount':
       return reply(msg.id, { initializeRequests: initializeCount.received });
+    case 'kode/funkyEcho':
+      // KODE-RPC-LIB-001: non-ASCII on both wire directions — Chinese params
+      // (client send, byte-length Content-Length) echoed back alongside a
+      // Chinese note (server send, funky header rotation)
+      return reply(msg.id, { echo: msg.params, note: '中文帧体边界' });
     case 'kode/cancels':
       return reply(msg.id, { ids: [...cancelTrace].sort((a, b) => a - b) });
     default:

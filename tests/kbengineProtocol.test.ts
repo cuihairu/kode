@@ -8,6 +8,7 @@ import {
   bigIntToNumber,
   buildCString,
   buildFrame,
+  buildWatcherDirFrameBody,
   parseComponentInfo,
   parseWatcherFrame,
   swapUint16,
@@ -108,6 +109,30 @@ describe('protocol byte helpers', () => {
     expect(frame.readUInt16LE(0)).toBe(65502);
     expect(frame.readUInt16LE(2)).toBe(2);
     expect(frame[4]).toBe(0x01);
+  });
+
+  it('KODE-RPC-LIB-001: cstring boundaries — non-ASCII utf8, oversize value, nested run in a dir frame', () => {
+    // non-ASCII: the NUL terminator must ride after the utf8 BYTES, not chars
+    const zh = buildCString('怪物/血量');
+    expect(zh[zh.length - 1]).toBe(0);
+    expect(zh.length).toBe(Buffer.from('怪物/血量', 'utf8').length + 1);
+    expect(zh.toString('utf8').slice(0, -1)).toBe('怪物/血量');
+    // oversize: a path longer than any length-prefix width the engine uses
+    // still ends on exactly one NUL
+    const big = buildCString('x'.repeat(128 * 1024));
+    expect(big.length).toBe(128 * 1024 + 1);
+    expect(big[big.length - 1]).toBe(0);
+    // nesting: a cstring run inside a type-1 watcher dir frame keeps each
+    // field separated by exactly one NUL
+    const dir = buildWatcherDirFrameBody('/', ['中文键', 'fps']);
+    expect(dir).toEqual(
+      Buffer.concat([
+        Buffer.from([1]),
+        buildCString('/'),
+        buildCString('中文键'),
+        buildCString('fps')
+      ])
+    );
   });
 });
 

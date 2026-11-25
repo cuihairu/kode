@@ -468,4 +468,20 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     expect(health.documents).toHaveLength(N);
     await client.dispose();
   }, 15_000);
+
+  it('KODE-RPC-LIB-001: 额外头(Content-Type)/小写 content-length/非 ASCII 中文帧体——三种合法形态全部正确解帧', async () => {
+    const client = tracked(makeClient({ args: [FAKE_SERVER, 'funkyFrames'] }));
+    // 握手回包本身就是轮换的 funky 帧:解不开帧 start() 就会超时
+    await client.start();
+    for (let i = 0; i < 6; i += 1) {
+      const result = (await client.request('kode/funkyEcho', { seq: i, text: '中文参数' })) as {
+        echo: { seq: number; text: string };
+        note: string;
+      };
+      // 发送向:Content-Length 必须按字节计(若按字符计,替身会解帧失败/截断)
+      expect(result.echo, `round ${i} echo`).toEqual({ seq: i, text: '中文参数' });
+      expect(result.note, `round ${i} note`).toBe('中文帧体边界');
+    }
+    await client.dispose();
+  }, 15_000);
 });

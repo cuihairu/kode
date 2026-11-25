@@ -267,6 +267,9 @@ importers:
       vitest:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@20.19.43)(@vitest/coverage-v8@5.1.0)(vite@7.3.7(@types/node@20.19.43))
+      vscode-jsonrpc:
+        specifier: 10.0.1
+        version: 10.0.1
       vscode-oniguruma:
         specifier: ^2.0.1
         version: 2.0.1
@@ -3150,6 +3153,10 @@ packages:
         optional: true
       jsdom:
         optional: true
+
+  vscode-jsonrpc@10.0.1:
+    resolution: {integrity: sha512-fGdu32Sp4GeSQ2twML46WPMB6cFfIJ4Vdx1K5s/WPzUYdShVPCGKscYltn5hiNz748xKNJdBHgocAvuN48tLGw==}
+    engines: {node: '>=14.17.0'}
 
   vscode-oniguruma@2.0.1:
     resolution: {integrity: sha512-poJU8iHIWnC3vgphJnrLZyI3YdqRlR27xzqDmpPXYzA93R4Gk8z7T6oqDzDoHjoikA2aS82crdXFkjELCdJsjQ==}
@@ -6304,6 +6311,8 @@ snapshots:
       '@vitest/coverage-v8': 5.1.0(vitest@5.1.0)
     transitivePeerDependencies:
       - msw
+
+  vscode-jsonrpc@10.0.1: {}
 
   vscode-oniguruma@2.0.1: {}
 
