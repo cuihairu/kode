@@ -8,16 +8,16 @@
  */
 
 /**
- * 入站消息:请求(带 id)或通知(无 id)。untagged 按字段区分。
+ * Inbound message: request (with id) or notification (no id). Untagged, distinguished by fields.
  */
 export type IncomingMessage = Request | Notification;
 /**
- * JSON-RPC 请求/响应 id。CORE-003:request_id 贯穿扩展↔Core↔后台任务, 数字与字符串两种形态都要保真(禁止归一化成一种)。
+ * JSON-RPC request/response id. CORE-003: request_id threads through extension<->Core<->background tasks; both number and string forms must be preserved faithfully (normalizing to one form is forbidden).
  */
 export type RequestId = number | string;
 
 /**
- * kode2 协议 wire DTO 全集(RUST-055 单一真源)。
+ * The full set of kode2 protocol wire DTOs (RUST-055 single source of truth).
  */
 export interface KodeProtocol {
   code_action_diagnostic: CodeActionDiagnostic;
@@ -67,36 +67,36 @@ export interface KodeProtocol {
   workspace_symbol_params: WorkspaceSymbolParams;
 }
 /**
- * codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。
+ * codeAction diagnostic input face (RUST-143 batch 3): the TS side collapses vscode.Diagnostic into pure data (code/range/related location face); the assembly decision core filters by the code gate and range intersection.
  */
 export interface CodeActionDiagnostic {
   code: string;
   range: Range;
   /**
-   * relatedInformation[0].location.uri.fsPath(parity 族定位面;无则缺省)。
+   * relatedInformation[0].location.uri.fsPath (parity-family location face; omitted when absent).
    */
   relatedFile?: string | null;
   /**
-   * relatedInformation[0].message(目标类名;空串时服务端按 def 文件名兜底)。
+   * relatedInformation[0].message (target class name; the server falls back to the def file name when it is empty).
    */
   relatedMessage?: string | null;
 }
 /**
- * LSP 区间。
+ * LSP range.
  */
 export interface Range {
   end: Position;
   start: Position;
 }
 /**
- * LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
+ * LSP position (character counted in UTF-16 code units; semantics per kode-vfs VFS-004).
  */
 export interface Position {
   character: number;
   line: number;
 }
 /**
- * codeAction 请求参数(RUST-143 批 3):装配族分派 + 族输入(registered 近拼宇宙=TS getKnownTypeContext 装配;snapshotText=parity 族目标 python 快照,TS readSharedFileSnapshot 打开缓冲区优先)+ 诊断面数组。四族 (typeReplacement/parityMethod/receiverNone/fixedDict)各自装配,产出 ActionFace 描述符数组(vscode 对象构造与 l10n 标题归 TS 薄壳)。
+ * codeAction request params (RUST-143 batch 3): assembly-family dispatch + family inputs (registered = the near-miss universe from TS getKnownTypeContext assembly; snapshotText = the parity-family target python snapshot, TS readSharedFileSnapshot preferring the open buffer) + the diagnostic face array. The four families (typeReplacement/parityMethod/receiverNone/fixedDict) are assembled independently, producing an ActionFace descriptor array (vscode object construction and l10n titles stay with the TS thin shell).
  */
 export interface CodeActionParams {
   diagnostics?: CodeActionDiagnostic[];
@@ -110,17 +110,17 @@ export interface TextDocumentIdentifier {
   uri: string;
 }
 /**
- * completion 能力声明(triggerCharacters 供客户端决定何时发请求)。
+ * completion capability declaration (triggerCharacters lets the client decide when to request).
  */
 export interface CompletionOptions {
   /**
-   * RUST-135:completionItem/resolve 延迟补详情面(文档/来源按需补)。
+   * RUST-135: completionItem/resolve lazy detail face (docs/source filled in on demand).
    */
   resolveProvider: boolean;
   triggerCharacters: string[];
 }
 /**
- * completion 请求参数:文档身份 + UTF-16 位置(触发上下文由服务端从 光标前文本推导,与 TS 行前缀判面同口径)。
+ * completion request params: document identity + UTF-16 position (the trigger context is derived server-side from the text before the cursor, same contract as the TS line-prefix face).
  */
 export interface CompletionParams {
   position: Position;
@@ -128,17 +128,17 @@ export interface CompletionParams {
 }
 export interface ContentChangeEvent {
   /**
-   * Full sync(change=1)下恒为 None;增量同步(change=2)带 range, 由 kode-vfs 做精确坐标转换(VFS-004)。
+   * Always None under full sync (change=1); incremental sync (change=2) carries a range, with exact coordinate conversion done by kode-vfs (VFS-004).
    */
   range?: Range | null;
   text: string;
 }
 /**
- * Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。
+ * Core process resource snapshot (RUST-026): RSS / thread count / cumulative disk IO.
  */
 export interface CoreResources {
   /**
-   * 进程累计 CPU 时间 ms(utime+stime,CLK_TCK=100 Linux 标准假设); 调用方两次采样差分得速率
+   * Cumulative process CPU time in ms (utime+stime, assuming the Linux-standard CLK_TCK=100); the caller diffs two samples to get a rate
    */
   cpuTimeMs: number;
   diskReadBytes: number;
@@ -147,20 +147,20 @@ export interface CoreResources {
   threads: number;
 }
 /**
- * definition 请求参数:文档身份 + UTF-16 位置(与 hover 同一定位基建)。
+ * definition request params: document identity + UTF-16 position (same locating foundation as hover).
  */
 export interface DefinitionParams {
   position: Position;
   textDocument: TextDocumentIdentifier;
 }
 /**
- * LSP `DeleteFilesParams`。
+ * LSP `DeleteFilesParams`.
  */
 export interface DeleteFilesParams {
   files: DeletedFile[];
 }
 /**
- * LSP `DeleteFilesParams` 条目(仅消费 files[].uri)。
+ * LSP `DeleteFilesParams` entry (only files[].uri is consumed).
  */
 export interface DeletedFile {
   uri: string;
@@ -189,43 +189,43 @@ export interface TextDocumentItem {
   version: number;
 }
 /**
- * definition 请求的文档身份(与 hover 同形,单独类型保 LSP 语义清晰)。
+ * Document identity for the definition request (same shape as hover; a separate type keeps LSP semantics clear).
  */
 export interface DocumentDiagnosticParams {
   textDocument: TextDocumentIdentifier;
 }
 /**
- * 打开文档摘要(只含 uri+version,不带正文)。
+ * Open-document summary (uri + version only, no text body).
  */
 export interface DocumentSummary {
   uri: string;
   version: number;
 }
 /**
- * documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。
+ * documentSymbol request params: document identity only (the Outline face is recomputed server-side from the synced document text; no position/context input; a separate type keeps LSP semantics clear).
  */
 export interface DocumentSymbolParams {
   textDocument: TextDocumentIdentifier;
 }
 /**
- * `$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构 (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。
+ * `$/kode/fileChanged` notification params: pure data, no vscode binding -- when watch is sunk into rust later, TS is just a consumer and the protocol stays character for character. Fields are isomorphic to TS `NonPythonChangeEvent` (fsPath/identity/kind/version/fileName/ext/sha256/handledBy).
  */
 export interface FileChangedParams {
   /**
-   * 小写含点扩展名(`.def`);无扩展名为空串
+   * Lowercase extension with the leading dot (`.def`); empty string when there is no extension
    */
   ext: string;
   fileName: string;
   /**
-   * 原样路径
+   * Path as-is
    */
   fsPath: string;
   /**
-   * "python" | "rust" | "unrouted"(路由命中的处理方)
+   * "python" | "rust" | "unrouted" (the handler the route resolved to)
    */
   handledBy: string;
   /**
-   * 归一身份键(斜杠/点段归一)
+   * Normalized identity key (slash / dot-segment normalization)
    */
   identity: string;
   /**
@@ -233,23 +233,23 @@ export interface FileChangedParams {
    */
   kind: string;
   /**
-   * 内容 sha256 hex;删除或读不到为 None(不编造)
+   * Content sha256 hex; None on deletion or when unreadable (never fabricated)
    */
   sha256?: string | null;
   /**
-   * 盘上版本 token `${mtimeMs}:${size}`;拿不到为 None(不编造)
+   * On-disk version token `${mtimeMs}:${size}`; None when unavailable (never fabricated)
    */
   version?: string | null;
 }
 /**
- * `$/kode/health` 响应:启动探针/健康状态/可观察恢复原因(CORE-016)。 `restart_generation` 由 TS 侧传入增长,崩溃重启后客户端可对账。
+ * `$/kode/health` response: startup probe / health status / observable recovery reason (CORE-016). `restart_generation` grows on the TS side so the client can reconcile after a crash restart.
  */
 export interface HealthReport {
   documents: DocumentSummary[];
   initialized: boolean;
   pid: number;
   /**
-   * RUST-026 Core 进程资源观测;非 Linux 或 /proc 解析失败 = None 诚实降级
+   * RUST-026 Core process resource observation; non-Linux or /proc parse failure = None (honest degradation)
    */
   resources?: CoreResources | null;
   restartGeneration: number;
@@ -259,14 +259,14 @@ export interface HealthReport {
   uptimeMs: number;
 }
 /**
- * hover 请求参数:文档身份 + UTF-16 位置(语义同 Position)。
+ * hover request params: document identity + UTF-16 position (same semantics as Position).
  */
 export interface HoverParams {
   position: Position;
   textDocument: TextDocumentIdentifier;
 }
 /**
- * JSON-RPC 请求。
+ * JSON-RPC request.
  */
 export interface Request {
   id: RequestId;
@@ -277,7 +277,7 @@ export interface Request {
   };
 }
 /**
- * JSON-RPC 通知。
+ * JSON-RPC notification.
  */
 export interface Notification {
   jsonrpc: string;
@@ -287,14 +287,14 @@ export interface Notification {
   };
 }
 /**
- * `initialize` 请求参数(只取本切片关心的字段,其余透传丢弃)。
+ * `initialize` request params (only the fields this slice cares about; the rest pass through and are dropped).
  */
 export interface InitializeParams {
   capabilities?: {
     [k: string]: unknown;
   };
   /**
-   * kode2 扩展位:restartGeneration 等客户端状态经此传入(CORE-015 对账)。
+   * kode2 extension slot: client state such as restartGeneration is passed in here (CORE-015 parity comparison).
    */
   initializationOptions?: {
     [k: string]: unknown;
@@ -302,98 +302,98 @@ export interface InitializeParams {
   processId?: number | null;
   rootUri?: string | null;
   /**
-   * LSP 多工作区文件夹(VFS-009/KBUG-ROOT):逐个注册为资源根,跨根同名 实体隔离的归属依据;缺省只落 rootUri。
+   * LSP multi-workspace folders (VFS-009/KBUG-ROOT): registered one by one as resource roots, the basis for attributing same-named entities across roots; defaults to only rootUri.
    */
   workspaceFolders?: WorkspaceFolder[] | null;
 }
 /**
- * LSP 工作区文件夹(initialize.workspaceFolders 条目;uri 必需)。
+ * LSP workspace folder (an initialize.workspaceFolders entry; uri is required).
  */
 export interface WorkspaceFolder {
   name?: string | null;
   uri: string;
 }
 /**
- * `initialize` 响应。
+ * `initialize` response.
  */
 export interface InitializeResult {
   capabilities: ServerCapabilities;
   serverInfo: ServerInfo;
 }
 /**
- * 服务器 capabilities(最小集:full 文本同步 + hover + completion)。
+ * Server capabilities (minimal set: full text sync + hover + completion).
  */
 export interface ServerCapabilities {
   /**
-   * RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。
+   * RUST-143 batch 3: textDocument/codeAction capability declaration (four-family assembly face).
    */
   codeActionProvider?: boolean;
   /**
-   * LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
+   * LSP-005 / PR-011: completion provider capability declaration (trigger character `<`).
    */
   completionProvider?: CompletionOptions | null;
   /**
-   * Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。
+   * Phase2 first slice: textDocument/definition capability declaration (declaration landing site).
    */
   definitionProvider?: boolean;
   /**
-   * RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。
+   * RUST-139 batch 3: textDocument/documentSymbol capability declaration (def segment-symbol face).
    */
   documentSymbolProvider?: boolean;
   /**
-   * LSP-003 / PH1-03(PR-010):hover provider 能力声明。
+   * LSP-003 / PH1-03 (PR-010): hover provider capability declaration.
    */
   hoverProvider?: boolean;
   /**
-   * RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。
+   * RUST-138 batch 3: textDocument/references capability declaration (declaration + reference-site face).
    */
   referencesProvider?: boolean;
   /**
-   * RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。
+   * RUST-141 batch 2: textDocument/rename+prepareRename capability declaration (def rename face).
    */
   renameProvider?: boolean;
   /**
-   * RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。
+   * RUST-140 batch 3: textDocument/signatureHelp capability declaration (def method signature face).
    */
   signatureHelpProvider?: boolean;
   textDocumentSync: TextDocumentSyncOptions;
   /**
-   * RUST-139 批 4:workspace/symbol 能力声明(def 符号前缀检索面)。
+   * RUST-139 batch 4: workspace/symbol capability declaration (def symbol prefix-search face).
    */
   workspaceSymbolProvider?: boolean;
 }
 /**
- * 全量同步(openClose + change=1)。
+ * Full sync (openClose + change=1).
  */
 export interface TextDocumentSyncOptions {
   /**
-   * 1 = Full:didChange 每次带全文(PH1 切片够用,增量同步在 VFS PR-004)。
+   * 1 = Full: didChange always carries the full text (enough for the PH1 slice; incremental sync is VFS PR-004).
    */
   change: number;
   openClose: boolean;
 }
 /**
- * serverInfo:TS 侧握手时校验名字/版本(BUILD-015 版本不匹配提示的输入)。
+ * serverInfo: the TS side validates name/version at handshake (input for the BUILD-015 version-mismatch notice).
  */
 export interface ServerInfo {
   name: string;
   version: string;
 }
 /**
- * prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置—— 可重命名符号解析与候选名区间由服务端从已同步文档复算。
+ * prepareRename request params (RUST-141 batch 2): document identity + UTF-16 position -- renamable-symbol resolution and the candidate-name range are recomputed server-side from the synced document.
  */
 export interface PrepareRenameParams {
   position: Position;
   textDocument: TextDocumentIdentifier;
 }
 /**
- * 引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。
+ * Reference context: `includeDeclaration` decides whether the exact declaration (that symbol's name span inside the def) counts toward the result. The types.xml face has no declaration site at all, so this flag has no effect on that face.
  */
 export interface ReferenceContext {
   includeDeclaration?: boolean;
 }
 /**
- * references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。 `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP ReferenceContext 语义一致;客户端可只送文档与位置)。
+ * references request params: document identity + UTF-16 position + reference context (RUST-138 batch 3). `context`/`includeDeclaration` may both be omitted (omitted = no exact declaration, matching LSP ReferenceContext semantics; the client may send just the document and position).
  */
 export interface ReferenceParams {
   context?: ReferenceContext;
@@ -401,20 +401,20 @@ export interface ReferenceParams {
   textDocument: TextDocumentIdentifier;
 }
 /**
- * LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。
+ * LSP `RenameFilesParams` (only files[].oldUri/newUri is consumed).
  */
 export interface RenameFilesParams {
   files: RenamedFile[];
 }
 /**
- * LSP `WorkspaceFileRename`:一条重命名事件(old → new)。
+ * LSP `WorkspaceFileRename`: one rename event (old -> new).
  */
 export interface RenamedFile {
   newUri: string;
   oldUri: string;
 }
 /**
- * rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。 def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。
+ * rename request params (RUST-141 batch 2): document identity + UTF-16 position + target name. The def-face edit and closure-conflict pre-check are recomputed server-side (the python self-access rewrite face is not part of this face).
  */
 export interface RenameParams {
   newName: string;
@@ -422,7 +422,7 @@ export interface RenameParams {
   textDocument: TextDocumentIdentifier;
 }
 /**
- * JSON-RPC 响应。`id: None` 仅用于 id 不可知的解析错误(规范允许 null)。
+ * JSON-RPC response. `id: None` is only for parse errors where the id is unknowable (the spec allows null).
  */
 export interface Response {
   error?: ResponseError | null;
@@ -431,7 +431,7 @@ export interface Response {
   result?: unknown;
 }
 /**
- * JSON-RPC 错误对象。
+ * JSON-RPC error object.
  */
 export interface ResponseError {
   code: number;
@@ -439,7 +439,7 @@ export interface ResponseError {
   message: string;
 }
 /**
- * 出站通知(服务器 → 客户端)。
+ * Outbound notification (server -> client).
  */
 export interface ServerNotification {
   jsonrpc: string;
@@ -447,14 +447,14 @@ export interface ServerNotification {
   params?: unknown;
 }
 /**
- * signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构) → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。
+ * signatureHelp request params (RUST-140 batch 3): python document + cursor. Starting from the inline text, the server runs call-site lexing (python_call_at, isomorphic to TS getPythonCallAtPosition) -> the inheritance-chain closure signature decision (signature_help) in this domain, with zero TS decision input throughout; the runtime entity registry chain (EntityMappingManager) does not cross this face -- signatures come from the corpus def view.
  */
 export interface SignatureHelpParams {
   position: Position;
   textDocument: TextDocumentIdentifier;
 }
 /**
- * `workspace/symbol` 参数(RUST-139 批 4):Ctrl+T 快速搜索的前缀查询串。 LSP `limit` 可选参数不入 Rust 面——结果集由决策核全量产出后由 TS 侧 薄壳截断(vscode 请求侧行为,服务端不猜分页口径)。
+ * `workspace/symbol` params (RUST-139 batch 4): the prefix query string for Ctrl+T quick search. The LSP optional `limit` param does not enter the Rust face -- the decision core produces the full result set, which the TS thin shell then truncates (that is vscode request-side behaviour; the server does not guess the paging contract).
  */
 export interface WorkspaceSymbolParams {
   query: string;

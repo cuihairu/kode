@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
     "CodeActionDiagnostic": {
-      "description": "codeAction 诊断入参面(RUST-143 批 3):TS 侧把 vscode.Diagnostic 收敛成 纯数据(code/区间/related 定位面),装配决策核按 code 闸与区间相交过滤。",
+      "description": "codeAction diagnostic input face (RUST-143 batch 3): the TS side collapses vscode.Diagnostic into pure data (code/range/related location face); the assembly decision core filters by the code gate and range intersection.",
       "properties": {
         "code": {
           "type": "string"
@@ -12,7 +12,7 @@
         },
         "relatedFile": {
           "default": null,
-          "description": "relatedInformation[0].location.uri.fsPath(parity 族定位面;无则缺省)。",
+          "description": "relatedInformation[0].location.uri.fsPath (parity-family location face; omitted when absent).",
           "type": [
             "string",
             "null"
@@ -20,7 +20,7 @@
         },
         "relatedMessage": {
           "default": null,
-          "description": "relatedInformation[0].message(目标类名;空串时服务端按 def 文件名兜底)。",
+          "description": "relatedInformation[0].message (target class name; the server falls back to the def file name when it is empty).",
           "type": [
             "string",
             "null"
@@ -34,7 +34,7 @@
       "type": "object"
     },
     "CodeActionParams": {
-      "description": "codeAction 请求参数(RUST-143 批 3):装配族分派 + 族输入(registered 近拼宇宙=TS getKnownTypeContext 装配;snapshotText=parity 族目标 python 快照,TS readSharedFileSnapshot 打开缓冲区优先)+ 诊断面数组。四族 (typeReplacement/parityMethod/receiverNone/fixedDict)各自装配,产出 ActionFace 描述符数组(vscode 对象构造与 l10n 标题归 TS 薄壳)。",
+      "description": "codeAction request params (RUST-143 batch 3): assembly-family dispatch + family inputs (registered = the near-miss universe from TS getKnownTypeContext assembly; snapshotText = the parity-family target python snapshot, TS readSharedFileSnapshot preferring the open buffer) + the diagnostic face array. The four families (typeReplacement/parityMethod/receiverNone/fixedDict) are assembled independently, producing an ActionFace descriptor array (vscode object construction and l10n titles stay with the TS thin shell).",
       "properties": {
         "diagnostics": {
           "default": [],
@@ -75,10 +75,10 @@
       "type": "object"
     },
     "CompletionOptions": {
-      "description": "completion 能力声明(triggerCharacters 供客户端决定何时发请求)。",
+      "description": "completion capability declaration (triggerCharacters lets the client decide when to request).",
       "properties": {
         "resolveProvider": {
-          "description": "RUST-135:completionItem/resolve 延迟补详情面(文档/来源按需补)。",
+          "description": "RUST-135: completionItem/resolve lazy detail face (docs/source filled in on demand).",
           "type": "boolean"
         },
         "triggerCharacters": {
@@ -95,7 +95,7 @@
       "type": "object"
     },
     "CompletionParams": {
-      "description": "completion 请求参数:文档身份 + UTF-16 位置(触发上下文由服务端从 光标前文本推导,与 TS 行前缀判面同口径)。",
+      "description": "completion request params: document identity + UTF-16 position (the trigger context is derived server-side from the text before the cursor, same contract as the TS line-prefix face).",
       "properties": {
         "position": {
           "$ref": "#/definitions/Position"
@@ -122,7 +122,7 @@
             }
           ],
           "default": null,
-          "description": "Full sync(change=1)下恒为 None;增量同步(change=2)带 range, 由 kode-vfs 做精确坐标转换(VFS-004)。"
+          "description": "Always None under full sync (change=1); incremental sync (change=2) carries a range, with exact coordinate conversion done by kode-vfs (VFS-004)."
         },
         "text": {
           "type": "string"
@@ -134,10 +134,10 @@
       "type": "object"
     },
     "CoreResources": {
-      "description": "Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。",
+      "description": "Core process resource snapshot (RUST-026): RSS / thread count / cumulative disk IO.",
       "properties": {
         "cpuTimeMs": {
-          "description": "进程累计 CPU 时间 ms(utime+stime,CLK_TCK=100 Linux 标准假设); 调用方两次采样差分得速率",
+          "description": "Cumulative process CPU time in ms (utime+stime, assuming the Linux-standard CLK_TCK=100); the caller diffs two samples to get a rate",
           "format": "uint64",
           "minimum": 0.0,
           "type": "integer"
@@ -173,7 +173,7 @@
       "type": "object"
     },
     "DefinitionParams": {
-      "description": "definition 请求参数:文档身份 + UTF-16 位置(与 hover 同一定位基建)。",
+      "description": "definition request params: document identity + UTF-16 position (same locating foundation as hover).",
       "properties": {
         "position": {
           "$ref": "#/definitions/Position"
@@ -189,7 +189,7 @@
       "type": "object"
     },
     "DeleteFilesParams": {
-      "description": "LSP `DeleteFilesParams`。",
+      "description": "LSP `DeleteFilesParams`.",
       "properties": {
         "files": {
           "items": {
@@ -204,7 +204,7 @@
       "type": "object"
     },
     "DeletedFile": {
-      "description": "LSP `DeleteFilesParams` 条目(仅消费 files[].uri)。",
+      "description": "LSP `DeleteFilesParams` entry (only files[].uri is consumed).",
       "properties": {
         "uri": {
           "type": "string"
@@ -267,7 +267,7 @@
       "type": "object"
     },
     "DocumentDiagnosticParams": {
-      "description": "definition 请求的文档身份(与 hover 同形,单独类型保 LSP 语义清晰)。",
+      "description": "Document identity for the definition request (same shape as hover; a separate type keeps LSP semantics clear).",
       "properties": {
         "textDocument": {
           "$ref": "#/definitions/TextDocumentIdentifier"
@@ -279,7 +279,7 @@
       "type": "object"
     },
     "DocumentSummary": {
-      "description": "打开文档摘要(只含 uri+version,不带正文)。",
+      "description": "Open-document summary (uri + version only, no text body).",
       "properties": {
         "uri": {
           "type": "string"
@@ -296,7 +296,7 @@
       "type": "object"
     },
     "DocumentSymbolParams": {
-      "description": "documentSymbol 请求参数:仅文档身份(Outline 面由服务端从已同步文档文本 复算,无位置/上下文入参;单独类型保 LSP 语义清晰)。",
+      "description": "documentSymbol request params: document identity only (the Outline face is recomputed server-side from the synced document text; no position/context input; a separate type keeps LSP semantics clear).",
       "properties": {
         "textDocument": {
           "$ref": "#/definitions/TextDocumentIdentifier"
@@ -308,25 +308,25 @@
       "type": "object"
     },
     "FileChangedParams": {
-      "description": "`$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构 (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。",
+      "description": "`$/kode/fileChanged` notification params: pure data, no vscode binding -- when watch is sunk into rust later, TS is just a consumer and the protocol stays character for character. Fields are isomorphic to TS `NonPythonChangeEvent` (fsPath/identity/kind/version/fileName/ext/sha256/handledBy).",
       "properties": {
         "ext": {
-          "description": "小写含点扩展名(`.def`);无扩展名为空串",
+          "description": "Lowercase extension with the leading dot (`.def`); empty string when there is no extension",
           "type": "string"
         },
         "fileName": {
           "type": "string"
         },
         "fsPath": {
-          "description": "原样路径",
+          "description": "Path as-is",
           "type": "string"
         },
         "handledBy": {
-          "description": "\"python\" | \"rust\" | \"unrouted\"(路由命中的处理方)",
+          "description": "\"python\" | \"rust\" | \"unrouted\" (the handler the route resolved to)",
           "type": "string"
         },
         "identity": {
-          "description": "归一身份键(斜杠/点段归一)",
+          "description": "Normalized identity key (slash / dot-segment normalization)",
           "type": "string"
         },
         "kind": {
@@ -334,14 +334,14 @@
           "type": "string"
         },
         "sha256": {
-          "description": "内容 sha256 hex;删除或读不到为 None(不编造)",
+          "description": "Content sha256 hex; None on deletion or when unreadable (never fabricated)",
           "type": [
             "string",
             "null"
           ]
         },
         "version": {
-          "description": "盘上版本 token `${mtimeMs}:${size}`;拿不到为 None(不编造)",
+          "description": "On-disk version token `${mtimeMs}:${size}`; None when unavailable (never fabricated)",
           "type": [
             "string",
             "null"
@@ -359,7 +359,7 @@
       "type": "object"
     },
     "HealthReport": {
-      "description": "`$/kode/health` 响应:启动探针/健康状态/可观察恢复原因(CORE-016)。 `restart_generation` 由 TS 侧传入增长,崩溃重启后客户端可对账。",
+      "description": "`$/kode/health` response: startup probe / health status / observable recovery reason (CORE-016). `restart_generation` grows on the TS side so the client can reconcile after a crash restart.",
       "properties": {
         "documents": {
           "items": {
@@ -385,7 +385,7 @@
             }
           ],
           "default": null,
-          "description": "RUST-026 Core 进程资源观测;非 Linux 或 /proc 解析失败 = None 诚实降级"
+          "description": "RUST-026 Core process resource observation; non-Linux or /proc parse failure = None (honest degradation)"
         },
         "restartGeneration": {
           "format": "uint64",
@@ -420,7 +420,7 @@
       "type": "object"
     },
     "HoverParams": {
-      "description": "hover 请求参数:文档身份 + UTF-16 位置(语义同 Position)。",
+      "description": "hover request params: document identity + UTF-16 position (same semantics as Position).",
       "properties": {
         "position": {
           "$ref": "#/definitions/Position"
@@ -444,17 +444,17 @@
           "$ref": "#/definitions/Notification"
         }
       ],
-      "description": "入站消息:请求(带 id)或通知(无 id)。untagged 按字段区分。"
+      "description": "Inbound message: request (with id) or notification (no id). Untagged, distinguished by fields."
     },
     "InitializeParams": {
-      "description": "`initialize` 请求参数(只取本切片关心的字段,其余透传丢弃)。",
+      "description": "`initialize` request params (only the fields this slice cares about; the rest pass through and are dropped).",
       "properties": {
         "capabilities": {
           "default": null
         },
         "initializationOptions": {
           "default": null,
-          "description": "kode2 扩展位:restartGeneration 等客户端状态经此传入(CORE-015 对账)。"
+          "description": "kode2 extension slot: client state such as restartGeneration is passed in here (CORE-015 parity comparison)."
         },
         "processId": {
           "default": null,
@@ -474,7 +474,7 @@
         },
         "workspaceFolders": {
           "default": null,
-          "description": "LSP 多工作区文件夹(VFS-009/KBUG-ROOT):逐个注册为资源根,跨根同名 实体隔离的归属依据;缺省只落 rootUri。",
+          "description": "LSP multi-workspace folders (VFS-009/KBUG-ROOT): registered one by one as resource roots, the basis for attributing same-named entities across roots; defaults to only rootUri.",
           "items": {
             "$ref": "#/definitions/WorkspaceFolder"
           },
@@ -487,7 +487,7 @@
       "type": "object"
     },
     "InitializeResult": {
-      "description": "`initialize` 响应。",
+      "description": "`initialize` response.",
       "properties": {
         "capabilities": {
           "$ref": "#/definitions/ServerCapabilities"
@@ -503,7 +503,7 @@
       "type": "object"
     },
     "Notification": {
-      "description": "JSON-RPC 通知。",
+      "description": "JSON-RPC notification.",
       "properties": {
         "jsonrpc": {
           "type": "string"
@@ -522,7 +522,7 @@
       "type": "object"
     },
     "Position": {
-      "description": "LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。",
+      "description": "LSP position (character counted in UTF-16 code units; semantics per kode-vfs VFS-004).",
       "properties": {
         "character": {
           "format": "uint32",
@@ -542,7 +542,7 @@
       "type": "object"
     },
     "PrepareRenameParams": {
-      "description": "prepareRename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置—— 可重命名符号解析与候选名区间由服务端从已同步文档复算。",
+      "description": "prepareRename request params (RUST-141 batch 2): document identity + UTF-16 position -- renamable-symbol resolution and the candidate-name range are recomputed server-side from the synced document.",
       "properties": {
         "position": {
           "$ref": "#/definitions/Position"
@@ -558,7 +558,7 @@
       "type": "object"
     },
     "Range": {
-      "description": "LSP 区间。",
+      "description": "LSP range.",
       "properties": {
         "end": {
           "$ref": "#/definitions/Position"
@@ -574,7 +574,7 @@
       "type": "object"
     },
     "ReferenceContext": {
-      "description": "引用上下文:`includeDeclaration` 支配是否把精确声明(def 内该符号的名字 跨度)计入结果。types.xml 面本身无声明位,该标志在该面不生效。",
+      "description": "Reference context: `includeDeclaration` decides whether the exact declaration (that symbol's name span inside the def) counts toward the result. The types.xml face has no declaration site at all, so this flag has no effect on that face.",
       "properties": {
         "includeDeclaration": {
           "default": false,
@@ -584,7 +584,7 @@
       "type": "object"
     },
     "ReferenceParams": {
-      "description": "references 请求参数:文档身份 + UTF-16 位置 + 引用上下文(RUST-138 批 3)。 `context`/`includeDeclaration` 均可缺省(缺省 = 不含精确声明,与 LSP ReferenceContext 语义一致;客户端可只送文档与位置)。",
+      "description": "references request params: document identity + UTF-16 position + reference context (RUST-138 batch 3). `context`/`includeDeclaration` may both be omitted (omitted = no exact declaration, matching LSP ReferenceContext semantics; the client may send just the document and position).",
       "properties": {
         "context": {
           "allOf": [
@@ -610,7 +610,7 @@
       "type": "object"
     },
     "RenameFilesParams": {
-      "description": "LSP `RenameFilesParams`(仅消费 files[].oldUri/newUri)。",
+      "description": "LSP `RenameFilesParams` (only files[].oldUri/newUri is consumed).",
       "properties": {
         "files": {
           "items": {
@@ -625,7 +625,7 @@
       "type": "object"
     },
     "RenameParams": {
-      "description": "rename 请求参数(RUST-141 批 2):文档身份 + UTF-16 位置 + 目标名。 def 面编辑与闭包冲突预检由服务端复算(python self 访问改写面不在本面)。",
+      "description": "rename request params (RUST-141 batch 2): document identity + UTF-16 position + target name. The def-face edit and closure-conflict pre-check are recomputed server-side (the python self-access rewrite face is not part of this face).",
       "properties": {
         "newName": {
           "type": "string"
@@ -645,7 +645,7 @@
       "type": "object"
     },
     "RenamedFile": {
-      "description": "LSP `WorkspaceFileRename`:一条重命名事件(old → new)。",
+      "description": "LSP `WorkspaceFileRename`: one rename event (old -> new).",
       "properties": {
         "newUri": {
           "type": "string"
@@ -661,7 +661,7 @@
       "type": "object"
     },
     "Request": {
-      "description": "JSON-RPC 请求。",
+      "description": "JSON-RPC request.",
       "properties": {
         "id": {
           "$ref": "#/definitions/RequestId"
@@ -693,10 +693,10 @@
           "type": "string"
         }
       ],
-      "description": "JSON-RPC 请求/响应 id。CORE-003:request_id 贯穿扩展↔Core↔后台任务, 数字与字符串两种形态都要保真(禁止归一化成一种)。"
+      "description": "JSON-RPC request/response id. CORE-003: request_id threads through extension<->Core<->background tasks; both number and string forms must be preserved faithfully (normalizing to one form is forbidden)."
     },
     "Response": {
-      "description": "JSON-RPC 响应。`id: None` 仅用于 id 不可知的解析错误(规范允许 null)。",
+      "description": "JSON-RPC response. `id: None` is only for parse errors where the id is unknowable (the spec allows null).",
       "properties": {
         "error": {
           "anyOf": [
@@ -729,7 +729,7 @@
       "type": "object"
     },
     "ResponseError": {
-      "description": "JSON-RPC 错误对象。",
+      "description": "JSON-RPC error object.",
       "properties": {
         "code": {
           "format": "int64",
@@ -747,11 +747,11 @@
       "type": "object"
     },
     "ServerCapabilities": {
-      "description": "服务器 capabilities(最小集:full 文本同步 + hover + completion)。",
+      "description": "Server capabilities (minimal set: full text sync + hover + completion).",
       "properties": {
         "codeActionProvider": {
           "default": false,
-          "description": "RUST-143 批 3:textDocument/codeAction 能力声明(四族装配面)。",
+          "description": "RUST-143 batch 3: textDocument/codeAction capability declaration (four-family assembly face).",
           "type": "boolean"
         },
         "completionProvider": {
@@ -763,36 +763,36 @@
               "type": "null"
             }
           ],
-          "description": "LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。"
+          "description": "LSP-005 / PR-011: completion provider capability declaration (trigger character `<`)."
         },
         "definitionProvider": {
           "default": false,
-          "description": "Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。",
+          "description": "Phase2 first slice: textDocument/definition capability declaration (declaration landing site).",
           "type": "boolean"
         },
         "documentSymbolProvider": {
           "default": false,
-          "description": "RUST-139 批 3:textDocument/documentSymbol 能力声明(def 段符号面)。",
+          "description": "RUST-139 batch 3: textDocument/documentSymbol capability declaration (def segment-symbol face).",
           "type": "boolean"
         },
         "hoverProvider": {
           "default": false,
-          "description": "LSP-003 / PH1-03(PR-010):hover provider 能力声明。",
+          "description": "LSP-003 / PH1-03 (PR-010): hover provider capability declaration.",
           "type": "boolean"
         },
         "referencesProvider": {
           "default": false,
-          "description": "RUST-138 批 3:textDocument/references 能力声明(语料声明+引用位面)。",
+          "description": "RUST-138 batch 3: textDocument/references capability declaration (declaration + reference-site face).",
           "type": "boolean"
         },
         "renameProvider": {
           "default": false,
-          "description": "RUST-141 批 2:textDocument/rename+prepareRename 能力声明(def 重命名面)。",
+          "description": "RUST-141 batch 2: textDocument/rename+prepareRename capability declaration (def rename face).",
           "type": "boolean"
         },
         "signatureHelpProvider": {
           "default": false,
-          "description": "RUST-140 批 3:textDocument/signatureHelp 能力声明(def 方法签名面)。",
+          "description": "RUST-140 batch 3: textDocument/signatureHelp capability declaration (def method signature face).",
           "type": "boolean"
         },
         "textDocumentSync": {
@@ -800,7 +800,7 @@
         },
         "workspaceSymbolProvider": {
           "default": false,
-          "description": "RUST-139 批 4:workspace/symbol 能力声明(def 符号前缀检索面)。",
+          "description": "RUST-139 batch 4: workspace/symbol capability declaration (def symbol prefix-search face).",
           "type": "boolean"
         }
       },
@@ -810,7 +810,7 @@
       "type": "object"
     },
     "ServerInfo": {
-      "description": "serverInfo:TS 侧握手时校验名字/版本(BUILD-015 版本不匹配提示的输入)。",
+      "description": "serverInfo: the TS side validates name/version at handshake (input for the BUILD-015 version-mismatch notice).",
       "properties": {
         "name": {
           "type": "string"
@@ -826,7 +826,7 @@
       "type": "object"
     },
     "ServerNotification": {
-      "description": "出站通知(服务器 → 客户端)。",
+      "description": "Outbound notification (server -> client).",
       "properties": {
         "jsonrpc": {
           "type": "string"
@@ -843,7 +843,7 @@
       "type": "object"
     },
     "SignatureHelpParams": {
-      "description": "signatureHelp 请求参数(RUST-140 批 3):python 文档 + 光标。服务端自 行内文本起走调用点词法(python_call_at 与 TS getPythonCallAtPosition 同构) → 本域继承链闭包签名决策(signature_help),全程零 TS 决策输入;实体注册 表运行时链(EntityMappingManager)不跨该面,签名来源是语料 def 视图。",
+      "description": "signatureHelp request params (RUST-140 batch 3): python document + cursor. Starting from the inline text, the server runs call-site lexing (python_call_at, isomorphic to TS getPythonCallAtPosition) -> the inheritance-chain closure signature decision (signature_help) in this domain, with zero TS decision input throughout; the runtime entity registry chain (EntityMappingManager) does not cross this face -- signatures come from the corpus def view.",
       "properties": {
         "position": {
           "$ref": "#/definitions/Position"
@@ -894,10 +894,10 @@
       "type": "object"
     },
     "TextDocumentSyncOptions": {
-      "description": "全量同步(openClose + change=1)。",
+      "description": "Full sync (openClose + change=1).",
       "properties": {
         "change": {
-          "description": "1 = Full:didChange 每次带全文(PH1 切片够用,增量同步在 VFS PR-004)。",
+          "description": "1 = Full: didChange always carries the full text (enough for the PH1 slice; incremental sync is VFS PR-004).",
           "format": "uint8",
           "minimum": 0.0,
           "type": "integer"
@@ -929,7 +929,7 @@
       "type": "object"
     },
     "WorkspaceFolder": {
-      "description": "LSP 工作区文件夹(initialize.workspaceFolders 条目;uri 必需)。",
+      "description": "LSP workspace folder (an initialize.workspaceFolders entry; uri is required).",
       "properties": {
         "name": {
           "default": null,
@@ -948,7 +948,7 @@
       "type": "object"
     },
     "WorkspaceSymbolParams": {
-      "description": "`workspace/symbol` 参数(RUST-139 批 4):Ctrl+T 快速搜索的前缀查询串。 LSP `limit` 可选参数不入 Rust 面——结果集由决策核全量产出后由 TS 侧 薄壳截断(vscode 请求侧行为,服务端不猜分页口径)。",
+      "description": "`workspace/symbol` params (RUST-139 batch 4): the prefix query string for Ctrl+T quick search. The LSP optional `limit` param does not enter the Rust face -- the decision core produces the full result set, which the TS thin shell then truncates (that is vscode request-side behaviour; the server does not guess the paging contract).",
       "properties": {
         "query": {
           "type": "string"
@@ -960,7 +960,7 @@
       "type": "object"
     }
   },
-  "description": "kode2 协议 wire DTO 全集(RUST-055 单一真源)。",
+  "description": "The full set of kode2 protocol wire DTOs (RUST-055 single source of truth).",
   "properties": {
     "code_action_diagnostic": {
       "$ref": "#/definitions/CodeActionDiagnostic"
