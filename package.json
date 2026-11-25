@@ -36,6 +36,7 @@
     "onCommand:kbengine.hotReload.showFileState",
     "onCommand:kbengine.hotReload.locateFile",
     "onCommand:kbengine.hotReload.filterByState",
+    "onCommand:kbengine.memoryMonitor.show",
     "onStartupFinished",
     "onLanguage:kbengine-def",
     "onLanguage:python",
