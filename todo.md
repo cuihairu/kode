@@ -3142,3 +3142,21 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - [x] 「用的是什么算法」类问题**必须先 grep 关键词全仓(TS+Rust+docs)再答**——本批首答倾向「两者都不是」,实测**差点答错**:BM25 真存在但在另一个面(kode-mcp),trigram 真存在但只挂路径字段。教训=检索算法面常**按面分离**(编辑器精确符号表 vs MCP 全文索引),答「全局用哪个算法」是伪命题。
 - [x] **AST/vector/RAG 三轴要分开答**:AST 有且是骨架(符号级分块已具)、vector 无但**已设计 P3 插拔位**(默认之外的可选档,触发条件=精确 under-recall 或自然语言)、RAG 无向量但有按需回读形态。别把「没有向量」答成「没有检索增强」——`read_node` 按需回读全文就是 RAG 形状。
 - [x] **P3 可插拔向量模块(hybrid fusion)**:已点火并落地(载体 **b78459fd**)。缝(`SemanticRetriever` trait + `vector: Mutex<Option<Arc<dyn SemanticRetriever>>>` + NL 融合链)P2 就已建好,本件**只填不建**——按「收编残差,不建抽象」。**三项决策(2026-11-24 用户裁定)**:①**确定性伪向量**(feature hashing,非 learned embedding);②**内存暴力扫描**(256 维 + 有界节点集,设计文档 §8 本地精确查询为主,不引向量 DB 新依赖);③**只 MCP 知识索引面**(编辑器符号索引面不接)。实现=`crates/kode-mcp/src/vector_index.rs`:FNV-1a 特征哈希(bucket=h%dims,符号取最高位,signed 降碰撞偏置)、L2 归一(零向量防 NaN cosine)、特征形状**镜像 Tantivy cjk 分词器**(拉丁 run 小写+`_`、CJK unigram+bigram,两面同口径)、name 权重 3×、tie 按 node id asc(与 BM25 doc id 约定一致)、**不可提取查询答空不硬答**、表缓存键=node count。接线:`store.rs` 新增 `nodes_all()`、`kb_index.rs` `store: Arc<KbStore>` + **构造期注册**(每个 index 天生有,无调用方 opt-in——`open()`/`open_at()` 双入口汇入唯一构造点)、`server.rs` 工具描述/query 描述同步改为诚实新文案;**文档对账(2026-11-25,载体 fe2b6538)**:设计文档 §11 末句「all honestly deferred」对 vector 面已过时(顺带 Tantivy+SQLite/Excel 面为先前批次遗留过时),按 :71 「(already landed)」括注惯例补时点注记 + §12 P3 行补 landed 括注,零正文重写。**诚实边界(必须留在工具描述与 payload)**:feature hashing **不是 learned embedding,不桥接近义词/复述**,那个仍是要上模型的升级;无模型权重、无网络、**内容不出机器**(云端 embedding=同族 exfiltration,项目红线排除)。**判例**:(a) **噪音地板是必需不是可选项**——signed 随机投影下长文档约半数得小幅正 cosine,`dot>0` 挡不住,融合行会灌满 limit;`rank()` 加 `NOISE_FLOOR_RATIO=0.25`(相对榜首)收口。(b) **断言「内置 catalog 节点不该出现」是错前提**:catalog 描述本来就含「网关/转发」(`config_catalog.rs:24` baseapp「登录转发」、`:1923` loginapp「登录网关」),向量面把它们捞出来是**正确行为**;阴性对照要用真无重叠的自建 fixture(测试改用 db.md「存档周期与备份策略」当阴性锚)。(c) BM25 分数无界(本例 48.75)而向量 cosine ∈(0,1],看行形态即可区分来源。剩余诚实残差:表缓存键=node count,**同数内容编辑**下次 count 变化或进程重启才刷新(已写进注释与描述)。(d) 判例级门禁:纯 Rust 批 fmt+clippy -D warnings+workspace test 全绿,`kb_index_behavior` 19/19(含新增 `default_vector_module_fuses_shared_features_only`)。
+
+## 2026-11-25 COM-EN 注释英文化清扫(用户令:代码内注释一律英文,存量也翻)
+
+范围边界(用户令):只动代码文件里的注释(`//`、`/* */`、`///`、`//!`、`#`);`.md` 文档不受限(保持中文可);i18n 资源/UI 文案/用户-facing 字符串不受限;字符串字面量里的中文(含 test 断言、golden 数据、l10n 值、模板串内 HTML/`<!-- -->`)本次不动。commit 英文、每目录一 commit、禁 git add -A、push main、CI 按 HEAD sha 绿。
+
+基线(2026-11-25 grep 实测,排 node_modules/target/dist/.git/vendor/.vitepress/coverage/out):TS 行注释含中文 1518 文件(tests 1038 / src 477 / 配置 3);Rust 442(kode-server 223 最大);Python 脚本 7;fixture .py 44 全在 kbengine-demo-assets/kbengine-tpl-scripts。
+
+豁免裁定(记此账):
+1. src/generated/{apiDocs,flagDomains,protocolTypes}.ts = 脚本生成+parity 锁,禁手工编辑,翻则被再生覆盖 → 豁免。
+2. tests/fixtures/kbengine-demo-assets/** 与 kbengine-tpl-scripts/** = 上游引擎资产快照(fixture 保真,golden/诊断测试以其为输入)→ 豁免。
+3. 测试读 src 断言的面已排雷:文档锁测试(docs/zh 两份)断 docs 内容+ASCII 码型,不受注释翻译影响;hover/消息断言打在字符串字面量上,不动。
+
+执行制:按目录分批派 agent(批次间目录互斥)→ 树静置 → 门(tsc --noEmit + cargo check 触及 crate + 全量 vitest rc 文件口径 + py_compile)→ 每目录一 commit → push → 下批;commit 前必 fetch 核 behind(多会话共树)。
+
+派工判例(本批新学):子 agent 输出可能**退化乱码**(模型侧),但其落盘编辑可能仍高质量完成(实测 scheduler/lib.rs 译得准确)——**判据只认 git status/diff 实测改动文件集,不认 agent 自报**;退化 agent 只完成 1/37 文件即停 → 未完成片必须**切小片重派**(判例:13 文件/agent 比 37 文件/agent 退化率低)。每波必核:期望文件集 vs 实际改动集。
+
+已收口目录(commit hash 回填):
+- wave1+wave2 派工中(kode-types/kode-protocol/kode-kbengine/kode-corpus/kode-vfs/kode-parser/kode-mcp/kode-scheduler/kode-python/kode-kbengine-protocol/kode-kbengine-schema/kode-index/kode-root/kode-kbengine-analyzer/src/ai/scripts)
