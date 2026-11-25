@@ -805,7 +805,12 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     stateMachine: hotReloadFileStateMachine,
     ledger: hotReloadTargetStateStore,
     resolveRootId: file => hotReloadTargetStateWiring.resolveRootId(file),
-    targetsForRoot: hotReloadTargetsForRoot
+    targetsForRoot: hotReloadTargetsForRoot,
+    // 修改时间段(FILE-TIME-001 并入,首行一条完整热更信息):盘上 mtime
+    stat: async (file: string) => {
+      const stat = await vscode.workspace.fs.stat(vscode.Uri.file(file));
+      return { mtimeMs: stat.mtime };
+    }
   });
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider({ pattern: '**/*.{py,def}' }, hotReloadFileStateLensProvider),

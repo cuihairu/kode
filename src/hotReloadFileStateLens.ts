@@ -14,6 +14,7 @@ import {
   type HotReloadFileStateView
 } from './backend/hotReloadFileState';
 import { formatHotReloadTime } from './hotReloadStatus';
+import { formatModifiedTimeLens, type StatMtimeMs } from './backend/fileModifiedLens';
 
 export const HOT_RELOAD_SHOW_FILE_STATE_COMMAND = 'kbengine.hotReload.showFileState';
 
@@ -22,6 +23,10 @@ export interface HotReloadFileStateLensDeps {
   readonly ledger: HotReloadTargetStateStore;
   resolveRootId(file: string): string | null;
   targetsForRoot(rootId: string): string[] | Promise<string[]>;
+  /** 盘上 mtime 注入(provider 传真 fs.stat,测试注入假体;缺省=不带修改段) */
+  stat?: StatMtimeMs;
+  /** 时钟注入(测试定钟;缺省=Date.now) */
+  now?: () => number;
 }
 
 /**
@@ -82,6 +87,25 @@ export class HotReloadFileStateCodeLensProvider implements vscode.CodeLensProvid
       command: HOT_RELOAD_SHOW_FILE_STATE_COMMAND,
       arguments: [file]
     });
+    // 修改时间段(FILE-TIME-001 并入,2026-11-25 用户裁定首行只留一条完整
+    // 热更信息):盘上 mtime 一次 stat,失败=只出热更段不编造时间。保存后
+    // mtime 变化由 onDidSaveTextDocument → refresh 重询体现。
+    if (this.deps.stat) {
+      try {
+        const { mtimeMs } = await this.deps.stat(file);
+        const modified = formatModifiedTimeLens(mtimeMs, document.isDirty, (this.deps.now ?? Date.now)());
+        if (modified !== null) {
+          const merged = new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), {
+            title: `${formatHotReloadStateLens(primary)} · ${modified}`,
+            command: HOT_RELOAD_SHOW_FILE_STATE_COMMAND,
+            arguments: [file]
+          });
+          return [merged];
+        }
+      } catch {
+        // stat 失败(删除/不可及)=热更段照出,修改段不出
+      }
+    }
     return [lens];
   }
 

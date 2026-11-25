@@ -39,20 +39,56 @@ export class ProcessBreadcrumbPythonSymbolProvider implements vscode.DocumentSym
     );
     const root = new vscode.DocumentSymbol(
       spec.name,
-      `当前进程:${spec.processes[0]}(scripts/<role> 目录判定);其余=同名对端文件。
-base↔cell 快捷键切换 ctrl+alt+shift+b/c(kbengine.processOwnership.openCell/openBase)。`,
+      `当前进程:${spec.processes[0]}(scripts/<role> 目录判定);其余=同名对端文件,行首「跳 base/cell →」按钮或 ctrl+alt+shift+b/c 切换。`,
       vscode.SymbolKind.Namespace,
       fullDocument,
       fileHead
     );
     root.children = spec.children.map(child => new vscode.DocumentSymbol(
       child.process,
-      `对端同名文件:${child.siblingPath ?? ''};base↔cell 可用快捷键 ctrl+alt+shift+b/c 切换`,
+      `对端同名文件:${child.siblingPath ?? ''};行首「跳 base/cell →」按钮或 ctrl+alt+shift+b/c 切换`,
       vscode.SymbolKind.Event,
       fullDocument,
       fileHead
     ));
     return [root];
+  }
+}
+
+/**
+ * 面包屑对端跳转按钮(PROC-BREADCRUMB-002,用户令 2026-11-25「点击无法跳转
+ * 到对应的同名文件」):DocumentSymbol 无 command 面(跨文件跳转 API 缺位),
+ * 在文件首行挂 CodeLens 按钮执行已注册的 openCell/openBase 命令。当前文件
+ * 判得出归属且对端存在才出按钮(判不出/无对端=零按钮,不猜)。与热更状态镜
+ * 同行共存:按钮排热更镜后(VS Code 行内 lens 平铺)。
+ */
+export class ProcessOwnershipSwitchCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly fileExists: (path: string) => boolean;
+
+  constructor(deps: { fileExists?: (path: string) => boolean } = {}) {
+    this.fileExists = deps.fileExists ?? ((path: string) => fs.existsSync(path));
+  }
+
+  provideCodeLenses(
+    document: vscode.TextDocument,
+    _token?: vscode.CancellationToken
+  ): vscode.CodeLens[] {
+    const spec = buildPythonProcessBreadcrumb(document.fileName, this.fileExists);
+    if (!spec) {
+      return [];
+    }
+    const lineZero = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
+    return spec.children
+      .filter(child => child.siblingPath)
+      .map(child => new vscode.CodeLens(lineZero, {
+        title: `跳 ${child.process === 'baseapp' ? 'base' : child.process === 'cellapp' ? 'cell' : child.process} →`,
+        command: child.process === 'baseapp'
+          ? KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND
+          : child.process === 'cellapp'
+            ? KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND
+            : '',
+        tooltip: `打开对端同名文件:${child.siblingPath ?? ''}`
+      }));
   }
 }
 

@@ -47,7 +47,7 @@ import {
   KBEngineSignatureHelpProvider,
   KBEngineWorkspaceSymbolProvider,
   ProcessBreadcrumbPythonSymbolProvider,
-  FileModifiedTimeCodeLensProvider,
+  ProcessOwnershipSwitchCodeLensProvider,
   registerProcessOwnershipSwitchCommands,
   MroChainCodeLensProvider,
   PropertyCodeLensProvider,
@@ -110,7 +110,6 @@ export interface LanguageServicesShared {
   rpcCodeLensProviderImpl: RpcCodeLensProvider;
   propertyCodeLensProviderImpl: PropertyCodeLensProvider;
   mroChainCodeLensProviderImpl: MroChainCodeLensProvider;
-  fileModifiedTimeCodeLensProviderImpl: FileModifiedTimeCodeLensProvider;
   engineSpiCodeLensProviderImpl: EngineSpiCodeLensProvider;
   eventCodeLensProviderImpl: EventCodeLensProvider;
   typesXmlCodeLensProviderImpl: TypesXmlCodeLensProvider;
@@ -588,19 +587,20 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   // base↔cell 快捷键切换命令(FILE-TIME-001 批,用户令 2026-11-17):与
   // 面包屑同一条判定链,键位在 package.json keybindings(ctrl+alt+shift+b/c)
   registerProcessOwnershipSwitchCommands(context);
-
-  // 文件顶部修改时间镜(FILE-TIME-001,用户令 2026-11-17):盘上 mtime
-  // 一次 stat,保存即刷新;热更时间半边归 IDE-HOT-100 状态点不重复出镜。
-  // 独立开关 kbengine.codeLens.fileModifiedTime
-  const fileModifiedTimeCodeLensProviderImpl = new FileModifiedTimeCodeLensProvider();
-  const fileModifiedTimeCodeLensProvider = vscode.languages.registerCodeLensProvider(
+  // 面包屑对端跳转按钮(PROC-BREADCRUMB-002,用户令 2026-11-25「点击无法
+  // 跳转到对应的同名文件」):DocumentSymbol 无 command 面,首行 CodeLens
+  // 按钮执行已注册的 openCell/openBase;与热更状态镜同行平铺
+  const processSwitchLensProviderImpl = new ProcessOwnershipSwitchCodeLensProvider();
+  const processSwitchLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
-    fileModifiedTimeCodeLensProviderImpl
+    processSwitchLensProviderImpl
   );
-  context.subscriptions.push(
-    fileModifiedTimeCodeLensProvider,
-    fileModifiedTimeCodeLensProviderImpl
-  );
+  context.subscriptions.push(processSwitchLensProvider);
+
+  // 文件顶部修改时间镜已并入热更状态镜(FILE-TIME-001,2026-11-25 用户裁定:
+  // 首行两镜合并,修改时间成为热更镜尾部段,不再单独占一行)。独立
+  // kbengine.codeLens.fileModifiedTime 开关键退役(CONFIG-DEDUP 同款:键删除,
+  // docs 注记并入去向;shared.ts 读取面保留隐藏覆盖不留死开关)
 
   // 引擎 SPI 函数标注镜(KODE-CFG-015,用户令 2026-11-03):被引擎以 SPI
   // 模式调用的入口模块级函数(getEntryScript() 36 方法表,KODE-CFG-012)
@@ -976,7 +976,6 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
     mroChainCodeLensProviderImpl,
-    fileModifiedTimeCodeLensProviderImpl,
     engineSpiCodeLensProviderImpl,
     eventCodeLensProviderImpl,
     typesXmlCodeLensProviderImpl
