@@ -467,7 +467,10 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     expect(Date.now() - t0).toBeLessThan(2000);
     expect(health.documents).toHaveLength(N);
     await client.dispose();
-  }, 15_000);
+    // wall-clock cap only (local ~1.4s); the coverage-instrumented CI runner
+    // under parallel-job load ran the same cycle past 15s, so give the real
+    // hang guards (request timeoutMs, latency pin) room to be the red signal
+  }, 60_000);
 
   it('KODE-RPC-LIB-001: 额外头(Content-Type)/小写 content-length/非 ASCII 中文帧体——三种合法形态全部正确解帧', async () => {
     const client = tracked(makeClient({ args: [FAKE_SERVER, 'funkyFrames'] }));
