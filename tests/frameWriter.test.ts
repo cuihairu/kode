@@ -13,10 +13,14 @@ interface FakeHooks {
   listeners: Map<string, Set<() => void>>;
   failWrites: () => void;
   emit: (event: 'drain' | 'close' | 'error') => void;
+  /** 模拟「drain 已发生但无人监听」:状态翻 false 而事件集里没有消费者 */
+  drainAlreadySpent: () => void;
 }
 
 /** firstWriteReturnsFalse=管道写满形态:首写返回 false(触发等 drain),
- * 其后写返回 true(drain 后缓冲已空)——贴近真实 drain 语义。 */
+ * 其后写返回 true(drain 后缓冲已空)——贴近真实 drain 语义。
+ * needDrainState 镜像真实 stdin.writableNeedDrain:write=false 置位,
+ * emit('drain') 清位。 */
 const makeHooks = (firstWriteReturnsFalse = false): FakeHooks => {
   const writes: Buffer[] = [];
   const listeners = new Map<string, Set<() => void>>([
@@ -25,6 +29,7 @@ const makeHooks = (firstWriteReturnsFalse = false): FakeHooks => {
     ['error', new Set()]
   ]);
   let pendingFalse = firstWriteReturnsFalse;
+  let needDrainState = false;
   return {
     writes,
     listeners,
@@ -37,16 +42,24 @@ const makeHooks = (firstWriteReturnsFalse = false): FakeHooks => {
         set.delete(listener); // once 语义
         listener();
       }
+      if (event === 'drain') {
+        needDrainState = false;
+      }
+    },
+    drainAlreadySpent: () => {
+      needDrainState = false;
     },
     hooks: {
       write: frame => {
         writes.push(frame);
         if (pendingFalse) {
           pendingFalse = false;
+          needDrainState = true;
           return false;
         }
         return true;
       },
+      needDrain: () => needDrainState,
       once: (event, listener) => {
         listeners.get(event)!.add(listener);
       },
@@ -95,6 +108,27 @@ describe('FrameWriter:drain 感知帧写器(RESP-009)', () => {
     fake.emit('drain');
     await flushMicrotasks();
     expect(done).toBe(true);
+    expect(fake.writes.map(b => b.toString())).toEqual(['f1', 'f2']);
+  });
+
+  it('drain 事件已被消费(管道排空但无监听者):等待态自愈,不泊车在已花事件上', async () => {
+    // KODE-RESP-009 CI 楔死回归钉:上一帧 write=false 后,真实 stdin 的
+    // 'drain' 可能在无人监听的窗口触发并被消费(库 semaphore 用 setImmediate
+    // 隔开相邻两写,poll 相插得进;满载下服务端恰在窗口内排空管道)——流的
+    // writableNeedDrain 已翻 false 而事件永不再来。下一帧必须查权威流态
+    // 自愈续写,不许泊车等一个不存在的事件。
+    const fake = makeHooks(true);
+    const writer = new FrameWriter(fake.hooks);
+    writer.send(frame('f1'));
+    await writer.drained(); // f1 写完且 write=false(管道满)
+    fake.drainAlreadySpent(); // 服务端在无监听窗口排空管道:事件已花
+    writer.send(frame('f2'));
+    let done = false;
+    void writer.drained().then(() => {
+      done = true;
+    });
+    await flushMicrotasks();
+    expect(done).toBe(true); // 不悬挂:权威态=false 即续写
     expect(fake.writes.map(b => b.toString())).toEqual(['f1', 'f2']);
   });
 

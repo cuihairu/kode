@@ -408,6 +408,10 @@ export class KodeCoreClient {
     // producers — no hand framing anywhere, bytes pass through untouched.
     this.frameWriter = new FrameWriter({
       write: frame => this.child !== child || !stdin.writable || stdin.destroyed || stdin.write(frame),
+      // writableNeedDrain = the stream's own authoritative "a drain event is
+      // pending" state; the writer consults this instead of a local flag so a
+      // drain consumed between two writes cannot park the FIFO forever
+      needDrain: () => this.child === child && stdin.writable && !stdin.destroyed && stdin.writableNeedDrain,
       once: (event, listener) => {
         if (stdin.destroyed) {
           queueMicrotask(listener);

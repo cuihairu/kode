@@ -458,7 +458,19 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     await sleep(300); // 冻结窗中段采样:生产端被背压阻塞(未灌完)且在队帧数有硬上界
     expect(floodDone).toBe(false);
     expect(client.writeQueueDepth).toBeLessThanOrEqual(2);
-    await flood;
+    // 诊断界:真楔死时 60s 裸超时无信息——45s 处以队列/进度状态红出来,
+    // 直指卡点(推进正常时此界永远不触发)
+    let floodDeadline: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_, rejectFlood) => {
+      floodDeadline = setTimeout(
+        () => rejectFlood(new Error(`flood stalled after 45s: floodDone=${floodDone} queueDepth=${client.writeQueueDepth}`)),
+        45_000
+      );
+      floodDeadline.unref?.();
+    });
+    deadline.catch(() => undefined); // losing side must not unhandle
+    await Promise.race([flood, deadline]);
+    clearTimeout(floodDeadline);
     // 恢复后交互请求不受积压拖累(预算 2s 内回包),语料一帧不丢
     const t0 = Date.now();
     const health = (await client.request('$/kode/health', undefined, { timeoutMs: 5000 })) as {
@@ -469,7 +481,8 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     await client.dispose();
     // wall-clock cap only (local ~1.4s); the coverage-instrumented CI runner
     // under parallel-job load ran the same cycle past 15s, so give the real
-    // hang guards (request timeoutMs, latency pin) room to be the red signal
+    // hang guards (45s stall bound above, request timeoutMs, latency pin)
+    // room to be the red signal
   }, 60_000);
 
   it('KODE-RPC-LIB-001: 额外头(Content-Type)/小写 content-length/非 ASCII 中文帧体——三种合法形态全部正确解帧', async () => {
