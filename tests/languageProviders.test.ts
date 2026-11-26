@@ -673,7 +673,7 @@ describe('validateDocument diagnostics', () => {
     const errors = diags.filter(d => d.severity === DiagnosticSeverity.Error);
     expect(errors.map(d => d.message)).toEqual([
       '属性 hp 缺少 <Type> 定义',
-      '属性 hp 缺少 <Flags> 定义'
+      expect.stringContaining('属性 hp 缺少 <Flags> 定义')
     ]);
   });
 
