@@ -1636,7 +1636,8 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "%kbengine.config.metrics.fileReadDetail.description%"
-          },          "kbengine.metrics.detailed": {
+          },
+          "kbengine.metrics.detailed": {
             "type": "boolean",
             "default": false,
             "markdownDescription": "%kbengine.config.metrics.detailed.description%"
@@ -1879,7 +1880,8 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.hover.apiDocs.description%"
-          },          "kbengine.hover.behaviorNotes": {
+          },
+          "kbengine.hover.behaviorNotes": {
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.hover.behaviorNotes.description%"
@@ -2049,7 +2051,9 @@
           },
           "kbengine.index.scanExcludeGlobs": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "default": [],
             "markdownDescription": "%kbengine.config.index.scanExcludeGlobs.description%"
           },
@@ -2146,7 +2150,8 @@
             "type": "string",
             "default": "",
             "markdownDescription": "%kbengine.config.engineRoot.description%"
-          },          "kbengine.managedDir": {
+          },
+          "kbengine.managedDir": {
             "type": "string",
             "default": ".kbengine",
             "markdownDescription": "%kbengine.config.managedDir.description%"
@@ -2686,7 +2691,8 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.autoRefreshFinalConfig.description%"
-          },          "kbengine.annotationLog": {
+          },
+          "kbengine.annotationLog": {
             "type": "boolean",
             "default": false,
             "markdownDescription": "%kbengine.config.annotationLog.description%"
@@ -2825,7 +2831,11 @@
         "properties": {
           "kbengine.memoryMonitor.sampleHz": {
             "type": "number",
-            "enum": [0.5, 1, 2],
+            "enum": [
+              0.5,
+              1,
+              2
+            ],
             "default": 1,
             "markdownDescription": "%kbengine.config.memoryMonitor.sampleHz.description%",
             "markdownEnumDescriptions": [
