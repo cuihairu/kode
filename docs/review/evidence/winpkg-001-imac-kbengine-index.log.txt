@@ -1,0 +1,10 @@
+[+0.0s][kode-index][server] spawned (pid 39624)
+[+0.2s][kode-index][server] ready (generation 0, server 0.2.0)
+[+0.4s][kode-index][discovery] def 首扫开始:1 个 .def,根=[C:/Users/cui/kode-winpkg-001/verification/workspace/scripts](实体候选 1)
+[+0.4s][kode-index][discovery] def 全量索引完成 1 个 .def → 实体 1 个,155ms
+[+0.7s][kode-index][event-index] 事件索引缓存恢复:直取 0,增量重建 2,丢弃 0
+[+0.7s][kode-index][cache] 索引缓存命中(eventIndex):直取 0,增量重建 2,丢弃 0
+[+0.9s][kode-index][cache] 后台预热完成:6/6 阶段(缓存命中 1 ⏭)
+[+11.7s][kode-index][server] spawned (pid 44708)
+[+11.7s][kode-index][server] exit (code=0, signal=?)
+[+11.7s][kode-index][server] ready (generation 0, server 0.2.0)

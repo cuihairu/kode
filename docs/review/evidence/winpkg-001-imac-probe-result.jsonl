@@ -1,0 +1,14 @@
+{"step":"extension-found","version":"0.2.0","isActive":true}
+{"step":"activated","version":"0.2.0","extensionPath":"C:\\Users\\cui\\kode-winpkg-001\\verification\\extensions\\cuihairu.kode-kbengine-0.2.0"}
+{"step":"gate-config","backend":"rust","serverPath":""}
+{"step":"bin-integrity","binDirList":["kode-kbengine.exe","kode-mcp.exe","kode-server.exe","manifest.json"],"manifestTarget":"win32-x64","shaCheck":{"kode-server.exe":"match","kode-kbengine.exe":"match","kode-mcp.exe":"match"}}
+{"step":"direct-spawn-test","serverExeExists":true,"result":{"error":null,"status":0,"signal":null,"stdout":"kode-server 0.2.0\n","stderr":""}}
+{"step":"procs-idle","procs":["\"ӳ������\",\"PID\",\"�Ự��\",\"�Ự#   \",\"�ڴ�ʹ�� \"","\"kode-server.exe\",\"39624\",\"Console\",\"1\",\"9,356 K\"","��Ϣ: û�����е�����ƥ��ָ����׼��"]}
+{"step":"core-restart-issued"}
+{"step":"procs-after-restart","procs":["\"ӳ������\",\"PID\",\"�Ự��\",\"�Ự#   \",\"�ڴ�ʹ�� \"","\"kode-server.exe\",\"44708\",\"Console\",\"1\",\"7,412 K\"","��Ϣ: û�����е�����ƥ��ָ����׼��"],"messagesSoFar":[]}
+{"step":"hover-issued"}
+{"step":"procs-after-hover","procs":["\"ӳ������\",\"PID\",\"�Ự��\",\"�Ự#   \",\"�ڴ�ʹ�� \"","\"kode-server.exe\",\"44708\",\"Console\",\"1\",\"7,708 K\"","��Ϣ: û�����е�����ƥ��ָ����׼��"]}
+{"step":"report-written"}
+{"step":"health-panel-messages","messages":[]}
+{"step":"in-session-shot","status":"","shotStatusFile":"fullscreen 6293x2560 -> screen-probe.png"}
+{"step":"all-messages","messages":[]}
