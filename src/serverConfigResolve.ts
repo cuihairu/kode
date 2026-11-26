@@ -441,9 +441,15 @@ async function refresh(
 
 /** 由 kbengine.binPath 推导引擎 defaults 文件路径(自 telnetService 迁入:
  * KODE-CFG-009 起 telnetService 消费本模块,实现居此避免环;telnetService
- * 按原名对外)。后缀不在/剥完为空/相对路径 → null。root 为引擎安装根
- * (binPath 剥掉 bin/server 尾段,2026-11-24 语义 = kbe 目录本身),
- * defaults 在其下 res/server/。 */
+ * 按原名对外)。
+ *
+ * 2026-11-27 健壮化(用户真机报障「无法定位 kbengine_defaults.xml(请检查
+ * kbengine.binPath 是否指向 kbe/bin/server)」——binPath 指向单个二进制
+ * 文件(如 .../bin/server/kbengine.exe)时 endsWith('bin/server') 永假,
+ * 恒报错。语义修正:binPath 是文件先剥文件名;目录尾匹配不上时不再死卡
+ * 报错,改为向上逐级探测 res/server/kbengine_defaults.xml(至多 6 级),
+ * 探测不到才 null——defaults 定位以「文件存在」为事实,不以目录名约定
+ * 为事实(kbe 改名照样认,与 engineCompatibility.ts:43 同口径)。 */
 export function deriveEngineDefaultsXmlPath(binPath: string): string | null {
   if (!binPath) {
     return null;
@@ -452,11 +458,27 @@ export function deriveEngineDefaultsXmlPath(binPath: string): string | null {
   if (!path.isAbsolute(normalized)) {
     return null;
   }
+  // binPath 指向文件(带扩展名/实际存在)→ 剥到所在目录再推根。
+  const isFileLike = path.extname(normalized).length > 0;
+  const startDir = isFileLike ? path.dirname(normalized) : normalized;
   const suffix = path.normalize(path.join('bin', 'server'));
-  if (!normalized.endsWith(suffix)) {
+  let root: string;
+  if (startDir.endsWith(suffix)) {
+    // 标准布局:bin/server 目录尾 → 剥掉即引擎根(原语义,快路径)。
+    root = startDir.slice(0, -(suffix.length + 1));
+  } else {
+    // 非标准 binPath:从 binPath(或其目录)向上逐级找 res/server/kbengine_defaults.xml,
+    // 至多 6 级(引擎根通常不深于此);命中以文件可读为准。
+    let probe = startDir;
+    for (let depth = 0; depth < 6 && probe.length > 1; depth++) {
+      const candidate = path.join(probe, 'res', 'server', 'kbengine_defaults.xml');
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+      probe = path.dirname(probe);
+    }
     return null;
   }
-  const root = normalized.slice(0, -(suffix.length + 1));
   if (root.length === 0) {
     return null;
   }

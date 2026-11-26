@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import * as net from 'net';
+import * as fs from 'fs';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -115,9 +116,47 @@ describe('deriveEngineDefaultsXmlPath(批112:binPath 推导引擎 defaults)', ()
   });
 
   it('后缀不在/剥完为空/相对路径/空串 → null(与 serverManager.detectKbeRoot 同口径)', () => {
-    expect(deriveEngineDefaultsXmlPath('/opt/kbengine/bin')).toBeNull();
     expect(deriveEngineDefaultsXmlPath('kbe/bin/server')).toBeNull();
     expect(deriveEngineDefaultsXmlPath('')).toBeNull();
+  });
+
+  it('binPath 指向文件(…/bin/server/kbengine.exe)→ 剥文件名按标准布局推(2026-11-27 真机报障)', () => {
+    const input = path.join('/opt/kbengine', 'bin', 'server', 'kbengine.exe');
+    const expected = path.join('/opt/kbengine', 'res', 'server', 'kbengine_defaults.xml');
+    expect(deriveEngineDefaultsXmlPath(input)).toBe(expected);
+  });
+
+  it('非标准布局(无 bin/server 尾)→ 向上逐级探测 res/server/kbengine_defaults.xml', () => {
+    // 造临时引擎根:root/res/server/kbengine_defaults.xml,binPath 给 root/bin
+    const os = require('os');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-defaults-probe-'));
+    try {
+      const resServer = path.join(root, 'res', 'server');
+      fs.mkdirSync(resServer, { recursive: true });
+      fs.writeFileSync(path.join(resServer, 'kbengine_defaults.xml'), '<kbems>');
+      const binDir = path.join(root, 'bin');
+      fs.mkdirSync(binDir, { recursive: true });
+      const expected = path.join(resServer, 'kbengine_defaults.xml');
+      expect(deriveEngineDefaultsXmlPath(binDir)).toBe(expected);
+      // binPath 指向 bin 下一个二进制文件也能探到
+      const exe = path.join(binDir, 'machine.exe');
+      fs.writeFileSync(exe, 'MZ');
+      expect(deriveEngineDefaultsXmlPath(exe)).toBe(expected);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('向上探测 6 级仍无 defaults → null(不伪造)', () => {
+    const os = require('os');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-defaults-miss-'));
+    try {
+      const deep = path.join(root, 'a', 'b', 'c');
+      fs.mkdirSync(deep, { recursive: true });
+      expect(deriveEngineDefaultsXmlPath(deep)).toBeNull();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
