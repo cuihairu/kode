@@ -9,6 +9,7 @@ import {
   renderDiscoveryReport,
   resetDiscoveryState,
   resolveDiscoveredConfigRoot,
+  resolveKbeSourceRoot,
   setDiscoveryChoice
 } from '../src/workspaceDiscovery';
 import type { DiscoveredCandidateSet, DiscoveryFieldLabel, DiscoveryLayoutFacts } from '../src/workspaceDiscovery';
@@ -52,6 +53,8 @@ const factsFor = (binPath = ''): DiscoveryLayoutFacts => {
     entitiesXmlPath: layout.entitiesXmlPath,
     typesXmlPath: layout.typesXmlPath,
     configPath: configSetting,
+    engineRootSetting: setting('engineRoot'),
+    engineRoot: setting('engineRoot') || resolveKbeSourceRoot(root) || '',
     configPathEffective:
       configSettingProbed
         ? configSetting

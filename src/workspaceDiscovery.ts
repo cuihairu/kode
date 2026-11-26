@@ -624,6 +624,7 @@ export type DiscoveryFieldLabel =
   | '接口目录 interfaces'
   | '组件目录 components'
   | '引擎消息表 messages_fixed.xml'
+  | '引擎安装根 kbengine.engineRoot'
   | '资产根 kbengine.assetsRoot'
   | '引擎二进制 kbengine.binPath';
 
@@ -676,6 +677,10 @@ export interface DiscoveryLayoutFacts {
   typesXmlPath: string | null;
   /** kbengine.assetsRoot 原值(资产根,可能为空串;仅 ${workspaceFolder} 展开) */
   configPath: string;
+  /** 引擎安装根原值(kbengine.engineRoot,kbe 目录本身;可能为空串) */
+  engineRootSetting: string;
+  /** 生效引擎安装根(显式设置 或 kbe 源码根自动检测兜底) */
+  engineRoot: string;
   /** 生效资产根(装配层经管理器口径:原值探针命中优先,否则发现兜底) */
   configPathEffective: string;
   /** kbengine.binPath 原值(可能含 ${env:...} 占位,可为空串) */
@@ -839,6 +844,30 @@ export function buildDiscoveryReport(
   fields.push(derivedField('组件目录 components', facts.componentsRoot));
 
   const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
+
+  // 引擎安装根:显式配置(kbengine.engineRoot)优先,否则用 kbe 源码根检测兜底。
+  // 该值才是 kbengine.xml 里的引擎根本体(COMPONENT_*_ROOT 的同源基准)。
+  const engineRootExplicit = facts.engineRootSetting
+    ? resolveAgainstWorkspace(workspaceRoot, facts.engineRootSetting)
+    : '';
+  const engineRootEffective = facts.engineRoot || engineRootExplicit || kbeSourceRoot || '';
+  fields.push({
+    label: '引擎安装根 kbengine.engineRoot',
+    status: existsValue(engineRootEffective) ? 'ok' : 'missing',
+    resolved: engineRootEffective || null,
+    source: !engineRootEffective
+      ? 'none'
+      : engineRootExplicit && engineRootEffective === engineRootExplicit
+        ? 'explicit-config'
+        : 'derived',
+    explicitConfig: facts.engineRootSetting || null,
+    explicitConfigExists: engineRootExplicit ? fs.existsSync(engineRootExplicit) : null,
+    conventions: [],
+    conventionHits: [],
+    scanHits: scan.kbeSourceRoots,
+    remembered: null
+  });
+
   const engineMessages = resolveEngineMessagesXmlFrom(scan, kbeSourceRoot);
   const messagesOk = existsValue(engineMessages);
   // 状态口径(批129):解析成功 ok;无源码根且工作区无消息表 = 纯资产常态,
@@ -993,6 +1022,8 @@ function remediationFor(field: DiscoveryFieldReport): string {
     case '接口目录 interfaces':
     case '组件目录 components':
       return '该目录由实体定义目录推导,先修好实体定义目录';
+    case '引擎安装根 kbengine.engineRoot':
+      return '设置 kbengine.engineRoot 指向 kbe 引擎安装根(kbe 目录本身);或确认工作区含 kbe 源码根(kbe/src/lib 或 kbe/src/common),会自动检测推导';
     case '资产根 kbengine.assetsRoot':
       return '设置 kbengine.assetsRoot 指向 KBEngine 资产根(其下应有 res/server/kbengine.xml 与 scripts/),或把资产根放在约定位置(工作区根、assets/、server_assets/,探针均为 res/server/kbengine.xml)';
     case '引擎二进制 kbengine.binPath':
