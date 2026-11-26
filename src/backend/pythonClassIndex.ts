@@ -32,34 +32,45 @@ import {
 } from '../languageServiceMetrics';
 
 /**
- * Python 类层级索引(mixin/跨类跳转根因修复)。
+ * Python class hierarchy index (root-cause fix for mixin / cross-class jumps).
  *
- * 既有跳转把方法归属交给 `.def` 派生索引(entityMapping.ts:573 对非 `.def`
- * 映射文件直接 return null;有 `.def` 也只按文件名 basename 当 owner 去 `.def`
- * 声明里查),导致「由基类/mixin 提供、不在任何 .def 里的方法」完全解析不到。
- * 本模块补上真正缺失的一层:**读 Python 类定义与基类、按 C3 MRO 解析
- * `self.<method>` 的真实实现位置**。跳转与 CodeLens 共用本索引。
+ * The existing jump logic handed method ownership to the `.def` derived index
+ * (entityMapping.ts:573 returns null outright for a non-`.def` mapped file, and
+ * when a `.def` exists it only looks up the declaration by treating the file's
+ * basename as the owner), so that "methods provided by a base class / mixin and
+ * present in no .def" cannot be resolved at all. This module adds the layer
+ * that is genuinely missing: **read the Python class definitions and their
+ * bases, and resolve the real implementation site of `self.<method>` by the C3
+ * MRO**. Jumping and CodeLens share this index.
  */
 
 /**
- * 扫描排除面:官方三件套之外再排引擎构建/依赖/临时树。
- * 依据(2026-10-16 本机实测,D:\workspaces\kbengine):只排 node_modules/
- * third_party/.git 时命中 14,245 个 .py(vcpkg 10,108 + build 3,614 + …),
- * 平均 10.13ms/文件的顺序读 ≈ 144 秒——即用户实测的「跳转前加载很久」;
- * 收窄后同仓 117 个文件 ≈ 1.2 秒。业务脚本(scripts/tools 等)不受影响。
+ * Scan exclusion face: beyond the official three-piece set, also exclude the
+ * engine's build / dependency / temporary trees.
+ * Basis (measured on this machine on 2026-10-16, D:\workspaces\kbengine):
+ * excluding only node_modules/ third_party/ and .git still hits 14,245 .py
+ * files (vcpkg 10,108 + build 3,614 + ...), and sequential reading at an
+ * average of 10.13ms per file comes out to ~144 seconds -- which is the
+ * "loads for a long time before a jump" the user actually observed; after
+ * narrowing, the same repo's 117 files take ~1.2 seconds. Business scripts
+ * (scripts/tools etc.) are unaffected.
  */
 export { PY_SCAN_EXCLUDE } from './pythonScanRules';
 
 export { parsePythonFile, isPythonCodePosition, getPythonBaseExpressionAtPosition } from './pythonParser';
 export type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 
-/** C3 线性化(Python3 真实 MRO):l(X) = X + merge(l(B1), l(B2), …, [B1,B2,…]) */
+/** C3 linearization (the real Python3 MRO): l(X) = X + merge(l(B1), l(B2), …, [B1,B2,…]) */
 /**
- * import 模块名 → 候选文件路径(单一事实源,原为类私有方法;2026-11-24 提出
- * 供 pythonBaseChain 同口径复用——父类链解析与索引 staging 不得漂移)。
- * 相对导入从文件目录起解;绝对导入依次试:文件目录 → scripts 同角色目录 →
- * scripts/common → scripts/user_type → scripts → 逐级祖先目录。每根给
- * `<module>.py` 与 `<module>/__init__.py` 两候选,保序。
+ * Import module name -> candidate file paths (single source of truth; was a
+ * private class method, lifted out on 2026-11-24 for pythonBaseChain to reuse on
+ * the same criterion -- parent-class chain resolution and the index staging
+ * must not drift apart).
+ * Relative imports resolve from the file's directory; absolute imports try in
+ * order: the file's directory -> the scripts directory of the same role ->
+ * scripts/common -> scripts/user_type -> scripts -> each ancestor directory in
+ * turn. Every root yields the two candidates `<module>.py` and
+ * `<module>/__init__.py`, order preserved.
  */
 export function pythonImportModuleCandidates(filePath: string, rawModuleName: string): string[] {
   let moduleName = rawModuleName;
@@ -101,10 +112,10 @@ export function linearizeC3(name: string, resolve: (base: string) => PythonClass
       let found = false;
       for (const list of work) {
         if (list.length === 0) {
-          continue; // 被 splice 清空的列表必须跳过:list[0] 为 undefined
+          continue; // a list emptied out by splice must be skipped: list[0] is undefined
         }
         const candidate = list[0];
-        // 候选不得出现在任何列表的尾部(除首个位置)
+        // a candidate must not appear in the tail of any list (apart from the first position)
         const inTail = work.some(other => other.length > 0 && other.indexOf(candidate) > 0);
         if (!inTail) {
           chosen = candidate;
@@ -113,7 +124,7 @@ export function linearizeC3(name: string, resolve: (base: string) => PythonClass
         }
       }
       if (!found) {
-        // 不可线性化(非法继承图):平铺剩余去重,不丢类
+        // Not linearizable (an illegal inheritance graph): flatten the remainder with de-duplication, losing no class
         for (const list of work) {
           for (const n of list) {
             if (!out.includes(n)) {
@@ -142,7 +153,7 @@ export function linearizeC3(name: string, resolve: (base: string) => PythonClass
       return cached;
     }
     if (inProgress.has(n)) {
-      return [n]; // 循环继承护栏:退化为含自身,不无限递归
+      return [n]; // circular-inheritance guardrail: degrade to self only, no infinite recursion
     }
     inProgress.add(n);
     const defs = resolve(n);
@@ -164,27 +175,30 @@ export interface PythonMethodLocation {
   filePath: string;
   line: number;
   character: number;
-  /** 提供该方法的类名(MRO 中首个命中) */
+  /** Name of the class providing this method (the first hit in the MRO) */
   className: string;
-  /** MRO 序(用于 CodeLens/多实现呈现) */
+  /** The MRO order (for CodeLens / multiple-implementation presentation) */
   mro: string[];
-  /** 解析所锚定的类:祖先解到 = 静态类自身;反向解到 = 继承静态类的类(主形态) */
+  /** The class the resolution anchored on: resolved to an ancestor = the static class itself; resolved in reverse = a class inheriting the static class (the primary form) */
   anchorClass?: string;
-  /** 命中的组合根(entities.xml × .def × Python 继承交叉派生;①祖先直解可缺省) */
+  /** The composition root hit (entities.xml × .def × Python inheritance cross-derived; ① direct ancestor resolution may omit it) */
   compositionRoot?: string;
 }
 
 /**
- * IDE-IDX-018:self 方法解析结果。partial=true 表示预算到期/取消,枚举不完整
- * (仅 ① 静态 MRO 目标或空集,② 组合根与 ③ 反向后代未查全)——消费端不得
- * 据此发布「完整枚举无命中」的权威负结论;partial=false 才是查全口径。
+ * IDE-IDX-018: the result of resolving a self method. partial=true means the
+ * budget expired or the work was cancelled, so the enumeration is incomplete
+ * (only ① the static MRO targets or an empty set, with ② the composition roots
+ * and ③ the reverse descendants not fully searched) -- the consumer must not
+ * publish an authoritative negative verdict of "a complete enumeration found
+ * nothing" on that basis; only partial=false is the fully-searched criterion.
  */
 export interface SelfMethodResolution {
   readonly candidates: PythonMethodLocation[];
   readonly partial: boolean;
 }
 
-/** MRO-CHAIN 链上一个定义者(类 + 方法定义落点) */
+/** One defining class on the MRO-CHAIN chain (class + the method definition's landing point) */
 export interface MroChainEntry {
   readonly className: string;
   readonly filePath: string;
@@ -193,30 +207,43 @@ export interface MroChainEntry {
 }
 
 /**
- * MRO-CHAIN(用户令 2026-11-18「mixin 遍历调用的执行顺序推导」):一条链 = 一个
- * 根类视角下,methodName 沿 MRO 序的全部定义者。for cls in __mro__ 遍历调度与
- * super() 接力的执行顺序都等于「MRO 序过滤出定义了该方法的类」——静态可推导
- * (C3 由基类声明序决定);链序即执行序,首项是最派生定义者。
+ * MRO-CHAIN (user order 2026-11-18, "deriving the execution order of mixin
+ * traversal calls"): one chain = the complete set of defining classes for
+ * methodName along the MRO order, from one root class's viewpoint. The
+ * execution order of both `for cls in __mro__` traversal dispatch and super()
+ * relay equals "the MRO order filtered down to the classes that define that
+ * method" -- statically derivable (C3 is determined by the base declaration
+ * order); the chain order is the execution order, and the first entry is the
+ * most-derived definer.
  */
 export interface MroMethodChain {
-  /** 视角根类(组合根本尊/其后代,或静态类自身) */
+  /** The viewpoint root class (the composition root itself / its descendants, or the static class itself) */
   readonly rootClassName: string;
   readonly entries: ReadonlyArray<MroChainEntry>;
 }
 
 /**
- * 工作区 Python 类索引:按需扫描 *.py 建 className → 定义列表,
- * 变更时按文件失效。所有查询走缓存,不在热点路径重复解析。
+ * Workspace Python class index: scans *.py on demand to build
+ * className -> definition lists, invalidating per file on change. Every query
+ * goes through the cache, with no repeated parsing on hot paths.
  *
- * PR5(去全仓阻塞):
- * - 文件发现/解析迁入 IndexScheduler:首扫 = 后台全量任务(发现 keyed 任务 +
- *   分块 full-reindex 任务),受交互限流,不再让首个请求等待全量完成;
- * - Definition 先查快照 + 已建索引,请求所需文件(查询文件/同目录/import 候选/
- *   同名类文件)以 RequestLocal 单文件任务按需解析,后台补全量;
- * - 组合根派生带 mtime 内容缓存(未变更 XML/def 重派生不重读)并把来源文件
- *   记入 SemanticDependencyGraph(PR4),失效按图裁断,不推导全仓重建;
- * - 显式版本号:classes/bases/methods/mro/compositionRoots 五轴各自递增,
- *   供测试与调用方断言「哪类变更动了哪层派生」。
+ * PR5 (removing the whole-repo block):
+ * - file discovery / parsing moved into the IndexScheduler: the first scan is
+ *   a background full task (a keyed discovery task + chunked full-reindex
+ *   tasks), subject to interactive throttling, so the first request no longer
+ *   waits for the full scan to complete;
+ * - Definition first consults the snapshot + the built index, and the files a
+ *   request needs (the query file / the same directory / import candidates /
+ *   same-named class files) are parsed on demand as RequestLocal single-file
+ *   tasks, with the background filling in the full scan;
+ * - composition root derivation carries an mtime content cache (re-deriving
+ *   unchanged XML/def does not re-read them) and records the source files in
+ *   the SemanticDependencyGraph (PR4), so invalidation is cut off per graph
+ *   and never triggers a whole-repo rebuild;
+ * - explicit version numbers: the five axes
+ *   classes/bases/methods/mro/compositionRoots increment independently, so
+ *   tests and callers can assert "which kind of change moved which derivation
+ *   layer".
  */
 export type PythonIndexVersionKey =
   | 'classes'
@@ -227,26 +254,34 @@ export type PythonIndexVersionKey =
 
 export type PythonIndexVersions = Record<PythonIndexVersionKey, number>;
 
-/** 组合根派生物在依赖图里的节点键(PR4 SemanticDependencyGraph) */
+/** Node key of the composition-root derived product in the dependency graph (PR4 SemanticDependencyGraph) */
 export const COMPOSITION_ROOTS_NODE = 'python:composition-roots';
 
 /**
- * 全扫分块大小(ENGINE-LIB-SCAN-005 刀4:16→4)。单块=N 个文件的连续主线程
- * 占用(<256KB 文件全走 parsePythonFile 纯同步),块越大单次占用越长——
- * Lib 级量级文件把 16 文件块放大成周期性前台卡顿;4 文件一块+块前交互
- * 冷却让路把后台占用粒度压到交互可插队。并发读收益在此块型下由块间流水
- * 补偿(块本身走调度器后台任务)。
+ * Full-scan chunk size (ENGINE-LIB-SCAN-005 blade 4: 16 -> 4). One chunk = N
+ * files of contiguous main-thread occupation (files under 256KB all go through
+ * parsePythonFile, purely synchronous); the larger the chunk, the longer each
+ * occupation -- lib-scale files inflated the 16-file chunk into periodic
+ * foreground jank. A 4-file chunk plus yielding to an interactive cooldown
+ * before each chunk compresses the background occupation's granularity to
+ * something interactive work can preempt. The benefit of concurrent reads at
+ * this chunk shape is compensated by pipelining between chunks (the chunk
+ * itself runs as a scheduler background task).
  */
 export const SCAN_CHUNK_SIZE = 4;
 /**
- * 块前交互冷却窗(ENGINE-LIB-SCAN-005 刀4;与 indexScheduler
- * DEFAULT_INTERACTIVE_COOLDOWN_MS 同值,单一口径——kodeCoreCorpusMirror
- * defaultMirrorYield 同一判定形态)。
+ * Interactive cooldown window before a chunk (ENGINE-LIB-SCAN-005 blade 4; the
+ * same value as indexScheduler's DEFAULT_INTERACTIVE_COOLDOWN_MS, one single
+ * criterion -- the same decision shape as kodeCoreCorpusMirror's
+ * defaultMirrorYield).
  */
 export const SCAN_INTERACTIVE_COOLDOWN_MS = 50;
 /**
- * 块前让路等待时长(纯函数,时钟读点在调用方):交互信标刚刷新(冷却窗内)
- * 时先等出窗再解析本块;信标陈旧或时钟异常(负差)都返回 0 不让路。
+ * Yielding wait duration before a chunk (a pure function; the clock read sits on
+ * the caller): when the interactive beacon was just refreshed (inside the
+ * cooldown window) wait until it leaves the window before parsing this chunk;
+ * a stale beacon or a clock anomaly (negative difference) both return 0,
+ * yielding nothing.
  */
 export function scanChunkYieldDelayMs(now: number, beaconAt: number): number {
   const since = now - beaconAt;
@@ -254,21 +289,25 @@ export function scanChunkYieldDelayMs(now: number, beaconAt: number): number {
     ? SCAN_INTERACTIVE_COOLDOWN_MS - since
     : 0;
 }
-/** 分块失败遗留文件的待补解析重试上限(永久不可读文件不无限重试) */
+/** Retry cap for the deferred parsing of files left behind by a failed chunk (a permanently unreadable file is not retried forever) */
 const MAX_SCAN_RETRY_ATTEMPTS = 3;
 
 /**
- * RUST-031:超大文件/积压超预算的降级明示面。解析积压字节预算(IDE-RES-002,
- * host 侧 8MiB)拒绝属能力限制而非故障——该文件本次不入索引,悬停/定义/补全
- * 可能缺失或不更新,必须让用户看得见,不能只落在默认关闭的日志里。会话内
- * 每文件只警示一次(有界 50,超出逐出最旧);worker 停用等非能力限制错误
- * (关窗阶段 dispose 全量拒绝)不警示,零噪声。
+ * RUST-031: the explicit-degradation face for oversized files / a backlog over
+ * budget. A parse-backlog byte budget (IDE-RES-002, 8MiB on the host side)
+ * rejection is a capability limit rather than a fault -- the file does not
+ * enter the index this round, hover / definition / completion may be missing or
+ * stale, and the user must be able to see that; it must not land only in a log
+ * that is off by default. Only one warning per file within a session (bounded
+ * at 50, evicting the oldest beyond that); non-capability-limit errors such as
+ * worker shutdown (a full rejection while disposing in the window-closing
+ * phase) raise no warning, zero noise.
  */
 const DEGRADED_NOTICE_LIMIT = 50;
 const degradedNoticed = new Set<string>();
 const DEGRADED_BUDGET_PREFIX = 'Python parse backlog byte budget exceeded';
 
-/** 测试用:清空降级警示去重表(不影响索引实例本身) */
+/** For tests: clear the degradation-warning de-duplication table (does not touch the index instance itself) */
 export function resetDegradedParseNoticeForTests(): void {
   degradedNoticed.clear();
 }
@@ -291,13 +330,13 @@ function noteDegradedParse(filePath: string, error: unknown): void {
 export class PythonClassIndex {
   private fileCache = new Map<string, { version: number; parsed: ParsedPythonFile }>();
   private byName = new Map<string, PythonClassDef[]>();
-  /** 后台全量扫描协调 Promise(发现+分块解析;失败置空允许重试,不缓存假象) */
+  /** Coordinating promise for the background full scan (discovery + chunked parsing; a failure clears it to allow a retry, never caching an illusion) */
   private scanPromise: Promise<void> | null = null;
-  /** PR3/PR5:调度器注入(扩展共享实例;独立构造自建一份) */
+  /** PR3/PR5: injected scheduler (an extension-shared instance; builds its own when constructed standalone) */
   private readonly scheduler: IndexScheduler;
-  /** PR4:Python 侧依赖图(组合根派生物 → xml/def/带实例赋值的 py 来源) */
+  /** PR4: the Python-side dependency graph (composition-root derived products -> xml / def / py sources carrying instance assignment) */
   private readonly dependencyGraph = new SemanticDependencyGraph();
-  /** 组合根派生结果(懒建;实体注册/类型/实体定义变化时置空重派) */
+  /** Composition root derivation results (lazily built; cleared and re-derived when entity registration / types / entity definitions change) */
   private rootsMap: CompositionRootMap | null = null;
   private rootsByScope = new Map<string, CompositionRootMap>();
   private rootsPromise: Promise<void> | null = null;
@@ -306,58 +345,69 @@ export class PythonClassIndex {
   private scanGeneration = 0;
   private documents = new Map<string, Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'>>();
   private mroCache = new Map<string, PythonClassDef[]>();
-  /** 按需单文件解析(RequestLocal)进行中去重:同文件并发请求合并为一次入队 */
+  /** De-duplication of in-progress on-demand single-file parses (RequestLocal): concurrent requests for the same file merge into one queue entry */
   private stagedRequests = new Map<string, Promise<void>>();
-  /** 组合根派生纪元:每次 resetRoots 递增(派生并发判稳用) */
+  /** Composition root derivation epoch: increments on each resetRoots (used to judge stability under concurrent derivation) */
   private rootsEpoch = 0;
-  /** 最近一次发现任务的全仓 .py 清单(discovery 序;staging 排序与扫描共用) */
+  /** The whole-repo .py list from the most recent discovery task (in discovery order; shared by staging sorting and the scan) */
   private discoveredFiles: vscode.Uri[] | null = null;
-  /** discoveredFiles 所属扫描代(换代后强制重新发现) */
+  /** The scan generation discoveredFiles belongs to (a new generation forces re-discovery) */
   private discoveredGeneration = -1;
   /**
-   * RESP-002:发现单飞(代际键)。发现等待不占调度器执行位——调度器单并发
-   * 位若被全盘 findFiles 的 await 占据,RequestLocal 已知路径补载也只能排队
-   * (异步让出事件循环,却不让出执行位)。换代守卫晚到结果不落缓存;失败不
-   * 缓存(下一调用重发现)。
+   * RESP-002: single-flight discovery (keyed by generation). Waiting on
+   * discovery does not occupy a scheduler execution slot -- if the scheduler's
+   * single concurrency slot were held by the await of a repo-wide findFiles, a
+   * RequestLocal known-path fill-up could only queue up too (it yields the event
+   * loop asynchronously, but not the execution slot). A generation guard keeps
+   * a late result out of the cache; a failure is not cached (the next call
+   * re-discovers).
    */
   private discoveredInFlight: { generation: number; promise: Promise<void> } | null = null;
   /**
-   * 文件发现序(装载入口同步记号):③ 反向候选的跨文件排序用。分块装载是
-   * Promise.all 并发(:837),完成序随 IO 时序翻动——不记号的话候选顺序
-   * 不确定(CI 40470720225 红例:同两候选仅顺序翻)。按发现序定死。
+   * File discovery order (a synchronous mark taken at the load entry point):
+   * used for cross-file ordering of ③'s reverse candidates. Chunked loading is
+   * Promise.all concurrency (:837), so completion order flips with IO timing --
+   * without the mark the candidate order is indeterminate (the CI 40470720225
+   * red case: the same two candidates differed only in order). The discovery
+   * order settles it.
    */
   private readonly fileOrder = new Map<string, number>();
   private nextFileOrder = 0;
   /**
-   * 全扫中被取消/失败的分块遗留文件 → 已尝试次数。分块失败不再静默吞掉后
-   * 照旧标记扫描代完成(那会让这批文件从未解析就永久缺席且无后续重试);
-   * 后续查询按此表定向补解析,只重跑这几个文件,不全仓重扫。
+   * Files left behind by chunks cancelled / failed during a full scan ->
+   * attempts so far. A chunk failure is no longer swallowed silently while the
+   * scan generation is still marked complete (that would leave this batch
+   * permanently absent without ever being parsed and with no later retry);
+   * later queries use this table for a targeted fill-up parse, re-running only
+   * these few files instead of rescanning the whole repo.
    */
   private pendingScanRetries = new Map<string, number>();
-  /** 待补重试是否已有分块在队列里(防每次查询重复入队) */
+  /** Whether a chunk for the pending retry is already queued (prevents re-queueing on every query) */
   private scanRetryInFlight = false;
-  /** 关闭文档后按盘重载的进行中 promise(每文件一条;查询须等它落定) */
+  /** In-flight promise for the reload from disk after a document closes (one per file; queries must wait for it to settle) */
   private closeReloads = new Map<string, Promise<void>>();
   /**
-   * SCAN-RESUME-001:全扫断点控制器(可选;装配层注入 index-cache 目录)。
-   * 分块完成落断点,中断后重开指纹匹配的文件直接采纳(直取路径),只扫剩余。
+   * SCAN-RESUME-001: full-scan checkpoint controller (optional; the wiring
+   * layer injects the index-cache directory). A checkpoint is written when a
+   * chunk completes, so after an interruption files whose fingerprints match are
+   * adopted straight away (the direct-take path) and only the rest is scanned.
    */
   private readonly scanProgress?: ScanProgressController;
-  /** SCAN-RESUME-001 测试面:最近一轮全扫的恢复统计(采纳/实扫计数) */
+  /** SCAN-RESUME-001 test face: resume statistics from the last full scan (adopted / actually scanned counts) */
   private lastScanResumeStats: { adopted: number; scanned: number } | null = null;
-  /** 组合根来源内容缓存(mtime+size 指纹;未变更文件重派生不再重读) */
+  /** Content cache of composition root sources (mtime+size fingerprint; re-deriving an unchanged file does not re-read it) */
   private rootsContentCache = new Map<string, { mtimeMs: number; size: number; content: string }>();
-  /** INDEX-DISCIPLINE-001 ③:语法门开关(装配点注入;默认恒开) */
+  /** INDEX-DISCIPLINE-001 ③: syntax gate switch (injected at the wiring point; on by default) */
   private syntaxGateEnabled: () => boolean;
-  /** INDEX-DISCIPLINE-001 ③:语法门累计拦下数(烂文件不入索引的次数) */
+  /** INDEX-DISCIPLINE-001 ③: running total of syntax-gate interceptions (how often a broken file was kept out of the index) */
   private syntaxGateSkipped = 0;
-  /** 显式派生版本轴(④):断言「哪类变更动了哪层」 */
+  /** Explicit derivation version axes (④): to assert "which kind of change moved which layer" */
   private indexVersions: PythonIndexVersions = {
     classes: 0, bases: 0, methods: 0, mro: 0, compositionRoots: 0
   };
 
   constructor(scheduler?: IndexScheduler, scanProgress?: ScanProgressController,
-    /** INDEX-DISCIPLINE-001 ③:语法门开关读取(默认恒开;装配点注入真配置)。 */
+    /** INDEX-DISCIPLINE-001 ③: reading the syntax gate switch (on by default; the wiring point injects the real configuration). */
     syntaxGateEnabled?: () => boolean
   ) {
     this.scheduler = scheduler ?? new IndexScheduler();
@@ -365,17 +415,17 @@ export class PythonClassIndex {
     this.syntaxGateEnabled = syntaxGateEnabled ?? (() => true);
   }
 
-  /** INDEX-DISCIPLINE-001 ③:语法门累计拦下数(状态栏 tooltip 观测面)。 */
+  /** INDEX-DISCIPLINE-001 ③: running total of syntax-gate interceptions (a status-bar tooltip observation face). */
   getSyntaxGateSkippedCount(): number {
     return this.syntaxGateSkipped;
   }
 
-  /** SCAN-RESUME-001:最近一轮全扫的断点恢复统计(采纳/实扫;测试断言面) */
+  /** SCAN-RESUME-001: checkpoint-resume statistics from the last full scan (adopted / actually scanned; a test assertion face) */
   getScanResumeStatsForTests(): { adopted: number; scanned: number } | null {
     return this.lastScanResumeStats;
   }
 
-  /** 显式版本查询(测试/遥测):断言变更只动受影响的派生层 */
+  /** Explicit version query (tests / telemetry): asserting that a change touched only the affected derivation layer */
   getIndexVersion(key: PythonIndexVersionKey): number {
     return this.indexVersions[key];
   }
@@ -384,26 +434,32 @@ export class PythonClassIndex {
     return { ...this.indexVersions };
   }
 
-  /** PR4 依赖图访问面(失效计划取证/测试) */
+  /** PR4 dependency graph access face (invalidation-plan forensics / tests) */
   getDependencyGraph(): SemanticDependencyGraph {
     return this.dependencyGraph;
   }
 
-  /** 首扫后台化入口:调度器接管发现+分块解析,立即返回不等完成 */
+  /** Entry point for backgrounding the first scan: the scheduler takes over discovery + chunked parsing, returning immediately without waiting for completion */
   scheduleBackgroundScan(): void {
     void this.ensureScanned();
   }
 
-  /** 全扫进度明细 sink(WARM-VISIBILITY-004 同形态):waitForInitialScan(onProgress)
-   * 注入,pyProgress 发射时现读;null = 无等待方,零开销。挂发到终态清空
-   * (身份比对防误清新等待方的注入)。 */
+  /** Full-scan progress detail sink (the same shape as WARM-VISIBILITY-004):
+   * injected by waitForInitialScan(onProgress) and read live when pyProgress is
+   * emitted; null = no waiter, zero overhead. Cleared when attached emission
+   * reaches a terminal state (an identity comparison prevents wiping out a new
+   * waiter's injection by mistake). */
   private scanDetailSink: ((detail: string) => void) | null = null;
 
   /**
-   * 等待全量扫描完成(验收清单/测试面;对齐 EntityMappingManager.waitForInitialScan
-   * 语义)。生产请求路径不调用它——Definition 首查不等全量,只有需要全仓口径
-   * 结果的调用方(验收断言/类名枚举/后台预热阶段)才等待。onProgress 透传
-   * 「python 类索引 N/M」逐文件节流进度(2026-11-23 用户令:类索引进状态栏)。
+   * Wait for the full scan to finish (the acceptance checklist / test face;
+   * aligned with EntityMappingManager.waitForInitialScan semantics). The
+   * production request path does not call it -- a Definition's first query does
+   * not wait for the full scan; only callers needing whole-repo-criterion
+   * results (acceptance assertions / class-name enumeration / the background
+   * warm-up phase) wait. onProgress passes through a per-file throttled
+   * "python class index N/M" progress (user order 2026-11-23: the class index
+   * enters the status bar).
    */
   waitForInitialScan(onProgress?: (detail: string) => void): Promise<void> {
     if (onProgress) {
@@ -477,14 +533,15 @@ export class PythonClassIndex {
     return nearby.length === 1 ? nearby[0] : candidates.length === 1 ? candidates[0] : null;
   }
 
-  /** import 模块名 → 候选文件路径(解析与按需 staging 共用同一口径,保序) */
+  /** Import module name -> candidate file paths (resolution and on-demand staging share one criterion, order preserved) */
   private importModuleCandidates(filePath: string, rawModuleName: string): string[] {
     return pythonImportModuleCandidates(filePath, rawModuleName);
   }
 
   private mroClasses(cls: PythonClassDef): PythonClassDef[] {
-    // IDE-RST-009:MRO 段耗时(python-mro-resolve)——缓存命中臂与 C3 线性化
-    // 臂都计入,真实查询口径不做旁路
+    // IDE-RST-009: MRO-segment timing (python-mro-resolve) -- both the
+    // cache-hit arm and the C3-linearization arm are counted, with no bypass of
+    // the real query criterion
     const mroStartedAt = performance.now();
     const finish = (result: PythonClassDef[]): PythonClassDef[] => {
       recordLanguageServiceOperation('python-mro-resolve', performance.now() - mroStartedAt, {
@@ -526,7 +583,7 @@ export class PythonClassIndex {
     if (filePath?.toLowerCase().endsWith('.py') && !this.fileCache.has(filePath)) { return; }
     this.generation += 1;
     if (!filePath) {
-      // 全量失效(工作区根切换/关停面):五轴全部递增
+      // Full invalidation (workspace root switch / shutdown face): all five axes increment
       for (const key of Object.keys(this.indexVersions) as PythonIndexVersionKey[]) {
         this.indexVersions[key] += 1;
       }
@@ -534,8 +591,10 @@ export class PythonClassIndex {
       this.rootsContentCache.clear();
     }
     if (filePath && !filePath.toLowerCase().endsWith('.py')) {
-      // ④ 显式失效条件:只有依赖图记录在案的来源(entities.xml/.def/types.xml/
-      // 带实例赋值的 py)才作废组合根;无关文件变更不再波及派生结果。
+      // ④ Explicit invalidation condition: only sources recorded in the
+      // dependency graph (entities.xml / .def / types.xml / py files carrying
+      // instance assignments) invalidate the composition roots; changes to
+      // unrelated files no longer ripple into the derived results.
       const plan = this.dependencyGraph.planInvalidation(filePath, changeKind);
       if (plan.invalidateFiles.includes(COMPOSITION_ROOTS_NODE)) {
         this.indexVersions.compositionRoots += 1;
@@ -564,13 +623,15 @@ export class PythonClassIndex {
   }
 
   /**
-   * IDE-SNP-009:统一移除根通知的消费面——定向摘除该根下全部记录,其余根
-   * 原样保留(区别于整库 invalidate+重扫自愈)。返回摘除的 py 文件数;未知
-   * 根是空操作,不虚进任何版本。
+   * IDE-SNP-009: the consumer face of the unified root-removal notice --
+   * surgically strips every record under that root while all other roots are
+   * kept as they are (distinct from a whole-store invalidate + rescan
+   * self-heal). Returns the number of py files stripped; an unknown root is a
+   * no-op that advances no version.
    */
   removeRoot(rootPath: string): number {
     if (!rootPath) { return 0; }
-    // 前缀判定带分隔符:/ws 不误伤 /wsX;两种分隔符都认(键可能是任意拼写)
+    // Prefix comparison carries the separator: /ws does not accidentally match /wsX; both separators are recognized (keys may be spelled either way)
     const underRoot = (filePath: string): boolean =>
       filePath === rootPath ||
       filePath.startsWith(rootPath + '/') ||
@@ -603,8 +664,10 @@ export class PythonClassIndex {
     for (const key of [...this.pendingScanRetries.keys()]) {
       if (underRoot(key)) { this.pendingScanRetries.delete(key); }
     }
-    // 摘除是显式版本事件(消费端可判定过期),非 TTL 静默过期;扫描换代让
-    // 在途扫描/发现缓存(discoveredGeneration 口径)自然作废
+    // The removal is an explicit version event (consumers can decide it is
+    // stale), not a silent TTL expiry; the scan generation bump naturally
+    // invalidates in-flight scan / discovery caches (the discoveredGeneration
+    // criterion)
     this.generation += 1;
     this.scanGeneration += 1;
     this.mroCache.clear();
@@ -617,7 +680,7 @@ export class PythonClassIndex {
     return removedFiles.length;
   }
 
-  /** 组合根派生状态复位 + 显式版本递增(所有复位路径统一走这里,便于断言) */
+  /** Reset the composition-root derivation state + explicit version increment (every reset path funnels through here, for easy assertion) */
   private resetRoots(): void {
     this.rootsEpoch += 1;
     if (this.rootsMap || this.rootsByScope.size > 0 || this.rootsPromise) {
@@ -636,24 +699,33 @@ export class PythonClassIndex {
     if (!this.fileCache.has(filePath) &&
         (filePath.split(/[\\/]/).some(part => PY_SCAN_EXCLUDED_DIRS.has(part)) ||
           isEnginePythonLibPath(filePath))) { return; }
-    // INDEX-DISCIPLINE-001 ③:语法门——重索引唯一入口(保存/外部写盘经
-    // 合并器收口到本面)统一过门。烂文件不入索引不绑定(索引保留上一次
-    // 健康版本符号,编辑中导航不断),只计数+日志;诊断面照旧由既有诊断链
-    // 报语法错。门禁文本与 loadFile 同源(开档缓冲优先,盘回落)——拦的
-    // 就是将要入索引的那份内容。
+    // INDEX-DISCIPLINE-001 ③: syntax gate -- the sole reindex entry point
+    // (saves / external disk writes funnel into this face through the merger)
+    // passes through the gate uniformly. A broken file does not enter the index
+    // and is not bound (the index keeps the symbols of the last healthy version,
+    // so navigation stays alive while editing); it only counts + logs, and the
+    // diagnostics face keeps reporting the syntax error through the existing
+    // diagnostics chain. The gated text and loadFile share one source (the open
+    // document buffer first, disk as fallback) -- what is intercepted is exactly
+    // the content about to enter the index.
     if (this.syntaxGateEnabled()) {
-      // 门禁文本与 loadFile 同源同序(workspace 开档优先,内部登记回落)——
-      // 拦的就是将要入索引的那份内容,两处取文不同序=门拦错文本。
+      // The gated text and loadFile share one source and one order (workspace
+      // open document first, internal registry as fallback) -- what is
+      // intercepted is exactly the content about to enter the index; a different
+      // fetch order in the two places = the gate intercepting the wrong text.
       const open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
       let text: string;
       try {
-        // 2026-11-24:盘腿走共享原文缓存(读一次、扇出多次);失败原样抛由
-        // 下方既有 catch 收口为空文本(缺档口径不变)。
+        // 2026-11-24: the disk leg goes through the shared raw-text cache (read
+        // once, fanned out many times); a failure is thrown as-is and folded by
+        // the existing catch below into empty text (the missing-file criterion
+        // is unchanged).
         text = open
           ? open.getText()
           : (await getSharedFileTextCache().readThroughAsync(filePath, p => fs.promises.readFile(p, 'utf8'))).text;
       } catch {
-        // 读不到(外部删档竞态等):交给 loadFile 的既有缺档口径,不在此拦
+        // Unreadable (an external file-delete race etc.): left to loadFile's
+        // existing missing-file criterion, not intercepted here
         text = '';
       }
       if (text !== '') {
@@ -672,11 +744,16 @@ export class PythonClassIndex {
 
   onDocumentClosed(document: vscode.TextDocument): void {
     this.documents.delete(document.fileName);
-    // KR-AUD-28:关闭的是编辑器文档,文件仍在盘——只按盘重载该文件,不推进
-    // 扫描代(旧实现 invalidate 会作废整扫描代,下次查询全仓重发现+重解析)。
-    // 盘是真相源:先同步摘除缓冲版(否则即时查询仍见内存缓冲内容),再异步
-    // 按盘重载;loadFile 读不到文档便回落磁盘读。重载 promise 记账,后续
-    // 查询(ensureScanned)先等它落定,避免即时查询看到空窗或旧缓冲。
+    // KR-AUD-28: what closed is the editor document while the file is still on
+    // disk -- reload only that file from disk and do not advance the scan
+    // generation (the old invalidate implementation invalidated the entire scan
+    // generation, so the next query triggered repo-wide re-discovery + re-parse).
+    // The disk is the source of truth: first synchronously strip the buffered
+    // version (otherwise instant queries still see the in-memory buffer), then
+    // asynchronously reload from disk; when loadFile cannot find a document it
+    // falls back to a disk read. The reload promise is booked so later queries
+    // (ensureScanned) wait for it to settle first, keeping instant queries from
+    // seeing an empty window or a stale buffer.
     if (this.fileCache.has(document.fileName)) {
       this.unindexFile(document.fileName);
       this.fileCache.delete(document.fileName);
@@ -706,15 +783,18 @@ export class PythonClassIndex {
 
   private commitParsedFile(filePath: string, parsed: ParsedPythonFile, version: number,
     parseMs: number): void {
-    // IDE-RST-009:提交段耗时(document-commit)——缓存入账/类索引/三层签名
-    // 对账/组合根桥依赖登记,与解析段(document-parse)分列,合成完整编辑面
+    // IDE-RST-009: commit-segment timing (document-commit) -- cache booking /
+    // class indexing / three-layer signature reconciliation / composition-root
+    // bridge dependency registration, listed separately from the parse segment
+    // (document-parse) to compose the full edit face
     const commitStartedAt = performance.now();
     const previous = this.fileCache.get(filePath)?.parsed;
     this.generation += 1;
     this.mroCache.clear();
     this.unindexFile(filePath);
-    // PR1 打点:单文件解析耗时(document-parse),版本号随样本记录,
-    // 解析结果与顺序保持原样(只观测,不改行为)。
+    // PR1 instrumentation: per-file parse timing (document-parse), with the
+    // document version recorded alongside each sample; parse results and order
+    // stay untouched (observation only, no behavior change).
     recordLanguageServiceOperation('document-parse', parseMs, {
       fileKind: 'python',
       documentVersion: version,
@@ -722,8 +802,10 @@ export class PythonClassIndex {
     });
     this.fileCache.set(filePath, { version, parsed });
     for (const cls of parsed.classes) { this.indexClass(cls); }
-    // ④ 显式版本轴:单次遍历构建 类/基类/方法 三层签名(30k 文件扫描路径上
-    // JSON 序列化是可观测开销,合并为一次循环),哪层变了就递增哪轴。
+    // ④ Explicit version axes: a single traversal builds the class / bases /
+    // methods three-layer signatures (on the 30k-file scan path JSON
+    // serialization is an observable cost, so they are fused into one loop),
+    // and whichever layer changed bumps its axis.
     let classesChanged = false;
     let basesChanged = false;
     let methodsChanged = false;
@@ -763,8 +845,10 @@ export class PythonClassIndex {
       this.indexVersions.bases += 1;
       this.indexVersions.methods += 1;
     }
-    // ④ 组合根的「实现对象 → 类」桥接来源记入依赖图:只有带模块级实例赋值的
-    // py 文件才是组合根派生来源,其余 py 变更不触发组合根重建(精确失效)。
+    // ④ The composition root's "implementation object -> class" bridging source
+    // is recorded in the dependency graph: only py files carrying module-level
+    // instance assignments are composition-root derivation sources, so other py
+    // changes never trigger a composition-root rebuild (precise invalidation).
     if (parsed.instanceAssignments.length > 0) {
       this.dependencyGraph.recordDependencies(COMPOSITION_ROOTS_NODE, [filePath]);
     }
@@ -772,15 +856,18 @@ export class PythonClassIndex {
     // rare module-level `instance = Class()` bridge. Ordinary method/class edits
     // change MRO lookup data but do not require another three workspace-wide
     // metadata scans. Rebuild roots only when that bridge changes.
-    // PR5:首扫后台化后,组合根派生与分块解析并发——首解析(previous 为空)只在
-    // 真的带来实例赋值时才作废派生结果,否则后台扫文件会把刚建好的组合根冲掉。
+    // PR5: after the first scan is backgrounded, composition-root derivation and
+    // chunked parsing run concurrently -- a first parse (previous is null)
+    // invalidates the derived results only when it really brings instance
+    // assignments, otherwise a background-scanned file would wash away a freshly
+    // built composition root.
     const assignmentSignature = (items: ParsedPythonFile['instanceAssignments']): string =>
       JSON.stringify(items.map(item => [item.variable, item.className]));
     const assignmentsChanged = !previous
       ? parsed.instanceAssignments.length > 0
       : assignmentSignature(previous.instanceAssignments) !== assignmentSignature(parsed.instanceAssignments);
     if (assignmentsChanged) {
-      // 只有「实现对象 → 类」桥真正变化才作废组合根(首解析无赋值不动派生)
+      // Only a real change to the "implementation object -> class" bridge invalidates the composition roots (a first parse with no assignment leaves the derivation untouched)
       this.resetRoots();
     }
     recordLanguageServiceOperation('document-commit', performance.now() - commitStartedAt, {
@@ -810,10 +897,13 @@ export class PythonClassIndex {
     }
   }
 
-  /** 首次查询时全量扫描(幂等,失败不抛) */
+  /** Full scan on the first query (idempotent; a failure does not throw) */
   /**
-   * 组合根派生输入指纹:fileCache 里全部模块级实例赋值(实现对象 → 类桥)。
-   * 派生期间指纹变化 = 输入变化,触发重派(④ 显式失效条件的并发面)。
+   * Input fingerprint for composition root derivation: all module-level
+   * instance assignments in the fileCache (the implementation object -> class
+   * bridge). The fingerprint changing during derivation = the inputs changed,
+   * which triggers a re-derivation (the concurrency face of ④'s explicit
+   * invalidation condition).
    */
   private assignmentsToken(): string {
     const items: string[] = [];
@@ -826,15 +916,17 @@ export class PythonClassIndex {
   }
 
   /**
-   * 组合根派生(懒):entities.xml 全部实体 + 各实体 .def(父/接口/组件/字段类型)
-   * + types.xml(implementedBy 字段对象类)。失败清缓存可重试(与扫描同口径)。
+   * Composition root derivation (lazy): every entity in entities.xml + each
+   * entity's .def (parent / interfaces / components / field types) + types.xml
+   * (the implementedBy field object classes). A failure clears the cache so it
+   * can be retried (the same criterion as the scan).
    */
   private async ensureCompositionRoots(): Promise<void> {
     if (this.rootsMap) {
       return;
     }
     if (this.rootsPromise) {
-      // PR1 打点:并入进行中的组合根派生 = 本次请求在等索引初始化
+      // PR1 instrumentation: joining an in-progress composition root derivation = this request is waiting on index initialization
       const joinWait = startLanguageServiceOperation('python-composition-roots', {
         waitedForInit: true,
         indexGeneration: this.generation
@@ -843,9 +935,10 @@ export class PythonClassIndex {
         await this.rootsPromise;
         joinWait.end('ok');
       } catch {
-        // 并入臂的拒绝分无触发输入——rootsPromise 的构建 IIFE 自带全量
-        // catch(派生失败只清缓存不外抛):IIFE 恒 resolve,await 不会落到
-        // 拒绝分。
+        // The join arm's rejection branch has no triggering input -- the
+        // rootsPromise's building IIFE carries its own full catch (a derivation
+        // failure only clears the cache and does not throw): the IIFE always
+        // resolves, so the await never reaches the rejection branch.
         /* istanbul ignore start */
         joinWait.end('error');
         /* istanbul ignore stop */
@@ -857,9 +950,12 @@ export class PythonClassIndex {
       const compositionMetrics = startLanguageServiceOperation('python-composition-roots', {
         indexGeneration: this.generation
       });
-      // PR5:不再等全量 .py 扫描——「实现对象 → 类」桥接用当前已建索引的实例
-      // 赋值表(未扫全时部分派生,赋值文件入索引后经 updateFile 的赋值签名对比
-      // 自动重派生);首扫本身已后台化,这里只需确保它在推进。
+      // PR5: no longer waits for the full .py scan -- the "implementation
+      // object -> class" bridge uses the instance-assignment table of the index
+      // built so far (a partial derivation until the scan completes, and once an
+      // assigning file enters the index the assignment-signature comparison in
+      // updateFile re-derives automatically); the first scan itself is already
+      // backgrounded, so this only needs to make sure it is progressing.
       void this.ensureScanned();
       const readText = async (uri: vscode.Uri): Promise<string> => {
         const document = vscode.workspace.textDocuments?.find(doc => doc.fileName === uri.fsPath) ?? this.documents.get(uri.fsPath);
@@ -869,8 +965,10 @@ export class PythonClassIndex {
           });
           return document.getText();
         }
-        // ③ 组合根构建缓存:同批 XML/def 只在 mtime/size 变化时才真正重读,
-        // 重派生(entities.xml/.def 局部失效后的常见路径)命中缓存不产生 IO。
+        // ③ Composition root build cache: the same batch of XML/def files is
+        // really re-read only when mtime/size changes, so a re-derivation (the
+        // common path after a partial invalidation of entities.xml/.def) hits
+        // the cache and produces no IO.
         try {
           const stat = await fs.promises.stat(uri.fsPath);
           const cached = this.rootsContentCache.get(uri.fsPath);
@@ -891,11 +989,15 @@ export class PythonClassIndex {
           let scoped = new Map<string, CompositionRootMap>();
           let resolvedRoots: string[] = [];
           let combinedMixins = new Map<string, string[]>();
-        // PR5 并发护栏:首扫后台化后,分块解析与派生并发推进。派生输入 =
-        // 元数据文件内容 + fileCache 实例赋值快照。注意不能用 this.generation
-        // 判稳——每次单文件解析都会递增它,后台扫描期间会引发无谓重派风暴;
-        // 这里以「组合根纪元(resetRoots)+ 赋值桥指纹」双条件判稳,输入变了才
-        // 用内容缓存重派(重读为零),不静默丢弃。
+        // PR5 concurrency guardrail: once the first scan is backgrounded, chunked
+        // parsing and derivation advance concurrently. Derivation inputs =
+        // metadata file contents + a fileCache instance-assignment snapshot. Note
+        // this.generation must not be used to judge stability -- every single-file
+        // parse increments it, which would cause a pointless re-derivation storm
+        // during a background scan; here stability is judged by the dual condition
+        // "composition root epoch (resetRoots) + assignment bridge fingerprint",
+        // and only a changed input re-derives through the content cache (zero
+        // re-reads), never dropped silently.
         for (let attempt = 0; attempt < 8; attempt += 1) {
         epochBefore = this.rootsEpoch;
         const assignmentsBefore = this.assignmentsToken();
@@ -905,8 +1007,11 @@ export class PythonClassIndex {
           findFilesAcrossRoots('**/types.xml', PY_SCAN_EXCLUDE)
         ]);
         compositionMetrics.countFileDiscovery(entityXmlFiles.length + defFiles.length + typeXmlFiles.length);
-        // ④ 组合根派生来源记入 PR4 依赖图:entities.xml/types.xml 全量、.def
-        // 全量(父链/接口/组件交叉读取,逐文件依赖边不划算);失效按图裁断。
+        // ④ The composition root's derivation sources are recorded in the PR4
+        // dependency graph: entities.xml/types.xml in full and .def in full
+        // (parent chains / interfaces / components are read across files, so
+        // per-file dependency edges are not worth it); invalidation is cut off
+        // per graph.
         this.dependencyGraph.recordDependencies(COMPOSITION_ROOTS_NODE, [
           ...entityXmlFiles.map(uri => uri.fsPath),
           ...defFiles.map(uri => uri.fsPath),
@@ -961,7 +1066,7 @@ export class PythonClassIndex {
           }
         }
         if (this.rootsEpoch !== epochBefore || this.assignmentsToken() !== assignmentsBefore) {
-          continue; // 输入在派生期间变化(或派生结果已被失效):重派(元数据走内容缓存,零 IO)
+          continue; // the inputs changed during derivation (or the derived result was invalidated): re-derive (metadata goes through the content cache, zero IO)
         }
         this.rootsByScope = scoped;
         this.rootsMap = { roots: resolvedRoots, defMixins: combinedMixins };
@@ -971,10 +1076,13 @@ export class PythonClassIndex {
         );
         return;
         }
-        // 多次让位后输入仍在变(编辑风暴):按最后一次快照正确收尾——rootsMap
-        // 落地、metrics end、rootsPromise 清理(KR-AUD-26:旧实现只打日志,
-        // join 臂对已 resolve 的旧 promise 空等,组合根查询永久空;落地后
-        // 真实失效仍会经 resetRoots/updateFile 赋值签名对比正常纠正)。
+        // The inputs are still changing after several yields (an edit storm):
+        // wrap up correctly on the last snapshot -- land rootsMap, end the
+        // metrics, and clear rootsPromise (KR-AUD-26: the old implementation
+        // only logged, and the join arm spun waiting on a long-resolved stale
+        // promise, leaving composition root queries permanently empty; once
+        // landed, a real invalidation is still corrected normally through
+        // resetRoots / the updateFile assignment-signature comparison).
         this.rootsByScope = scoped;
         this.rootsMap = { roots: resolvedRoots, defMixins: combinedMixins };
         compositionMetrics.end('ok');
@@ -982,7 +1090,7 @@ export class PythonClassIndex {
         jumpLog('info', () => `组合根派生连续让位 8 次,按最后一次输入落地 ${rootsTimer()}ms`);
       } catch {
         compositionMetrics.end('error');
-        // 派生失败:不当成功缓存,下次跳转重试;已建索引不受影响
+        // Derivation failure: not cached as a success, retried on the next jump; the already built index is unaffected
         if (epochBefore === this.rootsEpoch) {
           this.rootsMap = null;
           this.rootsByScope.clear();
@@ -994,9 +1102,12 @@ export class PythonClassIndex {
   }
 
   /**
-   * 「类 X 被哪些组合根收录」——三输入交叉:根自身的 Python MRO(含同名多文件)
-   * 或根 .def 声明的 mixin(Parent/接口/组件)名单命中 X。
-   * 按组合根派生序返回(entities.xml 实体序在前)。
+   * "Which composition roots include class X" -- a cross of the three inputs:
+   * the root's own Python MRO (including same-named classes in several files),
+   * or the mixin (Parent / interfaces / components) roster declared by the
+   * root's .def, hits X.
+   * Returned in composition root derivation order (the entities.xml entity
+   * order comes first).
    */
   async rootsContaining(className: string): Promise<string[]> {
     await this.ensureCompositionRoots();
@@ -1026,23 +1137,28 @@ export class PythonClassIndex {
   }
 
   /**
-   * 全量知识入口(类名枚举/MRO/后代等必须全仓口径的 API 等这里)。
-   * PR5 起扫描本体在调度器后台推进:发现 = keyed initial-scan 任务,解析 =
-   * 分块 full-reindex 后台任务(受交互限流);失败不缓存「已扫描」假象,
-   * scanPromise 置空后下次调用重新协调(与修复前语义一致)。
-   * 单飞行守卫:同一代只允许一个 runScheduledScan 实例——并发调用共享同一
-   * scanPromise,终态(成功记完成代/失败清空)由唯一实例回写,不互相覆盖。
+   * The whole-store knowledge entry point (APIs that must use a whole-repo
+   * criterion -- class-name enumeration / MRO / descendants -- wait here).
+   * Since PR5 the scan body advances in the scheduler's background: discovery =
+   * a keyed initial-scan task, parsing = chunked full-reindex background tasks
+   * (subject to interactive throttling); a failure does not cache a "scanned"
+   * illusion -- once scanPromise is cleared, the next call re-coordinates (the
+   * same semantics as before the fix).
+   * Single-flight guard: only one runScheduledScan instance is allowed per
+   * generation -- concurrent calls share the same scanPromise, and the
+   * terminal state (success records the completed generation / failure clears
+   * it) is written back by that single instance, never overwriting each other.
    */
   private scanCompletedGeneration = -1;
 
   private ensureScanned(): Promise<void> {
-    // KR-AUD-28:关闭文档后的按盘重载先落定——查询不得越过它看到空窗或旧缓冲。
+    // KR-AUD-28: the reload-from-disk after a closed document settles first -- a query must not leap past it and see an empty window or a stale buffer.
     if (this.closeReloads.size > 0) {
       const reloads = [...this.closeReloads.values()];
       return Promise.all(reloads).then(() => this.ensureScanned());
     }
     if (this.scanCompletedGeneration === this.scanGeneration) {
-      // 扫描代已完成,但可能存在失败分块遗留的待补文件:定向重试(不全仓重扫)
+      // The scan generation is complete, but files left behind by a failed chunk may still be pending: retry them in a targeted way (no whole-repo rescan)
       this.schedulePendingScanRetry();
       return Promise.resolve();
     }
@@ -1064,19 +1180,24 @@ export class PythonClassIndex {
   }
 
   /**
-   * 分块取消/失败遗留文件与解析失败(旧索引保留)文件的定向补解析:单个
-   * 后台小块,逐文件重跑 loadFile,以其实际提交结果(false=本次未提交)推进
-   * 有界重试(MAX_SCAN_RETRY_ATTEMPTS 次),永久不可读的文件不无限重试;
-   * 整块再被取消则保持登记,下一次查询再试。
+   * Targeted fill-up parse for files left behind by a chunk cancellation /
+   * failure and for files whose parse failed (old index kept): one small
+   * background chunk that re-runs loadFile per file, advancing a bounded retry
+   * (MAX_SCAN_RETRY_ATTEMPTS times) on its real commit result
+   * (false = nothing committed this round), so a permanently unreadable file is
+   * not retried forever; if the whole chunk is cancelled again the registration
+   * is kept and the next query tries again.
    */
   private schedulePendingScanRetry(): void {
     if (this.scanRetryInFlight || this.pendingScanRetries.size === 0) { return; }
     const files = [...this.pendingScanRetries.keys()];
     if (files.length === 0) { return; }
     this.scanRetryInFlight = true;
-    // 逐文件收 loadFile 的提交结果:登记表里既有从未入索引的分块遗留文件,
-    // 也有解析失败但旧索引仍在的文件——后者 fileCache 恒有值,不能拿
-    // 「表里有」当成功信号,必须看本次重试是否真的提交了内容。
+    // Collect loadFile's commit result per file: the registry holds both
+    // chunk-left-behind files that never entered the index and files whose parse
+    // failed while the old index survived -- the latter always has a fileCache
+    // value, so "present in the table" must not be taken as a success signal;
+    // this retry really committing content is what counts.
     const committed = new Map<string, boolean>();
     this.scheduler.enqueue({
       kind: 'full-reindex',
@@ -1103,11 +1224,11 @@ export class PythonClassIndex {
           }
         }
       },
-      () => undefined // 整块被取消:文件从未解析,保持登记,下一次查询再试
+      () => undefined // the whole chunk was cancelled: the files were never parsed, keep the registration and try again on the next query
     ).finally(() => { this.scanRetryInFlight = false; });
   }
 
-  /** 首扫协调:调度器 keyed 发现任务 → 分块后台解析任务(任务间可插队交互任务) */
+  /** First-scan coordination: the scheduler's keyed discovery task -> chunked background parse tasks (interactive tasks may preempt between tasks) */
   private async runScheduledScan(scanGeneration: number): Promise<void> {
     const scanMetrics = startLanguageServiceOperation('python-index-scan', {
       indexGeneration: this.generation
@@ -1115,17 +1236,26 @@ export class PythonClassIndex {
     const scanTimer = jumpTimeStart();
     try {
       const files = await this.ensureDiscovered(scanGeneration);
-      // 读取/解析计数按「尝试处理的文件数」口径:loadFile 内部有打开缓冲复用
-      // 与读失败回退,精确的读/解析分布由 document-parse 事件单独承载。
+      // Read / parse counts follow the "number of files attempted to be
+      // processed" criterion: loadFile internally reuses an open buffer and
+      // falls back on a read failure, and the precise read / parse split is
+      // carried separately by the document-parse event.
       scanMetrics.countFileDiscovery(files.length);
-      // ③ 反向候选的跨文件排序基线:发现序在此落号(首见不重排)。分块装载
-      // 是 Promise.all 并发,完成序随 IO 时序翻动;按需预载又是 readdir 序,
-      // 只有发现序才是候选顺序的稳定口径(CI 40470720225 红例根因)。
+      // ③ The cross-file ordering baseline for reverse candidates: the
+      // discovery order is marked here (a first sight is not re-sorted). Chunked
+      // loading is Promise.all concurrency, so completion order flips with IO
+      // timing, and on-demand preloading is readdir order -- only the discovery
+      // order is the stable criterion for candidate order (the root cause of the
+      // CI 40470720225 red case).
       for (const uri of files) { this.noteFileOrder(uri.fsPath); }
-      // SCAN-RESUME-001:断点恢复——读断点出采纳计划并清场(计划驻内存)。
-      // 指纹匹配(mtimeMs+size)的文件直接采纳(直取路径,与磁盘缓存恢复
-      // 同构);漂移/新增/断点缺席照扫。采纳与实扫都走分块提交同一面,
-      // 查询面 loading/partial 口径不动(半成品索引不提前对外服务)。
+      // SCAN-RESUME-001: checkpoint resume -- read the checkpoint into an
+      // adoption plan and clear the field (the plan lives in memory).
+      // Files with a matching fingerprint (mtimeMs+size) are adopted directly
+      // (the direct-take path, isomorphic with disk-cache restore); drift / new
+      // files / a missing checkpoint are scanned as usual. Adoption and actual
+      // scanning both go through the same chunk-commit face, and the query face's
+      // loading/partial criterion is unchanged (a half-finished index does not
+      // serve outside prematurely).
       const filePaths = files.map(uri => uri.fsPath);
       const resume = this.scanProgress ? this.scanProgress.loadResumePlan(filePaths) : null;
       const adoptedEntries = resume ? [...resume.adopt.values()] : [];
@@ -1133,12 +1263,16 @@ export class PythonClassIndex {
       this.lastScanResumeStats = { adopted: adoptedEntries.length, scanned: scanFiles.length };
       scanMetrics.countFileRead(scanFiles.length);
       scanMetrics.countFileParse(scanFiles.length);
-      // WARM-VISIBILITY-004 刀 B:python 全扫起扫行 + 块级节流进度,进统一
-      // 「KBEngine Index」通道(常开;进度行复用 scanStageProgress 双闸节流);
-      // ENGINE-LIB-SCAN-005 刀2:剔除面入行(任务书「范围变化可审计」)
+      // WARM-VISIBILITY-004 blade B: a python full-scan start line + chunk-level
+      // throttled progress, going into the unified "KBEngine Index" channel
+      // (always on; progress lines reuse scanStageProgress's dual-gate
+      // throttling); ENGINE-LIB-SCAN-005 blade 2: the exclusion face appears in
+      // the line (the task brief's "scope changes are auditable")
       const engineExcludedRoots = resolveEngineSubtreeExclusions().length;
-      // 扫描根入行(2026-11-23 二段令,范围可审计):用户按行内根即可判
-      // 「扫的是 scripts 还是整棵 workspace」,不再靠症状反推。
+      // The scan roots appear in the line (the 2026-11-23 two-stage order,
+      // auditable scope): from the roots in the line the user can tell "whether
+      // scripts or the whole workspace tree was scanned", instead of
+      // back-inferring from symptoms.
       const scanRootsLabel = getIndexScanRoots()
         .map(root => root.replace(/\\/g, '/'))
         .join(', ');
@@ -1149,24 +1283,28 @@ export class PythonClassIndex {
         total: files.length,
         report: detail => {
           indexLog('python-index', detail);
-          // 预热等待方在挂:同一明细镜像状态栏 message(类索引进状态栏)
+          // A warm-up waiter is attached: mirror the same detail to the status bar message (the class index enters the status bar)
           this.scanDetailSink?.(detail);
         }
       });
-      // 分块入队:每块一个后台任务,块与块之间调度器可插队交互任务
-      // (RequestLocal 单文件解析/当前文件更新),全量扫描不再独占主线程。
+      // Chunked enqueue: one background task per chunk, and between chunks the
+      // scheduler may preempt with interactive tasks (RequestLocal single-file
+      // parses / current-file updates), so the full scan no longer monopolizes
+      // the main thread.
       const batches: string[][] = [];
       const handles = [];
       if (adoptedEntries.length > 0) {
-        // 采纳伪分块:断点条目恢复 Map 后走 commitParsedFile(不重读不重解析)。
-        // 也按分块记账:任务被取消/失败时这批文件照 failedFiles→待补重试口径走。
+        // Adoption pseudo-chunk: checkpoint entries restored to Maps go through
+        // commitParsedFile (no re-read, no re-parse).
+        // It is also booked as a chunk: if the task is cancelled / fails, this
+        // batch of files follows the same failedFiles -> pending-retry criterion.
         const adoptedPaths = adoptedEntries.map(entry => entry.path);
         batches.push(adoptedPaths);
         handles.push(this.scheduler.enqueue({
           kind: 'full-reindex',
           priority: IndexTaskPriority.BackgroundFull,
           run: async () => {
-            // 失效换代:过期分块直接放弃(旧代结果不得覆盖新一代状态)
+            // Invalidated generation change: a stale chunk is dropped outright (an old generation's results must not overwrite the new generation's state)
             if (scanGeneration !== this.scanGeneration) { return; }
             for (const entry of adoptedEntries) {
               this.commitParsedFile(
@@ -1188,11 +1326,14 @@ export class PythonClassIndex {
           kind: 'full-reindex',
           priority: IndexTaskPriority.BackgroundFull,
           run: async () => {
-            // 失效换代:过期分块直接放弃(旧代结果不得覆盖新一代状态)
+            // Invalidated generation change: a stale chunk is dropped outright (an old generation's results must not overwrite the new generation's state)
             if (scanGeneration !== this.scanGeneration) { return; }
-            // ENGINE-LIB-SCAN-005 刀4:交互冷却窗让路——信标刚刷新(交互任务
-            // 在途或刚结束)时先等出窗再解析本块(FREEZE 刀1b 信标同源,
-            // defaultMirrorYield 同一判定形态),后台占用对交互让步。
+            // ENGINE-LIB-SCAN-005 blade 4: yield to the interactive cooldown
+            // window -- when the beacon was just refreshed (an interactive task
+            // in flight or just finished), first wait out the window before
+            // parsing this chunk (the same beacon source as FREEZE blade 1b, the
+            // same decision shape as defaultMirrorYield), so the background
+            // occupation yields to interactive work.
             const yieldMs = scanChunkYieldDelayMs(performance.now(), interactiveActivityBeacon.lastAt);
             if (yieldMs > 0) {
               await new Promise<void>(resolve => setTimeout(resolve, yieldMs));
@@ -1200,8 +1341,11 @@ export class PythonClassIndex {
             const results = await Promise.all(batch.map(file =>
               this.loadFile(file, -1).then(committed => (committed ? file : null), () => null)));
             pyProgress.step(results.filter(file => file !== null).length);
-            // SCAN-RESUME-001:本块已提交文件落断点(指纹自查盘;写失败静默,
-            // 断点只是加速);换代后不落(旧代条目不得混入新轮断点)
+            // SCAN-RESUME-001: this chunk's committed files land in the
+            // checkpoint (the fingerprint is stat-ed against the disk; a write
+            // failure is silent, the checkpoint is only an accelerator); nothing
+            // lands after a generation change (old-generation entries must not
+            // mix into a new round's checkpoint)
             if (this.scanProgress && scanGeneration === this.scanGeneration) {
               const commits: ScanChunkCommit[] = [];
               for (const file of results) {
@@ -1216,8 +1360,11 @@ export class PythonClassIndex {
           }
         }));
       }
-      // 逐分块收终态:取消/失败的分块不再把拒绝逐一吞掉后照旧标记该代完成
-      // ——那会让这批文件(每块最多 SCAN_CHUNK_SIZE 个)从未解析就永久缺席且无后续重试。
+      // Collect per-chunk terminal states: a cancelled / failed chunk no longer
+      // has its rejection swallowed one by one while the generation is still
+      // marked complete -- that would leave this batch of files (at most
+      // SCAN_CHUNK_SIZE per chunk) permanently absent without ever being
+      // parsed and with no later retry.
       const outcomes = await Promise.all(
         handles.map(handle => handle.wait.then(() => 'completed', () => 'failed' as const))
       );
@@ -1236,43 +1383,57 @@ export class PythonClassIndex {
         indexLog('python-index',
           `py 全扫有 ${failedFiles.length} 个文件未随分块解析,已登记待补(后续查询定向重试)`);
       } else {
-        // 本轮无失败分块:被本轮全量覆盖的遗留待补文件清表。RESP-002 后发现
-        // 不占调度执行位,按需补载与全扫收尾可并发——在册但不在本轮发现集的
-        // 条目是扫描期按需登记的,本轮未覆盖,不得误删。
+        // No failed chunks this round: clear the table of pending files that
+        // this round's full pass covered. With RESP-002, discovery no longer
+        // occupies a scheduler execution slot, so on-demand fill-up and the full
+        // scan's wrap-up can run concurrently -- entries registered but not in
+        // this round's discovery set were registered on demand during the scan
+        // and are not covered by this round, so they must not be deleted by
+        // mistake.
         const covered = new Set(filePaths);
         for (const file of [...this.pendingScanRetries.keys()]) {
           if (covered.has(file)) { this.pendingScanRetries.delete(file); }
         }
-        // SCAN-RESUME-001:全量零失败收尾——断点使命完成,清场(部分失败/
-        // 取消不 complete:已记录分块留盘,下一轮从断点续扫)
+        // SCAN-RESUME-001: a zero-failure full wrap-up -- the checkpoint's
+        // mission is done, clear the field (a partial failure / cancellation does
+        // not complete: the recorded chunks stay on disk and the next round
+        // resumes from the checkpoint)
         this.scanProgress?.complete();
       }
       jumpLog('info', () =>
         `py 全仓索引完成 ${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`
         + ` → 类 ${this.byName.size} 个,${scanTimer()}ms(调度器分块后台执行)`);
       pyProgress.finish();
-      // WARM-VISIBILITY-004 刀 B:完成行镜像进统一通道(计时取同段墙钟)
+      // WARM-VISIBILITY-004 blade B: the completion line is mirrored into the unified channel (the timing reads the same segment's wall clock)
       indexLog('python-index', () =>
         `py 全仓索引完成 ${files.length} 个文件(断点采纳 ${adoptedEntries.length}/实扫 ${scanFiles.length})`
         + ` → 类 ${this.byName.size} 个`);
       scanMetrics.end('ok');
     } catch (error) {
       scanMetrics.end('error');
-      // 扫描失败不阻断跳转,但必须让 ensureScanned 的单飞行守卫感知失败:
-      // 重抛后完成代不记账,scanPromise 清空,下次调用重新协调(与修复前
-      // 「失败不缓存已扫描假象」语义一致)。
+      // A scan failure does not block jumping, but ensureScanned's single-flight
+      // guard must sense it: after the rethrow the completed generation is not
+      // booked and scanPromise is cleared, so the next call re-coordinates (the
+      // same pre-fix semantics of "a failure does not cache a scanned
+      // illusion").
       if (scanGeneration === this.scanGeneration) { throw error; }
     }
   }
 
   /**
-   * 文件发现(类内代际单飞)只供后台全扫；请求所需的已知文件按路径定向补载。
-   * 同代缓存直接复用，换代或失败后可重新发现。
+   * File discovery (an in-class, generation-keyed single flight) serves only the
+   * background full scan; known files a request needs are filled in on demand,
+   * targeted by path. A same-generation cache is reused directly; a generation
+   * change or a failure allows re-discovery.
    *
-   * RESP-002:发现不经调度器——单并发执行位被全盘 findFiles 的 await 占据时,
-   * RequestLocal 已知路径补载也被迫排队(异步扫盘让出 JS 事件循环,却没有
-   * 让出调度执行位;慢外部目录/未结束 findFiles 期间高优先级任务恒 queued)。
-   * 发现等待与交互执行分离后,分块解析仍走调度器,块与块之间可插队交互任务。
+   * RESP-002: discovery does not go through the scheduler -- when the single
+   * concurrency execution slot is held by the await of a repo-wide findFiles,
+   * RequestLocal known-path fill-ups are also forced to queue (asynchronous
+   * disk scanning yields the JS event loop but not the scheduler execution
+   * slot; during a slow external directory / unfinished findFiles,
+   * high-priority tasks stay queued). Once the discovery wait is separated
+   * from interactive execution, chunked parsing still goes through the
+   * scheduler and interactive tasks may preempt between chunks.
    */
   private async ensureDiscovered(scanGeneration: number): Promise<vscode.Uri[]> {
     if (this.discoveredFiles && this.discoveredGeneration === scanGeneration) {
@@ -1282,10 +1443,14 @@ export class PythonClassIndex {
       this.discoveredInFlight = {
         generation: scanGeneration,
         promise: (async () => {
-          // ENGINE-LIB-SCAN-005 刀1:引擎仓 python 标准库镜像(kbe/scripts/common/Lib)
-          // 按路径形态剔出业务扫描——workspace glob 结果后滤 + 外部根遍历剪枝。
-          // 锚点根先行(2026-11-23 二段令):配置/派生/folder 顶层全缺席时按
-          // 引擎默认布局定位 scripts 根,裸 workspace glob 兜底不再触发。
+          // ENGINE-LIB-SCAN-005 blade 1: the engine repo's Python standard
+          // library mirror (kbe/scripts/common/Lib) is pruned out of business
+          // scanning by path shape -- post-filtering the workspace glob results
+          // + pruning the external-root traversal.
+          // The anchor root goes first (the 2026-11-23 two-stage order): when
+          // configuration / derivation / folder top level are all absent, the
+          // scripts root is located by the engine's default layout, and the bare
+          // workspace glob fallback is no longer triggered.
           await ensureAnchorScanRoot().catch(() => null);
           const files = await findFilesAcrossRoots(
             '**/*.py',
@@ -1293,8 +1458,9 @@ export class PythonClassIndex {
             undefined,
             fsPath => !isEnginePythonLibPath(fsPath)
           );
-          // 换代守卫:晚到的旧代发现不落缓存(scanGeneration 已推进,结果
-          // 无关;下一调用按新代重发现)。
+          // Generation-change guard: a late old-generation discovery does not
+          // land in the cache (scanGeneration has advanced; the result is
+          // irrelevant; the next call re-discovers per the new generation).
           if (scanGeneration === this.scanGeneration) {
             this.discoveredFiles = files;
             this.discoveredGeneration = scanGeneration;
@@ -1306,8 +1472,10 @@ export class PythonClassIndex {
     try {
       await flight.promise;
     } catch (error) {
-      // 失败不缓存「已发现」假象(与首扫失败口径一致):同代错误上抛给首扫
-      // 记账,换代错误静默(结果已无关,新代单飞已接管)。
+      // A failure does not cache a "discovered" illusion (the same criterion as
+      // a first-scan failure): a same-generation error is rethrown for the
+      // first scan to book; a generation-change error is silent (the result is
+      // already irrelevant, the new generation's single flight has taken over).
       if (scanGeneration === this.scanGeneration) { throw error; }
     } finally {
       if (this.discoveredInFlight === flight) { this.discoveredInFlight = null; }
@@ -1316,8 +1484,10 @@ export class PythonClassIndex {
   }
 
   /**
-   * 请求所需文件按需单文件解析(②):RequestLocal 优先级入队,排在后台
-   * 全量分块之前;同文件并发请求合并为一次入队(调度器同版本合并 + 本地去重)。
+   * On-demand single-file parse of the files a request needs (②): enqueued at
+   * RequestLocal priority, ahead of the background full chunks; concurrent
+   * requests for the same file merge into one queue entry (the scheduler merges
+   * the same version + local de-duplication).
    */
   private loadFileOnDemand(filePath: string): Promise<void> {
     if (this.fileCache.has(filePath)) {
@@ -1342,11 +1512,15 @@ export class PythonClassIndex {
   }
 
   /**
-   * Definition 请求前置(②):把解析该请求可能需要的文件补进索引——
-   * ① 查询文件自身;② 其 import 的模块候选路径(与 resolveSymbol 同一口径);
-   * ③ 同目录兄弟 .py(隐式就近引用;上限防大目录全读)。
-   * 候选按 import 搜索顺序、再按同目录文件名顺序补载；全程只需已知路径。
-   * 全部走 RequestLocal 单文件任务，不等待全仓 discovery。
+   * Definition request pre-staging (②): fill the index with the files this
+   * request may need -- ① the query file itself; ② the module candidate paths
+   * of its imports (the same criterion as resolveSymbol); ③ same-directory
+   * sibling .py files (implicit nearby references; the cap prevents reading a
+   * large directory in full).
+   * Candidates are filled in import search order, then in same-directory
+   * filename order; the whole path only needs known paths.
+   * Everything goes through RequestLocal single-file tasks, with no wait for
+   * the whole-repo discovery.
    */
   private async stageRequestFiles(filePath: string, token?: vscode.CancellationToken): Promise<void> {
     if (token?.isCancellationRequested) { return; }
@@ -1356,11 +1530,14 @@ export class PythonClassIndex {
     if (token?.isCancellationRequested) { return; }
     const cached = this.fileCache.get(filePath);
     if (!cached) {
-      return; // 文件不可读:后续解析按落空降级
+      return; // the file is unreadable: later resolution degrades to a miss
     }
-    // 审核发现(:183):import 派生的候选是真实依赖,不得按序截 64——截断会把
-    // 导入较多文件里靠后的真实依赖静默跳过,首查跳转落空。import 候选全量补载;
-    // 兄弟目录候选保留上限(防大目录全读,显式口径而非静默丢依赖)。
+    // Audit finding (:183): import-derived candidates are real dependencies and
+    // must not be cut at 64 in order -- the cut would silently skip the real
+    // dependencies later in a file with many imports, and the first jump query
+    // would miss. Import candidates are filled in full; the sibling-directory
+    // candidates keep their cap (preventing a full read of a large directory, an
+    // explicit criterion rather than a silent dependency drop).
     const importTargets: string[] = [];
     const seenTargets = new Set<string>();
     for (const binding of cached.parsed.imports?.values() ?? []) {
@@ -1387,14 +1564,16 @@ export class PythonClassIndex {
         await Promise.all(missingSiblings.slice(offset, offset + 8).map(target => this.loadFileOnDemand(target)));
       }
     } catch {
-      // 目录不可列(已删除/无权限):按落空降级
+      // The directory cannot be listed (deleted / no permission): degrade to a miss
     }
   }
 
   /**
-   * 定点按名补文件(②兜底):一类一文件的常规布局下,解析落空时按
-   * 类名同名 glob(星号星号斜杠 &lt;ClassName&gt;.py)补入候选文件后重试一次
-   * ——代价是一次定点发现,不是全仓扫描。
+   * Fill in files by name at a fixed point (②'s backstop): under the
+   * conventional one-class-per-file layout, when a resolution misses, a
+   * same-name-as-class glob (star star slash &lt;ClassName&gt;.py) fills in the
+   * candidate files and retries once -- the cost is one targeted discovery, not
+   * a whole-repo scan.
    */
   private async stageClassNameFiles(names: string[], token?: vscode.CancellationToken): Promise<void> {
     if (token?.isCancellationRequested) { return; }
@@ -1420,8 +1599,11 @@ export class PythonClassIndex {
     }
   }
 
-  /** 文件发现序记号:只在全扫发现清单落地时同步调用(保持首见序不重排)——
-   * 装载入口不能记:按需预载(stageRequestFiles)用 readdir 序,会污染发现序。 */
+  /** File discovery order mark: called synchronously only when the full scan's
+   * discovery list lands (preserving the first-sight order with no
+   * re-sorting) -- the load entry point must not record it: on-demand
+   * pre-staging (stageRequestFiles) uses readdir order, which would pollute
+   * the discovery order. */
   private noteFileOrder(filePath: string): void {
     if (!this.fileOrder.has(filePath)) {
       this.fileOrder.set(filePath, this.nextFileOrder++);
@@ -1431,22 +1613,28 @@ export class PythonClassIndex {
   private async loadFile(filePath: string, version: number): Promise<boolean> {
     const revision = this.revisions.get(filePath) ?? 0;
     this.revisions.set(filePath, revision);
-    // 读失败与解析失败分流(审核发现:两者原共用一个 catch,解析线程崩溃会
-    // 把仍存在文件的旧类索引一并删掉)。读失败=文件被删/不可读,撤索引正确;
-    // 解析失败=内容已读到、文件仍在盘,必须保留旧索引并登记待补重试。
-    // 返回值:false=本次尝试未提交内容(待补重试,有界);true=已提交或无害早退。
+    // Read failures and parse failures are routed apart (audit finding: the two
+    // originally shared one catch, so a parse-thread crash would also delete
+    // the old class index of a file that still exists). Read failure = the file
+    // was deleted / is unreadable, so withdrawing the index is correct; parse
+    // failure = the content was read and the file is still on disk, so the old
+    // index must be kept and a pending retry registered.
+    // Return value: false = this attempt committed no content (pending retry,
+    // bounded); true = committed or a harmless early exit.
     let open: Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'> | undefined;
     let content: string;
     try {
       open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
-      // 2026-11-24:盘腿走共享原文缓存;失败原样抛,读失败/解析失败分流不变。
+      // 2026-11-24: the disk leg goes through the shared raw-text cache; a failure is thrown as-is, and the read-failure / parse-failure split is unchanged.
       content = open
         ? open.getText()
         : (await getSharedFileTextCache().readThroughAsync(filePath, p => fs.promises.readFile(p, 'utf8'))).text;
     } catch {
       // A removed/unreadable file must not leave navigable stale classes.
-      // PR5:从未入索引的文件(staging 探测的候选路径不存在等)只记录版本,
-      // 不动类集/MRO/组合根——否则探测性读取会把派生状态反复冲掉。
+      // PR5: a file that never entered the index (a staging probe's candidate path
+      // does not exist etc.) only records its version and leaves the class set /
+      // MRO / composition roots alone -- otherwise the probing read would
+      // repeatedly wash away the derived state.
       if ((this.revisions.get(filePath) ?? 0) === revision) {
         const wasIndexed = this.fileCache.has(filePath);
         this.stagedRequests.delete(filePath);
@@ -1467,11 +1655,14 @@ export class PythonClassIndex {
       await this.updateFileResponsive(filePath, content, open?.version ?? version, revision);
       return true;
     } catch {
-      // 解析失败(解析线程崩溃/被停用/postMessage 异常):文件仍在盘,旧类
-      // 索引保留——删掉会让悬停/跳转在 worker 恢复前整段落空,且下次成功解析
-      // 前该文件凭空缺席。登记待补重试(与分块失败同渠道,有界
-      // MAX_SCAN_RETRY_ATTEMPTS,已有计数不重置防反复崩溃绕过上限),
-      // 后续查询经 schedulePendingScanRetry 定向补解析。
+      // Parse failure (the parse thread crashed / was disabled / a postMessage
+      // exception): the file is still on disk, so the old class index is kept --
+      // deleting it would leave hover / jumping blank in whole sections until the
+      // worker recovers, and the file would be absent out of thin air until the
+      // next successful parse. A pending retry is registered (the same channel as a
+      // chunk failure, bounded at MAX_SCAN_RETRY_ATTEMPTS, with an existing
+      // count left unreset so repeated crashes cannot bypass the cap), and later
+      // queries fill it in through schedulePendingScanRetry.
       this.stagedRequests.delete(filePath);
       if (!this.pendingScanRetries.has(filePath)) {
         this.pendingScanRetries.set(filePath, 1);
@@ -1482,18 +1673,25 @@ export class PythonClassIndex {
   }
 
   /**
-   * 编辑事件登记面(INDEX-DISCIPLINE-001 ②只认落盘,签名保留供既有调用点):
-   * - .def/.xml:依赖图失效照旧(def 面不是 python 批量索引,不在本纪律面);
-   * - .py:**只登记文档身份,不触发重索引**——重索引统一收口在
-   *   onFileChanged(保存/外部写盘经合并器);查询面(补全/悬停)的缓冲
-   *   实时性由 syncDocumentParse / asyncDocumentParse 按需解析承担。
+   * The registration face for edit events (INDEX-DISCIPLINE-001 ② only trusts
+   * what landed on disk; the signature is kept for the existing call sites):
+   * - .def/.xml: dependency-graph invalidation as before (the def face is not a
+   *   python batch index and is outside this discipline face);
+   * - .py: **only the document identity is registered; no reindex is triggered** --
+   *   reindexing funnels uniformly into onFileChanged (saves / external disk
+   *   writes through the merger); buffer freshness for the query face (completion
+   *   / hover) is carried by on-demand parsing in syncDocumentParse /
+   *   asyncDocumentParse.
    */
   async onDocumentChanged(document: vscode.TextDocument): Promise<void> {
     if (!/\.(py|def|xml)$/i.test(document.fileName)) { return; }
-    // IDE-DIA-003:同版本已入缓存即零成本跳过(诊断 syncDocumentParse 先解析
-    // 入缓存后,此处防抖补喂命中,不再各自完整解析一次);只认版本号——
-    // 缓存里那份就是该版本缓冲的解析,与文档对象身份无关;版本不可知
-    // (undefined)永不判同(空缓存 vacuous 命中会吞掉首解析)
+    // IDE-DIA-003: a same version already in the cache is a zero-cost skip
+    // (after diagnostics' syncDocumentParse parses into the cache first, this
+    // debounced feed hits there, so each side no longer performs a full parse);
+    // only the version number counts -- the cached entry is the parse of that
+    // version's buffer and has nothing to do with the document object's
+    // identity; an unknown version (undefined) is never judged equal (a
+    // vacuous hit on an empty cache would swallow the first parse)
     const cachedVersion = this.fileCache.get(document.fileName)?.version;
     if (cachedVersion !== undefined && cachedVersion === document.version) { return; }
     this.documents.set(document.fileName, document);
@@ -1505,11 +1703,12 @@ export class PythonClassIndex {
       }
       return;
     }
-    // py:只认落盘——编辑事件零重索引(缓冲查询走按需解析面)。
+    // py: only trust what landed on disk -- an edit event triggers zero reindexing (buffer queries go through the on-demand parse face).
   }
 
-  /** 版本键只读面:缓存命中且版本一致才给解析结果,否则 null(不把旧代
-   * 当现版本用;version 不可知(undefined)同样不给) */
+  /** Version-keyed read-only face: a parse result is given only on a cache hit
+   * with a matching version, otherwise null (an old generation is never used as
+   * the current version; an unknown version (undefined) also gets nothing) */
   getParsedForVersion(filePath: string, version: number | undefined): ParsedPythonFile | null {
     if (version === undefined) { return null; }
     const cached = this.fileCache.get(filePath);
@@ -1517,10 +1716,14 @@ export class PythonClassIndex {
   }
 
   /**
-   * INDEX-DISCIPLINE-001 ②:路径键查询面的按需缓冲解析——编辑事件已不再
-   * 喂索引,查询入口看到已登记文档且版本与缓存不同步时按需解析一次
-   * (同版本命中零解析;未登记=纯盘文件零成本直过)。这是「只认落盘」下
-   * 未保存缓冲导航不断链的补面:索引主体=盘上真值,查询文件本身按需新鲜。
+   * INDEX-DISCIPLINE-001 ②: on-demand buffer parsing for the path-keyed query
+   * face -- edit events no longer feed the index, so when a query entry sees a
+   * registered document whose version is out of step with the cache it parses
+   * once on demand (a same-version hit parses nothing; unregistered = a pure
+   * disk file passes through at zero cost). This is the compensating face that
+   * keeps unsaved-buffer navigation from breaking under "only trust what landed
+   * on disk": the index body = the truth on disk, and the queried file itself
+   * stays fresh on demand.
    */
   private async ensureBufferFresh(filePath: string): Promise<void> {
     const registered = this.documents.get(filePath);
@@ -1529,16 +1732,22 @@ export class PythonClassIndex {
     await this.asyncDocumentParse(registered);
   }
 
-  /** IDE-DIA-003 共享解析面:同版本命中直接返回缓存对象(零解析);未命中
-   * 同步解析并按版本入缓存——receiver 诊断与类索引消费同一份解析,
-   * 后续 onDocumentChanged 同版本去重不再各自完整解析一次 */
+  /** IDE-DIA-003 shared parse face: a same-version hit returns the cached object
+   * directly (zero parsing); a miss parses synchronously and books it in the
+   * cache by version -- receiver diagnostics and the class index consume the same
+   * parse, and a later onDocumentChanged deduplicates the same version instead of
+   * each performing a full parse */
   syncDocumentParse(document: Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'>): ParsedPythonFile {
     const hit = this.getParsedForVersion(document.fileName, document.version);
     if (hit) { return hit; }
-    // IDE-REV-001:同步提交新版本必须同步推进版本代令牌与当前文档身份——
-    // 否则随后的同版本编辑通知命中缓存提前返回(不递增令牌),在途旧版
-    // worker 的 revision 守卫仍比对旧令牌,回包把已发布的新代覆盖回旧代;
-    // 未注册身份时按需装载还会回退磁盘旧内容
+    // IDE-REV-001: synchronously committing a new version must synchronously
+    // advance the version-generation token and the current document identity --
+    // otherwise a following same-version edit notification hits the cache and
+    // returns early (without incrementing the token), while an in-flight old
+    // version's worker revision guard still compares against the old token and
+    // its reply overwrites the published new generation back to the old one; an
+    // unregistered identity also makes an on-demand load fall back to stale disk
+    // content
     this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
     this.documents.set(document.fileName, document);
     const parsed = parsePythonFile(document.getText(), document.fileName);
@@ -1546,14 +1755,20 @@ export class PythonClassIndex {
     return parsed;
   }
 
-  /** IDE-REV-009 异步共享解析面:receiver 诊断异步入口的消费面——同版本
-   * 命中直取(零解析);未命中走 updateFileResponsive(≥256KiB 进
-   * pythonParserWorker,宿主不落整文件同步解析),版本键提交后读回同一份
-   * 解析供索引同版本去重。解析失败(worker 停用/积压字节上限拒绝)按
-   * loadFile 同款登记有界待补重试并返回 null——调用方中止本轮,绝不回退
-   * 宿主同步整文件解析。revision 令牌与文档身份在派发前同步推进(REV-001
-   * 纪律):并发编辑令牌前进,在途回包被 updateFileResponsive 守卫丢弃,
-   * 读回落 null 同样中止本轮。 */
+  /** IDE-REV-009 asynchronous shared parse face: the consumer face of the
+   * receiver diagnostics' asynchronous entry -- a same-version hit is taken
+   * directly (zero parsing); a miss goes through updateFileResponsive (256KiB
+   * and up enters pythonParserWorker, so the host does not fall into a
+   * synchronous whole-file parse), and after the version-keyed commit the same
+   * parse is read back for the index's same-version de-duplication. A parse
+   * failure (worker disabled / rejected at the backlog byte cap) registers a
+   * bounded pending retry exactly as loadFile does and returns null -- the
+   * caller aborts this round and never falls back to a host-side synchronous
+   * whole-file parse. The revision token and document identity advance
+   * synchronously before dispatch (the REV-001 discipline): a concurrent edit
+   * advances the token, the in-flight reply is dropped by the
+   * updateFileResponsive guard, and a null read-back likewise aborts this
+   * round. */
   async asyncDocumentParse(
     document: Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'>
   ): Promise<ParsedPythonFile | null> {
@@ -1571,8 +1786,10 @@ export class PythonClassIndex {
       if (!this.pendingScanRetries.has(document.fileName)) {
         this.pendingScanRetries.set(document.fileName, 1);
       }
-      // 同一能力限制只明示一次(与 onDocumentChanged 共用去重表);只打开
-      // 不编辑的超大文件走此面也能被用户看见。
+      // The same capability limit is made explicit only once (sharing the
+      // de-duplication table with onDocumentChanged); an oversized file that is
+      // only opened and never edited goes through this face and still becomes
+      // visible to the user.
       noteDegradedParse(document.fileName, error);
       jumpLog('info', () => `py 异步共享解析未入索引(保留旧索引,已登记待补重试): ${document.fileName}`);
       return null;
@@ -1583,11 +1800,12 @@ export class PythonClassIndex {
   async resolveClassBase(document: vscode.TextDocument, expression: string, line?: number,
     token?: vscode.CancellationToken): Promise<PythonClassDef | null> {
     if (token?.isCancellationRequested) { return null; }
-    // INDEX-DISCIPLINE-001 ②:查询面缓冲实时性改走按需解析面(编辑事件已
-    // 不再喂索引;这里同版本命中零解析,未命中解析+按版本提交)。
+    // INDEX-DISCIPLINE-001 ②: buffer freshness for the query face now goes through the on-demand parse face (edit events no longer feed the index; here a same-version hit parses nothing, and a miss parses + commits by version).
     await this.asyncDocumentParse(document);
-    // ② PR5:先查快照+已建索引,请求所需文件按需单文件解析;全量扫描后台补,
-    // 不再让基类跳转等 107s 级冷启动扫描。
+    // ② PR5: consult the snapshot + the built index first, and parse the files a
+    // request needs as on-demand single files; the full scan fills in in the
+    // background, so a base-class jump no longer waits for a 107s-class cold-start
+    // scan.
     this.scheduleBackgroundScan();
     const owner = line === undefined ? undefined : await this.findEnclosingClass(document.fileName, line) ?? undefined;
     await this.stageRequestFiles(document.fileName, token);
@@ -1596,21 +1814,21 @@ export class PythonClassIndex {
     if (resolved) {
       return resolved;
     }
-    // 定点兜底:一类一文件布局下按类名补 `**/<Name>.py` 后重试一次
+    // Targeted backstop: under a one-class-per-file layout, fill in `**/<Name>.py` by class name and retry once
     await this.stageClassNameFiles([expression.split('.')[0]], token);
     if (token?.isCancellationRequested) { return null; }
     return this.resolveSymbol(document.fileName, expression, new Set(), owner);
   }
 
-  /** 类名 → 定义列表(可能同名多处) */
+  /** Class name -> definition list (several places may share the same name) */
   async findClassesByName(name: string): Promise<PythonClassDef[]> {
     await this.ensureScanned();
     return this.byName.get(name) ?? [];
   }
 
-  /** 按文件行找内层类定义(用于定位调用点所在类) */
+  /** Find the inner class definition for a file line (used to locate the class a call site sits in) */
   async findEnclosingClass(filePath: string, line: number): Promise<PythonClassDef | null> {
-    // ② PR5:文件本地查询,按需单文件解析即可,不等全仓扫描
+    // ② PR5: a file-local query -- an on-demand single-file parse suffices; it does not wait for the whole-repo scan
     let cached = this.fileCache.get(filePath);
     if (!cached) {
       await this.loadFileOnDemand(filePath);
@@ -1619,7 +1837,7 @@ export class PythonClassIndex {
     if (!cached) {
       return null;
     }
-    // 内层优先(endLine 相同取 startLine 更大者)
+    // The inner one wins (when endLine is equal, take the larger startLine)
     const hits = cached.parsed.classes.filter(cls => line >= cls.startLine && line < cls.endLine);
     if (hits.length === 0) {
       return null;
@@ -1627,14 +1845,14 @@ export class PythonClassIndex {
     return hits.reduce((a, b) => (b.startLine > a.startLine ? b : a));
   }
 
-  /** 计算某类的 MRO(含自身),跨文件基类解析 */
+  /** Compute a class's MRO (including itself), resolving base classes across files */
   async computeMRO(className: string): Promise<string[]> {
     await this.ensureScanned();
     const definitions = this.byName.get(className) ?? [];
     return definitions.length === 1 ? this.mroClasses(definitions[0]).map(cls => cls.name) : [];
   }
 
-  /** 类 name 的全部后代(直接子类传递闭包,含环护栏) */
+  /** All descendants of the class named `name` (the transitive closure of direct subclasses, with a cycle guardrail) */
   async descendantsOf(name: string): Promise<PythonClassDef[]> {
     await this.ensureScanned();
     const seeds = new Set((this.byName.get(name) ?? []).map(cls => this.classKey(cls)));
@@ -1648,13 +1866,21 @@ export class PythonClassIndex {
   }
 
   /**
-   * 主形态解析:从 `self` 的**静态类**出发解 C3 MRO,跨文件命中 mixin 定义。
-   * ① 静态类自身 MRO(祖先)—— 覆盖「子类调基类」;
-   * ② 静态类 MRO 无果 → 反向找**继承静态类的类**(兄弟 mixin 经共同子类,
-   *    如 MixinB.self.x() 需经 Avatar = (MixinA, MixinB) 的 MRO 才落到 MixinA)。
-   * 去重后按 祖先优先 → 后代声明序 返回全部候选(供 Location[] 列表选择)。
-   * IDE-IDX-018:返回带 partial 标记——预算到期/取消时枚举不完整,消费端
-   * 不得把空集当作完整枚举的权威负结论。
+   * The primary-form resolution: start from `self`'s **static class**, resolve
+   * the C3 MRO, and hit mixin definitions across files.
+   * ① the static class's own MRO (its ancestors) -- covers "a subclass calls a
+   *    base class";
+   * ② the static class's MRO comes up empty -> look in reverse for **classes
+   *    inheriting the static class** (sibling mixins through a common subclass,
+   *    e.g. MixinB.self.x() only lands on MixinA through the MRO of
+   *    Avatar = (MixinA, MixinB)).
+   * After de-duplication all candidates are returned in the order ancestors
+   * first -> descendants in declaration order (for picking from the Location[]
+   * list).
+   * IDE-IDX-018: the result carries a partial marker -- when the budget expires
+   * or is cancelled the enumeration is incomplete, and the consumer must not take
+   * an empty set as an authoritative negative verdict of a complete
+   * enumeration.
    */
   async resolveSelfMethodResolution(
     filePath: string,
@@ -1662,17 +1888,19 @@ export class PythonClassIndex {
     methodName: string,
     document?: vscode.TextDocument,
     token?: vscode.CancellationToken,
-    /** 组合根/全量就绪的预算(ms);测试注入小预算以确定性复现超时路径 */
+    /** Budget (ms) for composition roots / full readiness; tests inject a small budget to reproduce the timeout path deterministically */
     budgetMs: number = INTERACTIVE_INDEX_WAIT_MS
   ): Promise<SelfMethodResolution> {
     if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
     const queryTimer = jumpTimeStart();
     jumpLog('info', () => `py 查询 ${path.basename(filePath)}:${line + 1} 方法=${methodName}`);
-    // INDEX-DISCIPLINE-001 ②:同 resolveClassBase——查询面走按需解析。
+    // INDEX-DISCIPLINE-001 ②: as with resolveClassBase -- the query face goes through on-demand parsing.
     if (document) { await this.asyncDocumentParse(document); }
     await this.ensureBufferFresh(filePath);
-    // ② PR5:首查不阻塞在全量扫描上——快照/已建索引先答,请求所需文件
-    // (查询文件/同目录/import 候选)按需单文件解析,全量后台补。
+    // ② PR5: a first query no longer blocks on the full scan -- the snapshot /
+    // built index answers first, and the files a request needs (the query file /
+    // the same directory / import candidates) are parsed on demand as single
+    // files, with the full scan filling in the background.
     this.scheduleBackgroundScan();
     const enclosing = await this.findEnclosingClass(filePath, line);
     if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
@@ -1689,9 +1917,13 @@ export class PythonClassIndex {
       }
       const key = `${loc.filePath}::${loc.line}::${loc.character}`;
       if (seen.has(key)) {
-        // 同一落点先以无标注形态(①静态 MRO)入列、后以组合根标注形态(②)抵达:
-        // 位置相同,标注更丰富者胜——例如实体脚本类经 Python 继承拿到父类实现,
-        // ①直接命中且 ②按组合根命中同一行,不得让无标注版本吞掉组合根标注。
+        // The same landing point arrives first in an unannotated form (① the
+        // static MRO) and later in a composition-root-annotated form (②): when
+        // the position is equal the richer annotation wins -- e.g. an entity
+        // script class inherits a parent implementation through Python
+        // inheritance, so ① hits directly and ② hits the same line via the
+        // composition root, and the unannotated version must not swallow the
+        // composition-root annotation.
         const idx = out.findIndex(item =>
           `${item.filePath}::${item.line}::${item.character}` === key);
         if (idx >= 0 && !out[idx].compositionRoot && loc.compositionRoot) {
@@ -1704,37 +1936,50 @@ export class PythonClassIndex {
     };
 
     const out: PythonMethodLocation[] = [];
-    // ①② 两段查询:第二遍只在第一遍落空且后台扫描未收敛时,先等全量就绪再
-    // 重查(③ 反向形态的后代集合无法按需定点,必须全仓口径;①② 命中则首查
-    // 不等全量——这正是 PR5 去阻塞的主路径)。
+    // ①② two-pass query: the second pass runs only when the first pass missed
+    // and the background scan has not converged -- it first waits for full
+    // readiness and then re-queries (③'s reverse-form descendant set cannot be
+    // targeted on demand and needs a whole-repo criterion; if ①② hit, the
+    // first query does not wait for the full scan -- which is exactly the
+    // de-blocking main path of PR5).
     for (let pass = 0; pass < 2; pass += 1) {
-    // ① 先记录静态类 MRO 命中，但不能在这里提前返回。
-    // 同一个 mixin 可被多个实体组合，且这些实体的 MRO 可能覆盖该方法；
-    // 例如 CombatMixin.self.compute_damage 在 TrainingAvatar、TrainingMonster
-    // 与 EliteMonster 上分别命中 CriticalDamageMixin、DamageMixin、
-    // EliteDamageMixin。只返回静态 MRO 会把运行时有效目标全部漏掉。
+    // ① Record the static class's MRO hit first, but do not return early here.
+    // The same mixin can be composed by several entities, and those entities'
+    // MROs may override the method; for example CombatMixin.self.compute_damage
+    // hits CriticalDamageMixin, DamageMixin and EliteDamageMixin on
+    // TrainingAvatar, TrainingMonster and EliteMonster respectively. Returning
+    // only the static MRO would miss every target valid at runtime.
     push(this.lookupClass(enclosing, methodName), out);
     if (out.length === 0 && pass === 0) { jumpLog('debug', () => `py ①静态类 MRO 未命中(enclosing=${enclosing.name})`); }
 
-    // ② 组合根(用户 2026-10-16:实体清单里每个实体、其字段对象、组件都是组合根,
-    // 不止单一入口类):静态类被哪些组合根收录 → 在每一个组合根的 MRO 里找。
-    // 每根先走精确 Python 类身份，再走当前资产项目的 .def 声明 mixin
-    // (Parent → Interfaces → Components);多根/多处命中全部保留(上面 push 去重),
-    // 由 provider 出 Location[] 列表,不替用户跳第一个。
+    // ② Composition roots (user 2026-10-16: every entity in the entity roster,
+    // its field objects, and its components are all composition roots, not just
+    // a single entry class): which composition roots include the static class ->
+    // search inside every composition root's MRO.
+    // Each root first goes through exact Python class identity, then through the
+    // current asset project's .declared mixins (Parent -> Interfaces ->
+    // Components); every hit across multiple roots / multiple places is kept
+    // (the push above de-duplicates), and the provider emits a Location[] list
+    // rather than jumping to the first one for the user.
     const rootsReady = await raceWithBudget('definition:composition-roots',
       this.ensureCompositionRoots().then(() => true), budgetMs, token);
     if (!rootsReady) {
-      // 组合根派生超预算:已命中的 ① 静态 MRO 目标必须照常返回,不能因等待
-      // 超时把有效目标也一起丢弃(否则 self 跳转在冷/慢资产上整条落空)。
-      // 组合根侧本次不补;下次查询时派生结果已就绪/继续等待,自然补齐。
+      // Composition root derivation over budget: the already hit ① static MRO
+      // targets must be returned as usual; a wait timeout must not discard the
+      // valid targets along with them (otherwise a self jump misses in its
+      // entirety on cold / slow assets).
+      // The composition-root side is not filled in this round; by the next query
+      // the derivation results are ready / still being waited on and it
+      // completes naturally.
       if (out.length > 0) {
         jumpLog('info', () =>
           `py 组合根等待超时(${budgetMs}ms),先返回已命中 ${out.length} 个静态目标 ${queryTimer()}ms`);
       } else {
         jumpLog('info', () => `py 组合根等待超时(${budgetMs}ms),无静态目标,返回空集(partial) ${queryTimer()}ms`);
       }
-      // IDE-IDX-018:②③ 未查全,结果必须标记 partial——消费端不得把这枚
-      // 空集/静态子集发布成完整枚举的权威负结论。
+      // IDE-IDX-018: ②③ were not fully searched, so the result must be marked
+      // partial -- the consumer must not publish this empty set / static subset
+      // as an authoritative negative verdict of a complete enumeration.
       return { candidates: out, partial: true };
     }
     const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
@@ -1747,8 +1992,7 @@ export class PythonClassIndex {
       for (const rootClass of roots) {
         const contains = this.mroClasses(rootClass).some(cls => this.classKey(cls) === this.classKey(enclosing));
         const declared = composition?.defMixins.get(root) ?? [];
-        // PR5:比较用稳定 classKey 而非对象引用——staging/后台扫描可能重解析
-        // 查询文件,旧引用与重新入索引的类对象不再是同一实例。
+        // PR5: compare by the stable classKey rather than an object reference -- staging / background scanning may re-parse the query file, so the old reference and the re-indexed class object are no longer the same instance.
         const declaredEnclosing = declared.some(name => {
           const resolved = this.resolveSymbol(rootClass.filePath, name);
           return !!resolved && this.classKey(resolved) === this.classKey(enclosing);
@@ -1768,10 +2012,10 @@ export class PythonClassIndex {
       }
     }
     if (out.length > 0 || pass === 1) { break; }
-    // ①② 均落空:等后台全量收敛后重查一遍(失败/慢扫描在 ensureScanned 内部消化)
+    // Both ①② missed: wait for the background full scan to converge and re-query once (a failed / slow scan is absorbed inside ensureScanned)
     const scanReady = await raceWithBudget('definition:python-index',
       this.ensureScanned().then(() => true), budgetMs, token);
-    // 全量扫描超预算:①② 首查空且二遍查询未及执行——枚举不完整,同样标 partial。
+    // The full scan over budget: ①② came back empty on the first query and the second-pass query never ran -- the enumeration is incomplete, so mark partial too.
     if (!scanReady) { return { candidates: [], partial: true }; }
     }
     if (out.length > 0) { return { candidates: out, partial: false }; }
@@ -1788,9 +2032,12 @@ export class PythonClassIndex {
         }
       }
     }
-    // 候选顺序按文件发现序定死:分块 Promise.all 并发装载的完成序随 IO 时序
-    // 翻动(并发完成序 ≠ 发现序),不排序的话同两候选仅顺序翻(CI 40470720225
-    // 红例)。稳定排序:同文件多后代保持索引出现序;未见序号的排最后。
+    // Candidate order is settled by the file discovery order: the completion
+    // order of chunked Promise.all concurrent loading flips with IO timing
+    // (concurrent completion order != discovery order), so without sorting the
+    // same two candidates differ only in order (the CI 40470720225 red case).
+    // Stable sort: several descendants in one file keep their index appearance
+    // order; entries with no sequence number go last.
     descendants.sort((left, right) => left.order - right.order);
     for (const { sub } of descendants) {
       push(this.lookupClass(sub, methodName), out);
@@ -1805,7 +2052,7 @@ export class PythonClassIndex {
     return { candidates: out, partial: false };
   }
 
-  /** 兼容入口:仅候选数组(测试/旧调用面);需要 partial 状态用 resolveSelfMethodResolution */
+  /** Compatibility entry: the candidate array only (tests / older call faces); use resolveSelfMethodResolution when the partial state is needed */
   async resolveSelfMethodCandidates(
     filePath: string,
     line: number,
@@ -1819,7 +2066,7 @@ export class PythonClassIndex {
     return candidates;
   }
 
-  /** 兼容入口:首个候选(唯一实现场景即唯一解) */
+  /** Compatibility entry: the first candidate (in the single-implementation case it is the unique answer) */
   async resolveSelfMethod(
     filePath: string,
     line: number,
@@ -1829,13 +2076,13 @@ export class PythonClassIndex {
     return candidates.length > 0 ? candidates[0] : null;
   }
 
-  /** 某类「由哪些基类/mixin 提供」(CodeLens 用):MRO 去掉自身 */
+  /** Which base classes / mixins provide to a given class (for CodeLens): the MRO with itself removed */
   async mixinsProvidingTo(className: string): Promise<string[]> {
     const mro = await this.computeMRO(className);
     return mro.filter(name => name !== className);
   }
 
-  /** 某方法名在 MRO 中由哪些类提供(CodeLens/多实现用) */
+  /** Which classes in the MRO provide a given method name (for CodeLens / multiple implementations) */
   async providersOfMethod(className: string, methodName: string): Promise<PythonMethodLocation[]> {
     await this.ensureScanned();
     const out: PythonMethodLocation[] = [];
@@ -1850,12 +2097,17 @@ export class PythonClassIndex {
   }
 
   /**
-   * MRO-CHAIN:methodName 在「光标所在类」及全部包含它的组合根/后代视角下的
-   * 执行链。链序 = MRO 序过滤出定义者 = for cls in __mro__ 遍历/super() 接力的
-   * 真实执行序(与运行时 C3 一致,tests/mroChainLens.test.ts 用 python3 真跑
-   * 对拍钉死)。视角收集与 resolveSelfMethodResolution ② 同源:组合根直接包含
-   * (Python MRO 含该类)或 .def 声明 mixin(Parent/Interfaces/Components);
-   * 组合根等待超预算时返回已收集的链(链是提示面,不作权威负结论)。
+   * MRO-CHAIN: the execution chains of methodName from the viewpoint of the
+   * "class the cursor is in" and of every composition root / descendant that
+   * includes it. Chain order = the MRO order filtered down to the definers =
+   * the real execution order of `for cls in __mro__` traversal / super()
+   * relay (matching the runtime C3, pinned by a real python3 run-off in
+   * tests/mroChainLens.test.ts). Viewpoint collection shares the same source as
+   * resolveSelfMethodResolution ②: a composition root includes the class
+   * directly (its Python MRO contains it) or declares it as a mixin in its .def
+   * (Parent / Interfaces / Components); when the composition-root wait goes
+   * over budget the already collected chains are returned (a chain is a hint
+   * face and never an authoritative negative verdict).
    */
   async resolveMroMethodChains(
     filePath: string,
@@ -1890,18 +2142,24 @@ export class PythonClassIndex {
       if (entries.length > 0) { chains.push({ rootClassName: root.name, entries }); }
     };
 
-    // ② 组合根视角:与 resolveSelfMethodResolution ② 同一包含判定。
-    // 反向后代(③)与组合根都要全仓口径:预算内等全量收敛,超时先返回已有链
-    // (链是提示面,不发布权威负结论,下次查询自然补齐)。① 静态臂也要在等待
-    // 之后算:残缺解析态下间接可达的基类(包 __init__ 别名转出口等)会解析成
-    // null 被剔除,且 mroClasses 的 mroCache 不随后续解析失效——首次残缺 MRO
-    // 会被永久缓存,故全部链都从全仓口径起算。
+    // ② Composition root viewpoint: the same inclusion decision as
+    // resolveSelfMethodResolution ②.
+    // Both reverse descendants (③) and composition roots need a whole-repo
+    // criterion: wait for full convergence within budget, and on a timeout return
+    // the chains already collected first
+    // (a chain is a hint face, no authoritative negative verdict is published, and
+    // the next query fills the rest in naturally). The ① static arm is also
+    // computed only after the wait: under a degraded parse state a base class
+    // reachable only indirectly (a package __init__ alias re-export and the
+    // like) resolves to null and gets dropped, and mroClasses's mroCache does
+    // not go stale on a later parse -- the first degraded MRO would be cached
+    // for good, so every chain starts from the whole-repo criterion.
     const rootsReady = await raceWithBudget('definition:composition-roots',
       this.ensureCompositionRoots().then(() => true), budgetMs, token);
     const scanReady = await raceWithBudget('definition:python-index',
       this.ensureScanned().then(() => true), budgetMs, token);
 
-    // ① 静态类自身视角(未进实体清单的小根也有链)
+    // ① The static class's own viewpoint (small roots not in the entity roster get a chain too)
     addRoot(enclosing);
 
     if (rootsReady) {
@@ -1919,16 +2177,22 @@ export class PythonClassIndex {
             return !!resolved && this.classKey(resolved) === this.classKey(enclosing);
           });
           if (contains) { addRoot(rootClass); }
-          // def 声明 mixin(Parent/Interfaces/Components)不在 Python 基类里时,
-          // mixin 自身 MRO 也给一链(根名=该 mixin 类)
+          if (!contains && !declaredEnclosing) { continue; }
+          // When a .def-declared mixin (Parent / Interfaces / Components) is not
+          // among the Python bases, the mixin's own MRO also gets a chain
+          // (root name = that mixin class). The mixin loop sits behind the
+          // containment gate: an unrelated roster root must not inject its
+          // def-mixin chains into an unrelated class's query (2026-11-26 user
+          // report: in a multi-class file every class was tagged with the
+          // entity's interface chain). The two preserved faces: the entity's
+          // own view (contains) and editing a mixin file (declaredEnclosing).
           for (const name of declared) {
             const mixin = this.resolveSymbol(rootClass.filePath, name);
             if (mixin) { addRoot(mixin); }
           }
-          if (!contains && !declaredEnclosing) { continue; }
         }
       }
-      // ③ 反向后代:mixin 文件里同名钩子,后代根(子类)各自的链(需全量索引)
+      // ③ Reverse descendants: a same-named hook in the mixin file, and each descendant root's (subclass's) own chain (needs the full index)
       if (scanReady) {
         for (const defs of this.byName.values()) {
           if (token?.isCancellationRequested) { break; }
@@ -1945,7 +2209,7 @@ export class PythonClassIndex {
   }
 }
 
-/** 工作区根下相对化显示(测试与日志用) */
+/** Display relativized under the workspace root (for tests and logs) */
 export function displayPath(filePath: string): string {
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (folder && filePath.startsWith(folder)) {

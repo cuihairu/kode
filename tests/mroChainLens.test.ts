@@ -238,7 +238,7 @@ describe('MRO-CHAIN 组合根视角(嵌套作用域 + def mixin 面)', () => {
     }) as typeof workspace.findFiles;
   };
 
-  it('嵌套作用域内查询:最长作用域胜出,组合根视角给出根链与 def mixin 链', async () => {
+  it('嵌套作用域内查询:最长作用域胜出,组合根视角出本尊根链;跨实体 def-mixin 广播不注入', async () => {
     const { root, avatar } = buildNestedWorkspace();
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'nested', index: 0 }];
     stubNestedMetadata(root);
@@ -254,13 +254,13 @@ describe('MRO-CHAIN 组合根视角(嵌套作用域 + def mixin 面)', () => {
         avatar, lineOf(avatar, 'def onCrossDay'), 'onCrossDay', doc
       );
       const rootNames = chains.map(chain => chain.rootClassName);
-      // 组合根视角产出实体根链:本尊(静态自身)与实体根 TrainingMonster
-      // (其 MRO 含 TrainingAvatar 本尊,组合根视角才看得见)
+      // 组合根视角产出本尊根链(静态自身)。TrainingMonster 链已按 2026-11-26
+      // 用户令剪除:EliteMonster.def 的 <Parent>TrainingMonster</Parent> 曾把
+      // TrainingMonster 链无条件注入 TrainingAvatar 的查询(mixin 循环在包含
+      // 门禁之前=「无关类全标同链」的广播面);两者是兄弟实体,互不在对方
+      // MRO,原断言注释「其 MRO 含 TrainingAvatar 本尊」系误判,实为广播输出。
       expect(rootNames).toContain('TrainingAvatar');
-      expect(rootNames).toContain('TrainingMonster');
-      const monsterChain = chains.find(chain => chain.rootClassName === 'TrainingMonster')!;
-      expect(monsterChain.entries.map(entry => entry.className))
-        .toEqual(['TrainingMonster', 'HealthMixin', 'HistoryMixin', 'InventoryMixin']);
+      expect(rootNames).not.toContain('TrainingMonster');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

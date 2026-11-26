@@ -13,6 +13,7 @@ import {
   parsePythonFile,
   type PythonClassDef
 } from '../src/backend/pythonClassIndex';
+import { hasMroChainToPresent } from '../src/backend/mroChainLens';
 import { EntityMappingManager } from '../src/entityMapping';
 import { PythonDefinitionProvider } from '../src/languageProviders';
 import { makeTextDocument } from './helpers/vscodeStub';
@@ -717,6 +718,67 @@ describe('resolveMroMethodChains(提示面多根链)', () => {
       // 已取消令牌 → 立即空(不触碰索引)
       const token = { isCancellationRequested: true } as vscode.CancellationToken;
       expect(await index.resolveMroMethodChains(p, 2, 'check_alpha', undefined, token)).toEqual([]);
+    } finally {
+      stubWorkspace.findFiles = original;
+    }
+  });
+
+  it('def 声明 mixin 的链不广播给无关类(2026-11-26 用户报:多 class 文件全标同链)', async () => {
+    // 名册里每个无关实体根的 def-mixin 链曾无条件入链——同 scope 的独立类
+    // (不继承)只要方法名沿某实体 def mixin 的 MRO 有 ≥2 定义者就被误标。
+    // 口径:mixin 入链必须过「本类相关」门(contains || declaredEnclosing);
+    // 实体自身视角与编辑 mixin 文件视角照旧出链。
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mro-broadcast-'));
+    fs.mkdirSync(path.join(tmp, 'entity_defs'), { recursive: true });
+    const write = (name: string, lines: string[]): string => {
+      const full = path.join(tmp, name);
+      fs.writeFileSync(full, lines.join('\n'), 'utf8');
+      return full;
+    };
+    const paths = {
+      mixinA: write('mixin_a.py', ['class MixinA:', '\tdef boot(self):', '\t\tpass', '']),
+      avatar: write('avatar.py', [
+        'class Avatar(MixinA):',
+        '\tdef boot(self):',
+        '\t\tpass',
+        '\tdef iface_hook(self):',
+        '\t\tpass',
+        ''
+      ]),
+      actorBase: write('actor_base.py', ['class ActorBase:', '\tdef iface_hook(self):', '\t\tpass', '']),
+      actor: write('actor.py', ['class Actor(ActorBase):', '\tdef iface_hook(self):', '\t\tpass', '']),
+      other: write('other.py', ['class Other:', '\tdef iface_hook(self):', '\t\tpass', ''])
+    };
+    const entities = path.join(tmp, 'entities.xml');
+    fs.writeFileSync(entities, ['<root>', '\t<Avatar hasBase="true"></Avatar>', '</root>'].join('\n'), 'utf8');
+    const defFile = path.join(tmp, 'entity_defs', 'Avatar.def');
+    fs.writeFileSync(
+      defFile,
+      ['<root>', '\t<Interfaces>', '\t\t<interface> Actor </interface>', '\t</Interfaces>', '</root>'].join('\n'),
+      'utf8'
+    );
+    const all = [entities, defFile, ...Object.values(paths)];
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.includes('entities.xml')
+        ? [Uri.file(entities)]
+        : pattern && pattern.includes('*.def')
+          ? [Uri.file(defFile)]
+          : pattern && pattern.includes('types.xml')
+            ? []
+            : all.filter(f => f.endsWith('.py')).map(f => Uri.file(f))
+    ) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      // 红面:无关独立类 Other.iface_hook 不吃 Avatar 实体的 def-mixin 链
+      const unrelated = await index.resolveMroMethodChains(paths.other, 1, 'iface_hook');
+      expect(unrelated.filter(chain => chain.rootClassName === 'Actor')).toEqual([]);
+      expect(hasMroChainToPresent(unrelated)).toBe(false);
+      // 保真面:实体自身视角(Avatar.iface_hook)照常拿 def-mixin 链
+      const own = await index.resolveMroMethodChains(paths.avatar, 3, 'iface_hook');
+      const actorChain = own.find(chain => chain.rootClassName === 'Actor');
+      expect(actorChain, '实体自身视角保留 def-mixin 链').toBeDefined();
+      expect(actorChain!.entries.map(entry => entry.className)).toEqual(['Actor', 'ActorBase']);
     } finally {
       stubWorkspace.findFiles = original;
     }
