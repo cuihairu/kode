@@ -335,16 +335,19 @@ const ANCHORS: Array<[string, number, string]> = [
   // buildDictValueTypeHover 方法 +4 → provideHover 316→320;completion.ts import
   // +3 + arm 重排(普通 dict 键位上移至 fd 链前)→ provideCompletionItems#2
   // 1134→1186。HEAD 基线与随批真位重探双面对账,内容双面确认。
+  // 2026-11-26(CIFIX 追补):3531ea51 后注释口径修正又 +1 行(store 生命周期
+  // 措辞,落 hover 打点前)→ 五锚点各 +1:240→241/313→314/412→413/155→156/
+  // 963→964(真位重探;CI 45775775295 红因=该行未随 3531ea51 提交)。
   // 2026-11-25(PROC-BREADCRUMB-002 + FILE-TIME-001 并入收口):languageServices.ts
   // 标题栏上下文键装配块 +4 与行首切换镜装配块 +4(589 区,在前四打点后)→
   // completion python 语境打点 944 → 948;extension.ts 退役 fileModifiedTime
   // 解构与 fire 两行(260/795)→ 其后锚 503/615 → 502/614(diagnosticScheduler
   // 228/258 与其余锚不动)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 240, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 313, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 412, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 155, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 963, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 241, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 314, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 413, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 156, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 964, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
