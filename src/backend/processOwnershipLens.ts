@@ -1,31 +1,40 @@
 /**
- * 进程归属纯核(PROC-TAG-001 立项 2026-11-13;PROC-BREADCRUMB-001 改面
- * 2026-11-18):「显示当前文件属于哪一个进程,根据 Flags 和 BaseMethods 和
- * CellMethods 之类的可以判断;其他进程也存在对应的文件也需要显示其他进程
- * 的 tag,可以点击快速切换文件」。展示面从文件顶部 CodeLens 迁到面包屑
- * 合成根节点(用户令:头部镜要拉到顶部才看到,不实用)。
+ * Process-ownership pure core (PROC-TAG-001 chartered 2026-11-13; its face changed in
+ * PROC-BREADCRUMB-001 on 2026-11-18): "show which process the current file belongs to; Flags and
+ * BaseMethods and CellMethods and the like can be used to tell; other processes also have the
+ * corresponding file, and the other processes' tags need to be shown too, clickable to switch
+ * files quickly". The presentation face moved from the file-top CodeLens to the breadcrumb's
+ * synthetic root node (user order: the header lens required scrolling to the top to be seen,
+ * which was impractical).
  *
- * 判定链(按优先级,判不出就不出镜,诚实口径不猜):
- * 1. 目录角色:scripts/<role>/ 目录名 → 进程(base→baseapp、cell→cellapp、
- *    client→client、bots→bots)。scripts 与文件名之间的共享目录层
- *    (interfaces/interface/common)跳过后再认角色;跳过完直达文件名仍未见
- *    角色目录=判不出。
- * 2. def 区块佐证:目录判不出时,实现文件 def 声明的方法区块若恰好落在
- *    单一进程族(BaseMethods→baseapp / CellMethods→cellapp /
- *    ClientMethods→client)可佐证归属;跨族并存(双进程实体)或无区块=
- *    歧义/无证据,如实 null。
- * 3. 两者都判不出 → 不出镜。
+ * The determination chain (by priority; when it cannot be determined, the lens does not appear --
+ * an honest accounting, no guessing):
+ * 1. Directory role: a scripts/<role>/ directory name -> the process (base->baseapp,
+ *    cell->cellapp, client->client, bots->bots). The shared directory levels between scripts and
+ *    the file name (interfaces/interface/common) are skipped before the role is recognized; if,
+ *    after skipping, the file name is reached directly without seeing a role directory, it cannot
+ *    be determined.
+ * 2. def-section corroboration: when the directory cannot decide, if the method sections the
+ *    implementation file's def declares happen to fall in a single process family
+ *    (BaseMethods->baseapp / CellMethods->cellapp / ClientMethods->client), they corroborate the
+ *    ownership; coexisting families (a two-process entity) or no sections = ambiguous / no
+ *    evidence, honestly null.
+ * 3. Neither can decide -> the lens does not appear.
  *
- * 互链:当前文件的 scripts/<role>/ 锚点展开到其余角色目录的同名文件
- * (cell/Hero.py ↔ base/Hero.py ↔ bots/Hero.py),存在者列为对端段。
- * 零 vscode 零 IO:文件存在性由调用方注入,本核只做路径推导。
+ * Cross-link: the current file's scripts/<role>/ anchor is expanded to same-named files in the
+ * other role directories (cell/Hero.py <-> base/Hero.py <-> bots/Hero.py); sub-path levels under
+ * the role directory (the shared layer scripts/<role>/interfaces/) are preserved -- the mirror
+ * counterpart wins, the role root's same-named file is the fallback. The ones that exist are
+ * listed as sibling segments. Zero vscode, zero IO: file existence is injected by the
+ * caller; this core only derives paths.
  */
 
-/** 进程名(lens 展示与互链排序的稳定词表) */
+/** Process names (the stable vocabulary for lens display and cross-link ordering) */
 export type ProcessName = 'baseapp' | 'cellapp' | 'client' | 'bots';
 
-/** scripts/ 下角色目录 → 进程(目录物理名即角色;client 与 bots 是两个
- * 独立进程形态,互链按物理目录对,不做 client↔bots 合并) */
+/** Role directories under scripts/ -> the process (the directory's physical name is the role;
+ * client and bots are two separate process shapes, so the cross-link pairs physical directories
+ * and does not merge client<->bots) */
 const ROLE_DIR_TO_PROCESS: Readonly<Record<string, ProcessName>> = {
   base: 'baseapp',
   cell: 'cellapp',
@@ -33,13 +42,15 @@ const ROLE_DIR_TO_PROCESS: Readonly<Record<string, ProcessName>> = {
   bots: 'bots'
 };
 
-/** 角色目录之间的共享目录层:角色判定时跳过(跳过后直达文件名=判不出) */
+/** Shared directory levels between role directories: skipped during role determination (reaching
+ * the file name directly after skipping = cannot be determined) */
 const SHARED_DIR_NAMES: ReadonlySet<string> = new Set(['interfaces', 'interface', 'common']);
 
 /**
- * 判定链第一优先级:目录角色。路径按 / 与 \ 双分隔切段(工程实测两平台
- * 都会进来),取最深一层 scripts 段,向后跳过共享目录层,首个角色目录段
- * 即归属;无 scripts 段或角色判不出 → null(不出镜,不猜)。
+ * First priority of the determination chain: the directory role. The path is split by both /
+ * and \ separators (engineering tests show both platforms feed in); take the deepest scripts
+ * segment, skip the shared directory levels after it, and the first role-directory segment is
+ * the ownership; no scripts segment or an indeterminate role -> null (no lens, no guessing).
  */
 export function resolveScriptRole(fsPath: string): ProcessName | null {
   const segments = fsPath.split(/[\\/]/);
@@ -47,7 +58,7 @@ export function resolveScriptRole(fsPath: string): ProcessName | null {
   if (scriptsIndex < 0) {
     return null;
   }
-  // 尾段是文件名,只扫目录段
+  // The tail segment is the file name, so only directory segments are scanned
   for (let i = scriptsIndex + 1; i < segments.length - 1; i++) {
     const segment = segments[i];
     if (SHARED_DIR_NAMES.has(segment)) {
@@ -59,10 +70,12 @@ export function resolveScriptRole(fsPath: string): ProcessName | null {
 }
 
 /**
- * 判定链第二优先级:def 方法区块佐证。区块集合恰好落在单一进程族才
- * 佐证;跨族并存或空集=歧义/无证据,如实 null。bots 进程实现的是
- * client 侧实体脚本(BotsApp 框架),def 区块无法区分 client 与 bots,
- * 只佐证到 client——bots 归属只能由目录判定,这是判据的如实边界。
+ * Second priority of the determination chain: corroboration from def method sections. Only when
+ * the section set falls in exactly one process family does it corroborate; coexisting families
+ * or an empty set = ambiguous / no evidence, honestly null. The bots process implements the
+ * client-side entity scripts (the BotsApp framework), so def sections cannot distinguish client
+ * from bots and corroborate only down to client -- bots ownership can only come from the
+ * directory, which is the honest boundary of this evidence.
  */
 export function processFromDefSections(sections: ReadonlySet<string>): ProcessName | null {
   const families = new Set<ProcessName>();
@@ -78,22 +91,25 @@ export function processFromDefSections(sections: ReadonlySet<string>): ProcessNa
   return families.size === 1 ? [...families][0] : null;
 }
 
-/** 其他进程同名对应文件(互链 tag) */
+/** Same-named counterpart files in other processes (the cross-link tag) */
 export interface ProcessSiblingFile {
   readonly process: ProcessName;
   readonly path: string;
 }
 
-/** 进程归属规格:当前进程 + 其他进程同名文件(lens 渲染唯一输入形状) */
+/** The process-ownership spec: the current process + the other processes' same-named files (the
+ * sole input shape for lens rendering) */
 export interface ProcessOwnershipSpec {
   readonly current: ProcessName;
   readonly siblings: readonly ProcessSiblingFile[];
 }
 
 /**
- * 组装归属规格:目录角色判定 + 同名互链展开(其余角色目录同名文件,
- * 存在性由注入的 fileExists 判,本核零 IO)。目录判不出 → null(不出镜)。
- * 目录判得出但互链全缺 → siblings 空数组(只出当前进程展示镜)。
+ * Assemble the ownership spec: the directory-role determination + the same-named cross-link
+ * expansion (same-named files in the other role directories, whose existence the injected
+ * fileExists decides; this core does zero IO). The directory cannot decide -> null (no lens).
+ * The directory decides but every cross-link is missing -> an empty siblings array (only the
+ * current process's lens is shown).
  */
 export function buildProcessOwnershipSpec(
   fsPath: string,
@@ -107,36 +123,56 @@ export function buildProcessOwnershipSpec(
   const scriptsIndex = segments.lastIndexOf('scripts');
   const name = segments[segments.length - 1];
   const prefix = segments.slice(0, scriptsIndex + 1);
+  // The role directory is the first non-shared segment after scripts (the same scan as
+  // resolveScriptRole; the resolved current guarantees it exists). Sub-path levels after it
+  // (the shared layer scripts/<role>/interfaces/) are preserved by the cross-link expansion:
+  // scripts/base/interfaces/Hero.py mirrors to scripts/cell/interfaces/Hero.py, not to the
+  // role root -- dropping the sub-path made shared-layer files never find their same-named
+  // counterpart (2026-11-26 user report; the top-level scripts/interfaces/ is the Interfaces
+  // app, not the shared layer, and stays role-less).
+  let roleIndex = scriptsIndex + 1;
+  while (SHARED_DIR_NAMES.has(segments[roleIndex])) {
+    roleIndex += 1;
+  }
+  const under = segments.slice(roleIndex + 1, segments.length - 1);
   const seen = new Set<string>();
   const siblings: ProcessSiblingFile[] = [];
   for (const [dir, process] of Object.entries(ROLE_DIR_TO_PROCESS)) {
     if (process === current) {
       continue;
     }
-    const candidate = [...prefix, dir, name].join('/');
-    if (seen.has(candidate) || !fileExists(candidate)) {
+    // One sibling per role: the mirrored sub-path first, the role root's same-named file as
+    // the fallback (base/interfaces/X.py also pairs with cell/X.py when the mirror is absent)
+    const candidates = [...new Set([
+      [...prefix, dir, ...under, name].join('/'),
+      [...prefix, dir, name].join('/')
+    ])];
+    const hit = candidates.find(candidate => !seen.has(candidate) && fileExists(candidate));
+    if (!hit) {
       continue;
     }
-    seen.add(candidate);
-    siblings.push({ process, path: candidate });
+    seen.add(hit);
+    siblings.push({ process, path: hit });
   }
   return { current, siblings };
 }
 
-// ─── 面包屑进程切换器(PROC-BREADCRUMB-001,用户令 2026-11-18)──────────────
-// 头部进程 CodeLens 已移除(拉到顶部才看到=不实用;面包屑常驻可见);判定链
-// 与本文件纯核全量复用,合成根节点由 DocumentSymbolProvider 出(Outline 与
-// 面包屑同源单点)。跨文件跳转 DocumentSymbol 无 command 面:child 落本文件
-// 锚点(诚实降级),detail 携对端路径与 openCell/openBase 切换提示。
+// --- The breadcrumb process switcher (PROC-BREADCRUMB-001, user order 2026-11-18) ---
+// The header process CodeLens was removed (requiring a scroll to the top = impractical; the
+// breadcrumb is permanently visible); the determination chain and this file's pure core are reused
+// in full, and the synthetic root node is produced by the DocumentSymbolProvider (Outline and the
+// breadcrumb share a single source point). Cross-file jumps have no command face on
+// DocumentSymbol: the child lands on this file's anchor (an honest degradation), and detail
+// carries the sibling path plus an openCell/openBase switch hint.
 
-/** def 方法段 → 进程段(def 面数据源,与判定链同一词表) */
+/** def method sections -> process segments (the def-face data source, the same vocabulary as the determination chain) */
 const DEF_SECTION_TO_PROCESS: Readonly<Record<string, ProcessName>> = {
   BaseMethods: 'baseapp',
   CellMethods: 'cellapp',
   ClientMethods: 'client'
 };
 
-/** 进程段 → scripts/ 角色目录名(对端 py 推导用) */
+/** Process segments -> the scripts/ role directory name (for deriving the sibling .py) */
 const PROCESS_TO_ROLE_DIR: Readonly<Record<ProcessName, string>> = {
   baseapp: 'base',
   cellapp: 'cell',
@@ -144,28 +180,28 @@ const PROCESS_TO_ROLE_DIR: Readonly<Record<ProcessName, string>> = {
   bots: 'bots'
 };
 
-/** 面包屑子节点规格:进程段 + 本文件锚点(诚实降级跳转)+ 对端路径(可缺) */
+/** Breadcrumb child-node spec: the process segment + this file's anchor (an honest degraded jump) + the sibling path (may be absent) */
 export interface ProcessBreadcrumbChildSpec {
   readonly process: ProcessName;
-  /** 本文件锚点段名(def 面=def 区块;python 面=null 无锚) */
+  /** This file's anchor section name (the def face = a def section; the python face = null, no anchor) */
   readonly section: string | null;
-  /** 锚点区间(0 基行号,含头不含尾);无锚点=null */
+  /** The anchor range (0-based line numbers, inclusive of the start, exclusive of the end); no anchor = null */
   readonly anchor: { startLine: number; endLine: number } | null;
-  /** 对端实现文件路径;推导不出或不存在=null(detail 如实不带) */
+  /** The sibling implementation file path; null when it cannot be derived or does not exist (detail honestly omits it) */
   readonly siblingPath: string | null;
 }
 
-/** 面包屑合成根节点规格(provider 半边唯一输入形状) */
+/** The breadcrumb synthetic root node spec (the provider half's sole input shape) */
 export interface ProcessBreadcrumbSpec {
-  /** `实体名 · 段1▸·段2…`(▸ 标锚定段;单段不加标记) */
+  /** `entityName · seg1·seg2…` (the ▸ marks the anchored section; a single section gets no marker) */
   readonly name: string;
   readonly entityName: string;
-  /** 进程段全列(锚定段排首位) */
+  /** The full list of process segments (the anchored section first) */
   readonly processes: readonly ProcessName[];
   readonly children: readonly ProcessBreadcrumbChildSpec[];
 }
 
-/** 合成 name:锚定段(首位)带 ▸;单段不加标记(钉子1 口径) */
+/** The synthetic name: the anchored section (first) carries the ▸; a single section gets no marker (the pin-1 accounting) */
 function breadcrumbName(entityName: string, processes: readonly ProcessName[]): string {
   const segments =
     processes.length > 1
@@ -175,10 +211,13 @@ function breadcrumbName(entityName: string, processes: readonly ProcessName[]): 
 }
 
 /**
- * def 面合成根(.def 第一刀):进程段全列=本 def 声明的方法段映射,按文档序
- * (锚定段=文档序首段——def 无目录角色,「当前段」无判定面,取首段作锚定并
- * 排首位,▸ 只在多段时标);children=其余段,锚点=本文件对应 def 区块,
- * 对端路径=scripts/<role>/<实体名>.py(存在才带)。无方法段=null 不插节点。
+ * The def face's synthetic root (the .def first cut): the full process segment list = the
+ * current def's declared method sections mapped over, in document order (the anchored section =
+ * the first section in document order -- a def has no directory role, so "the current section" has
+ * no determination face; the first section is taken as the anchor and placed first, with the ▸ only
+ * when there are multiple sections); children = the remaining sections, the anchor = this file's
+ * corresponding def section, the sibling path = scripts/<role>/<entityName>.py (carried only if it
+ * exists). No method sections = null, no node inserted.
  */
 export function buildDefProcessBreadcrumb(
   defFsPath: string,
@@ -230,9 +269,12 @@ export function buildDefProcessBreadcrumb(
 }
 
 /**
- * python 面合成根(第二刀):目录角色命中才出节点(判不出=null 零干扰
- * Pylance);进程段全列=当前+互链存在者,当前段(真·目录判定)带 ▸ 排首位。
- * children=互链段,无本文件锚点(anchor=null),对端路径=互链文件。
+ * The python face's synthetic root (the second cut): a node appears only when the directory role
+ * hits (indeterminate = null, zero interference with Pylance); the full process segment list =
+ * the current + the cross-link's existing ones, with the current segment (the genuine directory
+ * determination) carrying the ▸ and placed first.
+ * children = the cross-link segments, with no anchor in this file (anchor=null), and the sibling
+ * path = the cross-link file.
  */
 export function buildPythonProcessBreadcrumb(
   fsPath: string,

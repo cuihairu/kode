@@ -92,6 +92,33 @@ describe('buildProcessOwnershipSpec(互链展开)', () => {
     expect(spec?.siblings).toEqual([]);
     expect(buildProcessOwnershipSpec('/ws/scripts/common/util.py', () => true)).toBeNull();
   });
+
+  it('角色子路径镜像:base/interfaces/Hero.py 对端=cell/interfaces/Hero.py(镜像位优先,每角色一个)', () => {
+    // 2026-11-26 用户报:同名互链把子路径丢了,共享层(scripts/<role>/interfaces/)
+    // 文件永远对不上角色根,快捷键报「没有对应的同名文件」。注意 scripts/interfaces/
+    // 顶层目录是 Interfaces 应用(对外接口),不是共享层;共享层在角色目录之下。
+    const spec = buildProcessOwnershipSpec(
+      '/ws/scripts/base/interfaces/Hero.py',
+      existsAmong([
+        '/ws/scripts/cell/Hero.py',
+        '/ws/scripts/cell/interfaces/Hero.py',
+        '/ws/scripts/bots/interfaces/Hero.py'
+      ])
+    );
+    expect(spec?.current).toBe('baseapp');
+    expect(spec?.siblings).toEqual([
+      { process: 'cellapp', path: '/ws/scripts/cell/interfaces/Hero.py' },
+      { process: 'bots', path: '/ws/scripts/bots/interfaces/Hero.py' }
+    ]);
+  });
+
+  it('镜像位缺席回落角色根同名:base/interfaces/X.py 只在 cell 根有同名也对上', () => {
+    const spec = buildProcessOwnershipSpec(
+      '/ws/scripts/base/interfaces/Activity.py',
+      existsAmong(['/ws/scripts/cell/Activity.py'])
+    );
+    expect(spec?.siblings).toEqual([{ process: 'cellapp', path: '/ws/scripts/cell/Activity.py' }]);
+  });
 });
 
 describe('buildDefProcessBreadcrumb(def 面合成根,钉子1/2/3)', () => {
