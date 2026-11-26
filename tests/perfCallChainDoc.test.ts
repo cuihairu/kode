@@ -632,8 +632,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
-  ['src/backend/diagnosticScheduler.ts', 228, 'requestQueued'],
-  ['src/backend/diagnosticScheduler.ts', 258, 'flushQueued'],
+  // 2026-11-26(COM-EN 注释翻译批):diagnosticScheduler.ts 文件头 JSDoc 翻译
+  // 行数位移,逐符号真位重探:requestQueued 228→259、flushQueued 258→296
+  // (setEnabled 176→202,invalidateAll 195→222,出处随 baseline 锁步)。
+  ['src/backend/diagnosticScheduler.ts', 259, 'requestQueued'],
+  ['src/backend/diagnosticScheduler.ts', 296, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/backend/documentStore.ts', 155, 'getDocumentLines'],
   // 2026-11-15:RUST-031 降级明示面——pythonClassIndex.ts 模块级降级警示块 +31
@@ -665,11 +668,14 @@ const ANCHORS: Array<[string, number, string]> = [
   // 类型块(+14)与 resolveMroImplementationOutcome(+69)按同题双裁弃用(机制留
   // pythonBaseChain 同源,收编其注明残差进 entityMapping/pythonBaseChain),
   // pythonClassIndex 回 38d6e015 形态 → 锚点维持 832/1583/1707,真位重探核实。
-  ['src/backend/pythonClassIndex.ts', 832, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1583, 'resolveClassBase'],
+  // 2026-11-26(COM-EN 注释翻译批):全文件注释翻译非均匀位移,逐符号真位重探:
+  // 832→924、1583→1800。出处随 baseline 锁步。
+  ['src/backend/pythonClassIndex.ts', 924, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1800, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1707, '①② 两段查询'],
+  // 2026-11-26(COM-EN):①② 注释已译英文,真位 1707→1939,锚文本随真位更新。
+  ['src/backend/pythonClassIndex.ts', 1939, '①② two-pass query'],
   // 2026-11-19(KODE-RESP-002):pythonClassIndex.ts 发现移出调度执行位——
   // 单飞字段块 +7、ensureDiscovered 重写 +22、零失败清表改覆盖式 +4(非均匀):
   // 767→774(+7)、1448→1481(+33)、1572→1605(+33)。出处随 baseline 锁步。

@@ -175,7 +175,7 @@ flowchart TD
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
-  MRO["PR5 两段方法解析(backend/pythonClassIndex.ts:1688)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
+  MRO["PR5 两段方法解析(backend/pythonClassIndex.ts:1885)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
   PASS2["pass2:①② 均落空才等全量收敛重查<br/>(ensureScanned,PR5 主路径首查不等这里)<br/>③ 反向形态:子类 MRO 反查 enclosing(精确身份)"]
   SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders/navigation.ts:47(fire-and-forget,不改返回值)"]
   END2["operation.end(hit|miss) → Location 或 Location 列表或 null"]
@@ -198,7 +198,7 @@ flowchart TD
   AD2 -.->|对拍| SHD
 
   WAITB("等待点 B:withInteractiveScanBudget 1s(首扫兜底最后一跳)<br/>languageProviders/pythonDefinition.ts:1088,属性探针增量索引未命中才等;命中直返不经过这里")
-  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:816,打点 :822)")
+  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:924,打点 :930)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
   MRO -.->|等待| WAITC
@@ -245,9 +245,9 @@ flowchart TD
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
   WATCH["extension.ts:502 文档事件适配<br/>(onSave/onOpen 同通道)"]
-  RQ["DiagnosticScheduler.requestQueued<br/>backend/diagnosticScheduler.ts:228"]
+  RQ["DiagnosticScheduler.requestQueued<br/>backend/diagnosticScheduler.ts:259"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:614 → backend/diagnosticScheduler.ts:258"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:614 → backend/diagnosticScheduler.ts:296"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
@@ -258,7 +258,7 @@ flowchart TD
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]
   DS["文档解析(document-parse 打点)<br/>documentStore 同版本只解析一次(PR2)"]
   PUB["diagnostics.set(uri, items) 发布"]
-  CFG2["配置切换 setEnabled/invalidateAll<br/>(backend/diagnosticScheduler.ts:176 / :195)generation+1 → 已发布文档全部重算(A6-4)"]
+  CFG2["配置切换 setEnabled/invalidateAll<br/>(backend/diagnosticScheduler.ts:202 / :222)generation+1 → 已发布文档全部重算(A6-4)"]
 
   CHG --> WATCH --> RQ --> CO --> FL --> VG
   VG -- "版本已前进" --> DROP

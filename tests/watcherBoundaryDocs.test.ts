@@ -99,15 +99,17 @@ describe('V-08 边界注记', () => {
       const start = Math.max(text.indexOf('## 8. V-08 boundary note'), text.indexOf('## 8. V-08 边界注记'));
       expect(start, '两份文档都应有 V-08 边界注记小节').toBeGreaterThan(0);
       const section = text.slice(start);
-      expect(section).toContain('src/kbengineProtocol.ts:54-58');
-      expect(section).toContain('src/kbengineProtocol.ts:113-122');
-      expect(section).toContain('src/kbengineProtocol.ts:316');
+      expect(section).toContain('src/kbengineProtocol.ts:55-59');
+      expect(section).toContain('src/kbengineProtocol.ts:114-123');
+      expect(section).toContain('src/kbengineProtocol.ts:317');
     }
     // 钩子引用的行号锚点必须仍指向真实内容(行号漂移即视为文档失实)
+    // 2026-11-26(COM-EN 注释翻译批):kbengineProtocol.ts 常量块前 +1 行,
+    // 54-58→55-59、113-122→114-123、316→317,注记与出处锁步。
     const lines = protocolSource.split('\n');
-    expect(lines[53]).toContain('CONSOLE_WATCHER_CB_MSG_ID = 65502');
-    expect(lines[112]).toContain('WATCHER_QUERY_MSG_IDS');
-    expect(lines[315]).toContain('export function buildFrame');
+    expect(lines[54]).toContain('CONSOLE_WATCHER_CB_MSG_ID = 65502');
+    expect(lines[113]).toContain('WATCHER_QUERY_MSG_IDS');
+    expect(lines[316]).toContain('export function buildFrame');
   });
 
   it('边界注记不把外部条件写成已满足(不宣称端到端已接通)', () => {
