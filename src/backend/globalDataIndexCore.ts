@@ -73,8 +73,8 @@ const AUGMENTED_ASSIGN_OPS = [
 
 const NUMERIC_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
-/** 裸标识符(键静态常量解析位:非数字字面量) */
-const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*$/;
+/** 裸标识符(键静态常量解析位:非数字字面量;KODE-DICTTYPE-001 亦消费) */
+export const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*$/;
 
 /**
  * 模块级静态常量绑定(KSEM-DATA-02):顶格 `NAME = "literal"` / 带注解
@@ -218,7 +218,7 @@ function decodeEscape(text: string, index: number): { value: string; next: numbe
  * 反斜杠保留,仅 `\` 仍避免下一引号闭合,与 Python 同);b/B/u/U/f 前缀
  * 不在此处理(各自走字节/Unicode/f-string 或如实跳过)。
  */
-function matchStringLiteral(text: string): string | null {
+export function matchStringLiteral(text: string): string | null {
   const head = /^([rR]?)(['"])/.exec(text);
   if (!head) {
     return null;
@@ -336,20 +336,22 @@ function matchConcatSignature(text: string): string | null {
   return emitted.join('');
 }
 
-interface KeySpan {
+// KODE-DICTTYPE-001: exported for the ordinary-dict core module so both
+// faces parse accesses through the exact same helpers (single judgment chain).
+export interface KeySpan {
   keyRaw: string;
   keyStart: number;
   keyEnd: number;
 }
 
-interface SubscriptParse extends KeySpan {
+export interface SubscriptParse extends KeySpan {
   kind: 'write' | 'read';
   valueText: string | null;
   exprEnd: number;
 }
 
 /** 访问表达式尾后一列(写点=RHS 尾、读点=`]`/`)` 尾);inlay/hover 标注位 */
-type AccessSpan = KeySpan & { exprEnd: number };
+export type AccessSpan = KeySpan & { exprEnd: number };
 
 /** 跳过行内空白后取列 */
 function skipWhitespace(lineText: string, from: number): number {
@@ -365,7 +367,7 @@ function skipWhitespace(lineText: string, from: number): number {
  * `=`(非 `==`)为写点(RHS 为同行余文),增强赋值算写但无值文本,
  * 其余为读点。
  */
-function parseSubscriptAccess(lineText: string, openBracket: number): SubscriptParse | null {
+export function parseSubscriptAccess(lineText: string, openBracket: number): SubscriptParse | null {
   let depth = 0;
   let inString: string | null = null;
   let close = -1;
@@ -470,7 +472,7 @@ function matchCloseParen(lineText: string, openParen: number): number {
  * default(KSEM-DATA-04:读点有效类型 union ∪ default 类型;缺省不取
  * default 为 null)。exprEnd=闭括号尾后一列(inlay/hover 标注位)。
  */
-function parseGetAccess(
+export function parseGetAccess(
   lineText: string,
   from: number
 ): (AccessSpan & { defaultText: string | null }) | null {
@@ -533,7 +535,7 @@ function parseGetAccess(
 }
 
 /** 区间去首尾空白;空区间 → null */
-function trimSpan(lineText: string, start: number, end: number): KeySpan | null {
+export function trimSpan(lineText: string, start: number, end: number): KeySpan | null {
   let lo = start;
   let hi = end;
   while (lo < hi && /\s/.test(lineText[lo])) {
