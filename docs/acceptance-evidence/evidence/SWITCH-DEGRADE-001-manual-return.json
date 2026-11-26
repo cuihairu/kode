@@ -1,0 +1,14 @@
+[
+ {
+  "step": "first B",
+  "active": "/tmp/switch-demo/scripts/base/Hero.py"
+ },
+ {
+  "step": "manual return to cell",
+  "active": "/tmp/switch-demo/scripts/cell/Hero.py"
+ },
+ {
+  "step": "second B after manual return",
+  "active": "/tmp/switch-demo/scripts/base/Hero.py"
+ }
+]

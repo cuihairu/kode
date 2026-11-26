@@ -1,0 +1,52 @@
+[
+ {
+  "press": 1,
+  "command": "B",
+  "active": "/tmp/switch-demo/scripts/base/Hero.py"
+ },
+ {
+  "press": 2,
+  "command": "C",
+  "active": "/tmp/switch-demo/scripts/cell/Hero.py"
+ },
+ {
+  "press": 3,
+  "command": "B",
+  "active": "/tmp/switch-demo/scripts/base/Hero.py"
+ },
+ {
+  "press": 4,
+  "command": "C",
+  "active": "/tmp/switch-demo/scripts/cell/Hero.py"
+ },
+ {
+  "press": 5,
+  "command": "B",
+  "active": "/tmp/switch-demo/scripts/base/Hero.py"
+ },
+ {
+  "press": 6,
+  "command": "C",
+  "active": "/tmp/switch-demo/scripts/cell/Hero.py"
+ },
+ {
+  "press": 7,
+  "command": "B",
+  "active": "/tmp/switch-demo/scripts/base/Hero.py"
+ },
+ {
+  "press": 8,
+  "command": "C",
+  "active": "/tmp/switch-demo/scripts/cell/Hero.py"
+ },
+ {
+  "press": 9,
+  "command": "B",
+  "active": "/tmp/switch-demo/scripts/base/Hero.py"
+ },
+ {
+  "press": 10,
+  "command": "C",
+  "active": "/tmp/switch-demo/scripts/cell/Hero.py"
+ }
+]
