@@ -778,6 +778,20 @@ The flow graph panel supports:
 - Title: `Show Symbol References Graph`
 - Purpose: show the def symbol reference graph as Mermaid and plain-text previews
 
+### `kbengine.findReferencesRW`
+
+- Title: `Find References (Read/Write)`
+- Purpose: list references grouped by WRITE / READ / DELETE for the Python symbol under the cursor
+- Entries: editor context menu (Python) and `ctrl+alt+shift+r` / `cmd+alt+shift+r` (Python)
+- Behavior:
+  - KBEngine key families (globalData/baseAppData/cellAppData, spaceData, cellData) reuse their existing site kinds; cellData sites without a kind default to read.
+  - Augmented assignment (`a += 1`) and subscript assignment (`a[i] = v`) are listed in both READ and WRITE with the `⇄` marker.
+  - Ordinary symbols align the public `vscode.executeReferenceProvider` locations with per-file `vscode.executeDocumentHighlightProvider` ranges; `DocumentHighlightKind.Text` falls back to the text heuristic.
+  - Symbol and key comparisons are case-sensitive (Python semantics); `Hero` and `hero` never share a family.
+  - Group order is WRITE → READ → DELETE, each sorted by `file:line`; rows show `file:line` with the code excerpt as detail, and picking a row jumps to the referenced line with `preview: false`.
+  - More than 50 reference files are queried sequentially with a host yield every 10 files; cancellation stops further queries. When neither face resolves, the command shows an informational message instead of an empty list.
+  - The built-in Shift+F12 references provider is unchanged.
+
 ### `kbengine.profile.start`
 
 - Title: `Start Runtime Profile`

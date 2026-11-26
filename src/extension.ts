@@ -1505,6 +1505,8 @@ export function activate(context: vscode.ExtensionContext) {
     indexScheduler,
     // KODE-SYN-006:.def 格式化 provider 的文档选择器(与其余 .def 语言服务同源)
     defDocumentSelector,
+    // RW-REFS-001:数据字典键索引单例交给读写分组命令(与引用 provider 同源)
+    dataDictIndex,
     // INDEX-DISCIPLINE-001:状态栏 tooltip 输入纪律观测行(待合并+语法门)
     indexDisciplineStats: () => ({
       coalescerPending: indexEventCoalescer.getPendingCount(),

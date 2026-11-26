@@ -221,7 +221,8 @@
     "onCommand:kbengine.git.historyNextPage",
     "onCommand:kbengine.git.openVersionDiff",
     "onCommand:kbengine.git.openVersionContent",
-    "onCommand:kbengine.git.openRangeHistoryDiff"
+    "onCommand:kbengine.git.openRangeHistoryDiff",
+    "onCommand:kbengine.findReferencesRW"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -894,6 +895,11 @@
         "icon": "$(graph)"
       },
       {
+        "command": "kbengine.findReferencesRW",
+        "title": "%kbengine.command.findReferencesRW.title%",
+        "icon": "$(search)"
+      },
+      {
         "command": "kbengine.profile.start",
         "title": "%kbengine.command.profile.start.title%"
       },
@@ -1526,6 +1532,11 @@
           "command": "kbengine.git.showRangeHistory",
           "when": "kode.gitHistoryEnabled && editorHasSelection",
           "group": "navigation@51"
+        },
+        {
+          "command": "kbengine.findReferencesRW",
+          "when": "editorLangId == python",
+          "group": "navigation@52"
         }
       ],
       "editor/title/context": [
@@ -1577,6 +1588,12 @@
         "command": "kbengine.processOwnership.openBase",
         "key": "ctrl+alt+shift+b",
         "mac": "cmd+alt+shift+b",
+        "when": "editorLangId == python"
+      },
+      {
+        "command": "kbengine.findReferencesRW",
+        "key": "ctrl+alt+shift+r",
+        "mac": "cmd+alt+shift+r",
         "when": "editorLangId == python"
       }
     ],

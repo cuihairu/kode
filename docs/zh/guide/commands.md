@@ -726,6 +726,20 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 - 标题：`Show Symbol References Graph`
 - 作用：以 Mermaid 与纯文本预览展示 def 符号引用图
 
+### `kbengine.findReferencesRW`
+
+- 标题：`查找引用（读/写）`
+- 作用：按 WRITE / READ / DELETE 三组列出光标处 Python 符号的引用
+- 入口：编辑器右键菜单（Python）与 `ctrl+alt+shift+r` / `cmd+alt+shift+r`（Python）
+- 行为：
+  - KBEngine 键族（globalData/baseAppData/cellAppData、spaceData、cellData）复用既有站点 kind；cellData 无 kind 的站点按读取对待。
+  - 增强赋值（`a += 1`）与下标赋值（`a[i] = v`）同时进入 READ 与 WRITE 两组，标 `⇄`。
+  - 普通符号用公开的 `vscode.executeReferenceProvider` 取跨文件位置，再用逐文件 `vscode.executeDocumentHighlightProvider` 按 range 对齐；`DocumentHighlightKind.Text` 走文本启发式。
+  - 符号与键比较严格区分大小写（Python 语义）；`Hero` 与 `hero` 不混为一族。
+  - 组序 WRITE → READ → DELETE，组内按 `file:line` 排序；行项为 `file:line`、detail 带代码行摘录，选中项以 `preview: false` 跳到引用行。
+  - 引用文件超过 50 时逐个查询，每 10 个让出宿主一次；取消后不再查文件。两面都不命中时给信息提示，不空转。
+  - 内置 Shift+F12 引用行为不变。
+
 ### `kbengine.profile.start`
 
 - 标题：`Start Runtime Profile`

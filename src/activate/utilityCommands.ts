@@ -9,6 +9,10 @@
 
 import * as vscode from 'vscode';
 import { l10nText } from '../nlsRuntime';
+// RW-REFS-001: grouped read/write/delete references command; dataDictIndex
+// comes from coreServices L1 via deps (the same instance the reference
+// provider uses), so key-family grouping needs no second resolver chain.
+import { registerRwReferencesCommand } from '../rwReferencesCommand';
 import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../backend/snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../backend/snippetGenerator';
@@ -98,13 +102,15 @@ export interface UtilityCommandsDeps {
   indexScheduler: IndexScheduler;
   /** .def 格式化 provider 的选择器(KODE-SYN-006;与 .def 其余语言服务同一 selector)。 */
   defDocumentSelector: ReadonlyArray<vscode.DocumentFilter | string>;
+  /** RW-REFS-001:shared GlobalDataDictIndex (coreServices L1) for the key-family face. */
+  dataDictIndex?: unknown;
   /** INDEX-DISCIPLINE-001:索引输入纪律观测面(合并器待合并数+语法门拦计数);
    * 可选注入,缺省时状态栏 tooltip 不加该行(面不冒充)。 */
   indexDisciplineStats?: () => { coalescerPending: number; syntaxGateSkipped: number } | null;
 }
 
 export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
-  const { context, entityMappingManager, serverManager, indexScheduler, defDocumentSelector } = deps;
+  const { context, entityMappingManager, serverManager, indexScheduler, defDocumentSelector, dataDictIndex } = deps;
   // .def 静态分析建议(性能分析):扫描工作区全部 .def,报告写入输出面板
   // 并以诊断形式落到问题列表(装配本体在 ./defAnalysisWiring,KODE-ARCH-002 纯移动)
   const defAnalysis = wireDefAnalysis();
@@ -175,6 +181,10 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     }
   );
   context.subscriptions.push(symbolReferencesCommand, symbolReferencesChannel);
+  // RW-REFS-001: READ/WRITE/DELETE grouped references; same dataDictIndex as
+  // the built-in reference provider, but outputs a QuickPick instead of
+  // changing Shift+F12 behavior.
+  context.subscriptions.push(registerRwReferencesCommand(context, dataDictIndex));
   context.subscriptions.push(defAnalysis.outputChannel, defAnalysis.diagnostics);
 
   // 自定义代码片段生成器:把选区文本做片段语法转义(\$ 与 \\)并去公共缩进

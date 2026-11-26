@@ -839,5 +839,11 @@
   "Inheritance chain": "继承链",
   "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.": "KBEngine 内存监控：{type} 泄漏计数连续 3 个采样周期非零（当前 {count}），疑似对象泄漏。",
   "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks. If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "kbengine.core.backend 配置为 rust/shadow,但未找到 kode-server 二进制(kbengine.core.serverPath 未配置且自动发现落空),当前实际回落 TS 轨道。点击本灯可切换轨道。 如果刚安装或更新扩展，请执行 Developer: Reload Window 让激活链重新发现二进制。",
-  "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "如果刚安装或更新扩展，请执行 Developer: Reload Window 让激活链重新发现二进制。"
+  "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "如果刚安装或更新扩展，请执行 Developer: Reload Window 让激活链重新发现二进制。",
+  "WRITE": "写入",
+  "READ": "读取",
+  "DELETE": "删除",
+  "No active Python editor": "当前没有活动的 Python 编辑器",
+  "No readable reference face at the cursor": "当前符号无读写引用面",
+  "{symbol} — {total} references (write {write} / read {read} / delete {delete})": "{symbol} — {total} 处引用（写 {write} / 读 {read} / 删 {delete}）"
 }

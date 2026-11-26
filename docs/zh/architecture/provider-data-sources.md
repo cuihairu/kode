@@ -71,7 +71,7 @@
 | HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine 派生视图(台账事实源,IDE-HOT-100) | 纯读;状态点点击命令 kbengine.hotReload.showFileState |
 | KBEngineDefFormatProvider | languageProviders/defFormatProvider.ts:23 | activate/utilityCommands.ts:1162/:1166 (KODE-SYN-006,整文档 + 选区两面) | 仅当前文档文本,经 `$/kode/def/format`(crates/kode-parser/src/def_format.rs 精确 span 核、crates/kode-server/src/def_format.rs);UTF-8 字节位 ↔ UTF-16 码元位换算在 backend/defFormat.ts | 编辑提议(TextEdit 集);已格式化、Rust 不可用、应答畸形或 XML 残缺(安全退回)时零编辑 |
 
-命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
+命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。`kbengine.findReferencesRW` 的键族面读 GlobalDataDictIndex / spaceData / cellData 既有站点的 kind(复用既有解析链,不造第二套),普通符号面把公开的 `vscode.executeReferenceProvider` 位置与逐文件 `vscode.executeDocumentHighlightProvider` 的 range 对齐;副作用限于 QuickPick 与 `showTextDocument` 跳转(不改文件、不重注册 provider)。
 
 ### 2b. 虚拟文档 provider(registerTextDocumentContentProvider,只读内容面)
 

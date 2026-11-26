@@ -450,5 +450,6 @@
   "kbengine.config.ai.temperature.description": "采样温度(0~2)。仅 OpenAI 兼容路线生效。\n\n默认值：`0.2`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
   "kbengine.config.ai.maxTokens.description": "单次回复最大 token 数。仅 OpenAI 兼容路线生效。\n\n默认值：`1024`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
   "kbengine.config.ai.requestTimeoutMs.description": "单次请求超时毫秒数;超时中止并报错,不悬挂。\n\n默认值：`30000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
-  "kbengine.config.ai.maxRetries.description": "只对可重试失败设重试上限(HTTP 429/5xx 与网络错误;`0` = 不重试);其它 4xx 立即失败。\n\n默认值：`1`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)"
+  "kbengine.config.ai.maxRetries.description": "只对可重试失败设重试上限(HTTP 429/5xx 与网络错误;`0` = 不重试);其它 4xx 立即失败。\n\n默认值：`1`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#ai-opt-in-base-ai-001)",
+  "kbengine.command.findReferencesRW.title": "查找引用（读/写）"
 }

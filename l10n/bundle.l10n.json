@@ -839,5 +839,11 @@
   "Inheritance chain": "Inheritance chain",
   "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.": "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.",
   "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks. If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks.",
-  "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again."
+  "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.",
+  "WRITE": "WRITE",
+  "READ": "READ",
+  "DELETE": "DELETE",
+  "No active Python editor": "No active Python editor",
+  "No readable reference face at the cursor": "No readable reference face at the cursor",
+  "{symbol} — {total} references (write {write} / read {read} / delete {delete})": "{symbol} — {total} references (write {write} / read {read} / delete {delete})"
 }
