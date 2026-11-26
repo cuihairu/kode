@@ -398,7 +398,8 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     // 路径契约不变。
     const dictValueCtx = dictValueKeyCompletionContext(
       document.lineAt(position.line).text,
-      position.character
+      position.character,
+      position.line
     );
     if (dictValueCtx && this.dictValueTypes) {
       return this.provideDictValueKeyCompletions(document, position, dictValueCtx).then(

@@ -338,6 +338,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-26(CIFIX 追补):3531ea51 后注释口径修正又 +1 行(store 生命周期
   // 措辞,落 hover 打点前)→ 五锚点各 +1:240→241/313→314/412→413/155→156/
   // 963→964(真位重探;CI 45775775295 红因=该行未随 3531ea51 提交)。
+  // 2026-11-26(KODE-CIFIX-DICTTYPE-001 ⑥审查):resolveReceiver 用
+  // classAtLine[ctx.line] 替代 line[0](self 接收者按光标行所在类解析,
+  // 非全文件首行猜)→ ctx 接口 +1、函数签名 +1、调用点传 line +1
+  // (completion.ts 净 +1,provideCompletionItems 1186→1187);多类文件证明红线 R4 已加
+  // (tests/dictValueType.providers.test.ts 第 5 例,还原 classAtLine[0] 红)。
   // 2026-11-25(PROC-BREADCRUMB-002 + FILE-TIME-001 并入收口):languageServices.ts
   // 标题栏上下文键装配块 +4 与行首切换镜装配块 +4(589 区,在前四打点后)→
   // completion python 语境打点 944 → 948;extension.ts 退役 fileModifiedTime
@@ -638,7 +643,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // lspCompletionToVscode sortText/filterText/snippet/data 面 +12、
   // KBEngineCompletionProvider.resolveCompletionItem +26(均在
   // PythonCompletionProvider 之前)→ 真位重探 1086→1134,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 1186, 'provideCompletionItems('],
+  ['src/languageProviders/completion.ts', 1187, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

@@ -106,14 +106,15 @@
 > 2026-11-19(RUST-149 批 3):取消令牌贯穿 inlay 四 provider(BuiltinType/InferredMirror/PropertyShadow/ProxyInternalAttr)——入口 cancelled() 闸 + def 归属/方向扫描束放行点复查,顶部累计 +9 → getDocumentLines 出处 inlay.ts 52→61,真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-23(SCAN-ROOT 锚点放开腿批):pythonClassIndex.ts 顶部 import 块展开 +5(全部锚点前)、扫描根入行块 +5(1121 区)与锚点 await 块 +3(1268 区)落在二三锚点前 → WAITC :811→816(+5,打点 :817→822)、CB2 :1551→1564(+13)、MRO :1564 前的软指针 :1629 一并校准到 ①② 两段查询 注释行 1688(+13),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-25(PROC-BREADCRUMB-002 + FILE-TIME-001 并入收口):languageServices.ts 标题栏上下文键装配块 +4 与行首切换镜装配块 +4(589 区,在前四打点后)→ completion python 语境打点 :944→948;extension.ts 退役 fileModifiedTime 解构与 fire 两行(260/795)→ WATCH :503→502、FL 源锚 :615→614(其余锚不动),真位重探(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-26(KODE-CIFIX-DICTTYPE-001 锚点锁步追补):3531ea51 consumer wiring + a935f450 注释追补已把 tests/perfCallChainDoc.test.ts ANCHORS 校到真位(languageServices 五打点 241/314/413/156/964;hover.ts provideHover 320;completion.ts provideCompletionItems 1187);§7 四图出处逐一对拍真位同步,并把早批遗留未校的 pythonDefinition.ts:261→322 与 diagnostics 打点 236/249→239/252 一并校准(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["activate/languageServices.ts:227 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
-  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:316"]
+  M1["activate/languageServices.ts:241 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:320"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
   BR{"languageId==python 且<br/>注入 EntityMappingManager?"}
@@ -160,8 +161,8 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["activate/languageServices.ts:300 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :399 一路)"]
-  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders/pythonDefinition.ts:261"]
+  M2["activate/languageServices.ts:314 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :413 一路)"]
+  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders/pythonDefinition.ts:322"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :4736 / Impl :4754"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
   KBE{"kbe/KBEngine 模块符号?"}
@@ -214,8 +215,8 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["activate/languageServices.ts:146 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :948 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:1134"]
+  M3["activate/languageServices.ts:156 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :964 一路)"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:1187"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}
@@ -252,7 +253,7 @@ flowchart TD
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:236 / entities 侧 :249"]
+  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:239 / entities 侧 :252"]
   VD["validateDocument(languageProviders/validation.ts:20)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders/validation.ts:20,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:329)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:342,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]

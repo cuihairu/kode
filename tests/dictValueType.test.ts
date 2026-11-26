@@ -162,24 +162,27 @@ describe('KODE-DICTTYPE-001 ordinary dict value types', () => {
   });
 
   it('9. completion context: quoted / bare, get and subscript, KBEngine excluded', () => {
-    expect(dictValueKeyCompletionContext('x = CONFIG["HO', 14)).toMatchObject({
+    expect(dictValueKeyCompletionContext('x = CONFIG["HO', 14, 3)).toMatchObject({
       receiver: 'CONFIG',
       partial: 'HO',
       replaceStart: 12,
-      viaGet: false
+      viaGet: false,
+      line: 3
     });
     // 'x = self.config.get("HO' is 24 chars; cursor at end leaves both letters
-    expect(dictValueKeyCompletionContext('x = self.config.get("HO', 24)).toMatchObject({
+    expect(dictValueKeyCompletionContext('x = self.config.get("HO', 24, 4)).toMatchObject({
       receiver: 'self.config',
       partial: 'HO',
-      viaGet: true
+      viaGet: true,
+      line: 4
     });
-    expect(dictValueKeyCompletionContext('x = CONFIG[', 11)).toMatchObject({
+    expect(dictValueKeyCompletionContext('x = CONFIG[', 11, 5)).toMatchObject({
       receiver: 'CONFIG',
       partial: '',
-      viaGet: false
+      viaGet: false,
+      line: 5
     });
-    expect(dictValueKeyCompletionContext('x = KBEngine.globalData["', 25)).toBeNull();
+    expect(dictValueKeyCompletionContext('x = KBEngine.globalData["', 25, 6)).toBeNull();
   });
 
   it('10. comments and string literals never produce containers or reads', () => {

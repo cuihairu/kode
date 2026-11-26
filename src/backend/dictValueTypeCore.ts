@@ -873,6 +873,9 @@ export interface DictValueKeyCompletionContext {
   partial: string;
   replaceStart: number;
   viaGet: boolean;
+  /** 0-based line of the cursor: self receivers resolve against the class
+   * enclosing this line, never against a file-wide guess. */
+  line: number;
 }
 
 const COMPLETION_QUOTED_TAIL_PATTERN =
@@ -889,7 +892,8 @@ const COMPLETION_BARE_TAIL_PATTERN =
  */
 export function dictValueKeyCompletionContext(
   lineText: string,
-  character: number
+  character: number,
+  line: number
 ): DictValueKeyCompletionContext | null {
   const text = lineText.slice(0, character);
   const quoted = COMPLETION_QUOTED_TAIL_PATTERN.exec(text);
@@ -898,7 +902,8 @@ export function dictValueKeyCompletionContext(
       receiver: quoted[1],
       partial: quoted[3],
       replaceStart: character - quoted[3].length,
-      viaGet: /\.get[ \t]*\(/.test(text.slice(quoted.index + quoted[1].length))
+      viaGet: /\.get[ \t]*\(/.test(text.slice(quoted.index + quoted[1].length)),
+      line
     };
   }
   const bare = COMPLETION_BARE_TAIL_PATTERN.exec(text);
@@ -907,7 +912,8 @@ export function dictValueKeyCompletionContext(
       receiver: bare[1],
       partial: '',
       replaceStart: character,
-      viaGet: bare[2].includes('.get')
+      viaGet: bare[2].includes('.get'),
+      line
     };
   }
   return null;

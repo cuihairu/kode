@@ -32,9 +32,7 @@ describe('KODE-DICTTYPE-001 provider surfaces', () => {
     const provider = new KBEngineHoverProvider(undefined, undefined, store);
     const doc = makeDoc();
     const hover = await provider.provideHover(doc, new vscode.Position(4, 17));
-    // debug: also try timed variant
-    const timed = await provider.provideHoverTimed(doc, new vscode.Position(4, 17));
-    const md = String((hover?.contents as vscode.MarkdownString)?.value ?? (timed?.contents as vscode.MarkdownString)?.value ?? '');
+    const md = String((hover?.contents as vscode.MarkdownString)?.value ?? '');
     expect(md).toContain('CONFIG');
     expect(md).toContain('int');
     expect(md).toContain('固定类型');
@@ -74,5 +72,33 @@ describe('KODE-DICTTYPE-001 provider surfaces', () => {
     const doc = makeDoc();
     // no crash on ordinary dict read without store; the ordinary chain answers
     await provider.provideHover(doc, new vscode.Position(4, 17));
+  });
+
+  // Prove-red: resolve the self receiver against classAtLine[0] (a file-wide
+  // guess) instead of the cursor line → this case fails with A_KEY.
+  it('5. self.<attr> key completion resolves the enclosing class, not line 0', async () => {
+    const provider = new KBEngineCompletionProvider(
+      undefined,
+      undefined,
+      new DictValueTypeStore()
+    );
+    const text = [
+      '# -*- coding: utf-8 -*-',
+      'class A:',
+      '    def __init__(self):',
+      '        self.config = {"A_KEY": 1}',
+      '',
+      'class B:',
+      '    def __init__(self):',
+      '        self.config = {"B_KEY": "x"}',
+      '',
+      '    def use(self):',
+      '        v = self.config["'
+    ].join('\n');
+    const doc = makeDoc(text);
+    const items = await provider.provideCompletionItems(doc, new vscode.Position(10, 25));
+    const list = Array.isArray(items) ? items : [];
+    expect(list.map(item => item.label)).toContain('B_KEY');
+    expect(list.map(item => item.label)).not.toContain('A_KEY');
   });
 });

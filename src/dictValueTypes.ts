@@ -73,7 +73,7 @@ export class DictValueTypeStore {
     const container =
       ctx.receiver.startsWith('self.')
         ? (() => {
-            const cls = analysis.classAtLine[0]; // completion receiver is class-scoped
+            const cls = analysis.classAtLine[ctx.line];
             return cls
               ? analysis.containers.get(`self:${cls}:${ctx.receiver}`) ?? null
               : null;
