@@ -503,3 +503,99 @@ describe('KR-AUD-62: 内建属性 inlay 目标跑词法掩码(注释/字符串�
     expect(targets[0]).toMatchObject({ line: 5 });
   });
 });
+
+// CREATE-06 前置面(2026-11-27):self. 补全并入本实体 def 声明属性——
+// pyright 对 workspace 源码无隐式桩合并(本机复现),kode 补全面是唯一载体。
+describe('self. 补全并入 def 属性(withDefPropertyCompletions)', () => {
+  const pyDocLocal = (text: string, fileName: string): MinimalTextDocument =>
+    makeTextDocument(text, { fileName, languageId: 'python' });
+
+  const defIndex = (pythonFile: string) => ({
+    rootName: 'Hero',
+    rootCategory: 'entity',
+    rootDefFile: '/tmp/project/scripts/entity_defs/Hero.def',
+    semantics: {},
+    propertyDefinitions: [
+      {
+        defFile: '/tmp/project/scripts/entity_defs/Hero.def',
+        line: 4,
+        typeName: 'UINT32',
+        domains: ['base', 'cell'],
+        persistent: true,
+        identity: {
+          ownerKind: 'entity', ownerName: 'Hero', sourceKind: 'local',
+          sourceChain: ['Hero'], symbolName: 'hp'
+        }
+      },
+      {
+        defFile: '/tmp/project/scripts/entity_defs/Hero.def',
+        line: 8,
+        typeName: 'ANY',
+        domains: [],
+        persistent: false,
+        identity: {
+          ownerKind: 'entity', ownerName: 'Hero', sourceKind: 'local',
+          sourceChain: ['Hero'], symbolName: 'mood'
+        }
+      }
+    ],
+    methodDefinitions: [],
+    pythonOwnerFiles: [],
+    pythonMethods: []
+  });
+
+  const makeStubManager = (pythonFile: string): EntityMappingManager => {
+    const manager = new EntityMappingManager({ subscriptions: [] });
+    managers.push(manager);
+    const index = defIndex(pythonFile);
+    return new Proxy(manager, {
+      get(target, property, receiver) {
+        if (property === 'getIndexForPythonFile') return () => index;
+        return Reflect.get(target, property, receiver);
+      }
+    }) as EntityMappingManager;
+  };
+
+  it('self. 补全含 def 属性 hp(类型右列)与 mood(ANY 不显类型),detail 带 def 来源', async () => {
+    const py = '/proj/scripts/cell/Hero.py';
+    const provider = new KBEngineCompletionProvider(makeStubManager(py));
+    const doc = pyDocLocal('\tself.', py);
+    const items = (await provider.provideCompletionItems(
+      doc,
+      new Position(0, 6)
+    )) as Array<{ label: { label: string; description?: string }; detail?: string }>;
+    const labels = items.map(item => (typeof item.label === 'string' ? item.label : item.label.label));
+    expect(labels).toContain('hp');
+    expect(labels).toContain('mood');
+    const hp = items.find(item => (typeof item.label === 'string' ? item.label : item.label.label) === 'hp');
+    expect(hp?.label).toMatchObject({ description: 'UINT32' });
+    expect(hp?.detail).toContain('def 属性');
+    const mood = items.find(item => (typeof item.label === 'string' ? item.label : item.label.label) === 'mood');
+    expect(mood?.label.description).toBeUndefined();
+  });
+
+  it('def 重名内建属性让位(不重复出项)', async () => {
+    const py = '/proj/scripts/cell/Hero.py';
+    const stub = defIndex(py);
+    (stub.propertyDefinitions as Array<{ identity: { symbolName: string } }>).unshift({
+      defFile: '/tmp/x.def', line: 1, typeName: 'int', domains: ['base'], persistent: true,
+      identity: { ownerKind: 'entity', ownerName: 'Hero', sourceKind: 'local', sourceChain: ['Hero'], symbolName: 'id' }
+    });
+    const manager = new EntityMappingManager({ subscriptions: [] });
+    managers.push(manager);
+    const proxied = new Proxy(manager, {
+      get(target, property, receiver) {
+        if (property === 'getIndexForPythonFile') return () => stub;
+        return Reflect.get(target, property, receiver);
+      }
+    }) as EntityMappingManager;
+    const provider = new KBEngineCompletionProvider(proxied);
+    const doc = pyDocLocal('\tself.', py);
+    const items = (await provider.provideCompletionItems(
+      doc,
+      new Position(0, 6)
+    )) as Array<{ label: { label: string } }>;
+    const labels = items.map(item => (typeof item.label === 'string' ? item.label : item.label.label));
+    expect(labels.filter(name => name === 'id')).toHaveLength(1);
+  });
+});

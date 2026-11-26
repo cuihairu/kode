@@ -1009,7 +1009,9 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
   ): vscode.ProviderResult<vscode.CompletionItem[]> {
     const pathFace = resolveEntityComponentFaceFromPath(document.fileName);
     if (pathFace) {
-      return createBuiltinPropertyCompletionItems(pathFace);
+      return this.withDefPropertyCompletions(document, () =>
+        createBuiltinPropertyCompletionItems(pathFace)
+      );
     }
     const manager = this.entityMappingManager;
     if (!manager) {
@@ -1022,9 +1024,62 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
         if (faces === null) {
           return [];
         }
-        return createBuiltinPropertyCompletionItems(faces.length === 1 ? faces[0] : null);
+        return this.withDefPropertyCompletions(document, () =>
+          createBuiltinPropertyCompletionItems(faces.length === 1 ? faces[0] : null)
+        );
       })
       .catch(() => []);
+  }
+
+  /** CREATE-06 前置面(2026-11-27 用户令「def 属性进 class 一直没落地」):
+   * self. 补全在内建属性之外并入**本实体 def 声明的属性**(entityMapping
+   * propertyDefinitions 已有声明行/类型/域位,零新索引)。pyright/pylance 对
+   * workspace 源码没有隐式桩合并通道(本机 pyright 1.1.414 复现:同名 per-
+   * module stub 不生效,`Cannot access attribute "hp"`),引擎属性进 pylance
+   * 的路只有用户显式继承基类(侵入,不做);kode 自己的补全面是唯一可控载体。
+   * def 属性项 detail 带声明行 + 域位,与内建属性同 label 形态;重名内建优先
+   * (def 同名键让位,不重复出项)。 */
+  private withDefPropertyCompletions(
+    document: vscode.TextDocument,
+    builtin: () => vscode.CompletionItem[]
+  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+    const manager = this.entityMappingManager;
+    if (!manager) {
+      return builtin();
+    }
+    try {
+      const index = manager.getIndexForPythonFile(document.fileName);
+      if (!index || index.propertyDefinitions.length === 0) {
+        return builtin();
+      }
+      const items = builtin();
+      const seen = new Set(
+        items.map(item => (typeof item.label === 'string' ? item.label : item.label.label))
+      );
+      for (const def of index.propertyDefinitions) {
+        const propName = def.identity.symbolName;
+        if (seen.has(propName)) {
+          continue;
+        }
+        seen.add(propName);
+        const typeText = def.typeName && def.typeName !== 'ANY' ? def.typeName : undefined;
+        const item = new vscode.CompletionItem(
+          { label: propName, description: typeText },
+          vscode.CompletionItemKind.Property
+        );
+        const domains = def.domains.length ? def.domains.join('/') : 'base';
+        item.detail = `def 属性 — ${domains}${def.persistent ? '' : ', 非持久化'}`;
+        item.documentation = new vscode.MarkdownString(
+          `声明: \`${def.defFile}:${def.line}\`` +
+            (def.defaultValue ? `\n\n默认值: \`${def.defaultValue}\`` : '')
+        );
+        item.sortText = `~${propName}`; // 内建属性在前,def 属性次之(排序码点低)
+        items.push(item);
+      }
+      return items;
+    } catch {
+      return builtin();
+    }
   }
 }
 
