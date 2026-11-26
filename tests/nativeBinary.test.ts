@@ -9,9 +9,11 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) { fs.rmSync(root, { recursive: true, force: true }); } });
 
 // :2999 魔数守门——bin/ 打包面候选必须是当前平台的镜像格式;dev 构建(target/*)
-// 是本机产物不校验。fixture 用真魔数(bin 面),target 面内容随意。
+// 是本机产物不校验。fixture 用真魔数(bin 面),target 面内容随意。win32 fixture
+// 用真实 PE 头形状(MZ\x90\x00,4 字节):2 字节 MZ 文件历史上恰好骗过读取面,
+// 真 PE(首 4 字节 4d5a9000)曾被精确比对整类拒收(KODE-WINPKG-001 根因)。
 const platformMagic = (platform: 'linux' | 'darwin' | 'win32'): Buffer =>
-  platform === 'win32' ? Buffer.from('4d5a', 'hex')
+  platform === 'win32' ? Buffer.from('4d5a9000', 'hex')
   : platform === 'darwin' ? Buffer.from('cffaedfe', 'hex')
   : Buffer.from('7f454c46', 'hex');
 
@@ -56,6 +58,26 @@ it('darwin accepts fat and both endianness Mach-O magics', () => {
     expect(discoverNativeBinary(root, 'kode-server', 'darwin'))
       .toBe(path.join(root, 'bin', 'kode-server'));
   }
+});
+
+it('win32 discovers a real 4-byte PE header with no rejection (KODE-WINPKG-001)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-native-pe-'));
+  roots.push(root);
+  fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
+  // 真 PE:首 4 字节 4d5a9000(MZ\x90\x00,mingw/msvc DOS 头常见形状)。
+  // 精确比对时代这里整类拒收,rejectedReason 谎报「平台不匹配」。
+  fs.writeFileSync(path.join(root, 'bin', 'kode-server.exe'), Buffer.from('4d5a9000', 'hex'));
+  expect(discoverNativeBinaryReport(root, 'kode-server', 'win32'))
+    .toEqual({ path: path.join(root, 'bin', 'kode-server.exe'), rejectedReason: null });
+  // 截断到只剩 2 字节 MZ 也仍是 PE 形状(前缀语义),可发现
+  fs.writeFileSync(path.join(root, 'bin', 'kode-server.exe'), Buffer.from('4d5a', 'hex'));
+  expect(discoverNativeBinary(root, 'kode-server', 'win32'))
+    .toBe(path.join(root, 'bin', 'kode-server.exe'));
+  // 真 ELF 头落在 win32 = 错平台包,仍拒收并给原因
+  fs.writeFileSync(path.join(root, 'bin', 'kode-server.exe'), Buffer.from('7f454c46', 'hex'));
+  const report = discoverNativeBinaryReport(root, 'kode-server', 'win32');
+  expect(report.path).toBe('');
+  expect(report.rejectedReason).toContain('win32');
 });
 
 // RUST-060:打包面完整性——bin/manifest.json 登记了每个二进制的 sha256;

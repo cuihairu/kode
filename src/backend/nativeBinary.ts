@@ -39,11 +39,11 @@ function readHeaderHex(file: string): string | null {
   }
 }
 
-/** Does the image format match the platform? Used only for the bin/ packaging face (a dev build is a local artifact and is not subject to this gate). */
+/** Does the image format match the platform? Used only for the bin/ packaging face (a dev build is a local artifact and is not subject to this gate). Prefix match: the header reads 4 bytes while PE's MZ magic is 2 bytes, so an exact comparison would structurally reject every real Windows image. */
 function matchesPlatformFormat(file: string, platform: NodeJS.Platform): boolean {
   const header = readHeaderHex(file);
   if (header === null) { return false; }
-  return expectedMagics(platform).includes(header);
+  return expectedMagics(platform).some(magic => header.startsWith(magic));
 }
 
 /** User-readable reason for a wrong-platform package (the direct-display face; the platform form uses the same accounting as VSIX platform names) */
