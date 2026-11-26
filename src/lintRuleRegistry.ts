@@ -463,6 +463,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/proxySessionSemanticsDiagnostics.ts'
   },
+  {
+    id: 'KBE-PY-031', code: 'kbengine.entityReferenceCache',
+    title: '缓存实体引用（实体销毁后引用滞留，C++ 内存不释放；存 entity.id 用时查）',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.entityReferenceCacheDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: '改存 entity.id', status: 'implemented',
+    source: 'src/backend/entityReferenceTracking.ts（发布 src/entityReferenceWiring.ts 独立集合）'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

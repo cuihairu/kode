@@ -83,6 +83,7 @@ import { discoverVenvsCached, verifyVenvDirectory } from '../backend/venvDiscove
 import { showProfileHealthSummary } from '../profileHealth';
 import { wireDefAnalysis } from '../defAnalysisWiring';
 import { wireTrapLintDiagnostics } from '../trapDiagnosticsWiring';
+import { wireEntityReferenceCacheDiagnostics } from '../entityReferenceWiring';
 import { wireConfigValueDiagnostics } from '../configValueDiagnosticsWiring';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1006,6 +1007,9 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // self 属性悬停面接线。注册点放在全部既有诊断集合之后(集合创建序即
   // 注册表序,消费方按序取集合,不抢既有下标)
   wireTrapLintDiagnostics(context, entityMappingManager);
+  // KODE-IDXREL-001 / KBE-PY-031 实体引用缓存诊断:独立集合,自持事件监听
+  // (不进 trap Rust 聚合——应答面只认三条 code);注册点在 trap 之后
+  wireEntityReferenceCacheDiagnostics(context, entityMappingManager);
   // KSEM-CFG-05 配置值校验诊断(独立集合 kbengine-config-value,自持监听,
   // 证据分级类型 Error/枚举 Warning/未知键 Information;注册点在全部既有
   // 诊断集合之后——集合创建序即注册表序,消费方按序取集合)

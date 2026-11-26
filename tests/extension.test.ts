@@ -174,7 +174,7 @@ describe('extension activate 装配', () => {
     // 再一份(receiver-none 诊断对账);C-19 起 def 面 parity 一键生成再一份
     // (def-method-missing-in-python 诊断对账);C-23 起 FIXED_DICT 整体重赋
     // quick fix 再一份(trapDiagnosticsWiring 自持注册)
-    expect(languagesRegistry.codeActionsRegistrations).toHaveLength(5);
+    expect(languagesRegistry.codeActionsRegistrations).toHaveLength(6);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关);IDE-HOT-100 起
@@ -241,6 +241,9 @@ describe('extension activate 装配', () => {
       'kbengine-def-analysis',
       'kode-ruff',
       'kbengine-trap-lints',
+      // KODE-IDXREL-001 / KBE-PY-031 实体引用缓存诊断集(kbengine-entity-reference-cache,
+      // 注册点在 trap 之后;不进 trap Rust 聚合)
+      'kbengine-entity-reference-cache',
       // KSEM-CFG-05 配置值校验诊断集再一份(kbengine-config-value,注册点在
       // 全部既有集合之后——集合创建序即注册表序)
       'kbengine-config-value'
