@@ -117,11 +117,32 @@ const restoreShowTextDocument = (): void => {
   (stubWindow as unknown as Record<string, unknown>).showTextDocument = originalShowTextDocument;
 };
 
+/** 注入编辑器变化事件替身(默认 stub 无该事件),记录监听器供用例手动派发,
+ * 模拟真机里用户手动切回某个 tab 的导航。 */
+const installEditorChangeHook = (): { fire: (fileName: string) => void } => {
+  let listener: ((editor: unknown) => void) | null = null;
+  (stubWindow as unknown as Record<string, unknown>).onDidChangeActiveTextEditor = (
+    callback: (editor: unknown) => void
+  ): { dispose(): void } => {
+    listener = callback;
+    return { dispose: (): void => undefined };
+  };
+  return {
+    fire: (fileName: string): void => {
+      if (!listener) {
+        throw new Error('editor change listener was not registered');
+      }
+      listener({ document: { fileName } });
+    }
+  };
+};
+
 describe('base↔cell 切换连按竞态(SWITCH-DEGRADE-001)', () => {
   let root = '';
 
   afterEach(() => {
     delete (stubWindow as { activeTextEditor?: unknown }).activeTextEditor;
+    delete (stubWindow as { onDidChangeActiveTextEditor?: unknown }).onDidChangeActiveTextEditor;
     restoreShowTextDocument();
     commandRegistry.reset();
     windowState.reset();
@@ -171,6 +192,81 @@ describe('base↔cell 切换连按竞态(SWITCH-DEGRADE-001)', () => {
     const second = windowState.showTextDocumentCalls[1].document as { fsPath: string };
     expect(second.fsPath).toBe(join(root, 'scripts', 'cell', 'Hero.py'));
     expect(messages.info.join('\n')).not.toContain('未找到同名');
+  });
+
+  // Prove-red(SWITCH-DEGRADE-001 ⑥):删掉 registerProcessOwnershipSwitchCommands
+  // 内的 onDidChangeActiveTextEditor 账作废 → 本例红(误报「未找到同名 baseapp」、
+  // 零次新打开);保留账作废则绿。复现用户报「手动切回来源后再按仍失效」。
+  it('用户手动切回上一轮来源文件后:作废停泊账,以当前编辑器为准', async () => {
+    root = makeTree();
+    const editorHook = installEditorChangeHook();
+    const subscriptions: Array<{ dispose(): void }> = [];
+    registerProcessOwnershipSwitchCommands({ subscriptions } as unknown as never);
+    const cellFile = join(root, 'scripts', 'cell', 'Hero.py');
+    const baseFile = join(root, 'scripts', 'base', 'Hero.py');
+    stubWindow.activeTextEditor = { document: { fileName: cellFile } } as never;
+    // 首跳 B:cell → base(编辑器在 stub 里不自动翻转)
+    await commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
+    expect(windowState.showTextDocumentCalls).toHaveLength(1);
+    // 真机里 showTextDocument 会翻转编辑器,用户随后手动切回 cell tab →
+    // 事件必须作废停泊账;下一次 B 应当重新从 cell 跳 base。
+    stubWindow.activeTextEditor = { document: { fileName: cellFile } } as never;
+    editorHook.fire(cellFile);
+    await commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
+    expect(windowState.showTextDocumentCalls.map(c => (c.document as { fsPath: string }).fsPath))
+      .toEqual([baseFile, baseFile]);
+    expect(messages.info.join('\n')).not.toContain('未找到同名');
+  });
+
+  // Prove-red:把递归续跳的 runSwitch(next, openedPath) 改回 runSwitch(next)
+  // (丢 sourceFile 穿透) → 续跳重新读陈旧编辑器 cell,本例第二次打开变 base,
+  // 断言 [base, cell] 失败。钉「续跳以刚打开的文件为源」。
+  it('续跳以刚打开的文件为源:sourceFile 穿透递归,不重读在途编辑器变化', async () => {
+    root = makeTree();
+    const editorHook = installEditorChangeHook();
+    const subscriptions: Array<{ dispose(): void }> = [];
+    registerProcessOwnershipSwitchCommands({ subscriptions } as unknown as never);
+    stubWindow.activeTextEditor = {
+      document: { fileName: join(root, 'scripts', 'cell', 'Hero.py') }
+    } as never;
+    const slow = deferShowTextDocument();
+    const press1 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
+    const press2 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // 在途期间用户跳到 scripts 外的第三处(账因真实导航作废):续跳仍须以
+    // 刚打开的 base 文件为源,报「未找到同名 baseapp」,不能误读编辑器。
+    const elsewhere = join(root, 'elsewhere', 'Hero.py');
+    stubWindow.activeTextEditor = { document: { fileName: elsewhere } } as never;
+    editorHook.fire(elsewhere);
+    await slow.releaseAll();
+    await Promise.all([press1, press2]);
+    expect(slow.calls.map(call => call.fsPath)).toEqual([
+      join(root, 'scripts', 'base', 'Hero.py')
+    ]);
+    expect(messages.info.join('\n')).toContain('未找到同名 baseapp');
+    expect(messages.info.join('\n')).not.toContain('判不出进程归属');
+  });
+
+  // Prove-red:把 latestQueued=process 改成首次入队不覆盖(if (!latestQueued))
+  // → 第三发 B 被先到的 C 压住,续跳打开 cell,本例「只开一次」断言失败。
+  it('在途连按 B→C→B:只认最新一次(B),不是首个入队请求', async () => {
+    root = makeTree();
+    const subscriptions: Array<{ dispose(): void }> = [];
+    registerProcessOwnershipSwitchCommands({ subscriptions } as unknown as never);
+    stubWindow.activeTextEditor = {
+      document: { fileName: join(root, 'scripts', 'cell', 'Hero.py') }
+    } as never;
+    const slow = deferShowTextDocument();
+    const press1 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
+    const press2 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND);
+    const press3 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
+    await slow.releaseAll();
+    await Promise.all([press1, press2, press3]);
+    // 首跳 cell→base;最新请求仍是 B,从 base 再切 base 无对端 → 不新开文件
+    expect(slow.calls.map(call => call.fsPath)).toEqual([
+      join(root, 'scripts', 'base', 'Hero.py')
+    ]);
+    expect(messages.info.join('\n')).toContain('未找到同名 baseapp');
   });
 
   it('用户手动跳到第三处:以编辑器为准(状态机不覆盖真实导航)', async () => {

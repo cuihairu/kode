@@ -118,6 +118,22 @@ export function registerProcessOwnershipSwitchCommands(context: vscode.Extension
   let lastSwitchSource: string | null = null;
   let lastSwitchTarget: string | null = null;
 
+  // ④ 真实编辑器变化即作废旧停泊账(SWITCH-DEGRADE-001 第六轮复核 BLOCKER):
+  // 用户切换后在编辑器里手动回到来源文件,若仍拿旧账当「陈旧编辑器」回退,
+  // 下一次按键会把来源误判成目标、报「未找到同名」不跳。只有落点等于上一轮
+  // 目标(自诱导 showTextDocument 或用户就停在目标上)时保留账,其余导航一律
+  // 作废 → 以当前编辑器为准。宿主 stub 无该事件时跳过(同 reveal.ts 惯例)。
+  if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
+    const subscription = vscode.window.onDidChangeActiveTextEditor(editor => {
+      const file = editor?.document?.fileName;
+      if (file === undefined || file !== lastSwitchTarget) {
+        lastSwitchSource = null;
+        lastSwitchTarget = null;
+      }
+    });
+    context.subscriptions.push(subscription);
+  }
+
   const runSwitch = async (
     process: 'cellapp' | 'baseapp',
     sourceFile?: string
