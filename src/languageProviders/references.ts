@@ -8,6 +8,7 @@ import { DefElementNode, getLineNumberAt } from '../backend/defParser';
 import { EntityMappingManager, EntityMethodSection } from '../entityMapping';
 import { provideTypesXmlReferences } from '../typesXmlReferences';
 import { provideDefSymbolReferences } from '../defSymbolReferences';
+import { looksLikeEntityName } from './navigation';
 import { PYTHON_RECEIVER_BY_SECTION, getPythonSelfAccessAtPosition } from '../backend/pythonLanguageUtils';
 import { GlobalDataDictIndex, isKeyInsideLineComment } from '../globalDataIndex';
 import { DEF_SYMBOL_SECTIONS, METHOD_SECTIONS, elementFullRange, elementTagRange, parseDefAst, toSectionName } from './shared';
@@ -227,7 +228,15 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
       if (rustLocations !== null) {
         return rustLocations;
       }
-      if (rustFace.kind === 'none') {
+      // RUST-138 批 4 修订(2026-11-27 真机回归:def 语料语义面恒 none 的词被
+      // 截胡):Rust 语料面只覆盖 Type/Parent/Interface 三类目标;Components/
+      // DetailLevels 等其他段符号 findDefSymbolInfo 不识别 → 落进本分支,而
+      // rust 面对它们恒 none——「面外」被误当成「权威无引用」,TS 既有链
+      // (defSymbolReferences 对别名/组件等自有覆盖)被整体短路 = def 索引
+      // 「坏」的真机观感。修:none 只对三类目标才是权威空;面外词回 TS 链,
+      // 由 TS 自行如实判空(2026-11-21 拍板的「不补同名语法站点」仍成立:
+      // defSymbolReferences 内部本就不产同名语法站点,Shadow/Dangling 不回流)。
+      if (rustFace.kind === 'none' && looksLikeEntityName(word)) {
         return null;
       }
       return provideDefSymbolReferences(
