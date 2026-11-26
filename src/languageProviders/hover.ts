@@ -44,6 +44,7 @@ import { cellDataHoverMarkdown } from '../backend/cellDataHover';
 import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition, buildEntityTypeRuntimeHints } from '../kbeModuleIndex';
 import { dataDictProcessDomain, dataDictSiteInDomain, pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
+import type { DictValueTypeStore } from '../dictValueTypes';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
 import { TAG_HOVER_DOCS, getLanguageFeatureConfig } from './shared';
 import { getKodeCoreShadowGate, serveHoverFromRust } from '../backend/kodeCoreShadowFaces';
@@ -261,7 +262,10 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
   // GLOBDATA-002:数据字典键索引注入(可选),键类型悬停用;未注入跳过。
   constructor(
     private readonly entityMappingManager?: EntityMappingManager,
-    private readonly dataDictIndex?: GlobalDataDictIndex
+    private readonly dataDictIndex?: GlobalDataDictIndex,
+    // KODE-DICTTYPE-001: ordinary dict container store (optional; absent →
+    // this face is skipped and the ordinary chain answers unchanged)
+    private readonly dictValueTypes?: DictValueTypeStore
   ) {}
 
   // 批159:同点位在途 hover 去重(provider 实例级,生产单实例语义不变,
@@ -711,6 +715,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
     }
 
+    // KODE-DICTTYPE-001: ordinary dict container read hover (module CONFIG /
+    // self.config / function-local dicts). Purely synchronous on the cached
+    // per-document analysis; a miss falls through to the ordinary chain
+    // (honest null: dynamic key / unknown key / untypeable value).
+    if (document.languageId === 'python' && this.dictValueTypes && !isDataDictPosition) {
+      const containerHover = this.buildDictValueTypeHover(document, position);
+      if (containerHover) {
+        deadline.dispose();
+        return containerHover;
+      }
+    }
+
     const stopKnown = timer?.start('annotation-query');
     let known: vscode.Hover | null;
     try {
@@ -838,6 +854,66 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         // 单写点类型 + default 凑成联合时也补来源行(否则 default 来源无处可看)
         markdown.appendMarkdown(`\n\n- ${defaultType} ← 本读点 .get 默认值`);
       }
+    }
+    return new vscode.Hover(markdown);
+  }
+
+  /**
+   * KODE-DICTTYPE-001 ordinary dict read hover: same format family as the
+   * data-dict face (type headline + write-site provenance). frozen containers
+   * (single literal init, no later mutation in-file) add the config read-only
+   * tag. Union members list their own write sites; untypeable writes and
+   * deletes are counted honestly, never guessed into the union.
+   */
+  private buildDictValueTypeHover(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): vscode.Hover | null {
+    const lineText = document.lineAt(position.line).text;
+    const query = this.dictValueTypes?.queryAt(
+      document,
+      lineText,
+      position.line,
+      position.character
+    );
+    if (!query) {
+      return null;
+    }
+    const typesLabel = query.types.join(' | ');
+    const keyLabel = query.nestedKey ?? query.entry.key;
+    const markdown = new vscode.MarkdownString();
+    markdown.appendMarkdown(`**${query.container.name}\`${keyLabel}\`: ${typesLabel}**`);
+    markdown.appendMarkdown(`\n\n读点 · 同键写点 ${query.entry.sites.length} 处`);
+    const first = query.entry.sites[0];
+    if (first) {
+      markdown.appendMarkdown(`\n\n首个写点 ${path.basename(first.file)}:${first.line + 1}`);
+    }
+    if (query.entry.types.length >= 2) {
+      const byType = new Map<string, string[]>();
+      for (const site of query.entry.sites) {
+        const label = `${path.basename(site.file)}:${site.line + 1}`;
+        const labels = byType.get(site.type) ?? [];
+        if (!labels.includes(label)) {
+          labels.push(label);
+        }
+        byType.set(site.type, labels);
+      }
+      for (const [type, labels] of byType) {
+        markdown.appendMarkdown(`\n\n- ${type} ← ${labels.join(', ')}`);
+      }
+    }
+    if (query.frozen && query.types.length === 1) {
+      markdown.appendMarkdown('\n\n固定类型(config 只写,本文件内无再写)');
+    }
+    if (query.entry.untypedWrites > 0) {
+      markdown.appendMarkdown(
+        `\n\n另有 ${query.entry.untypedWrites} 处写点类型不可推(不入联合)`
+      );
+    }
+    if (query.entry.deletes > 0) {
+      markdown.appendMarkdown(
+        `\n\n同键删除点 ${query.entry.deletes} 处(读取可能落在删除之后)`
+      );
     }
     return new vscode.Hover(markdown);
   }

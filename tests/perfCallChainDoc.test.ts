@@ -328,16 +328,23 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-24(C-19-MRO):languageServices.ts MRO 判存臂接线块 lane 侧曾 +9
   // (399→408、944→953);同题双裁弃该接线块(机制留 pythonBaseChain 同源),
   // languageServices 回 38d6e015 形态 → 锚点回 399/944,真位重探核实。
+  // 2026-11-26(KODE-DICTTYPE-001):consumer wiring——languageServices.ts import
+  // DictValueTypeStore +1、store 构造装配块 +9(前四打点后、python completion
+  // 打点前)→ hover 227→240、definition#1 300→313、python completion 146→155、
+  // definition#2 399→412、python completion#2 948→963;hover.ts import +4 +
+  // buildDictValueTypeHover 方法 +4 → provideHover 316→320;completion.ts import
+  // +3 + arm 重排(普通 dict 键位上移至 fd 链前)→ provideCompletionItems#2
+  // 1134→1186。HEAD 基线与随批真位重探双面对账,内容双面确认。
   // 2026-11-25(PROC-BREADCRUMB-002 + FILE-TIME-001 并入收口):languageServices.ts
   // 标题栏上下文键装配块 +4 与行首切换镜装配块 +4(589 区,在前四打点后)→
   // completion python 语境打点 944 → 948;extension.ts 退役 fileModifiedTime
   // 解构与 fire 两行(260/795)→ 其后锚 503/615 → 502/614(diagnosticScheduler
   // 228/258 与其余锚不动)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 227, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 300, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 399, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 146, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 948, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 240, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 313, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 412, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 155, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 963, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -530,7 +537,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // RUST-140 批 3(signatureHelp 接线):hover.ts 顶部 +1 行 import
   // (serveSignatureHelpFromRust),其后 provideHover 真位重探 315→316,
   // 出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 316, 'provideHover('],
+  ['src/languageProviders/hover.ts', 320, 'provideHover('],
   ['src/languageProviders/navigation.ts', 48, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
@@ -628,7 +635,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // lspCompletionToVscode sortText/filterText/snippet/data 面 +12、
   // KBEngineCompletionProvider.resolveCompletionItem +26(均在
   // PythonCompletionProvider 之前)→ 真位重探 1086→1134,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 1134, 'provideCompletionItems('],
+  ['src/languageProviders/completion.ts', 1186, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

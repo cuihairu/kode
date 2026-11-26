@@ -87,6 +87,7 @@ import { readTempEditReloadSettings, tempEditSectionReader } from '../backend/ho
 import { GeneratedSourceCodeLensProvider } from '../generatedSourceLenses';
 import type { CoreServicesShared } from './coreServices';
 import type { InfrastructureShared } from './infrastructure';
+import { DictValueTypeStore } from '../dictValueTypes';
 
 export interface LanguageServicesDeps
   extends Pick<InfrastructureShared, 'getEngineApiCatalog' | 'defDocumentSelector' | 'definitionNavigationSelector' | 'pythonDocumentSelector'>,
@@ -129,8 +130,17 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     emptyResultStatus
   } = deps;
 
+  // KODE-DICTTYPE-001:普通 dict 键类型面按文档版本缓存的分析(store)。
+  // provider 只持同一实例;查询时按版本惰性同步(同版本零重分析,新版本
+  // 即时失效),文档关闭即弃缓存(零跨文件猜测)。
+  const dictValueTypes = new DictValueTypeStore();
+
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
-  const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager, dataDictIndex);
+  const kbengineCompletionImpl = new KBEngineCompletionProvider(
+    entityMappingManager,
+    dataDictIndex,
+    dictValueTypes
+  );
   const completionProvider = vscode.languages.registerCompletionItemProvider(
     [
       ...defDocumentSelector,
@@ -212,7 +222,11 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   // 注入实体映射管理器后,python def 声明行的「实体 def 声明的 X 方法」
   // 标注走与 RPC CodeLens 同一把形参闸门;PR1 起带 hover 打点;GLOBDATA-002
   // 起注入数据字典键索引做键类型悬停）
-  const kbengineHoverImpl = new KBEngineHoverProvider(entityMappingManager, dataDictIndex);
+  const kbengineHoverImpl = new KBEngineHoverProvider(
+    entityMappingManager,
+    dataDictIndex,
+    dictValueTypes
+  );
   const hoverProvider = vscode.languages.registerHoverProvider(
     [
       ...definitionNavigationSelector,
@@ -503,6 +517,8 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     { dispose: rootRemovals.subscribe(event => { releaseDocumentsUnderRoot(event.rootPath); }) },
     { dispose: () => pythonIndexWatchers.forEach(watcher => watcher.dispose()) },
     vscode.workspace.onDidCloseTextDocument(document => pythonClassIndex.onDocumentClosed(document)),
+    // KODE-DICTTYPE-001:文档关闭即弃普通 dict 分析缓存(与 globalData 索引同生命周期)
+    vscode.workspace.onDidCloseTextDocument(document => dictValueTypes.close(document)),
     vscode.workspace.onDidChangeWorkspaceFolders(event => {
       resetScanRootCache();
       // IDE-IDX-015/IDE-SNP-009:移除的根经统一通知整根摘除各索引记录(留存根原样保留)
@@ -713,7 +729,7 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   // provider 现读配置下一次渲染即生效,不需要配置监听 fire
   const typeInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
     pythonDocumentSelector,
-    new PythonTypeInlayHintsProvider(entityMappingManager, dataDictIndex)
+    new PythonTypeInlayHintsProvider(entityMappingManager, dataDictIndex, dictValueTypes)
   );
   context.subscriptions.push(typeInlayHintsProvider);
 

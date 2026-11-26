@@ -18,6 +18,8 @@ import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, h
 import { PYTHON_TYPE_STUB_FALLBACK, resolveCustomTypePropertyAnnotation } from '../pythonTypeStubs';
 import { GlobalDataDictIndex, resolveScopeRoot } from '../globalDataIndex';
 import { dataDictKeyCompletionContext, type DataDictKeyCompletionContext } from '../backend/globalDataIndexCore';
+import { dictValueKeyCompletionContext, type DictValueKeyCompletionContext } from '../backend/dictValueTypeCore';
+import { DictValueTypeStore } from '../dictValueTypes';
 import { spaceDataKeyCompletionContext, type SpaceDataKeyCompletionContext } from '../backend/spaceDataIndexCore';
 import { getSpaceDataIndex, isSpaceDataIndexEnabled } from '../spaceDataIndex';
 import { awaitDataDictIndexReady, awaitSpaceDataIndexReady, isPythonDataDictIndexEnabled } from './pythonDefinition';
@@ -334,7 +336,9 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     private readonly entityMappingManager?: EntityMappingManager,
     // KSEM-DATA-02:共享数据键补全消费面(可选注入;缺省时本面静默让位,
     // 既有无参用例口径不变)
-    private readonly dataDictIndex?: GlobalDataDictIndex
+    private readonly dataDictIndex?: GlobalDataDictIndex,
+    // KODE-DICTTYPE-001:普通 dict 容器键补全(可选注入;缺省时本面静默让位)
+    private readonly dictValueTypes?: DictValueTypeStore
   ) {}
 
   provideCompletionItems(
@@ -386,6 +390,19 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       return this.provideSpaceDataKeyCompletions(document, position, spaceDataCtx, token).then(
         async items =>
           items !== null ? items : this.provideCompletionItemsSync(document, position, token)
+      );
+    }
+    // KODE-DICTTYPE-001:普通 dict 容器键位(`CONFIG["par` / `self.config.get(`
+    // 含)→ 本文件分析过的容器键族补全(键 + 推断类型 + frozen 标注)。非
+    // 普通容器接收者(KBEngine.* 由上方面 own)→ null 落回同步链,既有键位
+    // 路径契约不变。
+    const dictValueCtx = dictValueKeyCompletionContext(
+      document.lineAt(position.line).text,
+      position.character
+    );
+    if (dictValueCtx && this.dictValueTypes) {
+      return this.provideDictValueKeyCompletions(document, position, dictValueCtx).then(
+        items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
       );
     }
     // KSEM-STRUCT-02:FIXED_DICT 子字段下标链键位(嵌套 ["k"]["k2"] / .get("k")
@@ -721,6 +738,41 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     // RUST-004-W1:未就绪的部分键族照样列出(部分真实内容),列表标
     // isIncomplete——编辑器后续输入重查,初扫完成后自然补全,不装终答
     return marked.ready ? items : new vscode.CompletionList(items, true);
+  }
+
+  /**
+   * KODE-DICTTYPE-001 ordinary dict key completion: receivers this file's
+   * analysis recognized (module CONFIG / self attribute / function-local
+   * dict). detail = inferred union types (+frozen tag when the container had
+   * a single literal init and no later mutation in-file). No matching keys
+   * → [](key position offers nothing, never invented); receiver not an
+   * ordinary dict container → null (the sync chain answers).
+   */
+  private async provideDictValueKeyCompletions(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    ctx: DictValueKeyCompletionContext
+  ): Promise<vscode.CompletionItem[] | null> {
+    const store = this.dictValueTypes;
+    if (!store) {
+      return null;
+    }
+    store.syncDocument(document); // current edits included, zero staleness
+    const queries = store.resolveReceiver(document, ctx);
+    if (queries.length === 0) {
+      return []; // key position offers nothing, never invented
+    }
+    const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
+    const items: vscode.CompletionItem[] = [];
+    for (const query of queries) {
+      const typeLabel = query.types.join(' | ');
+      const detail = query.frozen ? `${typeLabel} · frozen` : typeLabel;
+      const item = new vscode.CompletionItem(query.entry.key, vscode.CompletionItemKind.Variable);
+      item.detail = detail;
+      item.range = range;
+      items.push(item);
+    }
+    return items;
   }
 
   /**

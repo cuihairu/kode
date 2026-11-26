@@ -44,6 +44,8 @@ import {
   scanCellDataKeyOperations
 } from './backend/cellDataReadType';
 import { flowVersionKeyForDocument } from './flowVersionKey';
+import { DictValueTypeStore } from './dictValueTypes';
+import { findDictValueAccessesOnLine } from './backend/dictValueTypeCore';
 
 /**
  * KSEM-CELL-06 cellData 键宇宙缓存:按文档版本键(flowVersionKey)记忆
@@ -76,7 +78,9 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
   constructor(
     private entityMappingManager: EntityMappingManager,
     // GLOBDATA-002:数据字典键索引(读点类型并同键写点值类型);未注入跳过
-    private dataDictIndex?: GlobalDataDictIndex
+    private dataDictIndex?: GlobalDataDictIndex,
+    // KODE-DICTTYPE-001:普通 dict 容器键类型面(读点行尾 : <类型>);未注入跳过
+    private dictValueTypes?: DictValueTypeStore
   ) {}
 
   async provideInlayHints(
@@ -185,8 +189,59 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     await this.collectSelfPropertyElementHints(document, range, documentLines, propertyWorkspaceRoot, hints);
     await this.collectRpcParameterHints(document, range, hints);
     await this.collectDataDictHints(document, range, documentLines, hints, token);
+    this.collectDictValueHints(document, range, documentLines, hints, token);
     await this.collectCellDataReadHints(document, range, documentLines, hints);
     return hints;
+  }
+
+  /**
+   * KODE-DICTTYPE-001 read-point inline types for ordinary dict containers
+   * (module CONFIG / self attribute / function-local dict). Only inferable
+   * types are shown; unknown values and missing keys stay hidden, same strict
+   * contract as the data-dict face. Write/delete points have no value-type
+   * face here. KBEngine.* receivers are owned by GLOBDATA-002 and excluded by
+   * the core analyzer.
+   */
+  private collectDictValueHints(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    documentLines: string[],
+    hints: vscode.InlayHint[],
+    token?: vscode.CancellationToken
+  ): void {
+    if (!this.dictValueTypes) {
+      return;
+    }
+    const analysis = this.dictValueTypes.syncDocument(document);
+    if (!analysis) {
+      return;
+    }
+    const constantBindings = extractModuleConstantBindings(document.getText());
+    const startLine = Math.max(0, range.start.line);
+    const endLine = Math.min(documentLines.length - 1, range.end.line);
+    for (let line = startLine; line <= endLine; line += 1) {
+      if (token?.isCancellationRequested) {
+        return;
+      }
+      const lineText = documentLines[line];
+      for (const access of findDictValueAccessesOnLine(analysis, lineText, line, constantBindings)) {
+        if (access.kind !== 'read') {
+          continue;
+        }
+        const query = access.query;
+        if (!query || query.types.length === 0) {
+          continue; // 无写点/全未知/键不存在 → 不出(能推才显)
+        }
+        const deepest = access.segments[access.segments.length - 1];
+        hints.push(
+          new vscode.InlayHint(
+            new vscode.Position(line, deepest.exprEnd),
+            `: ${query.types.join(' | ')}`,
+            vscode.InlayHintKind.Type
+          )
+        );
+      }
+    }
   }
 
   /**
