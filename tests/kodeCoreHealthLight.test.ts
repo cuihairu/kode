@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CORE_ERROR_BACKGROUND_COLOR_ID,
   CORE_HEALTH_PANEL_COMMAND,
+  CORE_RELOAD_WINDOW_HINT,
   CoreHealthGateSnapshot,
   CoreHealthLightKind,
   CoreHealthStatusBarItemLike,
@@ -108,6 +109,14 @@ describe('resolveCoreHealthLight 六态仲裁', () => {
     expect(faces.ok.errorBackground).toBeFalsy();
   });
 
+  it('KODE-COREDISCOVER-001: reload guidance appears only on the bypassed face', () => {
+    const faces = coreHealthLightFaces();
+    expect(faces.bypassed.tooltip).toContain('Developer: Reload Window');
+    expect(faces.bypassed.tooltip).toContain(CORE_RELOAD_WINDOW_HINT);
+    expect(faces.ok.tooltip).not.toContain('Developer: Reload Window');
+    expect(faces.off.tooltip).not.toContain('Developer: Reload Window');
+  });
+
   it('脸面文案经 l10n 双态:英文系统=英文源串,中文系统=zh-cn 包译文', () => {
     try {
       expect(coreHealthLightFaces().ok.text).toBe('$(check) Core: ok');
@@ -193,6 +202,7 @@ interface Harness {
   restarts: () => number;
   switches: () => Array<'ts' | 'rust' | 'shadow'>;
   firePanel: () => void;
+  order: string[];
 }
 
 const tick = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
@@ -200,6 +210,7 @@ const tick = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
 /** 装配假依赖控制器;snapshot 可后期改写以驱动不同仲裁分支 */
 const makeHarness = (overrides?: {
   snapshot?: Partial<CoreHealthGateSnapshot>;
+  rerediscover?: () => void;
 }): Harness => {
   const bar = makeBar();
   const timers = makeTimers();
@@ -215,6 +226,7 @@ const makeHarness = (overrides?: {
   const backendSwitches: Array<'ts' | 'rust' | 'shadow'> = [];
   let panelHandler: (() => void) | null = null;
   const snapshot: CoreHealthGateSnapshot = { ...baseSnapshot(), ...overrides?.snapshot };
+  const callOrder: string[] = [];
   const deps: KodeCoreHealthLightDeps = {
     createStatusBarItem: () => bar,
     registerCommand: (_command, handler) => {
@@ -222,7 +234,10 @@ const makeHarness = (overrides?: {
       return { dispose: () => undefined };
     },
     timers: timers.deps,
-    snapshot: () => snapshot,
+    snapshot: () => {
+      callOrder.push('snapshot');
+      return snapshot;
+    },
     probe: async () => {
       probeCount += 1;
       if (probeOutcome === 'throw') {
@@ -244,6 +259,12 @@ const makeHarness = (overrides?: {
     setBackend: mode => {
       backendSwitches.push(mode);
     },
+    rerediscover: overrides?.rerediscover
+      ? () => {
+          callOrder.push('rerediscover');
+          overrides.rerediscover?.();
+        }
+      : undefined,
   };
   const controller = new KodeCoreHealthLightController(deps);
   return {
@@ -263,8 +284,10 @@ const makeHarness = (overrides?: {
     restarts: () => restartCount,
     switches: () => backendSwitches,
     firePanel: () => {
+      callOrder.length = 0;
       panelHandler?.();
     },
+    order: callOrder,
   };
 };
 
@@ -381,6 +404,39 @@ describe('KodeCoreHealthLightController 假依赖面', () => {
     h.resolvePicks('Switch to rust track');
     await tick();
     expect(h.switches(), '选中才切轨').toEqual(['rust']);
+    h.controller.dispose();
+  });
+
+  it('KODE-COREDISCOVER-001: panel re-discovers before reading the snapshot; bypassed detail carries the reload hint', async () => {
+    const rediscoveries: string[] = [];
+    const h = makeHarness({
+      snapshot: { backendMode: 'rust', serverPathPresent: false },
+      rerediscover: () => {
+        rediscoveries.push('rerediscover');
+      },
+    });
+    await tick();
+    expect(h.controller.kind).toBe('bypassed');
+    h.order.length = 0;
+    h.firePanel();
+    expect(h.order[0]).toBe('rerediscover');
+    expect(h.order.indexOf('rerediscover')).toBeLessThan(h.order.indexOf('snapshot'));
+    expect(rediscoveries).toHaveLength(1);
+    expect(h.messages()[0]).toContain(CORE_RELOAD_WINDOW_HINT);
+    h.resolvePicks(undefined);
+    h.controller.dispose();
+  });
+
+  it('KODE-COREDISCOVER-001: panel re-discovery runs before the first snapshot read', async () => {
+    const h = makeHarness({ rerediscover: () => undefined });
+    await tick();
+    h.order.length = 0;
+    h.firePanel();
+    expect(h.order[0]).toBe('rerediscover');
+    expect(h.order.indexOf('rerediscover')).toBeLessThan(h.order.indexOf('snapshot'));
+    // ok face detail does not carry the bypassed-only guidance
+    expect(h.messages()[0]).not.toContain(CORE_RELOAD_WINDOW_HINT);
+    h.resolvePicks(undefined);
     h.controller.dispose();
   });
 

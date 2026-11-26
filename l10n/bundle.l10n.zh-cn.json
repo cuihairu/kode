@@ -811,7 +811,6 @@
   "$(check) Core: ok": "$(check) Core: 正常",
   "$(pulse) Core: probing": "$(pulse) Core: 待探活",
   "kbengine.core.backend is ts (pure TS track); there is no Rust Core process to probe.": "kbengine.core.backend=ts,纯 TS 轨道,没有可探的 Rust Core 进程。",
-  "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks.": "kbengine.core.backend 配置为 rust/shadow,但未找到 kode-server 二进制(kbengine.core.serverPath 未配置且自动发现落空),当前实际回落 TS 轨道。点击本灯可切换轨道。",
   "kode-server health probe failed (process not started, exited, or hung). Index/jump/CodeLens will fall back to TS or stall.": "kode-server 健康探针失败(进程未启动、已退出或挂死)。索引/跳转/CodeLens 将退 TS 或停摆。",
   "Core probe passed, but the command leg recently timed out (enough consecutive timeouts opens the circuit and routes commands to the TS fallback).": "Core 探针通过,但命令腿最近出现超时(连续超时会熔断,命令级功能走 TS 回落)。",
   "kode-server health probe passed. Click this item for details.": "kode-server 健康探针通过。点击本灯查看详情。",
@@ -838,5 +837,7 @@
   "inherited from `{className}`": "继承自父类 `{className}`",
   "{count} implementations on the chain, showing the nearest": "链上共 {count} 处实现,显示最近一处",
   "Inheritance chain": "继承链",
-  "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.": "KBEngine 内存监控：{type} 泄漏计数连续 3 个采样周期非零（当前 {count}），疑似对象泄漏。"
+  "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.": "KBEngine 内存监控：{type} 泄漏计数连续 3 个采样周期非零（当前 {count}），疑似对象泄漏。",
+  "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks. If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "kbengine.core.backend 配置为 rust/shadow,但未找到 kode-server 二进制(kbengine.core.serverPath 未配置且自动发现落空),当前实际回落 TS 轨道。点击本灯可切换轨道。 如果刚安装或更新扩展，请执行 Developer: Reload Window 让激活链重新发现二进制。",
+  "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "如果刚安装或更新扩展，请执行 Developer: Reload Window 让激活链重新发现二进制。"
 }

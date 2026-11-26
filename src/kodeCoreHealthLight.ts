@@ -26,6 +26,11 @@ export const CORE_HEALTH_PANEL_COMMAND = 'kbengine.core.healthPanel';
 export const CORE_HEALTH_PROBE_INTERVAL_MS = 10_000;
 export const CORE_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 
+/** Shown only in the bypassed face (tooltip and panel): a late install still
+ * needs a reload if bin/ events were missed during activation. */
+export const CORE_RELOAD_WINDOW_HINT =
+  'If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.';
+
 export type CoreHealthLightKind =
   | 'off'
   | 'bypassed'
@@ -75,7 +80,7 @@ const CORE_HEALTH_FACE_TEXT: Record<CoreHealthLightKind, string> = {
 const CORE_HEALTH_FACE_TOOLTIP: Record<CoreHealthLightKind, string> = {
   off: 'kbengine.core.backend is ts (pure TS track); there is no Rust Core process to probe.',
   bypassed:
-    'kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks.',
+    'kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks. If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.',
   unresponsive:
     'kode-server health probe failed (process not started, exited, or hung). Index/jump/CodeLens will fall back to TS or stall.',
   degraded:
@@ -226,6 +231,8 @@ export interface KodeCoreHealthLightDeps {
   readonly restartCore?: () => void;
   /** 轨道切换动作(接线层注 writeCoreBackendMode;缺省=面板不提供切换项) */
   readonly setBackend?: (mode: 'ts' | 'rust' | 'shadow') => void;
+  /** Re-discover the packaged binary before a panel read; unset = no behavior. */
+  readonly rerediscover?: () => void;
 }
 
 export const CORE_ERROR_BACKGROUND_COLOR_ID = 'statusBarItem.errorBackground';
@@ -307,6 +314,16 @@ export class KodeCoreHealthLightController {
 
   /** 点击面板:诊断详情即时可得(当前态+探针账+配置);重启与切轨必须用户选择 */
   private showPanel(): void {
+    // KODE-COREDISCOVER-001: the panel must show the live discovery result, not
+    // the activation-time snapshot; a late bin/ landing must be picked up here.
+    if (this.deps.rerediscover) {
+      try {
+        this.deps.rerediscover();
+      } catch (error) {
+        console.error('Core rediscovery failed; showing last known state', error);
+      }
+    }
+    this.render();
     const snapshot = this.deps.snapshot();
     const kind = resolveCoreHealthLight({ ...snapshot, probe: this.lastProbe });
     const probeLine = this.lastProbe
@@ -345,7 +362,8 @@ export class KodeCoreHealthLightController {
       backendLine,
       probeLine,
       ...(reasonLine ? [reasonLine] : []),
-      circuitLine
+      circuitLine,
+      ...(kind === 'bypassed' ? [l10nText(CORE_RELOAD_WINDOW_HINT)] : [])
     ].join('; ');
     this.deps.showMessage(detail);
     const actions = resolveCoreHealthPanelActions(

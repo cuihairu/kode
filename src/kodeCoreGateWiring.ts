@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { discoverNativeBinary } from './backend/nativeBinary';
 
@@ -19,6 +20,39 @@ import { setKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 
 export const CORE_SHADOW_CHANNEL_NAME = 'KBEngine Core Shadow';
 export const SHOW_SHADOW_DIFF_LOG_COMMAND = 'kbengine.core.showShadowDiffLog';
+/** KODE-COREDISCOVER-001: debounce for batched bin/ file events (installers drop
+ * the binary set in quick bursts; one rediscovery per burst). */
+export const CORE_BIN_REDISCOVER_DEBOUNCE_MS = 300;
+
+/** Re-run the packaged-binary discovery and apply the resulting gate config.
+ * The gate itself only caches what activation-time discovery produced, so after
+ * the bin/ files land this must be called before health surfaces show the
+ * current truth. */
+const rediscoveryRefreshers = new Set<() => void>();
+
+/** Register the existing health/status refresh surface to run after a
+ * bin/ re-discovery. The registry keeps the wiring one-directional: the gate
+ * assembly owns the event, the status assembly owns the refresh function. */
+export function registerCoreRediscoveryRefresh(refresh: () => void): vscode.Disposable {
+  rediscoveryRefreshers.add(refresh);
+  return {
+    dispose: () => {
+      rediscoveryRefreshers.delete(refresh);
+    }
+  };
+}
+
+/** Test-only: drop refreshers registered by a prior activation. */
+export function resetCoreRediscoveryRefreshersForTests(): void {
+  rediscoveryRefreshers.clear();
+}
+
+export function rerediscoverCore(gate: KodeCoreGate, extensionRoot: string): void {
+  gate.setConfig(readCoreGateConfig(extensionRoot));
+  for (const refresh of rediscoveryRefreshers) {
+    refresh();
+  }
+}
 
 function formatDiffEntry(entry: ShadowDiffEntry): string {
   const parts = [`#${entry.seq}`, entry.timestamp, entry.verdict, entry.method];
@@ -134,6 +168,52 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
   // (类型/实体/别名/继承链只由已镜像文档入库)。fire-and-forget,不阻塞
   // 激活;非服务轨道零开销。(镜像入口先注册扫描根再镜像,见 corpusMirror。)
   void mirrorCorpusToRust(gate);
+
+  // KODE-COREDISCOVER-001: packaged binaries may land after activation (a slow
+  // VSIX unpack, or a stale gate instance after an update). The gate caches the
+  // activation-time serverPath, so watch bin/ and re-discover on file events.
+  // Failure to create the watcher is logged and ignored: discovery must never
+  // block activation. No polling is introduced; this is purely event-driven.
+  let rediscoverTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleRerediscover = (): void => {
+    if (rediscoverTimer !== undefined) {
+      clearTimeout(rediscoverTimer);
+    }
+    rediscoverTimer = setTimeout(() => {
+      rediscoverTimer = undefined;
+      try {
+        rerediscoverCore(gate, extensionRoot);
+      } catch (error) {
+        console.error('Kode Core binary re-discovery failed', error);
+      }
+    }, CORE_BIN_REDISCOVER_DEBOUNCE_MS);
+  };
+  const binDir = path.join(extensionRoot, 'bin');
+  let binWatcher: vscode.FileSystemWatcher | undefined;
+  try {
+    binWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(binDir, '*')
+    );
+    binWatcher.onDidCreate(scheduleRerediscover);
+    binWatcher.onDidChange(scheduleRerediscover);
+    binWatcher.onDidDelete(scheduleRerediscover);
+  } catch (error) {
+    // Observable but non-fatal: the gate still works with the activation-time
+    // path; Reload Window remains the documented manual fallback.
+    binWatcher = undefined;
+    console.error('Kode Core bin watcher unavailable', error);
+  }
+  if (binWatcher) {
+    context.subscriptions.push({
+      dispose: () => {
+        if (rediscoverTimer !== undefined) {
+          clearTimeout(rediscoverTimer);
+          rediscoverTimer = undefined;
+        }
+        binWatcher?.dispose();
+      }
+    });
+  }
 
   // RUST-069-W:工作区根生命周期接入 Rust 唯一根注册表——folder 增删 /
   // assetsRoot 切换的根集差量(rootAdded/rootRemoved)同步给 Rust,移除
@@ -265,7 +345,11 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
         );
       });
     },
+    // KODE-COREDISCOVER-001: opening the panel must show the live bin/ result.
+    rerediscover: () => rerediscoverCore(gate, extensionRoot),
   });
+  // Watcher re-discovery also re-renders the light with the new serverPath.
+  const healthRediscoveryRefresh = registerCoreRediscoveryRefresh(() => healthLight.render());
 
   const configWatcher = vscode.workspace.onDidChangeConfiguration(event => {
     if (
@@ -294,6 +378,7 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
     deletedFilesWatcher,
     showDiffLogCommand,
     healthLight,
+    healthRediscoveryRefresh,
     unsubscribe
   );
   // Phase2 首片:把门交给定义/诊断 provider 的影子对拍入口(默认 ts 下

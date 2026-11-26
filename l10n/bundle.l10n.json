@@ -811,7 +811,6 @@
   "$(check) Core: ok": "$(check) Core: ok",
   "$(pulse) Core: probing": "$(pulse) Core: probing",
   "kbengine.core.backend is ts (pure TS track); there is no Rust Core process to probe.": "kbengine.core.backend is ts (pure TS track); there is no Rust Core process to probe.",
-  "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks.": "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks.",
   "kode-server health probe failed (process not started, exited, or hung). Index/jump/CodeLens will fall back to TS or stall.": "kode-server health probe failed (process not started, exited, or hung). Index/jump/CodeLens will fall back to TS or stall.",
   "Core probe passed, but the command leg recently timed out (enough consecutive timeouts opens the circuit and routes commands to the TS fallback).": "Core probe passed, but the command leg recently timed out (enough consecutive timeouts opens the circuit and routes commands to the TS fallback).",
   "kode-server health probe passed. Click this item for details.": "kode-server health probe passed. Click this item for details.",
@@ -838,5 +837,7 @@
   "inherited from `{className}`": "inherited from `{className}`",
   "{count} implementations on the chain, showing the nearest": "{count} implementations on the chain, showing the nearest",
   "Inheritance chain": "Inheritance chain",
-  "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.": "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak."
+  "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.": "KBEngine memory monitor: {type} leak count stayed nonzero for 3 samples (now {count}); possible object leak.",
+  "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks. If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "kbengine.core.backend is configured as rust/shadow but no kode-server binary was found (kbengine.core.serverPath is unset and auto-discovery came up empty); the extension is actually running the TS track. Click this item to switch tracks.",
+  "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again.": "If the extension was just installed or updated, run Developer: Reload Window to let the activation chain discover the binary again."
 }

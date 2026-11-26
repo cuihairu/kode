@@ -31,6 +31,7 @@ import {
 } from '../backend/kodeServiceStatus';
 import type { KodeMcpProbeResult } from '../kodeMcpHealthProbe';
 import { KODE_MCP_ENABLED_SETTING, KODE_MCP_TOGGLE_COMMAND } from '../kodeMcpHost';
+import { registerCoreRediscoveryRefresh } from '../kodeCoreGateWiring';
 
 export const KODE_CORE_STATUS_PRIORITY = 94;
 export const KODE_MCP_STATUS_PRIORITY = 93;
@@ -150,6 +151,9 @@ export function setupKodeServiceStatusBar(
   });
   context.subscriptions.push(configListener);
 
+  // KODE-COREDISCOVER-001: when a bin/ file lands after activation the watcher
+  // re-discovers and re-arms this status surface with the live serverPath.
+  context.subscriptions.push(registerCoreRediscoveryRefresh(refresh));
   refresh();
   runMcpProbeOnce();
 }
