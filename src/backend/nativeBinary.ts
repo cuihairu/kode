@@ -42,6 +42,8 @@ function readHeaderHex(file: string): string | null {
 /** Does the image format match the platform? Used only for the bin/ packaging face (a dev build is a local artifact and is not subject to this gate). Prefix match: the header reads 4 bytes while PE's MZ magic is 2 bytes, so an exact comparison would structurally reject every real Windows image. */
 function matchesPlatformFormat(file: string, platform: NodeJS.Platform): boolean {
   const header = readHeaderHex(file);
+  // ACT-TRACE(2026-11-27):真机排障——每次魔数判定落一行 console,exthost.log 可见。
+  console.log(`[kode-trace] magic check ${file} header=${header} platform=${platform}`);
   if (header === null) { return false; }
   return expectedMagics(platform).some(magic => header.startsWith(magic));
 }

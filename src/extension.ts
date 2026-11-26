@@ -4,6 +4,7 @@ import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { disposePythonParserWorker, getPythonParserWorkerGauge } from './backend/pythonParserWorkerHost';
 import { disposeDefParserWorker } from './backend/defParserWorkerHost';
 import { flushActivateProfile, markActivateStage } from './backend/activationProfile';
+import { discoverNativeBinaryReport } from './backend/nativeBinary';
 
 
 
@@ -156,6 +157,22 @@ import { getFileReadTotals } from './backend/fileReadMetrics';
  */
 
 export function activate(context: vscode.ExtensionContext) {
+  // ACT-TRACE(2026-11-27 用户令):激活链路 console 级追踪——exthost.log 直接
+  // 可见,不依赖 Output 面板。activate 进入即打点:扩展版本、host 平台、
+  // extension 路径,用于真机排障(装包后状态栏与实际激活态不符的场景)。
+  console.log(
+    `[kode-trace] activate enter v0.2.0 host=${process.platform} arch=${process.arch} ` +
+    `ext=${context.extensionUri.fsPath}`
+  );
+  try {
+    const binReport = discoverNativeBinaryReport(context.extensionUri.fsPath, 'kode-mcp');
+    console.log(
+      `[kode-trace] bin discover kode-mcp -> '${binReport.path || '(not found)'}' ` +
+      `rejected=${binReport.rejectedReason ?? 'none'}`
+    );
+  } catch (traceError) {
+    console.log(`[kode-trace] bin discover threw: ${String(traceError)}`);
+  }
   // RUST-022:activate() 同步体分段计时常驻埋点——markActivateStage 落标签、
   // 返回前 flushActivateProfile 落盘(step/total 逐段)。仅在调用方设置了
   // KODE_ACTIVATE_PROFILE_OUT(输出文件路径)时有行为,未设置时全部调用

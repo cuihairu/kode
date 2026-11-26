@@ -38,6 +38,7 @@ import {
 } from './pythonStubExport';
 import { processStubRoot } from './backend/pythonProcess';
 import { syncProcessPythonConfiguration, processConfigFs, type ProcessConfigDeps } from './pythonProcessConfig';
+import { detectKbEngineWorkspace } from './workspaceGate';
 import { typeStubArtifactExists } from './pythonTypeStubs';
 import {
   enforceRoleIsolation,
@@ -289,6 +290,21 @@ export async function syncPythonExtraPaths(
       await vscode.window.showInformationMessage('未打开工作区,跳过 Python extraPaths 接线');
     }
     return;
+  }
+  // KBEngine workspace 确认(2026-11-26 用户令:任意目录乱建 .kbengine/
+  // pyrightconfig.json = 瞎搞)。激活期自动同步(silent)只对有 KBEngine
+  // 信号(def/entities/types/alias xml)的工作区落盘;手动命令显式跑,
+  // 用户意图明确,照旧执行。
+  if (options.silent) {
+    const roots = folders.map(folder => folder.uri.fsPath);
+    const isKbe = await detectKbEngineWorkspace({
+      workspaceRoots: roots,
+      findFiles: (include, maxResults) =>
+        vscode.workspace.findFiles(include, null, maxResults)
+    });
+    if (!isKbe) {
+      return;
+    }
   }
   const written: string[] = [];
   // IDE-PRJ-006:跨角色同名模块播报(非静默模式);隔离闸在 plan 内,

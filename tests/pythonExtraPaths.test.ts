@@ -458,6 +458,12 @@ describe('syncPythonExtraPaths(装配层)', () => {
 
   it('静默模式全程零提示,成功写入也不弹(激活期约定)', async () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    // 2026-11-27(KBE-GATE):激活期静默同步先过 KBEngine workspace 门
+    // (无 def/entities/types/alias 信号的工作区零写入)。fake workspace 无
+    // findFiles,注入一个返回信号文件的 fake,模拟 KBEngine 项目。
+    (stubWorkspace as unknown as { findFiles: unknown }).findFiles = async () => [
+      Uri.file('/ws/entities/entities.xml')
+    ];
 
     await syncPythonExtraPaths(makeContext(), {
       exists: (): boolean => true,
@@ -466,6 +472,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
 
     expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(3);
     expect(messages.info).toHaveLength(0);
+    delete (stubWorkspace as { findFiles?: unknown }).findFiles;
     stubWorkspace.workspaceFolders = [];
   });
 
