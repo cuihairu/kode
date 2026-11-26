@@ -219,7 +219,13 @@ export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
             {
               title: spec.title,
               command: KBENGINE_SOURCE_REVEAL_COMMAND,
-              arguments: [vscode.Uri.file(spec.defPath), { selection: createDefinitionSelection(0) }]
+              // init-order spec 只解析到 def 文件路径,没有目标行号:不传
+              // selection(reveal 命令对缺省 selection=只开档不滚显)。此前
+              // 占位 createDefinitionSelection(0) 构造 Position(-1) 恒抛
+              // Illegal argument,整轮 provideCodeLenses 抛错,实体类文件上
+              // 访问镜与本镜全灭(VS Code 静默吃 provider 异常,2026-11-26
+              // 真机走查钓出)。
+              arguments: [vscode.Uri.file(spec.defPath)]
             }
           )
         );
