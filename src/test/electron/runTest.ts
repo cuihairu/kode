@@ -50,6 +50,9 @@ async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(__dirname, '../../..');
   const extensionTestsPath = path.resolve(__dirname, 'suite/index.js');
   const demoMode = process.argv.includes('--demo');
+  // 编辑器内体验面真机走查(uxWalkthrough.test.ts):装配与 --demo 同款
+  // (demo 资产副本作工作区,可改写钉混合面),suite 过滤切 uxwalk。
+  const uxwalkMode = process.argv.includes('--uxwalk');
   const vsixMode = process.argv.includes('--vsix');
   const fieldMode = process.argv.includes('--field');
   const multirootMode = process.argv.includes('--multiroot');
@@ -276,8 +279,9 @@ async function main(): Promise<void> {
     process.env.KODE_BUNDLE_FALLBACK_TEMP = temporaryRoot;
     localeArgs = ['--extensions-dir', extensionsDir, '--user-data-dir', userDataDir, '--locale=zh-cn'];
   }
-  if (demoMode) {
-    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-demo-'));
+  if (demoMode || uxwalkMode) {
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(),
+      demoMode ? 'kode-kbengine-demo-' : 'kode-kbengine-uxwalk-'));
     const demoSource = path.resolve(extensionDevelopmentPath, 'tests/fixtures/kbengine-demo-assets');
     workspacePath = path.join(temporaryRoot, 'kbengine-demo-assets');
     fs.cpSync(demoSource, workspacePath, { recursive: true });
@@ -289,7 +293,7 @@ async function main(): Promise<void> {
       'kbengine.python.extraPathsSync': false,
       'kbengine.jumpLog': true
     }, null, 2));
-    process.env.KODE_ELECTRON_SUITE = 'demo';
+    process.env.KODE_ELECTRON_SUITE = demoMode ? 'demo' : 'uxwalk';
     process.env.KODE_DEMO_WORKSPACE = workspacePath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   } else if (vsixMode) {
