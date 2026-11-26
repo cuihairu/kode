@@ -1,17 +1,19 @@
-//! 客户端实体 SDK 独立生成器(CI/bin 面):不依赖 VS Code 会话,直接从资产根
-//! (`scripts/entities.xml` + `scripts/entity_defs/`)生成客户端骨架到输出目录。
-//! 生成核心与扩展 `$/kode/sdk/generate` RPC 同一函数,双入口零分叉。
+//! Standalone client entity SDK generator (CI/bin face): needs no VS Code
+//! session; generates the client skeleton straight from the asset root
+//! (`scripts/entities.xml` + `scripts/entity_defs/`) into an output directory.
+//! The generation core is the same function as the extension
+//! `$/kode/sdk/generate` RPC; two entry points, zero divergence.
 //!
-//! 用法:
+//! Usage:
 //! ```text
 //! client-sdk-gen --assets-root <dir> --language <python|typescript|csharp>
-//!   [--out <dir>]            缺省 <assets-root>/scripts/client_entities
-//!   [--namespace <ns>]       C# 命名空间(缺省 KbEngineClient)
-//!   [--engine-version <v> --engine-commit <sha>]  头部溯源(须成对给)
-//!   [--generated-at <text>]  头部生成时间戳(缺省空)
+//!   [--out <dir>]            defaults to <assets-root>/scripts/client_entities
+//!   [--namespace <ns>]       C# namespace (defaults to KbEngineClient)
+//!   [--engine-version <v> --engine-commit <sha>]  header provenance (must be given as a pair)
+//!   [--generated-at <text>]  header generation timestamp (defaults to empty)
 //! ```
-//! CI 例:`cargo build -p kode-server --bin client-sdk-gen --release` 后
-//! `./target/release/client-sdk-gen --assets-root assets --language python --out tests/generated`。
+//! CI example: after `cargo build -p kode-server --bin client-sdk-gen --release`,
+//! `./target/release/client-sdk-gen --assets-root assets --language python --out tests/generated`.
 
 use std::path::PathBuf;
 

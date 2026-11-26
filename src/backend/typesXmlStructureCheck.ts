@@ -10,76 +10,90 @@ import {
 } from './defParser';
 
 /**
- * types.xml 结构完整性检查(RUST-177/KBE-007 诊断面,纯核零 vscode):
- * 别名前向引用/循环、`_` 保留前缀、别名重定义、ARRAY `<of>` 链缺失/目标
- * 未知、FIXED_DICT 结构(缺 Properties/无字段/字段缺 Type/字段类型未知)
- * 与 FD 字段 ENTITYCALL 静默降持久化——全部按引擎装载真源逐条取证。
+ * types.xml structure integrity check (RUST-177/KBE-007 diagnostic face, pure core, zero vscode):
+ * alias forward references/cycles, `_` reserved prefix, alias redefinition, ARRAY `<of>`
+ * chain missing/unknown target, FIXED_DICT structure (missing Properties/no fields/field
+ * missing Type/unknown field type) and FD field ENTITYCALL silent persistence demotion —
+ * all verified item by item against the engine's real loading source.
  *
- * 引擎真源锚(kbengine kbe/src 本地树逐条取证,2026-11-17 复核):
- * - 装载入口 DataTypes::loadTypes(datatypes.cpp:105-187)**单遍序敏**:按文档
- *   序逐条处理,条目指引 = FirstChild 的 getValStr(xml.cpp:121-128 只认
- *   **文本节点**;tinyxml2 折叠纯空白文本,故指引=首个非空白子节点——纯空白
- *   文本节点引擎侧不存在)。
- *   · 指引文本 == "FIXED_DICT"(精确大小写)→ FixedDictType 分支
+ * Engine source anchors (kbengine kbe/src local tree, verified item by item, re-checked 2026-11-17):
+ * - Load entry DataTypes::loadTypes (datatypes.cpp:105-187) is **single-pass
+ *   order-sensitive**: processes entries in document order; an entry's directive = the
+ *   FirstChild's getValStr (xml.cpp:121-128 only reads **text nodes**; tinyxml2 collapses
+ *   whitespace-only text, so the directive = the first non-whitespace child node —
+ *   whitespace-only text nodes do not exist engine-side).
+ *   · Directive text == "FIXED_DICT" (exact case) → FixedDictType branch
  *     (datatypes.cpp:135-151);
- *   · 指引文本 == "ARRAY" → FixedArrayType 分支(:152-168);
- *   · 其余文本 → getDataType(指引) 解析(:169-181);
- *   · FirstChild 是**元素** → getValStr 得空串 → getDataType("") 查不到
- *     → ERROR「can't fount type」+ return false → 启动中止(:169-178);
- *   · 条目无(非空白)子节点 → 引擎整条**静默跳过**(不注册无日志,
- *     loadTypes :132 的 if(childNode != NULL) 无 else 臂)。
- * - 名字口径:别名名查表解析是**大小写敏感精确匹配**(getDataType 用
- *   dataTypes_ 精确表,datatypes.cpp:221-236);重定义查重才用大小写不敏感
- *   的 dataTypesLowerName_(addDataType datatypes.cpp:190-218:命中 → ERROR
- *   「name {} exist.」+ return false——但 loadTypes 三个调用点
- *   (:141/:158/:180)全部丢弃返回值,装载继续,**先注册者胜**(dataTypes_
- *   不被覆写)。重定义是「引擎打日志但非致命」级别 → 本检查报 Warning。
- * - `_` 保留前缀:validTypeName(datatypes.cpp:43-50)只禁首字符 `_`,
- *   loadTypes 在读指引**之前**先查(:124-130)→ ERROR + return false → 中止。
- * - 解析失败/结构失败都是 ERROR + return false → **启动中止**(loadTypes
- *   各分支 :145-150/:162-167/:171-177)。引擎没有循环检测:别名循环/自引用/
- *   前向引用在单遍里必然落在某条的「此刻未知」上,走同一中止路径。因此本
- *   检查按**文档序**判定目标可解性,目标名在后文才出现时,消息注明
- *   「前向引用/循环」。
- * - ARRAY(datatype.cpp FixedArrayType::initialize :1658-1719):引擎把指引
- *   文本节点传进来,`enterNode(指引节点,"of")` 沿**兄弟链**扫(xml.cpp
- *   enterNode :72-93 扫本节点与后续兄弟,命中后返回其首个子节点)——`<of>`
- *   与指引文本同级。`<of>` 缺失 → ERROR「not found of」+ false → 中止
- *   (:1662-1667);`<of>` 指引 == "ARRAY" → 嵌套:**下一个兄弟 `<of>`**
- *   (继续沿兄弟链,不是子节点嵌套,:1671-1690);指引 == "FIXED_DICT" 或
- *   解析不到 → ERROR「did not find type」+ false → 中止(:1694-1706);
- *   嵌套深度受 XML 同级子节点数约束,环只在别名层存在。
- * - FIXED_DICT(datatype.cpp FixedDictType::initialize :2048-2196):缺
- *   `<Properties>` → ERROR + false → 中止(:2050-2055);字段缺 `<Type>` →
- *   ERROR「no label["Type"] ... will be ignored」**但继续装载、该字段被
- *   静默丢弃,非致命**(:2161-2165);字段类型未知 → ERROR「did not find
- *   type」+ false → 中止(:2151-2158);FD 字段类型只能是内建名/已注册别名
- *   /ARRAY(FIXED_DICT 是关键字不是注册名,作字段类型同样落「did not find
- *   type」中止);全部字段都被丢弃(或 Properties 下无字段)→ keyTypes_ 空
- *   → ERROR「no keys」+ false → 中止(:2187-2193)。任一致命 → loadTypes
- *   ERROR「parse FIXED_DICT error」→ 中止(:145-150;ARRAY 同形 :162-167)。
- * - FD 字段持久化读型:`<Persistent>` 文本 == 'false' **大小写敏感**才关断
- *   (:2068-2075,缺省即 true——与 .def 属性面 tolower+'true' 口径不同,
- *   见 persistentEntityCallCheck 头注)。
- * - FD 字段 ENTITYCALL 静默降持久化:字段类型(ARRAY 字段按元素末端类型)
- *   解析为 ENTITYCALL 时**无日志静默 persistent=false**——ARRAY 字段臂
- *   (:2104-2107)、纯类型臂(:2141-2144)。用户以为字段在持久化,引擎静默
- *   丢弃持久化;显式写 `<Persistent>false` 时无落差,不报。
- * - 诚实边界(检查面 vs 引擎行为的已知差异,不谎称同构):
- *   · 引擎首个致命错即 return false 中止,后文条目根本不装载;本检查继续
- *     扫描以一次给全发现,但**失败条目一律不入已注册表**(注册账与引擎
- *     一致:致命条目 addDataType 未达,后文条目按「先于本条才可解」口径
- *     依旧能如实检出前向引用)。
- *   · 条目属性(`type="X"` 等)引擎从不读取;本仓解析器(compositionRoots
- *     parseTypesXml)按 PR-012 门 §1.3-① 收编属性式回落并注册进 def 侧
- *     类型表——那是解析面口径;本检查按引擎真源**不认属性式**(无子节点的
- *     条目引擎静默跳过),两边落差属已知边界。
- *   · implementedBy 装载失败面(loadImplModule,cellapp/baseapp/client 组件
- *     :2174-2181)归既有 implementedBy 车道,不在此重复。
- *   · 值域/别名链深语义归 scalarAssign/cellData 各自车道。
+ *   · Directive text == "ARRAY" → FixedArrayType branch (:152-168);
+ *   · Any other text → getDataType(directive) resolution (:169-181);
+ *   · FirstChild is an **element** → getValStr yields the empty string → getDataType("")
+ *     misses → ERROR "can't fount type" + return false → startup aborted (:169-178);
+ *   · Entry has no (non-whitespace) child node → engine **silently skips** the whole
+ *     entry (no registration, no log; the if(childNode != NULL) at loadTypes :132 has
+ *     no else arm).
+ * - Name semantics: alias-name table lookup is a **case-sensitive exact match**
+ *   (getDataType uses the exact dataTypes_ table, datatypes.cpp:221-236); redefinition
+ *   dedup is the case-insensitive dataTypesLowerName_ (addDataType datatypes.cpp:190-218:
+ *   hit → ERROR "name {} exist." + return false — but all three loadTypes call sites
+ *   (:141/:158/:180) discard the return value, loading continues, **first registration
+ *   wins** (dataTypes_ is not overwritten). Redefinition is "engine logs but non-fatal"
+ *   level → this check reports Warning.
+ * - `_` reserved prefix: validTypeName (datatypes.cpp:43-50) only forbids a leading `_`;
+ *   loadTypes checks **before** reading the directive (:124-130) → ERROR + return false → abort.
+ * - Parse failure/structure failure are both ERROR + return false → **startup aborted**
+ *   (loadTypes branches :145-150/:162-167/:171-177). The engine has no cycle detection:
+ *   alias cycles/self-references/forward references in a single pass necessarily land on
+ *   some entry's "unknown at this moment", taking the same abort path. This check
+ *   therefore judges target resolvability in **document order**; when a target name only
+ *   appears later in the document, the message notes "forward reference/cycle".
+ * - ARRAY (datatype.cpp FixedArrayType::initialize :1658-1719): the engine passes the
+ *   directive text node in; `enterNode(directive node, "of")` scans along the **sibling
+ *   chain** (xml.cpp enterNode :72-93 scans this node and following siblings, returning
+ *   the first child of the hit) — `<of>` sits at the same level as the directive text.
+ *   `<of>` missing → ERROR "not found of" + false → abort (:1662-1667); `<of>` directive
+ *   == "ARRAY" → nesting: **the next sibling `<of>`** (keeps walking the sibling chain,
+ *   not child nesting, :1671-1690); directive == "FIXED_DICT" or unresolvable → ERROR
+ *   "did not find type" + false → abort (:1694-1706); nesting depth is bounded by the
+ *   number of same-level XML child nodes; cycles only exist at the alias layer.
+ * - FIXED_DICT (datatype.cpp FixedDictType::initialize :2048-2196): missing
+ *   `<Properties>` → ERROR + false → abort (:2050-2055); field missing `<Type>` →
+ *   ERROR "no label[\"Type\"] ... will be ignored" **but loading continues and the field
+ *   is silently dropped, non-fatal** (:2161-2165); unknown field type → ERROR "did not
+ *   find type" + false → abort (:2151-2158); the FD field type can only be a builtin
+ *   name/registered alias/ARRAY (FIXED_DICT is a keyword, not a registered name; as a
+ *   field type it likewise falls into the "did not find type" abort); all fields dropped
+ *   (or no fields under Properties) → keyTypes_ empty → ERROR "no keys" + false →
+ *   abort (:2187-2193). Any fatal → loadTypes ERROR "parse FIXED_DICT error" → abort
+ *   (:145-150; ARRAY same shape :162-167).
+ * - FD field persistence read: `<Persistent>` text == 'false' **case-sensitive** to turn
+ *   off (:2068-2075, defaults to true — different from the .def property face's
+ *   tolower+'true' semantics, see the persistentEntityCallCheck header comment).
+ * - FD field ENTITYCALL silent persistence demotion: when the field type (ARRAY fields by
+ *   the terminal element type) resolves to ENTITYCALL, **persistent=false is set silently
+ *   with no log** — ARRAY field arm (:2104-2107), plain type arm (:2141-2144). The user
+ *   believes the field is persisted while the engine silently drops persistence; when
+ *   `<Persistent>false` is written explicitly there is no gap, so nothing is reported.
+ * - Honest boundary (known differences between the check face and engine behavior, not
+ *   claimed isomorphic):
+ *   · The engine returns false and aborts at the first fatal error; later entries are
+ *     never loaded at all. This check keeps scanning to report all findings in one pass,
+ *     but **failed entries never enter the registered table** (the registration ledger
+ *     matches the engine: fatal entries never reach addDataType; later entries, under
+ *     the "resolvable only if registered before this entry" semantics, still honestly
+ *     detect forward references).
+ *   · Entry attributes (`type="X"` etc.) are never read by the engine; this repo's
+ *     parser (compositionRoots parseTypesXml) absorbs attribute-style fall back per the
+ *     PR-012 gate §1.3-① and registers into the def-side type table — that is the
+ *     parser-face semantics; this check follows the engine source and **does not honor
+ *     attribute style** (entries without child nodes are silently skipped by the
+ *     engine); that gap is a known boundary.
+ *   · The implementedBy load-failure face (loadImplModule, cellapp/baseapp/client
+ *     components :2174-2181) belongs to the existing implementedBy lane, not repeated here.
+ *   · Value-range/alias-chain deep semantics belong to the scalarAssign/cellData lanes
+ *     respectively.
  */
 
-/** 引擎内建类型名注册表(DataTypes::initialize :58-98 同源,kbengineMetadata 校准表派生;精确大小写) */
+/** Engine builtin type-name registry (same source as DataTypes::initialize :58-98, derived from the kbengineMetadata calibration table; exact case) */
 const BUILTIN_TYPE_NAMES: ReadonlySet<string> = new Set(KBENGINE_TYPES.map(item => item.name));
 
 export type TypesXmlStructureCode =
@@ -95,37 +109,38 @@ export type TypesXmlStructureCode =
 export interface TypesXmlStructureFinding {
   code: TypesXmlStructureCode;
   severity: 'error' | 'warning';
-  /** 0 基字符偏移(与 defParser 坐标系一致,装配面经 document.positionAt 转区间) */
+  /** 0-based character offset (same coordinate system as defParser; the wiring layer converts to ranges via document.positionAt) */
   offset: number;
   length: number;
   message: string;
 }
 
-/** 已注册别名快照(引擎单遍装载的注册表;target=该别名指引文本的折叠形态) */
+/** Registered alias snapshot (the registry built by the engine's single-pass load; target = the collapsed form of that alias's directive text) */
 interface KnownAlias {
   name: string;
   target: string;
 }
 
-/** 装载注册账对(engine 双表):known 键=精确名(getDataType dataTypes_ 口径)、knownLower=小写名集(addDataType dataTypesLowerName_ 查重口径) */
+/** Load registration ledger pair (engine twin tables): known keys = exact names (getDataType dataTypes_ semantics), knownLower = lowercase name set (addDataType dataTypesLowerName_ dedup semantics) */
 type KnownTables = {
   known: Map<string, KnownAlias>;
   knownLower: Set<string>;
 };
 
-/** 全文档名字语境(只读,与装载账无关):供「前向引用/大小写变体」提示分流 */
+/** Whole-document name context (read-only, independent of the load ledger): routes the "forward reference/case variant" hints */
 type NameContext = {
-  /** 全文档条目名(空白折叠后原样大小写) */
+  /** All entry names in the document (original case after whitespace folding) */
   allExact: ReadonlySet<string>;
-  /** 全文档条目名小写集 */
+  /** Lowercase set of all entry names in the document */
   allLower: ReadonlySet<string>;
 };
 
 /**
- * 目标此刻不可解的分流消息(大小写变体/前向引用/纯未知)。引擎报错与中止
- * 行为三种情形完全一致(getDataType 查不到 → ERROR + return false),只有
- * 修复指引不同——大小写笔误指名对照,前向引用指移动声明序,其余如实说
- * 「此刻不可解」。
+ * Routed message for a target unresolvable at this moment (case variant/forward
+ * reference/purely unknown). The engine's error-and-abort behavior is identical in all
+ * three cases (getDataType misses → ERROR + return false); only the fix guidance
+ * differs — a case typo points at the name comparison, a forward reference points at
+ * moving the declaration order, and the rest honestly says "unresolvable at this moment".
  */
 function unresolvableTargetMessage(
   subject: string,
@@ -150,14 +165,15 @@ function unresolvableTargetMessage(
   return `${subject}「${shown}」此刻不可解（引擎按精确名字查表，只认内建类型与先于本条声明的别名）：${engineNote}`;
 }
 
-/** 指引文本折叠(tinyxml2 折叠纯空白 + kbe_trim:内部空白串收成单空格) */
+/** Directive text folding (tinyxml2 collapses whitespace-only text + kbe_trim: internal whitespace runs collapse to a single space) */
 function collapseDirectiveText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
 /**
- * 引擎 FirstChild 等价读型:首个「非纯空白文本或元素」子节点(defParser
- * 不产生注释子节点,与 tinyxml2 折叠空白/跳过注释的可见序一致)。
+ * Engine FirstChild equivalent read: the first child that is "non-whitespace-only text
+ * or an element" (defParser produces no comment child nodes, matching tinyxml2's
+ * visible order of whitespace folding / comment skipping).
  */
 function firstNonWhitespaceChild(node: DefElementNode): DefTextNode | DefElementNode | undefined {
   return node.children.find(child =>
@@ -165,7 +181,7 @@ function firstNonWhitespaceChild(node: DefElementNode): DefTextNode | DefElement
   );
 }
 
-/** 条目/`<of>`/`<Type>` 指引读型:文本 → 折叠文本;元素 → 空串(引擎 getValStr 得 "");无 → null(引擎整条跳过) */
+/** Entry/`<of>`/`<Type>` directive read: text → folded text; element → empty string (engine getValStr yields ""); none → null (engine skips the whole entry) */
 function directiveText(node: DefElementNode): string | null {
   const first = firstNonWhitespaceChild(node);
   if (!first) {
@@ -177,12 +193,12 @@ function directiveText(node: DefElementNode): string | null {
   return '';
 }
 
-/** 元素名在开标签内的跨度(`<Name` 的 Name 段) */
+/** Span of the element name inside the open tag (the Name segment of `<Name`) */
 function elementNameSpan(node: DefElementNode): { offset: number; length: number } {
   return { offset: node.tagStart + 1, length: node.name.length };
 }
 
-/** 首个非空白直接文本的跨度(无则回落整个元素区间) */
+/** Span of the first non-whitespace direct text (falls back to the whole element range when absent) */
 function firstTextSpan(node: DefElementNode): { offset: number; length: number } {
   const first = firstNonWhitespaceChild(node);
   if (first && first.kind === 'text') {
@@ -191,12 +207,12 @@ function firstTextSpan(node: DefElementNode): { offset: number; length: number }
   return { offset: node.tagStart, length: Math.max(1, node.closeTagEnd - node.tagStart) };
 }
 
-/** 名字此刻可解性:内建名或已注册别名——**大小写敏感精确匹配**(引擎 getDataType dataTypes_ 精确表口径) */
+/** Name resolvability at this moment: builtin name or registered alias — **case-sensitive exact match** (engine getDataType exact-table dataTypes_ semantics) */
 function isResolvableName(name: string, tables: KnownTables): boolean {
   return BUILTIN_TYPE_NAMES.has(name) || tables.known.has(name);
 }
 
-/** 名字沿别名链末端解析(精确大小写;visited 有界防环,环链引擎本就装载中止) */
+/** Resolve a name to the end of its alias chain (exact case; bounded visited set guards cycles — a cyclic chain aborts engine loading anyway) */
 function resolveAliasChainEnd(name: string, tables: KnownTables): string | null {
   let current = name;
   const visited = new Set<string>();
@@ -215,10 +231,12 @@ function resolveAliasChainEnd(name: string, tables: KnownTables): string | null 
 }
 
 /**
- * ARRAY `<of>` 兄弟链规约(engine enterNode 口径:`<of>` 与指引文本同级;
- * 嵌套 ARRAY = 同级**下一个** `<of>` 兄弟,不是子节点)。返回末端元素类型名
- * (不可解返回 null),FD 字段调用方据此判 ENTITYCALL 静默降持久化;
- * 顶层 ARRAY 别名无持久化语义,忽略返回值。发现码统一 kbengine.types.arrayOf。
+ * ARRAY `<of>` sibling-chain reduction (engine enterNode semantics: `<of>` sits at the
+ * same level as the directive text; a nested ARRAY = the **next** sibling `<of>` at the
+ * same level, not child nesting). Returns the terminal element type name (null when
+ * unresolvable); FD-field callers use it to detect the ENTITYCALL silent persistence
+ * demotion; a top-level ARRAY alias has no persistence semantics and ignores the return
+ * value. The finding code is uniformly kbengine.types.arrayOf.
  */
 function resolveArrayOfChain(
   container: DefElementNode,
@@ -233,7 +251,7 @@ function resolveArrayOfChain(
     const ofSpan = firstTextSpan(ofElement);
     const directive = directiveText(ofElement);
     if (directive === null) {
-      // <of> 无(非空白)子节点 → getValStr 得空串 → getDataType("") 查不到
+      // <of> has no (non-whitespace) child node → getValStr yields the empty string → getDataType("") misses
       findings.push({
         code: 'kbengine.types.arrayOf',
         severity: 'error',
@@ -254,7 +272,7 @@ function resolveArrayOfChain(
         });
         return null;
       }
-      continue; // 嵌套层交给下一个兄弟 <of> 迭代
+      continue; // the nested layer is handled by the next sibling <of> iteration
     }
     if (directive === FIXED_DICT_TYPE_NAME) {
       findings.push({
@@ -297,10 +315,11 @@ function resolveArrayOfChain(
 }
 
 /**
- * FIXED_DICT 字段遍历(引擎 FixedDictType::initialize :2048-2196 口径)。
- * 返回 false = FD 致命(initialize 失败,引擎中止装载、本条不注册);
- * 字段缺 Type 是非致命 Warning(字段被静默丢弃),字段解析齐备时检查
- * ENTITYCALL 静默降持久化(Warning)。
+ * FIXED_DICT field traversal (engine FixedDictType::initialize :2048-2196 semantics).
+ * Returns false = FD fatal (initialize failed; the engine aborts loading and the entry
+ * is not registered); a field missing Type is a non-fatal Warning (the field is silently
+ * dropped); when field resolution is complete, checks the ENTITYCALL silent persistence
+ * demotion (Warning).
  */
 function checkFixedDictFields(
   aliasNode: DefElementNode,
@@ -341,7 +360,7 @@ function checkFixedDictFields(
     const typeSpan = firstTextSpan(typeElement);
     const directive = directiveText(typeElement);
     if (directive === null) {
-      // <Type> 无(非空白)子节点 → getValStr 得空串 → getDataType("") 查不到 → 中止
+      // <Type> has no (non-whitespace) child node → getValStr yields the empty string → getDataType("") misses → abort
       findings.push({
         code: 'kbengine.types.fieldType',
         severity: 'error',
@@ -352,15 +371,15 @@ function checkFixedDictFields(
       fatal = true;
       continue;
     }
-    // FD 字段 <Persistent> 缺省 true,显式关断是**大小写敏感**的 'false'
-    // (datatype.cpp:2068-2075;元素形态指引 getValStr 得空串 → 视为未关断,引擎口径)
+    // The FD field <Persistent> defaults to true; explicit shutoff is the **case-sensitive** 'false'
+    // (datatype.cpp:2068-2075; an element-form directive makes getValStr yield the empty string → treated as not shut off, engine semantics)
     const persistentElement = getDirectChildElements(field).find(node => node.name === 'Persistent');
     const persistentDirective = persistentElement ? directiveText(persistentElement) : null;
     const persistentOff = persistentDirective === 'false';
     if (directive === 'ARRAY') {
       const elementType = resolveArrayOfChain(typeElement, `${ownerLabel} 的${fieldLabel}`, tables, findings, names);
       if (elementType === null) {
-        fatal = true; // ARRAY 字段装载失败 → FD initialize false → 中止
+        fatal = true; // ARRAY field load failure → FD initialize false → abort
         continue;
       }
       resolvedFieldCount += 1;
@@ -416,8 +435,8 @@ function checkFixedDictFields(
       });
     }
   }
-  // 任一字段致命 → FD initialize false → 中止;字段全部被丢弃/无字段 →
-  // keyTypes_ 空 →「no keys」中止(datatype.cpp:2187-2193)
+  // Any fatal field → FD initialize false → abort; all fields dropped / no fields →
+  // keyTypes_ empty → "no keys" abort (datatype.cpp:2187-2193)
   if (fatal) {
     return false;
   }
@@ -436,32 +455,39 @@ function checkFixedDictFields(
 }
 
 /**
- * 预载注册名(KODE-SYN-003 alias.xml 文档域校验的装载语境):引擎单遍先载
- * types.xml 再载 alias.xml,校验 alias.xml 时把 types.xml 已注册名带指引
- * 预载进注册账——types.xml 名在 alias 文档域内可解,与引擎装载序一致。
+ * Preloaded registry names (the loading context for KODE-SYN-003 alias.xml document-scope
+ * validation): the engine's single pass loads types.xml before alias.xml, so when
+ * validating alias.xml the already-registered types.xml names are preloaded, with their
+ * directives, into the registration ledger — types.xml names are resolvable inside the
+ * alias document scope, matching the engine's load order.
  */
 export interface PreloadedRegistryName {
   name: string;
-  /** 装载指引(折叠形态,如 UINT32/FIXED_DICT/ARRAY/另一别名名) */
+  /** Load directive (collapsed form, e.g. UINT32/FIXED_DICT/ARRAY/another alias name) */
   target: string;
 }
 
 /**
- * 全量计算:types.xml 结构完整性发现。纯函数(文本进,发现出)。
- * `known` 表严格按引擎单遍装载序累积——检查本条目标时表里**没有本条**
- * (引擎 addDataType 在目标解析成功之后才注册),自引用与前向引用同落
- * 「此刻未知」。引擎首个致命错即中止、后文条目不装载;本检查继续扫描给全
- * 发现,但致命条目一律不入表(注册账与引擎一致,见头注边界)。
- * `preloaded` = 在本文档之前已注册的名字(KODE-SYN-003:alias.xml 校验时
- * 传 types.xml 注册面)。带 `_` 前缀的不预载(validTypeName 在注册前拒绝,
- * 引擎侧根本不会入表);预载内部重名按首位保留(引擎先注册者胜)。
+ * Full computation: types.xml structure integrity findings. Pure function (text in,
+ * findings out). The `known` table accumulates strictly in the engine's single-pass load
+ * order — when checking this entry's target the table **does not contain this entry**
+ * (the engine's addDataType registers only after the target resolves successfully), so
+ * self-references and forward references both land on "unknown at this moment". The
+ * engine aborts at the first fatal error and later entries are not loaded; this check
+ * keeps scanning to report all findings, but fatal entries never enter the table (the
+ * registration ledger matches the engine, see the header-comment boundary).
+ * `preloaded` = names already registered before this document (KODE-SYN-003: when
+ * validating alias.xml, pass the types.xml registration face). Names with a `_` prefix
+ * are not preloaded (validTypeName rejects them before registration, so the engine never
+ * enters them into the table); duplicate preloaded names keep the first (engine first
+ * registration wins).
  */
 export function computeTypesXmlStructureFindings(
   text: string,
   preloaded?: ReadonlyArray<PreloadedRegistryName>
 ): TypesXmlStructureFinding[] {
-  // 解析器对畸形 XML 会抛(assignNodePositions 定位失败);本文面只在可解析
-  // 文档上声称,解析失败 = 零发现
+  // The parser throws on malformed XML (assignNodePositions fails to locate); this
+  // document face only claims on parseable documents, parse failure = zero findings
   let document;
   try {
     document = parseDefDocument(text);
@@ -489,7 +515,7 @@ export function computeTypesXmlStructureFindings(
     const name = item.name.trim();
     const nameSpan = elementNameSpan(item);
     if (name.startsWith('_')) {
-      // validTypeName 只禁首字符 _,loadTypes 在读指引之前先查 → 中止,本条不注册
+      // validTypeName only forbids a leading _, loadTypes checks before reading the directive → abort, entry not registered
       findings.push({
         code: 'kbengine.types.reservedPrefix',
         severity: 'error',
@@ -501,7 +527,7 @@ export function computeTypesXmlStructureFindings(
     }
     const directive = directiveText(item);
     if (directive === null) {
-      // 条目无(非空白)子节点:引擎 childNode == NULL 整条静默跳过(不注册无日志)
+      // Entry has no (non-whitespace) child node: engine childNode == NULL silently skips the whole entry (no registration, no log)
       continue;
     }
     let branchOk = false;
@@ -511,7 +537,7 @@ export function computeTypesXmlStructureFindings(
       const elementType = resolveArrayOfChain(item, `别名「${name}」`, tables, findings, names);
       branchOk = elementType !== null;
     } else if (directive.length === 0) {
-      // 指引读得空串(首子节点是元素):getDataType("") 查不到 → 中止
+      // Directive reads as the empty string (first child is an element): getDataType("") misses → abort
       findings.push({
         code: 'kbengine.types.forwardRef',
         severity: 'error',
@@ -540,10 +566,11 @@ export function computeTypesXmlStructureFindings(
       branchOk = true;
     }
     if (!branchOk) {
-      continue; // 致命:引擎中止,本条不注册(addDataType 未达)
+      continue; // fatal: engine aborts, entry not registered (addDataType never reached)
     }
-    // addDataType:大小写不敏感查重命中 → ERROR + false,但返回值被 loadTypes
-    // 丢弃 → 装载继续、先注册者胜(本条不生效,报 Warning)
+    // addDataType: case-insensitive dedup hit → ERROR + false, but loadTypes discards
+    // the return value → loading continues, first registration wins (this entry takes no
+    // effect, report Warning)
     if (tables.knownLower.has(name.toLowerCase())) {
       findings.push({
         code: 'kbengine.types.duplicateAlias',

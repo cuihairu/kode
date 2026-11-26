@@ -12,8 +12,7 @@ use kode_server::client_sdk::{
 };
 
 fn demo_assets_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/kbengine-demo-assets")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/kbengine-demo-assets")
 }
 
 fn file_names(files: &[kode_server::client_sdk::ClientSdkCliFile]) -> Vec<String> {
@@ -125,7 +124,10 @@ fn headless_emits_fixed_dicts_when_referenced() {
     let names = file_names(&files);
     assert_eq!(
         names,
-        vec!["Avatar.ts".to_string(), "ClientSdkFixedDicts.ts".to_string()]
+        vec![
+            "Avatar.ts".to_string(),
+            "ClientSdkFixedDicts.ts".to_string()
+        ]
     );
     let fixed = files
         .iter()

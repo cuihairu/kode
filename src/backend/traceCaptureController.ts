@@ -1,30 +1,38 @@
 /**
- * KFLOW 受控采集控制器(FLOW-025):单进程调用事件的独立采集入口核心面。
- * 验收原文:「独立可关闭的采集入口和有界缓冲,记录开始/结束/异常/丢弃;
- * 不默认开启高开销全量 trace。」
+ * KFLOW controlled-capture controller (FLOW-025): the pure core of a standalone
+ * capture entry for single-process call events. Acceptance wording: "an
+ * independently closable capture entry with a bounded buffer, recording
+ * start/end/exceptions/drops; never enables high-overhead full tracing by
+ * default."
  *
- * 四条产品红线(每条都有构造期闸或测试钉):
- *   1. **默认关闭**:控制器构造后停在 idle,ingest 直接抛错——采集只因显式
- *      start() 发生,不存在隐式开启面(采集命令 UI 未接线,另立项;本面不注册任何
- *      自动触发);
- *   2. **有界缓冲**:maxEvents 必填>0,打满后事件不入缓冲只计丢弃
- *      (buffer-full),丢异数入 loss 对账——无界缓冲不交付;
- *   3. **开始/结束记账**:start 记 startedAtEpochMs 与窗口声明,stop/fail 记
- *      endedAtEpochMs 与 endReason(completed / collector-error)——窗口外
- *      发生了什么如实标「未知」,不冒充全程;
- *   4. **红线校验不绕过**:close 组装 RawMonitoringSession 后走
- *      importMonitoringSession(FLOW-024 面)——来源配对/同线程栈边/括号
- *      对称/丢失对账全部由协议层把关,控制器不自带一套宽松规则。
+ * Four product red lines (each pinned by a construction-time gate or a test):
+ *   1. **Off by default**: after construction the controller stays idle and
+ *      ingest throws directly — capture happens only via an explicit start();
+ *      there is no implicitly-enabled face (the capture command UI is not wired,
+ *      separate project; this face registers no automatic triggers);
+ *   2. **Bounded buffer**: maxEvents is required >0; when full, events do not
+ *      enter the buffer and are only counted as drops (buffer-full), the drop
+ *      count enters the loss reconciliation — an unbounded buffer does not ship;
+ *   3. **Start/end accounting**: start records startedAtEpochMs and the window
+ *      declaration, stop/fail record endedAtEpochMs and endReason (completed /
+ *      collector-error) — whatever happened outside the window is honestly
+ *      marked "unknown", never posed as the whole run;
+ *   4. **Red-line validation is not bypassed**: close assembles a
+ *      RawMonitoringSession and goes through importMonitoringSession (the
+ *      FLOW-024 face) — source pairing / same-thread stack edges / bracket
+ *      symmetry / loss reconciliation are all enforced by the protocol layer;
+ *      the controller carries no looser rules of its own.
  *
- * 控制器绑定 sys.monitoring 采集面(事件形态=monitoring_capture.py 输出);
- * 采样面=complete-within-window(受控窗口内逐事件完整)。纯核心,零 vscode
- * 依赖;真实子进程入口见 traceCaptureRun。
+ * The controller binds the sys.monitoring capture face (event shape =
+ * monitoring_capture.py output); the sampling face = complete-within-window
+ * (complete per event within the controlled window). Pure core, zero vscode
+ * dependencies; see traceCaptureRun for the real subprocess entry.
  */
 
 import { importMonitoringSession, type RawMonitoringSession } from './traceImport';
 import type { TraceProcessRole, TraceSession } from './traceEventModel';
 
-/** 采集原始事件形态(采集器输出;结构校验在 close 时的导入面做)。 */
+/** Raw captured event shape (collector output; structural validation happens in the import face at close time). */
 export type RawTraceEvent = Record<string, unknown>;
 
 export type TraceCaptureState = 'idle' | 'running' | 'stopped' | 'failed';
@@ -33,16 +41,16 @@ export type TraceCaptureEndReason = 'completed' | 'collector-error';
 
 export interface TraceCaptureOptions {
   sessionId: string;
-  /** 有界缓冲容量(必须 >0;打满即丢计入丢弃账) */
+  /** Bounded buffer capacity (must be >0; when full, events are dropped and counted in the drop account) */
   maxEvents: number;
   processId: string;
   threadId: string;
-  /** 采集进程角色;未知='unknown'(不猜) */
+  /** Captured process role; unknown='unknown' (no guessing) */
   processRole?: TraceProcessRole;
   processName?: string | null;
-  /** 受控窗口声明(complete-within-window 面必填,导入面会校验) */
+  /** Controlled window declaration (required by the complete-within-window face; the import face validates it) */
   windowNote: string;
-  /** 会话起始墙钟(缺省=start() 时刻 Date.now();测试可注入) */
+  /** Session start wall clock (defaults to Date.now() at start(); tests may inject) */
   startedAtEpochMs?: number;
 }
 
@@ -51,10 +59,10 @@ export interface TraceCaptureAccounting {
   startedAtEpochMs: number | null;
   endedAtEpochMs: number | null;
   endReason: TraceCaptureEndReason | null;
-  /** 结束说明(fail 时=采集器错误原因) */
+  /** End note (on fail = the collector error reason) */
   endNote: string | null;
   bufferedEvents: number;
-  /** 有界缓冲打满后被丢弃的事件数(只计真实溢出,不造假) */
+  /** Number of events dropped once the bounded buffer filled (counts only real overflow, never fabricated) */
   droppedBufferFull: number;
   calls: number;
   returns: number;
@@ -63,9 +71,9 @@ export interface TraceCaptureAccounting {
 
 export interface TraceCaptureResult {
   sessionId: string;
-  /** 采集原始工件(与 monitoring_capture.py 输出同形态;可落盘复查) */
+  /** Raw capture artifact (same shape as monitoring_capture.py output; can be persisted for review) */
   raw: RawMonitoringSession;
-  /** 协议会话(经 FLOW-024 导入面,红线全验) */
+  /** Protocol session (via the FLOW-024 import face, all red lines validated) */
   session: TraceSession;
   accounting: TraceCaptureAccounting;
 }
@@ -87,7 +95,7 @@ const KNOWN_ROLES: ReadonlySet<string> = new Set([
   'unknown'
 ]);
 
-/** 受控采集控制器:默认关闭、显式启停、有界缓冲、开始/结束/异常/丢弃记账。 */
+/** Controlled-capture controller: off by default, explicit start/stop, bounded buffer, start/end/exception/drop accounting. */
 export class TraceCaptureController {
   readonly sessionId: string;
   private readonly maxEvents: number;
@@ -130,7 +138,7 @@ export class TraceCaptureController {
     return this.stateValue;
   }
 
-  /** 显式启动采集窗口;只有这一步之后 ingest 才收事件(默认关闭红线)。 */
+  /** Explicitly start the capture window; only after this step does ingest accept events (off-by-default red line). */
   start(): void {
     if (this.stateValue !== 'idle') {
       throw new Error(`受控采集:start 只允许一次(当前状态 ${this.stateValue})`);
@@ -139,7 +147,7 @@ export class TraceCaptureController {
     this.startedAt = this.startedAtEpochMs ?? Date.now();
   }
 
-  /** 采集器事件入账;非 running 抛错(默认关闭/窗口已关);打满只计丢弃。 */
+  /** Account one collector event; throws when not running (off by default / window closed); when full, only counts drops. */
   ingest(event: RawTraceEvent): IngestOutcome {
     if (this.stateValue !== 'running') {
       throw new Error(
@@ -154,7 +162,7 @@ export class TraceCaptureController {
     return { accepted: true, buffered: this.buffered.length, dropped: this.dropped };
   }
 
-  /** 显式关闭采集窗口(completed);随后组装会话并过协议红线校验。 */
+  /** Explicitly close the capture window (completed); then assembles the session and passes protocol red-line validation. */
   stop(): TraceCaptureResult {
     if (this.stateValue !== 'running') {
       throw new Error(`受控采集:stop 只在采集窗口内合法(当前状态 ${this.stateValue})`);
@@ -162,7 +170,7 @@ export class TraceCaptureController {
     return this.close('completed', null);
   }
 
-  /** 采集器侧失败收口(collector-error);已缓冲事件如实保留,失败原因入账。 */
+  /** Collector-side failure closure (collector-error); buffered events are honestly kept, the failure reason recorded. */
   fail(reason: string): TraceCaptureResult {
     if (this.stateValue !== 'running') {
       throw new Error(`受控采集:fail 只在采集窗口内合法(当前状态 ${this.stateValue})`);

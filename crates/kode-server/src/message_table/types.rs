@@ -1,4 +1,4 @@
-//! types.xml 用户类型装载与查找。
+//! types.xml user-type loading and lookup.
 
 use kode_parser::diag::LineMap;
 use kode_parser::xml::parse as parse_xml;

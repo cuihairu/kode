@@ -1,20 +1,26 @@
 /**
- * 流敏感 self.<attr> 类型收编 Rust(RUST-MIGRATION-AUDIT-006 B1 车道批 1):
- * `$/kode/python/selfAttributeFlow` 的 TS 装配面。引擎本体=TS
- * selfAttributeFlowTypes.ts 逐字移植(kode-python self_flow.rs,含类跨度提取
- * 与 versionKey LRU 解析缓存);TS 引擎保留为兜底(kbengine.core.backend=ts
- * 杀开关语义不变)。入参 lines 为调用方行数组原样(inlay 路原文行/诊断路掩码
- * 行,Rust 不二次掩码),queryLine/行号 0 基,versionKey 为
- * flowVersionKeyForDocument 产物的不透明缓存键。响应 flow 缺失/畸形
- * (types 非字符串数组/annotation 非 null 或串/两布尔缺失)整面弃用返回
- * null(调用方回 TS 引擎)——禁止部分采用;Rust flow:null 与 TS 引擎
- * 返回 null 同判据(attr 空/查询行越界),装配面预检同判据先行短路不发 RPC。
+ * Flow-sensitive self.<attr> type inference absorbed into Rust
+ * (RUST-MIGRATION-AUDIT-006 B1 lane batch 1): the TS wiring face for
+ * `$/kode/python/selfAttributeFlow`. The engine body is a verbatim port of the TS
+ * selfAttributeFlowTypes.ts (kode-python self_flow.rs, including class span
+ * extraction and the versionKey LRU parse cache); the TS engine is kept as the
+ * fallback (the kbengine.core.backend=ts kill-switch semantics unchanged). The
+ * input lines is the caller's line array verbatim (the inlay path passes raw
+ * lines / the diagnostics path passes masked lines; Rust does not mask again),
+ * queryLine/line numbers are 0-based, and versionKey is the opaque cache key
+ * produced by flowVersionKeyForDocument. A missing/malformed flow in the
+ * response (types not a string array / annotation neither null nor string /
+ * either boolean missing) discards the whole face and returns null (the caller
+ * falls back to the TS engine) — partial adoption is forbidden; Rust flow:null
+ * and a TS engine null share the same criteria (empty attr / query line out of
+ * range), and the wiring face pre-checks with the same criteria and short-circuits
+ * without sending the RPC.
  */
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 const SELF_ATTRIBUTE_FLOW_RUST_METHOD = '$/kode/python/selfAttributeFlow';
 
-/** Rust 流事实面(与 TS SelfAttributeFlow 字段同形) */
+/** Rust flow facts face (same shape as the TS SelfAttributeFlow fields) */
 export interface SelfAttributeFlowFace {
   types: string[];
   annotation: string | null;
@@ -23,8 +29,9 @@ export interface SelfAttributeFlowFace {
 }
 
 /**
- * Rust-first 流敏感类型:无门/失败/畸形/非法入参一律 null(纯函数回退面)。
- * attr 空/查询行越界与 TS 引擎判据一致,不发 RPC。
+ * Rust-first flow-sensitive types: no gate / failure / malformed / invalid input
+ * all return null (pure function fallback face). Empty attr / query line out of
+ * range share the TS engine criteria and do not send the RPC.
  */
 export async function inferSelfAttributeFlowFromRust(
   lines: readonly string[],

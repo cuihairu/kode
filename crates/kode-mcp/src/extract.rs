@@ -1574,13 +1574,15 @@ mod tests {
         assert!(err.contains("root element is <root>"), "{err}");
     }
 
-    // ---- COV-006 覆盖提满批(2026-11-19):markdown 空标题序号名/python 倒置
-    // ---- 块/单元格全类型/xlsx 空表头·空行·空 sheet·行帽/csv 形状/json 根
-    // ---- 数组·null·深度帽·双帽/tmx 组嵌套·命名 fallback·诊断注记。 ----
+    // ---- COV-006 coverage fill batch (2026-11-19): markdown empty-heading
+    // ---- ordinal names / python inverted spans / all cell types / xlsx empty
+    // ---- header + empty rows + empty sheet + row cap / csv shapes / json root
+    // ---- array + null + depth cap + double cap / tmx group nesting + naming
+    // ---- fallback + diagnostics note. ----
 
     #[test]
     fn markdown_empty_heading_gets_ordinal_section_name() {
-        // 空标题(## 无文本)→ 具名序号 fallback,不产空名 section
+        // Empty heading (## with no text) → named ordinal fallback, no empty-name section
         let text = "# Title\n\n##\n\nbody\n";
         let nodes = markdown_nodes(project(), "docs/e.md", text);
         assert!(nodes
@@ -1590,7 +1592,7 @@ mod tests {
 
     #[test]
     fn python_symbol_with_inverted_span_yields_empty_block() {
-        // end_line < line(倒置):start >= end → 空块,不 panic
+        // end_line < line (inverted): start >= end → empty block, no panic
         let sym = PySymbol {
             name: "ghost".to_string(),
             kind: "function",
@@ -1614,7 +1616,7 @@ mod tests {
         use calamine::{CellErrorType, ExcelDateTime, ExcelDateTimeType};
         assert_eq!(cell_text(&calamine::Data::Empty), "");
         assert_eq!(cell_text(&calamine::Data::String("s".into())), "s");
-        assert_eq!(cell_text(&calamine::Data::Float(3.0)), "3"); // 整形浮点走 i64 格式
+        assert_eq!(cell_text(&calamine::Data::Float(3.0)), "3"); // integral floats use the i64 format
         assert_eq!(cell_text(&calamine::Data::Float(1.5)), "1.5");
         assert_eq!(cell_text(&calamine::Data::Int(7)), "7");
         assert_eq!(cell_text(&calamine::Data::Bool(true)), "true");
@@ -1638,7 +1640,7 @@ mod tests {
             cell_text(&calamine::Data::Error(CellErrorType::Div0)),
             "error #DIV/0!"
         );
-        // col_letter 多字母进位(26 → AA)
+        // col_letter multi-letter carry (26 → AA)
         assert_eq!(col_letter(0), "A");
         assert_eq!(col_letter(25), "Z");
         assert_eq!(col_letter(26), "AA");
@@ -1649,7 +1651,8 @@ mod tests {
     fn excel_fixture_empty_header_row_and_sheet_arms() {
         let xlsx = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/kb/coverage.xlsx");
         let nodes = excel_nodes(project(), "tables/coverage.xlsx", &xlsx).unwrap();
-        // types sheet:A1 空表头 → 无空名列节点;整空行(第3行)跳过
+        // types sheet: an empty A1 header → no empty-name column node; a fully empty
+        // row (row 3) is skipped
         assert!(nodes.iter().any(|n| n.kind == NodeKind::ExcelSheet
             && n.name == "types"
             && n.content.contains("id | tag")));
@@ -1665,7 +1668,7 @@ mod tests {
         assert!(nodes
             .iter()
             .any(|n| n.name == "types.row2" && n.content.contains("sword")));
-        // 完全空 sheet:无表头仍有 sheet 节点(range 兜底 A1)
+        // Fully empty sheet: still a sheet node without headers (range falls back to A1)
         let blank = nodes
             .iter()
             .find(|n| n.kind == NodeKind::ExcelSheet && n.name == "blank")
@@ -1679,8 +1682,10 @@ mod tests {
 
     #[test]
     fn excel_corrupt_sheet_yields_honest_unreadable_node() {
-        // zip 容器完好、单 sheet XML 打碎:工作簿可开,该 sheet cells 不可读
-        // → 诚实 unreadable 节点(错误可见,绝不吞),其余 sheet 正常索引
+        // zip container intact, one sheet's XML smashed: the workbook opens, that
+        // sheet's cells are unreadable
+        // → an honest unreadable node (the error is visible, never swallowed), other
+        // sheets index normally
         let xlsx =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/kb/corrupt_sheet.xlsx");
         let nodes = excel_nodes(project(), "tables/corrupt_sheet.xlsx", &xlsx).unwrap();
@@ -1694,7 +1699,7 @@ mod tests {
             &unreadable[0].location,
             SourceLocation::Excel { range, .. } if range == "unknown"
         ));
-        // 打碎的是最后一个 sheet(many):types 的行节点仍在
+        // The smashed sheet is the last one (many): types row nodes remain
         assert!(nodes
             .iter()
             .any(|n| n.kind == NodeKind::ExcelRow && n.name == "types.row2"));
@@ -1729,8 +1734,10 @@ mod tests {
         let path = dir.join("shapes.csv");
         std::fs::write(&path, b"\"name\",,qty\nsword,2,\n,,\nbow,3,x\n").unwrap();
         let nodes = csv_nodes(project(), "tables/shapes.csv", &path).unwrap();
-        // 引号翻转参与分隔符判定;空表头格不出列节点;全空行(第3行)不出行节点;
-        // 空行计入 total 但不索引 → 注记 "indexed 2/4"(现状钉:非 200 帽也注记)
+        // Quote toggling participates in delimiter detection; empty header cells emit
+        // no column node; a fully empty row (row 3) emits no row node;
+        // the empty row counts toward total but is not indexed → note "indexed 2/4"
+        // (pin on current behavior: the note appears even below the 200 cap)
         let sheet = nodes
             .iter()
             .find(|n| n.kind == NodeKind::ExcelSheet)
@@ -1761,7 +1768,7 @@ mod tests {
             .iter()
             .find(|n| n.kind == NodeKind::ExcelSheet)
             .expect("sheet node");
-        // 表头行计入 total(206=1 表头+205 数据),索引帽 200
+        // The header row counts toward total (206 = 1 header + 205 data), index cap 200
         assert!(
             sheet
                 .content
@@ -1781,11 +1788,12 @@ mod tests {
 
     #[test]
     fn json_root_array_null_leaf_and_depth_cap() {
-        // 根数组:子路径为纯十进制下标;null 叶以 "null" 入索引
+        // Root array: child paths are bare decimal indices; null leaves index as "null"
         let nodes = json_nodes(project(), "res/lut.json", "[null, 1]").unwrap();
         assert!(nodes.iter().any(|n| n.name == "0" && n.content == "null"));
         assert!(nodes.iter().any(|n| n.name == "1" && n.content == "1"));
-        // 20 层嵌套数组:深度 16 停(第 17 层不计 discovered),只留深度注记
+        // A 20-level nested array: stops at depth 16 (level 17 not counted in
+        // discovered), leaving only the depth note
         let mut text = String::new();
         for _ in 0..20 {
             text.push('[');
@@ -1802,7 +1810,7 @@ mod tests {
 
     #[test]
     fn json_keys_and_depth_both_capped() {
-        // 301 键 + 1 个 20 层深值:键帽与深度帽同时触发
+        // 301 keys + one 20-level-deep value: the keys cap and depth cap fire together
         let mut text = String::from("{");
         for i in 0..300 {
             if i > 0 {
@@ -1848,26 +1856,26 @@ mod tests {
                     </group>\n\
                     </map>\n";
         let nodes = tmx_nodes(project(), "res/maps/level02.tmx", text).unwrap();
-        // 命名 fallback:无 name/source → tileset{N};source 无 name → stem
+        // Naming fallback: no name/source → tileset{N}; source without name → stem
         let tilesets: Vec<&str> = nodes
             .iter()
             .filter(|n| n.kind == NodeKind::TmxTileset)
             .map(|n| n.name.as_str())
             .collect();
         assert_eq!(tilesets, vec!["tileset1", "extra", "cave"]);
-        // 非 image 子元素与无 source 的 image:不追加面,不 panic
+        // Non-image children and a sourceless image: no extra content appended, no panic
         let extra = nodes
             .iter()
             .find(|n| n.kind == NodeKind::TmxTileset && n.name == "extra")
             .unwrap();
         assert!(!extra.content.contains("image"));
-        // 内联 image 归 tileset 面
+        // The inline image belongs to the tileset face
         let ts1 = nodes
             .iter()
             .find(|n| n.kind == NodeKind::TmxTileset && n.name == "tileset1")
             .unwrap();
         assert!(ts1.content.contains("image ../tiles/dungeon.png"));
-        // imagelayer 标签面 + 无宽高 layer 不带尺寸
+        // The imagelayer label face + a layer without width/height carries no size
         let bg = nodes
             .iter()
             .find(|n| n.kind == NodeKind::TmxLayer && n.name == "bg")
@@ -1877,12 +1885,13 @@ mod tests {
             .iter()
             .find(|n| n.kind == NodeKind::TmxLayer && n.name == "nosize")
             .unwrap();
-        // 无 width/height:内容无尺寸段(整句钉现状)
+        // No width/height: no size segment in the content (whole-sentence pin on current behavior)
         assert_eq!(
             nosize.content,
             "tile layer nosize encoding=unknown (tile data not indexed)"
         );
-        // 空 objectgroup 无 objects 注记;无 id object 不带括号后缀
+        // An empty objectgroup has no objects note; an object without id gets no
+        // parenthesized suffix
         let empty = nodes
             .iter()
             .find(|n| n.kind == NodeKind::TmxObjectGroup && n.name == "empty")
@@ -1894,7 +1903,7 @@ mod tests {
             .unwrap();
         assert!(objs.content.contains("objects: flag"));
         assert!(!objs.content.contains("flag("));
-        // group 内 layer 正常下钻
+        // Layers inside a group descend normally
         assert!(nodes
             .iter()
             .any(|n| n.kind == NodeKind::TmxLayer && n.name == "hud"));

@@ -1,6 +1,8 @@
-//! 有类型跨度树(PA-006 字段树数据面)单测:
-//! ①结构断言(偏移/长度/嵌套);②与 [`kode_kbengine_protocol::codec::decode_value`]
-//! 对拍(同语料同 Ok/Err、同消费字节数)——字段树数据面与值解码零行为漂移。
+//! Typed span tree (PA-006 field tree data plane) unit tests:
+//! 1) structure assertions (offset/length/nesting);
+//! 2) parity comparison with [`kode_kbengine_protocol::codec::decode_value`] (same corpus, same
+//!    Ok/Err, same bytes consumed) — zero behavior drift between the field-tree data plane and
+//!    value decoding.
 
 use kode_kbengine_protocol::codec::Value;
 use kode_kbengine_protocol::codec::{
@@ -14,7 +16,7 @@ fn limits() -> DecodeLimits {
     DecodeLimits::default()
 }
 
-/// 断言 span 是 kind 的单叶。
+/// Assert that the span is a single leaf of the given kind.
 fn leaf(span: &ValueSpan, kind: SpanKind) {
     assert_eq!(span.kind, kind, "kind mismatch");
     assert!(span.children.is_empty(), "leaf has children");
@@ -22,7 +24,7 @@ fn leaf(span: &ValueSpan, kind: SpanKind) {
 }
 
 // ---------------------------------------------------------------------------
-// 结构断言
+// Structure assertions
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -61,7 +63,7 @@ fn scalars_spans_offsets() {
 
 #[test]
 fn cstring_span_includes_nul_and_stops_at_high_byte() {
-    // "abc\0..." → Str 覆盖 4B(含 NUL);高字节截断同 decode_value。
+    // "abc\0..." → Str covers 4B (including the NUL); high-byte truncation matches decode_value.
     let payload = b"abc\0def";
     let spans = decode_spans(&[WireType::String], payload, &limits()).unwrap();
     leaf(&spans[0], SpanKind::Str);
@@ -70,12 +72,12 @@ fn cstring_span_includes_nul_and_stops_at_high_byte() {
     let payload = [0x61u8, 0xe4, 0xb8, 0xad, 0x00];
     let spans = decode_spans(&[WireType::String], &payload, &limits()).unwrap();
     leaf(&spans[0], SpanKind::Str);
-    assert_eq!((spans[0].start, spans[0].len), (0, 1)); // 0xe4 非 ASCII → 截断
+    assert_eq!((spans[0].start, spans[0].len), (0, 1)); // 0xe4 is non-ASCII → truncate
 }
 
 #[test]
 fn prefixed_blocks_two_layer() {
-    // Unicode: u32 len + UTF-8 体 → Group{U32(4B), Str(body)}
+    // Unicode: u32 len + UTF-8 body → Group{U32(4B), Str(body)}
     let mut payload = Vec::new();
     let body = "你好".as_bytes();
     payload.extend_from_slice(&(body.len() as u32).to_le_bytes());
@@ -95,7 +97,7 @@ fn prefixed_blocks_two_layer() {
         (4, body.len())
     );
 
-    // Blob: 同构,体 Bytes;Python: 体 Raw(pickle 直通)。
+    // Blob: same shape, body Bytes; Python: body Raw (pickle passes straight through).
     let mut blob = Vec::new();
     let data = [1u8, 2, 3, 4];
     blob.extend_from_slice(&(data.len() as u32).to_le_bytes());
@@ -109,7 +111,7 @@ fn prefixed_blocks_two_layer() {
 
 #[test]
 fn vector_and_array_nesting() {
-    // Vector3: 12B, 3×F32 子项。
+    // Vector3: 12B, 3×F32 children.
     let mut v = Vec::new();
     for f in [1.0f32, 2.0, 3.0] {
         v.extend_from_slice(&f.to_le_bytes());
@@ -123,7 +125,7 @@ fn vector_and_array_nesting() {
         assert_eq!((c.start, c.len), (i * 4, 4));
     }
 
-    // Array: u32 count + 元素;元素 U16 各 2B。
+    // Array: u32 count + elements; each element U16 is 2B.
     let mut a = Vec::new();
     a.extend_from_slice(&3u32.to_le_bytes());
     a.extend_from_slice(&0x0102u16.to_le_bytes());
@@ -148,7 +150,7 @@ fn vector_and_array_nesting() {
 
 #[test]
 fn fixed_dict_nested_offsets() {
-    // FIXED_DICT { u8 key, str key }:字段声明序、嵌套偏移。
+    // FIXED_DICT { u8 key, str key }: field declaration order, nested offsets.
     let mut d = Vec::new();
     d.push(0x42);
     d.extend_from_slice(b"ok\0");
@@ -188,8 +190,8 @@ fn fixed_dict_nested_offsets() {
 
 #[test]
 fn raw_keeps_cursor_and_spans_cover_rest() {
-    // EntityCall 中段:不推进游标(同 decode_value),后续 arg 重读同字节。
-    // 跨度量与值解码一致。
+    // EntityCall mid-stream: the cursor is not advanced (same as decode_value), so subsequent args
+    // re-read the same bytes. Behavior matches the value decode exactly.
     let payload = [0xAAu8, 0xBB, 0xCC];
     let args = vec![WireType::UInt8, WireType::EntityCall, WireType::UInt8];
     let spans = decode_spans(&args, &payload, &limits()).unwrap();
@@ -197,11 +199,11 @@ fn raw_keeps_cursor_and_spans_cover_rest() {
     leaf(&spans[0], SpanKind::U8);
     assert_eq!((spans[0].start, spans[0].len), (0, 1));
     leaf(&spans[1], SpanKind::Raw);
-    assert_eq!((spans[1].start, spans[1].len), (1, 2)); // 剩余 2B,不消费
+    assert_eq!((spans[1].start, spans[1].len), (1, 2)); // the remaining 2B, not consumed
     leaf(&spans[2], SpanKind::U8);
-    assert_eq!((spans[2].start, spans[2].len), (1, 1)); // 从同一偏移重读
+    assert_eq!((spans[2].start, spans[2].len), (1, 1)); // re-read from the same offset
 
-    // Unresolved 同名。
+    // Same for Unresolved.
     let spans = decode_spans(
         &[WireType::Unresolved("Missing".into())],
         &payload,
@@ -213,12 +215,12 @@ fn raw_keeps_cursor_and_spans_cover_rest() {
 }
 
 // ---------------------------------------------------------------------------
-// 与 decode_value 对拍:同语料同 Ok/Err、同消费字节数
+// Parity with decode_value: same corpus, same Ok/Err, same bytes consumed
 // ---------------------------------------------------------------------------
 
 fn corpus() -> Vec<(Vec<WireType>, Vec<u8>)> {
     let mut cases: Vec<(Vec<WireType>, Vec<u8>)> = Vec::new();
-    // 全标量序列 + 完整载荷。
+    // All-scalar sequence + full payload.
     let mut p = Vec::new();
     p.extend_from_slice(&0x01020304u32.to_le_bytes());
     p.extend_from_slice(&(-5i16).to_le_bytes());
@@ -233,7 +235,7 @@ fn corpus() -> Vec<(Vec<WireType>, Vec<u8>)> {
         ],
         p,
     ));
-    // 嵌套 dict + array。
+    // Nested dict + array.
     let mut p = Vec::new();
     p.extend_from_slice(&2u32.to_le_bytes()); // array count
     p.extend_from_slice(&7u8.to_le_bytes());
@@ -263,13 +265,13 @@ fn corpus() -> Vec<(Vec<WireType>, Vec<u8>)> {
         }],
         p,
     ));
-    // Unicode/blob。
+    // Unicode/blob.
     let mut p = Vec::new();
     let body = "引擎".as_bytes();
     p.extend_from_slice(&(body.len() as u32).to_le_bytes());
     p.extend_from_slice(body);
     cases.push((vec![WireType::Unicode], p));
-    // 截断(EOF):声明数组数超剩余。
+    // Truncated (EOF): declared array count exceeds the remainder.
     let mut p = Vec::new();
     p.extend_from_slice(&1000u32.to_le_bytes());
     p.push(1);
@@ -279,9 +281,9 @@ fn corpus() -> Vec<(Vec<WireType>, Vec<u8>)> {
         }],
         p,
     ));
-    // 截断:标量不足。
+    // Truncated: insufficient bytes for a scalar.
     cases.push((vec![WireType::UInt64], vec![0x01, 0x02]));
-    // EntityCall 中段。
+    // EntityCall mid-stream.
     cases.push((
         vec![WireType::UInt8, WireType::EntityCall],
         vec![0xAA, 0xBB, 0xCC],
@@ -301,15 +303,16 @@ fn spans_parity_with_value_decode() {
         let span_res = decode_spans(&args, &payload, &lim);
         let consumed = cur1.offset();
 
-        // Ok/Err 一致性。
+        // Ok/Err agreement.
         assert_eq!(
             value_res.is_ok(),
             span_res.is_ok(),
             "Ok/Err mismatch for args={args:?} payload={payload:?}"
         );
         if let (Ok(spans), Ok(_)) = (&span_res, &value_res) {
-            // 消费字节数一致(不含 Raw 参数:EntityCall/Unresolved 不推进游标,
-            // 但 span 覆盖剩余字节——该口径由 raw_keeps_cursor 专测)。
+            // Same bytes consumed (excluding Raw params: EntityCall/Unresolved do not advance the
+            // cursor, while the span covers the remaining bytes — this semantics is dedicated-tested
+            // by raw_keeps_cursor).
             let has_raw = args
                 .iter()
                 .any(|t| matches!(t, WireType::EntityCall | WireType::Unresolved(_)));
@@ -326,12 +329,12 @@ fn spans_parity_with_value_decode() {
 
 #[test]
 fn depth_limit_errors_identically() {
-    // 深嵌套数组超过 MAX_DECODE_DEPTH(64):两边同 Err。
+    // Deeply nested array exceeding MAX_DECODE_DEPTH (64): both sides return Err.
     let mut ty = WireType::UInt8;
     for _ in 0..80 {
         ty = WireType::Array { of: Box::new(ty) };
     }
-    // 构造 payload:每层 u32 计数 1 + 末层 1B。
+    // Build payload: per-level u32 count of 1 + a final 1B.
     let mut p = Vec::new();
     for _ in 0..80 {
         p.extend_from_slice(&1u32.to_le_bytes());
@@ -347,9 +350,9 @@ fn depth_limit_errors_identically() {
 
 #[test]
 fn remaining_scalar_and_vector4_spans_offset_and_length() {
-    // 既有 scalars_spans_offsets 只走 U8/U16/U32/I64/F64/Bool 六臂;此测补齐
-    // I8/I16/I32/U64/F32 与 Vector4 组臂——每条标量臂的 read_* 与 leaf 行
-    // 各须跑一次,否则该分支在覆盖率口径上恒为 0(分支未被任何语料触达)。
+    // The existing scalars_spans_offsets only exercises the six arms U8/U16/U32/I64/F64/Bool; this test fills in
+    // I8/I16/I32/U64/F32 and the Vector4 group arm — each scalar arm's read_* and leaf lines must run once,
+    // otherwise that branch stays perpetually at 0 in coverage terms (never touched by any corpus).
     let mut payload = Vec::new();
     payload.extend_from_slice(&(-7i8).to_le_bytes());
     payload.extend_from_slice(&(-300i16).to_le_bytes());
@@ -383,7 +386,7 @@ fn remaining_scalar_and_vector4_spans_offset_and_length() {
     assert_eq!((spans[4].start, spans[4].len), (15, 8));
     leaf(&spans[5], SpanKind::F32);
     assert_eq!((spans[5].start, spans[5].len), (23, 4));
-    // Vector4:16B = 4×F32 子项(组臂的维度分派行由本测触达)。
+    // Vector4: 16B = 4×F32 children (this test also reaches the group arm's per-dimension dispatch lines).
     assert_eq!(spans[6].kind, SpanKind::Group);
     assert_eq!((spans[6].start, spans[6].len), (27, 16));
     assert_eq!(spans[6].children.len(), 4);
@@ -395,8 +398,9 @@ fn remaining_scalar_and_vector4_spans_offset_and_length() {
 
 #[test]
 fn array_span_count_over_cap_reports_memory_limit_with_count_and_cap() {
-    // 声明 count 超 max_array_len:预检臂必须在读任何元素前报错(防模板放大),
-    // 且把 count 与 cap 带出便于定位是哪条消息声明了巨数组。
+    // Declared count over max_array_len: the precheck arm must fail before reading any element (guarding
+    // against template amplification), and must surface both count and cap to help locate which message
+    // declared the huge array.
     let limits = DecodeLimits {
         max_array_len: 2,
         ..DecodeLimits::default()

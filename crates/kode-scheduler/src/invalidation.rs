@@ -1,9 +1,12 @@
-//! 失效图 + 分批重建计划(书 §17 PR-009「reverse DAG」+ §7 IDX-002/006/013 面)。
+//! Invalidation graph + batched rebuild planning (book §17 PR-009 "reverse DAG" + §7
+//! IDX-002/006/013 surfaces).
 //!
-//! - 失效图:文件 → 声明名(实体/类型/别名/属性/方法/组件)→ 反向受影响文件集
-//!   (复用 kode-index 名称倒排与反向依赖索引,不重复建图);
-//! - 分批重建:受影响集确定性排序后按上限切块,每批一个 `dependency-update`
-//!   任务(优先级继承变更文件面),整批走 [`crate::Scheduler`] 的批量/合并面。
+//! - Invalidation graph: file → declared names (entity / type / alias / attribute / method /
+//!   component) → reverse affected-file set (reusing kode-index's name inverted index and reverse
+//!   dependency index; no graph is built twice);
+//! - Batched rebuild: the affected set is deterministically sorted and then chunked by the cap,
+//!   one `dependency-update` task per batch (priority inherited from the changed-file surface),
+//!   the whole batch going through [`crate::Scheduler`]'s batch/merge surface.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,17 +15,20 @@ use kode_index::{DocumentKey, SymbolIndex};
 use crate::model::{priority, TaskKind};
 use crate::scheduler::{RunFn, TaskSpec};
 
-/// 跨文件调用反依赖:被调方文件 → 调用方文件集。
+/// Cross-file call reverse dependencies: callee file → set of caller files.
 ///
-/// 由 kode-python 的 [`kode_python::graph::build_call_reverse_index`] 产出,
-/// 经 [`InvalidationGraph::with_call_dependents`] 接入失效 DAG,使「改被调方
-/// 文件 → 重算调用方文件」。本 crate 保持零第三方/零语言耦合:只消费泛型
-/// `BTreeMap`,不依赖 kode-python(调用图面在语言集成层)。
+/// Produced by kode-python's [`kode_python::graph::build_call_reverse_index`] and fed into the
+/// invalidation DAG via [`InvalidationGraph::with_call_dependents`], so that "changing the callee
+/// file → recompute the caller files". This crate stays free of third-party and language coupling:
+/// it only consumes the generic `BTreeMap` and does not depend on kode-python (the call-graph
+/// surface lives in the language integration layer).
 pub type CallReverseIndex = BTreeMap<DocumentKey, BTreeSet<DocumentKey>>;
 
-/// 基于符号索引的反向失效视图(只读;图即索引的投影,不复制数据)。
+/// Reverse invalidation view over the symbol index (read-only; the graph is a projection of the
+/// index and copies no data).
 ///
-/// 可选携带调用反依赖 overlay(C-20 交付③:Python 调用图入 DAG)。
+/// Optionally carries a call reverse-dependency overlay (C-20 deliverable 3: the Python call
+/// graph enters the DAG).
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidationGraph<'a> {
     index: &'a SymbolIndex,
@@ -37,7 +43,8 @@ impl<'a> InvalidationGraph<'a> {
         }
     }
 
-    /// 带调用反依赖的失效图(名称倒排 + 调用边反向投影)。
+    /// Invalidation graph with call reverse dependencies (name inverted index + reverse
+    /// projection of call edges).
     pub fn with_call_dependents(
         index: &'a SymbolIndex,
         call_dependents: &'a CallReverseIndex,
@@ -48,7 +55,8 @@ impl<'a> InvalidationGraph<'a> {
         }
     }
 
-    /// 该文件声明的名字(去重升序;实体/属性/方法/类型/别名/组件)。
+    /// Names declared by this file (deduplicated, ascending; entity / attribute / method / type /
+    /// alias / component).
     pub fn declared_names(&self, key: &DocumentKey) -> Vec<String> {
         let mut names: Vec<String> = self
             .index
@@ -61,11 +69,14 @@ impl<'a> InvalidationGraph<'a> {
         names
     }
 
-    /// 变更该文件的传递闭包受影响集 = 自身 ∪ ⋃(依赖它声明的名字的文件)
-    /// ∪ ⋃(调用它定义方法的文件),并沿反向边继续传播至不动点:
-    /// A 调 B、B 调 C 时改 C,A 同样入集(否则 A 的索引/调用图保持陈旧)。
-    /// 防环:visited 集保证已处理文件不重入,有限步终止。
-    /// 确定性:DocumentKey 自带 Ord,结果为排序集合,重复依赖自动折叠。
+    /// Transitive-closure affected set of changing this file = itself ∪ ⋃(files depending on its
+    /// declared names) ∪ ⋃(files calling its defined methods), and propagation continues along
+    /// reverse edges to a fixed point: when A calls B and B calls C, changing C pulls A into the
+    /// set too (otherwise A's index / call graph stays stale).
+    /// Cycle protection: the visited set guarantees an already-processed file never re-enters, so
+    /// termination is finite.
+    /// Determinism: DocumentKey carries Ord, the result is a sorted set, and duplicate
+    /// dependencies fold automatically.
     pub fn affected_by(&self, key: &DocumentKey) -> BTreeSet<DocumentKey> {
         let mut affected: BTreeSet<DocumentKey> = BTreeSet::new();
         affected.insert(key.clone());
@@ -73,7 +84,8 @@ impl<'a> InvalidationGraph<'a> {
         let mut frontier: Vec<DocumentKey> = vec![key.clone()];
         while let Some(current) = frontier.pop() {
             if !processed.insert(current.clone()) {
-                continue; // 已展开过(环/重边):不重入,有限步终止。
+                continue; // Already expanded (cycle / duplicate edge): no re-entry, finite
+                          // termination.
             }
             for name in self.declared_names(&current) {
                 for dependent in self.index.dependents_of(&name) {
@@ -95,7 +107,8 @@ impl<'a> InvalidationGraph<'a> {
         affected
     }
 
-    /// 受影响集分批(确定性:按 (root_id, 路径) 升序后切块)。
+    /// Chunk the affected set (deterministic: sorted by (root_id, path) ascending before
+    /// chunking).
     pub fn plan_rebuild_batches(
         &self,
         affected: &BTreeSet<DocumentKey>,
@@ -105,7 +118,7 @@ impl<'a> InvalidationGraph<'a> {
     }
 }
 
-/// 受影响集分批(独立函数供批量提交面复用)。
+/// Chunk the affected set (a standalone function, also reused by the batch-commit surface).
 pub fn plan_batches(affected: &BTreeSet<DocumentKey>, max_batch: usize) -> Vec<Vec<DocumentKey>> {
     let max_batch = max_batch.max(1);
     let mut ordered: Vec<&DocumentKey> = {
@@ -122,9 +135,11 @@ pub fn plan_batches(affected: &BTreeSet<DocumentKey>, max_batch: usize) -> Vec<V
     batches
 }
 
-/// 把一次文件变更落成调度任务:变更文件本身一个 `single-file-update`,
-/// 受影响依赖按批切 `dependency-update`(优先级 = 依赖更新面)。
-/// `make_run` 由调用方提供重建闭包(本 crate 不绑定具体索引实现)。
+/// Turn one file change into scheduling tasks: one `single-file-update` for the changed file
+/// itself, and `dependency-update` tasks for the affected dependents, split by batch
+/// (priority = the dependency-update surface).
+/// `make_run` supplies the rebuild closure from the caller (this crate does not bind a concrete
+/// index implementation).
 pub fn plan_dependency_tasks<F>(
     graph: &InvalidationGraph<'_>,
     changed: &DocumentKey,
@@ -138,9 +153,11 @@ where
 {
     let mut specs: Vec<TaskSpec> = Vec::new();
     let mut affected = graph.affected_by(changed);
-    // KR-AUD-23:changed 强制单独成批——旧实现把 changed 混进受影响集统一
-    // 切块,max_batch 足够大时 changed 与依赖同批,SingleFileUpdate 高优先级
-    // 丢失(整批降为 DependencyUpdate)。先摘出 changed 单发,余量再切块。
+    // KR-AUD-23: changed is forced into its own batch — the old implementation mixed changed
+    // into the affected set and chunked them together, so with a large enough max_batch, changed
+    // shared a batch with its dependents and the SingleFileUpdate high priority was lost (the
+    // whole batch downgraded to DependencyUpdate). Pick changed out and send it alone first,
+    // then chunk the remainder.
     affected.remove(changed);
     specs.push(TaskSpec {
         kind: TaskKind::SingleFileUpdate,

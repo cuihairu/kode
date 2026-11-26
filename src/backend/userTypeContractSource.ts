@@ -1,10 +1,13 @@
-// GEN-DEF-1e 数据收集半边(读 types.xml/alias.xml + 扫 impl 文件)。
+// GEN-DEF-1e data-collection half (read types.xml/alias.xml + scan impl files).
 //
-// 纯逻辑(判定/定位)在 userTypeContract;本模块只做 I/O 与注册表解析:
-// getCustomTypeInfos → 带 implementedBy 的自定义类型 → impl 文件 → 三契约
-// 方法存在性快照。序列化契约描述(口径①②)也在此,供 hover/stub 文档复用。
-// KSEM-STRUCT-06:implementedBy 绑定真形采集(候选发现+读源)也在此,
-// 判定在 implementedByBinding 纯核。
+// Pure logic (judgment/locating) lives in userTypeContract; this module only does
+// I/O and registry resolution: getCustomTypeInfos → custom types carrying
+// implementedBy → impl files → the triple-contract method presence snapshot. The
+// serialization-contract descriptions (semantics ①②) are here too, reused by
+// hover/stub documentation.
+// KSEM-STRUCT-06: the implementedBy real-shape collection (candidate discovery +
+// source reading) is also here; the judgment lives in the implementedByBinding
+// pure core.
 
 import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
@@ -24,10 +27,11 @@ import {
 import { resolveImplementedByBinding, type ImplementedByBinding, type ImplementedByCandidate } from './implementedByBinding';
 
 /**
- * 收集全部 user_type 契约快照(带 implementedBy 的自定义类型;纯 FIXED_DICT/
- * ARRAY 别名无 impl,不进索引——它们不走对象契约,走 dict 形态序列化)。
- * impl 文件解析失败/缺失时 implFile 为空(缺方法诊断静默,由「未找到
- * python 文件」诊断兜底)。
+ * Collect all user_type contract snapshots (custom types carrying implementedBy;
+ * pure FIXED_DICT/ARRAY aliases have no impl and do not enter the index — they do
+ * not go through the object contract, they serialize in dict form). When the impl
+ * file fails to parse or is missing, implFile is empty (the missing-method
+ * diagnostic stays silent, backed up by the "python file not found" diagnostic).
  */
 export function collectUserTypeContractStatuses(
   workspaceRoot: string
@@ -63,9 +67,10 @@ export function collectUserTypeContractStatuses(
 }
 
 /**
- * 序列化契约一句话描述(口径①):wire/db→mem = createObjFromDict(反序列化
- * 入口),mem→wire/db = getDictFromObj(序列化出口)。用于 user_type/带 impl
- * 的 PYTHON 属性 hover 与桩文档。
+ * One-sentence serialization-contract description (semantics ①): wire/db→mem =
+ * createObjFromDict (the deserialization entry), mem→wire/db = getDictFromObj
+ * (the serialization exit). Used by the hover of user_type / PYTHON properties
+ * carrying an impl, and by stub documentation.
  */
 export function userTypeSerializationContractDoc(
   implementedBy?: string,
@@ -83,15 +88,16 @@ export function userTypeSerializationContractDoc(
   return lines.join('\n');
 }
 
-/** 口径②:PYTHON 无 impl 的标注(整值 pickle 进出,不走 dict 转换)。 */
+/** Semantics ②: the annotation for PYTHON without an impl (whole-value pickle in/out, no dict conversion). */
 export function pythonPickleContractDoc(): string {
   return '裸 PYTHON 属性走整值 pickle 进出,不走 dict 转换,无 createObjFromDict/getDictFromObj 契约。';
 }
 
 /**
- * 单个 user_type 的契约快照(悬停补全面用):只扫该类型的 impl 文件,
- * 不做全量注册表扫描(避免每次 hover 读全部 impl 文件)。
- * 无 implementedBy / 类型未注册 → null。
+ * The contract snapshot of a single user_type (for the hover completion face): only
+ * that type's impl file is scanned, not a full registry sweep (avoids reading every
+ * impl file on each hover).
+ * No implementedBy / type not registered → null.
  */
 export function userTypeContractStatusForName(
   workspaceRoot: string,
@@ -125,8 +131,10 @@ export function userTypeContractStatusForName(
 }
 
 /**
- * 悬停契约补全面(②+口径①):user_type 带 impl 时给出三契约方法补全状态
- * 与双向序列化契约。每个缺方法行标明后果方向;全齐给一行「完整」。
+ * The hover contract completion face (② + semantics ①): when a user_type carries an
+ * impl, gives the triple-contract method completion status and the bidirectional
+ * serialization contract. Each missing-method line states its consequence direction;
+ * when all are present, a "complete" line is given.
  */
 export function renderUserTypeContractHoverSection(
   status: UserTypeContractStatus
@@ -145,12 +153,14 @@ export function renderUserTypeContractHoverSection(
 }
 
 /**
- * KSEM-STRUCT-06:implementedBy 绑定真形采集(判定在 implementedByBinding 纯核)。
- * 候选发现按真实导入序:`module.py` 与 `module/__init__.py` 同名并存时
- * **包目录胜出**(CPython FileFinder 包优先,本地 python3 实测定案),
- * 每个 user_type 根至多产出一个候选;跨根同名模块并存交由纯核裁定
- * (ambiguous-module,工程内 sys.path 序不可判)。
- * implementedBy 为空 → null(无绑定面,与契约段同门槛)。
+ * KSEM-STRUCT-06: implementedBy real-shape binding collection (the judgment lives in
+ * the implementedByBinding pure core). Candidate discovery follows the real import
+ * order: when `module.py` and `module/__init__.py` coexist under the same name, the
+ * **package directory wins** (CPython FileFinder prefers packages, settled by local
+ * python3 testing); each user_type root produces at most one candidate; coexisting
+ * same-named modules across roots are left to the pure core's ruling
+ * (ambiguous-module; the in-workspace sys.path order is undecidable).
+ * Empty implementedBy → null (no binding face, same threshold as the contract section).
  */
 export function implementedByBindingForWorkspace(
   workspaceRoot: string,
@@ -161,7 +171,7 @@ export function implementedByBindingForWorkspace(
   }
   const moduleName = implementedBy.trim().split('.')[0];
   if (!moduleName) {
-    // 非两段值等畸形:候选无从谈起,交纯核如实报 malformed
+    // Malformed values such as non-two-segment ones: no candidates to speak of; hand to the pure core to report malformed honestly
     return resolveImplementedByBinding(implementedBy, []);
   }
   const moduleRel = moduleName.replace(/\./g, '/');
@@ -170,7 +180,7 @@ export function implementedByBindingForWorkspace(
     const packageInitPath = nodePath.join(root, moduleRel, '__init__.py');
     if (fs.existsSync(packageInitPath)) {
       candidates.push({ filePath: packageInitPath, source: readWorkspaceTextFile(packageInitPath), kind: 'package' });
-      continue; // 包优先(同根包目录胜过同名文件)
+      continue; // package wins (a same-root package directory beats a same-named file)
     }
     const filePath = nodePath.join(root, `${moduleRel}.py`);
     if (fs.existsSync(filePath)) {

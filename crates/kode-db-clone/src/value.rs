@@ -1,34 +1,38 @@
-//! 有类型行编码(PDC-0203):归档记录是带类型的值,不是 SQL dump。
+//! Typed row encoding (PDC-0203): archive records are typed values, not a SQL
+//! dump.
 //!
-//! 覆盖 NULL/BLOB/64-bit/DECIMAL/UTF-8 时间与时区:64-bit 与 DECIMAL 以精确
-//! 形态保留(不受 JSON number 精度限制),BLOB 十六进制,时间带可选时区偏移。
-//! 编码面可 serde 序列化(归档帧内容),解码面供导入(Phase 3)重建类型。
+//! Covers NULL/BLOB/64-bit/DECIMAL/UTF-8 times and time zones: 64-bit and DECIMAL
+//! are preserved in exact form (not subject to JSON number precision limits), BLOB
+//! as hex, times carry an optional time-zone offset. The encoding face is serde
+//! serializable (archive frame content); the decoding face lets import (Phase 3)
+//! rebuild types.
 
 use serde::{Deserialize, Serialize};
 
-/// 单元格的有类型值。
+/// Typed value of a cell.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "t", content = "v", rename_all = "kebab-case")]
 pub enum TypedValue {
     Null,
-    /// 有符号整型(TINYINT/SMALLINT/INT/signed BIGINT)。
+    /// Signed integer (TINYINT/SMALLINT/INT/signed BIGINT).
     Int(#[serde(with = "json_i64")] i64),
-    /// 无符号整型(unsigned 非扩位族)。
+    /// Unsigned integer (the unsigned non-widening family).
     UInt(#[serde(with = "json_u64")] u64),
-    /// 无符号 64-bit(bigint unsigned 全域,精确)。
+    /// Unsigned 64-bit (the full bigint unsigned range, exact).
     BigUInt(#[serde(with = "json_u64")] u64),
-    /// 浮点(float 列)。
+    /// Floating point (float columns).
     Float(f32),
-    /// 双精度(double 列)。
+    /// Double precision (double columns).
     Double(f64),
-    /// 精确小数(DECIMAL),字符串保真,不做浮点转换。
+    /// Exact decimal (DECIMAL), string-faithful, no float conversion.
     Decimal(String),
-    /// 二进制(BLOB/BINARY),十六进制编码。
+    /// Binary (BLOB/BINARY), hex encoded.
     Bytes(String),
-    /// UTF-8 文本(VARCHAR/CHAR/TEXT)。
+    /// UTF-8 text (VARCHAR/CHAR/TEXT).
     Text(String),
-    /// 时间(DATETIME/TIMESTAMP/DATE/TIME);offset_minutes 为相对 UTC 的时区
-    /// 偏移,None 表示行源未给出显式偏移(字符串行源形态)。
+    /// Time (DATETIME/TIMESTAMP/DATE/TIME); offset_minutes is the time-zone offset
+    /// relative to UTC; None means the row source gave no explicit offset (string
+    /// row-source form).
     DateTime {
         value: String,
         offset_minutes: Option<i32>,
@@ -84,7 +88,8 @@ mod json_u64 {
     }
 }
 
-/// 一行:值序与计划查询的列序一一对应。
+/// One row: the value order corresponds one-to-one with the planned query's
+/// column order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TypedRow {
     pub table: String,
@@ -92,15 +97,17 @@ pub struct TypedRow {
 }
 
 impl TypedValue {
-    /// 由字符串单元格 + 物理列型解析(RowSource 形态的行源)。
-    /// 列型按 resolveDbTypeLabel 输出比对;未知列型按文本保真(Text)。
+    /// Parses from a string cell + physical column type (row source in the
+    /// RowSource form). The column type is matched per resolveDbTypeLabel output;
+    /// unknown column types stay text-faithful (Text).
     pub fn parse(cell: Option<&str>, column_type: &str) -> TypedValue {
         let Some(raw) = cell else {
             return TypedValue::Null;
         };
         let ty = column_type.trim().to_ascii_lowercase();
         let unsigned = ty.contains("unsigned");
-        // 去 unsigned 前缀后取类型基名(如 `bigint(20) unsigned` → `bigint`)。
+        // Take the base type name after removing the unsigned word (e.g.
+        // `bigint(20) unsigned` → `bigint`).
         let normalized: String = ty.replace("unsigned", "");
         let base = normalized
             .split_once('(')
@@ -150,7 +157,7 @@ impl TypedValue {
     }
 }
 
-/// 小写十六进制(无第三方依赖)。
+/// Lowercase hex (no third-party dependency).
 pub fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -161,7 +168,7 @@ pub fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
-/// 十六进制解码(配对校验,奇数长度报错)。
+/// Hex decode (pair validation, odd length is an error).
 pub fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
     let bytes = s.as_bytes();
     let (pairs, rem) = bytes.as_chunks::<2>();
@@ -220,7 +227,7 @@ mod tests {
             TypedValue::parse(Some("9"), "tinyint unsigned"),
             TypedValue::UInt(9)
         );
-        // bigint unsigned 全域(u64::MAX 不经 f64 精度损失)。
+        // Full bigint unsigned range (u64::MAX without f64 precision loss).
         let max = u64::MAX.to_string();
         assert_eq!(
             TypedValue::parse(Some(&max), "bigint(20) unsigned"),
@@ -273,7 +280,8 @@ mod tests {
         let json = serde_json::to_string(&values).unwrap();
         let back: Vec<TypedValue> = serde_json::from_str(&json).unwrap();
         assert_eq!(back, values);
-        // JSON number 精度不损失:BigUInt 以字符串数字形态序列化后仍逐位相等。
+        // No JSON number precision loss: BigUInt serialized as a string digit form
+        // still matches digit-for-digit.
         assert!(json.contains("18446744073709551615"));
     }
 
@@ -288,7 +296,8 @@ mod tests {
 
     #[test]
     fn parses_float_and_double_with_fallback_to_text() {
-        // float/double:可解析 → 数值;不可解析 → 文本兜底(绝不吞成 0.0)。
+        // float/double: parseable → number; unparseable → text fallback (never
+        // swallowed into 0.0).
         assert_eq!(
             TypedValue::parse(Some("1.5"), "float"),
             TypedValue::Float(1.5)

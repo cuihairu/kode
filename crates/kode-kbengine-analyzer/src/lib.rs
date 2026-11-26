@@ -1,20 +1,24 @@
-//! kode2 KBEngine 分析引擎(todo PA-005 Phase 3)。
+//! kode2 KBEngine analysis engine (todo PA-005 Phase 3).
 //!
-//! 验收原文:「独立分析一组解码消息出 JSON 报告」。输入 = 解码记录集
-//! (PA-004 `capture analyze --records` 的 JSON 形状;字段子集,serde 容忍
-//! 多余字段),输出 = [`report::Report`] JSON。能力面:
+//! Acceptance wording: "independently analyze a set of decoded messages and produce a JSON
+//! report". Input = a set of decoded records (the PA-004 `capture analyze --records` JSON
+//! shape; a field subset, and serde tolerates extra fields); output = [`report::Report`]
+//! JSON. Capability faces:
 //!
-//! - `stats`:消息/流量统计(按名/按方向,未知消息计数不丢弃);
-//! - `correlate`:请求响应关联 —— **仅协议确证标识**:只按取证文档
-//!   (docs/kbengine-wire-protocol.md §6)确证的请求→响应对、同 Flow 内
-//!   同类型 FIFO 配对;相邻消息绝不猜配;
-//! - `latency`:配对双方时间戳齐备时的 P50/P95/P99(nearest-rank);
-//! - `anomalies`:未知消息 / 非法长度(取证最小长度表)/ 解码期异常透传
-//!   (Schema 不匹配);
-//! - `timeline`:Entity 事件与 RPC 时间线(实体为键);
-//! - `connections`:登录 / 切 Baseapp / 重连事件面。
+//! - `stats`: message/traffic statistics (by name/by direction, unknown message counts are
+//!   never dropped);
+//! - `correlate`: request/response correlation — **protocol-confirmed identifiers only**:
+//!   only the request->response pairs confirmed by the forensic document
+//!   (docs/kbengine-wire-protocol.md §6), FIFO pairing of the same type within one Flow;
+//!   neighbouring messages are never guess-matched;
+//! - `latency`: P50/P95/P99 (nearest-rank) when both sides of a pair have timestamps;
+//! - `anomalies`: unknown messages / illegal length (the forensic minimum length table) /
+//!   decode-time anomalies passed through (Schema mismatch);
+//! - `timeline`: Entity events and the RPC timeline (keyed by entity);
+//! - `connections`: login / Baseapp switch / reconnection event face.
 //!
-//! 零第三方依赖(serde/serde_json 仅报告序列化,PA-002 先例)。
+//! Zero third-party dependencies (serde/serde_json only for report serialization, per the
+//! PA-002 precedent).
 
 pub mod connections;
 pub mod correlate;
@@ -27,8 +31,9 @@ pub use record::{Direction, Record, RecordAnomaly};
 pub use report::{AnalysisOptions, Report};
 pub use stats::{analyze, PairSpec};
 
-/// 协议确证的请求→响应对(docs/kbengine-wire-protocol.md §6;只认这份
-/// 取证表,响应名不在表内的 downlink 不配对)。
+/// Protocol-confirmed request -> response pairs (docs/kbengine-wire-protocol.md §6; only
+/// this forensic table is trusted, so a downlink whose response name is not in the table is
+/// never paired).
 pub const CONFIRMED_PAIRS: &[PairSpec] = &[
     PairSpec {
         request: "Loginapp::hello",

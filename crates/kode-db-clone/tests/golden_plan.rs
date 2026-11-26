@@ -1,8 +1,12 @@
-//! Golden 验收(CLONE-P1 门):代表性 Avatar 虚拟 Fixture → 计划书 §4 的黄金计划。
+//! Golden acceptance (CLONE-P1 gate): representative Avatar virtual fixture → the
+//! golden plan of plan doc §4.
 //!
-//! 虚拟 Fixture 不经真实 MySQL(PDC-0003/0007 被阻塞,真实表夹具待用户环境):
-//! 派生侧按 kode deriveDatabaseTables 语义手工建模,物理侧按 information_schema
-//! 形状构造,断言表序、列清单、SQL 与拒绝/缺失面。证明计划器的行为而不依赖外部库。
+//! The virtual fixture does not go through a real MySQL (PDC-0003/0007 are blocked;
+//! real-table fixtures await the user's environment): the derived side is modeled
+//! by hand per kode deriveDatabaseTables semantics, the physical side is built in
+//! the information_schema shape, asserting table order, column lists, SQL and the
+//! denied/missing faces. Proves the planner's behavior without depending on an
+//! external database.
 
 use std::collections::BTreeMap;
 
@@ -11,7 +15,7 @@ use kode_db_clone::{
     ResolvedCloneSchema, RuleSet, SchemaResolver, SchemaSource, VirtualSchema,
 };
 
-/// 派生字段(镜像推导输出 FieldSchema 语义)。
+/// Derived field (mirrors the derivation output's FieldSchema semantics).
 fn field(name: &str, type_label: &str) -> DerivedField {
     DerivedField {
         name: name.into(),
@@ -22,7 +26,7 @@ fn field(name: &str, type_label: &str) -> DerivedField {
     }
 }
 
-/// 引擎合成子表(id/parentID/sm_autoLoad)。
+/// Engine-synthesized child table (id/parentID/sm_autoLoad).
 fn child_struct(table: &str, parent: &str, kind: &str) -> DerivedTable {
     DerivedTable {
         name: table.into(),
@@ -37,8 +41,8 @@ fn child_struct(table: &str, parent: &str, kind: &str) -> DerivedTable {
     }
 }
 
-/// 代表性 Avatar 派生 schema:根表(hasCell → position/direction)+
-/// ARRAY(items → mods 二级)+ ARRAY(inventory)+ ENTITY_COMPONENT(gold)。
+/// Representative Avatar derived schema: root (hasCell → position/direction) +
+/// ARRAY (items → nested mods) + ARRAY (inventory) + ENTITY_COMPONENT (gold).
 fn avatar_derived() -> CloneSchema {
     let mut root_fields = vec![
         field("id", "bigint unsigned"),
@@ -46,7 +50,7 @@ fn avatar_derived() -> CloneSchema {
         field("sm_name", "varchar"),
         field("sm_level", "int"),
     ];
-    // hasCell → VECTOR3 position + direction(六列,sm_N_<field>)。
+    // hasCell → VECTOR3 position + direction (six columns, sm_N_<field>).
     for axis in 0..3 {
         root_fields.push(field(&format!("sm_{axis}_position"), "float"));
     }
@@ -61,7 +65,8 @@ fn avatar_derived() -> CloneSchema {
         fields: root_fields,
     };
 
-    // ARRAY items 落 sm_value 列;items 内再嵌 ARRAY mods → 二级子表。
+    // ARRAY items lands an sm_value column; items nests another ARRAY mods → a
+    // second-level child table.
     let mut items = child_struct("tbl_Avatar_items", "tbl_Avatar", "array");
     items.fields.push(field("sm_value", "varchar"));
     let mut mods = child_struct("tbl_Avatar_items_mods", "tbl_Avatar_items", "array");
@@ -76,7 +81,8 @@ fn avatar_derived() -> CloneSchema {
     CloneSchema::new("Avatar".into(), vec![root, items, mods, inventory, gold]).unwrap()
 }
 
-/// 物理侧:与派生完全一致 + kbe_ 内部表 + 一张物理独有表(均须 deny)。
+/// Physical side: fully consistent with derived + a kbe_ internal table + one
+/// physical-only table (all must be denied).
 fn avatar_physical() -> VirtualSchema {
     let mut v = VirtualSchema::default();
     let mut add = |name: &str, cols: &[(&str, &str)]| {
@@ -146,12 +152,12 @@ fn avatar_physical() -> VirtualSchema {
             ("sm_amount", "int"),
         ],
     );
-    // 引擎内部表:派生侧无,kbe_ 前缀 → deny。
+    // Engine internal table: absent on the derived side, kbe_ prefix → deny.
     add(
         "kbe_entitylog",
         &[("id", "bigint(20) unsigned"), ("log", "text")],
     );
-    // 物理独有未派生表:deny(禁止猜关系)。
+    // Physical-only underived table: deny (no guessing relations).
     add("tbl_Unknown", &[("id", "bigint(20) unsigned")]);
     v
 }
@@ -162,15 +168,16 @@ fn golden_plan_for_representative_avatar() {
     let physical = avatar_physical();
 
     let resolved: ResolvedCloneSchema = SchemaResolver::resolve(&derived, &physical).unwrap();
-    assert_eq!(resolved.tables.len(), 5, "五张派生表全部通过匹配");
-    assert_eq!(resolved.missing.len(), 0, "无缺失");
+    assert_eq!(resolved.tables.len(), 5, "all five derived tables matched");
+    assert_eq!(resolved.missing.len(), 0, "nothing missing");
 
     let planner = ExportPlanner::new(10_000);
     let plan = planner
         .plan(&derived, &resolved, &RuleSet::default(), None)
         .unwrap();
 
-    // 黄金序:根表 → 引擎子表(先序,父先子后)。
+    // Golden order: root table → engine child tables (pre-order, parents before
+    // children).
     let tables: Vec<&str> = plan.queries.iter().map(|q| q.table.as_str()).collect();
     assert_eq!(
         tables,
@@ -183,7 +190,7 @@ fn golden_plan_for_representative_avatar() {
         ]
     );
 
-    // 根表按 id;全部子表按 parentID 挂父。
+    // Root table by id; all child tables attach to their parent by parentID.
     assert_eq!(plan.queries[0].filter, PlanFilter::RootId);
     for q in &plan.queries[1..] {
         assert_eq!(q.filter, PlanFilter::ParentId);
@@ -194,7 +201,8 @@ fn golden_plan_for_representative_avatar() {
         Some("tbl_Avatar_items")
     );
 
-    // 黄金 SQL:显式列、反引号、`?` 绑定;仅 SELECT(只读面)。
+    // Golden SQL: explicit columns, backticks, `?` bindings; SELECT only (read-only
+    // face).
     assert_eq!(
         plan.queries[0].select_sql,
         "SELECT `id`, `sm_autoLoad`, `sm_name`, `sm_level`, `sm_0_position`, `sm_1_position`, \
@@ -211,14 +219,16 @@ fn golden_plan_for_representative_avatar() {
         "SELECT `id`, `parentID`, `sm_autoLoad`, `sm_value` FROM `tbl_Avatar_inventory` \
          WHERE `parentID` = ?"
     );
-    // 组件子表同形(parentID 亦为逻辑列,source-evidence §4)。
+    // Component child tables share the same shape (parentID is a logical column
+    // there too, source-evidence §4).
     assert_eq!(
         plan.queries[4].select_sql,
         "SELECT `id`, `parentID`, `sm_autoLoad`, `sm_amount` FROM `tbl_Avatar_gold` \
          WHERE `parentID` = ?"
     );
 
-    // 拒绝面:kbe_ 内部表 + 物理独有表,带原因,不静默。
+    // Denied face: kbe_ internal table + physical-only table, with reasons, never
+    // silent.
     let denied: Vec<(&str, &str)> = plan
         .denied
         .iter()
@@ -235,7 +245,8 @@ fn golden_dry_run_reports_budget() {
     let physical = avatar_physical();
     let resolved = SchemaResolver::resolve(&derived, &physical).unwrap();
 
-    // 无估计 → within_budget 未知(无估计即不预判,执行期实际计数)。
+    // No estimates → within_budget unknown (no estimates means no prediction; the
+    // execution phase counts for real).
     let planner = ExportPlanner::new(10_000);
     let dry = planner
         .dry_run(&derived, &resolved, &RuleSet::default(), None)
@@ -244,7 +255,7 @@ fn golden_dry_run_reports_budget() {
     assert_eq!(dry.estimated_rows_total, None);
     assert!(dry.within_budget);
 
-    // 估计超预算 → 诚实错误(拒绝而非静默截断)。
+    // Estimates over budget → honest error (reject rather than silently truncate).
     let estimates = BTreeMap::from([
         ("tbl_Avatar".to_string(), 1u64),
         ("tbl_Avatar_items".to_string(), 50u64),

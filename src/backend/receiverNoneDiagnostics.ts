@@ -13,35 +13,41 @@ import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 import { maskPythonNonCode } from './pythonLexicalMask';
 
 /**
- * receiver 可能为 None 的诊断(用户令 2026-10-27,任务1):
- * self.client/self.cell/self.base 是引擎 EntityCall getter,引用为空直接返回
- * None(server/baseapp/entity.cpp:800 pyGetClientEntityCall、:750
- * pyGetCellEntityCall、cellapp/entity.cpp:74),玩家离线/掉线
- * (onClientDeath、onLoseCell → S_RELEASE)后即为 None。kode 已建模
- * Union[EntityCall, None](entityBuiltinProperties.ts),hover/实参 inlay 都有,
- * 此处补诊断面:无判空 guard 的成员调用/属性访问报 Warning;.def 段错配同源
- * 可报(经 self.cell 调 ClientMethods 声明的方法)。guard 分析用 in-tree
- * pythonParser 定方法界,行文本做形态判定(与 CodeLens 镜链同口径)。
+ * Diagnostics for a receiver that may be None (user order 2026-10-27, task 1):
+ * self.client/self.cell/self.base are engine EntityCall getters, and they
+ * return None directly once the reference is empty
+ * (server/baseapp/entity.cpp:800 pyGetClientEntityCall, :750
+ * pyGetCellEntityCall, cellapp/entity.cpp:74); after the player goes
+ * offline/disconnects (onClientDeath, onLoseCell -> S_RELEASE) they are None.
+ * kode already models Union[EntityCall, None]
+ * (entityBuiltinProperties.ts), and hover / argument inlay both exist; this
+ * adds the diagnostic surface: a member call / attribute access without a
+ * None-check guard reports a Warning, and the same-root .def section mismatch
+ * can also report (calling a method declared in ClientMethods through
+ * self.cell). Guard analysis uses the in-tree pythonParser to fix method
+ * bounds, with line text for the shape verdict (the same conventions as the
+ * CodeLens mirror chain).
  */
 
 export const RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
 /**
- * 诊断稳定 code(B-7,2026-10-29):快速修复与诊断按 code 对账(与
- * kbengine.unknownType 同款纪律)——守卫 QuickFix 只吃 receiver-none 码,
- * 段错配是路由问题不是判空问题,不出守卫动作。
+ * Stable diagnostic code (B-7, 2026-10-29): quick fixes and diagnostics are
+ * reconciled by code (the same discipline as kbengine.unknownType) -- the
+ * guard QuickFix only accepts the receiver-none code; a section mismatch is a
+ * routing problem, not a None-check problem, so it produces no guard action.
  */
 export const RECEIVER_NONE_DIAGNOSTIC_CODE = 'kbengine.receiverNone';
 export const RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE = 'kbengine.sectionMismatch';
 
-/** 引擎源码引用(随诊断消息携带,给「为什么可能是 None」的直接证据) */
+/** Engine source citations (carried with the diagnostic message, as direct evidence for "why it may be None") */
 export const RECEIVER_NONE_SOURCES: Record<PythonReceiverCall['receiver'], string> = {
   client: 'server/baseapp/entity.cpp:800 pyGetClientEntityCall',
   cell: 'server/baseapp/entity.cpp:750 pyGetCellEntityCall',
   base: 'server/cellapp/entity.cpp:74 pyGetBaseEntityCall'
 };
 
-/** receiver-none 消息(单一来源:TS 同步/异步面与 Rust 结构面渲染共用) */
+/** receiver-none message (single source: shared by the TS sync/async surfaces and the Rust structure-surface rendering) */
 export function renderReceiverNoneMessage(receiver: PythonReceiverCall['receiver']): string {
   return l10nText(
     'self.{receiver} may be None (the engine returns None directly once the player goes offline/disconnects, onClientDeath/onLoseCell → S_RELEASE); check for None before use; engine source: {source}',
@@ -50,9 +56,9 @@ export function renderReceiverNoneMessage(receiver: PythonReceiverCall['receiver
 }
 
 export interface ReceiverNoneFinding {
-  /** 0 起行(方法名 token 所在行) */
+  /** Line, 0-based (the line of the method-name token) */
   line: number;
-  /** 0 起列(方法名 token 起) */
+  /** Column, 0-based (from the method-name token) */
   character: number;
   receiver: PythonReceiverCall['receiver'];
   methodName: string;
@@ -66,8 +72,10 @@ const escapeSubject = (subject: string): string => subject.replace(/\./g, '\\.')
 const unescapeSubject = (subject: string): string => subject.replace(/\\\./g, '.');
 
 /**
- * IDE-LINT-002:if 头条件提取(掩码行:字符串/注释已空白)。从 `if` 后扫到
- * 括号深度 0 的首个 `:`——下标切片等代码内冒号不截断条件。
+ * IDE-LINT-002: if-header condition extraction (masked line: strings/comments
+ * already blanked). Scans from after `if` to the first `:` at bracket depth
+ * 0 -- colons inside code such as subscript slicing do not truncate the
+ * condition.
  */
 function extractIfHeader(line: string): { condition: string; bodyStart: number } | null {
   const match = /^\s*if\s+/.exec(line);
@@ -84,7 +92,7 @@ function extractIfHeader(line: string): { condition: string; bodyStart: number }
   return null;
 }
 
-/** 剥最外层配对括号(`(a) and (b)` 的外括号不包全则原样返回) */
+/** Strip the outermost paired parentheses (for `(a) and (b)` the outer parentheses do not wrap the whole expression, so return it unchanged) */
 function stripOuterParens(expr: string): string {
   let current = expr.trim();
   while (current.startsWith('(') && current.endsWith(')')) {
@@ -103,22 +111,26 @@ function stripOuterParens(expr: string): string {
 }
 
 /**
- * USER-LINT-01(用户报 2026-11-04):引擎校验器名单。KBEngine 全局 API
- * `kbe.isValid(entityRef)`——实体引用有效(未销毁)返回 True,
- * `isValid(None)`/无效引用返回 False,故 `kbe.isValid(X)` 真值 ⟹ X 可
- * 安全解引用,是引擎惯用的正向判空守卫。名单收敛于此一处常量表,后续
- * 引擎侧新增校验器(如 kbe.hasClient 等)在此追加限定名即可,勿散落
- * 硬编码到形态判定里。
+ * USER-LINT-01 (user report 2026-11-04): the engine validator name list. The
+ * KBEngine global API `kbe.isValid(entityRef)` -- a valid (non-destroyed)
+ * entity reference returns True, `isValid(None)` / an invalid reference
+ * returns False, so the truth of `kbe.isValid(X)` implies X can be safely
+ * dereferenced; it is the engine's customary positive None-check guard. The
+ * list is consolidated into this single constant table: when the engine adds
+ * validators later (such as kbe.hasClient), append the qualified name here,
+ * instead of scattering hardcoded names into the shape verdicts.
  */
 const ENGINE_VALIDATOR_NAMES: readonly string[] = ['kbe.isValid'];
 
-/** 正则字面元转义(subject 含 `self.client` 的点号) */
+/** Escape regex literals (the subject contains the dots of `self.client`) */
 const escapeRegexLiteral = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * 名单校验器调用形态:atom 恰为 `<validator>(subject)`(实参内空白宽容;
- * 多余实参/前缀后缀不匹配——`kbe.isValid(other)` 不构成对 subject 的守卫)。
+ * Name-list validator call shape: the atom is exactly
+ * `<validator>(subject)` (whitespace inside the argument is tolerated; extra
+ * arguments or prefixes/suffixes do not match -- `kbe.isValid(other)` does
+ * not constitute a guard for the subject).
  */
 const isEngineValidatorCall = (atom: string, subject: string): boolean => {
   const pattern = new RegExp(
@@ -130,8 +142,10 @@ const isEngineValidatorCall = (atom: string, subject: string): boolean => {
 const TOP_LEVEL_AND = /^(\s+)(and)(\s|$)/;
 const TOP_LEVEL_OR = /^(\s+)(or)(\s|$)/;
 
-/** 顶层(括号深度 0)按 and/or 切分——替代旧朴素字符串 split,不再被
- * 字符串内容/括号误切(掩码行内字符串已空白,这里是结构级切分) */
+/** Split on and/or at the top level (bracket depth 0) -- replacing the old
+ * naive string split, which was no longer mis-split by string content or
+ * parentheses (strings inside a masked line are already blank; this is a
+ * structural split) */
 function splitTopLevel(expr: string, op: 'and' | 'or'): string[] {
   const pattern = op === 'and' ? TOP_LEVEL_AND : TOP_LEVEL_OR;
   const parts: string[] = [];
@@ -155,14 +169,18 @@ function splitTopLevel(expr: string, op: 'and' | 'or'): string[] {
 }
 
 /**
- * IDE-LINT-002:条件布尔语义分诊。subject(原文,未转义)视角:
- * - positive:顶层无 or(优先级 and 紧于 or,顶层有 or 即不确定);顶层 and
- *   分句(剥外层括号)恰为 `subject` / `subject is not None` /
- *   `not (subject is None)` / 引擎校验器真值 `kbe.isValid(subject)`
- *   (USER-LINT-01:真值 ⟹ subject 可安全解引用);
- * - early-exit:单一原子恰为 `not subject` / `subject is None` /
- *   `not kbe.isValid(subject)`(校验器为假 ⟹ subject 无效,反向同理);
- * - null:不确定形态(保留警告)。
+ * IDE-LINT-002: condition boolean-semantics triage, from the subject's point
+ * of view (subject is the raw, unescaped text):
+ * - positive: no `or` at the top level (precedence binds `and` tighter than
+ *   `or`, so a top-level `or` is uncertain); each top-level `and` clause
+ *   (outer parentheses stripped) is exactly `subject` / `subject is not None`
+ *   / `not (subject is None)` / the truth of an engine validator
+ *   `kbe.isValid(subject)` (USER-LINT-01: truth implies the subject can be
+ *   safely dereferenced);
+ * - early-exit: a single atom is exactly `not subject` / `subject is None` /
+ *   `not kbe.isValid(subject)` (a false validator implies the subject is
+ *   invalid, and vice versa);
+ * - null: an uncertain shape (keep the warning).
  */
 type ConditionVerdict = 'positive' | 'early-exit' | null;
 
@@ -174,8 +192,9 @@ function conditionVerdict(condition: string, subject: string): ConditionVerdict 
     const atom = stripOuterParens(atomRaw);
     if (atom === subject || atom === `${subject} is not None`) { return true; }
     if (isEngineValidatorCall(atom, subject)) { return true; }
-    // `not kbe.isValid(subject)` 是反向(校验器为假才走块体)→ 早退非正向,
-    // 此处只认 `not (subject is None)`
+    // `not kbe.isValid(subject)` is the reverse direction (the block body only
+    // runs when the validator is false) -> early-exit, not positive; here we
+    // only accept `not (subject is None)`
     if (/^not\b/.test(atom)) { return stripOuterParens(atom.slice(3)) === `${subject} is None`; }
     return false;
   };
@@ -193,18 +212,18 @@ function conditionVerdict(condition: string, subject: string): ConditionVerdict 
   return null;
 }
 
-/** 接收者本地别名赋值:`x = self.<role>`(第 4 组须纯空白/已掩注释才算完赋值) */
+/** Local receiver alias assignment: `x = self.<role>` (group 4 must be pure whitespace / an already-masked comment for the assignment to count as complete) */
 const RECEIVER_ALIAS_ASSIGN =
   /^([ \t]*)([A-Za-z_]\w*)\s*=\s*self\.(cell|base|client)(.*)$/;
 
-/** 方法/类作用域头(掩码行;方法自身的 def 行由调用方排除) */
+/** Method/class scope header (masked line; the method's own def line is excluded by the caller) */
 const NESTED_SCOPE_HEADER = /^\s*(?:async\s+)?def\s|^\s*class\s/;
 
-/** 目标(别名名或 self.<role>)重绑:普通/增强赋值、海象;`==` `<=` 等比较不算 */
+/** Rebinding of the target (alias name or self.<role>): plain/augmented assignment, walrus; comparisons such as `==` `<=` do not count */
 const rebindPattern = (target: string): RegExp =>
   new RegExp(`\\b${target}\\s*(?:(?:\\*\\*|//|>>|<<|[-+*/%&|^])?=(?!=)|:=)`);
 
-/** for/del/as 对名字的重绑 */
+/** Rebinding of a name by for/del/as */
 const nameRebindExtras = (name: string): RegExp =>
   new RegExp(`\\b(?:for|del|as)\\s+${name}\\b`);
 
@@ -233,7 +252,7 @@ function buildMethodSpans(parsed: ReturnType<typeof parsePythonFile>): ClassMeth
   });
 }
 
-/** 方法体界(0 起行,含尾):保留原有类顺序，复用预先排序的方法区间。 */
+/** Method-body bounds (0-based lines, inclusive of the tail): keeps the original class order and reuses the pre-sorted method spans. */
 function enclosingMethodSpan(classes: readonly ClassMethodSpans[], line: number): MethodSpan | undefined {
   for (const cls of classes) {
     if (line < cls.startLine || line >= cls.endLine) { continue; }
@@ -246,44 +265,53 @@ function enclosingMethodSpan(classes: readonly ClassMethodSpans[], line: number)
 }
 
 /**
- * use 行之前是否存在接收者判空 guard:
- * a) 正向 if(`if self.cell:`/`if self.cell is not None:`/别名同形)
- *    且 use 行在其块体内(缩进更深且之间无同级去缩进);
- * b) 早退 if(`if not self.cell:`/`if self.cell is None:`)块体内含 return/raise;
- * c) use 行同行的单行 if guard(`if self.cell: self.cell.x()`)/三元前置判空。
+ * Whether a receiver None-check guard exists before the use line:
+ * a) a positive if (`if self.cell:` / `if self.cell is not None:` / the same
+ *    shape via an alias) with the use line inside its block body (deeper
+ *    indentation, and no same-level dedent in between);
+ * b) an early-exit if (`if not self.cell:` / `if self.cell is None:`) whose
+ *    block body contains a return/raise;
+ * c) a one-line if guard on the use line itself (`if self.cell:
+ *    self.cell.x()`) or a ternary pre-check.
  *
- * IDE-DIA-004:guard 前缀扫描按(方法,接收者)一次完成(scanGuardCandidates
- * 单趟收集候选行+别名),同方法同接收者的多处调用共享同一份候选,逐调用
- * 只做位置闸判定,不再每个调用点从头遍历方法体。
+ * IDE-DIA-004: the guard prefix scan is completed once per (method, receiver)
+ * (scanGuardCandidates collects candidate lines + aliases in a single pass),
+ * so multiple calls in the same method for the same receiver share one set of
+ * candidates; each call only evaluates the positional gates, instead of
+ * re-walking the method body from scratch at every call site.
  */
 interface GuardCandidate {
   line: number;
   indent: number;
   kind: 'positive' | 'early-exit';
-  /** 命中的分句 subject(转义形):过闸时查 (guard 行, use 行) 间有无重绑 */
+  /** The matched clause subject (escaped form): the gate checks for rebinding between (guard line, use line) */
   subject: string;
-  /** 正向 guard:if 块的闭合行(首个缩进 ≤ ifIndent 的非空行;无则方法体界+1)。
-   * use 行 < blockEnd 即仍在块体内(2026-10-28 审核整改:预计算一次,逐调用零重扫) */
+  /** Positive guard: the closing line of the if block (the first non-empty line
+   * with indentation <= ifIndent; otherwise method-body bound + 1).
+   * use line < blockEnd means it is still inside the block body (2026-10-28
+   * audit remediation: precomputed once, so each call needs no re-scan) */
   blockEnd?: number;
-  /** 早退 guard:块体内首个无条件 return/raise 行(0 起行;无则 undefined) */
+  /** Early-exit guard: the first unconditional return/raise line inside the block body (0-based line; undefined if none) */
   exitLine?: number;
 }
 
 interface MethodGuardScan {
   receiver: PythonReceiverCall['receiver'];
   candidates: GuardCandidate[];
-  /** 别名赋值行与名(`x = self.<role>`),同行闸判定按 use 之前的过滤 */
+  /** Alias assignment lines and names (`x = self.<role>`); the same-line gate filters by those before the use */
   aliases: Array<{ line: number; name: string }>;
-  /** 转义 subject → 重绑行表(别名再赋值/for/del、self.<role> 属性重赋值):
-   * guard 与 use 之间的重绑使旧证明失效(IDE-LINT-004) */
+  /** Escaped subject -> table of rebinding lines (alias reassignment / for / del,
+   * self.<role> attribute reassignment): a rebind between the guard and the use
+   * invalidates the earlier proof (IDE-LINT-004) */
   rebinds: Map<string, number[]>;
-  /** 方法体内嵌套 def/class 头行:guard 证明不跨作用域边界(IDE-LINT-004) */
+  /** Nested def/class header lines inside the method body: a guard proof does not
+   * cross a scope boundary (IDE-LINT-004) */
   nestedHeaders: number[];
 }
 
 let guardPrefixScanCount = 0;
 
-/** 测试面:guard 前缀扫描计数(按方法×接收者记账) */
+/** Test surface: guard prefix scan count (booked per method x receiver) */
 export function getGuardPrefixScanCountForTests(): number {
   return guardPrefixScanCount;
 }
@@ -292,7 +320,7 @@ export function resetGuardPrefixScanCountForTests(): void {
   guardPrefixScanCount = 0;
 }
 
-/** 测试面:块探测计数(blockContains/blockExits 触发次数) */
+/** Test surface: block probe count (number of blockContains/blockExits triggers) */
 let guardBlockProbeCount = 0;
 
 export function getGuardBlockProbeCountForTests(): number {
@@ -303,8 +331,10 @@ export function resetGuardBlockProbeCountForTests(): void {
   guardBlockProbeCount = 0;
 }
 
-/** 单趟扫方法体(掩码行):维持存活 subject 集(self.<role> 起步,遇别名
- * 赋值追加),记录重绑行与嵌套 def/class 头,guard 形态按条件布尔语义分诊 */
+/** Single-pass scan of the method body (masked lines): maintains the live
+ * subject set (starting from self.<role>, appending on alias assignment),
+ * records rebinding lines and nested def/class headers, and triages the
+ * guard shapes by condition boolean semantics */
 function scanGuardCandidates(
   lines: readonly string[],
   span: MethodSpan,
@@ -334,7 +364,7 @@ function scanGuardCandidates(
     if (j > span.startLine && NESTED_SCOPE_HEADER.test(text)) {
       nestedIndents.push(indent);
       nestedHeaders.push(j);
-      continue; // 嵌套作用域头行本身不是 guard/别名行
+      continue; // a nested scope header line is itself neither a guard nor an alias line
     }
     const nested = nestedIndents.length > 0;
     if (!nested) {
@@ -346,17 +376,19 @@ function scanGuardCandidates(
           aliasNames.add(name);
           subjects.push({ escaped: escapeSubject(name), plain: name });
         }
-        continue; // 别名赋值行本身不是 guard 行
+        continue; // an alias assignment line is itself not a guard line
       }
     }
-    // 重绑记账(IDE-LINT-004):别名名与 self.<role> 属性的重赋值/for/del/as
+    // Rebinding accounting (IDE-LINT-004): reassignment / for / del / as of the alias name and of the self.<role> attribute
     for (const subject of subjects) {
       const hit = rebindPattern(subject.plain).test(text)
         || (!subject.plain.startsWith('self.') && nameRebindExtras(subject.plain).test(text));
       if (hit) { recordRebind(subject.escaped, j); }
     }
-    // guard 形态判定:if 头条件按布尔语义分诊(IDE-LINT-002;行内单行体不算
-    // 块 guard,正向单行走 hasReceiverGuardFromScan 的同行闸)
+    // Guard shape verdict: triage the if-header condition by boolean semantics
+    // (IDE-LINT-002; an inline one-line body does not count as a block guard, a
+    // positive single-line body goes through the same-line gate of
+    // hasReceiverGuardFromScan)
     const header = extractIfHeader(text);
     if (!header) { continue; }
     const inlineBody = /\S/.test(text.slice(header.bodyStart));
@@ -374,8 +406,10 @@ function scanGuardCandidates(
       candidates.push({ line: j, indent, kind: 'early-exit', subject: early });
     }
   }
-  // 2026-10-28 审核整改:块界/早退位置每候选预计算一次(扫描期,计探测数),
-  // 逐调用只做位置闸判定,不再从 guard 行重扫文本(平方级 → 近线性)
+  // 2026-10-28 audit remediation: block bounds / early-exit positions are
+  // precomputed once per candidate (during the scan, counted as probes), and
+  // each call only evaluates the positional gates, no longer re-scanning text
+  // from the guard line (quadratic -> near linear)
   for (const candidate of candidates) {
     if (candidate.kind === 'positive') {
       candidate.blockEnd = firstDedentAfter(lines, span, candidate);
@@ -386,7 +420,7 @@ function scanGuardCandidates(
   return { receiver, candidates, aliases, rebinds, nestedHeaders };
 }
 
-/** if 块闭合行:candidate 行之后首个非空且缩进 ≤ ifIndent 的行;块贯通到方法体界则界+1 */
+/** Closing line of an if block: the first non-empty line after the candidate line whose indentation is <= ifIndent; if the block runs on to the method-body bound, that bound + 1 */
 function firstDedentAfter(
   lines: readonly string[],
   span: MethodSpan,
@@ -402,10 +436,14 @@ function firstDedentAfter(
 }
 
 /**
- * if 块体内首个无条件 return/raise 行(IDE-LINT-003):块体首行定块缩进,
- * 按块级语句顺序扫——首个块级 return/raise 即退出;首个块级复合语句
- * (嵌套 if/for/…,其 return 可不走)即不确定;更深缩进是续行/嵌套块,跳过。
- * 掩码行保证字符串/注释里的 return/raise 不再误判。
+ * First unconditional return/raise line inside an if block body
+ * (IDE-LINT-003): the first line of the body fixes the block indentation, and
+ * the scan follows block-level statement order -- the first block-level
+ * return/raise is the exit; the first block-level compound statement (a nested
+ * if/for/..., whose return may not run) is uncertain; deeper indentation is a
+ * continuation line / nested block and is skipped.
+ * Masked lines guarantee that a return/raise inside a string or comment is
+ * never misjudged.
  */
 function firstExitAfter(
   lines: readonly string[],
@@ -418,12 +456,12 @@ function firstExitAfter(
     const text = lines[j];
     if (COMMENT_ONLY.test(text)) { continue; }
     const indent = indentOf(text);
-    if (indent <= candidate.indent) { return undefined; } // 块已闭
+    if (indent <= candidate.indent) { return undefined; } // the block has closed
     if (bodyIndent === -1) { bodyIndent = indent; }
     if (indent === bodyIndent) {
       if (/^\s*(?:return|raise)\b/.test(text)) { return j; }
-      // 块级复合语句(嵌套 if/for/…):其后 return 不保证所有路径退出;
-      // 块级普通语句:无条件执行,继续向后找
+      // A block-level compound statement (nested if/for/...): the returns after it do not guarantee that every path exits;
+      // a block-level ordinary statement: executed unconditionally, keep looking further
       if (/^\s*(?:if|elif|else|for|while|try|except|finally|with|def|class|match|case)\b/.test(text)) {
         return undefined;
       }
@@ -432,7 +470,7 @@ function firstExitAfter(
   return undefined;
 }
 
-/** guard 与 use 之间 subject 无重绑(IDE-LINT-004:重赋值使旧证明失效) */
+/** No subject rebinding between the guard and the use (IDE-LINT-004: reassignment invalidates the earlier proof) */
 function bindingStableBetween(
   scan: MethodGuardScan,
   escapedSubject: string,
@@ -445,9 +483,11 @@ function bindingStableBetween(
 }
 
 /**
- * IDE-LINT-004:别名 guard 的证明窗口起点不是 guard 行,而是 guard 前最近
- * 一次该名的 receiver 赋值——赋值与 guard 之间的重赋值意味着 guard 测的
- * 已不是 receiver 值。self.<role> 本体的窗口就是 guard 行。
+ * IDE-LINT-004: the proof window of an alias guard does not start at the
+ * guard line but at the most recent receiver assignment of that name before
+ * the guard -- a reassignment between the assignment and the guard means the
+ * guard is no longer testing the receiver value. For self.<role> itself the
+ * window is just the guard line.
  */
 function proofWindowStart(scan: MethodGuardScan, candidate: GuardCandidate): number {
   const selfSubject = escapeSubject(`self.${scan.receiver}`);
@@ -460,12 +500,12 @@ function proofWindowStart(scan: MethodGuardScan, candidate: GuardCandidate): num
   return start;
 }
 
-/** guard 与 use 之间不跨嵌套 def/class 边界(IDE-LINT-004) */
+/** No crossing of a nested def/class boundary between the guard and the use (IDE-LINT-004) */
 function crossesNestedScope(scan: MethodGuardScan, fromLine: number, toLine: number): boolean {
   return scan.nestedHeaders.some(header => header > fromLine && header < toLine);
 }
 
-/** 候选过闸:位置闸(块界/早退已预计算)+ 重绑/跨作用域失效闸,零文本重扫 */
+/** Whether a candidate passes the gates: positional gates (block bounds / early exit already precomputed) + rebinding / cross-scope invalidation gates, with zero text re-scanning */
 function hasReceiverGuardFromScan(
   lines: readonly string[],
   scan: MethodGuardScan,
@@ -478,7 +518,7 @@ function hasReceiverGuardFromScan(
     const proofStart = proofWindowStart(scan, candidate);
     if (proofStart === -1
       || !bindingStableBetween(scan, candidate.subject, proofStart, useLine)
-      // 别名值与接收者属性同源:期间 self.<role> 被重赋值则旧证明同失效
+      // The alias value and the receiver attribute share a source: if self.<role> is reassigned in the meantime, the earlier proof fails too
       || !bindingStableBetween(scan, escapeSubject(`self.${scan.receiver}`), proofStart, useLine)) {
       continue;
     }
@@ -490,7 +530,7 @@ function hasReceiverGuardFromScan(
       return true;
     }
   }
-  // 同行 guard:单行 if(条件按布尔语义判定)/ 三元前置判空
+  // Same-line guard: a one-line if (the condition judged by boolean semantics) / a ternary pre-check
   const useText = lines[useLine];
   for (const subject of scanSubjectsUpTo(scan, useLine)) {
     const header = extractIfHeader(useText);
@@ -507,7 +547,7 @@ function hasReceiverGuardFromScan(
   return false;
 }
 
-/** 同行闸的 subject 集:接收者本体 + use 之前赋值且未被重绑的别名 */
+/** The subject set for the same-line gate: the receiver itself + aliases assigned before the use and not rebound */
 function scanSubjectsUpTo(scan: MethodGuardScan, useLine: number): string[] {
   const subjects = [escapeSubject(`self.${scan.receiver}`)];
   for (const alias of scan.aliases) {
@@ -519,21 +559,25 @@ function scanSubjectsUpTo(scan: MethodGuardScan, useLine: number): string[] {
   return subjects;
 }
 
-/** 方法体内别名属性使用点:`name.attr`(name 仍绑定 receiver 才算) */
+/** Alias attribute use points inside the method body: `name.attr` (only counts while name is still bound to the receiver) */
 const ALIAS_ATTR_USE = /\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)/g;
 
 interface AliasScope {
   indent: number;
-  /** 名 → receiver 绑定(行号);null = 已重绑为其他值 */
+  /** name -> receiver binding (line number); null = already rebound to another value */
   bindings: Map<string, { receiver: PythonReceiverCall['receiver']; line: number } | null>;
 }
 
 /**
- * IDE-LINT-006:收集方法体内本地别名的使用点(单趟,掩码行,按方法区间一次)。
- * 作用域链解析:嵌套 def/class 各自持绑定表;use 从最内层向外找首个绑定该名
- * 的作用域——内层有赋值(遮蔽)则不沿用外层 receiver 证明;外层绑定经闭包
- * 可见时按外层绑定报。产出与 self.<role>.<name> 同形的调用点(列=属性名
- * token),与直接调用共用同一 guard 闸与段错配检查。
+ * IDE-LINT-006: collect the use points of local aliases inside the method
+ * body (a single pass, masked lines, once per method span).
+ * Scope-chain resolution: a nested def/class keeps its own binding table; a
+ * use walks outward from the innermost scope to the first scope that binds the
+ * name -- if the inner scope has an assignment (shadowing), the outer receiver
+ * proof is not carried over; when the outer binding is visible through a
+ * closure, report according to the outer binding. Produces call points in the
+ * same shape as self.<role>.<name> (column = the attribute-name token), and
+ * shares the same guard gate and section-mismatch check as direct calls.
  */
 function collectAliasUseCalls(
   lines: readonly string[],
@@ -562,7 +606,7 @@ function collectAliasUseCalls(
       });
       continue;
     }
-    // 本作用域内重绑(普通/增强赋值、for/del/as)使该名绑定失效
+    // A rebind within this scope (plain/augmented assignment, for/del/as) invalidates the binding of that name
     for (const [name, binding] of scope.bindings) {
       if (binding === null) { continue; }
       if (rebindPattern(name).test(text) || nameRebindExtras(name).test(text)) {
@@ -572,15 +616,17 @@ function collectAliasUseCalls(
     let match: RegExpExecArray | null;
     ALIAS_ATTR_USE.lastIndex = 0;
     while ((match = ALIAS_ATTR_USE.exec(text)) !== null) {
-      // 作用域链向外解析:最内层持有该名绑定的作用域
+      // Resolve outward along the scope chain: the innermost scope holding the binding of that name
       let holder: AliasScope | undefined;
       for (let s = scopes.length - 1; s >= 0; s -= 1) {
         if (scopes[s].bindings.has(match[1])) { holder = scopes[s]; break; }
       }
       const binding = holder?.bindings.get(match[1]);
       if (!binding || binding.line === j) { continue; }
-      // 逐面语义闸(深审-3):调用面无此角色属性(如 cellapp 上 self.cell
-      // 别名)→ 绑定源头即 AttributeError,使用点不进诊断面。
+      // Per-surface semantic gate (deep audit 3): when the caller surface has no
+      // such role attribute (e.g. a self.cell alias on cellapp), the binding
+      // source is already an AttributeError, so the use point stays out of the
+      // diagnostic surface.
       const section = pythonReceiverSectionFor(callerFace, binding.receiver);
       if (section === null) { continue; }
       calls.push({
@@ -601,7 +647,7 @@ const indentOf = (line: string): number => {
   return match ? match[0].replace(/\t/g, '    ').length : 0;
 };
 
-/** .def 段错配消息(声明非空且无一处在接收者对应段时才成消息;否则 undefined) */
+/** .def section mismatch message (only becomes a message when the declarations are non-empty and none of them sits in the section matching the receiver; otherwise undefined) */
 function sectionMismatchMessage(
   receiver: PythonReceiverCall['receiver'],
   methodName: string,
@@ -618,31 +664,37 @@ function sectionMismatchMessage(
   );
 }
 
-/** .def 段错配:方法在 def 声明了,但没有任何一处在接收者对应的 section */
+/** .def section mismatch: the method is declared in the def, but not in any place within the section matching the receiver */
 function sectionMismatch(call: PythonReceiverCall, mapping: EntityMapping): string | undefined {
   return sectionMismatchMessage(call.receiver, call.methodName, mapping);
 }
 
 /**
- * 全量计算:无判空 guard 的接收者引用(Warning)+ .def 段错配(Warning)。
- * 纯函数(文本 + 内存映射快照),供诊断调度器同步 compute 面调用。
- * preparsed(IDE-DIA-003):同版本共享解析——直接给对象或给惰性提供器
- * (仅当确有 receiver 使用点过闸后才调用,IDE-DIA-001 零使用点不解析
- * 语义保持);给了就不各自完整解析一次。
+ * Full computation: receiver references without a None-check guard (Warning)
+ * + .def section mismatches (Warning).
+ * A pure function (text + in-memory mapping snapshot), called from the
+ * diagnostic scheduler's synchronous compute surface.
+ * preparsed (IDE-DIA-003): a shared parse for the same version -- either pass
+ * an object directly or pass a lazy provider (invoked only once a receiver use
+ * point has really passed the gates, preserving the IDE-DIA-001 semantics of
+ * not parsing when there are zero use points); when provided, no side performs
+ * its own full parse.
  */
 export type PreparsedPythonProvider = ReturnType<typeof parsePythonFile> | (() => ReturnType<typeof parsePythonFile>);
 
 /**
- * IDE-REV-009 异步面提供器:在同步形态之上允许异步取解析(如
- * asyncDocumentParse 的 worker 路径)与 null(本轮共享解析不可用——
- * worker 停用/积压上限/版本代被并发编辑顶掉):null 时异步面中止本轮
- * 返回 null,不回退宿主同步整文件解析。
+ * IDE-REV-009 async-surface provider: on top of the synchronous shapes it
+ * allows fetching the parse asynchronously (such as the worker path of
+ * asyncDocumentParse) and null (the shared parse is unavailable this round --
+ * worker shut down / backlog cap / the version generation displaced by a
+ * concurrent edit): on null the async surface aborts the round and returns
+ * null, without falling back to the host's synchronous whole-file parse.
  */
 export type AsyncPreparsedPythonProvider =
   | PreparsedPythonProvider
   | (() => ReturnType<typeof parsePythonFile> | null | Promise<ReturnType<typeof parsePythonFile> | null>);
 
-/** 逐调用求值(同步/异步面共用):guard 过闸判定 + 段错配,结果入 findings */
+/** Per-call evaluation (shared by the sync/async surfaces): guard gate verdict + section mismatch, results pushed into findings */
 function appendCallFindings(
   calls: readonly PythonReceiverCall[],
   lines: readonly string[],
@@ -679,16 +731,16 @@ function appendCallFindings(
   }
 }
 
-/** 一次解析的求值上下文(同步/异步面共用构建) */
+/** Evaluation context built from one parse (shared by the sync/async surfaces) */
 interface ReceiverEvalContext {
   lines: string[];
   methodSpans: ClassMethodSpans[];
   scanFor: (span: MethodSpan, receiver: PythonReceiverCall['receiver']) => MethodGuardScan;
-  /** IDE-LINT-006:本地别名使用点(掩码文本上按方法区间一次收集) */
+  /** IDE-LINT-006: local alias use points (collected once per method span over the masked text) */
   aliasUseCalls: PythonReceiverCall[];
 }
 
-/** 文本里疑似有别名赋值(决定是否做别名使用点收集的廉价预检) */
+/** The text appears to contain an alias assignment (a cheap pre-check deciding whether to collect alias use points) */
 export const RECEIVER_ALIAS_HINT = /\b[A-Za-z_]\w*\s*=\s*self\.(?:cell|base|client)\b/;
 
 function buildEvalContextFromParsed(
@@ -698,8 +750,9 @@ function buildEvalContextFromParsed(
 ): ReceiverEvalContext {
   const methodSpans = buildMethodSpans(parsed);
   const lines = maskedText.split(/\r?\n/);
-  // IDE-DIA-004:guard 前缀扫描按(方法区间, 接收者)一次,同方法同接收者的
-  // 多处调用共享同一份候选
+  // IDE-DIA-004: the guard prefix scan runs once per (method span, receiver),
+  // so multiple calls in the same method for the same receiver share one set of
+  // candidates
   const guardScans = new Map<MethodSpan, Map<PythonReceiverCall['receiver'], MethodGuardScan>>();
   const scanFor = (span: MethodSpan, receiver: PythonReceiverCall['receiver']): MethodGuardScan => {
     let byReceiver = guardScans.get(span);
@@ -714,8 +767,8 @@ function buildEvalContextFromParsed(
     }
     return scan;
   };
-  // IDE-LINT-006:掩码一次全文扫描(IDE-LINT-005)复用于调用发现与别名收集,
-  // 不逐命中重扫
+  // IDE-LINT-006: the single masked full-text scan (IDE-LINT-005) is reused for
+  // call discovery and alias collection, with no per-hit re-scan
   const aliasUseCalls: PythonReceiverCall[] = [];
   if (RECEIVER_ALIAS_HINT.test(maskedText)) {
     for (const cls of methodSpans) {
@@ -727,9 +780,12 @@ function buildEvalContextFromParsed(
   return { lines, methodSpans, scanFor, aliasUseCalls };
 }
 
-/** 异步面解析求值(IDE-REV-009):提供器优先(惰性——仅过闸后调用);无提供器
- * 默认自解析同样经 parsePythonFileResponsive 分流(≥256KiB 进 worker,宿主
- * 不落整文件同步解析;阈值下宿主同步与全仓口径一致)。null=本轮不可用。 */
+/** Async-surface parse evaluation (IDE-REV-009): the provider comes first
+ * (lazy -- invoked only after the gates pass); without a provider the default
+ * self-parse also routes through parsePythonFileResponsive (>=256KiB goes to
+ * the worker, and the host never lands on a synchronous whole-file parse; below
+ * the threshold the host's synchronous path matches the whole-repo
+ * conventions). null = unavailable this round. */
 async function resolveParsedAsync(
   text: string,
   filePath: string,
@@ -751,11 +807,15 @@ export function computeReceiverNoneFindings(
   mapping?: EntityMapping,
   preparsed?: PreparsedPythonProvider
 ): ReceiverNoneFinding[] {
-  // IDE-LINT-005:全文掩码一次,调用发现与 guard 分析共用(列偏移不变)
+  // IDE-LINT-005: one masked pass over the whole text, shared by call discovery
+  // and guard analysis (column offsets unchanged)
   const masked = maskPythonNonCode(text);
-  // 逐面语义闸(深审-3):调用面由脚本目录域换算;面上无此角色属性的引用
-  // (base.base/cell.cell/client.client)在发现面即滤除——AttributeError 面,
-  // guard/段对账都不适用,与 Rust bind_self_role 九面表同口径
+  // Per-surface semantic gate (deep audit 3): the caller surface converts from
+  // the script directory domain; references lacking this role attribute on the
+  // surface (base.base/cell.cell/client.client) are filtered out at the
+  // discovery surface -- an AttributeError face, where neither the guard nor the
+  // section reconciliation applies, matching the Rust bind_self_role nine-face
+  // table
   const callerFace = pythonScriptDomain(filePath) ?? undefined;
   const baseCalls = findPythonReceiverCalls(masked, callerFace);
   if (baseCalls.length === 0 && !RECEIVER_ALIAS_HINT.test(masked)) { return []; }
@@ -769,13 +829,13 @@ export function computeReceiverNoneFindings(
   return findings;
 }
 
-/** IDE-DIA-005 异步分片面:大文件计算移出同步入口 */
+/** IDE-DIA-005 async chunked surface: large-file computation moves out of the synchronous entry */
 export interface ReceiverNoneAsyncDeps {
-  /** 每片处理的调用数(默认 200) */
+  /** Number of calls processed per chunk (default 200) */
   chunkSize?: number;
-  /** 片间让出宿主(默认 setTimeout 0;测试可替换) */
+  /** Yield to the host between chunks (default setTimeout 0; tests may replace it) */
   yieldToHost?: () => Promise<void>;
-  /** 片间检查:返回 false 即中止(版本已前进,旧版本回包丢弃)→ 整体返回 null */
+  /** Check between chunks: returning false aborts (the version has advanced, so the stale reply is discarded) -> the whole thing returns null */
   shouldContinue?: () => boolean;
 }
 
@@ -785,15 +845,22 @@ const yieldToHostDefault = (): Promise<void> =>
   new Promise(resolve => { setTimeout(resolve, 0); });
 
 /**
- * computeReceiverNoneFindings 的分片异步面:调用点按 chunkSize 分片,
- * 片间让出宿主(计算期间宿主仍可响应定时器/请求);shouldContinue 为假
- * (版本已前进)中止并返回 null——调用方丢弃,绝不产出部分结果被当全量。
- * 产出与同步面逐项一致(同解析/同 guard 候选记忆化)。
+ * Chunked async surface of computeReceiverNoneFindings: call points are split
+ * into chunks of chunkSize, and the host is yielded to between chunks (the host
+ * can still answer timers/requests during the computation); a false
+ * shouldContinue (the version has advanced) aborts and returns null -- the
+ * caller discards it, and a partial result is never produced and mistaken for
+ * the full one.
+ * The output matches the synchronous surface item for item (the same parse /
+ * the same guard-candidate memoization).
  *
- * IDE-REV-009:解析消费异步面(resolveParsedAsync——提供器可异步/可 null,
- * 无提供器默认自解析同样 worker 分流),首个 yield 之前的宿主工作只剩
- * findPythonReceiverCalls 这一次线性正则扫描(无解析、无逐行状态机),
- * 整文件同步解析窗口不再存在;解析落定后复核版本(等待期间前进即中止)。
+ * IDE-REV-009: parse consumption goes through the async surface
+ * (resolveParsedAsync -- the provider may be async / may be null; without a
+ * provider the default self-parse also routes through the worker), so the host
+ * work before the first yield is only the single linear regex scan of
+ * findPythonReceiverCalls (no parsing, no per-line state machine); the
+ * synchronous whole-file parse window no longer exists. Once the parse lands,
+ * the version is rechecked (if it advanced while waiting, abort).
  */
 export async function computeReceiverNoneFindingsAsync(
   text: string,
@@ -804,18 +871,20 @@ export async function computeReceiverNoneFindingsAsync(
 ): Promise<ReceiverNoneFinding[] | null> {
   const chunkSize = deps.chunkSize ?? RECEIVER_NONE_CHUNK_SIZE;
   const yieldToHost = deps.yieldToHost ?? yieldToHostDefault;
-  // IDE-LINT-005:全文掩码一次,调用发现与 guard 分析共用(列偏移不变)
+  // IDE-LINT-005: one masked pass over the whole text, shared by call discovery
+  // and guard analysis (column offsets unchanged)
   const masked = maskPythonNonCode(text);
-  // 逐面语义闸(深审-3):与同步面同口径(见 computeReceiverNoneFindings)
+  // Per-surface semantic gate (deep audit 3): the same conventions as the sync
+  // surface (see computeReceiverNoneFindings)
   const callerFace = pythonScriptDomain(filePath) ?? undefined;
   const baseCalls = findPythonReceiverCalls(masked, callerFace);
   if (baseCalls.length === 0 && !RECEIVER_ALIAS_HINT.test(masked)) { return []; }
   const parsed = await resolveParsedAsync(text, filePath, preparsed);
   if (!parsed) {
-    return null; // 本轮共享解析不可用:中止,不产出,不回退宿主同步解析
+    return null; // the shared parse is unavailable this round: abort, produce nothing, and do not fall back to the host's synchronous parse
   }
   if (deps.shouldContinue && !deps.shouldContinue()) {
-    return null; // 解析等待期间版本已前进:旧版本回包由调用方丢弃
+    return null; // the version advanced while waiting for the parse: the caller discards the stale reply
   }
   const context = buildEvalContextFromParsed(masked, parsed, callerFace);
   const calls = baseCalls.concat(context.aliasUseCalls);
@@ -824,7 +893,7 @@ export async function computeReceiverNoneFindingsAsync(
     if (start > 0) {
       await yieldToHost();
       if (deps.shouldContinue && !deps.shouldContinue()) {
-        return null; // 版本已前进:中止,旧版本回包由调用方丢弃
+        return null; // the version has advanced: abort; the caller discards the stale reply
       }
     }
     const end = Math.min(start + chunkSize, calls.length);
@@ -834,7 +903,7 @@ export async function computeReceiverNoneFindingsAsync(
   return findings;
 }
 
-/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖) */
+/** Diagnostic item (pure data; the extension side converts to vscode.Diagnostic, tests stay vscode-free) */
 export interface ReceiverDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -843,7 +912,7 @@ export interface ReceiverDiagnosticItem {
   message: string;
   severity: 'Warning';
   source: 'kbengine';
-  /** 稳定 code(B-7):QuickFix provider 按此对账 */
+  /** Stable code (B-7): the QuickFix provider reconciles by this */
   code: string;
 }
 
@@ -861,16 +930,19 @@ const findingToDiagnosticItem = (finding: ReceiverNoneFinding): ReceiverDiagnost
 });
 
 /**
- * 早退守卫插入编辑(B-7 纯函数):使用行之前插入
- * `<缩进>if not self.<receiver>:` + `<缩进+一级>return`。
- * 缩进复用使用行的前导空白原文(空格/制表符不混);内层一级=空格文件
- * 加 4 空格、tab 文件加 1 tab。守卫形态即诊断面自认的 early-exit
- * guard 一族,插入后重算该位不再报。行号越界/空文本返回 null(不猜)。
+ * Early-exit guard insertion edit (B-7 pure function): inserts
+ * `<indent>if not self.<receiver>:` + `<indent+1>return` before the use line.
+ * The indent reuses the use line's leading whitespace verbatim (no mixing of
+ * spaces with tabs); one level in = add 4 spaces for a space file, add 1 tab
+ * for a tab file. The guard shape is exactly the early-exit guard family the
+ * diagnostic surface recognizes, so recomputing the position after insertion
+ * no longer reports. Out-of-range line numbers / empty text return null
+ * (never guess).
  */
 export interface ReceiverNoneGuardEdit {
-  /** 插入点(0 起行;插入该行行首之前) */
+  /** Insertion point (0-based line; inserted before the start of that line) */
   line: number;
-  /** 插入文本(两行,含尾换行) */
+  /** Inserted text (two lines, with a trailing newline) */
   text: string;
 }
 
@@ -896,20 +968,27 @@ export function buildReceiverNoneGuardEdit(
 }
 
 /**
- * 包裹式守卫替换编辑(2026-10-30 用户令):`if self.<receiver>:`(真值判定)
- * 包住当前语句与后续同级块并整体缩进一级、继续执行——用户:常见操作是
- * 判非 None 后继续,早退 `if not x: return` 反而不常见,故包裹式为首选。
- * 编辑=Range 替换 [startLine, endLine):原 `if self.<receiver>:` 行 +
- * 块内各行整体加一级缩进(前导原文空格/制表符不混;同级/更深行都进一级,
- * 相对深度保持)。块界=首个缩进低于使用行的非空非注释行(块贯通则文末)。
- * 行号越界/空文本/使用行为空行返回 null(不猜)。
+ * Wrapping guard replacement edit (user order 2026-10-30):
+ * `if self.<receiver>:` (truthiness test) wraps the current statement and the
+ * following same-level block, indents the whole thing by one level, and
+ * continues -- the user's words: the common operation is to continue after
+ * checking for non-None, whereas the early-exit `if not x: return` is the
+ * uncommon one, so the wrapping form is the preferred one.
+ * The edit = a Range replacement of [startLine, endLine): the original
+ * `if self.<receiver>:` line + every line inside the block indented one level
+ * overall (leading verbatim spaces/tabs not mixed; same-level and deeper lines
+ * all go in one level, keeping relative depth). The block bound = the first
+ * non-empty, non-comment line whose indentation is lower than the use line's
+ * (if the block runs on, the end of the text).
+ * Out-of-range line numbers / empty text / the use line being blank return
+ * null (never guess).
  */
 export interface ReceiverNoneWrapEdit {
-  /** 替换起点行(0 起,含) */
+  /** Replacement start line (0-based, inclusive) */
   startLine: number;
-  /** 替换终点行(0 起,不含;块闭行/文末) */
+  /** Replacement end line (0-based, exclusive; the block-closing line / end of text) */
   endLine: number;
-  /** 替换文本(块内行已加一级缩进,`if` 头行在前;不含文末换行) */
+  /** Replacement text (lines inside the block already indented one level, with the `if` header line first; no trailing newline at end of text) */
   text: string;
 }
 
@@ -929,16 +1008,19 @@ export function buildReceiverNoneWrapEdit(
   const leading = /^[ \t]*/.exec(useLine)?.[0] ?? '';
   const inner = leading.includes('\t') ? `${leading}\t` : `${leading}    `;
   const useIndent = indentOf(useLine);
-  // 2026-10-30 用户反馈:包裹式不得把整段后续同级块都卷进来——只包「用到
-  // 本 receiver 的连续语句」(以及它们的多行续行),首个不引用本 receiver 的
-  // 同级语句即截断,避免无关语句(如后面的 self.base.notify())被误缩进。
+  // 2026-10-30 user feedback: the wrapping form must not roll the entire
+  // following same-level block into itself -- wrap only "the consecutive
+  // statements that use this receiver" (together with their multi-line
+  // continuations), truncating at the first same-level statement that does not
+  // reference this receiver, so unrelated statements (such as a later
+  // self.base.notify()) are never indented by mistake.
   const receiverPattern = new RegExp(`\\bself\\.${receiver}\\b`);
   let end = line + 1;
   let balance = delimiterDelta(useLine);
   while (end < lines.length) {
     const current = lines[end];
     if (COMMENT_ONLY.test(current) || !current.trim()) {
-      // 多行语句续行内(括号未闭合)不因空行/注释中断;否则语句组结束
+      // Inside a multi-line statement continuation (unclosed brackets) a blank line / comment does not break it; otherwise the statement group ends
       if (balance > 0) {
         end += 1;
         continue;
@@ -948,7 +1030,7 @@ export function buildReceiverNoneWrapEdit(
     if (indentOf(current) < useIndent) {
       break;
     }
-    // 续行(balance>0 括号未闭合)或引用本 receiver → 纳入;否则语句组结束
+    // A continuation (balance>0, brackets unclosed) or a reference to this receiver -> include; otherwise the statement group ends
     if (!receiverPattern.test(current) && balance <= 0) {
       break;
     }
@@ -968,7 +1050,7 @@ export function buildReceiverNoneWrapEdit(
   };
 }
 
-/** 统计行内未闭合括号差(续行判定:>0 表示语句在下一行继续) */
+/** Tally the unclosed-bracket delta on the line (continuation verdict: >0 means the statement continues on the next line) */
 function delimiterDelta(line: string): number {
   let delta = 0;
   for (const char of line) {
@@ -981,7 +1063,7 @@ function delimiterDelta(line: string): number {
   return delta;
 }
 
-/** 开关口:enabled=false 零产出(用户令:配置开关默认开可关,severity=Warning) */
+/** Switch gate: enabled=false yields zero output (user order: the config switch defaults to on and can be turned off, severity=Warning) */
 export function receiverNoneDiagnosticItems(
   text: string,
   filePath: string,
@@ -995,9 +1077,10 @@ export function receiverNoneDiagnosticItems(
   return computeReceiverNoneFindings(text, filePath, mapping, preparsed).map(findingToDiagnosticItem);
 }
 
-/** IDE-DIA-005 异步面:分片计算 + 中止返回 null(旧版本回包丢弃)。
- * IDE-REV-009:preparsed 放宽为异步提供器(共享解析经 asyncDocumentParse
- * 的 worker 路径;null=本轮不可用,整体中止) */
+/** IDE-DIA-005 async surface: chunked computation + abort returns null (a stale-version reply is discarded).
+ * IDE-REV-009: preparsed is widened to an async provider (the shared parse goes
+ * through asyncDocumentParse's worker path; null = unavailable this round,
+ * aborting the whole thing) */
 export async function receiverNoneDiagnosticItemsAsync(
   text: string,
   filePath: string,
@@ -1013,27 +1096,30 @@ export async function receiverNoneDiagnosticItemsAsync(
   return findings === null ? null : findings.map(findingToDiagnosticItem);
 }
 
-// ---- Rust 面(AUDIT-005 B2 车道批 3:receiverNone 收编) ------------------------
-// `$/kode/lint/analyzeReceiverNone` 经 gate.runInRust(与 analyzeSpaceNav/
-// analyzeRoleMisuse 同口径):Rust 只回结构面(code/line/character/length +
-// kind/receiver/methodName),消息渲染留本模块(l10n 单一来源);段错配的
-// declared 由 TS 侧同一 mapping 快照重算——重算不构成错配 = 语义矛盾,
-// 整面作废回 TS 兜底(禁止部分采用)。
+// ---- Rust surface (AUDIT-005 B2 lane batch 3: receiverNone consolidation) ----
+// `$/kode/lint/analyzeReceiverNone` goes through gate.runInRust (the same
+// conventions as analyzeSpaceNav / analyzeRoleMisuse): Rust only returns the
+// structure surface (code/line/character/length + kind/receiver/methodName),
+// message rendering stays in this module (l10n single source); the section
+// mismatch's declared list is recomputed on the TS side from the same mapping
+// snapshot -- a recomputation that does not constitute a mismatch = semantic
+// contradiction, so the whole face is voided and it falls back to TS (partial
+// adoption is forbidden).
 
-/** Rust 结构面单条产物(`$/kode/lint/analyzeReceiverNone` 应答) */
+/** One Rust structure-surface product (a `$/kode/lint/analyzeReceiverNone` reply) */
 export interface ReceiverNoneRustItem {
   code: string;
   line: number;
   character: number;
   length: number;
-  /** 消息判别:receiverNone | sectionMismatch */
+  /** Message discriminator: receiverNone | sectionMismatch */
   kind: string;
-  /** client | cell | base(消息与段错配重算都用) */
+  /** client | cell | base (used by both the message and the section mismatch recomputation) */
   receiver: string;
   methodName: string;
 }
 
-/** 结构面单条 → 诊断面(消息渲染);缺参/未知 kind/契约漂移 = 畸形 */
+/** One structure-surface entry -> diagnostic surface (message rendering); missing fields / unknown kind / contract drift = malformed */
 function renderRustReceiverNoneItem(
   item: ReceiverNoneRustItem,
   mapping: EntityMapping | undefined
@@ -1082,11 +1168,11 @@ function renderRustReceiverNoneItem(
       return null;
     }
     if (!mapping) {
-      return null; // 无映射不可能出段错配条(契约漂移)
+      return null; // without a mapping a section mismatch entry is impossible (contract drift)
     }
     const message = sectionMismatchMessage(receiver, item.methodName, mapping);
     if (!message) {
-      return null; // TS 映射下不构成错配 = 语义矛盾,整面作废
+      return null; // it does not constitute a mismatch under the TS mapping = semantic contradiction, void the whole face
     }
     return {
       range: {
@@ -1103,8 +1189,9 @@ function renderRustReceiverNoneItem(
 }
 
 /**
- * 结构面数组 → 诊断面数组(消息渲染);任一条畸形返回 null(整面作废,调用方
- * 回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+ * Structure-surface array -> diagnostic-surface array (message rendering); any
+ * malformed entry returns null (the whole face is voided and the caller falls
+ * back to TS -- partial adoption is forbidden). Shared by the parity tests.
  */
 export function renderRustReceiverNoneItems(
   items: readonly unknown[],

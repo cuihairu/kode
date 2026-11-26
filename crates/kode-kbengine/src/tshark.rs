@@ -1,17 +1,18 @@
-//! PCAP 输入层:复用 TShark 成熟能力(todo PA-004 验收原文)。
+//! PCAP input layer: reuses TShark's mature capabilities (todo PA-004 acceptance text).
 //!
-//! 口径:CLI 不自己解 pcap 容器;`tshark -r <file|-> -T fields` 吐
-//! `frame.time_epoch / tcp.srcport / tcp.dstport / tcp.payload` 行,本模块
-//! 只做行解析 + 进程编排。`--pcap -` 时把 stdin 的 pcap 字节**流式**写入
-//! tshark 的 stdin(tshark 原生支持 `-r -`),边到边出,不整包驻留。
+//! Contract: the CLI does not decode pcap containers itself; `tshark -r <file|-> -T fields` emits
+//! `frame.time_epoch / tcp.srcport / tcp.dstport / tcp.payload` lines, and this module only parses
+//! the lines and orchestrates the process. With `--pcap -` the pcap bytes on stdin are written to
+//! tshark's stdin **streamingly** (tshark natively supports `-r -`), producing as they arrive
+//! without holding the whole capture in memory.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 
-/// 一行 tshark 字段输出(一个 TCP 载荷包)。
+/// One line of tshark field output (a TCP payload packet).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TsharkPacket {
-    /// `frame.time_epoch`(秒.fraction;缺失/不可解析 → None,不编造)。
+    /// `frame.time_epoch` (seconds.fraction; missing/unparsable -> None, never fabricated).
     pub timestamp: Option<f64>,
     pub srcport: u16,
     pub dstport: u16,
@@ -24,8 +25,9 @@ pub struct TsharkProcess {
     stdout: BufReader<std::process::ChildStdout>,
 }
 
-/// 启动 tshark。`pcap == "-"` 时必须给 `stdin_source`(流式拷贝,后台线程);
-/// 文件 pcap 时 stdin 置空(真实 tshark 不读 stdin,避免写管道死锁)。
+/// Launch tshark. When `pcap == "-"` a `stdin_source` must be supplied (streamed copy in a
+/// background thread); for a file pcap stdin is nulled (real tshark does not read stdin, which
+/// avoids a write-pipe deadlock).
 pub fn spawn_tshark(
     bin: &str,
     pcap: &str,
@@ -63,9 +65,10 @@ pub fn spawn_tshark(
         cmd.stdin(Stdio::null());
     }
 
-    // ETXTBSY 短退避重试:exec 撞上刚落盘/并发更新的二进制(tmpfs 上
-    // 写→exec 竞窗实测偶发,真实 tshark 被包管理器并发更新同面)。三次
-    // 5ms 退避后仍失败才如实上抛。
+    // Short ETXTBSY backoff retry: exec can hit a binary that was just written to disk or
+    // concurrently updated (the write->exec race window on tmpfs is observed occasionally; a real
+    // tshark hit by a package manager's concurrent update is the same face). Only after three 5ms
+    // backoffs still fail is the error surfaced as-is.
     let mut child = None;
     let mut last_err = None;
     for _ in 0..3 {
@@ -102,7 +105,7 @@ pub fn spawn_tshark(
                         Ok(0) => break,
                         Ok(n) => {
                             if si.write_all(&buf[..n]).is_err() {
-                                break; // 下游退出,停止灌入
+                                break; // downstream exited, stop feeding
                             }
                         }
                         Err(_) => break,
@@ -110,7 +113,7 @@ pub fn spawn_tshark(
                 }
                 let _ = si.flush();
             });
-            // si 在线程闭包结束时 drop → stdin 关闭,tshark 收尾。
+            // si is dropped when the thread closure ends -> stdin closes and tshark winds down.
         }
     }
 
@@ -122,7 +125,7 @@ pub fn spawn_tshark(
 }
 
 impl TsharkProcess {
-    /// 逐行驱动(流式:解析一行回调一行)。
+    /// Drive it line by line (streaming: one callback per parsed line).
     pub fn for_each_packet(
         &mut self,
         mut f: impl FnMut(Result<TsharkPacket, String>),
@@ -153,8 +156,8 @@ impl TsharkProcess {
     }
 }
 
-/// 解析一行 `ts \t sport \t dport \t payload`(payload 为冒号分隔 hex;
-/// 字段缺失/解析失败 → Err,不猜)。
+/// Parse one line of `ts \t sport \t dport \t payload` (the payload is colon-separated hex;
+/// a missing field or parse failure -> Err, no guessing).
 pub fn parse_tshark_line(line: &str) -> Result<TsharkPacket, String> {
     let parts: Vec<&str> = line.split('\t').collect();
     if parts.len() < 4 {
@@ -197,8 +200,8 @@ pub fn parse_tshark_line(line: &str) -> Result<TsharkPacket, String> {
 mod tests {
     use super::*;
 
-    // 用例全 unix-only(sh 脚本 fake tshark),助手同门,Windows 夜构建
-    // 不产 dead_code 警告。
+    // The cases are all unix-only (sh-script fake tshark); the helpers are gated the same way so
+    // the Windows nightly build produces no dead_code warnings.
     #[cfg(unix)]
     fn temp_dir(tag: &str) -> std::path::PathBuf {
         let dir =
@@ -207,9 +210,10 @@ mod tests {
         dir
     }
 
-    /// 可执行脚本落盘(hermetic fake tshark 的载体)。写临时名再原子 rename:
-    /// 目标路径出现时写句柄必已闭合,杜绝 exec 撞上残留写句柄的
-    /// ETXTBSY(实测偶发)。
+    /// Write an executable script to disk (the vehicle for the hermetic fake tshark). Write a
+    /// temporary name, then atomically rename: by the time the target path appears the write handle
+    /// is already closed, ruling out an exec hitting a residual write handle and producing ETXTBSY
+    /// (observed occasionally).
     #[cfg(unix)]
     fn write_script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
@@ -230,7 +234,7 @@ mod tests {
         assert_eq!(p.srcport, 51023);
         assert_eq!(p.dstport, 20013);
         assert_eq!(p.payload, vec![0xde, 0xad, 0xbe, 0xef]);
-        // 无时间戳(不可解析)→ None,不编造。
+        // No timestamp (unparsable) -> None, never fabricated.
         let p = parse_tshark_line("not-a-ts\t1\t2\t00").unwrap();
         assert_eq!(p.timestamp, None);
         assert_eq!(p.payload, vec![0x00]);
@@ -238,25 +242,25 @@ mod tests {
 
     #[test]
     fn parse_tshark_line_rejects_bad_fields_explicitly() {
-        // 字段数不足(<4)。
+        // Too few fields (<4).
         let err = parse_tshark_line("1\t2\t3").unwrap_err();
         assert!(
             err.contains("unexpected tshark field line (3 fields)"),
             "{err}"
         );
-        // srcport / dstport 不是 u16。
+        // srcport / dstport is not a u16.
         let err = parse_tshark_line("1.0\t99999\t2\t00").unwrap_err();
         assert!(err.contains("bad tcp.srcport: 99999"), "{err}");
         let err = parse_tshark_line("1.0\t1\t70000\t00").unwrap_err();
         assert!(err.contains("bad tcp.dstport: 70000"), "{err}");
-        // 载荷 hex 奇数长度。
+        // Payload hex with an odd length.
         let err = parse_tshark_line("1.0\t1\t2\td:ea").unwrap_err();
         assert!(err.contains("odd tcp.payload hex length"), "{err}");
-        // 载荷 hex 含非 hex 字符。
+        // Payload hex contains a non-hex character.
         let err = parse_tshark_line("1.0\t1\t2\tzz").unwrap_err();
         assert!(err.contains("bad hex at 0"), "{err}");
-        // 空 payload 也合法(纯 ACK/握手包,tshark -Y tcp.payload 会滤掉,
-        // 但解析层仍容忍空列)。
+        // An empty payload is legal too (pure ACK/handshake packets, filtered by tshark -Y
+        // tcp.payload, but the parsing layer still tolerates an empty field).
         let p = parse_tshark_line("1.0\t1\t2\t").unwrap();
         assert!(p.payload.is_empty());
     }
@@ -267,7 +271,8 @@ mod tests {
         let dir = temp_dir("file");
         let lines = dir.join("lines.txt");
         std::fs::write(&lines, "1759000000.100000\t51023\t20013\t00:11\n").unwrap();
-        // 文件 pcap:stdin 置空(真实 tshark 不读 stdin,防管道死锁)。
+        // File pcap: stdin is nulled (real tshark does not read stdin, guarding against a pipe
+        // deadlock).
         let script = write_script(
             &dir,
             "fake.sh",
@@ -294,8 +299,8 @@ mod tests {
         let dir = temp_dir("stream");
         let lines = dir.join("lines.txt");
         std::fs::write(&lines, "1759000000.100000\t51023\t20013\t00\n").unwrap();
-        // fake tshark 先吞 stdin 到 EOF(证明后台拷贝线程把字节送到了),
-        // 再输出预置行。
+        // The fake tshark first swallows stdin to EOF (proving the background copy thread really
+        // delivered the bytes), then emits its prepared lines.
         let script = write_script(
             &dir,
             "fake.sh",
@@ -329,7 +334,7 @@ mod tests {
     fn for_each_packet_skips_blank_lines_and_reports_nonzero_exit() {
         let dir = temp_dir("exit");
         let lines = dir.join("lines.txt");
-        // 空行必须跳过(不当作坏包),其余行为正常包。
+        // Blank lines must be skipped (not treated as bad packets); the rest are normal packets.
         std::fs::write(
             &lines,
             "\n1759000000.100000\t1\t2\t00\n\n1759000000.200000\t2\t1\tff\n",
@@ -362,7 +367,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn for_each_packet_propagates_read_errors_of_wellformed_output() {
-        // 正常行 + 退出 0:回调收到 Ok;整包成功收尾。
+        // Normal lines + exit 0: the callback receives Ok; the whole run winds down successfully.
         let dir = temp_dir("ok");
         let lines = dir.join("lines.txt");
         std::fs::write(&lines, "1759000000.100000\t7\t8\t0102\n").unwrap();
@@ -392,15 +397,17 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// unix→linux:ETXTBSY 竞窗复现只在 linux 验证过;macOS 的 exec 对
-    /// 持写句柄脚本不必然回 ETXTBSY(行为差异,darwin-x64 真红 2026-11-21),
-    /// 该断言平台语义不在 darwin 成立。
+    /// unix -> linux: the ETXTBSY race window has only been reproduced on linux; macOS exec does
+    /// not necessarily return ETXTBSY for a script with a held write handle (a behavioural
+    /// difference, darwin-x64 genuine red 2026-11-21), so this assertion's platform semantics do
+    /// not hold on darwin.
     #[cfg(target_os = "linux")]
     #[test]
     fn spawn_tshark_retries_then_reports_when_binary_busy() {
-        // exec 撞写句柄(ETXTBSY):三次退避重试后如实上抛安装提示,
-        // 不无限等。真实成因=二进制被并发更新/刚落盘的竞窗(见上注释);
-        // 测试以受控写句柄复现同一 errno 面。
+        // exec hitting a write handle (ETXTBSY): after three backoff retries the install hint is
+        // surfaced faithfully, no indefinite wait. The real cause is the race window of a binary
+        // being concurrently updated or just written to disk (see the note above); the test
+        // reproduces the same errno face with a controlled write handle.
         let dir = temp_dir("etxtbsy");
         let script = write_script(&dir, "fake.sh", "#!/bin/sh\nexit 0\n");
         let _writer = std::fs::OpenOptions::new()
@@ -416,12 +423,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn spawn_tshark_streaming_stops_feeding_when_downstream_exits_early() {
-        // 下游不读 stdin 直接退出:拷贝线程写满管道后撞 EPIPE 即停灌
-        // (不 panic 不挂死),stdout 正常收尾。
+        // The downstream exits without reading stdin: after the copy thread fills the pipe and hits
+        // EPIPE it stops feeding (no panic, no hang), and stdout winds down normally.
         let dir = temp_dir("epipe");
         let lines = dir.join("lines.txt");
         std::fs::write(&lines, "1759000000.100000\t51023\t20013\t00\n").unwrap();
-        // fake tshark 输出一行后立即退出(全程不读 stdin)。
+        // The fake tshark prints one line and exits immediately (never reading stdin at all).
         let script = write_script(
             &dir,
             "fake.sh",
@@ -439,8 +446,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn spawn_tshark_streaming_stops_feeding_on_source_read_error() {
-        // 源读错误:拷贝线程如实停止灌入并关 stdin,下游到 EOF 收尾,
-        // 错误不外泄(输入面问题不该伪装成 tshark 失败)。
+        // Source read error: the copy thread stops feeding faithfully and closes stdin, the
+        // downstream winds down at EOF, and the error does not leak out (an input-face problem must
+        // not masquerade as a tshark failure).
         struct FlakyRead {
             data: Vec<u8>,
             served: bool,

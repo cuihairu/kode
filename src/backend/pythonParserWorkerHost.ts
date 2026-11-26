@@ -5,18 +5,23 @@ import { parsePythonFile, type ParsedPythonFile } from './pythonParser';
 
 export const PYTHON_WORKER_PARSE_THRESHOLD = 256 * 1024;
 
-/** IDE-RES-002 待处理字节量上限:未派发(待派发最新)任务保留的源码串
- *  总量上界。达到上限后新积压请求不再无限保留源码串,以可解释错误拒绝;
- *  已在途任务与同文件合并(每文件只留最新一份)不受影响。 */
+/** IDE-RES-002 pending-byte ceiling: the upper bound on the source strings kept by
+ *  undelivered (latest-to-be-dispatched) tasks. Once the ceiling is hit, new backlog
+ *  requests stop holding their source strings indefinitely and are rejected with an
+ *  explainable error; in-flight tasks and same-file merging (only the latest one kept
+ *  per file) are unaffected. */
 export const MAX_QUEUED_PARSE_BYTES = 8 * 1024 * 1024;
 
-/** IDE-AUD-022:在途(已派发未回包)任务数硬上限。worker 挂起不回包时
- *  posted 不再无限增长;超限的首份任务转为待派发排队(受字节预算约束),
- *  回包后按全局让路面继续派发最新版本。 */
+/** IDE-AUD-022: hard cap on the number of in-flight (dispatched, no reply yet) tasks.
+ *  When the worker hangs without replying, posted no longer grows without bound; a
+ *  first task over the cap switches to the pending queue (bounded by the byte budget),
+ *  and after replies come back the global yield surface keeps dispatching the latest
+ *  versions. */
 export const MAX_POSTED_PARSE_JOBS = 16;
 
-/** IDE-AUD-022:在途源码串字节硬上限(已派发即 host 释放,此处计 worker
- *  持有/传输中的源码量,与 MAX_QUEUED_PARSE_BYTES 同口径)。 */
+/** IDE-AUD-022: hard cap on in-flight source-string bytes (the host releases content on
+ *  dispatch; this counts the source the worker holds or that is in transfer, the same
+ *  accounting as MAX_QUEUED_PARSE_BYTES). */
 export const MAX_POSTED_PARSE_BYTES = 8 * 1024 * 1024;
 
 interface ParseReply {
@@ -31,22 +36,25 @@ interface PendingParse {
   reject: (error: Error) => void;
 }
 
-/** 一次解析任务(IDE-RES-001:waiters 可多于一个——未派发即被更新版本
- *  合并的旧请求,其等待者改跟合并后任务的结果结算;调用方按 revision
- *  比对丢弃,语义与旧行为一致)。 */
+/** One parse task (IDE-RES-001: there can be more than one waiter -- an old request
+ *  merged by a newer version before it was dispatched settles on the merged task's
+ *  result; callers compare revisions and drop, with semantics matching the old
+ *  behaviour). */
 interface HostedJob {
   id: number;
   filePath: string;
   content: string;
-  /** 原始源码长度(AUD-022):派发后 host 释放 content,在途字节据此冲销。 */
+  /** Original source length (AUD-022): after dispatch the host releases content, and
+   * in-flight bytes are written back off against this. */
   contentLength: number;
   revision: number;
   waiters: PendingParse[];
 }
 
-/** 同文件派发链:在途一个 + 待派发最新一个。快速提交 v1/v2/v3 时,
- *  未运行的旧版本(尚未派发给 worker)不逐份解析——只有首份与最新份
- *  进 worker,中间版本零解析直接以最新结果结算。 */
+/** Same-file dispatch chain: one in flight + the latest pending one. On rapid commits
+ *  v1/v2/v3, the old versions that have not run yet (not dispatched to the worker) are
+ *  not each parsed -- only the first and the latest enter the worker, and the middle
+ *  versions settle straight on the latest result with zero parsing. */
 interface FileQueue {
   inFlight: HostedJob | null;
   pendingLatest: HostedJob | null;
@@ -56,31 +64,33 @@ let worker: Worker | null = null;
 let nextId = 1;
 const posted = new Map<number, HostedJob>();
 const fileQueues = new Map<string, FileQueue>();
-/** IDE-RES-002:待派发任务保留的源码串字节总量(已派发的 postMessage 后即释放) */
+/** IDE-RES-002: total source-string bytes held by pending tasks (released once dispatched via postMessage) */
 let queuedBytes = 0;
-/** IDE-REV-030:排队字节峰值(会话内高水位,单调不降;排干/清理不回落) */
+/** IDE-REV-030: queued-byte high-water mark within the session (monotonically non-decreasing; does not fall back on drain/cleanup) */
 let peakQueuedBytes = 0;
-/** IDE-REV-030:因超预算被拒的请求累计数(恢复后保留,供现场报告辨认积压史) */
+/** IDE-REV-030: cumulative number of requests rejected for exceeding the budget (kept after reset, so an on-site report can recognise the backlog history) */
 let budgetRejects = 0;
-/** IDE-AUD-022:在途(已派发未回包)源码串字节总量(派发时计,回包/失败冲销) */
+/** IDE-AUD-022: total source-string bytes in flight (dispatched, no reply yet; counted on dispatch, written back on reply/failure) */
 let postedBytes = 0;
 
-/** RUST-031:单文件降级台账项——哪个文件因超预算被拒、最近一次被拒的
- *  源码串大小、累计被拒笔数。 */
+/** RUST-031: one degraded-ledger entry -- which file was rejected for exceeding the budget,
+ *  the size of the most recently rejected source string, and the cumulative reject count. */
 export interface PythonParseDegradedFile {
   filePath: string;
   bytes: number;
   rejects: number;
 }
 
-/** RUST-031:超预算降级台账(会话内有界,只留最新 DEGRADED_LEDGER_LIMIT 个
- *  文件;恢复后保留,供状态报告明示「哪些文件能力受限」——budgetRejects
- *  只有总量,说不出是哪个文件)。 */
+/** RUST-031: the over-budget degradation ledger (bounded within the session, keeping only
+ *  the latest DEGRADED_LEDGER_LIMIT files; retained after reset so a status report can
+ *  state plainly "which files are degraded in capability" -- budgetRejects is only a
+ *  total and says nothing about which file). */
 const DEGRADED_LEDGER_LIMIT = 20;
 const degradedFiles = new Map<string, PythonParseDegradedFile>();
 
-/** 记一笔超预算拒绝:计数 +1 并落台账(已知文件只累计,新文件入表,
- *  超界逐出最旧)。 */
+/** Record one over-budget rejection: increment the count and write the ledger (a known
+ *  file only accumulates, a new file enters the table, and the oldest is evicted past
+ *  the bound). */
 function noteBudgetReject(filePath: string, bytes: number): void {
   budgetRejects += 1;
   const existing = degradedFiles.get(filePath);
@@ -112,30 +122,31 @@ function failPending(error: Error): void {
   postedBytes = 0;
 }
 
-/** IDE-REV-030:解析 worker 队列与字节占用的实测面。现场报告读这里,
- * 不用 indexTasksQueued 代替——那是索引任务层的排队计数,不是解析线程
- * 的派发队列。字节口径与 MAX_QUEUED_PARSE_BYTES 同源:JS 字符 length
- * (源码串码元计),不做额外字节估算。 */
+/** IDE-REV-030: the measured view of the parse worker's queue and byte occupancy.
+ *  On-site reports read this and do not substitute indexTasksQueued -- that is a queued
+ *  count at the index-task layer, not the dispatch queue of the parse thread. The byte
+ *  accounting is the same source as MAX_QUEUED_PARSE_BYTES: JS character length
+ *  (code units of the source string), with no extra byte estimation. */
 export interface PythonParserWorkerGauge {
-  /** 已派发进 worker 的在途任务数(posted;worker 挂起不回包时持续可见) */
+  /** In-flight tasks already dispatched into the worker (posted; stays visible while the worker hangs without replying) */
   running: number;
-  /** 未派发的待派发任务数(每文件最多保留最新一份) */
+  /** Undelivered pending tasks (at most the latest one kept per file) */
   queued: number;
-  /** 待派发任务保留的源码串字节量(同预算口径;已派发即释放) */
+  /** Source-string bytes held by pending tasks (the same budget accounting; released on dispatch) */
   queuedBytes: number;
-  /** 字节预算上限(即 MAX_QUEUED_PARSE_BYTES) */
+  /** Byte budget ceiling (i.e. MAX_QUEUED_PARSE_BYTES) */
   maxQueuedBytes: number;
-  /** 排队字节峰值(会话内高水位;排干后保留供辨认积压史) */
+  /** Queued-byte high-water mark (within the session; retained after a drain to recognise the backlog history) */
   peakQueuedBytes: number;
-  /** 因超预算被拒的请求累计数 */
+  /** Cumulative number of requests rejected for exceeding the budget */
   budgetRejects: number;
-  /** RUST-031:超预算降级台账快照(会话内有界,最新在表;恢复后保留) */
+  /** RUST-031: snapshot of the over-budget degradation ledger (bounded within the session, latest entries in the table; retained after reset) */
   degradedFiles: PythonParseDegradedFile[];
-  /** 在途(已派发未回包)源码串字节总量(AUD-022) */
+  /** Total source-string bytes in flight (dispatched, no reply yet) (AUD-022) */
   postedBytes: number;
-  /** 在途任务数硬上限(即 MAX_POSTED_PARSE_JOBS) */
+  /** Hard cap on the number of in-flight tasks (i.e. MAX_POSTED_PARSE_JOBS) */
   maxPostedJobs: number;
-  /** 在途源码串字节硬上限(即 MAX_POSTED_PARSE_BYTES) */
+  /** Hard cap on in-flight source-string bytes (i.e. MAX_POSTED_PARSE_BYTES) */
   maxPostedBytes: number;
 }
 
@@ -158,27 +169,29 @@ export function getPythonParserWorkerGauge(): PythonParserWorkerGauge {
   };
 }
 
-/** 测试用:清峰值/拒绝计数与降级台账(不影响在途队列本身) */
+/** For tests: clear the peak/reject counters and the degradation ledger (leaves the in-flight queues themselves alone) */
 export function resetPythonParserWorkerGaugeCountersForTests(): void {
   peakQueuedBytes = 0;
   budgetRejects = 0;
   degradedFiles.clear();
 }
 
-/** 测试用:fileQueues 当前条目数(PAR-1/KR-AUD-07 回收验收面) */
+/** For tests: the current number of fileQueues entries (the PAR-1/KR-AUD-07 reclaim acceptance face) */
 export function fileQueueCountForTests(): number {
   return fileQueues.size;
 }
 
-/** AUD-022:在途(已派发)任务是否还可接新任务——数量与字节双硬上限,
- *  任一超限即不再直接 post,改走待派发排队。 */
+/** AUD-022: whether an in-flight (dispatched) task can still take on new tasks -- twin
+ *  hard caps on count and bytes; past either, stop posting directly and switch to the
+ *  pending queue. */
 function canPostNow(contentLength: number): boolean {
   return posted.size < MAX_POSTED_PARSE_JOBS && postedBytes + contentLength <= MAX_POSTED_PARSE_BYTES;
 }
 
-/** AUD-022:全局让路面。某任务回包/失败释放在途容量后,按文件登记序
- *  派发各文件待派发最新,直至在途硬上限——恢复后最新版本可继续,
- *  不因首份任务积压而丢更新。 */
+/** AUD-022: the global yield surface. After some task's reply/failure releases in-flight
+ *  capacity, dispatch each file's pending latest, in file registration order, until the
+ *  in-flight hard cap -- after a reset the latest versions can keep flowing, so updates
+ *  are not lost to a first task stuck in flight. */
 function drainAllQueues(): void {
   for (const queue of fileQueues.values()) {
     if (queue.inFlight !== null || !queue.pendingLatest) { continue; }
@@ -188,8 +201,10 @@ function drainAllQueues(): void {
     queuedBytes -= next.content.length;
     dispatchJob(queue, next);
   }
-  // PAR-1(KR-AUD-07):已排干(无在途、无待派)的文件队列不再保留——回包/失败后
-  // 即回收,长会话 map 不随已处理文件数线性涨。先收集再删,防迭代中改 map。
+  // PAR-1 (KR-AUD-07): drained file queues (nothing in flight, nothing pending) are no
+  // longer kept -- reclaimed right after a reply/failure so the long-session map does not
+  // grow linearly with the number of processed files. Collect first, then delete, to
+  // avoid mutating the map mid-iteration.
   const drained: string[] = [];
   for (const [filePath, queue] of fileQueues) {
     if (queue.inFlight === null && queue.pendingLatest === null) {
@@ -207,8 +222,9 @@ function dispatchJob(queue: FileQueue, job: HostedJob): void {
   postedBytes += job.contentLength;
   try {
     ensureWorker().postMessage({ id: job.id, content: job.content, filePath: job.filePath, revision: job.revision });
-    // IDE-RES-002:已派发即释放 host 侧源码串副本(worker 已持自有拷贝,
-    // host 长会话不再扣着大字符串不放)
+    // IDE-RES-002: release the host-side source-string copy on dispatch (the worker holds
+    // its own copy, and the host no longer withholds the large string through a long
+    // session)
     job.content = '';
   } catch (error) {
     posted.delete(job.id);
@@ -265,9 +281,10 @@ export async function parsePythonFileResponsive(
   const queue = fileQueues.get(filePath) ?? { inFlight: null, pendingLatest: null };
   fileQueues.set(filePath, queue);
   if (queue.inFlight !== null || queue.pendingLatest !== null) {
-    // IDE-RES-002:积压字节记账——同文件顶替先释放旧版字节再记新版;总量
-    // 超上限不再保留源码串,以可解释错误拒绝(调用方 loadFile 登记有界重试/
-    // onDocumentChanged 留待下次编辑自然重试)
+    // IDE-RES-002: backlog byte accounting -- a same-file supersede releases the old version's
+    // bytes before recording the new one; once the total exceeds the ceiling, stop holding
+    // source strings and reject with an explainable error (the caller's loadFile registers a
+    // bounded retry / onDocumentChanged leaves it to a natural retry on the next edit)
     const superseded = queue.pendingLatest;
     const freedBytes = superseded ? superseded.content.length : 0;
     if (queuedBytes - freedBytes + content.length > MAX_QUEUED_PARSE_BYTES) {
@@ -282,8 +299,9 @@ export async function parsePythonFileResponsive(
     const promise = new Promise<{ revision: number; parsed: ParsedPythonFile }>((resolve, reject) => {
       job.waiters.push({ resolve, reject });
     });
-    // 同文件在途:未派发的上一版被本版合并(等待者改跟本版结果);
-    // 已在途的那份不可抢占,回包后本版接链派发
+    // Same file already in flight: the previous undelivered version is merged into this one
+    // (its waiters settle on this version's result); the already-dispatched one cannot be
+    // preempted, and this version chains onto the dispatch after its reply
     if (superseded) {
       job.waiters.push(...superseded.waiters);
     }
@@ -294,8 +312,9 @@ export async function parsePythonFileResponsive(
   const promise = new Promise<{ revision: number; parsed: ParsedPythonFile }>((resolve, reject) => {
     job.waiters.push({ resolve, reject });
   });
-  // AUD-022:首份任务也不能绕过在途硬上限——在途满(数量/字节)时转为
-  // 待派发排队(受字节预算约束),回包后全局让路面继续派发
+  // AUD-022: even a first task must not bypass the in-flight hard caps -- when in flight is
+  // full (count/bytes) it switches to the pending queue (bounded by the byte budget), and
+  // after a reply the global yield surface keeps dispatching
   if (canPostNow(content.length)) {
     dispatchJob(queue, job);
   } else if (queuedBytes + content.length <= MAX_QUEUED_PARSE_BYTES) {
@@ -315,7 +334,8 @@ export function disposePythonParserWorker(): void {
   const current = worker;
   worker = null;
   failPending(new Error('Python parser worker disposed'));
-  // terminate 可能 reject(线程已死等):拒绝也不许变 unhandled rejection——
-  // 等待者已全部在 failPending 结清,终止失败无补救面,静默收口。
+  // terminate can reject (dead thread etc.): a rejection must never become an unhandled
+  // rejection -- all waiters were settled in failPending, and there is no remediation face
+  // for a failed terminate, so close this out silently.
   if (current) { void current.terminate().catch(() => undefined); }
 }

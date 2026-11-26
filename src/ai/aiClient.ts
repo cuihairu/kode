@@ -1,14 +1,17 @@
-// AI 底座(AI-001,方案 C,用户令 2026-11-17):OpenAI-compatible
-// /v1/chat/completions,自带 fetch,零新依赖;未配置 baseUrl 时回退
-// vscode.lm(LanguageModelChat,feature-detect —— engines.vscode 1.82 早于
-// 1.90 引入的 lm API,存在性探测不可省,kodeMcpHost 同口径)。API key 只存
-// SecretStorage,绝不落 settings.json(configuration 面无 key 字段)。默认
-// 全关:未配置 endpoint 且无可用 lm 模型时不注册任何 AI 命令(惰性激活,
-// 零成本)。请求带超时/取消(CancellationToken 贯穿 abort)/重试上限;
-// 遥测零——除用户显式触发外零代码外发,只发该命令所需片段。
+// AI foundation (AI-001, plan C, user ruling 2026-11-17): OpenAI-compatible
+// /v1/chat/completions, ships its own fetch, zero new dependencies; falls back
+// to vscode.lm (LanguageModelChat, feature-detect — engines.vscode 1.82
+// predates the lm API introduced in 1.90, so existence probing cannot be
+// skipped; kodeMcpHost follows the same contract). The API key is stored only
+// in SecretStorage and never in settings.json (the configuration surface has no
+// key field). Off by default: when no endpoint is configured and no lm model
+// is available, no AI command is registered (lazy activation, zero cost).
+// Requests carry a timeout/cancel (CancellationToken threads through abort) and
+// a retry cap; telemetry is nil — no outbound traffic unless a user explicitly
+// triggers it, and only the snippet the command needs is sent.
 import * as vscode from 'vscode';
 
-/** SecretStorage 键名;对应命令 kbengine.ai.setApiKey / kbengine.ai.clearApiKey */
+/** SecretStorage key name; paired commands kbengine.ai.setApiKey / kbengine.ai.clearApiKey */
 export const AI_API_KEY_SECRET = 'kbengine.ai.apiKey';
 
 export interface AiChatMessage {
@@ -16,7 +19,7 @@ export interface AiChatMessage {
   content: string;
 }
 
-/** kbengine.ai.* endpoint 档(全部走 settings;key 不在此列) */
+/** kbengine.ai.* endpoint knobs (all served from settings; the key is not among them) */
 export interface AiEndpointConfig {
   baseUrl: string;
   model: string;
@@ -27,11 +30,14 @@ export interface AiEndpointConfig {
 }
 
 /**
- * vscode.lm LanguageModelChat 面的注入形状(生产=feature-detect 后的实例)。
- * KODE-FULL-011:按宿主真实契约对齐——sendRequest(messages, options?, token?)
- * 三参,token 是第三参(旧两参形态把 token 塞进了 options 位);response.text
- * 逐片产出 string 本体,不是 { content } 对象(旧读法把真实字符串片全读成 '',
- * 回复被吞成空串)。替身(测试)也按宿主 API 构造。
+ * Injection shape for the vscode.lm LanguageModelChat surface (production = the
+ * instance found by feature-detect).
+ * KODE-FULL-011: aligned to the host's real contract — sendRequest(messages,
+ * options?, token?) takes three arguments, token being the third (the old
+ * two-argument shape stuffed token into the options slot); response.text yields
+ * the raw string piece by piece, not a { content } object (the old reader
+ * parsed every real string piece as '' and the reply was swallowed into an
+ * empty string). The stand-in (tests) is built against the host API as well.
  */
 export interface AiLanguageModelLike {
   sendRequest(
@@ -41,7 +47,7 @@ export interface AiLanguageModelLike {
   ): { text: AsyncIterable<string> };
 }
 
-/** SecretStorage 注入形状(vscode context.secrets 即合此形;Thenable=vscode.d.ts 全局面) */
+/** SecretStorage injection shape (vscode context.secrets already fits it; Thenable = the global in vscode.d.ts) */
 export interface AiSecretsStore {
   get(key: string): Thenable<string | undefined>;
   store(key: string, value: string): Thenable<void>;
@@ -57,7 +63,7 @@ const DEFAULTS: AiEndpointConfig = {
   maxRetries: 1
 };
 
-/** 读 kbengine.ai.* 组;非法数值回落默认值,不做隐式钳制 */
+/** Read the kbengine.ai.* group; invalid numbers fall back to the defaults, with no implicit clamping */
 export function resolveAiEndpointConfig(): AiEndpointConfig {
   const config = vscode.workspace.getConfiguration('kbengine.ai');
   const num = (key: string, fallback: number): number => {
@@ -74,12 +80,12 @@ export function resolveAiEndpointConfig(): AiEndpointConfig {
   };
 }
 
-/** endpoint 已配置(baseUrl 非空)——key 可空,本地兼容服务常免鉴权 */
+/** Endpoint is configured (baseUrl non-empty) — the key may be empty, local compatible services often skip auth */
 export function hasConfiguredEndpoint(config: AiEndpointConfig): boolean {
   return config.baseUrl.trim().length > 0;
 }
 
-/** vscode.lm feature-detect:API 不在(engines 1.82<1.90)或探测失败=空集 */
+/** vscode.lm feature-detect: API absent (engines 1.82<1.90) or probe failure = empty set */
 export async function listLanguageModels(): Promise<AiLanguageModelLike[]> {
   const lm = (vscode as Partial<typeof vscode> & { lm?: { selectChatModels?: (o?: unknown) => Promise<unknown[]> } }).lm;
   if (!lm || typeof lm.selectChatModels !== 'function') {
@@ -94,8 +100,9 @@ export async function listLanguageModels(): Promise<AiLanguageModelLike[]> {
 }
 
 /**
- * AI 面可用性=注册判据:baseUrl 已配置(用户显式开)或存在任一 lm 模型
- * (宿主侧已有 BYOK provider)。两者皆无 → false → 不注册命令。
+ * AI surface availability = registration criterion: baseUrl is configured (user
+ * explicitly opted in) or at least one lm model exists (the host already has a
+ * BYOK provider). Neither → false → no command is registered.
  */
 export async function isAiFaceAvailable(config?: AiEndpointConfig): Promise<boolean> {
   const endpoint = config ?? resolveAiEndpointConfig();
@@ -107,12 +114,12 @@ export async function isAiFaceAvailable(config?: AiEndpointConfig): Promise<bool
 
 export interface AiSendOptions {
   messages: AiChatMessage[];
-  /** 已解析 endpoint;null/省略=回退 lm 路线 */
+  /** Resolved endpoint; null/omitted = fall back to the lm route */
   endpoint?: AiEndpointConfig | null;
-  /** SecretStorage 读出的 key;可空(免鉴权服务) */
+  /** Key read from SecretStorage; may be empty (no-auth services) */
   apiKey?: string | null;
   token?: vscode.CancellationToken;
-  /** lm 回退模型集注入(生产=缺省走 listLanguageModels) */
+  /** Injected lm fallback model set (production = default to listLanguageModels) */
   models?: AiLanguageModelLike[];
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
@@ -120,7 +127,7 @@ export interface AiSendOptions {
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-/** 429/5xx 与网络失败可重试;其余 4xx 一次都不试 */
+/** 429/5xx and network failures are retryable; other 4xx are never retried */
 function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
@@ -130,10 +137,12 @@ interface ChatCompletionResponse {
 }
 
 /**
- * 发一轮对话并取整段回复文本。endpoint 路线:POST {baseUrl}/v1/chat/completions,
- * Authorization Bearer <key>(key 可空则不带头);超时 requestTimeoutMs abort;
- * 取消贯穿 abort。lm 回退路线:model.sendRequest 流式聚合。无可用面=抛错
- * (调用方转用户可见信息),不静默假成功。
+ * Send one round of conversation and return the full reply text. Endpoint route:
+ * POST {baseUrl}/v1/chat/completions with Authorization Bearer <key> (the header
+ * is omitted when the key is empty); aborts after requestTimeoutMs; cancellation
+ * threads through abort. lm fallback route: model.sendRequest aggregated from
+ * the stream. No available surface = throw (the caller turns it into a
+ * user-visible message); never fail silently as a false success.
  */
 export async function sendAiMessage(options: AiSendOptions): Promise<string> {
   const endpoint = options.endpoint ?? resolveAiEndpointConfig();
@@ -144,9 +153,12 @@ export async function sendAiMessage(options: AiSendOptions): Promise<string> {
 }
 
 /**
- * 流式变体(AI-002 对话面板):onChunk 逐片回调,lm 路线逐 chunk 透传且
- * 取消即刻停收(已收部分保留返回);endpoint 兼容面按整段到达上屏一次
- * (本批不强制 SSE,中断=abort 已贯穿)——调用方在面板注记两种到达形态。
+ * Streaming variant (AI-002 chat panel): onChunk is called piece by piece. The
+ * lm route passes each chunk through and stops collecting immediately on
+ * cancel (the already-received part is kept and returned); the endpoint
+ * compatible surface renders the reply once in a single shot when the whole
+ * body has arrived (this batch does not force SSE, interruption = abort is
+ * already threaded through) — the caller notes both arrival shapes in the panel.
  */
 export async function sendAiMessageStream(
   options: AiSendOptions,
@@ -195,10 +207,13 @@ async function sendViaEndpoint(options: AiSendOptions, endpoint: AiEndpointConfi
     max_tokens: endpoint.maxTokens
   });
   let lastError = 'AI request failed';
-  // KODE-FULL-012:超时定时器/取消订阅的生命周期收口到整个重试轮的
-  // finally——此前 ok 但缺 content 的响应先 finish() 清掉定时器再抛错进
-  // 重试,下一轮用已死的定时器与已退订的取消监听,悬挂请求可永不截止。
-  // 重试轮内保持 deadline 在役:形状坏/网络失败重试仍受总超时与取消约束。
+  // KODE-FULL-012: the timeout timer / cancellation subscription lifecycle is
+  // closed out in the finally of the whole retry round — previously an ok
+  // response missing content called finish() (clearing the timer) and then threw
+  // into the retry, so the next round reused a dead timer and an unsubscribed
+  // cancellation listener, and a hung request could never expire.
+  // Keep the deadline live inside the retry round: shape/network-failure retries
+  // are still bound by the total timeout and cancellation.
   try {
     for (let attempt = 0; attempt <= endpoint.maxRetries; attempt++) {
       try {
@@ -227,8 +242,10 @@ async function sendViaEndpoint(options: AiSendOptions, endpoint: AiEndpointConfi
         if (controller.signal.aborted) {
           throw new Error('AI request timed out');
         }
-        // try 内抛出的 status error 只可能是非重试 4xx(fetch 分支已筛)——
-        // 直通出函数,不进重试循环;其余(网络失败/响应形状坏)按可重试记账
+        // A status error thrown inside the try can only be a non-retryable 4xx
+        // (the fetch branch already filtered it) — pass it straight out of the
+        // function, no retry loop; everything else (network failure / bad
+        // response shape) is accounted for as retryable
         const statusMatch = error instanceof Error && /^AI request failed with status (\d+)$/.exec(error.message);
         if (statusMatch && !isRetryableStatus(Number(statusMatch[1]))) {
           throw error;
@@ -266,7 +283,7 @@ async function sendViaLanguageModel(options: AiSendOptions, onChunk?: (text: str
   let text = '';
   for await (const chunk of response.text) {
     if (options.token?.isCancellationRequested) {
-      break; // 取消即刻停收,已收部分保留(AI-002 中断语义)
+      break; // cancel stops collecting at once, the received part is kept (AI-002 interruption semantics)
     }
     const piece = typeof chunk === 'string' ? chunk : '';
     text += piece;

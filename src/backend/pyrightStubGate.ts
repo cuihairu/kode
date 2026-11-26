@@ -1,13 +1,17 @@
 /**
- * IDE-STUB-002(用户令批次):generated 档接 pyright——生成 stub 后调用
- * pyright CLI(优先 `pyright`,回退 `npx --no-install pyright`;todo 原文
- * 「pyright --createstub/npx pyright」的 CLI 优先序落点在此:探测按候选序
- * 找可用 CLI,不做网络下载),用 pyright 诊断(`--outputjson`)校验生成
- * stub 的类型面。探测不可用则降级纯生成,仅在输出面板提示,不报错。
+ * IDE-STUB-002 (user-ordered batch): wire the generated tier to pyright --
+ * after stub generation, invoke the pyright CLI (prefer `pyright`, fall back
+ * to `npx --no-install pyright`; the CLI preference of the todo's original
+ * "pyright --createstub/npx pyright" lands here: probing walks the candidate
+ * order looking for a usable CLI, no network download), and validate the type
+ * face of the generated stubs with pyright diagnostics (`--outputjson`). When
+ * probing is unavailable, degrade to pure generation and only notice it in the
+ * output panel, without an error.
  *
- * 本模块零 vscode 依赖:runner 由调用方注入(装配层 child_process.execFile,
- * 测试注入 mock),档位闸在调用侧(只服务 generated 档,real-source 档的
- * 复制产物不由本模块校验)。
+ * This module has zero vscode dependencies: the runner is injected by the
+ * caller (wiring layer child_process.execFile, tests inject a mock), and the
+ * tier gate lives on the call side (serves the generated tier only; the
+ * real-source tier's copy artifacts are not validated by this module).
  */
 import { execFile } from 'child_process';
 
@@ -25,8 +29,10 @@ export type PyrightCommandRunner = (
 ) => Promise<PyrightRunResult>;
 
 /**
- * CLI 探测候选序:直装 pyright 优先,npx(不联网安装)回退。Windows 下 npm
- * 全局装的是 .cmd shim,execFile 无 shell 起不了裸名,候选按平台取 shim 名。
+ * CLI probe candidate order: directly installed pyright first, npx (no network
+ * install) as fallback. On Windows the npm global install is a .cmd shim and
+ * execFile without a shell cannot launch the bare name, so candidates take the
+ * shim name per platform.
  */
 export const PYRIGHT_CLI_CANDIDATES: readonly string[][] =
   process.platform === 'win32'
@@ -35,12 +41,13 @@ export const PYRIGHT_CLI_CANDIDATES: readonly string[][] =
 
 export interface PyrightCommand {
   file: string;
-  /** 版本探测之外固定携带的实参前缀(npx 形态时为 ['pyright']) */
+  /** Argument prefix always carried beyond the version probe (['pyright'] in the npx form) */
   args: string[];
 }
 
 /**
- * 逐候选跑 `--version`,第一个 0 退出的即中选;全败返回 null(降级纯生成)。
+ * Run `--version` per candidate; the first to exit 0 wins; return null when
+ * all fail (degrade to pure generation).
  */
 export async function detectPyrightCommand(
   run: PyrightCommandRunner,
@@ -54,7 +61,7 @@ export async function detectPyrightCommand(
         return { file, args: prefix };
       }
     } catch {
-      // 进程起不来(spawn ENOENT 等)等同候选失败,试下一个
+      // The process failing to start (spawn ENOENT etc.) counts as a candidate failure; try the next one
     }
   }
   return null;
@@ -77,7 +84,7 @@ export interface PyrightDiagnosticsReport {
 
 export interface PyrightSkippedReport {
   ran: false;
-  /** 未跑成的原因(探测失败/进程失败且无 JSON),如实回话用 */
+  /** Why the run did not happen (probe failure / process failure with no JSON), for honest reporting */
   reason: string;
 }
 
@@ -97,7 +104,7 @@ interface PyrightOutputJson {
   }>;
 }
 
-/** 输出面板单行汇总(诊断数 + 逐条),调用方负责落到通道 */
+/** Output panel one-line summary (diagnostic counts + per-diagnostic lines); the caller is responsible for writing to the channel */
 export function summarizePyrightReport(report: PyrightReport): string[] {
   if (!report.ran) {
     return [`[pyright] 未接入: ${report.reason}`];
@@ -113,7 +120,7 @@ export function summarizePyrightReport(report: PyrightReport): string[] {
   return lines;
 }
 
-/** 跑 `--outputjson <files...>` 并解析;进程失败且无 JSON 时 ran=false */
+/** Run `--outputjson <files...>` and parse it; ran=false when the process fails and there is no JSON */
 export async function runPyrightDiagnostics(
   run: PyrightCommandRunner,
   command: PyrightCommand,
@@ -161,18 +168,23 @@ function parsePyrightOutputJson(stdout: string): PyrightOutputJson | null {
 }
 
 /**
- * win32 shell 形态下 cmd.exe 对 `%VAR%` 做环境变量展开,双引号拦不住——含 %
- * 的实参(如 %TEMP% 形态的工作区路径)会被改写。此类实参不可安全传 shell,
- * 调用方按不安全处理(如实降级,不喂 pyright 被改写的路径)。
+ * In the win32 shell form, cmd.exe expands `%VAR%` environment variables and
+ * double quotes do not stop it -- arguments containing % (such as workspace
+ * paths in %TEMP% form) get rewritten. Such arguments cannot be handed to a
+ * shell safely, so the caller treats them as unsafe (degrade honestly instead
+ * of feeding pyright a rewritten path).
  */
 export function argUnsafeForCmdShell(arg: string): boolean {
   return /%/.test(arg);
 }
 
-/** 装配层默认 runner:child_process.execFile(退出码/异常都按结果回,不抛)。
- * Windows 下 .cmd shim 无 shell 起不了(Node 出于 CVE 拒绝无 shell 批处理),
- * 故 win32 走 shell 且对含空格/特殊字符实参手动加引号(posix 原样传参不经
- * shell);含 % 的实参在 win32 直接按失败回(见 argUnsafeForCmdShell)。 */
+/** Wiring layer default runner: child_process.execFile (both exit codes and
+ * exceptions come back as results, nothing is thrown).
+ * On Windows a .cmd shim cannot start without a shell (Node refuses a
+ * shell-less batch file for a CVE), so win32 goes through a shell and quotes
+ * arguments containing spaces/special characters by hand (posix passes
+ * arguments as-is without a shell); arguments containing % return as failure on
+ * win32 outright (see argUnsafeForCmdShell). */
 export const childProcessPyrightRunner: PyrightCommandRunner = (file, args) =>
   new Promise(resolve => {
     const useShell = process.platform === 'win32';

@@ -1,10 +1,13 @@
-//! SignatureHelp 决策核 golden 生成器(RUST-140 批 2):批 1 词法命中全集
-//! 上逐命中组附签名四件(label/形参/documentation/声明落点)与逐位
-//! activeArgument→activeParameter 标亮。
+//! SignatureHelp decision-core golden generator (RUST-140 batch 2): over the
+//! batch 1 full set of lexical hits, each hit group annotated with the
+//! signature four-piece (label/parameters/documentation/declaration landing
+//! point) plus per-position activeArgument -> activeParameter highlighting.
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodeSignatureHelpParity.test.ts
-//! 用生产词法面 + 生产注解链独立复算对拍(双向门禁:Rust 测试重生成
-//! 比对 + vitest 复算)。
+//! The golden file is produced by Rust; the TS side
+//! tests/kodeSignatureHelpParity.test.ts independently recomputes with the
+//! production lexical face + production annotation chain and compares
+//! (two-way gate: the Rust test regenerates and compares + vitest
+//! recomputes).
 
 fn main() {
     let repo_root = std::env::args().nth(1).unwrap_or_else(|| String::from("."));

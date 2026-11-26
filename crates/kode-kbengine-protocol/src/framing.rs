@@ -1,43 +1,45 @@
-//! Framing:消息帧状态机(PA-003「framing 三种长度 + TCP 粘包拆包」)。
+//! Framing: message frame state machine (PA-003 "framing three length shapes + TCP sticky/split packets").
 //!
-//! 引擎口径(PA-001 §4/§11):三端共享 `READ_ID → (READ_LEN → READ_LEN_EX)
-//! → READ_BODY` 状态机,支持任意字节边界的分片重组(packet_reader.cpp:31-250)。
-//! 红线:未知 id 不猜(默认 Fail)/ 单消息内存上限 / 截断留待下个 feed,不 panic。
+//! Engine semantics (PA-001 §4/§11): all three ends share the `READ_ID → (READ_LEN → READ_LEN_EX)
+//! → READ_BODY` state machine, supporting reassembly of fragments at any byte boundary
+//! (packet_reader.cpp:31-250).
+//! Red lines: unknown ids are never guessed (default Fail) / per-message memory cap /
+//! truncation is deferred to the next feed, no panics.
 
 use kode_kbengine_schema::messages::MessageLength;
 
 use crate::error::{DecodeError, DecodeErrorKind};
 
-/// 单消息长度规格(framing 视角;§4.2)。
+/// Per-message length specification (from the framing perspective; §4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LengthSpec {
-    /// 定长:线上无长度字段。
+    /// Fixed length: no length field on the wire.
     Fixed(u32),
-    /// 变长:u16(载荷,不含 id+len 头)。
+    /// Variable: u16 (payload, excluding the id+len header).
     Variable,
-    /// 扩展:u16=65535 哨兵 + u32 实长(本帧实际读到的实长)。
+    /// Extended: u16=65535 sentinel + u32 actual length (the actual length really read for this frame).
     Extended(u32),
 }
 
-/// 未知 id 策略(引擎:未知 id → ERROR + 通道 condemned;解析器默认对齐)。
+/// Unknown id policy (engine: unknown id → ERROR + channel condemned; the parser defaults to matching it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnknownIdPolicy {
-    /// 报错([`DecodeErrorKind::UnknownMessageId`]),与引擎语义一致。
+    /// Fail with an error ([`DecodeErrorKind::UnknownMessageId`]), matching engine semantics.
     Fail,
-    /// 宽松模式:按变长(u16 长度)试探组帧——仅在明确分析未知工程时启用。
+    /// Permissive mode: attempt framing as variable length (u16 length) — enable only when deliberately analyzing an unknown project.
     AssumeVariable,
 }
 
 #[derive(Debug, Clone)]
 pub struct FramingConfig {
-    /// id → 长度规格(来自静态段 + 动态导入段)。
+    /// id → length spec (from the static segment + the dynamically imported segment).
     pub specs: std::collections::BTreeMap<u16, MessageLength>,
     pub unknown_id_policy: UnknownIdPolicy,
-    /// 单消息载荷上限(红线:内存有上限;引擎外保守默认 1 MiB,
-    /// 扩展长度真实载荷通常远小于此)。
+    /// Per-message payload cap (red line: memory bounded; a conservative 1 MiB default
+    /// outside the engine, real extended-length payloads are usually far smaller).
     pub max_message_len: u32,
-    /// §4.3 packetAlwaysContainLength=true:所有消息按带 u16 长度建模
-    /// (message_handler.cpp:173-175)。
+    /// §4.3 packetAlwaysContainLength=true: every message is modeled as carrying a u16 length
+    /// (message_handler.cpp:173-175).
     pub packet_always_contain_length: bool,
 }
 
@@ -52,24 +54,24 @@ impl Default for FramingConfig {
     }
 }
 
-/// 解出的帧。
+/// A resolved frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pub id: u16,
     pub payload: Vec<u8>,
     pub length_spec: LengthSpec,
-    /// 帧起点在流内的偏移(本 parser 生命周期内累计)。
+    /// Offset of the frame start within the stream (accumulated over this parser's lifetime).
     pub stream_offset: usize,
 }
 
-/// 跨 feed 的帧状态机(TCP 粘包/拆包安全)。
+/// Frame state machine carried across feeds (TCP sticky/split-packet safe).
 #[derive(Debug)]
 pub struct FrameParser {
     cfg: FramingConfig,
     buf: Vec<u8>,
-    /// buf[0..consumed] 已消费、待压缩。
+    /// buf[0..consumed] has been consumed and awaits compaction.
     consumed: usize,
-    /// buf[0] 的流内绝对偏移(feed 累计;compact 推进)。
+    /// Absolute in-stream offset of buf[0] (accumulated by feed; advanced by compact).
     abs_base: usize,
 }
 
@@ -83,7 +85,7 @@ impl FrameParser {
         }
     }
 
-    /// 当前缓冲中未成帧的字节数(诊断/测试用)。
+    /// Bytes in the current buffer that have not yet formed a frame (diagnostics/tests).
     pub fn pending_buffer_len(&self) -> usize {
         self.buf.len() - self.consumed
     }
@@ -92,10 +94,11 @@ impl FrameParser {
         &mut self.cfg
     }
 
-    /// 喂入一段 TCP 流,吐出所有已完整解出的帧。
+    /// Feed a chunk of a TCP stream and emit every frame fully resolved.
     ///
-    /// 错误策略(红线):任何 Err 时状态机**复位**(缓冲清空)——引擎语义是
-    /// 错误后 condemn 通道,调用方应重开解析器或换策略;绝不在坏状态上继续。
+    /// Error policy (red line): on any Err the state machine **resets** (buffer cleared) — the
+    /// engine's semantics condemn the channel after an error; the caller should reopen the parser
+    /// or switch policy; decoding never continues on top of a bad state.
     pub fn feed(&mut self, chunk: &[u8]) -> Result<Vec<Frame>, DecodeError> {
         self.buf.extend_from_slice(chunk);
         let mut out = Vec::new();
@@ -109,9 +112,11 @@ impl FrameParser {
                 }
             }
         }
-        // 防失控:上限只约束「尚未解析出的余量」——先把完整合法帧解出来再判。
-        // 先判总缓冲会把一整块合法帧序列(如 1.2 MiB 的 loginapp 动态导入流)
-        // 因总字节超过一条最大帧就整体作废,合法数据静默丢失。
+        // Runaway guard: the cap constrains only the "still-unresolved remainder" — fully
+        // legal frames are resolved first, then the check runs.
+        // Checking the total buffer first would invalidate an entire run of legal frames
+        // (e.g. the 1.2 MiB loginapp dynamic import stream) just because the total bytes
+        // exceed one maximum frame, silently losing legal data.
         if self.buf.len() - self.consumed > self.cfg.max_message_len as usize + 8 {
             let len = self.buf.len() - self.consumed;
             self.reset();
@@ -127,9 +132,10 @@ impl FrameParser {
     }
 
     fn reset(&mut self) {
-        // 复位丢弃整个缓冲(已解出但随 Err 丢弃的帧 + 未成帧残留),丢弃段
-        // 同步推进 abs_base(与 compact 同账):否则恢复后的 stream_offset
-        // 从旧基点重新计数,系统性少报流内位置。
+        // A reset drops the whole buffer (frames already resolved but discarded with the Err,
+        // plus unframed residue); the dropped range advances abs_base in lockstep (same
+        // ledger as compact): otherwise stream_offset after recovery re-counts from the stale
+        // base point and systematically under-reports the in-stream position.
         self.abs_base += self.buf.len();
         self.buf.clear();
         self.consumed = 0;
@@ -143,7 +149,7 @@ impl FrameParser {
         }
     }
 
-    /// 尝试从 buf[consumed..] 解一帧;数据不足 → Ok(None)(留待下个 feed)。
+    /// Attempt to resolve one frame from buf[consumed..]; insufficient data → Ok(None) (defer to the next feed).
     fn try_one_frame(&mut self) -> Result<Option<Frame>, DecodeError> {
         let start = self.consumed;
         let buf = &self.buf[start..];
@@ -155,7 +161,7 @@ impl FrameParser {
         let len_spec = match self.cfg.specs.get(&id) {
             Some(MessageLength::Fixed(n)) => {
                 if self.cfg.packet_always_contain_length {
-                    // §4.3:线上强制带长度(读取并校验与表内定长一致)。
+                    // §4.3: the wire carries a length by force (read it and verify it matches the fixed length in the table).
                     if buf.len() < 4 {
                         return Ok(None);
                     }
@@ -177,7 +183,7 @@ impl FrameParser {
                 if self.cfg.specs.contains_key(&id)
                     || self.cfg.unknown_id_policy == UnknownIdPolicy::AssumeVariable
                 {
-                    // 变长:u16 → 65535 哨兵 → u32 实长(packet_reader.cpp:116-167)。
+                    // Variable: u16 → 65535 sentinel → u32 actual length (packet_reader.cpp:116-167).
                     if buf.len() < 4 {
                         return Ok(None);
                     }
@@ -221,7 +227,7 @@ impl FrameParser {
             }
         };
 
-        // 由规格算头部大小与载荷长。
+        // Derive the header size and payload length from the spec.
         let (header, payload_len) = match len_spec {
             LengthSpec::Fixed(n) => (2usize, n as usize),
             LengthSpec::Variable => {
@@ -231,7 +237,7 @@ impl FrameParser {
             LengthSpec::Extended(n) => (8, n as usize),
         };
         let total = header + payload_len;
-        // 单帧内存上限总检查(红线)。
+        // Aggregate per-frame memory cap check (red line).
         if total as u64 > self.cfg.max_message_len as u64 + 8 {
             return Err(DecodeError::new(
                 DecodeErrorKind::MemoryLimit,
@@ -241,7 +247,7 @@ impl FrameParser {
             ));
         }
         if buf.len() < total {
-            return Ok(None); // 分片:等下个 feed
+            return Ok(None); // Fragmented: wait for the next feed
         }
         let payload = buf[header..total].to_vec();
         self.consumed += total;
@@ -254,9 +260,10 @@ impl FrameParser {
     }
 }
 
-/// §8 加密信封定位(不解密;Blowfish 属密码学,协议引擎零第三方依赖红线):
-/// `u16 encLen + u8 padSize + 密文`,encLen = 明文长 + 1
-/// (encryption_filter.cpp:56-66)。
+/// §8 encrypted envelope location (not decrypted; Blowfish is cryptography, and the
+/// protocol engine's red line is zero third-party dependencies):
+/// `u16 encLen + u8 padSize + ciphertext`, with encLen = plaintext length + 1
+/// (encryption_filter.cpp:56-66).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedEnvelope {
     pub declared_plaintext_len: u32,

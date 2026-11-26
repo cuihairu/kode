@@ -76,7 +76,8 @@ def main():
     parser.add_argument("workload")
     args = parser.parse_args()
 
-    # 工具位 0=默认保留,1..5 先到先得(0-5 都合法;探针期用 6 撞上限)。
+    # Tool slot 0 is reserved by default; 1..5 are first come, first served
+    # (0-5 are all legal; a probe using 6 would hit the cap).
     tool_id = None
     for candidate in (5, 4, 3, 2, 1):
         try:
@@ -92,8 +93,8 @@ def main():
     t0 = time.monotonic_ns()
     events = []
     drops = []
-    call_stack = []  # [seq, ...] 仅 Python call(同线程;负载单线程)
-    open_exc = None  # 展开中的异常:{'event', 'crossed_frames': int, 'ident': id}
+    call_stack = []  # [seq, ...] Python calls only (same thread; workload is single-threaded)
+    open_exc = None  # exception being unwound: {'event', 'crossed_frames': int, 'ident': id}
     overflowed = 0
 
     def now_ms():

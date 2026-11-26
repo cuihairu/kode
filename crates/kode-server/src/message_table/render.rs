@@ -1,4 +1,4 @@
-//! Assembly 到输出 JSON 的映射与时间戳。
+//! Mapping from Assembly to output JSON, plus timestamps.
 
 use crate::message_table::assembly::{AsmArg, AsmMethod, AsmProperty};
 use crate::message_table::json::{ArgJson, MethodJson, PropertyJson};
@@ -48,7 +48,7 @@ pub(super) fn property_to_json(p: &AsmProperty) -> PropertyJson {
     }
 }
 
-/// 当前 UTC 时间 ISO-8601(TS new Date().toISOString() 等价,毫秒截 0)。
+/// Current UTC time as ISO-8601 (equivalent to TS new Date().toISOString(), milliseconds truncated to 0).
 pub(super) fn iso_now() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -61,7 +61,7 @@ pub(super) fn iso_now() -> String {
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}.000Z")
 }
 
-/// 1970-01-01 起天数 → 公历(y,m,d)(Howard Hinnant civil_from_days)。
+/// Days since 1970-01-01 -> Gregorian date (y,m,d) (Howard Hinnant civil_from_days).
 pub(super) fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;

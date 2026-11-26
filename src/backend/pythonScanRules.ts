@@ -8,13 +8,15 @@ export const PY_SCAN_EXCLUDE =
   `**/{${[...PY_SCAN_EXCLUDED_DIRS].join(',')}}/**`;
 
 /**
- * KODE-CFG-017:托管目录副本剔除(防镜像双计)。`.kbengine/inferred/` 镜像
- * scripts 树的 .py 副本会被 kode 自身扫描当独立文件再算一遍;隔离面只写
- * search.exclude / files.watcherExclude(findFiles 不吃 search.exclude),
- * 故扫描出口剔掉托管目录路径。评审三轮 P1:按**绝对路径前缀**判定
- * (workspaceRoot ∪ 外部扫描根 + managedDir 相对值拼出受管根,支持多段
- * 相对配置如 `tools/.kbengine`),不按任意同名段全局剔除——用户工作区里
- * 恰好同名的普通子目录/祖先目录不误伤。
+ * KODE-CFG-017: drop managed-directory copies (prevents double counting of mirrors). The .py
+ * copies of the scripts tree mirrored under `.kbengine/inferred/` would be scanned again as
+ * independent files by kode itself; the isolation face only writes search.exclude /
+ * files.watcherExclude (findFiles does not honor search.exclude), so the scan exit drops
+ * managed-directory paths. Three review rounds, P1: decide by **absolute path prefix**
+ * (workspaceRoot ∪ external scan roots + the managedDir relative value assemble the managed
+ * roots; multi-segment relative configs such as `tools/.kbengine` are supported), not by
+ * dropping any same-named segment globally -- ordinary subdirectories/ancestor directories in
+ * the user's workspace that happen to share the name are not collateral damage.
  */
 export function filterManagedDirCopies(
   paths: readonly string[],
@@ -29,7 +31,7 @@ export function filterManagedDirCopies(
   return paths.filter(p => !roots.some(r => p === r || p.startsWith(r.endsWith('/') ? r : `${r}/`)));
 }
 
-/** 外部根遍历目录黑名单并入托管目录名(managedDir 落在扫描根内时同剔) */
+/** Merge the managed directory name into the external-root walking directory blacklist (dropped too when managedDir lands inside a scan root) */
 export function withManagedDirSkip(dirs: ReadonlySet<string>, managedDir: string): Set<string> {
   const out = new Set(dirs);
   if (managedDir && !managedDir.includes('/')) {
@@ -39,12 +41,13 @@ export function withManagedDirSkip(dirs: ReadonlySet<string>, managedDir: string
 }
 
 /**
- * ENGINE-LIB-SCAN-005 刀1:KBEngine 引擎仓自带的 Python 标准库镜像
- * (kbe/scripts/common/Lib,纯库文件非业务代码,数千量级)按**路径形态**剔出
- * 业务 python 扫描——只在 `kbe/scripts/common/Lib` 段序下的路径才剔,
- * 普通项目自己的 `Lib`/`lib` 目录不受影响(照 KODE-CFG-017 的「形态/前缀
- * 锚定,不按任意同名段全局剔除」先例)。大小写不敏感(Windows 引擎仓);
- * 分隔符 \ 与 / 都认。
+ * ENGINE-LIB-SCAN-005 cut 1: the Python standard library mirror bundled in the KBEngine
+ * engine repo (kbe/scripts/common/Lib; pure library files, not business code, thousands of
+ * files) is excluded from the business python scan by **path shape** -- only paths whose
+ * segment sequence contains `kbe/scripts/common/Lib` are dropped; a project's own
+ * `Lib`/`lib` directories are unaffected (following the KODE-CFG-017 precedent of
+ * "shape/prefix anchoring, no global drop of any same-named segment"). Case-insensitive
+ * (the Windows engine repo); both the \ and / separators are recognized.
  */
 const ENGINE_LIB_SEGMENT_TAIL = ['kbe', 'scripts', 'common', 'lib'] as const;
 

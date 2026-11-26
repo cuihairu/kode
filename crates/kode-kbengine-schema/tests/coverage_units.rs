@@ -1,8 +1,9 @@
-//! PA-002 补强测试(layout 别名/实体全分支 / compat 全变更类型 / wire 尺寸
-//! 与显示名 / messages 定长推导与项目覆盖 / builder 项目装配与配置标签)。
+//! PA-002 reinforcement tests (layout alias/entity all branches / compat all change types / wire sizes
+//! and display names / messages fixed-length derivation and project overrides / builder project
+//! assembly and configuration tags).
 //!
-//! 引擎语义依据 docs/kbengine-wire-protocol.md(PA-001 取证,基准 bf1a9cd6
-//! / v2.5.10);与 schema_units.rs 同源口径,只补未覆盖分支。
+//! Engine semantics per docs/kbengine-wire-protocol.md (PA-001 evidence, baseline bf1a9cd6
+//! / v2.5.10); same semantics as schema_units.rs, only filling in the uncovered branches.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -31,7 +32,7 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// 每测试唯一临时项目根(进程 id + 调用方名)。
+/// A unique temporary project root per test (the process id + the caller's name).
 fn tmp_project(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("kode-schema-cov-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -45,12 +46,13 @@ fn write(path: &Path, text: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// wire:尺寸递归深限 / is_variable / display_name / is_resolvable_builtin
+// wire: size recursion depth cap / is_variable / display_name / is_resolvable_builtin
 // ---------------------------------------------------------------------------
 
 #[test]
 fn wire_fixed_size_depth_limit_is_conservative() {
-    // 70 层嵌套 FIXED_DICT(每层单字段)→ 自引用链在深限处保守判变长
+    // 70 levels of nested FIXED_DICT (one field per level) → the self-reference chain is
+    // conservatively judged variable at the depth cap
     let mut ty = WireType::UInt8;
     for _ in 0..(MAX_TYPE_DEPTH + 6) {
         ty = WireType::FixedDict {
@@ -61,10 +63,10 @@ fn wire_fixed_size_depth_limit_is_conservative() {
             }],
         };
     }
-    // 每层 1 字节,总深 70 层 > 深限 → 深限处返回 None(变长),不栈溢出
+    // One byte per level, 70 levels total > the cap → None (variable) at the cap, no stack overflow
     assert_eq!(ty.fixed_size(), None);
     assert!(ty.is_variable());
-    // 浅层嵌套仍精确
+    // Shallow nesting stays exact
     let small = WireType::FixedDict {
         module: None,
         fields: vec![
@@ -120,7 +122,7 @@ fn wire_display_names_cover_shapes() {
         "VECTOR3",
         "非容器/未知类型走 Debug 大写"
     );
-    // 嵌套显示名递归
+    // Nested display names recurse
     assert_eq!(
         WireType::Array {
             of: Box::new(WireType::FixedDict {
@@ -147,7 +149,7 @@ fn wire_resolvable_builtin_matches_map() {
         "MYSTERY"
     ));
     assert!(!kode_kbengine_schema::wire::is_resolvable_builtin(""));
-    // 与 builtin_wire_type 同口径
+    // Same semantics as builtin_wire_type
     for n in ["STRING", "BLOB", "DOUBLE", "VECTOR4", "INT64"] {
         assert_eq!(
             kode_kbengine_schema::wire::is_resolvable_builtin(n),
@@ -157,13 +159,14 @@ fn wire_resolvable_builtin_matches_map() {
 }
 
 // ---------------------------------------------------------------------------
-// layout:types.xml / alias.xml 全分支 + resolve 求值
+// layout: types.xml / alias.xml all branches + the resolve evaluation
 // ---------------------------------------------------------------------------
 
 #[test]
 fn layout_collect_types_directive_variants() {
-    // 内建文本指引 / type 属性回落 / 空指引跳过 / root 子元素跳过 /
-    // FIXED_DICT 空 implementedBy / ARRAY of 属性 / ARRAY 缺 of
+    // A builtin text directive / the type attribute fallback / an empty directive skipped / a root
+    // child element skipped /
+    // an empty implementedBy for FIXED_DICT / the ARRAY of attribute / ARRAY missing of
     let xml = r#"
 <root>
   <root>SKIP_ME</root>
@@ -198,11 +201,11 @@ fn layout_collect_types_directive_variants() {
 
     assert_eq!(map["ITEM_ID"], WireType::UInt16);
     assert_eq!(map["VIA_ATTR"], WireType::UInt32);
-    // 空指引被跳过:EMPTY_DECL 不进入表
+    // An empty directive is skipped: EMPTY_DECL does not enter the table
     assert!(!map.contains_key("EMPTY_DECL"));
-    // root 子元素被跳过
+    // A root child element is skipped
     assert!(!map.contains_key("SKIP_ME"));
-    // FIXED_DICT:空 implementedBy → None(不覆盖文本);<of> 元素优先
+    // FIXED_DICT: an empty implementedBy → None (the text is not overridden); the <of> element wins
     match &map["FD"] {
         WireType::FixedDict { module, fields } => {
             assert_eq!(module, &None);
@@ -216,7 +219,7 @@ fn layout_collect_types_directive_variants() {
         WireType::FixedDict { module, .. } => assert_eq!(module, &Some("DEMO.impl".into())),
         other => panic!("expected FixedDict, got {other:?}"),
     }
-    // FIXED_DICT 无 <Properties> 段 → 空字段表(仍解析为容器)
+    // A FIXED_DICT with no <Properties> segment → an empty field table (still parsed as a container)
     match &map["FD_NO_PROPS"] {
         WireType::FixedDict { module, fields } => {
             assert_eq!(module, &Some("X.y".into()));
@@ -225,7 +228,8 @@ fn layout_collect_types_directive_variants() {
         }
         other => panic!("expected FixedDict, got {other:?}"),
     }
-    // ARRAY:<of> 元素文本为空 → 过滤为空串;无 of 属性 → 元素未决落 Unresolved
+    // ARRAY: the <of> element text empty → filtered to the empty string; no of attribute → the element
+    // stays undetermined and lands as Unresolved
     match &map["ARR_OF_ATTR"] {
         WireType::Array { of } => assert!(matches!(
             **of,
@@ -233,14 +237,15 @@ fn layout_collect_types_directive_variants() {
         )),
         other => panic!("expected Array, got {other:?}"),
     }
-    // ARRAY:无 <of> 子元素 → of 属性回落
+    // ARRAY: no <of> child element → the of attribute fallback
     match &map["ARR_ATTR_ONLY"] {
         WireType::Array { of } => assert_eq!(**of, WireType::UInt16),
         other => panic!("expected Array, got {other:?}"),
     }
-    // 只有 of 属性、无 ARRAY 指引 → 无 directive,整体被跳过
+    // Only the of attribute, no ARRAY directive → no directive, the whole thing is skipped
     assert!(!map.contains_key("ARR_BARE"));
-    // ARRAY 无 <of> 无 of 属性 → 容器本身已解析,元素落 Unresolved("ARRAY <of> missing")
+    // ARRAY with no <of> and no of attribute → the container itself is resolved, the element lands as
+    // Unresolved ("ARRAY <of> missing")
     match &map["ARR_NO_OF"] {
         WireType::Array { of } => assert!(matches!(
             &**of,
@@ -252,8 +257,10 @@ fn layout_collect_types_directive_variants() {
 
 #[test]
 fn layout_alias_xml_all_target_paths() {
-    // <Type> 子元素优先;Type 空 → 首个非 Type 子元素名;两者空 → 文本回落;
-    // 全空 → 跳过。alias.xml 可引用 types.xml 里的声明(同一 directive 表)。
+    // The <Type> child element wins; Type empty → the first non-Type child element name; both empty →
+    // the text fallback;
+    // all empty → skipped. alias.xml may reference a declaration from types.xml (the same directive
+    // table).
     let types = "<root><ITEM_ID> UINT16 </ITEM_ID></root>";
     let alias = r#"
 <root>
@@ -267,27 +274,27 @@ fn layout_alias_xml_all_target_paths() {
     let raw = collect_raw_types(types, Some(alias));
     let map = resolve_alias_map(&raw);
     assert_eq!(map["ALIAS_TYPE"], WireType::UInt32);
-    // Type 空 → 回落首个非 Type 子元素**名**(UINT16 即引用)
+    // Type empty → fall back to the **name** of the first non-Type child element (UINT16 is the reference)
     assert_eq!(map["ALIAS_EMPTY_TYPE"], WireType::UInt16);
-    // 文本回落:ALIAS_TEXT → ITEM_ID(跨文件)→ UINT16
+    // The text fallback: ALIAS_TEXT → ITEM_ID (cross-file) → UINT16
     assert_eq!(map["ALIAS_TEXT"], WireType::UInt16);
     assert!(!map.contains_key("ALIAS_SKIP"), "全空指引被跳过");
-    // 嵌套 <root> 子元素被跳过
+    // A nested <root> child element is skipped
     assert!(!map.contains_key("IGNORED"));
-    // types.xml 自身条目同表可见
+    // An entry of types.xml itself is visible in the same table
     assert_eq!(map["ITEM_ID"], WireType::UInt16);
 
-    // 无根(空串)→ 不 panic、表空
+    // No root (an empty string) → no panic, an empty table
     let raw = collect_raw_types("", Some(""));
     assert!(resolve_alias_map(&raw).is_empty());
-    // 根缺失文本 → 不 panic
+    // The root missing text → no panic
     let raw = collect_raw_types("\u{0}not xml", None);
     assert!(resolve_alias_map(&raw).is_empty());
 }
 
 #[test]
 fn layout_resolve_ref_paths_and_cycle() {
-    // 环:A → B → A;深度限 → "alias cycle" 重命名
+    // A cycle: A → B → A; the depth limit → renamed "alias cycle"
     let xml = "<root><A> B </A><B> A </B></root>";
     let raw = collect_raw_types(xml, None);
     let map = resolve_alias_map(&raw);
@@ -300,25 +307,25 @@ fn layout_resolve_ref_paths_and_cycle() {
         other => panic!("expected Unresolved cycle, got {other:?}"),
     }
 
-    // 深限直达:resolve_ref 以 depth > MAX 起步 → Unresolved("depth limit")
+    // The depth cap reached directly: resolve_ref starting with depth > MAX → Unresolved("depth limit")
     let raw = collect_raw_types("<root><X> UINT8 </X></root>", None);
     let ty = resolve_ref(&raw, "X", MAX_TYPE_DEPTH + 1);
     assert!(matches!(&ty, WireType::Unresolved(m) if m.contains("depth limit")));
 
-    // 未知名 → Unresolved(原名)
+    // An unknown name → Unresolved (the original name)
     let ty = resolve_ref(&raw, "NOPE", 0);
     assert!(matches!(&ty, WireType::Unresolved(m) if m == "NOPE"));
 
-    // 内建名直接返回
+    // A builtin name returns directly
     assert_eq!(resolve_ref(&raw, "STRING", 0), WireType::String);
-    // trim 生效
+    // The trim takes effect
     assert_eq!(resolve_ref(&raw, "  UINT32  ", 0), WireType::UInt32);
 }
 
 #[test]
 fn layout_fixed_dict_field_missing_type_is_unresolved() {
-    // FIXED_DICT 字段无 <Type> → 字段级 Unresolved("{name} <Type> missing"),
-    // 不整表失败
+    // A FIXED_DICT field with no <Type> → a field-level Unresolved("{name} <Type> missing"),
+    // the whole table does not fail
     let xml = r#"
 <root>
   <FD>
@@ -346,7 +353,7 @@ fn layout_fixed_dict_field_missing_type_is_unresolved() {
 }
 
 // ---------------------------------------------------------------------------
-// layout:实体线格式(merged_def 父/接口/自身)+ 缺失 Type 属性 + 工具函数
+// layout: the entity wire format (merged_def parent/interface/own) + a missing Type attribute + helpers
 // ---------------------------------------------------------------------------
 
 const AVATAR_DEF: &str = r#"
@@ -406,14 +413,16 @@ fn layout_entity_wire_info_merges_parent_interface_own() {
     assert_eq!(info.interfaces, vec!["ROLE".to_string()]);
     assert!(info.volatile);
 
-    // 属性合并序:父 level(先) + 接口 roleId(后) + 自身 name/hp(最后)
+    // Property merge order: the parent's level (first) + the interface's roleId (later) + own
+    // name/hp (last)
     let names: Vec<&str> = info.properties.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, vec!["level", "roleId", "name", "hp"]);
-    // 同名覆盖:自身 name 覆盖接口/父同名(此处无同名,校验类型)
+    // A same-name override: own name would override the interface/parent's same name (there is no
+    // same name here, so the types are verified)
     assert_eq!(info.properties[2].ty, WireType::String);
     assert_eq!(info.properties[2].flags, vec!["BASE_AND_CLIENT"]);
 
-    // 方法段合并:父 onLevelUp + 自身 requestMove/attack/onDamaged
+    // The method segment merge: the parent's onLevelUp + own requestMove/attack/onDamaged
     let base: Vec<&str> = info.base_methods.iter().map(|m| m.name.as_str()).collect();
     assert_eq!(base, vec!["onLevelUp", "requestMove"]);
     let cell: Vec<&str> = info.cell_methods.iter().map(|m| m.name.as_str()).collect();
@@ -424,15 +433,15 @@ fn layout_entity_wire_info_merges_parent_interface_own() {
         .map(|m| m.name.as_str())
         .collect();
     assert_eq!(client, vec!["onDamaged"]);
-    // 参数线类型求值:VECTOR3 定宽 12
+    // The argument wire-type evaluation: VECTOR3 fixed width 12
     let rm = &info.base_methods[1];
     assert_eq!(rm.args, vec![WireType::Vector3]);
     assert!(rm.exposed);
 
-    // 缺失 .def → None(调用方落 missing_entities)
+    // A missing .def → None (the caller books it under missing_entities)
     let mut load_none = |_: &str| -> Option<kode_parser::model::DefFile> { None };
     assert!(entity_wire_info("Ghost", &mut load_none, &raw).is_none());
-    // 自身 .def 存在但父缺失 → 仍返回自身部分
+    // The own .def exists but the parent is missing → still returns the own part
     let mut load_partial = |name: &str| -> Option<kode_parser::model::DefFile> {
         if name == "Avatar" {
             Some(kode_parser::model::parse_def(AVATAR_DEF))
@@ -477,11 +486,11 @@ fn layout_def_file_name_and_builtin() {
         def_file_name(Path::new("NoSuffix")),
         Some("NoSuffix".into())
     );
-    // 空路径 / ".." 无 file_name 组件 → None
+    // An empty path / ".." with no file_name component → None
     assert_eq!(def_file_name(Path::new("")), None);
     assert_eq!(def_file_name(Path::new("..")), None);
 
-    // 内建分类口径(与 kode-types 转发一致)
+    // The builtin classification semantics (consistent with the kode-types forwarding)
     assert!(is_builtin_type("STRING"));
     assert!(is_builtin_type("UINT32"));
     assert!(!is_builtin_type("MYSTERY"));
@@ -507,7 +516,7 @@ fn layout_entity_registered_reads_attributes() {
 }
 
 // ---------------------------------------------------------------------------
-// messages(固定表):定长推导 + 项目覆盖 + 坏 id/arg 诊断
+// messages (the fixed table): fixed-length derivation + project overrides + bad id/arg diagnostics
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -521,8 +530,9 @@ fn message_length_fixed_len_api() {
 
 #[test]
 fn message_table_by_id_find() {
-    // id 唯一的合成表(by_id 语义);引擎表里多组件共用同一 id
-    // (Machine::stopserver 与 Loginapp::login 同为 3),by_id 只取首条。
+    // A synthetic table with unique ids (the by_id semantics); in the engine table several components
+    // share one id
+    // (Machine::stopserver and Loginapp::login are both 3), and by_id takes only the first one.
     let xml = r#"
 <root>
   <A::x><id>7</id><arg> UINT8 </arg></A::x>
@@ -541,7 +551,8 @@ fn message_table_by_id_find() {
     assert_eq!(table.find("A::x").unwrap().id, 7);
     assert_eq!(table.find("Nope"), None);
 
-    // 引擎表:同名查 id 与定长视图(id 冲突面见上注)
+    // The engine table: the same-name id lookup and the fixed-length view (see the note above for the id
+    // conflict plane)
     let engine = build_message_table(&engine_defaults_xml(), None);
     assert_eq!(engine.find("Loginapp::login").unwrap().id, 3);
     assert!(engine.find("Loginapp::login").unwrap().length.is_variable());
@@ -551,7 +562,7 @@ fn message_table_by_id_find() {
 
 #[test]
 fn message_parse_invalid_id_and_args() {
-    // 坏 <id>:非数字与超 u16 → 诊断 + 条目丢弃
+    // A bad <id>: a non-numeric value and one beyond u16 → a diagnostic + the entry dropped
     let xml = r#"
 <root>
   <Bad::Num><id>oops</id></Bad::Num>
@@ -568,10 +579,10 @@ fn message_parse_invalid_id_and_args() {
         table.find("Good::One").unwrap().args,
         vec![WireType::UInt32]
     );
-    // 空 arg 文本跳过;非空 UINT16 保留
+    // An empty arg text is skipped; a non-empty UINT16 is kept
     let empty = table.find("Good::Empty").unwrap();
     assert_eq!(empty.args, vec![WireType::UInt16]);
-    // 未知参数类型 → Unresolved + 诊断
+    // An unknown argument type → Unresolved + a diagnostic
     let unknown = table.find("Good::Unknown").unwrap();
     assert!(matches!(&unknown.args[0], WireType::Unresolved(m) if m == "NO_SUCH_TYPE"));
     assert!(unknown.length.is_variable(), "未知参数保守变长");
@@ -592,13 +603,15 @@ fn message_parse_invalid_id_and_args() {
 
 #[test]
 fn message_parse_missing_id_diagnostic() {
-    // 引擎基线条目缺 <id>:非项目段记诊断不产条目
+    // An engine baseline entry with no <id>: the non-project segment records a diagnostic and produces
+    // no entry
     let xml = "<root><NoId::Msg><arg> UINT8 </arg></NoId::Msg></root>";
     let table = build_message_table(xml, None);
     assert!(table.find("NoId::Msg").is_none());
     assert!(table.diagnostics.iter().any(|d| d.contains("missing <id>")));
 
-    // 项目覆盖段(第二参):同名无 id 条目被静默忽略(不诊断)
+    // The project override segment (the second argument): a same-name entry without an id is silently
+    // ignored (no diagnostic)
     let table = build_message_table(
         &engine_defaults_xml(),
         Some("<root><Loginapp::login></Loginapp::login></root>"),
@@ -612,17 +625,18 @@ fn message_parse_missing_id_diagnostic() {
 
 #[test]
 fn message_project_override_without_args_keeps_engine_args() {
-    // 项目覆盖只给 <id>(无 <arg>):保留引擎原参数与长度
+    // A project override giving only <id> (no <arg>): the engine's original arguments and length are kept
     let project = "<root><Loginapp::login><id>77</id></Loginapp::login></root>";
     let table = build_message_table(&engine_defaults_xml(), Some(project));
     let login = table.find("Loginapp::login").unwrap();
     assert_eq!(login.id, 77);
-    // 引擎 args(STRING/BLOB/STRING/STRING)保留
+    // The engine args (STRING/BLOB/STRING/STRING) are kept
     assert_eq!(login.args.len(), 4);
     assert!(matches!(login.args[0], WireType::String));
     assert!(login.length.is_variable(), "保留引擎参数 → 保持变长");
 
-    // 覆盖带 <arg> 则替换参数并重算长度(STRING 参数 → 变长)
+    // An override carrying <arg> replaces the arguments and recomputes the length (a STRING argument →
+    // variable)
     let project = "<root><Loginapp::login><id>78</id><arg> UINT16 </arg></Loginapp::login></root>";
     let table = build_message_table(&engine_defaults_xml(), Some(project));
     let login = table.find("Loginapp::login").unwrap();
@@ -630,14 +644,15 @@ fn message_project_override_without_args_keeps_engine_args() {
     assert_eq!(login.args, vec![WireType::UInt16]);
     assert_eq!(login.length, MessageLength::Fixed(2));
 
-    // 全新项目条目(表外)正常加入
+    // A brand-new project entry (not in the table) is added normally
     let project =
         "<root><Demo::new><id>910</id><arg> UINT32 </arg><arg> FLOAT </arg></Demo::new></root>";
     let table = build_message_table(&engine_defaults_xml(), Some(project));
     let new = table.find("Demo::new").unwrap();
     assert_eq!(new.length, MessageLength::Fixed(8));
 
-    // 覆盖无参定长消息(仅 <id>):保留空参数 → 重算定长 0
+    // Overriding a parameterless fixed message (only <id>): the empty arguments are kept → recomputed to
+    // fixed 0
     let project =
         "<root><Loginapp::importClientMessages><id>55</id></Loginapp::importClientMessages></root>";
     let table = build_message_table(&engine_defaults_xml(), Some(project));
@@ -649,7 +664,8 @@ fn message_project_override_without_args_keeps_engine_args() {
 
 #[test]
 fn message_overlay_all_fixed_shapes() {
-    // 接口层勘误(§6):仅当 XML 无 <arg> 时套用;含变长参数 → Variable
+    // The interface-layer corrections (§6): applied only when the XML has no <arg>; containing a variable
+    // argument → Variable
     let xml = r#"
 <root>
   <Loginapp::hello><id>4</id></Loginapp::hello>
@@ -679,7 +695,7 @@ fn message_overlay_all_fixed_shapes() {
     assert_eq!(relogin.args.len(), 4);
     assert!(relogin.length.is_variable());
 
-    // XML 已给 <arg> 的条目:勘误不覆盖
+    // An entry already given <arg> in the XML: the corrections do not override it
     let xml = r#"
 <root>
   <Loginapp::hello><id>4</id><arg> UINT16 </arg></Loginapp::hello>
@@ -705,7 +721,7 @@ fn message_overlay_all_fixed_shapes() {
 }
 
 // ---------------------------------------------------------------------------
-// compat:全变更类型 + Display + 兼容/不兼容判定
+// compat: all change types + Display + the compatible/incompatible verdict
 // ---------------------------------------------------------------------------
 
 fn msg(name: &str, id: u16, length: MessageLength, args: Vec<WireType>) -> MessageEntry {
@@ -780,7 +796,8 @@ fn compat_all_change_variants_and_display() {
     let old = base_schema();
     let mut new = old.clone();
 
-    // 消息级破坏:id 漂移 + 长度变 + 参数变;login 删除;新增消息
+    // Message-level breakage: an id drift + a length change + argument changes; login removed; a message
+    // added
     let mut messages = MessageTable::default();
     messages.entries.push(msg(
         "Client::onHelloCB",
@@ -795,11 +812,11 @@ fn compat_all_change_variants_and_display() {
         Vec::new(),
     ));
     new.messages = messages;
-    // 别名:ITEM_ID 删除,LEVEL 布局变
+    // Aliases: ITEM_ID removed, the LEVEL layout changed
     let mut aliases = BTreeMap::new();
     aliases.insert("LEVEL".into(), WireType::UInt32);
     new.aliases = aliases;
-    // 实体:Account 删除,Avatar 属性类型变,新增 Space
+    // Entities: Account removed, the Avatar property type changed, Space added
     let mut entities = BTreeMap::new();
     entities.insert(
         "Avatar".into(),
@@ -810,7 +827,7 @@ fn compat_all_change_variants_and_display() {
         entity("Space", vec![("id", WireType::UInt16)]),
     );
     new.entities = entities;
-    // 配置开关变
+    // The configuration switch changed
     new.packet_always_contain_length = true;
 
     let report = check(&old, &new);
@@ -883,8 +900,9 @@ fn compat_all_change_variants_and_display() {
 
 #[test]
 fn compat_additions_and_entity_removal_are_compatible() {
-    // 仅新增消息 / 新增实体 / 删除实体 → 兼容(都不破坏旧端解码);
-    // 既有消息的 id/长度/参数保持不动。
+    // Only a message added / an entity added / an entity removed → compatible (none of them breaks
+    // decoding on the old end);
+    // the id/length/arguments of existing messages stay untouched.
     let old = base_schema();
     let mut new = old.clone();
     new.messages.entries.push(msg(
@@ -922,9 +940,11 @@ fn compat_identical_is_compatible_no_changes() {
 
 #[test]
 fn compat_property_only_in_old_is_not_a_change() {
-    // 旧实体独有属性(新实体已删)→ SER-13 起显式落账:PropertyRemoved
-    // (属性删=合并序漂移,旧端按位解码新流错位;md5 可见 property.cpp:53-64
-    // → 握手拒绝)。仍不是 PropertyTypeChanged(类型未动)。
+    // A property unique to the old entity (already deleted in the new one) → booked explicitly since
+    // SER-13: PropertyRemoved
+    // (a removed property = a merge-order drift, the old end decodes the new stream position by
+    // position and misaligns; md5 visible at property.cpp:53-64
+    // → the handshake rejects). Still not PropertyTypeChanged (the type did not move).
     let old = base_schema();
     let mut new = old.clone();
     let avatar = new.entities.get_mut("Avatar").unwrap();
@@ -953,7 +973,7 @@ fn compat_property_only_in_old_is_not_a_change() {
 
 #[test]
 fn compat_change_variant_equality_and_struct() {
-    // 变体结构:可直接匹配(诊断/告警面)
+    // The variant structure: directly matchable (the diagnostic/alerting plane)
     let c = Change::PropertyTypeChanged {
         entity: "Avatar".into(),
         property: "hp".into(),
@@ -975,26 +995,27 @@ fn compat_change_variant_equality_and_struct() {
 }
 
 // ---------------------------------------------------------------------------
-// builder:项目装配(临时目录)+ 配置标签 + 缺失实体 + 错误面
+// builder: the project assembly (a temporary directory) + the configuration tags + missing entities +
+// the error surface
 // ---------------------------------------------------------------------------
 
 #[test]
 fn builder_error_display_and_non_project_root() {
-    // 非资产根(无 scripts/)→ Err + Display 可读
+    // Not an asset root (no scripts/) → Err + a readable Display
     let dir = tmp_project("not-root");
     let r = build_schema_from_project(&dir, None, &BuildOptions::default());
     let err = r.unwrap_err();
     let s = format!("{err}");
     assert!(s.contains("kbengine schema build error: not a KBEngine asset root"));
-    // std::error::Error 上抛
+    // std::error::Error propagation
     let boxed: Box<dyn std::error::Error> = Box::new(err);
     assert!(boxed.to_string().contains("not a KBEngine asset root"));
 }
 
 #[test]
 fn builder_project_fallback_and_missing_entities() {
-    // 项目 res/server/messages_fixed_defaults.xml 兜底(engine 参数 None):
-    // 固定表来自项目文件,不产生 not-provided 诊断
+    // The project res/server/messages_fixed_defaults.xml fallback (the engine argument None):
+    // the fixed table comes from the project file, so no not-provided diagnostic is produced
     let dir = tmp_project("fallback");
     write(
         &dir.join("scripts/entities.xml"),
@@ -1011,7 +1032,7 @@ fn builder_project_fallback_and_missing_entities() {
         "<root><Loginapp::hello><id>4</id></Loginapp::hello></root>",
     );
     let schema = build_schema_from_project(&dir, None, &BuildOptions::default()).expect("build");
-    // Ghost 已注册但 .def 缺失 → missing_entities(不编造空条目)
+    // Ghost is registered but its .def is missing → missing_entities (no empty entry is fabricated)
     assert_eq!(schema.missing_entities, vec!["Ghost".to_string()]);
     assert!(schema.entities.contains_key("Account"));
     assert!(!schema
@@ -1020,7 +1041,8 @@ fn builder_project_fallback_and_missing_entities() {
         .any(|d| d.contains("not provided")));
     assert_eq!(schema.messages.find("Loginapp::hello").unwrap().id, 4);
 
-    // 兜底文件也缺失 → not-provided 诊断 + 固定表 = 空段(不失败)
+    // The fallback file is also missing → the not-provided diagnostic + a fixed table = an empty
+    // segment (no failure)
     let dir2 = tmp_project("no-defaults");
     write(&dir2.join("scripts/entities.xml"), "<root></root>");
     write(&dir2.join("scripts/entity_defs/types.xml"), "<root></root>");
@@ -1053,7 +1075,7 @@ fn builder_packet_always_contain_length_from_config() {
         build_schema_from_project(&dir, Some(&engine_defaults_xml()), &BuildOptions::default())
             .expect("build");
     assert!(schema.packet_always_contain_length);
-    // 所有消息按变长建模(含原定长 importClientMessages id=5)
+    // Every message is modeled as variable (including the originally fixed importClientMessages id=5)
     assert!(schema
         .messages
         .find("Loginapp::importClientMessages")
@@ -1061,8 +1083,10 @@ fn builder_packet_always_contain_length_from_config() {
         .length
         .is_variable());
 
-    // kbengine_defaults.xml 兜底读取(false 语义):覆盖 kbengine.xml?——顺序:
-    // kbengine.xml 先读,defaults 后读可覆盖;此处 defaults 单独生效
+    // The kbengine_defaults.xml fallback read (false semantics): does it override kbengine.xml? — the
+    // order:
+    // kbengine.xml is read first and defaults, read later, can override it; here defaults alone takes
+    // effect
     let dir2 = tmp_project("always-len2");
     write(&dir2.join("scripts/entities.xml"), "<root></root>");
     write(&dir2.join("scripts/entity_defs/types.xml"), "<root></root>");
@@ -1088,7 +1112,7 @@ fn builder_packet_always_contain_length_from_config() {
         .length
         .is_variable());
 
-    // 配置标签缺失 / 空文本 → 引擎默认(false)
+    // A missing configuration tag / empty text → the engine default (false)
     let dir3 = tmp_project("always-len3");
     write(&dir3.join("scripts/entities.xml"), "<root></root>");
     write(&dir3.join("scripts/entity_defs/types.xml"), "<root></root>");
@@ -1109,7 +1133,7 @@ fn builder_packet_always_contain_length_from_config() {
     .expect("build3");
     assert!(!schema.packet_always_contain_length);
 
-    // "false"/"no" 语义也走 false 面
+    // The "false"/"no" semantics also take the false path
     let dir4 = tmp_project("always-len4");
     write(&dir4.join("scripts/entities.xml"), "<root></root>");
     write(&dir4.join("scripts/entity_defs/types.xml"), "<root></root>");
@@ -1155,7 +1179,8 @@ fn builder_truthy_variants_via_config() {
 
 #[test]
 fn builder_unreadable_file_produces_diagnostic() {
-    // types.xml 为目录 → 读取失败 → 诊断(不 panic),别名字段回退空
+    // types.xml is a directory → the read fails → a diagnostic (no panic), the alias field falls back
+    // to empty
     let dir = tmp_project("unreadable");
     write(&dir.join("scripts/entities.xml"), "<root></root>");
     write(&dir.join("scripts/entity_defs/alias.xml"), "<root></root>");
@@ -1168,7 +1193,7 @@ fn builder_unreadable_file_produces_diagnostic() {
         "diagnostics: {:?}",
         schema.diagnostics
     );
-    // 别名表为空但构建成功(坏文件走诊断不失败)
+    // The alias table is empty but the build succeeds (a bad file goes to diagnostics, no failure)
     assert!(schema.aliases.is_empty());
 }
 
@@ -1182,7 +1207,8 @@ fn builder_entities_xml_missing_is_error() {
 }
 
 // ---------------------------------------------------------------------------
-// 汇总:demo 项目真实装配 + 别名/实体/消息三面对拍(与 golden 同源)
+// The summary: real assembly of the demo project + a three-plane parity comparison over
+// aliases/entities/messages (the same source as the golden)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1194,17 +1220,17 @@ fn builder_demo_project_full_assembly() {
         &BuildOptions::default(),
     )
     .expect("demo build");
-    // 实体注册 ∩ .def 落盘
+    // The entity registrations ∩ the .def files on disk
     assert!(schema.entities.contains_key("Account"));
     assert!(schema.entities.contains_key("Avatar"));
-    // 别名解析链:ITEM_ID→UINT16,ITEM_IDS→ARRAY<ITEM_ID>
+    // The alias resolution chain: ITEM_ID→UINT16, ITEM_IDS→ARRAY<ITEM_ID>
     assert_eq!(schema.resolve_alias("ITEM_ID"), Some(&WireType::UInt16));
     assert!(matches!(
         schema.resolve_alias("ITEM_IDS"),
         Some(WireType::Array { of }) if matches!(**of, WireType::UInt16)
     ));
-    // 消息表来自引擎默认
+    // The message table comes from the engine defaults
     assert_eq!(schema.messages.find("Loginapp::login").unwrap().id, 3);
-    // resolve_alias 未知名 → None
+    // resolve_alias for an unknown name → None
     assert_eq!(schema.resolve_alias("NOPE"), None);
 }

@@ -296,8 +296,11 @@ mod tests {
     fn missing_binary_falls_back_to_unavailable_face() {
         let dir = temp_dir("missing");
         let missing = dir.join("no-such-ruff");
-        let face = lint(&["/w/x.py".to_string()], Some(missing.to_str().expect("utf8 path")))
-            .expect("缺二进制如实回退不报错");
+        let face = lint(
+            &["/w/x.py".to_string()],
+            Some(missing.to_str().expect("utf8 path")),
+        )
+        .expect("缺二进制如实回退不报错");
         assert_eq!(face["available"], serde_json::json!(false));
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }
@@ -313,11 +316,8 @@ mod tests {
         let version_stub = {
             let script = version_dir.join("hang.sh");
             std::fs::write(&script, "#!/bin/sh\nexec sleep 300\n").expect("write hang stub");
-            std::fs::set_permissions(
-                &script,
-                std::os::unix::fs::PermissionsExt::from_mode(0o755),
-            )
-            .expect("chmod");
+            std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .expect("chmod");
             script
         };
         #[cfg(windows)]
@@ -327,7 +327,10 @@ mod tests {
         );
         std::env::set_var("KODE_RUFF_DEADLINE_MS", "300");
         // 探测面挂起:降级 None,不无限等(墙钟 ~300ms 级)。
-        assert_eq!(probe_version(version_stub.to_str().expect("utf8 path")), None);
+        assert_eq!(
+            probe_version(version_stub.to_str().expect("utf8 path")),
+            None
+        );
 
         let check_dir = temp_dir("hang-c");
         #[cfg(unix)]
@@ -340,11 +343,8 @@ mod tests {
                  exec sleep 300\n",
             )
             .expect("write hang stub");
-            std::fs::set_permissions(
-                &script,
-                std::os::unix::fs::PermissionsExt::from_mode(0o755),
-            )
-            .expect("chmod");
+            std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .expect("chmod");
             script
         };
         #[cfg(windows)]

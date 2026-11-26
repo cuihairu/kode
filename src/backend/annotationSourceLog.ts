@@ -1,10 +1,14 @@
-// IDE-REV-037:注解来源日志(验收「日志明确所用来源」)——hover 推导答话
-// 时把「本次用了哪个来源」(悬停文档桶/其余打开文档桶/磁盘注解快照)落
-// [kode-annot] 行;过期未命中与受控重建触发同样落账。体量=每查一行,
-// 开关 kbengine.annotationLog 默认关闭,关闭时第一行即返回、消息以 () =>
-// 惰性传入零字符串拼接(同 jumpLog 口径)。本模块不 import vscode(与
-// pythonReturnTypeInference 的无 vscode 约束对齐):输出面板落盘由
-// extension 激活时注入 sink,环形缓冲供测试/取证直接读。
+// IDE-REV-037: annotation source log (acceptance criterion "the log names the
+// source actually used") — when hover inference answers, it emits a [kode-annot]
+// line recording "which source was used this time" (the hover-document bucket /
+// the other-open-documents bucket / the on-disk annotation snapshot); stale
+// misses and controlled rebuild triggers are logged the same way. Cost = one
+// line per query. The kbengine.annotationLog switch defaults to off; when off,
+// the first line returns immediately and the message is passed in as () => so
+// no string concatenation happens (same contract as jumpLog). This module does
+// not import vscode (aligned with pythonReturnTypeInference's no-vscode
+// constraint): output-panel writing is provided by a sink injected at extension
+// activation, and the ring buffer can be read directly by tests/forensics.
 export type AnnotationLogLevel = 'info' | 'debug';
 
 export type AnnotationLogSink = (line: string) => void;
@@ -22,7 +26,7 @@ export function clearRecentAnnotationSourceLogs(): void {
   recentLines.length = 0;
 }
 
-/** 开关注入点:extension 激活读配置、配置变更时刷新;测试直接置位 */
+/** Switch injection point: extension activation reads config, config changes refresh it; tests set it directly */
 export function setAnnotationSourceLogEnabled(value: boolean): void {
   enabled = value;
 }
@@ -31,7 +35,7 @@ export function isAnnotationSourceLogEnabled(): boolean {
   return enabled;
 }
 
-/** 输出面板接线:extension 注入(通道懒建);测试可注入自己的收行器 */
+/** Output panel wiring: injected by the extension (channel created lazily); tests can inject their own line collector */
 export function setAnnotationSourceLogSink(next: AnnotationLogSink | undefined): void {
   sink = next;
 }

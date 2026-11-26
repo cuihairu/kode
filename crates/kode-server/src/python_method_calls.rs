@@ -1,43 +1,37 @@
-//! python 方法调用层次解析决策核(RUST-145 批 1):与
-//! src/backend/pythonMethodCallQueries.ts 同构——方法块解析(索引首扫/
-//! 未保存文档覆盖共用)+ outgoing 绑定解析(精确文件+名→同名回退→dedup)
-//! 与 incoming 全量扫描(进程作用域过滤/打开文档覆盖/未入索引打开文件跳过)。
-//! 纯库零 RPC;golden 语料化对拍(tests/python_method_calls_golden.rs 重生成
-//! 比对,TS 侧 tests/kodePythonMethodCallsParity.test.ts 驱动生产函数复算)。
+//! The Python method-call layered-resolution decision core (RUST-145 batch 1): isomorphic with
+//! src/backend/pythonMethodCallQueries.ts -- method-block parsing (the index's first scan /
+//! unsaved-document override share it) + outgoing binding resolution (exact file+name -> same-name fallback -> dedup)
+//! plus incoming full scanning (process-scope filtering / open-document override / skipping not-yet-indexed open files).
+//! Pure library, zero RPC; golden-corpus comparison (tests/python_method_calls_golden.rs regenerates
+//! the comparison, driven by the TS-side tests/kodePythonMethodCallsParity.test.ts recomputing the production functions).
 //!
-//! 保真口径(与 TS 正则逐路径同构):
-//! - JS `\s` 全集(含 \u00a0/\u2000-\u200a/\u3000/\ufeff 等)——缩进计数与
-//!   空白行判定都用它,`\u3000` 全角空格行按 JS trim 语义算空白行;
-//! - def 行正则 `^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(`:async 路先试
-//!   (贪婪可选组),整体失败回退裸 def 路(JS 回溯语义);
-//! - 方法名列 = JS `indexOf(name)` 全行首现(非正则命中位)——`def de(self)`
-//!   的 indexOf("de") 命中 "def" 前缀内部列 0,双端同构诚实保真;
-//! - self 调用正则 `\bself\.([A-Za-z_]\w*)\s*\(`:词边界(前一字符非
-//!   [A-Za-z0-9_])、ident 贪婪、`\s*(`;ident 后非 `(` 整体失败前移一位;
-//!   字符串/注释无感知(正则盲区,双端一致);
-//! - 列域 UTF-16(LSP 面):CJK 前缀按 code unit 计数。
+//! Fidelity stance (isomorphic path by path with the TS regex):
+//! - the full JS `\s` set (including \u00a0/\u2000-\u200a/\u3000/\ufeff, etc.) -- indentation counting and
+//!   blank-line detection both use it; a `\u3000` full-width-space line counts as blank under the JS trim semantics;
+//! - the def-line regex `^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(`: the async path is tried first
+//!   (the greedy optional group); on total failure it falls back to the bare-def path (JS backtracking semantics);
+//! - the method-name column = the JS `indexOf(name)` first occurrence in the whole line (not the regex hit position) -- in `def de(self)`
+//!   indexOf("de") hits column 0 inside the "def" prefix; an honest isomorphism on both ends;
+//! - the self-call regex `\bself\.([A-Za-z_]\w*)\s*\(`: a word boundary (the preceding character is not
+//!   [A-Za-z0-9_]), a greedy ident, `\s*(`; if a non-`(` follows the ident, the whole attempt fails and it advances by one;
+//!   strings/comments are not seen through (a regex blind spot, consistent on both ends);
+//! - the column domain is UTF-16 (the LSP face): CJK prefixes count in code units.
 use crate::def_param_hints::{infer_method_section_from_python_file, normalize_file_identity};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// JS `\s`(regex)全集;亦是 JS String.trim 的空白集(不含额外字符)。
+/// The full JS `\s` (regex) set; also the whitespace set of JS String.trim (with no extra characters).
 fn is_js_space(c: char) -> bool {
     matches!(
         c,
-        ' ' | '\t'
-            | '\n'
-            | '\u{000b}'
-            | '\u{000c}'
-            | '\r'
-            | '\u{00a0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-            | '\u{feff}'
+        ' ' | '\t' | '\n' | '\u{000b}' | '\u{000c}' | '\r' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
     )
 }
 
@@ -49,12 +43,12 @@ fn is_ident_cont(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
-/// JS trim 空判定:全部字符是 JS 空白(含空串)。
+/// JS trim emptiness judgment: every character is JS whitespace (the empty string included).
 fn js_trim_empty(line: &str) -> bool {
     line.chars().all(is_js_space)
 }
 
-/// 行首 `\s*` 宽度(JS match[0].length 语义,UTF-16 单元)。
+/// The width of the leading `\s*` (JS match[0].length semantics, in UTF-16 units).
 fn leading_js_space_units(chars: &[char]) -> usize {
     let mut units = 0;
     for c in chars {
@@ -66,12 +60,12 @@ fn leading_js_space_units(chars: &[char]) -> usize {
     units
 }
 
-/// 字节偏移 → UTF-16 列(LSP 面)。
+/// Byte offset -> UTF-16 column (the LSP face).
 fn utf16_col(text: &str, byte_idx: usize) -> usize {
     text[..byte_idx].chars().map(|c| c.len_utf16()).sum()
 }
 
-/// self 调用点(解析产物,TS IndexedPythonMethodLocation['calls'] 同形)。
+/// Self-call sites (the resolution product, isomorphic in shape with TS IndexedPythonMethodLocation['calls']).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonSelfCall {
@@ -81,7 +75,7 @@ pub struct PythonSelfCall {
     pub file_path: String,
 }
 
-/// 索引方法块(方法名/1 基行/名列/缩进边界 endLine/自调用点集)。
+/// Indexed method blocks (method name / 1-based line / name column / indentation-boundary endLine / own-call-site set).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexedPythonMethodLocation {
@@ -93,7 +87,7 @@ pub struct IndexedPythonMethodLocation {
     pub calls: Vec<PythonSelfCall>,
 }
 
-/// outgoing 引用(resolved 绑定四元组,保留原始路径非归一形)。
+/// An outgoing reference (the four-tuple of the resolved binding, keeping the un-normalized original path).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonMethodCallReference {
@@ -103,7 +97,7 @@ pub struct PythonMethodCallReference {
     pub character: u32,
 }
 
-/// incoming 调用方窄面(不带 endLine/calls)。
+/// The incoming caller narrow face (without endLine/calls).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IncomingCaller {
@@ -113,7 +107,7 @@ pub struct IncomingCaller {
     pub character: u32,
 }
 
-/// incoming 命中(调用方+调用点行列)。
+/// An incoming hit (the caller + the call-site line/column).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IncomingPythonMethodCall {
@@ -122,7 +116,7 @@ pub struct IncomingPythonMethodCall {
     pub call_character: u32,
 }
 
-/// 打开文档快照(manager 面 collectOpenDocumentTexts 的语料化形态)。
+/// An open-document snapshot (the corpus form of the manager face's collectOpenDocumentTexts).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenDocumentText {
@@ -130,10 +124,10 @@ pub struct OpenDocumentText {
     pub content: String,
 }
 
-/// def 行匹配(手写扫描器,正则 `^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(`)。
-/// 返回 (indent UTF-16 宽, 名字节起点[character 回退位], 名)。
-/// 名列不在此定:TS 面 = `indexOf(name)` 全行首现(可能落在 "def" 前缀内部),
-/// 由 parse 层统一计算。
+/// A def-line match (a hand-written scanner with the regex `^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(`).
+/// Returns (the indent UTF-16 width, the name byte start [the character backing-off position], the name).
+/// The name column is not fixed here: the TS face = `indexOf(name)`'s first occurrence in the whole line (it may fall inside the "def" prefix),
+/// computed uniformly by the parse layer.
 fn match_def_line(line: &str) -> Option<(usize, usize, String)> {
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
@@ -147,7 +141,7 @@ fn match_def_line(line: &str) -> Option<(usize, usize, String)> {
         if p + 3 > chars.len() || chars[p] != 'd' || chars[p + 1] != 'e' || chars[p + 2] != 'f' {
             return None;
         }
-        // \s+(至少一个)
+        // \s+(at least one)
         let mut q = p + 3;
         let mut any = false;
         while q < chars.len() && is_js_space(chars[q]) {
@@ -157,7 +151,7 @@ fn match_def_line(line: &str) -> Option<(usize, usize, String)> {
         if !any || q >= chars.len() || !is_ident_start(chars[q]) {
             return None;
         }
-        // ident 贪婪(无回溯:\s*( 不吃 ident 字符,缩短必失败)
+        // a greedy ident (no backtracking: \s*( does not eat ident chars, so shortening must fail)
         let start = q;
         q += 1;
         while q < chars.len() && is_ident_cont(chars[q]) {
@@ -175,7 +169,7 @@ fn match_def_line(line: &str) -> Option<(usize, usize, String)> {
         }
     };
 
-    // JS 贪婪可选组:async 路先试,失败回退裸 def 路。
+    // The JS greedy optional group: the async path is tried first; on failure it falls back to the bare-def path.
     if chars[i..].starts_with(&['a', 's', 'y', 'n', 'c'])
         && i + 5 < chars.len()
         && is_js_space(chars[i + 5])
@@ -194,13 +188,17 @@ fn match_def_line(line: &str) -> Option<(usize, usize, String)> {
     Some((indent, byte_start, name))
 }
 
-/// self 调用扫描(手写,正则 `\bself\.([A-Za-z_]\w*)\s*\(` 逐路径同构)。
-/// startLine 为 bodyLines[0] 的 1 基行号(TS 面 index+2)。
-fn parse_python_self_calls(body_lines: &[&str], start_line: u32, python_file: &str) -> Vec<PythonSelfCall> {
+/// Self-call scanning (hand-written, the regex `\bself\.([A-Za-z_]\w*)\s*\(` isomorphic path by path).
+/// startLine is the 1-based line number of bodyLines[0] (TS face: index+2).
+fn parse_python_self_calls(
+    body_lines: &[&str],
+    start_line: u32,
+    python_file: &str,
+) -> Vec<PythonSelfCall> {
     let mut calls = Vec::new();
     for (offset, line) in body_lines.iter().enumerate() {
         let chars: Vec<char> = line.chars().collect();
-        // (byte_idx, char_idx) 同步推进
+        // (byte_idx, char_idx) advance in lockstep
         let mut i = 0;
         while i < chars.len() {
             let word_boundary = i == 0 || !is_ident_cont(chars[i - 1]);
@@ -236,7 +234,7 @@ fn parse_python_self_calls(body_lines: &[&str], start_line: u32, python_file: &s
                     character: (utf16_col(line, byte_idx) + "self.".len()) as u32,
                     file_path: python_file.to_string(),
                 });
-                // JS lastIndex = 匹配尾(右括号后一位)
+                // JS lastIndex = the match end (one past the closing paren)
                 i = r + 1;
             } else {
                 i += 1;
@@ -246,8 +244,11 @@ fn parse_python_self_calls(body_lines: &[&str], start_line: u32, python_file: &s
     calls
 }
 
-/// 方法块解析(TS parsePythonMethodBlocks 同构;索引首扫/未保存文档覆盖共用)。
-pub fn parse_python_method_blocks(content: &str, python_file: &str) -> Vec<IndexedPythonMethodLocation> {
+/// Method-block parsing (isomorphic with TS parsePythonMethodBlocks; the index's first scan / the unsaved-document override share it).
+pub fn parse_python_method_blocks(
+    content: &str,
+    python_file: &str,
+) -> Vec<IndexedPythonMethodLocation> {
     let lines: Vec<&str> = content.split('\n').collect();
     let mut methods = Vec::new();
 
@@ -255,11 +256,11 @@ pub fn parse_python_method_blocks(content: &str, python_file: &str) -> Vec<Index
         let Some((indent, name_byte_start, method_name)) = match_def_line(line) else {
             continue;
         };
-        // TS 面 character = `lineText.indexOf(name)` 全行首现——可落在 "def"
-        // 前缀内部(def de( → "de" 命中 "def"),非正则命中位。
+        // On the TS face character = `lineText.indexOf(name)`'s first occurrence in the whole line -- it may fall inside "def"
+        // (def de( -> "de" hits "def"), not the regex hit position.
         let character = match line.find(&method_name) {
             Some(byte_idx) => utf16_col(line, byte_idx),
-            None => utf16_col(line, name_byte_start), // 不可达:名从本行摘出
+            None => utf16_col(line, name_byte_start), // unreachable: the name was taken from this line
         };
         let mut end_line = lines.len();
         for (next, next_text) in lines.iter().enumerate().skip(index + 1) {
@@ -286,8 +287,8 @@ pub fn parse_python_method_blocks(content: &str, python_file: &str) -> Vec<Index
     methods
 }
 
-/// outgoing 解析:目标定位(路径身份归一)→ 逐调用点绑定(精确文件+名,
-/// 同名任意文件回退)→ dedup(归一路径:名:行:列)。
+/// Outgoing resolution: target location (path-identity normalization) -> per-call-site binding (exact file+name,
+/// a same-name any-file fallback) -> dedup (normalized path:name:line:column).
 pub fn resolve_outgoing_python_method_calls(
     methods: &[IndexedPythonMethodLocation],
     python_file: &str,
@@ -336,9 +337,9 @@ pub fn resolve_outgoing_python_method_calls(
     references
 }
 
-/// incoming 解析:按文件分桶(插入序)→ 打开文档覆盖(仅覆盖已入索引桶,
-/// 覆盖保持原桶位序)→ 全量扫描(名命中+目标在列+进程作用域过滤:双方块
-/// 已知且不同跳过;未知保守保留)。
+/// Incoming resolution: bucket by file (insertion order) -> open-document override (overriding only buckets already in the index,
+/// with the override keeping the original bucket order) -> full scanning (name hit + target in column + process-scope filtering: when both blocks
+/// are known and different, skip; when unknown, keep conservatively).
 pub fn resolve_incoming_python_method_calls(
     methods: &[IndexedPythonMethodLocation],
     open_texts: &[OpenDocumentText],
@@ -348,7 +349,7 @@ pub fn resolve_incoming_python_method_calls(
     let normalized_target = normalize_file_identity(python_file);
     let target_section = infer_method_section_from_python_file(&normalized_target);
 
-    // 分桶:JS Map 插入序(set 已存键保位)+ 逐桶覆盖。
+    // Bucketing: the JS Map insertion order (an existing set key keeps its position) + per-bucket override.
     let mut order: Vec<String> = Vec::new();
     let mut buckets: HashMap<String, Vec<IndexedPythonMethodLocation>> = HashMap::new();
     for method in methods {
@@ -382,11 +383,13 @@ pub fn resolve_incoming_python_method_calls(
             if call.method_name != method_name {
                 continue;
             }
-            if flat.iter().find(|candidate| {
-                candidate.method_name == call.method_name
-                    && normalize_file_identity(&candidate.file_path) == normalized_target
-            })
-            .is_none()
+            if flat
+                .iter()
+                .find(|candidate| {
+                    candidate.method_name == call.method_name
+                        && normalize_file_identity(&candidate.file_path) == normalized_target
+                })
+                .is_none()
             {
                 continue;
             }
@@ -412,10 +415,10 @@ pub fn resolve_incoming_python_method_calls(
 }
 
 // ---------------------------------------------------------------------------
-// golden 语料/探测/dump(TS 侧 parity 驱动同集)
+// golden corpus / probe / dump (the TS-side parity drives the same set)
 // ---------------------------------------------------------------------------
 
-/// 语料条目:in_index=false 的条目只作打开文档覆盖文本,不入索引。
+/// Corpus entries: entries with in_index=false serve only as open-document override text and are not indexed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MethodCallsCorpusEntry {
@@ -425,11 +428,11 @@ pub struct MethodCallsCorpusEntry {
     pub fs_path: String,
 }
 
-/// 探测面:outgoing / incoming(open_texts 引用 corpus 条目作覆盖文本)。
+/// The probe face: outgoing / incoming (open_texts reference corpus entries as override text).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "face", rename_all = "camelCase")]
 pub enum MethodCallsProbe {
-    // 变体级 rename_all 才落字段(容器级只改变体名)
+    // only a variant-level rename_all lands in the field (a container-level one only changes the variant name)
     #[serde(rename_all = "camelCase")]
     Outgoing {
         target_file: String,
@@ -451,7 +454,7 @@ pub struct OpenTextRef {
     pub fs_path: String,
 }
 
-/// 产出面(与 Probe 一一对应)。
+/// The produce face (one-to-one with Probe).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "face", rename_all = "camelCase")]
 pub enum MethodCallsProbeOutcome {
@@ -463,7 +466,7 @@ pub enum MethodCallsProbeOutcome {
     },
 }
 
-/// golden 文件形态。
+/// The golden-file form.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PythonMethodCallsGolden {
     pub generator: String,
@@ -474,9 +477,9 @@ pub struct PythonMethodCallsGolden {
 
 pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/python-method-calls-parity.json";
 
-/// golden 语料:三进程同构(同名方法跨 base/cell)+ common 未知区块 +
-/// 正则盲区诚实面(字符串/注释命中、myself 词边界、self.self 链)+
-/// 缩进边界(全角空格空白行/零缩进注释截断)+ CJK 列域 + def de 首现列。
+/// Golden corpus: three processes isomorphic (same-named methods spanning base/cell) + the common unknown block +
+/// an honest regex-blind-spot face (string/comment hits, the myself word boundary, self.self chains) +
+/// an indentation boundary (full-width-space blank line / zero-indent comment truncation) + a CJK column domain + the def de first-occurrence column.
 #[allow(clippy::needless_raw_string_hashes)]
 fn method_calls_corpus() -> Vec<MethodCallsCorpusEntry> {
     vec![
@@ -666,8 +669,14 @@ fn method_calls_probes() -> Vec<MethodCallsProbe> {
             target_file: "ws/scripts/base/avatar.py".into(),
             target_method: "prepare".into(),
             open_texts: vec![
-                OpenTextRef { corpus: "open_base_avatar_stripped".into(), fs_path: "ws/scripts/base/avatar.py".into() },
-                OpenTextRef { corpus: "open_ghost".into(), fs_path: "ws/scripts/base/ghost.py".into() },
+                OpenTextRef {
+                    corpus: "open_base_avatar_stripped".into(),
+                    fs_path: "ws/scripts/base/avatar.py".into(),
+                },
+                OpenTextRef {
+                    corpus: "open_ghost".into(),
+                    fs_path: "ws/scripts/base/ghost.py".into(),
+                },
             ],
         },
         MethodCallsProbe::Incoming {
@@ -678,7 +687,7 @@ fn method_calls_probes() -> Vec<MethodCallsProbe> {
     ]
 }
 
-/// 索引 = in_index 条目按序解析(与 TS parity 驱动同构)。
+/// Indexing = parsing the in_index entries in order (isomorphic with the TS parity driver).
 fn build_index_from_corpus(corpus: &[MethodCallsCorpusEntry]) -> Vec<IndexedPythonMethodLocation> {
     let mut methods = Vec::new();
     for entry in corpus.iter().filter(|e| e.in_index) {
@@ -691,12 +700,17 @@ fn run_method_calls_probe(probe: &MethodCallsProbe) -> MethodCallsProbeOutcome {
     let corpus = method_calls_corpus();
     let index = build_index_from_corpus(&corpus);
     match probe {
-        MethodCallsProbe::Outgoing { target_file, target_method } => {
-            MethodCallsProbeOutcome::Outgoing {
-                references: resolve_outgoing_python_method_calls(&index, target_file, target_method),
-            }
-        }
-        MethodCallsProbe::Incoming { target_file, target_method, open_texts } => {
+        MethodCallsProbe::Outgoing {
+            target_file,
+            target_method,
+        } => MethodCallsProbeOutcome::Outgoing {
+            references: resolve_outgoing_python_method_calls(&index, target_file, target_method),
+        },
+        MethodCallsProbe::Incoming {
+            target_file,
+            target_method,
+            open_texts,
+        } => {
             let open_docs: Vec<OpenDocumentText> = open_texts
                 .iter()
                 .map(|reference| {
@@ -711,7 +725,12 @@ fn run_method_calls_probe(probe: &MethodCallsProbe) -> MethodCallsProbeOutcome {
                 })
                 .collect();
             MethodCallsProbeOutcome::Incoming {
-                incoming: resolve_incoming_python_method_calls(&index, &open_docs, target_file, target_method),
+                incoming: resolve_incoming_python_method_calls(
+                    &index,
+                    &open_docs,
+                    target_file,
+                    target_method,
+                ),
             }
         }
     }
@@ -719,7 +738,8 @@ fn run_method_calls_probe(probe: &MethodCallsProbe) -> MethodCallsProbeOutcome {
 
 pub fn dump_python_method_calls_golden() -> String {
     let probes = method_calls_probes();
-    let outcomes: Vec<MethodCallsProbeOutcome> = probes.iter().map(run_method_calls_probe).collect();
+    let outcomes: Vec<MethodCallsProbeOutcome> =
+        probes.iter().map(run_method_calls_probe).collect();
     let golden = PythonMethodCallsGolden {
         generator: "dump-python-method-calls-golden".into(),
         corpus: method_calls_corpus(),
@@ -753,13 +773,13 @@ mod tests {
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0].method_name, "run");
         assert_eq!(blocks[0].line, 2);
-        // \u3000 全角空格行按 JS trim 语义是空白行,跳过;零缩进注释行截断
+        // A \u3000 full-width-space line is blank under the JS trim semantics, so skip it; a zero-indent comment line terminates the
         assert_eq!(blocks[0].end_line, 5);
         assert_eq!(blocks[0].calls.len(), 2);
         assert_eq!(blocks[0].calls[0].method_name, "step");
         assert_eq!(blocks[0].calls[0].line, 3);
         assert_eq!(blocks[0].calls[0].character, 13);
-        // \u3000 空白行跳过后,尾调用仍被捕获(空白行截断会丢尾调用,钉住)
+        // // skip: after skipping the blank line the trailing call is still captured (a blank-line termination would drop the trailing call -- pinned)
         assert_eq!(blocks[0].calls[1].method_name, "tail2");
         assert_eq!(blocks[0].calls[1].line, 5);
         assert_eq!(blocks[0].calls[1].character, 13);
@@ -771,12 +791,12 @@ mod tests {
 
     #[test]
     fn parse_def_edge_first_occurrence_and_cjk_columns() {
-        // def de(...): indexOf("de") 命中 "def" 前缀内部(4 缩进后列 4,JS indexOf 同构)
+        // def de(...): indexOf("de") hits inside the "def" prefix (column 4 after the 4-space indent; the JS indexOf is isomorphic)
         let blocks = parse_python_method_blocks("    def de(self):\n        pass\n", "f.py");
         assert_eq!(blocks[0].method_name, "de");
         assert_eq!(blocks[0].character, 4);
 
-        // CJK 前缀调用点列 = UTF-16 列(状态 = 1  # 中文 self.Helper())
+        // The CJK-prefix call-site column = the UTF-16 column (status = 1  # <CJK literal> self.Helper())
         let line = "        \u{72b6}\u{6001} = 1  # \u{4e2d}\u{6587} self.Helper()\n";
         let blocks = parse_python_method_blocks(
             &format!("class C:\n    def Fire(self):\n{}\n", line),
@@ -784,7 +804,7 @@ mod tests {
         );
         let call = &blocks[0].calls[0];
         assert_eq!(call.method_name, "Helper");
-        // 8 缩进 + 状态(2) + " = 1  # "(9,1 后双空格) + 中文(2) + 空格(1) = 22,self. 后 +5 = 27?实算:0-7 空格,8-9 状态,10 空格,11 =,12 空格,13 1,14-15 双空格,16 #,17 空格,18-19 中文,20 空格,self.=21-25 → H 列 26
+        // 8-space indent + status (2) + " = 1  # " (9, a double space after 1) + the CJK literal (2) + a space (1) = 22; self. +5 = 27? Actual count: spaces 0-7, status 8-9, a space 10, 11 =, a space 12, 13 1, a double space 14-15, 16 #, a space 17, 18-19 the CJK literal, a space 20, self.=21-25 -> column 26 for H
         assert_eq!(call.character, 26);
     }
 
@@ -801,9 +821,13 @@ mod tests {
             ),
             "f.py",
         );
-        let calls: Vec<&str> = blocks[0].calls.iter().map(|c| c.method_name.as_str()).collect();
-        // myself 不匹配(词边界);字符串/注释态照匹配(正则盲区,双端诚实);
-        // self.self.x → 第二个 self. 起 ident x 命中;self.step ( ) 带空白命中
+        let calls: Vec<&str> = blocks[0]
+            .calls
+            .iter()
+            .map(|c| c.method_name.as_str())
+            .collect();
+        // myself does not match (the word boundary); strings/comments still match (a regex blind spot, honest on both ends);
+        // self.self.x -> the ident x from the second self. on matches; self.step ( ) with whitespace still matches
         assert_eq!(calls, vec!["step", "x", "step"]);
         assert_eq!(blocks[0].calls[1].method_name, "x");
     }
@@ -818,9 +842,24 @@ mod tests {
                 character: 8,
                 end_line: 5,
                 calls: vec![
-                    PythonSelfCall { method_name: "same".into(), line: 3, character: 13, file_path: "ws/scripts/base/a.py".into() },
-                    PythonSelfCall { method_name: "same".into(), line: 4, character: 13, file_path: "ws/scripts/base/a.py".into() },
-                    PythonSelfCall { method_name: "elsewhere".into(), line: 5, character: 13, file_path: "ws/scripts/base/a.py".into() },
+                    PythonSelfCall {
+                        method_name: "same".into(),
+                        line: 3,
+                        character: 13,
+                        file_path: "ws/scripts/base/a.py".into(),
+                    },
+                    PythonSelfCall {
+                        method_name: "same".into(),
+                        line: 4,
+                        character: 13,
+                        file_path: "ws/scripts/base/a.py".into(),
+                    },
+                    PythonSelfCall {
+                        method_name: "elsewhere".into(),
+                        line: 5,
+                        character: 13,
+                        file_path: "ws/scripts/base/a.py".into(),
+                    },
                 ],
             },
             IndexedPythonMethodLocation {
@@ -848,14 +887,17 @@ mod tests {
                 calls: vec![],
             },
         ];
-        let references = resolve_outgoing_python_method_calls(&index, "ws/scripts/base/a.py", "caller");
-        // 同文件重复调用 dedup 为一;elsewhere 本文件无 → 同名回退首现(cell)
+        let references =
+            resolve_outgoing_python_method_calls(&index, "ws/scripts/base/a.py", "caller");
+        // Duplicate calls on the same file are deduped to one; elsewhere this file has none -> the same-name fallback takes the first occurrence (cell)
         assert_eq!(references.len(), 2);
         assert_eq!(references[0].file_path, "ws/scripts/base/a.py");
         assert_eq!(references[0].method_name, "same");
         assert_eq!(references[1].file_path, "ws/scripts/cell/a.py");
-        // 目标不存在 → 空
-        assert!(resolve_outgoing_python_method_calls(&index, "ws/scripts/base/a.py", "nope").is_empty());
+        // target absent -> empty
+        assert!(
+            resolve_outgoing_python_method_calls(&index, "ws/scripts/base/a.py", "nope").is_empty()
+        );
     }
 
     #[test]
@@ -867,7 +909,12 @@ mod tests {
                 line: 2,
                 character: 8,
                 end_line: 3,
-                calls: vec![PythonSelfCall { method_name: "work".into(), line: 3, character: 13, file_path: "ws/scripts/base/a.py".into() }],
+                calls: vec![PythonSelfCall {
+                    method_name: "work".into(),
+                    line: 3,
+                    character: 13,
+                    file_path: "ws/scripts/base/a.py".into(),
+                }],
             },
             IndexedPythonMethodLocation {
                 file_path: "ws/scripts/cell/a.py".into(),
@@ -875,7 +922,12 @@ mod tests {
                 line: 2,
                 character: 8,
                 end_line: 3,
-                calls: vec![PythonSelfCall { method_name: "work".into(), line: 3, character: 13, file_path: "ws/scripts/cell/a.py".into() }],
+                calls: vec![PythonSelfCall {
+                    method_name: "work".into(),
+                    line: 3,
+                    character: 13,
+                    file_path: "ws/scripts/cell/a.py".into(),
+                }],
             },
             IndexedPythonMethodLocation {
                 file_path: "ws/scripts/common/a.py".into(),
@@ -883,7 +935,12 @@ mod tests {
                 line: 2,
                 character: 8,
                 end_line: 3,
-                calls: vec![PythonSelfCall { method_name: "work".into(), line: 3, character: 13, file_path: "ws/scripts/common/a.py".into() }],
+                calls: vec![PythonSelfCall {
+                    method_name: "work".into(),
+                    line: 3,
+                    character: 13,
+                    file_path: "ws/scripts/common/a.py".into(),
+                }],
             },
             IndexedPythonMethodLocation {
                 file_path: "ws/scripts/base/a.py".into(),
@@ -902,13 +959,15 @@ mod tests {
                 calls: vec![],
             },
         ];
-        // 目标 base:cell 调用方被作用域过滤,common(未知区块)保守保留
-        let incoming = resolve_incoming_python_method_calls(&index, &[], "ws/scripts/base/a.py", "work");
+        // target base:cell callers are filtered by scope; common (the unknown block) is kept conservatively
+        let incoming =
+            resolve_incoming_python_method_calls(&index, &[], "ws/scripts/base/a.py", "work");
         assert_eq!(incoming.len(), 2);
         assert_eq!(incoming[0].caller.file_path, "ws/scripts/base/a.py");
         assert_eq!(incoming[1].caller.file_path, "ws/scripts/common/a.py");
-        // 目标区块未知(common):全保留
-        let all = resolve_incoming_python_method_calls(&index, &[], "ws/scripts/common/a.py", "work");
+        // the target block is unknown (common): keep everything
+        let all =
+            resolve_incoming_python_method_calls(&index, &[], "ws/scripts/common/a.py", "work");
         assert_eq!(all.len(), 3);
     }
 
@@ -921,7 +980,12 @@ mod tests {
                 line: 2,
                 character: 8,
                 end_line: 3,
-                calls: vec![PythonSelfCall { method_name: "work".into(), line: 3, character: 13, file_path: "ws/scripts/base/a.py".into() }],
+                calls: vec![PythonSelfCall {
+                    method_name: "work".into(),
+                    line: 3,
+                    character: 13,
+                    file_path: "ws/scripts/base/a.py".into(),
+                }],
             },
             IndexedPythonMethodLocation {
                 file_path: "ws/scripts/base/a.py".into(),
@@ -932,16 +996,20 @@ mod tests {
                 calls: vec![],
             },
         ];
-        // 覆盖已入索引桶:调用点随缓冲区消失 → 空
-        let stripped = "class A:\n    def caller(self):\n        pass\n    def work(self):\n        pass\n";
+        // overriding an indexed bucket: the call sites vanish with the buffer -> empty
+        let stripped =
+            "class A:\n    def caller(self):\n        pass\n    def work(self):\n        pass\n";
         let incoming = resolve_incoming_python_method_calls(
             &index,
-            &[OpenDocumentText { fs_path: "ws/scripts/base/a.py".into(), content: stripped.into() }],
+            &[OpenDocumentText {
+                fs_path: "ws/scripts/base/a.py".into(),
+                content: stripped.into(),
+            }],
             "ws/scripts/base/a.py",
             "work",
         );
         assert!(incoming.is_empty());
-        // 未入索引的打开文件不整体增扫(跳过)
+        // an open file not yet indexed is not added to the scan (skipped)
         let incoming2 = resolve_incoming_python_method_calls(
             &index,
             &[OpenDocumentText {
@@ -959,18 +1027,27 @@ mod tests {
     fn golden_probes_cover_both_faces() {
         let probes = method_calls_probes();
         assert!(probes.len() >= 12);
-        let outgoing = probes.iter().filter(|p| matches!(p, MethodCallsProbe::Outgoing { .. })).count();
-        let incoming = probes.iter().filter(|p| matches!(p, MethodCallsProbe::Incoming { .. })).count();
+        let outgoing = probes
+            .iter()
+            .filter(|p| matches!(p, MethodCallsProbe::Outgoing { .. }))
+            .count();
+        let incoming = probes
+            .iter()
+            .filter(|p| matches!(p, MethodCallsProbe::Incoming { .. }))
+            .count();
         assert!(outgoing >= 8, "outgoing 探测面规模");
         assert!(incoming >= 4, "incoming 探测面规模");
-        // 覆盖文本探测有且引用真 corpus 条目
+        // the override-text probe exists and references a real corpus entry
         let corpus = method_calls_corpus();
         for probe in &probes {
             if let MethodCallsProbe::Incoming { open_texts, .. } = probe {
                 for reference in open_texts {
                     assert!(
-                        corpus.iter().any(|entry| entry.name == reference.corpus && !entry.in_index),
-                        "覆盖文本条目须在 corpus 且不入索引: {}", reference.corpus
+                        corpus
+                            .iter()
+                            .any(|entry| entry.name == reference.corpus && !entry.in_index),
+                        "覆盖文本条目须在 corpus 且不入索引: {}",
+                        reference.corpus
                     );
                 }
             }

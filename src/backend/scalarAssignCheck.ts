@@ -1,30 +1,42 @@
 /**
- * KSEM-STRUCT-05:def 属性标量赋值范围/结构校验。
+ * KSEM-STRUCT-05: def property scalar-assignment range/structure validation.
  *
- * 引擎真源(STRUCT-04 同款,零新表):datatypes.cpp `DataTypes::initialize`
- * 注册表经 CELL-08 的 SCALAR_FAMILIES 复用(judgeCellDataValueWithRange——
- * 范围面在 STRUCT-04 构造面豁免,本面全量裁定),属性引擎类型取 def
- * <Type> 直文本/CustomTypePropertyInfo.typeName 原文——不凭 Python 类型名
- * 判断(验收原句)。
+ * Engine true source (same as STRUCT-04, zero new tables): the datatypes.cpp
+ * `DataTypes::initialize` registry is reused via CELL-08's SCALAR_FAMILIES
+ * (judgeCellDataValueWithRange — the range face is exempted in the STRUCT-04
+ * construction face; this face rules in full); the property's engine type is
+ * taken from the def <Type> direct text / CustomTypePropertyInfo.typeName
+ * verbatim — never judged from Python type names (acceptance wording).
  *
- * 确定消费点(赋值目标可解析为引擎标量):
- * - ①`self.<属性> = <整行字面量>`(def 属性 <Type> 是引擎标量);
- * - ②`self.<属性>["<键>"]… = <整行字面量>`(键链复用 STRUCT-02
- *   resolveFixedDictSubscriptKey,末键字段 typeName 进标量表);
- * - ③`self.<属性>[<整数>] = <整行字面量>`(数组根,元素类型取注册表
- *   内联 `of` 节点原文)。
+ * Definite consumption points (the assignment target resolves to an engine
+ * scalar):
+ * - (1) `self.<prop> = <whole-line literal>` (the def property's <Type> is an
+ *   engine scalar);
+ * - (2) `self.<prop>["<key>"]... = <whole-line literal>` (the key chain reuses
+ *   STRUCT-02's resolveFixedDictSubscriptKey; the last key's field typeName
+ *   enters the scalar table);
+ * - (3) `self.<prop>[<int>] = <whole-line literal>` (array root, the element
+ *   type taken from the registry's inline `of` node text).
  *
- * 纯逻辑层,不 import vscode。判定(保守面,误报=0 优先):
- * - RHS 必须整段单行字面量且非 `{…}`(dict 字面量归 STRUCT-04 构造面,
- *   两面按 RHS 形态天然互斥不重复);名字/调用/跨行残缺 → unknown 不猜;
- * - bool 是 int 子类入整数/浮点不报(CELL-08 同真值);浮点字面量入整数
- *   族=结构不符;整数字面量越带宽界(负入无符号/越界)=范围不符;
- * - None 入引擎标量=结构不符(isSameType 假);None 入 PYTHON 族不查
- *   (标量表外,类型推不出=诚实);
- * - 标量字面量赋给 FD 型目标(FD 容器/数组 FD 元素)不猜——容器面错配
- *   属 STRUCT-04 族边界,本面不越界;
- * - 混合链(数组元素再取键:`self.bag[0]["x"] = …`)不追——链状态机
- *   尚不跨数组段推进,诚实断链(见纪实边界节)。
+ * Pure logic layer, no vscode import. Decisions (conservative face, false
+ * positives = 0 first):
+ * - the RHS must be a whole single-line literal and not `{...}` (dict literals
+ *   belong to the STRUCT-04 construction face; the two faces are naturally
+ *   mutually exclusive by RHS shape, no duplication); names/calls/broken
+ *   cross-line → unknown, no guessing;
+ * - bool is an int subclass and entering int/float does not report (CELL-08
+ *   same truth value); a float literal entering the int family = structure
+ *   mismatch; an integer literal out of the width bounds (negative into
+ *   unsigned / out of range) = range mismatch;
+ * - None into an engine scalar = structure mismatch (isSameType false); None
+ *   into the PYTHON family is not checked (outside the scalar table, the type
+ *   cannot be inferred = honest);
+ * - a scalar literal assigned to an FD-typed target (FD container / array FD
+ *   element) is not guessed — container-face mismatches belong to the
+ *   STRUCT-04 family boundary, this face does not overstep;
+ * - mixed chains (an array element then taking a key: `self.bag[0]["x"] = ...`)
+ *   are not followed — the chain state machine does not yet advance across the
+ *   array segment, honestly broken (see the documentary-bounds section).
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -36,28 +48,28 @@ import { findLineCommentIndex } from './globalDataIndexCore';
 export const SCALAR_ASSIGN_DIAGNOSTIC_CODE = 'kbengine.scalarAssign';
 export const SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
-/** 一处标量赋值错配。 */
+/** One scalar-assignment mismatch. */
 export interface ScalarAssignFinding {
   line: number;
-  /** RHS 字面量起点(0 基字符列)。 */
+  /** The RHS literal's start (0-based character column). */
   character: number;
   length: number;
-  /** 错配面:structure=结构不符(含 None);range=整数越引擎标量界。 */
+  /** Mismatch face: structure = structure mismatch (None included); range = integer out of the engine scalar's bounds. */
   kind: 'structure' | 'range';
-  /** 目标表达式(`self.health` / `self.info["uid"]` / `self.bag[0]`)。 */
+  /** The target expression (`self.health` / `self.info["uid"]` / `self.bag[0]`). */
   target: string;
-  /** 期望引擎标量文案(`UINT8 (int 0..255)`)。 */
+  /** The expected engine scalar text (`UINT8 (int 0..255)`). */
   expected: string;
-  /** 实际值类文案(str/int/None/…)。 */
+  /** The actual value-kind text (str/int/None/...). */
   actual: string;
-  /** range 面:涉事整数字面量文本。 */
+  /** The range face: the offending integer literal text. */
   valueText: string;
-  /** 声明来源段(`Avatar.def:5` / `types.xml:10`)。 */
+  /** The declaration source segment (`Avatar.def:5` / `types.xml:10`). */
   source: string;
   message: string;
 }
 
-/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖)。 */
+/** Diagnostic item (pure data; the extension side converts to vscode.Diagnostic, tests avoid the vscode dependency). */
 export interface ScalarAssignDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -69,10 +81,10 @@ export interface ScalarAssignDiagnosticItem {
   code: string;
 }
 
-/** def 属性 → <Type> 直文本 + 声明来源段(locator 同契约;解析不出 null)。 */
+/** def property → <Type> direct text + declaration source segment (the locator's same contract; null when unresolvable). */
 export type ScalarAssignResolve = (propertyName: string) => Promise<{ typeName: string; source: string } | null>;
 
-/** 消息模板单一来源(结构面)。 */
+/** Single source of the message template (structure face). */
 export function renderScalarAssignStructureMessage(
   target: string,
   expected: string,
@@ -85,7 +97,7 @@ export function renderScalarAssignStructureMessage(
   );
 }
 
-/** 消息模板单一来源(范围面)。 */
+/** Single source of the message template (range face). */
 export function renderScalarAssignRangeMessage(
   target: string,
   value: string,
@@ -98,17 +110,20 @@ export function renderScalarAssignRangeMessage(
   );
 }
 
-/** 声明来源段(types.xml 基名:行)。 */
+/** Declaration source segment (types.xml basename:line). */
 function containerSource(container: CustomTypeInfo): string {
   const base = container.filePath.split(/[\\/]/).pop() ?? container.name;
   return container.line > 0 ? `${base}:${container.line}` : base;
 }
 
 /**
- * 注册表层引擎标量名裁定(别名链原地逐层下钻,环有界):引擎标量名直配
- * 标量表;自定义别名沿 aliasType 走到引擎标量名;落 FIXED_DICT/ARRAY/
- * 未知/环 → null(不接管)。不走 pythonTypeStubs 注解链——那是 Python
- * 类型名(int/list),不是引擎标量名(验收:不凭 Python 类型名判断)。
+ * Registry-level engine scalar name ruling (the alias chain drills down in
+ * place level by level, cycles bounded): an engine scalar name directly matches
+ * the scalar table; a custom alias walks aliasType until an engine scalar name;
+ * landing on FIXED_DICT/ARRAY/unknown/a cycle → null (not taken over). Does not
+ * walk the pythonTypeStubs annotation chain — those are Python type names
+ * (int/list), not engine scalar names (acceptance: never judge from Python type
+ * names).
  */
 function resolveEngineScalarTypeName(
   raw: string,
@@ -130,12 +145,12 @@ function resolveEngineScalarTypeName(
   return null;
 }
 
-/** 赋值目标:`self.<属性>` + 括号段(字符串键或整数下标)列。 */
+/** Assignment target: `self.<prop>` plus a list of bracket segments (string keys or integer subscripts). */
 interface ScalarAssignTarget {
   prop: string;
-  /** 段列:{kind:'key',key} | {kind:'index',text}(按出现序;text=原样下标文本)。 */
+  /** The segment list: {kind:'key',key} | {kind:'index',text} (in appearance order; text = the subscript text verbatim). */
   segments: Array<{ kind: 'key'; key: string } | { kind: 'index'; text: string }>;
-  /** RHS 首个非空白字符列。 */
+  /** The RHS's first non-whitespace character column. */
   rhsColumn: number;
   rhsText: string;
 }
@@ -143,7 +158,7 @@ interface ScalarAssignTarget {
 const TARGET_LHS =
   /^(\s*)self\.([A-Za-z_]\w*)((?:\s*\[\s*(?:'([A-Za-z_]\w*)'|"([A-Za-z_]\w*)"|(\d+))\s*\])*)\s*=(?!=)(.*)$/;
 
-/** 行剥注释后匹配目标形态;非 `self.<属性>[…] = <RHS>` 形态 → null。 */
+/** Matches the target shape after stripping the line's comments; a non-`self.<prop>[...] = <RHS>` shape → null. */
 function matchScalarAssignTarget(lineText: string): ScalarAssignTarget | null {
   const commentAt = findLineCommentIndex(lineText);
   const stripped = commentAt === -1 ? lineText : lineText.slice(0, commentAt);
@@ -151,14 +166,16 @@ function matchScalarAssignTarget(lineText: string): ScalarAssignTarget | null {
   if (!match) {
     return null;
   }
-  // 括号列:逐段收(字符串键/整数下标);杂质段整体不匹配(正则 *)已保证
+  // Bracket segments: collected one by one (string keys / integer subscripts);
+  // a segment with debris fails the whole match (the regex's *) already
+  // guarantees it
   const segments: ScalarAssignTarget['segments'] = [];
   const bracketBlock = match[3];
   const bracketRe = /\[\s*(?:'([A-Za-z_]\w*)'|"([A-Za-z_]\w*)"|(\d+))\s*\]/g;
   let bracketMatch: RegExpExecArray | null;
   let consumed = 0;
   while ((bracketMatch = bracketRe.exec(bracketBlock)) !== null) {
-    // 段间只允许空白:已消费长度 + 空白须正好衔接下一段
+    // Only whitespace is allowed between segments: consumed length + whitespace must exactly reach the next segment
     const gap = bracketBlock.slice(consumed, bracketMatch.index);
     if (gap.trim() !== '') {
       return null;
@@ -173,7 +190,8 @@ function matchScalarAssignTarget(lineText: string): ScalarAssignTarget | null {
   if (bracketBlock.slice(consumed).trim() !== '') {
     return null;
   }
-  // `=` 列不经惰性组算(会把 = 前尾随空白漏出组外),用 indexOf 算术
+  // The `=` column is not taken from the lazy group (it would leak trailing
+  // whitespace before `=` outside the group); computed with indexOf arithmetic
   const eqAt = stripped.indexOf('=', match[1].length + 'self.'.length + match[2].length);
   if (eqAt < 0) {
     return null;
@@ -190,8 +208,9 @@ function matchScalarAssignTarget(lineText: string): ScalarAssignTarget | null {
 }
 
 /**
- * 目标引擎类型裁定。返回 {typeLabel, source} 进标量表才判;null=不接管
- * (FD 容器面/数组 FD 元素/解析链断/非标量)。
+ * Target engine-type ruling. Returns {typeLabel, source} entering the scalar
+ * table before judging; null = not taken over (the FD container face / array FD
+ * elements / a broken resolution chain / non-scalar).
  */
 async function resolveTargetEngineType(
   target: ScalarAssignTarget,
@@ -204,11 +223,13 @@ async function resolveTargetEngineType(
   }
   const rootType = resolveCache.get(target.prop) ?? null;
   if (!rootType) {
-    return null; // def 属性不可解析:目标不定型
+    return null; // the def property is unresolvable: the target is not typed
   }
 
-  // ① 根形态(FD 容器目标接 dict 字面量归 STRUCT-04 面;标量字面量赋 FD
-  // 不越界——别名链落 FIXED_DICT/ARRAY 时 resolveEngineScalarTypeName 即 null)
+  // (1) root shape (an FD container target receiving a dict literal belongs to
+  // the STRUCT-04 face; a scalar literal assigned to FD does not overstep —
+  // when the alias chain lands on FIXED_DICT/ARRAY, resolveEngineScalarTypeName
+  // returns null anyway)
   if (target.segments.length === 0) {
     const engineType = resolveEngineScalarTypeName(rootType.typeName, customTypes);
     if (!engineType) {
@@ -217,7 +238,7 @@ async function resolveTargetEngineType(
     return { typeLabel: engineType, source: rootType.source };
   }
 
-  // ② 全字符串键链:STRUCT-02 单一解析链,末键字段 typeName
+  // (2) all-string-key chain: STRUCT-02's single resolution chain, the last key's field typeName
   if (target.segments.every(segment => segment.kind === 'key')) {
     const keys = target.segments.map(segment => (segment as { kind: 'key'; key: string }).key);
     const resolution = resolveFixedDictSubscriptKey(
@@ -235,12 +256,12 @@ async function resolveTargetEngineType(
     const container = resolution!.container;
     const engineType = resolveEngineScalarTypeName(field.typeName, customTypes);
     if (!engineType) {
-      return null; // FD/FD 字段非标量:构造面(STRUCT-04)或本面边界
+      return null; // the FD/FD field is not a scalar: the construction face (STRUCT-04) or this face's boundary
     }
     return { typeLabel: engineType, source: containerSource(container) };
   }
 
-  // ③ 单整数下标 + 数组根:元素类型取注册表内联 `of` 节点原文
+  // (3) a single integer subscript + array root: the element type taken from the registry's inline `of` node text
   if (target.segments.length === 1 && target.segments[0].kind === 'index') {
     const arrayType = customTypes.find(
       info => info.name === rootType.typeName && info.aliasType === 'ARRAY'
@@ -257,13 +278,14 @@ async function resolveTargetEngineType(
     return { typeLabel: engineType, source: containerSource(arrayType!) };
   }
 
-  return null; // 混合链(数组元素再取键):链状态机不跨数组段,诚实断链
+  return null; // mixed chain (an array element then taking a key): the chain state machine does not cross array segments, honestly broken
 }
 
 /**
- * 标量赋值扫描(纯函数)。resolveSelfPropertyType 给 def 属性 <Type> 直文本
- * 与声明来源段;customTypes 为 types.xml 注册表快照。目标落不到引擎标量/
- * RHS 非整段字面量 → 空集。
+ * Scalar-assignment scan (pure function). resolveSelfPropertyType provides the
+ * def property's <Type> direct text and declaration source segment; customTypes
+ * is a types.xml registry snapshot. A target that lands nowhere on an engine
+ * scalar / an RHS that is not a whole literal → the empty set.
  */
 export async function analyzeScalarAssignWrites(
   text: string,
@@ -279,7 +301,7 @@ export async function analyzeScalarAssignWrites(
       continue;
     }
     if (target.rhsText.startsWith('{')) {
-      continue; // dict 字面量归 STRUCT-04 构造面,互斥不重复
+      continue; // dict literals belong to the STRUCT-04 construction face; mutually exclusive, no duplication
     }
     const resolved = await resolveTargetEngineType(target, resolveSelfPropertyType, customTypes, resolveCache);
     if (!resolved) {
@@ -288,7 +310,7 @@ export async function analyzeScalarAssignWrites(
     const literal: CellDataValueLiteral = classifyCellDataWriteValue(target.rhsText);
     const verdict: CellDataValueVerdict | null = judgeCellDataValueWithRange(literal, resolved.typeLabel);
     if (!verdict) {
-      continue; // unknown/非标量:不猜
+      continue; // unknown / non-scalar: no guessing
     }
     const expected = cellDataScalarFamilyLabel(resolved.typeLabel) ?? resolved.typeLabel;
     const targetLabel = `self.${target.prop}${target.segments
@@ -315,7 +337,7 @@ export async function analyzeScalarAssignWrites(
   return findings;
 }
 
-/** finding → 诊断项(纯数据;extension 侧转 vscode.Diagnostic)。 */
+/** finding → diagnostic item (pure data; the extension side converts to vscode.Diagnostic). */
 export function scalarAssignFindingToItem(finding: ScalarAssignFinding): ScalarAssignDiagnosticItem {
   return {
     range: {

@@ -1,19 +1,22 @@
-//! CORE-011 IO/CPU 泳道分离门(基础版):独立硬顶 + 交互预留 + 总量守恒。
+//! CORE-011 IO/CPU lane-separation gate (baseline): independent hard ceilings + interactive
+//! reservation + total conservation.
 //!
-//! 纯决策核(接线随 server 装配单)。纪律(与模块审计
-//! docs/review/2026-11-15-rust-076-io-cpu-lane-separation.md 配套):
+//! Pure decision core (wiring comes with the server assembly). Discipline (paired with the
+//! module audit docs/review/2026-11-15-rust-076-io-cpu-lane-separation.md):
 //!
-//! - **泳道分离**:IO 慢任务与 CPU 密集任务各持独立并发硬顶(`io_max` /
-//!   `cpu_max`)——IO 饱和**不得**压缩 CPU 准入(反之亦然),慢操作只饿死
-//!   自己的泳道;
-//! - **交互预留**:预算恒含 1 个交互保留位;IO+CPU 满载时交互仍可入
-//!   (CORE-010 预留语义在泳道面重申);
-//! - **总量守恒**:三泳道在飞合计恒 ≤ `total`;
-//! - **锁跨 await 审计结论**:kode-vfs/parser/index/scheduler 四 crate 零
-//!   `async fn`、零 `Mutex`/`RwLock`(grep 证据见审计文档)——纯核无
-//!   await 即无「锁跨 await」,结构性成立; contention/反转为文档审计面。
+//! - **Lane separation**: slow IO tasks and CPU-intensive tasks each hold an independent
+//!   concurrency hard ceiling (`io_max` / `cpu_max`) — IO saturation must not compress CPU
+//!   admissions (and vice versa); slow operations only starve their own lane;
+//! - **Interactive reservation**: the budget always contains one interactive reserved slot; when
+//!   IO+CPU are full, interactive work can still enter (CORE-010 reservation semantics restated
+//!   on the lane surface);
+//! - **Total conservation**: the three lanes' combined in-flight count is always ≤ `total`;
+//! - **Lock-across-await audit conclusion**: the four crates kode-vfs/parser/index/scheduler
+//!   contain zero `async fn` and zero `Mutex`/`RwLock` (grep evidence in the audit doc) — a
+//!   pure core has no await, hence no "lock across await", structurally; contention/inversion is
+//!   the documentation audit surface.
 
-/// 泳道分类(交互 / IO 型 / CPU 型)。
+/// Lane classification (interactive / IO-type / CPU-type).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskLane {
     Interactive,
@@ -21,28 +24,30 @@ pub enum TaskLane {
     Cpu,
 }
 
-/// 泳道预算(CORE-011)。
+/// Lane budget (CORE-011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LaneBudget {
-    /// 容量总量(通常 = 可用核数;装配面喂,纯核不读环境)。
+    /// Total capacity (usually the available core count; fed by the assembly surface, the pure
+    /// core does not read the environment).
     pub total: usize,
-    /// IO 泳道并发硬顶。
+    /// Concurrency hard ceiling of the IO lane.
     pub io_max: usize,
-    /// CPU 泳道并发硬顶。
+    /// Concurrency hard ceiling of the CPU lane.
     pub cpu_max: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaneBudgetError {
-    /// total 为 0(无意义)。
+    /// total is 0 (meaningless).
     ZeroTotal,
-    /// io_max + cpu_max + 交互预留 1 超出总量(预算不自洽)。
+    /// io_max + cpu_max + the interactive reserve 1 exceeds the total (budget not self-consistent).
     Overcommitted,
 }
 
 impl LaneBudget {
-    /// 由总核数推导缺省预算:交互预留 1;IO 与 CPU 平分其余容量
-    /// (io_max = floor,cpu_max 吃余量;单核机两泳道皆 0,全给交互)。
+    /// Derive the default budget from the total core count: one interactive reserve; IO and CPU
+    /// split the rest (io_max = floor, cpu_max takes the remainder; on a single-core machine both
+    /// lanes are 0, everything goes to interactive).
     pub fn from_total(total: usize) -> LaneBudget {
         let remaining = total.saturating_sub(1);
         let io_max = remaining / 2;
@@ -54,7 +59,8 @@ impl LaneBudget {
         }
     }
 
-    /// 预算自洽性:total ≥ 1 且 1(交互预留) + io_max + cpu_max ≤ total。
+    /// Budget self-consistency: total ≥ 1 and 1 (interactive reserve) + io_max + cpu_max ≤
+    /// total.
     pub fn validate(&self) -> Result<(), LaneBudgetError> {
         if self.total == 0 {
             return Err(LaneBudgetError::ZeroTotal);
@@ -66,7 +72,8 @@ impl LaneBudget {
     }
 }
 
-/// 泳道准入门:三泳道独立记账,执行 CORE-011 不变量。
+/// Lane admission gate: the three lanes are accounted for independently, enforcing the CORE-011
+/// invariants.
 #[derive(Debug)]
 pub struct LaneGate {
     budget: LaneBudget,
@@ -76,7 +83,8 @@ pub struct LaneGate {
 }
 
 impl LaneGate {
-    /// 预算不自洽即在构造期拒绝(绝不带病运行)。
+    /// A non-self-consistent budget is rejected at construction time (never run with a sick
+    /// budget).
     pub fn new(budget: LaneBudget) -> Result<LaneGate, LaneBudgetError> {
         budget.validate()?;
         Ok(LaneGate {
@@ -91,7 +99,7 @@ impl LaneGate {
         self.budget
     }
 
-    /// 指定泳道当前在飞数。
+    /// Current in-flight count of a given lane.
     pub fn running(&self, lane: TaskLane) -> usize {
         match lane {
             TaskLane::Interactive => self.interactive_running,
@@ -100,13 +108,15 @@ impl LaneGate {
         }
     }
 
-    /// 三泳道在飞合计。
+    /// Combined in-flight count of the three lanes.
     pub fn total_running(&self) -> usize {
         self.interactive_running + self.io_running + self.cpu_running
     }
 
-    /// 准入:泳道硬顶 + 总量守恒(交互预留位恒保留)。
-    /// IO 泳道饱和**不拦** CPU 准入(分离语义;反之亦然)。
+    /// Admission: lane hard ceiling + total conservation (the interactive reserved slot is always
+    /// kept).
+    /// IO-lane saturation **does not block** CPU admission (separation semantics; likewise in
+    /// reverse).
     pub fn try_admit(&mut self, lane: TaskLane) -> bool {
         let lane_full = match lane {
             TaskLane::Interactive => false,
@@ -124,7 +134,8 @@ impl LaneGate {
         true
     }
 
-    /// 释放一个泳道位;无在飞可释放 = 调用方 bug,拒绝且不改计数。
+    /// Release one lane slot; nothing in flight to release = caller bug, rejected and the
+    /// counts are left untouched.
     pub fn release(&mut self, lane: TaskLane) -> bool {
         let slot = match lane {
             TaskLane::Interactive => &mut self.interactive_running,
@@ -149,7 +160,7 @@ mod tests {
         assert_eq!(b.io_max, 3, "预留 1 后 IO 取 floor(7/2)");
         assert_eq!(b.cpu_max, 4, "CPU 吃余量");
         assert!(b.validate().is_ok());
-        // 单核机:两泳道皆 0,全给交互。
+        // Single-core machine: both lanes are 0, everything goes to interactive.
         let single = LaneBudget::from_total(1);
         assert_eq!((single.io_max, single.cpu_max), (0, 0));
         assert!(single.validate().is_ok());
@@ -180,7 +191,8 @@ mod tests {
 
     #[test]
     fn io_saturation_does_not_throttle_cpu_admissions() {
-        // 分离语义的核心考场:IO 泳道全部被慢操作占满,CPU 准入不受影响。
+        // The core proving ground for separation semantics: the IO lane is entirely occupied by
+        // slow operations, and CPU admission is unaffected.
         let mut gate = LaneGate::new(LaneBudget::from_total(8)).expect("valid budget");
         for _ in 0..gate.budget().io_max {
             assert!(gate.try_admit(TaskLane::Io));
@@ -196,7 +208,8 @@ mod tests {
             gate.budget().cpu_max,
             "IO 饱和不得压缩 CPU 准入"
         );
-        // 反向同理:CPU 满载不拦 IO(已在上面 io_max 全入后无法复验,释放后验)。
+        // The reverse holds likewise: a full CPU lane does not block IO (it cannot be re-verified
+        // after all io_max are admitted above, so verify after releasing).
         for _ in 0..gate.budget().cpu_max {
             gate.release(TaskLane::Cpu);
         }
@@ -206,7 +219,8 @@ mod tests {
     #[test]
     fn interactive_never_denied_until_total_full() {
         let mut gate = LaneGate::new(LaneBudget::from_total(8)).expect("valid budget");
-        // IO+CPU 双满载(占 7/8):交互仍可入(预留位语义)。
+        // IO+CPU both full (taking 7/8): interactive work can still enter (reserved-slot
+        // semantics).
         for _ in 0..gate.budget().io_max {
             gate.try_admit(TaskLane::Io);
         }
@@ -249,11 +263,12 @@ mod tests {
         assert_eq!(gate.running(TaskLane::Cpu), 0, "释放不得串泳道");
         assert!(gate.release(TaskLane::Io));
         assert!(!gate.release(TaskLane::Io), "二次释放不得下溢");
-        // 释放后容量恢复:同一泳道可重新准入。
+        // After release, capacity recovers: the same lane can admit again.
         assert!(gate.try_admit(TaskLane::Io));
     }
 
-    /// 交互泳道读数/释放入口(预留位语义的记账面)。
+    /// Interactive-lane read / release entry points (the ledger surface of the reserved-slot
+    /// semantics).
     #[test]
     fn interactive_lane_running_read_and_release() {
         let mut gate = LaneGate::new(LaneBudget::from_total(4)).expect("valid budget");

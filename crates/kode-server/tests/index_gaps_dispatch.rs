@@ -12,9 +12,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 use kode_protocol::{IncomingMessage, Request, RequestId};
-use kode_vfs::CanonicalUri;
 use kode_server::server::Outgoing;
 use kode_server::{handle_message, ServerState};
+use kode_vfs::CanonicalUri;
 
 fn unique_dir(tag: &str) -> std::path::PathBuf {
     let nanos = SystemTime::now()
@@ -89,7 +89,9 @@ fn did_open(state: &mut ServerState, uri: &str, text: &str) {
 
 fn pump(state: &mut ServerState) {
     // RESP-001b:泵=生产形态(墙钟界;读线程往返在预算内交货应用)。
-    state.index.pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
+    state
+        .index
+        .pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
 }
 
 const DEF_TEXT: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
@@ -102,7 +104,11 @@ fn aggregate_report_always_has_three_families() {
     let mut state = init_state(&dir);
     let report = gaps(&mut state, json!({}), 1);
     let unindexed = report.get("unindexed").expect("unindexed 族恒在");
-    assert_eq!(unindexed.get("known"), Some(&Value::Null), "暖扫外 known=null");
+    assert_eq!(
+        unindexed.get("known"),
+        Some(&Value::Null),
+        "暖扫外 known=null"
+    );
     assert_eq!(
         unindexed.get("missing"),
         Some(&Value::Null),
@@ -110,12 +116,19 @@ fn aggregate_report_always_has_three_families() {
     );
     assert_eq!(unindexed.get("indexed"), Some(&json!(0)));
     let partial = report.get("partial").expect("partial 族恒在");
-    assert_eq!(partial.get("count"), Some(&json!(0)), "fresh server 无负缓存");
+    assert_eq!(
+        partial.get("count"),
+        Some(&json!(0)),
+        "fresh server 无负缓存"
+    );
     assert_eq!(partial.get("samples"), Some(&json!([])));
     let stale = report.get("stale").expect("stale 族恒在");
     assert!(stale.get("queued").and_then(|v| v.as_u64()).is_some());
     assert!(
-        stale.get("stormBuffered").and_then(|v| v.as_u64()).is_some(),
+        stale
+            .get("stormBuffered")
+            .and_then(|v| v.as_u64())
+            .is_some(),
         "stale 族形状齐全"
     );
 }
@@ -247,7 +260,11 @@ fn out_of_root_uri_honest_unindexed_and_fill_noop() {
     );
     assert_eq!(state.index.snapshot().queued, 0, "零侧效");
 
-    let verdict2 = gaps(&mut state, json!({"uri": "not a uri at all", "fill": true}), 2);
+    let verdict2 = gaps(
+        &mut state,
+        json!({"uri": "not a uri at all", "fill": true}),
+        2,
+    );
     assert_eq!(verdict2.get("gap"), Some(&json!("unindexed")));
     assert_eq!(verdict2.get("filled"), Some(&json!(false)));
 }

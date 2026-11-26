@@ -1,41 +1,58 @@
 /**
- * KSEM-SER-09:项目静态字典格式推导(纯核心,零 vscode 依赖)。
+ * KSEM-SER-09: project static dict format derivation (pure core, zero vscode
+ * dependencies).
  *
- * 验收口径(todo.md KSEM-SER-09):从确定的 dict 构造/写点提取必有、
- * 可选及值类型;分支汇流、多写者和动态 update 扩展为开放结构。
+ * Acceptance contract (todo.md KSEM-SER-09): extract required, optional and
+ * value types from definite dict constructions/write sites; branch confluence,
+ * multiple writers and dynamic update widen the result to an open structure.
  *
- * 推导模型(模块作用域 v1):
- *  - 写点收集 = 模块作用域(不落入任何 def/class 体的行;if/elif/else/
- *    for/while/try/except/with 体仍是模块作用域——Python 语义);
- *    函数局部同名变量是另一作用域,绝不并入(同名跨作用域合流是谎报,
- *    诚实边界);
- *  - 执行保证三级:always(模块顶层无条件写点)> complete(if/elif/else
- *    组带 else 且键在该组全部臂都有写点——恰好一臂执行,键必在)>
- *    maybe(无 else 的 if 臂/for/while/try/except/with 体——可能不执行);
- *  - 顺序语义:无条件字面量写点 = 重绑(其后读点看到的是新形状,先前
- *    条件写点作废——旧绑定的证据不跨重绑);其后动态写点(下标写/
- *    update/setdefault/|=/del)并入并置开放;
- *  - 无条件非字面量 RHS(构造调用/裸名)= unknown 终局(其后的动态写点
- *    转为 open+observed);
- *  - 必有 = 键被 always 写点写入,或被 complete 组全臂写入;可选 = 其余
- *    有证据键;值类型跨同键多写点分歧 → unknown(不猜);
- *  - 开放结构 = 任意动态写点/展开/推导式/动态键 → kind 'open',
- *    observed 保留已观测键面(宇宙开放但观测证据仍真);
- *  - 值类型面 = 字面量分类:带引号串/int/float/True/False/None/list
- *    (元素类型取首元素,混合/空 → unknown)/tuple(SER-10 JSON 转换面
- *    的序列化方向证据;dumps 后 tuple→list,详见 jsonChainPropagation;
- *    (1,) /(1, 2) 是元组,(1) 是括号标量,`(... for …)` 生成器表达式
- *    不是元组 → unknown)/嵌套 dict(递归 parseDictPairs,单写点全键
- *    必有;** 展开/推导式 → 嵌套 open)/其余(名字/调用/f 串)→ unknown。
+ * Derivation model (module scope v1):
+ *  - Write-site collection = module scope (lines not falling inside any
+ *    def/class body; if/elif/else/for/while/try/except/with bodies are still
+ *    module scope — Python semantics); a function-local variable of the same
+ *    name is a different scope and is never merged (conflating same names
+ *    across scopes would be a false report; honest boundary);
+ *  - Three tiers of execution guarantee: always (unconditional write site at
+ *    module top level) > complete (an if/elif/else group with an else in which
+ *    the key has a write site in every arm of that group — exactly one arm
+ *    executes, so the key must be present) > maybe (an if arm without an else,
+ *    or a for/while/try/except/with body — may not execute);
+ *  - Ordering semantics: an unconditional literal write site is a rebind
+ *    (later reads see the new shape and earlier conditional write sites are
+ *    void — evidence for the old binding does not survive a rebind); dynamic
+ *    write sites after it (subscript write / update / setdefault / |= / del)
+ *    merge in and set the structure open;
+ *  - An unconditional non-literal RHS (constructor call / bare name) is a
+ *    terminal unknown (subsequent dynamic write sites turn into
+ *    open+observed);
+ *  - Required = a key written by an always write site, or written in every arm
+ *    of a complete group; optional = the remaining keys with evidence; a value
+ *    type disagreeing across multiple write sites of the same key becomes
+ *    unknown (no guessing);
+ *  - Open structure = any dynamic write site / spread / comprehension / dynamic
+ *    key, giving kind 'open'; observed retains the already-observed key surface
+ *    (the universe is open, but the observed evidence is still true);
+ *  - Value type surface = literal classification: quoted string / int / float /
+ *    True / False / None / list (element type taken from the first element,
+ *    mixed/empty becomes unknown) / tuple (serialization-direction evidence for
+ *    the SER-10 JSON conversion surface; after dumps a tuple becomes a list,
+ *    see jsonChainPropagation; (1,) and (1, 2) are tuples, (1) is a parenthesized
+ *    scalar, and a `(... for …)` generator expression is not a tuple, hence
+ *    unknown) / nested dict (recursive parseDictPairs, all keys required at a
+ *    single write site; ** spread / comprehension make the nesting open) /
+ *    everything else (names / calls / f-strings) becomes unknown.
  *
- * raw/masked 双行口径:结构判定(def/class/分支行/写点形状)走掩码行,
- * 键串/值字面量内容走原文行(pythonCodeLines 掩码把引号抹成 '_',串值
- * 只在原文可见;matchDictBraces 自带注释剥离)。SER-04/05/06 同构坑。
+ * Raw/masked dual-line contract: structure decisions (def/class/branch lines /
+ * write-site shapes) use masked lines, while key strings and value literal
+ * contents use raw lines (the pythonCodeLines mask turns quotes into '_', so
+ * string values are only visible in the raw text; matchDictBraces already
+ * strips comments). Same family of traps as SER-04/05/06.
  *
- * 消费契约:KSEM-SER-10(JSON dumps/loads 链传播,jsonChainPropagation)
- * 按本模块输出裁结构;无写点变量不入 map(调用侧缺键即未知);schema
- * 绑定(KSEM-SER-08 设计)命中时优先 schema,推导只是代码事实侧的
- * 证据源。
+ * Consumption contract: KSEM-SER-10 (JSON dumps/loads chain propagation,
+ * jsonChainPropagation) decides structure from this module's output; variables
+ * with no write sites do not enter the map (a missing key on the caller side
+ * is unknown); when schema binding (KSEM-SER-08 design) matches, the schema
+ * wins — this derivation is only an evidence source for the code-fact side.
  */
 
 import { pythonCodeLines } from './pythonParser';
@@ -45,7 +62,7 @@ import {
   type MatchedBraces
 } from './fixedDictConstructCheck';
 
-/** 一个键的值类型面(字面量事实;推不出 = unknown,不猜)。 */
+/** Value type surface of a key (literal facts; undecidable = unknown, no guessing). */
 export type DictValueKind =
   | { kind: 'scalar'; scalar: 'str' | 'int' | 'float' | 'bool' | 'none' }
   | { kind: 'list'; element: DictValueKind | null }
@@ -54,10 +71,10 @@ export type DictValueKind =
   | { kind: 'unknown' };
 
 /**
- * 变量字典格式:
- *  - literal:封闭形状(required = 必有键,optional = 可选键);
- *  - open:开放结构(observed = 已观测键,宇宙开放);
- *  - unknown:重绑非字面量/无法判(零键面声称)。
+ * Format of a variable dict:
+ *  - literal: closed shape (required = mandatory keys, optional = optional keys);
+ *  - open: open structure (observed = already-seen keys, universe open);
+ *  - unknown: rebound to a non-literal / undecidable (no key-surface claim).
  */
 export type DictFormat =
   | {
@@ -68,36 +85,36 @@ export type DictFormat =
   | { kind: 'open'; observed: Map<string, DictValueKind> }
   | { kind: 'unknown' };
 
-/** 写点键证据(键 → 值类型)。 */
+/** Key evidence at a write site (key → value type). */
 type KeyEvidence = Map<string, DictValueKind>;
 
-/** 键执行保证等级。 */
+/** Execution-guarantee rank of a key. */
 type KeyRank = 'always' | 'complete' | 'maybe';
 
-/** 一个写点记录(变量单次赋值/写点收集的证据单元)。 */
+/** One write-site record (the evidence unit for a single assignment/write site of a variable). */
 interface WriterRec {
   line: number;
-  /** 赋值重绑(= {…});false = 增量写点(下标/update/setdefault/|=)。 */
+  /** Assignment rebind (= {...}); false = incremental write site (subscript/update/setdefault/|=). */
   rebind: boolean;
-  /** always / complete 组 / maybe(解析后回填 complete)。 */
+  /** always / complete group / maybe (complete is filled in after resolution). */
   rank: KeyRank;
-  /** 动态写点(开放宇宙证据)。 */
+  /** Dynamic write site (open-universe evidence). */
   dynamic: boolean;
-  /** 重绑到非字面量(unknown 终局证据)。 */
+  /** Rebind to a non-literal (terminal-unknown evidence). */
   unknownBase: boolean;
   keys: KeyEvidence;
 }
 
-/** 模块作用域判定所需的分支组现场(解析后回填 hasElse/臂覆盖)。 */
+/** Branch-group site needed for module-scope decisions (hasElse/arm coverage filled in after parsing). */
 interface IfGroup {
   id: number;
   hasElse: boolean;
   armCount: number;
-  /** 臂序号 → 该臂写点键集(全臂齐键才可 complete)。 */
+  /** Arm ordinal → the set of keys written in that arm (complete only if every arm carries the key). */
   arms: Map<number, KeyEvidence>;
 }
 
-/** 模块作用域复合块现场(arm = 该块内当前臂序,elif/else 递增)。 */
+/** Module-scope compound-block site (arm = the current arm ordinal inside this block, incremented by elif/else). */
 interface BlockFrame {
   indent: number;
   kind: string;
@@ -106,8 +123,10 @@ interface BlockFrame {
 }
 
 /**
- * 字典格式推导入口:全文件模块作用域变量 → 格式 map(只含有 dict
- * 证据的变量;无写点变量不入 map,调用侧缺键即未知)。
+ * Entry point of dict format derivation: module-scope variables of the whole
+ * file → format map (only variables with dict evidence; variables without
+ * write sites do not enter the map, so a missing key on the caller side is
+ * unknown).
  */
 export function deriveDictFormats(text: string): Map<string, DictFormat> {
   const masked = pythonCodeLines(text);
@@ -127,15 +146,18 @@ export function deriveDictFormats(text: string): Map<string, DictFormat> {
       continue;
     }
     const indent = m.length - m.trimStart().length;
-    // 作用域/分支栈收缩:缩退行关闭更深的 def/class 与分支块
+    // Scope/branch stack shrink: dedented lines close deeper def/class and
+    // branch blocks
     while (
       scopeIndents.length > 0 &&
       scopeIndents[scopeIndents.length - 1] >= indent
     ) {
       scopeIndents.pop();
     }
-    // elif/else 延续同缩进 if 组:顶部组帧豁免收缩(同缩进先收后找组
-    // 恒落空,分支合流面死);其余行按缩退正常关块
+    // elif/else continue the if group at the same indent: the topmost group
+    // frame is exempt from shrinking (pop-then-find at the same indent would
+    // always come up empty, making the branch-confluence surface dead); other
+    // lines close blocks normally by dedent
     const continuesGroup = /^(elif|else)\b/.test(m.trim());
     while (blockStack.length > 0) {
       const top = blockStack[blockStack.length - 1];
@@ -180,8 +202,9 @@ export function deriveDictFormats(text: string): Map<string, DictFormat> {
             top.arm += 1;
           }
         } else {
-          // 头 token 剥尾部冒号:`try:`/`finally:` 是单 token,带冒号
-          // 恒不中 maybe 名单(`for i in xs:` 有后文自然剥开,不受影响)
+          // Strip trailing colon from the header token: `try:` / `finally:` are
+          // single tokens and, colon included, never hit the maybe list
+          // (`for i in xs:` naturally strips its trailing part, unaffected)
           blockStack.push({ indent, kind: trimmed.split(/\s/)[0].replace(/:+$/, ''), group: null, arm: 0 });
         }
       }
@@ -191,7 +214,7 @@ export function deriveDictFormats(text: string): Map<string, DictFormat> {
     if (!inFunction) {
       const next = collectWriter(m, realLines, line, blockStack, collectors);
       if (next > line) {
-        line = next; // 多行字面量写点整体跳过
+        line = next; // skip the whole multiline literal write site
         continue;
       }
     }
@@ -208,8 +231,10 @@ export function deriveDictFormats(text: string): Map<string, DictFormat> {
 }
 
 /**
- * 单行写点收集(掩码行判形状;字面量配对/键串走原文行)。返回 >
- * line 表示多行字面量写点已被整体消费,调用方跳至返回行。
+ * Single-line write-site collection (shape decided from the masked line;
+ * literal pairing and key strings use the raw line). Returning a value >
+ * line means a multiline literal write site was consumed whole and the
+ * caller should jump to the returned line.
  */
 function collectWriter(
   m: string,
@@ -227,7 +252,7 @@ function collectWriter(
     }
     for (const block of blockStack) {
       if (block.group !== null) {
-        return 'complete'; // 占位:组解析时按全臂覆盖/hasElse 降级
+        return 'complete'; // placeholder: downgraded to full-arm coverage / hasElse during group resolution
       }
     }
     return 'always';
@@ -282,7 +307,7 @@ function collectWriter(
     return 0;
   };
 
-  // ── NAME = { 字面量(重绑语义;注解形参容忍)──
+  // ── NAME = { literal (rebind semantics; annotated targets tolerated) ──
   const literalAssign = /^([A-Za-z_]\w*)\s*(?::[^=]*?)?=\s*\{/.exec(m.trim());
   if (literalAssign) {
     const raw = realLines[line] ?? '';
@@ -303,27 +328,30 @@ function collectWriter(
       });
       return matched.endLine + 1;
     }
-    // `{` 配对失败(超窗/未闭):形状不猜——非字面量终局,诚实
+    // `{` brace match failed (window exceeded / unclosed): shape is not guessed —
+    // non-literal terminal, honest
     push(literalAssign[1], { rebind: true, rank: baseRank, dynamic: false, unknownBase: true, keys: new Map() });
     return line + 1;
   }
-  // ── NAME = 非字面量 RHS(调用/裸名/标量)= unknown 终局证据
-  //(掩码行判:注释/字符串位天然不匹配)──
+  // ── NAME = non-literal RHS (call / bare name / scalar) = terminal-unknown
+  // evidence (decided on the masked line: comment/string positions never
+  // match) ──
   const plainAssign = /^([A-Za-z_]\w*)\s*(?::[^=]*?)?=(?![=>])\s*\S/.exec(m.trim());
   if (plainAssign) {
     push(plainAssign[1], { rebind: true, rank: baseRank, dynamic: false, unknownBase: true, keys: new Map() });
     return line + 1;
   }
-  // ── NAME[键] = RHS(单段字面量键=观测键;变量键=开放)──
-  // 键串引号被掩码抹成 '_',形状匹配走原文行;名位经掩码行核验
-  //(注释/字符串位不判,SER-04/05/06 同构坑)
+  // ── NAME[key] = RHS (single literal key = observed key; variable key = open) ──
+  // The key string's quotes are masked to '_', so shape matching uses the raw
+  // line; the name position is verified against the masked line
+  // (comment/string positions are not judged — the SER-04/05/06 family of traps)
   const raw = realLines[line] ?? '';
   const rawTrim = raw.trim();
   const subWrite = /^([A-Za-z_]\w*)\s*\[\s*(['"])([\s\S]*?)\2\s*\]\s*=(?![=>])/.exec(rawTrim);
   if (subWrite) {
     const nameAt = subWrite.index + subWrite[0].indexOf(subWrite[1]);
     if (m.trim().slice(nameAt, nameAt + subWrite[1].length) !== subWrite[1]) {
-      return line; // 注释/字符串位:名非真代码
+      return line; // comment/string position: the name is not real code
     }
     const quoteAt = rawTrim.indexOf(subWrite[2], subWrite[1].length);
     const keyText = quoteAt >= 0
@@ -340,7 +368,7 @@ function collectWriter(
     });
     return line + 1;
   }
-  // ── NAME[动态键] = … / NAME[切片] = … → 开放 ──
+  // ── NAME[dynamic key] = … / NAME[slice] = … → open ──
   const dynWrite = /^([A-Za-z_]\w*)\s*\[(?!\s*['"]).+\]\s*=(?![=>])/.exec(m.trim());
   if (dynWrite) {
     push(dynWrite[1], { rebind: false, rank: baseRank, dynamic: true, unknownBase: false, keys: new Map() });
@@ -351,8 +379,9 @@ function collectWriter(
   if (updateCall) {
     const rawTrim = raw.trim();
     if (updateCall[2] === 'setdefault') {
-      // setdefault 语义:key = 首实参,值 = 次实参(缺省 None)——dict
-      // 实参是被插入的值,不是 update 的键面合并
+      // setdefault semantics: key = first argument, value = second argument
+      // (default None) — the dict argument is the inserted value, not a
+      // key-surface merge like update
       const argsText = rawTrim.slice(rawTrim.indexOf('(') + 1, rawTrim.lastIndexOf(')')).trim();
       const args = splitTopLevel(argsText);
       const keyTok = args !== null && args.length >= 1 ? args[0].trim() : '';
@@ -390,7 +419,7 @@ function collectWriter(
         keys: keys.map
       });
     } else {
-      // 非字面量实参/多实参混合 → 开放宇宙
+      // Non-literal argument / mixed multiple arguments → open universe
       push(updateCall[1], { rebind: false, rank: baseRank, dynamic: true, unknownBase: false, keys: new Map() });
     }
     return line + 1;
@@ -411,7 +440,7 @@ function collectWriter(
     }
     return line + 1;
   }
-  // ── del NAME[键] → 键证据作废面,开放处理 ──
+  // ── del NAME[key] → key evidence voided, treated as open ──
   if (/^del\s+[A-Za-z_]\w*\s*\[/.test(m.trim())) {
     const delName = /^del\s+([A-Za-z_]\w*)/.exec(m.trim());
     if (delName) {
@@ -422,7 +451,7 @@ function collectWriter(
   return line;
 }
 
-/** 行原文中 argText 首个 `{` 的绝对列(argText 未出现/无 `{` → -1)。 */
+/** Absolute column of argText's first `{` within the raw line (argText absent / no `{` → -1). */
 function rawIndentOf(raw: string, argText: string, braceAt: number): number {
   if (braceAt < 0) {
     return -1;
@@ -439,7 +468,7 @@ function rawIndentOf(raw: string, argText: string, braceAt: number): number {
   return raw.length - raw.trimStart().length + at;
 }
 
-/** 字面量 → 键证据(单写点全键必有;** 展开/推导式/动态键 → 开放)。 */
+/** Literal → key evidence (all keys required at a single write site; ** spread / comprehension / dynamic key → open). */
 function literalKeysOf(matched: MatchedBraces): { map: KeyEvidence; dynamic: boolean } {
   const { pairs, openUniverse } = parseDictPairs(matched);
   const map: KeyEvidence = new Map();
@@ -458,13 +487,14 @@ function literalKeysOf(matched: MatchedBraces): { map: KeyEvidence; dynamic: boo
   return { map, dynamic };
 }
 
-/** 值文本顶层含 for…in(字典/集合推导式)→ 开放结构。 */
+/** Value text containing a top-level for…in (dict/set comprehension) → open structure. */
 function isComprehensionValue(valueText: string): boolean {
   let probe = valueText.trim();
   const open = probe[0];
   if (open === '{' || open === '[' || open === '(') {
-    // 值自带外层括号:剥到括号内找 depth-0 的 for(推导式本体),
-    // 否则 `{k: 1 for k in xs}` 的 for 恒在深度 1,推导式漏检
+    // The value carries its own outer brackets: unwrap them to find a depth-0
+    // for (the comprehension body); otherwise the for in `{k: 1 for k in xs}`
+    // always sits at depth 1 and the comprehension goes undetected
     const inner = unwrapBracket(probe, open, open === '{' ? '}' : open === '[' ? ']' : ')');
     if (inner !== null) {
       probe = inner;
@@ -495,7 +525,7 @@ function isComprehensionValue(valueText: string): boolean {
   return false;
 }
 
-/** 值字面量分类(原文 valueText;引号完整可见;SER-10 内联字典实参复用)。 */
+/** Classify a value literal (raw valueText; quotes fully visible; reused by SER-10 inline dict arguments). */
 export function classifyValue(valueText: string): DictValueKind {
   const v = valueText.trim();
   if (v.length === 0) {
@@ -518,7 +548,7 @@ export function classifyValue(valueText: string): DictValueKind {
   }
   if (v[0] === '[') {
     if (isComprehensionValue(v)) {
-      return { kind: 'list', element: null }; // 推导式列表:元素宇宙开放
+      return { kind: 'list', element: null }; // comprehension list: element universe open
     }
     const inner = unwrapBracket(v, '[', ']');
     if (inner === null) {
@@ -531,15 +561,17 @@ export function classifyValue(valueText: string): DictValueKind {
     const first = classifyValue(items[0]);
     for (const item of items.slice(1)) {
       if (!sameKind(first, classifyValue(item))) {
-        return { kind: 'list', element: null }; // 混合元素 → 未收敛,不猜
+        return { kind: 'list', element: null }; // mixed elements → unconverged, do not guess
       }
     }
     return { kind: 'list', element: first };
   }
   if (v[0] === '(') {
-    // 元组 vs 括号表达式:(1,) / (1, 2) 是元组;(1) 只是括号标量,
-    // 递归分类内层;Python 无元组推导式——`(... for …)` 是生成器
-    // 表达式不是元组,诚实 unknown(生成器套列表等同)
+    // Tuple vs parenthesized expression: (1,) / (1, 2) are tuples; (1) is
+    // only a parenthesized scalar, recurse into the inner classification;
+    // Python has no tuple comprehension — `(... for …)` is a generator
+    // expression, not a tuple, so unknown is the honest answer (a generator
+    // wrapped in a list is equivalent)
     if (isComprehensionValue(v)) {
       return { kind: 'unknown' };
     }
@@ -555,15 +587,15 @@ export function classifyValue(valueText: string): DictValueKind {
       const firstItem = classifyValue(items[0]);
       for (const item of items.slice(1)) {
         if (!sameKind(firstItem, classifyValue(item))) {
-          return { kind: 'tuple', element: null }; // 混合元素 → 未收敛
+          return { kind: 'tuple', element: null }; // mixed elements → unconverged
         }
       }
       return { kind: 'tuple', element: firstItem };
     }
     if (inner.trim().endsWith(',')) {
-      return { kind: 'tuple', element: classifyValue(items[0]) }; // 单元素尾逗号
+      return { kind: 'tuple', element: classifyValue(items[0]) }; // trailing comma with a single element
     }
-    return classifyValue(inner.trim()); // 纯括号表达式:非元组
+    return classifyValue(inner.trim()); // plain parenthesized expression: not a tuple
   }
   if (v[0] === '{') {
     const inner = unwrapBracket(v, '{', '}');
@@ -601,7 +633,7 @@ export function classifyValue(valueText: string): DictValueKind {
   return { kind: 'unknown' };
 }
 
-/** 带引号字面量(首尾同引号;转义闭口容忍)。 */
+/** Quoted literal (matching quotes at both ends; escaped closing quote tolerated). */
 export function isQuotedLiteral(v: string): boolean {
   const q = v[0];
   if (q !== '\'' && q !== '"') {
@@ -610,7 +642,7 @@ export function isQuotedLiteral(v: string): boolean {
   return v.length >= 2 && v[v.length - 1] === q;
 }
 
-/** 平衡括号内文(首尾括号配对,引号感知;不闭 → null)。 */
+/** Content inside balanced brackets (matching first/last brackets, quote-aware; unclosed → null). */
 function unwrapBracket(v: string, open: string, close: string): string | null {
   if (v[0] !== open) {
     return null;
@@ -641,7 +673,7 @@ function unwrapBracket(v: string, open: string, close: string): string | null {
   return null;
 }
 
-/** 顶层逗号切分(引号/深度感知;残缺引号段原样返回)。 */
+/** Split on top-level commas (quote/depth-aware; a malformed quote segment is returned as-is). */
 function splitTopLevel(text: string): string[] | null {
   const items: string[] = [];
   let depth = 0;
@@ -685,7 +717,7 @@ function splitTopLevel(text: string): string[] | null {
   return items;
 }
 
-/** 同值类型判定(嵌套 dict 深等比较)。 */
+/** Same-value-type decision (nested dicts compared by deep equality). */
 function sameKind(a: DictValueKind, b: DictValueKind): boolean {
   if (a.kind !== b.kind) {
     return false;
@@ -705,10 +737,10 @@ function sameKind(a: DictValueKind, b: DictValueKind): boolean {
     }
     return sameKind(a.element, b.element);
   }
-  return true; // dict/unknown 同 kind 即视为一致形状证据
+  return true; // dict/unknown: identical kind is treated as consistent shape evidence
 }
 
-/** 合成 MatchedBraces 用的行起始表。 */
+/** Line-start table used to synthesize MatchedBraces. */
 function lineStartsOf(text: string): number[] {
   const starts = [0];
   for (let i = 0; i < text.length; i += 1) {
@@ -720,11 +752,14 @@ function lineStartsOf(text: string): number[] {
 }
 
 /**
- * 写点序列 → 最终格式:
- *  - 无条件字面量写点 = 重绑(清空前序证据,含条件写点);
- *  - 无条件非字面量 = unknown 终局(其后动态写点 → open+observed);
- *  - 条件写点并入;if 组全臂齐键(组带 else)→ complete 键升必有;
- *  - 任意动态证据 → open。
+ * Write-site sequence → final format:
+ *  - An unconditional literal write site is a rebind (clears prior evidence,
+ *    including conditional write sites);
+ *  - An unconditional non-literal is a terminal unknown (dynamic write sites
+ *    after it → open+observed);
+ *  - Conditional write sites merge in; an if group with the key in every arm
+ *    (group carries an else) promotes that complete key to required;
+ *  - Any dynamic evidence → open.
  */
 function resolveShape(
   recs: readonly WriterRec[],
@@ -733,7 +768,7 @@ function resolveShape(
   if (recs.length === 0) {
     return null;
   }
-  // 组解析:hasElse && 全臂齐键的键 → complete
+  // Group resolution: keys with hasElse and present in every arm → complete
   const completeKeys = new Set<string>();
   for (const g of groups.values()) {
     if (!g.hasElse || g.armCount < 2 || g.arms.size < g.armCount) {
@@ -765,7 +800,8 @@ function resolveShape(
       continue;
     }
     if (rec.rank === 'always' && !rec.dynamic && rec.rebind) {
-      // 无条件字面量赋值 = 重绑(增量写点在序后并入,不重置)
+      // Unconditional literal assignment = rebind (later incremental write sites
+      // merge in and do not reset)
       unknownBase = false;
       recs2 = [{ ...rec, rank: 'always' }];
       continue;
@@ -775,8 +811,10 @@ function resolveShape(
       continue;
     }
     if (unknownBase && rec.rank !== 'always') {
-      continue; // unknown 基上的条件写点:开放面已表达,不并键(always
-      // 写点保留:观测键面是开放结构的证据载体)
+      continue; // Conditional write sites on an unknown base: the open surface
+      // already expresses them, so keys are not merged (always write sites are
+      // kept: the observed key surface is the evidence carrier of an open
+      // structure)
     }
     recs2.push(rec);
   }
@@ -809,7 +847,7 @@ function resolveShape(
       observed.set(key, entry.value);
     }
     if (observed.size === 0) {
-      return null; // 开放宇宙但零观测证据:无形状声称(缺键即未知)
+      return null; // open universe with zero observed evidence: no shape claim (a missing key is unknown)
     }
     return { kind: 'open', observed };
   }
@@ -823,7 +861,7 @@ function resolveShape(
     }
   }
   if (required.size === 0 && optional.size === 0) {
-    return null; // 只有 unknown 基零键证据:无形状声称
+    return null; // only an unknown base with zero key evidence: no shape claim
   }
   return { kind: 'literal', required, optional };
 }

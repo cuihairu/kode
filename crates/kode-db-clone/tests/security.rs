@@ -1,9 +1,12 @@
-//! PDC-0604 安全验证(计划书 §6.1 门槛 / Phase 6):prod→prod 拒绝、源账号写权限
-//! 拒绝、SQL 注入标识符中和、敏感值不泄漏进导出。
+//! PDC-0604 security verification (plan doc §6.1 gates / Phase 6): prod→prod
+//! rejection, source-account write-permission rejection, SQL injection identifier
+//! neutralization, sensitive values never leaking into exports.
 //!
-//! 机制在 src/ 已有单测(target.rs/reader.rs/planner.rs/redact.rs),本文件从
-//! 「公开 API 边界」再证 fail-closed:更广的注入载荷(反引号+分号+注释)、
-//! reader→RedactingSink 端到端不泄漏。全部经公开接口,无新增依赖。
+//! The mechanisms already have unit tests in src/ (target.rs/reader.rs/planner.rs/
+//! redact.rs); this file re-proves fail-closed from the "public API boundary":
+//! broader injection payloads (backtick + semicolon + comments), and
+//! reader→RedactingSink end-to-end non-leakage. All via public interfaces, no new
+//! dependencies.
 
 use std::collections::BTreeMap;
 
@@ -19,13 +22,15 @@ use kode_db_clone::{
 };
 
 // ---------------------------------------------------------------------------
-// 1. prod→prod 拒绝:导入目标环境只认 local/test,prod/staging 在解析层即拒。
+// 1. prod→prod rejection: import target environments accept only local/test;
+// prod/staging is rejected at the parsing layer.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn prod_and_staging_import_targets_fail_closed() {
-    // 环境枚举无 prod/staging 变体,唯一成形态是 FromStr 解析;解析层拒绝即
-    // prod 目标永远无法构造 → prod→prod 克隆不可能成形。
+    // The environment enum has no prod/staging variant; the only construction path
+    // is FromStr parsing; rejection at the parsing layer means a prod target can
+    // never be constructed → a prod→prod clone cannot take shape.
     for bad in [
         "prod",
         "staging",
@@ -38,13 +43,14 @@ fn prod_and_staging_import_targets_fail_closed() {
         let err = bad.parse::<TargetEnvironment>().unwrap_err();
         assert!(
             matches!(err, CloneError::ImportRejected(_)),
-            "`{bad}` 必须 ImportRejected"
+            "`{bad}` must be ImportRejected"
         );
     }
 }
 
 // ---------------------------------------------------------------------------
-// 2. 源账号写权限拒绝:非只读语句一律 fail-closed。
+// 2. Source-account write-permission rejection: any non-read-only statement fails
+// closed.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -62,7 +68,10 @@ fn source_write_statements_fail_closed() {
         "SET autocommit = 1",
     ];
     for bad in writes {
-        assert!(validate_readonly(bad).is_err(), "写语句必须被拒: {bad}");
+        assert!(
+            validate_readonly(bad).is_err(),
+            "write statements must be rejected: {bad}"
+        );
     }
     let read_only = [
         "SELECT * FROM t",
@@ -75,13 +84,17 @@ fn source_write_statements_fail_closed() {
         "ROLLBACK",
     ];
     for good in read_only {
-        assert!(validate_readonly(good).is_ok(), "只读语句应放行: {good}");
+        assert!(
+            validate_readonly(good).is_ok(),
+            "read-only statements should pass: {good}"
+        );
     }
 }
 
 // ---------------------------------------------------------------------------
-// 3. SQL 注入:标识符(表/列)含反引号+分号+注释载荷 → render_select 反引号
-//    转义,生成的 SELECT 是单一安全语句,无反引号外逃逸字符。
+// 3. SQL injection: identifiers (tables/columns) carrying backtick + semicolon +
+//    comment payloads → render_select escapes backticks, the generated SELECT is a
+//    single safe statement with no breakout characters outside the quoting.
 // ---------------------------------------------------------------------------
 
 fn field(name: &str, type_label: &str) -> DerivedField {
@@ -94,8 +107,9 @@ fn field(name: &str, type_label: &str) -> DerivedField {
     }
 }
 
-/// 扫描 SQL,断言反引号引号段之外的字符不含语句逃逸载体(`;`、`'`、`"`、
-/// `--`、换行)。反引号内 ` `` ` 是转义的反引号,不断言。
+/// Scans the SQL, asserting that characters outside backtick-quoted spans carry no
+/// statement-breakout vehicles (`;`, `'`, `"`, `--`, newlines). Inside backticks,
+/// ` `` ` is an escaped backtick and is not asserted.
 fn assert_no_breakout(sql: &str) {
     let mut in_backtick = false;
     let mut chars = sql.chars().peekable();
@@ -103,7 +117,7 @@ fn assert_no_breakout(sql: &str) {
     while let Some(c) = chars.next() {
         if c == '`' {
             if in_backtick && chars.peek() == Some(&'`') {
-                // ```` → 转义的反引号,留在引号段内。
+                // ```` → an escaped backtick, stays inside the quoted span.
                 chars.next();
                 continue;
             }
@@ -114,19 +128,23 @@ fn assert_no_breakout(sql: &str) {
             outside.push(c);
         }
     }
-    assert!(!in_backtick, "反引号未闭合: {sql}");
+    assert!(!in_backtick, "backticks not closed: {sql}");
     for ch in outside.chars() {
         assert!(
             ch != ';' && ch != '\'' && ch != '"' && ch != '\n' && ch != '\r',
-            "引号段外出现逃逸载体 `{ch}`: {sql}"
+            "breakout vehicle `{ch}` outside quoted spans: {sql}"
         );
     }
-    assert!(!outside.contains("--"), "引号段外出现注释 `--`: {sql}");
+    assert!(
+        !outside.contains("--"),
+        "comment `--` outside quoted spans: {sql}"
+    );
 }
 
 #[test]
 fn sql_injection_identifiers_neutralized() {
-    // 表/列名内嵌注入载荷:反引号(需 ```` 转义)、分号(语句逃逸)、注释。
+    // Injection payloads embedded in table/column names: backtick (needs ````
+    // escaping), semicolon (statement breakout), comments.
     let evil_table = "tbl_Avatar`; DROP TABLE users; --";
     let evil_col = "id`; SELECT 1; --";
     let derived = CloneSchema::new(
@@ -160,17 +178,24 @@ fn sql_injection_identifiers_neutralized() {
         .plan(&derived, &resolved, &RuleSet::default(), None)
         .unwrap();
     let sql = &plan.queries[0].select_sql;
-    // 反引号转义:单 ` 都成 ````。
-    assert!(sql.contains("tbl_Avatar``"), "表名反引号转义: {sql}");
-    assert!(sql.contains("id``"), "列名反引号转义: {sql}");
-    // 无语句逃逸:反引号外无 `;`/`--`/引号/换行。
+    // Backtick escaping: every lone ` becomes ````.
+    assert!(
+        sql.contains("tbl_Avatar``"),
+        "table-name backtick escaping: {sql}"
+    );
+    assert!(sql.contains("id``"), "column-name backtick escaping: {sql}");
+    // No statement breakout: no `;`/`--`/quotes/newlines outside the backticks.
     assert_no_breakout(sql);
-    assert!(sql.contains("WHERE `id` = ?"), "谓词参数化绑定: {sql}");
+    assert!(
+        sql.contains("WHERE `id` = ?"),
+        "predicate parameterized binding: {sql}"
+    );
 }
 
 // ---------------------------------------------------------------------------
-// 4. 防秘密泄漏:敏感列(credential/personal)经 reader→RedactingSink 端到端
-//    掩码,捕获输出无原始秘密,报告如实记录。
+// 4. Secret-leak prevention: sensitive columns (credential/personal) are masked
+//    end to end through reader→RedactingSink; the captured output holds no raw
+//    secrets and the report records things honestly.
 // ---------------------------------------------------------------------------
 
 struct SecretExec {
@@ -245,7 +270,8 @@ fn sensitive_values_do_not_leak_into_export() {
     let plan = secret_plan();
     let mut capture = CaptureSink::default();
     let policy = SensitivityPolicy::default();
-    // 报告在 redacting 借用结束前取出(避免 capture 双重借用)。
+    // The report is taken before the redacting borrow ends (avoids double-borrowing
+    // capture).
     let report = {
         let mut redacting = RedactingSink::new(&mut capture, &policy, &plan);
         let out = reader
@@ -260,21 +286,23 @@ fn sensitive_values_do_not_leak_into_export() {
         assert!(!out.cancelled);
         redacting.report()
     };
-    // 泄漏检查:捕获到的任何行值不得含原始秘密/个人邮箱原文。
+    // Leak check: no captured row value may contain the raw secret / the personal
+    // email verbatim.
     for row in &capture.rows {
         let encoded = serde_json::to_vec(row).unwrap();
         assert!(
             !encoded.windows(b"hunter2".len()).any(|w| w == b"hunter2"),
-            "密码原文泄漏: {encoded:?}"
+            "raw password leaked: {encoded:?}"
         );
         assert!(
             !encoded
                 .windows(b"alice@example.com".len())
                 .any(|w| w == b"alice@example.com"),
-            "邮箱原文泄漏: {encoded:?}"
+            "raw email leaked: {encoded:?}"
         );
     }
-    // 报告如实记录敏感列,不含公开列。
+    // The report honestly records the sensitive columns and holds no public
+    // columns.
     let cols: BTreeMap<_, _> = report
         .entries
         .iter()
@@ -282,6 +310,10 @@ fn sensitive_values_do_not_leak_into_export() {
         .collect();
     assert_eq!(cols.get("sm_password"), Some(&"credential"));
     assert_eq!(cols.get("email"), Some(&"personal"));
-    assert_eq!(cols.get("sm_name"), None, "公开列不进报告");
-    assert_eq!(cols.get("id"), None, "id 不进报告");
+    assert_eq!(
+        cols.get("sm_name"),
+        None,
+        "public columns stay out of the report"
+    );
+    assert_eq!(cols.get("id"), None, "id stays out of the report");
 }

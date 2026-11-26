@@ -1,14 +1,15 @@
-//! 引擎源码全量自动索引成本基准(RUST-294 / ADR-107 反事实臂)。
+//! Cost benchmark for auto-indexing the full engine source tree (RUST-294 / ADR-107
+//! counterfactual arm).
 //!
-//! 走给定根下全部 `.py`(确定性排序),逐文件 ruff 容错解析
-//! ([`kode_python::ParsedAst::new`],与生产同入口),报:
-//! 文件数 / 字节 / 墙钟 / 含语法错误文件数 / 吞吐。
-//! 另报排除 `node_modules`/`.git`/`target`/`vcpkg*` 后的源码口径(两口径
-//! 分列,预算论证用),不做任何索引范围假设——「全量」与「源码口径」都是
-//! 实测,不是推断。
+//! Walks every `.py` under the given root (deterministic order), parses each file with ruff's
+//! tolerant path ([`kode_python::ParsedAst::new`], the same entry point as production), and
+//! reports: file count / bytes / wall clock / files with syntax errors / throughput.
+//! It also reports the source-only figure after excluding `node_modules`/`.git`/`target`/
+//! `vcpkg*` (both figures listed separately, for budget justification); it makes no index-scope
+//! assumptions -- both "full tree" and "source-only" are measured, not inferred.
 //!
-//! 用法:`cargo run -p kode-python --release --example bench_corpus -- <root>`
-//! 决策档:`docs/kode2/adr/ADR-107-engine-source-index-scope.md`。
+//! Usage: `cargo run -p kode-python --release --example bench_corpus -- <root>`
+//! Decision record: `docs/kode2/adr/ADR-107-engine-source-index-scope.md`.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;

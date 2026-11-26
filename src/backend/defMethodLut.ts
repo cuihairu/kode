@@ -1,26 +1,36 @@
 /**
- * def→python 方法跳转反查表纯核(DEF-LUT-001,巡检单 2026-10-20/2026-11-18
- * 用户拍板「执行」):门控放行后后台建全局反查表,def 方法 F12 从「按需懒构建
- * +慢速兜底等待(等索引/全项目扫描)」变 O(1) 查表。
+ * Pure core for the def-to-python method jump reverse-lookup table (DEF-LUT-001,
+ * inspection ticket 2026-10-20/2026-11-18, user ruling "execute"): once the gate
+ * opens, a global reverse-lookup table is built in the background, turning the
+ * def-method F12 flow from "lazy build on demand + slow fallback wait (waiting
+ * for the index / full project scan)" into an O(1) table lookup.
  *
- * 铁律(任务书口径):
- * - LUT 是**加速层不是唯一真相**:命中直接答,missing 秒回空,表未含该条
- *   (miss)回落既有慢链——清空 LUT 后查询结果必须与慢链一致(钉子④)。
- * - 构建/查询/失效独立可测,零 vscode 依赖(IO 与文档打开由装配层注入)。
- * - 门控红线:未放行工作区零构建——构建调度只在门控放行后的预热完成回调
- *   (monitoring.ts)发起,本核自身零启动副作用。
+ * Iron rules (per the task brief):
+ * - The LUT is an **acceleration layer, not the sole source of truth**: hits are
+ *   answered directly, missing returns empty immediately; if the table does not
+ *   contain the entry (miss), fall back to the existing slow chain -- after
+ *   clearing the LUT, query results must match the slow chain exactly (pin 4).
+ * - Build/query/invalidate must be independently testable with zero vscode
+ *   dependencies (IO and document opening are injected by the assembly layer).
+ * - Gate red line: zero builds for a gated-off workspace -- build scheduling is
+ *   only initiated from the warmup-complete callback after the gate opens
+ *   (monitoring.ts); this core itself has zero startup side effects.
  *
- * 失效口径(照抄 semanticIndex 快照仓思想,事件驱动精确作废):
- * - .def 变更 → removeDef(该 def 全部条目出表);
- * - .py 变更 → invalidatePythonFile(贡献者索引反查出受影响键,精确摘除);
- * - 代际(generation)每次出表/重建推进,供测试与打点断言失效确实发生。
+ * Invalidation contract (borrowed from the semanticIndex snapshot-store idea,
+ * event-driven precise invalidation):
+ * - .def change -> removeDef (all entries for that def leave the table);
+ * - .py change -> invalidatePythonFile (the contributor index reverse-looks-up
+ *   affected keys, removing precisely);
+ * - generation advances on every eviction/rebuild, for tests and instrumentation
+ *   to assert invalidation actually happened.
  */
 import { normalizeFileIdentity } from './pathIdentity';
 
-// 磁盘版本纪律:defLUT 载荷形状变更时随 INDEX_CACHE_SCHEMA_VERSION 整体
-// bump(indexDiskCache 既有语义:版本不符旧缓存整体弃用,不背兼容包袱)。
+// Disk version discipline: when the defLUT payload shape changes, bump it
+// together with INDEX_CACHE_SCHEMA_VERSION (existing indexDiskCache semantics:
+// a version mismatch discards the whole old cache; no compatibility baggage).
 
-/** 跳转落点(与 EntityMappingManager 解析面同形:line 1 基) */
+/** Jump landing point (same shape as the EntityMappingManager resolution surface: line is 1-based) */
 export interface DefMethodLutTarget {
   filePath: string;
   line: number;
@@ -28,15 +38,19 @@ export interface DefMethodLutTarget {
 }
 
 /**
- * 单方法条目。implementations=属主/绑定面命中(listMethodImplementations
- * ByIdentity 同源);mroImplementations=属主外补充实现(父 def/接口约定链与
- * 全项目唯一名回退的落点);missing=true 表示全链(def 声明了,属主 py、
- * 约定链、全项目回退都)无实现——查询面据此秒回空,不再进兜底等待。
+ * Single-method entry. implementations = owner/binding-surface hits (same
+ * source as listMethodImplementations ByIdentity); mroImplementations =
+ * supplementary implementations outside the owner (landing points from the
+ * parent def / interface convention chain and the whole-project unique-name
+ * fallback); missing=true means the entire chain found no implementation (the
+ * def declares it, but neither the owner py, the convention chain, nor the
+ * whole-project fallback has one) -- the query surface returns empty
+ * immediately on that basis, without entering the fallback wait.
  */
 export interface DefMethodLutEntry {
-  /** 归属 def 文件(原始路径,查询侧与当前文档比对用) */
+  /** Owning def file (original path, for comparison with the current document on the query side) */
   defFile: string;
-  /** def 声明行(1 基) */
+  /** Declaration line in the def (1-based) */
   defDeclLine: number;
   section: string;
   implementations: DefMethodLutTarget[];
@@ -45,9 +59,12 @@ export interface DefMethodLutEntry {
 }
 
 /**
- * 反查键:与 entityMappingHelpers.buildMethodOwnerBindingKey 同构
- * (ownerKind::ownerName::section::symbolName 小写连接)——该函数所在模块
- * 引 vscode,纯核不能引,故此处同式复刻;tests 钉等价测试锁两式不漂移。
+ * Reverse-lookup key: isomorphic to
+ * entityMappingHelpers.buildMethodOwnerBindingKey
+ * (ownerKind::ownerName::section::symbolName joined lowercased) -- the module
+ * hosting that function imports vscode, which the pure core cannot, so the
+ * same formula is replicated here; tests pin an equivalence test locking the
+ * two formulas from drifting.
  */
 export function buildDefMethodLutKey(identity: {
   ownerKind: string;
@@ -63,7 +80,7 @@ export function buildDefMethodLutKey(identity: {
   ].join('::').toLowerCase();
 }
 
-/** 单 def 的磁盘条目:indexDiskCache 范式,stat 快照供恢复侧校验(漂移拒收) */
+/** On-disk entry for a single def: indexDiskCache paradigm, stat snapshot for the restore side to verify (drift is rejected) */
 export interface DefLutDiskFile {
   defPath: string;
   mtimeMs: number;
@@ -76,7 +93,7 @@ interface DefTable {
   entries: Map<string, DefMethodLutEntry>;
 }
 
-/** stat 校验注入面(恢复侧用;默认恒通过,装配层传 fs.stat 版) */
+/** stat verification injection surface (used by the restore side; defaults to always passing, the assembly layer passes an fs.stat version) */
 export type DefStatProbe = (defPath: string) => { mtimeMs: number; size: number } | null;
 
 export interface DefMethodLutRestoreReport {
@@ -86,23 +103,25 @@ export interface DefMethodLutRestoreReport {
 }
 
 /**
- * 反查表本体:表按 def 分桶(整表重建=逐 def upsert 原子替换),贡献者索引
- * (py 文件 → 键集合)支撑 python 变更的精确作废。查询 getHit 三态:
- * hit(带落点)/ missing(秒回空)/ undefined(miss → 慢链)。
+ * The reverse-lookup table itself: tables are bucketed per def (a full table
+ * rebuild = per-def upsert with atomic replacement); the contributor index
+ * (py file -> key set) supports precise invalidation on python changes. The
+ * getHit query has three states: hit (with landing point) / missing
+ * (immediate empty) / undefined (miss -> slow chain).
  */
 export class DefMethodLut {
   private readonly tables = new Map<string, DefTable>();
-  /** 归一化 def 路径 → 原始路径(磁盘载荷 defPath 还原用) */
+  /** Normalized def path -> original path (for restoring defPath from the on-disk payload) */
   private readonly originalPaths = new Map<string, string>();
   private readonly contributors = new Map<string, Set<string>>();
   private generationCounter = 0;
 
-  /** 当前代际:每次出表/恢复推进(失效断言与「重建确实发生」的测试面) */
+    /** Current generation: advances on every eviction/restore (test surface for invalidation assertions and "a rebuild actually happened") */
   generation(): number {
     return this.generationCounter;
   }
 
-  /** 条目总数(测试/打点取证) */
+  /** Total entry count (test / instrumentation forensics) */
   size(): number {
     let total = 0;
     for (const table of this.tables.values()) {
@@ -116,9 +135,11 @@ export class DefMethodLut {
   }
 
   /**
-   * 整 def 桶替换(后台重建的单位):旧桶的贡献者边先摘,再登记新桶。
-   * generation 不推进(重建非失效;失效面由 removeDef/invalidatePythonFile
-   * 承担,代际断言只对失效敏感)。
+   * Whole-def bucket replacement (the unit of background rebuilds): the old
+   * bucket's contributor edges are removed first, then the new bucket is
+   * registered. generation does not advance (a rebuild is not an invalidation;
+   * the invalidation surface is handled by removeDef/invalidatePythonFile, and
+   * generation assertions are only sensitive to invalidations).
    */
   upsertDef(defFile: string, stat: { mtimeMs: number; size: number }, entries: Map<string, DefMethodLutEntry>): void {
     const key = normalizeFileIdentity(defFile);
@@ -131,12 +152,12 @@ export class DefMethodLut {
     }
   }
 
-  /** def 变更作废:该 def 全部条目出表(条目级 generation 推进) */
+  /** Invalidate on def change: all entries for that def leave the table (entry-level generation advance) */
   removeDef(defFile: string): number {
     return this.removeDefByKey(normalizeFileIdentity(defFile));
   }
 
-  /** python 变更作废:贡献者索引反查受影响键,逐桶精确摘除对应条目 */
+  /** Invalidate on python change: the contributor index reverse-looks-up affected keys, removing the matching entries per bucket precisely */
   invalidatePythonFile(pythonFile: string): number {
     const pyKey = normalizeFileIdentity(pythonFile);
     const affected = this.contributors.get(pyKey);
@@ -158,15 +179,17 @@ export class DefMethodLut {
         this.tables.delete(defKey);
       }
     }
-    // 该 py 边已整组删除;其他 py 的贡献者边保留(键已出表,边成悬空无害,
-    // 下次该 py 变更按空集早退——避免全表扫边清理的额外开销)
+    // Edges for this py were deleted as a whole group; contributor edges of
+    // other py files are kept (keys are already out of the table, so dangling
+    // edges are harmless -- the next change to that py early-exits on the empty
+    // set, avoiding the extra cost of a full-table edge sweep for cleanup)
     if (removed > 0) {
       this.generationCounter += 1;
     }
     return removed;
   }
 
-  /** 查询三态(钉子①②④):hit=有落点;missing=全链无实现秒回空;undefined=miss 走慢链 */
+  /** Query three states (pins 1, 2, 4): hit = has a landing point; missing = entire chain has no implementation, return empty immediately; undefined = miss, take the slow chain */
   getHit(key: string, defFile: string): { status: 'hit'; target: DefMethodLutTarget } | { status: 'missing' } | undefined {
     const table = this.tables.get(normalizeFileIdentity(defFile));
     if (!table) {
@@ -185,12 +208,12 @@ export class DefMethodLut {
     return entry.missing ? { status: 'missing' } : undefined;
   }
 
-  /** 条目直读(测试/取证面;查询面走 getHit) */
+  /** Direct entry read (test/forensics surface; the query surface goes through getHit) */
   getEntry(key: string, defFile: string): DefMethodLutEntry | undefined {
     return this.tables.get(normalizeFileIdentity(defFile))?.entries.get(key);
   }
 
-  /** 全部 def 桶快照(磁盘落盘载荷;空表返回 [] 而非 null——空表也是事实) */
+  /** Snapshot of all def buckets (on-disk payload; an empty table returns [] rather than null -- an empty table is also a fact) */
   capture(): DefLutDiskFile[] {
     const files: DefLutDiskFile[] = [];
     for (const [defKey, table] of this.tables) {
@@ -205,9 +228,11 @@ export class DefMethodLut {
   }
 
   /**
-   * 磁盘恢复(钉子⑥):逐 def stat 校验(漂移/缺失拒收该桶,照旧后台重建;
-   * 版本门由 indexDiskCache meta 承担)。恢复本身不推进 generation(空表
-   * 恢复非失效;随后预热完成的后台重建 upsertDef 自然接管)。
+   * Disk restore (pin 6): stat verification per def (drift/missing rejects that
+   * bucket, which is still rebuilt in the background as before; the version gate
+   * is handled by the indexDiskCache meta). Restore itself does not advance
+   * generation (restoring an empty table is not an invalidation; the background
+   * rebuild's upsertDef after warmup completes naturally takes over).
    */
   restore(files: DefLutDiskFile[] | undefined, statOf: DefStatProbe = () => ({ mtimeMs: 0, size: 0 })): DefMethodLutRestoreReport {
     const report: DefMethodLutRestoreReport = { adoptedDefs: 0, rejectedDefs: 0, adoptedEntries: 0 };

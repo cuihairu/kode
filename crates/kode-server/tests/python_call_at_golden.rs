@@ -60,23 +60,36 @@ fn python_call_at_golden_structure_is_complete() {
         repo_root().join(kode_server::python_call_at::PYTHON_CALL_AT_GOLDEN_REL_PATH),
     )
     .expect("golden");
-    let value: Dump = serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
+    let value: Dump =
+        serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     assert!(value.probe_count > 0, "probeCount 为空:语料上应探测过");
     assert!(value.hit_count > 0, "hitCount 为空:语料上应有调用命中");
     let total_probes: usize = value.files.iter().map(|f| f.probe_count).sum();
-    assert_eq!(total_probes, value.probe_count, "probeCount 与逐文件和不一致");
+    assert_eq!(
+        total_probes, value.probe_count,
+        "probeCount 与逐文件和不一致"
+    );
     let total_hits: usize = value.files.iter().map(|f| f.hits.len()).sum();
     assert_eq!(total_hits, value.hit_count, "hitCount 与逐文件和不一致");
     for file in &value.files {
         for hit in &file.hits {
-            assert!(hit["line"].is_u64() && hit["character"].is_u64(), "命中缺行/列: {hit}");
-            assert!(hit["receiverName"].is_string(), "命中缺 receiverName: {hit}");
+            assert!(
+                hit["line"].is_u64() && hit["character"].is_u64(),
+                "命中缺行/列: {hit}"
+            );
+            assert!(
+                hit["receiverName"].is_string(),
+                "命中缺 receiverName: {hit}"
+            );
             assert!(hit["methodName"].is_string(), "命中缺 methodName: {hit}");
             assert!(
                 hit["section"].is_null() || hit["section"].is_string(),
                 "命中 section 既非 null 也非字符串: {hit}"
             );
-            assert!(hit["activeArgument"].is_u64(), "命中缺 activeArgument: {hit}");
+            assert!(
+                hit["activeArgument"].is_u64(),
+                "命中缺 activeArgument: {hit}"
+            );
         }
     }
 }

@@ -1,27 +1,36 @@
 /**
- * 机器人(bots 进程)控制编排(IDE-BOT-001,A 案:本地单机闭环)。
+ * Orchestration for bot (bots process) control (IDE-BOT-001, case A: local
+ * single-machine closed loop).
  *
- * 引擎事实(调研 2026-11-06,~/workspaces/kbengine@f85ad81):
- * - bots = kbe/src/server/tools/bots 独立进程,模拟客户端批量登录压测;
- *   scripts/bots Python 驱动(kbemain 入口+客户端侧 Entity)。
- * - 加人只有 KBEngine.addBots(total[, tickCount, tickTime]);查询只有
- *   KBEngine.bots 只读字典(len/get/entities);**无逐个销毁 API**
- *   (PyBots 只读;bot 减员 = 停止 bots 进程,如实告知,不假装支持)。
- * - bots 进程自带 telnet_service(默认 51000,python 命令层),运行时操控
- *   不需重启进程;kode telnet 目标表已含 bots 组件。
+ * Engine facts (researched 2026-11-06, ~/workspaces/kbengine@f85ad81):
+ * - bots = kbe/src/server/tools/bots, a separate process that simulates a batch
+ *   of client logins for load testing; scripts/bots is the Python driver
+ *   (kbemain entry point + client-side Entities).
+ * - Adding bots only has KBEngine.addBots(total[, tickCount, tickTime]);
+ *   querying only has the read-only KBEngine.bots dictionary
+ *   (len/get/entities); there is **no per-bot destruction API** (PyBots is
+ *   read-only; reducing bots = stopping the bots process — say so honestly,
+ *   do not pretend to support it).
+ * - The bots process ships its own telnet_service (default 51000, the python
+ *   command layer), so runtime control needs no process restart; the kode
+ *   telnet target table already includes the bots component.
  *
- * 本文件只做编排(UI/进程/会话全经 deps 注入,无 vscode import):
- * - 白名单闸不绕:addBots 是写操作(批量登录),命令必须已在
- *   kbengine.telnet.enableCommands 白名单内,缺项如实报出该加哪条;
- * - 会话就绪等待有界(connect 后轮询 ready,超时如实报);
- * - 结果读取诚实:len 查询发送后读输出尾行,读不到就说读不到。
+ * This file only orchestrates (UI/process/session all injected via deps, no
+ * vscode import):
+ * - the whitelist gate is not bypassable: addBots is a write operation (batch
+ *   login), the command must already be in the kbengine.telnet.enableCommands
+ *   whitelist, and a missing entry is reported honestly with the entry to add;
+ * - the wait for session readiness is bounded (poll for ready after connect,
+ *   and report a timeout honestly);
+ * - result reading is honest: after sending the len query, read the tail lines
+ *   of the output; if nothing can be read, say nothing was read.
  */
 
 import { BUILTIN_QUICK_COMMANDS, isCommandAllowed } from './telnetClient';
 import { l10nText } from '../nlsRuntime';
 
 export const BOTS_COUNT_COMMAND = 'len(KBEngine.bots)';
-/** 白名单建议项(错误信息里亮给用户,与引擎 python 层命令同串) */
+/** Whitelist suggestion entry (surfaced to the user in error messages, the same string as the engine python-layer command) */
 export const BOTS_ADD_WHITELIST_ENTRY = 'KBEngine.addBots';
 
 export interface BotsTelnetTarget {
@@ -32,7 +41,7 @@ export interface BotsTelnetTarget {
   enableCommands: readonly string[];
 }
 
-/** addBots 命令串(镜像引擎文档示例形态:一次性=单参,分批=三参)。 */
+/** addBots command string (mirroring the engine docs' example shape: one-shot = single argument, batched = three arguments). */
 export function buildAddBotsCommand(total: number, tickCount?: number, tickTime?: number): string {
   if (!Number.isInteger(total) || total < 1) {
     throw new Error(l10nText('total must be an integer ≥1, got {value}', { value: total }));
@@ -51,7 +60,7 @@ export function buildAddBotsCommand(total: number, tickCount?: number, tickTime?
   return `KBEngine.addBots(${total}, ${count}, ${interval})`;
 }
 
-/** 解析输入框文本:空串/纯空白=undefined;整数文本=number;否则 null(非法)。 */
+/** Parses input-box text: empty string / pure whitespace = undefined; integer text = number; otherwise null (invalid). */
 export function parseOptionalInt(text: string): number | undefined | null {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
@@ -64,14 +73,14 @@ export function parseOptionalInt(text: string): number | undefined | null {
 }
 
 export interface BotsControlDeps {
-  /** bots telnet 目标(派生链已含 bots 组件;null=telnet 未配置)。 */
+  /** bots telnet target (the derivation chain already includes the bots component; null = telnet not configured). */
   getBotsTarget(): BotsTelnetTarget | null;
-  /** 建立会话(幂等);会话状态轮询经 getSessionState。 */
+  /** Establishes the session (idempotent); session-state polling goes through getSessionState. */
   connectTarget(key: string): void;
   getSessionState(key: string): string | null;
   sendCommand(key: string, command: string): boolean;
   getOutput(key: string): string[];
-  /** 睡眠毫秒(测试替身可缩短)。 */
+  /** Sleeps for milliseconds (a test stand-in can shorten it). */
   sleep(ms: number): Promise<void>;
   withInput(prompt: string, placeholder: string, validate: (text: string) => string | null): Thenable<string | undefined>;
   showInformationMessage(message: string): Thenable<unknown>;
@@ -80,10 +89,12 @@ export interface BotsControlDeps {
 }
 
 /**
- * 白名单允许判定:直接复用服务层 isCommandAllowed(精确 / `项+空格` /
- * `项+(` 前缀),白名单并上内置只读快捷命令——与 TelnetService.isAllowed
- * 同一语义同一实现,编排层不另立口径(双重闸:此处预检 + 服务层 sendCommand
- * 再检)。
+ * Whitelist allowance decision: reuses the service layer's isCommandAllowed
+ * directly (exact match / `entry+space` / `entry+(` prefixes) with the
+ * whitelist unioned with the built-in read-only quick commands — the same
+ * semantics and the same implementation as TelnetService.isAllowed, so the
+ * orchestration layer does not set up its own contract (double gate: precheck
+ * here + re-check by the service layer's sendCommand).
  */
 export function commandAllowed(command: string, whitelist: readonly string[]): boolean {
   return isCommandAllowed(command, [
@@ -92,15 +103,15 @@ export function commandAllowed(command: string, whitelist: readonly string[]): b
   ]);
 }
 
-/** 会话就绪等待:100ms×50 次 ≈ 5 秒上限(有界尝试数,测试替身可瞬时跑完)。 */
+/** Session-readiness wait: 100ms x 50 attempts ≈ 5 second upper bound (bounded attempt count; a test stand-in can finish instantly). */
 const CONNECT_ATTEMPTS = 50;
 const CONNECT_POLL_MS = 100;
-/** bot 数结果读取:150ms×14 次 ≈ 2 秒上限。 */
+/** Bot-count result reading: 150ms x 14 attempts ≈ 2 second upper bound. */
 const COUNT_ATTEMPTS = 14;
 const COUNT_POLL_MS = 150;
 
-/** 连接并等到会话 ready;无会话才 connect(connectTarget 会先断旧,握手在途
- * 时重复调用会反复重启握手);超时返回 false(如实,不重试不止损)。 */
+/** Connects and waits until the session is ready; only connects when there is no session (connectTarget tears the old one down first, so repeated
+ * calls while a handshake is in flight would keep restarting the handshake); returns false on timeout (reported as-is, no retry and no cut-loss). */
 async function ensureSessionReady(deps: BotsControlDeps, key: string): Promise<boolean> {
   let state = deps.getSessionState(key);
   if (state !== 'ready') {
@@ -126,9 +137,11 @@ function noTargetMessage(): string {
 }
 
 /**
- * `kbengine.bots.add`:问数量(可选分批)→ 经 bots 进程 telnet python 层发
- * addBots。白名单缺项/会话未就绪都如实报;成功后附带 bot 数查询(若白名单
- * 允许)并把结果落输出通道。返回结果摘要行(供测试断言)。
+ * `kbengine.bots.add`: asks for the count (optional batching) -> sends addBots
+ * through the bots process's telnet python layer. A missing whitelist entry or
+ * a session not ready is reported honestly; on success it also runs a bot-count
+ * query (if the whitelist allows it) and writes the result to the output
+ * channel. Returns a summary line of the result (for test assertions).
  */
 export async function runBotsAddCommand(deps: BotsControlDeps): Promise<string> {
   const target = deps.getBotsTarget();
@@ -161,8 +174,9 @@ export async function runBotsAddCommand(deps: BotsControlDeps): Promise<string> 
   if (tickText === undefined) {
     return l10nText('Cancelled; nothing executed.');
   }
-  // 校验闭包已拒非法文本(shift 出来的只会是空或整数),此处 ?? undefined 只做
-  // null→undefined 的类型归一
+  // The validation closure already rejects invalid text (the only values left
+  // after the shift are empty or an integer); the ?? undefined here just
+  // normalizes null -> undefined for typing
   const tickCount = parseOptionalInt(tickText) ?? undefined;
 
   let tickTime: number | undefined;
@@ -248,8 +262,9 @@ async function queryBotsCount(deps: BotsControlDeps, target: BotsTelnetTarget): 
 }
 
 /**
- * `kbengine.bots.count`:查询当前 bot 数(len(KBEngine.bots)),读输出尾行,
- * 读不到如实说。返回读到的数字串或 null(供测试断言)。
+ * `kbengine.bots.count`: queries the current bot count (len(KBEngine.bots)),
+ * reading the tail lines of the output, and says honestly when nothing can be
+ * read. Returns the number string read, or null (for test assertions).
  */
 export async function runBotsCountCommand(deps: BotsControlDeps): Promise<string | null> {
   const target = deps.getBotsTarget();

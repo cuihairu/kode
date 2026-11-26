@@ -117,7 +117,8 @@ mod tests {
 
     #[test]
     fn duplicate_roots_are_visited_once_without_truncation() {
-        // 同一根给两次(非截断场景):第二次 canonical 已访问 → 跳过,文件不重复。
+        // The same root given twice (non-truncation scenario): the second
+        // canonical is already visited → skipped, files not duplicated.
         let root = std::env::temp_dir().join(format!("kode-mcp-scan2-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("a.md"), "test").unwrap();
@@ -130,7 +131,8 @@ mod tests {
 
     #[test]
     fn root_that_is_a_file_counts_as_scan_error() {
-        // 根是文件而非目录:canonicalize 成功,read_dir 失败 → errors +1。
+        // A root that is a file rather than a directory: canonicalize
+        // succeeds, read_dir fails → errors +1.
         let root = std::env::temp_dir().join(format!("kode-mcp-scanfile-{}", std::process::id()));
         std::fs::write(&root, "not a dir").unwrap();
         let scan = collect(std::slice::from_ref(&root), "md", &[], 10);
@@ -141,8 +143,9 @@ mod tests {
 
     #[test]
     fn entry_limit_truncates_even_without_matching_files() {
-        // entry_limit(limit×100)先于文件上限:全非匹配扩展名也会截断,
-        // 无匹配文件的目录不无限走查。
+        // entry_limit (limit×100) applies before the file cap: even an
+        // entirely non-matching extension set truncates, so a directory with
+        // no matching files is not walked indefinitely.
         let root = std::env::temp_dir().join(format!("kode-mcp-scanlim-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         for i in 0..101 {
@@ -154,7 +157,8 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    /// 中途 walkdir 项 Err(子目录不可读):errors +1 继续走,不炸扫描。
+    /// A mid-walk walkdir entry error (unreadable subdirectory): errors +1
+    /// and the walk continues, it does not blow up the scan.
     #[cfg(unix)]
     #[test]
     fn unreadable_subdirectory_counts_as_scan_error() {
@@ -165,7 +169,7 @@ mod tests {
         std::fs::write(sub.join("a.md"), "x").unwrap();
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o000)).unwrap();
         let scan = collect(std::slice::from_ref(&root), "md", &[], 10);
-        // 先恢复权限再断言,保证清理可用。
+        // Restore permissions before asserting so cleanup stays possible.
         std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(scan.files.len(), 0, "locked dir yields no files");
         assert_eq!(

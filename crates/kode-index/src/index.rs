@@ -1,19 +1,24 @@
-//! 符号索引:名称倒排 + 文件级增量 + 原子 generation(书 §7 基础版,PR-007)。
+//! Symbol index: name inverted index + file-level increments + atomic
+//! generation (book §7 basic edition, PR-007).
 //!
-//! - 复用 kode-parser [`ParseRegistry`](kode_parser::dep):指纹命中零重建
-//!   (VFS-011 ParseCache + FNV-1a,IDX-003/004 基础版)+ 反向依赖索引
-//!   (IDX-002 基础版),本层不重复造缓存与指纹;
-//! - 名称倒排 `name → 槽位集`(IDX-006:定向 lookup / 前缀 workspace_symbols,
-//!   绝不 O(文件数) 扫描);
-//! - 文件级增量单元 `DocumentKey → 符号槽位表`:改一个文件只重登记该文件
-//!   的符号,其余文件的槽位与倒排原样保留(IDX-013 断言「仅影响相关文件」
-//!   的实测依据,rebuild 计数见 [`IndexStats`]);
-//! - [`SymbolIndex::update_batch`] 批量提交后一次性递增 generation(IDX-007
-//!   原子 generation 基础版);删除/改名 [`SymbolIndex::remove`] 连带清理
-//!   倒排/反向索引/继承边(IDX-014);根级 scoped 失效
-//!   [`SymbolIndex::invalidate_root`](IDX-015);
-//! - 继承链查询委托 kode-parser `resolve_parent_chain`:环显式诊断、有限
-//!   截断,绝不死循环(IDX-005 终止保障,SEM-004)。
+//! - Reuses kode-parser [`ParseRegistry`](kode_parser::dep): fingerprint hit =
+//!   zero rebuild (VFS-011 ParseCache + FNV-1a, IDX-003/004 basic edition) +
+//!   reverse dependency index (IDX-002 basic edition); this layer does not
+//!   rebuild its own cache or fingerprints;
+//! - Name inverted index `name -> slot set` (IDX-006: targeted lookup /
+//!   prefix workspace_symbols, never an O(file count) scan);
+//! - File-level increment unit `DocumentKey -> symbol slot table`: changing one
+//!   file only re-registers that file's symbols, while other files' slots and
+//!   inverted entries stay intact (the measured basis for the IDX-013
+//!   assertion "only affected files", see [`IndexStats`] for rebuild counts);
+//! - [`SymbolIndex::update_batch`] increments the generation once after the
+//!   whole batch is applied (IDX-007 atomic generation basic edition);
+//!   delete/rename [`SymbolIndex::remove`] cleans up the inverted index /
+//!   reverse index / inheritance edges in turn (IDX-014); root-level scoped
+//!   invalidation [`SymbolIndex::invalidate_root`](IDX-015);
+//! - Inheritance chain queries delegate to kode-parser `resolve_parent_chain`:
+//!   cycles are explicitly diagnosed and finitely truncated, never looping
+//!   forever (IDX-005 termination guarantee, SEM-004).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -24,29 +29,33 @@ use kode_vfs::store::{DocumentKey, RootId};
 
 use crate::symbol::{extract_records, Symbol, SymbolId, SymbolKind, SymbolRecord};
 
-/// 实测计数(增量零重建断言与 pr-007.md 报告的依据)。
+/// Measured counters (basis for the zero-rebuild increment assertions and the pr-007.md report).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct IndexStats {
-    /// update/update_batch 入口调用次数(按文件计)。
+    /// Number of update/update_batch entry invocations (counted per file).
     pub update_calls: u64,
-    /// 实际重登记符号的文件次数(指纹未命中才 +1;期望值 = 真实改动文件数)。
+    /// Number of files that actually re-registered symbols (only +1 when the fingerprint misses;
+    /// expected value = number of genuinely changed files).
     pub rebuilds: u64,
-    /// 指纹命中零重建次数。
+    /// Number of zero-rebuild fingerprint hits.
     pub cache_hits: u64,
-    /// remove/invalidate_root 清理的文件次数。
+    /// Number of files cleaned up by remove/invalidate_root.
     pub removals: u64,
-    /// generation 递增次数(批量提交只 +1)。
+    /// Number of generation increments (a batch submission only counts +1).
     pub generation_bumps: u64,
-    /// RUST-120-W:重解析但签名事实全等(body-only)被差异化跳过的次数
-    /// (不换槽位、不 bump generation,读者快照全部存活)。
+    /// RUST-120-W: number of times a reparse with identical signature facts (body-only)
+    /// was differentially skipped (no slot swap, no generation bump, all reader snapshots survive).
     pub body_only_skips: u64,
 }
 
-/// 变化类别(RUST-120-W 差异化失效的判定产物):
-/// - [`ChangeCategory::Identical`] 文本未变(指纹命中,零重建零失效);
-/// - [`ChangeCategory::BodyOnly`] 文本变了但签名事实(records+Parent+引用集)
-///   全等——索引态零变异、generation 不 bump,持有快照的读者全部不失效;
-/// - [`ChangeCategory::Signature`] 签名事实变了——重登记 + bump。
+/// Change category (the verdict of RUST-120-W differential invalidation):
+/// - [`ChangeCategory::Identical`] text unchanged (fingerprint hit, zero rebuild and
+///   zero invalidation);
+/// - [`ChangeCategory::BodyOnly`] text changed but the signature facts
+///   (records + Parent + reference set) are all identical — zero index-state
+///   mutation, no generation bump, and no reader holding a snapshot is
+///   invalidated;
+/// - [`ChangeCategory::Signature`] signature facts changed — re-register + bump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeCategory {
     Identical,
@@ -64,32 +73,32 @@ impl ChangeCategory {
     }
 }
 
-/// 单文件 update 回执(ARCH-004:明确告知发生了什么)。
+/// Single-file update receipt (ARCH-004: state clearly what happened).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexUpdateReport {
-    /// false = 指纹命中,符号零重建。
+    /// false = fingerprint hit, zero symbol rebuild.
     pub rebuilt: bool,
-    /// 非声明文件等原因(该文件不产符号)。
+    /// Reasons such as non-declaration file (the file produces no symbols).
     pub error: Option<String>,
-    /// RUST-120-W:变化类别(Identical/BodyOnly/Signature)。
+    /// RUST-120-W: change category (Identical/BodyOnly/Signature).
     pub change: ChangeCategory,
-    /// 本次新登记符号数(重建时有效)。
+    /// Symbols newly registered this pass (meaningful when rebuilt).
     pub added: usize,
-    /// 本次被替换掉的旧符号数(重建时有效)。
+    /// Old symbols displaced this pass (meaningful when rebuilt).
     pub removed: usize,
-    /// 应用后的 generation。
+    /// generation after the update is applied.
     pub generation: u64,
 }
 
-/// 批量提交回执(IDX-007:整批一个 generation)。
+/// Batch submission receipt (IDX-007: one generation per whole batch).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchReceipt {
     pub generation: u64,
-    /// 批内文件数。
+    /// Number of files in the batch.
     pub files: usize,
-    /// 批内真实重登记的文件数(指纹命中与 body-only 跳过不计)。
+    /// Files that actually re-registered (fingerprint hits and body-only skips do not count).
     pub rebuilds: u64,
-    /// 批内 body-only 差异化跳过数(RUST-120-W;不触发 generation bump)。
+    /// Body-only differential skips in the batch (RUST-120-W; no generation bump).
     pub body_only: u64,
     pub added: usize,
     pub removed: usize,
@@ -100,18 +109,19 @@ struct FileEntry {
     symbols: Vec<SymbolId>,
 }
 
-/// 符号索引。
+/// Symbol index.
 #[derive(Debug)]
 pub struct SymbolIndex {
     registry: ParseRegistry,
     slots: Vec<Option<Symbol>>,
     free: Vec<SymbolId>,
-    /// 名称倒排:name → 持有该名的槽位集(IDX-006)。
+    /// Name inverted index: name -> set of slots holding that name (IDX-006).
     by_name: BTreeMap<String, BTreeSet<SymbolId>>,
-    /// 文件级增量单元:file → 该文件符号槽位表(保文档序)。
+    /// File-level increment unit: file -> that file's symbol slot table (document order preserved).
     by_file: BTreeMap<DocumentKey, FileEntry>,
-    /// 继承边:(根, def 实体名) → Parent(IDX-002 基础版;链查询 IDX-005)。
-    /// 跨根同名实体的边互不覆盖、互不串链(KODE-FULL-017)。
+    /// Inheritance edges: (root, def entity name) -> Parent (IDX-002 basic edition;
+    /// chain queries IDX-005). Edges for same-named entities across roots neither
+    /// overwrite nor cross-chain (KODE-FULL-017).
     entity_parents: HashMap<(RootId, String), String>,
     generation: u64,
     pub stats: IndexStats,
@@ -137,10 +147,12 @@ impl SymbolIndex {
         SymbolIndex::default()
     }
 
-    /// CORE-013 基础版:解析层驻留预算的索引。预算单位 = 驻留解析产物自有
-    /// 字符串字节(下界代理,非 RSS 直测;RUST-129 实测 def 形态 RSS ≈ 该
-    /// 权重 ×3)。超预算按二次机会近似 LRU 驱逐,被驱逐文件再 update 即
-    /// 重建(缓存丢失不丢正确性);`new()` 保持无界,既有行为零变化。
+    /// CORE-013 basic edition: index with a parse-layer residency budget. Budget
+    /// unit = bytes of the resident parse product's own strings (a lower-bound proxy,
+    /// not a direct RSS measure; RUST-129 measured def-shape RSS at roughly this
+    /// weight ×3). Over-budget entries are evicted by a second-chance approximate
+    /// LRU; an evicted file simply rebuilds on the next update (cache loss loses
+    /// no correctness); `new()` stays unbounded, existing behavior unchanged.
     pub fn with_parse_budget(max_bytes: u64) -> SymbolIndex {
         SymbolIndex {
             registry: ParseRegistry::with_resident_budget(max_bytes),
@@ -148,48 +160,58 @@ impl SymbolIndex {
         }
     }
 
-    /// 解析驻留预算上限透传(无界 = None;装配观测面用)。
+    /// Pass-through of the parse residency budget cap (unbounded = None; for the
+    /// wiring-side observation surface).
     pub fn parse_budget_bytes(&self) -> Option<u64> {
         self.registry.resident_budget_bytes()
     }
 
-    /// RUST-125:缓冲活跃通知(打开/编辑触达面)——解析缓存条目驱逐缓刑
-    /// 一轮(缓刑非硬 pin,口径见 kode-parser ParseRegistry::note_buffer_
-    /// activity)。打开事件由队列装配面调用;didChange 经 update 自身触达。
+    /// RUST-125: buffer activity notification (the open/edit touch surface) —
+    /// grants parse cache entries one round of eviction reprieve (a reprieve, not
+    /// a hard pin; see kode-parser ParseRegistry::note_buffer_activity for the
+    /// exact contract). Open events are called by the queue wiring layer; didChange
+    /// reaches it via update itself.
     pub fn note_buffer_activity(&mut self, key: &DocumentKey) {
         self.registry.note_buffer_activity(key);
     }
 
-    /// RUST-125:解析驻留观测(健康面 `parseCache` 键同源)。
+    /// RUST-125: parse residency observation (same source as the health-face `parseCache` key).
     pub fn parse_cache_stats(&self) -> ParseCacheStats {
         self.registry.parse_cache_stats()
     }
 
-    /// RUST-133:解析失败文件全量枚举(索引缺口 partial 面)——注册表
-    /// 负缓存委托,按 (root, 路径) 字典序。
+    /// RUST-133: full enumeration of parse-failed files (the index-gap partial
+    /// face) — delegates to the registry negative cache, ordered by (root, path)
+    /// lexicographically.
     pub fn negative_entries(&self) -> Vec<(DocumentKey, String)> {
         self.registry.negative_entries()
     }
 
-    /// RUST-133:文件是否已入库(tracked 判定,per-URI 缺口裁定面;
-    /// by_file 直查,不枚举符号)。
+    /// RUST-133: whether the file is indexed (the tracked predicate, per-URI gap
+    /// ruling face; direct by_file lookup, no symbol enumeration).
     pub fn tracks(&self, key: &DocumentKey) -> bool {
         self.by_file.contains_key(key)
     }
 
-    /// RUST-133:文件是否被解析注册表知晓(tracked 判定的完整口径——
-    /// 解析成功但零符号的文件 by_file 为空,tracks 会误判 unindexed;
-    /// 注册表前向表对每个成功解析文件都有登记,失败/非声明文件没有)。
+    /// RUST-133: whether the file is known to the parse registry (the complete
+    /// contract for the tracked predicate — a file that parses successfully but
+    /// yields zero symbols is absent from by_file, so tracks would misjudge it as
+    /// unindexed; the registry forward table has an entry for every successfully
+    /// parsed file, and none for failed/non-declaration files).
     pub fn known_to_registry(&self, key: &DocumentKey) -> bool {
         self.registry.refs_of(key).is_some()
     }
 
-    /// 单文件增量入口(RUST-120-W 差异化失效):指纹命中 = Identical 零重建
-    /// 零失效;重解析后签名事实(records + Parent + 引用集)全等 = BodyOnly,
-    /// 索引态零变异、generation 不 bump——持有快照的读者全部存活;事实有变
-    /// = Signature 才重登记 + bump。解析缓存被 LRU 驱逐时旧引用集取不到 =
-    /// 保守按 Signature(宁多失效绝不漏报),旧 records 为空的首次入库不受
-    /// 此保守项影响。
+    /// Single-file increment entry (RUST-120-W differential invalidation):
+    /// fingerprint hit = Identical with zero rebuild and zero invalidation;
+    /// after reparsing, signature facts (records + Parent + reference set) all
+    /// identical = BodyOnly, with zero index-state mutation and no generation
+    /// bump — every reader holding a snapshot survives; facts changed =
+    /// Signature, which alone re-registers + bumps. When the parse cache has
+    /// been evicted by LRU the old reference set is unavailable = conservatively
+    /// treated as Signature (better to invalidate too often than to miss a report);
+    /// the first ingestion, whose old records are empty, is not affected by this
+    /// conservative fallback.
     pub fn update(&mut self, key: DocumentKey, text: &str) -> IndexUpdateReport {
         self.stats.update_calls += 1;
         let (rebuilt, change, error, added, removed) = self.ingest_classified(&key, text);
@@ -212,9 +234,9 @@ impl SymbolIndex {
         }
     }
 
-    /// 批量提交:全部文件应用完成后一次性递增 generation(IDX-007);分类后
-    /// 仅 Signature 触发 bump(RUST-120-W:纯 Identical/BodyOnly 批读者快照
-    /// 全部不失效)。
+    /// Batch submission: the generation increments once after every file is applied
+    /// (IDX-007); after classification only Signature triggers a bump
+    /// (RUST-120-W: a purely Identical/BodyOnly batch invalidates no reader snapshots).
     pub fn update_batch(&mut self, batch: &[(DocumentKey, String)]) -> BatchReceipt {
         let before_rebuilds = self.stats.rebuilds;
         let before_body_only = self.stats.body_only_skips;
@@ -233,7 +255,8 @@ impl SymbolIndex {
         }
         let rebuilds = self.stats.rebuilds - before_rebuilds;
         let body_only = self.stats.body_only_skips - before_body_only;
-        // 零签名变化的批不递增 generation(读者快照不失效;与单文件语义一致)。
+        // A batch with zero signature changes does not increment the generation
+        // (reader snapshots stay valid; same semantics as the single-file path).
         if rebuilds > 0 {
             self.bump();
         }
@@ -247,10 +270,12 @@ impl SymbolIndex {
         }
     }
 
-    /// 分类 ingest 核心(不动 stats/generation;调用方按类别记账):指纹命中
-    /// → Identical;重解析后旧新签名事实全等 → BodyOnly(索引态零变异);
-    /// 否则 Signature(差量替换)。旧事实在注册表更新前抓取(旧引用集经
-    /// `refs_of`;旧 records 由槽位重构,零额外驻留;旧 Parent 经继承边表)。
+    /// Classified ingest core (does not touch stats/generation; callers bookkeep by
+    /// category): fingerprint hit -> Identical; after reparsing the old and new
+    /// signature facts are identical -> BodyOnly (zero index-state mutation);
+    /// otherwise Signature (differential replacement). Old facts are captured before
+    /// the registry update (old reference set via `refs_of`; old records rebuilt
+    /// from slots, zero extra residency; old Parent via the inheritance edge table).
     fn ingest_classified(
         &mut self,
         key: &DocumentKey,
@@ -272,9 +297,11 @@ impl SymbolIndex {
             .and_then(|entity| self.entity_parents.get(&(key.root, entity)).cloned());
         let had_old_records = self.by_file.contains_key(key);
         let (registry_report, unit) = self.registry.update(key.clone(), text);
-        // registry 不变式:rebuilt=true 恒带解析产物——负缓存命中与非声明
-        // 文件两条无产物路径都返回 rebuilt=false。故「重建但无产物」不可
-        // 表达,与指纹命中同出口早退(Identical,索引态零变异)。
+        // Registry invariant: rebuilt=true always carries a parse product — both
+        // product-less paths (negative cache hit and non-declaration file) return
+        // rebuilt=false. So "rebuilt but no product" is inexpressible and exits early
+        // through the same branch as a fingerprint hit (Identical, zero index-state
+        // mutation).
         let unit = if registry_report.rebuilt {
             unit.as_deref()
         } else {
@@ -292,8 +319,10 @@ impl SymbolIndex {
         let (new_records, declaration) = extract_records(key, unit);
         let new_refs = self.registry.refs_of(key).cloned();
         let new_parent = declaration.as_ref().and_then(|(_, p)| p.clone());
-        // 旧引用集缺席且旧文件确有记录 = 解析缓存被驱逐,旧引用事实未知 →
-        // 保守 Signature(多失效不漏报);首次入库(无旧记录)不在此列。
+        // Old reference set absent while the old file does have records = the parse
+        // cache was evicted and the old reference facts are unknown -> conservatively
+        // Signature (prefer over-invalidating to under-reporting); the first ingestion
+        // (no old records) is exempt.
         let refs_known = old_refs.is_some() || !had_old_records;
         let body_only = refs_known
             && new_records == old_records
@@ -312,8 +341,9 @@ impl SymbolIndex {
         )
     }
 
-    /// 删除/改名失效(VFS-012/IDX-014):符号、倒排、反向依赖、继承边连带清理。
-    /// 返回移除的符号数。改名 = remove(old) + update(new)。
+    /// Delete/rename invalidation (VFS-012/IDX-014): cleans up symbols, the inverted
+    /// index, reverse dependencies and inheritance edges in one sweep.
+    /// Returns the number of removed symbols. Rename = remove(old) + update(new).
     pub fn remove(&mut self, key: &DocumentKey) -> usize {
         let removed = self.detach_file(key);
         self.registry.invalidate(key);
@@ -324,7 +354,8 @@ impl SymbolIndex {
         removed
     }
 
-    /// 根级 scoped 失效(IDX-015):只触该根文件,不扫全仓。返回移除符号数。
+    /// Root-level scoped invalidation (IDX-015): touches only that root's files, never
+    /// scanning the whole repo. Returns the number of removed symbols.
     pub fn invalidate_root(&mut self, root: RootId) -> usize {
         let keys: Vec<DocumentKey> = self
             .by_file
@@ -348,13 +379,16 @@ impl SymbolIndex {
         self.generation
     }
 
-    /// CORE-014 一致快照读:捕获当前 generation 并返回只读查询视图。
+    /// CORE-014 consistent snapshot read: captures the current generation and returns a
+    /// read-only query view.
     ///
-    /// 快照存活期间,`&mut` 变更路径(update/update_batch/remove/
-    /// invalidate_root)被借用检查器**编译期拒绝**——读写不一致(定义与
-    /// 引用来自不同 generation)在本核内结构性不可能。响应绑定面:装配层
-    /// 把 `generation()` 钉在响应上,晚到旧代结果用 [`SymbolIndex::is_current`]
-    /// 判旧即弃(绝不发布)。
+    /// While the snapshot lives, the `&mut` mutation paths (update/update_batch/
+    /// remove/invalidate_root) are **rejected at compile time** by the borrow checker
+    /// — a read/write inconsistency (definition and reference from different
+    /// generations) is structurally impossible inside this core. Response-binding
+    /// face: the wiring layer pins `generation()` onto the response and late-arriving
+    /// stale results are detected via [`SymbolIndex::is_current`] and dropped
+    /// (never published).
     pub fn read_snapshot(&self) -> IndexSnapshot<'_> {
         IndexSnapshot {
             index: self,
@@ -362,13 +396,14 @@ impl SymbolIndex {
         }
     }
 
-    /// 陈旧响应检测:`generation` 是否仍是当前代际。晚到旧代结果
-    /// (generation 落后)必须丢弃,不得覆盖新代视图(ARCH-005)。
+    /// Stale response detection: whether `generation` is still the current generation.
+    /// Late-arriving results from an older generation (behind) must be dropped and must
+    /// never overwrite the newer-generation view (ARCH-005).
     pub fn is_current(&self, generation: u64) -> bool {
         self.generation == generation
     }
 
-    /// 名称定向查找(IDX-006;结果按 name/kind/file/line 确定性排序)。
+    /// Name-directed lookup (IDX-006; results sorted deterministically by name/kind/file/line).
     pub fn lookup(&self, name: &str) -> Vec<Symbol> {
         self.ids_of_name(name)
             .into_iter()
@@ -376,7 +411,7 @@ impl SymbolIndex {
             .collect()
     }
 
-    /// 名称 + 种类定向查找。
+    /// Name + kind directed lookup.
     pub fn lookup_kind(&self, name: &str, kind: SymbolKind) -> Vec<Symbol> {
         self.ids_of_name(name)
             .into_iter()
@@ -385,8 +420,8 @@ impl SymbolIndex {
             .collect()
     }
 
-    /// 前缀扫描(workspace symbol;`prefix` 空串 = 全部;`limit` 0 = 不限)。
-    /// 走 BTreeMap 有序范围,不线性扫描符号总数。
+    /// Prefix scan (workspace symbol; an empty `prefix` means all; `limit` 0 means unlimited).
+    /// Walks the BTreeMap ordered range instead of linearly scanning the total symbol count.
     pub fn workspace_symbols(&self, prefix: &str, limit: usize) -> Vec<Symbol> {
         let mut out = Vec::new();
         for (name, ids) in self.by_name.range(prefix.to_string()..) {
@@ -407,7 +442,7 @@ impl SymbolIndex {
         out
     }
 
-    /// 文件内符号(文档序;文件级增量的观察口)。
+    /// Symbols within a file (document order; the observation point of file-level increments).
     pub fn symbols_in_file(&self, key: &DocumentKey) -> Vec<Symbol> {
         self.by_file
             .get(key)
@@ -421,14 +456,17 @@ impl SymbolIndex {
             .unwrap_or_default()
     }
 
-    /// 反向依赖:哪些文件引用了符号 `name`(类型/Parent/组件/接口/注册;
-    /// 复用 parser RefSet,IDX-002 基础版)。
+    /// Reverse dependencies: which files reference the symbol `name` (type/Parent/
+    /// component/interface/registration; reuses the parser RefSet, IDX-002 basic
+    /// edition).
     pub fn dependents_of(&self, name: &str) -> Vec<DocumentKey> {
         self.registry.dependents_of(name)
     }
 
-    /// 实体继承链(IDX-005:环显式诊断并截断,有限步终止)。继承边按根
-    /// 隔离(KODE-FULL-017):他根同名实体的 Parent 边不参与本根链解析。
+    /// Entity inheritance chain (IDX-005: cycles are explicitly diagnosed and truncated,
+    /// terminating in finitely many steps). Inheritance edges are isolated per root
+    /// (KODE-FULL-017): Parent edges for same-named entities in other roots do not
+    /// participate in this root's chain resolution.
     pub fn entity_chain(&self, root: RootId, entity: &str) -> (Vec<ChainNode>, Option<Diagnostic>) {
         resolve_parent_chain(entity, &self.scoped_parents(root))
     }
@@ -441,12 +479,14 @@ impl SymbolIndex {
         self.by_file.len()
     }
 
-    /// 已登记继承边的实体清单(观测/测试用;按根隔离,KODE-FULL-017)。
+    /// Inventory of entities with registered inheritance edges (for observation/tests;
+    /// isolated per root, KODE-FULL-017).
     pub fn entity_declarations_in(&self, root: RootId) -> HashMap<String, String> {
         self.scoped_parents(root)
     }
 
-    /// 单根继承边视图:name → Parent(链解析/观测共用同一隔离口径)。
+    /// Single-root inheritance edge view: name -> Parent (chain resolution and
+    /// observation share the same isolation semantics).
     fn scoped_parents(&self, root: RootId) -> HashMap<String, String> {
         self.entity_parents
             .iter()
@@ -455,12 +495,13 @@ impl SymbolIndex {
             .collect()
     }
 
-    // ---- 内部:文件级差量替换 ----
+    // ---- internal: file-level differential replacement ----
 
-    // (RUST-120-W 起 None 臂由 ingest_classified 直接走 detach_file,
-    //  旧分发壳 replace_file 删除。)
+    // (Since RUST-120-W the None arm goes straight to detach_file from
+    //  ingest_classified; the old dispatch shell replace_file was removed.)
 
-    /// 已抽取记录的装入(records/declaration 由分类路径抽取过,免二次抽取)。
+    /// Install already-extracted records (records/declaration were extracted by the
+    /// classification path, so no second extraction pass is needed).
     fn replace_file_with_records(
         &mut self,
         key: &DocumentKey,
@@ -481,7 +522,8 @@ impl SymbolIndex {
         (added, removed)
     }
 
-    /// 摘除一个文件的全部符号(差量清倒排,槽位回收)。返回摘除数。
+    /// Detach all symbols of one file (differentially clears the inverted index, recycles
+    /// slots). Returns the number detached.
     fn detach_file(&mut self, key: &DocumentKey) -> usize {
         let Some(entry) = self.by_file.remove(key) else {
             return 0;
@@ -497,8 +539,9 @@ impl SymbolIndex {
                 self.free.push(*id);
             }
         }
-        // 继承边跟随 def 文件摘除(改名/删除即失效,IDX-014);按
-        // (根, 实体) 摘,他根同名实体的边不受牵连(KODE-FULL-017)。
+        // Inheritance edges are detached along with the def file (rename/delete implies
+        // invalidation, IDX-014); detach per (root, entity), so edges of same-named
+        // entities in other roots are untouched (KODE-FULL-017).
         if file_kind_of_uri(&key.uri) == FileKind::Def {
             if let Some(entity) = crate::symbol::def_entity_name(key.uri.as_path()) {
                 self.entity_parents.remove(&(key.root, entity));
@@ -542,7 +585,7 @@ impl SymbolIndex {
     }
 }
 
-/// CORE-014 一致快照读视图(见 [`SymbolIndex::read_snapshot`])。
+/// CORE-014 consistent snapshot read view (see [`SymbolIndex::read_snapshot`]).
 #[derive(Debug)]
 pub struct IndexSnapshot<'a> {
     index: &'a SymbolIndex,
@@ -550,32 +593,32 @@ pub struct IndexSnapshot<'a> {
 }
 
 impl IndexSnapshot<'_> {
-    /// 捕获时点的 generation(响应绑定与陈旧检测的判定值)。
+    /// The generation at capture time (the value used for response binding and staleness checks).
     pub fn generation(&self) -> u64 {
         self.generation
     }
 
-    /// 名称查找(转发 [`SymbolIndex::lookup`],同确定性排序)。
+    /// Name lookup (forwards to [`SymbolIndex::lookup`], the same deterministic ordering).
     pub fn lookup(&self, name: &str) -> Vec<Symbol> {
         self.index.lookup(name)
     }
 
-    /// 名称+种类定向查找。
+    /// Name + kind directed lookup.
     pub fn lookup_kind(&self, name: &str, kind: SymbolKind) -> Vec<Symbol> {
         self.index.lookup_kind(name, kind)
     }
 
-    /// 文件内符号。
+    /// Symbols within a file.
     pub fn symbols_in_file(&self, key: &DocumentKey) -> Vec<Symbol> {
         self.index.symbols_in_file(key)
     }
 
-    /// 反向受影响集。
+    /// Reverse affected set.
     pub fn dependents_of(&self, name: &str) -> Vec<DocumentKey> {
         self.index.dependents_of(name)
     }
 
-    /// 符号总数。
+    /// Total symbol count.
     pub fn symbol_count(&self) -> usize {
         self.index.symbol_count()
     }
@@ -593,7 +636,7 @@ mod tests {
         DocumentKey::new(RootId(1), CanonicalUri::from_path(path))
     }
 
-    // ---- CORE-014 一致快照读 ----
+    // ---- CORE-014 consistent snapshot read ----
 
     #[test]
     fn snapshot_captures_generation_and_queries_frozen_view() {
@@ -607,12 +650,14 @@ mod tests {
             assert_eq!(snapshot.generation(), gen, "快照钉住捕获时点代际");
             assert_eq!(snapshot.lookup("hp").len(), 2, "只读视图照常可查");
             assert_eq!(snapshot.symbol_count(), index.symbol_count());
-            // 借用检查器结构性保证:snapshot 存活期间 update/remove/
-            // update_batch/invalidate_root 等 &mut 路径编译期拒绝(读写
-            // 不一致在核内不可能);作用域结束借用即终止。
+            // Structural guarantee from the borrow checker: while the snapshot is
+            // alive the &mut paths update/remove/update_batch/invalidate_root are
+            // rejected at compile time (a read/write inconsistency is impossible
+            // inside the core); the borrow ends when the scope does.
         }
         index.update(key("/proj/C.def"), text);
-        // 捕获代际已陈旧:is_current 识别旧代,晚到旧代结果必须丢弃。
+        // The captured generation is already stale: is_current recognises the older
+        // generation, and late-arriving older-generation results must be dropped.
         assert!(!index.is_current(gen), "变更后旧代必须被判陈旧");
         assert!(index.is_current(index.generation()));
     }
@@ -623,7 +668,8 @@ mod tests {
         let k = key("/proj/A.def");
         index.update(k.clone(), "<root>\n</root>\n");
         let gen = index.generation();
-        // 同键同文本:指纹命中零重建,generation 不动(改文档既定语义)。
+        // Same key, same text: fingerprint hit, zero rebuild, generation unchanged
+        // (the established semantics for document changes).
         let report = index.update(k.clone(), "<root>\n</root>\n");
         assert!(!report.rebuilt);
         assert_eq!(index.generation(), gen, "零重建不 bump generation");
@@ -635,17 +681,21 @@ mod tests {
         let mut index = SymbolIndex::new();
         index.update(key("/proj/A.def"), "<root>\n</root>\n");
         let pinned = index.generation();
-        // 模拟装配层把 pinned 钉在响应上,期间索引又被推进一代。
+        // Simulates the wiring layer pinning `pinned` on a response while the index
+        // advances another generation in the meantime.
         index.update(key("/proj/B.def"), "<root>\n</root>\n");
-        // 晚到响应携 pinned:判旧 → 调用方必须丢弃,不得覆盖新代视图。
+        // A late response carrying `pinned`: judged stale -> the caller must drop it
+        // and must not overwrite the newer-generation view.
         assert!(!index.is_current(pinned));
         assert_eq!(index.generation(), pinned + 1);
     }
 
-    /// 摘除契约(原 replace_file(key, None) 面):只摘旧符号、零新增,返回
-    /// (added=0, removed=旧符号数),倒排/继承边/by_file 连带清理。生产路径
-    /// update/update_batch 只在 registry rebuilt 时传 Some,该分支按函数自身
-    /// 契约直接验证(unit 级精度)。
+    /// Detachment contract (the old replace_file(key, None) face): detaches only old
+    /// symbols with zero additions, returning (added=0, removed=old symbol count),
+    /// and cleans up the inverted index / inheritance edges / by_file in turn. The
+    /// production paths update/update_batch only pass Some when the registry rebuilt,
+    /// so this branch is verified against the function's own contract directly (unit
+    /// level precision).
     #[test]
     fn replace_file_with_none_unit_only_detaches_old_symbols() {
         let mut index = SymbolIndex::new();
@@ -676,10 +726,12 @@ mod tests {
         );
     }
 
-    /// detach_file 两条防御臂:公共 API 下「by_file 条目 → 槽位恒占用、倒排
-    /// 恒含已附着 id」是不变量(attach/detach 同步维护),两臂只在内部状态
-    /// 被破坏时兜底——按仓库判例(防御臂以测试内状态构造直接验证)钉住
-    /// 「摘除不 panic、计数如实返回」。
+    /// The two defensive arms of detach_file: under the public API "by_file entry ->
+    /// slot always occupied, inverted index always contains the attached id" is an
+    /// invariant (attach/detach maintain them in lockstep), so both arms only serve as
+    /// a fallback when internal state has been corrupted — per the repo precedent
+    /// (defensive arms are verified directly by constructing state inside the test),
+    /// pinning "detachment does not panic and counts are returned faithfully".
     #[test]
     fn detach_file_defensive_arms_tolerate_broken_internal_state() {
         let mut index = SymbolIndex::new();
@@ -687,12 +739,14 @@ mod tests {
         index.update(k.clone(), &def_with_property("UINT32"));
         assert_eq!(index.symbol_count(), 2, "实体 + hp");
 
-        // 臂一:倒排丢失该名(槽位仍在)——摘除照常,计数如实。
+        // Arm one: the inverted index lost the name (the slot is still there) —
+        // detachment proceeds as usual and the count is faithful.
         assert!(index.by_name.remove("hp").is_some(), "先摘掉倒排键");
         assert_eq!(index.detach_file(&k), 2);
         assert!(index.lookup("hp").is_empty());
 
-        // 臂二:槽位悬空(by_file 条目仍在)——摘除跳过悬空 id。
+        // Arm two: the slot is dangling (the by_file entry is still present) —
+        // detachment skips the dangling id.
         index.update(k.clone(), &def_with_property("UINT16"));
         let ids: Vec<usize> = index.symbols_in_file(&k).iter().map(|s| s.id).collect();
         assert_eq!(ids.len(), 2);
@@ -704,14 +758,16 @@ mod tests {
         );
         assert_eq!(index.tracked_files(), 0, "by_file 条目摘除");
 
-        // 未入库键摘除:let-else 早退零计数(remove 契约面)。
+        // Detaching an unindexed key: the let-else early-returns with a zero count
+        // (the remove contract face).
         assert_eq!(index.detach_file(&key("/proj/ghost.def")), 0);
         assert_eq!(index.remove(&key("/proj/ghost.def")), 0);
     }
 
     #[test]
     fn parse_budget_preserves_lookup_correctness() {
-        // 预算 1B:任何产物都超限,插入即驱逐——最保守形态下查询面必须完好。
+        // Budget of 1 byte: every product exceeds it, so insertion evicts immediately —
+        // the query surface must stay intact under this most conservative shape.
         let mut index = SymbolIndex::with_parse_budget(1);
         let mut keys = Vec::new();
         for i in 0..5 {
@@ -722,10 +778,12 @@ mod tests {
             keys.push(k.clone());
             index.update(k, "<root><Properties><hp><Type>UINT32</Type><Flags>BASE</Flags></hp></Properties></root>");
         }
-        // 全部被驱逐:符号表仍有各文件产物(符号层独立于解析缓存),lookup 正常。
+        // Everything evicted: the symbol table still holds each file's product (the
+        // symbol layer is independent of the parse cache), and lookup works normally.
         let found = index.lookup("hp");
         assert_eq!(found.len(), 5, "符号层不受解析缓存驱逐影响");
-        // 被驱逐文件再 update:重建(解析层缓存丢失面),符号结果不双份。
+        // Re-updating the evicted file: a rebuild (the parse-layer cache-loss face), and
+        // symbol results are not duplicated.
         let report = index.update(
             keys[2].clone(),
             "<root><Properties><hp><Type>UINT32</Type><Flags>BASE</Flags></hp></Properties></root>",
@@ -735,7 +793,7 @@ mod tests {
         assert_eq!(again.len(), 5, "重建后符号不重复");
     }
 
-    // ---- 访问面与透传委托 ----
+    // ---- access surface and pass-through delegation ----
 
     #[test]
     fn change_category_as_str_is_stable_golden_literal() {
@@ -778,7 +836,7 @@ mod tests {
     #[test]
     fn tracks_and_known_to_registry_cover_file_states() {
         let mut index = SymbolIndex::new();
-        // 有符号文件:双面都认。
+        // A file with symbols: both faces accept it.
         let avatar = key("/proj/entities/Avatar.def");
         index.update(
             avatar.clone(),
@@ -787,12 +845,13 @@ mod tests {
         assert!(index.tracks(&avatar));
         assert!(index.known_to_registry(&avatar));
 
-        // 从未见过的键:双面都不认。
+        // A key never seen before: neither face accepts it.
         let ghost = key("/proj/Ghost.def");
         assert!(!index.tracks(&ghost));
         assert!(!index.known_to_registry(&ghost));
 
-        // 非声明文件:by_file 无条目、注册表无前向登记,双面都不认。
+        // A non-declaration file: no by_file entry and no forward registration in the
+        // registry, so neither face accepts it.
         let notes = key("/proj/notes.py");
         index.update(notes.clone(), "x = 1\n");
         assert!(!index.tracks(&notes));
@@ -813,17 +872,17 @@ mod tests {
             "<root>\n<Parent>Avatar</Parent>\n</root>\n",
         );
         let snapshot = index.read_snapshot();
-        // 名称+种类定向查找。
+        // Name + kind directed lookup.
         let hp = snapshot.lookup_kind("hp", SymbolKind::Property);
         assert_eq!(hp.len(), 1);
         assert_eq!(hp[0].file, avatar);
-        // 文件内符号:Avatar = 实体本体 + hp(文档序)。
+        // Symbols within a file: Avatar = the entity body itself + hp (document order).
         let in_file = snapshot.symbols_in_file(&avatar);
         assert_eq!(in_file.len(), 2);
         assert_eq!(in_file[0].kind, SymbolKind::Entity);
-        // 反向受影响集:Monster 以 Parent 引用 Avatar。
+        // Reverse affected set: Monster references Avatar via Parent.
         assert_eq!(snapshot.dependents_of("Avatar"), vec![monster]);
-        // 未知名:三面全空。
+        // An unknown name: all three faces empty.
         assert!(snapshot
             .lookup_kind("ghost", SymbolKind::Property)
             .is_empty());
@@ -831,7 +890,7 @@ mod tests {
         assert!(snapshot.dependents_of("ghost").is_empty());
     }
 
-    // ---- RUST-120-W 变化分类差异化失效 ----
+    // ---- RUST-120-W change-classification differential invalidation ----
 
     fn def_with_property(dtype: &str) -> String {
         format!(
@@ -841,12 +900,13 @@ mod tests {
 
     #[test]
     fn parse_cache_stats_forward_budget_resident_and_evictions() {
-        // 无界构造:budget None、resident 恒 0(不追踪)。
+        // Unbounded construction: budget None, resident always 0 (not tracked).
         let stats = SymbolIndex::new().parse_cache_stats();
         assert_eq!(stats.budget_bytes, None);
         assert_eq!(stats.resident_bytes, 0);
         assert_eq!(stats.evictions, 0);
-        // 有预算构造:budget 透传;入库后 resident/valid 增长。
+        // Budgeted construction: the budget passes through; resident/valid grow after
+        // ingestion.
         let mut index = SymbolIndex::with_parse_budget(4096);
         let stats = index.parse_cache_stats();
         assert_eq!(stats.budget_bytes, Some(4096));
@@ -856,8 +916,9 @@ mod tests {
         assert!(stats.resident_bytes > 0, "入库后驻留权重必须增长");
         assert_eq!(stats.valid, 1);
         assert_eq!(stats.negative, 0);
-        // 极小预算:插入即逐(单条目超限),驱逐计数透传;触达无效条目
-        // =零操作不 panic。
+        // A tiny budget: insertion evicts immediately (a single entry already exceeds
+        // it), and the eviction count passes through; touching an invalid entry is a
+        // no-op that does not panic.
         let mut tiny = SymbolIndex::with_parse_budget(1);
         tiny.update(key("/proj/T.def"), &def_with_property("UINT32"));
         assert!(tiny.parse_cache_stats().evictions >= 1);
@@ -884,7 +945,8 @@ mod tests {
         index.update(k.clone(), &def_with_property("UINT32"));
         let gen = index.generation();
         let records_before = index.symbols_in_file(&k).len();
-        // 尾注不位移任何已捕获元素的行号:模型全等 → BodyOnly(索引态零变异)。
+        // The trailing comment shifts no captured element's line number: the model is
+        // fully identical -> BodyOnly (zero index-state mutation).
         let body_only_text = format!(
             "{}<!-- trailing comment, model identical -->\n",
             def_with_property("UINT32")
@@ -908,7 +970,7 @@ mod tests {
         let report = index.update(k.clone(), &def_with_property("UINT64"));
         assert_eq!(report.change, ChangeCategory::Signature);
         assert_eq!(index.generation(), gen + 1, "签名变化才 bump");
-        // 实体文件级符号 + hp 属性 = 2 条全量重登记。
+        // The file-level entity symbol + the hp property = 2 records fully re-registered.
         assert_eq!((report.added, report.removed), (2, 2));
         let hp = index.lookup("hp");
         assert_eq!(hp.len(), 1);
@@ -929,7 +991,8 @@ mod tests {
             Some("Monster")
         );
         let gen = index.generation();
-        // 尾注版:records 与引用集均等,唯 Parent 变 → 声明面判 Signature。
+        // The variant with a trailing note: records and the reference set are both
+        // equal, only Parent changes -> the declaration face judges Signature.
         let v2 = "<root>\n\t<Parent> Dragon </Parent>\n</root>\n";
         let report = index.update(k.clone(), v2);
         assert_eq!(
@@ -954,8 +1017,8 @@ mod tests {
         let k = key("/proj/C.def");
         index.update(k.clone(), "<root>\n</root>\n");
         let gen = index.generation();
-        // records(records 空)与 Parent(无)均等,唯 interface_defs 引用变
-        // → RefSet 引用面判 Signature。
+        // records (empty) and Parent (none) are both equal; only the interface_defs
+        // reference changes -> the RefSet reference face judges Signature.
         let v2 = "<root>\n\t<Interfaces>\n\t\t<interface> BaseInterface </interface>\n\t</Interfaces>\n</root>\n";
         let report = index.update(k.clone(), v2);
         assert_eq!(
@@ -970,16 +1033,19 @@ mod tests {
 
     #[test]
     fn evicted_parse_reparse_still_classifies_body_only() {
-        // 解析缓存被驱逐(极小预算,单条目超限即逐 + 第二文件挤占)后同文本
-        // 再 update:指纹未命中重解析发生,但引用表独立于解析缓存生存 → 旧
-        // 签名事实仍可得 → 判 BodyOnly,读者快照不因缓存驱逐被误失效。
-        // (ingest_classified 的"旧引用集缺席保守 Signature"守卫为防御纵深
-        // ——今日公共 API 不可达:refs 表只在 remove/invalidate_root 连带
-        // 清理,而那两路同时摘 records。)
+        // After the parse cache is evicted (tiny budget: a single entry exceeds it and
+        // is evicted immediately, plus a second file squeezing it out), updating the same
+        // text again: the fingerprint misses so a reparse happens, but the reference table
+        // outlives the parse cache -> the old signature facts are still obtainable ->
+        // judged BodyOnly, so reader snapshots are not falsely invalidated by the cache
+        // eviction. (The "old reference set absent -> conservative Signature" guard in
+        // ingest_classified is defense in depth — unreachable through the public API
+        // today: the refs table is only cleaned up together with remove/invalidate_root,
+        // and those two paths detach records at the same time.)
         let mut index = SymbolIndex::with_parse_budget(1);
         let k = key("/proj/A.def");
         index.update(k.clone(), &def_with_property("UINT32"));
-        // 挤占:插入 B 把 A 的解析缓存逐出(符号层不受影响)。
+        // Squeeze-out: inserting B evicts A's parse cache (the symbol layer is unaffected).
         index.update(key("/proj/B.def"), &def_with_property("UINT16").repeat(20));
         let gen = index.generation();
         let rebuilds_before = index.stats.rebuilds;
@@ -1002,7 +1068,8 @@ mod tests {
         index.update(a.clone(), &def_with_property("UINT32"));
         index.update(b.clone(), &def_with_property("UINT16"));
         let gen = index.generation();
-        // 同文本(Identical)+ 尾注(BodyOnly):零签名变化 → 不 bump。
+        // Identical text (Identical) + a trailing note (BodyOnly): zero signature change
+        // -> no bump.
         let body_only_b = format!("{}<!-- note -->\n", def_with_property("UINT16"));
         let receipt = index.update_batch(&[
             (a.clone(), def_with_property("UINT32")),

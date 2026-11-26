@@ -1,30 +1,30 @@
-//! INDEX-DISCIPLINE-001 ①:索引重扫事件合并器——纯决策核(Rust 主路径,
-//! TS 侧 `src/backend/indexEventCoalescer.ts` 只持状态+定时器薄壳,镜像
-//! 回退同构)。
+//! INDEX-DISCIPLINE-001 (1): index-rescan event coalescer -- pure decision core (the Rust main path;
+//! the TS-side `src/backend/indexEventCoalescer.ts` is only a thin shell holding state + timer, a mirror fallback
+//! with the same shape).
 //!
-//! 用户令(2026-11-18):「频繁修改的文件要合并队列,最近修改的合并放队尾,
-//! 同一文件反复建索引不对」。纪律:
-//! - **300ms 时间窗**:窗口内同文件 N 次变更只保留最后一次(最新覆盖)——
-//!   调用方(薄壳)以 Map 承载 latest-wins,本核只做窗口到期判定;
-//! - **尾随顺延**:窗口到期但文件仍在编辑中(isDirty)→ 顺延到下一窗
-//!   (队尾合并语义:顺延件的落队序按最后推送时刻排,最近修改的最后出);
-//! - **有界顺延**:dirty 顺延有总上限(max_defer)——外部写盘撞上长编辑
-//!   会话时,到上限后按盘真相 flush,绝不无限饿死重扫。
+//! user order (2026-11-18): "frequently modified files must be coalesced in the queue; coalesce the most recently modified at the queue tail;
+//! re-indexing the same file over and over is wrong." Discipline:
+//! - **300ms time window**: within the window, N changes to the same file keep only the last one (newest overwrites) --
+//!   the caller (thin shell) carries latest-wins in a Map; this core only decides window expiry;
+//! - **trailing deferral**: window expired but the file is still being edited (isDirty) -> defer to the next window
+//!   (queue-tail coalescing semantics: deferred entries are queued by their last-push time, most recently modified exits last);
+//! - **bounded deferral**: dirty deferral has a total cap (max_defer) -- when external disk writes collide with a long editing
+//!   session, once the cap is reached flush according to the disk truth; never starve rescans indefinitely.
 //!
-//! 纯函数无状态:pending 清单/时钟全由调用方喂入(时钟单一真相在 TS 事件
-//! 层),本核零内部状态——可确定性单测,server 侧无隐藏可变状态。
+//! Pure stateless functions: the pending list / clock are all fed in by the caller (single clock truth lives in the TS event
+//! layer); this core holds zero internal state -- deterministically unit-testable, no hidden mutable state on the server side.
 
 use crate::rpc::RpcRegistry;
 use serde_json::{json, Value};
 
-/// 合并窗口(毫秒)。窗口内同文件多事件并一,窗口到期才进重扫队列。
+/// Coalescing window (ms). Multiple events for the same file within the window merge into one; only window expiry enters the rescan queue.
 pub const DEFAULT_COALESCE_WINDOW_MS: u64 = 300;
 
-/// dirty 顺延总上限(毫秒)。窗口可反复顺延,但自首次推送起不得超过此界
-/// (外部写盘 + 长编辑会话下,到界按盘真相 flush,不无限饿死)。
+/// Total cap on dirty deferral (ms). The window may defer repeatedly, but measured from the first push it must not exceed this bound
+/// (with external disk writes + a long editing session, reaching the bound flushes per the disk truth rather than starving forever).
 pub const DEFAULT_COALESCE_MAX_DEFER_MS: u64 = 5000;
 
-/// pending 条目(调用方喂入;`first/lastPushedAtMs` 为 TS 侧单调时钟)。
+/// Pending entries (fed by the caller; `first/lastPushedAtMs` use the TS-side monotonic clock).
 #[derive(Debug, Clone)]
 pub struct PendingEntry {
     pub file: String,
@@ -32,8 +32,8 @@ pub struct PendingEntry {
     pub last_pushed_at_ms: u64,
 }
 
-/// 决策结果:`flush` 按最后推送时刻**升序**(最旧先出队,最近修改的落
-/// 队尾);`defer` = 窗口已到但 dirty 顺延;`hold` = 窗口未到的条数。
+/// Decision result: `flush` in **ascending** last-push order (oldest dequeues first, most recently modified lands
+/// at the queue tail); `defer` = window expired but dirty, deferred; `hold` = count of entries whose window has not expired.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CoalesceDecision {
     pub flush: Vec<String>,
@@ -41,11 +41,11 @@ pub struct CoalesceDecision {
     pub hold: usize,
 }
 
-/// 纯决策核:给定 pending 清单 + 当前 dirty 集 + 时钟,产出本轮决策。
-/// 判定顺序(逐文件):
-/// 1. `now - last < window` → hold(窗口内合并中);
-/// 2. dirty 且 `now - first < max_defer` → defer(尾随顺延,下窗再看);
-/// 3. 其余 → flush(按 last 升序,最近修改的排最后=队尾)。
+/// Pure decision core: given the pending list + current dirty set + clock, produce this round's decision.
+/// Decision order (per file):
+/// 1. `now - last < window` -> hold (still coalescing within the window);
+/// 2. dirty and `now - first < max_defer` -> defer (trailing deferral, revisit next window);
+/// 3. otherwise -> flush (ascending by last, most recently modified last = queue tail).
 pub fn decide_coalesce(
     pending: &[PendingEntry],
     dirty: &[String],
@@ -67,7 +67,7 @@ pub fn decide_coalesce(
             flush_with_time.push((entry.last_pushed_at_ms, entry.file.clone()));
         }
     }
-    // 最近修改的合并放队尾:last 升序 → 薄壳按序入队,最新触碰的落队尾。
+    // Most recently modified coalesces at the queue tail: ascending by last -> the shell enqueues in order, the most recently touched lands at the tail.
     flush_with_time.sort_by_key(|(at, _)| *at);
     decision.flush = flush_with_time.into_iter().map(|(_, file)| file).collect();
     decision
@@ -77,9 +77,9 @@ pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/events/coalesce", coalesce_handler);
 }
 
-/// `$/kode/events/coalesce` 桥:pending/dirty/时钟全由 TS 薄壳喂入,本面
-/// 只回决策。载荷缺字段如实 Err(不静默吞成空决策——空决策会让薄壳以为
-/// 全部 flush,把 dirty 顺延纪律打穿)。
+/// `$/kode/events/coalesce` bridge: pending/dirty/clock are all fed in by the TS thin shell; this face
+/// only returns the decision. Missing payload fields honestly Err (never silently swallowed into an empty decision -- an empty decision would make the shell believe
+/// everything flushed, breaking the dirty-deferral discipline).
 fn coalesce_handler(params: Value) -> Result<Value, String> {
     let now_ms = params
         .get("nowMs")
@@ -112,7 +112,11 @@ fn coalesce_handler(params: Value) -> Result<Value, String> {
             .get("lastPushedAtMs")
             .and_then(|v| v.as_u64())
             .ok_or_else(|| "coalesce: pending[].lastPushedAtMs required".to_string())?;
-        pending.push(PendingEntry { file, first_pushed_at_ms, last_pushed_at_ms });
+        pending.push(PendingEntry {
+            file,
+            first_pushed_at_ms,
+            last_pushed_at_ms,
+        });
     }
     let dirty: Vec<String> = params
         .get("dirtyFiles")
@@ -148,8 +152,8 @@ mod tests {
 
     #[test]
     fn window_hold_then_flush() {
-        // 钉子①:窗口内 hold,窗口外 flush(同文件 N 次推送由薄壳 Map 并一,
-        // 本核见到的恒是并一后的单条)。
+        // Pin (1): hold inside the window, flush outside it (N pushes of the same file are merged by the shell's Map,
+        // so this core always sees the single merged entry).
         let pending = [entry("a.py", 0, 1000)];
         let at_1100 = decide_coalesce(&pending, &[], 1100, WINDOW, MAX_DEFER);
         assert_eq!(at_1100.hold, 1);
@@ -161,13 +165,13 @@ mod tests {
 
     #[test]
     fn dirty_defers_within_max() {
-        // 钉子②:窗口到期但 dirty → 顺延;max_defer 界外不再顺延。
+        // Pin (2): window expired but dirty -> defer; beyond the max_defer bound, no more deferral.
         let pending = [entry("a.py", 0, 0)];
         let dirty = vec!["a.py".to_string()];
         let at_301 = decide_coalesce(&pending, &dirty, 301, WINDOW, MAX_DEFER);
         assert_eq!(at_301.defer, vec!["a.py".to_string()]);
         assert!(at_301.flush.is_empty());
-        // first=0,now=5500 > max_defer=5000:按盘真相 flush。
+        // first=0, now=5500 > max_defer=5000: flush per the disk truth.
         let at_5501 = decide_coalesce(&pending, &dirty, 5501, WINDOW, MAX_DEFER);
         assert_eq!(at_5501.flush, vec!["a.py".to_string()]);
         assert!(at_5501.defer.is_empty());
@@ -175,7 +179,7 @@ mod tests {
 
     #[test]
     fn flush_order_most_recent_last() {
-        // 「最近修改的合并放队尾」:两文件都到期,后触碰的排 flush 尾。
+        // "Most recently modified coalesces at the queue tail": both files expired; the later-touched one is placed at the flush tail.
         let pending = [entry("older.py", 0, 100), entry("newer.py", 0, 900)];
         let decision = decide_coalesce(&pending, &[], 2000, WINDOW, MAX_DEFER);
         assert_eq!(
@@ -186,7 +190,7 @@ mod tests {
 
     #[test]
     fn clean_file_never_defers() {
-        // 非 dirty 文件窗口一到就 flush,零顺延。
+        // A non-dirty file flushes as soon as its window expires, zero deferral.
         let pending = [entry("a.py", 0, 0)];
         let decision = decide_coalesce(&pending, &[], 301, WINDOW, MAX_DEFER);
         assert_eq!(decision.flush.len(), 1);
@@ -195,7 +199,7 @@ mod tests {
 
     #[test]
     fn handler_rejects_missing_now() {
-        // 载荷缺 nowMs 如实 Err(不吞成全 flush)。
+        // Missing nowMs in the payload honestly Errs (not swallowed into a full flush).
         let err = coalesce_handler(serde_json::json!({ "pending": [] })).unwrap_err();
         assert!(err.contains("nowMs"));
     }

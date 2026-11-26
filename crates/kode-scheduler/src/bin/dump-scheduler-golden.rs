@@ -1,8 +1,10 @@
-//! 调度面对拍 golden 生成器:重放 10 个调度场景,输出决策面 JSON。
+//! Parity golden generator for the scheduling surface: replays the 10 scheduling scenarios and
+//! emits the decision-surface JSON.
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodeSchedulerParity.test.ts 用真实
-//! IndexScheduler + fake timers 复算对拍(双向门禁:Rust 测试重生成比对 +
-//! vitest 复算;ARCH-012:只对决策面,不做性能对比)。
+//! The golden file is produced by the Rust side, and the TS side
+//! tests/kodeSchedulerParity.test.ts recomputes the parity with a real IndexScheduler + fake
+//! timers (a two-way gate: the Rust test regenerates and compares + the vitest recompute;
+//! ARCH-012: only the decision surface, no performance comparison).
 
 fn main() {
     print!("{}", kode_scheduler::golden::dump_golden());

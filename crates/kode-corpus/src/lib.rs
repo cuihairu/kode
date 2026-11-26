@@ -1,15 +1,16 @@
-//! kode2 Phase2 P0: Python 语料层。
+//! kode2 Phase2 P0: Python corpus layer.
 //!
-//! 本 crate 只负责 `.py` 的**发现与轻量词法索引**,是 P1/P2 落点与悬停的共同前置:
-//! - [`enumerate`][]:确定性 `.py` 枚举(默认排除与 TS `PY_SCAN_EXCLUDE` 同集);
-//! - [`encoding`][]:BOM + PEP 263 `coding:` cookie 探测与解码;
-//! - [`symbols`][]:不执行 Python 的缩进/包裹连续语句词法抽取,产出类/方法/属性/导入四表;
-//! - [`index`][]:按内容指纹增量的文件级语料索引;
-//! - [`golden`][]:fixture 语料 golden 序列化(只写不读)。
+//! This crate only handles **discovery and lightweight lexical indexing** of `.py`
+//! files; it is the shared prerequisite for the P1/P2 landing points and hover:
+//! - [`enumerate`][]: deterministic `.py` enumeration (default excludes match the TS `PY_SCAN_EXCLUDE` set);
+//! - [`encoding`][]: BOM + PEP 263 `coding:` cookie detection and decoding;
+//! - [`symbols`][]: lexical extraction of indentation/parenthesis-continued statements that never executes Python, producing the class/method/attribute/import tables;
+//! - [`index`][]: file-level corpus index updated incrementally by content fingerprint;
+//! - [`golden`][]: golden serialization of the fixture corpus (write-only, never read).
 //!
-//! **明确边界**(`docs/kode2/phase2-slice-a.md` §1 / `phase2-py-face-gap.md` §4):
-//! 不产出 definition/hover/completion/diagnostics 结果,不新增 parser `FileKind`,
-//! 不改变 `serveFromRust()` 恒 false 的切流门禁。
+//! **Explicit boundary** (`docs/kode2/phase2-slice-a.md` §1 / `phase2-py-face-gap.md` §4):
+//! no definition/hover/completion/diagnostics results, no new parser `FileKind`,
+//! no change to the `serveFromRust()` always-false traffic-switch gate.
 
 pub mod encoding;
 pub mod enumerate;

@@ -130,7 +130,11 @@ fn did_change_flushes_at_latest_version() {
     did_open(&mut state, uri, 1, MISSING_FLAGS_DEF);
     flush(&mut state);
     did_change(&mut state, uri, 2, MISSING_FLAGS_DEF);
-    assert_eq!(state.diagnostics_dirty.get(uri), Some(&2), "didChange 换版标脏");
+    assert_eq!(
+        state.diagnostics_dirty.get(uri),
+        Some(&2),
+        "didChange 换版标脏"
+    );
 
     let params = only_publish(&flush(&mut state));
     assert_eq!(params["version"], json!(2), "按最新 didChange 版本发射");
@@ -149,10 +153,7 @@ fn version_bump_to_clean_def_emits_nothing() {
     assert_eq!(flush(&mut state).len(), 1, "v1 有 1 条");
     // v2:补齐 Flags → 零产出;flush 不再发射(同步面重置由 TS 承担)。
     did_change(&mut state, uri, 2, CLEAN_DEF);
-    assert!(
-        flush(&mut state).is_empty(),
-        "干净 def 零通知"
-    );
+    assert!(flush(&mut state).is_empty(), "干净 def 零通知");
 }
 
 #[test]
@@ -164,25 +165,22 @@ fn did_close_drops_dirty_and_releases_layers() {
     did_open(&mut state, uri, 1, MISSING_FLAGS_DEF);
     handle_message(
         &mut state,
-        notification("textDocument/didClose", json!({"textDocument": {"uri": uri}})),
+        notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri}}),
+        ),
     );
     assert!(
         !state.diagnostics_dirty.contains_key(uri),
         "didClose 摘除脏标记"
     );
-    assert!(
-        flush(&mut state).is_empty(),
-        "关闭后 flush 零通知"
-    );
+    assert!(flush(&mut state).is_empty(), "关闭后 flush 零通知");
 }
 
 #[test]
 fn empty_dirty_set_is_zero_cost() {
     let mut state = ServerState::new();
-    assert!(
-        flush(&mut state).is_empty(),
-        "空脏集零发射"
-    );
+    assert!(flush(&mut state).is_empty(), "空脏集零发射");
 }
 
 /// RESP-001:切片条数界——超 `DIAGNOSTIC_FLUSH_MAX_DOCS` 的脏集一次只

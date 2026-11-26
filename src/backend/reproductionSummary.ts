@@ -1,36 +1,42 @@
 /**
- * 复现配置摘要(IDE-REL-007):诊断排障时「环境长什么样」的一页导出。
- * 五节如实渲染——活动版本(扩展 id@version + 构建提交)、根(workspace/
- * 索引扫描根/活动 profile 双根)、宿主角色(local|remote + 扩展宿主侧)、
- * 开关(kbengine.* 布尔项)、队列数据(诊断排队/在途、注解、索引任务、
- * schema 冷构建 + 语言服务在册操作)。连接信息两层遮蔽:
- * ① 连接行渲染时 username/password 永不落值(固定 ***);
- * ② 全文过 maskConnectionSecrets 兜底——password/token/secret/
- *   authorization 赋值与 URL userinfo 一律 ***,防任意字段(如 profile 名)
- * 混入凭据形态文本外泄。本模块只渲染,采集与遮蔽语义全部经测试锁。
+ * Reproduction config summary (IDE-REL-007): a one-page export of "what the
+ * environment looks like" for diagnostic troubleshooting.
+ * Five sections rendered honestly — active versions (extension id@version +
+ * build commit), roots (workspace / index scan roots / active profile dual
+ * roots), host role (local|remote + extension host side), switches
+ * (kbengine.* booleans), queue data (diagnostics queued/in flight,
+ * annotations, index tasks, schema cold builds + language service active
+ * operations). Connection info is masked at two layers:
+ * ① when rendering connection lines username/password never get a value
+ *   (fixed ***);
+ * ② the whole text goes through maskConnectionSecrets as a backstop —
+ *   password/token/secret/authorization assignments and URL userinfo are
+ *   always ***, preventing any field (e.g. a profile name) from leaking
+ *   credential-shaped text. This module only renders; collection and masking
+ *   semantics are all locked by tests.
  */
 
 export interface ReproductionExtensionFact {
   id: string;
   version: string;
   active: boolean;
-  /** 扩展宿主侧(workspace host | ui host),口径同扩展身份报告(MET-001) */
+  /** Extension host side (workspace host | ui host), same ruling as the extension identity report (MET-001) */
   side: string;
 }
 
 export interface ReproductionConnectionFact {
-  /** 连接来源标识(如 engine-dbmgr:引擎 dbmgr 数据库接口配置) */
+  /** Connection source identifier (e.g. engine-dbmgr: the engine dbmgr database interface config) */
   source: string;
   host: string;
   port: number;
   username: string;
   databaseName: string;
-  /** 引擎 <encrypt>:true=RSA 密文,kode 本就读不出明文 */
+  /** Engine <encrypt>: true = RSA ciphertext, kode cannot read the plaintext in the first place */
   encrypt: boolean;
 }
 
 export interface ReproductionSummaryInput {
-  /** 宿主角色:label=local|remote(name)(hostLabel 口径),side=当前窗口扩展宿主侧 */
+  /** Host role: label=local|remote(name) (hostLabel ruling), side=the current window's extension host side */
   host: { label: string; side: string };
   extensions: ReproductionExtensionFact[];
   buildCommit: string;
@@ -42,12 +48,13 @@ export interface ReproductionSummaryInput {
     diagnosticsQueued: number;
     diagnosticsInFlight: number;
     annotationUpdates: number;
-    /** 注解索引共享构建在途量(IDE-REV-029):运行/等待/已全体取消收尾中 */
+    /** Shared annotation index build in-flight counts (IDE-REV-029): running / waiting / all-cancelled wrapping up */
     annotationBuilds: { running: number; waiting: number; cancelled: number };
-    /** 解析 worker 队列与字节占用(IDE-REV-030/IDE-AUD-023):区分 host
-     * 等待(queued/queuedBytes,未投递)与已投递(running/postedBytes,worker
-     * 在途);计数与字节双口径,保留输入一次可读——总保留=运行+排队任务、
-     * 排队字节+在途字节,不能只凭 running 高或 queuedBytes=0 误读无积压 */
+    /** Parse worker queue and byte usage (IDE-REV-030/IDE-AUD-023): distinguishes host
+     * waiting (queued/queuedBytes, not yet posted) from posted (running/postedBytes, worker
+     * in flight); dual count+byte ruling, retention input readable in one pass — total retention =
+     * running + queued jobs, queued bytes + in-flight bytes; do not misread "no backlog" from a
+     * high running alone or queuedBytes=0 alone */
     worker: {
       running: number;
       queued: number;
@@ -55,15 +62,15 @@ export interface ReproductionSummaryInput {
       maxQueuedBytes: number;
       peakQueuedBytes: number;
       budgetRejects: number;
-      /** 已投递(worker 在途)源码串字节(AUD-022/023) */
+      /** Posted (worker in-flight) source text bytes (AUD-022/023) */
       postedBytes: number;
-      /** 在途任务数硬上限 */
+      /** Hard cap on the number of in-flight jobs */
       maxPostedJobs: number;
-      /** 在途源码串字节硬上限 */
+      /** Hard cap on in-flight source text bytes */
       maxPostedBytes: number;
     };
-    /** 相关缓存容量面(IDE-REV-031):条目数与可获取的占用量、配置上限;
-     * 无字节估算的缓存只报条目并注明口径,不把累计命中当容量 */
+    /** Related cache capacity faces (IDE-REV-031): entry counts and obtainable usage, configured caps;
+     * byte-less-estimated caches report entry counts only and note the ruling, never treating cumulative hits as capacity */
     caches: {
       parsedDocuments: { entries: number; maxEntries: number; bytes: number; maxBytes: number };
       databaseSchemas: { entries: number; capacity: number };
@@ -72,7 +79,7 @@ export interface ReproductionSummaryInput {
     indexTasksQueued: number;
     schemaColdBuilds: number;
   };
-  /** 语言服务在册操作计数(MET-008 getActiveOperationCounts 口径) */
+  /** Language service active operation counts (MET-008 getActiveOperationCounts ruling) */
   activeOperations: Record<string, number>;
   connections: ReproductionConnectionFact[];
 }
@@ -81,14 +88,14 @@ const SECRET_VALUE_PATTERN =
   /((?:password|passwd|token|secret|authorization)\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\n,;&]+)/gi;
 const URL_USERINFO_PATTERN = /([a-z][a-z0-9+.-]*:\/\/)([^@\s/]+)@/gi;
 
-/** 连接凭据遮蔽兜底:赋值形态(password=x / token: "y")与 URL userinfo → *** */
+/** Connection credential masking backstop: assignment shapes (password=x / token: "y") and URL userinfo → *** */
 export function maskConnectionSecrets(text: string): string {
   return text
     .replace(SECRET_VALUE_PATTERN, '$1***')
     .replace(URL_USERINFO_PATTERN, '$1***@');
 }
 
-/** 连接行:username/password 永不落值(渲染层即遮蔽,不依赖兜底) */
+/** Connection line: username/password never get a value (masked at the render layer, not relying on the backstop) */
 export function renderConnectionLine(fact: ReproductionConnectionFact): string {
   return `${fact.source}: host=${fact.host} port=${fact.port} database=${fact.databaseName}`
     + ` username=*** password=*** encrypt=${fact.encrypt ? 'true' : 'false'}`;

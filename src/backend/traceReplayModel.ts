@@ -1,22 +1,32 @@
 /**
- * KFLOW 回放实例级流转模型(FLOW-028 的纯核):把 trace 会话 + 串联面
- * (traceCorrelation)装配成「真实组件实例泳道」回放模型——泳道=会话内
- * 真实观察到的进程实例,泳道内=本地栈段(回调段/入口链)+消息流。
+ * KFLOW replay instance-level flow model (the pure core of FLOW-028): assembles a
+ * trace session + the correlation face (traceCorrelation) into a "real component
+ * instance lane" replay model — a lane = a process instance actually observed in the
+ * session, and a lane's contents = local stack segments (callback segments / entry
+ * chains) + message flows.
  *
- * 验收原文:「以真实组件实例泳道展示本地栈段和消息流;多次相同 RPC/乱序/
- * 广播/缺失事件可区分。」四条可区分性保证(每条有钉):
- *   1. **多次相同 RPC**:每条消息流带 sendSeq/receiveSeq 锚(会话内唯一),
- *      同名方法重复调用=两条独立流,不合并;
- *   2. **乱序**:泳道内一律按 seq 序展示,不做跨进程时间排序(各时钟域
- *      不可比,R4)——流的因果归属只由 ID 配对决定,时间数值不参与;
- *   3. **广播**:同一 send 的 causal 流>1 条时全部标 broadcast(fan-in),
- *      逐接收者各一条;
- *   4. **缺失**:无对侧发送/接收=缺失标记(marker),ID 不一致=候选流——
- *      三种不完整形态各有独立面,不混装。
+ * Acceptance wording: "present local stack segments and message flows over real
+ * component instance lanes; repeated identical RPCs / out-of-order / broadcast /
+ * missing events must be distinguishable." Four distinguishability guarantees (each
+ * pinned):
+ *   1. **Repeated identical RPCs**: each message flow carries sendSeq/receiveSeq
+ *      anchors (unique within the session); repeated calls of the same-named method =
+ *      two independent flows, never merged;
+ *   2. **Out-of-order**: within a lane everything is presented in seq order, never
+ *      sorted by cross-process time (distinct clock domains are not comparable, R4) —
+ *      a flow's causal attribution is decided only by ID pairing; time values play no
+ *      part;
+ *   3. **Broadcast**: when one send has >1 causal flow, all are marked broadcast
+ *      (fan-in), one per receiver;
+ *   4. **Missing**: a send/receive without its counterpart = a missing marker, and an
+ *      ID mismatch = a candidate flow — the three incomplete shapes each have their
+ *      own independent face, never mixed together.
  *
- * 诚实边界:entityId=null 的来源(FLOW-024 面)泳道=进程实例,实例身份列
- * 如实标「来源未观察」;派发帧未观察到的 receive 根=null 带 note,不猜。
- * 纯核心零 vscode 依赖;HTML 呈现见 traceReplayHtml,面板见 traceReplayPanel。
+ * Honest boundary: for sources with entityId=null (the FLOW-024 face) a lane = a
+ * process instance, and the instance-identity column honestly notes "source not
+ * observed"; a receive whose dispatch frame was not observed gets root=null with a
+ * note, no guessing. Pure core with zero vscode dependencies; the HTML presentation is
+ * in traceReplayHtml, the panel in traceReplayPanel.
  */
 
 import { buildTraceCorrelations, type TraceCorrelationResult } from './traceCorrelation';
@@ -25,18 +35,18 @@ import type { TraceSession, TraceCallEvent, TraceMessageSendEvent, TraceMessageR
 export interface ReplayStackFrameRow {
   seq: number;
   file: string;
-  /** 1 基(保留采集口径,不换算) */
+  /** 1-based (keeps the capture semantics, no conversion) */
   line: number;
   function: string;
   className: string | null;
-  /** 相对段根深度(根=0) */
+  /** Depth relative to the segment root (root = 0) */
   depth: number;
   entityId: string | null;
 }
 
 export interface ReplayStackSegment {
   kind: 'callback' | 'entry-chain';
-  /** callback 段关联的 receive(入口链=null) */
+  /** The receive this callback segment is tied to (null for entry chains) */
   receiveSeq: number | null;
   rootCallSeq: number | null;
   frames: ReplayStackFrameRow[];
@@ -51,9 +61,9 @@ export interface ReplayFlow {
   receiveSeq: number | null;
   fromProcessId: string | null;
   toProcessId: string | null;
-  /** causal 且同一 send 对多个 receive(fan-in 广播) */
+  /** causal and the same send maps to multiple receives (fan-in broadcast) */
   broadcast: boolean;
-  /** candidate 解释(causal=null) */
+  /** The candidate explanation (null for causal) */
   reason: string | null;
 }
 
@@ -68,12 +78,12 @@ export interface ReplayLane {
   processId: string;
   role: string;
   name: string | null;
-  /** 观察到非 null entityId 的实例;空=来源无实例身份(如实) */
+  /** Instances observed with a non-null entityId; empty = the source carries no instance identity (honest) */
   entityInstances: string[];
   segments: ReplayStackSegment[];
   flows: ReplayFlow[];
   missingMarkers: ReplayMissingMarker[];
-  /** 泳道排序键=首个事件 seq(事件空=Number.MAX_SAFE_INTEGER,排末尾) */
+  /** Lane sort key = the first event's seq (no events = Number.MAX_SAFE_INTEGER, sorted last) */
   firstSeq: number;
 }
 
@@ -82,7 +92,7 @@ export interface TraceReplayModel {
   collectorKind: string;
   sampleFaceNote: string;
   lanes: ReplayLane[];
-  /** 全局流序:causal 先(按 receiveSeq,无 receive 按 sendSeq),候选追加 */
+  /** Global flow order: causal first (by receiveSeq, or sendSeq without a receive), candidates appended */
   flows: ReplayFlow[];
   completenessNote: string;
 }
@@ -139,8 +149,8 @@ function framesOf(index: CallIndex, calls: TraceCallEvent[], depthBySeq: Map<num
 }
 
 /**
- * 装配回放模型。correlation 可注入(已算过时免重算);四条可区分性保证
- * 见文件头。
+ * Assemble the replay model. correlation is injectable (skips recomputation when
+ * already computed); the four distinguishability guarantees are in the file header.
  */
 export function buildTraceReplayModel(
   session: TraceSession,
@@ -149,7 +159,7 @@ export function buildTraceReplayModel(
   const corr = correlation ?? buildTraceCorrelations(session);
   const index = indexCalls(session);
 
-  // ---- 泳道(真实观察到的进程实例;按首事件 seq 排序,不按时间)----
+  // ---- Lanes (real, observed process instances; sorted by first-event seq, not by time) ----
   const firstSeqByProcess = new Map<string, number>();
   for (const event of session.events) {
     const current = firstSeqByProcess.get(event.processId);
@@ -179,7 +189,7 @@ export function buildTraceReplayModel(
     );
   const laneByProcess = new Map(lanes.map(lane => [lane.processId, lane]));
 
-  // ---- 本地栈段:回调段(rooted)+ 入口链(未被回调段覆盖的根子树)----
+  // ---- Local stack segments: callback segments (rooted) + entry chains (root subtrees not covered by callback segments) ----
   const covered = new Set<number>();
   for (const segment of corr.callbackSegments) {
     const lane = laneByProcess.get(
@@ -208,7 +218,8 @@ export function buildTraceReplayModel(
       note: null
     });
   }
-  // 入口链:每棵根子树里未covered的调用(根入口链与回调段重叠处如实注记)
+  // Entry chains: the uncovered calls in each root subtree (overlaps between root entry
+  // chains and callback segments get an honest note)
   const roots = [...index.callsBySeq.values()].filter(call => call.parentSeq === null);
   for (const root of roots) {
     const { calls, depthBySeq } = subtreeOf(index, root.seq);
@@ -228,7 +239,8 @@ export function buildTraceReplayModel(
           : null
     });
   }
-  // 段排序:回调段按 receiveSeq,入口链按根 seq(全部 seq 序,段间不比时间)
+  // Segment ordering: callback segments by receiveSeq, entry chains by root seq (all seq
+  // order; no time comparison between segments)
   for (const lane of lanes) {
     lane.segments.sort(
       (left, right) =>
@@ -236,7 +248,7 @@ export function buildTraceReplayModel(
     );
   }
 
-  // ---- 消息流:causal(锚=seq 对,广播标 fan-in)+ 候选(ID 不一致)----
+  // ---- Message flows: causal (anchor = the seq pair, broadcast marked fan-in) + candidates (ID mismatch) ----
   const sendsBySeq = new Map<number, TraceMessageSendEvent>();
   const receivesBySeq = new Map<number, TraceMessageReceiveEvent>();
   for (const event of session.events) {
@@ -280,7 +292,7 @@ export function buildTraceReplayModel(
       });
     }
   }
-  // 全局流序:seq 锚序(causal 按 receiveSeq 回退 sendSeq;候选按两侧锚)
+  // Global flow order: seq-anchor order (causal by receiveSeq falling back to sendSeq; candidates by either anchor)
   const flowAnchor = (flow: ReplayFlow): number => flow.receiveSeq ?? flow.sendSeq ?? 0;
   flows.sort((left, right) => flowAnchor(left) - flowAnchor(right));
 
@@ -291,7 +303,7 @@ export function buildTraceReplayModel(
     if (toLane && toLane !== fromLane) toLane.flows.push(flow);
   }
 
-  // ---- 缺失标记:单侧候选(sendSeq null / receiveSeq null)落到对应泳道 ----
+  // ---- Missing markers: one-sided candidates (sendSeq null / receiveSeq null) land on the corresponding lane ----
   for (const candidate of corr.candidateLinks) {
     if (candidate.sendSeq !== null && candidate.receiveSeq === null) {
       const send = sendsBySeq.get(candidate.sendSeq);
@@ -325,7 +337,7 @@ export function buildTraceReplayModel(
   };
 }
 
-/** 回放模型摘要(诚实口径;呈现层直接引用)。 */
+/** Replay-model summary (honest semantics; cited directly by the presentation layer). */
 export function describeTraceReplayModel(model: TraceReplayModel): string {
   const rootedSegments = model.lanes.reduce(
     (count, lane) => count + lane.segments.filter(segment => segment.rootCallSeq !== null).length,

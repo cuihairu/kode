@@ -3,28 +3,33 @@ import * as path from 'path';
 import { Worker } from 'worker_threads';
 import { parseDefDocument, type DefDocument } from './defParser';
 
-// IDE-REV-039:def XML 解析移出宿主线程(镜像 pythonParserWorker 模式)——异步
-// schema 构建把单文件大 def(≥12k 行,95-185ms)解析交给 worker,宿主在解析段
-// 让出;同步面(parseDefDocument 直调)行为不变。低于阈值或产物缺失直接同步
-// 解析(小 def 本就廉价,不付 worker 往返);worker 崩溃/超限拒绝由调用方
-// (异步驱动)捕获后同步兜底,绝不炸 schema 构建。
+// IDE-REV-039: move def XML parsing out of the host thread (mirroring the
+// pythonParserWorker pattern) -- async schema building hands single-file large
+// defs (>=12k lines, 95-185ms) to the worker, yielding the host during the parse
+// phase; the sync surface (direct parseDefDocument calls) is unchanged. Below
+// the threshold or when the artifact is missing, parse synchronously (small defs
+// are cheap anyway, no worker round trip); worker crashes / over-limit rejections
+// are caught by the caller (the async driver) and fall back synchronously -- the
+// schema build never blows up.
 
-/** 超过此字节量(约 2000 行)才走 worker:小 def 同步解析,避免 worker 往返开销 */
+/** Only use the worker above this byte size (roughly 2000 lines): small defs parse synchronously, avoiding the worker round-trip cost */
 export const DEF_PARSE_WORKER_MIN_BYTES = 64 * 1024;
 
-/** 在途(已派发未回包)任务数硬上限——超限拒绝,调用方同步兜底 */
+/** Hard cap on in-flight (dispatched, not yet replied) jobs -- over the cap is rejected, and the caller falls back synchronously */
 export const MAX_POSTED_PARSE_JOBS = 16;
 
-/** 在途源码串字节硬上限——超限拒绝,由调用方按类别处置(KODE-FULL-015) */
+/** Hard cap on in-flight source-string bytes -- over the cap is rejected, and the caller handles it by category (KODE-FULL-015) */
 export const MAX_POSTED_PARSE_BYTES = 8 * 1024 * 1024;
 
 /**
- * KODE-FULL-015:预算类拒绝(过载/单件超大)的可分辨错误——调用方据此
- * 区分「排队可恢复」与「输入超形」,不再无差别回落宿主同步解析。
+ * KODE-FULL-015: a distinguishable error for budget-class rejections (overload /
+ * single item too large) -- callers use it to tell "queued and recoverable" apart
+ * from "input out of shape", instead of unconditionally falling back to host
+ * sync parsing.
  */
 export class DefParserBudgetError extends Error {
   constructor(
-    /** overload=在途任务/字节预算满(等待后可恢复);too-large=单件超字节上限 */
+    /** overload = in-flight job/byte budget full (recoverable after waiting); too-large = a single item exceeds the byte cap */
     readonly kind: 'overload' | 'too-large',
     message: string
   ) {
@@ -51,13 +56,13 @@ const posted = new Map<number, PendingParse>();
 let postedBytes = 0;
 
 export interface DefParserWorkerGauge {
-  /** 已派发进 worker 的在途任务数 */
+  /** In-flight jobs already dispatched to the worker */
   running: number;
-  /** 在途源码串字节总量 */
+  /** Total bytes of in-flight source strings */
   postedBytes: number;
-  /** 在途任务数硬上限 */
+  /** Hard cap on in-flight job count */
   maxPostedJobs: number;
-  /** 在途源码串字节硬上限 */
+  /** Hard cap on in-flight source-string bytes */
   maxPostedBytes: number;
 }
 
@@ -103,10 +108,12 @@ function ensureWorker(): Worker {
 }
 
 /**
- * IDE-REV-039:解析 def 文本——大文本走 worker(移出宿主线程),小文本/产物
- * 缺失直接同步解析。返回的 DefDocument 是 worker 回传的 structured clone
- * (plain object 图,parent/document 回引成环,内部同一性克隆后保持)。
- * 失败(worker 崩溃/单次解析错误/在途超限)reject,由调用方同步兜底。
+ * IDE-REV-039: parse def text -- large text goes to the worker (out of the host
+ * thread), small text / missing artifacts parse synchronously. The returned
+ * DefDocument is the structured clone sent back by the worker (a plain object
+ * graph; the parent/document back-references form cycles, and identity is
+ * preserved after cloning). Failures (worker crash / single parse error /
+ * in-flight over-limit) reject, and the caller falls back synchronously.
  */
 export async function parseDefDocumentResponsive(
   text: string,

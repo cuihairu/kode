@@ -24,7 +24,8 @@ MANIFEST = ROOT / "docs" / "public" / "config-switch-gifs" / "manifest.json"
 OUT_EN = ROOT / "docs" / "guide" / "config-effects.md"
 OUT_ZH = ROOT / "docs" / "zh" / "guide" / "config-effects.md"
 
-# 与 generate.py 同口径:manifest 相对 ROOT 存 repo 路径,页面用站点绝对路径
+# Same contract as generate.py: the manifest stores repo paths relative to ROOT,
+# while pages use site-absolute paths
 ASSET_PREFIX = "/config-switch-gifs/"
 
 TEXT = {
@@ -108,7 +109,8 @@ def render_page(lang: str, switches: list[dict], manifest: list[dict]) -> str:
     lines.append(t["rerun"][lang] + "\n")
     lines.append(f"> {t['generated-note'][lang]}\n")
 
-    # 组序按 switches.json 首现序(生成器不造排序,清单顺序=作者顺序)
+    # Group order follows first appearance in switches.json (the generator invents
+    # no sorting; list order is the author's order)
     groups: dict[str, list[dict]] = {}
     for s in switches:
         if s["key"] in captured:

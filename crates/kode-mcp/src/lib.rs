@@ -1,4 +1,4 @@
-//! kode-mcp:把 def 知识库暴露给 AI agent(MCP-001)。
+//! kode-mcp: expose the def knowledge base to AI agents (MCP-001).
 
 mod bounded_scan;
 pub mod code_index;

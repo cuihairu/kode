@@ -1,7 +1,9 @@
-// AI 对话面板 HTML(AI-002):自包含零外联——CSP 只认本次渲染 nonce
-// (webviewSecurity.webviewScriptCsp,default-src 'none'),无 CDN/无本地
-// 媒体。消息协议(宿主⇄面板):ask/cancel/preview/apply →;→ chunk/done/
-// error/cancelled/applied。会话历史驻留面板,宿主不落盘。
+// AI chat panel HTML (AI-002): self-contained with zero outbound links — the
+// CSP only trusts the nonce of this render (webviewSecurity.webviewScriptCsp,
+// default-src 'none'), no CDN and no local media. Message protocol
+// (host ⇄ panel): ask/cancel/preview/apply →; → chunk/done/error/cancelled/
+// applied. The conversation history lives in the panel; the host keeps nothing
+// on disk.
 import { webviewScriptCsp } from '../webviewSecurity';
 
 export interface AiChatPanelHtmlOptions {

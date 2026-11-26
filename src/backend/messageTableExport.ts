@@ -1,17 +1,19 @@
 /**
- * 消息表 JSON 导出命令体(IDE-SDK-002):选实体 → 现有计算结果 JSON
- * (renderMessageTableJson,保留方法段/utype/alias 配置/问题清单)→ 保
- * 存对话框 → 写文件;取消不创建文件(writeFile 零调用);缺声明/空清
- * 单如实提示;写失败如实呈现。VSCode 面全部注入,装配在 extension.ts。
+ * Message-table JSON export command body (IDE-SDK-002): pick an entity -> the
+ * already-computed JSON result (renderMessageTableJson, keeping the method section,
+ * utype, alias config and the problem list) -> save dialog -> write the file; cancelling
+ * creates no file (writeFile is never called); missing declaration/empty list is reported
+ * honestly; a write failure is presented honestly. Every VSCode face is injected; wiring
+ * lives in extension.ts.
  */
 
 export interface MessageTableExportDeps {
-  /** 实体名清单(来自共享索引/映射) */
+  /** Entity name list (from the shared index/mapping) */
   listEntityNames(): string[];
-  /** 单实体构建 JSON 文本;null=缺声明 */
+  /** Build the JSON text for one entity; null = missing declaration */
   buildTableJson(entityName: string): Promise<string | null>;
   pick(items: string[]): Promise<string | undefined>;
-  /** 保存路径选择(showSaveDialog 注入);undefined=取消 */
+  /** Save-path selection (showSaveDialog injected); undefined = cancelled */
   chooseSavePath(defaultFileName: string): Promise<string | undefined>;
   writeFile(path: string, content: string): Promise<void>;
   notifyWarning(message: string): unknown;

@@ -1,34 +1,34 @@
-//! RUST-139 批 1:def 文档符号(Outline)语料面——Properties/三方法段作
-//! 容器符号、段内声明作子符号,与 TS KBEngineDocumentSymbolProvider
-//! (IDE-NAV-005,src/languageProviders/references.ts)逐点同构。
+//! RUST-139 batch 1: def document-symbol (Outline) corpus face -- Properties/the three method sections become
+//! container symbols and declarations within a section become child symbols, point-for-point isomorphic with TS KBEngineDocumentSymbolProvider
+//! (IDE-NAV-005, src/languageProviders/references.ts).
 //!
-//! 语义钉(TS 同构):
-//! - 只出 Properties/BaseMethods/CellMethods/ClientMethods 四段(toSectionName
-//!   精确匹配 8 规范名后按 DEF_SYMBOL_SECTIONS 过滤;Parent/Interfaces/
-//!   Components/Volatile 与未知段不进 Outline);
-//! - 段符号 kind = Properties→Struct / 方法段→Class;段内**直接**元素子节点
-//!   = Properties→Field / 方法段→Method(成员不再下钻:TS `new
-//!   DocumentSymbol` 默认 children=[],方法内 <Arg> 等不产生符号);
-//! - range = 元素全跨度(开标签头 → 闭合标签尾;自闭合到开标签尾),
-//!   selectionRange = 名字所在开标签跨度(恒 ⊆ range);
-//! - detail 恒空串,序 = 文档序;解析无根 → None。
+//! Semantic pins (TS-isomorphic):
+//! - Only Properties/BaseMethods/CellMethods/ClientMethods four sections are emitted (after toSectionName
+//!   exact-matches the 8 canonical names, filtered by DEF_SYMBOL_SECTIONS; Parent/Interfaces/
+//!   Components/Volatile and unknown sections do not enter the Outline);
+//! - Section symbol kind = Properties->Struct / method sections->Class; the **direct** element children within a section
+//!   = Properties->Field / method sections->Method (no deeper descent into members: TS `new
+//!   DocumentSymbol` defaults children=[], so <Arg> etc. inside methods produce no symbols);
+//! - range = the element's full span (open-tag start -> closing-tag end; self-closing ends at the open tag's end),
+//!   selectionRange = the open-tag span containing the name (always ⊆ range);
+//! - detail is always the empty string, order = document order; parse with no root -> None.
 //!
-//! WorkspaceSymbol(IDE-NAV-006)依赖 entityMapping 运行时语义索引
-//! (ResolvedDefinitionSemantics 继承链/组件 rebase),留批 2;期间生产
-//! 服务面仍是 TS,本模块只落纯库(同 references.rs 批 1 边界)。
+//! WorkspaceSymbol (IDE-NAV-006) depends on the entityMapping runtime semantic index
+//! (ResolvedDefinitionSemantics inheritance chain / component rebase), left to batch 2; in the meantime the production
+//! serving face is still TS; this module lands only the pure library (same boundary as references.rs batch 1).
 
 use kode_parser::xml::{self, NodeData};
 
 use crate::definition::{byte_offset_to_position, LspRange};
 
-/// LSP DocumentSymbol kind(字符串面,与 TS `vscode.SymbolKind` 枚举名同形;
-/// golden/镜像以此字符串对拍,协议数值映射属 TS provider 投影细节)。
+/// LSP DocumentSymbol kind (string face, same shape as the TS `vscode.SymbolKind` enum names;
+/// golden/mirror compares on these strings; protocol numeric mapping is a TS provider projection detail).
 pub const SYMBOL_KIND_STRUCT: &str = "Struct";
 pub const SYMBOL_KIND_CLASS: &str = "Class";
 pub const SYMBOL_KIND_FIELD: &str = "Field";
 pub const SYMBOL_KIND_METHOD: &str = "Method";
 
-/// TS `toSectionName` 同构:8 规范段名精确匹配(大小写敏感,小写变体不算)。
+/// Isomorphic with TS `toSectionName`: exact match on the 8 canonical section names (case-sensitive, lowercase variants do not count).
 fn to_section_name(name: &str) -> Option<&str> {
     match name {
         "Parent" | "Interfaces" | "Components" | "Properties" | "BaseMethods" | "CellMethods"
@@ -37,7 +37,7 @@ fn to_section_name(name: &str) -> Option<&str> {
     }
 }
 
-/// TS `DEF_SYMBOL_SECTIONS` 同构:进 Outline 的四段。
+/// Isomorphic with TS `DEF_SYMBOL_SECTIONS`: the four sections entering the Outline.
 fn is_symbol_section(section: &str) -> bool {
     matches!(
         section,
@@ -45,7 +45,7 @@ fn is_symbol_section(section: &str) -> bool {
     )
 }
 
-/// 一条文档符号:名字/空 detail/kind/全跨度/开标签选择跨度/子符号。
+/// One document symbol: name / empty detail / kind / full span / open-tag selection span / child symbols.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DocumentSymbolFace {
     pub name: String,
@@ -57,7 +57,7 @@ pub struct DocumentSymbolFace {
     pub children: Vec<DocumentSymbolFace>,
 }
 
-/// def 文本 → Outline 符号树。解析无根 → None(TS parseDefAst 失败 null 同形)。
+/// def text -> Outline symbol tree. Parse with no root -> None (same shape as TS parseDefAst failing to null).
 pub fn document_symbols(text: &str) -> Option<Vec<DocumentSymbolFace>> {
     let doc = xml::parse(text, true);
     let root = doc.root()?;
@@ -96,7 +96,7 @@ pub fn document_symbols(text: &str) -> Option<Vec<DocumentSymbolFace>> {
     Some(symbols)
 }
 
-/// 段符号(带子符号)。range=全跨度,selectionRange=开标签跨度。
+/// Section symbol (with child symbols). range=full span, selectionRange=open-tag span.
 fn span_face(
     text: &str,
     el: &kode_parser::xml::ElementData,
@@ -115,7 +115,7 @@ fn span_face(
     }
 }
 
-/// 成员符号(平面:children 恒空,TS DocumentSymbol 默认值同形)。
+/// Member symbol (flat: children always empty, same shape as the TS DocumentSymbol default).
 fn flat_member_face(
     text: &str,
     el: &kode_parser::xml::ElementData,
@@ -125,7 +125,7 @@ fn flat_member_face(
     span_face(text, el, &name, kind, Vec::new())
 }
 
-/// TS elementFullRange 同构:开标签头 → 闭合标签尾;自闭合到开标签尾。
+/// Isomorphic with TS elementFullRange: open-tag start -> closing-tag end; self-closing ends at the open tag's end.
 fn full_range(text: &str, el: &kode_parser::xml::ElementData) -> LspRange {
     let end = if el.self_closing {
         el.open_span.end
@@ -138,7 +138,7 @@ fn full_range(text: &str, el: &kode_parser::xml::ElementData) -> LspRange {
     }
 }
 
-/// TS elementTagRange 同构:开标签整体跨度(名字所在,恒 ⊆ full_range)。
+/// Isomorphic with TS elementTagRange: the whole open-tag span (where the name lives, always ⊆ full_range).
 fn tag_range(text: &str, el: &kode_parser::xml::ElementData) -> LspRange {
     LspRange {
         start: byte_offset_to_position(text, el.open_span.start),
@@ -147,7 +147,7 @@ fn tag_range(text: &str, el: &kode_parser::xml::ElementData) -> LspRange {
 }
 
 // ---------------------------------------------------------------------------
-// golden(TS tests/kodeDocumentSymbolsParity.test.ts 复算对拍)
+// golden (recomputed comparison against TS tests/kodeDocumentSymbolsParity.test.ts)
 // ---------------------------------------------------------------------------
 
 pub const DOCUMENT_SYMBOLS_GOLDEN_REL_PATH: &str =
@@ -169,8 +169,8 @@ struct GoldenFile {
     symbols: Vec<DocumentSymbolFace>,
 }
 
-/// 遍历 fixture 语料,逐 def 文件输出 Outline 符号树 JSON(TS 镜像测试
-/// 用现有 defParser 原语复算同一 golden,双向门禁)。
+/// Walk the fixture corpus and output the Outline symbol-tree JSON per def file (the TS mirror test
+/// recomputes the same golden with the existing defParser primitives; bidirectional gate).
 pub fn dump_document_symbols_golden(repo_root: &std::path::Path) -> String {
     use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 
@@ -182,7 +182,7 @@ pub fn dump_document_symbols_golden(repo_root: &std::path::Path) -> String {
         files: Vec::new(),
     };
     for (path, (kind, text)) in &files {
-        // TS provider 只注册 defDocumentSelector;非 def 文件不进 golden。
+        // The TS provider registers only defDocumentSelector; non-def files do not enter the golden.
         if *kind != "def" {
             continue;
         }
@@ -205,7 +205,7 @@ fn count_symbols(symbols: &[DocumentSymbolFace]) -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// 单元钉(合成文本;golden 侧由 references_golden 同构的独立测试盖)
+// Unit pins (synthetic text; the golden side is covered by an independent test isomorphic with references_golden)
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -218,8 +218,8 @@ mod tests {
 
     #[test]
     fn section_filter_and_kinds() {
-        // Parent/Interfaces/Components/Volatile/未知/小写不进 Outline;
-        // Properties=Struct+Field,方法段=Class+Method,文档序。
+        // Parent/Interfaces/Components/Volatile/unknown/lowercase do not enter the Outline;
+        // Properties=Struct+Field, method sections=Class+Method, document order.
         let text = "<root>\n\
             <Parent> Avatar </Parent>\n\
             <Volatile>\n<ghost/>\n</Volatile>\n\
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn member_children_always_empty() {
-        // 方法成员内 <Arg> 不下钻(TS new DocumentSymbol 默认 children=[])。
+        // <Arg> inside method members does not descend (TS new DocumentSymbol defaults children=[]).
         let text = "<root>\n\
             <BaseMethods>\n\
             <doSpell>\n<Arg><Type> UINT32 </Type></Arg>\n</doSpell>\n\
@@ -288,7 +288,7 @@ mod tests {
             </root>";
         let symbols = document_symbols(text).expect("root");
         let section = &symbols[0];
-        // 段:开标签头(1,0) → 闭标签尾(6,13)「</Properties>」13 字符终位。
+        // Section: open-tag start (1,0) -> closing-tag end (6,13); `</Properties>` ends at column 13.
         assert_eq!(
             section.range.start,
             crate::definition::LspPosition {
@@ -303,7 +303,7 @@ mod tests {
                 character: 13
             }
         );
-        // selectionRange = 开标签跨度(1,0)-(1,12)。
+        // selectionRange = open-tag span (1,0)-(1,12).
         assert_eq!(
             section.selection_range,
             crate::definition::LspRange {
@@ -332,7 +332,7 @@ mod tests {
                 character: 5
             }
         );
-        // 自闭合:range 终 = 开标签尾(5,6)。
+        // Self-closing: range end = open-tag end (5,6).
         let bag = &section.children[1];
         assert_eq!(
             bag.range.start,
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn detail_empty_and_empty_section_kept() {
-        // 空段(无成员)照出(TS 段符号无条件 push),detail 恒空串。
+        // Empty section (no members) still emitted (the TS section symbol pushes unconditionally); detail always the empty string.
         let text = "<root>\n<CellMethods>\n</CellMethods>\n</root>";
         let symbols = document_symbols(text).expect("root");
         assert_eq!(names(&symbols), vec!["CellMethods"]);
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn text_children_are_not_symbols() {
-        // 段内文本/注释子节点不产生符号(只元素子节点)。
+        // Text/comment child nodes within a section produce no symbols (only element children).
         let text = "<root>\n\
             <Properties>\n\
             stray text\n\
@@ -381,11 +381,11 @@ mod tests {
         assert_eq!(names(&symbols[0].children), vec!["hp"]);
     }
 
-    /// RUST-149 横切登记(纯面):本 face 是 text→树 纯函数,四维结构性
-    /// 无载体——cancel(同步零 await 无取消位)/cold(无 workspace 索引
-    /// 与缓存,冷热同路)/root(per-document 面,无根状态,撤根语义归
-    /// 索引面 references/workspace_symbols 钉)。stale 无缓存载体,钉其
-    /// 可观察契约:同文本重复求值确定性无漂移,文本换代即换树。
+    /// RUST-149 cross-cutting registration (pure face): this face is a text->tree pure function, structurally
+    /// carrier-free on all four dimensions -- cancel (synchronous, zero awaits, no cancellation point) / cold (no workspace index
+    /// or cache, cold and hot share one path) / root (per-document face, no root state; unroot semantics belong to
+    /// the index faces' references/workspace_symbols pins). stale has no cache carrier; pin its
+    /// observable contract: repeated evaluation of the same text is deterministic with no drift; a new text generation means a new tree.
     #[test]
     fn rust_149_recompute_swaps_tree_and_is_stateless() {
         let v1 = "<root>\n<Properties>\n<hp/>\n</Properties>\n</root>";

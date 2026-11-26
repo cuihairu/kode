@@ -1,9 +1,12 @@
 /**
- * SP-4 空间导航诊断收编 Rust(AUDIT-005 B2 车道批 3):`$/kode/lint/analyzeSpaceNav`
- * 的 TS 装配面。纯分析在 spaceNavDiagnostics.ts(消息渲染/结构面),本模块只做
- * gate.runInRust + 结构面 → 诊断面(经 renderRustSpaceNavItems);Rust 不可用/
- * 失败/畸形返回 null,调用方(diagnostics.ts 空间导航臂)回 TS 同步兜底——
- * 禁止部分采用(静默丢能力)。
+ * SP-4 space navigation diagnostics absorbed into Rust (AUDIT-005 B2 lane batch 3):
+ * the TS wiring face for `$/kode/lint/analyzeSpaceNav`. Pure analysis lives in
+ * spaceNavDiagnostics.ts (message rendering / structural face); this module only
+ * does gate.runInRust plus structural face -> diagnostic face (via
+ * renderRustSpaceNavItems). Rust unavailable / failure / malformed response
+ * returns null and the caller (the space navigation arm in diagnostics.ts) falls
+ * back to the synchronous TS path — partial adoption is forbidden (silently
+ * dropping capability).
  */
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import {
@@ -14,9 +17,10 @@ import {
 const SPACE_NAV_RUST_METHOD = '$/kode/lint/analyzeSpaceNav';
 
 /**
- * Rust-first 空间导航产物:gate.runInRust 跑 `$/kode/lint/analyzeSpaceNav`,
- * 结构面经 renderRustSpaceNavItems 渲染;不可用/失败/畸形返回 null(调用方
- * 回 TS 兜底 computeSpaceNavFindings)。
+ * Rust-first space navigation findings: gate.runInRust runs
+ * `$/kode/lint/analyzeSpaceNav` and the structural face is rendered through
+ * renderRustSpaceNavItems; unavailable / failure / malformed returns null
+ * (the caller falls back to the TS computeSpaceNavFindings).
  */
 export async function buildSpaceNavItemsWithRust(
   text: string

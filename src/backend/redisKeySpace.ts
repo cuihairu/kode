@@ -1,20 +1,23 @@
 /**
- * Redis 键空间模型(KODE-REDIS-UI-001):按 kbe 源码口径分类真实存在的键。
+ * Redis keyspace model (KODE-REDIS-UI-001): classifies keys that really exist,
+ * following the kbe source conventions.
  *
- * 口径(与 kbe/src/lib/db_redis 对齐,KBE_TABLE_PERFIX="kbe"):
- * - `kbe_entitylog:<dbid>:<entityType>` → 实体日志哈希,字段
- *   entityID/ip/port/componentID/serverGroupID(kbe_table_redis.cpp:21/32)。
- * - `kbe_<...>` 其余 → 引擎表命名空间键(实体持久化在引擎为 stub,此处
- *   只如实归类,不伪造表结构)。
- * - 其他 → 外部/未知键(如实显示,不猜测语义)。
+ * Conventions (aligned with kbe/src/lib/db_redis, KBE_TABLE_PERFIX="kbe"):
+ * - `kbe_entitylog:<dbid>:<entityType>` -> the entity log hash, with fields
+ *   entityID/ip/port/componentID/serverGroupID (kbe_table_redis.cpp:21/32).
+ * - other `kbe_<...>` -> engine table namespace keys (entity persistence is a
+ *   stub in the engine, so this only classifies honestly without fabricating
+ *   table structure).
+ * - anything else -> external/unknown keys (shown as-is, without guessing
+ *   the semantics).
  *
- * 纯函数(无网络无 vscode),单测直驱。
+ * Pure functions (no network, no vscode), driven directly by unit tests.
  */
 
-/** 引擎表前缀(KBE_TABLE_PERFIX,entity_table.h:37)。 */
+/** Engine table prefix (KBE_TABLE_PERFIX, entity_table.h:37). */
 export const REDIS_KBE_PREFIX = 'kbe';
 
-/** 实体日志哈希字段(与 kbe_table_redis.cpp HSET 字段序一致)。 */
+/** Entity log hash fields (matching the HSET field order of kbe_table_redis.cpp). */
 export const REDIS_ENTITYLOG_FIELDS: readonly string[] = [
   'entityID',
   'ip',
@@ -28,7 +31,7 @@ export type RedisKeyInfo =
   | { kind: 'table'; key: string; table: string }
   | { kind: 'unknown'; key: string };
 
-/** `kbe_entitylog:<dbid>:<entityType>` 分类。 */
+/** Classification of `kbe_entitylog:<dbid>:<entityType>`. */
 export function classifyRedisKey(key: string): RedisKeyInfo {
   const entitylogPrefix = `${REDIS_KBE_PREFIX}_entitylog:`;
   if (key.startsWith(entitylogPrefix)) {
@@ -50,7 +53,7 @@ export function classifyRedisKey(key: string): RedisKeyInfo {
   return { kind: 'unknown', key };
 }
 
-/** 键清单 → 树节点(连接节点下的子节点;纯函数,便于单测)。 */
+/** Key list -> tree nodes (children under the connection node; pure functions, easy to unit test). */
 export interface RedisKeyTreeNode {
   label: string;
   description: string;
@@ -58,7 +61,7 @@ export interface RedisKeyTreeNode {
   children?: RedisKeyTreeNode[];
 }
 
-/** 按分类分组汇总:entitylog 一组,table 一组,unknown 一组。 */
+/** Group and summarize by classification: one group for entitylog, one for table, one for unknown. */
 export function buildRedisKeyTree(keys: string[]): RedisKeyTreeNode[] {
   const groups: Record<RedisKeyInfo['kind'], RedisKeyTreeNode[]> = {
     entitylog: [],
@@ -100,7 +103,7 @@ export function buildRedisKeyTree(keys: string[]): RedisKeyTreeNode[] {
   return out;
 }
 
-/** 哈希预览文本(与 mysql formatTablePreview 同风格,列字段/值对齐)。 */
+/** Hash preview text (same style as mysql's formatTablePreview, aligning the field/value columns). */
 export function formatRedisHashPreview(key: string, hash: Record<string, string>): string {
   const fields = Object.keys(hash);
   const header = `===== 键预览 ${key}(${fields.length} 字段) =====`;

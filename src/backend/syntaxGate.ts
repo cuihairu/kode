@@ -1,29 +1,34 @@
 /**
- * INDEX-DISCIPLINE-001 ③:python 索引输入语法门——TS 侧(Rust 主路径 +
- * TS 回退,模式照 ruffLint 先例)。
+ * INDEX-DISCIPLINE-001 (3): the python index input syntax gate — the TS side
+ * (Rust primary path + TS fallback, following the ruffLint precedent pattern).
  *
- * Rust 侧 `$/kode/syntax/gate`(kode-server syntax_gate.rs)是预检主路径:
- * 括号/引号配平 + 缩进一致性粗检(单遍扫描器,微秒级,零子进程)。
- * 本文件:
- * - `syntaxGateCheck`:TS 镜像核(Rust 不可用时的回退,语义与 Rust 同构;
- *   vitest 契约用例两面同跑);
- * - `checkSyntaxGate`:主入口——Rust 门在则走 Rust,无门/失败走 TS 回退
- *   (行为不变降级:门永远有答案,消费面不分支)。
+ * The Rust side `$/kode/syntax/gate` (kode-server syntax_gate.rs) is the primary
+ * pre-check path: bracket/quote balancing plus a coarse indentation consistency
+ * check (single-pass scanner, microsecond scale, zero subprocesses).
+ * This file:
+ * - `syntaxGateCheck`: the TS mirror core (the fallback when Rust is unavailable,
+ *   semantics isomorphic with Rust; the vitest contract cases run on both faces);
+ * - `checkSyntaxGate`: the main entry — takes Rust when the Rust gate exists, and
+ *   falls back to TS when there is no gate or the request fails (degradation with
+ *   unchanged behavior: the gate always has an answer, the consumer face does not
+ *   branch).
  *
- * 消费纪律(用户令 2026-11-18):不过关 → 跳过符号入索引和绑定,索引保留
- * 上一次健康版本符号;诊断面照旧由既有诊断链报语法错,本门不产诊断只做闸。
- * 零 vscode import(纯核;配置读取由调用方注入)。
+ * Consumption discipline (user order 2026-11-18): not passing -> skip indexing and
+ * binding of symbols, and the index keeps the symbols of the last healthy version;
+ * the diagnostics face keeps reporting syntax errors through the existing
+ * diagnostics chain, this gate produces no diagnostics and only gates.
+ * Zero vscode imports (pure core; configuration reading is injected by the caller).
  */
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
-/** 预检结果:`ok=false` 时 reasons 带行号定位(日志/观测面用,不进诊断)。 */
+/** Pre-check result: when `ok=false`, reasons carry line-number location (for the log/observation face, not fed into diagnostics). */
 export interface SyntaxGateResult {
   ok: boolean;
   reasons: string[];
 }
 
-/** 段扫描:括号配平 + 未闭合字符串定位(缩进判定不在此面)。 */
+/** Segment scan: bracket balancing plus unterminated-string location (indentation judging is not on this face). */
 function scanSegment(
   segment: string,
   lineNo: number,
@@ -77,7 +82,7 @@ function scanSegment(
   return false;
 }
 
-/** 行内找三引号收尾(尊重转义);返回起始下标,null=本行无收尾。 */
+/** Find the closing triple quote within a line (honoring escapes); returns the start index, null = no closer on this line. */
 function findCloseTriple(line: string): number | null {
   let i = 0;
   while (i < line.length) {
@@ -90,10 +95,12 @@ function findCloseTriple(line: string): number | null {
 }
 
 /**
- * TS 镜像核:与 Rust `syntax_gate` 同构的单遍扫描预检。
- * 宁漏勿冤:只拦「确定烂」(编辑中途显式断裂);假 OK 可接受(真诊断链
- * 照常报错),假 NO 不可接受(索引会饿死)。续行(行尾反斜杠)/括号内
- * 换行/三引号串体内的缩进一律不判。
+ * TS mirror core: a single-pass scan pre-check isomorphic with the Rust
+ * `syntax_gate`. Rather miss than wrong: only block the "definitely broken"
+ * (an explicit break mid-edit); a false OK is acceptable (the real diagnostics
+ * chain still reports the error), a false NO is not (the index would starve).
+ * Continuation lines (trailing backslash) / newlines inside brackets /
+ * indentation inside a triple-quoted string body are never judged.
  */
 export function syntaxGateCheck(text: string): SyntaxGateResult {
   const reasons: string[] = [];
@@ -110,7 +117,7 @@ export function syntaxGateCheck(text: string): SyntaxGateResult {
     pending = null;
     const lineNo = physicalLine;
 
-    // 三引号串体内:只找收尾引号(缩进/括号一律不判)
+    // Inside a triple-quoted string body: only look for the closing quotes (indentation/brackets are never judged)
     if (inTripleString) {
       const closeCol = findCloseTriple(line);
       if (closeCol !== null) {
@@ -122,7 +129,7 @@ export function syntaxGateCheck(text: string): SyntaxGateResult {
       continue;
     }
 
-    // 续行(行尾反斜杠):先并再扫——否则 `'abc \` 这类续字符串会被误判。
+    // Continuation line (trailing backslash): merge first, then scan — otherwise a continuing string such as `'abc \ would be misjudged.
     if (line.endsWith('\\')) {
       pending = line.slice(0, -1);
       continue;
@@ -179,8 +186,10 @@ export function syntaxGateCheck(text: string): SyntaxGateResult {
 }
 
 /**
- * 主入口:Rust 门(`$/kode/syntax/gate`)主路径;无门/请求失败/应答畸形
- * → TS 镜像回退(ruffLint 先例的「行为不变降级」口径:门永远有答案)。
+ * Main entry: the Rust gate (`$/kode/syntax/gate`) is the primary path; no gate /
+ * request failure / malformed response -> fall back to the TS mirror (the
+ * "degradation with unchanged behavior" ruling from the ruffLint precedent: the
+ * gate always has an answer).
  */
 export async function checkSyntaxGate(text: string): Promise<SyntaxGateResult> {
   const gate = getKodeCoreShadowGate();
@@ -195,7 +204,7 @@ export async function checkSyntaxGate(text: string): Promise<SyntaxGateResult> {
         }
       }
     } catch {
-      // 门抛错 → 回退 TS 镜像(不装死也不吞成 ok)
+      // The gate throws -> fall back to the TS mirror (neither pretend, nor swallow into ok)
     }
   }
   return syntaxGateCheck(text);

@@ -1,24 +1,30 @@
 /**
- * KSEM-CFG-03 统一配置字段身份(纯核心,零 vscode 依赖)。
+ * KSEM-CFG-03 unified config field identity (pure core, zero vscode dependency).
  *
- * 验收口径(todo.md SEM-033,旧 KSEM-CFG-03):以配置根/层级路径/工程/版本
- * 定位字段;map 动态键与固定对象字段区分。
+ * Acceptance contract (todo.md SEM-033, formerly KSEM-CFG-03): locate a field by
+ * config root / hierarchical path / project / version; distinguish map dynamic
+ * keys from fixed object fields.
  *
- * 字段身份四轴(CFG-02 契约记录之上的定位层):
- *  - root:配置根('defaults' 引擎默认 / 'custom' 项目覆盖文件 / 'final'
- *    合成最终配置);
- *  - path:点分层级路径(去 <root> 包裹,与 serverConfigCatalog 键同口径);
- *  - project:工程标识(调用方传入的资产根指纹;null=纯引擎默认);
- *  - version:引擎快照锚(942 行 baseline,CFG-02 同源)。
+ * Four axes of field identity (a locating layer above the CFG-02 contract record):
+ *  - root: config root ('defaults' engine defaults / 'custom' project override
+ *    file / 'final' synthesized final config);
+ *  - path: dot-separated hierarchical path (with the <root> wrapper stripped,
+ *    same contract as serverConfigCatalog keys);
+ *  - project: project identifier (asset-root fingerprint supplied by the caller;
+ *    null = pure engine defaults);
+ *  - version: engine snapshot anchor (the 942-line baseline, same source as CFG-02).
  *
- * 动态键区分(与 CFG-02 的 dynamicKeys 不冲突——那是「引擎是否迭代未知
- * 子节点」的行为面,无证据不记;本模块是**结构观察面**):
- *  - fixed:字段名在引擎 defaults 快照可枚举;
- *  - dynamic-extension:字段只出现在项目 custom 树(结构上可证:defaults
- *    里无同名兄弟),身份串内标记段名,定位仍可达。
+ * Dynamic key distinction (does not conflict with CFG-02's dynamicKeys — that is
+ * the behavioral surface of "does the engine iterate unknown child nodes", not
+ * recorded without evidence; this module is the **structural observation surface**):
+ *  - fixed: the field name is enumerable in the engine defaults snapshot;
+ *  - dynamic-extension: the field only appears in the project custom tree
+ *    (structurally provable: no same-name sibling exists in defaults); the
+ *    segment name is marked inside the identity string, so locating still works.
  *
- * 纯逻辑模块:输入已解析树(parseConfigXml 产物)+定位轴,输出身份串/
- * 溯源分类;不读文件不读配置不 import vscode。
+ * Pure logic module: input is a parsed tree (parseConfigXml output) plus locating
+ * axes; output is the identity string / provenance classification; no file reads,
+ * no config reads, no vscode import.
  */
 import type { ConfigXmlNode } from '../serverConfigMerge';
 
@@ -27,9 +33,9 @@ export type ConfigRootKind = 'defaults' | 'custom' | 'final';
 export interface ConfigFieldLocator {
   root: ConfigRootKind;
   path: string;
-  /** 工程标识(资产根指纹/路径;null=纯引擎默认) */
+  /** Project identifier (asset-root fingerprint/path; null = pure engine defaults) */
   project: string | null;
-  /** 引擎快照锚(如 'kbengine-defaults-942') */
+  /** Engine snapshot anchor (e.g. 'kbengine-defaults-942') */
   version: string;
 }
 
@@ -38,15 +44,17 @@ export interface ParsedConfigFieldIdentity {
   project: string | null;
   version: string;
   path: string;
-  /** 路径中属动态扩展段的段名(custom-only 段),按序 */
+  /** Names of path segments belonging to dynamic extension segments (custom-only), in order */
   dynamicSegments: readonly string[];
 }
 
 /**
- * 合成字段身份串(可解析往返):
- * `{root}://{project}@{version}/{path}`;动态段在段名前加 `~` 标记:
- * `final://proj-a@kbengine-defaults-942/myservice~.host`——`myservice~`
- * 表示该段是项目动态扩展段,非引擎固定对象字段。
+ * Compose the field identity string (parseable round-trip):
+ * `{root}://{project}@{version}/{path}`; dynamic segments get a `~` marker
+ * appended to the segment name:
+ * `final://proj-a@kbengine-defaults-942/myservice~.host` — `myservice~`
+ * means that segment is a project dynamic extension segment, not a fixed
+ * engine object field.
  */
 export function configFieldIdentity(
   locator: ConfigFieldLocator,
@@ -57,7 +65,7 @@ export function configFieldIdentity(
   return `${locator.root}://${project}@${locator.version}/${markedPath}`;
 }
 
-/** 段名加动态标记(与 dynamicSegments 对应的层级段);不存在则原样返回 */
+/** Append the dynamic marker to segment names (the hierarchical segments matching dynamicSegments); returns unchanged if absent */
 function markDynamicSegments(path: string, dynamicSegments: readonly string[]): string {
   if (dynamicSegments.length === 0) {
     return path;
@@ -69,9 +77,9 @@ function markDynamicSegments(path: string, dynamicSegments: readonly string[]): 
 
 const ROOT_KINDS: readonly ConfigRootKind[] = ['defaults', 'custom', 'final'];
 
-/** 身份串解析(往返);非良构返回 null——不猜。 */
+/** Parse the identity string (round-trip); returns null when not well-formed — no guessing. */
 export function parseConfigFieldIdentity(id: string): ParsedConfigFieldIdentity | null {
-  // version 不容 '@'(project 含 '@' 时整体不匹配——往返完整性优先)
+  // version does not allow '@' (when project contains '@' the whole thing fails to match — round-trip integrity takes priority)
   const schemeMatch = id.match(/^(defaults|custom|final):\/\/([^@/]*)@([^/@]+)\/(.+)$/);
   if (!schemeMatch) {
     return null;
@@ -111,13 +119,13 @@ export type ConfigFieldIdentityKind = 'fixed' | 'dynamic-extension' | 'dynamic-s
 
 export interface ConfigFieldProvenance {
   path: string;
-  /** 定义层:defaults 快照含该路径 / custom 项目树含该路径 */
+  /** Definition layer: the path is present in the defaults snapshot / in the custom project tree */
   definedInDefaults: boolean;
   definedInCustom: boolean;
-  /** custom 覆盖了 defaults 同名字段(defaults+custom 同在) */
+  /** custom overrides the same-named field from defaults (both defaults+custom present) */
   overriddenByCustom: boolean;
   kind: ConfigFieldIdentityKind;
-  /** dynamic-extension/segment-child 时:路径中 defaults 不存在的段名(按序) */
+  /** For dynamic-extension/segment-child: segment names in the path that do not exist in defaults (in order) */
   dynamicSegments: readonly string[];
 }
 
@@ -126,8 +134,9 @@ function childByName(node: ConfigXmlNode, name: string): ConfigXmlNode | undefin
 }
 
 /**
- * parseConfigXml 产物是空名合成文档节点(真 <root> 是其子)——归一到
- * <root> 节点;调用方直接传 <root> 节点则原样返回。
+ * parseConfigXml output is a synthetic document node with an empty name (the real
+ * <root> is its child) — normalize down to the <root> node; if the caller passes
+ * the <root> node directly it is returned unchanged.
  */
 export function normalizeRootNode(tree: ConfigXmlNode): ConfigXmlNode {
   if (tree.name === '') {
@@ -139,7 +148,7 @@ export function normalizeRootNode(tree: ConfigXmlNode): ConfigXmlNode {
   return tree;
 }
 
-/** 路径逐段下行;走到头返回节点,任一段缺失返回 undefined */
+/** Descend the tree segment by segment; returns the node when reaching the end, undefined when any segment is missing */
 function descend(node: ConfigXmlNode, segments: string[]): ConfigXmlNode | undefined {
   let current: ConfigXmlNode | undefined = node;
   for (const segment of segments) {
@@ -156,8 +165,10 @@ function segmentsOf(path: string): string[] {
 }
 
 /**
- * 单字段溯源分类。动态段=路径中**首个** defaults 快照缺失的段(其后代
- * 段不再重复登记——它们是动态段的子字段,不是新的动态段)。
+ * Provenance classification for a single field. A dynamic segment is the
+ * **first** segment in the path that is missing from the defaults snapshot
+ * (later descendant segments are not registered again — they are child fields
+ * of the dynamic segment, not new dynamic segments).
  */
 export function classifyConfigField(
   defaultsTree: ConfigXmlNode,
@@ -187,7 +198,7 @@ export function classifyConfigField(
   const definedInDefaults = dynamicSegments.length === 0;
   const customNode = customTree === null ? undefined : descend(normalizeRootNode(customTree), segments);
   const definedInCustom = customNode !== undefined;
-  // 动态段不是路径末端 → 其子字段:段子字段(非新动态段)
+  // the dynamic segment is not the tail of the path → its child field: a child field of that segment (not a new dynamic segment)
   const parentDynamic = dynamicSegments.length > 0 && lostAtIndex < segments.length - 1;
   const kind: ConfigFieldIdentityKind = parentDynamic
     ? 'dynamic-segment-child'
@@ -204,7 +215,7 @@ export function classifyConfigField(
   };
 }
 
-/** 树的全部叶子+容器路径(点分;跳过 <root> 与合成文档包裹;item 列表计容器)。 */
+/** All leaf + container paths of the tree (dot-separated; skips <root> and the synthetic document wrapper; an item list counts as a container). */
 export function collectConfigTreePaths(node: ConfigXmlNode, prefix = ''): string[] {
   const rootNode = prefix === '' ? normalizeRootNode(node) : node;
   const paths: string[] = [];
@@ -213,7 +224,7 @@ export function collectConfigTreePaths(node: ConfigXmlNode, prefix = ''): string
     if (child.children.length === 0) {
       paths.push(childPath);
     } else if (child.children.every((grandchild) => grandchild.name === 'item')) {
-      // <item> 列表:容器本身是字段(与 CFG-02 list 记录同口径)
+      // <item> list: the container itself is the field (same contract as CFG-02 list records)
       paths.push(childPath);
     } else {
       paths.push(childPath, ...collectConfigTreePaths(child, childPath));
@@ -230,7 +241,7 @@ export interface ConfigFieldIdentityScan {
   overridden: number;
 }
 
-/** 双树全量对扫:合并 defaults 可枚举字段与 custom 独有字段,逐条溯源。 */
+/** Full cross-scan of both trees: merge defaults' enumerable fields with custom-only fields, tracing provenance for each. */
 export function scanConfigFieldIdentities(
   defaultsTree: ConfigXmlNode,
   customTree: ConfigXmlNode | null,

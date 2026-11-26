@@ -1,6 +1,7 @@
-//! defPropsInlayHints 决策核 golden 生成器:合成语料+权威探测面+生产产出
-//! 同文件(TS 侧 tests/kodeDefPropsParity.test.ts 读 corpus+probes 驱动
-//! 生产函数复算对拍 outcomes)。
+//! defPropsInlayHints decision-core golden generator: synthetic corpus +
+//! authoritative probe surface + production output in one file (the TS side
+//! tests/kodeDefPropsParity.test.ts reads corpus+probes and drives the
+//! production function to recompute and compare outcomes).
 
 fn main() {
     print!("{}", kode_server::dump_def_props_golden());

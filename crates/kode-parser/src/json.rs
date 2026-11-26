@@ -1,8 +1,9 @@
-//! 对拍 golden 序列化:零依赖 JSON 写出(只写不读;读取交 TS 侧 JSON.parse)。
+//! Golden serialization for parity comparison: dependency-free JSON writing (write-only; reading is
+//! left to the TS side's JSON.parse).
 //!
-//! 输出形状由 dump 函数决定,须与 tests/kodeParserParity.test.ts 的 TS 提取器
-//! 逐字段一致(结构/字段名/空值语义),任何一侧改动都要重新生成 golden 并
-//! 让两侧门禁同时过。
+//! The output shape is determined by the dump functions and must match the TS extractor in
+//! tests/kodeParserParity.test.ts field by field (structure/field names/null semantics); any change
+//! on either side requires regenerating the goldens and letting both gates pass together.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -12,7 +13,7 @@ use crate::config::{merge_config_xml, parse_config};
 use crate::model::{parse_alias, parse_entities, parse_types, TypeKind};
 use crate::xml::Document;
 
-/// 对拍语料(仓库相对路径;顺序无关,输出按路径排序确定性生成)。
+/// Parity corpora (repo-relative paths; order-independent — the output is generated deterministically sorted by path).
 pub const PARITY_CORPORA: &[&str] = &[
     "tests/fixtures/kbengine-demo-assets",
     "tests/fixtures/parity-project",
@@ -20,7 +21,7 @@ pub const PARITY_CORPORA: &[&str] = &[
     "tests/fixtures/kbengine-tpl-scripts",
 ];
 
-/// 收集语料:*.def + entities.xml/types.xml/alias.xml(排序遍历保证确定性)。
+/// Collect the corpus: *.def + entities.xml/types.xml/alias.xml (sorted traversal for determinism).
 pub fn collect_corpus(
     repo_root: &Path,
     corpora: &[&str],
@@ -65,7 +66,7 @@ pub fn collect_corpus(
     out
 }
 
-/// 整个语料的 golden JSON(与 tests/kodeParserParity.test.ts 的 TS 提取器逐字段一致)。
+/// Golden JSON for the whole corpus (field-by-field consistent with the TS extractor in tests/kodeParserParity.test.ts).
 pub fn dump_corpus(repo_root: &Path) -> String {
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let mut w = JsonWriter::new();
@@ -88,16 +89,16 @@ pub fn dump_corpus(repo_root: &Path) -> String {
     w.buf
 }
 
-/// 单个语料文件的 golden 记录。
+/// Golden record for a single corpus file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileRecord {
-    /// 相对 fixture 根的路径(统一 `/` 分隔)。
+    /// Path relative to the fixture root (uniform `/` separators).
     pub file: String,
     pub kind: &'static str,
     pub json: String,
 }
 
-/// 小型 JSON 输出器(确保转义正确,零依赖)。
+/// Small JSON writer (correct escaping, zero dependencies).
 #[derive(Debug, Clone)]
 pub struct JsonWriter {
     pub buf: String,
@@ -162,7 +163,7 @@ impl Default for JsonWriter {
     }
 }
 
-/// 解析单个文件文本并产出 golden JSON(不含外层 file/kind 包装)。
+/// Parse a single file's text and emit its golden JSON (without the outer file/kind wrapper).
 pub fn record_json(kind: &str, text: &str) -> String {
     let mut w = JsonWriter::new();
     match kind {
@@ -354,12 +355,12 @@ fn str_array(w: &mut JsonWriter, items: &[String]) {
     w.raw("]");
 }
 
-// --- 配置域对拍(KODE-CFG-002) ---
+// --- Config-domain parity (KODE-CFG-002) ---
 
-/// 配置语料(仓库相对路径;全部 `.xml`,含 edge/ 边界集)。
+/// Config corpora (repo-relative paths; all `.xml`, including the edge/ boundary set).
 pub const CONFIG_CORPORA: &[&str] = &["tests/fixtures/config"];
 
-/// 收集配置语料:递归收 `.xml` 文件(排序遍历保证确定性)。
+/// Collect the config corpus: recursively gather `.xml` files (sorted traversal for determinism).
 pub fn collect_config_corpus(repo_root: &Path) -> BTreeMap<String, String> {
     fn walk(dir: &Path, rel_prefix: &str, out: &mut BTreeMap<String, String>) {
         let mut entries: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
@@ -393,7 +394,7 @@ pub fn collect_config_corpus(repo_root: &Path) -> BTreeMap<String, String> {
     out
 }
 
-/// 整个配置语料的 golden JSON(与 tests/configParity.test.ts 的 TS 提取器逐字段一致)。
+/// Golden JSON for the whole config corpus (field-by-field consistent with the TS extractor in tests/configParity.test.ts).
 pub fn dump_config_corpus(repo_root: &Path) -> String {
     let files = collect_config_corpus(repo_root);
     let mut w = JsonWriter::new();
@@ -419,7 +420,7 @@ pub fn dump_config_corpus(repo_root: &Path) -> String {
     w.buf
 }
 
-/// 配置树 golden 记录(镜像 TS `ConfigXmlNode` 提取字段)。
+/// Config-tree golden record (mirrors the extracted fields of TS `ConfigXmlNode`).
 pub fn dump_config_node(w: &mut JsonWriter, node: &crate::config::ConfigNode) {
     w.raw("{\"name\":");
     w.str(&node.name);
@@ -437,18 +438,19 @@ pub fn dump_config_node(w: &mut JsonWriter, node: &crate::config::ConfigNode) {
     w.raw("}");
 }
 
-// --- 配置合并对拍(KODE-CFG-003) ---
+// --- Config-merge parity (KODE-CFG-003) ---
 
-/// 合并对拍语料(base, override)XML 对(仓库相对路径;每对先 parse 后 merge,
-/// 输出 merge(base, override) 树记录)。
+/// Merge parity corpus: (base, override) XML pairs (repo-relative paths; each pair is parsed then
+/// merged, emitting a merge(base, override) tree record).
 pub const CONFIG_MERGE_PAIRS: &[(&str, &str)] = &[
-    // 真实路径:引擎 defaults 为基、元件 kbengine.xml 覆盖(顶层单 `<root>` 递归下钻)
+    // Real-world path: engine defaults as base, project kbengine.xml as override (single top-level `<root>` recursing downward)
     (
         "tests/fixtures/config/kbengine_defaults.xml",
         "tests/fixtures/config/kbengine.xml",
     ),
-    // 分支覆盖:单名叶子替换 / 仅 base / 仅 override / 双容器递归 / 容器↔叶子双向 /
-    // 重复名整表替换双向 / 注释合并去重与 override 优先 / 名字序 / 深层递归
+    // Branch coverage: single-name leaf replacement / base only / override only / dual-container
+    // recursion / container<->leaf both directions / repeated-name wholesale table replacement both
+    // directions / comment merge dedup with override preference / name ordering / deep recursion
     (
         "tests/fixtures/config/merge/m01_leaf_base.xml",
         "tests/fixtures/config/merge/m01_leaf_override.xml",
@@ -495,8 +497,8 @@ pub const CONFIG_MERGE_PAIRS: &[(&str, &str)] = &[
     ),
 ];
 
-/// 整个合并语料的 golden JSON(与 tests/configMergeParity.test.ts 的 TS 提取器
-/// 逐字段一致;parse 任一侧失败则 record=null)。
+/// Golden JSON for the whole merge corpus (field-by-field consistent with the TS extractor in
+/// tests/configMergeParity.test.ts; if parsing either side fails, record=null).
 pub fn dump_config_merge_corpus(repo_root: &Path) -> String {
     let mut w = JsonWriter::new();
     w.raw("{\"generator\":\"kode-parser dump-config-merge-golden\",\"pairCount\":");

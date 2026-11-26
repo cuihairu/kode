@@ -1,36 +1,50 @@
 /**
- * 热更 globs 默认值生成(用户令 2026-11-12「globs 应该生成默认值到配置中吧,
- * 方便修改」):把派生口径下实际生效的监视范围写进 kbengine.hotReload.globs,
- * 用户改起来有可见靶子,不必先去配 assetsRoot 再靠插件默默派生。
+ * Materializing default hot-reload globs (user order 2026-11-12: "globs
+ * should materialize their default value into the config, for easy editing"):
+ * writes the watch scope actually in effect under the derived convention into
+ * kbengine.hotReload.globs, so the user has a visible target to edit instead
+ * of configuring assetsRoot first and relying on silent plugin derivation.
  *
- * 形态红线(本模块存在的理由):派生口径的 `${workspaceFolder}/<相对>/<py 递归
- * 后缀>` 形态不能原样写进配置。显式 globs 经 setupHotReload 原样交给文件监视
- * 器注册口,而该注册口不展开 `${workspaceFolder}` 变量(派生口径要靠
- * deriveWatcherPattern 的 RelativePattern 才落地)。把变量形态写回配置=变成
- * 显式 glob 后按字面匹配绝对路径,监视范围静默落空。故生成一律给绝对路径形态
- * `${assetsRoot}/<py 递归后缀>`——它本身就是合法 GlobPattern,写回后监视不依赖
- * 派生、也不依赖变量展开,用户改哪个目录都是直接改串。
+ * Shape red line (the reason this module exists): the derived convention's
+ * `${workspaceFolder}/<relative>/<py recursive suffix>` shape must not be
+ * written into the config as is. Explicit globs are handed verbatim by
+ * setupHotReload to the file-watcher registration entry, and that entry does
+ * not expand the `${workspaceFolder}` variable (the derived convention lands
+ * only via deriveWatcherPattern's RelativePattern). Writing the variable
+ * shape back into the config turns it into an explicit glob that matches
+ * absolute paths literally, and the watch scope silently matches nothing.
+ * So generation always emits the absolute-path shape
+ * `${assetsRoot}/<py recursive suffix>` -- itself a legal GlobPattern; once
+ * written back, watching depends neither on derivation nor on variable
+ * expansion, and whichever directory the user edits is a direct string edit.
  *
- * 幂等与守口:
- * - globs 已显式写过(含空数组=显式不监视)→ 不动,提示已可改(不覆盖用户意图);
- * - 未写(unset)→ 才生成;生成需解析出 assetsRoot,缺根如实报错不写空值。
+ * Idempotence and guarded mouth:
+ * - globs already written explicitly (including an empty array = explicitly
+ *   watch nothing) -> left untouched, with a hint that it is already editable
+ *   (user intent is never overwritten);
+ * - unset -> only then is generation attempted; generation needs a resolved
+ *   assetsRoot, and a missing root is reported honestly with no empty value
+ *   written.
  *
- * 纯逻辑与装配分家:读/写配置经注入面(装配给真 vscode 实现,测试给假体),
- * 本模块不在纯函数里碰 vscode。
+ * Pure logic split from wiring: config read/write goes through an injected
+ * surface (wiring supplies the real vscode implementation, tests supply
+ * fakes); this module never touches vscode inside pure functions.
  */
 
 export const HOT_RELOAD_MATERIALIZE_GLOBS_COMMAND = 'kbengine.hotReload.materializeGlobs';
 
-/** 热更本职只处理 .py(与 deriveHotReloadGlob 的派生后缀同口径) */
+/** Hot reload proper only handles .py (same convention as deriveHotReloadGlob's derived suffix) */
 const HOT_RELOAD_GLOB_SUFFIX = '**/*.py';
 
-/** 路径归一成 glob 用正斜杠并去尾斜杠(Windows 反斜杠一并归一) */
+/** Normalize a path for globs: forward slashes, trailing slashes stripped (Windows backslashes normalized too) */
 const normalizePathForGlob = (value: string): string =>
   value.replace(/\\/g, '/').replace(/\/+$/, '');
 
 /**
- * 生成写入配置的监视模式:资产根绝对路径 + py 递归后缀。
- * assetsRoot 为空 → 空串(调用方按缺根如实报错,绝不写「全扫」形态)。
+ * Generate the watch pattern to write into the config: assets-root absolute
+ * path + the py recursive suffix. An empty assetsRoot -> empty string (the
+ * caller reports the missing root honestly; a "scan everything" shape is
+ * never written).
  */
 export function materializeHotReloadGlob(assetsRoot: string): string {
   const root = normalizePathForGlob((assetsRoot ?? '').trim());
@@ -41,35 +55,39 @@ export function materializeHotReloadGlob(assetsRoot: string): string {
 }
 
 /**
- * 配置读写口:读原始 globs 值(未写/类型写坏=undefined),写回监视模式数组。
- * update 返回 Thenable 而非 Promise——vscode Configuration.update 的声明
- * 面就是 Thenable<void>,本模块不要求调用方包一层。
+ * Config read/write port: reads the raw globs value (unset / wrong-typed =
+ * undefined) and writes back an array of watch patterns. update returns a
+ * Thenable rather than a Promise -- the declared surface of vscode's
+ * Configuration.update is Thenable<void>, and this module does not require
+ * callers to wrap it.
  */
 export interface HotReloadGlobsConfig {
   readRaw(): unknown;
   update(patterns: string[]): Thenable<void>;
 }
 
-/** 已显式写过(数组;空数组也算显式「不监视任何模式」,与 §11.1 同口径) */
+/** Already written explicitly (an array; an empty array also counts as explicitly "watch no patterns", same convention as §11.1) */
 const explicitGlobsOf = (raw: unknown): string[] | undefined =>
   Array.isArray(raw) ? (raw.filter((item): item is string => typeof item === 'string') as string[]) : undefined;
 
 export interface HotReloadGlobsMaterializeResult {
-  /** 已生成并写回的模式 */
+  /** The pattern that was generated and written back */
   readonly written?: string;
-  /** 未写的原因(已显式配置 / 缺资产根) */
+  /** Why nothing was written (already configured explicitly / missing assets root) */
   readonly skipped?: 'explicit' | 'no-assets-root';
 }
 
 export interface HotReloadGlobsMaterializeDeps {
   readonly config: HotReloadGlobsConfig;
-  /** 解析资产根(绝对路径;解析不出=空串) */
+  /** Resolve the assets root (an absolute path; unresolvable = empty string) */
   resolveAssetsRoot(): string;
 }
 
 /**
- * 生成默认值:未写才生成,已写不动。生成成功后配置变更事件驱动 watcher
- * 重建(setupHotReload 既有签名判据),无需额外接线。
+ * Materialize the default value: generate only when unset, never touch what
+ * is written. A successful generation lets the config-change event drive the
+ * watcher rebuild (setupHotReload's existing signature criterion), so no
+ * extra wiring is needed.
  */
 export async function materializeHotReloadGlobs(
   deps: HotReloadGlobsMaterializeDeps

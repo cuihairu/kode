@@ -4,28 +4,33 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      // definitionSemantics 纯逻辑测试经由 definitionWorkspace 传递依赖 vscode;
-      // 这里用 fake-vscode 替身满足模块求值(tests/fake-vscode,与 mocha 烟测
-      // 消费同一份实现)。
+      // definitionSemantics pure-logic tests transitively depend on vscode via
+      // definitionWorkspace; this stub satisfies module evaluation (tests/fake-vscode,
+      // the same implementation consumed by the mocha smoke tests).
       vscode: path.resolve(__dirname, 'tests/helpers/vscodeStub.ts')
     }
   },
   test: {
-    // vitest 承载全部功能测试(纯逻辑/仿真器/fake-vscode 装配与面板);
-    // src/test/suite 的 mocha 只做编译产物烟测,两套互不掺和。
+    // vitest carries all functional tests (pure logic / simulator / fake-vscode
+    // assembly and panels); the mocha suite in src/test/suite only smoke-tests the
+    // compiled artifacts, and the two never mix.
     include: ['tests/**/*.test.ts'],
     environment: 'node',
-    // WIN-7:全量 499 文件按 CPU 数并行在 16C/8GB 上把 spawn/真跑型用例
-    // 挤出 5s testTimeout(单跑全绿)——封顶 worker 数留余量;Linux CI 同益。
+    // WIN-7: the full 499-file run, parallelized by CPU count on 16C/8GB, squeezed
+    // spawn/real-run cases out of the 5s testTimeout (all green when run alone) —
+    // cap the worker count to keep headroom; Linux CI benefits the same way.
     maxWorkers: 8,
-    // 回环 socket 集成测试已全部迁移 tests/sim 仿真器(端口动态分配,
-    // 见 docs/redesign.md 阶段 1),文件级并行不再有固定端口争用。
+    // Loopback socket integration tests have all moved to the tests/sim simulator
+    // (ports allocated dynamically, see docs/redesign.md phase 1), so file-level
+    // parallelism no longer fights over fixed ports.
     coverage: {
       provider: 'v8',
-      // 覆盖率如实统计全部 src 源码:重设计阶段 3 起 extension.ts 的
-      // activate/deactivate 由 fake-vscode 装配测试驱动,进分母(P14/P16)。
-      // all=true: 未被测试触达的源文件也进分母,codecov 徽章数字才是全树真值
-      // (默认只统计被加载文件,会虚高到 ~100%,2026-10-22 修正)。
+      // Coverage honestly counts all src sources: from redesign phase 3 on,
+      // extension.ts activate/deactivate are driven by the fake-vscode assembly
+      // tests and count in the denominator (P14/P16).
+      // all=true: source files untouched by tests also count in the denominator,
+      // so the codecov badge number is the true whole-tree value (the default only
+      // counts loaded files and inflates to ~100%; corrected 2026-10-22).
       all: true,
       include: ['src/**/*.ts'],
       exclude: ['src/test/**'],

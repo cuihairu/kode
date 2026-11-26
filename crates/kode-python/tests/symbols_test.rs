@@ -1,4 +1,4 @@
-//! AST 符号表 + kode-corpus 降级测试(C-20 交付④)。
+//! AST symbol table + kode-corpus downgrade tests (C-20 deliverable 4).
 
 use kode_python::parse_ast_symbols;
 use kode_python::symbols::class_index;
@@ -35,17 +35,18 @@ fn extracts_classes_methods_attributes() {
     assert_eq!(avatar.name, "Avatar");
     assert_eq!(avatar.bases, vec!["KBEngine.Entity".to_string()]);
     assert_eq!(avatar.decorators, vec!["@deco".to_string()]);
-    // 类属性 base = 1 与 __init__/make 的 self.hp 写入(跨方法聚合,去重语义)
+    // Class attribute base = 1 plus the self.hp writes in __init__/make
+    // (aggregated across methods, dedup semantics)
     let attr_names: Vec<&str> = avatar.attributes.iter().map(|a| a.name.as_str()).collect();
     assert!(attr_names.contains(&"name"));
     assert!(attr_names.contains(&"hp"));
-    // 方法
+    // Methods
     let method_names: Vec<&str> = avatar.methods.iter().map(|m| m.name.as_str()).collect();
     assert_eq!(method_names, vec!["__init__", "make"]);
     let make = avatar.methods.iter().find(|m| m.name == "make").unwrap();
     assert!(make.is_async);
     assert_eq!(make.decorators, vec!["@staticmethod".to_string()]);
-    // __init__ 形参(去掉 self):name, hp
+    // __init__ params (self removed): name, hp
     let init = avatar
         .methods
         .iter()
@@ -58,11 +59,11 @@ fn extracts_classes_methods_attributes() {
 fn extracts_module_functions_and_imports() {
     let ext = parse_ast_symbols(SRC);
     let s = &ext.symbols;
-    // 模块级函数 standalone
+    // Module-level function standalone
     assert_eq!(s.functions.len(), 1);
     assert_eq!(s.functions[0].name, "standalone");
     assert_eq!(s.functions[0].params, vec!["x", "y", "args", "kw"]);
-    // 导入
+    // Imports
     let imports: Vec<(&str, &str, bool)> = s
         .imports
         .iter()
@@ -99,13 +100,14 @@ fn class_index_maps_name_to_class() {
 #[test]
 fn tolerant_of_syntax_errors() {
     let ext = parse_ast_symbols("class Broken(:\n    pass\n");
-    // 不 panic;错误被记录
+    // No panic; errors are recorded
     let _ = ext.errors;
     assert!(ext.symbols.classes.is_empty() || !ext.symbols.classes.is_empty());
 }
 
-/// KODE-AUD-008:match case 体内 `self.<attr> = ...` 属性写此前漏收集
-/// (collect_attributes 不走 Match);修复后 case 体内属性入表。
+/// KODE-AUD-008: `self.<attr> = ...` attribute writes inside match case bodies were
+/// previously missed (collect_attributes does not walk Match); after the fix,
+/// case-body attributes enter the table.
 #[test]
 fn match_case_self_attribute_collected() {
     let src = "class C:\n    def m(self, x):\n        match x:\n            case 1:\n                self.value = 1\n";
@@ -118,9 +120,10 @@ fn match_case_self_attribute_collected() {
     );
 }
 
-/// KR-AUD-11:`import a.b` 绑定名取顶层首段 `a`(跨文件解析按顶层名)。
-/// 旧实现 binding 取全段 "a.b",下游 CallContext.module_bindings/跨文件
-/// 解析按错误名匹配。
+/// KR-AUD-11: the binding name of `import a.b` takes the top-level first segment `a`
+/// (cross-file resolution works on top-level names). The old implementation used the full
+/// dotted "a.b" as binding, so downstream CallContext.module_bindings / cross-file
+/// resolution matched on the wrong name.
 #[test]
 fn dotted_import_binding_is_top_level_segment_kraud11() {
     let ext = parse_ast_symbols("import a.b\nimport numpy as np\n");
@@ -135,12 +138,13 @@ fn dotted_import_binding_is_top_level_segment_kraud11() {
 }
 
 // ---------------------------------------------------------------------------
-// 覆盖率补充:collect_attributes 控制流分支 / method_params 全形参位 /
-// 隐式作用域(推导式/lambda)/ star 导入 / 空作用域丢弃 / 非 self 属性负路径。
+// Coverage addenda: collect_attributes control-flow branches / all method_params
+// slots / implicit scopes (comprehension/lambda) / star imports / empty-scope
+// dropping / non-self attribute negative paths.
 // ---------------------------------------------------------------------------
 
-/// 方法体内 if/elif/else/for/else/while/else/with/try 各控制流体中的
-/// `self.<attr>` 写与 AnnAssign 属性声明均入属性表。
+/// `self.<attr>` writes and AnnAssign attribute declarations inside every control-flow
+/// body of a method (if/elif/else/for/else/while/else/with/try) all enter the attribute table.
 #[test]
 fn self_attributes_collected_in_control_flow_bodies() {
     let src = r#"
@@ -199,7 +203,8 @@ class C:
     }
 }
 
-/// 非 self 属性写(obj.x = 1 / self.a.b = 1)与普通局部赋值不产属性项。
+/// Non-self attribute writes (obj.x = 1 / self.a.b = 1) and plain local
+/// assignments produce no attribute entries.
 #[test]
 fn non_self_writes_are_not_attributes() {
     let src = "class C:\n    def m(self, obj):\n        obj.x = 1\n        self.a.b = 2\n        local = 3\n";
@@ -212,8 +217,8 @@ fn non_self_writes_are_not_attributes() {
     );
 }
 
-/// method_params 全形参位:posonly(/)、kwonly(*)、vararg、kwarg 顺序;
-/// `self` 过滤只按名(任意位置)。
+/// method_params covers all parameter slots: posonly (/), kwonly (*), vararg,
+/// kwarg ordering; the `self` filter is by name only (any position).
 #[test]
 fn method_params_covers_all_parameter_slots() {
     let src = "def f(self, a, /, b, *args, c, **kw):\n    pass\n";
@@ -222,12 +227,12 @@ fn method_params_covers_all_parameter_slots() {
         ext.symbols.functions[0].params,
         vec!["a", "b", "args", "c", "kw"]
     );
-    // kwonly 无 vararg/kwarg。
+    // kwonly with no vararg/kwarg.
     let ext2 = parse_ast_symbols("def g(a, *, b):\n    pass\n");
     assert_eq!(ext2.symbols.functions[0].params, vec!["a", "b"]);
 }
 
-/// 类基类只保留 dotted identifier:调用形态基类 `class C(func())` 被过滤。
+/// Class bases keep only dotted identifiers: a call-form base `class C(func())` is filtered out.
 #[test]
 fn class_bases_keep_only_dotted_identifiers() {
     let src = "def factory():\n    return object\n\nclass C(factory()):\n    pass\n\nclass D(Base):\n    pass\n";
@@ -238,9 +243,9 @@ fn class_bases_keep_only_dotted_identifiers() {
     assert_eq!(d.bases, vec!["Base".to_string()]);
 }
 
-/// 函数作用域 import 绑定收集:`from x import *` 不记绑定;推导式
-/// (Set/Dict/Generator)与 lambda 是独立隐式作用域(lambda 形参入
-/// 参数遮蔽);空作用域层(无绑定无遮蔽)不入表。
+/// Function-scope import binding collection: `from x import *` records no binding;
+/// comprehensions (Set/Dict/Generator) and lambdas are separate implicit scopes (lambda
+/// params enter parameter shadowing); an empty scope layer (no bindings, no shadows) is not tabulated.
 #[test]
 fn function_scope_binding_collector_edges() {
     let src = r#"
@@ -261,7 +266,7 @@ def empty():
     pass
 "#;
     let ext = parse_ast_symbols(src);
-    // star 导入不产绑定;with_star 的作用域层只有空绑定 → 整层不入表。
+    // Star imports produce no binding; with_star's scope layer has only empty bindings -> the whole layer is dropped.
     assert!(
         !ext.symbols
             .function_import_bindings
@@ -270,7 +275,7 @@ def empty():
         "star 导入不应记绑定, got {:#?}",
         ext.symbols.function_import_bindings
     );
-    // 推导式目标进各自隐式层(Set/Dict/Generator 各一层),不污染外层。
+    // Comprehension targets enter their own implicit layers (one layer each for Set/Dict/Generator), without polluting the outer layer.
     let comp_scopes: Vec<_> = ext
         .symbols
         .function_import_bindings
@@ -278,7 +283,7 @@ def empty():
         .filter(|s| matches!(s.kind, kode_python::model::ScopeKind::Comprehension))
         .collect();
     assert_eq!(comp_scopes.len(), 3, "三个推导式各一层: {comp_scopes:#?}");
-    // lambda 形参 p 入参数遮蔽。
+    // Lambda param p enters parameter shadowing.
     let lambda_scopes: Vec<_> = ext
         .symbols
         .function_import_bindings
@@ -290,7 +295,7 @@ def empty():
         1,
         "lambda 形参 p 应入参数遮蔽: {lambda_scopes:#?}"
     );
-    // 空作用域层(empty 无参数无绑定)不入表。
+    // Empty scope layer (empty has no params and no bindings) is not tabulated.
     assert!(
         !ext.symbols
             .function_import_bindings

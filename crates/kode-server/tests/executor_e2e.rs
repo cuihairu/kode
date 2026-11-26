@@ -179,7 +179,10 @@ fn pool_serves_heavy_task_while_light_requests_return_first() {
     let mut proc = spawn_server();
 
     // 握手:initialize → initialized。
-    send(&mut proc, &request(1, "initialize", json!({ "capabilities": {} })));
+    send(
+        &mut proc,
+        &request(1, "initialize", json!({ "capabilities": {} })),
+    );
     let init = wait_response(&proc, 1, Duration::from_secs(30));
     assert!(
         init.get("result").map(|r| !r.is_null()).unwrap_or(false),
@@ -222,9 +225,14 @@ fn pool_serves_heavy_task_while_light_requests_return_first() {
 
     // 重任务回包:流引擎真算出 self.hp 流型(非空)。
     let done = wait_response(&proc, 10, Duration::from_secs(120));
-    let flow = done.pointer("/result/flow").expect("selfAttributeFlow 应回 flow");
+    let flow = done
+        .pointer("/result/flow")
+        .expect("selfAttributeFlow 应回 flow");
     assert!(
-        flow.get("types").and_then(|t| t.as_array()).map(|t| !t.is_empty()).unwrap_or(false),
+        flow.get("types")
+            .and_then(|t| t.as_array())
+            .map(|t| !t.is_empty())
+            .unwrap_or(false),
         "重任务必须真执行(非空 types): {flow}"
     );
 
@@ -294,9 +302,15 @@ fn pool_serves_heavy_task_while_light_requests_return_first() {
 fn pool_span_id_traces_across_tasks_without_param_leaks() {
     let mut proc = spawn_server_with_stderr();
 
-    send(&mut proc, &request(1, "initialize", json!({ "capabilities": {} })));
+    send(
+        &mut proc,
+        &request(1, "initialize", json!({ "capabilities": {} })),
+    );
     wait_response(&proc, 1, Duration::from_secs(30));
-    send(&mut proc, &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }));
+    send(
+        &mut proc,
+        &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }),
+    );
 
     // 两个并发池任务,信封各带不同 span;params 内放敏感标记验证脱敏。
     // request 10:真实流引擎 handler(小语料,handler 成功结算即可)。
@@ -340,13 +354,11 @@ fn pool_span_id_traces_across_tasks_without_param_leaks() {
             done_health.is_some()
         );
         match proc.rx.try_recv() {
-            Ok(value) => {
-                match value.get("id").and_then(|v| v.as_i64()) {
-                    Some(10) => done_flow = Some(value),
-                    Some(11) => done_health = Some(value),
-                    _ => {}
-                }
-            }
+            Ok(value) => match value.get("id").and_then(|v| v.as_i64()) {
+                Some(10) => done_flow = Some(value),
+                Some(11) => done_health = Some(value),
+                _ => {}
+            },
             Err(_) => std::thread::sleep(Duration::from_millis(20)),
         }
     }
@@ -453,9 +465,15 @@ fn pool_cancel_interrupts_inflight_and_keeps_light_lane_served() {
     let mut proc = spawn_server_with_stderr();
 
     // 握手:initialize → initialized。
-    send(&mut proc, &request(1, "initialize", json!({ "capabilities": {} })));
+    send(
+        &mut proc,
+        &request(1, "initialize", json!({ "capabilities": {} })),
+    );
     wait_response(&proc, 1, Duration::from_secs(30));
-    send(&mut proc, &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }));
+    send(
+        &mut proc,
+        &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }),
+    );
 
     // 重任务 id 10:大语料无 versionKey(不缓存,每次现解析,数百毫秒)。
     send(
@@ -551,7 +569,11 @@ fn pool_cancel_interrupts_inflight_and_keeps_light_lane_served() {
     );
     send(
         &mut proc,
-        &request(21, "$/kode/rpc", json!({ "method": "$/kode/echo", "params": {} })),
+        &request(
+            21,
+            "$/kode/rpc",
+            json!({ "method": "$/kode/echo", "params": {} }),
+        ),
     );
     let pre = wait_response(&proc, 21, Duration::from_secs(30));
     assert_eq!(

@@ -32,40 +32,47 @@ ROOT = Path(__file__).resolve().parents[2]
 SWITCHES = ROOT / "scripts/config-switch-gifs/switches.json"
 OUTPUT = ROOT / "docs/public/config-switch-gifs"
 DEMO_ASSETS = ROOT / "tests/fixtures/kbengine-demo-assets"
-# 截图工作区/帧目录（可 --keep 保留）。多会话共树/并发捕获时用环境变量
-# KODE_GIF_CAP 指向各自独立目录,避免共享 vscode-profile 与 staging 区互踩
-# (2026-11-07:另会话同用 /tmp/kode-gif-capture,双方 kill_code 互杀 VS Code)。
+# Screenshot workspace/frames directory (kept with --keep). When several sessions
+# share this tree, or captures run concurrently, point KODE_GIF_CAP at a private
+# directory per session so shared vscode-profile and staging areas do not step on
+# each other (2026-11-07: another session also used /tmp/kode-gif-capture and both
+# sides' kill_code killed the other's VS Code).
 CAP = Path(os.environ.get("KODE_GIF_CAP", "/tmp/kode-gif-capture"))
 VSCODE_USER = CAP / "vscode-profile"
 VSCODE_EXT = CAP / "vscode-ext"
 DISPLAY = os.environ.get("KODE_GIF_DISPLAY", ":99")
 SCREEN = "1600x1000x24"
 GIF_DELAY_MS = 700
-# kode-server 二进制:show-final-config-on-open 依赖 KODE-CFG-009 的
-# `$/kode/config/resolve`(两棵树由 core 解析,TS 无本地回退),vscode 姿态
-# 把 kbengine.core.serverPath 指到它;二进制必须含 config/resolve(旧构建
-# 没有,strings 可查)。默认取仓库 cargo 产物,可用 KODE_SERVER_PATH 覆盖。
+# kode-server binary: show-final-config-on-open relies on KODE-CFG-009's
+# `$/kode/config/resolve` (both trees are resolved by core, TS has no local
+# fallback), so the vscode pose points kbengine.core.serverPath at it; the binary
+# must contain config/resolve (older builds do not, checkable via strings).
+# Defaults to the repo cargo artifact, overridable via KODE_SERVER_PATH.
 KODE_SERVER_PATH = os.environ.get(
     "KODE_SERVER_PATH", str(ROOT / "target" / "debug" / "kode-server"))
 
-# 悬停坐标（1600x1000、editor.fontSize 18、隐藏 minimap、默认 Dark+ 校准值）：
-# hover 目标 token 放在演示文件固定行列，像素位 = 常量，换主题/字号需重新校准
+# Hover coordinates (calibrated at 1600x1000, editor.fontSize 18, minimap hidden,
+# default Dark+): the hover target token sits at a fixed row/column in the demo
+# file, so the pixel position is a constant; recalibrate on theme/font-size change
 HOVER_XY = {
-    # HoverDemo.def: <Flags> 标签 / BASE_AND_CLIENT 取值
+    # HoverDemo.def: the <Flags> tag / the BASE_AND_CLIENT value
     "tag": (660, 250),
     "value": (760, 250),
-    # Monster.def: CellMethods 里的 onAggro 方法名
+    # Monster.def: the onAggro method name in CellMethods
     "method": (700, 340),
-    # SKILL_SLOT_DATA.py:2 注释里 weapon_skill_slot_list_inst 词中(待标定,
-    # 见 2026-11-07 标定注记:窗口在 1600x1000 Xvfb 内偏移待测,先按 (0,0))
+    # Middle of the word weapon_skill_slot_list_inst inside the comment at
+    # SKILL_SLOT_DATA.py:2 (still to be calibrated; see the 2026-11-07 calibration
+    # note: the window offset inside a 1600x1000 Xvfb is unmeasured, so assume (0,0))
     "implementedBy": (1051, 147),
 }
 
 BASE_SETTINGS = {
-    # 仅 workspace 作用域键——application/window 作用域键写在 .vscode/settings.json
-    # 不生效,归 PROFILE_SETTINGS(2026-11-07 实测:trust 写在工作区里,/tmp 工作区
-    # 仍进 Restricted Mode,扩展无 capabilities.untrustedWorkspaces 声明→永不激活,
-    # exthost 日志无一条 kode 激活记录,off/on 帧完全相同)。
+    # Workspace-scope keys only — application/window scope keys written into
+    # .vscode/settings.json do not take effect and belong in PROFILE_SETTINGS
+    # (2026-11-07 measurement: trust written in the workspace still left the /tmp
+    # workspace in Restricted Mode, the extension declares no
+    # capabilities.untrustedWorkspaces so it never activated, the exthost log has no
+    # kode activation record at all, and off/on frames came out identical).
     "workbench.startupEditor": "none",
     "workbench.editor.enablePreview": False,
     "telemetry.telemetryLevel": "off",
@@ -73,23 +80,25 @@ BASE_SETTINGS = {
     "editor.minimap.enabled": False,
     "editor.renderWhitespace": "none",
     "problems.autoReveal": False,
-    "kode.python.stubExport": False,   # 防止截图期间后台写 .pyi 产生通知
+    "kode.python.stubExport": False,   # avoid background .pyi writes raising notifications during capture
 }
 
-# 用户级(User/settings.json)——application/window 作用域固定项。
-# 截图专用 profile,键值全量写死,重跑覆盖同值保证跨机一致。
+# User level (User/settings.json) — fixed application/window scope items.
+# Screenshot-dedicated profile: all keys written out in full, reruns overwrite the
+# same values to stay consistent across machines.
 PROFILE_SETTINGS = {
-    "security.workspace.trust.enabled": False,   # /tmp 工作区免 Restricted Mode
+    "security.workspace.trust.enabled": False,   # /tmp workspace stays out of Restricted Mode
     "update.mode": "none",
     "extensions.autoUpdate": False,
     "extensions.autoCheckUpdates": False,
     "extensions.ignoreRecommendations": True,
     "window.commandCenter": False,
-    "workbench.colorTheme": "Default Dark+",   # 固定主题，保证跨机重跑像素可比
+    "workbench.colorTheme": "Default Dark+",   # fixed theme so reruns stay pixel-comparable across machines
     "chat.commandCenter.enabled": False,
-    # 首启免欢迎弹窗(2026-11-07 新 profile 实测:只写工作区 BASE_SETTINGS 不
-    # 够,全新 --user-data-dir 首启仍弹「Welcome to VS Code」模态,截图全被
-    # 模态遮住;须落 profile 用户级 settings.json)
+    # Suppress the first-launch welcome dialog (2026-11-07 measurement on a fresh
+    # profile: writing only the workspace BASE_SETTINGS is not enough, a brand new
+    # --user-data-dir still pops the "Welcome to VS Code" modal and covers every
+    # screenshot; it must land in the profile's user-level settings.json)
     "workbench.startupEditor": "none",
 }
 
@@ -178,7 +187,7 @@ def code_window():
         try:
             geo = subprocess.run(["xdotool", "getwindowgeometry", i],
                                  capture_output=True, text=True, env=env()).stdout
-            # 形如 "  Geometry: 1600x847"
+            # shaped like "  Geometry: 1600x847"
             dims = geo.split("Geometry:")[1].split()[0] if "Geometry:" in geo else "0x0"
             w, h = (int(v) for v in dims.split("x"))
             if w > 600 and h > 400:
@@ -195,7 +204,7 @@ def launch_code(ws, open_path=None):
     if open_path:
         args += ["--goto", str(open_path)]
     subprocess.Popen(args, env=env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(100):                      # 最多 30s 等窗口
+    for _ in range(100):                      # wait at most 30s for the window
         win = code_window()
         if win:
             subprocess.run(["xdotool", "windowactivate", "--sync", str(win)],
@@ -216,12 +225,15 @@ def mouse(x, y):
     subprocess.run(["xdotool", "mousemove", str(x), str(y)], capture_output=True, env=env())
 
 
-# 帧差/空白判定默认裁「编辑器文字区」（1600x1000 校准：跳过标签栏+面包屑，
-# 约 y>170）。只看文字区做空白/帧差判定——整窗裁剪会把标签栏/侧栏像素算
-# 进来，编辑器未画出来也会误判通过（2026-11-07 假阳性教训）。
-# hover 卡片渲染在光标旁（Ln 2 近顶部时卡片在 y~45-140，2026-11-07 键盘
-# 悬停实测），标准区裁不到；hover 类开关用加高区（含顶部卡片位，标题栏/
-# 标签带在 off/on 间恒定，不贡献帧差）。
+# Frame-diff/blank checks crop the "editor text area" by default (calibrated at
+# 1600x1000: skip the tab bar + breadcrumb, roughly y>170). Blank/diff checks look
+# at the text area only — a full-window crop would count tab bar/side bar pixels
+# and could pass by mistake when the editor never rendered (2026-11-07 false
+# positive lesson).
+# Hover cards render beside the cursor (near Ln 2 the card sits at y~45-140,
+# 2026-11-07 keyboard-hover measurement), which the standard region cannot catch;
+# hover-type switches use the taller region (including the top card slot; the title
+# bar/tab strip is constant between off/on and contributes no frame difference).
 TEXT_CROP = "890x600+389+170"
 HOVER_CROP = "1040x700+389+30"
 
@@ -292,10 +304,10 @@ def close_auxiliary():
         command_palette("View: Close Auxiliary Bar")
         time.sleep(1.0)
     except Exception:  # noqa: BLE001
-        pass                                   # 已关闭/命令不存在时非致命
+        pass                                   # not fatal when already closed / command does not exist
 
 
-# ---------------------------------------------------------------- 工作区
+# ---------------------------------------------------------------- workspace
 def write_settings(ws, extra):
     settings_dir = ws / ".vscode"
     settings_dir.mkdir(exist_ok=True)
@@ -312,7 +324,7 @@ def stage_workspace(name, extra_files=None):
     if ws.exists():
         shutil.rmtree(ws)
     shutil.copytree(DEMO_ASSETS, ws, ignore=shutil.ignore_patterns("*.pyc"))
-    # 诊断演示文件（刻意带错误，仓库 fixture 保持干净）
+    # Diagnostics demo files (deliberately broken, so the repo fixture stays clean)
     defs = ws / "scripts/entity_defs"
     (defs / "Broken.def").write_text(
         '<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> NOT_A_TYPE </Type>\n'
@@ -326,9 +338,11 @@ def stage_workspace(name, extra_files=None):
         '\t\t\t<Flags> BASE_AND_CLIENT </Flags>\n\t\t</name>\n\t</Properties>\n'
         '\t<CellMethods>\n\t\t<onAggro>\n\t\t\t<Arg> ENTITY_ID </Arg>\n'
         '\t\t</onAggro>\n\t</CellMethods>\n</root>\n')
-    # inlay 演示实体(短文件整体可见,无滚动/无 reveal 差;def 声明 hp/potions,
-    # self.hp/self.potions 访问处 typeData inlay 渲染 : UINT32)。注册进 entities.xml
-    # (resolvePropertyDefinitionInfo 走实体映射,未注册实体解析不出)。
+    # Inlay demo entity (short file fully visible, no scrolling / no reveal
+    # difference; def declares hp/potions and the typeData inlay renders : UINT32
+    # at the self.hp/self.potions accesses). Registered in entities.xml
+    # (resolvePropertyDefinitionInfo goes through the entity mapping, unregistered
+    # entities do not resolve).
     (defs / "InlayDemo.def").write_text(
         '<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n'
         '\t\t\t<Flags> ALL_CLIENTS </Flags>\n\t\t</hp>\n\t\t<potions>\n'
@@ -339,8 +353,9 @@ def stage_workspace(name, extra_files=None):
     ws_scripts = ws / "scripts"
     cell_dir = ws_scripts / "cell"
     cell_dir.mkdir(parents=True, exist_ok=True)
-    # self.id 单段访问(内建 face 属性,builtinTypeInlayHints 面;负向断言
-    # 排除多段 self.position.x 形态,故必须单段)
+    # Single-segment self.id access (builtin face attribute, the
+    # builtinTypeInlayHints surface; the negative assertion excludes multi-segment
+    # forms like self.position.x, so it must be single-segment)
     (cell_dir / "InlayDemo.py").write_text(
         'class InlayDemo:\n'
         '\tdef reqTakePotion(self, count):\n'
@@ -356,8 +371,9 @@ def stage_workspace(name, extra_files=None):
         '<root>\n\t<ClientMethods>\n\t\t<onKnocked>\n'
         '\t\t\t<Arg> UINT32 </Arg>\n\t\t</onKnocked>\n'
         '\t</ClientMethods>\n</root>\n')
-    # registerEvent(事件名, 回调):解析器(eventApi.findEventCalls)回调只认
-    # 点名(self.onFoo)或字符串字面量,标题按回调名匹配 def 行
+    # registerEvent(event name, callback): the resolver (eventApi.findEventCalls)
+    # only recognises a callback as a named reference (self.onFoo) or a string
+    # literal, and matches the def line by callback name
     (cell_dir / "EventDemo.py").write_text(
         'class EventDemo:\n'
         '\tdef __init__(self):\n'
@@ -365,9 +381,11 @@ def stage_workspace(name, extra_files=None):
         '\n'
         '\tdef onKnocked(self, attackerId):\n'
         '\t\tpass\n')
-    # RPC 镜链演示实体:def 声明 onAggro(cell RPC <Arg> UINT32),短文件整体
-    # 可见;RPC CodeLens 面=def 声明方法的实现行(EventDemo 已立事件回调
-    # 镜链演示,同帧双镜链会混淆画面,故单立 RpcDemo)。
+    # RPC mirror-chain demo entity: def declares onAggro (cell RPC
+    # <Arg> UINT32), short file fully visible; the RPC CodeLens surface is the
+    # implementation line of a method declared in def (EventDemo already carries
+    # an event-callback mirror-chain demo, two chains in one frame would confuse
+    # the shot, hence a separate RpcDemo).
     (defs / "RpcDemo.def").write_text(
         '<root>\n\t<CellMethods>\n\t\t<onAggro>\n'
         '\t\t\t<Arg> UINT32 </Arg>\n\t\t</onAggro>\n'
@@ -397,8 +415,8 @@ def stage_workspace(name, extra_files=None):
     return ws
 
 
-# ---------------------------------------------------------------- 姿态（pose）
-POSE_OPEN_WAIT = 9       # 激活+索引稳定等待（秒）
+# ---------------------------------------------------------------- pose
+POSE_OPEN_WAIT = 9       # wait for activation + index stabilisation (seconds)
 POSE_SETTLE = 2.5
 
 
@@ -410,7 +428,8 @@ def goto_line(line, win=None):
        文件末尾(Ln 234)。改走命令面板 Go to Line/Column(窗口级命令,任何
        焦点下都可用),先点一下编辑器区保证落点。"""
     if win:
-        # 窗口相对坐标点编辑器中部(文字区校准 +389+170 起 890x600 的中心)
+        # Click the middle of the editor using window-relative coordinates (the center
+        # of the 890x600 text area calibrated at +389+170)
         subprocess.run(["xdotool", "mousemove", f"window:{win}", "834", "470", "click", "1"],
                        capture_output=True, env=env())
         time.sleep(0.6)
@@ -455,10 +474,10 @@ def pose_file(win, ws, rel, line=None, problems=False, hover=None, settle=POSE_S
     launch_path = f"{target}:{line}:1" if line else str(target)
     win = launch_code(ws, launch_path)
     time.sleep(POSE_OPEN_WAIT)
-    close_auxiliary()                      # 关闭 Chat/副边栏，保持编辑器画面干净
+    close_auxiliary()                      # close the Chat/auxiliary bar, keep the editor shot clean
     time.sleep(1.0)
     if line:
-        goto_line(line, win)                # 显式居中,消除启动期 reveal 的滚动漂移
+        goto_line(line, win)                # explicit centring, removes startup reveal scroll drift
         time.sleep(1.0)
     if problems:
         key("ctrl+shift+m")
@@ -467,8 +486,10 @@ def pose_file(win, ws, rel, line=None, problems=False, hover=None, settle=POSE_S
         if hover_col is not None:
             hover_at(win, hover, hover_col, settle)
         else:
-            # 标定探针:窗口在 Xvfb 屏幕内的偏移(mouse() 用屏幕坐标,截图是
-            # 窗口自身坐标,两者差即偏移;标定时打印一次即可,不落盘)
+            # Calibration probe: the window's offset inside the Xvfb screen (mouse() uses
+            # screen coordinates, the screenshot uses the window's own; the
+            # difference is the offset; print it once while calibrating, do not
+            # persist it)
             geo = subprocess.run(["xdotool", "getwindowgeometry", "--shell", str(win)],
                                  capture_output=True, text=True, env=env()).stdout
             print(f"HOVER-GEO key=hover win={win}\n{geo}", flush=True)
@@ -485,21 +506,21 @@ def pose_command(win, ws, rel, cmd_substr, cursor_line=None, settle=6, pick=Fals
     launch_path = f"{target}:{cursor_line}:1" if cursor_line else str(target)
     win = launch_code(ws, launch_path)
     time.sleep(POSE_OPEN_WAIT)
-    close_auxiliary()                      # 关闭 Chat/副边栏
+    close_auxiliary()                      # close the Chat/auxiliary bar
     time.sleep(1.0)
     if cursor_line:
-        goto_line(cursor_line, win)         # 同 pose_file:显式居中消除滚动漂移
+        goto_line(cursor_line, win)         # as in pose_file: explicit centring removes scroll drift
         time.sleep(1.0)
     command_palette(cmd_substr)
     if pick:
         time.sleep(1.0)
-        key("Return")                       # 选 quick-pick 首项
+        key("Return")                       # pick the first quick-pick entry
         time.sleep(1.0)
     time.sleep(settle)
     return win
 
 
-# ---------------------------------------------------------------- 场景
+# ---------------------------------------------------------------- scenarios
 def cap_vscode(switch, state_value, ws):
     s = state_value
     frames = CAP / "frames"
@@ -534,10 +555,12 @@ def cap_vscode(switch, state_value, ws):
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "hover-implemented-by":
-        # 反链悬停面=user_type 模块内被 types.xml implementedBy 引用的符号名
-        # (SKILL_SLOT_DATA.weapon_skill_slot_list_inst):SKILL_SLOT_DATA.py:2
-        # 注释里就有该词(词位 cols 44-70 1-based),键盘悬停(showHover)精确
-        # 落词上,on 出反链卡片 off 无;无鼠标无像素标定
+        # Back-link hover surface = the symbol name referenced by implementedBy in
+        # types.xml inside the user_type module
+        # (SKILL_SLOT_DATA.weapon_skill_slot_list_inst): that word already appears
+        # in the SKILL_SLOT_DATA.py:2 comment (word span cols 44-70, 1-based); the
+        # keyboard hover (showHover) lands exactly on the word, on shows the
+        # back-link card, off shows nothing; no mouse, no pixel calibration
         write_settings(ws, {"kbengine.hover.implementedBy": s})
         win = pose_file(win=None, ws=ws,
                         rel="scripts/user_type/SKILL_SLOT_DATA.py",
@@ -545,8 +568,9 @@ def cap_vscode(switch, state_value, ws):
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "codelens-rpc":
-        # RPC 镜链面=def 声明方法的实现行(RpcDemo.def CellMethods onAggro):
-        # RpcDemo.py 整文件可见,镜链渲染在 def 行上方,off 熄灭 on 显现
+        # RPC mirror-chain surface = the implementation line of a method declared in def
+        # (RpcDemo.def CellMethods onAggro): RpcDemo.py is fully visible, the chain
+        # renders above the def line, off is dark and on lights up
         write_settings(ws, {"kbengine.codeLens.rpc": s})
         win = pose_file(win=None, ws=ws, rel="scripts/cell/RpcDemo.py", line=2)
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
@@ -557,8 +581,10 @@ def cap_vscode(switch, state_value, ws):
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "enable-structure-diagnostics":
-        # 结构诊断开关(Duplicate.def 重复属性是结构错,非基础解析错):
-        # 基础诊断恒开,只翻本开关 → problems 里出现/消失重复定义条目
+        # Structure diagnostics switch (duplicate properties in Duplicate.def are
+        # structure errors, not basic parse errors): basic diagnostics stay on,
+        # flipping only this switch makes the duplicate-definition entries appear
+        # and disappear in problems
         write_settings(ws, {"kbengine.enableDiagnostics": True,
                             "kbengine.enableStructureDiagnostics": s})
         win = pose_file(win=None, ws=ws, rel="scripts/entity_defs/Duplicate.def",
@@ -566,57 +592,67 @@ def cap_vscode(switch, state_value, ws):
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "codelens-property":
-        # self.<def 属性> 访问处 CodeLens(标题=def 类型与可见域,点击回声明行):
-        # InlayDemo.py 的 self.hp/self.potions 走同一解析链
+        # CodeLens at self.<def property> access sites (label = def type and visibility
+        # scope, click jumps back to the declaring line): InlayDemo.py's
+        # self.hp/self.potions walk the same resolution chain
         write_settings(ws, {"kbengine.codeLens.property": s})
         win = pose_file(win=None, ws=ws, rel="scripts/cell/InlayDemo.py", line=6)
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "codelens-event-callbacks":
-        # 事件回调 CodeLens:面是 registerEvent/addEvent 的回调 def 行标题
-        # (demo 资产无事件调用,2026-11-07 帧差闸拦下)——专用 EventDemo 实体
+        # Event callback CodeLens: the surface is the label on the callback def line of
+        # registerEvent/addEvent (the demo assets had no event calls, caught by
+        # the 2026-11-07 frame-diff gate) — hence a dedicated EventDemo entity
         write_settings(ws, {"kbengine.codeLens.eventCallbacks": s})
         win = pose_file(win=None, ws=ws, rel="scripts/cell/EventDemo.py", line=6)
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "builtin-type-inlay-hints":
-        # 内建属性行内 inlay:面是单段 self.<内建属性>(id/position/...,
-        # 负向断言排除 self.position.x 多段——Monster.py:22 全是多段,2026-11-07
-        # 帧差闸拦下)。InlayDemo.py:9 self.id 单段,on 出 : int,off 消失
+        # Inline inlay for builtin attributes: the surface is single-segment
+        # self.<builtin attribute> (id/position/...; the negative assertion
+        # excludes multi-segment self.position.x — Monster.py:22 is all
+        # multi-segment and was caught by the 2026-11-07 frame-diff gate).
+        # InlayDemo.py:9 self.id is single-segment: on shows : int, off hides it
         write_settings(ws, {"kbengine.python.builtinTypeInlayHints": s})
         win = pose_file(win=None, ws=ws, rel="scripts/cell/InlayDemo.py", line=9)
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "python-call-chain-hints":
-        # 方法声明行顶部 Call Chain CodeLens(takePotion 在 InlayDemo.def
-        # CellMethods 已声明,解析命中);off 时 lens 消失
+        # Call Chain CodeLens at the top of method declaration lines (takePotion is
+        # declared in InlayDemo.def CellMethods, so resolution hits); the lens
+        # disappears when off
         write_settings(ws, {"kbengine.python.callChainHints": s})
         win = pose_file(win=None, ws=ws, rel="scripts/cell/InlayDemo.py", line=5)
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "inlay-type-data":
-        # 专用 InlayDemo 实体(6 行,整文件可见):def 声明 hp/potions: UINT32,
-        # self.hp/self.potions 访问处出 : UINT32 inlay。此前 Avatar.py:137 姿态
-        # 有两坑——goto/reveal 滚动位不确定,且扩展激活后把视口甩到文件尾
-        # (2026-11-07 实测);短文件无滚动,从根上消掉这两个不确定源。
+        # Dedicated InlayDemo entity (6 lines, whole file visible): def declares
+        # hp/potions: UINT32 and the self.hp/self.potions access sites get
+        # : UINT32 inlays. The earlier Avatar.py:137 pose had two pitfalls —
+        # the goto/reveal scroll position was uncertain, and extension activation
+        # flung the viewport to the end of the file (2026-11-07 measurement); a
+        # short file has no scrolling, removing both sources of uncertainty at the
+        # root.
         write_settings(ws, {"kbengine.inlayHints.typeData": s,
                             "kbengine.python.builtinTypeInlayHints": True})
         win = pose_file(win=None, ws=ws, rel="scripts/cell/InlayDemo.py", line=3)
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "inlay-def-params":
-        # def 形参 inlay 面=区块文件内 def 定义行(InlayDemo.def CellMethods
-        # takePotion 声明 <Arg> UINT32;InlayDemo.py:5 def takePotion(self,
-        # count) 的 count 未标注 → on 时 count 后内联 : int,off 熄灭)
+        # def parameter inlay surface = the def declaration line inside the block file
+        # (InlayDemo.def CellMethods declares takePotion <Arg> UINT32;
+        # count in InlayDemo.py:5 def takePotion(self, count) is unannotated →
+        # on inlines : int after count, off hides it)
         write_settings(ws, {"kbengine.inlayHints.defParams": s})
         win = pose_file(win=None, ws=ws, rel="scripts/cell/InlayDemo.py", line=5)
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "call-chain-view":
-        # Show Call Chain 先弹「Select an entity method」quick-pick(只列 def
-        # 声明方法:onAggro/onDamaged/...),选中首项 onAggro 才开面板;
-        # callChainView 决定面板以 graph/text 打开(默认开 mermaid 渲染
-        # 需要时间,settle 给足)
+        # Show Call Chain first pops the "Select an entity method" quick-pick (listing
+        # only def-declared methods: onAggro/onDamaged/...), and picking the first
+        # entry onAggro opens the panel; callChainView decides whether the panel
+        # opens as graph/text (the default opens mermaid rendering, which takes
+        # time, so settle generously)
         write_settings(ws, {"kbengine.python.callChainHints": True,
                             "kbengine.python.callChainView": s})
         win = pose_command(win=None, ws=ws, rel="scripts/cell/Monster.py",
@@ -631,14 +667,20 @@ def cap_vscode(switch, state_value, ws):
         return screenshot(frames / f"{k}-{'on' if s else 'off'}.png", win)
 
     if k == "show-final-config-on-open":
-        # 开关真义（extension.ts 激活令）:on=激活即后台预览打开最终配置合成
-        # 视图(openFinalConfig(true),binPath 推导 defaults 路径),off=不开。
-        # CFG-009 起两棵树由 core `$/kode/config/resolve` 解析,TS 无本地回
-        # 退 → 姿态必须给 kbengine.core.serverPath(无 serverPath 时 runInRust
-        # 同步返回 no serverPath → merged 空 → 命令弹「无法定位引擎默认配置」
-        # 误导性报错且 on/off 无帧差)。binPath 写绝对路径(姿态现算,不依赖
-        # 变量展开)。合成文档文本自编辑器顶部铺开,就绪判定与帧差都用加高区
-        # (短文件文字几乎全在 y<170,标准区 std 判不过)
+        # What the switch really means (extension.ts activation path): on = activation
+        # opens the final-config composite view in a background preview
+        # (openFinalConfig(true); binPath derives the defaults path), off = it does
+        # not.
+        # Since CFG-009 both trees are resolved by core `$/kode/config/resolve`, and
+        # TS has no local fallback → the pose must supply kbengine.core.serverPath
+        # (without serverPath, runInRust synchronously returns no serverPath →
+        # merged is empty → the command pops the misleading "cannot locate engine
+        # default config" error and on/off has no frame diff). binPath is written as
+        # an absolute path (computed by the pose, not relying on variable
+        # expansion). The composite document text starts at the top of the editor,
+        # so both the ready check and the frame diff use the taller region (a short
+        # file's text is almost entirely at y<170, the standard region's std check
+        # never passes)
         write_settings(ws, {"kbengine.showFinalConfigOnOpen": s,
                             "kbengine.binPath": f"{ws}/kbe/bin/server",
                             "kbengine.core.serverPath": KODE_SERVER_PATH})
@@ -672,10 +714,11 @@ def generate_switch(switch, vsix, single_state=None):
     frames.append(cap_vscode(switch, switch["off"], ws))
     frames.append(cap_vscode(switch, switch["on"], ws))
 
-    # hover 卡片/CodeLens/inlay 可渲染在光标旁或文件顶部（短文件 def 行在上，
-    # lens 在 def 行上方近 y~120，2026-11-07 codelens-rpc 实测），标准区
-    # (y>170) 裁不到 → 这几类用加高区；标题栏/标签带在 off/on 间恒定，
-    # 不贡献帧差。
+    # Hover cards/CodeLens/inlay can render beside the cursor or at the file top (in
+    # a short file the def line is up top and the lens sits just above it near
+    # y~120, 2026-11-07 codelens-rpc measurement), which the standard region
+    # (y>170) cannot crop → these types use the taller region; the title bar/tab
+    # strip is constant between off/on and contributes no frame difference.
     region = HOVER_CROP if k.startswith(("hover", "codelens", "inlay", "builtin",
                                          "show-final-config")) \
         else TEXT_CROP
@@ -699,7 +742,8 @@ def generate_switch(switch, vsix, single_state=None):
             "-loop", "0", str(gif)])
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
-    # manifest 记 repo 相对路径（绝对路径绑定本机，换机重跑即腐化）
+    # The manifest records repo-relative paths (absolute paths bind to one machine and
+    # rot on a rerun elsewhere)
     rel = lambda p: str(Path(p).relative_to(ROOT))
     return {"key": k, "off": rel(out / f"{k}-{off_tag}.png"),
             "on": rel(out / f"{k}-{on_tag}.png"), "gif": rel(gif)}
@@ -720,7 +764,7 @@ def main():
         print(f"missing vsix: {vsix}\n先按 README 构建扩展包，或用 --vsix 指定", file=sys.stderr)
         raise SystemExit(2)
     install_vsix(vsix)
-    ensure_profile_settings()          # trust/主题等 application 级固定项(每次跑都保证)
+    ensure_profile_settings()          # application-scope fixed items like trust/theme (ensured on every run)
     CAP.mkdir(parents=True, exist_ok=True)
 
     if args.list:
@@ -760,7 +804,8 @@ def main():
     kill_code()
     if single_state:
         return
-    # manifest 按 key 合并（增量重跑不清掉其他开关的既有条目）
+    # Merge the manifest by key (an incremental rerun does not drop other switches'
+    # existing entries)
     manifest = OUTPUT / "manifest.json"
     merged = {}
     if manifest.exists():
@@ -774,7 +819,7 @@ def main():
     manifest.write_text(json.dumps(ordered, indent=2, ensure_ascii=False))
     print(f"manifest: {manifest} ({len(ordered)} gifs, this run: {len(results)}, fails: {fails})")
     if fails and args.all:
-        raise SystemExit(1)      # 回归门用法：--all 有失败即红
+        raise SystemExit(1)      # regression-gate usage: any failure under --all turns red
 
 
 if __name__ == "__main__":

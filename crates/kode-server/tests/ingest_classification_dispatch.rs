@@ -74,10 +74,10 @@ fn did_change_classification_matches_category_over_dispatch() {
     let _ = handle_message(
         &mut state,
         request(
-        0,
-        "initialize",
-        json!({"capabilities": {}, "rootUri": "file:///tmp"})
-    ),
+            0,
+            "initialize",
+            json!({"capabilities": {}, "rootUri": "file:///tmp"}),
+        ),
     );
 
     // 首次入库 = signature。
@@ -94,7 +94,10 @@ fn did_change_classification_matches_category_over_dispatch() {
     );
     {
         let result = request_result(&mut state, 98, "$/kode/health", json!({}));
-        eprintln!("DBG health initialized={} documents={:?} ingest={}", result["initialized"], result["documents"], result["ingest"]);
+        eprintln!(
+            "DBG health initialized={} documents={:?} ingest={}",
+            result["initialized"], result["documents"], result["ingest"]
+        );
     }
     let hover1 = hover_hp(&mut state, 1).expect("打开文档 hover 应可用");
     assert!(hover1.contains("UINT32"), "悬停应出 UINT32: {hover1}");
@@ -114,7 +117,10 @@ fn did_change_classification_matches_category_over_dispatch() {
         "parseCache 观测键形状(预算常量透传)"
     );
     assert!(pc["valid"].as_u64().unwrap() >= 1, "入库后有效条目 >= 1");
-    assert!(pc["residentBytes"].as_u64().unwrap() > 0, "入库后驻留权重 > 0");
+    assert!(
+        pc["residentBytes"].as_u64().unwrap() > 0,
+        "入库后驻留权重 > 0"
+    );
 
     // 同文本 didChange(新版本)= identical;悬停不变。
     let _ = handle_message(
@@ -169,7 +175,10 @@ fn did_change_classification_matches_category_over_dispatch() {
     let hover4 = hover_hp(&mut state, 4).expect("signature 后悬停可用");
     assert!(hover4.contains("UINT16"), "悬停应反映 UINT16: {hover4}");
     let after_signature = ingest(&mut state);
-    assert_eq!(after_signature["ingestSignature"], 2, "类型变更 = signature");
+    assert_eq!(
+        after_signature["ingestSignature"], 2,
+        "类型变更 = signature"
+    );
     assert_eq!(after_signature["ingestIdentical"], 1);
     assert_eq!(after_signature["ingestBodyOnly"], 1);
 }

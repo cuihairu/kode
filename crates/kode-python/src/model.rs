@@ -1,101 +1,113 @@
-//! 数据模型:AST 符号表 / 调用边 / def-use 链(C-20)。
+//! Data model: AST symbol tables / call edges / def-use chains (C-20).
 //!
-//! 约定:
-//! - 行号一律 **0-based**(与 TS `pythonClassIndex` / LSP / kode-corpus 同口径,
-//!   便于 wt/parity 直接对拍);列号 0-based UTF-16 code unit(LSP 口径)。
-//! - 本模块只放纯数据形状与稳定字面量,提取逻辑在 [`crate::symbols`] /
-//!   [`crate::callgraph`] / [`crate::dataflow`],对拍面 = 数据面,不允许两套语义。
+//! Conventions:
+//! - Line numbers are always **0-based** (the same semantics as TS `pythonClassIndex` / LSP /
+//!   kode-corpus, so wt/parity can be compared directly); columns are 0-based UTF-16 code units
+//!   (LSP semantics).
+//! - This module holds only pure data shapes and stable literals; the extraction logic lives in
+//!   [`crate::symbols`] / [`crate::callgraph`] / [`crate::dataflow`]. The parity face = the data
+//!   face; two sets of semantics are not allowed.
 
-/// AST 级符号表(单文件)。
+/// AST-level symbol tables (single file).
 ///
-/// 与 kode-corpus 的词法表 [`kode_corpus::PythonModule`] 同构但基于真实 AST,
-/// 能区分装饰器/async/嵌套函数与继承链;`to_corpus()` 可降级到词法形状供
-/// C-19 一致性检查与 wt/parity 复用(替代 C-19 自建)。
+/// Isomorphic to kode-corpus's lexical table [`kode_corpus::PythonModule`] but based on the real
+/// AST: it can distinguish decorators / async / nested functions and inheritance chains;
+/// `to_corpus()` can degrade to the lexical shape for the C-19 consistency check and wt/parity
+/// reuse (replacing C-19's home-grown parser).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstSymbols {
-    /// 源总行数(与 kode-corpus 同口径:末尾换行多一空行)。
+    /// Total source line count (same semantics as kode-corpus: a trailing newline yields one extra blank line).
     pub line_count: usize,
-    /// 模块级类声明(含嵌套?否——本表只收文件直属类,方法/属性挂在类上)。
+    /// Module-level class declarations (nested ones included? No -- this table only takes classes
+    /// directly owned by the file; methods / attributes hang off the classes).
     pub classes: Vec<AstClass>,
-    /// 模块级函数(`def` 不在类内)。
+    /// Module-level functions (`def` outside any class).
     pub functions: Vec<AstFunction>,
-    /// `import` / `from ... import ...` 绑定(仅模块顶层,语义表,与既有
-    /// 消费面口径一致)。模块顶层绑定对全文件可见。
+    /// `import` / `from ... import ...` bindings (module top level only, the semantic table, same
+    /// semantics as the existing consumer faces). Module-top-level bindings are file-wide visible.
     pub imports: Vec<AstImport>,
-    /// 函数作用域 import 绑定(按行区间定位调用点可见作用域)。每条 =
-    /// 一个作用域层的行区间与其子树内 import 的绑定名。调用图接收者解析
-    /// 用调用点行号落进哪个区间判可见性——区间天然嵌套(外层区间覆盖嵌套
-    /// 体,闭包可见语义),同名函数/推导式区间不相交(互不作保)。
+    /// Function-scope import bindings (call-site visibility is located by line interval). Each
+    /// entry = one scope layer's line interval plus the binding names of imports in its subtree.
+    /// Call-graph receiver resolution decides visibility by which interval the call site's line
+    /// number falls into -- intervals are naturally nested (an outer interval covers nested
+    /// bodies, the closure-visibility semantic), while intervals of same-named functions /
+    /// comprehensions are disjoint (they do not cover each other).
     pub function_import_bindings: Vec<ScopeImportBindings>,
-    /// 模块顶层被本地绑定(Store 赋值)的名 → 最近行。模块 import 回退的
-    /// 遮蔽面:顶层重绑定后,函数内同名接收者不是模块(复审第九轮残余)。
+    /// Module-top-level names that were locally bound (Store assignment) -> most recent line.
+    /// The shadow surface for the module import fallback: after a top-level rebind, a same-named
+    /// receiver inside a function is not the module (residual from review round nine).
     pub module_shadows: std::collections::BTreeMap<String, usize>,
 }
 
-/// 函数作用域的类别(裸名解析链建模:函数链参与解析,类体/推导式是
-/// 独立隐式作用域——其绑定/遮蔽不参与函数裸名链,只作自身层的隔离)。
+/// Kind of a function scope (models the bare-name resolution chain: function chains participate
+/// in resolution; class bodies / comprehensions are independent implicit scopes -- their bindings
+/// / shadows do not join the function bare-name chain and only act as isolation for their own layer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeKind {
-    /// 函数/方法/嵌套 def/lambda:参与裸名解析链。
+    /// Function / method / nested def / lambda: joins the bare-name resolution chain.
     Function,
-    /// 类体:裸名解析链不含类层(Python 语义),仅作绑定隔离。
+    /// Class body: the bare-name resolution chain does not include the class layer (Python
+    /// semantics); it only isolates bindings.
     Class,
-    /// 推导式(List/Set/Dict/Generator 的隐式函数作用域)。
+    /// Comprehension (the implicit function scope of List/Set/Dict/Generator).
     Comprehension,
 }
 
-/// 单个函数作用域的 import 绑定(行 0-based,与仓内口径一致)。
+/// Import bindings of a single function scope (lines 0-based, same semantics as the rest of the repo).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeImportBindings {
     pub kind: ScopeKind,
-    /// 函数起始行(def 行)。
+    /// Function start line (the `def` line).
     pub start_line: usize,
-    /// 函数结束行(体末行)。
+    /// Function end line (last line of the body).
     pub end_line: usize,
-    /// 该函数子树内(含嵌套 def/分支体)import 的绑定名 → (最近一次 import
-    /// 绑定行 0-based,目标模块 basename,目标身份 id)。basename 空串 =
-    /// 目标身份冲突歧义标记(解析层放弃该边)。
+    /// Binding names of imports inside this function's subtree (including nested def / branch
+    /// bodies) -> (most recent import binding line, 0-based; target module basename; target
+    /// identity id). An empty basename = the ambiguity marker for conflicting target identities
+    /// (the resolution layer drops that edge).
     pub bindings: std::collections::BTreeMap<String, (usize, String, String)>,
-    /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标) → 最近一次
-    /// 本地绑定行。本地绑定存在即整作用域按本地名处理(静态局部性),与
-    /// bindings 并存 = 静态歧义,保守放弃(宁缺毋滥)。
+    /// Names locally bound in this function's direct scope (parameters + Store assignment
+    /// targets) -> most recent local-binding line. Once a local binding exists, the whole scope
+    /// is treated as a local name (static locality); coexisting with `bindings` = static
+    /// ambiguity, conservatively dropped (prefer missing over wrong).
     pub shadows: std::collections::BTreeMap<String, usize>,
 }
 
-/// 类声明(AST 级)。
+/// Class declaration (AST level).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstClass {
     pub name: String,
-    /// 文件内唯一限定名(本表= `name`,嵌套类预留点分)。
+    /// File-unique qualified name (in this table = `name`; nested classes reserve dot-qualification).
     pub qualified_name: String,
-    /// 基类名(只保留合法 dotted identifier 且排除 `object`,与 TS/kode-corpus 同过滤)。
+    /// Base class names (only legal dotted identifiers are kept and `object` is excluded; the same
+    /// filtering as TS / kode-corpus).
     pub bases: Vec<String>,
     pub start_line: usize,
     pub end_line: usize,
     pub methods: Vec<AstMethod>,
-    /// 类体内 `self.<name> = ...` 写入位置(跨方法聚合)。
+    /// `self.<name> = ...` write sites in the class body (aggregated across methods).
     pub attributes: Vec<AstAttribute>,
     pub decorators: Vec<String>,
 }
 
-/// 类直属方法(AST 级)。
+/// Method directly owned by a class (AST level).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstMethod {
-    /// 所属类限定名。
+    /// Qualified name of the owning class.
     pub class: String,
     pub name: String,
     pub line: usize,
     pub character: usize,
     pub is_async: bool,
-    /// 紧邻 `def` 的装饰器(含 `@`,源码顺序)。
+    /// Decorators immediately above the `def` (including `@`, in source order).
     pub decorators: Vec<String>,
-    /// 形参名(posonly/pos/kwonly/vararg/kwarg 顺序),不含默认值表达式。
+    /// Formal parameter names (posonly/pos/kwonly/vararg/kwarg order); default value expressions excluded.
     pub params: Vec<String>,
-    /// 方法体结束行(不含);无体为 `start_line`。
+    /// End line of the method body (exclusive); `start_line` when there is no body.
     pub end_line: usize,
 }
 
-/// 模块级函数(AST 级)。
+/// Module-level function (AST level).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstFunction {
     pub name: String,
@@ -107,61 +119,65 @@ pub struct AstFunction {
     pub end_line: usize,
 }
 
-/// `self.<name> = ...` 属性写入。
+/// A `self.<name> = ...` attribute write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstAttribute {
-    /// 所属类限定名。
+    /// Qualified name of the owning class.
     pub class: String,
     pub name: String,
     pub line: usize,
     pub character: usize,
 }
 
-/// 导入绑定(AST 级)。
+/// Import binding (AST level).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstImport {
-    /// 本文件内绑定名。
+    /// Binding name inside this file.
     pub binding: String,
-    /// `from` 的模块名,或 `import` 的目标模块。
+    /// The module name of a `from`, or the target module of an `import`.
     pub module: String,
-    /// `from module import symbol` 的 symbol;普通 `import` 为 `None`。
+    /// The symbol of `from module import symbol`; `None` for a plain `import`.
     pub symbol: Option<String>,
-    /// 是否显式别名(`import a.b as c` / `from p import x as y`)。回退取
-    /// basename 时区分「绑包本体(无别名=顶层首段)」与「绑目标模块(有别名=
-    /// 末段)」,不得用绑定名==首段近似——`import a.b as a` 的别名恰为首段
-    /// 名,近似会误指无关 a.py(复审第十二轮残余)。
+    /// Whether an explicit alias is present (`import a.b as c` / `from p import x as y`). The
+    /// basename fallback must distinguish "binds the package itself (no alias = top-level first
+    /// segment)" from "binds the target module (with alias = last segment)"; it must not
+    /// approximate with binding name == first segment -- the alias of `import a.b as a` is exactly
+    /// the first-segment name, and the approximation would point at an unrelated a.py (residual
+    /// from review round twelve).
     pub aliased: bool,
-    /// from-import 的相对层级(`from .x import y` = 1)。目标身份一致性判定
-    /// 需要:不同层级同名目标(`.x.y` vs `..x.y`)不得混同(复审第十四轮残余)。
+    /// Relative level of the from-import (`from .x import y` = 1). Needed by the target-identity
+    /// consistency check: same-named targets at different levels (`.x.y` vs `..x.y`) must not be
+    /// conflated (residual from review round fourteen).
     pub level: u32,
     pub line: usize,
     pub is_from: bool,
 }
 
-/// 调用边种类(EdgeKind)——KBEngine 特化边与普通本地/外部调用。
+/// Call edge kinds (EdgeKind) -- KBEngine-specialized edges as well as ordinary local / external calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EdgeKind {
-    /// 本地/同名模块级调用:`foo(...)` 且 foo 是本文件模块级函数或导入绑定。
+    /// Local / same-name module-level call: `foo(...)` where foo is a module-level function of this
+    /// file or an import binding.
     Local,
-    /// 对象方法调用:`obj.method(...)`(obj 非 self 且非 KBEngine 通道)。
+    /// Object method call: `obj.method(...)` (obj is neither self nor a KBEngine channel).
     Method,
-    /// 自身方法调用:`self.method(...)`。
+    /// Self method call: `self.method(...)`.
     SelfMethod,
-    /// KBEngine 客户端广播:`self.allClients.<client-method>(...)`(对全部客户端)。
+    /// KBEngine client broadcast: `self.allClients.<client-method>(...)` (to all clients).
     KbeBroadcast,
-    /// KBEngine base 客户端广播:`self.baseClients.<method>(...)`。
+    /// KBEngine base client broadcast: `self.baseClients.<method>(...)`.
     KbeBaseClients,
-    /// KBEngine 跨进程:`self.cell.<method>(...)`(base→cell)、`self.base.<method>(...)`(cell→base)
-    /// 或 `self.client.<method>(...)`(cell→client)。
+    /// KBEngine cross-process: `self.cell.<method>(...)` (base->cell), `self.base.<method>(...)`
+    /// (cell->base), or `self.client.<method>(...)` (cell->client).
     KbeCrossProcess,
-    /// KBEngine 引擎 API:`KBEngine.<api>(...)` 或 `kbengine.<api>(...)`。
+    /// KBEngine engine API: `KBEngine.<api>(...)` or `kbengine.<api>(...)`.
     KbeApi,
-    /// 外部/无法解析的调用。
+    /// External / unresolvable call.
     Unknown,
 }
 
 impl EdgeKind {
-    /// 稳定字面量(golden 对拍出口)。
+    /// Stable literals (the golden parity-comparison output).
     pub const fn as_str(self) -> &'static str {
         match self {
             EdgeKind::Local => "local",
@@ -176,38 +192,38 @@ impl EdgeKind {
     }
 }
 
-/// 单条调用边。
+/// A single call edge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallEdge {
-    /// 调用方(可为空 = 模块级/未挂类)。
+    /// Caller (may be empty = module-level / not attached to a class).
     pub caller_class: Option<String>,
-    /// 调用方法/函数名(方法名或模块级函数名)。
+    /// Caller method / function name (a method name or a module-level function name).
     pub caller: String,
-    /// 调用点行(0-based)。
+    /// Call site line (0-based).
     pub caller_line: usize,
-    /// 被调名(属性链末段)。
+    /// Callee name (last segment of the attribute chain).
     pub callee: String,
-    /// 接收者链(如 `self`、`self.cell`、`self.allClients`、`module`);纯名调用为 None。
+    /// Receiver chain (e.g. `self`, `self.cell`, `self.allClients`, `module`); None for a bare name call.
     pub receiver: Option<String>,
     pub kind: EdgeKind,
 }
 
-/// 过程内 def-use 链(MVP:直线近似,不合并控制流分支)。
+/// Intra-procedural def-use chain (MVP: straight-line approximation, does not merge control-flow branches).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefUseChain {
-    /// 变量名(`x` 或 `self.attr`)。
+    /// Variable name (`x` or `self.attr`).
     pub var: String,
-    /// 最近一次定值行(0-based);无定值(参数/全局)为 None。
+    /// Most recent definition line (0-based); None when undefined (parameter / global).
     pub def_line: Option<usize>,
-    /// 使用点行(0-based,升序去重)。
+    /// Use site lines (0-based, ascending, deduplicated).
     pub use_lines: Vec<usize>,
-    /// 参数来源(该变量是形参时为 Some(参数索引),否则 None)。
+    /// Parameter origin (Some(parameter index) when the variable is a formal parameter, else None).
     pub is_param: bool,
 }
 
-/// 过程内数据流结果。
+/// Intra-procedural dataflow result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataflowResult {
-    /// 按首次出现顺序的 def-use 链。
+    /// Def-use chains in order of first appearance.
     pub chains: Vec<DefUseChain>,
 }

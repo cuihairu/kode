@@ -56,13 +56,13 @@ export interface LogHubOptions {
   maxListeners?: number;
   maxBatchBytes?: number;
   dedupeWindowMs?: number;
-  /** 单轮 poll 读取总量上限(AUD-024):突增按有限总量拆多轮让出,非一次吃全量。 */
+  /** Per-round poll total read limit (AUD-024): a burst is split into multiple yielding rounds of bounded total, not consumed in one go. */
   maxPollBytesPerRound?: number;
-  /** 单轮 poll 同步阻塞时间片(AUD-024):到点即中断循环,让宿主心跳可走。 */
+  /** Per-round poll synchronous-blocking time slice (AUD-024): the loop is interrupted when it expires so the host heartbeat can proceed. */
   pollTimeSliceMs?: number;
-  /** 上游 pending 事件数上限(AUD-025):快生产慢消费时超限丢弃最旧。 */
+  /** Upstream pending event-count limit (AUD-025): with a fast producer and a slow consumer, the oldest is dropped once over the limit. */
   maxPendingEvents?: number;
-  /** 上游 pending 字节上限(AUD-025):与事件数双限额,先超先丢。 */
+  /** Upstream pending byte limit (AUD-025): a second limit alongside the event count; whichever trips first drops first. */
   maxPendingBytes?: number;
 }
 
@@ -75,11 +75,12 @@ const DEFAULT_POLL_TIME_SLICE_MS = 25;
 const DEFAULT_MAX_PENDING_EVENTS = 10000;
 const DEFAULT_MAX_PENDING_BYTES = 8 * 1024 * 1024;
 
-/** 文件监控单批读取上限(IDE-RES-005):日志突增时分批读,不一次分配等于
- *  全部增量的 Buffer;批边界可能切在行中间,未换行尾巴拼进下一批。 */
+/** Per-batch read limit for file watching (IDE-RES-005): a log burst is read in batches rather
+ *  than allocating a Buffer equal to the whole increment at once; a batch boundary may split a
+ *  line, and a non-newline tail is joined into the next batch. */
 const MAX_READ_CHUNK_BYTES = 1024 * 1024;
 
-/** 文件监控 poll 量规(AUD-024):单轮最大连续阻塞与轮数,测试面可读。 */
+/** File-watch poll gauges (AUD-024): the max consecutive blocking and the round count per poll, readable on the test face. */
 export interface LogPollGauge {
   polls: number;
   maxPollMs: number;
@@ -93,9 +94,9 @@ export function normalizeText(value: string): string {
 interface FileWatcherState {
   offset: number;
   timer?: NodeJS.Timeout;
-  /** 行尾跨块尾巴:非末批把未换行行拼进下一批。 */
+  /** Cross-chunk tail at end-of-line: a non-final batch joins the non-newline line into the next batch. */
   partialLine: string;
-  /** UTF-8 跨块解码器(AUD-024):多字节字符被读界切开时保留不完整字节。 */
+  /** Cross-chunk UTF-8 decoder (AUD-024): keeps incomplete bytes when a multibyte character is split by the read boundary. */
   decoder: StringDecoder;
 }
 
@@ -177,9 +178,11 @@ export class LogHub implements LogHubLike {
       this.dropped += this.retained.length - this.capacity;
       this.retained.splice(0, this.retained.length - this.capacity);
     }
-    // 上游 pending 双限额(AUD-025):快生产慢消费时 pending 不得无限增,
-    // 超限丢弃最旧(shift 队首),丢计数与字节一并记账,量规可读。
-    // retained 不受影响:历史缓冲仍保 capacity 条,只是未 flush 队列被裁剪。
+    // The upstream pending dual limits (AUD-025): pending must not grow without bound with a
+    // fast producer and a slow consumer; once over the limit the oldest is dropped (shift off
+    // the queue head), with the drop count and bytes both booked so the gauges stay readable.
+    // retained is unaffected: the history buffer still keeps capacity entries; only the
+    // not-yet-flushed queue is trimmed.
     while (this.pending.length > this.maxPendingEvents || this.pendingBytes > this.maxPendingBytes) {
       const dropped = this.pending.shift() as LogEvent;
       this.pendingBytes -= dropped.text.length;
@@ -223,7 +226,7 @@ export class LogHub implements LogHubLike {
     return this.retained;
   }
 
-  /** 上游 pending 队列量规(AUD-025):未排干事件/字节与超限丢弃累计。 */
+  /** Upstream pending-queue gauge (AUD-025): undrained events/bytes plus the cumulative over-limit drops. */
   getLogHubGaugeForTests(): { pending: number; pendingBytes: number; pendingDropped: number } {
     return { pending: this.pending.length, pendingBytes: this.pendingBytes, pendingDropped: this.pendingDropped };
   }
@@ -264,9 +267,11 @@ export class LogHub implements LogHubLike {
             watcher.decoder = new StringDecoder('utf8');
           }
           if (stat.size === watcher.offset) return;
-          // 分批读取(IDE-RES-005)+单轮预算(AUD-024):分配峰值与增量总量解耦,
-          // 且单轮读总字节 ≤maxPollBytesPerRound、同步阻塞 ≤pollTimeSliceMs;
-          // 到预算/时间片即中断,offset 已推进,下一轮 interval 继续,无数据丢失。
+          // Batched reading (IDE-RES-005) + a per-round budget (AUD-024): the allocation peak is
+          // decoupled from the increment's total size, and per round the total bytes read is
+          // <= maxPollBytesPerRound and the synchronous blocking is <= pollTimeSliceMs;
+          // interrupted when the budget/time slice expires, with offset already advanced, the
+          // next interval round continuing, and no data lost.
           const buffer = Buffer.alloc(Math.min(
             MAX_READ_CHUNK_BYTES,
             stat.size - watcher.offset,
@@ -278,7 +283,7 @@ export class LogHub implements LogHubLike {
             for (;;) {
               const remaining = stat.size - watcher.offset;
               if (remaining <= 0) break;
-              // 时间片到点即让出宿主(心跳可走),不整块读尽增量
+              // Yield to the host as soon as the time slice expires (the heartbeat can proceed) rather than reading the whole increment in one block
               if (Date.now() - pollStart >= this.pollTimeSliceMs) break;
               const budgetRemaining = this.maxPollBytesPerRound - pollBytes;
               if (budgetRemaining <= 0) break;
@@ -289,14 +294,16 @@ export class LogHub implements LogHubLike {
               watcher.offset += read;
               pollBytes += read;
               const atEnd = watcher.offset >= stat.size;
-              // StringDecoder 保留读界切开的多字节字符,toString 不再产生 �
+              // StringDecoder keeps the multibyte characters split by the read boundary, so toString no longer produces a replacement character
               const text = watcher.decoder.write(buffer.subarray(0, read));
               const chunk = watcher.partialLine + text;
               watcher.partialLine = '';
               const lines = chunk.split('\n');
               const tail = lines.pop();
-              // 批边界切在行中间:非末批把未换行尾巴拼进下一批;
-              // 末批尾巴立即入(与旧一次读全量行为一致,文件末行不压缓存)
+              // The batch boundary can split a line: a non-final batch joins the non-newline tail
+              // into the next batch;
+              // the final batch's tail is ingested immediately (matching the old read-everything-in-
+              // one-go behaviour, so the file's last line does not linger in a buffer)
               if (!atEnd && tail !== undefined) {
                 watcher.partialLine = tail;
               }
@@ -355,7 +362,7 @@ export class LogHub implements LogHubLike {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.fileWatchers.forEach(({ timer }) => { if (timer) clearInterval(timer); });
     this.fileWatchers.clear();
-    // 释放即排空(AUD-025):pending 队列与字节一并清零,取消/释放不残留。
+    // Dispose drains everything (AUD-025): the pending queue and bytes are both cleared to zero, so cancel/dispose leaves nothing behind.
     this.pending.length = 0;
     this.pendingBytes = 0;
     this.events.removeAllListeners();

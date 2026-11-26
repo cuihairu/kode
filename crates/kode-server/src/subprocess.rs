@@ -170,10 +170,7 @@ mod tests {
     fn transient_spawn_family_roster() {
         for errno in [11, 12, 23, 24, 26] {
             let error = std::io::Error::from_raw_os_error(errno);
-            assert!(
-                is_transient_spawn(&error),
-                "errno {errno} 应判暂态重试"
-            );
+            assert!(is_transient_spawn(&error), "errno {errno} 应判暂态重试");
         }
         for errno in [2, 13] {
             let error = std::io::Error::from_raw_os_error(errno);

@@ -1,19 +1,27 @@
 /**
- * 指纹增量统计(RUST-403/旧 HR-HASH-016):让「单文件修改不触发全项目
- * Hash 重算」可观测——不是宣称增量,而是把增量工作量记账出来:
- * - bytes read:指纹计算实际读入的字节数(单文件保存≈该文件字节数;
- *   若实现劣化成全项目重扫,此数会膨胀到语料总量,一眼可见);
- * - rehashed files:实际重算指纹的文件数(单文件保存=1);
- * - affected dependency nodes:依赖遍历命中的受影响节点数(types.xml
- *   自定义类型变化的 reverse-dependency 闭包,analyzeTypesImpact 的
- *   affectedDefCount;entities.xml 注册表变化是注册面不是依赖图,不进此账)。
+ * Incremental fingerprint statistics (RUST-403 / former HR-HASH-016): makes
+ * "editing a single file does not trigger a project-wide hash recomputation"
+ * observable -- not by claiming incrementality, but by keeping the incremental
+ * workload in an account:
+ * - bytes read: bytes the fingerprint computation actually read (a single-file
+ *   save is about that file's byte count; if the implementation degenerates into
+ *   a project-wide rescan this number swells to the whole corpus and it is
+ *   immediately visible);
+ * - rehashed files: how many files were actually rehashed (a single-file save = 1);
+ * - affected dependency nodes: affected nodes hit by the dependency traversal
+ *   (the reverse-dependency closure for a changed custom type in types.xml,
+ *   i.e. analyzeTypesImpact's affectedDefCount; a change in the entities.xml
+ *   registry is a registry surface, not the dependency graph, and stays out of
+ *   this account).
  *
- * 统计口径=**变更触发面**(def 保存/指纹命令/types.xml 变化);显示面
- * (CodeLens 惰性读)只读不重算基线,不进账。纯逻辑零 vscode;装配持有,
- * 生命周期随宿主。
+ * The accounting scope is the **change-trigger surface** (def save /
+ * fingerprint command / types.xml change); the display surface (CodeLens
+ * lazy reads) only reads and never recomputes the baseline, so it is not
+ * counted. Pure logic, zero vscode; the wiring layer owns it and its
+ * lifetime follows the host.
  */
 
-/** 统计只读视图(累计值;装配侧经 view() 读、reset() 清) */
+/** Read-only stats view (cumulative values; the wiring layer reads via view() and clears via reset()) */
 export interface FingerprintStatsView {
   readonly bytesRead: number;
   readonly rehashedFiles: number;
@@ -21,31 +29,33 @@ export interface FingerprintStatsView {
 }
 
 /**
- * 指纹统计台账:三个计数器的累计面。防御性 clamp(负数入参按 0 计)——
- * 统计是观测面不是判定面,坏输入不抛错不污染账。
+ * Fingerprint stats ledger: the cumulative face of three counters. Defensive
+ * clamping (negative inputs are treated as 0) -- statistics are an
+ * observation surface, not a verdict surface, so bad input neither throws
+ * nor poisons the account.
  */
 export class FingerprintStats {
   private bytes = 0;
   private files = 0;
   private nodes = 0;
 
-  /** 一次指纹计算:bytesRead=本次读入字节,rehashedFiles=本次重算文件数(缺省 1) */
+  /** One fingerprint computation: bytesRead = bytes read this round, rehashedFiles = files rehashed this round (defaults to 1) */
   recordCompute(bytesRead: number, rehashedFiles = 1): void {
     this.bytes += Math.max(0, Math.floor(bytesRead));
     this.files += Math.max(0, Math.floor(rehashedFiles));
   }
 
-  /** 一次依赖影响分析:affectedNodes=受影响依赖节点数(types 闭包命中数) */
+  /** One dependency-impact analysis: affectedNodes = affected dependency node count (types closure hits) */
   recordDependencyTraversal(affectedNodes: number): void {
     this.nodes += Math.max(0, Math.floor(affectedNodes));
   }
 
-  /** 累计只读快照 */
+  /** Cumulative read-only snapshot */
   view(): FingerprintStatsView {
     return { bytesRead: this.bytes, rehashedFiles: this.files, affectedDependencyNodes: this.nodes };
   }
 
-  /** 清零(会话复位/测试用) */
+  /** Zero out (session reset / test use) */
   reset(): void {
     this.bytes = 0;
     this.files = 0;
@@ -53,7 +63,7 @@ export class FingerprintStats {
   }
 }
 
-/** 统计回显行(OUTPUT/审计同源) */
+/** Stats echo line (shared with the OUTPUT/audit text) */
 export function formatFingerprintStats(view: FingerprintStatsView): string {
   return `指纹统计: bytes read=${view.bytesRead} B, rehashed files=${view.rehashedFiles}, affected dependency nodes=${view.affectedDependencyNodes}`;
 }

@@ -50,15 +50,22 @@ fn def_props_golden_structure_is_complete() {
         repo_root().join(kode_server::def_props_hints::DEF_PROPS_GOLDEN_REL_PATH),
     )
     .expect("golden");
-    let value: Golden = serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
+    let value: Golden =
+        serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     assert!(value.corpus.len() >= 8, "语料应覆盖边界形态族");
     for entry in &value.corpus {
         assert!(
-            entry["name"].is_string() && entry["text"].is_string() && entry["properties"].is_array(),
+            entry["name"].is_string()
+                && entry["text"].is_string()
+                && entry["properties"].is_array(),
             "语料条目形: {entry}"
         );
     }
-    assert_eq!(value.probes.len(), value.outcomes.len(), "探测数与产出数一致");
+    assert_eq!(
+        value.probes.len(),
+        value.outcomes.len(),
+        "探测数与产出数一致"
+    );
     assert!(value.probes.len() >= 14, "探测面规模(8 锚面 + 逐锚组装)");
     let mut lit = std::collections::BTreeSet::new();
     for probe in &value.probes {
@@ -78,7 +85,10 @@ fn def_props_golden_structure_is_complete() {
                     anchors_hit += 1;
                 }
                 for site in sites {
-                    assert!(site["line"].is_u64() && site["character"].is_u64(), "锚形: {site}");
+                    assert!(
+                        site["line"].is_u64() && site["character"].is_u64(),
+                        "锚形: {site}"
+                    );
                 }
             }
             "items" => {
@@ -86,7 +96,10 @@ fn def_props_golden_structure_is_complete() {
                 if !item.is_null() {
                     items_hit += 1;
                     let position = &item["position"];
-                    assert!(position["line"].is_u64() && position["character"].is_u64(), "位置形: {item}");
+                    assert!(
+                        position["line"].is_u64() && position["character"].is_u64(),
+                        "位置形: {item}"
+                    );
                     assert_eq!(item["kind"], "Type", "kind 恒 Type: {item}");
                     let parts = item["parts"].as_array().expect("parts 数组");
                     assert!(parts.len() >= 2, "头部段+至少一属性段: {item}");
@@ -104,5 +117,8 @@ fn def_props_golden_structure_is_complete() {
             other => panic!("产出面非法: {other}"),
         }
     }
-    assert!(anchors_hit > 0 && items_hit > 0, "两面非空产出分布(防全空对拍空转)");
+    assert!(
+        anchors_hit > 0 && items_hit > 0,
+        "两面非空产出分布(防全空对拍空转)"
+    );
 }

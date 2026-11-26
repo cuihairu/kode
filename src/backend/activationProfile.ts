@@ -1,24 +1,27 @@
 import { performance } from 'perf_hooks';
 import * as fs from 'fs';
 
-// 激活期分阶段计时(KODE-PERF 激活排查):activate 是同步函数,视图注册与
-// 重活都在同步体内完成;用户侧「There is no data provider registered」与
-// 「一直在扫描」需要火焰级证据——哪些装配段各花多久。本模块只在设置了
-// KODE_ACTIVATE_PROFILE_OUT(输出文件路径)时记录:markActivateStage 落标签,
-// flushActivateProfile 在 activate 返回前把各段 step/total 耗时追加写入。
-// 未设置环境变量时全部调用零开销直通(常态门禁与生产零影响)。
+// Staged timing during activation (KODE-PERF activation investigation): activate is a
+// synchronous function, and view registration plus heavy work all complete inside the
+// synchronous body; the user-visible "There is no data provider registered" and
+// "still scanning" symptoms need flame-level evidence — which assembly segments take how
+// long. This module only records when KODE_ACTIVATE_PROFILE_OUT (output file path) is
+// set: markActivateStage drops labels, and flushActivateProfile appends each segment's
+// step/total timings to the file before activate returns.
+// When the env var is unset, every call is a zero-overhead passthrough (zero impact on
+// the usual gate and in production).
 
 const PROFILE_OUT = process.env.KODE_ACTIVATE_PROFILE_OUT ?? '';
 
 let stageMarks: Array<[string, number]> = [];
 
-/** 记录一个激活阶段标记(相对 activate-enter 的 performance.now 时间戳) */
+/** Record one activation stage mark (performance.now timestamp relative to activate-enter) */
 export function markActivateStage(label: string): void {
   if (!PROFILE_OUT) { return; }
   stageMarks.push([label, performance.now()]);
 }
 
-/** activate 返回前落盘:每行 stage\t<标签>\tstep=..\ttotal=.. */
+/** Flush to disk before activate returns: each line is stage\t<label>\tstep=..\ttotal=.. */
 export function flushActivateProfile(): void {
   if (!PROFILE_OUT || stageMarks.length === 0) { return; }
   const t0 = stageMarks[0][1];
@@ -31,7 +34,7 @@ export function flushActivateProfile(): void {
   try {
     fs.appendFileSync(PROFILE_OUT, lines.join('\n') + '\n');
   } catch {
-    /* 诊断输出失败不影响激活 */
+    /* diagnostic output failure must not affect activation */
   }
   stageMarks = [];
 }

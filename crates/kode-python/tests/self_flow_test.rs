@@ -1,15 +1,19 @@
-//! 流敏感 `self.<attr>` 扫描:两种 None 守卫块**内含查询位**的臂。
+//! Flow-sensitive `self.<attr>` scan: the two arms whose None guard block
+//! **contains the query position**.
 //!
-//! 既有 inline 单测(guard_narrowing_* / not_none_guard_narrows_inside_block)
-//! 的查询位都在守卫块**之外**,故 `scan_sequence` 的守卫递归臂里「块内到达
-//! 查询位即停」(`inner.reached_stop` → 整块早退)此前从未被触达:命中即
-//! `return`,调用方拿到的是块内态而非块后并集态。此臂漏测 = 守卫块内的
-//! inlay/诊断位读到错误的类型集。
+//! The existing inline unit tests (guard_narrowing_* / not_none_guard_narrows_inside_block)
+//! put their query position **outside** the guard block, so the "stop as soon as the
+//! query position is reached inside the block" (`inner.reached_stop` -> early-exit the
+//! whole block) path of the guard recursion arm in `scan_sequence` was never exercised:
+//! a hit means `return`, so callers receive the in-block state rather than the
+//! post-block union state. This arm untested = inlay/diagnostic positions inside a
+//! guard block read a wrong type set.
 //!
-//! not_none 臂注记:`not_none_guard` 词循环要求 `self` 后有空白再 `.`,
-//! 正常 Python 形态 `self.x` 永假(COV-001 已登记 finding,修复归独立批
-//! 拍板)——本文件以谓词今日唯一接受的合法形态 `self .x`(Python 语法
-//! 合法)驱动该臂,锁**现状**语义作漂移探测器,非背书。
+//! Note on the not_none arm: the `not_none_guard` word loop requires whitespace after
+//! `self` before the `.`, so the normal Python shape `self.x` never matches (COV-001 has
+//! a registered finding; the fix is left to a separate batch's ruling) -- this file drives
+//! that arm using `self .x` (valid Python syntax), the only form the predicate accepts
+//! today, pinning the **current** semantics as a drift detector, not an endorsement.
 
 use kode_python::self_flow::{infer_self_attribute_flow, SelfAttributeFlow};
 
@@ -30,8 +34,9 @@ fn flow(body: &[&str], query_line: usize, attr: &str) -> SelfAttributeFlow {
 
 #[test]
 fn none_guard_block_hosting_query_line_stops_inside() {
-    // 查询位落在 `if self.x is None:` 块体内:守卫臂以「恰为 None」为入口态
-    // 递归,块内命中查询行即停并整块早退——结果 = 块内态,非块后并集。
+    // The query position falls inside the `if self.x is None:` block body: the guard arm
+    // recurses with "exactly None" as entry state, stops on hitting the query line inside the
+    // block and early-exits the whole block -- result = in-block state, not the post-block union.
     let body = [
         "class Foo:",
         "    def __init__(self):",
@@ -41,7 +46,7 @@ fn none_guard_block_hosting_query_line_stops_inside() {
         "            self.x = [1]",
         "            y = self.x",
     ];
-    // 行 6 = `y = self.x`,在 is None 守卫块体内(行 4 是守卫头)。
+    // Line 6 = `y = self.x`, inside the is None guard block body (line 4 is the guard head).
     let f = flow(&body, 6, "x");
     assert_eq!(
         f.types,
@@ -55,8 +60,9 @@ fn none_guard_block_hosting_query_line_stops_inside() {
 
 #[test]
 fn not_none_guard_arm_query_inside_block_stops_with_narrowed_entry() {
-    // 空格形态 `self .x` 是谓词今日唯一接受的合法源;查询位在块体内 →
-    // 入口态 = 去 None(窄化),块内赋值可见,块内命中查询行即停早退。
+    // The spaced form `self .x` is the only legal source the predicate accepts today; the query
+    // position is inside the block body -> entry state = None removed (narrowed), the in-block
+    // assignment is visible, and hitting the query line inside the block stops with early exit.
     let body = [
         "class Foo:",
         "    def __init__(self):",
@@ -84,9 +90,10 @@ fn not_none_guard_arm_query_inside_block_stops_with_narrowed_entry() {
 
 #[test]
 fn not_none_guard_arm_terminal_and_union_after_block() {
-    // 块体以 return 早退:then 侧退出、else(x 可 None)继续 → 块后保持
-    // 入口态(terminal 分支);块体非早退:块后 = 入口 ∪ 块内态(else 分支)。
-    // 两形查询位都在块后,锁「块后并集」两臂 + 继续扫下一行。
+    // The block body early-exits with return: the then side exits, else (x may be None) continues
+    // -> after the block the entry state is retained (terminal branch); the block body does not
+    // early-exit: after the block = entry ∪ in-block state (else branch).
+    // Both forms query after the block, pinning both arms of "post-block union" + continuing to scan the next line.
     let terminal = [
         "class Foo:",
         "    def __init__(self):",

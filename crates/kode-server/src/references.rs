@@ -630,8 +630,7 @@ impl HoverEngine {
         character: u32,
     ) -> Option<Vec<DefinitionLocation>> {
         let query = self.types_reference_query(key, text, line0, character)?;
-        let locations: Vec<DefinitionLocation> =
-            query.sites.iter().map(site_location).collect();
+        let locations: Vec<DefinitionLocation> = query.sites.iter().map(site_location).collect();
         if locations.is_empty() {
             None
         } else {
@@ -736,12 +735,11 @@ impl HoverEngine {
     /// (defs_root 逐路径走查,同根多 entity_defs 树互不串)。
     fn name_decl_path_at(&self, kind: RefKind, path: &str, name: &str) -> Option<String> {
         match kind {
-            RefKind::Type => {
-                self.path_root_of(path)
-                    .and_then(|root| self.same_root_type_decl(root, name))
-                    .map(|(types_path, _)| types_path.clone())
-                    .or_else(|| self.entity_def_file(path, name))
-            }
+            RefKind::Type => self
+                .path_root_of(path)
+                .and_then(|root| self.same_root_type_decl(root, name))
+                .map(|(types_path, _)| types_path.clone())
+                .or_else(|| self.entity_def_file(path, name)),
             RefKind::Parent => self.entity_def_file(path, name),
             RefKind::Interface => self.interface_def_file(path, name),
         }
@@ -751,11 +749,7 @@ impl HoverEngine {
     /// 与批 1 位置面声明落点同源(Type=types 声明文件/实体 def;Interface
     /// 可 None——位置面缺声明位照列站点的先例)。
     fn query_decl_path(&self, key: &DocumentKey, query: &ReferenceQuery) -> Option<String> {
-        self.name_decl_path_at(
-            query.target.kind,
-            key.uri.as_path(),
-            &query.target.name,
-        )
+        self.name_decl_path_at(query.target.kind, key.uri.as_path(), &query.target.name)
     }
 
     /// 逐站点语义分类(批 2 核):站点域内声明 == 查询声明(同一 IR 节点)
@@ -771,9 +765,7 @@ impl HoverEngine {
                 let site_decl =
                     self.name_decl_path_at(query.target.kind, &site.uri, &query.target.name);
                 let (semantic, evidence) = match (&site_decl, &query_decl) {
-                    (Some(d), Some(q)) if d == q => {
-                        (SemanticClass::Semantic, Some(d.clone()))
-                    }
+                    (Some(d), Some(q)) if d == q => (SemanticClass::Semantic, Some(d.clone())),
                     (Some(d), _) => (SemanticClass::Shadow, Some(d.clone())),
                     (None, _) => (SemanticClass::Dangling, None),
                 };
@@ -842,8 +834,7 @@ impl HoverEngine {
             FileKind::Types => {
                 let query = self.types_reference_query(key, text, line0, character)?;
                 let sites = self.semantic_only_sites(key, &query);
-                let locations: Vec<DefinitionLocation> =
-                    sites.iter().map(site_location).collect();
+                let locations: Vec<DefinitionLocation> = sites.iter().map(site_location).collect();
                 if locations.is_empty() {
                     None
                 } else {
@@ -1153,12 +1144,9 @@ pub fn dump_references_semantic_golden(repo_root: &std::path::Path) -> String {
         dump.probe_count += probes.len();
         let mut references = Vec::new();
         for probe in probes {
-            if let Some((target, classified)) = engine.classified_references(
-                &key,
-                text,
-                probe.line as u32 - 1,
-                probe.character,
-            ) {
+            if let Some((target, classified)) =
+                engine.classified_references(&key, text, probe.line as u32 - 1, probe.character)
+            {
                 if classified.is_empty() {
                     continue;
                 }
@@ -1901,9 +1889,7 @@ mod tests {
         let filtered = engine
             .semantic_reference_locations(&key, A_AVATAR, line1 as u32 - 1, character, false)
             .expect("filtered locations");
-        assert!(filtered
-            .iter()
-            .all(|loc| loc.uri.starts_with("/proj-a")));
+        assert!(filtered.iter().all(|loc| loc.uri.starts_with("/proj-a")));
         assert_eq!(filtered.len(), 1);
         // 含声明:声明先行 + 同声明站点;全量位置面比过滤面多 proj-b 位。
         let with_decl = engine
@@ -1959,14 +1945,13 @@ mod tests {
         // 域按站点路径走查,root 相同不影响判定。
         let registry = registry();
         let mut engine = HoverEngine::new();
-        let tree_one = "<root>\n  <Interfaces>\n    <interface> ROLE </interface>\n  </Interfaces>\n</root>\n";
-        let tree_two = "<root>\n  <Interfaces>\n    <interface> ROLE </interface>\n  </Interfaces>\n</root>\n";
+        let tree_one =
+            "<root>\n  <Interfaces>\n    <interface> ROLE </interface>\n  </Interfaces>\n</root>\n";
+        let tree_two =
+            "<root>\n  <Interfaces>\n    <interface> ROLE </interface>\n  </Interfaces>\n</root>\n";
         for (path, text) in [
             ("/proj-a/scripts/entities.xml", A_ENTITIES),
-            (
-                "/proj-a/scripts/entity_defs/interfaces/ROLE.def",
-                A_ROLE,
-            ),
+            ("/proj-a/scripts/entity_defs/interfaces/ROLE.def", A_ROLE),
             ("/proj-a/alt/scripts/entities.xml", B_ENTITIES),
             (
                 "/proj-a/alt/scripts/entity_defs/interfaces/ROLE.def",
@@ -1988,13 +1973,7 @@ mod tests {
             .expect("classified cross-tree interface");
         let mut faces: Vec<(&str, SemanticClass, Option<&str>)> = classified
             .iter()
-            .map(|c| {
-                (
-                    c.site.uri.as_str(),
-                    c.semantic,
-                    c.evidence.as_deref(),
-                )
-            })
+            .map(|c| (c.site.uri.as_str(), c.semantic, c.evidence.as_deref()))
             .collect();
         faces.sort();
         assert_eq!(
@@ -2069,10 +2048,9 @@ mod tests {
             .1
             .iter()
             .any(|c| c.site.uri.starts_with("/proj-b") && c.semantic == SemanticClass::Shadow));
-        let root_b = registry
-            .root_for(&kode_vfs::uri::CanonicalUri::from_path(
-                "/proj-b/scripts/entities.xml",
-            ));
+        let root_b = registry.root_for(&kode_vfs::uri::CanonicalUri::from_path(
+            "/proj-b/scripts/entities.xml",
+        ));
         engine.invalidate_root(root_b);
         let after = engine
             .classified_references(&key, A_AVATAR, line1 as u32 - 1, character)

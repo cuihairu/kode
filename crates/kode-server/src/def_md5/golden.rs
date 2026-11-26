@@ -1,7 +1,8 @@
-//! def MD5 golden 样例集与黄金 JSON 生成(SRC-008 阶段 1 自 def_md5 迁出,
-//! 纯移动:GoldenSample/fixture/minimal/KR-AUD-80/81 手推锚点/golden_samples/
-//! dump_def_md5_golden/GOLDEN_REL_PATH)。区域原文零改动;计算与参数类型自父
-//! 模块导入(同 crate 内,无环)。
+//! def MD5 golden sample set and golden JSON generation (moved out of def_md5
+//! in SRC-008 phase 1, a pure move: GoldenSample/fixture/minimal/KR-AUD-80/81
+//! hand-derived anchors/golden_samples/dump_def_md5_golden/GOLDEN_REL_PATH).
+//! Region original text is untouched; computation and parameter types are
+//! imported from the parent module (same crate, no cycle).
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -12,7 +13,8 @@ use super::{compute_def_md5, DefMd5Params};
 // Golden
 // ===========================================================================
 
-/// 单个黄金样本(params+期望)。手造样本的字节流为手推规范推导锚点。
+/// A single golden sample (params + expectation). The hand-crafted sample's
+/// byte stream serves as the hand-derived canonical derivation anchor.
 #[derive(Debug)]
 pub struct GoldenSample {
     pub name: &'static str,
@@ -52,7 +54,8 @@ fn fixture_params(root: &Path, sub: &str) -> Option<DefMd5Params> {
             }
         }
     }
-    // 组件脚本存在性(kbengine-demo-assets 的 scripts/{base,cell}/components/)。
+    // Component script existence (kbengine-demo-assets's
+    // scripts/{base,cell}/components/).
     let mut component_scripts = HashSet::new();
     for side in ["base", "cell"] {
         if let Ok(entries) = std::fs::read_dir(scripts.join(side).join("components")) {
@@ -75,7 +78,8 @@ fn fixture_params(root: &Path, sub: &str) -> Option<DefMd5Params> {
     })
 }
 
-/// 手造最小资产(规范推导锚点):单实体单属性单方法,字节流手推对拍。
+/// Hand-crafted minimal assets (canonical derivation anchor): one entity, one
+/// property, one method; the byte stream is hand-derived for parity.
 fn minimal_params() -> DefMd5Params {
     let types_xml = "<root></root>".to_string();
     let entities_xml = "<root><Gate hasCell=\"true\"></Gate></root>".to_string();
@@ -115,9 +119,12 @@ fn minimal_params() -> DefMd5Params {
     }
 }
 
-/// KR-AUD-80/81 引擎对拍夹具(xml.cpp:72-95/113-119 + entitydef.cpp:551-639/
-/// 642-818):接口文本/元素两形态归一 + 组件 <Type> 文本导航。手推规范推导:
-/// 接口名本身不入流,两形态 md5 必须相同;组件类型名取 <Type> 文本。
+/// KR-AUD-80/81 engine parity fixtures (xml.cpp:72-95/113-119 +
+/// entitydef.cpp:551-639/642-818): interface text/element two-form
+/// normalization + component `<Type>` text navigation. Hand-derived canonical
+/// derivation: the interface name itself never enters the stream, so the two
+/// forms' md5 must be identical; the component type name comes from the
+/// `<Type>` text.
 fn kr_aud_80_interface_params(interface_entry: &str) -> DefMd5Params {
     let combat_def = "<root>\
         <Properties>\
@@ -184,15 +191,17 @@ fn kr_aud_81_component_params() -> DefMd5Params {
     }
 }
 
-/// 黄金样本集(demo-assets 全实体 + parity-project + 最小锚点
-/// + KR-AUD-80/81 接口/组件引擎对拍)。
+/// Golden sample set (all demo-assets entities + parity-project + the minimal
+/// anchor + KR-AUD-80/81 interface/component engine parity).
 pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
     let fixtures = repo_root.join("tests/fixtures");
     let mut samples = Vec::new();
     if let Some(mut params) = fixture_params(&fixtures, "kbengine-demo-assets") {
-        // demo-assets 夹具非引擎可装载(缺 Flags/Monster.onAggro 用未定义的
-        // ENTITY_ID);这里仅 md5 侧补充 ENTITY_ID 别名使可计算(回归锁用途,
-        // 非 parity 权威);types.xml 是共享夹具,不动文件避免级联其他 golden。
+        // The demo-assets fixture is not engine-loadable (it lacks Flags, and
+        // Monster.onAggro uses an undefined ENTITY_ID); here the md5 side only
+        // adds the ENTITY_ID alias to make it computable (a regression-lock
+        // purpose, not parity authority); types.xml is a shared fixture, so the
+        // file is left untouched to avoid cascading into other goldens.
         if !params.types_xml.contains("ENTITY_ID") {
             params.types_xml = params
                 .types_xml
@@ -213,8 +222,9 @@ pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
         name: "minimal-single-entity",
         params: minimal_params(),
     });
-    // KR-AUD-80:接口文本/元素两形态——引擎导航(getKey(enterNode·) =
-    // trim(首个非注释子节点 Value))归一,两样本 md5 必须相同。
+    // KR-AUD-80: interface text/element two forms — the engine navigation
+    // (getKey(enterNode·) = trim(first non-comment child node's Value))
+    // normalizes them, so the two samples' md5 must be identical.
     samples.push(GoldenSample {
         name: "kr-aud-80-interface-text",
         params: kr_aud_80_interface_params("<Interface> Combat </Interface>"),
@@ -223,7 +233,8 @@ pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
         name: "kr-aud-80-interface-element",
         params: kr_aud_80_interface_params("<Interface><Combat/></Interface>"),
     });
-    // KR-AUD-81:组件类型名=<Type> 文本(Inventory),非元素名字面量 "Type"。
+    // KR-AUD-81: the component type name = the `<Type>` text (Inventory), not
+    // the element name literal "Type".
     samples.push(GoldenSample {
         name: "kr-aud-81-component-type",
         params: kr_aud_81_component_params(),
@@ -231,7 +242,8 @@ pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
     samples
 }
 
-/// 黄金 JSON(规范推导为权威;streamHex+trace 供逐字节审计)。
+/// Golden JSON (the canonical derivation is authoritative; streamHex+trace for
+/// byte-level audits).
 pub fn dump_def_md5_golden(repo_root: &Path) -> String {
     let mut samples = Vec::new();
     for sample in golden_samples(repo_root) {
@@ -245,10 +257,13 @@ pub fn dump_def_md5_golden(repo_root: &Path) -> String {
     let value = json!({
         "generator": "kode-server dump-def-md5-golden",
         "algorithm": "engine EntityDef::md5() replay (kbengine 732b389)",
-        // RUST-404:golden 是规范推导(源码逐字节镜像重放),不是真实引擎运行
-        // 产物。兼容性宣称只允许来自真实引擎摘要对拍;无真实引擎证据时此处
-        // 恒 false,禁止把规范推导冒充「已同步」。置 true 必须附真实引擎证据
-        // 并同步改 def_md5_golden.rs 的 evidenceTier 断言。
+        // RUST-404: the golden is a canonical derivation (a byte-for-byte replay
+        // mirroring the source), not the output of a real engine run.
+        // Compatibility claims may only come from parity against real engine
+        // digests; without real engine evidence this stays false here — the
+        // canonical derivation must never be passed off as "in sync". Setting it
+        // to true requires real engine evidence attached plus a matching update
+        // to the evidenceTier assertion in def_md5_golden.rs.
         "realEngineVerified": false,
         "evidenceTier": "spec-derived (kbengine 732b389 source replay; no real engine run)",
         "provenance": {
@@ -271,5 +286,5 @@ pub fn dump_def_md5_golden(repo_root: &Path) -> String {
     serde_json::to_string(&value).expect("serialize def md5 golden")
 }
 
-/// 黄金文件相对路径(与 flag-domains/wire 同目录惯例)。
+/// Golden file relative path (same-directory convention as flag-domains/wire).
 pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/def-md5-parity.json";

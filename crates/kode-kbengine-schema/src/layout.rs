@@ -1,9 +1,11 @@
-//! 项目侧布局抽取:types.xml / alias.xml → 别名线类型表;
-//! entities.xml + .def → 实体线格式条目(todo PA-002「Wire Type Layout」)。
+//! Project-side layout extraction: types.xml / alias.xml → the alias wire-type table;
+//! entities.xml + .def → the entity wire-format entries (todo PA-002 "Wire Type Layout").
 //!
-//! 与 kode-types 类型图的分工:类型图(`kode_types::graph`)回答脚本语义
-//! (引用边/别名链/继承链);本模块**独立**按网络序列化规则递归求值出
-//! [`WireType`]。类型图 ≠ 网络序列化规则(PA-002 验收原文),两者不共用求值。
+//! Division of labor with the kode-types type graph: the type graph (`kode_types::graph`)
+//! answers script semantics (reference edges / alias chains / inheritance chains); this module
+//! evaluates recursively **independently** per the network serialization rules into
+//! [`WireType`]. The type graph ≠ the network serialization rules (PA-002 acceptance text); the
+//! two do not share evaluation.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -15,24 +17,26 @@ use kode_types::builtin;
 use crate::schema::{EntityMethodWire, EntityPropertyWire, EntityWireInfo};
 use crate::wire::{builtin_wire_type, DictField, WireType, MAX_TYPE_DEPTH};
 
-/// 原始别名表(名字 → 线类型;求值结果已递归展开;环 → Unresolved)。
+/// The raw alias table (name → wire type; evaluation results are recursively expanded; cycles →
+/// Unresolved).
 pub type AliasMap = BTreeMap<String, WireType>;
 
-/// types.xml + alias.xml 的原始声明(XML 层;先收集后求值)。
+/// The raw declarations from types.xml + alias.xml (XML layer; collect first, evaluate later).
 #[derive(Debug, Default)]
 pub struct RawTypes {
-    /// 名字 → 指引(内建名 / FIXED_DICT / ARRAY)。
+    /// name → directive (builtin name / FIXED_DICT / ARRAY).
     directives: BTreeMap<String, RawDecl>,
 }
 
 #[derive(Debug)]
 struct RawDecl {
     directive: String,
-    /// FIXED_DICT:字段声明序(字段名, 类型引用或内嵌 ARRAY 元素引用)。
+    /// FIXED_DICT: field declaration order (field name, type reference or inline ARRAY element
+    /// reference).
     dict_fields: Vec<(String, Option<String>)>,
-    /// FIXED_DICT:implementedBy 原文。
+    /// FIXED_DICT: the implementedBy verbatim.
     implemented_by: Option<String>,
-    /// ARRAY:`<of>` 元素引用。
+    /// ARRAY: the `<of>` element reference.
     of: Option<String>,
 }
 
@@ -59,7 +63,8 @@ fn collect_types_xml(text: &str, out: &mut RawTypes) {
         if name == "root" {
             continue;
         }
-        // 首个非空文本 token = 指引(FIXED_DICT/ARRAY/内建名);空则回落 type 属性。
+        // The first non-empty text token = the directive (FIXED_DICT/ARRAY/builtin name); if empty,
+        // fall back to the type attribute.
         let mut directive = el
             .text(&doc)
             .split_whitespace()
@@ -95,7 +100,8 @@ fn collect_types_xml(text: &str, out: &mut RawTypes) {
                         let field_type = doc.child_element(prop, "Type");
                         let field_ref = field_type.and_then(|t| {
                             let te = doc.element(t);
-                            // 数组元素写在 <Type> 内的 <of>;否则取 Type 文本首 token。
+                            // The array element is written as the <of> inside <Type>; otherwise take the first token
+                            // of the Type text.
                             doc.child_element(t, "of")
                                 .map(|of| doc.element(of).text(&doc).trim().to_string())
                                 .filter(|s| !s.is_empty())
@@ -122,8 +128,8 @@ fn collect_types_xml(text: &str, out: &mut RawTypes) {
     }
 }
 
-/// alias.xml(`<Name><Type> T </Type></Name>` 关联表;kode-parser `parse_alias`
-/// 语义的线类型版:名字 → 目标引用)。
+/// alias.xml (`<Name><Type> T </Type></Name>` association table; the kode-parser `parse_alias`
+/// semantics as a wire type version: name → target reference).
 fn collect_alias_xml(text: &str, out: &mut RawTypes) {
     let doc = xml::parse(text, false);
     let root = match doc.root() {
@@ -160,8 +166,9 @@ fn collect_alias_xml(text: &str, out: &mut RawTypes) {
     }
 }
 
-/// 递归求值:引用名 → 线类型。内建名直接映射;自定义名查声明表;
-/// 环/缺失 → Unresolved(深度上限 [`MAX_TYPE_DEPTH`],绝不无限递归)。
+/// Recursive evaluation: reference name → wire type. Builtin names map directly; custom names
+/// look up the declaration table; cycles/missing → Unresolved (depth cap [`MAX_TYPE_DEPTH`], never
+/// infinite recursion).
 pub fn resolve_ref(raw: &RawTypes, ref_name: &str, depth: usize) -> WireType {
     if depth > MAX_TYPE_DEPTH {
         return WireType::Unresolved(format!("{ref_name} (depth limit)"));
@@ -198,14 +205,15 @@ pub fn resolve_ref(raw: &RawTypes, ref_name: &str, depth: usize) -> WireType {
                     fields,
                 }
             }
-            // 别名链(ITEM_ID → UINT16 / 自定义 → 自定义):继续递归求值,
-            // 环由深度上限兜底落 Unresolved。
+            // Alias chains (ITEM_ID → UINT16 / custom → custom): keep recursing; cycles fall
+            // back to Unresolved via the depth cap.
             other => resolve_ref(raw, other, depth + 1),
         },
     }
 }
 
-/// 全表求值(顺序 = 声明序;诊断:环/缺失逐条落 `Unresolved`,不失败)。
+/// Whole-table evaluation (order = declaration order; diagnostics: cycles/missing land one by one
+/// as `Unresolved`, no failure).
 pub fn resolve_alias_map(raw: &RawTypes) -> AliasMap {
     let mut out = AliasMap::new();
     for name in raw.directives.keys() {
@@ -221,11 +229,11 @@ pub fn resolve_alias_map(raw: &RawTypes) -> AliasMap {
 }
 
 // ---------------------------------------------------------------------------
-// .def → 实体线格式
+// .def → entity wire format
 // ---------------------------------------------------------------------------
 
-/// 合并序:父 .def → 接口 .def → 自身(引擎 EntityDef 加载序;
-/// 同名属性先到先得,自身覆盖父)。
+/// Merge order: parent .def → interface .def → own (the engine's EntityDef load order; first-come
+/// for same-name properties, own overrides parent).
 fn merged_def(
     entity_name: &str,
     load_def: &mut dyn FnMut(&str) -> Option<DefFile>,
@@ -275,7 +283,8 @@ fn merged_def(
     Some(out)
 }
 
-/// 一个 .def 语义视图 → 实体线格式条目(属性/方法参数全部递归求值为线类型)。
+/// One .def semantic view → the entity wire-format entry (properties/method arguments all
+/// recursively evaluated to wire types).
 pub fn entity_wire_info(
     entity_name: &str,
     load_def: &mut dyn FnMut(&str) -> Option<DefFile>,
@@ -320,14 +329,15 @@ pub fn entity_wire_info(
     })
 }
 
-/// 加载 .def 语义的辅助:文件名(去目录去后缀)→ 实体/接口名。
+/// Helper for loading .def semantics: file name (without directory, without suffix) → the
+/// entity/interface name.
 pub fn def_file_name(path: &Path) -> Option<String> {
     path.file_name()
         .and_then(|n| n.to_str())
         .map(|n| n.strip_suffix(".def").unwrap_or(n).to_string())
 }
 
-/// 实体注册属性(hasClient 等)读取(entities.xml attributes)。
+/// Reads the entity registration attributes (hasClient and the like) from entities.xml.
 pub fn entity_registered(entities_xml: &str) -> Vec<(String, Vec<(String, String)>)> {
     parse_entities(entities_xml)
         .entities
@@ -336,7 +346,8 @@ pub fn entity_registered(entities_xml: &str) -> Vec<(String, Vec<(String, String
         .collect()
 }
 
-/// builtin 透明转发(kode-types 复用面;保证 alias 分类口径一致)。
+/// Builtin transparent forwarding (the kode-types reuse surface; keeps the alias classification
+/// semantics consistent).
 pub fn is_builtin_type(name: &str) -> bool {
     builtin::is_builtin(name)
 }

@@ -1,25 +1,31 @@
 /**
- * .def 原生格式化桥(KODE-SYN-006,评估结论见
- * docs/design/def-formatter-evaluation.md 方案 B):格式化核收敛在 Rust
- * (kode-parser def_format.rs 精确 span 面),本文件只做薄适配:
- * - `runDefFormat`:`$/kode/def/format` 桥(载荷 content/indentSize/start+end);
- * - 偏移坐标换算:Rust span 是**原文本 UTF-8 字节**位,vscode Position 是
- *   UTF-16 code unit——两侧换算 helper 是 provider 与真实编辑器之间的唯一
- *   转换面(中文/非 BMP 文本下字节位≠UTF-16 位,不可混用);
- * - `defFormatEditsToTextEdits`:行级编辑集 → TextEdit 面(range 由注入的
- *   工厂构造,本核零 vscode)。
+ * Native .def formatting bridge (KODE-SYN-006; the evaluation verdict is in
+ * docs/design/def-formatter-evaluation.md, option B): the formatting core lives
+ * in Rust (kode-parser def_format.rs, the precise span surface), and this file
+ * is only a thin adapter:
+ * - `runDefFormat`: the `$/kode/def/format` bridge (payload
+ *   content/indentSize/start+end);
+ * - offset coordinate conversion: a Rust span is a position in **raw-text
+ *   UTF-8 bytes**, while a vscode Position is a UTF-16 code unit -- the
+ *   conversion helpers on both sides are the only translation surface between
+ *   the provider and the real editor (for CJK/non-BMP text a byte position
+ *   is not a UTF-16 position, and they must not be mixed);
+ * - `defFormatEditsToTextEdits`: a line-level edit set -> the TextEdit surface
+ *   (ranges are built by an injected factory; this core has zero vscode).
  *
- * 诚实边界:Rust 不可用/应答畸形 → 无编辑(不猜不半改);残缺 XML 由 Rust 侧
- * 安全退回(零编辑 + `diagnostics` 条数回带,调用方据此区分「已格式化」与
- * 「解析不通」,零编辑不静默)。
+ * Honest boundaries: Rust unavailable / malformed reply -> no edits (no
+ * guessing, no half-apply); malformed XML is a safe fallback on the Rust side
+ * (zero edits + the `diagnostics` count carried back, so the caller can tell
+ * "formatted" apart from "unparsable"; a zero-edit result is never silent).
  *
- * 无 vscode import:UI/编辑器面全经注入(单测可纯驱动)。
+ * No vscode import: the whole UI/editor surface is injected (unit tests can
+ * drive it purely).
  */
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import type { RustCall } from './ruffLint';
 
-/** 一条行级编辑:`[start, end)` 是**原文本 UTF-8 字节**区间(纯插入时相等)。 */
+/** A single line-level edit: `[start, end)` is a **raw-text UTF-8 byte** interval (equal for a pure insertion). */
 export interface DefFormatEditFace {
   start: number;
   end: number;
@@ -28,26 +34,26 @@ export interface DefFormatEditFace {
 
 export interface DefFormatResult {
   edits: DefFormatEditFace[];
-  /** 解析诊断条数:零编辑 + 非零诊断 = 解析不通的安全退回,不是「已格式化」。 */
+  /** Parse diagnostic count: zero edits + nonzero diagnostics = a safe fallback for "unparsable", not "formatted". */
   diagnostics: number;
 }
 
 export type DefFormatCall = RustCall<DefFormatResult>;
 
-/** 选区(字节坐标,缺省=整文档)。 */
+/** Selection (byte coordinates; by default the whole document). */
 export interface DefFormatRange {
   start: number;
   end: number;
 }
 
 export interface DefFormatOptions {
-  /** 选区(缺省整文档);`start`/`end` 缺一半由 Rust 侧按错参拒。 */
+  /** Selection (whole document by default); if only one of `start`/`end` is given, the Rust side rejects it as a bad argument. */
   byteRange?: DefFormatRange;
-  /** 每层缩进空格数(缺省 4;Rust 侧上限 64,越界如实报错)。 */
+  /** Spaces per indentation level (default 4; the Rust side caps at 64 and reports out-of-range values honestly). */
   indentSize?: number;
 }
 
-/** `$/kode/def/format` 桥:content 直传(纯计算面,无 IO、无文件路径)。 */
+/** The `$/kode/def/format` bridge: content passed straight through (pure computation surface, no IO, no file paths). */
 export async function runDefFormat(
   content: string,
   options: DefFormatOptions = {}
@@ -71,7 +77,7 @@ export async function runDefFormat(
   try {
     return { status: 'ok', result: readResult(response.result) };
   } catch (error) {
-    // 应答畸形 = 形状漂移:如实降级,不部分采用也不抛给编辑器
+    // Malformed reply = shape drift: degrade honestly -- neither partially applied nor thrown at the editor
     return {
       status: 'error',
       reason: `defFormat: ${error instanceof Error ? error.message : String(error)}`
@@ -79,7 +85,7 @@ export async function runDefFormat(
   }
 }
 
-/** 应答形状校验:任一条目缺区间/文本或区间反向 → 整面作废(不部分采用)。 */
+/** Reply shape validation: if any entry lacks an interval/text or has a reversed interval -> the whole surface is discarded (no partial adoption). */
 function readResult(value: unknown): DefFormatResult {
   const record = value as Record<string, unknown> | null;
   if (typeof record !== 'object' || record === null) {
@@ -111,7 +117,7 @@ function readResult(value: unknown): DefFormatResult {
   return { edits, diagnostics: record.diagnostics };
 }
 
-// ---- 偏移坐标换算(UTF-8 字节 ↔ UTF-16 code unit) -------------------------
+// ---- Offset coordinate conversion (UTF-8 bytes <-> UTF-16 code unit) -------
 
 function codePointBytes(codePoint: number): number {
   if (codePoint < 0x80) {
@@ -126,7 +132,7 @@ function codePointBytes(codePoint: number): number {
   return 4;
 }
 
-/** 高位代理 + 紧邻低位代理 → 码点;否则 null(孤立代理按单单元计)。 */
+/** High surrogate + adjacent low surrogate -> code point; otherwise null (a lone surrogate counts as a single unit). */
 function pairCodePoint(content: string, index: number): number | null {
   const high = content.charCodeAt(index);
   if (high < 0xd800 || high > 0xdbff || index + 1 >= content.length) {
@@ -139,7 +145,7 @@ function pairCodePoint(content: string, index: number): number | null {
   return ((high - 0xd800) << 10) + (low - 0xdc00) + 0x10000;
 }
 
-/** UTF-16 code unit 位 → 原文本 UTF-8 字节位(vscode.offsetAt 的对偶)。 */
+/** UTF-16 code unit position -> raw-text UTF-8 byte position (the dual of vscode.offsetAt). */
 export function utf16OffsetToByteOffset(content: string, utf16Offset: number): number {
   const target = Math.max(0, Math.min(Math.floor(utf16Offset), content.length));
   let bytes = 0;
@@ -157,7 +163,7 @@ export function utf16OffsetToByteOffset(content: string, utf16Offset: number): n
   return bytes;
 }
 
-/** 原文本 UTF-8 字节位 → UTF-16 code unit 位(document.positionAt 的入参)。 */
+/** Raw-text UTF-8 byte position -> UTF-16 code unit position (the argument of document.positionAt). */
 export function byteOffsetToUtf16Offset(content: string, byteOffset: number): number {
   const total = utf16OffsetToByteOffset(content, content.length);
   const target = Math.max(0, Math.min(Math.floor(byteOffset), total));
@@ -175,7 +181,7 @@ export function byteOffsetToUtf16Offset(content: string, byteOffset: number): nu
   return index;
 }
 
-// ---- 编辑集 → TextEdit 面 ------------------------------------------------
+// ---- Edit set -> TextEdit surface -----------------------------------------
 
 export interface DefFormatTextEdit {
   range: unknown;
@@ -183,9 +189,11 @@ export interface DefFormatTextEdit {
 }
 
 /**
- * 行级编辑集 → TextEdit 面:每条编辑的字节区间换算成 UTF-16 位后由
- * `toRange` 构造真实 range(生产注入 vscode.Range 工厂,单测注入记录器)。
- * 区间互不重叠(Rust 侧单测已钉),故按序构造即可。
+ * Line-level edit set -> TextEdit surface: each edit's byte interval is
+ * converted to a UTF-16 position and then handed to `toRange` to build the
+ * real range (production injects the vscode.Range factory, unit tests inject a
+ * recorder). The intervals do not overlap (pinned by Rust-side unit tests), so
+ * building them in order is sufficient.
  */
 export function defFormatEditsToTextEdits(
   content: string,

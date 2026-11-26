@@ -1,8 +1,9 @@
-//! PA-002 验收的单元与行为测试(红先行:先于实现编写)。
+//! The PA-002 acceptance unit and behavior tests (red first: written before the implementation).
 //!
-//! 引擎语义依据 docs/kbengine-wire-protocol.md(PA-001 取证,引擎基准
-//! bf1a9cd6 / v2.5.10);固定消息表快照在 tests/fixtures/messages_fixed_defaults.xml
-//! (逐字节拷自 kbe/res/server/messages_fixed_defaults.xml)。
+//! Engine semantics per docs/kbengine-wire-protocol.md (PA-001 evidence, engine baseline
+//! bf1a9cd6 / v2.5.10); the fixed message table snapshot is
+//! tests/fixtures/messages_fixed_defaults.xml (copied byte for byte from
+//! kbe/res/server/messages_fixed_defaults.xml).
 
 use std::path::PathBuf;
 
@@ -16,7 +17,8 @@ fn repo_root() -> PathBuf {
 }
 
 fn fixture_project() -> PathBuf {
-    // 只读引用仓库共享 fixture(kbengine-demo-assets = 官方模板逐字快照)。
+    // Read-only reference to the repository-shared fixture (kbengine-demo-assets = a verbatim
+    // snapshot of the official template).
     repo_root().join("tests/fixtures/kbengine-demo-assets")
 }
 
@@ -29,7 +31,7 @@ fn engine_defaults_xml() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// WireType 尺寸规则(§3/§3.1)
+// WireType size rules (§3/§3.1)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -52,13 +54,13 @@ fn wire_fixed_sizes_match_engine() {
 
 #[test]
 fn wire_variable_shapes() {
-    // STRING: NUL 结尾无前缀(datatype.cpp:1050-1062)
+    // STRING: NUL terminated, no prefix (datatype.cpp:1050-1062)
     assert_eq!(WireType::String.fixed_size(), None);
-    // UNICODE/BLOB/PYTHON: u32 前缀(datatype.cpp:1129-1143,1448-1463)
+    // UNICODE/BLOB/PYTHON: a u32 prefix (datatype.cpp:1129-1143, 1448-1463)
     assert_eq!(WireType::Unicode.fixed_size(), None);
     assert_eq!(WireType::Blob.fixed_size(), None);
     assert_eq!(WireType::Python.fixed_size(), None);
-    // ARRAY: u32 元素数前缀(datatype.cpp:1837-1856)
+    // ARRAY: a u32 element-count prefix (datatype.cpp:1837-1856)
     assert_eq!(
         WireType::Array {
             of: Box::new(WireType::UInt32)
@@ -66,7 +68,7 @@ fn wire_variable_shapes() {
         .fixed_size(),
         None
     );
-    // FIXED_DICT 全定长字段 → 定长(datatype.cpp:2592+)
+    // FIXED_DICT with all fixed-size fields → fixed size (datatype.cpp:2592+)
     let dict = WireType::FixedDict {
         module: None,
         fields: vec![
@@ -81,14 +83,15 @@ fn wire_variable_shapes() {
         ],
     };
     assert_eq!(dict.fixed_size(), Some(8));
-    // 未知类型保守可变(解码端 Raw 保留)
+    // An unknown type is conservatively variable (the decoder keeps it as Raw)
     assert_eq!(WireType::Unresolved("MYSTERY".into()).fixed_size(), None);
-    // 递归定长字典(自引用经别名)→ 超界即保守可变,不栈溢出
+    // A recursive fixed dict (a self reference via an alias) → variable once over the limit, no
+    // stack overflow
     assert_eq!(WireType::EntityCall.fixed_size(), None);
 }
 
 // ---------------------------------------------------------------------------
-// 固定消息表(§5.1 + §4.2 定长推导)
+// The fixed message table (§5.1 + the §4.2 fixed-length derivation)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -97,11 +100,12 @@ fn parse_engine_fixed_defaults_table() {
 
     let login = table.find("Loginapp::login").expect("login exists");
     assert_eq!(login.id, 3);
-    // 固定表 XML 口径:STRING clientType + UINT8_ARRAY blob + STRING 账号 + STRING 密码
+    // The fixed-table XML semantics: STRING clientType + UINT8_ARRAY blob + STRING account + STRING
+    // password
     assert_eq!(login.args.len(), 4);
-    assert!(matches!(login.args[0], WireType::String)); // 前端类别(固定表 STRING)
+    assert!(matches!(login.args[0], WireType::String)); // the front-end category (the fixed table's STRING)
     assert!(matches!(login.args[1], WireType::Blob)); // UINT8_ARRAY
-                                                      // 含 STRING/BLOB → 可变长度(message_handler.cpp:201-215)
+                                                      // contains STRING/BLOB → variable length (message_handler.cpp:201-215)
     assert!(login.length.is_variable());
 
     let import = table
@@ -109,23 +113,25 @@ fn parse_engine_fixed_defaults_table() {
         .expect("import");
     assert_eq!(import.id, 5);
     assert!(import.args.is_empty());
-    assert!(!import.length.is_variable()); // 定长 0:线上无长度字段
+    assert!(!import.length.is_variable()); // fixed 0: no length field on the wire
 
     let ok = table.find("Client::onLoginSuccessfully").expect("onLogin");
     assert_eq!(ok.id, 502);
-    // STRING STRING UINT16 UINT8_ARRAY(§6 步骤 7);STRING → 线上可变
+    // STRING STRING UINT16 UINT8_ARRAY (§6 step 7); STRING → variable on the wire
     assert!(ok.length.is_variable());
 
     let hello = table.find("Client::onHelloCB").expect("onHelloCB");
     assert_eq!(hello.id, 521);
-    // §6 步骤 3(str+str+str+i32,loginapp.cpp:1361-1377 接口层口径)→ 变长
+    // §6 step 3 (str+str+str+i32, the loginapp.cpp:1361-1377 interface-layer semantics) → variable
     assert!(hello.length.is_variable());
     assert_eq!(hello.args.len(), 4);
 
-    // XML 缺 <arg> 的 hello:接口层勘误(str ver + str script + blob key)→ 变长
+    // The hello missing <arg> in the XML: the interface-layer correction (str ver + str script + blob
+    // key) → variable
     let hello_up = table.find("Loginapp::hello").unwrap();
     assert!(hello_up.length.is_variable());
-    // XML 无 <arg> 且无接口口径的无参消息:定长 0(线上无长度字段,§4.2-1)
+    // A parameterless message with no <arg> in the XML and no interface semantics: fixed 0 (no
+    // length field on the wire, §4.2-1)
     let import = table.find("Loginapp::importClientMessages").unwrap();
     assert!(!import.length.is_variable());
 }
@@ -136,12 +142,12 @@ fn project_override_replaces_engine_id() {
     let table =
         kode_kbengine_schema::messages::build_message_table(&engine_defaults_xml(), Some(project));
     assert_eq!(table.find("Loginapp::login").unwrap().id, 99);
-    // 未覆盖的条目保持引擎值
+    // Non-overridden entries keep their engine values
     assert_eq!(table.find("Loginapp::hello").unwrap().id, 4);
 }
 
 // ---------------------------------------------------------------------------
-// 项目 Schema 构建(真实 fixture 项目)
+// The project Schema build (a real fixture project)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -153,17 +159,17 @@ fn build_schema_from_demo_assets_project() {
     )
     .expect("schema build");
 
-    // entities.xml 注册的实体 → .def 线格式条目
+    // The entities registered in entities.xml → the .def wire-format entries
     assert!(schema.entities.contains_key("Account"));
     assert!(schema.entities.contains_key("Avatar"));
 
-    // 别名解析(types.xml):ITEM_ID→UINT16、ITEM_IDS→ARRAY<ITEM_ID>
+    // Alias resolution (types.xml): ITEM_ID→UINT16, ITEM_IDS→ARRAY<ITEM_ID>
     let item_id = schema.resolve_alias("ITEM_ID").expect("alias");
     assert!(matches!(item_id, WireType::UInt16));
     let ids = schema.resolve_alias("ITEM_IDS").expect("alias");
     assert!(matches!(&ids, WireType::Array { of } if matches!(**of, WireType::UInt16)));
 
-    // FIXED_DICT:SKILL_SLOT 两字段、字段类型内嵌 ARRAY
+    // FIXED_DICT: the two SKILL_SLOT fields, the field types nesting an ARRAY
     let slot = schema.resolve_alias("SKILL_SLOT").expect("alias");
     match slot {
         WireType::FixedDict { fields, .. } => {
@@ -173,7 +179,7 @@ fn build_schema_from_demo_assets_project() {
         other => panic!("expected FixedDict, got {other:?}"),
     }
 
-    // 消息表来自引擎固定默认(含 §5.1 关键 6 条)
+    // The message table comes from the engine fixed defaults (including the six key ones of §5.1)
     assert_eq!(schema.messages.find("Loginapp::login").unwrap().id, 3);
     assert_eq!(
         schema
@@ -196,7 +202,7 @@ fn entity_wire_info_has_flags_and_types() {
 
     let avatar = &schema.entities["Avatar"];
     let name = avatar.properties.iter().find(|p| p.name == "name").unwrap();
-    // STRING 实体属性 = NUL 结尾(datatype.cpp:1050-1062)
+    // A STRING entity property = NUL terminated (datatype.cpp:1050-1062)
     assert!(matches!(name.ty, WireType::String));
     assert_eq!(name.flags, vec!["BASE_AND_CLIENT"]);
 
@@ -204,7 +210,7 @@ fn entity_wire_info_has_flags_and_types() {
     assert!(matches!(hp.ty, WireType::UInt32));
     assert_eq!(hp.flags, vec!["ALL_CLIENTS"]);
 
-    // 方法段:参数类型进线格式 IR
+    // The method segments: argument types enter the wire-format IR
     let client_meths: Vec<_> = avatar
         .client_methods
         .iter()
@@ -214,7 +220,7 @@ fn entity_wire_info_has_flags_and_types() {
 }
 
 // ---------------------------------------------------------------------------
-// Canonical JSON + Hash + 兼容检查
+// Canonical JSON + Hash + the compatibility check
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -228,9 +234,9 @@ fn canonical_json_is_deterministic_and_hashed() {
     let jb = b.to_canonical_json();
     assert_eq!(ja, jb, "same input -> byte-identical canonical JSON");
     assert_eq!(a.hash_hex(), b.hash_hex());
-    // SHA-256 十六进制长度
+    // The SHA-256 hex length
     assert_eq!(a.hash_hex().len(), 64);
-    // JSON 可反序列化还原
+    // The JSON deserializes back to the same schema
     let round: kode_kbengine_schema::Schema =
         serde_json::from_str(&ja).expect("schema JSON round-trip");
     assert_eq!(round.hash_hex(), a.hash_hex());
@@ -242,7 +248,7 @@ fn compatibility_report_flags_real_breaks() {
     let old =
         build_schema_from_project(&fixture_project(), Some(&engine_defaults_xml()), &opts).unwrap();
 
-    // 新工程把 login 的固定 id 改掉 → 不兼容
+    // The new project changes login's fixed id → incompatible
     let overridden = "<root><Loginapp::login><id>77</id></Loginapp::login></root>";
     let new_msgs = kode_kbengine_schema::messages::build_message_table(
         &engine_defaults_xml(),
@@ -261,7 +267,7 @@ fn compatibility_report_flags_real_breaks() {
         report.changes
     );
 
-    // 同输入重算 → 兼容且无变更
+    // Recomputing the same input → compatible and no changes
     let same =
         build_schema_from_project(&fixture_project(), Some(&engine_defaults_xml()), &opts).unwrap();
     let report2 = kode_kbengine_schema::compat::check(&old, &same);
@@ -270,7 +276,7 @@ fn compatibility_report_flags_real_breaks() {
 }
 
 // ---------------------------------------------------------------------------
-// packetAlwaysContainLength 配置(§4.3)
+// The packetAlwaysContainLength configuration (§4.3)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -284,7 +290,7 @@ fn packet_always_contain_length_is_schema_carried() {
     let schema =
         build_schema_from_project(&fixture_project(), Some(&engine_defaults_xml()), &forced)
             .unwrap();
-    // 开关为 true:所有消息按线上可变建模(message_handler.cpp:173-175)
+    // The switch on true: every message is modeled as variable on the wire (message_handler.cpp:173-175)
     assert!(schema.packet_always_contain_length);
     let import = schema
         .messages
@@ -294,7 +300,7 @@ fn packet_always_contain_length_is_schema_carried() {
 }
 
 // ---------------------------------------------------------------------------
-// 健壮性:坏输入不 panic(SYNTAX-005 同规)
+// Robustness: bad input never panics (same rule as SYNTAX-005)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -305,7 +311,7 @@ fn bad_inputs_never_panic() {
         Some("<root><Broken"),
         &kode_kbengine_schema::BuildOptions::default(),
     );
-    // 必须返回 Err(可诊断),不允许 panic/unwrap 崩溃
+    // Must return an Err (a diagnosable one); panics/unwrap crashes are not allowed
     assert!(r.is_err());
 
     let garbage = "\u{0}\u{1}not xml at all <<< >>>";
@@ -314,6 +320,7 @@ fn bad_inputs_never_panic() {
         Some(garbage),
         &kode_kbengine_schema::BuildOptions::default(),
     );
-    // 垃圾固定表:引擎 notFoundError=true 语义 → 解析容错,表可为空但不 panic
+    // A garbage fixed table: the engine's notFoundError=true semantics → the parsing is
+    // tolerant, the table may end up empty but never panics
     assert!(ok.is_ok() || ok.is_err());
 }

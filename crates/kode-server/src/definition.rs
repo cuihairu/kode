@@ -1,55 +1,79 @@
-//! definition 响应链(Phase2 首片,书 §17 PR-010 定义面 / LSP 系列)。
+//! definition response chain (Phase2 first slice, book §17 PR-010 definition
+//! face / LSP series).
 //!
-//! 面 = **语料声明落点**:UTF-16 position → 词 → 声明处的 LSP Location。
-//! 复用 hover 的定位基建(word_at)与 HoverEngine 语料视图(纯内存、零 IO,
-//! ARCH-012 红线同 hover)。四类文档的落点口径:
-//! - `.def`:按 TS F12 provider 链的**落点语义**逐层同构 —
-//!   ①`<DetailLevel>` 取值词 → 本文件 `<DetailLevels>` 档位声明行;
-//!   ②`Properties` 段声明词 → null(2026-11-17 回归收回,与三方法段同口径:
-//!   TS F12 属性链脚本实现层先行,注册回落是 TS 末档;Rust 落注册会短路
-//!   脚本层=def 无法跳 py 实现);③三方法段声明词 → null(2026-11-08 demo
-//!   验收面:TS 下一层 = py 实现/def 调用链,Rust 不虚构落点,服务轨道回落
-//!   TS);④`<Parent>` 取值词 → 语料内父/接口/组件 def 文件首行(缺失即
-//!   null,绝不虚构);⑤`<Type>`/`<of>` 取值词 → 语料内 types.xml 声明行
-//!   (内建类型无定义文件,null);⑥`Components` 段声明词 → null(TS provider
-//!   链末尾同 null,不做单侧增强)。属性声明词的 Python 脚本层与数据库
-//!   schema 层是 Rust 无此能力的面(.py 面 / DB 快照),null 回落 TS 全链,
-//!   不虚构落点。
-//! - `entities.xml`:注册项词 → 语料内同名 def 文件首行(TS
-//!   findEntityDefinitionFile 同口径);
-//! - `types.xml`/`alias.xml`:声明词 → 本文件声明行(TS
-//!   findCustomTypeDefinition 同口径,落点=行首)。
+//! Face = **corpus declaration landing spot**: UTF-16 position → word → LSP
+//! Location at the declaration. Reuses hover's location infrastructure
+//! (word_at) and the HoverEngine corpus view (pure memory, zero IO, ARCH-012
+//! red line same as hover). Landing discipline for the four document kinds:
+//! - `.def`: layer-by-layer isomorphic to the TS F12 provider chain's
+//!   **landing semantics** —
+//!   (1) `<DetailLevel>` value word → this file's `<DetailLevels>` level
+//!   declaration line;
+//!   (2) `Properties` section declaration words → null (withdrawn by the
+//!   2026-11-17 regression, same discipline as the three method sections: the
+//!   TS F12 property chain's script-implementation layer goes first and the
+//!   registry fall-back is TS's last tier; if Rust landed the registry it would
+//!   short-circuit the script layer = def cannot jump to the py implementation);
+//!   (3) the three method sections' declaration words → null (2026-11-08 demo
+//!   acceptance face: the TS next layer = py implementation / def call chain,
+//!   Rust does not fabricate landing spots, the service track falls back to TS);
+//!   (4) `<Parent>` value word → first line of the parent/interface/component
+//!   def file in the corpus (missing → null, never fabricated);
+//!   (5) `<Type>`/`<of>` value words → the corpus types.xml declaration line
+//!   (builtin types have no definition file, null); (6) `Components` section
+//!   declaration words → null (the tail of the TS provider chain is likewise
+//!   null, no one-sided enhancement). The property declaration word's Python
+//!   script layer and database schema layer are faces Rust has no capability
+//!   for (.py face / DB snapshot), null falls back to the full TS chain, no
+//!   fabricated landing spots.
+//! - `entities.xml`: registry entry word → first line of the same-named def
+//!   file in the corpus (same discipline as TS findEntityDefinitionFile);
+//! - `types.xml`/`alias.xml`: declaration word → this file's declaration line
+//!   (same discipline as TS findCustomTypeDefinition, landing = line start).
 //!
-//! 剩余差异如实划归(Phase2 首片边界,docs/kode2/phase2-slice-a.md §面定义):
-//! TS F12 全脸中的 Python 脚本落点、数据库 schema 虚拟文档、kbe 桩;Rust
-//! 语料面一律 null 回落 TS。Phase2 首片曾以「402 声明词探针 401 命中 / 1 条
-//! 分歧=属性链脚本层」划归差异,2026-11-17 用户报 def 无法跳 py 实现回归后
-//! 收回:属性声明词 null 回落 TS 全链,脚本层分歧消除(golden 同步重生成)。
+//! Remaining differences honestly assigned (Phase2 first-slice boundary,
+//! docs/kode2/phase2-slice-a.md §face definitions): the Python script landings,
+//! database schema virtual documents, and kbe stubs within the full TS F12
+//! surface; the Rust corpus face always nulls and falls back to TS. The Phase2
+//! first slice once assigned the difference as "402 declaration-word probes, 401
+//! hits / 1 divergence = property-chain script layer"; after the 2026-11-17 user
+//! report of the def cannot-jump-to-py-implementation regression it was
+//! withdrawn: property declaration words null and fall back to the full TS
+//! chain, the script-layer divergence eliminated (golden regenerated in sync).
 //!
-//! RUST-137 批 1(2026-11-16)语料面补全(TS findDefinitionReferenceInDef
-//! 的纯语料半边全下沉,零 IO 红线保持):
-//! - `<Arg>` 取值词 → 语料内同名实体 def 首行(TS isPositionInsideTagValue
-//!   'Arg' + findEntityDefinitionFile 同构;root 定域唯一候选才落,歧义 null);
-//! - `<Interfaces>` 段内任一元素跨度上的词 → `<defs_root>/interfaces/<word>.def`
-//!   首行(TS isPositionInsideChildTag + findDefinitionFileByCategory('interface')
-//!   同构;TS interfacesRoot = entityDefsRoot/interfaces 单规则);
-//! - `<Type>`/`<of>` 取值词的 types.xml 未命中回落:component def → 实体 def
-//!   (TS findTypeValueDefinitionReference 顺序 type 条目 → component → entity
-//!   的语料化;components = defs_root/components 目录存在性);
-//! - `types.xml` 的 `<Type>` 取值词面(TS findTypeValueDefinitionInTypesXml
-//!   同构,无 gate):本文件顶层声明行 → component/entity 回落;implementedBy
-//!   值词面(py 符号行)仍属能力边界,null 回落 TS;
-//! - gate 对齐:TS findDefinitionReferenceInDef 顶部 looksLikeEntityName
-//!   (非内建 && 首字母大写)统一拒 Parent/Type/Arg/Interfaces 四臂——
-//!   既有 Parent/Type 臂补挂同 gate(小写词 TS 生产 null,曾单侧落点=增强,
-//!   本批收回对齐;golden 重生成审计无意外 diff)。
+//! RUST-137 batch 1 (2026-11-16) corpus face completion (the pure-corpus half
+//! of TS findDefinitionReferenceInDef fully sunk, zero-IO red line kept):
+//! - `<Arg>` value word → first line of the same-named entity def in the corpus
+//!   (isomorphic to TS isPositionInsideTagValue 'Arg' + findEntityDefinitionFile;
+//!   only a unique candidate scoped by root lands, ambiguity → null);
+//! - a word over any element span inside the `<Interfaces>` section → first line
+//!   of `<defs_root>/interfaces/<word>.def` (isomorphic to TS
+//!   isPositionInsideChildTag + findDefinitionFileByCategory('interface'); TS
+//!   interfacesRoot = entityDefsRoot/interfaces single rule);
+//! - types.xml miss fallback for `<Type>`/`<of>` value words: component def →
+//!   entity def (corpus-ization of TS findTypeValueDefinitionReference's order
+//!   type entry → component → entity; components = defs_root/components
+//!   directory existence);
+//! - the `<Type>` value word face of `types.xml` (isomorphic to TS
+//!   findTypeValueDefinitionInTypesXml, no gate): this file's top-level
+//!   declaration line → component/entity fallback; the implementedBy value-word
+//!   face (py symbol lines) remains a capability boundary, null falls back to TS;
+//! - gate alignment: the looksLikeEntityName at the top of TS
+//!   findDefinitionReferenceInDef (non-builtin && leading uppercase) uniformly
+//!   rejects the four arms Parent/Type/Arg/Interfaces — the pre-existing
+//!   Parent/Type arms are now gated the same way (lowercase words produce null
+//!   in TS; the earlier one-sided landing was an enhancement, withdrawn this
+//!   batch for alignment; golden regeneration audit showed no unexpected diff).
 //!
-//! 产品面事实:TS 只注册 DefinitionProvider(config/def/def+语料/python 四路,
-//! activate/languageServices.ts),无独立 Declaration/TypeDefinition provider;
-//! 账本 LSP-004 三方法名按产品现实收敛为 definition 单方法全链。
-//! 方法段/属性段声明词一律 null(TS 全链:脚本实现层先行,注册回落是
-//! TS 末档),golden 探针带列(Type/of、Arg 取值词词首列;Interfaces 标签 `<` 列),
-//! 位置判定型臂在 golden 语境真正触发。
+//! Product-face facts: TS registers only DefinitionProvider (config/def/def +
+//! corpus/python four routes, activate/languageServices.ts), no separate
+//! Declaration/TypeDefinition provider; ledger LSP-004's three method names
+//! converge per product reality to the single definition-method full chain.
+//! Method-section/property-section declaration words are always null (full TS
+//! chain: script-implementation layer first, registry fall-back is TS's last
+//! tier); golden probes carry columns (Type/of, Arg value words at the word's
+//! first column; Interfaces at the tag's `<` column), so position-judged arms
+//! really trigger in the golden context.
 
 use kode_index::symbol::extract_records;
 use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
@@ -61,7 +85,7 @@ use kode_vfs::store::DocumentKey;
 use crate::hover::{category_of, word_at, Category, HoverEngine};
 
 // ---------------------------------------------------------------------------
-// 响应模型(LSP Location 同形;serde camelCase 与 TS 对拍面同键)
+// Response model (same shape as LSP Location; serde camelCase shares keys with the TS parity face)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -76,15 +100,15 @@ pub struct LspRange {
     pub end: LspPosition,
 }
 
-/// 一条定义落点:目标文件 + 区间(声明名 span 或文件首行)。
+/// One definition landing: target file + range (declaration-name span or the file's first line).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DefinitionLocation {
     pub uri: String,
     pub range: LspRange,
 }
 
-/// 字节偏移 → LSP 0 基 (line, UTF-16 character)(与 VS Code positionAt 同语义:
-/// 行按 `\n` 切,`\r` 计入行内字符)。
+/// Byte offset → LSP 0-based (line, UTF-16 character) (same semantics as VS Code
+/// positionAt: lines split on `\n`, `\r` counted as an in-line character).
 pub(crate) fn byte_offset_to_position(text: &str, offset: usize) -> LspPosition {
     let offset = offset.min(text.len());
     let mut line = 0u32;
@@ -105,7 +129,8 @@ pub(crate) fn byte_offset_to_position(text: &str, offset: usize) -> LspPosition 
     LspPosition { line, character }
 }
 
-/// 1 基行号(声明处)→ 行首落点(TS `new Position(line - 1, 0)` 同形)。
+/// 1-based line number (of the declaration) → line-start landing (same shape as
+/// TS `new Position(line - 1, 0)`).
 pub(crate) fn line_start_location(uri: &str, line1: usize) -> DefinitionLocation {
     let pos = LspPosition {
         line: line1 as u32 - 1,
@@ -120,18 +145,18 @@ pub(crate) fn line_start_location(uri: &str, line1: usize) -> DefinitionLocation
     }
 }
 
-/// 文件首行落点(TS `Location(uri, Position(0, 0))` 同形)。
+/// File first-line landing (same shape as TS `Location(uri, Position(0, 0))`).
 pub(crate) fn file_head_location(uri: &str) -> DefinitionLocation {
     line_start_location(uri, 1)
 }
 
 // ---------------------------------------------------------------------------
-// 响应链(复用 HoverEngine 语料视图)
+// Response chain (reuses the HoverEngine corpus view)
 // ---------------------------------------------------------------------------
 
 impl HoverEngine {
-    /// 交互入口:UTF-16 position → 词 → 声明落点。未打开/未知词一律 None
-    /// (LSP 允许),不报错不阻塞。
+    /// Interaction entry: UTF-16 position → word → declaration landing.
+    /// Unopened / unknown word is always None (LSP permits it), no error, no block.
     pub fn definition(
         &self,
         key: &DocumentKey,
@@ -146,7 +171,8 @@ impl HoverEngine {
         self.definition_word(key, text, &word, line as usize + 1, line, character)
     }
 
-    /// 声明行入口(golden 生成用):声明行号(1 起)+ 词 → 落点。
+    /// Declaration-line entry (for golden generation): declaration line number
+    /// (1-based) + word → landing.
     pub fn definition_at_line(
         &self,
         key: &DocumentKey,
@@ -157,8 +183,10 @@ impl HoverEngine {
         self.definition_at_position(key, text, line1, 0, word)
     }
 
-    /// 声明行+列入口(golden 生成用;RUST-137 批 1 起位置判定型探针带词首列,
-    /// `<Type>`/`<of>`/`<Arg>`/`<Interfaces>` 臂在 golden 语境真正触发)。
+    /// Declaration line + column entry (for golden generation; since RUST-137
+    /// batch 1, position-judged probes carry the word's first column, so the
+    /// `<Type>`/`<of>`/`<Arg>`/`<Interfaces>` arms really trigger in the golden
+    /// context).
     pub fn definition_at_position(
         &self,
         key: &DocumentKey,
@@ -187,17 +215,20 @@ impl HoverEngine {
         match file_kind_of_uri(&key.uri) {
             FileKind::Def => {
                 let def = parse_def(text);
-                // ①`<DetailLevel>` 取值词 → 本文件 `<DetailLevels>` 档位声明行
-                // (TS findDetailLevelDefinitionInDef 同口径;gate 外,TS 生产
-                // 链首臂同位)。
+                // (1) `<DetailLevel>` value word → this file's `<DetailLevels>`
+                // level declaration line (same discipline as TS
+                // findDetailLevelDefinitionInDef; outside the gate, the TS
+                // production chain's first arm lands at the same spot).
                 if let Some(pos) = self.detail_level_landing(text, path, line0, character) {
                     return Some(pos);
                 }
-                // gate 域(TS findDefinitionReferenceInDef 顶部 looksLikeEntityName
-                // 同拒:Parent/Type/Arg/Interfaces 四臂;内建类型与小写词 null)。
+                // gate domain (TS findDefinitionReferenceInDef's top-level
+                // looksLikeEntityName rejects the same way: Parent/Type/Arg/
+                // Interfaces four arms; builtin types and lowercase words → null).
                 let gate = looks_like_entity_name(word);
-                // ②`<Parent>` 取值词 → 语料内父 def 首行(接口/组件目录规则
-                // 与 chain_face 同源;语料缺失即 null)。
+                // (2) `<Parent>` value word → first line of the parent def in the
+                // corpus (the interface/component directory rules come from the
+                // same source as chain_face; a missing corpus → null).
                 if gate {
                     if let Some(parent) = def.parent.as_deref().filter(|p| !p.is_empty()) {
                         if word == parent {
@@ -206,30 +237,39 @@ impl HoverEngine {
                             }
                         }
                     }
-                    // ③`<Type>`/`<of>` 取值词 → 语料内 types 声明行(内建 null),
-                    // 未命中回落 component/实体 def(RUST-137 批 1)。
+                    // (3) `<Type>`/`<of>` value words → the corpus types declaration
+                    // line (builtin → null); on miss, fall back to
+                    // component/entity def (RUST-137 batch 1).
                     if let Some(pos) = self.type_value_landing(key, text, line0, character, word) {
                         return Some(pos);
                     }
                 }
-                // ④段内声明词:Properties 与三方法段声明词一律 null(能力边界:
-                // py 脚本层/def 调用链是 TS 面,Rust 不虚构落点,服务轨道回落
-                // TS 取 py 实现落点——demo def-to-cell/base/client 验收面;
-                // 2026-11-17 回归收回:属性曾落注册行,短路 TS F12 属性链的
-                // 脚本实现层=def 无法跳 py 实现);组件段落 TS provider 链末尾
-                // 返 null,不产出落点(不单侧增强)。
+                // (4) In-section declaration words: Properties and the three method
+                // sections' declaration words are always null (capability boundary:
+                // the py script layer / def call chain is a TS face, Rust does not
+                // fabricate landings, the service track falls back to TS for the py
+                // implementation landing — demo def-to-cell/base/client acceptance
+                // face; withdrawn by the 2026-11-17 regression: properties used to
+                // land on the registry line, short-circuiting the TS F12 property
+                // chain's script-implementation layer = def could not jump to the py
+                // implementation); the Components section lands at the tail of the TS
+                // provider chain which returns null, no landing produced (no
+                // one-sided enhancement).
                 let (records, _) = extract_records(key, &ParsedUnit::Def(parse_def(text)));
                 if records.iter().any(|r| r.name == word && r.line == line1) {
                     return None;
                 }
-                // ⑤`<Arg>` 取值词 → 语料内实体 def 首行(RUST-137 批 1;gate 域)。
+                // (5) `<Arg>` value word → first line of the entity def in the corpus
+                // (RUST-137 batch 1; gate domain).
                 if gate {
                     if let Some(pos) = self.arg_value_landing(key, text, line0, character, word) {
                         return Some(pos);
                     }
-                    // ⑥`<Interfaces>` 段内词 → interfaces 目录 def 首行
-                    // (RUST-137 批 1;gate 域)。
-                    if let Some(pos) = self.interfaces_segment_landing(text, path, line0, character, word) {
+                    // (6) a word inside the `<Interfaces>` section → first line of the
+                    // interfaces-directory def (RUST-137 batch 1; gate domain).
+                    if let Some(pos) =
+                        self.interfaces_segment_landing(text, path, line0, character, word)
+                    {
                         return Some(pos);
                     }
                 }
@@ -241,8 +281,10 @@ impl HoverEngine {
                     .entities
                     .iter()
                     .find(|e| e.name == word && e.line == line1)?;
-                // KBUG-ROOT:候选按查询方根定域;唯一候选才落点,同根同名
-                // 多候选歧义不硬猜首见 → null(TS 面兜底)。
+                // KBUG-ROOT: candidates are scoped by the querier's root; only a
+                // unique candidate lands, same-root same-name multi-candidate
+                // ambiguity is not hard-guessed as the first seen → null (the TS
+                // face takes over).
                 let candidates = self.def_candidates(key.root, word);
                 let def_path = if candidates.len() == 1 {
                     Some(&candidates[0])
@@ -258,12 +300,16 @@ impl HoverEngine {
                     .iter()
                     .find(|t| t.name == word && t.line == line1)
                 {
-                    // RUST-137 批 4 反边(`.def`↔types.xml 双向的回程):声明词
-                    // 不再做无效自跳——落语料内首个消费站点(`Type/Arg/of` 值
-                    // 使用面,semantic_reference_locations 同源扫描,语义面
-                    // 同口径剔除跨 root 同名异声明 Shadow;路径序首命中,
-                    // 本文件内引用位不选,消费站点在 .def)。语料无消费回落
-                    // 本文件声明行(原自跳行为)。
+                    // RUST-137 batch 4 reverse edge (the return leg of the
+                    // `.def`↔types.xml bidirection): declaration words no longer do a
+                    // useless self-jump — land on the first consumer site in the
+                    // corpus (the `Type/Arg/of` value usage face, scanned from the
+                    // same source as semantic_reference_locations, the semantics face
+                    // excludes cross-root same-name different-declaration Shadows by
+                    // the same discipline; first hit in path order, in-file reference
+                    // spots are not chosen, the consumer site is in a .def). With no
+                    // corpus consumer, fall back to this file's declaration line (the
+                    // original self-jump behavior).
                     if let Some(consumer) = self
                         .semantic_reference_locations(key, text, line0, character, false)
                         .and_then(|sites| sites.into_iter().find(|loc| loc.uri != path))
@@ -272,12 +318,15 @@ impl HoverEngine {
                     }
                     return Some(line_start_location(path, decl.line));
                 }
-                // RUST-137 批 1:`<Type>` 取值词面(TS findTypeValueDefinitionInTypesXml
-                // 同构,无 gate——TS types.xml 分支不经 findDefinitionReferenceInDef):
-                // 本文件顶层声明行(findCurrentDocumentCustomTypeReference 同口径;
-                // 同 root types 条目链与其同效,合并)→ component/entity 回落;
-                // 无落点 null。implementedBy 值词(py 符号行)属能力边界,不触发
-                // 本臂(位置判定只认 `<Type>` 元素),null 回落 TS。
+                // RUST-137 batch 1: the `<Type>` value word face (isomorphic to TS
+                // findTypeValueDefinitionInTypesXml, no gate — the TS types.xml branch
+                // does not go through findDefinitionReferenceInDef): this file's
+                // top-level declaration line (same discipline as
+                // findCurrentDocumentCustomTypeReference; same-root types-entry chains
+                // share its effect, merged) → component/entity fallback; no landing →
+                // null. The implementedBy value word (py symbol lines) is a capability
+                // boundary, does not trigger this arm (position judging only
+                // recognizes the `<Type>` element), null falls back to TS.
                 if types_type_value_at(text, line0, character) {
                     if let Some(decl) = types.types.iter().find(|t| t.name == word) {
                         return Some(line_start_location(path, decl.line));
@@ -298,8 +347,9 @@ impl HoverEngine {
         }
     }
 
-    /// `<DetailLevel>` 取值内且词命中本文件 `<DetailLevels>` 档位名 →
-    /// 档位声明行行首(TS findDetailLevelDefinitionInDef 同口径)。
+    /// Inside a `<DetailLevel>` value and the word hits this file's
+    /// `<DetailLevels>` level name → line start of the level declaration line
+    /// (same discipline as TS findDetailLevelDefinitionInDef).
     fn detail_level_landing(
         &self,
         text: &str,
@@ -322,18 +372,22 @@ impl HoverEngine {
         let word = word_at(text, line0, character).unwrap_or_default();
         for child in doc.child_elements(levels) {
             let el = doc.element(child);
-            // 档位内文本只在词命中时才落点(与 TS 的 word 相等判定同口径)。
+            // Level text only lands when the word hits (same discipline as TS's
+            // word-equality judgment).
             if el.name == word {
-                // line_of 为 1 基行号;line_start_location 已按 0 基 LSP 行折算,
-                // 不能再 +1(否则落点偏下一行)。
+                // line_of is a 1-based line number; line_start_location already
+                // converts to the 0-based LSP line, so do not +1 again
+                // (otherwise the landing drifts to the next line).
                 return Some(line_start_location(path, lines.line_of(el.name_span.start)));
             }
         }
         None
     }
 
-    /// `<Parent>` 取值 → 语料内父 def 首行。目录规则与 chain_face 同源:
-    /// 接口文件父回落 interfaces 目录,组件槽父回落 components 目录。
+    /// `<Parent>` value → first line of the parent def in the corpus. The
+    /// directory rules share a source with chain_face: an interface file's parent
+    /// falls back to the interfaces directory, a component slot's parent falls
+    /// back to the components directory.
     fn parent_landing(&self, path: &str, parent: &str) -> Option<DefinitionLocation> {
         let defs_root = self.defs_root(path)?;
         let parent_dir = match category_of(&defs_root, path) {
@@ -347,10 +401,12 @@ impl HoverEngine {
         Some(file_head_location(&parent_path))
     }
 
-    /// 位置(UTF-16)落在 `<Type>`/`<of>` 取值内且词命中类型名 → 语料内
-    /// types.xml 声明行首落点。内建类型无定义文件(引擎 C++ 内建)→ None;
-    /// types 未命中回落 component/实体 def(TS findTypeValueDefinitionReference
-    /// 顺序 type 条目 → component → entity 的语料化;RUST-137 批 1,gate 在调用方)。
+    /// Position (UTF-16) inside a `<Type>`/`<of>` value and the word hits a type
+    /// name → corpus types.xml declaration line-start landing. Builtin types have
+    /// no definition file (engine C++ builtins) → None; on a types miss, fall
+    /// back to component/entity def (corpus-ization of TS
+    /// findTypeValueDefinitionReference's order type entry → component → entity;
+    /// RUST-137 batch 1, the gate is at the caller).
     fn type_value_landing(
         &self,
         key: &DocumentKey,
@@ -374,7 +430,8 @@ impl HoverEngine {
         if byte_offset < content.start || byte_offset > content.end {
             return None;
         }
-        // 语料内 types 声明查找:路径字典序首见(与 TS 语料序首见同口径)。
+        // Corpus types declaration lookup: first seen in path lexicographic order
+        // (same discipline as TS's corpus-order first-seen).
         for (tpath, types) in &self.types_files {
             if let Some(decl) = types.types.iter().find(|t| t.name == word) {
                 return Some(line_start_location(tpath, decl.line));
@@ -383,9 +440,11 @@ impl HoverEngine {
         self.category_def_landing(key, word)
     }
 
-    /// `<Arg>` 取值内词 → 语料内同名实体 def 首行(TS isPositionInsideTagValue
-    /// 'Arg' + findEntityDefinitionFile 同构;root 定域唯一候选才落,同根同名
-    /// 歧义不硬猜 → null)。gate 在调用方(RUST-137 批 1)。
+    /// A word inside an `<Arg>` value → first line of the same-named entity def
+    /// in the corpus (isomorphic to TS isPositionInsideTagValue 'Arg' +
+    /// findEntityDefinitionFile; only a unique candidate scoped by root lands,
+    /// same-root same-name ambiguity is not hard-guessed → null). The gate is at
+    /// the caller (RUST-137 batch 1).
     fn arg_value_landing(
         &self,
         key: &DocumentKey,
@@ -414,11 +473,14 @@ impl HoverEngine {
         Some(file_head_location(def_path))
     }
 
-    /// `<Interfaces>` 段内(任一后代元素跨度上,含起止标签)的词 → 语料内
-    /// `<defs_root>/interfaces/<word>.def` 首行。TS isPositionInsideChildTag
-    /// ('Interfaces') + findDefinitionFileByCategory('interface') 同构
-    /// (TS interfacesRoot = entityDefsRoot/interfaces 单规则;fs 存在性检查
-    /// 语料化为 corpus_defs 判定)。gate 在调用方(RUST-137 批 1)。
+    /// A word inside the `<Interfaces>` section (over any descendant element's
+    /// span, including open/close tags) → first line of
+    /// `<defs_root>/interfaces/<word>.def` in the corpus. Isomorphic to TS
+    /// isPositionInsideChildTag ('Interfaces') +
+    /// findDefinitionFileByCategory('interface') (TS interfacesRoot =
+    /// entityDefsRoot/interfaces single rule; the fs existence check is
+    /// corpus-ized into a corpus_defs judgment). The gate is at the caller
+    /// (RUST-137 batch 1).
     fn interfaces_segment_landing(
         &self,
         text: &str,
@@ -431,10 +493,7 @@ impl HoverEngine {
         let doc = xml::parse(text, true);
         let root = doc.root()?;
         let (_hit, chain) = deepest_element_with_chain(&doc, root, byte_offset)?;
-        if !chain
-            .iter()
-            .any(|&n| doc.element(n).name == "Interfaces")
-        {
+        if !chain.iter().any(|&n| doc.element(n).name == "Interfaces") {
             return None;
         }
         let defs_root = self.entity_defs_root(path)?;
@@ -445,12 +504,14 @@ impl HoverEngine {
         Some(file_head_location(&iface))
     }
 
-    /// TS findTypeValueDefinitionReference 的 component/entity 回落(语料化;
-    /// RUST-137 批 1):本 root `components/<word>.def` 存在 → 文件首行;
-    /// 否则实体 def(root 定域唯一候选,歧义 null——与 entities 面
-    /// def_candidates 同口径)。TS findEntityDefinitionFile 已对拍语义
-    /// (entities 面在用),components 半边对应 findDefinitionFileByCategory
-    /// ('component') 的 layout.componentsRoot/<word>.def 存在性检查。
+    /// The component/entity fallback of TS findTypeValueDefinitionReference
+    /// (corpus-ized; RUST-137 batch 1): this root's `components/<word>.def` exists
+    /// → the file's first line; otherwise the entity def (unique candidate scoped
+    /// by root, ambiguity → null — same discipline as the entities face's
+    /// def_candidates). TS findEntityDefinitionFile's semantics have already been
+    /// parity-compared (the entities face is in use); the components half
+    /// corresponds to findDefinitionFileByCategory ('component')'s
+    /// layout.componentsRoot/<word>.def existence check.
     fn category_def_landing(&self, key: &DocumentKey, word: &str) -> Option<DefinitionLocation> {
         let path = key.uri.as_path();
         if let Some(defs_root) = self.entity_defs_root(path) {
@@ -466,10 +527,12 @@ impl HoverEngine {
         None
     }
 
-    /// entity_defs 根解析(TS layout.entityDefsRoot 同口径):`entity_defs/`
-    /// 内文件经 defs_root 已取该目录;types.xml 等非 def 文件的 defs_root
-    /// 返回 entities 目录本身,此处统一折算 `{entities_dir}/entity_defs`
-    /// (目录在语料中存在才算——corpus 有其下任一 def)。RUST-137 批 1。
+    /// entity_defs root resolution (same discipline as TS layout.entityDefsRoot):
+    /// files inside `entity_defs/` already have that directory via defs_root;
+    /// non-def files such as types.xml get the entities directory itself from
+    /// defs_root, so here it is uniformly converted to
+    /// `{entities_dir}/entity_defs` (only counts if the directory exists in the
+    /// corpus — the corpus has some def under it). RUST-137 batch 1.
     pub(crate) fn entity_defs_root(&self, path: &str) -> Option<String> {
         let defs_root = self.defs_root(path)?;
         if path.starts_with(&format!("{defs_root}/")) {
@@ -488,9 +551,11 @@ impl HoverEngine {
     }
 }
 
-/// TS looksLikeEntityName 同构:非内建类型 && 首字母 ASCII 大写、其余
-/// ASCII 字母/数字/下划线(gate 域 = TS findDefinitionReferenceInDef 顶部
-/// 同拒;RUST-137 批 1 起既有 Parent/Type 臂一并挂 gate 对齐)。
+/// Isomorphic to TS looksLikeEntityName: non-builtin type && ASCII uppercase
+/// first letter, remaining units ASCII letters/digits/underscore (the gate
+/// domain = rejected the same way at the top of TS findDefinitionReferenceInDef;
+/// since RUST-137 batch 1 the pre-existing Parent/Type arms also hang the same
+/// gate for alignment).
 pub(crate) fn looks_like_entity_name(word: &str) -> bool {
     if is_builtin_type(word) {
         return false;
@@ -503,8 +568,9 @@ pub(crate) fn looks_like_entity_name(word: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// types.xml 的 `<Type>` 元素取值内位置判定(TS isPositionInsideTagValue
-/// 'Type' 同构;只认 `Type` 精确名——implementedBy 值不触发)。RUST-137 批 1。
+/// Position judgment inside the value of a types.xml `<Type>` element
+/// (isomorphic to TS isPositionInsideTagValue 'Type'; recognizes only the exact
+/// `Type` name — the implementedBy value does not trigger). RUST-137 batch 1.
 fn types_type_value_at(text: &str, line0: u32, character: u32) -> bool {
     let byte_offset = position_to_byte_offset(text, line0, character);
     let doc = xml::parse(text, true);
@@ -521,8 +587,8 @@ fn types_type_value_at(text: &str, line0: u32, character: u32) -> bool {
     byte_offset >= content.start && byte_offset <= content.end
 }
 
-/// 内建类型表(与 TS kbengineMetadata::KBENGINE_TYPES 同表,ARRAY/FIXED_DICT
-/// 容器含)。
+/// Builtin type table (same table as TS kbengineMetadata::KBENGINE_TYPES,
+/// ARRAY/FIXED_DICT containers included).
 pub(crate) const BUILTIN_TYPES: &[&str] = &[
     "UINT8",
     "UINT16",
@@ -553,7 +619,7 @@ pub(crate) fn is_builtin_type(name: &str) -> bool {
     BUILTIN_TYPES.contains(&name)
 }
 
-/// UTF-16 (line, character) → 字节偏移(clamp 到行尾/文末,不 panic)。
+/// UTF-16 (line, character) → byte offset (clamps to line end / end of text, no panic).
 pub(crate) fn position_to_byte_offset(text: &str, line0: u32, character: u32) -> usize {
     let lines = LineMap::new(text);
     let line_index = (line0 as usize).min(lines.line_count() - 1);
@@ -588,7 +654,8 @@ fn line_start_of(text: &str, line_index: usize) -> usize {
     text.len()
 }
 
-/// 深度优先找包含字节偏移的最深元素(偏移落在 [open_span.start, close_span.end])。
+/// Depth-first search for the deepest element containing the byte offset
+/// (offset within [open_span.start, close_span.end]).
 fn deepest_element_at(doc: &xml::Document, node: usize, offset: usize) -> Option<usize> {
     let data = doc.element(node);
     if offset < data.open_span.start || offset > data.close_span.end {
@@ -605,8 +672,10 @@ fn deepest_element_at(doc: &xml::Document, node: usize, offset: usize) -> Option
     Some(node)
 }
 
-/// 同 deepest_element_at,附根→自身的祖先链(元素节点序;TS findAncestorElement
-/// 含自身的祖先判定同域)。RUST-137 批 1(`<Interfaces>` 段判定)。
+/// Same as deepest_element_at, with the root→self ancestor chain attached
+/// (element-node order; the same domain as TS findAncestorElement's
+/// self-inclusive ancestor judgment). RUST-137 batch 1 (`<Interfaces>`
+/// section judgment).
 pub(crate) fn deepest_element_with_chain(
     doc: &xml::Document,
     node: usize,
@@ -618,8 +687,8 @@ pub(crate) fn deepest_element_with_chain(
     }
     for &child in &data.children {
         if let NodeHit::Element(found) = probe_node(doc, child, offset) {
-            let (hit, chain) = deepest_element_with_chain(doc, found, offset)
-                .unwrap_or((found, vec![found]));
+            let (hit, chain) =
+                deepest_element_with_chain(doc, found, offset).unwrap_or((found, vec![found]));
             let mut full = vec![node];
             full.extend(chain);
             return Some((hit, full));
@@ -647,10 +716,10 @@ fn probe_node(doc: &xml::Document, node: usize, offset: usize) -> NodeHit {
 }
 
 // ---------------------------------------------------------------------------
-// 对拍 golden(只写不读;TS 侧 tests/kodeDefinitionParity.test.ts 复算)
+// Parity golden (write-only; the TS side tests/kodeDefinitionParity.test.ts recomputes)
 // ---------------------------------------------------------------------------
 
-/// golden 文件名(仓库相对)。
+/// Golden file name (repo-relative).
 pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/definition-parity.json";
 
 #[derive(Debug, serde::Serialize)]
@@ -661,8 +730,9 @@ struct GoldenDefinition {
     definition: DefinitionLocation,
 }
 
-/// golden 探针:(1 基行,UTF-16 列,词)。位置判定型臂(Type/of、Arg 取值词、
-/// Interfaces 段词)带词首/标签首列,词比对型臂(Parent、声明词)列 = 0。
+/// Golden probes: (1-based line, UTF-16 column, word). Position-judged arms
+/// (Type/of, Arg value words, Interfaces-section words) carry the word's/tag's
+/// first column; word-compared arms (Parent, declaration words) use column = 0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GoldenProbe {
     line: usize,
@@ -670,8 +740,9 @@ struct GoldenProbe {
     word: String,
 }
 
-/// 元素文本内容首 token 探针(词首行列;TS 镜像
-/// `getElementText(node).trim().split(/\s+/)[0]` + contentStart 前导空白同算术)。
+/// Probe of the first token of an element's text content (word-start line/column;
+/// TS mirror `getElementText(node).trim().split(/\s+/)[0]` + the same
+/// contentStart leading-whitespace arithmetic).
 fn value_token_probe(doc: &xml::Document, node: usize, text: &str) -> Option<GoldenProbe> {
     let el = doc.element(node);
     let content = text.get(el.content_span.start..el.content_span.end)?;
@@ -689,7 +760,7 @@ fn value_token_probe(doc: &xml::Document, node: usize, text: &str) -> Option<Gol
     })
 }
 
-/// 先序遍历全部元素节点(文本节点不递归)。
+/// Pre-order walk over all element nodes (text nodes not recursed).
 fn walk_elements(doc: &xml::Document, node: usize, visit: &mut impl FnMut(usize)) {
     visit(node);
     for &child in &doc.element(node).children {
@@ -699,11 +770,10 @@ fn walk_elements(doc: &xml::Document, node: usize, visit: &mut impl FnMut(usize)
     }
 }
 
-/// 探针定序(行,列,词 全序;TS 镜像同键)+ 去重相邻全等项。
+/// Probe ordering ((line, column, word) total order; TS mirror same keys) +
+/// dedup of adjacent equal items.
 fn order_probes(mut probes: Vec<GoldenProbe>) -> Vec<GoldenProbe> {
-    probes.sort_by(|a, b| {
-        (&a.line, &a.character, &a.word).cmp(&(&b.line, &b.character, &b.word))
-    });
+    probes.sort_by(|a, b| (&a.line, &a.character, &a.word).cmp(&(&b.line, &b.character, &b.word)));
     probes.dedup();
     probes
 }
@@ -724,14 +794,16 @@ struct GoldenDump {
     files: Vec<GoldenFile>,
 }
 
-/// 整个语料的 definition golden JSON(每文件:声明符号 + Parent/Type 取值探针)。
+/// Definition golden JSON for the whole corpus (per file: declaration symbols +
+/// Parent/Type value probes).
 pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
     use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let registry = crate::golden_corpus::corpus_registry();
     let mut engine = HoverEngine::new();
-    // 先全量入库(字典序 = TS 语料序;键 = 各语料工程根,KBUG-ROOT 隔离)。
+    // Load everything first (lexicographic order = TS corpus order; keys = each
+    // corpus project root, KBUG-ROOT isolation).
     for (path, (_kind, text)) in &files {
         engine.update(crate::golden_corpus::corpus_key(&registry, path), text);
     }
@@ -749,7 +821,8 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
                 let def = parse_def(text);
                 if let Some(parent) = &def.parent {
                     if !parent.is_empty() {
-                        // 探针行 = `<Parent>` 出现行(取值词触发面;词比对臂,列 0)。
+                        // Probe line = the line where `<Parent>` appears (value-word
+                        // trigger face; word-compared arm, column 0).
                         if let Some(idx) = text.lines().position(|l| l.contains(parent)) {
                             probes.push(GoldenProbe {
                                 line: idx + 1,
@@ -768,30 +841,37 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
                         word: record.name.clone(),
                     });
                 }
-                // RUST-137 批 1 位置判定型探针:全树 `<Type>`/`<of>`/`<Arg>` 取值
-                // 词 + `<Interfaces>` 段内元素的内容首词(词首行列,生产触发面
-                // 是取值词而非元素名)——既有属性 Type 词探针(声明行+列 0)由
-                // 本采集取代,类型落点面在 golden 语境真正触发。
+                // RUST-137 batch 1 position-judged probes: whole-tree
+                // `<Type>`/`<of>`/`<Arg>` value words + the content-first word of
+                // elements inside the `<Interfaces>` section (word-start line/column;
+                // the production trigger face is the value word, not the element
+                // name) — the pre-existing property Type word probe (declaration line
+                // + column 0) is replaced by this collection, so the type-landing
+                // face really triggers in the golden context.
                 let doc = xml::parse(text, true);
                 if let Some(root) = doc.root() {
                     let mut value_tags: Vec<usize> = Vec::new();
                     let mut interface_segments: Vec<usize> = Vec::new();
-                    walk_elements(&doc, root, &mut |node| {
-                        match doc.element(node).name.as_str() {
+                    walk_elements(
+                        &doc,
+                        root,
+                        &mut |node| match doc.element(node).name.as_str() {
                             "Type" | "of" | "Arg" => value_tags.push(node),
                             "Interfaces" => interface_segments.push(node),
                             _ => {}
-                        }
-                    });
+                        },
+                    );
                     for node in value_tags {
                         if let Some(probe) = value_token_probe(&doc, node, text) {
                             probes.push(probe);
                         }
                     }
                     for segment in interface_segments {
-                        // 生产臂语义 = 取值词(光标在 `<interface> ROLE </interface>`
-                        // 的 ROLE 上,F12 word=ROLE);探针取段内元素的内容首词,
-                        // 元素名本身(interface,小写)会被 gate 拒、非生产触发面。
+                        // Production arm semantics = the value word (cursor on ROLE in
+                        // `<interface> ROLE </interface>`, F12 word=ROLE); the probe
+                        // takes the content-first word of in-section elements — the
+                        // element name itself (interface, lowercase) would be rejected
+                        // by the gate, not a production trigger face.
                         walk_elements(&doc, segment, &mut |inner| {
                             if inner != segment {
                                 if let Some(probe) = value_token_probe(&doc, inner, text) {
@@ -813,9 +893,12 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
             }
             "types" => {
                 for decl in parse_types(text).types {
-                    // RUST-137 批 4:声明词探针升格词首列(批 1 判例:位置判定
-                    // 型面须真正触发)。char 0 落在 `<` 上,语义面符号解析不出
-                    // 只走回落臂;词首列(元素名首字符)才触发反边臂。
+                    // RUST-137 batch 4: declaration-word probes upgraded to the
+                    // word's first column (batch 1 ruling: position-judged faces must
+                    // really trigger). Column 0 lands on `<`, where the semantics-face
+                    // symbol resolution fails and only the fallback arm runs; the
+                    // word's first column (the element name's first character) is
+                    // what triggers the reverse-edge arm.
                     let character = text
                         .lines()
                         .nth(decl.line - 1)
@@ -835,8 +918,9 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
                         word: decl.name,
                     });
                 }
-                // RUST-137 批 1:全树 `<Type>` 取值词探针(嵌套 FIXED_DICT 字段;
-                // 词首行列,findTypeValueDefinitionInTypesXml 触发面)。
+                // RUST-137 batch 1: whole-tree `<Type>` value-word probes (nested
+                // FIXED_DICT fields; word-start line/column,
+                // findTypeValueDefinitionInTypesXml trigger face).
                 let doc = xml::parse(text, true);
                 if let Some(root) = doc.root() {
                     walk_elements(&doc, root, &mut |node| {

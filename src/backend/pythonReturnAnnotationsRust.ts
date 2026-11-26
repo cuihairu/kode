@@ -1,28 +1,32 @@
 /**
- * 返回注解逐文件提取收编 Rust(RUST-MIGRATION-AUDIT-006 B1 车道批 3):
- * `$/kode/python/returnAnnotations` 的 TS 装配面。提取核(pythonReturnType-
- * Inference.ts 的 maskCodeLine/collectFileAnnotationFacts/extractFileImports/
- * parseLocalAssignmentCall 逐字移植,含单行掩码与首定义优先语义)在 Rust,
- * 本模块只做:廉价预检(原文无 `def` 子串 → 零事实不发 RPC)→ gate.runInRust
- * ({text: 原文}) → facts 形状校验(数组/名字非空串/注解 null 或串,畸形整面
- * 弃用)→ 事实序列。导入绑定/逐行调用面随同 RPC 下发,对拍测试直连消费;
- * 生产消费面=注解事实桶(cold build),查询级联(matchingAssignments/导入
- * 绑定)留 TS。不可用/失败/畸形返回 null → 调用方回 TS 让出式提取兜底——
- * 禁止部分采用;杀开关 kbengine.core.backend=ts 语义不变。
+ * Per-file return-annotation extraction folded into Rust (RUST-MIGRATION-AUDIT-006 B1 lane
+ * batch 3): the TS wiring surface of `$/kode/python/returnAnnotations`. The extraction core
+ * (maskCodeLine/collectFileAnnotationFacts/extractFileImports/parseLocalAssignmentCall from
+ * pythonReturnTypeInference.ts, ported verbatim, including single-line masking and the
+ * first-definition-wins semantics) lives in Rust; this module only does: a cheap precheck (no
+ * `def` substring in the source -> zero facts, no RPC sent) -> gate.runInRust({text: source}) ->
+ * facts shape validation (array / non-empty-string names / annotation null or string; a malformed
+ * whole face is discarded) -> the fact sequence. Import bindings and per-line call facts ride
+ * along with the same RPC and the parity tests consume them directly; the production consumers
+ * are the annotation fact buckets (cold build), while query cascades (matchingAssignments / import
+ * bindings) stay in TS. Unavailable / failed / malformed returns null -> the caller falls back to
+ * cooperative TS extraction -- partial adoption is forbidden; the kill switch
+ * kbengine.core.backend=ts keeps its semantics unchanged.
  */
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 const RETURN_ANNOTATIONS_RUST_METHOD = '$/kode/python/returnAnnotations';
 
-/** 一条注解事实(name=方法名;annotation=null = def 在而 `->` 缺) */
+/** One annotation fact (name = the method name; annotation=null means the def is there but `->` is missing) */
 export interface RustReturnAnnotationFact {
   name: string;
   annotation: string | null;
 }
 
 /**
- * Rust-first 注解事实:无门/原文零 `def` 线索/失败/畸形 → null 或合法空面
- * (零线索 [] 与兜底同输出,不空发 RPC)。
+ * Rust-first annotation facts: no gate / zero `def` clue in the source / failure / malformed ->
+ * null or a legitimately empty face ([] for zero clues, the same output as the fallback, no
+ * wasted RPC).
  */
 export async function extractFileReturnAnnotationFactsFromRust(
   source: string

@@ -1,12 +1,13 @@
-//! 零拷贝游标:对 `&[u8]` 的边界检查读取(失败返回 [`DecodeError`],绝不
-//! panic、绝不越界)。字符串语义逐条对齐引擎(PA-001 §3.1)。
+//! Zero-copy cursor: bounds-checked reads over `&[u8]` (returns [`DecodeError`] on
+//! failure, never panics, never reads out of bounds). String semantics aligned with the
+//! engine item by item (PA-001 §3.1).
 
 use kode_kbengine_schema::wire::WireType;
 
 use crate::codec::DecodeLimits;
 use crate::error::{DecodeError, DecodeErrorKind};
 
-/// 对一块只读字节的游标(`offset()` 为流内绝对偏移)。
+/// Cursor over a block of read-only bytes (`offset()` is the absolute offset within the stream).
 #[derive(Debug)]
 pub struct Cursor<'a> {
     data: &'a [u8],
@@ -30,7 +31,7 @@ impl<'a> Cursor<'a> {
         self.pos >= self.data.len()
     }
 
-    /// 借出剩余全部字节(零拷贝;Raw 保留用)。
+    /// Lend out all remaining bytes (zero-copy; for Raw retention).
     pub fn rest(&self) -> &'a [u8] {
         &self.data[self.pos.min(self.data.len())..]
     }
@@ -123,9 +124,10 @@ impl<'a> Cursor<'a> {
         ))
     }
 
-    /// 协议参数 STRING(memorystream.h:319-332 口径):逐字节扫描到 `\0`;
-    /// **非 ASCII 字节(≥0x80)同样提前终止**(引擎逐字节读 char > 0 时
-    /// break 的行为)。无 NUL 时读到流尾(容错,不报错)。
+    /// Protocol parameter STRING (memorystream.h:319-332 semantics): byte-wise scan to
+    /// `\0`; **non-ASCII bytes (≥0x80) also terminate early** (the engine's behavior of
+    /// breaking when a byte-wise char read yields > 0). Without a NUL, read to end of
+    /// stream (tolerated, no error).
     pub fn read_cstring(&mut self) -> Result<String, DecodeError> {
         let start = self.pos;
         let rest = self.rest();
@@ -146,14 +148,14 @@ impl<'a> Cursor<'a> {
         Ok(String::from_utf8_lossy(bytes).into_owned())
     }
 
-    /// u32 长度前缀块(UNICODE/BLOB/PYTHON,datatype.cpp:1129-1143 等)。
-    /// 长度上限 [`DecodeLimits::max_blob`](红线:内存有上限)。
+    /// u32 length-prefixed block (UNICODE/BLOB/PYTHON, datatype.cpp:1129-1143 etc.).
+    /// Length cap [`DecodeLimits::max_blob`] (red line: memory bounded).
     pub fn read_blob(&mut self, limits: &DecodeLimits) -> Result<&'a [u8], DecodeError> {
         let len = self.read_u32()?;
         self.read_sized_body(len as usize, limits, "blob")
     }
 
-    /// 已知声明长度的定体读取(长度/上限/EOF 三重检查)。
+    /// Fixed-size body read with a declared length (triple check: length / cap / EOF).
     pub fn read_sized_body(
         &mut self,
         len: usize,
@@ -172,7 +174,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// UTF-8 体解码(codec 用;偏移诊断在此层落位)。
+/// UTF-8 body decoding (used by codec; offset diagnostics land at this layer).
 pub fn read_utf8_body<'a>(
     cur: &mut Cursor<'a>,
     len: usize,
@@ -182,7 +184,7 @@ pub fn read_utf8_body<'a>(
     Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// 编译期哨兵:WireType 属于变长前缀族(供 framing/codec 共享的口径)。
+/// Compile-time sentinel: WireType belongs to the variable-length-prefix family (semantics shared by framing/codec).
 pub fn is_length_prefixed(ty: &WireType) -> bool {
     matches!(
         ty,

@@ -1,23 +1,29 @@
 /**
- * KFLOW trace 导入面(FLOW-024):把已验证来源(sys.monitoring 采集器,
- * scripts/trace/monitoring_capture.py)的 JSON 会话导入 G3 协议
- * (traceEventModel)。验收原文:「先支持一个已验证来源的真实帧顺序、文件行
- * 和异常位置;字段缺失明示,栈展开可跳源码。」
+ * KFLOW trace import face (FLOW-024): imports the JSON session of a verified source
+ * (the sys.monitoring collector, scripts/trace/monitoring_capture.py) into the G3
+ * protocol (traceEventModel). Acceptance wording: "support one verified source's real
+ * frame order, file lines, and exception positions first; state missing fields
+ * plainly, and let stack unwinding jump to source."
  *
- * 导入职责与诚实边界:
- *   - 只收 meta.collector==='sys-monitoring' 的会话;别的来源不是「转换一下
- *     也能收」,而是直接拒(来源配对表是红线,不冒充);
- *   - return 事件在采集原始面不带 correspondsToCallSeq(sys.monitoring 只给
- *     PY_RETURN/PY_UNWIND),导入按**同线程括号对称**(LIFO)配对——每个
- *     PY_START 恰有一个配对返回;配不上=会话损坏,如实抛错,不猜;
- *   - 帧 file/line 保留采集口径:line 为 1 基 def 声明行(co_firstlineno,
- *     稳定跳源码锚),不做换算不猜语句行;
- *   - 字段缺失明示:entityId/className/enginePythonVersion/关联 ID 等本来源
- *     观察不到的字段保持 null,不以推导冒充;
- *   - seq 分配、同线程栈边校验、来源/采样面配对、丢失对账全部交给
- *     buildTraceSession(协议红线不绕过)。
+ * Import responsibilities and honest boundaries:
+ *   - Only sessions with meta.collector==='sys-monitoring' are accepted; other
+ *     sources are not "convertible and acceptable" but rejected outright (the source
+ *     pairing table is a red line, no posing);
+ *   - return events do not carry correspondsToCallSeq in the raw capture face
+ *     (sys.monitoring only gives PY_RETURN/PY_UNWIND); the import pairs them by
+ *     **same-thread bracket symmetry** (LIFO) — each PY_START has exactly one paired
+ *     return; an unpaired one = a corrupted session, throw honestly, no guessing;
+ *   - frame file/line keep the capture semantics: line is the 1-based def declaration
+ *     line (co_firstlineno, a stable source-jump anchor), no conversion, no guessing
+ *     at statement lines;
+ *   - missing fields are stated plainly: fields this source cannot observe
+ *     (entityId/className/enginePythonVersion/correlation IDs and the like) stay
+ *     null, never replaced by inference;
+ *   - seq assignment, same-thread stack-edge validation, source/sample-face pairing,
+ *     and loss reconciliation are all delegated to buildTraceSession (protocol red
+ *     lines are never bypassed).
  *
- * 纯导入面,零 vscode 依赖;UI/回放消费在 FLOW-028。
+ * Pure import face, zero vscode dependencies; the UI/replay consumers are FLOW-028.
  */
 
 import {
@@ -30,7 +36,7 @@ import {
   type TraceSessionInput
 } from './traceEventModel';
 
-/** 采集器输出 JSON 形态(monitoring_capture.py payload,无 seq)。 */
+/** The collector's output JSON shape (the monitoring_capture.py payload, no seq). */
 export interface RawMonitoringSession {
   meta: {
     collector: string;
@@ -40,7 +46,7 @@ export interface RawMonitoringSession {
     windowNote: string;
     clock: string;
     startedAtEpochMs?: number;
-    /** 受控采集收口记账(FLOW-025 控制器面;最小采集器可不带) */
+    /** Controlled-capture teardown ledger (the FLOW-025 controller face; the minimal collector may omit it) */
     stoppedAtEpochMs?: number;
     endReason?: string;
     endNote?: string;
@@ -95,12 +101,12 @@ function optNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-/** sys.monitoring 帧面的跳源码目标(1 基 def 声明行,保留采集口径)。 */
+/** The sys.monitoring frame face's source-jump target (a 1-based def declaration line, keeping the capture semantics). */
 export function frameJumpTarget(frame: TraceFrame): { file: string; line: number } {
   return { file: frame.file, line: frame.line };
 }
 
-/** 把 sys.monitoring 会话导入 G3 协议;红线校验全部走 buildTraceSession。 */
+/** Import a sys.monitoring session into the G3 protocol; all red-line validation goes through buildTraceSession. */
 export function importMonitoringSession(raw: RawMonitoringSession, sessionId: string): TraceSession {
   if (raw.meta.collector !== 'sys-monitoring') {
     throw new Error(
@@ -129,8 +135,9 @@ export function importMonitoringSession(raw: RawMonitoringSession, sessionId: st
     name: entry.name ?? null
   }));
 
-  // 同线程括号对称配对:call 入栈,return 弹栈顶。seq 由 buildTraceSession
-  // 按输入序分配,无丢弃占位,原始下标即最终 seq。
+  // Same-thread bracket-symmetry pairing: a call pushes, a return pops the stack top.
+  // buildTraceSession assigns seq by input order with no dropped placeholders, so the
+  // raw index is the final seq.
   const openCalls = new Map<string, number[]>();
   const events: TraceEventInput[] = raw.events.map((rawEvent, index) => {
     const kind = expectString(rawEvent.kind, `events[${index}].kind`);
@@ -234,7 +241,7 @@ export function importMonitoringSession(raw: RawMonitoringSession, sessionId: st
   return buildTraceSession(input);
 }
 
-/** 导入面摘要(诚实声明来源与边界;UI/日志面直接引用)。 */
+/** Import-face summary (an honest statement of source and boundaries; cited directly by the UI/log face). */
 export function describeImportedSession(session: TraceSession): string {
   return [
     `session ${session.sessionId}`,

@@ -1,11 +1,13 @@
 /**
- * Player Data Clone 的连接 Profile 台账(CLONE-P5 / PDC-0501):Source(只读源)
- * 与 Target(本地可写目标)各一份,配置经注入持久层(workspaceState 面)按
- * profile 角色隔离;密码永不入配置——只进注入的 SecretStorage 面(键含角色,
- * 删除配置即删密钥)。
+ * Player Data Clone connection-profile ledger (CLONE-P5 / PDC-0501): one entry each for
+ * Source (a read-only source) and Target (a locally writable target); config goes through
+ * the injected persistence layer (the workspaceState face), isolated per profile role;
+ * passwords never enter the config -- they only go into the injected SecretStorage face
+ * (the key carries the role, so deleting the config deletes the secret).
  *
- * 环境铁律(§6.1):target 的 environment 只接受 local/test,prod/staging
- * 值在配置闸就拒绝(不等 Rust 侧复核);source 无环境概念,是任意只读源。
+ * Environment iron rule (§6.1): the target's environment only accepts local/test;
+ * prod/staging values are rejected at the config gate (not waiting for the Rust side to
+ * re-check); the source has no environment notion, it is an arbitrary read-only source.
  */
 
 export type CloneProfileRole = 'source' | 'target';
@@ -15,9 +17,9 @@ export interface CloneProfile {
   port: number;
   user: string;
   database: string;
-  /** target 专用:local/test(§6.1;source 无此字段)。 */
+  /** Target-only: local/test (§6.1; the source has no such field). */
   environment?: 'local' | 'test';
-  /** 密码是否已存(密码本体只进 secrets 面)。 */
+  /** Whether a password is stored (the password itself only lives in the secrets face). */
   hasStoredSecret: boolean;
 }
 
@@ -49,7 +51,7 @@ const isProfile = (value: unknown, role: CloneProfileRole): value is CloneProfil
     return false;
   }
   if (role === 'target') {
-    // §6.1:目标环境只认 local/test;prod/staging 及未知值在配置闸拒绝。
+    // §6.1: the target environment only accepts local/test; prod/staging and unknown values are rejected at the config gate.
     if (candidate.environment !== 'local' && candidate.environment !== 'test') {
       return false;
     }
@@ -83,7 +85,7 @@ export class CloneProfileStore {
     return this.profiles.get(role) ?? null;
   }
 
-  /** 保存配置;password 传 undefined 保留既有密钥,传 null 清除。 */
+  /** Save the config; password undefined keeps the existing secret, null clears it. */
   async save(
     role: CloneProfileRole,
     profile: Omit<CloneProfile, 'hasStoredSecret'>,
@@ -111,7 +113,7 @@ export class CloneProfileStore {
     this.persist();
   }
 
-  /** 取完整建连参数(密码只从 secrets 面 读;未存密码如实 undefined)。 */
+  /** Resolve the full connection parameters (the password is only read from the secrets face; no stored password means an honest undefined). */
   async resolveConnection(
     role: CloneProfileRole
   ): Promise<{

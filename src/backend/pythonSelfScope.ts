@@ -1,45 +1,49 @@
-// AUD-028(R2-F05)+AUD-029(R2-F06):属性引用与 receiver RPC 调用的「确定归属」
-// 不完整——getIncomingPythonPropertyAccesses/getIncomingPythonReceiverCalls 按
-// owner 文件原文正则扫描,结果混入字符串、注释、同文件另一普通类、嵌套重绑
-// self 的 self.hp / self.cell.X(。此模块做词法/作用域过滤:经 pythonCodeLines
-// 掩码排除字符串/注释(位置不位移),按缩进栈跟踪 class/function 作用域与函数
-// 首个参数是否为 self,只保留 owner 类直接方法内「self 即 owner 实例」的真
-// 读写点/真调用点。
+// AUD-028 (R2-F05) + AUD-029 (R2-F06): the "definite attribution" of property references and
+// receiver RPC calls was incomplete -- getIncomingPythonPropertyAccesses /
+// getIncomingPythonReceiverCalls regex-scanned the owner file's raw text, so the results mixed
+// in strings, comments, another plain class in the same file, and self.hp / self.cell.X(
+// with a nested rebound self. This module does lexical/scope filtering: masking via
+// pythonCodeLines rules out strings/comments (positions do not shift), an indentation stack
+// tracks class/function scopes and whether a function's first parameter is self, keeping only
+// the true read/write points / true call sites where "self is the owner instance" inside
+// direct methods of the owner class.
 //
-// 规则(对每个候选匹配,基于掩码文本与作用域栈):
-//   ① 掩码后该位置已被替换为空白 → 字符串/注释,排除;
-//   ② 归属类(掩码行所在顶层类)必须恰为 owner 类,同文件其它类排除;
-//   ③ self 归属:最近一个「以 self 为首参」的函数作用域必须满足——其所在类
-//      恰为 owner 类(嵌套类/其它类排除),且它不是嵌套在另一函数里的重绑
-//      (def helper(self) 嵌套 → 该 self 非 owner 实例,排除);闭包(无 self
-//      首参)不重绑,沿用外层方法 self,保留;
-//   ④ 属性面:self.<prop>( 带调用括号 → 方法调用(NAV-003 面),排除;
-//      RPC 面:self.<receiver>.<method>( 必须带调用括号(非调用形态不收)。
+// Rules (per candidate match, based on masked text and the scope stack):
+//   ① after masking the position was replaced by whitespace -> string/comment, excluded;
+//   ② the owning class (the top-level class containing the masked line) must be exactly the
+//      owner class; other classes in the same file are excluded;
+//   ③ self attribution: the nearest function scope "with self as first parameter" must satisfy
+//      -- its containing class is exactly the owner class (nested/other classes excluded), and
+//      it is not a rebind nested inside another function (a nested def helper(self) -> that self
+//      is not the owner instance, excluded); closures (no self first parameter) do not rebind,
+//      they inherit the outer method's self and are kept;
+//   ④ property face: self.<prop>( with call parens -> method call (NAV-003 face), excluded;
+//      RPC face: self.<receiver>.<method>( must carry call parens (non-call shapes are not collected).
 
 import { pythonCodeLines } from './pythonParser';
 
-/** 一处 owner 类内的 self 访问(0 基行/列;列指向属性名或方法名起点) */
+/** One self access inside the owner class (0-based line/character; the character points at the start of the property or method name) */
 export interface OwnerSelfPropertyAccess {
   line: number;
   character: number;
 }
 
 interface FunctionScope {
-  /** 0 基 def 行 */
+  /** 0-based def line */
   startLine: number;
-  /** 0 基结束行(不含;类/文件边界收口) */
+  /** 0-based end line (exclusive; closed at class/file boundaries) */
   endLine: number;
-  /** 首个参数名是否为 self(重绑判定) */
+  /** Whether the first parameter name is self (the rebind decision) */
   selfBound: boolean;
-  /** def 行所在最内层类名(无类=模块级函数) */
+  /** Name of the innermost class containing the def line (no class = module-level function) */
   className: string | null;
 }
 
 interface ClassScope {
   name: string;
-  /** 0 基 class 行 */
+  /** 0-based class line */
   startLine: number;
-  /** 0 基结束行(不含) */
+  /** 0-based end line (exclusive) */
   endLine: number;
 }
 
@@ -49,7 +53,7 @@ interface OwnerScopeWalk {
   ownerClass: ClassScope | null;
 }
 
-/** 从函数头提取首个参数名(支持续行括号);掩码文本内取,字符串已屏蔽 */
+/** Extract the first parameter name from a function header (parenthesized continuation lines supported); read from masked text, strings already blanked */
 function firstParamName(maskedLines: string[], defLine: number): string | null {
   let header = maskedLines[defLine] ?? '';
   let depth = 0;
@@ -77,7 +81,7 @@ function firstParamName(maskedLines: string[], defLine: number): string | null {
 const computeIndent = (line: string): number =>
   (/^[ \t]*/.exec(line)?.[0] ?? '').replace(/\t/g, '    ').length;
 
-/** 按缩进栈建立 class/function 作用域并解析 owner 类(供属性/RPC 两面共用) */
+/** Build class/function scopes via an indentation stack and resolve the owner class (shared by the property and RPC faces) */
 function buildOwnerScopeWalk(masked: string[], ownerClassName: string): OwnerScopeWalk {
   const lineCount = masked.length;
   const classes: ClassScope[] = [];
@@ -122,18 +126,18 @@ function buildOwnerScopeWalk(masked: string[], ownerClassName: string): OwnerSco
   return { classes, functions, ownerClass };
 }
 
-/** 掩码行处的 self 访问是否落在 owner 类直接方法内(规则②③) */
+/** Whether the self access at a masked line lands inside a direct method of the owner class (rules ② and ③) */
 function isOwnerMethodSelfAccess(walk: OwnerScopeWalk, line: number): boolean {
   const { functions, ownerClass } = walk;
-  // ② 归属类:掩码行所在顶层类必须为 owner 类(同文件其它类排除)
+  // ② owning class: the top-level class containing the masked line must be the owner class (other classes in the same file excluded)
   if (ownerClass && (line < ownerClass.startLine || line >= ownerClass.endLine)) { return false; }
-  // ③ self 归属:最近一个 self 首参函数作用域须为 owner 类直接方法
+  // ③ self attribution: the nearest self-first-parameter function scope must be a direct method of the owner class
   const containing = functions.filter(fn => line >= fn.startLine && line < fn.endLine);
   const selfBinder = [...containing].reverse().find(fn => fn.selfBound);
-  if (!selfBinder) { return false; } // 无 self 绑定(类体/模块级)→ 非实例访问
-  if (ownerClass && selfBinder.className !== ownerClass.name) { return false; } // 其它/嵌套类
-  // 嵌套重绑(def helper(self) 在方法内)→ 该 self 非 owner 实例,排除;
-  // 闭包(无 self 首参)不构成 selfBinder,自会沿用外层方法
+  if (!selfBinder) { return false; } // no self binding (class body / module level) -> not an instance access
+  if (ownerClass && selfBinder.className !== ownerClass.name) { return false; } // other/nested class
+  // Nested rebind (def helper(self) inside a method) -> that self is not the owner instance, excluded;
+  // closures (no self first parameter) do not form a selfBinder and inherit the outer method's self on their own
   const nestedInFunction = functions.some(fn =>
     fn !== selfBinder && fn.startLine < selfBinder.startLine && selfBinder.startLine < fn.endLine);
   if (nestedInFunction) { return false; }
@@ -145,9 +149,9 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * 在 owner 类作用域内找 self.<prop> 真读写点。
- * @param ownerClassName owner 类名(实体名/文件基名回退)
- * @returns 0 基行列列表,列指向属性名起点(与既有口径一致)
+ * Find the true read/write points of self.<prop> within the owner class scope.
+ * @param ownerClassName the owner class name (entity name / file base name fallback)
+ * @returns a list of 0-based line/character pairs; the character points at the start of the property name (same convention as existing code)
  */
 export function findOwnerSelfPropertyAccesses(
   content: string,
@@ -174,9 +178,9 @@ export function findOwnerSelfPropertyAccesses(
 }
 
 /**
- * 在 owner 类作用域内找 self.<receiver>.<method>( 真调用点。
- * @param receiver 调用段(cell/base/client),与声明段同款映射
- * @returns 0 基行列列表,列指向方法名起点(与既有口径一致)
+ * Find the true call sites of self.<receiver>.<method>( within the owner class scope.
+ * @param receiver the call section (cell/base/client), same mapping as the declaration section
+ * @returns a list of 0-based line/character pairs; the character points at the start of the method name (same convention as existing code)
  */
 export function findOwnerSelfReceiverCalls(
   content: string,

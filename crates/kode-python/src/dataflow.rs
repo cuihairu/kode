@@ -1,18 +1,23 @@
-//! 过程内 def-use 数据流(C-20 交付②,MVP)。
+//! Intra-procedural def-use dataflow (C-20 delivery item 2, MVP).
 //!
-//! MVP 边界(文档化,非本期修复项):
-//! - **直线近似**:按源码顺序扫描,进入 `if`/`for`/`while`/`with`/`try` 体时顺序
-//!   处理,不做控制流交汇合并(分支后变量的可能集不取并集);
-//! - 仅跟踪局部名与 `self.<attr>` 属性写入;全局/内建/自由变量不被跟踪;
-//! - 变量重定义会终结旧链(新定值开新链);
-//! - `del x` 视作 kill(终结链,不新开链),删除后 `use(x)` 不连旧链(MVP 近似)。
+//! MVP boundaries (documented, not a fix item of this phase):
+//! - **Straight-line approximation**: scanned in source order; entering an `if`/`for`/`while`/
+//!   `with`/`try` body is processed sequentially, with no control-flow join merging (the possible
+//!   sets of a variable after branches are not unioned);
+//! - only local names and `self.<attr>` attribute writes are tracked; globals / builtins / free
+//!   variables are not tracked;
+//! - redefining a variable terminates the old chain (a new definition starts a new chain);
+//! - `del x` is treated as a kill (terminates the chain without starting a new one); after the
+//!   delete, `use(x)` does not attach to the old chain (MVP approximation).
 //!
-//! KODE-AUD-007:补 AugAssign 读旧值(target 是 Store ctx 语义读)、del kill
-//! (Del ctx 非 Store 故旧实现漏)、Subscript 容器元素写侧读容器、NamedExpr(wa-
-//! lrus)target 定义、Comprehension generator target 定义。
+//! KODE-AUD-007: added AugAssign's read of the old value (the target is Store ctx but semantically
+//! a read), del as kill (its ctx is Del, not Store, so the old implementation missed it),
+//! Subscript element writes also reading the container, NamedExpr (walrus) target definitions, and
+//! Comprehension generator target definitions.
 //!
-//! 产出 [`DataflowResult`] 每变量(或其每次重定义)一条 [`DefUseChain`],含
-//! 定值行与使用行,参数来源以 `is_param` 标记(「变量来源与传播」的可查询面)。
+//! Produces [`DataflowResult`] with one [`DefUseChain`] per variable (or per each of its
+//! redefinitions), carrying the definition and use lines; the parameter origin is marked by
+//! `is_param` (the queryable face of "variable origin and propagation").
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,33 +27,39 @@ use ruff_text_size::Ranged;
 use crate::model::{DataflowResult, DefUseChain};
 use crate::parse::ParsedAst;
 
-/// 对单个函数/方法体做过程内 def-use(MVP)。
+/// Perform intra-procedural def-use for a single function / method body (MVP).
 ///
-/// `params` 为形参名(不含 `self`);`body` 为该函数体语句序列。
+/// `params` is the formal parameter names (excluding `self`); `body` is the statement sequence of
+/// that function body.
 pub fn dataflow_for_body(ast: &ParsedAst, params: &[String], body: &[Stmt]) -> DataflowResult {
     let mut state = State::new(params);
     walk_body(ast, &mut state, body);
-    // 定值链按首次出现顺序;空链(参数从未使用)也保留(来源可查)。
+    // Definition chains in order of first appearance; empty chains (a parameter never used) are
+    // kept as well (the origin stays queryable).
     DataflowResult {
         chains: state.chains,
     }
 }
 
-/// 单方法的 def-use 结果(RPC/消费面用;类方法带类名,模块级函数 `class=None`)。
+/// Def-use result of a single method (for the RPC / consumer face; class methods carry the class
+/// name, module-level functions have `class=None`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodDataflow {
-    /// 所属类限定名;模块级函数为 `None`。
+    /// Qualified name of the owning class; `None` for module-level functions.
     pub class: Option<String>,
     pub method: String,
-    /// 形参名(与 [`crate::symbols::method_params`] 同序同过滤,`self` 不计)。
+    /// Formal parameter names (same order and filtering as [`crate::symbols::method_params`];
+    /// `self` excluded).
     pub params: Vec<String>,
     pub result: DataflowResult,
 }
 
-/// 全文件方法级 def-use:类方法 + 模块级函数(与 [`crate::callgraph`] 同一
-/// 类→方法走查,委托 [`crate::symbols::method_params`] 取形参,单一口径)。
+/// File-wide method-level def-use: class methods + module-level functions (the same class ->
+/// method walk as [`crate::callgraph`]; parameter names delegated to
+/// [`crate::symbols::method_params`], one single semantics).
 ///
-/// 嵌套 def/class 不入本表(与调用图同边界:由外层面另行收集)。
+/// Nested def/class is not included in this table (same boundary as the call graph: collected
+/// separately by the outer face).
 pub fn dataflow_for_module(ast: &ParsedAst) -> Vec<MethodDataflow> {
     let mut out = Vec::new();
     for stmt in &ast.module().body {
@@ -83,11 +94,13 @@ pub fn dataflow_for_module(ast: &ParsedAst) -> Vec<MethodDataflow> {
 }
 
 struct State {
-    /// 作用域栈:每层 var → 当前活跃链下标(最近一次定值);栈顶为最内层。
-    /// 基层为函数体自身,KR-AUD-18 起 lambda 体推入独立子层(形参遮蔽)。
+    /// Scope stack: per layer var -> the index of the currently active chain (the most recent
+    /// definition); the top of the stack is the innermost layer.
+    /// The base layer is the function body itself; since KR-AUD-18 a lambda body pushes an
+    /// independent sub-layer (parameter shadowing).
     scopes: Vec<BTreeMap<String, usize>>,
-    /// `global`/`nonlocal` 已声明的名字(KR-AUD-19):对这些名字的赋值写的是
-    /// 外层绑定,不建局部 def 链。
+    /// Names declared via `global`/`nonlocal` (KR-AUD-19): an assignment to such a name writes an
+    /// outer binding, so no local def chain is built.
     global_names: BTreeSet<String>,
     chains: Vec<DefUseChain>,
 }
@@ -103,8 +116,9 @@ impl State {
         state
     }
 
-    /// 推入一层作用域并把 `params` 记为该层的参数链(is_param,无 def_line;
-    /// 空链也保留,来源可查)。基层(new)与 lambda 子作用域(KR-AUD-18)共用。
+    /// Push a scope layer and record `params` as that layer's parameter chains (is_param, no
+    /// def_line; empty chains are kept too, so the origin stays queryable). Shared by the base
+    /// layer (`new`) and lambda sub-scopes (KR-AUD-18).
     fn push_param_scope(&mut self, params: &[String]) {
         let mut scope = BTreeMap::new();
         for p in params {
@@ -121,7 +135,7 @@ impl State {
     }
 
     fn use_var(&mut self, var: &str, line: usize) {
-        // 由内层作用域向外查找(KR-AUD-18:lambda 形参遮蔽外层同名变量)。
+        // Look up from the innermost scope outward (KR-AUD-18: lambda parameters shadow outer same-named variables).
         for scope in self.scopes.iter().rev() {
             if let Some(&idx) = scope.get(var) {
                 let chain = &mut self.chains[idx];
@@ -134,7 +148,7 @@ impl State {
     }
 
     fn def_var(&mut self, var: &str, line: usize) {
-        // KR-AUD-19:global/nonlocal 声明名的赋值写外层绑定,不建局部链。
+        // KR-AUD-19: an assignment to a global/nonlocal declared name writes an outer binding; no local chain is built.
         if self.global_names.contains(var) {
             return;
         }
@@ -173,9 +187,10 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
             collect_writes(state, &a.target, line);
         }
         Stmt::AugAssign(a) => {
-            // KODE-AUD-007:`x += v` 的 target 是 Store 上下文,但语义读旧值再写新值。
-            // collect_reads 的 Name 分支只认 Load ctx 会漏读旧 x,故用 collect_reads_of
-            // 强制读 target 底层名(读旧值),再 collect_writes 写新链。
+            // KODE-AUD-007: the target of `x += v` is a Store context, but it semantically reads the old value
+            // and then writes the new one. The Name branch of collect_reads only recognizes a Load
+            // ctx and would miss reading the old x, so collect_reads_of forces reading the target's
+            // underlying name (reading the old value), then collect_writes writes the new chain.
             collect_reads_of(state, &a.target, line);
             collect_reads(state, &a.value, line);
             collect_writes(state, &a.target, line);
@@ -188,9 +203,11 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         }
         Stmt::Delete(d) => {
             for t in &d.targets {
-                // KODE-AUD-007:`del x` 终结 x 当前链(视作 kill),后续 use(x) 不连旧链。
-                // 旧实现走 collect_writes,但 del 的 Name ctx 是 Del(非 Store),Name 分支
-                // 不认 → 旧链未终结仍被后续读。kill_var 删 live 映射即终结。
+                // KODE-AUD-007: `del x` terminates x's current chain (treated as a kill); later use(x) does not
+                // attach to the old chain. The old implementation went through collect_writes, but
+                // del's Name ctx is Del (not Store) so the Name branch rejects it -> the old chain
+                // was never terminated and was still read afterwards. kill_var removes the live
+                // mapping, which terminates the chain.
                 kill_var(state, t, line);
             }
         }
@@ -228,8 +245,9 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
             walk_body(ast, state, &t.body);
             for h in &t.handlers {
                 let ast::ExceptHandler::ExceptHandler(inner) = h;
-                // KR-AUD-17:type_ 读与捕获名 def 用 handler 自己的行(旧实现
-                // 全记 try 语句行,def 行定位失真)。
+                // KR-AUD-17: the type_ read and the captured-name def use the handler's own line (the old
+                // implementation recorded everything on the try statement line, distorting the def
+                // line location).
                 let handler_line = ast.line_col(inner.range.start().to_u32()).0;
                 if let Some(typ) = &inner.type_ {
                     collect_reads(state, typ, handler_line);
@@ -245,8 +263,9 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         Stmt::Match(m) => {
             collect_reads(state, &m.subject, line);
             for case in &m.cases {
-                // KR-AUD-10:dataflow 侧——pattern 捕获名 def、guard 读。
-                // 捕获 def 先于 guard 读(guard 可引用捕获,如 `case [a,b] if a > 0`)。
+                // KR-AUD-10: the dataflow side -- pattern captured-name defs and guard reads.
+                // Capture defs come before the guard read (a guard may reference captures, e.g.
+                // `case [a,b] if a > 0`).
                 let case_line = ast.line_col(case.pattern.range().start().to_u32()).0;
                 collect_pattern_captures(state, &case.pattern, case_line);
                 if let Some(g) = &case.guard {
@@ -257,8 +276,9 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         }
         Stmt::Import(imp) => {
             for alias in &imp.names {
-                // KR-AUD-11:`import a.b` 绑定顶层名 `a`(与 symbols.rs 同口径),
-                // 无 asname 时不再按全段 "a.b" 造链(后续 `a.attr` 读才不断链)。
+                // KR-AUD-11: `import a.b` binds the top-level name `a` (same semantics as symbols.rs); without an
+                // asname we no longer build a chain for the full path "a.b" (later reads of
+                // `a.attr` then do not break the chain).
                 let binding = alias
                     .asname
                     .as_ref()
@@ -287,8 +307,8 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         }
         Stmt::FunctionDef(f) => state.def_var(f.name.as_str(), line),
         Stmt::ClassDef(c) => state.def_var(c.name.as_str(), line),
-        // KR-AUD-16:raise/assert 的表达式侧按读走查(exc/cause/test/msg),
-        // 不再整体落进无语义分支。
+        // KR-AUD-16: the expression side of raise/assert is walked as reads (exc/cause/test/msg),
+        // instead of falling wholesale into the no-semantics branch.
         Stmt::Raise(r) => {
             if let Some(e) = &r.exc {
                 collect_reads(state, e, line);
@@ -303,8 +323,9 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
                 collect_reads(state, m, line);
             }
         }
-        // KR-AUD-19:global/nonlocal 名登记;对它们的后续赋值不建局部 def 链
-        // (写的是外层绑定;读侧本就不跟踪全局/闭包自由变量)。
+        // KR-AUD-19: register the global/nonlocal names; later assignments to them build no local def
+        // chain (they write outer bindings; the read side never tracked globals / closure free
+        // variables in the first place).
         Stmt::Global(g) => {
             for n in &g.names {
                 state.global_names.insert(n.as_str().to_string());
@@ -323,10 +344,10 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
     }
 }
 
-/// 收集 match pattern 的捕获名 def(KR-AUD-10):`case [a, b]:` 的 a/b、
-/// `*rest`、mapping `**rest`、`case X() as y` 的 y 各 def 一条链。
-/// 附带读面:`case Point(x, 0):` 的类名 Point 与 `case V(值):` 的 value 表达式
-/// 按 Load 读记录(与 guard/subject 同一 collect_reads 通道)。
+/// Collect the captured-name defs of a match pattern (KR-AUD-10): the a/b of `case [a, b]:`,
+/// `*rest`, mapping `**rest`, and the y of `case X() as y` each def one chain.
+/// Also a read face: the class name Point of `case Point(x, 0):` and the value expression of
+/// `case V(x):` are recorded as Load reads (the same collect_reads channel as guard / subject).
 fn collect_pattern_captures(state: &mut State, pattern: &ast::Pattern, line: usize) {
     use ast::Pattern;
     match pattern {
@@ -378,8 +399,8 @@ fn collect_pattern_captures(state: &mut State, pattern: &ast::Pattern, line: usi
     }
 }
 
-/// 推导式 generators 按序走查:iter 读 → target 写 → ifs 读(KR-AUD-09:
-/// elt 的读必须排在这些之后,才能连上 target 的 def 链)。
+/// Walk a comprehension's generators in order: iter read -> target write -> ifs read (KR-AUD-09:
+/// the elt read must come after those, so it can attach to the target's def chain).
 fn collect_comp_generators(state: &mut State, generators: &[ast::Comprehension], line: usize) {
     for gen in generators {
         collect_reads(state, &gen.iter, line);
@@ -390,7 +411,7 @@ fn collect_comp_generators(state: &mut State, generators: &[ast::Comprehension],
     }
 }
 
-/// 收集读(Load 上下文的名字与 `self.<attr>` 属性读)。
+/// Collect reads (names in Load context and `self.<attr>` attribute reads).
 fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
     use Expr::*;
     match expr {
@@ -425,8 +446,8 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
             }
         }
         Named(n) => {
-            // KODE-AUD-007:walrus `(x := v)` 的 target 是 Store 上下文,须在此定义 x
-            // (旧实现只读 value,漏 def target)。
+            // KODE-AUD-007: the target of the walrus `(x := v)` is a Store context; x must be defined here
+            // (the old implementation only read the value and missed the target's def).
             collect_reads(state, &n.value, line);
             collect_writes(state, &n.target, line);
         }
@@ -463,9 +484,10 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
                 collect_reads(state, e, line);
             }
         }
-        // KR-AUD-09:先按序走完 generators(iter 读/target 写/ifs 读),最后读
-        // elt——旧实现 elt 先读,此时 generator target 尚未 def,elt 内对
-        // target 的 use 断链(`[str(x) for x in xs]` 的 str(x) 无链)。
+        // KR-AUD-09: walk the generators to completion in order first (iter read / target write / ifs
+        // read), then read the elt -- the old implementation read elt first, at which point the
+        // generator target was not yet def'd, so uses of the target inside elt broke their chain
+        // (the str(x) of `[str(x) for x in xs]` had no chain).
         ListComp(c) => {
             collect_comp_generators(state, &c.generators, line);
             collect_reads(state, &c.elt, line);
@@ -510,9 +532,11 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
             }
         }
         Lambda(l) => {
-            // KR-AUD-18:lambda 形参入独立子作用域(遮蔽外层同名变量);默认值
-            // 在外层作用域求值,先于推层读。体内读只查子作用域→外层,退出后
-            // 恢复外层作用域,外层链不受 lambda 体内定值影响。
+            // KR-AUD-18: lambda parameters enter an independent sub-scope (shadowing outer same-named
+            // variables); the default values are evaluated in the outer scope and read before the
+            // layer is pushed. Reads inside the body only consult the sub-scope -> the outer scope,
+            // and after exit the outer scope is restored, so outer chains are unaffected by
+            // definitions inside the lambda.
             for arg in l
                 .parameters
                 .as_ref()
@@ -533,13 +557,13 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
             collect_reads(state, &l.body, line);
             state.scopes.pop();
         }
-        // 字面量/字符串/名字(Load 已在 Name 分支处理)
+        // Literals / strings / names (Load is already handled in the Name branch)
         StringLiteral(_) | BytesLiteral(_) | NumberLiteral(_) | BooleanLiteral(_)
         | NoneLiteral(_) | EllipsisLiteral(_) | TString(_) | FString(_) | IpyEscapeCommand(_) => {}
     }
 }
 
-/// 收集写(Store 上下文的名字与 `self.<attr>` 属性写、元组解包)。
+/// Collect writes (names in Store context, `self.<attr>` attribute writes, tuple unpacking).
 fn collect_writes(state: &mut State, target: &Expr, line: usize) {
     use Expr::*;
     match target {
@@ -567,7 +591,8 @@ fn collect_writes(state: &mut State, target: &Expr, line: usize) {
         }
         Starred(s) => collect_writes(state, &s.value, line),
         Subscript(s) => {
-            // KODE-AUD-007:`a[0] = v` 写侧须读容器 a 与索引(旧实现只写 s.value 漏读)。
+            // KODE-AUD-007: the write side of `a[0] = v` must read the container a and the index (the old
+            // implementation only wrote s.value and missed the reads).
             collect_reads(state, &s.value, line);
             collect_reads(state, &s.slice, line);
             collect_writes(state, &s.value, line);
@@ -576,8 +601,9 @@ fn collect_writes(state: &mut State, target: &Expr, line: usize) {
     }
 }
 
-/// 强制读 target 底层名(不看 ctx):用于 AugAssign 的 target——它是 Store 上下文
-/// 但语义读旧值(`x += v` 先读旧 x)。对 Name 无条件 use;对 Subscript/Attribute 递归。
+/// Force a read of the target's underlying name (ignoring ctx): used for the target of an
+/// AugAssign -- it is a Store context but semantically reads the old value (`x += v` reads the old
+/// x first). For a Name it unconditionally uses; for Subscript/Attribute it recurses.
 fn collect_reads_of(state: &mut State, expr: &Expr, line: usize) {
     use Expr::*;
     match expr {
@@ -608,14 +634,16 @@ fn collect_reads_of(state: &mut State, expr: &Expr, line: usize) {
     }
 }
 
-/// 终结 var 当前链:`del x` 语义——后续 use(x) 不应连旧链。MVP 视作 kill(删 live
-/// 映射),不新开链(删除后 x 未定义,非重定义)。del 的 Name ctx 是 Del(非 Store),
-/// collect_writes 的 Name 分支不认,故单独处理。
+/// Terminate var's current chain: the semantics of `del x` -- a later use(x) should not attach to
+/// the old chain. The MVP treats it as a kill (removing the live mapping) and does not start a new
+/// chain (after deletion x is undefined, not redefined). del's Name ctx is Del (not Store) and
+/// collect_writes' Name branch rejects it, so it is handled separately.
 fn kill_var(state: &mut State, target: &Expr, line: usize) {
     use Expr::*;
     match target {
         Name(n) => {
-            // del 视作 kill:最内层作用域摘除映射即终结链(含 lambda 子作用域)。
+            // A del is treated as a kill: removing the mapping from the innermost scope terminates
+            // the chain (including lambda sub-scopes).
             for scope in state.scopes.iter_mut().rev() {
                 if scope.remove(n.id.as_str()).is_some() {
                     break;
@@ -633,7 +661,8 @@ fn kill_var(state: &mut State, target: &Expr, line: usize) {
             }
         }
         Subscript(s) => {
-            // `del a[i]` 读容器 a 与索引,再终结容器链(对容器递归 kill)。
+            // `del a[i]` reads the container a and the index, then terminates the container's chain (a
+            // recursive kill on the container).
             collect_reads(state, &s.value, line);
             collect_reads(state, &s.slice, line);
             kill_var(state, &s.value, line);
@@ -653,8 +682,8 @@ fn kill_var(state: &mut State, target: &Expr, line: usize) {
     }
 }
 
-/// lambda 形参名(posonly → pos → vararg → kwonly → kwarg;不滤 `self`——
-/// lambda 形参全是普通名字)。KR-AUD-18。
+/// Lambda parameter names (posonly -> pos -> vararg -> kwonly -> kwarg; `self` is not filtered out
+/// -- lambda parameters are all plain names). KR-AUD-18.
 fn lambda_param_names(p: &ast::Parameters) -> Vec<String> {
     let mut out: Vec<String> = p
         .posonlyargs
@@ -672,7 +701,7 @@ fn lambda_param_names(p: &ast::Parameters) -> Vec<String> {
     out
 }
 
-/// `expr` 是否为 `self` 名。
+/// Whether `expr` is the name `self`.
 fn is_self(expr: &Expr) -> bool {
     matches!(expr, Expr::Name(n) if n.id.as_str() == "self")
 }

@@ -1,11 +1,14 @@
-// SRC-005(阶段 1):definitionWorkspace.ts 纯 XML/自定义类型解析叶子函数
-// 迁出。纯移动:9 个模块级解析/结构构造/文本归一函数(parseCustomTypeProperties/
+// SRC-005 (stage 1): leaf functions for pure XML / custom-type parsing moved out
+// of definitionWorkspace.ts. A pure move: 9 module-level parsing / structure-building /
+// text-normalizing functions (parseCustomTypeProperties/
 // extractCustomTypeRawValue/extractCustomTypeAliasType/parseCustomTypeStructure/
 // attachStructureSourceLines/renderStructureNode/getInnerXml/normalizeXmlText/
-// isTrueAttributeValue)迁出为模块级导出;无 fs/path/vscode 依赖,仅 defParser
-// 值函数 + 类型导入(自 definitionWorkspace 类型-only,运行时无环);文件读取面
-// (getTypesXmlCustomTypeInfos/buildAliasXmlCustomTypeInfo)与 buildCustomTypeInfo
-// (依赖 findCustomTypePythonFileByImplementation)留在 definitionWorkspace.ts。
+// isTrueAttributeValue) moved out as module-level exports; no fs/path/vscode
+// dependencies, only defParser value functions plus type imports (type-only from
+// definitionWorkspace, so no runtime cycle). The file-reading surface
+// (getTypesXmlCustomTypeInfos/buildAliasXmlCustomTypeInfo) and buildCustomTypeInfo
+// (which depends on findCustomTypePythonFileByImplementation) stay in
+// definitionWorkspace.ts.
 import type { CustomTypePropertyInfo, CustomTypeStructureNode } from '../definitionWorkspace';
 import { DefElementNode, getDirectChildElement, getDirectChildElements, getLineNumberAt, getScalarChildValue, parseDefDocument, type DefDocument } from './defParser';
 

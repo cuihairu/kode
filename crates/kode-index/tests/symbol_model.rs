@@ -1,6 +1,8 @@
-//! 符号模型能力面门禁:六类 `SymbolKind::as_str` 字面量与 `MethodFacet::as_str`
-//! 是 golden 序列化与查询出口的稳定契约(PR-007 对拍面),`is_indexable` 决定
-//! 哪些文件进索引。此处逐字面量断言,保证任何一侧改动都显式暴露。
+//! Symbol model capability-face gate: the six `SymbolKind::as_str` literals and
+//! `MethodFacet::as_str` are the stable contract for golden serialization and the
+//! query exports (the PR-007 parity face), and `is_indexable` decides which files
+//! enter the index. Asserting each literal verbatim here makes any change on either
+//! side show up explicitly.
 
 use kode_index::symbol::is_indexable;
 use kode_index::{DocumentKey, MethodFacet, RootId, SymbolKind};
@@ -12,7 +14,8 @@ fn key(uri_path: &str) -> DocumentKey {
 
 #[test]
 fn symbol_kind_as_str_is_stable_golden_literal() {
-    // 对拍 golden 与查询出口的字面量必须逐字符稳定(改动即双向门禁红)。
+    // The literals used by the parity golden and the query exports must be stable
+    // character for character (any change turns the bidirectional gate red).
     assert_eq!(SymbolKind::Entity.as_str(), "entity");
     assert_eq!(SymbolKind::Property.as_str(), "property");
     assert_eq!(SymbolKind::Method.as_str(), "method");
@@ -30,7 +33,8 @@ fn method_facet_as_str_is_stable_golden_literal() {
 
 #[test]
 fn is_indexable_distinguishes_declaration_files() {
-    // 声明文件(.def/entities.xml/types.xml/alias.xml)可索引;其余文件不进索引。
+    // Declaration files (.def/entities.xml/types.xml/alias.xml) are indexable; other
+    // files do not enter the index.
     assert!(
         is_indexable(&key("/proj/entities/Avatar.def")),
         "def 可索引"
@@ -59,7 +63,8 @@ fn def_entity_name_takes_stem_and_ignores_missing() {
         Some("Avatar".into())
     );
     assert_eq!(def_entity_name("Car.def"), Some("Car".into()));
-    // 无文件茎的路径(父目录引用 / 根 / 空串)返回 None。
+    // Paths with no file stem (parent-directory reference / root / empty string)
+    // return None.
     assert_eq!(def_entity_name(".."), None, "父目录引用无文件茎");
     assert_eq!(def_entity_name("/"), None, "根路径无文件茎");
     assert_eq!(def_entity_name(""), None, "空路径无文件茎");

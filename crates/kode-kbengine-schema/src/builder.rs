@@ -1,4 +1,4 @@
-//! 项目目录 → [`Schema`] 的装配器(磁盘面;kode-vfs 读缓存)。
+//! The assembler from a project directory → [`Schema`] (the disk surface; the kode-vfs read cache).
 
 use std::path::Path;
 
@@ -8,15 +8,16 @@ use crate::layout::{self, AliasMap};
 use crate::messages::{build_message_table, MessageTable};
 use crate::schema::{EntityWireInfo, Schema};
 
-/// 构建选项。
+/// Build options.
 #[derive(Debug, Clone, Default)]
 pub struct BuildOptions {
-    /// §4.3 packetAlwaysContainLength(引擎默认 false;true 时所有消息按
-    /// 线上可变建模,message_handler.cpp:173-175)。
+    /// §4.3 packetAlwaysContainLength (engine default false; when true, every message is modeled as
+    /// variable on the wire, message_handler.cpp:173-175).
     pub packet_always_contain_length: bool,
 }
 
-/// 构建失败(项目结构不满足最小要求;坏文件走诊断不失败)。
+/// A build failure (the project structure does not meet the minimum requirement; bad files go to
+/// diagnostics rather than failing).
 #[derive(Debug)]
 pub struct BuildError(pub String);
 
@@ -27,13 +28,13 @@ impl std::fmt::Display for BuildError {
 }
 impl std::error::Error for BuildError {}
 
-/// 从项目资产根(`kbengine_<...>_assets/`,内含 `scripts/entities.xml` 等)
-/// 构建完整 Schema。
+/// Builds the complete Schema from the project asset root (`kbengine_<...>_assets/`, containing
+/// `scripts/entities.xml` and the like).
 ///
-/// `engine_fixed_defaults_xml` = 引擎 `kbe/res/server/messages_fixed_defaults.xml`
-/// 原文(固定表基准;调用方自带,crate 不绑引擎仓库路径)。项目
-/// `res/server/messages_fixed.xml` 存在则作为覆盖段并入;`kbengine.xml` /
-/// `kbengine_defaults.xml` 存在则读 `<packetAlwaysContainLength>`。
+/// `engine_fixed_defaults_xml` = the verbatim engine `kbe/res/server/messages_fixed_defaults.xml`
+/// (the fixed-table baseline; supplied by the caller, the crate does not bind an engine repository path).
+/// When the project `res/server/messages_fixed.xml` exists it is merged in as the override segment;
+/// when `kbengine.xml` / `kbengine_defaults.xml` exists, `<packetAlwaysContainLength>` is read.
 pub fn build_schema_from_project(
     project_root: &Path,
     engine_fixed_defaults_xml: Option<&str>,
@@ -53,7 +54,8 @@ pub fn build_schema_from_project(
         match cache.load(path) {
             Ok(buf) => Some(buf.text().to_string()),
             Err(e) => {
-                // 诊断走相对项目根的路径(快照/日志跨机器可对拍)。
+                // Diagnostics use paths relative to the project root (snapshots/logs can be compared
+                // across machines).
                 let shown = path.strip_prefix(project_root).unwrap_or(path);
                 acc.push(format!("{}: unreadable ({e})", shown.display()));
                 None
@@ -61,7 +63,7 @@ pub fn build_schema_from_project(
         }
     };
 
-    // ---- types.xml / alias.xml → 别名线类型表 ----
+    // ---- types.xml / alias.xml → the alias wire-type table ----
     let defs_dir = scripts.join("entity_defs");
     let types_xml = read(&defs_dir.join("types.xml"), &mut diagnostics);
     let alias_xml = read(&defs_dir.join("alias.xml"), &mut diagnostics);
@@ -71,7 +73,7 @@ pub fn build_schema_from_project(
     );
     let aliases: AliasMap = layout::resolve_alias_map(&raw);
 
-    // ---- entities.xml + *.def → 实体线格式 ----
+    // ---- entities.xml + *.def → the entity wire formats ----
     let entities_xml = read(&scripts.join("entities.xml"), &mut diagnostics)
         .ok_or_else(|| BuildError("scripts/entities.xml missing".into()))?;
     let registered = layout::entity_registered(&entities_xml);
@@ -93,11 +95,11 @@ pub fn build_schema_from_project(
         }
     }
 
-    // ---- 固定消息表:引擎默认 + 项目覆盖 ----
+    // ---- The fixed message table: engine defaults + project overrides ----
     let mut defaults_xml_text: Option<String> = engine_fixed_defaults_xml.map(str::to_string);
     if defaults_xml_text.is_none() {
-        // 允许项目 res/server/messages_fixed_defaults.xml 兜底(引擎也按
-        // res/server 解析该文件;不存在则表为空段)。
+        // The project res/server/messages_fixed_defaults.xml is allowed as a fallback (the engine also
+        // resolves this file under res/server; when absent the table is an empty segment).
         defaults_xml_text = read(
             &project_root.join("res/server/messages_fixed_defaults.xml"),
             &mut diagnostics,
@@ -118,7 +120,7 @@ pub fn build_schema_from_project(
         );
     }
 
-    // ---- packetAlwaysContainLength(项目配置覆盖引擎默认) ----
+    // ---- packetAlwaysContainLength (project configuration overrides the engine default) ----
     let mut always_len = opts.packet_always_contain_length;
     for cfg in [
         "res/server/kbengine.xml",
@@ -131,7 +133,7 @@ pub fn build_schema_from_project(
         }
     }
     if always_len {
-        // §4.3:所有消息按变长建模(含原定长)。
+        // §4.3: every message is modeled as variable (including originally fixed ones).
         for e in &mut messages.entries {
             e.length = crate::messages::MessageLength::Variable;
         }
@@ -150,8 +152,8 @@ pub fn build_schema_from_project(
     Ok(schema)
 }
 
-/// `<tag> 1|true|True </tag>` 语义(引擎 serverconfig 的布尔读取近似:
-/// 数字 0=假 / 非 0=真,布尔字面量按大小写不敏感;标签缺失 = None)。
+/// `<tag> 1|true|True </tag>` semantics (an approximation of the engine serverconfig boolean read:
+/// numeric 0 = false / non-zero = true, boolean literals case-insensitive; a missing tag = None).
 fn parse_truthy_tag(xml_text: &str, tag: &str) -> Option<bool> {
     let doc = kode_parser::xml::parse(xml_text, false);
     let root = doc.root()?;
@@ -163,6 +165,6 @@ fn parse_truthy_tag(xml_text: &str, tag: &str) -> Option<bool> {
     Some(raw != "0" && raw != "false" && raw != "no")
 }
 
-// EntityWireInfo 未在本文件使用时保留导入名(构建期消警)。
+// Keeps the EntityWireInfo import name when unused in this file (suppresses the warning at build time).
 #[allow(unused)]
 fn _type_witness(_: &EntityWireInfo) {}

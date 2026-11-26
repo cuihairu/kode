@@ -1,12 +1,13 @@
-//! 类型化 ID 映射(plan §6.3 / PDC-0304):oldID → newID 的键必须区分
-//! 物理表 + 主键列,不同表的编号重复不得串改;新主键在目标插入后由数据库
-//! 返回——计划期(Prepare)只分配**占位符**,Apply 期(Phase 4)以真实回填。
+//! Typed ID mapping (plan §6.3 / PDC-0304): the oldID → newID key must distinguish
+//! physical table + primary key column; duplicate numbering across different tables must never cross-contaminate.
+//! New primary keys are returned by the database after the target insert —
+//! the plan phase (Prepare) only assigns **placeholders**; Apply (Phase 4) backfills with real values.
 //!
-//! 值域用 [`TypedValue`] 保精度(bigint unsigned 全域),不做算术偏移
-//! (§6.3:所有相关字段使用映射结果而非偏移量)。
+//! The value domain uses [`TypedValue`] to preserve precision (full bigint unsigned range), with no arithmetic offset
+//! (§6.3: all related fields use the mapping result, not an offset).
 //!
-//! 业务永久稳定 ID(物品模板/技能配置/地图)不入映射:不入表即保持原值,
-//! 「未知引用不默认全局替换」由省略承载,不靠哨兵值。
+//! Business permanently-stable IDs (item templates/skill configs/maps) do not enter the mapping: not being inserted means the original value stays,
+//! and "unknown references are not globally replaced by default" is carried by omission, not by a sentinel value.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -15,8 +16,8 @@ use serde::{Serialize, Serializer};
 
 use crate::value::TypedValue;
 
-/// 全序投影(TypedValue 含 Float 不能派生 Ord;映射键只要求确定性全序,
-/// 等价性语义仍由 TypedValue 的 PartialEq 精确承载)。
+/// Total-order projection (TypedValue contains Float so Ord cannot be derived; the mapping key only needs a deterministic total order,
+/// while equivalence semantics remain carried precisely by TypedValue's PartialEq).
 pub(crate) fn value_rank(v: &TypedValue) -> (u8, String) {
     match v {
         TypedValue::Null => (0, String::new()),
@@ -35,24 +36,24 @@ pub(crate) fn value_rank(v: &TypedValue) -> (u8, String) {
     }
 }
 
-/// 集合探测用的规范键(与 value_rank 同一投影的扁平形态)。
+/// Canonical key for set probing (the flat form of the same projection as value_rank).
 pub(crate) fn value_key(v: &TypedValue) -> String {
     let (disc, payload) = value_rank(v);
     format!("{disc}:{payload}")
 }
 
-/// 导入 ID 模式(§6.1/PDC-0303):空白目标保留原 DBID / 已有测试库分配新 ID。
+/// Import ID mode (§6.1/PDC-0303): an empty target preserves original DBIDs / an existing test DB allocates new IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImportMode {
-    /// `preserve-id-if-empty`:保留归档原值(要求目标该 ID 空闲,预演查冲突)。
+    /// `preserve-id-if-empty`: keep the archive's original values (requires the target IDs to be free; the rehearsal checks for conflicts).
     PreserveIfEmpty,
-    /// `allocate-new-ids`:全部主键/引用重分配(默认建议,降低碰撞风险)。
+    /// `allocate-new-ids`: reassign all primary keys/references (recommended default, lowers collision risk).
     AllocateNewIds,
 }
 
-/// 映射键(§6.3:数据库接口 + Entity 类型由计划整体限定,此处承载
-/// 物理表 + 主键列 + 旧值三元组;serde 平面化为可审计字符串)。
+/// Mapping key (§6.3: the database interface + Entity type are constrained by the plan as a whole; this carries the
+/// physical table + primary key column + old value triple; serde flattens it into an auditable form).
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdMapKey {
     pub table: String,
@@ -85,7 +86,7 @@ impl PartialOrd for IdMapKey {
     }
 }
 
-// 手写序列化(键入审计面:表/列/旧值三段,旧值按 TypedValue 原生形态)。
+// Hand-written serialization (keys into the audit face: table/column/old value, the old value in TypedValue's native form).
 impl Serialize for IdMapKey {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
@@ -97,31 +98,31 @@ impl Serialize for IdMapKey {
     }
 }
 
-/// 旧值的新去向。
+/// Where an old value maps to.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum MappedId {
-    /// 保留归档原值(preserve 模式主键/结构引用)。
+    /// Preserves the archive's original value (preserve-mode primary keys/structural references).
     Preserved,
-    /// Apply 期由数据库返回新主键;计划期仅占位(序号在语句内引用)。
+    /// Apply gets the new primary key back from the database; planning only places a placeholder (the number is referenced within statements).
     Allocated { placeholder: u64 },
-    /// 计划期即确定的重写值(唯一键本地重建,PDC-0305)。
+    /// Rewrite value already determined at planning time (unique-key local rebuild, PDC-0305).
     Rebuilt { value: TypedValue },
 }
 
-/// ID 类别(验收门:预演须按类别展示变更面)。
+/// ID category (acceptance gate: the rehearsal must present the change face by category).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IdCategory {
-    /// 根表实体主键。
+    /// Root-table entity primary key.
     RootKey,
-    /// 子表行主键。
+    /// Child-table row primary key.
     ChildRowKey,
-    /// 子表 parentID(引用同克隆集内父行)。
+    /// Child-table parentID (references a parent row within the same clone set).
     ParentReference,
-    /// 声明跟随的业务引用列(Follow 规则,重映射)。
+    /// Declared-following business reference column (Follow rule, remapped).
     BusinessReference,
-    /// 唯一键本地重建(昵称/登录名)。
+    /// Unique-key local rebuild (nickname/login name).
     RebuiltIdentity,
 }
 
@@ -137,7 +138,7 @@ impl IdCategory {
     }
 }
 
-/// 一条登记:键 + 去向 + 类别(审计面)。
+/// One registration: key + mapping + category (audit face).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IdMapEntry {
     pub key: IdMapKey,
@@ -145,8 +146,8 @@ pub struct IdMapEntry {
     pub category: IdCategory,
 }
 
-/// 本次导入的 ID 映射账本(BTreeMap 确定性序;JSON 键必须是字符串,
-/// 故序列化为按键序的条目数组,同样可审计且免键投影失真)。
+/// The ID mapping ledger for this import (BTreeMap deterministic order; JSON keys must be strings,
+/// so it serializes as an entry array in key order — equally auditable and free of key-projection distortion).
 #[derive(Debug, Clone, Default)]
 pub struct IdMap {
     entries: BTreeMap<IdMapKey, IdMapEntry>,
@@ -172,12 +173,12 @@ impl IdMap {
         }
     }
 
-    /// 登记一条「保留原值」。
+    /// Registers a "preserve original value" entry.
     pub fn preserve(&mut self, key: IdMapKey, category: IdCategory) {
         self.insert(key, MappedId::Preserved, category);
     }
 
-    /// 登记一条占位新键(placeholder 单调递增,计划期不猜真实值)。
+    /// Registers a placeholder new key (placeholders increase monotonically; planning never guesses the real value).
     pub fn allocate(&mut self, key: IdMapKey, category: IdCategory) -> MappedId {
         let placeholder = self.next_placeholder;
         self.next_placeholder += 1;
@@ -186,14 +187,14 @@ impl IdMap {
         mapped
     }
 
-    /// 登记一条计划期重写值(唯一键重建)。
+    /// Registers a planning-time rewrite value (unique-key rebuild).
     pub fn rebuild(&mut self, key: IdMapKey, value: TypedValue, category: IdCategory) {
         self.insert(key, MappedId::Rebuilt { value }, category);
     }
 
     fn insert(&mut self, key: IdMapKey, mapped: MappedId, category: IdCategory) {
-        // 同键重复登记按 BTreeMap 语义后写覆盖;调用方(导入计划器)按行序
-        // 恰好一次登记,重复即上游逻辑错,测试锁定。
+        // Duplicate registration of the same key overwrites per BTreeMap semantics; callers (the import
+        // planner) register exactly once per row order, so a duplicate is an upstream logic bug, locked by tests.
         self.entries.insert(
             key.clone(),
             IdMapEntry {
@@ -204,7 +205,7 @@ impl IdMap {
         );
     }
 
-    /// 查旧值的去向(结构列渲染时引用同一映射,不另算)。
+    /// Looks up where an old value maps (structural column rendering references the same mapping; nothing is computed separately).
     pub fn get(&self, table: &str, column: &str, old: &TypedValue) -> Option<&MappedId> {
         self.entries
             .get(&IdMapKey {
@@ -215,7 +216,7 @@ impl IdMap {
             .map(|e| &e.mapped)
     }
 
-    /// 占位符 → 键(语句渲染时把 NewKey 占位与映射账本对上;Apply 期回填用)。
+    /// Placeholder → key (statement rendering aligns NewKey placeholders with the mapping ledger; used for Apply backfill).
     pub fn key_for_placeholder(&self, placeholder: u64) -> Option<&IdMapKey> {
         self.entries
             .values()
@@ -223,7 +224,7 @@ impl IdMap {
             .map(|e| &e.key)
     }
 
-    /// 按类别计数(预演摘要面)。
+    /// Counts by category (rehearsal summary face).
     pub fn counts_by_category(&self) -> BTreeMap<IdCategory, usize> {
         let mut out = BTreeMap::new();
         for entry in self.entries.values() {
@@ -232,7 +233,7 @@ impl IdMap {
         out
     }
 
-    /// 全部登记(确定性序,审计/测试断言面)。
+    /// All registrations (deterministic order, audit/test assertion face).
     pub fn entries(&self) -> impl Iterator<Item = &IdMapEntry> {
         self.entries.values()
     }
@@ -260,7 +261,7 @@ mod tests {
 
     #[test]
     fn keys_are_typed_per_table_and_column() {
-        // §6.3:不同表/列的同值旧键互不串改。
+        // §6.3: same-valued old keys in different tables/columns never cross-contaminate.
         let mut map = IdMap::new();
         map.allocate(key("tbl_Avatar", "id", 7), IdCategory::RootKey);
         map.preserve(key("tbl_Account", "id", 7), IdCategory::RootKey);
@@ -321,7 +322,7 @@ mod tests {
     #[test]
     fn missing_key_is_none_not_default() {
         let map = IdMap::new();
-        // 未登记的引用不返回任何映射(调用方须保持原值,而非默认替换)。
+        // An unregistered reference returns no mapping (callers must keep the original value, not replace it by default).
         assert!(map
             .get("tbl_Avatar", "sm_templateId", &TypedValue::BigUInt(42))
             .is_none());
@@ -329,8 +330,8 @@ mod tests {
 
     #[test]
     fn value_rank_and_key_cover_all_value_kinds_deterministically() {
-        // 序投影:Null < 整型族 < 浮点族 < 十进制 < 字节 < 文本 < 时间,
-        // 同族内按载荷序;value_key 是同一投影的扁平形态(可审计字符串)。
+        // Order projection: Null < integer family < float family < decimal < bytes < text < datetime,
+        // ordered by payload within a family; value_key is the flat form of the same projection (auditable string).
         let mut keys: Vec<String> = [
             TypedValue::Null,
             TypedValue::Int(-5),
@@ -351,7 +352,10 @@ mod tests {
         .collect();
         let mut sorted = keys.clone();
         sorted.sort();
-        assert_eq!(keys, sorted, "rank 序与枚举声明序一致");
+        assert_eq!(
+            keys, sorted,
+            "rank order matches the enum declaration order"
+        );
         assert_eq!(keys[0], "0:");
         assert!(keys[1].starts_with("1:-5"));
         assert!(keys[2].starts_with("2:5"));
@@ -363,12 +367,16 @@ mod tests {
         assert_eq!(keys[8], "8:abc");
         assert!(keys[9].starts_with("9:2026-01-01|Some(480)"));
         keys.dedup();
-        assert_eq!(keys.len(), 10, "十种值形态的键互不相同");
+        assert_eq!(
+            keys.len(),
+            10,
+            "the keys of the ten value kinds are all distinct"
+        );
     }
 
     #[test]
     fn id_map_key_orders_by_table_then_column_then_value() {
-        // 全序:表 → 列 → 值秩;partial_cmp 与 cmp 一致(Ord 前置)。
+        // Total order: table → column → value rank; partial_cmp agrees with cmp (Ord precondition).
         let a = IdMapKey {
             table: "tbl_A".into(),
             column: "id".into(),
@@ -384,8 +392,8 @@ mod tests {
             column: "id".into(),
             old: TypedValue::BigUInt(1),
         };
-        assert!(a < b, "同表同列:数值秩 < 文本秩");
-        assert!(b < c, "表名序决定跨表序");
+        assert!(a < b, "same table and column: numeric rank < text rank");
+        assert!(b < c, "table name order decides the cross-table order");
         assert_eq!(a.cmp(&a), std::cmp::Ordering::Equal);
         assert_eq!(a.partial_cmp(&b), Some(a.cmp(&b)));
         assert!(a == a.clone());

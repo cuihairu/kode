@@ -1,14 +1,14 @@
-//! 对拍 golden 语料的根注册(KBUG-ROOT)。
+//! Root registration for comparison golden corpora (KBUG-ROOT).
 //!
-//! 缺陷:golden 生成器曾把全部语料文件统一按 [`RootId::UNROOTED`] 入库,
-//! 四个语料工程(各自是独立 fixture 项目)的同名实体在引擎视图里混成
-//! 一个根,首见借用跨工程串路径。生产语义是每工作区根隔离(VFS-009),
-//! 这里按同口径把 `PARITY_CORPORA` 每个语料工程注册为独立资源根,
-//! 入库/查询键 = 各自工程根。
+//! Defect: the golden generator used to file all corpus files under [`RootId::UNROOTED`] uniformly,
+//! so same-named entities across the four corpus projects (each an independent fixture project) blurred into one root
+//! in the engine view, letting a first-seen hit borrow paths across projects. Production semantics are per-workspace-root isolation (VFS-009),
+//! so here each corpus project in `PARITY_CORPORA` is registered as an independent resource root with the same stance;
+//! the filing/lookup key = each project's own root.
 
 use kode_vfs::store::{DocumentKey, RootRegistry};
 
-/// 注册全部对播音料工程;注册顺序 = [`kode_parser::json::PARITY_CORPORA`] 顺序。
+/// Register all comparison corpus projects; registration order = [`kode_parser::json::PARITY_CORPORA`] order.
 pub(crate) fn corpus_registry() -> RootRegistry {
     let mut registry = RootRegistry::new();
     for corpus in kode_parser::json::PARITY_CORPORA {
@@ -17,7 +17,7 @@ pub(crate) fn corpus_registry() -> RootRegistry {
     registry
 }
 
-/// 语料文件的入库/查询键:根 = 文件所属语料工程(最长前缀归属)。
+/// Filing/lookup key for corpus files: root = the corpus project the file belongs to (longest-prefix ownership).
 pub(crate) fn corpus_key(registry: &RootRegistry, rel_path: &str) -> DocumentKey {
     let uri = kode_vfs::uri::CanonicalUri::from_path(rel_path);
     DocumentKey::new(registry.root_for(&uri), uri)

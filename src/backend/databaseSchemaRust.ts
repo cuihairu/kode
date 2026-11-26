@@ -1,10 +1,15 @@
-// IDE-RUST-008:Rust 核心表/列推导接线面——`$/kode/databaseSchema/build`。
+// IDE-RUST-008: Rust-core table/column derivation wiring surface --
+// `$/kode/databaseSchema/build`.
 //
-// 边界(镜像 IDE-RUST-007「输入收集留 TS、推导归 Rust」):表/列推导归 Rust,
-// 入参是 TS 已收集的属性描述符树(properties)+实体名/def 路径/hasCell/表前缀;
-// 属性收集(走查 def 闭包 + types.xml 别名解析 + 组件模块域,熔合快照版本清单)
-// 仍由 databaseSchemaCore 承担。Rust 不可用(无 gate/调用失败/形状不合规/异常)
-// 返回 null,调用方回落到 TS deriveDatabaseTables。
+// Boundary (mirrors IDE-RUST-007 "input collection stays in TS, derivation
+// belongs to Rust"): table/column derivation belongs to Rust; the inputs are
+// the property descriptor tree already collected by TS (properties) plus the
+// entity name / def file path / hasCell / table prefix. Property collection
+// (walking the def closure + types.xml alias resolution + component module
+// domains, fusing the snapshot version manifest) is still handled by
+// databaseSchemaCore. When Rust is unavailable (no gate / call failure /
+// shape mismatch / exception) this returns null and the caller falls back to
+// the TS deriveDatabaseTables.
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import type {

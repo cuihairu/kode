@@ -1,9 +1,10 @@
-//! flag→domain 对拍 golden 生成器:输出 kode-parser model.rs 的
-//! `normalize_flag_tokens` + `flag_domains` 组合真值表 JSON。
+//! flag -> domain parity golden generator: emits the combined truth table JSON
+//! for `normalize_flag_tokens` + `flag_domains` from kode-parser model.rs.
 //!
-//! golden 由 Rust 产出;TS 侧 `src/generated/flagDomains.ts` 由此派生,
-//! `tests/flagDomainsParity.test.ts` 复算对拍(双向门禁:Rust 测试重生成
-//! 比对 + vitest 复算,同 hover/completion golden 模式)。
+//! The golden is produced by Rust; the TS side `src/generated/flagDomains.ts`
+//! derives from it, and `tests/flagDomainsParity.test.ts` recomputes and
+//! compares (two-way gate: the Rust test regenerates and compares + vitest
+//! recomputes, same pattern as the hover/completion goldens).
 
 fn main() {
     print!("{}", kode_server::dump_flag_domains_golden());

@@ -1,22 +1,29 @@
 /**
- * KODE-MCP-HOST 纯核:内置 MCP 服务器定义装配(2026-11-13 用户令
- * 「内置 mcp,点击开启,默认开启」,推翻 2026-11-10「不托管」口径)。
+ * KODE-MCP-HOST pure core: assembling the built-in MCP server definitions (user order
+ * 2026-11-13 "built-in mcp, enabled by a click, on by default", overturning the 2026-11-10
+ * "not hosted" accounting).
  *
- * 扩展经 VS Code 原生 MCP 扩展 API(vscode.lm.registerMcpServerDefinitionProvider,
- * McpStdioServerDefinition,VS Code ≥1.101)把 kode-mcp 服务器定义**随扩展内建
- * 提供**:装上即在 MCP 服务器列表出现(默认开启),用户在原生 MCP UI 或点击
- * 状态栏项一键启停;运行时 feature-detect,引擎基线 1.82 不动——老 VS Code
- * 无此 API 时回落现状(仅状态栏二进制在位探测)。
+ * The extension uses the VS Code native MCP extension API
+ * (vscode.lm.registerMcpServerDefinitionProvider, McpStdioServerDefinition, VS Code >=1.101)
+ * to **ship the kode-mcp server definitions built into the extension**: once installed they
+ * appear in the MCP server list (on by default), and the user toggles them on/off either in
+ * the native MCP UI or with one click on the status-bar item; the API is feature-detected at
+ * runtime, leaving the 1.82 engine baseline untouched -- an older VS Code without this API
+ * falls back to the status quo (only the status-bar binary presence probe).
  *
- * 纯核只做归约(vscode 面见 src/kodeMcpHost.ts):
- * - enabled=false 或二进制缺失 → 零定义(诚实:不提供跑不起来的服务器);
- * - 每工作区文件夹一服务器:command=kode-mcp 二进制、args=[assets 根]
- *   (kode-mcp CLI 契约:首参=资产根,docs/guide/kode-mcp-enablement.md);
- * - assets 根解析落空 → 该文件夹跳过(不硬造根);
- * - 同名文件夹(不同路径)label 加序号去重,顺序=文件夹序(确定性)。
+ * The pure core only reduces (the vscode face is in src/kodeMcpHost.ts):
+ * - enabled=false or a missing binary -> zero definitions (honest: do not offer a server that
+ *   cannot run);
+ * - one server per workspace folder: command=the kode-mcp binary, args=[the assets root]
+ *   (the kode-mcp CLI contract: the first argument = the asset root,
+ *   docs/guide/kode-mcp-enablement.md);
+ * - an assets-root resolution that comes up empty -> that folder is skipped (never fabricate a
+ *   root);
+ * - folders with the same name (different paths) get a sequence number appended to the label to
+ *   dedupe, in folder order (deterministic).
  */
 
-/** 单个内建 MCP 服务器定义(vscode 面经 McpStdioServerDefinition 构造)。 */
+/** A single built-in MCP server definition (the vscode face constructs it via McpStdioServerDefinition). */
 export interface KodeMcpServerSpec {
   label: string;
   command: string;

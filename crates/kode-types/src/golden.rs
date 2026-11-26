@@ -1,14 +1,17 @@
-//! 对拍 golden 序列化(只写不读;TS 侧 `tests/kodeTypesParity.test.ts` 用现有
-//! defParser/compositionRoots 原语复算,双向门禁与 PR-005/007 同构)。
+//! Parity golden serialization (write-only, never read; the TS side
+//! `tests/kodeTypesParity.test.ts` recomputes with the existing
+//! defParser/compositionRoots primitives — a bidirectional gate isomorphic to
+//! PR-005/007).
 //!
-//! golden 形状(与 dump 逐字段一致):
+//! Golden shape (field-for-field with the dump):
 //! `{"generator","fileCount","typeNodeCount","files":[{"file","kind",
 //!   "decls"|"aliases"|"composition"|"entities"}],
 //!  "graph":{"classifications":[{"name","class"}],
 //!   "aliasChains":[{"name","status","chain"}],
 //!   "inheritanceChains":[{"entity","status","chain"}],
-//!   "cycles":[[...]]}}`。
-//! 任何一侧抽取/求值语义变化都要重生成 golden 并让两侧门禁同时过。
+//!   "cycles":[[...]]}}`.
+//! Any change to extraction/evaluation semantics on either side requires
+//! regenerating the golden and getting both gates through at once.
 
 use std::path::Path;
 
@@ -17,14 +20,15 @@ use kode_parser::model::{parse_alias, parse_def, parse_entities, parse_types};
 
 use crate::graph::{ChainStatus, TypeGraph};
 
-/// golden 文件名(仓库相对)。
+/// Golden file name (repo-relative).
 pub const GOLDEN_REL_PATH: &str = "crates/kode-types/tests/golden/type-parity.json";
 
-/// compositionRoots 的接口标签四种拼写(引擎 EntityDef::loadInterfaces 口径;
-/// 精确匹配,不做规范化)。
+/// The four spellings of the compositionRoots interface tags (engine
+/// EntityDef::loadInterfaces semantics; exact match, no normalization).
 const INTERFACE_TAGS: &[&str] = &["interface", "Interface", "type", "Type"];
 
-/// .def 路径 → 实体名(文件名去 .def;与 kode-index::def_entity_name 同口径)。
+/// .def path -> entity name (file name minus .def; same semantics as
+/// kode-index::def_entity_name).
 fn def_entity_name(path: &str) -> Option<String> {
     path.rsplit('/')
         .next()
@@ -40,7 +44,8 @@ fn status_str(status: ChainStatus) -> &'static str {
     }
 }
 
-/// 语料 → 全量类型图(按排序文件序灌入,节点/边序确定)。
+/// Corpus -> full type graph (ingested in sorted file order, so node/edge
+/// order is deterministic).
 pub fn build_corpus_graph(repo_root: &Path) -> (TypeGraph, usize) {
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let mut graph = TypeGraph::new();
@@ -70,7 +75,8 @@ pub fn build_corpus_graph(repo_root: &Path) -> (TypeGraph, usize) {
     (graph, files.len())
 }
 
-/// 整个语料的类型面 golden JSON(与 TS 复算器逐字段一致)。
+/// Type-face golden JSON of the whole corpus (field-for-field with the TS
+/// recomputation).
 pub fn dump_type_golden(repo_root: &Path) -> String {
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let (graph, file_count) = build_corpus_graph(repo_root);
@@ -96,8 +102,10 @@ pub fn dump_type_golden(repo_root: &Path) -> String {
                 let def = parse_def(text);
                 w.raw(",\"composition\":{\"parent\":");
                 w.opt_str(def.parent.as_deref());
-                // compositionRoots:Interfaces 子元素按四种精确**标签名**拼写过滤
-                // (parser DefFile.interfaces 存的是文本,这里按文档重取标签名)。
+                // compositionRoots:Interfaces child elements filtered by the four
+                // exact **tag-name** spellings (the parser DefFile.interfaces
+                // stores text; here the tag names are re-fetched from the
+                // document).
                 w.raw(",\"interfaces\":[");
                 let mut fi = true;
                 let document = kode_parser::xml::parse(text, true);
@@ -206,7 +214,8 @@ pub fn dump_type_golden(repo_root: &Path) -> String {
         w.raw("}");
     }
 
-    // 图级:分类 + 别名链 + 继承链 + 全图环(均按名称排序,输出确定)。
+    // Graph level: classifications + alias chains + inheritance chains +
+    // whole-graph cycles (all sorted by name, so output is deterministic).
     w.raw("],\"graph\":{\"classifications\":[");
     let mut names = graph.by_name.keys().cloned().collect::<Vec<_>>();
     for e in &graph.registered_entities {

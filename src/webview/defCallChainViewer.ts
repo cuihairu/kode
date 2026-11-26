@@ -1,16 +1,23 @@
 /*
- * Call Chain webview 侧脚本(浏览器面,不进 tsc 主编译):
- * esbuild 以 --bundle 打包为离线单文件 IIFE,产 media/defCallChainViewer.js——
- * 不拆包、无 CDN、无运行时动态加载,离线包即时可用。
+ * Call Chain viewer script on the webview (browser) side, outside the main
+ * tsc compile: esbuild bundles it with --bundle into the offline single-file
+ * IIFE media/defCallChainViewer.js — no code splitting, no CDN, no runtime
+ * dynamic loading, so the offline bundle is immediately usable.
  *
- * mermaid 采用官方小体积发行版 @mermaid-js/tiny(≈全量一半):无 KaTeX/Mindmap/
- * Architecture/ELK/懒加载,flowchart 布局回落 dagre——正是调用链图需要的渲染面。
- * tiny 是纯 IIFE,以普通 <script> 语义加载后赋值 globalThis.mermaid,无 default
- * export——且其内部顶层 var 依赖全局脚本作用域,不能被 esbuild 再包一层 IIFE
- * (实测会 "Cannot read properties of undefined"),故入口不做 import,由构建脚本
- * 把 tiny dist 原样前置于打包产物(与官方 <script> 用法等价,仍单文件离线);
- * 类型沿用全量 mermaid 包的 .d.ts(仅 import type,不进包)。
- * 纯逻辑(tab 解析/回落判定)来自 ../defCallChainViewLogic,与 vitest 同源。
+ * mermaid uses the official small @mermaid-js/tiny distribution (about half
+ * the full build): no KaTeX/Mindmap/Architecture/ELK/lazy loading, and
+ * flowchart layout falls back to dagre — exactly the rendering surface a
+ * call-chain graph needs.
+ * tiny is a plain IIFE: loaded with ordinary <script> semantics it assigns
+ * globalThis.mermaid and has no default export — and its internal top-level
+ * var relies on global script scope, so it must not be wrapped in another
+ * IIFE by esbuild (measured to fail with
+ * "Cannot read properties of undefined"). Hence the entry point does no
+ * import; the build script prepends the tiny dist verbatim to the bundle
+ * (equivalent to the official <script> usage, still one offline file).
+ * Types reuse the full mermaid package .d.ts (import type only, not bundled).
+ * The pure logic (tab parsing / fallback decision) comes from
+ * ../defCallChainViewLogic and is shared with vitest.
  */
 import type mermaidType from 'mermaid';
 import {
@@ -65,7 +72,7 @@ function showNotice(notice: string): void {
 }
 
 function postTab(tab: CallChainTab): void {
-  // acquireVsCodeApi 全生命周期只可调用一次;测试宿主缺失时静默跳过
+  // acquireVsCodeApi may only be called once per lifetime; skip silently when the host is absent (tests)
   if (typeof window.acquireVsCodeApi === 'function') {
     window.acquireVsCodeApi().postMessage({ type: 'callChainTab', tab });
   }
@@ -80,15 +87,17 @@ async function activate(): Promise<void> {
     if (!mermaid) {
       throw new Error('mermaid tiny bundle did not publish globalThis.mermaid');
     }
-    // tiny 构建不含 ELK,布局只有 dagre(默认);显式钉在 dagre 上走经典流程图布局。
-    // 图内若显式请求 elk(如 init 指令),tiny 会静默回落 dagre,不抛错。
+    // The tiny build has no ELK, so the only layout is dagre (the default); pin
+    // it explicitly to get the classic flowchart layout. If a diagram asks for
+    // elk outright (e.g. an init directive), tiny silently falls back to dagre
+    // without throwing.
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark', layout: 'dagre' });
     const { svg } = await mermaid.render('kbengine-call-chain-graph', payload.mermaid);
     if (graphPane) {
       graphPane.innerHTML = svg;
     }
   } catch (reason) {
-    // 渲染失败自动回落 Text,面板头说明原因
+    // On render failure fall back to Text and let the pane header explain why
     const failure = handleCallChainGraphRenderFailure(reason);
     tab = failure.tab;
     showNotice(failure.notice);

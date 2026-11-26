@@ -1,13 +1,15 @@
-// python 方法调用层次解析决策核(RUST-145 批 1)。CallHierarchy
-// incoming/outgoing 的索引查询算法(目标定位→self. 调用点枚举→绑定解析
-// (精确文件+名,同名回退)→去重/进程作用域过滤)与索引首扫/未保存
-// 文档覆盖共用的方法块解析(parsePythonMethodBlocks,自 entityMappingHelpers
-// 迁入)与区块推断(inferMethodSectionFromPythonFile,迁入;语义不变,
-// normalizeLookupPath 即 normalizeFileIdentity 的直通别名,此处直用)。
-// 纯库零 vscode/fs;manager 面(entityMapping getIncoming/OutgoingPython
-// MethodCalls)只做索引获取+取消检查+打开文档清单收集。与 Rust
-// python_method_calls.rs golden 对拍同源(tests/kodePythonMethodCallsParity
-// .test.ts)。
+// Decision core for python method call hierarchy resolution (RUST-145 batch 1).
+// The index query algorithms for CallHierarchy incoming/outgoing (target locating ->
+// self. call-site enumeration -> binding resolution (exact file+name, fallback by same
+// name) -> dedup / process-scope filtering) share with the index first scan / unsaved
+// document override both the method-block parsing (parsePythonMethodBlocks, migrated
+// from entityMappingHelpers) and the section inference (inferMethodSectionFromPythonFile,
+// migrated; semantics unchanged -- normalizeLookupPath is a pass-through alias of
+// normalizeFileIdentity, used directly here).
+// Pure library, zero vscode/fs; the manager face (entityMapping getIncoming/OutgoingPython
+// MethodCalls) only does index fetching + cancellation checks + open-document inventory
+// collection. Golden-parity with Rust python_method_calls.rs from the same source
+// (tests/kodePythonMethodCallsParity.test.ts).
 import { normalizeFileIdentity } from './pathIdentity';
 import type { DefMethodSection } from './defParser';
 
@@ -51,13 +53,14 @@ export interface OpenDocumentTextCore {
 export function inferMethodSectionFromPythonFile(pythonFile: string): DefMethodSection | undefined {
   const normalizedPath = normalizeFileIdentity(pythonFile).toLowerCase();
 
-  // demo 资产目录名(scripts/base|cell|client|bots,官方资产模板形态;引擎
-  // baseapp→scripts/base、cellapp→scripts/cell、bots→scripts/bots 装载,
-  // bots.cpp:211-228)。此前只认 base/cell/client,demo 资产里实有的
-  // scripts/bots 文件全落 undefined——段过滤/作用域推断/调用图分段一并瞎
-  // (2026-11-11 用户报障收编)。bots 的脚本面是 client 面(KB-API-007:
-  // ClientObjectBase 组装)。引擎进程名(baseapp/cellapp)不是目录名,两层
-  // 名不得混称——目录只按资产层认。
+  // demo asset directory names (scripts/base|cell|client|bots, official asset
+  // template shape; the engine loads baseapp->scripts/base, cellapp->scripts/cell,
+  // bots->scripts/bots, bots.cpp:211-228). Previously only base/cell/client were
+  // recognised, so the demo's scripts/bots files all fell to undefined -- section
+  // filtering/scope inference/call-graph segmentation went blind together (the
+  // 2026-11-11 user bug report folded in). bots' script face is the client face
+  // (KB-API-007: ClientObjectBase assembly). Engine process names (baseapp/cellapp)
+  // are not directory names -- directories are recognised by the asset layer only.
   if (normalizedPath.includes('/scripts/bots/') || normalizedPath.includes('/assets/scripts/bots/')
     || normalizedPath.startsWith('bots/') || normalizedPath.includes('/bots/')) {
     return 'ClientMethods';
@@ -144,8 +147,9 @@ function parsePythonSelfCalls(
       calls.push({
         methodName: match[1],
         line: startLine + index,
-        // match[0] 恒以 'self.' 开头,名字紧跟前缀(批86 M7 同类:indexOf(name)
-        // 在 name 为 'self' 子串时命中前缀内部,self.e/self.self 列错位)
+        // match[0] always starts with 'self.' and the name follows the prefix directly
+        // (batch 86 M7 family: indexOf(name) hits inside the prefix when name is a 'self'
+        // substring, misplacing the column for self.e/self.self)
         character: match.index + 'self.'.length,
         filePath: pythonFile
       });
@@ -156,10 +160,12 @@ function parsePythonSelfCalls(
 }
 
 /**
- * outgoing:目标方法定位(路径身份归一)→ 逐 self. 调用点绑定解析——
- * 精确(文件+名)优先,同文件无此名回退同名任意文件(现状口径:跨文件
- * 同名是弱信号),dedup 键=归一路径:名:行:列。返回保留 resolved 原始
- * 路径(非归一形)。纯函数,取消检查归 manager 包装面。
+ * outgoing: locate the target method (path identity normalised) -> resolve the binding
+ * of each self. call site -- exact (file+name) first, and when that file has no such
+ * name fall back to any file with the same name (current stance: the same name across
+ * files is a weak signal); the dedup key = normalised path:name:line:column. The return
+ * keeps resolved's original path (not the normalised form). Pure function; cancellation
+ * checks belong to the manager wrapper face.
  */
 export function resolveOutgoingPythonMethodCalls(
   methods: IndexedPythonMethodLocationCore[],
@@ -206,17 +212,22 @@ export function resolveOutgoingPythonMethodCalls(
 }
 
 /**
- * incoming:调用方全量扫描。2026-11-05 用户反馈(def 方法 Shift+F12):
- * 本地调用按方法自身区块/进程作用域收录——baseapp 的 self.x() 不计入
- * cellapp 同名方法引用。KBEngine def 方法不可跨进程,本进程 self.x() 是
- * 本地调用,跨进程是 self.cell/base/client.x()(RPC,另走
- * getIncomingPythonReceiverCalls)。目标区块由实现文件路径推断;调用方区块
- * 已知且不同 → 跨进程伪引用,跳过。调用方区块未知(common/ 等共享脚本,
- * 可被目标进程导入)→ 保守保留;目标区块未知 → 全保留(现状行为)。
- * IDE-NAV-004:未保存文档跟随——openTexts(在位打开文档缓冲区当前版)
- * 覆盖该文件的索引条目后再扫(与索引首扫同一纯函数);仅覆盖已入索引的
- * 文件(未入索引的打开文件不整体增扫,现状口径)。纯函数,openTexts
- * 清单收集与取消检查归 manager 包装面。
+ * incoming: a full scan of callers. 2026-11-05 user feedback (def method Shift+F12):
+ * local calls are collected by the method's own section/process scope -- a baseapp
+ * self.x() does not count as a reference to the same-named cellapp method. KBEngine def
+ * methods cannot cross processes: this process's self.x() is a local call, and a
+ * cross-process call is self.cell/base/client.x() (an RPC, handled separately via
+ * getIncomingPythonReceiverCalls). The target section is inferred from the implementing
+ * file path; a caller section that is known and different -> a cross-process phantom
+ * reference, skipped. An unknown caller section (shared scripts under common/ etc.,
+ * which the target process may import) -> conservatively kept; an unknown target
+ * section -> keep everything (current behaviour).
+ * IDE-NAV-004: follow unsaved documents -- openTexts (the current in-place versions of
+ * the opened document buffers) override that file's index entries before the scan (the
+ * same pure function as the index first scan); only already-indexed files are overridden
+ * (an opened file outside the index is not scanned wholesale, current stance). Pure
+ * function; collecting the openTexts inventory and the cancellation checks belong to the
+ * manager wrapper face.
  */
 export function resolveIncomingPythonMethodCalls(
   methods: IndexedPythonMethodLocationCore[],
@@ -261,8 +272,9 @@ export function resolveIncomingPythonMethodCalls(
         continue;
       }
 
-      // 进程作用域过滤(见上方注释)。调用方文件区块与目标区块都已知且
-      // 不同 → 跨进程伪引用(如 base 调 cell 方法),跳过。
+      // Process-scope filtering (see the note above). When both the caller file's section
+      // and the target section are known and differ -> a cross-process phantom
+      // reference (such as base calling a cell method), skipped.
       const callerSection = inferMethodSectionFromPythonFile(method.filePath);
       if (targetSection && callerSection && callerSection !== targetSection) {
         continue;

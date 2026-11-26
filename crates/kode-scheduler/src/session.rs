@@ -1,22 +1,26 @@
-//! CORE-004 workspace session(基础版):单实例会话 = **唯一根注册表** +
-//! **受控共享缓存扇出**。
+//! CORE-004 workspace session (baseline): a single-instance session = **single root registry** +
+//! **controlled shared-cache fan-out**.
 //!
-//! - **单实例**:全部 `RootId` 只能经本会话的根注册表发出(0 恒为
-//!   [`RootId::UNROOTED`],永不分配)——结构上不存在第二个发号器,多根会话
-//!   仍是一个会话。进程级单例硬闸不做:那会破坏嵌入方组合与测试,单实例
-//!   由装配面(server 持有唯一 session)保证。
-//! - **根 id 化身隔离**:`remove_root` 走 [`RootRegistry::unregister`],id
-//!   永不复用;同一路径撤销后重新注册必得新 id,旧化身的缓存条目绝不可能
-//!   被当成新化身的有效身份(撤销时同步扇出清空,双重保证)。
-//! - **受控共享缓存**:共享缓存(索引/文档仓库/解析注册表)各持根级失效
-//!   入口,本会话把它们登记为 [`RootInvalidationSink`],撤根时按注册序
-//!   逐一扇出并给回执([`RootRemoval`],ARCH-004:明确告知每个消费面清了
-//!   多少条目);键只能经 [`WorkspaceSession::key_for`] 铸造,根外路径
-//!   拒绝(None),绝不给 UNROOTED 铸键——缓存身份永不脱离已注册根。
+//! - **Single instance**: every `RootId` can only be issued through this session's root
+//!   registry (0 is always [`RootId::UNROOTED`] and never allocated) — structurally there is
+//!   no second issuer, and a multi-root session is still one session. No process-level
+//!   singleton hard gate: that would break embedder composition and tests; single-instance
+//!   status is guaranteed by the assembly surface (the server holds exactly one session).
+//! - **Root id incarnation isolation**: `remove_root` goes through [`RootRegistry::unregister`];
+//!   ids are never reused, so re-registering the same path after removal must yield a new id,
+//!   and cache entries of the old incarnation can never be treated as valid identity of the
+//!   new incarnation (fan-out clears synchronously on removal for double assurance).
+//! - **Controlled shared cache**: shared caches (symbol index / document store / parse
+//!   registry) each expose a root-level invalidation entry; this session registers them as
+//!   [`RootInvalidationSink`] and fans out on root removal in registration order, returning a
+//!   receipt ([`RootRemoval`], ARCH-004: explicitly tell each consumer surface how many entries
+//!   it cleared); keys can only be minted via [`WorkspaceSession::key_for`], out-of-root paths
+//!   are rejected (None), and keys are never minted for UNROOTED — cache identity never leaves
+//!   a registered root.
 //!
-//! `RootInvalidationSink` 内建实现只覆盖本 crate 依赖面([`SymbolIndex`] /
-//! [`DocumentStore`]);解析注册表(PARSE 侧)适配属 server 装配接线,随
-//! provider 单接线,不在本基础版范围。
+//! The built-in `RootInvalidationSink` impls only cover this crate's dependency surfaces
+//! ([`SymbolIndex`] / [`DocumentStore`]); the parse registry (PARSE side) adapter belongs to
+//! server assembly wiring and is wired together with the provider, out of scope here.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,11 +29,13 @@ use kode_index::SymbolIndex;
 use kode_vfs::store::{DocumentKey, DocumentStore, RootId, RootRegistry};
 use kode_vfs::uri::CanonicalUri;
 
-/// 受控共享缓存的根级失效面:撤根时由 session 按注册序扇出。
+/// Root-level invalidation surface of a controlled shared cache: fanned out by the session in
+/// registration order when a root is removed.
 pub trait RootInvalidationSink {
-    /// 清除该根的全部驻留条目,返回清除条目数(回执记账用)。
+    /// Clear every resident entry of that root and return the number cleared (used by the
+    /// receipt ledger).
     fn invalidate_root(&mut self, root: RootId) -> usize;
-    /// 回执里的消费面身份标签。
+    /// Identity label of the consumer surface, used in receipts.
     fn sink_name(&self) -> &'static str;
 }
 
@@ -51,14 +57,15 @@ impl RootInvalidationSink for DocumentStore {
     }
 }
 
-/// 撤根回执(ARCH-004):根 id + 每个消费面清除的条目数(按注册序)。
+/// Root-removal receipt (ARCH-004): the root id + how many entries each consumer surface
+/// cleared (in registration order).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootRemoval {
     pub root: RootId,
     pub invalidated: Vec<(&'static str, usize)>,
 }
 
-/// 单实例 workspace session(见模块文档)。
+/// Single-instance workspace session (see module docs).
 #[derive(Default)]
 pub struct WorkspaceSession {
     registry: RootRegistry,
@@ -67,7 +74,7 @@ pub struct WorkspaceSession {
 
 impl std::fmt::Debug for WorkspaceSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // 不打印 sink(可能巨大),只打印根/消费面计数。
+        // Do not print sinks (may be huge), only root/consumer-surface counts.
         f.debug_struct("WorkspaceSession")
             .field("roots", &self.registry.roots().len())
             .field("sinks", &self.sinks.len())
@@ -80,8 +87,9 @@ impl WorkspaceSession {
         WorkspaceSession::default()
     }
 
-    /// 登记一个共享缓存消费面(撤根扇出按登记序);同一实例可重复登记
-    /// (每次登记都收到扇出)。返回当前消费面数。
+    /// Register a shared-cache consumer surface (root-removal fan-out follows registration
+    /// order); the same instance may be registered repeatedly (each registration receives
+    /// fan-out). Returns the current consumer-surface count.
     pub fn register_sink(&mut self, sink: Rc<RefCell<dyn RootInvalidationSink>>) -> usize {
         self.sinks.push(sink);
         self.sinks.len()
@@ -91,13 +99,14 @@ impl WorkspaceSession {
         self.sinks.len()
     }
 
-    /// 注册根(重复注册同一路径幂等,返回既有 id)。
+    /// Register a root (re-registering the same path is idempotent and returns the existing id).
     pub fn add_root(&mut self, path: &str) -> RootId {
         self.registry.register(path)
     }
 
-    /// 撤销根:注册表除名 + 向全部消费面按登记序扇出根级失效。
-    /// 未知路径返回 None 且不做任何扇出。
+    /// Remove a root: unregister from the registry + fan out root-level invalidation to all
+    /// consumer surfaces in registration order. An unknown path returns None and fans out
+    /// nothing.
     pub fn remove_root(&mut self, path: &str) -> Option<RootRemoval> {
         let root = self.registry.unregister(path)?;
         let mut invalidated = Vec::new();
@@ -113,18 +122,18 @@ impl WorkspaceSession {
         self.registry.roots()
     }
 
-    /// URI 归属(最长前缀根胜出;根外 = [`RootId::UNROOTED`])。
+    /// URI ownership (the longest-prefix root wins; outside any root = [`RootId::UNROOTED`]).
     pub fn root_for(&self, uri: &CanonicalUri) -> RootId {
         self.registry.root_for(uri)
     }
 
-    /// 命中该 URI 的全部根(>1 即根冲突,供冲突诊断)。
+    /// Every root that claims this URI (>1 means a root conflict, for conflict diagnostics).
     pub fn overlapping_roots(&self, uri: &CanonicalUri) -> Vec<RootId> {
         self.registry.overlapping_roots(uri)
     }
 
-    /// 受控铸键入口:根外路径拒绝(None),绝不给 UNROOTED 铸键——
-    /// 共享缓存条目身份永不脱离已注册根。
+    /// Controlled key-minting entry: out-of-root paths are rejected (None), and keys are
+    /// never minted for UNROOTED — shared-cache entry identity never leaves a registered root.
     pub fn key_for(&self, uri: &CanonicalUri) -> Option<DocumentKey> {
         let root = self.registry.root_for(uri);
         if root == RootId::UNROOTED {
@@ -141,7 +150,8 @@ mod tests {
     use kode_index::SymbolKind;
     use std::cell::RefCell;
 
-    /// 记录扇出调用的假 sink(名可定制,供注册序断言)。
+    /// A fake sink that records fan-out calls (its name is customizable, for registration-order
+    /// assertions).
     struct NamedLog {
         name: &'static str,
         calls: Vec<u32>,
@@ -199,7 +209,7 @@ mod tests {
         );
         assert_eq!(first.borrow().calls, vec![root.0]);
         assert_eq!(second.borrow().calls, vec![root.0]);
-        // 注册表已除名:同路径再次撤销 = None。
+        // The registry no longer holds it: removing the same path again = None.
         assert!(session.remove_root("/w/proj").is_none());
     }
 
@@ -253,7 +263,8 @@ mod tests {
         let mut session = WorkspaceSession::new();
         let a = session.add_root("/w/alpha");
         let b = session.add_root("/w/beta");
-        // 同名实体各根一份:共享缓存里的真隔离考场(实体名取文件 stem)。
+        // Same-named entity, one copy per root: the real isolation proving ground inside a
+        // shared cache (the entity name is taken from the file stem).
         let text = "<root>\n</root>";
         let index = Rc::new(RefCell::new(SymbolIndex::new()));
         index.borrow_mut().update(
@@ -274,7 +285,7 @@ mod tests {
         session.register_sink(index.clone());
         let removal = session.remove_root("/w/alpha").expect("撤 alpha");
         assert_eq!(removal.invalidated, vec![("symbol-index", 1)]);
-        // beta 的同名实体必须幸存:扇出只清被撤根。
+        // beta's same-named entity must survive: fan-out only clears the removed root.
         let survivors = index.borrow().lookup_kind("Monster", SymbolKind::Entity);
         assert_eq!(survivors.len(), 1, "只剩 beta 一份");
         assert_eq!(survivors[0].file.root, b, "幸存者必须属于 beta 根");
@@ -291,7 +302,8 @@ mod tests {
         assert!(!dbg.contains("sink-a"), "sink 内部不得泄漏进 Debug");
     }
 
-    /// DocumentStore 内建消费面:回执名 + 只清被撤根的驻留文档。
+    /// DocumentStore built-in consumer surface: receipt name + clears only the resident
+    /// documents of the removed root.
     #[test]
     fn document_store_sink_receipt_and_root_isolation() {
         let mut session = WorkspaceSession::new();
@@ -317,7 +329,8 @@ mod tests {
         session.register_sink(store.clone());
         let removal = session.remove_root("/w/alpha").expect("撤 alpha");
         assert_eq!(removal.invalidated, vec![("document-store", 1)]);
-        // beta 文档必须幸存:扇出只清被撤根的驻留条目。
+        // The beta document must survive: fan-out only clears the removed root's resident
+        // entries.
         assert!(store
             .borrow()
             .is_open(&DocumentKey::new(b, uri("/w/beta/Monster.def"))));
@@ -326,7 +339,8 @@ mod tests {
             .is_open(&DocumentKey::new(a, uri("/w/alpha/Avatar.def"))));
     }
 
-    /// 查询面三件:sink_count / roots 列表 / overlapping_roots(嵌套根冲突)。
+    /// Three query-side pieces: sink_count / the roots listing / overlapping_roots
+    /// (nested-root conflict).
     #[test]
     fn sink_count_roots_listing_and_overlapping_roots() {
         let mut session = WorkspaceSession::new();
@@ -342,11 +356,11 @@ mod tests {
         assert!(listing.contains(&(a, "/w/alpha".to_string())));
         assert!(listing.contains(&(nested, "/w/alpha/nested".to_string())));
 
-        // 嵌套根同时命中同一 URI:>1 即根冲突面。
+        // Nested roots both claim the same URI: >1 means the root-conflict surface.
         let hits = session.overlapping_roots(&uri("/w/alpha/nested/Monster.def"));
         assert_eq!(hits.len(), 2, "内外两层根都命中");
         assert!(hits.contains(&a) && hits.contains(&nested));
-        // 根外路径无命中。
+        // Out-of-root paths get no hits.
         assert!(session
             .overlapping_roots(&uri("/elsewhere/x.def"))
             .is_empty());

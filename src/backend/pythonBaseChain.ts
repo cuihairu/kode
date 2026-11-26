@@ -1,41 +1,55 @@
 /**
- * Python 父类链直读解析(2026-11-24 用户报「提了无数次」的病灶):
- * def 中定义的方法,对应 py 实体类继承的父类已实现,def-method-missing-in-python
- * 仍报警、F12 也跳不过去——此前的判定面(属主注册面/全项目唯一名)都不看真实
- * 继承:方法名多处出现时全项目唯一名臂静默,约定链只读属主文件。
+ * Direct-read Python parent-class chain resolution (the long-reported
+ * 2026-11-24 complaint the user filed "countless times"):
+ * a method defined in the def that a parent class inherited by the py entity
+ * class already implements still raises def-method-missing-in-python, and F12
+ * will not jump either -- the earlier decision faces (owner registration face /
+ * project-wide unique name) never look at real inheritance: when the method
+ * name appears in several places the project-wide unique name arm goes silent,
+ * and the convention chain only reads the owner file.
  *
- * 本模块做**同步、缓冲区感知**的父类链遍历:从(文件, 类名)出发,沿 class 的
- * bases 走——同文件同名类直连;跨文件走 import 解析(候选路径与索引 staging
- * 同一口径 pythonImportModuleCandidates,单一事实源);解析不到的基类(引擎
- * 内建 KBEngine.Entity 等)如实跳过,不贡献方法。
+ * This module does a **synchronous, buffer-aware** parent-class chain walk:
+ * starting from (file, class name) it follows the bases of the class --
+ * a same-named class in the same file is linked directly, cross-file goes
+ * through import resolution (candidate paths use the same
+ * pythonImportModuleCandidates criterion as the index staging, one single
+ * source of truth); a base that cannot be resolved (engine builtins such as
+ * KBEngine.Entity) is skipped honestly and contributes no methods.
  *
- * 消费面(三处同链):defPythonParity 采集(祖先方法并入已实现集,Rust 规则
- * 集合差语义不变)/entityMapping 缺口判定(祖先链有=不算缺)/def→python 跳转
- * mro 臂(落点=最近声明祖先,LUT 与慢链同序)。
+ * Consumer faces (three places, one chain): defPythonParity collection (ancestor
+ * methods are folded into the implemented set, the Rust rule's set-difference
+ * semantics stay unchanged) / entityMapping gap decision (present in the
+ * ancestor chain = not a gap) / the mro arm of the def -> python jump
+ * (landing point = the nearest declaring ancestor, the LUT keeps the slow
+ * chain's order).
  *
- * 边界:链序是「声明序 BFS(父先于祖)」,不是 C3 线性化——存在性判定与最近
- * 祖先落点两用途下与 C3 至多差在菱形继承多实现的选择,KBEngine 实体继承
- * 实际为单链;全量 C3 在 pythonClassIndex(需索引),本模块刻意零索引依赖。
+ * Boundary: the chain order is a declaration-order BFS (parents before
+ * grandparents), not C3 linearization -- for the two uses of an existence
+ * decision and a nearest-ancestor landing point it differs from C3 at most in
+ * which of several implementations a diamond inheritance picks, and KBEngine
+ * entity inheritance is a single chain in practice; full C3 lives in
+ * pythonClassIndex (which needs the index), while this module deliberately has
+ * zero index dependencies.
  */
 
 import { parsePythonFile, type ParsedPythonFile, type PythonClassDef } from './pythonParser';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { pythonImportModuleCandidates } from './pythonClassIndex';
 
-/** 链上一个类环节:文件 + 类 + 该类方法表(parsePythonFile 的 Map 原样) */
+/** One class link in the chain: file + class + the method table of that class (the parsePythonFile Map as-is) */
 export interface PythonBaseChainLink {
   filePath: string;
   className: string;
   cls: PythonClassDef;
 }
 
-/** 遍历护栏:类数/读盘文件数上限(真实 KBEngine 工程链深个位数,护栏只防环与病态布局) */
+/** Walk guardrails: class count / files-read-from-disk caps (a real KBEngine project's chain depth is single digits; the guardrails only guard against cycles and pathological layouts) */
 export const PYTHON_BASE_CHAIN_MAX_CLASSES = 64;
 export const PYTHON_BASE_CHAIN_MAX_FILES = 32;
 
 const fileKey = (filePath: string): string => filePath.replace(/\\/g, '/');
 
-/** 在已解析文件里找类:顶层名优先,退而求 qualifiedName(嵌套类外层.内层) */
+/** Find a class inside an already parsed file: the top-level name first, then falling back to qualifiedName (outer.inner for nested classes) */
 function findClass(parsed: ParsedPythonFile, className: string): PythonClassDef | undefined {
   return (
     parsed.classes.find(item => item.name === className) ??
@@ -44,13 +58,16 @@ function findClass(parsed: ParsedPythonFile, className: string): PythonClassDef 
 }
 
 interface ChainWalkOptions {
-  /** 是否把起点自身作为链首(缺省 true:调用方要「自身 ∪ 祖先」的并集语义) */
+  /** Whether to include the starting point itself as the first link (defaults to true: the caller wants the "self ∪ ancestors" union semantics) */
   includeSelf?: boolean;
 }
 
 /**
- * 沿父类链遍历(声明序 BFS,近亲在前)。读不到/解析不了/类不存在的环节
- * 整枝跳过(零猜测);护栏(类数/文件数)触顶即停止扩展,已收环节如实返回。
+ * Walk along the parent-class chain (declaration-order BFS, closer relatives
+ * first). A link that cannot be read / parsed / does not exist has its whole
+ * branch skipped (zero guessing); hitting a guardrail (class count / file
+ * count) stops the expansion and the links collected so far are returned as
+ * they are.
  */
 export function walkPythonBaseChain(
   pythonFile: string,
@@ -94,9 +111,12 @@ export function walkPythonBaseChain(
     if (!cls) {
       continue;
     }
-    // includeSelf 只控制「自身是否入链」,不控制遍历起点:用独立的已处理标记,
-    // 否则 includeSelf:false 时首个节点(links 仍为空)也判 isFirst → 首个祖先
-    // 一并被跳过,整链返空(2026-11-24 单测逮住:hasMethod…InBaseChain 恒 false)
+    // includeSelf only controls "whether self enters the chain", not the
+    // traversal start point: an independent processed flag is used, otherwise
+    // with includeSelf:false the first node (links still empty) also tests
+    // isFirst -> the first ancestor is skipped along with it and the whole chain
+    // comes back empty (caught by the 2026-11-24 unit test:
+    // hasMethod…InBaseChain was always false)
     const isFirst = !processed;
     processed = true;
     if (!isFirst || includeSelf) {
@@ -109,22 +129,22 @@ export function walkPythonBaseChain(
       if (!base || base === node.className) {
         continue;
       }
-      // 同文件同名类直连(嵌套/别名父类常见形)
+      // A same-named class in the same file is linked directly (a common shape for nested/aliased parents)
       if (parsed!.classes.some(item => item.name === base && item !== cls)) {
         queue.push({ file: node.file, className: base });
         continue;
       }
-      // 跨文件:import 绑定解析(from X import Y [as Z] → 绑定键 Z,原符号 Y)
+      // Cross-file: import binding resolution (from X import Y [as Z] -> binding key Z, original symbol Y)
       const binding = parsed!.imports?.get(base);
       if (!binding) {
-        continue; // 引擎内建/第三方:解析不到,如实不贡献方法
+        continue; // engine builtin / third party: unresolvable, so it honestly contributes no methods
       }
       const targetClassName = binding.symbol ?? base;
       for (const candidate of pythonImportModuleCandidates(node.file, binding.module)) {
         const candidateParsed = parseAt(candidate);
         if (candidateParsed && findClass(candidateParsed, targetClassName)) {
           queue.push({ file: candidate, className: targetClassName });
-          break; // Python import 取首个命中模块,不串目录
+          break; // a Python import takes the first matching module; do not walk further directories
         }
       }
     }
@@ -132,7 +152,7 @@ export function walkPythonBaseChain(
   return links;
 }
 
-/** 祖先链(不含自身)上是否已实现该方法——缺口判定用(自身面调用方已查过) */
+/** Whether the method is already implemented somewhere on the ancestor chain (excluding self) -- for the gap decision (the caller has already checked the self face) */
 export function hasMethodImplementationInBaseChain(
   pythonFile: string,
   className: string,
@@ -143,19 +163,25 @@ export function hasMethodImplementationInBaseChain(
   );
 }
 
-/** 缺口判定的诚实三态结果(C-19-MRO):
- * resolved=false=链解析不出(消费方照报现状,不注明不编造);
- * resolved=true 且 implemented=true=链上有实现(消 gap);
- * resolved=true 且 implemented=false=全链查过无实现(classNames 供「已查链」注明)。 */
+/** Honest three-state result of the gap decision (C-19-MRO):
+ * resolved=false = the chain could not be resolved (the consumer reports the
+ * status quo, annotating nothing and inventing nothing);
+ * resolved=true and implemented=true = the chain has an implementation
+ * (closes the gap);
+ * resolved=true and implemented=false = the whole chain was searched with no
+ * implementation (classNames back the "chain checked" annotation). */
 export interface PythonBaseChainMethodOutcome {
   readonly resolved: boolean;
-  /** 链类名(最近优先,含属主自身;resolved=true 时给) */
+  /** Chain class names (nearest first, including the owner itself; given when resolved=true) */
   readonly classNames: string[];
   readonly implemented: boolean;
 }
 
-/** 全链(含自身)一次走链同时给判存与类名——缺口判定臂用(收编 lane C-19-MRO
- * 注明残差,机制与 parity/跳转/悬停同源)。链空(属主脚本解析不出)=resolved=false。 */
+/** One walk over the full chain (including self) yields both the existence
+ * decision and the class names -- used by the gap-decision arm (absorbing the
+ * lane C-19-MRO annotation residual; the mechanism shares the same source as
+ * parity/jump/hover). An empty chain (the owner script does not parse) =
+ * resolved=false. */
 export function resolvePythonBaseChainMethodOutcome(
   pythonFile: string,
   className: string,
@@ -172,7 +198,7 @@ export function resolvePythonBaseChainMethodOutcome(
   };
 }
 
-/** 链上声明该方法的环节(自身在前,近祖先后):跳转落点用,最近声明者优先 */
+/** The links on the chain that declare the method (self first, then nearer grandparents): for the jump landing point, the nearest declaration wins */
 export function findMethodLocationsInPythonBaseChain(
   pythonFile: string,
   className: string,
@@ -188,7 +214,7 @@ export function findMethodLocationsInPythonBaseChain(
   return out;
 }
 
-/** 链上方法名并集(含自身):parity 采集的已实现集用 */
+/** The union of method names on the chain (including self): for the parity collection's implemented set */
 export function collectPythonBaseChainMethodNames(pythonFile: string, className: string): Set<string> {
   const names = new Set<string>();
   for (const link of walkPythonBaseChain(pythonFile, className)) {
@@ -199,5 +225,5 @@ export function collectPythonBaseChainMethodNames(pythonFile: string, className:
   return names;
 }
 
-/** 测试口径:规范化路径(与内部 fileKey 同式) */
+/** Test-facing criterion: normalized path (the same form as the internal fileKey) */
 export const normalizeChainFilePath = fileKey;

@@ -1,42 +1,45 @@
-//! 解码记录 + 异常记录:解局面(PA-003 session)→ 报告面的唯一数据形状。
+//! Decoded records + anomaly records: the decode face's (PA-003 session) single data shape for the
+//! report face.
 //!
-//! 记录 JSON 同时是 PA-005 分析引擎(`kode-kbengine-analyzer`)的输入形状:
-//! `capture analyze --records <file>` 落盘、`analyze --records <file>` 回读。
-//! 异常语义对齐引擎红线:失败不 panic,逐条带偏移落盘继续。
+//! The records JSON are also the input shape for the PA-005 analysis engine
+//! (`kode-kbengine-analyzer`): `capture analyze --records <file>` writes them out and
+//! `analyze --records <file>` reads them back. The anomaly semantics align with the engine's red
+//! lines: no panic on failure, keep going with each anomaly persisted with its offset.
 
 use kode_kbengine_protocol as kbp;
 use kode_kbengine_schema::messages::MessageTable;
 use serde::Serialize;
 
-/// 一条解码完成的消息记录。
+/// One fully decoded message record.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Record {
-    /// Flow:`loginapp` / `baseapp`(PA-001 §6:两进程表独立)。
+    /// Flow: `loginapp` / `baseapp` (PA-001 §6: the two processes' tables are independent).
     pub flow: String,
-    /// `c2s` / `s2c`。
+    /// `c2s` / `s2c`.
     pub direction: String,
     pub id: u16,
-    /// 未装表 id → None(异常面,分析端按 unknown 计)。
+    /// An id not in the table -> None (the anomaly face; the analysis side counts it as unknown).
     pub name: Option<String>,
     pub payload_len: usize,
-    /// 该方向流内的帧起点偏移。
+    /// Offset of the frame start within this direction's stream.
     pub stream_offset: usize,
-    /// 秒级 Unix 时间戳(pcap 输入层带;raw 流为 null)。
+    /// Second-granularity Unix timestamp (carried by the pcap input layer; null for raw flows).
     pub timestamp: Option<f64>,
-    /// 实体事件/远程调用首参(INT32 entityID)。
+    /// First parameter of an entity event / remote call (INT32 entityID).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<i32>,
-    /// 远程调用的方法 id(线上 UINT16;静态表形状命中时提取)。
+    /// Method id of the remote call (a UINT16 on the wire; extracted when the static-table shape
+    /// hits).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method_id: Option<u16>,
-    /// 按消息签名解码的参数值(JSON 形状;见 [`value_to_json`])。
+    /// Argument values decoded per the message signature (JSON shape; see [`value_to_json`]).
     pub args: serde_json::Value,
 }
 
-/// 一条异常(解码失败/输入面问题;不中断继续)。
+/// One anomaly (decode failure / input-face problem; processing continues without aborting).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Anomaly {
-    /// snake_case 类别(unknown_message_id / memory_limit / ... / unmapped_stream)。
+    /// snake_case category (unknown_message_id / memory_limit / ... / unmapped_stream).
     pub kind: String,
     pub flow: String,
     pub offset: usize,
@@ -53,7 +56,7 @@ fn kind_name(kind: kbp::DecodeErrorKind) -> &'static str {
     }
 }
 
-/// 协议值 → JSON(Bytes/Raw 走 hex 保留体,不丢字节)。
+/// Protocol value -> JSON (Bytes/Raw carry a hex preservation body, so no byte is lost).
 pub fn value_to_json(v: &kbp::codec::Value) -> serde_json::Value {
     use kbp::codec::Value;
     match v {
@@ -85,7 +88,8 @@ pub fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-/// hex 文本 → 字节(容忍 `:` 分隔与空白;tshark/人工粘贴两用)。
+/// Hex text -> bytes (tolerates `:` separators and whitespace; serves both tshark output and
+/// hand-pasted text).
 pub fn hex_decode(text: &str) -> Result<Vec<u8>, String> {
     let cleaned: String = text
         .chars()
@@ -109,15 +113,16 @@ pub fn hex_decode(text: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// 远程调用消息面(PA-001 §7:base → `Baseapp::onRemoteMethodCall`,cell →
-/// `Baseapp::onRemoteCallCellMethodFromClient`,下行为 `Client::onRemoteMethodCall` /
-/// `Base::onRemoteMethodCall` / `Entity::onRemoteMethodCall`)。
+/// Remote-call message face (PA-001 §7: base -> `Baseapp::onRemoteMethodCall`, cell ->
+/// `Baseapp::onRemoteCallCellMethodFromClient`; downlink is `Client::onRemoteMethodCall` /
+/// `Base::onRemoteMethodCall` / `Entity::onRemoteMethodCall`).
 fn is_remote_call(name: &str) -> bool {
     name.ends_with("onRemoteMethodCall") || name.ends_with("onRemoteCallCellMethodFromClient")
 }
 
-/// 记录增强:实体事件/远程调用首参(INT32 entityID;onCreatedProxies 的
-/// UINT64 guid 在前,按「首个 Int」取,不依赖参数序)。
+/// Record enrichment: the first parameter of an entity event / remote call (INT32 entityID; in
+/// onCreatedProxies the UINT64 guid comes first, so take "the first Int" rather than relying on
+/// argument order).
 fn extract_entity_fields(values: &[kbp::codec::Value], name: &str) -> (Option<i32>, Option<u16>) {
     let mut entity_id = None;
     let mut method_id = None;
@@ -128,7 +133,7 @@ fn extract_entity_fields(values: &[kbp::codec::Value], name: &str) -> (Option<i3
                 if entity_id.is_none() {
                     entity_id = Some(*i as i32);
                 } else if rpc && method_id.is_none() {
-                    // INT32 entityID 之后罕见第二个 Int;不猜,跳过。
+                    // A second Int after the INT32 entityID is rare; do not guess, skip it.
                 }
             }
             kbp::codec::Value::UInt(u) if rpc && method_id.is_none() && *u <= u16::MAX as u64 => {
@@ -140,8 +145,8 @@ fn extract_entity_fields(values: &[kbp::codec::Value], name: &str) -> (Option<i3
     (entity_id, method_id)
 }
 
-/// 解码驱动:session(PA-003)+ 记录/异常落袋;失败复位该 Flow 后继续
-/// (引擎语义:错误通道 condemn,不越界不 panic)。
+/// Decode driver: session (PA-003) plus record/anomaly collection; on failure the Flow is reset and
+/// decoding continues (engine semantics: the erroring channel is condemned, no overruns, no panic).
 #[derive(Debug)]
 pub struct DecodeDriver {
     session: kbp::Session,
@@ -160,7 +165,7 @@ impl DecodeDriver {
         }
     }
 
-    /// 喂入一个方向的一段 TCP 流字节,吐出/累积记录。
+    /// Feed a stretch of TCP flow bytes for one direction; emits/accumulates records.
     pub fn feed(
         &mut self,
         role: kbp::ComponentRole,
@@ -200,8 +205,8 @@ impl DecodeDriver {
                     offset: e.offset,
                     message: e.message,
                 });
-                // 引擎语义:错误后通道 condemned → 该 Flow 整体重置(两个
-                // 方向的组帧器),后续字节按新流解析。
+                // Engine semantics: after the error the channel is condemned -> the whole Flow is
+                // reset (both directions' frame builders); later bytes are parsed as a fresh stream.
                 self.session.reset_flow(role, &self.statics);
             }
         }
@@ -223,8 +228,8 @@ pub fn role_of(flow: &str) -> Option<kbp::ComponentRole> {
     }
 }
 
-/// 静态消息表来源:`--defaults <xml>`;缺省 = 空表(全部 id 走未知异常面,
-/// 不编造默认表)。
+/// Source of the static message table: `--defaults <xml>`; default = empty table (every id then goes
+/// to the unknown anomaly face; no default table is fabricated).
 pub fn message_table(defaults: Option<&str>) -> Result<MessageTable, String> {
     match defaults {
         Some(path) => {
@@ -243,7 +248,8 @@ mod tests {
     use kbp::codec::Value;
     use kbp::{ComponentRole, Direction};
 
-    /// 仓库自带的引擎缺省消息表(与 CLI 验收同一份)。
+    /// The engine's default message table shipped in the repository (the same copy the CLI
+    /// acceptance uses).
     fn defaults_xml_path() -> String {
         format!(
             "{}/tests/fixtures/messages_fixed_defaults.xml",
@@ -251,7 +257,7 @@ mod tests {
         )
     }
 
-    /// 变长帧线上形态:`u16 id (LE) + u16 载荷长 (LE) + 载荷`。
+    /// Variable-length frame wire form: `u16 id (LE) + u16 payload length (LE) + payload`.
     fn var_frame(id: u16, payload: &[u8]) -> Vec<u8> {
         let mut v = Vec::with_capacity(4 + payload.len());
         v.extend_from_slice(&id.to_le_bytes());
@@ -262,7 +268,8 @@ mod tests {
 
     #[test]
     fn value_to_json_preserves_every_value_shape() {
-        // Bytes/Raw 走 hex 保留体,不丢字节;其余按 JSON 原生形状。
+        // Bytes/Raw carry a hex preservation body so no byte is lost; everything else keeps its
+        // native JSON shape.
         assert_eq!(value_to_json(&Value::Bool(true)), serde_json::json!(true));
         assert_eq!(value_to_json(&Value::Int(-5)), serde_json::json!(-5));
         assert_eq!(value_to_json(&Value::UInt(7)), serde_json::json!(7));
@@ -294,7 +301,7 @@ mod tests {
             value_to_json(&raw),
             serde_json::json!({ "$raw_hex": "dead", "$reason": "unresolved type" })
         );
-        // 嵌套容器同样保持形状。
+        // Nested containers keep their shape the same way.
         assert_eq!(
             value_to_json(&Value::Dict(vec![(
                 "pos".into(),
@@ -312,14 +319,14 @@ mod tests {
     fn hex_codec_round_trips_and_rejects_bad_input() {
         assert_eq!(hex_encode(&[0xde, 0xad]), "dead");
         assert_eq!(hex_encode(&[]), "");
-        // 冒号分隔(tshark 形态)/空白/0x 前缀都容忍。
+        // Colon-separated (the tshark form), whitespace, and a 0x prefix are all tolerated.
         assert_eq!(hex_decode("de:ad").unwrap(), vec![0xde, 0xad]);
         assert_eq!(hex_decode("de ad\n").unwrap(), vec![0xde, 0xad]);
         assert_eq!(hex_decode("0xdead").unwrap(), vec![0xde, 0xad]);
         assert_eq!(hex_decode("").unwrap(), Vec::<u8>::new());
-        // 奇数长度:明确报错,不猜。
+        // Odd length: report clearly, no guessing.
         assert!(hex_decode("abc").unwrap_err().contains("odd hex length"));
-        // 非 hex 字符:报错并带位置。
+        // Non-hex character: report with the position.
         let err = hex_decode("zz").unwrap_err();
         assert!(err.contains("bad hex at"), "{err}");
         let err2 = hex_decode("d0z0").unwrap_err();
@@ -352,12 +359,13 @@ mod tests {
     #[test]
     fn message_table_defaults_to_empty_without_xml() {
         let table = message_table(None).unwrap();
-        // 缺省 = 空表:不编造默认表,任何 id 都走未知异常面。
+        // Default = empty table: no fabricated default table, every id goes to the unknown anomaly
+        // face.
         assert!(table.by_id(3).is_none());
-        // 真实缺省 XML:装表后 id 3 = Loginapp::login。
+        // Real default XML: with the table loaded, id 3 = Loginapp::login.
         let loaded = message_table(Some(&defaults_xml_path())).unwrap();
         assert!(loaded.by_id(3).is_some());
-        // 文件不存在:read 失败如实报错,不 panic。
+        // File does not exist: the read failure is reported faithfully, no panic.
         let err = message_table(Some("/nonexistent/messages.xml")).unwrap_err();
         assert!(err.contains("read"), "{err}");
     }
@@ -365,36 +373,38 @@ mod tests {
     #[test]
     fn extract_entity_fields_takes_first_int_as_entity_id() {
         use Value::{Bytes, Int, Str, UInt};
-        // 非 RPC 消息:首个 Int 即 entityID(onCreatedProxies 的 guid 在前,
-        // 按「首个 Int」取,不依赖参数序)。
+        // Non-RPC message: the first Int is the entityID (in onCreatedProxies the guid comes
+        // first, so take "the first Int" rather than relying on argument order).
         let (e, m) = extract_entity_fields(
             &[UInt(12345), Int(99), Str("Avatar".into())],
             "Client::onCreatedProxies",
         );
         assert_eq!((e, m), (Some(99), None));
-        // RPC(下行 Client::onRemoteMethodCall):entityID 之后首个 UInt(≤65535)
-        // 是方法 id。
+        // RPC (downlink Client::onRemoteMethodCall): the first UInt (<= 65535) after
+        // the entityID is the method id.
         let (e, m) = extract_entity_fields(
             &[Int(7), UInt(3), Bytes(vec![1])],
             "Client::onRemoteMethodCall",
         );
         assert_eq!((e, m), (Some(7), Some(3)));
-        // 上行 cell 远程调用:INT32 entityID + 载荷,无方法 id。
+        // Uplink cell remote call: INT32 entityID + payload, no method id.
         let (e, m) = extract_entity_fields(
             &[Int(42), Bytes(vec![9])],
             "Baseapp::onRemoteCallCellMethodFromClient",
         );
         assert_eq!((e, m), (Some(42), None));
-        // RPC 内 entityID 之后罕见第二个 Int:不猜,跳过(方法 id 仍取 UInt)。
+        // A second Int after the entityID inside an RPC is rare: do not guess, skip it
+        // (the method id still comes from the UInt).
         let (e, m) = extract_entity_fields(&[Int(7), Int(8), UInt(3)], "Base::onRemoteMethodCall");
         assert_eq!((e, m), (Some(7), Some(3)));
-        // 无 Int/UInt 的消息:两字段都空。
+        // A message with no Int/UInt: both fields stay empty.
         let (e, m) = extract_entity_fields(&[Str("x".into())], "Client::onLoginFailed");
         assert_eq!((e, m), (None, None));
-        // 非 RPC 的 UInt 不冒充方法 id。
+        // A non-RPC UInt does not masquerade as the method id.
         let (e, m) = extract_entity_fields(&[UInt(16)], "Client::onKicked");
         assert_eq!((e, m), (None, None));
-        // 非 RPC 出现第二个 Int:else-if 条件为假,rpc 臂不参与(仍只取首个)。
+        // A second Int in a non-RPC message: the else-if condition is false, the rpc arm
+        // does not participate (still only the first Int is taken).
         let (e, m) = extract_entity_fields(&[Int(1), Int(2)], "Client::onCreatedProxies");
         assert_eq!((e, m), (Some(1), None));
     }
@@ -403,8 +413,8 @@ mod tests {
     fn driver_decodes_baseapp_remote_call_with_entity_and_method() {
         let table = message_table(Some(&defaults_xml_path())).unwrap();
         let mut driver = DecodeDriver::new(table);
-        // Base::onRemoteMethodCall(id 301,baseapp 流 s2c):INT32 entityID +
-        // UINT16 方法 id + UINT8_ARRAY 载荷。
+        // Base::onRemoteMethodCall (id 301, baseapp flow s2c): INT32 entityID +
+        // UINT16 method id + UINT8_ARRAY payload.
         let mut payload = Vec::new();
         payload.extend_from_slice(&1024i32.to_le_bytes());
         payload.extend_from_slice(&77u16.to_le_bytes());
@@ -425,18 +435,19 @@ mod tests {
         assert_eq!(rec.entity_id, Some(1024));
         assert_eq!(rec.method_id, Some(77));
         assert_eq!(rec.timestamp, Some(1759000000.5));
-        // 首参(INT32 entityID)保留在 args JSON 里。
+        // The first parameter (INT32 entityID) is preserved in the args JSON.
         assert_eq!(rec.args[0], serde_json::json!(1024));
-        // UINT8_ARRAY 以 $hex 保留体出参,不丢字节。
+        // The UINT8_ARRAY leaves via the $hex preservation body, no byte lost.
         assert_eq!(rec.args[2]["$hex"], serde_json::json!("616263"));
     }
 
     #[test]
     fn driver_reports_anomaly_kinds_without_panicking() {
         let table = message_table(Some(&defaults_xml_path())).unwrap();
-        // 截断帧(声明载荷长 > 实际):unexpected_eof 后通道复位,继续可用。
+        // Truncated frame (declared payload length > actual): after unexpected_eof the channel is
+        // reset and stays usable.
         let mut driver = DecodeDriver::new(table.clone());
-        // Base::onRemoteMethodCall 载荷只有 1 字节(INT32 读不满)。
+        // The Base::onRemoteMethodCall payload is only 1 byte (not enough for a full INT32).
         driver.feed(
             ComponentRole::Baseapp,
             Direction::ServerToClient,
@@ -447,7 +458,7 @@ mod tests {
         assert_eq!(driver.anomalies[0].kind, "unexpected_eof");
         assert_eq!(driver.anomalies[0].flow, "baseapp");
 
-        // 未知 id:unknown_message_id(loginapp 流)。
+        // Unknown id: unknown_message_id (loginapp flow).
         let mut driver = DecodeDriver::new(table.clone());
         driver.feed(
             ComponentRole::Loginapp,
@@ -458,8 +469,9 @@ mod tests {
         assert_eq!(driver.anomalies[0].kind, "unknown_message_id");
         assert_eq!(driver.anomalies[0].flow, "loginapp");
 
-        // 字符串按有损语义读(0xff 高位字节截断,不报错),后续参数继续;
-        // 这里喂满 4 参合法载荷确保 login 正常解码,作为异常面的对照。
+        // Strings are read with lossy semantics (0xff high bytes truncated, no error) and later
+        // parameters keep going; here we feed a full legal 4-argument payload so login decodes
+        // normally, as the control case against the anomaly faces.
         let mut driver = DecodeDriver::new(table.clone());
         let mut ok_payload = Vec::new();
         ok_payload.extend_from_slice(b"1\0");
@@ -477,7 +489,8 @@ mod tests {
         assert_eq!(driver.records.len(), 1);
         assert_eq!(driver.records[0].name.as_deref(), Some("Loginapp::login"));
 
-        // 内存上限:变长帧 65535 哨兵 + u32 实长超限 → memory_limit。
+        // Memory limit: variable-length frame with the 65535 sentinel + a u32 real length over the
+        // limit -> memory_limit.
         let mut driver = DecodeDriver::new(table.clone());
         let mut stream = Vec::new();
         stream.extend_from_slice(&301u16.to_le_bytes());
@@ -491,7 +504,7 @@ mod tests {
         );
         assert_eq!(driver.anomalies[0].kind, "memory_limit");
 
-        // 空表(无 --defaults):任何 id 都未知,复位后继续可用。
+        // Empty table (no --defaults): every id is unknown; after reset it stays usable.
         let mut driver = DecodeDriver::new(message_table(None).unwrap());
         driver.feed(
             ComponentRole::Loginapp,

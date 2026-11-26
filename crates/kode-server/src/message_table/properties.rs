@@ -1,4 +1,4 @@
-//! 属性 utype/域位/组件槽模拟(TS addPropertyDescription)。
+//! Property utype/domain-bit/component-slot simulation (TS addPropertyDescription).
 
 use crate::message_table::assembly::{AsmIssue, AsmProperty, AsmType, Assembly};
 use crate::message_table::constants::{
@@ -73,8 +73,8 @@ pub(super) fn simulate_property(
         });
         return;
     };
-    // 引擎保留此臂(hasBaseFlags<=0 && hasCellFlags<=0 报错),但 g_entityFlagMapping
-    // 全部 12 表项均落在 base∪cell 位集内,查表成功者恒过此关;照形状保留。
+    // The engine keeps this arm (hasBaseFlags<=0 && hasCellFlags<=0 raises an error), but in g_entityFlagMapping
+    // all 12 table entries fall within the base∪cell bit set, so anything found by table lookup always passes this check; kept to mirror the shape.
     if flag_bits & ENTITY_BASE_DATA_FLAGS <= 0 && flag_bits & ENTITY_CELL_DATA_FLAGS <= 0 {
         asm.issues.push(AsmIssue {
             kind: "property-flags-no-base-cell",
@@ -148,7 +148,7 @@ pub(super) fn simulate_property(
     };
     asm.properties.last_mut().unwrap().utype = Some(utype);
 
-    // addPropertyDescription 名字三查,逐域添加时触发
+    // addPropertyDescription looks up the name three times, triggered when adding per domain
     let first_domain = registered_domains[0];
     let report_add_failure = |asm: &mut Assembly, kind: &'static str, message: String| {
         asm.issues.push(AsmIssue {

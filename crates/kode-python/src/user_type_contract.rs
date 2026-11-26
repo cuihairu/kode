@@ -1,29 +1,38 @@
-//! user_type 三契约方法探测与缺方法收集核(RUST-MIGRATION-AUDIT-006 B1 车道
-//! 批 4):src/backend/userTypeContract.ts 纯逻辑半边逐字移植——
-//! - `impl_file_has_contract_method`(:77-80):`^[ \t]*def[ \t]+METHOD[ \t]*\(`
-//!   m 模式测试。JS m 模式 `^` = 串首 + 每个 JS 行终止符(\n/\r/U+2028/U+2029)
-//!   之后;贪 `[ \t]*` 后接字面量 `def`/方法名/`(` 无需回溯(d 与 ( 均非
-//!   [ \t],贪匹配后单点判定即精确);方法名取自固定三方法,TS 侧 escapeRegExp
-//!   对其恒等,按字面量扫描。注意:探测是**原始行正则,无词法掩码**——三引号
-//!   体内的形似 def 行与 TS 同判命中(TS 本尊即如此,保真不修饰)。
-//! - `contract_symbol_name`(:83-87):implementedBy?.trim().split('.') 末段,
-//!   空/缺省回退类型名(trim 集=JS \s 全类,复用 self_flow::is_js_space)。
-//! - `collect_user_type_contract_missing`(:95-122):impl 文件缺省/空串静默
-//!   (「未找到 python 文件」诊断兜底,不重复报);每缺失方法一条,消息文案
-//!   字节级保真(半角括号/半角逗号/`——`,以 TS 编译产物 JSON.stringify 对
-//!   基准),related 标签 `实现文件 <basename>`(\ 与 / 双分隔符取尾段)。
+//! user_type three-contract-method probing and the missing-method collection core (the
+//! RUST-MIGRATION-AUDIT-006 B1 lane, batch 4): a line-for-line port of the pure-logic half of
+//! src/backend/userTypeContract.ts --
+//! - `impl_file_has_contract_method` (:77-80): an m-mode test of
+//!   `^[ \t]*def[ \t]+METHOD[ \t]*\(`. In JS m mode `^` = the string start + the position after
+//!   every JS line terminator (\n/\r/U+2028/U+2029); a greedy `[ \t]*` followed by the literals
+//!   `def` / method name / `(` needs no backtracking (neither d nor ( is in [ \t], so a
+//!   single-point check after the greedy match is exact); the method names come from the fixed
+//!   three methods, and TS's escapeRegExp is the identity on them, so they are scanned as
+//!   literals. Note: the probe is a **raw line regex with no lexical mask** -- a def-looking line
+//!   inside triple quotes hits exactly as it does in TS (the TS original behaves this way, so it is
+//!   preserved faithfully, not polished).
+//! - `contract_symbol_name` (:83-87): the last segment of implementedBy?.trim().split('.'),
+//!   falling back to the type name when empty / absent (the trim set = the whole JS \s class,
+//!   reusing self_flow::is_js_space).
+//! - `collect_user_type_contract_missing` (:95-122): a missing / empty impl file is silent (the
+//!   "python file not found" diagnosis is the fallback, so it is not reported twice); one item per
+//!   missing method, with the message wording kept byte-faithful (half-width parentheses /
+//!   half-width comma / `——`, benchmarked against the TS build output's JSON.stringify), and the
+//!   related label `实现文件 <basename>` (taking the last segment over both \ and / separators).
 //!
-//! symbolLength=TS `.length` 语义=**UTF-16 码元数**(代理对计 2),非字节数。
-//! 收集核不探测:方法存在性由调用面从源码探测后传入(与 TS 快照流同形)。
+//! symbolLength = TS `.length` semantics = **UTF-16 code units** (a surrogate pair counts 2), not
+//! bytes. The collection core does no probing: method existence is probed by the calling face from
+//! the source and passed in (same shape as the TS snapshot flow).
 
 use crate::self_flow::{is_js_line_terminator, is_js_space};
 
-/// 三个契约方法,引擎 setImplModule 逐个 GetAttrString 取(顺序即声明序)。
+/// The three contract methods, which the engine's setImplModule fetches one by one via GetAttrString
+/// (the order is the declaration order).
 pub const USER_TYPE_CONTRACT_METHODS: [&str; 3] =
     ["createObjFromDict", "getDictFromObj", "isSameType"];
 
-/// 口径③:每个契约方法缺失的后果方向文案(与 TS USER_TYPE_CONTRACT_CONSEQUENCE
-/// 字节级一致;未知方法返回空串——调用面固定三方法,不会触达)。
+/// Semantics 3: the wording of the consequence direction for each missing contract method (byte
+/// identical to TS USER_TYPE_CONTRACT_CONSEQUENCE; an unknown method returns an empty string -- the
+/// calling face uses the fixed three methods, so it is never reached).
 pub fn contract_consequence(method: &str) -> &'static str {
     match method {
         "createObjFromDict" => "无法从网络/DB 构造该类型(反序列化入口缺失)",
@@ -37,7 +46,8 @@ fn is_probe_space(code: u16) -> bool {
     code == 0x20 || code == 0x09
 }
 
-/// 在一个 m 模式行起点上做单次尝试(贪 [ \t]* 后字面量,无需回溯,见模块注)。
+/// Make a single attempt at an m-mode line start (greedy [ \t]* then literals, no backtracking
+/// needed; see the module note).
 fn probe_line_start(source: &[u16], start: usize, method: &[u16]) -> bool {
     let mut i = start;
     while i < source.len() && is_probe_space(source[i]) {
@@ -48,7 +58,7 @@ fn probe_line_start(source: &[u16], start: usize, method: &[u16]) -> bool {
         return false;
     }
     i += 3;
-    // `[ \t]+`(至少一个)
+    // `[ \t]+` (at least one)
     let ws_start = i;
     while i < source.len() && is_probe_space(source[i]) {
         i += 1;
@@ -56,20 +66,22 @@ fn probe_line_start(source: &[u16], start: usize, method: &[u16]) -> bool {
     if i == ws_start {
         return false;
     }
-    // 方法名字面量
+    // The method name literal
     if i + method.len() > source.len() || source[i..i + method.len()] != *method {
         return false;
     }
     i += method.len();
-    // `[ \t]*` 后 `(`(贪后单点判定)
+    // `(` after `[ \t]*` (single-point check after the greedy match)
     while i < source.len() && is_probe_space(source[i]) {
         i += 1;
     }
     i < source.len() && source[i] == 0x28
 }
 
-/// 在 impl 文件原文里查一个契约方法是否定义(file 级扫描;类方法/实例赋值
-/// 形态皆覆盖——引擎经模块属性拿对象后取方法,定义在实现模块内即可见)。
+/// Look up whether a contract method is defined in the impl file's raw source (a file-level scan;
+/// both class-method and instance-assignment shapes are covered -- the engine fetches the object
+/// through a module attribute and then the method, so defining it anywhere inside the impl
+/// module is visible).
 pub fn impl_file_has_contract_method(source: &[u16], method: &str) -> bool {
     let method_units: Vec<u16> = method.encode_utf16().collect();
     let mut start = 0usize;
@@ -96,7 +108,8 @@ fn js_trim(raw: &str) -> &str {
     raw.trim_matches(is_js_trim_char)
 }
 
-/// 符号名 = implementedBy 后段(引擎 GetAttrString 取后段);缺省回退类型名。
+/// Symbol name = the trailing segment of implementedBy (the engine's GetAttrString takes the
+/// trailing segment); falls back to the type name when absent.
 pub fn contract_symbol_name(name: &str, implemented_by: Option<&str>) -> String {
     let last = implemented_by.map(|raw| js_trim(raw).split('.').next_back().unwrap_or(""));
     match last {
@@ -110,13 +123,14 @@ fn utf16_len(s: &str) -> usize {
 }
 
 fn basename_of(path: &str) -> &str {
-    // TS: implFile.split(/[\\/]/).pop() ?? implFile(split 恒有 ≥1 段,尾段即)
+    // TS: implFile.split(/[\\/]/).pop() ?? implFile (split always yields >= 1 segment, so the last one is it)
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
-/// 缺方法记录(定位与文案齐备;line 由 by_impl_file 调用面贴——TS
-/// collectUserTypeContractMissingByImplFile 的过滤+`implLine ?? 1` 贴行在
-/// kode-server 面,恒等路径比较)。
+/// A missing-method record (with the location and wording both present; the line is attached by
+/// the by_impl_file calling face -- TS collectUserTypeContractMissingByImplFile's filtering plus
+/// the `implLine ?? 1` line attachment live on the kode-server face, so the path comparison is the
+/// same).
 #[derive(Debug)]
 pub struct UserTypeContractMissingItem {
     pub message: String,
@@ -128,9 +142,10 @@ pub struct UserTypeContractMissingItem {
     pub related_label: String,
 }
 
-/// 收集单个 user_type 的缺方法记录(纯函数;方法存在性快照由调用面探测后
-/// 传入,顺序=USER_TYPE_CONTRACT_METHODS)。impl 文件缺失/空串静默——由
-/// 「user_type 未找到 python 文件」诊断兜底,不重复报。
+/// Collect the missing-method records of one user_type (pure function; the method-existence
+/// snapshot is probed by the calling face and passed in, ordered as USER_TYPE_CONTRACT_METHODS).
+/// A missing / empty impl file is silent -- covered by the "user_type python file not found"
+/// diagnosis fallback, so it is not reported twice.
 pub fn collect_user_type_contract_missing(
     name: &str,
     implemented_by: Option<&str>,
@@ -146,7 +161,7 @@ pub fn collect_user_type_contract_missing(
         if methods[idx] {
             continue;
         }
-        // TS: status.implementedBy ?? symbolName(nullish——空串实现声明保留空串)
+        // TS: status.implementedBy ?? symbolName (nullish -- an empty-string implementation declaration keeps the empty string)
         let impl_label = implemented_by
             .map(str::to_string)
             .unwrap_or_else(|| symbol_name.clone());
@@ -169,7 +184,7 @@ pub fn collect_user_type_contract_missing(
     items
 }
 
-// ---- 单测 -----------------------------------------------------------------
+// ---- unit tests -----------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -221,7 +236,7 @@ mod tests {
 
     #[test]
     fn probe_line_starts_cover_cr_lf_and_unicode_separators() {
-        // 孤立 \r / \u2028 / \u2029 都是 JS m 模式 ^ 行起点
+        // A lone \r / \u2028 / \u2029 is also a JS m-mode ^ line start
         assert!(probe(
             "x = 1\rdef isSameType(self):\r    pass",
             "isSameType"
@@ -240,10 +255,11 @@ mod tests {
 
     #[test]
     fn probe_is_raw_line_regex_no_lexical_mask() {
-        // 探测不做词法掩码:三引号体内的形似 def 行与 TS 同判命中(保真)
+        // The probe applies no lexical mask: a def-looking line inside triple quotes hits just as it does
+        // in TS (kept faithful)
         let source = "doc = \"\"\"\ndef isSameType(self):\n\"\"\"\n";
         assert!(probe(source, "isSameType"));
-        // 引号内同行前缀形(`s = "def …"`)行首不是 def,不命中
+        // A same-line prefix form inside quotes (`s = "def …"`): the line start is not def, so no hit
         assert!(!probe("s = \"def isSameType(self):\"\n", "isSameType"));
     }
 
@@ -317,17 +333,17 @@ mod tests {
 
     #[test]
     fn collect_message_uses_implemented_by_nullish_semantics() {
-        // implementedBy 空串:?? 语义保留空串(不换 symbolName)
+        // implementedBy as an empty string: the ?? semantics keep the empty string (no swap to symbolName)
         let items = status_with("T", Some(""), Some("/w/i.py"), [false; 3]);
         assert!(items[0].message.contains("的实现  缺契约方法"));
-        // implementedBy 缺省:回退 symbolName=类型名
+        // implementedBy absent: fall back to symbolName = the type name
         let items = status_with("T", None, Some("/w/i.py"), [false; 3]);
         assert!(items[0].message.contains("的实现 T 缺契约方法"));
     }
 
     #[test]
     fn collect_symbol_length_counts_utf16_units() {
-        // 代理对计 2:TS `.length` 语义
+        // A surrogate pair counts 2: TS `.length` semantics
         let items = status_with(
             "T\u{1D400}x",
             Some("m.T\u{1D400}x"),
@@ -353,7 +369,8 @@ mod tests {
 
     #[test]
     fn unknown_method_consequence_is_empty() {
-        // 未知方法空串(调用面固定三方法;pub 直调钉住 `_` 臂语义)
+        // An unknown method yields the empty string (the calling face uses the fixed three methods; this
+        // public direct call pins down the `_` arm's semantics)
         assert_eq!(contract_consequence("notInContract"), "");
     }
 }

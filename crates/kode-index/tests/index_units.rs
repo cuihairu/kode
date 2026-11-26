@@ -1,8 +1,10 @@
-//! 符号索引单元/增量门禁(书 IDX-001..007/013/014/015 基础版,PR-007)。
+//! Symbol index unit/increment gate (book IDX-001..007/013/014/015 basic edition, PR-007).
 //!
-//! rebuild 计数实测(与 pr-007.md 报告数字对应,`--nocapture` 可复现):
-//! 首扫 N 文件 = N rebuild;二扫同内容 = 0 rebuild;单文件改动 = 恰 1 rebuild;
-//! 批量 k 文件 = 1 次 generation;删除/根级失效 = 0 rebuild 仅清理。
+//! Measured rebuild counts (corresponding to the numbers in the pr-007.md report,
+//! reproducible with `--nocapture`):
+//! first scan of N files = N rebuilds; second scan of the same content = 0 rebuilds;
+//! a single-file change = exactly 1 rebuild; a batch of k files = 1 generation;
+//! delete/root-level invalidation = 0 rebuilds, cleanup only.
 
 use kode_index::{DocumentKey, MethodFacet, RootId, SymbolIndex, SymbolKind};
 use kode_vfs::uri::CanonicalUri;
@@ -15,7 +17,7 @@ fn def_text(parent: Option<&str>, prop: &str, prop_type: &str, methods: &[&str])
     def_text_full(parent, prop, prop_type, None, methods)
 }
 
-/// 组件槽可选的 def 构造器。
+/// def builder with an optional component slot.
 fn def_text_full(
     parent: Option<&str>,
     prop: &str,
@@ -43,7 +45,7 @@ fn def_text_full(
     s
 }
 
-/// 六文件工作区(2 def + 1 entities + 1 types + 1 alias + 1 组件 def)。
+/// Six-file workspace (2 def + 1 entities + 1 types + 1 alias + 1 component def).
 fn workspace() -> Vec<(DocumentKey, String)> {
     let mut files = vec![
         (
@@ -64,7 +66,8 @@ fn workspace() -> Vec<(DocumentKey, String)> {
         ),
         (
             key("/proj/types.xml"),
-            // 直接文本 directive(与语料/TS parseTypesXml 同口径;属性式跳过不产符号)。
+            // A direct text directive (the same contract as the corpus/TS parseTypesXml;
+            // attribute-style directives are skipped and produce no symbols).
             "<root>\n  <JSONDATA>UINT32</JSONDATA>\n</root>\n".to_string(),
         ),
         (
@@ -93,7 +96,7 @@ fn full_scan_then_rescan_is_zero_rebuild() {
     );
     assert_eq!(receipt.generation, 1, "批量提交 = 1 次 generation(IDX-007)");
 
-    // 二扫同内容:零重建(IDX-003/004 指纹命中)。
+    // Second scan of the same content: zero rebuilds (IDX-003/004 fingerprint hit).
     let again = index.update_batch(&files);
     println!(
         "二扫: rebuilds={} cache_hits={} generation={}",
@@ -113,7 +116,7 @@ fn single_file_edit_rebuilds_exactly_one_file() {
     index.update_batch(&files);
     let before = index.lookup("hp");
 
-    // 只改 Avatar.def 一个属性名:仅该文件重登记(IDX-013)。
+    // Change only one property name in Avatar.def: only that file is re-registered (IDX-013).
     let mut changed = files.clone();
     changed.retain(|(k, _)| k.uri.as_path().ends_with("Avatar.def"));
     changed[0].1 = def_text_full(
@@ -145,7 +148,7 @@ fn single_file_edit_rebuilds_exactly_one_file() {
     assert_eq!(before.len(), 1);
     assert_eq!(index.generation(), 2);
 
-    // 同内容重复 update:零重建。
+    // Repeated update with the same content: zero rebuilds.
     let repeat = index.update(changed[0].0.clone(), &changed[0].1);
     assert!(!repeat.rebuilt);
     assert_eq!(index.stats.rebuilds, 7);
@@ -202,14 +205,16 @@ fn queries_cover_all_kinds_and_prefix_scan() {
     assert_eq!(on_prefix.len(), 2, "onRpc(Avatar) + onSpawned(Monster)");
     let limited = index.workspace_symbols("", 5);
     assert_eq!(limited.len(), 5, "limit 生效");
-    // 有序范围扫描,不线性扫全表:结果按名升序。
+    // Ordered range scan, not a linear full-table scan: results are sorted by name ascending.
     assert!(on_prefix[0].name <= on_prefix[1].name);
 }
 
 #[test]
 fn inheritance_edges_are_isolated_per_root() {
-    // KODE-FULL-017:继承边以 (根, 实体名) 存查——两根各有同名实体时
-    // Parent 边互不覆盖、互不串链;摘除一根的 def 不动另一根的边。
+    // KODE-FULL-017: inheritance edges are stored and looked up by (root, entity name) —
+    // when two roots each have a same-named entity, the Parent edges neither overwrite
+    // nor cross-chain each other; detaching one root's def leaves the other root's edges
+    // alone.
     let mut index = SymbolIndex::new();
     let root_a = RootId(1);
     let root_b = RootId(2);
@@ -227,7 +232,8 @@ fn inheritance_edges_are_isolated_per_root() {
     );
     index.update(key_b.clone(), &def_text(Some("NPC"), "hp", "UINT32", &[]));
 
-    // 各根各链:同名实体按各自根的 Parent 解析,不取「后注册者」。
+    // One chain per root: same-named entities resolve via their own root's Parent, never
+    // "whoever was registered later".
     let (chain_a, cycle_a) = index.entity_chain(root_a, "Avatar");
     assert!(cycle_a.is_none());
     assert_eq!(chain_a[0].parent.as_deref(), Some("Monster"));
@@ -235,7 +241,7 @@ fn inheritance_edges_are_isolated_per_root() {
     assert!(cycle_b.is_none());
     assert_eq!(chain_b[0].parent.as_deref(), Some("NPC"));
 
-    // 摘除 root_b 的 def:root_a 的边原样,root_b 的边随文件消失。
+    // Detaching root_b's def: root_a's edges stay intact, root_b's edges vanish with the file.
     index.remove(&key_b);
     assert_eq!(
         index
@@ -258,12 +264,12 @@ fn reverse_deps_and_inheritance_chain_with_cycle_termination() {
     let mut index = SymbolIndex::new();
     index.update_batch(&workspace());
 
-    // 反向依赖(IDX-002/006):谁引用了 Avatar(Parent)。
+    // Reverse dependencies (IDX-002/006): who references Avatar (Parent).
     let dependents = index.dependents_of("Avatar");
     assert!(dependents
         .iter()
         .any(|k| k.uri.as_path().ends_with("Monster.def")));
-    // 继承链(SEM-004/IDX-005):Monster → Avatar → 根。
+    // Inheritance chain (SEM-004/IDX-005): Monster -> Avatar -> root.
     let (chain, cycle) = index.entity_chain(RootId(1), "Monster");
     assert!(cycle.is_none());
     assert_eq!(chain.len(), 2);
@@ -271,7 +277,8 @@ fn reverse_deps_and_inheritance_chain_with_cycle_termination() {
     assert_eq!(chain[0].parent.as_deref(), Some("Avatar"));
     assert_eq!(chain[1].entity, "Avatar");
 
-    // 环:互相 Parent,有限步截断 + 显式诊断,绝不死循环。
+    // Cycle: mutually referencing Parents, truncated in finitely many steps plus an
+    // explicit diagnostic — never an infinite loop.
     index.update(
         key("/proj/entities/A.def"),
         &def_text(Some("B"), "x", "UINT32", &[]),
@@ -307,11 +314,12 @@ fn removal_and_rename_clean_every_lookup_path() {
         "继承边连带清理(IDX-014)"
     );
     assert_eq!(index.tracked_files(), 5, "解析缓存同步失效");
-    // Monster 的 Parent 引用还在(它自己声明),但链在 Avatar 处断(根)。
+    // Monster's Parent reference is still there (it declares it itself), but the chain
+    // breaks at Avatar (the root).
     let (chain, cycle) = index.entity_chain(avatar_key.root, "Monster");
     assert!(cycle.is_none() && chain.len() == 2 && chain[1].parent.is_none());
 
-    // 改名 = remove(old) + update(new)(IDX-014)。
+    // Rename = remove(old) + update(new) (IDX-014).
     index.update_batch(&files);
     let new_key = key("/proj/entities/Player.def");
     index.remove(&avatar_key);
@@ -330,7 +338,7 @@ fn root_scoped_invalidation_touches_only_that_root() {
     let files = workspace();
     let mut index = SymbolIndex::new();
     index.update_batch(&files);
-    // 第二根放一个文件。
+    // Put one file in a second root.
     let other = DocumentKey::new(
         RootId(2),
         CanonicalUri::from_path("/other/entities/Npc.def"),
@@ -371,7 +379,8 @@ fn symbols_in_file_returns_document_order_and_unknown_file_empty() {
     index.update_batch(&files);
     let avatar_key = key("/proj/entities/Avatar.def");
 
-    // 已登记文件:按文档序返回全部符号(实体 → 属性 → 组件槽 → Base 方法)。
+    // A registered file: all symbols returned in document order (entity -> property ->
+    // component slot -> Base methods).
     let symbols = index.symbols_in_file(&avatar_key);
     println!("Avatar.def 符号: {symbols:?}");
     let kinds: Vec<SymbolKind> = symbols.iter().map(|s| s.kind).collect();
@@ -399,7 +408,7 @@ fn symbols_in_file_returns_document_order_and_unknown_file_empty() {
         "组件类型进 detail"
     );
 
-    // 未登记文件:空表(不 panic,走 unwrap_or_default)。
+    // An unregistered file: an empty table (no panic, goes through unwrap_or_default).
     let unknown = key("/proj/entities/Never.def");
     assert!(
         index.symbols_in_file(&unknown).is_empty(),
@@ -412,7 +421,7 @@ fn remove_and_invalidate_on_untracked_are_noops() {
     let mut index = SymbolIndex::new();
     let unknown = key("/proj/entities/Ghost.def");
 
-    // 删除未登记文件:0 移除,不 bump generation,不累计 removals。
+    // Deleting an unregistered file: 0 removed, no generation bump, no removals accumulated.
     let before_gen = index.generation();
     let removed = index.remove(&unknown);
     assert_eq!(removed, 0, "未登记文件删除必须 0 移除");
@@ -423,13 +432,14 @@ fn remove_and_invalidate_on_untracked_are_noops() {
     );
     assert_eq!(index.stats.removals, 0);
 
-    // 根级失效空根:0 移除,不 bump。
+    // Root-level invalidation of an empty root: 0 removed, no bump.
     let removed = index.invalidate_root(RootId(999));
     assert_eq!(removed, 0, "空根失效必须 0 移除");
     assert_eq!(index.generation(), before_gen, "空根失效不 bump generation");
     assert_eq!(index.stats.removals, 0);
 
-    // 有内容的根失效后再失效同一根:第二次 0 移除(文件已清,幂等)。
+    // Invalidating a populated root and then invalidating the same root again: the second
+    // pass removes 0 (files already cleared, idempotent).
     index.update(
         key("/proj/entities/A.def"),
         &def_text(None, "x", "UINT32", &[]),

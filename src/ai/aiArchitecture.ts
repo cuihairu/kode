@@ -1,9 +1,14 @@
-// AI-005 架构框架分析(analyzeArchitecture):把 Rust 引擎结构化摘要
-// ($/kode/dependency/graph 既有数据面——依赖图/继承/has-a,非源码全文)喂
-// LLM 生成叙述性架构报告(Markdown,只读虚拟 scheme 预览面板)。数据真源
-// 在引擎,LLM 只做总结;prompt 与报告都显式声明截断策略(超限工程按预算
-// 截断,绝不静默)。零落盘:报告走只读虚拟文档;AI 面未配置时命令不出
-// (惰性注册判据同 AI-001,handler 二次闸防注册后配置被清空)。
+// AI-005 architecture framework analysis (analyzeArchitecture): feeds the Rust
+// engine's structured summary ($/kode/dependency/graph existing data surface —
+// dependency graph / inheritance / has-a, not the full source) to the LLM to
+// produce a narrative architecture report (Markdown, read-only virtual scheme
+// preview panel). The data source of truth is in the engine; the LLM only
+// summarizes; both the prompt and the report explicitly state the truncation
+// strategy (engineering beyond the budget is truncated by budget, never
+// silently). Zero disk footprint: the report rides on a read-only virtual
+// document; the command does not appear when the AI surface is unconfigured
+// (lazy registration criterion same as AI-001, plus a handler-side second gate
+// against the configuration being cleared after registration).
 import * as vscode from 'vscode';
 import { AI_API_KEY_SECRET, AiSecretsStore, isAiFaceAvailable, sendAiMessage } from './aiClient';
 import type { DependencyGraphRust } from '../backend/dependencyGraphRust';
@@ -11,7 +16,7 @@ import type { DependencyGraphRust } from '../backend/dependencyGraphRust';
 export const AI_ANALYZE_ARCHITECTURE_COMMAND = 'kbengine.ai.analyzeArchitecture';
 const ARCH_SCHEME = 'kbengine-ai-architecture';
 
-/** 摘要预算(字符):超限截断,prompt 与报告都显式声明,绝不静默 */
+/** Digest budget (characters): truncation on overrun; the prompt and report both declare it explicitly, never silently */
 export const ARCHITECTURE_DIGEST_BUDGET = 12000;
 
 export interface ArchitectureDigest {
@@ -24,8 +29,9 @@ export interface ArchitectureDeps {
 }
 
 /**
- * 依赖图→结构化摘要文本(计数行+实体清单+按 kind 分组的边示例)。
- * 超预算硬截断并打 truncated=true——喂给 LLM 的就是这段文本,不发散源码。
+ * Dependency graph → structured digest text (count lines + entity list +
+ * per-kind edge samples). Hard truncation on over-budget with truncated=true —
+ * this text is what is fed to the LLM; the source is not allowed to sprawl.
  */
 export function summarizeDependencyGraph(
   graph: DependencyGraphRust,
@@ -78,7 +84,7 @@ function renderArchitecturePrompt(digest: string, truncated: boolean): Array<{ r
 let lastReport = '';
 let archProvider: vscode.Disposable | null = null;
 
-/** 报告只读虚拟文档(scheme 惰性注册,内容随每次分析换新) */
+/** Read-only virtual document for the report (scheme registered lazily, contents refreshed per analysis) */
 function ensureArchProvider(context: vscode.ExtensionContext): vscode.Uri {
   if (!archProvider) {
     archProvider = vscode.workspace.registerTextDocumentContentProvider(ARCH_SCHEME, {
@@ -92,8 +98,9 @@ function ensureArchProvider(context: vscode.ExtensionContext): vscode.Uri {
 }
 
 /**
- * 注册 AI-005 分析面(AI 面惰性块内调用):analyzeArchitecture 命令。
- * 报告零落盘(只读虚拟 scheme);deps 注入面供测试替换 buildGraph。
+ * Register the AI-005 analysis surface (called inside the lazy AI block): the
+ * analyzeArchitecture command. Zero disk footprint for the report (read-only
+ * virtual scheme); the deps injection surface lets tests replace buildGraph.
  */
 export function registerAiArchitecture(
   context: vscode.ExtensionContext,
@@ -143,7 +150,7 @@ export function registerAiArchitecture(
   return disposable;
 }
 
-/** 测试清理面:虚拟文档 provider 与报告内容一并弃 */
+/** Test cleanup surface: the virtual document provider and the report contents are discarded together */
 export function disposeAiArchitectureForTests(): void {
   if (archProvider) {
     archProvider.dispose();

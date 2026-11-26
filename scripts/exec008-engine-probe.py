@@ -148,7 +148,7 @@ def main():
         print("探针失败: %s" % msg, file=sys.stderr)
         return 1
 
-    # 1. initialize + attach(协议序,见模块注释)
+    # 1. initialize + attach (protocol order, see module docstring)
     dap.send("initialize", clientID="kode-exec008-probe", adapterID="debugpy",
              pathFormat="path", linesStartAt1=True, columnsStartAt1=True)
     dap.send("attach", connect={"host": args.host, "port": args.port}, justMyCode=False)
@@ -159,7 +159,8 @@ def main():
         return fail("等 initialized 事件超时")
     ev(args.out, "EVENT: initialized")
 
-    # 2. 断点在 initialized 窗口下发(对已运行目标不能等 attach 响应)
+    # 2. Send breakpoints within the initialized window (never wait for the attach
+    # response on an already-running target)
     dap.send("setBreakpoints",
              source={"path": args.source},
              breakpoints=[{"line": args.breakpoint_line}], sourceModified=False)
@@ -176,20 +177,23 @@ def main():
     thread_id = stopped.get("threadId")
     ev(args.out, "EVENT: stopped reason=breakpoint threadId=%s" % thread_id)
 
-    # 3. stackTrace 顶帧(行号从帧取,DAP stopped 事件不带 line)
+    # 3. stackTrace top frame (line comes from the frame; the DAP stopped event
+    # carries no line)
     dap.send("stackTrace", threadId=thread_id, startFrame=0, levels=1)
     m = dap.wait_response("stackTrace", timeout=args.timeout)
     frames = ((m or {}).get("body") or {}).get("stackFrames") or []
     if not frames:
         return fail("stackTrace 空")
     top = frames[0]
-    # 帧名只留证不断言:引擎目标脚本函数名各异;关键断言是「停在断点行」。
+    # Frame name is evidence only, never asserted: engine target script function
+    # names vary; the key assertion is "stopped on the breakpoint line".
     if top.get("line") != args.breakpoint_line:
         return fail("顶帧行非断点行(%d): %d" % (args.breakpoint_line, top.get("line")))
     frame_id = top.get("id")
     ev(args.out, "STACK: top=%s line=%s frameId=%s" % (top.get("name"), top.get("line"), frame_id))
 
-    # 4. evaluate a(期望值)+ b(断点行未定义=NameError 前态正确)
+    # 4. evaluate a (expected value) + b (undefined on the breakpoint line =
+    # correct pre-state before the NameError)
     dap.send("evaluate", expression="a", frameId=frame_id, context="watch")
     m = dap.wait_response("evaluate", timeout=args.timeout)
     a_val = ((m or {}).get("body") or {}).get("result")
@@ -203,7 +207,7 @@ def main():
     ev(args.out, "EVAL-b-before-step: %s (断点行 b 未定义=NameError 前态正确)"
         % (b_before if b_before else "<NameError>"))
 
-    # 5. variables(Locals): a/delta/self 在场
+    # 5. variables (Locals): a/delta/self present
     dap.send("scopes", frameId=frame_id)
     m = dap.wait_response("scopes", timeout=args.timeout)
     scopes = ((m or {}).get("body") or {}).get("scopes") or []
@@ -216,7 +220,7 @@ def main():
     ev(args.out, "VARIABLES[%s]: %s" % (local.get("name"),
         ", ".join("%s=%s" % (v.get("name"), v.get("value")) for v in variables)))
 
-    # 6. next(单步)→ stopped(step,单步行)
+    # 6. next (step over) -> stopped (reason=step, on the stepped-to line)
     dap.send("next", threadId=thread_id)
     ev(args.out, "REQUEST: next issued")
     stopped2 = dap.wait_event("stopped", timeout=args.timeout)
@@ -235,7 +239,7 @@ def main():
         return fail("单步后 b != %s: %s" % (args.expect_b, b_val))
     ev(args.out, "EVAL-b-after-step: %s (line %s)" % (b_val, top2.get("line")))
 
-    # 7. disconnect(断连)
+    # 7. disconnect
     dap.send("disconnect", restart=False)
     ev(args.out, "DISCONNECT: issued")
     time.sleep(0.5)

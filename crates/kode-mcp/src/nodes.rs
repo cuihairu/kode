@@ -349,7 +349,8 @@ mod tests {
         assert!(NodeKind::Entity.rank() < NodeKind::Document.rank());
     }
 
-    /// rank() 全 20 臂:结构序严格递增(0..19)且两两不同。
+    /// rank() across all 20 arms: strictly increasing structural order (0..19)
+    /// and pairwise distinct.
     #[test]
     fn rank_covers_every_kind_with_strict_total_order() {
         let ordered = [
@@ -384,8 +385,9 @@ mod tests {
         }
     }
 
-    /// from_kind_str 未知串 → None(存读面回落XmlElement 的判据);Relation
-    /// 七名稳定且两两不同。
+    /// from_kind_str on unknown strings -> None (the criterion for the
+    /// store/read face falling back to XmlElement); the seven Relation names
+    /// are stable and pairwise distinct.
     #[test]
     fn from_kind_str_rejects_unknown_and_relation_names_are_stable() {
         assert_eq!(NodeKind::from_kind_str("nope"), None);

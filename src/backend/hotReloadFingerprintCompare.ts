@@ -1,37 +1,49 @@
 /**
- * .def 指纹三路比对纯核(HR-PR-07,书 §19.8 HR-HASH-006/008):
- * - HR-HASH-008 文件修改后的三路判定:上次本地指纹 vs 当前指纹 vs 服务端
- *   已应用 Digest,各路独立给 一致/不同/未知,不并路不冒充;
- * - 跨类纪律继承 hotReloadDefHash/RevisionEvidence:fileHash(sha256)与
- *   engineDigest(引擎复合 MD5)是不同算法/不同输入,**永不互比**;
- *   appliedConsistency 只在「引擎算法已协商(md5)+本地按同算法重算+引擎
- *   回执 Digest 三者齐」时才给 consistent/different——缺任一环如实 unknown
- *   并点名原因,不猜;
- * - 同类才可比:fileChanged 只比 fileHash 对,semanticChanged 只比语义
- *   指纹对(structuralFingerprintHash 产物);值缺失/解析失败(null)→ unknown;
- * - HR-HASH-006 FingerprintProvider(profile)面:引擎 fork/版本差异交协商
- *   (negotiateEngineDigest);协商不出算法如实标 `not available`,不替
- *   引擎猜算法,本地 sha256 绝不冒充运行时协议 Hash(HR-HASH-005 同源)。
- * 纯逻辑零 vscode;执行编排仍归 tempEdit/defMd5Check 既有面。
+ * .def fingerprint three-way comparison pure core (HR-PR-07, spec §19.8
+ * HR-HASH-006/008):
+ * - HR-HASH-008 three-way judgment after a file modification: last local
+ *   fingerprint vs current fingerprint vs the server-side applied Digest.
+ *   Each lane reports match / differ / unknown independently — lanes are
+ *   never merged and never masquerade for one another;
+ * - Cross-kind discipline inherited from hotReloadDefHash /
+ *   RevisionEvidence: fileHash (sha256) and engineDigest (the engine's
+ *   composite MD5) are different algorithms over different inputs and are
+ *   **never compared against each other**;
+ *   appliedConsistency only yields consistent / different when "the engine
+ *   algorithm has been negotiated (md5) + locally recomputed with the same
+ *   algorithm + the engine's receipt Digest" are all three present — if any
+ *   link is missing it is honestly unknown, with the reason named, never
+ *   guessed;
+ * - Only same-kind values are comparable: fileChanged compares only the
+ *   fileHash pair, semanticChanged only the semantic fingerprint pair
+ *   (structuralFingerprintHash output); a missing value or parse failure
+ *   (null) -> unknown;
+ * - HR-HASH-006 FingerprintProvider (profile) face: engine fork / version
+ *   differences are handed to negotiation (negotiateEngineDigest); when no
+ *   algorithm negotiates, it is honestly labeled `not available` — we do not
+ *   guess an algorithm on the engine's behalf, and local sha256 never
+ *   impersonates the runtime protocol Hash (same origin as HR-HASH-005).
+ * Pure logic, zero vscode; execution orchestration still belongs to the
+ * existing tempEdit / defMd5Check faces.
  */
 
 import { negotiateEngineDigest } from './hotReloadDefHash';
 
-/** 三路比对输入:各路可选,缺=该路如实 unknown(不猜不补) */
+/** Three-way comparison input: each lane is optional; missing = that lane is honestly unknown (never guessed, never filled in) */
 export interface FingerprintTriCompareInput {
-  /** 上次记录的 fileHash(hashDefContent 产物 sha256 hex) */
+  /** Last recorded fileHash (hashDefContent output, sha256 hex) */
   readonly lastLocalFileHash?: string;
-  /** 当前 fileHash */
+  /** Current fileHash */
   readonly currentFileHash?: string;
-  /** 上次语义指纹(structuralFingerprintHash 产物;null=当时解析失败) */
+  /** Last semantic fingerprint (structuralFingerprintHash output; null = the parse had failed then) */
   readonly lastSemanticHash?: string | null;
-  /** 当前语义指纹(null=当前解析失败) */
+  /** Current semantic fingerprint (null = the current parse failed) */
   readonly currentSemanticHash?: string | null;
-  /** 本地按引擎已协商算法重算的 MD5(仅同类对拍用;sha256 不入此参) */
+  /** MD5 recomputed locally with the engine's negotiated algorithm (same-kind pairing only; sha256 never enters this parameter) */
   readonly localRecomputedMd5?: string;
-  /** 引擎回执报告的 Digest(运行时证据) */
+  /** Digest reported by the engine's receipt (runtime evidence) */
   readonly serverAppliedDigest?: string;
-  /** 引擎 Digest 协商输入(引擎报告的算法标识;缺省=未协商) */
+  /** Engine Digest negotiation input (the algorithm identifier reported by the engine; defaults to not negotiated) */
   readonly engineMd5?: string;
 }
 
@@ -42,11 +54,11 @@ export interface FingerprintTriVerdict {
   readonly fileChanged: FingerprintTriState;
   readonly semanticChanged: FingerprintTriState;
   readonly appliedConsistency: AppliedConsistency;
-  /** 每路 unknown 的原因逐条点名(展示面可审;可判定路不产原因) */
+  /** The unknown reason named one by one for each lane (auditable on the display face; decidable lanes produce no reason) */
   readonly reasons: string[];
 }
 
-/** 同类对拍:两侧都有值才判,缺=unknown+原因(null 先于空串判,防 null 取 length) */
+/** Same-kind pairing: only judged when both sides have a value; missing = unknown + reason (null is checked before the empty string, so we never take length on null) */
 const compareSameKind = (
   last: string | null | undefined,
   current: string | null | undefined,
@@ -66,8 +78,10 @@ const compareSameKind = (
 };
 
 /**
- * HR-HASH-008 三路判定:文件修改后给出 fileHash 对、语义指纹对、
- * 引擎已应用 Digest 三路的独立结论。未知理由逐条可审。
+ * HR-HASH-008 three-way judgment: after a file modification, produce the
+ * independent conclusions for the fileHash pair, the semantic fingerprint
+ * pair, and the engine's applied Digest. The unknown reasons are auditable
+ * one by one.
  */
 export function compareFingerprints(input: FingerprintTriCompareInput): FingerprintTriVerdict {
   const reasons: string[] = [];
@@ -76,7 +90,7 @@ export function compareFingerprints(input: FingerprintTriCompareInput): Fingerpr
     input.lastLocalFileHash,
     input.currentFileHash,
     'fileHash 缺失(上次或当前),文件是否变化未知',
-    '一侧 def 解析失败无语义可比(如实未知)' // fileHash 不涉解析,该 reason 实际不可达,保留对称口径
+    '一侧 def 解析失败无语义可比(如实未知)' // fileHash is not involved in parsing, so this reason is actually unreachable; kept for the symmetric convention
   );
   if (file.reason) {
     reasons.push(file.reason);
@@ -112,11 +126,11 @@ export function compareFingerprints(input: FingerprintTriCompareInput): Fingerpr
   };
 }
 
-/** HR-HASH-006 指纹档案(profile):算法协商结果+面向 UI 的如实标签 */
+/** HR-HASH-006 fingerprint profile: the algorithm negotiation result plus the honest UI-facing label */
 export interface FingerprintProfile {
   readonly digestAlgorithm: 'md5' | 'unknown';
   readonly negotiated: boolean;
-  /** 协商出算法给算法名;协商不出如实 `not available`,不猜 */
+  /** When an algorithm negotiates, give its name; when none negotiates, honestly report `not available` — never guess */
   readonly label: string;
 }
 

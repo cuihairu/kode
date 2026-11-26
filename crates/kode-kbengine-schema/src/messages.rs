@@ -1,13 +1,14 @@
-//! 固定消息表(messages_fixed_defaults.xml + 项目 messages_fixed.xml)。
+//! The fixed message table (messages_fixed_defaults.xml + the project messages_fixed.xml).
 //!
-//! 引擎口径( PA-001 §5.1,message_handler.cpp:140-229 / fixed_messages.cpp:29-74):
-//! - XML 元素名 = `Component::messageName`,子元素 `<id>` = 固定 ID;
-//! - `<arg>` 逐条 = 参数内建类型名(本基准 v2.5.10 用 `<arg>`);
-//! - 定长推导:`msgLen == 0` 注册时按 `args->dataSize()` 计算;
-//!   参数含 std::string 强制降级为变长(message_handler.cpp:201-215);
-//! - 引擎对不在固定表的消息在进程启动时增量分配 ID——静态取证无法还原
-//!   (PA-001 §5.2),真实连接的完整表来自登录期 onImportClientMessages
-//!   动态导入(协议引擎 PA-003 消费),本表只承载固定表段。
+//! Engine semantics (PA-001 §5.1, message_handler.cpp:140-229 / fixed_messages.cpp:29-74):
+//! - XML element name = `Component::messageName`, the child element `<id>` = the fixed ID;
+//! - each `<arg>` = an argument builtin type name (this baseline v2.5.10 uses `<arg>`);
+//! - fixed-length derivation: `msgLen == 0` is computed from `args->dataSize()` at registration;
+//!   an argument containing std::string forces a downgrade to variable length (message_handler.cpp:201-215);
+//! - the engine assigns IDs incrementally at process startup for messages not in the fixed table —
+//!   this cannot be recovered from static evidence (PA-001 §5.2); the complete table of a real
+//!   connection comes from the login-time onImportClientMessages dynamic import (consumed by the protocol
+//!   engine PA-003); this table carries only the fixed-table segment.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,13 +16,13 @@ use kode_parser::xml::{self, NodeData};
 
 use crate::wire::WireType;
 
-/// 消息长度形状(§4.2)。
+/// Message length shape (§4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageLength {
-    /// 定长:线上**无**长度字段,接收端查表取长。
+    /// Fixed: **no** length field on the wire; the receiver looks the length up in the table.
     Fixed(u32),
-    /// 变长:线上带 u16 msgLen(= 载荷字节数,不含 id+len 头);
-    /// 载荷 ≥65535 时 u16 写 65535 哨兵 + u32 实长(§4.2-3)。
+    /// Variable: carries a u16 msgLen on the wire (= payload byte count, excluding the id+len header);
+    /// when the payload ≥65535 the u16 writes the 65535 sentinel + the u32 actual length (§4.2-3).
     Variable,
 }
 
@@ -30,7 +31,7 @@ impl MessageLength {
         matches!(self, MessageLength::Variable)
     }
 
-    /// 定长值(变长返回 None)。
+    /// The fixed value (returns None for variable).
     pub fn fixed_len(&self) -> Option<u32> {
         match self {
             MessageLength::Fixed(n) => Some(*n),
@@ -39,23 +40,24 @@ impl MessageLength {
     }
 }
 
-/// 单条固定表消息。
+/// A single fixed-table message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageEntry {
-    /// `Component::messageName` 原名(XML 元素名,保留 `::`)。
+    /// The `Component::messageName` original name (XML element name, keeping `::`).
     pub name: String,
-    /// 固定 ID(固定表 `<id>`;项目覆盖时为项目值)。
+    /// The fixed ID (fixed table `<id>`; the project value when overridden by the project).
     pub id: u16,
-    /// 参数线类型(声明序)。
+    /// Argument wire types (declaration order).
     pub args: Vec<WireType>,
     pub length: MessageLength,
 }
 
-/// 固定消息表(id 升序;含解析诊断)。
+/// The fixed message table (id ascending; carries parse diagnostics).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MessageTable {
     pub entries: Vec<MessageEntry>,
-    /// 解析诊断(表名 + 行内描述;SYNTAX-005 同规:坏输入不失败)。
+    /// Parse diagnostics (table name + inline description; same rule as SYNTAX-005: bad input does
+    /// not fail).
     pub diagnostics: Vec<String>,
 }
 
@@ -69,7 +71,8 @@ impl MessageTable {
     }
 }
 
-/// 全参数定长 → Some(Σ字节数);任一参数变长/未知 → None(保守可变)。
+/// All arguments fixed → Some(sum of bytes); any argument variable/unknown → None (conservatively
+/// variable).
 fn sum_fixed_sizes(args: &[WireType]) -> Option<u32> {
     let mut total: u64 = 0;
     for a in args {
@@ -78,14 +81,15 @@ fn sum_fixed_sizes(args: &[WireType]) -> Option<u32> {
     u32::try_from(total).ok()
 }
 
-/// 引擎接口层参数勘误(PA-001 §6 的 C++ 解析代码口径;仅当固定表 XML 未给
-/// `<arg>` 时套用——这些消息的参数在引擎 C++ 接口宏里注册,XML 只给 id):
+/// Engine interface-layer argument corrections (PA-001 §6 C++ parse-code semantics; applied only
+/// when the fixed-table XML gives no `<arg>` — the arguments of these messages are registered in the
+/// engine's C++ interface macros and the XML only gives the id):
 /// - hello: str verInfo + str scriptVerInfo + blob encryptedKey
-///   (serverapp.cpp:504-539 / clientapp.cpp:399-415)→ 线上变长;
+///   (serverapp.cpp:504-539 / clientapp.cpp:399-415) → variable on the wire;
 /// - onHelloCB: str serverVersion + str scriptVersion + str messagesDigest +
-///   i32 componentType(loginapp.cpp:1361-1377)→ 变长;
+///   i32 componentType (loginapp.cpp:1361-1377) → variable;
 /// - reloginBaseapp: str name + str password + u32 rndUUID + i32 entityID
-///   (clientobjectbase.cpp:655-670)→ 变长。
+///   (clientobjectbase.cpp:655-670) → variable.
 const ENGINE_INTERFACE_OVERLAY: &[(&str, &[&str])] = &[
     ("Loginapp::hello", &["STRING", "STRING", "UINT8_ARRAY"]),
     ("Baseapp::hello", &["STRING", "STRING", "UINT8_ARRAY"]),
@@ -99,19 +103,20 @@ const ENGINE_INTERFACE_OVERLAY: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// 构建固定消息表。
+/// Builds the fixed message table.
 ///
-/// `defaults_xml` = 引擎 `kbe/res/server/messages_fixed_defaults.xml`;
-/// `project_xml` = 项目 `res/server/messages_fixed.xml`(可选;同名消息
-/// 覆盖引擎条目,引擎 notFoundError=false 语义)。
+/// `defaults_xml` = the engine `kbe/res/server/messages_fixed_defaults.xml`;
+/// `project_xml` = the project `res/server/messages_fixed.xml` (optional; same-name messages
+/// override engine entries, with the engine's notFoundError=false semantics).
 pub fn build_message_table(defaults_xml: &str, project_xml: Option<&str>) -> MessageTable {
     let mut table = MessageTable::default();
     parse_fixed_xml(defaults_xml, false, &mut table);
     if let Some(project) = project_xml {
         parse_fixed_xml(project, true, &mut table);
     }
-    // 接口层勘误:XML 无 <arg> 的已知接口消息按引擎代码注册的参数建模
-    // (有 <arg> 的条目以 XML 为准,不覆盖)。
+    // Interface-layer corrections: known interface messages with no <arg> in the XML are modeled with
+    // the arguments registered in the engine code (entries with <arg> take the XML as authoritative and
+    // are not overridden).
     for (name, arg_names) in ENGINE_INTERFACE_OVERLAY {
         if let Some(slot) = table.entries.iter_mut().find(|e| e.name == *name) {
             if !slot.args.is_empty() {
@@ -176,7 +181,7 @@ fn parse_fixed_xml(text: &str, is_project_override: bool, table: &mut MessageTab
                         match crate::wire::builtin_wire_type(&raw) {
                             Some(t) => args.push(t),
                             None => {
-                                // 未知参数类型:保守变长 + Unresolved 保留,不猜测。
+                                // Unknown argument type: conservatively variable + kept as Unresolved, not guessed.
                                 args.push(WireType::Unresolved(raw.clone()));
                                 table
                                     .diagnostics
@@ -184,19 +189,21 @@ fn parse_fixed_xml(text: &str, is_project_override: bool, table: &mut MessageTab
                             }
                         }
                     }
-                    // descr/其他子元素不进 IR。
+                    // descr/other child elements do not enter the IR.
                     _ => {}
                 }
             }
         }
         let Some(id) = id else {
             if !is_project_override {
-                // 引擎基线里所有条目都带 <id>;缺 id 记诊断不产条目。
+                // Every entry in the engine baseline carries <id>; a missing id is recorded as a diagnostic
+                // and produces no entry.
                 table.diagnostics.push(format!("{name}: missing <id>"));
             }
             continue;
         };
-        // 定长推导:全参数定长 → Fixed(Σsize);任一参数变长 → Variable。
+        // Fixed-length derivation: all arguments fixed → Fixed(sum size); any argument variable →
+        // Variable.
         let length = match sum_fixed_sizes(&args) {
             Some(total) => MessageLength::Fixed(total),
             None => MessageLength::Variable,
@@ -207,7 +214,8 @@ fn parse_fixed_xml(text: &str, is_project_override: bool, table: &mut MessageTab
             args,
             length,
         };
-        // 项目覆盖:同名替换引擎条目(保留引擎在 `<arg>` 缺失时的原参数)。
+        // Project override: same-name messages replace the engine entry (keeping the engine's original
+        // arguments when `<arg>` is absent).
         if let Some(slot) = table.entries.iter_mut().find(|e| e.name == entry.name) {
             let args = if entry.args.is_empty() {
                 slot.args.clone()

@@ -1,17 +1,22 @@
-//! KB-001/MCP explain:回答「XX API 怎么用 / XX 机制怎么运作」。
+//! KB-001/MCP explain: answers "how do I use XX API / how does XX mechanism work".
 //!
-//! 两个面,同源不复制:
-//! - **API 面**:直调 kode-server 的 C-21 嵌入库 `api_docs_lookup`(与 hover、
-//!   `$/kode/apiDocs/lookup` RPC 同一份 `assets/api-docs.json`)。
-//! - **机制面**:本模块内嵌 docs/knowledge 机制文章(编译期 include_str!,
-//!   与仓库文件零漂移),按关键词索引匹配,返回标题/双语文件/锚定提交/
-//!   摘要/章节标题。索引条目手工策展,只指向真实存在的文章。
+//! Two faces, same source with no duplication:
+//! - **API face**: calls kode-server's C-21 embedded library `api_docs_lookup`
+//!   directly (the same `assets/api-docs.json` as hover and the
+//!   `$/kode/apiDocs/lookup` RPC).
+//! - **Mechanism face**: this module embeds docs/knowledge mechanism articles
+//!   (compile-time include_str!, zero drift from the repo files), matches by
+//!   keyword index, and returns the title / bilingual file / anchoring commit /
+//!   summary / section headings. Index entries are hand-curated and only point
+//!   to articles that actually exist.
 //!
-//! 两面都未命中时如实返回空列表 + 提示,绝不编造解释。
+//! When neither face hits, return an empty list + a hint faithfully; never
+//! fabricate an explanation.
 
 use serde_json::{json, Value};
 
-/// 一篇机制文章的索引条目(text = 编译期内嵌全文,标题运行时抽取)。
+/// An index entry for one mechanism article (text = the compile-time embedded
+/// full text; the title is extracted at runtime).
 struct KnowledgeArticle {
     file: &'static str,
     zh_file: &'static str,
@@ -22,7 +27,8 @@ struct KnowledgeArticle {
     text: &'static str,
 }
 
-/// 机制文章索引(仅 ② 桶机制文档;API 页走 API 面,不入此索引)。
+/// Mechanism article index (only the ② bucket mechanism docs; API pages go
+/// through the API face and are not in this index).
 const ARTICLES: &[KnowledgeArticle] = &[
     KnowledgeArticle {
         file: "docs/knowledge/entity-lifecycle-reference.md",
@@ -180,8 +186,9 @@ const ARTICLES: &[KnowledgeArticle] = &[
     },
 ];
 
-/// explain 主入口:topic 必填;domain 供 API 面消歧(base/cell/client/...);
-/// locale `en`/`zh-cn`(API 面本地化,机制面始终双语双路径)。
+/// Main explain entry: topic is required; domain disambiguates the API face
+/// (base/cell/client/...); locale `en`/`zh-cn` (localizes the API face; the
+/// mechanism face is always bilingual with both paths).
 pub fn explain(topic: &str, domain: Option<&str>, locale: &str) -> Value {
     let api = kode_server::api_docs::api_docs_lookup(topic, domain, locale);
     let knowledge = match_knowledge(topic);
@@ -202,7 +209,8 @@ pub fn explain(topic: &str, domain: Option<&str>, locale: &str) -> Value {
     })
 }
 
-/// 关键词匹配:小写化后精确等值 3 分、互为子串 2 分;按分排序,取前 5。
+/// Keyword matching: exact equality after lowercasing scores 3, being
+/// substrings of each other scores 2; sorted by score, taking the top 5.
 fn match_knowledge(topic: &str) -> Vec<Value> {
     let needle = topic.trim().to_lowercase();
     if needle.len() < 2 {
@@ -246,7 +254,7 @@ fn match_knowledge(topic: &str) -> Vec<Value> {
         .collect()
 }
 
-/// 抽取 `## ` 章节标题(去掉前导井号与空白)。
+/// Extract `## ` section headings (dropping the leading hashes and whitespace).
 fn headings_of(text: &str) -> Vec<&str> {
     text.lines()
         .filter_map(|line| {
@@ -291,14 +299,15 @@ mod tests {
 
     #[test]
     fn knowledge_face_matches_by_compound_keyword() {
-        // cellData 命中迁移文关键词 celldata(小写化归一)。
+        // cellData hits the migration article keyword celldata (normalized by lowercasing).
         let out = explain("cellData", None, "en");
         assert!(!out["knowledge"].as_array().unwrap().is_empty());
     }
 
     #[test]
     fn knowledge_face_matches_wire_protocol_article() {
-        // 协议帧/报文面:explain 命中线协议规范文(承载 protocol_frame 接地)。
+        // Wire frame / message face: explain hits the wire protocol spec article
+        // (carrying the protocol_frame grounding).
         let out = explain("protocol frame", None, "en");
         let matches = out["knowledge"].as_array().unwrap();
         assert!(matches
@@ -332,7 +341,8 @@ mod tests {
 
     #[test]
     fn short_topic_matches_no_article() {
-        // 单字符/空白主题不做关键词匹配(防全量误命中)。
+        // Single-character / blank topics do no keyword matching (avoids blanket
+        // false hits).
         assert!(match_knowledge("x").is_empty());
         assert!(match_knowledge("  ").is_empty());
     }

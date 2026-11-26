@@ -1,23 +1,25 @@
-/** 文件身份键：保留 POSIX 大小写，Windows 盘符和 UNC 路径不区分大小写。 */
+/** File identity key: keeps POSIX case sensitivity; Windows drive letters and UNC paths are case-insensitive. */
 export function normalizeFileIdentity(filePath: string): string {
   const raw = filePath.replace(/\\/g, '/');
   const unc = raw.startsWith('//');
   const prefix = unc ? '//' : raw.startsWith('/') ? '/' : '';
   const parts: string[] = [];
-  // KR-AUD-37①:词法折叠 `..`(POSIX 语义)——同一目录的不同拼法
-  // (`scripts/../entity_defs` 与 `entity_defs`)必须同键,否则身份比对把
-  // 同一文件判成两个。可弹出则弹;绝对路径根上的 `..` 丢弃(`/..` 即 `/`);
-  // 相对路径前置 `..` 保留(不误删);`.` 与空段照旧丢弃。
+  // KR-AUD-37(1): lexical fold of `..` (POSIX semantics) -- spellings of the
+  // same directory (`scripts/../entity_defs` vs `entity_defs`) must share one
+  // key, otherwise identity comparison treats one file as two. Pop when a pop
+  // is legal; a `..` at an absolute root is dropped (`/..` is `/`); a leading
+  // `..` on a relative path is kept (no false deletion); `.` and empty
+  // segments are dropped as before.
   for (const part of raw.split('/')) {
     if (part === '' || part === '.') {
       continue;
     }
     if (part === '..') {
       const last = parts[parts.length - 1];
-      // 盘符根段(`C:`)等同绝对根:`..` 不可弹出(`C:/a/..` = `C:/`)
+      // A drive-root segment (`C:`) is equivalent to an absolute root: `..` cannot pop it (`C:/a/..` = `C:/`)
       const lastIsDriveRoot = last !== undefined && /^[A-Za-z]:$/.test(last);
-      // 审核 P2:UNC 根(`//server/share`)的 server/share 两段是共享边界,
-      // 不可被 `..` 弹出(`//server/share/..` = `//server/share`)
+      // Audit P2: the two `server/share` segments of a UNC root (`//server/share`) are the share
+      // boundary and cannot be popped by `..` (`//server/share/..` = `//server/share`)
       const uncFloor = unc ? 2 : 0;
       if (parts.length > uncFloor && last !== '..' && !lastIsDriveRoot) {
         parts.pop();
@@ -31,8 +33,9 @@ export function normalizeFileIdentity(filePath: string): string {
     }
     parts.push(part);
   }
-  // 审核 P2 收口:裸盘符段收尾仅对无前缀路径(真 Windows 盘符根)生效——
-  // POSIX 绝对路径 `/C:`(名为 `C:` 的目录)不得与盘符根 `c:/` 碰撞同键
+  // Audit P2 closure: the bare drive-segment tail applies only to prefix-less paths (a genuine
+  // Windows drive root) -- the POSIX absolute path `/C:` (a directory named `C:`) must not
+  // collide with the drive root `c:/` into the same key
   if (prefix === '' && parts.length === 1 && /^[A-Za-z]:$/.test(parts[0])) {
     return `${parts[0].toLowerCase()}/`;
   }

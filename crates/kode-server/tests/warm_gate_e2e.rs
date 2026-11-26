@@ -100,7 +100,9 @@ fn wait_response(proc: &ServerProc, id: i64, timeout: Duration) -> Value {
                 }
             }
             Err(RecvTimeoutError::Timeout) => panic!("no response for id {id} in time"),
-            Err(RecvTimeoutError::Disconnected) => panic!("server stdout closed before response for id {id}"),
+            Err(RecvTimeoutError::Disconnected) => {
+                panic!("server stdout closed before response for id {id}")
+            }
         }
     }
 }
@@ -108,13 +110,7 @@ fn wait_response(proc: &ServerProc, id: i64, timeout: Duration) -> Value {
 fn result_of(response: Value) -> Value {
     response
         .get("result")
-        .and_then(|r| {
-            if r.is_null() {
-                None
-            } else {
-                Some(r.clone())
-            }
-        })
+        .and_then(|r| if r.is_null() { None } else { Some(r.clone()) })
         .unwrap_or_else(|| panic!("expected success response: {response}"))
 }
 
@@ -153,7 +149,10 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
     let mut proc = spawn_server();
 
     // 握手。
-    send(&mut proc, &request(1, "initialize", json!({ "capabilities": {} })));
+    send(
+        &mut proc,
+        &request(1, "initialize", json!({ "capabilities": {} })),
+    );
     let init = wait_response(&proc, 1, Duration::from_secs(30));
     assert!(
         init.get("result").map(|r| !r.is_null()).unwrap_or(false),
@@ -176,7 +175,11 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
     // 可控屏障:begin(1000) 后不发 complete——首扫挂住 = Warming。
     send(
         &mut proc,
-        &request(3, "$/kode/index/beginBackgroundScan", json!({ "total": 1000 })),
+        &request(
+            3,
+            "$/kode/index/beginBackgroundScan",
+            json!({ "total": 1000 }),
+        ),
     );
     let begun = result_of(wait_response(&proc, 3, Duration::from_secs(30)));
     assert_eq!(
@@ -187,7 +190,11 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
     // 进行中复用:同 key 第二次 begin 不重入队。
     send(
         &mut proc,
-        &request(4, "$/kode/index/beginBackgroundScan", json!({ "total": 1000 })),
+        &request(
+            4,
+            "$/kode/index/beginBackgroundScan",
+            json!({ "total": 1000 }),
+        ),
     );
     let reused = result_of(wait_response(&proc, 4, Duration::from_secs(30)));
     assert_eq!(
@@ -233,7 +240,9 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
     send(&mut proc, &request(12, "$/kode/health", json!({})));
     let health = wait_response(&proc, 12, Duration::from_secs(30));
     assert_eq!(
-        health.pointer("/result/warm/state").and_then(|s| s.as_str()),
+        health
+            .pointer("/result/warm/state")
+            .and_then(|s| s.as_str()),
         Some("warming"),
         "健康面应带 warming 暖态: {health}"
     );
@@ -243,13 +252,23 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
         .cloned()
         .expect("health missing maintenance");
     let maintenance_obj = maintenance.as_object().expect("maintenance object");
-    assert_eq!(maintenance_obj.len(), 3, "maintenance 三键形状: {maintenance}");
+    assert_eq!(
+        maintenance_obj.len(),
+        3,
+        "maintenance 三键形状: {maintenance}"
+    );
     assert!(
-        maintenance.get("agedTerminal").and_then(|v| v.as_u64()).is_some(),
+        maintenance
+            .get("agedTerminal")
+            .and_then(|v| v.as_u64())
+            .is_some(),
         "agedTerminal 计数: {maintenance}"
     );
     assert!(
-        maintenance.get("pressureReclaims").and_then(|v| v.as_u64()).is_some(),
+        maintenance
+            .get("pressureReclaims")
+            .and_then(|v| v.as_u64())
+            .is_some(),
         "pressureReclaims 计数: {maintenance}"
     );
     assert!(
@@ -263,7 +282,11 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
     // 首扫完成 → Warm(刷新 = 计数落账)。
     send(
         &mut proc,
-        &request(13, "$/kode/index/scanComplete", json!({ "done": 1000, "failed": 0 })),
+        &request(
+            13,
+            "$/kode/index/scanComplete",
+            json!({ "done": 1000, "failed": 0 }),
+        ),
     );
     let completed = result_of(wait_response(&proc, 13, Duration::from_secs(30)));
     assert_eq!(
@@ -280,7 +303,11 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
     // 刷新循环:Warm 后再 begin = 全新入队(根变化 → 重镜像)。
     send(
         &mut proc,
-        &request(15, "$/kode/index/beginBackgroundScan", json!({ "total": 5 })),
+        &request(
+            15,
+            "$/kode/index/beginBackgroundScan",
+            json!({ "total": 5 }),
+        ),
     );
     let requeue = result_of(wait_response(&proc, 15, Duration::from_secs(30)));
     assert_eq!(
@@ -290,12 +317,23 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
     );
 
     // 取消 → Idle,不留假 pending;迟到 complete 诚实报错。
-    send(&mut proc, &request(16, "$/kode/index/scanCancel", json!({})));
-    let cancelled = result_of(wait_response(&proc, 16, Duration::from_secs(30)));
-    assert_eq!(cancelled, json!({ "state": "idle" }), "cancel 应回 Idle: {cancelled}");
     send(
         &mut proc,
-        &request(17, "$/kode/index/scanComplete", json!({ "done": 5, "failed": 0 })),
+        &request(16, "$/kode/index/scanCancel", json!({})),
+    );
+    let cancelled = result_of(wait_response(&proc, 16, Duration::from_secs(30)));
+    assert_eq!(
+        cancelled,
+        json!({ "state": "idle" }),
+        "cancel 应回 Idle: {cancelled}"
+    );
+    send(
+        &mut proc,
+        &request(
+            17,
+            "$/kode/index/scanComplete",
+            json!({ "done": 5, "failed": 0 }),
+        ),
     );
     let late = wait_response(&proc, 17, Duration::from_secs(30));
     let message = late
@@ -321,13 +359,18 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
         Some(cold),
         "冷请求观测应保留: {warm}"
     );
-    send(&mut proc, &request(19, "$/kode/index/scanCancel", json!({})));
+    send(
+        &mut proc,
+        &request(19, "$/kode/index/scanCancel", json!({})),
+    );
     let idle = result_of(wait_response(&proc, 19, Duration::from_secs(30)));
     assert_eq!(idle, json!({ "state": "idle" }), "幂等 cancel: {idle}");
     send(&mut proc, &request(20, "$/kode/health", json!({})));
     let health = wait_response(&proc, 20, Duration::from_secs(30));
     assert_eq!(
-        health.pointer("/result/warm/state").and_then(|s| s.as_str()),
+        health
+            .pointer("/result/warm/state")
+            .and_then(|s| s.as_str()),
         Some("idle"),
         "健康面应回 idle: {health}"
     );

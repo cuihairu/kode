@@ -1,22 +1,27 @@
 /**
- * 解析单目标 accepted 回执(IDE-HOT-003):已记录协议=JSON 对象
- * {"status":"accepted","file":"<与所发文件逐字一致的回显>"},可选
- * "targetId"(给了就必须与目标一致)、"request_id"(F5 关联 id,给了就
- * 必须与本次发送的关联标识一致);额外字段忽略,只认已记录字段。
- * 只有逐字段符合该契约才把台账记录升格 accepted;未知结构(非 JSON/
- * JSON 非对象/状态值不是 'accepted'/file 回显缺失或不一致)与其他
- * 状态值('applied' 是 HOT-004 的核验面、'ok'/'queued' 未记录)一律
- * 保留未确认,不猜、不升格。
+ * Parse a single-target accepted receipt (IDE-HOT-003): the recorded
+ * protocol is a JSON object
+ * {"status":"accepted","file":"<an echo byte-identical to the file sent>"},
+ * with optional "targetId" (if present it must match the target) and
+ * "request_id" (the F5 correlation id; if present it must match this
+ * send's correlation marker); extra fields are ignored and only the
+ * recorded fields are recognized.
+ * Only a field-by-field match of that contract promotes the ledger record
+ * to accepted; unknown structures (not JSON / JSON that is not an object /
+ * a status value other than 'accepted' / a missing or mismatching file echo)
+ * and any other status value ('applied' is HOT-004's verification surface,
+ * 'ok'/'queued' are unrecorded) are all kept unconfirmed -- never guessed
+ * at and never promoted.
  */
 
 import type { HotReloadTargetKey, HotReloadTargetStateStore } from './hotReloadTargetState';
 
 export interface HotReloadReceiptExpectation {
-  /** 所发文件绝对路径(回执必须逐字回显它才认) */
+  /** Absolute path of the file sent (the receipt only counts if it echoes it byte for byte) */
   file: string;
-  /** 目标实例 id;回执给了 targetId 就必须一致 */
+  /** Target instance id; if the receipt carries a targetId it must match */
   targetId?: string;
-  /** F5 关联 id:本次发送的关联标识;回执给了 request_id 就必须一致 */
+  /** F5 correlation id: this send's correlation marker; if the receipt carries a request_id it must match */
   requestId?: string;
 }
 
@@ -24,7 +29,7 @@ export type HotReloadReceiptParse =
   | { kind: 'accepted'; file: string }
   | { kind: 'not-accepted'; reason: string };
 
-/** 只认已记录协议;一切不符合保留未确认 */
+/** Only the recorded protocol is recognized; anything nonconforming stays unconfirmed */
 export function parseHotReloadAcceptedReceipt(
   body: string,
   expected: HotReloadReceiptExpectation
@@ -58,9 +63,12 @@ export function parseHotReloadAcceptedReceipt(
 }
 
 /**
- * 升格即入账:协议符合 → 该 (rootId,targetId,file) 记录升格
- * accepted;不符合 → 台账原样保留未确认(不动既有记录)。带 attempt
- * (IDE-AUD-005)=绑定所属发送代际写回,记录已换代则拒写不动。
+ * Promotion happens on the spot: if the protocol matches, the
+ * (rootId,targetId,file) record is promoted to accepted; if it does not,
+ * the ledger is left as it is, unconfirmed (no existing record touched).
+ * Carrying an attempt (IDE-AUD-005) means writing back bound to the owning
+ * send generation -- if the record has already moved to a new generation the
+ * write is refused and nothing is touched.
  */
 export function applyAcceptedReceipt(
   store: HotReloadTargetStateStore,

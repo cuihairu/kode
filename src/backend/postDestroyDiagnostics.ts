@@ -1,31 +1,40 @@
-// IDE-LINT-010:Entity 销毁后访问 lint(KBE-PY-010)——同一函数内可确定的
-// `self.destroy()` 之后直接访问 `self.<成员>` 报 Warning;跨回调/异常/动态
-// 分派/跨块标注未分析,不做全文件误报。
+// IDE-LINT-010: the access-after-entity-destruction lint (KBE-PY-010) -- a direct `self.<member>`
+// access after a determinable `self.destroy()` within the same function reports a Warning; the
+// cross-callback / exception / dynamic dispatch / cross-block cases are marked as unanalyzed and
+// deliberately produce no file-wide false positives.
 //
-// 纯逻辑层,不 import vscode。引擎事实:
-//   - `destroy` 是各面实体宏公共方法(entity_macro.h:20 `SCRIPT_METHOD_DECLARE
-//     ("destroy", pyDestroyEntity, ...)`),`self.destroy()` 销毁自身;
-//   - 销毁后各 getter(如 Entity::pyGetCellEntityCall)检查 destroyed,访问
-//     即异常——故销毁后的任何成员访问都是错用。
+// A pure logic layer, no vscode import. Engine facts:
+//   - `destroy` is a public method of the per-face entity macro (entity_macro.h:20
+//     `SCRIPT_METHOD_DECLARE("destroy", pyDestroyEntity, ...)`), and `self.destroy()` destroys
+//     the entity itself;
+//   - after destruction the getters (such as Entity::pyGetCellEntityCall) check destroyed and
+//     access raises -- so any member access after destruction is a misuse.
 //
-// 判定(最小、可靠、同块直进):
-//   - 非实体脚本(路径面无 def 归属)→ 不接管(普通 Python 类不猜);
-//   - 角色不明(路径面 null 且 def 归属空/多面歧义)→ 不猜;
-//   - 同一函数体同一块(同一缩进,中间无 dedent)内,销毁语句(整句
-//     `self.destroy()` 或 `x = self.destroy()`)先于访问语句,且两者间无
-//     同层 `return`/`break`/`continue`/`raise`(无条件早退,访问为死码)→
-//     报 Warning;
-//   - 成员集:排除 `id`/`isDestroyed`/`className`(销毁后仍可读的身份/
-//     状态项,读 `isDestroyed` 正是确认销毁)与 `destroy`(重复销毁非本
-//     lint 面向的访问错用)——其余任何成员(属性/方法/EntityCall)访问都报;
-//   - 销毁语句在访问语句之后、销毁条件执行(if/while 内)、或与访问不同块
-//     (销毁在祖先块/嵌套块/回调)→ 不报(未分析,见下)。
+// The determination (minimal, reliable, straight through a single block):
+//   - not an entity script (no def attribution on the path face) -> not taken over (no guessing
+//     for an ordinary Python class);
+//   - the role is unclear (the path face is null and def attribution is empty / ambiguously
+//     multi-faced) -> no guessing;
+//   - inside the same function body and the same block (the same indent, with no dedent in
+//     between), a destroy statement (a whole `self.destroy()` statement or
+//     `x = self.destroy()`) precedes the access statement, and there is no same-level
+//     `return`/`break`/`continue`/`raise` between the two (an unconditional early exit, making
+//     the access dead code) -> report a Warning;
+//   - the member set: `id`/`isDestroyed`/`className` are excluded (identity/state items that
+//     are still readable after destruction -- reading `isDestroyed` is exactly how destruction
+//     is confirmed), along with `destroy` (a repeated destruction is not the access misuse this
+//     lint targets) -- any other member (property/method/EntityCall) access is reported;
+//   - the destroy statement comes after the access statement, the destruction is conditional
+//     (inside an if/while), or it is in a different block from the access (the destruction in an
+//     ancestor block / a nested block / a callback) -> not reported (unanalyzed, see below).
 //
-// 已知边界(与同族 self-属性 lint 一致):销毁在祖先块、访问在嵌套块、跨
-// 函数/跨回调(回调里销毁,另一回调访问)、异常路径(销毁抛错未完成)、
-// 动态分派(def 声明 `destroy` 方法/属性 → `self.destroy()` 可能非引擎销毁)
-// ——均不分析,不冒充已实现;`self.<prop>` 仅 `self.` 单段前缀(`other.destroy`
-// 与 `self.cell.destroy` 非销毁自身,不参与)。
+// Known boundary (consistent with the sibling self-property lint): the destruction in an ancestor
+// block, the access in a nested block, cross-function / cross-callback (destroyed in one
+// callback, accessed in another), the exception path (the destruction raised and never
+// completed), dynamic dispatch (the def declares a `destroy` method/property, so
+// `self.destroy()` may not be the engine's destruction) -- none of these are analyzed, and none
+// is passed off as implemented; `self.<prop>` only matches the single-segment `self.` prefix
+// (`other.destroy` and `self.cell.destroy` do not destroy the entity itself and do not count).
 
 import { pythonCodeLines, pythonStatements } from './pythonParser';
 import { l10nText } from '../nlsRuntime';
@@ -34,7 +43,7 @@ import { resolveEntityComponentFaceFromPath, type EntityComponentFace } from './
 export const POST_DESTROY_DIAGNOSTIC_CODE = 'kbengine.postDestroy';
 export const POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
-/** 销毁后仍可读/无碍的成员(身份、状态、重复销毁);其余访问都报 */
+/** Members that stay readable/harmless after destruction (identity, state, a repeated destruction); every other access is reported */
 const SAFE_MEMBERS = new Set(['id', 'isDestroyed', 'className', 'destroy']);
 
 const DESTROY_STATEMENT = /^(?:[A-Za-z_]\w*\s*=\s*)?self\.destroy\s*\(/;
@@ -42,7 +51,7 @@ const EARLY_EXIT_STATEMENT = /^(?:return|break|continue|raise)\b/;
 const FUNCTION_HEADER = /^\s*(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(/;
 const ACCESS_PATTERN = /\bself\.(\w+)/g;
 
-/** 消息模板单一来源(TS 渲染,Rust 只回结构面) */
+/** The single source of the message template (rendered in TS; Rust returns only the structural face) */
 export function renderPostDestroyMessage(member: string, destroyLine: number): string {
   return l10nText(
     'self.{member} accessed after self.destroy() (destroyed at line {line}): the entity is dead after destruction; {member} access triggers the engine destroyed check',
@@ -50,13 +59,13 @@ export function renderPostDestroyMessage(member: string, destroyLine: number): s
   );
 }
 
-/** 一处销毁后访问 */
+/** One post-destruction access */
 export interface PostDestroyFinding {
   line: number;
   character: number;
   length: number;
   member: string;
-  /** 销毁语句位置(取证) */
+  /** The destroy statement's position (for evidence) */
   destroyLine: number;
   destroyColumn: number;
   message: string;
@@ -69,7 +78,7 @@ interface Statement {
   indent: number;
 }
 
-/** 同一函数体同一块:同缩进,且两者间无 dedent(缩进 < 本层) */
+/** The same block within the same function body: the same indent, with no dedent (an indent below this level) between the two */
 function sameBlock(from: Statement, to: Statement, all: readonly Statement[]): boolean {
   if (from.indent !== to.indent) {
     return false;
@@ -85,9 +94,11 @@ function sameBlock(from: Statement, to: Statement, all: readonly Statement[]): b
 }
 
 /**
- * 销毁后访问判定(纯函数)。pathFace 与 defFaces 由调用方提供(与内建属性
- * hover 同源面判定);isDestroyDeclared 为 def 是否声明 `destroy`(动态分派
- * 边界,声明则 `self.destroy()` 可能非引擎销毁 → 整文件不分析)。
+ * The post-destruction access determination (a pure function). pathFace and defFaces come from
+ * the caller (the same same-source face determination as the builtin-property hover);
+ * isDestroyDeclared says whether the def declares `destroy` (the dynamic-dispatch boundary: when
+ * it does, `self.destroy()` may not be the engine's destruction, so the whole file is not
+ * analyzed).
  */
 export function findPostDestroyFindings(
   text: string,
@@ -95,7 +106,7 @@ export function findPostDestroyFindings(
   defFaces: readonly EntityComponentFace[] | null,
   isDestroyDeclared: boolean
 ): PostDestroyFinding[] {
-  // 动态分派边界:def 声明 destroy → 不冒充引擎销毁
+  // The dynamic-dispatch boundary: the def declares destroy -> never pass it off as the engine's destruction
   if (isDestroyDeclared) {
     return [];
   }
@@ -112,13 +123,13 @@ export function findPostDestroyFindings(
   const maskedLines = pythonCodeLines(text);
   const findings: PostDestroyFinding[] = [];
 
-  // 只分析函数体内(模块/类体无 self;顶层匹配不成立)
+  // Only analyze inside function bodies (a module/class body has no self; a top-level match does not hold)
   for (let s = 0; s < statements.length; s += 1) {
     const header = statements[s];
     if (!FUNCTION_HEADER.test(header.text)) {
       continue;
     }
-    // 函数体 = 其后缩进 > def 缩进的语句
+    // The function body = the statements after it whose indent is greater than the def's indent
     const bodyStart = s + 1;
     let bodyEnd = statements.length;
     for (let t = bodyStart; t < statements.length; t += 1) {
@@ -129,13 +140,13 @@ export function findPostDestroyFindings(
     }
     const body = statements.slice(bodyStart, bodyEnd);
 
-    // 同块内查找每个访问语句前面的销毁语句
+    // Within the same block, look for the destroy statement that precedes each access statement
     for (let a = 0; a < body.length; a += 1) {
       const access = body[a];
       if (!/\bself\./.test(access.text)) {
         continue;
       }
-      // 找到本块内先于 access 的销毁语句(同块,无同层早退)
+      // Find the destroy statement within this block that precedes access (same block, no same-level early exit)
       let destroy: Statement | null = null;
       for (let d = 0; d < a; d += 1) {
         const candidate = body[d];
@@ -145,7 +156,7 @@ export function findPostDestroyFindings(
         if (!sameBlock(candidate, access, body)) {
           continue;
         }
-        // 同层早退(return/break/continue/raise)在销毁与访问之间 → 访问死码
+        // A same-level early exit (return/break/continue/raise) between the destruction and the access -> the access is dead code
         let dead = false;
         for (let k = d + 1; k < a; k += 1) {
           const mid = body[k];
@@ -162,8 +173,9 @@ export function findPostDestroyFindings(
       if (destroy === null) {
         continue;
       }
-      // 逐个命中 `self.<member>`(member 非安全集):直接扫掩码行找位置
-      // (掩码保留源位置,且字符串/注释内的伪访问不命中)
+      // Hit each `self.<member>` (member outside the safe set): scan the masked lines directly for the
+      // position (the mask preserves source positions, and a spurious access inside a string or
+      // comment does not hit)
       for (let ln = access.line; ln <= access.endLine; ln += 1) {
         const masked = maskedLines[ln];
         ACCESS_PATTERN.lastIndex = 0;
@@ -187,7 +199,7 @@ export function findPostDestroyFindings(
       }
     }
   }
-  // 去重:嵌套函数体既随外层函数分析、又作自身函数分析,同一命中会重复
+  // Deduplicate: a nested function body is analyzed both as part of the outer function and as its own function, so the same hit can repeat
   const seen = new Set<string>();
   return findings.filter(finding => {
     const key = `${finding.line}:${finding.character}:${finding.member}`;
@@ -199,7 +211,7 @@ export function findPostDestroyFindings(
   });
 }
 
-/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖) */
+/** The diagnostic item (pure data; the extension side converts it to a vscode.Diagnostic, and tests avoid the vscode dependency) */
 export interface PostDestroyDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -212,9 +224,11 @@ export interface PostDestroyDiagnosticItem {
 }
 
 /**
- * 异步入口:pathFace 按目录域定面;判不出经 fetchDefFaces 取 def 归属面
- * (与内建属性 inlay provider 同源);isDestroyDeclared 由调用方经
- * getMappingForPythonFile 判 def 是否声明 destroy(动态分派边界)。
+ * The async entry point: pathFace fixes the face by the directory domain; when it cannot be
+ * determined, the def attribution face is taken via fetchDefFaces (the same source as the
+ * builtin-property inlay provider); isDestroyDeclared is supplied by the caller via
+ * getMappingForPythonFile, saying whether the def declares destroy (the dynamic-dispatch
+ * boundary).
  */
 export async function postDestroyDiagnosticItemsAsync(
   text: string,
@@ -238,7 +252,7 @@ export async function postDestroyDiagnosticItemsAsync(
   return findPostDestroyFindings(text, pathFace, defFaces, isDestroyDeclared()).map(postDestroyFindingToItem);
 }
 
-/** finding → 诊断项(纯数据;extension 侧转 vscode.Diagnostic) */
+/** finding -> the diagnostic item (pure data; the extension side converts it to a vscode.Diagnostic) */
 export function postDestroyFindingToItem(finding: PostDestroyFinding): PostDestroyDiagnosticItem {
   return {
     range: {
@@ -252,14 +266,16 @@ export function postDestroyFindingToItem(finding: PostDestroyFinding): PostDestr
   };
 }
 
-// ---- Rust 面(AUDIT-005 B2 车道批 4:postDestroy 收编) -------------------------
-// `$/kode/lint/analyzePostDestroy` 经 gate.runInRust(与 analyzeReceiverNone/
-// analyzeSpaceNav 同口径):Rust 只回结构面(line/character/length/member +
-// destroyLine/destroyColumn),消息渲染留本模块(l10n 单一来源)。任一条畸形
-// 返回 null(整面作废,调用方回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+// ---- The Rust face (AUDIT-005 B2 lane batch 4: postDestroy absorbed) -------------------------
+// `$/kode/lint/analyzePostDestroy` goes through gate.runInRust (the same accounting as
+// analyzeReceiverNone/analyzeSpaceNav): Rust returns only the structural face
+// (line/character/length/member + destroyLine/destroyColumn), while the message rendering stays
+// in this module (the single source for l10n). Any malformed entry returns null (the whole face is
+// voided, the caller falls back to TS -- partial adoption is forbidden). Shared by the
+// cross-check tests.
 
-/** Rust 结构面单条产物(`$/kode/lint/analyzePostDestroy` 应答;结构校验逐字段):
- * {code, line, character, length, member, destroyLine, destroyColumn} */
+/** One structural entry from Rust (a `$/kode/lint/analyzePostDestroy` response; the structure is
+ * validated field by field): {code, line, character, length, member, destroyLine, destroyColumn} */
 const MEMBER_PATTERN = /^[A-Za-z_]\w*$/;
 const SELF_DOT_LENGTH = 'self.'.length;
 
@@ -300,8 +316,9 @@ function renderRustPostDestroyItem(item: unknown): PostDestroyDiagnosticItem | n
 }
 
 /**
- * 结构面数组 → 诊断面数组(消息渲染);任一条畸形返回 null(整面作废,调用方
- * 回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+ * The structural array -> the diagnostic array (with the message rendering); any malformed entry
+ * returns null (the whole face is voided, the caller falls back to TS -- partial adoption is
+ * forbidden). Shared by the cross-check tests.
  */
 export function renderRustPostDestroyItems(items: readonly unknown[]): PostDestroyDiagnosticItem[] | null {
   const rendered: PostDestroyDiagnosticItem[] = [];

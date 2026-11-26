@@ -1,13 +1,18 @@
-//! PDC-0603 性能验证(计划书 §10 矩阵 / Phase 6):
-//! 大 ARRAY 子表、十万级子行、大包(单行大 BLOB)分批读取、reader 侧内存有界、
-//! 流中取消/超时。
+//! PDC-0603 performance verification (plan doc §10 matrix / Phase 6):
+//! large ARRAY child tables, hundred-thousand-level child rows, large packets
+//! (single-row large BLOB) read in batches, reader-side bounded memory,
+//! mid-stream cancel / timeout.
 //!
-//! 断言只放宽松上界——PDC-0601/0602 教训:严格时序断言在 546-worker 负载下会
-//! flake。这里的上界只拦真实回归(挂死/平方级退化),实测耗时与编码体积用
-//! eprintln 落日志供人工核对,不作严格时序断言。
+//! Assertions only place loose upper bounds — the PDC-0601/0602 lesson: strict
+//! timing assertions flake under 546-worker load. The bounds here only catch real
+//! regressions (hangs / quadratic degradation); measured durations and encoded
+//! sizes go to the log via eprintln for manual review, not strict timing
+//! assertions.
 //!
-//! 全部经公开 API,无新增依赖。reader 侧流式性由「丢弃式计数汇」证明:
-//! 汇不保留行数据,导出能跑完 30 万行即说明 reader 逐行交棒、不整表累积。
+//! Everything goes through the public API, no new dependencies. Reader-side
+//! streaming is proven by the "discard-style counting sink": the sink retains no
+//! row data, so the export finishing 300k rows shows the reader hands off row by
+//! row instead of accumulating whole tables.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -18,14 +23,17 @@ use kode_db_clone::reader::{
 };
 use kode_db_clone::value::TypedRow;
 
-/// 十万级子行:ARRAY 子表行数(超过 hardening 的 SUB_ROWS=100_000 基线)。
+/// Hundred-thousand-level child rows: the ARRAY child table's row count (beyond
+/// hardening's SUB_ROWS=100_000 baseline).
 const SUB_ROWS: u64 = 300_000;
 
-/// 大包单行:4 MiB 二进制 → blob 单元格 → 8 MiB hex 编码的 Bytes 值。
+/// Large single-row packet: 4 MiB binary → blob cell → 8 MiB hex-encoded Bytes
+/// value.
 const BLOB_CELL_BYTES: usize = 4 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
-// 夹具:按表名返回行集的只读执行器(backtick 限定匹配,防 tbl_Avatar 前缀误中)
+// Fixture: a read-only executor returning row sets by table name (backtick-
+// qualified matching, to keep tbl_Avatar prefix from matching by mistake)
 // ---------------------------------------------------------------------------
 
 struct MapExec {
@@ -59,7 +67,8 @@ impl ReadOnlyExecutor for MapExec {
     }
 }
 
-/// root(1 行) + items 子表(N 行) 的计划。sub 列序/列型可注入(大包用 blob)。
+/// Plan for root (1 row) + the items child table (N rows). Sub column order/types
+/// injectable (blob for the large packet).
 fn big_plan(sub_columns: &[&str], sub_types: &[&str], sub_rows: u64) -> QueryPlan {
     let cols: Vec<String> = sub_columns.iter().map(|s| s.to_string()).collect();
     let types: Vec<String> = sub_types.iter().map(|s| s.to_string()).collect();
@@ -104,7 +113,7 @@ fn big_plan(sub_columns: &[&str], sub_types: &[&str], sub_rows: u64) -> QueryPla
     }
 }
 
-/// 30 万行 items 执行器(每行 id/parentID/sm_value)。
+/// 300k-row items executor (each row id/parentID/sm_value).
 fn big_exec(sub_rows: u64) -> MapExec {
     let mut sub = Vec::with_capacity(sub_rows as usize);
     for i in 0..sub_rows {
@@ -121,7 +130,8 @@ fn big_exec(sub_rows: u64) -> MapExec {
 }
 
 // ---------------------------------------------------------------------------
-// 丢弃式计数汇:记录行数/累计字节/最大单行字节,不保留行数据
+// Discard-style counting sink: records row count / cumulative bytes / max single
+// row bytes, retains no row data
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -130,7 +140,7 @@ struct CountingSink {
     total_bytes: u64,
     max_row_bytes: u64,
     counts: BTreeMap<String, u64>,
-    /// 到达该行数后取消(流中取消用例)。
+    /// Cancels once this row count is reached (mid-stream cancel case).
     cancel_at: Option<u64>,
     control: Option<ExportControl>,
 }
@@ -167,11 +177,13 @@ impl RowSink for CountingSink {
 }
 
 // ---------------------------------------------------------------------------
-// 测试
+// Tests
 // ---------------------------------------------------------------------------
 
-/// 大 ARRAY 子表 + 十万级子行(30 万):全量成功、计数准确、reader 侧不累积。
-/// 汇丢弃行数据仍能跑完,即证明逐行交棒、内存有界(最大单行编码远小于总量)。
+/// Large ARRAY child table + hundred-thousand-level child rows (300k): full
+/// success, exact counts, no reader-side accumulation. The sink discards row
+/// data yet the export completes — proving row-by-row hand-off and bounded memory
+/// (the max single-row encoding is far smaller than the total).
 #[test]
 fn large_array_subtable_300k_streams_and_counts() {
     let exec = big_exec(SUB_ROWS);
@@ -197,28 +209,32 @@ fn large_array_subtable_300k_streams_and_counts() {
     assert_eq!(sink.rows, 1 + SUB_ROWS);
     assert_eq!(sink.counts["tbl_Avatar"], 1);
     assert_eq!(sink.counts["tbl_Avatar_items"], SUB_ROWS);
-    // 宽松上界:内存内 30 万行应在数秒内;60s 只拦真实挂死/平方级退化。
+    // Loose upper bound: 300k in-memory rows should finish within seconds; 60s
+    // only catches real hangs / quadratic degradation.
     assert!(
         elapsed < Duration::from_secs(60),
-        "300k 行导出耗时 {elapsed:?} 超出宽松上界"
+        "300k-row export took {elapsed:?}, beyond the loose upper bound"
     );
-    // 流式证据:单行编码远小于总量(逐行交棒,非整表累积)。
+    // Streaming evidence: single-row encoding far smaller than the total (row-by-row
+    // hand-off, not whole-table accumulation).
     assert!(
         sink.max_row_bytes * 100 < sink.total_bytes,
-        "reader 应逐行交棒:max_row={}B total={}B",
+        "reader should hand off row by row:max_row={}B total={}B",
         sink.max_row_bytes,
         sink.total_bytes
     );
     eprintln!(
-        "[perf] 300k 子行: {elapsed:?} total_bytes={}B max_row={}B",
+        "[perf] 300k child rows: {elapsed:?} total_bytes={}B max_row={}B",
         sink.total_bytes, sink.max_row_bytes
     );
 }
 
-/// 大包分批读取:单行 4 MiB BLOB → 8 MiB hex 编码,如实保留、不截断不丢失。
+/// Large packet read in batches: a single 4 MiB BLOB row → 8 MiB hex encoding,
+/// preserved honestly, never truncated or lost.
 #[test]
 fn large_blob_packet_reads_in_one_row() {
-    // 确定性 a-z 循环字节(全 1 字节 UTF-8,hex 编码恰为 2×)。
+    // Deterministic a-z cycling bytes (all 1-byte UTF-8; hex encoding is exactly
+    // 2x).
     let mut blob = String::with_capacity(BLOB_CELL_BYTES);
     for i in 0..BLOB_CELL_BYTES {
         blob.push((b'a' + (i % 26) as u8) as char);
@@ -247,15 +263,16 @@ fn large_blob_packet_reads_in_one_row() {
     assert!(!out.cancelled);
     assert_eq!(out.stats.total_rows, 2);
     assert_eq!(sink.rows, 2);
-    // hex 编码后单行体积应 ≥ 2× 二进制(加 JSON 开销)。
+    // After hex encoding the single row should be ≥ 2x the binary (plus JSON
+    // overhead).
     assert!(
         sink.max_row_bytes >= (BLOB_CELL_BYTES as u64) * 2,
-        "大包应被 hex 编码保留:max_row={}B",
+        "the large packet should be preserved via hex encoding:max_row={}B",
         sink.max_row_bytes
     );
     assert!(
         elapsed < Duration::from_secs(30),
-        "4MiB blob 导出耗时 {elapsed:?} 超出宽松上界"
+        "4MiB blob export took {elapsed:?}, beyond the loose upper bound"
     );
     eprintln!(
         "[perf] 4MiB blob 单行: {elapsed:?} encoded={}B",
@@ -263,7 +280,8 @@ fn large_blob_packet_reads_in_one_row() {
     );
 }
 
-/// 宽行(300 列)计划:仅 root 查询,列序/列型由调用方给定。
+/// Wide-row (300 columns) plan: root query only; column order/types given by the
+/// caller.
 fn wide_plan(root_columns: Vec<String>, root_types: Vec<String>) -> QueryPlan {
     let select = format!(
         "SELECT {} FROM `tbl_Avatar` WHERE `id` = ?",
@@ -293,7 +311,8 @@ fn wide_plan(root_columns: Vec<String>, root_types: Vec<String>) -> QueryPlan {
     }
 }
 
-/// 宽行(300 列):多字段单行如实导出、计数准确。
+/// Wide row (300 columns): a many-field single row exported honestly, count
+/// exact.
 #[test]
 fn wide_row_many_columns_exports() {
     const WIDE: usize = 300;
@@ -324,10 +343,14 @@ fn wide_row_many_columns_exports() {
     assert_eq!(out.stats.total_rows, 1);
     assert_eq!(sink.rows, 1);
     assert_eq!(sink.counts["tbl_Avatar"], 1);
-    eprintln!("[perf] {WIDE}-col 宽行: encoded={}B", sink.max_row_bytes);
+    eprintln!(
+        "[perf] {WIDE}-col wide row: encoded={}B",
+        sink.max_row_bytes
+    );
 }
 
-/// 流中取消(超时族):到达 1000 行时取消 → 如实停止、报 cancelled、不报成功。
+/// Mid-stream cancel (timeout family): cancels at 1000 rows → stops honestly,
+/// reports cancelled, reports no success.
 #[test]
 fn mid_stream_cancel_stops_export() {
     let exec = big_exec(SUB_ROWS);
@@ -347,12 +370,12 @@ fn mid_stream_cancel_stops_export() {
             &control,
         )
         .unwrap();
-    assert!(out.cancelled, "流中取消应报 cancelled");
+    assert!(out.cancelled, "mid-stream cancel should report cancelled");
     assert!(
         sink.rows >= 999 && sink.rows < 1 + SUB_ROWS,
-        "应停在取消点附近: rows={}",
+        "should stop near the cancel point: rows={}",
         sink.rows
     );
     let stopped = sink.rows;
-    eprintln!("[perf] 流中取消: 停在 {stopped} 行");
+    eprintln!("[perf] mid-stream cancel: stopped at row {stopped}");
 }

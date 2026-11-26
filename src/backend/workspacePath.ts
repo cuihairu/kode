@@ -6,8 +6,9 @@ export function joinWorkspacePath(basePath: string, ...segments: string[]): stri
     return path.posix.join(basePath, ...segments.map(segment => segment.replace(/\\/g, '/')));
   }
 
-  // 显式走 win32 语义:依赖平台隐式 path 时,在 linux/macOS 主机上
-  // path.join 是 posix 实现,会给 C:\ 路径产出生混合分隔符的错误结果。
+  // Go with win32 semantics explicitly: when relying on the platform-implicit path,
+  // on linux/macOS hosts path.join is the posix implementation and would produce a
+  // wrong mixed-separator result for C:\ paths.
   return path.win32.join(basePath, ...segments);
 }
 
@@ -16,15 +17,19 @@ export function usesPosixPath(targetPath: string): boolean {
 }
 
 /**
- * WIN-3:纯路径逻辑按输入路径风格选 path 实现(平台参数化纯函数,可测)。
- * POSIX 平台 path 即 posix;win32 上反斜杠与盘符前缀(驱动+正/反斜杠,
- * `C:/` 与 `C:\`)都是平台风格信号——含 `\` 或盘符前缀走 path.win32,
- * `/` 开头与相对纯 `/` 形态走 path.posix(单测与 uri.path 派生面)。混用会
- * 让 win32 的 join/resolve/relative 把 /ws/repo 归一成 \ws\repo 并锚到当
- * 前盘,或把合法 cwd 内路径判成越界,输出与消费方期望双双失真。
- * 审核发现修复:旧实现只以 includes('\\') 判风格,盘符+正斜杠路径
- * (`C:/repo/...`) 被误判为 posix,path.posix.resolve 会错误锚到 cwd;
- * 与 usesPosixPath(同样认 `^[A-Za-z]:[\\/]` 盘符)保持一致。
+ * WIN-3: pure path logic picks the path implementation by input-path style (a
+ * platform-parameterized pure function, testable). On POSIX platforms path is posix;
+ * on win32 both backslashes and drive-letter prefixes (drive + forward/backward
+ * slash, `C:/` and `C:\`) are platform-style signals — a `\` or a drive-letter prefix
+ * goes to path.win32, while a leading `/` and relative pure-`/` shapes go to
+ * path.posix (unit tests and the uri.path derived face). Mixing them makes win32's
+ * join/resolve/relative normalize /ws/repo into \ws\repo anchored to the current
+ * drive, or judge a legitimate in-cwd path as out of bounds, distorting both the
+ * output and the consumer's expectation.
+ * Audit-finding fix: the old implementation judged style only by includes('\\'), so
+ * a drive-letter + forward-slash path (`C:/repo/...`) was misjudged as posix, and
+ * path.posix.resolve would wrongly anchor to the cwd; kept consistent with
+ * usesPosixPath (which likewise recognizes the `^[A-Za-z]:[\\/]` drive prefix).
  */
 export function selectPathApiForPlatform(
   platform: NodeJS.Platform,
@@ -36,24 +41,29 @@ export function selectPathApiForPlatform(
   return /^[A-Za-z]:[\\/]/.test(samplePath) || samplePath.includes('\\') ? path.win32 : path.posix;
 }
 
-/** 按当前宿主平台选 path 实现(经 selectPathApiForPlatform 参数化)。 */
+/** Pick the path implementation by the current host platform (parameterized via selectPathApiForPlatform). */
 export function pathApiFor(samplePath: string): path.PlatformPath {
   return selectPathApiForPlatform(process.platform, samplePath);
 }
 
 /**
- * 路径模板渲染单一真源(委派 src/variableSubstitution 的官方变量表):
- * `${workspaceFolder}`、`${env:...}` 等占位 → 渲染后的纯文本,**不含任何
- * join/锚定**——锚到工作区根仍由各链自己的路径口径负责。
+ * The single source of truth for path-template rendering (delegates to src/
+ * variableSubstitution's official variable table): placeholders like
+ * `${workspaceFolder}` and `${env:...}` → rendered plain text, **with no join/
+ * anchoring** — anchoring to the workspace root remains each chain's own path
+ * semantics' responsibility.
  *
- * 两链同用本函数,同输入必须同输出(等价性由 tests/pathTemplateEquivalence
- * .test.ts 锁定):
- * - 手工输入链 definitionWorkspace.resolveWorkspacePath(kbengine.entityDefsPath
- *   等配置项 → layout 候选)
- * - 发现链 workspaceDiscovery.resolveAgainstWorkspace(诊断报告的显式配置盘点)
- * 此前手工链漏渲染,配置里的 `${workspaceFolder}/...` 被当相对路径字面拼进
- * def 根(`<root>/${workspaceFolder}/scripts/entity_defs`,必然不存在),与发现链
- * 结论不一致 → def 根定位错位。
+ * Both chains use this function; the same input must give the same output
+ * (equivalence locked by tests/pathTemplateEquivalence.test.ts):
+ * - the manual-input chain definitionWorkspace.resolveWorkspacePath (settings keys
+ *   such as kbengine.entityDefsPath → layout candidates)
+ * - the discovery chain workspaceDiscovery.resolveAgainstWorkspace (the explicit
+ *   configuration inventory of the diagnostic report)
+ * Previously the manual chain skipped rendering, so `${workspaceFolder}/...` in a
+ * setting was spliced literally into the def root as a relative path
+ * (`<root>/${workspaceFolder}/scripts/entity_defs`, which could never exist),
+ * disagreeing with the discovery chain's conclusion → the def root was located in
+ * the wrong place.
  */
 export function renderPathTemplate(value: string, workspaceRoot: string): string {
   const folders: VariableFolderRef[] = [{ fsPath: workspaceRoot, name: '' }];
@@ -61,13 +71,16 @@ export function renderPathTemplate(value: string, workspaceRoot: string): string
 }
 
 /**
- * 展开 VS Code 官方变量(批141 起委派 src/variableSubstitution,替换逻辑
- * 单一真源;与 serverManager.getBinPath 同款口径,批112 起 telnet 引擎
- * defaults 推导与最终配置合成共用此实现)。
+ * Expand VS Code official variables (since batch 141 delegated to src/
+ * variableSubstitution as the single source of truth for replacement logic; the same
+ * semantics as serverManager.getBinPath, and since batch 112 the telnet engine
+ * defaults derivation and the final configuration synthesis share this
+ * implementation).
  *
- * 沿用本函数既有的「未解析落空串」口径:路径类设置读不到变量时当没写,
- * 不让一个缺失的环境变量把扩展装配整挂。抛错口径由 quickActionConfig
- * 的命令侧自己选。
+ * Keeps this function's existing "unresolved falls to the empty string" semantics:
+ * a path-class setting whose variable cannot be read is treated as not written, so
+ * one missing environment variable never takes down the whole extension wiring. The
+ * throw semantics are chosen by quickActionConfig's command side itself.
  */
 export function expandWorkspacePlaceholders(
   value: string,
@@ -79,7 +92,8 @@ export function expandWorkspacePlaceholders(
   if (resolved.length === 0 || path.isAbsolute(resolved)) {
     return resolved;
   }
-  // 相对结果一律以仓库根为基准解析(用户令 2026-10-16:不许假设当前 cwd);
-  // 无工作区根可锚 → 空串(调用方按「未解析出」跳过,绝不相对 cwd 探测)
+  // A relative result is always resolved against the repository root (user order
+  // 2026-10-16: never assume the current cwd);
+  // no workspace root to anchor → empty string (callers skip as "unresolved", never probing relative to cwd)
   return workspaceRoot ? joinWorkspacePath(workspaceRoot, resolved) : '';
 }

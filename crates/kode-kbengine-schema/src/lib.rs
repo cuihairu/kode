@@ -1,20 +1,21 @@
-//! kode2 KBEngine schema engine(todo PA-002 Phase 1)。
+//! kode2 KBEngine schema engine (todo PA-002 Phase 1).
 //!
-//! 从真实 KBEngine 项目生成完整协议 Schema:项目资产(scripts/entities.xml +
-//! entity_defs/**/*.def + types.xml/alias.xml)+ 引擎固定消息表
-//! (messages_fixed_defaults.xml + 项目 messages_fixed.xml)→
-//! [`Schema`](schema::Schema) IR(canonical JSON + SHA-256 摘要 + 版本兼容检查)。
+//! Generates a complete protocol Schema from a real KBEngine project: project assets
+//! (scripts/entities.xml + entity_defs/**/*.def + types.xml/alias.xml) + the engine's fixed
+//! message table (messages_fixed_defaults.xml + the project's messages_fixed.xml) →
+//! the [`Schema`](schema::Schema) IR (canonical JSON + SHA-256 digest + version compatibility checks).
 //!
-//! 设计边界(验收原文):
-//! - 「Wire Type Layout 独立于现有类型图」:`wire`/`layout` 自带求值,
-//!   不消费 `kode_types::graph`(类型图 = 脚本语义;本 crate = 网络序列化规则,
-//!   取证依据 docs/kbengine-wire-protocol.md,PA-001)。
-//! - 复用 kode-parser(xml/model)/kode-types(builtin 分类)/kode-vfs(磁盘读缓存)。
-//! - 未知类型不猜测:落 `WireType::Unresolved`,解码端 Raw 保留。
+//! Design boundaries (from the acceptance text):
+//! - "Wire Type Layout is independent of the existing type graph": `wire`/`layout` evaluate on
+//!   their own and do not consume `kode_types::graph` (the type graph = script semantics; this
+//!   crate = network serialization rules, evidence in docs/kbengine-wire-protocol.md, PA-001).
+//! - Reuses kode-parser (xml/model) / kode-types (builtin classification) / kode-vfs (disk read cache).
+//! - Unknown types are never guessed: they land as `WireType::Unresolved`, and the decoding side
+//!   keeps them as Raw.
 //!
-//! 线上完整消息表的三段模型(静态默认 + 项目覆盖 + 登录动态导入):本 crate
-//! 承载前两段;动态导入(§5.2 onImportClientMessages)由 kode-kbengine-protocol
-//! (PA-003)在流上解析。
+//! The three-segment model of the complete on-wire message table (static defaults + project
+//! overrides + login-time dynamic import): this crate carries the first two segments; the dynamic
+//! import (§5.2 onImportClientMessages) is parsed on the stream by kode-kbengine-protocol (PA-003).
 
 pub mod builder;
 pub mod compat;

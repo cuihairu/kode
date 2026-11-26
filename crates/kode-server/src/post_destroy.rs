@@ -1,25 +1,25 @@
-//! postDestroy 诊断收编(AUDIT-005 B2 车道批 4):`$/kode/lint/analyzePostDestroy`。
+//! postDestroy diagnostics absorption (AUDIT-005 B2 lane batch 4): `$/kode/lint/analyzePostDestroy`.
 //!
-//! TS 源 = src/backend/postDestroyDiagnostics.ts,逐语义忠实移植(对拍纪律):
-//!   - 全量在 UTF-16 码元面(`Vec<u16>`,encode_utf16)做扫描——TS 的
-//!     `match.index`/`indexOf` 都是 UTF-16 码元列,非 ASCII 行字节面会漂移;
-//!   - 行掩码 = pythonCodeLines 等价移植(注释/字符串/f-string **整段掩码**,
-//!     与 receiverNone 用的 mask_python_non_code「f-string 表达式保留」语义
-//!     不同;引号态跨行延续,反斜杠转义双格,三引号开/闭 3 格)——注意本
-//!     模块自己掩码 text,与 TS 侧 pythonCodeLines 对拍一致;
-//!   - 语句面(掩码拼接后的 text/line/endLine/indent)由 TS 供给
-//!     (pythonStatements 是共享上游,parsePythonFile 亦建于其上)——本模块
-//!     不重做语句切分,只做块/销毁/早退/访问点分析;
-//!   - 正则全部手工展开:`\b` 左界 = 前码元非词元或文首;词元 =
-//!     `[A-Za-z0-9_]`;`\s` = JS 空白类;锚定前缀形态逐位判定;
-//!   - 消息不出 Rust:只回结构面(line/character/length/member + destroyLine/
-//!     destroyColumn),l10n 渲染留 TS(畸形整面作废)。
+//! The TS source = src/backend/postDestroyDiagnostics.ts, ported faithfully semantically (comparison discipline):
+//!   - the whole scan runs on the UTF-16 code-unit face (`Vec<u16>`, encode_utf16) -- the TS
+//!     `match.index`/`indexOf` are both UTF-16 code-unit columns; on a non-ASCII line the byte face would drift;
+//!   - the line mask = an equivalent port of pythonCodeLines (comments / strings / f-strings **masked as a whole segment**,
+//!     a different semantics from the "f-string expressions kept" of mask_python_non_code used by receiverNone;
+//!     quote state carries across lines, a backslash escape counts double, and triple-quote open/close count 3) -- note this
+//!     module masks text itself, consistent with the TS-side pythonCodeLines comparison;
+//!   - the statement face (text/line/endLine/indent after mask concatenation) is supplied by the TS side
+//!     (pythonStatements is the shared upstream, and parsePythonFile is built on it too) -- this module
+//!     does not redo statement splitting, it only does block / destroy / early-exit / access-point analysis;
+//!   - every regex is hand-expanded: the `\b` left boundary = the preceding code unit is not a word unit or start of text; a word unit =
+//!     `[A-Za-z0-9_]`; `\s` = the JS whitespace class; the anchored prefix shapes are tested unit by unit;
+//!   - no messages leave Rust: only the structural face comes back (line/character/length/member + destroyLine/
+//!     destroyColumn); the l10n rendering stays with TS (a malformed whole face is discarded).
 //!
-//! 入参 `{text, destroyDeclared,
-//! statements:[{text,line,endLine,indent},…]}`(text 为掩码拼接文本);
-//! 出 `{items:[{line,character,length,member,destroyLine,destroyColumn}]}`。
-//! 面/动态分派闸(pathFace/defFaces/destroyDeclared 短路)在 TS 装配面,
-//! 本模块保留 destroyDeclared 防线(契约忠实)。
+//! Input `{text, destroyDeclared,
+//! statements:[{text,line,endLine,indent},…]}` (text is the mask-concatenated text);
+//! output `{items:[{line,character,length,member,destroyLine,destroyColumn}]}`.
+//! The face / dynamic-dispatch gate (pathFace/defFaces/destroyDeclared short-circuits) lives in the TS wiring layer,
+//! and this module keeps the destroyDeclared guard line (contract fidelity).
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -29,7 +29,7 @@ use crate::rpc::RpcRegistry;
 
 pub const CODE_POST_DESTROY: &str = "kbengine.postDestroy";
 
-/// TS SAFE_MEMBERS:销毁后仍可读/无碍的成员(身份、状态、重复销毁)。
+/// TS SAFE_MEMBERS: members still readable/harmless after destruction (identity, state, repeated destroy).
 const SAFE_MEMBERS: [&str; 4] = ["id", "isDestroyed", "className", "destroy"];
 
 pub fn register(reg: &mut RpcRegistry) {
@@ -40,10 +40,10 @@ pub fn register(reg: &mut RpcRegistry) {
 #[serde(rename_all = "camelCase", default)]
 struct PostDestroyParams {
     text: String,
-    /// def 声明 destroy(动态分派边界)→ 零产出(TS 装配面已短路,此为防线)
+    /// a def declaring destroy (the dynamic-dispatch boundary) -> zero output (the TS wiring layer already short-circuits; this is a guard line)
     #[serde(default)]
     destroy_declared: bool,
-    /// TS pythonStatements 产物(掩码拼接文本 + 首行坐标/缩进)
+    /// The TS pythonStatements product (mask-concatenated text + first-line coordinates/indent)
     #[serde(default)]
     statements: Vec<StatementInput>,
 }
@@ -81,7 +81,7 @@ fn analyze_post_destroy(params: Value) -> Result<Value, String> {
     Ok(json!({ "items": items }))
 }
 
-// ---- 基础词元/空白判定 -------------------------------------------------------
+// ---- basic word-unit / whitespace tests -------------------------------------------------------
 
 fn is_js_space(code: u16) -> bool {
     matches!(
@@ -108,7 +108,7 @@ fn starts_with(text: &[u16], at: usize, word: &str) -> bool {
                     return false;
                 }
             }
-            None => return true, // 词元耗尽 = 前缀成立
+            None => return true, // word units exhausted = the prefix holds
         }
     }
     expected.next().is_none()
@@ -118,7 +118,7 @@ fn eq_u16(text: &[u16], word: &str) -> bool {
     text.len() == word.encode_utf16().count() && text.iter().copied().eq(word.encode_utf16())
 }
 
-/// 行切分 = `\r?\n`(剥 `\n` 前至多一个 `\r`),与 TS `split(/\r?\n/)` 同语义。
+/// Line splitting = `\r?\n` (stripping at most one `\r` before `\n`), the same semantics as TS `split(/\r?\n/)`.
 fn split_lines(text: &[u16]) -> Vec<Vec<u16>> {
     let mut lines: Vec<Vec<u16>> = Vec::new();
     let mut current: Vec<u16> = Vec::new();
@@ -146,8 +146,8 @@ fn split_lines(text: &[u16]) -> Vec<Vec<u16>> {
     lines
 }
 
-/// trim 前导与尾随 JS 空白(TS `trimStart()` 后做锚定判定的等价形态:
-/// 锚定 `^` 只看前导,尾部空白不影响前缀匹配,这里仍全 trim 以便复用)。
+/// Trims leading and trailing JS whitespace (the equivalent form of doing the anchored test after TS `trimStart()`: the
+/// anchored `^` only looks at the leading side; trailing whitespace does not affect prefix matching -- this still trims fully for reuse).
 fn trim_u16(text: &[u16]) -> &[u16] {
     let mut start = 0usize;
     while start < text.len() && is_js_space(text[start]) {
@@ -160,11 +160,11 @@ fn trim_u16(text: &[u16]) -> &[u16] {
     &text[start..end]
 }
 
-// ---- pythonCodeLines 等价移植(引号态跨行延续;保长保位) ----------------------
+// ---- an equivalent port of pythonCodeLines (quote state carries across lines; length and position preserved) ----------------------
 //
-// TS 逐码元状态机:引号内 → 空格(反斜杠转义双格;单引号闭合 1 格;三引号
-// 闭合 3 格);开引号 → `_`(三引号 `___`);`#` → 行尾全空格;引号态跨行
-// 延续(未闭合单引号续到下一行)。f-string 无特判 = 表达式整段掩码。
+// The TS per-code-unit state machine: inside quotes -> spaces (a backslash escape counts double; a single-quote close counts 1; a
+// triple-quote close counts 3); an open quote -> `_` (a triple quote `___`); `#` -> all spaces to the end of line; quote state carries
+// across lines (an unclosed single quote continues to the next line). f-strings get no special case = the expression is masked as a whole segment.
 
 fn python_code_lines(text: &[u16]) -> Vec<Vec<u16>> {
     let mut lines: Vec<Vec<u16>> = Vec::new();
@@ -177,7 +177,7 @@ fn python_code_lines(text: &[u16]) -> Vec<Vec<u16>> {
             let ch = raw[col];
             if let Some(q) = quote {
                 if ch == 0x5C {
-                    // TS:`masked += '  '; col += 1; continue;`(循环再 +1 = 双格双码元)
+                    // TS: `masked += '  '; col += 1; continue;` (the loop adds another +1 = two columns, two code units)
                     masked.push(0x20);
                     masked.push(0x20);
                     col += 2;
@@ -230,7 +230,7 @@ fn python_code_lines(text: &[u16]) -> Vec<Vec<u16>> {
     lines
 }
 
-// ---- 语句形态判定(TS 正则手工展开) ------------------------------------------
+// ---- statement shape tests (the TS regex hand-expanded) ------------------------------------------
 
 /// `^\s*(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(`
 fn function_header(text: &[u16]) -> bool {
@@ -247,8 +247,8 @@ fn function_header(text: &[u16]) -> bool {
         if j > ws_start {
             i = j;
         }
-        // async 后无空白 → 可选组不成立(回退到从 i 判 def,必失败,与
-        // 正则回溯同语义)
+        // no whitespace after async -> the optional group does not hold (falling back to testing def from i, which must fail, the same
+        // semantics as regex backtracking)
     }
     if !starts_with(text, i, "def") {
         return false;
@@ -259,7 +259,7 @@ fn function_header(text: &[u16]) -> bool {
         j += 1;
     }
     if j == ws_start {
-        return false; // def 后要求 ≥1 空白
+        return false; // at least 1 whitespace is required after def
     }
     if j >= text.len() || !is_name_start(text[j]) {
         return false;
@@ -274,7 +274,7 @@ fn function_header(text: &[u16]) -> bool {
     j < text.len() && text[j] == 0x28
 }
 
-/// `self\.destroy\s*\(` 在 `at` 处(前缀形态由调用方保证)
+/// `self\.destroy\s*\(` at `at` (the prefix shape is guaranteed by the caller)
 fn destroy_call_at(text: &[u16], at: usize) -> bool {
     if !starts_with(text, at, "self.destroy") {
         return false;
@@ -286,12 +286,12 @@ fn destroy_call_at(text: &[u16], at: usize) -> bool {
     j < text.len() && text[j] == 0x28
 }
 
-/// `^(?:[A-Za-z_]\w*\s*=\s*)?self\.destroy\s*\(`(trimStart 后判定)
+/// `^(?:[A-Za-z_]\w*\s*=\s*)?self\.destroy\s*\(` (tested after trimStart)
 fn destroy_statement(trimmed: &[u16]) -> bool {
     if destroy_call_at(trimmed, 0) {
         return true;
     }
-    // 赋值前缀形态:名称 + \s* + '=' + \s*(可回退到无前缀,已先行尝试)
+    // The assignment-prefix shape: name + \s* + '=' + \s* (it may fall back to no prefix, which was tried first)
     if trimmed.is_empty() || !is_name_start(trimmed[0]) {
         return false;
     }
@@ -312,7 +312,7 @@ fn destroy_statement(trimmed: &[u16]) -> bool {
     destroy_call_at(trimmed, k)
 }
 
-/// `^(?:return|break|continue|raise)\b`(trimStart 后判定;\b = 后随非词元或文末)
+/// `^(?:return|break|continue|raise)\b` (tested after trimStart; \b = followed by a non-word unit or end of text)
 fn early_exit_statement(trimmed: &[u16]) -> bool {
     for word in ["return", "break", "continue", "raise"] {
         if starts_with(trimmed, 0, word) {
@@ -325,7 +325,7 @@ fn early_exit_statement(trimmed: &[u16]) -> bool {
     false
 }
 
-/// `\bself\.` 在语句文本中存在(无尾界;词元最大性由左界保证)
+/// `\bself\.` exists in the statement text (no trailing boundary; the word-unit maximal property is guaranteed by the left boundary)
 fn contains_self_access(text: &[u16]) -> bool {
     let mut i = 0usize;
     while i + 5 <= text.len() {
@@ -337,8 +337,8 @@ fn contains_self_access(text: &[u16]) -> bool {
     false
 }
 
-/// `\bself\.(\w+)/g` 逐命中(掩码行;(起点, 名字起点, 名字长度);\w+ 匹配
-/// 失败时引擎前进一步,这里同语义 `pos = i + 1`)
+/// `\bself\.(\w+)/g` hit by hit (on masked rows; (start, name start, name length); when the \w+ match fails, the engine
+/// advances one step, here the same semantics as `pos = i + 1`)
 fn access_matches(masked: &[u16]) -> Vec<(usize, usize, usize)> {
     let mut hits: Vec<(usize, usize, usize)> = Vec::new();
     let mut pos = 0usize;
@@ -368,7 +368,7 @@ fn access_matches(masked: &[u16]) -> Vec<(usize, usize, usize)> {
     hits
 }
 
-/// `indexOf('self.destroy')`(无命中 → TS `Math.max(0, -1)` = 0)
+/// `indexOf('self.destroy')` (no hit -> TS `Math.max(0, -1)` = 0)
 fn destroy_column_of(masked: &[u16]) -> Option<usize> {
     let word: Vec<u16> = "self.destroy".encode_utf16().collect();
     if masked.len() < word.len() {
@@ -386,9 +386,9 @@ fn destroy_column_of(masked: &[u16]) -> Option<usize> {
     None
 }
 
-// ---- 块/销毁/早退分析(TS findPostDestroyFindings 同构) ----------------------
+// ---- block / destroy / early-exit analysis (isomorphic with TS findPostDestroyFindings) ----------------------
 
-/// 同一函数体同一块:同缩进,且两者间无缩进 < 本层的语句(无 dedent)
+/// The same function body and the same block: the same indent, and no statement with an indent < this level between the two (no dedent)
 fn same_block(from: &StatementInput, to: &StatementInput, body: &[&StatementInput]) -> bool {
     if from.indent != to.indent {
         return false;
@@ -419,14 +419,14 @@ fn compute_post_destroy_items(
     let masked_lines = python_code_lines(&text_u16);
     let mut findings: Vec<PostDestroyItem> = Vec::new();
 
-    // 只分析函数体内(模块/类体无 self;顶层匹配不成立)
+    // Only inside function bodies is analyzed (a module/class body has no self; a top-level match does not hold)
     for s in 0..statements.len() {
         let header = &statements[s];
         let header_text: Vec<u16> = header.text.encode_utf16().collect();
         if !function_header(&header_text) {
             continue;
         }
-        // 函数体 = 其后缩进 > def 缩进的语句
+        // The function body = the statements after it with an indent > the def's indent
         let body_start = s + 1;
         let mut body_end = statements.len();
         for (t, stmt) in statements.iter().enumerate().skip(body_start) {
@@ -437,7 +437,7 @@ fn compute_post_destroy_items(
         }
         let body: Vec<&StatementInput> = statements[body_start..body_end].iter().collect();
 
-        // 同块内查找每个访问语句前面的销毁语句
+        // Within the same block, find the destroy statement before each access statement
         for (a_idx, access) in body.iter().enumerate() {
             let access_text: Vec<u16> = access.text.encode_utf16().collect();
             if !contains_self_access(&access_text) {
@@ -453,7 +453,7 @@ fn compute_post_destroy_items(
                 if !same_block(candidate, access, &body) {
                     continue;
                 }
-                // 同层早退(return/break/continue/raise)在销毁与访问之间 → 访问死码
+                // A same-level early exit (return/break/continue/raise) between the destroy and the access -> the access is dead code
                 let mut dead = false;
                 for mid in body.iter().take(a_idx).skip(d + 1) {
                     let mid_text: Vec<u16> = mid.text.encode_utf16().collect();
@@ -468,8 +468,8 @@ fn compute_post_destroy_items(
                 }
             }
             let Some(destroy) = destroy else { continue };
-            // 逐个命中 `self.<member>`(member 非安全集):扫掩码行(掩码保留
-            // 源位置,字符串/注释内的伪访问不命中)
+            // Hit `self.<member>` one by one (member not in the safe set): scan the masked rows (the mask preserves the
+            // source positions, so pseudo-accesses inside strings/comments do not hit)
             let destroy_column = masked_lines
                 .get(destroy.line)
                 .and_then(|line| destroy_column_of(line))
@@ -497,7 +497,7 @@ fn compute_post_destroy_items(
             }
         }
     }
-    // 去重:嵌套函数体既随外层函数分析、又作自身函数分析,同一命中会重复
+    // Dedup: a nested function body is analyzed both with the outer function and as its own function, so the same hit repeats
     let mut seen: Vec<(usize, usize, String)> = Vec::new();
     let mut deduped: Vec<PostDestroyItem> = Vec::new();
     for finding in findings {
@@ -511,7 +511,7 @@ fn compute_post_destroy_items(
     deduped
 }
 
-// ---- 单测(形态面,行为面由 tests/postDestroyRustParity.test.ts 对拍) --------
+// ---- unit tests (the shape face; the behavior face is compared by tests/postDestroyRustParity.test.ts) --------
 
 #[cfg(test)]
 mod tests {
@@ -598,7 +598,7 @@ mod tests {
             stmt("self.hp", 3, 3, 4),
         ];
         let items = compute_post_destroy_items(text, false, &statements);
-        // 「if x: return」是单条语句(text 前缀非 return)→ 不构成早退
+        // "if x: return" is a single statement (the text prefix is not return) -> it does not constitute an early exit
         assert_eq!(items.len(), 1);
     }
 
@@ -629,13 +629,13 @@ mod tests {
 
     #[test]
     fn masked_string_statement_no_false_hit() {
-        // 字符串整段掩码(语句文本由 TS 供给已是掩码形态):含 self.hp 的
-        // 字符串不构成访问;掩码行扫描同样不命中
+        // Strings are masked as a whole segment (the statement text supplied by the TS side is already masked): a string containing
+        // self.hp does not constitute an access; the masked-row scan likewise does not hit
         let text = "def f(self):\n    self.destroy()\n    s = \"self.hp\"\n";
         let statements = vec![
             stmt("def f(self):", 0, 0, 0),
             stmt("self.destroy()", 1, 1, 4),
-            stmt("s = _________", 2, 2, 4), // "self.hp" 掩码形态(9 码元)
+            stmt("s = _________", 2, 2, 4), // the masked form of "self.hp" (9 code units)
         ];
         let items = compute_post_destroy_items(text, false, &statements);
         assert!(items.is_empty());
@@ -669,8 +669,8 @@ mod tests {
             stmt("self.hp", 4, 4, 4),
         ];
         let items = compute_post_destroy_items(text, false, &statements);
-        // line3 在 g 体(缩进 8):销毁在 f 体(缩进 4)→ 同块缩进不等不跨块;
-        // g 体自身无销毁 → 不报。仅 line4 同层直进报 1。
+        // line3 is in g's body (indent 8): the destroy is in f's body (indent 4) -> same-block indents differ, so it does not cross blocks;
+        // g's body itself has no destroy -> not reported. Only line4, entering the same level directly, reports 1.
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].line, 4);
     }
@@ -700,17 +700,17 @@ mod tests {
 
     #[test]
     fn mask_preserves_positions_across_quote_lines() {
-        // 引号态跨行:未闭合单引号续到下一行;开引号 1 格 `_`、引号内空格、
-        // 闭引号 1 格空格;反斜杠转义双格
+        // Quote state across lines: an unclosed single quote continues to the next line; an open quote counts 1 as `_`; a space inside quotes;
+        // the closing quote counts 1 as a space; a backslash escape counts double
         let text = "s = 'abc\ndef\n' + self.hp\n";
         let lines = python_code_lines(&text.encode_utf16().collect::<Vec<u16>>());
-        assert_eq!(lines.len(), 4); // 尾 \n → 末尾空行(split 同语义)
+        assert_eq!(lines.len(), 4); // the trailing \n -> an empty final line (the same split semantics)
         assert_eq!(String::from_utf16_lossy(&lines[0]), "s = _   ");
         assert_eq!(String::from_utf16_lossy(&lines[1]), "   ");
         assert_eq!(String::from_utf16_lossy(&lines[2]), "  + self.hp");
         let escaped = "\"a\\\"b\" self.hp";
         let lines = python_code_lines(&escaped.encode_utf16().collect::<Vec<u16>>());
-        // 开引号 `_` + 引号内('a' 空格、转义双格、'b' 空格)+ 闭引号空格 + 空格
+        // The open quote `_` + inside quotes ('a' a space, the escape counting double, 'b' a space) + the closing quote a space + a space
         assert_eq!(String::from_utf16_lossy(&lines[0]), "_      self.hp");
     }
 
@@ -739,9 +739,9 @@ mod tests {
         assert_eq!(encoded["length"], json!(7));
     }
 
-    // ---- 入口/底层形态面(COV 批补) -------------------------------------------
+    // ---- entry / underlying shape faces (added by the COV batch) -------------------------------------------
 
-    /// RPC 入口直调:良形参数往返 + 非对象形参如实 Err。
+    /// RPC entry called directly: well-shaped parameters round-trip + non-object parameters honestly Err.
     #[test]
     fn rpc_entry_round_trip_and_bad_shape_is_error() {
         let v = analyze_post_destroy(json!({
@@ -758,8 +758,8 @@ mod tests {
         assert!(analyze_post_destroy(json!(7)).is_err());
     }
 
-    /// JS 全类空白:trim 两向剥离 + 头部缩进判定都按全类(NBSP/全角/行分隔
-    /// 符/ZWNBSP 一并算空白,窄 ASCII 类会与 TS 分歧)。
+    /// The full JS whitespace class: trimming in both directions + the leading-indent test both go by the full class (NBSP / full-width / the line
+    /// separator / ZWNBSP all count as whitespace; the narrow ASCII class would diverge from TS).
     #[test]
     fn js_space_class_full_width_faces_trim_and_header() {
         let spaced: Vec<u16> =
@@ -771,7 +771,7 @@ mod tests {
         assert!(function_header(&hdr), "NBSP 缩进 + async + 多字符名");
     }
 
-    /// function_header 拒绝面:def 后无空白/名首非 name-start/def 后即尽。
+    /// The function_header rejection face: no whitespace after def / the name does not start with a name-start / text ends right after def.
     #[test]
     fn function_header_reject_faces() {
         let s = |t: &str| t.encode_utf16().collect::<Vec<u16>>();
@@ -781,23 +781,23 @@ mod tests {
         assert!(function_header(&s("def foo (self):")));
     }
 
-    /// 掩码面:注释整行空格化、三引号开(___)体(空格)闭(空格×3)、
-    /// \r\n 对剥与末行孤 \r 剥(split 同语义)。
+    /// The mask face: comments turned into all spaces for the line, a triple-quote open (___), the body (spaces), the close (spaces x3),
+    /// CRLF pair-stripping, and a lone trailing \r on the last line stripped (the same split semantics).
     #[test]
     fn masking_comments_triple_quotes_and_crlf_split() {
         let text = "# note\r\n\ns = '''abc'''\r\nself.hp\r";
         let lines = python_code_lines(&text.encode_utf16().collect::<Vec<u16>>());
         assert_eq!(lines.len(), 4);
         assert_eq!(String::from_utf16_lossy(&lines[0]), "      ");
-        // 空行(\n 紧随 \r\n):切分时 current 为空,last() None 路径
+        // An empty line (\n immediately after \r\n): current is empty at the split; the last() None path
         assert_eq!(String::from_utf16_lossy(&lines[1]), "");
-        // 开引号 ___;体(abc)与闭引号各掩空格(只有开引号是 _)
+        // The open quote is ___; the body (abc) and the closing quote are each masked as spaces (only the open quote is _)
         assert_eq!(String::from_utf16_lossy(&lines[2]), "s = ___      ");
         assert_eq!(String::from_utf16_lossy(&lines[3]), "self.hp");
     }
 
-    /// destroy 调用形:括号前空白仍成立;前缀非可赋名(( 开头)的候选语句
-    /// 在 destroy 之前先被否决(非 destroy 语句走赋值前缀拒绝臂)。
+    /// The destroy-call shape: whitespace before the paren still holds; a candidate statement whose prefix is not an assignable name (starting
+    /// with ( ) is vetoed before destroy (a non-destroy statement goes down the assignment-prefix rejection arm).
     #[test]
     fn destroy_call_space_before_paren_and_nonassignable_candidate() {
         let text = "def f(self):\n    (x)\n    self.destroy ()\n    self.hp\n";
@@ -813,8 +813,8 @@ mod tests {
         assert_eq!(items[0].destroy_column, 4);
     }
 
-    /// 词边界失败:「returnx」前缀命中 return 但尾随词元 → 不是早退,
-    /// 访问仍要报。
+    /// A word-boundary failure: the "returnx" prefix hits return but a trailing word unit follows -> not an early exit,
+    /// and the access still gets reported.
     #[test]
     fn return_suffixed_word_is_not_early_exit() {
         let text = "def f(self):\n    self.destroy()\n    returnx\n    self.hp\n";
@@ -828,8 +828,8 @@ mod tests {
         assert_eq!(items.len(), 1);
     }
 
-    /// `self.` 后无名(空白):访问语句成立(含 \bself\.)但逐命中扫描零
-    /// 命中;endLine 越过文本末行(掩码行缺席)同样零命中不 panic。
+    /// No name after `self.` (whitespace): the access statement holds (it contains \bself\.) but the hit-by-hit scan finds zero
+    /// hits; endLine crossing past the text's last line (masked rows absent) likewise finds zero hits without panicking.
     #[test]
     fn self_dot_without_name_scans_no_hits_beyond_end() {
         let text = "def f(self):\n    self.destroy()\n    self. hp\n";
@@ -842,8 +842,8 @@ mod tests {
         assert!(items.is_empty());
     }
 
-    /// destroy_column 回退:语句声明面与原文行失配时(行过短/行够长但无
-    /// self.destroy 子串)如实回 0,不编造。
+    /// destroy_column fallback: when the statement's declared face mismatches the original line (the line too short / the line long enough but
+    /// without the self.destroy substring), it honestly returns 0 and does not fabricate.
     #[test]
     fn destroy_column_falls_back_when_masked_line_lacks_call() {
         let short = "def f(self):\nzz\n    self.hp\n";
@@ -862,8 +862,8 @@ mod tests {
         assert_eq!(items2[0].destroy_column, 0);
     }
 
-    /// 嵌套函数体既随外层分析又作自身分析:同一命中两入 findings,去重
-    /// 后只报一次。
+    /// A nested function body is analyzed both with the outer one and as its own: the same hit enters findings twice; after dedup
+    /// it is reported only once.
     #[test]
     fn nested_body_analyzed_twice_reports_once() {
         let text = "def f(self):\n    def g():\n        self.destroy()\n        self.hp\n";

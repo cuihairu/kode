@@ -1,25 +1,30 @@
-// C-23 交付②第三条规则(KBE-PY-017):onDestroy 内定时器注销 lint。
-// 数据源 = KB-001 生命周期 §Timers(docs/knowledge/traps-index.md
-// §Timers & controllers;src/knowledge/trapsKnowledge.ts
-// detection='timer-cancel-on-destroy')。KB-001 事实:`destroy()` 即
-// `scriptTimers_.cancelAll()`——引擎销毁已取消本实体全部定时器,onDestroy
-// 里再 delTimer 是多余清理;且对陈旧/不存在 id 的 delTimer 静默返回 -1
-// (fork 口径)。注:任务书原拟「addTimer 句柄未在 onDestroy 注销」按
-// KB-001 真值修正为「onDestroy 内 delTimer 冗余」——原形态会把知识库判定
-// 为不必要的动作当成缺失动作报,与数据源自相矛盾。
+// C-23 delivery (2), the third rule (KBE-PY-017): the timer cancellation lint inside
+// onDestroy.
+// Data source = KB-001 lifecycle §Timers (docs/knowledge/traps-index.md
+// §Timers & controllers; src/knowledge/trapsKnowledge.ts
+// detection='timer-cancel-on-destroy'). KB-001 fact: `destroy()` is
+// `scriptTimers_.cancelAll()` — engine destruction already cancels every timer of
+// this entity, so delTimer again inside onDestroy is redundant cleanup; moreover
+// delTimer on a stale/nonexistent id silently returns -1 (the fork ruling). Note:
+// the task sheet originally proposed "an addTimer handle not cancelled in
+// onDestroy", corrected per the KB-001 truth to "delTimer inside onDestroy is
+// redundant" — the original shape would report an action the knowledge base
+// deems unnecessary as a missing action, self-contradicting the data source.
 //
-// 纯逻辑层,不 import vscode。判定(保守面):`def onDestroy(self…)` 方法
-// 块(缩进大于方法头且未低于方法头缩进闭合)内的 `self.delTimer(` 实语句;
-// 其他方法、注释同形、无 onDestroy 文件不报。
+// Pure logic layer, no vscode import. Judging (the conservative face): the real
+// `self.delTimer(` statements inside a `def onDestroy(self…)` method block
+// (indentation greater than the method header and not closed below the header's
+// indentation); other methods, comment-shaped lookalikes, and files without
+// onDestroy do not report.
 
 import { l10nText } from '../nlsRuntime';
 
 export const TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE = 'kbengine.timerCleanupOnDestroy';
 
-/** 一处冗余的销毁期定时器注销 */
+/** One redundant destroy-time timer cancellation */
 export interface TimerCleanupFinding {
   line: number;
-  /** `self.delTimer` 起点所在行内 0 起列(语句首非空白列) */
+  /** 0-based column within the line of the `self.delTimer` start (the statement's first non-whitespace column) */
   character: number;
   length: number;
   message: string;
@@ -28,7 +33,7 @@ export interface TimerCleanupFinding {
 const ON_DESTROY_HEADER = /^(\s*)(?:async\s+)?def\s+onDestroy\s*\(\s*self\b/;
 const DEL_TIMER_CALL = /\bself\.delTimer\s*\(/;
 
-/** 诊断文案(l10n 模板单一来源;Rust 结构面经 wiring 层用本函数渲染) */
+/** Diagnostic text (the l10n template single source; the Rust structural face renders through this function via the wiring layer) */
 export function renderTimerCleanupMessage(): string {
   return l10nText(
     'delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)'
@@ -44,7 +49,7 @@ export function analyzeTimerCleanupOnDestroy(text: string): TimerCleanupFinding[
     const trimmed = raw.trim();
     const indent = raw.length - raw.trimStart().length;
     if (onDestroyIndent !== null) {
-      // 块闭合:非空行缩进回到/低于方法头缩进
+      // Block closed: a non-empty line's indentation returns to/below the method header indentation
       if (trimmed && indent <= onDestroyIndent) {
         onDestroyIndent = null;
       }

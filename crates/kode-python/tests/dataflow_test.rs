@@ -1,4 +1,4 @@
-//! 过程内 def-use 数据流测试(C-20 交付②,MVP 直线近似)。
+//! Intraprocedural def-use dataflow tests (C-20 deliverable 2, MVP straight-line approximation).
 
 use kode_python::dataflow::{dataflow_for_body, dataflow_for_module};
 use kode_python::ParsedAst;
@@ -12,7 +12,7 @@ fn chain<'a>(result: &'a kode_python::DataflowResult, var: &str) -> &'a kode_pyt
 }
 
 fn body_of_method(src: &str, method: &str) -> (Vec<String>, Vec<ruff_python_ast::Stmt>) {
-    // 用 ruff 直接解析出方法体(测试用;不依赖 crate 内部封装)
+    // Parse the method body directly with ruff (test-only; does not depend on crate-internal wrappers)
     let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
     let module = parsed.syntax();
     for stmt in &module.body {
@@ -30,7 +30,7 @@ fn body_of_method(src: &str, method: &str) -> (Vec<String>, Vec<ruff_python_ast:
 }
 
 fn body_of_func(src: &str, func: &str) -> Vec<ruff_python_ast::Stmt> {
-    // 模块级函数体(测试用)
+    // Module-level function body (test-only)
     let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
     for stmt in &parsed.syntax().body {
         if let ruff_python_ast::Stmt::FunctionDef(f) = stmt {
@@ -71,37 +71,37 @@ class Foo:
 "#;
     let ast = ParsedAst::new(src);
     let (_, body) = body_of_method(src, "compute");
-    // 形参:去掉 self 后 a, b
+    // Params: a, b after removing self
     let result = dataflow_for_body(&ast, &["a".to_string(), "b".to_string()], &body);
     let chains = &result.chains;
 
-    // a 是参数:is_param,无 def_line,在 x=a+b 行(0-based 第 3 行)被读
+    // a is a param: is_param, no def_line, read on the x=a+b line (0-based line 3)
     let a = chain(&result, "a");
     assert!(a.is_param);
     assert_eq!(a.def_line, None);
     assert_eq!(a.use_lines, vec![3]);
 
-    // b 同
+    // b likewise
     let b = chain(&result, "b");
     assert!(b.is_param);
     assert_eq!(b.use_lines, vec![3]);
 
-    // x 在行 3 定义,行 4(y=x*2)与行 5(z=y+x)被读
+    // x defined on line 3, read on line 4 (y=x*2) and line 5 (z=y+x)
     let x = chain(&result, "x");
     assert_eq!(x.def_line, Some(3));
     assert_eq!(x.use_lines, vec![4, 5]);
 
-    // y 行 4 定义,行 5 被读
+    // y defined on line 4, read on line 5
     let y = chain(&result, "y");
     assert_eq!(y.def_line, Some(4));
     assert_eq!(y.use_lines, vec![5]);
 
-    // z 行 5 定义,行 6(print)与 7(return)被读
+    // z defined on line 5, read on line 6 (print) and 7 (return)
     let z = chain(&result, "z");
     assert_eq!(z.def_line, Some(5));
     assert_eq!(z.use_lines, vec![6, 7]);
 
-    // 链数 = 2 参数 + x/y/z 各一次重定义(无重定义) = 5
+    // Chain count = 2 params + x/y/z each defined once (no redefinition) = 5
     assert_eq!(chains.len(), 5);
 }
 
@@ -115,7 +115,7 @@ def f():
     print(x)
 "#;
     let ast = ParsedAst::new(src);
-    // 取模块级 f 的函数体
+    // Take the body of module-level f
     let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
     let body = match &parsed.syntax().body[0] {
         ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
@@ -123,7 +123,7 @@ def f():
     };
     let result = dataflow_for_body(&ast, &[], &body);
     let xs: Vec<_> = result.chains.iter().filter(|c| c.var == "x").collect();
-    // x 两次定值 → 两条链(raw string 首行为空:行 1 = def f():,行 2 = x = 1)
+    // x defined twice -> two chains (the raw string's first line is empty: line 1 = def f():, line 2 = x = 1)
     assert_eq!(xs.len(), 2);
     assert_eq!(xs[0].def_line, Some(2));
     assert_eq!(xs[0].use_lines, vec![3]);
@@ -145,10 +145,10 @@ class Avatar:
     let (_, body) = body_of_method(src, "damage");
     let result = dataflow_for_body(&ast, &["n".to_string()], &body);
     let hp = chain(&result, "self.hp");
-    // raw string 首行为空 → 行 1 = class,行 6 = self.hp = self.hp - n;
-    // 读 self.hp(无 prior 链,init 不在本函数体)→ 写 self.hp
+    // The raw string's first line is empty -> line 1 = class, line 6 = self.hp = self.hp - n;
+    // reading self.hp (no prior chain; init is not in this function body) -> writing self.hp
     assert_eq!(hp.def_line, Some(6));
-    // n 参数被读
+    // The n param is read
     let n = chain(&result, "n");
     assert!(n.is_param);
 }
@@ -169,15 +169,17 @@ fn for_loop_var_is_def() {
 }
 
 // ---------------------------------------------------------------------------
-// KODE-AUD-007:数据流 AST 语义缺陷修复验证。
-// 5 项语义:AugAssign 读旧值 / del kill / Subscript 写侧读容器 /
-// NamedExpr target 定义 / Comprehension generator target 定义。
-// 判别性:每项修复前旧实现漏语义,修复后断言成立。
+// KODE-AUD-007: verification of the dataflow AST semantic defect fixes.
+// 5 semantics: AugAssign reads the old value / del kills / Subscript write side reads the container /
+// NamedExpr target defines / Comprehension generator target defines.
+// Discriminative: before each fix the old implementation missed the semantics; after the fix
+// the assertions hold.
 // ---------------------------------------------------------------------------
 
-/// AugAssign `x += v`:target 是 Store 上下文但语义读旧值。旧实现
-/// collect_reads 的 Name 分支只认 Load → 漏读旧 x;修复用 collect_reads_of
-/// 强制读。断言第一条 x 链(定值于 x=1)在 x+=2 行被读。
+/// AugAssign `x += v`: the target is a Store context but semantically reads the old value. The old
+/// implementation's collect_reads Name branch only recognized Load -> the old x read was missed;
+/// the fix forces the read via collect_reads_of. Asserts the first x chain (defined at x=1) is read
+/// on the x+=2 line.
 #[test]
 fn augassign_reads_old_value() {
     let src = "def f():\n    x = 1\n    x += 2\n";
@@ -189,16 +191,17 @@ fn augassign_reads_old_value() {
     };
     let result = dataflow_for_body(&ast, &[], &body);
     let xs: Vec<_> = result.chains.iter().filter(|c| c.var == "x").collect();
-    // x 两条链:x=1 定值,被 x+=2 读旧值;x+=2 定值新链。
+    // Two x chains: x=1 defines and is read as old value by x+=2; x+=2 defines the new chain.
     assert_eq!(xs.len(), 2, "x 应两链: {:?}", result.chains);
     assert_eq!(xs[0].def_line, Some(1));
     assert_eq!(xs[0].use_lines, vec![2], "x+=2 应读旧 x");
     assert_eq!(xs[1].def_line, Some(2));
 }
 
-/// `del x` 终结 x 当前链:后续 use(x) 不连旧链。旧实现走 collect_writes
-/// 但 del 的 Name ctx 是 Del(非 Store)不认 → 旧链仍被后续读;修复 kill_var
-/// 删 live 映射即终结。
+/// `del x` terminates x's current chain: later use(x) does not link to the old chain. The old
+/// implementation went through collect_writes, but del's Name ctx is Del (not Store) and was not
+/// recognized -> the old chain still absorbed later reads; the fix has kill_var delete the live
+/// mapping, which terminates the chain.
 #[test]
 fn del_kills_chain() {
     let src = "def f():\n    x = 1\n    del x\n    use(x)\n";
@@ -218,11 +221,13 @@ fn del_kills_chain() {
     );
 }
 
-/// Subscript 写侧 `a[0] = v` 语义读容器 a 与索引。旧实现只 collect_writes
-/// s.value(漏读容器);修复写分支先 collect_reads(s.value)+collect_reads(s.slice)。
-/// 容器 a 在 subscript 基座是 Load ctx(读容器找元素,不重定义变量 a),故 a
-/// 单链:def=1(初值),use=[2(a[0]=5 读容器), 3(use(a) 读)]。判别:修复前 use=[3]
-/// (漏行 2 容器读),修复后 [2,3]。
+/// Subscript write side `a[0] = v` semantically reads container a and the index. The old
+/// implementation only collect_writes'd s.value (missing the container read); the fix's write branch
+/// first does collect_reads(s.value)+collect_reads(s.slice).
+/// Container a at the subscript base is a Load ctx (reading the container to find the element,
+/// not redefining variable a), so a is a single chain: def=1 (initial value),
+/// use=[2 (a[0]=5 reads the container), 3 (use(a) reads)]. Discriminative: before the fix use=[3]
+/// (missing the line 2 container read), after the fix [2,3].
 #[test]
 fn subscript_write_reads_container() {
     let src = "def f():\n    a = [1]\n    a[0] = 5\n    use(a)\n";
@@ -239,8 +244,9 @@ fn subscript_write_reads_container() {
     assert_eq!(xs[0].use_lines, vec![2, 3], "a[0]=5 应读容器 a");
 }
 
-/// NamedExpr(walrus)`(n := v)`的 target 是 Store 上下文,须定义 n。旧实现
-/// 只读 value 漏 def target;修复在 Named 分支 collect_writes(target)。
+/// NamedExpr (walrus) `(n := v)`: the target is a Store context and must define n. The old
+/// implementation only read the value and missed the target def; the fix does collect_writes(target)
+/// in the Named branch.
 #[test]
 fn namedexpr_target_defined() {
     let src = "def f():\n    (n := 1)\n    use(n)\n";
@@ -256,8 +262,9 @@ fn namedexpr_target_defined() {
     assert_eq!(n.use_lines, vec![2]);
 }
 
-/// Comprehension generator target `[x for x in items]` 定义 x。旧实现只
-/// collect_reads(iter)漏 def target;修复在 generator 循环 collect_writes(target)。
+/// Comprehension generator target `[x for x in items]` defines x. The old implementation only
+/// collect_reads(iter) and missed the target def; the fix does collect_writes(target) in the
+/// generator loop.
 #[test]
 fn comprehension_target_defined() {
     let src = "def f(items):\n    vals = [x for x in items]\n    use(x)\n";
@@ -270,18 +277,18 @@ fn comprehension_target_defined() {
     let result = dataflow_for_body(&ast, &["items".to_string()], &body);
     let x = chain(&result, "x");
     assert_eq!(x.def_line, Some(1), "comprehension target 应定义 x");
-    // KR-AUD-09 语义更新:elt 本身的 `x` 读在 target def 之后,也连上链
-    // (旧实现 elt 先读,漏记这次 use)。
+    // KR-AUD-09 semantics update: the `x` read of elt itself comes after the target def and also
+    // links to the chain (the old implementation read elt first and failed to record this use).
     assert_eq!(x.use_lines, vec![1, 2]);
-    // items 参数被 iter 读。
+    // The items param is read by iter.
     let items = chain(&result, "items");
     assert!(items.is_param);
     assert_eq!(items.use_lines, vec![1]);
 }
 
-/// KR-AUD-09:推导式 elt 读先于 generator target 写,elt 内 def-use 断链
-/// (`[str(x) for x in xs]` 的 str(x) 读不到 x 链)。修复:先按序走完
-/// generators(iter 读/target 写/ifs 读),最后读 elt。
+/// KR-AUD-09: comprehension elt reads happened before the generator target write, breaking the
+/// def-use chain inside elt (in `[str(x) for x in xs]` the str(x) could not reach x's chain).
+/// Fix: walk the generators in order first (iter read / target write / ifs read), then read elt last.
 #[test]
 fn comprehension_elt_use_links_to_generator_target_kraud09() {
     let src = "def f(xs):\n    r = [str(x) for x in xs]\n    return r\n";
@@ -292,7 +299,7 @@ fn comprehension_elt_use_links_to_generator_target_kraud09() {
         _ => unreachable!(),
     };
     let result = dataflow_for_body(&ast, &["xs".to_string()], &body);
-    // elt 内 str(x) 的读必须连上 generator target 定义的 x 链。
+    // The str(x) read inside elt must link to the x chain defined by the generator target.
     let x = chain(&result, "x");
     assert_eq!(x.def_line, Some(1), "generator target 应定义 x");
     assert_eq!(x.use_lines, vec![1], "elt 内 use 应连上 target 链");
@@ -300,9 +307,10 @@ fn comprehension_elt_use_links_to_generator_target_kraud09() {
     assert_eq!(xs.use_lines, vec![1]);
 }
 
-/// KR-AUD-10:dataflow 侧 match pattern 捕获名不 def、guard 不读(callgraph
-/// 半边已由 KODE-AUD-008 闭合,本测只修 dataflow)。`case [a, b] if b > 0:`
-/// 捕获 a/b 各 def 一条链,guard 内 b 的读、case 体内 a 的读均连上链。
+/// KR-AUD-10: on the dataflow side, match pattern capture names did not def and the guard did not read
+/// (the callgraph half was closed out by KODE-AUD-008; this test only fixes dataflow).
+/// `case [a, b] if b > 0:` captures a/b, each defining a chain; the b read in the guard and the
+/// a read in the case body both link to the chains.
 #[test]
 fn match_pattern_captures_def_and_guard_reads_kraud10() {
     let src = "def f(v):\n    match v:\n        case [a, b] if b > 0:\n            return a\n        case _:\n            return None\n";
@@ -323,8 +331,9 @@ fn match_pattern_captures_def_and_guard_reads_kraud10() {
     assert_eq!(v.use_lines, vec![1], "match subject 读保持");
 }
 
-/// KR-AUD-11:`import a.b` 的绑定名是顶层名 `a`(Python 语义),旧实现取全段
-/// "a.b" 造链,后续 `a.attr` 的读断链。修复:无 asname 时取首段。
+/// KR-AUD-11: the binding name of `import a.b` is the top-level name `a` (Python semantics); the old
+/// implementation built the chain from the full dotted "a.b", breaking later `a.attr` reads. Fix:
+/// take the first segment when there is no asname.
 #[test]
 fn dotted_import_binds_top_level_name_kraud11() {
     let src = "def f():\n    import a.b\n    return a.c\n";
@@ -340,9 +349,9 @@ fn dotted_import_binds_top_level_name_kraud11() {
     assert_eq!(a.use_lines, vec![2], "a.c 的读应连上 import 链");
 }
 
-/// KR-AUD-16:`raise err` / `assert cond, msg` / `raise X(e) from c` 的表达式
-/// 侧此前整体不走读(Stmt::Raise/Assert 落在无语义分支)。修复:exc/cause/
-/// test/msg 全按读走查。
+/// KR-AUD-16: the expression sides of `raise err` / `assert cond, msg` / `raise X(e) from c` were
+/// never walked as reads before (Stmt::Raise/Assert fell into a branch with no semantics). Fix:
+/// exc/cause/test/msg are all walked as reads.
 #[test]
 fn raise_and_assert_expressions_are_reads_kraud16() {
     let src = "def f(err, cond, msg):\n    raise err\n    assert cond, msg\n    raise ValueError(err) from cond\n";
@@ -369,7 +378,7 @@ fn raise_and_assert_expressions_are_reads_kraud16() {
     assert_eq!(msg.use_lines, vec![2], "assert msg 应读 msg");
 }
 
-/// KR-AUD-17:except 捕获名的 def 行此前记在 try 语句行,应为 handler 自己的行。
+/// KR-AUD-17: the except capture name's def line was previously recorded on the try statement line; it should be the handler's own line.
 #[test]
 fn except_capture_def_line_is_handler_line_kraud17() {
     let src = "def f():\n    try:\n        risky()\n    except ValueError as e:\n        log(e)\n";
@@ -385,9 +394,9 @@ fn except_capture_def_line_is_handler_line_kraud17() {
     assert_eq!(e.use_lines, vec![4]);
 }
 
-/// KR-AUD-18:lambda 形参此前不建模遮蔽——`lambda x: x + 1` 体内对 x 的读
-/// 连到外层参数 x 的链。修复:lambda 形参入独立子作用域,体内读先查子
-/// 作用域,外层链不受影响。
+/// KR-AUD-18: lambda params previously had no shadow modeling -- reads of x inside `lambda x: x + 1`'s
+/// body linked to the outer parameter x's chain. Fix: lambda params enter an independent sub-scope;
+/// body reads consult the sub-scope first and the outer chain is unaffected.
 #[test]
 fn lambda_param_shadows_outer_var_kraud18() {
     let src = "def f(x):\n    g = lambda x: x + 1\n    return g(x)\n";
@@ -415,8 +424,8 @@ fn lambda_param_shadows_outer_var_kraud18() {
     assert_eq!(lam.use_lines, vec![1], "lambda 体内读连 lambda 形参链");
 }
 
-/// KR-AUD-19:`global x` / `nonlocal x` 之后的赋值写的是外层绑定,不应建
-/// 函数内局部 def 链(旧实现照常 def_var,产假局部链)。
+/// KR-AUD-19: assignments after `global x` / `nonlocal x` write the outer binding and must not build a
+/// function-local def chain (the old implementation def_var'd as usual, producing a spurious local chain).
 #[test]
 fn global_declared_assignment_makes_no_local_chain_kraud19() {
     let src = "def f():\n    global counter\n    counter = 1\n    return counter\n";
@@ -434,8 +443,8 @@ fn global_declared_assignment_makes_no_local_chain_kraud19() {
     );
 }
 
-/// KR-AUD-19(nonlocal 面):`nonlocal x` 后赋值同样不产局部链;未声明
-/// nonlocal 的外层同名变量遮蔽语义不回归。
+/// KR-AUD-19 (nonlocal face): assignments after `nonlocal x` likewise produce no local chain; the
+/// shadowing semantics of an outer same-named variable without a nonlocal declaration must not regress.
 #[test]
 fn nonlocal_declared_assignment_makes_no_local_chain_kraud19() {
     let src = "def f():\n    nonlocal total\n    total = 0\n    other = 1\n";
@@ -451,13 +460,13 @@ fn nonlocal_declared_assignment_makes_no_local_chain_kraud19() {
 }
 
 // ---------------------------------------------------------------------------
-// 覆盖率补充:dataflow_for_module 全文件入口 + walk_stmt / collect_reads /
+// Coverage addenda: dataflow_for_module whole-file entry + walk_stmt / collect_reads /
 // collect_writes / collect_reads_of / kill_var / collect_pattern_captures /
-// collect_comp_generators / lambda 形参 全分支。
+// collect_comp_generators / lambda params, all branches.
 // ---------------------------------------------------------------------------
 
-/// 全文件入口:类方法与模块级函数各产出一条 MethodDataflow,类名/形参/
-/// 定值行/使用行逐项对齐(单一口径,委托 method_params)。
+/// Whole-file entry: class methods and module-level functions each yield one MethodDataflow, with
+/// class name / params / def lines / use lines aligned item by item (single semantics, delegating to method_params).
 #[test]
 fn dataflow_for_module_collects_methods_and_functions() {
     let src = r#"
@@ -489,7 +498,7 @@ def standalone(a, b):
     assert_eq!(x.use_lines, vec![8]);
 }
 
-/// AnnAssign(带值/不带值):`x: int = 1` 定义 x 并读右侧;`y: int` 仅定义。
+/// AnnAssign (with value / without): `x: int = 1` defines x and reads the right side; `y: int` only defines.
 #[test]
 fn annassign_defines_with_and_without_value() {
     let src = "def f():\n    x: int = 1\n    use(x)\n    y: int\n";
@@ -504,10 +513,11 @@ fn annassign_defines_with_and_without_value() {
     assert!(y.use_lines.is_empty());
 }
 
-/// If 的 elif/else 分支:各分支 test 按读走查(直线近似,不做交汇合并)。
-/// 注:elif 的 test 读记在 If 语句起始行(walk_stmt 的 If 分支对全部
-/// elif_else_clauses 复用语句行,与 except handler 的 KR-AUD-17 行定位
-/// 口径不同——既有行为,不在此批改动)。
+/// If's elif/else branches: each branch's test is walked as a read (straight-line approximation, no
+/// merge at join points).
+/// Note: an elif's test read is recorded on the If statement's start line (walk_stmt's If branch
+/// reuses the statement line for all elif_else_clauses, a different line-attribution contract than the
+/// except handler's KR-AUD-17 -- existing behavior, not changed in this batch).
 #[test]
 fn if_elif_else_tests_are_reads() {
     let src = "def f(a, b):\n    if a:\n        pass\n    elif b:\n        pass\n    else:\n        pass\n";
@@ -520,7 +530,7 @@ fn if_elif_else_tests_are_reads() {
     assert_eq!(b.use_lines, vec![1], "elif test 读 b(记 If 语句行)");
 }
 
-/// While test 读 / With 上下文读与 optional_vars 定义。
+/// While test reads / With context reads and optional_vars definitions.
 #[test]
 fn while_and_with_are_walked() {
     let src =
@@ -537,7 +547,7 @@ fn while_and_with_are_walked() {
     assert_eq!(c.use_lines, vec![4], "体 内 use(c) 连链");
 }
 
-/// 函数体内 import / from-import / 嵌套 def / 嵌套 class 各定义一个绑定。
+/// Function-body import / from-import / nested def / nested class each define one binding.
 #[test]
 fn local_import_and_nested_defs_define_bindings() {
     let src = "def f():\n    import a.b\n    from kbe import KBEngine\n    def inner():\n        pass\n    class C:\n        pass\n    return a\n";
@@ -555,8 +565,8 @@ fn local_import_and_nested_defs_define_bindings() {
     assert_eq!(c.def_line, Some(5), "嵌套 class 定义 C");
 }
 
-/// match pattern 各形态的捕获 def 与读面:值/单例/序列星号/mapping rest/
-/// 类模式关键字/as 名/or 模式。
+/// Capture defs and read faces for each match pattern form: value/singleton/sequence star/
+/// mapping rest/class-pattern keyword/as name/or pattern.
 #[test]
 fn match_pattern_variants_capture_and_read() {
     let src = r#"
@@ -578,14 +588,15 @@ def f(v, key):
     let ast = ParsedAst::new(src);
     let body = body_of_func(src, "f");
     let result = dataflow_for_body(&ast, &["v".into(), "key".into()], &body);
-    // 序列模式:x 捕获、*rest 捕获,均在 case 行(7)。
+    // Sequence pattern: x capture, *rest capture, both on the case line (7).
     let x = chain(&result, "x");
     assert_eq!(x.def_line, Some(7));
     let rest = chain(&result, "rest");
     assert_eq!(rest.def_line, Some(7), "*rest 捕获 def");
-    // mapping:键表达式与 **rest 捕获均在 case 行(9)。注:裸名键
-    // (`{key: m_val}`)ruff 给 Store ctx,collect_reads 的 Name 分支只认
-    // Load → 不记读(ruff 模式键解析的既有行为);键值捕获 def 照常。
+    // mapping: key expressions and the **rest capture are both on the case line (9). Note: for a
+    // bare name key (`{key: m_val}`) ruff gives a Store ctx, and collect_reads's Name branch only
+    // recognizes Load -> no read recorded (existing behavior of ruff's pattern-key parsing); the
+    // key value capture def is normal.
     let key = chain(&result, "key");
     assert!(
         key.use_lines.is_empty(),
@@ -596,24 +607,25 @@ def f(v, key):
     assert_eq!(m_val.def_line, Some(9));
     let m_rest = chain(&result, "m_rest");
     assert_eq!(m_rest.def_line, Some(9), "**rest 捕获 def");
-    // 类模式:类名读、位置与关键字捕获(`py=pv` 经 MatchAs 捕获)、as 名,
-    // 均在 case 行(11)。(`py=0` 是属性对字面量的匹配,不产捕获。)
+    // Class pattern: class name read, positional and keyword captures (`py=pv` captured via
+    // MatchAs), and the as name are all on the case line (11). (`py=0` is an attribute-against-
+    // literal match and produces no capture.)
     let px = chain(&result, "px");
     assert_eq!(px.def_line, Some(11));
     let pv = chain(&result, "pv");
     assert_eq!(pv.def_line, Some(11), "关键字模式捕获 def");
     let whole = chain(&result, "whole");
     assert_eq!(whole.def_line, Some(11), "as 名 def");
-    // or 模式:as 名捕获在 case 行(13)。
+    // or pattern: the as-name capture is on the case line (13).
     let either = chain(&result, "either");
     assert_eq!(either.def_line, Some(13), "or 模式 as 名 def");
-    // 主题读保持。
+    // The subject read is preserved.
     let v = chain(&result, "v");
     assert_eq!(v.use_lines, vec![2]);
 }
 
-/// 推导式各形态(Set/SetComp/DictComp/Generator/Tuple)与 if 过滤:
-/// iter 读 → target 写 → ifs 读 → elt 读(KR-AUD-09 顺序)。
+/// Comprehension forms (Set/SetComp/DictComp/Generator/Tuple) with if filters:
+/// iter read -> target write -> ifs read -> elt read (KR-AUD-09 order).
 #[test]
 fn comprehension_and_container_forms_are_walked() {
     let src = r#"
@@ -634,8 +646,9 @@ def f(a, b, items, k):
         &["a".into(), "b".into(), "items".into(), "k".into()],
         &body,
     );
-    // a 的读:行 2(set 元素)、3(tuple)、4(dict value)、5/6/7/8(各推导式
-    // 的 if 与 elt 同行,去重计一次)、4 已含。slice 无 a。
+    // Reads of a: line 2 (set element), 3 (tuple), 4 (dict value), 5/6/7/8 (each
+    // comprehension's if and elt share a line, deduplicated to one count); 4 is
+    // already included. The slice has no a.
     let a = chain(&result, "a");
     assert_eq!(
         a.use_lines,
@@ -643,16 +656,17 @@ def f(a, b, items, k):
         "a 的读行应覆盖各容器/推导式: {:?}",
         a.use_lines
     );
-    // b 只在 tuple 被读。
+    // b is read only in the tuple.
     let b = chain(&result, "b");
     assert_eq!(b.use_lines, vec![3]);
-    // k 在 dict 字面量与 DictComp 的 key 侧被读。
+    // k is read in the dict literal and on the DictComp key side.
     let k = chain(&result, "k");
     assert_eq!(k.use_lines, vec![4, 7]);
-    // items 是四个推导式的 iter 与 slice 基座。
+    // items is the iter and the slice base of the four comprehensions.
     let items = chain(&result, "items");
     assert_eq!(items.use_lines, vec![5, 6, 7, 8, 9]);
-    // 推导式 target 定义 x(四个推导式共享同名 target,重定义各开新链)。
+    // Comprehension targets define x (the four comprehensions share the same target name; each
+    // redefinition opens a new chain).
     let xs: Vec<_> = result.chains.iter().filter(|c| c.var == "x").collect();
     assert_eq!(
         xs.len(),
@@ -664,17 +678,17 @@ def f(a, b, items, k):
     assert_eq!(xs[3].def_line, Some(8));
 }
 
-/// lambda 形参(posonly 默认值/vararg/kwarg)与体内读遮蔽(KR-AUD-18)。
+/// Lambda params (posonly defaults / vararg / kwarg) and in-body read shadowing (KR-AUD-18).
 #[test]
 fn lambda_params_and_defaults_are_scoped() {
     let src = "def f(base):\n    g = lambda x=base, *args, **kw: x\n    return g()\n";
     let ast = ParsedAst::new(src);
     let body = body_of_func(src, "f");
     let result = dataflow_for_body(&ast, &["base".into()], &body);
-    // 默认值在外层作用域求值:base 在 lambda 推层前被读。
+    // The default value is evaluated in the outer scope: base is read before the lambda pushes its layer.
     let base = chain(&result, "base");
     assert_eq!(base.use_lines, vec![1], "lambda 默认值读外层 base");
-    // lambda 形参 x/args/kw 各一条参数链;体内 x 读连 lambda 形参链。
+    // Lambda params x/args/kw each have one param chain; the in-body x read links to the lambda param chain.
     let xs: Vec<_> = result.chains.iter().filter(|c| c.var == "x").collect();
     assert_eq!(xs.len(), 1, "x 只有 lambda 形参链: {:#?}", result.chains);
     assert!(xs[0].is_param);
@@ -686,13 +700,13 @@ fn lambda_params_and_defaults_are_scoped() {
     let kw = chain(&result, "kw");
     assert!(kw.is_param);
     assert!(kw.use_lines.is_empty());
-    // g = lambda ... 赋值本身定义 g(非参数链),形参遮蔽断言不受影响。
+    // The `g = lambda ...` assignment itself defines g (not a param chain); the param-shadowing assertions are unaffected.
     let g = chain(&result, "g");
     assert_eq!(g.def_line, Some(1));
     assert!(!g.is_param);
 }
 
-/// AugAssign 的 Subscript/Attribute target(读旧值语义,KODE-AUD-007)。
+/// AugAssign with Subscript/Attribute targets (read-old-value semantics, KODE-AUD-007).
 #[test]
 fn augassign_subscript_and_attribute_read_old_value() {
     let src = "def f(self):\n    a = [1]\n    a[0] += 1\n    self.x += 1\n";
@@ -707,7 +721,7 @@ fn augassign_subscript_and_attribute_read_old_value() {
     assert!(hp.use_lines.is_empty());
 }
 
-/// 非 self 属性写(obj.attr = 1)不产 def 链(对象字段不可静态跟踪)。
+/// Non-self attribute writes (obj.attr = 1) produce no def chain (object fields are not statically trackable).
 #[test]
 fn non_self_attribute_write_makes_no_chain() {
     let src = "def f(obj):\n    obj.attr = 1\n";
@@ -726,7 +740,7 @@ fn non_self_attribute_write_makes_no_chain() {
     );
 }
 
-/// 元组/列表/星号解包写(Store 元组解包各元素 def)。
+/// Tuple/list/starred unpack writes (each element of a Store tuple unpack defs).
 #[test]
 fn tuple_list_starred_unpack_writes() {
     let src = "def f():\n    (a, b) = (1, 2)\n    [c, d] = (3, 4)\n    e, *rest = (5, 6)\n";
@@ -746,8 +760,8 @@ fn tuple_list_starred_unpack_writes() {
     }
 }
 
-/// 元组/列表/星号 target 的 AugAssign(ruff 语法恢复形态):读旧值
-/// (collect_reads_of 的 Tuple/List/Starred 分支)后再开新链。
+/// AugAssign with tuple/list/starred targets (ruff syntax-recovery forms): read the old value
+/// (collect_reads_of's Tuple/List/Starred branches) before opening a new chain.
 #[test]
 fn augassign_tuple_list_targets_read_elements() {
     let src =
@@ -755,8 +769,8 @@ fn augassign_tuple_list_targets_read_elements() {
     let ast = ParsedAst::new(src);
     let body = body_of_func(src, "f");
     let result = dataflow_for_body(&ast, &[], &body);
-    // 行号:def f(0)、a=1(1)、b=2(2)、(a,b)+=1(3)、[a,b]+=2(4)、
-    // (c,*d)+=3(5)。
+    // Line numbers: def f(0), a=1(1), b=2(2), (a,b)+=1(3), [a,b]+=2(4),
+    // (c,*d)+=3(5).
     let as_: Vec<_> = result.chains.iter().filter(|c| c.var == "a").collect();
     assert_eq!(
         as_.len(),
@@ -775,15 +789,16 @@ fn augassign_tuple_list_targets_read_elements() {
     assert_eq!(bs[0].use_lines, vec![3], "(a, b) += 1 读旧 b");
     assert_eq!(bs[1].def_line, Some(3));
     assert_eq!(bs[1].use_lines, vec![4]);
-    // (c, *d) += 3:c 与 *d 各开新链(读旧值——两者先前未定义,无读可记)。
+    // (c, *d) += 3: c and *d each open a new chain (old-value reads -- neither was previously defined,
+    // so no reads to record).
     let c = chain(&result, "c");
     assert_eq!(c.def_line, Some(5));
     let d = chain(&result, "d");
     assert_eq!(d.def_line, Some(5), "星号 target 亦 def");
 }
 
-/// kill 各形态:del 名 / del self.attr / del a[i] / del 元组 / del 列表 /
-/// del 星号——删除后 use 不连旧链(KODE-AUD-007 kill 语义)。
+/// kill forms: del name / del self.attr / del a[i] / del tuple / del list /
+/// del starred -- after deletion, use no longer links to the old chain (KODE-AUD-007 kill semantics).
 #[test]
 fn del_variants_kill_chains() {
     let src = r#"
@@ -809,10 +824,10 @@ def f(self):
     let ast = ParsedAst::new(src);
     let body = body_of_func(src, "f");
     let result = dataflow_for_body(&ast, &[], &body);
-    // 行号(raw string 首行空):x=1(行2)、del x(3)、use(x)(4)、
-    // self.attr=1(5)、del(6)、use(7)、a=[1](8)、del a[0](9)、use(a)(10)、
-    // (p,q)=(11)、del(p,q)(12)、use(p)(13)、(r,s)=(14)、del[r,s](15)、
-    // (t,u)=(16)、del t,u(17)、use(t)(18)。
+    // Line numbers (raw string's first line is empty): x=1(line 2), del x(3), use(x)(4),
+    // self.attr=1(5), del(6), use(7), a=[1](8), del a[0](9), use(a)(10),
+    // (p,q)=(11), del(p,q)(12), use(p)(13), (r,s)=(14), del[r,s](15),
+    // (t,u)=(16), del t,u(17), use(t)(18).
     let x = chain(&result, "x");
     assert_eq!(x.def_line, Some(2));
     assert!(
@@ -829,7 +844,8 @@ def f(self):
     );
     let a = chain(&result, "a");
     assert_eq!(a.def_line, Some(8));
-    // del a[0] 在终结前读容器 a(找元素),故 use 记 del 行;后续 use(a) 不连。
+    // del a[0] reads container a (to find the element) before terminating, so use records the del
+    // line; later use(a) does not link.
     assert_eq!(
         a.use_lines,
         vec![9],
@@ -858,8 +874,8 @@ def f(self):
     assert!(u.use_lines.is_empty(), "del t, u 终结 u: {:?}", u.use_lines);
 }
 
-/// kill 其余形态:未定义名(作用域穷尽)、星号 target、非 self 属性、
-/// 以及 `del (a + b)` 的语法恢复形态(未识别 target 整体跳过,不 panic)。
+/// Remaining kill forms: an undefined name (scope exhausted), a starred target, a non-self attribute,
+/// and the `del (a + b)` syntax-recovery form (the unrecognized target is skipped whole, no panic).
 #[test]
 fn del_unbound_and_starred_and_unhandled_targets() {
     let src = r#"
@@ -875,15 +891,15 @@ def f(self, obj):
     let ast = ParsedAst::new(src);
     let body = body_of_func(src, "f");
     let result = dataflow_for_body(&ast, &[], &body);
-    // 行号(raw 首行空):del notdefined(2)、del self.notdefined(3)、
-    // del obj.attr(4)、a=1(5)、b=2(6)、del a,*b(7)、del (c+d)(8)。
+    // Line numbers (raw first line empty): del notdefined(2), del self.notdefined(3),
+    // del obj.attr(4), a=1(5), b=2(6), del a,*b(7), del (c+d)(8).
     let a = chain(&result, "a");
     assert_eq!(a.def_line, Some(5));
     assert!(a.use_lines.is_empty(), "del a 终结 a: {:?}", a.use_lines);
     let b = chain(&result, "b");
     assert_eq!(b.def_line, Some(6));
     assert!(b.use_lines.is_empty(), "del *b 终结 b: {:?}", b.use_lines);
-    // 未识别的 BinOp target 不产链、不 panic。
+    // An unrecognized BinOp target produces no chain and no panic.
     assert!(
         !result.chains.iter().any(|c| c.var == "c" || c.var == "d"),
         "del (c + d) 不应产 c/d 链: {:#?}",
@@ -891,7 +907,7 @@ def f(self, obj):
     );
 }
 
-/// 写 target 的未识别形态(ruff 语法恢复):`(a + b) = 1` / `f() = 1` 不产链。
+/// Unrecognized write-target forms (ruff syntax recovery): `(a + b) = 1` / `f() = 1` produce no chain.
 #[test]
 fn assign_unhandled_targets_are_ignored() {
     let src = "def f():\n    (a + b) = 1\n    f() = 2\n";
@@ -910,8 +926,8 @@ fn assign_unhandled_targets_are_ignored() {
     );
 }
 
-/// AugAssign 的未识别 target(ruff 语法恢复):`(a + b) += 1` 走 collect_reads
-/// 兜底分支(表达式的 Load 读照常记),不 panic。
+/// AugAssign with an unrecognized target (ruff syntax recovery): `(a + b) += 1` goes through the
+/// collect_reads fallback branch (the expression's Load reads are recorded as usual), no panic.
 #[test]
 fn augassign_unhandled_target_falls_back_to_reads() {
     let src = "def f(a, b):\n    (a + b) += 1\n";
@@ -922,12 +938,12 @@ fn augassign_unhandled_target_falls_back_to_reads() {
     assert_eq!(a.use_lines, vec![1], "(a + b) += 1 的 BinOp 左值按读兜底");
     let b = chain(&result, "b");
     assert_eq!(b.use_lines, vec![1]);
-    // BinOp target 不开新链。
+    // A BinOp target opens no new chain.
     let as_: Vec<_> = result.chains.iter().filter(|c| c.var == "a").collect();
     assert_eq!(as_.len(), 1, "未识别 target 不重定义 a");
 }
 
-/// AugAssign 非 self 属性 target(`obj.attr += 1` 读 obj 链,写不产链)。
+/// AugAssign with a non-self attribute target (`obj.attr += 1` reads obj's chain; the write produces no chain).
 #[test]
 fn augassign_non_self_attribute_reads_base() {
     let src = "def f(obj):\n    obj.attr += 1\n";
@@ -943,7 +959,7 @@ fn augassign_non_self_attribute_reads_base() {
     );
 }
 
-/// 读侧剩余形态:关键字实参值、BoolOp、UnaryOp、条件表达式、Starred。
+/// Remaining read-side forms: keyword argument values, BoolOp, UnaryOp, conditional expressions, Starred.
 #[test]
 fn read_side_expression_forms() {
     let src = r#"
@@ -957,7 +973,7 @@ def f(a, b, items):
     let ast = ParsedAst::new(src);
     let body = body_of_func(src, "f");
     let result = dataflow_for_body(&ast, &["a".into(), "b".into(), "items".into()], &body);
-    // 行号:use(x=a)(2)、y(3)、w(4)、q(5)、st(6)。
+    // Line numbers: use(x=a)(2), y(3), w(4), q(5), st(6).
     let a = chain(&result, "a");
     assert_eq!(
         a.use_lines,
@@ -969,7 +985,7 @@ def f(a, b, items):
     assert_eq!(b.use_lines, vec![3, 5], "b:BoolOp 与条件 test 各读一次");
     let items = chain(&result, "items");
     assert_eq!(items.use_lines, vec![6], "Starred 读 items");
-    // 关键字名 x 不是读。
+    // The keyword name x is not a read.
     assert!(
         !result.chains.iter().any(|c| c.var == "x"),
         "关键字名不产链: {:#?}",
@@ -977,7 +993,7 @@ def f(a, b, items):
     );
 }
 
-/// async 生成器:await / yield / yield from 的值按读走查。
+/// async generators: await / yield / yield from values are walked as reads.
 #[test]
 fn async_generator_reads_are_collected() {
     let src = "async def af(a):\n    await a\n    yield a\n    yield from a\n";
@@ -997,7 +1013,7 @@ fn async_generator_reads_are_collected() {
     );
 }
 
-/// dataflow_for_module 忽略模块级非 class/def 语句(仅收集方法与函数)。
+/// dataflow_for_module ignores module-level non-class/def statements (only methods and functions are collected).
 #[test]
 fn module_level_plain_statements_are_skipped() {
     let src = "X = 1\n\ndef f():\n    return X\n\nclass C:\n    def m(self):\n        pass\n";

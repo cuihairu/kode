@@ -1,38 +1,48 @@
 /**
- * RUST-420(HR-QA-008)HTTP 端点策略纯核:默认只放行确认的 loopback 目标
- * (本机引擎端点);非 loopback 需显式授权(kbengine.http.allowNonLoopback)
- * 且逐次落安全警告,未授权一律阻止。
+ * RUST-420 (HR-QA-008) HTTP endpoint policy pure core: by default only
+ * confirmed loopback targets (the local engine endpoint) are allowed; a
+ * non-loopback target needs explicit authorization
+ * (kbengine.http.allowNonLoopback) plus a security warning recorded per
+ * request, and anything unauthorized is blocked.
  *
- * 与 RUST-422(HR-QA-010)工作区信任闸互补:信任闸防「配置来自不受信
- * 工作区」,本闸防「请求目的地越出本机」——即使工作区已信任,把请求发到
- * 非本机主机(内网探测/云元数据/数据外带)仍需用户显式授权。
+ * Complementary to the RUST-422 (HR-QA-010) workspace trust gate: the trust
+ * gate guards against "the config coming from an untrusted workspace", while
+ * this gate guards against "the request destination leaving this machine" --
+ * even with the workspace trusted, sending a request to a non-local host
+ * (intranet probing / cloud metadata / data exfiltration) still needs
+ * explicit user authorization.
  *
- * 分类只认 host 字面量,不做 DNS 解析:名字解析到 loopback 的公网域名仍按
- * 非 loopback 拦(保守侧,用户可显式授权放行);反向(localhost 被
- * /etc/hosts 改指别机)属机器层配置,不在插件职责内。node 传输面不跟随
- * 重定向,首请求 URL 即全部网络目的地,无重定向绕闸面。
+ * Classification only looks at the host literal and never does DNS
+ * resolution: a public domain that resolves to loopback is still blocked as
+ * non-loopback (the conservative side; the user can explicitly authorize
+ * it); the reverse case (localhost redirected to another machine via
+ * /etc/hosts) is machine-level configuration outside the extension's
+ * responsibility. The node transport surface does not follow redirects, so
+ * the first request URL is the entire network destination and there is no
+ * redirect route around the gate.
  *
- * 零 vscode 零 IO(与 httpRequestService/httpRequestExecutor 同层纪律)。
+ * Zero vscode, zero IO (the same layer discipline as
+ * httpRequestService/httpRequestExecutor).
  */
 
 export type HttpEndpointKind = 'loopback' | 'non-loopback' | 'not-http';
 
 export interface HttpEndpointClassification {
   readonly kind: HttpEndpointKind;
-  /** URL 的 hostname(URL 解析器已小写化);not-http 时为 null */
+  /** The URL's hostname (already lowercased by the URL parser); null for not-http */
   readonly host: string | null;
 }
 
-/** IPv4 段:1-3 位数字且 ≤255 */
+/** IPv4 octet: 1-3 digits and <= 255 */
 const isIpv4Octet = (part: string): boolean => /^\d{1,3}$/.test(part) && Number(part) <= 255;
 
-/** 127.0.0.0/8 整段是 IPv4 loopback(非仅 127.0.0.1) */
+/** The whole 127.0.0.0/8 range is IPv4 loopback (not just 127.0.0.1) */
 const isIpv4Loopback = (host: string): boolean => {
   const parts = host.split('.');
   return parts.length === 4 && parts[0] === '127' && parts.every(isIpv4Octet);
 };
 
-/** IPv6 loopback:::1(含展开形)与 IPv4 映射形 ::ffff:127.x.x.x */
+/** IPv6 loopback ::1 (including the expanded form) and the IPv4-mapped form ::ffff:127.x.x.x */
 const isIpv6Loopback = (host: string): boolean => {
   const raw = (host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host).toLowerCase();
   if (raw === '::1' || raw === '0:0:0:0:0:0:0:1') {
@@ -42,8 +52,8 @@ const isIpv6Loopback = (host: string): boolean => {
 };
 
 /**
- * host 字面量是否 loopback:localhost 及其子域(RFC 6761 保留 *.localhost)
- * / 127.0.0.0/8 / [::1] / ::ffff:127.x.x.x。
+ * Whether the host literal is loopback: localhost and its subdomains (RFC
+ * 6761 reserves *.localhost) / 127.0.0.0/8 / [::1] / ::ffff:127.x.x.x.
  */
 export function isLoopbackHost(hostname: string): boolean {
   const host = hostname.trim().toLowerCase();
@@ -54,9 +64,11 @@ export function isLoopbackHost(hostname: string): boolean {
 }
 
 /**
- * URL → 端点分类。只对可解析的 http/https URL 分类(那才有网络目的地);
- * 解析失败或非 http(s) 协议(not-http)由既有传输面拒绝(invalid-url/
- * unsupported-protocol),本闸不重复裁决。
+ * URL -> endpoint classification. Only parseable http/https URLs are
+ * classified (only those have a network destination); a parse failure or a
+ * non-http(s) protocol (not-http) is rejected by the existing transport
+ * surface (invalid-url / unsupported-protocol), and this gate does not
+ * adjudicate it again.
  */
 export function classifyHttpEndpoint(url: string): HttpEndpointClassification {
   let parsed: URL;
@@ -76,21 +88,24 @@ export function classifyHttpEndpoint(url: string): HttpEndpointClassification {
 }
 
 export interface HttpEndpointPolicyDecision {
-  /** allow=放行;warn=放行但逐次落安全警告(非 loopback 已显式授权);block=阻止 */
+  /** allow = let through; warn = let through but record a security warning per request (non-loopback explicitly authorized); block = stop it */
   readonly action: 'allow' | 'warn' | 'block';
   readonly host: string | null;
-  /** warn/block 时的用户可读说明;allow 为 null */
+  /** A user-readable explanation for warn/block; null for allow */
   readonly message: string | null;
 }
 
-/** 非 loopback 显式授权设置键(package.json contributes.configuration 同名) */
+/** The non-loopback explicit-authorization setting key (same name under package.json contributes.configuration) */
 export const HTTP_ALLOW_NON_LOOPBACK_SETTING = 'kbengine.http.allowNonLoopback';
 
 /**
- * 端点策略裁决(纯函数):
- * - loopback / 非 http(s) → allow(本机引擎是功能本意;非 http 由传输面拒);
- * - 非 loopback 未授权 → block(SSRF/数据外带防护,不发请求);
- * - 非 loopback 已授权 → warn(放行,安全警告随每次请求落面板)。
+ * Endpoint policy verdict (pure function):
+ * - loopback / not http(s) -> allow (the local engine is the feature's very
+ *   intent; non-http is rejected by the transport surface);
+ * - non-loopback, unauthorized -> block (SSRF / data-exfiltration protection,
+ *   no request sent);
+ * - non-loopback, authorized -> warn (let through; the security warning lands
+ *   on the panel with every request).
  */
 export function decideHttpEndpoint(url: string, allowNonLoopback: boolean): HttpEndpointPolicyDecision {
   const { kind, host } = classifyHttpEndpoint(url);

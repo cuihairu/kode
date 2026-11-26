@@ -1,39 +1,44 @@
-//! KBEngine 服务端配置 XML 解析(配置先行域,KODE-CFG-002)。
+//! KBEngine server-side configuration XML parsing (config-first domain, KODE-CFG-002).
 //!
-//! 逐语义对齐 TS `parseConfigXml`(`src/serverConfigMerge.ts:62`),供
-//! `$/kode/config/*` 通道与字节级对拍复用。纯函数、零第三方依赖、不 panic
-//! (沿用本 crate 铁律)。语义对齐清单见 `docs/design/config-first.md` §7.1。
+//! Semantically line-by-line aligned with TS `parseConfigXml` (`src/serverConfigMerge.ts:62`),
+//! shared by the `$/kode/config/*` channels and byte-level parity comparison. Pure functions,
+//! zero third-party dependencies, no panics (following this crate's iron rules). See
+//! `docs/design/config-first.md` §7.1 for the semantic alignment checklist.
 //!
-//! 关键差异面(相对字节级 def 解析器):这是**正则容错**解析——仅需元素树,
-//! 属性忽略(只用于自闭合判定);声明/XML PI 丢弃;注释**不剥离**,按位置
-//! 关联进树(`source_comments` 捕获,KODE-CFG-010:行内/尾随挂所属元素、
-//! 前导挂紧随元素、段尾/文件尾游离就近挂容器);标签不闭合/多余闭合按
-//! 已见内容容错不抛;根为伪节点(名字空),顶层组件段作其 children。
+//! Key difference from the byte-level def parser: this is a **regex-tolerant** parse — only the
+//! element tree is needed, attributes are ignored (used only for the self-closing decision);
+//! declarations/XML PIs are dropped; comments are **not stripped**, but associated into the tree
+//! by position (`source_comments` capture, KODE-CFG-010: inline/trailing ones attach to their own
+//! element, leading ones to the following element, section-end/file-end strays to the nearest
+//! enclosing container); unclosed tags/extra close tags are tolerated against what has already
+//! been seen and never thrown; the root is a pseudo node (empty name) whose children are the
+//! top-level component sections.
 
-/// 配置合成树节点(镜像 TS `ConfigXmlNode`)。
+/// Config synthesized-tree node (mirrors TS `ConfigXmlNode`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigNode {
-    /// 元素名;伪根为空串
+    /// Element name; empty string for the pseudo root
     pub name: String,
-    /// 叶子值(空格 join,伪根跳过)
+    /// Leaf value (space-joined, skipped for the pseudo root)
     pub text: String,
-    /// 子段/子键
+    /// Sub-sections / sub-keys
     pub children: Vec<ConfigNode>,
-    /// 源注释(输入 XML 原文):行内/尾随挂所属元素、前导挂紧随元素、
-    /// 段尾/文件尾游离就近挂容器。渲染时原样回写(TS 侧 render 面)。
+    /// Source comments (verbatim from the input XML): inline/trailing attach to their own element,
+    /// leading ones to the following element, section-end/file-end strays to the nearest enclosing
+    /// container. Written back verbatim at render time (TS-side render face).
     pub source_comments: Vec<String>,
 }
 
-/// 词法 token(镜像 JS `tokenRe` 三分支)。
+/// Lexical token (mirrors the three JS `tokenRe` branches).
 enum TokenKind {
-    /// 注释体(不含 `<!--`/`-->` 定界符)
+    /// Comment body (excluding the `<!--`/`-->` delimiters)
     Comment(String),
-    /// 声明/XML PI(丢弃)
+    /// Declaration/XML PI (dropped)
     Pi,
-    /// 标签
+    /// Tag
     Tag {
         name: String,
-        /// 标签名之后的原样文本(自闭合判定用)
+        /// Raw text after the tag name (used for the self-closing decision)
         attrs: String,
         is_close: bool,
     },
@@ -45,17 +50,18 @@ struct Token {
     kind: TokenKind,
 }
 
-/// 找 `needle` 在 `hay[start..]` 的第一次出现(字节序,定界符均 ASCII)。
+/// Find the first occurrence of `needle` in `hay[start..]` (byte order; all delimiters are ASCII).
 fn find_from(hay: &str, start: usize, needle: &str) -> Option<usize> {
     hay.get(start..)?.find(needle).map(|off| start + off)
 }
 
-/// 下一个 token:镜像 JS
-/// `tokenRe = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)(\w+)([^>]*)>/g`。
+/// Next token: mirrors JS
+/// `tokenRe = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)(\w+)([^>]*)>/g`.
 ///
-/// 优先级(同一位置):comment > PI > tag(JS 交替序);无闭合定界符的候选
-/// 不算 token(JS 懒量词 `*?` 失败→该位置整分支不匹配→推进)。标签名只收
-/// `[A-Za-z0-9_]`(`\w` ASCII),属性取标签名后到 `>` 前原样(含 `/` 结尾)。
+/// Priority (at the same position): comment > PI > tag (JS alternation order); a candidate without a
+/// closing delimiter is not a token (JS lazy quantifier `*?` fails -> the whole branch fails at that
+/// position -> advance). Tag names only accept `[A-Za-z0-9_]` (ASCII `\w`); attrs are taken verbatim
+/// from after the tag name up to `>` (including a trailing `/`).
 fn next_token(xml: &str, pos: usize) -> Option<Token> {
     let b = xml.as_bytes();
     let mut i = pos;
@@ -73,7 +79,7 @@ fn next_token(xml: &str, pos: usize) -> Option<Token> {
                         kind: TokenKind::Comment(body.to_string()),
                     });
                 }
-                // 无 `-->`:非 token,按文本推进
+                // No `-->`: not a token, advance as text
             } else if b.get(i + 1) == Some(&b'?') {
                 if let Some(close) = find_from(xml, i + 2, "?>") {
                     return Some(Token {
@@ -110,7 +116,7 @@ fn next_token(xml: &str, pos: usize) -> Option<Token> {
                             },
                         });
                     }
-                    // 无 `>`:非 token,按文本推进
+                    // No `>`: not a token, advance as text
                 }
             }
         }
@@ -119,15 +125,17 @@ fn next_token(xml: &str, pos: usize) -> Option<Token> {
     None
 }
 
-/// 自闭合判定:镜像 JS `/\/\s*$/.test(attrs)`——尾部 `/` 可跟空白。
+/// Self-closing decision: mirrors JS `/\/\s*$/.test(attrs)` — a trailing `/` may be followed by whitespace.
 fn is_self_closing(attrs: &str) -> bool {
     attrs.trim_end().ends_with('/')
 }
 
-/// 解析引擎风格的服务端配置 XML(仅需元素树;属性忽略;声明/PI 丢弃)。
+/// Parse engine-style server-side config XML (only the element tree is needed; attributes ignored;
+/// declarations/PIs dropped).
 ///
-/// 镜像 TS `parseConfigXml` 全语义:注释按位置关联进树(源注释归属规则)、
-/// 根为伪节点、标签不闭合/多余闭合容错不抛、无子节点返回 `None`。
+/// Mirrors the full semantics of TS `parseConfigXml`: comments associated into the tree by position
+/// (source-comment attribution rules), root as a pseudo node, unclosed tags/extra close tags tolerated
+/// without throwing, and `None` when there are no child nodes.
 pub fn parse_config(xml: &str) -> Option<ConfigNode> {
     struct Node {
         name: String,
@@ -135,8 +143,9 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
         children: Vec<usize>,
         source_comments: Vec<String>,
     }
-    // 节点竞技场:index 0 = 伪根;children 存子节点索引。规避递归可变借用,
-    // 且 lastClosed 指向已闭合节点(其 children 已定型,只追加源注释)。
+    // Node arena: index 0 = pseudo root; children hold child-node indices. Avoids recursive mutable
+    // borrows, and lastClosed points at an already-closed node (its children are settled, so only
+    // source comments are appended).
     let mut arena: Vec<Node> = vec![Node {
         name: String::new(),
         text: String::new(),
@@ -152,7 +161,7 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
 
     while let Some(tok) = next_token(xml, pos) {
         let top = *stack.last().expect("stack never empty");
-        // takeText:上一 token 尾到当前 token 首之间的文本,trim 后空格 join
+        // takeText: text between the previous token's end and the current token's start, space-joined after trim
         if top != 0 {
             let text = xml.get(last_end..tok.start).unwrap_or("").trim();
             if !text.is_empty() {
@@ -169,7 +178,7 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
                 let since_tag = xml.get(last_tag_end..tok.start).unwrap_or("");
                 if let Some(closed) = last_closed {
                     if !since_tag.contains('\n') {
-                        // 行内/尾随注释 → 最近闭合的元素
+                        // Inline/trailing comment -> most recently closed element
                         arena[closed].source_comments.push(body);
                     } else {
                         pending.push(body);
@@ -200,7 +209,7 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
                         }
                         last_closed = Some(top);
                     }
-                    // 多余闭合(名字不匹配/根上闭合):忽略
+                    // Extra close (name mismatch / closing at the root): ignore
                 } else {
                     let idx = arena.len();
                     arena.push(Node {
@@ -222,8 +231,9 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
             }
         }
     }
-    // 文件尾游离注释:就近挂到尚未闭合的容器;栈已空则挂段首容器元素。
-    // 一个元素都没有(纯注释输入)则丢弃——与 TS 返回 None 的路径一致。
+    // File-end stray comments: attach to the nearest not-yet-closed container; if the stack is back to
+    // just the root, attach to the first container element of the section. If there is not a single element
+    // (comment-only input) they are dropped — consistent with the path where TS returns None.
     if !pending.is_empty() {
         let target = if stack.len() > 1 {
             Some(*stack.last().expect("stack never empty"))
@@ -237,7 +247,7 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
     if arena[0].children.is_empty() {
         return None;
     }
-    // 竞技场 → ConfigNode 树
+    // Arena -> ConfigNode tree
     fn build(idx: usize, arena: &[Node]) -> ConfigNode {
         let n = &arena[idx];
         ConfigNode {
@@ -250,10 +260,10 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
     Some(build(0, &arena))
 }
 
-// --- 合并语义(KODE-CFG-003,镜像 TS mergeConfigXml/mergeSourceComments) ---
+// --- Merge semantics (KODE-CFG-003, mirroring TS mergeConfigXml/mergeSourceComments) ---
 
-/// JS `\s` 精确字符集(与 Rust `is_whitespace` 在 `\u{feff}` 等处有出入,
-/// 对拍须逐字节一致,故按 ECMAScript 定义镜像)。
+/// JS `\s` exact character set (differs from Rust `is_whitespace` around `\u{feff}`; parity comparison
+/// must match byte for byte, so the ECMAScript definition is mirrored).
 fn is_js_ws(c: char) -> bool {
     matches!(
         c,
@@ -268,11 +278,12 @@ fn is_js_ws(c: char) -> bool {
     )
 }
 
-/// 注释内容消毒:镜像 TS `sanitizeXmlComment`(serverConfigCommentText.ts:11)——
-/// 空白串压成单空格并 trim、`-` 连串压成单个、结尾 `-` 补空格(防与 `-->` 拼出
-/// `--`)。合并去重与渲染回写共用此口径。
+/// Sanitize comment content: mirrors TS `sanitizeXmlComment` (serverConfigCommentText.ts:11) —
+/// whitespace runs collapse to a single space and are trimmed, runs of `-` collapse to one, and a
+/// trailing `-` gets a space appended (prevents it combining with `-->` to form `--`). Both merge
+/// deduplication and render-time writeback share this contract.
 pub fn sanitize_xml_comment(text: &str) -> String {
-    // /\s+/g → ' '
+    // /\s+/g -> ' '
     let mut spaced = String::with_capacity(text.len());
     let mut in_ws = false;
     for c in text.chars() {
@@ -286,9 +297,9 @@ pub fn sanitize_xml_comment(text: &str) -> String {
             in_ws = false;
         }
     }
-    // trim()(替换后边缘只剩单空格)
+    // trim() (after replacement, only single spaces remain at the edges)
     let trimmed = spaced.trim_matches(' ');
-    // /-+/g → '-'
+    // /-+/g -> '-'
     let mut collapsed = String::with_capacity(trimmed.len());
     let mut prev_dash = false;
     for c in trimmed.chars() {
@@ -308,9 +319,10 @@ pub fn sanitize_xml_comment(text: &str) -> String {
     collapsed
 }
 
-/// 两侧源注释合并(override 优先):override 侧在前、defaults 侧在后;规范化
-/// (sanitize)后相同只留首条(保留原文);全空返回 None(不设 sourceComments)。
-/// 镜像 TS `mergeSourceComments`(serverConfigMerge.ts:143)。
+/// Merge source comments from both sides (override wins): override-side entries first, defaults-side
+/// after; identical after normalization (sanitize) keep only the first occurrence (original text
+/// preserved); all empty returns None (sourceComments is not set).
+/// Mirrors TS `mergeSourceComments` (serverConfigMerge.ts:143).
 fn merge_source_comments(base: &ConfigNode, over: &ConfigNode) -> Option<Vec<String>> {
     let mut merged: Vec<String> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
@@ -333,14 +345,16 @@ fn merge_source_comments(base: &ConfigNode, over: &ConfigNode) -> Option<Vec<Str
     }
 }
 
-/// 合并(引擎同键覆盖口径,镜像 TS `mergeConfigXml`,serverConfigMerge.ts:164):
-/// 以 defaults(base)为基、自定义(override)覆盖。子键按名字对齐——自定义没有
-/// 的保留默认;自定义写了的整名替换(叶子取自定义值,重复名列表如 `<item>`
-/// 整表替换,不与默认表交错);两边都是单一容器段则递归下钻。源注释两侧都保留:
-/// override 侧在前(优先),同名单元素的 defaults 侧注释追加其后;重复名列表整表
-/// 替换时只带自定义侧注释。
+/// Merge (engine same-key-override contract, mirroring TS `mergeConfigXml`, serverConfigMerge.ts:164):
+/// defaults (base) is the base and the custom config (override) overrides it. Sub-keys are aligned by
+/// name — those the custom config lacks keep the default; names the custom config writes are replaced
+/// by the whole name (leaves take the custom value, repeated-name lists such as `<item>` are replaced
+/// wholesale, never interleaved with the default table); when both sides are single container sections
+/// it recurses downward. Source comments are kept from both sides: the override side goes first
+/// (preferred), and for a single same-name element the defaults-side comments are appended after; when a
+/// repeated-name list is replaced wholesale only the custom-side comments are carried.
 pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> ConfigNode {
-    // 名字序:base.children 全序在前,override 新名追加在后(各自保序去重)
+    // Name order: the full order of base.children first, override-only names appended (each deduped while preserving order)
     let mut names: Vec<&str> = Vec::new();
     for child in base.children.iter().chain(override_node.children.iter()) {
         if !names.contains(&child.name.as_str()) {
@@ -360,27 +374,27 @@ pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> Config
             .filter(|child| child.name == name)
             .collect();
         if override_ones.is_empty() {
-            // 自定义没写 → 保留默认(整段原样)
+            // Not written in the custom config -> keep the default (whole section verbatim)
             children.extend(base_ones.into_iter().cloned());
         } else if base_ones.is_empty() {
-            // 默认没有 → 自定义整段
+            // Not present in defaults -> the whole custom section
             children.extend(override_ones.into_iter().cloned());
         } else if base_ones.len() == 1
             && override_ones.len() == 1
             && !base_ones[0].children.is_empty()
             && !override_ones[0].children.is_empty()
         {
-            // 两边都是单一容器段 → 递归下钻(子键继续对齐)
+            // Both sides are single container sections -> recurse downward (sub-keys keep aligning)
             children.push(merge_config_xml(base_ones[0], override_ones[0]));
         } else if base_ones.len() == 1 && override_ones.len() == 1 {
-            // 同名单元素(叶子/空容器):值取自定义,源注释两侧都留(override 优先)
+            // Single same-name element (leaf/empty container): value from the custom config, source comments kept from both sides (override preferred)
             let mut node = override_ones[0].clone();
             if let Some(comments) = merge_source_comments(base_ones[0], override_ones[0]) {
                 node.source_comments = comments;
             }
             children.push(node);
         } else {
-            // 重复名列表(任一侧多个)→ 整表替换为自定义侧
+            // Repeated-name list (multiple on either side) -> replace the whole table with the custom side
             children.extend(override_ones.into_iter().cloned());
         }
     }
@@ -396,15 +410,17 @@ pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> Config
     merged
 }
 
-// ============ KODE-CFG-009:core resolve(消费通道唯一取数口) ============
+// ============ KODE-CFG-009: core resolve (the single data source for consuming channels) ============
 //
-// TS 消费面(hover 合成展示/telnet 速览/数据库连接要素)统一经
-// `$/kode/config/resolve` 取本模块产物;TS 侧 parseConfigXml/mergeConfigXml/
-// summarizeFinalTelnet/extractDatabaseInterfaceConfig 同步下线(设计 §6.2
-// step 3),本模块是解析/合并/读值的唯一实现。
+// The TS consuming faces (hover synthesized display / telnet quick view / database connection
+// essentials) all fetch this module's output via `$/kode/config/resolve`; the TS-side
+// parseConfigXml/mergeConfigXml/summarizeFinalTelnet/extractDatabaseInterfaceConfig are retired
+// in lockstep (design §6.2 step 3) — this module is the sole implementation for
+// parse/merge/value-read.
 
-/// 引擎各组件 telnet 默认端口(kbengine_defaults.xml `<telnet_service><port/>`)。
-/// 写死表自 TS `telnetService.ENGINE_DEFAULT_TELNET_PORTS` 迁入,core 为唯一真源。
+/// Engine default telnet ports per component (kbengine_defaults.xml `<telnet_service><port/>`).
+/// The hard-coded table was migrated from TS `telnetService.ENGINE_DEFAULT_TELNET_PORTS`; core is
+/// the single source of truth.
 pub const ENGINE_DEFAULT_TELNET_PORTS: [&str; 7] = [
     "loginapp",
     "dbmgr",
@@ -415,8 +431,8 @@ pub const ENGINE_DEFAULT_TELNET_PORTS: [&str; 7] = [
     "bots",
 ];
 
-/// telnet 速览条目(镜像 TS summarizeFinalTelnet 产物:端口数字非法→None、
-/// 0 合法保留、密码空→None)。
+/// Telnet quick-view entry (mirrors the TS summarizeFinalTelnet output: invalid port number -> None,
+/// 0 is valid and kept, empty password -> None).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TelnetSummaryEntry {
     pub component: String,
@@ -424,29 +440,31 @@ pub struct TelnetSummaryEntry {
     pub password: Option<String>,
 }
 
-/// dbmgr 数据库接口连接要素(镜像 TS extractDatabaseInterfaceConfig 产物:
-/// 缺叶回落引擎默认;encrypt 缺省 true;明文密码只在 encrypt=false 提取)。
+/// dbmgr database-interface connection essentials (mirrors the TS extractDatabaseInterfaceConfig
+/// output: missing leaves fall back to engine defaults; encrypt defaults to true; the plaintext
+/// password is only extracted when encrypt=false).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatabaseInterfaceConfig {
     pub host: String,
-    /// 端口(缺/非法回落 3306;引擎 `<port>0` 表示用 mysql 默认,同样落 3306)
+    /// Port (missing/invalid falls back to 3306; engine `<port>0` means "use the mysql default", which also lands on 3306)
     pub port: f64,
     pub username: String,
     pub database_name: String,
-    /// true = 密码经引擎 RSA 加密,kode 不读不解读
+    /// true = password is RSA-encrypted by the engine; kode neither reads nor interprets it
     pub encrypt: bool,
     pub character_set: String,
-    /// 明文密码(仅 encrypt=false 时提取)
+    /// Plaintext password (only extracted when encrypt=false)
     pub plain_password: Option<String>,
 }
 
-/// 引擎 defaults dbmgr 段缺叶时的默认值(kbengine_defaults.xml
-/// `<dbmgr><databaseInterfaces><default>`)。
+/// Defaults for missing leaves in the engine defaults dbmgr section (kbengine_defaults.xml
+/// `<dbmgr><databaseInterfaces><default>`).
 const ENGINE_DB_INTERFACE_DEFAULTS: (&str, f64, &str, &str, &str) =
     ("localhost", 3306.0, "kbe", "kbe", "utf8mb4");
 
-/// 文本按 JS `Number` 口径转数(配置读值用):trim 后空/非数/非有限 → None。
-/// JS Number 还接受 "0x10"/"Infinity" 等形态,配置端口域不出现,不镜像。
+/// Parse text into a number following the JS `Number` contract (for config value reads): empty /
+/// non-numeric / non-finite after trim -> None. JS Number also accepts forms like "0x10"/"Infinity",
+/// which never occur in the config port domain and are not mirrored.
 fn leaf_number(text: &str) -> Option<f64> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -455,8 +473,9 @@ fn leaf_number(text: &str) -> Option<f64> {
     trimmed.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
-/// 两候选层找段(镜像 TS extractDatabaseInterfaceConfig 的 candidates:
-/// 伪根一层直挂组件段与 `<root>` 包裹二层都找)。
+/// Find a section among the two candidate layers (mirrors the candidates of TS
+/// extractDatabaseInterfaceConfig: both the layer where component sections hang directly under the
+/// pseudo root and the `<root>`-wrapped second layer are searched).
 fn find_among_layers<'a>(root: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
     root.children
         .iter()
@@ -477,9 +496,10 @@ fn child_leaf<'a>(parent: &'a ConfigNode, name: &str) -> Option<&'a str> {
         .map(|child| child.text.as_str())
 }
 
-/// 从合成树读 telnet 速览:逐组件(引擎写死表序)读 `<telnet_service>` 端口/
-/// 密码。端口按 JS Number.isFinite 口径(0 合法保留,非数→None),密码非空
-/// 才带出;组件段缺 telnet_service → 全 None(不猜)。
+/// Read the telnet quick view from the synthesized tree: per component (in the engine's hard-coded
+/// table order) read the `<telnet_service>` port/password. The port follows the JS Number.isFinite
+/// contract (0 is valid and kept, non-numeric -> None); the password is emitted only when non-empty;
+/// a component section missing telnet_service -> all None (no guessing).
 pub fn telnet_summary(root: &ConfigNode) -> Vec<TelnetSummaryEntry> {
     ENGINE_DEFAULT_TELNET_PORTS
         .iter()
@@ -506,10 +526,10 @@ pub fn telnet_summary(root: &ConfigNode) -> Vec<TelnetSummaryEntry> {
         .collect()
 }
 
-/// 从合成树提取 `<dbmgr><databaseInterfaces><default>` 的连接要素;段缺→None。
-/// username/encrypt 藏在 `<auth>` 下,characterSet 藏在 `<unicodeString>` 下;
-/// 端口缺/非法/0 回落 3306(引擎 `<port>0` 即「用 mysql 默认」,
-/// db_interface_mysql.cpp:166-167)。
+/// Extract the connection essentials of `<dbmgr><databaseInterfaces><default>` from the synthesized
+/// tree; section missing -> None. username/encrypt hide under `<auth>`, characterSet under
+/// `<unicodeString>`; a missing/invalid/0 port falls back to 3306 (engine `<port>0` means "use the
+/// mysql default", db_interface_mysql.cpp:166-167).
 pub fn db_interface_config(root: &ConfigNode) -> Option<DatabaseInterfaceConfig> {
     let iface = find_among_layers(root, "dbmgr")?
         .children
@@ -538,7 +558,7 @@ pub fn db_interface_config(root: &ConfigNode) -> Option<DatabaseInterfaceConfig>
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .unwrap_or(default_charset);
-    // encrypt 缺省 true:值(lowercase)非字面 false 即加密
+    // encrypt defaults to true: any value (lowercased) other than the literal false means encrypted
     let encrypt = auth
         .and_then(|a| child_leaf(a, "encrypt"))
         .map(str::trim)
@@ -573,16 +593,18 @@ pub fn db_interface_config(root: &ConfigNode) -> Option<DatabaseInterfaceConfig>
     })
 }
 
-/// 元件配置 telnet_service 段读值(镜像 TS parseKbengineXmlTelnet 语义:
-/// 文档序首个 `<telnet_service>`,端口数字非法→None,密码空→None)。
+/// Read the telnet_service section of the project config (mirrors TS parseKbengineXmlTelnet
+/// semantics: first `<telnet_service>` in document order, invalid port number -> None, empty
+/// password -> None).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CustomTelnet {
     pub port: Option<f64>,
     pub password: Option<String>,
 }
 
-/// `$/kode/config/resolve` 产物:双树 + 合成树 + telnet 速览 + 数据库连接要素
-/// + 元件 telnet 段读值一次出全(TS 消费通道唯一取数口)。
+/// Output of `$/kode/config/resolve`: both trees + the synthesized tree + telnet quick view +
+/// database connection essentials + project-config telnet section values, all emitted at once
+/// (the single data source for TS consuming channels).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedConfig {
     pub defaults_tree: Option<ConfigNode>,
@@ -590,13 +612,14 @@ pub struct ResolvedConfig {
     pub merged: Option<ConfigNode>,
     pub telnet_summary: Vec<TelnetSummaryEntry>,
     pub db_interface: Option<DatabaseInterfaceConfig>,
-    /// 元件配置(自定义侧)telnet_service 段读值(custom 树缺/无段 → None)
+    /// Project-config (custom-side) telnet_service section values (custom tree missing / no section -> None)
     pub custom_telnet: Option<CustomTelnet>,
 }
 
-/// 解析 defaults + 元件配置原文、按引擎同键覆盖合并、并读出 telnet 速览与
-/// 数据库连接要素。两侧都缺 → 全空产物(merged None,不猜)。
-/// 文档序首个名匹配节点(镜像 Rust derive 侧 first_node 语义)。
+/// Parse the defaults + project-config raw text, merge under the engine same-key-override rules,
+/// and read out the telnet quick view and database connection essentials. Both sides missing ->
+/// an all-empty result (merged None, no guessing).
+/// First name-matching node in document order (mirrors the Rust derive-side first_node semantics).
 fn first_node<'a>(node: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
     node.children
         .iter()
@@ -608,8 +631,9 @@ fn first_node<'a>(node: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
         })
 }
 
-/// 元件配置 telnet_service 段读值(TS parseKbengineXmlTelnet 的 core 迁入形:
-/// 无段 → None;端口文本按 JS Number.isFinite 口径;密码空 → None)。
+/// Read the telnet_service section of the project config (core-migrated form of TS
+/// parseKbengineXmlTelnet: no section -> None; port text follows the JS Number.isFinite contract;
+/// empty password -> None).
 pub fn custom_telnet(custom_tree: Option<&ConfigNode>) -> Option<CustomTelnet> {
     let section = first_node(custom_tree?, "telnet_service")?;
     let port = child_leaf(section, "port").and_then(leaf_number);

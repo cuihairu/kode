@@ -1,4 +1,4 @@
-//! MessageTable 主构建与 def 递归装载流程。
+//! Main MessageTable build and recursive def loading flow.
 
 use std::collections::HashMap;
 
@@ -21,12 +21,12 @@ use crate::message_table::types::load_types_xml;
 use crate::message_table::views::DefView;
 
 // ---------------------------------------------------------------------------
-// 主构建
+// Main build
 // ---------------------------------------------------------------------------
 
-/// TS buildMessageTable:基元表注册 → types.xml 用户类型 → 自身 def 递归并入
-/// → aliasID 分配 → 汇总 JSON。自身 def 结构错误 → null(与 TS loadDef 抛错
-/// 同路,不产表)。
+/// TS buildMessageTable: primitive table registration -> types.xml user types -> recursive merge of own def
+/// -> aliasID assignment -> aggregated JSON. Structural error in own def -> null (same path as TS loadDef
+/// throwing; no table produced).
 pub(super) fn build_table(params: &Value) -> Result<Value, String> {
     let entity_name = params
         .get("entityName")
@@ -67,7 +67,7 @@ pub(super) fn build_table(params: &Value) -> Result<Value, String> {
         paths: &paths,
     };
 
-    // 自身 def 结构错误:TS source.loadDef(entityName,'entity') 抛错 → null(不产表)
+    // Structural error in own def: TS source.loadDef(entityName,'entity') throws -> null (no table produced)
     let Some(own) = source.load(entity_name) else {
         return Ok(Value::Null);
     };
@@ -149,8 +149,8 @@ pub(super) fn build_table(params: &Value) -> Result<Value, String> {
     serde_json::to_value(&table).map_err(|e| e.to_string())
 }
 
-/// 单份 def 并入模块(TS loadDefIntoModule):属性 → Cell → Base → Client 方法
-/// →(非接口)接口声明序递归 → 组件槽 → 父类递归。
+/// Merge a single def into the module (TS loadDefIntoModule): properties -> Cell -> Base -> client methods
+/// -> (non-interface) recursion in interface declaration order -> component slots -> parent recursion.
 pub(super) fn load_def_into_module(
     module_name: &str,
     local: DefView,
@@ -159,8 +159,8 @@ pub(super) fn load_def_into_module(
     asm: &mut Assembly,
 ) {
     let visit_key = normalize_source_key(source.path_of(module_name));
-    // 成环守卫只罩实体(own+父链);接口不罩(引擎 loadInterfaces 重复声明
-    // 每次完整装载,撞名报 [X] is exist!;接口尾部提前 return 无环风险)。
+    // Cycle guard only covers entities (own + parent chain); interfaces are not covered (engine loadInterfaces re-declares
+    // fully on each load; name collision reports [X] is exist!; the early return at the interface tail leaves no cycle risk).
     if origin_kind != "interface" && asm.visited.contains(&visit_key) {
         asm.issues.push(AsmIssue {
             kind: "parent-cycle",
@@ -192,7 +192,7 @@ pub(super) fn load_def_into_module(
         }
     }
 
-    // 接口 def 只并入属性+方法(引擎 loadInterfaces 不递归接口自身)
+    // Interface defs only merge properties + methods (engine loadInterfaces does not recurse into the interface itself)
     if origin_kind == "interface" {
         return;
     }
@@ -212,7 +212,7 @@ pub(super) fn load_def_into_module(
         }
     }
 
-    // 组件槽注册(loadComponents 在接口后父类前)
+    // Component slot registration (loadComponents runs after interfaces, before parents)
     for component in &local.components {
         register_component_slot(module_name, component, source, asm);
     }

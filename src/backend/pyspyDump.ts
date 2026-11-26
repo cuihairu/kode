@@ -1,15 +1,21 @@
 /**
- * py-spy 性能分析(IDE-PDBG-003):serverControl 树 debug 图标后的
- * $(pulse) 入口,对目标组件进程跑 `py-spy dump` 把 Python 调用栈写进
- * 「KBEngine py-spy」输出通道;进程选择复用既有组件选择器口径。
- * 本机未装 py-spy 时按所选解释器 pip 一键安装——装失败如实弹原因,
- * 绝不重试轰炸;装好/已在位才跑 dump。
+ * py-spy profiling (IDE-PDBG-003): behind the debug icon in the serverControl
+ * tree, the $(pulse) entry runs `py-spy dump` against the target component
+ * process and writes the Python call stack into the "KBEngine py-spy" output
+ * channel; process selection reuses the existing component-selector criterion.
+ * When py-spy is not installed locally, it is installed with pip against the
+ * selected interpreter in one click -- a failed install surfaces its reason
+ * honestly and never retries in a bombardment; dump runs only once installed /
+ * already in place.
  *
- * 权限口径(文档同步):py-spy 经 ptrace 读目标进程栈。Linux 默认
- * kernel.yama.ptrace_scope=1 只允许父子进程互探,组件进程不是 py-spy
- * 的子进程——需要 ptrace_scope=0(sysctl)或 sudo/属主一致+cap;容器里
- * 要 --cap-add=SYS_PTRACE。权限不足时 py-spy 自身报错,dump 失败通道
- * 把 ptrace 指引拼在原因后面,不吞不猜。
+ * Permission criterion (kept in sync with the docs): py-spy reads the target
+ * process's stack via ptrace. Linux's default kernel.yama.ptrace_scope=1 only
+ * allows parent-child mutual probing, and the component process is not py-spy's
+ * child -- so ptrace_scope=0 (sysctl) or sudo / matching owner + capability is
+ * needed; inside a container, --cap-add=SYS_PTRACE is required. With
+ * insufficient permissions py-spy itself errors out and the dump-failure
+ * channel appends the ptrace guidance after the reason: nothing swallowed,
+ * nothing guessed.
  */
 
 import { killProcessTree, spawnProcess } from './processManager';
@@ -25,21 +31,22 @@ export interface CommandRunResult {
   exitCode: number | null;
 }
 
-/** spawn 注入面:真实现见 defaultSpawnRunner,测试注入替身不真跑 py-spy */
+/** Spawn injection face: the real implementation is defaultSpawnRunner; tests inject a stand-in that never actually runs py-spy */
 export type SpawnRunner = (
   command: string,
   args: string[],
   timeoutMs: number
 ) => Promise<CommandRunResult>;
 
-/** 真实 spawn:stdout/stderr 分收,超时杀进程按 -1 退出;永不抛 */
+/** Real spawn: stdout/stderr collected separately; on timeout the process is killed and reported as exit -1; never throws */
 export const defaultSpawnRunner: SpawnRunner = (command, args, timeoutMs) =>
   new Promise(resolve => {
     try {
       const child = spawnProcess(command, args, {
         windowsHide: true,
-        // POSIX 下设进程组长(与 ProcessManager 同口径):超时按组杀,
-        // py-spy 派生的孙进程不残留成孤儿
+        // On POSIX make the process a group leader (same criterion as
+        // ProcessManager): the timeout kills by group so that grandchild
+        // processes spawned by py-spy are not left behind as orphans
         detached: process.platform !== 'win32'
       });
       let stdout = '';
@@ -54,8 +61,9 @@ export const defaultSpawnRunner: SpawnRunner = (command, args, timeoutMs) =>
         resolve({ stdout, stderr, exitCode });
       };
       const timer = setTimeout(() => {
-        // 组杀(对照 ProcessManager.killProcessTree 口径):派生孙进程不
-        // 残留;单进程兜底回落 child.kill
+        // Group kill (matching the ProcessManager.killProcessTree criterion):
+        // spawned grandchildren do not linger; the single-process fallback falls
+        // back to child.kill
         void killProcessTree(child.pid ?? 0, 'SIGKILL', child);
         finish(-1);
       }, timeoutMs);
@@ -77,19 +85,23 @@ export const defaultSpawnRunner: SpawnRunner = (command, args, timeoutMs) =>
 
 export interface PyspyPresence {
   installed: boolean;
-  /** `py-spy --version` 输出的版本(如 0.3.14);未装为 null */
+  /** Version reported by `py-spy --version` (e.g. 0.3.14); null when not installed */
   version: string | null;
-  /** 未装原因一行(命令不存在/超时),可定位 */
+  /** One-line reason it is not installed (command missing / timeout), so the issue can be located */
   detail: string;
 }
 
 /**
- * 解释器旁的 py-spy 可执行文件定位:pip 把入口脚本装进解释器所在环境的
- * 脚本目录(venv 的 bin//Scripts/、pip --user 的 ~/.local/bin),扩展宿主
- * PATH 通常不含这些目录——只探 PATH 会把已装误判成未装,「一键安装」装完
- * 仍探测不到,反复弹安装框(2026-10-30 用户实测)。候选按序:解释器同目录
- * → ~/.local/bin;相对名解释器(ssh 远端的 'python3')与缺位都返回 null,
- * 调用方回落 PATH 裸命令。
+ * Locate the py-spy executable next to the interpreter: pip installs entry
+ * scripts into the script directory of the interpreter's environment (venv's
+ * bin/ or Scripts/, pip --user's ~/.local/bin), and the extension host's PATH
+ * usually lacks those directories -- probing PATH only would misjudge an
+ * installed py-spy as missing, so the "one-click install" would complete and
+ * still not be detected, popping the install dialog over and over (observed by
+ * the user on 2026-10-30). Candidates in order: the interpreter's own
+ * directory, then ~/.local/bin; a relative-name interpreter (e.g. 'python3' on
+ * an ssh remote) and a missing interpreter both return null, and the caller
+ * falls back to the bare PATH command.
  */
 export function resolvePyspyCommand(
   interpreterPath: string | null | undefined,
@@ -99,8 +111,10 @@ export function resolvePyspyCommand(
     return null;
   }
   const exe = process.platform === 'win32' ? 'py-spy.exe' : 'py-spy';
-  // WIN-3:按解释器路径风格选 path——POSIX 解释器(/ 开头)保持 / 拼装,win 盘符
-  // 走平台 join;否则 win32 把 /proj/.venv/bin 拼成反斜杠形态与探针/夹具错配。
+  // WIN-3: pick the path API by the interpreter path style -- a POSIX
+  // interpreter (leading /) keeps / style joining, a win drive letter takes the
+  // platform join; otherwise win32 joins /proj/.venv/bin into backslash form,
+  // mismatching the probe/fixture.
   const P = pathApiFor(interpreterPath);
   const candidates = [
     P.join(P.dirname(interpreterPath), exe),
@@ -109,7 +123,7 @@ export function resolvePyspyCommand(
   return candidates.find(candidate => exists(candidate)) ?? null;
 }
 
-/** 探测 py-spy:`<命令> --version`(版本号常走 stderr);命令优先解释器旁定位,回落 PATH 裸命令 */
+/** Probe py-spy with `<command> --version` (the version usually arrives on stderr); the command is resolved next to the interpreter first, falling back to the bare PATH command */
 export async function checkPyspyInstalled(
   runner: SpawnRunner,
   pyspyCommand?: string | null
@@ -131,13 +145,13 @@ export async function checkPyspyInstalled(
 
 export interface PyspyInstallResult {
   ok: boolean;
-  /** 成功给输出尾;失败给原因(退出码+输出尾),如实报错不假成功 */
+  /** On success the output tail; on failure the reason (exit code + output tail), reporting honestly instead of faking success */
   detail: string;
 }
 
 const INSTALL_TIMEOUT_MS = 120_000;
 
-/** 一键安装:`<解释器> -m pip install -U py-spy`;起不来/超时/非零退出都算失败 */
+/** One-click install: `<interpreter> -m pip install -U py-spy`; a failure to start / timeout / non-zero exit all count as failure */
 export async function installPyspy(
   runner: SpawnRunner,
   interpreterPath: string
@@ -155,19 +169,20 @@ export async function installPyspy(
   };
 }
 
-/** ptrace 权限口径(单一真源:dump 失败通道与文档同一段话) */
+/** ptrace permission criterion (single source of truth: the dump-failure channel and the docs share this same paragraph) */
 export const PYSPY_PTRACE_GUIDANCE =
   'py-spy 经 ptrace 读目标进程栈:Linux 默认 ptrace_scope=1 只允许父子互探,需 sysctl kernel.yama.ptrace_scope=0 或 sudo 运行;容器内需 --cap-add=SYS_PTRACE;Windows 需管理员或相同用户会话';
 
 export interface PyspyDumpResult {
   ok: boolean;
-  /** 调用栈本体(成功)或失败原因+指引(失败),原样进输出通道 */
+  /** The call stack itself (success) or the failure reason + guidance (failure), passed verbatim into the output channel */
   output: string;
 }
 
-/** 弹窗注入面(ensurePyspyReady 用;扩展侧接 vscode.window,测试记文案)。
- * 返回类型放宽到 unknown:vscode 弹窗面是 Thenable 不是 Promise,取值经
- * await 规整,只有 warn 的选择字符串被消费。 */
+/** Dialog injection face (used by ensurePyspyReady; the extension side wires vscode.window, tests record the texts).
+ * The return type is widened to unknown: the vscode dialog face is a Thenable
+ * rather than a Promise, values are normalized through await, and only warn's
+ * picked action string is consumed. */
 export interface PyspyUi {
   warn(message: string, ...actions: string[]): unknown;
   info(message: string): unknown;
@@ -175,22 +190,26 @@ export interface PyspyUi {
 }
 
 /**
- * py-spy 就位编排:已在位 → 直接放行零弹窗;未装 → 弹一键安装(取消即止),
- * 按所选解释器(PRG-004 同链)pip 安装;装失败如实弹原因不重试轰炸;解释器
- * 缺位给设置指引。放行=true 才继续 dump。
+ * py-spy readiness orchestration: already in place -> let it through with zero
+ * dialogs; not installed -> pop the one-click install (cancel stops there) and
+ * pip install against the selected interpreter (same chain as PRG-004); a
+ * failed install surfaces its reason honestly with no retry bombardment; a
+ * missing interpreter gets setup guidance. Only true means dump may continue.
  */
 export async function ensurePyspyReady(
   runner: SpawnRunner,
   ui: PyspyUi,
   resolveInterpreter: () => InterpreterResolution
 ): Promise<boolean> {
-  // 探测先于弹窗按所选解释器定位命令(解释器旁已装即零弹窗);ssh 远端的
-  // 相对名解释器定位不出,回落 PATH 裸命令,与远端口径一致
+  // Probe before any dialog, locating the command via the selected interpreter
+  // (already installed next to the interpreter = zero dialogs); a remote ssh
+  // relative-name interpreter cannot be located, so this falls back to the bare
+  // PATH command, consistent with the remote criterion
   const resolution = resolveInterpreter();
   const pyspyCommand = resolvePyspyCommand(resolution.interpreterPath);
   const presence = await checkPyspyInstalled(runner, pyspyCommand);
   if (presence.installed) {
-    return true; // 已装:零多余弹窗
+    return true; // already installed: zero extra dialogs
   }
   const pick = await ui.warn(
     `本机未安装 py-spy(${presence.detail}),按所选 Python 解释器安装?`,
@@ -212,7 +231,7 @@ export async function ensurePyspyReady(
   return true;
 }
 
-/** 权限类失败特征(py-spy 报错文案):命中即拼 ptrace 指引 */
+/** Permission-class failure markers (py-spy error text): a match appends the ptrace guidance */
 const PTRACE_FAILURE_MARKERS = [
   'Operation not permitted',
   'permission denied',
@@ -221,9 +240,11 @@ const PTRACE_FAILURE_MARKERS = [
 ];
 
 /**
- * `py-spy dump --pid <pid> --nonblocking`:拿目标进程的 Python 调用栈。
- * --nonblocking 不暂停目标进程(生产组件优先不卡服);失败把 ptrace 指引
- * 拼在原因后面,权限类报错一眼能定位。
+ * `py-spy dump --pid <pid> --nonblocking`: fetch the target process's Python
+ * call stack. --nonblocking does not pause the target process (production
+ * components get priority over stalling the server); on failure the ptrace
+ * guidance is appended after the reason so permission-class errors can be
+ * located at a glance.
  */
 export async function runPyspyDump(
   runner: SpawnRunner,
@@ -244,13 +265,16 @@ export async function runPyspyDump(
   };
 }
 
-// ---- IDE-PYSPY-001:py-spy record 火焰图面(record --format flamegraph)----
+// ---- IDE-PYSPY-001: py-spy record flamegraph face (record --format flamegraph)----
 //
-// 与 dump 面的分工:dump 拿当前调用栈文本(秒级快照),record 在时长窗口内
-// 按采样率取样并落盘为火焰图。record 输出是 --output 文件而非 stdout,
-// 成功判据=退出码 0 且文件存在非空(注入 fileExistsNonEmpty 供测试替身)。
+// Division of labor with the dump face: dump fetches the current call stack as
+// text (a seconds-level snapshot), record samples at a sampling rate over a
+// duration window and writes a flamegraph to disk. record's output goes to the
+// --output file rather than stdout; the success criterion = exit code 0 and a
+// file that exists and is non-empty (fileExistsNonEmpty is injected for test
+// stand-ins).
 
-/** record 傻瓜化默认参数:窗口 10s、采样 100/s、flamegraph、非阻塞 */
+/** Fool-proof record defaults: 10s window, 100 samples/s, flamegraph, non-blocking */
 export const PYSPY_RECORD_DEFAULTS = {
   durationSec: 10,
   rateHz: 100,
@@ -269,7 +293,7 @@ export interface PyspyRecordOptions {
   threads?: boolean;
 }
 
-/** 纯参数拼装(镜像 py-spy record --help v0.4.3 标志,忠实不臆造) */
+/** Pure argument assembly (mirrors the py-spy record --help flags of v0.4.3; faithful, nothing invented) */
 export function buildPyspyRecordArgs(
   pid: number,
   outFile: string,
@@ -301,7 +325,7 @@ export function buildPyspyRecordArgs(
   return args;
 }
 
-/** 文件存在非空的注入面(测试替身不真落盘) */
+/** Injection face for "file exists and is non-empty" (test stand-ins never really write to disk) */
 export interface PyspyFileDeps {
   fileExistsNonEmpty: (filePath: string) => boolean;
 }
@@ -316,14 +340,16 @@ const realFileDeps: PyspyFileDeps = {
   }
 };
 
-/** record 超时 = 采样窗口 + 15s 宽限(record 窗口满才收尾,宽限防慢盘) */
+/** record timeout = sampling window + 15s grace (record only wraps up once the window is full; the grace guards against slow disks) */
 export const PYSPY_RECORD_GRACE_MS = 15_000;
 
 /**
  * `py-spy record --pid <pid> --format <f> --output <file> --duration <d>
- * --rate <r> [--nonblocking] [--native] [--threads]`:窗口内取样落盘火焰图。
- * 成功=退出码 0 且输出文件存在非空(输出在文件,stdout 不承载);失败把
- * ptrace 权限指引拼在原因后(与 dump 同一段话)。
+ * --rate <r> [--nonblocking] [--native] [--threads]`: sample inside the window
+ * and write the flamegraph to disk. Success = exit code 0 and an output file
+ * that exists and is non-empty (the output lives in the file, stdout carries
+ * nothing); on failure the ptrace permission guidance is appended after the
+ * reason (the same paragraph as dump).
  */
 export async function runPyspyRecord(
   runner: SpawnRunner,
@@ -354,11 +380,11 @@ export async function runPyspyRecord(
 }
 
 export interface PyspyScheduleOptions extends PyspyRecordOptions {
-  /** 采集次数 X(每 N 秒采一次,共 X 次) */
+  /** Number of captures X (one capture every N seconds, X in total) */
   count: number;
-  /** 相邻两次采集之间的间隔秒 N */
+/** Gap seconds N between two consecutive captures */
   intervalSec: number;
-  /** 输出目录(每次采集落一个 flame-<ts>-<i>.svg) */
+  /** Output directory (each capture drops one flame-<ts>-<i>.svg) */
   outDir: string;
 }
 
@@ -370,9 +396,9 @@ export interface PyspyScheduleRun {
 }
 
 export interface PyspyScheduleDeps extends PyspyFileDeps {
-  /** 间隔等待注入面(测试不真睡) */
+  /** Interval-wait injection face (tests never really sleep) */
   sleep: (ms: number) => Promise<void>;
-  /** 当前时间戳注入面(测试锁文件名) */
+  /** Current-timestamp injection face (tests pin the file names) */
   now: () => number;
 }
 
@@ -383,9 +409,11 @@ const realScheduleDeps: PyspyScheduleDeps = {
 };
 
 /**
- * 周期采集编排:每 N 秒采一次共 X 次,各次落独立 SVG;任一次失败即止
- * (附着的进程采不到后续样本,继续无意义),已成功的文件保留。返回逐次
- * 结果,调用方据 ok 汇总展示。
+ * Periodic capture orchestration: one capture every N seconds, X in total,
+ * each landing an independent SVG; the first failure stops the run (once the
+ * attached process stops yielding samples, continuing is pointless) while
+ * already-successful files are kept. Returns the per-capture results; the
+ * caller aggregates and presents them based on ok.
  */
 export async function runPyspySchedule(
   runner: SpawnRunner,

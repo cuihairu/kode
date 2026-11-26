@@ -1,10 +1,13 @@
 /**
- * 首装扫描纯层(设计 1.4,2026-10-15 已代决;2026-10-16 用户令更新):
- * - 对调用方给出的每个根只扫一层、收 `.bat` 与 `.ps1`,不递归;
- * - 启停/导表词表只定分类(category),**不再过滤**——非词表脚本同样进候选,
- *   分类留空(写配置时省略;schema 本就「可省」),由用户在清单里勾选;
- * - 按绝对路径去重;
- * - 目录读取整体注入,本层不碰 vscode.workspace.fs(真实目录读的适配在 quickActions)。
+ * First-install scan pure layer (design 1.4, decided on the user's behalf 2026-10-15; updated
+ * per user order 2026-10-16):
+ * - For each root given by the caller, scan only one level, collecting `.bat` and `.ps1`, no recursion;
+ * - the start-stop/export word lists only decide the category and **no longer filter** -- scripts
+ *   outside the word lists also become candidates with the category left empty (omitted when
+ *   writing config; the schema already allows omitting it), and the user ticks them in the list;
+ * - deduplicate by absolute path;
+ * - directory reads are injected wholesale; this layer never touches vscode.workspace.fs (the
+ *   adapter for real directory reads lives in quickActions).
  */
 
 import * as path from 'path';
@@ -12,24 +15,24 @@ import { pathApiFor } from './workspacePath';
 import { classifyBatchScript } from './quickActionConfig';
 import type { QuickActionCategory } from './quickActionConfig';
 
-/** vscode.FileSystemKind 的取值(File=1);fake-vscode 未导出该枚举,这里按真值常量收口 */
+/** The value of vscode.FileSystemKind (File=1); fake-vscode does not export that enum, so it is pinned here as the real-value constant */
 export const FILE_SYSTEM_KIND_FILE = 1;
 
 const SCRIPT_PATTERN = /\.(bat|ps1)$/i;
 
 export interface DirectoryEntry {
   name: string;
-  /** FileSystemKind;缺省视为非文件(真 vscode 恒有值,注入替身可能不带) */
+  /** FileSystemKind; absent is treated as a non-file (real vscode always has it; injected doubles may not) */
   type?: number;
 }
 
 export interface BatchScriptCandidate {
   path: string;
-  /** 词表命中的分类(启停/导表);非词表脚本为 null,写配置时省略该字段 */
+  /** The category hit by the word lists (start-stop/export); null for scripts outside the lists, the field is omitted when writing config */
   category: QuickActionCategory | null;
 }
 
-/** 是否被扫进候选(一层 .bat/.ps1,词表只随行给分类不过滤);分类与路径一并返回便于去重 */
+/** Whether a file is scanned into candidates (one level of .bat/.ps1; the word lists only attach a category in passing, they do not filter); category and path are returned together for easy dedup */
 export function scanBatchScripts(
   root: string,
   readDir: (root: string) => DirectoryEntry[]
@@ -38,7 +41,7 @@ export function scanBatchScripts(
   try {
     entries = readDir(root);
   } catch {
-    // 根目录读不到(权限/未选工作区):静默返回空清单,由调用方决定提示与否
+    // The root directory cannot be read (permissions / no workspace chosen): silently return an empty list; the caller decides whether to notify
     return [];
   }
 
@@ -51,8 +54,8 @@ export function scanBatchScripts(
     if (!SCRIPT_PATTERN.test(entry.name)) {
       continue;
     }
-    // WIN-3:按根风格 join——POSIX 根(/ 开头)走 posix,win32 fsPath 走平台
-    // path;否则 win32 把 /ws 拼成 \ws 与消费方期望错配。
+    // WIN-3: join according to the root's style -- POSIX roots (starting with /) go through posix,
+    // win32 fsPath goes through the platform path; otherwise win32 joins /ws into \ws, mismatching consumer expectations.
     const candidatePath = pathApiFor(root).join(root, entry.name);
     const normalized = path.resolve(candidatePath).replace(/\\/g, '/');
     const key = process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -65,7 +68,7 @@ export function scanBatchScripts(
   return candidates;
 }
 
-/** 扫描多个根目录并按规范化绝对路径去重。 */
+/** Scan multiple root directories and deduplicate by normalized absolute path. */
 export function scanBatchScriptsInRoots(
   roots: readonly string[],
   readDir: (root: string) => DirectoryEntry[]

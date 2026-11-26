@@ -1,35 +1,37 @@
 /**
- * Call Chain 双 Tab 纯逻辑(docs/redesign.md 批157 用户第 4 号问题):
- * tab 解析/回落判定不碰 vscode DOM,供 webview 脚本(esbuild 直译)与
- * vitest 双方复用;面板装配面见 defCallChainProvider.ts。
+ * Pure logic for the Call Chain dual tabs (docs/redesign.md batch 157, user
+ * question #4): tab resolution/fallback decisions never touch the vscode DOM,
+ * so both the webview script (translated verbatim by esbuild) and vitest can
+ * reuse them. For the panel assembly surface see defCallChainProvider.ts.
  */
 
 export type CallChainTab = 'graph' | 'text';
 
-/** workspaceState 持久化键:tab 选择跟随工作区,重开面板回放 */
+/** workspaceState persistence key: the tab choice follows the workspace and is replayed when the panel is reopened */
 export const CALL_CHAIN_TAB_STATE_KEY = 'kbengine.defCallChain.activeTab';
 
-/** 未知值(旧版本残留/手改配置)一律按未选处理 */
+/** Unknown values (leftovers from older versions / hand-edited config) are always treated as unselected */
 export function normalizeCallChainTab(value: unknown): CallChainTab | null {
   return value === 'graph' || value === 'text' ? value : null;
 }
 
 /**
- * 初始 tab 解析:持久化选择 > 配置 kbengine.python.callChainView > 默认 graph。
- * 用户本次会话切过的 tab 优先于配置默认,符合“工作区状态记忆”语义。
+ * Initial tab resolution: persisted choice > config kbengine.python.callChainView
+ * > default graph. The tab the user switched to this session takes priority over
+ * the config default, matching the "workspace state memory" semantics.
  */
 export function resolveInitialCallChainTab(configView: unknown, storedTab: unknown): CallChainTab {
   return normalizeCallChainTab(storedTab) ?? normalizeCallChainTab(configView) ?? 'graph';
 }
 
 export interface CallChainRenderFailure {
-  /** 渲染失败固定回落 Text */
+  /** On render failure, always fall back to Text */
   tab: 'text';
-  /** 面板头说明(带原因,不吞错) */
+  /** Panel-header notice (carries the reason; the error is not swallowed) */
   notice: string;
 }
 
-/** Graph 渲染失败(mermaid 抛错/语法不识别)→ 自动切 Text 并给出面板头说明 */
+/** Graph render failure (mermaid throws / syntax not recognized) -> switch to Text automatically and surface a panel-header notice */
 export function handleCallChainGraphRenderFailure(reason?: unknown): CallChainRenderFailure {
   const detail = reason instanceof Error
     ? reason.message

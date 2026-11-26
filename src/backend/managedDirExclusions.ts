@@ -1,51 +1,55 @@
 /**
- * KODE-CFG-017 隔离面：让 `.kbengine` 自管目录不污染用户搜索 / 资源管理器 /
- * git。纯逻辑层，不 import vscode；装配层在 extension.ts。
+ * KODE-CFG-017 isolation face: keep the self-managed `.kbengine` directory from polluting
+ * the user's search / explorer / git. Pure logic layer, no vscode imports; the wiring layer
+ * lives in extension.ts.
  *
- * 三条纪律（与 pythonExtraPaths / jsoncAssociation 同款）：
- * - 「只管理自己那一段」：search.exclude / files.watcherExclude 只增删 kode
- *   上次写入的段（记 workspaceState），用户手填条目永不被动；
- * - .gitignore 只在「git 仓 + 文件已存在」时幂等追加，**绝不创建**（SVN /
- *   无 VCS 场景不写任何 git 专属物）；
- * - 全部 additive / idempotent / 可回退，按 `managedDir` 设置值而非硬编码。
+ * Three disciplines (same pattern as pythonExtraPaths / jsoncAssociation):
+ * - "manage only your own section": search.exclude / files.watcherExclude only add or remove
+ *   the section kode wrote last time (recorded in workspaceState); entries the user types by
+ *   hand are never touched;
+ * - .gitignore is appended idempotently only when "a git repo + the file already exists",
+ *   and is **never created** (SVN / no-VCS scenarios write nothing git-specific);
+ * - everything is additive / idempotent / revertible, keyed off the `managedDir` setting
+ *   value rather than hardcoded.
  */
 
 export interface ManagedDirExclusionsDeps {
-  /** 读文本文件；不存在返回 null（.gitignore 探测） */
+  /** Read a text file; returns null when it does not exist (.gitignore probing) */
   readText?: (path: string) => string | null;
-  /** 写文本文件（仅 git 仓 + .gitignore 已存在时调用） */
+  /** Write a text file (only called when a git repo + .gitignore already exists) */
   writeText?: (path: string, content: string) => void;
-  /** 向上找 `.git` 目录，命中返回仓根，否则 null */
+  /** Search upward for a `.git` directory; on a hit returns the repo root, otherwise null */
   findGitRoot?: (startDir: string) => string | null;
-  /** 向上找 `.svn` 目录，命中返回仓根，否则 null */
+  /** Search upward for a `.svn` directory; on a hit returns the repo root, otherwise null */
   findSvnRoot?: (startDir: string) => string | null;
-  /** git 仓根的 .gitignore 绝对路径（默认 <root>/.gitignore） */
+  /** Absolute path of the git repo root's .gitignore (default <root>/.gitignore) */
   gitignorePath?: (gitRoot: string) => string;
 }
 
-/** 排除键形态：`<managedDir>/**`（工作区根相对 glob，VS Code 语义） */
+/** Exclusion key shape: `<managedDir>/**` (a workspace-root-relative glob, VS Code semantics) */
 export function exclusionKeyFor(managedDir: string): string {
   const dir = managedDir.replace(/^\/+|\/+$/g, '');
   return `${dir}/**`;
 }
 
-/** gitignore 追加行：`<managedDir>/`（带尾斜杠 = 只忽略目录形态） */
+/** gitignore append line: `<managedDir>/` (the trailing slash = only the directory form is ignored) */
 export function gitignoreLineFor(managedDir: string): string {
   const dir = managedDir.replace(/^\/+|\/+$/g, '');
   return `${dir}/`;
 }
 
-/** kode 管理段的标记注释（ASCII 稳定，便于日后精确移除自己段） */
+/** Marker comment of the kode-managed section (stable ASCII, for precisely removing our own section later) */
 export const GITIGNORE_MARKER = '# kode managed dir (auto-generated)';
 
 /**
- * 判定 gitignore 内容是否已忽略该目录。
- * 命中条件：某行（去空白）精确等于 `dir` / `dir/` / `/dir` / `/dir/`。
- * 只认「目录本身」形态：**子路径规则（如 `dir/stubs/`）与通配 glob
- * （如 `dir/**`）都不算整目录已忽略**——它们只覆盖子集，其余生成文件仍
- * 可能被 Git 跟踪，故须补追加 `dir/`。保守：宁可重复追加一条 kode 段，也
- * 不误判用户已有规则为「已忽略」（重复追加由内容比对去重兜底，不炸）。
- * 用户手写条目永不被删。
+ * Decide whether the gitignore content already ignores that directory.
+ * Hit condition: some line (whitespace-trimmed) is exactly `dir` / `dir/` / `/dir` / `/dir/`.
+ * Only the "directory itself" forms count: **sub-path rules (like `dir/stubs/`) and wildcard
+ * globs (like `dir/**`) do not count as the whole directory being ignored** -- they cover only
+ * a subset, and the remaining generated files could still be tracked by Git, so `dir/` must be
+ * appended. Conservative: rather append one duplicate kode section than misjudge an existing
+ * user rule as "already ignored" (a duplicate append is deduplicated by content comparison,
+ * so nothing breaks). Hand-written user entries are never deleted.
  */
 export function gitignoreIgnores(content: string, managedDir: string): boolean {
   const dir = managedDir.replace(/^\/+|\/+$/g, '');
@@ -66,16 +70,18 @@ export type GitignorePlan =
   | { action: 'append'; line: string; marker: string; nextContent: string };
 
 /**
- * gitignore 增补计划（纯函数）：只决定「内容该怎么变」，是否写盘由调用方
- * 依「git 仓 + .gitignore 存在」决定——本函数绝不创建文件。
- * 幂等：已忽略则 none；已含 kode 段（marker + 本目录行）也 none。
+ * gitignore append plan (pure function): it only decides "how the content should change";
+ * whether to write to disk is decided by the caller based on "a git repo + .gitignore exists"
+ * -- this function never creates a file.
+ * Idempotent: already ignored -> none; already containing the kode section (marker + this
+ * directory's line) -> none as well.
  */
 export function planGitignoreAdd(content: string, managedDir: string): GitignorePlan {
   const line = gitignoreLineFor(managedDir);
   if (gitignoreIgnores(content, managedDir)) {
     return { action: 'none', line };
   }
-  // 已含 kode 段（marker + 该目录行相邻）→ 不动（防重复段）
+  // Already contains the kode section (marker + this directory's line adjacent) -> leave it alone (guards against a duplicate section)
   const lines = content.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     if (lines[i].trim() === GITIGNORE_MARKER && i + 1 < lines.length && lines[i + 1].trim() === line) {
@@ -89,7 +95,7 @@ export function planGitignoreAdd(content: string, managedDir: string): Gitignore
 
 export type VcsKind = 'git' | 'svn' | 'none';
 
-/** VCS 探测（纯函数化判定入口）：git 优先，其次 svn，都不在返回 none */
+/** VCS probing (a pure-function decision entry): git first, then svn, otherwise none */
 export function detectVcs(deps: ManagedDirExclusionsDeps, startDir: string): { kind: VcsKind; root: string | null } {
   const gitRoot = deps.findGitRoot?.(startDir) ?? null;
   if (gitRoot) {
@@ -103,27 +109,28 @@ export function detectVcs(deps: ManagedDirExclusionsDeps, startDir: string): { k
 }
 
 export interface ExclusionPlan {
-  /** 该写回的值（用户段在前 + kode 当前段） */
+  /** The value to write back (the user's section first + kode's current section) */
   next: Record<string, unknown>;
-  /** 与现值不同才需要写 */
+  /** A write is needed only if this differs from the current value */
   changed: boolean;
-  /** 本次 kode 管理的键值（供 workspaceState 下次差量） */
+  /** The keys kode manages this time (for the next workspaceState diff) */
   managedKeys: ManagedExclusionEntry[];
 }
 
 /**
- * kode 上次写入的自管配置项（键 + 当时写的值）。记值是为了区分「用户改过」
- * 与「kode 自管未动」：值仍等于 kode 写的值 → 仍属自管项；被用户改过 → 属
- * 用户条目，永不被动。
+ * A self-managed config entry kode wrote last time (the key + the value written then).
+ * Recording the value distinguishes "the user changed it" from "kode's own untouched entry":
+ * the value still equals what kode wrote -> still a self-managed entry; changed by the user ->
+ * a user entry, never touched.
  */
 export interface ManagedExclusionEntry {
-  /** 上次 kode 写入的配置键（如 `.kbengine/**`） */
+  /** The config key kode wrote last time (e.g. `.kbengine/**`) */
   key: string;
-  /** 上次 kode 写入的值（kode 恒写 true，此处留通用型防未来演变） */
+  /** The value kode wrote last time (kode always writes true; a general type is kept here against future evolution) */
   value: unknown;
 }
 
-/** 兼容旧存形：旧版 workspaceState 只存字符串键数组（恒写 true）→ 记录形 */
+/** Compatible with the old stored shape: the old workspaceState stored only a string-key array (always true) -> the record shape */
 export function normalizeManagedEntries(
   stored: readonly (string | ManagedExclusionEntry)[]
 ): ManagedExclusionEntry[] {
@@ -131,14 +138,19 @@ export function normalizeManagedEntries(
 }
 
 /**
- * search.exclude / files.watcherExclude 的计划（「只管理自己那一段」）：
- * 先把上次 kode 写的自管键全部剔掉（用户手填永不动），再加当前 enabled 的键。
- * - 自管项判定 = 在 previouslyManaged 记录中 **且当前值仍等于 kode 上次写的值**
- *   （用户改过值 → 视为用户条目，保留不动）；
- * - 若用户把 kode 正在管理的那个键改了值（如 `.kbengine/**: false` 重新包含），
- *   kode 不再强制写回 true（尊重用户覆盖，防「同步逻辑直接覆盖为 true」）；
- * - 更换托管目录时，旧目录键仅当仍是自管项才被清除，用户调过的旧键保留。
- * current 值形态不由本扩展控制：非对象按空处理，不炸。
+ * The plan for search.exclude / files.watcherExclude ("manage only your own section"):
+ * first strip out every self-managed key kode wrote last time (hand-typed user entries are
+ * never touched), then add the currently enabled keys.
+ * - The self-managed test = it is in the previouslyManaged record **and the current value still
+ *   equals what kode wrote last time** (the user changed the value -> treat it as a user entry,
+ *   kept untouched);
+ * - If the user changed the value of the very key kode is managing (e.g. `.kbengine/**: false`
+ *   to re-include), kode no longer forcibly writes true back (respect the user's override, to
+ *   prevent "the sync logic overwriting it straight back to true");
+ * - When the managed directory changes, an old-directory key is removed only if it is still a
+ *   self-managed entry; old keys the user adjusted are kept.
+ * The current value's shape is not controlled by this extension: a non-object is treated as
+ * empty, nothing breaks.
  */
 export function planExclusion(
   current: unknown,
@@ -159,7 +171,7 @@ export function planExclusion(
       userEntries[key] = value;
     }
   }
-  // 用户若改过 kode 当前管理的那个键的值（如 true→false），kode 让位不写回。
+  // If the user changed the value of the key kode currently manages (e.g. true->false), kode yields and does not write it back.
   const ourEntry = managed.find((e) => e.key === managedKey);
   const userOverrodeManaged = ourEntry !== undefined && currentMap[managedKey] !== ourEntry.value;
   const managedEntries = enabled && !userOverrodeManaged

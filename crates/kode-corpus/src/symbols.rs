@@ -1,79 +1,80 @@
-//! Python 缩进语法的轻量词法抽取。
+//! Lightweight lexical extraction for Python indentation syntax.
 //!
-//! 这不是完整 Python parser,也不执行 Python。它复刻 TS `pythonClassIndex.parsePythonFile`
-//! 的可观察语义(注释/字符串屏蔽、括号/反斜杠续行、缩进作用域),额外补 P0 所需的
-//! `self.<name> = ...` 属性表与装饰器记录:
-//! - `classes`:类名、限定名、基类、起止行;
-//! - `methods`:类直属方法(`async def` 与装饰器保留);
-//! - `attributes`:方法体内 `self.<name> = ...` 的写入位置;
-//! - `imports`:`import` / `from ... import ...` 的绑定表。
+//! This is not a full Python parser and it never executes Python. It replicates the
+//! observable semantics of TS `pythonClassIndex.parsePythonFile` (comment/string
+//! masking, paren/backslash continuation, indentation scopes) and adds the
+//! `self.<name> = ...` attribute table and decorator records that P0 requires:
+//! - `classes`: class name, qualified name, bases, start/end line;
+//! - `methods`: methods attached directly to a class (`async def` and decorators preserved);
+//! - `attributes`: write positions of `self.<name> = ...` inside method bodies;
+//! - `imports`: binding table for `import` / `from ... import ...`.
 //!
-//! 行号 0-based;列号按 LSP/TS 口径为 UTF-16 code unit。
+//! Line numbers are 0-based; columns are UTF-16 code units per the LSP/TS contract.
 
 use std::collections::HashMap;
 
-/// 一个 `.py` 文件的四张词法表。
+/// The four lexical tables of one `.py` file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PythonModule {
-    /// TS `content.split(/\r?\n/).length` 同口径(末尾换行会多一空行)。
+    /// Same contract as TS `content.split(/\r?\n/).length` (a trailing newline yields one extra empty line).
     pub line_count: usize,
     pub classes: Vec<ClassSymbol>,
     pub methods: Vec<MethodSymbol>,
     pub attributes: Vec<AttributeSymbol>,
     pub imports: Vec<ImportSymbol>,
-    /// 模块级实例赋值 `NAME = Class(...)`(TS `instanceAssignments` 兼容面)。
+    /// Module-level instance assignment `NAME = Class(...)` (TS `instanceAssignments` compatibility surface).
     pub instances: Vec<InstanceAssignment>,
 }
 
-/// 类声明。
+/// A class declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClassSymbol {
     pub name: String,
     pub qualified_name: String,
-    /// 只保留合法 dotted identifier 且排除 `object`(与 TS 同过滤)。
+    /// Only valid dotted identifiers are kept and `object` is excluded (same filter as TS).
     pub bases: Vec<String>,
     pub start_line: usize,
-    /// 作用域结束行(不含);文件结束时为 `line_count`。
+    /// Scope end line (exclusive); `line_count` at end of file.
     pub end_line: usize,
 }
 
-/// 方法声明(仅类直属 `def`,闭包不算)。
+/// A method declaration (only `def`s directly in a class; closures do not count).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodSymbol {
-    /// 所属类的限定名。
+    /// Qualified name of the owning class.
     pub class: String,
     pub name: String,
     pub line: usize,
     pub character: usize,
     pub is_async: bool,
-    /// 紧邻该 `def` 的装饰器行(含 `@`,按源码顺序)。
+    /// Decorator lines immediately above that `def` (including `@`, in source order).
     pub decorators: Vec<String>,
 }
 
-/// 方法体内 `self.<name> = ...` 的属性写入。
+/// An attribute write of `self.<name> = ...` inside a method body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeSymbol {
-    /// 所属类的限定名。
+    /// Qualified name of the owning class.
     pub class: String,
     pub name: String,
     pub line: usize,
     pub character: usize,
 }
 
-/// 导入绑定。
+/// An import binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportSymbol {
-    /// 本文件内使用的绑定名。
+    /// The binding name used inside this file.
     pub binding: String,
-    /// `from` 的模块名,或 `import` 的目标模块。
+    /// Module name from `from`, or the target module of `import`.
     pub module: String,
-    /// `from module import symbol` 的 symbol;普通 `import` 为 `None`。
+    /// The symbol of `from module import symbol`; `None` for plain `import`.
     pub symbol: Option<String>,
     pub line: usize,
     pub is_from: bool,
 }
 
-/// 模块级实例赋值。
+/// A module-level instance assignment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstanceAssignment {
     pub variable: String,
@@ -81,7 +82,7 @@ pub struct InstanceAssignment {
     pub line: usize,
 }
 
-/// 解析一个已解码的 Python 源文件。
+/// Parse a decoded Python source file.
 pub fn parse_python_module(source: &str) -> PythonModule {
     let raw_lines = source_lines(source);
     let masked_lines = mask_lines(&raw_lines);
@@ -975,8 +976,9 @@ mod tests {
 
     #[test]
     fn string_escapes_are_masked_without_breaking_lexing() {
-        // 字符串内转义(含三引号串里的行尾反斜杠)按占位屏蔽,
-        // 被转义的引号不得提前闭合字符串。
+        // Escapes inside strings (including a trailing backslash in a
+        // triple-quoted string) are masked as placeholders; an escaped quote
+        // must not close the string early.
         let source = "class A:\n    def m(self):\n        text = 'it\\'s'\n        triple = '''\n        tail\\\n        '''\n        self.hp = 1\n";
         let module = parse_python_module(source);
         assert_eq!(module.methods.len(), 1);
@@ -991,7 +993,8 @@ mod tests {
 
     #[test]
     fn tab_indentation_counts_as_four_columns_per_tab() {
-        // 制表符缩进按每 tab 4 列计层级;列号仍按原文(LSP UTF-16)计。
+        // Tab indentation counts 4 columns per tab for nesting levels; columns are
+        // still measured on the original text (LSP UTF-16).
         let source = "class A:\n\tdef m(self):\n\t\tself.hp = 1\n";
         let module = parse_python_module(source);
         assert_eq!(module.classes.len(), 1);
@@ -1006,7 +1009,8 @@ mod tests {
 
     #[test]
     fn malformed_class_headers_are_not_indexed() {
-        // 残缺 class 头(裸关键字/无名/无冒号/名称后跟非括号内容)不产生类符号。
+        // Malformed class headers (bare keyword / no name / no colon / non-paren
+        // content after the name) produce no class symbol.
         let source = "class\nclass A\nclass A + B:\nclass Real:\n    pass\n";
         let module = parse_python_module(source);
         assert_eq!(
@@ -1023,7 +1027,8 @@ mod tests {
 
     #[test]
     fn malformed_def_headers_are_not_indexed() {
-        // 残缺 def 头(裸 async/裸 def/名称后无参数括号)不产生方法符号。
+        // Malformed def headers (bare async / bare def / no parameter parens after
+        // the name) produce no method symbol.
         let source = "async\ndef\ndef f:\nclass A:\n    def ok(self):\n        pass\n";
         let module = parse_python_module(source);
         assert_eq!(
@@ -1039,7 +1044,8 @@ mod tests {
 
     #[test]
     fn malformed_import_statements_contribute_no_bindings() {
-        // 裸 from / from 无 import / 绑定名后跟随裸词 / as 别名后多余内容都跳过。
+        // Bare `from`, `from` without `import`, a bare word after the binding name,
+        // and extra content after an `as` alias are all skipped.
         let source = "from\nfrom os\nimport a b\nimport a as b c\nimport os.path\n";
         let module = parse_python_module(source);
         let imports: Vec<(&str, &str, Option<&str>)> = module
@@ -1058,7 +1064,7 @@ mod tests {
 
     #[test]
     fn instance_assignment_requires_instantiation_call() {
-        // 模块级 `name = Class` 不带调用括号不算实例赋值。
+        // A module-level `name = Class` without call parens is not an instance assignment.
         let source = "avatar = Avatar\nservice = Service()\nif True:\n    nested = Avatar()\n";
         let module = parse_python_module(source);
         assert_eq!(
@@ -1073,7 +1079,8 @@ mod tests {
 
     #[test]
     fn qualified_self_and_non_identifier_targets_are_skipped() {
-        // `x.self.hp` 中带限定前缀的 self 被跳过;`self.1` 后跟非标识符不记属性。
+        // A `self` carrying a qualifier prefix in `x.self.hp` is skipped; `self.1`
+        // followed by a non-identifier records no attribute.
         let source = "class A:\n    def m(self):\n        x.self.hp = 1\n        self.1 = 3\n        self.ok = 2\n";
         let module = parse_python_module(source);
         assert_eq!(
@@ -1088,7 +1095,8 @@ mod tests {
 
     #[test]
     fn bracketed_lhs_still_yields_self_attribute() {
-        // '=' 前出现成对括号按深度屏蔽,下标赋值仍能定位 self 属性。
+        // Matching brackets before '=' are masked by depth, so subscript assignment
+        // still locates the self attribute.
         let source = "class A:\n    def m(self):\n        self.items[0] = 1\n";
         let module = parse_python_module(source);
         assert_eq!(
@@ -1103,7 +1111,8 @@ mod tests {
 
     #[test]
     fn augmented_and_comparative_assignments_are_not_simple() {
-        // `+=` 与 `==` 都不算简单赋值,不产生 self 属性。
+        // Neither `+=` nor `==` counts as a simple assignment, so neither yields a
+        // self attribute.
         let source = "class A:\n    def m(self):\n        self.hp += 1\n        if self.hp == 100:\n            self.full = True\n";
         let module = parse_python_module(source);
         assert_eq!(
@@ -1118,7 +1127,8 @@ mod tests {
 
     #[test]
     fn decorators_skip_comment_lines_and_stop_at_plain_code() {
-        // 装饰器回溯:同行缩进的注释行跳过继续向上,普通代码行终止回溯。
+        // Decorator back-traversal: comment lines at the same indent are skipped and
+        // traversal continues upward; a plain code line terminates it.
         let source = "class A:\n    # 注释\n    @b\n    def m(self):\n        pass\n\nclass B:\n    y = 1\n    def n(self):\n        pass\n";
         let module = parse_python_module(source);
         let m = module

@@ -1,18 +1,27 @@
 /**
- * 热更状态栏文件版本号(HOT-VER):每文件单调递增整数(v1, v2, …),不暴露
- * mtime:size 原始 token。规则:文件首次被跟踪记 v1;每次检测到盘上内容变化
- * (version token 变)+1;回执 applied 且 digest 与当前盘上一致时基线追平
- * (该文件基线版本 = 当前版本)。基线存台账(HotReloadTargetState 同生命周期,
- * 不新开存储)。
+ * Hot reload status bar file version numbers (HOT-VER): a monotonically
+ * increasing integer per file (v1, v2, ...), never exposing the raw
+ * mtime:size token. Rules: v1 when the file is first tracked; +1 each time an
+ * on-disk content change is detected (version token changed); the baseline
+ * catches up when a receipt arrives applied and its digest matches what is
+ * currently on disk (that file's baseline version = current version). The
+ * baseline lives in the ledger (same lifecycle as HotReloadTargetState, no
+ * new storage).
  *
- * 台账独立于 watcher:`kbengine.hotReload.enabled=false` 时手动触发路径
- * (showFileState / retryFailed / 右键手动发一次热更)照样建档出号,与开监视
- * 时同一文件同一版本——watcher 只是本版本簿的默认事件来源之一,不是它的前提;
- * 两条路径写同一份台账同一实现(noteFileVersion 的 token 判重保证不重复计数)。
+ * The ledger is independent of the watcher: with
+ * `kbengine.hotReload.enabled=false` the manual trigger paths (showFileState /
+ * retryFailed / right-click manual hot reload) still create records and issue
+ * numbers, same file same version as when watching is on -- the watcher is only
+ * one default event source of this version book, not its precondition; both
+ * paths write the same ledger through the same implementation (noteFileVersion's
+ * token dedup guarantees no double counting).
  *
- * 徽标口径:单号=已同步(基线==盘上),双号=待同步(基线→盘上);未跟踪/不在
- * 监视范围的文件不显号。版本号只描述「盘上内容变了几次/基线在哪」,不声称已
- * 生效——生效与否仍由 applied 双证核验说了算。
+ * Badge convention: single number = synced (baseline == on disk), double number
+ * = pending sync (baseline -> on disk); untracked files and files outside the
+ * watch scope show no number. The version number only describes "how many
+ * times the on-disk content changed / where the baseline is"; it does not claim
+ * the change took effect -- whether it took effect is still decided by the
+ * applied double-evidence verification.
  */
 
 import { createHash } from 'crypto';
@@ -33,17 +42,18 @@ import {
 
 export type { HotReloadVersionBadgeView, HotReloadVersionSource };
 
-/** 内容 sha256(与 hotReloadFileState.sha256Hex 同源的 node:crypto 原语) */
+/** Content sha256 (node:crypto primitive, same source as hotReloadFileState.sha256Hex) */
 const sha256Hex = (content: string): string =>
   createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
 
-/** glob 字面量段的正则转义(元字符;`*`/`?`/`{}`/`,` 由调用方另行处理) */
+/** Regex escaping for the literal segments of a glob (metacharacters; `*`/`?`/`{}`/`,` are handled separately by the caller) */
 const escapeGlobLiteral = (text: string): string => text.replace(/[.+^$()|[\]\\]/g, '\\$&');
 
 /**
- * glob → RegExp(VS Code glob 子集):`**` 跨目录、`*`/`?` 不跨目录、
- * `{a,b}` 花括号枚举;含 `/` 的模式按相对路径整体锚定,不含 `/` 的模式
- * (如 `*.py`)任意深度按末段命中。
+ * glob -> RegExp (VS Code glob subset): `**` crosses directories, `*`/`?` do
+ * not, `{a,b}` is brace enumeration; patterns containing `/` are anchored as a
+ * whole against the relative path, while patterns without `/` (e.g. `*.py`)
+ * match by last segment at any depth.
  */
 const globToRegExp = (rawPattern: string): RegExp => {
   const pattern = rawPattern.replace(/\\/g, '/');
@@ -54,7 +64,7 @@ const globToRegExp = (rawPattern: string): RegExp => {
     if (char === '*') {
       if (pattern[index + 1] === '*') {
         if (pattern[index + 2] === '/') {
-          out += '(?:[^/]+/)*'; // `**/` = 零个或多个目录段
+          out += '(?:[^/]+/)*'; // `**/` = zero or more directory segments
           index += 2;
         } else {
           out += '.*';
@@ -90,9 +100,12 @@ const globToRegExp = (rawPattern: string): RegExp => {
 };
 
 /**
- * 监视范围判定:文件相对路径是否命中任一热更 glob。范围只看 `globs` 配置,
- * 与 `enabled` 开关正交——开关只决定建不建 watcher,版本徽标的「在不在监视
- * 范围」永远按同一套模式判,手动触发路径与 watcher 路径口径一致。
+ * Watch-scope decision: whether a file's relative path hits any hot reload
+ * glob. Scope only looks at the `globs` setting and is orthogonal to the
+ * `enabled` switch -- the switch only decides whether a watcher is created;
+ * the version badge's "inside or outside the watch scope" is always judged
+ * against the same pattern set, so manual trigger and watcher paths share one
+ * convention.
  */
 export function matchesHotReloadGlob(file: string, patterns: readonly string[]): boolean {
   const posixPath = file.replace(/\\/g, '/');
@@ -100,21 +113,21 @@ export function matchesHotReloadGlob(file: string, patterns: readonly string[]):
 }
 
 export interface HotReloadVersionTrackerDeps {
-  /** 版本簿载体(台账内,不新开存储) */
+  /** Version book carrier (inside the ledger, no new storage) */
   readonly store: HotReloadTargetStateStore;
-  /** 当前活动文档绝对路径(无=undefined);注入即状态栏优先显示它 */
+  /** Absolute path of the current active document (none = undefined); when injected the status bar shows it first */
   activeFile(): string | undefined;
-  /** 是否在监视范围(globs 命中;与 enabled 开关无关) */
+  /** Whether inside the watch scope (glob hit; unrelated to the enabled switch) */
   isWatched(file: string): boolean;
-  /** 注入时钟(版本事件时间戳) */
+  /** Injected clock (version event timestamps) */
   now(): number;
-  /** 盘上版本 token 采样口(缺省走 fs.stat 的 mtimeMs:size) */
+  /** On-disk version token sampling hook (defaults to fs.stat's mtimeMs:size) */
   statToken?(file: string): Promise<string | undefined>;
-  /** 盘上内容读取口(applied 基线追平的 digest 比对;缺省走 fs.readFile) */
+  /** On-disk content read hook (digest comparison for applied baseline catch-up; defaults to fs.readFile) */
   readContent?(file: string): Promise<string | undefined>;
 }
 
-/** 版本事件渲染(OUTPUT 版本台账行):时间 + 版本 + 事实,不加工不美化 */
+/** Version event rendering (OUTPUT version ledger line): time + version + facts, no processing, no beautification */
 const renderVersionEvent = (event: HotReloadFileVersionEvent): string => {
   const time = formatHotReloadTime(event.at);
   switch (event.kind) {
@@ -149,10 +162,13 @@ const renderVersionEvent = (event: HotReloadFileVersionEvent): string => {
 };
 
 /**
- * 版本采样与徽标数据源:采样(异步 stat)与判定(同步读台账)分离——状态栏
- * 渲染走同步 badge/pending/report,渲染后 kickRefresh 异步重采,采到变化才
- * 补渲染一次。所有路径(watcher 事件、回执落账、手动触发、点击状态栏)都
- * 收敛到本类的 noteFile/refresh 两个入口,不存在第二套计数。
+ * Version sampling and badge data source: sampling (async stat) is separated
+ * from judgment (sync ledger read) -- status bar rendering goes through the
+ * sync badge/pending/report, after which kickRefresh re-samples asynchronously
+ * and only a detected change triggers one extra render. Every path (watcher
+ * events, receipt recording, manual triggers, status bar clicks) converges to
+ * this class's two entry points noteFile/refresh; no second counting
+ * implementation exists.
  */
 export class HotReloadVersionTracker implements HotReloadVersionSource {
   private readonly deps: HotReloadVersionTrackerDeps;
@@ -165,7 +181,7 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
     if (this.deps.statToken) {
       return this.deps.statToken(file);
     }
-    // 接 main 的盘上版本读取接口(readFileVersionToken),不另造第二套判据
+    // Hooks into main's on-disk version read interface (readFileVersionToken); no second criterion is built
     return readFileVersionToken(file);
   }
 
@@ -181,8 +197,10 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
   }
 
   /**
-   * 采样单个文件的盘上版本(watcher 事件 / 手动触发前显式建档共用)。
-   * 返回是否有变化(建档或 +1)——调用方据此补渲染状态栏。
+   * Samples one file's on-disk version (shared by watcher events and explicit
+   * record creation before manual triggers).
+   * Returns whether anything changed (record created or +1) -- the caller uses
+   * it to re-render the status bar.
    */
   async noteFile(file: string): Promise<boolean> {
     const token = await this.stat(file);
@@ -191,9 +209,12 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
   }
 
   /**
-   * 全量刷新:stat 全部已跟踪文件(补采/跳号),再对「基线 < 盘上当前」且有
-   * applied 记录的文件读盘比对 digest——与发送时点冻结基准一致才基线追平
-   * (盘上已变则不追平,如实保持双号)。返回是否有变化。
+   * Full refresh: stat every tracked file (backfill sampling / skip numbers),
+   * then for files whose "baseline < on-disk current" and that have an applied
+   * record, read the disk and compare digests -- the baseline catches up only
+   * when it matches the baseline frozen at send time (if the disk has changed
+   * since, no catch-up and the double number is honestly kept). Returns whether
+   * anything changed.
    */
   async refresh(): Promise<boolean> {
     let changed = false;
@@ -210,7 +231,7 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
     return changed;
   }
 
-  /** applied 且盘上内容 sha256 == 发送时点冻结基准 → 基线追平到当前版本 */
+  /** applied and on-disk content sha256 == baseline frozen at send time -> baseline catches up to the current version */
   private async catchUpBaseline(file: string): Promise<boolean> {
     const state = this.deps.store.fileVersion(file);
     if (!state || state.baseline >= state.version) {
@@ -225,12 +246,12 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
       return false;
     }
     if (!digests.includes(sha256Hex(content))) {
-      return false; // 盘上内容 ≠ 所发内容:不追平,双号如实保留
+      return false; // on-disk content != sent content: no catch-up, the double number is honestly kept
     }
     return this.deps.store.advanceFileVersionBaseline(file, this.deps.now());
   }
 
-  /** 当前活动文档版本;未跟踪/不在监视范围 → 回落最近变更文件;全无=undefined */
+  /** Current active document version; untracked/outside watch scope -> falls back to the most recently changed file; none at all = undefined */
   badge(): HotReloadVersionBadgeView | undefined {
     const active = this.deps.activeFile();
     if (active !== undefined && this.deps.isWatched(active)) {
@@ -243,7 +264,7 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
     return recent ? this.viewOf(recent) : undefined;
   }
 
-  /** 全部待同步文件(基线 ≠ 盘上当前),按文件路径排序 */
+  /** All pending-sync files (baseline != on-disk current), sorted by file path */
   pending(): HotReloadVersionBadgeView[] {
     return this.deps.store
       .fileVersions()
@@ -252,7 +273,7 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
       .sort((left, right) => left.file.localeCompare(right.file));
   }
 
-  /** OUTPUT 版本台账:逐文件列基线/盘上版本与每次版本跃迁的时间与发送回执 */
+  /** OUTPUT version ledger: per file, lists the baseline/on-disk version plus the time and send receipt of every version jump */
   report(): string[] {
     const badgeFile = this.badge()?.file;
     const states = this.deps.store.fileVersions().filter(state => this.deps.isWatched(state.file));
@@ -274,7 +295,7 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
     return lines;
   }
 
-  /** 单文件版本说明(showFileState 等手动路径落日志用);未跟踪/不在范围=undefined */
+  /** Single-file version description (for showFileState and other manual paths to log); untracked/out of scope = undefined */
   describeVersion(file: string): string | undefined {
     const state = this.deps.store.fileVersion(file);
     if (!state || !this.deps.isWatched(file)) {
@@ -286,7 +307,7 @@ export class HotReloadVersionTracker implements HotReloadVersionSource {
     })`;
   }
 
-  /** 最近变更文件(仅 tracked/bump 变更事件按序号比,投递/基线事件不算变更) */
+  /** Most recently changed file (compares by sequence number over tracked/bump change events only; delivery/baseline events do not count as changes) */
   private recentChangedFile(): HotReloadFileVersionState | undefined {
     let best: HotReloadFileVersionState | undefined;
     for (const state of this.deps.store.fileVersions()) {

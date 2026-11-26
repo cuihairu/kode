@@ -1,7 +1,11 @@
-//! 类型图:节点 IR、边、别名链/继承链求值、全图环检测(书 §6.2 SEM-002/004/005/013)。
+//! Type graph: node IR, edges, alias chain / inheritance chain evaluation,
+//! and whole-graph cycle detection (book §6.2 SEM-002/004/005/013).
 //!
-//! 构建入口按输入种类递增灌入([`TypeGraph::add_types`] 等),查询面纯读。
-//! 所有遍历均为有限步(visited 集合截断),环显式诊断,绝不死循环(IDX-005 同款保障)。
+//! The builder entries ingest incrementally per input kind
+//! ([`TypeGraph::add_types`] and friends); the query face is read-only.
+//! Every traversal is bounded (truncated by a visited set), cycles are
+//! diagnosed explicitly, and nothing ever loops forever (the same guarantee
+//! as IDX-005).
 
 use std::collections::{BTreeMap, BTreeSet};
 

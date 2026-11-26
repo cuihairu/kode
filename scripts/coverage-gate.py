@@ -15,7 +15,7 @@ tests/examples/benches 与 *_tests.rs)。分 crate 聚合:
 import sys
 from collections import defaultdict
 
-# 核心 crate 清单(第一档);可用 argv 覆盖,便于本地定向验证。
+# Core crate list (tier one); overridable via argv for targeted local verification.
 CORE_CRATES = ["kode-server", "kode-kbengine", "kode-python"]
 CORE_MIN_LINES = 98.0
 
@@ -29,7 +29,7 @@ def parse_lcov(path):
             if line.startswith("SF:"):
                 path_str = line[3:].strip()
                 parts = path_str.split("/crates/")
-                # /crates/<crate>/src/... → crate;仓库根文件归 "(root)"。
+                # /crates/<crate>/src/... -> crate; files at the repo root become "(root)".
                 cur = parts[1].split("/")[0] if len(parts) > 1 else "(root)"
             elif line.startswith("DA:") and cur is not None:
                 count = int(line[3:].split(",")[1])

@@ -1,25 +1,29 @@
-//! 两级 Schema(plan §4.1):派生(DefDerivedSchema)+ 物理(PhysicalSchema)→ 已解析(ResolvedCloneSchema)。
+//! Two-level schema (plan §4.1): derived (DefDerivedSchema) + physical
+//! (PhysicalSchema) → resolved (ResolvedCloneSchema).
 //!
-//! 派生侧数据镜像 kode-server `database_schema` 推导输出(字段语义一致,接入为机械映射)。
-//! 物理侧经 `PhysicalSchema` trait 抽象:虚拟 Fixture 用 [`VirtualSchema`],真实库由
-//! `information_schema` 读取器(Phase 后续,依赖真实 MySQL)实现。任何未确认映射 fail-closed。
+//! The derived side mirrors kode-server's `database_schema` derivation output
+//! (identical field semantics; wiring is a mechanical mapping). The physical side
+//! is abstracted by the `PhysicalSchema` trait: virtual fixtures use
+//! [`VirtualSchema`], a real database is served by the `information_schema` reader
+//! (later phase, needs a real MySQL). Any unconfirmed mapping fails closed.
 
 use std::collections::BTreeMap;
 
 use crate::error::{CloneError, CloneResult};
 
-/// 列的来源(plan §5.4 manifest 溯源)。
+/// Source of a column (plan §5.4 manifest provenance).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SchemaSource {
-    /// 来自 `.def`/`types.xml` 属性声明。
+    /// From `.def`/`types.xml` property declarations.
     Def,
-    /// 引擎合成列(id/parentID/sm_*),非 def 推导。
+    /// Engine-synthesized column (id/parentID/sm_*), not def-derived.
     Synthetic,
-    /// 未知来源(物理层独有,未在派生侧匹配)。
+    /// Unknown origin (physical-only, not matched on the derived side).
     Unknown,
 }
 
-/// 派生表字段(镜像推导输出 FieldSchema 的语义)。
+/// Derived table field (mirrors the semantics of the derivation output's
+/// FieldSchema).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DerivedField {
     pub name: String,
@@ -29,29 +33,32 @@ pub struct DerivedField {
     pub source: SchemaSource,
 }
 
-/// 派生表(镜像推导输出 TableSchema 的语义)。`kind` ∈ {root, array, component}。
+/// Derived table (mirrors the semantics of the derivation output's TableSchema).
+/// `kind` ∈ {root, array, component}.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DerivedTable {
     pub name: String,
     pub kind: String,
-    /// 非根表指向父表(ARRAY/组件子表的逻辑父)。
+    /// Non-root tables point at their parent (the logical parent of ARRAY /
+    /// component child tables).
     pub parent_table_name: Option<String>,
-    /// def 属性路径(子表对应属性链),根表为 None。
+    /// def property path (the child table's property chain); None for the root.
     pub property_path: Option<String>,
     pub fields: Vec<DerivedField>,
 }
 
-/// def 派生 schema(DefDerivedSchema 等价)。
+/// def-derived schema (equivalent of DefDerivedSchema).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloneSchema {
     pub entity_name: String,
     pub tables: Vec<DerivedTable>,
-    /// 表名 → 表(派生侧索引)。
+    /// table name → table (derived-side index).
     pub table_index: BTreeMap<String, DerivedTable>,
 }
 
 impl CloneSchema {
-    /// 由表列表构建并校验:根表唯一、子表父引用有效(无悬空父)。
+    /// Builds and validates from a table list: exactly one root table, child
+    /// parent references valid (no dangling parents).
     pub fn new(entity_name: String, tables: Vec<DerivedTable>) -> CloneResult<Self> {
         let mut table_index = BTreeMap::new();
         for table in &tables {
@@ -90,17 +97,18 @@ impl CloneSchema {
     }
 }
 
-/// 物理表(来自 information_schema 的列/键/引擎信息)。
+/// Physical table (columns / keys / engine info from information_schema).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalTable {
     pub name: String,
-    /// 存储引擎,如 `InnoDB`。
+    /// Storage engine, e.g. `InnoDB`.
     pub engine: String,
-    /// 列名 → 规范化列类型(如 `bigint unsigned`、`varchar(255)`)。
+    /// column name → normalized column type (e.g. `bigint unsigned`,
+    /// `varchar(255)`).
     pub columns: BTreeMap<String, String>,
-    /// 主键列(若有)。
+    /// Primary key columns (if any).
     pub primary_key: Vec<String>,
-    /// 索引列(不含主键)。
+    /// Index columns (excluding the primary key).
     pub indexes: Vec<Vec<String>>,
 }
 
@@ -110,13 +118,14 @@ impl PhysicalTable {
     }
 }
 
-/// 物理 schema 读取抽象:虚拟 Fixture 用 [`VirtualSchema`],真实库用 information_schema 读取器。
+/// Physical schema read abstraction: virtual fixtures use [`VirtualSchema`], a
+/// real database uses the information_schema reader.
 pub trait PhysicalSchema {
     fn table(&self, name: &str) -> Option<&PhysicalTable>;
     fn table_names(&self) -> Vec<String>;
 }
 
-/// 虚拟物理 schema(测试与 Phase 1 虚拟 Fixture 用)。
+/// Virtual physical schema (for tests and the Phase 1 virtual fixture).
 #[derive(Debug, Clone, Default)]
 pub struct VirtualSchema {
     pub tables: BTreeMap<String, PhysicalTable>,
@@ -141,14 +150,18 @@ impl PhysicalSchema for VirtualSchema {
     }
 }
 
-/// 已解析克隆 schema:仅含两侧匹配并经规则批准的表(plan §4.1)。
+/// Resolved clone schema: contains only tables matched on both sides and approved
+/// by rules (plan §4.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedCloneSchema {
-    /// 通过派生+物理两侧匹配的表(含根表与引擎确定子表)。
+    /// Tables that matched on both derived and physical sides (root table and
+    /// engine-certain child tables included).
     pub tables: Vec<DerivedTable>,
-    /// 被拒绝的表(kbe_ 内部表、物理独有未派生表)与原因。
+    /// Rejected tables (kbe_ internal tables, physical-only underived tables) with
+    /// reasons.
     pub denied: Vec<DeniedTable>,
-    /// 派生表在物理侧缺失(未知表,禁止前缀猜测)——按 fail-closed 记为错误。
+    /// Derived tables missing on the physical side (unknown tables; no guessing by
+    /// prefix) — recorded as errors fail-closed.
     pub missing: Vec<String>,
 }
 
@@ -158,16 +171,19 @@ pub struct DeniedTable {
     pub reason: String,
 }
 
-/// Schema 解析器:匹配派生↔物理,校验类型/引擎,应用 allow/deny(kbe_ deny)。
+/// Schema resolver: matches derived ↔ physical, validates types/engine, applies
+/// allow/deny (kbe_ denied).
 #[derive(Debug)]
 pub struct SchemaResolver;
 
-/// 引擎内部表前缀(plan §2/§4.1:kbe_ 内部表默认排除)。
+/// Engine internal table prefix (plan §2/§4.1: kbe_ internal tables excluded by
+/// default).
 const KBE_PREFIX: &str = "kbe_";
 
 impl SchemaResolver {
-    /// 解析并校验。派生表必须在物理侧存在且字段类型兼容,否则 fail-closed。
-    /// `kbe_` 前缀表与物理独有未派生表 → deny(排除)。
+    /// Resolves and validates. A derived table must exist on the physical side
+    /// with compatible field types, otherwise fail closed. `kbe_`-prefixed tables
+    /// and physical-only underived tables → deny (excluded).
     pub fn resolve<S: PhysicalSchema>(
         derived: &CloneSchema,
         physical: &S,
@@ -211,7 +227,8 @@ impl SchemaResolver {
             tables.push(table.clone());
         }
 
-        // 物理独有、未在派生侧的表:引擎内部表/未知表,deny 而非猜测。
+        // Physical-only tables absent from the derived side: engine internal /
+        // unknown tables, deny instead of guessing.
         for name in physical.table_names() {
             if !derived.table_index.contains_key(&name) {
                 denied.push(DeniedTable {
@@ -231,17 +248,20 @@ impl SchemaResolver {
     }
 }
 
-/// 派生列型与物理列型是否兼容(大小写无关,忽略显示宽度与字符集差异)。
+/// Whether the derived column type is compatible with the physical one
+/// (case-insensitive, ignoring display width and charset differences).
 fn type_compatible(derived: &str, physical: &str) -> bool {
     let d = normalize_type(derived);
     let p = normalize_type(physical);
     d == p
 }
 
-/// 规范化列型:`varchar(255)`→`varchar`、`bigint(20) unsigned`→`bigint unsigned` 等。
+/// Normalizes a column type: `varchar(255)`→`varchar`, `bigint(20) unsigned`→
+/// `bigint unsigned`, etc.
 fn normalize_type(t: &str) -> String {
     let lower = t.trim().to_ascii_lowercase();
-    // 去除括号内显示宽度/长度参数,保留 `unsigned` 等后缀。
+    // Drop display width/length parameters inside parentheses, keep suffixes like
+    // `unsigned`.
     let base = lower
         .split_once('(')
         .map(|(head, _rest)| head.trim().to_string())
@@ -373,7 +393,7 @@ mod tests {
             engine: "InnoDB".into(),
             columns: BTreeMap::from([
                 ("id".into(), "bigint unsigned".into()),
-                ("sm_autoLoad".into(), "bigint".into()), // 型不兼容
+                ("sm_autoLoad".into(), "bigint".into()), // incompatible type
             ]),
             primary_key: vec!["id".into()],
             indexes: vec![],
@@ -411,7 +431,8 @@ mod tests {
 
     #[test]
     fn rejects_schema_without_exactly_one_root() {
-        // 零根表(全是子表)与双根表都拒绝:引擎克隆以单实体为边界。
+        // Both zero root tables (all children) and two root tables are rejected:
+        // engine cloning is bounded to a single entity.
         let no_root = CloneSchema::new(
             "Avatar".into(),
             vec![child("tbl_Avatar_items", "tbl_Avatar")],
@@ -438,7 +459,7 @@ mod tests {
 
     #[test]
     fn rejects_child_referencing_unknown_parent() {
-        // 子表父引用悬空:fail-closed,不猜关系。
+        // Child parent reference dangling: fail closed, no guessed relation.
         let err = CloneSchema::new(
             "Avatar".into(),
             vec![root("tbl_Avatar"), child("tbl_Items", "tbl_Ghost")],
@@ -453,7 +474,8 @@ mod tests {
 
     #[test]
     fn resolve_denies_kbe_prefixed_derived_table() {
-        // kbe_ 内部表:默认排除进 denied(带原因),不参与解析。
+        // kbe_ internal tables: excluded into denied by default (with a reason),
+        // not resolved.
         let mut kbe = root("kbe_mail");
         kbe.kind = "array".into();
         let derived = CloneSchema::new("Avatar".into(), vec![root("tbl_Avatar"), kbe]).unwrap();
@@ -476,12 +498,13 @@ mod tests {
 
     #[test]
     fn resolve_fails_closed_on_derived_column_missing_from_physical() {
-        // 派生列在物理侧缺失:UnknownColumn,不猜默认类型。
+        // Derived column missing on the physical side: UnknownColumn, no default
+        // type guessed.
         let derived = CloneSchema::new("Avatar".into(), vec![root("tbl_Avatar")]).unwrap();
         let physical = VirtualSchema::new(vec![PhysicalTable {
             name: "tbl_Avatar".into(),
             engine: "InnoDB".into(),
-            // 缺 sm_autoLoad 列。
+            // Missing the sm_autoLoad column.
             columns: BTreeMap::from([("id".into(), "bigint(20) unsigned".into())]),
             primary_key: vec!["id".into()],
             indexes: vec![],

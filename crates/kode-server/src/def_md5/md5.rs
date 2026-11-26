@@ -1,9 +1,11 @@
-//! def MD5 基础:RFC 1321 手写 MD5(SRC-008 阶段 1 自 def_md5 迁出,纯移动)
-//! 与带溯源踪迹的字节流构建器(DefMd5Stream/TraceEntry/to_hex)。区域原文
-//! 零改动;finish 需要 DefMd5Result,自父模块导入(类型,无运行时环)。
+//! def MD5 basics: RFC 1321 hand-written MD5 (SRC-008 phase 1, moved out of
+//! def_md5, a pure move) and the provenance-traced byte-stream builder
+//! (DefMd5Stream/TraceEntry/to_hex). Region original text is untouched; finish
+//! needs DefMd5Result, imported from the parent module (types only, no runtime
+//! cycle).
 use super::DefMd5Result;
 // ===========================================================================
-// MD5(RFC 1321,手写:无新依赖红线)
+// MD5 (RFC 1321, hand-written: no-new-dependencies red line)
 // ===========================================================================
 
 const MD5_S: [u32; 64] = [
@@ -23,7 +25,8 @@ const MD5_K: [u32; 64] = [
     0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
 ];
 
-/// RFC 1321 MD5(镜像引擎 OpenSSL MD5;输出小端 digest)。
+/// RFC 1321 MD5 (mirrors the engine's OpenSSL MD5; outputs the digest in
+/// little-endian).
 #[derive(Clone, Debug)]
 pub struct Md5 {
     state: [u32; 4],
@@ -122,10 +125,11 @@ impl Default for Md5 {
 }
 
 // ===========================================================================
-// 字节流构建器(带溯源踪迹,golden 可审计)
+// Byte-stream builder (provenance-traced, auditable for goldens)
 // ===========================================================================
 
-/// 单段 append 的溯源记录(字段名+引擎 file:line+字节 hex)。
+/// Provenance record of one append segment (field name + engine file:line +
+/// bytes hex).
 #[derive(Clone, Debug)]
 pub struct TraceEntry {
     pub field: String,
@@ -133,7 +137,7 @@ pub struct TraceEntry {
     pub bytes_hex: String,
 }
 
-/// def MD5 字节流:喂 MD5 的同时镜像留痕。
+/// def MD5 byte stream: feeds the MD5 while mirroring the traces in parallel.
 #[derive(Clone, Debug)]
 pub struct DefMd5Stream {
     md5: Md5,
@@ -160,7 +164,7 @@ impl DefMd5Stream {
         });
     }
 
-    /// 引擎裸字符串(无长度前缀无 NUL)。
+    /// Engine raw string (no length prefix, no NUL).
     pub fn append_str(&mut self, field: &str, source: &str, s: &str) {
         self.append(field, source, s.as_bytes());
     }

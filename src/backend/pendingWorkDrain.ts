@@ -1,22 +1,24 @@
 /**
- * pendingWork 排干口径(IDE-AUD-019):最终验收的「后台量排干」断言必须
- * 使用真实 pendingWork 返回类型逐项核对 queued/running——2026-10-30 深审
- * F17 反例:旧套件对 Object.values(pending) 逐个与 0 比较,而量规里有
- * 嵌套对象(caches/worker/annotationBuilds),`object === 0` 永假,排干
- * 断言在当前量规形态下不可能通过。
+ * pendingWork drain accounting (IDE-AUD-019): the final-acceptance "background volume
+ * drained" assertion must check queued/running item by item against the real pendingWork
+ * return type -- 2026-10-30 deep-audit F17 counterexample: the old suite compared each
+ * entry of Object.values(pending) against 0, but the gauges contain nested objects
+ * (caches/worker/annotationBuilds), so `object === 0` is always false and the drain
+ * assertion could never pass in the current gauge shape.
  *
- * 口径(预登记):
- * - 排干面(必须归零才算排干):diagnosticsQueued、diagnosticsInFlight、
- *   annotationUpdates、indexTasksQueued、schemaColdBuilds、
- *   worker.running、worker.queued、annotationBuilds.running/waiting/cancelled;
- * - 容量面(不要求归零,归零反而可疑):caches.parsedDocuments/
- *   databaseSchemas/annotationIndex 是缓存容量量规,worker.queuedBytes/
- *   peakQueuedBytes/budgetRejects 是字节与累计量规——只要在途任务数归零,
- *   容量留存就是正常承接(AUD-019 原文:不以 caches/worker 对象与零比较,
- *   也不要求缓存容量归零)。
+ * Accounting (pre-registered):
+ * - Drain surface (must reach zero to count as drained): diagnosticsQueued,
+ *   diagnosticsInFlight, annotationUpdates, indexTasksQueued, schemaColdBuilds,
+ *   worker.running, worker.queued, annotationBuilds.running/waiting/cancelled;
+ * - Capacity surface (zero is not required, and zero would actually be suspicious):
+ *   caches.parsedDocuments/databaseSchemas/annotationIndex are cache-capacity gauges,
+ *   and worker.queuedBytes/peakQueuedBytes/budgetRejects are byte and cumulative gauges --
+ *   as long as the in-flight task count reaches zero, the retained capacity is normal
+ *   carry-over (AUD-019 verbatim: do not compare the caches/worker objects against zero,
+ *   and do not require cache capacity to reach zero).
  *
- * 本模块零依赖(不 import vscode/extension),纯函数,供真机套件
- * (finalMarks 等)与单测共用。
+ * This module has zero dependencies (no vscode/extension imports), pure functions, shared
+ * by the real-machine suites (finalMarks etc.) and the unit tests.
  */
 
 export interface PendingWorkSnapshot {
@@ -24,11 +26,12 @@ export interface PendingWorkSnapshot {
   diagnosticsInFlight: number;
   annotationUpdates: number;
   /**
-   * 容量量规(不进排干口径):字段形态对齐真实量规函数返回——
-   * parsedDocuments=getParsedDocumentCacheGauge(defParser)、
-   * databaseSchemas=getDatabaseSchemaCacheGauge(databaseSchema)、
-   * annotationIndex=getReturnAnnotationCacheGauge(pythonReturnTypeInference)。
-   * 审核发现:此前声明为 number,真实 pendingWork() 喂入即类型不符。
+   * Capacity gauges (outside the drain accounting): the field shapes match the real gauge
+   * function returns -- parsedDocuments=getParsedDocumentCacheGauge(defParser),
+   * databaseSchemas=getDatabaseSchemaCacheGauge(databaseSchema),
+   * annotationIndex=getReturnAnnotationCacheGauge(pythonReturnTypeInference).
+   * Found by audit: these were previously declared as number, which mismatched the type
+   * as soon as a real pendingWork() was fed in.
    */
   caches: {
     parsedDocuments: { entries: number; maxEntries: number; bytes: number; maxBytes: number };
@@ -51,7 +54,7 @@ export interface PendingWorkSnapshot {
   schemaColdBuilds: number;
 }
 
-/** 排干面:键=量规路径(嵌套用点),值=当前在途/排队计数;全空=已排干 */
+/** Drain surface: key = gauge path (dotted for nesting), value = current in-flight/queued count; all empty = drained */
 export function drainablePendingWork(
   pending: PendingWorkSnapshot
 ): Record<string, number> {

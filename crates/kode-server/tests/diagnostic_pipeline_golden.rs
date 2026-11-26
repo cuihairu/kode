@@ -15,7 +15,8 @@ fn repo_root() -> std::path::PathBuf {
 #[test]
 fn diagnostic_pipeline_golden_matches_regenerated_dump() {
     let regenerated = dump_diagnostic_pipeline_golden();
-    let golden_path = repo_root().join(kode_server::diagnostic_pipeline::DIAGNOSTIC_PIPELINE_GOLDEN_REL_PATH);
+    let golden_path =
+        repo_root().join(kode_server::diagnostic_pipeline::DIAGNOSTIC_PIPELINE_GOLDEN_REL_PATH);
     let committed = std::fs::read_to_string(&golden_path)
         .expect("golden 文件缺失: crates/kode-server/tests/golden/diagnostic-pipeline-parity.json");
     let committed = committed.trim_end_matches('\n');
@@ -50,10 +51,19 @@ fn diagnostic_pipeline_golden_structure_is_complete() {
         repo_root().join(kode_server::diagnostic_pipeline::DIAGNOSTIC_PIPELINE_GOLDEN_REL_PATH),
     )
     .expect("golden");
-    let value: Golden = serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
+    let value: Golden =
+        serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     assert!(value.trace_count >= 12, "语料应覆盖全部 12 计数器与管线面");
-    assert_eq!(value.traces.len(), value.trace_count, "迹数与 traceCount 一致");
-    assert_eq!(value.outcomes.len(), value.trace_count, "产出数与 traceCount 一致");
+    assert_eq!(
+        value.traces.len(),
+        value.trace_count,
+        "迹数与 traceCount 一致"
+    );
+    assert_eq!(
+        value.outcomes.len(),
+        value.trace_count,
+        "产出数与 traceCount 一致"
+    );
     let layer_keys = ["localSyntax", "semantic", "engineCompat", "runtimeConfig"];
     // 12 计数器覆盖审计:全部计数器在语料里至少被点亮一次
     let counter_keys = [
@@ -75,10 +85,7 @@ fn diagnostic_pipeline_golden_structure_is_complete() {
         let stats = outcome["stats"].as_object().expect("stats object");
         assert_eq!(stats.len(), 4, "四层管线统计齐备");
         for (layer, per) in stats {
-            assert!(
-                layer_keys.contains(&layer.as_str()),
-                "层名非法: {layer}"
-            );
+            assert!(layer_keys.contains(&layer.as_str()), "层名非法: {layer}");
             for key in counter_keys {
                 if per[key].as_u64().unwrap_or(0) > 0 {
                     lit.insert(key);
@@ -88,7 +95,10 @@ fn diagnostic_pipeline_golden_structure_is_complete() {
         // 每条产出:发布记录层名合法、workload 四层齐备
         for record in outcome["publishLog"].as_array().expect("publishLog") {
             let op = record["op"].as_str().expect("record op");
-            assert!(op == "publish" || op == "clearAll", "发布记录 op 非法: {op}");
+            assert!(
+                op == "publish" || op == "clearAll",
+                "发布记录 op 非法: {op}"
+            );
             if op == "publish" {
                 let layer = record["layer"].as_str().expect("layer");
                 assert!(layer_keys.contains(&layer), "发布层名非法: {layer}");
@@ -99,8 +109,14 @@ fn diagnostic_pipeline_golden_structure_is_complete() {
         let workload = outcome["workload"].as_object().expect("workload");
         assert_eq!(workload.len(), 4, "四层残留量规齐备");
         for (layer, per) in workload {
-            assert!(layer_keys.contains(&layer.as_str()), "量规层名非法: {layer}");
-            assert!(per["queued"].is_u64() && per["inFlight"].is_u64(), "量规字段缺: {per}");
+            assert!(
+                layer_keys.contains(&layer.as_str()),
+                "量规层名非法: {layer}"
+            );
+            assert!(
+                per["queued"].is_u64() && per["inFlight"].is_u64(),
+                "量规字段缺: {per}"
+            );
         }
     }
     for key in counter_keys {

@@ -1,9 +1,10 @@
-//! 结构化诊断与字节 Span(SYNTAX-002/003)。
+//! Structured diagnostics and byte spans (SYNTAX-002/003).
 //!
-//! 所有解析失败都产出 [`Diagnostic`],绝不 panic、绝不抛错中断整棵树;
-//! span 一律 0 基字节偏移,对原始输入(含伪注释掩码后的同长度字节)有效。
+//! All parse failures produce a [`Diagnostic`]; never panic, never abort the whole tree by throwing;
+//! spans are always 0-based byte offsets, valid against the original input (including the
+//! same-length bytes produced by pseudo-comment masking).
 
-/// 0 基字节区间 `[start, end)`。
+/// 0-based byte range `[start, end)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: usize,
@@ -27,7 +28,7 @@ impl Span {
     }
 }
 
-/// 诊断严重级(与 TS 侧 defAnalyzer 的 error/warning/info 对齐)。
+/// Diagnostic severity (aligned with the TS-side defAnalyzer's error/warning/info).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Severity {
     Error,
@@ -45,37 +46,37 @@ impl Severity {
     }
 }
 
-/// 稳定诊断码(`kp-` 前缀,协议层可直接透传)。
+/// Stable diagnostic codes (`kp-` prefix, passable straight through at the protocol layer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub enum DiagCode {
-    /// 未闭合元素(EOF 时栈非空)。
+    /// Unclosed element (stack non-empty at EOF).
     UnclosedElement,
-    /// 闭合标签与栈顶不匹配。
+    /// Close tag does not match the stack top.
     MismatchedCloseTag,
-    /// 游离闭合标签(栈内无对应元素)。
+    /// Stray close tag (no matching element on the stack).
     StrayCloseTag,
-    /// 标签名非法。
+    /// Invalid tag name.
     InvalidTagName,
-    /// 属性名非法或缺 `=`。
+    /// Invalid attribute name or missing `=`.
     InvalidAttribute,
-    /// 属性值未闭合。
+    /// Unterminated attribute value.
     UnterminatedAttributeValue,
-    /// 注释未闭合。
+    /// Unterminated comment.
     UnterminatedComment,
-    /// CDATA 未闭合。
+    /// Unterminated CDATA.
     UnterminatedCdata,
-    /// 处理指令未闭合。
+    /// Unterminated processing instruction.
     UnterminatedProcessingInstruction,
-    /// 未知/残缺实体引用。
+    /// Unknown/malformed entity reference.
     InvalidEntity,
-    /// 同元素重复属性(保留首个)。
+    /// Duplicate attribute on one element (first kept).
     DuplicateAttribute,
-    /// `<` 后不是任何可识别构造。
+    /// `<` is not followed by any recognizable construct.
     UnexpectedLt,
-    /// 伪注释之外的顶层垃圾字节已被跳过。
+    /// Top-level garbage bytes outside pseudo-comments have been skipped.
     SkippedGarbage,
-    /// 继承/别名链存在环(语义层)。
+    /// Cycle in the inheritance/alias chain (semantic layer).
     InheritanceCycle,
 }
 
@@ -100,7 +101,7 @@ impl DiagCode {
     }
 }
 
-/// 结构化诊断:码 + 级别 + 字节 span + 消息。
+/// Structured diagnostic: code + severity + byte span + message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub code: DiagCode,
@@ -125,7 +126,7 @@ impl Diagnostic {
     }
 }
 
-/// 行起点表(1 基行号查询;掩码不改字节长度,故对原文件同样成立)。
+/// Line-start table (for 1-based line number queries; masking does not change byte length, so it holds for the original file too).
 #[derive(Debug, Clone)]
 pub struct LineMap {
     line_starts: Vec<usize>,
@@ -142,7 +143,7 @@ impl LineMap {
         LineMap { line_starts }
     }
 
-    /// 1 基行号(越界 clamp 到末行,不 panic)。
+    /// 1-based line number (out-of-range offsets clamp to the last line, no panic).
     pub fn line_of(&self, offset: usize) -> usize {
         let offset = offset.min(self.last_start());
         let mut lo = 0usize;

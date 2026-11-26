@@ -1,46 +1,53 @@
-//! 返回注解逐文件提取核(RUST-MIGRATION-AUDIT-006 B1 车道批 3):
-//! src/backend/pythonReturnTypeInference.ts 提取面逐字移植——maskCodeLine
-//! (单行引号/注释掩码,跨行三引号体不处理=TS 既有口径)、parseLocalAssignmentCall
-//! (单跳赋值调用形态,三正则 ASSIGNMENT/SIMPLE_CALL/ATTRIBUTE_CALL 手工展开,
-//! 含 `\s*=\s*(?!=)(.+)$` 的贪婪回退语义与 JS `.` 行终止符排除)、
-//! collectFileAnnotationFacts(首定义优先,def 在而 `->` 缺记 null 事实遮蔽
-//! 磁盘旧注解,64 行截断)、extractFileImports(from/bare 导入绑定,通配跳过,
-//! 相对前导点剥除按后缀匹配近似)。列/长度一律 UTF-16 码元基底,正则手工展开
-//! 的贪婪/回溯语义逐点论证见各 fn 注。回调面不在生产契约(RPC 出参即事实
-//! 序列),collect 一次性返回 Vec 由调用方分桶。消息/工作区机械不出本模块。
+//! Per-file extraction core for return annotations (the RUST-MIGRATION-AUDIT-006 B1 lane,
+//! batch 3): a line-for-line port of the extraction face of
+//! src/backend/pythonReturnTypeInference.ts -- maskCodeLine (single-line quote / comment masking;
+//! multi-line triple-quote bodies are not handled = the pre-existing TS semantics),
+//! parseLocalAssignmentCall (the single-hop assignment-call shape; the three regexes
+//! ASSIGNMENT/SIMPLE_CALL/ATTRIBUTE_CALL are hand-expanded, including the greedy backtracking
+//! semantics of `\s*=\s*(?!=)(.+)$` and the JS `.` line-terminator exclusion),
+//! collectFileAnnotationFacts (first definition wins; a def present but `->` missing records a
+//! null fact that shadows the stale on-disk annotation; 64-line truncation), extractFileImports
+//! (from / bare import bindings, wildcards skipped, relative leading dots stripped with a
+//! suffix-match approximation). Columns / lengths are always on a UTF-16 code unit basis; the
+//! greedy / backtracking semantics of each hand-expanded regex are argued point by point in each
+//! fn's note. A callback face is not part of the production contract (the RPC output is the fact
+//! sequence itself); collect returns the Vec in one shot for the caller to bucket. No message /
+//! workspace machinery leaves this module.
 
 use crate::self_flow::{is_js_line_terminator, is_js_space, is_name_start, is_word};
 
-/// 一条 `名 = 右值` 赋值里的单层调用(简单调用 f() 或属性直调 a.b())
+/// The single-hop call in one `name = rhs` assignment (a plain call f() or a direct attribute
+/// call a.b()).
 #[derive(Debug, PartialEq)]
 pub struct LocalAssignmentCall {
-    /// 被赋值变量名(简单标识符,不含点)
+    /// The assigned variable name (a plain identifier, no dots).
     pub target: String,
-    /// 属性直调的接收者(a.b() 的 a);简单调用 f() 为 None
+    /// The receiver of a direct attribute call (the a of a.b()); None for a plain call f().
     pub receiver: Option<String>,
-    /// 被调函数/方法名
+    /// The called function / method name.
     pub method_name: String,
 }
 
-/// 一条注解事实(首定义优先;annotation=None = def 在而 `->` 缺,遮蔽磁盘)
+/// One annotation fact (first definition wins; annotation=None = the def is present but `->` is
+/// missing, shadowing the disk).
 #[derive(Debug, PartialEq)]
 pub struct FileAnnotationFact {
     pub name: String,
     pub annotation: Option<String>,
 }
 
-/// `from mod import original as local` 绑定(保留被导入原始符号名)
+/// A `from mod import original as local` binding (keeps the imported original symbol name).
 #[derive(Debug, PartialEq)]
 pub struct FromImportBindingFace {
-    /// 绑定名(alias 有则 alias,否则原始符号)
+    /// The binding name (the alias when present, otherwise the original symbol).
     pub local: String,
-    /// 模块路径(前导点剥除,`.`→`/`)
+    /// The module path (leading dots stripped, `.` -> `/`).
     pub module: String,
-    /// 被导入的原始符号名
+    /// The imported original symbol name.
     pub symbol: String,
 }
 
-/// `import X [as Y]` 绑定(接收者 Y/X 到模块 X)
+/// An `import X [as Y]` binding (receiver Y/X onto module X).
 #[derive(Debug, PartialEq)]
 pub struct BareImportBindingFace {
     pub local: String,
@@ -53,7 +60,7 @@ pub struct FileImportBindings {
     pub receivers: Vec<BareImportBindingFace>,
 }
 
-/// 逐行调用事实(行号 0 起,输入=全文掩码文本的 '\n' 切分行)
+/// A per-line call fact (line numbers 0-based; input = the whole masked text split on '\n').
 #[derive(Debug, PartialEq)]
 pub struct LineAssignmentCall {
     pub line: usize,
@@ -79,8 +86,9 @@ fn slice3_is(text: &[u16], at: usize, quote: u16) -> bool {
         && text.get(at + 2) == Some(&quote)
 }
 
-/// JS `String.prototype.trim`:去两端 JS `\s` 全类(含  / /﻿,
-/// 与 Rust char::is_whitespace 集合不同,不换用)
+/// JS `String.prototype.trim`: trim both ends over the full JS `\s` class (including
+/// \u2028/\u2029/BOM; a different set from Rust's char::is_whitespace, so it is not
+/// substituted)
 fn js_trim_range(text: &[u16]) -> (usize, usize) {
     let mut start = 0usize;
     while start < text.len() && is_js_space(text[start]) {
@@ -102,11 +110,13 @@ fn from_utf16(units: &[u16]) -> String {
     String::from_utf16(units).unwrap_or_default()
 }
 
-/// TS maskCodeLine(pythonReturnTypeInference.ts:48-73 逐字移植):单行引号/
-/// 注释掩码——引号体内逐码元换空白(转义 `\\` 两码元占位、闭引号一码元、
-/// triple 开/闭各三下划线占位)、`#` 起尾段全空白。**跨行三引号体不处理**
-/// (quote 态不跨行,每行重置=TS 既有口径;跨行体由调用方全文掩码,
-/// KR-AUD-64)。raw[col] 为 UTF-16 码元访问,slice(col,col+3) 同码元。
+/// TS maskCodeLine (a verbatim port of pythonReturnTypeInference.ts:48-73): single-line quote /
+/// comment masking -- inside quotes each code unit becomes whitespace (an escape `\\` occupies
+/// two units, a closing quote one unit, a triple open / close three underscore placeholders each),
+/// and the tail from `#` is all whitespace. **Multi-line triple-quote bodies are not handled**
+/// (the quote state does not span lines and resets each line = the pre-existing TS semantics;
+/// the multi-line body is masked by the caller over the whole text, KR-AUD-64). raw[col] is a
+/// UTF-16 code-unit access, as is slice(col,col+3).
 pub fn mask_code_line(raw: &[u16]) -> Vec<u16> {
     let mut quote: u16 = 0;
     let mut triple = false;
@@ -116,7 +126,7 @@ pub fn mask_code_line(raw: &[u16]) -> Vec<u16> {
         let ch = raw[col];
         if quote != 0 {
             if ch == 0x5C {
-                // `masked += '  '; col += 1; continue;`(+循环自增共 2)
+                // `masked += '  '; col += 1; continue;` (+ the loop increment = 2 in total)
                 masked.push(0x20);
                 masked.push(0x20);
                 col += 2;
@@ -162,9 +172,10 @@ pub fn mask_code_line(raw: &[u16]) -> Vec<u16> {
     masked
 }
 
-/// `^\s*def\s+([A-Za-z_]\w*)\s*\(` 手工展开。回溯论证:各 `\s*` 贪婪尾随字符
-/// ('d'/'名字首元'/'(' 均非空白)、名字贪婪尾随字符(非词元)皆不可回退,单趟
-/// 扫描即等价。`\s` 为 JS 全类(is_js_space)。
+/// Hand-expansion of `^\s*def\s+([A-Za-z_]\w*)\s*\(`. Backtracking argument: the character
+/// following each greedy `\s*` ('d' / the name's first unit / '(' is never whitespace) and the
+/// character following the greedy name (a non-word unit) can never be given back, so a single
+/// scan pass is equivalent. `\s` is the full JS class (is_js_space).
 fn match_def_head(masked: &[u16]) -> Option<Vec<u16>> {
     let mut i = 0usize;
     while i < masked.len() && is_js_space(masked[i]) {
@@ -179,7 +190,7 @@ fn match_def_head(masked: &[u16]) -> Option<Vec<u16>> {
         j += 1;
     }
     if j == ws_start {
-        return None; // `\s+` 至少一空白
+        return None; // `\s+` requires at least one whitespace
     }
     if !is_name_start(masked.get(j).copied().unwrap_or(0)) {
         return None;
@@ -199,12 +210,15 @@ fn match_def_head(masked: &[u16]) -> Option<Vec<u16>> {
     Some(masked[name_start..name_end].to_vec())
 }
 
-/// `^(\s*)([A-Za-z_]\w*)\s*=\s*(?!=)(.+)$` 手工展开(ASSIGNMENT_PATTERN)。
-/// 尾段 `\s*=\s*(?!=)(.+)$` 语义:`=` 后 `\s*` 先贪婪吞满空白,前瞻(≠'=')失败
-/// 才逐位回退(`x == 5` 无空白可退 → 整体失配;`x =  = 5` 退一位 → 俘获自末个
-/// 空白起,含残余 `= 5`);`(.+)$` 的 `.` 排除 JS 行终止符——俘获区内含孤立
-/// \r/ /  则该俘获起整体失配(与 TS `(.+)$` 一致)。行内无终止符的
-/// 常态下俘获=「= 后首个非(前瞻 '=')位到行尾」。
+/// Hand-expansion of `^(\s*)([A-Za-z_]\w*)\s*=\s*(?!=)(.+)$` (ASSIGNMENT_PATTERN).
+/// Semantics of the tail `\s*=\s*(?!=)(.+)$`: the `\s*` after `=` first greedily consumes all the
+/// whitespace, and only when the lookahead (not '=') fails does it retreat unit by unit (`x == 5`
+/// has no whitespace to retreat from -> the whole match fails; `x =  = 5` retreats one unit -> the
+/// capture starts at the last whitespace, including the residual `= 5`); the `.` of `(.+)$`
+/// excludes JS line terminators -- if the capture region contains a lone \r/ /  the whole
+/// capture fails (matching TS's `(.+)$`). In the normal case where the line holds no terminator,
+/// the capture = "from the first position after `=` that is not (the lookahead '=') to end of
+/// line".
 fn parse_assignment_head(line: &[u16]) -> Option<(Vec<u16>, usize)> {
     let mut i = 0usize;
     while i < line.len() && is_js_space(line[i]) {
@@ -225,8 +239,8 @@ fn parse_assignment_head(line: &[u16]) -> Option<(Vec<u16>, usize)> {
     if line.get(i) != Some(&0x3D) {
         return None;
     }
-    let eq = i; // '=' 位
-                // `\s*` 贪婪:吞满 '=' 后空白
+    let eq = i; // the position of '='
+                // `\s*` greedy: consume all whitespace after '='
     let mut e = eq + 1;
     while e < line.len() && is_js_space(line[e]) {
         e += 1;
@@ -235,7 +249,8 @@ fn parse_assignment_head(line: &[u16]) -> Option<(Vec<u16>, usize)> {
     if e < line.len() && line[e] != 0x3D && first_terminator_from(line, e).is_none() {
         rhs_start = Some(e);
     } else if e > eq + 1 && first_terminator_from(line, e - 1).is_none() {
-        // 回退一位:line[e-1] 构造上必为空白(≠'=');俘获区需无终止符
+        // Retreat one unit: line[e-1] is whitespace by construction (not '='); the capture region must
+        // hold no terminator
         rhs_start = Some(e - 1);
     }
     let start = rhs_start?;
@@ -246,8 +261,9 @@ fn first_terminator_from(text: &[u16], from: usize) -> Option<usize> {
     (from..text.len()).find(|&i| is_js_line_terminator(text[i]))
 }
 
-/// rhs 上 `^([A-Za-z_]\w*)\s*\.\s*([A-Za-z_]\w*)\s*\(`(ATTRIBUTE_CALL):
-/// 名字/空白贪婪尾随字符('.','.'? '(' 非词元非空白)皆不可回退,单趟扫描。
+/// On rhs, `^([A-Za-z_]\w*)\s*\.\s*([A-Za-z_]\w*)\s*\(` (ATTRIBUTE_CALL):
+/// the characters following the greedy name / whitespace ('.', '.', '?' -- '(' is neither a word
+/// unit nor whitespace) can never be given back, so a single scan pass suffices.
 fn match_attribute_call(rhs: &[u16]) -> Option<(Vec<u16>, Vec<u16>)> {
     if !is_name_start(rhs.first().copied().unwrap_or(0)) {
         return None;
@@ -285,7 +301,7 @@ fn match_attribute_call(rhs: &[u16]) -> Option<(Vec<u16>, Vec<u16>)> {
     Some((recv, method))
 }
 
-/// rhs 上 `^([A-Za-z_]\w*)\s*\(`(SIMPLE_CALL)
+/// On rhs, `^([A-Za-z_]\w*)\s*\(` (SIMPLE_CALL)
 fn match_simple_call(rhs: &[u16]) -> Option<Vec<u16>> {
     if !is_name_start(rhs.first().copied().unwrap_or(0)) {
         return None;
@@ -308,9 +324,11 @@ fn contains_dot(text: &[u16]) -> bool {
     text.contains(&0x2E)
 }
 
-/// parseLocalAssignmentCall(:79-94 逐字移植):单行赋值解析,右值须是「单层
-/// 调用整体」(属性直调优先,其次简单调用且 rhs 无点);链式/二元/字面量
-/// → None。rhs 先 maskCodeLine 再 trim(引号体内 `)` 显形,注释剔除)。
+/// parseLocalAssignmentCall (a verbatim port of :79-94): a single-line assignment parse, where
+/// the right-hand side must be "one whole single-hop call" (a direct attribute call takes
+/// priority, then a plain call with no dot in the rhs); chained / binary / literal -> None. The
+/// rhs is masked with maskCodeLine and then trimmed (a `)` inside quotes surfaces, comments are
+/// removed).
 pub fn parse_local_assignment_call(line: &[u16]) -> Option<LocalAssignmentCall> {
     let (target, rhs_start) = parse_assignment_head(line)?;
     let rhs_raw = &line[rhs_start..];
@@ -338,9 +356,11 @@ pub fn parse_local_assignment_call(line: &[u16]) -> Option<LocalAssignmentCall> 
     None
 }
 
-/// collectFileAnnotationFacts(:202-236 逐字移植;回调面改一次性返回事实序列,
-/// 顺序=record 触发序):首定义优先(def 在而 `->` 缺记 annotation=None);
-/// 不完整签名不吞后续定义、不借后续冒号/注解;64 行截断弃当前。
+/// collectFileAnnotationFacts (a verbatim port of :202-236; the callback face becomes a one-shot
+/// return of the fact sequence, ordered = the record firing order): first definition wins (a def
+/// present but `->` missing records annotation=None); an incomplete signature neither swallows
+/// later definitions nor borrows a later colon / annotation; the 64-line truncation drops the
+/// current one.
 pub fn collect_file_annotation_facts(text: &[u16]) -> Vec<FileAnnotationFact> {
     let mut facts = Vec::new();
     let mut seen: std::collections::HashSet<Vec<u16>> = std::collections::HashSet::new();
@@ -355,7 +375,7 @@ pub fn collect_file_annotation_facts(text: &[u16]) -> Vec<FileAnnotationFact> {
     for raw_line in crate::self_flow::split_crlf(text) {
         let masked = mask_code_line(&raw_line);
         let next_def = match_def_head(&masked);
-        // 不完整的签名不能吞掉后续定义,也不能借用后续定义的冒号或注解
+        // An incomplete signature must not swallow later definitions, nor borrow their colon or annotation
         if current.is_some() && next_def.is_some() {
             current = None;
         }
@@ -415,7 +435,7 @@ pub fn collect_file_annotation_facts(text: &[u16]) -> Vec<FileAnnotationFact> {
     facts
 }
 
-/// `signature.indexOf('->')`(UTF-16 码元扫描,`-`=`>` 相邻)
+/// `signature.indexOf('->')` (a UTF-16 code-unit scan, `-` and `>` adjacent)
 fn find_arrow(signature: &[u16]) -> i64 {
     if signature.len() < 2 {
         return -1;
@@ -428,10 +448,11 @@ fn find_arrow(signature: &[u16]) -> i64 {
     -1
 }
 
-/// `^\s*from\s+([.\w]+)\s+import\s+([^#]*?)(?:#.*)?$` 手工展开(FROM_IMPORT):
-/// 模块贪婪 `[.\w]+` 尾随必为空白(类内字符不可回退);`import` 字面量后须
-/// 空白;惰性俘获 `([^#]*?)(?:#.*)?$` 网络效应=「'import'+空白 到首个 '#' 或
-/// 行尾」(俘获不含 '#',余段要么空要么 '#' 起)。
+/// Hand-expansion of `^\s*from\s+([.\w]+)\s+import\s+([^#]*?)(?:#.*)?$` (FROM_IMPORT):
+/// the greedy module `[.\w]+` must be followed by whitespace (a class-internal character can never
+/// be given back); whitespace is required after the literal `import`; the lazy capture
+/// `([^#]*?)(?:#.*)?$` nets out as "from 'import' + whitespace to the first '#' or end of line"
+/// (the capture excludes '#', and the remainder is either empty or starts with '#').
 fn match_from_import(line: &[u16]) -> Option<(Vec<u16>, Vec<u16>)> {
     let mut i = 0usize;
     while i < line.len() && is_js_space(line[i]) {
@@ -478,9 +499,10 @@ fn match_from_import(line: &[u16]) -> Option<(Vec<u16>, Vec<u16>)> {
     Some((module, line[k..capture_end].to_vec()))
 }
 
-/// `^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?$` 手工展开(IMPORT_ALIAS,
-/// 两端锚定):名字贪婪后余段为空→无别名;否则须 `\s+as\s+名字` 恰到行尾
-/// (`x as y z` 类残段失配=TS 同判)。
+/// Hand-expansion of `^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?$` (IMPORT_ALIAS,
+/// anchored at both ends): after the greedy name the remainder being empty -> no alias;
+/// otherwise `\s+as\s+name` must end exactly at line end (`x as y z` class leftovers fail, as
+/// TS judges).
 fn match_import_alias(part: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
     if !is_name_start(part.first().copied().unwrap_or(0)) {
         return None;
@@ -520,9 +542,10 @@ fn match_import_alias(part: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
 }
 
 /// `^\s*import\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s+as\s+([A-Za-z_]\w*))?\s*(?:#.*)?$`
-/// 手工展开(BARE_IMPORT):点分段贪婪后,先试有别名(`\s+as\s+名`)再试无别名
-/// (`\s*(?:#.*)?$`);段数回退=正则 `(\.\w+)*` 循环回溯(段内 `\w*` 截断必留
-/// 词元字符,不可回退,只需枚举 '.' 边界)。
+/// Hand-expansion (BARE_IMPORT): after the greedy dotted segments, first try the aliased form
+/// (`\s+as\s+name`) then the non-aliased one (`\s*(?:#.*)?$`); retreating the segment count is the
+/// regex's `(\.\w+)*` loop backtracking (a `\w*` truncation inside a segment always leaves a word
+/// unit, so it cannot be given back -- only the '.' boundaries need enumerating).
 fn match_bare_import(line: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
     let mut i = 0usize;
     while i < line.len() && is_js_space(line[i]) {
@@ -539,7 +562,7 @@ fn match_bare_import(line: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
     if j == ws {
         return None;
     }
-    // 首段 [A-Za-z_]\w*
+    // First segment [A-Za-z_]\w*
     if !is_name_start(line.get(j).copied().unwrap_or(0)) {
         return None;
     }
@@ -548,7 +571,7 @@ fn match_bare_import(line: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
     while j < line.len() && is_word(line[j]) {
         j += 1;
     }
-    // 贪婪收集 '.'+名 段边界(每段终点)
+    // Greedily collect the '.'+name segment boundaries (each segment's endpoint)
     let mut seg_ends: Vec<usize> = vec![j];
     while j < line.len() && line[j] == 0x2E {
         let mut k = j + 1;
@@ -563,9 +586,10 @@ fn match_bare_import(line: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
         j = k;
     }
     let first_seg_end = seg_ends[0];
-    // 段数自多变少(贪婪回溯);固定段数下先试有别名再试无别名
+    // Segment count from many to few (greedy backtracking); for a fixed count, try the aliased form
+    // first, then the non-aliased one.
     for &mod_end in seg_ends.iter().rev() {
-        // 有别名:\s+ 'as' \s+ 名 → \s* (?:#.*)? $
+        // Aliased: \s+ 'as' \s+ name -> \s* (?:#.*)? $
         let mut t = mod_end;
         let ws = t;
         while t < line.len() && is_js_space(line[t]) {
@@ -591,7 +615,7 @@ fn match_bare_import(line: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
                 }
             }
         }
-        // 无别名:\s* (?:#.*)? $
+        // Non-aliased: \s* (?:#.*)? $
         let mut t = mod_end;
         while t < line.len() && is_js_space(line[t]) {
             t += 1;
@@ -604,7 +628,8 @@ fn match_bare_import(line: &[u16]) -> Option<(Vec<u16>, Option<Vec<u16>>)> {
     None
 }
 
-/// `\s*(?:#.*)?$` 残段判据:跳过空白后要么 '#' 起注释要么直达行尾
+/// The `\s*(?:#.*)?$` tail criterion: after skipping whitespace, either a '#' comment or straight
+/// to end of line
 fn tail_matches(line: &[u16], mut t: usize) -> bool {
     while t < line.len() && is_js_space(line[t]) {
         t += 1;
@@ -612,9 +637,11 @@ fn tail_matches(line: &[u16], mut t: usize) -> bool {
     t == line.len() || line[t] == 0x23
 }
 
-/// extractFileImports(:799-826 逐字移植):行序遍历,from 绑定(通配跳过,
-/// 模块前导点剥除+点→斜杠)与 bare 绑定(别名绑完整点分路径,无别名维持单段)
-/// 分列表;同名重复 set 覆盖语义由调用方 Map 承接,此处保插入序。
+/// extractFileImports (a verbatim port of :799-826): iterate in line order, keeping the from
+/// bindings (wildcards skipped, module leading dots stripped + dot -> slash) and the bare bindings
+/// (an alias binds the full dotted path, no alias keeps a single segment) in separate lists; the
+/// same-name duplicate set-overwrite semantics are absorbed by the caller's Map, so insertion order
+/// is preserved here.
 pub fn extract_file_imports(lines: &[Vec<u16>]) -> FileImportBindings {
     let mut names: Vec<FromImportBindingFace> = Vec::new();
     let mut receivers: Vec<BareImportBindingFace> = Vec::new();
@@ -633,7 +660,7 @@ pub fn extract_file_imports(lines: &[Vec<u16>]) -> FileImportBindings {
             if module.is_empty() || capture.contains(&0x2A) {
                 continue;
             }
-            // capture.split(','):逐段 trim 后 IMPORT_ALIAS
+            // capture.split(','): trim each part, then IMPORT_ALIAS
             let mut part_start = 0usize;
             loop {
                 let split = capture[part_start..]
@@ -682,7 +709,7 @@ pub fn extract_file_imports(lines: &[Vec<u16>]) -> FileImportBindings {
     FileImportBindings { names, receivers }
 }
 
-// ---- 单测 -----------------------------------------------------------------
+// ---- unit tests -----------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -776,7 +803,7 @@ mod tests {
 
     #[test]
     fn quoted_rhs_masked_then_call_visible() {
-        // 引号体掩码后 `)` 显形,简单调用成立
+        // After the quote body is masked the `)` surfaces, so the plain call matches
         assert_eq!(
             parse("x = f(\"s\")"),
             Some(LocalAssignmentCall {
@@ -801,13 +828,13 @@ mod tests {
 
     #[test]
     fn assignment_with_stray_eq_still_matches_head() {
-        // `x =  = 5`:回退一位俘获 "= 5" → 非调用 None(但赋值头成立)
+        // `x =  = 5`: back up one char to capture "= 5" -> not a call, None (but the assignment head still holds)
         assert_eq!(parse("x =  = 5"), None);
     }
 
     #[test]
     fn lone_cr_in_rhs_fails_whole_match() {
-        // 行内孤立 \r 使 `(.+)$` 整体失配(JS `.` 排除行终止符)
+        // A lone in-line \r makes `(.+)$` fail as a whole (JS `.` excludes line terminators)
         let text = "x = f(\rx)";
         assert_eq!(parse(text), None);
     }
@@ -848,8 +875,8 @@ mod tests {
 
     #[test]
     fn facts_truncated_signature_does_not_borrow_next() {
-        // 首签名未收口被第二 def 打断:首名无事实(不在 64 行截断内而打断),
-        // 第二名带注解
+        // The first signature, unclosed, is cut off by the second def: the first name has no fact
+        // (interrupted, not within the 64-line truncation), the second name carries the annotation
         let mut text = String::from("def a(\n");
         for _ in 0..3 {
             text.push_str("    param,\n");
@@ -980,19 +1007,21 @@ mod tests {
         assert_eq!(out.names[0].local, "Good");
     }
 
-    // ---- COV-043:掩码/匹配器残臂直打 --------------------------------------
+    // ---- COV-043: direct hits on the mask/matcher residual arms ------------
 
     #[test]
     fn mask_triple_quote_opens_and_closes_in_one_line() {
-        // 同行开闭三引号:开=三下划线占位,体内逐码元空白,闭=三空白
+        // Triple quotes opening and closing on one line: open = three underscores placeholder,
+        // body = per-code-unit blanks, close = three blanks
         let masked = mask_code_line(&u("s = \"\"\"abc\"\"\""));
         assert_eq!(from_utf16(&masked), "s = ___      ");
     }
 
     #[test]
     fn def_head_failure_and_space_tolerant_arms() {
-        // 词后无空白(defg)/名字首元非词(def 1x)/名字后非括号(def q:)各归
-        // None;括号前空白(def f (x))合法命中且注解照常提取
+        // No whitespace after the keyword (defg) / name's first unit not a word char (def 1x) /
+        // no paren after the name (def q:) each fall to None; whitespace before the paren
+        // (def f (x)) is a legitimate hit and the annotation is extracted as usual
         let text = u("defg(x):\ndef 1x():\ndef q:\ndef f (x) -> int:\n    pass\n");
         let facts = collect_file_annotation_facts(&text);
         assert_eq!(facts.len(), 1, "{facts:?}");
@@ -1002,7 +1031,8 @@ mod tests {
 
     #[test]
     fn assignment_head_leading_space_and_bad_name_arms() {
-        // 缩进赋值(缩进块内的 x = f())合法;名字首元非词归 None
+        // Indented assignment (x = f() inside an indented block) is legitimate; a name whose
+        // first unit is not a word char falls to None
         let hit = parse("    x = f()");
         assert_eq!(
             hit.map(|c| (c.target, c.receiver, c.method_name)),
@@ -1013,23 +1043,27 @@ mod tests {
 
     #[test]
     fn call_matcher_residual_arms() {
-        // 属性直调:点后非名字首元/方法后无括号 → None
+        // Direct attribute call: first unit after the dot not a name char / no paren after the
+        // method -> None
         assert!(parse("x = a.1b()").is_none());
         assert!(parse("x = a.b").is_none());
-        // 简单调用:名字与括号间空白合法命中;名字后无括号 → None
+        // Plain call: whitespace between the name and the paren is a legitimate hit; no paren
+        // after the name -> None
         let spaced = parse("x = f ()");
         assert_eq!(
             spaced.map(|c| (c.target, c.method_name)),
             Some(("x".to_string(), "f".to_string()))
         );
         assert!(parse("x = f").is_none());
-        // 属性直调前缀命中但右值不以 ) 收尾(二元式)→ 整体 None
+        // The attribute-call prefix hits but the RHS does not end at `)` (a binary expression)
+        // -> None as a whole
         assert!(parse("x = a.b() + 1").is_none());
     }
 
     #[test]
     fn facts_truncate_after_64_unclosed_lines() {
-        // 签名跨 64 行未闭合:截断弃当前(f 不得产出),后续定义照常收
+        // Signature spans 64 lines unclosed: truncation drops the current one (f must not be
+        // produced); later definitions are collected as usual
         let mut text = String::from("def f(\n");
         for _ in 0..63 {
             text.push_str("    filler\n");
@@ -1043,7 +1077,8 @@ mod tests {
 
     #[test]
     fn from_import_leading_space_and_module_arms() {
-        // 缩进 from 导入合法;from 后无空白/模块段空各归 None
+        // An indented from import is legitimate; no whitespace after from / an empty module
+        // segment each fall to None
         let out = extract_file_imports(&[u("    from m import x")]);
         assert_eq!(out.names.len(), 1);
         assert_eq!(out.names[0].local, "x");
@@ -1054,11 +1089,11 @@ mod tests {
     #[test]
     fn import_alias_residual_arms() {
         let lines = vec![
-            u("from m import 1x"),       // 名字首元非词
-            u("from m import x y"),      // 残段非 as
-            u("from m import x as"),     // as 后无名字
-            u("from m import x as yz"),  // 多字符别名
-            u("from m import x as y z"), // 别名后残段
+            u("from m import 1x"),       // name's first unit not a word char
+            u("from m import x y"),      // residual segment is not `as`
+            u("from m import x as"),     // no name after `as`
+            u("from m import x as yz"),  // multi-char alias
+            u("from m import x as y z"), // residual segment after the alias
         ];
         let out = extract_file_imports(&lines);
         assert_eq!(out.names.len(), 1, "{:?}", out.names);
@@ -1070,10 +1105,10 @@ mod tests {
     #[test]
     fn bare_import_residual_arms() {
         let lines = vec![
-            u("    import time"),  // 缩进 bare 导入
-            u("importx"),          // import 后无空白
-            u("import 1x"),        // 段首非词
-            u("import a.b as cd"), // 多字符别名
+            u("    import time"),  // indented bare import
+            u("importx"),          // no whitespace after import
+            u("import 1x"),        // segment starts with a non-word char
+            u("import a.b as cd"), // multi-char alias
         ];
         let out = extract_file_imports(&lines);
         assert_eq!(out.receivers.len(), 2, "{:?}", out.receivers);

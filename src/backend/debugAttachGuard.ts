@@ -1,15 +1,20 @@
 /**
- * 调试连接的截止与取消(IDE-DBG-007):attach 到无人监听的端口时
- * vscode.debug.startDebugging 返回的 Promise 可能长时间不落定(连接
- * 挂起到 OS 级 TCP 超时为止),调试入口就此永久等待。attachWithDeadline
- * 给它两道闸——①截止:超时即停掉卡住的会话并如实提示,不等到底;
- * ②取消:用户在进度通知上取消走同一停止路径。两条路径都只停一次、
- * 绝不重试;截止/取消返回后晚到的 start 结果(成功或异常)一律吞掉。
- * 纯逻辑面:发起/停止/提示/取消订阅与计时器全部注入,测试用手动
- * 计时器精确回放,不碰真定时器。
+ * Deadline and cancellation for debug connections (IDE-DBG-007): when
+ * attaching to a port nobody is listening on, the Promise returned by
+ * vscode.debug.startDebugging may stay unsettled for a long time (the
+ * connection hangs until the OS-level TCP timeout), so the debug entry
+ * point would wait forever. attachWithDeadline gives it two gates --
+ * (1) deadline: on timeout it stops the stuck session and reports the truth
+ * instead of waiting it out; (2) cancellation: when the user cancels the
+ * progress notification it goes through the same stop path. Both paths stop
+ * exactly once and never retry; any late start result (success or error)
+ * arriving after the deadline/cancellation returns is swallowed.
+ * Pure logic surface: start / stop / notify / cancel subscription and timers
+ * are all injected, so tests replay timing precisely with manual timers and
+ * never touch real timers.
  */
 
-/** 默认截止毫秒数(kbengine.debug.attachTimeoutMs 缺省同源) */
+/** Default deadline in milliseconds (shares the same default as kbengine.debug.attachTimeoutMs) */
 export const DEBUG_ATTACH_TIMEOUT_DEFAULT_MS = 15_000;
 
 export type AttachGuardOutcome =
@@ -18,26 +23,29 @@ export type AttachGuardOutcome =
   | { status: 'cancelled' };
 
 export interface AttachGuardOptions {
-  /** 用户面目标标签(提示文案携带,如 `cellapp (debugpy 5679)`) */
+  /** User-facing target label (carried by the notification text, e.g. `cellapp (debugpy 5679)`) */
   label: string;
-  /** 截止毫秒数;<=0 不限时(等到底,取消面仍可用) */
+  /** Deadline in milliseconds; <=0 means no deadline (wait it out; the cancel surface stays available) */
   timeoutMs: number;
-  /** 发起附加(生产:vscode.debug.startDebugging);不可达端口下可能永不落定 */
+  /** Start the attach (production: vscode.debug.startDebugging); may never settle on an unreachable port */
   start(): Promise<boolean>;
-  /** 截止/取消时停掉卡住的会话(生产:vscode.debug.stopSession()) */
+  /** Stop the stuck session on deadline/cancellation (production: vscode.debug.stopSession()) */
   stop(): void;
-  /** IDE-REV-003:start 落定即回调(每闸恰一次):late=闸已返回后才落定
-   * (迟到成功由调用方关联本次会话并清理一次,迟到异常同样只经此通知,
-   * 不外泄成 unhandled rejection);timely 落定也回调,供调用方释放随闸
-   * 存活到落定为止的资源(如会话追踪订阅)。 */
+  /** IDE-REV-003: callback as soon as start settles (exactly once per gate):
+   * late = it settled only after the gate already returned (a late success is
+   * correlated to this session by the caller and cleaned up once; a late error
+   * is likewise reported only through here and never escapes as an unhandled
+   * rejection); a timely settle also callbacks, so the caller can release
+   * resources that live with the gate until it settles (such as the session
+   * tracking subscription). */
   onStartSettled?(late: boolean, success: boolean): void;
-  /** 用户面提示(超时/取消各一条,写明已停止、不再重试) */
+  /** User-facing notification (one each for timeout / cancellation, stating it has stopped and will not retry) */
   notify(message: string): void;
-  /** 可选外部取消面(生产:withProgress 的 CancellationToken 适配) */
+  /** Optional external cancellation surface (production: an adaptation of withProgress's CancellationToken) */
   onCancel?(listener: () => void): { dispose(): void };
 }
 
-/** 计时器注入面(测试用手动计时器精确触发/清位) */
+/** Timer injection surface (tests fire / clear precisely with manual timers) */
 export interface AttachGuardTimers {
   set(handler: () => void, ms: number): unknown;
   clear(handle: unknown): void;
@@ -64,16 +72,18 @@ export async function attachWithDeadline(
       cancelSubscription?.dispose();
     };
 
-    // 执行器内同步发起(调用方拿到的 Promise 已在监听;start 同步抛错
-    // 兜成 rejection 走同一错误通道)
+    // Start synchronously inside the executor (the Promise handed to the caller
+    // is already being listened to; a synchronous throw from start is
+    // converted into a rejection and goes through the same error channel)
     let startPromise: Promise<boolean>;
     try {
       startPromise = options.start();
     } catch (error) {
       startPromise = Promise.reject(error);
     }
-    // 吞咽守卫:截止/取消先返回后,晚到的落定(成功或异常)不得变成
-    // unhandled rejection,也不得触发任何下游动作
+    // Swallow guard: after the deadline/cancellation has returned, a late
+    // settle (success or error) must not become an unhandled rejection and must
+    // not trigger any downstream action
     startPromise.then(() => undefined, () => undefined);
 
     startPromise.then(

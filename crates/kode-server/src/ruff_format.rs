@@ -288,11 +288,8 @@ mod tests {
                  exec sleep 300\n",
             )
             .expect("write hang stub");
-            std::fs::set_permissions(
-                &script,
-                std::os::unix::fs::PermissionsExt::from_mode(0o755),
-            )
-            .expect("chmod");
+            std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .expect("chmod");
             script
         };
         #[cfg(windows)]
@@ -303,8 +300,12 @@ mod tests {
              std::thread::sleep(std::time::Duration::from_secs(300)); }",
         );
         std::env::set_var("KODE_RUFF_DEADLINE_MS", "300");
-        let error = format_content("x=1\n", "/w/a.py", Some(script.to_str().expect("utf8 path")))
-            .expect_err("挂起 format 必须报超时");
+        let error = format_content(
+            "x=1\n",
+            "/w/a.py",
+            Some(script.to_str().expect("utf8 path")),
+        )
+        .expect_err("挂起 format 必须报超时");
         assert!(error.contains("ruff format"), "{error}");
         assert!(error.contains("timed out"), "{error}");
         std::fs::remove_dir_all(&dir).ok();

@@ -1,17 +1,18 @@
-//! VFS-007/008/010 工作区扫描:目录排除、文件分类、安全降级。
+//! VFS-007/008/010 workspace scanning: directory exclusion, file classification, safe degradation.
 //!
-//! - **排除(VFS-007)**:默认跳过 `.git`、`node_modules`、`.venv`、build/
-//!   target/generated 等;支持用户追加排除(整组件通配,`*` 通配符)。
-//! - **分类(VFS-008 基础版)**:`.def`、types.xml、entities.xml、alias.xml、
-//!   Python、引擎源(路径含 `kbe`/`kbengine` 组件)。精细的独立发现规则
-//!   (引擎版本 profile 等)随 PR-006 root discovery 补全。
-//! - **安全(VFS-010)**:读目录失败(权限拒绝/网络 FS 抖动)跳过并计数,
-//!   不 panic;默认不跟随目录符号链接(符号链接循环天然免疫);深度封顶。
+//! - **Exclusion (VFS-007)**: skips `.git`, `node_modules`, `.venv`, build/target/generated and
+//!   the like by default; user-added exclusions are supported (whole-component globs, `*` wildcard).
+//! - **Classification (VFS-008 base version)**: `.def`, types.xml, entities.xml, alias.xml,
+//!   Python, engine sources (paths containing a `kbe`/`kbengine` component). Finer standalone
+//!   discovery rules (engine version profiles etc.) land with PR-006 root discovery.
+//! - **Safety (VFS-010)**: a failed directory read (permission denied / network FS flakiness) is
+//!   skipped and counted, never a panic; directory symlinks are not followed by default
+//!   (naturally immune to symlink loops); depth is capped.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// 默认排除目录(VFS-007 名单;用户排除是追加而非替换)。
+/// Default excluded directories (the VFS-007 list; user exclusions are appended, not substituted).
 pub const DEFAULT_EXCLUDED_DIRS: &[&str] = &[
     ".git",
     "node_modules",
@@ -29,7 +30,7 @@ pub const DEFAULT_EXCLUDED_DIRS: &[&str] = &[
     "generated",
 ];
 
-/// KBEngine 关切文件类别(VFS-008 基础版)。
+/// File categories of KBEngine interest (VFS-008 base version).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FileKind {
     Def,
@@ -37,12 +38,12 @@ pub enum FileKind {
     EntitiesXml,
     AliasXml,
     Python,
-    /// 引擎源码树下的 xml/py/cpp/h(路径含 `kbe` 或 `kbengine` 组件)。
+    /// xml/py/cpp/h under an engine source tree (path contains a `kbe` or `kbengine` component).
     EngineSource,
     Other,
 }
 
-/// 按路径分类一个文件(VFS-008;精确文件名大小写敏感,对齐 KBEngine 约定)。
+/// Classify one file by path (VFS-008; exact file names are case-sensitive, matching KBEngine conventions).
 pub fn classify(path: &Path) -> FileKind {
     let name = path
         .file_name()
@@ -81,14 +82,14 @@ fn in_engine_tree(path: &Path) -> bool {
     })
 }
 
-/// 扫描配置。
+/// Scan configuration.
 #[derive(Debug, Clone)]
 pub struct WalkOptions {
-    /// 排除的目录组件名(精确匹配;在 DEFAULT_EXCLUDED_DIRS 之上追加)。
+    /// Excluded directory component names (exact match; appended on top of DEFAULT_EXCLUDED_DIRS).
     pub excluded_dirs: BTreeSet<String>,
-    /// 用户追加通配排除(整组件匹配,`*` 通配任意子串,如 `*.generated`)。
+    /// User-added wildcard exclusions (whole component match, `*` matches any substring, e.g. `*.generated`).
     pub user_exclude_globs: Vec<String>,
-    /// 最大目录深度(防环/防失控;根为 0 层)。
+    /// Maximum directory depth (guards against cycles and runaway scans; the root is level 0).
     pub max_depth: usize,
 }
 
@@ -105,22 +106,22 @@ impl Default for WalkOptions {
     }
 }
 
-/// 扫描结果统计(VFS-010:跳过原因可见,不静默)。
+/// Scan result statistics (VFS-010: skip reasons stay visible, never silent).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WalkStats {
     pub files: usize,
-    /// 读失败被跳过的目录数(权限拒绝/网络 FS/竞态消失)。
+    /// Number of directories skipped on read failure (permission denied / network FS / vanished in a race).
     pub skipped_dirs: usize,
 }
 
-/// 一个扫描命中:路径 + 类别。
+/// One scan hit: path + kind.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ScanEntry {
     pub path: PathBuf,
     pub kind: FileKind,
 }
 
-/// 扫描一个根目录(不跟随目录 symlink;确定性排序)。
+/// Scan one root directory (directory symlinks are not followed; deterministic sorting).
 pub fn scan(root: &Path, opts: &WalkOptions) -> (Vec<ScanEntry>, WalkStats) {
     let mut entries = Vec::new();
     let mut stats = WalkStats::default();
@@ -153,7 +154,8 @@ fn scan_dir(
         let path = item.path();
         let name = item.file_name().to_string_lossy().into_owned();
         if file_type.is_symlink() {
-            // 目录符号链接不跟随(循环免疫);文件符号链接按文件收录。
+            // Directory symlinks are not followed (loop immune); file symlinks are
+            // collected as files.
             let target_is_dir = std::fs::metadata(&path)
                 .map(|meta| meta.is_dir())
                 .unwrap_or(false);
@@ -189,7 +191,7 @@ fn is_user_excluded(name: &str, opts: &WalkOptions) -> bool {
         .any(|glob| glob_match_component(glob, name))
 }
 
-/// 整组件通配:只支持 `*`(任意子串),够用且无依赖。
+/// Whole-component wildcard: only `*` (any substring) is supported; sufficient and dependency free.
 fn glob_match_component(glob: &str, name: &str) -> bool {
     if !glob.contains('*') {
         return glob == name;
@@ -213,7 +215,7 @@ fn glob_match_component(glob: &str, name: &str) -> bool {
             None => return false,
         }
     }
-    // 尾段必须顶到结尾(除非尾段为空)。
+    // The tail segment must reach the end (unless it is empty).
     parts
         .last()
         .map(|last| last.is_empty() || rest.is_empty())
@@ -260,7 +262,7 @@ mod tests {
             FileKind::EngineSource
         );
         assert_eq!(classify(Path::new("/w/other.xml")), FileKind::Other);
-        // 普通工程里的 x.xml 不算引擎源。
+        // An x.xml inside a plain project is not an engine source.
         assert_eq!(classify(Path::new("/w/config/x.xml")), FileKind::Other);
     }
 
@@ -300,7 +302,7 @@ mod tests {
         let (entries, stats) = scan(&dir, &WalkOptions::default());
         assert_eq!(entries.len(), 1);
         assert_eq!(stats.skipped_dirs, 1);
-        // 还原权限以便清理。
+        // Restore permissions so the directory can be cleaned up.
         let mut perms = std::fs::metadata(&locked).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&locked, perms).unwrap();
@@ -324,7 +326,7 @@ mod tests {
         {
             std::os::unix::fs::symlink(dir.join("real"), dir.join("loop")).unwrap();
             let (entries, _) = scan(&dir, &WalkOptions::default());
-            // 只算 real/ 下的真实文件,loop/ 不展开(循环免疫)。
+            // Only real files under real/ are counted; loop/ is not expanded (loop immune).
             assert_eq!(entries.len(), 1);
         }
         std::fs::remove_dir_all(&dir).unwrap();
@@ -332,7 +334,8 @@ mod tests {
 
     #[test]
     fn max_depth_zero_stops_descending() {
-        // 深度封顶:第 0 层可见,sub/ 整层截断(防环/防失控)。
+        // Depth cap: level 0 is visible, sub/ is truncated as a whole (guards against
+        // cycles and runaway scans).
         let dir = temp_dir("depth");
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("top.def"), "").unwrap();
@@ -353,11 +356,11 @@ mod tests {
         let dir = temp_dir("flink");
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("sub/target.def"), "").unwrap();
-        // 文件 symlink:按文件收录(分类看链接路径的扩展名)。
+        // File symlink: collected as a file (classification looks at the extension of the link path).
         std::os::unix::fs::symlink(dir.join("sub/target.def"), dir.join("link.def")).unwrap();
-        // 悬空 symlink:metadata 失败 → 不当目录,仍按文件收录。
+        // Dangling symlink: metadata fails -> not a directory, still collected as a file.
         std::os::unix::fs::symlink(dir.join("gone.def"), dir.join("dangling.def")).unwrap();
-        // 目录 symlink:不展开。
+        // Directory symlink: not expanded.
         std::os::unix::fs::symlink(dir.join("sub"), dir.join("dirlink")).unwrap();
 
         let (entries, stats) = scan(&dir, &WalkOptions::default());
@@ -367,7 +370,7 @@ mod tests {
             .collect();
         assert!(names.contains(&"link.def".to_string()), "{names:?}");
         assert!(names.contains(&"dangling.def".to_string()), "{names:?}");
-        // target.def 只经 sub/(真实目录)收录一次;dirlink/ 不展开。
+        // target.def is collected only once, via sub/ (a real directory); dirlink/ is not expanded.
         assert_eq!(
             names.iter().filter(|n| *n == "target.def").count(),
             1,
@@ -390,13 +393,13 @@ mod tests {
 
     #[test]
     fn glob_prefix_and_suffix_parts_match_whole_component() {
-        // 首段(前缀)必须顶到组件开头。
+        // The first segment (prefix) must start at the component's beginning.
         assert!(glob_match_component("tmp*", "tmp123"));
         assert!(!glob_match_component("tmp*", "xtmp123"));
-        // 中段任意位置查找,尾段必须顶到结尾。
+        // Middle segments are searched anywhere, but the tail must reach the end.
         assert!(glob_match_component("a*b", "axb"));
         assert!(!glob_match_component("a*b", "axbx"));
-        // 纯 '*' 通配任意组件。
+        // A bare '*' matches any component.
         assert!(glob_match_component("*", "whatever"));
     }
 }

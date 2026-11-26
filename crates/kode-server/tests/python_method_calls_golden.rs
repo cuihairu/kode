@@ -46,10 +46,8 @@ struct Golden {
 
 #[test]
 fn python_method_calls_golden_structure_is_complete() {
-    let committed = std::fs::read_to_string(
-        repo_root().join(python_method_calls::GOLDEN_REL_PATH),
-    )
-    .expect("golden");
+    let committed = std::fs::read_to_string(repo_root().join(python_method_calls::GOLDEN_REL_PATH))
+        .expect("golden");
     let value: Golden =
         serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     assert!(value.corpus.len() >= 8, "语料应覆盖三进程同构/盲区/边界族");
@@ -59,14 +57,24 @@ fn python_method_calls_golden_structure_is_complete() {
             entry["name"].is_string() && entry["text"].is_string() && entry["fsPath"].is_string(),
             "语料条目形: {entry}"
         );
-        assert!(entry["inIndex"].is_boolean(), "语料条目须标 inIndex: {entry}");
+        assert!(
+            entry["inIndex"].is_boolean(),
+            "语料条目须标 inIndex: {entry}"
+        );
         if entry["inIndex"].as_bool().unwrap_or(false) {
             indexed += 1;
         }
     }
     assert!(indexed >= 6, "索引语料规模");
-    assert_eq!(value.probes.len(), value.outcomes.len(), "探测数与产出数一致");
-    assert!(value.probes.len() >= 12, "探测面规模(outgoing 8 + incoming 4)");
+    assert_eq!(
+        value.probes.len(),
+        value.outcomes.len(),
+        "探测数与产出数一致"
+    );
+    assert!(
+        value.probes.len() >= 12,
+        "探测面规模(outgoing 8 + incoming 4)"
+    );
     let mut lit = std::collections::BTreeSet::new();
     for probe in &value.probes {
         lit.insert(probe["face"].as_str().expect("probe face").to_string());
@@ -77,11 +85,17 @@ fn python_method_calls_golden_structure_is_complete() {
     for outcome in &value.outcomes {
         let face = outcome["face"].as_str().expect("outcome face");
         if face == "outgoing" {
-            assert!(outcome["references"].is_array(), "outgoing 产出形: {outcome}");
+            assert!(
+                outcome["references"].is_array(),
+                "outgoing 产出形: {outcome}"
+            );
         } else if face == "incoming" {
             assert!(outcome["incoming"].is_array(), "incoming 产出形: {outcome}");
             for hit in outcome["incoming"].as_array().expect("array") {
-                assert!(hit["caller"]["filePath"].is_string(), "incoming 命中形: {hit}");
+                assert!(
+                    hit["caller"]["filePath"].is_string(),
+                    "incoming 命中形: {hit}"
+                );
                 assert!(hit["callLine"].is_u64(), "incoming 调用行: {hit}");
             }
         } else {

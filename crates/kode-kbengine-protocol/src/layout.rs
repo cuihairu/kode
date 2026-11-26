@@ -1,58 +1,68 @@
-//! wire 布局解释(KSEM-SER-12):在既有编解码/跨度结果
-//! ([`crate::codec::decode_spans`] 同读序、同限额、同错误语义)之上,
-//! 产字段路径 / 类型标签 / 字节偏移树与首错位置。
+//! Wire layout interpretation (KSEM-SER-12): on top of the existing codec/span
+//! results (same read order, same limits, same error semantics as
+//! [`crate::codec::decode_spans`]), it produces a field path / type label / byte
+//! offset tree plus the first error location.
 //!
-//! 红线(SER-12 验收③):跨度树只证明字节按 schema 可走读——**能解析字节
-//! ≠ 业务对象类型正确**;PYTHON 桶体 = pickle 不透明 Raw(SER-11 同界),
-//! EntityCall/Unresolved 不编造字段序(PA-001 TODO-2 同界)。
+//! Red line (SER-12 acceptance item 3): a span tree only proves the bytes can be
+//! walked per the schema — **bytes parse ≠ business object type is correct**;
+//! PYTHON bucket bodies = opaque pickle Raw (same boundary as SER-11), and
+//! EntityCall/Unresolved fabricate no field order (same boundary as PA-001 TODO-2).
 //!
-//! 与 `decode_spans` 的分工:跨度树 = 数据面(Wireshark 插件按注册字段
-//! 渲染);布局树 = 展示面(节点携带路径与类型标签,错误定位到
-//! `arg1.members[2]` 粒度——`span_inner` 不线程化路径,本面自建同读序
-//! 镜像,对拍由 `tests/layout_units.rs` 锁定:同语料同 Ok/Err、同消费
-//! 字节数、Ok 树逐节点 start/len/kind 深等)。
+//! Division of labor with `decode_spans`: span tree = data plane (the Wireshark
+//! plugin renders registered fields); layout tree = display plane (nodes carry a path
+//! and type label, errors located down to `arg1.members[2]` granularity — `span_inner`
+//! does not thread the path, so this plane builds its own mirror with the same read
+//! order; the parity comparison is pinned by `tests/layout_units.rs`: same corpus,
+//! same Ok/Err, same bytes consumed, and Ok trees deep-equal per node
+//! start/len/kind).
 
 use crate::codec::{min_element_size, Budget, DecodeLimits, SpanKind, MAX_DECODE_DEPTH};
 use crate::cursor::Cursor;
 use crate::error::{DecodeError, DecodeErrorKind};
 use kode_kbengine_schema::wire::WireType;
 
-/// 布局解释节点:路径 + 类型标签 + 字节区间(相对载荷起点)+ 子项。
+/// Layout interpretation node: path + type label + byte range (relative to the payload start) + children.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutNode {
-    /// 字段路径(`arg0` / `arg1.members[2]` / `arg0.cfg.hp` 风格)。
+    /// Field path (`arg0` / `arg1.members[2]` / `arg0.cfg.hp` style).
     pub path: String,
-    /// 类型标签(schema [`WireType::display_name`];合成段为段标签)。
+    /// Type label (the schema [`WireType::display_name`]; a segment label for synthesized segments).
     pub type_label: String,
-    /// 相对载荷起点的字节偏移。
+    /// Byte offset relative to the payload start.
     pub start: usize,
     pub len: usize,
     pub kind: SpanKind,
     pub children: Vec<LayoutNode>,
 }
 
-/// 一次布局解释:成功节点 + 首错(位置与路径)+ 首错后未解释剩余字节起点。
+/// One layout interpretation: successful nodes + the first error (location and path)
+/// + the start of the uninterpreted trailing bytes after that first error.
 ///
-/// 首错即停:错后游标处于半读位,后续 arg 的字节解释不可靠——不编造
-/// (引擎侧类型错即 OUT_TYPE_ERROR 整帧失败,同口径)。
+/// Stop at the first error: after the error the cursor sits at a half-read position,
+/// so the byte interpretation of later args is unreliable — nothing is fabricated
+/// (on the engine side a type error is an OUT_TYPE_ERROR failing the whole frame;
+/// same semantics).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutExplanation {
     pub nodes: Vec<LayoutNode>,
     pub error: Option<DecodeError>,
-    /// 首错处游标偏移;其后字节未解释。无错为 None。
+    /// Cursor offset at the first error; bytes after it are uninterpreted. None when there is no error.
     pub unresolved_tail_from: Option<usize>,
-    /// 恒真:此树只证明字节按 schema 可走读,**不证明业务对象类型正确**
-    /// (SER-12 验收红线;展示面必须携带此声明,消费端不得据此判定对象正确)。
+    /// Always true: this tree only proves the bytes can be walked per the schema,
+    /// **not that the business object type is correct** (SER-12 acceptance red line;
+    /// the display plane must carry this disclaimer and consumers must not use it to
+    /// declare an object correct).
     pub structural_only: bool,
 }
 
-/// 布局解释的诚实声明原文(展示面可直接引用)。
+/// The verbatim honesty disclaimer of layout interpretation (the display plane may quote it directly).
 pub const LAYOUT_HONESTY_NOTE: &str =
     "布局解释只证明字节按 schema 可走读,不证明业务对象类型正确;pickle/EntityCall 段不透明。";
 
-/// 按 schema 线类型解出布局解释树:与 [`crate::codec::decode_spans`] 同读序、
-/// 同限额检查与错误语义;Ok 时逐 arg 一个顶层节点,Err 落 [`LayoutExplanation::error`]
-/// (位置 = 失败读点的载荷偏移,路径 = 线程化字段路径)。
+/// Resolve the layout interpretation tree from the schema wire types: same read order,
+/// limit checks and error semantics as [`crate::codec::decode_spans`]; on Ok there is one
+/// top-level node per arg, on Err the result lands in [`LayoutExplanation::error`]
+/// (location = payload offset at the failing read point, path = the threaded field path).
 pub fn decode_layout(
     args: &[WireType],
     payload: &[u8],
@@ -83,9 +93,11 @@ pub fn decode_layout(
     }
 }
 
-/// `span_inner` 的布局镜像:同一 Cursor 读序、同一限额检查与错误文本;
-/// 差异 = 路径线程贯穿 + 节点携带路径/类型标签。本级产生的错误重写路径为
-/// 线程化路径(保留 kind/offset/message);子级错误原样上传(最深路径即真位)。
+/// Layout mirror of `span_inner`: same Cursor read order, same limit checks and error
+/// text; the difference = path threading throughout + nodes carrying path/type label.
+/// Errors produced at this level get their path rewritten to the threaded path (kind/
+/// offset/message preserved); errors from deeper levels are forwarded as-is (the deepest
+/// path is the true location).
 fn layout_inner(
     ty: &WireType,
     path: &str,
@@ -162,7 +174,7 @@ fn layout_inner(
             let _ = cur.read_cstring();
             node(SpanKind::Str, cur.offset(), Vec::new())
         }
-        // 带 u32 长度前缀的族:前缀 4B + 体,两层(体 Str/Bytes/Raw)。
+        // The u32 length-prefixed family: 4B prefix + body, two levels (body Str/Bytes/Raw).
         WireType::Unicode | WireType::Blob | WireType::Python => {
             let body_start = start + 4;
             cur.read_blob(limits).map_err(|e| with_path(e, path))?;
@@ -261,7 +273,7 @@ fn layout_inner(
             }
             node(SpanKind::Group, cur.offset(), children)
         }
-        // EntityCall/Unresolved:同 span_inner 不推进游标,Raw 覆盖剩余。
+        // EntityCall/Unresolved: like span_inner, no cursor advance; Raw covers the remainder.
         WireType::EntityCall | WireType::Unresolved(_) => {
             let len = cur.rest().len();
             node(SpanKind::Raw, start + len, Vec::new())
@@ -269,7 +281,7 @@ fn layout_inner(
     })
 }
 
-/// 错误路径重写:保留 kind/offset/message,路径换线程化字段路径。
+/// Error path rewrite: keep kind/offset/message, swap the path for the threaded field path.
 fn with_path(err: DecodeError, path: &str) -> DecodeError {
     DecodeError::new(err.kind, err.offset, path, err.message)
 }

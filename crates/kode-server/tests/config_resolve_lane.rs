@@ -6,7 +6,9 @@
 //! serving 面在主线程内联执行,两轨零共享;视图面误入 IO 表或后台泳道
 //! 即红(慢解析占后台位无谓、被 IO 硬顶挡住则是真回归)。
 
-use kode_server::executor::{execution_lane, rpc_job_kind, rpc_lane_class, ExecutionLane, PoolLane};
+use kode_server::executor::{
+    execution_lane, rpc_job_kind, rpc_lane_class, ExecutionLane, PoolLane,
+};
 use kode_server::ServerState;
 
 /// 配置合并视图的两个取数面(视图命令 kbengine.config.visualize 与

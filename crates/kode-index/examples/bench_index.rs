@@ -1,10 +1,12 @@
-//! 增量索引 rebuild 计数实测(release;数字进 docs/kode2/pr-007.md)。
+//! Measured rebuild counts of the incremental index (release; the numbers go into
+//! docs/kode2/pr-007.md).
 //!
-//! 场景:合成 200 文件工作区(140 def + 20 entities + 20 types + 20 alias),
-//! 首扫 → 全量二扫(同内容)→ 单文件编辑 → 批量改 10 文件 → 删 5 文件。
-//! 只看计数,不做跨机性能结论(ARCH-012)。
+//! Scenario: a synthetic 200-file workspace (140 def + 20 entities + 20 types +
+//! 20 alias), first scan -> full second scan (same content) -> single-file edit ->
+//! batch change of 10 files -> delete 5 files.
+//! Counters only; no cross-machine performance conclusions are drawn (ARCH-012).
 //!
-//! 复现:`cargo run -p kode-index --release --example bench_index -- .`
+//! Reproduce: `cargo run -p kode-index --release --example bench_index -- .`
 
 use kode_index::{DocumentKey, RootId, SymbolIndex};
 use kode_vfs::uri::CanonicalUri;
@@ -13,8 +15,9 @@ fn key(path: &str) -> DocumentKey {
     key_in(RootId(1), path)
 }
 
-/// 多根工作区:声明文件种类由文件名判定(entities.xml/types.xml/alias.xml
-/// 是保留名),同根不能重名,故每组 XML 各占一个 root(与 VFS-002 身份模型一致)。
+/// Multi-root workspace: the declaration file kind is decided by file name (entities.xml /
+/// types.xml / alias.xml are reserved names), and names must be unique within a root, so
+/// each XML group gets its own root (consistent with the VFS-002 identity model).
 fn key_in(root: RootId, path: &str) -> DocumentKey {
     DocumentKey::new(root, CanonicalUri::from_path(path))
 }
@@ -82,7 +85,7 @@ fn main() {
 
     let report = index.update(
         key("/proj/entities/E7.def"),
-        &def_text("E", 5, 3), // +1 属性
+        &def_text("E", 5, 3), // +1 property
     );
     println!(
         "单文件编辑: rebuilt={} removed={} added={} 累计 rebuilds={}",

@@ -21,8 +21,9 @@ export function getPythonSelfAccessAtPosition(
   while ((match = regex.exec(lineText)) !== null) {
     const fullMatch = match[0];
     const accessPath = match[1];
-    // fullMatch 恒等于 'self.' + accessPath(批86 M7 反向发现:indexOf 会命中
-    // 'self' 内部同形子串,'self.e' 的 'e' 令 pathStart 越界),按后缀算术取路径起点
+    // fullMatch always equals 'self.' + accessPath (a reverse finding from batch 86 M7:
+    // indexOf hits a like-shaped substring inside 'self', and the 'e' of 'self.e' makes
+    // pathStart run out of bounds), so the path start comes from suffix arithmetic
     const pathStart = match.index + fullMatch.length - accessPath.length;
     const segments = accessPath.split('.');
 
@@ -46,28 +47,30 @@ export function getPythonSelfAccessAtPosition(
   return null;
 }
 
-/** def 方法区块(与 defParser 的 DefMethodSection 同形;此处只做接收者段映射) */
+/** def method section (same shape as defParser's DefMethodSection; here only the receiver-section mapping is done) */
 export type PythonReceiverSection = 'BaseMethods' | 'CellMethods' | 'ClientMethods';
 
 export interface PythonReceiverCall {
-  /** 文档行(0 起;单行口径恒 0) */
+  /** Document line (0-based; always 0 under the single-line accounting) */
   line: number;
-  /** 方法名在行内的起始列(0 起) */
+  /** Starting column of the method name within the line (0-based) */
   character: number;
-  /** 接收者段:self.cell / self.base / self.client 的段名 */
+  /** Receiver section: the section name for self.cell / self.base / self.client */
   receiver: 'cell' | 'base' | 'client';
-  /** 接收者段对应的 def 方法区块(段闸依据) */
+  /** def method section corresponding to the receiver section (the basis for the section gate) */
   section: PythonReceiverSection;
-  /** 被调用的方法名 */
+  /** Name of the method being called */
   methodName: string;
   /**
-   * 调用面(脚本目录域换算;逐面语义闸依据)。未换算(调用方未给路径
-   * 域)→ undefined:语义闸按旧口径走(receiver → 段),不裁合法性。
+   * Caller face (converted from the script directory domain; the basis for the
+   * per-face semantic gate). Unconverted (the caller gave no path domain) ->
+   * undefined: the semantic gate follows the old accounting (receiver -> section)
+   * and does not rule on legality.
    */
   callerFace?: PythonCallerFace;
 }
 
-/** 接收者段 → def 方法区块(用户令 2026-10-21:cell→CellMethods 等,一一对应) */
+/** Receiver section -> def method section (user order 2026-10-21: cell->CellMethods etc., one-to-one) */
 export const PYTHON_RECEIVER_SECTIONS: Record<
   PythonReceiverCall['receiver'],
   PythonReceiverSection
@@ -77,7 +80,7 @@ export const PYTHON_RECEIVER_SECTIONS: Record<
   client: 'ClientMethods'
 };
 
-/** def 方法区块 → 接收者段(引用收录面 IDE-NAV-003:CellMethods→cell 等,反查表) */
+/** def method section -> receiver section (the reference-collection face IDE-NAV-003: CellMethods->cell etc., a reverse-lookup table) */
 export const PYTHON_RECEIVER_BY_SECTION: Record<
   PythonReceiverSection,
   PythonReceiverCall['receiver']
@@ -88,22 +91,27 @@ export const PYTHON_RECEIVER_BY_SECTION: Record<
 };
 
 /**
- * 调用面(脚本目录域:scripts/base|cell|client|bots;与 entityMapping
- * pythonScriptDomain 同名同域,此处不引依赖,值由调用方换算)。
+ * Caller face (script directory domain: scripts/base|cell|client|bots; the same
+ * name and domain as entityMapping's pythonScriptDomain -- no dependency is pulled in
+ * here, the caller converts the value).
  */
 export type PythonCallerFace = 'base' | 'cell' | 'client';
 
 /**
- * 逐面语义表(深审-3 收口,引擎九面属性表;与 Rust refs.rs bind_self_role
- * 同源单点语义):每个调用面上 self.<receiver> 的合法派发目标段;该面无此
- * 角色属性 → null。引擎依据(SCRIPT_GET_DECLARE 构造点逐个核):
- * baseapp 有 .cell/.client(baseapp/entity.cpp:750/:800)、cellapp 有
- * .base/.client(cellapp/entity.cpp:391/:573,.client 是 CLIENT_VIA_BASE,
- * 目标段仍是 ClientMethods)、client 有 .base/.cell(client_lib/entity.cpp:
- * 104/:115);同面无此属性(base.base/cell.cell/client.client,自身即该面;
- * client 面同名 .clientapp 是应用对象非角色引用)。照旧无条件段映射会把
- * AttributeError 的引用当合法派发去对账 def 段——与 bind_self_role 矛盾
- * (九面表:非法 face·attr 组合 → None),诊断闸须先过本表。
+ * Per-face semantic table (closing out deep audit-3, the engine's nine-face attribute
+ * table; single-source semantics shared with Rust refs.rs bind_self_role): for each
+ * caller face, the legal dispatch target section of self.<receiver>; a face lacking
+ * this role attribute -> null. Engine evidence (each SCRIPT_GET_DECLARE construction
+ * site checked by hand): baseapp has .cell/.client (baseapp/entity.cpp:750/:800),
+ * cellapp has .base/.client (cellapp/entity.cpp:391/:573, and .client is
+ * CLIENT_VIA_BASE, whose target section is still ClientMethods), and client has
+ * .base/.cell (client_lib/entity.cpp:104/:115); a face never has this attribute for
+ * itself (base.base/cell.cell/client.client, since it already is that face; on the
+ * client face the like-named .clientapp is an application object, not a role reference).
+ * The old unconditional section mapping would take an AttributeError reference and
+ * treat it as a legal dispatch to reconcile against def sections -- contradicting
+ * bind_self_role (nine-face table: an illegal face·attr combination -> None), so the
+ * diagnostics gate must pass this table first.
  */
 export const PYTHON_RECEIVER_FACES: Record<
   PythonCallerFace,
@@ -115,10 +123,13 @@ export const PYTHON_RECEIVER_FACES: Record<
 };
 
 /**
- * 逐面语义闸:解析接收者在该调用面的目标段(段闸依据)。调用面已知 →
- * 九面表裁定(面上无此属性 → null,该引用是 AttributeError,def 段对账
- * 不适用);调用面未知 → 保旧口径(receiver → 段,目标段映射 whenever
- * 该引用合法恒真,未知面不裁合法性与目标段无关)。
+ * Per-face semantic gate: resolve the receiver's target section on that caller face
+ * (the basis for the section gate). A known caller face -> the nine-face table rules
+ * (a face lacking this attribute -> null; the reference is an AttributeError and the
+ * def-section reconciliation does not apply); an unknown caller face -> keep the old
+ * accounting (receiver -> section; the target-section mapping holds whenever the
+ * reference is legal, and ruling on legality is unrelated to the target section on an
+ * unknown face).
  */
 export function pythonReceiverSectionFor(
   callerFace: PythonCallerFace | null | undefined,
@@ -130,14 +141,15 @@ export function pythonReceiverSectionFor(
   return PYTHON_RECEIVER_SECTIONS[receiver];
 }
 
-/** 只认 self.<role>.<name> 形态;entity.cell.X 等局部接收者不识别(用户令) */
+/** Only the self.<role>.<name> shape is recognised; local receivers such as entity.cell.X are not (user order) */
 const PYTHON_RECEIVER_CALL_PATTERN =
   /\bself\.(cell|base|client)\.([A-Za-z_][A-Za-z0-9_]*)/g;
 
 /**
- * 光标处的接收者调用解析:F12/Hover 面用。光标必须落在方法名 token 上
- * (self.cell./self.base./self.client. 的第三段);落在接收者段或别处 → null。
- * callerFace 可选(逐面语义闸依据,见 pythonReceiverSectionFor)。
+ * Resolve the receiver call at the cursor: for the F12/Hover face. The cursor must sit
+ * on the method-name token (the third segment of self.cell./self.base./self.client.);
+ * on the receiver section or elsewhere -> null.
+ * callerFace is optional (the per-face semantic-gate basis, see pythonReceiverSectionFor).
  */
 export function getPythonReceiverCallAtPosition(
   lineText: string,
@@ -149,8 +161,9 @@ export function getPythonReceiverCallAtPosition(
 
   while ((match = regex.exec(lineText)) !== null) {
     const methodName = match[2];
-    // match[0] 恒为 'self.<role>.' + methodName(批86 同口径:按后缀算术取起点,
-    // 不用 indexOf——方法名与 'self' 同形子串会错位)
+    // match[0] is always 'self.<role>.' + methodName (same accounting as batch 86: the start
+    // comes from suffix arithmetic, not indexOf -- a like-shaped substring of 'self' would
+    // misalign the method name)
     const nameStart = match.index + match[0].length - methodName.length;
     const nameEnd = nameStart + methodName.length;
     if (character < nameStart || character > nameEnd) {
@@ -159,7 +172,7 @@ export function getPythonReceiverCallAtPosition(
     const receiver = match[1] as PythonReceiverCall['receiver'];
     const section = pythonReceiverSectionFor(callerFace, receiver);
     if (section === null) {
-      return null; // 调用面无此角色属性(AttributeError 面):不产出派生信息
+      return null; // the caller face has no such role attribute (AttributeError face): derive nothing
     }
     return {
       line: 0,
@@ -174,7 +187,7 @@ export function getPythonReceiverCallAtPosition(
   return null;
 }
 
-/** 全文档接收者调用扫描(CodeLens 面):每行每处 self.<role>.<name> 一条 */
+/** Whole-document receiver-call scan (the CodeLens face): one entry per self.<role>.<name> occurrence per line */
 export function findPythonReceiverCalls(
   text: string,
   callerFace?: PythonCallerFace
@@ -191,7 +204,7 @@ export function findPythonReceiverCalls(
       const receiver = match[1] as PythonReceiverCall['receiver'];
       const section = pythonReceiverSectionFor(callerFace, receiver);
       if (section === null) {
-        continue; // 调用面无此角色属性:不进发现面(诊断闸裁合法性的前置)
+        continue; // the caller face has no such role attribute: excluded from the discovery face (a precondition for the diagnostics gate's legality ruling)
       }
       calls.push({
         line: index,
@@ -208,18 +221,19 @@ export function findPythonReceiverCalls(
 }
 
 export interface PythonReceiverCallArgumentSpan {
-  /** 实参首字符列(0 起,已跳过前导空白) */
+  /** Column of the argument's first character (0-based, leading whitespace skipped) */
   start: number;
-  /** 实参尾后一列(已剔除尾随空白;inlay hint 锚点) */
+  /** One past the argument's end (trailing whitespace trimmed; the inlay hint anchor) */
   end: number;
-  /** 实参去空白直文本(不做任何推导,只作数量对齐用) */
+  /** The argument's raw text with whitespace trimmed (no derivation at all; used only for count alignment) */
   text: string;
 }
 
 export interface PythonReceiverCallWithArguments extends PythonReceiverCall {
   /**
-   * 单行口径顶层逗号切分的实参区间;跨行调用/括号不闭合 → 空数组(inlay
-   * 不给该调用出提示)。只做机械切分,零语义推导。
+   * Argument spans split at top-level commas under the single-line accounting; a
+   * multiline call or unbalanced brackets -> an empty array (inlay offers no hint for
+   * that call). Purely mechanical splitting, zero semantic derivation.
    */
   arguments: PythonReceiverCallArgumentSpan[];
 }
@@ -229,9 +243,10 @@ const CALL_ARGUMENT_CLOSERS = new Set([')', ']', '}']);
 const CALL_ARGUMENT_CLOSER_FOR: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
 
 /**
- * 从方法名结束处向后取同行实参:首个 '(' 起到深度 0 的 ')' 止,内容按顶层
- * 逗号切分(深度计 ()[]{},字符串 ' " 内的逗号/括号不算)。同行找不到闭合
- * ')' → null(跨行调用不出实参表)。
+ * Take the same-line arguments from the end of the method name: from the first '(' up to
+ * the ')' at depth 0, with the content split at top-level commas (depth tracks ()[]{};
+ * commas/brackets inside a ' " string do not count). No closing ')' on the line -> null
+ * (a multiline call yields no argument table).
  */
 export function parseSingleLineCallArguments(
   lineText: string,
@@ -244,7 +259,7 @@ export function parseSingleLineCallArguments(
       break;
     }
     if (!/\s/.test(lineText[index])) {
-      // 方法名与 '(' 之间出现其他 token(如换行前的运算符尾)→ 不认
+      // some other token appears between the method name and '(' (such as a trailing operator before a line break) -> not recognised
       return null;
     }
   }
@@ -304,7 +319,7 @@ export function parseSingleLineCallArguments(
     }
   }
 
-  // 同行括号不闭合(跨行调用)→ 整体不出实参表
+  // the brackets do not close on this line (a multiline call) -> no argument table at all
   return null;
 }
 
@@ -324,7 +339,7 @@ function finishArgumentSpan(
   return { start: lo, end: hi, text: lineText.slice(lo, hi) };
 }
 
-/** 全文档接收者调用实参扫描(inlay 形参提示面):调用 + 同行实参区间 */
+/** Whole-document receiver-call argument scan (the inlay parameter-hint face): the call plus its same-line argument spans */
 export function findPythonReceiverCallArguments(
   text: string,
   callerFace?: PythonCallerFace
@@ -361,13 +376,16 @@ export function getPythonSelfCompletionContext(lineText: string): PythonSelfComp
     };
   }
 
-  // 不可达(批65 定性):能走到此处必是"正则命中且行不以 '.' 结尾"——组1 未
-  // 匹配时命中串只能是 'self.'/'self..'(双点亦被 `\.?` 吞掉),均以 '.' 结尾
-  // 而在上方 endsWithDot 早退;组1 命中则 accessPath 至少含一个 \w 段,segments
-  // 恒非空。两个三元恒取真臂,''/null 兜底无触发路径。语句与分支条目随区间
-  // 一并移出分母(TESTING.md 分母口径据实登记);tests/pythonLanguageUtils
-  // .test.ts 另以 'self..'(双点仍走早退)与 'self.a..'(锚定失败归 null)
-  // 锁死通往此处的输入形状。
+  // Unreachable (the batch 65 verdict): reaching here requires "the regex matched and the
+  // line does not end with '.'" -- when group 1 does not match, the matched string can only
+  // be 'self.'/'self..' (a double dot is likewise swallowed by `\.?`), both ending with '.'
+  // and thus early-exited at endsWithDot above; when group 1 matches, accessPath contains
+  // at least one \w segment, so segments is never empty. Both conditionals always take the
+  // true arm, and the ''/null fallbacks have no triggering path. The statements and branch
+  // entries are removed from the denominator together with the region (the denominator
+  // accounting in TESTING.md is recorded as-is); tests/pythonLanguageUtils.test.ts additionally
+  // pins the input shapes that reach here with 'self..' (a double dot still takes the early
+  // exit) and 'self.a..' (a failed anchor maps to null).
   /* istanbul ignore start */
   const partialSymbol = segments.length > 0 ? segments[segments.length - 1] : '';
   const rootSymbol = segments.length > 0 ? segments[0] : null;
@@ -383,21 +401,24 @@ export function getPythonSelfCompletionContext(lineText: string): PythonSelfComp
 }
 
 export interface PythonMemberAccess {
-  /** 接收者名(非 self:avatar/monster 等对象名) */
+  /** Receiver name (not self: object names such as avatar/monster) */
   receiverName: string;
-  /** 光标所在成员名(方法名段) */
+  /** The member name under the cursor (the method-name segment) */
   memberName: string;
-  /** 完整访问路径 接收者.成员 */
+  /** Full access path: receiver.member */
   fullPath: string;
 }
 
 /**
- * 光标处成员访问解析(批158,用户令 2026-10-26):非 self 接收者的调用形态
- * avatar.SendErrorInfo("err", 1)。只认「调用形」——成员名后(允许空白)必须是
- * '(';属性访问/传方法引用不走此层。self.* 有专属管线
- * (getPythonSelfAccessAtPosition),此处跳过避免双管线。光标必须落在成员名
- * 段(与接收者调用同口径:按后缀算术取起点,不用 indexOf——成员名与接收者
- * 同形子串会错位);落在接收者段不认(接收者词由其它面负责)。
+ * Member access resolution at the cursor (batch 158, user order 2026-10-26): the call
+ * shape for a non-self receiver, avatar.SendErrorInfo("err", 1). Only the "call shape"
+ * is recognised -- what follows the member name (whitespace allowed) must be '('; an
+ * attribute read or a passed method reference does not go through this layer. self.*
+ * has its own pipeline (getPythonSelfAccessAtPosition) and is skipped here to avoid a
+ * double pipeline. The cursor must sit on the member-name segment (the same accounting
+ * as receiver calls: the start comes from suffix arithmetic, not indexOf -- a
+ * like-shaped substring of the receiver would misalign the member name); sitting on the
+ * receiver segment is not recognised (the receiver word is owned by other faces).
  */
 export function getPythonMemberAccessAtPosition(
   lineText: string,
@@ -435,22 +456,24 @@ export function getPythonMemberAccessAtPosition(
 }
 
 export interface PythonCallAtPosition {
-  /** 接收者:'self' 或对象变量名(avatar 等) */
+  /** Receiver: 'self' or an object variable name (avatar etc.) */
   receiverName: string;
-  /** 被调方法名 */
+  /** The method name being called */
   methodName: string;
-  /** 接收者段对应的 def 方法区块(与 PythonReceiverCall.section 同口径,
-   *  段闸依据);无段(undefined) */
+  /** The def method section of the receiver section (the same accounting as
+   *  PythonReceiverCall.section, the basis for the section gate); no section (undefined) */
   section?: PythonReceiverSection;
-  /** 光标所在实参序号(顶层逗号切分,0 起) */
+  /** Index of the argument under the cursor (split at top-level commas, 0-based) */
   activeArgument: number;
 }
 
 /**
- * 光标处调用解析(批159 签名帮助面):覆盖 self.base/cell/client.X(...) 与
- * 对象调用 avatar.X(...) 两形态;光标须落在「方法名→'(' 之间或实参表内」
- * (实参表按字符串感知深度计顶层逗号,与 inlay 实参切分同源口径)。属性
- * 读取(名字后非 '(')不认;不在任何调用实参表内不认。
+ * Call resolution at the cursor (the batch 159 signature-help face): covers both shapes,
+ * self.base/cell/client.X(...) and an object call avatar.X(...); the cursor must fall
+ * "between the method name and '(' or inside the argument table" (the argument table
+ * counts top-level commas with string-aware depth, the same accounting as the inlay
+ * argument split). An attribute read (no '(' after the name) is not recognised; nor is a
+ * position inside no call's argument table.
  */
 export function getPythonCallAtPosition(
   lineText: string,
@@ -463,12 +486,12 @@ export function getPythonCallAtPosition(
   while ((match = regex.exec(lineText)) !== null) {
     const receiverToken = match[1];
     const methodName = match[2];
-    const callOpen = match.index + match[0].length - 1; // '(' 列
-    // 光标须落在 '(' 及其实参表范围内;方法名上不算(签名帮助不在此触发)
+    const callOpen = match.index + match[0].length - 1; // the column of '('
+    // The cursor must fall within '(' and its argument table; the method name does not count (signature help is not triggered here)
     if (character < callOpen) {
       continue;
     }
-    // 实参表字符串感知深度扫描:顶层逗号定活动实参,顺带找闭合
+    // String-aware depth scan of the argument table: top-level commas fix the active argument, and the closing bracket is found along the way
     let depth = 0;
     let inString: string | null = null;
     let activeArgument = 0;
@@ -501,8 +524,9 @@ export function getPythonCallAtPosition(
         activeArgument += 1;
       }
     }
-    // 归属判定:闭合调用要求光标不越过闭括号(一行多调用互不吞);
-    // 未闭合(边打边求助的进行时)视为延伸到行尾,光标在其后即认。
+    // Ownership test: a closed call requires the cursor not to pass its closing bracket (several
+    // calls on one line must not swallow each other); an unclosed one (mid-typing while
+    // asking for help) is treated as extending to end of line, and a cursor past it counts.
     if (closed && closeIndex < character) {
       continue;
     }
@@ -518,6 +542,6 @@ export function getPythonCallAtPosition(
     });
   }
 
-  // 嵌套/相邻时取起点最靠后者(最紧包含光标的调用;匹配序即 callOpen 升序)
+  // When nested or adjacent, take the one with the latest start (the call most tightly containing the cursor; match order is already ascending by callOpen)
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }

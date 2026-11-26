@@ -1,12 +1,18 @@
 /**
- * revision 证据的展示入口(IDE-REV-027,原 IDE-HOT-008):从真实发送结果
- * 出发,逐 (目标,文件) 渲染三类证据、各自点名来源——fileHash(本地对
- * 当前文件内容 sha256 重算)/semanticHash(.def 结构语义指纹,注释空白
- * 不影响)/engineDigest(运行时回执报告的 digest,会话证据册按回显归
- * 属)。跨类不比较:本地哈希不冒充运行时证据,值巧合相同也不判「一致」;
- * 同类值比对是协议内验证手段,不在此面做。缺的种类不填空:内容读不到
- * 就没有 fileHash/semanticHash,运行时没回执过就没有 engineDigest,各
- * 自如实缺席。
+ * Display entry for revision evidence (IDE-REV-027, formerly IDE-HOT-008):
+ * starting from the real send results, renders three kinds of evidence per
+ * (target, file), each naming its source -- fileHash (a local sha256
+ * recomputation over the current file content) / semanticHash (the .def
+ * structural semantic fingerprint; comments and whitespace do not affect it)
+ * / engineDigest (the digest reported by the runtime receipt, attributed in
+ * the session evidence register by the echo). Kinds are never compared
+ * across categories: a local hash never masquerades as runtime evidence, and
+ * a coincidental match of values is never judged "identical"; comparing
+ * same-kind values is an in-protocol verification means and is not done on
+ * this surface. Missing kinds are left empty rather than padded: if the
+ * content cannot be read there is no fileHash/semanticHash, and if the
+ * runtime never returned a receipt there is no engineDigest -- each is
+ * honestly absent.
  */
 
 import { createHash } from 'crypto';
@@ -22,15 +28,15 @@ import {
 import { structuralFingerprintHash } from './hotReloadDefStructure';
 import type { HotReloadTargetStateStore } from './hotReloadTargetState';
 
-/** 本地 fileHash:当前内容 UTF-8 sha256(现成原语,与 applied 核验同源) */
+/** Local fileHash: UTF-8 sha256 of the current content (an off-the-shelf primitive, same origin as the applied verification) */
 export const localFileHash = (content: string): string =>
   createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
 
-/** semanticHash:.def 有结构语义指纹才成证据;其他文件/解析不了=null 如实缺 */
+/** semanticHash: only a .def with a structural semantic fingerprint becomes evidence; other files / unparseable content = null, honestly absent */
 export const semanticHashOf = (file: string, content: string): string | null =>
   file.toLowerCase().endsWith('.def') ? structuralFingerprintHash(content) : null;
 
-/** 逐文件证据装配:只装实际有的种类(缺的不填空) */
+/** Per-file evidence assembly: only the kinds that actually exist are assembled (missing ones are not padded) */
 export const collectRevisionEvidences = (
   file: string,
   content: string | null,
@@ -63,20 +69,20 @@ export const collectRevisionEvidences = (
   return evidences;
 };
 
-/** 展示面注入:落日志块 + 打开通道;测试用假体同形 */
+/** Display-surface injection: log-block sink + open channel; tests use fakes of the same shape */
 export interface HotReloadRevisionEvidenceView {
   logBlock(text: string): void;
   show(): void;
 }
 
 export interface HotReloadRevisionEvidenceCommandDeps {
-  /** 所发文件现内容读取(与 fire 路径 digest 基准同一通道);读不到=null */
+  /** Read of the sent file's current content (the same channel as the fire-path digest baseline); unreadable = null */
   readFileContent(file: string): Promise<string | null>;
-  /** 引擎 digest 证据册(运行时回执报告面) */
+  /** Engine digest evidence register (the runtime receipt reporting surface) */
   readonly digests: HotReloadEngineDigestRegister;
 }
 
-/** 命令体:台账逐目标逐文件渲染证据报告;空台账如实无投递记录 */
+/** Command body: renders the evidence report target by target and file by file from the ledger; an empty ledger honestly means no delivery records */
 export async function runHotReloadRevisionEvidenceCommand(
   store: HotReloadTargetStateStore,
   deps: HotReloadRevisionEvidenceCommandDeps,

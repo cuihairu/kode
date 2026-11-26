@@ -1,11 +1,15 @@
-// RUST-136 增量③:TS 生产 hover 跟随 Rust 侧 `**Full Type**` 增面。
-// 算法镜像 crates/kode-server/src/hover.rs 的 expand_type_token /
-// full_type_of_property(FULL_TYPE_MAX_DEPTH=3 护栏同常数),输入面换成生产
-// 快照:getEntityCustomTypesSnapshot 的 CustomTypeInfo 条目替代 Rust 的
-// root_types_table(types.xml 声明)。对拍真源仍是 tests/kodeHoverParity.test.ts
-// (语料面 golden),本模块只服务悬停渲染,不另立判定。
-// 纯逻辑:无 vscode/fs 依赖,仅类型导入(自 definitionWorkspace 类型-only,
-// 运行时无环;同 definitionWorkspaceXml.ts 口径)。
+// RUST-136 increment (3): the TS production hover follows the Rust-side
+// `**Full Type**` added surface.
+// The algorithm mirrors expand_type_token / full_type_of_property in
+// crates/kode-server/src/hover.rs (FULL_TYPE_MAX_DEPTH=3, the same guard
+// constant), with the input surface swapped for the production snapshot:
+// CustomTypeInfo entries from getEntityCustomTypesSnapshot replace the Rust
+// root_types_table (types.xml declarations). The parity comparison source of
+// truth remains tests/kodeHoverParity.test.ts (corpus-surface golden); this
+// module only serves hover rendering and establishes no separate verdict.
+// Pure logic: no vscode/fs dependency, type-only imports (from
+// definitionWorkspace type-only, so there is no runtime cycle; same contract as
+// definitionWorkspaceXml.ts).
 import type { CustomTypeInfo, CustomTypeStructureNode } from '../definitionWorkspace';
 
 /** 展开深度护栏:≥3 按原文 token(防环/防爆炸;与 Rust 同常数) */

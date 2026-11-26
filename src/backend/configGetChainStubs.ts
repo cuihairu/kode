@@ -1,44 +1,54 @@
 /**
- * CFG-GETCHAIN-003 声明式 config.get* 类型补全——纯核(零 IO/零写盘):
- * 用户工程无 Excel 大字面量模块,用法是 `config.getXXX()`/`config[k]` 风格,
- * 运行时是 dict 静态推断无解——提示不靠推断靠**声明**:工作区声明
- * 「管理器对象 → 表键集合(键→类型)」,kode 生成 .pyi stub(Literal 重载
- * get/__getitem__/直属属性三用),Pylance 原生吃。
+ * CFG-GETCHAIN-003 declarative config.get* type completion — pure core
+ * (zero IO / zero disk writes): user projects have no Excel-based big literal
+ * modules, the usage style is `config.getXXX()` / `config[k]`, and the
+ * runtime is a dict so static inference has no answer — hints rely on
+ * **declaration**, not inference: the workspace declares
+ * "manager object → set of table keys (key → type)", and kode generates a
+ * .pyi stub (Literal overloads for get/__getitem__/direct properties), which
+ * Pylance consumes natively.
  *
- * 本模块=声明解析+stub 文本生成(可测纯函数)。**落盘/接线面被
- * PYLANCE-CRASH-001 取证门禁挡**(任务书纪律:排除 kode 写盘触发 Pylance
- * 崩溃的嫌疑之前,不往 stubPath 写新东西)——接线随该批放行后单开。
+ * This module = declaration parsing + stub text generation (testable pure
+ * functions). **The disk-write / wiring surface is blocked by the
+ * PYLANCE-CRASH-001 forensics gate** (task discipline: until the suspicion that
+ * kode's disk writes trigger the Pylance crash is ruled out, nothing new is
+ * written to stubPath) — wiring opens separately once that batch is released.
  */
 
 /**
- * dataclass 臂类名前缀:每管理器另产一个纯注解 `@dataclass` 属性式类
- * (任务书「另产 dataclass 属性式类」),给用户一个可引用的行/记录类型;
- * 管理器绑定仍指表类(dict 用法面),dataclass 是附加命名类型不抢绑定。
+ * Class-name prefix for the dataclass arm: for each manager an additional
+ * pure-annotation `@dataclass` property-style class is produced (the task's
+ * "also produce a dataclass property-style class"), giving users a referenceable
+ * row/record type; the manager binding still points at the table class (the dict
+ * usage surface), and the dataclass is an added named type that does not steal
+ * the binding.
  */
 const DATACLASS_PREFIX = '_KodeConfigData_';
 
 export interface ConfigGetChainKey {
   key: string;
-  /** Python 注解文本(声明原样,如 `int`/`list[str]`) */
+  /** Python annotation text (verbatim from the declaration, e.g. `int` / `list[str]`) */
   type: string;
 }
 
 export interface ConfigGetChainDeclaration {
-  /** 管理器对象名(Python 标识符;stub 尾部以其为名出绑定) */
+  /** Manager object name (a Python identifier; the stub tail emits a binding named after it) */
   manager: string;
-  /** 键→类型(保持声明序;Literal 集合与属性注解同源) */
+  /** key → type (declaration order preserved; the Literal set and the property annotations share the same source) */
   keys: ConfigGetChainKey[];
-  /** 可选来源表路径(进 stub 头注释,溯源用) */
+  /** Optional source table path (goes into the stub header comment, for provenance) */
   source?: string;
 }
 
 const IDENT = /^[A-Za-z_]\w*$/;
 
 /**
- * 解析设置声明(`{ "config": { "keys": { "hp": "int" }, "source": "…" } }`)
- * → 逐管理器声明表。坏形状逐条跳过不抛(设置是用户手写 JSON,容错面宽):
- * 非对象/管理器名非标识符/keys 缺失或空/键名非标识符/类型文本含控制字符
- * 或引号(stub 文本安全)——整条弃,其余照收。
+ * Parse the settings declarations (`{ "config": { "keys": { "hp": "int" }, "source": "…" } }`)
+ * → a declaration table per manager. Bad shapes are skipped one by one without
+ * throwing (settings are user-written JSON, so the tolerance surface is wide)
+ * — non-object / manager name not an identifier / keys missing or empty / key
+ * name not an identifier / type text containing control characters or quotes
+ * (stub text safety) — the whole entry is dropped, the rest are accepted as-is.
  */
 export function parseConfigGetChainDeclarations(raw: unknown): ConfigGetChainDeclaration[] {
   if (typeof raw !== 'object' || raw === null) {
@@ -59,7 +69,7 @@ export function parseConfigGetChainDeclarations(raw: unknown): ConfigGetChainDec
         continue;
       }
       const trimmed = type.trim();
-      // stub 文本安全:类型注解不含换行/引号/反斜杠(其余注解字符放行)
+      // stub text safety: the type annotation must not contain newlines/quotes/backslashes (other annotation characters are allowed)
       if (!trimmed || /[\n\r'"\\]/.test(trimmed)) {
         continue;
       }
@@ -78,11 +88,13 @@ export function parseConfigGetChainDeclarations(raw: unknown): ConfigGetChainDec
 }
 
 /**
- * 生成 stub 文本(`config_gen.pyi` 形态):每管理器一个表类,
- * `get(key: Literal[...])` 逐键 @overload + `object` 兜底、
- * `__getitem__` 同套重载、直属属性注解(dict/属性/get 三用),
- * 另产纯注解 `@dataclass` 属性式类(声明 keys → 字段,可引用的记录类型),
- * 尾部以管理器名出模块级绑定(指表类)。
+ * Generate the stub text (the `config_gen.pyi` shape): one table class per
+ * manager, `get(key: Literal[...])` with a per-key @overload plus an `object`
+ * fallback, `__getitem__` with the same set of overloads, direct property
+ * annotations (dict/property/get three-way usage), plus a pure-annotation
+ * `@dataclass` property-style class (declared keys → fields, a referenceable
+ * record type), and a module-level binding named after the manager in the tail
+ * (pointing at the table class).
  */
 export function generateConfigGetChainStubPyi(declarations: readonly ConfigGetChainDeclaration[]): string {
   const header = [
@@ -111,8 +123,10 @@ export function generateConfigGetChainStubPyi(declarations: readonly ConfigGetCh
     body.push('');
     body.push(`${decl.manager}: ${cls}`);
     body.push('');
-    // dataclass 臂:纯注解属性类(stub 内 @dataclass = pyright dataclass transform,
-    // 字段即声明 keys;管理器绑定不指它,属性面由表类直属注解承担)
+    // dataclass arm: a pure-annotation property class (inside a stub, @dataclass = the
+    // pyright dataclass transform; the fields are exactly the declared keys; the manager
+    // binding does not point at it — the property surface is carried by the table class's
+    // direct annotations)
     body.push(`@dataclass`);
     body.push(`class ${DATACLASS_PREFIX}${decl.manager}:`);
     for (const { key, type } of decl.keys) {

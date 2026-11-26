@@ -1,23 +1,23 @@
 /**
- * 重载通道抽象 (IDE-HOT-101):ReloadTransport 接口 + 两个内置实现。
- * 设计:docs/design/hot-reload-design.md §4。
+ * Reload channel abstraction (IDE-HOT-101): the ReloadTransport interface + two built-in implementations.
+ * Design: docs/design/hot-reload-design.md §4.
  *
- * 通道 = 把一组文件「送达目标实例触发重载」的传输面。两个内置实现:
- * - 'kbengine-official' = KBEngine 官方方案:经 KBEngineTelnetClient 控制台对
- *   baseapp/cellapp 执行 KBEngine.reloadScript(fullReload)。引擎无 HTTP 回执
- *   协议(AUD-007 实勘),本实现只给「命令已发送/控制台已回显」级证据,
- *   普通引擎保持未确认；带 demo observer 的进程可返回带指纹的执行回执。
- * - 'http' = HTTP/xreload 方案:复用 HttpRequestEntry 模板(url/method/headers/
- *   body),扩展 ${files}(文件列表 JSON)/${fileList}(逗号分隔)占位;回包体走
- *   既有 accepted/applied 协议(HOT-003/004)解析；官方通道通过 demo
- *   observer 也可返回同形核验回执。
+ * Channel = the transport face that "delivers a set of files to the target instance to trigger a reload". Two built-in implementations:
+ * - 'kbengine-official' = the KBEngine official approach: via the KBEngineTelnetClient console run
+ *   KBEngine.reloadScript(fullReload) against baseapp/cellapp. The engine has no HTTP receipt
+ *   protocol (AUD-007 field survey); this implementation only provides "command sent / console echoed" level evidence,
+ *   and a plain engine stays unconfirmed; a process with the demo observer can return an execution receipt carrying fingerprints.
+ * - 'http' = the HTTP/xreload approach: reuses the HttpRequestEntry template (url/method/headers/
+ *   body), extending the ${files} (file list JSON) / ${fileList} (comma-separated) placeholders; the response body goes through
+ *   the existing accepted/applied protocol (HOT-003/004) parsing; the official channel via the demo
+ *   observer can also return an identically-shaped verification receipt.
  *
- * 通道选择:resolveReloadTransport(部署配置下挂的 hotReload 段)→ 通道实现,
- * 未配/未知 → null(调用方回落既有 actionName quick action 通道)。
+ * Channel selection: resolveReloadTransport(hotReload section under the deployment config) -> channel implementation,
+ * unconfigured/unknown -> null (the caller falls back to the existing actionName quick action channel).
  *
- * 结构性 def 批不进任何通道:调用方(setupHotReload 的 HOT-005 结构闸)在
- * 通道 send 之前拦截,本模块不感知 def 结构(设计 §4.4)。接入火线(把通道
- * 送进 fire 路径)+ 配置面板是 IDE-HOT-102 的范围,本级交付抽象+实现+选择。
+ * Structurally-def batches enter no channel: the caller (the HOT-005 structural gate in setupHotReload)
+ * intercepts before the channel's send, and this module is unaware of def structure (design §4.4). Wiring the channel
+ * into the fire path + the config panel is the scope of IDE-HOT-102; this level delivers the abstraction + implementations + selection.
  */
 
 import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from './httpRequestService';
@@ -32,16 +32,16 @@ import { randomUUID } from 'crypto';
 
 export type ReloadTransportKind = 'kbengine-official' | 'http';
 
-/** 投递目标:rootId(文件归属扫描根)+ targetId(服务实例,如 baseapp/cellapp) */
+/** Delivery target: rootId (the file-ownership scan root) + targetId (the service instance, e.g. baseapp/cellapp) */
 export interface ReloadTarget {
   readonly rootId: string;
   readonly targetId: string;
 }
 
 /**
- * 回执流条目。'sent'=已发送/控制台已回显级证据(官方通道,引擎无回执协议,
- * 绝不 claim applied);'accepted'/'applied'=HTTP 通道按 HOT-003/004 协议
- * 解析(回包体逐字回显所发文件才认);'failed'=送达失败。
+ * Receipt stream entry. 'sent' = sent / console-echoed level evidence (official channel; the engine has no receipt
+ * protocol, so it never claims applied); 'accepted'/'applied' = the HTTP channel parsed per the HOT-003/004 protocol
+ * (only recognized when the response body echoes the sent file verbatim); 'failed' = delivery failed.
  */
 export type ReloadReceipt =
   | { status: 'sent'; file?: string; detail: string; requestId?: string }
@@ -50,14 +50,14 @@ export type ReloadReceipt =
       file: string;
       digest?: string;
       note?: string;
-      /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
+      /** F4: receipt carries an explicit targetId (a receipt that disagrees with the expected target is rejected at the parse layer) */
       targetId?: string;
       /**
-       * RUST-420(HR-QA-008):端点策略安全警告(已授权非 loopback 时随回执
-       * 携带,台账逐次可见)。缺省不带;与协议侧 note 分开,不互混。
+       * RUST-420 (HR-QA-008): endpoint policy security warning (carried along with the receipt when a non-loopback
+       * endpoint is authorized, visible per-send in the ledger). Absent by default; kept separate from the protocol-side note, no mixing.
        */
       detail?: string;
-      /** F5(关联 id):该回执所属发送请求的关联标识(发送侧逐发送生成) */
+      /** F5 (correlation id): the correlation identifier of the send request this receipt belongs to (generated per send on the sending side) */
       requestId?: string;
     }
   | {
@@ -65,14 +65,14 @@ export type ReloadReceipt =
       file: string;
       digest?: string;
       revision?: number;
-      /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
+      /** F4: receipt carries an explicit targetId (a receipt that disagrees with the expected target is rejected at the parse layer) */
       targetId?: string;
       /**
-       * RUST-420(HR-QA-008):端点策略安全警告(同 accepted——applied 无协议
-       * 文本字段,安全警告经此携带)。缺省不带。
+       * RUST-420 (HR-QA-008): endpoint policy security warning (same as accepted -- applied has no protocol
+       * text field, so the security warning is carried here). Absent by default.
        */
       detail?: string;
-      /** F5(关联 id):该回执所属发送请求的关联标识(发送侧逐发送生成) */
+      /** F5 (correlation id): the correlation identifier of the send request this receipt belongs to (generated per send on the sending side) */
       requestId?: string;
     }
   | { status: 'failed'; file?: string; reason: string; targetId?: string; requestId?: string };
@@ -84,15 +84,15 @@ export interface ReloadSendSummary {
 
 export interface ReloadTransport {
   readonly kind: ReloadTransportKind;
-  /** 连通性测试(配置面板按钮):HTTP=端点可达;官方=控制台可连 */
+  /** Connectivity test (config panel button): HTTP = endpoint reachable; official = console connectable */
   probe(): Promise<{ ok: boolean; detail: string }>;
   /**
-   * 发送一组文件重载。回执逐条经 onReceipt 推送;返回汇总(同批回执)。
-   * 实现保证:官方通道不产生 applied;HTTP 通道仅在回包协议符合时产生
-   * accepted/applied,未认到的文件落 'sent'(已送达无协议回执)。
-   * F3 三轮:senderDigests=发送时点冻结的内容 sha256(file → hex,可选)——
-   * 随报文下发(sender_digests 字段),接收端据此对应用产物核验后才能回
-   * applied;不给则接收端无法按发送方冻结基准核验,不会回 applied。
+   * Send a set of files to reload. Receipts are pushed one by one via onReceipt; returns the summary (the same batch of receipts).
+   * Implementation guarantees: the official channel never produces applied; the HTTP channel produces
+   * accepted/applied only when the response protocol matches, and unrecognized files land as 'sent' (delivered, no protocol receipt).
+   * F3 third round: senderDigests = the content sha256 frozen at send time (file -> hex, optional) --
+   * delivered with the message (sender_digests field); the receiver can only return
+   * applied after verifying the application artifact against it; if not given, the receiver cannot verify against the sender's frozen baseline and will not return applied.
    */
   send(
     target: ReloadTarget,
@@ -102,16 +102,16 @@ export interface ReloadTransport {
   ): Promise<ReloadSendSummary>;
 }
 
-/** ${files} 文件列表占位(JSON 数组)与 ${fileList}(逗号分隔) */
+/** ${files} file-list placeholder (JSON array) and ${fileList} (comma-separated) */
 export const RELOAD_FILES_PLACEHOLDER = '${files}';
 export const RELOAD_FILE_LIST_PLACEHOLDER = '${fileList}';
-/** F4:${targetId}=发送目标标识(通道侧替换,请求可区分/寻址目标实例) */
+/** F4: ${targetId} = send target identifier (substituted on the channel side, so requests can distinguish/address the target instance) */
 export const RELOAD_TARGET_ID_PLACEHOLDER = '${targetId}';
 
 /**
- * 替换重载专用占位 + 既有变量表:
- * ${files}=fileSet 的 JSON 数组;${fileList}=逗号分隔;其余 ${...} 走既有
- * 变量解析,未知占位原样保留(批105 口径),不吞。
+ * Substitute the reload-specific placeholders + the existing variable table:
+ * ${files} = the JSON array of fileSet; ${fileList} = comma-separated; any other ${...} goes through the existing
+ * variable resolution, and unknown placeholders are preserved as-is (batch 105 convention), not swallowed.
  */
 export function substituteReloadVariables(
   text: string,
@@ -134,7 +134,7 @@ export function substituteReloadVariables(
 }
 
 /* ------------------------------------------------------------------ */
-/* HTTP 通道                                                           */
+/* HTTP channel                                                        */
 /* ------------------------------------------------------------------ */
 
 export interface ReloadHttpRequest {
@@ -154,10 +154,10 @@ export interface ReloadHttpResponse {
 export type ReloadHttpRunner = (request: ReloadHttpRequest) => Promise<ReloadHttpResponse>;
 
 /**
- * F5(关联 id):发送侧逐发送生成的关联标识。JSON 对象请求体自动附加
- * request_id(模板已显式给出则不覆盖);接收端按契约逐字回显,发送侧据此
- * 把回执精确归到所属那次发送(跨发送乱序/迟到回执不再靠 targetId+file
- * 猜)。单调序列+时钟+随机尾,唯一下界=同一进程生命周期内不重复。
+ * F5 (correlation id): the correlation identifier generated per send on the sending side. A JSON object request body gets
+ * request_id automatically attached (not overwritten if the template already gives it explicitly); the receiver echoes it
+ * verbatim per the contract, and the sending side uses it to attribute receipts precisely to the send they belong to (out-of-order/late
+ * receipts across sends no longer rely on guessing via targetId+file). Monotonic sequence + clock + random tail, unique lower bound = no repetition within the same process lifetime.
  */
 let nextRequestSeq = 0;
 export function generateReloadRequestId(): string {
@@ -166,12 +166,12 @@ export function generateReloadRequestId(): string {
 }
 
 /**
- * HTTP 通道请求构造单一来源(RUST-358/HR-HTTP-016):send 与 preview 共用
- * 同一构造,预览与实际发送逐字节同形(防漂移)。${targetId} 占位先于变量
- * 替换替换为发送目标标识;JSON 对象请求体自动附加 targetId(F4 二轮)与
- * sender_digests(F3 三轮,模板已显式给出则不覆盖;未给 digests 时如实
- * 不附加——预览无基准 digest 就不伪造该字段)。request_id(F5 关联 id)
- * 同形附加:未给(预览零发送)就不附加,不伪造关联。
+ * Single source for HTTP channel request construction (RUST-358/HR-HTTP-016): send and preview share
+ * the same construction, so the preview and the actual send are byte-for-byte identical in shape (drift prevention). The ${targetId} placeholder is replaced with the send target identifier before variable
+ * substitution; a JSON object request body gets targetId auto-attached (F4 second round) and
+ * sender_digests (F3 third round, not overwritten if the template already gives it explicitly; when digests are not given, honestly
+ * do not attach -- if the preview has no baseline digest, do not fake that field). request_id (F5 correlation id)
+ * is attached the same way: if not given (zero sends in preview), do not attach, do not fake a correlation.
  */
 export function buildReloadHttpRequest(
   entry: HttpRequestEntry,
@@ -199,7 +199,7 @@ export function buildReloadHttpRequest(
         return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
       }
     } catch {
-      // 非 JSON:无处附加,保持原样
+      // Not JSON: nowhere to attach, keep as-is
     }
     return text;
   };
@@ -218,7 +218,7 @@ export function buildReloadHttpRequest(
         return JSON.stringify({ ...(parsed as Record<string, unknown>), request_id: requestId });
       }
     } catch {
-      // 非 JSON:无处附加,保持原样
+      // Not JSON: nowhere to attach, keep as-is
     }
     return text;
   };
@@ -246,7 +246,7 @@ export function buildReloadHttpRequest(
         });
       }
     } catch {
-      // 非 JSON:无处附加,保持原样
+      // Not JSON: nowhere to attach, keep as-is
     }
     return text;
   };
@@ -262,10 +262,10 @@ export function buildReloadHttpRequest(
 }
 
 /**
- * RUST-357(HR-HTTP-015)端点健康观察口:传输层每次发送的可达性事实上报
- * (断连/重连自动更新 endpoint health)。事实只有 ok/detail——刻意不带
- * 任何模块投递字段(health success ≠ 任何模块已更新成功),健康展示面
- * (通道状态栏灯)与投递结果面(台账/回执)各走各的轴。
+ * RUST-357 (HR-HTTP-015) endpoint health observation port: the transport layer honestly reports reachability on every send
+ * (disconnect/reconnect updates endpoint health automatically). The facts are only ok/detail -- deliberately carrying no
+ * module delivery fields (health success != any module updated successfully); the health display face
+ * (channel status bar lamp) and the delivery result face (ledger/receipts) each follow their own axis.
  */
 export interface EndpointHealthObserver {
   noteEndpointHealth(kind: ReloadTransportKind, ok: boolean, detail: string): void;
@@ -273,23 +273,23 @@ export interface EndpointHealthObserver {
 
 export interface ReloadHttpDeps {
   run: ReloadHttpRunner;
-  /** 既有变量表上下文(${module}/${filename}/... 等);缺省空 */
+  /** Existing variable table context (${module}/${filename}/... etc.); defaults to empty */
   context?: VariableContext;
-  /** RUST-357:发送面健康观察;注入即逐发送上报,不注入=零行为变化 */
+  /** RUST-357: send-face health observation; injected = report per send, not injected = zero behavior change */
   healthObserver?: EndpointHealthObserver;
   /**
-   * RUST-420(HR-QA-008)非 loopback 端点显式授权:默认只放行确认的 loopback
-   * 目标(本机引擎);返回 true=用户已显式授权(kbengine.http.allowNonLoopback),
-   * 非 loopback 逐次落安全警告后放行。缺省不注入=未授权(非 loopback 一律
-   * 阻止)——端点越界是危险面,安全默认必须收紧,与信任闸「缺省视为可信」
-   * 相反。执行时读(授权可随设置变化,与信任闸同口径)。
+   * RUST-420 (HR-QA-008) explicit authorization for non-loopback endpoints: by default only confirmed loopback
+   * targets are allowed (local engine); returning true = the user has explicitly authorized (kbengine.http.allowNonLoopback),
+   * and non-loopback is allowed after recording a security warning each time. Default not injected = unauthorized (non-loopback always
+   * blocked) -- endpoint overreach is a dangerous face, so the secure default must be tightened, the opposite of the trust gate's "defaults to trusted".
+   * Read at execution time (authorization may change with settings, same convention as the trust gate).
    */
   allowNonLoopback?: () => boolean;
 }
 
 /**
- * RUST-420(HR-QA-008)非 loopback 已授权时的安全警告随回执逐次落账:
- * 贴到每条回执的 reason/detail(台账是通道的逐次记录面,逐次可见)。
+ * RUST-420 (HR-QA-008) when a non-loopback endpoint is authorized, the security warning lands in the ledger with each receipt:
+ * attached to each receipt's reason/detail (the ledger is the channel's per-send record face, visible per send).
  */
 function appendEndpointWarnToReceipt(receipt: ReloadReceipt, message: string): ReloadReceipt {
   if (receipt.status === 'failed') {
@@ -299,7 +299,7 @@ function appendEndpointWarnToReceipt(receipt: ReloadReceipt, message: string): R
   return { ...receipt, detail };
 }
 
-/** 默认 HTTP 执行器:复用 httpRequestService 的纯 node http/https 传输面 */
+/** Default HTTP runner: reuses httpRequestService's pure node http/https transport face */
 export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
   httpDefaultTransport({
     url: request.url,
@@ -309,9 +309,9 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
     timeoutMs: DEFAULT_HTTP_TIMEOUT_MS,
     maxResponseBytes: request.maxResponseBytes
   }).then(result => {
-    // RUST-419:失败结果(ECONNREFUSED/证书/代理/超时等真实原因在 error 字段)
-    // 必须以 throw 送达 send/probe 的 catch 面分类输出——原先 ok:false 被折成
-    // status:0 静默丢弃,全部网络错误都呈现为无用的「HTTP 0:非 2xx」。
+    // RUST-419: a failure result (real causes such as ECONNREFUSED/certificate/proxy/timeout are in the error field)
+    // must reach the catch face of send/probe via throw for classified output -- previously ok:false was folded into
+    // status:0 and silently dropped, so every network error surfaced as a useless "HTTP 0: non-2xx".
     if (!result.ok) {
       throw new Error(result.error ?? `HTTP ${result.status} 请求失败`);
     }
@@ -323,17 +323,17 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
   });
 
 /**
- * 解析 HTTP 回包体为回执列表(HOT-003/004 协议口径):
- * - 数组=逐条;单对象=单条;非 JSON=全 'sent'(已送达,无协议回执)。
- * - 只认 file 与所发文件集逐字一致的条目;status 只认
- *   accepted/applied/failed,其余未记录状态不认。
- * - F4:expectedTargetId 给定时,条目显式携带的 targetId 必须与之一致,
- *   不一致的回执整条拒绝(该文件落 'sent',不 claim applied)——回执带
- *   错误 targetId 不得当作该目标的 accepted/applied 证据。
- * - F5(关联 id):expectedRequestId 给定时,条目显式携带的 request_id 必须
- *   与之一致,不一致的回执整条拒绝——把回执精确归到所属发送(乱序/迟到
- *   回执不归本次发送,不 claim applied)。
- * - 未认到的文件补 'sent'(送达成功但无匹配回执,不 claim applied)。
+ * Parse the HTTP response body into a receipt list (HOT-003/004 protocol convention):
+ * - Array = one per entry; single object = one entry; non-JSON = all 'sent' (delivered, no protocol receipt).
+ * - Only entries whose file matches the sent file set verbatim are recognized; status is only recognized as
+ *   accepted/applied/failed, other unrecorded statuses are not recognized.
+ * - F4: when expectedTargetId is given, the targetId explicitly carried by an entry must match it,
+ *   an inconsistent receipt is rejected as a whole (that file lands as 'sent', not claim applied) -- a receipt with a
+ *   wrong targetId must not be treated as accepted/applied evidence for that target.
+ * - F5 (correlation id): when expectedRequestId is given, the request_id explicitly carried by an entry must
+ *   match it, an inconsistent receipt is rejected as a whole -- attribute the receipt precisely to the send it belongs to (out-of-order/late
+ *   receipts are not attributed to this send, not claim applied).
+ * - Files not recognized are filled in as 'sent' (delivered successfully but no matching receipt, not claim applied).
  */
 export function parseReloadHttpReceipts(
   body: string,
@@ -354,7 +354,7 @@ export function parseReloadHttpReceipts(
   const items = Array.isArray(parsed) ? parsed : [parsed];
   const receipts: ReloadReceipt[] = [];
   const seen = new Set<string>();
-  // 被拒文件 → 真实拒绝原因(整条拒回的真相,targetId/request_id 分列)。
+  // rejected file -> real rejection reason (the truth of a whole-entry rejection, targetId/request_id listed separately).
   const mismatched = new Map<string, string>();
   for (const item of items) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {
@@ -365,10 +365,10 @@ export function parseReloadHttpReceipts(
     if (file === undefined || seen.has(file) || !fileSet.includes(file)) {
       continue;
     }
-    // F4:回执显式 targetId 与预期目标不一致 → 整条拒绝(不认状态、不认
-    // digest);F4 二轮:显式「非字符串」targetId(null/数字/对象)是畸形
-    // 回执,绝不归一化成 undefined 按「未提供」处理——同样整条拒绝。字段
-    // 缺失才是真的未提供(可选字段,给了就必须是匹配目标的字符串)。
+    // F4: the receipt's explicit targetId disagrees with the expected target -> reject as a whole (don't accept status, don't accept
+    // digest); F4 second round: an explicit "non-string" targetId (null/number/object) is a malformed
+    // receipt, never normalize to undefined and treat as "not provided" -- likewise reject as a whole. The field
+    // being missing is the only real "not provided" (optional field; if given it must be a string matching the target).
     const hasTargetIdField = 'targetId' in record;
     const receiptTargetId = typeof record.targetId === 'string' ? record.targetId : undefined;
     const malformedTargetId = hasTargetIdField && receiptTargetId === undefined;
@@ -382,10 +382,10 @@ export function parseReloadHttpReceipts(
       );
       continue;
     }
-    // F5(关联 id):回执显式 request_id 与本次发送的关联标识不一致 → 整条
-    // 拒绝(该回执不归本次发送,不认状态/不 claim applied)——把回执精确归
-    // 到所属发送,跨发送乱序/迟到回执不再靠 targetId+file 猜。畸形与未提供
-    // 口径同 targetId:显式「非字符串」是畸形整条拒绝,缺失才是未提供。
+    // F5 (correlation id): the receipt's explicit request_id disagrees with this send's correlation identifier -> reject as a whole
+    // (that receipt does not belong to this send, don't accept status / not claim applied) -- attribute the receipt precisely
+    // to the send it belongs to, cross-send out-of-order/late receipts no longer rely on guessing via targetId+file. Malformed vs not-provided
+    // convention is the same as targetId: an explicit "non-string" is malformed and rejected as a whole; missing is the only "not provided".
     const hasRequestIdField = 'request_id' in record;
     const receiptRequestId = typeof record.request_id === 'string' ? record.request_id : undefined;
     const malformedRequestId = hasRequestIdField && receiptRequestId === undefined;
@@ -464,9 +464,9 @@ export class HttpReloadTransport implements ReloadTransport {
   ) {}
 
   /**
-   * RUST-357(HR-HTTP-015):上报本次发送的端点健康事实(断连/重连)。未注入
-   * 观察口=零行为变化(既有通道零注入不回归)。health ok/detail 只述传输层
-   * 可达性,不携带任何模块投递结论。
+   * RUST-357 (HR-HTTP-015): report the endpoint health fact of this send (disconnect/reconnect). Not injecting the
+   * observation port = zero behavior change (existing channels with zero injection do not regress). health ok/detail only describe transport-layer
+   * reachability and carry no module delivery conclusion.
    */
   private noteEndpointHealth(kind: ReloadTransportKind, ok: boolean, detail: string): void {
     this.deps.healthObserver?.noteEndpointHealth(kind, ok, detail);
@@ -474,10 +474,10 @@ export class HttpReloadTransport implements ReloadTransport {
 
   async probe(): Promise<{ ok: boolean; detail: string }> {
     const url = substituteReloadVariables(this.entry.url, [], this.deps.context);
-    // RUST-420(HR-QA-008)端点策略闸:探测同样过闸(探测也发 HTTP GET 到配置
-    // 声明的目的地)。阻止=如实报不可达+原因(不发请求);已授权=放行但逐次
-    // 落安全警告(附在 detail 上,探活结果如实呈现)。执行时读(授权可随
-    // 设置变化),缺省未注入=未授权(安全默认收紧)。
+    // RUST-420 (HR-QA-008) endpoint policy gate: probe also passes the gate (probe also sends an HTTP GET to the destination
+    // declared in the config). Blocked = honestly report unreachable + reason (no request sent); authorized = allowed but record
+    // a security warning each time (attached to detail, the probe result is presented honestly). Read at execution time (the authorization can change with
+    // settings), default not injected = not authorized (the secure default tightens).
     const endpoint = decideHttpEndpoint(url, this.deps.allowNonLoopback?.() ?? false);
     if (endpoint.action === 'block') {
       return { ok: false, detail: endpoint.message ?? '非 loopback 端点已阻止' };
@@ -485,11 +485,11 @@ export class HttpReloadTransport implements ReloadTransport {
     const warnNote =
       endpoint.action === 'warn' && endpoint.message !== null ? ` · ${endpoint.message}` : '';
     try {
-      // 无副作用探测(KODE-AUD-009):probe 与真实 fire 请求分离——连通性
-      // 测试发 GET 无体请求(HTTP 安全方法),不携带重载载荷(不用配置的
-      // 重载 method、不发 body/${files} 占位),端点不会因探测而实际重载;
-      // headers 保留(可能带鉴权),url 不替换文件占位。若端点仅认重载
-      // method,探测如实报非 2xx,不再误触发重载。
+      // Side-effect-free probe (KODE-AUD-009): probe is separate from the real fire request -- the connectivity
+      // test sends a GET with no body (HTTP safe method), carrying no reload payload (does not use the configured
+      // reload method, does not send body/${files} placeholders), so the endpoint does not actually reload because of a probe;
+      // headers are kept (may carry auth), and the url is not replaced with file placeholders. If the endpoint only accepts the reload
+      // method, the probe honestly reports non-2xx, and no longer mistakenly triggers a reload.
       const response = await this.deps.run({
         url,
         method: 'GET',
@@ -506,16 +506,16 @@ export class HttpReloadTransport implements ReloadTransport {
             : `端点不可达(HTTP ${response.status} 非 2xx)`) + warnNote
       };
     } catch (error) {
-      // RUST-419:探测失败分类输出可用错误(endpoint/证书/代理/中断)
+      // RUST-419: probe failure classified output of a usable error (endpoint/certificate/proxy/interruption)
       return { ok: false, detail: formatReloadTransportThrownError(error) + warnNote };
     }
   }
 
   /**
-   * RUST-358(HR-HTTP-016):构造将要发出的精确请求(不发送、零副作用)。与
-   * send 共用 buildReloadHttpRequest——URL/method/headers/body 逐字节同形,
-   * 用户确认的正是实际会发的那份报文。未给 senderDigests 时不附加
-   * sender_digests(真实发送按文件冻结 digest 附加,预览不伪造)。
+   * RUST-358 (HR-HTTP-016): construct the exact request that will be sent (no send, zero side effects). Shares
+   * buildReloadHttpRequest with send -- URL/method/headers/body byte-for-byte identical in shape,
+   * what the user confirms is exactly the payload that will actually be sent. When senderDigests is not given,
+   * sender_digests is not attached (real send attaches per frozen file digest, preview does not fabricate).
    */
   preview(
     target: ReloadTarget,
@@ -531,13 +531,13 @@ export class HttpReloadTransport implements ReloadTransport {
     onReceipt: (receipt: ReloadReceipt) => void,
     senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
-    // F5(关联 id):逐发送生成关联标识——进请求体(request_id 自动附加)与
-    // 回执(本次发送产生的每条回执都带,不论来自线上回显还是本地合成),
-    // 消费方据此把回执精确归到所属发送。
+    // F5 (correlation id): generate a correlation identifier per send -- it goes into the request body (request_id auto-attached) and
+    // the receipts (every receipt produced by this send carries it, whether from a wire echo or locally synthesized),
+    // so consumers can attribute each receipt precisely to the send it belongs to.
     const requestId = generateReloadRequestId();
-    // F4:${targetId} 占位、F4 二轮 body 自动附加 targetId、F3 三轮
-    // sender_digests、F5 request_id 全在 buildReloadHttpRequest(预览/发送
-    // 单一来源;预览不传 requestId=零发送不伪造关联)。
+    // F4: the ${targetId} placeholder, F4 second round body auto-attached targetId, F3 third round
+    // sender_digests, and F5 request_id all live in buildReloadHttpRequest (preview/send
+    // single source; preview does not pass requestId = zero sends, no fabricated correlation).
     const request = buildReloadHttpRequest(
       this.entry,
       target,
@@ -546,11 +546,11 @@ export class HttpReloadTransport implements ReloadTransport {
       senderDigests,
       requestId
     );
-    // RUST-420(HR-QA-008)端点策略闸:profile 部署通道的真实目的地(模板插值
-    // 后 URL)在发出前过端点策略——默认只放行 loopback;非 loopback 未授权
-    // 一律阻止(不发请求,逐文件 failed 回执携带阻止原因),已授权放行但逐次
-    // 落安全警告(贴在回执上,台账逐次可见)。执行时读(授权可随设置变化),
-    // 缺省未注入=未授权(安全默认收紧,与信任闸「缺省可信」相反)。
+    // RUST-420 (HR-QA-008) endpoint policy gate: the profile-deployment channel's real destination (the URL after template
+    // interpolation) passes the endpoint policy before being sent -- by default only loopback is allowed; non-loopback unauthorized
+    // is always blocked (no request sent, per-file failed receipts carry the block reason), authorized is allowed but records
+    // a security warning each time (attached to the receipt, visible per send in the ledger). Read at execution time (the authorization can change with settings),
+    // default not injected = unauthorized (the secure default tightens, the opposite of the trust gate's "defaults to trusted").
     const endpoint = decideHttpEndpoint(request.url, this.deps.allowNonLoopback?.() ?? false);
     if (endpoint.action === 'block') {
       const receipts = fileSet.map(file => ({
@@ -564,9 +564,9 @@ export class HttpReloadTransport implements ReloadTransport {
       return { kind: this.kind, receipts };
     }
     const warnMessage = endpoint.action === 'warn' ? endpoint.message : null;
-    // RUST-420:已授权非 loopback → warn:安全警告贴在每条回执上(推送面与
-    // 返回汇总同批同形,不各说各话)。F5:所有回执统一盖本次发送的关联标识
-    // (wire 回显已匹配的按同值盖,本地合成的补盖——逐发送可精确归账)。
+    // RUST-420: authorized non-loopback -> warn: the security warning is attached to every receipt (the push face and
+    // the returned summary are the same batch in the same shape, not talking past each other). F5: all receipts are uniformly stamped with this send's correlation identifier
+    // (wire echoes already matched are stamped with the same value, locally synthesized ones get the stamp added -- per-send precise attribution).
     const finish = (receipts: ReloadReceipt[]): ReloadSendSummary => {
       const stamped = receipts.map(r => ({ ...r, requestId }));
       const wrapped =
@@ -580,14 +580,14 @@ export class HttpReloadTransport implements ReloadTransport {
     try {
       response = await this.deps.run(request);
     } catch (error) {
-      // RUST-419:传输异常分类输出可用错误(逐文件 failed 回执同因)
-      // RUST-357:断连——无响应即端点不可达(健康观察口按同一可用错误上报)
+      // RUST-419: transport exception classified output of a usable error (per-file failed receipts share the same cause)
+      // RUST-357: disconnect -- no response means the endpoint is unreachable (the health observation port reports the same usable error)
       const health = sendErrorToEndpointHealth(error);
       this.noteEndpointHealth(this.kind, health.ok, health.detail);
       return finish(fileSet.map(file => ({ status: 'failed' as const, file, reason: health.detail })));
     }
     if (response.status < 200 || response.status >= 300) {
-      // RUST-357:有响应但非 2xx——端点可达但通道不健康
+      // RUST-357: responded but non-2xx -- endpoint reachable but the channel is unhealthy
       this.noteEndpointHealth(this.kind, false, sendStatusToEndpointHealth(response.status).detail);
       return finish(
         fileSet.map(file => ({
@@ -597,11 +597,11 @@ export class HttpReloadTransport implements ReloadTransport {
         }))
       );
     }
-    // RUST-357:2xx——端点可达/重连(health success 只说明端点可达,不代表
-    // 任何模块已更新成功:模块投递结果另在回执/台账轴)
+    // RUST-357: 2xx -- endpoint reachable/reconnected (health success only means the endpoint is reachable; it does not mean
+    // any module updated successfully: module delivery results live on the receipt/ledger axis)
     this.noteEndpointHealth(this.kind, true, sendStatusToEndpointHealth(response.status).detail);
-    // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝;
-    // F5:关联 id 传入——显式 request_id 与本次发送不一致的回执整条拒绝。
+    // F4: the target is passed into receipt parsing -- receipts whose explicit targetId disagrees with that target are rejected as a whole;
+    // F5: the correlation id is passed in -- receipts whose explicit request_id disagrees with this send are rejected as a whole.
     return finish(
       response.bodyTruncated
         ? fileSet.map(file => ({ status: 'sent' as const, file, detail: '响应体已截断，未能核验回执' }))
@@ -611,20 +611,20 @@ export class HttpReloadTransport implements ReloadTransport {
 }
 
 /* ------------------------------------------------------------------ */
-/* KBEngine 官方通道                                                   */
+/* KBEngine official channel                                           */
 /* ------------------------------------------------------------------ */
 
 export interface ReloadOfficialConfig {
   host: string;
   port: number;
   password?: string;
-  /** 全量重载(默认 true);false=增量 */
+  /** Full reload (defaults to true); false = incremental */
   fullReload?: boolean;
-  /** 控制台命令;缺省 KBEngine.reloadScript(<fullReload>) */
+  /** Console command; defaults to KBEngine.reloadScript(<fullReload>) */
   command?: string;
 }
 
-/** 控制台连接的极简面:真实实现由接线方用 KBEngineTelnetClient 适配 */
+/** Minimal face over the console connection: the real implementation is adapted by the wiring side via KBEngineTelnetClient */
 export interface ReloadTelnetConnection {
   connect(): void;
   disconnect(): void;
@@ -638,14 +638,14 @@ export type ReloadTelnetConnector = (config: ReloadOfficialConfig) => ReloadTeln
 
 export interface ReloadOfficialDeps {
   connect?: ReloadTelnetConnector;
-  /** 等待控制台就绪;缺省轮询 isReady(默认 3s 超时) */
+  /** Wait for the console to be ready; defaults to polling isReady (3s timeout by default) */
   waitForReady?: (conn: ReloadTelnetConnection, timeoutMs: number) => Promise<boolean>;
-  /** 等待控制台回显的窗口(默认 800ms);0=不等回显 */
+  /** Window to wait for the console echo (800ms by default); 0 = do not wait for echo */
   awaitEchoMs?: number;
   timeoutMs?: number;
 }
 
-/** 默认连接器:包一层 KBEngineTelnetClient(纯 node net,无 vscode) */
+/** Default connector: wraps KBEngineTelnetClient (pure node net, no vscode) */
 export const defaultReloadTelnetConnector: ReloadTelnetConnector = config => {
   let dataListener: ((text: string) => void) | undefined;
   let closeListener: ((hadError: boolean) => void) | undefined;
@@ -672,7 +672,7 @@ export const defaultReloadTelnetConnector: ReloadTelnetConnector = config => {
   };
 };
 
-/** 默认就绪等待:轮询 isReady 至超时 */
+/** Default ready wait: polls isReady until timeout */
 export const defaultReloadWaitForReady = async (
   conn: ReloadTelnetConnection,
   timeoutMs: number
@@ -724,7 +724,7 @@ export class KbengineOfficialTransport implements ReloadTransport {
     }
   }
 
-  /** 监听执行结果；默认命令等待完整的唯一标记 JSON，自定义命令保留回显模式。 */
+  /** Listen for the execution result; the default command waits for the complete unique-marker JSON, custom commands keep echo mode. */
   private readonly captureEcho = (conn: ReloadTelnetConnection, marker?: string): Promise<string> => {
     const awaitEchoMs = this.deps.awaitEchoMs ?? 8000;
     if (awaitEchoMs <= 0) {
@@ -759,7 +759,7 @@ export class KbengineOfficialTransport implements ReloadTransport {
     target: ReloadTarget,
     fileSet: readonly string[],
     onReceipt: (receipt: ReloadReceipt) => void,
-    // Demo observer 可核验冻结指纹；无 observer 的普通引擎只保留执行层证据。
+    // Demo observer can verify frozen fingerprints; a plain engine without observer only keeps execution-layer evidence.
     senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
     const conn = this.connector()(this.config);
@@ -835,7 +835,7 @@ export class KbengineOfficialTransport implements ReloadTransport {
 }
 
 /* ------------------------------------------------------------------ */
-/* 通道选择                                                           */
+/* Channel selection                                                   */
 /* ------------------------------------------------------------------ */
 
 export interface ReloadChannelConfig {
@@ -847,20 +847,20 @@ export interface ReloadChannelConfig {
 export interface ReloadTransportDeps {
   http?: ReloadHttpDeps;
   official?: ReloadOfficialDeps;
-  /** RUST-357(HR-HTTP-015):透传给 HTTP 通道的发送面健康观察口 */
+  /** RUST-357 (HR-HTTP-015): passed through to the HTTP channel's send-face health observation port */
   healthObserver?: EndpointHealthObserver;
   /**
-   * RUST-420(HR-QA-008):透传给 HTTP 通道的非 loopback 端点显式授权(执行时读)。
-   * 缺省不注入=未授权(非 loopback 一律阻止,安全默认收紧)。
+   * RUST-420 (HR-QA-008): passed through to the HTTP channel's explicit non-loopback endpoint authorization (read at execution time).
+   * Not injected by default = unauthorized (non-loopback always blocked, the secure default tightens).
    */
   allowNonLoopback?: () => boolean;
 }
 
 /**
- * 默认部署通道(用户令 2026-11-10「默认就是 http 方式,都提供默认配置」):
- * 无激活 profile 或 profile 未配 hotReload 段时用它。端点为
- * `http://127.0.0.1:8090/hotfix`，JSON 文件集支持 targetId/冻结指纹回执。
- * 旧单模块表单只保留在兼容的 quick-request 路径。
+ * Default deployment channel (user order 2026-11-10 "default is the http approach, provide default config everywhere"):
+ * used when no profile is active or the profile has no hotReload section. The endpoint is
+ * `http://127.0.0.1:8090/hotfix`; the JSON file set supports targetId/frozen-fingerprint receipts.
+ * The old module-only form is kept only on the compatible quick-request path.
  */
 export function createDefaultHotReloadChannel(): ReloadChannelConfig {
   const entry: HttpRequestEntry = {
@@ -875,10 +875,10 @@ export function createDefaultHotReloadChannel(): ReloadChannelConfig {
 }
 
 /**
- * 按部署配置选择通道:channel='http' 且给 http 条目 → HTTP 通道;
- * channel='kbengine-official' 且给 official 参数 → 官方通道;
- * 未配(undefined)或字段缺失/未知 channel → null(调用方回落既有
- * actionName quick action 通道,行为与现状一致)。
+ * Select the channel per the deployment config: channel='http' with an http entry -> HTTP channel;
+ * channel='kbengine-official' with official params -> official channel;
+ * unconfigured (undefined) or missing fields / unknown channel -> null (the caller falls back to the existing
+ * actionName quick action channel, behavior identical to the status quo).
  */
 export function resolveReloadTransport(
   config: ReloadChannelConfig | undefined,
@@ -902,7 +902,7 @@ export function resolveReloadTransport(
 }
 
 /* ------------------------------------------------------------------ */
-/* 通道配置持久化校验(IDE-HOT-102)                                      */
+/* Channel config persistence validation (IDE-HOT-102)                 */
 /* ------------------------------------------------------------------ */
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -910,10 +910,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 校验/归一 ReloadChannelConfig(IDE-HOT-102:profile 持久化读回):
- * 只认已记录字段,未知字段忽略;channel 未知或对应参数段缺失/畸形
- * 返回 undefined(调用方如实按「未配」处理,不猜测)。
- * 字段逐项宽松校验:缺省可省字段用类型默认,必填缺失即判畸形。
+ * Validate/normalize ReloadChannelConfig (IDE-HOT-102: profile persistence read-back):
+ * only recorded fields are recognized, unknown fields ignored; an unknown channel or a missing/malformed
+ * corresponding parameter section returns undefined (the caller honestly treats it as "unconfigured", no guessing).
+ * Fields are validated loosely item by item: fields that can be omitted fall back to type defaults; a missing required field is judged malformed.
  */
 export function normalizeReloadChannelConfig(value: unknown): ReloadChannelConfig | undefined {
   if (!isRecord(value)) {

@@ -1,15 +1,19 @@
 /**
- * .py 源码 lint via ruff(IDE-RUST-005,A 案:shell out,零 API 耦合)。
+ * Lint .py sources via ruff (IDE-RUST-005, plan A: shell out, zero API coupling).
  *
- * Rust 侧 `$/kode/ruff/lint`(kode-server ruff_lint.rs)负责探测/spawn/解析:
- * 恒 `--target-version py37`(KBEngine 3.7.3 锁死)+`--no-cache`(不写用户
- * 工作区);缺二进制如实 `available:false`(回退不报)。本文件只做:
- * - 桥(runRuffLint:载荷契约 files/ruffPath);
- * - 命令编排(runRuffLintCommand):收集工作区 .py(有界)→ Rust lint →
- *   诊断发布;缺 ruff 时**同意式**安装(选定的解释器 `python -m pip install
- *   ruff`),安装失败如实报错并**亮出手动安装命令**让用户自己跑,pip 原始
- *   输出进输出通道;绝不静默安装、绝不假装已装。
- * - 无 vscode import:UI/进程/诊断面全经 deps 注入(单测驱动纯编排)。
+ * The Rust side `$/kode/ruff/lint` (kode-server ruff_lint.rs) handles probing /
+ * spawning / parsing: always `--target-version py37` (KBEngine 3.7.3 locked) +
+ * `--no-cache` (never writes into the user workspace); a missing binary is
+ * honestly `available:false` (falls back, does not report). This file only does:
+ * - the bridge (runRuffLint: the payload contract files/ruffPath);
+ * - command orchestration (runRuffLintCommand): collect workspace .py files
+ *   (bounded) -> Rust lint -> publish diagnostics; when ruff is missing,
+ *   **opt-in** install (the selected interpreter's `python -m pip install ruff`),
+ *   on failure report honestly and **show the manual install command** so the
+ *   user can run it themselves, with pip's raw output going to the output channel;
+ *   never install silently, never pretend it is installed.
+ * - no vscode imports: the UI/process/diagnostics faces are all injected via
+ *   deps (unit tests drive the pure orchestration).
  */
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
@@ -38,10 +42,10 @@ export interface RuffLintResult {
   diags: RuffDiag[];
 }
 
-/** 单次命令的文件上限(与 Rust MAX_FILES_PER_CALL 同值;超出如实提示分批)。 */
+/** File cap for a single command (same value as the Rust MAX_FILES_PER_CALL; exceeding it honestly prompts for batching). */
 export const RUFF_MAX_FILES = 2000;
 
-/** `$/kode/ruff/lint` 桥:files 直传;ruffPath 可选(解释器 bin 定位后传入)。 */
+/** `$/kode/ruff/lint` bridge: files passed straight through; ruffPath optional (passed in once the interpreter bin is located). */
 export async function runRuffLint(
   files: string[],
   ruffPath?: string
@@ -65,7 +69,7 @@ export async function runRuffLint(
   };
 }
 
-/** 解释器路径 → 同 bin 目录下的 ruff 可执行(pip 装完落这里)。 */
+/** Interpreter path -> the ruff executable in the same bin directory (where pip installs it). */
 export function ruffExePathForInterpreter(interpreterPath: string, sep = '/'): string {
   const idx = Math.max(interpreterPath.lastIndexOf(sep), interpreterPath.lastIndexOf('\\'));
   const dir = idx >= 0 ? interpreterPath.slice(0, idx) : '.';
@@ -73,22 +77,22 @@ export function ruffExePathForInterpreter(interpreterPath: string, sep = '/'): s
   return `${dir}${dir.endsWith('/') || dir.endsWith('\\') ? '' : sep}${exe}`;
 }
 
-/** 手动安装命令文案(安装失败时亮给用户自己跑;带空格加引号)。 */
+/** Manual install command text (shown for the user to run themselves on install failure; quoted when it contains spaces). */
 export function installCommandText(interpreterPath: string): string {
   const quoted = /\s/.test(interpreterPath) ? `"${interpreterPath}"` : interpreterPath;
   return `${quoted} -m pip install ruff`;
 }
 
 export interface RuffLintCommandDeps {
-  /** 收集工作区 .py 文件(有界;实现方决定排除面)。 */
+  /** Collect workspace .py files (bounded; the implementation decides the exclusion face). */
   getWorkspacePythonFiles(): Promise<string[]>;
-  /** 当前选定解释器路径(null=未选定)。 */
+  /** Currently selected interpreter path (null = none selected). */
   getInterpreterPath(): string | null;
-  /** pip 安装(同意后调用);ok=false 时 output 携原始 stdout/stderr。 */
+  /** pip install (called after consent); when ok=false, output carries the raw stdout/stderr. */
   runPipInstall(interpreterPath: string): Promise<{ ok: boolean; output: string }>;
   showInformationMessage(message: string, ...items: string[]): Thenable<string | undefined>;
   showErrorMessage(message: string): Thenable<unknown>;
-  /** 诊断发布面(file → diags;空数组=清该文件)。 */
+  /** Diagnostics publish face (file -> diags; an empty array clears that file). */
   setDiagnostics(entries: Array<{ file: string; diags: RuffDiag[] }>): void;
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
 }
@@ -97,9 +101,10 @@ const INSTALL_ACTION = l10nText('Install (via pip)');
 const MANUAL_ACTION = l10nText('Show manual install command');
 
 /**
- * `kbengine.python.ruffLint`:lint 工作区 .py 并发布诊断。缺 ruff → 同意式
- * pip 安装;失败如实报错并亮手动命令(用户令 2026-11-06)。返回摘要行
- * (供测试断言);不可继续时返回如实的失败说明。
+ * `kbengine.python.ruffLint`: lint workspace .py files and publish diagnostics.
+ * Missing ruff -> opt-in pip install; on failure report honestly and show the
+ * manual command (user order 2026-11-06). Returns a summary line (for test
+ * assertions); when it cannot proceed, returns an honest failure description.
  */
 export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<string> {
   const files = await deps.getWorkspacePythonFiles();
@@ -119,7 +124,7 @@ export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<str
   let call = await runRuffLint(files, ruffPathHint);
 
   if (call.status === 'ok' && !call.result.available) {
-    // 缺 ruff:同意式安装,绝不静默装。
+    // Missing ruff: opt-in install, never install silently.
     const choice = await deps.showInformationMessage(
       l10nText(
         'ruff not found (.py lint unavailable). Install via pip with the selected interpreter?{suffix}',
@@ -192,8 +197,9 @@ export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<str
 }
 
 /**
- * `kbengine.python.installRuff`:手动安装入口(选定解释器 pip 装 ruff)。
- * 失败如实报错并亮手动命令(用户令 2026-11-06);成功后复检可用性。
+ * `kbengine.python.installRuff`: the manual install entry (pip-install ruff with
+ * the selected interpreter). On failure report honestly and show the manual
+ * command (user order 2026-11-06); after success re-check availability.
  */
 export async function runInstallRuffCommand(deps: RuffLintCommandDeps): Promise<string> {
   const interpreter = deps.getInterpreterPath();

@@ -1,9 +1,11 @@
-//! 进程拓扑 CI 拦截(C-17):对给定 workspace 目录跑定义期错配预警,任一发现
-//! 打印并 exit 1(CI 门禁),零发现/无清单 exit 0。
+//! Process topology CI interception (C-17): runs the definition-time mismatch
+//! pre-warning over a given workspace directory; any finding is printed and
+//! exits 1 (CI gate), zero findings / no manifest exits 0.
 //!
-//! 用法:`validate-process-topology [workspace-dir]`(缺省=当前目录)。
-//! 输入:<dir>/process_topology.xml(缺省→静默零发现)、<dir>/scripts/entities.xml
-//! (可选)、<dir>/scripts/**/*.def(递归,按目录归类 entity/interface/component)。
+//! Usage: `validate-process-topology [workspace-dir]` (defaults to the current
+//! directory). Inputs: <dir>/process_topology.xml (absent -> silent zero
+//! findings), <dir>/scripts/entities.xml (optional), <dir>/scripts/**/*.def
+//! (recursive, classified entity/interface/component by directory).
 
 use std::path::{Path, PathBuf};
 
@@ -16,7 +18,7 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from("."));
     let manifest = dir.join("process_topology.xml");
     if !manifest.is_file() {
-        // 无清单=功能未启用,静默零发现(零误报)。
+        // No manifest = the feature is not enabled: silent zero findings (no false positives).
         return;
     }
     let manifest_text = read(&manifest);
@@ -47,7 +49,7 @@ fn read(path: &Path) -> String {
     })
 }
 
-/// 递归收集 `<scripts>` 下全部 `.def`,按所在目录归类。
+/// Recursively collect every `.def` under `<scripts>`, classified by its directory.
 fn collect_defs(scripts: &Path) -> Vec<DefInput> {
     let mut out = Vec::new();
     if scripts.is_dir() {
@@ -84,7 +86,7 @@ fn walk(dir: &Path, out: &mut Vec<DefInput>) {
     }
 }
 
-/// 按 scripts 子目录归类 def(闭包走查用 category 决定实体优先)。
+/// Classify def by scripts subdirectory (the closure walk uses `category` to decide entity precedence).
 fn classify(path: &Path) -> String {
     let parent = path
         .parent()

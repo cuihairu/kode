@@ -1,28 +1,36 @@
 /**
- * venv 自动发现(PY-ENV 二期):扫描工作区(及其子目录,深度封顶)下的
- * 虚拟环境。认环境只认证据——venv 以 pyvenv.cfg 文件为证、conda 环境以
- * conda-meta/ 目录为证,并且解释器二进制(bin/python 或 Windows 的
- * Scripts/python.exe)真实在盘才收录;损坏环境(有标记没二进制/有二进制
- * 没标记)一律不认,绝不伪造。扫描面与 pythonScanRules(Python 源码类索
- * 引)完全解耦:不共享候选清单、不共享剪枝规则、互不 import。全部只做
- * 存在性探测,不执行任何程序。
+ * venv auto-discovery (PY-ENV phase 2): scans the workspace (and its subdirectories,
+ * up to a depth cap) for virtual environments. An environment is accepted only on
+ * evidence — a venv is evidenced by a pyvenv.cfg file, a conda environment by a
+ * conda-meta/ directory, and the interpreter binary (bin/python or, on Windows,
+ * Scripts/python.exe) must actually exist on disk to be recorded; broken environments
+ * (a marker without a binary / a binary without a marker) are never accepted, never
+ * fabricated. The scan face is fully decoupled from pythonScanRules (the Python
+ * source-code class index): no shared candidate lists, no shared pruning rules, no
+ * cross imports. Everything is pure existence probing; no program is ever executed.
  *
- * 同步版(scanVenvs)之外另有异步层(scanVenvsAsync + discoverVenvsCached,
- * KODE-RESP-010):目录读走异步 I/O 且目录间让步,宽目录/慢文件系统下事件
- * 循环心跳持续;总目录/时间预算与取消令牌到顶即停;按根及配置代(约定名
- * 清单)缓存,多消费者共享一次在途发现。产品主线程(UI/状态栏/选择器)一律
- * 走异步层,同步版只留给确已离开主线程的调用方。
+ * Besides the synchronous version (scanVenvs) there is an async layer (scanVenvsAsync
+ * + discoverVenvsCached, KODE-RESP-010): directory reads go through async I/O with a
+ * yield between directories, keeping the event-loop heartbeat alive under wide
+ * directories / slow filesystems; the total-directory / time budgets and the cancel
+ * token stop the walk the moment they hit their limits; results are cached per root
+ * and per configuration generation (the agreed-name list), and multiple consumers
+ * share one in-flight discovery. Product main threads (UI/status bar/picker) always
+ * use the async layer; the synchronous version is reserved for callers that have
+ * definitely left the main thread.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-/** 扫描深度封顶(0 = 扫描根自身一层) */
+/** Scan depth cap (0 = the scan root itself, one level) */
 export const MAX_VENV_SCAN_DEPTH = 3;
 
 /**
- * 剪枝目录名:依赖树/构建产物/版本控制目录里可能出现环境状目录,但都不
- * 是用户意图里的项目环境,绝不进入(注意 .venv/venv 是合法候选,不在此列)。
+ * Pruned directory names: dependency trees / build outputs / version-control
+ * directories may contain environment-looking directories, but none of them is a project
+ * environment the user intends, so they are never entered (note .venv/venv are legal
+ * candidates and not in this list).
  */
 export const DEFAULT_PRUNED_DIRECTORY_NAMES: readonly string[] = [
   'node_modules',
@@ -34,32 +42,32 @@ export const DEFAULT_PRUNED_DIRECTORY_NAMES: readonly string[] = [
   '.cache'
 ];
 
-/** 单个发现的环境 */
+/** A single discovered environment */
 export interface DiscoveredVenv {
-  /** 环境目录绝对路径 */
+  /** Absolute path of the environment directory */
   rootPath: string;
-  /** 目录名(basename) */
+  /** Directory name (basename) */
   name: string;
-  /** 已验证的解释器二进制绝对路径 */
+  /** Absolute path of the verified interpreter binary */
   interpreterPath: string;
-  /** 证据类型:pyvenv.cfg=venv,conda-meta=conda */
+  /** Evidence type: pyvenv.cfg = venv, conda-meta = conda */
   envKind: 'venv' | 'conda';
-  /** 相对扫描根的深度(根直下=0) */
+  /** Depth relative to the scan root (directly under root = 0) */
   depth: number;
 }
 
 export interface VenvScanOptions {
-  /** 深度封顶,默认 MAX_VENV_SCAN_DEPTH */
+  /** Depth cap, defaults to MAX_VENV_SCAN_DEPTH */
   maxDepth?: number;
-  /** 剪枝目录名清单,默认 DEFAULT_PRUNED_DIRECTORY_NAMES */
+  /** Pruned directory-name list, defaults to DEFAULT_PRUNED_DIRECTORY_NAMES */
   prunedDirectoryNames?: readonly string[];
-  /** 平台(测试注入);默认 process.platform */
+  /** Platform (test injection); defaults to process.platform */
   platform?: NodeJS.Platform;
-  /** 同深度优先的目录名提示(venvDirectories 配置语义延续) */
+  /** Same-depth preferred directory-name hints (continuing the venvDirectories configuration semantics) */
   preferredNames?: readonly string[];
 }
 
-/** 该目录名是否在剪枝清单里(精确匹配;venv 候选名不在清单) */
+/** Whether this directory name is in the prune list (exact match; venv candidate names are not in the list) */
 export function shouldPruneVenvScanDirectory(
   name: string,
   pruned: readonly string[] = DEFAULT_PRUNED_DIRECTORY_NAMES
@@ -67,8 +75,8 @@ export function shouldPruneVenvScanDirectory(
   return pruned.includes(name);
 }
 
-/** 平台对应的解释器二进制候选(bin|Scripts × python|python3[.exe]);conda
- * 环境在 Windows 的解释器常在环境根目录(python.exe),按 envKind 追加 */
+/** Platform-specific interpreter binary candidates (bin|Scripts × python|python3[.exe]); a conda
+ * environment's interpreter on Windows often sits in the environment root (python.exe), appended by envKind */
 export function venvBinaryCandidates(
   dir: string,
   platform: NodeJS.Platform,
@@ -89,8 +97,8 @@ export function venvBinaryCandidates(
   return layout;
 }
 
-/** 存在性探测只认真文件(目录/symlink-to-dir 不算);statSync 跟随 symlink,
- * venv 的 bin/python 是指向系统解释器的 symlink,照样判真 */
+/** Existence probing counts real files only (directories / symlink-to-dir do not count); statSync follows symlinks,
+ * and a venv's bin/python is a symlink pointing at the system interpreter, still judged real */
 const isFileCandidate = (candidate: string): boolean => {
   try {
     return fs.statSync(candidate).isFile();
@@ -100,8 +108,9 @@ const isFileCandidate = (candidate: string): boolean => {
 };
 
 /**
- * 环境证据判定:pyvenv.cfg 文件 → venv;conda-meta 目录 → conda;都无 →
- * null(不是环境,不猜)。venv 证据优先(两者都在盘时按 venv 记)。
+ * Environment evidence ruling: a pyvenv.cfg file → venv; a conda-meta directory →
+ * conda; neither → null (not an environment, no guessing). venv evidence wins (when
+ * both are on disk it is recorded as venv).
  */
 export function hasEnvMarker(dir: string): 'venv' | 'conda' | null {
   try {
@@ -109,21 +118,22 @@ export function hasEnvMarker(dir: string): 'venv' | 'conda' | null {
       return 'venv';
     }
   } catch {
-    // 无 pyvenv.cfg,继续看 conda 证据
+    // No pyvenv.cfg, keep checking conda evidence
   }
   try {
     if (fs.statSync(path.join(dir, 'conda-meta')).isDirectory()) {
       return 'conda';
     }
   } catch {
-    // 无 conda-meta
+    // No conda-meta
   }
   return null;
 }
 
 /**
- * 验证一个目录是否为可用环境:环境证据在 + 解释器二进制在盘。返回解释器
- * 路径;任一证据缺失返回 null(损坏环境不认,不伪造路径)。
+ * Verify that a directory is a usable environment: environment evidence present + the
+ * interpreter binary on disk. Returns the interpreter path; null when any evidence is
+ * missing (a broken environment is not accepted and no path is fabricated).
  */
 export function verifyVenvDirectory(
   dir: string,
@@ -142,10 +152,12 @@ export function verifyVenvDirectory(
 }
 
 /**
- * 深度优先扫描 root 下的环境(深度封顶,剪枝名单绝不进入;发现环境后不
- * 再向其内部下钻——环境里嵌环境不是任何人的意图)。排序:浅者先,同深度
- * 字典序;name 命中 preferredNames 的同深度再前置(解析链用它让目录名清
- * 单配置的语义仍然生效)。
+ * Depth-first scan of the environment under root (depth capped, prune list never
+ * entered; after discovering an environment, never descend into it — a nested
+ * environment inside an environment is not anyone's intent). Ordering: shallower
+ * first, lexicographic within the same depth; names matching preferredNames are moved
+ * earlier within the same depth (the resolution chain uses this so the directory-name
+ * hint configuration semantics still work).
  */
 export function scanVenvs(root: string, options: VenvScanOptions = {}): DiscoveredVenv[] {
   const maxDepth = options.maxDepth ?? MAX_VENV_SCAN_DEPTH;
@@ -159,7 +171,7 @@ export function scanVenvs(root: string, options: VenvScanOptions = {}): Discover
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
-      return; // 不可读目录如实跳过
+      return; // unreadable directories are skipped honestly
     }
     for (const entry of entries) {
       if (!entry.isDirectory() || shouldPruneVenvScanDirectory(entry.name, pruned)) {
@@ -176,7 +188,7 @@ export function scanVenvs(root: string, options: VenvScanOptions = {}): Discover
           depth,
           preferred: preferredSet.has(entry.name)
         });
-        continue; // 不向环境内部下钻
+        continue; // do not descend into the environment
       }
       if (depth < maxDepth) {
         visit(child, depth + 1);
@@ -188,8 +200,8 @@ export function scanVenvs(root: string, options: VenvScanOptions = {}): Discover
   return sortDiscoveredVenvs(found);
 }
 
-/** 排序(同步/异步两道扫描共用,零漂移):浅者先,同深度约定名命中
- * (preferredNames)先置,再字典序 */
+/** Sorting (shared by both the sync/async scans, zero drift): shallower first, same-depth agreed-name hits
+ * (preferredNames) moved before others, then lexicographic */
 const sortDiscoveredVenvs = (
   found: Array<DiscoveredVenv & { preferred: boolean }>
 ): DiscoveredVenv[] =>
@@ -202,23 +214,23 @@ const sortDiscoveredVenvs = (
     )
     .map(({ preferred: _preferred, ...env }) => env);
 
-// ---- 异步扫描层(KODE-RESP-010):宽目录/慢文件系统不得卡死扩展宿主主线程 ----
+// ---- Async scan layer (KODE-RESP-010): wide directories / slow filesystems must not freeze the extension host main thread ----
 
-/** 异步扫描的总目录访问预算(含扫描根与约定候选探测;大仓库到顶即停) */
+/** Total directory-access budget of the async scan (including the scan root and agreed-candidate probing; stops once hit in large repos) */
 export const MAX_VENV_SCAN_DIRECTORIES = 4096;
-/** 异步扫描的总时间预算(ms);超时即停,返回已发现部分 */
+/** Total time budget of the async scan (ms); on timeout, returns the portion discovered so far */
 export const VENV_SCAN_DEADLINE_MS = 5000;
 
 export interface VenvScanAsyncOptions extends VenvScanOptions {
-  /** 总目录预算,默认 MAX_VENV_SCAN_DIRECTORIES;到顶停止深扫 */
+  /** Total-directory budget, defaults to MAX_VENV_SCAN_DIRECTORIES; stops the deep scan once hit */
   maxDirectories?: number;
-  /** 时间预算 ms,默认 VENV_SCAN_DEADLINE_MS */
+  /** Time budget ms, defaults to VENV_SCAN_DEADLINE_MS */
   deadlineMs?: number;
-  /** 取消令牌:置 aborted 后不再深扫(在途扫描以已发现部分正常收束) */
+  /** Cancel token: after aborted is set, no deeper scanning happens (the in-flight scan converges on the portion already found) */
   signal?: { aborted: boolean };
-  /** 目录读取注入面(测试注入慢文件系统);缺省 fs.promises.readdir */
+  /** Directory-read injection face (tests inject a slow filesystem); defaults to fs.promises.readdir */
   readDirectory?: (dir: string) => Promise<fs.Dirent[]>;
-  /** 目录间让步(缺省 setImmediate);事件循环心跳由它保证 */
+  /** Yield between directories (defaults to setImmediate); the event-loop heartbeat is guaranteed by it */
   yieldControl?: () => Promise<void>;
 }
 
@@ -228,11 +240,15 @@ const readDirectoryDefault = (dir: string): Promise<fs.Dirent[]> =>
   fs.promises.readdir(dir, { withFileTypes: true });
 
 /**
- * scanVenvs 的异步版(KODE-RESP-010):目录读走异步 I/O,目录之间让步一次
- * (setImmediate,可注入),事件循环心跳持续运行;总目录/时间预算到顶或取消
- * 令牌置位即停,不再深扫,已发现部分如实返回(不伪造完整)。约定候选
- * (preferredNames)先直接探测——常见 .venv/venv 布局不必等全树走完;走查
- * 与同步版同规则(深度封顶/剪枝名单/环境不下钻),输出排序与同步版一致。
+ * The async version of scanVenvs (KODE-RESP-010): directory reads go through
+ * async I/O with one yield between directories (setImmediate, injectable), keeping
+ * the event-loop heartbeat running continuously; stops when the total-directory /
+ * time budget is hit or the cancel token is set — no deeper scanning, and the
+ * discovered portion is returned honestly (no fabricated completeness). Agreed
+ * candidates (preferredNames) are probed directly first — common .venv/venv layouts
+ * need not wait for the whole tree walk; the walk follows the same rules as the
+ * synchronous version (depth cap / prune list / no descending into environments), and
+ * its output ordering matches the synchronous version.
  */
 export async function scanVenvsAsync(
   root: string,
@@ -251,7 +267,7 @@ export async function scanVenvsAsync(
   const claimed = new Set<string>();
   let visited = 0;
 
-  // 预算/取消/时间三重闸:任一触发后不再发生任何后续目录读
+  // Budget/cancel/time triple gate: once any triggers, no further directory reads happen
   const exhausted = (): boolean =>
     visited >= maxDirectories || options.signal?.aborted === true || Date.now() > deadline;
 
@@ -270,9 +286,11 @@ export async function scanVenvsAsync(
     }
   };
 
-  // 优先探测约定候选(单点 stat 验真,不依赖全树走查):.venv/venv 常见布局
-  // 在这里直接命中;未命中的名字由后面的走查如实收录。命中即 claimed,走查
-  // 不重复验真也不向环境内部下钻(与同步版「环境不下钻」同规则)。
+  // Probe agreed candidates first (single-point stat validation, independent of the full
+  // tree walk): common .venv/venv layouts hit right here; unmatched names are still
+  // recorded honestly by the later walk. Once hit, the candidate is claimed — the walk
+  // does not re-validate it nor descend into the environment (same rule as the
+  // synchronous version's "no descending into environments").
   for (const name of preferredNames) {
     if (exhausted()) {
       break;
@@ -295,7 +313,7 @@ export async function scanVenvsAsync(
     try {
       entries = await readDirectory(dir);
     } catch {
-      return; // 不可读目录如实跳过
+      return; // unreadable directories are skipped honestly
     }
     for (const entry of entries) {
       if (exhausted()) {
@@ -318,14 +336,16 @@ export async function scanVenvsAsync(
   return sortDiscoveredVenvs(found);
 }
 
-// ---- 发现缓存层(KODE-RESP-010):按根及配置代缓存 + 在途共享 ----
+// ---- Discovery cache layer (KODE-RESP-010): cache per root and configuration generation + in-flight sharing ----
 
 const VENV_DISCOVERY_CACHE_CAPACITY = 4;
 const venvDiscoveryCache = new Map<string, DiscoveredVenv[]>();
 const venvDiscoveryInFlight = new Map<string, Promise<DiscoveredVenv[]>>();
 
-/** 缓存键 = 平台 + 根 + 排序后的约定名清单:配置内容进键(按根及配置代
- * 缓存),venvDirectories 改动自然换键重扫;名序不同视为同一配置代 */
+/** Cache key = platform + root + sorted agreed-name list: the configuration content enters
+ * the key (cache per root and configuration generation), so a change to venvDirectories
+ * naturally changes the key and rescans; a different name order is treated as the same
+ * configuration generation */
 export function venvDiscoveryCacheKey(
   root: string,
   preferredNames: readonly string[],
@@ -334,7 +354,7 @@ export function venvDiscoveryCacheKey(
   return [platform, root, ...[...preferredNames].sort()].join('|');
 }
 
-/** 只读缓存不触发扫描(undefined = 无热值);UI 用它先展示已有候选 */
+/** A read-only cache peek that does not trigger a scan (undefined = no hot value); the UI uses it to show existing candidates first */
 export function peekVenvDiscoveryCache(
   root: string,
   preferredNames: readonly string[],
@@ -343,17 +363,20 @@ export function peekVenvDiscoveryCache(
   return venvDiscoveryCache.get(venvDiscoveryCacheKey(root, preferredNames, platform));
 }
 
-/** 清空缓存与在途记录(测试隔离用) */
+/** Clears the cache and in-flight records (for test isolation) */
 export function clearVenvDiscoveryCache(): void {
   venvDiscoveryCache.clear();
   venvDiscoveryInFlight.clear();
 }
 
 /**
- * 带缓存的发现:热值直接返回(UI 先展示已有候选,不再重扫);冷值启动一次
- * 带预算的异步扫描,同键的多个消费者共享同一支在途 Promise(一次在途发现),
- * 收束后写缓存供后续消费。扫描失败不缓存、如实抛出(下次调用可重试)。
- * 首个消费者的 options 负责本次扫描的预算参数;缓存键只认根/约定名/平台。
+ * Cached discovery: a hot value returns directly (the UI shows existing candidates
+ * first, no rescan); a cold value starts one budgeted async scan, and multiple
+ * consumers with the same key share the same in-flight Promise (one in-flight
+ * discovery), which writes the cache for later consumption once it converges. A
+ * failed scan is not cached and throws honestly (the next call can retry). The first
+ * consumer's options carries this scan's budget parameters; the cache key only
+ * recognizes the root / agreed names / platform.
  */
 export function discoverVenvsCached(
   root: string,
@@ -391,8 +414,9 @@ export function discoverVenvsCached(
 }
 
 /**
- * 解析 `python --version` 输出里的版本号:取 "Python x.y.z" 形态,取不到
- * 如实 null(显示面省略版本段,不伪造)。
+ * Parse the version number out of `python --version` output: take the "Python x.y.z"
+ * shape, and when that cannot be done, honestly return null (the display face omits
+ * the version segment rather than fabricating one).
  */
 export function parsePythonVersionOutput(output: string): string | null {
   const match = output.match(/Python\s+(\d+\.\d+\.\d+)/);

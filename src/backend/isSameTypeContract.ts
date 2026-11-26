@@ -1,44 +1,61 @@
 /**
- * KSEM-SER-07:isSameType 契约边界面(签名/调用绑定 + 兼容性证明状态)。
+ * KSEM-SER-07: the isSameType contract boundary face (signature/call
+ * binding + compatibility proof status).
  *
- * 引擎真源(datatype.cpp,树实测):
- *  - 调用绑定 = 单位置实参:impl 判定经 PyObject_CallFunction(pyIsSameType,
- *    "(O)", obj)(:2450-2452)——self 之外恰好一个形参;形参缺/多(无默认)
- *    → 每次判定 TypeError,SCRIPT_ERROR_CHECK 记脚本错误并按 false 回落
- *    内建校验(错误刷屏);
- *  - 判真 = 指针恒等:Py_True == pyRet(:2458)——只有字面 True 短路判真;
- *    返回 1/其他 truthy 对象一律按 false 处理;
- *  - 短路语义(FixedDictType::isSameType :2497-2512):impl 返回 True →
- *    立即 return true,内建校验(FixedDict 实例/字典尺寸/逐键类型)全部
- *    跳过;impl 返回 false 时引擎忽略该判定继续内建校验(:2506)——返回
- *    False 不拒绝对象;
- *  - impl_createObjFromDict 后置校验(:2421):转换结果必须过 isSameType,
- *    失败记脚本错误——isSameType 是转换链的兼容性闸门。
+ * Engine ground truth (datatype.cpp, verified in the tree):
+ *  - Call binding = one positional argument: the impl verdict goes through
+ *    PyObject_CallFunction(pyIsSameType, "(O)", obj) (:2450-2452) — exactly
+ *    one parameter besides self; missing/extra parameters (no default)
+ *    → TypeError on every check, SCRIPT_ERROR_CHECK records a script error
+ *    and falls back to built-in validation (error spam);
+ *  - Truth = pointer identity: Py_True == pyRet (:2458) — only the literal
+ *    True short-circuits to a pass; 1/other truthy objects always count as
+ *    false;
+ *  - Short-circuit semantics (FixedDictType::isSameType :2497-2512): impl
+ *    returning True → immediately return true, all built-in validation
+ *    (FixedDict instance/dict size/per-key types) skipped; impl returning
+ *    false is ignored and built-in validation proceeds (:2506) — returning
+ *    False does not reject the object;
+ *  - impl_createObjFromDict post-validation (:2421): the conversion result
+ *    must pass isSameType, failure records a script error — isSameType is
+ *    the compatibility gate of the conversion chain.
  *
- * 静态可判定域(验收「校验可确定签名和调用绑定;动态返回不能冒称已证明
- * 对象兼容,给出待运行验证状态」):
- *  - arity 面(Warning):def 签名对引擎单位置实参绑定静态裁定——self/cls
- *    之外恰好一个无默认位置形参(或带名 *args 承接)合法;零位置承接/
- *    多余无默认位置形参/仅关键字必需形参(**kwargs 不承接位置实参)→
- *    每次调用 TypeError,锚 def 行方法名;签名不可解析(收括号未闭)→
- *    该方法零产出不猜;
- *  - 兼容性证明状态(每方法至多一条,优先级聚合 acceptAll > pending >
- *    fallback,Information):
- *     - acceptAll:存在 return True 位——impl 可短路引擎免检;
- *     - pending:存在静态不可证明返回位(调用/表达式/裸名/未解析类名
- *       isinstance)——兼容性未证明,待运行验证,不冒称已证明也不冒称
- *       不兼容(验收核心句);
- *     - fallback:全部返回位皆非 True 常量(False/None/数值/字符串)——
- *       引擎按指针恒等只认 True,恒被无视、内建校验兜底。
- *    isinstance(obj, X):X 全部可解析(内建类型名或本文件类名)→ 该位
- *    已证明,零产出;任一元素不可解析 → pending 锚该元素。
- *  - 嵌套 def 域跳过(域诚实);注释/字符串位不判(掩码核验)。
+ * Statically decidable domain (acceptance: "validation can determine the
+ * signature and call binding; dynamic returns must not masquerade as proven
+ * object compatibility — report a pending runtime verification status"):
+ *  - arity face (Warning): the def signature is statically adjudicated
+ *    against the engine's single positional argument binding — exactly one
+ *    positional parameter without a default besides self/cls (or a named
+ *    *args carrying it) is legal; no positional carrier / extra no-default
+ *    positional parameters / required keyword-only parameters (**kwargs does
+ *    not carry positional arguments) → TypeError on every call, anchor the
+ *    def-line method name; unparseable signature (unclosed parens) → the
+ *    method yields zero findings, no guessing;
+ *  - compatibility proof status (at most one per method, priority
+ *    aggregation acceptAll > pending > fallback, Information):
+ *     - acceptAll: a `return True` site exists — the impl can short-circuit
+ *       the engine past validation;
+ *     - pending: a statically unprovable return site exists (calls/
+ *       expressions/bare names/unresolved class names in isinstance) —
+ *       compatibility unproven, pending runtime verification, neither
+ *       masquerading as proven nor as incompatible (core acceptance
+ *       sentence);
+ *     - fallback: every return site is a non-True constant (False/None/
+ *       numbers/strings) — the engine honors only True by pointer identity,
+ *       these are always ignored and built-in validation decides.
+ *    isinstance(obj, X): every X resolvable (built-in type name or a class
+ *    name in this file) → the site is proven, zero findings; any element
+ *    unresolvable → pending anchored at that element.
+ *  - nested def blocks are skipped (honest about the domain); comment/
+ *    string positions are not judged (mask verification).
  *
- * raw/masked 双行口径:True/False/isinstance/类名是代码,掩码行保留;
- * 字符串常量内容掩码抹空(return "" 掩码后仍按带引号常量裁)。锚列取
- * 原文行(掩码等长,两侧行列一致,SER-04/05/06 同构坑)。
+ * raw/masked dual-line convention: True/False/isinstance/class names are
+ * code and survive on the masked line; string constant contents are wiped
+ * by the mask (`return ""` still counts as a quoted constant after masking).
+ * Anchor columns come from the raw line (the mask is length-preserving,
+ * both sides share lines/columns, same-shaped pitfall as SER-04/05/06).
  *
- * 纯逻辑层,不 import vscode。
+ * Pure logic layer, does not import vscode.
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -55,28 +72,29 @@ import { pythonCodeLines } from './pythonParser';
 
 export const SAME_TYPE_CONTRACT_CODE = 'kbengine.isSameTypeBinding';
 
-/** 一个 isSameType 契约边界发现(face 即证明状态)。 */
+/** One isSameType contract boundary finding (the face is the proof status). */
 export interface SameTypeFinding {
   line: number;
-  /** 0 基字符列。 */
+  /** Zero-based character column. */
   character: number;
   length: number;
-  /** FD 容器类型名。 */
+  /** FD container type name. */
   container: string;
-  /** impl 符号名。 */
+  /** impl symbol name. */
   symbol: string;
-  /** arity=签名不符(Warning);acceptAll=恒 True 免检;fallback=非 True
-   *  常量恒被无视回落内建;pending=动态返回待运行验证。 */
+  /** arity=signature mismatch (Warning); acceptAll=always True, checks
+   *  skipped; fallback=non-True constant, always ignored, built-in decides;
+   *  pending=dynamic return, pending runtime verification. */
   face: 'arity' | 'acceptAll' | 'fallback' | 'pending';
   message: string;
 }
 
-/** arity 面(签名对引擎单位置实参绑定静态裁定为不符)。 */
+/** arity face (signature statically adjudicated as mismatching the engine's single positional argument binding). */
 export function renderArityMsg(symbol: string): string {
   return l10nText('{symbol}.isSameType signature does not match the engine call binding — the engine passes exactly one positional argument (datatype.cpp impl_isSameType), so every check raises TypeError and script errors replace validation', { symbol });
 }
 
-/** acceptAll 面(恒 True 短路免检)。 */
+/** acceptAll face (always True, short-circuits past validation). */
 export function renderAcceptAllMsg(
   container: string,
   symbol: string,
@@ -85,7 +103,7 @@ export function renderAcceptAllMsg(
   return l10nText('{symbol}.isSameType returns True unconditionally (declared in {source}) — the engine short-circuits on True and skips built-in validation entirely, so every object is accepted as {container} without per-key checks', { container, symbol, source });
 }
 
-/** fallback 面(非 True 常量恒被无视,引擎回落内建校验)。 */
+/** fallback face (non-True constants are always ignored; the engine falls back to built-in validation). */
 export function renderFallbackMsg(
   container: string,
   symbol: string,
@@ -94,7 +112,7 @@ export function renderFallbackMsg(
   return l10nText('{symbol}.isSameType only returns constants other than True (declared in {source}) — the engine compares the return by pointer identity with True, so these returns never count and built-in validation decides instead; returning False does not reject {container} objects', { container, symbol, source });
 }
 
-/** pending 面(动态返回待运行验证,不冒称已证明兼容)。 */
+/** pending face (dynamic return awaiting runtime verification; never masquerades as proven compatibility). */
 export function renderPendingMsg(
   container: string,
   symbol: string,
@@ -103,14 +121,14 @@ export function renderPendingMsg(
   return l10nText('{symbol}.isSameType returns a value whose compatibility cannot be proven statically (declared in {source}); object compatibility for {container} is unverified — runtime samples are required before treating this converter as verified', { container, symbol, source });
 }
 
-/** Python 内建类型名(isinstance 元素可解析域)。 */
+/** Python built-in type names (the resolvable domain for isinstance elements). */
 const BUILTIN_TYPES: ReadonlySet<string> = new Set([
   'int', 'str', 'float', 'bool', 'bytes', 'bytearray', 'list', 'tuple',
   'dict', 'set', 'frozenset', 'object', 'complex', 'type', 'range',
   'memoryview'
 ]);
 
-/** 一个返回位分类。 */
+/** Classification of one return site. */
 interface RetSite {
   face: 'acceptAll' | 'fallback' | 'pending';
   line: number;
@@ -118,14 +136,14 @@ interface RetSite {
   length: number;
 }
 
-/** 聚合优先级:恒 True 免检 > 待运行验证 > 恒被无视。 */
+/** Aggregation priority: always-True skips checks > pending runtime verification > always ignored. */
 const FACE_RANK: Record<RetSite['face'], number> = {
   acceptAll: 3,
   pending: 2,
   fallback: 1
 };
 
-/** 常量 token:False/None/数值/带引号字面量(掩码行内容为占位)。 */
+/** Constant tokens: False/None/numbers/quoted literals (masked-line contents are placeholders). */
 function isConstToken(token: string): boolean {
   if (token === 'False' || token === 'None') {
     return true;
@@ -136,12 +154,12 @@ function isConstToken(token: string): boolean {
   return /^(["']).*\1$/.test(token);
 }
 
-/** 裸标识符。 */
+/** Bare identifier. */
 function isBareName(token: string): boolean {
   return /^[A-Za-z_]\w*$/.test(token);
 }
 
-/** 跳过嵌套 def 块,返回跳出后应处理的行号。 */
+/** Skips a nested def block; returns the line number to resume at. */
 function skipNested(
   masked: readonly string[],
   at: number,
@@ -163,7 +181,7 @@ function skipNested(
   return line;
 }
 
-/** 掩码行收集本文件类名(isinstance 元素可解析域)。 */
+/** Collects class names in this file from masked lines (resolvable domain for isinstance elements). */
 function fileClassNames(masked: readonly string[]): Set<string> {
   const names = new Set<string>();
   const pattern = /^\s*class\s+([A-Za-z_]\w*)/;
@@ -176,7 +194,7 @@ function fileClassNames(masked: readonly string[]): Set<string> {
   return names;
 }
 
-/** 原文行 start 处取平衡括号段(内容 + 闭括号列;不闭 → null)。 */
+/** Takes the balanced-paren span starting at `start` of the raw line (content + closing column; unbalanced → null). */
 function parenSpan(
   raw: string,
   start: number
@@ -211,9 +229,11 @@ function parenSpan(
 }
 
 /**
- * isinstance 第二实参元素集(裸名/元组裸名,元组形态递归展开为叶子),
- * 元素带原行列;形态不符 → null(归 pending,不猜)。
- * content = isinstance 平衡段内文本,base = 其在原行的起始列。
+ * Element set of the second isinstance argument (bare names / tuple bare
+ * names, tuple shapes recursively expanded into leaves), elements carry
+ * raw line/column; shape mismatch → null (lands in pending, no guessing).
+ * content = text inside the isinstance balanced span, base = its start
+ * column on the raw line.
  */
 function typeTestArgs(
   content: string,
@@ -255,8 +275,10 @@ function typeTestArgs(
 }
 
 /**
- * 顶层逗号拆分(引号/括号深度感知),元素带原行列(列 = 元素首非空白
- * 字符)。未闭引号段仍按已收元素返回(调用侧元素形态校验兜底)。
+ * Top-level comma split (quote/paren-depth aware), elements carry raw
+ * line/column (column = the element's first non-whitespace character). An
+ * unterminated quote segment still returns with the elements collected so
+ * far (the caller's element shape validation backstops it).
  */
 function splitTypeArgs(
   text: string,
@@ -314,8 +336,8 @@ function splitTypeArgs(
 }
 
 /**
- * isSameType 契约边界入口。inputs = resolveImplMethodInputs(
- * text, bindings, 'isSameType')(SER-04/05/06 同构机)。
+ * isSameType contract boundary entry. inputs = resolveImplMethodInputs(
+ * text, bindings, 'isSameType') (same-shaped machine as SER-04/05/06).
  */
 export function computeSameTypeFindings(
   text: string,
@@ -337,16 +359,21 @@ export function computeSameTypeFindings(
       ? symbol.slice(symbol.lastIndexOf('.') + 1)
       : symbol;
 
-    // ── arity 面:签名对引擎单位置实参绑定静态裁定 ──
+    // ── arity face: signature statically adjudicated against the engine's
+    // single positional argument binding ──
     const signature = defSignatureParams(realLines, input.defLine);
     if (signature === null) {
-      continue; // 签名不可解析(收括号未闭):不猜
+      continue; // unparseable signature (unclosed parens): no guessing
     }
-    // 形参逐位裁定(原文判,不依赖剥名行为):'/' 为 positional-only 标记;
-    // '*' 开头 = 仅关键字域(带名单星 *args 才承接引擎位置实参,'**' 只收
-    // 关键字);有默认 = 形参含 '='(纯注解形参无 '=';'==' 只可能出现在
-    // 默认表达式内,仍属有默认)。self/cls 之外引擎恰好传一个位置实参:
-    // 无位置承接 / 多余无默认位置形参 / 仅关键字必需形参 → 恒 TypeError。
+    // Parameter-by-parameter adjudication (judged on the raw line, not on a
+    // stripped-name line): '/' is the positional-only marker; a leading '*'
+    // = keyword-only territory (only a named single-star *args carries the
+    // engine's positional argument, '**' only collects keywords); has-default
+    // = the parameter contains '=' (a bare-annotation parameter has no '=';
+    // '==' can only appear inside a default expression, still has-default).
+    // Besides self/cls the engine passes exactly one positional argument:
+    // no positional carrier / extra no-default positional parameter /
+    // required keyword-only parameter → TypeError every time.
     let objSeen = false;
     let varArgsSeen = false;
     let starForm = false;
@@ -368,25 +395,26 @@ export function computeSameTypeFindings(
       const hasDefault = trimmed.includes('=');
       if (starForm) {
         if (!hasDefault) {
-          badArity = true; // 仅关键字必需形参,引擎不传
+          badArity = true; // required keyword-only parameter, the engine passes none
         }
         continue;
       }
       if (!objSeen) {
-        objSeen = true; // obj 形参(引擎位置实参承接位)
+        objSeen = true; // the obj parameter (where the engine's positional argument lands)
         continue;
       }
       if (!hasDefault) {
-        badArity = true; // 多余必需位置形参
+        badArity = true; // extra required positional parameter
       }
     }
     if (!objSeen && !varArgsSeen) {
-      badArity = true; // 引擎的单位置实参无处承接
+      badArity = true; // the engine's single positional argument has no carrier
     }
     if (badArity) {
       const defText = realLines[input.defLine] ?? '';
-      // 锚 def 行方法名:symbol 是容器限定类名(不含方法名),
-      // indexOf(short) 在 def 行落空 → 错锚 0;从 def 行取真名)
+      // Anchor the method name on the def line: symbol is the container-
+      // qualified class name (no method name), indexOf(short) misses on the
+      // def line → wrong anchor at 0; take the real name from the def line)
       const nameMatch = /^\s*def\s+([A-Za-z_]\w*)/.exec(defText);
       const at = nameMatch
         ? nameMatch.index + nameMatch[0].indexOf(nameMatch[1])
@@ -401,10 +429,11 @@ export function computeSameTypeFindings(
         face: 'arity',
         message: renderArityMsg(symbol)
       });
-      continue; // 签名不符:调用恒 TypeError,体面无意义
+      continue; // signature mismatch: every call raises TypeError, the body is meaningless
     }
 
-    // ── 兼容性证明状态:返回位分类(优先级聚合) ──
+    // ── compatibility proof status: return site classification (priority
+    // aggregation) ──
     let best: RetSite | null = null;
     let line = input.bodyStartLine;
     while (line <= input.bodyEndLine && line < masked.length) {
@@ -423,7 +452,8 @@ export function computeSameTypeFindings(
       }
       const raw = realLines[line] ?? '';
       const returnAt = m.indexOf('return');
-      // ── isinstance(...):全元素可解析 → 已证明零产出;否则 pending ──
+      // ── isinstance(...): every element resolvable → proven, zero
+      // findings; otherwise pending ──
       if (/^\s*return\s+isinstance\s*\(/.test(m)) {
         const openAt = raw.indexOf('(', returnAt + 6);
         const span = openAt >= 0 ? parenSpan(raw, openAt) : null;
@@ -471,7 +501,7 @@ export function computeSameTypeFindings(
         line += 1;
         continue;
       }
-      // ── 单 token:return True / 非 True 常量 / 裸名 ──
+      // ── single token: return True / non-True constant / bare name ──
       const constMatch = /^\s*return\s+(\S+)\s*$/.exec(m);
       if (constMatch) {
         const tokenMasked = constMatch[1];
@@ -510,7 +540,8 @@ export function computeSameTypeFindings(
         line += 1;
         continue;
       }
-      // ── 其余多 token return(调用/表达式/括号常量)→ pending ──
+      // ── remaining multi-token returns (calls/expressions/parenthesized
+      // constants) → pending ──
       const rawHit = /(\S+)/.exec(raw.slice(returnAt + 6));
       const tokenRaw = rawHit ? rawHit[1] : '';
       const tokenAt = tokenRaw ? raw.indexOf(tokenRaw, returnAt + 6) : returnAt;
@@ -526,7 +557,7 @@ export function computeSameTypeFindings(
     }
 
     if (best === null) {
-      continue; // 全部返回位已证明(可解析 isinstance)或无 return:零产出
+      continue; // every return site proven (resolvable isinstance) or no return: zero findings
     }
     const message =
       best.face === 'acceptAll'
@@ -547,7 +578,7 @@ export function computeSameTypeFindings(
   return findings;
 }
 
-/** finding → 诊断项(arity Warning;证明状态面 Information;同族形状)。 */
+/** finding → diagnostic item (arity Warning; proof-status faces Information; same family shape). */
 export function sameTypeFindingToItem(
   finding: SameTypeFinding
 ): FixedDictConstructDiagnosticItem {

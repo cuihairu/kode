@@ -1,18 +1,18 @@
-//! RUST-075-W worker 执行器装配:执行归属登记 + 真 worker 池。
+//! RUST-075-W worker executor assembly: execution-ownership registration + a real worker pool.
 //!
-//! 形态:`$/kode/rpc` 注册面 handler 是纯函数(`fn(Value) -> Result`)、
-//! 零 ServerState 依赖(TS 读盘直传,不碰镜像语料)——这类请求走 worker
-//! 线程执行,主线程 stdio 泵持续读取/响应,重任务在飞时健康/轻请求照常
-//! 先回。准入不变量(交互预留/后台硬顶/总量守恒/释放记账)全部由
-//! kode-scheduler `WorkerPoolGate` 持有,本模块只接线不另立决策核。
+//! Shape: the `$/kode/rpc` registered-face handler is a pure function (`fn(Value) -> Result`) with
+//! zero ServerState dependency (TS reads disk and passes text straight through, never touching mirror corpus) -- such requests run on
+//! worker threads; the main thread's stdio pump keeps reading/responding, so while heavy work is in flight, health/light requests still
+//! answer first. The admission invariants (interactive reservation / background hard cap / total conservation / release accounting) are all held by
+//! the kode-scheduler `WorkerPoolGate`; this module only wires and does not set up a separate decision core.
 //!
-//! 取消(CORE-007 + RUST-072):排队未启动的 job 即刻摘除回 -32800(容量
-//! 未占);在途 job 登记丢弃标记 + 置位该请求的取消令牌——handler 协作点
-//! (kode-python cancel 探针)查询令牌提前退出,绝不产出部分结果;终态
-//! (含被中断的 Err)一律释放容量,结算按三源裁定 Cancelled(-32800):
-//! 弹出前登记表/在途丢弃登记表/handler 自报取消文案(无 span 的 job 以
-//! handler 文案为诚实源)。丢弃登记只在确有本池 job(排队摘除命中或
-//! submit 登记过 span)时写入——未知 id/重复/迟到取消不入表,表有界。
+//! Cancellation (CORE-007 + RUST-072): a queued-not-yet-started job is removed immediately, answering -32800 (its capacity
+//! was never taken); an in-flight job gets a drop marker registered + its request's cancellation token set -- the handler's cooperation
+//! point (the kode-python cancel probe) polls the token and exits early, never producing partial results; every final state
+//! (including the interrupted Err) releases capacity; settlement adjudicates Cancelled (-32800) from three sources:
+//! the pre-pop registry / the in-flight drop registry / the handler's self-reported cancellation text (a job with no span takes the
+//! handler text as the honest source). A drop is registered only when this pool really has the job (a queue-removal hit, or
+//! the span was registered at submit) -- unknown ids / duplicates / late cancels never enter the table, and the table stays bounded.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,18 +27,18 @@ use serde_json::Value;
 
 use crate::rpc::RegistrySnapshot;
 
-/// 执行归属:顶层 method 臂 → 执行位置决策面。
+/// Execution ownership: the top-level method arm -> the execution-location decision face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionLane {
-    /// 主线程内联:快速 serving 面(hover/completion/definition/diagnostic/
-    /// health/workspace/*)与顺序语义面(initialize/shutdown/exit/wait)。
+    /// Main-thread inline: fast serving faces (hover/completion/definition/diagnostic/
+    /// health/workspace/*) and the ordered-semantics faces (initialize/shutdown/exit/wait).
     Inline,
-    /// worker 池:`$/kode/rpc` 纯 handler 面。
+    /// Worker pool: the `$/kode/rpc` pure-handler face.
     Pool(PoolLane),
 }
 
-/// 池内泳道:交互(用户语义请求)或后台(首扫/报表;当前生产无真实后台
-/// 调用方,RUST-074-W 落地时在此登记对应内层 method 的泳道)。
+/// A lane within the pool: interactive (user semantic requests) or background (first scan / reports; production currently has no real background
+/// caller; when RUST-074-W lands, register the corresponding inner method's lane here).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PoolLane {
@@ -46,11 +46,11 @@ pub enum PoolLane {
     Background,
 }
 
-/// RUST-076-W:真实阻塞 IO / 外部进程等待的内层 method 显式登记表。表内
-/// 面归 `LaneGate::Io`(阻塞读盘/子进程 shell-out),其余注册面一律
-/// `Cpu`(纯解析)。归属完整性由 tests/executor_ownership.rs 对
-/// snapshot.methods() 全量断言:漏登记的面走 Cpu 缺省(仍能跑),表内
-/// 登记了已注销的面则红(防陈旧登记)。
+/// RUST-076-W: the explicit registry of inner methods with truly blocking IO / external-process waits. Faces in the
+/// table belong to `LaneGate::Io` (blocking disk reads / subprocess shell-outs); every other registered face is
+/// `Cpu` (pure parsing). Ownership completeness is asserted in tests/executor_ownership.rs against
+/// snapshot.methods() in full: an unregistered face defaults to Cpu (still runs), while a face registered
+/// in the table that has since been deregistered turns red (guards against stale registrations).
 const IO_TASK_METHODS: &[&str] = &[
     "$/kode/dbClone/export",
     "$/kode/dbClone/inspectArchive",
@@ -60,10 +60,10 @@ const IO_TASK_METHODS: &[&str] = &[
     "$/kode/workspace/scanAnchors",
 ];
 
-/// 单一分类源:`$/kode/rpc` 内层 method → (池泳道, LaneGate 类别)。
-/// 表内 IO 面 → Background+Io(慢 IO 不占交互预留位);其余 → Interactive
-/// +Cpu。cpu_max/io_max 之外,交互请求恒经 WorkerPoolGate 交互预留位准入
-/// (LaneGate::Interactive 恒可入),两类硬顶都拦不住交互面。
+/// Single classification source: the `$/kode/rpc` inner method -> (pool lane, LaneGate category).
+/// Faces in the IO table -> Background+Io (slow IO never takes an interactive reservation seat); everything else -> Interactive
+/// +Cpu. Beyond cpu_max/io_max, an interactive request is always admitted through WorkerPoolGate's interactive reservation
+/// (LaneGate::Interactive can always enter); neither hard cap can block the interactive face.
 pub fn rpc_lane_class(inner: &str) -> (PoolLane, TaskLane) {
     if IO_TASK_METHODS.contains(&inner) {
         (PoolLane::Background, TaskLane::Io)
@@ -72,23 +72,23 @@ pub fn rpc_lane_class(inner: &str) -> (PoolLane, TaskLane) {
     }
 }
 
-/// 池泳道归类(IO 表面归后台泳道,与 RUST-074-W 暖门首扫同池不占交互位)。
+/// Pool-lane classification (IO-table faces belong to the background lane, sharing the pool with RUST-074-W's warm-gate first scan without taking interactive seats).
 pub fn rpc_pool_lane(inner: &str) -> PoolLane {
     rpc_lane_class(inner).0
 }
 
-/// LaneGate 准入类别归类(分类单一源的第二投影)。
+/// LaneGate admission-category classification (the second projection of the single classification source).
 pub fn rpc_job_kind(inner: &str) -> TaskLane {
     rpc_lane_class(inner).1
 }
 
-/// RUST-076-W:worker 数 → LaneGate 预算。结构性约束:io+cpu ≤ total-1
-/// (恒留 ≥1 个 worker 给交互预留位;WorkerPoolGate 的 interactive 配额
-/// 是准入闸,LaneGate 预算是 worker 占用闸,两层叠加)。库
-/// `LaneBudget::from_total` 在 N=2 会给出 io_max=0(饿死 2 核 CI 的 IO
-/// 面),此处自定:≥2 核 io ≥ 1;workers=1 时两泳道皆 0(全给交互)——
-/// KODE-RESP-005 起生产装配经 `assembly_pool_budget` 下限 2,该分支仅
-/// 为直接构造(测试/安全网)保留。
+/// RUST-076-W: worker count -> LaneGate budget. Structural constraint: io+cpu <= total-1
+/// (always keeping >=1 worker for the interactive reservation; WorkerPoolGate's interactive quota
+/// is the admission gate and the LaneGate budget is the worker-occupancy gate; the two layers stack). The library's
+/// `LaneBudget::from_total` yields io_max=0 at N=2 (starving the IO faces on a 2-core CI),
+/// so here we override: at >=2 cores io >= 1; with workers=1 both lanes are 0 (all given to interactive) --
+/// since KODE-RESP-005 the production assembly goes through `assembly_pool_budget` with a floor of 2; this branch only
+/// remains for direct construction (tests / safety net).
 pub fn lane_budget_for_workers(workers: usize) -> LaneBudget {
     let remaining = workers.saturating_sub(1);
     let io_max = if remaining == 0 {
@@ -104,22 +104,22 @@ pub fn lane_budget_for_workers(workers: usize) -> LaneBudget {
     }
 }
 
-/// KODE-RESP-005:装配面预算(唯一生产入口,main.rs 使用)。
+/// KODE-RESP-005: the assembly-face budget (the sole production entry, used by main.rs).
 ///
-/// 单核/单 CPU 配额机(available_parallelism=1)下 `from_total(1)` 给
-/// background_max=0、io_max=0——后台 IO 面(dbClone/ruff/scanAnchors,生产
-/// 后台队列全是 Io 泳道)永不准入,请求恒无结果;draining 排空语义下
-/// shutdown join 也永久挂起。装配下限 2:1 交互 worker + 1 IO 面 worker。
-/// 超售一根线程不构成「占满全核」的本意——后台 job 阻塞在子进程/读盘,
-/// 不是 CPU 饱和源;且 background_max=1/io_max=1 双硬顶仍界住并发。多核
-/// (≥2)行为与 from_total 完全一致,下限只救退化预算。
+/// On a single-core / single-CPU-quota machine (available_parallelism=1), `from_total(1)` yields
+/// background_max=0 and io_max=0 -- background IO faces (dbClone/ruff/scanAnchors; the production background
+/// queue is entirely Io-lane) would never be admitted and requests would never get results; under the draining semantics the
+/// shutdown join would hang forever. The assembly floor is 2: 1 interactive worker + 1 IO-face worker.
+/// Overselling one thread does not violate the intent of "never saturate all cores" -- background jobs block on subprocesses / disk reads,
+/// which are not a CPU saturation source; and the dual hard caps background_max=1/io_max=1 still bound concurrency. With multiple
+/// cores (>=2) the behavior matches from_total exactly; the floor only rescues degenerate budgets.
 pub fn assembly_pool_budget(cores: usize) -> PoolBudget {
     PoolBudget::from_total(cores.max(2))
 }
 
-/// 主分派环入口的执行归属决策。`$/kode/rpc` 按内层 method 归池;params
-/// 形状非法(无内层 method)→ Inline,由 server 原样走 INVALID_PARAMS
-/// 错误路径(口径不变,不因分类器抢答)。
+/// The execution-ownership decision at the main dispatch-loop entry. `$/kode/rpc` is pooled by inner method; an invalid params
+/// shape (no inner method) -> Inline, letting the server take its original INVALID_PARAMS
+/// error path (stance unchanged; the classifier never pre-empts the answer).
 pub fn execution_lane(method: &str, params: Option<&Value>) -> ExecutionLane {
     if method == "$/kode/rpc" {
         return match params
@@ -133,9 +133,9 @@ pub fn execution_lane(method: &str, params: Option<&Value>) -> ExecutionLane {
     ExecutionLane::Inline
 }
 
-/// 池记账快照(健康面 `$/kode/health` 的 `pool` 键;无执行器装配时省略)。
-/// RUST-076-W:`ioRunning`/`cpuRunning` = LaneGate 泳道在飞(准入/释放
-/// 观测;交互预留位经 WorkerPoolGate interactive 口径呈现,不重复计)。
+/// Pool accounting snapshot (the health face's `$/kode/health` `pool` key; omitted when no executor is assembled).
+/// RUST-076-W: `ioRunning`/`cpuRunning` = LaneGate lanes in flight (an admission/release
+/// observation; interactive reservations are presented via WorkerPoolGate's interactive stance and never double-counted).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolStats {
@@ -149,24 +149,24 @@ pub struct PoolStats {
     pub jobs_cancelled: u64,
 }
 
-/// 一个待执行 job(纯 handler 调用;worker 零共享状态)。
+/// One pending job (a pure handler call; workers share no state).
 #[derive(Debug)]
 pub struct Job {
     pub id: RequestId,
     pub method: String,
     pub params: Value,
     pub lane: PoolLane,
-    /// RUST-076-W:LaneGate 准入类别(真实 IO/外部进程等待 = Io,CPU 解析
-    /// = Cpu)。生产路径经 `rpc_job_kind` 分类;交互队列 job 的准入恒走
-    /// Interactive 预留位(kind 只作登记,CPU/IO 硬顶绝不拦交互)。
+    /// RUST-076-W: the LaneGate admission category (truly blocking IO / external-process waits = Io; CPU parsing
+    /// = Cpu). The production path classifies via `rpc_job_kind`; interactive-queue jobs are always admitted through
+    /// the Interactive reservation (kind is bookkeeping only; the CPU/IO hard caps never block interactive).
     pub kind: TaskLane,
-    /// RUST-068-W:跨任务追踪 id(TS 请求入口生成,信封级透传;缺省 None
-    /// =无 span 的纯服务端发起调用)。日志面只印 span 不印 params(脱敏)。
+    /// RUST-068-W: cross-task tracing id (generated at the TS request entry, passed through at envelope level; defaults to None
+    /// = a pure server-initiated call with no span). The log face prints only the span, never params (sanitized).
     pub span: Option<String>,
 }
 
-/// 执行终态:Done=成功回值 / Failed=handler Err(映射 -32602 或 -32601) /
-/// Cancelled=取消(排队摘除或在途丢弃,映射 -32800)。
+/// Execution final state: Done = a successful return value / Failed = a handler Err (mapped to -32602 or -32601) /
+/// Cancelled = cancelled (queue removal or in-flight drop, mapped to -32800).
 #[derive(Debug)]
 pub enum JobStatus {
     Done(Value),
@@ -179,13 +179,13 @@ pub struct JobOutcome {
     pub id: RequestId,
     pub lane: PoolLane,
     pub status: JobStatus,
-    /// RUST-068-W:回包侧日志携带同一 span(与 Job 同源透传)。
+    /// RUST-068-W: the reply-side log carries the same span (passed through from the same source as Job).
     pub span: Option<String>,
 }
 
-/// 终态 → LSP 响应映射:与 server.rs `handle_rpc` 同口径(Err 文案
-/// "method not found" 开头 → -32601,其余 → -32602;取消 → -32800,与
-/// `$/kode/wait` 取消语义一致)。集中一处防双写漂移。
+/// Final state -> LSP response mapping: the same stance as server.rs `handle_rpc` (an Err message
+/// starting with "method not found" -> -32601, otherwise -> -32602; cancel -> -32800, consistent with
+/// the `$/kode/wait` cancellation semantics). Kept in one place to guard against double-write drift.
 pub fn rpc_response_for(id: RequestId, status: JobStatus) -> Response {
     match status {
         JobStatus::Done(value) => Response::success(id, value),
@@ -215,40 +215,40 @@ struct ExecShared {
 
 struct ExecState {
     gate: WorkerPoolGate,
-    /// RUST-076-W:IO/CPU 泳道准入记账(真实阻塞面与 CPU 解析面各持独立
-    /// 硬顶,io+cpu ≤ workers-1 结构性保交互预留)。准入/释放全在此锁内,
-    /// 与队列同锁——无锁跨线程重排。
+    /// RUST-076-W: IO/CPU lane admission accounting (truly blocking faces and CPU-parsing faces each hold an independent
+    /// hard cap; io+cpu <= workers-1 structurally preserves the interactive reservation). Admission/release all happen under this lock,
+    /// the same lock as the queue -- no lock-free cross-thread reordering.
     lane_gate: LaneGate,
     interactive: VecDeque<Job>,
     background: VecDeque<Job>,
-    /// 取消时在途(或刚弹出未启动)的 job id;执行前/后按此丢弃。
+    /// Job ids cancelled while in flight (or just popped but not yet started); dropped on this basis before/after execution.
     running_cancelled: HashSet<RequestId>,
-    /// RUST-068-W:在途/排队 job 的 span 表(submit 插入,终态摘除)——
-    /// 取消/回包日志按 id 回捞 span;容量=未决 job 数,天然有界。
+    /// RUST-068-W: the span table for in-flight/queued jobs (inserted at submit, removed at final state) --
+    /// cancel/reply logs look up spans by id; capacity = the number of pending jobs, naturally bounded.
     spans: std::collections::HashMap<RequestId, String>,
-    /// RUST-072:在途 job 的取消令牌(worker 弹出时登记,终态摘除)——
-    /// cancel 命中即置位,handler 经 kode-python 探针协作点提前退出;
-    /// 容量=在途 job 数,天然有界。
+    /// RUST-072: cancellation tokens for in-flight jobs (registered when a worker pops, removed at final state) --
+    /// a cancel hit sets the token, and the handler exits early through the kode-python probe cooperation point;
+    /// capacity = the number of in-flight jobs, naturally bounded.
     running_tokens: HashMap<RequestId, Arc<AtomicBool>>,
     draining: bool,
 }
 
-/// worker 池执行器:main 线程持有,worker 数 = 预算总量。
+/// The worker-pool executor: held by the main thread; worker count = the total budget.
 pub struct PoolExecutor {
     shared: Arc<ExecShared>,
-    /// 线程句柄 Drop 时 join(shutdown 语义:不再受理,排空后退出)。
+    /// Join the thread handles on Drop (shutdown semantics: stop accepting, drain, then exit).
     handles: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
 impl std::fmt::Debug for PoolExecutor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // worker/记账面经健康 pool 键对账,Debug 只报身份不展开内部锁。
+        // Workers/accounting reconcile through the health pool key; Debug reports identity only and does not expand internal locks.
         f.debug_struct("PoolExecutor").finish_non_exhaustive()
     }
 }
 
 impl PoolExecutor {
-    /// 装配执行器:预算不自洽即 panic(绝不带病运行,与 gate 口径一致)。
+    /// Assemble the executor: an inconsistent budget panics (never run in a broken state, matching the gate's stance).
     pub fn spawn(
         snapshot: RegistrySnapshot,
         budget: PoolBudget,
@@ -295,13 +295,13 @@ impl PoolExecutor {
         )
     }
 
-    /// 健康面共享的记账快照 cell(ServerState.pool_stats 指向同一份)。
+    /// The accounting-snapshot cell shared with the health face (ServerState.pool_stats points at the same one).
     pub fn stats_cell(&self) -> Arc<Mutex<PoolStats>> {
         Arc::clone(&self.shared.stats_cell)
     }
 
-    /// 提交一个 job;draining(退出中)静默弃置——唯一提交方是主循环泵,
-    /// 它先于 shutdown 停摆,此分支只兜极窄的收尾竞态窗。
+    /// Submit a job; during draining (exiting) it is silently discarded -- the only submitter is the main-loop pump,
+    /// which stops before shutdown; this branch only covers a very narrow closing race window.
     pub fn submit(&self, job: Job) {
         let mut state = self.shared.state.lock().expect("pool state lock");
         if state.draining {
@@ -317,10 +317,10 @@ impl PoolExecutor {
         self.shared.signal.notify_all();
     }
 
-    /// 取消一个请求:排队未启动 → 摘除回 -32800(容量未占,不入丢弃登记
-    /// ——离队 job 永不执行,登记无人结算);在途 → 置位取消令牌 + 丢弃
-    /// 标记,执行完成后容量照常释放、结果丢弃回 -32800。未知/重复/迟到
-    /// id 不入任何表(RUST-072 有界化,长跑不膨胀)。
+    /// Cancel a request: queued-not-started -> remove and answer -32800 (capacity untaken, no drop registration --
+    /// a dequeued job never runs, so a registration would have no one to settle it); in-flight -> set the cancellation token + a
+    /// drop marker; after execution the capacity is released as usual and the result is discarded, answering -32800. Unknown/duplicate/late
+    /// ids enter no table (RUST-072 bounding; no growth on long runs).
     pub fn cancel(&self, id: &RequestId) {
         let (removed, span) = {
             let mut state = self.shared.state.lock().expect("pool state lock");
@@ -331,25 +331,25 @@ impl PoolExecutor {
                     stats.jobs_cancelled += 1;
                 });
             }
-            // RUST-072:在途令牌命中即置位(handler 协作点查询提前退出)。
+            // RUST-072: an in-flight token hit sets it immediately (the handler cooperation point polls and exits early).
             if let Some(token) = state.running_tokens.get(id) {
                 token.store(true, Ordering::SeqCst);
             }
-            // RUST-072 有界化:丢弃标记只在 job 仍可能被执行时写入——在途
-            // 令牌表命中,或弹出未登记令牌的窄窗(已离队但 worker 手里,
-            // span 表命中)。排队摘除的 job 已离队永不执行,不入表(否则
-            // 登记无人结算摘除,长跑排队取消泄漏);未知 id(内联请求/重复/
-            // 迟到取消)同样不入表。表容量 ≤ 在途 job 数,长跑有界。
+            // RUST-072 bounding: a drop marker is written only when the job could still be executed -- an in-flight
+            // token-table hit, or the narrow window where it was popped without a token registered (dequeued but in the worker's hands,
+            // span-table hit). A queue-removed job has left the queue and never runs, so it enters no table (otherwise
+            // the registration would have no one to settle and remove it, and long-run queued cancels would leak); unknown ids (inline requests / duplicates /
+            // late cancels) enter no table either. Table capacity <= the number of in-flight jobs, bounded on long runs.
             if state.running_tokens.contains_key(id)
                 || (!removed.is_some() && state.spans.contains_key(id))
             {
                 state.running_cancelled.insert(id.clone());
             }
-            // RUST-068-W:span 回捞两态——排队摘除=终态即本回执,span 随表
-            // 摘除随回执携带;在途丢弃=终态在 worker 结算段,span 留表
-            // (worker 回包携带),取消留痕只读克隆。此前在途也无条件摘表:
-            // worker 结算捞空 → 终态回执丢 span(排队摘除与 worker 弹出的
-            // 竞窗内必现,win32-arm64 夜构建 span_table 用例实红)。
+            // RUST-068-W: two span-lookup states -- queue removal = the final state is this very receipt, and the span leaves the
+            // table with the receipt carrying it; in-flight drop = the final state happens in the worker's settlement section, so the span stays in the
+            // table (carried by the worker's reply), and the cancellation trace keeps a read-only clone. Previously in-flight drops also removed the table unconditionally:
+            // the worker settlement would find nothing -> the final-state receipt lost its span (guaranteed to hit within the race window between
+            // queue removal and worker pop; the win32-arm64 nightly build's span_table case went red in practice).
             let span = if removed.is_some() {
                 state.spans.remove(id)
             } else {
@@ -368,7 +368,7 @@ impl PoolExecutor {
         }
     }
 
-    /// 未决 job 的 span 表深度(测试/健康对账口;终态即摘除,天然有界)。
+    /// Depth of the pending jobs' span table (a test/health reconciliation port; removed at final state, naturally bounded).
     pub fn outstanding_spans_for_tests(&self) -> usize {
         self.shared
             .state
@@ -378,8 +378,8 @@ impl PoolExecutor {
             .len()
     }
 
-    /// RUST-072:取消丢弃登记表深度(测试口;验收「长跑登记表有界」——
-    /// 未知 id/迟到取消不入表,终态即摘除,容量 ≤ 未决+在途 job 数)。
+    /// RUST-072: depth of the cancel-drop registry (a test port; acceptance of "the long-run registry stays bounded" --
+    /// unknown ids / late cancels never enter; removed at final state; capacity <= pending + in-flight jobs).
     pub fn pending_cancel_registrations_for_tests(&self) -> usize {
         self.shared
             .state
@@ -389,8 +389,8 @@ impl PoolExecutor {
             .len()
     }
 
-    /// 停止受理新 job,worker 排空已受理队列后退出(受理即欠回包,不弃置),
-    /// join 全部 worker(退出路径;阻塞至在途 handler 完成)。
+    /// Stop accepting new jobs; workers drain the accepted queue then exit (an accepted request owes a reply, never discarded),
+    /// and join all workers (the exit path; blocks until in-flight handlers complete).
     pub fn shutdown(&self) {
         {
             let mut state = self.shared.state.lock().expect("pool state lock");
@@ -410,7 +410,7 @@ impl Drop for PoolExecutor {
     }
 }
 
-/// RUST-068-W:取消留痕(span 缺省印 `-`;只印 id/span,不印 params——脱敏)。
+/// RUST-068-W: the cancellation trace (span defaults to printing `-`; prints only id/span, never params -- sanitized).
 fn log_cancel(id: &RequestId, span: Option<&str>) {
     eprintln!(
         "[kode-server] request {id} cancelled (pool span={})",
@@ -418,18 +418,18 @@ fn log_cancel(id: &RequestId, span: Option<&str>) {
     );
 }
 
-/// 从队列摘除目标 id 的排队 job(取消路径;容量未占,无需记账释放)。
+/// Remove the queued job with the target id from the queue (the cancel path; capacity untaken, no release accounting needed).
 fn remove_queued(queue: &mut VecDeque<Job>, id: &RequestId) -> Option<Job> {
     let index = queue.iter().position(|job| &job.id == id)?;
     queue.remove(index)
 }
 
-/// 按闭包改记账并同步健康面 cell(gate 与 lane_gate 运行数在每次记账变更
-/// 后刷新;cell 只在队列锁内短持,健康路径只持 cell 锁,无反向持锁)。
-/// RUST-076-W:交互在飞经 WorkerPoolGate interactive 口径呈现,LaneGate
-/// 的 Interactive 记数不重复出表;io/cpu 两泳道由 LaneGate 直接对账。
-/// KR-AUD-22 同族(scheduler.rs panic_to_error 同口径):handler panic 消息
-/// 转 Err 文案,按 Failed 终态落账。
+/// Update accounting via the closure and sync the health-face cell (the gate and lane_gate running counts refresh after every
+/// accounting change; the cell is held briefly inside the queue lock only, the health path holds only the cell lock, never the reverse).
+/// RUST-076-W: interactive in-flight is presented via WorkerPoolGate's interactive stance; LaneGate's
+/// Interactive count is never double-published; the io/cpu lanes reconcile directly through LaneGate.
+/// Same family as KR-AUD-22 (the same stance as scheduler.rs panic_to_error): a handler panic message becomes an
+/// Err message, accounted under the Failed final state.
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         format!("dispatch panicked: {s}")
@@ -450,9 +450,9 @@ fn bump_stats(cell: &Mutex<PoolStats>, state: &ExecState, f: impl FnOnce(&mut Po
     }
 }
 
-/// KODE-RESP-005:后台队头可否准入的只读探测(不改任何记账;与 worker
-/// 取 job 段的 try_admit 判据同式:泳道硬顶 + gate 双闸)。供 draining
-/// 守卫识别「永不被调度」的排队 job。
+/// KODE-RESP-005: a read-only probe of whether the background queue head could be admitted (changes no accounting; the same form as the
+/// worker take-job section's try_admit criterion: the lane hard cap + the gate's double gate). Lets the draining
+/// guard recognize queued jobs that would never be scheduled.
 fn background_admittable(state: &ExecState) -> bool {
     let head_kind = match state.background.front() {
         Some(job) => job.kind,
@@ -473,24 +473,24 @@ fn background_admittable(state: &ExecState) -> bool {
 
 fn worker_loop(shared: Arc<ExecShared>) {
     loop {
-        // 取 job 段:锁内只做队列摘取与准入记账,handler 在锁外执行。
-        // RUST-076-W:准入分两层——LaneGate(IO/CPU/交互泳道记账,先)+
-        // WorkerPoolGate(交互预留位配额,后);任一层拒即按已准入侧回滚,
-        // job 如实回队等容量(condvar wait,不忙旋)。
+        // Take-job section: under the lock only queue removal and admission accounting happen; the handler runs outside the lock.
+        // RUST-076-W: admission has two layers -- LaneGate (IO/CPU/interactive lane accounting, first) +
+        // WorkerPoolGate (the interactive reservation quota, second); either layer rejecting rolls back the already-admitted side,
+        // and the job honestly returns to the queue to wait for capacity (condvar wait, no busy spinning).
         let (job, admitted_lane) = {
             let mut state = shared.state.lock().expect("pool state lock");
             'pick: loop {
-                // draining(退出中):排空已受理队列再退——受理过的请求都欠
-                // 回包,静默弃置会破坏与内联路径的回包平价。
+                // Draining (exiting): drain the accepted queue before exiting -- every accepted request owes
+                // a reply; silently discarding would break reply parity with the inline path.
                 if state.draining && state.interactive.is_empty() && state.background.is_empty() {
                     return;
                 }
-                // KODE-RESP-005:draining 时队头永不可准入(退化预算,如未经
-                // 装配下限的 total=1:background_max=0/io_max=0)且无任何
-                // 在飞 job——排空语义等不到排空,join 将永久挂起。如实取消
-                // 余下排队 job(回 -32800,受理即欠回包的诚实近似)后走
-                // 循环顶排空检查退出。探测只读不改记账;交互队头在占用为
-                // 零时恒可入,不存在此形态。
+                // KODE-RESP-005: while draining, the queue head can never be admitted (a degenerate budget, e.g. an unassembled
+                // floor of total=1: background_max=0/io_max=0) and no job at all is
+                // in flight -- the drain semantics would never see the drain complete and join would hang forever. Honestly cancel
+                // the remaining queued jobs (answering -32800, the honest approximation of "accepted means owing a reply") and then fall through to
+                // the loop-top drain check to exit. The probe is read-only and changes no accounting; an interactive queue head with zero
+                // occupancy can always enter, so this shape cannot occur.
                 if state.draining
                     && state.interactive.is_empty()
                     && !state.background.is_empty()
@@ -513,9 +513,9 @@ fn worker_loop(shared: Arc<ExecShared>) {
                     shared.signal.notify_all();
                     continue;
                 }
-                // 交互优先:预留位语义——后台满载/排队也拦不住交互请求。
-                // 交互面准入恒走 LaneGate::Interactive(恒可入,直至总量
-                // 满),kind 只是登记,CPU/IO 硬顶绝不拦交互。
+                // Interactive first: the reservation semantics -- a saturated/queued background cannot block an interactive request either.
+                // The interactive face is always admitted through LaneGate::Interactive (always able to enter, until the
+                // total fills); kind is bookkeeping only, and the CPU/IO hard caps never block interactive.
                 if let Some(job) = state.interactive.pop_front() {
                     let lane_admitted = state.lane_gate.try_admit(TaskLane::Interactive);
                     let gate_admitted = lane_admitted && state.gate.try_admit_interactive();
@@ -523,17 +523,17 @@ fn worker_loop(shared: Arc<ExecShared>) {
                         bump_stats(&shared.stats_cell, &state, |_| {});
                         break 'pick (job, TaskLane::Interactive);
                     }
-                    // 理论不可达(worker=total,空闲线程弹出时必有余位);
-                    // 如实回队等容量,绝不越记账(已准入侧先回滚)。
+                    // Theoretically unreachable (worker=total; a waking idle thread must find a free seat);
+                    // honestly return it to the queue to wait for capacity, never over-admitting (rolling back the already-admitted side first).
                     if lane_admitted && !gate_admitted {
                         state.lane_gate.release(TaskLane::Interactive);
                     }
                     state.interactive.push_front(job);
                 } else if let Some(&head_kind) = state.background.front().map(|job| &job.kind) {
-                    // 后台队:按队头 job 的 kind 准入泳道(IO/CPU 各持硬顶,
-                    // 分离语义——IO 饱和不压 CPU,反之亦然),再过 gate 配额。
-                    // 队头不动(FIFO 保序),泳道拒绝即整队等待——不重排
-                    // 不插队,与空队列同走 condvar wait。
+                    // Background queue: admit the queue head's job into its lane by kind (IO/CPU each hold a hard cap,
+                    // separated semantics -- IO saturation does not squeeze CPU, and vice versa), then pass the gate quota.
+                    // The queue head does not move (FIFO order preserved); a lane rejection makes the whole queue wait -- no reordering,
+                    // no queue jumping; the empty-queue path and this one both take the condvar wait.
                     let lane_admitted = state.lane_gate.try_admit(head_kind);
                     let gate_admitted = lane_admitted && state.gate.try_admit_background();
                     if lane_admitted && gate_admitted {
@@ -551,8 +551,8 @@ fn worker_loop(shared: Arc<ExecShared>) {
                 state = shared.signal.wait(state).expect("pool state lock poisoned");
             }
         };
-        // RUST-072:登记本 job 取消令牌(锁内登记,cancel 三查窗口一致)并
-        // 设进本线程探针——handler 协作点(kode-python)据此提前退出。
+        // RUST-072: register this job's cancellation token (registered under the lock so the cancel three-lookup window stays consistent) and
+        // set it into this thread's probe -- the handler cooperation point (kode-python) exits early on this basis.
         let cancel_token = Arc::new(AtomicBool::new(false));
         {
             let mut state = shared.state.lock().expect("pool state lock");
@@ -561,14 +561,14 @@ fn worker_loop(shared: Arc<ExecShared>) {
                 .insert(job.id.clone(), Arc::clone(&cancel_token));
         }
         kode_python::cancel::set_probe(Some(Arc::clone(&cancel_token)));
-        // RUST-068-W:worker 侧起跑留痕(跨任务追踪面;只印 id/method/span)。
+        // RUST-068-W: the worker-side start trace (the cross-task tracing face; prints only id/method/span).
         eprintln!(
             "[kode-server] pool job {} {} start (span={})",
             job.id,
             job.method,
             job.span.as_deref().unwrap_or("-")
         );
-        // 弹出前已取消(排队摘除窗口外)的 id:按取消短路,不执行 handler。
+        // Ids cancelled before pop (outside the queue-removal window): short-circuit as cancelled, never running the handler.
         let cancelled_before = {
             let mut state = shared.state.lock().expect("pool state lock");
             state.running_cancelled.remove(&job.id)
@@ -576,10 +576,10 @@ fn worker_loop(shared: Arc<ExecShared>) {
         let outcome_status = if cancelled_before {
             JobStatus::Cancelled
         } else {
-            // 纯 handler 执行(锁外;worker 零共享状态)。
-            // KR-AUD-22 同族(catch_unwind 收敛,照 scheduler.rs 先例):worker
-            // 只 spawn 一次不重生,handler panic 掀翻线程会让本 job 的 gate
-            // 配额与泳道位永不释放(计数泄漏楔死准入),请求方也无终态回包。
+            // Pure handler execution (outside the lock; workers share no state).
+            // Same family as KR-AUD-22 (catch_unwind convergence, following the scheduler.rs precedent): a worker
+            // is spawned once and never reborn; a handler panic flipping the thread would leave this job's gate
+            // quota and lane seat never released (count leakage wedges admission shut), and the requester would never get a final-state reply.
             let dispatched = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 shared.snapshot.dispatch(&job.method, job.params)
             }));
@@ -589,10 +589,10 @@ fn worker_loop(shared: Arc<ExecShared>) {
                 Err(payload) => JobStatus::Failed(panic_message(payload)),
             }
         };
-        // 结算段:释放记账 + 终态计数 + 回包(在途取消在此丢弃结果)。
-        // RUST-072:取消裁定三源并列——弹出前登记表、在途丢弃登记表、
-        // handler 自报取消文案(协作点 Err;无 span 的 job 不经 span 表,
-        // 以 handler 文案为诚实源,绝不落 -32602 冒充参数错)。
+        // Settlement section: release accounting + final-state counters + the reply (an in-flight cancel discards the result here).
+        // RUST-072: cancellation is adjudicated from three sources in parallel -- the pre-pop registry, the in-flight drop registry,
+        // and the handler's self-reported cancellation text (a cooperation-point Err; a job with no span bypasses the span table,
+        // taking the handler text as the honest source, never falling to -32602 posing as a params error).
         let mut state = shared.state.lock().expect("pool state lock");
         let cancelled = cancelled_before
             || state.running_cancelled.remove(&job.id)
@@ -607,11 +607,11 @@ fn worker_loop(shared: Arc<ExecShared>) {
             PoolLane::Interactive => state.gate.release_interactive(),
             PoolLane::Background => state.gate.release_background(),
         };
-        // RUST-076-W:泳道位与 gate 配额同批释放(取消/失败照常释放——
-        // 无占位泄漏;release 拒下溢即准入/释放错配 = 装配 bug)。
+        // RUST-076-W: lane seats and gate quota release in the same batch (cancel/failure release as usual --
+        // no seat leaks; release rejecting an underflow means an admission/release mismatch = an assembly bug).
         let lane_released = state.lane_gate.release(admitted_lane);
         if !released || !lane_released {
-            // 准入/释放错配 = 装配 bug:stderr 留痕不 panic(server 健壮性)。
+            // Admission/release mismatch = an assembly bug: leave a stderr trace, do not panic (server robustness).
             eprintln!("[kode-server] pool release without admission (bug)");
         }
         bump_stats(&shared.stats_cell, &state, |stats| match final_status {
@@ -619,11 +619,11 @@ fn worker_loop(shared: Arc<ExecShared>) {
             JobStatus::Failed(_) => stats.jobs_failed += 1,
             JobStatus::Cancelled => stats.jobs_cancelled += 1,
         });
-        // span/令牌表随终态摘除(容量=未决/在途 job 数,天然有界)。
+        // The span/token tables are removed at final state (capacity = pending/in-flight job counts, naturally bounded).
         let span = state.spans.remove(&job.id);
         state.running_tokens.remove(&job.id);
         drop(state);
-        // RUST-072:清本线程探针(worker 线程复用,防串 job)。
+        // RUST-072: clear this thread's probe (worker threads are reused; guard against cross-job contamination).
         kode_python::cancel::set_probe(None);
         let _ = shared.done_tx.send(JobOutcome {
             id: job.id,
@@ -631,7 +631,7 @@ fn worker_loop(shared: Arc<ExecShared>) {
             status: final_status,
             span,
         });
-        // 容量已释放:等待中的后台/交互可以取 job。
+        // Capacity released: waiting background/interactive jobs may take a job.
         shared.signal.notify_all();
     }
 }
@@ -643,21 +643,21 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{Duration, Instant};
 
-    /// 测试慢 handler 协调器:静态位(fn 指针不能捕获)。各测试用互不重叠
-    /// 的 ticket 段,跨测试零串扰(cargo test 并行安全)。
+    /// Test slow-handler coordinator: static slots (fn pointers cannot capture). Each test uses a non-overlapping
+    /// ticket range, giving zero cross-test interference (cargo test parallel-safe).
     fn hold() -> &'static (Mutex<Vec<u32>>, Condvar) {
         static HOLD: std::sync::OnceLock<(Mutex<Vec<u32>>, Condvar)> = std::sync::OnceLock::new();
         HOLD.get_or_init(|| (Mutex::new(Vec::new()), Condvar::new()))
     }
 
-    /// PoisonError 容错:worker panic 中毒后,测试协调面照常拿锁工作,
-    /// 不让单个测试的 panic 连坐整组(PoisonError 连坐前科:CI 实红)。
+    /// PoisonError tolerance: after a worker panic poisons the lock, the test coordination face still takes the lock and works,
+    /// keeping one test's panic from implicating the whole group (PoisonError guilt-by-association precedent: it went red on CI in practice).
     fn hold_lock() -> std::sync::MutexGuard<'static, Vec<u32>> {
         hold().0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// 慢机容忍:有界等待的拍数上限环境感知。缺省 3000 与历史口径一致
-    /// (20ms 拍≈60s);CI 慢机由 workflow 设 KODE_TEST_TICK_BUDGET=9000 放宽。
+    /// Slow-machine tolerance: an environment-aware cap on the bounded wait's tick count. The default 3000 matches the historical stance
+    /// (a 20ms tick ~ 60s); CI slow machines relax it via the workflow setting KODE_TEST_TICK_BUDGET=9000.
     fn tick_budget() -> usize {
         std::env::var("KODE_TEST_TICK_BUDGET")
             .ok()
@@ -665,11 +665,11 @@ mod tests {
             .unwrap_or(3000)
     }
 
-    /// fn 指针 handler:登记 ticket 后阻塞,直到放行号(ticket+1000)出现。
-    /// notify 驱动的真等待:单拍到 deadline,release 的 notify_all 提前唤醒
-    /// (spurious wakeup 由 contains 循环吸收),无逐拍轮询;总时长有界
-    /// (tick_budget×20ms,缺省 60s/CI 180s)——测试侧 panic 后孤儿 worker
-    /// 也能自行超时退出,不挂死 CI(纯 wait() 无界版实测挂死)。
+    /// fn-pointer handler: after registering the ticket it blocks until release number (ticket+1000) appears.
+    /// A notify-driven true wait: a single wait until deadline; release's notify_all wakes it early
+    /// (spurious wakeups are absorbed by the contains loop), no per-tick polling; the total duration is bounded
+    /// (tick_budget x 20ms, defaulting to 60s / 180s on CI) -- so an orphaned worker after a test-side panic
+    /// still times out and exits by itself, never wedging CI (the pure unbounded wait() version wedged in practice).
     fn blocking_handler(params: Value) -> Result<Value, String> {
         let ticket = params.get("ticket").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         {
@@ -698,7 +698,7 @@ mod tests {
         Ok(serde_json::json!({ "ticket": ticket }))
     }
 
-    /// 放行指定 ticket(测试协调面)。
+    /// Release the specified ticket (the test coordination face).
     fn release(ticket: u32) {
         let mut waiting = hold_lock();
         waiting.push(ticket + 1000);
@@ -706,8 +706,8 @@ mod tests {
         hold().1.notify_all();
     }
 
-    /// RUST-072 可取消 handler:登记 ticket 后轮询本线程取消探针(与生产
-    /// kode-python 协作点同一查询通道);取消 → Err(取消文案),否则等放行。
+    /// RUST-072 cancellable handler: after registering the ticket it polls this thread's cancel probe (the same query channel as the
+    /// production kode-python cooperation point); on cancel -> Err (the cancellation text), otherwise it waits for release.
     fn cancellable_polling_handler(params: Value) -> Result<Value, String> {
         let ticket = params.get("ticket").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         {
@@ -736,8 +736,8 @@ mod tests {
         Ok(serde_json::json!({ "ticket": ticket }))
     }
 
-    /// 等到 handler 登记了指定 ticket(worker 真正开跑的可观察面)。
-    /// 有界等待:调度面回归(交互永不入)时红而非挂死。
+    /// Wait until a handler registered the specified ticket (the observable face of a worker truly starting).
+    /// Bounded wait: turns red rather than wedging when the scheduling face regresses (interactive never entering).
     fn wait_started(ticket: u32) {
         let mut waiting = hold_lock();
         let mut ticks = 0usize;
@@ -772,8 +772,8 @@ mod tests {
     }
 
     fn job(id: u32, method: &str, lane: PoolLane) -> Job {
-        // 缺省 kind 与生产分类同构:后台队列=Io 面,交互队列=Cpu 面
-        // (交互准入恒走 Interactive 预留位,kind 只登记)。
+        // The default kinds are isomorphic with the production classification: background queue = Io faces, interactive queue = Cpu faces
+        // (interactive admission always goes through the Interactive reservation; kind is bookkeeping only).
         let kind = match lane {
             PoolLane::Interactive => TaskLane::Cpu,
             PoolLane::Background => TaskLane::Io,
@@ -794,8 +794,8 @@ mod tests {
 
     #[test]
     fn lane_budget_for_workers_keeps_interactive_reserve_and_io_floor() {
-        // 结构性约束:io+cpu ≤ workers-1(恒留交互预留位);≥2 核 io ≥ 1
-        // (库 from_total 在 N=2 给 io=0 会饿死 IO 面);1 核全给交互。
+        // Structural constraint: io+cpu <= workers-1 (always keep the interactive reservation); at >=2 cores io >= 1
+        // (the library's from_total gives io=0 at N=2, starving the IO faces); a single core gives everything to interactive.
         let cases = [
             (1usize, (0usize, 0usize)),
             (2, (1, 0)),
@@ -813,7 +813,7 @@ mod tests {
 
     #[test]
     fn rpc_lane_class_routes_io_table_and_defaults_cpu() {
-        // IO 表五面 → Background+Io(慢 IO 不占交互位)。
+        // The IO table's five faces -> Background+Io (slow IO never takes interactive seats).
         for method in [
             "$/kode/dbClone/export",
             "$/kode/dbClone/inspectArchive",
@@ -827,7 +827,7 @@ mod tests {
                 "{method} 须归 IO 表"
             );
         }
-        // 其余注册面缺省 Interactive+Cpu(纯解析)。
+        // The remaining registered faces default to Interactive+Cpu (pure parsing).
         assert_eq!(
             rpc_lane_class("$/kode/echo"),
             (PoolLane::Interactive, TaskLane::Cpu)
@@ -836,7 +836,7 @@ mod tests {
             rpc_lane_class("$/kode/python/selfAttributeFlow"),
             (PoolLane::Interactive, TaskLane::Cpu)
         );
-        // 单一分类源的两投影一致。
+        // The two projections of the single classification source agree.
         for method in ["$/kode/ruff/lint", "$/kode/echo"] {
             assert_eq!(rpc_pool_lane(method), rpc_lane_class(method).0);
             assert_eq!(rpc_job_kind(method), rpc_lane_class(method).1);
@@ -845,8 +845,8 @@ mod tests {
 
     #[test]
     fn io_saturation_does_not_block_cpu_and_interactive_lanes() {
-        // total=4 → io_max=1, cpu_max=2。IO 满 + CPU 满 + 交互在飞同时成立
-        // (4 worker 全占),且 CPU 满载后第 4 个 CPU job 排队——交互仍立入。
+        // total=4 -> io_max=1, cpu_max=2. IO full + CPU full + interactive in flight all hold simultaneously
+        // (all 4 workers occupied), and after CPU saturates the 4th CPU job queues -- interactive still enters immediately.
         let budget = PoolBudget {
             total: 4,
             interactive_reserved: 1,
@@ -874,9 +874,9 @@ mod tests {
             TaskLane::Cpu,
         ));
         wait_started(503);
-        // 第 4 个 CPU job:CPU 泳道硬顶(2)与 gate 后台配额(3)双双满载
-        // ——排队等容量,绝不越记账(80ms 静置观察期;若越权启动,505 交互
-        // 将无 worker 可用,wait_started 红即越权面)。
+        // The 4th CPU job: the CPU lane hard cap (2) and the gate's background quota (3) are both saturated
+        // -- queue and wait for capacity, never over-admitting (an 80ms observation quiet period; if it started anyway, the 505 interactive
+        // request would have no worker left, and wait_started turning red would be the over-admission face).
         executor.submit(job_with_kind(
             504,
             "$/kode/test/blocking",
@@ -884,7 +884,7 @@ mod tests {
             TaskLane::Cpu,
         ));
         std::thread::sleep(Duration::from_millis(80));
-        // 交互面在 CPU 满 + IO 满时仍立即可入(预留位语义)。
+        // The interactive face still enters immediately with CPU full + IO full (the reservation semantics).
         executor.submit(job(505, "$/kode/test/blocking", PoolLane::Interactive));
         wait_started(505);
         let stats = stats_of(&executor);
@@ -899,7 +899,7 @@ mod tests {
         );
         release(505);
         release(502);
-        // CPU 位释放:排队 CPU job 依序入(IO 位仍满不拦 CPU)。
+        // A CPU seat releases: queued CPU jobs enter in order (a still-full IO seat does not block CPU).
         wait_started(504);
         let stats = stats_of(&executor);
         assert_eq!(stats.cpu_running, 2, "CPU 位释放后补位");
@@ -912,8 +912,8 @@ mod tests {
 
     #[test]
     fn cancel_queued_io_job_leaves_no_lane_slot() {
-        // total=2 → io_max=1。排队 IO job 取消:即刻回 -32800,泳道零占位;
-        // 后续 IO job 在位释放后照常准入(无占位泄漏)。
+        // total=2 -> io_max=1. Cancelling a queued IO job: answers -32800 immediately with zero lane seats taken;
+        // Subsequent IO jobs enter as usual after the seat releases (no seat leak).
         let (executor, rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         executor.submit(job(601, "$/kode/test/blocking", PoolLane::Background));
@@ -926,7 +926,7 @@ mod tests {
         assert_eq!(stats.jobs_cancelled, 1);
         assert_eq!(stats.io_running, 1, "在途 601 泳道位未受影响");
         release(601);
-        // 泳道位已释放:新 IO job 可执行(取消不留占位)。
+        // The lane seat has released: a new IO job can execute (a cancel leaves no seat taken).
         executor.submit(job(603, "$/kode/test/blocking", PoolLane::Background));
         wait_started(603);
         assert_eq!(stats_of(&executor).io_running, 1);
@@ -936,7 +936,7 @@ mod tests {
 
     #[test]
     fn failing_io_job_releases_lane_slot() {
-        // IO job 失败(handler Err):泳道位照常释放,后续 IO job 不饿死。
+        // An IO job fails (handler Err): the lane seat releases as usual, so later IO jobs do not starve.
         let (executor, rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         executor.submit(job(611, "$/kode/test/failing", PoolLane::Background));
@@ -951,11 +951,11 @@ mod tests {
 
     #[test]
     fn span_table_tracks_outstanding_jobs_and_drains_on_terminal() {
-        // 确定性排队:701/703 两张 wait_started 占满 total=2 的两个 worker,
-        // 702 提交时准入必拒(交互预留位也满),必走「排队→取消摘除」路径。
-        // 不再依赖主线程 cancel 抢在 worker 唤醒前拿锁的竞速——CI 慢机
-        // 实红前科:worker 先弹起则 702 在途,cancel 走在途路径 span 留表,
-        // 断言 2≠1 必红(try_admit_interactive「总占用<total 恒放行交互」)。
+        // Deterministic queueing: 701/703's two wait_started calls occupy both workers of total=2,
+        // so when 702 is submitted, admission must reject (the interactive reservation is full too) and it must take the "queue -> cancel-remove" path.
+        // No longer relying on the race where the main thread's cancel grabs the lock before the worker wakes -- on a slow CI
+        // machine this went red in practice: if the worker pops first, 702 is in flight, cancel takes the in-flight path leaving the span in the table,
+        // and the 2!=1 assertion must go red (try_admit_interactive's "total occupancy < total always admits interactive").
         let (executor, rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
         executor.submit(job(701, "$/kode/test/blocking", PoolLane::Interactive));
@@ -976,7 +976,7 @@ mod tests {
         );
         release(701);
         release(703);
-        // 通道里三张回执到达序不定:按 id 分捡齐(701/703 完成+702 取消)。
+        // The three receipts arrive over the channel in any order: sort them out by id (701/703 completions + the 702 cancel).
         let expected_701 = format!("span-{:04x}", 701);
         let expected_702 = format!("span-{:04x}", 702);
         let expected_703 = format!("span-{:04x}", 703);
@@ -1019,14 +1019,14 @@ mod tests {
 
     #[test]
     fn inflight_cancel_terminal_outcome_carries_span() {
-        // 回归钉:在途丢弃路径的取消不得从 span 表摘走 span——终态回执由
-        // worker 结算段产出,span 留表才能随回包携带(排队摘除路径已由
-        // span_table 用例覆盖;此前的无条件摘表让 worker 结算捞空,win32
-        // 夜构建实红)。确定性:起跑后再取消,不走排队竞窗。
+        // Regression pin: a cancel on the in-flight-drop path must not remove the span from the span table -- the final-state receipt is
+        // produced by the worker's settlement section, so the span must stay in the table to ride along with the reply (the queue-removal path is
+        // already covered by the span_table case; the previous unconditional table removal let the worker settlement find nothing, going red on
+        // the win32 nightly in practice). Determinism: cancel only after the start, never through the queue race window.
         let (executor, rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
-        // ticket 841:独立段(cancellable 用例同段 801 曾撞车——全局 hold
-        // 登记表跨池共享,票号重叠会让 wait_started 被他人登记误触发)。
+        // Ticket 841: an independent range (the cancellable case previously collided with its range-mate 801 -- the global hold
+        // registry is shared across pools, so overlapping ticket numbers made wait_started fire on someone else's registration).
         executor.submit(job(841, "$/kode/test/blocking", PoolLane::Interactive));
         wait_started(841);
         executor.cancel(&RequestId::Number(841));
@@ -1052,7 +1052,7 @@ mod tests {
     }
 
     fn stats_of(executor: &PoolExecutor) -> PoolStats {
-        // PoisonError 容错:与 hold 面同款,panic 后记账观察不连坐。
+        // PoisonError tolerance: the same as the hold face; accounting observation after a panic is not guilt-bound.
         *executor
             .shared
             .stats_cell
@@ -1060,7 +1060,7 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner())
     }
 
-    /// 等到记账进入期望运行态(轮询,超时即断言失败)。
+    /// Wait until accounting enters the expected running state (polling; a timeout fails the assertion).
     fn wait_running(executor: &PoolExecutor, interactive: usize, background: usize) {
         for _ in 0..300 {
             let stats = stats_of(executor);
@@ -1089,13 +1089,13 @@ mod tests {
             ),
             ExecutionLane::Pool(PoolLane::Interactive)
         );
-        // 形状非法:回 Inline,由 server 走原 INVALID_PARAMS 路径。
+        // Invalid shape: returns Inline, letting the server take its original INVALID_PARAMS path.
         assert_eq!(
             execution_lane("$/kode/rpc", Some(&serde_json::json!({}))),
             ExecutionLane::Inline
         );
         assert_eq!(execution_lane("$/kode/rpc", None), ExecutionLane::Inline);
-        // 顶层 serving 面恒 Inline。
+        // Top-level serving faces are always Inline.
         assert_eq!(
             execution_lane("textDocument/hover", None),
             ExecutionLane::Inline
@@ -1133,7 +1133,7 @@ mod tests {
             background_max: 1,
         };
         let (executor, rx) = PoolExecutor::spawn(registry_with_test_handlers(), budget);
-        // 先占掉唯一后台位,再排一个后台,最后排交互:交互必须越过排队后台。
+        // First take the only background seat, then queue a background job, then queue an interactive one: interactive must overtake the queued background job.
         executor.submit(job(101, "$/kode/test/blocking", PoolLane::Background));
         wait_started(101);
         executor.submit(job(102, "$/kode/test/blocking", PoolLane::Background));
@@ -1147,7 +1147,7 @@ mod tests {
         );
         release(103);
         release(101);
-        // 空出的后台位让排队 job 102 得以执行。
+        // The freed background seat lets queued job 102 execute.
         wait_started(102);
         release(102);
         let mut seen: Vec<i64> = Vec::new();
@@ -1179,13 +1179,13 @@ mod tests {
         wait_started(201);
         wait_running(&executor, 0, 1);
         assert_eq!(stats_of(&executor).background_running, 1, "后台硬顶 1");
-        // 后台满载:交互仍立即可入(预留位语义)。
+        // Background saturated: interactive still enters immediately (the reservation semantics).
         executor.submit(job(209, "$/kode/test/blocking", PoolLane::Interactive));
         wait_started(209);
         wait_running(&executor, 1, 1);
         release(209);
         release(201);
-        // 空出的后台位:排队 job 依序入。
+        // The freed background seat: queued jobs enter in order.
         wait_started(202);
         release(202);
         wait_started(203);
@@ -1211,14 +1211,14 @@ mod tests {
         executor.submit(job(301, "$/kode/test/blocking", PoolLane::Interactive));
         wait_started(301);
         executor.submit(job(302, "$/kode/test/blocking", PoolLane::Interactive));
-        // 302 排队中取消:即刻回 -32800,不占容量。
+        // Cancelling 302 while queued: answers -32800 immediately, no capacity taken.
         executor.cancel(&RequestId::Number(302));
         let outcome = recv_outcome(&rx);
         assert!(matches!(outcome.status, JobStatus::Cancelled));
         let stats = stats_of(&executor);
         assert_eq!(stats.jobs_cancelled, 1);
         assert_eq!(stats.interactive_running, 1, "在途 301 未受影响");
-        // 放行 301:302 不得复活。
+        // Release 301: 302 must not revive.
         release(301);
         let mut seen_first = false;
         let mut seen_cancelled_twice = false;
@@ -1250,7 +1250,7 @@ mod tests {
         let stats = stats_of(&executor);
         assert_eq!(stats.jobs_cancelled, 1);
         assert_eq!(stats.interactive_running, 0, "容量已释放");
-        // 释放后容量恢复:新 job 可执行。
+        // Capacity recovers after release: a new job can execute.
         executor.submit(job(402, "$/kode/echo", PoolLane::Interactive));
         let outcome = recv_outcome(&rx);
         assert!(matches!(outcome.status, JobStatus::Done(_)));
@@ -1259,9 +1259,9 @@ mod tests {
 
     #[test]
     fn cancel_running_flips_token_handler_exits_early_and_settles_cancelled() {
-        // RUST-072 核心面:在途取消 → cancel 置位令牌 → handler 协作点探针
-        // 提前退出(真中断,不等 handler 自然跑完)→ 结算 Cancelled(-32800),
-        // 容量即刻回收,轻请求不被占用。
+        // RUST-072 core face: in-flight cancel -> cancel sets the token -> the handler cooperation point's probe
+        // exits early (a true interruption, not waiting for the handler to finish naturally) -> settles as Cancelled (-32800),
+        // capacity is reclaimed immediately, and light requests are not occupied.
         let (executor, rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         executor.submit(job(801, "$/kode/test/cancellable", PoolLane::Interactive));
@@ -1269,9 +1269,9 @@ mod tests {
         let cancel_at = std::time::Instant::now();
         executor.cancel(&RequestId::Number(801));
         let outcome = recv_outcome(&rx);
-        // handler 每 10ms 查一次探针:提前退出应在秒级内到账(自然跑完也
-        // 有界,但取消路径必须明显快于放行路径——这里没有放行,唯一出口
-        // 就是取消)。
+        // The handler polls the probe every 10ms: the early exit should land within seconds (finishing naturally is also
+        // bounded, but the cancel path must be clearly faster than the release path -- there is no release here; the only
+        // exit is the cancel).
         assert!(
             cancel_at.elapsed() < Duration::from_secs(5),
             "在途取消应经令牌提前退出,实测 {:?}",
@@ -1293,7 +1293,7 @@ mod tests {
             "终态摘除:登记表排空"
         );
         assert_eq!(stats_of(&executor).interactive_running, 0, "容量已回收");
-        // 回收后轻请求照常立即可入。
+        // After reclamation, light requests still enter immediately as usual.
         executor.submit(job(802, "$/kode/echo", PoolLane::Interactive));
         let outcome = recv_outcome(&rx);
         assert!(matches!(outcome.status, JobStatus::Done(_)));
@@ -1302,9 +1302,9 @@ mod tests {
 
     #[test]
     fn cancel_handler_message_settles_cancelled_even_without_span() {
-        // 无 span 的 job(submit 未带 span → span 表无登记):在途取消的
-        // 裁定走在途令牌表(worker 弹出即登记,与 span 无关)——结算
-        // Cancelled,不落 Failed(-32602)。
+        // A job with no span (submit carried no span -> no span-table entry): an in-flight cancel
+        // is adjudicated through the in-flight token table (registered when the worker pops, span-independent) -- settling
+        // as Cancelled, never as Failed (-32602).
         let (executor, rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         let bare = Job {
@@ -1329,9 +1329,9 @@ mod tests {
 
     #[test]
     fn handler_reported_cancellation_message_settles_cancelled() {
-        // 结算三源的诚实源臂可观察面:executor 从未取消(令牌表/丢弃表双
-        // 缺),handler 自己经探针观测取消并报取消文案 → 结算 Cancelled,
-        // 绝不落 Failed(-32602)冒充参数错。
+        // The honest-source arm of the three settlement sources, observable: the executor never cancelled (both the token table
+        // and the drop table absent), the handler itself observed the cancel through the probe and reported the cancellation text -> settles as Cancelled,
+        // never as Failed (-32602) posing as a params error.
         fn self_reporting_cancel_handler(_params: Value) -> Result<Value, String> {
             let token = Arc::new(AtomicBool::new(true));
             kode_python::cancel::set_probe(Some(token));
@@ -1361,9 +1361,9 @@ mod tests {
 
     #[test]
     fn panicking_handler_settles_failed_and_releases_gate() {
-        // KR-AUD-22 同族:handler panic 按 Failed 终态落账(catch_unwind 收敛)。
-        // worker 只 spawn 一次不重生——不收敛就掀翻线程:gate 配额与泳道位
-        // 永不释放(计数泄漏楔死准入),请求方也拿不到终态回包。
+        // Same family as KR-AUD-22: a handler panic is accounted under the Failed final state (catch_unwind convergence).
+        // A worker is spawned once and never reborn -- without convergence the thread would flip: the gate quota and lane seats
+        // would never release (count leakage wedges admission shut) and the requester would never get a final-state reply.
         fn panicking_handler(_params: Value) -> Result<Value, String> {
             panic!("handler exploded");
         }
@@ -1379,11 +1379,11 @@ mod tests {
             message.contains("handler exploded"),
             "panic 消息应可定位,实际 {message:?}"
         );
-        // 配额已释放:终态后泳道占用排空,失败计数入账
+        // Quota released: after the final state the lane occupancy drains and the failure counter books.
         let stats = stats_of(&executor);
         assert_eq!(stats.interactive_running, 0, "终态后交互占用应排空");
         assert_eq!(stats.jobs_failed, 1, "panic 按失败计数");
-        // 线程未被掀翻:同一 worker 照常处理下一个 job
+        // The thread was not flipped: the same worker handles the next job as usual
         executor.submit(job(912, "$/kode/test/boom", PoolLane::Interactive));
         let second = recv_outcome(&rx);
         assert!(matches!(second.status, JobStatus::Failed(_)));
@@ -1392,12 +1392,12 @@ mod tests {
 
     #[test]
     fn cancel_unknown_and_duplicate_ids_never_grow_registration_table() {
-        // 验收「长跑登记表有界」:未知 id(内联请求/没提交过的 id)、排队
-        // 摘除(离队即永不执行,登记无人结算不入表)、终态后重复/迟到取消
-        // 都不入表——表容量 ≤ 在途 job 数,长跑不膨胀。
+        // Acceptance of "the long-run registry stays bounded": unknown ids (inline requests / never-submitted ids), queue
+        // removal (once dequeued it never runs, so a registration would have no settler and enters no table), and duplicate/late cancels after final state
+        // all enter no table -- table capacity <= the number of in-flight jobs, no growth on long runs.
         let (executor, _rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(2));
-        // 占满两个 worker:821/823 在途,822 排队。
+        // Occupy both workers: 821/823 in flight, 822 queued.
         executor.submit(job(821, "$/kode/test/cancellable", PoolLane::Interactive));
         executor.submit(job(823, "$/kode/test/cancellable", PoolLane::Interactive));
         wait_started(821);
@@ -1417,16 +1417,16 @@ mod tests {
             3,
             "未知 id 不动在途 job 的 span"
         );
-        // 排队摘除:job 离队永不执行,登记不入表(泄漏臂——旧口径在此入表
-        // 且无人结算,长跑排队取消无限膨胀)。
+        // Queue removal: the job leaves the queue and never runs, and its registration enters no table (the leak arm -- the old stance entered the table here
+        // with no settler, letting long-run queued cancels grow unboundedly).
         executor.cancel(&RequestId::Number(822));
         assert_eq!(
             executor.pending_cancel_registrations_for_tests(),
             0,
             "排队摘除不入表(离队即永不执行)"
         );
-        // 在途取消:命中登记,终态(协作中断)即摘除;其后重复取消(未知
-        // id 臂)不再膨胀。
+        // In-flight cancel: the registry is hit, and the final state (cooperative interruption) removes it immediately; later duplicate cancels (the
+        // unknown-id arm) do not grow it further.
         executor.cancel(&RequestId::Number(821));
         assert_eq!(
             executor.pending_cancel_registrations_for_tests(),
@@ -1452,7 +1452,7 @@ mod tests {
 
     #[test]
     fn late_cancel_after_terminal_never_grows_registration_table() {
-        // 迟到取消(终态后):表已摘除,取消落「未知 id」臂,不入表。
+        // A late cancel (after final state): the table entry is gone, the cancel falls to the "unknown id" arm, and enters no table.
         let (executor, rx) =
             PoolExecutor::spawn(registry_with_test_handlers(), PoolBudget::from_total(1));
         executor.submit(job(831, "$/kode/test/cancellable", PoolLane::Interactive));
@@ -1480,7 +1480,7 @@ mod tests {
         let response = rpc_response_for(outcome.id, outcome.status);
         assert_eq!(response.error.as_ref().map(|e| e.code), Some(-32602));
         wait_running(&executor, 0, 0);
-        // 未知 method 同口径 -32601。
+        // An unknown method gets the same stance, -32601.
         executor.submit(job(502, "$/kode/test/absent", PoolLane::Interactive));
         let outcome = recv_outcome(&rx);
         let response = rpc_response_for(outcome.id, outcome.status);
@@ -1531,8 +1531,8 @@ mod tests {
         drop(executor);
     }
 
-    /// KODE-RESP-005:装配预算下限——单核给 2(交互 1 + IO 面 1,后台可
-    /// 准入),多核与 from_total 逐字段一致(下限只救退化预算)。
+    /// KODE-RESP-005: the assembly-budget floor -- a single core gets 2 (1 interactive + 1 IO face, with background
+    /// admittable); multiple cores match from_total field for field (the floor only rescues degenerate budgets).
     #[test]
     fn assembly_budget_floors_single_core_and_keeps_multicore() {
         let single = assembly_pool_budget(1);
@@ -1550,9 +1550,9 @@ mod tests {
         assert_eq!(assembly_pool_budget(2), PoolBudget::from_total(2));
     }
 
-    /// KODE-RESP-005 验收臂 1(池级):单核推导的装配预算下,后台 IO 面
-    /// job(dbClone/ruff/scanAnchors 形态)真实执行出结果——修复前
-    /// from_total(1) 的 background_max=0 使其永不出队。
+    /// KODE-RESP-005 acceptance arm 1 (pool level): under the single-core-derived assembly budget, a background IO-face
+    /// job (the dbClone/ruff/scanAnchors shape) really executes and produces a result -- before the fix,
+    /// from_total(1)'s background_max=0 kept it from ever dequeuing.
     #[test]
     fn single_core_assembly_budget_runs_background_io_job() {
         fn echo_handler(params: Value) -> Result<Value, String> {
@@ -1571,10 +1571,10 @@ mod tests {
         drop(executor);
     }
 
-    /// KODE-RESP-005 验收臂 2(池级):draining 时永不可准入的后台排队 job
-    /// 被如实取消(-32800)且 shutdown 有界返回——修复前 join 永久挂起。
-    /// 退化预算 from_total(1) 直接构造:装配下限已防生产路径,此处钉
-    /// 安全网语义(任何预算组合下退出都不挂死)。
+    /// KODE-RESP-005 acceptance arm 2 (pool level): a background queued job that can never be admitted while draining
+    /// is honestly cancelled (-32800) and shutdown returns bounded -- before the fix, join hung forever.
+    /// Built directly from the degenerate budget from_total(1): the assembly floor already guards the production path; here we pin
+    /// the safety-net semantics (exit never wedges under any budget combination).
     #[test]
     fn shutdown_cancels_unschedulable_background_queue() {
         let (executor, rx) =

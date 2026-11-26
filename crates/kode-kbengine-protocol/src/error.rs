@@ -1,31 +1,33 @@
-//! 偏移定位诊断(PA-003「diagnostics 偏移定位」):每个解码错误带绝对字节
-//! 偏移 + 字段路径,失败绝不 panic(红线)。
+//! Offset-locating diagnostics (PA-003 "diagnostics offset locating"): every decode
+//! error carries an absolute byte offset + field path; failures never panic (red line).
 
 use std::fmt;
 
-/// 错误类别。
+/// Error category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeErrorKind {
-    /// 输入在需要更多字节时结束(帧片段等待下个包也归此)。
+    /// Input ended while more bytes were needed (a frame fragment waiting for the
+    /// next packet also falls here).
     UnexpectedEof,
-    /// 长度字段非法(声明越界/超出内存上限)。
+    /// Illegal length field (declared out of bounds / exceeding the memory cap).
     MemoryLimit,
-    /// 消息 ID 不在任何已装表的段。
+    /// Message ID not present in any installed table segment.
     UnknownMessageId,
-    /// 递归深度超限(红线:递归类型有界)。
+    /// Recursion depth exceeded (red line: recursive types bounded).
     DepthLimit,
-    /// 字符串/标量语义非法(NUL 缺失、UTF-8 坏等按引擎容错处理时不产生此错;
-    /// 只有无法继续才报)。
+    /// Illegal string/scalar semantics (missing NUL, broken UTF-8 and the like do
+    /// not raise this when handled with engine tolerance; only reported when
+    /// decoding cannot continue).
     InvalidString,
 }
 
-/// 解码错误(带绝对偏移 + 路径)。
+/// Decode error (with absolute offset + path).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodeError {
     pub kind: DecodeErrorKind,
-    /// 流内绝对字节偏移(诊断定位口径)。
+    /// Absolute byte offset within the stream (diagnostic locating semantics).
     pub offset: usize,
-    /// 字段路径(`Loginapp::login.account` 风格)。
+    /// Field path (`Loginapp::login.account` style).
     pub path: String,
     pub message: String,
 }

@@ -1,15 +1,18 @@
-// SemanticTokens 决策核(RUST-144 批 3,新面):python 文件结构符号语义
-// ——class/方法/模块级函数声明名、def 形参名、装饰器名,共 5 类 token
-// (语法关键字/字符串面留给 TextMate grammar,不与之重叠)。纯函数
-// (文本输入,零 vscode/引擎依赖),解析复用 pythonParser(parsePythonFile
-// /pythonCodeLines/pythonStatements)与 defParamInlayHints(parseDefLine
-// /splitParams 同一套 def 行扫描,口径一致)。诚实边界:self.X 属性访问
-// 与局部变量面不做(与 Pylance 冲突大+需 self scope 分析,后续批次按
-// RUST-148 冲突矩阵裁度);跨行 def 的形参不提取(与 inlay 同单行闸)。
+// SemanticTokens decision core (RUST-144 batch 3, a new face): python file
+// structural symbol semantics — class/method/module-level function declaration
+// names, def parameter names, decorator names, 5 token types in total (syntax
+// keywords/string literals are left to the TextMate grammar, without overlapping
+// it). Pure functions (text input, zero vscode/engine dependencies); parsing
+// reuses pythonParser (parsePythonFile/pythonCodeLines/pythonStatements) and
+// defParamInlayHints (the same def line scan via parseDefLine/splitParams, the
+// same ruling). The honest boundary: self.X attribute access and the local
+// variable face are not done (high conflict with Pylance + requires self scope
+// analysis; later batches decide via the RUST-148 conflict matrix); parameters of
+// multi-line defs are not extracted (the same single-line gate as inlay).
 import { parsePythonFile, pythonCodeLines, pythonStatements } from './pythonParser';
 import { parseDefSignature } from '../defParamInlayHints';
 
-/** legend 顺序即编码 typeIndex(与 Rust semantic_tokens.rs 同序,勿改序) */
+/** The legend order is the encoded typeIndex (the same order as the Rust semantic_tokens.rs; do not reorder) */
 export const SEMANTIC_TOKEN_TYPES = ['class', 'function', 'method', 'parameter', 'macro'] as const;
 
 export const SEMANTIC_TOKEN_MODIFIERS = ['declaration', 'async'] as const;
@@ -17,32 +20,34 @@ export const SEMANTIC_TOKEN_MODIFIERS = ['declaration', 'async'] as const;
 export type SemanticTokenType = (typeof SEMANTIC_TOKEN_TYPES)[number];
 
 export interface SemanticTokenSpan {
-  /** 0 起行 */
+  /** 0-based line */
   line: number;
-  /** 行内 0 起 UTF-16 列 */
+  /** 0-based UTF-16 column within the line */
   startCharacter: number;
   length: number;
   type: SemanticTokenType;
-  /** 'declaration' 声明位;'async' async def(声明名与形参都可带) */
+  /** 'declaration' the declaration site; 'async' async def (both declaration names and parameters may carry it) */
   modifiers: string[];
 }
 
-/** 装饰器行:@ 名(可点分,取全表达式 span) */
+/** Decorator line: @ name (dotted allowed, the full expression span is taken) */
 const DECORATOR_RE = /^\s*@\s*([A-Za-z_][\w.]*)/;
 const CLASS_NAME_RE = /^\s*class\s+([A-Za-z_]\w*)/;
 const DEF_HEAD_RE = /^\s*(async\s+)?def\s+([A-Za-z_]\w*)/;
 
 /**
- * 提取结构符号 span(按行/列升序,无去重——同一 token 只会由单一规则产
- * 出)。任何 python 文件都出(语言级结构语义,无实体段闸);空文件/无符
- * 号文件返回空数组。
+ * Extract structural symbol spans (ascending by line/column, no dedup — the same
+ * token is only ever produced by a single rule). Emitted for any python file
+ * (language-level structural semantics, no entity section gate); an empty file /
+ * a file without symbols returns an empty array.
  */
 export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
   const maskedLines = pythonCodeLines(text);
   const parsed = parsePythonFile(text, 'semantic-tokens-synthetic.py');
   const spans: SemanticTokenSpan[] = [];
 
-  // 类声明名(掩码行内 class 后名字;掩码位置不变故列对齐原文)
+  // Class declaration names (the name after class on the masked line; masked
+  // positions are unchanged, so columns align with the raw text)
   for (const cls of parsed.classes) {
     const lineText = maskedLines[cls.startLine] ?? '';
     const match = CLASS_NAME_RE.exec(lineText);
@@ -60,7 +65,7 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
     });
   }
 
-  // 方法声明名(parsePythonFile methods 表,行/列直用;async 从掩码行判)
+  // Method declaration names (the parsePythonFile methods table, line/column used directly; async judged from the masked line)
   const classBoundDefLines = new Set<number>();
   for (const cls of parsed.classes) {
     for (const [methodName, location] of cls.methods) {
@@ -79,7 +84,7 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
     }
   }
 
-  // 语句面:模块级 def(function)/装饰器(macro)
+  // Statement face: module-level def (function) / decorators (macro)
   const statements = pythonStatements(text);
   for (const statement of statements) {
     const defMatch = DEF_HEAD_RE.exec(statement.text);
@@ -89,7 +94,7 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
       if (defMatch[1]) {
         modifiers.push('async');
       }
-      // statement.text 是合并文本,首行列与原行一致;名列表=匹配尾前
+      // statement.text is the merged text, the first line's column matches the original line; the name column = before the match's tail
       const start = statement.text.indexOf(methodName, defMatch[0].length - methodName.length);
       spans.push({
         line: statement.line,
@@ -122,7 +127,7 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
     }
   }
 
-  // 形参:类方法 def 行(parsePythonFile 表给的行/列)
+  // Parameters: class method def lines (the line/column the parsePythonFile table gives)
   for (const cls of parsed.classes) {
     for (const [methodName, location] of cls.methods) {
       collectParameterSpans(
@@ -142,9 +147,10 @@ export function buildSemanticTokenSpans(text: string): SemanticTokenSpan[] {
 }
 
 /**
- * def 形参 span(parseDefSignature,与 inlay 同一套统一事实源=掩码行域;
- * KODE-SYN-004 起签名可跨行,span 落形参名所在行)。参数自带 declaration+
- * async 修饰。
+ * def parameter spans (parseDefSignature, the same unified source of truth as
+ * inlay = the masked line domain; since KODE-SYN-004 a signature may cross lines,
+ * and the span lands on the line of the parameter name). Parameters carry
+ * declaration + async modifiers by themselves.
  */
 function collectParameterSpans(
   maskedLines: readonly string[],
@@ -154,9 +160,11 @@ function collectParameterSpans(
   spans: SemanticTokenSpan[],
   modifiers: string[]
 ): void {
-  // 形参切分与 inlay 同一套:parseDefSignature 的 site.params 已剥首参
-  // self/cls(本扩展 parameter 语义=RPC 形参,接收者不是形参,与 inlay/
-  // 签名 formatter 同口径),未闭合签名(编辑中)不出。
+  // Parameter splitting shares the inlay implementation: parseDefSignature's
+  // site.params has already stripped the leading self/cls (this extension's
+  // parameter semantics = RPC parameters, the receiver is not a parameter, the
+  // same ruling as inlay/the signature formatter); an unclosed signature
+  // (mid-edit) emits nothing.
   const site = parseDefSignature(maskedLines, line, methodName, nameCharacter, 'ClientMethods');
   if (!site) {
     return;
@@ -173,9 +181,11 @@ function collectParameterSpans(
 }
 
 /**
- * LSP 相对编码:[deltaLine, deltaStartChar, length, typeIndex,
- * modifierBitmask]。span 须已按行/列升序(本模块产出保证);legend 索引
- * 由 SEMANTIC_TOKEN_TYPES/MODIFIERS 定,未知类型抛错(装配面 bug 早爆)。
+ * LSP relative encoding: [deltaLine, deltaStartChar, length, typeIndex,
+ * modifierBitmask]. Spans must already be ascending by line/column (guaranteed by
+ * this module's output); legend indexes are defined by
+ * SEMANTIC_TOKEN_TYPES/MODIFIERS; an unknown type throws (a wiring-face bug
+ * explodes early).
  */
 export function encodeSemanticTokens(spans: SemanticTokenSpan[]): number[] {
   const data: number[] = [];

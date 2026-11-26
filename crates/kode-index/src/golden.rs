@@ -1,10 +1,12 @@
-//! 对拍 golden 序列化(只写不读;TS 侧 `tests/kodeIndexParity.test.ts` 用现有
-//! defParser 原语复算,双向门禁与 PR-005 同构)。
+//! Parity golden serialization (write-only; the TS side `tests/kodeIndexParity.test.ts`
+//! recomputes with the existing defParser primitives, and the bidirectional gate is
+//! isomorphic to PR-005).
 //!
-//! golden 形状与 [`kode_index::symbol::extract_records`] 逐字段一致:
+//! The golden shape matches [`kode_index::symbol::extract_records`] field by field:
 //! `{"generator","fileCount","symbolCount","files":[{"file","kind",
-//!   "symbols":[{"name","kind","line","facet","detail"}]}]}`。
-//! 任何一侧抽取语义变化都要重生成 golden 并让两侧门禁同时过。
+//!   "symbols":[{"name","kind","line","facet","detail"}]}]}`.
+//! Any change to the extraction semantics on either side must regenerate the golden
+//! and make both sides' gates pass.
 
 use std::path::Path;
 
@@ -15,9 +17,10 @@ use kode_vfs::store::{DocumentKey, RootId};
 
 use crate::symbol::{def_entity_name, extract_records};
 
-/// 语料文件 → ParsedUnit(kind 字符串来自 collect_corpus,只产
-/// def/entities/types/alias 四种)。未知 kind 不是数据形态而是语料发现
-/// 面契约失守 → fail-fast 断言面,不在产出路径里静默丢文件。
+/// Corpus file -> ParsedUnit (kind strings come from collect_corpus, which only
+/// produces def/entities/types/alias). An unknown kind is not a data shape but a
+/// corpus-discovery surface contract breach -> fail-fast assertion surface; we never
+/// silently drop files inside the production path.
 fn parse_by_kind(kind: &str, text: &str) -> ParsedUnit {
     match kind {
         "def" => ParsedUnit::Def(parse_def(text)),
@@ -28,17 +31,17 @@ fn parse_by_kind(kind: &str, text: &str) -> ParsedUnit {
     }
 }
 
-/// golden 文件名(仓库相对)。
+/// golden file name (repo-relative).
 pub const GOLDEN_REL_PATH: &str = "crates/kode-index/tests/golden/symbol-parity.json";
 
-/// 整个语料的符号 golden JSON(与 TS 复算器逐字段一致)。
+/// Symbol golden JSON for the entire corpus (field-for-field identical to the TS recomputer).
 pub fn dump_symbols(repo_root: &Path) -> String {
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let mut w = JsonWriter::new();
     w.raw("{\"generator\":\"kode-index dump-symbol-golden\",\"fileCount\":");
     w.num(files.len());
     let mut symbol_total = 0usize;
-    // 先算总数(两遍遍历换取输出结构简单:总数在前)。
+    // Count the total first (two passes trade for a simpler output shape: the total comes first).
     for (path, (kind, text)) in &files {
         let unit = parse_by_kind(kind, text);
         let key = DocumentKey::new(
@@ -104,7 +107,7 @@ pub fn dump_symbols(repo_root: &Path) -> String {
     w.buf
 }
 
-/// 实体名帮助器的 re-export(测试用)。
+/// Re-export of the entity-name helper (for tests).
 pub fn entity_of_file(path: &str) -> Option<String> {
     def_entity_name(path)
 }
@@ -115,7 +118,7 @@ mod tests {
 
     use super::{entity_of_file, parse_by_kind};
 
-    /// ParsedUnit → 稳定标签(测试断言用;变体归属一目了然)。
+    /// ParsedUnit -> stable tag (for test assertions; variant membership at a glance).
     fn unit_tag(unit: ParsedUnit) -> &'static str {
         match unit {
             ParsedUnit::Def(_) => "def",
@@ -125,7 +128,7 @@ mod tests {
         }
     }
 
-    /// kind 分派面:四种语料 kind 各自落到对应 ParsedUnit。
+    /// kind dispatch surface: each of the four corpus kinds lands on its matching ParsedUnit.
     #[test]
     fn parse_by_kind_dispatches_all_corpus_kinds() {
         assert_eq!(unit_tag(parse_by_kind("def", "<root/>")), "def");
@@ -138,14 +141,16 @@ mod tests {
         );
     }
 
-    /// 未知 kind 是语料发现面契约失守:不静默丢文件,直接 fail-fast。
+    /// An unknown kind is a corpus-discovery surface contract breach: fail fast, never
+    /// silently drop the file.
     #[test]
     #[should_panic(expected = "语料发现面契约失守")]
     fn parse_by_kind_rejects_unknown_kind() {
         let _ = parse_by_kind("unknown-kind", "<root/>");
     }
 
-    /// entity_of_file 转发 def_entity_name:取文件茎,无茎路径返回 None。
+    /// entity_of_file forwards to def_entity_name: takes the file stem; stem-less
+    /// paths return None.
     #[test]
     fn entity_of_file_delegates_to_def_entity_name() {
         assert_eq!(

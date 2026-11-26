@@ -1,11 +1,16 @@
-// AI-003 快速修复建议层(explainFix):诊断码+诊断行片段喂 LLM 生成修复
-// 建议,只作建议层输出到 diff 预览——引擎判定不变,诊断正确性不依赖 AI
-// (AI 面全离线可用;未配置时该 CodeAction 根本不出,provider 闸一次+
-// 命令 handler 二次闸防注册后配置被清空)。输出永不直写盘:建议走只读
-// 虚拟 scheme(kbengine-ai-fix)diff 预览;本层只做「解释+建议」预览,
-// 应用动作留给用户在对话面板(AI-002)或手工通道完成,不提供一键写入
-// 面。片段最小化:只喂诊断行文本与诊断消息,不发整个文件(遥测零口径:
-// 只发该命令所需片段)。
+// AI-003 quick-fix suggestion layer (explainFix): feeds the diagnostic code plus
+// the diagnostic line snippet to the LLM to produce fix suggestions, output only
+// as a suggestion layer rendered into a diff preview — engine rulings are
+// unchanged, diagnostic correctness does not depend on AI (the AI surface works
+// fully offline; when unconfigured the CodeAction simply never appears, with a
+// provider-side gate plus a command-handler second gate against the
+// configuration being cleared after registration). Output is never written
+// straight to disk: suggestions ride a read-only virtual scheme (kbengine-ai-fix)
+// diff preview; this layer only provides an "explain + suggest" preview, the
+// apply action is left to the user via the chat panel (AI-002) or a manual
+// channel — no one-click write surface is offered. Snippet minimization: only
+// the diagnostic line text and the diagnostic message are sent, never the whole
+// file (zero-telemetry contract: only the snippet the command needs goes out).
 import * as vscode from 'vscode';
 import { AI_API_KEY_SECRET, AiSecretsStore, isAiFaceAvailable, sendAiMessage } from './aiClient';
 import { extractCodeSuggestions } from './aiChatPanel';
@@ -13,12 +18,12 @@ import { extractCodeSuggestions } from './aiChatPanel';
 export const AI_EXPLAIN_FIX_COMMAND = 'kbengine.ai.explainFix';
 const FIX_SCHEME = 'kbengine-ai-fix';
 
-/** 喂给 LLM 的最小片段(诊断元数据+诊断行文本,不含文件其余部分) */
+/** Minimal snippet fed to the LLM (diagnostic metadata + diagnostic line text, nothing else from the file) */
 export interface AiExplainFixPayload {
   message: string;
   code: string;
   file: string;
-  /** 诊断起始行(0 基) */
+  /** Diagnostic start line (0-based) */
   line: number;
   lineText: string;
 }
@@ -31,7 +36,7 @@ interface FixSuggestion {
 let lastSuggestion: FixSuggestion | null = null;
 let fixProvider: vscode.Disposable | null = null;
 
-/** kode 自家诊断才进 AI 建议层(外来诊断不外发,片段最小化) */
+/** Only kode's own diagnostics enter the AI suggestion layer (foreign diagnostics are never sent out, snippet minimization) */
 function isKodeDiagnosticCode(code: vscode.Diagnostic['code'] | undefined): code is string {
   return typeof code === 'string' && code.startsWith('kbengine.');
 }
@@ -76,7 +81,7 @@ function renderPrompt(payload: AiExplainFixPayload): Array<{ role: 'system' | 'u
   ];
 }
 
-/** CodeAction 请求面:AI 面可用时,对范围相交的 kbengine.* 诊断出建议层动作 */
+/** CodeAction request surface: when the AI surface is available, offers suggestion-layer actions for range-intersecting kbengine.* diagnostics */
 export class KBEngineAiExplainFixCodeActionProvider implements vscode.CodeActionProvider {
   async provideCodeActions(
     document: vscode.TextDocument,
@@ -87,7 +92,7 @@ export class KBEngineAiExplainFixCodeActionProvider implements vscode.CodeAction
     if (token?.isCancellationRequested) {
       return [];
     }
-    // 未配置 AI 面时该 CodeAction 不出(引擎判定不变,诊断不依赖 AI)
+    // When the AI surface is unconfigured the CodeAction does not appear (engine rulings unchanged, diagnostics do not depend on AI)
     if (!(await isAiFaceAvailable())) {
       return [];
     }
@@ -110,8 +115,9 @@ export class KBEngineAiExplainFixCodeActionProvider implements vscode.CodeAction
         vscode.CodeActionKind.QuickFix
       );
       action.diagnostics = [diagnostic];
-      // 建议层:动作只携带命令,网络调用发生在用户显式执行时(提供
-      // CodeAction 的路径零外发)
+      // Suggestion layer: the action only carries a command; the network call
+      // happens when the user explicitly runs it (the CodeAction-providing path
+      // makes zero outbound requests)
       action.command = {
         command: AI_EXPLAIN_FIX_COMMAND,
         title: vscode.l10n.t('AI explain / fix suggestion'),
@@ -143,7 +149,7 @@ async function handleExplainFix(payload: AiExplainFixPayload, secrets: AiSecrets
   }
   const suggestions = extractCodeSuggestions(reply);
   if (suggestions.length === 0) {
-    // 诚实:AI 回复没给出代码建议就明说,不猜不硬造
+    // Honest: say so plainly when the AI reply contains no code suggestion; no guessing, no fabrication
     void vscode.window.showInformationMessage('AI 回复未包含代码建议,仅有文字说明');
     return;
   }
@@ -159,9 +165,9 @@ async function handleExplainFix(payload: AiExplainFixPayload, secrets: AiSecrets
 }
 
 /**
- * 注册 AI-003 建议层(在 AI 面惰性块内调用,零成本面):CodeAction provider
- * (python + kbengine-def 双 selector)+ explainFix 命令 + 只读虚拟 scheme
- * provider。
+ * Register the AI-003 suggestion layer (called inside the lazy AI block, zero-cost
+ * surface): CodeAction provider (python + kbengine-def dual selector) + the
+ * explainFix command + the read-only virtual scheme provider.
  */
 export function registerAiExplainFix(
   context: vscode.ExtensionContext,
@@ -195,7 +201,7 @@ export function registerAiExplainFix(
   return fixProvider;
 }
 
-/** 测试清理面:provider/命令/虚拟 scheme 与 lastSuggestion 一并弃 */
+/** Test cleanup surface: provider/commands/virtual scheme and lastSuggestion are discarded together */
 export function disposeAiExplainFixForTests(): void {
   if (fixProvider) {
     fixProvider.dispose();

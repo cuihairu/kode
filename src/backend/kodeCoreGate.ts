@@ -12,76 +12,95 @@ import {
 } from './kodeCoreShadowFaces';
 import { indexLog } from './indexLog';
 
-// kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
-// 2026-11-08 用户令「直接切到 rust」:serving 门禁解除,rust 字面量生效为
-// 服务轨道(serveFromRust=true),TS 实现保留为失败/缺二进制兜底。本模块
-// 只做三件事:
-//   1. 解析 kbengine.core.backend 开关(ts|rust|shadow,默认 rust;非法值
-//      一律回落 ts —— kill-switch 永远收得回来);
-//   2. rust 字面量 = 服务轨道:serveFromRust() 在配了 serverPath 时返回
-//      true,provider 接 gate.serveInRust() 走 Rust 结果、失败回落 TS;
-//      serverPath 未配(含自动发现落空)时回落 ts,留一次 notice 存照;
-//   3. shadow 模式下 compare() 把同参请求镜像给 Rust server 做短超时
-//      对比,任何 Rust 侧失败只记差异日志,compare 恒返回 TS 结果
-//      原样(影子对拍只在 shadow 模式;rust 服务轨道不走 compare)。
+// kode2 PR-012: dual-track switchover gate (kill-switch / shadow / diff log).
+// 2026-11-08 user order "switch straight to rust": the serving gate is lifted
+// and the rust literal takes effect as the serving track (serveFromRust=true),
+// with the TS implementation retained as the failure/missing-binary fallback.
+// This module does only three things:
+//   1. parse the kbengine.core.backend switch (ts|rust|shadow, default rust;
+//      any illegal value falls back to ts — the kill-switch is always
+//      recoverable);
+//   2. rust literal = serving track: serveFromRust() returns true once
+//      serverPath is configured, and the provider takes gate.serveInRust() for
+//      the Rust result, falling back to TS on failure; when serverPath is not
+//      configured (including a discovery miss) it falls back to ts, leaving a
+//      notice on record;
+//   3. in shadow mode compare() mirrors the same-param request to the Rust
+//      server for a short-timeout comparison; any Rust-side failure only
+//      records a diff log entry, and compare always returns the TS result
+//      as-is (shadow comparison only in shadow mode; the rust serving track
+//      does not go through compare).
 
 export type KodeBackendMode = 'ts' | 'rust' | 'shadow';
 
-/** shadow 对比结论:match/diff 之外的三种失败都归属 rust 侧,不改服务 */
+/** shadow comparison verdict: the three failure kinds beyond match/diff all
+ * belong to the rust side and never change serving */
 export type ShadowVerdict = 'match' | 'diff' | 'rust-error' | 'rust-timeout' | 'rust-unavailable';
 
-/** 差异日志单条:seq 单调递增,verdict 汇总口径见 ShadowVerdict */
+/** Single diff-log entry: seq increments monotonically; verdict tallying is
+ * documented on ShadowVerdict */
 export interface ShadowDiffEntry {
   seq: number;
   timestamp: string;
   method: string;
   uri?: string;
   verdict: ShadowVerdict;
-  /** diff 时为首个分歧路径与双方截断值;失败时为错误摘要 */
+  /** diff case: first divergent path plus both sides' truncated values; on
+   * failure: an error summary */
   detail?: string;
 }
 
 export interface KodeCoreGateConfig {
-  /** kbengine.core.backend 原始字符串(可能非法) */
+  /** raw kbengine.core.backend string (possibly illegal) */
   backend: string;
-  /** kode-server 二进制路径;空 = rust 不可用 */
+  /** path to the kode-server binary; empty = rust unavailable */
   serverPath: string;
-  /** shadow 镜像请求超时毫秒(默认 2000) */
+  /** shadow mirror request timeout in milliseconds (default 2000) */
   shadowTimeoutMs: number;
 }
 
 export const DEFAULT_CORE_GATE_CONFIG: KodeCoreGateConfig = {
-  // 2026-11-08 用户令:默认服务轨道直接切 rust(未配 serverPath 时由
-  // serveFromRust 回落 ts,不会因缺二进制误伤)。kill-switch = backend:ts。
+  // 2026-11-08 user order: the default serving track switches straight to rust
+  // (falls back to ts when serverPath is unconfigured, so a missing binary
+  // does no harm). kill-switch = backend:ts.
   backend: 'rust',
   serverPath: '',
   shadowTimeoutMs: 2000,
 };
 
-/** spawn 失败后的重试冷却(毫秒):防 provider 高频查询把失败刷成风暴 */
+/** spawn-failure retry cooldown (milliseconds): stops high-frequency provider
+ * queries from turning a failure into a storm */
 const SPAWN_COOLDOWN_MS = 30_000;
 
 /**
- * 命令级 RPC 缺省超时(2026-11-24 真机病灶):runInRust 此前不传超时 =
- * transport 层不起定时器、无限等——server 进程楔死/变慢时 def 首扫逐实体
- * 调 $/kode/python/symbols 每请求白等 ~10s,21 个实体拖成 241s。所有命令级
- * RPC 一律封顶;确需更久/更短预算的调用方显式传 timeoutMs 覆盖。
+ * command-level RPC default timeout (2026-11-24 on-machine defect): runInRust
+ * previously passed no timeout, so the transport layer started no timer and
+ * waited forever — with the server wedged/slow, each def first-scan entity's
+ * $/kode/python/symbols call burned ~10s, and 21 entities stretched to 241s.
+ * Every command-level RPC is now capped; callers that genuinely need a longer
+ * or shorter budget pass timeoutMs explicitly.
  */
 export const COMMAND_RPC_TIMEOUT_MS_DEFAULT = 10_000;
 /**
- * 命令腿熔断阈值:连续超时(期间无任何成功)达到即开闸,后续 runInRust
- * 直通 ok:false 由调用方回落 TS(与交互腿熔断同判式:超时 = server 楔死
- * 信号,重试不好转;非超时失败不计数——spawn/退出类硬失败本就快速回落,
- * 用户显式命令不该被永久挡住)。复位 = 进程更换(stopClient/restartCore/
- * 自动重启对账),新进程 = 新的成功机会。
+ * command-leg circuit-breaker threshold: once consecutive timeouts (with no
+ * successes in between) hit this point, the circuit opens and later runInRust
+ * calls pass through ok:false for the caller to fall back to TS (same judging
+ * as the interactive leg: a timeout = server wedged signal, retrying won't
+ * help; non-timeout failures are not counted — spawn/exit hard failures fall
+ * back quickly anyway, and explicit user commands should not be blocked
+ * permanently). Reset = process replacement (stopClient/restartCore/
+ * automatic-restart reconciliation); a new process is a new chance for
+ * success.
  */
 export const COMMAND_TRIP_THRESHOLD = 3;
 
 /**
- * kill-switch 解析:仅 'shadow' 与 'rust' 两个字面量改变模式,其余(含
- * undefined/空串/拼错)一律回落 'ts' —— 开关异常时安全侧是 TS 真相。
- * 'rust' = 服务轨道(2026-11-08 用户令「直接切」,serving 门禁解除);
- * rustServingGated 保留为观测字段,现恒 false(门已解)。
+ * kill-switch parsing: only the 'shadow' and 'rust' literals change the mode;
+ * anything else (including undefined/empty/misspelled) falls back to 'ts' —
+ * when the switch misbehaves, the safe side is TS truth.
+ * 'rust' = serving track (2026-11-08 user order "switch straight", serving
+ * gate lifted); rustServingGated is retained as an observation field and is
+ * now permanently false (the gate is off).
  */
 export function resolveBackendMode(rawBackend: string | undefined): {
   mode: KodeBackendMode;
@@ -96,14 +115,16 @@ export function resolveBackendMode(rawBackend: string | undefined): {
   return { mode: 'ts', rustServingGated: false };
 }
 
-/** probeHealth 结果:reason=快速失败臂原错误词;预算耗尽臂(疑似挂死)缺省 */
+/** probeHealth outcome: reason = the original error word from the fast-failure
+ * arm; the budget-exhausted arm (suspected hang) leaves it absent */
 export interface CoreHealthProbeOutcome {
   ok: boolean;
   latencyMs: number;
   reason?: string;
 }
 
-/** 规范化:对象按键名排序后比较(数组保序),屏蔽序列化键序差异 */
+/** Canonicalize: objects are compared with keys sorted (arrays keep their
+ * order), masking away serialization key-order differences */
 export function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(canonicalize);
@@ -125,8 +146,9 @@ function truncate(text: string, max = 80): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
-/** 镜像账键是否落在被撤根下(键可能是 fsPath 或 file:// URI;前缀判定,
- * 与 server 侧 root_for 最长前缀同语义;/ws 不误伤 /wsX) */
+/** Whether a mirror-ledger key falls under the withdrawn root (the key may be
+ * an fsPath or a file:// URI; prefix judgment, the same semantics as the
+ * server-side root_for longest-prefix; /ws must not touch /wsX) */
 export function uriUnderRoot(uri: string, fsPath: string): boolean {
   const plain = uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
   return plain === fsPath || plain.startsWith(`${fsPath}/`);
@@ -140,7 +162,8 @@ function preview(value: unknown): string {
   }
 }
 
-/** 首个分歧路径('$' 为根;对象取键,数组取下标);一致返回 null */
+/** First divergent path ('$' is the root; objects take keys, arrays take
+ * indexes); returns null when the two values agree */
 export function firstDiffPath(tsValue: unknown, rustValue: unknown, path = '$'): string | null {
   const canonicalTs = canonicalize(tsValue);
   const canonicalRust = canonicalize(rustValue);
@@ -182,7 +205,8 @@ export function firstDiffPath(tsValue: unknown, rustValue: unknown, path = '$'):
   return walk(canonicalTs, canonicalRust, path);
 }
 
-/** 差异日志:有界环形(默认 500 条),可订阅(输出通道消费) */
+/** Diff log: bounded ring (default 500 entries), subscribable (consumed by
+ * the output channel) */
 export class ShadowDiffLog {
   private seq = 0;
   private readonly items: ShadowDiffEntry[] = [];
@@ -237,7 +261,8 @@ export class ShadowDiffLog {
   }
 }
 
-/** compare() 所需的 client 面(KodeCoreClient 子集,测试可注入替身) */
+/** the client surface compare() needs (a KodeCoreClient subset; tests may
+ * inject a stand-in) */
 export interface ShadowClientLike {
   start(): Promise<unknown>;
   request(
@@ -246,40 +271,49 @@ export interface ShadowClientLike {
     opts?: { timeoutMs?: number }
   ): Promise<unknown>;
   dispose(): Promise<void>;
-  /** 语料镜像腿(Phase2 首片):文档 open/change/close,notify 语义不回包。
-   * KODE-RESP-009:返回可为 Promise(帧真正写完+drain 才完成)——镜像生产
-   * 端 await 即写背压;同步实现(测试替身)照样满足(不等待)。 */
+  /** corpus mirror leg (Phase2 first slice): document open/change/close,
+   * notify semantics with no reply. KODE-RESP-009: the return value may be a
+   * Promise (it completes only when the frame is truly written and drained) —
+   * awaiting it on the mirroring producer side is write backpressure; a
+   * synchronous implementation (test stand-in) satisfies it the same way
+   * (no waiting). */
   openDocument?(uri: string, languageId: string, version: number, text: string): void | Promise<void>;
   changeDocument?(uri: string, version: number, text: string): void | Promise<void>;
   closeDocument?(uri: string): void | Promise<void>;
-  /** 重启代数读口(E-2;可选):自动重启后 gate 重置镜像账并重放快照 */
+  /** restart-generation read port (E-2; optional): after an automatic
+   * restart the gate resets the mirror ledger and replays snapshots */
   getRestartGeneration?(): number;
-  /** 通知面(§11.3 可选):单向通知,不回包;KodeCoreClient 同名方法 */
+  /** notification surface (optional per §11.3): one-way notifications, no
+   * reply; same-named method on KodeCoreClient */
   notify?(method: string, params?: unknown): void;
-  /** 根生命周期(RUST-069-W 可选):新增/移除工作区根,请求面带回执 */
+  /** root lifecycle (RUST-069-W, optional): add/remove workspace roots, the
+   * request surface carries a receipt */
   addWorkspaceRoot?(fsPath: string): Promise<unknown>;
   removeWorkspaceRoot?(fsPath: string): Promise<unknown>;
-  /** 暖门(RUST-074-W 可选):首扫状态机 begin/complete/cancel,请求面带回执 */
+  /** warm gate (RUST-074-W, optional): first-scan state machine
+   * begin/complete/cancel, the request surface carries a receipt */
   beginBackgroundScan?(total: number): Promise<unknown>;
   scanComplete?(done: number, failed: number): Promise<unknown>;
   scanCancel?(): Promise<unknown>;
-  /** 服务器通知消费面(RUST-142 可选):gate 延迟装配,客户端懒建后可再设 */
+  /** server-notification consumer surface (RUST-142, optional): the gate wires
+   * it lazily, so it can be set again after the client is built on demand */
   setNotificationHandler?(
     handler: ((notification: ServerNotificationMessage) => void) | null
   ): void;
 }
 
 export interface KodeCoreGateOptions {
-  /** 默认 new KodeCoreClient({ binaryPath: serverPath }) */
+  /** defaults to new KodeCoreClient({ binaryPath: serverPath }) */
   clientFactory?: (serverPath: string) => ShadowClientLike;
   diffLog?: ShadowDiffLog;
   now?: () => number;
 }
 
-/** 门状态快照(可观测/回退演练判据读取) */
+/** gate state snapshot (read for observability / fallback drill criteria) */
 export interface KodeCoreGateState {
   mode: KodeBackendMode;
-  /** 生效服务轨道:rust 服务轨道(serveFromRust)时为 'rust';shadow 时 'shadow';否则 'ts' */
+  /** effective serving track: 'rust' on the rust serving track
+   * (serveFromRust); 'shadow' in shadow mode; 'ts' otherwise */
   servingMode: 'ts' | 'shadow' | 'rust';
   rustServingGated: boolean;
   serverPath: string;
@@ -292,24 +326,32 @@ export class KodeCoreGate {
   private config: KodeCoreGateConfig = { ...DEFAULT_CORE_GATE_CONFIG };
   private client: ShadowClientLike | null = null;
   private clientServerPath = '';
-  /** initialize 握手参数(KBUG-ROOT:多工作区文件夹根归属);未设置 = 默认参数 */
+  /** initialize handshake parameters (KBUG-ROOT: multi workspace folder root
+   * attribution); unset = default parameters */
   private initializeParams: KodeCoreInitializeParams | undefined;
-  /** 服务器通知消费面(RUST-142 接线):懒建客户端时透传,客户端已在
-   * (ensureClient 之后后置装配)即刻改挂;null = 无消费者(通知丢弃)。 */
+  /** server-notification consumer surface (RUST-142 wiring): passed through when
+   * the client is built lazily; if the client already exists (late wiring after
+   * ensureClient) it is re-attached immediately; null = no consumer
+   * (notifications dropped). */
   private notificationHandler: ((notification: ServerNotificationMessage) => void) | null = null;
   private nextAttemptAt = 0;
-  /** 语料镜像账:uri → 已镜像版本(shadow 会话内;kill-switch 清空) */
+  /** corpus mirror ledger: uri -> mirrored version (within the shadow session;
+   * cleared by the kill-switch) */
   private mirroredVersions = new Map<string, number>();
-  /** 语料快照:uri → 最近镜像内容(重启重放依据;关文档即撤,kill-switch 清空) */
+  /** corpus snapshots: uri -> most recently mirrored content (the basis for
+   * restart replay; dropped when the document closes; cleared by kill-switch) */
   private mirrorSnapshots = new Map<
     string,
     { languageId: string; version: number; text: string }
   >();
-  /** 已注册根账(RUST-069-W):fsPath 集合——重启重放补注册依据;kill-switch 清空 */
+  /** registered-root ledger (RUST-069-W): the fsPath set — the basis for
+   * re-registration during restart replay; cleared by the kill-switch */
   private registeredRoots = new Set<string>();
-  /** 上次见到的重启代数(null = 尚未对账;变化即判定自动重启) */
+  /** last observed restart generation (null = not yet reconciled; a change
+   * means an automatic restart) */
   private lastRestartGeneration: number | null = null;
-  /** 命令腿熔断账:连续超时计数(成功即清零)与开闸位(进程更换即复位) */
+  /** command-leg circuit ledger: consecutive timeout count (cleared on any
+   * success) and the open flag (reset on process replacement) */
   private commandTimeoutStreak = 0;
   private commandCircuitOpen = false;
   private readonly notices: string[] = [];
@@ -322,17 +364,22 @@ export class KodeCoreGate {
     this.now = options.now ?? Date.now;
   }
 
-  /** 应用新配置;离开镜像轨道(ts kill-switch)或换二进制即停 Rust 进程 */
+  /** applies a new config; leaving the mirror track (ts kill-switch) or
+   * swapping the binary stops the Rust process */
   /**
-   * initialize 握手参数(KBUG-ROOT 根归属):仅存储;在此之后创建的客户端
-   * 实例握手即携带(自动重启重建同样生效)。装配路径在首次 ensureClient
-   * 前调用;已存活客户端不因此重启。
+   * initialize handshake parameters (KBUG-ROOT root attribution): stored only;
+   * client instances created afterwards carry them in their handshake (the same
+   * holds when an automatic restart rebuilds them). The wiring path calls this
+   * before the first ensureClient; an already-live client is not restarted
+   * because of it.
    */
   setInitializeParams(params: KodeCoreInitializeParams): void {
     this.initializeParams = params;
   }
 
-  /** 服务器通知消费面(RUST-142):先存后挂(客户端已建即刻改挂,未建懒建时透传)。 */
+  /** server-notification consumer surface (RUST-142): store first, attach
+   * second (re-attach immediately if the client already exists; pass through
+   * when it is built lazily). */
   setNotificationHandler(
     handler: ((notification: ServerNotificationMessage) => void) | null
   ): void {
@@ -354,12 +401,13 @@ export class KodeCoreGate {
     }
   }
 
-  /** 解析后的模式(rust 字面量保留原值供观测) */
+  /** resolved mode (the rust literal keeps its original value for observation) */
   get mode(): KodeBackendMode {
     return resolveBackendMode(this.config.backend).mode;
   }
 
-  /** 生效服务轨道:rust 服务轨道(serveFromRust)时 'rust';shadow 时 'shadow';否则 'ts' */
+  /** effective serving track: 'rust' on the rust serving track (serveFromRust);
+   * 'shadow' in shadow mode; 'ts' otherwise */
   get servingMode(): 'ts' | 'shadow' | 'rust' {
     if (this.mode === 'shadow') {
       return 'shadow';
@@ -367,7 +415,8 @@ export class KodeCoreGate {
     return this.serveFromRust() ? 'rust' : 'ts';
   }
 
-  /** 语料镜像是否需要:shadow 对拍或 rust 服务轨道都需要 Rust 侧持有语料 */
+  /** whether corpus mirroring is needed: both shadow comparison and the rust
+   * serving track require the Rust side to hold the corpus */
   private shouldMirrorCorpus(): boolean {
     return this.mode === 'shadow' || this.serveFromRust();
   }
@@ -388,19 +437,22 @@ export class KodeCoreGate {
   }
 
   /**
-   * serving 放行(2026-11-08 用户令「直接切到 rust」):rust 字面量且已配
-   * serverPath(自动发现落空/留空 = 回落 ts,不因缺二进制误伤)。kill-switch
-   * = backend:ts,切回即停 Rust 进程(用户不可见回滚)。
+   * serving pass-through (2026-11-08 user order "switch straight to rust"): the
+   * rust literal with serverPath configured (a discovery miss/blank = fall back
+   * to ts, so a missing binary does no harm). kill-switch = backend:ts, and
+   * switching back stops the Rust process (an invisible rollback for the user).
    */
   serveFromRust(): boolean {
     return this.mode === 'rust' && this.config.serverPath !== '';
   }
 
   /**
-   * `$/kode/fileChanged` 通知(热更旁路面 §11.3):把非 py 文件变化按需转给
-   * rust 解析。**不为发通知拉起进程**——只有已存活的 client 才发;未启动/
-   * 不可用一律静默降级返回 false(不报错、不阻塞热更),与 LSP「未知通知
-   * 静默丢弃」的前向兼容口径一致。
+   * `$/kode/fileChanged` notification (hot-reload bypass surface, §11.3):
+   * forwards non-py file changes to rust parsing on demand. It **does not
+   * spawn a process to send a notification** — only an already-live client sends;
+   * unstarted/unavailable always degrades silently to false (no error, no
+   * blocking of hot reload), matching LSP's forward-compatibility stance of
+   * "silently dropping unknown notifications".
    */
   notifyFileChanged(params: unknown): boolean {
     const client = this.client;
@@ -416,12 +468,14 @@ export class KodeCoreGate {
   }
 
   /**
-   * RUST-131-W:生产文件事件(workspace/didRenameFiles、workspace/
-   * didDeleteFiles)直传 rust——撤销旧 URI 符号/解析缓存/待执行刷新
-   * (晚到旧任务复活禁令),rename 侧新 URI 执行时刻回读盘。未打开依赖
-   * 的移动/删除由此面兜底(didOpen/didClose 只覆盖打开缓冲区)。口径同
-   * notifyFileChanged:只有已存活的 client 才发,未启动/不可用静默返回
-   * false(不为发通知拉起进程)。
+   * RUST-131-W: production file events (workspace/didRenameFiles, workspace/
+   * didDeleteFiles) go straight to rust — invalidating the old URI's symbol/
+   * parse caches and pending refreshes (the no-resurrecting-late-stale-tasks
+   * rule), and re-reading the rename side's new URI from disk at execution time.
+   * Moves/deletes of not-opened dependents are covered by this surface
+   * (didOpen/didClose only cover open buffers). Same stance as notifyFileChanged:
+   * only an already-live client sends; unstarted/unavailable return false
+   * silently (no process is spawned just to send a notification).
    */
   notifyWorkspaceFileEvent(
     method: 'workspace/didRenameFiles' | 'workspace/didDeleteFiles',
@@ -440,19 +494,24 @@ export class KodeCoreGate {
   }
 
   /**
-   * 命令级 Rust 调用(生成/消息表/lint 等用户主动命令):按需拉起 client,
-   * 把请求包成 `$/kode/rpc { method, params }` 调一次,成功返回 ok:true,
-   * 任何失败返回 ok:false(原因),由调用方回退 TS 路径。
-   * 与 serving 面正交:不动 serveFromRust(仍恒 false),不依赖 shadow 模式,
-   * 不依赖 mirror 语料(params 由调用方直传)。进程生命周期交给 teardown
-   * (kill-switch/配置变更 stopClient),连续命令复用同进程不重复 spawn。
+   * command-level Rust invocation (user-initiated commands such as generation /
+   * message tables / lint): brings the client up on demand, wraps the request
+   * as a single `$/kode/rpc { method, params }` call, returns ok:true on
+   * success, and ok:false (with a reason) on any failure so the caller falls
+   * back to the TS path.
+   * Orthogonal to the serving surface: it does not touch serveFromRust (which
+   * is still permanently false), does not depend on shadow mode, and does not
+   * depend on mirrored corpus (params are passed straight by the caller). Process
+   * lifetime is left to teardown (kill-switch/config-change stopClient);
+   * consecutive commands reuse the same process and do not re-spawn.
    */
   async runInRust<T = unknown>(
     method: string,
     params?: unknown,
     opts?: { timeoutMs?: number }
   ): Promise<{ ok: true; result: T } | { ok: false, reason: string }> {
-    // 熔断开放:直通回落(调用方走 TS),不再拉起进程白等预算
+    // circuit open: pass through to fallback (the caller takes TS) instead of
+    // spawning a process to burn budget for nothing
     if (this.commandCircuitOpen) {
       return {
         ok: false,
@@ -486,18 +545,23 @@ export class KodeCoreGate {
     }
   }
 
-  /** 命令腿熔断现状(诊断面/测试用) */
+  /** current state of the command-leg circuit (for diagnostics/tests) */
   commandCircuitState(): { open: boolean; timeoutStreak: number } {
     return { open: this.commandCircuitOpen, timeoutStreak: this.commandTimeoutStreak };
   }
 
   /**
-   * 健康探针(2026-11-24 健康灯批):ensureClient→start→`$/kode/health`,
-   * 整个探针体与 timeoutMs 预算竞速——server 进程楔死时 start() 自身也可能
-   * 挂(START_TIMEOUT_MS 10s 级),探针必须无条件按时应答。任何失败如实报
-   * ok:false。被动读口:不计熔断 streak、不弹 notice(判活是观测面,不是
-   * 故障面,不驱动任何回落决策)。reason=快速失败臂的原错误词(TIMEOUT/
-   * EXITED/spawn 原文),预算耗尽臂 reason 缺省=预算内未决(疑似挂死)。
+   * health probe (2026-11-24 health-light batch): ensureClient -> start ->
+   * `$/kode/health`, with the whole probe body racing against the timeoutMs
+   * budget — when the server process is wedged, start() itself can hang
+   * (START_TIMEOUT_MS is on the order of 10s), so the probe must answer on
+   * time unconditionally. Any failure reports ok:false honestly. Passive read
+   * port: it does not count toward the circuit streak and raises no notice
+   * (liveness judgment is an observation surface, not a failure surface, and
+   * drives no fallback decision). reason = the original error word from the
+   * fast-failure arm (TIMEOUT/EXITED/raw spawn message); on the
+   * budget-exhausted arm reason is absent = undecided within the budget
+   * (suspected hang).
    */
   async probeHealth(timeoutMs = 2_000): Promise<CoreHealthProbeOutcome> {
     if (this.mode === 'ts' || !this.config.serverPath) {
@@ -535,12 +599,15 @@ export class KodeCoreGate {
   }
 
   /**
-   * serving 面(2026-11-08 用户令「直接切」):Rust 服务轨道时把 LSP 方法
-   * (textDocument/definition 等)直发给 kode-server,返回 Rust 结果;任何
-   * Rust 侧失败(缺 serverPath/启动失败/请求失败/超时)一律返回 fallback
-   * —— provider 用 fallback 走 TS 实现,用户可见行为与 ts 模式一致(铁律:
-   * Rust 失败不误伤服务)。非服务轨道零开销直通 fallback。命令级
-   * $/kode/rpc 用 runInRust;本面专供 LSP 服务方法。
+   * serving surface (2026-11-08 user order "switch straight"): on the Rust
+   * serving track, LSP methods (textDocument/definition and the like) go
+   * straight to kode-server and the Rust result is returned; any Rust-side
+   * failure (missing serverPath/start failure/request failure/timeout) returns
+   * the fallback — the provider uses it to take the TS implementation, so the
+   * user-visible behavior matches ts mode (iron rule: a Rust failure must never
+   * harm serving). Off the serving track it passes straight through to the
+   * fallback at zero cost. Command-level $/kode/rpc uses runInRust; this
+   * surface is exclusively for LSP serving methods.
    */
   async serveInRust<T>(
     method: string,
@@ -556,24 +623,30 @@ export class KodeCoreGate {
       this.noticeOnce(`rust 服务不可用(${method}): client 创建失败,回落 ts`);
       return fallback;
     }
-    // P1-4:启动面独立记账。启动失败此前与请求失败同笼,转成正常回落——
-    // 预算包装(awaitWithInteractiveBudget)把它记成一次成功,启动失败永不
-    // 熔断。现在如实记传输级硬失败(仍回落 ts,不误伤服务)。
+    // P1-4: the start leg is accounted for independently. A start failure was
+    // previously bucketed with request failures and turned into an ordinary
+    // fallback — the budget wrapper (awaitWithInteractiveBudget) logged it as
+    // a success, so a start failure could never trip the circuit. Now it is
+    // recorded honestly as a transport-level hard failure (still falling back to
+    // ts, without harming serving).
     try {
       await client.start();
     } catch (error) {
-      // P1(复审 2026-11-24):启动失败只记当前客户端。挂起中的旧 client
-      // 在重启/换配置后才拒绝,其失败属已消亡会话——无条件记账会打开
-      // 新会话的熔断,下一次交互直通 null。
+      // P1 (review 2026-11-24): a start failure is only recorded for the current
+      // client. A pending old client rejects only after a restart/config change,
+      // so its failure belongs to a dead session — accounting for it
+      // unconditionally would open the new session's circuit and make the next
+      // interaction pass straight through as null.
       if (this.client === client) {
         noteInteractiveStartupFailure();
         this.noticeOnce(`rust 服务启动失败(${method}): ${(error as Error).message},回落 ts`);
       }
       return fallback;
     }
-    // 同窗口:start 挂起期间已换人(重启/换 serverPath),本帧不得再驱动
-    // 旧 client(syncRestartGeneration 会把熔断代数倒回旧代,请求打进
-    // 已 dispose 的进程)。
+    // Same window: the client was replaced while start was pending (restart /
+    // serverPath change), so this frame must not drive the old client any more
+    // (syncRestartGeneration would roll the circuit generation back to the old
+    // one, and the request would hit an already-disposed process).
     if (this.client !== client) {
       return fallback;
     }
@@ -606,12 +679,15 @@ export class KodeCoreGate {
         new KodeCoreClient({
           binaryPath: this.config.serverPath,
           initializeParams: this.initializeParams,
-          // WARM-VISIBILITY-004 刀 B(FREEZE 刀3):kode-server 存活心跳/
-          // 重启循环取证进统一「KBEngine Index」通道。
+          // WARM-VISIBILITY-004 blade B (FREEZE blade 3): kode-server liveness
+          // heartbeat / restart-loop evidence goes into the unified "KBEngine
+          // Index" channel.
           onLifecycle: line => { indexLog('server', line); },
         });
-      // RUST-142:通知消费面透传(handler 先于客户端装配已设置时,改挂;
-      // 客户端懒建后置装配走 setNotificationHandler 的 client 改挂)。
+      // RUST-142: the notification consumer surface is passed through (if the
+      // handler was set before the client was wired, re-attach it; late wiring
+      // on a lazily built client goes through setNotificationHandler's client
+      // re-attach).
       this.client.setNotificationHandler?.(this.notificationHandler);
       this.clientServerPath = this.config.serverPath;
       return this.client;
@@ -623,7 +699,8 @@ export class KodeCoreGate {
     }
   }
 
-  /** kill-switch/换二进制:停 Rust 进程并清冷却、镜像账与快照(异步,不阻塞配置路径) */
+  /** kill-switch / binary swap: stop the Rust process and clear the cooldown,
+   * mirror ledger and snapshots (asynchronous, does not block the config path) */
   private stopClient(): void {
     const client = this.client;
     this.client = null;
@@ -632,8 +709,9 @@ export class KodeCoreGate {
     this.mirrorSnapshots.clear();
     this.registeredRoots.clear();
     this.lastRestartGeneration = null;
-    // 进程更换(kill-switch/换二进制/手动重启同路径):命令腿熔断复位,
-    // 新进程 = 新的成功机会(与交互腿手动复位同判式)
+    // process replacement (kill-switch / binary swap / manual restart share this
+    // path): reset the command-leg circuit — a new process is a new chance for
+    // success (the same judging as the interactive leg's manual reset)
     this.commandCircuitOpen = false;
     this.commandTimeoutStreak = 0;
     if (client) {
@@ -642,10 +720,13 @@ export class KodeCoreGate {
   }
 
   /**
-   * 重启对账(E-2):client 自动重启后新进程是空库,旧版本账必须失效 ——
-   * 版本账清零,快照全量重放为 didOpen(新账随重放重建),否则 didChange 会
-   * 因文档未打开被新进程忽略。调用点:每次 start() 握手之后(mirrorDocument
-   * 与 compare 同一入口,谁先到谁重放)。
+   * restart reconciliation (E-2): after the client auto-restarts, the new
+   * process has an empty corpus, so the old version ledger must become invalid —
+   * the version ledger is cleared and the snapshots are fully replayed as
+   * didOpen (the new ledger is rebuilt by the replay), otherwise didChange would
+   * be ignored by the new process because the document is not open. Call site:
+   * after every start() handshake (mirrorDocument and compare share the same
+   * entry, whoever arrives first replays).
    */
   private syncRestartGeneration(client: ShadowClientLike): void {
     const generation = client.getRestartGeneration?.();
@@ -661,14 +742,19 @@ export class KodeCoreGate {
     }
     this.lastRestartGeneration = generation;
     this.mirroredVersions.clear();
-    // 熔断重置：新进程=新的成功机会（server-runtime 侧问题随旧进程消散）。
+    // circuit reset: a new process is a new chance for success (server-runtime
+    // problems die with the old process).
     resetInteractiveCircuit(generation);
-    // 命令腿熔断同规则复位(自动重启对账点;与 stopClient 手动路径双覆盖)
+    // the command-leg circuit resets under the same rule (the automatic-restart
+    // reconciliation point; together with stopClient's manual path this covers
+    // both)
     this.commandCircuitOpen = false;
     this.commandTimeoutStreak = 0;
-    // RUST-069-W:新进程根注册表是空的(握手只带 workspaceFolders)——
-    // 运行期注册过的根(外部 assetsRoot / 运行期新增 folder)先补注册,
-    // 再重放语料快照(文件根归属依赖根已注册,顺序不可倒置)。
+    // RUST-069-W: the new process's root registry is empty (the handshake only
+    // carries workspaceFolders) — re-register the roots registered at runtime
+    // (external assetsRoot / folders added at runtime) before replaying the
+    // corpus snapshots (a file's root attribution depends on the root being
+    // registered, so the order must not be inverted).
     for (const fsPath of this.registeredRoots) {
       const sent = client.addWorkspaceRoot?.(fsPath);
       if (sent) {
@@ -682,10 +768,13 @@ export class KodeCoreGate {
   }
 
   /**
-   * 根生命周期(RUST-069-W):把工作区根(运行期新增 folder / 外部
-   * assetsRoot)注册进 Rust 唯一根注册表。请求面带回执(根 id);账内
-   * 去重不重发(server 侧幂等兜底)。非服务轨道/未配 serverPath 零开销
-   * 直通 null;失败静默(尽力而为,不误伤服务),账保留——重启重放补注册。
+   * root lifecycle (RUST-069-W): registers a workspace root (a folder added at
+   * runtime / an external assetsRoot) into Rust's single root registry. The
+   * request surface carries a receipt (the root id); the ledger dedupes so it
+   * does not resend (the server side is idempotent as a backstop). Off the
+   * serving track / with serverPath unconfigured it passes straight through to
+   * null at zero cost; failures are silent (best effort, without harming
+   * serving) and the ledger entry is kept — restart replay re-registers it.
    */
   async registerRoot(fsPath: string): Promise<{ root: number } | null> {
     if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
@@ -716,11 +805,16 @@ export class KodeCoreGate {
   }
 
   /**
-   * 根生命周期(RUST-069-W):移除工作区根——Rust 侧撤注册并扇出共享缓存
-   * 清理(镜像/符号/解析候选),回执带 removed。镜像账同步摘除该根条目:
-   * 服务端已清,账不摘则重加根后的语料重镜像按「已镜像」跳过 didOpen,
-   * 新化身空库永不补齐(移除→重加即静默降级)。未注册过的根照发(server
-   * 幂等:未知根 removed:false,不扇出)。非服务轨道零开销直通 null。
+   * root lifecycle (RUST-069-W): removes a workspace root — the Rust side
+   * unregisters it and fans out shared-cache cleanup (mirrors/symbols/parse
+   * candidates), and the receipt carries removed. The mirror ledger drops that
+   * root's entries in sync: the server side is already clean, so if the ledger
+   * kept them, the corpus re-mirror after re-adding the root would skip didOpen
+   * as "already mirrored" and the new incarnation's empty corpus would never be
+   * filled (remove -> re-add would be a silent degradation). A root never
+   * registered is still sent (the server is idempotent: an unknown root yields
+   * removed:false with no fan-out). Off the serving track it passes straight
+   * through to null at zero cost.
    */
   async removeRoot(fsPath: string): Promise<{ removed: boolean } | null> {
     if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
@@ -754,10 +848,12 @@ export class KodeCoreGate {
   }
 
   /**
-   * 暖门(RUST-074-W):首扫开始——server 侧 keyed 状态机入队(Warming)。
-   * 生产首扫 = 语料镜像全程(见 kodeCoreCorpusMirror);begin 带镜像总数
-   * 供观测对账。尽力而为:非镜像轨道/未配 serverPath 零开销直通 null,
-   * 失败静默(不误伤服务)。
+   * warm gate (RUST-074-W): first scan begins — the server-side keyed state
+   * machine is enqueued (Warming). The production first scan is the whole corpus
+   * mirror (see kodeCoreCorpusMirror); begin carries the mirror total for
+   * observational reconciliation. Best effort: off the mirror track / with
+   * serverPath unconfigured it passes straight through to null at zero cost,
+   * and failures are silent (without harming serving).
    */
   async beginBackgroundScan(total: number): Promise<{ state: string } | null> {
     if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
@@ -784,9 +880,11 @@ export class KodeCoreGate {
   }
 
   /**
-   * 暖门(RUST-074-W):首扫完成——镜像全程结束,server 泵至 Warm 并落
-   * done/failed 计数。迟到/无进行中首扫时 server 侧 -32602 诚实拒,这里
-   * 静默(尽力而为);非镜像轨道零开销直通 null。
+   * warm gate (RUST-074-W): first scan finished — the whole mirror pass is over,
+   * the server pumps to Warm and records the done/failed counts. For a late /
+   * no in-progress first scan the server side honestly refuses with -32602, and
+   * here that stays silent (best effort); off the mirror track it passes straight
+   * through to null at zero cost.
    */
   async scanComplete(done: number, failed: number): Promise<{ state: string } | null> {
     if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
@@ -813,9 +911,11 @@ export class KodeCoreGate {
   }
 
   /**
-   * 暖门(RUST-074-W):首扫取消——镜像中断(轨道切走/枚举失败)时回
-   * Idle,不留假 pending。幂等:server 非 Warming 期返回当前真实状态;
-   * 非镜像轨道零开销直通 null,失败静默。
+   * warm gate (RUST-074-W): first scan cancelled — on a mirror interruption
+   * (the track switched away / enumeration failed) it goes back to Idle and
+   * leaves no false pending. Idempotent: outside Warming the server returns its
+   * current real state; off the mirror track it passes straight through to null
+   * at zero cost, and failures are silent.
    */
   async scanCancel(): Promise<{ state: string } | null> {
     if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
@@ -842,19 +942,28 @@ export class KodeCoreGate {
   }
 
   /**
-   * 语料镜像腿(Phase2 首片):把文档 open/change 同步给 Rust server,
-   * definition/diagnostics 影子对拍才有同输入。尽力而为:任何失败静默
-   * (verdict 口径归 compare 自己的失败分类,镜像不刷差异日志);非 shadow
-   * 或未配 serverPath 零开销直通。版本账在会话内单调:前进走 didChange,
-   * 回退(重开)走 close+open,不虚构版本;自动重启后账本重置并重放快照。
+   * corpus mirror leg (Phase2 first slice): syncs document open/change to the
+   * Rust server, so definition/diagnostics shadow comparison shares the same
+   * input. Best effort: any failure is silent (the verdict tally belongs to
+   * compare's own failure classification; mirroring does not spam the diff log);
+   * off shadow or with serverPath unconfigured it passes straight through at zero
+   * cost. The version ledger is monotonic within a session: forward moves take
+   * didChange, a rewind (reopen) takes close+open, and versions are never
+   * fabricated; after an automatic restart the ledger is reset and snapshots are
+   * replayed.
    *
-   * KODE-RESP-007:磁盘语料与编辑器 overlay 生命周期分开——corpus 旗标
-   * 的调用方(全量语料镜像的盘读/枚举快照)是后台快照,只允许补位
-   * (fill-only):账内已有该文档(编辑器流已镜像,或本轮已补)即跳过,
-   * 绝不驱动 change/降级 close+open,晚到的盘快照 v1 不得把在役文档从
-   * v2 拉回旧内容;缺席才按 didOpen 补位入账(与编辑器流共用账本,重启
-   * 重放/关闭清理同口径)。不带 corpus 的编辑器流调用保持原语义(前进
-   * didChange,重开低版本 close+open 兜底 missed-close 边,不虚构版本)。
+   * KODE-RESP-007: disk corpus and editor overlay lifecycles are separate —
+   * callers passing the corpus flag (the full corpus mirror's disk reads /
+   * enumeration snapshots) are background snapshots and may only fill in
+   * (fill-only): if the ledger already holds this document (the editor stream
+   * mirrored it, or this pass already filled it) it is skipped, never driving a
+   * change or a degrading close+open; a late disk snapshot at v1 must not pull a
+   * live document back from v2 to stale content; only an absence is filled in as
+   * didOpen and recorded (sharing the ledger with the editor stream, with the
+   * same stance for restart replay / close cleanup). Editor-stream calls without
+   * the corpus flag keep their original semantics (forward takes didChange, a
+   * lower-version reopen takes close+open to cover the missed-close edge, and
+   * versions are never fabricated).
    */
   async mirrorDocument(
     uri: string,
@@ -873,10 +982,13 @@ export class KodeCoreGate {
     await client.start();
     this.syncRestartGeneration(client);
     const mirrored = this.mirroredVersions.get(uri);
-    // RESP-009:账本同步先行,await 只承担帧写背压等待(必要时等 drain,
-    // 语料镜像生产端被管道限速,客户端缓冲有硬上界)。占位在 await 之前,
-    // 并发重入(编辑器腿与语料快照腿同帧各补一次)只发一次 didOpen;
-    // 发送抛错回滚账本,下一次调用重补(尽力而为,失败静默)。
+    // RESP-009: the ledger update comes first; the await only bears the frame
+    // write-backpressure wait (waiting for drain when needed, since the corpus
+    // mirror producer is rate-limited by the pipe and the client buffer has a hard
+    // upper bound). The placeholder is set before the await, so concurrent
+    // re-entry (the editor leg and the corpus snapshot leg each filling once in
+    // the same frame) sends didOpen only once; a throw while sending rolls the
+    // ledger back and the next call re-fills (best effort, failures silent).
     const priorVersion = mirrored;
     const priorSnapshot = this.mirrorSnapshots.get(uri);
     const rollback = (): void => {
@@ -891,7 +1003,8 @@ export class KodeCoreGate {
       }
     };
     if (options?.corpus) {
-      // 后台快照补位:在场即跳过(不重发不降级),缺席才补 openDocument。
+      // background snapshot fill-in: present means skip (no resend, no
+      // downgrade); only an absence fills in an openDocument.
       if (mirrored !== undefined) {
         return;
       }
@@ -935,14 +1048,18 @@ export class KodeCoreGate {
       }
       return;
     }
-    // 同版本 = 同内容(VS Code 每次内容变更版本必增):镜像腿重入不重发。
+    // same version = same content (VS Code bumps the version on every content
+    // change): a mirror-leg re-entry does not resend.
   }
 
   /**
-   * 关文档清理(E-4):撤版本账与快照,并通知 Rust didClose —— 关闭/丢弃未保存
-   * 修订后 Rust 侧不再持有旧 overlay(内存不涨),重开低版本文档走 didOpen
-   * 正常路径。不反向拉起进程:只处理已存在的 client(非 shadow 或未装配时
-   * 仅清账);幂等,重复关闭不再发通知。
+   * close-document cleanup (E-4): drops the version ledger entry and snapshot
+   * and notifies Rust with didClose — after a close/abandoned unsaved revision
+   * the Rust side no longer holds the old overlay (memory does not grow), and
+   * reopening a lower-version document takes the normal didOpen path. It does
+   * not spawn a process in reverse: only an existing client is handled (off
+   * shadow or unwired, only the ledger is cleared); idempotent, a repeated close
+   * sends no notification.
    */
   closeMirroredDocument(uri: string): void {
     const hadSnapshot = this.mirrorSnapshots.delete(uri);
@@ -957,12 +1074,15 @@ export class KodeCoreGate {
   }
 
   /**
-   * shadow 镜像对比:恒返回 tsResult 原样,永不抛错。Rust 结果只进差异
-   * 日志;任何 Rust 侧失败(start/请求/超时/不可用)只记 verdict 不上浮。
-   * 非 shadow 模式零开销直通(不建进程、不记日志)。
+   * shadow mirror comparison: always returns tsResult as-is and never throws.
+   * The Rust result only goes into the diff log; any Rust-side failure
+   * (start/request/timeout/unavailable) only records a verdict and is not
+   * surfaced. Off shadow mode it passes straight through at zero cost (no
+   * process is built, no log is written).
    */
   async compare<T>(method: string, params: unknown, tsResult: T, uri?: string): Promise<T> {
-    // 影子对拍只在 shadow 模式;rust 服务轨道/ts 轨道都不走 compare。
+    // shadow comparison happens only in shadow mode; neither the rust serving
+    // track nor the ts track goes through compare.
     if (this.mode !== 'shadow') {
       return tsResult;
     }
@@ -990,7 +1110,8 @@ export class KodeCoreGate {
       fail('rust-unavailable', `rust server 启动失败: ${truncate((error as Error).message, 120)}`);
       return tsResult;
     }
-    // 自动重启后先重放语料快照,否则本次对拍打在空库上(E-2)
+    // after an automatic restart, replay the corpus snapshots first, otherwise
+    // this comparison would hit an empty corpus (E-2)
     this.syncRestartGeneration(client);
     try {
       const rustResult = await client.request(method, params, {
@@ -1012,8 +1133,9 @@ export class KodeCoreGate {
         error instanceof KodeCoreTransportError &&
         (error.code === 'TIMEOUT' || error.code === 'REQUEST_CANCELLED')
       ) {
-        // TIMEOUT=硬超时兜底;REQUEST_CANCELLED=超时闸先发的 $/cancelRequest
-        // 回 -32800 —— 两者都是影子超时,归 rust 侧
+        // TIMEOUT = the hard-timeout backstop; REQUEST_CANCELLED = the
+        // $/cancelRequest sent first by the timeout gate coming back as -32800
+        // — both are shadow timeouts and belong to the rust side
         fail('rust-timeout', `${method} 超时(${this.config.shadowTimeoutMs}ms)`);
       } else {
         fail('rust-error', truncate((error as Error).message, 160));
@@ -1022,21 +1144,26 @@ export class KodeCoreGate {
     return tsResult;
   }
 
-  /** 停 Rust 进程;差异日志保留(回退演练要读) */
+  /** stops the Rust process; the diff log is kept (fallback drills read it) */
   async dispose(): Promise<void> {
     this.stopClient();
   }
 
   /**
-   * RUST-221 用户显式重启 Core:停当前 Rust 进程并清冷却、镜像账与快照,
-   * 下次语义请求按当前配置重建(与换 serverPath 自动重启同一路径)。
-   * backend=ts 时无进程可停,幂等无害;差异日志保留(与 dispose 同口径)。
+   * RUST-221 user-initiated explicit Core restart: stops the current Rust
+   * process and clears the cooldown, mirror ledger and snapshots, and the next
+   * semantic request rebuilds per the current config (the same path as an
+   * automatic restart after a serverPath change). With backend=ts there is no
+   * process to stop, so this is harmlessly idempotent; the diff log is kept
+   * (the same stance as dispose).
    */
   restartCore(): void {
     this.stopClient();
-    // P1-4:手动重启 = 无条件复位窗口。若此后新进程启动再失败,握手对账
-    // (syncRestartGeneration → resetInteractiveCircuit)跑不到,熔断必须
-    // 在重启动作本身复位,否则后续请求仍被熔断挡住,重启等于无效。
+    // P1-4: a manual restart is an unconditional reset window. If the new
+    // process fails to start afterwards, the handshake reconciliation
+    // (syncRestartGeneration -> resetInteractiveCircuit) never runs, so the
+    // circuit must be reset by the restart action itself; otherwise later
+    // requests stay blocked by the circuit and the restart is a no-op.
     resetInteractiveCircuitForManualRestart();
   }
 }

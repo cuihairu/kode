@@ -1,18 +1,23 @@
 /**
- * .py 一键格式化 via ruff format(2026-11-18 批 A,巡检单
- * kode-ruff-format-statusbar.md)。A 案 shell out 零 API 耦合,与 ruffLint
- * 同源口径:Rust 侧 `$/kode/ruff/format`(kode-server ruff_format.rs)负责
- * 探测/spawn/stdin→stdout 管道;缺二进制如实 `available:false`(回退不报)。
- * 本文件只做:
- * - 桥(runRuffFormat:载荷契约 content/fileName/ruffPath);
- * - 命令编排(runRuffFormatCommand):活动 .py → format → 全文替换;
- *   缺 ruff 同意式安装(同 ruffLint 成熟先例),拒绝亮手动命令,绝不静默装;
- * - Provider 注册编排(ensureRuffFormatterRegistered):探测到 ruff 自动注册
- *   document/range 两 provider(**不抢默认**:不动 editor.defaultFormatter,
- *   仅用户未配置任何 python 格式化器时一次性提示「一键设为默认」,点才设);
- * - 生成器直通(formatGeneratedPython):探测到 ruff 才多行化,不可用原样
- *   返回(单行兼容)。
- * - 无 vscode import:UI/进程面全经 deps 注入(单测驱动纯编排)。
+ * One-click .py formatting via ruff format (2026-11-18 batch A, inspection sheet
+ * kode-ruff-format-statusbar.md). Plan A shells out with zero API coupling, the
+ * same ruling as ruffLint: the Rust side `$/kode/ruff/format`
+ * (kode-server ruff_format.rs) handles probing/spawn/the stdin->stdout pipe; a
+ * missing binary is honestly `available:false` (falls back, does not report).
+ * This file only does:
+ * - the bridge (runRuffFormat: the payload contract content/fileName/ruffPath);
+ * - command orchestration (runRuffFormatCommand): active .py -> format ->
+ *   full-text replace; missing ruff is opt-in installed (the mature ruffLint
+ *   precedent), a refusal shows the manual command, never installs silently;
+ * - provider registration orchestration (ensureRuffFormatterRegistered): once ruff
+ *   is probed, auto-register both document/range providers (**never grabs the
+ *   default**: editor.defaultFormatter is untouched; only when the user has no
+ *   python formatter configured at all is there a one-time "set as default"
+ *   prompt, and it only applies when clicked);
+ * - generator passthrough (formatGeneratedPython): multi-line only when ruff is
+ *   probed; when unavailable, return verbatim (single-line compatibility).
+ * - no vscode imports: the UI/process faces are all injected via deps (unit
+ *   tests drive the pure orchestration).
  */
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
@@ -25,7 +30,7 @@ export interface RuffFormatResult {
   formatted?: string;
 }
 
-/** `$/kode/ruff/format` 桥:content/fileName 直传(stdin 管道由 Rust 侧接)。 */
+/** `$/kode/ruff/format` bridge: content/fileName passed straight through (the stdin pipe is handled by the Rust side). */
 export async function runRuffFormat(
   content: string,
   fileName: string,
@@ -57,15 +62,15 @@ export async function runRuffFormat(
 }
 
 export interface RuffFormatCommandDeps {
-  /** 活动编辑器文件(仅 .py;非 .py/无编辑器 = null)。 */
+  /** The active editor file (.py only; non-.py / no editor = null). */
   getActivePythonFile(): { fileName: string; content: string } | null;
-  /** 应用格式化全文(编辑替换)。 */
+  /** Apply the formatted full text (an edit replacement). */
   applyFormattedText(text: string): void;
-  /** 当前选定解释器路径(null=未选定)。 */
+  /** Currently selected interpreter path (null = none selected). */
   getInterpreterPath(): string | null;
-  /** 解释器 bin 下 ruff 定位(null=PATH 回落);探测/格式化同源,防探测命中而格式化落空。 */
+  /** Locate ruff under the interpreter bin (null = fall back to PATH); probing and formatting share one source so a probe hit cannot miss at format time. */
   getRuffPath?(): string | undefined;
-  /** pip 安装(同意后调用);ok=false 时 output 携原始 stdout/stderr。 */
+  /** pip install (called after consent); when ok=false, output carries the raw stdout/stderr. */
   runPipInstall(interpreterPath: string): Promise<{ ok: boolean; output: string }>;
   showInformationMessage(message: string, ...items: string[]): Thenable<string | undefined>;
   showErrorMessage(message: string): Thenable<unknown>;
@@ -76,8 +81,9 @@ const INSTALL_ACTION = l10nText('Install (via pip)');
 const SKIP_ACTION = l10nText('Not now');
 
 /**
- * `kbengine.python.ruffFormat`:格式化当前 .py。可用即全文替换;缺 ruff →
- * 同意式安装(装成自动重试一次);安装失败/拒绝如实亮手动命令,不 crash。
+ * `kbengine.python.ruffFormat`: format the current .py. When available, replace the
+ * full text; missing ruff -> opt-in install (one automatic retry once installed);
+ * on install failure/refusal honestly show the manual command, no crash.
  */
 export async function runRuffFormatCommand(deps: RuffFormatCommandDeps): Promise<void> {
   const active = deps.getActivePythonFile();
@@ -125,7 +131,7 @@ export async function runRuffFormatCommand(deps: RuffFormatCommandDeps): Promise
     return;
   }
   if (!call.result.available || call.result.formatted === undefined) {
-    // 无解释器可装/仍未装:亮手动命令让用户自己装,不重试风暴。
+    // No interpreter to install with / still not installed: show the manual command so the user installs it themselves, no retry storm.
     void deps.showErrorMessage(l10nText('ruff is not installed. Install it and retry.'));
     return;
   }
@@ -133,7 +139,7 @@ export async function runRuffFormatCommand(deps: RuffFormatCommandDeps): Promise
 }
 
 export interface RuffFormatterRegisterDeps {
-  /** 探测 ruff 可用性(解释器 bin/PATH;不弹任何 UI)。 */
+  /** Probe ruff availability (interpreter bin/PATH; no UI is shown). */
   probeRuffAvailable(): Promise<boolean>;
   registerDocumentFormattingEditProvider(
     selector: unknown,
@@ -143,11 +149,11 @@ export interface RuffFormatterRegisterDeps {
     selector: unknown,
     provider: unknown
   ): unknown;
-  /** 用户 editor.defaultFormatter 当前值(未设=undefined)。 */
+  /** The user's current editor.defaultFormatter value (unset = undefined). */
   getDefaultFormatter(): string | undefined;
-  /** 用户点「设为默认」后实际写入面(装配层注入;未注入=只问不设)。 */
+  /** The actual write face after the user clicks "Set as default" (injected by the wiring layer; not injected = ask but never set). */
   setDefaultFormatter?(): void;
-  /** 解释器 bin 下 ruff 定位(null/未注入=PATH 回落);探测与 provider 同源。 */
+  /** Locate ruff under the interpreter bin (null/not injected = fall back to PATH); the probe and the provider share one source. */
   getRuffPath?(): string | undefined;
   showInformationMessage(message: string, ...items: string[]): Thenable<string | undefined>;
 }
@@ -155,9 +161,11 @@ export interface RuffFormatterRegisterDeps {
 const SET_DEFAULT_ACTION = l10nText('Set as default formatter');
 
 /**
- * 激活期探测注册(默认不抢默认):探测到 ruff → 注册 document/range 两
- * provider(python);未探测 → 不注册零打扰。仅当用户未配置任何
- * defaultFormatter 时,一次性提示「一键设为默认」——点才设,绝不自动改。
+ * Probe-and-register at activation (never grabs the default): when ruff is probed
+ * -> register both document/range providers (python); not probed -> no
+ * registration, zero intrusion. Only when the user has no defaultFormatter
+ * configured at all, a one-time "set as default" prompt — it applies only when
+ * clicked, never changes anything automatically.
  */
 export async function ensureRuffFormatterRegistered(deps: RuffFormatterRegisterDeps): Promise<boolean> {
   const available = await deps.probeRuffAvailable();
@@ -172,15 +180,16 @@ export async function ensureRuffFormatterRegistered(deps: RuffFormatterRegisterD
       l10nText('Kode (ruff) can format Python files. Set it as the default formatter?'),
       SET_DEFAULT_ACTION
     ).then(choice => {
-      // 「点才设」:装配层接线实际设置面;此处仅编排询问,设置动作由
-      // deps 消费方注入(保持本核零 vscode)。
+      // "Set only when clicked": the wiring layer wires up the actual set face;
+      // this only orchestrates the question, the set action is injected by the
+      // deps consumer (keeping this core zero-vscode).
       if (choice === SET_DEFAULT_ACTION) { deps.setDefaultFormatter?.(); }
     });
   }
   return true;
 }
 
-/** provider 本体:document/range 共用——内容→runRuffFormat→TextEdit 全文替换。 */
+/** Provider body: shared by document/range — content -> runRuffFormat -> a full-text TextEdit replacement. */
 function makeRuffFormatProvider(
   getRuffPath?: () => string | undefined
 ): {
@@ -201,14 +210,16 @@ function makeRuffFormatProvider(
 }
 
 export interface FormatGeneratedPythonDeps {
-  /** format 面(生产=runRuffFormat 的 available 闸;测试注入多行化替身)。 */
+  /** The format face (production = runRuffFormat's available gate; tests inject a multi-line stand-in). */
   runFormat(content: string, fileName: string): Promise<{ available: boolean; formatted?: string }>;
 }
 
 /**
- * 生成器直通(治本):配置类 py 生成后经 ruff format 多行化——FIXED_DICT/
- * ARRAY 长默认值不再挤一行,debug 可读。探测不到 ruff/任何失败 → 原样返回
- * (单行输出兼容不动),绝不因格式化面阻塞生成。
+ * Generator passthrough (root fix): after a config py is generated, multi-line it
+ * via ruff format — FIXED_DICT/ARRAY long defaults no longer squeeze onto one line
+ * and stay debug-readable. ruff not probed / any failure -> return verbatim (the
+ * single-line output stays untouched), and the generation chain is never blocked by
+ * the formatting face.
  */
 export async function formatGeneratedPython(
   content: string,
@@ -221,7 +232,7 @@ export async function formatGeneratedPython(
       return result.formatted;
     }
   } catch {
-    // 格式化面任何异常不拖垮生成主链
+    // Any exception in the formatting face must not drag down the generation chain
   }
   return content;
 }

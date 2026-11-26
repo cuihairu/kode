@@ -1,13 +1,18 @@
-//! 客户端实体 SDK 生成核心(`$/kode/sdk/generate`,Rust 单一生产者)。
+//! Client entity SDK generation core (`$/kode/sdk/generate`, Rust is the single
+//! producer).
 //!
-//! 与 TS `src/clientSdkGenerator.ts` 旧纯生产器**逐字节对拍**:同一份 .def/
-//! types.xml 输入产出相同文件内容。TS 侧只留读盘(UI 壳/写盘)与 Rust 不可用
-//! 时的回落分支,生成逻辑收敛到这里(单一来源 = Rust)。
+//! Byte-for-byte parity with the old TS `src/clientSdkGenerator.ts` pure
+//! producer: the same .def / types.xml input yields the same file contents. The
+//! TS side keeps only disk reads (UI shell / writing) and the fallback branch
+//! for when Rust is unavailable; the generation logic converges here (single
+//! source = Rust).
 //!
-//! 入参 = `{ language, entities: [{name, defText}], typesXml, generatedAt,
-//! engineTrace?, namespace? }`,返回 = `[{ fileName, content }]`。handler 是
-//! 纯函数(params 由 TS 直传,不依赖 mirror 语料、不读盘);畸形 def(结构
-//! 错误)按 TS parseClientSdkEntity→null 同口径跳过,单份坏 def 不打断整批。
+//! Input = `{ language, entities: [{name, defText}], typesXml, generatedAt,
+//! engineTrace?, namespace? }`, output = `[{ fileName, content }]`. The handler
+//! is a pure function (params come straight from TS, with no dependence on the
+//! mirror corpus and no disk reads); a malformed def (structural error) is
+//! skipped under the same criteria as TS parseClientSdkEntity -> null, and one
+//! bad def does not abort the whole batch.
 
 use std::collections::{HashMap, HashSet};
 
@@ -19,33 +24,33 @@ use kode_parser::xml::{self, Document, NodeData};
 
 use crate::rpc::RpcRegistry;
 
-/// FIXED_DICT 伴随文件基名(无扩展名;与 TS 同源常量)。
+/// FIXED_DICT companion file basename (no extension; a constant shared with TS).
 pub const FIXED_DICTS_BASENAME: &str = "ClientSdkFixedDicts";
-/// 组件类型类伴随文件基名(无扩展名;与 TS 同源常量)。
+/// Component type class companion file basename (no extension; a constant shared with TS).
 pub const COMPONENTS_BASENAME: &str = "ClientSdkComponents";
-/// C# 输出命名空间缺省值(Unity 客户端工程可自行改)。
+/// Default namespace for C# output (a Unity client project can change it itself).
 pub const DEFAULT_CSHARP_NAMESPACE: &str = "KbEngineClient";
-/// 生成文件头部固定第一行(手写会在下次生成被覆盖)。
+/// Fixed first line of a generated file header (hand edits are overwritten on the next generation).
 const GENERATED_HEADER_LINE: &str =
     "// 由 kode 客户端实体 SDK 生成器生成，手动修改会在下次生成时被覆盖";
-/// 引擎溯源探测不到时的字面量(不猜不空缺)。
+/// Literal used when engine provenance cannot be detected (no guessing, no gap).
 const TRACE_UNKNOWN: &str = "unknown";
 
-/// 注册 `$/kode/sdk/generate` handler。
+/// Register the `$/kode/sdk/generate` handler.
 pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/sdk/generate", generate_handler);
 }
 
 // ---------------------------------------------------------------------------
-// 内建类型映射(语言中立 → 目标语言;与 TS TS_BUILTIN_TYPES/CS_BUILTIN_TYPES 同表)
+// Builtin type mapping (language-neutral -> target language; same table as TS TS_BUILTIN_TYPES/CS_BUILTIN_TYPES)
 // ---------------------------------------------------------------------------
 
-/// 引擎内置类型 → TypeScript。
+/// Engine builtin types -> TypeScript.
 const TS_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("UINT8", "number"),
     ("UINT16", "number"),
     ("UINT32", "number"),
-    // IDE-AUD-063:64 位整数用 bigint 保全域精确(number 为 float64,2^53+1 起静默丢精度)。
+    // IDE-AUD-063: 64-bit integers use bigint to keep the whole domain exact (number is float64 and silently loses precision from 2^53+1 on).
     ("UINT64", "bigint"),
     ("INT8", "number"),
     ("INT16", "number"),
@@ -66,7 +71,7 @@ const TS_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("BLOB", "unknown"),
 ];
 
-/// 引擎内置类型 → C#(向量默认 Vector2/3/4,Unity 自带)。
+/// Engine builtin types -> C# (vectors default to Vector2/3/4, which Unity ships with).
 const CS_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("UINT8", "byte"),
     ("UINT16", "ushort"),
@@ -91,8 +96,10 @@ const CS_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("BLOB", "object"),
 ];
 
-/// 引擎内置类型 → Python(骨架零依赖:向量用 tuple 泛型,不依赖 KBEngine
-/// stubs 的 Vector 类;UINT64/INT64 → int,Python 3 int 无界天然全精确域)。
+/// Engine builtin types -> Python (the skeleton stays dependency-free: vectors
+/// use tuple generics and do not depend on the Vector class from the KBEngine
+/// stubs; UINT64/INT64 -> int, and Python 3 int is unbounded and naturally
+/// exact over the whole domain).
 const PY_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("UINT8", "int"),
     ("UINT16", "int"),
@@ -117,7 +124,7 @@ const PY_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("BLOB", "bytes"),
 ];
 
-/// 内建类型名缺失时的兜底(TS=unknown,C#=object,Python=Any)。
+/// Fallback when a builtin type name is missing (TS=unknown, C#=object, Python=Any).
 fn builtin_table(language: &str) -> &'static [(&'static str, &'static str)] {
     if language == "csharp" {
         CS_BUILTIN_TYPES
@@ -139,18 +146,18 @@ fn fallback_for(language: &str) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
-// 语义模型(.def → 实体;types.xml → 类型表)
+// Semantic model (.def -> entity; types.xml -> type table)
 // ---------------------------------------------------------------------------
 
 struct SdkProperty {
     name: String,
-    /// `<Type>` 直文本;ARRAY 为 `ARRAY`。
+    /// The `<Type>` direct text; `ARRAY` for ARRAY.
     type_name: String,
-    /// ARRAY 的 `<of>` 文本;非容器为 None。
+    /// The `<of>` text of ARRAY; None for non-containers.
     element_type: Option<String>,
-    /// `<Flags>` 原文(trim)。
+    /// The `<Flags>` text as-is (trimmed).
     flags: String,
-    /// 三域位(base/cell/client)。
+    /// The three domain bits (base/cell/client).
     domains: Vec<&'static str>,
 }
 
@@ -165,11 +172,11 @@ struct SdkMethod {
     arg_types: Vec<String>,
 }
 
-/// 组件槽 SDK 面:slot 成员 + 组件类型类(客户端可见属性)。
+/// Component slot SDK face: the slot member + the component type class (client-visible properties).
 struct SdkComponent {
     slot: String,
     type_name: String,
-    /// 客户端可见属性(组件模块自身 + 接口 + 父类递归,按名去重首个)。
+    /// Client-visible properties (the component module itself + interfaces + parents, recursed, deduped by name keeping the first).
     properties: Vec<SdkProperty>,
 }
 
@@ -200,7 +207,7 @@ struct TypeMap {
     aliases: HashMap<String, String>,
     fixed_dicts: HashMap<String, FixedDictType>,
     fallback: &'static str,
-    /// 目标语言(容器/数组发射形态按语言分流:TS/CS `T[]`,Python `list[T]`)。
+    /// Target language (container/array emission shape branches by language: TS/CS `T[]`, Python `list[T]`).
     language: String,
 }
 
@@ -209,7 +216,7 @@ struct SdkEntityInput {
     def_text: String,
 }
 
-/// 组件 def 原文表(按名;TS 闭包发现 category 'component' 递归收集)。
+/// Component def raw text table (keyed by name; the TS closure walks category 'component' and collects recursively).
 type ComponentDefs = HashMap<String, String>;
 
 struct EngineTrace {
@@ -217,7 +224,7 @@ struct EngineTrace {
     engine_commit: String,
 }
 
-/// handler 入参(与 TS RPC 契约一一对应)。
+/// Handler input (a one-to-one match with the TS RPC contract).
 struct SdkGenerateParams {
     language: String,
     entities: Vec<SdkEntityInput>,
@@ -229,12 +236,13 @@ struct SdkGenerateParams {
 }
 
 // ---------------------------------------------------------------------------
-// .def 解析(与 TS parseClientSdkEntity / parseDefFileSemantics 同口径)
+// .def parsing (same criteria as TS parseClientSdkEntity / parseDefFileSemantics)
 // ---------------------------------------------------------------------------
 
-/// 结构错误判定:TS fxp 对未闭合/闭合不匹配/游离闭合会抛错 →
-/// parseClientSdkEntity 返回 null(跳过该 def)。Rust 容错恢复不出 panic,
-/// 在此把同类结构性错误收束成「跳过」,保持两侧行为一致。
+/// Structural error test: TS fxp throws on unclosed / mismatched close / stray
+/// close tags -> parseClientSdkEntity returns null (skipping that def). Rust's
+/// tolerant recovery does not panic, so the same class of structural error is
+/// folded into "skip" here, keeping both sides' behaviour consistent.
 fn is_structural_error(doc: &Document) -> bool {
     doc.diagnostics.iter().any(|diag| {
         matches!(
@@ -247,8 +255,9 @@ fn is_structural_error(doc: &Document) -> bool {
     })
 }
 
-/// TS getReferenceTargetName:遍历子节点,首个非空 trim 文本取其值,
-/// 否则首个元素子节点取其名(引擎口径:`<Parent><Entity/></Parent>` → Entity)。
+/// TS getReferenceTargetName: walk the child nodes and take the value of the
+/// first non-empty trimmed text; otherwise take the name of the first element
+/// child (engine criteria: `<Parent><Entity/></Parent>` -> Entity).
 fn reference_target_name(doc: &Document, idx: usize) -> String {
     for &child in &doc.element(idx).children {
         match &doc.nodes[child].data {
@@ -270,7 +279,7 @@ fn reference_target_name(doc: &Document, idx: usize) -> String {
     String::new()
 }
 
-/// TS readDefTypeNode:`<Type>` 直文本 + `<of>` 文本分两栏。
+/// TS readDefTypeNode: the `<Type>` direct text plus the `<of>` text, in two columns.
 fn read_def_type_node(doc: &Document, type_idx: Option<usize>) -> (String, Option<String>) {
     let Some(idx) = type_idx else {
         return (String::new(), None);
@@ -284,7 +293,7 @@ fn read_def_type_node(doc: &Document, type_idx: Option<usize>) -> (String, Optio
     (type_name, element_type)
 }
 
-/// TS readDefMethods:一段方法(可只收 Exposed),Arg 只有类型没有名字。
+/// TS readDefMethods: one method section (optionally Exposed only); Arg carries a type and no name.
 fn read_def_methods(
     doc: &Document,
     root: usize,
@@ -311,7 +320,7 @@ fn read_def_methods(
     methods
 }
 
-/// 组件槽 `<Type>` 名:文本直取,空回落首个元素子名(与 message_table node_value 同口径)。
+/// Component slot `<Type>` name: take the text directly, falling back to the first element child's name when empty (same criteria as message_table node_value).
 fn slot_type_name(doc: &Document, slot: usize) -> String {
     let Some(type_idx) = doc.child_element(slot, "Type") else {
         return String::new();
@@ -326,8 +335,10 @@ fn slot_type_name(doc: &Document, slot: usize) -> String {
         .unwrap_or_default()
 }
 
-/// 组件模块客户端可见属性:自身 + 接口 + 父类(components/ 下)递归按名去重
-/// (首个即自身优先);缺失 def 返回 None(调用方跳过该槽/该引用)。
+/// Client-visible properties of a component module: itself + interfaces +
+/// parents (under components/), recursed and deduped by name (the first, i.e.
+/// itself, wins); a missing def returns None (the caller skips that slot /
+/// reference).
 fn parse_component_properties(
     type_name: &str,
     component_defs: &ComponentDefs,
@@ -397,7 +408,7 @@ fn parse_component_properties(
     Some(out)
 }
 
-/// TS parseClientSdkEntity:def 内容 → 实体模型;结构错误返回 None(跳过)。
+/// TS parseClientSdkEntity: def content -> entity model; a structural error returns None (skip).
 fn parse_entity(def_text: &str, name: &str, component_defs: &ComponentDefs) -> Option<SdkEntity> {
     let doc = xml::parse(def_text, false);
     if is_structural_error(&doc) {
@@ -438,8 +449,10 @@ fn parse_entity(def_text: &str, name: &str, component_defs: &ComponentDefs) -> O
             if type_name.is_empty() {
                 continue;
             }
-            // 缺失组件 def → 跳过该槽(宽容;引擎整表失败,SDK 面按 message_table
-            // 同口径报 issue 由 TS 侧闭包面处理,此处静默跳过)。
+            // A missing component def -> skip that slot (tolerant; the engine fails the
+            // whole table, and the SDK face reports the issue under the same
+            // criteria as message_table, handled by the TS-side closure face, so
+            // skip silently here).
             if let Some(properties) =
                 parse_component_properties(&type_name, component_defs, &mut HashSet::new())
             {
@@ -472,10 +485,10 @@ fn client_visible_properties(entity: &SdkEntity) -> Vec<&SdkProperty> {
 }
 
 // ---------------------------------------------------------------------------
-// types.xml → 类型表(与 TS getCustomTypeInfos + buildClientSdkTypeMap 同口径)
+// types.xml -> type table (same criteria as TS getCustomTypeInfos + buildClientSdkTypeMap)
 // ---------------------------------------------------------------------------
 
-/// TS normalizeXmlText:连续空白折叠成单空格后 trim;空 → None。
+/// TS normalizeXmlText: collapse runs of whitespace to a single space and trim; empty -> None.
 fn normalize_xml_text(value: &str) -> Option<String> {
     let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if normalized.is_empty() {
@@ -485,7 +498,7 @@ fn normalize_xml_text(value: &str) -> Option<String> {
     }
 }
 
-/// TS renderStructureNode:元素 → `<name>…</name>` XML 串(自闭合短形)。
+/// TS renderStructureNode: element -> `<name>…</name>` XML string (self-closing short form).
 fn render_structure_node(doc: &Document, idx: usize) -> String {
     let element = doc.element(idx);
     if element.self_closing {
@@ -511,8 +524,8 @@ fn inner_xml(doc: &Document, idx: usize) -> String {
     out
 }
 
-/// TS extractCustomTypeRawValue:文本 chunk 规范化 + 元素结构串(跳过
-/// implementedBy/Properties)拼接;全空 → `ALIAS`。
+/// TS extractCustomTypeRawValue: normalized text chunks + element structure
+/// strings (skipping implementedBy/Properties), joined; all empty -> `ALIAS`.
 fn extract_custom_type_raw_value(doc: &Document, idx: usize) -> String {
     let mut chunks: Vec<String> = Vec::new();
     for &child in &doc.element(idx).children {
@@ -539,7 +552,7 @@ fn extract_custom_type_raw_value(doc: &Document, idx: usize) -> String {
     }
 }
 
-/// TS extractCustomTypeAliasType:rawValue 首个标识符 token;无 → `ALIAS`。
+/// TS extractCustomTypeAliasType: the first identifier token of rawValue; none -> `ALIAS`.
 fn extract_custom_type_alias_type(raw_value: &str) -> String {
     let bytes = raw_value.as_bytes();
     let Some(&first) = bytes.first() else {
@@ -555,8 +568,8 @@ fn extract_custom_type_alias_type(raw_value: &str) -> String {
     raw_value[..end].to_string()
 }
 
-/// TS parseCustomTypeProperties:FIXED_DICT 字段清单(name + Type + 行号)。
-/// TS 侧按 name 排序;字段缺 `<Type>` → typeName=None(生成时按语言兜底)。
+/// TS parseCustomTypeProperties: the FIXED_DICT field list (name + Type + line number).
+/// The TS side sorts by name; a field missing `<Type>` -> typeName=None (generation falls back per language).
 fn parse_custom_type_properties(
     doc: &Document,
     type_idx: usize,
@@ -670,14 +683,16 @@ fn generate_handler(params: Value) -> Result<Value, String> {
 }
 
 // ---------------------------------------------------------------------------
-// headless 收集面(client-sdk-gen bin/CI;extension 流程的收集在 TS
-// definitionWorkspace,此处为同口径复刻:entities.xml 登记序(平铺+分节,
-// 文档序首条去重)→ {name}.def;组件闭包种子=实体 def `<Components>` 槽名,
-// visit 递归 Interfaces/Parent/组件槽(components/ 优先,interfaces/ 回落),
-// 与 TS collectClientSdkComponentDefs 同向;types.xml 缺席=空类型表。
+// headless collection face (client-sdk-gen bin/CI; the extension flow collects
+// in TS definitionWorkspace, so this is an equivalent replica: entities.xml
+// registration order (flat + sectioned, deduped by first occurrence in document
+// order) -> {name}.def; the component closure seeds from the entity def
+// `<Components>` slot names, and visit recurses Interfaces/Parent/component
+// slots (components/ preferred, interfaces/ as fallback), same direction as TS
+// collectClientSdkComponentDefs; a missing types.xml = an empty type table.
 // ---------------------------------------------------------------------------
 
-/// def 文本的闭包线索(组件槽/接口/父类名;结构错误 → 全空,不 panic)。
+/// Closure leads from the def text (component slot / interface / parent names; a structural error yields all empty, without panicking).
 struct DefClosureLeads {
     component_names: Vec<String>,
     interface_names: Vec<String>,
@@ -722,12 +737,20 @@ fn parse_def_closure_leads(def_text: &str) -> DefClosureLeads {
     leads
 }
 
-/// entities.xml 登记名(文档序;平铺 + ClientServerEntities/ServerOnlyEntities
-/// 分节双口径,同名首条保留,与 TS getRegisteredEntities 同向)。文件不可读
-/// 或无根 → Err(调用方决定是否中止)。
-pub fn read_registered_entity_names(entities_xml_path: &std::path::Path) -> Result<Vec<String>, String> {
-    let text = std::fs::read_to_string(entities_xml_path)
-        .map_err(|e| format!("读取 entities.xml 失败({}): {e}", entities_xml_path.display()))?;
+/// Registered names from entities.xml (document order; flat + the
+/// ClientServerEntities/ServerOnlyEntities sectioned dual criteria, keeping the
+/// first occurrence of a duplicate name, same direction as TS
+/// getRegisteredEntities). An unreadable file or a missing root -> Err (the
+/// caller decides whether to abort).
+pub fn read_registered_entity_names(
+    entities_xml_path: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    let text = std::fs::read_to_string(entities_xml_path).map_err(|e| {
+        format!(
+            "读取 entities.xml 失败({}): {e}",
+            entities_xml_path.display()
+        )
+    })?;
     let doc = xml::parse(&text, false);
     let root = doc
         .root()
@@ -741,7 +764,7 @@ pub fn read_registered_entity_names(entities_xml_path: &std::path::Path) -> Resu
     };
     for child in doc.child_elements(root) {
         let element = doc.element(child);
-        // 分节容器(BigWorld 语义):子元素才是登记项;平铺节自身即登记名。
+        // Sectioned container (BigWorld semantics): the child elements are the registration entries; a flat section's own name is the registration name.
         if element.name == "ClientServerEntities" || element.name == "ServerOnlyEntities" {
             for entry in doc.child_elements(child) {
                 push_name(doc.element(entry).name.as_str());
@@ -753,8 +776,9 @@ pub fn read_registered_entity_names(entities_xml_path: &std::path::Path) -> Resu
     Ok(names)
 }
 
-/// headless 生成请求:`assets_root` 指资产根(其下 `scripts/entities.xml` +
-/// `scripts/entity_defs/`);语言三选一;溯源/命名空间可选。
+/// Headless generation request: `assets_root` points at the asset root (with
+/// `scripts/entities.xml` + `scripts/entity_defs/` under it); the language is
+/// one of three; provenance / namespace are optional.
 #[derive(Debug)]
 pub struct ClientSdkCliRequest {
     pub assets_root: std::path::PathBuf,
@@ -765,15 +789,16 @@ pub struct ClientSdkCliRequest {
     pub generated_at: Option<String>,
 }
 
-/// headless 生成产物(文件名+内容,由调用方落盘)。
+/// Headless generation output (file name + content, written to disk by the caller).
 #[derive(Debug)]
 pub struct ClientSdkCliFile {
     pub file_name: String,
     pub content: String,
 }
 
-/// 从资产根收集 def/types 语料并生成客户端 SDK 文件(CI/bin 入口;
-/// 生成核心与 `$/kode/sdk/generate` RPC 同一函数,双入口零分叉)。
+/// Collect the def/types corpus from the asset root and generate the client SDK
+/// files (CI/bin entry point; the generation core is the same function as the
+/// `$/kode/sdk/generate` RPC, so the two entry points have zero divergence).
 pub fn generate_sdk_headless(req: &ClientSdkCliRequest) -> Result<Vec<ClientSdkCliFile>, String> {
     let scripts_dir = req.assets_root.join("scripts");
     let entity_defs_root = scripts_dir.join("entity_defs");
@@ -804,7 +829,7 @@ pub fn generate_sdk_headless(req: &ClientSdkCliRequest) -> Result<Vec<ClientSdkC
         ));
     }
 
-    // 组件闭包:种子=各实体 def 的组件槽名,visit 递归 Interfaces/Parent/组件槽。
+    // Component closure: seeds = each entity def's component slot names; visit recurses Interfaces/Parent/component slots.
     let mut component_defs: ComponentDefs = HashMap::new();
     let mut queue: Vec<String> = Vec::new();
     let mut enqueued = HashSet::new();
@@ -824,9 +849,13 @@ pub fn generate_sdk_headless(req: &ClientSdkCliRequest) -> Result<Vec<ClientSdkC
         if component_defs.contains_key(&name) {
             continue;
         }
-        // 组件优先 components/,接口回落 interfaces/(与 TS 同口径)。
-        let component_path = entity_defs_root.join("components").join(format!("{name}.def"));
-        let interface_path = entity_defs_root.join("interfaces").join(format!("{name}.def"));
+        // Prefer components/ for components, fall back to interfaces/ for interfaces (same criteria as TS).
+        let component_path = entity_defs_root
+            .join("components")
+            .join(format!("{name}.def"));
+        let interface_path = entity_defs_root
+            .join("interfaces")
+            .join(format!("{name}.def"));
         let def_path = if component_path.is_file() {
             component_path
         } else if interface_path.is_file() {
@@ -856,8 +885,9 @@ pub fn generate_sdk_headless(req: &ClientSdkCliRequest) -> Result<Vec<ClientSdkC
             engine_version: v.clone(),
             engine_commit: c.clone(),
         }),
-        // 单独给一边也不伪造另一半:溯源半缺时整段省略,与 RPC 侧
-        // engineTrace 对象缺席同形态。
+        // Giving only one side does not fabricate the other: when half the provenance
+        // is missing, omit the whole block, matching the shape of an absent
+        // engineTrace object on the RPC side.
         _ => None,
     };
 
@@ -883,8 +913,9 @@ pub fn generate_sdk_headless(req: &ClientSdkCliRequest) -> Result<Vec<ClientSdkC
 mod tests {
     use super::*;
 
-    /// 内建表覆盖引擎注册全集(与 kode-types 同口径):内建类型清单漂移时
-    /// 生成面不得静默缺失映射。
+    /// The builtin tables cover the engine's whole registry (same criteria as kode-types):
+    /// if the builtin type list drifts, the generation face must not silently
+    /// lose a mapping.
     #[test]
     fn builtin_tables_cover_engine_registry() {
         for name in kode_types::builtin::BUILTIN_TYPES {
@@ -903,20 +934,22 @@ mod tests {
         }
     }
 
-    /// 结构错误判定只收束 fxp 抛错同类(未闭合/错配/游离闭合/非法标签名);
-    /// 良构文档不得误判(误判会整份 def 被跳过)。
+    /// The structural error test only folds in the same class fxp throws on
+    /// (unclosed / mismatched / stray close / invalid tag name); a well-formed
+    /// document must not be misjudged (a misjudgement would skip the whole def).
     #[test]
     fn is_structural_error_matches_wire_skip_class() {
         assert!(!is_structural_error(&xml::parse(
             "<root><A/></root>",
             false
         )));
-        // 闭合标签缺名(`</>`)→ InvalidTagName,与 fxp 抛错同类。
+        // A close tag without a name (`</>`) -> InvalidTagName, the same class as fxp's thrown errors.
         assert!(is_structural_error(&xml::parse("<root></></root>", false)));
     }
 
-    /// 引用目标名:文本形态(trim 后非空)优先,元素形态取首个元素子名,
-    /// 纯注释子节点 → 空串。
+    /// Reference target name: the text form (non-empty after trim) wins; the
+    /// element form takes the first element child's name; comment-only child
+    /// nodes -> an empty string.
     #[test]
     fn reference_target_name_prefers_text_then_element_name() {
         let doc = xml::parse("<root><Parent> Mob </Parent></root>", false);
@@ -935,7 +968,7 @@ mod tests {
         assert_eq!(reference_target_name(&doc, parent), "");
     }
 
-    /// 缺 `<Type>` 子元素 → (空, None);不动 Flags 等兄弟节点。
+    /// A missing `<Type>` child element -> (empty, None); sibling nodes such as Flags are left untouched.
     #[test]
     fn read_def_type_node_without_type_is_empty() {
         let doc = xml::parse("<root><hp><Flags>ALL_CLIENTS</Flags></hp></root>", false);
@@ -946,7 +979,7 @@ mod tests {
         assert_eq!(element_type, None);
     }
 
-    /// 组件槽类型名:无 `<Type>` → 空;直文本空时回落首个元素子名;全空 → 空。
+    /// Component slot type name: no `<Type>` -> empty; an empty direct text falls back to the first element child's name; all empty -> empty.
     #[test]
     fn slot_type_name_falls_back_to_first_element_child() {
         let doc = xml::parse("<root><bag></bag></root>", false);
@@ -974,7 +1007,7 @@ mod tests {
         assert!(parse_component_properties("Ghost", &defs, &mut HashSet::new()).is_none());
     }
 
-    /// 组件 def 结构错误 → None(调用方跳过该槽),不 panic。
+    /// A structural error in a component def -> None (the caller skips that slot), without panicking.
     #[test]
     fn parse_component_properties_structural_error_is_none() {
         let mut defs = ComponentDefs::new();
@@ -982,7 +1015,7 @@ mod tests {
         assert!(parse_component_properties("Bad", &defs, &mut HashSet::new()).is_none());
     }
 
-    /// 无 `Properties` 段的组件 → 空清单(仍是 Some,槽不丢)。
+    /// A component with no `Properties` section -> an empty list (still Some, so the slot is not lost).
     #[test]
     fn parse_component_properties_without_properties_is_empty() {
         let mut defs = ComponentDefs::new();
@@ -991,7 +1024,7 @@ mod tests {
         assert!(out.is_empty());
     }
 
-    /// 接口与父类递归并入客户端可见属性,同名去重(自身优先)。
+    /// Interfaces and parents are merged recursively into the client-visible properties, deduped by name (itself wins).
     #[test]
     fn parse_component_properties_merges_interface_and_parent_with_dedup() {
         let mut defs = ComponentDefs::new();
@@ -1029,7 +1062,7 @@ mod tests {
         );
     }
 
-    /// 无 `Properties` 段的实体照常成模;组件空槽(缺 `<Type>`)跳过不炸。
+    /// An entity with no `Properties` section still models normally; an empty component slot (missing `<Type>`) is skipped without breaking.
     #[test]
     fn parse_entity_skips_empty_component_slot_and_supports_no_properties() {
         let entity = parse_entity(
@@ -1043,7 +1076,7 @@ mod tests {
         assert!(entity.components.is_empty());
     }
 
-    /// 槽 `<Type>` 直文本空但含元素子 → 元素名即组件类型;组件客户端属性入槽。
+    /// A slot whose `<Type>` direct text is empty but has element children -> the element name is the component type; the component's client properties enter the slot.
     #[test]
     fn parse_entity_resolves_slot_type_from_element_child() {
         let mut defs = ComponentDefs::new();
@@ -1060,14 +1093,14 @@ mod tests {
         assert_eq!(entity.components[0].properties[0].name, "vis");
     }
 
-    /// 连续空白折叠成单空格;纯空白 → None。
+    /// Runs of whitespace collapse to a single space; pure whitespace -> None.
     #[test]
     fn normalize_xml_text_collapses_whitespace() {
         assert_eq!(normalize_xml_text("  a \n b\tc  "), Some("a b c".into()));
         assert_eq!(normalize_xml_text("   \n  "), None);
     }
 
-    /// 结构串渲染:自闭合短形;嵌套元素递归,文本原样保留。
+    /// Structure string rendering: the self-closing short form; nested elements recurse, text is kept as-is.
     #[test]
     fn render_structure_node_renders_self_closing_and_nested() {
         let doc = xml::parse("<root><Props/><FIX><Props/> tail </FIX></root>", false);
@@ -1081,8 +1114,8 @@ mod tests {
         );
     }
 
-    /// 自定义类型 rawValue:文本 chunk 规范化 + 元素结构串,跳过
-    /// implementedBy/Properties 与注释;全空 → ALIAS。
+    /// Custom type rawValue: normalized text chunks + element structure strings,
+    /// skipping implementedBy/Properties and comments; all empty -> ALIAS.
     #[test]
     fn extract_custom_type_raw_value_and_alias_type() {
         let doc = xml::parse(

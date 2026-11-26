@@ -1,7 +1,9 @@
-//! 客户端实体 SDK 生成(SRC-012 自 client_sdk 迁出,纯移动):类型名解析与发射
-//! (build_client_sdk_type_map/resolve_*/format_*)、TS/CS 实体生成
-//! (generate_ts_entity/generate_cs_entity)、固定字典/组件文件、成员冲突检测与
-//! 装配(generate)。区域原文零改动;父模块私有符号经 use super 导入。
+//! Client entity SDK generation (SRC-012, moved out of client_sdk; pure
+//! relocation): type-name resolution and emission
+//! (build_client_sdk_type_map/resolve_*/format_*), TS/CS entity generation
+//! (generate_ts_entity/generate_cs_entity), fixed-dict/component files, member
+//! conflict detection and assembly (generate). The region's original text is
+//! unchanged; the parent module's private symbols come in via `use super`.
 use std::collections::{HashMap, HashSet};
 
 use kode_parser::diag::LineMap;
@@ -14,7 +16,7 @@ use super::{
     COMPONENTS_BASENAME, DEFAULT_CSHARP_NAMESPACE, FIXED_DICTS_BASENAME, GENERATED_HEADER_LINE,
     TRACE_UNKNOWN,
 };
-/// types.xml → 类型表(内建表 + 别名 + FIXED_DICT;与 TS 同口径)。
+/// types.xml -> type table (builtin table + aliases + FIXED_DICT; same criteria as TS).
 fn build_client_sdk_type_map(types_xml: Option<&str>, language: &str) -> TypeMap {
     let mut aliases: HashMap<String, String> = HashMap::new();
     let mut fixed_dicts: HashMap<String, FixedDictType> = HashMap::new();
@@ -55,7 +57,7 @@ fn build_client_sdk_type_map(types_xml: Option<&str>, language: &str) -> TypeMap
 }
 
 // ---------------------------------------------------------------------------
-// 类型名解析与发射(与 TS resolveClientSdkTypeName / generate* 同口径)
+// Type-name resolution and emission (same criteria as TS resolveClientSdkTypeName / generate*)
 // ---------------------------------------------------------------------------
 
 fn resolve_type_name(type_map: &TypeMap, type_name: &str, element_type: Option<&str>) -> String {
@@ -97,7 +99,7 @@ fn resolve_arg_type(type_map: &TypeMap, type_name: &str) -> String {
     resolve_type_name(type_map, type_name, None)
 }
 
-/// def 的 `<Arg>` 只有类型没有名字,统一给 `arg0/arg1…` 编号。
+/// def's `<Arg>` carries only a type and no name, so a uniform `arg0/arg1…` index is assigned.
 fn format_arg_types(type_map: &TypeMap, arg_types: &[String], language: &str) -> String {
     arg_types
         .iter()
@@ -186,16 +188,19 @@ fn def_header(language: &str, generated_at: &str, trace_lines: &[String]) -> Vec
         format!("{comment} 目标语言: {target}"),
         format!("{comment} 生成时间: {generated_at}"),
     ];
-    // IDE-AUD-063:TS 64 位整数表示与编解码边界(与 TS defHeader 同口径)。
+    // IDE-AUD-063: TS 64-bit integer representation and codec boundaries (same criteria as TS defHeader).
     if language == "typescript" {
         lines.push(
             "// 64 位整数: UINT64/INT64 → bigint(全精确域);TS 编译目标需 ES2020+;bigint 不进 JSON.stringify,编解码按 BigInt 感知通道实现"
                 .to_string(),
         );
     }
-    // Python 侧对应边界:int 无界天然全精确域(IDE-AUD-063 的 py 镜像口径)。
+    // The corresponding boundary on the Python side: int is unbounded and naturally fully exact (IDE-AUD-063's py mirror criteria).
     if language == "python" {
-        lines.push("# 64 位整数: UINT64/INT64 → int(Python 3 int 无界,全精确域,无 bigint 特判)".to_string());
+        lines.push(
+            "# 64 位整数: UINT64/INT64 → int(Python 3 int 无界,全精确域,无 bigint 特判)"
+                .to_string(),
+        );
     }
     lines.extend(trace_lines.iter().cloned());
     lines.push(String::new());
@@ -464,10 +469,12 @@ fn generate_cs_entity(
     lines.join("\n")
 }
 
-/// Python 实体骨架(与 generate_ts_entity/generate_cs_entity 同构复刻):
-/// 类注解属性(客户端可见)+ `__init__`(entity_id)+ ClientMethods 回调
-/// stub + Exposed Base/CellMethods 包装(发送接缝)+ 接缝空方法。
-/// 骨架零依赖(标准库 only),e2e 测试可直接 import/实例化。
+/// Python entity skeleton (an isomorphic replica of generate_ts_entity /
+/// generate_cs_entity): class annotation properties (client-visible) +
+/// `__init__` (entity_id) + ClientMethods callback stubs + Exposed
+/// Base/CellMethods wrappers (send seams) + empty seam methods. The skeleton
+/// has zero dependencies (standard library only), so e2e tests can import /
+/// instantiate it directly.
 fn generate_py_entity(
     entity: &SdkEntity,
     type_map: &TypeMap,
@@ -508,7 +515,10 @@ fn generate_py_entity(
     lines.push(String::new());
 
     lines.push(format!("class {}:", entity.name));
-    let mut doc = format!("    \"\"\"{} 客户端实体 SDK 骨架{}", entity.name, parent_note);
+    let mut doc = format!(
+        "    \"\"\"{} 客户端实体 SDK 骨架{}",
+        entity.name, parent_note
+    );
     if !used.is_empty() {
         let names = used
             .iter()
@@ -604,14 +614,10 @@ fn generate_py_entity(
     }
 
     lines.push(String::new());
-    lines.push(
-        "    def on_base_outgoing(self, _method: str, _args: list) -> None:".to_string(),
-    );
+    lines.push("    def on_base_outgoing(self, _method: str, _args: list) -> None:".to_string());
     lines.push("        \"\"\"发送接缝: 按客户端插件的 base 调用通道实现\"\"\"".to_string());
     lines.push(String::new());
-    lines.push(
-        "    def on_cell_outgoing(self, _method: str, _args: list) -> None:".to_string(),
-    );
+    lines.push("    def on_cell_outgoing(self, _method: str, _args: list) -> None:".to_string());
     lines.push("        \"\"\"发送接缝: 按客户端插件的 cell 调用通道实现\"\"\"".to_string());
     lines.push(String::new());
     lines.join("\n")
@@ -624,7 +630,7 @@ fn format_source_line(line: Option<usize>) -> String {
     }
 }
 
-/// FIXED_DICT 伴随文件(逐语言;引用为空 → None 不产文件)。
+/// FIXED_DICT companion file (per language; returns None and produces no file when the reference set is empty).
 fn generate_fixed_dicts_file(
     entities: &[&SdkEntity],
     type_map: &TypeMap,
@@ -643,8 +649,9 @@ fn generate_fixed_dicts_file(
                 }
             }
         }
-        // 组件属性引用的 FIXED_DICT 也计入(与 generate_components_file 的
-        // import 同源),避免「仅组件属性引用」时伴随文件缺失导致断裂导入。
+        // FIXED_DICTs referenced by component properties also count (same source as
+        // the imports in generate_components_file), so a "component-property-only
+        // reference" cannot leave a missing companion file and a broken import.
         for component in &entity.components {
             for property in &component.properties {
                 if let Some(dict) = type_map.fixed_dicts.get(&property.type_name) {
@@ -697,7 +704,7 @@ fn generate_fixed_dicts_file(
             lines.push("@dataclass".to_string());
             lines.push(format!("class {}:", dict.name));
             if dict.properties.is_empty() {
-                // 空 Properties 的 FIXED_DICT 同样需要类体占位。
+                // A FIXED_DICT with empty Properties likewise needs a class-body placeholder.
                 lines.push("    pass".to_string());
             }
             for property in &dict.properties {
@@ -749,8 +756,9 @@ fn generate_fixed_dicts_file(
     Some(lines.join("\n"))
 }
 
-/// 组件类型类伴随文件(逐语言;引用为空 → None 不产文件)。
-/// 与 FIXED_DICT 伴随同模式:每组件类型一 class/interface(客户端可见属性)。
+/// Component type class companion file (per language; returns None and produces no
+/// file when the reference set is empty). Same pattern as the FIXED_DICT
+/// companion: one class/interface per component type (client-visible properties).
 fn generate_components_file(
     entities: &[&SdkEntity],
     type_map: &TypeMap,
@@ -772,7 +780,7 @@ fn generate_components_file(
         return None;
     }
 
-    // 组件属性引用的 FIXED_DICT(TS 需 import;与实体面同模式)。
+    // FIXED_DICTs referenced by component properties (TS needs an import; same pattern as the entity face).
     let mut dict_seen: HashSet<String> = HashSet::new();
     let mut fixed_names: Vec<String> = Vec::new();
     if language == "typescript" {
@@ -811,7 +819,7 @@ fn generate_components_file(
             lines.push(String::new());
         }
     } else if language == "python" {
-        // 组件属性引用的 FIXED_DICT 需 import(py 与 TS 同模式;CS 走 namespace 免 import)。
+        // FIXED_DICTs referenced by component properties need an import (py matches the TS pattern; C# goes through a namespace and needs no import).
         let mut py_fixed: Vec<String> = Vec::new();
         for comp in &used {
             for property in &comp.properties {
@@ -839,7 +847,7 @@ fn generate_components_file(
             lines.push("@dataclass".to_string());
             lines.push(format!("class {}:", comp.type_name));
             if comp.properties.is_empty() {
-                // 无客户端可见属性也要给类体(空体是 IndentationError)。
+                // Still provide a class body when there is no client-visible property (an empty body is an IndentationError).
                 lines.push("    # 无客户端可见属性".to_string());
                 lines.push("    pass".to_string());
             }
@@ -898,11 +906,14 @@ fn extension_for(language: &str) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
-// IDE-AUD-062:辅助固定成员与业务成员重名预检(与 TS findClientSdkMemberConflicts 同口径)。
-// 生成器固定输出 entityId/onBaseOutgoing/onCellOutgoing(TS)与
-// EntityId/OnBaseOutgoing/OnCellOutgoing(C#),外加 baseCall*/cellCall* 包装;
-// 业务属性/组件槽/ClientMethods 回调与这些固定名字撞名时产物含重复成员无法编译。
-// 策略=生成前提前拒绝并说明原因,绝不静默覆盖。
+// IDE-AUD-062: pre-check for duplicate names between the helper fixed members
+// and business members (same criteria as TS findClientSdkMemberConflicts).
+// The generator emits entityId/onBaseOutgoing/onCellOutgoing (TS) and
+// EntityId/OnBaseOutgoing/OnCellOutgoing (C#) as fixed output, plus baseCall*/
+// cellCall* wrappers; when a business property / component slot / ClientMethods
+// callback collides with one of those fixed names, the artifact contains
+// duplicate members and will not compile. Policy: reject before generating and
+// explain why; never silently overwrite.
 // ---------------------------------------------------------------------------
 
 fn add_member(members: &mut HashMap<String, Vec<String>>, name: &str, source: String) {
@@ -929,8 +940,10 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
             "辅助方法 onCellOutgoing（发送接缝）".to_string(),
         );
     } else if language == "python" {
-        // python 骨架蛇形命名:辅助固定成员 entity_id/on_base_outgoing/on_cell_outgoing,
-        // 包装前缀 base_call_/cell_call_ 接方法原名(业务成员一律保持 def 原名不转写)。
+        // The python skeleton uses snake_case naming: the helper fixed members are
+        // entity_id/on_base_outgoing/on_cell_outgoing, and the wrapper prefixes
+        // base_call_/cell_call_ take the original method name (business members
+        // always keep their def name and are never transliterated).
         add_member(
             &mut members,
             "entity_id",
@@ -1060,7 +1073,7 @@ pub(super) fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>,
         .filter_map(|input| parse_entity(&input.def_text, &input.name, &params.component_defs))
         .collect();
 
-    // IDE-AUD-062:生成前预检辅助固定成员与业务成员重名,冲突即拒绝,绝不静默覆盖。
+    // IDE-AUD-062: pre-check for duplicate names between the helper fixed members and business members before generating; reject on conflict, never silently overwrite.
     let conflict_msgs = find_member_conflicts(&entities, language);
     if !conflict_msgs.is_empty() {
         return Err(format!(
@@ -1077,7 +1090,7 @@ pub(super) fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>,
         let content = if language == "typescript" {
             generate_ts_entity(entity, &type_map, &params.generated_at, &trace_lines)
         } else if language == "python" {
-            // python 骨架无 namespace 概念,类名即 def 实体名。
+            // The python skeleton has no namespace concept; the class name is the def entity name.
             generate_py_entity(entity, &type_map, &params.generated_at, &trace_lines)
         } else {
             generate_cs_entity(

@@ -1364,7 +1364,9 @@ pub fn flush_diagnostics_pipeline(state: &mut ServerState, deadline: Instant) ->
         if index >= DIAGNOSTIC_FLUSH_MAX_DOCS || Instant::now() >= deadline {
             // 界外余量回脏集(版本原样),由后续空闲 tick 追平。
             for (rest_uri, rest_version) in dirty[index..].iter() {
-                state.diagnostics_dirty.insert(rest_uri.clone(), *rest_version);
+                state
+                    .diagnostics_dirty
+                    .insert(rest_uri.clone(), *rest_version);
             }
             break;
         }

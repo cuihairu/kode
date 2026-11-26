@@ -1,14 +1,17 @@
-//! VFS-002/003/009/012 文档仓库:身份、overlay、版本转移、根注册、删除失效。
+//! VFS-002/003/009/012 document store: identity, overlay, version transitions, root registration, removal invalidation.
 //!
-//! - **身份(VFS-002)**:`DocumentKey = (RootId, CanonicalUri)`;open buffer
-//!   另带严格递增 version。basename 永远不当身份。
-//! - **overlay(VFS-003)**:打开文档内存优先(ARCH-003);didOpen/didChange/
-//!   didClose 是仅有的三条 version 转移边,旧 version 一律拒绝(见
-//!   [`VersionConflict`]),保证「编辑器最新内容不被旧结果覆盖」(ARCH-005)。
-//! - **根注册(VFS-009 基础版)**:注册顺序 = 显式优先顺序;查询取最长前缀,
-//!   命中多个根时 [`RootRegistry::overlapping_roots`] 供冲突诊断。
-//! - **删除/重命名(VFS-012)**:`remove`/`rename` 返回 [`RemovedDocument`],
-//!   下游 index/diagnostics 据此清理过期 symbol 与旧 diagnostics。
+//! - **Identity (VFS-002)**: `DocumentKey = (RootId, CanonicalUri)`; an open buffer
+//!   also carries a strictly increasing version. A basename is never the identity.
+//! - **Overlay (VFS-003)**: open documents prefer memory (ARCH-003); didOpen/didChange/
+//!   didClose are the only three version transition edges, and an older version is
+//!   always rejected (see [`VersionConflict`]), guaranteeing "the editor's latest
+//!   content is never overwritten by an older result" (ARCH-005).
+//! - **Root registration (VFS-009 base version)**: registration order = explicit
+//!   preference order; a query takes the longest prefix, and
+//!   [`RootRegistry::overlapping_roots`] is exposed for conflict diagnostics when
+//!   multiple roots are hit.
+//! - **Deletion/rename (VFS-012)**: `remove`/`rename` return [`RemovedDocument`],
+//!   letting the downstream index/diagnostics clean stale symbols and old diagnostics.
 
 use std::collections::HashMap;
 
@@ -16,7 +19,7 @@ use crate::disk::DiskCache;
 use crate::line_index::{DocumentBuffer, TextChange};
 use crate::uri::CanonicalUri;
 
-/// 资源根 id。0 保留给「不属于任何已注册根」的文档。
+/// Resource root id. 0 is reserved for documents belonging to no registered root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RootId(pub u32);
 
@@ -24,7 +27,7 @@ impl RootId {
     pub const UNROOTED: RootId = RootId(0);
 }
 
-/// VFS-002 查询身份:root + canonical URI。version 只在 open buffer 上存在。
+/// VFS-002 query identity: root + canonical URI. The version exists only on an open buffer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DocumentKey {
     pub root: RootId,
@@ -37,8 +40,8 @@ impl DocumentKey {
     }
 }
 
-/// 资源根注册表(VFS-009 基础版)。
-/// id 从 1 起分配:0 恒留给 [`RootId::UNROOTED`](根外文档),不与任何注册根重合。
+/// Resource root registry (VFS-009 base version).
+/// Ids start at 1: 0 is always left for [`RootId::UNROOTED`](documents outside any registered root) and never coincides with a registered root.
 #[derive(Debug, Clone)]
 pub struct RootRegistry {
     roots: Vec<(RootId, String)>,
@@ -59,8 +62,8 @@ impl RootRegistry {
         }
     }
 
-    /// 注册一个根(重复注册同一路径幂等,返回既有 id)。
-    /// 注册顺序即显式优先顺序(VFS-009)。
+    /// Register one root (re-registering the same path is idempotent and returns the existing id).
+    /// Registration order is the explicit preference order (VFS-009).
     pub fn register(&mut self, path: &str) -> RootId {
         let canonical = CanonicalUri::from_path(path);
         for (id, existing) in &self.roots {
@@ -74,9 +77,11 @@ impl RootRegistry {
         id
     }
 
-    /// 撤销一个根(CORE-004 会话面):条目移除,id **永不复用**(next_id 单调)——
-    /// 撤销后重新注册同一路径必得新 id,新化身与旧化身的缓存身份永不重合
-    /// (受控共享缓存的隔离前提)。未知路径返回 None,不做任何变更。
+    /// Unregister one root (CORE-004 session surface): the entry is removed, and its id is
+    /// **never reused** (next_id is monotonic) — re-registering the same path after
+    /// unregistering always yields a new id, so the cache identities of the new and old
+    /// incarnations never coincide (the isolation premise of a controlled shared cache).
+    /// An unknown path returns None, making no change at all.
     pub fn unregister(&mut self, path: &str) -> Option<RootId> {
         let canonical = CanonicalUri::from_path(path);
         let pos = self
@@ -90,7 +95,7 @@ impl RootRegistry {
         &self.roots
     }
 
-    /// URI 归属:最长前缀的根胜出;无命中 → [`RootId::UNROOTED`]。
+    /// URI ownership: the longest-prefix root wins; a miss -> [`RootId::UNROOTED`].
     pub fn root_for(&self, uri: &CanonicalUri) -> RootId {
         let path = uri.as_path();
         let mut best: Option<(RootId, usize)> = None;
@@ -104,7 +109,7 @@ impl RootRegistry {
         best.map(|(id, _)| id).unwrap_or(RootId::UNROOTED)
     }
 
-    /// 命中该 URI 的全部根(按注册顺序;>1 即根冲突,供 VFS-009 冲突诊断)。
+    /// All roots hitting that URI (in registration order; >1 means a root conflict, for VFS-009 conflict diagnostics).
     pub fn overlapping_roots(&self, uri: &CanonicalUri) -> Vec<RootId> {
         let path = uri.as_path();
         self.roots
@@ -115,7 +120,7 @@ impl RootRegistry {
     }
 }
 
-/// root 是 path 的前缀且断在组件边界(或完整相等)。
+/// root is a prefix of path that ends on a component boundary (or the two are exactly equal).
 fn prefix_len_at_boundary(root: &str, path: &str) -> Option<usize> {
     if path == root {
         return Some(root.len());
@@ -127,36 +132,36 @@ fn prefix_len_at_boundary(root: &str, path: &str) -> Option<usize> {
     if root.ends_with('/') || rest.starts_with('/') {
         Some(root.len())
     } else {
-        None // 兄弟目录:/w/demo 与 /w/demo2 不得互相吞并
+        None // Sibling directories: /w/demo and /w/demo2 must not swallow each other
     }
 }
 
-/// version 转移冲突(VFS-003/013)。
+/// Version transition conflict (VFS-003/013).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionConflict {
-    /// 目标文档未 didOpen(didChange 前置缺失)。
+    /// The target document was never didOpen (the didChange prerequisite is missing).
     NotOpen,
-    /// 来的 version 不比现有新;`current` 为现有 version。
+    /// The incoming version is not newer than the existing one; `current` is the existing version.
     Stale { current: i64, incoming: i64 },
 }
 
-/// 打开文档 overlay 条目。
+/// The overlay entry for an open document.
 #[derive(Debug, Clone)]
 struct OpenDocument {
     version: i64,
     buffer: DocumentBuffer,
 }
 
-/// 快照来源(VFS-003:区分「未保存」与「磁盘」)。
+/// Snapshot source (VFS-003: distinguishing "unsaved" from "disk").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentSource {
-    /// 内存 overlay(含未保存编辑)。
+    /// In-memory overlay (including unsaved edits).
     OpenOverlay,
-    /// 磁盘(经指纹缓存)。
+    /// Disk (via the fingerprint cache).
     Disk,
 }
 
-/// 一次查询快照:文本 + 行索引 + 来源 + (打开时)版本。
+/// One query snapshot: text + line index + source + (when open) version.
 #[derive(Debug, Clone)]
 pub struct DocumentSnapshot {
     pub key: DocumentKey,
@@ -165,7 +170,7 @@ pub struct DocumentSnapshot {
     pub buffer: DocumentBuffer,
 }
 
-/// VFS-012:remove/rename 的失效回执,供下游 index/diagnostics 清理。
+/// VFS-012: the removal receipt of remove/rename, for downstream index/diagnostics cleanup.
 #[derive(Debug, Clone)]
 pub struct RemovedDocument {
     pub key: DocumentKey,
@@ -174,7 +179,7 @@ pub struct RemovedDocument {
     pub last_buffer: Option<DocumentBuffer>,
 }
 
-/// 文档仓库:overlay + 磁盘指纹缓存。
+/// Document store: overlay + disk fingerprint cache.
 #[derive(Debug, Default)]
 pub struct DocumentStore {
     overlays: HashMap<DocumentKey, OpenDocument>,
@@ -186,8 +191,10 @@ impl DocumentStore {
         DocumentStore::default()
     }
 
-    /// didOpen:登记 overlay。已打开且 incoming version 不比现有新 → 拒绝
-    /// (LSP 语义:open 只该出现在未打开文档;防御性忽略旧重放)。
+    /// didOpen: registers an overlay. Already open with an incoming version that is not
+    /// newer -> rejected
+    /// (LSP semantics: open only ever targets an unopened document; old replays are
+    /// defensively ignored).
     pub fn open(
         &mut self,
         key: DocumentKey,
@@ -213,8 +220,8 @@ impl DocumentStore {
         Ok(buffer)
     }
 
-    /// didChange:必须已打开;version 严格递增;changes 依序应用
-    /// (full sync 一个全文 change,incremental 为若干 ranged change)。
+    /// didChange: must already be open; version strictly increasing; changes applied in order
+    /// (full sync is one whole-text change, incremental is several ranged changes).
     pub fn change(
         &mut self,
         key: &DocumentKey,
@@ -244,14 +251,16 @@ impl DocumentStore {
         Ok(buffer)
     }
 
-    /// didClose:移除 overlay,文档回落到磁盘真相;未保存内容随 overlay 丢弃
-    /// (LSP 语义:close 前客户端应已保存)。返回是否确实打开过。
+    /// didClose: removes the overlay and the document falls back to the on-disk truth;
+    /// unsaved content is dropped with the overlay
+    /// (LSP semantics: the client should have saved before close). Returns whether the
+    /// document was actually open.
     pub fn close(&mut self, key: &DocumentKey) -> bool {
         self.overlays.remove(key).is_some()
     }
 
-    /// 查询快照:open overlay 优先(VFS-003),否则磁盘(指纹缓存,VFS-006)。
-    /// 文档既未打开也无法从磁盘读取 → `None`(VFS-010 安全降级)。
+    /// Query a snapshot: open overlay first (VFS-003), otherwise disk (fingerprint cache, VFS-006).
+    /// Document neither open nor readable from disk -> `None` (VFS-010 safe degradation).
     pub fn snapshot(&mut self, key: &DocumentKey) -> Option<DocumentSnapshot> {
         if let Some(open) = self.overlays.get(key) {
             return Some(DocumentSnapshot {
@@ -271,7 +280,7 @@ impl DocumentStore {
         })
     }
 
-    /// 只查 open overlay(不触盘;纯内存查询路径)。
+    /// Query only the open overlay (no disk access; the pure in-memory query path).
     pub fn open_buffer(&self, key: &DocumentKey) -> Option<(i64, DocumentBuffer)> {
         self.overlays
             .get(key)
@@ -286,7 +295,7 @@ impl DocumentStore {
         self.overlays.len()
     }
 
-    /// 打开文档摘要,按 uri 排序(health 报告确定性输出)。
+    /// Open document summaries, sorted by uri (deterministic health report output).
     pub fn open_summaries(&self) -> Vec<(String, i64)> {
         let mut out: Vec<(String, i64)> = self
             .overlays
@@ -297,9 +306,9 @@ impl DocumentStore {
         out
     }
 
-    /// VFS-012:删除失效——移除 overlay 与磁盘缓存,返回清理回执
-    /// (下游 index/diagnostics 据此删过期 symbol;文件不存在也返回回执,
-    /// 调用方统一走清理逻辑)。
+    /// VFS-012: delete invalidation — removes the overlay and the disk cache entry, returning a cleanup receipt
+    /// (the downstream index/diagnostics uses it to delete stale symbols; a receipt is returned even when
+    /// the file does not exist, so the caller always runs the same cleanup logic).
     pub fn remove(&mut self, key: &DocumentKey) -> Option<RemovedDocument> {
         let open = self.overlays.remove(key);
         let path = crate::path_from_uri(key.uri.as_path());
@@ -312,8 +321,9 @@ impl DocumentStore {
         })
     }
 
-    /// VFS-012:重命名/跨根移动——旧身份整体失效 + 内容迁移到新身份
-    /// (若旧文档打开则保持打开状态、版本延续)。
+    /// VFS-012: rename/cross-root move — the old identity is invalidated as a whole and the
+    /// content migrates to the new identity
+    /// (if the old document was open it stays open, with its version carried over).
     pub fn rename(&mut self, old: &DocumentKey, new: DocumentKey) -> Option<RemovedDocument> {
         let open = self.overlays.remove(old);
         let old_path = crate::path_from_uri(old.uri.as_path());
@@ -330,7 +340,7 @@ impl DocumentStore {
         Some(removed)
     }
 
-    /// 根切换/根移除:整根失效(VFS-013 工作区根切换),返回被清理的文档键。
+    /// Root switch/root removal: the whole root is invalidated (VFS-013 workspace root switch), returning the cleaned document keys.
     pub fn invalidate_root(&mut self, root: RootId) -> Vec<DocumentKey> {
         let mut removed: Vec<DocumentKey> = self
             .overlays
@@ -367,10 +377,11 @@ mod tests {
         let first = registry.register("/w/alpha");
         assert_ne!(first, RootId::UNROOTED);
         assert_eq!(registry.unregister("/w/alpha"), Some(first));
-        // 未知路径撤销:None,零变更。
+        // Unregistering an unknown path: None, zero changes.
         assert_eq!(registry.unregister("/w/alpha"), None);
         assert_eq!(registry.unregister("/w/other"), None);
-        // 重新注册同一路径必得新 id:新旧化身缓存身份永不重合(CORE-004)。
+        // Re-registering the same path must yield a new id: the cache identities of
+        // the new and old incarnations never coincide (CORE-004).
         let second = registry.register("/w/alpha");
         assert_ne!(first, second, "id 不得复用,化身必须隔离");
         assert_eq!(registry.roots().len(), 1);
@@ -385,14 +396,14 @@ mod tests {
         assert_eq!(registry.root_for(&uri), engine);
         let uri = CanonicalUri::from_path("/w/demo/entities/Monster.def");
         assert_eq!(registry.root_for(&uri), demo);
-        // 兄弟目录不得吞并。
+        // Sibling directories must not swallow each other.
         let uri = CanonicalUri::from_path("/w/demo2/x.def");
         assert_eq!(registry.root_for(&uri), RootId::UNROOTED);
         assert!(registry.overlapping_roots(&uri).is_empty());
-        // 命中两个根 → 冲突诊断入口。
+        // Two roots hit -> conflict diagnostics entry point.
         let uri = CanonicalUri::from_path("/w/demo/kbengine/y.def");
         assert_eq!(registry.overlapping_roots(&uri), vec![demo, engine]);
-        // 同一路径重复注册幂等。
+        // Registering the same path twice is idempotent.
         assert_eq!(registry.register("/w/demo"), demo);
     }
 
@@ -407,7 +418,7 @@ mod tests {
         let snap = store.snapshot(&k).unwrap();
         assert_eq!(snap.version, Some(2));
         assert_eq!(snap.source, ContentSource::OpenOverlay);
-        // 旧 version 被拒。
+        // An old version is rejected.
         assert!(matches!(
             store.change(&k, 1, vec![TextChange::full("old")]),
             Err(VersionConflict::Stale {
@@ -469,7 +480,7 @@ mod tests {
         let mut store = DocumentStore::new();
         let k = key(1, "/w/reopen.def");
         store.open(k.clone(), 1, "v1").unwrap();
-        // 同版本重放被拒(open 只属于未打开文档)。
+        // A same-version replay is rejected (open only belongs to an unopened document).
         assert!(matches!(
             store.open(k.clone(), 1, "again"),
             Err(VersionConflict::Stale {
@@ -477,7 +488,7 @@ mod tests {
                 incoming: 1
             })
         ));
-        // 更新版本重开:overlay 整体替换。
+        // Reopen with a newer version: the overlay is replaced as a whole.
         store.open(k.clone(), 3, "v3").unwrap();
         let snap = store.snapshot(&k).unwrap();
         assert_eq!(snap.version, Some(3));
@@ -518,7 +529,8 @@ mod tests {
         store.open(b.clone(), 5, "b").unwrap();
         store.open(a.clone(), 2, "a").unwrap();
         assert_eq!(store.open_count(), 2);
-        // 按 uri 排序(health 报告确定性输出),插入顺序 b,a 不影响输出序。
+        // Sorted by uri (deterministic health report output); insertion order b,a
+        // does not affect the output order.
         assert_eq!(
             store.open_summaries(),
             vec![
@@ -526,7 +538,7 @@ mod tests {
                 ("file:///w/b.def".to_string(), 5),
             ]
         );
-        // close 后计数与摘要同步回落。
+        // After close, the count and summaries fall back in sync.
         store.close(&a);
         assert_eq!(store.open_count(), 1);
         assert_eq!(
@@ -548,10 +560,10 @@ mod tests {
         let snap = store.snapshot(&dk).unwrap();
         assert_eq!(snap.source, ContentSource::Disk);
         assert_eq!(snap.buffer.text(), "from disk");
-        // 失效 + 清空面可达(删除/重命名/根切换共用)。
+        // The invalidate + clear surface is reachable (shared by delete/rename/root switch).
         store.disk_cache().invalidate(&p);
         store.disk_cache().clear();
-        // Default 实现与 new 等价(roots 为空,id 从 1 起)。
+        // The Default implementation equals new (empty roots, ids start at 1).
         let registry = RootRegistry::default();
         assert!(registry.roots().is_empty());
         assert_eq!(

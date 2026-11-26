@@ -1,24 +1,33 @@
-//! 调度器长期压力车道(RUST-083 旧 CORE-018:long-running fuzz/load/stress)。
+//! Scheduler long-running stress lane (RUST-083's former CORE-018: long-running fuzz/load/stress).
 //!
-//! 目标不是测速,是在随机化混合负载下周期性断言调度核的**结构不变量**,
-//! 任一不变量被破坏即证明真实缺陷并中止返回结构化诊断:
+//! The goal is not speed measurement, but periodically asserting the scheduler core's
+//! **structural invariants** under a randomized mixed load; any broken invariant proves a
+//! genuine defect and aborts with structured diagnostics:
 //!
-//! - **无死锁 / 无永久 pending**:有界预算内 [`Scheduler::drain`] 必须把队列排空
-//!   (queued 归零、running 归零)。排不掉 = 交互冷却或饥饿路径把任务永久卡住。
-//! - **计数守恒**:`completed + failed + cancelled == created`。`created` 只在真正
-//!   新建任务时自增(合并/过期丢弃/队列满被拒都不计)。破坏 = 任务凭空消失或重复计数。
-//! - **无取消泄漏**:`cancel` 成功 N 次,则 `cancelled` 计数必须 >= N。若一个已取消
-//!   的任务又跑完(completed 涨、cancelled 不涨),守恒式仍可能成立,故本条单独断言——
-//!   这正是「取消后复活」的泄漏面。
-//! - **无界内存闸**:`retained_task_count() <= MAX_RETAINED_TERMINAL_TASKS`。
-//!   终态窗口有界化后,长会话高频入队下 `tasks` 表必须保持有界。
-//! - **keyed 面无假 pending**:排空后所有 ensure 过的 key 必须落 Completed/Failed/
-//!   Cancelled,绝不残留 Queued/Running(= 永不重跑的假 pending)。
-//! - **暂停/恢复配平**:每次 pause 必有对应 resume,恢复后车道仍能排空。
-//! - **风暴合并不丢事件**:同文件重复事件合并数 = 事件总数 - 落队条数。
+//! - **No deadlock / no permanent pending**: within a bounded budget [`Scheduler::drain`] must
+//!   empty the queue (queued down to zero, running down to zero). Failing to drain means the
+//!   interactive cooldown or the starvation path has pinned tasks permanently.
+//! - **Count conservation**: `completed + failed + cancelled == created`. `created` only
+//!   increments when a task is genuinely newly created (merging / stale drop / queue-full
+//!   rejection are all excluded). A violation means tasks vanished or were double-counted.
+//! - **No cancellation leak**: if `cancel` succeeded N times, the `cancelled` count must be
+//!   >= N. If a cancelled task somehow finishes again (completed rises, cancelled does not),
+//!   > the conservation formula could still hold, so this is asserted separately — this is
+//!   > exactly the "resurrection after cancellation" leak surface.
+//! - **Unbounded-memory gate**: `retained_task_count() <= MAX_RETAINED_TERMINAL_TASKS`.
+//!   Once the terminal window is bounded, the `tasks` table must stay bounded under
+//!   high-frequency enqueueing in long sessions.
+//! - **No fake pending on the keyed surface**: after draining, every ensured key must land on
+//!   Completed/Failed/Cancelled, never lingering on Queued/Running (= fake pending that will
+//!   never rerun).
+//! - **Pause/resume balance**: every pause has a matching resume, and the lane can still drain
+//!   after resuming.
+//! - **Storm merging loses no events**: same-file duplicate events merged count = total events
+//!   - landed entries.
 //!
-//! 随机源是零依赖确定性 xorshift(seed 可复现,失败可按 seed 回放);不引 rand crate
-//! (本 crate 铁律:零第三方依赖,仅 workspace 内 kode-index/kode-vfs)。
+//! The random source is a zero-dependency deterministic xorshift (the seed is reproducible and
+//! failures can be replayed by seed); no rand crate is pulled in (this crate's iron rule: zero
+//! third-party dependencies, only kode-index/kode-vfs from the workspace).
 
 use crate::scheduler::Scheduler;
 use crate::{
@@ -26,20 +35,21 @@ use crate::{
     MAX_RETAINED_TERMINAL_TASKS,
 };
 
-/// 车道参数(缺省值见 [`StressOptions::default`];bin 侧可由环境变量覆盖)。
+/// Lane parameters (defaults in [`StressOptions::default`]; the bin side may override them via
+/// environment variables).
 #[derive(Debug, Clone, Copy)]
 pub struct StressOptions {
-    /// 入队操作总数(混合优先级/文件/版本/keyed)。
+    /// Total enqueue operations (mixed priority / file / version / keyed).
     pub total_ops: u64,
-    /// 有界队列上限;0 = 无界。
+    /// Bounded queue ceiling; 0 = unbounded.
     pub max_queued: usize,
-    /// 交互冷却窗口 ms。
+    /// Interactive cooldown window in ms.
     pub interactive_cooldown_ms: u64,
-    /// 后台抗饥饿上限 ms。
+    /// Background anti-starvation ceiling in ms.
     pub starvation_limit_ms: u64,
-    /// 每 N 个操作断言一次全部不变量。
+    /// Assert every invariant once every N operations.
     pub check_every: u64,
-    /// 取消操作注入比例(0..=100)。
+    /// Cancellation-operation injection ratio (0..=100).
     pub cancel_rate_pct: u8,
 }
 
@@ -56,7 +66,7 @@ impl Default for StressOptions {
     }
 }
 
-/// 车道观测结果(供 CI/报告消费)。
+/// Lane observation results (consumed by CI / reports).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StressReport {
     pub created: u64,
@@ -64,9 +74,10 @@ pub struct StressReport {
     pub failed: u64,
     pub cancelled: u64,
     pub cancel_successes: u64,
-    /// 队列深度峰值(观测面,非断言)。
+    /// Peak queue depth (observation surface, not an assertion).
     pub peak_queued: usize,
-    /// tasks 表条目峰值(内存面观测,断言上界见不变量)。
+    /// Peak entry count of the tasks table (memory-side observation; the asserted ceiling is
+    /// covered by the invariants).
     pub peak_retained: usize,
     pub checks_run: u64,
     pub pauses: u64,
@@ -76,27 +87,29 @@ pub struct StressReport {
     pub anti_starvation_promotions: u64,
 }
 
-/// 车道失败:结构化诊断(kind 供 CI 分类,detail 供归因)。
+/// Lane failure: structured diagnostics (`kind` for CI classification, `detail` for attribution).
 #[derive(Debug)]
 pub struct StressViolation {
     pub kind: &'static str,
     pub detail: String,
 }
 
-/// 峰值采样面(避免断言函数参数膨胀)。
+/// Peak-sampling surface (avoids bloating the assertion function's parameter list).
 #[derive(Debug, Default)]
 struct Peaks {
     queued: usize,
     retained: usize,
 }
 
-/// 确定性 xorshift64(seed 可复现,零依赖,失败可按 seed 回放)。
+/// Deterministic xorshift64 (seed is reproducible, zero dependencies, failures can be replayed
+/// by seed).
 struct Rng(u64);
 
 impl Rng {
     fn new(seed: u64) -> Rng {
-        // xorshift64 唯一坏点 = 0(恒 0);只替 0,不做 |1——那会把偶数
-        // seed 折叠到同序列(实测 seed=2 与 seed=3 经 |1 都是 3,复现面失效)。
+        // xorshift64's only bad point = 0 (stuck at 0); substitute only for 0, and do not apply
+        // |1 — that would fold even seeds onto the same sequence (measured: seed=2 and seed=3
+        // both become 3 after |1, which breaks the reproduction surface).
         Rng(if seed == 0 {
             0x9E37_79B9_7F4A_7C15
         } else {
@@ -111,7 +124,7 @@ impl Rng {
         self.0 = x;
         x.wrapping_mul(0x2545F4914F6CDD1D)
     }
-    /// 取 [0, n)。
+    /// Draw from [0, n).
     fn below(&mut self, n: u64) -> u64 {
         if n <= 1 {
             0
@@ -122,7 +135,7 @@ impl Rng {
 }
 
 fn priority_at(rng: &mut Rng) -> u8 {
-    // 交互(0..1)少于后台(2..4),贴近真实负载分布。
+    // Interactive (0..1) is rarer than background (2..4), closer to a real load distribution.
     match rng.below(100) {
         0..=6 => 0,
         7..=22 => 1,
@@ -144,8 +157,9 @@ fn kind_at(rng: &mut Rng) -> TaskKind {
 }
 
 fn file_at(rng: &mut Rng) -> Option<String> {
-    // 20% 无文件任务(首扫/全量重建,不参与同文件合并);其余 30 个文件轮转,
-    // 制造同文件多版本(合并/过期/让位)面。
+    // 20% fileless tasks (initial scan / full reindex, not part of same-file merging); the
+    // rest rotate over 30 files, creating the same-file multi-version surface (merge / stale /
+    // yielding).
     if rng.below(100) < 20 {
         return None;
     }
@@ -153,7 +167,8 @@ fn file_at(rng: &mut Rng) -> Option<String> {
 }
 
 fn version_at(rng: &mut Rng, op: u64) -> Option<u64> {
-    // 多数随操作推进(单调递增 → 新顶旧),少数回退(→ 过期丢弃)。
+    // Most advance with the operation number (monotonic increase → new supersedes old), a few
+    // regress (→ stale drop).
     if rng.below(100) < 60 {
         Some(op / 8 + 1)
     } else {
@@ -175,7 +190,8 @@ fn make_spec(
         file: file.map(str::to_string),
         version,
         target: None,
-        // 有界工作量:不真 IO,只让不同任务体行为可区分(与 op 挂钩的小循环)。
+        // Bounded workload: no real IO, it just makes different task bodies behave differently
+        // (a small loop tied to op).
         run: Box::new(move |_cancel| {
             if fail {
                 Err(format!("stress-fail-{op}"))
@@ -191,7 +207,7 @@ fn make_spec(
     }
 }
 
-/// 运行完整压力车道;任一不变量破坏即中止并返回诊断。
+/// Run the full stress lane; any broken invariant aborts and returns the diagnostics.
 pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, StressViolation> {
     let scheduler_opts = SchedulerOptions {
         interactive_cooldown_ms: opts.interactive_cooldown_ms,
@@ -211,9 +227,11 @@ pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, Stress
     let mut checks_run: u64 = 0;
     let mut pauses: u64 = 0;
     let mut inflight: Vec<u64> = Vec::with_capacity(4096);
-    // 全程最大已见任务 id:新任务的 id 由调度器单调分配,id 大于它才是真新建。
-    // 「Queued 决策但 id 是旧任务」= 同文件同版本合并到在队任务(该任务当初
-    // 入队时已计过),再 +1 就会重复计数(终局守恒必红,实测差 19 即此因)。
+    // The maximum task id seen so far: the scheduler allocates ids monotonically, so only an id
+    // greater than this is a genuinely new task. "Queued decision but the id is an old task" =
+    // same-file same-version merge into an already-queued task (that task was already counted
+    // when first enqueued); incrementing again would double-count (final conservation would
+    // turn red; a measured gap of 19 was exactly this cause).
     let mut max_seen_id: u64 = 0;
 
     for op in 1..=opts.total_ops {
@@ -221,11 +239,12 @@ pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, Stress
         let file = file_at(&mut rng);
         let version = version_at(&mut rng, op);
         let kind = kind_at(&mut rng);
-        // 8% 失败任务:验证失败不缓存成永久 pending(keyed 可恢复)。
+        // 8% failing tasks: verify that failures do not get cached as permanent pending
+        // (keyed is recoverable).
         let fail = rng.below(100) < 8;
         let want_cancel = rng.below(100) < u64::from(opts.cancel_rate_pct);
 
-        // 10% keyed 单例面;其余走普通入队。
+        // 10% keyed singleton surface; the rest go through ordinary enqueueing.
         if rng.below(100) < 10 {
             let key = format!("key-{}", op % 64);
             let (decision, id) = s.ensure(
@@ -260,7 +279,8 @@ pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, Stress
             }
         }
 
-        // 取消注入:批量取消(cancel_queued_tasks)与单点取消交替覆盖。
+        // Cancellation injection: batch cancellation (cancel_queued_tasks) and single-point
+        // cancellation are covered alternately.
         if want_cancel && !inflight.is_empty() && rng.below(100) < 30 {
             if rng.below(100) < 20 {
                 let n = s.cancel_queued_tasks("stress-cancel-batch");
@@ -276,7 +296,7 @@ pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, Stress
             }
         }
 
-        // 暂停/恢复面:成对出现,恢复后才能排空。
+        // Pause/resume surface: always in pairs; draining is only possible after resuming.
         if rng.below(1000) < 3 {
             s.pause();
             pauses += 1;
@@ -289,7 +309,7 @@ pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, Stress
             }
         }
 
-        // 峰值采样(在周期断言排空前采,否则恒为 0)。
+        // Peak sampling (taken before the periodic assertion drains, otherwise always 0).
         let queued = s.status().queued;
         if queued > peaks.queued {
             peaks.queued = queued;
@@ -320,7 +340,7 @@ pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, Stress
         &mut checks_run,
     )?;
 
-    // keyed 面终检:排空后不得残留假 pending。
+    // Keyed-surface final check: after draining no fake pending may remain.
     for (key, state) in s.status().keyed_tasks.iter() {
         if state == TaskState::Queued.as_str() || state == TaskState::Running.as_str() {
             return Err(StressViolation {
@@ -349,7 +369,7 @@ pub fn run_stress(seed: u64, opts: StressOptions) -> Result<StressReport, Stress
     })
 }
 
-/// 排空后断言全部不变量。`at_op` 仅作诊断定位。
+/// Assert every invariant after draining. `at_op` is only for diagnostic positioning.
 #[allow(clippy::too_many_arguments)]
 fn assert_invariants(
     s: &mut Scheduler,
@@ -359,9 +379,11 @@ fn assert_invariants(
     peaks: &mut Peaks,
     checks_run: &mut u64,
 ) -> Result<(), StressViolation> {
-    // 恢复后再排空:暂停中 drain 立即返回,会把「正在暂停」误判成死锁。
+    // Resume before draining: while paused, drain returns immediately, which would misread
+    // "currently paused" as a deadlock.
     s.resume();
-    // 60s 逻辑预算:远超交互冷却(50ms)与饥饿上限(5s),保证后台任务可被晋升执行。
+    // 60s logical budget: far beyond the interactive cooldown (50ms) and the starvation ceiling
+    // (5s), guaranteeing that background tasks can be promoted to execution.
     s.drain(60_000);
     *checks_run += 1;
 
@@ -388,8 +410,9 @@ fn assert_invariants(
         });
     }
 
-    // 取消泄漏:cancel 成功次数必须被 cancelled 计数完整承接。
-    // 已取消任务若又跑完(completed 涨而 cancelled 不涨),此处必然红。
+    // Cancellation leak: the number of successful cancels must be fully absorbed by the
+    // cancelled count. If a cancelled task finishes again (completed rises while cancelled does
+    // not), this must turn red.
     if status.cancelled < cancel_successes {
         return Err(StressViolation {
             kind: "cancel-leak",
@@ -419,10 +442,12 @@ fn assert_invariants(
     Ok(())
 }
 
-/// 风暴车道累计面(逐窗口排空,故各计数单调可累加)。
+/// Accumulation surface for the storm lane (each window is drained, so the counts are
+/// monotonic and can be accumulated).
 ///
-/// 注:合并数直接读 [`crate::StormBuffer::merged`](它是累计值,勿按窗口重复累加);
-/// 结构体只留两个本探针自算的量。
+/// Note: the merged count is read straight from [`crate::StormBuffer::merged`] (it is already a
+/// cumulative value; do not accumulate it again per window); the struct keeps only the two
+/// quantities this probe computes itself.
 struct StormTotals {
     landed: u64,
     created: u64,
@@ -437,7 +462,8 @@ impl StormTotals {
     }
 }
 
-/// 落盘当前缓冲并逐条入队;任一事件未被接受即视为丢失(单调版本下无合法丢弃)。
+/// Land the current buffer and enqueue entry by entry; any event that is not accepted is
+/// treated as lost (there is no legal drop under monotonic versions).
 fn flush_storm_buffer(
     s: &mut Scheduler,
     buffer: &mut crate::StormBuffer,
@@ -457,7 +483,8 @@ fn flush_storm_buffer(
         let out = s.enqueue(spec);
         match out.decision {
             EnqueueDecision::Queued => totals.created += 1,
-            // 同文件同版本合并到在队任务(该任务已计过)——合法接受。
+            // Same-file same-version merged into an already-queued task (that task was already
+            // counted) — a legal acceptance.
             EnqueueDecision::Merged => {}
             EnqueueDecision::StaleDropped | EnqueueDecision::RejectedQueueFull => {
                 return Err(StressViolation {
@@ -473,14 +500,19 @@ fn flush_storm_buffer(
     Ok(())
 }
 
-/// 风暴合并面探针:同文件重复事件并一、最新版本胜出、合并不丢事件。
+/// Storm-merge surface probe: same-file duplicate events collapse into one, the newest version
+/// wins, and merging loses no events.
 ///
-/// 版本号取单调递增序列(每次事件严格比同文件上一条新),使任何「过期丢弃」都
-/// 成为真缺陷信号:若调度器把更新版本判成过期而丢弃,说明版本比较被破坏。
+/// Version numbers come from a monotonically increasing sequence (each event is strictly newer
+/// than the previous one for the same file), so any "stale drop" becomes a genuine defect
+/// signal: if the scheduler judges a newer version stale and drops it, the version comparison
+/// is broken.
 ///
-/// 每攒满一个缓冲窗口就**立即排空**(真实接入形态:通知合并后及时重建),避免
-/// 全量堆积后一次排空——那会把 drain 的逐任务全队列选择放大成 O(n²),测的
-/// 是车道自身的调度器复杂度而非缺陷;同时保留「窗口内高密度合并」这一目标面。
+/// As soon as a buffer window fills up it is **drained immediately** (the real integration
+/// shape: rebuild promptly after notifications are merged), avoiding one big drain after a
+/// full backlog — that would amplify drain's per-task whole-queue scan into O(n²), measuring
+/// the lane's own scheduler complexity rather than defects, while still preserving the target
+/// surface of "high-density merging within a window".
 pub fn stress_storm_probe(
     seed: u64,
     total_events: u64,
@@ -491,7 +523,8 @@ pub fn stress_storm_probe(
     let mut totals = StormTotals::new();
     let mut version_clock: u64 = 0;
 
-    // 只在 8 个文件上打事件:大量同文件重复 → 高密度合并面。
+    // Only put events on 8 files: heavy same-file duplication, hence the high-density merging
+    // surface.
     for _ in 0..total_events {
         version_clock += 1;
         buffer.record(
@@ -514,8 +547,10 @@ pub fn stress_storm_probe(
                     ),
                 });
             }
-            // 计数守恒:累计入队数必须被累计终态完整承接(终态计数是单调累计,
-            // 不可按窗口清零——清零后与累计值不可比)。
+            // Count conservation: the cumulative enqueued count must be fully absorbed by the
+            // cumulative terminal states (terminal counts are monotonically cumulative; they
+            // must not be zeroed per window — after zeroing they are incomparable with the
+            // cumulative values).
             let accounted = status.completed + status.failed + status.cancelled;
             if accounted != totals.created {
                 return Err(StressViolation {
@@ -534,8 +569,9 @@ pub fn stress_storm_probe(
         s.drain(60_000);
     }
 
-    // 合并不丢事件:事件总数 = 缓冲累计并一数 + 落盘条数(merged 本身就是
-    // 累计值,勿按窗口重复累加——重复累加会把正确的合并面误报成丢失)。
+    // Merging loses no events: total events = cumulative de-duplicated count of the buffer +
+    // landed entries (merged is itself a cumulative value, so do not accumulate it again per
+    // window — double accumulation would misreport a correct merging surface as lost events).
     let seen = buffer.events_seen;
     if seen != buffer.merged + totals.landed {
         return Err(StressViolation {
@@ -554,7 +590,8 @@ pub fn stress_storm_probe(
 mod tests {
     use super::*;
 
-    /// StressOptions::default() 直测:长跑车道缺省形状(此前从未被读)。
+    /// Direct test of StressOptions::default(): the long-running lane's default shape
+    /// (never read before).
     #[test]
     fn stress_options_default_matches_long_lane_shape() {
         let d = StressOptions::default();
@@ -566,8 +603,9 @@ mod tests {
         assert_eq!(d.cancel_rate_pct, 5);
     }
 
-    /// xorshift64 唯一坏点 = 0(恒 0):seed=0 必须替换成金常数,
-    /// 且与显式传入该金常数完全同序列(复现面等价)。
+    /// xorshift64's only bad point = 0 (stuck at 0): seed=0 must be substituted with the golden
+    /// constant, and the resulting sequence must be exactly the same as passing that golden
+    /// constant explicitly (the reproduction surfaces are equivalent).
     #[test]
     fn rng_seed_zero_substitutes_golden_constant() {
         const GOLDEN: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -578,12 +616,13 @@ mod tests {
             assert_eq!(a.next(), b.next());
             assert_eq!(a.below(97), b.below(97));
         }
-        // below(0)/below(1) 恒 0(除零守卫)。
+        // below(0)/below(1) are always 0 (division-by-zero guard).
         assert_eq!(Rng::new(7).below(0), 0);
         assert_eq!(Rng::new(7).below(1), 0);
     }
 
-    /// 已排空、带 n 个终态驻留条目的调度器(直测 assert_invariants 用)。
+    /// A scheduler that has been drained and retains n terminal entries (for direct tests of
+    /// assert_invariants).
     fn drained_with_terminals(n: u64) -> Scheduler {
         let mut s = Scheduler::new(SchedulerOptions::default());
         for op in 1..=n {
@@ -607,7 +646,7 @@ mod tests {
             .expect_err("上述参数组合必然破坏对应不变量")
     }
 
-    /// 计数不守恒臂:虚报 created → completed+failed+cancelled != created。
+    /// Count-conservation arm: inflating created → completed+failed+cancelled != created.
     #[test]
     fn assert_invariants_flags_count_violation() {
         let mut s = drained_with_terminals(3);
@@ -621,7 +660,7 @@ mod tests {
         );
     }
 
-    /// 取消泄漏臂:cancel 成功数虚报 → cancelled < cancel_successes。
+    /// Cancel-leak arm: inflating the cancel success count → cancelled < cancel_successes.
     #[test]
     fn assert_invariants_flags_cancel_leak() {
         let mut s = drained_with_terminals(2);
@@ -634,8 +673,9 @@ mod tests {
         );
     }
 
-    /// Ok 路径峰值采样:排空后驻留终态条目要回写 peaks.retained
-    /// (run_stress 主循环先自采峰值,此臂只在直测面可见)。
+    /// Ok-path peak sampling: after draining, retained terminal entries must be written back
+    /// into peaks.retained (the run_stress main loop samples peaks itself first; this arm is
+    /// only visible on the direct-test surface).
     #[test]
     fn assert_invariants_ok_updates_peak_retained() {
         let mut s = drained_with_terminals(3);
@@ -646,9 +686,11 @@ mod tests {
         assert_eq!(peaks.retained, 3, "驻留终态条目数回写峰值");
     }
 
-    /// 排空失败臂:交互冷却 >> drain 预算(60s)且抗饥饿上限更远时,
-    /// 后台任务在预算内无法晋升 → 检测器按「排不掉 = 永久卡住」红。
-    /// (口径:钉检测器守卫与诊断内容,不是真死锁;生产缺省冷却 50ms << 60s。)
+    /// Drain-failure arm: with the interactive cooldown >> the drain budget (60s) and an even
+    /// farther starvation ceiling, background tasks cannot be promoted within the budget →
+    /// the detector turns red on "cannot drain = stuck permanently".
+    /// (Semantics: this pins down the detector's guard and diagnostic content, not a real
+    /// deadlock; production's default cooldown is 50ms << 60s.)
     #[test]
     fn assert_invariants_reports_undrained_queue_as_deadlock() {
         let mut s = Scheduler::new(SchedulerOptions {
@@ -656,7 +698,7 @@ mod tests {
             starvation_limit_ms: 400_000,
             max_queued: None,
         });
-        // 先跑一个交互任务,锚定冷却窗口起点。
+        // Run an interactive task first, anchoring the start of the cooldown window.
         s.enqueue(make_spec(
             TaskKind::SingleFileUpdate,
             0,
@@ -666,7 +708,8 @@ mod tests {
             false,
         ));
         s.drain(1_000);
-        // 再入队后台任务:drain(60s) 内既过不了冷却也够不着饥饿晋升。
+        // Then enqueue a background task: within drain(60s) it can neither clear the cooldown
+        // nor reach starvation promotion.
         s.enqueue(make_spec(
             TaskKind::SingleFileUpdate,
             3,
@@ -680,11 +723,13 @@ mod tests {
         assert!(v.detail.contains("queued=1"), "{}", v.detail);
     }
 
-    /// 检测器失败经 run_stress 传播:周期断言(310 的 `?`)与终局断言
-    /// (321 的 `?`)两条车道都必须把 Err 原样带回调用方。
+    /// Detector failure propagates through run_stress: both lanes, the periodic assertion (the
+    /// `?` at 310) and the final assertion (the `?` at 321), must hand the Err back to the
+    /// caller unchanged.
     ///
-    /// 冷却窗口由交互任务锚定(无交互入队时 NEVER_MS 使后台不受节流),
-    /// 200 ops 下必有交互任务入队(确定性 seed,非概率断言)。
+    /// The cooldown window is anchored by an interactive task (with no interactive enqueueing,
+    /// NEVER_MS leaves background unthrottled), and under 200 ops an interactive task is bound
+    /// to be enqueued (deterministic seed, not a probabilistic assertion).
     #[test]
     fn run_stress_propagates_detector_failure_from_periodic_and_final_checks() {
         let undrainable = |check_every: u64| StressOptions {
@@ -695,16 +740,18 @@ mod tests {
             check_every,
             cancel_rate_pct: 0,
         };
-        // 周期断言:op=50 时 drain 预算耗尽即红。
+        // Periodic assertion: at op=50 the drain budget is exhausted and it turns red.
         let v = run_stress(1, undrainable(50)).expect_err("周期断言必传播失败");
         assert_eq!(v.kind, "deadlock-or-permanent-pending");
-        // 终局断言:check_every=0 关掉周期面,只走收尾 `?`。
+        // Final assertion: check_every=0 disables the periodic surface, only the closing `?`
+        // runs.
         let v = run_stress(1, undrainable(0)).expect_err("终局断言必传播失败");
         assert_eq!(v.kind, "deadlock-or-permanent-pending");
     }
 
-    /// 风暴落盘丢弃臂:队列里已有同文件新版本(v9),缓冲再落旧版本(v5)
-    /// → StaleDropped → 「风暴事件未被接受」红(单调版本承诺被破坏面)。
+    /// Storm landing-drop arm: the queue already holds a newer version of the same file (v9)
+    /// and the buffer then lands the older one (v5) → StaleDropped → the "storm event not
+    /// accepted" red (the surface where the monotonic-version promise is broken).
     #[test]
     fn flush_storm_buffer_reports_stale_drop() {
         let mut s = Scheduler::new(SchedulerOptions::default());
@@ -721,8 +768,9 @@ mod tests {
             "{}",
             v.detail
         );
-        // 口径:landed = 离开缓冲进入落盘流程的事件数(先计数后判收),
-        // 接受与否由 Err 表达;created 只在真入队时 +1。
+        // Semantics: landed = the number of events that left the buffer and entered the landing
+        // flow (counted before the acceptance decision), and whether they were accepted is
+        // expressed by the Err; created only increments on a real enqueue.
         assert_eq!(totals.landed, 2);
         assert_eq!(totals.created, 1);
     }

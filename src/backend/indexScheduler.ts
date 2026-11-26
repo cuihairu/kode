@@ -1,16 +1,23 @@
-// 统一索引调度器(PR3,评审 docs/review/2026-10-22 §3.3):索引任务的生命周期
-// 与优先级唯一入口。任务类别覆盖首扫/单文件增量/受影响依赖更新/删除清理/
-// 非交互全项目分析;同文件同版本任务合并、过期版本任务取消丢弃;失败任务
-// 不缓存「已扫描」假象,后续请求可重新入队恢复(不永久 pending)。
-// 后台任务(全量/非交互)受交互限流:交互任务入队或刚完成的冷却窗口内不
-// 上主线程,编辑高峰不让全量索引抢占输入响应。
-// 打点:每次任务执行经 languageServiceMetrics('index-scheduler')记录耗时与
-// 终态;限流让路/合并/丢弃计数由 getStatus().metrics 承载(测试与报告取证)。
+// Unified index scheduler (PR3, review docs/review/2026-10-22 §3.3): the
+// single entry point for index task lifecycle and priority. Task kinds cover
+// initial scan/single-file incremental/affected dependency updates/delete
+// cleanup/non-interactive whole-project analysis; same-file same-version
+// tasks merge, stale-version tasks are cancelled and dropped; failed tasks
+// do not cache an "already scanned" illusion, later requests can re-enqueue
+// and recover (never permanently pending).
+// Background tasks (full/non-interactive) are throttled by interaction:
+// within the cooldown window after an interactive task enqueues or just
+// finishes they stay off the main thread, so a full index never steals input
+// responsiveness during editing bursts.
+// Instrumentation: every task execution records duration and terminal state
+// through languageServiceMetrics('index-scheduler'); the throttle-yield/
+// merge/drop counters are carried by getStatus().metrics (evidence for
+// tests and reports).
 
 import { performance } from 'perf_hooks';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 
-/** 任务类别 = 生命周期阶段(§3.3 至少支持清单) */
+/** Task kind = lifecycle stage (the §3.3 minimum support list) */
 export type IndexTaskKind =
   | 'initial-scan'
   | 'single-file-update'
@@ -20,25 +27,26 @@ export type IndexTaskKind =
   | 'non-interactive';
 
 /**
- * 优先级(评审建议顺序,数值越小越先):
- * 当前文件轻量 > 请求所需局部 > 依赖更新 > 后台全量 > 非交互。
+ * Priorities (review-recommended order, a smaller number runs first):
+ * current-file light > request-local > dependency update > background full
+ * > non-interactive.
  */
 export const IndexTaskPriority = {
-  /** 当前打开文件的轻量解析 */
+  /** Light parse of the currently open file */
   CurrentFileLight: 0,
-  /** 当前请求需要但尚未建立的局部索引 */
+  /** Local index the current request needs but that does not exist yet */
   RequestLocal: 1,
-  /** 当前文件修改引起的受影响依赖更新 */
+  /** Affected dependency updates caused by the current file's modification */
   DependencyUpdate: 2,
-  /** 后台全量索引 */
+  /** Background full index */
   BackgroundFull: 3,
-  /** 非交互式全项目分析 */
+  /** Non-interactive whole-project analysis */
   NonInteractive: 4
 } as const;
 
 export type IndexTaskPriorityValue = (typeof IndexTaskPriority)[keyof typeof IndexTaskPriority];
 
-/** 交互任务 = 会话内用户在等的那几类(优先级高于后台全量) */
+/** Interactive tasks = the kinds the user is waiting on within the session (higher priority than background full) */
 export function isInteractivePriority(priority: number): boolean {
   return priority < IndexTaskPriority.BackgroundFull;
 }
@@ -46,13 +54,13 @@ export function isInteractivePriority(priority: number): boolean {
 export interface IndexTaskSpec {
   kind: IndexTaskKind;
   priority: IndexTaskPriorityValue;
-  /** 任务体;拒绝 = 该次尝试失败(可恢复,不算永久状态) */
+  /** Task body; rejection = this attempt failed (recoverable, not a permanent state) */
   run: () => Promise<void>;
-  /** 单文件增量的目标文件(合并/过期判定的键的一部分) */
+  /** Target file of a single-file incremental task (part of the merge/staleness key) */
   filePath?: string;
-  /** 文件版本(document version/mtime 代);同文件跨版本靠它判过期 */
+  /** File version (document version/mtime generation); same-file cross-version staleness is judged by it */
   version?: number;
-  /** 文件删除/资产根移除时的失效目标(仅状态查询展示用) */
+  /** Invalidated target on file delete/asset root removal (display only, for status queries) */
   targetPath?: string;
 }
 
@@ -60,10 +68,10 @@ export type IndexTaskState = 'queued' | 'running' | 'completed' | 'failed' | 'ca
 
 export interface IndexTaskHandle {
   id: number;
-  /** 任务终态 Promise(取消 = 拒绝;失败 = 拒绝;调用方可 catch 忽略) */
+  /** Terminal-state Promise (cancel = rejects; failure = rejects; callers may catch and ignore) */
   wait: Promise<void>;
   cancel(reason?: string): void;
-  /** 当前状态快照(queued/running/completed/failed/cancelled) */
+  /** Current state snapshot (queued/running/completed/failed/cancelled) */
   state(): IndexTaskState;
 }
 
@@ -78,22 +86,22 @@ interface ScheduledTask {
   run: () => Promise<void>;
   state: IndexTaskState;
   cancelReason?: string;
-  /** 任务体抛出的原始错误(handle.wait 拒绝时原样透传) */
+  /** The raw error thrown by the task body (passed through verbatim when handle.wait rejects) */
   error?: unknown;
-  /** 终态钩子(句柄可多份:合并复用/ensureTask 各挂一个) */
+  /** Terminal-state hooks (there can be several handles: merge reuse/ensureTask each attach one) */
   settleListeners: Array<() => void>;
 }
 
 export interface SchedulerMetrics {
-  /** 同文件同版本合并掉的重复任务数 */
+  /** Duplicate tasks merged away for the same file and version */
   mergedTasks: number;
-  /** 过期版本任务取消丢弃数 */
+  /** Stale-version tasks cancelled and dropped */
   staleDropped: number;
-  /** 后台任务因交互压力被推迟启动的次数 */
+  /** Times a background task's start was postponed under interactive pressure */
   postponedBackground: number;
-  /** 后台任务因交互限流累计让出的等待时长(ms) */
+  /** Cumulative wait time yielded by background tasks under interactive throttling (ms) */
   backgroundDelayMs: number;
-  /** 任务失败后重新入队恢复的次数 */
+  /** Times a failed task re-enqueued and recovered */
   recoveries: number;
 }
 
@@ -104,12 +112,12 @@ export interface SchedulerStatus {
   completed: number;
   failed: number;
   cancelled: number;
-  /** keyed 任务(如首扫)当前状态;无活动任务时为上一次终态 */
+  /** Current state of a keyed task (e.g. initial scan); the last terminal state when no task is active */
   keyedTasks: Record<string, IndexTaskState>;
   metrics: SchedulerMetrics;
-  /** 最近一轮「忙起」时刻(epoch ms);从未跑过任务=null(状态栏不显示建立行) */
+  /** When the last round turned "busy" (epoch ms); null if no task ever ran (the status bar hides the build line) */
   lastBuildStartedAt: number | null;
-  /** 最近一轮「跑空」时刻(epoch ms;队列清空+无运行任一任务结算后);从未跑完=null */
+  /** When the last round "drained" (epoch ms; queue empty + no running task after a settle); null if it never finished */
   lastBuildCompletedAt: number | null;
 }
 
@@ -121,9 +129,11 @@ interface KeyedEntry {
 
 export interface IndexSchedulerOptions {
   /**
-   * 交互冷却窗口(ms):最后一次交互任务入队/完成后的这段时间内,后台任务
-   * 不启动。默认 50ms——编辑高峰(连续输入)下每个按键都刷新窗口,全量
-   * 索引持续让路;空闲后一个窗口内恢复后台推进。
+   * Interactive cooldown window (ms): within this span after the last
+   * interactive task enqueued/finished, background tasks do not start.
+   * Defaults to 50ms — during editing bursts (continuous typing) every
+   * keystroke refreshes the window so the full index keeps yielding; after
+   * idleness background progress resumes within one window.
    */
   interactiveCooldownMs?: number;
 }
@@ -131,12 +141,16 @@ export interface IndexSchedulerOptions {
 const DEFAULT_INTERACTIVE_COOLDOWN_MS = 50;
 
 /**
- * 交互活动信标(RUST-TRACK-FREEZE-007 刀1):最近一次交互任务入队/完成时刻
- * (performance.now 口径,与调度器冷却窗同一时钟)。调度器外的后台洪水
- * (如语料镜像分帧)据此避让——冷却窗内=用户在交互,后台多让一拍,复用
- * 本模块 interactiveCooldownMs 的单一口径,不另造时钟。模块级共享:
- * 调度器实例在 languageServices 装配,镜像入口在 gate wiring,只有模块级
- * 信标能让两侧同读。
+ * Interactive activity beacon (RUST-TRACK-FREEZE-007 cut 1): the moment the
+ * last interactive task enqueued/finished (performance.now convention, the
+ * same clock as the scheduler's cooldown window). Background floods outside
+ * the scheduler (e.g. corpus mirroring chunking) yield based on it — inside
+ * the cooldown window = the user is interacting, background yields an extra
+ * beat, reusing this module's interactiveCooldownMs as the single
+ * convention instead of building another clock. Shared at module level:
+ * the scheduler instance is assembled in languageServices and the mirroring
+ * entry sits in gate wiring; only a module-level beacon lets both sides read
+ * the same value.
  */
 export const interactiveActivityBeacon = { lastAt: -Number.MAX_VALUE };
 
@@ -159,9 +173,11 @@ export class IndexScheduler {
   };
   private lastInteractiveEnqueueAt = -Number.MAX_VALUE;
   private lastInteractiveEndAt = -Number.MAX_VALUE;
-  // 轮次生命周期时间戳(批 B 索引建立时间面):忙起=空闲后首个任务开跑,
-  // 跑空=任一任务终态后队列空且无运行任务。取消清队(dispose/reset)不算
-  // 跑完——没有「建立完成」事实,不更新 completedAt。
+  // Round lifecycle timestamps (batch B index build timing face): busy-start
+  // = the first task starts running after idle, drained = the queue is empty
+  // and no task is running after any terminal state. Cancel-and-clear
+  // (dispose/reset) does not count as finished — there is no "build
+  // complete" fact, so completedAt is not updated.
   private buildActive = false;
   private buildStartedAt: number | null = null;
   private buildCompletedAt: number | null = null;
@@ -173,11 +189,11 @@ export class IndexScheduler {
     this.interactiveCooldownMs = options.interactiveCooldownMs ?? DEFAULT_INTERACTIVE_COOLDOWN_MS;
   }
 
-  /** 入队一个任务;返回句柄(wait 取消/失败时拒绝,调用方自行 catch) */
+  /** Enqueues a task; returns a handle (wait rejects on cancel/failure, callers catch it themselves) */
   enqueue(spec: IndexTaskSpec): IndexTaskHandle {
     if (this.disposed) {
       const wait = Promise.reject(new Error('index scheduler disposed'));
-      // 防未处理拒绝噪音:调用方不 catch 也不炸进程
+      // Guard against unhandled rejection noise: the process survives even if the caller never catches
       wait.catch(() => undefined);
       return { id: -1, wait, cancel: () => undefined, state: () => 'cancelled' as IndexTaskState };
     }
@@ -187,14 +203,15 @@ export class IndexScheduler {
       interactiveActivityBeacon.lastAt = this.lastInteractiveEnqueueAt;
     }
 
-    // 同文件合并/过期判定:只对带 filePath 的任务生效(首扫等无文件任务不合并)
+    // Same-file merge/staleness adjudication: only applies to tasks carrying
+    // filePath (file-less tasks like the initial scan never merge)
     if (spec.filePath !== undefined) {
       const sameFile = this.queueOrder
         .map(id => this.tasks.get(id))
         .filter((task): task is ScheduledTask => task !== undefined && task.filePath === spec.filePath);
       const sameVersion = sameFile.find(task => task.version === spec.version);
       if (sameVersion) {
-        // ② 同文件同版本:合并为一条,优先级取更高者(数值更小)
+        // ② same file and version: merge into one, take the higher priority (smaller number)
         this.metrics.mergedTasks += 1;
         if (spec.priority < sameVersion.priority) {
           sameVersion.priority = spec.priority;
@@ -206,13 +223,14 @@ export class IndexScheduler {
         task => task.version !== undefined && spec.version !== undefined && task.version > spec.version
       );
       if (newer) {
-        // ② 新任务比队列里已有的同文件任务旧:丢弃新任务(过期)
+        // ② the new task is older than an existing same-file queued task: drop the new task (stale)
         this.metrics.staleDropped += 1;
         const wait = Promise.reject(new Error(`stale task dropped for ${spec.filePath}`));
         wait.catch(() => undefined);
         return { id: -1, wait, cancel: () => undefined, state: () => 'cancelled' as IndexTaskState };
       }
-      // 队列里有同文件的更旧版本任务:取消丢弃,让位新版本
+      // Older-version tasks for the same file exist in the queue: cancel and
+      // drop them, yielding to the new version
       for (const task of sameFile) {
         if (task.version !== undefined && spec.version !== undefined && task.version < spec.version) {
           this.cancelQueued(task, 'stale-version');
@@ -239,8 +257,10 @@ export class IndexScheduler {
   }
 
   /**
-   * keyed 单例任务(首扫等):同 key 进行中直接复用;上一次尝试失败/取消后
-   * 再次调用会重新入队——失败不缓存成永久 pending,后续请求可恢复(④)。
+   * Keyed singleton tasks (initial scan etc.): an in-progress same key is
+   * reused directly; after the last attempt failed/was cancelled, calling
+   * again re-enqueues — failure is never cached as permanent pending, later
+   * requests can recover (④).
    */
   ensureTask(key: string, factory: () => IndexTaskSpec): Promise<void> {
     const entry = this.keyed.get(key);
@@ -267,7 +287,7 @@ export class IndexScheduler {
     return handle.wait;
   }
 
-  /** keyed 任务是否已完成(状态查询便捷面) */
+  /** Whether a keyed task completed (convenience face for status queries) */
   isKeyedComplete(key: string): boolean {
     return this.keyed.get(key)?.state === 'completed';
   }
@@ -300,7 +320,7 @@ export class IndexScheduler {
     };
   }
 
-  /** 取消所有排队任务(运行中的不中断);dispose 前的批量清理用 */
+  /** Cancels all queued tasks (running ones are not interrupted); used for bulk cleanup before dispose */
   cancelQueuedTasks(reason = 'scheduler-reset'): number {
     const ids = [...this.queueOrder];
     for (const id of ids) {
@@ -332,7 +352,8 @@ export class IndexScheduler {
           ));
         }
       };
-      // 终态可能在 handle 创建前后到达:先查一次,再挂终态钩子
+      // The terminal state may arrive before or after handle creation: check
+      // once first, then attach the terminal hook
       check();
       if (!settled) {
         task.settleListeners.push(check);
@@ -356,20 +377,25 @@ export class IndexScheduler {
     task.state = 'cancelled';
     task.cancelReason = reason;
     this.cancelled += 1;
-    // 同步回写 keyed 台账(KR-AUD-90):promise 拒绝回调要等微任务,这里
-    // 不回写的话后续 ensureTask 会把死 id 当作 queued 复用(reused 而非 recovered)。
+    // Synchronously write back the keyed ledger (KR-AUD-90): the promise
+    // rejection callback waits for a microtask; without this write-back a
+    // later ensureTask would reuse the dead id as queued (reused instead of
+    // recovered).
     for (const entry of this.keyed.values()) {
       if (entry.id === task.id) { entry.state = 'cancelled'; }
     }
     this.metrics.staleDropped += reason === 'stale-version' ? 1 : 0;
     for (const listener of task.settleListeners.splice(0)) { listener(); }
-    // 取消即终态:同样出表,避免过期版本任务(快速连续保存)在表里积压
+    // Cancel is terminal: leave the map the same way, so stale-version tasks
+    // (rapid consecutive saves) do not pile up in the map
     this.tasks.delete(task.id);
   }
 
   /**
-   * pump 推迟到微任务:同一同步批内的入队(一次请求引发的若干索引任务)
-   * 先聚齐再排序启动——否则先入队的低优任务同步抢跑,优先级队列失效。
+   * pump is deferred to a microtask: enqueues within the same synchronous
+   * batch (several index tasks triggered by one request) gather first and
+   * are then sorted and started — otherwise an earlier low-priority task
+   * jumps the queue synchronously and the priority queue breaks.
    */
   private pumpScheduled = false;
 
@@ -382,7 +408,7 @@ export class IndexScheduler {
     });
   }
 
-  /** 单并发驱动:每次任务终态后重新取队首 */
+  /** Single-concurrency driver: after each task's terminal state, pick the queue head again */
   private pump(): void {
     if (this.disposed || this.runningId !== null) { return; }
     const next = this.pickNext();
@@ -397,10 +423,13 @@ export class IndexScheduler {
     const operation = startLanguageServiceOperation('index-scheduler', {
       indexGeneration: next.priority
     });
-    // KODE-RESP-003:run 声明返回 Promise 并不禁止函数体在返回前同步 throw
-    // ——直接调用时同步异常在 Promise 链建立前逸出,绕过失败记账/清槽,
-    // runningId 永不释放→后续任务永久排队。先包一层 Promise.resolve().then
-    // 把调用挪进 Promise 上下文,同步 throw 变 rejection 走统一失败收口。
+    // KODE-RESP-003: run declaring a Promise return does not stop the body
+    // from throwing synchronously before returning — on a direct call the
+    // synchronous exception escapes before the Promise chain exists,
+    // bypassing failure recording/slot clearing, and runningId is never
+    // released → later tasks queue forever. Wrapping in Promise.resolve()
+    // .then first moves the call into Promise context, turning a synchronous
+    // throw into a rejection that flows through the unified failure closeout.
     void Promise.resolve()
       .then(() => next.run())
       .then(() => {
@@ -409,7 +438,8 @@ export class IndexScheduler {
         operation.end('ok');
       })
       .catch((error: unknown) => {
-        // 失败不缓存「已扫描」假象:keyed 条目回落 failed,后续请求重跑(④)
+        // Failure never caches the "already scanned" illusion: the keyed
+        // entry falls back to failed, later requests rerun (④)
         next.state = 'failed';
         next.error = error;
         this.failed += 1;
@@ -422,13 +452,17 @@ export class IndexScheduler {
           interactiveActivityBeacon.lastAt = this.lastInteractiveEndAt;
         }
         for (const listener of next.settleListeners.splice(0)) { listener(); }
-        // 终态任务出表:run 闭包持有整批文件路径与错误对象,长会话保存/扫描
-        // 会让 tasks Map 无限增长。句柄经 settleListeners 与自身闭包保留状态,
-        // 不依赖 Map;queued/running 查询也只看 queueOrder 与 runningId。
+        // Terminal-state tasks leave the map: the run closure holds the whole
+        // batch of file paths and error objects, and long-session saves/scans
+        // would grow the tasks Map without bound. Handles keep their state
+        // through settleListeners and their own closures, not the Map;
+        // queued/running queries also only look at queueOrder and runningId.
         this.tasks.delete(next.id);
         this.pump();
-        // 跑空结算(批 B):pump 递归后仍无运行/排队=本轮索引结束,记完成时刻。
-        // 后台限流挂起的队列(queueOrder 非空)不算跑空。
+        // Drained settle (batch B): after the recursive pump there is still
+        // nothing running/queued = this index round is over, record the
+        // completion time. A queue suspended by background throttling
+        // (queueOrder non-empty) does not count as drained.
         if (this.buildActive && this.runningId === null && this.queueOrder.length === 0) {
           this.buildActive = false;
           this.buildCompletedAt = Date.now();
@@ -444,10 +478,12 @@ export class IndexScheduler {
     candidates.sort((left, right) => left.priority - right.priority || left.seq - right.seq);
     const head = candidates[0];
     if (isInteractivePriority(head.priority)) {
-      // ③ 优先级顺序:交互任务永远先于后台任务
+      // ③ priority order: interactive tasks always go before background tasks
       return head;
     }
-    // ⑥ 后台限流:交互冷却窗口内不启动后台任务,不让全量索引抢主线程
+    // ⑥ background throttling: within the interactive cooldown window
+    // background tasks do not start, so the full index never steals the
+    // main thread
     const now = performance.now();
     const sinceLastInteractive = now - Math.max(this.lastInteractiveEnqueueAt, this.lastInteractiveEndAt);
     if (sinceLastInteractive < this.interactiveCooldownMs) {

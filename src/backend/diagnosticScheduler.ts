@@ -1,96 +1,111 @@
-// 诊断任务版本化与分层调度(PR6 A6-1/A6-2/A6-4):
+// Diagnostic task versioning and layered scheduling (PR6 A6-1/A6-2/A6-4):
 //
-// ① 版本化:每个诊断任务携带文档版本令牌。连续编辑时同 URI 的排队任务
-//    「最新版本胜出」——旧版本任务出队时记 coalescedStale,永不执行;
-//    执行后若文档已前进(stale),结果丢弃不发布(staleDropped)。任何路径
-//    都不可能发布与当前版本不匹配的诊断。
-// ② 分层:local 层 = 纯文本/AST 的本地校验(标量/结构/清单),只随本文档
-//    编辑重算;semantic 层 = 依赖语义索引的校验,随索引失效重算。无关文件
-//    变更不产生任何打开文档的诊断任务(per-URI 键控,天然隔离),指标可断言。
-// ③ 同版本免重算:同文档同版本 + 同诊断输入代(generation,配置切换等外部
-//    输入变更时自增)已发布过的,重复请求直接跳过(skippedCurrentVersion)。
-// ④ 配置切换:诊断开关关闭 → 清空 collection 并记住 disabled(重开前不计算);
-//    子开关/结构开关变更 → invalidateAll 迫使已发布文档重算。开关判定用
-//    isDiagnosticsConfigSection 精确裁断,无关 kbengine.* 配置变更不再触发
-//    全文档重扫(旧行为是任意 kbengine.* 变更都全量重算)。
+// 1. Versioning: every diagnostic task carries a document version token. For
+//    queued tasks with the same URI under continuous editing, "latest version
+//    wins" — when a stale-version task is dequeued it is counted as
+//    coalescedStale and never executes; if the document has advanced by the
+//    time the task runs (stale), the result is discarded and not published
+//    (staleDropped). No path can publish diagnostics that do not match the
+//    current version.
+// 2. Layering: local layer = local validation over plain text/AST
+//    (scalar/structure/manifest), recomputed only on edits to this document;
+//    semantic layer = validation that depends on the semantic index,
+//    recomputed when the index is invalidated. Changes to unrelated files
+//    produce no diagnostic tasks for open documents (per-URI keying, natural
+//    isolation), and the metrics are assertable.
+// 3. Same-version skip: if the same document at the same version with the same
+//    diagnostic input generation (generation, incremented when external inputs
+//    such as config changes) has already been published, repeated requests are
+//    skipped outright (skippedCurrentVersion).
+// 4. Config switches: toggling diagnostics off clears the collection and
+//    remembers disabled (nothing computed until re-enabled); sub-switch or
+//    structure-switch changes trigger invalidateAll, forcing published
+//    documents to recompute. Switch detection is decided precisely by
+//    isDiagnosticsConfigSection, so unrelated kbengine.* config changes no
+//    longer trigger a full rescan (the old behavior recomputed everything on
+//    any kbengine.* change).
 //
-// 打点:每次实际计算经 PR1 埋点记 diagnostics 事件(带 layer/fileKind/版本),
-// 与 extension.ts 既有 startLanguageServiceOperation('diagnostics') 同名合并。
+// Telemetry: every actual computation records a diagnostics event via the PR1
+// instrumentation (with layer/fileKind/version), merged under the same name as
+// the existing startLanguageServiceOperation('diagnostics') in extension.ts.
 
 import { recordLanguageServiceOperation } from '../languageServiceMetrics';
 
-/** 诊断分层:local=纯文本/AST 本地校验;semantic=依赖语义索引的校验 */
+/** Diagnostic layer: local = plain text/AST local validation; semantic = validation depending on the semantic index */
 export type DiagnosticLayer = 'local' | 'semantic';
 
-/** 调度输入文档面:vscode.TextDocument 与测试替身的公共子集 */
+/** Scheduling input document surface: the common subset of vscode.TextDocument and the test stub */
 export interface DiagnosticTaskDocument {
   uri: { toString(): string };
-  /** 编辑序号;替身可能没有 → undefined(按「每次都可能变」处理) */
+  /** Edit ordinal; a stub may lack it, hence undefined (treated as "may change every time") */
   version?: number;
 }
 
 export interface DiagnosticTaskOptions<T> {
   layer: DiagnosticLayer;
-  /** 产出诊断项(同步;validateDocument/validateEntitiesXmlDocument 的计算面) */
+  /** Produces diagnostic items (synchronous; the compute surface of validateDocument/validateEntitiesXmlDocument) */
   compute?: () => readonly T[];
-  /** IDE-DIA-005 异步分片面:大文件计算移出同步入口;给了优先于 compute。
-   *  返回 null = 中止(版本已前进等),记过期不发布;完成后的发布同样复核版本。 */
+  /** IDE-DIA-005 async slicing surface: moves large-file computation out of the
+   *  synchronous entry point; when provided it takes priority over compute.
+   *  Returning null means abort (version already advanced, etc.), counted as
+   *  stale and not published; publishing after completion also re-checks the
+   *  version. */
   computeAsync?: () => Promise<readonly T[] | null>;
-  /** 发布面:diagnostics.set(uri, items) 或测试收集器 */
+  /** Publish surface: diagnostics.set(uri, items) or a test collector */
   publish: (items: readonly T[]) => void;
 }
 
 export interface DiagnosticSchedulerStats {
-  /** 受理的请求总数(request + requestQueued) */
+  /** Total accepted requests (request + requestQueued) */
   requested: number;
-  /** 实际执行计算次数 */
+  /** Number of computations actually executed */
   computed: number;
-  /** 成功发布次数 */
+  /** Number of successful publishes */
   published: number;
-  /** 连续编辑合并:被更新版本顶掉、从未执行的排队任务数 */
+  /** Continuous-edit coalescing: queued tasks displaced by a newer version and never executed */
   coalescedStale: number;
-  /** 执行后才过期的任务:计算完成但版本已前进,结果丢弃不发布 */
+  /** Tasks that expired after starting: computation finished but the version had advanced, result discarded and not published */
   staleDropped: number;
-  /** IDE-DIA-008:文档关闭(或关闭后重开)后晚到的 worker 结果丢弃数 */
+  /** IDE-DIA-008: worker results arriving late after document close (or close-then-reopen), discarded */
   releasedDropped: number;
-  /** 同版本 + 同诊断输入代已发布,重复请求跳过重算 */
+  /** Already published at the same version + same diagnostic input generation; repeated requests skip recompute */
   skippedCurrentVersion: number;
-  /** 开关关闭期间受理的请求(只记账,不计算) */
+  /** Requests accepted while the switch was off (bookkeeping only, nothing computed) */
   disabledSkipped: number;
-  /** 计算在途时开关关闭(AUD-026):旧异步结果丢弃,不写回 collection */
+  /** Switch turned off while computing (AUD-026): old async result discarded, not written back to the collection */
   disabledAsyncDropped: number;
-  /** 计算在途时诊断输入代已切换(AUD-026):旧配置结果丢弃,
-   *  不发布也不把新代标成已发布 */
+  /** Diagnostic input generation switched while computing (AUD-026): old config result
+   *  discarded, neither published nor marking the new generation as published */
   staleGenerationDropped: number;
-  /** KR-AUD-04(DIA-1):异步计算失败次数(worker 崩溃/解析异常等)。
-   *  失败不重抛(computeAndPublish 返回 void,调用方无 catch 面),
-   *  在此记账供诊断健康度观测 */
+  /** KR-AUD-04 (DIA-1): count of async computation failures (worker crash/parse exception etc.).
+   *  Failures are not rethrown (computeAndPublish returns void, callers have no catch surface);
+   *  recorded here for diagnostic health observability */
   errored: number;
-  /** 清理动作次数(开关关闭清空/文档关闭释放) */
+  /** Number of clear actions (switch-off clear / document close release) */
   cleared: number;
 }
 
 interface UriState {
-  /** 最近一次发布对应的文档版本(undefined=未发布过/替身无版本) */
+  /** Document version matching the most recent publish (undefined = never published / stub without a version) */
   publishedVersion: number | undefined;
-  /** 最近一次发布对应的诊断输入代 */
+  /** Diagnostic input generation matching the most recent publish */
   publishedGeneration: number;
-  /** 排队中的任务(同 URI 至多一个:新版本请求顶掉旧版本) */
+  /** Queued task (at most one per URI: a newer-version request displaces the older one) */
   queued: QueuedTask | null;
 }
 
 interface QueuedTask {
-  /** URI 键(IDE-DIA-006:出队后处理仍需回查 state,随任务携带) */
+  /** URI key (IDE-DIA-006: post-dequeue handling still needs to look up state, so it travels with the task) */
   key: string;
   document: DiagnosticTaskDocument;
   options: DiagnosticTaskOptions<unknown>;
-  /** 入队时版本令牌 */
+  /** Version token at enqueue time */
   version: number | undefined;
-  /** 入队时关闭代(IDE-DIA-008:处理前失配=文档已关闭,零计算丢弃) */
+  /** Release epoch at enqueue time (IDE-DIA-008: mismatch before processing = document closed, discard with zero computation) */
   releaseEpoch: number;
 }
 
-/** AUD-052:耗时到 0.1ms 取整(与 metrics 聚合 round1 同口径,仅展示层用) */
+/** AUD-052: round elapsed time to 0.1ms (same contract as the metrics aggregation round1, display layer only) */
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
@@ -101,36 +116,43 @@ function versionOf(document: DiagnosticTaskDocument): number | undefined {
     : undefined;
 }
 
-/** IDE-DIA-006 单轮时间片:一轮 flush 连续同步处理文档的时长上界。超出且
- *  还有待处理条目时让出宿主(宏任务边界)再继续——多个文档待诊断时,一轮
- *  flush 不连续占满宿主处理全部文档。与 workspaceIndex 的 YIELD_SLICE_MS
- *  同族口径(25ms),单次宿主连续同步段上界=切片+单个文档计算。 */
+/** IDE-DIA-006 per-round time slice: upper bound on how long one flush keeps
+ *  handling documents synchronously in a row. When exceeded while entries
+ *  remain, yield to the host (macro-task boundary) and continue — with several
+ *  documents awaiting diagnostics, one flush does not monopolize the host for
+ *  all of them. Same-family contract as workspaceIndex's YIELD_SLICE_MS
+ *  (25ms); the upper bound of a single continuous synchronous host segment is
+ *  slice + one document computation. */
 const FLUSH_SLICE_MS = 25;
 
-/** 默认让出面:setImmediate 宏任务边界(定时器/IO/其它宏任务可插进) */
+/** Default yield surface: the setImmediate macro-task boundary (timers/IO/other macro tasks can interleave) */
 const yieldToHostDefault = (): Promise<void> =>
   new Promise(resolve => { setImmediate(resolve); });
 
 export interface DiagnosticSchedulerOptions {
-  /** 单轮时间片毫秒(测试注入;默认 FLUSH_SLICE_MS) */
+  /** Per-round time slice in milliseconds (test injection; defaults to FLUSH_SLICE_MS) */
   sliceMs?: number;
-  /** 让出面(测试注入;默认 setImmediate 宏任务边界) */
+  /** Yield surface (test injection; defaults to the setImmediate macro-task boundary) */
   yieldToHost?: () => Promise<void>;
 }
 
 export class DiagnosticScheduler {
-  /** 诊断输入代:配置切换(invalidateAll)自增,迫使已发布文档重算 */
+  /** Diagnostic input generation: incremented on config switches (invalidateAll), forcing published documents to recompute */
   private generation = 0;
   private enabled = true;
   private readonly states = new Map<string, UriState>();
-  /** IDE-DIA-005:在途异步计算(完成/失败均自摘) */
+  /** IDE-DIA-005: in-flight async computations (removed on completion or failure alike) */
   private readonly pending = new Set<Promise<unknown>>();
-  /** IDE-DIA-006:已出队、尚未处理完的条目数(pendingWorkload 诚实面:
-   *  让出窗口内 map 面已空,残留量规仍要数上在途批的未处理条目) */
+  /** IDE-DIA-006: number of dequeued entries not yet processed (the honest
+   *  pendingWorkload surface: inside the yield window the map side is empty,
+   *  yet the residual gauge must still count unprocessed entries of the
+   *  in-flight batch) */
   private drainingCount = 0;
-  /** IDE-DIA-008 每 URI 关闭代:releaseDocument 自增;stateFor 新建状态
-   *  (重开/再请求)也自增——上一代的在途计算与出队条目全部失配作废,
-   *  晚到的 worker 结果不可能写入 DiagnosticCollection。 */
+  /** IDE-DIA-008 per-URI release epoch: incremented by releaseDocument; also
+   *  incremented when stateFor creates fresh state (reopen/re-request) — all
+   *  in-flight computations and dequeued entries of the previous epoch are
+   *  invalidated by mismatch, so late worker results can never land in the
+   *  DiagnosticCollection. */
   private readonly epochs = new Map<string, number>();
   private readonly sliceMs: number;
   private readonly yieldFn: () => Promise<void>;
@@ -158,10 +180,13 @@ export class DiagnosticScheduler {
     return this.enabled;
   }
 
-  /** 残留任务量规(P0-4b 审核重开 2026-10-28):排队中 URI 数与在途异步
-   * 计算数——现场验收在取消/保存风暴后按此面观测宿主内无未泄残留。 */
+  /** Residual task gauge (P0-4b audit reopened 2026-10-28): queued URI count
+   *  and in-flight async computation count — field acceptance observes this
+   *  surface after cancel/save storms to verify no leaked residuals remain
+   *  inside the host. */
   pendingWorkload(): { queued: number; inFlight: number } {
-    // IDE-DIA-006:让出窗口内 map 面已空,已出队未处理完的条目也计入
+    // IDE-DIA-006: inside the yield window the map side is already empty,
+    // yet dequeued-but-unprocessed entries also count
     let queued = this.drainingCount;
     for (const state of this.states.values()) {
       if (state.queued) { queued += 1; }
@@ -170,8 +195,9 @@ export class DiagnosticScheduler {
   }
 
   /**
-   * 诊断开关切换(A6-4):关闭时经 clearAll 清空 collection,之后请求只记账;
-   * 重开时迫使全部已发布文档重算。返回开关是否发生变化。
+   * Diagnostic switch toggle (A6-4): when off, clearAll clears the collection
+   * and subsequent requests only record bookkeeping; when re-enabled, force
+   * every published document to recompute. Returns whether the switch changed.
    */
   setEnabled(enabled: boolean, clearAll: () => void): boolean {
     if (this.enabled === enabled) {
@@ -181,7 +207,8 @@ export class DiagnosticScheduler {
     if (!enabled) {
       clearAll();
       this.stats.cleared += 1;
-      // 关闭期间发布的版本标记全部作废:重开后同版本也要重算一次
+      // All version marks published during the off period are voided: after
+      // re-enabling, even the same version must recompute once
       for (const state of this.states.values()) {
         state.publishedVersion = undefined;
       }
@@ -191,7 +218,7 @@ export class DiagnosticScheduler {
     return true;
   }
 
-  /** 诊断输入变更(子开关/结构开关/语义索引失效):迫使已发布文档重算 */
+  /** Diagnostic input change (sub-switch/structure-switch/semantic index invalidation): force published documents to recompute */
   invalidateAll(): void {
     this.generation += 1;
     for (const state of this.states.values()) {
@@ -200,8 +227,10 @@ export class DiagnosticScheduler {
   }
 
   /**
-   * 立即通道:同步计算 + 版本守卫(捕获版本令牌,计算后复核才发布)。
-   * 同版本 + 同代已发布的直接跳过(无关重复请求零重算)。
+   * Immediate channel: synchronous compute + version guard (capture the
+   * version token, re-check after computing before publishing). Already
+   * published at the same version + same generation is skipped outright
+   * (zero recompute for unrelated repeated requests).
    */
   request<T>(document: DiagnosticTaskDocument, options: DiagnosticTaskOptions<T>): void {
     this.stats.requested += 1;
@@ -222,8 +251,10 @@ export class DiagnosticScheduler {
   }
 
   /**
-   * 排队通道(A6-1 连续编辑合并):同 URI 只保留最新版本任务,旧版本出队记
-   * coalescedStale、永不执行。配合 flushQueued() 在宏任务边界发布。
+   * Queued channel (A6-1 continuous-edit coalescing): per URI only the latest
+   * version task is kept; when an older version is dequeued it is counted as
+   * coalescedStale and never executes. Paired with flushQueued() which
+   * publishes at macro-task boundaries.
    */
   requestQueued<T>(document: DiagnosticTaskDocument, options: DiagnosticTaskOptions<T>): void {
     this.stats.requested += 1;
@@ -235,7 +266,9 @@ export class DiagnosticScheduler {
     const state = this.stateFor(key);
     const version = versionOf(document);
     if (state.queued) {
-      // 顶掉排队任务:版本不同即「连续编辑合并过期任务」;同版本替换不记合并
+      // Displace the queued task: differing versions mean "continuous-edit
+      // coalescing of a stale task"; same-version replacement does not count
+      // as coalescing
       if (state.queued.version !== undefined && version !== undefined
         && state.queued.version !== version) {
         this.stats.coalescedStale += 1;
@@ -250,11 +283,16 @@ export class DiagnosticScheduler {
     };
   }
 
-  /** 冲刷排队任务:每 URI 至多一个(最新版本),发布前复核版本令牌。
-   *  IDE-DIA-006 单轮时间片:连续同步处理超过 sliceMs 且还有待处理条目时,
-   *  让出宿主(宏任务边界)再继续;让出窗口内新入队任务由后续轮次收编,
-   *  让出窗口内文档前进的条目按处理时守卫丢弃。无让出路径(小批量)与旧
-   *  同步口径逐拍等价——零让出时整轮原子完成,旧契约不变。 */
+  /** Flush queued tasks: at most one per URI (latest version), re-check the
+   *  version token before publishing.
+   *  IDE-DIA-006 per-round time slice: when continuous synchronous processing
+   *  exceeds sliceMs while entries remain, yield to the host (macro-task
+   *  boundary) and continue; tasks newly enqueued inside the yield window are
+   *  incorporated by later rounds, and entries whose document advanced inside
+   *  the yield window are dropped by the at-processing-time guard. The no-yield
+   *  path (small batches) is tick-for-tick equivalent to the old synchronous
+   *  contract — with zero yields the whole round completes atomically and the
+   *  old contract is unchanged. */
   async flushQueued(): Promise<void> {
     if (!this.enabled) {
       return;
@@ -271,11 +309,15 @@ export class DiagnosticScheduler {
         try {
           this.processQueuedEntry(batch[index]);
         } catch {
-          // 排队面同步 compute 抛错:调用方 (extension.ts `void flushQueued()`)
-          // 无 catch 面——重抛成 UnhandledPromiseRejection,且剩余批次任务
-          // 全丢、drainingCount 卡死;与 KR-AUD-04 异步面同口径:记 errored、
-          // 吞掉不重抛,本条目之后的条目照常处理(互不连坐)。
-          // (request() 直接同步路径的既有传播语义不受影响,由该入口自持)
+          // Sync compute throwing on the queued surface: the caller
+          // (extension.ts `void flushQueued()`) has no catch surface —
+          // rethrowing would surface as UnhandledPromiseRejection, drop every
+          // remaining batch task, and wedge drainingCount; same contract as the
+          // KR-AUD-04 async surface: record errored, swallow without
+          // rethrowing, and entries after this one are still processed (no
+          // collective punishment).
+          // (The existing propagation semantics of the request() direct sync
+          // path are unaffected; that entry point keeps its own behavior)
           this.stats.errored += 1;
         }
         this.drainingCount -= 1;
@@ -284,7 +326,9 @@ export class DiagnosticScheduler {
         }
         if (performance.now() - roundStart >= this.sliceMs) {
           await this.yieldFn();
-          // 让出窗口内开关关闭:剩余条目不再计算(重开 invalidateAll 兜重算)
+          // Switch turned off inside the yield window: remaining entries are
+          // not computed (re-enable triggers invalidateAll as the recompute
+          // backstop)
           if (!this.enabled) {
             this.drainingCount = 0;
             return;
@@ -294,15 +338,17 @@ export class DiagnosticScheduler {
         }
       }
       this.drainingCount = 0;
-      // 本轮零让出=同步原子完成,窗口内不可能有新任务入队,收工;
-      // 让出过=再收一轮,收编让出窗口内的编辑新入队任务
+      // Zero yields this round = synchronous atomic completion, no task could
+      // have been enqueued inside the window, done;
+      // yielded = collect another round, incorporating edit-enqueued tasks
+      // from the yield window
       if (!sliced) {
         return;
       }
     }
   }
 
-  /** 出队:把 map 面排队任务一次性取走(所有权转移,并发 flush 不双算) */
+  /** Dequeue: take all queued map-side tasks at once (ownership transfer, concurrent flushes never double-count) */
   private collectQueued(): QueuedTask[] {
     const batch: QueuedTask[] = [];
     for (const state of this.states.values()) {
@@ -316,15 +362,18 @@ export class DiagnosticScheduler {
     return batch;
   }
 
-  /** 处理单个出队条目:处理时守卫(比入队时更新鲜)后才计算发布 */
+  /** Process a single dequeued entry: at-processing-time guard (fresher than
+   *  enqueue time) before computing and publishing */
   private processQueuedEntry(queued: QueuedTask): void {
-    // IDE-DIA-008:入队后文档已关闭(含让出窗口内关闭)→ 零计算直接丢弃
+    // IDE-DIA-008: document closed after enqueue (including closes inside the
+    // yield window) → discard outright with zero computation
     if ((this.epochs.get(queued.key) ?? 0) !== queued.releaseEpoch) {
       this.stats.releasedDropped += 1;
       return;
     }
     const currentVersion = versionOf(queued.document);
-    // 处理时文档已前进到入队之后的新版本(含让出窗口内前进):过期,丢弃
+    // Document advanced past the enqueued version by processing time
+    // (including advances inside the yield window): stale, discard
     if (queued.version !== undefined && currentVersion !== queued.version) {
       this.stats.staleDropped += 1;
       return;
@@ -349,21 +398,24 @@ export class DiagnosticScheduler {
     return false;
   }
 
-  /** IDE-DIA-005:是否有异步计算在途 */
+  /** IDE-DIA-005: whether any async computation is in flight */
   hasPendingComputations(): boolean {
     return this.pending.size > 0;
   }
 
-  /** IDE-DIA-005:等全部在途异步计算落定(测试与停用面) */
+  /** IDE-DIA-005: wait until every in-flight async computation settles (test and shutdown surfaces) */
   async pendingComputations(): Promise<void> {
     while (this.pending.size > 0) {
       await Promise.all([...this.pending]);
     }
   }
 
-  /** 文档关闭:释放版本标记与残留排队任务(下次打开全量重算)。
-   *  IDE-DIA-008:关闭代自增——上一代全部在途计算与已出队未处理条目
-   *  的处理/发布前守卫失配,晚到的 worker 结果不可能写入 collection。 */
+  /** Document close: release the version marks and residual queued tasks
+   *  (a full recompute happens on next open).
+   *  IDE-DIA-008: the release epoch increments — all in-flight computations of
+   *  the previous epoch and every dequeued-but-unprocessed entry mismatch the
+   *  at-processing/at-publish guard, so late worker results can never land in
+   *  the collection. */
   releaseDocument(document: DiagnosticTaskDocument): void {
     const key = document.uri.toString();
     const state = this.states.get(key);
@@ -388,7 +440,7 @@ export class DiagnosticScheduler {
     }
   }
 
-  /** 测试与停用面:清空全部 URI 状态与统计(不改开关/代数) */
+  /** Test and shutdown surface: clear all URI state and stats (leaves the switch/generation untouched) */
   resetForTests(): void {
     this.states.clear();
     this.epochs.clear();
@@ -403,7 +455,8 @@ export class DiagnosticScheduler {
     if (!state) {
       state = { publishedVersion: undefined, publishedGeneration: -1, queued: null };
       this.states.set(key, state);
-      // IDE-DIA-008:新建状态=重开/再请求,上一代残留的晚到结果全部作废
+      // IDE-DIA-008: fresh state = reopen/re-request; all residual late
+      // results from the previous epoch are voided
       this.epochs.set(key, (this.epochs.get(key) ?? 0) + 1);
     }
     return state;
@@ -415,18 +468,25 @@ export class DiagnosticScheduler {
     version: number | undefined,
     options: DiagnosticTaskOptions<unknown>
   ): void {
-    // IDE-DIA-008:捕获当代关闭代——计算在途期间文档关闭(或关闭后重开)
-    // 都会失配,晚到的 worker 结果发布前丢弃
+    // IDE-DIA-008: capture the current release epoch — a document close during
+    // the computation (or close-then-reopen) mismatches, and the late worker
+    // result is dropped before publishing
     const releaseEpoch = this.epochs.get(key) ?? 0;
-    // AUD-026:捕获发起代——计算在途期间诊断输入代切换(配置变更/invalidateAll),
-    // 旧配置结果不得发布,也不得把新代标成已发布
+    // AUD-026: capture the starting generation — if the diagnostic input
+    // generation switches while the computation is in flight (config change /
+    // invalidateAll), the old-config result must neither publish nor mark the
+    // new generation as published
     const startedGeneration = this.generation;
     if (options.computeAsync) {
-      // IDE-DIA-005:异步分片面——大文件计算移出同步入口,完成后复核版本
-      // 才发布;null(中止)/版本前进均记过期不发布
-      // AUD-052:计时起点在发起时——computeAsync 完成后的 then 里才取
-      // startedAt 会把整个计算阶段漏掉(35ms 计算记 ~0);分段:compute=计算阶段,
-      // publish=发布守卫+发布,同步路径同口径
+      // IDE-DIA-005: async slicing surface — large-file computation moves out
+      // of the sync entry point and only publishes after re-checking the
+      // version on completion; null (abort) / version advance both count as
+      // stale and do not publish
+      // AUD-052: the timing origin is at dispatch — taking startedAt inside
+      // the then after computeAsync resolves would miss the entire compute
+      // phase (a 35ms computation recorded as ~0); split: compute = compute
+      // phase, publish = publish guards + publish; the sync path uses the same
+      // contract
       const startedAt = performance.now();
       const computation = options.computeAsync().then(items => {
         this.pending.delete(computation);
@@ -446,19 +506,22 @@ export class DiagnosticScheduler {
           this.stats.staleDropped += 1;
           return;
         }
-        // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
+        // Publish guard: the document advanced during the computation (reentrancy
+        // / orchestration) → the result no longer matches the new version, discard
         if (version !== undefined && versionOf(document) !== version) {
           this.stats.staleDropped += 1;
           record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
           return;
         }
-        // 发布守卫:计算期间文档已关闭(或关闭后重开到新代)→ 不写 collection
+        // Publish guard: the document was closed during the computation (or
+        // closed and reopened into a new epoch) → do not write the collection
         if ((this.epochs.get(key) ?? 0) !== releaseEpoch) {
           this.stats.releasedDropped += 1;
           record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
           return;
         }
-        // AUD-026 发布守卫:计算在途时开关关闭 → 旧异步结果不写回 collection
+        // AUD-026 publish guard: the switch turned off while computing → the old
+        // async result is not written back to the collection
         if (!this.enabled) {
           this.stats.disabledAsyncDropped += 1;
           record({
@@ -469,8 +532,10 @@ export class DiagnosticScheduler {
           });
           return;
         }
-        // AUD-026 发布守卫:计算在途时代已切换 → 旧配置结果丢弃(不发布,
-        // 也不把新代标成已发布,否则重开同版本会被 skippedCurrentVersion 跳过)
+        // AUD-026 publish guard: the generation switched while computing → the
+        // old-config result is discarded (not published, and the new generation
+        // is not marked published either, otherwise reopening the same version
+        // would be skipped by skippedCurrentVersion)
         if (this.generation !== startedGeneration) {
           this.stats.staleGenerationDropped += 1;
           record({
@@ -493,12 +558,15 @@ export class DiagnosticScheduler {
           cacheMisses: 1
         });
       }, _error => {
-        // KR-AUD-04(DIA-1):失败不重抛——重抛后 computation 变 rejected,
-        // 除 pendingComputations() 偶然 Promise.all 外无任何消费者
-        // (computeAndPublish 返回 void,调用方无法挂 catch),错误只会在
-        // 扩展宿主里以 UnhandledPromiseRejection 形式泄漏、信息丢失。
-        // 记统计(errored)+ error 状态打点供健康度观测,吞掉不重抛。
-        // 同步 compute 路径(:489 起同步调用)的既有抛错语义不受影响。
+        // KR-AUD-04 (DIA-1): failures are not rethrown — a rethrow leaves
+        // computation rejected with no consumer (nothing but the incidental
+        // Promise.all inside pendingComputations(); computeAndPublish returns
+        // void so callers cannot attach a catch), and the error would only leak
+        // out of the extension host as an UnhandledPromiseRejection, losing
+        // information. Record the stat (errored) plus an error status point for
+        // health observability and swallow it.
+        // The existing throw semantics of the sync compute path (called
+        // synchronously from :489 onwards) are unaffected.
         this.pending.delete(computation);
         this.stats.errored += 1;
         const elapsed = performance.now() - startedAt;
@@ -527,13 +595,15 @@ export class DiagnosticScheduler {
         subPhases: { compute, publish: round1(elapsed - (computeEnd - startedAt)) }
       });
     };
-    // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
+    // Publish guard: the document advanced during the computation (reentrancy
+    // / orchestration) → the result no longer matches the new version, discard
     if (version !== undefined && versionOf(document) !== version) {
       this.stats.staleDropped += 1;
       record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
       return;
     }
-    // 发布守卫(IDE-DIA-008):同步计算重入关闭文档 → 不写 collection
+    // Publish guard (IDE-DIA-008): the document was closed during a synchronous
+    // compute → do not write the collection
     if ((this.epochs.get(key) ?? 0) !== releaseEpoch) {
       this.stats.releasedDropped += 1;
       record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
@@ -554,9 +624,11 @@ export class DiagnosticScheduler {
 }
 
 /**
- * 诊断相关配置裁断(A6-4):只有这些节变更才允许触发已打开文档重算。
- * 旧行为是任意 kbengine.* 变更(hover/jumpLog/codeLens…)都全量重扫,
- * 无关配置变更重算全部打开文档 —— 由 isDiagnosticsConfigSection 收口。
+ * Diagnostics-relevant config arbitration (A6-4): only changes to these
+ * sections are allowed to trigger recomputation of open documents. The old
+ * behavior rescanned on any kbengine.* change (hover/jumpLog/codeLens…),
+ * recomputing every open document on unrelated config changes —
+ * isDiagnosticsConfigSection closes that gap.
  */
 const DIAGNOSTICS_CONFIG_SECTIONS = [
   'kbengine.enableDiagnostics',
@@ -569,7 +641,7 @@ export function isDiagnosticsConfigSection(section: string): boolean {
     section === prefix || section.startsWith(`${prefix}.`));
 }
 
-/** 进程级共享实例:extension.ts 诊断事件面与测试共用同一份统计 */
+/** Process-level shared instance: the diagnostic event surface in extension.ts and tests share the same stats */
 let sharedScheduler: DiagnosticScheduler | null = null;
 
 export function getDiagnosticScheduler(): DiagnosticScheduler {
@@ -579,7 +651,7 @@ export function getDiagnosticScheduler(): DiagnosticScheduler {
   return sharedScheduler;
 }
 
-/** 测试面:重置共享调度器(统计/队列/代数/开关全部归零) */
+/** Test surface: reset the shared scheduler (stats/queue/generation/switch all zeroed) */
 export function resetDiagnosticSchedulerForTests(): void {
   getDiagnosticScheduler().resetForTests();
 }

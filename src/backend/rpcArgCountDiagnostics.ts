@@ -9,40 +9,50 @@ import { maskPythonNonCode } from './pythonLexicalMask';
 import { buildRpcArgCountsFromRust } from './rpcArgCountRust';
 
 /**
- * RPC 参数数量 lint(IDE-LINT-008,用户令 2026-11-06;KBE-PY-009 诊断面):
- * self.base/cell/client.<method>(...) 调用按调用点顶层实参数与 .def 方法
- * 声明的 <Arg> 数对账,明确数量不符才报 Warning。
+ * RPC argument-count lint (IDE-LINT-008, user order 2026-11-06; KBE-PY-009
+ * diagnostic face): self.base/cell/client.<method>(...) calls are reconciled
+ * by their top-level actual argument count against the .def method declaration's
+ * <Arg> count; only a clear mismatch reports a Warning.
  *
- * 关键口径(与验收「星号参数/动态接收者及声明未就绪保留未知」一致):
- * - 声明未就绪:该实体/根映射里查不到该方法声明、或该方法声明的 Arg 数
- *   各来源不一致(同名跨实体/组件多来源)→ 未知,不报。
- * - 段错配:方法在别的 section 声明(经当前接收者侧调用不会路由到)→ 由
- *   sectionMismatch 单独报,此处不重复;同一 section 才按 Arg 数对账。
- * - 星号参数:调用点顶层任一实参段首以 `*` 开头(解包/收集)或声明 Arg
- *   直文本以 `*` 开头 → 数量不可判定,未知,不报。(顶层 `a * b` 的二元
- *   乘法星号不触发——只认实参段首星号;嵌套括号内的星号不影响外层计数。)
- * - 跨行调用可计数(括号深度跨行扫到配对 `)`);括号不闭合到文件尾 →
- *   未知,不报。动态接收者(非 self.<role>.<name> 形态)本就不在发现面,
- *   天然未知。inlay 提示不替代诊断:此处独立产出诊断,与 inlay 同数据源
- *   但不同面。
+ * Key contracts (consistent with the acceptance wording "star args / dynamic
+ * receivers and declarations-not-ready keep unknown"):
+ * - declaration not ready: the method declaration cannot be found in this
+ *   entity/root mapping, or its Arg count is inconsistent across sources
+ *   (same name across multiple entities/components) → unknown, not reported.
+ * - section mismatch: the method is declared in another section (a call through
+ *   the current receiver side cannot route to it) → reported separately by
+ *   sectionMismatch, not duplicated here; only same-section declarations are
+ *   reconciled by Arg count.
+ * - star args: any top-level actual argument segment starting with `*`
+ *   (unpacking/collecting), or a declared Arg's raw text starting with `*` →
+ *   the count cannot be decided, unknown, not reported. (A top-level `a * b`
+ *   binary multiplication star does not trigger — only an argument-segment's
+ *   leading star counts; a star inside nested parens does not affect the outer
+ *   count.)
+ * - cross-line calls can be counted (bracket depth scanned across lines to the
+ *   matching `)`); parens unclosed to end of file → unknown, not reported.
+ *   Dynamic receivers (not self.<role>.<name> shape) are outside the discovery
+ *   face anyway, naturally unknown. Inlay hints do not replace diagnostics:
+ *   this face independently produces diagnostics, same data source as the inlay
+ *   but a different face.
  */
 
-/** 诊断稳定 code(B-7 纪律:快速修复/测试按 code 对账) */
+/** Stable diagnostic code (B-7 discipline: quick fixes/tests reconcile by code) */
 export const RPC_ARG_COUNT_DIAGNOSTIC_CODE = 'kbengine.rpcArgCount';
 
-/** 开关默认值(用户令:默认开启,与同族诊断一致) */
+/** Switch default (user order: on by default, consistent with the sibling diagnostics) */
 export const RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
 export interface RpcArgCountFinding {
-  /** 0 起行(方法名 token 所在行) */
+  /** Line (0-based, the line of the method-name token) */
   line: number;
-  /** 0 起列(方法名 token 起) */
+  /** Column (0-based, at the method-name token) */
   character: number;
   methodName: string;
   receiver: PythonReceiverCall['receiver'];
-  /** .def 声明的 Arg 数(与调用点实参数的对账基准) */
+  /** The .def declaration's Arg count (the reconciliation baseline against the call site's actual arguments) */
   declaredCount: number;
-  /** 调用点顶层实参数 */
+  /** The call site's top-level actual arguments */
   actualCount: number;
   message: string;
 }
@@ -50,12 +60,17 @@ export interface RpcArgCountFinding {
 const CALL_OPENER_CLOSER: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
 
 /**
- * 调用点顶层实参数计数;数量不可判定(星号实参/括号不闭合/方法名与 '('
- * 间有其他 token)返回 null。输入是**原始 Python 文本**(非掩码)——本扫描
- * 自带字符串/注释词法状态:字符串里的逗号/括号/星号不计,注释(# 到行尾)
- * 不计,顶层逗号即实参分隔;空括号计 0;尾随逗号不多计;跨行从 '(' 所在
- * 行扫到配对 ')' 或文件尾(未闭合 → null)。与调用点发现面(findPythonReceiver
- * Calls 走掩码)分工:发现面掩码去伪调用,计数面原文去伪分隔。
+ * Count the call site's top-level actual arguments; returns null when the
+ * count cannot be decided (star argument / unclosed parens / other tokens
+ * between the method name and '('). The input is **raw Python text** (not
+ * masked) — this scan carries its own string/comment lexical state: commas,
+ * parens and stars inside strings do not count, comments (# to line end) do
+ * not count, a top-level comma is an argument separator; empty parens count 0;
+ * a trailing comma does not over-count; scanning crosses lines from the line of
+ * '(' to the matching ')' or end of file (unclosed → null). Division of labor
+ * with the call-site discovery face (findPythonReceiverCalls runs on masked
+ * text): the discovery face masks out fake calls, the counting face works on
+ * raw text to mask out fake separators.
  */
 export function countCallArguments(
   lines: readonly string[],
@@ -64,7 +79,8 @@ export function countCallArguments(
   const nameEnd = call.character + call.methodName.length;
   const firstLine = lines[call.line] ?? '';
 
-  // 方法名后同行找 '(';先出现其他非空白 token → 形态不明,未知
+  // Look for '(' on the same line after the method name; another non-whitespace
+  // token first → shape unclear, unknown
   let openParen = -1;
   for (let i = nameEnd; i < firstLine.length; i += 1) {
     const ch = firstLine[i];
@@ -74,13 +90,15 @@ export function countCallArguments(
   if (openParen === -1) { return null; }
 
   let count = 0;
-  // 括号闭符号栈:调用自身 '(' 是根(不入栈),其内嵌套 ( [ { 才入栈;
-  // 栈空时看到的 ')' 即调用闭合,栈空时看到的逗号即顶层实参分隔。
+  // bracket-closer stack: the call's own '(' is the root (not pushed); nested
+  // ( [ { inside it are pushed; a ')' seen while the stack is empty is the
+  // call's closing, a comma seen while the stack is empty is a top-level
+  // argument separator.
   const closerStack: string[] = [];
-  let atSegmentStart = true; // 段首(括号后/逗号后)
-  let segmentHasStar = false; // 段首出现 '*' → 解包/收集,数量不可判定
-  let segmentHasCode = false; // 段内出现实参内容(逗号前)
-  let inString: string | null = null; // 字符串定界引号;null=不在字符串
+  let atSegmentStart = true; // segment start (after a paren or comma)
+  let segmentHasStar = false; // '*' at segment start → unpacking/collecting, count undecidable
+  let segmentHasCode = false; // argument content seen inside the segment (before a comma)
+  let inString: string | null = null; // the string's delimiter quote; null = not inside a string
   let tripleString = false;
 
   for (let line = call.line; line < lines.length; line += 1) {
@@ -88,7 +106,8 @@ export function countCallArguments(
     const startCol = line === call.line ? openParen + 1 : 0;
     for (let col = startCol; col < text.length; col += 1) {
       const ch = text[col];
-      // 字符串态:引号内一切字符不计(含逗号/括号/星号/注释符)
+      // string state: every character inside the quotes does not count (including
+      // commas/parens/stars/comment characters)
       if (inString) {
         if (ch === '\\') { col += 1; continue; }
         if (tripleString) {
@@ -102,7 +121,8 @@ export function countCallArguments(
         }
         continue;
       }
-      // 引号进入字符串态(整个字符串是一个实参内容,不展开内部逗号)
+      // a quote enters string state (the whole string is one argument's content;
+      // inner commas are not expanded)
       if (ch === '"' || ch === '\'') {
         inString = ch;
         tripleString = text.startsWith(ch.repeat(3), col);
@@ -113,7 +133,8 @@ export function countCallArguments(
         if (tripleString) { col += 2; }
         continue;
       }
-      // 注释:到行尾(跳出内层循环,行首续扫)
+      // comment: to the line end (jump out of the inner loop, resume at the
+      // next line)
       if (ch === '#') { break; }
       if (closerStack.length === 0) {
         if (ch === ')') {
@@ -131,7 +152,8 @@ export function countCallArguments(
         }
         if (ch in CALL_OPENER_CLOSER) {
           closerStack.push(CALL_OPENER_CLOSER[ch]);
-          // 嵌套结构整段算一个实参内容;段内星号不影响外层计数
+          // a nested structure counts in full as one argument's content; a star
+          // inside the segment does not affect the outer count
           segmentHasCode = true;
           atSegmentStart = false;
           continue;
@@ -146,7 +168,8 @@ export function countCallArguments(
         }
         continue;
       }
-      // 嵌套深度 >0:只记括号配对,不参与顶层实参统计
+      // nesting depth >0: only tracking bracket pairing, not participating in the
+      // top-level argument count
       const top = closerStack[closerStack.length - 1];
       if (ch === top) {
         closerStack.pop();
@@ -155,32 +178,32 @@ export function countCallArguments(
       }
     }
   }
-  return null; // '(' 到文件尾未闭合:形态不明,未知
+  return null; // '(' unclosed to end of file: shape unclear, unknown
 }
 
-/** 声明侧:该方法在调用所属 section 的声明里,Arg 数是否可唯一确定 */
+/** Declaration side: in the declarations for the section of the call, whether the Arg count is uniquely determinable */
 function resolveDeclaredArgCount(
   declarations: readonly { section: string; declaredArgs?: string[] }[],
   expectedSection: string
 ): { declaredCount: number; hasStarArg: boolean } | null {
   const matching = declarations.filter(d => d.section === expectedSection);
   if (matching.length === 0) {
-    return null; // 本 section 无声明:段错配面负责,此处未知
+    return null; // no declaration in this section: the section-mismatch face handles it, unknown here
   }
   let declaredCount: number | null = null;
   let hasStarArg = false;
   for (const declaration of matching) {
     if (declaration.declaredArgs === undefined) {
-      return null; // 声明未就绪(无 Arg 信息):未知
+      return null; // declaration not ready (no Arg info): unknown
     }
     const argCount = declaration.declaredArgs.length;
     if (declaration.declaredArgs.some(arg => arg.trim().startsWith('*'))) {
-      hasStarArg = true; // 声明带星号形参:数量可变,未知
+      hasStarArg = true; // the declaration has a star parameter: variable count, unknown
     }
     if (declaredCount === null) {
       declaredCount = argCount;
     } else if (declaredCount !== argCount) {
-      return null; // 同 section 多来源 Arg 数不一致:歧义,未知
+      return null; // multiple sources in the same section disagree on Arg count: ambiguous, unknown
     }
   }
   if (declaredCount === null) {
@@ -190,9 +213,11 @@ function resolveDeclaredArgCount(
 }
 
 /**
- * 判定核(批 8 抽出共用):发现面调用点 + 实参数槽位(calls 序对齐,null=未知)
- * → 语义闸与消息渲染。同步面喂本地计数,Rust-first 异步面喂 Rust 槽位;
- * 两路判定零分叉。
+ * Decision core (extracted for sharing in batch 8): the discovery face's call
+ * sites + actual-argument slots (calls-order aligned, null = unknown) → the
+ * semantic gate and message rendering. The sync face feeds local counts, the
+ * Rust-first async face feeds Rust slots; both paths decide with zero
+ * divergence.
  */
 function collectRpcArgCountFindings(
   calls: readonly PythonReceiverCall[],
@@ -204,20 +229,23 @@ function collectRpcArgCountFindings(
     const call = calls[index];
     const declarations = mapping.methods[call.methodName];
     if (!declarations || declarations.length === 0) {
-      continue; // 声明未就绪:未知,不报
+      continue; // declaration not ready: unknown, not reported
     }
-    // 目标段随发现面带来(face-aware 发现面已滤 AttributeError 引用;
-    // 无调用面时 = 旧口径 receiver → 段,值相同)
+    // The target section is carried by the discovery face (a face-aware
+    // discovery face has already filtered AttributeError references; with no
+    // call face = the old receiver → section contract, same values)
     const expectedSection = call.section;
     const declared = resolveDeclaredArgCount(declarations, expectedSection);
     if (!declared || declared.hasStarArg) {
-      continue; // 段外声明/星号形参/歧义:未知,不报
+      continue; // out-of-section declaration / star parameter / ambiguity: unknown, not reported
     }
-    // 槽位与 calls 序对齐由两路构造保证(Rust 面校验长度,本地面 map 同序);
-    // Rust 槽位 null=未知合法,不槽位级回退本地(整面纪律,禁部分采用)
+    // Slot alignment with calls order is guaranteed by both constructors (the
+    // Rust face validates the length, the local face maps in the same order);
+    // a Rust slot of null is a legal unknown, with no per-slot fallback to local
+    // (whole-face discipline, partial adoption forbidden)
     const actualCount = counts[index] ?? null;
     if (actualCount === null || actualCount === declared.declaredCount) {
-      continue; // 未知或数量一致:不报
+      continue; // unknown or equal counts: not reported
     }
     const first = declarations.find(d => d.section === expectedSection);
     const where = first ? `(${first.defFile}:${first.line + 1})` : '';
@@ -245,9 +273,10 @@ function collectRpcArgCountFindings(
 }
 
 /**
- * 全量计算:RPC 调用点实参数与 .def <Arg> 数明确不符的 Warning。
- * 纯函数(文本 + 内存映射快照),同步面;无映射/无调用点即空集,零额外解析。
- * 实参计数面走本地 countCallArguments。
+ * Full computation: a Warning for RPC call-site actual arguments clearly
+ * mismatching the .def <Arg> count. Pure function (text + in-memory mapping
+ * snapshot), sync face; no mapping / no call sites yields the empty set, zero
+ * extra parsing. The argument-counting face uses the local countCallArguments.
  */
 export function computeRpcArgCountFindings(
   text: string,
@@ -255,10 +284,13 @@ export function computeRpcArgCountFindings(
   callerFace?: PythonCallerFace
 ): RpcArgCountFinding[] {
   if (!mapping?.methods) { return []; }
-  // IDE-LINT-005 同款词法掩码:字符串/注释先行空白,列偏移不变。调用点发现
-  // 面走掩码(去字符串/注释里的伪调用);实参计数面走原文(计数自带词法态,
-  // 字符串里的逗号不当分隔——见 countCallArguments)。callerFace 给定 →
-  // 发现面按逐面语义表滤 AttributeError 引用(深审-3)。
+  // The same IDE-LINT-005 lexical mask: strings/comments pre-replaced by
+  // whitespace, column offsets unchanged. The call-site discovery face runs on
+  // the mask (removing fake calls in strings/comments); the argument-counting
+  // face runs on raw text (the count carries its own lexical state, commas in
+  // strings are not separators — see countCallArguments). A callerFace is given
+  // → the discovery face filters AttributeError references by the per-face
+  // semantics table (deep review-3).
   const masked = maskPythonNonCode(text);
   const calls = findPythonReceiverCalls(masked, callerFace);
   if (calls.length === 0) { return []; }
@@ -271,10 +303,13 @@ export function computeRpcArgCountFindings(
 }
 
 /**
- * Rust-first 异步面(AUDIT-005 B2 批 8):发现面/语义闸/消息同同步面,实参
- * 计数面走 `$/kode/lint/analyzeRpcArgCount`(params.text = 原文——计数自带
- * 词法态,发现面掩码坐标在原文同位);计数不可用/失败/畸形整面回本地计数,
- * 禁止部分采用。params.text = 原文口径见 rpcArgCountRust。
+ * Rust-first async face (AUDIT-005 B2 batch 8): discovery face / semantic gate /
+ * messages same as the sync face; the argument-counting face goes through
+ * `$/kode/lint/analyzeRpcArgCount` (params.text = raw text — the count carries
+ * its own lexical state, the discovery face's mask coordinates line up with the
+ * raw text); unavailable / failed / malformed counts fall back to the local
+ * count for the whole face, partial adoption forbidden. The params.text = raw
+ * text contract, see rpcArgCountRust.
  */
 export async function computeRpcArgCountFindingsAsync(
   text: string,
@@ -282,7 +317,8 @@ export async function computeRpcArgCountFindingsAsync(
   callerFace?: PythonCallerFace
 ): Promise<RpcArgCountFinding[]> {
   if (!mapping?.methods) { return []; }
-  // 发现面掩码 + 逐面语义滤(与同步面同口径);实参计数面原文口径不变
+  // Discovery-face mask + per-face semantic filter (same contract as the sync
+  // face); the argument-counting face's raw-text contract unchanged
   const masked = maskPythonNonCode(text);
   const calls = findPythonReceiverCalls(masked, callerFace);
   if (calls.length === 0) { return []; }

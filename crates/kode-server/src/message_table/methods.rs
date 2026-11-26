@@ -1,4 +1,4 @@
-//! 方法 utype/参数链模拟(TS addMethodDescription)。
+//! Method utype/argument-chain simulation (TS addMethodDescription).
 
 use crate::message_table::assembly::{AsmArg, AsmIssue, AsmMethod, AsmType, Assembly};
 use crate::message_table::constants::{origin_label, section_name, METHOD_UTYPE_MAX};

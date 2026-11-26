@@ -1,15 +1,15 @@
-//! defPropsInlayHints 决策核(def 属性只读视图 inlay,src/defPropsInlayHints.ts
-//! 同构):注释锚提取(整行注释+精确 token)/根级属性过滤(组件槽与 FIXED_DICT
-//! 子键不进总览)/单锚点 inlay 组装(头部段+逐属性段,注解链内建直查)。纯库
-//! 零 RPC;文本坐标域 UTF-16 code unit;诚实边界=实体归属链(python 文件→
-//! def 属性清单的运行时索引)与 provider 装配面留 TS,本核只消费语料化清单。
+//! defPropsInlayHints decision core (read-only view inlay for def properties, isomorphic with src/defPropsInlayHints.ts):
+//! comment anchor extraction (whole-line comments + exact token) / root-level property filtering (component slots and FIXED_DICT
+//! sub-keys do not enter the overview) / single-anchor inlay assembly (header section + per-property section, with built-in direct lookup in the annotation chain). Pure library,
+//! zero RPC; the text coordinate domain is UTF-16 code units; honest boundary = the entity ownership chain (python file ->
+//! the runtime index of the def property list) and the provider wiring layer stay in TS; this core only consumes the corpus-ized property list.
 
 use serde::{Deserialize, Serialize};
 
-/// 锚注释里的精确标记 token(与 TS DEF_PROPS_ANCHOR_TOKEN 同串)。
+/// Exact marker token inside the anchor comment (same string as TS DEF_PROPS_ANCHOR_TOKEN).
 pub const DEF_PROPS_ANCHOR_TOKEN: &str = "kode:props-from-def";
 
-/// 锚点(纯数据):锚注释行(0 起)+ 行文本长度(hint 锚在行尾)。
+/// Anchor (pure data): anchor comment line (0-based) + line text length (the hint anchors at end of line).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefPropsAnchorSite {
@@ -17,7 +17,7 @@ pub struct DefPropsAnchorSite {
     pub character: usize,
 }
 
-/// inlay 单段(label part):文本 + 悬停出处(无出处键缺席)。
+/// One inlay part (label part): text + hover origin (key absent when there is no origin).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefPropsHintPart {
@@ -26,7 +26,7 @@ pub struct DefPropsHintPart {
     pub tooltip: Option<String>,
 }
 
-/// 一条锚点 inlay(纯数据;provider 层转 vscode.InlayHint)。
+/// One anchor inlay (pure data; the provider layer converts to vscode.InlayHint).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefPropsHintItem {
@@ -35,8 +35,8 @@ pub struct DefPropsHintItem {
     pub kind: String,
 }
 
-/// 属性声明语料面(PropertyDefinitionInfo 消费子形;可选字段键缺席与 TS
-/// undefined 同形)。
+/// Property-declaration corpus face (the consumed sub-shape of PropertyDefinitionInfo; absent optional-field keys match TS
+/// undefined).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PropertyDefFace {
@@ -53,7 +53,7 @@ pub struct PropertyDefFace {
     pub component_slot_name: Option<String>,
 }
 
-/// 行切分(与 TS split(/\r?\n/) 同构;\r\n 与 \n 都切,\r 不独立成行)。
+/// Line splitting (isomorphic with TS split(/\r?\n/); both \r\n and \n split, a lone \r does not form its own line).
 pub(crate) fn split_lines(text: &str) -> Vec<&str> {
     let mut lines = Vec::new();
     let mut current = text;
@@ -69,8 +69,8 @@ pub(crate) fn split_lines(text: &str) -> Vec<&str> {
     lines
 }
 
-/// 提取注释锚:只认整行注释形态(trim 后以 # 起);代码行尾注释/字符串
-/// 字面量里的同词不触发。纯函数(文本输入)。
+/// Extract comment anchors: only the whole-line comment form is recognized (starts with # after trim); end-of-line comments in code / the same word inside string
+/// literals do not trigger. Pure function (text input).
 pub fn find_def_props_anchor_sites(text: &str) -> Vec<DefPropsAnchorSite> {
     let lines = split_lines(text);
     let mut sites = Vec::new();
@@ -81,7 +81,7 @@ pub fn find_def_props_anchor_sites(text: &str) -> Vec<DefPropsAnchorSite> {
         if !line_text.contains(DEF_PROPS_ANCHOR_TOKEN) {
             continue;
         }
-        // TS lineText.length 是 UTF-16 长度
+        // TS lineText.length is a UTF-16 length
         sites.push(DefPropsAnchorSite {
             line: index,
             character: line_text.encode_utf16().count(),
@@ -90,7 +90,7 @@ pub fn find_def_props_anchor_sites(text: &str) -> Vec<DefPropsAnchorSite> {
     sites
 }
 
-/// 根级声明过滤器:组件槽成员与 FIXED_DICT 子键(路径带 .)不进总览。
+/// Root-level declaration filter: component-slot members and FIXED_DICT sub-keys (paths containing .) do not enter the overview.
 fn is_root_level_property(property: &PropertyDefFace) -> bool {
     if property.component_slot_name.is_some() {
         return false;
@@ -102,13 +102,10 @@ fn is_root_level_property(property: &PropertyDefFace) -> bool {
     !property_path.contains('.')
 }
 
-/// 段悬停:声明出处(文件名:行)+ 域 + 持久化,无域无持久化只剩出处。
+/// Section hover: declaration origin (file:line) + domain + persistence; with no domain and no persistence only the origin remains.
 fn part_tooltip_of(property: &PropertyDefFace) -> String {
-    // TS defFile.split(/[\\/]/).pop() ?? defFile:末段 basename(两种斜杠)
-    let file_name = match property
-        .def_file
-        .rfind(['/', '\\'])
-    {
+    // TS defFile.split(/[\\/]/).pop() ?? defFile: last-segment basename (both slash kinds)
+    let file_name = match property.def_file.rfind(['/', '\\']) {
         Some(pos) => property.def_file[pos + 1..].to_string(),
         None => property.def_file.clone(),
     };
@@ -122,29 +119,35 @@ fn part_tooltip_of(property: &PropertyDefFace) -> String {
     details.join(" · ")
 }
 
-/// 组装单锚点 inlay:头部段 `def 属性(N)`(悬停=只读视图说明)+ 逐属性段
-/// `name: 注解`(Any 落名裸显),段间 ` · ` 分隔。注解链与 hover/stub 同源
-/// ——本核承载 TS resolveEntityAnnotationType 的空工作区根链(内建直查+
-/// 别名按名);注册表快照链不下沉(诚实边界批 3)。根级属性为零 → None
-/// (锚行零 inlay)。
+/// Assemble one anchor inlay: header section `def 属性(N)` (hover = read-only view explanation) + per-property sections
+/// `name: 注解` (Any falls back to the bare name), sections separated by ` · `. The annotation chain shares its source with hover/stub
+/// -- this core carries TS resolveEntityAnnotationType's empty-workspace-root chain (built-in direct lookup +
+/// aliases by name); the registry-snapshot chain does not sink down (honest boundary batch 3). Zero root-level properties -> None
+/// (zero inlays on the anchor line).
 pub fn build_def_props_inlay_items(
     site: &DefPropsAnchorSite,
     properties: &[PropertyDefFace],
 ) -> Option<DefPropsHintItem> {
-    let root_properties: Vec<&PropertyDefFace> =
-        properties.iter().filter(|p| is_root_level_property(p)).collect();
+    let root_properties: Vec<&PropertyDefFace> = properties
+        .iter()
+        .filter(|p| is_root_level_property(p))
+        .collect();
     if root_properties.is_empty() {
         return None;
     }
     let mut parts = vec![DefPropsHintPart {
         text: format!("def 属性({}) ", root_properties.len()),
         tooltip: Some(
-            "def 声明属性只读视图(纯渲染,非代码)。事实源: .def;跳转: 属性上 F12 直达声明行".to_string(),
+            "def 声明属性只读视图(纯渲染,非代码)。事实源: .def;跳转: 属性上 F12 直达声明行"
+                .to_string(),
         ),
     }];
     for property in &root_properties {
         if parts.len() > 1 {
-            parts.push(DefPropsHintPart { text: " · ".to_string(), tooltip: None });
+            parts.push(DefPropsHintPart {
+                text: " · ".to_string(),
+                tooltip: None,
+            });
         }
         let name = property
             .property_path
@@ -152,13 +155,13 @@ pub fn build_def_props_inlay_items(
             .filter(|p| !p.is_empty())
             .unwrap_or_else(|| property.symbol_name.clone());
         // TS: typeName ? resolveEntityAnnotationType(root, typeName) : FALLBACK;
-        // 结果 === FALLBACK('Any') → 裸名。两分支合一直查链。
+        // result === FALLBACK('Any') -> bare name. Both branches merge into the direct-lookup chain.
         let annotation = property
             .type_name
             .as_ref()
             .and_then(|type_name| super::def_param_hints::resolve_annotation_direct(type_name))
-            // TS 判据 = 结果 === FALLBACK('Any') → 裸名(ENTITYCALL/PYTHON
-            // 表值 Any 与未知/ALIAS 同落裸名,不伪造类型)
+            // TS criterion = result === FALLBACK('Any') -> bare name (ENTITYCALL/PYTHON
+            // table values Any, along with unknown/ALIAS, all fall to the bare name; no fabricated types)
             .filter(|annotation| annotation != "Any");
         let text = match annotation {
             Some(annotation) => format!("{}: {}", name, annotation),
@@ -180,10 +183,10 @@ pub fn build_def_props_inlay_items(
 }
 
 // ---------------------------------------------------------------------------
-// golden(语料+权威探测面+产出;TS 镜像 tests/kodeDefPropsParity.test.ts)
+// golden (corpus + authoritative probe face + outputs; TS mirror tests/kodeDefPropsParity.test.ts)
 // ---------------------------------------------------------------------------
 
-/// 语料条目:py 源(锚面)+ 语料化属性清单(实体归属链留 TS 的诚实边界)。
+/// Corpus entry: py source (anchor face) + corpus-ized property list (honest boundary with the entity ownership chain left in TS).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefPropsCorpusEntry {
     pub name: String,
@@ -191,7 +194,7 @@ pub struct DefPropsCorpusEntry {
     pub properties: Vec<PropertyDefFace>,
 }
 
-/// 探测面:锚提取 / 单锚组装。
+/// Probe face: anchor extraction / single-anchor assembly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "face", rename_all = "camelCase")]
 pub enum DefPropsProbe {
@@ -199,7 +202,7 @@ pub enum DefPropsProbe {
     Items { corpus: String, anchor_index: usize },
 }
 
-/// 产出面(与 Probe 一一对应)。
+/// Output face (one-to-one with Probe).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "face", rename_all = "camelCase")]
 pub enum DefPropsProbeOutcome {
@@ -207,7 +210,7 @@ pub enum DefPropsProbeOutcome {
     Items { item: Option<DefPropsHintItem> },
 }
 
-/// golden 文件形态。
+/// Golden file shape.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DefPropsGolden {
     pub generator: String,
@@ -395,9 +398,11 @@ fn def_props_corpus() -> Vec<DefPropsCorpusEntry> {
 fn def_props_probes() -> Vec<DefPropsProbe> {
     let mut probes = Vec::new();
     for entry in def_props_corpus() {
-        probes.push(DefPropsProbe::Anchors { corpus: entry.name.clone() });
+        probes.push(DefPropsProbe::Anchors {
+            corpus: entry.name.clone(),
+        });
     }
-    // anchored_multiline 有 2 锚(行 0/5),其余语料各 1 锚
+    // anchored_multiline has 2 anchors (lines 0/5); the other corpora have 1 each
     for (corpus, count) in [
         ("anchored_multiline", 2usize),
         ("base_props", 1),
@@ -409,7 +414,10 @@ fn def_props_probes() -> Vec<DefPropsProbe> {
         ("windows_def_file", 1),
     ] {
         for anchor_index in 0..count {
-            probes.push(DefPropsProbe::Items { corpus: corpus.into(), anchor_index });
+            probes.push(DefPropsProbe::Items {
+                corpus: corpus.into(),
+                anchor_index,
+            });
         }
     }
     probes
@@ -426,7 +434,10 @@ fn run_def_props_probe(
                 sites: find_def_props_anchor_sites(&entry.text),
             }
         }
-        DefPropsProbe::Items { corpus, anchor_index } => {
+        DefPropsProbe::Items {
+            corpus,
+            anchor_index,
+        } => {
             let entry = table.get(corpus).expect("corpus 名必在表");
             let sites = find_def_props_anchor_sites(&entry.text);
             let item = sites
@@ -443,8 +454,10 @@ pub fn dump_def_props_golden() -> String {
         .into_iter()
         .map(|entry| (entry.name.clone(), entry))
         .collect();
-    let outcomes: Vec<DefPropsProbeOutcome> =
-        list.iter().map(|probe| run_def_props_probe(&table, probe)).collect();
+    let outcomes: Vec<DefPropsProbeOutcome> = list
+        .iter()
+        .map(|probe| run_def_props_probe(&table, probe))
+        .collect();
     let golden = DefPropsGolden {
         generator: "dump-def-props-golden".into(),
         corpus: def_props_corpus(),
@@ -455,7 +468,7 @@ pub fn dump_def_props_golden() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// 单元钉(防 golden 自洽同义反复)
+// Unit pins (guard against golden self-consistent tautology)
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -466,13 +479,23 @@ mod tests {
     fn anchor_only_full_line_comments() {
         let text = "# kode:props-from-def\nclass A:  # kode:props-from-def\nx = \"kode:props-from-def\"\n   # kode:props-from-def\n";
         let sites = find_def_props_anchor_sites(text);
-        assert_eq!(sites.len(), 2, "行尾注释与字符串内同词不触发;带前导空格整行注释触发");
+        assert_eq!(
+            sites.len(),
+            2,
+            "行尾注释与字符串内同词不触发;带前导空格整行注释触发"
+        );
         assert_eq!(sites[0].line, 0);
-        assert_eq!(sites[0].character, "# kode:props-from-def".encode_utf16().count());
+        assert_eq!(
+            sites[0].character,
+            "# kode:props-from-def".encode_utf16().count()
+        );
         assert_eq!(sites[1].line, 3);
-        // CJK 注释锚:character 按 UTF-16 单元
+        // CJK comment anchor: character counted in UTF-16 units
         let cjk = find_def_props_anchor_sites("# \u{6ce8}\u{91ca} kode:props-from-def\n");
-        assert_eq!(cjk[0].character, 24, "# +空格+两 CJK(各 1 单元)+空格+19 字符 token");
+        assert_eq!(
+            cjk[0].character, 24,
+            "# +空格+两 CJK(各 1 单元)+空格+19 字符 token"
+        );
     }
 
     #[test]
@@ -492,14 +515,22 @@ mod tests {
             make(None, Some("bag.coins"), "coins"),
             make(None, None, "root"),
         ];
-        let site = DefPropsAnchorSite { line: 0, character: 5 };
+        let site = DefPropsAnchorSite {
+            line: 0,
+            character: 5,
+        };
         let item = build_def_props_inlay_items(&site, &props).expect("根级 1 条应出");
-        assert_eq!(item.parts.len(), 2, "单属性:头部段+属性段(间隔段自第 2 属性起)");
+        assert_eq!(
+            item.parts.len(),
+            2,
+            "单属性:头部段+属性段(间隔段自第 2 属性起)"
+        );
         assert_eq!(item.parts[1].text, "root");
-        // 全部非根级 → None
-        let filtered: Vec<PropertyDefFace> = vec![make(Some("m"), None, "m"), make(None, Some("a.b"), "b")];
+        // All non-root-level -> None
+        let filtered: Vec<PropertyDefFace> =
+            vec![make(Some("m"), None, "m"), make(None, Some("a.b"), "b")];
         assert_eq!(build_def_props_inlay_items(&site, &filtered), None);
-        // 空清单 → None
+        // Empty list -> None
         assert_eq!(build_def_props_inlay_items(&site, &[]), None);
     }
 
@@ -522,7 +553,10 @@ mod tests {
             make(Some("ALIAS"), "aliased"),
             make(Some("UINT8"), "typed"),
         ];
-        let site = DefPropsAnchorSite { line: 0, character: 3 };
+        let site = DefPropsAnchorSite {
+            line: 0,
+            character: 3,
+        };
         let item = build_def_props_inlay_items(&site, &props).expect("5 根级应出");
         let texts: Vec<&str> = item
             .parts
@@ -551,14 +585,21 @@ mod tests {
             component_slot_name: None,
         };
         let item = build_def_props_inlay_items(
-            &DefPropsAnchorSite { line: 0, character: 1 },
+            &DefPropsAnchorSite {
+                line: 0,
+                character: 1,
+            },
             &[property],
         )
         .unwrap();
         assert_eq!(item.parts[0].text, "def 属性(1) ");
-        assert!(item.parts[0].tooltip.as_deref().unwrap().contains("只读视图"));
+        assert!(item.parts[0]
+            .tooltip
+            .as_deref()
+            .unwrap()
+            .contains("只读视图"));
         assert_eq!(item.parts[1].text, "n: int");
-        // Windows 反斜杠 basename + 域 + 持久化
+        // Windows backslash basename + domain + persistence
         let win = PropertyDefFace {
             def_file: "C:\\\\p\\\\win.def".into(),
             line: 2,
@@ -570,7 +611,10 @@ mod tests {
             component_slot_name: None,
         };
         let item = build_def_props_inlay_items(
-            &DefPropsAnchorSite { line: 0, character: 1 },
+            &DefPropsAnchorSite {
+                line: 0,
+                character: 1,
+            },
             &[win],
         )
         .unwrap();

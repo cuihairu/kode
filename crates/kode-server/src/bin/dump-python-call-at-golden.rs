@@ -1,8 +1,12 @@
-//! python call-at 对拍 golden 生成器:遍历 fixture .py 语料,逐行逐位置探测
-//! 接收者调用解析面(非空命中入 golden,probeCount 全集对账)。
+//! python call-at parity golden generator: walks the fixture .py corpus and
+//! probes the receiver-call resolution surface line by line and position by
+//! position (non-empty hits enter the golden, with probeCount reconciled over
+//! the full set).
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodePythonCallAtParity.test.ts 直接
-//! import 生产 getPythonCallAtPosition 逐位置复算对拍(双向门禁)。
+//! The golden file is produced by Rust; the TS side
+//! tests/kodePythonCallAtParity.test.ts imports the production
+//! getPythonCallAtPosition directly and recomputes position by position
+//! (two-way gate).
 
 fn main() {
     let repo_root = std::env::args().nth(1).unwrap_or_else(|| String::from("."));

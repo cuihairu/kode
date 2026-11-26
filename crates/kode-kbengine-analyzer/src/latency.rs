@@ -1,5 +1,5 @@
-//! 延迟 P50/P95/P99(PA-005;只对时间戳齐备的协议确证配对计算;
-//! nearest-rank 百分位,确定性不插值)。
+//! Latency P50/P95/P99 (PA-005; computed only for protocol-confirmed pairs that have
+//! both timestamps; nearest-rank percentiles, deterministic with no interpolation).
 
 use serde::Serialize;
 
@@ -7,7 +7,8 @@ use crate::correlate::CorrelationReport;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct LatencyReport {
-    /// 时间戳齐备的配对数(未齐备的配对不进入延迟统计)。
+    /// Number of pairs with both timestamps (pairs that are incomplete do not enter the
+    /// latency statistics).
     pub pair_count: usize,
     pub p50_ms: Option<f64>,
     pub p95_ms: Option<f64>,
@@ -15,7 +16,7 @@ pub struct LatencyReport {
     pub max_ms: Option<f64>,
 }
 
-/// nearest-rank:ceil(p*n)-1 下标;空集返回 None。
+/// nearest-rank: the ceil(p*n)-1 index; returns None for an empty set.
 fn percentile(sorted: &[f64], p: f64) -> Option<f64> {
     if sorted.is_empty() {
         return None;

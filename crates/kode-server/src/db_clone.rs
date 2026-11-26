@@ -1,19 +1,29 @@
-//! `$/kode/dbClone/*` —— player data clone 桥接面(CLONE-P5 / PDC-0501..0506)。
+//! `$/kode/dbClone/*` — player data clone bridging face (CLONE-P5 / PDC-0501..0506).
 //!
-//! 边界(镜像 database_schema.rs「输入收集留 TS、推导归 Rust」):克隆的
-//! 计划/归档纯逻辑在 `kode-db-clone` crate(自包含,无 server 依赖),本模块
-//! 只做 JSON wire ↔ crate 类型的机械映射并注册 RPC:
-//! - `inspectArchive`:TS 传归档路径 → `Archive::inspect` 清单(不回行值);
-//! - `planExport`:TS 传推导输出 + 源库 information_schema 探测的物理表
-//!   → `ExportPlanner` 只读 SELECT 计划(执行由 TS 侧 mysql2 只读会话承担);
-//! - `export`:TS 传已读出的有类型行 → 落 `.kdpclone`(脱敏默认开,§7);
-//! - `planImport`:TS 传归档 + 目标 Profile + 物理表 + 目标快照 → ImportPlanner
-//!   计划(语句全 `?` 参数化)。
+//! Boundary (mirroring database_schema.rs's "input collection stays in TS,
+//! derivation belongs to Rust"): the pure plan/archive logic of cloning lives
+//! in the `kode-db-clone` crate (self-contained, no server dependency); this
+//! module only does the mechanical JSON wire ↔ crate type mapping and
+//! registers the RPCs:
+//! - `inspectArchive`: TS passes the archive path → `Archive::inspect`
+//!   manifest (row values are not returned);
+//! - `planExport`: TS passes the derivation output plus physical tables probed
+//!   from the source database's information_schema → an `ExportPlanner`
+//!   read-only SELECT plan (execution is carried by the TS-side mysql2
+//!   read-only session);
+//! - `export`: TS passes already-read typed rows → lands a `.kdpclone`
+//!   (redaction defaults on, §7);
+//! - `planImport`: TS passes archive + target Profile + physical tables +
+//!   target snapshot → an ImportPlanner plan (all statements `?`
+//!   parameterized).
 //!
-//! 事务执行(Apply)不在此面:单事务必须独占一条 MySQL 会话,而 Rust 侧无
-//! MySQL 客户端——TS 侧 executor 驱动 mysql2 事务,语义对齐 crate `apply.rs`
-//! (begin → 逐句 → 失败 rollback → commit,PDC-0402/0405 同款)。这是
-//! PDC-0506「与当前已有的 Rust/TS 后端模式兼容」的显式取舍,非疏漏。
+//! Transaction execution (Apply) is not on this face: a single transaction
+//! must own one MySQL session exclusively, and the Rust side has no MySQL
+//! client — the TS-side executor drives the mysql2 transaction, with semantics
+//! aligned to the crate's `apply.rs` (begin → statement by statement →
+//! rollback on failure → commit, the same pattern as PDC-0402/0405). This is
+//! the explicit trade-off behind PDC-0506 "compatible with the currently
+//! existing Rust/TS backend modes", not an oversight.
 
 use std::str::FromStr;
 
@@ -48,7 +58,8 @@ pub fn register(reg: &mut RpcRegistry) {
 // inspectArchive
 // ---------------------------------------------------------------------------
 
-/// 物理表 wire 形态(camelCase;`PhysicalTable` 无 serde derive,本层机械映射)。
+/// Physical table wire shape (camelCase; `PhysicalTable` has no serde derive,
+/// this layer maps mechanically).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PhysicalTableWire {
@@ -79,12 +90,14 @@ impl PhysicalTableWire {
 }
 
 // ---------------------------------------------------------------------------
-// 归档加密密钥解析(PDC-0607 §2.2 缺口的接线)
+// Archive encryption key resolution (wiring up the PDC-0607 §2.2 gap)
 // ---------------------------------------------------------------------------
 
-/// 写侧:密钥根 → 该归档的密钥(无则生成,0600 落盘)。密钥目录不得在归档
-/// 路径内(结构性保证);id = 归档绝对路径 SHA-256(见 keystore::key_id_for_archive)。
-/// 密钥材料全程留 Rust——TS 只传密钥根目录路径,永不接触密钥字节。
+/// Write side: key root → the key for this archive (generated if absent, stored
+/// with 0600). The key directory must not be inside the archive path
+/// (structurally guaranteed); id = SHA-256 of the archive's absolute path (see
+/// keystore::key_id_for_archive). Key material stays in Rust throughout — TS
+/// only passes the key root directory path and never touches key bytes.
 fn write_key_from_root(archive_path: &str, key_root: &str) -> Result<ArchiveKey, String> {
     let root = std::path::Path::new(key_root);
     let archive = std::path::Path::new(archive_path);
@@ -96,14 +109,16 @@ fn write_key_from_root(archive_path: &str, key_root: &str) -> Result<ArchiveKey,
 }
 
 // ---------------------------------------------------------------------------
-// 同目标导出互斥(KODE-FULL-016)
+// Same-target export mutual exclusion (KODE-FULL-016)
 // ---------------------------------------------------------------------------
 
-/// 目标锁等待上限:等不到就如实报错,绝不无限阻塞调用方。进程崩溃时内核
-/// 自动释放文件锁,不留死锁。
+/// Target lock wait upper bound: if the lock cannot be acquired, report an
+/// error honestly rather than blocking the caller forever. If a process
+/// crashes, the kernel releases the file lock automatically — no deadlock.
 const EXPORT_LOCK_WAIT_MS: u64 = 10_000;
 
-/// 持锁守卫:导出全程(取钥→写归档)持有,离开作用域自动解锁。
+/// Lock guard: held for the whole export (key acquisition → archive writing),
+/// unlocked automatically when it leaves scope.
 struct ExportLockGuard {
     file: Option<std::fs::File>,
 }
@@ -116,10 +131,14 @@ impl Drop for ExportLockGuard {
     }
 }
 
-/// 按归档目标取独占导出锁:锁文件落密钥根目录(kode 自有目录,不污染用户
-/// 导出目录),按归档绝对路径 id(`key_id_for_archive`)命名——同目标互斥、
-/// 不同目标并行。std 文件锁(flock/LockFileEx)跨进程成立;持锁进程死亡由
-/// 内核释放。明文导出(无 keyRoot)没有 kode 自有目录可落锁,维持原行为。
+/// Takes the exclusive export lock for an archive target: the lock file lives
+/// in the key root directory (a kode-owned directory, keeping the user's
+/// export directory clean) and is named by the archive's absolute-path id
+/// (`key_id_for_archive`) — same targets exclude each other, different targets
+/// run in parallel. The std file lock (flock/LockFileEx) holds across
+/// processes; if the lock-holding process dies, the kernel releases it.
+/// Plaintext exports (no keyRoot) have no kode-owned directory to put the lock
+/// in and keep the original behavior.
 fn lock_export_target(archive_path: &str, key_root: &str) -> Result<ExportLockGuard, String> {
     let root = std::path::Path::new(key_root);
     let archive = std::path::Path::new(archive_path);
@@ -155,9 +174,12 @@ fn lock_export_target(archive_path: &str, key_root: &str) -> Result<ExportLockGu
     }
 }
 
-/// 读侧:显式 keyHex 优先(向后兼容旧载荷);否则未加密档 → None,加密档按
-/// 密钥根取钥——钥匙缺失如实报错(点名密钥根与 id,便于运维定位),绝不
-/// 静默生成新钥(那只会造出永远解不开档的错误钥匙)。
+/// Read side: an explicit keyHex wins (backwards compatible with older
+/// payloads); otherwise an unencrypted archive → None, and an encrypted one
+/// takes its key by key root — a missing key is reported honestly (naming the
+/// key root and the id so operators can locate it), never silently replaced
+/// by a newly generated key (that would only produce a wrong key that can
+/// never open the archive).
 fn resolve_read_key(
     archive_path: &str,
     key_hex: Option<&str>,
@@ -190,11 +212,13 @@ fn resolve_read_key(
 #[serde(rename_all = "camelCase")]
 struct InspectParams {
     path: String,
-    /// 加密归档的密钥(64 位 hex;明文归档省略)。
+    /// Key of an encrypted archive (64 hex chars; omitted for plaintext ones).
     #[serde(default)]
     key_hex: Option<String>,
-    /// 密钥存储根目录(keyHex 缺省时按归档路径推导 id 取钥;TS 侧传
-    /// globalStorage 下的 clone-keys 目录,密钥不落工作区/VCS)。
+    /// Key store root directory (when keyHex is absent, the id is derived from
+    /// the archive path and the key is taken from there; the TS side passes
+    /// the clone-keys directory under globalStorage, so keys never land in the
+    /// workspace/VCS).
     #[serde(default)]
     key_root: Option<String>,
 }
@@ -218,11 +242,13 @@ fn inspect_archive(params: Value) -> Result<Value, String> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PlanExportParams {
-    /// kode-server databaseSchema/build 推导输出(tables/tableIndex,原样透传)。
+    /// kode-server databaseSchema/build derivation output (tables/tableIndex,
+    /// passed through as is).
     derivation: Value,
-    /// 源库 information_schema 探测的物理表(TS 侧只读会话收集)。
+    /// Physical tables probed from the source database's information_schema
+    /// (collected by the TS-side read-only session).
     physical_tables: Vec<PhysicalTableWire>,
-    /// 行预算(默认 100_000,超限诚实拒绝)。
+    /// Row budget (defaults to 100_000; going over it is refused honestly).
     #[serde(default = "default_row_budget")]
     row_budget: u64,
 }
@@ -257,16 +283,20 @@ fn plan_export(params: Value) -> Result<Value, String> {
 struct ExportParams {
     path: String,
     entity: String,
-    /// 源库读出的有类型行(按表)。
+    /// Typed rows read out of the source database (per table).
     rows: Vec<TypedRow>,
-    /// 脱敏开关(默认 true:credential/personal 列掩码,§7「默认不展示密码/token」)。
+    /// Redaction switch (defaults to true: credential/personal columns are
+    /// masked, §7 "never show passwords/tokens by default").
     #[serde(default = "default_true")]
     redact_sensitive: bool,
-    /// 导出所用计划列序(脱敏按列名归类必需;省略则不脱敏)。
+    /// Column order of the plan used for the export (needed so redaction can
+    /// classify by column name; omitting it means no redaction).
     #[serde(default)]
     plan: Option<Value>,
-    /// 密钥存储根目录:传了即加密落盘(chacha20poly1305,钥经 FileKeyStore
-    /// 0600 独立存,不跟归档同处);缺省写明文归档(向后兼容)。
+    /// Key store root directory: when passed, the archive is written encrypted
+    /// (chacha20poly1305, key stored separately by FileKeyStore with 0600,
+    /// never co-located with the archive); by default a plaintext archive is
+    /// written (backwards compatible).
     #[serde(default)]
     key_root: Option<String>,
 }
@@ -277,9 +307,12 @@ fn default_true() -> bool {
 
 fn export_archive(params: Value) -> Result<Value, String> {
     let params: ExportParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
-    // KODE-FULL-016:同目标导出互斥——先取目标锁,再取/建密钥、写归档;
-    // 守卫活到函数返回,写入全程串行化(两路并发首建也只会有一把钥、
-    // 一份完整归档)。明文导出无 keyRoot 可落锁,维持原行为。
+    // KODE-FULL-016: same-target exports are mutually exclusive — take the
+    // target lock first, then acquire/create the key and write the archive;
+    // the guard lives until the function returns, serializing the whole write
+    // (two concurrent first-time creations still yield only one key and one
+    // complete archive). Plaintext exports have no keyRoot to take a lock on
+    // and keep the original behavior.
     let _export_lock = params
         .key_root
         .as_ref()
@@ -296,7 +329,7 @@ fn export_archive(params: Value) -> Result<Value, String> {
     )
     .map_err(|e| e.to_string())?;
 
-    // 按表计数分组(end_table 需要逐表行数)。
+    // Group by table with a row count (end_table needs the per-table row count).
     let mut rows_by_table: std::collections::BTreeMap<String, Vec<TypedRow>> =
         std::collections::BTreeMap::new();
     for row in params.rows {
@@ -312,7 +345,9 @@ fn export_archive(params: Value) -> Result<Value, String> {
                 .map_err(|e| e.to_string())?,
         ),
         (None, true) => {
-            // 脱敏按列名归类必须知道列序;缺计划时静默不脱敏等于假保护。
+            // Redaction by column name requires knowing the column order;
+            // silently skipping redaction when the plan is missing would be
+            // fake protection.
             return Err(
                 "redactSensitive requires the export plan (column order) — pass the planExport result"
                     .to_string(),
@@ -439,7 +474,8 @@ fn plan_import(params: Value) -> Result<Value, String> {
     );
     let resolved = SchemaResolver::resolve(&schema, &physical).map_err(|e| e.to_string())?;
 
-    // 目标 Profile:环境仅 local/test(其余值在 validate_for_import fail-closed)。
+    // Target Profile: the environment is only local/test (all other values are
+    // fail-closed in validate_for_import).
     let target = TargetProfile {
         environment: parse_environment(&params.target.environment)?,
         db_interface: params.target.db_interface,
@@ -450,7 +486,8 @@ fn plan_import(params: Value) -> Result<Value, String> {
         engine_version: params.target.engine_version,
     };
 
-    // 目标快照:唯一键清单 + 既有值(预演冲突比对;TS 侧只读探测收集)。
+    // Target snapshot: unique-key list + existing values (for dry-run conflict
+    // comparison; collected by the TS-side read-only probing).
     let mut snapshot = TargetSnapshot::default();
     for unique in &params.snapshot.unique_keys {
         snapshot.unique_keys.push(UniqueKey {
@@ -503,7 +540,8 @@ struct ReadRowsParams {
     key_root: Option<String>,
 }
 
-/// 归档行读取(Apply 期 TS 侧绑定字面值/唯一键探测的输入;单玩家量级)。
+/// Archive row reads (the input for the TS-side literal binding / unique-key
+/// probing during Apply; single-player scale).
 fn read_archive_rows(params: Value) -> Result<Value, String> {
     let params: ReadRowsParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
     let key = resolve_read_key(
@@ -522,7 +560,7 @@ fn read_archive_rows(params: Value) -> Result<Value, String> {
 }
 
 // ---------------------------------------------------------------------------
-// wire 映射辅助
+// wire mapping helpers
 // ---------------------------------------------------------------------------
 
 fn schema_from_derivation(derivation: &Value) -> Result<CloneSchema, String> {
@@ -566,7 +604,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 与 databaseSchema/build 输出同形的迷你推导(根表 + ARRAY 子表)。
+    /// Mini derivation with the same shape as the databaseSchema/build output
+    /// (root table + ARRAY child table).
     fn mini_derivation() -> Value {
         json!({
             "tables": [
@@ -638,7 +677,7 @@ mod tests {
     fn rpc_surface_round_trips_export_inspect_and_plan_import() {
         let dir = temp_dir("round");
 
-        // planExport:推导+物理 → 只读 SELECT 计划。
+        // planExport: derivation + physical → read-only SELECT plan.
         let plan_value = plan_export(json!({
             "derivation": mini_derivation(),
             "physicalTables": mini_physical()
@@ -651,7 +690,7 @@ mod tests {
         assert_eq!(plan_value["queries"][0]["filter"]["kind"], "root-id");
         assert_eq!(plan_value["queries"][1]["filter"]["kind"], "parent-id");
 
-        // export:行值 + 计划(脱敏默认开)→ .kdpclone。
+        // export: row values + plan (redaction defaults on) → .kdpclone.
         let archive_path = dir.join("avatar.kdpclone");
         let meta = export_archive(json!({
             "path": archive_path.to_string_lossy(),
@@ -676,7 +715,7 @@ mod tests {
         assert!(encoded.contains("9007199254740993"));
         assert!(encoded.contains("18446744073709551615"));
 
-        // inspectArchive:只回清单不回行值。
+        // inspectArchive: returns only the manifest, never row values.
         let inspected = inspect_archive(json!({
             "path": archive_path.to_string_lossy()
         }))
@@ -685,7 +724,8 @@ mod tests {
         assert_eq!(inspected["tables"].as_array().map(Vec::len), Some(2));
         assert!(inspected.get("rows").is_none());
 
-        // planImport:归档 + 目标(local/mysql/可写)+ 物理表 + 快照(hero 占用)→ 计划。
+        // planImport: archive + target (local/mysql/writable) + physical tables
+        // + snapshot (hero taken) → plan.
         let plan = plan_import(json!({
             "path": archive_path.to_string_lossy(),
             "target": {
@@ -724,7 +764,8 @@ mod tests {
         }))
         .unwrap();
 
-        // export 带 keyRoot:加密落盘 + 密钥 0600 独立存于密钥根。
+        // export with keyRoot: lands encrypted + the key stored separately with
+        // 0600 in the key root.
         let meta = export_archive(json!({
             "path": archive_path.to_string_lossy(),
             "entity": "Avatar",
@@ -750,17 +791,20 @@ mod tests {
             .collect();
         assert_eq!(key_files.len(), 1, "一归档一钥,落密钥根");
 
-        // 静态证明:归档字节里没有明文**载荷**(行值 hero 不得明文出现)。
-        // 帧名(如 tables/tbl_Avatar.json)在帧头明文是格式设计——头部整体
-        // 作 AEAD 关联数据(认证不加密),解密前须先按名定位帧;帧名属元数据
-        // (类似加密 zip 的文件名),不含行值。
+        // Static proof: the archive bytes contain no plaintext **payload**
+        // (the row values of hero must not appear in plaintext).
+        // Frame names (e.g. tables/tbl_Avatar.json) being plaintext in the
+        // frame header is a format design decision — the header as a whole
+        // serves as AEAD associated data (authenticated, not encrypted), and a
+        // frame must be located by name before decryption; frame names are
+        // metadata (like file names inside an encrypted zip), not row values.
         let raw = std::fs::read(&archive_path).unwrap();
         assert!(
             !raw.windows(b"hero".len()).any(|w| w == b"hero"),
             "归档明文含敏感载荷 hero:加密未生效"
         );
 
-        // inspect 带 keyRoot:清单可读,encrypted 如实 true。
+        // inspect with keyRoot: the manifest is readable, encrypted honestly true.
         let inspected = inspect_archive(json!({
             "path": archive_path.to_string_lossy(),
             "keyRoot": keys.to_string_lossy()
@@ -768,7 +812,8 @@ mod tests {
         .unwrap();
         assert_eq!(inspected["encrypted"].as_bool(), Some(true));
 
-        // inspect 无钥无 keyRoot:如实报加密档需钥。
+        // inspect with no key and no keyRoot: reports honestly that an
+        // encrypted archive needs its key.
         let no_key = inspect_archive(json!({
             "path": archive_path.to_string_lossy()
         }))
@@ -778,7 +823,8 @@ mod tests {
             "缺钥错误话术: {no_key}"
         );
 
-        // readArchiveRows 带 keyRoot:行值可读回(导入 Apply 期输入面)。
+        // readArchiveRows with keyRoot: row values can be read back (the input
+        // face for the import Apply phase).
         let rows = read_archive_rows(json!({
             "path": archive_path.to_string_lossy(),
             "keyRoot": keys.to_string_lossy()
@@ -786,7 +832,7 @@ mod tests {
         .unwrap();
         assert_eq!(rows["tables"].as_array().map(Vec::len), Some(1));
 
-        // planImport 带 keyRoot:归档可开,计划可出。
+        // planImport with keyRoot: the archive opens and the plan comes out.
         let plan = plan_import(json!({
             "path": archive_path.to_string_lossy(),
             "keyRoot": keys.to_string_lossy(),
@@ -833,7 +879,9 @@ mod tests {
         }))
         .unwrap();
 
-        // 密钥丢失(如跨机拷归档):读侧绝不静默生成新钥,点名根与 id 如实报。
+        // Key lost (e.g. archive copied across machines): the read side never
+        // silently generates a new key; it reports honestly naming the root and
+        // the id.
         std::fs::remove_dir_all(&keys).unwrap();
         let err = inspect_archive(json!({
             "path": archive_path.to_string_lossy(),
@@ -857,7 +905,8 @@ mod tests {
             rows_err.contains("key is missing from the key store"),
             "readArchiveRows 同话术: {rows_err}"
         );
-        // 静默生成新钥会让归档永远解不开还装作正常——密钥根必须仍空。
+        // Silently generating a new key would leave the archive unopenable
+        // forever while pretending to be fine — the key root must still be empty.
         assert!(!keys.exists(), "读侧不得静默生成密钥");
 
         std::fs::remove_dir_all(&dir).unwrap();
@@ -867,7 +916,8 @@ mod tests {
     fn key_root_inside_archive_path_is_rejected() {
         let dir = temp_dir("enc-inside");
         let archive_path = dir.join("avatar.kdpclone");
-        // 密钥根=归档路径本身:结构性拒绝(密钥不跟归档同存)。
+        // Key root = the archive path itself: structurally refused (keys never
+        // live next to the archive).
         let err = export_archive(json!({
             "path": archive_path.to_string_lossy(),
             "entity": "Avatar",
@@ -965,7 +1015,7 @@ mod tests {
         assert!(decode_key(Some(&"0".repeat(64))).is_ok());
     }
 
-    /// PhysicalTableWire.engine 缺省 → InnoDB(serde default = default_engine)。
+    /// PhysicalTableWire.engine absent → InnoDB (serde default = default_engine).
     #[test]
     fn physical_table_wire_defaults_engine_to_innodb() {
         let plan = plan_export(json!({
@@ -986,8 +1036,10 @@ mod tests {
         assert_eq!(plan["queries"].as_array().map(Vec::len), Some(2));
     }
 
-    /// 明文档 + keyRoot:keyRoot 分支走 is_encrypted=false → Ok(None),照常读。
-    /// 明文档 + 显式 keyHex:keyHex 优先通道,钥不匹配明文 → 如实报错。
+    /// Plaintext archive + keyRoot: the keyRoot branch sees is_encrypted=false
+    /// → Ok(None), reads as usual.
+    /// Plaintext archive + explicit keyHex: the keyHex-priority channel, key
+    /// mismatched with plaintext → honest error.
     #[test]
     fn read_side_tolerates_key_root_on_plain_archive() {
         let dir = temp_dir("plain-root");
@@ -1025,8 +1077,9 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// redactSensitive 缺省 = true:不传该字段且无计划 → 拒绝(证明默认真值,
-    /// 若默认 false 导出会静默成功)。
+    /// redactSensitive defaults to true: omitting the field with no plan →
+    /// refused (proves the default is true; with a default of false the export
+    /// would succeed silently).
     #[test]
     fn export_redact_sensitive_defaults_to_true() {
         let dir = temp_dir("redact-default");
@@ -1040,7 +1093,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// 加密档钥丢失时 planImport 在开档前如实报错(resolve_read_key 的 `?`)。
+    /// With an encrypted archive's key lost, planImport reports honestly before
+    /// opening the archive (resolve_read_key's `?`).
     #[test]
     fn plan_import_reports_missing_key_store_honestly() {
         let dir = temp_dir("plan-miss");
@@ -1089,7 +1143,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// 模式/autoload 解析:文档化取值接受,未知值如实报错。
+    /// Mode/autoload parsing: documented values are accepted, unknown values
+    /// are reported honestly.
     #[test]
     fn parse_mode_and_autoload_accept_documented_values_only() {
         assert_eq!(parse_mode(None).unwrap(), ImportMode::AllocateNewIds);
@@ -1119,8 +1174,9 @@ mod tests {
             .contains("unknown autoload policy `bogus`"));
     }
 
-    /// planImport options:unique-seed reject/自定义、mode/autoload 文档化值
-    /// 经 wire 全链贯通(计划成形)。
+    /// planImport options: unique-seed reject/custom and the documented
+    /// mode/autoload values flow through the wire end to end (a plan takes
+    /// shape).
     #[test]
     fn plan_import_options_variants_shape_plans() {
         let dir = temp_dir("options");
@@ -1171,9 +1227,11 @@ mod tests {
 
     #[test]
     fn concurrent_same_target_exports_serialize_and_archive_stays_openable() {
-        // KODE-FULL-016:屏障同时开始多路同目标导出——目标锁把写入串行化,
-        // 各路收敛到同一把密钥(原子首建),最终归档完整、可用存储密钥打开。
-        // 探针只断言结果,绝不打印密钥材料。
+        // KODE-FULL-016: the barrier starts several same-target exports at
+        // once — the target lock serializes the writes, every lane converges on
+        // the same key (atomic first creation), and the final archive is
+        // complete and openable with the stored key.
+        // The probe only asserts outcomes; it never prints key material.
         let dir = temp_dir("export-race");
         let keys = dir.join("clone-keys");
         let archive_path = dir.join("avatar.kdpclone");
@@ -1205,7 +1263,8 @@ mod tests {
             handle.join().unwrap().unwrap();
         }
 
-        // 存储密钥打开最终归档:inspect 成功、加密如实、实体对得上。
+        // Opening the final archive with the stored key: inspect succeeds,
+        // encrypted is honestly true, and the entity matches.
         let inspected = inspect_archive(json!({
             "path": archive_path.to_string_lossy(),
             "keyRoot": keys.to_string_lossy()
@@ -1214,7 +1273,9 @@ mod tests {
         assert_eq!(inspected["encrypted"].as_bool(), Some(true));
         assert_eq!(inspected["entity"].as_str(), Some("Avatar"));
 
-        // 密钥根里恰一把钥(4 路首建收敛) + 一把目标锁;锁不落用户导出目录。
+        // Exactly one key in the key root (4 lanes converging on first
+        // creation) + one target lock; the lock never lands in the user's
+        // export directory.
         let mut key_count = 0;
         let mut lock_count = 0;
         for entry in std::fs::read_dir(&keys).unwrap().filter_map(|e| e.ok()) {
@@ -1237,8 +1298,10 @@ mod tests {
 
     #[test]
     fn export_lock_times_out_with_clear_error_when_held() {
-        // KODE-FULL-016:持锁期间第二路同目标导出有界等待后如实报错,
-        // 绝不无限阻塞;锁释放后同目标立即可再导。
+        // KODE-FULL-016: while the lock is held, a second same-target export
+        // waits a bounded time and then reports an error honestly, never
+        // blocking forever; once the lock is released the same target can be
+        // exported again right away.
         let dir = temp_dir("export-lock");
         let keys = dir.join("clone-keys");
         let archive_path = dir.join("avatar.kdpclone");
@@ -1262,8 +1325,9 @@ mod tests {
             blocked.contains("another export") && blocked.contains("in progress"),
             "有界等待话术: {blocked}"
         );
-        // 等待确有界(远小于上限的硬上界 sanity:不超过 60s;实测略高于
-        // 上限因锁等待先于其他工作)。
+        // The wait is genuinely bounded (hard sanity upper bound well above the
+        // limit: no more than 60s; measured slightly above the limit because the
+        // lock wait precedes other work).
         assert!(start.elapsed().as_secs() < 60);
 
         drop(_held);

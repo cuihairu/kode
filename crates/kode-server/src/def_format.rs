@@ -1,23 +1,29 @@
-//! .def 原生格式化(Rust 核,KODE-SYN-006):评估结论见
-//! docs/design/def-formatter-evaluation.md 方案 B——格式化收敛到
-//! kode-parser 的精确 span 面,TS 侧只做薄 provider 适配(零外部依赖,
-//! 不做 TS 端 XML 重排)。
+//! Native .def formatting (Rust core, KODE-SYN-006): see the evaluation
+//! conclusion in docs/design/def-formatter-evaluation.md plan B — formatting
+//! converges onto kode-parser's exact span face, with the TS side only doing a
+//! thin provider adaptation (zero external dependencies, no TS-side XML
+//! re-layout).
 //!
-//! 命令面 `$/kode/def/format`(经 `$/kode/rpc` 单臂派发):入参
-//! `{content: string, indentSize?: u64, start?: u64, end?: u64}`,出
-//! `{edits, diagnostics}`。
+//! Command face `$/kode/def/format` (dispatched through the `$/kode/rpc` single
+//! arm): input `{content: string, indentSize?: u64, start?: u64, end?: u64}`,
+//! output `{edits, diagnostics}`.
 //!
-//! - **纯计算,不 spawn**:格式化核在 kode-parser 内同步返回,无子进程、
-//!   无 IO、无工作区写入(与 ruff 的 shell out 面不同,故不占 IO 泳道)。
-//! - **`edits` 是行级极小编辑集**(`[start, end)` 换成 `text`),区间在
-//!   **原文本**的字节坐标系上;应用(逆序)后与整篇渲染逐字节相同
-//!   (`format_def_edits` 的 roundtrip 单测钉住)。渲染结果与原文相同 →
-//!   空编辑集(幂等落点)。
-//! - **选区**:`start`/`end` 成对给出时只回「与选区相交」的编辑(行级编辑
-//!   不越界裁切,跨边界的行整行替换——与行对齐的 formatter 常规口径)。
-//! - **任何解析诊断 → 空编辑集**,绝不半改(残缺 XML 是活编辑器里的常态,
-//!   不是错误);`diagnostics` 条数回带,供 TS 侧如实区分「已格式化」与
-//!   「解析不通、安全退回」,零编辑不静默。
+//! - **Pure computation, no spawn**: the formatting core inside kode-parser
+//!   returns synchronously — no subprocess, no IO, no workspace writes
+//!   (unlike ruff's shell-out face, so it takes no IO lane).
+//! - **`edits` is a minimal line-level edit set** (`[start, end)` replaced by
+//!   `text`), with ranges in the byte coordinate system of the **original
+//!   text**; applying them (in reverse order) is byte-for-byte identical to the
+//!   full render (pinned by `format_def_edits`' roundtrip unit test). A render
+//!   identical to the source → empty edit set (idempotent landing point).
+//! - **Selection**: when `start`/`end` are given as a pair, only edits
+//!   "intersecting the selection" come back (line-level edits are not clipped
+//!   at the boundary; a line crossing the boundary is replaced whole — the
+//!   usual convention of line-aligned formatters).
+//! - **Any parse diagnostic → empty edit set**, never a half-format (broken
+//!   XML is the normal state inside a live editor, not an error); the
+//!   `diagnostics` count comes back so TS can honestly tell "formatted" from
+//!   "unparseable, safe retreat" — zero edits is never silent.
 
 use serde_json::{json, Value};
 
@@ -30,7 +36,8 @@ pub fn register(reg: &mut RpcRegistry) {
     reg.register(METHOD, def_format_handler);
 }
 
-/// 缩进尺寸的合理上限(再大就是误传,按错参如实 Err,不静默收紧)。
+/// Reasonable upper bound for the indent size (anything larger is a mistake;
+/// reported honestly as a bad-parameter Err, never silently tightened).
 const INDENT_SIZE_MAX: u64 = 64;
 
 fn def_format_handler(params: Value) -> Result<Value, String> {
@@ -72,7 +79,9 @@ fn def_format_handler(params: Value) -> Result<Value, String> {
     Ok(json!({ "edits": edits, "diagnostics": report.diagnostics }))
 }
 
-/// 行级编辑不与选区裁切:相交即整条采纳(零宽选区=光标位,取覆盖该位的行)。
+/// Line-level edits are not clipped by the selection: an intersection adopts
+/// the whole edit (a zero-width selection = the cursor position, taking the
+/// line covering it).
 fn edit_intersects(edit: &kode_parser::DefFormatEdit, start: usize, end: usize) -> bool {
     if start == end {
         edit.start <= start && edit.end >= start
@@ -81,8 +90,9 @@ fn edit_intersects(edit: &kode_parser::DefFormatEdit, start: usize, end: usize) 
     }
 }
 
-/// 选区口径:`start`/`end` 必须成对给出(单给按错参 Err,不猜半个区间),
-/// 越界 clamp 到文档边界。返回 `(start, end)` 或 `None`(整文档)。
+/// Selection convention: `start`/`end` must be given as a pair (one alone is a
+/// bad-parameter Err, half a range is never guessed), out-of-range values clamp
+/// to the document boundary. Returns `(start, end)` or `None` (whole document).
 fn selection_range(params: &Value, content_len: usize) -> Result<Option<(usize, usize)>, String> {
     let start = params.get("start").and_then(|v| v.as_u64());
     let end = params.get("end").and_then(|v| v.as_u64());
@@ -104,14 +114,16 @@ mod tests {
     const MESSY: &str =
         "<root>\n<Properties>\n<hp>\n<Type>UINT32</Type>\n</hp>\n</Properties>\n</root>";
 
-    /// 整文档面:非空编辑集、诊断 0;逆序应用后与整篇渲染逐字节相同。
+    /// Whole-document face: non-empty edit set, 0 diagnostics; applying in
+    /// reverse order is byte-for-byte identical to the full render.
     #[test]
     fn whole_document_returns_edit_set_and_zero_diagnostics() {
         let face = def_format_handler(json!({ "content": MESSY })).expect("整文档面");
         let edits = face["edits"].as_array().expect("edits 是数组");
         assert!(!edits.is_empty(), "未格式化文档必须有编辑");
         assert_eq!(face["diagnostics"], 0);
-        // 逆序应用编辑集 → 与渲染产物相同(载荷可自洽落回原文)
+        // Applying the edit set in reverse → identical to the render output
+        // (the payload lands self-consistently back onto the original text)
         let rendered = kode_parser::format_def_text(MESSY, &DefFormatOptions::default());
         let mut out = String::from(MESSY);
         let mut max_start = usize::MAX;
@@ -130,7 +142,8 @@ mod tests {
         assert_eq!(out, rendered);
     }
 
-    /// 已格式化 → 零编辑、零诊断(幂等落点,前端据此不写文档)。
+    /// Already formatted → zero edits, zero diagnostics (idempotent landing
+    /// point; the front end writes no document on this basis).
     #[test]
     fn already_formatted_document_reports_zero_edits() {
         let rendered = kode_parser::format_def_text(MESSY, &DefFormatOptions::default());
@@ -139,7 +152,8 @@ mod tests {
         assert_eq!(face["diagnostics"], 0);
     }
 
-    /// 残缺 XML → 零编辑**且**诊断条数如实回带(不静默当「已格式化」)。
+    /// Incomplete XML → zero edits **and** the diagnostic count comes back
+    /// honestly (never silently treated as "already formatted").
     #[test]
     fn incomplete_xml_returns_no_edits_with_diagnostics() {
         let face = def_format_handler(json!({ "content": "<root><a></b>" })).expect("残缺面");
@@ -150,10 +164,11 @@ mod tests {
         );
     }
 
-    /// 选区面:只回与选区相交的编辑,且成对缺一半按错参 Err。
+    /// Selection face: only edits intersecting the selection come back, and a
+    /// pair missing one half is a bad-parameter Err.
     #[test]
     fn selection_range_filters_and_half_range_is_rejected() {
-        // 半个选区按错参 Err(不猜另一头)
+        // Half a selection is a bad-parameter Err (the other end is never guessed)
         assert!(def_format_handler(json!({ "content": MESSY, "start": 4 })).is_err());
         assert!(def_format_handler(json!({ "content": MESSY, "end": 4 })).is_err());
 
@@ -161,13 +176,15 @@ mod tests {
         let whole_count = whole["edits"].as_array().unwrap().len();
         assert!(whole_count > 0, "未格式化文档必须有编辑");
 
-        // 选区 = 首行(渲染后逐字节不变)→ 零编辑:证明过滤是真过滤,非照搬整篇
+        // Selection = the first line (unchanged after rendering) → zero edits:
+        // proves the filter is a real filter, not a whole-document passthrough
         let first_line = "<root>\n".len();
         let face =
             def_format_handler(json!({ "content": MESSY, "start": 0, "end": first_line })).unwrap();
         assert_eq!(face["edits"], json!([]), "未变行上的选区不得回带编辑");
 
-        // 选区 = 整文档 → 与整篇面同数(过滤不丢编辑)
+        // Selection = whole document → the same count as the whole-document face
+        // (the filter drops no edits)
         let full = def_format_handler(json!({
             "content": MESSY,
             "start": 0,
@@ -176,7 +193,7 @@ mod tests {
         .unwrap();
         assert_eq!(full["edits"].as_array().unwrap().len(), whole_count);
 
-        // 中段选区:不相交的编辑不得出现
+        // Mid-document selection: non-intersecting edits must not appear
         let mid = first_line + "<Properties>\n".len();
         let mid_face =
             def_format_handler(json!({ "content": MESSY, "start": 0, "end": mid })).unwrap();
@@ -186,7 +203,9 @@ mod tests {
             assert!(s < mid && e > 0, "选区外的编辑不得回带: [{s},{e})");
         }
 
-        // 全越界 clamp 到文档尾:不 Err,按「光标停在文末」处理(末行若在改,编辑照常回带)
+        // Fully out-of-range clamps to the document tail: not an Err, handled as
+        // "the cursor rests at end of document" (if the last line is being edited,
+        // the edit still comes back)
         let clamped =
             def_format_handler(json!({ "content": MESSY, "start": 10_000, "end": 20_000 }))
                 .unwrap();
@@ -196,12 +215,14 @@ mod tests {
             "clamp 后的零宽区间=文档尾光标,不得静默丢编辑"
         );
 
-        // 零宽选区落在未变行上 → 零编辑(光标不牵连不相干的行)
+        // A zero-width selection on an unchanged line → zero edits (the cursor
+        // does not drag in unrelated lines)
         let cursor = def_format_handler(json!({ "content": MESSY, "start": 3, "end": 3 })).unwrap();
         assert_eq!(cursor["edits"], json!([]));
     }
 
-    /// 错参如实 Err:缺 content / 非字符串 content / indentSize 越界。
+    /// Bad parameters reported honestly as Err: missing content / non-string
+    /// content / out-of-range indentSize.
     #[test]
     fn bad_params_are_rejected_honestly() {
         assert!(def_format_handler(json!({})).is_err());
@@ -211,7 +232,8 @@ mod tests {
             def_format_handler(json!({ "content": MESSY, "indentSize": INDENT_SIZE_MAX + 1 }))
                 .is_err()
         );
-        // 合法缩进尺寸按参数生效(不静默收紧也不忽略)
+        // A valid indent size takes effect as given (never silently tightened,
+        // never ignored)
         let face = def_format_handler(json!({ "content": MESSY, "indentSize": 2 })).unwrap();
         assert!(
             face["edits"]
@@ -223,7 +245,8 @@ mod tests {
         );
     }
 
-    /// 注册不重名:METHOD 常量即注册键。
+    /// Registration without a duplicate name: the METHOD constant is the
+    /// registration key.
     #[test]
     fn registers_under_the_def_format_method_name() {
         let mut reg = RpcRegistry::new();

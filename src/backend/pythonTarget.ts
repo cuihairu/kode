@@ -1,26 +1,31 @@
 /**
- * 引擎目标 Python 版本来源与 debugpy 版本策略(DBG-COMPAT-01/02,2026-11-12
- * 用户账本):引擎目标版本从「真实引擎」或「显式项目目标」来,保留来源与
- * 未知状态——绝不拿开发机解释器或全局常量(旧 EMBEDDED_PYTHON_VERSION
- * '3.12.13')代替引擎版本,多工程不同版本互不串用(解析按活动 profile 的
- * engineRoot 逐工作区走)。
+ * Engine target Python version provenance and the debugpy version policy (DBG-COMPAT-01/02,
+ * 2026-11-12 user ledger): the engine target version comes from "the real engine" or an
+ * "explicit project target", and provenance plus the unknown state are preserved -- never
+ * substitute the dev machine's interpreter or a global constant (the old EMBEDDED_PYTHON_VERSION
+ * '3.12.13') for the engine version; projects with different versions never borrow from each
+ * other (resolution walks the active profile's engineRoot per workspace).
  *
- * 版本来源优先级(resolvePythonTarget):
- * 1. 显式设置 kbengine.debug.pythonTarget(如 "3.7.3";空 = 未显式);
- * 2. 引擎二进制横幅扫描:活动 profile 的 engineRoot 下 kbe/bin/server 的
- *    服务二进制(前 32MB,至多 3 个)扫 CPython 版本串投票——≥2 个二进制
- *    同现一个候选才认;单二进制单候选降级认( weaker,来源如实记);
- *    多候选/零候选 = 未知,不猜;
- * 3. 都无 = none(未知)。未知不是错误状态,是诚实状态:下游策略返回
- *    无 pin,自动安装/同步拒绝盲动,预检只查装没装。
+ * Version source priority (resolvePythonTarget):
+ * 1. Explicit kbengine.debug.pythonTarget setting (e.g. "3.7.3"; empty = not explicit);
+ * 2. Engine binary banner scan: scan the server binaries under kbe/bin/server of the active
+ *    profile's engineRoot (first 32MB, at most 3 binaries) for CPython version strings and vote
+ *    -- a candidate is trusted only when >=2 binaries show it; a single binary with a single
+ *    candidate is accepted at reduced confidence (weaker, provenance recorded honestly);
+ *    multiple candidates / zero candidates = unknown, no guessing;
+ * 3. Neither = none (unknown). Unknown is not an error state, it is the honest state: downstream
+ *    policy returns no pin, auto-install/sync refuses to act blindly, and the precheck only
+ *    checks whether it is installed.
  *
- * debugpy 版本策略(debugpyPolicyFor,口径=docs/guide/
- * python-debugger-compatibility.md 官方兼容表,2026-11-11 核查):
- * - 3.7.x → 严格锁 1.7.0(1.8.0 起 debugpy 官方要求 ≥3.8,过高直接拒);
- * - 3.8.x → 1.8.1(官方 2024.2.x 支持线),下限闸;
- * - 3.9.x → 1.8.13(官方 2025.5.x 支持线),下限闸;
- * - 3.10+(现代已知版本)→ 下限 1.8.0(该线官方纳入 3.10-3.12 的最低版);
- * - 未知 → 无策略:不盲装最新版,不自动同步。
+ * debugpy version policy (debugpyPolicyFor; authoritative source = the official compatibility
+ * table in docs/guide/python-debugger-compatibility.md, verified 2026-11-11):
+ * - 3.7.x -> strict lock on 1.7.0 (from 1.8.0 on, debugpy officially requires >=3.8; anything
+ *   newer is rejected outright);
+ * - 3.8.x -> 1.8.1 (official 2024.2.x support line), as a floor gate;
+ * - 3.9.x -> 1.8.13 (official 2025.5.x support line), as a floor gate;
+ * - 3.10+ (modern known versions) -> floor 1.8.0 (the lowest version of that line whose official
+ *   CI covers 3.10-3.12);
+ * - unknown -> no policy: never blindly install the latest, never auto-sync.
  */
 
 import * as fs from 'fs';
@@ -28,32 +33,32 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { resolveActiveProfile } from '../activeProfile';
 
-/** 显式项目目标设置键(空/未设 = 不显式,走引擎二进制探测) */
+/** Explicit project target setting key (empty/unset = not explicit, go through engine binary probing) */
 export const PYTHON_TARGET_SETTING = 'kbengine.debug.pythonTarget';
 
-/** 二进制扫描扇出上限:至多前 N 个服务二进制(投票跨二进制) */
+/** Binary scan fan-out cap: at most the first N server binaries (voting across binaries) */
 export const ENGINE_BIN_SCAN_LIMIT = 3;
-/** 单二进制扫描头部字节数(CPython 版本串在 .rodata,头部窗口足够) */
+/** Head bytes scanned per binary (the CPython version string lives in .rodata; a head window is enough) */
 export const ENGINE_BIN_SCAN_BYTES = 32 * 1024 * 1024;
 
 export type PythonTargetSource = 'project-setting' | 'engine-binary' | 'none';
 
 export interface PythonTarget {
-  /** 三段版本("3.7.3");null = 未知(来源字段保留,绝不回落常量) */
+  /** Three-segment version ("3.7.3"); null = unknown (the source field is preserved; never falls back to a constant) */
   version: string | null;
-  /** 版本从哪来(project-setting/engine-binary;none = 无来源) */
+  /** Where the version came from (project-setting/engine-binary; none = no source) */
   source: PythonTargetSource;
-  /** 一行人类可读来源描述(哪条设置/哪些二进制/缺什么) */
+  /** One-line human-readable provenance description (which setting / which binaries / what is missing) */
   detail: string;
 }
 
-/** 三段版本规范化;非 x.y.z 形如实 null(不猜不裁剪) */
+/** Normalize a three-segment version; non-x.y.z shapes honestly yield null (no guessing, no trimming) */
 export function normalizeVersionText(text: string): string | null {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(text.trim());
   return match ? `${match[1]}.${match[2]}.${match[3]}` : null;
 }
 
-/** 版本的 minor 行("3.7.3"→"3.7");非三段 null */
+/** The version's minor line ("3.7.3" -> "3.7"); null when not three segments */
 export function pythonLineOf(version: string | null): string | null {
   if (version === null) {
     return null;
@@ -63,9 +68,10 @@ export function pythonLineOf(version: string | null): string | null {
 }
 
 /**
- * 从二进制字节扫 CPython 版本串候选(去重、按出现序)。latin1 解码零位移,
- * 版本串是纯 ASCII。3.x 起头过滤掉 OpenSSL/zlib 等非 Python 版本噪声;
- * 上限只留 minor<40 的合理形态,防误配任意三段数字。
+ * Scan binary bytes for CPython version string candidates (deduplicated, in order of
+ * appearance). latin1 decoding shifts nothing; version strings are pure ASCII. Version strings
+ * not starting with 3.x (OpenSSL/zlib and other non-Python version noise) are filtered out;
+ * the cap keeps only sane shapes with minor<40, guarding against matching arbitrary three-segment numbers.
  */
 export function scanPythonVersionCandidates(bytes: Buffer): string[] {
   const found: string[] = [];
@@ -87,9 +93,10 @@ export function scanPythonVersionCandidates(bytes: Buffer): string[] {
 }
 
 /**
- * 跨二进制投票:同一候选出现在 ≥2 个二进制 → 可信;恰一个这样的候选才认
- * (多个 = 互斥证据,未知);零个时降级——只扫了一个二进制且它恰有一个
- * 候选,也认(来源面如实标注 weaker)。其余一律 null(不猜)。
+ * Cross-binary voting: a candidate seen in >=2 binaries -> trusted; exactly one such candidate
+ * is accepted (multiple = mutually exclusive evidence, unknown); with zero, degrade -- if only
+ * one binary was scanned and it has exactly one candidate, accept that too (the provenance face
+ * is honestly marked weaker). Everything else is null (no guessing).
  */
 export function voteEnginePythonVersion(candidatesPerBinary: readonly string[][]): string | null {
   const binaryCount = new Map<string, number>();
@@ -109,17 +116,17 @@ export function voteEnginePythonVersion(candidatesPerBinary: readonly string[][]
 }
 
 export interface PythonTargetDeps {
-  /** kbengine.debug.pythonTarget 当前值(未设/空 = 不显式) */
+  /** Current value of kbengine.debug.pythonTarget (unset/empty = not explicit) */
   configValue(): string | undefined;
-  /** 活动 profile 的引擎根(判不出/未选 profile = null) */
+  /** The active profile's engine root (unresolvable / no profile selected = null) */
   engineRoot(): string | null;
-  /** 引擎根下的服务二进制列表(生产 = <引擎根>/bin/server 文件,确定序) */
+  /** Server binaries under the engine root (production = files of <engine root>/bin/server, deterministic order) */
   listServerBinaries(root: string): string[];
-  /** 读二进制头部字节;读不了(权限/不存在)如实 null */
+  /** Read the binary's head bytes; unreadable (permissions / missing) honestly yields null */
   readBinaryHead(candidate: string, maxBytes: number): Buffer | null;
 }
 
-/** 生产面:引擎安装根下 bin/server 目录文件按名确定序(跨平台无后缀过滤) */
+/** Production face: files of the bin/server directory under the engine install root in deterministic name order (cross-platform, no extension filtering) */
 export const defaultListServerBinaries = (root: string): string[] => {
   const dir = path.join(root, 'bin', 'server');
   try {
@@ -149,7 +156,7 @@ const defaultReadBinaryHead = (candidate: string, maxBytes: number): Buffer | nu
   }
 };
 
-/** 生产装配:工作区设置 + 活动 profile 引擎根(逐工作区,互不串用) */
+/** Production wiring: workspace settings + active profile engine root (per workspace, never borrowed across) */
 export function pythonTargetDeps(workspaceState?: {
   get(key: string): unknown;
 }): PythonTargetDeps {
@@ -165,10 +172,10 @@ export function pythonTargetDeps(workspaceState?: {
   };
 }
 
-/** 间接一层方便测试替身换 workspace 配置源 */
+/** One level of indirection so test doubles can swap the workspace config source */
 let workspaceConfigSource: (() => { get<T>(section: string, fallback?: T): T }) | null = null;
 
-/** 测试注入口:替换 kbengine 配置读取源(生产默认真 vscode.workspace) */
+/** Test injection point: replace the kbengine config read source (production defaults to the real vscode.workspace) */
 export function setWorkspaceConfigSourceForTests(
   source: (() => { get<T>(section: string, fallback?: T): T }) | null
 ): void {
@@ -185,8 +192,9 @@ const vscodeWorkspaceConfig = (): { get<T>(section: string, fallback?: T): T } =
 };
 
 /**
- * 目标版本解析主面:设置 > 二进制投票 > 未知。每个返回都带来源与
- * detail——「未知」保留来源信息,绝不静默回落常量或开发机解释器。
+ * Main face of target version resolution: setting > binary voting > unknown. Every return
+ * carries provenance and detail -- "unknown" keeps its source information and never silently
+ * falls back to a constant or the dev machine's interpreter.
  */
 export function resolvePythonTarget(deps: PythonTargetDeps): PythonTarget {
   const setting = deps.configValue()?.trim();
@@ -245,34 +253,34 @@ const candidatesPerBinaryCount = (perBinary: readonly string[][]): number =>
   perBinary.reduce((sum, candidates) => sum + candidates.length, 0);
 
 // ---------------------------------------------------------------------------
-// debugpy 版本策略(口径 = docs/guide/python-debugger-compatibility.md)
+// debugpy version policy (authoritative source = docs/guide/python-debugger-compatibility.md)
 // ---------------------------------------------------------------------------
 
 export interface DebugpyPolicy {
-  /** 目标 Python 行("3.7");null = 无策略(未知目标) */
+  /** The target Python line ("3.7"); null = no policy (unknown target) */
   line: string | null;
-  /** 安装/同步的精确 pin("1.7.0");null = 不自动装 */
+  /** The exact pin installed/synced ("1.7.0"); null = no auto-install */
   pin: string | null;
-  /** 严格等号:过高也拒(3.7 专属——1.8.0 起官方要求 ≥3.8) */
+  /** Strict equality: newer is rejected too (3.7 only -- from 1.8.0 on the official requirement is >=3.8) */
   strict: boolean;
-  /** 非严格行的版本下限(null = 无) */
+  /** Version floor for non-strict lines (null = none) */
   floor: string | null;
 }
 
-/** 3.7 的扩展支持线(ms-python.debugpy 2024.0.x,官方兼容表) */
+/** The extension support line for 3.7 (ms-python.debugpy 2024.0.x, official compatibility table) */
 export const PY37_DEBUGGER_EXTENSION_LINE = '2024.0';
 
-/** 已核实支持线表:Python 行 → debugpy pin(来源见模块头注释) */
+/** Verified support line table: Python line -> debugpy pin (see the module header comment for provenance) */
 const DEBUGPY_PIN_BY_LINE: Readonly<Record<string, string>> = {
   '3.7': '1.7.0',
   '3.8': '1.8.1',
   '3.9': '1.8.13'
 };
 
-/** 现代行(3.10+)的兼容下限:1.8.0 起官方 CI 纳入 3.10-3.12 */
+/** Compatibility floor for modern lines (3.10+): from 1.8.0 on, official CI covers 3.10-3.12 */
 export const MODERN_DEBUGPY_FLOOR = '1.8.0';
 
-/** 语义化三段比较(autoDebugpy.compareVersions 的本模块副本避免反向依赖) */
+/** Semantic three-segment comparison (a local copy of autoDebugpy.compareVersions to avoid a reverse dependency) */
 const compare3 = (a: string, b: string): number => {
   const parse = (value: string): number[] =>
     value.split('.').slice(0, 3).map(part => Number.parseInt(part, 10) || 0);
@@ -286,8 +294,9 @@ const compare3 = (a: string, b: string): number => {
 };
 
 /**
- * 目标 Python 版本 → debugpy 策略。3.7 严格等号;3.8/3.9 按已核实支持线
- * pin 且接受更高(官方后续版本仍支持该行);3.10+ 下限 1.8.0;未知无策略。
+ * Target Python version -> debugpy policy. 3.7 strict equality; 3.8/3.9 pin to the verified
+ * support line and accept newer (later official versions still support that line); 3.10+ floor
+ * 1.8.0; unknown -> no policy.
  */
 export function debugpyPolicyFor(pythonVersion: string | null): DebugpyPolicy | null {
   const line = pythonLineOf(pythonVersion);
@@ -309,8 +318,9 @@ export function debugpyPolicyFor(pythonVersion: string | null): DebugpyPolicy | 
 }
 
 /**
- * 版本是否满足策略:strict 必须 ==pin;非严格 >=floor(floor null 恒真)。
- * 供同步/预检/资产树核对三处共用同一裁决(DBG-COMPAT-04 同一闸)。
+ * Whether a version satisfies the policy: strict requires ==pin; non-strict requires >=floor
+ * (a null floor is always true). Shared by sync / precheck / asset-tree verification so all
+ * three use one ruling (DBG-COMPAT-04, the same gate).
  */
 export function debugpyVersionSatisfiesPolicy(version: string, policy: DebugpyPolicy): boolean {
   if (policy.strict) {
@@ -319,7 +329,7 @@ export function debugpyVersionSatisfiesPolicy(version: string, policy: DebugpyPo
   return policy.floor === null || compare3(version, policy.floor) >= 0;
 }
 
-/** 策略的 pip 安装参数(精确版本,不再统一 -U;modern 行用下限形式) */
+/** pip install args for the policy (exact version, no more blanket -U; modern lines use the floor form) */
 export function debugpyInstallSpecFor(pythonVersion: string | null): string[] | null {
   const policy = debugpyPolicyFor(pythonVersion);
   if (policy === null) {
@@ -332,9 +342,10 @@ export function debugpyInstallSpecFor(pythonVersion: string | null): string[] | 
 }
 
 /**
- * 3.7 目标的调试扩展版本线核查(DBG-COMPAT-05):ms-python.debugpy 实测
- * 版本是否落在 3.7 对应支持线(2024.0.x)。null 版本 = 未知(扩展没装/
- * 读不到)——未知不判匹配,调用方如实说明。
+ * Verify the debug extension version line for a 3.7 target (DBG-COMPAT-05): whether the
+ * observed ms-python.debugpy version falls on the 3.7 support line (2024.0.x). A null version =
+ * unknown (extension not installed / unreadable) -- unknown never judges a match; the caller
+ * explains honestly.
  */
 export function debugExtensionOn37Line(version: string | null): boolean | null {
   if (version === null) {
@@ -350,13 +361,13 @@ export function debugExtensionOn37Line(version: string | null): boolean | null {
   return Number.parseInt(match[1], 10) === expectedMajor && Number.parseInt(match[2], 10) === expectedMinor;
 }
 
-/** ms-python.debugpy 扩展 id(debugpy 调试类型提供者,attach 的依赖面) */
+/** The ms-python.debugpy extension id (the debugpy debug type provider; the dependency face of attach) */
 export const DEBUGPY_EXTENSION_ID = 'ms-python.debugpy';
 
 /**
- * 读扩展宿主里 ms-python.debugpy 的实测版本(DBG-COMPAT-05);未安装/
- * packageJSON 异常 → null(诚实未知)。registry 注入便于测试,默认真
- * vscode.extensions。
+ * Read the observed ms-python.debugpy version in the extension host (DBG-COMPAT-05); not
+ * installed / packageJSON anomaly -> null (honest unknown). The registry is injectable for
+ * tests; the default is the real vscode.extensions.
  */
 export function readDebugpyExtensionVersion(
   registry: { getExtension(id: string): { packageJSON?: { version?: unknown } } | undefined } = vscode.extensions
@@ -371,15 +382,16 @@ export function readDebugpyExtensionVersion(
 
 export interface DebugExtensionCompat {
   kind: 'ok' | 'extension-off-line' | 'extension-missing';
-  /** 非 ok 时的一行可操作文案(固定版本安装 + 禁自动更新步骤) */
+  /** A one-line actionable message when not ok (fixed-version install + disable auto-update steps) */
   message: string | null;
 }
 
 /**
- * 3.7 目标 × 调试扩展线判定(DBG-COMPAT-05):strict 目标(3.7)要求
- * ms-python.debugpy 落在 2024.0.x——之后的扩展线已移除 Python 3.7 调试
- * 支持,attach 必败;非 3.7 目标不看扩展线(新线更好);未安装=诚实缺失。
- * 判定只产出步骤文案,绝不自动降级用户的调试扩展(其他工程不受 3.7 约束)。
+ * 3.7 target x debug extension line decision (DBG-COMPAT-05): a strict target (3.7) requires
+ * ms-python.debugpy on 2024.0.x -- later extension lines removed Python 3.7 debug support, so
+ * attach is guaranteed to fail; non-3.7 targets do not look at the extension line (newer lines
+ * are better); not installed = honest absence. The decision only produces step-by-step message
+ * text and never auto-downgrades the user's debug extension (other projects are not bound by 3.7).
  */
 export function debugExtensionCompatFor(
   pythonTarget: PythonTarget,

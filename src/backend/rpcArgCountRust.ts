@@ -1,25 +1,33 @@
 /**
- * rpcArgCount 诊断收编 Rust(AUDIT-005 B2 车道批 8):`$/kode/lint/analyzeRpcArgCount`
- * 的 TS 装配面。调用点发现面(findPythonReceiverCalls 走掩码文本,列偏移不变)
- * 与语义闸(mapping.methods 声明对账/段匹配/星号形参)与消息渲染全留 TS 单一
- * 来源;Rust 只做实参计数面(countCallArguments 逐字移植,原文自持字符串/注释
- * 词法态,括号栈跨行)。counts 与 calls 序对齐,null=未知合法槽位;响应缺失/
- * 长度不齐/槽位非「非负整数或 null」整面作废返回 null(调用方回本地计数)——
- * 禁止部分采用。
+ * rpcArgCount diagnostics absorbed into Rust (AUDIT-005 B2 lane batch 8): the
+ * TS wiring face for `$/kode/lint/analyzeRpcArgCount`. Call-site discovery
+ * (findPythonReceiverCalls walks masked text, column offsets unchanged), the
+ * semantic gate (mapping.methods declaration cross-check / section matching /
+ * star parameters) and message rendering all stay in TS as the single source;
+ * Rust only does the actual-argument counting face (countCallArguments ported
+ * verbatim, with its own string/comment lexical state over the raw text and a
+ * bracket stack that crosses lines). counts aligns with the calls order,
+ * null = unknown, a legal slot; a missing response / length mismatch / slot
+ * that is not "non-negative integer or null" invalidates the whole face and
+ * returns null (the caller falls back to local counting) — partial adoption is
+ * forbidden.
  */
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import type { PythonReceiverCall } from './pythonLanguageUtils';
 
 const RPC_ARG_COUNT_RUST_METHOD = '$/kode/lint/analyzeRpcArgCount';
 
-/** 计数槽位:非负整数或 null(未知);畸形 true */
+/** Counting slot: a non-negative integer or null (unknown); malformed true */
 const badSlot = (value: unknown): boolean =>
   value !== null && (typeof value !== 'number' || !Number.isInteger(value) || value < 0);
 
 /**
- * Rust-first 实参计数:gate.runInRust 跑 `$/kode/lint/analyzeRpcArgCount`,
- * params = {text(原文), calls(发现面坐标,结构子集)},响应 counts 与 calls
- * 序对齐;无门/失败/畸形返回 null(calls 空不发 RPC,合法空数组)。
+ * Rust-first actual-argument counting: gate.runInRust runs
+ * `$/kode/lint/analyzeRpcArgCount` with
+ * params = {text (raw source), calls (discovery-face coordinates, a structural
+ * subset)}; the response counts aligns with the calls order. No gate / failure /
+ * malformed response returns null (no RPC is sent for empty calls; an empty
+ * array is legal).
  */
 export async function buildRpcArgCountsFromRust(
   text: string,

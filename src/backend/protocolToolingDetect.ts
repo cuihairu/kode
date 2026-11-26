@@ -1,12 +1,16 @@
-//! PA-007(todo.md Phase 5):协议工具链检测——Wireshark/TShark/KBEngine
-//! 插件/kode-kbengine CLI 的版本与安装状态解析。
+//! PA-007 (todo.md Phase 5): protocol toolchain detection — parsing the
+//! versions and install status of Wireshark/TShark/the KBEngine plugin/the
+//! kode-kbengine CLI.
 //!
-//! 本模块是纯函数面:只解析 CLI 输出文本,零 vscode/child_process 依赖,
-//! 可独立单测;spawn 与命令接线在 wiring 侧(PA-007 后续增量)。解析规则
-//! 以本机 tshark 4.6.4 实测输出为基准(见 tests fixture),上游输出格式
-//! 变化时先扩测试再扩解析,不静默吞错。
+//! This module is a pure function face: it only parses CLI output text, with
+//! zero vscode/child_process dependencies, and can be unit-tested
+//! independently; spawning and command wiring live on the wiring side (a
+//! later PA-007 increment). The parsing rules are anchored to the measured
+//! output of the local tshark 4.6.4 (see the tests fixtures); when upstream
+//! output formats change, extend the tests first, then the parser — never
+//! swallow errors silently.
 
-/** `tshark -G plugins` 一行:`name<TAB>version<TAB>type<TAB>path`。 */
+/** One line of `tshark -G plugins`: `name<TAB>version<TAB>type<TAB>path`. */
 export interface TsharkPluginEntry {
   name: string;
   version: string;
@@ -14,27 +18,29 @@ export interface TsharkPluginEntry {
   path: string;
 }
 
-/** `tshark -G folders` 里与本集成相关的两个插件目录。 */
+/** The two plugin directories relevant to this integration in `tshark -G folders`. */
 export interface TsharkPluginFolders {
   personalPlugins: string | null;
   globalPlugins: string | null;
 }
 
-/** `tshark -v` 首行 `TShark (Wireshark) 4.6.4.` → `4.6.4`(尾句点非版本)。 */
+/** `tshark -v` first line `TShark (Wireshark) 4.6.4.` → `4.6.4` (the trailing period is not part of the version). */
 export function parseTsharkVersion(firstLine: string): string | null {
   const match = /^TShark \(Wireshark\) (\d+\.\d+(?:\.\d+)?)/.exec(firstLine);
   return match ? match[1] : null;
 }
 
-/** `wireshark -v` 首行 `Wireshark 4.6.4 (...)` → `4.6.4`;GUI 未装如实 null。 */
+/** `wireshark -v` first line `Wireshark 4.6.4 (...)` → `4.6.4`; an uninstalled GUI returns honest null. */
 export function parseWiresharkVersion(firstLine: string): string | null {
   const match = /^Wireshark (\d+\.\d+(?:\.\d+)?)/.exec(firstLine);
   return match ? match[1] : null;
 }
 
 /**
- * `tshark -G plugins` 全量解析:严格 4 列 TAB 分隔,列数/空白不符的行
- * 如实跳过(检测报告宁缺毋错);全空输入返回空数组。
+ * Full parse of `tshark -G plugins`: strictly 4 TAB-separated columns;
+ * lines with a different column count or blank fields are skipped honestly
+ * (the detection report prefers missing over wrong); an all-empty input
+ * returns an empty array.
  */
 export function parseTsharkPlugins(stdout: string): TsharkPluginEntry[] {
   const entries: TsharkPluginEntry[] = [];
@@ -56,7 +62,7 @@ export function parseTsharkPlugins(stdout: string): TsharkPluginEntry[] {
   return entries;
 }
 
-/** 命中 KBEngine dissector 插件(type=dissector 且文件名含 kbengine)。 */
+/** Finds the KBEngine dissector plugin (type=dissector and the file name contains kbengine). */
 export function findKbengineDissector(
   entries: TsharkPluginEntry[]
 ): TsharkPluginEntry | null {
@@ -68,9 +74,10 @@ export function findKbengineDissector(
 }
 
 /**
- * `tshark -G folders` 解析:每行 `标签:补空格<TAB>路径`(标签自带冒号,
- * 冒号后按列宽补空格);只取两行插件目录,其余(Lua/个人 Lua 等)忽略。
- * 未安装/格式漂移 → 对应 null。
+ * Parse of `tshark -G folders`: each line is `label:padding<TAB>path` (the
+ * label carries its own colon, followed by column-width padding); only the
+ * two plugin-directory lines are taken, the rest (Lua/personal Lua etc.) are
+ * ignored. Not installed / format drift → the matching null.
  */
 export function parseTsharkFolders(stdout: string): TsharkPluginFolders {
   let personal: string | null = null;
@@ -91,23 +98,26 @@ export function parseTsharkFolders(stdout: string): TsharkPluginFolders {
   return { personalPlugins: personal, globalPlugins: global };
 }
 
-/** `kode-kbengine --version` 单行输出 → semver(`0.2.0`);畸形输出 null。 */
+/** `kode-kbengine --version` single-line output → semver (`0.2.0`); malformed output → null. */
 export function parseCliVersion(stdout: string): string | null {
   const match = /^kode-kbengine (\d+\.\d+\.\d+)$/.exec(stdout.trim());
   return match ? match[1] : null;
 }
 
-/** `4.6.4` → `4.6`(宿主版本线,插件目录 `<maj.min>` 子目录口径);`4.6` 原样。 */
+/** `4.6.4` → `4.6` (the host version line, matching the `<maj.min>` subdirectory convention for plugin directories); `4.6` stays as is. */
 export function wiresharkVersionLine(version: string): string | null {
   const match = /^(\d+\.\d+)(?:\.|$)/.exec(version);
   return match ? match[1] : null;
 }
 
 /**
- * 插件落盘目录版本线与宿主版本线是否一致(PA-006 实勘:plugin_want_major/
- * minor 必须匹配宿主,4.6 插件不进 4.4 宿主;目录 `<maj.min>` 即目标版本线)。
- * pluginPath 无 `/plugins/<maj.min>/` 形态(如个人目录手动放置)→ null 未知,
- * 报告如实标未知,不猜。
+ * Whether the plugin's on-disk directory version line matches the host's
+ * (PA-006 field findings: plugin_want_major/minor must match the host, a
+ * 4.6 plugin does not load into a 4.4 host; the `<maj.min>` directory is
+ * the target version line).
+ * A pluginPath without the `/plugins/<maj.min>/` shape (e.g. manually
+ * placed in a personal directory) → null unknown; the report marks it
+ * honestly as unknown, no guessing.
  */
 export function pluginFolderMatchesHost(
   pluginPath: string,

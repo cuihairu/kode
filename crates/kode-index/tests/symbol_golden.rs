@@ -1,5 +1,6 @@
-//! golden 重生成比对(Rust 侧真值;TS 侧 tests/kodeIndexParity.test.ts 用现有
-//! defParser 原语复算同一 golden,形成双向对拍,PR-005 同构)。
+//! Golden regeneration comparison (the Rust side is the source of truth; the TS side
+//! tests/kodeIndexParity.test.ts recomputes the same golden with the existing
+//! defParser primitives, forming a bidirectional parity check, isomorphic to PR-005).
 
 use kode_index::golden::{dump_symbols, GOLDEN_REL_PATH};
 
@@ -17,7 +18,8 @@ fn symbol_golden_matches_regenerated_dump() {
     let golden_path = repo_root().join(GOLDEN_REL_PATH);
     let committed = std::fs::read_to_string(&golden_path)
         .expect("golden 文件缺失: crates/kode-index/tests/golden/symbol-parity.json");
-    // 尾部换行由重定向/dump-symbol-golden println! 引入,不参与比对
+    // The trailing newline is introduced by the redirect / dump-symbol-golden's
+    // println! and does not take part in the comparison
     let committed = committed.trim_end_matches('\n');
     if regenerated != committed {
         let diff_at = regenerated
@@ -63,8 +65,10 @@ fn symbol_golden_structure_is_complete() {
             assert!(sym.facet.is_some(), "方法缺少分面: {sym:?}");
         }
     }
-    // 能力面:六类符号中,语料可表达五类(alias 语料仅有 TS 同口径之外的
-    // 属性式别名,不计入 golden;alias 记录由 index_units 用合成文件覆盖)。
+    // Capability face: of the six symbol kinds, the corpus can express five (the alias
+    // corpus only has attribute-style aliases that fall outside the TS-side contract, so
+    // they are not counted into the golden; alias records are covered by index_units with
+    // a synthetic file).
     let kinds: std::collections::BTreeSet<&str> =
         value.symbols.iter().map(|s| s.kind.as_str()).collect();
     for expected in ["entity", "property", "method", "type", "component"] {
@@ -72,7 +76,7 @@ fn symbol_golden_structure_is_complete() {
     }
 }
 
-// --- 极小 JSON 读取器(测试专用;golden 是本 crate 自己写出的确定形状) ---
+// --- Tiny JSON reader (test-only; the golden is the deterministic shape this crate writes out) ---
 
 #[derive(Default)]
 struct Value {

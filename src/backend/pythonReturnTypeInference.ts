@@ -8,30 +8,36 @@ import { maskPythonNonCode } from './pythonLexicalMask';
 import { extractFileReturnAnnotationFactsFromRust } from './pythonReturnAnnotationsRust';
 
 /**
- * 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
- * → data: JSONDATA」):`<名> = <右值>` 的 hover 面按右值被调函数的返回注解
- * 推导变量类型。目录发现和源码读取均异步执行，不 import vscode。
+ * Local variable return type inference (user order 2026-10-21: "data = activity_data.get_data()
+ * -> data: JSONDATA"): the hover face of `<name> = <rhs>` infers the variable's type from the
+ * return annotation of the function called on the rhs. Directory discovery and source reads are
+ * async; this module does not import vscode.
  *
- * 批 3(RUST-MIGRATION-AUDIT-006 B1 车道):逐文件提取核
- * (maskCodeLine/collectFileAnnotationFacts/extractFileImports/
- * parseLocalAssignmentCall)已收编 Rust(`$/kode/python/returnAnnotations`,
- * 逐字移植),异步桶构建面(extractFileReturnAnnotationsAsync,cold build 逐
- * 文件)Rust-first+TS 让出式提取兜底;同步路径(保存换桶/文档版本桶/重放)
- * 与查询级联(matchingAssignments/extractFileImports/三级级联)留 TS——
- * 同步边界无法 await RPC,宿主机械不动。
+ * Batch 3 (RUST-MIGRATION-AUDIT-006 B1 lane): the per-file extraction core
+ * (maskCodeLine/collectFileAnnotationFacts/extractFileImports/parseLocalAssignmentCall) has been
+ * folded into Rust (`$/kode/python/returnAnnotations`, ported verbatim); the async bucket build
+ * face (extractFileReturnAnnotationsAsync, cold build per file) is Rust-first with cooperative
+ * TS extraction as the fallback; the synchronous paths (save swaps bucket / document version
+ * buckets / replay) and the query cascade (matchingAssignments/extractFileImports/three-level
+ * cascade) stay in TS -- a synchronous boundary cannot await an RPC, so the host machinery is
+ * untouched.
  *
- * 解析优先级(用户令原话):python 实现的 `def get_data(...) -> X:` 返回注解
- * (按方法名在项目 python 文件内定位定义,单层调用 + 属性直调 a.b() 一层即
- * 可,不追跨变量传播)→ .def 方法返回声明若有 → 未知则不显示。KBEngine 的
- * .def 方法格式只有 <Arg> 形参声明、没有返回声明语法,故第二层在当前 def
- * 格式下结构性地不存在,不解不造。解出才有提示(「能推才显」):注解缺失/
- * 解析链断一律返回 null,调用方不显示任何类型(不显 Any、不显空类型)。
+ * Resolution priority (the user's own words): the python-implemented `def get_data(...) -> X:`
+ * return annotation (locate the definition by method name across the project's python files; a
+ * single call level plus one attribute call a.b() suffices, no chasing cross-variable
+ * propagation) -> a .def method return declaration if present -> unknown means display nothing.
+ * The KBEngine .def method format only has <Arg> parameter declarations and no return
+ * declaration syntax, so the second level structurally does not exist under the current def
+ * format; not solved, not invented. Only a resolved result is shown ("display only what can be
+ * inferred"): a missing annotation or a broken resolution chain always returns null and the
+ * caller shows no type at all (no Any, no empty type).
  *
- * 索引按工作区缓存,TTL 3 秒自愈(新文件/改动 3 秒内可见,无 watch 依赖);
- * 测试用 resetPythonReturnAnnotationCache() 即时清。
+ * The index is cached per workspace with a 3-second TTL for self-healing (new files/edits become
+ * visible within 3 seconds, no watcher dependency); tests call resetPythonReturnAnnotationCache()
+ * to clear immediately.
  */
 
-/** 扫描排除面:与 pythonClassIndex.PY_SCAN_EXCLUDE 同口径的目录名清单 */
+/** Scan exclusion face: the directory name list sharing the same convention as pythonClassIndex.PY_SCAN_EXCLUDE */
 const SCAN_EXCLUDED_DIRS = new Set([
   'node_modules', 'third_party', '.git', 'vcpkg', 'build', 'dist', 'out',
   '.tmp', 'perf', '.venv', 'venv', 'site-packages', '__pycache__', 'coverage'
@@ -40,13 +46,13 @@ const SCAN_EXCLUDED_DIRS = new Set([
 const INDEX_TTL_MS = 3000;
 const ANNOTATION_READ_CONCURRENCY = 8;
 
-/** 一条 `名 = 右值` 赋值里的单层调用(简单调用 f() 或属性直调 a.b()) */
+/** The single-level call in one `name = rhs` assignment (a simple call f() or an attribute call a.b()) */
 export interface LocalAssignmentCall {
-  /** 被赋值变量名(简单标识符,不含点) */
+  /** The assigned variable name (a simple identifier, no dots) */
   target: string;
-  /** 属性直调的接收者(a.b() 的 a);简单调用 f() 为 null */
+  /** The receiver of an attribute call (the a of a.b()); null for a simple call f() */
   receiver: string | null;
-  /** 被调函数/方法名 */
+  /** The called function/method name */
   methodName: string;
 }
 
@@ -54,7 +60,7 @@ const ASSIGNMENT_PATTERN = /^(\s*)([A-Za-z_]\w*)\s*=\s*(?!=)(.+)$/;
 const SIMPLE_CALL_PATTERN = /^([A-Za-z_]\w*)\s*\(/;
 const ATTRIBUTE_CALL_PATTERN = /^([A-Za-z_]\w*)\s*\.\s*([A-Za-z_]\w*)\s*\(/;
 
-/** 去注释去字符串但不移位(与 pythonClassIndex.pythonCodeLines 同法,精简版) */
+/** Strip comments and strings without shifting positions (a condensed version of pythonClassIndex.pythonCodeLines) */
 function maskCodeLine(raw: string): string {
   let quote = '';
   let triple = false;
@@ -83,8 +89,9 @@ function maskCodeLine(raw: string): string {
 }
 
 /**
- * 单行赋值解析:`data = activity_data.get_data()` → 命中;右值不是「单层
- * 调用整体」(链式 f().g()、二元表达式、字面量等)→ null(一层即可,不追)。
+ * Single-line assignment parsing: `data = activity_data.get_data()` -> hit; when the rhs is not
+ * a "single-level call as a whole" (chained f().g(), binary expressions, literals, etc.) -> null
+ * (one level is enough, no chasing).
  */
 export function parseLocalAssignmentCall(lineText: string): LocalAssignmentCall | null {
   const match = ASSIGNMENT_PATTERN.exec(lineText);
@@ -104,9 +111,10 @@ export function parseLocalAssignmentCall(lineText: string): LocalAssignmentCall 
 }
 
 /**
- * 从 python 源码里读 `def <methodName>(...) -> X:` 的返回注解文本。
- * 签名允许多行(括号深度归零的冒号收口);def 在而 `->` 缺 → null
- * (无注解不显示);def 不在 → null。返回的注解串已去空白。
+ * Read the return annotation text of `def <methodName>(...) -> X:` from python source.
+ * Signatures may span lines (the signature closes at the colon once paren depth returns to
+ * zero); def present but `->` missing -> null (no annotation, nothing displayed); def absent
+ * -> null. The returned annotation string is already whitespace-trimmed.
  */
 export function extractDefReturnAnnotation(source: string, methodName: string): string | null {
   const lines = source.split(/\r?\n/);
@@ -115,8 +123,9 @@ export function extractDefReturnAnnotation(source: string, methodName: string): 
     if (!defHead.test(maskCodeLine(lines[start]))) {
       continue;
     }
-    // 收口:参数括号闭合后深度归零的冒号即签名结束(形参注解里的冒号在括号
-    // 内,不收口);与 def 同行或后续行都收。
+    // Closing: the signature ends at the first colon once paren depth returns to zero after the
+    // parameter parens opened (colons inside parameter annotations sit inside parens and do not
+    // close); accepted on the def line or on later lines alike.
     let depth = 0;
     let sawParens = false;
     let signature = '';
@@ -141,9 +150,10 @@ export function extractDefReturnAnnotation(source: string, methodName: string): 
   return null;
 }
 
-/** 项目 python 文件清单(异步走根树;取消后不再访问后续目录),排序保确定。
- *  RUST-001:原同步全仓 readdirSync 版无生产调用者已删——休眠违规面不留,
- *  调用方统一走本函数。 */
+/** Project python file list (async walk of the root tree; after cancellation no further
+ *  directories are visited), sorted to stay deterministic.
+ *  RUST-001: the original synchronous whole-repo readdirSync version had no production caller
+ *  and was deleted -- dormant violation faces are not kept; all callers go through this function. */
 export async function collectProjectPythonFilesAsync(
   workspaceRoot: string,
   limit = 20000,
@@ -172,14 +182,16 @@ export async function collectProjectPythonFilesAsync(
   return files.sort();
 }
 
-/** 方法名 → 返回注解(同名多定义时取扫描序里第一个有注解的;缺注解不入表) */
+/** Method name -> return annotation (with multiple same-named definitions, the first annotated one in scan order wins; missing annotations do not enter the table) */
 export type PythonReturnAnnotationIndex = Map<string, string>;
 
 /**
- * 一次按行遍历提取「每个方法首次定义」的注解事实(IDE-HOV-002/003 同口径):
- * record(name, annotation) 在签名收口处触发;def 在而 `->` 缺 → annotation=null
- * (文档桶据此遮蔽磁盘同名的旧注解);截断/被后续定义顶替的签名不记事实。
- * 导出=Rust↔TS 对拍测试共用(事实单一来源面)。
+ * One pass over the lines extracting annotation facts for "each method's first definition"
+ * (same convention as IDE-HOV-002/003): record(name, annotation) fires where the signature
+ * closes; def present but `->` missing -> annotation=null (document buckets use this to shadow
+ * the stale disk annotation of the same name); truncated signatures or ones displaced by a
+ * later definition record no fact.
+ * Exported for the Rust<->TS parity tests (the single-source face for facts).
  */
 export function collectFileAnnotationFacts(
   source: string,
@@ -192,7 +204,7 @@ export function collectFileAnnotationFacts(
   for (const rawLine of source.split(/\r?\n/)) {
     const masked = maskCodeLine(rawLine);
     const nextDef = defHead.exec(masked)?.[1];
-    // 不完整的签名不能吞掉后续定义，也不能借用后续定义的冒号或注解。
+    // An incomplete signature must not swallow later definitions, nor borrow a later definition's colon or annotation.
     if (current && nextDef) { current = undefined; }
     if (!current) {
       const name = nextDef;
@@ -217,7 +229,7 @@ export function collectFileAnnotationFacts(
   }
 }
 
-/** 一次按行遍历源码，提取每个函数首次定义的返回注解。 */
+/** One pass over the source lines, extracting each function's first-definition return annotation. */
 export function extractFileReturnAnnotations(source: string): PythonReturnAnnotationIndex {
   const result: PythonReturnAnnotationIndex = new Map();
   collectFileAnnotationFacts(source, (name, annotation) => {
@@ -260,8 +272,9 @@ async function maskCodeLineCooperatively(raw: string, budget: YieldBudget): Prom
   return masked;
 }
 
-/** 让出式逐行收集:与同步 collectFileAnnotationFacts 同口径(截断签名
- * 不借后续定义、同名首个定义),按字符预算 setImmediate 让出事件循环。 */
+/** Cooperative line-by-line collection: same convention as the synchronous collectFileAnnotationFacts
+ * (a truncated signature borrows nothing from later definitions; first definition per name),
+ * yielding the event loop via setImmediate on a character budget. */
 async function collectFileAnnotationFactsAsync(
   source: string,
   record: (name: string, annotation: string | null) => void
@@ -301,9 +314,11 @@ async function collectFileAnnotationFactsAsync(
   }
 }
 
-/** 与同步提取器同口径;大文件和单个长签名均按字符预算让出事件循环。
- * 批 3:Rust-first(`$/kode/python/returnAnnotations` facts 面同口径建表,
- * 插入序=事实序;无门/失败/畸形 null → 让出式 TS 提取兜底)。 */
+/** Same convention as the synchronous extractor; both large files and single long signatures yield
+ * the event loop on a character budget.
+ * Batch 3: Rust-first (the `$/kode/python/returnAnnotations` facts face builds the table with the
+ * same convention, insertion order = fact order; no gate / failure / malformed null -> cooperative
+ * TS extraction as the fallback). */
 export async function extractFileReturnAnnotationsAsync(source: string): Promise<PythonReturnAnnotationIndex> {
   const rustFacts = await extractFileReturnAnnotationFactsFromRust(source);
   if (rustFacts !== null) {
@@ -333,11 +348,11 @@ export function buildReturnAnnotationIndex(sources: readonly string[]): PythonRe
 interface ReturnAnnotationCacheEntry {
   builtAtMs: number;
   index: PythonReturnAnnotationIndex;
-  /** 磁盘面按文件桶(IDE-HOV-012):保存只替换该文件桶,合并视图纯内存重算,不重读其他文件 */
+  /** The disk face as per-file buckets (IDE-HOV-012): a save only replaces that file's bucket, the merged view is recomputed purely in memory, other files are not re-read */
   fileBuckets: Map<string, PythonReturnAnnotationIndex>;
 }
 
-/** 按插入序合并文件桶(先见优先,与全量扫描合并语义一致;Map.set 换桶不换位,序稳定)。 */
+/** Merge file buckets in insertion order (first seen wins, matching the full-scan merge semantics; Map.set swaps the bucket but not the position, so order is stable). */
 function mergeAnnotationBuckets(
   fileBuckets: Map<string, PythonReturnAnnotationIndex>
 ): PythonReturnAnnotationIndex {
@@ -351,11 +366,14 @@ function mergeAnnotationBuckets(
 }
 
 /**
- * IDE-HOV-012:保存文件时只替换该文件注解桶——提取已保存文本(调用方给
- * document.getText(),零文件读取),内存合并出新视图,其他文件桶不动、不重读。
- * 删除的返回注解随换桶不再可查。冷缓存(尚无全量索引)为 no-op:下一次查询
- * 按磁盘真值全量建,不虚建部分索引;首扫在途(2026-10-28 审核整改)记入
- * 待重放事件,发布前换桶,扫描期旧读不吞新注解。
+ * IDE-HOV-012: on save, only that file's annotation bucket is replaced -- extract the saved text
+ * (the caller supplies document.getText(), zero file reads) and merge in memory into a new view;
+ * other file buckets are untouched and not re-read. Deleted return annotations stop being
+ * findable once the bucket is swapped. A cold cache (no full index yet) is a no-op: the next
+ * query builds in full from disk truth, never a fake partial index; while the first scan is in
+ * flight (2026-10-28 review remediation) the save is recorded as a pending replay event and the
+ * bucket is swapped before publishing, so stale reads from the scan period do not swallow the
+ * new annotation.
  */
 export function applySavedFileAnnotations(
   workspaceRoot: string | null,
@@ -363,8 +381,9 @@ export function applySavedFileAnnotations(
   source: string
 ): void {
   if (!workspaceRoot) { return; }
-  // IDE-REV-006:在途重建(TTL 过期重建/首扫)一律登记保存事件——仅改已发布
-  // 桶时,重建的扫描期旧读会在发布时覆盖本次保存;登记后发布前重放,新值不丢
+  // IDE-REV-006: any in-flight rebuild (TTL-expired rebuild / first scan) records the save event
+  // -- when only the published bucket is modified, the rebuild's stale scan-period read would
+  // overwrite this save at publish; once recorded it replays before publish and the new value is not lost
   annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'save', filePath, source });
   const cached = returnAnnotationCaches.get(workspaceRoot);
   if (!cached) { return; }
@@ -373,18 +392,22 @@ export function applySavedFileAnnotations(
 }
 
 /**
- * IDE-HOV-014:删除文件时移除该文件注解桶——弃桶后纯内存重合并,该来源
- * 注解不再可查,其他文件同名方法来源仍按原次序兜底。冷缓存与不在册路径
- * 均为 no-op:下一次查询按磁盘真值全量建,不虚建部分索引;首扫在途
- * (2026-10-28 审核整改)记入待重放事件,发布前弃桶,已删文件注解不驻留。
+ * IDE-HOV-014: on file delete, remove that file's annotation bucket -- after dropping the bucket
+ * a purely in-memory re-merge makes that source's annotations unfindable, while other files'
+ * sources for a same-named method still backstop in the original order. Cold caches and
+ * unregistered paths are no-ops: the next query builds in full from disk truth, never a fake
+ * partial index; while the first scan is in flight (2026-10-28 review remediation) the delete is
+ * recorded as a pending replay event and the bucket is dropped before publishing, so a deleted
+ * file's annotations do not linger.
  */
 export function removeSavedFileAnnotations(
   workspaceRoot: string | null,
   filePath: string
 ): void {
   if (!workspaceRoot) { return; }
-  // IDE-REV-007:在途重建一律登记删除事件——仅弃已发布桶时,重建的扫描期
-  // 旧读会在发布时把已删来源复活;登记后发布前重放弃桶,来源不驻留
+  // IDE-REV-007: any in-flight rebuild records the delete event -- when only the published bucket
+  // is dropped, the rebuild's stale scan-period read would revive the deleted source at publish;
+  // once recorded the bucket drop replays before publish and the source does not linger
   annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'delete', filePath });
   const cached = returnAnnotationCaches.get(workspaceRoot);
   if (!cached) { return; }
@@ -393,10 +416,13 @@ export function removeSavedFileAnnotations(
 }
 
 /**
- * IDE-HOV-015:重命名文件时迁移注解来源——旧键桶原位换新键(保插入序,
- * 先见优先语义不因重命名洗牌),内容承接不丢、不留下双份。冷缓存与不在册
- * 路径均为 no-op:下一次查询按磁盘真值全量建;首扫在途(2026-10-28 审核
- * 整改)记入待重放事件,发布时对扫描收集的桶迁键,import 绑定按新模块命中。
+ * IDE-HOV-015: on file rename, migrate the annotation source -- the old-key bucket is re-keyed
+ * in place (insertion order preserved; the first-seen-wins semantics are not reshuffled by the
+ * rename), content carried over with nothing lost and no duplicate left behind. Cold caches and
+ * unregistered paths are no-ops: the next query builds in full from disk truth; while the first
+ * scan is in flight (2026-10-28 review remediation) the rename is recorded as a pending replay
+ * event, keys are migrated on the scan-collected buckets at publish, and import bindings hit
+ * via the new module.
  */
 export function renameSavedFileAnnotations(
   workspaceRoot: string | null,
@@ -404,8 +430,9 @@ export function renameSavedFileAnnotations(
   newFilePath: string
 ): void {
   if (!workspaceRoot) { return; }
-  // IDE-REV-008:在途重建一律登记迁移事件——仅迁已发布桶时,重建的扫描期
-  // 旧读会在发布时把旧键带回来;发布前重放迁键,旧模块不命中、新模块可查
+  // IDE-REV-008: any in-flight rebuild records the rename event -- when only the published bucket
+  // is migrated, the rebuild's stale scan-period read would bring the old key back at publish;
+  // the key migration replays before publish, so the old module stops hitting and the new module is queryable
   annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'rename', oldFilePath, newFilePath });
   const cached = returnAnnotationCaches.get(workspaceRoot);
   if (!cached) { return; }
@@ -420,8 +447,9 @@ export function renameSavedFileAnnotations(
 
 const returnAnnotationCaches = new Map<string, ReturnAnnotationCacheEntry>();
 type AnnotationCancellation = { readonly isCancellationRequested: boolean };
-/** 首扫在途窗口内到达的文件事件(2026-10-28 审核整改):发布前重放,
- * 扫描期读到的旧内容不再吞掉窗口内的保存/删除/重命名。 */
+/** File events arriving while the first scan is in flight (2026-10-28 review remediation): replayed
+ * before publishing, so stale content read during the scan period no longer swallows the saves/
+ * deletes/renames that happened inside the window. */
 type PendingFileEvent =
   | { kind: 'save'; filePath: string; source: string }
   | { kind: 'delete'; filePath: string }
@@ -430,32 +458,38 @@ interface AnnotationBuild {
   waiters: Set<{ token?: AnnotationCancellation }>;
   promise: Promise<PythonReturnAnnotationIndex>;
   pendingFileEvents: PendingFileEvent[];
-  /** 共享取消令牌(IDE-REV-029 量规的取消归属面):全体等待者取消才取消 */
+  /** Shared cancellation token (the cancellation-attribution face of the IDE-REV-029 gauge): cancelled only when every waiter has cancelled */
   sharedToken: AnnotationCancellation;
 }
 const annotationBuilds = new Map<string, AnnotationBuild>();
 
-/** 残留任务量规(P0-4b 审核重开 2026-10-28):编辑路径去抖在途的文档注解
- * 更新数——现场验收观测取消/风暴后无未泄残留的只读面。
- * IDE-REV-028(2026-10-30):待处理量覆盖 pending(去抖排队)与 inflight
- * (异步提取执行中)两面——门住提取时仍显示在途,不再只看去抖队列。 */
+/** Leftover-task gauge (P0-4b review reopened 2026-10-28): the number of document annotation
+ * updates debounced and in flight on the edit path -- a read-only face for on-site acceptance to
+ * observe that no un-leaked residue remains after cancellation/storms.
+ * IDE-REV-028 (2026-10-30): the pending count covers both the pending (debounce-queued) and
+ * inflight (async extraction executing) faces -- while an extraction is gated it still reports
+ * as in flight, no longer only looking at the debounce queue. */
 export function getPendingDocumentUpdateCount(): number {
   return pendingDocumentUpdates.size + inflightDocumentUpdates.size;
 }
 
-/** 执行中(inflight)文档注解更新数(IDE-REV-028):按文件计——异步提取
- * 真正执行中的文件数,与去抖排队面分开可观测。 */
+/** The number of document annotation updates currently executing (inflight) (IDE-REV-028): counted
+ * per file -- the files whose async extraction is genuinely running, observable separately from the
+ * debounce queue face. */
 export function getInflightDocumentUpdateCount(): number {
   return inflightDocumentUpdates.size;
 }
 
 /**
- * 注解索引共享构建的在途量(IDE-REV-029,原 IDE-MET-008):冷构建与 TTL
- * 过期重建都走共享构建(annotationBuilds)——running=执行中的共享构建数
- * (按工作区计);waiting=搭这些共享构建的请求数(等待面);cancelled=
- * 全体等待者都已取消、正在收尾的共享构建数(取消归属:共享构建只认全体
- * 取消,单个请求取消不拖死构建)。发布(缓存落账)或取消收尾后归零。
- * 与 REV-028 的逐文件文档更新(请求独占任务)分开计量,不混账。
+ * In-flight volume of shared annotation index builds (IDE-REV-029, originally IDE-MET-008): both
+ * cold builds and TTL-expired rebuilds go through shared builds (annotationBuilds) -- running =
+ * the number of shared builds executing (counted per workspace); waiting = the number of requests
+ * hitching a ride on those shared builds (the waiting face); cancelled = the number of shared
+ * builds whose every waiter has cancelled and which are winding down (cancellation attribution:
+ * a shared build only honours the whole-set cancellation; a single request cancelling does not
+ * kill the build). Returns to zero after publish (cache accounting) or cancellation wind-down.
+ * Metered separately from REV-028's per-file document updates (request-exclusive tasks); the
+ * books are never mixed.
  */
 export interface AnnotationBuildWorkload {
   running: number;
@@ -474,14 +508,14 @@ export function getAnnotationBuildWorkload(): AnnotationBuildWorkload {
   return { running: annotationBuilds.size, waiting, cancelled };
 }
 
-/** IDE-REV-031:注解索引缓存容量面——按工作区根每根一份,TTL 过期重建;
- * 无条目上限(条目数受工作区根数约束)、无字节占用量可取,口径如实注明,
- * 不臆造字节估算。 */
+/** IDE-REV-031: the annotation index cache capacity face -- one entry per workspace root, rebuilt
+ * on TTL expiry; no entry cap (entry count is bounded by the number of workspace roots) and no
+ * byte-usage number available, the convention is stated honestly rather than inventing a byte estimate. */
 export function getReturnAnnotationCacheGauge(): { entries: number; ttlMs: number } {
   return { entries: returnAnnotationCaches.size, ttlMs: INDEX_TTL_MS };
 }
 
-/** 测试用:清全部工作区缓存(换临时根/改文件后立即生效) */
+/** For tests: clear all workspace caches (takes effect immediately after swapping a temp root / editing files) */
 export function resetPythonReturnAnnotationCache(): void {
   returnAnnotationCaches.clear();
   annotationBuilds.clear();
@@ -495,30 +529,33 @@ export function resetPythonReturnAnnotationCache(): void {
 }
 
 /**
- * IDE-HOV-011 按文档版本更新的当前文件注解桶:打开文档未保存的返回注解
- * 变化按版本立即生效(同文件优先于磁盘索引;「def 在而注解缺」遮蔽磁盘
- * 同名旧注解,不借旧值)。桶只由文档版本驱动:版本前进才重提取,旧版本/
- * 同版本不得覆盖新版本;关闭文档弃桶回到磁盘口径(未保存修改随关闭消失)。
+ * IDE-HOV-011 the current file's annotation bucket updated by document version: unsaved
+ * return-annotation changes of an open document take effect per version immediately (the same
+ * file wins over the disk index; "def present but annotation missing" shadows the stale
+ * same-named disk annotation, no borrowing the old value). The bucket is driven only by the
+ * document version: re-extract only when the version advances; an older/same version must not
+ * overwrite a newer one; closing the document drops the bucket and returns to the disk
+ * convention (unsaved modifications vanish with the close).
  */
 export interface DocumentAnnotationBucket {
   version: number;
   annotations: PythonReturnAnnotationIndex;
-  /** def 存在但无返回注解的方法名:遮蔽磁盘索引同名的旧注解 */
+  /** Method names whose def exists but has no return annotation: shadow the stale same-named annotations in the disk index */
   unannotatedNames: Set<string>;
 }
 
 const documentAnnotationBuckets = new Map<string, Map<string, DocumentAnnotationBucket>>();
 
 export interface DocumentAnnotationContext {
-  /** 文档身份(URI 串):hover/保存/关闭事件共用同一键 */
+  /** Document identity (URI string): hover/save/close events share the same key */
   fileKey: string;
-  /** 文档版本:递增才重提取;旧版本不得覆盖新版本 */
+  /** Document version: re-extract only on increase; an older version must not overwrite a newer one */
   version: number;
-  /** 惰性取文档全文:仅在版本前进需要重提取时调用一次 */
+  /** Lazily fetch the document's full text: called once, only when the version advanced and re-extraction is needed */
   source: () => string;
 }
 
-/** 按文档版本更新该文件桶;同版本幂等,旧版本不覆盖新版本。 */
+/** Update the file's bucket by document version; the same version is idempotent, an older version never overwrites a newer one. */
 export function updateDocumentReturnAnnotations(
   workspaceRoot: string | null,
   context: DocumentAnnotationContext
@@ -541,8 +578,10 @@ export function updateDocumentReturnAnnotations(
 }
 
 /**
- * 关闭文档弃桶:未保存修改不再遮蔽磁盘口径。2026-10-28 审核整改:同时
- * 取消该文件的在途/待冲刷注解更新(否则关闭后异步提取落桶,复活已弃桶)。
+ * Drop the bucket when a document closes: unsaved modifications no longer shadow the disk
+ * convention. 2026-10-28 review remediation: also cancel that file's in-flight/pending-flush
+ * annotation updates (otherwise an async extraction landing after the close would revive the
+ * dropped bucket).
  */
 export function releaseDocumentReturnAnnotations(workspaceRoot: string | null, fileKey: string): void {
   if (!workspaceRoot) { return; }
@@ -555,11 +594,12 @@ export function releaseDocumentReturnAnnotations(workspaceRoot: string | null, f
   documentAnnotationBuckets.get(workspaceRoot)?.delete(fileKey);
 }
 
-// ====== 2026-10-28 审核整改(HOV-011):编辑事件注解提取移出同步路径 ======
-// 每个 onDidChangeTextDocument 事件此前同步整文件提取(889KB ≈ 120ms 阻塞
-// 事件循环)。改为:同文件按最新版本合并(旧版本事件覆盖不提取),宏任务
-// 冲刷时用让出式异步提取(collectFileAnnotationFactsAsync,按字符预算
-// setImmediate 让出),版本/关闭竞态由版本闸+文档代际守卫兜住。
+// ====== 2026-10-28 review remediation (HOV-011): move edit-event annotation extraction off the synchronous path ======
+// Each onDidChangeTextDocument event previously extracted the whole file synchronously (889KB
+// ~= 120ms blocking the event loop). Now: per-file events merge to the latest version (an
+// older-version event being superseded does not extract), a macrotask flush runs the cooperative
+// async extraction (collectFileAnnotationFactsAsync, yielding via setImmediate on a character
+// budget), and version/close races are contained by the version gate plus the document generation guard.
 const pendingDocumentUpdates = new Map<string, {
   workspaceRoot: string;
   version: number;
@@ -569,7 +609,7 @@ const pendingDocumentUpdates = new Map<string, {
 const inflightDocumentUpdates = new Map<string, Promise<void>>();
 const documentBucketGenerations = new Map<string, number>();
 
-/** 编辑面入口:排队(同文件合并到最新版本),宏任务后异步提取,不阻塞编辑同步路径 */
+/** Edit face entry: queue (same file merges to the latest version), extract asynchronously after a macrotask, never blocking the edit's synchronous path */
 export function queueDocumentReturnAnnotations(
   workspaceRoot: string | null,
   context: DocumentAnnotationContext
@@ -580,7 +620,7 @@ export function queueDocumentReturnAnnotations(
   if (pending) {
     pending.version = context.version;
     pending.source = context.source;
-    return; // 已有定时器在途:合并到最新版本,不重复提取旧版本
+    return; // a timer is already in flight: merge to the latest version, do not re-extract the older version
   }
   const entry = {
     workspaceRoot,
@@ -595,8 +635,9 @@ export function queueDocumentReturnAnnotations(
   pendingDocumentUpdates.set(key, entry);
 }
 
-/** 测试面(IDE-REV-028):门住异步提取的确定性在途窗口——每笔提取发起前
- * 调一次,返回的 promise 放行才继续。生产恒 null(零行为变化)。 */
+/** Test face (IDE-REV-028): gate the async extraction into a deterministic in-flight window --
+ * called once before each extraction starts, and extraction continues only when the returned
+ * promise lets it. Always null in production (zero behavior change). */
 let documentExtractionGateForTests: (() => Promise<void>) | null = null;
 export function setDocumentExtractionGateForTests(gate: (() => Promise<void>) | null): void {
   documentExtractionGateForTests = gate;
@@ -616,15 +657,16 @@ function scheduleInflight(
   })().catch(() => {});
   inflightDocumentUpdates.set(fileKey, extraction);
   void extraction.finally(() => {
-    // IDE-REV-028:旧任务的 finally 不删除同文件新任务的在途记录——同文件
-    // 重叠版本各归各:只有记录仍属于本任务才删,新版本已接管则留给它自己。
+    // IDE-REV-028: an old task's finally must not delete the in-flight record of a newer task on
+    // the same file -- overlapping versions of one file each own their record: delete only if the
+    // record still belongs to this task; if a newer version has taken over, leave it to that one.
     if (inflightDocumentUpdates.get(fileKey) === extraction) {
       inflightDocumentUpdates.delete(fileKey);
     }
   });
 }
 
-/** 让出式异步提取:按字符预算让出事件循环(大文件不再整段阻塞宿主) */
+/** Cooperative async extraction: yield the event loop on a character budget (large files no longer block the host in one go) */
 export async function updateDocumentReturnAnnotationsAsync(
   workspaceRoot: string | null,
   context: DocumentAnnotationContext
@@ -640,7 +682,7 @@ export async function updateDocumentReturnAnnotationsAsync(
     else { annotations.set(name, annotation); }
   });
   if ((documentBucketGenerations.get(context.fileKey) ?? 0) !== generation) {
-    return; // 提取期间文档已关:弃桶不复活
+    return; // the document was closed during extraction: the dropped bucket is not revived
   }
   let rootBuckets = documentAnnotationBuckets.get(workspaceRoot);
   if (!rootBuckets) {
@@ -648,11 +690,11 @@ export async function updateDocumentReturnAnnotationsAsync(
     documentAnnotationBuckets.set(workspaceRoot, rootBuckets);
   }
   const after = rootBuckets.get(context.fileKey);
-  if (after && context.version <= after.version) { return; } // 期间已入更新版本
+  if (after && context.version <= after.version) { return; } // an updated version already landed meanwhile
   rootBuckets.set(context.fileKey, { version: context.version, annotations, unannotatedNames });
 }
 
-/** 测试面:冲刷全部待更新并等异步提取完成(同步断言口径) */
+/** Test face: flush all pending updates and wait for the async extractions to finish (the synchronous assertion convention) */
 export async function flushPendingDocumentReturnAnnotationsForTests(): Promise<void> {
   for (const [key, entry] of [...pendingDocumentUpdates.entries()]) {
     pendingDocumentUpdates.delete(key);
@@ -662,8 +704,9 @@ export async function flushPendingDocumentReturnAnnotationsForTests(): Promise<v
   await Promise.all([...inflightDocumentUpdates.values()]);
 }
 
-/** 测试面:直读文档注解桶(批 D 级联删除后查询不再读桶;发布机制仍由
- * extension.ts 文档事件驱动,机制断言走本访问器)。 */
+/** Test face: read the document annotation bucket directly (after the batch D cascade deletion,
+ * queries no longer read buckets; the publishing machinery is still driven by extension.ts
+ * document events, and machinery assertions go through this accessor). */
 export function getDocumentReturnAnnotationBucketForTests(
   workspaceRoot: string,
   fileKey: string
@@ -711,10 +754,11 @@ async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: A
     while (!token.isCancellationRequested && nextFile < files.length) {
       const i = nextFile++;
       try {
-        // 共享原文缓存记账入口(2026-11-24 缓存收口批):推断语料与定义/引用链共享缓存原文
+        // Shared source-text cache accounting entry (2026-11-24 cache consolidation batch): the
+        // inference corpus and the definition/reference chains share the cached source text
         sources[i] = await readFileUtf8Recorded(files[i]);
       } catch {
-        // 单个不可读文件不影响其他文件。
+        // A single unreadable file does not affect the other files.
       }
     }
   };
@@ -725,8 +769,9 @@ async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: A
     if (token.isCancellationRequested) return new Map();
     fileBuckets.set(files[i], await extractFileReturnAnnotationsAsync(sources[i]));
   }
-  // 2026-10-28 审核整改:首扫在途窗口内的文件事件在发布前按到达序重放
-  // (保存换桶/删除弃桶/重命名迁键),扫描期旧读不吞掉窗口内的新状态。
+  // 2026-10-28 review remediation: file events inside the first-scan in-flight window replay in
+  // arrival order before publishing (save swaps bucket / delete drops bucket / rename migrates
+  // key), so stale reads from the scan period do not swallow the new state from inside the window.
   for (const event of build.pendingFileEvents) {
     if (event.kind === 'save') {
       fileBuckets.set(event.filePath, extractFileReturnAnnotations(event.source));
@@ -747,18 +792,19 @@ async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: A
   return index;
 }
 
-/** 推导结果:注解串 + 来源方法名(hover 标注「推导自 get_data() 返回注解」) */
+/** Inference result: the annotation string plus the source method name (hover marks it "inferred from get_data()'s return annotation") */
 export interface LocalVariableReturnType {
   target: string;
   annotation: string;
   methodName: string;
 }
 
-/** IDE-HOV-017:文件级显式 import 绑定——`from X import n [as a]` 绑定名 n/a
- * 到模块 X;`import X [as Y]` 绑定接收者 Y/X 到模块 X(供 `X.fn()` 用)。
- * 通配 `import *` 非显式绑定,不参与;相对导入的前导点按后缀匹配近似。 */
-/** `from mod import original as local` 的绑定:保留被导入的原始符号名
- * (symbol=original),查模块桶用 symbol 而非绑定名 local(R2-F17)。 */
+/** IDE-HOV-017: file-level explicit import bindings -- `from X import n [as a]` binds the name
+ * n/a to module X; `import X [as Y]` binds the receiver Y/X to module X (for `X.fn()` use).
+ * Wildcard `import *` is not an explicit binding and does not participate; a relative import's
+ * leading dots are approximated by suffix matching. */
+/** The binding of `from mod import original as local`: the imported original symbol name is kept
+ * (symbol=original); module bucket lookups use symbol, not the bound name local (R2-F17). */
 interface FromImportBinding {
   module: string;
   symbol: string;
@@ -769,13 +815,14 @@ export interface FileImportBindings {
 }
 
 const FROM_IMPORT_PATTERN = /^\s*from\s+([.\w]+)\s+import\s+([^#]*?)(?:#.*)?$/;
-/** `import X` / `import pkg.good as g`:模块可点分(2026-10-28 审核整改,
- * 子模块别名也是合法绑定,漏认会回退全局同名方法给出错误注解)。 */
+/** `import X` / `import pkg.good as g`: the module may be dotted (2026-10-28 review remediation;
+ * a submodule alias is also a legitimate binding, and missing it would fall back to a global
+ * same-named method and yield a wrong annotation). */
 const BARE_IMPORT_PATTERN =
   /^\s*import\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s+as\s+([A-Za-z_]\w*))?\s*(?:#.*)?$/;
 const IMPORT_ALIAS_PATTERN = /^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?$/;
 
-/** 导出=Rust↔TS 对拍测试共用(绑定面单一来源) */
+/** Exported for the Rust<->TS parity tests (single source for the binding face) */
 export function extractFileImports(lines: readonly string[]): FileImportBindings {
   const names = new Map<string, FromImportBinding>();
   const receivers = new Map<string, string>();
@@ -793,8 +840,9 @@ export function extractFileImports(lines: readonly string[]): FileImportBindings
     }
     const bare = BARE_IMPORT_PATTERN.exec(line);
     if (bare) {
-      // Python 绑定名=别名(有则)否则首段;别名绑到完整子模块路径
-      // (pkg.good → pkg/good),无别名时维持单段 `import pkg` 语义。
+      // The Python bound name = the alias if present, otherwise the first segment; an alias binds
+      // to the full submodule path (pkg.good -> pkg/good), while no alias keeps the single-segment
+      // `import pkg` semantics.
       const dotted = bare[1];
       const firstSegment = dotted.split('.')[0];
       const boundName = bare[2] ?? firstSegment;
@@ -805,7 +853,7 @@ export function extractFileImports(lines: readonly string[]): FileImportBindings
   return { names, receivers };
 }
 
-/** 模块 → 唯一匹配的文件桶;找不到或多处同名模块均为 null(无法确定 → 未知)。 */
+/** Module -> the uniquely matching file bucket; not found or multiple same-named modules both give null (undeterminable -> unknown). */
 function locateModuleBucket(
   fileBuckets: Map<string, PythonReturnAnnotationIndex>,
   module: string
@@ -822,27 +870,33 @@ function locateModuleBucket(
 }
 
 /**
- * IDE-HOV-016:自 hover 行向上找赋值,只在未跨出作用域前有效——上行路上
- * 每跨过一条 `def`/`class` 头(缩进 i),其上缩进 ≥ i+1 的赋值即属别的
- * 作用域(兄弟方法/被嵌套函数),不再借用;模块级(缩进 0)赋值不受限
- * (Python 全局读语义)。
- * IDE-AUD-042:尊重最后一次变量写入——自 hover 行向上只认最近一次对
- * word 的赋值(不再把更早的调用答案借给被覆盖的变量;R2-F16 反例
- * `x=original(); x=0` 此前仍推导 EXPECTED)。调用形态过滤不属本扫描
- * (归 matchingAssignments),预检用存在性口径(归 hasLocalReturnCandidate)。
+ * IDE-HOV-016: search upward from the hover line for an assignment, valid only before leaving
+ * the scope -- on the way up, once a `def`/`class` header at indent i is crossed, assignments
+ * above it with indent >= i+1 belong to another scope (sibling methods / the nested function)
+ * and are no longer borrowed; module-level (indent 0) assignments are unrestricted (Python
+ * global-read semantics).
+ * IDE-AUD-042: respect the last variable write -- searching upward from the hover line, only
+ * the most recent assignment to word counts (no longer lending an earlier call answer to an
+ * overwritten variable; the R2-F16 counterexample `x=original(); x=0` previously still inferred
+ * EXPECTED). Call-shape filtering is not part of this scan (belongs to matchingAssignments);
+ * the precheck uses the existence convention (belongs to hasLocalReturnCandidate).
  */
 /**
- * 悬停词的最近同名写点(掩码后文本)。null = 作用域内无同名写点。
- * KBUG-GATE-03:作用域/掩码/最近写点扫描是 TS 链(matchingAssignments)与
- * hover 预检(hasLocalReturnCandidate)共用的单一实现——两侧永不各自漂移。
+ * The nearest same-named write point of the hovered word (masked text). null = no same-named
+ * write point within scope.
+ * KBUG-GATE-03: the scope/mask/nearest-write scan is the single implementation shared by the TS
+ * chain (matchingAssignments) and the hover precheck (hasLocalReturnCandidate) -- the two sides
+ * never drift apart.
  */
 function nearestSameNameWrite(lines: readonly string[], hoverLine: number, word: string): { text: string } | null {
   if (!word) {
     return null;
   }
-  // KR-AUD-64:掩码先行——全文掩一次(pythonLexicalMask 跨行记三引号态,
-  // 保行保列),三引号字符串体内的 `名 = 调用` 形行不再被当成真实赋值候选。
-  // 单行 maskCodeLine 只能处理同行引号,跨行三引号体必须全文掩。
+  // KR-AUD-64: mask first -- mask the whole text once (pythonLexicalMask tracks triple-quote
+  // state across lines, keeping rows and columns), so `name = call`-shaped lines inside a
+  // triple-quoted string body are no longer taken as real assignment candidates.
+  // The single-line maskCodeLine only handles quotes on the same line; a cross-line triple-quoted
+  // body must be masked as whole text.
   const maskedLines = maskPythonNonCode(lines.join('\n')).split('\n');
   let scopeIndentLimit = Number.POSITIVE_INFINITY;
   for (let line = Math.min(hoverLine, maskedLines.length - 1); line >= 0; line -= 1) {
@@ -862,10 +916,12 @@ function nearestSameNameWrite(lines: readonly string[], hoverLine: number, word:
   return null;
 }
 
-/** 悬停词的最新写入候选(调用形态)。TS 链候选面:最近写点是单层/属性调用
- * 才作为唯一候选返回,否则(常量/别名/未知表达式/局部遮蔽)返回空——
- * IDE-AUD-042 不把更早的调用答案借给被覆盖的变量;可推导形态裁定归 Rust 面,
- * 本函数不再充当 hover 预检闸(KBUG-GATE)。 */
+/** The hovered word's latest write candidate (call shape). TS chain candidate face: the nearest
+ * write point is returned as the sole candidate only when it is a single-level/attribute call,
+ * otherwise (constant/alias/unknown expression/local shadowing) an empty list -- IDE-AUD-042
+ * never lends an earlier call answer to an overwritten variable; the decidability-of-shape
+ * ruling belongs to the Rust face, and this function no longer acts as the hover precheck gate
+ * (KBUG-GATE). */
 export function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
   const write = nearestSameNameWrite(lines, hoverLine, word);
   if (!write) {
@@ -876,13 +932,17 @@ export function matchingAssignments(lines: readonly string[], hoverLine: number,
 }
 
 /**
- * KBUG-GATE-02/03:hover 预检(存在性口径,形态无关)——作用域内有同名
- * 写点即放行 Rust localReturnType 腿;可推导性与答案诚实性由 Rust 引擎裁定
- * (别名链/链式调用等形态不再被 TS 侧「单层调用」正则克隆闸拦截——修前
- * `x = alias`/`x = build().load()` 在生产入口被吞,Rust 根本收不到查询)。
- * 只排除可证明无结果:字符串/注释伪赋值(掩码,KR-AUD-64)、空词/行越界、
- * 作用域内无同名写点——伪赋值与非法查询零 RPC 快跳;不在 TS 复制 Rust 的
- * RHS 形态判定(GATE-03),常量/字面量写点放行后由 Rust 诚实答 null。
+ * KBUG-GATE-02/03: the hover precheck (existence convention, shape-agnostic) -- a same-named
+ * write point within scope lets the Rust localReturnType leg through; decidability and answer
+ * honesty are ruled by the Rust engine (shapes like alias chains/chained calls are no longer
+ * blocked by the TS-side "single-level call" regex clone gate -- before the fix
+ * `x = alias`/`x = build().load()` was swallowed at the production entry and Rust never received
+ * the query).
+ * Only provably resultless cases are excluded: string/comment pseudo-assignments (masking,
+ * KR-AUD-64), empty word / line out of bounds, no same-named write point within scope --
+ * pseudo-assignments and illegal queries fast-path with zero RPC; the Rust RHS shape decision is
+ * not duplicated in TS (GATE-03); a constant/literal write point is let through and Rust
+ * honestly answers null.
  */
 export function hasLocalReturnCandidate(lines: readonly string[], hoverLine: number, word: string): boolean {
   return nearestSameNameWrite(lines, hoverLine, word) !== null;
@@ -896,9 +956,10 @@ function resolveFromAnnotationIndex(candidates: readonly LocalAssignmentCall[], 
   return null;
 }
 
-/** 交互查询只读已发布快照；冷查询和过期快照触发后台重建。文档桶(IDE-HOV-011)
- * 先于磁盘索引:悬停文档自己的桶最优先,其余打开文档的桶次之,被「注解已删」
- * 遮蔽的名字不再从磁盘旧值借。 */
+/** Interactive queries only read the published snapshot; cold queries and expired snapshots
+ * trigger a background rebuild. Document buckets (IDE-HOV-011) come before the disk index: the
+ * hovered document's own bucket has top priority, other open documents' buckets come next, and
+ * names shadowed by "annotation deleted" no longer borrow stale disk values. */
 export function resolveLocalVariableReturnTypeFromSnapshot(
   lines: readonly string[],
   hoverLine: number,
@@ -906,8 +967,9 @@ export function resolveLocalVariableReturnTypeFromSnapshot(
   workspaceRoot: string | null,
   documentContext?: DocumentAnnotationContext
 ): LocalVariableReturnType | null {
-  // IDE-RST-009:查询段耗时(python-annotation-query)——普通变量 hover 的
-  // 注解路径全量计入(含无候选早退),真实查询口径不做旁路
+  // IDE-RST-009: query-segment duration (python-annotation-query) -- the annotation path of an
+  // ordinary variable hover is counted in full (including the no-candidate early exit); the real
+  // query convention takes no bypass
   const queryStartedAt = performance.now();
   try {
     return resolveLocalVariableReturnTypeFromSnapshotImpl(lines, hoverLine, word, workspaceRoot, documentContext);
@@ -923,24 +985,30 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
   hoverLine: number,
   word: string,
   workspaceRoot: string | null,
-  // 批 D:查询消费面(文档桶级联)已删;参数保留(hover 装配与既有调用方
-  // 签名不变)但不再参与解析——桶发布由 extension.ts 文档事件驱动
+  // Batch D: the query consumer face (document bucket cascade) is deleted; the parameter is kept
+  // (the hover wiring and existing caller signatures unchanged) but no longer participates in
+  // resolution -- bucket publishing is driven by extension.ts document events
   _documentContext?: DocumentAnnotationContext
 ): LocalVariableReturnType | null {
   if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) return null;
   const candidates = matchingAssignments(lines, hoverLine, word);
   if (candidates.length === 0) return null;
-  // 精确性主车道批 D:级联兜底(悬停文档桶→其余打开文档桶→磁盘索引的全局
-  // 方法名猜测,跨类误绑)整链删除——接收者不可知 → null(诚实,不显示);
-  // 同文件可推导子集由 Rust localReturnType 面接住(hover.ts Rust-first 腿),
-  // 本链只保留 IDE-HOV-017 import 绑定路径(接收者已正确)。查询路不再喂
-  // 文档桶(桶发布改由 extension.ts 文档事件驱动,查询消费面已随级联删除)。
+  // Precision main lane, batch D: the cascade backstop (hovered document bucket -> other open
+  // document buckets -> the disk index's global method-name guessing with cross-class
+  // misbinding) is deleted as a whole chain -- receiver unknowable -> null (honest, nothing
+  // displayed); the same-file inferable subset is caught by the Rust localReturnType face (the
+  // Rust-first leg in hover.ts), and this chain keeps only the IDE-HOV-017 import binding path
+  // (receiver already correct). The query path no longer feeds document buckets (bucket
+  // publishing moved to extension.ts document events; the query consumer face was deleted along
+  // with the cascade).
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  // 2026-10-28 审核整改:TTL 过期检查必须在命中之前——过期索引不再答磁盘
-  // 旧注解(原检查放在级联命中返回之后,过期旧值可无限命中)。
+  // 2026-10-28 review remediation: the TTL expiry check must come before the hit -- an expired
+  // index no longer answers stale disk annotations (the check originally sat after the cascade
+  // hit returned, letting an expired stale value hit without end).
   const diskIndexFresh = cached !== undefined && Date.now() - cached.builtAtMs < INDEX_TTL_MS;
-  // IDE-HOV-017:显式 import 绑定的候选只解析到对应模块的文件桶;
-  // 绑定模块无注解、模块文件找不到或多处同名(无法确定)都不回退全局。
+  // IDE-HOV-017: candidates with an explicit import binding resolve only into the corresponding
+  // module's file bucket; a bound module without the annotation, a missing module file, or
+  // multiple same-named modules (undeterminable) never fall back to the global index.
   const bindings = extractFileImports(lines);
   for (const assignment of candidates) {
     const fromBinding = bindings.names.get(assignment.methodName);
@@ -949,8 +1017,9 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
       : undefined;
     if (fromBinding !== undefined || receiverModule !== undefined) {
       const module = receiverModule ?? fromBinding!.module;
-      // 接收者形态(X.fn())查桶用方法名 fn;from 导入形态查桶用被导入的
-      // 原始符号名(symbol),不是绑定名(R2-F17 别名 `as local` 丢原名)。
+      // The receiver shape (X.fn()) looks the bucket up by the method name fn; the from-import
+      // shape looks it up by the imported original symbol name (symbol), not the bound name
+      // (R2-F17: the alias `as local` drops the original).
       const symbol = receiverModule !== undefined ? assignment.methodName : fromBinding!.symbol;
       const bucket = diskIndexFresh ? locateModuleBucket(cached!.fileBuckets, module) : null;
       const annotation = bucket?.get(symbol);
@@ -962,11 +1031,11 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
       }
       continue;
     }
-    // 非绑定候选:接收者不可知 → 不猜(诚实 miss;不借任何同名注解)
+    // Unbound candidates: receiver unknowable -> no guessing (an honest miss; never borrows any same-named annotation)
   }
   if (!cached || Date.now() - cached.builtAtMs >= INDEX_TTL_MS) {
-    // IDE-REV-037:过期/冷盘未命中在日志里明确——不借旧值答话,受控重建
-    // 异步排队,新快照发布后恢复命中。
+    // IDE-REV-037: an expired/cold-disk miss is spelled out in the log -- no answering with stale
+    // values; a controlled rebuild queues asynchronously and hits resume once the new snapshot publishes.
     annotationSourceLog('info', () =>
       `hover-miss word=${word} disk-index=${cached ? 'expired' : 'cold'} rebuild=queued`
     );
@@ -976,9 +1045,11 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
 }
 
 /**
- * hover 求值:光标落在 `word` 上时,在 [0, hoverLine] 内找 `word = <单层调用>`
- * 的赋值,**自 hover 行向上取最后一条可解析的**(同名重赋值取最后一次可解析
- * 值);右值被调方法名在项目 python 索引有返回注解才解出,否则 null(不显示)。
+ * hover evaluation: when the cursor rests on `word`, search [0, hoverLine] for a
+ * `word = <single-level call>` assignment, **taking the last parsable one upward from the hover
+ * line** (for repeated same-named assignments, the last parsable value); the rhs's called method
+ * name resolves only if the project python index has a return annotation for it, otherwise null
+ * (nothing displayed).
  */
 export function resolveLocalVariableReturnType(
   lines: readonly string[],

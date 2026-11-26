@@ -1,18 +1,22 @@
 /**
- * RUST-220(旧 UI-003)性能面板纯核:队列/缓存/索引生成/P95·P99/主要慢请求
- * 及处理建议,单份快照报告文本(命令驱动即时快照,与 showSummary/showActiveTasks
- * 同模式,不做轮询面板)。数据面全部复用既有源:诊断调度器 pendingWorkload
- * (DIA-006)、IndexScheduler.getStatus(RUST-187)、三缓存 gauge、
- * languageServiceMetrics 分位数汇总(P50/P95/P99 逐操作族,PR1)。
- * 诚实边界:无采样窗口样本的操作族不进慢请求榜(count=0 时分位数是空窗口
- * 产物,不冒充);处理建议按阈值映射既有取证入口,不发明新诊断。
+ * Pure core of the RUST-220 (formerly UI-003) performance panel: queues / caches / index
+ * building / P95 and P99 / the main slow requests and remediation suggestions, as a single
+ * snapshot report text (a command-driven immediate snapshot, the same pattern as
+ * showSummary/showActiveTasks, not a polling panel). The data face reuses the existing
+ * sources in full: the diagnostics scheduler's pendingWorkload (DIA-006),
+ * IndexScheduler.getStatus (RUST-187), the three cache gauges, and the
+ * languageServiceMetrics percentile summary (P50/P95/P99 per operation family, PR1).
+ * Honest boundary: an operation family with no samples in the sampling window does not make
+ * the slow-request board (at count=0 the percentiles are an artifact of an empty window, and
+ * are not passed off as real); remediation suggestions map onto existing forensic entry
+ * points by threshold and invent no new diagnostics.
  */
 
 export interface PerformanceQueueInputs {
   diagnosticsQueued: number;
   diagnosticsInFlight: number;
   indexQueued: number;
-  /** SchedulerStatus.running 是活动任务对象,接线侧归一成布尔 */
+  /** SchedulerStatus.running is an active task object; the wiring side normalizes it to a boolean */
   indexRunning: boolean;
   indexFailed: number;
   indexCompleted: number;
@@ -48,14 +52,14 @@ export interface PerformancePanelInputs {
   queue: PerformanceQueueInputs;
   index: PerformanceIndexMetrics;
   caches: PerformanceCacheGauges;
-  /** 原样传入;纯核内按 p99 降序取「主要慢请求」前 N(count=0 的空窗口行排除) */
+  /** Passed through as-is; inside the pure core, the "main slow requests" top N are taken in descending p99 order (rows with count=0, an empty window, are excluded) */
   latencies: PerformanceLatencyRow[];
 }
 
-/** 慢请求榜容量:只列主要慢请求(全量分位数表由 kbengine.metrics.showSummary 承载) */
+/** Slow-request board capacity: only the main slow requests are listed (the full percentile table is carried by kbengine.metrics.showSummary) */
 const SLOW_REQUEST_LIMIT = 5;
 
-/** 慢请求判定与建议映射(阈值固定,证据→既有取证入口,不发明新诊断) */
+/** Slow-request determination and suggestion mapping (fixed thresholds; evidence maps onto existing forensic entry points, no new diagnostics invented) */
 export function slowRequestSuggestion(row: PerformanceLatencyRow): string | null {
   if (row.p99Ms > 1000) {
     return '建议卡顿取证 kbengine.metrics.startCpuProfile;日志查看器过滤 [kode-lsm]/[kode-hover] 定位慢层';
@@ -74,7 +78,7 @@ function formatPriorityQueue(byPriority: Record<number, number>): string {
   return keys.map(priority => `p${priority}=${String(byPriority[priority])}`).join(' ');
 }
 
-/** 纯核:输入 → 面板报告文本。段落固定:队列→索引生成→缓存→主要慢请求→处理建议。 */
+/** Pure core: inputs -> the panel report text. The sections are fixed: queues -> index building -> caches -> main slow requests -> remediation suggestions. */
 export function renderPerformancePanelReport(inputs: PerformancePanelInputs): string {
   const { queue, index, caches } = inputs;
   const lines: string[] = [

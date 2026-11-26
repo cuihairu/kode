@@ -1,18 +1,24 @@
 /**
- * VS Code 官方变量替换(批141,任务单 kode-varfix.md 用户令:「是 VS Code 的
- * 变量替换语法」):仓内此前有两套互不相干的实现——workspacePath 的
- * `${workspaceFolder}`/`${env:}` 静默空串口径,与 quickActionConfig 的
- * `${workspaceFolder:Name}` 抛错口径,且两套都缺官方变量表里其余成员。
- * 本模块作唯一真源,两处旧实现改为委派,不再各写一份。
+ * VS Code official variable substitution (batch 141, task sheet kode-varfix.md user
+ * order: "this is VS Code's variable substitution syntax"): the repo previously had
+ * two unrelated implementations — workspacePath's `${workspaceFolder}`/`${env:}`
+ * silent-empty-string semantics and quickActionConfig's `${workspaceFolder:Name}`
+ * throwing semantics — and both lacked the other members of the official variable
+ * table. This module is the single source of truth; the two old implementations now
+ * delegate instead of each maintaining a copy.
  *
- * 官方变量表(执行单要求「照官方变量表实现」,至少覆盖用户点名的 8 个):
+ * Official variable table (the execution sheet required "implement per the official
+ * variable table", covering at least the 8 the user named):
  * https://code.visualstudio.com/docs/reference/variables-in-scope-files
  *
- * 未解析变量的两种口径(各自调用方按语义选,行为与批141 前保持一致):
- * - `empty`(默认):替换为空串。路径类设置沿用旧口径,读不到就当没写,
- *   不因为一个环境变量不存在就让整个扩展装配失败。
- * - `throw`:直接报错并带上出错的表达式。quick action 这类「跑错就是
- *   静默假成功」的命令沿用旧口径——脚本被跑成「路径为空」比报错更糟。
+ * Two semantics for unresolved variables (each caller picks by meaning; behavior is
+ * unchanged from before batch 141):
+ * - `empty` (default): replace with the empty string. Path-class settings keep the
+ *   old semantics — unreadable means not written, and one missing environment
+ *   variable never fails the whole extension wiring.
+ * - `throw`: error out immediately with the offending expression. Quick actions, the
+ *   kind of command where "running wrong = a silent fake success", keep the old
+ *   semantics — a script run with an "empty path" is worse than an error.
  */
 
 import * as path from 'path';
@@ -23,17 +29,17 @@ export interface VariableFolderRef {
 }
 
 export interface VariableContext {
-  /** 多根工作区按 vscode.workspace.workspaceFolders 顺序传入 */
+  /** Multi-root workspace passed in vscode.workspace.workspaceFolders order */
   folders: readonly VariableFolderRef[];
-  /** 当前打开的文件(vscode.window.activeTextEditor?.document.fileName) */
+  /** The currently open file (vscode.window.activeTextEditor?.document.fileName) */
   filePath?: string;
-  /** 进程工作目录,${cwd} 用 */
+  /** Process working directory, for ${cwd} */
   cwd?: string;
-  /** 用户主目录,${userHome} 用 */
+  /** User home directory, for ${userHome} */
   userHome?: string;
-  /** 平台路径分隔符,${pathSeparator} 用;不注入时按宿主平台推导 */
+  /** Platform path separator, for ${pathSeparator}; derived from the host platform when not injected */
   pathSeparator?: string;
-  /** 环境变量表,${env:NAME} 用;不注入时读 process.env */
+  /** Environment-variable table, for ${env:NAME}; reads process.env when not injected */
   env?: Record<string, string | undefined>;
 }
 
@@ -41,7 +47,7 @@ export type UnresolvedPolicy = 'empty' | 'throw';
 
 const VARIABLE_PATTERN = /\$\{([^${}]*)\}/g;
 
-/** ${relativeFile} 判定:文件在某个工作区根之下才给出相对路径 */
+/** The ${relativeFile} ruling: a relative path is given only when the file sits under some workspace root */
 function isUnderRoot(filePath: string, root: string): boolean {
   const normalizedFile = filePath.replace(/\\/g, '/');
   const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -49,8 +55,10 @@ function isUnderRoot(filePath: string, root: string): boolean {
 }
 
 /**
- * 按名字取工作区根:不传名字取第一个(与 ${workspaceFolder} 官方语义一致),
- * 传名字按 folder.name 精确匹配。取不到返回 null,由调用方按未解析口径处理。
+ * Get a workspace root by name: without a name, take the first (matching the
+ * ${workspaceFolder} official semantics); with a name, match folder.name exactly.
+ * Returns null when not found, and the caller handles it per the unresolved
+ * semantics.
  */
 export function resolveWorkspaceFolderRef(
   name: string | undefined,
@@ -100,7 +108,7 @@ function resolveExpression(
 
   if (key === 'env') {
     const table = context.env ?? process.env;
-    // 「${env:NAME}」必须带名:裸 ${env} 不猜第一个环境变量,按未解析处理
+    // "${env:NAME}" must carry a name: a bare ${env} does not guess the first environment variable and is treated as unresolved
     const name = rest.join(':');
     return name.length > 0 ? table[name] : undefined;
   }
@@ -131,8 +139,9 @@ function resolveExpression(
       const dot = fileName.lastIndexOf('.');
       return dot <= 0 ? '' : fileName.slice(dot);
     }
-    // 相对族:落在某个工作区根之下才给相对写法,区外文件回退绝对路径
-    // (与 VS Code 同款语义:工作区外的文件没有「相对工作区」可言)
+    // The relative family: a relative form is given only when the file sits under some
+    // workspace root; files outside fall back to the absolute path
+    // (same semantics as VS Code: a file outside the workspace has no "relative to workspace" meaning)
     const owner = context.folders.find(folder => isUnderRoot(filePath, folder.fsPath));
     const relative = owner ? filePath.replace(/\\/g, '/').slice(owner.fsPath.replace(/\\/g, '/').replace(/\/+$/, '').length + 1) : filePath;
     return key === 'relativeFile' ? relative : dirnameOf(relative);
@@ -147,8 +156,9 @@ function resolveExpression(
   }
 
   if (key === 'pathSeparator') {
-    // 走 node 的 path.sep 而非 process.platform 三元:宿主平台在测试里不可变,
-    // 写死三元会让另一侧分支永远走不到,覆盖率上是一条假缺口
+    // Use node's path.sep rather than a process.platform ternary: the host platform is
+    // immutable in tests, and a hardcoded ternary would leave the other branch forever
+    // unreachable — a false coverage gap
     return context.pathSeparator ?? path.sep;
   }
 
@@ -156,8 +166,9 @@ function resolveExpression(
 }
 
 /**
- * 按 VS Code 官方变量表替换一段文本里的全部 ${...}。同一段文本里可混用多个
- * 变量(URL、路径都行),嵌套与未闭合的 `$` 原样保留。
+ * Replace every ${...} in a piece of text per the VS Code official variable table.
+ * Multiple variables can be mixed in one text (URLs and paths alike); nesting and
+ * unclosed `$` are kept verbatim.
  */
 export function substituteVariables(
   text: string,
@@ -177,9 +188,12 @@ export function substituteVariables(
 }
 
 /**
- * 解析单个变量表达式(批152):给「自定义变量 + 官方变量」单趟合并的调用方用
- * ——resolve 得到值返回值,官方表不认识返回 undefined,由调用方决定保留原文
- * 还是落空(HTTP 模板口径:未知占位原样保留,与批105 行为一致)。
+ * Resolve a single variable expression (batch 152): for callers merging "custom
+ * variables + official variables" in one pass — returns the value when resolve
+ * produces one, returns undefined when the official table does not know it, and the
+ * caller decides whether to keep the original text or fall to empty (the HTTP
+ * template semantics: unknown placeholders kept verbatim, matching batch 105's
+ * behavior).
  */
 export function resolveVariableExpression(
   expression: string,

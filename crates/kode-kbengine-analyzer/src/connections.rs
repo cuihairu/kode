@@ -1,12 +1,12 @@
-//! 连接分析(PA-005「登录/切 Baseapp/重连」)。
+//! Connection analysis (PA-005 "login / Baseapp switch / reconnection").
 //!
-//! 事件口径(docs/kbengine-wire-protocol.md §6):
-//! - login_attempt  = 上行 `Loginapp::login`
-//! - login_ok       = 下行 `Client::onLoginSuccessfully`
-//! - login_failed   = 下行 `Client::onLoginFailed`
-//! - baseapp_switch = login_ok 后见到的 `Baseapp::hello`(§6 步骤 8:切网关
-//!   必重走 hello;未登录成功的 baseapp hello 不计切换)
-//! - relogin        = 上行 `Baseapp::reloginBaseapp`(§6 步骤 11)
+//! Event contract (docs/kbengine-wire-protocol.md §6):
+//! - login_attempt  = the uplink `Loginapp::login`
+//! - login_ok       = the downlink `Client::onLoginSuccessfully`
+//! - login_failed   = the downlink `Client::onLoginFailed`
+//! - baseapp_switch = a `Baseapp::hello` seen after login_ok (§6 step 8: switching
+//!   gateway must repeat hello; a baseapp hello without a successful login is not a switch)
+//! - relogin        = the uplink `Baseapp::reloginBaseapp` (§6 step 11)
 
 use serde::Serialize;
 
@@ -54,7 +54,7 @@ pub fn analyze(records: &[Record]) -> ConnectionReport {
                     out.baseapp_switches += 1;
                     Some("baseapp_switch")
                 } else {
-                    None // 未登录成功的 baseapp hello(直连/重连前的握手)不算切换
+                    None // A baseapp hello without a successful login (the handshake before direct connect/reconnect) is not a switch
                 }
             }
             "Baseapp::reloginBaseapp" => {

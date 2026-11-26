@@ -1,9 +1,9 @@
-//! 基础类型 + containers 编码值解码(PA-003「codec 基础类型」
-//! 「containers ARRAY+FIXED_DICT」)。
+//! Basic types + containers value decoding (PA-003 "codec basic types",
+//! "containers ARRAY+FIXED_DICT").
 //!
-//! 规则全部取自 PA-001(docs/kbengine-wire-protocol.md §3/§3.1);
-//! 红线落地:失败不 panic / 内存有限([`DecodeLimits`])/ 递归有界
-//! ([`MAX_DECODE_DEPTH`])/ 未知类型 Raw 保留(不猜测、不丢字节)。
+//! Every rule comes from PA-001 (docs/kbengine-wire-protocol.md §3/§3.1);
+//! red lines landed: no panic on failure / memory bounded ([`DecodeLimits`]) / recursion bounded
+//! ([`MAX_DECODE_DEPTH`]) / unknown types kept as Raw (no guessing, no dropped bytes).
 
 use kode_kbengine_schema::wire::{WireType, MAX_TYPE_DEPTH};
 
@@ -11,22 +11,22 @@ pub use crate::cursor::read_utf8_body;
 use crate::cursor::Cursor;
 use crate::error::{DecodeError, DecodeErrorKind};
 
-/// 运行时解码值。
+/// Runtime decoded value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Bool(bool),
-    /// 有符号标量(INT8/16/32/64)。
+    /// Signed scalar (INT8/16/32/64).
     Int(i64),
-    /// 无符号标量(UINT8/16/32/64)。
+    /// Unsigned scalar (UINT8/16/32/64).
     UInt(u64),
     Float(f64),
     Str(String),
-    /// BLOB / Raw 保留体。
+    /// BLOB / Raw retained body.
     Bytes(Vec<u8>),
     Array(Vec<Value>),
-    /// FIXED_DICT:声明序键值(线上无键名,键名来自 schema)。
+    /// FIXED_DICT: key/values in declared order (no key names on the wire; names come from the schema).
     Dict(Vec<(String, Value)>),
-    /// 无法按 schema 解码(未知类型/ENTITYCALL/pickle):原始字节 + 原因。
+    /// Cannot be decoded per the schema (unknown type / ENTITYCALL / pickle): raw bytes + reason.
     Raw(RawValue),
 }
 
@@ -36,14 +36,14 @@ pub struct RawValue {
     pub bytes: Vec<u8>,
 }
 
-/// 内存/递归上限(红线参数;默认值对齐解析器用途,可按调用方收紧)。
+/// Memory/recursion caps (red-line parameters; defaults suit a parser and callers may tighten them).
 #[derive(Debug, Clone)]
 pub struct DecodeLimits {
-    /// 单块(字符串/字节块/数组体)最大字节数。
+    /// Maximum bytes for a single block (string / byte block / array body).
     pub max_blob: usize,
-    /// 单数组最大元素数。
+    /// Maximum elements in a single array.
     pub max_array_len: usize,
-    /// 单次解码最大值节点数(防 FIXED_DICT 大模板放大)。
+    /// Maximum value nodes per single decode (guards against FIXED_DICT big-template amplification).
     pub max_values: usize,
 }
 
@@ -57,10 +57,10 @@ impl Default for DecodeLimits {
     }
 }
 
-/// 解码递归深度上限(与 schema 侧 MAX_TYPE_DEPTH 同级,独立防线)。
+/// Decode recursion depth cap (same tier as the schema-side MAX_TYPE_DEPTH, an independent line of defense).
 pub const MAX_DECODE_DEPTH: usize = MAX_TYPE_DEPTH;
 
-/// 内部计数器(值节点数限幅;layout 展示面共用同一记账)。
+/// Internal counter (caps the number of value nodes; the layout display plane shares the same ledger).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Budget {
     pub(crate) values: usize,
@@ -81,11 +81,12 @@ impl Budget {
     }
 }
 
-/// 按 schema 线类型解码一个值。
+/// Decode one value per the schema wire type.
 ///
-/// 未知类型([`WireType::Unresolved`]/[`WireType::EntityCall`])消费当前
-/// 区域剩余全部字节为 Raw:下游解码在该边界安全停住,字节不丢、不编造
-/// (PA-001 TODO-2:ENTITYCALL 完整线格式未取证)。
+/// Unknown types ([`WireType::Unresolved`] / [`WireType::EntityCall`]) consume all remaining bytes
+/// of the current region as Raw: downstream decoding stops safely at that boundary, bytes are
+/// neither lost nor fabricated (PA-001 TODO-2: the full ENTITYCALL wire format is not
+/// forensically pinned).
 pub fn decode_value(
     ty: &WireType,
     cur: &mut Cursor,
@@ -175,8 +176,8 @@ fn decode_inner(
                     format!("declared {count} > cap {}", limits.max_array_len),
                 ));
             }
-            // 元素最小字节数预检:声明数 × 最小元素必须 ≤ 剩余(防 4G 声明
-            // 触发逐元素逐次 EOF 报错放大)。
+            // Element minimum-size precheck: declared count × smallest element must be ≤ remaining
+            // (prevents a 4G declaration from triggering per-element EOF errors one after another).
             let min_elem = min_element_size(of);
             if min_elem > 0 && count.saturating_mul(min_elem) > cur.remaining() {
                 return Err(DecodeError::new(
@@ -215,7 +216,7 @@ fn decode_inner(
     })
 }
 
-/// 元素最小线字节数(数组预检;变长元素返回 1B 下限:至少能放 0 长度)。
+/// Minimum wire bytes of an element (array precheck; variable-length elements return the 1B floor: at least a 0 length fits).
 pub(crate) fn min_element_size(ty: &WireType) -> usize {
     match ty {
         WireType::Bool | WireType::UInt8 | WireType::Int8 => 1,
@@ -230,12 +231,14 @@ pub(crate) fn min_element_size(ty: &WireType) -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// 有类型跨度树(PA-006 插件字段树数据面;additive——不参与上方解码路径,
-// 供 Wireshark 插件按注册字段渲染字节区间)。
+// Typed span tree (PA-006 plugin field tree data plane; additive — not part of the
+// decoding path above; lets the Wireshark plugin render byte ranges per registered
+// field).
 // ---------------------------------------------------------------------------
 
-/// 跨度种类(插件按此选注册字段;F32/F64 走字节面——libwireshark alpha
-/// 未暴露 FT_FLOAT/FT_DOUBLE,如实不解值不编造)。
+/// Span kind (the plugin picks a registered field from this; F32/F64 go through the byte
+/// plane — the libwireshark alpha does not expose FT_FLOAT/FT_DOUBLE, so values are reported as
+/// not decoded rather than fabricated).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpanKind {
     Bool,
@@ -252,28 +255,31 @@ pub enum SpanKind {
     Str,
     Bytes,
     Raw,
-    /// 容器/复合(数组、FIXED_DICT、带长度前缀的 Unicode/Blob/Python、
-    /// 定长 Vector)——字节范围 + 子项。
+    /// Container/composite (arrays, FIXED_DICT, length-prefixed Unicode/Blob/Python,
+    /// fixed-size Vector) — byte range + children.
     Group,
 }
 
-/// 一次解码的字节跨度:相对载荷起点的偏移/长度,嵌套容器带 children。
-/// 只覆盖解码消费的前缀;尾残字节(帧内 arg 之外)不编造跨度。
+/// Byte spans of one decode: offset/length relative to the payload start; nested containers
+/// carry children.
+/// Covers only the prefix consumed by decoding; trailing residue bytes (outside the frame's args)
+/// get no fabricated spans.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValueSpan {
-    /// 相对载荷(payload)起点的字节偏移。
+    /// Byte offset relative to the payload start.
     pub start: usize,
     pub len: usize,
     pub kind: SpanKind,
     pub children: Vec<ValueSpan>,
 }
 
-/// 按 schema 线类型解出跨度树:与 [`decode_value`] 同读序、同错误语义、
-/// 同限额(预算/深度/数组预检),Ok 时逐参数一个顶层跨度。
+/// Resolve the span tree from the schema wire types: same read order, same error semantics
+/// and same limits (budget / depth / array precheck) as [`decode_value`]; on Ok there is one
+/// top-level span per argument.
 ///
-/// 这是字段树的数据面(插件零解析逻辑,协议 crate 单一来源);与
-/// [`decode_value`] 的对拍由 `tests/span_units.rs` 锁定(同语料同 Ok/Err、
-/// 同消费字节数)。
+/// This is the data plane of the field tree (the plugin has zero parsing logic; the protocol
+/// crate is the single source); the parity comparison with [`decode_value`] is pinned by
+/// `tests/span_units.rs` (same corpus, same Ok/Err, same bytes consumed).
 pub fn decode_spans(
     args: &[WireType],
     payload: &[u8],
@@ -288,9 +294,9 @@ pub fn decode_spans(
     Ok(out)
 }
 
-/// `decode_inner` 的跨度镜像:同一 Cursor 读序、同一限额检查与错误文本;
-/// 唯一差异 = 记录消费区间而非值(EntityCall/Unresolved 同 decode_inner
-/// 不推进游标,跨度覆盖剩余字节)。
+/// Span mirror of `decode_inner`: same Cursor read order, same limit checks and error text;
+/// the only difference = it records the consumed range instead of the value (EntityCall/
+/// Unresolved, like decode_inner, do not advance the cursor; the span covers the remaining bytes).
 fn span_inner(
     ty: &WireType,
     cur: &mut Cursor,
@@ -308,7 +314,7 @@ fn span_inner(
     }
     budget.take(limits, "value")?;
     let start = cur.offset();
-    // end 参数化:闭包不捕获 cur,避免与 read_* 可变借用冲突。
+    // end is parameterized: the closure does not capture cur, avoiding a conflict with the read_* mutable borrows.
     let leaf = |kind: SpanKind, end: usize| ValueSpan {
         start,
         len: end - start,
@@ -364,7 +370,7 @@ fn span_inner(
             cur.read_cstring()?;
             leaf(SpanKind::Str, cur.offset())
         }
-        // 带 u32 长度前缀的族:前缀 4B + 体,两层(体 Str/Bytes/Raw)。
+        // The u32 length-prefixed family: 4B prefix + body, two levels (body Str/Bytes/Raw).
         WireType::Unicode | WireType::Blob | WireType::Python => {
             let body_start = start + 4;
             cur.read_blob(limits)?;
@@ -460,7 +466,7 @@ fn span_inner(
                 children,
             }
         }
-        // EntityCall/Unresolved:同 decode_inner 不推进游标,Raw 覆盖剩余。
+        // EntityCall/Unresolved: like decode_inner, no cursor advance; Raw covers the remainder.
         WireType::EntityCall | WireType::Unresolved(_) => ValueSpan {
             start,
             len: cur.rest().len(),

@@ -1,10 +1,14 @@
-//! 崩溃恢复台账(书 §4 CORE-015 面 + 调度器「不永久 pending」恢复语义)。
+//! Crash-recovery ledger (book §4 CORE-015 surface + the scheduler's "never permanently pending"
+//! recovery semantics).
 //!
-//! - 写入:临时文件 + 原子 rename(IDX-010 崩溃写入护栏);行格式自描述,
-//!   首列 magic `SCHEDJ1` 防误读旧/异构文件;
-//! - 读取:逐行容错解析——损坏/未知行跳过并计数,绝不因单行坏数据丢弃整账;
-//! - 恢复:按「当前版本」过滤过期记录(版本落后即丢弃,与在线 stale 面同规),
-//!   其余重新入队,失败不缓存假象。
+//! - Writing: temporary file + atomic rename (IDX-010 crash-write guard); the line format is
+//!   self-describing, and the leading magic column `SCHEDJ1` prevents misreading old or
+//!   heterogeneous files;
+//! - Reading: per-line tolerant parsing — corrupt/unknown lines are skipped and counted, and a
+//!   single bad line never discards the whole ledger;
+//! - Recovery: stale records are filtered out by "current version" (a lagging version is dropped,
+//!   same rule as the online stale surface), the rest are re-enqueued, and failures are never
+//!   cached as false reassurance.
 
 use std::collections::HashMap;
 use std::fs;
@@ -15,7 +19,7 @@ use std::path::{Path, PathBuf};
 use crate::model::{priority, TaskKind};
 use crate::scheduler::{RunFn, Scheduler};
 
-/// 单条待恢复任务记录(queued 任务的持久投影)。
+/// A single pending-recovery task record (the persistent projection of a queued task).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskRecord {
     pub kind: String,
@@ -71,7 +75,7 @@ fn parse_opt_field(s: &str) -> Option<String> {
     }
 }
 
-/// 行格式:`SCHEDJ1\t<kind>\t<priority>\t<file|->\t<version|->\t<target|->`
+/// Line format: `SCHEDJ1\t<kind>\t<priority>\t<file|->\t<version|->\t<target|->`
 fn encode_record(rec: &TaskRecord) -> String {
     format!(
         "{}\t{}\t{}\t{}\t{}\t{}\n",
@@ -86,7 +90,7 @@ fn encode_record(rec: &TaskRecord) -> String {
     )
 }
 
-/// 容错解析一行;无法解析返回 None(计入损坏行)。
+/// Tolerantly parse one line; return None if it cannot be parsed (counted as a corrupt line).
 fn decode_record(line: &str) -> Option<TaskRecord> {
     let fields: Vec<&str> = line.split('\t').collect();
     if fields.len() != 6 || fields[0] != JOURNAL_MAGIC {
@@ -111,8 +115,9 @@ fn decode_record(line: &str) -> Option<TaskRecord> {
     })
 }
 
-/// 台账临时名 = 完整路径 + ".tmp"(KR-AUD-24:旧实现经 `with_extension`
-/// 拼接,无扩展名路径产出 `journal..tmp` 双点形态)。
+/// Ledger temporary name = full path + ".tmp" (KR-AUD-24: the old implementation spliced it
+/// with `with_extension`, which produced the double-dot `journal..tmp` shape for paths without
+/// an extension).
 #[doc(hidden)]
 pub fn journal_tmp_path(path: &Path) -> PathBuf {
     let mut s = path.as_os_str().to_os_string();
@@ -120,7 +125,7 @@ pub fn journal_tmp_path(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// 写台账:临时文件 + 原子 rename;返回写入记录数。
+/// Write the ledger: temporary file + atomic rename; returns the number of records written.
 pub fn write_journal(path: &Path, records: &[TaskRecord]) -> io::Result<usize> {
     let tmp = journal_tmp_path(path);
     if let Some(parent) = path.parent() {
@@ -138,7 +143,8 @@ pub fn write_journal(path: &Path, records: &[TaskRecord]) -> io::Result<usize> {
     Ok(records.len())
 }
 
-/// 读台账:返回 (可恢复记录, 损坏行数)。文件不存在 = 空账(冷启动)。
+/// Read the ledger: returns (recoverable records, number of corrupt lines). A missing file = an
+/// empty ledger (cold start).
 pub fn load_journal(path: &Path) -> io::Result<(Vec<TaskRecord>, usize)> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -159,19 +165,21 @@ pub fn load_journal(path: &Path) -> io::Result<(Vec<TaskRecord>, usize)> {
     Ok((records, corrupt))
 }
 
-/// 恢复回执。
+/// Recovery receipt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RecoveryReport {
-    /// 重新入队的任务数(含在线合并的记录)。
+    /// Number of tasks re-enqueued (including records merged online).
     pub recovered: usize,
-    /// 版本落后于当前版本被丢弃的记录数(计 stale)。
+    /// Number of records dropped for lagging behind the current version (counted as stale).
     pub stale_dropped: usize,
 }
 
 impl Scheduler {
-    /// 从台账恢复:过期记录按当前版本丢弃,其余重新入队。
-    /// `current_versions`:file → 当前已知最新版本(didChange 已到达的版本)。
-    /// `make_run`:为每条恢复记录构造任务体。
+    /// Recover from the ledger: stale records are dropped by current version, the rest are
+    /// re-enqueued.
+    /// `current_versions`: file → currently known latest version (the version didChange already
+    /// reached).
+    /// `make_run`: builds the task body for each recovered record.
     pub fn recover(
         &mut self,
         records: Vec<TaskRecord>,

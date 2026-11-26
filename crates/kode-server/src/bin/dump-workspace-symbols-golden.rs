@@ -1,10 +1,13 @@
-//! WorkspaceSymbol 快速搜索 golden 生成器(RUST-139 批 2):全集符号名
-//! 派生确定性前缀探针(原形/小写两字符/原形两字符)+ 负例 + 空前缀,
-//! 逐探针记命中全量(rootName/symbolName/kind/section/声明落点/行)。
+//! WorkspaceSymbol quick-search golden generator (RUST-139 batch 2):
+//! deterministic prefix probes derived from the full symbol-name set
+//! (original form / lowercase two chars / original-form two chars) + negative
+//! cases + empty prefix, recording the full hit set per probe (rootName/
+//! symbolName/kind/section/declaration landing point/line).
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodeWorkspaceSymbolsParity.test.ts
-//! 用 defParser 原语独立复算对拍(双向门禁:Rust 测试重生成比对 +
-//! vitest 复算)。
+//! The golden file is produced by Rust; the TS side
+//! tests/kodeWorkspaceSymbolsParity.test.ts independently recomputes with
+//! defParser primitives and compares (two-way gate: the Rust test regenerates
+//! and compares + vitest recomputes).
 
 fn main() {
     let repo_root = std::env::args().nth(1).unwrap_or_else(|| String::from("."));

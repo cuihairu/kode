@@ -1,41 +1,45 @@
 /**
- * 自定义代码片段生成器(纯逻辑层)
- * 把编辑器选区文本转成 VSCode 片段体,合并进工作区级
- * .vscode/kbengine-custom.code-snippets;落盘由命令层(extension.ts)执行。
+ * Custom code snippet generator (pure logic layer)
+ * Turns the editor selection text into a VSCode snippet body, merged into the
+ * workspace-level .vscode/kbengine-custom.code-snippets; persisting to disk is
+ * done by the command layer (extension.ts).
  */
 
-/** 工作区内自定义片段文件(相对工作区根) */
+/** The workspace custom snippets file (relative to the workspace root) */
 export const CUSTOM_SNIPPETS_RELATIVE_PATH = '.vscode/kbengine-custom.code-snippets';
 
-/** 单个自定义片段条目 */
+/** A single custom snippet entry */
 export interface SnippetEntry {
-  /** 触发前缀 */
+  /** Trigger prefix */
   prefix: string;
-  /** 片段体(逐行) */
+  /** Snippet body (line by line) */
   body: string[];
-  /** 描述(空串表示不写该字段) */
+  /** Description (an empty string means the field is not written) */
   description: string;
-  /** 生效语言(scope),取生成时文档的 languageId */
+  /** The effective language (scope), taken from the document's languageId at generation time */
   scope: string;
 }
 
 export interface MergeSnippetResult {
-  /** 合并后的完整片段文件内容(2 空格缩进 JSON,尾部换行) */
+  /** The merged full snippet file content (JSON with 2-space indent, trailing newline) */
   content: string;
-  /** 是否覆盖了同名旧条目 */
+  /** Whether a same-named older entry was overwritten */
   overwritten: boolean;
 }
 
-// 片段语法中 `\` 是转义前缀、`$` 开启 tabstop/占位符/变量,字面收录前
-// 双双转义(VSCode 片段语法约定)。
+// In the snippet grammar `\` is the escape prefix and `$` opens a tabstop/
+// placeholder/variable; both are escaped before literal inclusion (the VSCode
+// snippet grammar convention).
 export function escapeSnippetText(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\$/g, '\\$');
 }
 
 /**
- * 行首空白列宽(编辑器 tabSize 列语义):空格 1 列,tab 前进到下一
- * tabSize 倍数。字符数口径在 tab/空格混用时与列语义不等价(1 枚 tab
- * 可折 4 列),去公共缩进必须按列算才保得住相对层级。
+ * Leading whitespace column width (the editor's tabSize column semantics): a space
+ * is 1 column, a tab advances to the next tabSize multiple. A character-count
+ * ruling is not equivalent to the column semantics when tabs/spaces are mixed
+ * (1 tab can fold into 4 columns); removing the common indent must be computed in
+ * columns to preserve the relative hierarchy.
  */
 export function leadingWhitespaceColumns(line: string, tabSize: number): number {
   let column = 0;
@@ -48,9 +52,12 @@ export function leadingWhitespaceColumns(line: string, tabSize: number): number 
 }
 
 /**
- * 按公共列数剥行首空白,余文保留原字符。剥除判据是「剥前列数 < 公共列」:
- * tab 不可拆,跨公共列的整枚一并剥除,该行保留的相对缩进只会偏浅不会偏深
- * (反向会颠倒层级);列数到达或遇非空白即止。
+ * Strip leading whitespace up to the common column count, keeping the remaining
+ * characters verbatim. The strip criterion is "columns before stripping < common
+ * columns": a tab cannot be split, a whole tab crossing the common column is
+ * stripped with it, and the retained relative indentation of that line can only
+ * come out shallower, never deeper (the reverse would invert the hierarchy);
+ * stopping when the column count is reached or a non-whitespace appears.
  */
 export function stripCommonIndent(line: string, commonColumns: number, tabSize: number): string {
   let column = 0;
@@ -67,11 +74,14 @@ export function stripCommonIndent(line: string, commonColumns: number, tabSize: 
 }
 
 /**
- * 选区文本 → 片段体行:统一换行为 \n,去掉首尾空行,按非空行的最少缩进
- * 去公共缩进(插入位置的缩进由编辑器补),逐行做片段语法转义。
- * 缩进按 tabSize 列语义计(编辑器 tabSize 由命令层传入):纯字符数口径
- * 在 tab/空格混用时相对层级残留偏移,列口径与编辑器 normalizeIndentation
- * 的插入语义对齐。
+ * Selection text -> snippet body lines: normalize newlines to \n, drop leading and
+ * trailing blank lines, strip the common indent by the minimum indent of the
+ * non-empty lines (the insertion position's indent is supplied by the editor), and
+ * escape each line for the snippet grammar. Indentation is measured in tabSize
+ * column semantics (the editor's tabSize is passed in by the command layer): a pure
+ * character-count ruling leaves residual offsets in relative hierarchy when tabs/
+ * spaces mix, while the column ruling aligns with the editor's
+ * normalizeIndentation insertion semantics.
  */
 export function selectionToSnippetBody(text: string, tabSize = 4): string[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
@@ -95,9 +105,11 @@ export function selectionToSnippetBody(text: string, tabSize = 4): string[] {
 }
 
 /**
- * 把条目合并进片段文件内容:existingContent 为 null/空串时新建;已有内容
- * 必须是顶层对象的合法 JSON——手改出的注释/坏 JSON 直接抛错交命令层提示,
- * 不静默改写用户文件。同名条目视为覆盖。
+ * Merge an entry into the snippet file content: creates a new file when
+ * existingContent is null/an empty string; existing content must be legal JSON of
+ * a top-level object — hand-edited comments/bad JSON throws straight to the command
+ * layer for prompting, never silently rewriting the user's file. A same-named
+ * entry counts as an overwrite.
  */
 export function mergeSnippetEntry(
   existingContent: string | null,
@@ -123,11 +135,14 @@ export function mergeSnippetEntry(
   if (entry.description.trim() !== '') {
     record.description = entry.description;
   }
-  // 条目不走普通赋值:片段名 __proto__ 会命中 Object.prototype 的 __proto__
-  // 访问器,新条目不落任何自身属性即被丢掉(序列化无该片段,命令层却报已生成);
-  // 官方片段装载 vs/base/common/json.ts 的 setObjectProperty 正是为该键改用
-  // defineProperty 保留自身属性。spread/计算键按 CreateDataProperty 定义,
-  // 同样绕开访问器,常规名称行为不变。
+  // The entry does not go through plain assignment: a snippet named __proto__
+  // would hit Object.prototype's __proto__ accessor, and the new entry would be
+  // dropped without landing any own property (serialization has no such snippet,
+  // yet the command layer reports it generated); the official snippet loader
+  // vs/base/common/json.ts's setObjectProperty uses defineProperty for exactly
+  // this key to preserve own properties. Spread/computed keys follow
+  // CreateDataProperty, likewise bypassing the accessor, with unchanged behavior
+  // for ordinary names.
   root = { ...root, [name]: record };
 
   return { content: `${JSON.stringify(root, null, 2)}\n`, overwritten };

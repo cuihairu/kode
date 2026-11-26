@@ -56,9 +56,10 @@ struct GoldenFile {
 
 #[test]
 fn references_semantic_golden_structure_is_complete() {
-    let committed =
-        std::fs::read_to_string(repo_root().join(kode_server::references::SEMANTIC_GOLDEN_REL_PATH))
-            .expect("golden");
+    let committed = std::fs::read_to_string(
+        repo_root().join(kode_server::references::SEMANTIC_GOLDEN_REL_PATH),
+    )
+    .expect("golden");
     let value: Dump =
         serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     assert!(
@@ -104,15 +105,9 @@ fn references_semantic_golden_structure_is_complete() {
                     "站点区间键形不对: {site}"
                 );
                 let semantic = site["semantic"].as_str().expect("semantic str");
-                assert!(
-                    CLASSES.contains(&semantic),
-                    "semantic 分类越界: {semantic}"
-                );
+                assert!(CLASSES.contains(&semantic), "semantic 分类越界: {semantic}");
                 if semantic == "dangling" {
-                    assert!(
-                        site["evidence"].is_null(),
-                        "Dangling 无证据(不猜): {site}"
-                    );
+                    assert!(site["evidence"].is_null(), "Dangling 无证据(不猜): {site}");
                 } else {
                     assert!(
                         site["evidence"].is_string(),

@@ -1,14 +1,20 @@
-//! KODE-CFG-005:配置派生 RPC 面(`$/kode/config/derive`)。
+//! KODE-CFG-005: config-derived RPC face (`$/kode/config/derive`).
 //!
-//! 消费端(TS `src/configDerive.ts` → `src/scanRoots.ts`)经**命令级**
-//! `gate.runInRust('$/kode/config/derive')` 取 CFG-004 推导出的派生能力
-//! (def 扫描根/入口脚本/telnet/调试就绪)。与 serving 面开关**正交**:
-//! 不动 `serveFromRust`(恒 false)、不动 `kbengine.core.backend`,不依赖
-//! shadow 模式——params 由 TS 直传(已从盘上解析:配置路径/工作区根/入口
-//! 脚本存在性;树可选:def 扫描根只需路径事实,telnet/debug 面才需合成树)。
+//! The consumer side (TS `src/configDerive.ts` → `src/scanRoots.ts`) goes
+//! through the **command-level** `gate.runInRust('$/kode/config/derive')` to
+//! get the derived capabilities produced by CFG-004 (def scan roots / entry
+//! scripts / telnet / debug readiness). This is **orthogonal** to the serving
+//! face switches: it never touches `serveFromRust` (always false), never
+//! touches `kbengine.core.backend`, and does not depend on shadow mode —
+//! params are passed in directly by TS (already resolved from disk: config
+//! path / workspace root / entry script existence; the trees are optional —
+//! the def scan root only needs path facts, only the telnet/debug faces need
+//! a synthesized tree).
 //!
-//! 单一真源在 Rust core(TS 不复制推导逻辑);Err = 输入形态非法,TS 按
-//! 不可用回退旧 workspace∪assetsRoot 链(不杀 server,不视为断言失败)。
+//! The single source of truth lives in the Rust core (TS does not duplicate
+//! the derivation logic); Err = malformed input shape, and TS falls back to
+//! the old workspace∪assetsRoot chain as unavailable (no server kill, not
+//! treated as an assertion failure).
 
 use serde_json::{json, Map, Value};
 
@@ -19,7 +25,7 @@ use kode_parser::config_derive::{
 
 use crate::rpc::RpcRegistry;
 
-/// 注册 `$/kode/config/derive`;由 `ServerState::new()` 加一行调用。
+/// Registers `$/kode/config/derive`; called with one line from `ServerState::new()`.
 pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/config/derive", derive_handler);
 }
@@ -39,10 +45,11 @@ fn derive_handler(params: Value) -> Result<Value, String> {
     Ok(json!({ "derive": derive_to_json(&caps), "diagnostics": diagnostics }))
 }
 
-/// 反序列化一个配置树节点(镜像 TS `ConfigXmlNode`:`name/text/children/
-/// sourceComments`)。`null`/缺省 → `None`(该面无树,如 def 扫描根只依赖
-/// 路径事实);非对象 → Err(形态非法,TS 回退)。kode-parser 是零第三方
-/// crate,不能 serde 派生,故在此手工逐字段转。
+/// Deserializes one config tree node (mirrors TS `ConfigXmlNode`: `name/text/
+/// children/sourceComments`). `null`/absent → `None` (this face has no tree,
+/// e.g. a def scan root that only relies on path facts); a non-object → Err
+/// (malformed shape, TS falls back). kode-parser is a zero-third-party crate
+/// and cannot derive serde, so fields are converted by hand here.
 fn config_node_from_json(v: Option<&Value>) -> Result<Option<ConfigNode>, String> {
     match v {
         None | Some(Value::Null) => Ok(None),
@@ -96,7 +103,7 @@ fn node_from_map(map: &Map<String, Value>) -> Result<ConfigNode, String> {
     })
 }
 
-/// 派生事实(拥有所有格;构造 `DeriveFacts` 时借用)。
+/// Derived facts (owns them; borrowed when constructing `DeriveFacts`).
 struct OwnedFacts {
     workspace_root: Option<String>,
     custom_config_path: Option<String>,
@@ -160,7 +167,7 @@ impl OwnedFacts {
     }
 }
 
-/// 派生能力 → JSON(camelCase,消费端 TS 直读)。
+/// Derived capabilities → JSON (camelCase, read directly by the TS consumer).
 fn derive_to_json(caps: &DeriveCapabilities) -> Value {
     json!({
         "defScanRoots": {
@@ -177,8 +184,9 @@ fn derive_to_json(caps: &DeriveCapabilities) -> Value {
                 "passwordSet": e.password_set,
             })).collect::<Vec<_>>(),
         },
-        // CLONE-P5 骨架:Rust 派生数据库连接档案(明文密码不回传,
-        // passwordAvailable 仅标记 encrypt=false 且配置非空)。
+        // CLONE-P5 skeleton: Rust-derived database connection profile
+        // (plaintext passwords are never sent back; passwordAvailable only
+        // marks encrypt=false with a non-empty config).
         "database": {
             "available": caps.database.available,
             "dbType": caps.database.db_type,
@@ -203,7 +211,8 @@ fn derive_to_json(caps: &DeriveCapabilities) -> Value {
     })
 }
 
-/// 派生诊断(reasons 由 CFG-004 产出,英文机器面文案;此处补 scope 与 severity)。
+/// Derived diagnostics (reasons are produced by CFG-004 as English machine
+/// face copy; scope and severity are added here).
 fn diagnostics_to_json(caps: &DeriveCapabilities) -> Vec<Value> {
     let mut out = Vec::new();
     if caps.def_scan_roots.degraded {
@@ -223,7 +232,7 @@ fn diagnostics_to_json(caps: &DeriveCapabilities) -> Vec<Value> {
     out
 }
 
-/// JSON 值种类名(诊断/错误文案用)。
+/// JSON value kind name (used for diagnostic/error copy).
 fn kind_of(v: &Value) -> &'static str {
     match v {
         Value::Null => "null",
@@ -235,20 +244,22 @@ fn kind_of(v: &Value) -> &'static str {
     }
 }
 
-// ============ KODE-CFG-009:`$/kode/config/resolve`(消费通道取数口) ============
+// ============ KODE-CFG-009: `$/kode/config/resolve` (consumer-channel fetch port) ============
 //
-// params = `{ defaultsXml: string|null, customXml: string|null }`(TS 只读盘
-// 送原文,不解析)→ `{ defaultsTree, customTree, merged, telnetSummary,
-// dbInterface }`。解析/合并/读值唯一实现在 kode-parser resolve_config
-// (TS parseConfigXml/mergeConfigXml/summarizeFinalTelnet/
-// extractDatabaseInterfaceConfig 已下线,设计 §6.2 step 3)。
+// params = `{ defaultsXml: string|null, customXml: string|null }` (TS only
+// reads the raw text from disk, no parsing) → `{ defaultsTree, customTree,
+// merged, telnetSummary, dbInterface }`. The single implementation of
+// parse/merge/value-reading is kode-parser resolve_config (the TS
+// parseConfigXml/mergeConfigXml/summarizeFinalTelnet/
+// extractDatabaseInterfaceConfig have been retired, design §6.2 step 3).
 
 use kode_parser::config::{
     resolve_config, DatabaseInterfaceConfig, TelnetSummaryEntry, ENGINE_DEFAULT_TELNET_PORTS,
 };
 
-/// 常量端口数值表(与 ENGINE_DEFAULT_TELNET_PORTS 同源,查表用;pub 供
-/// kode-mcp 配置问答面复用,core 仍唯一真源)。
+/// Constant port number table (same source as ENGINE_DEFAULT_TELNET_PORTS,
+/// for lookups; pub so the kode-mcp config Q&A face can reuse it, while the
+/// core remains the single source of truth).
 pub const ENGINE_TELNET_PORT_NUMBERS: &[(&str, i64)] = &[
     ("loginapp", 31000),
     ("dbmgr", 32000),
@@ -259,7 +270,7 @@ pub const ENGINE_TELNET_PORT_NUMBERS: &[(&str, i64)] = &[
     ("bots", 51000),
 ];
 
-/// 注册 `$/kode/config/resolve`。
+/// Registers `$/kode/config/resolve`.
 pub fn register_resolve(reg: &mut RpcRegistry) {
     reg.register("$/kode/config/resolve", resolve_handler);
 }
@@ -277,9 +288,11 @@ fn resolve_handler(params: Value) -> Result<Value, String> {
             .iter()
             .map(telnet_entry_to_json)
             .collect::<Vec<_>>(),
-        // 引擎写死端口表(core 唯一真源;TS 侧 TS 常量表已删)
+        // Engine hard-coded port table (single source of truth in the core;
+        // the TS-side constant table has been deleted)
         "telnetDefaultPorts": telnet_default_ports_json(),
-        // 元件配置 telnet_service 段读值(旧 parseKbengineXmlTelnet 的 core 形)
+        // Reads the telnet_service section of the component config (the core
+        // form of the old parseKbengineXmlTelnet)
         "customTelnet": resolved.custom_telnet.as_ref().map(|t| {
             json!({
                 "port": t.port.map(json_number),
@@ -298,8 +311,8 @@ fn opt_xml_text(v: Option<&Value>, field: &str) -> Result<Option<String>, String
     }
 }
 
-/// ConfigNode → TS `ConfigXmlNode` 形 JSON(sourceComments 空则省,与 TS
-/// 可选字段同形)。
+/// ConfigNode → TS `ConfigXmlNode`-shaped JSON (sourceComments omitted when
+/// empty, same shape as the TS optional fields).
 fn config_node_to_json(node: &ConfigNode) -> Value {
     let children: Vec<Value> = node.children.iter().map(config_node_to_json).collect();
     let mut map = Map::new();
@@ -320,7 +333,8 @@ fn config_node_to_json(node: &ConfigNode) -> Value {
     Value::Object(map)
 }
 
-/// f64 → JSON 数(整值落整数,与 TS Number 输出形态一致)。
+/// f64 → JSON number (whole values become integers, matching the TS Number
+/// output shape).
 fn json_number(value: f64) -> Value {
     if value.fract() == 0.0 && value.abs() < 9e15 {
         Value::Number(serde_json::Number::from(value as i64))
@@ -359,7 +373,8 @@ fn db_interface_to_json(db: &DatabaseInterfaceConfig) -> Value {
     Value::Object(map)
 }
 
-/// 引擎写死端口表(core 常量唯一真源)→ JSON。
+/// Engine hard-coded port table (single source of truth among core
+/// constants) → JSON.
 fn telnet_default_ports_json() -> Value {
     let mut map = Map::new();
     for component in ENGINE_DEFAULT_TELNET_PORTS.iter() {

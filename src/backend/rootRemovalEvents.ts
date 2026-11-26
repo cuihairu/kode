@@ -1,21 +1,24 @@
-// IDE-SNP-009:统一移除根通知。工作区根被移除时,一个通知源向全部消费索引
-// 广播同一根移除事件;各消费索引订阅后定向摘除该根记录,不再整库失效等
-// 各自 TTL/重扫自愈。与 IDE-SNP-008 的共享文件事件合并器不同:根移除是
-// 粗粒度终态事件,一次 emit 同步广播一次,不做窗口/去重(重复 emit 视为
-// 独立通知,消费面摘除幂等)。
+// IDE-SNP-009: unified root-removal notification. When a workspace root is removed, one
+// notification source broadcasts the same root-removal event to every consumer index;
+// each consumer index subscribes and then strips that root record by target instead of
+// invalidating its whole index and waiting out its own TTL/rescan self-heal. Unlike the
+// shared file event merger of IDE-SNP-008: a root removal is a coarse-grained terminal
+// event, one emit broadcasts synchronously once, with no windowing/dedup (a repeated
+// emit is treated as an independent notification, and consumer-side stripping is
+// idempotent).
 export interface RootRemovalEvent {
-  /** 移除根的原样路径(消费端按自身键规则应用) */
+  /** The removed root path verbatim (consumers apply it under their own key rules) */
   readonly rootPath: string;
 }
 
 export type RootRemovalHandler = (event: RootRemovalEvent) => void;
 
 export interface RootRemovalNotifier {
-  /** 广播一次根移除(同步投递给当前全部订阅者) */
+  /** Broadcast one root removal (delivered synchronously to all current subscribers) */
   emit(rootPath: string): void;
-  /** 订阅根移除事件;返回退订函数 */
+  /** Subscribe to root removal events; returns an unsubscribe function */
   subscribe(handler: RootRemovalHandler): () => void;
-  /** 终结:清订阅,后续 emit 不投递 */
+  /** Terminate: clear subscribers, later emits are not delivered */
   dispose(): void;
 }
 

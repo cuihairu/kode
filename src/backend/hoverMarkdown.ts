@@ -1,8 +1,11 @@
 /**
- * hover Markdown 格式化(IDE-ARC-003 抽离):languageProviders 五处 render 位
- * (返回类型推导/def 声明方法/接收者调用/内建属性/事件统计)的字符串拼装
- * 只住本模块。纯格式化层:不读文件、不读配置、不 import vscode——文本
- * 输入进来,markdown 字符串出去,既有 hover 文本逐字不变。
+ * Hover Markdown formatting (extracted under IDE-ARC-003): the string
+ * assembly for the five render sites in languageProviders (inferred return
+ * type / def-declared method / receiver call / builtin property / event
+ * statistics) lives only in this module. Pure formatting layer: it reads no
+ * files, reads no configuration, and does not import vscode — text goes in,
+ * a markdown string comes out, and the existing hover text stays
+ * character-for-character unchanged.
  */
 import { basename } from 'path';
 import {
@@ -11,8 +14,10 @@ import {
 } from './entityBuiltinProperties';
 import { PYTHON_TYPE_STUB_FALLBACK, type SelfPropertyResolved } from './selfPropertyTypeInference';
 
-/** def 声明方法/接收者调用共用输入:receiver 有值 = 接收者调用面(标题带
- * 接收者段),无值 = 声明面;签名/声明行/Exposed 尾段两面同构。 */
+/** Shared input for the def-declared method / receiver call faces: a present
+ * receiver = receiver call face (the headline carries a receiver segment),
+ * absent = declaration face; signature / declaration line / Exposed tail
+ * segment are isomorphic across both faces. */
 export interface EntityDefMethodHoverInput {
   methodName: string;
   section: string;
@@ -23,7 +28,7 @@ export interface EntityDefMethodHoverInput {
   receiver?: string;
 }
 
-/** 「此函数/此调用是实体 def 声明的 X 方法」标注全文 */
+/** Full text of the "this function / this call is the entity's def-declared X method" annotation */
 export function formatEntityDefMethodHover(input: EntityDefMethodHoverInput): string {
   const header = input.receiver === undefined
     ? `**${input.methodName}** — 此函数是实体 def 声明的 ${input.section} 方法\n\n`
@@ -32,29 +37,31 @@ export function formatEntityDefMethodHover(input: EntityDefMethodHoverInput): st
   return `${header}签名: \`${input.signature}\`\n\n声明: \`${basename(input.defFile)}:${input.defLine}\`${exposed}`;
 }
 
-/** 局部变量返回类型推导标注:`**目标: 注解**` + 来源方法段 */
+/** Local variable return type inference annotation: `**target: annotation**` + source method segment */
 export function formatInferredReturnHover(target: string, annotation: string, methodName: string): string {
   return `**${target}: ${annotation}**\n\n推导自 ${methodName}() 返回注解`;
 }
 
-/** 事件统计标注:当前文件注册/触发计数 */
+/** Event statistics annotation: registration / trigger counts in the current file */
 export function formatEventStatsHover(event: string, registrations: number, emits: number): string {
   return `**${event}**\n\n当前文件统计：${registrations} 处注册 · ${emits} 处触发`;
 }
 
-/** 内建属性标注:首行 headline(名称+类型+面/读写,复用纯格式化面)+ 注册来源段 */
+/** Builtin property annotation: the headline first line (name + type + face/read-write, reusing the pure formatting face) + registration source segment */
 export function formatBuiltinPropertyHover(hit: EntityBuiltinPropertyHit): string {
   return `${formatEntityBuiltinPropertyHeadline(hit.property.name, hit.face, hit.property)}\n\n引擎注册面: \`${hit.property.source}\``;
 }
 
-/** TYP-ARRAY def 属性/数组元素标注:首行 `**目标: 注解**` + 来源段 + 诚实 Any 原因(④) */
+/** TYP-ARRAY def property / array element annotation: the `**target: annotation**` first line + source segment + the honest Any reason (④) */
 export function formatSelfPropertyTypeHover(resolved: SelfPropertyResolved): string {
   const headline = `**${resolved.expr}: ${resolved.annotation}**`;
   const source = resolved.kind === 'element'
     ? `元素类型推导自 \`self.${resolved.propertyName}\`(\`${basename(resolved.defFile)}:${resolved.defLine}\`)`
     : `def 属性声明: \`${basename(resolved.defFile)}:${resolved.defLine}\``;
-  // reason 两义(TYP-DICTGET):Any 诚实原因带「未解析」尾注;非 Any 时是
-  // 信息性注记(dict.get 键可能不存在),原样引述不加 Any 尾。
+  // The reason is two-meaning (TYP-DICTGET): when the annotation is Any it
+  // carries the honest reason with an "unresolved" tail note; otherwise it is
+  // an informational note (a dict.get key may not exist), quoted verbatim
+  // with no Any tail.
   const reason = !resolved.reason
     ? ''
     : resolved.annotation === PYTHON_TYPE_STUB_FALLBACK
@@ -63,7 +70,7 @@ export function formatSelfPropertyTypeHover(resolved: SelfPropertyResolved): str
   return `${headline}\n\n${source}${reason}`;
 }
 
-/** KSEM-STRUCT-02 FIXED_DICT 子字段键标注输入(键+值注解+声明位置)。 */
+/** KSEM-STRUCT-02 FIXED_DICT sub-field key annotation input (key + value annotation + declaration location). */
 export interface FixedDictKeyHoverInput {
   containerName: string;
   key: string;
@@ -72,20 +79,23 @@ export interface FixedDictKeyHoverInput {
   line: number;
 }
 
-/** FIXED_DICT 子字段键标注:首行 `**键: 注解**` + types.xml 声明段。 */
+/** FIXED_DICT sub-field key annotation: the `**key: annotation**` first line + the types.xml declaration segment. */
 export function formatFixedDictKeyHover(input: FixedDictKeyHoverInput): string {
   return `**${input.key}: ${input.annotation}**\n\nFIXED_DICT \`${input.containerName}\` 字段声明: \`${basename(input.file)}:${input.line}\``;
 }
 
-/** KSEM-STRUCT-07 implementedBy 下标悬停说明输入(容器名+绑定值)。 */
+/** KSEM-STRUCT-07 implementedBy subscript hover note input (container name + bound value). */
 export interface ImplementedBySubscriptNoteInput {
   containerName: string;
   implementedBy: string;
 }
 
-/** implementedBy FD 的字符串下标悬停说明:内存形式为实现类结构,键位由实现
- * 类定义;FIXED_DICT Properties 只描述传输/存储形式(getDictFromObj 边界
- * 还原),不按其判定内存下标——给机制说明,不把实现对象当 TypedDict。 */
+/** String-subscript hover note for implementedBy FDs: the in-memory form is
+ * the implementing class's structure and the keys are defined by the
+ * implementing class; FIXED_DICT Properties only describe the
+ * transport/storage form (restored across the getDictFromObj boundary), so
+ * in-memory subscripting is not judged by it — this explains the mechanism
+ * and never treats the implementing object as a TypedDict. */
 export function formatImplementedBySubscriptNoteHover(input: ImplementedBySubscriptNoteInput): string {
   return `**${input.containerName}**:implementedBy 类型\n\n内存形式由实现类 \`${input.implementedBy}\` 重定义(键位/访问面由实现类定义);FIXED_DICT Properties 键位仅描述传输/存储形式(引擎经 getDictFromObj 还原后使用),不适用于内存下标。`;
 }

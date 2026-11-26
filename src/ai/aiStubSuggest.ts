@@ -1,10 +1,16 @@
-// AI-004 stub/typings 建议层(suggestStub):对 stub 模板真源的成员段,AI
-// 补 docstring/使用示例,只作建议层输出到 diff 预览——绝不替代模板真源
-// (typings/ 目录钉死 fork commit 的真源口径不动,用户设计资产红线;本层
-// 对真源文件零写入)。diff 两侧都是只读虚拟文档:左侧=真源原段,右侧=
-// AI 建议段,确认后由用户手工誊抄——不提供一键写入面。片段最小化:只发
-// 选中的成员段,不发整个模板。AI 面未配置时命令不出(惰性注册判据同
-// AI-001,handler 二次闸防注册后配置被清空)。
+// AI-004 stub/typings suggestion layer (suggestStub): for a member section of the
+// stub template source of truth, the AI adds docstrings/usage examples, output
+// only as a suggestion layer rendered into a diff preview — it never replaces the
+// template source of truth (the typings/ directory is pinned to the fork commit;
+// that source-of-truth contract is unchanged, a user design-asset red line; this
+// layer writes nothing to the source-of-truth files). Both sides of the diff are
+// read-only virtual documents: left = the original section, right = the AI
+// suggested section, and the user hand-copies it after confirming — no one-click
+// write surface is offered. Snippet minimization: only the selected member
+// section is sent, never the whole template. When the AI surface is
+// unconfigured the command does not appear (lazy registration criterion same as
+// AI-001, plus a handler-side second gate against the configuration being
+// cleared after registration).
 import * as vscode from 'vscode';
 import { AI_API_KEY_SECRET, AiSecretsStore, isAiFaceAvailable, sendAiMessage } from './aiClient';
 import { extractCodeSuggestions } from './aiChatPanel';
@@ -16,9 +22,9 @@ export const AI_SUGGEST_STUB_COMMAND = 'kbengine.ai.suggestStub';
 const STUB_SCHEME = 'kbengine-ai-stub';
 
 interface StubSuggestionState {
-  /** 真源原段(只读 diff 左侧) */
+  /** Original source-of-truth section (read-only diff left side) */
   source: string;
-  /** AI 建议段(只读 diff 右侧) */
+  /** AI suggested section (read-only diff right side) */
   suggestion: string;
 }
 
@@ -26,9 +32,12 @@ let stubState: StubSuggestionState | null = null;
 let stubProvider: vscode.Disposable | null = null;
 
 /**
- * 从模板真源文本提取成员段:`def <名>(`/`class <名>` 起行到下一个同级或
- * 更浅缩进的定义行(不含)——同名多定义取首个;找不到返回 null(不猜)。
- * 顶层装饰器行(@...)在定义行上方时并入段落起点(签名完整可喂)。
+ * Extract a member section from the template source-of-truth text: from the
+ * `def <name>(` / `class <name>` line up to (but not including) the next
+ * definition line at the same or shallower indentation — when a name has
+ * multiple definitions take the first; returns null when not found (no guessing).
+ * Top-level decorator lines (@...) sitting above the definition line are folded
+ * into the section start (so the signature is complete enough to feed).
  */
 export function extractStubTemplateSection(
   templateText: string,
@@ -47,7 +56,7 @@ export function extractStubTemplateSection(
     headerLine = index;
     startLine = index;
     indent = line.match(/^\s*/)?.[0].length ?? 0;
-    // 顶层成员:紧邻上方的连续装饰器行并入(签名带 @overload 等才完整)
+    // Top-level member: fold in the consecutive decorator lines directly above (the signature only becomes complete with @overload etc.)
     let decorator = startLine - 1;
     while (decorator >= 0 && /^\s*@/.test(lines[decorator])) {
       startLine = decorator;
@@ -58,8 +67,9 @@ export function extractStubTemplateSection(
   if (headerLine < 0) {
     return null;
   }
-  // 段尾=header 之后第一个同级或更浅缩进的定义行(不含;装饰器并入后
-  // 从 headerLine+1 找,自己的 def 行不会被误判)
+  // Section end = the first definition line after the header at the same or a
+  // shallower indentation (exclusive; searching from headerLine+1 after folding
+  // in decorators, so its own def line is not misjudged)
   const bodyDefRe = /^\s*(class|def|@)\b/;
   let endLine = lines.length;
   for (let index = headerLine + 1; index < lines.length; index += 1) {
@@ -73,7 +83,7 @@ export function extractStubTemplateSection(
       break;
     }
   }
-  // 段尾空行回缩(尾随空白行不属于成员段)
+  // Shrink the section end past trailing blank lines (they do not belong to the member section)
   while (endLine > headerLine + 1 && !lines[endLine - 1].trim()) {
     endLine -= 1;
   }
@@ -99,7 +109,7 @@ function renderStubPrompt(
   ];
 }
 
-/** 命令入口的成员名解析:显式参数优先;否则活动 .pyi 光标词;提不出=诚实提示 */
+/** Member-name resolution at the command entry: an explicit argument wins; otherwise the cursor word in the active .pyi; when nothing can be resolved, show an honest hint */
 function resolveMemberName(explicit?: string): string | null {
   const trimmed = explicit?.trim();
   if (trimmed) {
@@ -157,7 +167,7 @@ async function handleSuggestStub(
     void vscode.window.showInformationMessage('AI 回复未包含代码建议,仅有文字说明');
     return;
   }
-  // 真源红线:本层对模板文件零写入——只把原段/建议段挂进只读虚拟文档
+  // Source-of-truth red line: this layer writes nothing to the template file — it only mounts the original/suggested section into read-only virtual documents
   stubState = { source: section.text, suggestion: suggestions[0].code };
   const left = vscode.Uri.parse(`${STUB_SCHEME}:source.pyi?side=source`);
   const right = vscode.Uri.parse(`${STUB_SCHEME}:suggestion.pyi?side=suggestion`);
@@ -170,8 +180,9 @@ async function handleSuggestStub(
 }
 
 /**
- * 注册 AI-004 建议层(AI 面惰性块内调用):suggestStub 命令+只读虚拟
- * scheme provider。真源文件零写入。
+ * Register the AI-004 suggestion layer (called inside the lazy AI block): the
+ * suggestStub command + the read-only virtual scheme provider. Zero writes to
+ * the source-of-truth files.
  */
 export function registerAiStubSuggest(
   context: vscode.ExtensionContext,
@@ -200,7 +211,7 @@ export function registerAiStubSuggest(
   return stubProvider;
 }
 
-/** 测试清理面 */
+/** Test cleanup surface */
 export function disposeAiStubSuggestForTests(): void {
   if (stubProvider) {
     stubProvider.dispose();

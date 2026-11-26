@@ -1,8 +1,10 @@
-//! 请求响应关联(PA-005「仅协议确证标识,不拿相邻猜对」)。
+//! Request/response correlation (PA-005 "protocol-confirmed identifiers only, never
+//! guessing from neighbouring messages").
 //!
-//! 口径:只认 [`PairSpec`] 取证表内的 请求名→响应名 组合;同 Flow 内同
-//! 类型 FIFO 配对(协议状态机每对至多一个在途请求);响应名不在任何在途
-//! 请求的可接受集内 → 不配对,计入 unmatched(不猜测)。
+//! Contract: only the request-name -> response-name combinations in the [`PairSpec`]
+//! forensic table are trusted; FIFO pairing of the same type within one Flow (the protocol
+//! state machine has at most one in-flight request per pair); a response name not in any
+//! in-flight request's accepted set -> no pairing, counted as unmatched (no guessing).
 
 use std::collections::VecDeque;
 
@@ -18,19 +20,19 @@ pub struct Pair {
     pub response: String,
     pub request_ts: Option<f64>,
     pub response_ts: Option<f64>,
-    /// 响应 - 请求(毫秒;时间戳齐备才有)。
+    /// Response - request (milliseconds; present only when both timestamps exist).
     pub delta_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct CorrelationReport {
     pub pairs: Vec<Pair>,
-    /// 发出但未等到协议响应的请求数(不猜测配对)。
+    /// Number of requests issued but never answered by a protocol response (no guess-matching).
     pub unmatched_requests: usize,
 }
 
-/// 单遍扫描:FIFO 队列按 (flow, request_name);响应到来时取**最早的**
-/// 可接受请求(跨请求类型取最老,避免同 flow 的 hello/login 混淆)。
+/// Single-pass scan: FIFO queues keyed by (flow, request_name); when a response arrives take the
+/// **earliest** acceptable request (the oldest across request types, to avoid confusing hello/login within the same flow).
 pub fn correlate(records: &[Record], pairs: &[PairSpec]) -> CorrelationReport {
     let mut out = CorrelationReport::default();
     // flow → request_name → FIFO of (ts, order)
@@ -52,7 +54,7 @@ pub fn correlate(records: &[Record], pairs: &[PairSpec]) -> CorrelationReport {
             continue;
         }
         if is_response {
-            // 可接受该响应的请求类型里,取全局最老的在途请求。
+            // Among the request types that accept this response, take the globally oldest in-flight request.
             let mut best: Option<(String, usize, Option<f64>)> = None;
             for p in pairs {
                 if !p.responses.contains(&name.as_str()) {
@@ -92,7 +94,7 @@ pub fn correlate(records: &[Record], pairs: &[PairSpec]) -> CorrelationReport {
             }
         }
     }
-    // 剩余在途 = 未匹配请求。
+    // Remaining in-flight requests = unmatched requests.
     out.unmatched_requests = pending.values().map(VecDeque::len).sum();
     out
 }

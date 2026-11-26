@@ -1,14 +1,21 @@
-//! Fuzz(PDC-0602):归档/规则/畸形 BLOB/嵌套关系/环引用的 fail-closed 面。
+//! Fuzz (PDC-0602): the fail-closed face for archives / rules / malformed BLOB /
+//! nested relations / cycle references.
 //!
-//! 全部经确定性 PRNG 或手工畸形夹具驱动,断言「绝不 panic」——解析面只许
-//! Ok 或 Err,不许 unwind(panic 即测试失败)。`cargo test` 即可跑,不依赖
-//! cargo-fuzz/nightly;PRNG 用 xorshift64 免第三方依赖,CI 可复现。
+//! Everything is driven by a deterministic PRNG or hand-made malformed fixtures and
+//! asserts "never panic" -- the parsing face is only allowed to return Ok or Err,
+//! never unwind (a panic fails the test). Runs with plain `cargo test`, no
+//! cargo-fuzz/nightly dependency; the PRNG uses xorshift64 to avoid third-party
+//! deps and to stay reproducible in CI.
 //!
-//! 覆盖面:
-//! - 归档字节流(魔数/版本/旗标/帧头/清单/校验和/jsonl)→ Archive::open 不 panic;
-//! - 畸形 TypedRow/BLOB(奇数 hex、非 hex、负 BigUInt、未知 tag)→ serde 不 panic;
-//! - 规则(空实体/未知表/自引用/include/exclude 重叠)→ validate/apply 不 panic;
-//! - 嵌套/环关系(深链、环、扇出)→ RelationGraph 终止不 panic、环被检出。
+//! Coverage:
+//! - archive byte streams (magic/version/flags/frame header/manifest/checksum/jsonl)
+//!   -> Archive::open must not panic;
+//! - malformed TypedRow/BLOB (odd-length hex, non-hex, negative BigUInt, unknown tag)
+//!   -> serde must not panic;
+//! - rules (empty entity / unknown table / self reference / include+exclude overlap)
+//!   -> validate/apply must not panic;
+//! - nested / cyclic relations (deep chain, cycle, fan-out) -> RelationGraph
+//!   terminates without panicking, and cycles are detected.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -20,7 +27,7 @@ use kode_db_clone::{
     TypedRow, TypedValue,
 };
 
-/// 确定性 xorshift64 PRNG(免第三方依赖,CI 可复现)。
+/// Deterministic xorshift64 PRNG (no third-party deps, reproducible in CI).
 struct XorShift(u64);
 impl XorShift {
     fn new(seed: u64) -> Self {
@@ -45,20 +52,20 @@ impl XorShift {
     }
 }
 
-/// 临时文件路径(带进程 + 迭代序,避免并发 worker 冲突)。
+/// Temp file path (includes process id + iteration sequence to avoid concurrent worker clashes).
 fn tmp_path(tag: &str, seq: u64) -> PathBuf {
     let pid = std::process::id();
     std::env::temp_dir().join(format!("kode-fuzz-{tag}-{pid}-{seq}.kdpclone"))
 }
 
-/// 写临时文件,返回路径。
+/// Write a temp file, return its path.
 fn write_tmp(bytes: &[u8], tag: &str, seq: u64) -> PathBuf {
     let p = tmp_path(tag, seq);
     std::fs::write(&p, bytes).expect("write fuzz temp");
     p
 }
 
-/// 断言闭包绝不 panic;返回 Ok/Err 结果(供断言)。
+/// Assert the closure never panics; returns the Ok/Err result (for further assertions).
 fn must_not_panic<T>(what: &str, f: impl FnOnce() -> T) -> std::thread::Result<T> {
     let r = catch_unwind(AssertUnwindSafe(f));
     assert!(
@@ -69,7 +76,7 @@ fn must_not_panic<T>(what: &str, f: impl FnOnce() -> T) -> std::thread::Result<T
 }
 
 // ---------------------------------------------------------------------------
-// 构造助手(与 golden_plan/apply 同口径)
+// Construction helpers (same conventions as golden_plan/apply)
 // ---------------------------------------------------------------------------
 
 fn field(name: &str, type_label: &str) -> DerivedField {
@@ -82,7 +89,7 @@ fn field(name: &str, type_label: &str) -> DerivedField {
     }
 }
 
-/// 链式子表:parent 为上一级(根 parent=None)。
+/// Chained child table: parent is the previous level (root has parent=None).
 fn chain_table(name: &str, parent: Option<&str>) -> DerivedTable {
     DerivedTable {
         name: name.into(),
@@ -104,7 +111,7 @@ fn row(table: &str, values: Vec<TypedValue>) -> TypedRow {
     }
 }
 
-/// 写一份最小合法归档(供变异 fuzz 起点)。
+/// Write a minimal valid archive (starting point for mutation fuzzing).
 fn write_valid_archive(path: &Path) {
     let mut w = ArchiveWriter::new(path, None, "Avatar").expect("writer");
     w.write_row(
@@ -124,13 +131,13 @@ fn write_valid_archive(path: &Path) {
         .expect("finalize");
 }
 
-/// 读完整字节。
+/// Read all bytes.
 fn read_bytes(path: &Path) -> Vec<u8> {
     std::fs::read(path).expect("read archive")
 }
 
 // ---------------------------------------------------------------------------
-// 1. 归档字节流 fuzz
+// 1. Archive byte-stream fuzz
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -141,11 +148,11 @@ fn archive_random_bytes_never_panics() {
         let bytes = rng.bytes(len);
         let p = write_tmp(&bytes, "rand", i);
         let res = must_not_panic("Archive::open(random bytes)", || Archive::open(&p, None));
-        // 无论 Ok/Err 皆可;关键是不 panic。
+        // Either Ok or Err is fine; the key is not panicking.
         let _ = res.unwrap();
         let _ = std::fs::remove_file(&p);
     }
-    // 偶发大缓冲(接近但不超过 cap,构造已保证 < cap)。
+    // Occasional large buffers (close to but under cap; the construction guarantees < cap).
     for i in 0..8u64 {
         let len = 64 * 1024 + (i as usize) * 1024;
         let bytes = rng.bytes(len);
@@ -162,7 +169,7 @@ fn archive_structural_mutations_never_panic() {
     let bytes = read_bytes(&base);
     let _ = std::fs::remove_file(&base);
 
-    // 逐字节翻转前 64 字节(魔数/版本/旗标/首帧头)。
+    // Flip each of the first 64 bytes one by one (magic/version/flags/first frame header).
     for i in 0..64u64 {
         if i as usize >= bytes.len() {
             break;
@@ -174,7 +181,7 @@ fn archive_structural_mutations_never_panic() {
         let _ = std::fs::remove_file(&p);
     }
 
-    // 各截断点(前 32 字节逐点 + 随机后段)。
+    // Every truncation point (each of the first 32 bytes, plus random later cuts).
     for i in 0..32u64 {
         let mut b = bytes.clone();
         b.truncate(i as usize);
@@ -193,7 +200,7 @@ fn archive_structural_mutations_never_panic() {
         let _ = std::fs::remove_file(&p);
     }
 
-    // 追加垃圾/翻清单字节(校验和必被破坏 → Err,不 panic)。
+    // Append garbage / corrupt manifest bytes (checksum must be broken -> Err, no panic).
     for i in 0..20u64 {
         let mut b = bytes.clone();
         let n = rng.range(1, 64);
@@ -206,7 +213,7 @@ fn archive_structural_mutations_never_panic() {
 
 #[test]
 fn archive_bad_magic_version_flag_never_panic() {
-    // 手工拼坏头:错魔数、错版本、错旗标(带加密位但无 key)。
+    // Hand-built bad header: wrong magic, wrong version, wrong flags (encryption bit set but no key).
     let base = tmp_path("valid2", 0);
     write_valid_archive(&base);
     let bytes = read_bytes(&base);
@@ -225,7 +232,7 @@ fn archive_bad_magic_version_flag_never_panic() {
     let _ = std::fs::remove_file(&p);
 
     let mut bad_ver = bytes.clone();
-    bad_ver[9] = 99; // MAGIC.len()==9,版本在索引 9。
+    bad_ver[9] = 99; // MAGIC.len()==9, version sits at index 9.
     let p = write_tmp(&bad_ver, "badver", 0);
     let e = must_not_panic("Archive::open(bad version)", || Archive::open(&p, None))
         .unwrap()
@@ -236,9 +243,9 @@ fn archive_bad_magic_version_flag_never_panic() {
     );
     let _ = std::fs::remove_file(&p);
 
-    // 加密旗标置位但未给 key → Err(不 panic)。
+    // Encryption flag set but no key provided -> Err (no panic).
     let mut enc = bytes.clone();
-    enc[10] |= 0x01; // MAGIC.len()+1==10 是旗标位。
+    enc[10] |= 0x01; // MAGIC.len()+1==10 is the flags byte.
     let p = write_tmp(&enc, "encflag", 0);
     let _ = must_not_panic("Archive::open(encrypted, no key)", || {
         Archive::open(&p, None)
@@ -248,13 +255,13 @@ fn archive_bad_magic_version_flag_never_panic() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. jsonl 行 / 畸形 BLOB fuzz
+// 2. jsonl row / malformed BLOB fuzz
 // ---------------------------------------------------------------------------
 
 #[test]
 fn jsonl_row_fuzz_never_panics() {
     let mut rng = XorShift::new(0xc0ffee);
-    // 随机字节当 jsonl 行。
+    // Random bytes as jsonl rows.
     for i in 0..300u64 {
         let n = rng.range(0, 512);
         let bytes = rng.bytes(n);
@@ -264,7 +271,7 @@ fn jsonl_row_fuzz_never_panics() {
         .unwrap();
         let _ = i;
     }
-    // 随机合法 JSON 但字段畸形。
+    // Valid-ish JSON but with malformed fields.
     for i in 0..200u64 {
         let tn = rng.range(0, 16);
         let table = rng.bytes(tn);
@@ -287,12 +294,12 @@ fn jsonl_row_fuzz_never_panics() {
 
 #[test]
 fn malformed_blob_values_never_panic() {
-    // Bytes 变体带畸形 hex(奇数/非 hex/超长)→ 反序列化不 panic。
+    // Bytes variant with malformed hex (odd length / non-hex / overly long) -> deserialization must not panic.
     let cases = [
-        r#"{"t":"bytes","v":"0f0"}"#,        // 奇数 hex
-        r#"{"t":"bytes","v":"zzzz"}"#,       // 非 hex
-        r#"{"t":"bytes","v":""}"#,           // 空
-        r#"{"t":"bytes","v":"0f0f0f0f0f"}"#, // 合法但无意义
+        r#"{"t":"bytes","v":"0f0"}"#,        // odd-length hex
+        r#"{"t":"bytes","v":"zzzz"}"#,       // non-hex
+        r#"{"t":"bytes","v":""}"#,           // empty
+        r#"{"t":"bytes","v":"0f0f0f0f0f"}"#, // valid but meaningless
     ];
     for (i, c) in cases.iter().enumerate() {
         let json = format!(r#"{{"table":"tbl_Avatar","values":[{c}]}}"#);
@@ -302,7 +309,7 @@ fn malformed_blob_values_never_panic() {
         .unwrap();
         let _ = i;
     }
-    // 负 BigUInt / Int 溢出 / 未知 tag / DateTime 缺 offset。
+    // Negative BigUInt / Int overflow / unknown tag / DateTime missing offset.
     let tricky = [
         r#"{"t":"biguint","v":-1}"#,
         r#"{"t":"int","v":9223372036854775808}"#,
@@ -321,7 +328,7 @@ fn malformed_blob_values_never_panic() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. 规则 fuzz(畸形结构 → fail-closed,不 panic)
+// 3. Rule fuzz (malformed structure -> fail-closed, no panic)
 // ---------------------------------------------------------------------------
 
 fn avatar_schema() -> CloneSchema {
@@ -339,7 +346,7 @@ fn avatar_schema() -> CloneSchema {
 fn rule_validate_fuzz_never_panics() {
     let schema = avatar_schema();
     let malformed: Vec<RuleSet> = vec![
-        // 空实体 / 空表 / 空列。
+        // Empty entity / empty table / empty column.
         RuleSet {
             relations: vec![RelationRule {
                 entity: String::new(),
@@ -353,7 +360,7 @@ fn rule_validate_fuzz_never_panics() {
             identities: vec![],
             projections: vec![],
         },
-        // 未知表。
+        // Unknown table.
         RuleSet {
             relations: vec![],
             identities: vec![IdentityRule {
@@ -363,7 +370,7 @@ fn rule_validate_fuzz_never_panics() {
             }],
             projections: vec![],
         },
-        // 自引用(实体==子表路径)。
+        // Self reference (entity == child table path).
         RuleSet {
             relations: vec![RelationRule {
                 entity: "Avatar".into(),
@@ -377,7 +384,7 @@ fn rule_validate_fuzz_never_panics() {
             identities: vec![],
             projections: vec![],
         },
-        // Error 动作(declare error → fail-closed)。
+        // Error action (declare error -> fail-closed).
         RuleSet {
             relations: vec![RelationRule {
                 entity: "Avatar".into(),
@@ -391,7 +398,7 @@ fn rule_validate_fuzz_never_panics() {
             identities: vec![],
             projections: vec![],
         },
-        // 投影 include/exclude 重叠 + 空 include。
+        // Projection include/exclude overlap + empty include.
         RuleSet {
             relations: vec![],
             identities: vec![],
@@ -413,7 +420,7 @@ fn rule_validate_fuzz_never_panics() {
     ];
     for (i, rules) in malformed.iter().enumerate() {
         let _ = must_not_panic("RuleSet::validate", || rules.validate(&schema)).unwrap();
-        // apply_relation / project / identity_column 同样不 panic。
+        // apply_relation / project / identity_column must not panic either.
         let _ =
             must_not_panic("apply_relation", || rules.apply_relation("Avatar", "items")).unwrap();
         let _ = must_not_panic("project", || rules.project(&schema.tables[0].clone())).unwrap();
@@ -423,12 +430,12 @@ fn rule_validate_fuzz_never_panics() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. 嵌套/环关系 fuzz(终止、不 panic、环被检出)
+// 4. Nested/cyclic relation fuzz (terminates, no panic, cycles detected)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn relation_deep_chain_terminates() {
-    // 深链(2000 级):build + topological_order 必须终止且不 panic。
+    // Deep chain (2000 levels): build + topological_order must terminate and not panic.
     let depth = 2000;
     let mut tables = Vec::with_capacity(depth + 1);
     tables.push(chain_table("tbl_0", None));
@@ -448,8 +455,8 @@ fn relation_deep_chain_terminates() {
 
 #[test]
 fn relation_cycle_detected_no_hang() {
-    // 双向环 A<->B(互为 parent,与 relations.rs rejects_cycle 同口径)
-    // → build 必检出 CycleDetected,不挂起。
+    // Bidirectional cycle A<->B (mutual parents, same convention as relations.rs rejects_cycle)
+    // -> build must detect CycleDetected and must not hang.
     let tables = vec![
         chain_table("tbl_0", None),
         chain_table("tbl_a", Some("tbl_b")),
@@ -469,7 +476,7 @@ fn relation_cycle_detected_no_hang() {
 
 #[test]
 fn relation_large_fanout_terminates() {
-    // 单根 → 5000 子表扇出。
+    // Single root -> 5000 child tables fan-out.
     let root = chain_table("tbl_0", None);
     let mut tables = vec![root];
     for i in 1..=5000 {
@@ -488,7 +495,7 @@ fn relation_large_fanout_terminates() {
 
 #[test]
 fn relation_deep_plus_cycle_terminates() {
-    // 深链末端接环:build 终止(检出环或成功),不挂起不 panic。
+    // Deep chain ending in a cycle: build terminates (cycle detected or success), no hang, no panic.
     let depth = 1000;
     let mut tables = Vec::with_capacity(depth + 2);
     tables.push(chain_table("tbl_0", None));
@@ -496,7 +503,7 @@ fn relation_deep_plus_cycle_terminates() {
         let prev = format!("tbl_{}", i - 1);
         tables.push(chain_table(&format!("tbl_{i}"), Some(&prev)));
     }
-    // 末端子表回引链中段 → 环。
+    // Tail child table points back into the middle of the chain -> cycle.
     tables.push(chain_table("tbl_loop", Some("tbl_500")));
     let schema = CloneSchema::new("Avatar".into(), tables.clone()).expect("schema");
     let _ = must_not_panic("RelationGraph::build(deep+cycle)", || {

@@ -1,8 +1,10 @@
-//! 诊断分级装配 golden 生成器(RUST-142 批 2):语料逐 def 文件全量 lint
-//! (production-shape knownTypes)→ 决策表路由 → 逐层独立调度核回放。
+//! Diagnostic layering assembly golden generator (RUST-142 batch 2): full
+//! lint over the corpus per def file (production-shape knownTypes) -> decision
+//! table routing -> per-layer independent scheduler-core replay.
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodeDiagnosticLayeringParity.test.ts
-//! 复算决策表/合流序/production seam 对拍(双向门禁)。
+//! The golden file is produced by Rust; the TS side
+//! tests/kodeDiagnosticLayeringParity.test.ts recomputes the decision table /
+//! merge ordering / production seam and compares (two-way gate).
 
 fn main() {
     let repo_root = std::env::args().nth(1).unwrap_or_else(|| String::from("."));

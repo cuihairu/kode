@@ -1,10 +1,14 @@
-// IDE-MET-007:扩展宿主 CPU profile 采集入口。验收口径:从卡顿触发到
-// profile 落盘的步骤可复现——kbengine.metrics.startCpuProfile 开采,
-// stopCpuProfile 停采并把 V8 CPU profile 写成 .cpuprofile;同名
-// .window.txt 记录窗口起止 ISO 与时长,并列语言服务指标快照,把这份
-// profile 关联到请求窗口(卡顿期间哪些操作在跑、延迟直方图什么样)。
-// inspector 会话经工厂注入:生产=真 inspector.Session,测试=假会话锁
-// 生命周期与落盘面,不依赖活体 profiler 的时序抖动。
+// IDE-MET-007: extension-host CPU profile capture entry point. Acceptance
+// contract: the steps from stutter trigger to profile on disk are
+// reproducible -- kbengine.metrics.startCpuProfile starts the capture,
+// stopCpuProfile stops it and writes the V8 CPU profile as .cpuprofile;
+// a same-stem .window.txt records the window start/end ISO timestamps and
+// duration, plus a language-service metric snapshot, tying this profile
+// to the request window (which operations ran during the stutter, what
+// the latency histogram looks like).
+// The inspector session is injected through a factory: production = a real
+// inspector.Session, tests = a fake session pinning the lifecycle and the
+// on-disk surface, without depending on live profiler timing jitter.
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -13,7 +17,7 @@ import inspector from 'inspector';
 import { getLanguageServiceSummaryReport } from '../languageServiceMetrics';
 import { getEventLoopDelayReport } from './hostVitals';
 
-/** inspector 会话最小面(post 回调式,与 Node 原生同形,便于替身) */
+/** Minimal inspector session surface (post with callbacks; same shape as the Node native one, easy to stub) */
 export interface CpuProfilerSessionLike {
   connect(): void;
   disconnect(): void;
@@ -51,12 +55,12 @@ interface ActiveCapture {
 
 let active: ActiveCapture | null = null;
 
-/** 测试注入面:替换 inspector 会话工厂 */
+/** Test injection surface: replace the inspector session factory */
 export function setCpuProfileSessionFactory(factory: () => CpuProfilerSessionLike): void {
   sessionFactory = factory;
 }
 
-/** 落盘目录(生产=globalStorage;缺省回落系统临时目录) */
+/** Output directory (production = globalStorage; falls back to the system temp directory by default) */
 export function setCpuProfileDirectory(directory: string): void {
   fs.mkdirSync(directory, { recursive: true });
   outputDirectory = directory;
@@ -66,7 +70,7 @@ export function isCpuProfileRunning(): boolean {
   return active !== null;
 }
 
-/** 开始采集;已在采/启动失败返回 false(失败时会话当场断开不留运行态) */
+/** Start capturing; returns false when already capturing or on start failure (on failure the session is disconnected immediately, leaving no running state) */
 export async function startCpuProfile(): Promise<boolean> {
   if (active) {
     return false;
@@ -75,7 +79,7 @@ export async function startCpuProfile(): Promise<boolean> {
   session.connect();
   try {
     await post(session, 'Profiler.enable');
-    // 采样间隔 1000us:卡顿取证粒度足够,开销可忽略
+    // Sampling interval 1000us: fine enough granularity for stutter forensics, negligible overhead
     await post(session, 'Profiler.setSamplingInterval', { interval: 1000 });
     await post(session, 'Profiler.start');
   } catch {
@@ -93,7 +97,7 @@ export async function startCpuProfile(): Promise<boolean> {
 const isoCompact = (date: Date): string =>
   date.toISOString().replace(/[:.]/g, '-');
 
-/** 停止采集并落盘:.cpuprofile + .window.txt(窗口关联面);未在采返回 null */
+/** Stop capturing and write to disk: .cpuprofile + .window.txt (window-correlation surface); returns null when not capturing */
 export async function stopCpuProfile(): Promise<CpuProfileCaptureResult | null> {
   if (!active) {
     return null;
@@ -126,7 +130,7 @@ export async function stopCpuProfile(): Promise<CpuProfileCaptureResult | null> 
   }
 }
 
-/** 测试面:清运行态与注入(不动已落盘文件) */
+/** Test surface: clear runtime state and injections (does not touch files already written to disk) */
 export function resetCpuProfileCapture(): void {
   if (active) {
     active.session.disconnect();

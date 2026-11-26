@@ -1,32 +1,41 @@
-// C-23 交付②第二条规则(KBE-PY-016):已销毁实体引用滞留 lint。
-// 数据源 = KB-001 生命周期/内存专题(docs/knowledge/traps-index.md
-// §Memory & references;src/knowledge/trapsKnowledge.ts
-// detection='destroyed-entity-container-capture')。KB-001 事实:真正的
-// 引用隐患不是定时器(destroy 即 cancelAll、handler 不持 Python 强引用),
-// 而是脚本把实体引用(self)存进生命周期长于实体的**模块级容器**——
-// destroy 后引用滞留,引擎 3600 s 后打 garbages 泄漏告警;正确姿势是
-// onDestroy 里解除引用,排查滞留者用 `KBEngine.entities.garbages.items()`。
+// C-23 deliverable 2, second rule (KBE-PY-016): lint for stale references to
+// destroyed entities.
+// Data source = KB-001 lifecycle/memory topic (docs/knowledge/traps-index.md
+// §Memory & references; src/knowledge/trapsKnowledge.ts
+// detection='destroyed-entity-container-capture'). KB-001 fact: the real
+// reference hazard is not timers (destroy cancels all of them immediately and
+// handlers hold no strong Python reference), but scripts storing the entity
+// reference (self) into a **module-level container** that outlives the
+// entity — after destroy the reference lingers and the engine emits a
+// garbages leak warning after 3600 s; the correct move is to drop the
+// reference in onDestroy, and `KBEngine.entities.garbages.items()` finds the
+// lingering holders.
 //
-// 纯逻辑层,不 import vscode。判定(保守面,误报=0 优先):
-//   - 模块级容器:顶格(indent 0)`NAME = []` / `NAME = {}` / `NAME = set()`
-//     声明的 list/dict/set(标量/lambda 等非容器全局不参与);
-//   - 类体内语句(缩进 > 0)把 `self` 存入容器:append/add/extend/update
-//     调用(实参含独立 self 词元)与 `NAME[...] = …self…` 下标赋值;
-//   - 局部容器、非 self 实参、读操作(`in` 判断)、注释同形不报;
-//   - 闭包逃逸(`lambda: self`)与函数属性等面不分析,如实边界不冒充。
+// Pure logic layer, no vscode import. Detection (conservative surface,
+// zero false positives takes priority):
+//   - Module-level containers: list/dict/set declared at column 0
+//     (indent 0) via `NAME = []` / `NAME = {}` / `NAME = set()`
+//     (non-container globals such as scalars/lambdas are not considered);
+//   - Statements inside a class body (indent > 0) storing `self` into a
+//     container: append/add/extend/update calls (argument containing a
+//     standalone self token) and `NAME[...] = …self…` subscript assignment;
+//   - Not reported: local containers, non-self arguments, read operations
+//     (`in` checks), and comment lines shaped the same way;
+//   - Closure escape (`lambda: self`), function attributes and similar
+//     surfaces are not analyzed — honest boundary, no overclaiming.
 
 import { l10nText } from '../nlsRuntime';
 
 export const DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE = 'kbengine.destroyedEntityReference';
 
-/** 一处实体引用滞留 */
+/** A single stale entity reference finding */
 export interface DestroyedEntityCaptureFinding {
   line: number;
-  /** `self` 词元起点(0 起列) */
+  /** Start column (0-based) of the `self` token */
   character: number;
   length: number;
   container: string;
-  /** 容器操作(append/add/extend/update/subscript) */
+  /** Container operation (append/add/extend/update/subscript) */
   method: string;
   message: string;
 }
@@ -35,7 +44,7 @@ const CONTAINER_INIT = /^([A-Za-z_]\w*)\s*=\s*(\[\]|\{\}|set\(\))\s*$/;
 const CALL_CAPTURE = /\b([A-Za-z_]\w*)\.(append|add|extend|update)\((.+)\)/;
 const SUBSCRIPT_CAPTURE = /\b([A-Za-z_]\w*)\[[^\]]+\]\s*=\s*(.+)/;
 
-/** 诊断文案(l10n 模板单一来源;Rust 结构面经 wiring 层用本函数渲染) */
+/** Diagnostic message (single source for the l10n template; the Rust structure surface renders through this function via the wiring layer) */
 export function renderDestroyedEntityReferenceMessage(container: string): string {
   return l10nText(
     'Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy',
@@ -93,7 +102,7 @@ export function analyzeDestroyedEntityCaptures(text: string): DestroyedEntityCap
   return findings;
 }
 
-/** 实参/右值文本里独立 `self` 词元的 0 起列;无则 -1(self.id 等成员读不算) */
+/** 0-based column of a standalone `self` token in the argument/rvalue text; -1 if absent (member reads such as self.id do not count) */
 function standaloneSelfOffset(text: string): number {
   const match = /(?<![\w.])self(?![\w.])/.exec(text);
   return match ? match.index : -1;

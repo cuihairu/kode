@@ -1,5 +1,5 @@
-//! kode-mcp MCP server(rmcp stdio)。装配 AssetKnowledge + explain;
-//! 资产根从 CLI 参数取(缺省=当前目录)。
+//! kode-mcp MCP server (rmcp stdio). Assembles AssetKnowledge + explain;
+//! the asset root comes from CLI arguments (defaults to the current directory).
 
 use rmcp::{
     model::{
@@ -18,12 +18,14 @@ use crate::kb::AssetKnowledge;
 #[derive(Debug)]
 pub struct KodeMcpServer {
     pub knowledge: Arc<RwLock<AssetKnowledge>>,
-    /// 资产根(config_qa 配置问答面读 `{root}/res/server/kbengine.xml` 等)。
+    /// Asset root (the config_qa configuration Q&A face reads
+    /// `{root}/res/server/kbengine.xml` and the like).
     pub assets_root: std::path::PathBuf,
-    /// 额外知识路径(CLI 附加参数;search_docs 在此+资产根下收 `.md`)。
+    /// Extra knowledge paths (CLI additional arguments; search_docs collects
+    /// `.md` files here plus under the asset root).
     pub extra_paths: Vec<std::path::PathBuf>,
-    /// P2 知识索引(Tantivy BM25 + SQLite + notify 增量;search 工具与
-    /// index_status 的 storage 面由此出)。
+    /// P2 knowledge index (Tantivy BM25 + SQLite + notify incremental; the
+    /// search tool and the storage face of index_status come from it).
     pub index: Arc<crate::kb_index::KnowledgeIndex>,
 }
 
@@ -68,8 +70,10 @@ impl KodeMcpServer {
     }
 
     fn call_tool_impl(&self, params: CallToolRequestParams) -> Result<CallToolResponse, McpError> {
-        // KODE-FULL-005:knowledge 是后台对账同代刷新的共享缓存;本面全部
-        // 同步工具,读守卫短持(无 await 穿越持有)。
+        // KODE-FULL-005: knowledge is a shared cache refreshed in the same
+        // generation by the background reconciliation; every tool on this face
+        // is synchronous, so the read guard is held briefly (no await crosses
+        // the held guard).
         let knowledge = self.knowledge.read().expect("knowledge read lock");
         let arguments = params.arguments.clone().unwrap_or_default();
         let arg_str = |key: &str| {
@@ -128,8 +132,9 @@ impl KodeMcpServer {
                 arg_str("group").as_deref(),
                 arg_str("prefix").as_deref(),
             )),
-            // 注:search_docs/search_symbols 在 call_tool 里走 spawn_blocking
-            // 面,不经过 call_tool_impl(此面只处理同步工具)。
+            // Note: search_docs/search_symbols take the spawn_blocking face in
+            // call_tool and do not pass through call_tool_impl (this face only
+            // handles synchronous tools).
             "protocol_frame" => crate::protocol_frame::protocol_frame(
                 &knowledge,
                 arg_str("typeName").as_deref(),
@@ -151,7 +156,8 @@ impl KodeMcpServer {
                 )
             }
             "index_status" => {
-                // P1 语义面 + P2 存储面合并;P1 键保持原样(不破坏既有断言)。
+                // P1 semantic face + P2 storage face merged; P1 keys kept as-is
+                // (do not break existing assertions).
                 let mut status = crate::semantic_model::index_status(&knowledge, &self.assets_root);
                 status["storage"] = self.index.status();
                 Ok(status)
@@ -583,8 +589,10 @@ impl ServerHandler for KodeMcpServer {
     }
 }
 
-/// stdio 入口:加载资产根(可选额外知识路径)并服务到进程退出。
-/// P2:启动时建知识索引(Tantivy+SQLite,增量 BLAKE3 对账)并挂 notify 监视。
+/// stdio entry point: loads the asset root (with optional extra knowledge
+/// paths) and serves until the process exits.
+/// P2: builds the knowledge index at startup (Tantivy + SQLite, incremental
+/// BLAKE3 reconciliation) and attaches the notify watcher.
 pub async fn run_stdio(
     root: std::path::PathBuf,
     extra_paths: Vec<std::path::PathBuf>,
@@ -593,10 +601,14 @@ pub async fn run_stdio(
     let knowledge = Arc::new(RwLock::new(AssetKnowledge::load(&root)));
     index.attach_model_cache(Arc::clone(&knowledge));
     index.build();
-    // 监视失败不致命(网络文件系统等):BLAKE3 对账兜底,index_status 如实报告。
+    // A failed watch is not fatal (network filesystems and the like): the
+    // BLAKE3 reconciliation is the fallback, and index_status reports it
+    // faithfully.
     let _ = index.start_watch();
-    // KODE-FULL-005:watcher 只记 dirty,后台 worker 消费——增删改
-    // py/def/表格后不重启 MCP,search/read_node/依赖查询同代更新。
+    // KODE-FULL-005: the watcher only records dirty entries and a background
+    // worker consumes them -- after py/def/table additions, deletions or
+    // edits the MCP is not restarted, and search/read_node/dependency queries
+    // update within the same generation.
     index.start_reconcile_worker();
     let server = KodeMcpServer {
         knowledge,
@@ -609,12 +621,16 @@ pub async fn run_stdio(
     Ok(())
 }
 
-/// 探活模式(--probe):跳过语料装载(`AssetKnowledge::load` 全量解析
-/// py/def/表格)与索引构建,空库直接服务握手面。TS 健康探针用它毫秒级验证
-/// 「二进制可拉起 + MCP 协议可应答」,不等整库解析(全新 spawn 在大语料上
-/// 建索引是秒级,探针预算吃不起)。探活模式不承诺工具调用有数据(index 未
-/// build、knowledge 空库),探针客户端拿到 tools/list 应答即收进程;空库上
-/// 工具调用如实返回空结果,不 panic。
+/// Liveness mode (--probe): skips corpus loading (`AssetKnowledge::load`
+/// parsing py/def/tables in full) and index building, serving the handshake
+/// face with an empty store. The TS health probe uses it to verify in
+/// milliseconds that "the binary launches + the MCP protocol responds",
+/// without waiting for a full corpus parse (a fresh spawn indexing a large
+/// corpus takes seconds, which the probe budget cannot afford). Liveness mode
+/// does not promise that tool calls have data (the index is not built and
+/// knowledge is an empty store); the probe client closes the process as soon
+/// as it gets a tools/list response. On an empty store, tool calls return
+/// empty results faithfully rather than panicking.
 pub async fn run_stdio_probe(
     root: std::path::PathBuf,
     extra_paths: Vec<std::path::PathBuf>,

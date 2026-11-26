@@ -1,50 +1,64 @@
 import { parsePythonFile, type ParsedPythonFile } from './pythonParser';
 
 /**
- * LANG-NAR-1 语义引擎流敏感窄化(用户令 2026-11-02):
- * `self.<attr>` 用户自管属性(非 .def 声明、非内建 receiver)的流敏感类型推导。
+ * LANG-NAR-1 semantic engine flow-sensitive narrowing (user order 2026-11-02):
+ * flow-sensitive type inference for `self.<attr>` user-managed attributes (not
+ * .def-declared, not a builtin receiver).
  *
- * 背景:GEN-DEF-1a/1b 已把 .def 声明属性的注解定为非 Optional(FixedArray[T]/
- * FixedDict/内建直译),但用户在 __init__ 里自管的属性(如 self.TalentTree 先
- * `= None` 再 `= [...]`)在语义引擎里完全不可见——hover/inlay 全落 null
- * (propertyCodeLens/typeInlayHints 的 resolvePropertyDefinitionInfo 只走 .def)。
- * 本模块补齐:对自管属性做 (a) 类型收敛(__init__ 赋值 ∪ 类级声明,声明∪赋值),
- * (b) 流敏感窄化(`if self.X is None: self.X = expr` 后收窄为 expr 类型;
- * `if self.X is not None:` 块内去 None;早退 `if self.X is None: return` 后去
- * None)。纯函数面(文本 + 可选回调),零 vscode 依赖,供诊断/悬停消费。
+ * Background: GEN-DEF-1a/1b already fixed .def-declared attributes' annotations
+ * to non-Optional (FixedArray[T]/FixedDict/builtin direct mapping), but
+ * attributes the user manages in __init__ (e.g. self.TalentTree first `= None`
+ * then `= [...]`) are entirely invisible to the semantic engine — hover/inlay
+ * all land on null (propertyCodeLens/typeInlayHints's
+ * resolvePropertyDefinitionInfo only walks .def). This module fills the gap: for
+ * self-managed attributes it does (a) type convergence (__init__ assignments ∪
+ * class-level declarations), (b) flow-sensitive narrowing (after
+ * `if self.X is None: self.X = expr` narrow to expr's type; inside an
+ * `if self.X is not None:` block drop None; after an early exit
+ * `if self.X is None: return` drop None). Pure function face (text + optional
+ * callbacks), zero vscode dependencies, consumed by diagnostics/hover.
  *
- * 收敛口径:基类 = __init__ 体流扫描末态(尾部赋值覆盖,`= None` 后被 `= []`
- * 覆盖即收敛为 list,故「__init__ 初始化后无警告」成立)∪ 类级声明;无 __init__
- * 时 = 类级声明(含 `X = None` → None)。流扫描在查询方法内自基类起步,按
- * 赋值/守卫逐点推进,返回查询位的收窄类型。
+ * Convergence contract: the baseline = the __init__ body's flow-scan end state
+ * (a trailing assignment overrides; after `= None` overwritten by `= []` it
+ * converges to list, so "no warning after __init__ initialization" holds) ∪
+ * class-level declarations; without __init__ = the class-level declarations
+ * (including `X = None` → None). The flow scan starts from the baseline inside
+ * the querying method, advancing point by point through assignments/guards, and
+ * returns the narrowed type at the query position.
  *
- * 诚实边界:类型以原子注解字符串集合表示(如 'None' / 'list' / 'list[int]' /
- * 'TalentNode');表达式类型推不出即空集(不硬造 Any)——空集在收窄并集里
- * 等价于「未知,不新增 None」,诊断侧按「有 None 证据才报」保守闸,不误报。
+ * Honest boundaries: a type is represented as a set of atomic annotation strings
+ * (e.g. 'None' / 'list' / 'list[int]' / 'TalentNode'); an expression whose type
+ * cannot be inferred yields the empty set (never fabricating Any) — the empty
+ * set is equivalent to "unknown, add no None" in narrowed unions, and the
+ * diagnostic side uses the conservative gate of "report only with None
+ * evidence", so no false positives.
  */
 
 /**
- * KODE-PERF-001:按文档版本键的解析缓存(有界 LRU)。同文档版本(键=
- * `${uri}|${version}`)的多次流查询——诊断/inlay 同版本共享——只解析一次
- * AST;版本递增或换文档自然换键,旧键靠有界淘汰回收;无键调用(纯函数/
- * 测试)不读写缓存,行为与既有纯函数逐字节一致。
+ * KODE-PERF-001: a parse cache keyed by document version (bounded LRU).
+ * Multiple flow queries of the same document version (key =
+ * `${uri}|${version}`) — diagnostics/inlay sharing the same version — parse the
+ * AST once; a version bump or a different document naturally changes the key,
+ * and old keys are reclaimed by bounded eviction; a keyless call (pure
+ * function/test) neither reads nor writes the cache, behaving byte-for-byte
+ * like the existing pure function.
  */
 const PARSE_CACHE_MAX_ENTRIES = 8;
 const flowParseCache = new Map<string, ParsedPythonFile>();
 let flowParseCountForTests = 0;
 
-/** 清缓存并归零解析计数(测试注入口;生产不用) */
+/** Clear the cache and zero the parse counter (test injection point; not used in production) */
 export function resetSelfAttributeFlowParseCacheForTests(): void {
   flowParseCache.clear();
   flowParseCountForTests = 0;
 }
 
-/** 实际解析次数(缓存命中不计;测试断言「访问点增多不重复解析」用) */
+/** Actual parse count (cache hits not counted; used by tests asserting "more access points do not re-parse") */
 export function selfAttributeFlowParseCountForTests(): number {
   return flowParseCountForTests;
 }
 
-/** 按版本键取/建解析结果;无键=每次现解析(纯函数回退) */
+/** Get/build the parse result by version key; keyless = parse fresh each time (pure-function fallback) */
 function parseWithVersionCache(
   lines: readonly string[],
   versionKey: string | undefined
@@ -52,7 +66,7 @@ function parseWithVersionCache(
   if (versionKey !== undefined) {
     const cached = flowParseCache.get(versionKey);
     if (cached) {
-      // LRU 触碰:移到尾(最近使用)
+      // LRU touch: move to the tail (most recently used)
       flowParseCache.delete(versionKey);
       flowParseCache.set(versionKey, cached);
       return cached;
@@ -72,30 +86,32 @@ function parseWithVersionCache(
   return parsed;
 }
 
-/** 查询位自管属性的流敏感类型事实 */
+/** The flow-sensitive type facts of the self-managed attribute at the query position */
 export interface SelfAttributeFlow {
-  /** 去重排序的原子类型名(如 ['None','list']);空 = 无法确定 */
+  /** Deduplicated, sorted atomic type names (e.g. ['None','list']); empty = undeterminable */
   types: string[];
-  /** 格式化注解串('list | None'/'None'/'list')或 null(types 空) */
+  /** The formatted annotation string ('list | None'/'None'/'list') or null (types empty) */
   annotation: string | null;
-  /** 流类型含 None */
+  /** The flow type contains None */
   hasNone: boolean;
-  /** 窄化生效:收敛基类含 None 而查询位流类型不含(守卫/赋值已去 None) */
+  /** Narrowing took effect: the converged baseline contains None but the query-position flow type does not (a guard/assignment already dropped None) */
   narrowed: boolean;
 }
 
-/** 表达式类型解析回调(调用方注入,如 pythonReturnTypeInference 的索引) */
+/** Expression-type resolution callbacks (injected by the caller, e.g. pythonReturnTypeInference's index) */
 export interface SelfAttributeFlowOptions {
-  /** 函数调用返回注解:`make_tree()` → 'list' 等;未注入/未解出 → null */
+  /** Function-call return annotation: `make_tree()` → 'list' etc.; not injected / unresolved → null */
   resolveCallAnnotation?: (callee: string) => string | null;
-  /** 裸名/属性末段注解(非调用形态):`TalentNode` → 'TalentNode' 等 */
+  /** Bare-name / attribute-final-segment annotation (non-call shape): `TalentNode` → 'TalentNode' etc. */
   resolveNameAnnotation?: (name: string) => string | null;
   /**
-   * 下标读注解:`self.cellData['spaceUType']` → 'str'。target=被下标的接收者
-   * 属性名('cellData'),key=字符串字面量键。2026-11-23 用户报:base 进程里
-   * `self.spaceUType = self.cellData['spaceUType']` 这类写点不出类型——此前
-   * typeOfExpr 无下标分支,RHS 推不出 → 写点 inlay 空。注入方(def 键类型面)
-   * 未注入/未解出 → null。
+   * Subscript-read annotation: `self.cellData['spaceUType']` → 'str'.
+   * target = the subscripted receiver's property name ('cellData'), key = the
+   * string-literal key. User-reported 2026-11-23: in the base process, write
+   * points like `self.spaceUType = self.cellData['spaceUType']` produced no
+   * type — typeOfExpr previously had no subscript branch, the RHS could not be
+   * inferred → the write point's inlay was empty. Not injected / unresolved by
+   * the injector (the def key-type face) → null.
    */
   resolveSubscriptType?: (target: string, key: string) => string | null;
 }
@@ -104,18 +120,18 @@ interface ClassSpan {
   name: string;
   startLine: number;
   endLine: number;
-  /** 方法名 → 起始行(0 起) */
+  /** Method name → start line (0-based) */
   methods: Map<string, { line: number; character: number }>;
 }
 
 interface MethodSpan {
   startLine: number;
   endLine: number;
-  /** 方法体基础缩进(首个非空体行缩进;无体行则方法行缩进+1) */
+  /** The method body's base indent (the first non-blank body line's indent; with no body line, the method line's indent + 1) */
   baseIndent: number;
 }
 
-/** 类型集合运算:并集(原子去重) */
+/** Type-set operation: union (atomic dedup) */
 function unionTypes(...sets: ReadonlyArray<ReadonlySet<string>>): Set<string> {
   const out = new Set<string>();
   for (const set of sets) {
@@ -126,7 +142,7 @@ function unionTypes(...sets: ReadonlyArray<ReadonlySet<string>>): Set<string> {
   return out;
 }
 
-/** 去 None */
+/** Drop None */
 function withoutNone(types: ReadonlySet<string>): Set<string> {
   const out = new Set<string>();
   for (const item of types) {
@@ -137,7 +153,7 @@ function withoutNone(types: ReadonlySet<string>): Set<string> {
   return out;
 }
 
-/** 排序 + ` | ` 联接(测试确定性;'None' 字典序在前) */
+/** Sort + join with ` | ` (deterministic for tests; 'None' sorts first lexicographically) */
 function formatTypes(types: ReadonlySet<string>): string | null {
   if (types.size === 0) {
     return null;
@@ -153,25 +169,28 @@ const indentOf = (line: string): number => {
 const COMMENT_ONLY = /^\s*(#.*)?$/;
 const BLANK = /^\s*$/;
 
-/** `self.<attr> = <expr>`(attr 精确匹配;赋值形态非 `==`) */
+/** `self.<attr> = <expr>` (exact attr match; assignment shape, not `==`) */
 const selfAssignment = (attr: string): RegExp =>
   new RegExp(`^\\s*self\\.${escapeRegExp(attr)}\\s*=\\s*(?!=)(.+)$`);
 
-/** `if self.<attr> is None:`(正向判 None 守卫) */
+/** `if self.<attr> is None:` (a positive None-guard) */
 const noneGuard = (attr: string): RegExp =>
   new RegExp(`^\\s*if\\s+self\\.${escapeRegExp(attr)}\\s+is\\s+None\\s*:`);
 
-/** `if self.<attr> is not None:`(正向非 None 守卫) */
+/** `if self.<attr> is not None:` (a positive non-None guard) */
 const notNoneGuard = (attr: string): RegExp =>
   new RegExp(`^\\s*if\\s+self\\.${escapeRegExp(attr)}\\s+is\\s+not\\s+None\\s*:`);
 
 /**
- * 任何 `if`/`elif`/`else`/`for`/`while`/`try`/`except`/`finally`/`with` 块开
- * (非注释)。KODE-AUD-004:补 else/except/finally——此前这三类块体在
- * scanSequence 里不被 anyBlockOpen 识别,块体行以更深缩进被「跳过」分支吞掉,
- * 块内 `self.<attr> = ...` 赋值不贡献流类型(如 `if c: X=None / else: X=[..]`
- * 块后只并 then 侧,漏 else 侧)。else/except/finally 与 if/try 同缩进,并入
- * 通用块处理,块后并集语义原样。
+ * Any `if`/`elif`/`else`/`for`/`while`/`try`/`except`/`finally`/`with` block
+ * opener (non-comment). KODE-AUD-004: added else/except/finally — these three
+ * block bodies were previously not recognized by anyBlockOpen in scanSequence,
+ * so body lines with deeper indent were swallowed by the "skip" branch, and
+ * `self.<attr> = ...` assignments inside the block contributed no flow type
+ * (e.g. `if c: X=None / else: X=[..]` unioned only the then side after the
+ * block, missing the else side). else/except/finally share the indent of
+ * if/try, so they are folded into the generic block handling, with the
+ * post-block union semantics unchanged.
  */
 const anyBlockOpen = /^\s*(if|elif|else|for|while|try|except|finally|with)\b/;
 const terminalLine = /^\s*(return|raise)\b/;
@@ -180,7 +199,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** 提取赋值右侧(去掉尾注释) */
+/** Extract the assignment's right-hand side (trailing comment stripped) */
 function assignmentRhs(text: string, attr: string): string | null {
   const match = selfAssignment(attr).exec(text);
   if (!match) {
@@ -190,7 +209,8 @@ function assignmentRhs(text: string, attr: string): string | null {
 }
 
 function stripTrailingComment(rhs: string): string {
-  // 简单形态:不在字符串内的 `#` 视为注释截断(字面量面足够)
+  // Simple shape: a `#` outside a string is treated as a comment cut (sufficient
+  // for the literal face)
   let inString: string | null = null;
   for (let i = 0; i < rhs.length; i += 1) {
     const char = rhs[i];
@@ -212,9 +232,11 @@ function stripTrailingComment(rhs: string): string {
 }
 
 /**
- * 表达式类型(原子集合):字面量(list/dict/set/tuple/str/int/float/bool/None)、
- * 调用形态(经回调取返回注解)、裸名(经回调)、`self.Y`(递归本引擎)。推不出
- * → 空集(不硬造)。只做浅层形态判定,不解析任意表达式。
+ * Expression type (atomic set): literals (list/dict/set/tuple/str/int/float/
+ * bool/None), call shapes (return annotation via callback), bare names (via
+ * callback), `self.Y` (recursing into this engine). Uninferrable → the empty
+ * set (no fabrication). Only shallow shape decisions, never parsing arbitrary
+ * expressions.
  */
 function typeOfExpr(expr: string, options?: SelfAttributeFlowOptions): Set<string> {
   const text = stripTrailingComment(expr);
@@ -233,8 +255,9 @@ function typeOfExpr(expr: string, options?: SelfAttributeFlowOptions): Set<strin
   if (/^[+-]?\d+\.\d+$/.test(text)) {
     return new Set(['float']);
   }
-  // 字符串字面量(带可选前缀 b/r/f/u):b/B 前缀=bytes(b''/br''/rb''/B''),
-  // 其余(r/u/f 及无前缀)=str。KODE-AUD-004:此前一律判 str,b'...' 误判。
+  // String literal (with optional b/r/f/u prefix): a b/B prefix = bytes
+  // (b''/br''/rb''/B''), the rest (r/u/f and no prefix) = str. KODE-AUD-004:
+  // previously always judged str, so b'...' was misjudged.
   const strPrefix = /^([bBrRuUfF]{0,2})['"]/.exec(text);
   if (strPrefix && /['"]$/.test(text)) {
     return new Set([/[bB]/.test(strPrefix[1]) ? 'bytes' : 'str']);
@@ -248,8 +271,9 @@ function typeOfExpr(expr: string, options?: SelfAttributeFlowOptions): Set<strin
   if (text.startsWith('(') && text.endsWith(')')) {
     return new Set(['tuple']);
   }
-  // 下标读:`self.cellData['spaceUType']` / `cellData["x"]`(别名/裸名接收者同样认)
-  // → 经回调取键类型。2026-11-23 用户报的正是这个形态推不出。
+  // Subscript read: `self.cellData['spaceUType']` / `cellData["x"]` (alias/bare
+  // receivers accepted too) → get the key type via callback. This is exactly the
+  // shape the 2026-11-23 user report said could not be inferred.
   const subscript = /^([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\[\s*['"]([^'"]+)['"]\s*\]$/.exec(text);
   if (subscript) {
     const receiver = subscript[1].replace(/\s+/g, '');
@@ -257,20 +281,21 @@ function typeOfExpr(expr: string, options?: SelfAttributeFlowOptions): Set<strin
     const annotation = options?.resolveSubscriptType?.(target, subscript[2]) ?? null;
     return annotation ? new Set([annotation]) : new Set();
   }
-  // 调用形态:name(...) / a.b.c(...) → 末段 callee 取返回注解
+  // call shape: name(...) / a.b.c(...) → the final-segment callee's return annotation
   const callMatch = /^([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\(/.exec(text);
   if (callMatch) {
     const callee = callMatch[1].split('.').pop()!.trim();
     const annotation = options?.resolveCallAnnotation?.(callee) ?? null;
     return annotation ? new Set([annotation]) : new Set();
   }
-  // self.Y(本引擎递归,有界:不解析嵌套 self 链更深一层)
+  // self.Y (recursion into this engine, bounded: no parsing one level deeper into nested self chains)
   const selfChain = /^self\.([A-Za-z_]\w*)$/.exec(text);
   if (selfChain) {
-    // 递归由调用方在已知行上下文调用;此处返回空避免无界(调用方处理)
+    // recursion is invoked by the caller with a known line context; return empty
+    // here to avoid unbounded recursion (the caller handles it)
     return new Set();
   }
-  // 裸名(常量/变量):经回调
+  // bare name (constant/variable): via callback
   const nameMatch = /^[A-Za-z_]\w*$/.exec(text);
   if (nameMatch) {
     const annotation = options?.resolveNameAnnotation?.(text) ?? null;
@@ -279,7 +304,7 @@ function typeOfExpr(expr: string, options?: SelfAttributeFlowOptions): Set<strin
   return new Set();
 }
 
-/** 方法体界(0 起行,含尾):复用类方法排序区间 */
+/** Method body bounds (0-based lines, inclusive end): reuses the class's sorted method intervals */
 function enclosingMethod(
   classes: readonly ClassSpan[],
   line: number
@@ -303,7 +328,7 @@ function enclosingMethod(
   return null;
 }
 
-/** 方法体基础缩进:方法行后首个非空行的缩进;无体行则方法行缩进+1 */
+/** The method body's base indent: the first non-blank line's indent after the method line; with no body line, the method line's indent + 1 */
 function methodBaseIndent(lines: readonly string[], method: MethodSpan): number {
   const methodIndent = indentOf(lines[method.startLine]);
   for (let j = method.startLine + 1; j <= method.endLine; j += 1) {
@@ -318,17 +343,20 @@ function methodBaseIndent(lines: readonly string[], method: MethodSpan): number 
 
 interface ScanResult {
   state: Set<string>;
-  /** then 分支以 return/raise 终止(不落到块后) */
+  /** the then branch terminates with return/raise (does not fall through past the block) */
   terminal: boolean;
-  /** 扫描在 stopAtLine 前停住(查询位在本块内,外层须立即返回本态) */
+  /** the scan stopped before stopAtLine (the query position is inside this block; the outer layer must return this state immediately) */
   reachedStop: boolean;
 }
 
 /**
- * 顺序扫描一段语句序列(从 startLine 起,同一缩进层),推进 attr 流类型。
- * stopAtLine 非空时在到达该行前停止(返回该行前的状态,不处理该行)。
- * 递归处理 if/for/while 块:块后状态 = 并集(入口态, then 态)(else 路径 ∪
- * then 路径);早退(块内含 return/raise)then 不落到块后,块后 = 入口态。
+ * Sequentially scan a run of statements (from startLine at the same indent
+ * level), advancing attr's flow type. With a non-null stopAtLine, stop before
+ * reaching that line (returning the state before that line without processing
+ * it). Recursively handles if/for/while blocks: post-block state = union(entry
+ * state, then state) (else path ∪ then path); on early exit (the block contains
+ * a return/raise) the then path does not fall through, so post-block = the entry
+ * state.
  */
 function scanSequence(
   lines: readonly string[],
@@ -344,9 +372,12 @@ function scanSequence(
   let line = startLine;
   while (line <= endLine) {
     if (stopAtLine !== null && line >= stopAtLine) {
-      // 到达查询位:本块内停住,外层须立即返回(查询位在块内)。
-      // 查询位恰是赋值行时先落赋值语义再停(写点 inlay 显 RHS 类型,
-      // 与 def inlay 在写点显声明类型同口径,而非守卫真分支里的旧值 None)
+      // Reached the query position: stop inside this block, the outer layer must
+      // return immediately (the query position is inside the block).
+      // When the query position is exactly an assignment line, apply the
+      // assignment semantics before stopping (the write point's inlay shows the
+      // RHS type, the same contract as def inlay showing the declared type at
+      // the write point, rather than the old None from a guard's true branch)
       const rhsAtStop = assignmentRhs(lines[line] ?? '', attr);
       if (rhsAtStop !== null) {
         return { state: typeOfExpr(rhsAtStop, options), terminal: false, reachedStop: true };
@@ -360,22 +391,23 @@ function scanSequence(
     }
     const thisIndent = indentOf(text);
     if (thisIndent < indent) {
-      // 去缩进:本序列结束(调用方负责关块)
+      // dedent: this sequence ends (the caller closes the block)
       break;
     }
     if (thisIndent > indent) {
-      // 更深缩进(块体)不属本层,跳过(由块递归处理);保守步进
+      // deeper indent (a block body) does not belong to this level, skip it
+      // (handled by block recursion); conservative step
       line += 1;
       continue;
     }
-    // 赋值:self.<attr> = expr → 覆盖流类型
+    // assignment: self.<attr> = expr → overwrite the flow type
     const rhs = assignmentRhs(text, attr);
     if (rhs !== null) {
       state = typeOfExpr(rhs, options);
       line += 1;
       continue;
     }
-    // 守卫:if self.<attr> is None:
+    // guard: if self.<attr> is None:
     if (noneGuard(attr).test(text)) {
       const blockEnd = findBlockEnd(lines, line, endLine, thisIndent);
       const bodyIndent = blockBodyIndent(lines, line, blockEnd);
@@ -383,10 +415,10 @@ function scanSequence(
         lines, line + 1, blockEnd, bodyIndent, attr, new Set(['None']), options, stopAtLine
       );
       if (inner.terminal) {
-        // 早退:then 不落到块后;else 路径(X 非 None)继续 → 去 None
+        // early exit: the then path does not fall through; the else path (X not None) continues → drop None
         state = unionTypes(withoutNone(state));
       } else {
-        // then 落回块后:并集(else=X 非 None → 去 None, then=inner.state)
+        // the then path falls back after the block: union (else = X not None → dropped None, then = inner.state)
         state = unionTypes(withoutNone(state), inner.state);
       }
       if (inner.reachedStop) {
@@ -395,7 +427,7 @@ function scanSequence(
       line = blockEnd + 1;
       continue;
     }
-    // 守卫:if self.<attr> is not None:
+    // guard: if self.<attr> is not None:
     if (notNoneGuard(attr).test(text)) {
       const blockEnd = findBlockEnd(lines, line, endLine, thisIndent);
       const bodyIndent = blockBodyIndent(lines, line, blockEnd);
@@ -403,7 +435,7 @@ function scanSequence(
         lines, line + 1, blockEnd, bodyIndent, attr, withoutNone(state), options, stopAtLine
       );
       if (inner.terminal) {
-        // 早退非 None 块:then 退出,else(X 可 None)继续 → 入口态
+        // early-exit non-None block: then exits, else (X may be None) continues → entry state
         state = unionTypes(state);
       } else {
         state = unionTypes(state, inner.state);
@@ -414,7 +446,7 @@ function scanSequence(
       line = blockEnd + 1;
       continue;
     }
-    // 其他块(if/for/while/try/with):块体可能含赋值,块后并集
+    // other blocks (if/for/while/try/with): the body may contain assignments, union after the block
     if (anyBlockOpen.test(text)) {
       const blockEnd = findBlockEnd(lines, line, endLine, thisIndent);
       const bodyIndent = blockBodyIndent(lines, line, blockEnd);
@@ -432,7 +464,7 @@ function scanSequence(
       line = blockEnd + 1;
       continue;
     }
-    // return/raise:本序列终止(调用方标记 terminal)
+    // return/raise: this sequence terminates (the caller marks terminal)
     if (terminalLine.test(text)) {
       return { state, terminal: true, reachedStop: false };
     }
@@ -441,7 +473,7 @@ function scanSequence(
   return { state, terminal: false, reachedStop: false };
 }
 
-/** if/for/while 块闭合行:首个缩进 <= ifIndent 的非空行;无则 endLine+1 */
+/** The if/for/while block's closing line: the first non-blank line with indent <= ifIndent; none → endLine+1 */
 function findBlockEnd(
   lines: readonly string[],
   startLine: number,
@@ -460,7 +492,7 @@ function findBlockEnd(
   return endLine;
 }
 
-/** 块体实际缩进:块行后首个非空行的缩进;无体行则块行缩进+1 */
+/** The block body's actual indent: the first non-blank line's indent after the block line; with no body line, the block line's indent + 1 */
 function blockBodyIndent(
   lines: readonly string[],
   startLine: number,
@@ -476,7 +508,7 @@ function blockBodyIndent(
   return indentOf(lines[startLine]) + 1;
 }
 
-/** 收敛基类:__init__ 体流扫描末态 ∪ 类级声明(含 `X = None`) */
+/** Converged baseline: the __init__ body's flow-scan end state ∪ class-level declarations (including `X = None`) */
 function convergedBaseline(
   lines: readonly string[],
   cls: ClassSpan,
@@ -484,7 +516,7 @@ function convergedBaseline(
   options: SelfAttributeFlowOptions | undefined
 ): Set<string> {
   let baseline = new Set<string>();
-  // 类级声明:类体顶层(实际体缩进)的 `X = ...` / `X: T = ...`
+  // class-level declarations: `X = ...` / `X: T = ...` at the class body's top level (the actual body indent)
   const classBodyIndent = blockBodyIndent(lines, cls.startLine, cls.endLine - 1);
   const firstMethodLine = cls.methods.size > 0
     ? Math.min(...[...cls.methods.values()].map(loc => loc.line))
@@ -499,18 +531,18 @@ function convergedBaseline(
     if (indentOf(text) !== classBodyIndent) {
       continue;
     }
-    // 注解声明 `X: T = ...`(T 优先;`X: T` 无初始值亦算)
+    // annotated declaration `X: T = ...` (T takes priority; `X: T` with no initial value also counts)
     const annotated = classAnnotated.exec(text);
     if (annotated) {
       baseline = unionTypes(baseline, new Set([annotated[1].trim()]));
     }
-    // 赋值声明 `X = ...`(如 `X = None` 类级默认)
+    // assignment declaration `X = ...` (e.g. the class-level default `X = None`)
     const assigned = classAssignment.exec(text);
     if (assigned) {
       baseline = unionTypes(baseline, typeOfExpr(assigned[1], options));
     }
   }
-  // __init__ 体流扫描末态(尾部赋值覆盖)
+  // the __init__ body's flow-scan end state (a trailing assignment overrides)
   const init = cls.methods.get('__init__');
   if (init) {
     const initMethod: MethodSpan = { startLine: init.line, endLine: cls.endLine - 1, baseIndent: 0 };
@@ -527,18 +559,26 @@ function convergedBaseline(
     );
     baseline = result.state;
   }
-  // 注:2026-11-23 曾试过「跨方法写入聚合」(把其它方法的 `self.attr =` 并进
-  // 类级基线,让 onTeleportSuccess 等写点也能查到类型)。该形态与 Rust 对拍
-  // 引擎(Rust 侧未同构,parity 测试恒红)、越界(类体/空方法位查询被并进别
-  // 方法类型,应 null 却得值)且 O(方法×行) 拖慢万行级解析(>8s 预算)。真跨
-  // 方法写点索引需 Rust 侧同构落地后再做,本面保持 __init__/类级基线不动。
+  // NOTE: 2026-11-23 tried "cross-method write aggregation" (folding other
+  // methods' `self.attr =` into the class-level baseline so that write points
+  // such as onTeleportSuccess could also look up types). That shape diverged
+  // from the Rust parity engine (the Rust side is not isomorphic, parity tests
+  // permanently red), overstepped (queries at the class body / empty methods
+  // were folded into other methods' types, getting a value where it should be
+  // null), and its O(methods x lines) cost slowed ten-thousand-line parsing
+  // (>8s budget). A real cross-method write-point index needs the Rust side's
+  // isomorphic counterpart first; this face keeps the __init__/class-level
+  // baseline unchanged.
   return baseline;
 }
 
 /**
- * 查询位自管属性流敏感类型(纯函数)。
- * 返回 null 当:不在类内方法/类体、attr 为空、无法定位上下文。
- * 调用方需先确定 attr(如从访问扫描 self.<attr> 提取)。
+ * The flow-sensitive type of the self-managed attribute at the query position
+ * (pure function).
+ * Returns null when: not inside a class method/class body, attr is empty, or
+ * the context cannot be located.
+ * The caller must first determine attr (e.g. extracted from an access scan of
+ * self.<attr>).
  */
 export function inferSelfAttributeFlow(
   lines: readonly string[],
@@ -550,8 +590,9 @@ export function inferSelfAttributeFlow(
   if (!attr || queryLine < 0 || queryLine >= lines.length) {
     return null;
   }
-  // KODE-PERF-001:同文档版本多次流查询共享一次解析(键=uri|version);
-  // 无键(纯函数/测试)=现解析,行为不变。
+  // KODE-PERF-001: multiple flow queries of the same document version share one
+  // parse (key = uri|version); keyless (pure function/test) = parse fresh, same
+  // behavior.
   const parsed = parseWithVersionCache(lines, versionKey);
   const classes = (parsed.classes as unknown as ClassSpan[]) ?? [];
   const enclosing = enclosingMethod(classes, queryLine);
@@ -573,7 +614,7 @@ export function inferSelfAttributeFlow(
     );
     flow = result.state;
   } else {
-    // 类体/模块层:无方法流,直接用收敛基类
+    // class body / module level: no method flow, use the converged baseline directly
     const cls = classes.find(c => queryLine >= c.startLine && queryLine < c.endLine);
     baseline = cls ? convergedBaseline(lines, cls, attr, options) : new Set<string>();
     flow = new Set(baseline);

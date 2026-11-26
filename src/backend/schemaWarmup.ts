@@ -1,32 +1,37 @@
-// IDE-SCH-006:schema 重建后台任务面——首扫完成后逐实体把快照构建入队到
-// 统一索引调度器(非交互优先级),冷 schema 计算发生在后台而不是首次悬停/
-// 打开;交互任务优先级更高(编辑高峰让路),逐实体一条任务 = 天然分块,
-// 取消/工作区演化即刻止步。交互查询路径本身不变(同步命中缓存),只是从
-// 「首次交互付冷启动」变成「后台先付」。
+// IDE-SCH-006: the schema rebuild background task face — after the first scan
+// completes, enqueue snapshot builds per entity into the unified index scheduler
+// (non-interactive priority), so the cold schema computation happens in the
+// background instead of on first hover/open; interactive tasks have higher
+// priority (yielding at edit peaks), one task per entity = natural chunking, and
+// cancellation/workspace evolution stops immediately. The interactive query path
+// itself is unchanged (synchronously hits the cache); it just changes from "pay
+// the cold start on first interaction" to "the background pays first".
 
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { buildDatabaseSchemaSnapshotAsync } from '../databaseSchema';
 
 export interface SchemaWarmupDeps {
-  /** 每个实体构建前等待(测试闸:挂起以观察取消与分块;生产缺省直通) */
+  /** Wait before each entity build (test gate: hang to observe cancellation and chunking; production defaults to passthrough) */
   beforeBuild?: (entityName: string) => Promise<void>;
 }
 
 export interface SchemaWarmupHandle {
-  /** 全部任务终态后结算:resolve(已构建实体数)(取消也结算,不拒绝) */
+  /** Settles after all tasks reach a terminal state: resolves with the number of built entities (cancellation also settles, does not reject) */
   wait: Promise<number>;
-  /** 取消尚未运行的任务;运行中的任务在构建前检查旗标,不再产出新快照 */
+  /** Cancel tasks not yet running; a running task checks the flag before building and produces no new snapshot */
   cancel(reason?: string): void;
-  /** 已构建实体数(实时观测面) */
+  /** Number of built entities (real-time observation face) */
   builtCount(): number;
 }
 
 /**
- * 逐实体入队 schema 快照后台构建。每个实体一条 non-interactive 任务
- * (调度器语义:交互任务入队/冷却窗口内不上主线程);已建/失效由缓存口径
- * 裁断(命中即免建,SCH-002)。2026-10-28 审核整改:构建走异步阶段闸面
- * (buildDatabaseSchemaSnapshotAsync)——阶段间让出宿主,取消在构建中段
- * 即刻止步;不再同步整段调用 getDatabaseSchemaSnapshot。
+ * Enqueue background schema snapshot builds per entity. One non-interactive task
+ * per entity (scheduler semantics: interactive tasks being queued / inside the
+ * cooldown window keep off the main thread); built/invalid is decided by the cache
+ * ruling (a hit skips the build, SCH-002). 2026-10-28 audit fix: the build goes
+ * through the async stage gate face (buildDatabaseSchemaSnapshotAsync) — yields
+ * to the host between stages, cancellation stops immediately mid-build; no longer
+ * calls getDatabaseSchemaSnapshot synchronously for the whole stretch.
  */
 export function scheduleBackgroundSchemaWarmup(
   scheduler: IndexScheduler,
@@ -46,11 +51,11 @@ export function scheduleBackgroundSchemaWarmup(
         run: async () => {
           if (cancelled) { return; }
           await deps.beforeBuild?.(entityName);
-          if (cancelled) { return; } // 闸门期间被取消:不再产出新快照
+          if (cancelled) { return; } // cancelled during the gate: no new snapshot is produced
           const snapshot = await buildDatabaseSchemaSnapshotAsync(entityName, workspaceRoot, {
             gate: async () => {
               await new Promise<void>(resolve => { setImmediate(resolve); });
-              return !cancelled; // 构建中段被取消:止步,不发布
+              return !cancelled; // cancelled mid-build: stop, do not publish
             }
           });
           if (snapshot) { built += 1; }

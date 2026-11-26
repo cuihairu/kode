@@ -1,4 +1,5 @@
-//! 消息/流量统计 + 报告装配(PA-005 验收「消息/流量统计」+ analyze 入口)。
+//! Message/traffic statistics + report assembly (the PA-005 acceptance item
+//! "message/traffic statistics" + the analyze entry point).
 
 use std::collections::BTreeMap;
 
@@ -11,14 +12,14 @@ use crate::record::{Direction, Record};
 use crate::report::{AnalysisOptions, Report};
 use crate::CONFIRMED_PAIRS;
 
-/// 协议确证对规格(请求名 → 可接受响应名集)。
+/// Protocol-confirmed pair specification (request name -> accepted response name set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PairSpec {
     pub request: &'static str,
     pub responses: &'static [&'static str],
 }
 
-/// 按消息名的计数面。
+/// Counting face keyed by message name.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct MessageStat {
     pub count: usize,
@@ -33,11 +34,12 @@ pub struct TrafficStat {
     pub payload_bytes: usize,
 }
 
-/// 消息/流量统计(验收「消息/流量统计」;未知消息不计入 message_stats,
-/// 以 meta.unknown_messages 呈现,不静默丢弃)。
+/// Message/traffic statistics (the acceptance item "message/traffic statistics"; unknown
+/// messages are not counted into message_stats but presented as meta.unknown_messages, never
+/// silently dropped).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct StatsReport {
-    /// 消息名 → 计数/字节/方向(BTreeMap = 确定序)。
+    /// Message name -> count/bytes/direction (BTreeMap = deterministic order).
     pub message_stats: BTreeMap<String, MessageStat>,
     pub traffic: TrafficTotal,
     pub unknown_messages: usize,
@@ -50,7 +52,7 @@ pub struct TrafficTotal {
     pub s2c: TrafficStat,
 }
 
-/// 统计一遍(纯函数;不改记录序)。
+/// A single statistics pass (a pure function; does not change the record order).
 pub fn compute_stats(records: &[Record]) -> StatsReport {
     let mut out = StatsReport::default();
     for r in records {
@@ -83,7 +85,8 @@ pub fn compute_stats(records: &[Record]) -> StatsReport {
     out
 }
 
-/// 分析入口:一组解码记录 → JSON 可序列化报告(验收原文)。
+/// Analysis entry point: a set of decoded records -> a JSON-serializable report (the
+/// acceptance wording).
 pub fn analyze(records: &[Record], _opts: &AnalysisOptions) -> Report {
     let stats = compute_stats(records);
     let correlations = correlate::correlate(records, CONFIRMED_PAIRS);

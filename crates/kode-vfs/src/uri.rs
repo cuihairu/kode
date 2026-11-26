@@ -1,27 +1,30 @@
-//! VFS-001/002 路径身份:canonical URI。
+//! VFS-001/002 path identity: canonical URI.
 //!
-//! 基础版语义(完整跨平台矩阵——Windows UNC、WSL、Unicode normalization、
-//! symlink 解析——随 PR-006 root discovery 落地,此处先立规则与数据形态):
+//! Base-version semantics (the full cross-platform matrix — Windows UNC, WSL, Unicode
+//! normalization, symlink resolution — lands with PR-006 root discovery; this file first
+//! establishes the rules and the data shape):
 //!
-//! - 内部规范形态 = **percent 解码后的绝对路径**,`/` 分隔,`.`/`..` 段已词法消解,
-//!   Windows 盘符统一大写并带前导 `/`(`C:/x` ↔ `/C:/x` 等价)。
-//! - 身份比较用规范形态字节比较:POSIX 区分大小写;Windows 大小写折叠语义
-//!   需要 IO 探测,基础版不假装支持(文档声明,不悄悄归一化)。
-//! - 非文件 scheme(`http:` 等)一律拒绝,不静默降级成字符串键。
-//! - 禁止仅以 basename 建身份:身份 = (root_id, CanonicalUri)(见 [`crate::store`])。
+//! - The internal canonical form = **the percent-decoded absolute path**, `/`-separated,
+//!   with `.`/`..` segments resolved lexically, Windows drive letters upper-cased and
+//!   carrying a leading `/` (`C:/x` ↔ `/C:/x` are equivalent).
+//! - Identity comparison is byte comparison of the canonical form: POSIX is case-sensitive;
+//!   Windows case-folding semantics need IO probing, and the base version does not pretend
+//!   to support it (documented, no silent normalization).
+//! - Non-file schemes (`http:` etc.) are always rejected, never silently degraded to a string key.
+//! - Building identity from a bare basename is forbidden: identity = (root_id, CanonicalUri) (see [`crate::store`]).
 
 use std::fmt;
 
-/// URI 解析失败原因(VFS-001:非法输入必须显式报错,不得静默降级)。
+/// Why URI parsing failed (VFS-001: illegal input must error explicitly, never degrade silently).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UriError {
-    /// 非文件 scheme(`http://`、`untitled:` 等);kode-vfs 只管磁盘文件。
+    /// A non-file scheme (`http://`, `untitled:` etc.); kode-vfs only handles disk files.
     UnsupportedScheme(String),
-    /// `file:` URI 缺少绝对路径部分。
+    /// A `file:` URI missing its absolute path part.
     NotAbsolute,
-    /// percent 编码非法(如 `%G1`、截断的 `%A`)。
+    /// Illegal percent-encoding (e.g. `%G1`, a truncated `%A`).
     InvalidEncoding,
-    /// 空输入。
+    /// Empty input.
     Empty,
 }
 
@@ -38,17 +41,18 @@ impl fmt::Display for UriError {
 
 impl std::error::Error for UriError {}
 
-/// canonical URI:VFS-002 查询身份的路径分量。
-/// 比较看内部 `path` 字段;构造只经 [`CanonicalUri::parse`] / [`CanonicalUri::from_path`]。
+/// Canonical URI: the path component of the VFS-002 query identity.
+/// Comparison looks at the internal `path` field; construction only goes through
+/// [`CanonicalUri::parse`] / [`CanonicalUri::from_path`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CanonicalUri {
-    /// 规范形态:解码后的绝对路径,`/` 分隔,无 `.`/`..` 段;
-    /// Windows 形如 `/C:/dir/file.def`。
+    /// The canonical form: the decoded absolute path, `/`-separated, with no `.`/`..` segments;
+    /// Windows looks like `/C:/dir/file.def`.
     path: String,
 }
 
 impl CanonicalUri {
-    /// 从 `file:///...` URI 或绝对路径构造。非法输入报错(VFS-001)。
+    /// Build from a `file:///...` URI or an absolute path. Illegal input errors (VFS-001).
     pub fn parse(input: &str) -> Result<CanonicalUri, UriError> {
         let input = input.trim();
         if input.is_empty() {
@@ -65,7 +69,7 @@ impl CanonicalUri {
             return Ok(CanonicalUri::from_path(input));
         }
         let raw = if let Some(rest) = strip_scheme(input, "file:") {
-            // file://[host]/path —— 只接受空 host(或 localhost)的本地形态。
+            // file://[host]/path — only the local forms are accepted (empty host, or localhost).
             if let Some(path) = rest.strip_prefix("//") {
                 match path.find('/') {
                     Some(0) => path,
@@ -93,15 +97,15 @@ impl CanonicalUri {
         Ok(CanonicalUri::from_path(&decoded))
     }
 
-    /// 从文件系统路径构造(已是绝对路径则按规范形态收纳)。
+    /// Build from a filesystem path (an already-absolute path is absorbed as-is into the canonical form).
     pub fn from_path(path: &str) -> CanonicalUri {
         let mut path = path.replace('\\', "/");
-        // Windows 盘符:把 `C:/...` / `C:\...` / `/c:/...` 规范成 `/C:/...`,盘符大写。
+        // Windows drive: normalize `C:/...` / `C:\...` / `/c:/...` into `/C:/...`, drive letter upper-cased.
         let bytes = path.as_bytes();
         let drive_pos = if bytes.len() >= 2 && bytes[1] == b':' {
             Some(0) // "C:/..."
         } else if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b':' {
-            Some(1) // "/c:/..."(file URI 直传形态)
+            Some(1) // "/c:/..." (the form passed straight through by a file URI)
         } else {
             None
         };
@@ -121,17 +125,20 @@ impl CanonicalUri {
         }
     }
 
-    /// 规范路径(供磁盘 IO 与 root 前缀匹配用)。
+    /// Canonical path (for disk IO and root prefix matching).
     pub fn as_path(&self) -> &str {
         &self.path
     }
 
-    /// 还原成当前平台 std::fs 可直接消费的路径(磁盘 IO 专用;身份/展示面
-    /// 禁用——VFS-002 同禁则):Windows 盘符规范形态 `/C:/...` 去前缀还原
-    /// `C:/...`(std 对正斜杠分隔符原生兼容),POSIX 形态原样。与 from_path
-    /// 的盘符归一互逆——此前 index_queue 磁盘回落直接喂 `as_path()`,
-    /// `/C:/...` 在 Windows 上非有效路径(相对当前盘根解析),读盘恒败 =
-    /// 关闭文档回落全走逐出臂(2026-11-16 win 夜构建三例实红)。
+    /// Restore as a path the current platform's std::fs can consume directly (disk IO only;
+    /// forbidden on the identity/display surfaces — the same prohibition as VFS-002):
+    /// the Windows canonical drive form `/C:/...` drops its prefix to restore
+    /// `C:/...` (std natively accepts forward-slash separators); the POSIX form is
+    /// returned as-is. This is the inverse of from_path's drive normalization —
+    /// previously index_queue's disk fallback fed `as_path()` straight in, and `/C:/...`
+    /// is not a valid path on Windows (it resolves relative to the current drive root),
+    /// so disk reads always failed = the closed-document fallback always went through the
+    /// eviction arm (2026-11-16 win nightly, three genuine reds).
     pub fn to_native_path(&self) -> String {
         let path = &self.path;
         let bytes = path.as_bytes();
@@ -145,7 +152,7 @@ impl CanonicalUri {
         path.to_string()
     }
 
-    /// 还原成 `file://` URI 字符串(保留字符做最小 percent 编码;非 ASCII 原样保留)。
+    /// Restore as a `file://` URI string (minimal percent-encoding of reserved characters; non-ASCII kept as-is).
     pub fn to_uri_string(&self) -> String {
         let mut out = String::with_capacity(self.path.len() + 8);
         out.push_str("file://");
@@ -171,7 +178,7 @@ impl CanonicalUri {
         out
     }
 
-    /// 最后一段(basename;仅供展示/分类,禁止当身份用——VFS-002)。
+    /// The last segment (basename; for display/classification only — forbidden as identity, VFS-002).
     pub fn basename(&self) -> &str {
         let path = self.path.trim_end_matches('/');
         match path.rfind('/') {
@@ -187,7 +194,7 @@ impl fmt::Display for CanonicalUri {
     }
 }
 
-/// 取 `scheme:` 前缀(形如 `xxx:` 且冒号前无 `/`、`:`)。
+/// Take the `scheme:` prefix (shaped like `xxx:` with no `/` or `:` before the colon).
 fn scheme_of(input: &str) -> Option<&str> {
     let colon = input.find(':')?;
     let scheme = &input[..colon];
@@ -209,7 +216,7 @@ fn strip_scheme<'a>(input: &'a str, scheme: &str) -> Option<&'a str> {
     }
 }
 
-/// percent 解码(%XX;非法序列报错,不吞)。
+/// Percent decoding (%XX; illegal sequences error, never swallowed).
 fn percent_decode(input: &str) -> Result<String, UriError> {
     if !input.contains('%') {
         return Ok(input.to_string());
@@ -236,7 +243,7 @@ fn percent_decode(input: &str) -> Result<String, UriError> {
     String::from_utf8(out).map_err(|_| UriError::InvalidEncoding)
 }
 
-/// 折叠重复 `/`,词法消解 `.`/`..`(不触盘,纯字符串——VFS-001 基础规则)。
+/// Collapse duplicate `/` and resolve `.`/`..` lexically (no disk access, pure string handling — the VFS-001 base rule).
 fn normalize_segments(path: &str) -> String {
     let absolute = path.starts_with('/');
     let mut stack: Vec<&str> = Vec::new();
@@ -245,7 +252,7 @@ fn normalize_segments(path: &str) -> String {
             "" | "." => {}
             ".." => {
                 if absolute {
-                    stack.pop(); // 绝对路径 .. 不会越出根
+                    stack.pop(); // On an absolute path, .. cannot escape the root
                 } else if stack.pop().is_none() {
                     stack.push("..");
                 }
@@ -282,7 +289,7 @@ mod tests {
         let uri = CanonicalUri::parse("file:///w/my%20project/a%23b.def").unwrap();
         assert_eq!(uri.as_path(), "/w/my project/a#b.def");
         assert_eq!(uri.to_uri_string(), "file:///w/my%20project/a%23b.def");
-        // 二次解析同一身份(parse(to_string(u)) == u)。
+        // Parsing twice yields the same identity (parse(to_string(u)) == u).
         assert_eq!(CanonicalUri::parse(&uri.to_uri_string()).unwrap(), uri);
     }
 
@@ -294,11 +301,11 @@ mod tests {
 
     #[test]
     fn to_native_path_strips_windows_drive_prefix() {
-        // 反斜杠盘符路径 → 规范 `/C:/...` → 原生 `C:/...`(std 兼容正斜杠)。
+        // Backslash drive path -> canonical `/C:/...` -> native `C:/...` (std accepts forward slashes).
         let uri = CanonicalUri::from_path("C:\\Users\\u\\AppData\\Local\\Temp\\T.def");
         assert_eq!(uri.as_path(), "/C:/Users/u/AppData/Local/Temp/T.def");
         assert_eq!(uri.to_native_path(), "C:/Users/u/AppData/Local/Temp/T.def");
-        // 小写盘符 file URI 直传形态同样还原(file:///c:/x → C:/x)。
+        // A lowercase-drive file URI in pass-through form restores the same way (file:///c:/x -> C:/x).
         let uri = CanonicalUri::parse("file:///c:/temp/T.def").unwrap();
         assert_eq!(uri.as_path(), "/C:/temp/T.def");
         assert_eq!(uri.to_native_path(), "C:/temp/T.def");
@@ -358,7 +365,7 @@ mod tests {
             CanonicalUri::parse("file://server/share/a.def"),
             Err(UriError::UnsupportedScheme(_))
         ));
-        // localhost 是唯一放行的 host 形态。
+        // localhost is the only host form allowed through.
         let uri = CanonicalUri::parse("file://localhost/w/a.def").unwrap();
         assert_eq!(uri.as_path(), "/w/a.def");
     }
@@ -366,7 +373,7 @@ mod tests {
     #[test]
     fn invalid_inputs_error_not_panic() {
         assert_eq!(CanonicalUri::parse(""), Err(UriError::Empty));
-        // 带非法 percent 的完整 file URI → InvalidEncoding。
+        // A full file URI with illegal percent-encoding -> InvalidEncoding.
         assert!(matches!(
             CanonicalUri::parse("file:///%G1.def"),
             Err(UriError::InvalidEncoding)
@@ -402,7 +409,7 @@ mod tests {
 
     #[test]
     fn file_uri_without_absolute_path_is_rejected() {
-        // file:def / file:./x.def(无绝对路径)→ NotAbsolute,不猜测工作目录。
+        // file:def / file:./x.def (no absolute path) -> NotAbsolute; never guess a working directory.
         assert!(matches!(
             CanonicalUri::parse("file:def"),
             Err(UriError::NotAbsolute)
@@ -422,10 +429,10 @@ mod tests {
         ] {
             assert!(s.contains(token), "`{s}` should contain `{token}`");
         }
-        // 控制字符同样编码。
+        // Control characters are encoded too.
         let ctrl = CanonicalUri::from_path("/w/a\u{7}b");
         assert!(ctrl.to_uri_string().contains("%07"));
-        // 编码后再解析回到同一身份。
+        // Parsing after encoding returns to the same identity.
         assert_eq!(CanonicalUri::parse(&uri.to_uri_string()).unwrap(), uri);
         assert_eq!(CanonicalUri::parse(&ctrl.to_uri_string()).unwrap(), ctrl);
     }
@@ -444,7 +451,8 @@ mod tests {
 
     #[test]
     fn relative_paths_keep_leading_dotdot_after_overflow() {
-        // 相对路径的 .. 越出顶部时保留字面 ..(不越出根,也不吞掉)。
+        // A relative path's .. escaping the top keeps a literal .. (it neither escapes
+        // the root nor gets swallowed).
         assert_eq!(CanonicalUri::from_path("a/../..").as_path(), "..");
         assert_eq!(CanonicalUri::from_path("a/b/../..").as_path(), "/");
         assert_eq!(CanonicalUri::from_path("a/./b").as_path(), "a/b");
@@ -452,7 +460,7 @@ mod tests {
 
     #[test]
     fn file_uri_with_host_but_no_path_is_not_absolute() {
-        // file://host(之后连 '/' 都没有)→ NotAbsolute,不猜工作目录。
+        // file://host (not even a '/' afterwards) -> NotAbsolute; never guess a working directory.
         assert!(matches!(
             CanonicalUri::parse("file://localhost"),
             Err(UriError::NotAbsolute)
@@ -465,16 +473,17 @@ mod tests {
 
     #[test]
     fn plain_paths_and_colon_inside_segment_parse_as_paths() {
-        // 纯路径直入 parse(无任何 scheme)→ 与 from_path 同一身份。
+        // A plain path fed straight into parse (no scheme at all) -> the same identity as from_path.
         assert_eq!(
             CanonicalUri::parse("/w/demo/x.def").unwrap(),
             CanonicalUri::from_path("/w/demo/x.def")
         );
-        // 路径段内冒号:`/w/odd` 含 '/' 不是合法 scheme 字符 → 按普通路径收,
-        // 冒号保留在路径里。
+        // A colon inside a path segment: `/w/odd` contains '/', not a legal scheme
+        // character -> received as a plain path, colon kept in the path.
         let odd = CanonicalUri::parse("/w/odd:name.def").unwrap();
         assert_eq!(odd.as_path(), "/w/odd:name.def");
-        // 盘符后无 '/':同样规范成 /C:/... 形态(不丢路径)。
+        // Drive letter without a trailing '/': also normalized into the /C:/... form
+        // (no path loss).
         assert_eq!(CanonicalUri::from_path("c:x.def").as_path(), "/C:/x.def");
     }
 }

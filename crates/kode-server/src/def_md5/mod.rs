@@ -1,39 +1,57 @@
-//! C-18 KBEngine 官方 def MD5(`EntityDef::md5()`)重放器。
+//! C-18 KBEngine official def MD5 (`EntityDef::md5()`) replayer.
 //!
-//! 目标:与引擎对同一资产计算出的复合 md5 **逐字节一致**。引擎在 def 装载
-//! 管线中把结构化字节流喂入静态 `KBE_MD5`(entitydef.cpp:32/243),字符串=
-//! 裸字节无定界、数值=原生小端;本模块按引擎执行序重放同一字节流。
+//! Goal: be **byte-for-byte identical** to the composite md5 the engine
+//! computes over the same assets. During the def loading pipeline the engine
+//! feeds a structured byte stream into the static `KBE_MD5`
+//! (entitydef.cpp:32/243); strings = raw bytes with no delimiter, numbers =
+//! native little-endian; this module replays the same byte stream in the
+//! engine's execution order.
 //!
-//! 溯源(本地 kbengine HEAD 732b389):
-//! - 内建类型构造序:datatypes.cpp:53-83(21 项,uid 计数器 1 起:datatype.cpp:24);
-//! - DataType 构造=aliasName(构造期恒空,0 字节)+uid u16:datatype.cpp:86-97
-//!   ——别名注册后置(`aliasName(name)` 不再入流),标量别名不构造新类型;
-//! - FixedArrayType::initialize=[元素 uid u16]+[元素 strType]:datatype.cpp:1715-1717;
-//! - FixedDictType 每键=[uid u16]+[strType]+[键名]+[persistent 1B]+[databaseLength u32]
-//!   (ARRAY 键同形,先入嵌套构造字节):datatype.cpp:2096-2149;
-//!   implementedBy(非空才):datatype.cpp:2183-2184;
-//! - PropertyDescription 构造=[name]+[Default]+[Type 裸文本]+[utype u16]+[flags u32]
-//!   +[persistent 1B]+[identifier 1B]+[databaseLength u32]+[detailLevel i8]+[类型 uid u16]
-//!   :property.cpp:53-64;ENTITYCALL 持久覆盖:property.cpp:48;
-//! - MethodDescription 构造=[name]+[utype 恒 0(setUType 不再入流:method.inl:16-19)]+
-//!   [exposedType 4B]:method.cpp:28-30;每实参=[uid u16]+[exposedType 4B]:method.cpp:65-67;
-//!   `<Exposed/>`→[exposedType 4B]:method.cpp:50(文档序决定实参带的 exposed 值;
-//!   ClientMethods 无 Exposed 分支:entitydef.cpp:1602-1666);
-//! - ScriptDefModule 构造=模块名:scriptdef_module.cpp:60(uType 不入流);
-//! - 装载序=loadAllDefDescriptions(Properties→Cell→Base→Client:entitydef.cpp:927-964)
-//!   →loadInterfaces(递归,非 message_table 单层:entitydef.cpp:551-639)
-//!   →loadComponents(未注册过才 registerNewScriptDefModule:entitydef.cpp:642-818;
-//!   组件属性字节=[EntityComponentType uid]+PropertyDescription("EntityComponent"),
-//!   flags 由组件 hasBase/hasCell/hasClient 推导:entitydef.cpp:793-808/821-843)
-//!   →loadParentClass(递归 loadDefInfo:entitydef.cpp:890-924)
-//!   →autoMatchCompOwn(entities.xml 条目存在才追 3×int32 hasClient/hasCell/hasBase,
-//!   缺省 -1、有值 1/0:scriptdef_module.cpp:341-397;组件模块早退:304-331);
-//! - 属性 utype 自动计数器 g_propertyUtypeAuto(1 起,占用即前进,显式 `<Utype>`
-//!   入 g_propertyUtypes 占号):entitydef.cpp:45/1018-1093;
-//! - MD5 输出大写 32hex:md5.cpp:65-72(`"%2.2X"`)。
+//! Provenance (local kbengine HEAD 732b389):
+//! - Built-in type construction order: datatypes.cpp:53-83 (21 items, uid
+//!   counter starting at 1: datatype.cpp:24);
+//! - DataType construction = aliasName (always empty at construction, 0 bytes)
+//!   + uid u16: datatype.cpp:86-97 — alias registration comes afterwards
+//!     (`aliasName(name)` no longer enters the stream), scalar aliases do not
+//!     construct a new type;
+//! - FixedArrayType::initialize = [element uid u16] + [element strType]:
+//!   datatype.cpp:1715-1717;
+//! - FixedDictType per key = [uid u16] + [strType] + [key name] +
+//!   [persistent 1B] + [databaseLength u32] (an ARRAY key has the same shape,
+//!   with the nested construction bytes entering first): datatype.cpp:2096-2149;
+//!   implementedBy (only when non-empty): datatype.cpp:2183-2184;
+//! - PropertyDescription construction = [name] + [Default] + [Type raw text] +
+//!   [utype u16] + [flags u32] + [persistent 1B] + [identifier 1B] +
+//!   [databaseLength u32] + [detailLevel i8] + [type uid u16]:
+//!   property.cpp:53-64; ENTITYCALL persistent override: property.cpp:48;
+//! - MethodDescription construction = [name] + [utype always 0 (setUType no
+//!   longer enters the stream: method.inl:16-19)] + [exposedType 4B]:
+//!   method.cpp:28-30; per argument = [uid u16] + [exposedType 4B]:
+//!   method.cpp:65-67; `<Exposed/>` → [exposedType 4B]: method.cpp:50 (the
+//!   document order decides the exposed value an argument carries; ClientMethods
+//!   have no Exposed branch: entitydef.cpp:1602-1666);
+//! - ScriptDefModule construction = module name: scriptdef_module.cpp:60
+//!   (uType does not enter the stream);
+//! - Loading order = loadAllDefDescriptions (Properties→Cell→Base→Client:
+//!   entitydef.cpp:927-964) → loadInterfaces (recursive, not the message_table
+//!   single level: entitydef.cpp:551-639) → loadComponents
+//!   (registerNewScriptDefModule only if not already registered:
+//!   entitydef.cpp:642-818; the component property bytes = [EntityComponentType
+//!   uid] + PropertyDescription("EntityComponent"), flags derived from the
+//!   component's hasBase/hasCell/hasClient: entitydef.cpp:793-808/821-843) →
+//!   loadParentClass (recursive loadDefInfo: entitydef.cpp:890-924) →
+//!   autoMatchCompOwn (only when the entities.xml entry exists, appends 3×int32
+//!   hasClient/hasCell/hasBase, default -1, with value 1/0:
+//!   scriptdef_module.cpp:341-397; component modules exit early: 304-331);
+//! - Property utype auto counter g_propertyUtypeAuto (starts at 1, advances
+//!   when taken; an explicit `<Utype>` takes its slot in g_propertyUtypes):
+//!   entitydef.cpp:45/1018-1093;
+//! - MD5 output is uppercase 32 hex: md5.cpp:65-72 (`"%2.2X"`).
 //!
-//! IDE 内部 sha256/semanticHash 双轨(hotReloadDefHash/hotReloadStructure)是
-//! 另一套体系,本模块不触碰;引擎互通只此一份实现(Rust 权威,无 TS 镜像)。
+//! The IDE-internal sha256/semanticHash dual track (hotReloadDefHash /
+//! hotReloadStructure) is a separate system and untouched by this module; the
+//! engine interop has exactly this one implementation (Rust authority, no TS
+//! mirror).
 
 use std::collections::{HashMap, HashSet};
 
@@ -43,7 +61,7 @@ use serde_json::{json, Value};
 use crate::rpc::RpcRegistry;
 
 // ===========================================================================
-// 子模块(SRC-008 阶段 1):MD5 基础+字节流、golden 样例集。
+// Submodules (SRC-008 phase 1): MD5 basics + byte stream, golden sample set.
 // ===========================================================================
 
 mod golden;
@@ -53,10 +71,10 @@ pub use golden::{dump_def_md5_golden, golden_samples, GoldenSample, GOLDEN_REL_P
 pub use md5::{to_hex, DefMd5Stream, Md5, TraceEntry};
 
 // ===========================================================================
-// 重放器
+// Replayer
 // ===========================================================================
 
-/// 内建类型构造序(datatypes.cpp:56-79)。
+/// Built-in type construction order (datatypes.cpp:56-79).
 pub const BUILTIN_TYPE_ORDER: [&str; 21] = [
     "UINT8",
     "UINT16",
@@ -81,7 +99,8 @@ pub const BUILTIN_TYPE_ORDER: [&str; 21] = [
     "VECTOR4",
 ];
 
-/// Flags 字符串→原始位掩码(entitydef.cpp:161-174,输入先 toUpper)。
+/// Flags string → raw bit mask (entitydef.cpp:161-174, the input is uppercased
+/// first).
 pub fn flags_value(name_upper: &str) -> Option<u32> {
     match name_upper {
         "CELL" => Some(0x0000_0001),
@@ -110,21 +129,23 @@ enum TypeKind {
     Array,
     Dict,
     EntityComponent,
-    /// EntityCallType(datatype.h:633-635)——getName()/type() 类身份构造期即定,
-    /// KR-AUD-82:与 aliasName 注册名解耦(引擎 addDataType 不动类身份)。
+    /// EntityCallType (datatype.h:633-635) — the getName()/type() class
+    /// identity is fixed at construction time;
+    /// KR-AUD-82: decoupled from the aliasName registration name (the engine's
+    /// addDataType never touches class identity).
     EntityCall,
 }
 
 #[derive(Clone, Debug)]
 struct TypeInfo {
     kind: TypeKind,
-    /// Array 的元素类型 id(FixedArrayType::getDataType)。
+    /// The Array's element type id (FixedArrayType::getDataType).
     element: Option<u16>,
 }
 
 #[derive(Default)]
 struct DataTypesState {
-    /// _g_dataTypeUID(datatype.cpp:24,1 起;finalise 重置:108)。
+    /// _g_dataTypeUID (datatype.cpp:24, starts at 1; finalise resets it: 108).
     next_uid: u16,
     by_name: HashMap<String, u16>,
     info: HashMap<u16, TypeInfo>,
@@ -139,7 +160,8 @@ impl DataTypesState {
         }
     }
 
-    /// DataType 构造:aliasName 构造期恒空(0 字节)+uid u16(datatype.cpp:86-97)。
+    /// DataType construction: aliasName always empty at construction (0 bytes)
+    /// + uid u16 (datatype.cpp:86-97).
     fn construct(&mut self, stream: &mut DefMd5Stream, kind: TypeKind, field: &str) -> u16 {
         let id = self.next_uid;
         self.next_uid += 1;
@@ -154,9 +176,11 @@ impl DataTypesState {
         id
     }
 
-    /// addDataType(name, dt):只写名字→id 表(aliasName 后置,不入流;
-    /// datatypes.cpp:190-218——`dataType->aliasName(name)` 只改 aliasName_,
-    /// 不改 getName()/type() 类身份)。KR-AUD-82:register 不得覆写类型元信息。
+    /// addDataType(name, dt): writes only the name→id table (alias registration
+    /// comes afterwards, not in the stream; datatypes.cpp:190-218 —
+    /// `dataType->aliasName(name)` only changes aliasName_, never the
+    /// getName()/type() class identity). KR-AUD-82: register must not overwrite
+    /// type metadata.
     fn register(&mut self, name: &str, id: u16) {
         self.by_name.insert(name.to_string(), id);
     }
@@ -165,15 +189,16 @@ impl DataTypesState {
         self.by_name.get(name).copied()
     }
 
-    /// 该类型是否 ENTITYCALL——引擎三处判定都是**类身份**且不递归数组链
-    /// (KR-AUD-86):
+    /// Whether this type is ENTITYCALL — the engine's three checks all use the
+    /// **class identity** and never recurse into the array chain (KR-AUD-86):
     /// - property.cpp:48-51 `strcmp(dataType_->getName(),"ENTITYCALL")`;
     /// - datatype.cpp:2141 `dataType->type()`;
-    /// - datatype.cpp:2104 数组键 `dataType->getDataType()->type()`——只看
-    ///   **一层**元素(元素是嵌套 FixedArrayType 时 type()==FIXEDARRAY),
-    ///   由调用方传入元素 id 即等价。
+    /// - datatype.cpp:2104 array key `dataType->getDataType()->type()` — it
+    ///   only looks at **one level** of element (a nested FixedArrayType element
+    ///   has type()==FIXEDARRAY), so the element id passed by the caller is
+    ///   equivalent.
     ///
-    /// 别名注册不改类身份(KR-AUD-82)。
+    /// Alias registration never changes class identity (KR-AUD-82).
     fn is_entitycall(&self, id: u16) -> bool {
         matches!(
             self.info.get(&id).map(|info| info.kind),
@@ -182,7 +207,8 @@ impl DataTypesState {
     }
 }
 
-/// 模块的域位与 exposed 计数(组件 flags 推导用,entitydef.cpp:793-808)。
+/// The module's domain bits and exposed-method count (for component flags
+/// derivation, entitydef.cpp:793-808).
 #[derive(Clone, Default)]
 struct ModuleState {
     has_base: bool,
@@ -190,21 +216,25 @@ struct ModuleState {
     has_client: bool,
     base_exposed_methods: usize,
     cell_exposed_methods: usize,
-    /// isComponentModule(scriptdef_module.cpp:304 早退判定)。
+    /// isComponentModule (scriptdef_module.cpp:304 early-exit check).
     is_component: bool,
-    /// 本模块已用显式/自动 Utype(KR-AUD-85:冲突判定限同模块,
-    /// 引擎 findPropertyDescription 只查本模块)。
+    /// Utypes used by this module, explicit or auto (KR-AUD-85: conflict
+    /// detection is limited to the same module — the engine's
+    /// findPropertyDescription only looks at this module).
     prop_utypes: Vec<u16>,
 }
 
-/// 计算入参(镜像 message_table 输入形态;componentScripts 为可选的
-/// `{"base:Name","cell:Name"}` 存在集——组件 autoMatchCompOwn 的脚本探测面,
-/// 对应引擎 scripts/{base,cell}/components/<Name>.py 存在性)。
+/// Computation inputs (mirror the message_table input shape; componentScripts
+/// is an optional `{"base:Name","cell:Name"}` existence set — the script probe
+/// face of the component's autoMatchCompOwn, corresponding to the existence of
+/// the engine's scripts/{base,cell}/components/<Name>.py).
 #[derive(Clone, Debug, Default)]
 pub struct DefMd5Params {
     pub types_xml: String,
     pub entities_xml: String,
-    /// 实体/接口/组件名→def 原文(接口/组件按名取,目录结构不参与)。
+    /// Entity/interface/component name → def original text (interfaces and
+    /// components are looked up by name; directory structure does not
+    /// participate).
     pub defs: HashMap<String, String>,
     pub alias_xml: String,
     pub component_scripts: HashSet<String>,
@@ -232,7 +262,8 @@ impl DefMd5Result {
     }
 }
 
-/// XML 助手:引擎 getValStr=首文本子节点 kbe_trim(xml.cpp:121-128)。
+/// XML helper: the engine's getValStr = first text child node kbe_trim
+/// (xml.cpp:121-128).
 fn first_text(doc: &Document, el: usize) -> String {
     let element = doc.element(el);
     for &child in &element.children {
@@ -245,15 +276,17 @@ fn first_text(doc: &Document, el: usize) -> String {
     String::new()
 }
 
-/// 引擎 enterNode(node,key)≈父元素的具名子元素(xml.cpp:60-88)。
+/// Engine enterNode(node,key) ≈ the parent element's named child element
+/// (xml.cpp:60-88).
 fn child_el(doc: &Document, parent: usize, key: &str) -> Option<usize> {
     doc.child_elements(parent)
         .into_iter()
         .find(|&c| doc.element(c).name == key)
 }
 
-/// 引擎 xml.cpp:113-119 getKey=trim(Value):元素取标签名,文本/CDATA 取解码
-/// 文本 trim(接口/组件名文本形态的来源)。
+/// Engine xml.cpp:113-119 getKey = trim(Value): an element takes its tag name,
+/// text/CDATA take the decoded text trimmed (the source of the text forms of
+/// interface/component names).
 fn engine_get_key(doc: &Document, node: usize) -> String {
     match &doc.nodes[node].data {
         NodeData::Element(e) => e.name.trim().to_string(),
@@ -264,16 +297,21 @@ fn engine_get_key(doc: &Document, node: usize) -> String {
     }
 }
 
-/// 引擎 xml.cpp:72-95 enterNode:沿 node 起的兄弟链找 getKey==key 的元素,
-/// 命中返回其**首个非注释子节点**——文本或元素皆可(非具名子元素查找)。
-/// 另:tinyxml2 的 DOM 不存在"原始字节纯空白"的文本节点——Identify
-/// (tinyxml2.cpp:715-723)先按**原始字节** SkipWhiteSpace 再分类,只有
-/// 空白后跟真实文本才回退 p=start 建含空白前缀的文本节点(:782-786);
-/// 默认 PRESERVE_WHITESPACE(xml.h:1732,引擎 new XMLDocument() 走默认)。
-/// 实体解码发生在 GetStr(tinyxml2.cpp:286-360),晚于分类——`&#32;` 这类
-/// 解码后才成空白的节点引擎**照建**(getKey=trim→空名)。故本仓按原始
-/// 字节分类跳过:文本 span 内全是 C locale 空白才视作引擎不存在的节点;
-/// CDATA 是显式节点照建不跳。
+/// Engine xml.cpp:72-95 enterNode: walks the sibling chain starting at node
+/// looking for an element whose getKey == key, and on a hit returns its **first
+/// non-comment child node** — text or element alike (not a named-child lookup).
+/// Also: tinyxml2's DOM has no text node that is "purely whitespace in the raw
+/// bytes" — Identify (tinyxml2.cpp:715-723) skips whitespace on the **raw
+/// bytes** before classifying, and only whitespace followed by real text falls
+/// back to p=start to build a text node with a whitespace prefix (:782-786);
+/// the default is PRESERVE_WHITESPACE (xml.h:1732, and the engine's
+/// `new XMLDocument()` uses the default).
+/// Entity decoding happens in GetStr (tinyxml2.cpp:286-360), after
+/// classification — for a node like `&#32;` that becomes whitespace only after
+/// decoding, the engine **does build it** (getKey = trim → empty name). So this
+/// repo classifies and skips on raw bytes: a text span counts as a node the
+/// engine would not have only if it is entirely C-locale whitespace; CDATA is
+/// an explicit node and is built, not skipped.
 fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
     let mut cur = Some(node);
     while let Some(idx) = cur {
@@ -300,8 +338,9 @@ fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
     None
 }
 
-/// C locale isspace(tinyxml2 XMLUtil::IsWhiteSpace 底层,tinyxml2.h:569-572
-/// 经由 isspace();UTF-8 续字节不算空白)。
+/// C-locale isspace (the layer under tinyxml2's XMLUtil::IsWhiteSpace,
+/// tinyxml2.h:569-572, via isspace(); UTF-8 continuation bytes are not
+/// whitespace).
 fn is_engine_whitespace(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
 }
@@ -320,13 +359,17 @@ struct Replayer {
     entities_text: String,
     defs: HashMap<String, String>,
     component_scripts: HashSet<String>,
-    /// entities.xml 条目名→(hasClient,hasCell,hasBase)属性值(缺省 -1)。
+    /// entities.xml entry name → (hasClient,hasCell,hasBase) attribute values
+    /// (defaults to -1).
     entities_attrs: HashMap<String, (i32, i32, i32)>,
-    /// 已完成 def 装载的模块名(loadComponents 的 findScriptModule 判定)。
+    /// Module names whose def loading is complete (the loadComponents
+    /// findScriptModule check).
     loaded_modules: HashSet<String>,
-    /// KODE-AUD-006:当前 def 展开路径的活动栈(再入即环)。load_interfaces /
-    /// load_parent_class 不查 loaded_modules,interface/parent 链成环(A→B→A)
-    /// 会无限递归栈溢出;loading 标记正在展开的 def 名,再遇即截断。
+    /// KODE-AUD-006: active stack of the current def expansion path (re-entry
+    /// means a cycle). load_interfaces / load_parent_class do not check
+    /// loaded_modules, so a cyclic interface/parent chain (A→B→A) would recurse
+    /// until stack overflow; `loading` marks the def name currently being
+    /// expanded, and meeting it again truncates.
     loading: HashSet<String>,
     modules: HashMap<String, ModuleState>,
     /// g_propertyUtypeAuto/g_propertyUtypes(entitydef.cpp:45/1018-1093)。
@@ -380,7 +423,8 @@ impl Replayer {
 
     fn replay_builtin_types(&mut self) {
         for name in BUILTIN_TYPE_ORDER {
-            // ENTITYCALL 构造期即带类身份(EntityCallType),KR-AUD-82。
+            // ENTITYCALL carries its class identity (EntityCallType) from
+            // construction time, KR-AUD-82.
             let kind = if name == "ENTITYCALL" {
                 TypeKind::EntityCall
             } else {
@@ -429,9 +473,10 @@ impl Replayer {
         Ok(())
     }
 
-    /// FixedArrayType::initialize:追加 [元素 uid u16]+[元素 strType]
-    /// (datatype.cpp:1715-1717;嵌套 ARRAY 先入内层构造+初始化字节)。
-    /// 返回元素类型 id(供调用方回填 ArrayTypeInfo.element)。
+    /// FixedArrayType::initialize: appends [element uid u16] + [element
+    /// strType] (datatype.cpp:1715-1717; a nested ARRAY first enters its inner
+    /// construction + initialization bytes). Returns the element type id (for
+    /// the caller to fill back into ArrayTypeInfo.element).
     fn replay_array(&mut self, doc: &Document, of_parent_el: usize) -> Result<u16, String> {
         let of_el = child_el(doc, of_parent_el, "of")
             .ok_or_else(|| "FixedArrayType::initialize: not found \"of\"".to_string())?;
@@ -461,7 +506,8 @@ impl Replayer {
         }
     }
 
-    /// FixedDictType::initialize(XML):逐键 + implementedBy(datatype.cpp:2050-2196)。
+    /// FixedDictType::initialize (XML): per key + implementedBy
+    /// (datatype.cpp:2050-2196).
     fn replay_fixed_dict(
         &mut self,
         doc: &Document,
@@ -545,7 +591,7 @@ impl Replayer {
     }
 
     // ------------------------------------------------------------------
-    // Phase2:entities.xml 逐实体重放(entitydef.cpp:199-237)
+    // Phase2: replay entities.xml entity by entity (entitydef.cpp:199-237)
     // ------------------------------------------------------------------
 
     fn replay_entities(&mut self) -> Result<(), String> {
@@ -558,7 +604,7 @@ impl Replayer {
             Some(r) => r,
             None => return Ok(()),
         };
-        // 文档序快照(借用冲突:先收集名)。
+        // Document-order snapshot (borrow conflict: collect the names first).
         let names: Vec<String> = doc
             .child_elements(root)
             .iter()
@@ -571,7 +617,8 @@ impl Replayer {
         Ok(())
     }
 
-    /// registerNewScriptDefModule:未注册过才构造(名字入流;entitydef.cpp:253-265)。
+    /// registerNewScriptDefModule: constructs only if not already registered
+    /// (the name enters the stream; entitydef.cpp:253-265).
     fn register_new_script_module(&mut self, name: &str) {
         if self.modules.contains_key(name) {
             return;
@@ -582,16 +629,19 @@ impl Replayer {
             .insert(name.to_string(), ModuleState::default());
     }
 
-    /// loadDefInfo(entitydef.cpp:339-400):装载序闭包。
-    /// `interfaces_ignore_components` 仅组件分支为 true(entitydef.cpp:765)。
+    /// loadDefInfo (entitydef.cpp:339-400): the loading-order closure.
+    /// `interfaces_ignore_components` is true only in the component branch
+    /// (entitydef.cpp:765).
     fn load_def_info(
         &mut self,
         file_name: &str,
         module_name: &str,
         interfaces_ignore_components: bool,
     ) -> Result<(), String> {
-        // KODE-AUD-006:活动栈保护——component 链成环(A→B→A)经 load_components
-        // → load_def_info 递归,loading 再遇即截断(引擎递归装载无法终止)。
+        // KODE-AUD-006: active-stack protection — a cyclic component chain
+        // (A→B→A) recurses via load_components → load_def_info, and meeting
+        // `loading` again truncates (the engine's recursive loading cannot
+        // terminate).
         if !self.loading.insert(file_name.to_string()) {
             return Ok(());
         }
@@ -609,7 +659,8 @@ impl Replayer {
             self.load_interfaces(&doc, root, module_name, interfaces_ignore_components)?;
             self.load_components(&doc, root, module_name)?;
             self.load_parent_class(&doc, root, module_name)?;
-            // loadDetailLevelInfo/loadVolatileInfo 不入流(已核:无 md5 追加)。
+            // loadDetailLevelInfo/loadVolatileInfo do not enter the stream
+            // (verified: no md5 appends).
             self.auto_match_comp_own(module_name);
             self.loaded_modules.insert(file_name.to_string());
             Ok(())
@@ -669,8 +720,10 @@ impl Replayer {
                     v
                 }
                 None => {
-                    // 引擎缺 Flags 报错终止(entitydef.cpp:1162-1176);kode 夹具
-                    // 存在缺 Flags 属性,按 flags=0 宽容重放(trace 留痕)。
+                    // The engine errors out and stops on a missing Flags
+                    // (entitydef.cpp:1162-1176); some kode fixture properties
+                    // lack Flags, so these are replayed leniently with flags=0
+                    // (recorded in the trace).
                     0
                 }
             };
@@ -713,7 +766,8 @@ impl Replayer {
             };
             let utype = self.calc_property_utype(i_utype, module_name)?;
 
-            // PropertyDescription 构造字节(property.cpp:53-64;顺序严格)。
+            // PropertyDescription construction bytes (property.cpp:53-64; the
+            // order is strict).
             self.stream
                 .append_str("property-name", "property.cpp:53", &name);
             self.stream
@@ -744,8 +798,9 @@ impl Replayer {
         Ok(())
     }
 
-    /// 属性/实参的 <Type> 解析:ARRAY 内联构造(嵌套字节先入流),其余查表
-    /// (entitydef.cpp:1190-1212 / 1340-1353)。
+    /// `<Type>` resolution for properties/arguments: ARRAY is constructed
+    /// inline (nested bytes enter the stream first), everything else is a table
+    /// lookup (entitydef.cpp:1190-1212 / 1340-1353).
     fn resolve_datatype(
         &mut self,
         doc: &Document,
@@ -771,12 +826,15 @@ impl Replayer {
         }
     }
 
-    /// calcDefPropertyUType(entitydef.cpp:1018-1093)。显式 Utype 的冲突判定
-    /// 是**同模块**的:全局 g_propertyUtypes 命中后引擎只查
-    /// `pScriptModule->findPropertyDescription(futype, base/cell/client)`,
-    /// 本模块没有该属性就照常 push_back——跨模块复用同一 Utype 引擎容忍
-    /// (KR-AUD-85;修前全局查重更严,拒掉合法 def)。全局表仍收全量 utype
-    /// 供 auto 计数器跳号。
+    /// calcDefPropertyUType (entitydef.cpp:1018-1093). The conflict check for
+    /// an explicit Utype is **same-module** scoped: after the global
+    /// g_propertyUtypes hit, the engine only consults
+    /// `pScriptModule->findPropertyDescription(futype, base/cell/client)`, and
+    /// if this module lacks the property it push_backs as usual — the engine
+    /// tolerates reusing the same Utype across modules (KR-AUD-85; before the
+    /// fix the global dedup was stricter and rejected valid defs). The global
+    /// table still collects all utypes so the auto counter can skip taken
+    /// numbers.
     fn calc_property_utype(&mut self, i_utype: i64, module_name: &str) -> Result<u16, String> {
         let futype: u16;
         if i_utype > 0 {
@@ -802,9 +860,10 @@ impl Replayer {
     }
 
     /// loadDef{Cell,Base,Client}Methods(entitydef.cpp:1314+/1440+/1602+):
-    /// 构造=[name]+[utype 恒 0]+[exposedType 4B];子节点文档序处理
-    /// (Exposed→[exposed 4B];Arg→内联 ARRAY 字节+[uid]+[exposed 4B];
-    /// Utype 无字节:setUType 不追加)。ClientMethods 无 Exposed 分支。
+    /// Construction = [name] + [utype always 0] + [exposedType 4B]; child nodes
+    /// are processed in document order (Exposed → [exposed 4B]; Arg → inline
+    /// ARRAY bytes + [uid] + [exposed 4B]; Utype contributes no bytes: setUType
+    /// appends nothing). ClientMethods have no Exposed branch.
     fn load_def_methods(
         &mut self,
         doc: &Document,
@@ -830,22 +889,26 @@ impl Replayer {
                             .append_i32("method-set-exposed", "method.cpp:50", exposed);
                     }
                     "Arg" => {
-                        // 引擎:typeNode = argNode->FirstChild();getValStr(typeNode)
-                        // (entitydef.cpp:1486-1488/1620-1622)= **Arg 元素自身文本**,
-                        // 非 `<Type>` 子元素;内联 ARRAY 用 `<of>`(Arg 的子元素)导航。
+                        // Engine: typeNode = argNode->FirstChild();
+                        // getValStr(typeNode) (entitydef.cpp:1486-1488/1620-1622)
+                        // = the **Arg element's own text**, not a `<Type>` child
+                        // element; an inline ARRAY navigates via `<of>` (a child
+                        // of Arg).
                         let str_type = first_text(doc, child);
                         let data_type =
                             self.resolve_datatype(doc, child, &str_type, module_name, &name)?;
                         self.stream
                             .append_u16("method-arg-uid", "method.cpp:66", data_type);
-                        // pushArgType 带的是当时的 exposedType_(method.cpp:67)。
+                        // pushArgType carries the exposedType_ at that moment
+                        // (method.cpp:67).
                         self.stream
                             .append_i32("method-arg-exposed", "method.cpp:67", exposed);
                     }
                     _ => {} // Utype 等无字节
                 }
             }
-            // addMethodDescription 不入流;utype 自动分配也不入流(setUType 不追加)。
+            // addMethodDescription does not enter the stream; neither does the
+            // auto-allocated utype (setUType appends nothing).
             let m = self.module(module_name);
             match domain {
                 MethodDomain::Cell => {
@@ -868,7 +931,8 @@ impl Replayer {
         Ok(())
     }
 
-    /// loadInterfaces(entitydef.cpp:551-639,递归;内容并入当前模块,接口名不入流)。
+    /// loadInterfaces (entitydef.cpp:551-639, recursive; contents merge into
+    /// the current module, the interface name never enters the stream).
     fn load_interfaces(
         &mut self,
         doc: &Document,
@@ -881,8 +945,8 @@ impl Replayer {
             None => return Ok(()),
         };
         for if_entry in doc.child_elements(interfaces_el) {
-            // 引擎 entitydef.cpp:562-565:条目 getKey(=元素名)必属
-            // {interface,Interface,type,Type},否则 continue。
+            // Engine entitydef.cpp:562-565: the entry's getKey (= element name)
+            // must be one of {interface,Interface,type,Type}, otherwise continue.
             let entry_key = engine_get_key(doc, if_entry);
             if !matches!(
                 entry_key.as_str(),
@@ -890,10 +954,12 @@ impl Replayer {
             ) {
                 continue;
             }
-            // 引擎 entitydef.cpp:567-584:interfaceNode=enterNode(条目,键)依次
-            // 尝试四键——首非注释子节点;接口名=getKey(interfaceNode):
-            // 文本形态 `<interface> ROLE </interface>` 得 "ROLE",元素形态
-            // `<interface><Tank/></interface>` 得元素名 "Tank"。
+            // Engine entitydef.cpp:567-584: interfaceNode =
+            // enterNode(entry, key), trying the four keys in turn — the first
+            // non-comment child node; interface name = getKey(interfaceNode):
+            // the text form `<interface> ROLE </interface>` yields "ROLE", the
+            // element form `<interface><Tank/></interface>` yields the element
+            // name "Tank".
             let interface_node = ["Interface", "interface", "Type", "type"]
                 .iter()
                 .find_map(|k| engine_enter_node(doc, if_entry, k));
@@ -902,9 +968,11 @@ impl Replayer {
                 None => continue,
             };
             let interface_name = engine_get_key(doc, interface_node);
-            // KODE-AUD-006:活动栈保护——interface 链成环(A→B→A)不查
-            // loaded_modules,递归无限栈溢出;loading 再遇即截断。处理完移除,
-            // 错误传播前必先移除(否则残留在 loading 污染后续展开)。
+            // KODE-AUD-006: active-stack protection — a cyclic interface chain
+            // (A→B→A) does not check loaded_modules and would recurse until
+            // stack overflow; meeting `loading` again truncates. Removed when
+            // done, and it must be removed before the error propagates (otherwise
+            // leftovers in `loading` pollute later expansions).
             if !self.loading.insert(interface_name.clone()) {
                 continue;
             }
@@ -942,23 +1010,27 @@ impl Replayer {
             None => return Ok(()),
         };
         for comp_entry in doc.child_elements(components_el) {
-            // 引擎 entitydef.cpp:655:componentName=getKey(条目)=元素名。
+            // Engine entitydef.cpp:655: componentName = getKey(entry) =
+            // the element name.
             let component_name = engine_get_key(doc, comp_entry);
-            // enterNode(条目, componentName)(entitydef.cpp:656)=条目首个
-            // 非注释子节点(文本或元素)。
+            // enterNode(entry, componentName) (entitydef.cpp:656) = the entry's
+            // first non-comment child node (text or element).
             let comp_node = match engine_enter_node(doc, comp_entry, &component_name) {
                 Some(n) => n,
                 None => continue,
             };
-            // 引擎 entitydef.cpp:663-671 三步导航后半:componentTypeNameNode=
-            // enterNode(componentNode,"Type"),componentTypeName=getKey(·)——
-            // 即 `<Type>` 文本(trim),非元素名字面量 "Type"。
+            // The back half of the engine's three-step navigation at
+            // entitydef.cpp:663-671: componentTypeNameNode =
+            // enterNode(componentNode,"Type"), componentTypeName = getKey(·) —
+            // i.e. the `<Type>` text (trimmed), not the element name literal
+            // "Type".
             let component_type_name = match engine_enter_node(doc, comp_node, "Type") {
                 Some(n) => engine_get_key(doc, n),
                 None => String::new(),
             };
             if component_type_name.is_empty() {
-                // 引擎 entitydef.cpp:668-671:componentTypeName=="" → return false。
+                // Engine entitydef.cpp:668-671: componentTypeName=="" → return
+                // false.
                 return Err(format!("component name is NULL: {component_name}"));
             }
 
@@ -975,11 +1047,13 @@ impl Replayer {
             let utype = self.calc_property_utype(i_utype, module_name)?;
 
             if !self.loaded_modules.contains(&component_type_name) {
-                // 新组件:注册(名字入流)+装 def(接口忽略组件:765)
-                // +父类(components/ 目录)+autoMatchCompOwn(791)。
+                // New component: register (the name enters the stream) + load its
+                // def (interfaces ignore components: 765) + parent class
+                // (components/ directory) + autoMatchCompOwn (791).
                 self.register_new_script_module(&component_type_name);
                 self.module(&component_type_name).is_component = true;
-                // 组件脚本存在性→域位(scriptdef_module.cpp:306-320)。
+                // Component script existence → domain bits
+                // (scriptdef_module.cpp:306-320).
                 if self
                     .component_scripts
                     .contains(&format!("base:{component_type_name}"))
@@ -995,7 +1069,8 @@ impl Replayer {
                 self.load_def_info(&component_type_name, &component_type_name, true)?;
             }
 
-            // flags 由组件 hasBase/hasCell/hasClient 推导(entitydef.cpp:793-808)。
+            // flags are derived from the component's hasBase/hasCell/hasClient
+            // (entitydef.cpp:793-808).
             let flags = {
                 let m = self.module(&component_type_name);
                 let mut f = 0u32;
@@ -1016,7 +1091,8 @@ impl Replayer {
             };
 
             // addComponentProperty(entitydef.cpp:821-843):EntityComponentType
-            // 构造 uid(非 types 已知名才新建)+PropertyDescription("EntityComponent")。
+            // Construct the uid (creating a new one only for names unknown to
+            // types) + PropertyDescription("EntityComponent").
             let ec_id = match self.types.lookup(&component_type_name) {
                 Some(id) => id,
                 None => {
@@ -1056,7 +1132,8 @@ impl Replayer {
             self.stream
                 .append_u16("component-prop-type-uid", "property.cpp:63-64", ec_id);
 
-            // 组件属性置宿主域位(entitydef.cpp:851-861)。
+            // The component property sets the host's domain bits
+            // (entitydef.cpp:851-861).
             if flags & ENTITY_BASE_DATA_FLAGS > 0 {
                 self.module(module_name).has_base = true;
             }
@@ -1070,8 +1147,9 @@ impl Replayer {
         Ok(())
     }
 
-    /// loadParentClass(entitydef.cpp:890-924):父 def 并入当前模块
-    /// (不注册父模块名;父的 autoMatchCompOwn 按 entities.xml 条目追 int32)。
+    /// loadParentClass (entitydef.cpp:890-924): the parent def merges into the
+    /// current module (the parent module name is not registered; the parent's
+    /// autoMatchCompOwn appends int32s according to the entities.xml entry).
     fn load_parent_class(
         &mut self,
         doc: &Document,
@@ -1082,16 +1160,20 @@ impl Replayer {
             Some(p) => p,
             None => return Ok(()),
         };
-        // 引擎 entitydef.cpp:897-899:parentClassName =
-        // getKey(enterNode(defNode,"Parent"))——enterNode 返回 <Parent> 首个
-        // 非注释子节点,getKey=trim(Value)(xml.cpp:72-95/113-119):文本形态
-        // `<Parent> A </Parent>` 得 "A",元素形态 `<Parent><A/></Parent>` 得
-        // 元素名 "A"(KR-AUD-83;修前只取 first_text,元素形态得空串)。
+        // Engine entitydef.cpp:897-899: parentClassName =
+        // getKey(enterNode(defNode,"Parent")) — enterNode returns the first
+        // non-comment child node of <Parent>, and getKey = trim(Value)
+        // (xml.cpp:72-95/113-119): the text form `<Parent> A </Parent>` yields
+        // "A", the element form `<Parent><A/></Parent>` yields the element name
+        // "A" (KR-AUD-83; before the fix only first_text was taken, so the
+        // element form yielded an empty string).
         let parent_name = engine_enter_node(doc, parent_el, "Parent")
             .map(|node| engine_get_key(doc, node))
             .unwrap_or_default();
-        // KODE-AUD-006:活动栈保护——parent 链成环(A→B→A)不查 loaded_modules,
-        // 递归无限栈溢出;loading 再遇即截断。处理完移除(错误传播前必先移除)。
+        // KODE-AUD-006: active-stack protection — a cyclic parent chain
+        // (A→B→A) does not check loaded_modules and would recurse until stack
+        // overflow; meeting `loading` again truncates. Removed when done (and it
+        // must be removed before the error propagates).
         if !self.loading.insert(parent_name.clone()) {
             return Ok(());
         }
@@ -1109,9 +1191,12 @@ impl Replayer {
             self.load_interfaces(&pdoc, proot, module_name, false)?;
             self.load_components(&pdoc, proot, module_name)?;
             self.load_parent_class(&pdoc, proot, module_name)?;
-            // 引擎 loadDefInfo 每递归层尾部都调 pScriptModule->autoMatchCompOwn()
-            // (entitydef.cpp:398),其内部用模块自身 name_(子模块)查 entities.xml
-            // → 父链每层重复追子模块 3×int32(引擎怪癖,重放照实镜像)。
+            // The engine's loadDefInfo calls pScriptModule->autoMatchCompOwn()
+            // at the tail of every recursion level (entitydef.cpp:398); inside,
+            // it looks up entities.xml using the module's own name_ (the child
+            // module) → every parent-chain level appends the child module's
+            // 3×int32 again (an engine quirk, mirrored faithfully in the
+            // replay).
             self.auto_match_comp_own(module_name);
             Ok(())
         })();
@@ -1120,8 +1205,10 @@ impl Replayer {
     }
 
     /// autoMatchCompOwn(scriptdef_module.cpp:302-530):
-    /// - 组件模块早退(304-331),exposed 方法可补 hasClient(322-328);
-    /// - 实体模块仅 entities.xml 有该名条目时追 3×int32(缺省 -1、有值 1/0)。
+    /// - Component modules exit early (304-331); exposed methods can still set
+    ///   hasClient (322-328);
+    /// - Entity modules append the 3×int32 only when entities.xml has an entry
+    ///   of that name (defaults to -1, with value 1/0).
     fn auto_match_comp_own(&mut self, name: &str) {
         let m = self.modules.get(name).cloned().unwrap_or_default();
         if m.is_component {
@@ -1144,7 +1231,8 @@ impl Replayer {
     }
 }
 
-/// 计算复合 def md5(Phase1 types.xml + Phase2 entities.xml,引擎执行序)。
+/// Computes the composite def md5 (Phase1 types.xml + Phase2 entities.xml, in
+/// the engine's execution order).
 pub fn compute_def_md5(params: DefMd5Params) -> Result<DefMd5Result, String> {
     let mut replayer = Replayer::new(params)?;
     replayer.replay_builtin_types();

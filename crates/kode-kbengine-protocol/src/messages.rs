@@ -1,6 +1,7 @@
-//! 消息 ID 映射:静态段(固定表)+ 项目覆盖段 + 动态导入段(PA-003
-//! 「message ID 静态+动态映射」;PA-001 §5:三段合并模型,静态表在真实
-//! 连接不成立——增量分配的 ID 只能从 onImportClientMessages 导入帧拿到)。
+//! Message ID mapping: static segment (fixed table) + project override segment + dynamic
+//! import segment (PA-003 "message ID static + dynamic mapping"; PA-001 §5: three-segment
+//! merge model — the static table does not hold on a real connection, since incrementally
+//! allocated ids can only be obtained from the onImportClientMessages import frame).
 
 use kode_kbengine_schema::messages::{build_message_table, MessageLength, MessageTable};
 use kode_kbengine_schema::wire::{builtin_wire_type, WireType};
@@ -9,7 +10,7 @@ use crate::codec::DecodeLimits;
 use crate::cursor::Cursor;
 use crate::error::{DecodeError, DecodeErrorKind};
 
-/// 单条消息规格(解码面)。
+/// Spec of a single message (decode plane).
 #[derive(Debug, Clone, PartialEq)]
 pub struct MessageSpec {
     pub id: u16,
@@ -18,16 +19,16 @@ pub struct MessageSpec {
     pub args: Vec<WireType>,
 }
 
-/// id → 规格(含动态导入段;线程间传递用 owned 结构)。
+/// id → spec (including the dynamic import segment; an owned structure for hand-off between threads).
 #[derive(Debug, Clone, Default)]
 pub struct MessageMap {
     by_id: std::collections::BTreeMap<u16, MessageSpec>,
-    /// EntityDef 别名段(uid → 别名名;§6 步骤 10 alias section)。
+    /// EntityDef alias segment (uid → alias name; §6 step 10 alias section).
     aliases: std::collections::BTreeMap<u16, String>,
 }
 
 impl MessageMap {
-    /// 静态段:引擎固定默认表(+项目覆盖,由调用方在 MessageTable 已合并)。
+    /// Static segment: the engine's fixed default table (+ project overrides, already merged by the caller in the MessageTable).
     pub fn from_static(table: &MessageTable) -> Self {
         let mut map = MessageMap::default();
         for e in &table.entries {
@@ -37,7 +38,7 @@ impl MessageMap {
         map
     }
 
-    /// 从引擎固定默认 XML 直接构建(便捷入口)。
+    /// Build directly from the engine's fixed default XML (convenience entry).
     pub fn from_defaults_xml(defaults_xml: &str, project_xml: Option<&str>) -> Self {
         Self::from_static(&build_message_table(defaults_xml, project_xml))
     }
@@ -73,23 +74,23 @@ impl MessageMap {
         self.by_id.is_empty()
     }
 
-    /// framing 用的(id → 长度规格)快照。
+    /// (id → length spec) snapshot used by framing.
     pub fn clone_specs(&self) -> std::collections::BTreeMap<u16, MessageLength> {
         self.by_id.iter().map(|(id, s)| (*id, s.length)).collect()
     }
 
-    /// EntityDef 导入的别名段(uid → 名;§6 步骤 10)。
+    /// Alias segment imported with the EntityDef (uid → name; §6 step 10).
     pub fn alias_by_uid(&self, uid: u16) -> Option<&str> {
         self.aliases.get(&uid).map(String::as_str)
     }
 
-    /// 并入一条别名(onImportClientEntityDef alias section)。
+    /// Merge in one alias (onImportClientEntityDef alias section).
     pub fn insert_alias(&mut self, uid: u16, name: String) {
         self.aliases.insert(uid, name);
     }
 }
 
-/// 动态导入摘要。
+/// Dynamic import summary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportSummary {
     pub count: u16,
@@ -97,8 +98,8 @@ pub struct ImportSummary {
     pub fixed: u16,
 }
 
-/// datatype2id(引擎 kbe/src/lib/server/common.cpp:20-70 实测表;
-/// onImportClientMessages 的 argTypes 字段用)→ 线类型。
+/// datatype2id (the engine's measured table at kbe/src/lib/server/common.cpp:20-70;
+/// used by the argTypes field of onImportClientMessages) → wire type.
 pub fn wire_type_from_datatype2id(id: u8) -> Option<WireType> {
     Some(match id {
         1 => WireType::String,
@@ -125,7 +126,7 @@ pub fn wire_type_from_datatype2id(id: u8) -> Option<WireType> {
     })
 }
 
-/// 内建名 → datatype2id(构建测试/工具用)。
+/// Builtin name → datatype2id (for build tests/tools).
 pub fn datatype2id_of(name: &str) -> Option<u8> {
     builtin_wire_type(name)?;
     Some(match name.to_ascii_uppercase().as_str() {
@@ -151,13 +152,13 @@ pub fn datatype2id_of(name: &str) -> Option<u8> {
 }
 
 impl MessageMap {
-    /// 解析 onImportClientMessages 载荷并**并入本表**(§5.2;loginapp 返回
-    /// ClientInterface+Loginapp exposed,baseapp 只返回 Baseapp exposed——
-    /// 两进程表不同,所以按 Flow 各自应用一次)。
+    /// Parse an onImportClientMessages payload and **merge it into this table** (§5.2; loginapp
+    /// returns ClientInterface+Loginapp exposed while baseapp returns only Baseapp exposed —
+    /// the two processes have different tables, so it is applied once per Flow).
     ///
-    /// 记录序(loginapp.cpp:1471-1481 写序 = JS kbengine.js:3841-3863 读序):
+    /// Record order (loginapp.cpp:1471-1481 write order = JS kbengine.js:3841-3863 read order):
     /// `u16 count + count × { u16 msgID, i16 msgLen, str msgName,
-    /// i8 argsType, u8 argsize, u8[argoutsize] }`。
+    /// i8 argsType, u8 argsize, u8[argoutsize] }`.
     pub fn apply_import(
         &mut self,
         payload: &[u8],
@@ -198,8 +199,9 @@ impl MessageMap {
             self.insert_spec(id, name, length);
             self.set_args(id, args);
         }
-        // 声明 count 有剩余未消费/中途断流:EOF 错误已由 read 抛出;此处
-        // 额外哨兵——载荷必须恰好消费完(引擎定长块)。
+        // Declared count left unconsumed / stream cut short: the EOF error was already raised
+        // by the reads; this is an extra sentinel — the payload must be consumed exactly (the
+        // engine writes a fixed-size block).
         if !cur.at_end() {
             return Err(DecodeError::new(
                 DecodeErrorKind::UnexpectedEof,

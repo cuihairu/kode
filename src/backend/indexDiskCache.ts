@@ -1,24 +1,35 @@
 /**
- * BG-WARM 索引磁盘缓存纯核(2026-11-18 用户令,巡检单 kode-index-disk-cache.md):
- * 预热五阶段最重的两块(discovery def 解析缓存 / eventIndex 事件索引)落
- * globalStorage 磁盘,二次启动从「全仓重扫分钟级」降到「哈希校验秒级」。
+ * BG-WARM index disk cache pure core (2026-11-18 user order, inspection
+ * sheet kode-index-disk-cache.md): the two heaviest pieces of the five-stage
+ * warmup (discovery def parse cache / eventIndex event index) land on disk in
+ * globalStorage, taking a second startup from "minutes of full-repo rescan"
+ * down to "seconds of hash verification".
  *
- * 布局:<globalStorage>/index-cache/{meta.json, discovery.json, eventIndex.json, defLut.json}
- * - meta.json = 提交点:schema 版本 + 扩展版本号(溯源)+ 各产物 sha256 + 计数。
- *   淘汰键只认 schema 格式常量(见 readIndexCache 版本门注释):kode 改索引
- *   数据格式/解析结构时 bump 它即整体弃用重建;扩展版本号与引擎版本都不参与
- *   (2026-11-18 用户拍板,纠正 2fe69ff3:引擎版本与 kode 能否解析自己的缓存
- *   无关;扩展 nightly 滚动版本号更不能当淘汰键)。数据准确性由实体侧既有
- *   逐文件 mtime+size 哈希快照管。
- *   产物先写、meta 后写,meta 未更新 = 旧缓存完整可用(writeFileAtomic
- *   单文件原子,绝不半截)。
- * - 产物文件 = 纯载荷数组;读回时按 meta 的 sha 逐件校验,篡改/半截 → 该
- *   产物弃用(下次启动照旧全扫)。
+ * Layout: <globalStorage>/index-cache/{meta.json, discovery.json, eventIndex.json, defLut.json}
+ * - meta.json = commit point: schema version + extension version (for
+ *   provenance) + per-artifact sha256 + counts. The eviction key only honors
+ *   the schema format constant (see the readIndexCache version-gate comment):
+ *   when kode changes its index data format / parse structure, bumping it
+ *   discards and rebuilds the whole cache; the extension version and the
+ *   engine version do not participate (2026-11-18 user ruling, correcting
+ *   2fe69ff3: the engine version has nothing to do with whether kode can
+ *   parse its own cache; the extension's nightly rolling version is even less
+ *   fit as an eviction key). Data accuracy is governed by the entity side's
+ *   existing per-file mtime+size hash snapshots.
+ *   Artifacts are written first and meta last; meta not updated = the old
+ *   cache is fully usable (writeFileAtomic is per-file atomic, never
+ *   half-written).
+ * - Artifact files = pure payload arrays; on read-back each is verified
+ *   against meta's sha; tampered/truncated -> that artifact is discarded
+ *   (the next startup does a full scan as before).
  *
- * 本模块零 vscode 依赖(纯核+假体同形模式);IO 全注入(测试容错臂)。
- * 语义不变铁律:缓存只是挪时机,索引内容由 capture/restore 双侧实体
- * (EntityMappingManager / WorkspaceIndex)保证与现算逐字节等价——失效
- * 判据在实体侧(stat 快照比对),本模块只管持久化与版本门。
+ * This module has zero vscode dependency (pure core + dummy same-shape
+ * pattern); all IO is injected (tests inject the failure arms).
+ * Semantics-unchanged iron rule: the cache only moves the timing; the index
+ * content is guaranteed byte-for-byte equal to a fresh computation by the
+ * capture/restore entity pair (EntityMappingManager / WorkspaceIndex) -- the
+ * invalidation criterion lives on the entity side (stat snapshot comparison);
+ * this module only handles persistence and the version gate.
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -27,13 +38,14 @@ import type { EntityMappingIndex } from '../entityMapping';
 import type { DefLutDiskFile } from './defMethodLut';
 import type { IndexedFile } from '../workspaceIndex';
 
-/** 缓存结构版本:载荷形状变更时 bump,旧缓存整体弃用(钉子④) */
+/** Cache structure version: bump when the payload shape changes, discarding the old cache wholesale (pin ④) */
 export const INDEX_CACHE_SCHEMA_VERSION = 'index-cache/1';
 export const INDEX_CACHE_DIR_NAME = 'index-cache';
 
-/** discovery 产物条目:.def 解析缓存(defParseCache)的磁盘形态。
- * pythonOwners = 该 def 消费的 python owner 文件半边快照——py 内容不在
- * .def mtime 里(既有口径),跨会话必须同校验,否则恢复出陈旧 pythonMethods。 */
+/** discovery artifact entry: the on-disk shape of the .def parse cache (defParseCache).
+ * pythonOwners = the half snapshot of the python owner files this def consumes --
+ * py content is not reflected in the .def mtime (existing convention), so it must
+ * be verified the same way across sessions, or stale pythonMethods get restored. */
 export interface DefCacheDiskEntry {
   defPath: string;
   mtimeMs: number;
@@ -42,7 +54,7 @@ export interface DefCacheDiskEntry {
   index: EntityMappingIndex;
 }
 
-/** eventIndex 产物条目:WorkspaceIndex 单文件索引的磁盘形态+stat 快照 */
+/** eventIndex artifact entry: the on-disk shape of a WorkspaceIndex per-file index + stat snapshot */
 export interface EventIndexDiskEntry {
   path: string;
   mtimeMs: number;
@@ -53,23 +65,23 @@ export interface EventIndexDiskEntry {
 export interface IndexCacheDiskPayload {
   discovery?: DefCacheDiskEntry[];
   eventIndex?: EventIndexDiskEntry[];
-  /** DEF-LUT-001:def→py 方法跳转反查表(逐 def 桶+stat 快照,恢复侧校验) */
+  /** DEF-LUT-001: def->py method jump reverse-lookup table (per-def buckets + stat snapshots, verified on the restore side) */
   defLut?: DefLutDiskFile[];
 }
 
 export interface IndexCacheMetaFile {
   schemaVersion: string;
-  /** 溯源用:写缓存时的扩展版本号。不作淘汰键(见版本门注释) */
+  /** For provenance: the extension version at cache-write time. Not an eviction key (see the version-gate comment) */
   kodeVersion: string;
   savedAt: number;
-  /** 各产物内容 sha256(读回逐件校验,防篡改/半截) */
+  /** Content sha256 of each artifact (verified per artifact on read-back, guarding against tampering/truncation) */
   sha: { discovery?: string; eventIndex?: string; defLut?: string };
   discoveryCount: number;
   eventIndexCount: number;
   defLutCount?: number;
 }
 
-/** IO 注入面(默认同步 fs;测试注入失败臂=钉子⑤) */
+/** IO injection face (defaults to sync fs; tests inject the failure arms = pin ⑤) */
 export interface IndexCacheIo {
   readText(file: string): string | null;
   writeTextAtomic(file: string, content: string): void;
@@ -85,7 +97,7 @@ export const defaultIndexCacheIo: IndexCacheIo = {
     }
   },
   writeTextAtomic: (file, content) => {
-    // 复用既有原子写(临时文件+rename);失败 throw 由上层静默降级
+    // Reuses the existing atomic write (temp file + rename); a throwing failure is silently degraded by the layer above
     const temp = `${file}.kode-tmp-${process.pid}-${Date.now()}`;
     fs.writeFileSync(temp, content, 'utf8');
     fs.renameSync(temp, file);
@@ -100,12 +112,16 @@ export function sha256Of(text: string): string {
 }
 
 /**
- * discovery 载荷序列化投影:剔除 semantics.local.document(DefDocument XML
- * 原树——环源 children 互指+缓存体积大头),恢复侧由 rootName 重建最小占位
- * document。document 面在 EntityMappingIndex 消费面仅一处
- * (messageTableEngine 读 root?.name),占位保该面行为等价;getAllMappings
- * 投影不含 semantics,等价断言面不受影响。若未来出现新的 document 深消费,
- * 该占位会如实暴露为空面——不静默给陈旧数据。
+ * discovery payload serialization projection: strips semantics.local.document
+ * (the DefDocument XML original tree -- cyclic children references plus the
+ * bulk of the cache size); the restore side rebuilds a minimal placeholder
+ * document from rootName. The document face has exactly one consumer in the
+ * EntityMappingIndex consumption faces (messageTableEngine reads root?.name),
+ * and the placeholder keeps that face behaviorally equivalent; the
+ * getAllMappings projection does not include semantics, so the equivalence
+ * assertion face is unaffected. If a new deep document consumer appears in
+ * the future, the placeholder will honestly expose itself as an empty face --
+ * no silently serving stale data.
  */
 const documentPlaceholderOf = (rootName: string): unknown => ({
   text: '',
@@ -149,9 +165,10 @@ const parseJsonArray = (text: string | null): unknown[] | null => {
 };
 
 /**
- * 读缓存:meta 版本门(分级,只认破坏性变更,见下方注释)→
- * 产物逐件 sha 校验(不匹配 → 该产物缺席,调用方照旧全扫该侧)。
- * meta 缺失/损坏 → null(等同未缓存)。
+ * Reads the cache: meta version gate (tiered, only destructive changes count,
+ * see the comment below) -> per-artifact sha verification (mismatch -> that
+ * artifact is absent, the caller full-scans that side as before).
+ * meta missing/corrupt -> null (same as not cached).
  */
 export function readIndexCache(
   cacheDir: string,
@@ -172,12 +189,13 @@ export function readIndexCache(
   } catch {
     return null;
   }
-  // 版本门(2026-11-18 用户拍板,纠正 2fe69ff3 的 engineMajor 分级):唯一
-  // 淘汰键 = schemaVersion(kode 索引数据格式常量)。kode 改索引格式/解析
-  // 结构时 bump 该常量即整体弃用重建;引擎版本(缓存载荷全由工作区文件派生,
-  // 与引擎 API 无关)与扩展版本号(nightly 每次滚动)都不参与判定,数据
-  // 准确性由实体侧逐文件 mtime+size 哈希快照管。meta 里遗留的 engineMajor
-  // 键(2fe69ff3 形态旧缓存)被 JSON 解析自然忽略,不因此白扫一次。
+  // Version gate (2026-11-18 user ruling, correcting 2fe69ff3's engineMajor tiering): the only
+  // eviction key = schemaVersion (kode's index data format constant). When kode changes its index
+  // format/parse structure, bumping that constant discards and rebuilds the whole cache; the engine
+  // version (the cached payload is derived entirely from workspace files, unrelated to engine APIs)
+  // and the extension version (nightly rolls every time) do not participate in the decision; data
+  // accuracy is governed by the entity side's per-file mtime+size hash snapshots. A leftover engineMajor
+  // key in meta (2fe69ff3-shaped old cache) is naturally ignored by JSON parsing and does not trigger a wasted scan.
   if (meta.schemaVersion !== expected.schemaVersion) {
     return null;
   }
@@ -204,8 +222,10 @@ export function readIndexCache(
 }
 
 /**
- * 写缓存:产物先写、meta 后写(meta=提交点);任何失败静默降级返回 false
- * (钉子⑤:写失败不 crash,下次启动照旧全扫,日志归装配层)。
+ * Writes the cache: artifacts first, meta last (meta = commit point); any
+ * failure silently degrades and returns false
+ * (pin ⑤: a write failure does not crash, the next startup full-scans as
+ * before, logging belongs to the wiring layer).
  */
 export function writeIndexCache(
   cacheDir: string,

@@ -1,8 +1,8 @@
-//! 导出计划器(plan §4.3):由已解析 schema + 关系图 + 规则生成父先子后的只读
-//! SELECT 序列(根按 id,子表按 parentID),预算检查诚实截断。
+//! Export planner (plan §4.3): from the resolved schema + relation graph + rules, generates a parent-before-child read-only
+//! SELECT sequence (roots by id, child tables by parentID) with honest budget truncation.
 //!
-//! Phase 1 无执行器:plan() 产物即 dry-run 面(结构与顺序、列清单、拒绝/缺失表、
-//! 预算判定),供验收 Fixture 与 Phase 2 执行器消费。
+//! Phase 1 has no executor: the plan() output is the dry-run face (structure and ordering, column list, denied/missing tables,
+//! budget verdicts), for acceptance fixtures and the Phase 2 executor to consume.
 
 use std::collections::BTreeMap;
 
@@ -13,61 +13,61 @@ use crate::relations::RelationGraph;
 use crate::rules::RuleSet;
 use crate::schema::{CloneSchema, DeniedTable, ResolvedCloneSchema};
 
-/// 单条计划查询:一张表的只读 SELECT 及其参数绑定形态。
+/// A single planned query: one table's read-only SELECT and its parameter binding form.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct PlannedQuery {
-    /// 执行序(父先子后,0 起)。
+    /// Execution order (parent before child, 0-based).
     pub sequence: usize,
     pub table: String,
-    /// 子表时指向父表(引擎 parentID 逻辑关系)。
+    /// For child tables, points at the parent table (the engine's parentID logical relation).
     pub parent_table: Option<String>,
-    /// 过滤形态:根表按 id,子表按 parentID。
+    /// Filter form: root tables by id, child tables by parentID.
     pub filter: PlanFilter,
-    /// 显式列清单(投影后;结构列恒含)。
+    /// Explicit column list (after projection; structural columns always included).
     pub columns: Vec<String>,
-    /// 与列序一一对应的派生列型(PDC-0203 有类型行编码的依据)。
+    /// Derived column types in one-to-one correspondence with the column order (the basis for PDC-0203's typed row encoding).
     pub column_types: Vec<String>,
-    /// 只读 SELECT 语句(`?` 为绑定参数)。
+    /// Read-only SELECT statement (`?` is a bound parameter).
     pub select_sql: String,
-    /// 该表估计行数(无估计时为 None)。
+    /// Estimated row count for this table (None when there is no estimate).
     pub estimated_rows: Option<u64>,
 }
 
-/// 参数绑定形态。
+/// Parameter binding form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum PlanFilter {
-    /// `WHERE id = ?`(根表,实体主键)。
+    /// `WHERE id = ?` (root table, entity primary key).
     RootId,
-    /// `WHERE parentID = ?`(子表,父行 id)。
+    /// `WHERE parentID = ?` (child table, parent row id).
     ParentId,
 }
 
-/// 完整导出计划(可序列化为 manifest 片段)。
+/// Complete export plan (serializable as a manifest fragment).
 #[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 pub struct QueryPlan {
     pub entity_name: String,
     pub row_budget: u64,
-    /// 计划内查询(父先子后)。
+    /// Queries within the plan (parent before child).
     pub queries: Vec<PlannedQuery>,
-    /// 被排除表(kbe_/物理独有)及原因。
+    /// Excluded tables (kbe_/physically-only) and reasons.
     pub denied: Vec<DeniedTable>,
-    /// 物理侧缺失的派生表(fail-closed 提示,非猜测)。
+    /// Derived tables missing on the physical side (fail-closed notice, not a guess).
     pub missing: Vec<String>,
-    /// 身份列(IdentityRule 声明;Phase 3 IDMapper 输入)。
+    /// Identity column (declared by IdentityRule; input for the Phase 3 IDMapper).
     pub identity: Option<IdentityColumn>,
-    /// 有估计时的总行数估计。
+    /// Total row estimate, when estimates are available.
     pub estimated_rows_total: Option<u64>,
 }
 
-/// 身份列声明。
+/// Identity column declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct IdentityColumn {
     pub table: String,
     pub column: String,
 }
 
-/// dry-run 摘要(不执行,只回答「会做什么、多大、是否在预算内」)。
+/// Dry-run summary (executes nothing; answers "what will happen, how big, is it within budget").
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DryRun {
     pub entity_name: String,
@@ -80,7 +80,7 @@ pub struct DryRun {
     pub missing: Vec<String>,
 }
 
-/// 导出计划器。
+/// Export planner.
 #[derive(Debug)]
 pub struct ExportPlanner {
     row_budget: u64,
@@ -91,8 +91,8 @@ impl ExportPlanner {
         Self { row_budget }
     }
 
-    /// 生成计划。`estimates` 供预算预检(虚拟 Fixture/执行期 COUNT 均可);
-    /// 给出估计且超预算 → [`CloneError::BudgetExceeded`](crate::CloneError::BudgetExceeded)(诚实拒绝,不静默截断)。
+    /// Generates the plan. `estimates` feed the budget preflight (virtual fixtures / runtime COUNT both work);
+    /// given an estimate that exceeds the budget → [`CloneError::BudgetExceeded`](crate::CloneError::BudgetExceeded) (honest refusal, no silent truncation).
     pub fn plan(
         &self,
         schema: &CloneSchema,
@@ -102,7 +102,7 @@ impl ExportPlanner {
     ) -> CloneResult<QueryPlan> {
         rules.validate(schema)?;
 
-        // 关系图只对已解析表建边(拒绝/缺失表不入计划)。
+        // The relation graph builds edges only for resolved tables (denied/missing tables stay out of the plan).
         let graph = RelationGraph::build(schema, &resolved.tables)?;
         let order = graph.topological_order(schema);
         let resolved_names: BTreeMap<&str, usize> = resolved
@@ -191,7 +191,7 @@ impl ExportPlanner {
         })
     }
 
-    /// dry-run 摘要(内部走同一 plan 路径,保证摘要与计划一致)。
+    /// Dry-run summary (internally takes the same plan path, guaranteeing the summary matches the plan).
     pub fn dry_run(
         &self,
         schema: &CloneSchema,
@@ -217,13 +217,13 @@ impl ExportPlanner {
     }
 }
 
-/// 标识符引用(反引号转义):表名/列名来自派生 schema,但标识符若含反引号
-/// 仍须转义,否则生成畸形/可注入 SELECT(与 information_schema 同口径)。
+/// Identifier quoting (backtick escaping): table/column names come from the derived schema, but identifiers containing
+/// backticks still need escaping, otherwise a malformed/injectable SELECT is generated (same policy as information_schema).
 fn quote_ident(name: &str) -> String {
     format!("`{}`", name.replace('`', "``"))
 }
 
-/// 渲染只读 SELECT:显式反引号列 + `?` 绑定参数。仅生成 SELECT(白名单语句面)。
+/// Renders a read-only SELECT: explicit backtick columns + `?` bound parameters. Generates only SELECT (the allowlisted statement face).
 fn render_select(table: &str, columns: &[String], filter: PlanFilter) -> String {
     let quoted: Vec<String> = columns.iter().map(|c| quote_ident(c)).collect();
     let predicate = match filter {
@@ -399,7 +399,7 @@ mod tests {
             vec![root(), child("tbl_Avatar_ghost", "tbl_Avatar")],
         )
         .unwrap();
-        // 物理侧缺 ghost 表;kbe_ 表物理存在但派生侧无 → denied。
+        // The ghost table is missing on the physical side; the kbe_ table exists physically but not on the derived side → denied.
         let mut phys = physical(&["tbl_Avatar"]);
         phys.tables.insert(
             "kbe_entitylog".into(),
@@ -418,7 +418,7 @@ mod tests {
             .unwrap();
         assert_eq!(plan.missing, vec!["tbl_Avatar_ghost".to_string()]);
         assert!(plan.denied.iter().any(|d| d.name == "kbe_entitylog"));
-        // 缺失表不入查询序列。
+        // Missing tables stay out of the query sequence.
         assert_eq!(plan.queries.len(), 1);
     }
 
@@ -469,19 +469,25 @@ mod tests {
     }
     #[test]
     fn render_select_escapes_backticks_in_identifiers() {
-        // 表/列名含反引号:转义为 ````,否则生成畸形/可注入 SELECT。
+        // Table/column names containing backticks: escaped as ````, otherwise a malformed/injectable SELECT is generated.
         let sql = render_select(
             "tbl`Avatar",
             &["id".into(), "weird`col".into()],
             PlanFilter::RootId,
         );
-        assert!(sql.contains("FROM `tbl``Avatar`"), "表名反引号转义: {sql}");
-        assert!(sql.contains("`weird``col`"), "列名反引号转义: {sql}");
-        assert!(sql.contains("WHERE `id` = ?"), "谓词不变: {sql}");
+        assert!(
+            sql.contains("FROM `tbl``Avatar`"),
+            "table name backtick escaped: {sql}"
+        );
+        assert!(
+            sql.contains("`weird``col`"),
+            "column name backtick escaped: {sql}"
+        );
+        assert!(sql.contains("WHERE `id` = ?"), "predicate unchanged: {sql}");
         let parent = render_select("tbl_Bag", &["parentID".into()], PlanFilter::ParentId);
         assert!(
             parent.contains("WHERE `parentID` = ?"),
-            "子表谓词不变: {parent}"
+            "child-table predicate unchanged: {parent}"
         );
     }
 }

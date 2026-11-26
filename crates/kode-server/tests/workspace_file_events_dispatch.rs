@@ -16,9 +16,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 use kode_protocol::{IncomingMessage, Notification, Request, RequestId};
-use kode_vfs::{CanonicalUri, DocumentKey};
 use kode_server::server::Outgoing;
 use kode_server::{handle_message, ServerState};
+use kode_vfs::{CanonicalUri, DocumentKey};
 
 fn unique_dir(tag: &str) -> std::path::PathBuf {
     let nanos = SystemTime::now()
@@ -96,16 +96,21 @@ fn drain_and_hover(state: &mut ServerState, uri: &str, id: i64) -> Option<String
     );
     assert_eq!(out.len(), 1);
     match out.into_iter().next().unwrap() {
-        Outgoing::Response(response) => response
-            .result
-            .and_then(|r| r.get("contents").and_then(|c| c.get("value")).and_then(|v| v.as_str()).map(String::from)),
+        Outgoing::Response(response) => response.result.and_then(|r| {
+            r.get("contents")
+                .and_then(|c| c.get("value"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        }),
         other => panic!("hover 回执形状异常: {other:?}"),
     }
 }
 
 fn pump(state: &mut ServerState) {
     // RESP-001b:泵=生产形态(墙钟界;读线程往返在预算内交货应用)。
-    state.index.pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
+    state
+        .index
+        .pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
 }
 
 const DEF_TEXT: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
@@ -187,7 +192,10 @@ fn delete_unopened_disk_file_evicts_resident_symbols() {
     );
     handle_message(
         &mut state,
-        notification("textDocument/didClose", json!({"textDocument": {"uri": uri}})),
+        notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri}}),
+        ),
     );
     drain_and_hover(&mut state, &uri, 1);
     pump(&mut state);
@@ -241,7 +249,12 @@ fn rename_on_disk_moves_symbols_to_new_uri() {
     pump(&mut state);
     let old_key = key_for(&state, &old_uri);
     assert!(
-        !state.hover.borrow().index.symbols_in_file(&old_key).is_empty(),
+        !state
+            .hover
+            .borrow()
+            .index
+            .symbols_in_file(&old_key)
+            .is_empty(),
         "rename 前旧 URI 符号驻留"
     );
 
@@ -262,7 +275,12 @@ fn rename_on_disk_moves_symbols_to_new_uri() {
     pump(&mut state);
     let new_key = key_for(&state, &new_uri);
     assert!(
-        !state.hover.borrow().index.symbols_in_file(&new_key).is_empty(),
+        !state
+            .hover
+            .borrow()
+            .index
+            .symbols_in_file(&new_key)
+            .is_empty(),
         "新 URI 执行时刻回读盘上文件得符号"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -310,7 +328,12 @@ fn rename_open_document_overlay_follows_to_new_uri() {
     pump(&mut state);
     let new_key = key_for(&state, &new_uri);
     assert!(
-        !state.hover.borrow().index.symbols_in_file(&new_key).is_empty(),
+        !state
+            .hover
+            .borrow()
+            .index
+            .symbols_in_file(&new_key)
+            .is_empty(),
         "新 URI 有符号"
     );
     // overlay 胜出:新 URI 的 open_buffer 文本 = 未保存修订(非盘上旧文)。
@@ -362,7 +385,12 @@ fn rename_across_roots_moves_symbols_between_roots() {
         "旧根撤销"
     );
     assert!(
-        !state.hover.borrow().index.symbols_in_file(&new_key).is_empty(),
+        !state
+            .hover
+            .borrow()
+            .index
+            .symbols_in_file(&new_key)
+            .is_empty(),
         "新根入库"
     );
     assert_ne!(old_key.root, new_key.root, "跨根各归其根");
@@ -412,7 +440,12 @@ fn delete_skips_unparseable_and_out_of_root_uris() {
     );
     let other_key = key_for(&state, &other_uri);
     assert!(
-        !state.hover.borrow().index.symbols_in_file(&other_key).is_empty(),
+        !state
+            .hover
+            .borrow()
+            .index
+            .symbols_in_file(&other_key)
+            .is_empty(),
         "坏/根外 URI 跳过不误伤他文件"
     );
     std::fs::remove_dir_all(&dir).ok();

@@ -1,19 +1,25 @@
-//! CORE-012 大结果治理(基础版):限额分页 + 字节体积上限 + 协作取消。
+//! CORE-012 large-result governance (baseline): capped pagination + byte-size ceiling +
+//! cooperative cancellation.
 //!
-//! 纯分页核(流式 chunk 的真正传输接线随 server 装配单);不变量:
+//! Pure pagination core (the real transport wiring of streaming chunks comes with the server
+//! assembly); invariants:
 //!
-//! - **条目硬限**:单页条目数 ≤ `max_items`;
-//! - **体积硬限**:单页权重合计 ≤ `max_bytes`(权重 = 调用方给的条目近似
-//!   字节;与 VFS-013 驻留权重同口径的下界代理,不是 JSON 字节数直测);
-//! - **超大条目绝不静默消失**:单条自身权重超 `max_bytes` 时,本页在该条
-//!   前截止,`oversized_at` 如实上报,绝不吞条目也绝不超限收录;
-//! - **确定性分页**:游标 = 输入序偏移;同输入同游标必得同页;
-//! - **协作取消**:逐条检查 [`CancelToken`],取消即停收,已收部分如实标注
-//!   `cancelled`(半页诚实,绝不装完整页)。
+//! - **Entry hard cap**: entries per page ≤ `max_items`;
+//! - **Size hard cap**: total weight per page ≤ `max_bytes` (weight = per-entry approximate
+//!   bytes supplied by the caller; a lower-bound proxy on the same semantics as the VFS-013
+//!   resident weight, not a direct measurement of JSON bytes);
+//! - **Oversized entries never silently vanish**: when a single entry's own weight exceeds
+//!   `max_bytes`, the page cuts off before that entry, `oversized_at` reports it truthfully,
+//!   never swallowing the entry and never admitting it over the cap;
+//! - **Deterministic pagination**: cursor = input-order offset; the same input plus the same
+//!   cursor must yield the same page;
+//! - **Cooperative cancellation**: check [`CancelToken`] entry by entry; on cancellation
+//!   collection stops and what was already collected is honestly flagged `cancelled`
+//!   (a half page stays honest, never pretending to be a full page).
 
 use crate::scheduler::CancelToken;
 
-/// 单页限额(CORE-012)。两项都必须 ≥ 1。
+/// Per-page limits (CORE-012). Both must be ≥ 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageLimits {
     pub max_items: usize,
@@ -22,14 +28,14 @@ pub struct PageLimits {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageLimitsError {
-    /// max_items 为 0。
+    /// max_items is 0.
     ZeroItems,
-    /// max_bytes 为 0。
+    /// max_bytes is 0.
     ZeroBytes,
 }
 
 impl PageLimits {
-    /// 校验(构造期拒绝带病限额)。
+    /// Validate (reject unhealthy limits at construction time).
     pub fn validate(&self) -> Result<(), PageLimitsError> {
         if self.max_items == 0 {
             return Err(PageLimitsError::ZeroItems);
@@ -41,7 +47,7 @@ impl PageLimits {
     }
 }
 
-/// 分页游标:输入序偏移(确定性;无游标字段 = 从 0 起)。
+/// Pagination cursor: input-order offset (deterministic; no cursor field = start from 0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageCursor {
     pub offset: usize,
@@ -53,24 +59,27 @@ impl PageCursor {
     }
 }
 
-/// 一页结果(ARCH-004:截断/取消/超大条目全部明示,不装完整)。
+/// One page of results (ARCH-004: truncation / cancellation / oversized entries are all
+/// explicit, never passed off as complete).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Page<T> {
-    /// 本页条目(输入序切片)。
+    /// Entries of this page (input-order slice).
     pub items: Vec<T>,
-    /// 本页起始偏移。
+    /// Starting offset of this page.
     pub offset: usize,
-    /// 下一页起始偏移;None = 已到底(无更多条目)。
+    /// Starting offset of the next page; None = reached the end (no more entries).
     pub next_offset: Option<usize>,
-    /// 单条自身权重超 max_bytes 的条目位置(绝不静默吞;调用方特判面)。
+    /// Position of the entry whose own weight exceeds max_bytes (never silently swallowed;
+    /// this is the caller's special-case surface).
     pub oversized_at: Option<usize>,
-    /// 本页因取消而半途收笔(已收条目如实保留)。
+    /// This page stopped short because of cancellation (collected entries are kept as is).
     pub cancelled: bool,
-    /// 本页权重合计(下界代理,同条目权重口径)。
+    /// Total weight of this page (lower-bound proxy, same per-entry weight semantics).
     pub bytes_estimate: usize,
 }
 
-/// 按限额切一页。`weight` 给出条目近似字节(体积上限计量面)。
+/// Cut one page out under the limits. `weight` yields an entry's approximate bytes (the
+/// size-ceiling metering surface).
 pub fn paginate<T: Clone>(
     items: &[T],
     cursor: PageCursor,
@@ -90,20 +99,22 @@ pub fn paginate<T: Clone>(
     let mut bytes = 0usize;
     let mut idx = cursor.offset;
     while idx < items.len() {
-        // 协作取消:逐条检查,取消即停收(半页如实)。
+        // Cooperative cancellation: check entry by entry; on cancellation stop collecting
+        // (a half page is reported as such).
         if cancel.is_cancelled() {
             page.cancelled = true;
             break;
         }
         let item = &items[idx];
         let w = weight(item);
-        // 超大条目:绝不吞、绝不超限收录——本页在此截止并如实上报。
+        // Oversized entry: never swallow it, never admit it over the cap — this page cuts off
+        // here and reports it truthfully.
         if w > limits.max_bytes {
             page.oversized_at = Some(idx);
             break;
         }
         if taken == limits.max_items || bytes + w > limits.max_bytes {
-            // 限额截断:还有更多,下一页从当前条目起。
+            // Limit truncation: there is more; the next page starts at the current entry.
             break;
         }
         bytes += w;
@@ -151,7 +162,7 @@ mod tests {
             }
         }
         assert_eq!(pages, 4, "35 条按 10/页 = 3 满页 + 1 尾页");
-        // 尾页 5 条。
+        // The tail page holds 5 entries.
         let last = paginate(
             &items,
             PageCursor { offset: 30 },
@@ -174,7 +185,8 @@ mod tests {
             |v| *v as usize,
             &cancel,
         );
-        // 10+10+10 = 30 > 25 → 只收两个 10(20),第三个 10 让下一页。
+        // 10+10+10 = 30 > 25 → only two 10s are taken (20); the third 10 is deferred to the
+        // next page.
         assert_eq!(page.items, vec![10, 10]);
         assert_eq!(page.bytes_estimate, 20);
         assert_eq!(page.next_offset, Some(2));
@@ -192,11 +204,13 @@ mod tests {
             |v| *v as usize,
             &cancel,
         );
-        // 条目 1(权重 1000 > 8):本页在它前截止,如实上报,绝不收录。
+        // Entry 1 (weight 1000 > 8): this page cuts off before it, reports it truthfully,
+        // and never admits it.
         assert_eq!(page.items, vec![1]);
         assert_eq!(page.oversized_at, Some(1));
         assert_eq!(page.next_offset, Some(1), "调用方可从超大条目处特判续取");
-        // 从超大条目继续:它自身仍超限,页恒空但 oversized_at 持续指认。
+        // Resuming from the oversized entry: it is still over the cap, so the page stays empty
+        // but oversized_at keeps pointing at it.
         let again = paginate(
             &items,
             PageCursor { offset: 1 },
@@ -212,7 +226,8 @@ mod tests {
     fn cancel_stops_collection_and_marks_partial_page() {
         let items: Vec<usize> = (0..50).collect();
         let cancel = CancelToken::new();
-        // 权重闭包在第 6 次计量时拉响取消(协作检查点语义的考场)。
+        // The weight closure fires the cancellation on the 6th metering (a proving ground for
+        // the cooperative-checkpoint semantics).
         let mut seen = 0;
         let trigger = cancel.clone();
         let page = paginate(
@@ -230,8 +245,10 @@ mod tests {
             &cancel,
         );
         assert!(page.cancelled, "半页必须如实标注");
-        // 协作语义(与调度器 run 体取消同口径):触发条目自身的准入迭代
-        // 已在取消生效前完成,故其保留;下一个检查点(idx=6)停收。
+        // Cooperative semantics (same contract as scheduler run-body cancellation): the
+        // triggering entry's own admission iteration has already completed before the
+        // cancellation takes effect, so it is kept; collection stops at the next checkpoint
+        // (idx=6).
         assert_eq!(page.items.len(), 6, "触发取消的条目保留,下一检查点停");
         assert_eq!(page.next_offset, Some(6), "取消截断也是截断:调用方可续");
     }

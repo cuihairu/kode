@@ -1,22 +1,29 @@
 /**
- * KFLOW 跨进程/回调串联面(FLOW-027):在 traceEventModel 会话上把
- * message-send / message-receive 串成因果边或候选关联,并把 message-receive
- * 的派发帧落地为本地回调执行段。验收原文:「有可靠 ID 时连接事件,无 ID 只
- * 展示候选关联并解释;禁止仅按方法名/邻近时间宣称因果。」
+ * KFLOW cross-process/callback correlation face (FLOW-027): on a traceEventModel
+ * session, threads message-send / message-receive into causal edges or candidate
+ * correlations, and grounds a message-receive's dispatch frame as a local callback
+ * execution segment. Acceptance wording: "connect events when reliable IDs exist;
+ * with no ID only show candidate correlations and explain; never claim causality
+ * purely from a method name or time proximity."
  *
- * 三条裁定红线(全部构造期可查):
- *   1. **causal 只认关联 ID**:两侧 correlationId 非空且相等才算因果(复用
- *      relateMessages 的裁定,不另设宽松规则);令牌面按 FLOW-026 设计=载荷
- *      opt-in,没装适配的来源天然无 ID;
- *   2. **候选必须解释**:缺侧/无对侧同 ID/ID 不一致 → candidate,reason 带
- *      出处与「禁止按方法名/邻近时间宣称因果」口径;同一方法名、时间邻近
- *      永远不升格 causal;
- *   3. **回调段=观察事实**:派发帧按 (进程,线程,帧全等,seq 在 receive 之后
- *      最近) 落到 call 事件;帧缺失或会话内没观察到该帧 → rootCallSeq=null
- *      如实,不猜。跨进程时间**不可比**(各时钟域,R4),因果方向只由 ID 配对
- *      决定,不做时间序裁剪。
+ * Three ruling red lines (all checkable at construction time):
+ *   1. **causal accepts only correlation IDs**: an edge is causal only when both
+ *      sides' correlationIds are non-null and equal (reusing relateMessages'
+ *      ruling; no laxer rule set up separately); the token face per the FLOW-026
+ *      design = payload opt-in, so sources without the adapter attached naturally
+ *      have no ID;
+ *   2. **candidates must be explained**: missing side / no counterpart with the same
+ *      ID / ID mismatch → candidate, with reason carrying provenance and the "never
+ *      claim causality from method name / time proximity" semantics; the same method
+ *      name or time proximity never gets promoted to causal;
+ *   3. **callback segments = observed facts**: the dispatch frame grounds onto a call
+ *      event by (process, thread, frame fully equal, nearest seq after the receive);
+ *      frame missing or unobserved in the session → rootCallSeq=null, honestly, no
+ *      guessing. Cross-process times are **not comparable** (distinct clock domains,
+ *      R4); the causal direction is decided only by ID pairing, never by timeline
+ *      trimming.
  *
- * 纯核心,零 vscode 依赖;呈现面在 FLOW-028。
+ * Pure core, zero vscode dependencies; the presentation face is FLOW-028.
  */
 
 import {
@@ -36,7 +43,7 @@ export interface TraceCausalLink {
 
 export interface TraceCandidateLink {
   kind: 'candidate';
-  /** 单侧无对侧时另一侧为 null(如实) */
+  /** When one side has no counterpart, the other side is null (honest) */
   sendSeq: number | null;
   receiveSeq: number | null;
   reason: string;
@@ -44,13 +51,13 @@ export interface TraceCandidateLink {
 
 export interface TraceCallbackSegment {
   receiveSeq: number;
-  /** 派发帧对应的本地 call(帧全等且 seq 在 receive 之后最近);观察不到=null 如实 */
+  /** The local call grounding the dispatch frame (frame fully equal, nearest seq after the receive); unobservable = null, honestly */
   rootCallSeq: number | null;
-  /** 回调执行段:根及其全部后代 call(前序) */
+  /** Callback execution segment: the root and all its descendant calls (pre-order) */
   callSeqs: number[];
-  /** 执行段内 call 对应的 return 事件 seq */
+  /** The seqs of the return events corresponding to the calls in the segment */
   returnSeqs: number[];
-  /** 根缺失/帧缺失时如实说明 */
+  /** An honest explanation when the root or the frame is missing */
   note: string | null;
 }
 
@@ -99,8 +106,9 @@ function collectCallbackSubtree(session: TraceSession, rootSeq: number, threadId
 }
 
 /**
- * 串联发送/接收与回调。裁定规则见文件头;配对判定一律走 relateMessages
- * (协议层),本函数只做索引、派发帧落地与候选解释。
+ * Correlate sends/receives and callbacks. Ruling rules are in the file header; pairing
+ * verdicts always go through relateMessages (the protocol layer); this function only
+ * indexes, grounds dispatch frames, and explains candidates.
  */
 export function buildTraceCorrelations(session: TraceSession): TraceCorrelationResult {
   const sends = session.events.filter(
@@ -110,7 +118,7 @@ export function buildTraceCorrelations(session: TraceSession): TraceCorrelationR
     (event): event is TraceMessageReceiveEvent => event.kind === 'message-receive'
   );
 
-  // 按 ID 索引(null 不入索引——null 永远只给候选)
+  // Index by ID (null never enters the index — null only ever yields candidates)
   const sendsById = new Map<string, typeof sends>();
   for (const send of sends) {
     if (send.correlationId === null) continue;
@@ -131,7 +139,7 @@ export function buildTraceCorrelations(session: TraceSession): TraceCorrelationR
   const matchedSendSeqs = new Set<number>();
   const matchedReceiveSeqs = new Set<number>();
 
-  // causal:两侧 ID 非空且相等(relateMessages 裁定;1:N=N 次配对同判)
+  // causal: both sides' IDs non-null and equal (relateMessages ruling; 1:N = N pairings, each judged the same)
   for (const send of sends) {
     if (send.correlationId === null) continue;
     const peers = receivesById.get(send.correlationId) ?? [];
@@ -149,7 +157,7 @@ export function buildTraceCorrelations(session: TraceSession): TraceCorrelationR
       }
     }
   }
-  // ID 不一致的配对也过一遍裁定(=candidate,reason 带 mismatch 口径)
+  // Mismatched-ID pairings also pass through the ruling (= candidate, with reason carrying the mismatch semantics)
   for (const send of sends) {
     if (send.correlationId === null) continue;
     for (const receive of receives) {
@@ -168,7 +176,7 @@ export function buildTraceCorrelations(session: TraceSession): TraceCorrelationR
     }
   }
 
-  // 缺侧/无 ID:单侧候选,如实解释(FLOW-026:令牌面=载荷 opt-in,未装适配=无 ID)
+  // Missing side / no ID: one-sided candidates, explained honestly (FLOW-026: token face = payload opt-in, no adapter attached = no ID)
   for (const send of sends) {
     if (matchedSendSeqs.has(send.seq)) continue;
     const idNote =
@@ -196,7 +204,7 @@ export function buildTraceCorrelations(session: TraceSession): TraceCorrelationR
     });
   }
 
-  // 回调执行段:派发帧落地 + 后代子树收集(观察事实,不猜)
+  // Callback execution segments: dispatch-frame grounding + descendant-subtree collection (observed facts, no guessing)
   const calls = session.events.filter((event): event is TraceCallEvent => event.kind === 'call');
   const callbackSegments: TraceCallbackSegment[] = receives.map(receive => {
     if (receive.frame === null) {
@@ -240,7 +248,7 @@ export function buildTraceCorrelations(session: TraceSession): TraceCorrelationR
   return { causalLinks, candidateLinks, callbackSegments };
 }
 
-/** 串联面摘要(诚实口径;呈现层/日志直接引用)。 */
+/** Correlation-face summary (honest semantics; cited directly by the presentation layer / logs). */
 export function describeTraceCorrelations(result: TraceCorrelationResult): string {
   const causal = result.causalLinks.length;
   const candidate = result.candidateLinks.length;

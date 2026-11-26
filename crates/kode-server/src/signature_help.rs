@@ -38,7 +38,7 @@ use serde::Serialize;
 use crate::def_param_hints::{
     infer_method_section_from_python_file, normalize_file_identity, resolve_annotation_direct,
 };
-use crate::hover::{Category, HoverEngine, category_of};
+use crate::hover::{category_of, Category, HoverEngine};
 use crate::python_call_at::get_python_call_at_position;
 
 // ---------------------------------------------------------------------------
@@ -522,7 +522,7 @@ struct GoldenActivation {
 /// activeArgument→activeParameter 标亮。未解析命中不入档(对账靠
 /// hitCount/resolvedCount 差值,TS 侧复算未解析位必须同落空)。
 pub fn dump_signature_help_golden(repo_root: &std::path::Path) -> String {
-    use kode_parser::json::{PARITY_CORPORA, collect_corpus};
+    use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 
     let py_corpus = crate::python_call_at::collect_python_corpus(repo_root);
     let files = collect_corpus(repo_root, PARITY_CORPORA);
@@ -874,11 +874,9 @@ mod tests {
     fn root_removal_drops_resolution() {
         let (registry, mut engine) = build();
         let py = py_path("base", "Avatar");
-        assert!(
-            engine
-                .signature_help(&py, "onRpc", Some("BaseMethods"))
-                .is_some()
-        );
+        assert!(engine
+            .signature_help(&py, "onRpc", Some("BaseMethods"))
+            .is_some());
         engine.invalidate_root(registry.root_for(&CanonicalUri::from_path("/proj-a/x.def")));
         assert!(
             engine

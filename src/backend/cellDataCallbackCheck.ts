@@ -1,43 +1,56 @@
 /**
- * cellData 回调入口访问检查(KSEM-CELL-12):onGetCell 中读 self.cellData 必抛。
+ * cellData callback-entry access check (KSEM-CELL-12): reading self.cellData
+ * inside onGetCell must throw.
  *
- * 引擎依据(base 侧 kbe/src/server/baseapp/entity.cpp,kbengine@3082ab5):
- * - onGetCell 先跑 destroyCellData()(:1024,PyObject_DelAttrString 删属性 :564),
- *   **之后**才调脚本回调(:1030-1032)——回调内任何对 self.cellData 的求值都抛
- *   AttributeError(属性表无 type 级 cellData getter,纯实例属性,删除后无回退)。
- * - cellData 只有构建时(:252)与 onBackupCellData 的 isDirty 分支(:1122)两处装回,
- *   onGetCell 内不会重装——本方法体内「引擎删了」是确定事实。
- * - 判据只覆盖 onGetCell 这个**明确回调入口**;onLoseCell/onRestore/任意方法的
- *   调用时机与 cellData 在场性的关系不做确定结论(验收原句),本面一律沉默。
+ * Engine evidence (base side, kbe/src/server/baseapp/entity.cpp, kbengine@3082ab5):
+ * - onGetCell first runs destroyCellData() (:1024, PyObject_DelAttrString
+ *   removes the attribute at :564) and only **afterwards** invokes the script
+ *   callback (:1030-1032) -- any evaluation of self.cellData inside the
+ *   callback raises AttributeError (no type-level cellData getter exists in
+ *   the attribute table; it is a pure instance attribute with no fallback
+ *   once deleted).
+ * - cellData is only reinstalled in two places: at construction time (:252)
+ *   and in onBackupCellData's isDirty branch (:1122); it is never reinstalled
+ *   inside onGetCell -- "the engine deleted it" is a certain fact within this
+ *   method body.
+ * - The predicate only covers onGetCell as an **explicit callback entry**; no
+ *   definite conclusion is drawn about how the call timing of
+ *   onLoseCell/onRestore/arbitrary methods relates to cellData presence
+ *   (verbatim from acceptance), and this surface stays silent on all of them.
  *
- * 求值/赋值分类(行内,括号深度感知):
- * - `self.cellData = <dict>` 是属性存储,合法不抛——**不报**,且其后本方法体内
- *   的读取因属性已被重建同样不报(两态流:absent/present,存储→present,
- *   del→absent,absent 态读→报);
- * - `self.cellData[k] = v`、`.get(...)`、迭代、别名绑定、del——都要先求值属性,
- *   absent 态一律报;
- * - 注释与字符串由掩码剔除(字符串里的 "self.cellData" 不是访问)。
+ * Evaluation/store classification (per line, paren-depth aware):
+ * - `self.cellData = <dict>` is an attribute store, legal, does not throw --
+ *   **not reported**, and later reads in this method body are equally not
+ *   reported because the attribute has been rebuilt (two-state flow:
+ *   absent/present; store -> present, del -> absent, read while absent ->
+ *   reported);
+ * - `self.cellData[k] = v`, `.get(...)`, iteration, alias binding, del -- all
+ *   evaluate the attribute first, and are always reported in the absent state;
+ * - comments and strings are removed by the mask ("self.cellData" inside a
+ *   string is not an access).
  *
- * 范围:类体内名为 onGetCell 的方法(模块级同名函数引擎从不调用,不报)。
- * 角色闸在装配面(base 脚本);纯逻辑无 vscode/无键宇宙/无 RPC,直接可测。
+ * Scope: methods named onGetCell inside class bodies (module-level functions
+ * of the same name are never invoked by the engine, so not reported). The
+ * role gate lives in the assembly surface (base scripts); the pure logic has
+ * no vscode / no key universe / no RPC, and is directly testable.
  */
 import { parsePythonFile, pythonCodeLines } from './pythonParser';
 
-/** 本面产出的诊断码(与 lintRuleRegistry 锁步)。 */
+/** Diagnostic code produced by this surface (kept in lockstep with lintRuleRegistry). */
 export const CELL_DATA_CALLBACK_CODE = 'kbengine.cellDataLifecycle';
 
-/** 一条回调入口访问发现(纯数据;extension 侧转 vscode.Diagnostic)。 */
+/** One callback-entry access finding (pure data; converted to vscode.Diagnostic on the extension side). */
 export interface CellDataCallbackFinding {
-  /** 0 基行。 */
+  /** 0-based line. */
   line: number;
-  /** `self.cellData` 起点(0 基行内字符列)。 */
+  /** Start of `self.cellData` (0-based character column within the line). */
   character: number;
-  /** `self.cellData` 长度(提示区间 = 接收者表达式本体)。 */
+  /** Length of `self.cellData` (hint range = the receiver expression itself). */
   length: number;
   message: string;
 }
 
-/** 诊断项(纯数据;与 CELL-08/10 的 item 形状同形,便于共用装配面)。 */
+/** Diagnostic item (pure data; same shape as the CELL-08/10 item, so the assembly surface can be shared). */
 export interface CellDataCallbackDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -49,12 +62,12 @@ export interface CellDataCallbackDiagnosticItem {
   code: string;
 }
 
-/** 开关默认值(与 CELL-08/10 同口径:默认开)。 */
+/** Toggle default (same contract as CELL-08/10: on by default). */
 export const CELL_DATA_CALLBACK_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
 const ACCESS_RE = /\bself\.cellData\b/g;
 
-/** onGetCell 体(0 基,含 def 行,不含收窄行)。缩进闸:首个非空行缩进 ≤ def 缩进即止。 */
+/** onGetCell body (0-based, including the def line, excluding narrowing lines). Indent gate: stop at the first non-blank line whose indent is <= the def indent. */
 function methodBodySpan(lines: string[], defLine: number): { start: number; end: number } {
   const defIndent = lines[defLine].match(/^\s*/)![0].length;
   let end = lines.length;
@@ -72,9 +85,11 @@ function methodBodySpan(lines: string[], defLine: number): { start: number; end:
 }
 
 /**
- * 行内存储判定:`self.cellData` 之后、同行内是否存在深度 0 的纯赋值 `=`。
- * `[`/`(` 在赋值号之前出现 → 下标/调用已先求值属性,不是存储。
- * `==`/`<=`/`>=`/`!=`/增广(`+=` 等)/walrus(`:=`) 的 `=` 不算存储。
+ * Per-line store predicate: after `self.cellData`, is there a depth-0 plain
+ * assignment `=` later on the same line. `[`/`(` appearing before the `=`
+ * means the subscript/call already evaluated the attribute, not a store.
+ * The `=` in `==`/`<=`/`>=`/`!=`/augmented (`+=` etc.)/walrus (`:=`) is not a
+ * store.
  */
 function isAttributeStore(maskedLine: string, tokenEnd: number): boolean {
   let depth = 0;
@@ -83,7 +98,7 @@ function isAttributeStore(maskedLine: string, tokenEnd: number): boolean {
     const ch = maskedLine[i];
     if (ch === '[' || ch === '(' || ch === '{') {
       if (depth === 0 && ch === '[') {
-        return false; // self.cellData[k] = v:下标先求值属性 → 读
+        return false; // self.cellData[k] = v: the subscript evaluates the attribute first -> read
       }
       depth += 1;
     } else if (ch === ']' || ch === ')' || ch === '}') {
@@ -104,15 +119,15 @@ function isAttributeStore(maskedLine: string, tokenEnd: number): boolean {
   return false;
 }
 
-/** 行内是否 `del self.cellData`(token 之前最近非空 token 是 del 关键字)。 */
+/** Whether the line holds `del self.cellData` (the nearest non-blank token before the token is the del keyword). */
 function isDelStatement(maskedLine: string, tokenStart: number): boolean {
   return /\bdel\s+$/.test(maskedLine.slice(0, tokenStart));
 }
 
-/** cellData 属性态:absent=引擎已删(onGetCell 入口即此态);present=脚本在本方法体内重建过。 */
+/** cellData attribute state: absent = the engine deleted it (the onGetCell entry state); present = the script rebuilt it inside this method body. */
 export type AttrState = 'absent' | 'present';
 
-/** onGetCell 方法跨度集(0 基 def 行;模块级同名函数不在 classes.methods 里,天然排除)。 */
+/** Set of onGetCell method spans (0-based def lines; module-level same-name functions are absent from classes.methods and thus naturally excluded). */
 function onGetCellSpans(text: string): Array<{ line: number; character: number }> {
   const parsed = parsePythonFile(text, 'virtual.py');
   const spans: Array<{ line: number; character: number }> = [];
@@ -126,8 +141,10 @@ function onGetCellSpans(text: string): Array<{ line: number; character: number }
 }
 
 /**
- * 两态流单行推进:对 masked 行内每个 `self.cellData` 访问按 存/del/读 分类,
- * 更新状态;absent 态的 del/读经 onFinding 上报(存储不报)。行序从左到右。
+ * Advance the two-state flow by one line: classify each `self.cellData`
+ * access on the masked line as store/del/read and update the state; del/read
+ * in the absent state are reported through onFinding (stores are not). Line
+ * order is left to right.
  */
 function advanceLine(
   masked: string,
@@ -144,8 +161,10 @@ function advanceLine(
     if (isAttributeStore(masked, tokenEnd)) {
       next = 'present';
     } else if (isDelStatement(masked, tokenStart)) {
-      // 引擎依据写进文案:删除在回调前(cellapp/entity.cpp 同族结论不混用,
-      // 本面只谈 base 侧 onGetCell)。del 与读在 absent 态同抛 AttributeError。
+      // Engine evidence, quoted into the message: deletion happens before the
+      // callback (cellapp/entity.cpp same-family conclusions are not mixed in;
+      // this surface only talks about base-side onGetCell). del and read raise
+      // the same AttributeError in the absent state.
       if (next === 'absent' && onFinding) {
         onFinding({
           line: lineNo,
@@ -168,7 +187,7 @@ function advanceLine(
   return next;
 }
 
-/** onGetCell 中的 self.cellData 访问检查(纯函数)。 */
+/** self.cellData access check inside onGetCell (pure function). */
 export function cellDataCallbackFindings(text: string): CellDataCallbackFinding[] {
   const spans = onGetCellSpans(text);
   if (spans.length === 0) {
@@ -189,17 +208,19 @@ export function cellDataCallbackFindings(text: string): CellDataCallbackFinding[
   return findings;
 }
 
-/** CELL-14:hover 面——位置所在 onGetCell 窗口与进入该行前的两态流状态。 */
+/** CELL-14: hover surface -- the onGetCell window containing the position and the two-state flow state just before entering that line. */
 export interface CellDataProvenWindow {
-  /** 位置是否落在某个 onGetCell 方法体内。 */
+  /** Whether the position falls inside some onGetCell method body. */
   inWindow: boolean;
-  /** 窗口内:该行**首个访问**将见到的属性态(absent=引擎已删/present=已重建);窗口外 null。 */
+  /** Within the window: the attribute state the line's **first access** will see (absent = engine deleted / present = rebuilt); null outside the window. */
   state: AttrState | null;
 }
 
 /**
- * 位置行 proven 状态(纯函数):状态 = 处理完 [方法体起点, 查询行) 后的属性态
- * (同一行多个访问时 hover 给「该行第一个访问将见到」的态;窗口外不证)。
+ * Proven state at a position line (pure function): the state is the attribute
+ * state after processing [method body start, queried line) (with multiple
+ * accesses on the same line, hover gives the state the first access of the line
+ * will see; outside the window, no proof).
  */
 export function cellDataProvenStateAtLine(text: string, line: number): CellDataProvenWindow {
   const spans = onGetCellSpans(text);
@@ -221,7 +242,7 @@ export function cellDataProvenStateAtLine(text: string, line: number): CellDataP
   return { inWindow: false, state: null };
 }
 
-/** 发现 → 诊断项(区间 = `self.cellData` 本体)。 */
+/** Finding -> diagnostic item (range = the `self.cellData` expression itself). */
 export function cellDataCallbackFindingToItem(
   finding: CellDataCallbackFinding
 ): CellDataCallbackDiagnosticItem {

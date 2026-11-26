@@ -1,28 +1,33 @@
-// C-20:Python 调用图/符号表的 Rust 权威实现接线面——`$/kode/python/callgraph`
-// 与 `$/kode/python/symbols`。
+// C-20: wiring surface for the authoritative Rust implementation of the Python
+// call graph / symbol table -- `$/kode/python/callgraph` and
+// `$/kode/python/symbols`.
 //
-// 边界(镜像 processTopologyRust/databaseSchemaRust「输入收集留 TS、分析归
-// Rust」):文件集原文(路径+text)经 RPC 直传,Rust 解析 AST、提取调用边/符号表/
-// 数据流并返回。Rust 不可用(无门/未配 serverPath/调用失败/形状不合规)返回
-// null,调用方回退 TS 自建面(C-19 兜底)或零产出(面板静默)。无 TS 镜像——
-// Rust 单一实现。
+// Boundary (mirrors processTopologyRust / databaseSchemaRust's "input
+// collection stays in TS, analysis belongs to Rust"): the file set's raw text
+// (path + text) is passed straight over RPC; Rust parses the AST, extracts call
+// edges / symbol tables / dataflow and returns them. When Rust is unavailable
+// (no gate / serverPath not configured / call failure / shape mismatch) this
+// returns null and the caller falls back to the self-built TS face (the C-19
+// backstop) or to zero output (the panel stays silent). There is no TS mirror
+// -- Rust is the single implementation.
 //
-// 行号口径:Rust 0-based 原样透出;1-based 换算在消费点(C-19 entityMapping /
-// 面板)做,与本文件无关。
+// Line-number criterion: Rust's 0-based values are passed through as-is; the
+// conversion to 1-based happens at the consumption point (C-19 entityMapping /
+// the panel) and has nothing to do with this file.
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
-/** Rust `$/kode/python/callgraph` 入参(镜像 CallgraphParams) */
+/** Input parameters for Rust's `$/kode/python/callgraph` (mirrors CallgraphParams) */
 export interface PythonCallGraphRustParams {
-  /** 待分析文件集(路径 + 原文;可为空) */
+  /** File set to analyze (path + raw text; may be empty) */
   files: Array<{ path: string; text: string }>;
-  /** `<root>/process_topology.xml` 原文(可选;进程角色归类用) */
+  /** Raw text of `<root>/process_topology.xml` (optional; used for process role classification) */
   manifestXmlText?: string;
 }
 
-/** 调用图节点(方法/函数/模块伪节点) */
+/** Call graph node (method / function / module pseudo-node) */
 export interface PythonCallGraphNode {
-  /** 方法 `Class.method` / 函数 `<stem>::func` / 模块 `<stem>` */
+  /** Method `Class.method` / function `<stem>::func` / module `<stem>` */
   id: string;
   /** "method" | "function" | "module" */
   kind: string;
@@ -35,7 +40,7 @@ export interface PythonCallGraphNode {
   params: string[];
 }
 
-/** 单条调用边 */
+/** A single call edge */
 export interface PythonCallGraphEdge {
   callerId?: string;
   calleeId?: string;
@@ -45,12 +50,12 @@ export interface PythonCallGraphEdge {
   callerLine: number;
   callee: string;
   receiver?: string;
-  /** EdgeKind 字面量(local/method/self-method/kbe-xxx/unknown) */
+  /** EdgeKind literal (local/method/self-method/kbe-xxx/unknown) */
   kind: string;
   filePath: string;
 }
 
-/** 过程内 def-use 链(MVP) */
+/** In-procedure def-use chain (MVP) */
 export interface PythonDefUseChain {
   var: string;
   defLine?: number;
@@ -58,7 +63,7 @@ export interface PythonDefUseChain {
   isParam: boolean;
 }
 
-/** 单方法 def-use 结果 */
+/** def-use result for a single method */
 export interface PythonMethodDataflow {
   filePath: string;
   class?: string;
@@ -66,11 +71,11 @@ export interface PythonMethodDataflow {
   chains: PythonDefUseChain[];
 }
 
-/** Rust 输出:调用图 + 统计 */
+/** Rust output: the call graph + statistics */
 export interface PythonCallGraphRustResult {
   nodes: PythonCallGraphNode[];
   edges: PythonCallGraphEdge[];
-  /** 被调方文件路径 → 调用方文件路径集 */
+  /** Callee file path -> set of caller file paths */
   reverseIndex: Record<string, string[]>;
   dataflow: PythonMethodDataflow[];
   processRoles: string[];
@@ -82,14 +87,14 @@ export interface PythonCallGraphRustResult {
     errorCount: number;
     byKind: Record<string, number>;
   };
-  /** RUST-077-W:分页元信息(仅被切片的维度携带;全量小结果缺席) */
+  /** RUST-077-W: paging metadata (carried only by dimensions that were sliced; absent for small full results) */
   edgePage?: PythonCallGraphPageMeta;
   nodePage?: PythonCallGraphPageMeta;
   dataflowPage?: PythonCallGraphPageMeta;
   reversePage?: PythonCallGraphPageMeta;
 }
 
-/** RUST-077-W:单页元信息(CORE-012;nextOffset 缺席 = 到底) */
+/** RUST-077-W: metadata for one page (CORE-012; a missing nextOffset means the end) */
 export interface PythonCallGraphPageMeta {
   offset: number;
   nextOffset?: number | null;
@@ -100,17 +105,18 @@ export interface PythonCallGraphPageMeta {
 }
 
 /**
- * RUST-077-W:分页续取上限(防御性;正常页数 = 总量/页额,远低于此)。
+ * RUST-077-W: cap on pagination continuation requests (defensive; the normal
+ * page count = total / page size, far below this).
  */
 const MAX_CALLGRAPH_PAGE_REQUESTS = 10_000;
 
-/** 单维续取状态:开启维带 nextOffset 游标,终局维带 total(空尾页)。 */
+/** Continuation state for one dimension: an open dimension carries a nextOffset cursor, a terminal dimension carries total (empty tail page). */
 interface CallGraphDimState<T> {
   acc: T[];
-  /** 下一请求携带的游标:开启态 = nextOffset;终局 = total。 */
+  /** Cursor carried by the next request: open state = nextOffset; terminal = total. */
   cursor: number;
   done: boolean;
-  /** 全量条目数(服务端 `*Page.total`;缺席时按已收编数计)。 */
+  /** Total entry count (the server's `*Page.total`; counted from absorbed entries when absent). */
   total: number;
 }
 
@@ -124,10 +130,14 @@ function pageNext(meta: PythonCallGraphPageMeta | undefined): number | null {
 }
 
 /**
- * 数组维步进。开启维:追加切片并推进游标;无 `*Page` 元信息 = 全量维整段
- * 收编即终局。终局维:只做幂等校验(空尾页),绝不重复入账。返回 false =
- * 协作取消半页/游标不前进(超大条目卡死)/终局维被服务端复活——外层放弃
- * 返回 null(C-19 降级 TS 兜底),绝不把半页冒充全量。
+ * Step an array dimension. Open dimension: append the slice and advance the
+ * cursor; no `*Page` metadata = a full dimension, absorbed in one segment and
+ * terminal immediately. Terminal dimension: only an idempotence check (empty
+ * tail page), never double-booked. Returning false = collaborative cancellation
+ * of a half page / the cursor not advancing (stuck on an oversized entry) / a
+ * terminal dimension revived by the server -- the outer layer gives up and
+ * returns null (C-19 degrades to the TS backstop), never passing off a half
+ * page as the full result.
  */
 function stepArrayDim<T>(
   dim: CallGraphDimState<T>,
@@ -172,7 +182,7 @@ function stepArrayDim<T>(
   return true;
 }
 
-/** 反索引维状态(对象维;条目 = {callee: callers},键序由服务端 BTreeMap 定)。 */
+/** Reverse-index dimension state (object dimension; entry = {callee: callers}, key order fixed by the server's BTreeMap). */
 interface CallGraphReverseState {
   index: Record<string, string[]>;
   cursor: number;
@@ -181,7 +191,8 @@ interface CallGraphReverseState {
 }
 
 /**
- * 反索引维步进:语义与 stepArrayDim 一致,切片按键合并(跨页调用方去重)。
+ * Step the reverse-index dimension: same semantics as stepArrayDim, with the
+ * slice merged by key (caller de-duplication across pages).
  */
 function stepReverseDim(
   dim: CallGraphReverseState,
@@ -232,14 +243,14 @@ function stepReverseDim(
   return true;
 }
 
-/** 每方法自身调用引用 */
+/** A method's own call reference */
 export interface PythonSymbolCall {
   methodName: string;
   line: number;
   character: number;
 }
 
-/** 类方法符号 */
+/** Class method symbol */
 export interface PythonSymbolMethod {
   name: string;
   line: number;
@@ -251,7 +262,7 @@ export interface PythonSymbolMethod {
   calls: PythonSymbolCall[];
 }
 
-/** 类符号 */
+/** Class symbol */
 export interface PythonSymbolClass {
   name: string;
   qualifiedName: string;
@@ -263,7 +274,7 @@ export interface PythonSymbolClass {
   attributes: Array<{ name: string; line: number; character: number }>;
 }
 
-/** 模块级函数符号 */
+/** Module-level function symbol */
 export interface PythonSymbolFunction {
   name: string;
   line: number;
@@ -274,7 +285,7 @@ export interface PythonSymbolFunction {
   endLine: number;
 }
 
-/** 单文件符号表(Rust `$/kode/python/symbols` 输出元素) */
+/** Symbol table for a single file (an output element of Rust's `$/kode/python/symbols`) */
 export interface PythonSymbolsFile {
   filePath: string;
   lineCount: number;
@@ -293,13 +304,16 @@ export interface PythonSymbolsFile {
 export type PythonSymbolsRustResult = PythonSymbolsFile[];
 
 /**
- * 调用图(经 Rust):文件集 → 节点/边/反索引/数据流;Rust 不可用/失败/形状
- * 不合规返回 null(面板降级:不可用徽标,不抛错)。
+ * Call graph (via Rust): file set -> nodes / edges / reverse index / dataflow;
+ * returns null when Rust is unavailable / fails / the shape does not match
+ * (the panel degrades: an unavailable badge, no thrown error).
  */
 /**
- * KR-AUD-89:Rust `file_stem` 只按 `/` 分割(python_callgraph.rs:161)——
- * Windows 面 `uri.fsPath` 是反斜杠,发送前在 RPC 边界统一归一;Rust 侧
- * analyze() 有 debug_assert 锁死该契约(上游归一化,非 Rust 容错)。
+ * KR-AUD-89: Rust's `file_stem` splits only on `/` (python_callgraph.rs:161) --
+ * the Windows face's `uri.fsPath` is backslash-delimited, so paths are
+ * normalized uniformly at the RPC boundary before sending; Rust's analyze()
+ * has a debug_assert locking that contract down (upstream normalization, not
+ * Rust-side tolerance).
  */
 export function normalizeCallGraphPath(path: string): string {
   return path.replace(/\\/g, '/');
@@ -314,13 +328,19 @@ export async function buildPythonCallGraphInRust(
   }
   const files = params.files.map(file => ({ ...file, path: normalizeCallGraphPath(file.path) }));
   const manifestXmlText = params.manifestXmlText ?? '';
-  // RUST-077-W:四维分页续取。服务端无状态,每次响应都是全量分析的分页视图
-  // ——首页不带游标;续取请求恒携带四游标:开启维带 `*Page.nextOffset`,
-  // 终局维带 total(空尾页保持终局,防止服务端把已收完的维当新分页重新打
-  // 开)。纯函数确定性:同输入同游标必得同页,续取恰好拼回全量。
-  // processRoles/stats 与输入一一对应,取首页原样。任一维取消半页/游标不
-  // 前进(超大条目卡死)/终局维被复活/请求数超限 → null(C-19 降级 TS 兜
-  // 底),绝不把半页冒充全量。
+  // RUST-077-W: four-dimension paging continuation. The server is stateless, so
+  // every response is a paged view of the full analysis -- the first page
+  // carries no cursor; continuation requests always carry all four cursors: an
+  // open dimension carries `*Page.nextOffset`, a terminal dimension carries
+  // total (an empty tail page keeps it terminal, so the server does not reopen
+  // an already-collected dimension as a fresh page). Pure-function
+  // determinism: the same inputs and cursors always yield the same page, and
+  // continuations reassemble exactly the full result.
+  // processRoles/stats correspond one-to-one with the inputs, so they are taken
+  // verbatim from the first page. A cancelled half page / a cursor that does not
+  // advance (stuck on an oversized entry) in any dimension / a terminal
+  // dimension revived / the request-count cap exceeded -> null (C-19 degrades
+  // to the TS backstop), never passing off a half page as the full result.
   const nodes = arrayDim<PythonCallGraphNode>();
   const edges = arrayDim<PythonCallGraphEdge>();
   const dataflow = arrayDim<PythonMethodDataflow>();
@@ -378,16 +398,21 @@ export async function buildPythonCallGraphInRust(
 }
 
 /**
- * 符号面预算(2026-11-24 真机病灶):def 首扫逐实体走本面,此前不传超时 =
- * transport 层无限等——server 每请求拖 ~10s 时 21 个实体拖成 241s。健康
- * server 同 Interactive 预算量级毫秒级应答;2s 封顶 + 命令腿熔断(连续 3 次
- * 超时开闸,后续直通回落 TS)把索引期最坏停滞压到 ~6s 而非分钟级。
+ * Budget for the symbol face (2026-11-24 field failure): the def first scan
+ * goes through this face per entity, and passing no timeout earlier meant an
+ * unbounded transport-layer wait -- with the server taking ~10s per request, 21
+ * entities dragged out to 241s. A healthy server answers in the same millisecond
+ * order of magnitude as the Interactive budget; a 2s cap plus a circuit breaker
+ * on the command leg (the gate opens after three consecutive timeouts, and later
+ * calls pass straight through, falling back to TS) compresses the worst-case
+ * index-phase stall to ~6s instead of minutes.
  */
 export const PYTHON_SYMBOLS_RUST_TIMEOUT_MS = 2000;
 
 /**
- * 符号表(经 Rust):文件集 → 每文件 AST 符号表(含每方法自身调用);Rust 不可用/
- * 失败/形状不合规返回 null(C-19 回退 TS 自建)。
+ * Symbol table (via Rust): file set -> a per-file AST symbol table (including
+ * each method's own calls); returns null when Rust is unavailable / fails /
+ * the shape does not match (C-19 falls back to the self-built TS version).
  */
 export async function buildPythonSymbolsInRust(
   files: Array<{ path: string; text: string }>

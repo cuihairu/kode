@@ -31,7 +31,8 @@ const ALLOWED_PROCESS_METHOD: &str = "$/kode/processTopology/validate";
 const FORBIDDEN_SOURCE_TOKENS: &[&str] = &["TcpStream", "TcpListener", "tokio::net"];
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("读目录 {} 失败: {e}", dir.display()));
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("读目录 {} 失败: {e}", dir.display()));
     for entry in entries {
         let entry = entry.unwrap_or_else(|e| panic!("目录项读取失败: {e}"));
         let path = entry.path();
@@ -49,8 +50,8 @@ fn scan_for_tokens(dir: &Path, tokens: &[&str]) -> (usize, Vec<String>) {
     collect_rs_files(dir, &mut files);
     let mut violations = Vec::new();
     for file in &files {
-        let text =
-            std::fs::read_to_string(file).unwrap_or_else(|e| panic!("读 {} 失败: {e}", file.display()));
+        let text = std::fs::read_to_string(file)
+            .unwrap_or_else(|e| panic!("读 {} 失败: {e}", file.display()));
         for (idx, raw) in text.lines().enumerate() {
             let line = raw.trim_start();
             if line.starts_with("//") {
@@ -109,7 +110,11 @@ fn core_crates_source_carries_no_engine_transport_tokens() {
         server_files >= 100,
         "kode-server 源文件数异常少({server_files}),扫描面失效"
     );
-    assert!(server_hits.is_empty(), "kode-server 源面出现引擎侧传输记号:\n{}", server_hits.join("\n"));
+    assert!(
+        server_hits.is_empty(),
+        "kode-server 源面出现引擎侧传输记号:\n{}",
+        server_hits.join("\n")
+    );
 
     let python_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../kode-python/src");
     let (python_files, python_hits) = scan_for_tokens(&python_dir, FORBIDDEN_SOURCE_TOKENS);
@@ -117,5 +122,9 @@ fn core_crates_source_carries_no_engine_transport_tokens() {
         python_files >= 10,
         "kode-python 源文件数异常少({python_files}),扫描面失效"
     );
-    assert!(python_hits.is_empty(), "kode-python 源面出现引擎侧传输记号:\n{}", python_hits.join("\n"));
+    assert!(
+        python_hits.is_empty(),
+        "kode-python 源面出现引擎侧传输记号:\n{}",
+        python_hits.join("\n")
+    );
 }

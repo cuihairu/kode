@@ -1,9 +1,11 @@
-//! completion 对拍 golden 生成器:遍历 fixture 语料,输出每文件每场景点的
-//! 补全响应 JSON(判面 + 条目集)。
+//! Completion parity golden generator: walks the fixture corpus and emits the
+//! completion response JSON for every scenario point in every file (decision
+//! surface + item set).
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodeCompletionParity.test.ts 用现有
-//! defParser/defChain 等原语复算对拍(双向门禁:Rust 测试重生成比对 +
-//! vitest 复算)。
+//! The golden file is produced by Rust; the TS side
+//! tests/kodeCompletionParity.test.ts recomputes with the existing
+//! defParser/defChain primitives and compares (two-way gate: the Rust test
+//! regenerates and compares + vitest recomputes).
 
 fn main() {
     let repo_root = std::env::args().nth(1).unwrap_or_else(|| String::from("."));

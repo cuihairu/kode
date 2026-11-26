@@ -1,31 +1,35 @@
-//! 符号模型:六类声明符号 + 位置 + 抽取记录(书 §7 IDX-001 第 3 层「符号/类型
-//! 索引」,PR-007 能力面 = 实体/属性/方法/类型/别名/组件)。
+//! Symbol model: six kinds of declaration symbols + locations + extraction records
+//! (book §7 IDX-001 layer 3 "symbol/type index", PR-007 capability face =
+//! entity/property/method/type/alias/component).
 //!
-//! - [`SymbolKind`]:六类符号;`as_str` 为对拍 golden 与查询出口的稳定字面量;
-//! - [`MethodFacet`]:Cell/Base/Client 方法分面(SEM-006/007 基础);
-//! - [`SymbolRecord`]:单条抽取记录(索引入库与 golden 序列化共用同一形状,
-//!   保证「对拍面 = 索引面」,不允许两套提取逻辑);
-//! - [`extract_records`]:ParsedUnit → 符号记录(纯函数,无 IO);
-//! - [`SymbolId`]:arena 槽位号,仅在索引持有一致 generation 快照期间有意义,
-//!   查询出口返回 owned [`Symbol`](SEM-001 稳定 id 的跨进程语义随 PR-008)。
+//! - [`SymbolKind`]: the six symbol kinds; `as_str` is the stable literal used by the
+//!   parity golden and the query exports;
+//! - [`MethodFacet`]: Base/Cell/Client method facets (SEM-006/007 foundation);
+//! - [`SymbolRecord`]: one extraction record (index ingestion and golden serialization
+//!   share the same shape, keeping "parity face = index face"; two extraction logics
+//!   are not allowed);
+//! - [`extract_records`]: ParsedUnit -> symbol records (pure function, no IO);
+//! - [`SymbolId`]: arena slot number, only meaningful while the index holds a consistent
+//!   generation snapshot; query exports return owned [`Symbol`](the cross-process
+//!   semantics of the SEM-001 stable id follow PR-008).
 
 use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
 use kode_vfs::store::DocumentKey;
 
-/// 符号种类。
+/// Symbol kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SymbolKind {
-    /// 实体(entities.xml 注册项与 .def 实体本体)。
+    /// Entity (entities.xml registration entry and the .def entity body itself).
     Entity,
-    /// .def 属性。
+    /// .def property.
     Property,
-    /// .def 方法(Base/Cell/Client 分面由 [`MethodFacet`] 区分)。
+    /// .def method (the Base/Cell/Client facet is distinguished by [`MethodFacet`]).
     Method,
-    /// types.xml 自定义类型。
+    /// types.xml custom type.
     Type,
-    /// alias.xml 别名。
+    /// alias.xml alias.
     Alias,
-    /// .def 组件槽。
+    /// .def component slot.
     Component,
 }
 
@@ -42,7 +46,7 @@ impl SymbolKind {
     }
 }
 
-/// 方法分面。
+/// Method facet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MethodFacet {
     Base,
@@ -60,23 +64,23 @@ impl MethodFacet {
     }
 }
 
-/// arena 槽位号(删除后槽位复用;外部不得跨 generation 缓存)。
+/// Arena slot number (slots are reused after deletion; callers must not cache across generations).
 pub type SymbolId = usize;
 
-/// 入库符号(查询出口返回 owned 拷贝,不暴露内部 arena/倒排结构)。
+/// Indexed symbol (query exports return an owned copy and never expose the internal arena/inverted structures).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
     pub id: SymbolId,
     pub name: String,
     pub kind: SymbolKind,
     pub file: DocumentKey,
-    /// 1 起行号;.def 实体本体(无行位置的文件级符号)约定为 1。
+    /// 1-based line number; the .def entity body (a file-level symbol with no line position) is by convention 1.
     pub line: usize,
     pub facet: Option<MethodFacet>,
     pub detail: Option<String>,
 }
 
-/// 抽取记录(与 golden 序列化逐字段一致:name/kind/line/facet/detail)。
+/// Extraction record (field-for-field identical to the golden serialization: name/kind/line/facet/detail).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymbolRecord {
     pub name: String,
@@ -98,7 +102,7 @@ impl SymbolRecord {
     }
 }
 
-/// 从 `.def` 文件路径/URI 取实体名(file stem;与 TS basename 去 .def 同口径)。
+/// Entity name from a `.def` file path/URI (file stem; same semantics as the TS basename minus .def).
 pub fn def_entity_name(uri_path: &str) -> Option<String> {
     std::path::Path::new(uri_path)
         .file_stem()
@@ -107,11 +111,13 @@ pub fn def_entity_name(uri_path: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// ParsedUnit → (符号记录序列, .def 实体声明)。
+/// ParsedUnit -> (sequence of symbol records, .def entity declaration).
 ///
-/// 返回的记录顺序 = 文档顺序(def:实体本体 → Properties → Components →
-/// Base/Cell/Client 方法段,与 DefFile 字段序一致),golden 与索引共用。
-/// 第二个返回值仅 .def 有:`(实体名, Parent)`(继承边,IDX-002)。
+/// The returned record order = document order (def: entity body -> Properties ->
+/// Components -> Base/Cell/Client method sections, matching the DefFile field order),
+/// shared by both golden and the index.
+/// The second return value exists only for .def: `(entity name, Parent)` (inheritance
+/// edge, IDX-002).
 pub fn extract_records(
     key: &DocumentKey,
     unit: &ParsedUnit,
@@ -209,7 +215,7 @@ pub fn extract_records(
     }
 }
 
-/// 声明文件种类判别(非声明文件不产符号;与 dep.rs 同一判定)。
+/// Declaration file-kind predicate (non-declaration files yield no symbols; same test as dep.rs).
 pub fn is_indexable(key: &DocumentKey) -> bool {
     !matches!(file_kind_of_uri(&key.uri), FileKind::Other)
 }

@@ -1,22 +1,32 @@
-//! `$/kode/databaseSchema/build` —— MySQL 表/列推导核心(IDE-RUST-008)。
+//! `$/kode/databaseSchema/build` — MySQL table/column derivation core (IDE-RUST-008).
 //!
-//! 边界(镜像 IDE-RUST-007「输入收集留 TS、推导归 Rust」):表/列推导归
-//! Rust——入参是 TS 已收集的属性描述符树(properties)+实体名/def 路径/
-//! hasCell/表前缀,推导本身不读文件/配置/工作区;属性收集(走查 def 闭包
-//! + types.xml 别名解析 + 组件模块域,熔合快照版本清单)仍由 TS 承担。
+//! Boundary (mirroring IDE-RUST-007 "input collection stays in TS, derivation
+//! belongs to Rust"): table/column derivation belongs to Rust — the inputs are
+//! the TS-collected property descriptor tree (properties) plus entity name /
+//! def path / hasCell / table prefix, and the derivation itself reads no
+//! files/config/workspace; property collection (walking the def closure +
+//! types.xml alias resolution + component module domains, fused with the
+//! snapshot version manifest) is still carried by TS.
 //!
-//! 语义(逐条对齐 TS src/databaseSchemaCore.ts 的 deriveDatabaseTables →
-//! buildMysqlTableSchemas → appendPropertyToTable → expandColumnNames /
-//! resolveDbTypeLabel / resolveEffectiveDatabaseLength):
-//! - 根表 = `{tablePrefix}{entityName}`,固定 id(自增主键)+ sm_autoLoad(索引),
-//!   hasCell 时追加 position/direction 六列(EntityTableMysql 建表);
-//! - ARRAY → 子表(当前表名+祖先项名链+自身名),元素项落子表顶层,链/FD 前缀重置;
-//! - ENTITY_COMPONENT → 子表(容器表名+组件名);实体无 cell 且组件槽无 base 域时
-//!   组件连表跳过;FD 内组件项父表即容器表;
-//! - ENTITYCALL 不落列;FIXED_DICT → 键名累积进前缀,不建子表;
-//! - 叶子:列名按 expandColumnNames(VECTOR2/3/4 → sm_N_name,否则 sm_name),
-//!   类型标签按 resolveDbTypeLabel(17 内建 → mysql 型,否则小写),
-//!   STRING/UNICODE 未声明或 ≤0 的 DatabaseLength 按引擎默认 255 落列。
+//! Semantics (aligned item by item with TS src/databaseSchemaCore.ts's
+//! deriveDatabaseTables → buildMysqlTableSchemas → appendPropertyToTable →
+//! expandColumnNames / resolveDbTypeLabel / resolveEffectiveDatabaseLength):
+//! - Root table = `{tablePrefix}{entityName}`, with a fixed id (auto-increment
+//!   primary key) + sm_autoLoad (indexed); when hasCell, the six
+//!   position/direction columns are appended (EntityTableMysql table build);
+//! - ARRAY → child table (current table name + ancestor item name chain + own
+//!   name); the element item lands at the child table's top level, and the
+//!   chain/FD prefixes are reset;
+//! - ENTITY_COMPONENT → child table (container table name + component name);
+//!   when the entity has no cell and the component slot flag has no base
+//!   domain, the component and its table are both skipped; a component item
+//!   inside an FD has the container table as its parent table;
+//! - ENTITYCALL lands no column; FIXED_DICT → key names accumulate into the
+//!   prefix, no child table is created;
+//! - Leaves: column names follow expandColumnNames (VECTOR2/3/4 → sm_N_name,
+//!   otherwise sm_name); type labels follow resolveDbTypeLabel (17 built-ins →
+//!   mysql type, otherwise lowercase); STRING/UNICODE with an undeclared or
+//!   ≤0 DatabaseLength lands with the engine default of 255.
 
 use std::collections::BTreeMap;
 
@@ -31,7 +41,7 @@ pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/databaseSchema/build", build_handler);
 }
 
-// ---- 输入(镜像 TS PersistentPropertyDescriptor / DatabaseSchemaDerivationInput)----
+// ---- inputs (mirror TS PersistentPropertyDescriptor / DatabaseSchemaDerivationInput) ----
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,7 +84,7 @@ struct PropertyNode {
     array_element: Option<Box<PropertyNode>>,
 }
 
-// ---- 输出(镜像 TS TableSchemaDescriptor / TableFieldDescriptor)----
+// ---- outputs (mirror TS TableSchemaDescriptor / TableFieldDescriptor) ----
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,8 +118,10 @@ struct FieldSchema {
     source: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     database_length: Option<Number>,
-    // 声明处是否显式配置 DatabaseLength(>0)——IDE-DB-001 容量提示区分
-    // 「已配置 N」与「未配置→引擎默认 255」;TS TableFieldDescriptor 同名镜像
+    // Whether the declaration site explicitly configures DatabaseLength (>0) —
+    // the IDE-DB-001 capacity hint distinguishes "configured N" from "not
+    // configured → engine default 255"; same-name mirror of the TS
+    // TableFieldDescriptor field
     #[serde(skip_serializing_if = "Option::is_none")]
     database_length_specified: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -237,8 +249,10 @@ fn append_property_to_table(
 
     match property.type_name.as_str() {
         "ARRAY" => {
-            // 子表名 = 当前表名 + 祖先项名链(非空段)+ 自身名;元素项落子表顶层,
-            // 链与 FD 前缀均重置(EntityTableItemMysql_ARRAY::initialize)。
+            // Child table name = current table name + ancestor item name chain
+            // (non-empty segments) + own name; the element item lands at the
+            // child table's top level, and both the chain and the FD prefix are
+            // reset (EntityTableItemMysql_ARRAY::initialize).
             let table_name = build_array_table_name(current_table_name, name_chain, &property.name);
             let child = create_array_table(&table_name, current_table_name, property);
             tables.push(child);
@@ -256,8 +270,9 @@ fn append_property_to_table(
             }
         }
         "ENTITY_COMPONENT" => {
-            // 引擎规则(组件表构建循环):实体无 cell 内容且组件槽旗标无 base 域时,
-            // 组件连表一起跳过。
+            // Engine rule (component table build loop): when the entity has no
+            // cell content and the component slot flag has no base domain, the
+            // component and its table are both skipped.
             if !entity_has_cell && !property.scopes.iter().any(|s| s == "base") {
                 return;
             }
@@ -280,10 +295,14 @@ fn append_property_to_table(
             }
         }
         "ENTITYCALL" => {
-            // ENTITYCALL 不落列(syncToDB 为空);顶层数组的子表照建,元素列由本分支吞掉。
+            // ENTITYCALL lands no column (syncToDB is empty); a top-level
+            // array's child table is still built, and its element columns are
+            // swallowed by this branch.
         }
         "FIXED_DICT" => {
-            // FD 键链:只有 FD 键名累积进前缀;FD 作数组元素时项名为空串,前缀不加段。
+            // FD key chain: only FD key names accumulate into the prefix; when
+            // an FD is an array element the item name is the empty string and
+            // no segment is added to the prefix.
             let next_prefix = if property.name.is_empty() {
                 fixed_dict_prefix.to_string()
             } else {
@@ -331,7 +350,7 @@ fn build_array_table_name(
             table_name.push_str(segment);
         }
     }
-    // 数组自身名出自标签名或 'value',恒非空。
+    // The array's own name comes from the label name or 'value'; always non-empty.
     table_name.push('_');
     table_name.push_str(if array_name.is_empty() {
         "values"
@@ -401,9 +420,12 @@ fn create_component_table(
                 &property.source,
                 Some("PRIMARY"),
             ),
-            // 组件子表同属引擎 child 表(isChild(true),entity_table_mysql.cpp:1525):
-            // syncToDB 给全部 child 表追加 parentID 结构列(entity_table_mysql.cpp:
-            // 379-380),与 ARRAY 子表同形——TS 派生已含,此处补齐对齐(parity bug #1)。
+            // Component child tables are also engine child tables
+            // (isChild(true), entity_table_mysql.cpp:1525): syncToDB appends
+            // the parentID structural column to every child table
+            // (entity_table_mysql.cpp:379-380), same shape as ARRAY child
+            // tables — the TS derivation already covers this; this fills it in
+            // for parity (parity bug #1).
             synthetic_field(
                 "parentID",
                 "bigint unsigned",
@@ -471,7 +493,8 @@ fn leaf_field(property: &PropertyNode, field_name: String) -> FieldSchema {
     }
 }
 
-// 引擎向量命名:index 在前,FD 前缀夹在 index 与项名之间。
+// Engine vector naming: index comes first, the FD prefix sits between the
+// index and the item name.
 fn expand_column_names(property: &PropertyNode, fixed_dict_prefix: &str) -> Vec<String> {
     let count = match property.type_name.as_str() {
         "VECTOR2" => 2,
@@ -519,7 +542,8 @@ fn resolve_db_type_label(type_name: &str) -> String {
     label.to_string()
 }
 
-// STRING/UNICODE 未声明 DatabaseLength(或声明 ≤0)时按引擎默认 255 落列。
+// When STRING/UNICODE declares no DatabaseLength (or declares ≤0), the column
+// lands with the engine default of 255.
 fn resolve_effective_database_length(property: &PropertyNode) -> Option<Number> {
     if property.type_name == "STRING" || property.type_name == "UNICODE" {
         let has_declared = declared_database_length(property);
@@ -533,8 +557,9 @@ fn resolve_effective_database_length(property: &PropertyNode) -> Option<Number> 
     }
 }
 
-// 声明处是否显式配置 DatabaseLength(>0):有效长度已折算默认 255,声明
-// 与否单独留痕(IDE-DB-001 容量提示用)。
+// Whether the declaration site explicitly configures DatabaseLength (>0): the
+// effective length has already been folded to the default 255; whether it was
+// declared is tracked separately (for the IDE-DB-001 capacity hint).
 fn declared_database_length(property: &PropertyNode) -> bool {
     property
         .database_length

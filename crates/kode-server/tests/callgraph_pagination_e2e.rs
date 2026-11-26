@@ -91,7 +91,11 @@ fn request(id: i64, method: &str, params: Value) -> Value {
 
 /// `$/kode/rpc` 内层调用信封(池路径;分类按内层 method)。
 fn rpc_request(id: i64, inner: &str, params: Value) -> Value {
-    request(id, "$/kode/rpc", json!({ "method": inner, "params": params }))
+    request(
+        id,
+        "$/kode/rpc",
+        json!({ "method": inner, "params": params }),
+    )
 }
 
 fn wait_response(proc: &ServerProc, id: i64, timeout: Duration) -> Value {
@@ -118,13 +122,7 @@ fn wait_response(proc: &ServerProc, id: i64, timeout: Duration) -> Value {
 fn result_of(response: Value) -> Value {
     response
         .get("result")
-        .and_then(|r| {
-            if r.is_null() {
-                None
-            } else {
-                Some(r.clone())
-            }
-        })
+        .and_then(|r| if r.is_null() { None } else { Some(r.clone()) })
         .unwrap_or_else(|| panic!("expected success response: {response}"))
 }
 
@@ -158,7 +156,9 @@ fn assert_bounded(key: &str, result: &Value) {
 }
 
 fn page_next(meta: &Value) -> Option<usize> {
-    meta.get("nextOffset").and_then(|v| v.as_u64()).map(|v| v as usize)
+    meta.get("nextOffset")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
 }
 
 /// 单维续取状态机(与 TS 消费方同契约):开启维追加切片推进游标;终局维只
@@ -203,8 +203,10 @@ fn step_array_dim(
     if meta.get("cancelled").and_then(|v| v.as_bool()) == Some(true) {
         return false;
     }
-    let dim_total =
-        meta.get("total").and_then(|v| v.as_u64()).unwrap_or(sink.len() as u64) as usize;
+    let dim_total = meta
+        .get("total")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(sink.len() as u64) as usize;
     match page_next(meta) {
         None => {
             *total = dim_total;
@@ -247,10 +249,7 @@ fn oversized_callgraph_pages_resume_and_stay_bounded_over_stdio() {
     next_id += 1;
     send(&mut proc, &request(next_id, "$/kode/health", json!({})));
     let health = result_of(wait_response(&proc, next_id, Duration::from_secs(10)));
-    let pool = health
-        .get("pool")
-        .cloned()
-        .expect("health missing pool");
+    let pool = health.get("pool").cloned().expect("health missing pool");
     let mut pool_keys: Vec<String> = pool
         .as_object()
         .expect("pool object")
@@ -261,8 +260,14 @@ fn oversized_callgraph_pages_resume_and_stay_bounded_over_stdio() {
     assert_eq!(
         pool_keys,
         vec![
-            "backgroundRunning", "cpuRunning", "interactiveRunning", "ioRunning",
-            "jobsCancelled", "jobsDone", "jobsFailed", "workers"
+            "backgroundRunning",
+            "cpuRunning",
+            "interactiveRunning",
+            "ioRunning",
+            "jobsCancelled",
+            "jobsDone",
+            "jobsFailed",
+            "workers"
         ]
     );
 
@@ -271,10 +276,18 @@ fn oversized_callgraph_pages_resume_and_stay_bounded_over_stdio() {
     let mut params = json!({ "files": files, "manifestXmlText": "" });
     let first = callgraph_rpc(&mut proc, &mut next_id, params.clone());
     let stats = first.get("stats").cloned().expect("stats");
-    let edge_total = stats.get("edgeCount").and_then(|v| v.as_u64()).expect("edgeCount") as usize;
-    let node_total = stats.get("nodeCount").and_then(|v| v.as_u64()).expect("nodeCount") as usize;
-    let dataflow_total =
-        stats.get("dataflowCount").and_then(|v| v.as_u64()).expect("dataflowCount") as usize;
+    let edge_total = stats
+        .get("edgeCount")
+        .and_then(|v| v.as_u64())
+        .expect("edgeCount") as usize;
+    let node_total = stats
+        .get("nodeCount")
+        .and_then(|v| v.as_u64())
+        .expect("nodeCount") as usize;
+    let dataflow_total = stats
+        .get("dataflowCount")
+        .and_then(|v| v.as_u64())
+        .expect("dataflowCount") as usize;
     assert_eq!(edge_total, methods, "self-method 调用全量边");
     assert_eq!(node_total, methods, "每方法一节点");
 
@@ -315,20 +328,41 @@ fn oversized_callgraph_pages_resume_and_stay_bounded_over_stdio() {
         let first_nodes = first.get("nodes").and_then(|v| v.as_array());
         let first_dataflow = first.get("dataflow").and_then(|v| v.as_array());
         assert!(
-            step_array_dim(&mut edges, first_edges, first.get("edgePage"), 0,
-                &mut edge_done, &mut edge_cursor, &mut edge_dim_total),
+            step_array_dim(
+                &mut edges,
+                first_edges,
+                first.get("edgePage"),
+                0,
+                &mut edge_done,
+                &mut edge_cursor,
+                &mut edge_dim_total
+            ),
             "首页 edge 维步进失败(取消/卡死): {:?}",
             first.get("edgePage")
         );
         assert!(
-            step_array_dim(&mut nodes, first_nodes, first.get("nodePage"), 0,
-                &mut node_done, &mut node_cursor, &mut node_dim_total),
+            step_array_dim(
+                &mut nodes,
+                first_nodes,
+                first.get("nodePage"),
+                0,
+                &mut node_done,
+                &mut node_cursor,
+                &mut node_dim_total
+            ),
             "首页 node 维步进失败: {:?}",
             first.get("nodePage")
         );
         assert!(
-            step_array_dim(&mut dataflow, first_dataflow, first.get("dataflowPage"), 0,
-                &mut dataflow_done, &mut dataflow_cursor, &mut dataflow_dim_total),
+            step_array_dim(
+                &mut dataflow,
+                first_dataflow,
+                first.get("dataflowPage"),
+                0,
+                &mut dataflow_done,
+                &mut dataflow_cursor,
+                &mut dataflow_dim_total
+            ),
             "首页 dataflow 维步进失败: {:?}",
             first.get("dataflowPage")
         );
@@ -362,12 +396,33 @@ fn oversized_callgraph_pages_resume_and_stay_bounded_over_stdio() {
         let page_edges = page.get("edges").and_then(|v| v.as_array());
         let page_nodes = page.get("nodes").and_then(|v| v.as_array());
         let page_dataflow = page.get("dataflow").and_then(|v| v.as_array());
-        let ok_edges = step_array_dim(&mut edges, page_edges, page.get("edgePage"),
-            edge_cursor, &mut edge_done, &mut edge_cursor, &mut edge_dim_total);
-        let ok_nodes = step_array_dim(&mut nodes, page_nodes, page.get("nodePage"),
-            node_cursor, &mut node_done, &mut node_cursor, &mut node_dim_total);
-        let ok_dataflow = step_array_dim(&mut dataflow, page_dataflow, page.get("dataflowPage"),
-            dataflow_cursor, &mut dataflow_done, &mut dataflow_cursor, &mut dataflow_dim_total);
+        let ok_edges = step_array_dim(
+            &mut edges,
+            page_edges,
+            page.get("edgePage"),
+            edge_cursor,
+            &mut edge_done,
+            &mut edge_cursor,
+            &mut edge_dim_total,
+        );
+        let ok_nodes = step_array_dim(
+            &mut nodes,
+            page_nodes,
+            page.get("nodePage"),
+            node_cursor,
+            &mut node_done,
+            &mut node_cursor,
+            &mut node_dim_total,
+        );
+        let ok_dataflow = step_array_dim(
+            &mut dataflow,
+            page_dataflow,
+            page.get("dataflowPage"),
+            dataflow_cursor,
+            &mut dataflow_done,
+            &mut dataflow_cursor,
+            &mut dataflow_dim_total,
+        );
         last_page = serde_json::json!({
             "edgePage": page.get("edgePage"),
             "nodePage": page.get("nodePage"),
@@ -384,7 +439,11 @@ fn oversized_callgraph_pages_resume_and_stay_bounded_over_stdio() {
 
     assert_eq!(edges.len(), edge_total, "续取累计 == stats.edgeCount");
     assert_eq!(nodes.len(), node_total, "续取累计 == stats.nodeCount");
-    assert_eq!(dataflow.len(), dataflow_total, "续取累计 == stats.dataflowCount");
+    assert_eq!(
+        dataflow.len(),
+        dataflow_total,
+        "续取累计 == stats.dataflowCount"
+    );
     assert!(pages >= 2, "超限必须多页: pages={pages}");
 
     // 确定性:同游标重取字节级一致(纯函数,text-in)。
@@ -434,7 +493,10 @@ fn legacy_small_callgraph_has_no_page_keys_over_stdio() {
         );
     }
     let stats = result.get("stats").cloned().expect("stats");
-    let edges = result.get("edges").and_then(|v| v.as_array()).expect("edges");
+    let edges = result
+        .get("edges")
+        .and_then(|v| v.as_array())
+        .expect("edges");
     assert_eq!(edges.len(), 1);
     assert_eq!(
         stats.get("edgeCount").and_then(|v| v.as_u64()),

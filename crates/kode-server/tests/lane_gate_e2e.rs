@@ -91,7 +91,11 @@ fn request(id: i64, method: &str, params: Value) -> Value {
 
 /// `$/kode/rpc` 内层调用信封(池路径;分类按内层 method)。
 fn rpc_request(id: i64, inner: &str, params: Value) -> Value {
-    request(id, "$/kode/rpc", json!({ "method": inner, "params": params }))
+    request(
+        id,
+        "$/kode/rpc",
+        json!({ "method": inner, "params": params }),
+    )
 }
 
 fn wait_response(proc: &ServerProc, id: i64, timeout: Duration) -> Value {
@@ -118,13 +122,7 @@ fn wait_response(proc: &ServerProc, id: i64, timeout: Duration) -> Value {
 fn result_of(response: Value) -> Value {
     response
         .get("result")
-        .and_then(|r| {
-            if r.is_null() {
-                None
-            } else {
-                Some(r.clone())
-            }
-        })
+        .and_then(|r| if r.is_null() { None } else { Some(r.clone()) })
         .unwrap_or_else(|| panic!("expected success response: {response}"))
 }
 
@@ -197,7 +195,10 @@ fn blocking_io_lane_does_not_stall_cpu_and_interactive() {
 
     // 泳道分离需 ≥2 worker(1 核机两泳道皆 0,交互全占——本测试前提)。
     let pool = pool_of(&health_of(&mut proc, &mut next_id));
-    let workers = pool.get("workers").and_then(|v| v.as_u64()).expect("workers");
+    let workers = pool
+        .get("workers")
+        .and_then(|v| v.as_u64())
+        .expect("workers");
     assert!(
         workers >= 2,
         "lane separation E2E requires >=2 workers, got {workers}"
@@ -234,11 +235,7 @@ fn blocking_io_lane_does_not_stall_cpu_and_interactive() {
     let echo_id = next_id;
     send(
         &mut proc,
-        &rpc_request(
-            echo_id,
-            "$/kode/echo",
-            json!({ "msg": "lane-separation" }),
-        ),
+        &rpc_request(echo_id, "$/kode/echo", json!({ "msg": "lane-separation" })),
     );
     let echo = result_of(wait_response(&proc, echo_id, Duration::from_secs(5)));
     assert_eq!(

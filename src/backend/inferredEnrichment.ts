@@ -1,14 +1,19 @@
 /**
- * KODE-CFG-017-R 消费面富化：读 `.kbengine/inferred/` 镜像（pyrefly 注解产物）
- * 提取推断注解，供 hover/inlay provider 富化。纯逻辑层，不 import vscode。
+ * KODE-CFG-017-R consumption-face enrichment: reads the `.kbengine/inferred/`
+ * mirror (pyrefly annotation artifacts) to extract inferred annotations for
+ * hover/inlay provider enrichment. Pure logic layer, does not import vscode.
  *
- * 铁律（T-04 禁遮蔽）：镜像只在 provider 读取面被消费，**绝不**进入
- * extraPaths / 导入解析。本模块只做「源 .py → 镜像路径」映射与「镜像全文 →
- * 注解」提取，不含任何写路径、不含 vscode 依赖。
+ * Iron rule (T-04 no shadowing): the mirror is consumed only on the provider
+ * read face and **never** enters extraPaths / import resolution. This module
+ * only does the "source .py -> mirror path" mapping and the "mirror full text
+ * -> annotations" extraction; it contains no write path and no vscode
+ * dependency.
  *
- * 提取口径：pythonLexicalMask 掩码保长保行（列偏移不变），因此所有定位
- * （def 头、括号配对、冒号/箭头）都在掩码文本上做，注解文本一律回原文切片
- * ——字符串字面量里的 `Literal["a"]`、注释尾巴不串味。
+ * Extraction convention: the pythonLexicalMask mask preserves length and line
+ * count (column offsets unchanged), so all positioning (def headers, bracket
+ * pairing, colon/arrow) happens on the masked text while annotation text is
+ * always sliced back from the raw source -- a `Literal["a"]` inside a string
+ * literal or a comment tail never leaks into an annotation.
  */
 
 import * as path from 'path';
@@ -23,7 +28,7 @@ export function generatedStubPath(root: string, managedDir: string, source: stri
   return path.join(root, managedDir, 'stubs', 'generated', `${relative}i`);
 }
 
-/** 源 .py 在镜像里的相对路径（工作区相对路径，复用 mirrorPrefixFor 口径）。 */
+/** The source .py's relative path inside the mirror (workspace-relative path, reusing the mirrorPrefixFor convention). */
 export function mirrorRelPathFor(
   workspaceRoot: string,
   scriptsRoot: string,
@@ -35,11 +40,14 @@ export function mirrorRelPathFor(
 }
 
 /**
- * 源 .py 绝对路径 → 镜像绝对路径；不在工作区内返回 null。
- * 镜像结构 `<managedDir>/inferred/<mirrorPrefix>/<scripts 相对路径>`，而
- * mirrorPrefix + scripts 相对路径 == 工作区相对路径（源在 scripts 根内时），
- * 故直接按工作区相对路径拼装；源不在 scripts 根内时镜像本就无此文件，
- * 读取面 miss 静默回退，映射无需单独拒绝。
+ * Source .py absolute path -> mirror absolute path; returns null when outside
+ * the workspace. The mirror layout is
+ * `<managedDir>/inferred/<mirrorPrefix>/<scripts-relative path>`, and
+ * mirrorPrefix + scripts-relative path == workspace-relative path (when the
+ * source is inside the scripts root), so we assemble directly from the
+ * workspace-relative path; when the source is outside the scripts root the
+ * mirror simply has no such file, the read face misses and silently falls
+ * back, so the mapping needs no separate rejection.
  */
 export function mirrorPathForSource(
   workspaceRoot: string,
@@ -53,7 +61,7 @@ export function mirrorPathForSource(
   return path.join(workspaceRoot, managedDir, 'inferred', rel);
 }
 
-/** 找 `def <name>(` 的正文起始（返回 ')' 的 index 与 def 行结束 index）。 */
+/** Finds the body start of `def <name>(` (returns the ')' index and the def line end index). */
 function findDefHeader(maskedText: string, symbolName: string): { closeParen: number; lineEnd: number } | null {
   const namePattern = symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const defRe = new RegExp(`\\bdef\\s+${namePattern}\\s*\\(`, 'g');
@@ -78,7 +86,7 @@ function findDefHeader(maskedText: string, symbolName: string): { closeParen: nu
   return null;
 }
 
-/** 按顶层逗号切分参数表（忽略嵌套括号内的逗号）；start 为段内偏移（供原文定位）。 */
+/** Splits the parameter list on top-level commas (ignoring commas inside nested brackets); start is the in-segment offset (for raw-source positioning). */
 function splitTopLevelCommas(segment: string): Array<{ text: string; start: number }> {
   const parts: Array<{ text: string; start: number }> = [];
   let depth = 0;
@@ -98,12 +106,12 @@ function splitTopLevelCommas(segment: string): Array<{ text: string; start: numb
   return parts;
 }
 
-/** 掩码区间 → 原文切片再 trim（注解字面量保真）。 */
+/** Masked range -> raw-source slice, then trim (keeps annotation literals faithful). */
 function rawSlice(rawText: string, start: number, end: number): string {
   return rawText.slice(start, end).trim();
 }
 
-/** 掩码区间 → 原文切片，并按掩码回走尾部空白（注释被掩成空白，防注释尾巴串进注解）。 */
+/** Masked range -> raw-source slice, walking trailing whitespace back over the mask (comments are masked into whitespace, keeping comment tails out of the annotation). */
 function maskedBackTrimSlice(maskedText: string, rawText: string, start: number, end: number): string {
   let e = end;
   while (e > start && (maskedText[e - 1] === ' ' || maskedText[e - 1] === '\t')) {
@@ -113,10 +121,14 @@ function maskedBackTrimSlice(maskedText: string, rawText: string, start: number,
 }
 
 /**
- * 掩码 `name:` 注解区间的原文类型切片：截到行内顶层 `=` 或行界，再回走
- * 掩码尾部空白（注释被掩成空白，天然排除行尾注释尾巴；raw 上的 `#` 查找
- * 不可用——掩码已抹 `#`，且 raw 字符串里可有 `#`）。lineLimit 传该行结尾
- * （全文本调用必传），防 `=` 越到后续行。返回空串视为无注解。
+ * Raw-source type slice of a masked `name:` annotation range: cut at the
+ * line's top-level `=` or the line boundary, then walk trailing whitespace
+ * back over the mask (comments are masked into whitespace, which naturally
+ * excludes end-of-line comment tails; searching for `#` on the raw text is
+ * unusable -- the mask has already erased `#`, and raw strings may contain
+ * `#`). Pass this line's end as lineLimit (required for whole-text calls) to
+ * keep `=` from reaching into later lines. An empty-string return means no
+ * annotation.
  */
 function annotatedTypeAfterColon(maskedText: string, rawText: string, typeStart: number, lineLimit: number): string {
   let typeEnd = maskedText.indexOf('=', typeStart);
@@ -130,8 +142,9 @@ function annotatedTypeAfterColon(maskedText: string, rawText: string, typeStart:
 }
 
 /**
- * 提取函数/方法返回注解；无注解返回 null（`def f() -> str` → 'str'）。
- * 定位在掩码上做，注解回原文切片。
+ * Extracts a function/method return annotation; returns null when absent
+ * (`def f() -> str` -> 'str'). Positioning happens on the mask; the
+ * annotation is sliced back from the raw source.
  */
 export function extractReturnAnnotation(mirrorText: string, symbolName: string): string | null {
   const masked = maskPythonNonCode(mirrorText);
@@ -151,7 +164,7 @@ export function extractReturnAnnotation(mirrorText: string, symbolName: string):
   return annotation === '' ? null : annotation;
 }
 
-/** 参数名/注解解析结果（nameEnd 为掩码列 == 原文列，供 inlay 插入点使用）。 */
+/** Parameter name/annotation parse result (nameEnd is a mask column == raw column, used as the inlay insertion point). */
 export interface ParsedParamSpan {
   name: string;
   type: string | null;
@@ -165,7 +178,7 @@ interface ParsedDefHeader {
   returnType: string | null;
 }
 
-/** 单行 def 头解析（掩码定位、原文切片）；行内括号不闭合（多行签名）返回 null。 */
+/** Single-line def header parse (mask positioning, raw slicing); returns null when brackets do not close within the line (multi-line signature). */
 function parseDefHeaderInLine(lineText: string): ParsedDefHeader | null {
   const masked = maskPythonNonCode(lineText);
   const defMatch = /\bdef\s+\w+\s*\(/.exec(masked);
@@ -206,7 +219,7 @@ function parseDefHeaderInLine(lineText: string): ParsedDefHeader | null {
     if (part === '' || part === '*' || part === '**' || part === '/') {
       continue;
     }
-    // part 起点回原文：段内偏移 + partRaw 前导空白 + part 前导 `*`
+    // Map the part start back to the raw source: in-segment offset + partRaw leading whitespace + part leading `*`
     const lead = /^[\s*]*/.exec(part)?.[0].length ?? 0;
     const partStartInRaw = segmentStart + partRaw.start + (partRaw.text.length - partRaw.text.trimStart().length) + lead;
     const body = part.slice(lead);
@@ -226,8 +239,9 @@ function parseDefHeaderInLine(lineText: string): ParsedDefHeader | null {
 }
 
 /**
- * 提取参数注解表；无注解返回 []（`def f(x: int, y)` → [{name:'x',type:'int'}]）。
- * 定位在掩码上做，注解回原文切片。
+ * Extracts the parameter annotation table; returns [] when unannotated
+ * (`def f(x: int, y)` -> [{name:'x',type:'int'}]). Positioning happens on the
+ * mask; the annotations are sliced back from the raw source.
  */
 export function extractParamAnnotations(
   mirrorText: string,
@@ -238,7 +252,7 @@ export function extractParamAnnotations(
   if (!header) {
     return [];
   }
-  // openParen 是 findDefHeader 匹配到的 `(`（lastIndexOf 在 closeParen 前定位）。
+  // openParen is the `(` matched by findDefHeader (lastIndexOf locates it before closeParen).
   const openParen = masked.lastIndexOf('(', header.closeParen);
   const segmentStart = openParen + 1;
   const result: Array<{ name: string; type: string }> = [];
@@ -252,7 +266,7 @@ export function extractParamAnnotations(
     const body = part.slice(lead);
     const colon = body.indexOf(':');
     if (colon === -1) {
-      continue; // 无注解参数跳过（y 无类型）
+      continue; // skip unannotated parameters (y has no type)
     }
     const name = body.slice(0, colon).trim();
     if (name === '') {
@@ -266,8 +280,10 @@ export function extractParamAnnotations(
 }
 
 /**
- * 提取变量/属性注解（`x: int = ...` / `self.x: str`）；无注解返回 null。
- * 行首锚定（含 self. 前缀），定位在掩码上做，注解回原文切片。
+ * Extracts a variable/attribute annotation (`x: int = ...` / `self.x: str`);
+ * returns null when unannotated.
+ * Anchored at line start (including the self. prefix); positioning happens on
+ * the mask, the annotation is sliced back from the raw source.
  */
 export function extractVariableAnnotation(mirrorText: string, symbolName: string): string | null {
   const masked = maskPythonNonCode(mirrorText);
@@ -283,7 +299,7 @@ export function extractVariableAnnotation(mirrorText: string, symbolName: string
   return type === '' ? null : type;
 }
 
-/** 行级推断提示（inlay）：源行第 character 列后渲染 label。 */
+/** Line-level inference hint (inlay): renders label after column `character` of the source line. */
 export interface InferredAnnotationHint {
   line: number;
   character: number;
@@ -393,9 +409,12 @@ export function generatedStubSymbol(source: string, stub: string, name: string, 
 }
 
 /**
- * 源文与镜像逐行差分：镜像有而源缺的类型注解 → 行内提示位。
- * pyrefly 就地写注解不改行数，两文行数不一致即结构漂移，整批不出
- * （宁缺毋错）；单行 def 头不闭合（多行签名）该行跳过，优雅降级。
+ * Line-by-line diff of source vs mirror: type annotations present in the
+ * mirror but missing in the source -> in-line hint positions.
+ * pyrefly writes annotations in place without changing the line count, so a
+ * line-count mismatch means structural drift and the whole batch is dropped
+ * (prefer missing over wrong); a single-line def header that does not close
+ * (multi-line signature) skips that line, degrading gracefully.
  */
 export function diffInferredAnnotations(sourceText: string, mirrorText: string): InferredAnnotationHint[] {
   const sourceLines = sourceText.split('\n');
@@ -413,8 +432,8 @@ export function diffInferredAnnotations(sourceText: string, mirrorText: string):
     const srcDef = parseDefHeaderInLine(srcLine);
     const mirDef = parseDefHeaderInLine(mirLine);
     if (srcDef || mirDef) {
-      // def 头差分：返回注解（源缺箭头）+ 同名形参注解（源缺冒号）；
-      // 单侧是 def 行（同位异构）不硬配,跳过。
+      // def header diff: return annotation (source lacks the arrow) + same-named parameter annotations (source lacks the colon);
+      // when only one side is a def line (same position, different shape) do not force-pair, skip.
       if (srcDef && mirDef) {
         if (!srcDef.hasReturnArrow && mirDef.hasReturnArrow && mirDef.returnType) {
           hints.push({ line: i, character: srcDef.closeParen + 1, label: `-> ${mirDef.returnType}` });
@@ -432,7 +451,7 @@ export function diffInferredAnnotations(sourceText: string, mirrorText: string):
       }
       continue;
     }
-    // 赋值差分：镜像行 `name: Type = ...`、源行同名裸赋值 `name = ...`。
+    // Assignment diff: mirror line `name: Type = ...`, source line a same-named bare assignment `name = ...`.
     const mirMasked = maskPythonNonCode(mirLine);
     const nameMatch = /^(\s*)((?:self\.)?)([A-Za-z_]\w*)\s*:/.exec(mirMasked);
     if (!nameMatch) {
@@ -446,7 +465,7 @@ export function diffInferredAnnotations(sourceText: string, mirrorText: string):
     const namePattern = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const srcAssign = new RegExp(`^(\\s*)((?:self\\.)?)(${namePattern})(?![\\w])([^\\n]*)$`).exec(maskPythonNonCode(srcLine));
     if (!srcAssign || !/^\s*=(?!=)/.test(srcAssign[4])) {
-      continue; // 源行不是该名字的裸赋值（已带注解 / 比较运算 / 其他语句）
+      continue; // the source line is not a bare assignment of that name (already annotated / comparison / other statement)
     }
     hints.push({
       line: i,

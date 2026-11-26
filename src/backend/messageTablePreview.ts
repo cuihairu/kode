@@ -1,15 +1,17 @@
 /**
- * 单实体 messageTable 预览命令体(IDE-SDK-001):选实体(QuickPick)→
- * 现有计算结果(buildMessageTable→markdown)可查看;缺声明(构建返
- * 回 null——entities.xml 未登记或 entity_defs 缺 def)时明确提示,不
- * 展示空预览不猜;未发现任何实体如实提示;取消选择静默退出。VSCode
- * 面全部注入(pick/show/notify),装配在 extension.ts。
+ * Single-entity messageTable preview command body (IDE-SDK-001): pick an entity
+ * (QuickPick) -> the already-computed result (buildMessageTable -> markdown) can be
+ * viewed; when the declaration is missing (the build returns null -- entities.xml does not
+ * register it or entity_defs lacks the def), say so explicitly instead of showing an empty
+ * preview or guessing; if no entities were discovered at all, say so honestly; cancelling
+ * the pick exits silently. Every VSCode face is injected (pick/show/notify); wiring lives
+ * in extension.ts.
  */
 
 export interface MessageTablePreviewDeps {
-  /** 实体名清单(来自共享索引/映射) */
+  /** Entity name list (from the shared index/mapping) */
   listEntityNames(): string[];
-  /** 单实体构建 markdown;null=缺声明 */
+  /** Build markdown for one entity; null = missing declaration */
   buildTableMarkdown(entityName: string): Promise<string | null>;
   pick(items: string[]): Promise<string | undefined>;
   show(markdown: string): Promise<unknown>;

@@ -1,18 +1,18 @@
-//! `$/kode/python/callgraph` + `$/kode/python/symbols` —— Python 调用图/符号表
-//! RPC(C-20 完整交付②;消费面 = src/pythonCallGraphRust.ts 与依赖图面板)。
+//! `$/kode/python/callgraph` + `$/kode/python/symbols` -- the Python call graph / symbol table
+//! RPC (C-20 full delivery part 2; consumers = src/pythonCallGraphRust.ts and the dependency-graph panel).
 //!
-//! - callgraph:文件集(原文直传)→ 节点/调用边/跨文件反索引/过程内数据流/
-//!   进程角色/统计。跨文件反索引喂 kode-scheduler `with_call_dependents`
-//!   (改被调方文件 → 重算调用方文件)。
-//! - symbols:文件集 → 每文件 AST 符号表(类/方法/函数/导入 + 每方法自身调用),
-//!   供 C-19 方法一致性复用(替代 TS parsePythonMethodBlocks+parsePythonSelfCalls)。
+//! - callgraph: a file set (source text passed through) -> nodes / call edges / cross-file reverse index /
+//!   intra-procedural data flow / process roles / statistics. The cross-file reverse index feeds kode-scheduler's
+//!   `with_call_dependents` (changing a callee file -> recompute the caller files).
+//! - symbols: a file set -> per-file AST symbol tables (classes / methods / functions / imports plus each method's own
+//!   self-calls), for C-19 method-consistency reuse (replaces the TS parsePythonMethodBlocks+parsePythonSelfCalls).
 //!
-//! 行号口径:kode-python 0-based(行/列均 0-based UTF-16),RPC 原样透出;
-//! 1-based 换算在 TS 消费点做(与 C-19 既有 IndexedPythonMethodLocation 对齐)。
-//! 容错:单文件语法错误不整体失败(ruff 容错路径),错误进 `stats.errorCount`
-//! / symbols 的 `errors`,能解析部分照常产出(半成品脚本友好)。
+//! Line-number stance: kode-python is 0-based (both line and column 0-based UTF-16); the RPC passes them through as-is;
+//! 1-based conversion happens at the TS consumption point (aligned with C-19's existing IndexedPythonMethodLocation).
+//! Fault tolerance: a per-file syntax error does not fail the whole run (the ruff tolerant path); errors go into `stats.errorCount`
+//! / the symbols' `errors`, and the parseable part is still produced (friendly to half-finished scripts).
 //!
-//! 边界:被调方解析是启发式(动态语言),未知调用保持 `unknown` 类边,不虚构。
+//! Boundary: callee resolution is heuristic (a dynamic language); unknown calls keep the `unknown` edge class and are not fabricated.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,7 +35,7 @@ pub fn register(reg: &mut RpcRegistry) {
 }
 
 // ---------------------------------------------------------------------------
-// 输入
+// Input
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -52,34 +52,34 @@ struct CallgraphParams {
     files: Vec<FileInput>,
     #[serde(default)]
     manifest_xml_text: Option<String>,
-    /// RUST-077-W:边分页续取游标(CORE-012 输入序偏移)。缺省 0 = 首页;
-    /// 同输入同游标必得同页(handler text-in 纯函数,确定性重跑)。旧调用
-    /// 方不发此键 = 全量(小结果契约零变化)。
+    /// RUST-077-W: the cursor for resuming edge pagination (a CORE-012 input-order offset). Defaults to 0 = the first page;
+    /// the same input with the same cursor always yields the same page (a text-in pure-function handler, deterministic reruns). Old
+    /// callers that omit this key = the full set (zero change to the small-result contract).
     #[serde(default)]
     edge_offset: usize,
-    /// RUST-077-W:节点数组分页游标(同语义)。
+    /// RUST-077-W: the pagination cursor for the node array (same semantics).
     #[serde(default)]
     node_offset: usize,
-    /// RUST-077-W:数据流数组分页游标(同语义)。
+    /// RUST-077-W: the pagination cursor for the data-flow array (same semantics).
     #[serde(default)]
     dataflow_offset: usize,
-    /// RUST-077-W:跨文件反索引条目分页游标(BTreeMap 键序确定性;条目 =
-    /// {callee: callers} 键值对,切片不改对象形状)。
+    /// RUST-077-W: the pagination cursor for cross-file reverse-index entries (BTreeMap key-order determinism; an entry =
+    /// a {callee: callers} key-value pair; slicing does not change the object shape).
     #[serde(default)]
     reverse_offset: usize,
 }
 
-/// RUST-077-W:单页边限额(服务端策略常量;配置化接线随 RUST-078-W 预算
-/// 构造落,本批不伪造配置面)。条目硬限防极端碎片页,字节硬限 = 真实
-/// serde 序列化字节(逐边实测,非权重估算)。256 KiB:已知生产大面
-/// (万文件工作区 callgraph)单响应远超此限,分页在生产真实生效。
+/// RUST-077-W: the per-page edge cap (a server-side policy constant; the configurable wiring lands with RUST-078-W's budget
+/// construction; this batch does not fabricate a configuration face). The entry hard cap guards against extremely fragmented pages; the byte hard cap =
+/// the real serde serialization bytes (measured edge by edge, not a weight estimate). 256 KiB: the known large production face
+/// (the ten-thousand-file workspace callgraph) far exceeds this in a single response, so pagination genuinely takes effect in production.
 const EDGE_PAGE_MAX_ITEMS: usize = 20_000;
 const EDGE_PAGE_MAX_BYTES: usize = 256 * 1024;
 
-/// RUST-077-W:按 CORE-012 纯核切一页数组(边/节点/数据流通用)。weight =
-/// 逐条真实 serde 序列化字节(「真实输出字节限制」的字面口径);协作取消
-/// 桥 = worker 线程探针(kode_python::cancel)在逐条计量点拉响 scheduler
-/// CancelToken——触发条目保留、下一检查点停收,与纯核文档语义一致。
+/// RUST-077-W: slice one page from an array by the CORE-012 pure core (shared by edges / nodes / data flow). weight =
+/// the per-entry real serde serialization bytes (the literal reading of the "real output byte limit"); the cooperative-cancellation
+/// bridge = the worker-thread probe (kode_python::cancel) firing the scheduler CancelToken at the per-entry
+/// measurement point -- the triggering entry is kept and intake stops at the next checkpoint, matching the pure-core documentation semantics.
 fn slice_json_page(
     items: &[Value],
     offset: usize,
@@ -115,8 +115,8 @@ fn slice_json_page(
     (page.items, meta)
 }
 
-/// RUST-077-W:反索引条目切片(BTreeMap 键序确定性 → 输入序偏移语义成立;
-/// 条目序列化为单键对象 {callee: callers},形状与全量一致)。
+/// RUST-077-W: reverse-index entry slicing (BTreeMap key-order determinism -> the input-order-offset semantics hold;
+/// each entry serializes as a single-key object {callee: callers}, with the same shape as the full set).
 fn slice_reverse_page(
     reverse_index: &BTreeMap<String, Vec<String>>,
     offset: usize,
@@ -140,7 +140,7 @@ fn slice_reverse_page(
     (out, meta)
 }
 
-/// 分页元信息(响应 `edgePage` 键;全量小结果不携带此键 = 旧契约零变化)。
+/// Pagination metadata Pagination metadata (the response's `edgePage` key; full small results omit this key = zero change to the old contract).
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EdgePageMeta {
@@ -148,9 +148,9 @@ struct EdgePageMeta {
     next_offset: Option<usize>,
     oversized_at: Option<usize>,
     cancelled: bool,
-    /// 本页真实序列化字节合计(与切页计量同源)。
+    /// The real serialized byte total of this page (the same source as the slicing measurement).
     bytes_estimate: usize,
-    /// 全量边数(消费方续取进度对账)。
+    /// The total edge count (for consumers to reconcile their resume progress).
     total: usize,
 }
 
@@ -162,13 +162,13 @@ struct SymbolsParams {
 }
 
 // ---------------------------------------------------------------------------
-// 输出形状
+// Output shapes
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NodeOut {
-    /// 方法 `Class.method` / 模块级函数 `<stem>::func` / 模块伪节点 `<stem>`。
+    /// Method `Class.method` / module-level function `<stem>::func` / module pseudo-node `<stem>`.
     id: String,
     /// "method" | "function" | "module"。
     kind: &'static str,
@@ -176,7 +176,7 @@ struct NodeOut {
     class_name: Option<String>,
     name: String,
     file_path: String,
-    /// 0-based(透出原样,TS 消费点换算)。
+    /// 0-based (passed through as-is; converted at the TS consumption point).
     line: usize,
     is_async: bool,
     params: Vec<String>,
@@ -226,12 +226,12 @@ struct StatsOut {
     edge_count: usize,
     dataflow_count: usize,
     error_count: usize,
-    /// 全 8 类边固定键(0 计数也保留,面板图例稳定)。
+    /// Fixed keys for all 8 edge classes (zero counts are kept too, keeping the panel legend stable).
     by_kind: BTreeMap<&'static str, usize>,
 }
 
 // ---------------------------------------------------------------------------
-// 单文件分析
+// Per-file analysis
 // ---------------------------------------------------------------------------
 
 struct FileAnalysis {
@@ -244,8 +244,8 @@ struct FileAnalysis {
 }
 
 fn analyze(path: &str, text: &str) -> FileAnalysis {
-    // KR-AUD-89:路径分隔只认 '/',斜杠归一在上游 RPC 边界完成
-    // (TS normalizeCallGraphPath)——断言锁死契约,漏归一即红。
+    // KR-AUD-89: path separation only accepts '/'; slash normalization is done at the upstream RPC boundary
+    // (the TS normalizeCallGraphPath) -- this assertion pins the contract; a missed normalization turns red immediately.
     debug_assert!(
         !path.contains('\\'),
         "KR-AUD-89: callgraph path must be '/'-separated upstream: {path}"
@@ -265,13 +265,13 @@ fn analyze(path: &str, text: &str) -> FileAnalysis {
     }
 }
 
-/// basename 去 `.py`(路径分隔只认 `/`;Windows 面由调用方统一斜杠)。
+/// basename with `.py` stripped (path separation only accepts `/`; the Windows face is slash-normalized by the caller).
 fn file_stem(path: &str) -> &str {
     let base = path.rsplit('/').next().unwrap_or(path);
     base.strip_suffix(".py").unwrap_or(base)
 }
 
-/// 全 8 类边固定键表。
+/// The fixed key table for all 8 edge classes.
 fn kind_table() -> BTreeMap<&'static str, usize> {
     let kinds = [
         EdgeKind::Local,
@@ -295,19 +295,22 @@ fn build_handler(params: Value) -> Result<Value, String> {
         serde_json::from_value(params).map_err(|e| format!("python/callgraph params: {e}"))?;
     let cancel_probe = kode_python::cancel::is_cancelled();
     let mut result = serde_json::to_value(build_callgraph(&input)).map_err(|e| e.to_string())?;
-    // RUST-077-W:大结果分页接生产——四个大维度(边/节点/数据流/反索引)
-    // 按 CORE-012 纯核切片,单页 payload 有界;同输入同游标必得同页(纯
-    // 函数确定性),续取语义成立。被切片的维度携带 `*Page` 元信息键。
+    // RUST-077-W: pagination for large results goes to production -- the four large dimensions (edges / nodes / data flow / reverse index)
+    // are sliced by the CORE-012 pure core, keeping the per-page payload bounded; the same input with the same cursor always yields the same page (pure
+    // -function determinism), so resume semantics hold. Sliced dimensions carry the `*Page` metadata key.
     if let Some(obj) = result.as_object_mut() {
-        // (响应键, 游标, 切片器)逐维处理;任一维非首页/未到底/有取消/
-        // 超大条目即插入对应 `*Page` 元信息,全量维不携带键(旧契约零变)。
+        // (response key, cursor, slicer) handled per dimension; any dimension that is not the first page / not at the end / has a cancellation /
+        // has an oversized entry inserts its `*Page` metadata; the full-set dimension carries no key (zero change to the old contract).
         for (key, page_key, offset, sliced) in [
             (
                 "edges",
                 "edgePage",
                 input.edge_offset,
                 SliceKind::Array(
-                    obj.get("edges").and_then(|v| v.as_array()).cloned().unwrap_or_default(),
+                    obj.get("edges")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default(),
                 ),
             ),
             (
@@ -315,7 +318,10 @@ fn build_handler(params: Value) -> Result<Value, String> {
                 "nodePage",
                 input.node_offset,
                 SliceKind::Array(
-                    obj.get("nodes").and_then(|v| v.as_array()).cloned().unwrap_or_default(),
+                    obj.get("nodes")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default(),
                 ),
             ),
             (
@@ -323,7 +329,10 @@ fn build_handler(params: Value) -> Result<Value, String> {
                 "dataflowPage",
                 input.dataflow_offset,
                 SliceKind::Array(
-                    obj.get("dataflow").and_then(|v| v.as_array()).cloned().unwrap_or_default(),
+                    obj.get("dataflow")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default(),
                 ),
             ),
             (
@@ -351,8 +360,8 @@ fn build_handler(params: Value) -> Result<Value, String> {
                     )
                 }
             };
-            // 全量小结果(首页且到底且无取消/超大条目)不携带 `*Page` 键;
-            // 非首页(offset>0)即使到底也如实携带(续取尾页)。
+            // A full small result (first page and at the end and no cancellation / oversized entry) carries no `*Page` key;
+            // a non-first page (offset>0) carries it honestly even at the end (resuming the tail page).
             let full_page = offset == 0
                 && meta.next_offset.is_none()
                 && meta.oversized_at.is_none()
@@ -369,7 +378,7 @@ fn build_handler(params: Value) -> Result<Value, String> {
     Ok(result)
 }
 
-/// RUST-077-W:分页维度载荷(数组维或反索引映射维)。
+/// RUST-077-W: the payload of a paginated dimension (an array dimension or the reverse-index mapping dimension).
 enum SliceKind {
     Array(Vec<Value>),
     Reverse(BTreeMap<String, Vec<String>>),
@@ -389,7 +398,7 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
         .map(|f| analyze(&f.path, &f.text))
         .collect();
 
-    // 节点:类方法 + 模块级函数;模块伪节点仅当该文件有顶层调用边。
+    // Nodes: class methods + module-level functions; a module pseudo-node only when the file has top-level call edges.
     let mut nodes: Vec<NodeOut> = Vec::new();
     let mut edges: Vec<EdgeOut> = Vec::new();
     let mut by_kind = kind_table();
@@ -471,7 +480,7 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
         }
     }
 
-    // 跨文件反索引(被调方文件 → 调用方文件集),键映射回 path 字符串。
+    // Cross-file reverse index (callee file -> the set of caller files), keys mapped back to path strings.
     let mut file_edges: BTreeMap<DocumentKey, Vec<CallEdge>> = BTreeMap::new();
     let mut file_symbols: BTreeMap<DocumentKey, AstSymbols> = BTreeMap::new();
     let mut key_to_path: BTreeMap<DocumentKey, String> = BTreeMap::new();
@@ -492,7 +501,7 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
         reverse_index.insert(callee_path, caller_paths);
     }
 
-    // 数据流(每方法 def-use)。
+    // Data flow (per-method def-use).
     let dataflow: Vec<DataflowOut> = analyses
         .iter()
         .flat_map(|a| {
@@ -540,7 +549,7 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
     })
 }
 
-/// 清单 `<process role="...">` 角色去重(升序;清单缺省=空)。
+/// Deduplicate the manifest's `<process role="...">` roles (ascending; the manifest defaults to empty).
 fn parse_process_roles(text: &str) -> Vec<String> {
     let doc = kode_parser::xml::parse(text, true);
     let mut roles = BTreeSet::new();
@@ -569,12 +578,12 @@ fn parse_process_roles(text: &str) -> Vec<String> {
 #[serde(rename_all = "camelCase")]
 struct CallRefOut {
     method_name: String,
-    /// 0-based(与 C-19 TS 面同源换算点)。
+    /// 0-based (the same-source conversion point as the C-19 TS face).
     line: usize,
     character: usize,
 }
 
-/// 类体内 `self.<name> = ...` 属性写入(kode-python 模型无 Serialize,显式映射)。
+/// Property writes of the form `self.<name> = ...` inside a class body (the kode-python model has no Serialize, hence an explicit mapping).
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AttrSymOut {
@@ -593,7 +602,7 @@ struct MethodSymOut {
     decorators: Vec<String>,
     params: Vec<String>,
     end_line: usize,
-    /// 该方法的自身调用(self-method 边,含调用点列)。
+    /// The method's own self-calls (self-method edges, including call-site columns).
     calls: Vec<CallRefOut>,
 }
 
@@ -641,7 +650,7 @@ struct FileSymbolsOut {
     classes: Vec<ClassSymOut>,
     functions: Vec<FuncSymOut>,
     imports: Vec<ImportSymOut>,
-    /// ruff 语法错误(格式化字符串;空 = 无)。
+    /// ruff syntax errors (formatted strings; empty = none).
     errors: Vec<String>,
 }
 
@@ -657,10 +666,10 @@ fn symbols_handler(params: Value) -> Result<Value, String> {
 }
 
 fn file_symbols(path: &str, text: &str) -> FileSymbolsOut {
-    // 单次解析:符号表与错误都从同一 ParsedAst 取(不二次 parse_ast_symbols)。
+    // Single parse: both the symbol table and the errors come from the same ParsedAst (no second parse_ast_symbols).
     let ast = ParsedAst::new(text);
     let symbols = extract(&ast);
-    // 自身调用(self-method 边)带调用点列;按 (类, 方法) 分组入账。
+    // Self-calls (self-method edges) carry call-site columns; grouped and filed by (class, method).
     let detailed = extract_call_graph_detailed(&ast, &symbols);
     let mut calls_by: BTreeMap<(String, String), Vec<CallRefOut>> = BTreeMap::new();
     for (edge, column) in detailed {

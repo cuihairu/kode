@@ -1,10 +1,14 @@
 /**
- * 只重试失败目标的热更新(IDE-HOT-007):遍历批次聚合(HOT-006)的目
- * 标,只对 outcome=failed 的目标重新发送——已确认成功侧(applied/
- * accepted/sent-unverified,均已发出)不重复发送,重发=重复投递同文
- * 件;每跳发起前探针取消,取消后停止后续发送:已完成的动作保留,未
- * 发起的标 skipped-cancelled 不冒充已发。发送器注入(deps.send),本
- * 模块不碰台账——重发后的结果落账走 HOT-002..004 既有面。
+ * Hot reload that only retries failed targets (IDE-HOT-007): walks the
+ * targets of the batch aggregation (HOT-006) and re-sends only the ones with
+ * outcome=failed -- the confirmed-success side (applied/accepted/
+ * sent-unverified, all already dispatched) is not re-sent, since re-sending
+ * means duplicately delivering the same file; a cancel probe runs before
+ * each hop starts, and once cancelled the remaining sends stop: completed
+ * actions are kept, ones never started are marked skipped-cancelled rather
+ * than masquerading as sent. The sender is injected (deps.send) and this
+ * module never touches the ledger -- recording post-resend results goes
+ * through the existing HOT-002..004 surfaces.
  */
 
 import type { HotReloadTargetKey } from './hotReloadTargetState';
@@ -17,7 +21,7 @@ export interface HotReloadSendResult {
 
 export interface HotReloadRetryDeps {
   send(key: HotReloadTargetKey): HotReloadSendResult | Promise<HotReloadSendResult>;
-  /** 每跳发起前探针:true=取消(后续全部不再发起) */
+  /** Probe before each hop starts: true = cancelled (nothing further is started) */
   isCancelled(): boolean;
 }
 
@@ -27,13 +31,13 @@ export interface HotReloadRetryAction {
   key: HotReloadTargetKey;
   keyId: string;
   action: HotReloadRetryActionKind;
-  /** skipped-confirmed=为什么不发(原状态);skipped-cancelled=取消说明;resent 可选带重发说明 */
+  /** skipped-confirmed = why it was not sent (original state); skipped-cancelled = cancellation explanation; resent may optionally carry a resend explanation */
   detail?: string;
-  /** 仅 resent:重发结果透传(ok=false 如实呈现) */
+  /** resent only: the resend result passed through as-is (ok=false is shown honestly) */
   result?: HotReloadSendResult;
 }
 
-/** 只重试失败目标:成功侧跳过、取消停止后续、动作序跟随批次目标序 */
+/** Retry failed targets only: the success side is skipped, cancellation stops the rest, and action order follows the batch target order */
 export async function retryFailedHotReloadTargets(
   summary: HotReloadBatchSummary,
   deps: HotReloadRetryDeps

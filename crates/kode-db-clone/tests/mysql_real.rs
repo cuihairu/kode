@@ -1,13 +1,17 @@
-//! PDC-0601:testcontainers/MySQL 真实集成测试(差异版本组合)。
+//! PDC-0601: testcontainers/MySQL real integration tests (differing version
+//! combinations).
 //!
-//! 用真实 MySQL 容器验证 crate 核心对真实数据库语义的适配:information_schema
-//! 解析、只读导出、事务导入(真实 AUTO_INCREMENT / 一致性快照 / 回滚)端到端。
+//! Uses real MySQL containers to verify the crate core's fit with real database
+//! semantics: information_schema parsing, read-only export, transactional import
+//! (real AUTO_INCREMENT / consistent snapshot / rollback) end to end.
 //!
-//! 门控:`#[ignore]` + 环境变量 `KODE_DB_CLONE_MYSQL=1`(需 Docker)。默认
-//! `cargo test` 不运行(dev-deps 仅在显式启用时生效);运行方式:
+//! Gating: `#[ignore]` + environment variable `KODE_DB_CLONE_MYSQL=1` (needs
+//! Docker). A default `cargo test` does not run them (dev-deps only take effect
+//! when explicitly enabled); to run:
 //! `KODE_DB_CLONE_MYSQL=1 cargo test -p kode-db-clone --test mysql_real -- --ignored --nocapture`
 //!
-//! 库 crate 自身保持无 MySQL 驱动依赖(驱动仅此测试的 dev-dependency)。
+//! The library crate itself stays free of MySQL driver dependencies (the driver is
+//! only this test's dev-dependency).
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -37,9 +41,10 @@ use testcontainers::runners::SyncRunner;
 use testcontainers::{Image, ImageExt};
 
 // ---------------------------------------------------------------------------
-// KBEngine 派生 DDL(source-evidence §3/§4):Avatar 主表 + ARRAY 子表 + 组件子表。
-// 列型/主键/索引按 ETM.cpp 事实;列序与 golden_apply avatar_derived 对齐,
-// 使物理↔派生比较走同一判定。
+// KBEngine-derived DDL (source-evidence §3/§4): Avatar main table + ARRAY child
+// table + component child table. Column types / primary keys / indexes per the
+// ETM.cpp facts; column order aligned with golden_apply's avatar_derived so that
+// the physical ↔ derived comparison takes the same decision path.
 // ---------------------------------------------------------------------------
 const DDL: [&str; 3] = [
     "CREATE TABLE IF NOT EXISTS tbl_Avatar (\
@@ -65,10 +70,12 @@ const DDL: [&str; 3] = [
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];
 
-/// 自实现 MySQL 镜像:testcontainers-modules 的 mysql 模块等待条件含
-/// "X Plugin ready"(5.7 默认不装 X Plugin)且 mysqld 行带 /usr/sbin/ 前缀
-/// (5.7 日志无前缀),两者对 5.7 永不满足 → StartupTimeout。故只用跨版本
-/// 稳定且两者都出现的子串 "ready for connections"(stderr)作就绪条件。
+/// A self-implemented MySQL image: the mysql module of testcontainers-modules
+/// uses wait conditions containing "X Plugin ready" (5.7 does not ship the X Plugin
+/// by default) and expects the mysqld line to carry a /usr/sbin/ prefix (5.7 logs
+/// carry no prefix); neither is ever satisfied on 5.7 → StartupTimeout. Hence only
+/// the cross-version-stable substring "ready for connections" (stderr), which
+/// both print, is used as the readiness condition.
 #[derive(Debug, Clone)]
 struct MysqlImage {
     tag: String,
@@ -148,8 +155,9 @@ fn temp_dir(tag: &str) -> PathBuf {
     d
 }
 
-/// 把任一 mysql 值无损转成字符串面(与 crate 的字符串协议一致)。
-/// NULL→None;Int/UInt/Float/Double→to_string;Bytes→UTF-8 lossy。
+/// Converts any mysql value losslessly to the string face (consistent with the
+/// crate's string protocol). NULL→None; Int/UInt/Float/Double→to_string;
+/// Bytes→UTF-8 lossy.
 fn cell_string(row: &mysql::Row, i: usize) -> Option<String> {
     use mysql::Value;
     let v: Value = row.get::<Value, usize>(i).unwrap_or(Value::NULL);
@@ -192,7 +200,8 @@ fn to_mysql_typed(params: &[TypedValue]) -> Vec<mysql::Value> {
             TypedValue::Float(x) => mysql::Value::Float(*x),
             TypedValue::Double(x) => mysql::Value::Double(*x),
             TypedValue::Decimal(s) => mysql::Value::Bytes(s.clone().into_bytes()),
-            // Bytes 为十六进制编码,入参须还原原始字节。
+            // Bytes is hex-encoded; the parameter must restore the original
+            // bytes.
             TypedValue::Bytes(hex) => mysql::Value::Bytes(hex_decode(hex).unwrap_or_default()),
             TypedValue::Text(s) => mysql::Value::Bytes(s.clone().into_bytes()),
             TypedValue::DateTime { .. } => mysql::Value::Bytes(b"1970-01-01 00:00:00".to_vec()),
@@ -200,13 +209,16 @@ fn to_mysql_typed(params: &[TypedValue]) -> Vec<mysql::Value> {
         .collect()
 }
 
-/// 共享连接:RowSource/ReadOnlyExecutor 用 `&self` 方法,故须内部可变;
-/// WriteExecutor 用 `&mut self`,RefCell 对两者都兼容。
+/// Shared connection: RowSource/ReadOnlyExecutor use `&self` methods, so interior
+/// mutability is required; WriteExecutor uses `&mut self`; RefCell is compatible
+/// with both.
 type SharedConn = Rc<RefCell<mysql::Conn>>;
 
-/// 带重试的连接:MySQL 容器首启(空 datadir)时初始化阶段会短暂打印
-/// "ready for connections" 但真实 server 尚未监听 TCP;日志行就绪条件不
-/// 可靠,故循环尝试 `Conn::new` 直到成功或 `tries` 次耗尽。
+/// Connect with retry: on a MySQL container's first start (empty datadir) the
+/// initialization phase briefly prints "ready for connections" while the real
+/// server is not yet listening on TCP; a log-line readiness condition is
+/// unreliable, so `Conn::new` is retried in a loop until success or `tries` is
+/// exhausted.
 fn connect_with_retry(
     opts: mysql::Opts,
     tries: usize,
@@ -224,7 +236,7 @@ fn connect_with_retry(
     Err(format!("mysql connect failed after {tries} tries: {last:?}").into())
 }
 
-// 信息源适配(信息_schema 读取):RowSource。
+// Information-source adapter (information_schema reads): RowSource.
 struct MysqlRows {
     conn: SharedConn,
 }
@@ -242,7 +254,7 @@ impl kode_db_clone::information_schema::RowSource for MysqlRows {
     }
 }
 
-// 只读执行器(导出):ReadOnlyExecutor。
+// Read-only executor (export): ReadOnlyExecutor.
 struct MysqlRead {
     conn: SharedConn,
 }
@@ -271,7 +283,8 @@ impl ReadOnlyExecutor for MysqlRead {
     }
 }
 
-// 写执行器(导入):WriteExecutor(真实事务/自增/计数)。
+// Write executor (import): WriteExecutor (real transaction / auto-increment /
+// counts).
 struct MysqlWrite {
     conn: SharedConn,
 }
@@ -310,23 +323,28 @@ impl WriteExecutor for MysqlWrite {
     }
 }
 
-/// 在指定 MySQL 版本镜像上跑完整往返。
+/// Runs the full round trip on the given MySQL version image.
 fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
     let node = MysqlImage { tag: tag.into() }
         .with_startup_timeout(std::time::Duration::from_secs(240))
         .start()?;
     let host = node.get_host()?;
     let port = node.get_host_port_ipv4(3306.tcp())?;
-    // get_host() 常返回 Domain("localhost");rust mysql crate 对 localhost 的
-    // 解析在容器网络下不稳定(手动 127.0.0.1/localhost 皆可,测试内 localhost
-    // 偶发 server disconnected)。故连接统一走显式 127.0.0.1(映射必在回环)。
+    // get_host() often returns Domain("localhost"); the rust mysql crate's
+    // resolution of localhost is unstable under container networking (manual
+    // 127.0.0.1/localhost both work, but localhost inside tests intermittently
+    // hits server disconnected). So connections uniformly go through an explicit
+    // 127.0.0.1 (the mapping is always on loopback).
     let url = format!("mysql://root@127.0.0.1:{port}/test");
-    // 就绪条件 "ready for connections" 在 MySQL 首启初始化(DATADIR 为空)时会被
-    // 临时初始化阶段的 server 打印,此时真实 server 尚未监听 TCP 3306 → 直连会
-    // server disconnected。故用「重试直到真连上」兜住首启窗口,不依赖日志行。
+    // The readiness condition "ready for connections" gets printed during MySQL's
+    // first-start initialization (empty DATADIR) by the temporary initialization
+    // server, at which point the real server is not yet listening on TCP 3306 → a
+    // direct connect hits server disconnected. Hence "retry until really
+    // connected" covers the first-start window, without relying on the log line.
     let opts = mysql::Opts::from_url(&url)?;
     let conn: SharedConn = Rc::new(RefCell::new(connect_with_retry(opts.clone(), 60)?));
-    // 目标连接:独立可写连接,导入回写(生产里导出/导入本就分属不同连接)。
+    // Target connection: a separate writable connection for the import write-back
+    // (in production, export/import naturally use different connections).
     let dst: SharedConn = Rc::new(RefCell::new(connect_with_retry(opts, 60)?));
 
     {
@@ -336,7 +354,7 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // 造数:根 + 2 个 ARRAY 行 + 1 个组件行(真实 AUTO_INCREMENT)。
+    // Seed data: root + 2 ARRAY rows + 1 component row (real AUTO_INCREMENT).
     let root_id: u64 = {
         let mut c = conn.borrow_mut();
         c.exec_drop(
@@ -360,7 +378,7 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
         id
     };
 
-    // 1) 真实 information_schema 解析 → 物理 schema。
+    // 1) Real information_schema parsing → physical schema.
     let derived = avatar_derived();
     let physical = {
         let rows = MysqlRows { conn: conn.clone() };
@@ -369,11 +387,12 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
     let resolved = SchemaResolver::resolve(&derived, &physical)?;
     assert_eq!(resolved.missing.len(), 0, "no derived table may be missing");
 
-    // 2) 只读导出计划。
+    // 2) Read-only export plan.
     let rules = RuleSet::default();
     let plan = ExportPlanner::new(1_000_000).plan(&derived, &resolved, &rules, None)?;
 
-    // 3) 只读导出 → 归档(真实 REPEATABLE READ 只读事务)。
+    // 3) Read-only export → archive (a real REPEATABLE READ read-only
+    // transaction).
     let dir = temp_dir(tag);
     let archive_path = dir.join("avatar.kdp");
     {
@@ -397,7 +416,8 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
     let items_rows = archive.table_rows("tbl_Avatar_items")?;
     assert_eq!(items_rows.len(), 2);
 
-    // 4) 导入计划(目标=同库 local 可写;空唯一键快照)。
+    // 4) Import plan (target = the same database, local, writable; empty unique
+    // key snapshot).
     let target = TargetProfile {
         environment: TargetEnvironment::Local,
         db_interface: "mysql".into(),
@@ -418,7 +438,8 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
         &ImportOptions::default(),
     )?;
 
-    // 5) 单事务导入(真实自增回填 + COMMIT + 逐表 COUNT 校验)。
+    // 5) Single-transaction import (real auto-increment backfill + COMMIT +
+    // per-table COUNT verification).
     let mut store = MemoryRunStore::default();
     let outcome = {
         let mut w = MysqlWrite { conn: dst.clone() };
@@ -444,7 +465,8 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
     assert!(run.verify.passed, "COUNT verify must pass");
     assert_eq!(run.new_root_id, Some(root_id + 1), "next AUTO_INCREMENT");
 
-    // 6) 目标已含原 + 新各一份(目标侧只读查询仍可走写连接)。
+    // 6) The target now holds both the original and the new copy (target-side
+    // read-only queries may still go through the write connection).
     let count: u64 = dst
         .borrow_mut()
         .query_first("SELECT COUNT(*) FROM tbl_Avatar")?
@@ -455,7 +477,7 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
         .query_first("SELECT COUNT(*) FROM tbl_Avatar_items")?
         .unwrap();
     assert_eq!(items, 4, "original 2 + imported 2");
-    // 导入的 items 都指向新根(新 parentID)。
+    // The imported items all point at the new root (new parentID).
     let new_root: u64 = root_id + 1;
     let linked: u64 = dst
         .borrow_mut()
@@ -469,7 +491,7 @@ fn roundtrip_on(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// 真实 MySQL 8.0 全往返。
+/// Real MySQL 8.0 full round trip.
 #[test]
 #[ignore = "requires docker; set KODE_DB_CLONE_MYSQL=1 to run"]
 fn mysql_real_roundtrip_mysql80() {
@@ -480,7 +502,7 @@ fn mysql_real_roundtrip_mysql80() {
     roundtrip_on("8.0").expect("mysql 8.0 round-trip");
 }
 
-/// 真实 MySQL 5.7 全往返(差异版本组合)。
+/// Real MySQL 5.7 full round trip (differing version combination).
 #[test]
 #[ignore = "requires docker; set KODE_DB_CLONE_MYSQL=1 to run"]
 fn mysql_real_roundtrip_mysql57() {

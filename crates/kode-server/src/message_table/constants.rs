@@ -1,11 +1,11 @@
-//! MessageTable 编号与域规则常量。
+//! MessageTable numbering and domain-rule constants.
 
 // ---------------------------------------------------------------------------
-// 常量(与 TS messageTable.ts 逐条一致;来源见其模块头注)
+// Constants (item-for-item identical with TS messageTable.ts; see its module header note for sources)
 // ---------------------------------------------------------------------------
 
-/// g_entityFlagMapping 12 项(entitydef.cpp L161-174),值 = EntityDataFlags 位
-/// (common.h L19-30)。查找前 toupper,大小写不敏感。
+/// g_entityFlagMapping, 12 entries (entitydef.cpp L161-174), values = EntityDataFlags bits
+/// (common.h L19-30). toupper before lookup, case-insensitive.
 pub(super) const PROPERTY_FLAG_BITS: &[(&str, i64)] = &[
     ("CELL", 0x01),
     ("CELL_AND_CLIENT", 0x08),
@@ -21,12 +21,12 @@ pub(super) const PROPERTY_FLAG_BITS: &[(&str, i64)] = &[
     ("OWN_CLIENT", 0x10),
 ];
 
-/// common.h L141-147:三域位集。
+/// common.h L141-147: three-domain bit sets.
 pub(super) const ENTITY_BASE_DATA_FLAGS: i64 = 0x40 | 0x20;
 pub(super) const ENTITY_CELL_DATA_FLAGS: i64 = 0x01 | 0x02 | 0x04 | 0x08 | 0x80 | 0x10;
 pub(super) const ENTITY_CLIENT_DATA_FLAGS: i64 = 0x20 | 0x04 | 0x08 | 0x80 | 0x10;
 
-/// 基元类型 utype 表:DataTypes::initialize 顺序(datatypes.cpp L54-79)。
+/// Primitive-type utype table: DataTypes::initialize order (datatypes.cpp L54-79).
 pub(super) const PRIMITIVE_TYPE_UTYPES: &[(&str, i64)] = &[
     ("UINT8", 1),
     ("UINT16", 2),
@@ -51,7 +51,7 @@ pub(super) const PRIMITIVE_TYPE_UTYPES: &[(&str, i64)] = &[
     ("VECTOR4", 21),
 ];
 
-/// 引擎保留属性名(common.h L125-155 ENTITY_LIMITED_PROPERTYS,静态表部分)。
+/// Engine-reserved property names (common.h L125-155 ENTITY_LIMITED_PROPERTYS, static-table part).
 pub(super) const LIMITED_PROPERTY_NAMES: &[&str] = &[
     "id",
     "position",
@@ -83,16 +83,16 @@ pub(super) const LIMITED_PROPERTY_NAMES: &[&str] = &[
     "interface",
 ];
 
-/// ENTITY_METHOD_UID 上界:uint16,超界报溢出。
+/// ENTITY_METHOD_UID upper bound: uint16; beyond it reports overflow.
 pub(super) const METHOD_UTYPE_MAX: i64 = 65535;
-/// aliasID:属性从 4 起(1-3 保留),超 255 回退 -1。
+/// aliasID: properties start at 4 (1-3 reserved); beyond 255 falls back to -1.
 pub(super) const ALIAS_ID_PROPERTY_BASE: i64 = 4;
 pub(super) const ALIAS_ID_MAX: i64 = 255;
 
-/// 方法段装载序(引擎 loadDefInfo 顺序)。
+/// Method-section load order (engine loadDefInfo order).
 pub(super) const METHOD_LOAD_ORDER: &[&str] = &["CellMethods", "BaseMethods", "ClientMethods"];
 
-/// 三域位集:域命中的属性表才会走 addPropertyDescription。
+/// Three-domain bit sets: only property tables whose domain bits hit go through addPropertyDescription.
 pub(super) fn domain_bits_of(domain: &str) -> i64 {
     match domain {
         "cell" => ENTITY_CELL_DATA_FLAGS,
@@ -101,7 +101,7 @@ pub(super) fn domain_bits_of(domain: &str) -> i64 {
     }
 }
 
-/// 组件类型号(common.h L78-82),addPropertyDescription 冲突报错按域打印。
+/// Component type numbers (common.h L78-82); addPropertyDescription conflict errors print per domain.
 pub(super) fn domain_component_type(domain: &str) -> i64 {
     match domain {
         "cell" => 5,
@@ -110,7 +110,7 @@ pub(super) fn domain_component_type(domain: &str) -> i64 {
     }
 }
 
-/// 方法段名 → 引擎段简称(冲突文案用)。
+/// Method-section name -> engine section abbreviation (used in conflict messages).
 pub(super) fn section_name(section: &str) -> &'static str {
     match section {
         "CellMethods" => "Cell",
@@ -119,7 +119,7 @@ pub(super) fn section_name(section: &str) -> &'static str {
     }
 }
 
-/// 来源标签:own 原样;接口/父类带后缀(与 TS originLabel 同)。
+/// Origin label: own as-is; interfaces/parents get a suffix (same as TS originLabel).
 pub(super) fn origin_label(module_name: &str, origin_kind: &str) -> String {
     match origin_kind {
         "interface" => format!("{module_name}(接口)"),
@@ -128,7 +128,7 @@ pub(super) fn origin_label(module_name: &str, origin_kind: &str) -> String {
     }
 }
 
-/// TS normalizeSourceKey:反斜杠归斜杠 + 小写。
+/// TS normalizeSourceKey: backslashes normalized to slashes + lowercase.
 pub(super) fn normalize_source_key(file_path: &str) -> String {
     file_path.replace('\\', "/").to_ascii_lowercase()
 }

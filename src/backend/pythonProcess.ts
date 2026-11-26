@@ -38,10 +38,11 @@ export function processStubRoot(stubRoot: string, process: PythonProcess): strin
 }
 
 /**
- * 共享数据字典的引擎真域(KSEM-DATA-04/SEM-045):`KBEngine.baseAppData`
- * 仅 baseapp 进程注册(baseapp.cpp:461)、`cellAppData` 仅 cellapp 进程注册
- * (cellapp.cpp:200);`globalData` 全进程注册(entity_app.h:419)不收窄。
- * 返回 null = 全进程可见,不做进程域过滤。
+ * The engine's true domain of the shared data dictionaries (KSEM-DATA-04/SEM-045):
+ * `KBEngine.baseAppData` is registered by the baseapp process only (baseapp.cpp:461),
+ * `cellAppData` by the cellapp process only (cellapp.cpp:200); `globalData` is
+ * registered by every process (entity_app.h:419) and is not narrowed.
+ * Returning null = visible to all processes, no process-domain filtering.
  */
 export function dataDictProcessDomain(dict: string): ReadonlySet<PythonProcess> | null {
   if (dict === 'baseAppData') {
@@ -54,9 +55,11 @@ export function dataDictProcessDomain(dict: string): ReadonlySet<PythonProcess> 
 }
 
 /**
- * 单文件是否在字典进程域内:globalData 恒真;域化字典的文件角色不在域内
- * = 运行期无此模块属性(false);scripts/ 目录之外角色不可知 = 不声称出域
- * (true,与「不猜」口径一致)。
+ * Whether a single file sits inside the dictionary's process domain: globalData is
+ * always true; for a domain-bound dictionary a file role outside the domain
+ * = no such module attribute at runtime (false); outside the scripts/ directory the
+ * role is unknowable = do not claim it is out of domain (true, matching the
+ * "do not guess" stance).
  */
 export function dataDictSiteInDomain(file: string, dict: string): boolean {
   const domain = dataDictProcessDomain(dict);

@@ -1,15 +1,18 @@
-//! 方法级调用图 + KBEngine 特化边(C-20 交付①)。
+//! Method-level call graph + KBEngine-specialized edges (C-20 delivery item 1).
 //!
-//! 从 AST 提取每个函数/方法体的调用边,并按 KBEngine 通道语义特化:
-//! - `self.allClients.<client-method>(...)` → [`EdgeKind::KbeBroadcast`];
-//! - `self.baseClients.<method>(...)` → [`EdgeKind::KbeBaseClients`];
-//! - `self.cell.<method>(...)`(base→cell)/ `self.base.<method>(...)`(cell→base)/
-//!   `self.client.<method>(...)`(cell→client)→ [`EdgeKind::KbeCrossProcess`]
-//!   (进程归属方向由 `receiver` 字段区分,联动 C-17 进程语义);
-//! - `KBEngine.<api>(...)` / `kbengine.<api>(...)` → [`EdgeKind::KbeApi`]。
+//! Extracts the call edges of every function / method body from the AST, specialized by KBEngine
+//! channel semantics:
+//! - `self.allClients.<client-method>(...)` -> [`EdgeKind::KbeBroadcast`];
+//! - `self.baseClients.<method>(...)` -> [`EdgeKind::KbeBaseClients`];
+//! - `self.cell.<method>(...)` (base->cell) / `self.base.<method>(...)` (cell->base) /
+//!   `self.client.<method>(...)` (cell->client) -> [`EdgeKind::KbeCrossProcess`]
+//!   (the process-ownership direction is carried by the `receiver` field, interplaying with C-17
+//!   process semantics);
+//! - `KBEngine.<api>(...)` / `kbengine.<api>(...)` -> [`EdgeKind::KbeApi`].
 //!
-//! 分类是启发式的(动态语言无静态类型):`foo(...)` 在本文件有模块级函数或导入
-//! 绑定 → [`EdgeKind::Local`];其余裸名 → [`EdgeKind::Unknown`]。
+//! Classification is heuristic (a dynamic language has no static types): `foo(...)` with a
+//! module-level function or import binding in this file -> [`EdgeKind::Local`]; remaining bare
+//! names -> [`EdgeKind::Unknown`].
 
 use std::collections::BTreeSet;
 
@@ -19,19 +22,19 @@ use ruff_text_size::Ranged;
 use crate::model::{AstSymbols, CallEdge, EdgeKind};
 use crate::parse::ParsedAst;
 
-/// 调用上下文(由 AST 符号表派生,用于本地/导入判定)。
+/// Call context (derived from the AST symbol tables, used for local / import determination).
 #[derive(Debug, Clone, Default)]
 pub struct CallContext {
-    /// 本文件模块级函数名。
+    /// Names of the module-level functions of this file.
     pub module_functions: BTreeSet<String>,
-    /// 本文件导入绑定名(`from x import y` 的 y、`import x` 的 x/asname)。
+    /// Import binding names of this file (`y` of `from x import y`, `x` / the asname of `import x`).
     pub imported_bindings: BTreeSet<String>,
-    /// 本文件导入的模块绑定名(`import os` 的 os、`import numpy as np` 的 np)。
+    /// Module binding names imported by this file (`os` of `import os`, `np` of `import numpy as np`).
     pub module_bindings: BTreeSet<String>,
 }
 
 impl CallContext {
-    /// 从 AST 符号表构建(单文件内可解析的本地目标)。
+    /// Build from the AST symbol tables (local targets resolvable within a single file).
     pub fn from_symbols(symbols: &AstSymbols) -> CallContext {
         let mut ctx = CallContext::default();
         for f in &symbols.functions {
@@ -48,7 +51,8 @@ impl CallContext {
     }
 }
 
-/// 提取单文件全部调用边(类方法 + 模块级函数 + 模块顶层语句)。
+/// Extract all call edges of a single file (class methods + module-level functions + module
+/// top-level statements).
 pub fn extract_call_graph(ast: &ParsedAst, symbols: &AstSymbols) -> Vec<CallEdge> {
     let ctx = CallContext::from_symbols(symbols);
     let mut out = Vec::new();
@@ -86,13 +90,15 @@ pub fn extract_call_graph(ast: &ParsedAst, symbols: &AstSymbols) -> Vec<CallEdge
     out
 }
 
-/// 调用边 + 调用点列(0-based UTF-16;符号表 per-method `calls` 用)。
+/// Call edge + the call-site column (0-based UTF-16; used by the symbol tables' per-method
+/// `calls`).
 ///
-/// 与 [`extract_call_graph`] 同一条走查(边集逐条相等,顺序一致),仅额外带出
-/// 调用点列号——调用图边模型([`CallEdge`])保持只有行号,不为此改动 golden 面。
+/// Same walk as [`extract_call_graph`] (the edge sets are equal item by item, in the same order),
+/// just additionally emitting the call-site column -- the call-graph edge model ([`CallEdge`])
+/// keeps line numbers only, and the golden face is not changed for this.
 pub type DetailedCallEdge = (CallEdge, usize);
 
-/// [`extract_call_graph`] 的带列变体(走查复用,产出逐条对齐)。
+/// The column-carrying variant of [`extract_call_graph`] (walk reused, output aligned item by item).
 pub fn extract_call_graph_detailed(ast: &ParsedAst, symbols: &AstSymbols) -> Vec<DetailedCallEdge> {
     let ctx = CallContext::from_symbols(symbols);
     let mut out = Vec::new();
@@ -135,11 +141,12 @@ pub fn extract_call_graph_detailed(ast: &ParsedAst, symbols: &AstSymbols) -> Vec
     out
 }
 
-/// 模块顶层调用边的 caller 占位名。
+/// Caller placeholder name for module top-level call edges.
 pub const MODULE_CALLER: &str = "<module>";
 
-/// lambda 体内调用边的 caller 占位名(KR-AUD-21:与嵌套 def「自身为 caller」
-/// 口径统一;多个 lambda 同名,调用点由 caller_line 区分)。
+/// Caller placeholder name for call edges inside a lambda body (KR-AUD-21: unified with the nested
+/// def "is its own caller" semantics; several lambdas share this name, so call sites are told apart
+/// by caller_line).
 pub const LAMBDA_CALLER: &str = "<lambda>";
 
 fn walk_body(
@@ -243,21 +250,24 @@ fn walk_stmt(
         Stmt::Match(m) => {
             walk_expr(ast, ctx, &m.subject, caller_class, caller, out);
             for case in &m.cases {
-                // KODE-AUD-008:pattern guard(`case x if foo():`)内调用此前漏走。
+                // KODE-AUD-008: calls inside a pattern guard (`case x if foo():`) were previously not walked.
                 if let Some(g) = &case.guard {
                     walk_expr(ast, ctx, g, caller_class, caller, out);
                 }
                 walk_body(ast, ctx, &case.body, caller_class, caller, out);
             }
         }
-        // KODE-AUD-008:嵌套 def/class 此前整体跳过(体内调用全漏)。现作为独立
-        // 调用方记录:嵌套函数以自身名为 caller(外层函数调用仍由外层走查记录,
-        // 不重叠);嵌套类的方法以嵌套类名为 caller_class。
+        // KODE-AUD-008: nested def/class was previously skipped as a whole (calls inside were all missed).
+        // It is now recorded as an independent caller: a nested function uses its own name as
+        // caller (the outer function call is still recorded by the outer walk, so there is no
+        // overlap); a nested class's methods use the nested class name as caller_class.
         Stmt::FunctionDef(f) => {
             let nested = f.name.as_str().to_string();
-            // KR-AUD-20(KODE-AUD-008 残留面):嵌套 def 不是外层类的方法——
-            // caller_class 置 None,不再继承外层产伪 (Foo, inner) 类方法边。
-            // 嵌套类的方法仍以嵌套类名为 caller_class(下方 ClassDef 分支)。
+            // KR-AUD-20 (residual of KODE-AUD-008): a nested def is not a method of the outer
+            // class -- caller_class is set to None, so it no longer inherits the outer and
+            // produces a fake (Foo, inner) class-method edge.
+            // A nested class's methods still use the nested class name as caller_class (the
+            // ClassDef branch below).
             walk_body(ast, ctx, &f.body, None, &nested, out);
         }
         Stmt::ClassDef(cls) => {
@@ -293,7 +303,7 @@ fn walk_expr(
     match expr {
         Call(c) => {
             record_call(ast, ctx, c, caller_class, caller, out);
-            // 嵌套调用(callee 自身的子表达式、实参、关键字值)
+            // Nested calls (sub-expressions of the callee itself, arguments, keyword values).
             walk_expr(ast, ctx, &c.func, caller_class, caller, out);
             for a in &c.arguments.args {
                 walk_expr(ast, ctx, a, caller_class, caller, out);
@@ -318,9 +328,9 @@ fn walk_expr(
             walk_expr(ast, ctx, &b.right, caller_class, caller, out);
         }
         UnaryOp(u) => walk_expr(ast, ctx, &u.operand, caller_class, caller, out),
-        // KR-AUD-21:lambda 体内调用以自身 "<lambda>" 为 caller、caller_class
-        // =None——与嵌套 def(KODE-AUD-008)「独立调用方」口径统一,不再归
-        // 外层 caller。
+        // KR-AUD-21: calls inside a lambda body use "<lambda>" itself as the caller and
+        // caller_class = None -- unified with the nested def (KODE-AUD-008) "independent caller"
+        // semantics, so they are no longer attributed to the outer caller.
         Lambda(l) => walk_expr(ast, ctx, &l.body, None, LAMBDA_CALLER, out),
         If(e) => {
             walk_expr(ast, ctx, &e.test, caller_class, caller, out);
@@ -413,16 +423,16 @@ fn walk_expr(
                 walk_expr(ast, ctx, st, caller_class, caller, out);
             }
         }
-        // f-string 内的嵌套调用在调用图中可忽略(MVP;表达式求值副作用不在
-        // 方法级调用图范围)。
+        // Nested calls inside an f-string can be ignored in the call graph (MVP; expression-evaluation
+        // side effects are out of scope for a method-level call graph).
         FString(_) => {}
-        // 字面量/名字:无子调用(名字作为被调方在 Call 分支已记录)
+        // Literals / names: no sub-calls (names as callees are already recorded in the Call branch)
         Name(_) | StringLiteral(_) | BytesLiteral(_) | NumberLiteral(_) | BooleanLiteral(_)
         | NoneLiteral(_) | EllipsisLiteral(_) | TString(_) | IpyEscapeCommand(_) => {}
     }
 }
 
-/// 记录一条调用边:解析被调目标链并分类。
+/// Record one call edge: resolve the callee target chain and classify it.
 fn record_call(
     ast: &ParsedAst,
     ctx: &CallContext,
@@ -459,7 +469,7 @@ fn record_call(
     );
 }
 
-/// 解析 dotted attribute 链(`self.cell.xxx` → `["self","cell","xxx"]`)。
+/// Resolve the dotted attribute chain (`self.cell.xxx` -> `["self","cell","xxx"]`).
 fn dotted_chain(expr: &Expr) -> Option<Vec<String>> {
     match expr {
         Expr::Name(n) => Some(vec![n.id.as_str().to_string()]),
@@ -473,7 +483,7 @@ fn dotted_chain(expr: &Expr) -> Option<Vec<String>> {
     }
 }
 
-/// 按 KBEngine 通道语义分类。
+/// Classify according to KBEngine channel semantics.
 fn classify(chain: &Option<Vec<String>>, callee: &str, ctx: &CallContext) -> EdgeKind {
     let Some(v) = chain else {
         return EdgeKind::Unknown;
@@ -483,7 +493,7 @@ fn classify(chain: &Option<Vec<String>>, callee: &str, ctx: &CallContext) -> Edg
     }
     match v[0].as_str() {
         "self" => match v.len() {
-            1 => EdgeKind::SelfMethod, // `self(...)`(罕见;按自身调用记)
+            1 => EdgeKind::SelfMethod, // `self(...)` (rare; recorded as a self call)
             2 => EdgeKind::SelfMethod,
             _ => match v[1].as_str() {
                 "allClients" => EdgeKind::KbeBroadcast,
@@ -501,8 +511,9 @@ fn classify(chain: &Option<Vec<String>>, callee: &str, ctx: &CallContext) -> Edg
                     EdgeKind::Unknown
                 }
             } else {
-                // 导入模块调用(`mod.func`)与对象方法调用(`obj.method`)统一按
-                // Method 记(动态语言无类型信息,细分类属过程间分析,不在 MVP)
+                // Imported-module calls (`mod.func`) and object method calls (`obj.method`) are both
+                // recorded as Method (a dynamic language has no type information; a finer split is
+                // inter-procedural analysis, out of MVP scope).
                 EdgeKind::Method
             }
         }

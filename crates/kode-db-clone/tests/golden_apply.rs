@@ -1,15 +1,23 @@
-//! Golden 验收(CLONE-P4 门,plan §6.2 Apply/Verify + §6.4):代表性 Avatar
-//! 虚拟 Fixture → 导入计划 → **单事务执行 + 主键回填 + 提交后核对 + 受控清理**。
+//! Golden acceptance (CLONE-P4 gate, plan §6.2 Apply/Verify + §6.4): a representative
+//! Avatar virtual fixture -> import plan -> **single-transaction execution + primary
+//! key backfill + post-commit verification + controlled cleanup**.
 //!
-//! 执行面是虚拟数据库(WriteExecutor 实现:staging/committed 两级,rollback 丢
-//! staging,commit 才落 committed,自增主键按 MySQL 语义返回);真实 MySQL 连接
-//! 不进本 crate(PDC-0003 环境同因)。断言面:
-//! - 事务形状:begin ×1 / commit ×1 / 失败路径 rollback,提交前零可见数据;
-//! - 占位回填:子行 parentID 绑定值 = 根行执行返回的真实新主键(PDC-0402);
-//! - 失败注入任意行 → 全量回滚,重试全新 run,不静默重复(PDC-0405);
-//! - 重复指纹默认拒绝并回显既有映射,「另建副本」显式放行(§6.4);
-//! - Verify 逐表计数核对 + 清理计划逆拓扑序只生成不执行(PDC-0406/0408);
-//! - 引擎加载验证记录如实 attempted=false(PDC-0407,环境属 P5 装配)。
+//! The execution face is a virtual database (a WriteExecutor implementation: staging/
+//! committed two levels, rollback drops staging, only commit lands in committed,
+//! auto-increment primary keys returned per MySQL semantics); real MySQL connections
+//! do not enter this crate (PDC-0003, same-environment reason). Assertions:
+//! - transaction shape: begin x1 / commit x1 / rollback on failure, zero visible data
+//!   before commit;
+//! - placeholder backfill: child row parentID bound value = the real new primary key
+//!   returned by the root row execution (PDC-0402);
+//! - failure injected at any row -> full rollback, retry starts a fresh run, no silent
+//!   duplication (PDC-0405);
+//! - duplicate fingerprint rejected by default and echoes the existing mapping;
+//!   "create another copy" is an explicit opt-in (§6.4);
+//! - Verify per-table count checks + cleanup plan in reverse topological order,
+//!   generated but never executed (PDC-0406/0408);
+//! - engine load verification honestly recorded attempted=false (PDC-0407,
+//!   environment belongs to P5 wiring).
 
 use std::collections::BTreeMap;
 
@@ -21,7 +29,7 @@ use kode_db_clone::{
     UniqueKey, UniquePolicy, VerifyState, VirtualSchema, WriteExecutor,
 };
 
-// ---- 与 golden_import.rs 同源的 Avatar 三级代表结构(集成测试独立二进制) ----
+// ---- Avatar three-level representative structure shared with golden_import.rs (integration tests are separate binaries) ----
 
 fn field(name: &str, type_label: &str) -> DerivedField {
     DerivedField {
@@ -202,7 +210,8 @@ fn write_archive(dir: &std::path::Path, name: &str, root_name: &str) -> std::pat
 }
 
 fn occupied_hero_snapshot() -> TargetSnapshot {
-    // sm_name 唯一键且 hero 已占用 → 计划期触发本地重建(hero_imported1)。
+    // sm_name is a unique key and "hero" is already occupied → planning triggers a
+    // local rebuild (hero_imported1).
     let mut snapshot = TargetSnapshot::default();
     snapshot.unique_keys.push(UniqueKey {
         table: "tbl_Avatar".into(),
@@ -227,7 +236,8 @@ fn plan_for(archive: &Archive) -> kode_db_clone::ImportPlan {
     .unwrap()
 }
 
-// ---- 虚拟数据库(staging/committed 两级 + MySQL 自增语义) ----
+// ---- Virtual database (staging/committed two levels + MySQL auto-increment
+// semantics) ----
 
 #[derive(Default)]
 struct VirtualDb {
@@ -238,11 +248,13 @@ struct VirtualDb {
     begins: usize,
     commits: usize,
     rollbacks: usize,
-    /// 命中即模拟约束失败(唯一键冲突)的 SQL 子串。
+    /// SQL substring that, when hit, simulates a constraint failure (unique key
+    /// conflict).
     fail_needle: Option<String>,
-    /// 核对期少报的行数(验证失败注入面)。
+    /// Row count under-reported during verification (verification-failure
+    /// injection face).
     undercount_by: u64,
-    /// 核对期计数查询异常注入面(KODE-FULL-009)。
+    /// Verification-phase count-query error injection face (KODE-FULL-009).
     verify_error: Option<String>,
 }
 
@@ -263,12 +275,12 @@ impl VirtualDb {
     }
 }
 
-/// 从 "INSERT INTO <t> (…"/"DELETE FROM <t> …"/"SELECT COUNT(*) FROM <t> WHERE …"
-/// 提取表名。
+/// Extracts the table name from "INSERT INTO <t> (…"/"DELETE FROM <t> …"/
+/// "SELECT COUNT(*) FROM <t> WHERE …".
 fn table_of(sql: &str) -> &str {
     let tokens: Vec<&str> = sql.split_whitespace().collect();
     match tokens.first() {
-        // INSERT/DELETE 的表名在第 3 词,SELECT COUNT 的在第 4 词。
+        // INSERT/DELETE table name is the 3rd word; SELECT COUNT's is the 4th.
         Some(&"SELECT") => tokens.get(3).copied().unwrap_or(""),
         _ => tokens.get(2).copied().unwrap_or(""),
     }
@@ -295,7 +307,8 @@ impl WriteExecutor for VirtualDb {
         }
         let new_id = self.next_auto_id;
         self.next_auto_id += 1;
-        // MySQL 语义:绑 NULL 的自增主键由库分配,回填进落库行。
+        // MySQL semantics: an auto-increment primary key bound as NULL is allocated
+        // by the database and backfilled into the stored row.
         let mut stored = params.to_vec();
         if stored.first() == Some(&TypedValue::Null) {
             stored[0] = TypedValue::BigUInt(new_id);
@@ -378,7 +391,8 @@ fn golden_apply_single_transaction_with_pk_backfill_and_verify() {
         ApplyOutcome::DuplicateRejected(_) => panic!("first import must apply"),
     };
 
-    // ---- 事务形状:一开一提零回滚;执行序父先子后 ----
+    // ---- Transaction shape: one begin, one commit, zero rollbacks; execution
+    // order parents before children ----
     assert_eq!(db.begins, 1);
     assert_eq!(db.commits, 1);
     assert_eq!(db.rollbacks, 0);
@@ -393,7 +407,8 @@ fn golden_apply_single_transaction_with_pk_backfill_and_verify() {
         ]
     );
 
-    // ---- 落库值:根行 = 新主键 1000 + autoLoad 禁用 0 + 重建名 hero_imported1 ----
+    // ---- Stored values: root row = new primary key 1000 + autoLoad disabled 0 +
+    // rebuilt name hero_imported1 ----
     assert_eq!(
         db.committed.get("tbl_Avatar"),
         Some(&vec![vec![
@@ -402,7 +417,8 @@ fn golden_apply_single_transaction_with_pk_backfill_and_verify() {
             TypedValue::Text("hero_imported1".into()),
         ]])
     );
-    // 子行 parentID 绑定根行真实新主键(占位回填,PDC-0402)。
+    // Child rows' parentID binds the root row's real new primary key (placeholder
+    // backfill, PDC-0402).
     let items = db.committed.get("tbl_Avatar_items").unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(items[0][1], TypedValue::BigUInt(1000));
@@ -410,7 +426,7 @@ fn golden_apply_single_transaction_with_pk_backfill_and_verify() {
     let gold = db.committed.get("tbl_Avatar_gold").unwrap();
     assert_eq!(gold[0][1], TypedValue::BigUInt(1000));
 
-    // ---- Run 审计:计数/回填映射/根句柄/指纹 ----
+    // ---- Run audit: counts / backfill mapping / root handle / fingerprint ----
     assert_eq!(run.run_id, 1);
     assert_eq!(run.mode, ImportMode::AllocateNewIds);
     assert_eq!(
@@ -432,14 +448,15 @@ fn golden_apply_single_transaction_with_pk_backfill_and_verify() {
     );
     assert_eq!(store.runs().len(), 1);
 
-    // ---- Verify:逐表 found == expected,全过 ----
+    // ---- Verify: per table found == expected, all pass ----
     assert!(run.verify.passed);
     assert_eq!(run.verify.checks.len(), 3);
     for check in &run.verify.checks {
         assert!(check.ok, "{:?} not ok", check);
     }
 
-    // ---- 清理计划:逆拓扑序(子先父后),只生成不执行 ----
+    // ---- Cleanup plan: reverse topological order (children before parents),
+    // generated but never executed ----
     let tables: Vec<&str> = run.cleanup.steps.iter().map(|s| table_of(&s.sql)).collect();
     assert_eq!(
         tables,
@@ -455,10 +472,10 @@ fn golden_apply_single_transaction_with_pk_backfill_and_verify() {
         .preconditions
         .iter()
         .any(|p| p.contains("not currently loaded by a local KBEngine server")));
-    // 执行面从未出现 DELETE(永不自动清理)。
+    // The execution face never sees a DELETE (cleanup is never automatic).
     assert!(!db.write_log.iter().any(|s| s.contains("DELETE")));
 
-    // ---- 账号绑定/加载验证的诚实面 ----
+    // ---- Account binding / load verification honest face ----
     assert!(!run.binding.applied);
     assert!(run
         .binding
@@ -470,12 +487,13 @@ fn golden_apply_single_transaction_with_pk_backfill_and_verify() {
         .note
         .contains("not attempted: local KBEngine wiring"));
 
-    // ---- Run 可序列化审计 ----
+    // ---- Run serializable audit ----
     let json = serde_json::to_value(&run).unwrap();
     assert!(json.get("resolved_ids").is_some());
     assert!(json.get("cleanup").is_some());
 
-    // ---- 指纹内容敏感:另一份归档(根名不同)指纹不同 ----
+    // ---- Fingerprint is content-sensitive: another archive (different root
+    // name) yields a different fingerprint ----
     let other = write_archive(&dir, "other.kdpclone", "rival");
     let other_archive = Archive::open(&other, None).unwrap();
     assert_ne!(
@@ -491,7 +509,8 @@ fn injected_failure_at_any_row_rolls_back_and_retry_is_clean() {
     let dir = temp_dir("fail");
     let (plan, archive) = fixture(&dir);
 
-    // 第 3 条(第二行 items)注入失败:回滚后零提交、零登记。
+    // Inject failure at statement 3 (the second items row): after rollback, zero
+    // commits and zero run records.
     let mut db = VirtualDb::new();
     let mut store = MemoryRunStore::new();
     let control = ApplyControl {
@@ -516,7 +535,8 @@ fn injected_failure_at_any_row_rolls_back_and_retry_is_clean() {
     assert_eq!(db.committed_total(), 0);
     assert!(store.runs().is_empty());
 
-    // 重试(无注入,同执行器):全新事务成功,恰好一套数据,不静默续写。
+    // Retry (no injection, same executor): a fresh transaction succeeds with exactly
+    // one copy of the data, no silent continuation.
     let outcome = ImportApplier
         .apply(
             &plan,
@@ -554,11 +574,13 @@ fn executor_constraint_error_midway_rolls_back() {
             &ApplyControl::default(),
         )
         .unwrap_err();
-    // 唯一键冲突原样上抛(PDC-0403:唯一错误不静默吞)。
+    // The unique key conflict is propagated as-is (PDC-0403: unique errors are
+    // never silently swallowed).
     assert!(matches!(err, CloneError::ImportConflict(_)));
     assert_eq!(db.rollbacks, 1);
     assert_eq!(db.committed_total(), 0);
-    // 根表那条已执行过(随后回滚),子表一条都没到执行面。
+    // The root-table statement did execute (then rolled back); not a single child
+    // statement reached the execution face.
     assert_eq!(db.write_log.len(), 1);
     assert!(store.runs().is_empty());
 
@@ -589,7 +611,8 @@ fn duplicate_fingerprint_rejected_until_explicitly_allowed() {
     assert_eq!(first_run.run_id, 1);
     let writes_after_first = db.write_log.len();
 
-    // 同归档第二次:默认拒绝,回显既有映射(§6.4),一条新语句都不发。
+    // Second run of the same archive: rejected by default, echoing the existing
+    // mapping (§6.4), without sending a single new statement.
     let second = ImportApplier
         .apply(
             &plan,
@@ -610,7 +633,7 @@ fn duplicate_fingerprint_rejected_until_explicitly_allowed() {
     assert_eq!(db.write_log.len(), writes_after_first);
     assert_eq!(db.begins, 1);
 
-    // 显式「另建副本」:放行,第二套数据、run 2。
+    // Explicit "create another copy": allowed, second copy of the data, run 2.
     let third = ImportApplier
         .apply(
             &plan,
@@ -639,8 +662,9 @@ fn duplicate_fingerprint_rejected_until_explicitly_allowed() {
 
 #[test]
 fn apply_of_plan_with_statementless_tables_skips_verify_and_cleanup_for_them() {
-    // 归档只有根行:items/gold 在 order 里但无语句 → Verify 按 0 跳过、
-    // 清理计划对无新键的表也不生成步骤(只对真正导入的表负责)。
+    // The archive has only the root row: items/gold appear in order but have no
+    // statements → Verify skips them at 0, and the cleanup plan generates no steps
+    // for tables without new keys (answerable only for tables actually imported).
     let dir = temp_dir("root-only");
     let path = write_archive_root_only(&dir, "root-only.kdpclone");
     let archive = Archive::open(&path, None).unwrap();
@@ -666,11 +690,11 @@ fn apply_of_plan_with_statementless_tables_skips_verify_and_cleanup_for_them() {
     };
     assert_eq!(run.inserted_per_table.get("tbl_Avatar"), Some(&1));
     assert!(!run.inserted_per_table.contains_key("tbl_Avatar_items"));
-    // Verify:只核对有语句的表。
+    // Verify: only tables with statements are checked.
     assert_eq!(run.verify.checks.len(), 1);
     assert_eq!(run.verify.checks[0].table, "tbl_Avatar");
     assert!(run.verify.passed);
-    // 清理计划:只对有新主键的表生成 DELETE 步骤。
+    // Cleanup plan: DELETE steps generated only for tables with new primary keys.
     assert_eq!(run.cleanup.steps.len(), 1);
     assert!(run.cleanup.steps[0].sql.contains("tbl_Avatar"));
     assert_eq!(db.committed_total(), 1);
@@ -705,8 +729,9 @@ fn write_archive_root_only(dir: &std::path::Path, name: &str) -> std::path::Path
 
 #[test]
 fn apply_records_declared_account_binding_without_credential_writes() {
-    // 声明了账号绑定规则:Apply 只登记事实(declaration/applied=false),
-    // 绝不写凭据或账号表(PDC-0306)。
+    // An account binding rule is declared: Apply only records the fact
+    // (declaration / applied=false), never writing credentials or account tables
+    // (PDC-0306).
     let dir = temp_dir("binding");
     let (mut plan, archive) = fixture(&dir);
     plan.account_binding = kode_db_clone::AccountBindingPlan {
@@ -737,7 +762,8 @@ fn apply_records_declared_account_binding_without_credential_writes() {
     );
     assert!(!run.binding.applied);
     assert!(run.binding.note.contains("recorded"));
-    // 绑定不产生任何额外写语句:写日志只含 4 条 INSERT。
+    // Binding produces no extra write statements: the write log holds only the 4
+    // INSERTs.
     assert_eq!(db.write_log.len(), 4);
     assert!(db
         .write_log
@@ -748,14 +774,17 @@ fn apply_records_declared_account_binding_without_credential_writes() {
 
 #[test]
 fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
-    // 提交后核对失败:如实报 DriftMismatch;数据已原子提交,run 照常落账
-    // (重复导入闸 :249 靠指纹识别同一导入重试——核对失败也记录,否则
-    // retry 后数据重复而闸不认;强制重导走 allow_duplicate 面)。
+    // Post-commit verification fails: DriftMismatch reported honestly; the data is
+    // already atomically committed and the run is recorded as usual (the duplicate
+    // import gate :249 identifies retries of the same import by fingerprint —
+    // verification failures are recorded too, otherwise a retry would duplicate the
+    // data while the gate does not recognize it; forced re-import goes through the
+    // allow_duplicate face).
     let dir = temp_dir("undercount");
     let (plan, archive) = fixture(&dir);
 
     let mut db = VirtualDb::new();
-    db.undercount_by = 1; // 核对期少报一行 → found != expected
+    db.undercount_by = 1; // verification under-reports one row → found != expected
     let mut store = MemoryRunStore::new();
     let err = ImportApplier
         .apply(
@@ -771,14 +800,16 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
         matches!(err, CloneError::DriftMismatch(ref m) if m.contains("post-commit verification failed")),
         "{err:?}"
     );
-    // 数据已提交(原子完整,不回滚已提交事务),run 进账供重试闸识别。
+    // The data is committed (atomically complete, committed transactions are not
+    // rolled back); the run is recorded so the retry gate can identify it.
     assert_eq!(db.committed_total(), 4);
     assert_eq!(db.begins, 1);
     assert_eq!(db.commits, 1);
     let fingerprint = archive_fingerprint(&archive).unwrap();
     assert!(store.find_by_fingerprint(&fingerprint).is_some());
 
-    // 同导入重试(未开 allow_duplicate)→ 重复导入闸现拒,不再二进库。
+    // Retrying the same import (allow_duplicate off) → the duplicate import gate
+    // rejects it now; the database is not written a second time.
     match ImportApplier
         .apply(
             &plan,
@@ -795,10 +826,11 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
         }
         other => panic!("expected DuplicateRejected, got {other:?}"),
     }
-    // 重试未再写库(闸在写前触发)
+    // The retry wrote nothing (the gate fires before writing)
     assert_eq!(db.commits, 1);
 
-    // 开 allow_duplicate 才放行(强制重导面不受影响)
+    // Only allow_duplicate lets it through (the forced re-import face is
+    // unaffected)
     let mut store2 = MemoryRunStore::new();
     let err2 = ImportApplier
         .apply(
@@ -822,13 +854,15 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
 
 #[test]
 fn pre_begin_validation_rejects_drift_before_transaction_opens() {
-    // KODE-FULL-010:表/行/列宽校验移 begin 前——漂移错误不再落进已开启
-    // 的事务(旧口径 begin 后 `?` 直穿绕过 rollback);事务内剩余错误
-    // 路径统一由 TxnGuard 兜底回滚。
+    // KODE-FULL-010: table/row/column-width validation moved before begin — drift
+    // errors no longer land inside an already-opened transaction (the old basis let
+    // `?` pass straight through after begin, bypassing rollback); remaining
+    // in-transaction error paths are uniformly rolled back by TxnGuard.
     let dir = temp_dir("prebegin");
     let (mut plan, archive) = fixture(&dir);
 
-    // 臂 1:语句引用归档缺失的表——begin 前拒绝,事务零开销。
+    // Arm 1: a statement references a table absent from the archive — rejected
+    // before begin, zero transaction overhead.
     plan.statements[0].table = "tbl_Missing".into();
     let mut db = VirtualDb::new();
     let mut store = MemoryRunStore::new();
@@ -847,13 +881,17 @@ fn pre_begin_validation_rejects_drift_before_transaction_opens() {
             && m.contains("absent from the archive")),
         "{err:?}"
     );
-    assert_eq!(db.begins, 0, "校验在 begin 前,事务未开");
+    assert_eq!(
+        db.begins, 0,
+        "validation happens before begin; no transaction opened"
+    );
     assert_eq!(db.rollbacks, 0);
     assert_eq!(db.committed_total(), 0);
     assert!(store.runs().is_empty());
 
-    // 臂 2:列宽三不一致(cells/columns/归档行值)——同闸前置拒绝,
-    // 旧口径 zip 静默截断会变成本地错位插入。
+    // Arm 2: three-way column width mismatch (cells/columns/archive row values) —
+    // rejected by the same gate up front; the old basis's silently truncating zip
+    // would have become a locally misaligned insert.
     let (mut plan2, archive2) = fixture(&dir);
     plan2.statements[0].columns.push("sm_extra".into());
     let mut db2 = VirtualDb::new();
@@ -878,9 +916,11 @@ fn pre_begin_validation_rejects_drift_before_transaction_opens() {
 
 #[test]
 fn verify_query_error_after_commit_still_records_run_for_retry() {
-    // KODE-FULL-009:commit 成功后计数查询异常——run 必须已按指纹落账
-    // (账面先于核对 I/O,不再 `?` 直穿丢账),核对态=unknown;同归档
-    // 重试走重复导入闸回显 prior_run,库中数据不重复。
+    // KODE-FULL-009: the count query errors after a successful commit — the run
+    // must already be recorded by fingerprint (the ledger precedes verification
+    // I/O, no more `?` punching straight through and losing the record), verify
+    // state = unknown; retrying the same archive goes through the duplicate import
+    // gate echoing prior_run, so the database data is not duplicated.
     let dir = temp_dir("verr");
     let (plan, archive) = fixture(&dir);
 
@@ -902,11 +942,13 @@ fn verify_query_error_after_commit_still_records_run_for_retry() {
         "{err:?}"
     );
     assert!(err.to_string().contains("is recorded"));
-    // 数据已提交(原子完整),不因核对异常回滚。
+    // The data is committed (atomically complete); the verification error does not
+    // roll it back.
     assert_eq!(db.committed_total(), 4);
     assert_eq!(db.begins, 1);
     assert_eq!(db.commits, 1);
-    // 已落账:指纹闸能取回;核对态 unknown(≠ failed),映射/清理计划在。
+    // Recorded: the fingerprint gate can retrieve it; verify state unknown
+    // (≠ failed), mapping / cleanup plan intact.
     let fingerprint = archive_fingerprint(&archive).unwrap();
     let recorded = store
         .find_by_fingerprint(&fingerprint)
@@ -921,7 +963,8 @@ fn verify_query_error_after_commit_still_records_run_for_retry() {
     assert!(!recorded.resolved_ids.is_empty());
     assert!(!recorded.cleanup.steps.is_empty());
 
-    // 同归档重试:闸先于写触发,回显同一 run,库中数据不重复。
+    // Retrying the same archive: the gate fires before writing, echoing the same
+    // run; the database data is not duplicated.
     match ImportApplier
         .apply(
             &plan,
@@ -940,17 +983,19 @@ fn verify_query_error_after_commit_still_records_run_for_retry() {
         }
         other => panic!("expected DuplicateRejected, got {other:?}"),
     }
-    assert_eq!(db.committed_total(), 4, "重试不得重复插入");
-    assert_eq!(db.commits, 1, "重试未开启新事务");
+    assert_eq!(db.committed_total(), 4, "retry must not insert twice");
+    assert_eq!(db.commits, 1, "retry opened no new transaction");
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn preserve_mode_verify_finds_archived_ids_and_root_handle() {
-    // PreserveIfEmpty 端到端契约(plan §6.1):主键/引用按归档原值直通落库,
-    // 提交后核对与根句柄必须取「归档原值」——核对 found == expected(不误报
-    // DriftMismatch),new_root_id = 归档原 id(而非 None)。
+    // PreserveIfEmpty end-to-end contract (plan §6.1): primary keys/references land
+    // in the database with the archive's original values; post-commit verification
+    // and the root handle must take the "archive original values" — verification
+    // found == expected (no false DriftMismatch), new_root_id = the archive's
+    // original id (not None).
     let dir = temp_dir("preserve");
     let path = write_archive(&dir, "preserve.kdpclone", "hero");
     let archive = Archive::open(&path, None).unwrap();
@@ -988,7 +1033,8 @@ fn preserve_mode_verify_finds_archived_ids_and_root_handle() {
         ApplyOutcome::DuplicateRejected(_) => panic!("preserve import must apply"),
     };
 
-    // 归档原值落库(id 7 / 100 / 101 / 200,autoLoad 保持原值 1)。
+    // Archive original values land in the database (id 7 / 100 / 101 / 200,
+    // autoLoad keeps its original 1).
     assert_eq!(run.mode, ImportMode::PreserveIfEmpty);
     assert_eq!(
         db.committed.get("tbl_Avatar"),
@@ -999,7 +1045,8 @@ fn preserve_mode_verify_finds_archived_ids_and_root_handle() {
         ]])
     );
 
-    // Verify:逐表 found == expected(归档原 id 逐行可查),全过不误报。
+    // Verify: per table found == expected (the archive's original ids are
+    // queryable row by row), all pass with no false report.
     assert!(run.verify.passed);
     assert_eq!(run.verify.checks.len(), 3);
     for check in &run.verify.checks {
@@ -1007,10 +1054,12 @@ fn preserve_mode_verify_finds_archived_ids_and_root_handle() {
         assert_eq!(check.found, check.expected);
     }
 
-    // 根句柄 = 归档原 id(契约「preserve 模式下为归档原值」,不得为 None)。
+    // Root handle = the archive's original id (contract "in preserve mode it is the
+    // archive's original value"; must not be None).
     assert_eq!(run.new_root_id, Some(7));
 
-    // 清理计划同样引用归档原 id(只生成,不执行)。
+    // The cleanup plan likewise references the archive's original id (generated,
+    // never executed).
     assert_eq!(run.cleanup.steps.len(), 3);
     assert_eq!(run.cleanup.steps[2].params, vec![TypedValue::BigUInt(7)]);
     assert!(!db.write_log.iter().any(|s| s.contains("DELETE")));
@@ -1020,12 +1069,13 @@ fn preserve_mode_verify_finds_archived_ids_and_root_handle() {
 
 #[test]
 fn order_violation_gate_rolls_back_staged_rows() {
-    // 计划被外部打乱(子行先于父行):占位顺序违规 → fail-closed,
-    // 且前面语句的暂存行必须回滚,不留半套(失败路径保证 rollback)。
+    // The plan is externally shuffled (child rows before parent rows): placeholder
+    // order violation → fail closed, and the staged rows of earlier statements must
+    // be rolled back with no half-copy left (the failure path guarantees rollback).
     let dir = temp_dir("order-violation");
     let (mut plan, archive) = fixture(&dir);
     assert_eq!(plan.statements.len(), 4);
-    plan.statements.swap(0, 1); // items 语句提到根语句之前
+    plan.statements.swap(0, 1); // moves the items statement ahead of the root one
 
     let mut db = VirtualDb::new();
     let mut store = MemoryRunStore::new();

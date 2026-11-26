@@ -1,9 +1,11 @@
-//! wire 布局解释(KSEM-SER-12)单测:
-//! ①路径/类型标签/偏移结构断言;②错误位置(线程化路径 + 字节偏移 +
-//! 未解释尾界);③诚实红线(PYTHON 桶 Raw 不编造、EntityCall/Unresolved
-//! 透传、structural_only 恒真);④与 [`decode_spans`] 对拍(同语料同
-//! Ok/Err、同消费字节数、Ok 树逐节点 start/len/kind 深等——展示面与
-//! 数据面零行为漂移)。
+//! Wire layout interpretation (KSEM-SER-12) unit tests:
+//! 1) structure assertions for path / type label / offset;
+//! 2) error location (threaded path + byte offset + uninterpreted tail boundary);
+//! 3) honesty red lines (PYTHON bucket Raw fabricates nothing, EntityCall/Unresolved pass
+//!    through, structural_only always true);
+//! 4) parity comparison with [`decode_spans`] (same corpus, same Ok/Err, same bytes consumed,
+//!    Ok trees deep-equal per node start/len/kind — zero behavior drift between the display and
+//!    data planes).
 
 use kode_kbengine_protocol::codec::{decode_spans, DecodeLimits, SpanKind, ValueSpan};
 use kode_kbengine_protocol::error::DecodeErrorKind;
@@ -21,7 +23,7 @@ fn fd(name: &str, ty: WireType) -> DictField {
     }
 }
 
-/// 对拍:Ok 树逐节点 start/len/kind 深等(路径/标签是展示面增量,不比)。
+/// Parity: Ok trees deep-equal per node start/len/kind (path/label are display-plane additions and are not compared).
 fn assert_span_mirror(node: &LayoutNode, span: &ValueSpan) {
     assert_eq!(node.start, span.start, "start drift at {}", node.path);
     assert_eq!(node.len, span.len, "len drift at {}", node.path);
@@ -37,8 +39,8 @@ fn assert_span_mirror(node: &LayoutNode, span: &ValueSpan) {
     }
 }
 
-/// 对拍:同语料同 Ok/Err;Err 时 kind/offset/message 同(layout 路径为
-/// 线程化增量,不比 message 之外的字段差异)。
+/// Parity: same corpus, same Ok/Err; on Err the kind/offset/message match (the layout path is a
+/// threaded addition; differences in fields other than the message are not compared).
 fn parity(args: &[WireType], payload: &[u8]) {
     let spans = decode_spans(args, payload, &limits());
     let layout = decode_layout(args, payload, &limits());
@@ -60,7 +62,7 @@ fn parity(args: &[WireType], payload: &[u8]) {
 }
 
 // ---------------------------------------------------------------------------
-// 路径 / 类型标签 / 偏移
+// Path / type label / offset
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -106,7 +108,7 @@ fn fixed_dict_field_paths_in_declaration_order() {
     assert_eq!(root.children[1].path, "arg0.name");
     assert_eq!(root.children[1].type_label, "STRING");
     assert_eq!((root.children[1].start, root.children[1].len), (2, 3));
-    // 声明序 = wire 序(SER-02 §2):hp 先于 name
+    // Declaration order = wire order (SER-02 §2): hp before name
     assert!(root.children[0].start < root.children[1].start);
 }
 
@@ -122,7 +124,7 @@ fn array_element_paths_and_count_prefix() {
     let out = decode_layout(&args, &payload, &limits());
     let root = &out.nodes[0];
     assert_eq!(root.type_label, "ARRAY<UINT32>");
-    assert_eq!((root.start, root.len), (0, 12)); // 计数前缀在组区间内
+    assert_eq!((root.start, root.len), (0, 12)); // the count prefix lies inside the group range
     assert_eq!(root.children.len(), 2);
     assert_eq!(root.children[0].path, "arg0[0]");
     assert_eq!((root.children[0].start, root.children[0].len), (4, 4));
@@ -169,7 +171,7 @@ fn nested_paths_array_of_dict_and_dict_of_array() {
 }
 
 // ---------------------------------------------------------------------------
-// 长度前缀族 / 向量 / 不透明段
+// Length-prefixed family / vectors / opaque segments
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -222,7 +224,7 @@ fn entity_call_and_unresolved_raw_passthrough_no_advance() {
     let root = &out.nodes[0];
     assert_eq!(root.kind, SpanKind::Raw);
     assert_eq!(root.type_label, "ENTITYCALL");
-    assert_eq!((root.start, root.len), (0, 6)); // 覆盖剩余,不编造字段序
+    assert_eq!((root.start, root.len), (0, 6)); // covers the remainder, no fabricated field order
 
     let un = decode_layout(
         &[WireType::Unresolved("Ghost".to_string())],
@@ -234,27 +236,27 @@ fn entity_call_and_unresolved_raw_passthrough_no_advance() {
 }
 
 // ---------------------------------------------------------------------------
-// 错误位置(线程化路径 + 偏移 + 未解释尾界)
+// Error location (threaded path + offset + uninterpreted tail boundary)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn top_level_error_position_and_tail() {
-    // arg1 需要 4B,只有 1B
+    // arg1 needs 4B, only 1B given
     let payload = vec![0x11, 0x22];
     let args = vec![WireType::UInt8, WireType::UInt32];
     let out = decode_layout(&args, &payload, &limits());
     let err = out.error.expect("expected error");
     assert_eq!(err.kind, DecodeErrorKind::UnexpectedEof);
-    assert_eq!(err.offset, 1); // 游标到达处 = 错误字节位
+    assert_eq!(err.offset, 1); // where the cursor reached = the error byte position
     assert_eq!(err.path, "arg1");
     assert_eq!(out.unresolved_tail_from, Some(1));
-    assert_eq!(out.nodes.len(), 1); // arg0 已解释
+    assert_eq!(out.nodes.len(), 1); // arg0 already interpreted
     assert!(out.structural_only);
 }
 
 #[test]
 fn nested_error_paths_dict_field_and_array_element() {
-    // FD.hp 截断:读 u16 失败不消费 → 错误位 = 当前游标(0),需 2B 只有 1B
+    // FD.hp truncated: the failed u16 read consumes nothing → error position = current cursor (0); needs 2B, only 1B
     let args = vec![WireType::FixedDict {
         module: None,
         fields: vec![fd("hp", WireType::UInt16)],
@@ -264,7 +266,7 @@ fn nested_error_paths_dict_field_and_array_element() {
     assert_eq!(err.path, "arg0.hp");
     assert_eq!(err.offset, 0);
 
-    // 数组预检:声明 3 元素 U32 只剩 8B → 数组级路径 + 计数读完后偏移
+    // Array precheck: 3 U32 elements declared, only 8B left → array-level path + offset after the count is read
     let mut payload = Vec::new();
     payload.extend_from_slice(&3u32.to_le_bytes());
     payload.extend_from_slice(&1u32.to_le_bytes());
@@ -279,7 +281,7 @@ fn nested_error_paths_dict_field_and_array_element() {
     assert_eq!(err2.offset, 4);
     assert_eq!(out2.unresolved_tail_from, Some(4));
 
-    // 元素级线程化路径:预检(min=1)放行后,第 2 个 FD 元素 hp 截断
+    // Element-level threaded path: after the precheck (min=1) passes, the 2nd FD element's hp is truncated
     let mut payload3 = Vec::new();
     payload3.extend_from_slice(&2u32.to_le_bytes());
     payload3.extend_from_slice(&[0x11, 0x22]);
@@ -298,7 +300,7 @@ fn nested_error_paths_dict_field_and_array_element() {
 
 #[test]
 fn array_declared_over_cap_and_over_remaining() {
-    // 声明 5 > cap 4 → MemoryLimit,offset = 计数读完后
+    // Declared 5 > cap 4 → MemoryLimit, offset = after the count is read
     let tight = DecodeLimits {
         max_array_len: 4,
         ..DecodeLimits::default()
@@ -317,7 +319,7 @@ fn array_declared_over_cap_and_over_remaining() {
     assert_eq!(err.path, "arg0");
     assert_eq!(err.offset, 4);
 
-    // 声明 4 元素 U32 只剩 4B → 预检 UnexpectedEof(min_elem 预检同 codec)
+    // 4 U32 elements declared, only 4B left → precheck UnexpectedEof (the min_elem precheck matches codec)
     let mut payload2 = Vec::new();
     payload2.extend_from_slice(&4u32.to_le_bytes());
     payload2.extend_from_slice(&1u32.to_le_bytes());
@@ -335,7 +337,7 @@ fn array_declared_over_cap_and_over_remaining() {
 
 #[test]
 fn depth_limit_hits_at_threaded_path() {
-    // 65 层嵌套 FD(单字段链)超过 MAX_DECODE_DEPTH=64
+    // 65 levels of nested FD (single-field chain) exceed MAX_DECODE_DEPTH=64
     let mut ty = WireType::UInt8;
     for _ in 0..65 {
         ty = WireType::FixedDict {
@@ -355,7 +357,7 @@ fn depth_limit_hits_at_threaded_path() {
 }
 
 // ---------------------------------------------------------------------------
-// 诚实红线
+// Honesty red lines
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -367,7 +369,7 @@ fn structural_only_flag_and_note_are_carried() {
 }
 
 // ---------------------------------------------------------------------------
-// 与 decode_spans 对拍(零行为漂移)
+// Parity with decode_spans (zero behavior drift)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -399,22 +401,22 @@ fn parity_with_decode_spans_ok_corpus() {
 
 #[test]
 fn parity_with_decode_spans_err_corpus() {
-    // 截断:U64 只给 3B
+    // Truncated: U64 given only 3B
     parity(&[WireType::UInt64], &[1, 2, 3]);
-    // FD 第二字段截断
+    // FD second field truncated
     let args = vec![WireType::FixedDict {
         module: None,
         fields: vec![fd("a", WireType::UInt8), fd("b", WireType::UInt32)],
     }];
     parity(&args, &[1, 2, 3, 4]);
-    // 数组声明超剩
+    // Array declared beyond the remainder
     parity(
         &[WireType::Array {
             of: Box::new(WireType::UInt16),
         }],
         &[3, 0, 0, 0, 1, 0],
     );
-    // Unicode 体超 cap
+    // Unicode body over cap
     let tight = DecodeLimits {
         max_blob: 2,
         ..DecodeLimits::default()
@@ -430,7 +432,7 @@ fn parity_with_decode_spans_err_corpus() {
 
 #[test]
 fn parity_entity_call_overlap_semantics_locked() {
-    // EntityCall 不推进游标:后续 arg 与 Raw 跨度重叠——两面对拍锁同一语义
+    // EntityCall does not advance the cursor: later args overlap the Raw span — the parity of both planes pins this same semantics
     let mut payload = Vec::new();
     payload.extend_from_slice(&[1, 2, 3, 4]);
     let args = vec![WireType::EntityCall, WireType::UInt8];
@@ -442,9 +444,10 @@ fn parity_entity_call_overlap_semantics_locked() {
 
 #[test]
 fn remaining_scalar_and_vector4_layout_nodes_mirror_spans() {
-    // 布局展示面与数据面同读序:补齐 I8/I16/I32/U64/I64/F32 与 Vector4 臂——
-    // 每条标量臂的 read_* 与 node 行各须跑一次(展示面分支漏跑 = 该臂的路径
-    // 线程与类型标签零断言)。parity 对拍锁两面零行为漂移。
+    // Layout display plane shares the read order with the data plane: fill in the I8/I16/I32/U64/I64/F32
+    // and Vector4 arms — each scalar arm's read_* and node lines must run once (a display-plane branch
+    // that never runs = zero assertions on that arm's path threading and type label). The parity
+    // comparison pins zero behavior drift between the two planes.
     let mut payload = Vec::new();
     payload.extend_from_slice(&(-7i8).to_le_bytes());
     payload.extend_from_slice(&(-300i16).to_le_bytes());
@@ -469,13 +472,13 @@ fn remaining_scalar_and_vector4_layout_nodes_mirror_spans() {
     assert!(out.error.is_none(), "{:?}", out.error);
     assert_eq!(out.nodes.len(), 7);
     assert!(out.structural_only, "展示面必须携带诚实声明");
-    // 路径线程:顶层 arg{i};Vector4 子项 arg6[i]
+    // Path threading: top level arg{i}; Vector4 children arg6[i]
     assert_eq!(out.nodes[0].path, "arg0");
     assert_eq!(out.nodes[5].path, "arg5");
     assert_eq!(out.nodes[6].children.len(), 4);
     assert_eq!(out.nodes[6].children[2].path, "arg6[2]");
     assert_eq!(out.nodes[6].children[2].type_label, "f32");
-    // 类型标签随 schema 走(display_name),展示面不得自造
+    // Type labels come from the schema (display_name); the display plane must not invent them
     assert_eq!(out.nodes[0].type_label, WireType::Int8.display_name());
     assert_eq!(out.nodes[6].type_label, WireType::Vector4.display_name());
 }

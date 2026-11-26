@@ -1,16 +1,18 @@
-//! ROOT-010 对拍 golden 序列化:零依赖 JSON 只写不读(读取交 TS JSON.parse)。
+//! ROOT-010 parity golden serialization: dependency-free JSON, write-only (reading is
+//! left to the TS JSON.parse).
 //!
-//! 输出形状须与 `tests/kodeRootParity.test.ts` 的 TS 复算器逐字段一致;
-//! 任何一侧改动都要重新生成 golden 并让两侧门禁同时过。锚点路径相对各
-//! fixture 树根、`/` 分隔、排序去重(消除 readdir 序差);scanVisited 为
-//! 精确计数(TS walk 逐条目计数,两侧必须完全相等)。
+//! The output shape must match the TS recomputer in `tests/kodeRootParity.test.ts`
+//! field by field; any change on either side must regenerate the golden and make both
+//! gates pass. Anchor paths are relative to each fixture tree root, `/` separated,
+//! sorted and de-duplicated (erasing readdir order differences); scanVisited is an exact
+//! count (the TS walk counts per entry, so both sides must be equal).
 
 use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::scan::{scan_workspace_anchors, ScanOptions};
 
-/// 对拍 fixture 树(仓库相对 `crates/kode-root/tests/fixtures/` 之下)。
+/// Parity fixture trees (beneath `crates/kode-root/tests/fixtures/`, repo-relative).
 pub const PARITY_TREES: &[&str] = &[
     "linux_assets",
     "engine_repo",
@@ -51,7 +53,7 @@ fn dump_str_list(out: &mut String, key: &str, values: &[std::path::PathBuf]) {
     );
 }
 
-/// 生成 golden(ROOT-010):每树锚点集 + visited/截断旗标。
+/// Generate the golden (ROOT-010): each tree's anchor set + visited/truncation flags.
 pub fn dump_golden(fixtures_dir: &Path) -> String {
     let mut out = String::new();
     out.push_str(
@@ -110,15 +112,16 @@ mod tests {
 
     #[test]
     fn escape_json_covers_every_escape_arm() {
-        // 引号/反斜杠/控制字符逐条转义;普通字符原样保留。
+        // Quotes/backslashes/control characters are escaped one by one; plain
+        // characters are kept as they are.
         assert_eq!(escape_json("plain"), "plain");
         assert_eq!(escape_json("a\"b"), "a\\\"b");
         assert_eq!(escape_json("a\\b"), "a\\\\b");
         assert_eq!(escape_json("a\nb\rc\td"), "a\\nb\\rc\\td");
-        // 其他 < 0x20 控制字符走 \\u 形态。
+        // Other < 0x20 control characters take the \\u form.
         assert_eq!(escape_json("a\u{1}b"), "a\\u0001b");
         assert_eq!(escape_json("a\u{7}b"), "a\\u0007b");
-        // 非 ASCII 原样保留(golden 面不二次编码)。
+        // Non-ASCII is kept as-is (the golden surface does not re-encode).
         assert_eq!(escape_json("怪物"), "怪物");
     }
 
@@ -131,7 +134,8 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("\"fixturesDir\": \"crates/kode-root/tests/fixtures\""));
-        // 六棵对拍树逐一名列,且每树带 visited/截断旗标。
+        // All six parity trees are listed by name, each carrying visited/truncation
+        // flags.
         for tree in PARITY_TREES {
             assert!(
                 text.contains(&format!("\"name\": \"{tree}\"")),
@@ -141,7 +145,8 @@ mod tests {
         assert!(text.contains("\"scanVisited\""));
         assert!(text.contains("\"scanTruncated\""));
         assert!(text.trim_end().ends_with('}'));
-        // 花括号平衡(零依赖的 JSON 形状前件;TS 侧再 JSON.parse 全量复算)。
+        // Brace balance (the dependency-free JSON shape precondition; the TS side
+        // does a full JSON.parse recomputation).
         let open = text.matches('{').count();
         let close = text.matches('}').count();
         assert_eq!(open, close, "golden braces must balance");

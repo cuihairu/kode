@@ -1,18 +1,23 @@
 /**
- * 预览列来源接线(IDE-REV-018):把 databaseColumnSource 的三态列来源接到
- * 表预览输出通道——预览表名反查工作区虚拟 schema(逐注册实体,含 ARRAY/
- * 组件子表),拿到描述符后逐列渲染 derived(声明处 filePath:line,输出
- * 面板可点击定位 def/type 行)/synthetic(引擎合成列,无声明处)/unknown
- * (如实未知);表不在推导面内时整段如实说明,不猜邻居表。反查面全注入,
- * 装配层给真实注册表与 schema 快照。
+ * Preview column-source wiring (IDE-REV-018): connects the three-state column
+ * sources from databaseColumnSource to the table preview output channel -- the
+ * preview table name is looked up against the workspace virtual schema (per
+ * registered entity, including ARRAY/component sub-tables); once a descriptor
+ * is found, each column renders as derived (declaration site as filePath:line,
+ * clickable in the output panel to jump to the def/type line) / synthetic
+ * (engine-synthesized column, no declaration site) / unknown (honestly
+ * unknown); when the table is outside the derivation surface, the whole
+ * section says so honestly rather than guessing a neighboring table. The
+ * lookup surface is fully injected: the assembly layer supplies the real
+ * registry and schema snapshot.
  */
 
 import type { TableSchemaDescriptor } from './databaseSchemaCore';
 import { formatColumnSourceDetail, linkResultColumnsToSources } from './databaseColumnSource';
 
-/** 反查依赖:装配层注入真实注册表/快照面(测试注入替身) */
+/** Lookup dependencies: the assembly layer injects the real registry/snapshot surface (test stubs injected) */
 export interface ColumnSourceResolverDeps {
-  /** 逐工作区根列出实体清单(注册序) */
+  /** List the entity inventory per workspace root (registration order) */
   listEntityRoots(): Array<{ rootPath: string; entityName: string }>;
   getSnapshot(
     entityName: string,
@@ -21,28 +26,31 @@ export interface ColumnSourceResolverDeps {
 }
 
 /**
- * 表名 → 虚拟 schema 描述符。IDE-AUD-011:反查按当前连接的作用域根
- * (scopeRootPath=连接的资产根)限定——只认该根内的实体声明;作用域根为
- * null/未给时如实返回 null(无匹配根显示未知),绝不跨 workspace 根首命中
- * (两项目同名表不再跳到邻居项目的声明)。
+ * Table name -> virtual schema descriptor. IDE-AUD-011: the lookup is
+ * constrained by the current connection's scope root (scopeRootPath = the
+ * connection's asset root) -- only entity declarations inside that root are
+ * recognized; when the scope root is null/unspecified, null is returned
+ * honestly (no matching root shows unknown), never falling back to a first
+ * match across workspace roots (a same-named table in two projects no longer
+ * jumps to the neighboring project's declaration).
  */
 export type ColumnSourceTableResolver = (
   tableName: string,
   scopeRootPath: string | null
 ) => TableSchemaDescriptor | null;
 
-/** 表名 → 虚拟 schema 描述符:按作用域根内注册清单逐实体反查,miss=null */
+/** Table name -> virtual schema descriptor: look up per registered entity inside the scope root's registry; miss = null */
 export function createPreviewColumnSourceTableResolver(
   deps: ColumnSourceResolverDeps
 ): ColumnSourceTableResolver {
   return (tableName, scopeRootPath) => {
     if (!scopeRootPath) {
-      // 无作用域根(无活动 profile/资产根):如实未知,不按 workspace 首命中
+      // No scope root (no active profile/asset root): honestly unknown, no workspace first-match
       return null;
     }
     for (const { rootPath, entityName } of deps.listEntityRoots()) {
       if (rootPath !== scopeRootPath) {
-        continue; // 只认当前连接的资产根
+        continue; // only honor the current connection's asset root
       }
       const snapshot = deps.getSnapshot(entityName, rootPath);
       const descriptor = snapshot?.tableIndex.get(tableName);
@@ -54,7 +62,7 @@ export function createPreviewColumnSourceTableResolver(
   };
 }
 
-/** 列来源段:derived 行带 filePath:line(输出面板点击定位面),段尾空行分段 */
+/** Column-source section: derived rows carry filePath:line (click-to-navigate surface in the output panel); a trailing blank line separates sections */
 export function renderColumnSourceSection(
   columns: Array<{ name: string }>,
   table: string,

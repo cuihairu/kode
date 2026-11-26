@@ -12,28 +12,35 @@ import {
 } from './serverConfigCatalog';
 
 /**
- * 最终配置的子分类与逐项作用注释(用户令:final XML config 增强)。
+ * Sub-category and per-item effect comments for the final config (user order:
+ * enhanced final XML config).
  *
- * 分组主轴 = 进程:kbengine_defaults.xml 的顶层段名就是进程名(dbmgr/cellapp/
- * baseapp/loginapp/machine/bots/logger/interfaces/...),serverconfig.cpp 逐段
- * `root->FirstChildElement("<进程>")` 读取(serverconfig.cpp:733 baseapp、:911
- * dbmgr),段内再按功能(network/db/log/...)分子分类。
+ * The grouping axis = process: the top-level section names of
+ * kbengine_defaults.xml are process names (dbmgr/cellapp/baseapp/loginapp/
+ * machine/bots/logger/interfaces/...); serverconfig.cpp reads each section via
+ * `root->FirstChildElement("<process>")` (serverconfig.cpp:733 baseapp, :911
+ * dbmgr), and inside a section sub-categorizes by function (network/db/log/...).
  *
- * 注释位置(引擎兼容取证:本机引擎 KBEngine 2.5.10 的 kbe/src/lib/xml/xml.{h,cpp}
- * 与 kbe/src/lib/server/serverconfig.cpp,并用同版本 tinyxml2 11 实测):
- * - 容器元素:注释作为元素第一个子节点。serverconfig.cpp 全篇用
- *   FirstChildElement/NextSiblingElement 取子元素(291 处),二者都跳过注释节点;
- *   XML_FOR_BEGIN 显式按 `ToElement()==nullptr` 跳过注释(xml.h:14-19);
- *   enterNode 也显式跳过注释节点(xml.cpp:81-89)。
- * - 叶子元素(有值/无值):注释放值之后,仍在元素内部。tinyxml2 的
- *   IntText()/DoubleText() 只认第一个子节点是文本,注释在值之前会把数值读成
- *   默认值——实测 `<r><!-- c --> 42 </r>` → IntText() 取默认,`<r> 42 <!-- c
- *   --></r>` → 42;而引擎数值项正是走 intText/doubleText(serverconfig.cpp:41-67)。
- *   放值之后 GetText()/IntText()/ToText() 三条读法都取到原值。
- * 任何注释都不出现在元素上方或文件头。
+ * Comment placement (engine-compatibility evidence: local engine KBEngine 2.5.10's
+ * kbe/src/lib/xml/xml.{h,cpp} and kbe/src/lib/server/serverconfig.cpp, measured
+ * with the same-version tinyxml2 11):
+ * - Container elements: the comment is the element's first child node.
+ *   serverconfig.cpp uses FirstChildElement/NextSiblingElement throughout (291
+ *   sites) to get child elements, both of which skip comment nodes;
+ *   XML_FOR_BEGIN explicitly skips comments via `ToElement()==nullptr`
+ *   (xml.h:14-19); enterNode also explicitly skips comment nodes
+ *   (xml.cpp:81-89).
+ * - Leaf elements (with/without value): the comment goes after the value, still
+ *   inside the element. tinyxml2's IntText()/DoubleText() only accept the first
+ *   child being text; a comment before the value makes the number read as its
+ *   default — measured `<r><!-- c --> 42 </r>` → IntText() takes the default,
+ *   `<r> 42 <!-- c --></r>` → 42; engine numeric items go through intText/
+ *   doubleText (serverconfig.cpp:41-67). Placed after the value, all three read
+ *   paths GetText()/IntText()/ToText() still read the original value.
+ * No comment appears above an element or at the top of the file.
  */
 
-/** 顶层段名 = 进程名(证据:kbe/res/server/kbengine_defaults.xml 顶层段) */
+/** Top-level section names = process names (evidence: top-level sections of kbe/res/server/kbengine_defaults.xml) */
 const PROCESS_SECTION_NAMES = new Set([
   'baseapp',
   'cellapp',
@@ -48,26 +55,27 @@ const PROCESS_SECTION_NAMES = new Set([
 ]);
 
 export interface ConfigAnnotationOptions {
-  /** VS Code 显示语言(undefined/zh* → 中文注释,其余英文) */
+  /** VS Code display language (undefined/zh* → Chinese comments, otherwise English) */
   language?: string;
   /**
-   * false = 关闭增强(kbengine.finalConfigComments):不加作用注释、不加文档
-   * 头注、不按子分类重排。只关「生成物」——解析期捕获的源注释
-   * (sourceComments)是输入原文,不受开关影响,照常回写。
+   * false = disable enhancement (kbengine.finalConfigComments): no effect
+   * comments, no doc header note, no re-grouping by sub-category. Only the
+   * "generated artifacts" turn off — source comments captured during parse
+   * (sourceComments) are the input's original text, unaffected by the switch,
+   * and are written back as usual.
    */
   enabled?: boolean;
-  /** 文档头注(合成来源与覆盖口径),放进第一个顶层元素内部;属生成物,
-   * enabled=false 时不输出 */
+  /** Doc header note (synthesized provenance and override contract), placed inside the first top-level element; a generated artifact, not emitted when enabled=false */
   header?: string;
 }
 
-/** 子分类排序键;自定义配置恒排最后 */
+/** Sub-category sort key; custom config always ranks last */
 function groupRank(group: ServerConfigGroup): number {
   const index = SERVER_CONFIG_GROUP_ORDER.indexOf(group);
   return index < 0 ? SERVER_CONFIG_GROUP_ORDER.length : index;
 }
 
-/** 组合一条注释文案:【子分类】作用说明〔来源: ...〕(英文侧同构) */
+/** Compose one comment text: 【sub-category】effect description〔source: ...〕 (same shape on the English side) */
 function composeComment(doc: ServerConfigItemDoc, language: string | undefined): string {
   const zh = isZhConfigLanguage(language);
   const group = SERVER_CONFIG_GROUPS[doc.group];
@@ -79,7 +87,7 @@ function composeComment(doc: ServerConfigItemDoc, language: string | undefined):
   return `[${label}] ${body} (source: ${doc.source})`;
 }
 
-/** 未识别的自定义配置项:归入「自定义配置」子分类并标「未识别」,不猜语义 */
+/** Unrecognized custom config items: grouped into the "custom config" sub-category and marked "unrecognized", never guessing semantics */
 function composeUnknownComment(language: string | undefined): string {
   const doc = SERVER_CONFIG_UNKNOWN_DOC;
   const zh = isZhConfigLanguage(language);
@@ -90,9 +98,11 @@ function composeUnknownComment(language: string | undefined): string {
 }
 
 /**
- * 给合成配置树挂子分类注释:逐项查文案库(查不到 = 自定义配置·未识别),
- * 段内按子分类稳定排序(同组保持引擎原序),并把文档头注放进第一个顶层元素。
- * 返回新树,不改动入参。
+ * Attach sub-category comments to the synthesized config tree: per item look
+ * up the doc library (miss = custom config, unrecognized), stably sort within a
+ * section by sub-category (same group keeps the engine's original order), and
+ * place the doc header note inside the first top-level element. Returns a new
+ * tree without mutating the input.
  */
 export function annotateConfigTree(
   root: ConfigXmlNode,
@@ -101,8 +111,10 @@ export function annotateConfigTree(
   const { language, enabled = true, header } = options;
   const top = root.children;
   const single = top.length === 1 ? top[0] : undefined;
-  // 包裹段(<root>/<defaults>)不参与排序:全局键与进程段保持引擎原序。
-  // 单个顶层段本身就是进程段(无包裹)时,它的子键照常分组。
+  // The wrapper section (<root>/<defaults>) does not participate in sorting: global
+  // keys and process sections keep the engine's original order.
+  // When a single top-level section is itself the process section (no wrapper),
+  // its child keys are grouped as usual.
   const isWrapper = single !== undefined && !PROCESS_SECTION_NAMES.has(single.name);
   const sortMinParentDepth = isWrapper ? 2 : 1;
 
@@ -115,14 +127,18 @@ export function annotateConfigTree(
       ? findServerConfigItemDoc([node.name])
       : findServerConfigItemDoc(segments);
 
-    // 注释放元素内部(容器在子节点前、叶子在值后),规则与取证见文件头
+    // Comments are placed inside the element (containers before children, leaves
+    // after the value); rules and evidence in the file header
     const out: ConfigXmlNode = { name: node.name, text: node.text, children };
     if (node.sourceComments !== undefined && node.sourceComments.length > 0) {
-      // 源注释原样带过(生成的注释是另一套字段,渲染时源注释优先)
+      // Source comments pass through verbatim (generated comments are a separate
+      // field; source comments win at render time)
       out.sourceComments = [...node.sourceComments];
     }
-    // 源注释优先:文案库正文(中英双语,正文常逐字收割自源注释)与源注释同一
-    // 内容时不再挂生成注释,否则同一条说明在同一元素里显示两遍(KODE-CFG-010)
+    // Source comments take priority: when the catalog body (bilingual, its body
+    // is often verbatim-harvested from source comments) is the same content as
+    // the source comment, do not attach a generated comment, otherwise the same
+    // explanation shows twice inside one element (KODE-CFG-010)
     const coveredBySource =
       enabled &&
       doc !== null &&
@@ -147,7 +163,8 @@ export function annotateConfigTree(
     annotated.sourceComments = [...root.sourceComments];
   }
 
-  // 段内按子分类排序:同组保持原序(稳定排序),自定义配置沉底。
+  // Sort within a section by sub-category: same group keeps the original order
+  // (stable sort), custom config sinks to the bottom.
   if (enabled) {
     const rankMap = new Map<ConfigXmlNode, number>();
     const rankPass = (node: ConfigXmlNode, segments: readonly string[]): void => {
@@ -176,7 +193,8 @@ export function annotateConfigTree(
   }
 
   if (enabled && header !== undefined && annotated.children.length > 0) {
-    // 文档头注同属生成物:开关关闭时不输出(源注释不受此开关管辖)
+    // The doc header note is also a generated artifact: not emitted when the
+    // switch is off (source comments are outside the switch's jurisdiction)
     annotated.children[0].docHeader = header;
   }
   return annotated;

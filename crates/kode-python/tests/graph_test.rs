@@ -1,4 +1,4 @@
-//! 调用图聚合 + kode-scheduler 反向索引测试(C-20 交付③)。
+//! Call graph aggregation + kode-scheduler reverse index tests (C-20 deliverable 3).
 
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ fn key(path: &str) -> DocumentKey {
     DocumentKey::new(RootId(0), CanonicalUri::from_path(path))
 }
 
-/// 多文件 → 跨文件反向索引(测试夹具:每文件解析符号表+调用边后聚合)。
+/// Multiple files -> cross-file reverse index (test fixture: parse each file's symbol table + call edges, then aggregate).
 fn build_rev(files: &[(&DocumentKey, &str)]) -> kode_python::graph::CallReverseIndex {
     let mut file_edges = BTreeMap::new();
     let mut file_symbols = BTreeMap::new();
@@ -44,13 +44,13 @@ fn cross_file_call_builds_reverse_index() {
     }
 
     let rev = build_call_reverse_index(&file_edges, &file_symbols);
-    // game.py 调 heal(定义在 avatar.py)→ 反向:avatar.py → {game.py}
+    // game.py calls heal (defined in avatar.py) -> reverse: avatar.py -> {game.py}
     let dependents = rev.get(&avatar_key).expect("avatar.py 应有反依赖");
     assert!(
         dependents.contains(&game_key),
         "game.py 应是 avatar.py 的调用方"
     );
-    // damage 无人调用 → 不产生额外条目
+    // damage is never called -> no extra entry
     assert_eq!(rev.len(), 1);
 }
 
@@ -65,7 +65,7 @@ fn self_calls_do_not_cross_files() {
     file_edges.insert(a_key.clone(), extract_call_graph(&ast, &symbols));
     file_symbols.insert(a_key.clone(), symbols);
     let rev = build_call_reverse_index(&file_edges, &file_symbols);
-    // self.g() 同文件 → 不产生跨文件条目
+    // self.g() stays in the same file -> no cross-file entry
     assert!(rev.is_empty());
 }
 
@@ -98,10 +98,11 @@ fn of_kind_filters_visualization_edges() {
     assert_eq!(graph.of_kind(kode_python::EdgeKind::KbeApi).len(), 1);
 }
 
-/// KODE-AUD-008:跨文件伪边防护。zcaller.py 本地定义 foo 并调用 `foo()`;
-/// afoo.py 也定义 foo 且键序在前。旧实现 find_module_function 全项目搜先
-/// 命中 afoo → 伪边 afoo→zcaller(本地调用被误指跨文件);修复后调用方
-/// 自身定义即判本地,不产跨文件边。
+/// KODE-AUD-008: cross-file pseudo-edge guard. zcaller.py defines foo locally and calls `foo()`;
+/// afoo.py also defines foo and sorts earlier by key. The old implementation's
+/// find_module_function searched the whole project, hit afoo first -> pseudo edge
+/// afoo→zcaller (a local call misattributed as cross-file); after the fix a definition
+/// in the caller itself counts as local, and no cross-file edge is produced.
 #[test]
 fn local_bare_name_no_cross_file_pseudo_edge() {
     let zcaller = "def foo():\n    pass\n\ndef caller():\n    foo()\n";
@@ -125,10 +126,10 @@ fn local_bare_name_no_cross_file_pseudo_edge() {
 
 #[test]
 fn receiver_without_import_no_cross_file_pseudo_edge() {
-    // KODE-AUD-008 复审残余:非模块接收者(实例变量 `avatar.heal()`,调用方
-    // 未 `import avatar`)不可静态解析——按模块名找文件会把唯一同名文件
-    // avatar.py 误指为被调方(伪跨文件边)。要求:接收者首段不是调用方
-    // import 绑定 → 不产跨文件边。
+    // KODE-AUD-008 review residual: a non-module receiver (instance variable `avatar.heal()`, the
+    // caller has no `import avatar`) is not statically resolvable -- finding a file by module name
+    // would misattribute the sole same-named avatar.py as the callee (pseudo cross-file edge).
+    // Requirement: if the receiver's first segment is not a caller import binding -> no cross-file edge.
     let zcaller = "def battle():\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -150,8 +151,8 @@ fn receiver_without_import_no_cross_file_pseudo_edge() {
 
 #[test]
 fn imported_module_receiver_resolves_cross_file() {
-    // 同形态但调用方确有 `import avatar` 绑定 → 模块接收者照常解析到
-    // avatar.py(正向回归:修复不得把真模块调用也切断)。
+    // Same shape but the caller does have an `import avatar` binding -> the module receiver still
+    // resolves to avatar.py (positive regression: the fix must not cut off genuine module calls).
     let zcaller = "import avatar\n\ndef battle():\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -173,8 +174,9 @@ fn imported_module_receiver_resolves_cross_file() {
 
 #[test]
 fn function_scoped_import_receiver_resolves_cross_file() {
-    // 复审第二轮残余:函数内导入(`def f(): import avatar; avatar.heal()`)
-    // 同样是真模块绑定——绑定核验若只看模块顶层 import 表会漏判断边。
+    // Review round 2 residual: a function-local import (`def f(): import avatar; avatar.heal()`)
+    // is a genuine module binding too -- binding verification that only inspects the module
+    // top-level import table would miss the edge decision.
     let zcaller = "def battle():\n    import avatar\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -196,8 +198,8 @@ fn function_scoped_import_receiver_resolves_cross_file() {
 
 #[test]
 fn cross_function_import_no_pseudo_edge() {
-    // 复审第三轮残余:绑定归属必须按作用域——`setup` 里的函数内 import
-    // 不能为 `battle` 的实例接收者作保(avatar 是 battle 的参数,不是模块)。
+    // Review round 3 residual: binding ownership must follow scope -- the function-local import in
+    // `setup` cannot vouch for `battle`'s instance receiver (avatar is battle's parameter, not a module).
     let zcaller = "def setup():\n    import avatar\n\ndef battle():\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -219,8 +221,9 @@ fn cross_function_import_no_pseudo_edge() {
 
 #[test]
 fn same_name_method_import_no_pseudo_edge() {
-    // 复审第四轮残余①:裸函数名键会合并无关同名方法——A.run 里的函数内
-    // import 不能为 B.run 的实例接收者作保。作用域必须按行区间定位。
+    // Review round 4 residual (1): bare function-name keys merge unrelated same-named methods -- the
+    // function-local import in A.run cannot vouch for B.run's instance receiver. Scope must be
+    // located by line range.
     let zcaller = "class A:\n    def run(self):\n        import avatar\n\nclass B:\n    def run(self, avatar):\n        avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -242,8 +245,9 @@ fn same_name_method_import_no_pseudo_edge() {
 
 #[test]
 fn outer_import_visible_to_nested_call() {
-    // 复审第四轮残余②:外层 import、嵌套 def 内调用——闭包可见,应产边
-    // (绑定按行区间归属,外层区间覆盖嵌套体,漏边方向)。
+    // Review round 4 residual (2): outer import, call inside a nested def -- visible through the
+    // closure, so an edge should be produced (bindings are attributed by line range; the outer
+    // range covers the nested body; missing-edge direction).
     let zcaller = "def outer():\n    import avatar\n\n    def inner():\n        avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -265,8 +269,8 @@ fn outer_import_visible_to_nested_call() {
 
 #[test]
 fn param_shadow_blocks_outer_import_vouch() {
-    // 复审第五轮残余:外层 import 不能为内层同名参数作保——inner 的
-    // avatar 是参数遮蔽,不是外层导入的模块。
+    // Review round 5 residual: an outer import cannot vouch for an inner same-named parameter --
+    // inner's avatar is a parameter shadow, not the module imported at the outer level.
     let zcaller =
         "def outer():\n    import avatar\n\n    def inner(avatar):\n        avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
@@ -289,8 +293,8 @@ fn param_shadow_blocks_outer_import_vouch() {
 
 #[test]
 fn local_assign_shadow_blocks_outer_import_vouch() {
-    // 同族:内层局部赋值(Store)同样遮蔽外层 import——局部变量接收者
-    // 不可静态解析,外层导入不作保。
+    // Same family: an inner local assignment (Store) also shadows the outer import -- a local
+    // variable receiver is not statically resolvable, so the outer import does not vouch.
     let zcaller = "def outer():\n    import avatar\n\n    def inner():\n        avatar = load()\n        avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -312,8 +316,8 @@ fn local_assign_shadow_blocks_outer_import_vouch() {
 
 #[test]
 fn module_import_does_not_bypass_param_shadow() {
-    // 复审第六轮残余①:模块顶层 import 是最外层回退——内层参数遮蔽
-    // 必须先生效,不能被模块级 import 短路。
+    // Review round 6 residual (1): a module top-level import is the outermost fallback -- the inner
+    // parameter shadow must take effect first and must not be short-circuited by the module-level import.
     let zcaller = "import avatar\n\ndef f(avatar):\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -335,8 +339,9 @@ fn module_import_does_not_bypass_param_shadow() {
 
 #[test]
 fn same_scope_conflict_gives_up_edge() {
-    // 复审第七轮用例改口径(第六轮残余③):同作用域 import 与参数并存,
-    // 静态不裁决先后(需数据流)——保守放弃该边(宁缺毋滥;伪边向优先防)。
+    // Review round 7 case, semantics revised (round 6 residual (3)): an import and a parameter coexist
+    // in the same scope and statics cannot rule on the ordering (needs dataflow) -- conservatively give
+    // up the edge (prefer missing over wrong; the pseudo-edge direction is guarded first).
     let zcaller = "def f(avatar):\n    import avatar\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -358,8 +363,8 @@ fn same_scope_conflict_gives_up_edge() {
 
 #[test]
 fn comprehension_target_does_not_shadow_function_import() {
-    // 复审第六轮残余②:推导式目标是独立隐式作用域,不遮蔽函数局部
-    // import——推导式目标的 Store 不应污染函数 shadows。
+    // Review round 6 residual (2): a comprehension target is an independent implicit scope and does not
+    // shadow a function-local import -- a comprehension target's Store must not pollute the function shadows.
     let zcaller = "def f():\n    import avatar\n    rows = [str(avatar) for avatar in items]\n    return avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -381,8 +386,8 @@ fn comprehension_target_does_not_shadow_function_import() {
 
 #[test]
 fn comprehension_target_shadow_blocks_module_vouch() {
-    // 复审第七轮残余②:推导式目标遮蔽其自身的接收者——模块 import 不为
-    // 推导式元素内的迭代变量接收者作保(伪边向)。
+    // Review round 7 residual (2): a comprehension target shadows its own receiver -- the module import
+    // does not vouch for an iteration-variable receiver inside a comprehension element (pseudo-edge direction).
     let zcaller = "import avatar\nrows = [avatar.heal() for avatar in items]\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -404,8 +409,8 @@ fn comprehension_target_shadow_blocks_module_vouch() {
 
 #[test]
 fn rebind_after_import_blocks_vouch() {
-    // 复审第七轮残余③:同作用域 import 后又被本地赋值重绑定——调用点
-    // 接收者是本地对象,模块 import 不作保(伪边向)。
+    // Review round 7 residual (3): a same-scope import is later rebound by a local assignment -- the
+    // receiver at the call site is a local object, so the module import does not vouch (pseudo-edge direction).
     let zcaller = "def f():\n    import avatar\n    avatar = obj\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -427,8 +432,8 @@ fn rebind_after_import_blocks_vouch() {
 
 #[test]
 fn multi_line_comprehension_shadow_blocks_vouch() {
-    // 复审第八轮残余②:多行推导式的迭代变量遮蔽自身元素接收者——元素
-    // 调用行仍落推导式区间内,模块 import 不作保。
+    // Review round 8 residual (2): a multi-line comprehension's iteration variable shadows its own element
+    // receiver -- the element call line still falls inside the comprehension range, so the module import does not vouch.
     let zcaller = "import avatar\nrows = [avatar.heal()\n        for avatar in items]\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -450,8 +455,9 @@ fn multi_line_comprehension_shadow_blocks_vouch() {
 
 #[test]
 fn module_rebind_blocks_module_fallback() {
-    // 复审第九轮残余①:模块顶层 import 后被本地赋值重绑定——函数内裸名
-    // 接收者是该本地对象,模块 import 回退不作保(伪边向)。
+    // Review round 9 residual (1): a module top-level import is later rebound by a local assignment -- the
+    // bare-name receiver inside the function is that local object, so the module import fallback does not
+    // vouch (pseudo-edge direction).
     let zcaller = "import avatar\navatar = obj\n\ndef battle():\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -473,8 +479,9 @@ fn module_rebind_blocks_module_fallback() {
 
 #[test]
 fn aliased_import_resolves_target_module_not_binding_name() {
-    // 复审第九轮残余②:`import other as avatar` 的绑定名是 avatar,目标
-    // 模块是 other——接收者应解析到 other.py 而非按绑定名误指 avatar.py。
+    // Review round 9 residual (2): for `import other as avatar` the binding name is avatar but the target
+    // module is other -- the receiver should resolve to other.py, not be misattributed to avatar.py by
+    // binding name.
     let other = "def heal():\n    pass\n";
     let avatar_file = "def heal():\n    pass\n";
     let zcaller = "import other as avatar\n\ndef battle():\n    avatar.heal()\n";
@@ -502,8 +509,9 @@ fn aliased_import_resolves_target_module_not_binding_name() {
 
 #[test]
 fn module_fallback_dotted_import_uses_first_segment() {
-    // 复审第十轮残余①:模块回退对无别名 `import a.b` 应取顶层首段 a
-    // (绑定的就是包 a),不得取末段 b 把同名无关 b.py 误指为被调方。
+    // Review round 10 residual (1): for an unaliased `import a.b` the module fallback should take the
+    // top-level first segment a (that is what gets bound, the package a); it must not take the last
+    // segment b and misattribute the unrelated same-named b.py as the callee.
     let zcaller = "import a.b\n\ndef battle():\n    a.f()\n";
     let amod = "def f():\n    pass\n";
     let bmod = "def f():\n    pass\n";
@@ -531,8 +539,9 @@ fn module_fallback_dotted_import_uses_first_segment() {
 
 #[test]
 fn conflicting_import_targets_give_up_edge() {
-    // 复审第十轮残余②:同名多次 import 目标不同(other/actual 争 avatar
-    // 绑定)——目标身份冲突,静态不裁决,保守放弃该边。
+    // Review round 10 residual (2): repeated same-named imports with different targets (other/actual
+    // competing for the avatar binding) -- conflicting target identity; statics do not adjudicate, so
+    // conservatively give up the edge.
     let other = "def heal():\n    pass\n";
     let actual = "def heal():\n    pass\n";
     let avatar_file = "def heal():\n    pass\n";
@@ -566,8 +575,9 @@ fn conflicting_import_targets_give_up_edge() {
 
 #[test]
 fn module_fallback_aliased_dotted_import_uses_last_segment() {
-    // 复审第十一轮残余①:`import a.b as c` 的绑定 c 指向模块 a.b——回退
-    // 应取末段 b(b.py),不得因绑定名恰为顶层首段误取 a.py。
+    // Review round 11 residual (1): the binding c of `import a.b as c` points at module a.b -- the
+    // fallback should take the last segment b (b.py), not mistakenly take a.py just because the
+    // binding name happens to equal the top-level first segment.
     let zcaller = "import a.b as c\n\ndef battle():\n    c.f()\n";
     let bmod = "def f():\n    pass\n";
     let amod = "def f():\n    pass\n";
@@ -595,18 +605,19 @@ fn module_fallback_aliased_dotted_import_uses_last_segment() {
 
 #[test]
 fn function_layer_from_import_conflict_gives_up_edge() {
-    // 复审第十一轮残余②:同 basename 不同目标(pkg.x vs other.x)的
-    // from-import 目标身份冲突——basename 相同不足以判定一致,应放弃。
+    // Review round 11 residual (2): from-imports with the same basename but different targets (pkg.x vs
+    // other.x) conflict in target identity -- an identical basename is not enough to judge them
+    // consistent, so give up.
     let px = "def heal():\n    pass\n";
     let ox = "def heal():\n    pass\n";
     let zcaller = "def battle():\n    from pkg import x as avatar\n    from other import x as avatar\n    avatar.heal()\n";
     let pk = key("scripts/x.py");
     let ok = key("scripts/x2.py");
     let zk = key("scripts/zcaller.py");
-    // 两个目标文件 basename 都须能命中(同 basename 不同目录在测试里用
-    // 同名不可行,改用两个不同文件各含 heal,断言两者都不产边——即完全
-    // 放弃)。x.py 与 x2.py basename 不同,保守契约下 from-conflict 放弃
-    // 后解析不到任何文件,两处都应无边。
+    // Both target files' basenames must be hit (same basename in different directories is not feasible
+    // in this test, so two distinct files each containing heal are used instead, asserting that neither
+    // produces an edge -- i.e. fully given up). x.py and x2.py differ in basename; under the conservative
+    // contract, once the from-conflict gives up nothing resolves, so both should have no edge.
     let mut file_edges = BTreeMap::new();
     let mut file_symbols = BTreeMap::new();
     for (k, src) in [(&pk, px), (&ok, ox), (&zk, zcaller)] {
@@ -625,9 +636,10 @@ fn function_layer_from_import_conflict_gives_up_edge() {
 
 #[test]
 fn aliased_dotted_import_alias_equals_first_segment_uses_last_segment() {
-    // 复审第十二轮残余:`import a.b as a` 显式别名恰为顶层首段名——绑定 a
-    // 指向模块 a.b,回退须按显式别名标志取末段 b(b.py),不得因绑定名等于
-    // 首段把「有别名」误判成「绑包本体」而误指无关 a.py。
+    // Review round 12 residual: `import a.b as a` where the explicit alias happens to equal the top-level
+    // first segment name -- binding a points at module a.b, so the fallback must take the last segment b
+    // (b.py) per the explicit-alias flag; it must not misjudge "has alias" as "binds the package itself"
+    // because the binding name equals the first segment and misattribute the unrelated a.py.
     let zcaller = "import a.b as a\n\ndef battle():\n    a.f()\n";
     let bmod = "def f():\n    pass\n";
     let amod = "def f():\n    pass\n";
@@ -655,9 +667,9 @@ fn aliased_dotted_import_alias_equals_first_segment_uses_last_segment() {
 
 #[test]
 fn aliased_and_unaliased_same_binding_conflict_gives_up_edge() {
-    // 复审第十二轮残余(一致性面):`import a.b` 与 `import a.b as a` 绑定名
-    // 同为 a,但目标身份不同(包本体 a vs 末段 b)——别名与否须进目标一致性
-    // 检查,冲突即放弃,不按首条误指。
+    // Review round 12 residual (consistency face): `import a.b` and `import a.b as a` share the binding
+    // name a but differ in target identity (the package a itself vs the last segment b) -- aliased-or-not
+    // must enter the target consistency check; on conflict, give up rather than misattribute by the first entry.
     let zcaller = "import a.b\nimport a.b as a\n\ndef battle():\n    a.f()\n";
     let bmod = "def f():\n    pass\n";
     let amod = "def f():\n    pass\n";
@@ -682,9 +694,10 @@ fn aliased_and_unaliased_same_binding_conflict_gives_up_edge() {
 
 #[test]
 fn same_target_import_with_and_without_alias_keeps_edge() {
-    // 复审第十三轮残余:别名与否不是目标身份——`import a` 与 `import a as a`
-    // (或 `from p import x` 与 `from p import x as x`)绑定名相同且解析后
-    // 目标相同,一致性检查不得因 aliased 标志不同判冲突放弃(漏边向)。
+    // Review round 13 residual: aliased-or-not is not target identity -- `import a` and `import a as a`
+    // (or `from p import x` and `from p import x as x`) share the binding name and resolve to the same
+    // target; the consistency check must not declare a conflict and give up over a differing aliased
+    // flag (missing-edge direction).
     let zcaller = "import a\nimport a as a\n\ndef battle():\n    a.f()\n";
     let amod = "def f():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -706,9 +719,10 @@ fn same_target_import_with_and_without_alias_keeps_edge() {
 
 #[test]
 fn conflicting_target_identity_same_basename_gives_up_edge() {
-    // 复审第十四轮残余:`import a.a`(身份=包 a)与 `import a.a as a`(身份=
-    // 模块 a.a)查找 basename 同为 a,但实际目标身份不同——一致性按目标身份
-    // 判,应弃边,不得因 basename 相同判一致而误指 a.py。
+    // Review round 14 residual: `import a.a` (identity = package a) and `import a.a as a` (identity =
+    // module a.a) share the lookup basename a but differ in actual target identity -- consistency is
+    // judged by target identity, so the edge should be dropped; do not judge them consistent over the
+    // shared basename and misattribute a.py.
     let zcaller = "import a.a\nimport a.a as a\n\ndef battle():\n    a.f()\n";
     let amod = "def f():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -730,8 +744,8 @@ fn conflicting_target_identity_same_basename_gives_up_edge() {
 
 #[test]
 fn same_target_from_import_with_and_without_alias_keeps_edge() {
-    // 复审第十四轮残余(from 面):`from p import x` 与 `from p import x as x`
-    // 绑定名同 x、目标身份同 p.x——不因 aliased 标志不同弃边,真边保留。
+    // Review round 14 residual (from face): `from p import x` and `from p import x as x` share binding
+    // name x and target identity p.x -- do not drop the edge over a differing aliased flag; the genuine edge is kept.
     let zcaller = "from p import x\nfrom p import x as x\n\ndef battle():\n    x.f()\n";
     let xmod = "def f():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -753,9 +767,10 @@ fn same_target_from_import_with_and_without_alias_keeps_edge() {
 
 #[test]
 fn different_relative_level_from_import_gives_up_edge() {
-    // 复审第十五轮残余(测试有效性):from-import 回退按 symbol 取 basename
-    // (y → y.py),层级冲突测试必须对唯一 y.py 断言无边——若层级比较失效,
-    // 两导入身份判一致会按 y 产边到 y.py,断言即红(可判别)。
+    // Review round 15 residual (test validity): the from-import fallback takes the basename from the
+    // symbol (y -> y.py), so the level-conflict test must assert no edge against the unique y.py -- if
+    // the level comparison broke, the two imports would be judged identity-consistent and produce an
+    // edge to y.py via y, turning the assertion red (discriminative).
     let zcaller = "from .x import y\nfrom ..x import y\n\ndef battle():\n    y.f()\n";
     let ymod = "def f():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -777,10 +792,11 @@ fn different_relative_level_from_import_gives_up_edge() {
 
 #[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
-    // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
-    // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠
-    // 回调用方文件 → 反索引无声丢弃。要求:不产伪边,但调用方文件必须
-    // 出现在 uncertain 面(uncertain_cross_process_files),供保守重扫消费。
+    // RUST-7: for `self.cell.*`/`self.base.*` cross-process edges the callee file is not statically
+    // resolvable (the entity class lives in a file on the other process side). Old behavior: falling into
+    // the self.* branch folded it back into the caller file as "same class" -> silently dropped from the
+    // reverse index. Requirement: produce no pseudo edge, but the caller file must appear in the uncertain
+    // face (uncertain_cross_process_files) for the conservative rescan to consume.
     let base_src = "class Avatar:\n    def onHpChanged(self):\n        self.cell.recalc()\n";
     let plain_src = "def unrelated():\n    pass\n";
     let base_key = key("scripts/entities/avatar_base.py");
@@ -795,7 +811,7 @@ fn rust7_cross_process_edge_marked_uncertain_not_silent() {
         file_symbols.insert(k.clone(), symbols);
     }
 
-    // 边确实被识别为 KbeCrossProcess(前提:不是 Unknown 混进来的)
+    // The edge is indeed classified KbeCrossProcess (precondition: not something Unknown slipped in as)
     let edges = &file_edges[&base_key];
     assert!(
         edges
@@ -804,14 +820,14 @@ fn rust7_cross_process_edge_marked_uncertain_not_silent() {
         "self.cell.recalc() 应分类为 KbeCrossProcess, got {edges:?}"
     );
 
-    // 反索引:跨进程边既不产伪边,也不再无声折叠回调用方自身
+    // Reverse index: cross-process edges produce no pseudo edge and are no longer silently folded back into the caller itself
     let rev = build_call_reverse_index(&file_edges, &file_symbols);
     assert!(
         rev.is_empty(),
         "跨进程边被调方不可解析,不应产任何反索引条目(含自身折叠), got {rev:?}"
     );
 
-    // uncertain 面:有跨进程边的调用方文件必须被标出(非无声丢弃)
+    // Uncertain face: caller files with cross-process edges must be flagged (not silently dropped)
     let uncertain = uncertain_cross_process_files(&file_edges);
     assert!(
         uncertain.contains(&base_key),
@@ -826,9 +842,10 @@ fn rust7_cross_process_edge_marked_uncertain_not_silent() {
 
 #[test]
 fn inner_scope_unrelated_import_falls_through_to_outer_resolution() {
-    // 内层函数仅 import 无关模块(utils):对 avatar 既无绑定也无遮蔽 →
-    // (None,None) 未决继续向外——无关 import 不得截断解析,由模块顶层
-    // `import avatar` 保放跨文件边(漏边向:未提及名当作未决而非本地名)。
+    // The inner function imports only an unrelated module (utils): no binding and no shadow for avatar ->
+    // (None, None) unresolved, keep walking outward. An unrelated import must not truncate resolution; the
+    // module top-level `import avatar` vouches for the cross-file edge (missing-edge direction: a name that
+    // is never mentioned is treated as unresolved, not as a local name).
     let utils_src = "def load():\n    pass\n";
     let avatar_src = "def heal():\n    pass\n";
     let zcaller =
@@ -845,8 +862,9 @@ fn inner_scope_unrelated_import_falls_through_to_outer_resolution() {
 
 #[test]
 fn unresolved_module_import_no_edge_when_file_missing() {
-    // `import nothere` 的模块接收者按 basename 全项目找文件;项目里没有
-    // nothere.py → 零匹配不产边(宁缺毋滥),也不得误指其他 basename 文件。
+    // The module receiver of `import nothere` searches the whole project for a file by basename; no
+    // nothere.py exists in the project -> zero matches produce no edge (prefer missing over wrong),
+    // and no other basename's file may be misattributed either.
     let zcaller = "import nothere\n\ndef battle():\n    nothere.act()\n";
     let other_src = "def act():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -860,8 +878,9 @@ fn unresolved_module_import_no_edge_when_file_missing() {
 
 #[test]
 fn ambiguous_same_basename_files_give_up_edge() {
-    // 两个不同目录的同名 avatar.py:basename 匹配不唯一 → 歧义放弃,不
-    // 指向任一候选(宁缺毋滥;反依赖指错文件会漏失效/误失效)。
+    // Same-named avatar.py in two different directories: the basename match is not unique -> give up on
+    // ambiguity and point at neither candidate (prefer missing over wrong; a reverse dependency pointing at
+    // the wrong file causes missed or spurious invalidation).
     let zcaller = "import avatar\n\ndef battle():\n    avatar.heal()\n";
     let a1 = "def heal():\n    pass\n";
     let a2 = "def heal():\n    pass\n";
@@ -878,8 +897,8 @@ fn ambiguous_same_basename_files_give_up_edge() {
 
 #[test]
 fn edge_kind_as_str_stable_literals() {
-    // golden 对拍出口:八种边种类的稳定字面量(wt/parity 面板着色/导出
-    // 按此字符串消费,改动即破坏对拍契约)。
+    // Golden parity-comparison exit: stable literals for the eight edge kinds (wt/parity panel
+    // coloring/export consume these strings; changing them breaks the parity contract).
     assert_eq!(kode_python::EdgeKind::Local.as_str(), "local");
     assert_eq!(kode_python::EdgeKind::Method.as_str(), "method");
     assert_eq!(kode_python::EdgeKind::SelfMethod.as_str(), "self-method");

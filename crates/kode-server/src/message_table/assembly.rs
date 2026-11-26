@@ -1,9 +1,9 @@
-//! MessageTable 中间装配状态。
+//! Intermediate assembly state for the MessageTable.
 
 use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
-// 中间装配态(TS ModuleAssembly 对应物)
+// Intermediate assembly state (counterpart of TS ModuleAssembly)
 // ---------------------------------------------------------------------------
 
 pub(super) struct AsmType {
@@ -65,7 +65,7 @@ pub(super) struct AsmSource {
     pub(super) file_path: String,
 }
 
-/// 装配态:引擎全局计数器与模块内已注册名的模拟(TS ModuleAssembly)。
+/// Assembly state: simulation of engine-global counters and names registered within the module (TS ModuleAssembly).
 pub(super) struct Assembly {
     pub(super) entity_name: String,
     pub(super) used_utypes: HashSet<i64>,

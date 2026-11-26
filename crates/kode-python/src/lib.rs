@@ -1,18 +1,23 @@
-//! kode-python:KBEngine Python 脚本的 AST 集成层(kode2 C-20)。
+//! kode-python: AST integration layer for KBEngine Python scripts (kode2 C-20).
 //!
-//! 职责(kode2 C-20,交付面见 docs/kode2/KODE_2_COMPLETE_TODO.md):
-//! - [`parse`] Python 源 → ruff AST(ruff_python_parser,不造轮子)+ 行定位;
-//! - [`symbols`] AST → 符号表(类/方法/属性/导入四表,可降级为
-//!   [`kode_corpus::PythonModule`] 供 C-19 一致性检查与 wt/parity 复用);
-//! - [`callgraph`] 方法级调用图 + KBEngine 特化边(allClients/baseClients 广播边、
-//!   cell/base 跨进程边,进程归属联动 C-17);
-//! - [`dataflow`] 过程内 def-use 数据流(MVP:直线近似,不合并控制流分支);
-//! - [`graph`] 调用图聚合 + 供 kode-scheduler 失效 DAG 消费的反向索引
-//!   (被调方文件 → 调用方文件集)。
+//! Responsibilities (kode2 C-20; the delivery surface is in
+//! docs/kode2/KODE_2_COMPLETE_TODO.md):
+//! - [`parse`] Python source -> ruff AST (ruff_python_parser, no reinventing the wheel) +
+//!   line locations;
+//! - [`symbols`] AST -> symbol tables (four tables: classes / methods / attributes / imports,
+//!   degradable to [`kode_corpus::PythonModule`] for C-19 consistency checks and wt/parity reuse);
+//! - [`callgraph`] method-level call graph + KBEngine-specialized edges (allClients/baseClients
+//!   broadcast edges, cell/base cross-process edges, process-ownership interplay C-17);
+//! - [`dataflow`] intra-procedural def-use dataflow (MVP: straight-line approximation, does not
+//!   merge control-flow branches);
+//! - [`graph`] call-graph aggregation + reverse index (callee file -> set of caller files) for
+//!   the kode-scheduler invalidation DAG to consume.
 //!
-//! 边界:过程间数据流/指针分析不在本期(MVP 只做过程内直线近似)。
-//! 依赖:本 crate 是仓库唯一显式引入第三方解析器(ruff)的模块,其余 crate
-//! 保持零第三方依赖(见 crate 根 `Cargo.toml` 注)。
+//! Boundary: inter-procedural dataflow / pointer analysis is out of scope this phase (MVP does
+//! only intra-procedural straight-line approximation).
+//! Dependencies: this crate is the only module in the repo that explicitly introduces a third-party
+//! parser (ruff); all other crates keep zero third-party dependencies (see the note at the crate
+//! root `Cargo.toml`).
 
 pub mod callgraph;
 pub mod cancel;

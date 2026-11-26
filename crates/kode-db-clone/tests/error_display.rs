@@ -1,5 +1,6 @@
-//! CloneError 文案面(PDC-0107):每个变体都以可理解的英文文案展示原因,
-//! 不泄漏底层 SQL/凭据细节;并确认可用作 std::error::Error。
+//! CloneError message face (PDC-0107): every variant renders its cause as an
+//! understandable English message without leaking underlying SQL/credential
+//! details; also confirms it works as a std::error::Error.
 
 use kode_db_clone::error::CloneError;
 
@@ -68,7 +69,7 @@ fn error_is_std_error_and_not_leaks_credentials() {
     let err = CloneError::ArchiveError("password=hunter2 surfaced".into());
     let dyn_err: &dyn std::error::Error = &err;
     assert!(dyn_err.to_string().contains("password=hunter2"));
-    // 预算截断必须如实声明「被截断」而不是伪完整。
+    // Budget truncation must honestly declare "truncated" instead of faking completeness.
     let msg = CloneError::BudgetExceeded {
         limit: 5,
         requested: 9,

@@ -1,24 +1,24 @@
-/** 一个类的定义(含它自己的 `def` 方法) */
+/** A class definition (including its own `def` methods) */
 export interface PythonClassDef {
   name: string;
-  /** 基类表达式，保留模块与 import 别名。 */
+  /** Base-class expressions, preserving modules and import aliases. */
   bases: string[];
   qualifiedName?: string;
   filePath: string;
-  /** 0-based 起始行(class 语句行) */
+  /** 0-based start line (the line of the class statement) */
   startLine: number;
-  /** 0-based 结束行(不含) */
+  /** 0-based end line (exclusive) */
   endLine: number;
-  /** 方法名 → 定义位置(0-based 行/列) */
+  /** Method name -> definition position (0-based line/column) */
   methods: Map<string, { line: number; character: number }>;
 }
 
-/** 解析结果:类按文件聚合 + 全局 className → 定义 多映射(同名类可能多处) */
+/** Parse result: classes aggregated per file + a global className -> definition multimap (a class name can appear in many places) */
 export interface ParsedPythonFile {
   filePath: string;
   classes: PythonClassDef[];
   imports?: Map<string, { module: string; symbol?: string }>;
-  /** 模块级实例赋值 `NAME = CLASS(...)`(types.xml implementedBy 指向实现对象,经此解析 实例→类) */
+  /** Module-level instance assignment `NAME = CLASS(...)` (types.xml implementedBy points at the implementation object; via this the instance -> class resolution happens) */
   instanceAssignments: Array<{ variable: string; className: string; line: number }>;
 }
 
@@ -58,8 +58,9 @@ export function isPythonCodePosition(content: string, line: number, character: n
 
 /**
  * Join bracket/backslash continuations, retaining the first line's coordinates.
- * `text` 为掩码文本(注释/字符串整体空白),`indent` 取首行前导空白。
- * IDE-LINT-010 复用(销毁后访问 lint 的块/缩进结构分析)。
+ * `text` is the masked text (comments/strings are all whitespace), `indent` is the
+ * leading whitespace of the first line.
+ * IDE-LINT-010 reuses it (block/indentation structure analysis for after-disposal lint).
  */
 export function pythonStatements(content: string): Array<{ text: string; line: number; endLine: number; indent: number }> {
   const statements: Array<{ text: string; line: number; endLine: number; indent: number }> = [];
@@ -157,9 +158,10 @@ export function parsePythonFile(content: string, filePath: string): ParsedPython
         if (!match) { continue; }
         if (from) {
           if (/^\.+$/.test(from[1])) {
-            // KR-AUD-32:`from . import mod` 的导入名是模块接收者——折叠进模块
-            // 路径('.'+'mod' → '.mod',无 symbol),importModuleCandidates 才能按
-            // 兄弟文件 mod.py 解析;纯点号记成 module='.' 会解析到目录自身落空。
+            // KR-AUD-32: the imported name of `from . import mod` is a module receiver --
+            // fold it into the module path ('.'+'mod' -> '.mod', no symbol) so that
+            // importModuleCandidates can resolve it to the sibling file mod.py; recording
+            // a bare dot as module='.' resolves to the directory itself and falls empty.
             imports.set(match[2] ?? match[1], { module: from[1] + match[1] });
           } else {
             imports.set(match[2] ?? match[1], { module: from[1], symbol: match[1] });

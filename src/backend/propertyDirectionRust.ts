@@ -1,11 +1,17 @@
 /**
- * propertyDirection 诊断收编 Rust(AUDIT-005 B2 车道批 7):`$/kode/lint/analyzePropertyDirection`
- * 的 TS 装配面。词法三扫描(self.<path> 访问/def __init__ 赋值+cellData 拷贝键/
- * cellData 键访问,全原文口径)在 Rust;**影子/cellData 两流完整保留**——判定核
- * (方向分类/影子抑制/两流分派)与 def 解析、消息渲染全留 TS 单一来源,Rust 只
- * 供给扫描束(与本地 scanBundleOf 同形),判定核零分叉。零 `self.` 线索返回合法
- * 空束不发 RPC;失败/畸形返回 null(调用方回本地扫描束)——禁止部分采用
- * (静默丢能力)。
+ * propertyDirection diagnostics absorbed into Rust (AUDIT-005 B2 lane batch 7):
+ * the TS wiring face of `$/kode/lint/analyzePropertyDirection`. The three
+ * lexical scans (self.<path> accesses / def __init__ assignments + cellData
+ * copy keys / cellData key accesses, all on the verbatim text) live in Rust;
+ * **both the shadow and cellData streams are fully preserved** — the ruling
+ * core (direction classification / shadow suppression / two-stream
+ * dispatch) plus def resolution and message rendering all stay in TS as the
+ * single source, while Rust only supplies the scan bundle (same shape as the
+ * local scanBundleOf), zero divergence in the ruling core. Zero `self.`
+ * clues return a legitimate empty bundle without issuing an RPC;
+ * failure/malformed shapes return null (the caller falls back to the local
+ * scan bundle) — partial adoption is forbidden (it silently drops
+ * capability).
  */
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import {
@@ -29,11 +35,11 @@ const emptyBundle = (): PropertyDirectionScanBundle => ({
   cellDataAccesses: []
 });
 
-/** 非负整数校验;畸形 true */
+/** Non-negative integer check; true means malformed */
 const badInt = (value: unknown): boolean =>
   typeof value !== 'number' || !Number.isInteger(value) || value < 0;
 
-/** Rust 扫描束 → 本地同形束;任一面畸形返回 null(整面作废,不部分采用) */
+/** Rust scan bundle → local same-shape bundle; any malformed face returns null (the whole face is void, never partially adopted) */
 function convertScanBundle(raw: unknown): PropertyDirectionScanBundle | null {
   if (raw === null || typeof raw !== 'object') {
     return null;
@@ -143,10 +149,14 @@ function convertScanBundle(raw: unknown): PropertyDirectionScanBundle | null {
 }
 
 /**
- * Rust-first 扫描束:gate.runInRust 跑 `$/kode/lint/analyzePropertyDirection`,
- * 结构束经 convertScanBundle 转本地同形(调用方 propertyDirectionDiagnosticItems
- * Async / propertyDirectionShadowHintItemsAsync 的 bundle 入参,判定核与兜底
- * 完全同一份);无门/零线索/失败/畸形返回 null(零线索合法空束,不空发 RPC)。
+ * Rust-first scan bundle: gate.runInRust runs
+ * `$/kode/lint/analyzePropertyDirection`, and the structured bundle goes
+ * through convertScanBundle into the local same shape (the bundle argument of
+ * the callers propertyDirectionDiagnosticItemsAsync /
+ * propertyDirectionShadowHintItemsAsync, so the ruling core and the fallback
+ * share exactly one copy); no gate / zero clues / failure / malformed shape
+ * returns null (zero clues is a legitimate empty bundle, no RPC fired
+ * blindly).
  */
 export async function buildPropertyDirectionScanBundleWithRust(
   text: string
@@ -173,8 +183,8 @@ export async function buildPropertyDirectionScanBundleWithRust(
   return convertScanBundle(scan);
 }
 
-/** 测试面:空束(零线索语义,与 scanBundleOf('') 同输出) */
+/** Test face: the empty bundle (zero-clue semantics, same output as scanBundleOf('')) */
 export const emptyPropertyDirectionScanBundleForTest = emptyBundle;
 
-/** 测试面:本地扫描束直查(对拍兜底侧共用) */
+/** Test face: direct lookup of the local scan bundle (shared with the fallback side for parity checks) */
 export const localScanBundleForTest = scanBundleOf;

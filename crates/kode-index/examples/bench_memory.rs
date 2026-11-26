@@ -1,27 +1,34 @@
-//! 索引内存占用实测(RUST-129 旧 IDX-012:内存索引结构评测)。
+//! Measured index memory footprint (RUST-129, old IDX-012: memory index structure evaluation).
 //!
-//! 目标不是测速,是把「50k 文件内存爆炸」命题落到数字上,并为
-//! interning / arena / small vectors 三个候选结构给出实测收益上限:
+//! The goal is not to measure speed but to put numbers on the "50k files memory blowup"
+//! proposition, and to give a measured upper bound on the gains of three candidate
+//! structures — interning / arena / small vectors:
 //!
-//! - **分层归因**:`--layer parse`(仅 ParseRegistry:解析树缓存 + 引用正/反表)
-//!   与 `--layer full`(完整 SymbolIndex = 解析层 + 符号层)同规模各测一次 RSS,
-//!   符号层 = full − parse。
-//! - **线性检验**:5k / 10k / 25k / 50k 四档,bytes/file 与 bytes/symbol 应
-//!   平稳(爬升 = 有超线性结构)。
-//! - **interning 潜力**:`--layer ratio` 小语料实测「名字总字节 / 去重后字节」,
-//!   得出符号 name 字符串层 intern 后的可省比例(上限,实际还要扣表结构开销)。
-//! - **RSS 口径**:读 /proc/self/status VmRSS(Linux;拿不到则跳过内存面只打
-//!   符号计数)。基线在本轮构建**之前**、上一轮 drop **之后**采样,故 delta
-//!   是保守下界(分配器可能不把上轮释放页还给 OS);四个档位同进程升序跑,
-//!   若 bytes/symbol 出现爬升,用 `--layer`/`--files` 单独重跑该档复核。
-//!   RSS 采样时结构必须存活(持引用采,采完才 drop)。
+//! - **Layered attribution**: `--layer parse` (ParseRegistry only: parse tree cache +
+//!   reference forward/reverse tables) and `--layer full` (full SymbolIndex = parse layer
+//!   + symbol layer) each measure RSS at the same scale, and the symbol layer = full − parse.
+//! - **Linearity check**: four tiers 5k / 10k / 25k / 50k; bytes/file and bytes/symbol
+//!   should stay flat (a climb = a super-linear structure).
+//! - **Interning potential**: `--layer ratio` measures "total name bytes / deduplicated
+//!   bytes" on a small corpus, yielding the fraction saved by interning the symbol name
+//!   string layer (an upper bound; real savings must further deduct table overhead).
+//! - **RSS semantics**: reads VmRSS from /proc/self/status (Linux; if unavailable, skip
+//!   the memory face and only print symbol counts). The baseline is sampled **before** this
+//!   round's build and **after** the previous round's drop, so the delta is a conservative
+//!   lower bound (the allocator may not return the previous round's freed pages to the
+//!   OS); the four tiers run ascending in the same process, and if bytes/symbol climbs,
+//!   rerun that tier alone with `--layer`/`--files` to cross-check.
+//!   The structure must stay alive while RSS is sampled (sample while holding a reference,
+//!   drop only afterwards).
 //!
-//! 语料形态与 bench_increment 同族:每文件 64 属性 + 12 方法,属性/方法名
-//! 全工程共享(贴真实项目 hp/level/onLogin 类高频重名形态),实体名取文件
-//! stem 全工程唯一 → 每文件 77 符号,其中重名面占 76。
+//! The corpus shape is the same family as bench_increment: 64 properties + 12 methods per
+//! file, with property/method names shared project-wide (mirroring the high-frequency
+//! same-name shape of real projects like hp/level/onLogin), and the entity name taken from
+//! the file stem is project-wide unique -> 77 symbols per file, of which 76 are on the
+//! same-name face.
 //!
-//! 复现:`cargo run -p kode-index --release --example bench_memory`
-//!   (单档:`-- --layer parse|full --files 25000`;只测去重率:`-- --layer ratio`)
+//! Reproduce: `cargo run -p kode-index --release --example bench_memory`
+//!   (single tier: `-- --layer parse|full --files 25000`; dedup rate only: `-- --layer ratio`)
 
 use kode_index::{DocumentKey, RootId, SymbolIndex};
 use kode_parser::dep::ParseRegistry;
@@ -55,7 +62,7 @@ fn def_text() -> String {
     s
 }
 
-/// /proc/self/status 的 VmRSS(kB);非 Linux 或读取失败返回 None。
+/// VmRSS (kB) from /proc/self/status; returns None on non-Linux or a read failure.
 fn rss_kb() -> Option<u64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     let line = status.lines().find(|l| l.starts_with("VmRSS:"))?;
@@ -67,7 +74,8 @@ fn rss_label(kb: Option<u64>) -> String {
     kb.map(|v| v.to_string()).unwrap_or_else(|| "n/a".into())
 }
 
-/// 仅解析层:ParseRegistry(解析树缓存 + 引用正/反表),不建符号表。
+/// Parse layer only: ParseRegistry (parse tree cache + reference forward/reverse tables),
+/// without building the symbol table.
 fn feed_parse(files: usize, text: &str) -> ParseRegistry {
     let mut registry = ParseRegistry::new();
     for i in 0..files {
@@ -84,7 +92,8 @@ fn feed_parse(files: usize, text: &str) -> ParseRegistry {
     registry
 }
 
-/// 完整索引:逐文件喂入(文本即用即弃,避免语料本体驻留污染归因)。
+/// Full index: fed in file by file (text is used and discarded immediately, so the corpus
+/// body itself does not stay resident and pollute the attribution).
 fn feed_full(files: usize, text: &str) -> SymbolIndex {
     let mut index = SymbolIndex::new();
     let mut added_total = 0usize;
@@ -108,7 +117,7 @@ fn feed_full(files: usize, text: &str) -> SymbolIndex {
 fn run_layer(layer: &str, files: usize) {
     let text = def_text();
     let before = rss_kb();
-    // 结构必须在 RSS 采样时存活(采样后才 drop)。
+    // The structure must still be alive when RSS is sampled (drop only after sampling).
     let after = match layer {
         "parse" => {
             let registry = feed_parse(files, &text);
@@ -140,7 +149,8 @@ fn run_layer(layer: &str, files: usize) {
     }
 }
 
-/// 名字去重率(intering 潜力):小语料逐符号收集 name,测「总字节 / 去重字节」。
+/// Name deduplication rate (interning potential): collect name symbol by symbol on a small
+/// corpus and measure "total bytes / deduplicated bytes".
 fn name_ratio(files: usize, text: &str) {
     let mut index = SymbolIndex::new();
     for i in 0..files {
@@ -188,7 +198,7 @@ fn main() {
         "ratio" => name_ratio(files_arg.unwrap_or(1_000), &def_text()),
         "parse" | "full" => run_layer(&layer, files_arg.unwrap_or(50_000)),
         "all" => {
-            // 升序扫档:ratio(小语料) → parse/full 各四档。
+            // Ascending tier sweep: ratio (small corpus) -> parse/full four tiers each.
             name_ratio(1_000, &def_text());
             for files in [5_000usize, 10_000, 25_000, 50_000] {
                 run_layer("parse", files);

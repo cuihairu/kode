@@ -1,16 +1,16 @@
-//! `$/kode/messageTable/build` handler(批123 消息编号表纯逻辑核心)。
+//! `$/kode/messageTable/build` handler (batch 123 pure-logic core of the message numbering table).
 //!
-//! 从 def 文本(TS 侧已读盘直传)产出一张与 TS `buildMessageTable` 逐字段
-//! 一致的 MessageTable JSON:方法/属性 utype 分配、域位冲突、别名 id、
-//! 组件槽、types.xml 用户类型。输入 = `{entityName, defText, typesXml,
-//! defs: {name: text}, paths: {name: path}, aliasIdEnabled}`;输出 =
-//! MessageTable 全形 JSON(clientMethods/clientProperties 为全量条目,与
-//! TS buildMessageTable 返回对象一致,渲染器负责缩减序列化)。
+//! From def text (read from disk and passed through by the TS side) produce a MessageTable JSON that matches TS `buildMessageTable` field for field:
+//! method/property utype assignment, domain-bit conflicts, alias ids,
+//! component slots, types.xml user types. Input = `{entityName, defText, typesXml,
+//! defs: {name: text}, paths: {name: path}, aliasIdEnabled}`; output =
+//! the full-shape MessageTable JSON (clientMethods/clientProperties carry the full entry set, matching
+//! the object returned by TS buildMessageTable; the renderer handles reduced serialization).
 //!
-//! 引擎语义与 TS 实现逐条对齐(src/messageTable.ts 模块头注),此处不复述;
-//! 差异只在**解析基座**:TS 用 fxp + parseLocalDefinition,Rust 用 kode-parser
-//! xml 状态机(等价的容错解析),`<Utype>`/ARRAY `<of>` 链/`<Flags>` 原文
-//! 在此从 xml Document 提取(PropertyDef/MethodDef 不带这些细粒度)。
+//! Engine semantics are aligned item-for-item with the TS implementation (see the src/messageTable.ts module header note); not repeated here.
+//! The only difference is the **parsing base**: TS uses fxp + parseLocalDefinition, Rust uses the kode-parser
+//! xml state machine (equivalent fault-tolerant parsing); the raw text of `<Utype>`/ARRAY `<of>` chains/`<Flags>`
+//! is extracted here from the xml Document (PropertyDef/MethodDef do not carry that granularity).
 
 mod aliases;
 mod assembly;
@@ -30,7 +30,7 @@ use serde_json::Value;
 use crate::rpc::RpcRegistry;
 use builder::build_table;
 
-/// 注册 `$/kode/messageTable/build` RPC 处理器。
+/// Register the `$/kode/messageTable/build` RPC handler.
 pub fn register(reg: &mut RpcRegistry) {
     {
         reg.register("$/kode/messageTable/build", build_handler);

@@ -1,23 +1,23 @@
-//! 诊断分级装配决策核(RUST-142 批 2;TS 生产四族装配批的纯库半边)。
+//! Diagnostic-tiering assembly decision core (RUST-142 batch 2; the pure-library half of the TS production four-family assembly batch).
 //!
-//! 批 1(diagnostic_pipeline.rs)交付了 12 计数器调度状态机回放核 +
-//! 四族层模型(layer_for_family)。本批把**真实 lint 家族税表**接入四层:
-//! `lint::Finding.check` 的 15 个在役 check 码 → 四层路由(现状全部
-//! LocalSyntax——生产 TS 层枚举仍 local|semantic,诊断面 rust 服务腿
-//! (observeRustDefFindings/mergeRustDefFindings)把这些 findings 当本地
-//! def 校验并集;semantic/engineCompat/runtimeConfig 三个座位是目标设计
-//! 面,家族迁移时由 TS 装配批翻表,本面只锁「表 + 路由 + 合流序」)。
+//! Batch 1 (diagnostic_pipeline.rs) delivered the 12-counter scheduling state-machine replay core plus
+//! the four-family layer model (layer_for_family). This batch wires the **real lint family tax table** into the four layers:
+//! the 15 active check codes of `lint::Finding.check` -> four-layer routing (currently all
+//! LocalSyntax -- the production TS layer enum is still local|semantic, and the diagnostic face's rust serving leg
+//! (observeRustDefFindings/mergeRustDefFindings) treats these findings as local
+//! def-validation union; the semantic/engineCompat/runtimeConfig three seats are the target design
+//! faces; the family migration hands the table flip to the TS assembly batch, while this face locks only "table + routing + merge order").
 //!
-//! 合流序 = 批 1 golden 同款层名字节序(engineCompat < localSyntax <
-//! runtimeConfig < semantic);逐层独立 DiagnosticSchedulerCore(request
-//! 立即通道,version 同版跳过等语义全部继承批 1 回放核)。
+//! Merge order = batch 1 golden's same layer-name byte order (engineCompat < localSyntax <
+//! runtimeConfig < semantic); each layer has an independent DiagnosticSchedulerCore (request
+//! immediate channel, version-same-skip semantics all inherited from the batch 1 replay core).
 //!
-//! 诚实边界(登记,不冒充):分级现状是**全 LocalSyntax 常表**——四层
-//! 路由的可观察面(异层落桶/合流交错)在语料上不可分辨,由合成钉 +
-//! merged_publish 手工桶钉闭环;engineCompat 座位的真实占员(def md5
-//! 兼容面)与 runtimeConfig 座位(TS configContract 族)归各自车道接线
-//! 时入表。didChange 生产接线 + LSP publishDiagnostics 留接线批,本批
-//! 零接 server.rs 纯库不变。
+//! Honest boundary (registered, not disguised): the current tiering is an **all-LocalSyntax constant table** -- the observable face of
+//! four-layer routing (cross-layer bucket placement / merge interleaving) is indistinguishable on the corpus, closed by synthetic pins +
+//! merged_publish manual-bucket pins; the real occupants of the engineCompat seat (the def md5
+//! compat face) and of the runtimeConfig seat (the TS configContract family) belong to their own lanes' wiring
+//! when they are wired in. The didChange production wiring + LSP publishDiagnostics stay with the wiring batch; this batch
+//! touches zero of server.rs -- the pure library stays unchanged.
 
 use std::collections::BTreeMap;
 
@@ -29,9 +29,9 @@ use crate::diagnostic_pipeline::{
 use crate::hover::HoverEngine;
 use crate::lint::{analyze_def_with_python, Finding, InheritedNames, PythonParityInput};
 
-/// 在役 lint check 码全表(lint/rules.rs 15 规则;新增规则双侧同步——
-/// 本表是四族装配的家族税源,TS 镜像 tests/kodeDiagnosticLayeringParity
-/// 同表对拍)。
+/// Full table of active lint check codes (lint/rules.rs, 15 rules; new rules synced on both sides --
+/// this table is the family tax source for the four-family assembly; the TS mirror tests/kodeDiagnosticLayeringParity
+/// compares on the same table).
 pub const CHECK_CODES: &[&str] = &[
     "def-method-missing-in-python",
     "duplicate-definition",
@@ -50,38 +50,38 @@ pub const CHECK_CODES: &[&str] = &[
     "unknown-type-reference",
 ];
 
-/// 家族 → 层决策表(RUST-142 批 3a 四族真占员入表——按「检查的计算依赖」
-/// 分层,非按消息语义:层 = 该诊断重算所需的工作域/节奏,独立节流)。
+/// Family -> layer decision table (RUST-142 batch 3a: the four families' real occupants enter the table -- layered by "the check's computational dependency"
+/// not by message semantics: the layer = the working domain / cadence needed to recompute that diagnostic, throttled independently).
 ///
-/// - LocalSyntax:单 def 自足、廉价、按击键可重算的结构/词表/作用域检查
-///   (12 码:重复标签/重复定义/关键字名/缺 Type/缺 Flags/flag·detail 词表/
-///   DetailLevel 冗余/ALL_CLIENTS+大负载组合/方法·属性同名/引擎受限名/
-///   引擎未注册幻影类型——后两码虽是「引擎不接受」语义,但其判定是静态
-///   词表、零索引零引擎版本,按计算域归本地层);
-/// - Semantic:需工作区解析(index/types.xml 注册表/继承链/Python 对拍)的
-///   检查(3 码:def-method-missing-in-python/inherited-name-collision/
+/// - LocalSyntax: single-def self-contained, cheap, per-keystroke recomputable structure/vocabulary/scope checks
+///   (12 codes: duplicate tag / duplicate definition / keyword name / missing Type / missing Flags / flag and detail vocabularies /
+///   redundant DetailLevel / ALL_CLIENTS + large payload combination / method and property name collision / engine-restricted names /
+///   engine-unregistered phantom types -- although the last two codes carry "engine rejects it" semantics, their judgement is a static
+///   vocabulary with zero index and zero engine version, so by computational domain they belong to the local layer);
+/// - Semantic: checks needing workspace resolution (index / types.xml registry / inheritance chain / Python parity)
+///   (3 codes: def-method-missing-in-python / inherited-name-collision /
 ///   unknown-type-reference);
-/// - EngineCompat / RuntimeConfig:本表无占员——按批 2 诚实边界,两座位
-///   归各自车道(engineCompat = def md5 兼容面,runtimeConfig =
-///   configContract 族),家族迁移时再入表。
+/// - EngineCompat / RuntimeConfig: no occupants in this table -- per the batch 2 honest boundary, the two seats
+///   belong to their own lanes (engineCompat = the def md5 compat face, runtimeConfig =
+///   the configContract family), entering the table when the family migrates.
 ///
-/// 未知 check 码保守路由 LocalSyntax(不丢产出)。
+/// Unknown check codes route conservatively to LocalSyntax (no output lost).
 pub fn layer_for_check(check: &str) -> DiagnosticLayer {
     match check {
-        // 需要工作区解析(types.xml 注册表/继承链/Python 对拍)。
-        "def-method-missing-in-python"
-        | "inherited-name-collision"
-        | "unknown-type-reference" => DiagnosticLayer::Semantic,
-        // 其余在役码均单 def 自足静态判定 → 本地语法层。
+        // Needs workspace resolution (types.xml registry / inheritance chain / Python parity).
+        "def-method-missing-in-python" | "inherited-name-collision" | "unknown-type-reference" => {
+            DiagnosticLayer::Semantic
+        }
+        // All other active codes are single-def self-contained static judgements -> the local syntax layer.
         _ => DiagnosticLayer::LocalSyntax,
     }
 }
 
-/// 四层名合流序 = 批 1 golden 同款字节序(publishLog 拼接口径)。
+/// Four-layer name merge order = batch 1 golden's same byte order (the publishLog concatenation stance).
 pub const MERGED_PUBLISH_ORDER: &[&str] =
     &["engineCompat", "localSyntax", "runtimeConfig", "semantic"];
 
-/// 逐层路由桶(保序;route_findings 产出,merged_publish 消费)。
+/// Per-layer routing buckets (order-preserving; produced by route_findings, consumed by merged_publish).
 #[derive(Debug, Default, Clone)]
 pub struct LayeredFindings {
     pub local_syntax: Vec<Finding>,
@@ -110,7 +110,7 @@ impl LayeredFindings {
     }
 }
 
-/// 全量 findings 按决策表路由(保序入桶)。
+/// Route all findings through the decision table (order-preserving bucket insertion).
 pub fn route_findings(findings: Vec<Finding>) -> LayeredFindings {
     let mut out = LayeredFindings::default();
     for finding in findings {
@@ -120,7 +120,7 @@ pub fn route_findings(findings: Vec<Finding>) -> LayeredFindings {
     out
 }
 
-/// 逐层调度核组(独立节流语义 = 批 1 回放核,四层互不影响)。
+/// Per-layer scheduler core group (independent throttling semantics = the batch 1 replay core; the four layers do not affect each other).
 #[derive(Debug)]
 pub struct LayeredSchedulers {
     pub local_syntax: DiagnosticSchedulerCore,
@@ -148,7 +148,7 @@ impl LayeredSchedulers {
         }
     }
 
-    /// 合流发布面:四层 sink 按层名字节序拼接(publishLog 拼接口径)。
+    /// Merged publish face: the four layer sinks are concatenated in layer-name byte order (the publishLog concatenation stance).
     pub fn merged_publish(&self) -> Vec<&PublishRecord> {
         let mut out = Vec::new();
         for name in MERGED_PUBLISH_ORDER {
@@ -172,7 +172,7 @@ impl Default for LayeredSchedulers {
 }
 
 // ---------------------------------------------------------------------------
-// golden 第四面(语料真分布 + 决策表快照 + 逐层独立回放)
+// golden fourth face (real corpus distribution + decision-table snapshot + per-layer independent replay)
 // ---------------------------------------------------------------------------
 
 pub const DIAGNOSTIC_LAYERING_GOLDEN_REL_PATH: &str =
@@ -220,10 +220,10 @@ struct GoldenDump {
     files: Vec<GoldenFile>,
 }
 
-/// 语料分级装配快照:逐 def 文件跑全量 lint(production-shape knownTypes =
-/// 引擎 type_context 实体名 + types.xml 自定义类型;inheritedNames 缺省 =
-/// parity 规则零产出,诚实边界)、按决策表路由、逐层独立调度核回放
-/// (request 立即通道,version=Some(1))。
+/// Corpus tiering-assembly snapshot: run full lint per def file (production-shape knownTypes =
+/// engine type_context entity names + types.xml custom types; inheritedNames defaults to
+/// zero output from the parity rule, honest boundary), route by the decision table, and replay per-layer independent scheduler cores
+/// (request immediate channel, version=Some(1)).
 pub fn dump_diagnostic_layering_golden(repo_root: &std::path::Path) -> String {
     use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 
@@ -326,7 +326,7 @@ pub fn dump_diagnostic_layering_golden(repo_root: &std::path::Path) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// 单元钉
+// Unit pins
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -351,9 +351,9 @@ mod tests {
         }
     }
 
-    /// 决策表覆盖面:CHECK_CODES 全表可路由(批 3a 真占员:12 本地 +
-    /// 3 语义,engineCompat/runtimeConfig 两座位归 def-md5/configContract
-    /// 车道);未知码保守路由 LocalSyntax(不丢产出)。
+    /// Decision-table coverage: the full CHECK_CODES table is routable (batch 3a real occupants: 12 local +
+    /// 3 semantic; the engineCompat/runtimeConfig two seats belong to the def-md5/configContract
+    /// lanes); unknown codes route conservatively to LocalSyntax (no output lost).
     #[test]
     fn layer_table_is_total_and_failsafe() {
         assert_eq!(
@@ -384,7 +384,7 @@ mod tests {
         );
     }
 
-    /// 路由保序 + 桶隔离:同层 findings 顺序保持,不跨桶漂移。
+    /// Order-preserving routing + bucket isolation: same-layer findings keep their order, no cross-bucket drift.
     #[test]
     fn routing_preserves_order_within_buckets() {
         let findings = vec![
@@ -403,9 +403,9 @@ mod tests {
         );
     }
 
-    /// 合流序:层名字节序(engineCompat < localSyntax < runtimeConfig <
-    /// semantic);空层不产段。手工桶构造(决策表现役全 local,异层桶
-    /// 只有手工可造——诚实边界)。
+    /// Merge order: layer-name byte order (engineCompat < localSyntax < runtimeConfig <
+    /// semantic); empty layers produce no segment. Buckets built by hand (the decision table's active codes are all local, so cross-layer buckets
+    /// can only be built by hand -- honest boundary).
     #[test]
     fn merged_publish_concatenates_in_byte_order() {
         let mut schedulers = LayeredSchedulers::new();
@@ -414,7 +414,7 @@ mod tests {
             async_id: None,
             side_effects: Vec::new(),
         };
-        // 插入顺序故意反字节序:semantic → localSyntax → runtimeConfig。
+        // Insertion order deliberately reversed from byte order: semantic -> localSyntax -> runtimeConfig.
         schedulers.semantic.request("u", Some(1), task_for(1));
         schedulers.local_syntax.request("u", Some(1), task_for(2));
         schedulers.runtime_config.request("u", Some(1), task_for(3));
@@ -431,7 +431,7 @@ mod tests {
             vec!["localSyntax", "runtimeConfig", "semantic"],
             "字节序合流,engineCompat 空层不产段"
         );
-        // 引擎兼容座位占位:手工占员后合流第一位。
+        // Engine-compat seat occupancy: after a manual occupant it merges first.
         schedulers.engine_compat.request("u", Some(1), task_for(4));
         let merged = schedulers.merged_publish();
         let layers: Vec<&'static str> = merged
@@ -448,8 +448,8 @@ mod tests {
         );
     }
 
-    /// 逐层独立节流(批 1 语义继承):同层同版跳过,跨层互不影响;
-    /// stats 分层记账。
+    /// Per-layer independent throttling (batch 1 semantics inherited): same-layer same-version skips, cross-layer independence;
+    /// stats is accounted per layer.
     #[test]
     fn per_layer_schedulers_are_independent() {
         let mut schedulers = LayeredSchedulers::new();
@@ -466,11 +466,11 @@ mod tests {
             "同层同版跳过"
         );
         assert_eq!(schedulers.local_syntax.stats().published, 1);
-        // 跨层同 uri 同版本不受影响(local 已发布,semantic 首发照发布)。
+        // Same uri same version across layers is unaffected (local already published; semantic still publishes its first).
         schedulers.semantic.request("a.def", Some(1), task());
         assert_eq!(schedulers.semantic.stats().published, 1, "层间独立节流");
         assert_eq!(schedulers.local_syntax.stats().published, 1);
-        // 关一层不影响其余层。
+        // Closing one layer does not affect the other layers.
         schedulers.runtime_config.set_enabled(false);
         schedulers.runtime_config.request("a.def", Some(1), task());
         assert_eq!(schedulers.runtime_config.stats().disabled_skipped, 1);
@@ -478,8 +478,8 @@ mod tests {
         assert_eq!(schedulers.engine_compat.stats().published, 1);
     }
 
-    /// RUST-149 横切(stale 替位,装配面级):同层同 uri 版本换代即换发布
-    /// (旧版不虚报);cancel/cold 对同步纯面 N-A 如实登记。
+    /// RUST-149 cross-cutting (stale replacement, at the assembly-face level): same-layer same-uri version change means a new publish
+    /// (the old version is never falsely reported); cancel/cold are honestly registered as N-A for this synchronous pure face.
     #[test]
     fn version_bump_replaces_published_items() {
         let mut schedulers = LayeredSchedulers::new();

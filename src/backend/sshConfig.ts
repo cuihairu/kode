@@ -1,31 +1,35 @@
 /**
- * ~/.ssh/config 解析(IDE-PDBG-004 远程服务器管理视图的数据源):
- * Host 块逐一收 HostName/User/Port/ProxyJump(跳板链),供远程 debug 与
- * py-spy 分派用。只认常见键,Include 指令不展开(如实标注局限,主机
- * 写在被 include 的文件里不会出现)。通配 Host 模式(星号与问号)按
- * ssh 语义是匹配模板不是具体主机,视图不列。
+ * ~/.ssh/config parsing (the data source for the IDE-PDBG-004 remote server
+ * management view): each Host block collects HostName/User/Port/ProxyJump (the
+ * jump chain), for remote debug and py-spy dispatch. Only common keys are
+ * recognized; the Include directive is not expanded (an honestly documented
+ * limitation: hosts written into an included file do not appear). Wildcard Host
+ * patterns (asterisk and question mark) are match templates rather than concrete
+ * hosts by ssh semantics, so the view does not list them.
  */
 
 export interface SshHostEntry {
-  /** Host 行的别名(视图与 debug.json 连接声明引用的就是它) */
+  /** The alias on the Host line (what the view and debug.json connection declarations reference) */
   host: string;
-  /** HostName 实际主机;缺省 = 别名本身(ssh 语义) */
+  /** HostName, the actual host; defaults to the alias itself (ssh semantics) */
   hostname?: string;
   user?: string;
   port?: number;
-  /** ProxyJump 跳板链(如 bastion 或 bastion1,bastion2) */
+  /** ProxyJump jump chain (e.g. bastion or bastion1,bastion2) */
   proxyJump?: string;
 }
 
-/** 通配模式(ssh 把星号与问号当匹配模板,不是具体主机):视图与选择面都不列 */
+/** Wildcard patterns (ssh treats asterisk and question mark as match templates, not concrete hosts): neither the view nor the pick face lists them */
 export function isWildcardHostPattern(host: string): boolean {
   return host.includes('*') || host.includes('?');
 }
 
 /**
- * 解析 ssh_config 文本:逐行扫 `Host` 开块,块内收 HostName/User/Port/
- * ProxyJump(键大小写不敏感,`=` 与空白分隔都认);negated host(`!`)跳过
- * 整块。Host 行多个别名时逐别名各立一条(同块参数共享)。
+ * Parse ssh_config text: scan line by line for `Host` opening a block, and inside
+ * the block collect HostName/User/Port/ProxyJump (keys are case-insensitive, both
+ * `=` and whitespace separators accepted); a negated host (`!`) skips the whole
+ * block. Multiple aliases on one Host line each get their own entry (parameters of
+ * the block are shared).
  */
 export function parseSshConfig(text: string): SshHostEntry[] {
   const entries: SshHostEntry[] = [];
@@ -49,12 +53,12 @@ export function parseSshConfig(text: string): SshHostEntry[] {
     current = null;
   };
   for (const rawLine of text.split(/\r?\n/)) {
-    // 井号注释(引号内井号不剥——键值里带 # 的主机名极罕见,保守不处理)
+    // Hash comments (a hash inside quotes is not stripped — hostnames containing # in the value are extremely rare, conservatively not handled)
     const line = rawLine.replace(/(^|\s)#.*$/, '').trim();
     if (line.length === 0) {
       continue;
     }
-    // `Key=Value` 与 `Key Value` 两种形(ssh_config 手册口径)
+    // Both `Key=Value` and `Key Value` forms (the ssh_config manual ruling)
     const normalized = line.includes('=') && /^[A-Za-z]/.test(line)
       ? line.replace('=', ' ')
       : line;
@@ -73,7 +77,7 @@ export function parseSshConfig(text: string): SshHostEntry[] {
       continue;
     }
     if (current === null || value.length === 0) {
-      continue; // 块外的散键不属任何主机,忽略
+      continue; // a stray key outside a block belongs to no host, ignore
     }
     if (key === 'hostname') {
       current.hostname = value;
@@ -87,14 +91,14 @@ export function parseSshConfig(text: string): SshHostEntry[] {
     } else if (key === 'proxyjump') {
       current.proxyJump = value;
     }
-    // 其余键(Match/Include/IdentityFile…)不进视图面:Include 不展开是
-    // 如实局限,写进文档
+    // Other keys (Match/Include/IdentityFile…) do not enter the view face: Include
+    // not being expanded is an honest limitation, documented
   }
   flush();
   return entries;
 }
 
-/** 按别名收拢:同别名后块覆盖前块(ssh「首个取值生效」的近似,视图够用) */
+/** Consolidate by alias: for the same alias a later block overrides the earlier one (an approximation of ssh's "first value wins" ruling, good enough for the view) */
 export function dedupeSshHosts(entries: SshHostEntry[]): SshHostEntry[] {
   const byHost = new Map<string, SshHostEntry>();
   for (const entry of entries) {

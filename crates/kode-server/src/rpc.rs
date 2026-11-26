@@ -54,7 +54,9 @@ impl RpcRegistry {
     /// 快照执行纯 handler,与主线程 ServerState 零共享。同一注册源派生,
     /// 一致性由 snapshot_matches_registry 锁定。
     pub fn snapshot(&self) -> RegistrySnapshot {
-        RegistrySnapshot { handlers: self.handlers.clone() }
+        RegistrySnapshot {
+            handlers: self.handlers.clone(),
+        }
     }
 }
 

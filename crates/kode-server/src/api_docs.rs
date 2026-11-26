@@ -1,17 +1,24 @@
-//! C-21:嵌入式 KBEngine Python API 文档库(kbengine Python API hover/查询面)。
+//! C-21: embedded KBEngine Python API documentation library (kbengine Python
+//! API hover/query surface).
 //!
-//! 正本 = `assets/api-docs.json`,由 `scripts/generate-api-docs.mjs` 从
-//! `docs/knowledge/api-*.md`(KB-API 批次已做 kbe/src file:line grounding)
-//! 抽取;`src/generated/apiDocs.ts` 是它的 TS 镜像(hover 消费面),
-//! `tests/apiDocsParity.test.ts` 锁两份一致。本模块只装载与查询,不解析
-//! markdown,不改写条目。
+//! Canonical source = `assets/api-docs.json`, extracted by
+//! `scripts/generate-api-docs.mjs` from `docs/knowledge/api-*.md` (the KB-API
+//! batch already did kbe/src file:line grounding); `src/generated/apiDocs.ts`
+//! is its TS mirror (the hover consumer face), and
+//! `tests/apiDocsParity.test.ts` locks the two copies in agreement. This module
+//! only loads and queries: it does not parse markdown and does not rewrite
+//! entries.
 //!
-//! 查询语义(与 TS 面 `lookupApiDoc` 同口径):
-//! - `domain` 给定时精确优先,域内唯一命中即返回;
-//! - 域未命中/未给时,全库唯一(或唯一 owner)命中返回;
-//! - 多域多 owner 歧义返回 `ambiguous` 候选列表,绝不静默挑一个;
-//! - `locale = "zh-cn"` 时摘要在 `summaryZh` 非空时本地化,缺失回退
-//!   `summaryEn`(回退条目带 `localized: false` 如实标注)。
+//! Query semantics (same criteria as the TS face `lookupApiDoc`):
+//! - when `domain` is given, exact match wins; a unique hit inside the domain
+//!   is returned;
+//! - when the domain misses / is not given, a unique hit over the whole
+//!   library (or one with a unique owner) is returned;
+//! - ambiguity across multiple domains and owners returns the `ambiguous`
+//!   candidate list, never silently picking one;
+//! - with `locale = "zh-cn"` the summary is localized when `summaryZh` is
+//!   non-empty, otherwise it falls back to `summaryEn` (fallback entries are
+//!   honestly annotated with `localized: false`).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -92,7 +99,7 @@ fn entry_json(entry: &ApiDocEntry, locale: &str) -> Value {
     })
 }
 
-/// 查询:name 精确匹配 member;domain 可选;locale `en`/`zh-cn`。
+/// Query: name matches member exactly; domain is optional; locale `en`/`zh-cn`.
 pub fn api_docs_lookup(name: &str, domain: Option<&str>, locale: &str) -> Value {
     let lib = library();
     let by_name: Vec<&ApiDocEntry> = lib
@@ -176,8 +183,8 @@ mod tests {
 
     #[test]
     fn lookup_prefers_domain_then_unique() {
-        // fireEvent 多 owner(entity/KBEngine 两面):域精确 → base entity 面;
-        // createEntity 单 owner 多域:无域 → owner 唯一回退命中
+        // fireEvent has multiple owners (entity/KBEngine faces): exact domain -> the base entity face;
+        // createEntity is a single owner across multiple domains: no domain -> unique-owner fallback hit
         let hit = api_docs_lookup("fireEvent", Some("base"), "en");
         assert_eq!(hit.get("domain").and_then(Value::as_str), Some("base"));
         assert_eq!(hit.get("owner").and_then(Value::as_str), Some("entity"));
@@ -196,8 +203,9 @@ mod tests {
 
     #[test]
     fn ambiguous_reports_candidates_not_guess() {
-        // fireEvent 多 owner(entity 方法 / KBEngine 模块函数):无域查询必须
-        // 如实返回候选,绝不静默挑一个
+        // fireEvent has multiple owners (entity method / KBEngine module function): a
+        // domain-less query must honestly return the candidates, never silently
+        // picking one
         let result = api_docs_lookup("fireEvent", None, "en");
         assert!(
             result.get("ambiguous").is_some(),
@@ -240,11 +248,13 @@ mod tests {
     }
     #[test]
     fn domain_filter_miss_returns_null_not_ambiguous() {
-        // addTimer 在库(跨 4 域),但查不存在的域:域内零条 → Null,
-        // 不落回全库 ambiguous(域过滤是收窄,不是建议)。
+        // addTimer is in the library (across 4 domains), but querying a nonexistent
+        // domain: zero entries inside the domain -> Null,
+        // never falling back to the whole-library ambiguous (domain filtering is
+        // narrowing, not a suggestion).
         let v = api_docs_lookup("addTimer", Some("nonesuch-domain"), "en");
         assert_eq!(v, Value::Null);
-        // 空域字符串=未给域(走全库路径),与域内零条区分。
+        // An empty domain string = no domain given (whole-library path), distinct from zero entries inside a domain.
         let all = api_docs_lookup("addTimer", Some(""), "en");
         assert!(all.get("ambiguous").is_some(), "空域退化为全库歧义面");
     }

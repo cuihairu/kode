@@ -1,12 +1,13 @@
-//! 与 TS `src/indexScheduler.ts` 调度面对拍 golden(fixture 驱动,ARCH-012:
-//! 只对行为决策面,不做性能对比)。
+//! Parity golden for the TS `src/indexScheduler.ts` scheduling surface (fixture driven,
+//! ARCH-012: only the behavioural decision surface, no performance comparison).
 //!
-//! 场景 = 一串调度操作(enqueue / ensure / advance / drain / cancel-queued)。
-//! Rust 侧 [`replay`] 在逻辑时钟下执行并记录决策面(decisions/runOrder/
-//! 终态快照);TS 侧 `tests/kodeSchedulerParity.test.ts` 用真实 `IndexScheduler`
-//! 加 vitest fake timers 复算同一串 ops,逐字段比对。
-//! golden 由 Rust `dump-scheduler-golden` 产出、TS 复算,双向门禁与
-//! PR-005/006/007 同构。
+//! A scenario = a run of scheduling operations (enqueue / ensure / advance / drain /
+//! cancel-queued). The Rust side [`replay`] executes them on the logical clock and records the
+//! decision surface (decisions / runOrder / final snapshot); the TS side
+//! `tests/kodeSchedulerParity.test.ts` recomputes the same run of ops with a real `IndexScheduler`
+//! plus vitest fake timers and compares field by field.
+//! The golden is produced by Rust `dump-scheduler-golden` and recomputed by TS, a two-way gate
+//! isomorphic with PR-005/006/007.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -17,7 +18,7 @@ use crate::scheduler::{EnqueueDecision, Scheduler, SchedulerOptions, TaskSpec};
 pub const GOLDEN_REL_PATH: &str = "crates/kode-scheduler/tests/golden/scheduler-parity.json";
 pub const INTERACTIVE_COOLDOWN_MS: u64 = 50;
 
-/// 对拍场景操作(TS 侧按同名义重放)。
+/// Parity scenario operation (the TS side replays it under the same name).
 #[derive(Debug, Clone)]
 pub enum Op {
     Enqueue {
@@ -49,7 +50,7 @@ pub struct Scenario {
     pub ops: Vec<Op>,
 }
 
-/// 单场景重放结果(= golden 中的 expected 块)。
+/// Replay result of a single scenario (= the expected block inside the golden).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioOutcome {
     pub decisions: Vec<String>,
@@ -63,7 +64,7 @@ pub struct ScenarioOutcome {
     pub metrics: crate::model::SchedulerMetrics,
 }
 
-/// 对拍场景全集(10 个;每个 op 语义见 docs/kode2/pr-009.md)。
+/// The full set of parity scenarios (10 of them; per-op semantics in docs/kode2/pr-009.md).
 pub fn build_scenarios() -> Vec<Scenario> {
     let enq =
         |kind: &'static str, priority: u8, file: Option<&'static str>, version: Option<u64>| {
@@ -224,7 +225,8 @@ fn descriptor(kind: &str, file: Option<&str>, version: Option<u64>) -> String {
     )
 }
 
-/// 在全新调度器上重放一个场景(逻辑时钟;交互冷却与 TS 默认一致)。
+/// Replay a scenario on a brand-new scheduler (logical clock; the interactive cooldown matches
+/// the TS default).
 pub fn replay(scenario: &Scenario) -> ScenarioOutcome {
     let mut sched = Scheduler::new(SchedulerOptions {
         interactive_cooldown_ms: INTERACTIVE_COOLDOWN_MS,
@@ -327,7 +329,7 @@ pub fn replay(scenario: &Scenario) -> ScenarioOutcome {
     outcome
 }
 
-// ---- JSON 序列化(零依赖;TS 侧 JSON.parse 消费) ----
+// ---- JSON serialization (zero dependencies; consumed by TS-side JSON.parse) ----
 
 fn json_str(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
@@ -471,7 +473,7 @@ fn outcome_json(name: &str, scenario: &Scenario, outcome: &ScenarioOutcome) -> S
     )
 }
 
-/// golden 全文(由 `dump-scheduler-golden` 落盘,TS 复算对拍)。
+/// The full golden text (written to disk by `dump-scheduler-golden`, recomputed by TS for parity).
 pub fn dump_golden() -> String {
     let scenarios = build_scenarios();
     let bodies: Vec<String> = scenarios
@@ -492,7 +494,8 @@ pub fn dump_golden() -> String {
 mod tests {
     use super::json_str;
 
-    /// JSON 字符串转义四臂 + 控制字符 \u 兜底(golden 快照语料从未含特殊字符)。
+    /// The four arms of JSON string escaping + the \u fallback for control characters (the
+    /// golden snapshot corpus never contained any special characters).
     #[test]
     fn json_str_escapes_quotes_backslash_newline_tab_and_control() {
         assert_eq!(

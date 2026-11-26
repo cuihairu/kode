@@ -1,28 +1,31 @@
-//! 版本兼容检查(todo PA-002「版本兼容检查」+ KSEM-SER-13「wire 布局兼容变化」)。
+//! Version compatibility checks (todo PA-002 "version compatibility check" + KSEM-SER-13
+//! "wire layout compatibility changes").
 //!
-//! [`check`]:判定为**不兼容**的变更(旧端解码新流会错位):
-//! - 消息固定 ID 漂移 / 长度形状改变 / 参数线类型改变 / 消息消失;
-//! - 别名线类型布局改变(展开后不相等);
-//! - 实体属性线类型改变 / 增删 / 声明序漂移 / 旗标漂移;
-//! - 实体方法增删 / 参数表漂移(三段各自比对,SER-13 补齐「Arg 布局」)。
+//! [`check`]: changes ruled **incompatible** (an old end decoding the new stream would misalign):
+//! - message fixed ID drift / length shape change / argument wire type change / message removal;
+//! - alias wire type layout change (not equal after expansion);
+//! - entity property wire type change / addition or removal / declaration-order drift / flag drift;
+//! - entity method additions or removals / argument-table drift (the three segments compared
+//!   separately; SER-13 fills in the "Arg layout").
 //!
-//! 判定为**兼容**的变更:新增消息 / 新增实体 / 新增别名 / 新增属性。
+//! Changes ruled **compatible**: adding a message / entity / alias / property.
 //!
-//! [`check_classified`](SER-13):在 [`check`] 之上给每条变更挂
-//! [`EngineGate`]——变更面是否进入引擎 defs-md5 聚合流决定分类:
-//! **引擎握手实际拒绝**(md5 可见,混合部署 digest 不匹配即 shutDown,
-//! 含纯新增——digest 是内容等值闸,不理解「兼容演进」)vs **静态不兼容
-//! 风险**(md5 盲区,引擎不拦截,字节按旧布局静默重释)vs 无闸加性;
-//! 并附 [`WireDiff`] 字段顺序/类型/参数位细节。两个布尔维度语义正交:
-//! `wire_compatible`(full-redeploy 下旧端解码新流不破位)≠
-//! `handshake_safe`(内部通道 digest 等值)。
+//! [`check_classified`] (SER-13): on top of [`check`], attaches [`EngineGate`] to each change —
+//! whether the change plane enters the engine's defs-md5 aggregation stream decides the class:
+//! **actually rejected by the engine handshake** (md5 visible; in a mixed deployment a digest mismatch
+//! triggers shutDown, pure additions included — the digest is a content-equality gate and does not
+//! understand "compatible evolution") vs **static incompatibility risk** (an md5 blind spot: the engine
+//! does not intercept, and the bytes are silently reinterpreted per the old layout) vs ungated
+//! additions; and attaches the [`WireDiff`] field order/type/argument-slot detail. The two boolean
+//! dimensions are semantically orthogonal: `wire_compatible` (an old end decoding a new stream does
+//! not misalign under a full redeploy) ≠ `handshake_safe` (internal-channel digest equality).
 
 use serde::{Deserialize, Serialize};
 
 use crate::schema::Schema;
 use crate::wire::WireType;
 
-/// 实体方法段(SER-13:三段参数表各自比对)。
+/// Entity method segment (SER-13: the three argument tables compared separately).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MethodSegment {
@@ -89,16 +92,16 @@ pub enum Change {
         property: String,
         old_index: usize,
     },
-    /// 声明序漂移(声明序 = wire 序,SER-02 §2;旧 check 按名匹配无视次序,
-    /// SER-13 补齐验收「字段顺序」)。
+    /// Declaration-order drift (declaration order = wire order, SER-02 §2; the old check matched by
+    /// name and ignored order, SER-13 fills in the acceptance item "field order").
     PropertyReordered {
         entity: String,
         property: String,
         old_index: usize,
         new_index: usize,
     },
-    /// 同步旗标漂移(BASE_AND_CLIENT / ALL_CLIENTS / ...;md5 可见
-    /// property.cpp:57 flags feed,且决定同步面)。
+    /// Sync flag drift (BASE_AND_CLIENT / ALL_CLIENTS / ...; md5 visible via the property.cpp:57 flags
+    /// feed, and it decides the sync plane).
     PropertyFlagsChanged {
         entity: String,
         property: String,
@@ -115,7 +118,7 @@ pub enum Change {
         segment: MethodSegment,
         method: String,
     },
-    /// 方法参数表漂移(三段各自;md5 可见 method.cpp:66-67 逐参数 feed)。
+    /// Method argument-table drift (each of the three segments; md5 visible via the per-argument feed at method.cpp:66-67).
     MethodArgsChanged {
         entity: String,
         segment: MethodSegment,
@@ -242,7 +245,7 @@ pub struct CompatReport {
     pub changes: Vec<Change>,
 }
 
-/// old = 已发布 schema,new = 重算 schema。
+/// old = the published schema, new = the recomputed schema.
 pub fn check(old: &Schema, new: &Schema) -> CompatReport {
     let mut changes: Vec<Change> = Vec::new();
 
@@ -302,8 +305,8 @@ pub fn check(old: &Schema, new: &Schema) -> CompatReport {
         match new.entities.get(name) {
             None => changes.push(Change::EntityRemoved { name: name.clone() }),
             Some(ne) => {
-                // 属性面:按名匹配;声明序即 wire 序(SER-02 §2),次序/旗标/
-                // 增删逐项落账(md5 可见:property.cpp:53-64,SER-13)。
+                // Property plane: matched by name; declaration order is the wire order (SER-02 §2), and
+                // order/flags/additions-removals are booked item by item (md5 visible: property.cpp:53-64, SER-13).
                 for (oi, p) in ent.properties.iter().enumerate() {
                     match ne.properties.iter().position(|q| q.name == p.name) {
                         None => changes.push(Change::PropertyRemoved {
@@ -348,8 +351,9 @@ pub fn check(old: &Schema, new: &Schema) -> CompatReport {
                     }
                 }
 
-                // 方法三段:参数表逐段比对(md5 可见:method.cpp:28-30/:66-67;
-                // 旧 check 不比方法面,SER-13 补齐验收「Arg 布局」)。
+                // The three method segments: the argument tables compared segment by segment (md5 visible:
+                // method.cpp:28-30/:66-67; the old check did not compare the method plane, SER-13 fills in
+                // the acceptance item "Arg layout").
                 for (old_ms, new_ms, segment) in [
                     (
                         ent.base_methods.as_slice(),
@@ -420,34 +424,38 @@ pub fn check(old: &Schema, new: &Schema) -> CompatReport {
 }
 
 // ---------------------------------------------------------------------------
-// SER-13:引擎握手分类(静态不兼容风险 vs 引擎握手实际拒绝)+ wire 细节
+// SER-13: engine handshake classification (static incompatibility risk vs actually rejected by the
+// engine handshake) + wire detail
 // ---------------------------------------------------------------------------
 
-/// 变更落入的引擎面(SER-13 验收:区分静态不兼容风险和引擎握手实际拒绝条件)。
+/// The engine plane a change falls into (SER-13 acceptance: distinguishes static incompatibility risk
+/// from the conditions under which the engine handshake actually rejects).
 ///
-/// 判据 = 变更面是否进入引擎 defs-md5 聚合流(feed 锚,KBEngine bf1a9cd6):
-/// - 属性:property.cpp:53-64(名/默认串/类型名/utype/flags/persistent/
-///   identifier/databaseLength/detailLevel/datatype uid);
-/// - 方法:method.cpp:28-30(名/utype/exposed)+ :50(setExposed 追加)
-///   + :66-67(逐参数 datatype uid,**追加序 = 参数序**);
-/// - 数据类型:datatype.cpp:95-96(注册名/uid)、:1716/:1782/:2097
-///   (FIXED_DICT/FixedArray 逐字段 uid+型名,**追加序 = 声明序**);
-/// - final:entitydef.cpp:243;握手:entity_app.h:1250-1257——digest 不匹配
-///   即 ERROR_MSG + `shutDown()`,仅内部通道(isExternal 早退),digest 由
-///   dbmgr 分发(sync_app_datas_handler.cpp:97,含 3 秒注册等待闸)。
+/// Criterion = whether the change plane enters the engine's defs-md5 aggregation stream (feed anchors,
+/// KBEngine bf1a9cd6):
+/// - properties: property.cpp:53-64 (name / default string / type name / utype / flags / persistent /
+///   identifier / databaseLength / detailLevel / datatype uid);
+/// - methods: method.cpp:28-30 (name / utype / exposed) + :50 (the setExposed append)
+///   + :66-67 (the per-argument datatype uid, **append order = argument order**);
+/// - data types: datatype.cpp:95-96 (registered name / uid), :1716/:1782/:2097
+///   (FIXED_DICT/FixedArray per-field uid + type name, **append order = declaration order**);
+/// - final: entitydef.cpp:243; handshake: entity_app.h:1250-1257 — a digest mismatch means
+///   ERROR_MSG + `shutDown()`, internal channel only (isExternal returns early), and the digest is
+///   distributed by dbmgr (sync_app_datas_handler.cpp:97, including the 3-second registration wait gate).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineGate {
-    /// defs-md5 可见:混合部署必被握手拒绝——**含纯新增**(digest 是内容
-    /// 等值闸,不理解「兼容演进」;旧 `compatible` 把 EntityAdded/Removed
-    /// 记为兼容是 wire 维度,不是握手维度)。full-redeploy 下另看
-    /// `wire_compatible` 维度。
+    /// Visible in defs-md5: a mixed deployment is always rejected at the handshake — **pure additions
+    /// included** (the digest is a content-equality gate and does not understand "compatible evolution";
+    /// the old `compatible` marking EntityAdded/Removed as compatible is the wire dimension, not the
+    /// handshake dimension). Under a full redeploy, look at the `wire_compatible` dimension separately.
     HandshakeRejected,
-    /// md5 盲区但 wire 可见:引擎不拦截,混合部署照常启动,字节按旧布局
-    /// 重释(固定消息表 id/长度/参数、引擎配置属 config 层,不入 defs
-    /// 聚合流)——**最危险类:无任何运行时防线**。
+    /// An md5 blind spot but visible on the wire: the engine does not intercept, a mixed deployment
+    /// starts normally, and the bytes are reinterpreted per the old layout (fixed message table id/length/
+    /// arguments, and engine configuration belong to the config layer and do not enter the defs
+    /// aggregation stream) — **the most dangerous class: no runtime line of defense at all**.
     SilentRisk,
-    /// md5 盲区且 wire 加性:新增固定消息,旧端不认识新 id,不重释旧字节。
+    /// An md5 blind spot and wire-additive: adding a fixed message; the old end does not recognize the new id and does not reinterpret old bytes.
     UnGated,
 }
 
@@ -461,7 +469,7 @@ impl std::fmt::Display for EngineGate {
     }
 }
 
-/// 单条变更 → 引擎握手面分类(判据见 [`EngineGate`] 模块锚)。
+/// One change → classification into the engine handshake plane (see the [`EngineGate`] module anchors for the criteria).
 pub fn classify(change: &Change) -> EngineGate {
     match change {
         Change::PropertyTypeChanged { .. }
@@ -485,19 +493,19 @@ pub fn classify(change: &Change) -> EngineGate {
     }
 }
 
-/// wire 细节差异(SER-13 验收:字段顺序 / 类型 / Arg 布局逐位落账)。
+/// Wire detail diffs (SER-13 acceptance: field order / type / Arg layout booked position by position).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WireDiff {
-    /// FIXED_DICT 同名字段声明序漂移(声明序 = wire 序,SER-02 §2):
-    /// 即使各字段类型全同,字节重读也错位。
+    /// Declaration-order drift of same-name fields in a FIXED_DICT (declaration order = wire order, SER-02 §2):
+    /// even when every field type is identical, re-reading the bytes misaligns.
     FieldReordered {
         path: String,
         field: String,
         old_index: usize,
         new_index: usize,
     },
-    /// 叶子线类型漂移(display_name 计;path = 别名或 `别名.字段` 叶位)。
+    /// Leaf wire type drift (counted by display_name; path = the alias or the `alias.field` leaf position).
     FieldTypeChanged {
         path: String,
         old: String,
@@ -513,7 +521,7 @@ pub enum WireDiff {
         field: String,
         old_index: usize,
     },
-    /// 参数按位比较:同位线类型漂移(位置即语义)。
+    /// Arguments compared position by position: a wire type drift at the same slot (position is the semantics).
     ArgChanged {
         path: String,
         index: usize,
@@ -530,8 +538,9 @@ pub enum WireDiff {
     },
 }
 
-/// 两条线类型的布局差异:FIXED_DICT 按名匹配(序差 = [`WireDiff::FieldReordered`],
-/// 类型差递归下钻);ARRAY 元素差下钻 `path[]`;叶子按 [`WireType::display_name`]。
+/// The layout diff between two wire types: FIXED_DICT matches by name (an order difference =
+/// [`WireDiff::FieldReordered`], a type difference drills down recursively); ARRAY element differences
+/// drill down at `path[]`; leaves are compared by [`WireType::display_name`].
 pub fn diff_wire_type(path: &str, old: &WireType, new: &WireType) -> Vec<WireDiff> {
     let mut out = Vec::new();
     diff_type(path, old, new, &mut out);
@@ -594,7 +603,7 @@ fn diff_type(path: &str, old: &WireType, new: &WireType, out: &mut Vec<WireDiff>
     }
 }
 
-/// 参数表按位差异(位置即语义;path = 消息名或 `实体.段.方法`)。
+/// Position-by-position diff of an argument table (position is the semantics; path = the message name or `entity.segment.method`).
 fn diff_args(path: &str, old: &[WireType], new: &[WireType], out: &mut Vec<WireDiff>) {
     for i in 0..old.len().min(new.len()) {
         if old[i] != new[i] {
@@ -620,7 +629,7 @@ fn diff_args(path: &str, old: &[WireType], new: &[WireType], out: &mut Vec<WireD
     }
 }
 
-/// 实体指定段的方法参数表(不存在实体/方法 → None)。
+/// The argument table of a given method in a given entity segment (entity/method missing → None).
 fn method_args<'a>(
     entity: Option<&'a crate::schema::EntityWireInfo>,
     segment: MethodSegment,
@@ -635,7 +644,7 @@ fn method_args<'a>(
     Some(&m.args)
 }
 
-/// 带分类的单条变更:变更本体 + 引擎握手面 + wire 细节。
+/// One classified change: the change itself + the engine handshake plane + the wire detail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClassifiedChange {
     pub change: Change,
@@ -643,28 +652,29 @@ pub struct ClassifiedChange {
     pub wire_diffs: Vec<WireDiff>,
 }
 
-/// SER-13 面向报告:[`check`] 之上加引擎握手分类与 wire 细节。
+/// SER-13 report-oriented: [`check`] plus the engine handshake classification and the wire detail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayoutCompatReport {
-    /// [`check`] 的 `compatible` 同口径:full-redeploy 语义下旧端解码新流
-    /// 不破位。**不是**握手判定——见 `handshake_safe`。
+    /// Same semantics as [`check`]'s `compatible`: under full-redeploy semantics an old end decoding a new
+    /// stream does not misalign. **Not** a handshake verdict — see `handshake_safe`.
     pub wire_compatible: bool,
-    /// 引擎内部通道握手面:任何 [`EngineGate::HandshakeRejected`] 变更即
-    /// false(含纯新增);零差异才 true。客户端/bots 走外部通道不吃此闸
-    /// (isExternal 早退),静态比对是那侧唯一防线。
+    /// The engine's internal-channel handshake plane: any [`EngineGate::HandshakeRejected`] change makes it
+    /// false (pure additions included); only zero differences yield true. Clients/bots go through the external
+    /// channel and are not subject to this gate (isExternal returns early); the static comparison is the only
+    /// line of defense on that side.
     pub handshake_safe: bool,
-    /// 版本维度:canonical JSON SHA-256 工具指纹(旧/新)——相同指纹
-    /// ⇔ canonical 内容字节级一致;**不是**引擎 defs-md5(见 `note`)。
+    /// Version dimension: canonical JSON SHA-256 tool fingerprint (old / new) — an identical fingerprint
+    /// ⇔ byte-identical canonical content; **not** the engine's defs-md5 (see `note`).
     pub old_hash: String,
     pub new_hash: String,
     pub classified: Vec<ClassifiedChange>,
     pub note: String,
 }
 
-/// 报告诚实声明:分类判据锚 + hash 性质 + 外部通道口径。
+/// The report's honesty disclaimer: the classification criteria anchors + the hash nature + the external-channel semantics.
 pub const COMPAT_HONESTY_NOTE: &str = "分类依据引擎 defs-md5 聚合流(feed 锚:property.cpp:53-64 / method.cpp:28-30,50,66-67 / datatype.cpp:95-96,1716,1782,2097;final entitydef.cpp:243;握手 entity_app.h:1250-1257 仅内部通道,digest 由 dbmgr 分发 sync_app_datas_handler.cpp:97)。hash 为 canonical JSON SHA-256 工具指纹,非引擎 defs-md5,握手以引擎自身聚合为准;客户端走外部通道不吃此闸,静态比对是那侧唯一防线。";
 
-/// old = 已发布 schema,new = 重算 schema。
+/// old = the published schema, new = the recomputed schema.
 pub fn check_classified(old: &Schema, new: &Schema) -> LayoutCompatReport {
     let report = check(old, new);
     let mut classified = Vec::with_capacity(report.changes.len());

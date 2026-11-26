@@ -1,12 +1,16 @@
 /**
- * KFLOW 受控采集运行面(FLOW-025):把已验证采集器
- * (scripts/trace/monitoring_capture.py,sys.monitoring 面)作为**子进程**
- * 跑在受控参数下——独立入口(只被显式调用,无任何隐式触发)、超时可关闭
- * (timeoutMs 到点 kill)、有界缓冲(max-events 透传采集器)、产物经
- * FLOW-024 导入面过红线。命令行组装与子进程交互面注入(测试替身验证组装
- * 与失败路径,不起真子进程;真采集集成测试按解释器能力 skipIf)。
- * FLOW-029:maxEvents/timeoutMs 缺省走预登记预算(traceBudget,默认值+
- * 硬顶唯一出处),显式给值也受硬顶约束。
+ * KFLOW controlled-capture run face (FLOW-025): runs the verified collector
+ * (scripts/trace/monitoring_capture.py, the sys.monitoring face) as a **child
+ * process** under controlled parameters — an independent entry (invoked only
+ * explicitly, with no implicit trigger of any kind), closable on timeout (kill when
+ * timeoutMs is up), a bounded buffer (max-events passed through to the collector), and
+ * the artifact goes through the FLOW-024 import face's red lines. Command-line
+ * assembly and the child-process interaction face are injected (test stand-ins verify
+ * assembly and failure paths without starting a real child; the real-capture
+ * integration test uses skipIf based on interpreter capability).
+ * FLOW-029: maxEvents/timeoutMs defaults to the pre-registered budgets (traceBudget,
+ * the sole source of default values + hard caps); explicitly given values are also
+ * bound by the hard caps.
  */
 
 import { spawn as nodeSpawn } from 'node:child_process';
@@ -18,29 +22,29 @@ import { resolveCaptureBudgets } from './traceBudget';
 import type { TraceSession } from './traceEventModel';
 
 export interface ControlledCaptureRequest {
-  /** 解释器(须 ≥3.12 才有 sys.monitoring;能力探测归调用方) */
+  /** The interpreter (sys.monitoring requires >= 3.12; capability probing belongs to the caller) */
   pythonPath: string;
-  /** 采集器脚本(绝对/相对 cwd 均可) */
+  /** The collector script (absolute or relative to cwd) */
   collectorScript: string;
-  /** 采集目标脚本(其 main() 全程=受控窗口) */
+  /** The capture target script (its whole main() = the controlled window) */
   targetScript: string;
-  /** 有界缓冲透传采集器 --max-events(缺省/硬顶=FLOW-029 预登记预算) */
+  /** Bounded buffer passed through to the collector's --max-events (default / hard cap = the FLOW-029 pre-registered budget) */
   maxEvents?: number;
-  /** 可关闭红线:超时 kill(缺省/硬顶=FLOW-029 预登记预算) */
+  /** Closable red line: kill on timeout (default / hard cap = the FLOW-029 pre-registered budget) */
   timeoutMs?: number;
-  /** 采集 cwd(帧 file 以此为基准换相对路径) */
+  /** The capture cwd (frame files are converted to relative paths against it) */
   cwd: string;
   sessionId: string;
 }
 
 export interface ControlledCaptureRunResult {
   session: TraceSession;
-  /** 采集器 stderr 摘要(事件计数行等;失败时含错误线索) */
+  /** A tail of the collector's stderr (event-count lines etc.; on failure it carries error clues) */
   stderrTail: string;
   durationMs: number;
 }
 
-/** 采集器命令行组装(--key=value 无空格 token 口径,透传安全)。 */
+/** Collector command-line assembly (--key=value no-space token semantics, safe to pass through). */
 export function buildCollectorArgs(request: ControlledCaptureRequest, outPath: string): string[] {
   const budget = resolveCaptureBudgets({ maxEvents: request.maxEvents, timeoutMs: request.timeoutMs });
   return [
@@ -63,7 +67,7 @@ interface SpawnableChild {
   kill(signal?: string): boolean;
 }
 
-/** 受控采集入口:起采集器子进程 → 等收口 → 读产物 → 导入协议红线。 */
+/** The controlled-capture entry: start the collector child process → await teardown → read the artifact → import through the protocol's red lines. */
 export async function runControlledCapture(
   request: ControlledCaptureRequest,
   deps: CaptureSpawnDeps = {}
@@ -87,7 +91,7 @@ export async function runControlledCapture(
     child.on('exit', (code, signal) => resolve({ code, signal }));
   });
 
-  // 可关闭红线:超时到点 kill,不留给无界采集口。
+  // Closable red line: kill when the timeout is up; never leaves an unbounded capture port open.
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;

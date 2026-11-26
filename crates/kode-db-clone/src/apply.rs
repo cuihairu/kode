@@ -1,23 +1,35 @@
-//! 导入 Apply/Verify 期(plan §6.2/§6.4 / PDC-0401..0408):在**单个事务**内
-//! 执行 [`ImportPlan`](crate::import::ImportPlan) 的参数化语句,回填数据库返回的
-//! 新主键,提交后按表只读核对,产出可审计的 [`ImportRun`] 与**不自动执行**的
-//! 受控清理计划。
+//! Import Apply/Verify phase (plan §6.2/§6.4 / PDC-0401..0408): executes the
+//! parameterized statements of [`ImportPlan`](crate::import::ImportPlan) inside
+//! a **single transaction**, backfills the new primary keys returned by the
+//! database, cross-checks per table read-only after commit, and produces an
+//! auditable [`ImportRun`] plus a controlled cleanup plan that is **never
+//! executed automatically**.
 //!
-//! 真实 MySQL 连接不进本 crate(与 reader/information_schema 同口径):执行面走
-//! [`WriteExecutor`] 抽象,事务边界由 applier 严格编排(begin → 逐句 → 任何失败
-//! rollback → 全部成功才 commit)。MySQL `AUTO_INCREMENT` 序列间隙不可回滚,
-//! 数据行原子性不受影响(§6.2);多库/非事务面不得宣称原子性。
+//! Real MySQL connections stay out of this crate (same policy as
+//! reader/information_schema): the execution face goes through the
+//! [`WriteExecutor`] abstraction, and transaction boundaries are strictly
+//! orchestrated by the applier (begin → statement by statement → any failure
+//! rollback → commit only after all succeed). MySQL `AUTO_INCREMENT` sequence
+//! gaps cannot be rolled back, but row atomicity is unaffected (§6.2); the
+//! multi-database / non-transactional face must not claim atomicity.
 //!
-//! 三条铁律的 Apply 期落点:
-//! - 重复导入检查(§6.4):同归档指纹再次导入默认拒绝并回显既有映射,
-//!   「另建副本」必须显式传 [`ApplyControl::allow_duplicate`]。
-//! - 账号绑定(PDC-0306 写侧):无声明规则时**不写任何账号表**,run 报告明确
-//!   「未绑定,本地账号不可见」;有声明也只登记绑定事实,凭据类写操作不属本面。
-//! - 清理(PDC-0408):只生成按逆拓扑序的 DELETE 计划,永不自动执行;加载中的
-//!   实体是否可清理由调用方(引擎侧)判定。
+//! Where the three iron rules land during Apply:
+//! - Duplicate import check (§6.4): re-importing the same archive fingerprint
+//!   is rejected by default and the existing mapping is echoed back; building
+//!   "a fresh copy" requires explicitly passing
+//!   [`ApplyControl::allow_duplicate`].
+//! - Account binding (PDC-0306 write side): with no declaration rule, **no
+//!   account table is written at all**; the run report states clearly
+//!   "not bound, invisible to local accounts"; with a declaration, only the
+//!   binding fact is recorded — credential writes are not this face's job.
+//! - Cleanup (PDC-0408): only generates a DELETE plan in reverse topological
+//!   order, never executes it; whether entities currently loaded may be
+//!   cleaned is decided by the caller (engine side).
 //!
-//! 引擎原生加载验证(PDC-0407)在本面只落记录形态:真实引擎环境属 P5 UI 装配
-//! (PDC-0003 同因),记录如实标 `attempted: false`,不虚报已验证。
+//! Engine-native load verification (PDC-0407) lands here only in record form:
+//! a real engine environment belongs to the P5 UI wiring (same reason as
+//! PDC-0003), so the record honestly marks `attempted: false` and never
+//! overclaims verification.
 
 use std::collections::BTreeMap;
 
@@ -31,38 +43,45 @@ use crate::import::{AutoLoadPolicy, ImportPlan, PlannedCell};
 use crate::target::TargetProfile;
 use crate::value::{hex_encode, TypedRow, TypedValue};
 
-/// Apply 期执行面(单一事务;调用方保证 MySQL/InnoDB,applier 复核目标门槛)。
+/// Apply-phase execution face (single transaction; the caller guarantees
+/// MySQL/InnoDB, the applier re-checks the target gate).
 pub trait WriteExecutor {
-    /// 开启事务(等效 START TRANSACTION)。
+    /// Begin a transaction (equivalent to START TRANSACTION).
     fn begin(&mut self) -> CloneResult<()>;
-    /// 执行一条参数化 INSERT,返回数据库分配的新主键(last insert id;
-    /// 表无自增时返回 0,调用方按计划判别是否需要)。
+    /// Execute one parameterized INSERT and return the new primary key
+    /// assigned by the database (last insert id; returns 0 when the table has
+    /// no auto-increment — the caller decides from the plan whether it needs it).
     fn execute_insert(&mut self, sql: &str, params: &[TypedValue]) -> CloneResult<u64>;
-    /// 事务/会话内只读计数(Verify 用;SELECT COUNT 形态)。
+    /// Read-only count inside the transaction/session (for Verify; a SELECT
+    /// COUNT shape).
     fn query_count(&mut self, sql: &str, params: &[TypedValue]) -> CloneResult<u64>;
-    /// 回滚事务(失败路径)。
+    /// Roll back the transaction (failure path).
     fn rollback(&mut self) -> CloneResult<()>;
-    /// 提交事务(全部语句成功后)。
+    /// Commit the transaction (after all statements succeeded).
     fn commit(&mut self) -> CloneResult<()>;
 }
 
-/// 已导入归档的登记处(重复导入闸 + run 号分配,§6.4)。
+/// Registry of imported archives (duplicate-import gate + run id allocation, §6.4).
 pub trait ImportRunStore {
-    /// 分配单调 run 号(1 起)。
+    /// Allocate a monotonic run id (starting at 1).
     fn next_run_id(&mut self) -> u64;
-    /// 归档指纹 → 既有 run(含已建立的映射)。
+    /// Archive fingerprint → existing run (including established mappings).
     fn find_by_fingerprint(&self, fingerprint: &str) -> Option<ImportRun>;
-    /// 落账一次成功导入。
+    /// Record one successful import.
     fn record(&mut self, run: ImportRun);
-    /// 改写同 run 号的既有落账为终态(KODE-FULL-009 两阶段:提交成功先
-    /// record committed/unknown,核对结束 upsert 终态)。默认实现等价追加;
-    /// 持久化实现应按 run_id 原位改写,避免同 run 双账。
+    /// Rewrite the existing entry with the same run id to its final state
+    /// (KODE-FULL-009 two-phase: after commit succeeds, record
+    /// committed/unknown first; after verification ends, upsert the final
+    /// state). The default implementation is equivalent to appending;
+    /// persistent implementations should rewrite in place by run_id to avoid
+    /// double entries for one run.
     fn upsert(&mut self, run: ImportRun) {
         self.record(run)
     }
 }
 
-/// 进程内登记(测试/单次 CLI 面;持久化面由调用方另配)。
+/// In-process registry (tests / one-shot CLI face; the caller wires a
+/// persistent one separately).
 #[derive(Debug, Default)]
 pub struct MemoryRunStore {
     next: u64,
@@ -102,7 +121,8 @@ impl ImportRunStore for MemoryRunStore {
     }
 
     fn upsert(&mut self, run: ImportRun) {
-        // 同 run 号原位改写(两阶段落账不留双账);未见过的 run 号按追加。
+        // Rewrite in place by run id (two-phase accounting leaves no double
+        // entries); unseen run ids are appended.
         match self.runs.iter_mut().find(|r| r.run_id == run.run_id) {
             Some(slot) => *slot = run,
             None => self.runs.push(run),
@@ -110,7 +130,8 @@ impl ImportRunStore for MemoryRunStore {
     }
 }
 
-/// 空实现(无登记面时的默认:不拦截重复,run 号恒 1)。
+/// No-op implementation (the default when no registry face is present: does
+/// not intercept duplicates, run id is always 1).
 #[derive(Debug, Default)]
 pub struct NoopRunStore;
 
@@ -124,25 +145,28 @@ impl ImportRunStore for NoopRunStore {
     fn record(&mut self, _run: ImportRun) {}
 }
 
-/// Apply 控制项。
+/// Apply control knobs.
 #[derive(Debug, Clone, Default)]
 pub struct ApplyControl {
-    /// 允许「另建副本」式重复导入(默认拒绝同指纹重导)。
+    /// Allow "fresh copy" style duplicate imports (same-fingerprint re-imports
+    /// are rejected by default).
     pub allow_duplicate: bool,
-    /// 失败注入(第 N 条语句,1 基;PDC-0405 验证面/测试用)。
+    /// Failure injection (at statement N, 1-based; for the PDC-0405
+    /// verification face / tests).
     pub fail_at_statement: Option<usize>,
 }
 
-/// 账号绑定的 Apply 期结果(PDC-0306 写侧)。
+/// Apply-phase result of account binding (PDC-0306 write side).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BindingOutcome {
     pub declaration: Option<String>,
-    /// 是否写入了绑定(引擎语义绑定由调用方/引擎侧完成;本面只登记)。
+    /// Whether a binding was written (engine-semantic binding is done by the
+    /// caller / engine side; this face only records).
     pub applied: bool,
     pub note: String,
 }
 
-/// 逐表只读核对结果(PDC-0406)。
+/// Per-table read-only verification result (PDC-0406).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct VerifyCheck {
     pub table: String,
@@ -151,43 +175,48 @@ pub struct VerifyCheck {
     pub ok: bool,
 }
 
-/// 核对结论三态(KODE-FULL-009)。
+/// Three-state verification conclusion (KODE-FULL-009).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerifyState {
-    /// 已提交但核对未完成(计数查询异常中断):数据在库是事实,计数未知。
+    /// Committed but verification incomplete (count query interrupted by an
+    /// error): the data being in the database is a fact, the count is unknown.
     Unknown,
-    /// 核对完成且逐表计数全对上。
+    /// Verification completed and per-table counts all match.
     Passed,
-    /// 核对完成且有表计数不齐。
+    /// Verification completed and some table counts disagree.
     Failed,
 }
 
-/// 提交后核对报告。
+/// Post-commit verification report.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct VerifyReport {
     pub checks: Vec<VerifyCheck>,
-    /// 全部核对通过才为 true;核对未完成(state=unknown)恒 false。
+    /// True only when all checks pass; always false while verification is
+    /// incomplete (state=unknown).
     pub passed: bool,
-    /// 核对三态(KODE-FULL-009):「计数未知」与「计数对不上」的显式区分。
+    /// Three-state verification (KODE-FULL-009): explicit distinction
+    /// between "count unknown" and "count mismatch".
     pub state: VerifyState,
-    /// 计数查询异常原文(仅 state=unknown 时有值)。
+    /// Raw count-query error (only set when state=unknown).
     pub error: Option<String>,
 }
 
-/// KBEngine 原生加载验证记录(PDC-0407)。
+/// KBEngine-native load verification record (PDC-0407).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LoadVerification {
-    /// 是否真的尝试了引擎加载(v1 crate 内默认 false——引擎环境属 P5 UI 装配)。
+    /// Whether engine loading was really attempted (false by default in the
+    /// v1 crate — engine environments belong to the P5 UI wiring).
     pub attempted: bool,
     pub was_active: Option<bool>,
     pub load_success: Option<bool>,
-    /// 主要持久化字段一致性抽查(字段 → 归档值/回读值是否一致)。
+    /// Spot check of major persisted fields (field → whether archive value /
+    /// read-back value agree).
     pub field_checks: Vec<FieldConsistency>,
     pub note: String,
 }
 
-/// 单字段一致性(归档值 vs 引擎回读值)。
+/// Single-field consistency (archive value vs engine read-back value).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FieldConsistency {
     pub table: String,
@@ -197,16 +226,18 @@ pub struct FieldConsistency {
     pub matches: bool,
 }
 
-/// 受控清理计划(PDC-0408):只生成,不执行。
+/// Controlled cleanup plan (PDC-0408): generate only, never execute.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CleanupPlan {
-    /// 逆拓扑序 DELETE(子先父后),参数化。
+    /// Reverse-topological-order DELETE (children before parents),
+    /// parameterized.
     pub steps: Vec<CleanupStatement>,
-    /// 执行前必须由引擎侧确认的事项(是否被本地服务器加载等)。
+    /// Matters the engine side must confirm before execution (whether it is
+    /// loaded by a local server, etc.).
     pub preconditions: Vec<String>,
 }
 
-/// 一条清理语句。
+/// One cleanup statement.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CleanupStatement {
     pub sequence: usize,
@@ -214,18 +245,20 @@ pub struct CleanupStatement {
     pub params: Vec<TypedValue>,
 }
 
-/// 一次导入的完整审计记录(PDC-0404)。
+/// Complete audit record of one import (PDC-0404).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ImportRun {
-    /// store 分配的单调 run 号(1 起)。
+    /// Monotonic run id allocated by the store (starting at 1).
     pub run_id: u64,
-    /// manifest 字节的 SHA-256(覆盖全部数据帧校验和)。
+    /// SHA-256 over the manifest bytes (which cover every data frame checksum).
     pub archive_fingerprint: String,
     pub mode: ImportMode,
     pub inserted_per_table: BTreeMap<String, u64>,
-    /// 计划占位 → 数据库真实新主键(Apply 回填,PDC-0402)。
+    /// Plan placeholder → real new primary key from the database (backfilled
+    /// by Apply, PDC-0402).
     pub resolved_ids: BTreeMap<u64, u64>,
-    /// 根表新主键(allocate 模式;preserve 模式为归档原值)。
+    /// New root-table primary key (allocate mode; the original archive value
+    /// in preserve mode).
     pub new_root_id: Option<u64>,
     pub binding: BindingOutcome,
     pub verify: VerifyReport,
@@ -233,20 +266,22 @@ pub struct ImportRun {
     pub load_verification: LoadVerification,
 }
 
-/// 重复导入的既有事实(§6.4:回显映射,不重复建角色)。
+/// Prior facts about a duplicate import (§6.4: echo the mapping back, do not
+/// build the role twice).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DuplicateImport {
     pub prior_run: ImportRun,
 }
 
-/// Apply 结果。
+/// Apply result.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ApplyOutcome {
     Applied(ImportRun),
     DuplicateRejected(DuplicateImport),
 }
 
-/// 归档指纹:manifest 覆盖全部帧校验和,对其字节取 SHA-256。
+/// Archive fingerprint: SHA-256 over the manifest bytes, which themselves
+/// cover every frame checksum.
 pub fn archive_fingerprint(archive: &Archive) -> CloneResult<String> {
     let manifest = archive
         .file("manifest.json")
@@ -254,9 +289,10 @@ pub fn archive_fingerprint(archive: &Archive) -> CloneResult<String> {
     Ok(hex_encode(Sha256::digest(manifest).as_slice()))
 }
 
-/// 事务 guard(KODE-FULL-010):begin..commit 之间的任何错误返回(含
-/// `?` 直穿)都在 Drop 中回滚——不依赖每条错误路径手写回滚,
-/// 「begin 后错误绕过 rollback」的窗口由类型系统关闭。
+/// Transaction guard (KODE-FULL-010): any error return between begin..commit
+/// (including a `?` passing straight through) rolls back in Drop — no need
+/// for hand-written rollback on every error path, and the window where an
+/// error after begin could bypass rollback is closed by the type system.
 struct TxnGuard<'a> {
     executor: &'a mut dyn WriteExecutor,
     done: bool,
@@ -270,12 +306,13 @@ impl Drop for TxnGuard<'_> {
     }
 }
 
-/// 导入执行器(Prepare 产物 → 单事务 Apply → 提交后 Verify)。
+/// Import executor (Prepare product → single-transaction Apply → post-commit Verify).
 #[derive(Debug, Default)]
 pub struct ImportApplier;
 
 impl ImportApplier {
-    /// 执行导入。失败路径保证 rollback 且无半套数据(PDC-0405)。
+    /// Execute the import. The failure path guarantees rollback and leaves
+    /// no half-applied data (PDC-0405).
     #[allow(clippy::too_many_arguments)]
     pub fn apply(
         &self,
@@ -286,10 +323,12 @@ impl ImportApplier {
         store: &mut dyn ImportRunStore,
         control: &ApplyControl,
     ) -> CloneResult<ApplyOutcome> {
-        // PDC-0401:仅 MySQL/单库可写;目标门槛与 Prepare 同闸复核。
+        // PDC-0401: only MySQL/single-database writes; the target gate is
+        // re-checked with the same gate Prepare uses.
         target.validate_for_import()?;
 
-        // PDC-0404/§6.4:重复导入闸(同指纹默认拒绝,回显既有映射)。
+        // PDC-0404/§6.4: duplicate-import gate (same fingerprint rejected by
+        // default, existing mapping echoed back).
         let fingerprint = archive_fingerprint(archive)?;
         if !control.allow_duplicate {
             if let Some(prior) = store.find_by_fingerprint(&fingerprint) {
@@ -299,16 +338,21 @@ impl ImportApplier {
             }
         }
 
-        // 行值面:计划只带绑定去向,Apply 按语句的 (表,行号) 取归档原值。
+        // Row-value face: the plan only carries binding destinations; Apply
+        // takes the archived original value by the statement's (table, row).
         let mut rows_by_table: BTreeMap<String, Vec<TypedRow>> = BTreeMap::new();
         for meta in &archive.meta().tables {
             rows_by_table.insert(meta.name.clone(), archive.table_rows(&meta.name)?);
         }
 
-        // ---- 校验先行(KODE-FULL-010):表/行/列宽纯数据校验移到 begin 前 ----
-        // begin 后的任何错误返回都必须回滚;旧口径这两处 `?` 直穿曾绕过
-        // rollback,把漂移错误留在已开启的事务里。前移后事务内只剩执行/
-        // 绑定失败,统一由 TxnGuard 兜底回滚。
+        // ---- Validate before opening the transaction (KODE-FULL-010):
+        // pure data validation of tables/rows/column widths moves before
+        // begin ----
+        // any error return after begin must roll back; under the old policy
+        // these two `?` pass-throughs could bypass rollback, leaving drift
+        // errors inside an already-open transaction. After the move the only
+        // things that can fail inside the transaction are execution/binding,
+        // which TxnGuard covers uniformly.
         for (index, stmt) in plan.statements.iter().enumerate() {
             let rows = rows_by_table.get(&stmt.table).ok_or_else(|| {
                 CloneError::DriftMismatch(format!(
@@ -343,7 +387,9 @@ impl ImportApplier {
         let mut resolved_ids: BTreeMap<u64, u64> = BTreeMap::new();
 
         for (index, stmt) in plan.statements.iter().enumerate() {
-            // PDC-0405:失败注入点(guard 兜底回滚,无半套;重试走全新 run,不静默续写)。
+            // PDC-0405: failure injection point (the guard rolls back, no
+            // half-applied set; a retry takes a fresh run and never resumes
+            // silently).
             if control.fail_at_statement == Some(index + 1) {
                 return Err(CloneError::ImportRejected(format!(
                     "injected failure at statement {} of {}; transaction rolled back, nothing committed",
@@ -370,13 +416,15 @@ impl ImportApplier {
                 .zip(stmt.columns.iter())
                 .zip(row.values.iter())
             {
-                // 绑定失败(顺序违规等)与语句失败同闸:guard Drop 兜底回滚,
-                // 前面语句的暂存行不留半套。
+                // Binding failures (order violations, etc.) share the gate
+                // with statement failures: guard Drop rolls back, leaving no
+                // half-applied set of earlier statements' buffered rows.
                 let bound = resolve_param(cell, column, value, &stmt.table, plan, &resolved_ids)?;
                 params.push(bound);
             }
             let new_id = txn.executor.execute_insert(&stmt.insert_sql, &params)?;
-            // 占位回填:该语句的 NewKey 占位 → 数据库返回的真实主键(PDC-0402)。
+            // Placeholder backfill: this statement's NewKey placeholders →
+            // the real primary key returned by the database (PDC-0402).
             for cell in &stmt.cells {
                 if let PlannedCell::NewKey { placeholder } = cell {
                     resolved_ids.insert(*placeholder, new_id);
@@ -389,15 +437,21 @@ impl ImportApplier {
         txn.done = true;
         drop(txn);
 
-        // ---- 账面先于核对 I/O(KODE-FULL-009):提交成功即落账 ----
-        // 数据已提交是既成事实;随后的核对只是只读计数,任何异常/中断都
-        // 不得让指纹闸(:249 find_by_fingerprint)对本导入失明——否则同一
-        // 归档重试会绕过闸再插一套数据。先按已知事实(行数/映射/清理计划)
-        // 把本 run 落账,核对区记 state=unknown;核对完成后 upsert 终态。
-        // 语句失败路径走不到这里(commit 前已 rollback),账面不会出现
-        // 「未提交先记账」的假账。
+        // ---- Ledger before verification I/O (KODE-FULL-009): record the run
+        // as soon as the commit succeeds ----
+        // that the data has been committed is an accomplished fact; the
+        // subsequent verification is only read-only counting, and no
+        // exception/interruption may blind the fingerprint gate (:249
+        // find_by_fingerprint) to this import — otherwise retrying the same
+        // archive would bypass the gate and insert a second data set. Record
+        // the run first with the known facts (row counts / mapping / cleanup
+        // plan), mark the verification area state=unknown, then upsert the
+        // final state once verification completes. Statement failure paths
+        // never reach here (rollback happens before commit), so the ledger
+        // cannot show the false entry of "recorded before committed".
 
-        // ---- 账号绑定写侧(PDC-0306):只登记事实,不写凭据/账号表 ----
+        // ---- Account binding write side (PDC-0306): record facts only, no
+        // credential/account table writes ----
         let binding = match &plan.account_binding.declaration {
             Some(declaration) => BindingOutcome {
                 declaration: Some(declaration.clone()),
@@ -413,7 +467,8 @@ impl ImportApplier {
             },
         };
 
-        // ---- 清理计划(PDC-0408):逆拓扑序,只生成不执行 ----
+        // ---- Cleanup plan (PDC-0408): reverse topological order, generate
+        // only, never execute ----
         let mut steps: Vec<CleanupStatement> = Vec::new();
         for name in plan.order.iter().rev() {
             let ids = new_ids_for_table(plan, &resolved_ids, &rows_by_table, name);
@@ -434,8 +489,10 @@ impl ImportApplier {
             ],
         };
 
-        // ---- 根表新主键(对外句柄,§7 UI 展示面):allocate 模式为数据库
-        // 分配值,preserve 模式为归档原值(契约「preserve 模式下为归档原值」)。
+        // ---- Root-table new primary key (the external handle, §7 UI display
+        // face): the database-assigned value in allocate mode, the archived
+        // original in preserve mode (contract: "in preserve mode the archived
+        // original value").
         let root_table = plan.order.first().cloned();
         let new_root_id = root_table.as_ref().and_then(|root| {
             new_ids_for_table(plan, &resolved_ids, &rows_by_table, root)
@@ -468,9 +525,12 @@ impl ImportApplier {
         };
         store.record(run.clone());
 
-        // ---- Verify(PDC-0406):提交后按表只读核对(新主键必须逐行可查) ----
-        // 计数查询异常不再 `?` 直穿(KODE-FULL-009):账面已落,异常记
-        // unknown 并上抛可恢复报告,重试走闸回显映射,绝不重复插数。
+        // ---- Verify (PDC-0406): post-commit per-table read-only
+        // cross-check (each new primary key must be row-by-row queryable) ----
+        // count-query errors no longer pass straight through with `?`
+        // (KODE-FULL-009): the ledger entry is already recorded, the error is
+        // recorded as unknown and a recoverable report is raised; retries go
+        // through the gate and echo the mapping back, never re-inserting data.
         let mut checks: Vec<VerifyCheck> = Vec::new();
         let mut verify_error: Option<CloneError> = None;
         for name in &plan.order {
@@ -487,7 +547,8 @@ impl ImportApplier {
                     found,
                     ok: found == expected,
                 }),
-                // 计数查询异常 ≠ 数据不在:提交事实不变,核对记 unknown。
+                // A count-query error ≠ the data being absent: the commit
+                // fact stands, verification records unknown.
                 Err(e) => {
                     verify_error = Some(e);
                     break;
@@ -515,20 +576,25 @@ impl ImportApplier {
                 }
             }
         };
-        // 终态改写同 run 号落账(两阶段:unknown → passed/failed/unknown)。
+        // Final-state rewrite into the same run id entry (two-phase:
+        // unknown → passed/failed/unknown).
         store.upsert(run.clone());
         if let Some(e) = verify_error.as_ref() {
-            // 可恢复报告:数据已提交且已按指纹落账;同一归档重试由重复
-            // 导入闸回显 prior_run(映射/清理计划俱全),计数核对可按
-            // resolved_ids 人工补做,不自动重插。
+            // Recoverable report: the data is committed and the run is
+            // recorded by fingerprint; retrying the same archive goes through
+            // the duplicate-import gate and echoes prior_run (mapping and
+            // cleanup plan intact). The count check can be completed manually
+            // from resolved_ids; no automatic re-insertion.
             return Err(CloneError::ImportRejected(format!(
                 "post-commit verification errored: {e}; data is committed and run {} is recorded, retry of the same archive returns the prior run instead of re-inserting",
                 run.run_id
             )));
         }
         if !run.verify.passed {
-            // 数据已提交(原子完整);核对失败如实上报,不回滚已提交事务,
-            // 清理计划随错误对象之外的 run 报告由调用方取回处理。
+            // The data is committed (atomically complete); a verification
+            // failure is reported honestly — the committed transaction is not
+            // rolled back. The cleanup plan travels with the run report, which
+            // the caller retrieves outside the error object.
             return Err(CloneError::DriftMismatch(format!(
                 "post-commit verification failed: {:?}",
                 run.verify
@@ -542,7 +608,7 @@ impl ImportApplier {
     }
 }
 
-/// 单元格 → 具体绑定值(表/列入 idmap 键,§6.3)。
+/// Cell → concrete bound value (table/column joins into the idmap key, §6.3).
 fn resolve_param(
     cell: &PlannedCell,
     column: &str,
@@ -552,7 +618,8 @@ fn resolve_param(
     resolved: &BTreeMap<u64, u64>,
 ) -> CloneResult<TypedValue> {
     Ok(match cell {
-        // 新主键:绑 NULL,由目标 AUTO_INCREMENT 分配,真实值随 execute_insert 返回。
+        // New primary key: bind NULL, let the target AUTO_INCREMENT assign it;
+        // the real value comes back from execute_insert.
         PlannedCell::NewKey { .. } => TypedValue::Null,
         PlannedCell::KeyReference { placeholder } => {
             let id = resolved.get(placeholder).ok_or_else(|| {
@@ -563,12 +630,14 @@ fn resolve_param(
             TypedValue::BigUInt(*id)
         }
         PlannedCell::Literal => value.clone(),
-        // 策略覆写:绑定策略值(ForceDisabled → 0,§6.2「禁用线上 autoLoad」)。
+        // Policy override: bind the policy value (ForceDisabled → 0, §6.2
+        // "disable autoLoad online").
         PlannedCell::PolicyOverride => match plan.autoload_policy {
             AutoLoadPolicy::PreserveArchive => value.clone(),
             AutoLoadPolicy::ForceDisabled => TypedValue::UInt(0),
         },
-        // 计划期已定的重建值(唯一键本地重建;键 = 表+列+旧值)。
+        // Rebuild value decided at plan time (unique keys rebuilt locally;
+        // key = table+column+old value).
         PlannedCell::Remapped => match plan.idmap.get(table, column, value) {
             Some(MappedId::Rebuilt { value: rebuilt }) => rebuilt.clone(),
             _ => value.clone(),
@@ -576,9 +645,12 @@ fn resolve_param(
     })
 }
 
-/// 表的全部新主键(按计划该表主键列的实际绑定值):NewKey 占位取数据库
-/// 回填值(allocate);主键列 Literal 取归档原值(preserve——计划期不产
-/// 占位,只认占位会空集,致核对误报 DriftMismatch / 根句柄恒 None)。
+/// All new primary keys of a table (the actual bound values of the plan's
+/// primary-key column for that table): NewKey placeholders take the database
+/// backfilled value (allocate); a Literal primary-key column takes the
+/// archived original value (preserve — the plan produces no placeholder, so
+/// recognizing placeholders only would yield an empty set, making verification
+/// falsely report DriftMismatch and the root handle always None).
 fn new_ids_for_table(
     plan: &ImportPlan,
     resolved: &BTreeMap<u64, u64>,
@@ -614,7 +686,8 @@ fn new_ids_for_table(
     ids
 }
 
-/// 主键绑定值 → 标量 u64(核对/清理参数走 TypedValue,根句柄取数值)。
+/// Primary-key bound value → scalar u64 (verification/cleanup parameters stay
+/// TypedValue; the root handle takes the numeric value).
 fn typed_id_to_u64(value: &TypedValue) -> Option<u64> {
     match value {
         TypedValue::BigUInt(x) => Some(*x),
@@ -689,7 +762,7 @@ mod tests {
     #[test]
     fn resolve_param_branches() {
         let mut plan = test_plan();
-        // NewKey → NULL(交给目标分配)。
+        // NewKey → NULL (left to the target to assign).
         assert_eq!(
             resolve_param(
                 &PlannedCell::NewKey { placeholder: 1 },
@@ -702,7 +775,8 @@ mod tests {
             .unwrap(),
             TypedValue::Null
         );
-        // KeyReference 已回填 → 真实新主键;未回填 → 顺序违规报错。
+        // KeyReference already backfilled → the real new primary key; not yet
+        // backfilled → an order-violation error.
         let resolved = BTreeMap::from([(1u64, 1000u64)]);
         assert_eq!(
             resolve_param(
@@ -725,7 +799,8 @@ mod tests {
             &BTreeMap::new(),
         )
         .is_err());
-        // PolicyOverride:默认策略 ForceDisabled → 0;PreserveArchive → 原值。
+        // PolicyOverride: default policy ForceDisabled → 0;
+        // PreserveArchive → the original value.
         assert_eq!(
             resolve_param(
                 &PlannedCell::PolicyOverride,
@@ -751,7 +826,8 @@ mod tests {
             .unwrap(),
             TypedValue::UInt(1)
         );
-        // Remapped:取 idmap 重建值(hero → hero_imported1);Literal 原值直通。
+        // Remapped: take the idmap rebuild value (hero → hero_imported1);
+        // Literal passes the original value through.
         assert_eq!(
             resolve_param(
                 &PlannedCell::Remapped,
@@ -780,7 +856,7 @@ mod tests {
 
     #[test]
     fn noop_run_store_never_intercepts() {
-        // NoopRunStore:恒 1 号、不拦截、不落账。
+        // NoopRunStore: always run id 1, intercepts nothing, records nothing.
         let mut noop = NoopRunStore;
         assert_eq!(noop.next_run_id(), 1);
         assert!(noop.find_by_fingerprint("x").is_none());

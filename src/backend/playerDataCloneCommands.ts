@@ -1,21 +1,21 @@
 /**
- * Player Data Clone 命令编排(CLONE-P5 / PDC-0501..0507,计划书 §7):
- * - 连接 Profile 配置/测试(0501):Source 只读源 + Target 本地可写目标;
- * - 导出(0502):实体/DBID 选择 → 只读计划预览 → 只读会话执行 → .kdpclone;
- * - 归档浏览(0503):清单/哈希状态/脱敏状态;不回行值,默认不展示敏感值;
- * - 导入(0504/0505):两遍计划(pass-1 列序 → 唯一值有界探测 → pass-2 冲突
- *   预演)→ 预览(冲突/绑定/告警/Persisted≠Live)→ 本地环境二次确认 →
- *   进度+取消(取消即回滚)→ 审计落盘;
- * - 审计查看(0505):.kode/clone-runs/ 下的 run 记录回显;
- * - 加载验证(0506):提交后 COUNT 复核如实展示;引擎侧原生加载验证需要
- *   本地 KBEngine 运行环境,未接线部分如实说明,不虚报。
+ * Player Data Clone command orchestration (CLONE-P5 / PDC-0501..0507, plan §7):
+ * - connection profile setup/test (0501): Source read-only source + Target local writable target;
+ * - export (0502): entity/DBID selection → read-only plan preview → read-only session execution → .kdpclone;
+ * - archive browsing (0503): manifest/hash state/redaction state; never row values, sensitive values hidden by default;
+ * - import (0504/0505): two-pass plan (pass-1 column order → unique-value bounded probing → pass-2 conflict
+ *   rehearsal) → preview (conflict/binding/warnings/Persisted≠Live) → local-environment second confirmation →
+ *   progress + cancel (cancel = rollback) → audit written to disk;
+ * - audit review (0505): run records echoed from .kode/clone-runs/;
+ * - load verification (0506): COUNT recheck shown faithfully as-is; engine-side native load verification
+ *   requires a local KBEngine runtime, unwired parts described faithfully, never falsely reported.
  *
- * 文案国际化(UX-REVIEW-010d):key=英文源串,zh-cn 经 deps.localize(装配面
- * 注 l10nText)取词,无注入回落英文源串;比较选项一律与同一调用值判等
- * (不依赖固定语言文字)。关键告示「持久化副本(Persisted copy)≠ 在线
- * 当前状态(Live state)」在导出/导入两面都出现。
+ * localization (UX-REVIEW-010d): key = English source string, zh-cn fetched via deps.localize (the wiring
+ * layer injects l10nText), no injection falls back to the English source string; comparisons always
+ * compare against the same call value (not depending on fixed language text). The key notice "persisted
+ * copy (Persisted copy) ≠ live online state (Live state)" appears on both the export and import faces.
  *
- * 无 vscode import:UI/连接/文件面全部经 deps 注入(单测驱动纯编排)。
+ * no vscode imports: UI/connection/file faces all injected via deps (unit tests drive pure orchestration).
  */
 
 import type { CloneProfileRole, CloneProfileStore } from './playerDataCloneProfiles';
@@ -48,18 +48,18 @@ import {
 } from './playerDataCloneRust';
 import type { ArchiveMetaWire, ImportPlanWire, TypedRowWire } from './playerDataCloneWire';
 
-/** 实体推导表描述符(结构子集;形状由 databaseSchema 快照保证)。 */
+/** Entity-derived table descriptor (structure subset; shape guaranteed by the databaseSchema snapshot). */
 export interface EntityTableDescriptorLike {
   name: string;
 }
 
-/** {name} 占位符实参(译文内替换;口径同 nlsRuntime.NlsArgs)。 */
+/** {name} placeholder argument (replaced inside the translation; semantics match nlsRuntime.NlsArgs). */
 export type L10nArgs = Record<string, string | number | boolean>;
 
-/** 取词包装形态:装配面注入 localize(= l10nText),无注入回落英文源串。 */
+/** Lookup wrapper form: the wiring layer injects localize (= l10nText), no injection falls back to the English source string. */
 export type CloneL10n = (message: string, args?: L10nArgs) => string;
 
-/** 无 localize 注入时的回退:英文源串内 {name} 按 args 原位替换。 */
+/** Fallback when no localize is injected: {name} in the English source string is replaced in place by args. */
 export function withL10nArgs(message: string, args?: L10nArgs): string {
   if (!args) {
     return message;
@@ -74,14 +74,14 @@ export interface PlayerCloneCommandDeps {
   localize?(message: string, args?: L10nArgs): string;
   profiles: CloneProfileStore;
   listEntityNames(): string[];
-  /** 实体 → 推导表(databaseSchema 快照;读不到 = null,不猜)。 */
+  /** Entity → derived tables (databaseSchema snapshot; unreadable = null, never guessed). */
   resolveEntityTables(entityName: string): EntityTableDescriptorLike[] | null;
   showQuickPick(items: readonly string[], options: { placeHolder: string }): Promise<string | undefined>;
   showInputBox(options: {
     prompt: string;
-    /** 既有配置预填(005a:已输入的非密码信息跨前进/返回保留);密码绝不预填 */
+    /** Existing-config prefill (005a: non-password info already entered is preserved across forward/back); password is never prefilled */
     value?: string;
-    /** 输入框上方标题(005a:展示角色与步骤序号,如 "Source 2/5") */
+    /** Title above the input box (005a: shows the role and step number, e.g. "Source 2/5") */
     title?: string;
     password?: boolean;
     validateInput?(value: string): string | null;
@@ -93,35 +93,39 @@ export interface PlayerCloneCommandDeps {
     options: { title: string; cancellable: boolean },
     task: (token: { isCancellationRequested: boolean }) => Promise<R>
   ): Promise<R>;
-  /** 导出归档保存路径选择;取消 = undefined。defaultDir=上次导出目录(保存起点预填)。 */
+  /** Export archive save-path selection; cancel = undefined. defaultDir = last export directory (prefilled as the save starting point). */
   pickArchiveSavePath(defaultName: string, defaultDir?: string): Promise<string | undefined>;
-  /** 导入归档选择;取消 = undefined。 */
+  /** Import archive selection; cancel = undefined. */
   pickArchiveOpenPath(): Promise<string | undefined>;
-  /** 审计落盘面;路径由调用方决定(工作区 .kode/clone-runs)。 */
+  /** Audit-written face; the path is decided by the caller (workspace .kode/clone-runs). */
   writeAuditFile(name: string, content: string): Promise<string>;
   listAuditFiles(): Promise<string[]>;
   readAuditFile(path: string): Promise<string | null>;
   /**
-   * 归档加密密钥根目录(globalStorage 下的 clone-keys;密钥材料全程留
-   * Rust,TS 只传目录路径)。undefined=不加密(测试替身/旧装配兼容)。
+   * Archive encryption key root directory (clone-keys under globalStorage; key material
+   * stays in Rust the whole time, TS only passes the directory path). undefined = not
+   * encrypted (test doubles / legacy wiring compatible).
    */
   getKeyRoot(): string | undefined;
   /**
-   * 归档加密默认值(kbengine.clone.archiveEncryption;缺省 = 'encrypted')。
-   * 只作导出确认页的初始态,导出时每次可切换(PDC-0609);读面不受影响
-   * (加密位探测定,明文/加密归档都能读)。
+   * Archive encryption default (kbengine.clone.archiveEncryption; default = 'encrypted').
+   * Used only as the initial state of the export confirmation page, each export can toggle
+   * it (PDC-0609); the read face is unaffected (the encryption bit is probed, both plaintext
+   * and encrypted archives can be read).
    */
   getArchiveEncryptionDefault?(): 'encrypted' | 'plain';
   /**
-   * UX-REVIEW-004b 导出预检:Rust 克隆后端轻探测(true=门在场)。不发 RPC,
-   * 只判 gate 缺席;server 级故障仍由 plan/write 的 no-gate/error 面如实上报。
-   * 缺省=跳过该面(测试替身/旧装配兼容)。
+   * UX-REVIEW-004b export pre-check: light probe of the Rust clone backend (true = gate present).
+   * Sends no RPC, only judges gate absence; server-level faults are still reported faithfully
+   * via the plan/write no-gate/error faces.
+   * Default = skip this face (test doubles / legacy wiring compatible).
    */
   probeCloneBackend?(): boolean;
   /**
-   * UX-REVIEW-004b 导出预检:源连接真实建连测试(SELECT VERSION();探针会话
-   * 只读即关)。失败带原始原因,导出在实体/DBID 收集前给重试/配置入口。
-   * 缺省=跳过该面(测试替身/旧装配兼容)。
+   * UX-REVIEW-004b export pre-check: source-connection real connection test (SELECT VERSION();
+   * the probe session closes read-only immediately). On failure the raw reason is carried,
+   * and export offers a retry/configure entry before entity/DBID collection.
+   * Default = skip this face (test doubles / legacy wiring compatible).
    */
   probeSourceConnection?(config: {
     host: string;
@@ -131,9 +135,10 @@ export interface PlayerCloneCommandDeps {
     database: string;
   }): Promise<{ ok: true } | { ok: false; reason: string }>;
   /**
-   * UX-2026-11-22 整改1:上次成功导出的选择记忆(workspaceState 面注入,
-   * databaseWiring 复用 kode.playerClone.profiles 同机制)。缺省=无记忆
-   * (零行为变化,测试替身/旧装配兼容)。只记成功,不记取消/失败。
+   * UX-2026-11-22 increment 1: selection memory of the last successful export (workspaceState face
+   * injection, databaseWiring reuses the kode.playerClone.profiles mechanism). Default = no memory
+   * (zero behavior change, test doubles / legacy wiring compatible). Only success is recorded,
+   * not cancel/failure.
    */
   getLastExportSelection?(): {
     entityName: string;
@@ -141,7 +146,7 @@ export interface PlayerCloneCommandDeps {
     savePath: string;
     encrypt: boolean;
   } | null;
-  /** 成功导出后落记忆(仅成功路径调用)。 */
+  /** Persist memory after a successful export (called only on the success path). */
   rememberExportSelection?(selection: {
     entityName: string;
     dbid: string;
@@ -149,20 +154,21 @@ export interface PlayerCloneCommandDeps {
     encrypt: boolean;
   }): void;
   /**
-   * 从引擎最终配置(dbmgr/databaseInterfaces/default)派生源连接(用户令:
-   * 导出优先读最终配置,不逼用户手输)。null = 最终配置不可用(无 kbengine.xml
-   * 且派生档案缺位)。password 为引擎 RSA 明文解出值;不可解 = undefined,
-   * 调用方按「密码读不到」如实降级。defaultsOnly = 只拿到引擎默认值
-   * (kbengine.xml 缺席,值非本项目实际配置,须如实告警)。
+   * Derive the source connection from the engine final config (dbmgr/databaseInterfaces/default) (user order:
+   * export prefers reading the final config, never forcing the user to type it by hand). null = final config
+   * unavailable (no kbengine.xml and no derived profile). password is the value decrypted from the engine RSA
+   * plaintext; undecryptable = undefined, the caller degrades faithfully as "password unreadable". defaultsOnly =
+   * only the engine defaults were obtained (kbengine.xml absent, the values are not this project's actual config,
+   * must be warned about faithfully).
    */
   resolveFinalConfigSourceConnection?(): Promise<{
     config: { host: string; port: number; user: string; password?: string; database: string };
     defaultsOnly: boolean;
   } | null>;
   /**
-   * 用户令 2026-11-23:导出弹窗「从配置读取」面 —— kbengine.clone.defaultEntity /
-   * defaultDbId 生效值(与 archiveEncryption 同一设置层)。缺省 = 无注入
-   * (测试替身/旧装配兼容,弹窗行为与旧版逐字节一致)。
+   * user order 2026-11-23: export dialog "read from config" face —— kbengine.clone.defaultEntity /
+   * defaultDbId effective values (same settings layer as archiveEncryption). Default = no injection
+   * (test doubles / legacy wiring compatible, dialog behavior byte-identical to the old version).
    */
   getCloneExportConfigDefaults?(): { defaultEntity?: string; defaultDbId?: string };
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
@@ -172,7 +178,7 @@ export interface PlayerCloneCommandDeps {
 const PERSISTED_NOT_LIVE =
   'This is a persisted copy of the database, not the live online state.';
 
-/** 路径目录名(手写,免 node:path 依赖;只作保存起点预填)。 */
+/** Path directory name (handwritten, no node:path dependency; used only as the save starting point prefill). */
 function dirnameOf(p: string): string | undefined {
   const sep = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return sep > 0 ? p.slice(0, sep) : undefined;
@@ -182,7 +188,7 @@ const noGateMessage =
   'Player Data Clone requires the Rust backend (kode-server) to be available: check the kode-core server configuration.';
 
 // ---------------------------------------------------------------------------
-// 0609 导出加密选择(设置默认 + 导出确认页逐次切换)
+// 0609 export encryption selection (settings default + per-export toggle on the confirmation page)
 // ---------------------------------------------------------------------------
 
 export const EXPORT_CONFIRM_ITEM = 'Export';
@@ -192,10 +198,12 @@ const PLAIN_LABEL = 'Plaintext (portable)';
 const TOGGLE_ENCRYPTION_LABEL = 'Toggle encryption';
 
 /**
- * 导出确认页的加密选择循环:确认项文案携带当前加密态,切换项反复翻转,
- * 直至导出/取消。confirmed=false 即退出导出流程(取消/关窗)。
- * previewSummary(UX-2026-11-22 整改3):计划预览摘要(表清单/行预算/missing)
- * 并入占位文案,确认页即看即过;详情仍照写 OUTPUT 留档。
+ * The encryption selection loop of the export confirmation page: the confirm item's text carries the
+ * current encryption state, the toggle item flips it repeatedly, until export/cancel. confirmed=false
+ * exits the export flow (cancel/window closed).
+ * previewSummary (UX-2026-11-22 increment 3): the plan preview summary (table list/row budget/missing)
+ * is merged into the placeholder text so the confirmation page can be read and passed on the spot;
+ * details are still written to OUTPUT for the record.
  */
 export async function pickExportEncryption(
   pick: (
@@ -210,7 +218,7 @@ export async function pickExportEncryption(
   const l10n: CloneL10n = localize ?? withL10nArgs;
   let encrypt = defaultEncrypt;
   for (;;) {
-    // 选项文案与比较共用同一调用值(010d:比较不依赖固定语言文字)。
+    // The option text and the comparison share the same call value (010d: comparison does not depend on fixed language text).
     const confirmItem = `${l10n(EXPORT_CONFIRM_ITEM)},${encrypt ? l10n(ENCRYPTED_LABEL) : l10n(PLAIN_LABEL)}`;
     const toggleItem = `${l10n(TOGGLE_ENCRYPTION_LABEL)} → ${encrypt ? l10n(PLAIN_LABEL) : l10n(ENCRYPTED_LABEL)}`;
     const cancelItem = l10n(EXPORT_CANCEL_ITEM);
@@ -229,27 +237,27 @@ export async function pickExportEncryption(
 }
 
 // ---------------------------------------------------------------------------
-// 0501 连接 Profile 配置 / 测试(UX-REVIEW-005a/005c 分步向导)
+// 0501 connection profile setup / test (UX-REVIEW-005a/005c step-by-step wizard)
 // ---------------------------------------------------------------------------
 
-/** 摘要页动作(005c):保存 / 测试连接 / 返回修改 / 取消;选择按同一值判断。 */
+/** Summary page actions (005c): save / test connection / edit / cancel; the choice is judged by the same value. */
 export const CLONE_SUMMARY_SAVE = 'Save';
 export const CLONE_SUMMARY_TEST = 'Test connection';
 export const CLONE_SUMMARY_EDIT = 'Edit';
 export const CLONE_SUMMARY_CANCEL = 'Cancel';
 /**
- * 保留已存密码(005d 明确保留语义):仅在已存密钥且本次密码输入留空时
- * 出现;选中后以 save(password=undefined) 落盘,SecretStorage 旧密钥原样
- * 保留——与「保存(留空=清除)」形成一对明确语义。
+ * Keep the stored password (005d explicit keep semantics): appears only when a secret is stored and
+ * this input leaves the password empty; selecting it persists via save(password=undefined) and the
+ * SecretStorage old key is kept as-is — forming an explicit semantic pair with "save (empty = clear)".
  */
 export const CLONE_SUMMARY_KEEP_SECRET = 'Keep stored password';
 
-/** 输入步骤草稿:全程内存态,只有摘要页选「保存」才落盘(取消不写半成品)。 */
+/** Input-step draft: kept in memory throughout, only written to disk when "save" is chosen on the summary page (cancel writes no half-finished data). */
 interface CloneProfileDraft {
   host: string;
   portText: string;
   user: string;
-  /** '' = 清除已存密码(既有口径);非空 = 覆盖。摘要绝不回显本值。 */
+  /** '' = clear the stored password (existing convention); non-empty = overwrite. The summary never echoes this value. */
   password: string;
   database: string;
   environment?: 'local' | 'test';
@@ -264,7 +272,7 @@ export async function runConfigureCloneProfileCommand(
   const l10n: CloneL10n = (message, args) =>
     deps.localize?.(message, args) ?? withL10nArgs(message, args);
   const existing = deps.profiles.get(role);
-  // 005a:既有配置预填非密码字段(成功保存后可再次修改);密码绝不回填。
+  // 005a: prefill the non-password fields from the existing config (revisable after a successful save); the password is never backfilled.
   const draft: CloneProfileDraft = {
     host: existing?.host ?? '',
     portText: existing ? String(existing.port) : '',
@@ -307,7 +315,7 @@ export async function runConfigureCloneProfileCommand(
   ];
   const totalSteps = steps.length + (role === 'target' ? 1 : 0);
 
-  // 分步输入(005a):标题带角色与步骤序号;Esc 取消整体放弃,不写半成品。
+  // Step-by-step input (005a): the title carries the role and step number; Esc cancels and abandons everything, writing no half-finished data.
   for (const [index, step] of steps.entries()) {
     const answer = await deps.showInputBox({
       prompt: step.prompt,
@@ -317,12 +325,12 @@ export async function runConfigureCloneProfileCommand(
       validateInput: step.validate
     });
     if (answer === undefined) {
-      return; // 取消:已输入内容不落盘
+      return; // cancel: what was typed is not written to disk
     }
     draft[step.key] = answer;
   }
   if (role === 'target') {
-    // §6.1:目标环境显式声明,只认 local/test。
+    // §6.1: the target environment is declared explicitly, only local/test are accepted.
     const environment = await deps.showQuickPick(['local', 'test'], { placeHolder: envPrompt });
     if (environment !== 'local' && environment !== 'test') {
       return;
@@ -330,11 +338,11 @@ export async function runConfigureCloneProfileCommand(
     draft.environment = environment;
   }
 
-  // 摘要页(005c):不含密码的摘要 + 保存/测试/返回修改/取消;只有保存落盘。
-  // 已存密钥且本次密码留空时额外提供「保留已存密码」(005d 明确保留语义)。
+  // Summary page (005c): a password-free summary + save/test/edit/cancel; only save writes to disk.
+  // When a secret is stored and the password is left empty this time, additionally offer "keep stored password" (005d explicit keep semantics).
   let keepSecret = false;
   for (;;) {
-    // 选项与比较共用同一调用值(010d:比较不依赖固定语言文字)。
+    // The options and the comparison share the same call value (010d: comparison does not depend on fixed language text).
     const saveLabel = l10n(CLONE_SUMMARY_SAVE);
     const keepSecretLabel = l10n(CLONE_SUMMARY_KEEP_SECRET);
     const testLabel = l10n(CLONE_SUMMARY_TEST);
@@ -349,7 +357,7 @@ export async function runConfigureCloneProfileCommand(
       placeHolder: cloneSummaryText(l10n, role, draft, existing?.hasStoredSecret === true)
     });
     if (!picked || picked === cancelLabel) {
-      return; // 取消:不写入半成品
+      return; // cancel: no half-finished data written
     }
     if (picked === testLabel) {
       await testCloneDraftConnection(deps, role, draft);
@@ -366,11 +374,11 @@ export async function runConfigureCloneProfileCommand(
     if (picked === saveLabel) {
       break;
     }
-    return; // 未知选择(宿主差异/旧脚本)按取消处理,绝不落盘
+    return; // an unknown choice (host differences / legacy scripts) is treated as cancel, never written to disk
   }
 
-  // 保存:keepSecret → password=undefined(SecretStorage 旧密钥原样保留);
-  // 留空 → null(清除);输入 → 覆盖。密钥面失败如实报错,不虚报已保存。
+  // Save: keepSecret → password=undefined (the SecretStorage old key is kept as-is);
+  // empty → null (clear); typed → overwrite. Secret-face failures report the error faithfully, never falsely reported as saved.
   const password = keepSecret
     ? undefined
     : draft.password === ''
@@ -412,7 +420,7 @@ export async function runConfigureCloneProfileCommand(
   );
 }
 
-/** 摘要文本(005c):连接参数 + 密码状态,绝不回显密码本体。 */
+/** Summary text (005c): connection parameters + password state, never echoing the password itself. */
 function cloneSummaryText(
   l10n: CloneL10n,
   role: CloneProfileRole,
@@ -437,7 +445,7 @@ function cloneSummaryText(
   return `${roleLabel(role)}: ${parts.join(' · ')}`;
 }
 
-/** 返回修改(005a):选中字段重填,输入预填当前草稿值(密码仍不回显)。 */
+/** Edit / go back to revise (005a): refill the chosen field, the input prefilled with the current draft value (the password is still never echoed). */
 async function reviseDraftStep(
   deps: PlayerCloneCommandDeps,
   l10n: CloneL10n,
@@ -455,7 +463,7 @@ async function reviseDraftStep(
   }
   const picked = await deps.showQuickPick(items, { placeHolder: l10n(CLONE_SUMMARY_EDIT) });
   if (picked === undefined) {
-    return; // 取消修改:草稿不动,回到摘要
+    return; // cancel the edit: the draft is untouched, back to the summary
   }
   switch (picked) {
     case prompts.hostPrompt: {
@@ -519,13 +527,15 @@ async function reviseDraftStep(
       return;
     }
     default:
-      return; // 未知选择:草稿不动
+      return; // an unknown choice: the draft is untouched
   }
 }
 
 /**
- * 摘要页「测试连接」(005c):用草稿值建连测试,失败带原始原因;测试不落盘。
- * 密码留空且已存密钥时按保存语义取既有密码测试(与最终保存行为一致)。
+ * Summary page "test connection" (005c): builds a connection with the draft values and tests it,
+ * carrying the raw reason on failure; the test writes nothing to disk.
+ * When the password is left empty and a secret is stored, the existing password is taken with
+ * save semantics for the test (consistent with the final save behavior).
  */
 async function testCloneDraftConnection(
   deps: PlayerCloneCommandDeps,
@@ -546,7 +556,7 @@ async function testCloneDraftConnection(
   });
 }
 
-/** 连接测试的呈现面(已存配置与摘要页草稿共用):成功带版本,失败带原因。 */
+/** The presentation face of the connection test (shared by the stored-config and summary-page draft paths): success carries the version, failure carries the reason. */
 async function showCloneConnectionTestResult(
   deps: PlayerCloneCommandDeps,
   role: CloneProfileRole,
@@ -602,7 +612,7 @@ export async function runTestCloneConnectionCommand(
 }
 
 // ---------------------------------------------------------------------------
-// 0503 归档浏览
+// 0503 archive browsing
 // ---------------------------------------------------------------------------
 
 function renderArchiveSummary(l10n: CloneL10n, meta: ArchiveMetaWire): string[] {
@@ -660,23 +670,25 @@ export async function runInspectCloneArchiveCommand(
 }
 
 // ---------------------------------------------------------------------------
-// 0502 导出
+// 0502 export
 // ---------------------------------------------------------------------------
 
 /**
- * UX-REVIEW-004b 预检依赖生产装配(004b-1 覆盖配置缺失面,本两件补「可用
- * 后端 + 连接测试」余量):后端探测=门缺席轻探测;源连接探测=真实建连 +
- * SELECT VERSION() 即关(探针只读会话,失败带原始原因)。
+ * UX-REVIEW-004b pre-checks depend on production wiring (004b-1 covers the missing-config face, these
+ * two add the "usable backend + connection test" headroom): the backend probe = a light probe of gate
+ * absence; the source-connection probe = a real connection + SELECT VERSION() that closes immediately
+ * (the probe is a read-only session, carrying the raw reason on failure).
  */
 export function cloneBackendProbe(): NonNullable<PlayerCloneCommandDeps['probeCloneBackend']> {
   return () => getKodeCoreShadowGate() !== null;
 }
 
 /**
- * UX-2026-11-22 整改2:探针独立短超时档(可配 kbengine.clone.probeTimeoutMs,
- * 缺省 5000)。探针只答「现在连不连得上」,不该让用户干等导出执行侧的
- * 长超时(deadline 120s);超时立即以失败回给既有的重试/配置弹窗,交互
- * 面不变。导出执行(openCloneSession/executeExportPlan)仍用原超时档。
+ * UX-2026-11-22 increment 2: the probe gets an independent short-timeout tier (configurable via
+ * kbengine.clone.probeTimeoutMs, default 5000). The probe only answers "can it connect right now",
+ * it should not make the user wait for the export-execution side's long timeout (deadline 120s);
+ * on timeout it immediately fails into the existing retry/configure dialog, the interaction face
+ * unchanged. Export execution (openCloneSession/executeExportPlan) still uses the original timeout tier.
  */
 export const CLONE_PROBE_TIMEOUT_MS_DEFAULT = 5000;
 
@@ -685,9 +697,9 @@ export function cloneSourceConnectionProbe(
   probeTimeoutMs: number | (() => number) = CLONE_PROBE_TIMEOUT_MS_DEFAULT
 ): NonNullable<PlayerCloneCommandDeps['probeSourceConnection']> {
   return async config => {
-    // 每次调用读档(门禁口径:配置/信任面在 fire time 读,装配后改动即时生效)。
+    // Read the config on every call (gate discipline: the config/trust face is read at fire time, changes after wiring take effect immediately).
     const timeoutMs = typeof probeTimeoutMs === 'function' ? probeTimeoutMs() : probeTimeoutMs;
-    // 闭包可变引用用 holder:TS 无法跨 async IIFE 追踪直接赋值窄化。
+    // The mutable closure reference goes through a holder: TS cannot track direct-assignment narrowing across an async IIFE.
     const held: { session: CloneMysqlConnection | null } = { session: null };
     let timer: ReturnType<typeof setTimeout> | undefined;
     const probeWork: Promise<{ ok: true } | { ok: false; reason: string }> = (async () => {
@@ -703,7 +715,7 @@ export function cloneSourceConnectionProbe(
         try {
           await conn.end();
         } catch {
-          // 与导出收尾同口径:探针关闭失败不覆盖探测结果。
+          // Same discipline as the export wrap-up: a failure to close the probe does not overwrite the probe result.
         }
       }
     })();
@@ -725,23 +737,23 @@ export function cloneSourceConnectionProbe(
       if (timer) {
         clearTimeout(timer);
       }
-      // 超时路径:晚到的会话必须销毁,短探针档不能漏连接。
+      // Timeout path: a late-arriving session must be destroyed, the short probe tier must not leak a connection.
       if (held.session) {
         try {
           held.session.abort?.();
         } catch {
-          // 已在关闭中的连接销毁失败无害。
+          // A failure to destroy an already-closing connection is harmless.
         }
       }
     }
   };
 }
 
-/** 源连接选择项文案(010d:比较与展示同值)。 */
+/** Source-connection option text (010d: comparison and display share the same value). */
 export const EXPORT_SOURCE_FINAL_ITEM_PREFIX = 'Final config';
 export const EXPORT_SOURCE_PROFILE_ITEM_PREFIX = 'Clone profile';
 
-/** 连接值单行展示(不回显密码,只报有无)。 */
+/** Single-line display of connection values (never echoing the password, only reporting presence). */
 export function formatExportSourceConnectionItem(
   prefix: string,
   c: { host: string; port: number; user: string; database: string },
@@ -752,11 +764,13 @@ export function formatExportSourceConnectionItem(
 }
 
 /**
- * UX-2026-11-23 用户令:导出源连接选择。
- * 优先弹「从最终配置读取」(引擎 dbmgr/databaseInterfaces/default 派生,与只读
- * 查询同链),项内展示实际值;另有克隆档案(旧链)与配置向导两项。最终配置不
- * 可用(派生 null)且无档案 → 如实报「最终配置不可用」并给配置入口,不再静默
- * 直落手输向导。返回 null = 用户取消/不可用且未配置。
+ * UX-2026-11-23 user order: export source-connection selection.
+ * Prefer offering "read from the final config" (derived from the engine dbmgr/databaseInterfaces/default,
+ * same chain as the read-only query), each item shows the actual values; there are also the clone
+ * profile (legacy chain) and the configure-wizard items. The final config unavailable (derivation null)
+ * and no profile → faithfully report "final config unavailable" and give a configure entry, no longer
+ * silently falling straight into the manual-input wizard. Returning null = user cancel / unavailable
+ * and unconfigured.
  */
 export async function resolveExportSourceConnection(
   deps: PlayerCloneCommandDeps,
@@ -788,8 +802,8 @@ export async function resolveExportSourceConnection(
     : null;
   const configureItem = l10n('Configure source connection');
   if (!finalItem && !profileItem) {
-    // 最终配置不可用且无档案:保留旧告警链(如实报未配置 + 配置入口),
-    // 不再静默直落手输向导。
+    // Final config unavailable and no profile: keep the old warning chain (faithfully report unconfigured + a configure entry),
+    // no longer silently falling straight into the manual-input wizard.
     const choice = await deps.showWarningMessage(
       l10n('Source connection is not configured.'),
       configureItem
@@ -817,7 +831,7 @@ export async function resolveExportSourceConnection(
   if (finalItem && picked === finalItem) {
     if (!finalConn) { return null; }
     if (finalConn.defaultsOnly) {
-      // defaults-only:值来自 kbengine_defaults.xml 而非本项目实际配置,如实告警。
+      // defaults-only: the values come from kbengine_defaults.xml, not this project's actual config, warn faithfully.
       await deps.showWarningMessage(l10n(playerCloneDefaultsOnlyWarning()));
     }
     return finalConn.config;
@@ -825,7 +839,7 @@ export async function resolveExportSourceConnection(
   return profileConn;
 }
 
-/** defaults-only 告警(与只读查询同口径,但作用于导出源连接)。 */
+/** The defaults-only warning (same discipline as the read-only query, but applied to the export source connection). */
 export const playerCloneDefaultsOnlyWarning = (): string =>
   withL10nArgs(
     'Component kbengine.xml was not found; these values are engine defaults (kbengine_defaults.xml), not the final merged config. Place kbengine.xml under assetsRoot res/server/ (or check kbengine.assetsRoot) and retry.'
@@ -841,21 +855,23 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     );
     return;
   }
-  // UX-REVIEW-004b:后端可用性预检在输入收集前——无 Rust 门如实告知,
-  // 不先丢实体/DBID。
+  // UX-REVIEW-004b: the backend-availability pre-check comes before input collection — no Rust gate is reported faithfully,
+  // rather than dropping the entity/DBID inputs first.
   if (deps.probeCloneBackend && !deps.probeCloneBackend()) {
     await deps.showErrorMessage(l10n(noGateMessage));
     return;
   }
-  // UX-2026-11-23 用户令:导出源连接优先读引擎最终配置——与只读查询同一
-  // 派生链(dbmgr/databaseInterfaces/default),不再无档案就直接弹手输向导。
-  // quickpick 每项展示实际值(host:port/db);选「克隆档案」才走旧向导链。
+  // UX-2026-11-23 user order: the export source connection prefers reading the engine final config — the same
+  // derivation chain as the read-only query (dbmgr/databaseInterfaces/default), no longer popping the manual-input
+  // wizard directly when no profile exists.
+  // Each quickpick item shows the actual values (host:port/db); choosing "clone profile" takes the legacy wizard chain.
   let config = await resolveExportSourceConnection(deps, l10n);
   if (!config) {
     return;
   }
-  // UX-REVIEW-004b:源连接测试入口——配置在场但连不上时,实体/DBID 收集前
-  // 如实给原因与重试/配置入口;探针通过才继续收集。
+  // UX-REVIEW-004b: the source-connection test entry — when the config is present but cannot connect,
+  // give the reason faithfully with a retry/configure entry before entity/DBID collection;
+  // collection continues only after the probe passes.
   if (deps.probeSourceConnection) {
     for (;;) {
       const probe = await deps.probeSourceConnection(config);
@@ -877,18 +893,19 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
       if (choice !== retry) { return; }
     }
   }
-  // UX-2026-11-22 整改1:记住上次选择——上次成功导出的实体置顶(回车即过),
-  // 占位文案带「last:」提示;无历史值时列表序与占位文案照旧(零行为变化)。
+  // UX-2026-11-22 increment 1: remember the last selection — the last successfully exported entity goes on top (enter to pass),
+  // the placeholder carries a "last:" hint; with no historical value the list order and placeholder stay as before (zero behavior change).
   const lastExport = deps.getLastExportSelection?.() ?? null;
   const lastEntity =
     lastExport && entityNames.includes(lastExport.entityName) ? lastExport.entityName : null;
   const orderedEntities = lastEntity
     ? [lastEntity, ...entityNames.filter(name => name !== lastEntity)]
     : entityNames;
-  // UX-2026-11-23 用户令:实体弹窗「从配置读取」——kbengine.clone.defaultEntity
-  // 生效值内联成首项(配置值可见,回车即选);配置为空、值不在当前语料实体清单
-  // (不猜实体名)或与上次成功导出同实体(已置顶,不重复出项) → 不出配置项,
-  // 列表与旧行为一致。
+  // UX-2026-11-23 user order: entity dialog "read from config" — the kbengine.clone.defaultEntity
+  // effective value is inlined as the first item (the config value is visible, enter selects it);
+  // when the config is empty, the value is not in the current corpus entity list (entity names are never guessed),
+  // or it is the same entity as the last successful export (already on top, not duplicated) → no config item,
+  // the list stays consistent with the old behavior.
   const cloneConfigDefaults = deps.getCloneExportConfigDefaults?.() ?? {};
   const configEntity = (cloneConfigDefaults.defaultEntity ?? '').trim();
   const configEntityKnown = configEntity !== '' && entityNames.includes(configEntity);
@@ -909,8 +926,8 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
   }
   const entityName =
     configEntityItem && pickedEntity === configEntityItem ? configEntity : pickedEntity;
-  // UX-REVIEW-004b:实体上下文(表结构推导)检查前置到 DBID 输入前——
-  // 推导失败如实报错,不先丢已输入的 DBID。
+  // UX-REVIEW-004b: the entity-context (table-structure derivation) check is moved up before DBID input —
+  // a derivation failure reports the error faithfully instead of dropping the already-typed DBID first.
   const derivationTables = deps.resolveEntityTables(entityName);
   if (!derivationTables || derivationTables.length === 0) {
     await deps.showErrorMessage(
@@ -918,9 +935,10 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     );
     return;
   }
-  // UX-2026-11-23 用户令:DBID 输入框「从配置读取」——kbengine.clone.defaultDbId
-  // 生效值写进 prompt(配置值可见)并作预填;预填优先级 = 上次成功导出 > 配置
-  // (与实体弹窗记忆口径一致);配置为空时 prompt/预填与旧行为逐字节一致。
+  // UX-2026-11-23 user order: DBID input box "read from config" — the kbengine.clone.defaultDbId
+  // effective value is written into the prompt (the config value is visible) and used as the prefill;
+  // prefill priority = last successful export > config (consistent with the entity-dialog memory
+  // convention); when the config is empty the prompt/prefill is byte-identical to the old behavior.
   const configDbId = (cloneConfigDefaults.defaultDbId ?? '').trim();
   const dbidBasePrompt = l10n('Root-table DBID (the entity primary key id)');
   const dbidPrompt = configDbId
@@ -959,8 +977,8 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
         );
         return;
       }
-      // UX-2026-11-22 整改3:计划预览弹窗化——摘要(表清单/行预算/missing)
-      // 并入加密确认 quickpick 占位文案,两步并一步;OUTPUT 照写留档不删。
+      // UX-2026-11-22 increment 3: the plan preview moves into the dialog — the summary (table list/row budget/missing)
+      // is merged into the encryption-confirmation quickpick placeholder, two steps become one; OUTPUT is still written for the record, not deleted.
       const tablesLine = l10n('Tables: {tables}', {
         tables: plan.result.queries.map(q => q.table).join(', ')
       });
@@ -981,9 +999,9 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
       deps.channel.appendLine(preview.join('\n'));
       deps.channel.show(true);
 
-      // UX-2026-11-23 用户令:加密确认弹窗「展示配置的值」——设置生效值
-      // (kbengine.clone.archiveEncryption)写进确认弹窗占位文案,初始态同源
-      // (PDC-0609:上次成功导出优先于配置缺省)。
+      // UX-2026-11-23 user order: the encryption-confirmation dialog "shows the config value" — the settings effective
+      // value (kbengine.clone.archiveEncryption) is written into the confirmation dialog placeholder, the initial state
+      // from the same source (PDC-0609: the last successful export takes priority over the config default).
       const archiveEncryptionDefault = deps.getArchiveEncryptionDefault?.() ?? 'encrypted';
       const encryptionDefaultLine = l10n(
         'Archive encryption default (kbengine.clone.archiveEncryption): {value}',
@@ -998,7 +1016,7 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
       const encryptionChoice = await pickExportEncryption(
         deps.showQuickPick,
         plan.result.queries.length,
-        // 整改1:上次成功导出的加密位作初始态;无历史值回落设置(PDC-0609)。
+        // Increment 1: the last successful export's encryption bit is the initial state; with no historical value fall back to the setting (PDC-0609).
         lastExport ? lastExport.encrypt : archiveEncryptionDefault === 'encrypted',
         l10n,
         previewSummary
@@ -1046,7 +1064,7 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
           persisted: l10n(PERSISTED_NOT_LIVE)
         })
       );
-      // 整改1:仅成功路径落记忆(取消/失败不污染下次预填)。
+      // Increment 1: only the success path persists the memory (cancel/failure does not pollute the next prefill).
       deps.rememberExportSelection?.({
         entityName,
         dbid: dbidText,
@@ -1074,17 +1092,17 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
 }
 
 // ---------------------------------------------------------------------------
-// 0504/0505 导入(两遍计划 + 预演 + 二次确认 + 单事务 Apply + 审计)
+// 0504/0505 import (two-pass plan + rehearsal + second confirmation + single-transaction apply + audit)
 // ---------------------------------------------------------------------------
 
 export async function runImportCloneCommand(
   deps: PlayerCloneCommandDeps,
   archivePath?: string
 ): Promise<void> {
-  // UX-REVIEW-004c:导入前先检查目标配置(缺配置直接进入向导,取消不收集
-  // 后续信息)与目标环境(仅 local/test,§6.1 双保险);连接可达性在探测
-  // 会话建立后第一时间校验(见下 testCloneConnection),失败如实报因、
-  // 导入未开始(不登记防重、不写入)。
+  // UX-REVIEW-004c: before importing, check the target config first (a missing config goes straight into the wizard,
+  // cancel collects no further information) and the target environment (local/test only, §6.1 double protection);
+  // connection reachability is verified as soon as the probe session is established (see testCloneConnection below);
+  // a failure reports the reason faithfully and the import has not started (no duplicate guard registered, no write).
   const l10n: CloneL10n = (message, args) =>
     deps.localize?.(message, args) ?? withL10nArgs(message, args);
   let targetConfig = await deps.profiles.resolveConnection('target');
@@ -1100,10 +1118,10 @@ export async function runImportCloneCommand(
     await runConfigureCloneProfileCommand(deps, 'target');
     targetConfig = await deps.profiles.resolveConnection('target');
     if (!targetConfig) {
-      return; // 配置向导被取消:不收集后续信息
+      return; // the configure wizard was cancelled: no further information collected
     }
   }
-  // §6.1 双保险:台账配置闸已拒 prod/staging;导入执行前再落一道环境闸。
+  // §6.1 double protection: the ledger config gate already rejects prod/staging; an environment gate is added again before the import runs.
   if (targetConfig.environment !== 'local' && targetConfig.environment !== 'test') {
     await deps.showErrorMessage(
       l10n('Target environment accepts local/test only (import never writes production/staging).')
@@ -1142,8 +1160,8 @@ export async function runImportCloneCommand(
     let rowsByTable = new Map<string, TypedRowWire[]>();
     let columnOrder = new Map<string, string[]>();
     try {
-      // 004c:探测会话建立后先验连接可达(真实 SELECT),失败如实报因——
-      // 导入未开始:不登记防重、不生成计划、不写入。
+      // 004c: after the probe session is established, first verify the connection is reachable (a real SELECT);
+      // a failure reports the reason faithfully — the import has not started: no duplicate guard registered, no plan generated, no write.
       const probe = await testCloneConnection(connection);
       if (!probe.ok) {
         await deps.showErrorMessage(
@@ -1153,8 +1171,8 @@ export async function runImportCloneCommand(
       }
       const tableNames = derivationTables.map(table => table.name);
       const physicalTables = await probePhysicalTables(connection, tableNames);
-      // 唯一键 = 目标单列唯一索引(探测自 information_schema;复合键 v1 不预演,
-      // 插入期冲突仍会 fail-closed 回滚)。
+      // Unique key = the target's single-column unique index (probed from information_schema; composite keys
+      // are not rehearsed in v1, an insert-time conflict still fails closed and rolls back).
       const uniqueKeys = physicalTables
         .filter(table => table.indexes.some(columns => columns.length === 1))
         .flatMap(table =>
@@ -1163,7 +1181,7 @@ export async function runImportCloneCommand(
             .map(columns => ({ table: table.name, column: columns[0] }))
         );
 
-      // pass-1:空快照计划 → 列序(归档行不带列名,值序=导出列序)。
+      // pass-1: an empty-snapshot plan → the column order (archive rows carry no column names, value order = export column order).
       const pass1 = await planCloneImport(
         path,
         {
@@ -1191,7 +1209,7 @@ export async function runImportCloneCommand(
       }
       columnOrder = columnOrderFromPlan(pass1.result);
 
-      // 归档行 → 唯一值候选 → 目标既有值有界探测 → pass-2 冲突预演。
+      // Archive rows → unique-value candidates → bounded probe of existing target values → pass-2 conflict rehearsal.
       const rowsCall = await readCloneArchiveRows(path, deps.getKeyRoot());
       if (rowsCall.status === 'no-gate') {
         await deps.showErrorMessage(l10n(noGateMessage));
@@ -1233,7 +1251,7 @@ export async function runImportCloneCommand(
       }
       plan = pass2.result;
     } finally {
-      // 探测连接是只读会话;Apply 需要写事务,重开一条(同配置)。
+      // The probe connection is a read-only session; the apply needs a write transaction, so another one is opened (same config).
       await connection.end();
     }
     if (!plan) {
@@ -1241,7 +1259,7 @@ export async function runImportCloneCommand(
     }
     const confirmedPlan: ImportPlanWire = plan;
 
-    // ---- 预览(PDC-0504:逐表/逐类别/冲突/绑定/告警 + Persisted≠Live) ----
+    // ---- preview (PDC-0504: per table / per category / conflicts / binding / warnings + Persisted≠Live) ----
     const perTable = Object.entries(plan.summary.statements_per_table)
       .map(([table, count]) => `${table}×${count}`)
       .join(', ');
@@ -1266,7 +1284,7 @@ export async function runImportCloneCommand(
     deps.channel.appendLine(previewLines.join('\n'));
     deps.channel.show(true);
 
-    // 选项与比较共用同一调用值(010d:比较不依赖固定语言文字)。
+    // The options and the comparison share the same call value (010d: comparison does not depend on fixed language text).
     const continueLabel = l10n('Continue to confirmation');
     const firstCancelLabel = l10n(EXPORT_CANCEL_ITEM);
     const firstConfirm = await deps.showQuickPick(
@@ -1279,7 +1297,7 @@ export async function runImportCloneCommand(
     if (firstConfirm !== continueLabel) {
       return;
     }
-    // 本地环境二次确认(§6.1:目标必须是本地/测试库,写入不可伪装成预演)。
+    // Second confirmation of the local environment (§6.1: the target must be a local/test database, a write must not be disguised as a rehearsal).
     const confirmWriteLabel = l10n('Confirm write to local database {host}:{port}/{database}', {
       host: targetConfig.host,
       port: targetConfig.port,
@@ -1317,7 +1335,7 @@ export async function runImportCloneCommand(
       }
     }
 
-    // ---- Apply:重开连接(写事务;readonly:false)+ 进度 + 取消(§6.4 取消即回滚) ----
+    // ---- Apply: reopen the connection (write transaction; readonly:false) + progress + cancel (§6.4 cancel = rollback) ----
     const writeConnection = await openCloneSession(targetConfig, { readonly: false });
     try {
       const result = await deps.withProgress(
@@ -1398,7 +1416,7 @@ export async function runImportCloneCommand(
 }
 
 // ---------------------------------------------------------------------------
-// 0505 审计查看
+// 0505 audit review
 // ---------------------------------------------------------------------------
 
 export async function runShowCloneAuditCommand(deps: PlayerCloneCommandDeps): Promise<void> {

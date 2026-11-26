@@ -62,10 +62,16 @@ fn syntax_gate_passes_healthy_text() {
 
 #[test]
 fn syntax_gate_rejects_mid_edit_breakage_with_location() {
-    let bracket = rpc("$/kode/syntax/gate", json!({"text": "def m(self:\n    pass\n"})).unwrap();
+    let bracket = rpc(
+        "$/kode/syntax/gate",
+        json!({"text": "def m(self:\n    pass\n"}),
+    )
+    .unwrap();
     assert_eq!(bracket["ok"], json!(false));
     let reasons = bracket["reasons"].as_array().unwrap();
-    assert!(reasons.iter().any(|r| r.as_str().unwrap().contains("unclosed-bracket")));
+    assert!(reasons
+        .iter()
+        .any(|r| r.as_str().unwrap().contains("unclosed-bracket")));
 
     let string = rpc("$/kode/syntax/gate", json!({"text": "value = 'abc\n"})).unwrap();
     assert_eq!(string["ok"], json!(false));
@@ -170,7 +176,10 @@ fn coalesce_flushes_most_recently_touched_last() {
         }),
     )
     .unwrap();
-    assert_eq!(result["flush"], json!(["oldest.py", "middle.py", "newest.py"]));
+    assert_eq!(
+        result["flush"],
+        json!(["oldest.py", "middle.py", "newest.py"])
+    );
 }
 
 #[test]

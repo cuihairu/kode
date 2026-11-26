@@ -1,20 +1,33 @@
-//! 批 D 返回注解接收者级联修正(精确性主车道):`$/kode/python/localReturnType`
-//! 引擎本体。同文件接收者定型解析——TS 级联兜底(cascadeAnnotation 全局方法名
-//! 猜测,跨类误绑实测误导 #2)删除后,同文件可推导子集由本面接住:
+//! Batch D return annotation receiver cascade fix (the precision main lane):
+//! the body of the `$/kode/python/localReturnType` engine. Same-file receiver
+//! typing -- after removing the TS cascade fallback (cascadeAnnotation's global
+//! method-name guess, whose cross-class mis-binding was mislead #2 in testing),
+//! this face covers the same-file derivable subset:
 //!
-//! - 域门(KBUG-SCOPE 词法作用域链):自 hover 位的最内函数域向外,第一个
-//!   「绑定该名」的域裁定——参数绑定 → 诚实空(遮蔽外层);域内写点绑定 →
-//!   hover 行前最近写点(不可解即止);global/nonlocal 声明 → 向外透传;
-//!   域外尽 → 模块域。类体直系 hover 的链 = 本类体 → 模块;方法体 hover
-//!   跳过类体(类体属性表不在函数词法链上,他类体亦不可借);
-//! - 最近写点胜(替换语义;同行多条语句取执行序最后一条;写点不可解即止,
-//!   不再向上借更早答案 = R2-F16 同语义);
-//! - RHS 推导(流引擎共享表格):`x = f(...)` 同文件模块级 def `-> T`(重名
-//!   歧义不猜)/ `x = self.m(...)` 所在类方法注解 / `x = A.m(...)` 类限定 /
-//!   `x = recv.m(...)` 接收者唯一原子恰为同类名 / `x = y` 别名链同域递归;
-//! - 诚实边界:字面量、`self.<attr>` 属性读、类实例化(非返回注解面)、
-//!   无注解、环、越界 → None,绝不猜。import 绑定路径留在 TS(已接收者
-//!   正确),本面只补同文件可推导真值。
+//! - Domain gate (KBUG-SCOPE lexical scope chain): from the innermost function
+//!   domain containing the hover position outward, the first domain that
+//!   "binds that name" rules -- parameter binding -> honest empty (shadows the
+//!   outer); a write point binding in the domain -> the nearest write point
+//!   before the hover line (stop when it cannot be resolved); global/nonlocal
+//!   declaration -> pass through outward; chain exhausted -> module domain.
+//!   The chain for a direct class-body hover = own class body -> module; a
+//!   method body hover skips the class body (the class attribute table is not
+//!   on the function lexical chain, and other class bodies cannot be borrowed);
+//! - The nearest write point wins (replacement semantics; with several
+//!   statements on one line the last one in execution order is taken; stop
+//!   when the write point cannot be resolved, no longer borrowing an earlier
+//!   answer upward = the R2-F16 semantics);
+//! - RHS derivation (the table shared with the flow engine): `x = f(...)` a
+//!   same-file module-level def `-> T` (no guess on ambiguous same names) /
+//!   `x = self.m(...)` the method annotation of the enclosing class /
+//!   `x = A.m(...)` class qualified / `x = recv.m(...)` the receiver's unique
+//!   atom is exactly the class name / `x = y` an alias chain recursing in the
+//!   same domain;
+//! - Honest boundaries: literals, `self.<attr>` attribute reads, class
+//!   instantiation (not a return annotation face), no annotation, cycles,
+//!   out of range -> None, never guess. The import binding path stays in TS
+//!   (already receiver-correct); this face only supplies the same-file
+//!   derivable truth.
 
 use std::collections::HashSet;
 
@@ -23,12 +36,15 @@ use crate::self_flow::{
     FlowVal, FnDomain, Pos, ResolveState, RhsShape,
 };
 
-/// 别名链有界跳数(与流面 RESOLVE_MAX_HOPS 同量级;域门扫描每跳严格下行,
-/// 环天然有界,此处只是双保险)。
+/// Bounded hop count for alias chains (on the same order of magnitude as the
+/// flow face's RESOLVE_MAX_HOPS; the domain gate scan strictly descends on
+/// every hop, so cycles are naturally bounded -- this is only belt and braces).
 const FACE_MAX_HOPS: usize = 4;
 
-/// localReturnType 面答案(target=hover 词;annotation=返回注解原文;
-/// method_name=推导来源调用名,与 TS formatInferredReturnHover 消费面同形)。
+/// A localReturnType face answer (target = the hovered word;
+/// annotation = the return annotation verbatim; method_name = the name of the
+/// call the derivation came from, shaped like the TS
+/// formatInferredReturnHover consumer face).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocalReturnFace {
     pub target: String,
@@ -36,17 +52,22 @@ pub struct LocalReturnFace {
     pub method_name: String,
 }
 
-/// KBUG-ORDER:查询位缺失列的保守回退 = hover 行首个非空白字符列(与
-/// 整行光标悬停的旧引擎口径一致;绝不伪造整行最后写点)。
+/// KBUG-ORDER: the conservative fallback when the query position lacks a column
+/// = the column of the first non-blank character of the hover line (consistent
+/// with the old engine's semantics for a whole-line cursor hover; never
+/// fabricating the line's last write point).
 fn first_non_blank_col(line: &[u16]) -> usize {
     line.iter()
         .position(|c| *c != b' ' as u16 && *c != b'\t' as u16)
         .unwrap_or(0)
 }
 
-/// 接收者定型解析入口(纯函数;versionKey 协议与流面同)。
-/// `hover_column` = 0 基 UTF-16 列(VSCode Position.character 同口径;None =
-/// 缺列,保守回退行首非空白列)。None = hover 词无可推导返回注解(诚实空)。
+/// Receiver typing resolution entry point (pure function; versionKey protocol
+/// identical to the flow face).
+/// `hover_column` = 0-based UTF-16 column (the same semantics as VSCode
+/// Position.character; None = missing column, falling back conservatively to the
+/// line's first non-blank column). None = the hovered word has no derivable
+/// return annotation (honest empty).
 pub fn local_return_type(
     lines: &[Vec<u16>],
     hover_line: usize,
@@ -58,11 +79,13 @@ pub fn local_return_type(
         return Ok(None);
     }
     let word = String::from_utf16_lossy(word);
-    // TS Impl 同款守卫:全大写/下划线常量名不查询(装配面同守卫,双保险)
+    // The TS Impl's same guard: all-caps/underscore constant names are not
+    // queried (the assembly face carries the same guard; belt and braces)
     if is_constant_name(&word) {
         return Ok(None);
     }
-    // RUST-072:取消(Err)透传,绝不伪装诚实空。
+    // RUST-072: cancellation (Err) is passed through; never disguised as an
+    // honest empty.
     let fp = crate::self_flow::flow_parse(lines, version_key)?;
     let mut state = ResolveState::from_flow_parse(&fp, lines);
     let mut visited = HashSet::new();
@@ -78,7 +101,8 @@ pub fn local_return_type(
     )
 }
 
-/// 全大写/数字/下划线常量名守卫(TS `/^[A-Z_][A-Z0-9_]*$/` 同语义)。
+/// The all-caps/digit/underscore constant name guard (same semantics as the TS
+/// `/^[A-Z_][A-Z0-9_]*$/`).
 fn is_constant_name(word: &str) -> bool {
     let mut chars = word.chars();
     match chars.next() {
@@ -88,19 +112,30 @@ fn is_constant_name(word: &str) -> bool {
     chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// 域门扫描(KBUG-SCOPE 词法作用域链重铸,替代旧缩进回溯):Python 名字
-/// 解析模型——自 hover 位的最内函数域向外,链上第一个「绑定该名」的域裁定:
-/// - 参数绑定 → 诚实空(参数无返回注解面,且遮蔽外层同名绑定);
-/// - 域内写点绑定 → hover 位前(含)最近有效写点 → 解析(不可解即止,不外借);
-/// - global/nonlocal 声明 → 本域不绑定该名,解向外层;
-/// - 链外尽 → 模块域(见 `is_module_binding`)。
+/// Domain gate scan (the KBUG-SCOPE lexical scope chain recast, replacing the
+/// old indentation traceback): the Python name resolution model -- from the
+/// innermost function domain at the hover position outward, the first domain
+/// on the chain that "binds that name" rules:
+/// - parameter binding -> honest empty (parameters have no return annotation
+///   face, and they shadow a same-named outer binding);
+/// - a write point binding inside the domain -> the nearest valid write point
+///   at or before the hover position -> resolved (stop when it cannot be
+///   resolved, no borrowing from outside);
+/// - global/nonlocal declaration -> the domain does not bind that name, so
+///   resolution goes outward;
+/// - the chain exhausted -> the module domain (see `is_module_binding`).
 ///
-/// 类体直系 hover(不在任何函数域内)的链 = 本类体 → 模块:本类体写点可读;
-/// 方法体 hover 的链不含类体(KBUG-SCOPE-04:类体属性表不在函数词法链上,
-/// 他类体写点亦不可借)。写点行域判定取代缩进窄化——def 体写点不再被
-/// def 结束后的模块层读借用,嵌套函数体写点不再外溢。
-/// KBUG-ORDER:`query` = hover 位(行+UTF-16 列;链/类包含仍按行,同行
-/// 读写不混、RHS 内读回旧值由流求值裁定)。
+/// A direct class body hover (not inside any function domain) has the chain =
+/// own class body -> module: write points of the own class body are readable;
+/// a method body hover's chain excludes the class body (KBUG-SCOPE-04: the
+/// class attribute table is not on the function lexical chain, and another
+/// class body's write points cannot be borrowed either). Write point line-domain
+/// judgment replaces indentation narrowing -- write points in a def body are no
+/// longer borrowed by module-level reads after the def ends, and write points
+/// in a nested function body no longer leak outward.
+/// KBUG-ORDER: `query` = the hover position (line + UTF-16 column; chain/class
+/// containment is still by line, same-line reads and writes are not mixed, and
+/// reading back the old value inside an RHS is settled by flow evaluation).
 fn face_scan(
     fp: &FlowParse,
     state: &mut ResolveState,
@@ -114,8 +149,9 @@ fn face_scan(
         return None;
     }
     let start = query.line.min(lines.len() - 1);
-    // hover 位的作用域链:含 hover 行的函数域,体首行降序(最内先行;
-    // 同首行时体更小者先行 = 嵌套域)
+    // The scope chain at the hover position: function domains containing the
+    // hover line, sorted by descending body first line (innermost first;
+    // on the same first line, the smaller body comes first = nested domain)
     let mut chain: Vec<&FnDomain> = fp
         .fn_domains
         .iter()
@@ -128,16 +164,20 @@ fn face_scan(
     });
     for domain in &chain {
         if domain.globals.iter().any(|n| n == word) || domain.nonlocals.iter().any(|n| n == word) {
-            continue; // global/nonlocal:本域不绑定该名,解向外层
+            continue; // global/nonlocal: the domain does not bind that name, resolve outward
         }
         if domain.params.iter().any(|n| n == word) {
-            return None; // 参数绑定:无返回注解面,遮蔽外层同名绑定
+            return None; // parameter binding: no return annotation face, shadows the outer binding
         }
-        // 本域写点 = 该名在本域局部(Python 函数级静态绑定):写点值经
-        // 语句流树流敏感裁定(KBUG-CFGFLOW:if False/终止后写点不污染,
-        // 合流多候选全同才答;KBUG-ORDER:同行按列,悬停 RHS 内读旧值);
-        // 无可达写点 → UnboundLocal 位,诚实空,绝不外借模块/外层绑定
-        // (KBUG-SCOPE-02)。
+        // A write point in this domain = the name is local to this domain
+        // (Python's function-level static binding): the write point value is
+        // settled flow-sensitively through the statement flow tree
+        // (KBUG-CFGFLOW: writes inside `if False` or after termination do not
+        // pollute; at a join, answer only when every candidate agrees;
+        // KBUG-ORDER: on the same line, decide by column, and a hover inside an
+        // RHS reads the old value);
+        // no reachable write point -> an UnboundLocal position, honest empty,
+        // never borrowing a module/outer binding (KBUG-SCOPE-02).
         let domain_writes = fp.bare_writes.get(word).map(Vec::as_slice).unwrap_or(&[]);
 
         let binds_here = |w: &BareWrite| w.method_start == Some(domain.header_line);
@@ -146,7 +186,8 @@ fn face_scan(
                 domain_writes.iter().filter(|w| binds_here(w)).collect();
             let val = match fp.fn_trees.get(&domain.header_line) {
                 Some(tree) => flow_query_value(tree, &domain_write_refs, query),
-                // 无树域(直接赋值 lambda 等;其体内无裸名写点):退文本序位
+                // A domain without a tree (a directly assigned lambda, etc.; no bare-name
+                // write point inside its body): fall back to the text-order position
                 None => match domain_write_refs.iter().rev().find(|w| w.pos() <= query) {
                     Some(w) => FlowVal::One(w.pos()),
                     None => FlowVal::Unbound,
@@ -163,9 +204,10 @@ fn face_scan(
                 visited,
             );
         }
-        // 本域无该名绑定 → 向外层函数域继续
+        // No binding for that name in this domain -> continue to the outer function domain
     }
-    // 类体直系 hover:本类体绑定(类体 `global` 声明名除外)
+    // A direct class body hover: a binding in the own class body (excluding names
+    // declared `global` in the class body)
     let hover_class = if chain.is_empty() {
         fp.classes
             .iter()
@@ -211,13 +253,17 @@ fn face_scan(
                     visited,
                 );
             }
-            // 本类体未绑定 → 落模块域(类体执行期可见模块名)
+            // Not bound in this class body -> fall through to the module domain
+            // (module names are visible during class body execution)
         }
     }
-    // 模块域绑定:非函数域写点;类体直系写点须其类体声明过 `global`;
-    // 函数域写点须其函数域声明过 `global`(写点重定向模块名空间)。
-    // 写点值经模块语句流树流敏感裁定(KBUG-CFGFLOW;main-guard 等条件块
-    // 内写点是候选而非确定)。
+    // A module domain binding: a write point outside any function domain; a direct
+    // class body write point requires its class body to have declared `global`;
+    // a function domain write point requires its function domain to have
+    // declared `global` (the write point redirects the module name space).
+    // The write point value is settled flow-sensitively through the module
+    // statement flow tree (KBUG-CFGFLOW; a write point inside a conditional
+    // block such as a main-guard is a candidate, not a certainty).
     let is_module_binding = |w: &BareWrite| -> bool {
         match w.method_start {
             Some(header) => fp
@@ -248,10 +294,12 @@ fn face_scan(
     None
 }
 
-/// 流值 → 面答案:One 直解;Many 逐候选解析——候选面全同 = 该面,不同 =
-/// 未知,绝不按源码先后任取(KBUG-CFGFLOW-03);maybe_unbound = 合流含
-/// 未绑定路径 → 诚实空(可能 NameError);Unbound = 无可达写点(UnboundLocal
-/// /不可达位)。
+/// Flow value -> face answer: `One` is resolved directly; `Many` resolves each
+/// candidate in turn -- all candidates sharing one face = that face, differing
+/// faces = unknown, never picking one by source order (KBUG-CFGFLOW-03);
+/// maybe_unbound = the join contains an unbound path -> honest empty (a
+/// possible NameError); `Unbound` = no reachable write point (an UnboundLocal
+/// or unreachable position).
 #[allow(clippy::too_many_arguments)]
 fn resolve_flow_val(
     fp: &FlowParse,
@@ -268,7 +316,7 @@ fn resolve_flow_val(
         FlowVal::One(l) => {
             let write = writes.iter().copied().find(|w| w.pos() == l)?;
             if !visited.insert((write.line, write.col, word.to_string())) {
-                return None; // `x = x` 身份链/重复解同一写点 → 诚实空
+                return None; // `x = x` identity chain / resolving the same write point twice -> honest empty
             }
             resolve_face_shape(fp, state, lines, write, depth, visited)
         }
@@ -288,7 +336,7 @@ fn resolve_flow_val(
                 face = match (face, f) {
                     (None, f0) => f0,
                     (Some(prev), Some(f0)) if prev == f0 => Some(prev),
-                    _ => return None, // 候选结果不同 → 未知
+                    _ => return None, // the candidate results differ -> unknown
                 };
             }
             face
@@ -296,8 +344,9 @@ fn resolve_flow_val(
     }
 }
 
-/// 最近写点 RHS → 面答案。调用形态直取注解;别名链同域递归;其余形态
-/// (字面量/属性读/未知)诚实空。
+/// The nearest write point's RHS -> face answer. A call form takes the
+/// annotation directly; an alias chain recurses within the same domain; any
+/// other form (literal / attribute read / unknown) is honest empty.
 fn resolve_face_shape(
     fp: &FlowParse,
     state: &mut ResolveState,
@@ -309,17 +358,21 @@ fn resolve_face_shape(
     match &write.shape {
         RhsShape::Call(callee) => face_from_callee(fp, state, write, callee),
         RhsShape::Local(alias) => {
-            // 别名链:同域口径解别名名的最近写点(每跳严格下行,天然有界)。
-            // KBUG-ORDER-03:查询位 = 本写点 RHS 起始位——别名读只见严格
-            // 先行的绑定,自引用/同行后写不可见(`y = a(); x = y; y = b()`
-            // 悬 x 解 y 的 a 写点,不吞后续 b 写点)。
+            // Alias chain: resolve the alias name's nearest write point under the same
+            // domain semantics (every hop strictly descends, so it is naturally
+            // bounded).
+            // KBUG-ORDER-03: the query position = this write point's RHS start
+            // position -- an alias read only sees strictly preceding bindings;
+            // self-reference and later writes on the same line are invisible
+            // (hovering x in `y = a(); x = y; y = b()` resolves y's a write
+            // point, without swallowing the later b write point).
             face_scan(fp, state, lines, write.rhs_pos, alias, depth + 1, visited)
         }
         _ => None,
     }
 }
 
-/// 调用形态 → (注解原文, 调用名)。
+/// A call form -> (the annotation verbatim, the call name).
 fn face_from_callee(
     fp: &FlowParse,
     state: &mut ResolveState,
@@ -328,12 +381,17 @@ fn face_from_callee(
 ) -> Option<LocalReturnFace> {
     let (annotation, method_name) = match callee {
         CalleeShape::Name(f) => {
-            // 同文件模块级 def 注解(重名歧义/无注解/类实例化 → 诚实空:
-            // 实例化的类名不是返回注解,面语义不答)。
-            // KBUG-BIND-01/02:调用位置的绑定事实先于声明表——参数/局部
-            // def/域内先行写点绑定 → 诚实空;模块别名绑定透传值链注解
-            // (与流面 resolve_callee 同规则;绑定值为类名原子 → 实例化
-            // 语义,非返回注解面,诚实空)
+            // The same-file module-level def annotation (an ambiguous same name / no
+            // annotation / class instantiation -> honest empty: an instantiated
+            // class name is not a return annotation, and the face semantics
+            // does not answer it).
+            // KBUG-BIND-01/02: the binding fact at the call position takes
+            // precedence over the declaration table -- a parameter / local def /
+            // an earlier write point binding in the domain -> honest empty; a
+            // module alias binding passes the value chain annotation through
+            // (the same rule as the flow face's resolve_callee; a binding whose
+            // value is a class name atom -> instantiation semantics, not a
+            // return annotation face, honest empty)
             let declared = |name: &str| match fp.def_returns.get(name)? {
                 DefReturn::Single(Some(ann)) => Some(ann.clone()),
                 _ => None,
@@ -341,7 +399,7 @@ fn face_from_callee(
             match state.callee_binding(f, write.line) {
                 CalleeBinding::Bound(Some(atom)) => {
                     if state.unique_class(&atom).is_some() {
-                        return None; // 绑定到类名 = 实例化/静态语义,非注解面
+                        return None; // bound to a class name = instantiation / static semantics, not an annotation face
                     }
                     (declared(&atom)?, f.clone())
                 }
@@ -350,15 +408,18 @@ fn face_from_callee(
             }
         }
         CalleeShape::SelfMethod(m) => {
-            // 所在类方法表;类体直系/模块域写点无类语境 → 诚实空
+            // The enclosing class's method table; a direct class body / module domain
+            // write point has no class context -> honest empty
             let cls = write.class_start?;
             (state.method_atom(cls, m)?, m.clone())
         }
         CalleeShape::Qualified { class, method } => {
-            // KBUG-BIND-04:原始类静态方法仅在名**未绑定**时命中(A=B /
-            // A=unknown 后 A.load 不沿用原类);名被绑定或类限定未命中 →
-            // 变量原子链裁定(与流面 resolve_callee 同优先级:类限定先,
-            // 变量链后;多候选不任取首项)
+            // KBUG-BIND-04: the original class's static method only hits while the name is
+            // **unbound** (after `A = B` / `A = unknown`, `A.load` no longer
+            // follows the original class); a bound name or a class-qualified
+            // miss -> the variable atom chain decides (the same priority as the
+            // flow face's resolve_callee: class-qualified first, the variable
+            // chain second; several candidates never take the first one)
             let static_hit = state
                 .unique_class(class)
                 .and_then(|cls| state.method_atom(cls, method))
@@ -388,8 +449,10 @@ fn face_from_callee(
             }
         }
         CalleeShape::Chained { receiver, method } => {
-            // 接收者唯一原子且恰为同类名(流引擎共享推导,含局部链/实例化原子;
-            // 类体直系写点 method_start=None,链面诚实空 = 流面同语义)
+            // The receiver's unique atom, which is exactly a class name (derivation shared
+            // with the flow engine, covering local chains and instantiation
+            // atoms; a direct class body write point has method_start=None, so
+            // the chain face is honest empty = the same semantics as the flow face)
             let atoms = resolve_shape(
                 state,
                 receiver,
@@ -414,7 +477,8 @@ fn face_from_callee(
     })
 }
 
-// ---- 单测(面语义钉;跨类误绑/诚实边界/链式/别名/域门) ----------------------
+// ---- Unit tests (pinning face semantics; cross-class mis-binding / honest
+// boundaries / chaining / aliases / domain gate) ----------------------
 
 #[cfg(test)]
 mod tests {
@@ -477,7 +541,9 @@ mod tests {
         assert_eq!(face.method_name, "load");
     }
 
-    /// 用户点名误导面:两个类各有同名方法,类限定各答各的,不跨类误绑。
+    /// The user-named mislead face: two classes each have a method of the same
+    /// name; class qualification answers each with its own, with no cross-class
+    /// mis-binding.
     #[test]
     fn same_name_methods_in_two_classes_bind_to_their_own_class() {
         let lines = lines_of(
@@ -541,7 +607,7 @@ mod tests {
         assert_eq!(face.method_name, "load");
     }
 
-    /// 别名链:x = y;y = f() → x 面答 f 注解。
+    /// Alias chain: `x = y; y = f()` -> x's face answers with f's annotation.
     #[test]
     fn alias_chain_resolves_through() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\nt = make()\nx = t\n");
@@ -558,7 +624,7 @@ mod tests {
         assert_eq!(face.method_name, "make");
     }
 
-    /// `x = x` 身份链 → 诚实空(环防)。
+    /// `x = x` identity chain -> honest empty (cycle protection).
     #[test]
     fn identity_alias_honest_empty() {
         let lines = lines_of("x = x\n");
@@ -573,7 +639,9 @@ mod tests {
         .is_none());
     }
 
-    /// 最近写点胜且不可解即止:重赋值字面量后不再借更早调用答案(R2-F16 同语义)。
+    /// The nearest write point wins and resolution stops when unsolvable: after a
+    /// reassignment to a literal, an earlier call answer is no longer borrowed
+    /// (the R2-F16 semantics).
     #[test]
     fn overwritten_by_literal_stops_earlier_answer() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\ndata = make()\ndata = 1\n");
@@ -588,7 +656,9 @@ mod tests {
         .is_none());
     }
 
-    /// 域门:兄弟方法体的同名写点不借;方法内 hover 只认本方法体写点。
+    /// Domain gate: a same-named write point in a sibling method body is not
+    /// borrowed; a hover inside a method only recognizes the write points of
+    /// that method body.
     #[test]
     fn sibling_method_write_not_borrowed() {
         let lines = lines_of(
@@ -605,7 +675,9 @@ mod tests {
         .is_none());
     }
 
-    /// 模块层写点放行:hover 在方法体、写点在模块层(def/class 头窄化后域内)。
+    /// A module-level write point passes through: the hover is in a method body
+    /// while the write point is at module level (inside the domain after
+    /// def/class header narrowing).
     #[test]
     fn module_write_visible_from_method_body() {
         let lines = lines_of(
@@ -623,10 +695,13 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// KBUG-SCOPE-04 语义重钉(账本推翻旧口径):方法体裸名不读所属类体的
-    /// 属性表——`data` 在方法 `n` 内是自由名,类体写点不可借,诚实空
-    /// (旧「类头窄化放行」口径答 make() 是误导;类体直系读走
-    /// same_class_body_hover_reads_own_class_write)。
+    /// KBUG-SCOPE-04 semantics re-pinned (the ledger overturned the old
+    /// contract): a bare name in a method body does not read the enclosing
+    /// class body's attribute table -- `data` inside method `n` is a free name,
+    /// the class body write point cannot be borrowed, honest empty
+    /// (the old "class header narrowing passes through" contract answering
+    /// make() was a mislead; direct class body reads go through
+    /// same_class_body_hover_reads_own_class_write).
     #[test]
     fn method_body_does_not_read_class_body_table() {
         let lines = lines_of(
@@ -643,7 +718,8 @@ mod tests {
         .is_none());
     }
 
-    /// hover 行上的写点即候选(TS `line <= hoverLine` 含端)。
+    /// A write point on the hover line is itself a candidate (the TS
+    /// `line <= hoverLine` is inclusive).
     #[test]
     fn write_on_hover_line_counts() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\ndata = make()\n");
@@ -659,7 +735,7 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// 无注解 def → 诚实空(不硬造)。
+    /// An unannotated def -> honest empty (nothing fabricated).
     #[test]
     fn unannotated_def_honest_empty() {
         let lines = lines_of("def make():\n    return None\n\ndata = make()\n");
@@ -674,7 +750,8 @@ mod tests {
         .is_none());
     }
 
-    /// 重名 def 歧义 → 诚实空(不取首定义硬猜)。
+    /// Same-name def ambiguity -> honest empty (no forced guess on the first
+    /// definition).
     #[test]
     fn ambiguous_def_honest_empty() {
         let lines = lines_of(
@@ -691,7 +768,9 @@ mod tests {
         .is_none());
     }
 
-    /// 类实例化不是返回注解面:`data = Repo()` → 诚实空(流面产原子,本面不答)。
+    /// A class instantiation is not a return annotation face:
+    /// `data = Repo()` -> honest empty (the flow face produces an atom; this
+    /// face does not answer).
     #[test]
     fn class_instantiation_not_a_return_annotation() {
         let lines = lines_of("class Repo:\n    pass\n\ndata = Repo()\n");
@@ -706,7 +785,8 @@ mod tests {
         .is_none());
     }
 
-    /// self.属性读不是调用:诚实空(与旧 TS 同为 null,零回退)。
+    /// A `self.<attr>` read is not a call: honest empty (same null as the old
+    /// TS, zero regression).
     #[test]
     fn self_attr_read_honest_empty() {
         let lines = lines_of(
@@ -723,7 +803,7 @@ mod tests {
         .is_none());
     }
 
-    /// 常量名守卫(全大写)不查询。
+    /// The constant name guard (all caps) is not queried.
     #[test]
     fn constant_name_skipped() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\nDATA = make()\n");
@@ -738,7 +818,8 @@ mod tests {
         .is_none());
     }
 
-    /// 接收者推不出唯一类原子 → 诚实空(不猜方法名)。
+    /// When no unique class atom can be derived for the receiver -> honest empty
+    /// (no method-name guessing).
     #[test]
     fn unknown_receiver_chained_honest_empty() {
         let lines = lines_of(
@@ -755,7 +836,8 @@ mod tests {
         .is_none());
     }
 
-    /// 前向引用:hovers 行在写点之前 → 诚实空(流序)。
+    /// Forward reference: the hover line precedes the write point -> honest empty
+    /// (flow order).
     #[test]
     fn forward_reference_honest_empty() {
         let lines =
@@ -771,7 +853,8 @@ mod tests {
         .is_none());
     }
 
-    /// 装饰器 def 名行域门:装饰器行不窄化,名行窄化(与名行口径同)。
+    /// Domain gate on a decorated def's name line: the decorator line does not
+    /// narrow, the name line does (same contract as the name line).
     #[test]
     fn decorated_def_header_narrows_at_name_line() {
         let lines = lines_of(
@@ -789,7 +872,8 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// 三引号字符串体里的伪赋值不产写点(AST 真语句;旧行扫描的假象面消除)。
+    /// A fake assignment inside a triple-quoted string body produces no write
+    /// point (real AST statements; the old line-scan artefact face is gone).
     #[test]
     fn string_body_fake_write_not_registered() {
         let lines =
@@ -805,7 +889,7 @@ mod tests {
         .is_none());
     }
 
-    /// hover 行越界 → None(与流面同守卫)。
+    /// An out-of-range hover line -> None (the same guard as the flow face).
     #[test]
     fn out_of_range_hover_line() {
         let lines = lines_of("data = 1\n");
@@ -820,8 +904,9 @@ mod tests {
         .is_none());
     }
 
-    /// 别名链环:`x = y` 与 `y = x` 互指 → 诚实空(每跳严格下行,天然有界;
-    /// 防环 visited 双保险)。
+    /// An alias chain cycle: `x = y` and `y = x` point at each other -> honest
+    /// empty (every hop strictly descends, so it is naturally bounded; the
+    /// anti-cycle visited set is belt and braces).
     #[test]
     fn mutual_alias_cycle_honest_empty() {
         let lines = lines_of("x = y\ny = x\n");
@@ -836,7 +921,8 @@ mod tests {
         .is_none());
     }
 
-    /// 版本键缓存协议:同键同文命中缓存(两次查询同值)。
+    /// The version key cache protocol: the same key with the same text hits the
+    /// cache (both queries return the same value).
     #[test]
     fn version_key_cache_hit() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\ndata = make()\n");
@@ -863,9 +949,11 @@ mod tests {
         crate::self_flow::reset_self_attribute_flow_parse_cache_for_tests();
     }
 
-    // ---- KBUG-SCOPE(词法作用域链:参数遮蔽/边界/global/nonlocal)----
+    // ---- KBUG-SCOPE (lexical scope chain: parameter shadowing / boundaries /
+    // global / nonlocal) ----
 
-    /// SCOPE-01:模块层 `x = make()` 不得借给 `def run(x)` 参数位。
+    /// SCOPE-01: a module-level `x = make()` must not be borrowed by the
+    /// parameter position of `def run(x)`.
     #[test]
     fn kbug_scope_param_shadow_blocks_module_write() {
         let lines = lines_of(
@@ -882,7 +970,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-01:vararg/仅关键字/kwarg 参数同员遮蔽(全参数位一律本域绑定)。
+    /// SCOPE-01: vararg / keyword-only / kwarg parameters shadow the same way
+    /// (every parameter position is bound in its own domain).
     #[test]
     fn kbug_scope_vararg_kwonly_kwarg_params_block() {
         let lines = lines_of(
@@ -899,7 +988,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-02:读前于写(UnboundLocal 位)不借模块层同名绑定。
+    /// SCOPE-02: a read that comes before the write (an UnboundLocal position)
+    /// does not borrow a same-named module-level binding.
     #[test]
     fn kbug_scope_unbound_local_position_not_borrow_outer() {
         let lines = lines_of(
@@ -916,7 +1006,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-02:函数内写点不可解即止,不退借外层有类型绑定。
+    /// SCOPE-02: a write point inside a function that cannot be resolved stops
+    /// immediately, without falling back to an outer typed binding.
     #[test]
     fn kbug_scope_local_unresolvable_write_blocks_module() {
         let lines = lines_of(
@@ -933,7 +1024,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-02:lambda 参数遮蔽模块层绑定(直接赋值 lambda 自成一域)。
+    /// SCOPE-02: a lambda parameter shadows the module-level binding (a directly
+    /// assigned lambda forms its own domain).
     #[test]
     fn kbug_scope_lambda_param_shadow_blocks() {
         let lines =
@@ -949,7 +1041,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-02:嵌套函数参数遮蔽(祖先链上参数同样阻断外层解)。
+    /// SCOPE-02: a nested function's parameter shadows (parameters on the
+    /// ancestor chain block the outer resolution the same way).
     #[test]
     fn kbug_scope_nested_fn_param_blocks() {
         let lines = lines_of(
@@ -966,7 +1059,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-02:嵌套函数体内的写点不得被外层行借(函数边界,不外溢)。
+    /// SCOPE-02: a write point in a nested function body must not be borrowed by
+    /// an outer line (function boundary; no leakage outward).
     #[test]
     fn kbug_scope_nested_fn_write_not_visible_from_outer() {
         let lines = lines_of(
@@ -983,7 +1077,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-02:def 体写点不得借给 def 结束后的模块层读。
+    /// SCOPE-02: a write point in a def body must not be borrowed by a
+    /// module-level read after the def ends.
     #[test]
     fn kbug_scope_def_body_write_not_borrowed_after_def() {
         let lines = lines_of(
@@ -1000,7 +1095,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-03:global 声明的读透传模块绑定(合法借位保留)。
+    /// SCOPE-03: a read of a `global`-declared name passes through to the module
+    /// binding (a legal borrow is retained).
     #[test]
     fn kbug_scope_global_read_passes_to_module() {
         let lines = lines_of(
@@ -1018,8 +1114,10 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// SCOPE-03:global 声明的函数内重赋值按模块名空间最近写点裁定
-    /// (重赋值为字面量 → 诚实空,不回借更早答案)。
+    /// SCOPE-03: a reassignment of a `global`-declared name inside a function is
+    /// settled by the nearest write point in the module name space
+    /// (a literal reassignment -> honest empty, without borrowing back an
+    /// earlier answer).
     #[test]
     fn kbug_scope_global_reassigned_literal_stops_earlier() {
         let lines = lines_of(
@@ -1036,7 +1134,8 @@ mod tests {
         .is_none());
     }
 
-    /// SCOPE-03:nonlocal 透传外层函数域写点(闭包链合法读保留)。
+    /// SCOPE-03: `nonlocal` passes through to the enclosing function domain's
+    /// write point (a legal closure-chain read is retained).
     #[test]
     fn kbug_scope_nonlocal_reads_enclosing_function_write() {
         let lines = lines_of(
@@ -1054,7 +1153,8 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// SCOPE-04:类体直系读读本类体写点(执行期顺序命名空间,合法保留)。
+    /// SCOPE-04: a direct class body read reads the own class body's write point
+    /// (the execution-ordered name space; a legal case is retained).
     #[test]
     fn kbug_scope_class_body_hover_reads_own_class_write() {
         let lines = lines_of(
@@ -1072,7 +1172,8 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// SCOPE-04:他类类体写点不借(B 体读不到 A 体)。
+    /// SCOPE-04: another class's class body write point is not borrowed
+    /// (B's body cannot read A's body).
     #[test]
     fn kbug_scope_other_class_body_not_borrowed() {
         let lines = lines_of(
@@ -1089,10 +1190,12 @@ mod tests {
         .is_none());
     }
 
-    // ---- KBUG-BIND(调用目标绑定先于声明表)----
+    // ---- KBUG-BIND (a call target's binding takes precedence over the
+    // declaration table) ----
 
-    /// BIND-01:被调名被参数遮蔽——`def run(make)` 内 `make()` 不借模块
-    /// def 注解(动态 callable 未知)。
+    /// BIND-01: the callee name is shadowed by a parameter -- `make()` inside
+    /// `def run(make)` does not borrow the module def annotation (a dynamic
+    /// callable is unknown).
     #[test]
     fn kbug_bind_param_shadow_blocks_def_annotation() {
         let lines = lines_of(
@@ -1109,7 +1212,8 @@ mod tests {
         .is_none());
     }
 
-    /// BIND-01 守卫:未遮蔽的 `make()` 照常命中模块 def 注解。
+    /// BIND-01 guard: an unshadowed `make()` still hits the module def
+    /// annotation as usual.
     #[test]
     fn kbug_bind_unshadowed_call_still_hits() {
         let lines = lines_of(
@@ -1127,8 +1231,10 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// BIND-02:裸名调用先解析当前位置绑定——域内先行赋值(`fetch =
-    /// mystery`)遮蔽模块 def 声明表(mystery 无声明 → 诚实空)。
+    /// BIND-02: a bare-name call resolves the binding at the current position
+    /// first -- an earlier assignment in the domain (`fetch = mystery`) shadows
+    /// the module def declaration table (mystery has no declaration -> honest
+    /// empty).
     #[test]
     fn kbug_bind_local_rebind_by_assignment_blocks_def_table() {
         let lines = lines_of(
@@ -1145,7 +1251,8 @@ mod tests {
         .is_none());
     }
 
-    /// BIND-02:域内局部 def 遮蔽模块同名声明表(无注解局部 def → 诚实空)。
+    /// BIND-02: a local def in the domain shadows the same-named module
+    /// declaration table (an unannotated local def -> honest empty).
     #[test]
     fn kbug_bind_local_def_shadows_module_def() {
         let lines = lines_of(
@@ -1162,8 +1269,9 @@ mod tests {
         .is_none());
     }
 
-    /// BIND-02 守卫:调用位置在绑定之前 → 声明表照常(前向合法,不因
-    /// 域内存在绑定就一刀切)。
+    /// BIND-02 guard: a call position before the binding -> the declaration
+    /// table applies as usual (a forward reference is legal; do not blanket
+    /// exclude just because a binding exists somewhere in the domain).
     #[test]
     fn kbug_bind_call_before_binding_still_declared() {
         let lines = lines_of(
@@ -1181,8 +1289,9 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// BIND-02:别名透传——`fetch = real`(real 有注解)后 `fetch()` 命中
-    /// real 的注解面(绑定值为函数名身份原子)。
+    /// BIND-02: alias pass-through -- after `fetch = real` (real is annotated),
+    /// `fetch()` hits real's annotation face (the binding value is a function
+    /// name identity atom).
     #[test]
     fn kbug_bind_alias_to_annotated_fn_passes_through() {
         let lines = lines_of(
@@ -1200,8 +1309,10 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// BIND-03:模块层类名重绑定 `A = B` 后 `A.load()` 不沿用旧 A 注解
-    /// (绑定值原子为 B;B 类值链解不出方法面 → 诚实空,绝不含旧 int)。
+    /// BIND-03: after a module-level class name rebind `A = B`, `A.load()` no
+    /// longer follows the old A annotation (the binding value atom is B; B's
+    /// class value chain cannot resolve a method face -> honest empty, never
+    /// containing the old int).
     #[test]
     fn kbug_bind_module_class_rebind_does_not_keep_old_annotation() {
         let lines = lines_of(
@@ -1218,7 +1329,8 @@ mod tests {
         .is_none());
     }
 
-    /// BIND-03:模块层重绑定为未知名 `A = unknown` 后同样不沿用原类。
+    /// BIND-03: a module-level rebind to an unknown name `A = unknown` likewise
+    /// does not follow the original class.
     #[test]
     fn kbug_bind_module_rebind_to_unknown_honest() {
         let lines = lines_of(
@@ -1235,7 +1347,8 @@ mod tests {
         .is_none());
     }
 
-    /// BIND-04 守卫:原始类静态方法(名未绑定)照常命中类限定面。
+    /// BIND-04 guard: the original class's static method (the name is unbound)
+    /// still hits the class-qualified face as usual.
     #[test]
     fn kbug_bind_original_class_qualified_still_hits() {
         let lines = lines_of(
@@ -1254,8 +1367,8 @@ mod tests {
         assert_eq!(face.method_name, "load");
     }
 
-    /// BIND-03(裸名形态):模块层 `make = mystery` 重绑定后 `make()` 不借
-    /// 模块 def 注解。
+    /// BIND-03 (bare-name form): after a module-level `make = mystery` rebind,
+    /// `make()` does not borrow the module def annotation.
     #[test]
     fn kbug_bind_module_name_rebind_blocks_def_annotation() {
         let lines =
@@ -1271,10 +1384,12 @@ mod tests {
         .is_none());
     }
 
-    // ---- KBUG-CFGFLOW(分支可达性/合流/终止/循环异常保守/查询位)----
+    // ---- KBUG-CFGFLOW (branch reachability / joins / termination /
+    // conservative loop and exception handling / the query position) ----
 
-    /// CFGFLOW-01/02:`if False` 内 str 写点不污染外部 int 面(静态死分支
-    /// 不可达,不产出口)。
+    /// CFGFLOW-01/02: a str write point inside `if False` does not pollute the
+    /// outer int face (a statically dead branch is unreachable and produces no
+    /// exit).
     #[test]
     fn kbug_cfgflow_if_false_write_not_pollute() {
         let lines = lines_of(
@@ -1293,7 +1408,8 @@ mod tests {
         assert_eq!(face.method_name, "make");
     }
 
-    /// CFGFLOW-01 守卫:`if True` = 静态确定分支,str 写点确定生效。
+    /// CFGFLOW-01 guard: `if True` = a statically definite branch, so the str
+    /// write point definitely takes effect.
     #[test]
     fn kbug_cfgflow_if_true_definite_write() {
         let lines = lines_of(
@@ -1311,7 +1427,8 @@ mod tests {
         assert_eq!(face.annotation, "Rock");
     }
 
-    /// CFGFLOW-03 守卫:if/else 两支同面(同调用)→ 合流仍命中。
+    /// CFGFLOW-03 guard: both if/else branches share the same face (the same
+    /// call) -> the join still hits.
     #[test]
     fn kbug_cfgflow_if_else_same_face_confluence() {
         let lines = lines_of(
@@ -1329,7 +1446,8 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// CFGFLOW-03:if/else 两支不同面 → 未知,不按源码先后任取最后一支。
+    /// CFGFLOW-03: the if/else branches have different faces -> unknown; never
+    /// take the last branch by source order.
     #[test]
     fn kbug_cfgflow_if_else_differ_honest_unknown() {
         let lines = lines_of(
@@ -1349,7 +1467,8 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-03:无 else 条件分支 → 入口值路径并入,候选不同 → 未知。
+    /// CFGFLOW-03: a conditional branch without else -> the entry value path
+    /// joins in; different candidates -> unknown.
     #[test]
     fn kbug_cfgflow_no_else_differ_honest() {
         let lines = lines_of(
@@ -1369,7 +1488,8 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-03:仅条件分支赋值(无入口写点)→ 可能未绑定,诚实空。
+    /// CFGFLOW-03: a conditional branch assignment only (no entry write point)
+    /// -> possibly unbound, honest empty.
     #[test]
     fn kbug_cfgflow_cond_only_write_maybe_unbound() {
         let lines = lines_of(
@@ -1389,7 +1509,8 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-04:终止分支(return)出口不达语句后 → 只合流可达路径。
+    /// CFGFLOW-04: a terminated branch's (return) exit does not reach the
+    /// statement after it -> only reachable paths join.
     #[test]
     fn kbug_cfgflow_terminated_branch_excluded() {
         let lines = lines_of(
@@ -1407,7 +1528,8 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// CFGFLOW-04:嵌套 def 的 return 不终止外层路径(函数边界清楚)。
+    /// CFGFLOW-04: a nested def's return does not terminate the outer path (the
+    /// function boundary is respected).
     #[test]
     fn kbug_cfgflow_nested_def_return_not_terminate_outer() {
         let lines = lines_of(
@@ -1427,7 +1549,8 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-02:前序无条件终止后的写点不可达;不可达位查询诚实空。
+    /// CFGFLOW-02: a write point after an unconditional termination is
+    /// unreachable; querying an unreachable position is honest empty.
     #[test]
     fn kbug_cfgflow_after_return_unreachable_honest() {
         let lines = lines_of(
@@ -1447,8 +1570,9 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-05:循环保守(0 次执行入口值 + ≥1 次体出口并集),候选不同
-    /// → 未知,绝不回退最后文本写点。
+    /// CFGFLOW-05: loop conservatism (the 0-iteration entry value unioned with
+    /// the >=1-iteration body exit); different candidates -> unknown, never
+    /// falling back to the last textual write point.
     #[test]
     fn kbug_cfgflow_loop_conservative() {
         let lines = lines_of(
@@ -1468,8 +1592,9 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-05:循环体内读位前于写点 → 环回保守(≥2 次迭代可见前轮
-    /// 写点),未知,绝不回退文本首写点。
+    /// CFGFLOW-05: a read inside a loop body before the write point -> conservative
+    /// about the loop back edge (>= 2 iterations see the previous round's write
+    /// point); unknown, never falling back to the first textual write point.
     #[test]
     fn kbug_cfgflow_loop_body_read_before_write_conservative() {
         let lines = lines_of(
@@ -1489,8 +1614,8 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-05:try/except 保守并集(异常路径入口值 + try 体出口),
-    /// 候选不同 → 未知。
+    /// CFGFLOW-05: try/except conservative union (the exception path's entry
+    /// value plus the try body exit); different candidates -> unknown.
     #[test]
     fn kbug_cfgflow_try_conservative() {
         let lines = lines_of(
@@ -1510,14 +1635,15 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-06:查询位流敏感——分支前/分支内/合流后各得路径结果;
-    /// 直线推断保持通过。
+    /// CFGFLOW-06: the query position is flow sensitive -- before the branch,
+    /// inside the branch, and after the join each get their path result;
+    /// straight-line inference keeps passing.
     #[test]
     fn kbug_cfgflow_positions_flow_sensitive() {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nif cond:\n    print(x)\n    x = other()\ny = x\n",
         );
-        // 分支前:直线确定
+        // Before the branch: straight-line and definite
         let face = local_return_type(
             &lines,
             6,
@@ -1528,7 +1654,8 @@ mod tests {
         .expect("not cancelled")
         .expect("分支前直线写点应命中");
         assert_eq!(face.annotation, "Tree");
-        // 分支内读位前于写:入口值直达
+        // Inside the branch, the read position precedes the write: the entry value
+        // applies directly
         let face = local_return_type(
             &lines,
             8,
@@ -1539,7 +1666,7 @@ mod tests {
         .expect("not cancelled")
         .expect("分支内入口值应命中");
         assert_eq!(face.annotation, "Tree");
-        // 合流后:候选不同 → 未知
+        // After the join: different candidates -> unknown
         assert!(
             local_return_type(
                 &lines,
@@ -1554,7 +1681,8 @@ mod tests {
         );
     }
 
-    /// CFGFLOW-01/02:静态死分支内查询 = 不可达位,诚实空(绝不解析死写点)。
+    /// CFGFLOW-01/02: a query inside a statically dead branch = an unreachable
+    /// position, honest empty (never resolve a dead write point).
     #[test]
     fn kbug_cfgflow_query_in_dead_branch_honest() {
         let lines = lines_of(
@@ -1574,28 +1702,32 @@ mod tests {
         );
     }
 
-    // ---- KBUG-ORDER:同行赋值顺序 / 查询列精度(流值以 Pos(行,UTF-16 列)裁定)----
+    // ---- KBUG-ORDER: same-line assignment order / query column precision
+    // (flow values are settled by Pos(line, UTF-16 column)) ----
 
     fn wu16(s: &str) -> Vec<u16> {
         s.encode_utf16().collect::<Vec<u16>>()
     }
 
-    /// ORDER-01:同行别名不吞未来写点。`y = a(); x = y; y = b()` 同行,x 的
-    /// 别名回溯只见其 RHS 之前的 y 绑定(a 的 int),同行后续 `y = b()` 不可见;
-    /// 反转语句顺序后答案随真实执行序改变。
+    /// ORDER-01: a same-line alias does not swallow a future write point. On one
+    /// line `y = a(); x = y; y = b()`, x's alias traceback only sees the y
+    /// binding before its own RHS (a's int); the later same-line `y = b()` is
+    /// invisible; reversing the statement order changes the answer with the
+    /// real execution order.
     #[test]
     fn kbug_order_same_line_alias_future_value() {
         let lines = lines_of(
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\ndef run():\n    y = a(); x = y; y = b()\n    return x\n",
         );
-        // 悬 return x 的 x(行 8 列 11):x 写点在同行 y=b() 之前,别名解 y=a() 的 int
+        // Hovering the x of `return x` (line 8, col 11): x's write point precedes the
+        // same-line y=b(), so the alias resolves y=a()'s int
         let face = local_return_type(&lines, 8, Some(11), &wu16("x"), None)
             .expect("not cancelled")
             .expect("同行别名应命中 a 的 int");
         assert_eq!(face.annotation, "int");
         assert_eq!(face.method_name, "a");
 
-        // 反转:y = b(); x = y; y = a() → str(随真实执行序)
+        // Reversed: y = b(); x = y; y = a() -> str (following the real execution order)
         let lines = lines_of(
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\ndef run():\n    y = b(); x = y; y = a()\n    return x\n",
         );
@@ -1606,7 +1738,8 @@ mod tests {
         assert_eq!(face.method_name, "b");
     }
 
-    /// ORDER-01 分行版:别名回溯不越过写点 RHS 之后的新绑定。
+    /// ORDER-01 split-line version: the alias traceback does not cross past a new
+    /// binding made after the write point's RHS.
     #[test]
     fn kbug_order_multiline_alias_future_value() {
         let lines = lines_of(
@@ -1618,41 +1751,48 @@ mod tests {
         assert_eq!(face.annotation, "int");
     }
 
-    /// ORDER-05:同行读前于写不混。`print(x); x = b()`——悬 print 内 x(显式
-    /// 列)= 读前写点,诚实空;悬 x 目标 = 新值 str;悬 RHS 内 b 前 x = 旧值
-    /// (此处无旧绑定,诚实空);缺列 = 保守回退行首非空白列(诚实空),绝不
-    /// 默认整行末写点。
+    /// ORDER-05: on one line, a read before the write is not mixed up.
+    /// `print(x); x = b()` -- hovering x inside print (explicit column) = a read
+    /// before the write point, honest empty; hovering the x target = the new
+    /// value str; hovering x before b inside the RHS = the old value (no old
+    /// binding here, honest empty); a missing column = the conservative fallback
+    /// to the line's first non-blank column (honest empty), never defaulting to
+    /// the line's last write point.
     #[test]
     fn kbug_order_read_before_write_same_line() {
         let lines =
             lines_of("def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n");
-        // 悬 print(x) 的 x(列 10):写点未执行 → UnboundLocal 诚实空
+        // Hovering the x of print(x) (col 10): the write point has not executed yet ->
+        // UnboundLocal, honest empty
         assert!(
             local_return_type(&lines, 4, Some(10), &wu16("x"), None)
                 .expect("not cancelled")
                 .is_none(),
             "读前写点应诚实空"
         );
-        // 悬 x 目标(列 14):目标位先于 RHS = 新值 str
+        // Hovering the x target (col 14): the target position precedes the RHS = the
+        // new value str
         let face = local_return_type(&lines, 4, Some(14), &wu16("x"), None)
             .expect("not cancelled")
             .expect("悬目标应见新值");
         assert_eq!(face.annotation, "str");
-        // 悬 x = b() 的 RHS 内(列 18):语句内读旧值 → 无旧绑定诚实空
+        // Hovering inside the RHS of x = b() (col 18): an in-statement read of the old
+        // value -> no old binding, honest empty
         assert!(
             local_return_type(&lines, 4, Some(18), &wu16("x"), None)
                 .expect("not cancelled")
                 .is_none(),
             "RHS 内读应见旧值(此处未绑定)"
         );
-        // 缺列:保守回退行首非空白列(列 4 = print 语句内)→ 诚实空
+        // Missing column: the conservative fallback to the first non-blank column
+        // (col 4 = inside the print statement) -> honest empty
         assert!(
             local_return_type(&lines, 4, None, &wu16("x"), None)
                 .expect("not cancelled")
                 .is_none(),
             "缺列应保守,不得默认整行末写点"
         );
-        // 写后读(下一行):str 照常命中
+        // A read after the write (the next line): str hits as usual
         let lines2 = lines_of(
             "def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n    return x\n",
         );
@@ -1662,45 +1802,50 @@ mod tests {
         assert_eq!(face.annotation, "str");
     }
 
-    /// ORDER-05:写后读同行不混。`x = a(); print(x)` 悬 print 内 x → int。
+    /// ORDER-05: a read after a write on the same line is not mixed up.
+    /// `x = a(); print(x)` -- hovering the x inside print -> int.
     #[test]
     fn kbug_order_write_then_read_same_line() {
         let lines =
             lines_of("def a() -> int:\n    return None\n\ndef run():\n    x = a(); print(x)\n");
-        // `    x = a(); print(x)`:print 内 x 列 14
+        // `    x = a(); print(x)`: the x inside print is at col 14
         let face = local_return_type(&lines, 4, Some(14), &wu16("x"), None)
             .expect("not cancelled")
             .expect("写后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
-    /// ORDER-03:元组同时赋值。`x, y = y, x` 交换——悬 x 目标 = 旧 y 的面(str),
-    /// 悬 y 目标 = 旧 x 的面(int);同行内互读按 RHS 元素位裁定,不吞对方。
+    /// ORDER-03: simultaneous tuple assignment. The `x, y = y, x` swap -- hovering
+    /// the x target = the old y's face (str), hovering the y target = the old
+    /// x's face (int); mutual reads on the same line are settled by the RHS
+    /// element position, without swallowing the other side.
     #[test]
     fn kbug_order_tuple_swap_reads_pre_values() {
         let lines = lines_of(
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\nx = a()\ny = b()\nx, y = y, x\n",
         );
-        // 悬 x 目标(行 8 列 0):解旧 y → str
+        // Hovering the x target (line 8, col 0): resolves the old y -> str
         let face = local_return_type(&lines, 8, Some(0), &wu16("x"), None)
             .expect("not cancelled")
             .expect("交换悬 x 应见旧 y 的 str");
         assert_eq!(face.annotation, "str");
-        // 悬 y 目标(行 8 列 3):解旧 x → int
+        // Hovering the y target (line 8, col 3): resolves the old x -> int
         let face = local_return_type(&lines, 8, Some(3), &wu16("y"), None)
             .expect("not cancelled")
             .expect("交换悬 y 应见旧 x 的 int");
         assert_eq!(face.annotation, "int");
-        // 悬同行 RHS 元素区(行 8 列 9,x 元素前):同时赋值未完成 → 旧值
-        // (x=a() 的 int),不吞本句新绑定
+        // Hovering the same-line RHS element region (line 8, col 9, before the x
+        // element): the simultaneous assignment is incomplete -> the old value
+        // (a()'s int), not swallowing this statement's new binding
         let face = local_return_type(&lines, 8, Some(9), &wu16("x"), None)
             .expect("not cancelled")
             .expect("交换 RHS 域内读旧值应见 int");
         assert_eq!(face.annotation, "int");
     }
 
-    /// ORDER-03:链式赋值 `x = y = make()`——各目标同 RHS,先后悬两目标均 Tree;
-    /// 后续别名 z = y 照常透传。
+    /// ORDER-03: chained assignment `x = y = make()` -- each target shares the
+    /// same RHS, so hovering the two targets in order both give Tree; the later
+    /// alias z = y passes through as usual.
     #[test]
     fn kbug_order_chained_assignment_targets() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\nx = y = make()\nz = y\n");
@@ -1718,89 +1863,102 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// ORDER-03 自引用:`x = x` 不吞本写点——RHS 读旧值,此前绑定的面保留
-    /// (旧引擎线粒度把自己写点选为最近解 → 环防诚实空;现按 RHS 位时间边界
-    /// 解出前值)。
+    /// ORDER-03 self-reference: `x = x` does not swallow its own write point --
+    /// the RHS reads the old value and the previously bound face is retained
+    /// (the old line-granular engine picked its own write point as the nearest
+    /// resolution -> cycle protection, honest empty; now resolved against the
+    /// RHS position time boundary to the prior value).
     #[test]
     fn kbug_order_self_reference_reads_prior_binding() {
         let lines = lines_of("def a() -> int:\n    return None\n\nx = a()\nx = x\n");
-        // 悬 x = x 的目标(列 0):新值 = 旧值 = int(自引用保面)
+        // Hovering the target of x = x (col 0): new value = old value = int
+        // (a self-reference keeps the face)
         let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None)
             .expect("not cancelled")
             .expect("自引用应保留前值 int");
         assert_eq!(face.annotation, "int");
-        // 悬下一行(写后):同 int
+        // Hovering the next line (after the write): the same int
         let face = local_return_type(&lines, 4, Some(0), &wu16("x"), None)
             .expect("not cancelled")
             .expect("自引用后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
-    /// ORDER-05:多行 RHS——悬续行(语句未完)= 语句内读旧值(前一绑定 int);
-    /// 悬语句后 = 新值 Tree。
+    /// ORDER-05: a multi-line RHS -- hovering the continuation line (the
+    /// statement incomplete) = an in-statement read of the old value (the prior
+    /// binding, int); hovering after the statement = the new value Tree.
     #[test]
     fn kbug_order_multiline_rhs_reads_old_then_new() {
         let lines = lines_of(
             "def a() -> int:\n    return None\n\ndef make() -> Tree:\n    return None\n\nx = a()\nx = make(\n    1, 2)\nprint(x)\n",
         );
-        // 悬 RHS 首行 (7,4):x = make( 语句域内且过 RHS 起始位 → 旧值 int
+        // Hovering the RHS first line (7,4): inside the x = make( statement and
+        // past the RHS start position -> the old value int
         let face = local_return_type(&lines, 7, Some(4), &wu16("x"), None)
             .expect("not cancelled")
             .expect("多行 RHS 内读应见旧值 int");
         assert_eq!(face.annotation, "int");
-        // 悬续行参数区 (8,5):语句仍未完成 → 旧值 int
+        // Hovering the continuation line's argument area (8,5): the statement is
+        // still incomplete -> the old value int
         let face = local_return_type(&lines, 8, Some(5), &wu16("x"), None)
             .expect("not cancelled")
             .expect("续行参数区读应见旧值 int");
         assert_eq!(face.annotation, "int");
-        // 悬语句完成后的 print(x)(行 9 列 6):新值 Tree
+        // Hovering the print(x) after the statement completed (line 9, col 6):
+        // the new value Tree
         let face = local_return_type(&lines, 9, Some(6), &wu16("x"), None)
             .expect("not cancelled")
             .expect("语句后读应见新值 Tree");
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// ORDER-05:emoji 行 UTF-16 列(代理对计 2)——同行多写点按 UTF-16 列
-    /// 分序,字符数口径会错位。
+    /// ORDER-05: UTF-16 columns on an emoji line (a surrogate pair counts 2) --
+    /// multiple write points on one line are ordered by UTF-16 column; a
+    /// character-count contract would misalign them.
     #[test]
     fn kbug_order_emoji_utf16_columns() {
-        // `    d = "🚀"; x = a(); x = b()`:d=4, 🚀 占 UTF-16 两单元(9-10),
-        // 第一个 x=14,第二个 x=23(字符口径会算成 22)
+        // `    d = "🚀"; x = a(); x = b()`: d=4, 🚀 occupies two UTF-16 units (9-10),
+        // the first x=14, the second x=23 (a character-count contract would
+        // compute 22)
         let lines = lines_of(
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\ndef run():\n    d = \"🚀\"; x = a(); x = b()\n",
         );
-        // 悬第一个 x 目标(列 14)→ int
+        // Hovering the first x target (col 14) -> int
         let face = local_return_type(&lines, 7, Some(14), &wu16("x"), None)
             .expect("not cancelled")
             .expect("emoji 行第一写点应命中 int");
         assert_eq!(face.annotation, "int");
-        // 悬第二个 x 前空位(列 22):x = b() 未到 → 仍 int
+        // Hovering the blank space before the second x (col 22): x = b() has not
+        // been reached yet -> still int
         let face = local_return_type(&lines, 7, Some(22), &wu16("x"), None)
             .expect("not cancelled")
             .expect("列 22 应仍在第一写点 int");
         assert_eq!(face.annotation, "int");
-        // 悬第二个 x 目标(列 23,UTF-16)→ str
+        // Hovering the second x target (col 23, UTF-16) -> str
         let face = local_return_type(&lines, 7, Some(23), &wu16("x"), None)
             .expect("not cancelled")
             .expect("emoji 行第二写点应命中 str");
         assert_eq!(face.annotation, "str");
     }
 
-    /// ORDER-05:行尾注释——悬注释内 x(语句早已完成)= 新值生效(注释非
-    /// 语句域,不判 RHS 边界)。
+    /// ORDER-05: a trailing comment -- hovering x inside the comment (the
+    /// statement has long completed) = the new value is in effect (a comment is
+    /// not statement territory, so no RHS boundary is judged).
     #[test]
     fn kbug_order_comment_hover_after_statement() {
         let lines = lines_of("def a() -> int:\n    return None\n\nx = a()  # x\n");
-        // `x = a()  # x`:注释内 x 列 11
+        // `x = a()  # x`: the x inside the comment is at col 11
         let face = local_return_type(&lines, 3, Some(11), &wu16("x"), None)
             .expect("not cancelled")
             .expect("注释悬停应见已生效写点");
         assert_eq!(face.annotation, "int");
     }
 
-    /// ORDER-03 未支持形态明确未知:`x, y = pair`(右非等长元组字面量)走
-    /// 通用形态,交换配对不成立时不硬造对应面(悬 x 解 RHS 整体形态——
-    /// 未支持 = 诚实空)。
+    /// ORDER-03 an explicitly unknown unsupported form: `x, y = pair` (the
+    /// right side is not an equal-length tuple literal) goes through the generic
+    /// form; when the swap pairing does not hold, do not fabricate a matching
+    /// face (hovering x resolves the whole RHS shape -- unsupported = honest
+    /// empty).
     #[test]
     fn kbug_order_unsupported_tuple_shape_honest() {
         let lines = lines_of("def pair() -> tuple:\n    return None\n\nx, y = pair()\n");
@@ -1812,8 +1970,9 @@ mod tests {
         );
     }
 
-    // ---- COV-1 第二轮(2026-11-19):经本入口驱动 self_flow 语句流树
-    // ---- 求值臂(eval_block 查询位 820-973)与绑定机(1895-2210) ----
+    // ---- COV-1 round 2 (2026-11-19): driving the self_flow statement flow tree
+    // ---- evaluation arms (eval_block query positions 820-973) and the binding
+    // ---- machine (1895-2210) through this entry point ----
 
     fn face_is(lines: &[&str], line: usize, word: &str) -> Option<String> {
         let ls = lines_of(&lines.join("\n"));
@@ -1824,7 +1983,8 @@ mod tests {
 
     #[test]
     fn cov_tree_then_span_query_keeps_block_value() {
-        // 查询落 then 块内(898):字面量写点无注解面 → None(臂已执行)
+        // The query lands inside the then block (898): a literal write point has
+        // no annotation face -> None (the arm already executed)
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -1838,7 +1998,8 @@ mod tests {
 
     #[test]
     fn cov_tree_dead_else_query_unbound_honest() {
-        // const-true 的 else 块内查询(899-913)→ 不可达 = 诚实空
+        // A query inside the else block of a const-true (899-913) -> unreachable
+        // = honest empty
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -1852,7 +2013,8 @@ mod tests {
 
     #[test]
     fn cov_tree_if_header_query_keeps_entry() {
-        // 查询在 if 头行间隙(915-919):入口字面量无注解面 → None(臂已执行)
+        // The query in the if header line gap (915-919): the entry literal has no
+        // annotation face -> None (the arm already executed)
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -1865,7 +2027,8 @@ mod tests {
 
     #[test]
     fn cov_tree_loop_body_and_header_queries() {
-        // 体内在询(943-948)/头行位询(950-954):字面量无面 → None(臂已执行)
+        // A query inside the body (943-948) / a header line position query
+        // (950-954): a literal has no face -> None (the arm already executed)
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -1879,7 +2042,8 @@ mod tests {
 
     #[test]
     fn cov_tree_join_case_and_gap_queries() {
-        // case 块内在询(958-967)/match 域内非 case 位(969-973)
+        // A query inside a case block (958-967) / a non-case position in the match
+        // domain (969-973)
         let lines = [
             "def m(x):",
             "    v = 'init'",
@@ -1896,7 +2060,8 @@ mod tests {
 
     #[test]
     fn cov_tree_both_branches_terminated_after_query() {
-        // 双终止合流(820-826):any_live=false → 终止出口
+        // Both branches terminated at the join (820-826): any_live=false -> the
+        // terminated exit
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -1911,7 +2076,7 @@ mod tests {
 
     #[test]
     fn cov_tree_while_else_folds_into_exit() {
-        // while-else 出口并入(836-837)
+        // The while-else exit folds in (836-837)
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -1921,13 +2086,15 @@ mod tests {
             "        v = 's'",
             "    return v",
         ];
-        // while-else 折叠并入出口;字面量写点无注解面 → None(实测钉板)
+        // The while-else folds into the exit; a literal write point has no
+        // annotation face -> None (verified by test)
         assert_eq!(face_is(&lines, 6, "v"), None);
     }
 
     #[test]
     fn cov_tree_many_of_many_nested_branch_in_loop() {
-        // 环内分支多写点 → Many 嵌套展平(558-561)
+        // Multiple branch write points inside the loop -> Many nested flattening
+        // (558-561)
         let lines = [
             "def m(c, d):",
             "    v = 'init'",
@@ -1943,15 +2110,16 @@ mod tests {
 
     #[test]
     fn cov_tree_unbound_fold_in_no_else_branch() {
-        // 无 else 折叠并入入口 Unbound(567)→ maybe_unbound 诚实空
+        // The no-else fold merges into the entry Unbound (567) -> maybe_unbound,
+        // honest empty
         let lines = ["def m(c):", "    if c:", "        v = 1", "    return v"];
         assert_eq!(face_is(&lines, 3, "v"), None);
     }
 
     #[test]
     fn cov_class_direct_alias_binding() {
-        // 类体直系绑定 + Local 别名递归(2004-2019):别名非调用无注解面 →
-        // None(绑定解析臂已执行)
+        // Class-body direct binding + Local alias recursion (2004-2019): alias is not a
+        // call, no annotation face -> None (the binding-resolution arm already executed)
         let lines = [
             "def make() -> Repo:",
             "    return None",
@@ -1964,7 +2132,7 @@ mod tests {
 
     #[test]
     fn cov_module_alias_binding() {
-        // 模块级裸写别名(2053-2062):非调用无面 → None(臂已执行)
+        // Module-level bare-write alias (2053-2062): not a call, no face -> None (the arm already executed)
         let lines = [
             "def make() -> Repo:",
             "    return None",
@@ -1977,14 +2145,14 @@ mod tests {
 
     #[test]
     fn cov_binding_after_query_unbound() {
-        // 绑定在查询位之后(2019/2038)→ Unbound 诚实空
+        // Binding after the query position (2019/2038) -> Unbound, honest empty
         let lines = ["def m():", "    a = v", "    v = 1"];
         assert_eq!(face_is(&lines, 1, "v"), None);
     }
 
     #[test]
     fn cov_global_declaration_redirects_to_module() {
-        // 域内 global 声明让位(1965)+ 写点重定向模块
+        // In-domain global declaration yields (1965) + write point redirects to the module
         let lines = [
             "g = 5",
             "def m():",
@@ -1992,13 +2160,14 @@ mod tests {
             "    g = 6",
             "    x = g",
         ];
-        // global 让位后落模块绑定;字面量无注解面 → None(实测钉板)
+        // After the global yields, the binding lands on the module; a literal has no
+        // annotation face -> None (verified by test)
         assert_eq!(face_is(&lines, 4, "g"), None);
     }
 
     #[test]
     fn cov_numeric_unary_atom_faces() {
-        // 一元数值臂:complex(326/357)/Invert 未知(331)/walrus(350)/嵌套一元(351-352)
+        // Unary numeric arm: complex (326/357) / Invert unknown (331) / walrus (350) / nested unary (351-352)
         let lines = [
             "def m(x):",
             "    a = -1j",
@@ -2008,8 +2177,9 @@ mod tests {
             "    e = +1j",
             "    return a",
         ];
-        // 一元数值各形态:面=注解面,数值字面量无注解 → 全 None(实测钉板;
-        // 数值定型进写点 shape,由流面消费)
+        // Unary numeric shapes: face = annotation face, numeric literals have no
+        // annotation -> all None (verified by test; the numeric type lands in the
+        // write-point shape, consumed by the flow face)
         assert_eq!(face_is(&lines, 6, "a"), None);
         assert_eq!(face_is(&lines, 6, "b"), None);
         assert_eq!(face_is(&lines, 6, "c"), None);
@@ -2019,21 +2189,21 @@ mod tests {
 
     #[test]
     fn cov_unknown_callee_honest_none() {
-        // 未知名被调(2097/2157 一带):解析不外推
+        // Unknown-name callee (around 2097/2157): resolution does not extrapolate
         let lines = ["def m():", "    v = nope()", "    return v"];
         assert_eq!(face_is(&lines, 2, "v"), None);
     }
 
     #[test]
     fn cov_unknown_receiver_not_guessed() {
-        // 接收者不唯一/未知不猜(2207)
+        // Receiver not unique / unknown: no guessing (2207)
         let lines = ["def m():", "    v = other.get()", "    return v"];
         assert_eq!(face_is(&lines, 2, "v"), None);
     }
 
-    // ---- COV-1 第三轮:列精确位询(910-919)/无写环体(943-948)/
-    // ---- 全 Unbound 折叠(567)/绑定机深臂(1957-2062/2166-2207)/
-    // ---- 方法注解歧义(1918)/基线备忘命中(1895)/lambda 被调(1067) ----
+    // ---- COV-1 round three: column-exact position query (910-919) / loop body without write (943-948) /
+    // ---- all-Unbound fold (567) / binding-machine deep arms (1957-2062/2166-2207) /
+    // ---- method annotation ambiguity (1918) / baseline memo hit (1895) / lambda callee (1067) ----
 
     fn face_at(lines: &[&str], line: usize, col: usize, word: &str) -> Option<String> {
         let ls = lines_of(&lines.join("\n"));
@@ -2044,7 +2214,7 @@ mod tests {
 
     #[test]
     fn cov_tree_if_header_col_query_entry_value() {
-        // 查询位=if 行测试表达式列(≥ Branch start)→ 头行间隙臂(915-919)
+        // Query position = the if-line test-expression column (>= Branch start) -> the header-line gap arm (915-919)
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -2057,7 +2227,7 @@ mod tests {
 
     #[test]
     fn cov_tree_else_span_non_const_query() {
-        // 非常量 else 块内位询(910-913):进入 else 体求值
+        // Position query inside the non-constant else block (910-913): enters the else-body evaluation
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -2071,7 +2241,7 @@ mod tests {
 
     #[test]
     fn cov_tree_loop_body_without_hovered_write() {
-        // 环体内询但体内无该名写点(943-948)
+        // Query inside the loop body but no write point for that name in the body (943-948)
         let lines = [
             "def m(c):",
             "    v = 'init'",
@@ -2084,14 +2254,14 @@ mod tests {
 
     #[test]
     fn cov_fold_all_unbound_branch() {
-        // 无 else 且 then 出口亦未绑定 → 折叠全 Unbound(567)
+        // No else and the then exit is also unbound -> folds to all Unbound (567)
         let lines = ["def m(c):", "    if c:", "        x = 1", "    return v"];
         assert_eq!(face_is(&lines, 3, "v"), None);
     }
 
     #[test]
     fn cov_nested_def_chain_sort() {
-        // 嵌套 def:作用域链双域排序(1957-1960)
+        // Nested def: scope-chain two-domain sort (1957-1960)
         let lines = [
             "def outer(c):",
             "    def inner():",
@@ -2103,7 +2273,7 @@ mod tests {
 
     #[test]
     fn cov_class_alias_chain_resolves_class_binding() {
-        // 类体别名链:local_atom 走类体绑定臂(2004-2019)
+        // Class-body alias chain: local_atom takes the class-body binding arm (2004-2019)
         let lines = [
             "class K:",
             "    b = 5",
@@ -2116,14 +2286,14 @@ mod tests {
 
     #[test]
     fn cov_class_alias_bound_after_query_unbound() {
-        // 类体绑定在查询位之后(2019)
+        // Class-body binding after the query position (2019)
         let lines = ["class K:", "    u = a1", "    a1 = b", "    b = 5"];
         assert_eq!(face_is(&lines, 1, "a1"), None);
     }
 
     #[test]
     fn cov_method_alias_chain_and_bound_after() {
-        // 方法域别名链(2029-2036)与绑定在后(2038)
+        // Method-domain alias chain (2029-2036) and binding after (2038)
         let lines = ["def m():", "    w1 = w2", "    w2 = 5", "    return w1"];
         assert_eq!(face_is(&lines, 3, "w1"), None);
         let after = [
@@ -2138,7 +2308,7 @@ mod tests {
 
     #[test]
     fn cov_callee_alias_call_bound_atom() {
-        // 别名被调:CalleeBinding::Bound(Some)→callee_atom(2166)→注解面
+        // Alias callee: CalleeBinding::Bound(Some) -> callee_atom (2166) -> annotation face
         let lines = [
             "def make() -> Repo:",
             "    return None",
@@ -2152,14 +2322,14 @@ mod tests {
 
     #[test]
     fn cov_callee_alias_literal_bound_none() {
-        // 字面量别名被调:Bound(None)(2167)→ 诚实空
+        // Literal alias callee: Bound(None) (2167) -> honest empty
         let lines = ["def use():", "    mk = 5", "    v = mk()", "    return v"];
         assert_eq!(face_is(&lines, 3, "v"), None);
     }
 
     #[test]
     fn cov_receiver_not_unique_no_guess() {
-        // 接收者类型不唯一 → 不猜(2207)
+        // Receiver type not unique -> no guessing (2207)
         let lines = [
             "class K:",
             "    def m(self, c):",
@@ -2175,7 +2345,7 @@ mod tests {
 
     #[test]
     fn cov_ambiguous_same_name_method_atom_none() {
-        // 同类同名方法多注解 → 歧义不猜(1918)
+        // Same-named methods in the same class with multiple annotations -> ambiguous, no guessing (1918)
         let lines = [
             "class K:",
             "    def get(self) -> A:",
@@ -2191,7 +2361,7 @@ mod tests {
 
     #[test]
     fn cov_baseline_memo_hit_via_many_candidates() {
-        // 合流多候选同接收者 → 基线备忘第二次命中(1895)
+        // Confluence with many candidates on the same receiver -> baseline memo second-visit hit (1895)
         let lines = [
             "class K:",
             "    def __init__(self):",
@@ -2203,24 +2373,24 @@ mod tests {
             "            v = self.src.get()",
             "        return v",
         ];
-        // 双候选同接收者:基线备忘二访命中;S 未声明 → 无面(实测钉板)
+        // Two candidates on the same receiver: baseline memo second-visit hit; S is undeclared -> no face (verified by test)
         assert_eq!(face_is(&lines, 8, "v"), None);
     }
 
     #[test]
     fn cov_lambda_callee_shape_unknown() {
-        // 被调=lambda 调用式 → RhsShape::Unknown(1067)
+        // Callee = lambda call form -> RhsShape::Unknown (1067)
         let lines = ["def m():", "    v = (lambda: 1)()", "    return v"];
         assert_eq!(face_is(&lines, 2, "v"), None);
     }
 
-    // ---- COV-1 第四轮:callee_binding 类/模块臂(2004-2062)、
-    // ---- Bound(Some/None) 消费(2166-2167)、链比较器(1957-1960)、
-    // ---- global 域穿透、元组解包配对(1700-1702) ----
+    // ---- COV-1 round four: callee_binding class/module arms (2004-2062),
+    // ---- Bound(Some/None) consumption (2166-2167), chain comparator (1957-1960),
+    // ---- global domain penetration, tuple unpack pairing (1700-1702) ----
 
     #[test]
     fn cov_nested_def_hover_inside_inner_chain_sort() {
-        // 悬停位在嵌套 def 体内 → 链双域,比较器执行(1957-1960)
+        // Hover position inside a nested def body -> chain with two domains, comparator exercised (1957-1960)
         let lines = [
             "def outer(c):",
             "    def inner():",
@@ -2232,7 +2402,7 @@ mod tests {
 
     #[test]
     fn cov_class_body_callee_alias_call() {
-        // 类体直系别名被调:callee_binding 类体臂(2004-2019)
+        // Class-body direct alias callee: callee_binding class-body arm (2004-2019)
         let lines = [
             "def make() -> Repo:",
             "    return None",
@@ -2245,7 +2415,7 @@ mod tests {
 
     #[test]
     fn cov_class_body_callee_bound_after_and_literal() {
-        // 类体绑定在后(2019/2038)与字面量绑定(2036)
+        // Class-body binding after (2019/2038) and literal binding (2036)
         let after = [
             "def make() -> Repo:",
             "    return None",
@@ -2260,7 +2430,7 @@ mod tests {
 
     #[test]
     fn cov_module_plain_alias_and_alias_chain() {
-        // 模块裸名别名(2053-2056 非 Local 终止 2062)与别名之别名(2059-2060)
+        // Module bare-name alias (2053-2056, not Local, ends at 2062) and alias of an alias (2059-2060)
         let one = ["one = 5", "two = one", "three = 2"];
         assert_eq!(face_is(&one, 2, "two"), None);
         let chain = ["one = 5", "two = one", "three = two"];
@@ -2269,7 +2439,7 @@ mod tests {
 
     #[test]
     fn cov_module_level_callee_alias_call() {
-        // 模块层调用别名:Bound 消费臂(2166-2167)
+        // Module-level call through an alias: Bound consumption arm (2166-2167)
         let lines = [
             "def make() -> Repo:",
             "    return None",
@@ -2281,7 +2451,7 @@ mod tests {
 
     #[test]
     fn cov_global_and_nonlocal_domain_penetration() {
-        // fn 域 global 声明穿透域绑定(1965);nonlocal 同面
+        // global declaration in an fn domain penetrates the domain binding (1965); nonlocal is the same face
         let lines = [
             "g = 5",
             "def m():",
@@ -2304,7 +2474,7 @@ mod tests {
 
     #[test]
     fn cov_tuple_unpack_paired_entries() {
-        // 等长元组解包配对入表(1700-1702 return)
+        // Equal-length tuple unpack pairs enter the table (1700-1702 return)
         let lines = ["def m():", "    x, y = 1, 's'", "    return x"];
         assert_eq!(face_is(&lines, 2, "x"), None);
         assert_eq!(face_is(&lines, 2, "y"), None);
@@ -2312,7 +2482,7 @@ mod tests {
 
     #[test]
     fn cov_callee_nested_def_chain_sort_and_outer_binding() {
-        // 嵌套 def 内调用:域链双域排序(1957-1960)+ 外层域绑定解析
+        // Call inside a nested def: domain-chain two-domain sort (1957-1960) + outer-domain binding resolution
         let lines = [
             "def make() -> Repo:",
             "    return None",
@@ -2327,7 +2497,7 @@ mod tests {
 
     #[test]
     fn cov_callee_global_declared_domain_penetration() {
-        // 域内 global 声明的被调名:穿透域绑定(1965)→ 模块声明表
+        // Callee name with an in-domain global declaration: penetrates the domain binding (1965) -> module declaration table
         let lines = [
             "def make() -> Repo:",
             "    return None",
@@ -2336,17 +2506,17 @@ mod tests {
             "    global g",
             "    v = g()",
         ];
-        // global 声明名穿透域绑定 → 模块声明表 → 注解面(实测钉板)
+        // The global-declared name penetrates the domain binding -> module declaration table -> annotation face (verified by test)
         assert_eq!(face_is(&lines, 5, "v").as_deref(), Some("Repo"));
     }
 
-    // ---- COV-044:面扫描残臂直打 -------------------------------------------
+    // ---- COV-044: face-scan remaining arms hit directly --------------------
 
     #[test]
     fn alias_chain_beyond_hop_cap_returns_none() {
-        // 链长超 FACE_MAX_HOPS(=4):a0→a1→…→a5 六名,查 a5 需 5 跳,
-        // 第 5 跳入 face_scan 时 depth=5 > 4 → 诚实空
-        // 行 0..7:def/return/a0..a5;查询位=目标别名自身写行(写已生效)
+        // Chain longer than FACE_MAX_HOPS (=4): a0 -> a1 -> ... -> a5, six names; querying a5 needs 5 hops,
+        // and the 5th hop enters face_scan with depth=5 > 4 -> honest empty.
+        // Lines 0..7: def/return/a0..a5; query position = the target alias's own write line (write already in effect)
         let lines = [
             "def src() -> Src:",
             "    return None",
@@ -2358,18 +2528,22 @@ mod tests {
             "a5 = a4",
         ];
         assert_eq!(face_is(&lines, 7, "a5"), None, "超跳链应诚实空");
-        // 同链查 a3:4 跳内可达调用面,注解照常命中(负对照,证明上限臂
-        // 不是把整条链都吞了)
+        // Querying a3 on the same chain: the call face is reachable within 4 hops and the
+        // annotation still hits (negative control, proving the cap arm does not swallow the
+        // whole chain)
         assert_eq!(face_is(&lines, 5, "a3").as_deref(), Some("Src"));
     }
 
     #[test]
     fn identity_alias_revisit_returns_none() {
-        // `x = x` 身份链:首次解 x 写点后,别名面再扫 x 命中同一写点 →
-        // visited 拦截 → 诚实空(写点 RHS 读位仍可见自身 LHS 位)
-        // 环路族诚实空:`x = x` 自引用 RHS 读位不可见自身写;元组交换
-        // `x, y = y, x` 逐元素记位后 y 跳的读位仍在同语句内、交换前值
-        // 不可见 → Unbound。环在别名语义下无解,两形态都不得出面
+        // `x = x` identity chain: after the first resolution of x's write point, the alias face
+        // rescans x and hits the same write point -> intercepted by visited -> honest empty
+        // (the write-point RHS read position still sees its own LHS position).
+        // Honest empty for the loop family: the self-referencing RHS read position of `x = x`
+        // cannot see its own write; for the tuple swap `x, y = y, x`, after recording the
+        // position element by element, the y hop's read position is still inside the same
+        // statement and the pre-swap value is not visible -> Unbound. A loop has no solution
+        // under alias semantics, so neither form may yield a face.
         let lines = ["x, y = y, x", "z = 1"];
         assert_eq!(face_is(&lines, 1, "x"), None, "交换环应诚实空");
         assert_eq!(face_is(&lines, 1, "y"), None, "交换环双向同语义");
@@ -2377,9 +2551,9 @@ mod tests {
 
     #[test]
     fn alias_bound_to_class_is_instantiation_not_face() {
-        // 调用位绑定到类名:`ctor = Widget` 后 `w = ctor()` = 实例化语义,
-        // 非返回注解面 → 诚实空(类名原子消费臂;对照 cov_module_level_
-        // callee_alias_call 的 def 原子透传臂)
+        // Call position bound to a class name: after `ctor = Widget`, `w = ctor()` is instantiation
+        // semantics, not a return annotation face -> honest empty (class-name atom consumption arm;
+        // contrast with the def-atom pass-through arm of cov_module_level_callee_alias_call).
         let lines = ["class Widget:", "    pass", "ctor = Widget", "w = ctor()"];
         assert_eq!(face_is(&lines, 3, "w"), None, "实例化语义不应出注解面");
     }

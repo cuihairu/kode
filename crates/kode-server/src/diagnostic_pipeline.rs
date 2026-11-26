@@ -1,45 +1,45 @@
-//! 诊断调度状态机 + 四族分层独立节流(RUST-142 批 1,src/backend/
-//! diagnosticScheduler.ts 同构下沉,纯回放核零真实时钟)。
+//! Diagnostic scheduling state machine + four-family layered independent throttling (RUST-142 batch 1, sunk down isomorphic with src/backend/
+//! diagnosticScheduler.ts; a pure replay core with zero real clock).
 //!
-//! 面 = TS DiagnosticScheduler 的**确定性状态机**(版本化合并/分层记账/
-//! 关闭代/输入代/开关闸/异步五守卫/12 计数器),事件迹回放驱动:
-//!   - request(立即通道:同步计算+发布守卫)/ request_queued + flush
-//!     (排队通道:同 URI 最新版本胜出,coalescedStale 永不执行);
-//!   - flush 让出边界(slice_ms=0 确定性:每条目后必让出)执行 duringYield
-//!     脚本事件;让出 hook 体同步执行,期间 resolve 的异步计算其续延在
-//!     让出返回前以 FIFO 结算(镜像侧 computeAsync 直接返回 gate promise
-//!     =单微任务续延,onOk 于 flush-resume 前排队,TS 微任务序同构);
-//!   - 异步续延 = 发布五守卫(null 中止→staleDropped/任务 doc 对象被
-//!     重入改版→staleDropped/关闭代失配→releasedDropped/开关关闭→
-//!     disabledAsyncDropped/输入代切换→staleGenerationDropped),失败
-//!     → errored(不重抛,与 KR-AUD-04 同口径);**版本守卫读的是任务
-//!     自己捕获的 doc 对象**(TS document 对象语义:新版本=新请求=新
-//!     对象,旧任务守卫不受新请求影响,发布回写自己的 version 标记);
-//!   - 四族分层:LocalSyntax / Semantic / EngineCompat / RuntimeConfig,
-//!     每层一个独立调度器实例(独立节流=实例隔离,TS 生产 13 个
-//!     DiagnosticScheduler 每族一实例同构);层只作路由与记账面,不改
-//!     调度语义(TS options.layer 仅影响 metrics fileKind)。
+//! The face = TS DiagnosticScheduler's **deterministic state machine** (versioned merge / layered accounting /
+//! close generation / input generation / enable gate / five async guards / 12 counters), driven by event-trace replay:
+//!   - request (immediate channel: synchronous compute + publish guards) / request_queued + flush
+//!     (queued channel: newest version per URI wins; coalescedStale is never executed);
+//!   - flush yield boundaries (slice_ms=0 determinism: always yields after each entry) execute duringYield
+//!     script events; the yield hook body runs synchronously, and continuations of async computations resolved during it settle in FIFO
+//!     before the yield returns (the mirror side's computeAsync returns the gate promise directly
+//!     = a single microtask continuation, onOk queues before flush-resume, isomorphic with the TS microtask order);
+//!   - Async continuations = five publish guards (null abort -> staleDropped / the task's doc object re-entered and versioned
+//!     forward -> staleDropped / close-generation mismatch -> releasedDropped / switch off ->
+//!     disabledAsyncDropped / input generation switched -> staleGenerationDropped); failure
+//!     -> errored (no rethrow, same stance as KR-AUD-04); **the version guard reads the task's
+//!     own captured doc object** (TS document object semantics: a new version = a new request = a new
+//!     object; the old task's guard is unaffected by the new request, and publishing writes back its own version marker);
+//!   - Four-family layering: LocalSyntax / Semantic / EngineCompat / RuntimeConfig,
+//!     one independent scheduler instance per layer (independent throttling = instance isolation, isomorphic with the TS production's
+//!     one DiagnosticScheduler instance per family); layers are only a routing and accounting face and do not change
+//!     the scheduling semantics (TS options.layer only affects metrics fileKind).
 //!
-//! golden = {traces, outcomes}:traces 与 outcomes 都由 Rust 产出,TS 侧
-//! tests/kodeDiagnosticPipelineParity.test.ts 读 golden 的 traces 驱动
-//! **生产** DiagnosticScheduler(4 实例管线)逐迹复算,逐条 outcomes
-//! 深等(发布序+终态统计+残留量规)——TS 生产调度器是语义真值源,
-//! 镜像红=移植错,按源码重推。
+//! golden = {traces, outcomes}: both traces and outcomes are produced by Rust; the TS side's
+//! tests/kodeDiagnosticPipelineParity.test.ts reads the golden traces to drive the **production**
+//! DiagnosticScheduler (a 4-instance pipeline) to recompute trace by trace, comparing each outcome
+//! by deep equality (publish order + final-state stats + residual metrics) -- the TS production scheduler is the semantic source of truth;
+//! a red mirror = a porting error; re-derive from the source.
 //!
-//! 诚实边界:TS 生产层枚举仍是 local|semantic 两值(17 家族现全部按
-//! local 调度);四族是本行的目标设计,层路由/分类面在本核,生产 TS
-//! 不动(接线留批 2)。性能计时(recordLanguageServiceOperation)不在
-//! 对拍面。
+//! Honest boundary: the TS production layer enum still has the two values local|semantic (all 17 families currently schedule as
+//! local); the four families are this line's target design, with the layer routing/classification face in this core; the production TS
+//! is untouched (wiring left to batch 2). Performance timing (recordLanguageServiceOperation) is not on
+//! the comparison face.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 
 // ---------------------------------------------------------------------------
-// 四族分层
+// Four-family layering
 // ---------------------------------------------------------------------------
 
-/// 诊断分层(RUST-142 目标四族;TS 生产现为 local|semantic 两值,
-/// 本枚举是服务端目标面,层只作路由/记账不改调度语义)。
+/// Diagnostic layering (RUST-142's target four families; TS production currently has the two values local|semantic;
+/// this enum is the server-side target face; layers only route/account and do not change scheduling semantics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DiagnosticLayer {
@@ -74,10 +74,10 @@ impl DiagnosticLayer {
     }
 }
 
-/// 四族→既有 Rust 模块锚(分类面;一族一层,各锚为已落库模块):
-/// local syntax=def 本地校验(diagnostics.rs)/ semantic=KSEM 语义索引
-/// (semantics/)/ engine compatibility=def md5 引擎门(def_md5.rs)/
-/// runtime config=配置契约(config_rpc.rs)。
+/// Four families -> existing Rust module anchors (classification face; one family one layer, each anchor a landed module):
+/// local syntax=def local validation (diagnostics.rs) / semantic=KSEM semantic index
+/// (semantics/) / engine compatibility=the def md5 engine gate (def_md5.rs) /
+/// runtime config=config contract (config_rpc.rs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticFamily {
     DefLocalValidation,
@@ -96,7 +96,7 @@ pub fn layer_for_family(family: DiagnosticFamily) -> DiagnosticLayer {
 }
 
 // ---------------------------------------------------------------------------
-// 统计(TS DiagnosticSchedulerStats 12 计数器同构)
+// Stats (isomorphic with the TS DiagnosticSchedulerStats 12 counters)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,11 +124,11 @@ pub struct PendingWorkload {
 }
 
 // ---------------------------------------------------------------------------
-// 事件迹(golden 内嵌;TS 镜像读同一迹驱动生产调度器)
+// Event traces (embedded in the golden; the TS mirror reads the same traces to drive the production scheduler)
 // ---------------------------------------------------------------------------
 
-/// 计算体内重入编排(TS compute/computeAsync 闭包内的副作用):
-/// MutateVersion=改写本任务捕获的 doc 对象版本;Release=重入 releaseDocument。
+/// Re-entrant orchestration within a compute body (side effects inside the TS compute/computeAsync closures):
+/// MutateVersion=rewrite the version of the doc object this task captured; Release=re-enter releaseDocument.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "op")]
 pub enum SideEffect {
@@ -208,8 +208,8 @@ fn default_layer() -> DiagnosticLayer {
 }
 
 fn default_slice_ms() -> u64 {
-    // TS FLUSH_SLICE_MS 巨值域=永不 yield(确定性;真值 25ms 依赖时钟,
-    // 对拍只走 0=每条目必让出 与 巨值=零让出 两确定性域)
+    // TS FLUSH_SLICE_MS huge-value domain = never yields (deterministic; the real value 25ms depends on the clock,
+    // so comparison only walks the two deterministic domains: 0 = always yields per entry, huge = zero yields)
     1_000_000_000
 }
 
@@ -221,11 +221,11 @@ pub struct TraceCorpusEntry {
 }
 
 // ---------------------------------------------------------------------------
-// 调度器核心(TS DiagnosticScheduler 状态机同构;items = u32 脚本化)
+// Scheduler core (isomorphic with the TS DiagnosticScheduler state machine; items = scripted u32)
 // ---------------------------------------------------------------------------
 
-/// 文档版本格(每请求任务一个,支持同步计算内重入改版——TS 侧 compute
-/// 闭包改写 document.version 对象语义)。
+/// Document version cell (one per request task, supporting re-entrant re-versioning inside a synchronous compute -- the TS side's compute
+/// closure rewriting the document.version object semantics).
 #[derive(Debug, Clone)]
 struct DocCell {
     version: std::cell::Cell<Option<i64>>,
@@ -236,7 +236,7 @@ type SharedDoc = std::rc::Rc<DocCell>;
 #[derive(Debug, Clone)]
 pub struct TaskSpec {
     pub items: Vec<u32>,
-    /// 异步计算 ID(注册进 pending;None=同步路径)
+    /// Async computation id (registered into pending; None = synchronous path)
     pub async_id: Option<usize>,
     pub side_effects: Vec<SideEffect>,
 }
@@ -257,7 +257,7 @@ struct UriState {
     queued: Option<QueuedTask>,
 }
 
-/// 发布面记录(golden 可比;TS 镜像同形)。
+/// Publish-face record (comparable in the golden; same shape as the TS mirror).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "op")]
 pub enum PublishRecord {
@@ -271,7 +271,7 @@ pub enum PublishRecord {
     },
 }
 
-/// 在途异步计算(续延数据;TS .then(onOk, onErr) 闭包捕获面的结构化)。
+/// In-flight async computation (continuation data; a structuring of the TS .then(onOk, onErr) closure-capture face).
 #[derive(Debug)]
 struct PendingAsync {
     key: String,
@@ -282,11 +282,11 @@ struct PendingAsync {
     started_generation: i64,
 }
 
-/// 微任务模型(TS 生产续延链的结构化):Body = async fn 体恢复段
-/// (`await gate` 返回;计算体内重入副作用;Error 拒绝跳过体内后续),
-/// 完后按 outcome 排 OkItems/OkNull/Err;Ok*/Err = onOk/onErr 段
-/// (计数+五守卫+发布/记账),跑完从 pending 摘除。settle=排空全部
-/// 微任务(事件后/让出边界,先于 flush 恢复宏任务)。
+/// Microtask model (a structuring of the TS production continuation chain): Body = the async fn body-resume segment
+/// (`await gate` returns; re-entrant side effects inside the compute body; an Error rejection skips the body's remainder),
+/// then OkItems/OkNull/Err are queued by outcome; Ok*/Err = the onOk/onErr segments
+/// (counters + five guards + publish/accounting), removed from pending once run. settle = drain all
+/// microtasks (after events / at yield boundaries, before the flush-resume macrotask).
 #[derive(Debug, Clone)]
 enum MicroTask {
     Body(usize),
@@ -295,23 +295,23 @@ enum MicroTask {
     Err(usize),
 }
 
-/// 诊断调度核心(单层;四族管线 = 每层一个实例)。
-/// 状态迭代序 = TS Map 插入序(Vec + 索引,flush 批序可对拍)。
+/// Diagnostic scheduling core (single layer; the four-family pipeline = one instance per layer).
+/// State iteration order = TS Map insertion order (Vec + index; the flush batch order is comparable).
 #[derive(Debug)]
 pub struct DiagnosticSchedulerCore {
     generation: i64,
     enabled: bool,
     states: Vec<(String, UriState)>,
     state_index: BTreeMap<String, usize>,
-    /// 在途异步计算(Ok/Err 跑完即摘,TS pending Set 同口径;in_flight=长度)
+    /// In-flight async computations (removed as soon as Ok/Err finishes running, same stance as the TS pending Set; in_flight = its length)
     pending: Vec<PendingAsync>,
-    /// 已 resolve 待结算的续延(async_id;outcome 由 outcomes 携带)
+    /// Resolved continuations awaiting settlement (async_id; the outcome is carried by outcomes)
     resolved: BTreeMap<usize, AsyncOutcome>,
-    /// 微任务队列(TS 微任务 FIFO 同构;flush 让出边界含 FlushResume 哨)
+    /// Microtask queue (isomorphic with the TS microtask FIFO; the flush yield boundary includes the FlushResume sentinel)
     microtasks: VecDeque<MicroTask>,
     next_async_id: usize,
     epochs: BTreeMap<String, u64>,
-    /// 发布收集(回放面注入的 sink 等价物)
+    /// Publish collection (the sink equivalent injected by the replay face)
     sink: Vec<PublishRecord>,
     layer: DiagnosticLayer,
     stats: SchedulerStats,
@@ -351,8 +351,8 @@ impl DiagnosticSchedulerCore {
         self.states.iter().any(|(_, s)| s.queued.is_some())
     }
 
-    /// 残留任务量规(TS pendingWorkload;queued=排队 URI 数,
-    /// in_flight=未落定异步计算数)。
+    /// Residual workload metric (TS pendingWorkload; queued = number of queued URIs,
+    /// in_flight = number of unsettled async computations).
     pub fn pending_workload(&self) -> PendingWorkload {
         let queued = self
             .states
@@ -365,16 +365,17 @@ impl DiagnosticSchedulerCore {
         }
     }
 
-    /// 开关切换(A6-4;clear_all 走发布面 ClearAll 记录)。
+    /// Switch toggle (A6-4; clear_all goes through the publish face's ClearAll record).
     pub fn set_enabled(&mut self, enabled: bool) {
         if self.enabled == enabled {
             return;
         }
         self.enabled = enabled;
         if !enabled {
-            self.sink.push(PublishRecord::ClearAll { layer: self.layer });
+            self.sink
+                .push(PublishRecord::ClearAll { layer: self.layer });
             self.stats.cleared += 1;
-            // 关闭期间发布的版本标记全部作废:重开后同版本也要重算一次
+            // Version markers published during closure are all invalidated: after reopening, the same version must recompute once
             for (_, state) in self.states.iter_mut() {
                 state.published_version = None;
             }
@@ -383,7 +384,7 @@ impl DiagnosticSchedulerCore {
         }
     }
 
-    /// 诊断输入代切换(子开关/语义索引失效):迫使已发布文档重算。
+    /// Diagnostic input-generation switch (sub-switch / semantic index invalidation): forces published documents to recompute.
     pub fn invalidate_all(&mut self) {
         self.generation += 1;
         for (_, state) in self.states.iter_mut() {
@@ -391,8 +392,8 @@ impl DiagnosticSchedulerCore {
         }
     }
 
-    /// TS stateFor:插入序 map 新建状态 + 关闭代自增(重开=旧代在途全作废)。
-    /// 返回状态槽位(借用纪律:持槽借用期间不得再调 &self 方法)。
+    /// TS stateFor: create state in an insertion-ordered map + increment the close generation (reopen = all in-flight tasks of the old generation are invalidated).
+    /// Returns the state slot (borrow discipline: while the slot borrow is held, no &self method may be called again).
     fn state_for(&mut self, key: &str) -> usize {
         if let Some(&index) = self.state_index.get(key) {
             return index;
@@ -409,7 +410,7 @@ impl DiagnosticSchedulerCore {
         self.epochs.get(key).copied().unwrap_or(0)
     }
 
-    /// 立即通道:同步计算 + 发布守卫(版本/关闭代)。
+    /// Immediate channel: synchronous compute + publish guards (version / close generation).
     pub fn request(&mut self, uri: &str, version: Option<i64>, task: TaskSpec) {
         self.stats.requested += 1;
         if !self.enabled {
@@ -434,7 +435,7 @@ impl DiagnosticSchedulerCore {
         self.compute_and_publish(uri, doc, version, task);
     }
 
-    /// 排队通道(A6-1):同 URI 只留最新版本任务(旧版本 coalescedStale)。
+    /// Queued channel (A6-1): per URI keep only the newest-version task (older versions coalescedStale).
     pub fn request_queued(&mut self, uri: &str, version: Option<i64>, task: TaskSpec) {
         self.stats.requested += 1;
         if !self.enabled {
@@ -453,7 +454,7 @@ impl DiagnosticSchedulerCore {
         };
         let release_epoch = self.epoch_of(uri);
         if replace_stale {
-            // 版本不同=「连续编辑合并过期任务」;同版本替换不记合并
+            // Different version = "continuous editing coalesces stale tasks"; same-version replacement does not count as coalescing
             self.stats.coalesced_stale += 1;
         }
         self.states[index].1.queued = Some(QueuedTask {
@@ -465,14 +466,14 @@ impl DiagnosticSchedulerCore {
         });
     }
 
-    /// 冲刷排队任务:每 URI 至多一个(最新版本),发布前复核版本令牌。
-    /// slice_ms=0 = 每条目后必让出(确定性;TS performance.now 差 ≥0 恒真),
-    /// 巨值域=零让出;yield = 跑一条 duringYields 脚本事件 + 边界内结算全部
-    /// 续延。生产序依据:让出面默认 setImmediate 宏任务边界,脚本事件
-    /// (外部 worker 回调 resolve)是让出窗口内的宏任务轮,gate 续延链
-    /// (async fn 体恢复 → onOk 发布)是微任务,在 flush 恢复的宏任务之前
-    /// 排空——让出窗口 resolve 的异步先于 flush 恢复发布。让出过=再收一轮
-    /// (收编窗口内新入队任务)。
+    /// Flush queued tasks: at most one per URI (the newest version), re-verifying the version token before publishing.
+    /// slice_ms=0 = always yields after each entry (deterministic; a TS performance.now difference >= 0 is always true),
+    /// huge-value domain = zero yields; yield = run one duringYields script event + settle all continuations within the boundary,
+    /// The production-order rationale: the yielding face defaults to the setImmediate macrotask boundary; script events
+    /// (an external worker callback resolving) are macrotask rounds within the yield window; the gate continuation chain
+    /// (async fn body resume -> onOk publish) is microtasks, drained before the flush-resume macrotask,
+    /// so an async resolved within the yield window publishes before the flush resumes. Having yielded = collect one more round
+    /// (coalescing tasks newly queued within the window).
     fn flush_round(&mut self, slice_ms: u64, script: &mut std::vec::IntoIter<TraceEvent>) {
         if !self.enabled {
             return;
@@ -490,27 +491,27 @@ impl DiagnosticSchedulerCore {
                     break;
                 }
                 if slice_ms == 0 {
-                    // 让出 hook 体:同步跑一条脚本事件,随后结算续延
-                    // (微任务排空先于 flush 恢复宏任务)
+                    // Yield hook body: run one script event synchronously, then settle continuations
+                    // (microtask drain precedes the flush-resume macrotask)
                     if let Some(event) = script.next() {
                         self.run_event(event, script);
                     }
                     self.settle();
-                    // 让出窗口内开关关闭:剩余条目不再计算(重开 invalidateAll 兜重算)
+                    // Switch turned off within the yield window: remaining entries are not computed (reopen's invalidateAll forces recompute)
                     if !self.enabled {
                         return;
                     }
                     sliced = true;
                 }
             }
-            // 零让出=同步原子完成收工;让出过=再收一轮
+            // Zero yields = finish synchronously and atomically; having yielded = collect one more round
             if !sliced {
                 return;
             }
         }
     }
 
-    /// 出队:插入序取走全部排队任务(所有权转移,TS collectQueued 同构)。
+    /// Dequeue: take all queued tasks in insertion order (ownership transfer, isomorphic with TS collectQueued).
     fn collect_queued(&mut self) -> Vec<QueuedTask> {
         let mut batch = Vec::new();
         for (_, state) in self.states.iter_mut() {
@@ -521,14 +522,14 @@ impl DiagnosticSchedulerCore {
         batch
     }
 
-    /// 处理单个出队条目:处理时守卫(关闭代失配/任务 doc 改版)后才计算发布。
+    /// Process one dequeued entry: only after processing-time guards (close-generation mismatch / task doc re-versioned) does it compute and publish.
     fn process_queued_entry(&mut self, queued: QueuedTask) {
-        // 入队后文档已关闭(含让出窗口内关闭)→ 零计算直接丢弃
+        // Document closed after enqueueing (including closed within the yield window) -> zero compute, dropped outright
         if self.epoch_of(&queued.key) != queued.release_epoch {
             self.stats.released_dropped += 1;
             return;
         }
-        // 处理时任务 doc 对象已前进到入队之后的新版本 → 过期丢弃
+        // At processing time the task's doc object has advanced to a newer version than at enqueue -> dropped as stale
         let current = queued.doc.version.get();
         if queued.version.is_some() && current != queued.version {
             self.stats.stale_dropped += 1;
@@ -551,8 +552,8 @@ impl DiagnosticSchedulerCore {
         self.compute_and_publish(&queued.key, queued.doc, queued.version, queued.task);
     }
 
-    /// 计算与发布:同步路径(计算体内副作用→守卫→发布)/异步路径
-    /// (注册在途,续延由 settle 驱动跑同一组守卫)。
+    /// Compute and publish: synchronous path (in-body side effects -> guards -> publish) / async path
+    /// (registered in flight; its continuation is driven by settle through the same guard set).
     fn compute_and_publish(
         &mut self,
         key: &str,
@@ -560,7 +561,7 @@ impl DiagnosticSchedulerCore {
         version: Option<i64>,
         task: TaskSpec,
     ) {
-        // TS:捕获当代关闭代与发起代——在途期间关闭/换代都失配
+        // TS: capture the current close generation and the originating generation -- closing or re-generating while in flight both mismatch
         let release_epoch = self.epoch_of(key);
         let started_generation = self.generation;
         match task.async_id {
@@ -575,17 +576,17 @@ impl DiagnosticSchedulerCore {
                 });
             }
             None => {
-                // 同步计算(计算体内重入副作用:改版/重入关闭)
+                // Synchronous compute (re-entrant in-body side effects: re-version / re-entrant close)
                 for effect in &task.side_effects {
                     self.apply_side_effect(effect, Some(&doc));
                 }
                 self.stats.computed += 1;
-                // 发布守卫:计算期间文档前进(重入 mutateVersion)
+                // Publish guard: the document advanced during compute (re-entrant mutateVersion)
                 if version.is_some() && doc.version.get() != version {
                     self.stats.stale_dropped += 1;
                     return;
                 }
-                // 发布守卫:同步计算重入关闭文档
+                // Publish guard: the synchronous compute re-entered and closed the document
                 if self.epoch_of(key) != release_epoch {
                     self.stats.released_dropped += 1;
                     return;
@@ -609,7 +610,7 @@ impl DiagnosticSchedulerCore {
         self.stats.published += 1;
     }
 
-    /// 文档关闭:释放版本标记与残留排队任务;关闭代自增(晚到结果全作废)。
+    /// Document close: release version markers and leftover queued tasks; increment the close generation (all late results invalidated).
     pub fn release_document(&mut self, uri: &str) {
         let Some(index) = self.state_index.get(uri).copied() else {
             return;
@@ -618,7 +619,7 @@ impl DiagnosticSchedulerCore {
             self.stats.coalesced_stale += 1;
         }
         self.states.remove(index);
-        // 重建索引(TS Map delete 不动其余插入序;Vec remove 同)
+        // Rebuild the index (a TS Map delete leaves the remaining insertion order alone; Vec remove is the same)
         self.state_index.clear();
         for (position, (key, _)) in self.states.iter().enumerate() {
             self.state_index.insert(key.clone(), position);
@@ -628,25 +629,29 @@ impl DiagnosticSchedulerCore {
         self.stats.cleared += 1;
     }
 
-    /// 异步解析(事件):记录 outcome 并排队 Body 段(async fn 体恢复——
-    /// TS gate resolve 时刻;守卫/发布在 Body 产的 Ok 段)。
+    /// Async resolution (event): record the outcome and queue the Body segment (async fn body resume --
+    /// the moment the TS gate resolves; guards/publishing live in the Ok segment the Body produces).
     pub fn resolve_async(&mut self, async_id: usize, outcome: AsyncOutcome) {
-        if !self.pending.iter().any(|p| p.task.async_id == Some(async_id)) {
+        if !self
+            .pending
+            .iter()
+            .any(|p| p.task.async_id == Some(async_id))
+        {
             return;
         }
         self.resolved.insert(async_id, outcome);
         self.microtasks.push_back(MicroTask::Body(async_id));
     }
 
-    /// 结算:排空微任务队列(TS 解释器每事件 await setImmediate 同构;
-    /// FIFO=排队序;让出边界先于 flush 恢复宏任务)。
+    /// Settle: drain the microtask queue (isomorphic with the TS interpreter awaiting setImmediate per event;
+    /// FIFO = queue order; the yield boundary precedes the flush-resume macrotask).
     pub fn settle(&mut self) {
         while let Some(task) = self.microtasks.pop_front() {
             self.run_microtask(task);
         }
     }
 
-    /// 单微任务执行。
+    /// Execute a single microtask.
     fn run_microtask(&mut self, task: MicroTask) {
         match task {
             MicroTask::Body(id) => {
@@ -654,10 +659,10 @@ impl DiagnosticSchedulerCore {
                     return;
                 };
                 match outcome {
-                    // async fn 体 await gate 拒绝 → 体内后续(副作用)不执行
+                    // async fn body's `await gate` rejected -> the body's remainder (side effects) does not run
                     AsyncOutcome::Error => self.microtasks.push_back(MicroTask::Err(id)),
                     AsyncOutcome::Null => {
-                        // 体恢复段:计算体内重入副作用(await 返回后、return null 前)
+                        // Body-resume segment: re-entrant side effects inside the compute body (after the await returns, before return null)
                         self.apply_pending_effects(id);
                         self.microtasks.push_back(MicroTask::OkNull(id));
                     }
@@ -671,14 +676,14 @@ impl DiagnosticSchedulerCore {
                 let Some(pending) = self.take_pending(id) else {
                     return;
                 };
-                // TS onOk(null):computed 先记,null=中止记过期不发布
+                // TS onOk(null): record computed first; null = abort, recorded as stale, not published
                 self.stats.computed += 1;
                 self.stats.stale_dropped += 1;
                 let _ = pending;
             }
             MicroTask::Err(id) => {
                 let pending = self.take_pending(id);
-                // KR-AUD-04:失败不重抛,errored 记账,computed 不增
+                // KR-AUD-04: failure does not rethrow; account it in errored, computed does not increase
                 self.stats.errored += 1;
                 let _ = pending;
             }
@@ -686,24 +691,24 @@ impl DiagnosticSchedulerCore {
                 let Some(pending) = self.take_pending(id) else {
                     return;
                 };
-                // TS onOk 首行:computed 先记(先于 null 检查与全部守卫)
+                // TS onOk first line: record computed first (before the null check and all guards)
                 self.stats.computed += 1;
-                // 发布守卫:计算期间文档前进(任务 doc 对象被重入改版)
+                // Publish guard: the document advanced during compute (the task's doc object was re-entered and re-versioned)
                 if pending.version.is_some() && pending.doc.version.get() != pending.version {
                     self.stats.stale_dropped += 1;
                     return;
                 }
-                // 发布守卫:计算期间文档已关闭(或关闭后重开到新代)
+                // Publish guard: the document was closed during compute (or reopened into a new generation after closing)
                 if self.epoch_of(&pending.key) != pending.release_epoch {
                     self.stats.released_dropped += 1;
                     return;
                 }
-                // 发布守卫:计算在途时开关关闭
+                // Publish guard: the switch was turned off while the compute was in flight
                 if !self.enabled {
                     self.stats.disabled_async_dropped += 1;
                     return;
                 }
-                // 发布守卫:计算在途时代已切换(不发布,也不把新代标成已发布)
+                // Publish guard: the generation switched while the compute was in flight (do not publish, and do not mark the new generation published)
                 if self.generation != pending.started_generation {
                     self.stats.stale_generation_dropped += 1;
                     return;
@@ -713,7 +718,7 @@ impl DiagnosticSchedulerCore {
         }
     }
 
-    /// async fn 体恢复段的重入副作用(gate 正常落定后执行;Error 拒绝跳过)。
+    /// Re-entrant side effects of the async fn body-resume segment (run after the gate settles normally; an Error rejection skips them).
     fn apply_pending_effects(&mut self, id: usize) {
         let (effects, doc) = self
             .pending
@@ -726,7 +731,7 @@ impl DiagnosticSchedulerCore {
         }
     }
 
-    /// TS pending.delete:onOk/onErr 段起跑即从在途摘除。
+    /// TS pending.delete: removed from in-flight as soon as the onOk/onErr segment starts running.
     fn take_pending(&mut self, id: usize) -> Option<PendingAsync> {
         let position = self
             .pending
@@ -746,7 +751,12 @@ impl DiagnosticSchedulerCore {
         }
     }
 
-    fn make_task(&mut self, items: Vec<u32>, async_compute: bool, side_effects: Vec<SideEffect>) -> TaskSpec {
+    fn make_task(
+        &mut self,
+        items: Vec<u32>,
+        async_compute: bool,
+        side_effects: Vec<SideEffect>,
+    ) -> TaskSpec {
         let async_id = if async_compute {
             let id = self.next_async_id;
             self.next_async_id += 1;
@@ -761,7 +771,7 @@ impl DiagnosticSchedulerCore {
         }
     }
 
-    /// 事件回放入口(事件层路由由回放面负责,这里只跑单层语义)。
+    /// Event-replay entry (event-to-layer routing is the replay face's job; only single-layer semantics run here).
     fn run_event(&mut self, event: TraceEvent, _script: &mut std::vec::IntoIter<TraceEvent>) {
         match event {
             TraceEvent::Request {
@@ -808,7 +818,7 @@ impl DiagnosticSchedulerCore {
 }
 
 // ---------------------------------------------------------------------------
-// 回放面(四族管线;每层独立调度器=独立节流)
+// Replay face (four-family pipeline; one independent scheduler per layer = independent throttling)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -829,8 +839,8 @@ pub struct PipelineGolden {
     pub outcomes: Vec<TraceOutcome>,
 }
 
-/// 回放:四族管线(每层独立调度器),事件按层路由,事件后结算续延
-/// (TS 解释器每事件 await setImmediate 排空微任务同构)。
+/// Replay: four-family pipeline (one independent scheduler per layer); events route by layer and continuations settle after each event
+/// (isomorphic with the TS interpreter draining microtasks via await setImmediate per event).
 pub fn replay_trace(trace: &TraceCorpusEntry) -> TraceOutcome {
     let mut schedulers: BTreeMap<String, DiagnosticSchedulerCore> = BTreeMap::new();
     for layer in DiagnosticLayer::ALL {
@@ -846,7 +856,7 @@ pub fn replay_trace(trace: &TraceCorpusEntry) -> TraceOutcome {
             .expect("layer routed scheduler");
         let mut empty_script = Vec::new().into_iter();
         scheduler.run_event(event.clone(), &mut empty_script);
-        // 事件后结算(TS 解释器统一 await 排空微任务)
+        // Settle after each event (the TS interpreter uniformly awaits to drain microtasks)
         scheduler.settle();
     }
     let mut stats = BTreeMap::new();
@@ -879,7 +889,7 @@ fn layer_of_event(event: &TraceEvent) -> DiagnosticLayer {
 }
 
 // ---------------------------------------------------------------------------
-// golden 语料(迹由本函数权威定义;TS 镜像读 golden 的 traces 复算)
+// golden corpus (traces are authoritatively defined by this function; the TS mirror recomputes from the golden traces)
 // ---------------------------------------------------------------------------
 
 pub const DIAGNOSTIC_PIPELINE_GOLDEN_REL_PATH: &str =
@@ -918,16 +928,12 @@ fn corpus() -> Vec<TraceCorpusEntry> {
         layer: DiagnosticLayer::LocalSyntax,
     };
     vec![
-        // T1 立即通道:发布/同版本同代跳过/版本前进重算
+        // T1 immediate channel: publish / same-version same-generation skip / version advance recompute
         TraceCorpusEntry {
             name: "sync_request_publish_version_skip".into(),
-            events: vec![
-                req(a, 1, vec![1]),
-                req(a, 1, vec![1]),
-                req(a, 2, vec![2]),
-            ],
+            events: vec![req(a, 1, vec![1]), req(a, 1, vec![1]), req(a, 2, vec![2])],
         },
-        // T2 开关闸:关→clearAll+cleared+disabledSkipped;开→invalidateAll 重算
+        // T2 enable gate: off -> clearAll+cleared+disabledSkipped; on -> invalidateAll recompute
         TraceCorpusEntry {
             name: "disabled_gate_roundtrip".into(),
             events: vec![
@@ -944,7 +950,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 req(a, 1, vec![1]),
             ],
         },
-        // T3 排队合并:同 URI 最新版本胜出(coalescedStale=1),flush 只算 v2
+        // T3 queued coalescing: newest version per URI wins (coalescedStale=1); flush computes only v2
         TraceCorpusEntry {
             name: "queued_coalesce_latest_wins".into(),
             events: vec![
@@ -957,8 +963,8 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 },
             ],
         },
-        // T4 让出窗口:批间让出执行脚本(入队新任务→re-collect 第二轮;
-        // release 已入批任务→处理时关闭代失配 releasedDropped)
+        // T4 yield window: yield between batches runs the script (enqueue a new task -> re-collect a second round;
+        // release an already-batched task -> close-generation mismatch at processing, releasedDropped)
         TraceCorpusEntry {
             name: "flush_yield_recollect_and_release".into(),
             events: vec![
@@ -978,9 +984,9 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 },
             ],
         },
-        // T5 异步+新版本请求:任务 doc 对象不受新请求影响,晚到回包照发布
-        // (TS document 对象语义:守卫只读任务自己捕获的对象;发布回写
-        // 自己的 version 标记覆盖新请求标记)
+        // T5 async + new-version request: the task's doc object is unaffected by the new request; the late reply still publishes
+        // (TS document object semantics: the guard only reads the task's own captured object; the publish writes back
+        // its own version marker, overwriting the new request's marker)
         TraceCorpusEntry {
             name: "async_own_doc_object_publishes_late".into(),
             events: vec![
@@ -994,7 +1000,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 macro_task(),
             ],
         },
-        // T6 异步 null 中止(computed 先于 null 检查,staleDropped)
+        // T6 async null abort (computed is recorded before the null check, staleDropped)
         TraceCorpusEntry {
             name: "async_null_abort".into(),
             events: vec![
@@ -1007,7 +1013,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 macro_task(),
             ],
         },
-        // T7 异步在途关闭:晚到回包不发布(releasedDropped)
+        // T7 async in-flight close: the late reply does not publish (releasedDropped)
         TraceCorpusEntry {
             name: "async_release_midflight".into(),
             events: vec![
@@ -1024,7 +1030,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 macro_task(),
             ],
         },
-        // T8 异步在途关开关:旧结果不写回(disabledAsyncDropped)
+        // T8 async in-flight switch-off: the old result is not written back (disabledAsyncDropped)
         TraceCorpusEntry {
             name: "async_disable_midflight".into(),
             events: vec![
@@ -1041,7 +1047,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 macro_task(),
             ],
         },
-        // T9 异步在途换代:旧配置结果丢弃(不发布也不标已发布→重开同版本要重算)
+        // T9 async in-flight generation switch: the old config result is discarded (not published and not marked published -> reopening the same version must recompute)
         TraceCorpusEntry {
             name: "async_invalidate_midflight".into(),
             events: vec![
@@ -1058,7 +1064,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 req(a, 1, vec![9]),
             ],
         },
-        // T10 异步失败:errored 记账,computed 不增,无发布
+        // T10 async failure: accounted in errored, computed does not increase, no publish
         TraceCorpusEntry {
             name: "async_error_accounted".into(),
             events: vec![
@@ -1071,7 +1077,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 macro_task(),
             ],
         },
-        // T11 异步双在途 FIFO 结算:发布序=解析序(先 resolve b 后 a)
+        // T11 async double in-flight FIFO settlement: publish order = resolution order (b resolves before a)
         TraceCorpusEntry {
             name: "async_fifo_settle_order".into(),
             events: vec![
@@ -1091,7 +1097,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 macro_task(),
             ],
         },
-        // T12 已发布同版本重入队:flush 处理时守卫 skippedCurrentVersion
+        // T12 same-version re-queue after publish: the guard at flush processing yields skippedCurrentVersion
         TraceCorpusEntry {
             name: "flush_repeat_skips_published_version".into(),
             events: vec![
@@ -1109,7 +1115,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 },
             ],
         },
-        // T13 同步计算重入改版:守卫读改后版本→staleDropped(computed 已记)
+        // T13 synchronous compute re-enters and re-versions: the guard reads the new version -> staleDropped (computed already recorded)
         TraceCorpusEntry {
             name: "sync_compute_reentrant_mutate_version".into(),
             events: vec![TraceEvent::Request {
@@ -1121,7 +1127,7 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 layer: DiagnosticLayer::LocalSyntax,
             }],
         },
-        // T14 同步计算重入关闭(自 release):releasedDropped
+        // T14 synchronous compute re-enters close (via release itself): releasedDropped
         TraceCorpusEntry {
             name: "sync_compute_reentrant_release".into(),
             events: vec![TraceEvent::Request {
@@ -1133,10 +1139,10 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 layer: DiagnosticLayer::LocalSyntax,
             }],
         },
-        // T15 排队任务处理时任务 doc 改版:staleDropped(release 重入在
-        // 入队后、flush 前由另一事件改版不可达——用让出窗口入队+第二让出
-        // 改不了已捕获 doc,本迹改由 flush 让出窗口内 Invalidate 后同版本
-        // 重入队覆盖 publishedGeneration 守卫路径)
+        // T15 queued task whose doc re-versions at processing: staleDropped (a release re-entry after
+        // enqueue but before flush via another event is unreachable -- enqueue within a yield window + a second yield
+        // cannot mutate the captured doc, so this trace instead re-queues the same version after an Invalidate inside the flush yield window
+        // to cover the publishedGeneration guard path)
         TraceCorpusEntry {
             name: "queued_flush_after_invalidate_recomputes".into(),
             events: vec![
@@ -1157,8 +1163,8 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 },
             ],
         },
-        // T16 四族管线独立节流:同 URI 四层各自调度;关 localSyntax 不影响
-        // 其余层计算与发布(clearAll 只落在 localSyntax 发布面)
+        // T16 four-family pipeline independent throttling: the same URI schedules in each of the four layers independently; turning off localSyntax does not affect
+        // the other layers' compute and publish (clearAll lands only on the localSyntax publish face)
         TraceCorpusEntry {
             name: "pipeline_layers_independent_throttle".into(),
             events: vec![
@@ -1229,8 +1235,8 @@ fn corpus() -> Vec<TraceCorpusEntry> {
                 },
             ],
         },
-        // T17 异步在途期间排队任务让出窗口 resolve:续延于让出边界结算,
-        // 发布落在 flush 批内(onOk 于 flush-resume 前排空的 TS 微任务序)
+        // T17 a queued task resolved within the yield window while an async is in flight: the continuation settles at the yield boundary,
+        // the publish lands inside the flush batch (the TS microtask order where onOk drains before flush-resume)
         TraceCorpusEntry {
             name: "yield_resolves_async_publish_inside_flush".into(),
             events: vec![
@@ -1258,8 +1264,8 @@ fn corpus() -> Vec<TraceCorpusEntry> {
     ]
 }
 
-/// golden 生成(权威迹 + 回放产出;traces 与 outcomes 同文件,TS 镜像读
-/// traces 驱动生产调度器逐条对拍 outcomes)。
+/// golden generation (authoritative traces + replay outputs; traces and outcomes share one file; the TS mirror reads
+/// traces to drive the production scheduler, comparing outcomes item by item).
 pub fn dump_diagnostic_pipeline_golden() -> String {
     let traces = corpus();
     let outcomes: Vec<TraceOutcome> = traces.iter().map(replay_trace).collect();
@@ -1273,8 +1279,8 @@ pub fn dump_diagnostic_pipeline_golden() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// 单元钉(核心语义独立断言;golden 的 outcomes 由同一代码产出属自洽,
-// 这里的钉直接对调度核语义断言,防 golden 同义反复)
+// Unit pins (independent assertions on core semantics; the golden's outcomes being produced by the same code is self-consistent,
+// so these pins assert the scheduling core's semantics directly, guarding against golden tautology)
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -1334,7 +1340,7 @@ mod tests {
         assert!(!core.has_queued_tasks(), "关闭后队列清空");
         core.flush_round(1_000_000_000, &mut Vec::new().into_iter());
         assert_eq!(core.stats().published, 0, "已释放任务不发布");
-        // 在途异步:关闭后代失配,晚到回包不发布
+        // In-flight async: close-generation mismatch, the late reply does not publish
         core.request("a", Some(1), async_task(0, vec![1]));
         core.release_document("a");
         core.resolve_async(0, AsyncOutcome::Items { items: vec![1] });
@@ -1353,7 +1359,7 @@ mod tests {
         core.settle();
         assert_eq!(core.stats().stale_generation_dropped, 1);
         assert_eq!(core.stats().published, 0);
-        // 关键语义:不把新代标成已发布——同版本重算不跳过
+        // Key semantics: do not mark the new generation published -- same-version recompute does not skip
         core.request("a", Some(1), sync_task(vec![9]));
         assert_eq!(core.stats().skipped_current_version, 0);
         assert_eq!(core.stats().published, 1);
@@ -1370,14 +1376,14 @@ mod tests {
         core.resolve_async(0, AsyncOutcome::Items { items: vec![1] });
         core.settle();
         assert_eq!(core.stats().disabled_async_dropped, 0, "关前未注册异步");
-        // 在途异步在关闭后 resolve
+        // In-flight async resolving after close
         let mut core2 = DiagnosticSchedulerCore::new(DiagnosticLayer::LocalSyntax);
         core2.request("a", Some(1), async_task(0, vec![1]));
         core2.set_enabled(false);
         core2.resolve_async(0, AsyncOutcome::Items { items: vec![1] });
         core2.settle();
         assert_eq!(core2.stats().disabled_async_dropped, 1);
-        // 重开:invalidateAll 迫使已发布文档重算(同版本不跳过)
+        // Reopen: invalidateAll forces published documents to recompute (same version does not skip)
         core.set_enabled(true);
         core.request("a", Some(1), sync_task(vec![1]));
         assert_eq!(core.stats().skipped_current_version, 0);
@@ -1414,7 +1420,7 @@ mod tests {
         let mut core = DiagnosticSchedulerCore::new(DiagnosticLayer::LocalSyntax);
         core.request_queued("zz", Some(1), sync_task(vec![1]));
         core.request_queued("aa", Some(1), sync_task(vec![2]));
-        // 插入序批:zz 先于 aa(非字典序);slice=0 批间让出执行脚本入队新任务
+        // Insertion-order batches: zz before aa (not lexicographic); slice=0 yields between batches, the script enqueues a new task
         core.request_queued("mm", Some(1), sync_task(vec![3]));
         let mut script = vec![TraceEvent::RequestQueued {
             uri: "bb".into(),
@@ -1439,9 +1445,9 @@ mod tests {
 
     #[test]
     fn yield_window_async_publishes_before_flush_resume() {
-        // T17 语义:让出面默认 setImmediate 宏任务边界,让出窗口内 resolve
-        // 的续延链(async fn 体恢复→onOk 发布)是微任务,在 flush 恢复的
-        // 宏任务之前排空——异步发布先落,flush 同步条目后落。
+        // T17 semantics: the yielding face defaults to the setImmediate macrotask boundary; a continuation chain resolved within the yield window
+        // (async fn body resume -> onOk publish) is microtasks, drained before the flush-resume
+        // macrotask -- the async publish lands first, the flush's synchronous entries land after.
         let mut core = DiagnosticSchedulerCore::new(DiagnosticLayer::LocalSyntax);
         core.request_queued("b", Some(1), async_task(0, vec![1]));
         core.request_queued("c", Some(1), sync_task(vec![3]));
@@ -1493,14 +1499,32 @@ mod tests {
 
     #[test]
     fn layer_pipeline_routes_independently() {
-        assert_eq!(layer_for_family(DiagnosticFamily::DefLocalValidation), DiagnosticLayer::LocalSyntax);
-        assert_eq!(layer_for_family(DiagnosticFamily::SemanticsIndex), DiagnosticLayer::Semantic);
-        assert_eq!(layer_for_family(DiagnosticFamily::DefMd5Compat), DiagnosticLayer::EngineCompat);
-        assert_eq!(layer_for_family(DiagnosticFamily::ConfigContract), DiagnosticLayer::RuntimeConfig);
-        assert_eq!(DiagnosticLayer::parse("localSyntax"), Some(DiagnosticLayer::LocalSyntax));
-        assert_eq!(DiagnosticLayer::parse("runtimeConfig"), Some(DiagnosticLayer::RuntimeConfig));
+        assert_eq!(
+            layer_for_family(DiagnosticFamily::DefLocalValidation),
+            DiagnosticLayer::LocalSyntax
+        );
+        assert_eq!(
+            layer_for_family(DiagnosticFamily::SemanticsIndex),
+            DiagnosticLayer::Semantic
+        );
+        assert_eq!(
+            layer_for_family(DiagnosticFamily::DefMd5Compat),
+            DiagnosticLayer::EngineCompat
+        );
+        assert_eq!(
+            layer_for_family(DiagnosticFamily::ConfigContract),
+            DiagnosticLayer::RuntimeConfig
+        );
+        assert_eq!(
+            DiagnosticLayer::parse("localSyntax"),
+            Some(DiagnosticLayer::LocalSyntax)
+        );
+        assert_eq!(
+            DiagnosticLayer::parse("runtimeConfig"),
+            Some(DiagnosticLayer::RuntimeConfig)
+        );
         assert_eq!(DiagnosticLayer::parse("nope"), None);
-        // 独立节流:关一层不影响其余层计算
+        // Independent throttling: turning off one layer does not affect the other layers' compute
         let mut local = DiagnosticSchedulerCore::new(DiagnosticLayer::LocalSyntax);
         let mut semantic = DiagnosticSchedulerCore::new(DiagnosticLayer::Semantic);
         local.request("a", Some(1), sync_task(vec![1]));

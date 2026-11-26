@@ -1,25 +1,38 @@
-// IDE-LINT-009:已确认角色的引擎内建属性错用 lint(KBE-PY-008 诊断面)——实体
-// 脚本里 `self.<内建属性>` 访问当前角色面不注册该属性(注册于其他面)时报
-// Warning;角色不明与普通 Python 类不猜。
+// IDE-LINT-009: lint for misuse of engine builtin properties with a known role
+// (KBE-PY-008 diagnostic face) — in an entity script, a `self.<builtin property>`
+// access reports a Warning when the current role face does not register that
+// property (it is registered on other faces); unknown roles and plain Python
+// classes are never guessed.
 //
-// 纯逻辑层,不 import vscode。角色判定与内建属性 hover/inlay 同一底座同一
-// 口径(resolveEntityComponentFaceFromPath 目录域 + getEntityComponentFacesFor
-// PythonFile def 归属,见 entityBuiltinProperties §4-3);数据源复用同一张引擎
-// 属性表(getEntityBuiltinPropertiesForFace)——hover 元数据与 lint 共用来源。
+// Pure logic layer, no vscode import. Role resolution shares the same base and
+// the same ruling as the builtin-property hover/inlay
+// (resolveEntityComponentFaceFromPath directory domain +
+// getEntityComponentFacesForPythonFile def attribution, see
+// entityBuiltinProperties §4-3); the data source reuses the same engine property
+// table (getEntityBuiltinPropertiesForFace) — hover metadata and the lint share
+// one source.
 //
-// 判定:
-//   - 非实体脚本(pathFace null 且 defFaces null)→ 不接管(普通 Python 类不猜);
-//   - 角色不明(pathFace null 且 defFaces 空/多面歧义)→ 不猜(多面歧义只给宏
-//     公共 3,而那 3 项各面都注册,不可能错用 → 零产出);
-//   - 当前面注册该属性 → 正常访问,不报;
-//   - 属性不在当前面但在其他面注册 → 角色错用,报 Warning(引注册面取证);
-//   - 属性任何面都没注册(不是内建)→ 落回 def/普通符号,不报。
+// Ruling:
+//   - non-entity script (pathFace null and defFaces null) → not taken over (plain
+//     Python classes are never guessed);
+//   - unknown role (pathFace null and defFaces empty/multi-face ambiguous) → not
+//     guessed (multi-face ambiguity only yields the macro-common 3, and those 3
+//     items are registered on every face, so misuse is impossible → zero output);
+//   - the current face registers the property → normal access, no report;
+//   - the property is not on the current face but is registered on other faces →
+//     role misuse, report a Warning (citing the registering faces as evidence);
+//   - the property is registered on no face (not builtin) → falls back to
+//     def/ordinary symbols, no report.
 //
-// 已知边界(与同族 self-属性 lint 一致):嵌套非实体类内的同名 self.<p> 不单列
-// (文件级实体身份判定);引擎实体 API(方法,如 teleport/addTimer)的角色面表
-// 尚未建立——本 lint 只对属性面表有据可查的错用报,API 错用保持仅提示(hover/
-// 补全元数据),不冒充已实现;`self.<prop>` 仅单段(self.cell.X 等多段访问
-// 不参与——那是 EntityCall 成员面,由 receiver/段错配负责)。
+// Known boundaries (consistent with the sibling self-attribute lint): a same-named
+// self.<p> inside a nested non-entity class is not singled out (file-level entity
+// identity ruling); the role-face table for engine entity APIs (methods such as
+// teleport/addTimer) is not yet built — this lint only reports misuse with
+// documented evidence in the property face table; API misuse stays hint-only
+// (hover/completion metadata) and does not pose as implemented; `self.<prop>` is
+// single-segment only (multi-segment accesses such as self.cell.X do not
+// participate — that is the EntityCall member face, owned by receiver/segment
+// mismatch).
 
 import { maskPythonNonCode } from './pythonLexicalMask';
 import { l10nText } from '../nlsRuntime';
@@ -33,21 +46,23 @@ import {
 export const ROLE_MISUSE_DIAGNOSTIC_CODE = 'kbengine.roleMisuse';
 export const ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
-/** 各面属性名表(数据源同 hover 属性表;面=null 时宏公共 3 各面都注册) */
+/** Per-face property name tables (same data source as the hover property table; when
+ * face=null the macro-common 3 are registered on every face) */
 export interface RoleMisuseTables {
   baseapp: readonly string[];
   cellapp: readonly string[];
   client: readonly string[];
 }
 
-/** 生产面表(TS 桥接给 Rust;与 FACE_PROPERTY_NAMES 同源单点) */
+/** Production face tables (TS bridges these to Rust; same single source as FACE_PROPERTY_NAMES) */
 export const ROLE_MISUSE_TABLES: RoleMisuseTables = {
   baseapp: getEntityBuiltinPropertiesForFace('baseapp').map(p => p.name),
   cellapp: getEntityBuiltinPropertiesForFace('cellapp').map(p => p.name),
   client: getEntityBuiltinPropertiesForFace('client').map(p => p.name)
 };
 
-/** 面表 → 面属性集(判定用;每调用重建,表小可忽略) */
+/** Face tables → per-face property sets (for the ruling; rebuilt per call, the
+ * tables are small enough to ignore) */
 function faceSetsOf(
   tables: RoleMisuseTables
 ): Record<EntityComponentFace, Set<string>> {
@@ -58,7 +73,7 @@ function faceSetsOf(
   };
 }
 
-/** 属性注册的面列表(定序 baseapp → cellapp → client) */
+/** The faces registering a property (fixed order baseapp → cellapp → client) */
 function facesRegistering(
   faceSets: Record<EntityComponentFace, Set<string>>,
   propertyName: string
@@ -69,8 +84,10 @@ function facesRegistering(
 }
 
 /**
- * 消息渲染(单源模板;Rust 结构面与 TS 兜底共用,零模板漂移)。
- * source = 引擎注册取证(任一注册面源码;空 = 表内缺源)。
+ * Message rendering (single-source template; shared by the Rust structural face
+ * and the TS fallback, zero template drift).
+ * source = engine registration evidence (the source of any registering face;
+ * empty = the table lacks a source).
  */
 export function renderRoleMisuseMessage(
   propertyName: string,
@@ -89,7 +106,8 @@ export function renderRoleMisuseMessage(
   );
 }
 
-/** 该属性在任一注册面的引擎取证(引注册面源码;首面即够) */
+/** Engine evidence for the property on any registering face (cites the registering
+ * face's source; the first face suffices) */
 function sourceFor(propertyName: string, faces: readonly EntityComponentFace[]): string {
   for (const face of faces) {
     const property = getEntityBuiltinPropertiesForFace(face)
@@ -101,32 +119,35 @@ function sourceFor(propertyName: string, faces: readonly EntityComponentFace[]):
   return '';
 }
 
-/** 一处角色错用访问(诊断面所需最小信息) */
+/** One role-misuse access (the minimum info the diagnostic face needs) */
 export interface RoleMisuseFinding {
-  /** 行(0 起) */
+  /** Line (0-based) */
   line: number;
-  /** `self` 起始列(0 起;高亮整个 `self.<name>`) */
+  /** Start column of `self` (0-based; highlights the whole `self.<name>`) */
   character: number;
-  /** 高亮长度(`self.<name>` 全长) */
+  /** Highlight length (full length of `self.<name>`) */
   length: number;
   propertyName: string;
-  /** 当前文件角色面(目录域优先;def 归属唯一面) */
+  /** The current file's role face (directory domain first; a unique def-attributed face) */
   currentFace: EntityComponentFace;
-  /** 该属性实际注册的面(当前面不在其中) */
+  /** The faces the property is actually registered on (the current face is not among them) */
   registeredFaces: EntityComponentFace[];
   source: string;
   message: string;
 }
 
 /**
- * 当前文件角色面(目录域优先;无目录域时 def 归属唯一面生效,多面歧义与
- * 非实体脚本 → null,零产出)。与内建属性 hover 同源面判定。
+ * The current file's role face (directory domain first; without a directory
+ * domain a unique def-attributed face applies, multi-face ambiguity and
+ * non-entity scripts → null, zero output). Same face ruling as the builtin
+ * property hover.
  */
 export function resolveRoleMisuseFace(
   pathFace: EntityComponentFace | null,
   defFaces: readonly EntityComponentFace[] | null
 ): EntityComponentFace | null {
-  // 非实体脚本:目录域无面且无 def 归属 → 不接管(普通 Python 类不猜)
+  // Non-entity script: no face in the directory domain and no def attribution →
+  // not taken over (plain Python classes are never guessed)
   const isEntityScript = pathFace !== null || (defFaces !== null && defFaces.length > 0);
   if (!isEntityScript) {
     return null;
@@ -135,10 +156,14 @@ export function resolveRoleMisuseFace(
 }
 
 /**
- * 角色错用判定(纯函数):掩码文本上扫单段 `self.<属性>`,属性注册于其他面
- * 而当前面没有 → Warning;非实体脚本/角色不明/非内建属性跳过。
- * pathFace 与 defFaces 由调用方提供(与内建属性 hover 同源面判定)。
- * tables 为面属性名表(默认生产面表;测试可注入合成表,与 Rust 对拍同源)。
+ * Role misuse ruling (pure function): scans single-segment `self.<property>` on
+ * the masked text; a property registered on other faces but not on the current
+ * face → Warning; non-entity scripts / unknown roles / non-builtin properties
+ * are skipped.
+ * pathFace and defFaces come from the caller (same face ruling as the builtin
+ * property hover).
+ * tables is the per-face property name table (defaults to the production tables;
+ * tests may inject synthetic tables, the same source as the Rust parity checks).
  */
 export function findRoleMisuseFindings(
   text: string,
@@ -168,15 +193,15 @@ export function findRoleMisuseFindings(
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(lineText)) !== null) {
       const propertyName = match[1];
-      // 当前面注册 → 正常访问,不报
+      // Registered on the current face → normal access, no report
       if (faceSets[face].has(propertyName)) {
         continue;
       }
-      // 任何面都没注册(非内建)→ 落回 def/普通符号,不报
+      // Registered on no face (non-builtin) → falls back to def/ordinary symbols, no report
       if (!allBuiltin.has(propertyName)) {
         continue;
       }
-      // 内建但当前面没有 → 角色错用
+      // Builtin but absent from the current face → role misuse
       const registeredFaces = facesRegistering(faceSets, propertyName);
       const source = sourceFor(propertyName, registeredFaces);
       findings.push({
@@ -194,7 +219,7 @@ export function findRoleMisuseFindings(
   return findings;
 }
 
-/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖) */
+/** Diagnostic item (pure data; the extension side converts to vscode.Diagnostic, tests avoid the vscode dependency) */
 export interface RoleMisuseDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -206,7 +231,7 @@ export interface RoleMisuseDiagnosticItem {
   code: string;
 }
 
-/** findings → 诊断项(纯数据;test 免 vscode;Rust 面与 TS 兜底共用) */
+/** findings → diagnostic items (pure data; tests avoid vscode; shared by the Rust face and the TS fallback) */
 export function roleMisuseFindingsToItems(
   findings: readonly RoleMisuseFinding[]
 ): RoleMisuseDiagnosticItem[] {
@@ -222,15 +247,18 @@ export function roleMisuseFindingsToItems(
   }));
 }
 
-// ---- Rust 面(AUDIT-005 B2 车道批 2:roleMisuse 收编) -------------------------
-// `$/kode/lint/analyzeRoleMisuse` 经 gate.runInRust(命令面,与 analyzeTraps
-// 同口径):Rust 只回结构面(code/line/character/length + propertyName/
-// registeredFaces),消息渲染与引擎取证留 TS(模板单一来源 =
-// renderRoleMisuseMessage,取证 = sourceFor)。Rust 不可用(无门/未配
-// serverPath/调用失败)或应答畸形(任一条缺结构字段/缺 l10n 参数/语义矛盾)
-// 整面作废回 TS 同步路径 —— 禁止部分采用(静默丢能力)。
+// ---- Rust face (AUDIT-005 B2 lane batch 2: roleMisuse adoption) ---------------
+// `$/kode/lint/analyzeRoleMisuse` goes through gate.runInRust (the command face,
+// the same ruling as analyzeTraps): Rust returns only the structural face
+// (code/line/character/length + propertyName/registeredFaces); message rendering
+// and engine evidence stay in TS (single template source =
+// renderRoleMisuseMessage, evidence = sourceFor). When Rust is unavailable (no
+// gate / serverPath not configured / call failure) or the response is malformed
+// (any item missing a structural field / an l10n parameter / semantically
+// contradictory), the whole face is voided and falls back to the TS sync path —
+// partial adoption is forbidden (it would silently drop capability).
 
-/** Rust 结构面单条产物(`$/kode/lint/analyzeRoleMisuse` 应答) */
+/** One structural-face item from Rust (the `$/kode/lint/analyzeRoleMisuse` response) */
 export interface RustRoleMisuseItem {
   code: string;
   line: number;
@@ -245,9 +273,12 @@ const ROLE_MISUSE_RUST_METHOD = '$/kode/lint/analyzeRoleMisuse';
 const VALID_FACES = new Set<EntityComponentFace>(['baseapp', 'cellapp', 'client']);
 
 /**
- * 结构面数组 → 诊断面(消息渲染+引擎取证);任一条畸形/语义矛盾返回 null
- * (整面作废,调用方回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
- * face = 当前面(消息与矛盾校验面);tables = 面表(非内建校验面)。
+ * Structural-face array → diagnostic face (message rendering + engine evidence);
+ * any malformed/semantically-contradictory item returns null (the whole face is
+ * voided, the caller falls back to TS — partial adoption is forbidden). Shared by
+ * the parity tests.
+ * face = the current face (for the message and the contradiction checks);
+ * tables = the face tables (for the non-builtin check).
  */
 export function renderRustRoleMisuseItems(
   items: unknown,
@@ -294,13 +325,13 @@ export function renderRustRoleMisuseItems(
       registeredFaces.push(rf as EntityComponentFace);
     }
     if (registeredFaces.length === 0) {
-      return null; // 非内建(TS 不产),语义矛盾 → 作废
+      return null; // non-builtin (TS does not produce it), semantic contradiction → voided
     }
     if (registeredFaces.includes(face)) {
-      return null; // 当前面在注册面(TS 不产),语义矛盾 → 作废
+      return null; // the current face is among the registering faces (TS does not produce it), semantic contradiction → voided
     }
     if (!allBuiltin.has(item.propertyName)) {
-      return null; // 非内建(TS 不产),语义矛盾 → 作废
+      return null; // non-builtin (TS does not produce it), semantic contradiction → voided
     }
     const source = sourceFor(item.propertyName, registeredFaces);
     rendered.push({
@@ -318,9 +349,10 @@ export function renderRustRoleMisuseItems(
 }
 
 /**
- * Rust-first 角色错用产物:gate.runInRust 跑 `$/kode/lint/analyzeRoleMisuse`,
- * 结构面经 renderRustRoleMisuseItems 渲染;不可用/失败/畸形回 TS 兜底
- * findRoleMisuseFindings(既有行为不变)。
+ * Rust-first role-misuse output: gate.runInRust runs
+ * `$/kode/lint/analyzeRoleMisuse`, the structural face is rendered by
+ * renderRustRoleMisuseItems; unavailable / failure / malformed falls back to the
+ * TS findRoleMisuseFindings (existing behavior unchanged).
  */
 export async function buildRoleMisuseItemsWithRust(
   text: string,
@@ -358,18 +390,21 @@ export async function buildRoleMisuseItemsWithRust(
   );
 }
 
-/** 构建期依赖(测试可注入) */
+/** Build-time dependencies (tests may inject) */
 export interface RoleMisuseComputeDeps {
-  /** 面属性名表(Rust 输入 + TS 兜底共用,与对拍同源) */
+  /** Face property name tables (shared by the Rust input and the TS fallback, same source as the parity checks) */
   facePropertyNames: RoleMisuseTables;
   enabled: boolean;
 }
 
 /**
- * 异步入口:pathFace 按目录域定面;pathFace 判不出时经 fetchDefFaces(通常
- * entityMappingManager.getEntityComponentFacesForPythonFile)取 def 归属面
- * (与内建属性 inlay provider 同源),失败按 null 兜底(非实体 → 零产出)。
- * enabled=false 零产出。Rust-first(经 buildRoleMisuseItemsWithRust),TS 兜底。
+ * Async entry: pathFace is resolved by directory domain; when pathFace cannot
+ * decide, fetchDefFaces (usually
+ * entityMappingManager.getEntityComponentFacesForPythonFile) fetches the
+ * def-attributed face (same source as the builtin-property inlay provider);
+ * failure falls back to null (non-entity → zero output).
+ * enabled=false yields zero output. Rust-first (via buildRoleMisuseItemsWithRust),
+ * TS fallback.
  */
 export async function roleMisuseDiagnosticItemsAsync(
   text: string,

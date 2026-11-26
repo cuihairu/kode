@@ -1,13 +1,14 @@
 /**
- * Player Data Clone wire 形态(CLONE-P5 / 计划书 §7/§8):TS ↔ Rust(`$/kode/dbClone/*`)
- * 与 TS ↔ mysql2 两侧的纯数据形态。无 vscode 依赖(单测直接驱动)。
+ * Player Data Clone wire shapes (CLONE-P5 / the plan doc §7/§8): the pure data shapes for
+ * TS <-> Rust (`$/kode/dbClone/*`) and TS <-> mysql2 on both sides. No vscode dependencies
+ * (unit tests drive it directly).
  *
- * TypedValue 的归档 wire 是邻接标签 `{"t":"big-u-int","v":7}`(kode-db-clone
- * value.rs serde 形态,kebab-case 变体名);本模块提供构造器/解析器,别处不
- * 手拼该形状。
+ * TypedValue's archived wire uses the adjacent tag `{"t":"big-u-int","v":7}` (the kode-db-clone
+ * value.rs serde shape, kebab-case variant names); this module provides constructors/parsers
+ * so nobody hand-assembles that shape elsewhere.
  */
 
-/** 有类型值 wire(Rust TypedValue 邻接标签形态)。 */
+/** Typed value wire (the Rust TypedValue adjacent-tag shape). */
 export interface TypedValueWire {
   t: string;
   v?: unknown;
@@ -40,13 +41,13 @@ export const tvText = (v: string): TypedValueWire => ({ t: 'text', v });
 export const tvBytesHex = (hex: string): TypedValueWire => ({ t: 'bytes', v: hex });
 export const tvDecimal = (v: string): TypedValueWire => ({ t: 'decimal', v });
 
-/** 有类型行 wire(表 + 与列序对齐的值序)。 */
+/** Typed row wire (a table + a value sequence aligned with the column order). */
 export interface TypedRowWire {
   table: string;
   values: TypedValueWire[];
 }
 
-/** 物理表 wire(camelCase;information_schema 探测 → Rust planExport/planImport)。 */
+/** Physical table wire (camelCase; information_schema probing -> Rust planExport/planImport). */
 export interface PhysicalTableWire {
   name: string;
   engine: string;
@@ -55,7 +56,7 @@ export interface PhysicalTableWire {
   indexes: string[][];
 }
 
-/** 目标 Profile wire(§6.1:环境仅 local/test,Rust 侧 fail-closed 复核)。 */
+/** Target profile wire (§6.1: environment is local/test only, fail-closed re-checked on the Rust side). */
 export interface TargetProfileWire {
   environment: 'local' | 'test';
   dbInterface: 'mysql';
@@ -66,13 +67,13 @@ export interface TargetProfileWire {
   engineVersion?: string;
 }
 
-/** 目标快照 wire(唯一键清单 + 既有值;TS 只读探测收集)。 */
+/** Target snapshot wire (unique-key list + existing values; collected by read-only TS probing). */
 export interface TargetSnapshotWire {
   uniqueKeys: Array<{ table: string; column: string }>;
   existingValues: Array<{ table: string; column: string; value: TypedValueWire }>;
 }
 
-/** 归档清单(Rust Archive::inspect 输出;无行值)。 */
+/** Archive manifest (Rust Archive::inspect output; no row values). */
 export interface ArchiveMetaWire {
   format: string;
   version: number;
@@ -85,7 +86,7 @@ export interface ArchiveMetaWire {
   files: string[];
 }
 
-/** 计划单元格(与 Rust PlannedCell serde kebab-case 形态对齐)。 */
+/** Plan cell (aligned with the Rust PlannedCell serde kebab-case shape). */
 export type PlannedCellWire =
   | { kind: 'literal' }
   | { kind: 'new-key'; placeholder: number }
@@ -93,7 +94,7 @@ export type PlannedCellWire =
   | { kind: 'policy-override' }
   | { kind: 'remapped' };
 
-/** 计划 INSERT 语句(全 `?` 参数化,无内嵌值)。 */
+/** Planned INSERT statement (fully `?`-parameterized, no embedded values). */
 export interface PlannedInsertWire {
   sequence: number;
   table: string;
@@ -103,14 +104,14 @@ export interface PlannedInsertWire {
   insert_sql: string;
 }
 
-/** 导入计划(Rust ImportPlan Serialize 输出的 TS 消费面)。 */
+/** Import plan (the TS consumption face of the Rust ImportPlan Serialize output). */
 export interface ImportPlanWire {
   entity_name: string;
   mode: string;
   autoload_policy: string;
   order: string[];
   statements: PlannedInsertWire[];
-  /** ID 映射账本(按键序数组;apply 期 Remapped 取 rebuilt 值用)。 */
+  /** ID mapping ledger (in key-order array order; used during apply for Remapped to fetch the rebuilt value). */
   idmap: Array<{
     key: { table: string; column: string; old: TypedValueWire };
     mapped: { kind: string; placeholder?: number; value?: TypedValueWire };
@@ -132,20 +133,20 @@ export interface ImportPlanWire {
   };
 }
 
-/** 导出计划(Rust ExportPlanner QueryPlan 输出,snake_case 字段)。 */
+/** Export plan (the Rust ExportPlanner QueryPlan output, snake_case fields). */
 export interface QueryPlanWire {
   entity_name: string;
   row_budget: number;
   queries: Array<{
     sequence: number;
     table: string;
-    /** 子表指向逻辑父表(引擎 parentID 关系;根表为空)。 */
+    /** A child table points at its logical parent table (the engine parentID relation; empty for a root table). */
     parent_table?: string | null;
     columns: string[];
-    /** 与列序对齐的派生列型(有类型行编码依据)。 */
+    /** Derived column types aligned with the column order (the basis for typed-row encoding). */
     column_types: string[];
     select_sql: string;
-    /** 根表按 id/子表按 parentID 的绑定值来源标记。 */
+    /** The binding-value source marker: by id for a root table, by parentID for a child table. */
     filter: { kind: 'root-id' | 'parent-id' };
   }>;
   denied: Array<{ name: string; reason: string }>;
@@ -155,7 +156,7 @@ export interface QueryPlanWire {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** ArchiveMeta 形状闸(ok=false 一律按不可用处理,不猜字段)。 */
+/** ArchiveMeta shape gate (ok=false is always treated as unavailable, no guessing fields). */
 export function isArchiveMeta(value: unknown): value is ArchiveMetaWire {
   if (!isRecord(value)) {
     return false;
@@ -167,7 +168,7 @@ export function isArchiveMeta(value: unknown): value is ArchiveMetaWire {
   );
 }
 
-/** ImportPlan 形状闸(语句/摘要/绑定缺一即不可用)。 */
+/** ImportPlan shape gate (missing statements/summary/binding in any combination means unavailable). */
 export function isImportPlan(value: unknown): value is ImportPlanWire {
   if (!isRecord(value)) {
     return false;
@@ -188,7 +189,7 @@ export function isImportPlan(value: unknown): value is ImportPlanWire {
   );
 }
 
-/** QueryPlan 形状闸。 */
+/** QueryPlan shape gate. */
 export function isQueryPlan(value: unknown): value is QueryPlanWire {
   if (!isRecord(value)) {
     return false;
@@ -203,8 +204,9 @@ export function isQueryPlan(value: unknown): value is QueryPlanWire {
 }
 
 /**
- * mysql2 单元格 → TypedValueWire:按物理列型归型(与 Rust TypedValue::parse
- * 同口径:整数族精确、decimal/时间字符串保真、未知列型退文本不造假)。
+ * mysql2 cell -> TypedValueWire: type it by the physical column type (the same accounting as
+ * Rust TypedValue::parse: the integer family exact, decimal/time strings preserved faithfully,
+ * unknown column types degrade to text without fabricating anything).
  */
 export function cellToTypedValue(cell: unknown, columnType: string): TypedValueWire {
   if (cell === null || cell === undefined) {
@@ -254,7 +256,7 @@ export function cellToTypedValue(cell: unknown, columnType: string): TypedValueW
   return tvText(String(cell));
 }
 
-/** TypedValueWire → mysql2 绑定值(NewKey 的 NULL 由 apply 层给,此处纯转换)。 */
+/** TypedValueWire -> a mysql2 binding value (NewKey's NULL is supplied by the apply layer; this is a pure conversion). */
 export function typedValueToBind(value: TypedValueWire): unknown {
   switch (value.t) {
     case 'null':

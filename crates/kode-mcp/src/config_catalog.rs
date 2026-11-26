@@ -2332,19 +2332,24 @@ mod tests {
 
     #[test]
     fn unknown_keys_and_wrong_case_are_honest_misses() {
-        // find_doc 是精确等值面:未知键不虚构条目,大小写不放宽——why_setting
-        // 靠「库里查不到」与「库里查到」区分 curated 含义是否可给。
+        // find_doc is an exact-equality face: unknown keys do not fabricate
+        // entries and case is not relaxed — why_setting relies on "not found in
+        // the catalog" versus "found in the catalog" to decide whether a
+        // curated meaning can be given.
         assert!(find_doc("no.such.key").is_none());
         assert!(find_doc("").is_none());
-        // 键为小写点路径:大小写不同的拼写一律查不到(严格等值,不猜)。
+        // Keys are lowercase dotted paths: differently-cased spellings never
+        // resolve (strict equality, no guessing).
         assert!(find_doc("BASEAPP.ARCHIVEPERIOD").is_none());
         assert!(find_doc("baseapp.archiveperiod").is_none());
     }
 
     #[test]
     fn keys_are_unique() {
-        // 排序断言不保证唯一(重复键仍有序);重复会让 find_doc 的首个命中
-        // 依赖迭代顺序,生成器去重契约在此锁死。
+        // A sorted assertion does not guarantee uniqueness (duplicate keys
+        // would still be ordered); duplicates would make find_doc's first hit
+        // depend on iteration order, so the generator dedup contract is locked
+        // here.
         let mut keys: Vec<&str> = SERVER_CONFIG_ITEM_DOCS.iter().map(|(k, _)| *k).collect();
         keys.sort_unstable();
         let total = keys.len();
@@ -2354,9 +2359,10 @@ mod tests {
 
     #[test]
     fn every_dotted_key_has_all_ancestor_entries() {
-        // 树形契约:子键的每级祖先都自己有条目(baseapp、
-        // baseapp.downloadStreaming、…)——why_setting 沿树取段、
-        // list_config_settings 按前缀过滤,都依赖父节点可见。
+        // Tree contract: every level of a child key's ancestors has its own
+        // entry (baseapp, baseapp.downloadStreaming, …) — why_setting walking
+        // the tree for segments and list_config_settings filtering by prefix
+        // both depend on parent nodes being visible.
         let keys: std::collections::HashSet<&str> =
             SERVER_CONFIG_ITEM_DOCS.iter().map(|(k, _)| *k).collect();
         for key in &keys {
@@ -2376,8 +2382,10 @@ mod tests {
 
     #[test]
     fn sources_anchor_to_engine_tree_paths_with_line_refs() {
-        // 溯源契约:source 一律是引擎树内「文件:行(段)」引用,行段只含数字
-        // 与 +-,分隔符——这是 file:line 接地,不是自由文本(生成器产出约束)。
+        // Provenance contract: source is always an in-engine-tree
+        // "file:line(range)" reference, and the line part contains only digits
+        // and +-, as separators — this is file:line grounding, not free text
+        // (a constraint on the generator's output).
         for (key, doc) in SERVER_CONFIG_ITEM_DOCS {
             assert!(
                 doc.source.starts_with("kbe/"),
@@ -2403,8 +2411,10 @@ mod tests {
 
     #[test]
     fn groups_stay_in_documented_taxonomy() {
-        // 分组契约:group 只取 server.rs list_config_settings 过滤文案列出的
-        // 功能组(两处同步,越界分组会让过滤器静默漏结果)。
+        // Grouping contract: group only takes the functional groups listed in
+        // server.rs list_config_settings filter wording (kept in sync in both
+        // places; an out-of-range group would make the filter silently drop
+        // results).
         const GROUPS: &[&str] = &[
             "process", "net", "db", "account", "telnet", "log", "view", "backup", "perf", "test",
             "general", "custom",
@@ -2420,7 +2430,8 @@ mod tests {
 
     #[test]
     fn nested_key_resolves_with_group_and_provenance() {
-        // 深键样例:两级嵌套键可查,条目带组别与行段出处(非仅文件名)。
+        // Deep-key sample: a two-level nested key resolves, and its entry
+        // carries the group plus a line-range source (not just the file name).
         let doc = find_doc("baseapp.downloadStreaming.bitsPerSecondPerClient")
             .expect("nested key present");
         assert_eq!(doc.group, "perf");
@@ -2430,7 +2441,8 @@ mod tests {
             "range provenance expected: {}",
             doc.source
         );
-        // zh/en 双语面非同一文本(双语条目,不是复制粘贴占位)。
+        // The zh/en bilingual faces are not the same text (a bilingual entry,
+        // not a copy-paste placeholder).
         assert_ne!(doc.zh, doc.en);
     }
 }

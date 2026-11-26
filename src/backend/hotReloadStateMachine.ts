@@ -1,36 +1,44 @@
 /**
- * HR-STATE-001 热更文件状态模型 + 迁移表(纯核,零 vscode 零 IO):
- * - 13 态统一模型,把既有四面状态收拢成一列可迁移的每文件状态机——
- *   投递台账四态(HotReloadDeliveryOutcome:sent-unverified/accepted/applied/failed,
- *   hotReloadTargetState.ts)、状态栏七态(HotReloadStatusKind:watch-off/ready/
- *   ready-with-error/sending/sent-unverified/applied/failed,hotReloadStatus.ts)、
- *   流水线队列段(pending/previewHeld/wave,hotReloadSavePipeline.ts)、语法闸
- *   (blocked,HR-WATCH-012) 都是本模型的投影/阶段;
- * - 迁移表=HOT_RELOAD_STATE_TRANSITIONS(from → 合法 to[]),非法迁移如实拒
- *   (canTransition false;状态机类 set 拒抛)。迁移表是**定义**,不是运行时
- *   唯一闸——既有四面各自的守卫(IDE-AUD-005 代际绑定、applied 双证核验等)
- *   原样保留,本表只统一口径,不替代守卫;
- * - 状态文案/阶段语义随注释逐态标明,只描述已核实事实,未确认不称成功
- *   (与状态栏脸面同纪律)。
+ * HR-STATE-001 hot reload file state model + transition table (pure core,
+ * zero vscode, zero IO):
+ * - a 13-state unified model folding the existing four faces' states into a
+ *   single per-file state machine of movable states — the delivery ledger's
+ *   four states (HotReloadDeliveryOutcome:
+ *   sent-unverified/accepted/applied/failed, hotReloadTargetState.ts), the
+ *   status bar's seven states (HotReloadStatusKind: watch-off/ready/
+ *   ready-with-error/sending/sent-unverified/applied/failed,
+ *   hotReloadStatus.ts), the pipeline queue segments
+ *   (pending/previewHeld/wave, hotReloadSavePipeline.ts), and the syntax
+ *   gate (blocked, HR-WATCH-012) are all projections/stages of this model;
+ * - the transition table = HOT_RELOAD_STATE_TRANSITIONS (from → legal to[]),
+ *   illegal transitions honestly refused (canTransition false; the state
+ *   machine class's set throws). The transition table is the
+ *   **definition**, not the sole runtime gate — each of the four faces
+ *   keeps its own guards (IDE-AUD-005 generation binding, applied
+ *   dual-evidence verification, etc.) untouched; this table only unifies
+ *   the convention and never replaces the guards;
+ * - state wording/stage semantics are marked per state in the comments,
+ *   describing only verified facts; unconfirmed never counts as success
+ *   (the same discipline as the status bar face).
  */
 
-/** 13 态统一模型(HR-STATE-001):名字与 todo 行逐字一致 */
+/** The 13-state unified model (HR-STATE-001): names match the todo lines verbatim */
 export type HotReloadState =
-  | 'disabled' // 监视关(per target/root):不监听,不发送
-  | 'idle' // 监视中,文件稳定,无待发变更
-  | 'dirty' // 文件已变(保存/磁盘变更),去抖窗内未入管线
-  | 'queued' // 已入管线(pending/预览滞留/波次),未开始定稿
-  | 'checking' // 稳定窗/语法闸检查进行中(HR-WATCH-007/012 窗)
-  | 'sending' // HTTP 请求在途
-  | 'sent_unverified' // 已发(2xx)无业务回执:未确认,不称成功
-  | 'accepted' // 服务端回执 accepted
-  | 'applied' // 回执 applied+指纹核验一致:已核实生效
-  | 'failed' // 发送失败/应用失败
-  | 'blocked' // 语法闸/门禁拦下,不发
-  | 'restart_required' // def 结构变更需引擎重启
-  | 'unknown'; // 结果不可判定(如 2xx 但状态不可辨)
+  | 'disabled' // watching off (per target/root): not listening, not sending
+  | 'idle' // watching, file stable, nothing pending to send
+  | 'dirty' // file changed (save/disk change), inside the debounce window, not yet in the pipeline
+  | 'queued' // in the pipeline (pending/preview-held/wave), finalization not started
+  | 'checking' // stability window/syntax gate check in progress (HR-WATCH-007/012 window)
+  | 'sending' // HTTP request in flight
+  | 'sent_unverified' // sent (2xx) with no business receipt: unconfirmed, never called success
+  | 'accepted' // server receipt accepted
+  | 'applied' // receipt applied + fingerprint verification matched: verified in effect
+  | 'failed' // send failed/apply failed
+  | 'blocked' // held by the syntax gate/gate, not sent
+  | 'restart_required' // structural def change needs an engine restart
+  | 'unknown'; // result undecidable (e.g. 2xx but the state is unrecognizable)
 
-/** 状态中文标签(状态栏/面板展示面用;只述已核实事实) */
+/** Chinese labels for the states (used by the status bar/panel display face; states only verified facts) */
 export const HOT_RELOAD_STATE_LABELS: Record<HotReloadState, string> = {
   disabled: '关',
   idle: '就绪',
@@ -48,36 +56,41 @@ export const HOT_RELOAD_STATE_LABELS: Record<HotReloadState, string> = {
 };
 
 /**
- * 迁移表(HR-STATE-001 定义):from → 合法 to[]。
- * 设计依据=既有四面已证的迁移(回执升级 sent-unverified→accepted/applied/failed、
- * 应用后再编辑→dirty、闸拦→blocked、def 结构→restart_required、关/拆→disabled)
- * 收拢成单表;每行只列事实可达的目标,不列不可达/非法迁移。
+ * Transition table (the HR-STATE-001 definition): from → legal to[].
+ * Design basis = transitions already proven by the four existing faces
+ * (receipt upgrade sent-unverified→accepted/applied/failed, re-edit after
+ * apply→dirty, gate block→blocked, structural def→restart_required,
+ * off/teardown→disabled) folded into one table; each row lists only
+ * factually reachable targets, never unreachable/illegal transitions.
  */
 export const HOT_RELOAD_STATE_TRANSITIONS: Record<HotReloadState, readonly HotReloadState[]> = {
-  disabled: ['idle'], // 开监视
-  idle: ['dirty', 'disabled'], // 文件变 / 关
-  dirty: ['queued', 'disabled'], // 去抖窗到入管线 / 关
-  queued: ['checking', 'disabled'], // 定稿开始(稳定窗/语法闸) / 拆
-  checking: ['sending', 'blocked', 'idle', 'disabled'], // 过检发送 / 闸拦 / 还原无变 / 拆
+  disabled: ['idle'], // watching enabled
+  idle: ['dirty', 'disabled'], // file changed / off
+  dirty: ['queued', 'disabled'], // debounce window elapsed into the pipeline / off
+  queued: ['checking', 'disabled'], // finalization starts (stability window/syntax gate) / teardown
+  checking: ['sending', 'blocked', 'idle', 'disabled'], // passed checks and sending / gate block / restored with no change / teardown
   sending: ['sent_unverified', 'accepted', 'applied', 'failed', 'unknown', 'disabled'],
-  sent_unverified: ['accepted', 'applied', 'failed', 'dirty', 'disabled'], // 晚回执 / 再编辑 / 关
-  accepted: ['applied', 'failed', 'dirty', 'disabled'], // 升级 applied / 降失败 / 再编辑 / 关
-  applied: ['dirty', 'restart_required', 'disabled'], // 再编辑 / def 结构变 / 关
-  failed: ['dirty', 'restart_required', 'disabled'], // 重试/再编辑 / def 结构变 / 关
-  blocked: ['dirty', 'disabled'], // 再编辑重检 / 关
-  restart_required: ['idle', 'dirty', 'disabled'], // 重启后追平 / 重启后再编辑 / 关
-  unknown: ['sent_unverified', 'failed', 'dirty', 'disabled'] // 可判定 / 判定失败 / 再编辑 / 关
+  sent_unverified: ['accepted', 'applied', 'failed', 'dirty', 'disabled'], // late receipt / re-edit / off
+  accepted: ['applied', 'failed', 'dirty', 'disabled'], // upgraded to applied / demoted to failed / re-edit / off
+  applied: ['dirty', 'restart_required', 'disabled'], // re-edit / structural def change / off
+  failed: ['dirty', 'restart_required', 'disabled'], // retry/re-edit / structural def change / off
+  blocked: ['dirty', 'disabled'], // re-edit re-check / off
+  restart_required: ['idle', 'dirty', 'disabled'], // caught up after restart / re-edit after restart / off
+  unknown: ['sent_unverified', 'failed', 'dirty', 'disabled'] // decidable / verdict failed / re-edit / off
 };
 
-/** 迁移是否合法(纯表查询;非法=如实 false,不猜不替代守卫) */
+/** Whether a transition is legal (pure table query; illegal = honestly false, no guessing and no replacing the guards) */
 export function canHotReloadTransition(from: HotReloadState, to: HotReloadState): boolean {
   return HOT_RELOAD_STATE_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
 /**
- * 每键(文件/目标/根)状态机:初始 unknown,set 校验迁移表,非法拒抛
- * (StateMachineTransitionError)。这是**口径面**,既有四面守卫原样保留;
- * 状态机只拒绝明显非法迁移,不代替守卫做决策。
+ * Per-key (file/target/root) state machine: starts at unknown, set validates
+ * against the transition table and throws on illegal ones
+ * (StateMachineTransitionError). This is the **convention face**; the four
+ * existing faces' guards stay untouched; the state machine only rejects
+ * clearly illegal transitions and never makes decisions in place of the
+ * guards.
  */
 export class HotReloadStateMachine {
   private readonly states = new Map<string, HotReloadState>();
@@ -86,7 +99,7 @@ export class HotReloadStateMachine {
     return this.states.get(key) ?? 'unknown';
   }
 
-  /** 置状态;非法迁移拒抛。force=true 绕过迁移校验(初始/重置面)。 */
+  /** Sets a state; illegal transitions throw. force=true bypasses transition validation (init/reset face). */
   set(key: string, state: HotReloadState, force = false): void {
     const current = this.get(key);
     if (!force && current !== state && !canHotReloadTransition(current, state)) {
@@ -95,7 +108,7 @@ export class HotReloadStateMachine {
     this.states.set(key, state);
   }
 
-  /** 若迁移合法则置状态并返回 true;非法返回 false 且状态原样 */
+  /** Sets the state and returns true if the transition is legal; returns false on illegal ones with the state untouched */
   trySet(key: string, state: HotReloadState): boolean {
     const current = this.get(key);
     if (current !== state && !canHotReloadTransition(current, state)) {
@@ -114,7 +127,7 @@ export class HotReloadStateMachine {
   }
 }
 
-/** 非法迁移的如实错误(可审:来源键/from/to) */
+/** The honest error for an illegal transition (auditable: source key/from/to) */
 export class HotReloadStateTransitionError extends Error {
   constructor(
     readonly key: string,
@@ -127,9 +140,11 @@ export class HotReloadStateTransitionError extends Error {
 }
 
 /**
- * 投递台账四态 → 13 态投影(HR-STATE-001 收口:台账 outcome 是发送结果面,
- * 与生命周期状态同口径但不等价——outcome 缺 dirty/queued/checking 等
- * 发送前阶段,投影只在 outcome 可判定时用)。
+ * Delivery ledger four states → 13-state projection (HR-STATE-001 closeout:
+ * the ledger outcome is the send-result face, sharing the convention with
+ * the lifecycle states but not equivalent to them — the outcome lacks the
+ * pre-send stages like dirty/queued/checking, so the projection applies
+ * only when the outcome is decidable).
  */
 export function projectDeliveryOutcome(
   outcome: 'sent-unverified' | 'accepted' | 'applied' | 'failed'
@@ -146,7 +161,7 @@ export function projectDeliveryOutcome(
   }
 }
 
-/** 状态栏七态 → 13 态投影(全局面,单文件口径只取代表性:ready 类归 idle) */
+/** Status bar seven states → 13-state projection (whole-project face; the single-file convention only takes representatives: ready-class maps to idle) */
 export function projectStatusKind(
   kind: 'watch-off' | 'ready' | 'ready-with-error' | 'sending' | 'sent-unverified' | 'applied' | 'failed'
 ): HotReloadState {

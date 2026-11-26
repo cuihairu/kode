@@ -1,26 +1,32 @@
 /**
- * SP-4: 空间/导航语义诊断(纯文本面,引擎源码取证,低误报口径)
+ * SP-4: space/navigation semantic diagnostics (pure text face, engine-source
+ * evidence, low-false-positive contract).
  *
- * 三类保守检查:
- * 1) setSpaceData/delSpaceData 使用保留键 "_mapping"
- *    —— 引擎在 set/del 两路径都拒绝:spacememory.cpp:740(set)、:862(del)
- *    "key{_mapping} is protected!";_mapping 是引擎内部几何映射存储键
- *    (setGeometryPath→setSpaceData("_mapping", path),spacememory.cpp:547)。
- * 2) 文件出现 navigate/navigatePathPoints 调用但全文无 canNavigate
- *    —— 几何/导航数据未加载时 navigate 静默失败(entity.cpp:2583-2589
- *    not found navhandle → paths 为空 → navigate 返回 0 不建控制器)。
- *    canNavigate() 是引擎暴露的就绪探针(entity.cpp:2563-2576,
- *    pNavHandle==NULL 即 False);调用 navigate 却从未核验前置 → Warning。
- *    仅当文件完全没有 canNavigate 字样时才报,避免有守卫文件的噪声。
- * 3) addSpaceGeometryMapping 的 params dict 键必须是 int 字面量
- *    —— 引擎 PyDict_Next 后 PyLong_Check(key) 失败即
- *    "args(params) error!" AssertionError(spacememory.cpp:194);
- *    字符串层键({"0": "..."} )运行时必炸。仅检字典**顶层**字面量键
- *    (嵌套 dict 的字符串键引擎不校验),不猜变量/表达式求值结果。
+ * Three conservative checks:
+ * 1) setSpaceData/delSpaceData using the reserved key "_mapping"
+ *    — the engine rejects it on both the set/del paths: spacememory.cpp:740
+ *    (set), :862 (del), "key{_mapping} is protected!"; _mapping is the engine's
+ *    internal geometry-mapping storage key
+ *    (setGeometryPath→setSpaceData("_mapping", path), spacememory.cpp:547).
+ * 2) the file has navigate/navigatePathPoints calls but no canNavigate anywhere
+ *    — with geometry/nav data not loaded, navigate fails silently
+ *    (entity.cpp:2583-2589, not found navhandle → paths empty → navigate
+ *    returns 0 and builds no controller). canNavigate() is the engine's exposed
+ *    readiness probe (entity.cpp:2563-2576, pNavHandle==NULL means False);
+ *    calling navigate while never verifying the precondition → Warning.
+ *    Reported only when the file has no canNavigate occurrence at all, avoiding
+ *    noise in files that do have guards.
+ * 3) addSpaceGeometryMapping's params dict keys must be int literals
+ *    — after the engine's PyDict_Next, PyLong_Check(key) failing raises the
+ *    "args(params) error!" AssertionError (spacememory.cpp:194); a string-level
+ *    key ({"0": "..."}) explodes at runtime. Only the dict's **top-level**
+ *    literal keys are checked (the engine does not validate string keys of
+ *    nested dicts); variable/expression evaluation results are never guessed.
  *
- * 纯函数,无 vscode 依赖;extension 侧转 vscode.Diagnostic 并挂
- * DiagnosticScheduler(与 receiverNone/startupScript 同一生命周期)。
- * 开关: kbengine.spaceNavDiagnostics(默认开)。
+ * Pure functions, no vscode dependency; the extension side converts to
+ * vscode.Diagnostic and hangs off DiagnosticScheduler (the same lifecycle as
+ * receiverNone/startupScript).
+ * Switch: kbengine.spaceNavDiagnostics (on by default).
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -29,11 +35,11 @@ export const SPACE_NAV_DIAGNOSTIC_CODE = 'kbengine.spaceNav';
 export const SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
 export interface SpaceNavFinding {
-  /** 0 起行 */
+  /** Line (0-based) */
   line: number;
-  /** 0 起列(命中 token 起点) */
+  /** Column (0-based, at the hit token's start) */
   start: number;
-  /** 0 起列(不含,token 终点) */
+  /** Column (0-based, exclusive, at the token's end) */
   end: number;
   message: string;
   code: string;
@@ -41,16 +47,19 @@ export interface SpaceNavFinding {
 
 const MAPPING_KEY_RE =
   /\b(?:setSpaceData|delSpaceData)\s*\(\s*[^,)]+,\s*("|')_mapping\1/g;
-// 只认 self.navigate / self.navigatePathPoints(引擎实体方法调用约定);
-// 任意对象(avatar.navigate 等)不当作引擎方法,避免无关告警。
+// Only self.navigate / self.navigatePathPoints count (the engine's entity-method
+// call convention); calls on any object (avatar.navigate etc.) are not treated as
+// engine methods, avoiding unrelated warnings.
 const NAV_CALL_RE = /\bself\s*\.\s*(navigate|navigatePathPoints)\s*\(/g;
 const CAN_NAVIGATE_RE = /\bcanNavigate\b/g;
 
 /**
- * dict 体内的**顶层**引号键(嵌套 dict/list 里的不收):返回 [体偏移, 原文
- * token]。引擎 PyDict_Next 只见顶层键(spacememory.cpp:194 只查顶层),
- * 嵌套 {"a": 1} 的字符串键不是 params 键。逐字符扫描:字符串整体跳过
- * (含转义),闭引号后跳空白紧跟 `:` 且深度为 0 才算键位。
+ * The **top-level** quoted keys in a dict body (nested dict/list keys are not
+ * collected): returns [body offset, raw token]. The engine's PyDict_Next only
+ * sees top-level keys (spacememory.cpp:194 checks top level only), so a nested
+ * {"a": 1}'s string key is not a params key. Scans character by character:
+ * strings are skipped whole (escapes included), and a key position counts only
+ * when, after the closing quote, whitespace is followed by `:` at depth 0.
  */
 function topLevelQuotedKeys(body: string): Array<[number, string]> {
   const out: Array<[number, string]> = [];
@@ -72,7 +81,7 @@ function topLevelQuotedKeys(body: string): Array<[number, string]> {
         j += 1;
       }
       if (j >= n) {
-        return out; // 未闭合:保守收手
+        return out; // unclosed: stop conservatively
       }
       const token = body.slice(i, j + 1);
       let k = j + 1;
@@ -119,15 +128,17 @@ function offsetToLine(starts: readonly number[], offset: number): number {
   return lo;
 }
 
-/** 全文偏移 → 行内列(0 基):减该行起始偏移。 */
+/** Whole-text offset → in-line column (0-based): subtract the line's start offset. */
 function offsetToCol(starts: readonly number[], offset: number): number {
   return offset - starts[offsetToLine(starts, offset)];
 }
 
 /**
- * 纯文本词法掩码:true=该位置在代码区(非注释/字符串)。
- * 供空间导航匹配过滤——注释/字符串里的 navigate/canNavigate 字样不参与
- * 语义判定,避免无关告警。逐字符状态机:行注释 #、单/双引号字符串(含三引号)。
+ * Pure-text lexical mask: true = the position is in code (not a comment/string).
+ * Filters space-nav matches — navigate/canNavigate occurrences in comments/
+ * strings do not participate in the semantic decision, avoiding unrelated
+ * warnings. A character-at-a-time state machine: line comments #, single/double
+ * quoted strings (triple quotes included).
  */
 function codeMask(text: string): boolean[] {
   const mask = new Array<boolean>(text.length).fill(true);
@@ -136,7 +147,7 @@ function codeMask(text: string): boolean[] {
   while (i < n) {
     const ch = text[i];
     if (ch === '#') {
-      // 行注释:到行尾(不含换行)
+      // line comment: to the line end (newline not included)
       while (i < n && text[i] !== '\n') {
         mask[i] = false;
         i += 1;
@@ -186,10 +197,11 @@ function codeMask(text: string): boolean[] {
 }
 
 /**
- * 找到 addSpaceGeometryMapping 调用里 params 位置的 dict 字面量区间。
- * 策略:从调用开括号起做括号深度扫描,跳过字符串;遇到 depth==1 的
- * `{` 即 params dict(引擎签名第 5 参;无 dict 则返回 null)。
- * 返回 [dictOpen, dictClose] 字符下标(含括号)。
+ * Find the dict literal interval at the params position of an
+ * addSpaceGeometryMapping call. Strategy: a bracket-depth scan from the call's
+ * opening paren, skipping strings; a `{` at depth==1 is the params dict (the
+ * engine signature's 5th parameter; returns null when there is no dict).
+ * Returns [dictOpen, dictClose] character indexes (brackets included).
  */
 function findParamsDictSpan(text: string, callOpen: number): [number, number] | null {
   let depth = 0;
@@ -219,7 +231,7 @@ function findParamsDictSpan(text: string, callOpen: number): [number, number] | 
     if (ch === ')' || ch === ']' || ch === '}') {
       depth -= 1;
       if (depth === 0) {
-        // 调用闭合;若 dict 未闭合则无效
+        // the call closes; an unclosed dict is invalid
         if (dictOpen >= 0) {
           return null;
         }
@@ -242,13 +254,13 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
   const mask = codeMask(text);
   const inCode = (offset: number): boolean => offset >= 0 && offset < mask.length && mask[offset];
 
-  // ── 1) _mapping 保留键 ──
+  // -- 1) the _mapping reserved key --
   MAPPING_KEY_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = MAPPING_KEY_RE.exec(text)) !== null) {
-    if (!inCode(match.index)) continue; // 调用在注释/字符串里 → 不报
+    if (!inCode(match.index)) continue; // the call is inside a comment/string → no report
     const keyToken = match[0];
-    // 命中位置落在 "_mapping" 上
+    // The hit position lands on "_mapping"
     const keyOffset = match.index + keyToken.lastIndexOf(match[1] + '_mapping' + match[1]);
     const keyLen = '_mapping'.length + 2;
     findings.push({
@@ -260,7 +272,7 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
     });
   }
 
-  // ── 2) self.navigate / self.navigatePathPoints 无 canNavigate 前置 ──
+  // -- 2) self.navigate / self.navigatePathPoints without a canNavigate precondition --
   let hasCanNavigate = false;
   CAN_NAVIGATE_RE.lastIndex = 0;
   let guardMatch: RegExpExecArray | null;
@@ -274,11 +286,13 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
     NAV_CALL_RE.lastIndex = 0;
     while ((match = NAV_CALL_RE.exec(text)) !== null) {
       const offset = match.index;
-      if (!inCode(offset)) continue; // 注释/字符串里的调用不报
-      // 方法名起点(self. 之后),用于定位列。
+      if (!inCode(offset)) continue; // calls in comments/strings are not reported
+      // The method name's start (after self.), used to locate the column.
       const methodOffset = offset + match[0].indexOf(match[1]);
-      // 审核发现:`\s*` 可跨行(self\n.navigate)——行号必须取方法名所在行,
-      // 与列同源;取 self 行会把范围放到错行且列越出行尾。
+      // Audit finding: `\s*` can cross lines (self\n.navigate) — the line must be
+      // the method name's line, from the same source as the column; taking the
+      // self line would put the range on the wrong line with a column past the
+      // line end.
       const line = offsetToLine(starts, methodOffset);
       findings.push({
         line,
@@ -290,7 +304,7 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
     }
   }
 
-  // ── 3) params dict 引号键(非 int 字面量) ──
+  // -- 3) params dict quoted keys (not int literals) --
   const mappingCallRe = /\baddSpaceGeometryMapping\s*\(/g;
   while ((match = mappingCallRe.exec(text)) !== null) {
     if (!inCode(match.index)) continue; // 调用在注释/字符串里 → 不报
@@ -301,9 +315,11 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
     }
     const [dictOpen, dictClose] = span;
     const dictBody = text.slice(dictOpen + 1, dictClose);
-    // 审核发现:引擎只校验 params **顶层**键(PyDict_Next 收到的就是顶层键,
-    // spacememory.cpp:194),嵌套 dict 的字符串键不校验——旧实现对整个 dict 体
-    // 正则扫描,`{0: {"a": 1}}` 里嵌套键 "a" 被误报。深度感知只收顶层键位。
+    // Audit finding: the engine validates only the params' **top-level** keys
+    // (PyDict_Next receives exactly the top-level keys, spacememory.cpp:194);
+    // string keys of nested dicts are not validated — the old implementation
+    // regex-scanned the whole dict body, so the nested key "a" in `{0: {"a": 1}}`
+    // was misreported. Depth awareness collects top-level key positions only.
     for (const [bodyOffset, token] of topLevelQuotedKeys(dictBody)) {
       const keyOffset = dictOpen + 1 + bodyOffset;
       const keyLen = token.length;
@@ -322,38 +338,40 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
   return findings;
 }
 
-// ---- Rust 面(AUDIT-005 B2 车道批 3:spaceNav 收编) ---------------------------
-// `$/kode/lint/analyzeSpaceNav` 经 gate.runInRust(命令面,与 analyzeTraps 同口径):
-// Rust 只回结构面(code/line/character/length + kind/可选 key),消息渲染留本模块
-// (l10n 单一来源)。不可用/失败/畸形整面作废回 TS 同步路径 —— 禁止部分采用。
+// ---- Rust face (AUDIT-005 B2 lane batch 3: spaceNav adoption) ------------------
+// `$/kode/lint/analyzeSpaceNav` goes through gate.runInRust (the command face,
+// the same contract as analyzeTraps): Rust returns only the structural face
+// (code/line/character/length + kind/optional key); message rendering stays in
+// this module (l10n single source). Unavailable / failed / malformed voids the
+// whole face back to the TS sync path — partial adoption forbidden.
 
-/** Rust 结构面单条产物(`$/kode/lint/analyzeSpaceNav` 应答) */
+/** One structural-face item from Rust (the `$/kode/lint/analyzeSpaceNav` response) */
 export interface SpaceNavRustItem {
   code: string;
   line: number;
   character: number;
   length: number;
-  /** 三消息判别:mappingKey | navigateNoGuard | paramsStringKey */
+  /** The three-message discriminator: mappingKey | navigateNoGuard | paramsStringKey */
   kind: string;
-  /** paramsStringKey 的 l10n 参数(键 token) */
+  /** The paramsStringKey l10n parameter (the key token) */
   key?: string;
 }
 
-/** mappingKey 消息(引擎保留键,_mapping 被 set/del 双路径拒绝) */
+/** The mappingKey message (an engine reserved key; _mapping is rejected by both the set/del paths) */
 export function renderMappingKeyMessage(): string {
   return l10nText(
     'The key "_mapping" is an engine reserved key (rejected by both set and del, runtime AssertionError "key{_mapping} is protected!"). Space geometry is managed by addSpaceGeometryMapping; use another key. (spacememory.cpp:740/862)'
   );
 }
 
-/** navigateNoGuard 消息(调用 navigate 却从未核验 canNavigate 前置) */
+/** The navigateNoGuard message (navigate called while canNavigate is never verified as a precondition) */
 export function renderNavigateNoGuardMessage(): string {
   return l10nText(
     'navigate/navigatePathPoints called but canNavigate never appears: pathfinding fails silently when nav data is not loaded (paths empty, no move controller). Guard with if self.canNavigate() first. (entity.cpp:2583 not found navhandle; canNavigate entity.cpp:2563)'
   );
 }
 
-/** paramsStringKey 消息(引擎要求 int 键) */
+/** The paramsStringKey message (the engine requires int keys) */
 export function renderParamsStringKeyMessage(key: string): string {
   return l10nText(
     'params-level key {key} is a string literal; the engine requires int keys (PyLong_Check failure raises AssertionError "args(params) error!"). Write {0: "xx.navmesh"}. (spacememory.cpp:194)',
@@ -362,8 +380,10 @@ export function renderParamsStringKeyMessage(key: string): string {
 }
 
 /**
- * 结构面单条 → 诊断面(消息渲染);缺 l10n 参数/未知 kind = 畸形,返回 null。
- * code/line/character/length 类型核 + kind 判别(与 TS 同步路径同消息源)。
+ * One structural-face item → the diagnostic face (message rendering); a missing
+ * l10n parameter / unknown kind = malformed, returns null.
+ * code/line/character/length type checks + the kind discriminator (the same
+ * message source as the TS sync path).
  */
 function renderRustSpaceNavItem(item: SpaceNavRustItem): SpaceNavFinding | null {
   if (
@@ -405,8 +425,9 @@ function renderRustSpaceNavItem(item: SpaceNavRustItem): SpaceNavFinding | null 
 }
 
 /**
- * 结构面数组 → 诊断面数组(消息渲染);任一条畸形返回 null(整面作废,调用方
- * 回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+ * A structural-face array → a diagnostic-face array (message rendering); any
+ * malformed item returns null (the whole face voided, the caller falls back to
+ * TS — partial adoption forbidden). Shared by the parity tests.
  */
 export function renderRustSpaceNavItems(items: readonly unknown[]): SpaceNavFinding[] | null {
   const rendered: SpaceNavFinding[] = [];

@@ -1,11 +1,17 @@
 /**
- * receiverNone 诊断收编 Rust(AUDIT-005 B2 车道批 3):`$/kode/lint/analyzeReceiverNone`
- * 的 TS 装配面。guard 分析/别名使用点/段错配判定在 Rust(receiver_none.rs,掩码
- * 与逐语义同 TS),本模块只做:廉价预检(零 receiver 线索零产出,不取解析不发
- * RPC)→ 解析面供给方法区间(parsePythonFile 是共享上游,与 roleMisuse 的 face
- * 同口径)→ mapping.methods 投影 declarations → gate.runInRust → 结构面经
- * renderRustReceiverNoneItems 渲染。不可用/解析中止/失败/畸形返回 null,调用方
- * (diagnostics.ts receiver 臂)回 TS 异步兜底——禁止部分采用(静默丢能力)。
+ * receiverNone diagnostics consolidated into Rust (AUDIT-005 B2 lane batch 3):
+ * the TS wiring layer for `$/kode/lint/analyzeReceiverNone`. Guard analysis /
+ * alias use points / section mismatch verdicts live in Rust
+ * (receiver_none.rs, same masking and same semantics as TS); this module only
+ * does: cheap pre-check (zero receiver clues means zero output; no parse
+ * fetched, no RPC sent) -> parse-surface supply of the method spans
+ * (parsePythonFile is the shared upstream, the same conventions as the
+ * roleMisuse face) -> mapping.methods projected into declarations ->
+ * gate.runInRust -> the structure surface rendered through
+ * renderRustReceiverNoneItems. Unavailable/parse-aborted/failed/malformed
+ * returns null and the caller (the receiver arm in diagnostics.ts) falls
+ * back to the TS async path -- partial adoption is forbidden (silently
+ * dropping the capability).
  */
 import type { EntityMapping } from '../entityMapping';
 import { pythonScriptDomain } from '../entityMapping';
@@ -23,8 +29,10 @@ import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 
 const RECEIVER_NONE_RUST_METHOD = '$/kode/lint/analyzeReceiverNone';
 
-/** 解析面解析(与 receiverNoneDiagnostics.resolveParsedAsync 同语义:提供器
- * 优先(可异步/可 null),无提供器自解析同样 worker 分流) */
+/** Parse-surface resolution (same semantics as
+ * receiverNoneDiagnostics.resolveParsedAsync: provider first (may be async /
+ * may be null); without a provider, self-parsing also routes through the
+ * worker) */
 async function resolveParsed(
   text: string,
   filePath: string,
@@ -41,9 +49,12 @@ async function resolveParsed(
 }
 
 /**
- * Rust-first receiverNone 产物:gate.runInRust 跑 `$/kode/lint/analyzeReceiverNone`,
- * 结构面经 renderRustReceiverNoneItems 渲染;无门/零线索(合法空面 [])/解析
- * 中止/失败/畸形返回 null(零线索面直接 [],与 TS 兜底同输出,不空发 RPC)。
+ * Rust-first receiverNone artifact: gate.runInRust runs
+ * `$/kode/lint/analyzeReceiverNone` and the structure surface renders through
+ * renderRustReceiverNoneItems; no gate / zero clues (a legitimate empty face
+ * [) / parse aborted / failure / malformed returns null (a zero-clues face
+ * returns [] directly, the same output as the TS fallback, so no empty RPC is
+ * sent).
  */
 export async function buildReceiverNoneItemsWithRust(
   text: string,
@@ -55,9 +66,12 @@ export async function buildReceiverNoneItemsWithRust(
   if (!gate) {
     return null;
   }
-  // 廉价预检(与 computeReceiverNoneFindings 同口径):掩码一次 + 线性扫描,
-  // 零 receiver 线索零产出,不取解析也不发 RPC(懒解析语义保持)。逐面语义
-  // 闸(深审-3):调用面随 RPC 下发,face 无效引用在 Rust 侧同口径滤除
+  // Cheap pre-check (same conventions as computeReceiverNoneFindings): one
+  // masking pass + a linear scan; zero receiver clues means zero output, with
+  // no parse fetched and no RPC sent (lazy-parse semantics preserved). The
+  // per-surface semantic gate (deep audit 3): the caller surface goes down
+  // with the RPC, and invalid face references are filtered out on the Rust
+  // side under the same conventions
   const callerFace = pythonScriptDomain(filePath) ?? undefined;
   const masked = maskPythonNonCode(text);
   const baseCalls = findPythonReceiverCalls(masked, callerFace);
@@ -66,7 +80,7 @@ export async function buildReceiverNoneItemsWithRust(
   }
   const parsed = await resolveParsed(text, filePath, preparsed);
   if (!parsed) {
-    return null; // 共享解析不可用:本轮中止(调用方兜底臂同样中止,同语义)
+    return null; // the shared parse is unavailable: abort this round (the caller's fallback arm aborts the same way, same semantics)
   }
   const methods = parsed.classes.map(cls => ({
     startLine: cls.startLine,

@@ -1,21 +1,22 @@
-//! 诊断查询面(Phase2 首片,书 §17 PR-011 诊断面 / LSP 系列)。
+//! Diagnostic query face (Phase2 first slice, book section 17 PR-011 diagnostic face / LSP series).
 //!
-//! 面 = TS `validateDocument`(.def,默认开关全开)在**语料视图下可复刻的
-//! 确定性子集**,逐条同文案同区间同序(真对齐非改阈值):
-//!   ①标量扫描(DFS 先序):未知 `<Type>` 引用(内建 ∪ 语料 entities ∪
-//!     语料 types/aliases 之外 → Error)、未知 `<Flags>` 值(Error)、
-//!     未知 `<DetailLevel>`(Error);
-//!   ②结构扫描(按段):重复定义(Properties 按旗标作用域,Warning+Info
-//!     成对)、属性缺 `<Type>`/`<Flags>`(Error)。
-//! 消息文案、严重级、区间(节点 span / 取值子区间)与 TS 逐字节同源。
+//! The face = the deterministic subset of TS `validateDocument` (.def, all default switches on) replicable under the
+//! corpus view, matching text, ranges, and order item-for-item (true alignment, not threshold tweaks):
+//!   1. Scalar scan (DFS pre-order): unknown `<Type>` references (outside builtin union corpus entities
+//!      union corpus types/aliases -> Error), unknown `<Flags>` values (Error),
+//!      unknown `<DetailLevel>` (Error);
+//!   2. Structural scan (per section): duplicate definitions (Properties per flag scope, Warning+Info
+//!      paired); properties missing `<Type>`/`<Flags>` (Error).
 //!
-//! 划归边界(docs/kode2/phase2-slice-a.md §面定义):
-//! - `missingPythonFile` 分支(implementedBy 的 user_type Python 文件存在性
-//!   需磁盘面)Rust 语料视图不判定,该 Warning 不在本面;
-//! - kp-* 语法诊断(kode-parser 内部能力)不在对拍面(TS validateDocument
-//!   不产出语法维);workspace 发现口径(单根 types.xml/entities.xml 发现)
-//!   在本面收敛为**已入库语料并集**,TS 复算按同语料同口径复算。
-//! - entities.xml 的 validateEntitiesXmlDocument 面不在本片(独立单)。
+//! Message text, severities, and ranges (node span / value sub-range) are byte-for-byte sourced from TS.
+//!
+//! Attribution boundary (docs/kode2/phase2-slice-a.md, face definition):
+//! - The `missingPythonFile` branch (existence of the user_type Python file behind implementedBy
+//!   needs a disk face) is not judged by the Rust corpus view; that Warning is not on this face;
+//! - kp-* syntax diagnostics (a kode-parser internal capability) are not on the comparison face (TS validateDocument
+//!   produces no syntax dimension); the workspace discovery stance (single-root types.xml/entities.xml discovery)
+//!   converges here to the **filed-corpus union**; TS recomputes on the same corpus and stance.
+//! - The validateEntitiesXmlDocument face of entities.xml is not in this slice (a separate ticket).
 
 use serde::Serialize;
 
@@ -25,13 +26,13 @@ use kode_parser::xml::{self, Document};
 use crate::definition::{byte_offset_to_position, LspRange};
 use crate::hover::HoverEngine;
 
-/// LSP 严重级(Error=1/Warning=2/Information=3;TS DiagnosticSeverity 同值)。
+/// LSP severity (Error=1/Warning=2/Information=3; TS DiagnosticSeverity has the same values).
 pub const SEVERITY_ERROR: u32 = 1;
 pub const SEVERITY_WARNING: u32 = 2;
 pub const SEVERITY_INFORMATION: u32 = 3;
 
-/// 一条诊断(vscode.Diagnostic 可比面:区间 + 级别 + 文案;无 code/source 键,
-/// 与 TS 构造同形)。
+/// One diagnostic (a comparable face for vscode.Diagnostic: range + level + message; no code/source keys,
+/// same shape as the TS construction).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DiagnosticFace {
     pub range: LspRange,
@@ -40,10 +41,10 @@ pub struct DiagnosticFace {
 }
 
 // ---------------------------------------------------------------------------
-// 词表(与 TS kbengineMetadata 同表;新增词条双侧同步)
+// Vocabularies (the same table as TS kbengineMetadata; new entries synced on both sides)
 // ---------------------------------------------------------------------------
 
-/// KBENGINE_FLAGS 12 词(含 CELL* 别名拼写)。
+/// KBENGINE_FLAGS, 12 words (including CELL* alias spellings).
 const KNOWN_FLAGS: &[&str] = &[
     "CELL_PUBLIC",
     "CELL_PRIVATE",
@@ -59,11 +60,11 @@ const KNOWN_FLAGS: &[&str] = &[
     "CELL_AND_OTHER_CLIENTS",
 ];
 
-/// loadDetailLevelInfo 三档。
+/// The three loadDetailLevelInfo tiers.
 const DETAIL_LEVELS: &[&str] = &["NEAR", "MEDIUM", "FAR"];
 
-/// 旗标 → 数据作用域集(TS ENTITY_*_DATA_FLAGS 同表;归一化别名后判定,
-/// 顺序 base/cell/client,未命中剔除)。
+/// Flag -> data-scope set (same table as TS ENTITY_*_DATA_FLAGS; judged after alias normalization,
+/// order base/cell/client; misses are dropped).
 fn flag_scopes(normalized: &str) -> Vec<&'static str> {
     let mut out = Vec::new();
     if matches!(normalized, "BASE" | "BASE_AND_CLIENT") {
@@ -100,7 +101,7 @@ fn scope_label(scope: &str) -> &str {
         .unwrap_or(scope)
 }
 
-/// `<Flags>` 值归一化(TS normalizePropertyFlag 同口径:trim + 大写 + 别名折算)。
+/// `<Flags>` value normalization (same stance as TS normalizePropertyFlag: trim + uppercase + alias folding).
 fn normalize_property_flag(raw: Option<String>) -> Option<String> {
     let upper = raw?.trim().to_uppercase();
     if upper.is_empty() {
@@ -114,7 +115,7 @@ fn normalize_property_flag(raw: Option<String>) -> Option<String> {
     })
 }
 
-/// 顶层段白名单(TS toSectionName ∩ ALLOWED_TOP_LEVEL_SECTIONS,精确大小写)。
+/// Top-level section whitelist (TS toSectionName intersect ALLOWED_TOP_LEVEL_SECTIONS, exact case).
 fn section_label_of(name: &str) -> Option<&'static str> {
     match name {
         "Parent" => Some("父类区块"),
@@ -128,10 +129,10 @@ fn section_label_of(name: &str) -> Option<&'static str> {
 }
 
 // ---------------------------------------------------------------------------
-// 取值区间(TS pushDiagnosticForNodeValue / createNodeRange 同规则)
+// Value range (same rules as TS pushDiagnosticForNodeValue / createNodeRange)
 // ---------------------------------------------------------------------------
 
-/// 节点整体区间(tagStart..closeTagEnd;自闭合 closeTagEnd=开标签终点)。
+/// The node's overall range (tagStart..closeTagEnd; for self-closing tags closeTagEnd = the end of the open tag).
 fn node_range(text: &str, data: &xml::ElementData) -> LspRange {
     LspRange {
         start: byte_offset_to_position(text, data.open_span.start),
@@ -139,7 +140,7 @@ fn node_range(text: &str, data: &xml::ElementData) -> LspRange {
     }
 }
 
-/// 取值子区间:值在 content 内的首个出现;越界/缺失回落 content 区间。
+/// The value's sub-range: the value's first occurrence within the content; out-of-range/missing falls back to the content range.
 fn value_range(text: &str, data: &xml::ElementData, value: &str) -> LspRange {
     let content_start = data.content_span.start;
     let content_end = data.content_span.end;
@@ -159,12 +160,12 @@ fn value_range(text: &str, data: &xml::ElementData, value: &str) -> LspRange {
     }
 }
 
-/// 直接文本拼接 trim(TS getNodeValue 同语义)。
+/// Trimmed direct text concatenation (same semantics as TS getNodeValue).
 fn node_value(doc: &Document, idx: usize) -> String {
     doc.element(idx).text(doc).trim().to_string()
 }
 
-/// 词法扫描 [A-Za-z_][A-Za-z0-9_]*(TS typeCandidateRegex 同序)。
+/// Lexical scan [A-Za-z_][A-Za-z0-9_]* (same order as TS typeCandidateRegex).
 fn word_tokens(value: &str) -> Vec<String> {
     let mut out = Vec::new();
     let chars: Vec<char> = value.chars().collect();
@@ -185,7 +186,7 @@ fn word_tokens(value: &str) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// 语料类型环境(已入库并集口径,见文件头)
+// Corpus type environment (filed-union stance, see the file header)
 // ---------------------------------------------------------------------------
 
 pub(crate) struct TypeContext {
@@ -220,11 +221,11 @@ impl HoverEngine {
 }
 
 // ---------------------------------------------------------------------------
-// 主面:.def 诊断(TS validateDocument 同序同文案)
+// Main face: .def diagnostics (same order and text as TS validateDocument)
 // ---------------------------------------------------------------------------
 
 impl HoverEngine {
-    /// .def 文档诊断面。文档类型非 .def 返回空(本面只覆盖 validateDocument)。
+    /// The .def document diagnostic face. Non-.def document types return empty (this face covers only validateDocument).
     pub fn def_diagnostics(&self, text: &str) -> Vec<DiagnosticFace> {
         let mut out = Vec::new();
         let doc = xml::parse(text, true);
@@ -237,8 +238,8 @@ impl HoverEngine {
         out
     }
 
-    /// 按文档类型分派(非 .def 现为空面;.entities/.types/.alias 专项诊断
-    /// 属后续单)。
+    /// Dispatch by document type (non-.def is currently an empty face; .entities/.types/.alias dedicated diagnostics
+    /// belong to later tickets).
     pub fn diagnostics(&self, key_uri_path: &str, text: &str) -> Vec<DiagnosticFace> {
         let kind = kode_parser::dep::file_kind_of_uri(&kode_vfs::uri::CanonicalUri::from_path(
             key_uri_path,
@@ -250,7 +251,7 @@ impl HoverEngine {
     }
 }
 
-/// ①标量扫描:visitElementNodes DFS 先序,Type/Flags/DetailLevel 三分支互斥。
+/// 1. Scalar scan: visitElementNodes DFS pre-order, Type/Flags/DetailLevel three mutually exclusive branches.
 fn scalar_pass(
     text: &str,
     doc: &Document,
@@ -263,9 +264,9 @@ fn scalar_pass(
         "Type" => validate_type_node(text, doc, node, ctx, out),
         "Flags" => {
             let raw = node_value(doc, node);
-            // KR-AUD-84:整串查表;'|' 组合形态单独出「引擎不支持」诊断
-            // (与 lint/rules.rs UnknownFlagValueRule、TS validateScalarTagValues
-            // 三处同文案)。
+            // KR-AUD-84: whole-string lookup; the '|' combined form gets a separate "engine does not support" diagnostic
+            // (same text in all three places: here, lint/rules.rs UnknownFlagValueRule, and TS validateScalarTagValues
+            // ).
             let normalized = raw.to_uppercase();
             if raw.contains('|') {
                 out.push(DiagnosticFace {
@@ -302,12 +303,12 @@ fn scalar_pass(
     }
 }
 
-/// 未知 Type 引用:候选词逐个判内建/实体/自定义,未注册 → Error(候选词
-/// 子区间;TS pushDiagnosticForNodeValue 同规则)。missingPythonFile 分支
-/// 不在本面(见文件头划归,服务轨道下由 TS 侧保留该盘上探测分支)。
-/// TS unverifiable 档同口径:types.xml/alias.xml 注册表为空(语料无注册
-/// 视图)时无法裁决,一律静默(resolveCustomTypeReference `!customTypes.size`
-/// 同语义),绝不把无注册视图误报成「未注册」。
+/// Unknown Type references: each candidate word is judged builtin/entity/custom; unregistered -> Error (the candidate-word
+/// sub-range; same rule as TS pushDiagnosticForNodeValue). The missingPythonFile branch
+/// is not on this face (see the attribution boundary in the file header; on the serving track that disk-probe branch is kept by the TS side).
+/// TS unverifiable tier, same stance: when the types.xml/alias.xml registries are empty (no registered
+/// view) nothing can be adjudicated, so always stay silent (resolveCustomTypeReference's `!customTypes.size`
+/// has the same semantics); never misreport an unregistered view as "unregistered".
 fn validate_type_node(
     text: &str,
     doc: &Document,
@@ -340,7 +341,7 @@ fn validate_type_node(
     }
 }
 
-/// ②结构扫描:按段白名单逐段,段内声明节点先重复判定再属性结构判定。
+/// 2. Structural scan: per section whitelist; within a section, duplicate judgement first, then property-structure judgement.
 fn structure_pass(text: &str, doc: &Document, root: usize, out: &mut Vec<DiagnosticFace>) {
     for section in doc.child_elements(root) {
         let section_data = doc.element(section);
@@ -358,7 +359,7 @@ fn structure_pass(text: &str, doc: &Document, root: usize, out: &mut Vec<Diagnos
             let symbol_data = doc.element(symbol);
             let symbol_range = node_range(text, symbol_data);
             if is_properties {
-                // 重复定义(按旗标作用域;首见 wins,Warning+Info 成对)。
+                // Duplicate definition (per flag scope; first-seen wins, Warning+Info paired).
                 let scopes = flag_scopes_owned(doc, symbol);
                 if !scopes.is_empty() {
                     let empty = std::collections::BTreeMap::new();
@@ -397,10 +398,10 @@ fn structure_pass(text: &str, doc: &Document, root: usize, out: &mut Vec<Diagnos
                     }
                 }
             } else {
-                // 接口区块条目是文本形态(`<interface>Name</interface>`,标签只是
-                // 四拼写之一):身份取节点值(接口名)而非标签名——同标签不同接口
-                // 是合法形态(实体可挂多接口),按标签名判重会把第二个接口误报
-                // 重复(TS validateSectionStructure 同源)。
+                // Interface-block entries are in text form (`<interface>Name</interface>`; the tag is only
+                // one of the four spellings): identity takes the node value (the interface name), not the tag name -- the same tag with different interfaces
+                // is a legal shape (an entity may carry multiple interfaces); judging duplicates by tag name would falsely report
+                // the second interface as a duplicate (same source as TS validateSectionStructure).
                 let identity = if section_data.name == "Interfaces" {
                     node_value(doc, symbol)
                 } else {
@@ -423,7 +424,7 @@ fn structure_pass(text: &str, doc: &Document, root: usize, out: &mut Vec<Diagnos
                 }
             }
             if is_properties {
-                // 属性结构:缺 <Type>/<Flags>(Error,节点整体区间)。
+                // Property structure: missing <Type>/<Flags> (Error, the node's overall range).
                 if doc.child_element(symbol, "Type").is_none() {
                     out.push(DiagnosticFace {
                         range: symbol_range.clone(),
@@ -443,7 +444,7 @@ fn structure_pass(text: &str, doc: &Document, root: usize, out: &mut Vec<Diagnos
     }
 }
 
-/// 属性旗标作用域(base/cell/client 序,仅保留命中的)。
+/// Property flag scopes (base/cell/client order, keeping only the hits).
 fn flag_scopes_owned(doc: &Document, symbol: usize) -> Vec<String> {
     normalize_property_flag(doc.scalar_child_value(symbol, "Flags"))
         .map(|normalized| {
@@ -456,10 +457,10 @@ fn flag_scopes_owned(doc: &Document, symbol: usize) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// 对拍 golden(只写不读;TS 侧 tests/kodeDiagnosticsParity.test.ts 复算)
+// Comparison golden (write-only, never read back; recomputed by the TS side's tests/kodeDiagnosticsParity.test.ts)
 // ---------------------------------------------------------------------------
 
-/// golden 文件名(仓库相对)。
+/// Golden file name (relative to the repo root).
 pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/diagnostics-parity.json";
 
 #[derive(Debug, Serialize)]
@@ -477,7 +478,7 @@ struct GoldenDump {
     files: Vec<GoldenFile>,
 }
 
-/// 整个语料的 diagnostics golden JSON(.def 文件逐份诊断面)。
+/// Diagnostics golden JSON for the whole corpus (per-.def-file diagnostic faces).
 pub fn dump_diagnostics_golden(repo_root: &std::path::Path) -> String {
     use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 

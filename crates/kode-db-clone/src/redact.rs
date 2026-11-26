@@ -1,8 +1,10 @@
-//! 源数据脱敏策略(PDC-0106;PDC-0205 的归档加密/密钥存储属 Phase 2)。
+//! Source data redaction policy (PDC-0106; the PDC-0205 archive encryption /
+//! key storage belongs to Phase 2).
 //!
-//! 定义列敏感度分类(凭据/个人/公开)与掩码助手;执行期经 [`RedactingSink`]
-//! 按策略对敏感列默认脱敏(PDC-0205 敏感信息默认脱敏开关)。归档加密/密钥
-//! 存储见 keystore.rs/archive.rs。
+//! Defines the column sensitivity classification (credential / personal / public)
+//! and masking helpers; at execution time [`RedactingSink`] redacts sensitive
+//! columns by default per policy (the PDC-0205 sensitive-data default-redaction
+//! switch). See keystore.rs/archive.rs for archive encryption and key storage.
 
 use std::collections::BTreeMap;
 
@@ -13,14 +15,15 @@ use crate::planner::QueryPlan;
 use crate::reader::RowSink;
 use crate::value::{TypedRow, TypedValue};
 
-/// 列敏感度。
+/// Column sensitivity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sensitivity {
-    /// 凭据(密码/令牌/密钥)——导出与日志一律掩码。
+    /// Credentials (passwords / tokens / keys) — always masked in exports and logs.
     Credential,
-    /// 个人数据(邮箱/电话/证件)——默认掩码,可经配置放宽。
+    /// Personal data (email / phone / ID numbers) — masked by default, may be
+    /// relaxed via configuration.
     Personal,
-    /// 公开字段(昵称/等级等)——按原值。
+    /// Public fields (nickname / level etc.) — original value.
     Public,
 }
 
@@ -34,15 +37,16 @@ impl Sensitivity {
     }
 }
 
-/// 脱敏策略:按列名分类 + 提供掩码值。
+/// Redaction policy: classifies by column name + supplies mask values.
 #[derive(Debug, Clone, Default)]
 pub struct SensitivityPolicy {
-    /// 覆盖默认分类(列名 → 敏感度)。
+    /// Overrides the default classification (column name → sensitivity).
     pub overrides: Vec<(String, Sensitivity)>,
 }
 
 impl SensitivityPolicy {
-    /// 分类一个列名。凭据模式优先于个人模式;显式 overrides 最高优先。
+    /// Classifies a column name. Credential patterns take priority over personal
+    /// patterns; explicit overrides have the highest priority.
     pub fn classify(&self, column: &str) -> Sensitivity {
         let lower = column.to_ascii_lowercase();
         if let Some((_, s)) = self.overrides.iter().find(|(c, _)| c == column) {
@@ -78,7 +82,8 @@ impl SensitivityPolicy {
         Sensitivity::Public
     }
 
-    /// 按敏感度掩码一个值(凭据→固定 ***;个人→保留首尾;公开→原值)。
+    /// Masks a value by sensitivity (credential → fixed ***; personal → keep first
+    /// and last characters; public → original value).
     pub fn mask(&self, column: &str, value: &str) -> String {
         match self.classify(column) {
             Sensitivity::Credential => "***".into(),
@@ -87,13 +92,15 @@ impl SensitivityPolicy {
         }
     }
 
-    /// 日志行脱敏:把 `key=value`(key 为凭据)中的 value 掩掉。
-    /// 用于导出/审计日志,不把明文凭据写入日志(PDC-0106 源数据脱敏)。
+    /// Log-line redaction: masks the value of `key=value` pairs whose key is a
+    /// credential. Used for export/audit logs so plaintext credentials never enter
+    /// the log (PDC-0106 source data redaction).
     pub fn redact_log(&self, line: &str) -> String {
         let mut out = String::with_capacity(line.len());
         let mut rest = line;
         while let Some(eq) = rest.find('=') {
-            // 取 `=` 前的键(限定在空格/引号边界内的词)。
+            // Take the key before `=` (limited to the word within space/quote
+            // boundaries).
             let key_start = rest[..eq]
                 .rfind([' ', '\t', '"', '\'', ','])
                 .map(|i| i + 1)
@@ -103,14 +110,17 @@ impl SensitivityPolicy {
             if self.classify(key_trim) == Sensitivity::Credential {
                 out.push_str(&rest[..eq]);
                 out.push_str("=***");
-                // 跳过值体(不把明文凭据回灌输出)。引号值须跳过整个引号区间
-                // (含闭引号,不吸收其后的空白);裸值以空白/逗号为界。
+                // Skip the value body (plaintext credentials never re-enter the
+                // output). Quoted values must skip the whole quoted span (including
+                // the closing quote, without absorbing trailing whitespace); bare
+                // values end at whitespace/comma.
                 let after_eq = eq + 1;
                 let tail = &rest[after_eq..];
                 let val_end = match tail.as_bytes().first() {
                     Some(b'"') | Some(b'\'') => {
                         let quote = tail.as_bytes()[0] as char;
-                        // 配对闭引号之后的位置;未闭合则吞掉余下全部(安全)。
+                        // Position after the matching closing quote; if unclosed,
+                        // swallow the rest (safe).
                         let close = tail[1..].find(quote).map(|i| i + 2).unwrap_or(tail.len());
                         after_eq + close
                     }
@@ -131,7 +141,8 @@ impl SensitivityPolicy {
     }
 }
 
-/// 个人数据掩码:保留首尾字符,中间以 `*` 替代(长度≤4 则全掩)。
+/// Personal data mask: keeps the first and last characters, replaces the middle
+/// with `*` (length ≤ 4 masks everything).
 fn mask_personal(value: &str) -> String {
     let chars: Vec<char> = value.chars().collect();
     if chars.len() <= 4 {
@@ -146,13 +157,14 @@ fn mask_personal(value: &str) -> String {
     out
 }
 
-/// 脱敏执行汇(PDC-0205 默认脱敏):把敏感列的文本值掩码后转交内层汇,
-/// 并逐列计数掩码次数(进 redaction-report.json)。非文本敏感值保持原样
-/// (无字符串形态,不假掩)但仍在报告标注。
+/// Redaction execution sink (PDC-0205 default redaction): masks text values of
+/// sensitive columns before handing rows to the inner sink, and counts masks per
+/// column (fed into redaction-report.json). Non-text sensitive values stay as-is
+/// (no string form exists, so no fake masking) but are still noted in the report.
 pub struct RedactingSink<'a> {
     inner: &'a mut dyn RowSink,
     policy: &'a SensitivityPolicy,
-    /// 表 → 列名序(来自计划,与行值序对齐)。
+    /// table → column name order (from the plan, aligned with row value order).
     columns: BTreeMap<String, Vec<String>>,
     masked: BTreeMap<(String, String), u64>,
 }
@@ -186,12 +198,13 @@ impl<'a> RedactingSink<'a> {
         }
     }
 
-    /// 掩码计数(表,列) → 次数,作脱敏报告原料。
+    /// Mask counts (table, column) → count, the raw material of the redaction
+    /// report.
     pub fn masked_counts(&self) -> &BTreeMap<(String, String), u64> {
         &self.masked
     }
 
-    /// 脱敏报告(逐条:表/列/敏感度/掩码次数)。
+    /// Redaction report (per entry: table / column / sensitivity / mask count).
     pub fn report(&self) -> RedactionReport {
         let entries = self
             .masked
@@ -244,7 +257,7 @@ impl RowSink for RedactingSink<'_> {
     }
 }
 
-/// 脱敏报告(归档 redaction-report.json 的形态)。
+/// Redaction report (the shape of the archive's redaction-report.json).
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct RedactionReport {
     pub entries: Vec<RedactionEntry>,
@@ -283,7 +296,7 @@ mod tests {
     fn masks_by_sensitivity() {
         let p = SensitivityPolicy::default();
         assert_eq!(p.mask("sm_password", "hunter2"), "***");
-        assert_eq!(p.mask("email", "a@b.com"), "a*****m"); // 首尾保留,中间 *
+        assert_eq!(p.mask("email", "a@b.com"), "a*****m"); // first/last kept, middle *
         assert_eq!(p.mask("sm_name", "Alice"), "Alice");
     }
 
@@ -305,7 +318,8 @@ mod tests {
 
     #[test]
     fn redacts_quoted_credential_values_wholesale() {
-        // 带引号的凭据值:必须跳过整个引号区间,不得把值体回灌输出。
+        // Quoted credential values: must skip the entire quoted span; the value
+        // body must not re-enter the output.
         let p = SensitivityPolicy::default();
         let line = "password=\"hunter2\" token='abc123' name=Alice";
         let out = p.redact_log(line);
@@ -324,7 +338,8 @@ mod tests {
 
     #[test]
     fn redacts_quoted_value_with_internal_space() {
-        // 引号内空白不截断值:整段引号值一并掩掉。
+        // Whitespace inside quotes must not truncate the value: mask the whole
+        // quoted value in one go.
         let p = SensitivityPolicy::default();
         let line = "password=\"my secret pass\" name=Alice";
         let out = p.redact_log(line);
@@ -345,7 +360,8 @@ mod tests {
         assert_eq!(mask_personal("ab"), "**");
         assert_eq!(mask_personal("abc"), "***");
         assert_eq!(mask_personal(""), "");
-        // 多字节字符按字符数掩码,不按字节;>4 保留首尾。
+        // Multi-byte characters are masked by character count, not bytes; >4 keeps
+        // first and last.
         assert_eq!(mask_personal("王小明同学"), "王***学");
     }
 
@@ -356,7 +372,8 @@ mod tests {
         assert!(format!("{p:?}").contains("SensitivityPolicy"));
     }
 
-    /// 行捕获汇:记录流经的行,供断言脱敏前后差异。
+    /// Row-capture sink: records the rows flowing through, for asserting redaction
+    /// differences.
     struct CaptureSink {
         rows: Vec<TypedRow>,
         ended: Vec<(String, u64)>,
@@ -422,7 +439,7 @@ mod tests {
             )
             .unwrap();
             sink.end_table("tbl_Avatar", 1).unwrap();
-            // 计划外的表:直通,不改写。
+            // Tables outside the plan: pass through, no rewrite.
             sink.write_row("tbl_Unknown", &text_row("tbl_Unknown", &["a@b.com"]))
                 .unwrap();
             let report = sink.report();
@@ -437,7 +454,8 @@ mod tests {
             assert_eq!(by_col.remove("sm_name"), None, "公开列不进报告");
             assert!(!sink.masked_counts().is_empty());
         }
-        // 首行:敏感列被掩,公开列保留;end_table 直通。
+        // First row: sensitive columns masked, public columns kept; end_table passes
+        // through.
         assert_eq!(capture.rows[0].values[0], TypedValue::Text("Alice".into()));
         assert_eq!(
             capture.rows[0].values[1],
@@ -445,7 +463,7 @@ mod tests {
         );
         assert_eq!(capture.rows[0].values[2], TypedValue::Text("***".into()));
         assert_eq!(capture.ended, vec![("tbl_Avatar".to_string(), 1)]);
-        // 未知表行原样直通。
+        // Unknown-table rows pass through unchanged.
         assert_eq!(
             capture.rows[1].values[0],
             TypedValue::Text("a@b.com".into())
@@ -461,7 +479,7 @@ mod tests {
             ended: Vec::new(),
         };
         let mut sink = RedactingSink::new(&mut capture, &policy, &plan);
-        // 掩码后与原值相同(公开列)→ 不改写、不计数。
+        // Masked output equals the original (public column) → no rewrite, no count.
         sink.write_row("tbl_Avatar", &text_row("tbl_Avatar", &["Alice"]))
             .unwrap();
         assert_eq!(sink.masked_counts().len(), 0);
@@ -471,7 +489,8 @@ mod tests {
 
     #[test]
     fn redacting_sink_debug_renders_policy_and_masks() {
-        // Debug 是审计面:策略与掩码计数可见,行缓冲不整块倾倒。
+        // Debug is the audit face: policy and mask counts visible, row buffers not
+        // dumped wholesale.
         let plan = plan_with_columns(&["sm_name", "email"]);
         let policy = SensitivityPolicy::default();
         let mut capture = CaptureSink {
@@ -488,8 +507,9 @@ mod tests {
 
     #[test]
     fn non_text_value_in_sensitive_column_passes_through() {
-        // 敏感列的值不是文本(数值/blob 等):掩码策略只作用于文本形态,
-        // 非文本值原样直通、不计数、不报错。
+        // The sensitive column's value is not text (numbers / blobs etc.): the mask
+        // policy only applies to the text form; non-text values pass through
+        // unchanged, uncounted, without error.
         let plan = plan_with_columns(&["email"]);
         let policy = SensitivityPolicy::default();
         let mut capture = CaptureSink {

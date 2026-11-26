@@ -1,20 +1,26 @@
 /**
- * KODE-CFG-017 推断层：pyrefly infer 外置二进制发现 + 参数构造 + 写权限闸。
- * 纯逻辑层不 import vscode；装配层入口在文件尾部的 sync 入口（同
- * pythonExtraPaths 模式：纯函数重测，执行器薄）。
+ * KODE-CFG-017 inference face: pyrefly infer external binary discovery +
+ * argument construction + write-permission gate.
+ * The pure logic layer does not import vscode; the wiring layer entry is the
+ * sync entry at the end of the file (same pattern as pythonExtraPaths: pure
+ * functions re-tested, thin executor).
  *
- * 验证结论（todo KODE-CFG-017）：正确子命令是 `infer`（激进推断，本地字面量
- * + 引用链）而非 `stubgen`（1.4.0 对无标注全落 Incomplete）；def 真值经
- * `--search-path`（.kbengine/stubs）喂入后推断沿真值链走。
+ * Verification conclusion (todo KODE-CFG-017): the correct subcommand is
+ * `infer` (aggressive inference over local literals + reference chains), not
+ * `stubgen` (1.4.0 falls back to Incomplete for everything unannotated); def
+ * ground truth is fed in via `--search-path` (.kbengine/stubs) so inference
+ * follows the truth chain.
  */
 
 import * as path from 'path';
 import { pathApiFor } from './workspacePath';
 
 // ---------------------------------------------------------------------------
-// 写权限闸（用户令 2026-11-03）：scope 外写一律拒绝，不静默。
-// Rust 核搬移前，本函数是全部落盘路径的强制关卡；语义与 Rust 侧一致：
-// Managed（默认，仅 .kbengine/**）| UserSource（另含 scripts/**，须显式开启）。
+// Write-permission gate (user order 2026-11-03): writes outside the scope are
+// always denied, never silently. Until the Rust core migration lands, this
+// function is the mandatory checkpoint for every disk-write path; semantics
+// match the Rust side: Managed (default, .kbengine/** only) | UserSource
+// (additionally scripts/**, must be explicitly enabled).
 // ---------------------------------------------------------------------------
 
 export type SourceWriteScope = 'managed' | 'user';
@@ -24,7 +30,7 @@ export const SOURCE_WRITE_SCOPE_USER: SourceWriteScope = 'user';
 
 export interface WriteScopeDecision {
   allowed: boolean;
-  /** 拒绝原因（allowed=false 时必有，供诊断播报，不静默） */
+  /** Denial reason (always present when allowed=false; surfaced for diagnostics, never silent) */
   reason?: string;
 }
 
@@ -34,10 +40,11 @@ function isInside(root: string, target: string): boolean {
 }
 
 /**
- * 闸判定（纯函数）：target 是否落在 scope 允许的写域内。
- * - managed：仅 <workspaceRoot>/<managedDir>/** 内可写；
- * - user：managed 域 ∪ <scriptsRoot>/**（须用户显式开启
- *   `kbengine.infer.sourceWrite=user`，默认 managed）。
+ * Gate decision (pure function): whether target falls inside the write domain
+ * allowed by the scope.
+ * - managed: writable only inside <workspaceRoot>/<managedDir>/**;
+ * - user: managed domain ∪ <scriptsRoot>/** (requires the user to explicitly
+ *   enable `kbengine.infer.sourceWrite=user`; default is managed).
  */
 export function assertWritable(
   target: string,
@@ -63,21 +70,21 @@ export function assertWritable(
 }
 
 // ---------------------------------------------------------------------------
-// 二进制发现：设置 > PATH > pipx 默认位。
+// Binary discovery: setting > PATH > pipx default location.
 // ---------------------------------------------------------------------------
 
 export interface PyreflyDiscoveryDeps {
   exists: (absPath: string) => boolean;
-  /** PATH 环境变量串（装配层传 process.env.PATH；测试注入） */
+  /** PATH environment variable string (wiring layer passes process.env.PATH; tests inject) */
   envPath?: string;
-  /** 用户主目录（pipx 默认位 ~/.local/bin） */
+  /** User home directory (pipx default location ~/.local/bin) */
   homeDir?: string;
 }
 
 const PYREFLY_BINARY = 'pyrefly';
 const PYREFLY_WINDOWS_BINARY = 'pyrefly.exe';
 
-/** 发现 pyrefly 可执行文件绝对路径；找不到返回 null（功能降级不报错） */
+/** Discover the absolute path of the pyrefly executable; returns null when not found (feature degrades without an error) */
 export function discoverPyrefly(settingPath: unknown, deps: PyreflyDiscoveryDeps): string | null {
   if (typeof settingPath === 'string' && settingPath.trim() !== '') {
     const candidate = settingPath.trim();
@@ -87,8 +94,9 @@ export function discoverPyrefly(settingPath: unknown, deps: PyreflyDiscoveryDeps
   const names = pathEnv.includes(';') ? [PYREFLY_WINDOWS_BINARY, PYREFLY_BINARY] : [PYREFLY_BINARY];
   for (const dir of pathEnv.split(path.delimiter).filter(segment => segment !== '')) {
     for (const name of names) {
-      // WIN-3:按目录风格 join——POSIX 目录(/ 开头)保持 /,win 盘符走平台
-      // path;否则 win32 把 /usr/local/bin 拼成 \usr\local\bin 与探针错配。
+      // WIN-3: join per directory style -- POSIX dirs (leading /) keep /,
+      // win drive letters take the platform path; otherwise win32 joins
+      // /usr/local/bin into \usr\local\bin, mismatching the probe.
       const candidate = pathApiFor(dir).join(dir, name);
       if (deps.exists(candidate)) {
         return candidate;
@@ -105,12 +113,13 @@ export function discoverPyrefly(settingPath: unknown, deps: PyreflyDiscoveryDeps
 }
 
 // ---------------------------------------------------------------------------
-// 参数构造。
+// Argument construction.
 // ---------------------------------------------------------------------------
 
 /**
  * `pyrefly infer --python-version <v> --search-path <stubs>... <targetDir>`
- * （目标 Python 3.7 是 KBEngine 内嵌解释器版本；search-path 喂 def 真值）。
+ * (target Python 3.7 is the KBEngine embedded interpreter version;
+ * search-path feeds def ground truth).
  */
 export function buildInferArgs(
   pythonVersion: string,
@@ -126,7 +135,7 @@ export function buildInferArgs(
 }
 
 // ---------------------------------------------------------------------------
-// 执行（装配层注入 spawn；测试不依赖真 pyrefly）。
+// Execution (wiring layer injects spawn; tests do not depend on a real pyrefly).
 // ---------------------------------------------------------------------------
 
 export interface SpawnResult {
@@ -145,8 +154,8 @@ export type PyreflyRunStatus = 'ran' | 'ran-with-errors' | 'not-found';
 
 export interface PyreflyRunOutcome {
   status: PyreflyRunStatus;
-  /** 进程退出码（not-found 无） */
+  /** Process exit code (absent for not-found) */
   code?: number;
-  /** 退出码非 0 时的 stderr 摘要（供诊断） */
+  /** stderr summary when the exit code is non-zero (for diagnostics) */
   stderr?: string;
 }

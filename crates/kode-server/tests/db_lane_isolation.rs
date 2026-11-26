@@ -14,7 +14,9 @@
 //!    纯 CPU 类别(与 RUST-180 配置取数同规则:用户主动刷新的视图取数
 //!    不被后台硬顶拦截,也不许被误归 IO 表)。
 
-use kode_server::executor::{execution_lane, rpc_job_kind, rpc_lane_class, ExecutionLane, PoolLane};
+use kode_server::executor::{
+    execution_lane, rpc_job_kind, rpc_lane_class, ExecutionLane, PoolLane,
+};
 use kode_server::ServerState;
 
 /// 生产依赖禁入的数据库驱动/网络客户端键(全族,防换皮)。
@@ -37,13 +39,20 @@ const FORBIDDEN_DRIVER_KEYS: &[&str] = &[
 /// kode-db-clone 生产依赖白名单(纯数据处理:序列化/哈希/加密/熵)。
 /// 任何人往该 crate 加新生产依赖(哪怕看起来无害)都会红——隔离属性按
 /// 清单钉死,不靠口头约定。
-const DB_CLONE_ALLOWED_KEYS: &[&str] = &["serde", "serde_json", "sha2", "chacha20poly1305", "getrandom"];
+const DB_CLONE_ALLOWED_KEYS: &[&str] = &[
+    "serde",
+    "serde_json",
+    "sha2",
+    "chacha20poly1305",
+    "getrandom",
+];
 
 /// 读 Cargo.toml,剥注释后按节归类,返回生产依赖节([dependencies] 与
 /// [target.*.dependencies] 这类生产目标节)的依赖键集合。
 /// [dev-dependencies]/[build-dependencies] 不算生产面。
 fn production_dependency_keys(path: &std::path::Path) -> Vec<String> {
-    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("读 {} 失败: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("读 {} 失败: {e}", path.display()));
     let mut keys = Vec::new();
     let mut section = String::new();
     for raw in text.lines() {
@@ -52,7 +61,10 @@ fn production_dependency_keys(path: &std::path::Path) -> Vec<String> {
             continue;
         }
         if line.starts_with('[') {
-            section = line.trim_start_matches('[').trim_end_matches(']').to_string();
+            section = line
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_string();
             continue;
         }
         let is_production = section == "dependencies"
@@ -72,7 +84,8 @@ fn production_dependency_keys(path: &std::path::Path) -> Vec<String> {
 
 /// 读指定节([dev-dependencies] 等)的依赖键集合。
 fn section_dependency_keys(path: &std::path::Path, want: &str) -> Vec<String> {
-    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("读 {} 失败: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("读 {} 失败: {e}", path.display()));
     let mut keys = Vec::new();
     let mut section = String::new();
     for raw in text.lines() {
@@ -81,7 +94,10 @@ fn section_dependency_keys(path: &std::path::Path, want: &str) -> Vec<String> {
             continue;
         }
         if line.starts_with('[') {
-            section = line.trim_start_matches('[').trim_end_matches(']').to_string();
+            section = line
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_string();
             continue;
         }
         if section != want {

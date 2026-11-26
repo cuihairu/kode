@@ -1,16 +1,20 @@
 /**
- * user_type 三契约探测/收集收编 Rust(RUST-MIGRATION-AUDIT-006 B1 车道批 4):
- * `$/kode/python/userTypeContract` 的 TS 装配面。探测核(implFileHasContract-
- * Method)与缺方法收集核(collectUserTypeContractMissing)逐字移植在 Rust;
- * 注册表半(types.xml/alias.xml 解析、impl 行定位、文件读取=definition-
- * Workspace 宿主绑定)留 TS——本模块只做组装:快照收集(statuses 带 methods
- * 供 TS 兜底,RPC 下发剥 methods 由 Rust 从 sources 原文重探测)→
- * gate.runInRust({file, sources, statuses}) → items 形状校验(message/method
- * ∈三方法/typeName/symbolName/symbolLength 非负整数/line 非负整数/related
- * 双串,畸形整面弃用)→ items(line 已贴)。无绑定本文件的 status → 合法
- * 空面 [](不空发 RPC);无门/失败/畸形 → null → 调用方回 TS
- * collectUserTypeContractMissingByImplFile 兜底——禁止部分采用;杀开关
- * kbengine.core.backend=ts 语义不变。
+ * user_type triple-contract probing/collection absorbed into Rust (RUST-MIGRATION-
+ * AUDIT-006 B1 lane batch 4): the TS wiring face of `$/kode/python/userTypeContract`.
+ * The probe core (implFileHasContractMethod) and the missing-method collection core
+ * (collectUserTypeContractMissing) are ported verbatim into Rust; the registry half
+ * (types.xml/alias.xml parsing, impl-line locating, and file reading = definition-
+ * Workspace host binding) stays in TS — this module only assembles: snapshot
+ * collection (statuses carry methods for the TS fall back; the RPC wire strips
+ * methods and Rust re-probes from the verbatim sources) →
+ * gate.runInRust({file, sources, statuses}) → items shape validation (message/method
+ * ∈ the three methods/typeName/symbolName/symbolLength a non-negative integer/line a
+ * non-negative integer/related a pair of strings; a malformed shape discards the
+ * whole face) → items (line already attached). A status not bound to this file → a
+ * legitimate empty face [] (no empty RPC is sent); no gate / failure / malformed →
+ * null → the caller falls back to the TS collectUserTypeContractMissingByImplFile —
+ * partial adoption is forbidden; the kill switch kbengine.core.backend=ts keeps its
+ * semantics unchanged.
  */
 import { readWorkspaceTextFile } from '../definitionWorkspace';
 import {
@@ -25,12 +29,13 @@ const USER_TYPE_CONTRACT_RUST_METHOD = '$/kode/python/userTypeContract';
 
 const CONTRACT_METHOD_SET = new Set<string>(USER_TYPE_CONTRACT_METHODS);
 
-/** 一条缺方法诊断项(定位行已贴;= TS collectUserTypeContractMissingByImplFile 出参同构) */
+/** One missing-method diagnostic item (line already attached; isomorphic to the TS collectUserTypeContractMissingByImplFile output) */
 export type RustUserTypeContractMissingItem = UserTypeContractMissingItem & { line: number };
 
 /**
- * Rust-first 缺方法收集:无门/失败/畸形 → null(调用方回 TS 兜底);
- * 无绑定目标文件的 status → 合法空面 [](不空发 RPC)。
+ * Rust-first missing-method collection: no gate / failure / malformed → null (the
+ * caller falls back to TS); a status not bound to the target file → a legitimate
+ * empty face [] (no empty RPC is sent).
  */
 export async function collectUserTypeContractMissingByImplFileFromRust(
   statuses: readonly UserTypeContractStatus[],
@@ -53,7 +58,7 @@ export async function collectUserTypeContractMissingByImplFileFromRust(
     file: implFile,
     sources,
     statuses: statuses.map(status => {
-      // methods 不下发:探测在 Rust 从 sources 原文重做(TS 快照 methods 仅供兜底)
+      // methods is not sent over the wire: probing is redone in Rust from the verbatim sources (the TS snapshot's methods only serve the fall back)
       const wire: Record<string, unknown> = { name: status.name };
       if (status.implementedBy !== undefined) {
         wire.implementedBy = status.implementedBy;

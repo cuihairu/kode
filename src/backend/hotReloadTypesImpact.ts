@@ -1,34 +1,47 @@
 /**
- * RUST-398(HR-HASH-011):types.xml 自定义类型变化 → 受影响全部 .def 的
- * reverse-dependency 影响报告。
+ * RUST-398 (HR-HASH-011): types.xml custom type changes -> reverse-dependency
+ * impact report over all affected .def files.
  *
- * 口径:
- * - 自定义类型声明 = types.xml <root> 的每个子元素(别名、ARRAY、FIXED_DICT
- *   都是命名类型,声明名 = 元素名;kind = `type` 属性或内容首 token)。
- * - 类型结构形状 = 声明元素的规范化结构序列化(与 hotReloadDefStructure 的
- *   structuralNodeFingerprint 同款:去注释/空白、子序排序)。形状变 = 结构性变化。
- * - 类型依赖图:类型 A 引用类型 B ⟺ A 的子树里出现 B 的名字(作为 <Type>/<of>
- *   token),且 B 本身是已声明自定义类型。变化沿依赖图**传递闭包**传播:
- *   类型 B 变 → 依赖 B 的类型 A 的语义也变 → 引用 A 的 .def 受影响。
- * - .def 的自定义类型引用 = 文档内 <Type>/<Arg>/<of> 元素文本首 token,
- *   过滤到已声明自定义类型名集合。内建类型(UINT16/STRING/...)不在声明集,
- *   自然不被计入(引用未注册名 = 未注册,另有诊断面,本模块不冒充)。
- * - 严重性:任何受影响 .def 都标 restartRequired——自定义类型形状变化即
- *   序列化/RPC 形状变化(与 RUST-397 门禁同判据),不作为普通 Python reload
- *   自动发送;types.xml 本身按书 §19.4 不得默认自动应用,本模块只出报告。
- * - 新增类型不使既有 .def 受影响(现有文档无从引用尚不存在的类型),只如实
- *   记入 changedTypes;删除/变化按上述闭包传播。
+ * Convention:
+ * - Custom type declaration = every child element of the types.xml <root>
+ *   (alias, ARRAY, FIXED_DICT are all named types; declaration name = element
+ *   name; kind = the `type` attribute or the first token of the content).
+ * - Type structural shape = canonical structural serialization of the
+ *   declaring element (same discipline as hotReloadDefStructure's
+ *   structuralNodeFingerprint: comments/whitespace stripped, children
+ *   sorted). Shape change = structural change.
+ * - Type dependency graph: type A references type B <=> B's name appears in
+ *   A's subtree (as a <Type>/<of> token) and B itself is a declared custom
+ *   type. Changes propagate along the dependency graph's **transitive
+ *   closure**: type B changes -> the semantics of type A that depends on B
+ *   change too -> .def files referencing A are affected.
+ * - Custom type references of a .def = first token of the <Type>/<Arg>/<of>
+ *   element text inside the document, filtered to the set of declared custom
+ *   type names. Built-in types (UINT16/STRING/...) are not in the declared
+ *   set and are naturally not counted (referencing an unregistered name =
+ *   unregistered; there is a separate diagnostic face for that, and this
+ *   module does not impersonate it).
+ * - Severity: every affected .def is marked restartRequired -- a custom type
+ *   shape change is a serialization/RPC shape change (same criterion as the
+ *   RUST-397 gate) and is not auto-sent as a plain Python reload; types.xml
+ *   itself must not be auto-applied by default per book §19.4, this module
+ *   only produces the report.
+ * - Added types do not affect existing .def files (existing documents cannot
+ *   reference a type that does not exist yet); they are only honestly
+ *   recorded in changedTypes; removals/changes propagate via the closure
+ *   above.
  *
- * 纯逻辑无 vscode/fs 依赖,单测用例直驱;执行编排归 hotReload 管道调用方。
+ * Pure logic with no vscode/fs dependency, unit tests drive it directly;
+ * execution orchestration belongs to the hotReload pipeline caller.
  */
 
 import { parseDefDocument, type DefElementNode } from './defParser';
 
 export interface CustomTypeDecl {
   name: string;
-  /** 规范化结构形状:变=结构性变化(去注释/空白,子序排序) */
+  /** Canonical structural shape: changed = structural change (comments/whitespace stripped, children sorted) */
   shape: string;
-  /** 直接引用的自定义类型名(子树 <Type>/<of> token ∩ 声明集) */
+  /** Directly referenced custom type names (subtree <Type>/<of> tokens ∩ declared set) */
   references: string[];
 }
 
@@ -37,28 +50,28 @@ export type CustomTypeChangeKind = 'added' | 'removed' | 'changed';
 export interface CustomTypeChange {
   name: string;
   change: CustomTypeChangeKind;
-  /** 变化说明(回显/报告同源) */
+  /** Change description (shared source for echo/report) */
   reason: string;
 }
 
 export interface AffectedDef {
   name: string;
-  /** 逐条影响(引用链点名:直接引用 vs 经类型依赖传播) */
+  /** Per-item impact (names the reference chain: direct reference vs propagated via type dependency) */
   reasons: string[];
 }
 
 export interface TypesImpactReport {
-  /** types.xml 自定义类型变化逐条(增/删/形状变) */
+  /** types.xml custom type changes, one entry each (added/removed/shape changed) */
   readonly changedTypes: CustomTypeChange[];
-  /** 受影响 .def 逐文件(经直接或传递闭包依赖) */
+  /** Affected .def files, one entry each (via direct or transitive-closure dependency) */
   readonly affectedDefs: AffectedDef[];
   readonly totalDefCount: number;
   readonly affectedDefCount: number;
-  /** 任何受影响 .def 存在 → 需重启,不自动热更 */
+  /** Any affected .def exists -> restart required, no automatic hot reload */
   readonly anyAffected: boolean;
 }
 
-/** 元素内全部文本拼接去空白(取 <Type> 文本首 token 用) */
+/** Concatenates all text inside an element, trimmed (used for the <Type> text first token) */
 const descendantTextTrimmed = (element: DefElementNode): string => {
   let text = '';
   for (const child of element.children) {
@@ -72,14 +85,15 @@ const descendantTextTrimmed = (element: DefElementNode): string => {
 };
 
 /**
- * 规范化结构序列化(与 hotReloadDefStructure.structuralNodeFingerprint 同款
- * 纪律):递归元素名+文本,去注释/空白,子序排序——注释/空白/重排不产生差异,
- * 结构或文本变则差异。
+ * Canonical structural serialization (same discipline as
+ * hotReloadDefStructure.structuralNodeFingerprint): recursive element names +
+ * text, comments/whitespace stripped, children sorted -- comments/whitespace/
+ * reordering produce no difference; structural or text changes do.
  */
 const structuralShape = (element: DefElementNode): string => {
   const parts: string[] = [];
-  // 属性入形:`<JSONDATA type="UINT32"/>` 的 kind 就在 type 属性里,忽略属性
-  // 会把 UINT32→INT32 判成未变(序列化形状已变)。
+  // Attributes enter the shape: `<JSONDATA type="UINT32"/>` carries its kind
+  // in the type attribute; ignoring attributes would judge UINT32->INT32 as unchanged (the serialized shape did change).
   for (const [key, value] of Object.entries(element.attributes)) {
     parts.push(`${key}=${value}`);
   }
@@ -101,7 +115,7 @@ const childElements = (element: DefElementNode): DefElementNode[] =>
 
 const firstToken = (value: string): string => value.trim().split(/\s+/)[0];
 
-/** 子树内所有 <Type>/<of>/<Arg> 文本 token(自定义类型候选,调用方过滤) */
+/** All <Type>/<of>/<Arg> text tokens in the subtree (custom type candidates; the caller filters) */
 const collectTypeTokens = (element: DefElementNode, into: Set<string>): void => {
   if (element.name === 'Type' || element.name === 'of' || element.name === 'Arg') {
     const token = firstToken(descendantTextTrimmed(element));
@@ -115,8 +129,10 @@ const collectTypeTokens = (element: DefElementNode, into: Set<string>): void => 
 };
 
 /**
- * 解析 types.xml → 自定义类型声明表(名 → 声明)。解析不出根 = 空表
- * (如实,不造声明);重复名首见保留(BTreeMap entry/or_insert 同口径)。
+ * Parses types.xml -> custom type declaration table (name -> declaration).
+ * No parsable root = empty table (honest, no invented declarations); on
+ * duplicate names the first occurrence wins (same convention as BTreeMap
+ * entry/or_insert).
  */
 export function parseCustomTypes(typesXml: string): Map<string, CustomTypeDecl> {
   const document = parseDefDocument(typesXml);
@@ -125,7 +141,7 @@ export function parseCustomTypes(typesXml: string): Map<string, CustomTypeDecl> 
   if (!root) {
     return table;
   }
-  // 首遍:声明集(重复名首见保留,并记住声明元素供第二遍取 token)
+  // First pass: the declared set (first occurrence wins on duplicates, and remember the declaring element for the second pass to collect tokens)
   const declaredElements = new Map<string, DefElementNode>();
   for (const child of childElements(root)) {
     if (!declaredElements.has(child.name)) {
@@ -137,7 +153,7 @@ export function parseCustomTypes(typesXml: string): Map<string, CustomTypeDecl> 
       });
     }
   }
-  // 二遍:依赖引用 = 子树 token ∩ 声明集(声明集此时已完整)
+  // Second pass: dependency references = subtree tokens ∩ declared set (the declared set is complete by now)
   const declaredNames = new Set(declaredElements.keys());
   for (const [name, element] of declaredElements) {
     const tokens = new Set<string>();
@@ -148,8 +164,10 @@ export function parseCustomTypes(typesXml: string): Map<string, CustomTypeDecl> 
 }
 
 /**
- * .def 文档引用的自定义类型名(直接引用):<Type>/<Arg>/<of> 文本 token ∩
- * 声明集。解析不出 = 空集(解析失败另有诊断面,本面不冒充)。
+ * Custom type names referenced by a .def document (direct references):
+ * <Type>/<Arg>/<of> text tokens ∩ declared set. Not parsable = empty set
+ * (parse failures have their own diagnostic face; this face does not
+ * impersonate it).
  */
 export function collectDefCustomTypeRefs(
   defText: string,
@@ -172,8 +190,9 @@ export function collectDefCustomTypeRefs(
 }
 
 /**
- * 类型依赖图传递闭包:from → 直接引用的自定义类型名集合。
- * reachable = 自身 ∪ 直接引用 ∪ 其引用(迭代至不动点)。
+ * Transitive closure over the type dependency graph: from -> the set of
+ * directly referenced custom type names.
+ * reachable = itself ∪ direct references ∪ their references (iterated to a fixed point).
  */
 function reachableTypes(from: string, decls: ReadonlyMap<string, CustomTypeDecl>): Set<string> {
   const reached = new Set<string>([from]);
@@ -195,17 +214,19 @@ function reachableTypes(from: string, decls: ReadonlyMap<string, CustomTypeDecl>
 }
 
 export interface TypesImpactInput {
-  /** types.xml 变更前原文 */
+  /** types.xml text before the change */
   readonly beforeTypesXml: string;
-  /** types.xml 变更后原文 */
+  /** types.xml text after the change */
   readonly afterTypesXml: string;
-  /** 工作区内全部 .def(名 + 原文;名仅用于报告点名) */
+  /** All .def files in the workspace (name + text; the name is only for naming files in the report) */
   readonly defs: ReadonlyArray<{ name: string; text: string }>;
 }
 
 /**
- * types.xml 自定义类型变化 → 受影响 .def 影响报告(HR-HASH-011)。
- * 变化集 = 增/删/形状变;受影响 = 直接引用或经类型依赖闭包触及变化集的 .def。
+ * types.xml custom type changes -> impact report over affected .def files
+ * (HR-HASH-011). Change set = added/removed/shape changed; affected = .def
+ * files that directly reference, or reach the change set through the type
+ * dependency closure.
  */
 export function analyzeTypesImpact(input: TypesImpactInput): TypesImpactReport {
   const before = parseCustomTypes(input.beforeTypesXml);
@@ -229,16 +250,16 @@ export function analyzeTypesImpact(input: TypesImpactInput): TypesImpactReport {
     }
   }
 
-  // 受影响自定义类型名集:删除/形状变(新增不使既有 .def 受影响)
+  // Set of impacted custom type names: removals/shape changes (additions do not affect existing .def files)
   const impactful = new Set(
     changedTypes.filter(change => change.change !== 'added').map(change => change.name)
   );
 
-  // .def 的自定义类型引用按 before∪after 声明集过滤:删除前的类型仍是自定义
-  // 类型(被删后 def 文本未变,仍引用它),不能用 after 集把删除引用漏掉。
+  // Filter .def custom type references by the before∪after declared set: a type present before removal is
+  // still custom (the def text is unchanged and still references it); the after set alone must not drop removal refs.
   const unionNames = new Set<string>([...before.keys(), ...after.keys()]);
 
-  // 逐 .def:引用集 ∩ 变化闭包;闭包 = 该 def 引用的每个类型可达的(含自身)变化类型
+  // Per .def: reference set ∩ change closure; closure = impacted types reachable from each type this def references (itself included)
   const affectedDefs: AffectedDef[] = [];
   for (const def of input.defs) {
     const refs = collectDefCustomTypeRefs(def.text, unionNames);
@@ -270,7 +291,7 @@ export function analyzeTypesImpact(input: TypesImpactInput): TypesImpactReport {
   };
 }
 
-/** 影响报告回显行(详情面直显) */
+/** Impact report echo line (shown directly in the detail face) */
 export function formatTypesImpactReport(report: TypesImpactReport): string {
   if (report.changedTypes.length === 0) {
     return 'types.xml 无自定义类型结构变化,无影响';

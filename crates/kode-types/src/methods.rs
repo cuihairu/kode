@@ -1,31 +1,41 @@
-//! .def 方法元数据面(SEM-006/RUST-108):方法参数、返回类型声明、
-//! Cell/Base/Client 分面、Property flags、调用权限元数据。
+//! .def method metadata face (SEM-006/RUST-108): method arguments, return type
+//! declarations, Cell/Base/Client facets, Property flags, invocation
+//! permission metadata.
 //!
-//! - 分面 = .def 三段(BaseMethods/CellMethods/ClientMethods),逐方法记录
-//!   声明 site(name span + 1 基行)+ 出处(root/version 经
-//!   [`crate::graph::TypeGraph::set_ingest`] 上下文,provenance 同口径);
-//! - 参数 = `<Arg>` 原文 + 类型引用(kode-parser collect_type_refs 同口径,
-//!   ARRAY/FIXED_DICT 指令剥离 + `<of>` 文本);**引擎 RPC 参数无具名**,
-//!   如实不造参数名;指令独占的 Arg 产出空 ref,如实;
-//! - 返回类型 = def `<ReturnType>` 直文本声明(TS definitionSemantics
-//!   getScalarChildValue 同口径;def 格式无返回值网络序列化,该声明供
-//!   inlay/导航消费——Python 推导居 RUST-PRECISION 面,两者互补不混流);
-//! - 调用权限 = `Exposed` truthy + 分面:Base/Cell 分面的 Exposed = 客户端
-//!   可调(引擎 exposedMethods);Client 分面 = 服务端→客户端方向,不因
-//!   无 Exposed 而不可达——事实记录在此,解释居消费面;
-//! - Property flags:`DefFile.properties[].flags`(规范化 token)已由
-//!   kode-parser 承载,本模块不重复建模(def 旗标语义居
-//!   defAnalyzer/CELL-08 各面)。
+//! - Facet = the three .def sections (BaseMethods/CellMethods/ClientMethods);
+//!   each method records its declaration site (name span + 1-based line) plus
+//!   its origin (root/version carried through the
+//!   [`crate::graph::TypeGraph::set_ingest`] context, same provenance
+//!   semantics);
+//! - Args = `<Arg>` raw text + type references (same semantics as kode-parser
+//!   collect_type_refs: ARRAY/FIXED_DICT directive stripping + `<of>` text);
+//!   **engine RPC parameters are unnamed**, so no argument names are invented;
+//!   an Arg occupied solely by a directive yields an empty ref, as-is;
+//! - Return type = the raw text declaration of def `<ReturnType>` (same
+//!   semantics as TS definitionSemantics getScalarChildValue; the def format has
+//!   no return value network serialization, and this declaration is consumed by
+//!   inlay/navigation — Python inference lives on the RUST-PRECISION face, and
+//!   the two complement each other without mixing);
+//! - Invocation permission = `Exposed` truthy + facet: Exposed on the
+//!   Base/Cell facets = callable from the client (engine exposedMethods); the
+//!   Client facet = server→client direction and is not unreachable merely
+//!   because it lacks Exposed — the fact is recorded here, interpretation
+//!   belongs to the consuming side;
+//! - Property flags: `DefFile.properties[].flags` (normalized tokens) is
+//!   already carried by kode-parser, so this module does not model it again
+//!   (def flag semantics live on the defAnalyzer/CELL-08 faces).
 //!
-//! 注册时机:`add_def` 灌入时逐方法登记;同名实体重复 add_def 整体跳过
-//! (节点 first-write-wins 同口径),不产生重复方法条目。
+//! Registration timing: methods are registered one by one when `add_def`
+//! ingests; a repeated add_def for an entity with the same name is skipped as a
+//! whole (nodes follow the same first-write-wins semantics), so no duplicate
+//! method entries arise.
 
 use kode_parser::Span;
 
 use crate::graph::TypeGraph;
 use crate::provenance::{TypeOrigin, TypeSourceKind};
 
-/// 方法分面(.def 三段)。
+/// Method facet (the three .def sections).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodFacet {
     Base,
@@ -43,40 +53,44 @@ impl MethodFacet {
     }
 }
 
-/// 方法参数:原文 + 类型引用(顺序保留;无具名,引擎 RPC 参数无名字)。
+/// Method argument: raw text + type references (order preserved; unnamed,
+/// since engine RPC parameters have no names).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodArg {
     pub text: String,
     pub type_refs: Vec<String>,
 }
 
-/// 方法元数据(单条 = 一个实体某分面的一个方法声明)。
+/// Method metadata (one entry = one method declaration of an entity on a facet).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodMeta {
-    /// 所属实体(add_def 的 name 参数,= 文件名去 .def)。
+    /// Owning entity (the `name` argument of add_def, = file name minus .def).
     pub entity: String,
     pub facet: MethodFacet,
     pub name: String,
     pub args: Vec<MethodArg>,
-    /// def `<ReturnType>` 直文本声明;缺/空 = None(如实,不猜)。
+    /// Raw text declaration of def `<ReturnType>`; missing/empty = None
+    /// (as-is, no guessing).
     pub return_type: Option<String>,
-    /// `<Exposed>` truthy(调用权限事实;语义见模块doc)。
+    /// `<Exposed>` truthy (the invocation permission fact; semantics in the
+    /// module doc).
     pub exposed: bool,
-    /// 方法声明名 0 基字节区间(parser name_span)。
+    /// 0-based byte range of the method declaration name (parser name_span).
     pub span: Span,
-    /// 方法声明行(parser 1 基)。
+    /// Method declaration line (1-based per the parser).
     pub line: usize,
-    /// 出处(root/version 携带灌入上下文)。
+    /// Origin (carries the ingestion context: root/version).
     pub origin: TypeOrigin,
 }
 
 impl TypeGraph {
-    /// 某实体的全部方法(分面登记序 = def 文件段序,稳定)。
+    /// All methods of an entity (facet registration order = def file section
+    /// order, stable).
     pub fn entity_methods(&self, entity: &str) -> Vec<&MethodMeta> {
         self.methods.iter().filter(|m| m.entity == entity).collect()
     }
 
-    /// 某实体某分面的方法。
+    /// Methods of an entity on a given facet.
     pub fn methods_by_facet(&self, entity: &str, facet: MethodFacet) -> Vec<&MethodMeta> {
         self.methods
             .iter()
@@ -84,7 +98,8 @@ impl TypeGraph {
             .collect()
     }
 
-    /// 调用权限面:某实体 Exposed truthy 的方法(跨分面,登记序)。
+    /// Invocation permission face: methods of an entity whose Exposed is
+    /// truthy (across facets, registration order).
     pub fn exposed_methods(&self, entity: &str) -> Vec<&MethodMeta> {
         self.methods
             .iter()
@@ -92,9 +107,10 @@ impl TypeGraph {
             .collect()
     }
 
-    /// 从 .def 灌入方法元数据(add_def 内部调用;公开度 pub(crate) 防绕过
-    /// 出处上下文)。重复实体(add_def 节点被 first-write-wins 拒绝)不达
-    /// 此处,无重复条目。
+    /// Ingest method metadata from a .def (called inside add_def; kept
+    /// pub(crate) so the origin context cannot be bypassed). A duplicated
+    /// entity (its add_def node rejected by first-write-wins) never reaches
+    /// here, so no duplicate entries arise.
     pub(crate) fn record_methods(&mut self, entity: &str, def: &kode_parser::model::DefFile) {
         for (facet, ms) in [
             (MethodFacet::Base, &def.base_methods),

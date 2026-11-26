@@ -1,11 +1,14 @@
-//! VFS-006 磁盘指纹:mtime + size 双字段。
+//! VFS-006 disk fingerprint: mtime + size, both fields.
 //!
-//! 只看 mtime 是已知坑(粒度粗、可回拨、网络 FS 不可靠),所以指纹恒带 size。
-//! 基础版用 (mtime_secs, mtime_nanos, size) 三元组;内容 hash 增强留接口
-//! ([`DiskFingerprint`] 可扩展),调用方语义不变。
+//! Looking at mtime alone is a known pitfall (coarse granularity, rewritable backwards,
+//! unreliable over a network FS), so the fingerprint always carries size.
+//! The base version uses the (mtime_secs, mtime_nanos, size) triple; the content-hash
+//! extension is kept as an interface ([`DiskFingerprint`] is extensible) without changing
+//! caller semantics.
 //!
-//! [`DiskCache`] 缓存「指纹 → 文本缓冲」:指纹未变的重复 snapshot 不重读文件
-//! (ARCH-003/热路径禁同步全量读);删除/重命名时整体失效(VFS-012)。
+//! [`DiskCache`] caches "fingerprint -> text buffer": a repeated snapshot whose fingerprint is
+//! unchanged does not re-read the file (ARCH-003 / no synchronous full read on the hot path);
+//! delete/rename invalidates it wholesale (VFS-012).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,7 +16,7 @@ use std::sync::Arc;
 
 use crate::line_index::DocumentBuffer;
 
-/// 磁盘文件指纹(VFS-006:mtime + size,缺一不可)。
+/// Disk file fingerprint (VFS-006: mtime + size, neither can be dropped).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiskFingerprint {
     pub mtime_secs: i64,
@@ -22,7 +25,7 @@ pub struct DiskFingerprint {
 }
 
 impl DiskFingerprint {
-    /// stat 一次;文件不存在或 stat 失败返回 `Ok(None)`(VFS-010:不可读 ≠ panic)。
+    /// One stat; a missing file or a failed stat returns `Ok(None)` (VFS-010: unreadable is not a panic).
     pub fn of_path(path: &Path) -> std::io::Result<Option<DiskFingerprint>> {
         match std::fs::metadata(path) {
             Ok(meta) => {
@@ -31,7 +34,8 @@ impl DiskFingerprint {
                     Ok(d) => (d.as_secs() as i64, d.subsec_nanos()),
                     Err(err) => {
                         let d = err.duration();
-                        // 早于 epoch(罕见):用负秒表示,保证指纹仍可比较。
+                        // Before the epoch (rare): encode as negative seconds so the fingerprint
+                        // stays comparable.
                         let nanos = d.subsec_nanos();
                         if nanos == 0 {
                             (-(d.as_secs() as i64), 0)
@@ -58,7 +62,7 @@ struct DiskEntry {
     buffer: DocumentBuffer,
 }
 
-/// 磁盘文本缓存:指纹命中复用缓冲,未命中重读。
+/// Disk text cache: a fingerprint hit reuses the buffer, a miss re-reads the file.
 #[derive(Debug, Default)]
 pub struct DiskCache {
     entries: HashMap<PathBuf, DiskEntry>,
@@ -73,8 +77,9 @@ impl DiskCache {
         self.entries.len()
     }
 
-    /// 读取快照:stat → 指纹与缓存一致则复用;否则读文件重建行索引。
-    /// 读失败(权限/消失/非 UTF-8)返回 Err,不污染缓存(VFS-010)。
+    /// Read a snapshot: after stat, reuse the buffer when the fingerprint matches the cache;
+    /// otherwise read the file and rebuild the line index.
+    /// A read failure (permissions / vanished / non-UTF-8) returns Err and does not pollute the cache (VFS-010).
     pub fn load(&mut self, path: &Path) -> std::io::Result<DocumentBuffer> {
         let fingerprint = DiskFingerprint::of_path(path)?
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "file vanished"))?;
@@ -98,7 +103,7 @@ impl DiskCache {
         Ok(buffer)
     }
 
-    /// VFS-012:删除/重命名时失效对应路径。
+    /// VFS-012: invalidate the corresponding path on delete/rename.
     pub fn invalidate(&mut self, path: &Path) {
         self.entries.remove(path);
     }
@@ -132,10 +137,10 @@ mod tests {
         std::fs::write(&file, b"abc").unwrap();
         let fp1 = DiskFingerprint::of_path(&file).unwrap().unwrap();
         assert_eq!(fp1.size, 3);
-        // 不写入,连 stat 两次 → 指纹稳定。
+        // No write, two stats in a row -> the fingerprint is stable.
         let fp_again = DiskFingerprint::of_path(&file).unwrap().unwrap();
         assert_eq!(fp1, fp_again);
-        // 改内容(size 变)→ 指纹必变。
+        // Change the content (size changes) -> the fingerprint must change.
         std::fs::write(&file, b"abcd").unwrap();
         let fp3 = DiskFingerprint::of_path(&file).unwrap().unwrap();
         assert_ne!(fp1, fp3);
@@ -158,7 +163,7 @@ mod tests {
         assert_eq!(cache.cached_len(), 1);
         let second = cache.load(&file).unwrap();
         assert_eq!(second.text(), "hello");
-        // 内容变了 → 重读并更新缓存。
+        // The content changed -> re-read and update the cache.
         std::fs::write(&file, "changed").unwrap();
         let third = cache.load(&file).unwrap();
         assert_eq!(third.text(), "changed");
@@ -180,8 +185,9 @@ mod tests {
 
     #[test]
     fn pre_epoch_mtime_uses_negative_seconds_fingerprint() {
-        // 早于 epoch(负秒)不能 panic,也不能把指纹折到正数侧:
-        // 整秒 → (-secs, 0);带小数秒 → 向上取整到 (-secs-1, 1e9-nanos)。
+        // A pre-epoch (negative second) mtime must not panic, and must not fold the
+        // fingerprint onto the positive side:
+        // whole seconds -> (-secs, 0); fractional seconds -> round up to (-secs-1, 1e9-nanos).
         let dir = temp_dir("preepoch");
         let whole = dir.join("whole.def");
         let frac = dir.join("frac.def");
@@ -207,7 +213,8 @@ mod tests {
         let fp_frac = DiskFingerprint::of_path(&frac).unwrap().unwrap();
         assert_eq!(fp_frac.mtime_secs, -1);
         assert_eq!(fp_frac.mtime_nanos, 500_000_000);
-        // 同一秒不同小数秒 → 指纹必须可区分(负侧 nanos 进指纹)。
+        // The same second with different fractional seconds -> the fingerprints must be
+        // distinguishable (negative-side nanos enter the fingerprint).
         assert_ne!(fp_whole, fp_frac);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -216,7 +223,8 @@ mod tests {
     #[cfg(unix)]
     fn unreadable_parent_dir_is_err_not_none() {
         use std::os::unix::fs::PermissionsExt;
-        // stat 失败但不是 NotFound(权限拒绝)→ 原样 Err 透传,调用方降级。
+        // A failed stat that is not NotFound (permission denied) -> pass the Err
+        // through as-is and let the caller degrade.
         let dir = temp_dir("perm-stat");
         let locked = dir.join("locked");
         std::fs::create_dir_all(&locked).unwrap();

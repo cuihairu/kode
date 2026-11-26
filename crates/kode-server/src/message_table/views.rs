@@ -1,4 +1,4 @@
-//! def XML 到轻量视图的解析层。
+//! Parsing layer from def XML to lightweight views.
 
 use kode_parser::diag::LineMap;
 use kode_parser::xml::Document;
@@ -6,7 +6,7 @@ use kode_parser::xml::Document;
 use crate::message_table::constants::METHOD_LOAD_ORDER;
 
 // ---------------------------------------------------------------------------
-// def 视图(xml Document 提取;TS parseLocalDefinition 相关字段)
+// Def view (extracted from the xml Document; fields relevant to TS parseLocalDefinition)
 // ---------------------------------------------------------------------------
 
 pub(super) struct DefView {
@@ -46,11 +46,11 @@ pub(super) struct CompView {
     pub(super) type_name: String,
     pub(super) line: usize,
     pub(super) utype: i64,
-    /// `<Persistent>`(truthy);缺省 None = 引擎默认 true(entitydef.cpp L689)。
+    /// `<Persistent>` (truthy); defaults to None = engine default true (entitydef.cpp L689).
     pub(super) persistent: Option<bool>,
 }
 
-/// TS getScalarChildValue:首个匹配子元素直接文本 trim;空 → None。
+/// TS getScalarChildValue: trim the direct text of the first matching child; empty -> None.
 pub(super) fn scalar_child(doc: &Document, idx: usize, name: &str) -> Option<String> {
     let child = doc.child_element(idx, name)?;
     let value = doc.element(child).text(doc).trim().to_string();
@@ -61,7 +61,7 @@ pub(super) fn scalar_child(doc: &Document, idx: usize, name: &str) -> Option<Str
     }
 }
 
-/// TS getNodeValue:子元素文本 trim;空回落首个子元素名;仍空 → None。
+/// TS getNodeValue: trim the child element text; empty falls back to the first child element's name; still empty -> None.
 pub(super) fn node_value(doc: &Document, idx: usize, name: &str) -> Option<String> {
     let child = doc.child_element(idx, name)?;
     let text = doc.element(child).text(doc).trim().to_string();
@@ -73,12 +73,12 @@ pub(super) fn node_value(doc: &Document, idx: usize, name: &str) -> Option<Strin
         .map(|&c| doc.element(c).name.clone())
 }
 
-/// TS parseUtypeValue:非数字文本得 0(视同未设置,自动分配)。
+/// TS parseUtypeValue: non-numeric text yields 0 (treated as unset, auto-assigned).
 pub(super) fn parse_utype(text: Option<&str>) -> i64 {
     text.and_then(|t| t.trim().parse::<i64>().ok()).unwrap_or(0)
 }
 
-/// 已解析 doc 上构造视图(Source::load 复用同一 doc,免二次解析)。
+/// Build a view over an already-parsed doc (Source::load reuses the same doc, avoiding a second parse).
 pub(super) fn parse_def_view_with(doc: &Document, text: &str) -> DefView {
     let lines = LineMap::new(text);
 
@@ -87,9 +87,9 @@ pub(super) fn parse_def_view_with(doc: &Document, text: &str) -> DefView {
     let parent_line = root
         .and_then(|r| doc.child_element(r, "Parent"))
         .map(|p| lines.line_of(doc.element(p).name_span.start));
-    // 引擎 loadInterfaces(entitydef.cpp L559-561)只装载 wrapper 标签为
-    // interface/Interface/type/Type 四拼写的子元素(大小写敏感精确比对),
-    // 其余 continue;取名与 <Parent> 同:文本取文本、元素取标签名。
+    // Engine loadInterfaces (entitydef.cpp L559-561) only loads children whose wrapper tag is one of the
+    // four spellings interface/Interface/type/Type (case-sensitive exact comparison),
+    // everything else continues; naming matches <Parent>: text elements take their text, others take the tag name.
     let interfaces = root
         .and_then(|r| doc.child_element(r, "Interfaces"))
         .map(|ifaces| {
@@ -188,7 +188,7 @@ pub(super) fn parse_method(
     }
 }
 
-/// TS parseArgType:ARRAY 走 `<of>` 递归;缺 of / 空 of 按 TS 语义保留。
+/// TS parseArgType: ARRAY recurses through `<of>`; missing of / empty of kept per TS semantics.
 pub(super) fn parse_arg(doc: &Document, arg_node: usize, name: &str) -> ArgView {
     if name != "ARRAY" {
         return ArgView {

@@ -37,8 +37,7 @@ fn semantics_golden_matches_regenerated_dump() {
 #[test]
 fn semantics_golden_covers_anchor_faces() {
     let golden_path = repo_root().join(GOLDEN_REL_PATH);
-    let committed =
-        std::fs::read_to_string(&golden_path).expect("golden 在案(上一测已断言)");
+    let committed = std::fs::read_to_string(&golden_path).expect("golden 在案(上一测已断言)");
     let value: serde_json::Value = serde_json::from_str(&committed).expect("golden JSON 合法");
     // 覆盖锚:语料规模 / Avatar 三段导航链 / 忽略账 / 内建·生成物探针。
     assert!(value["corpusCount"].as_u64().expect("corpusCount") > 20);

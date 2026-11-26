@@ -1,17 +1,24 @@
-//! attributeNone 诊断词法面(AUDIT-005 B2 车道批 6,LANG-NAR-1 自管属性可能
-//! None 诊断):入参 text 为 TS 预掩码文本(maskPythonNonCode 同源——注释/字符
-//! 串字面量已替换为同长空白,行/列偏移不变),本模块只做词法扫描:
-//! `\bself\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)` 手工展开 + 内建 receiver
-//! (cell/base/client,receiverNone 专责)跳过 + 0 起行号与成员列计算
-//! (UTF-16 码元基底)。流敏感 None 证据面已于 RUST-MIGRATION-AUDIT-006 批 1
-//! 收编 Rust(引擎 kode-python::self_flow);批 2 起本面**内联逐项流事实**——
-//! 响应条目携带 flow:{types,annotation,hasNone,narrowed}(每 (行,属性) 一次
-//! 引擎查询,项间克隆;入参 versionKey 直传 KODE-PERF-001 版本键控解析缓存),
-//! TS render 退位为事实校验+同键矛盾整面作废,双调用缝消除。行数组取
-//! self_flow::split_crlf(= TS `maskedText.split(/\r?\n/)` 同法,掩码行)。
-//! 成员列沿用 TS `match[0].indexOf(member)` 首次出现语义逐字对齐(含
-//! self.<a>.<a> 命中 attr 段的既有口径)。回结构面
-//! [{code,line,character,length,attr,member,flow}],消息不出 Rust。
+//! attributeNone diagnostic lexical face (AUDIT-005 B2 lane batch 6, LANG-NAR-1
+//! self-managed attribute may-be-None diagnostic): the `text` argument is TS
+//! pre-masked text (same source as maskPythonNonCode — comments / string
+//! literals already replaced with equal-length blanks, so line/column offsets
+//! are unchanged); this module only does a lexical scan:
+//! `\bself\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)` expanded by hand + built-in receiver
+//! (cell/base/client, handled by receiverNone) skip + 0-based line number and
+//! member column computation (UTF-16 code-unit base). The flow-sensitive None
+//! evidence face was folded into Rust in RUST-MIGRATION-AUDIT-006 batch 1
+//! (engine kode-python::self_flow); from batch 2 this face **inlines per-item
+//! flow facts** — each response item carries flow:{types,annotation,hasNone,
+//! narrowed} (one engine query per (line, attribute), cloned across items; the
+//! `versionKey` argument is passed straight through to the KODE-PERF-001
+//! version-keyed parse cache), while TS render is demoted to fact validation +
+//! whole-face invalidation on same-key contradictions, removing the double-call
+//! seam. Line array comes from self_flow::split_crlf (= the TS
+//! `maskedText.split(/\r?\n/)` equivalent, masked lines). The member column
+//! keeps the TS `match[0].indexOf(member)` first-occurrence semantics aligned
+//! literally (including the existing self.<a>.<a> hitting the attr segment).
+//! Response shape
+//! [{code,line,character,length,attr,member,flow}]; messages never leave Rust.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -27,10 +34,10 @@ pub fn register(reg: &mut RpcRegistry) {
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 struct AttributeNoneParams {
-    /// TS 预掩码文本(maskPythonNonCode 输出)
+    /// TS pre-masked text (maskPythonNonCode output)
     text: String,
-    /// KODE-PERF-001 版本键控解析缓存键(TS flowVersionKeyForDocument 产物;
-    /// 缺省 = 现解析不缓存,与流引擎纯函数回退同语义)
+    /// KODE-PERF-001 version-keyed parse cache key (produced by TS flowVersionKeyForDocument;
+    /// omitted = parse now without caching, same semantics as the flow engine's pure-function fallback)
     version_key: Option<String>,
 }
 
@@ -45,8 +52,10 @@ struct AttributeNoneItem {
     member: String,
 }
 
-/// 内联流事实面(与 `$/kode/python/selfAttributeFlow` 出参同形;批 2 起随
-/// 词法条目下发,TS render 只做校验+同键矛盾检测,不再二次流查询)
+/// Inline flow fact face (same shape as the `$/kode/python/selfAttributeFlow`
+/// output; from batch 2 it ships with each lexical item, so TS render only
+/// validates + detects same-key contradictions and no longer issues a second
+/// flow query)
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AttributeNoneFlowFace {
@@ -56,8 +65,10 @@ struct AttributeNoneFlowFace {
     narrowed: bool,
 }
 
-/// 响应条目 = 词法结构面 + 内联流事实(引擎查询恒可解:行号来自同文本扫描
-/// 恒在界内、attr 非空;None = 契约漂移,TS 侧整面作废)
+/// Response item = lexical structure face + inline flow facts (the engine query
+/// is always resolvable: the line number comes from a scan of the same text and
+/// is always in range, and attr is non-empty; None = contract drift, and the TS
+/// side invalidates the whole face)
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AttributeNoneItemFace {
@@ -70,14 +81,16 @@ fn analyze_attribute_none(params: Value) -> Result<Value, String> {
     let params: AttributeNoneParams =
         serde_json::from_value(params).map_err(|err| err.to_string())?;
     let items = compute_attribute_none_items(&params.text);
-    // RUST-072:取消(Err)经 worker 结算按取消表裁定 -32800,在此透传,
-    // 不产部分 items 冒充完整面。
+    // RUST-072: cancellation (Err) is settled by the worker as -32800 per the
+    // cancellation table; pass it through here and do not emit partial items
+    // pretending to be a complete face.
     let faces = attach_flow_faces(&params.text, &items, params.version_key.as_deref())?;
     Ok(json!({ "items": faces }))
 }
 
-/// 每 (行, 属性) 一次流引擎查询(kode-python::self_flow 批 1 引擎,与
-/// typeInlayHints 同源),项间克隆;行数组 = 掩码文本 split_crlf。
+/// One flow-engine query per (line, attribute) (kode-python::self_flow batch 1
+/// engine, same source as typeInlayHints), cloned across items; line array =
+/// masked text split_crlf.
 fn attach_flow_faces(
     masked_text: &str,
     items: &[AttributeNoneItem],
@@ -92,8 +105,9 @@ fn attach_flow_faces(
         let flow = match cache.get(&(item.line, item.attr.clone())) {
             Some(hit) => hit.clone(),
             None => {
-                // RUST-072:取消即中止全响应(Err 透传),不缓存部分态;
-                // 缓存随本次调用局部死亡,不跨请求。
+                // RUST-072: cancellation aborts the whole response (Err passes
+                // through) and partial state is not cached; the cache lives and
+                // dies locally with this call and never spans requests.
                 let flow = kode_python::self_flow::infer_self_attribute_flow(
                     &lines,
                     item.line,
@@ -118,10 +132,10 @@ fn attach_flow_faces(
     Ok(faces)
 }
 
-/// 内建 receiver 属性(receiverNone 专责,此处跳过避免重复/口径分叉)
+/// Built-in receiver attributes (handled by receiverNone; skipped here to avoid duplication / diverging criteria)
 const BUILTIN_RECEIVERS: [&str; 3] = ["cell", "base", "client"];
 
-/// TS 词首字符类 `[A-Za-z_]`(不含数字)
+/// TS word-start character class `[A-Za-z_]` (no digits)
 fn is_name_start(code: u16) -> bool {
     code == 0x5F || (0x41..=0x5A).contains(&code) || (0x61..=0x7A).contains(&code)
 }
@@ -140,18 +154,21 @@ fn starts_with(text: &[u16], at: usize, word: &str) -> bool {
                     return false;
                 }
             }
-            None => return true, // 词元耗尽 = 前缀成立
+            None => return true, // word exhausted = prefix holds
         }
     }
     expected.next().is_none()
 }
 
-/// `\bself\.` 扫描(预掩码文本,UTF-16 码元基底)。greedy attr 贪吃全部词元后
-/// 若下一码元非 `.`,回溯无效(缩短 attr 只会留下词元,`.` 仍不成立)→ 不需要
-/// 回溯;member 空则整位匹配失败,引擎前进 1(与 g 正则 lastIndex 语义一致)。
+/// `\bself\.` scan (pre-masked text, UTF-16 code-unit base). When the greedy attr
+/// eats all word characters and the next code unit is not `.`, backtracking is
+/// futile (shortening attr only leaves word characters behind; `.` still does
+/// not hold) -> no backtracking is needed; an empty member means the whole
+/// position fails to match and the engine advances by 1 (same semantics as the
+/// `g` regex lastIndex).
 fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
     let text: Vec<u16> = masked_text.encode_utf16().collect();
-    // 行起始偏移表(每 '\n' 后一位置;与 TS buildLineStarts 等值)
+    // Line-start offset table (one position after each '\n'; equal to TS buildLineStarts)
     let mut line_starts: Vec<usize> = vec![0];
     for (idx, code) in text.iter().enumerate() {
         if *code == 10 {
@@ -162,10 +179,10 @@ fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
     let mut line_idx = 0usize;
     let mut i = 0usize;
     while i < text.len() {
-        // `\b` 左界:行首/前码元非词元;'self' 逐码元;'.' 紧随
+        // `\b` left boundary: line start / previous code unit is not a word char; 'self' code unit by code unit; '.' immediately after
         let self_dot = i == 0 || !is_name_char(text[i - 1]);
         if self_dot && starts_with(&text, i, "self") && text.get(i + 4) == Some(&0x2E) {
-            // attr:[A-Za-z_] 起头,词元 greedy
+            // attr: starts with [A-Za-z_], greedy word chars
             let attr_start = i + 5;
             if let Some(&first) = text.get(attr_start) {
                 if is_name_start(first) {
@@ -173,9 +190,9 @@ fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
                     while j < text.len() && is_name_char(text[j]) {
                         j += 1;
                     }
-                    // greedy attr 后需 '.'(回溯无效,见模块注释)
+                    // require '.' after the greedy attr (backtracking is futile; see module docs)
                     if text.get(j) == Some(&0x2E) {
-                        // member:[A-Za-z_] 起头,词元 greedy
+                        // member: starts with [A-Za-z_], greedy word chars
                         let member_start = j + 1;
                         if let Some(&mfirst) = text.get(member_start) {
                             if is_name_start(mfirst) {
@@ -187,7 +204,7 @@ fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
                                     String::from_utf16(&text[attr_start..j]).unwrap_or_default();
                                 let member =
                                     String::from_utf16(&text[member_start..k]).unwrap_or_default();
-                                // 内建 receiver 跳过(按 attr 名集)
+                                // Skip built-in receivers (by attr name set)
                                 let attr_u16: Vec<u16> = attr.encode_utf16().collect();
                                 let is_builtin = BUILTIN_RECEIVERS.iter().any(|name| {
                                     attr_u16.as_slice()
@@ -199,8 +216,8 @@ fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
                                     {
                                         line_idx += 1;
                                     }
-                                    // 成员列 = 匹配起点 + 匹配段内 member 首次出现
-                                    // (TS `match[0].indexOf(member)` 逐字对齐)
+                                    // Member column = match start + first occurrence of member
+                                    // inside the matched span (literal alignment with TS `match[0].indexOf(member)`)
                                     let member_u16: Vec<u16> = member.encode_utf16().collect();
                                     let mut offset = 0usize;
                                     for s in i..=(k - member_u16.len()) {
@@ -218,7 +235,7 @@ fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
                                         member,
                                     });
                                 }
-                                // g 正则 lastIndex:匹配成立即越过整段(含内建跳过)
+                                // `g` regex lastIndex: on a successful match skip past the whole span (including built-in skips)
                                 i = k;
                                 continue;
                             }
@@ -227,13 +244,13 @@ fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
                 }
             }
         }
-        // 本位不成立:引擎前进 1
+        // This position fails: engine advances by 1
         i += 1;
     }
     items
 }
 
-// ---- 单测 -----------------------------------------------------------------
+// ---- Unit tests ------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -249,7 +266,7 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].code, CODE_ATTRIBUTE_NONE);
         assert_eq!(items[0].line, 0);
-        // 列 = 匹配起点(4) + 'self.TalentTree.get' 内 indexOf('get') = 16
+        // column = match start (4) + indexOf('get') within 'self.TalentTree.get' = 16
         assert_eq!(items[0].character, 20);
         assert_eq!(items[0].length, 3);
         assert_eq!(items[0].attr, "TalentTree");
@@ -270,14 +287,15 @@ mod tests {
         assert_eq!(items[0].member, "a");
         assert_eq!(items[1].member, "b");
         assert_eq!(items[0].character, 7);
-        // 第二匹配起点 13 + 'self.x.b' 内 indexOf('b') = 7
+        // second match start 13 + indexOf('b') within 'self.x.b' = 7
         assert_eq!(items[1].character, 20);
     }
 
     #[test]
     fn member_column_uses_first_occurrence_semantics() {
-        // TS `match[0].indexOf(member)`:self.id.id 的 indexOf('id') = 5(attr
-        // 段首中)→ character = 匹配起点 + 5(既有口径逐字对齐,非成员真位)
+        // TS `match[0].indexOf(member)`: indexOf('id') on self.id.id = 5 (inside the
+        // start of the attr segment) -> character = match start + 5 (existing
+        // criteria aligned literally; not the member's real position)
         let items = items_of("self.id.id\n");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].character, 5);
@@ -286,7 +304,7 @@ mod tests {
 
     #[test]
     fn member_column_first_occurrence_in_self_word() {
-        // member='lf' 首中 'self' 段内(indexOf = 2)
+        // member='lf' first hits inside the 'self' segment (indexOf = 2)
         let items = items_of("self.ab.lf\n");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].character, 2);
@@ -294,14 +312,14 @@ mod tests {
 
     #[test]
     fn attr_empty_no_match() {
-        // self.5x / self.( → attr 形不符,零匹配
+        // self.5x / self.( -> attr shape mismatch, zero matches
         assert!(items_of("self.5x.y\n").is_empty());
         assert!(items_of("self.(x.y\n").is_empty());
     }
 
     #[test]
     fn member_empty_whole_match_fails() {
-        // self.x.() member 形不符 → 整位失败(不是 attr 单报)
+        // self.x.() member shape mismatch -> the whole position fails (not an attr-only report)
         assert!(items_of("self.x.(1)\n").is_empty());
     }
 
@@ -312,7 +330,7 @@ mod tests {
 
     #[test]
     fn left_word_boundary_respected() {
-        // myself.x.y:\b 失败;_self.x.y:前码元词元失败
+        // myself.x.y: \b fails; _self.x.y: previous code unit is a word char, fails
         assert!(items_of("myself.x.y\n").is_empty());
         assert!(items_of("_self.x.y\n").is_empty());
     }
@@ -322,17 +340,17 @@ mod tests {
         let items = items_of("a = 1\nb = 2\nself.foo.bar()\n");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].line, 2);
-        // 匹配起点 12 + 'self.foo.bar' 内 indexOf('bar') = 9
+        // match start 12 + indexOf('bar') within 'self.foo.bar' = 9
         assert_eq!(items[0].character, 21);
     }
 
     #[test]
     fn non_ascii_prefix_column_is_utf16() {
-        // 掩码后中文串占位同长(UTF-16 码元),列按码元计
+        // After masking, the CJK string placeholder has equal length (UTF-16 code units); the column is counted in code units
         let items = items_of("s = \"庆祝\" ; self.cfg.load()\n");
         assert_eq!(items.len(), 1);
-        // 匹配起点 11(掩码同长占位,UTF-16 码元列)+ 'self.cfg.load' 内
-        // indexOf('load') = 9
+        // match start 11 (masked equal-length placeholder, UTF-16 code-unit column)
+        // + indexOf('load') within 'self.cfg.load' = 9
         assert_eq!(items[0].character, 20);
     }
 
@@ -351,17 +369,17 @@ mod tests {
         let encoded = serde_json::to_value(&items[0]).unwrap();
         assert_eq!(encoded["code"], json!("kbengine.attributeNone"));
         assert_eq!(encoded["line"], json!(0));
-        // 'self.v.read' 内 indexOf('read') = 7
+        // indexOf('read') within 'self.v.read' = 7
         assert_eq!(encoded["character"], json!(7));
         assert_eq!(encoded["length"], json!(4));
         assert_eq!(encoded["attr"], json!("v"));
         assert_eq!(encoded["member"], json!("read"));
     }
-    // ---- 批 2:内联流事实 ---------------------------------------------------
+    // ---- batch 2: inline flow facts ------------------------------------------
 
     #[test]
     fn flow_face_none_evidence_inline() {
-        // __init__ 仅 = None,无守卫 → hasNone true
+        // __init__ only assigns None, no guard -> hasNone true
         let text = "class Foo:\n    def __init__(self):\n        self.TalentTree = None\n    def method(self):\n        self.TalentTree.get(0)\n";
         let items = compute_attribute_none_items(text);
         let faces = attach_flow_faces(text, &items, None).expect("not cancelled");
@@ -374,7 +392,7 @@ mod tests {
 
     #[test]
     fn flow_face_narrowed_inline() {
-        // 守卫后收窄 → hasNone false/narrowed true,条目流事实即裁定依据
+        // narrowed after the guard -> hasNone false / narrowed true; the item's flow facts are the adjudication basis
         let text = "class Foo:\n    def __init__(self):\n        self.TalentTree = None\n    def method(self):\n        if self.TalentTree is None:\n            self.TalentTree = make_tree()\n        self.TalentTree.get(0)\n";
         let items = compute_attribute_none_items(text);
         let faces = attach_flow_faces(text, &items, None).expect("not cancelled");
@@ -385,7 +403,7 @@ mod tests {
 
     #[test]
     fn flow_face_shared_across_same_line_attr() {
-        // 同行同属性两条目共享一次引擎查询(hasNone 一致,克隆同值)
+        // Two items on the same line and attribute share one engine query (hasNone agrees, same value cloned)
         let text = "class Foo:\n    def __init__(self):\n        self.x = None\n    def m(self):\n        self.x.a(); self.x.b()\n";
         let items = compute_attribute_none_items(text);
         assert_eq!(items.len(), 2);
@@ -409,8 +427,9 @@ mod tests {
 
     #[test]
     fn analyze_entry_roundtrip_and_type_mismatch_rejected() {
-        // RPC 入口直调:良形参数往返(items 数组+词法字段),类型错配走
-        // serde 拒绝臂(text 期望 String,给数字)。
+        // RPC entry called directly: well-formed parameters round-trip (items array
+        // + lexical fields); a type mismatch takes the serde rejection arm
+        // (text expects String but gets a number).
         let ok = analyze_attribute_none(json!({
             "text": "self.hero.level\n",
             "versionKey": null,
@@ -432,8 +451,10 @@ mod tests {
 
     #[test]
     fn analyze_cancel_err_aborts_whole_face() {
-        // RUST-072:取消经流引擎 Err 透传整响应,不产部分 items 冒充完整面。
-        // 探针全局态:先恢复再断言,失败也不漏置。
+        // RUST-072: cancellation passes through the flow engine's Err and aborts the whole
+        // response; no partial items pretending to be a complete face.
+        // Probe global state: restore before asserting so a failure cannot
+        // leave it set.
         kode_python::cancel::set_probe(Some(std::sync::Arc::new(
             std::sync::atomic::AtomicBool::new(true),
         )));
@@ -444,10 +465,10 @@ mod tests {
 
     #[test]
     fn eof_truncated_shapes_and_starts_with_tail() {
-        // EOF 截断:attr/member 起始位越界 → if-let None 臂,整位不成立。
+        // EOF truncation: attr/member start positions out of bounds -> the if-let None arm, the whole position fails.
         assert!(items_of("self.").is_empty(), "attr 起始越界");
         assert!(items_of("self.x.").is_empty(), "member 起始越界");
-        // starts_with 尾:文本先于词元耗尽 → false;恰同长同时耗尽 → true。
+        // starts_with tail: the text runs out before the word -> false; exactly the same length, both exhausted -> true.
         let text: Vec<u16> = "sel".encode_utf16().collect();
         assert!(!starts_with(&text, 0, "self"));
         assert!(starts_with(&text, 0, "sel"));

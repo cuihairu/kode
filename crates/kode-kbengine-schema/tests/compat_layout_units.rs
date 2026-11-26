@@ -1,12 +1,16 @@
-//! KSEM-SER-13:wire 布局兼容变化(纯核心)。
+//! KSEM-SER-13: wire layout compatibility changes (the pure core).
 //!
-//! 面分组:①引擎握手分类表全变体锁定([`classify`] 判据 = 变更面是否进
-//! defs-md5 聚合流,feed 锚 property.cpp:53-64 / method.cpp:28-30,50,66-67 /
-//! datatype.cpp:95-96,1716,1782,2097);②两个布尔维度的正交性
-//! (wire_compatible = full-redeploy 旧端解码不破位,handshake_safe =
-//! 内部通道 digest 等值——含纯新增,engine_app digest 是内容等值闸);
-//! ③字段顺序显式落账(FD 按名匹配序差 / 属性声明序漂移);④Arg 布局按位
-//! (方法三段 + 固定消息表);⑤版本(hash 指纹 + 诚实声明)。
+//! Plane grouping: ① the engine handshake classification table, all variants pinned down (the
+//! [`classify`] criterion = whether the change plane enters
+//! the defs-md5 aggregation stream, feed anchors property.cpp:53-64 / method.cpp:28-30,50,66-67 /
+//! datatype.cpp:95-96,1716,1782,2097); ② the orthogonality of the two boolean dimensions
+//! (wire_compatible = an old end decoding does not misalign under a full redeploy, handshake_safe =
+//! internal-channel digest equality — pure additions included, the engine_app digest is a
+//! content-equality gate);
+//! ③ the field order booked explicitly (the name-matching order difference in an FD / a property
+//! declaration-order drift); ④ the Arg layout position by position
+//! (the three method segments + the fixed message table); ⑤ the version (the hash fingerprint + the
+//! honesty disclaimer).
 
 use std::collections::BTreeMap;
 
@@ -19,7 +23,7 @@ use kode_kbengine_schema::schema::{EntityMethodWire, EntityPropertyWire, EntityW
 use kode_kbengine_schema::wire::{DictField, WireType};
 
 // ---------------------------------------------------------------------------
-// 夹具
+// The fixtures
 // ---------------------------------------------------------------------------
 
 fn prop(name: &str, ty: WireType, flags: &[&str]) -> EntityPropertyWire {
@@ -123,7 +127,7 @@ fn gate_of(report: &LayoutCompatReport, name: &str) -> EngineGate {
 }
 
 // ---------------------------------------------------------------------------
-// ① 引擎握手分类表:全变体锁定
+// ① The engine handshake classification table: all variants pinned down
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -263,12 +267,14 @@ fn classification_table_locked() {
 }
 
 // ---------------------------------------------------------------------------
-// ② 两个布尔维度的正交性(验收:静态风险 vs 引擎握手实际拒绝)
+// ② The orthogonality of the two boolean dimensions (acceptance: static risk vs actually rejected by
+// the engine handshake)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn entity_added_is_wire_compatible_but_handshake_rejected() {
-    // 纯新增实体:digest 是内容等值闸 → 混合部署 shutDown;full-redeploy 下 wire 加性。
+    // A purely added entity: the digest is a content-equality gate → shutDown in a mixed deployment;
+    // wire-additive under a full redeploy.
     let old = schema(BTreeMap::new(), BTreeMap::new(), vec![]);
     let mut new_entities = BTreeMap::new();
     new_entities.insert("Avatar", entity(vec![], vec![], vec![], vec![]));
@@ -281,8 +287,9 @@ fn entity_added_is_wire_compatible_but_handshake_rejected() {
 
 #[test]
 fn message_args_silent_risk_boots_mixed_and_breaks_wire() {
-    // 固定消息表参数漂移:md5 盲区 → 引擎不拦,混合部署照常启动,字节重释
-    // (最危险类:无任何运行时防线)。
+    // A fixed message table argument drift: an md5 blind spot → the engine does not intercept, a mixed
+    // deployment starts normally, the bytes are reinterpreted
+    // (the most dangerous class: no runtime line of defense at all).
     let old = schema(
         BTreeMap::new(),
         BTreeMap::new(),
@@ -339,7 +346,7 @@ fn message_added_is_ungated() {
 }
 
 // ---------------------------------------------------------------------------
-// ③ 字段顺序显式落账(验收「字段顺序」)
+// ③ The field order booked explicitly (the acceptance item "field order")
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -393,7 +400,7 @@ fn fixed_dict_type_change_and_field_add_remove_paths() {
             vec![],
         )
     };
-    // 叶子类型漂移:path = 别名.字段
+    // A leaf type drift: path = alias.field
     let report = check_classified(
         &base(vec![("hp", WireType::UInt32)]),
         &base(vec![("hp", WireType::UInt16)]),
@@ -406,7 +413,7 @@ fn fixed_dict_type_change_and_field_add_remove_paths() {
             new: "UINT16".to_string(),
         }]
     );
-    // 字段删/增:old_index / new_index 各自保留
+    // A field removed/added: old_index / new_index are each kept
     let report = check_classified(
         &base(vec![("hp", WireType::UInt32), ("nm", WireType::String)]),
         &base(vec![("hp", WireType::UInt32)]),
@@ -431,7 +438,7 @@ fn fixed_dict_type_change_and_field_add_remove_paths() {
             index: 1,
         }]
     );
-    // 嵌套 FD 序差:path 线程化到容器层
+    // An order difference in a nested FD: the path threaded down to the container level
     let report = check_classified(
         &base(vec![(
             "cfg",
@@ -455,7 +462,7 @@ fn property_order_flags_faces_from_check() {
         e.insert("Avatar", entity(props, vec![], vec![], vec![]));
         schema(e, BTreeMap::new(), vec![])
     };
-    // 纯序差(类型全同)→ PropertyReordered 单条
+    // A pure order difference (all types identical) → a single PropertyReordered
     let report = check_classified(
         &avatar(vec![
             prop("hp", WireType::UInt32, &["ALL_CLIENTS"]),
@@ -471,7 +478,7 @@ fn property_order_flags_faces_from_check() {
         .classified
         .iter()
         .any(|c| c.change.to_string() == "property reordered: Avatar.hp (index 0 -> 1)"));
-    // 旗标漂移:md5 可见(property.cpp:57)且决定同步面
+    // A flag drift: md5 visible (property.cpp:57) and it decides the sync plane
     let report = check_classified(
         &avatar(vec![prop("hp", WireType::UInt32, &["ALL_CLIENTS"])]),
         &avatar(vec![prop("hp", WireType::UInt32, &["BASE"])]),
@@ -481,7 +488,7 @@ fn property_order_flags_faces_from_check() {
         .change
         .to_string()
         .contains("property flags changed: Avatar.hp")));
-    // 属性增/删落账(旧 check 静默忽略,SER-13 补齐)
+    // Property additions/removals booked (the old check silently ignored them, SER-13 fills them in)
     let report = check_classified(
         &avatar(vec![prop("hp", WireType::UInt32, &["ALL_CLIENTS"])]),
         &avatar(vec![
@@ -493,7 +500,8 @@ fn property_order_flags_faces_from_check() {
 }
 
 // ---------------------------------------------------------------------------
-// ④ Arg 布局(验收「Arg 布局/版本」:方法三段 + 按位差异)
+// ④ The Arg layout (the acceptance item "Arg layout/version": the three method segments + the
+// position-by-position diff)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -528,7 +536,7 @@ fn entity_method_args_changed_all_three_segments() {
             new: "UINT16".to_string(),
         }]
     );
-    // 增参:位置即语义,落 ArgAdded(index = 新参位)
+    // An argument added: position is the semantics, booked as ArgAdded (index = the new argument slot)
     let report = check_classified(
         &avatar(vec![method("req", vec![])]),
         &avatar(vec![method("req", vec![WireType::String])]),
@@ -540,7 +548,7 @@ fn entity_method_args_changed_all_three_segments() {
             index: 0,
         }]
     );
-    // 删参
+    // An argument removed
     let report = check_classified(
         &avatar(vec![method("req", vec![WireType::String, WireType::UInt8])]),
         &avatar(vec![method("req", vec![WireType::String])]),
@@ -555,7 +563,7 @@ fn entity_method_args_changed_all_three_segments() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑤ 版本与零差异 + 诚实声明
+// ⑤ The version and zero differences + the honesty disclaimer
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -617,14 +625,15 @@ fn report_json_roundtrip() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑥ diff_wire_type 直查面(数组下钻 / 等型零差异)
+// ⑥ The direct diff_wire_type surface (the array drill-down / an identical type yielding zero
+// differences)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn diff_wire_type_unit_faces() {
-    // 等型 → 空
+    // An identical type → empty
     assert!(diff_wire_type("X", &WireType::UInt32, &WireType::UInt32).is_empty());
-    // 标量漂移 → 叶位一条
+    // A scalar drift → one entry at the leaf position
     assert_eq!(
         diff_wire_type("X", &WireType::UInt32, &WireType::UInt64),
         vec![WireDiff::FieldTypeChanged {
@@ -633,7 +642,7 @@ fn diff_wire_type_unit_faces() {
             new: "UINT64".to_string(),
         }]
     );
-    // 数组元素漂移:下钻 `X[]`
+    // An array element drift: drilling down at `X[]`
     assert_eq!(
         diff_wire_type(
             "X",
@@ -650,7 +659,7 @@ fn diff_wire_type_unit_faces() {
             new: "UINT16".to_string(),
         }]
     );
-    // 结构异形(FD vs 标量)→ 顶层一条,不猜字段
+    // A structural shape difference (an FD vs a scalar) → one entry at the top level, no field guessing
     assert_eq!(
         diff_wire_type("X", &fd(vec![("a", WireType::UInt8)]), &WireType::UInt8),
         vec![WireDiff::FieldTypeChanged {
@@ -662,12 +671,14 @@ fn diff_wire_type_unit_faces() {
 }
 
 // ---------------------------------------------------------------------------
-// ⑥ COV-010 残臂:check 方法增删两臂 + Display 渲染面 + check_classified
-//    属性类型/方法参数(base/cell 段)细节臂
+// ⑥ The COV-010 residual arms: the two method addition/removal arms of check + the Display rendering
+// surface + check_classified
+//    and the property type / method argument (base/cell segment) detail arms
 // ---------------------------------------------------------------------------
 
-/// check() 的方法增删两臂(三段各一)+ 对应 Display 渲染(含 label 的
-/// base/cell 臂)。
+/// The two method addition/removal arms of check() (one per segment) + the corresponding Display
+/// rendering (including the labeled
+/// base/cell arms).
 #[test]
 fn check_method_add_remove_and_display_labels() {
     let old = schema(
@@ -718,7 +729,8 @@ fn check_method_add_remove_and_display_labels() {
         !report.compatible,
         "方法增删不在兼容白名单 → wire 维也不兼容"
     );
-    // 直构 base/cell 段的 MethodArgsChanged 渲染(label 两臂):
+    // Directly constructing the MethodArgsChanged rendering for the base/cell segments (the two
+    // labeled arms):
     assert_eq!(
         Change::MethodArgsChanged {
             entity: "Avatar".into(),
@@ -739,7 +751,7 @@ fn check_method_add_remove_and_display_labels() {
     );
 }
 
-/// check() 的属性删除/旗标漂移 + 对应 Display 渲染。
+/// The property removal / flag drift of check() + the corresponding Display rendering.
 #[test]
 fn check_property_removed_and_flags_changed_display() {
     let old = schema(
@@ -786,7 +798,7 @@ fn check_property_removed_and_flags_changed_display() {
     assert!(!report.compatible);
 }
 
-/// EngineGate 三面 Display 标签(报告面渲染)。
+/// The Display labels of the three EngineGate planes (rendering for the report surface).
 #[test]
 fn engine_gate_display_labels() {
     assert_eq!(
@@ -797,7 +809,8 @@ fn engine_gate_display_labels() {
     assert_eq!(EngineGate::UnGated.to_string(), "ungated");
 }
 
-/// check_classified 的 PropertyTypeChanged 细节臂:标量漂移 + FD 递归下钻。
+/// The PropertyTypeChanged detail arm of check_classified: a scalar drift + the recursive FD
+/// drill-down.
 #[test]
 fn check_classified_property_type_change_wire_details() {
     let old = schema(
@@ -878,8 +891,8 @@ fn check_classified_property_type_change_wire_details() {
     );
 }
 
-/// check_classified 的 MethodArgsChanged 细节臂:base/cell 段(覆盖
-/// method_args 的 base/cell 查找臂)+ ArgChanged/ArgAdded/ArgRemoved 全形。
+/// The MethodArgsChanged detail arm of check_classified: the base/cell segments (covering
+/// the base/cell lookup arms of method_args) + every shape of ArgChanged/ArgAdded/ArgRemoved.
 #[test]
 fn check_classified_method_args_base_and_cell_segments() {
     let old = schema(

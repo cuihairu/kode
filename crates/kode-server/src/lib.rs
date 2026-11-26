@@ -1,5 +1,5 @@
-//! kode-server 库入口:分派状态机、hover 响应链、completion 请求链与
-//! Phase2 定义/诊断面供 bin 与集成测试共用(bin 只是 stdio 泵)。
+//! kode-server library entry: dispatch state machine, hover response chain, completion request chain, and
+//! the Phase2 definition/diagnostic faces, shared by the bin and integration tests (the bin is only a stdio pump).
 
 pub mod api_docs;
 pub mod attribute_none;
@@ -14,16 +14,15 @@ pub mod def_format;
 pub mod def_md5;
 pub mod def_param_hints;
 pub mod def_props_hints;
-pub mod semantic_tokens;
 pub mod def_rename;
 pub mod definition;
+pub mod dependency_graph;
 pub mod diagnostic_layering;
 pub mod diagnostic_pipeline;
-pub mod document_symbols;
-pub mod dependency_graph;
 pub mod diagnostics;
-pub mod executor;
+pub mod document_symbols;
 pub mod event_coalesce;
+pub mod executor;
 pub mod flag_domains;
 pub(crate) mod golden_corpus;
 pub mod hover;
@@ -50,20 +49,21 @@ pub mod rpc_arg_count;
 pub mod ruff_format;
 pub mod ruff_lint;
 pub mod self_attribute_flow;
-pub mod subprocess;
-pub mod syntax_gate;
+pub mod semantic_tokens;
 pub mod semantics;
 pub mod semantics_golden;
 pub mod semantics_rpc;
 pub mod server;
 pub mod signature_help;
 pub mod space_nav;
-pub mod workspace_symbols;
+pub mod subprocess;
+pub mod syntax_gate;
 pub mod trap_lints;
 pub mod user_type_contract;
 pub mod warm_gate;
 pub mod wire_codec;
 pub mod workspace_discovery;
+pub mod workspace_symbols;
 
 pub use code_action::dump_code_action_golden;
 pub use code_action_assembly::dump_code_action_assembly_golden;
@@ -71,25 +71,25 @@ pub use completion::{
     dump_completion_golden, resolve_item, to_lsp_items, CompletionContextFace, CompletionItemFace,
     CompletionResponse,
 };
-pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};
 pub use def_param_hints::dump_def_param_hints_golden;
 pub use def_props_hints::dump_def_props_golden;
-pub use semantic_tokens::dump_semantic_tokens_golden;
 pub use def_rename::dump_def_rename_golden;
+pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};
 pub use diagnostic_layering::dump_diagnostic_layering_golden;
 pub use diagnostic_pipeline::dump_diagnostic_pipeline_golden;
-pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
-pub use python_call_at::dump_python_call_at_golden;
-pub use references::dump_references_golden;
-pub use references::dump_references_semantic_golden;
-pub use signature_help::dump_signature_help_golden;
-pub use workspace_symbols::dump_workspace_symbols_golden;
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
 };
+pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
 pub use flag_domains::{dump_flag_domains_golden, CANONICAL, GOLDEN_REL_PATH};
 pub use hover::{dump_hover_golden, render_markdown, HoverEngine, HoverFace, HoverResponse};
+pub use python_call_at::dump_python_call_at_golden;
+pub use references::dump_references_golden;
+pub use references::dump_references_semantic_golden;
+pub use semantic_tokens::dump_semantic_tokens_golden;
 pub use server::{
     cancel_target, handle_message, handle_message_with_poll, CancelRegistry, Outgoing, ServerState,
     SERVER_NAME,
 };
+pub use signature_help::dump_signature_help_golden;
+pub use workspace_symbols::dump_workspace_symbols_golden;

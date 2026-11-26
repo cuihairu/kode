@@ -1,4 +1,4 @@
-//! 子命令实现(schema validate/build/diff/inspect、decode --hex、capture analyze)。
+//! Subcommand implementations (schema validate/build/diff/inspect, decode --hex, capture analyze).
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -11,7 +11,7 @@ use crate::cli::Command;
 use crate::records::{hex_decode, message_table, role_of, DecodeDriver};
 use crate::tshark;
 
-/// 子命令执行结果:stdout 文本 + 退出码。
+/// Subcommand outcome: stdout text + exit code.
 #[derive(Debug)]
 pub struct CmdOutcome {
     pub stdout: String,
@@ -72,7 +72,7 @@ pub fn dispatch(cmd: Command) -> CmdResult {
 }
 
 // ---------------------------------------------------------------------------
-// schema 面
+// schema face
 // ---------------------------------------------------------------------------
 
 fn read_defaults(defaults: Option<&str>) -> Result<Option<String>, String> {
@@ -103,8 +103,8 @@ fn schema_validate(project: &str, defaults: Option<&str>) -> CmdResult {
         "schema_version": schema.schema_version,
         "messages": schema.messages.entries.len(),
         "entities": schema.entities.len(),
-        // 可选资产缺失/坏文件是构建诊断(SYNTAX-005 同规),不否定 validate;
-        // 结构性失败走 Err → exit 1。
+        // Missing/broken optional assets are build diagnostics (same rule as SYNTAX-005) and do
+        // not invalidate validate; structural failures go through Err -> exit 1.
         "diagnostics": schema.diagnostics,
     });
     Ok(CmdOutcome {
@@ -220,7 +220,7 @@ fn driver_report(driver: &DecodeDriver) -> String {
 // capture analyze
 // ---------------------------------------------------------------------------
 
-/// `--raw-flow loginapp=<hex>`(上行)/ `loginapp.down=<hex>`(下行)。
+/// `--raw-flow loginapp=<hex>` (uplink) / `loginapp.down=<hex>` (downlink).
 fn raw_flow_spec(spec: &str) -> Result<(String, bool, Vec<u8>), String> {
     let (flow_key, hex) = spec
         .split_once('=')
@@ -251,7 +251,8 @@ fn capture_analyze(
     let table = message_table(defaults)?;
     let mut driver = DecodeDriver::new(table);
 
-    // 1. raw-flow:直接喂 TCP 流字节(字节级组帧对拍/无 tshark 环境)。
+    // 1. raw-flow: feed TCP flow bytes straight in (byte-level framing parity comparison /
+    // environments without tshark).
     for (key, hex) in raw_flows {
         let (flow, down, bytes) = raw_flow_spec(&format!("{key}={hex}"))?;
         let role = role_of(&flow).expect("validated above");
@@ -263,7 +264,7 @@ fn capture_analyze(
         driver.feed(role, dir, &bytes, None);
     }
 
-    // 2. pcap:TShark 输入层(stdin `-` 走流式)。
+    // 2. pcap: the TShark input layer (stdin `-` goes streaming).
     if let Some(pcap_path) = pcap {
         let mut ports: BTreeMap<u16, String> = BTreeMap::new();
         for (flow, port) in flow_map {
@@ -320,11 +321,11 @@ fn capture_analyze(
 }
 
 // ---------------------------------------------------------------------------
-// analyze(PA-005 分析引擎)
+// analyze (PA-005 analysis engine)
 // ---------------------------------------------------------------------------
 
-/// `analyze --records <file|->`:记录 JSON(裸数组或 {"records": [...]})→
-/// 报告 JSON。
+/// `analyze --records <file|->`: records JSON (a bare array or {"records": [...]}) ->
+/// report JSON.
 fn analyze_records(source: &str) -> CmdResult {
     let text = if source == "-" {
         let mut buf = String::new();
@@ -384,7 +385,7 @@ mod tests {
         dir
     }
 
-    /// 写一份 hermetic fake tshark:吞 stdin、打印预置行文件后退出 0。
+    /// Write a hermetic fake tshark: swallow stdin, print the prepared lines file, exit 0.
     #[cfg(unix)]
     fn write_fake_tshark(
         dir: &std::path::Path,
@@ -404,8 +405,8 @@ mod tests {
         script
     }
 
-    // 三个 fixture 助手只服务 unix-only 用例(sh 脚本),与用例同门,
-    // Windows 夜构建不产 dead_code 警告。
+    // The three fixture helpers only serve the unix-only cases (sh scripts); gated together with
+    // those cases so the Windows nightly build produces no dead_code warnings.
     #[cfg(unix)]
     fn tshark_line(ts: &str, sport: u16, dport: u16, payload: &[u8]) -> String {
         let hex: Vec<String> = payload.iter().map(|b| format!("{b:02x}")).collect();
@@ -435,7 +436,7 @@ mod tests {
 
     #[test]
     fn raw_flow_spec_supports_up_down_and_rejects_bad_direction() {
-        // 无方向后缀 = 上行;`.up`/`.down` 显式。
+        // No direction suffix = uplink; `.up`/`.down` are explicit.
         let (flow, down, bytes) = raw_flow_spec("loginapp=de:ad").unwrap();
         assert_eq!((flow.as_str(), down), ("loginapp", false));
         assert_eq!(bytes, vec![0xde, 0xad]);
@@ -443,13 +444,13 @@ mod tests {
         assert_eq!((flow.as_str(), down), ("baseapp", false));
         let (flow, down, _) = raw_flow_spec("loginapp.down=ff").unwrap();
         assert_eq!((flow.as_str(), down), ("loginapp", true));
-        // 未知方向后缀。
+        // Unknown direction suffix.
         let err = raw_flow_spec("loginapp.side=00").unwrap_err();
         assert!(err.contains("bad --raw-flow direction 'side'"), "{err}");
-        // 缺 `=`。
+        // Missing `=`.
         let err = raw_flow_spec("loginapp").unwrap_err();
         assert!(err.contains("bad --raw-flow: loginapp"), "{err}");
-        // 未知 flow。
+        // Unknown flow.
         let err = raw_flow_spec("cellapp=00").unwrap_err();
         assert!(err.contains("unknown flow 'cellapp'"), "{err}");
     }
@@ -459,7 +460,8 @@ mod tests {
         let dir = temp_dir("inspect");
         let out = dir.join("schema.json");
         let proj = demo_assets();
-        // 用真实 demo 资产构建一份 schema,再对未命中 id/entity 断言报错文案。
+        // Build a schema from the real demo assets, then assert the error text for missed
+        // id/entity.
         let built = schema_build(
             proj.to_str().unwrap(),
             Some(&defaults_xml()),
@@ -468,21 +470,22 @@ mod tests {
         assert!(built.is_ok(), "{:?}", built);
         let schema = out.to_str().unwrap();
 
-        // 未命中 message-id → Err,不 panic。
+        // Missed message-id -> Err, no panic.
         let r = schema_inspect(schema, None, Some(65535), None);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("message id 65535"));
-        // 未命中 entity → Err。
+        // Missed entity -> Err.
         let r = schema_inspect(schema, None, None, Some("NopeEntity"));
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("entity NopeEntity"));
-        // 未命中 message 名 → Err(既有验收面覆盖 Some,这里补 None 侧)。
+        // Missed message name -> Err (the existing acceptance face covers Some, here we add the
+        // None side).
         let r = schema_inspect(schema, Some("Nope::missing"), None, None);
         assert!(r.is_err());
-        // 文件不存在:read 失败如实报错。
+        // File does not exist: the read failure is reported faithfully.
         let r = schema_inspect("/nonexistent/schema.json", None, None, None);
         assert!(r.unwrap_err().contains("read"));
-        // 文件存在但 JSON 非法:parse 失败。
+        // File exists but the JSON is invalid: the parse fails.
         let bad = dir.join("bad.json");
         std::fs::write(&bad, "{not json").unwrap();
         let r = schema_inspect(bad.to_str().unwrap(), None, None, None);
@@ -501,7 +504,7 @@ mod tests {
         );
         assert!(built.is_ok());
         let schema = out.to_str().unwrap();
-        // by_id 命中。
+        // by_id hit.
         let r = schema_inspect(schema, None, Some(502), None).unwrap();
         assert!(
             r.stdout.contains("Client::onLoginSuccessfully"),
@@ -509,10 +512,10 @@ mod tests {
             r.stdout
         );
         assert_eq!(r.code, 0);
-        // entity 命中。
+        // entity hit.
         let r = schema_inspect(schema, None, None, Some("Avatar")).unwrap();
         assert!(r.stdout.contains("\"properties\""), "{}", r.stdout);
-        // 全量概览命中。
+        // Full-overview hit.
         let r = schema_inspect(schema, None, None, None).unwrap();
         assert!(r.stdout.contains("\"aliases\""), "{}", r.stdout);
         std::fs::remove_dir_all(&dir).ok();
@@ -525,7 +528,7 @@ mod tests {
         let lines = dir.join("lines.txt");
         let pcap = dir.join("capture.pcap");
         std::fs::write(&pcap, b"not-real-pcap-bytes").unwrap();
-        // 一个合法报文 + 一个未映射端口报文(端口 9/10 不在 flow-map)。
+        // One valid packet + one packet on an unmapped port (ports 9/10 are not in the flow-map).
         let up = var_frame(3, &login_payload());
         std::fs::write(
             &lines,
@@ -538,7 +541,7 @@ mod tests {
         .unwrap();
         let fake = write_fake_tshark(&dir, &lines);
 
-        // 文件 pcap 分支(spawn_tshark bin, path, None)+ unmapped_stream 异常。
+        // The file-pcap branch (spawn_tshark bin, path, None) + the unmapped_stream anomaly.
         let result = capture_analyze(
             Some(pcap.to_str().unwrap()),
             fake.to_str().unwrap(),
@@ -572,7 +575,7 @@ mod tests {
     fn capture_analyze_surfaces_malformed_tshark_line_as_error() {
         let dir = temp_dir("cap-bad");
         let lines = dir.join("lines.txt");
-        // 字段数不足(tshark 只给了 3 列)→ parse_tshark_line Err。
+        // Too few fields (tshark only gave 3 columns) -> parse_tshark_line Err.
         std::fs::write(&lines, "1759000000.1\t51023\t20013\n").unwrap();
         let fake = write_fake_tshark(&dir, &lines);
         let pcap = dir.join("capture.pcap");
@@ -594,8 +597,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn capture_analyze_keeps_first_packet_error_when_lines_repeat() {
-        // 两行都坏:首错保留(packet_err 只记首个,后续不覆盖);fake tshark
-        // 零退出,错误必须从 packet_err 面浮出(而非 tshark 退出码面)。
+        // Both lines are bad: the first error is kept (packet_err only records the first; later
+        // ones do not overwrite it); the fake tshark exits 0, so the error must surface from the
+        // packet_err face (not from the tshark exit-code face).
         let dir = temp_dir("cap-bad2");
         let lines = dir.join("lines.txt");
         std::fs::write(&lines, "bad1\nbad2\n").unwrap();
@@ -619,7 +623,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn capture_analyze_reports_tshark_nonzero_exit() {
-        // tshark 打印一行后非零退出 → for_each_packet 报「tshark exited with」。
+        // tshark prints one line then exits non-zero -> for_each_packet reports "tshark exited with".
         let dir = temp_dir("cap-exit");
         let lines = dir.join("lines.txt");
         std::fs::write(&lines, "1759000000.1\t51023\t20013\t00\n").unwrap();
@@ -650,7 +654,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 变长帧线上形态:`u16 id (LE) + u16 载荷长 (LE) + 载荷`。
+    /// Variable-length frame wire form: `u16 id (LE) + u16 payload length (LE) + payload`.
     #[cfg(unix)]
     fn var_frame(id: u16, payload: &[u8]) -> Vec<u8> {
         let mut v = Vec::with_capacity(4 + payload.len());
@@ -660,7 +664,7 @@ mod tests {
         v
     }
 
-    /// Loginapp::login(id 3)载荷:STRING UINT8_ARRAY STRING STRING。
+    /// Loginapp::login (id 3) payload: STRING UINT8_ARRAY STRING STRING.
     #[cfg(unix)]
     fn login_payload() -> Vec<u8> {
         let mut v = Vec::new();

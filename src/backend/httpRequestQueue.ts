@@ -1,43 +1,56 @@
 /**
- * HR-HTTP-007(RUST-349)按目标有界并发队列:
- * - 同目标(以相同 targetKey 入队)默认串行——FIFO,前一任务结算后下一个才起
- *   (热更同端点请求不互相乱序,旧版本后定稿不先到引擎);
- * - 不同目标相互独立并发,互不排队;
- * - 全局在途上限(globalConcurrency)兜底整层并发,防多目标同时把宿主压爆。
- * 纯逻辑,与传输面解耦:task 是任意返回 Promise 的闭包,队列只负责排序与限流,
- * 任务结果/拒绝如实透传给调用方(拒绝不吞、不停摆,队列照常推进后续任务)。
- * 目标数通常极少(单端点/单通道),出队用顺序扫描即可,不引入堆/复杂调度器
- * (与 HR-HTTP-001 单一执行路径口径一致,不另造并行抽象)。
+ * HR-HTTP-007 (RUST-349) per-target bounded concurrency queue:
+ * - Same target (enqueued with the same targetKey) defaults to serial — FIFO;
+ *   the next task starts only after the previous one settles (hot reload
+ *   requests to the same endpoint never reorder among themselves, and an
+ *   older revision finalized later never reaches the engine first);
+ * - Different targets run concurrently and independently of one another, never
+ *   queueing behind each other;
+ * - A global in-flight cap (globalConcurrency) backstops the whole layer's
+ *   concurrency, preventing many targets together from crushing the host.
+ * Pure logic, decoupled from the transport face: a task is any closure
+ * returning a Promise, and the queue only does ordering and rate limiting.
+ * Task results / rejections are passed through honestly to the caller
+ * (rejections are neither swallowed nor allowed to stall the queue; the queue
+ * keeps advancing the remaining tasks).
+ * The target count is usually tiny (single endpoint / single channel), so
+ * dequeue is a plain sequential scan — no heap / complex scheduler is
+ * introduced (consistent with HR-HTTP-001's single execution path
+ * convention; no parallel abstraction is invented here).
  */
 
 export interface HttpTargetQueueOptions {
-  /** 同目标并发上限;缺省 1(串行) */
+  /** Per-target concurrency cap; defaults to 1 (serial) */
   readonly perTargetConcurrency?: number;
-  /** 全局在途上限;缺省 4 */
+  /** Global in-flight cap; defaults to 4 */
   readonly globalConcurrency?: number;
 }
 
 export interface HttpTargetQueue {
   /**
-   * 入队执行:按 targetKey 维护 FIFO,返回该任务结果(拒绝如实透传给调用方)。
-   * 调用方 await 即获得与该任务自身执行相同的结算语义,只是发起时刻被排队。
+   * Enqueue and run: keeps FIFO per targetKey and returns that task's result
+   * (rejections are passed through honestly to the caller). Awaiting on the
+   * caller's side yields exactly the same settlement semantics as the task's
+   * own execution; only the moment of launch was queued.
    */
   run<T>(targetKey: string, task: () => Promise<T>): Promise<T>;
   /**
-   * HR-QA-016 soak 自省:当前内部状态(目标键数/全局在途/排队数)。
-   * 全部任务结算后应全零——目标态在 idle 时自删(perTarget.delete),
-   * 结算不清=连接泄漏(soak 以此为不变式)。
+   * HR-QA-016 soak introspection: the current internal state (target key
+   * count / global in-flight / pending count). After every task settles all
+   * three should be zero — a target state deletes itself when idle
+   * (perTarget.delete), and failing to settle is a connection leak (soak
+   * treats this as its invariant).
    */
   stats(): HttpTargetQueueStats;
 }
 
-/** HR-QA-016 soak 自省形状:结算后全零=无残留(无连接泄漏) */
+/** HR-QA-016 soak introspection shape: all zero after settling = no residue (no connection leak) */
 export interface HttpTargetQueueStats {
-  /** 仍有状态的目标键数(结算完=0) */
+  /** The number of target keys still holding state (=0 once settled) */
   readonly targets: number;
-  /** 全局在途(未结算)任务数 */
+  /** The number of globally in-flight (unsettled) tasks */
   readonly inFlight: number;
-  /** 排队(已入队未起跑)任务数 */
+  /** The number of queued (enqueued, not yet started) tasks */
   readonly pending: number;
 }
 
@@ -56,8 +69,10 @@ export function createHttpTargetQueue(options: HttpTargetQueueOptions = {}): Htt
   let globalActive = 0;
 
   const pump = (): void => {
-    // 有全局槽且某目标有等待且该目标未达其并发上限 → 出队一个起跑。
-    // 目标集极小,顺序扫描足够;扫描一轮后若仍未起任何任务即停(等结算再泵)。
+    // There is a global slot, some target has a waiters queue, and that target
+    // is under its concurrency cap -> dequeue one and launch it.
+    // The target set is tiny, so a sequential scan suffices; stop as soon as a
+    // full scan round launches nothing (wait for settlements to pump again).
     for (const state of perTarget.values()) {
       if (globalActive >= globalConcurrency) {
         return;
@@ -75,8 +90,10 @@ export function createHttpTargetQueue(options: HttpTargetQueueOptions = {}): Htt
   const run = <T>(targetKey: string, task: () => Promise<T>): Promise<T> =>
     new Promise<T>((resolve, reject) => {
       const start = (): void => {
-        // 任务经微任务边界起跑:start 只在 pump 内同步被调,微任务让 task
-        // 抛错也落拒绝分支,不在队列内部裸抛。
+        // The task starts across a microtask boundary: start is only ever
+        // invoked synchronously inside pump, and the microtask hop means a
+        // throwing task lands in the rejection branch rather than bare-throwing
+        // inside the queue.
         void Promise.resolve()
           .then(task)
           .then(

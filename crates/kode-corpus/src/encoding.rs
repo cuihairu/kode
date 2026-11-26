@@ -1,13 +1,14 @@
-//! Python 源文件编码探测与解码。
+//! Encoding detection and decoding for Python source files.
 //!
-//! 规则顺序与 CPython/PEP 263 一致:
-//! 1. UTF-8 / UTF-16 LE / UTF-16 BE BOM 优先;
-//! 2. 否则读前两物理行的 `# ... coding[:=] <name>` cookie;
-//! 3. 无 BOM/cookie 时默认 UTF-8;仅在无歧义的 NUL 分布下才按 BOM-less UTF-16
-//!    启发式识别(避免把普通 UTF-8 误判成 UTF-16)。
+//! Rule order matches CPython/PEP 263:
+//! 1. UTF-8 / UTF-16 LE / UTF-16 BE BOM takes priority;
+//! 2. otherwise read the `# ... coding[:=] <name>` cookie from the first two physical lines;
+//! 3. with no BOM/cookie the default is UTF-8; BOM-less UTF-16 is only recognized by
+//!    heuristic when the NUL distribution is unambiguous (so plain UTF-8 is not misread as UTF-16).
 //!
-//! 探测与解码分离:即使本 crate 不能解码某个声明 codec(例如 GBK),调用方仍能
-//! 得到 [`Encoding::Other`] 与原始声明,便于索引层记录明确失败而不是静默乱码。
+//! Detection and decoding are separated: even when this crate cannot decode a declared codec
+//! (e.g. GBK), the caller still gets [`Encoding::Other`] plus the raw declaration, so the
+//! index layer can record an explicit failure instead of silently producing mojibake.
 
 use std::fmt;
 
@@ -17,23 +18,23 @@ const UTF16BE_BOM: &[u8] = &[0xFE, 0xFF];
 const UTF32LE_BOM: &[u8] = &[0xFF, 0xFE, 0x00, 0x00];
 const UTF32BE_BOM: &[u8] = &[0x00, 0x00, 0xFE, 0xFF];
 
-/// 已识别的源文件编码。
+/// A recognized source file encoding.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Encoding {
     Utf8,
-    /// UTF-8 with BOM(BOM 已计入 [`EncodingDetection::bom_len`])。
+    /// UTF-8 with BOM (the BOM is already counted in [`EncodingDetection::bom_len`]).
     Utf8Bom,
     Utf16Le,
     Utf16Be,
     Latin1,
     Cp1252,
     Ascii,
-    /// 已探测/声明但本 crate 不解码的 codec(保留规范化名字)。
+    /// A codec that was detected/declared but is not decoded by this crate (normalized name kept).
     Other(String),
 }
 
 impl Encoding {
-    /// golden 与日志使用的稳定字面量(不是用户原始声明)。
+    /// Stable literal used by golden output and logs (not the user's raw declaration).
     pub fn canonical_name(&self) -> &str {
         match self {
             Encoding::Utf8 => "utf-8",
@@ -62,7 +63,7 @@ impl Encoding {
     }
 }
 
-/// 探测结论的来源。
+/// The source of a detection conclusion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncodingSource {
     Bom,
@@ -71,27 +72,27 @@ pub enum EncodingSource {
     Default,
 }
 
-/// 编码探测结果。
+/// The result of encoding detection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodingDetection {
     pub encoding: Encoding,
     pub source: EncodingSource,
-    /// BOM 字节数(无 BOM 为 0);解码时先剥掉。
+    /// Number of BOM bytes (0 when there is no BOM); stripped before decoding.
     pub bom_len: usize,
-    /// 原始 cookie 声明(若存在,即使 BOM 优先也保留)。
+    /// The raw cookie declaration (kept when present, even if the BOM takes priority).
     pub declared: Option<String>,
-    /// cookie 所在物理行(0-based)。
+    /// Physical line holding the cookie (0-based).
     pub cookie_line: Option<usize>,
 }
 
-/// 解码成功后的文本 + 探测结论。
+/// The text after a successful decode, plus the detection conclusion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedSource {
     pub text: String,
     pub detection: EncodingDetection,
 }
 
-/// 解码失败原因(带偏移,便于索引层记录可复现的失败点)。
+/// Reason for a failed decode (with offsets, so the index layer can record a reproducible failure point).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
     InvalidUtf8 { offset: usize },
@@ -125,7 +126,7 @@ impl fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-/// 探测 BOM、PEP 263 cookie 与保守的 BOM-less UTF-16 启发式。
+/// Detect a BOM, a PEP 263 cookie, and the conservative BOM-less UTF-16 heuristic.
 pub fn detect_encoding(bytes: &[u8]) -> EncodingDetection {
     let bom = bom_encoding(bytes);
     let cookie_bytes = bom.as_ref().map(|(_, len)| &bytes[*len..]).unwrap_or(bytes);
@@ -168,7 +169,7 @@ pub fn detect_encoding(bytes: &[u8]) -> EncodingDetection {
     }
 }
 
-/// 按探测结果解码。BOM 与 cookie 冲突时 BOM 生效(与 CPython 一致)。
+/// Decode according to the detection result. When BOM and cookie conflict the BOM wins (as in CPython).
 pub fn decode_source(bytes: &[u8]) -> Result<DecodedSource, DecodeError> {
     let detection = detect_encoding(bytes);
     let body = &bytes[detection.bom_len.min(bytes.len())..];
@@ -620,7 +621,8 @@ mod tests {
         let decoded = decode_source(ok).unwrap();
         assert_eq!(decoded.detection.encoding, Encoding::Ascii);
         assert_eq!(decoded.text, "# coding: ascii\nprint('ok')\n");
-        // 非 ASCII 字节:offset 为全文件偏移(cookie 场景 BOM 为 0,分支仍执行 shifted)。
+        // Non-ASCII byte: the offset is a whole-file offset (the BOM is 0 in the
+        // cookie case, yet the shifted branch still runs).
         let err = decode_source(b"# coding: ascii\nx = '\xFF'\n").unwrap_err();
         assert_eq!(err, DecodeError::InvalidAscii { offset: 21 });
     }
@@ -639,19 +641,21 @@ mod tests {
 
     #[test]
     fn cp1252_punctuation_table_maps_every_defined_byte() {
-        // 0x80..=0x9F 中除未定义位(0x81/0x8D/0x8F/0x90/0x9D)外全部有映射。
+        // Every byte in 0x80..=0x9F has a mapping except the undefined slots
+        // (0x81/0x8D/0x8F/0x90/0x9D).
         let undefined = [0x81u8, 0x8D, 0x8F, 0x90, 0x9D];
         let defined: Vec<u8> = (0x80..=0x9F).filter(|b| !undefined.contains(b)).collect();
         let mut body = b"# coding: cp1252\n".to_vec();
         body.extend_from_slice(&defined);
         let decoded = decode_source(&body).unwrap();
-        // 17 个前缀字符之后,每个定义字节各产出 1 个字符(无未定义报错)。
+        // After the 17 prefix characters each defined byte yields exactly 1
+        // character (no undefined-byte error).
         assert_eq!(decoded.text.chars().skip(17).count(), defined.len());
-        // 抽查关键映射。
+        // Spot-check the key mappings.
         assert!(decoded.text.contains('\u{20AC}')); // 0x80 → €
         assert!(decoded.text.contains('\u{2019}')); // 0x92 → ’
         assert!(decoded.text.contains('\u{2014}')); // 0x97 → —
-                                                    // 未定义字节:0x81 报 InvalidCp1252。
+                                                    // Undefined byte: 0x81 reports InvalidCp1252.
         let mut bad = b"# coding: cp1252\n".to_vec();
         bad.push(0x81);
         assert!(matches!(
@@ -681,15 +685,15 @@ mod tests {
 
     #[test]
     fn bomless_heuristic_rejects_short_or_ambiguous_input() {
-        // <4 字节:不启用启发式。
+        // Fewer than 4 bytes: the heuristic is not enabled.
         assert_eq!(detect_encoding(b"ab").source, EncodingSource::Default);
         assert_eq!(detect_encoding(b"").source, EncodingSource::Default);
-        // 偶数对但无 NUL:普通文本,不判 UTF-16。
+        // Even pairs but no NUL: plain text, not judged as UTF-16.
         assert_eq!(
             detect_encoding(b"class Avatar: pass").source,
             EncodingSource::Default
         );
-        // 首字节全零(高位在前)= BOM-less UTF-16 BE。
+        // All-zero leading bytes (high byte first) = BOM-less UTF-16 BE.
         let mut be = Vec::new();
         for unit in "class Monster: pass\n".encode_utf16() {
             be.extend_from_slice(&unit.to_be_bytes());
@@ -702,17 +706,17 @@ mod tests {
 
     #[test]
     fn cookie_without_separator_or_name_is_not_a_cookie() {
-        // "coding" 后无 :/= → 不是 cookie。
+        // No :/= after "coding" -> not a cookie.
         assert_eq!(
             detect_encoding(b"# coding latin-1\nclass A:\n").source,
             EncodingSource::Default
         );
-        // 有分隔符但声明名为空 → 不是 cookie。
+        // A separator with an empty declared name -> not a cookie.
         assert_eq!(
             detect_encoding(b"# coding:\nclass A:\n").source,
             EncodingSource::Default
         );
-        // 声明名带点/下划线等合法字符。
+        // A declared name carrying legal characters such as dots and underscores.
         assert_eq!(
             detect_encoding(b"# coding: iso_8859-1.default\nclass A:\n").encoding,
             Encoding::Other("iso-8859-1.default".to_string())
@@ -730,7 +734,8 @@ mod tests {
         }
         assert_eq!(decode_source(&le).unwrap().text, text);
         assert_eq!(decode_source(&be).unwrap().text, text);
-        // 高位代理后跟非低位代理 → 定位到代理起始 offset(BOM 后 2)。
+        // A high surrogate followed by a non-low surrogate -> the offset lands on
+        // the surrogate start (2 after the BOM).
         let mut bad = UTF16LE_BOM.to_vec();
         bad.extend_from_slice(&0xD800u16.to_le_bytes());
         bad.extend_from_slice(&0x0041u16.to_le_bytes());
@@ -738,7 +743,7 @@ mod tests {
             decode_source(&bad).unwrap_err(),
             DecodeError::InvalidUtf16 { offset: 2 }
         );
-        // 孤立低位代理开头 → 非法。
+        // A lone low surrogate at the start -> invalid.
         let mut low = UTF16LE_BOM.to_vec();
         low.extend_from_slice(&0xDC00u16.to_le_bytes());
         assert_eq!(
@@ -749,15 +754,16 @@ mod tests {
 
     #[test]
     fn cookie_line_ending_edge_cases() {
-        // 第二行以 \r 结尾且无换行:cookie 仍识别。
+        // Second line ends with \r and has no newline: the cookie is still recognized.
         let cr_end = b"#!/usr/bin/env python\r\n# coding: latin-1\r";
         let detected = detect_encoding(cr_end);
         assert_eq!(detected.encoding, Encoding::Latin1);
         assert_eq!(detected.cookie_line, Some(1));
-        // 单行无换行符。
+        // A single line without a newline.
         let one_line = b"# coding: cp1252";
         assert_eq!(detect_encoding(one_line).encoding, Encoding::Cp1252);
-        // utf-16 cookie(无 BOM)按 LE 解码;整体奇数字节 → 奇数长度报错(offset 为末字节)。
+        // A utf-16 cookie (no BOM) decodes as LE; an odd total byte count -> an
+        // odd-length error (offset at the last byte).
         let mut odd = b"# coding: utf-16\n".to_vec();
         odd.extend_from_slice(&0x41u16.to_le_bytes());
         odd.push(0x41);

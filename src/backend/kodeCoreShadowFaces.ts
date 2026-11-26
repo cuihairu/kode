@@ -1,34 +1,40 @@
 import type { KodeCoreGate } from './kodeCoreGate';
 
-// kode2 Phase2 首片:definition + diagnostics 双轨面对拍接线(书 §17
-// PH7-02 / docs/kode2/phase2-slice-a.md)。职责边界:
-//   1. 持有 KodeCoreGate 引用(setupKodeCoreGate 装配时注入;默认 null =
-//      全部入口零开销直通,与 PR-012 默认 ts 零可见变化同款);
-//   2. 把 TS 面(vscode.Location / vscode.Diagnostic[])适配成与 kode-server
-//      响应同形的 LSP 面,经 gate.compare() 影子对拍 —— 恒返回/不影响 TS
-//      结果,Rust 结果只进差异日志(不切流铁律同 PR-012);
-//   3. shadow 会话内把语料文档(.def + types/entities/alias.xml)的
-//      open/change 镜像给 Rust,关闭时撤镜像(语料同步腿;失败静默,verdict
-//      口径归 compare 自己的失败分类)。
-// 结构化适配全部走形状类型,不 import vscode(单测用 fake-vscode 同形)。
+// kode2 Phase2 first slice: dual-track shadow cross-check wiring for the
+// definition + diagnostics faces (book section 17 PH7-02 /
+// docs/kode2/phase2-slice-a.md). Responsibility boundary:
+//   1. Hold the KodeCoreGate reference (injected during setupKodeCoreGate
+//      wiring; default null = every entry is a zero-overhead pass-through,
+//      the same shape as the PR-012 default-ts zero visible change);
+//   2. Adapt the TS faces (vscode.Location / vscode.Diagnostic[]) into LSP
+//      faces with the same shape as the kode-server response, and run a
+//      shadow cross-check through gate.compare() -- always return / never
+//      affect the TS result; Rust results only go to the diff log (the iron
+//      rule against switching the live stream holds, same as PR-012);
+//   3. Inside a shadow session, mirror the open/change of corpus documents
+//      (.def + types/entities/alias.xml) to Rust, and retract the mirror on
+//      close (the corpus sync leg; failures are silent and the verdict
+//      policy belongs to compare's own failure classification).
+// All structural adaptation goes through shape types and does not import
+// vscode (unit tests use a same-shaped fake-vscode).
 
 let shadowGate: KodeCoreGate | null = null;
 
-/** 装配点注入(传 null 即拆除;扩展停用时调用) */
+/** Wiring-layer injection (passing null tears it down; called when the extension is deactivated) */
 export function setKodeCoreShadowGate(gate: KodeCoreGate | null): void {
   if (shadowGate !== gate) {
-    // 换门（装配/重启/测试换桩）= 新的传输实例：熔断清零，给新门干净窗口。
+    // Replacing the gate (wiring / restart / swapping the test stub) means a new transport instance: reset the circuit so the new gate gets a clean window.
     resetInteractiveCircuit(Date.now());
   }
   shadowGate = gate;
 }
 
-/** 测试/诊断读取当前门(不建进程) */
+/** Read the current gate for tests/diagnostics (does not spawn a process) */
 export function getKodeCoreShadowGate(): KodeCoreGate | null {
   return shadowGate;
 }
 
-// ---- 形状类型(vscode.Location / vscode.Diagnostic 的结构子集) ------------
+// ---- Shape types (structural subsets of vscode.Location / vscode.Diagnostic) ------------
 
 interface PositionLike {
   line: number;
@@ -59,7 +65,7 @@ interface DocumentLike {
   getText(): string;
 }
 
-// ---- LSP 面(与 kode-server 响应同形;对拍面见 phase2-slice-a.md) --------
+// ---- LSP faces (same shape as the kode-server response; cross-check faces in phase2-slice-a.md) --------
 
 export interface LspLocationFace {
   uri: string;
@@ -74,22 +80,23 @@ export interface LspDiagnosticReportFace {
   items: { range: RangeLike; severity: number; message: string }[];
 }
 
-/** LSP 位置面(kode-server LspPosition 同形;行 0 基、列 UTF-16 code unit) */
+/** LSP position face (same shape as kode-server LspPosition; line 0-based, column in UTF-16 code units) */
 export interface LspPositionFace {
   line: number;
   character: number;
 }
 
-/** LSP 区间面(kode-server LspRange 同形) */
+/** LSP range face (same shape as kode-server LspRange) */
 export interface LspRangeFace {
   start: LspPositionFace;
   end: LspPositionFace;
 }
 
 /**
- * 文档符号面(kode-server document_symbols::DocumentSymbolFace 同形)。
- * kind 是符号种类字符串面(与 TS vscode.SymbolKind 枚举名同形;协议数值
- * 映射归 provider 投影细节)。
+ * Document symbol face (same shape as kode-server
+ * document_symbols::DocumentSymbolFace). kind is the symbol-kind string
+ * face (same shape as the TS vscode.SymbolKind enum names; the numeric
+ * protocol mapping is a provider projection detail).
  */
 export interface LspDocumentSymbolFace {
   name: string;
@@ -100,39 +107,42 @@ export interface LspDocumentSymbolFace {
   children: LspDocumentSymbolFace[];
 }
 
-/** kode-server textDocument/completion 应答面(to_lsp_items 投影) */
+/** kode-server textDocument/completion response face (to_lsp_items projection) */
 export interface LspCompletionReportFace {
   isIncomplete: boolean;
   items: {
     label: string;
-    /** LSP CompletionItemKind 数值(method=2/type/entity/alias=7/property=10) */
+    /** LSP CompletionItemKind numeric value (method=2/type/entity/alias=7/property=10) */
     kind: number;
     detail?: string;
-    /** RUST-135:条目序锁(响应序 = 声明序/链序,零填充序列) */
+    /** RUST-135: entry order lock (response order = declaration order/chain order, zero-padded sequence) */
     sortText?: string;
-    /** RUST-135:键入过滤面(= label) */
+    /** RUST-135: typed filter face (= label) */
     filterText?: string;
-    /** RUST-135:snippet 插入文本(py 方法/函数面 `name($0)`) */
+    /** RUST-135: snippet insert text (py method/function face `name($0)`) */
     insertText?: string;
-    /** RUST-135:插入格式(2 = snippet) */
+    /** RUST-135: insert format (2 = snippet) */
     insertTextFormat?: number;
-    /** RUST-135:completionItem/resolve 往返载荷(来源面判别) */
+    /** RUST-135: completionItem/resolve round-trip payload (source face discriminator) */
     data?: Record<string, unknown>;
   }[];
 }
 
-/** completionItem/resolve 应答面:文档面(markdown)与可选 detail 更新 */
+/** completionItem/resolve response face: documentation face (markdown) plus an optional detail update */
 export interface LspCompletionResolveFace {
   documentation?: { kind: string; value: string };
   detail?: string;
 }
 
 /**
- * resolve 延迟补详情 rust 服务(RUST-135):服务轨道下请求 kode-server
- * completionItem/resolve(params = completion 出条目的 {label,detail,data}
- * 子集)。Rust 复算出文档面返回之;载荷不可判/语料缺位/任何失败返回
- * null —— 调用方保持条目既有面(不装空文档)。零镜像(resolve 无文档
- * 上下文,语料在 completion 时已由镜像腿入库)。
+ * resolve lazy detail-completion rust service (RUST-135): under the serve
+ * track, request kode-server completionItem/resolve (params = the
+ * {label,detail,data} subset of the completion output entry). Rust
+ * recomputes and returns the documentation face; an undecidable payload / a
+ * missing corpus / any failure returns null -- the caller keeps the entry's
+ * existing face (an empty document is not installed). Zero mirroring
+ * (resolve has no document context; the corpus already entered through the
+ * mirror leg at completion time).
  */
 export async function serveCompletionResolveFromRust(
   item: { label: string; detail?: string; data?: Record<string, unknown> }
@@ -160,7 +170,7 @@ export async function serveCompletionResolveFromRust(
   return null;
 }
 
-/** vscode.Location(单/数组)→ LSP Location 面;null/落空 → null */
+/** vscode.Location (single/array) -> LSP Location face; null / a miss -> null */
 export function locationToLspFace(location: unknown): LspLocationFace | null {
   const first = Array.isArray(location) ? location[0] : location;
   if (!first || typeof first !== 'object') {
@@ -188,7 +198,7 @@ export function locationToLspFace(location: unknown): LspLocationFace | null {
   };
 }
 
-/** vscode.DiagnosticSeverity → LSP 严重级(+1;Error 0→1 …) */
+/** vscode.DiagnosticSeverity -> LSP severity (+1; Error 0->1 ...) */
 const toLspSeverity = (severity: number): number => {
   if (typeof severity !== 'number' || severity < 0 || severity > 3) {
     return 1;
@@ -196,7 +206,7 @@ const toLspSeverity = (severity: number): number => {
   return severity + 1;
 };
 
-/** vscode.Diagnostic[] → LSP pull 报告面(kode-server 同形 {kind, items}) */
+/** vscode.Diagnostic[] -> LSP pull report face (same shape as kode-server {kind, items}) */
 export function diagnosticsToLspFace(diagnostics: readonly DiagnosticLike[]): LspDiagnosticReportFace {
   return {
     kind: 'full',
@@ -208,33 +218,42 @@ export function diagnosticsToLspFace(diagnostics: readonly DiagnosticLike[]): Ls
   };
 }
 
-// ---- 入口(provider/validate 面调用;非 shadow 或未装配时零开销) ----------
+// ---- Entries (called by the provider/validate faces; zero overhead when not shadowing or unwired) ----------
 
 /**
- * 交互 serving 面端到端预算(KBUG-TIME-02):语料四面(definition/completion/
- * hover/diagnostic)从发起(含 mirror 的 client.start/排队/响应)到回落的
- * 总时长。后台命令面不经此预算。transport 层硬超时(+2000ms)在预算外
- * 显式计入清理窗口,pending/计时器照常回收(KBUG-TIME-05)。
+ * End-to-end budget for the interactive serving faces (KBUG-TIME-02): the
+ * total elapsed time for the four corpus faces (definition/completion/
+ * hover/diagnostic), from dispatch (including the mirror's client.start/
+ * queuing/response) to fallback. Background command faces do not go through
+ * this budget. The transport-layer hard timeout (+2000ms) is explicitly
+ * counted outside the budget as a cleanup window, and pending items/timers
+ * are reclaimed as usual (KBUG-TIME-05).
  */
 export const INTERACTIVE_SERVE_BUDGET_MS = 2000;
 
-/** 取消探测周期(ms) */
+/** Cancellation probe period (ms) */
 const CANCEL_POLL_MS = 50;
 
 /**
- * 交互等待壳:预算计时 + 取消探测,任一先到即放弃 Rust 等待(返回 null,
- * 调用方走 TS 降级)。败方 promise 挂 catch 吞迟到结算——不产生未处理
- * rejection,迟到响应不改变已定结果(KBUG-TIME-03/04)。work 收到与预算
- * 同值的 timeoutMs,transport 层同步发 $/cancelRequest + 硬超时清理。
+ * Interactive wait shell: budget timer + cancellation probe; whichever
+ * arrives first abandons the Rust wait (returns null, and the caller takes
+ * the TS fallback). The losing promise gets a catch that swallows late
+ * settlements -- no unhandled rejection is produced, and a late response
+ * cannot change an already-decided result (KBUG-TIME-03/04). work receives
+ * a timeoutMs equal to the budget; the transport layer concurrently sends
+ * $/cancelRequest + hard-timeout cleanup.
  */
 /**
- * Rust 交互腿熔断（2026-11-23 用户报「def hover 恒 2 秒 loading」）：
- * kode-server 起不来（二进制缺失/架构不符/握手卡死）时，rustPromise 会一直
- * pending，每个请求都撞满预算才回落 TS——表现为每次 hover 固定 2s loading
- * 且永不自愈。熔断规则：传输级硬失败（spawn 失败/进程退出/握手超时）当次即
- * 熔断；预算超时连续累计 INTERACTIVE_TRIP_THRESHOLD 次（无任何一次成功）
- * 也熔断。熔断只对当前扩展宿主会话生效，重启窗口（restartGeneration 变化）
- * 自动重置。
+ * Rust interactive-leg circuit breaker (user report 2026-11-23, "def hover
+ * always 2s loading"): when kode-server will not come up (missing binary /
+ * architecture mismatch / handshake stuck), rustPromise stays pending and
+ * every request burns the full budget before falling back to TS -- showing
+ * up as a fixed 2s loading on each hover that never self-heals. Circuit rules:
+ * a transport-level hard failure (spawn failure / process exit / handshake
+ * timeout) trips immediately; accumulating INTERACTIVE_TRIP_THRESHOLD budget
+ * timeouts in a row (with no success at all) also trips it. The trip only
+ * affects the current extension host session; a new restart window
+ * (restartGeneration change) resets it automatically.
  */
 const INTERACTIVE_TRIP_THRESHOLD = 3;
 
@@ -242,7 +261,7 @@ let interactiveCircuitOpen = false;
 let interactiveTimeoutStreak = 0;
 let interactiveCircuitGeneration = -1;
 
-/** 熔断状态查询（测试与状态栏诊断面用）。 */
+/** Circuit state query (used by tests and the status-bar diagnostics face). */
 export function interactiveCircuitState(): {
   open: boolean;
   timeoutStreak: number;
@@ -250,7 +269,7 @@ export function interactiveCircuitState(): {
   return { open: interactiveCircuitOpen, timeoutStreak: interactiveTimeoutStreak };
 }
 
-/** 重启窗口/显式重置（restartGeneration 变化时由门同步调用）。 */
+/** Restart window / explicit reset (called in sync by the gate when restartGeneration changes). */
 export function resetInteractiveCircuit(generation: number): void {
   if (interactiveCircuitGeneration !== generation) {
     interactiveCircuitGeneration = generation;
@@ -260,10 +279,13 @@ export function resetInteractiveCircuit(generation: number): void {
 }
 
 /**
- * P1-4:用户显式重启 Core = 无条件复位窗口。自动重启路径靠「代数变化」
- * 触发 resetInteractiveCircuit,但手动重启后若新进程启动再失败,握手对账
- * (syncRestartGeneration)永远跑不到,代数恒不变 → 熔断永不复位。手动
- * 复位不比对代数,直接清零熔断与超时连续计数。
+ * P1-4: a user-initiated Core restart = an unconditional reset window. The
+ * automatic restart path relies on a "generation change" to trigger
+ * resetInteractiveCircuit, but if the new process fails to start after a
+ * manual restart, the handshake reconciliation (syncRestartGeneration) never
+ * runs and the generation never changes -> the circuit never resets. The
+ * manual reset skips the generation comparison and directly zeroes the circuit
+ * and the timeout streak.
  */
 export function resetInteractiveCircuitForManualRestart(): void {
   interactiveCircuitOpen = false;
@@ -271,9 +293,12 @@ export function resetInteractiveCircuitForManualRestart(): void {
 }
 
 /**
- * P1-4:Rust 服务轨道启动失败(spawn/握手拒绝)如实记入熔断。此前
- * serveInRust 把启动异常转成正常回落,本面在预算包装下把该次记成成功——
- * 启动失败连续发生也永不熔断,交互腿每请求白等预算。
+ * P1-4: Rust serve-track startup failure (spawn / handshake rejection) is
+ * recorded faithfully into the circuit. Previously serveInRust converted a
+ * startup exception into a normal fallback, and this face counted that
+ * attempt as a success under the budget wrapper -- repeated startup failures
+ * never tripped the circuit and the interactive leg wasted the full budget on
+ * every request.
  */
 export function noteInteractiveStartupFailure(): void {
   recordInteractiveFailure('hard');
@@ -281,7 +306,7 @@ export function noteInteractiveStartupFailure(): void {
 
 function recordInteractiveFailure(kind: 'hard' | 'timeout'): void {
   if (kind === 'hard') {
-    // 传输级硬失败当次熔断：spawn 错误/进程退出不会因重试而好转。
+    // A transport-level hard failure trips the circuit this very time: spawn errors / process exit do not improve with retries.
     interactiveCircuitOpen = true;
   } else {
     interactiveTimeoutStreak += 1;
@@ -304,7 +329,7 @@ export async function awaitWithInteractiveBudget<T>(
     return null;
   }
   if (interactiveCircuitOpen) {
-    // 熔断开放：直通 null（调用方回落 TS 链），不再白等预算。
+    // Circuit open: pass straight through null (the caller falls back to the TS chain) instead of wasting the budget again.
     return null;
   }
   let budgetTimer: NodeJS.Timeout | undefined;
@@ -316,7 +341,7 @@ export async function awaitWithInteractiveBudget<T>(
       if (!settled) recordInteractiveSuccess();
     },
     err => {
-      // 硬失败（spawn/transport/握手）当次熔断；预算超时由 budget 分支计。
+      // A hard failure (spawn/transport/handshake) trips the circuit this very time; budget timeouts are counted in the budget branch.
       if (!settled) recordInteractiveFailure('hard');
       if (err instanceof Error) {
         err.message = `[kode-server interactive leg hard-failed, circuit opened] ${err.message}`;
@@ -353,37 +378,44 @@ const isDefDocument = (document: DocumentLike): boolean =>
   document.languageId === 'kbengine-def' ||
   document.uri.fsPath.toLowerCase().endsWith('.def');
 
-/** 语料 XML 后缀(与 kode-server file_kind_of_uri 口径同源,决定 Rust 解析视图) */
+/** Corpus XML suffixes (same policy as kode-server file_kind_of_uri; decides the Rust parse view) */
 const CORPUS_XML_SUFFIXES = ['entities.xml', 'types.xml', 'alias.xml'];
 
 /**
- * 语料文档(.def + 三类 XML):Rust 侧类型环境(custom types / 注册项)只由
- * 这些文档的 didOpen/didChange 入库,缺一类就会出现「已注册却报未注册」
- * 的假诊断。
+ * Corpus documents (.def + the three XML kinds): the Rust-side type
+ * environment (custom types / registered entries) is only populated by these
+ * documents' didOpen/didChange; missing any one of them produces the bogus
+ * "registered yet reported unregistered" diagnostics.
  */
 const isCorpusDocument = (document: DocumentLike): boolean =>
   isDefDocument(document) ||
   CORPUS_XML_SUFFIXES.some(suffix => document.uri.fsPath.endsWith(suffix));
 
 /**
- * 补全面 Rust 文档门(RUST-134):语料文档之外,.py 也在补全面候选
- * (self. 实体成员面 + KBEngine./kbe. 模块别名面均由 Rust 共享查询接管)。
- * 仅补全 serve 路径使用;definition/hover 等其余面维持 isCorpusDocument
- * 口径(Python 悬停/定义落点不在 Rust 面)。
+ * Completion-face Rust document gate (RUST-134): besides the corpus
+ * documents, .py files are also completion candidates (the self. entity-member
+ * face + the KBEngine./kbe. module-alias face are both taken over by the
+ * Rust shared queries). Used only by the completion serve path; the other
+ * faces such as definition/hover keep the isCorpusDocument policy (Python
+ * hover/definition landing points are not in the Rust face).
  */
 const isCompletionRustDocument = (document: DocumentLike): boolean =>
   isCorpusDocument(document) || document.uri.fsPath.toLowerCase().endsWith('.py');
 
-/** ProviderResult 是否 thenable(映射管理器方法跳转返回 Promise 的路径) */
+/** Whether a ProviderResult is thenable (the mapping-manager method jump path that returns a Promise) */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
   return value !== null && typeof value === 'object' && typeof (value as { then?: unknown }).then === 'function';
 }
 
 /**
- * ProviderResult 结算(E-3):同步 Location/Location[] 原样返回;thenable 解析
- * 完成才产出对拍面(未解析时直接适配会得到 null,把异步落点误记成分歧)。
- * 拒绝路径返回 unsettled —— 无 TS 真相可对拍,不产出对拍也不产生未处理拒绝
- * (provider 的返回语义由调用方原样透传,这里只读不接管)。
+ * Settling a ProviderResult (E-3): a synchronous Location/Location[] is
+ * returned as-is; the cross-check face is only produced once the thenable has
+ * resolved (adapting it while unresolved would yield null and wrongly record
+ * an async landing point as a disagreement). The rejection path returns
+ * unsettled -- there is no TS ground truth to cross-check against, so no
+ * cross-check is produced and no unhandled rejection is raised (the provider's
+ * return semantics are passed through verbatim by the caller; this only reads,
+ * it does not take over).
  */
 export async function settleProviderResult(
   result: unknown
@@ -399,12 +431,16 @@ export async function settleProviderResult(
 }
 
 /**
- * 定义面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
- * 语料文档(Rust 侧要有本文件 buffer 才可能应答),再请求 kode-server
- * textDocument/definition。Rust 有落点返回 LSP face(uri 为规范路径,与
- * shadow locationToLspFace 同形);无落点(词未知/语料环境缺/Python/schema
- * 不在本面=Rust 恒 null)或任何失败返回 null —— 调用方回 TS。非服务轨道/
- * 未装配门零开销返回 null。Rust 落点优先于 TS 落点(直接切语义)。
+ * Definition-face rust service (user order 2026-11-08, "switch directly to
+ * rust"): under the serve track, first mirror the corpus document (the Rust
+ * side needs a buffer for this file to be able to answer), then request
+ * kode-server textDocument/definition. If Rust has a landing point, return the
+ * LSP face (uri is the canonical path, same shape as shadow
+ * locationToLspFace); with no landing point (unknown word / missing corpus
+ * environment / Python or schema, which are not in this face = Rust is always
+ * null) or on any failure, return null -- the caller falls back to TS. A
+ * non-serve track or an unwired gate returns null at zero overhead. The Rust
+ * landing point takes precedence over the TS one (switch-directly semantics).
  */
 export async function serveDefinitionFromRust(
   document: DocumentLike,
@@ -414,8 +450,9 @@ export async function serveDefinitionFromRust(
   if (!gate || !gate.serveFromRust()) {
     return null;
   }
-  // Rust 面 = 语料声明落点(definition.rs:113 file_kind_of_uri Other → None);
-  // schema/python 不在本面,零请求直通 TS。
+  // Rust face = corpus declaration landing points (definition.rs:113
+  // file_kind_of_uri Other -> None); schema/python are not in this face, so it
+  // passes straight through to TS with no request.
   if (!isCorpusDocument(document)) {
     return null;
   }
@@ -444,13 +481,17 @@ export async function serveDefinitionFromRust(
 }
 
 /**
- * 补全面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
- * 文档(Rust 侧要有本文件 buffer 才可能应答),再请求 kode-server
- * textDocument/completion。Rust 判定出上下文且条目集非空时返回条目集;
- * 未判定上下文(接口段/属性子标签/def 顶层/无归属的 py)、任何失败、或
- * 「空条目集+isIncomplete:false」(语料缺位与真无候选不可区分,RUST-021
- * 关闭面修订)返回 null —— 调用方回 TS。Rust 条目集优先于 TS(直接切语义),
- * 但空集不装权威结果。
+ * Completion-face rust service (user order 2026-11-08, "switch directly to
+ * rust"): under the serve track, first mirror the document (the Rust side
+ * needs a buffer for this file to be able to answer), then request
+ * kode-server textDocument/completion. If Rust decides a context and the item
+ * set is non-empty, return the item set; if the context is undecided
+ * (interface section / property sub-tag / def top level / unowned py), on any
+ * failure, or in the case of "empty item set + isIncomplete:false" (a missing
+ * corpus and a genuine absence of candidates cannot be distinguished,
+ * per the RUST-021 closure-face revision), return null -- the caller falls
+ * back to TS. The Rust item set takes precedence over TS (switch-directly
+ * semantics), but an empty set is not installed as an authoritative result.
  */
 export async function serveCompletionFromRust(
   document: DocumentLike,
@@ -460,8 +501,9 @@ export async function serveCompletionFromRust(
   if (!gate || !gate.serveFromRust()) {
     return null;
   }
-  // Rust 面 = 语料文档 + py(补全专用门:RUST-134 self./模块别名面;
-  // 其余文档零请求直通 TS)。
+  // Rust face = corpus documents + py (the completion-dedicated gate: RUST-134
+  // self./module-alias face; other documents pass straight through to TS with
+  // no request).
   if (!isCompletionRustDocument(document)) {
     return null;
   }
@@ -486,9 +528,11 @@ export async function serveCompletionFromRust(
   if (typeof face.isIncomplete !== 'boolean' || !Array.isArray(face.items)) {
     return null;
   }
-  // 空条目集不权威(RUST-021 关闭面修订):语料缺位也会产「判定上下文+
-  // 零条目」,与「真无候选」不可区分 —— 非空响应壳里的空集一律回 TS,
-  // 不把「语料缺位」装成「无候选」。
+  // An empty item set is not authoritative (RUST-021 closure-face revision):
+  // a missing corpus also produces "context decided + zero items", which is
+  // indistinguishable from "genuinely no candidates" -- an empty set inside a
+  // non-empty response shell always falls back to TS, so "corpus missing" is
+  // not installed as "no candidates".
   if (face.items.length === 0 && face.isIncomplete === false) {
     return null;
   }
@@ -496,11 +540,14 @@ export async function serveCompletionFromRust(
 }
 
 /**
- * 悬停面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
- * 语料文档(未保存修订以编辑器内容为准),再请求 kode-server
- * textDocument/hover。Rust 命中返回 markdown 文本;未命中(词未知/文档不在
- * 语料面=Python/schema 恒 null)或任何失败返回 null —— 调用方回 TS 既有链。
- * 非服务轨道/未装配门零开销。Rust 内容优先于 TS(直接切语义)。
+ * Hover-face rust service (user order 2026-11-08, "switch directly to rust"):
+ * under the serve track, first mirror the corpus document (unsaved revisions
+ * use the editor content as authoritative), then request kode-server
+ * textDocument/hover. A Rust hit returns markdown text; a miss (unknown word /
+ * document not in the corpus face = Python/schema, always null) or any
+ * failure returns null -- the caller takes its existing TS chain. A non-serve
+ * track or an unwired gate is zero overhead. Rust content takes precedence
+ * over TS (switch-directly semantics).
  */
 export async function serveHoverFromRust(
   document: DocumentLike,
@@ -510,7 +557,8 @@ export async function serveHoverFromRust(
   if (!gate || !gate.serveFromRust()) {
     return null;
   }
-  // Rust 面 = 语料文档(def + 三类 XML);非语料零请求直通 TS。
+  // Rust face = corpus documents (def + the three XML kinds); non-corpus
+  // documents pass straight through to TS with no request.
   if (!isCorpusDocument(document)) {
     return null;
   }
@@ -539,14 +587,19 @@ export async function serveHoverFromRust(
 }
 
 /**
- * 诊断面 rust 服务(2026-11-08 用户令「直接切到 rust」,诊断面最后一片):
- * 服务轨道下先镜像 .def 文档(未保存修订以编辑器内容为准),再请求
- * kode-server textDocument/diagnostic(LSP pull 全量面 {kind:'full',items})。
- * Rust 面只覆盖语料可复刻的 validateDocument 子集(标量三码 + 结构重复/
- * 缺字段;missingPythonFile 盘上探测分支不在面);entities/types/alias 专项
- * 诊断也不在本片 —— 非 .def 直通 null,TS 现产面保留。畸形应答整面作废
- * (任一条目缺区间/级别/文案)返回 null,不做部分采用 —— 调用方保留 TS 集。
- * 非服务轨道/未装配门零开销。
+ * Diagnostics-face rust service (user order 2026-11-08, "switch directly to
+ * rust"; the last slice for the diagnostics face): under the serve track,
+ * first mirror the .def document (unsaved revisions use the editor content as
+ * authoritative), then request kode-server textDocument/diagnostic (the LSP
+ * pull full face {kind:'full',items}). The Rust face only covers the
+ * validateDocument subset reproducible from the corpus (the three scalar codes
+ * + structural duplicate/missing field; the missingPythonFile on-disk probe
+ * branch is not in the face); the entities/types/alias dedicated diagnostics
+ * are also not in this slice -- non-.def passes straight through to null and
+ * the TS-produced face is retained. A malformed response invalidates the whole
+ * face (any item missing a range/severity/message) and returns null, with no
+ * partial adoption -- the caller keeps its TS set. A non-serve track or an
+ * unwired gate is zero overhead.
  */
 export async function serveDiagnosticsFromRust(
   document: DocumentLike
@@ -606,7 +659,7 @@ const isLspRangeFace = (value: unknown): value is LspRangeFace =>
   isLspPositionFace((value as Record<string, unknown>).start) &&
   isLspPositionFace((value as Record<string, unknown>).end);
 
-/** 递归校验符号面:任意一层畸形 → 整面作废(不做部分采用) */
+/** Recursively validate the symbol face: any malformed level -> the whole face is invalidated (no partial adoption) */
 const isLspDocumentSymbolFace = (value: unknown): value is LspDocumentSymbolFace => {
   if (!value || typeof value !== 'object') {
     return false;
@@ -630,14 +683,18 @@ const isLspDocumentSymbolFace = (value: unknown): value is LspDocumentSymbolFace
 };
 
 /**
- * 文档符号面 rust 服务(RUST-139 批 3 接线;2026-11-08 用户令「直接切到
- * rust」):服务轨道下先镜像 .def 文档(未保存修订以编辑器内容为准),再请求
- * kode-server textDocument/documentSymbol。Rust 段符号面 = Properties/三方法
- * 段的容器符号+直接成员符号(核 document_symbols.rs,与 TS IDE-NAV-005 逐点
- * 同构);解析无根/文档未打开/任何失败/应答畸形 → null,调用方回 TS 既有
- * 实现(不部分采用)。
- * 诚实边界:Rust 面不含进程段面包屑合成根(跨文件对端跳是 TS 投影层职责),
- * provider 侧保留面包屑装配。
+ * Document symbol face rust service (RUST-139 batch 3 wiring; user order
+ * 2026-11-08, "switch directly to rust"): under the serve track, first mirror
+ * the .def document (unsaved revisions use the editor content as authoritative),
+ * then request kode-server textDocument/documentSymbol. The Rust section
+ * symbol face = container symbols + direct member symbols for the
+ * Properties/three method sections (core document_symbols.rs, point-for-point
+ * isomorphic with the TS IDE-NAV-005); no parse root / document not open / any
+ * failure / malformed response -> null, and the caller takes its existing TS
+ * implementation (no partial adoption).
+ * Honest boundary: the Rust face does not include the process-section
+ * breadcrumb synthetic root (jumping to a cross-file counterparty is a TS
+ * projection-layer job); the provider side keeps the breadcrumb assembly.
  */
 export async function serveDocumentSymbolsFromRust(
   document: DocumentLike,
@@ -678,35 +735,49 @@ const isLspLocationFace = (value: unknown): value is LspLocationFace => {
 };
 
 /**
- * 引用面 rust 服务应答三态(RUST-138 批 4 切语义过滤面):失败面与 Rust 权威
- * 空集必须分开,否则「权威空」会被当「不可用」而回 TS 补回同名语法站点。
- * unavailable = 非服务轨道/非语料文档/预算超时/取消/请求失败/应答畸形
- *   → 调用方回 TS 既有实现(可用性优先);
- * locations   = Rust 权威命中(Rust 已镜像语料并出引用位,空集是合法应答);
- * none        = Rust 权威 null(符号不可解析/站点全被语义过滤)→ 如实空,
- *   **不再**回 TS 补同名语法站点(2026-11-21 用户拍板:Shadow/Dangling 不回 TS)。
+ * Three-valued references-face rust service response (RUST-138 batch 4
+ * switching to the semantics-filtered face): the failure face and the Rust
+ * authoritative empty set must be kept apart, otherwise "authoritative empty"
+ * would be mistaken for "unavailable" and TS would be called back on to supply
+ * same-name syntax sites.
+ * unavailable = non-serve track / non-corpus document / budget timeout /
+ *   cancellation / request failure / malformed response -> the caller takes
+ *   its existing TS implementation (availability first);
+ * locations   = Rust authoritative hit (Rust has mirrored the corpus and
+ *   produced reference sites; an empty set is a legal response);
+ * none        = Rust authoritative null (symbol unresolvable / all sites
+ *   semantics-filtered) -> honestly empty, and **no longer** falls back to TS
+ *   to supply same-name syntax sites (user ruling 2026-11-21: Shadow/Dangling
+ *   do not fall back to TS).
  */
 export type ReferencesServeFace =
   | { kind: 'unavailable' }
   | { kind: 'locations'; locations: LspLocationFace[] }
   | { kind: 'none' };
 
-/** serveInRust 的失败回落哨兵:与 Rust 权威 null 区分(铁律失败不误伤)。 */
+/** Failure-fallback sentinel for serveInRust: distinguishes it from a Rust authoritative null (iron rule: a failure must not be misapplied). */
 const REFERENCES_SERVE_FAILED = {};
 
-/** 服务壳内部三态:{ raw } = Rust 已应答(值可空),{ failed } = 请求未答成 */
+/** Internal three states of the serve shell: { raw } = Rust answered (value may be null), { failed } = the request did not get an answer */
 type ReferencesServed = { state: 'raw'; value: unknown } | { state: 'failed' };
 
 /**
- * 引用位面 rust 服务(RUST-138 批 3 接线,批 4 切语义过滤面):服务轨道下先镜像
- * 语料文档,再请求 kode-server textDocument/references。Rust 面 = 语料面引用:
- * def 文档出自定义类型/实体 Parent/接口名三类目标的声明位(includeDeclaration
- * 时前置)+ 全语料语义站点位;types.xml 文档出该类型名全语料引用位(无声明位)。
- * 站点面走 semantic_reference_locations:跨 root 同名异声明(Shadow)与站点域
- * 不可解析(Dangling)不入列。Python 文档(属性 self 访问/调用点面归
- * entityMapping 运行时)、entities/alias、未知符号 → 语义面如实 null(kind=
- * none);任何失败/超时/取消/应答畸形(任一条目缺 uri/区间)→ unavailable,调用方
- * 回 TS 既有实现(不部分采用)。非服务轨道/未装配门零开销。
+ * References-face rust service (RUST-138 batch 3 wiring, batch 4 switching to
+ * the semantics-filtered face): under the serve track, first mirror the corpus
+ * document, then request kode-server textDocument/references. Rust face =
+ * corpus-face references: def documents yield declaration sites for the three
+ * target kinds (self-defined types / entity Parent / interface names, placed
+ * first when includeDeclaration holds) + corpus-wide semantic reference
+ * sites; a types.xml document yields corpus-wide reference sites for that type
+ * name (no declaration sites). The site face goes through
+ * semantic_reference_locations: same-name-but-different-declaration across
+ * roots (Shadow) and sites whose domain cannot be resolved (Dangling) are not
+ * listed. Python documents (property self access / call-site face belong to
+ * the entityMapping runtime), entities/alias, unknown symbols -> the semantic
+ * face returns null honestly (kind=none); any failure / timeout /
+ * cancellation / malformed response (any item missing a uri/range) ->
+ * unavailable, and the caller takes its existing TS implementation (no
+ * partial adoption). A non-serve track or an unwired gate is zero overhead.
  */
 export async function serveReferencesFromRust(
   document: DocumentLike,
@@ -742,7 +813,7 @@ export async function serveReferencesFromRust(
     INTERACTIVE_SERVE_BUDGET_MS,
     isCancelled
   );
-  // 预算壳 null = 超时/取消/抛错 → 失败面,回 TS(可用性优先,不误伤服务)。
+  // A null from the budget shell = timeout / cancellation / throw -> the failure face, falling back to TS (availability first, without misapplying the served result).
   if (result === null || result.state === 'failed') {
     return { kind: 'unavailable' };
   }
@@ -825,12 +896,15 @@ const isDefRenameEditsFace = (value: unknown): value is DefRenameEditsFace => {
 };
 
 /**
- * prepareRename 面 rust 服务(RUST-141 批 2 接线):服务轨道下先镜像 .def
- * 文档,再请求 kode-server textDocument/prepareRename。Rust 面 = def 属性/
- * 方法名上光标的候选区间+占位名(核 resolve_rename_symbol_at_offset,与 TS
- * defRenamer 同构)。非 .def/未开档/光标不在可重命名符号上(null)/任何失败/
- * 应答畸形 → null,调用方回 TS 既有实现(不部分采用)。非服务轨道/未装配门
- * 零开销。
+ * prepareRename face rust service (RUST-141 batch 2 wiring): under the serve
+ * track, first mirror the .def document, then request kode-server
+ * textDocument/prepareRename. Rust face = candidate range + placeholder name
+ * for a cursor on a def property/method name (core
+ * resolve_rename_symbol_at_offset, isomorphic with the TS defRenamer).
+ * Non-.def / document not open / cursor not on a renamable symbol (null) /
+ * any failure / malformed response -> null, and the caller takes its existing
+ * TS implementation (no partial adoption). A non-serve track or an unwired gate
+ * is zero overhead.
  */
 export async function servePrepareRenameFromRust(
   document: DocumentLike,
@@ -866,13 +940,16 @@ export async function servePrepareRenameFromRust(
 }
 
 /**
- * def 重命名编辑复算面 rust 服务(RUST-141 批 2 接线):服务轨道下先镜像
- * .def 文档,再请求 kode-server textDocument/rename。Rust 面 = 同文件冲突
- * 预检(NAV-008)+ 闭包占名预检(AUD-061)+ 目标与后代 def 全部编辑
- * (AUD-046);冲突位不阻塞应答,由 provider 决定抛错文案(文案串留 TS 侧
- * l10n 边界)。python self 访问/receiver 调用改写与漂移守卫归 TS
- * entityMapping 车道,不在本面。应答畸形(任一键形状不对)→ null,调用方
- * 回 TS 既有实现(不部分采用)。
+ * def rename-edit recomputation face rust service (RUST-141 batch 2 wiring):
+ * under the serve track, first mirror the .def document, then request
+ * kode-server textDocument/rename. Rust face = same-file conflict precheck
+ * (NAV-008) + closure name-claim precheck (AUD-061) + all edits for the target
+ * and descendant defs (AUD-046); conflict sites do not block the response --
+ * the provider decides the error message (the message strings stay at the TS
+ * l10n boundary). python self access / receiver call rewriting and the drift
+ * guard belong to the TS entityMapping lane and are not in this face. A
+ * malformed response (any key with the wrong shape) -> null, and the caller
+ * takes its existing TS implementation (no partial adoption).
  */
 export async function serveRenameFromRust(
   document: DocumentLike,
@@ -906,7 +983,7 @@ export async function serveRenameFromRust(
   return result;
 }
 
-/** Rust GateRange 面(平铺 0 基行/列,与 code_action_assembly::GateRange 同形) */
+/** Rust GateRange face (flat 0-based line/column, same shape as code_action_assembly::GateRange) */
 export interface CodeActionGateRangeFace {
   startLine: number;
   startChar: number;
@@ -915,16 +992,17 @@ export interface CodeActionGateRangeFace {
 }
 
 /**
- * EditFace 三态(RUST-143 批 3):replaceRange=定点替换;insertLine=类体/语句
- * 插行(text 以换行开/结尾由 Rust 侧烘焙);replaceLines=整行段替换(换行
- * 已烘焙进 text)。
+ * EditFace tri-state (RUST-143 batch 3): replaceRange = a point replacement;
+ * insertLine = inserting a line into a class body/statement (the leading /
+ * trailing newline in text is baked in on the Rust side); replaceLines =
+ * replacing a whole line range (the newlines are already baked into text).
  */
 export type CodeActionEditFace =
   | { type: 'replaceRange'; file: string; range: CodeActionGateRangeFace; newText: string }
   | { type: 'insertLine'; file: string; line: number; text: string }
   | { type: 'replaceLines'; file: string; startLine: number; endLine: number; text: string };
 
-/** ActionFace:Rust 装配描述符(vscode 对象构造与 l10n 标题插值归 TS 薄壳) */
+/** ActionFace: the Rust assembly descriptor (vscode object construction and l10n title interpolation belong to the TS thin shell) */
 export interface CodeActionFace {
   kind: string;
   title: string;
@@ -933,7 +1011,7 @@ export interface CodeActionFace {
   titleParams: string[];
 }
 
-/** 诊断入参面(TS 侧由 vscode.Diagnostic 投影;related* 供 parity 族定位) */
+/** Diagnostic input face (projected from vscode.Diagnostic on the TS side; related* lets the parity family locate things) */
 export interface CodeActionDiagnosticParam {
   code: string;
   range: {
@@ -1002,19 +1080,25 @@ const isCodeActionFace = (value: unknown): value is CodeActionFace => {
   );
 };
 
-/** def 族(typeReplacement/parityMethod)只在 .def 文档请求;py 族反之 */
+/** The def families (typeReplacement/parityMethod) are only requested on .def documents; the py families the other way round */
 const CODE_ACTION_DEF_FAMILIES = new Set(['typeReplacement', 'parityMethod']);
 const CODE_ACTION_PY_FAMILIES = new Set(['receiverNone', 'fixedDict']);
 
 /**
- * codeAction 装配面 rust 服务(RUST-143 批 3 接线):服务轨道下先镜像文档,
- * 再按族请求 kode-server textDocument/codeAction。Rust 面 = 四族装配决策
- * (修参数类型/创建缺失定义/receiver-none 守卫双动作/FIXED_DICT 整体重赋),
- * 产出 ActionFace 描述符数组。诚实边界:registered 近拼宇宙(getKnownTypeContext
- * 装配)与 parity 目标 python 快照(readSharedFileSnapshot 打开缓冲区优先)
- * 由 TS 作入参传入;vscode.CodeAction/WorkspaceEdit 构造与 l10n 标题插值归
- * TS 薄壳。族×文档类不匹配/未开档/任何失败/应答畸形(任一 face 缺键)→
- * null,调用方回 TS 既有实现(不部分采用)。非服务轨道/未装配门零开销。
+ * codeAction assembly face rust service (RUST-143 batch 3 wiring): under the
+ * serve track, first mirror the document, then request kode-server
+ * textDocument/codeAction per family. Rust face = the four families of
+ * assembly decisions (fixing the argument type / creating the missing
+ * definition / the receiver-none guard's double action / the wholesale FIXED_DICT
+ * reassignment), producing an array of ActionFace descriptors. Honest
+ * boundary: the registered near-spelling universe (getKnownTypeContext
+ * assembly) and the parity target python snapshot (readSharedFileSnapshot,
+ * preferring an open buffer) are passed in as arguments by the TS side;
+ * vscode.CodeAction/WorkspaceEdit construction and l10n title interpolation
+ * belong to the TS thin shell. Family x document-kind mismatch / document not
+ * open / any failure / malformed response (any face missing a key) -> null,
+ * and the caller takes its existing TS implementation (no partial adoption).
+ * A non-serve track or an unwired gate is zero overhead.
  */
 export async function serveCodeActionsFromRust(
   document: DocumentLike,
@@ -1078,7 +1162,7 @@ export async function serveCodeActionsFromRust(
   return result;
 }
 
-/** 选中声明的落点面(signature_help::SignatureDefinition 同形,行 1 起) */
+/** Landing-point face of the selected declaration (same shape as signature_help::SignatureDefinition, line 1-based) */
 export interface SignatureHelpDefinitionFace {
   file: string;
   line: number;
@@ -1086,7 +1170,7 @@ export interface SignatureHelpDefinitionFace {
   exposed: boolean;
 }
 
-/** SignatureHelp 面(RUST-140 批 3):位置无关四件,签名组装与 TS 同构 */
+/** SignatureHelp face (RUST-140 batch 3): the four position-independent pieces; signature assembly is isomorphic with TS */
 export interface SignatureHelpFace {
   label: string;
   parameters: string[];
@@ -1094,7 +1178,7 @@ export interface SignatureHelpFace {
   definition: SignatureHelpDefinitionFace;
 }
 
-/** 应答双键:face + 活动形参标亮(clamp 零形参臂由 Rust 决策核给出) */
+/** Response double key: face + active-parameter highlight (the clamp arm for zero parameters is given by the Rust decision core) */
 export interface SignatureHelpResultFace {
   signature: SignatureHelpFace;
   activeParameter: number;
@@ -1134,14 +1218,18 @@ const isSignatureHelpResultFace = (value: unknown): value is SignatureHelpResult
 };
 
 /**
- * SignatureHelp 决策面 rust 服务(RUST-140 批 3 接线):服务轨道下先镜像
- * python 文档,再请求 kode-server textDocument/signatureHelp。Rust 面 =
- * 调用点归属(python_call_at)+ def 声明解析(owner 链闭包 + 接收者段硬闸)
- * + 签名组装,回 {signature, activeParameter} 双键;应答 null = 该位置无
- * 签名。诚实边界:vscode.SignatureInformation/MarkdownString 构造归 TS
- * 薄壳;entityMapping 注册表运行时链(resolveMethodDefinition)留 TS 回退
- * 车道。非 .py/非服务轨道/取消/任何失败/应答畸形 → null,调用方回 TS 既有
- * 实现(不部分采用)。非服务轨道/未装配门零开销。
+ * SignatureHelp decision face rust service (RUST-140 batch 3 wiring): under
+ * the serve track, first mirror the python document, then request kode-server
+ * textDocument/signatureHelp. Rust face = call-site attribution
+ * (python_call_at) + def declaration resolution (owner chain closure +
+ * receiver-section hard gate) + signature assembly, returning the double key
+ * {signature, activeParameter}; a null response = no signature at that
+ * position. Honest boundary: vscode.SignatureInformation/MarkdownString
+ * construction belongs to the TS thin shell; the entityMapping registry
+ * runtime chain (resolveMethodDefinition) stays on the TS fallback lane.
+ * Non-.py / non-serve track / cancellation / any failure / malformed response
+ * -> null, and the caller takes its existing TS implementation (no partial
+ * adoption). A non-serve track or an unwired gate is zero overhead.
  */
 export async function serveSignatureHelpFromRust(
   document: DocumentLike,
@@ -1173,12 +1261,12 @@ export async function serveSignatureHelpFromRust(
   return result;
 }
 
-/** 根范围 def 符号命中面(workspace_symbols::WorkspaceSymbolHit 同形,行 1 起) */
+/** Root-scoped def symbol hit face (same shape as workspace_symbols::WorkspaceSymbolHit, line 1-based) */
 export interface WorkspaceSymbolHitFace {
   symbolName: string;
   /** "property" | "method" */
   kind: string;
-  /** 仅 method 在场(Rust Option<&str>);属性无段 */
+  /** Present only for method (Rust Option<&str>); properties have no section */
   section: string | null;
   rootName: string;
   rootDefFile: string;
@@ -1206,15 +1294,20 @@ const isWorkspaceSymbolHitFace = (value: unknown): value is WorkspaceSymbolHitFa
 };
 
 /**
- * workspace/symbol 检索面 rust 服务(RUST-139 批 4 接线):服务轨道下请求
- * kode-server workspace/symbol。Rust 面 = 语料 entity 类 def root 集 +
- * effective 折叠闭包(first-wins 去重)+ 组件槽独立面 + 前缀大小写不敏感/
- * trim + rootName→symbolName→line 三键排序;回 {symbols:[命中面]}。语料由
- * didOpen 入库,检索面不镜像文档(无文档上下文)。
- * 诚实边界:vscode.SymbolInformation/Location/Position 构造归 TS 薄壳;
- * 结果集截断(LSP limit)归 TS 请求侧。非服务轨道/未装配门/取消/任何失败/
- * 应答畸形 → null,调用方回 TS 既有 searchDefSymbolsByPrefix 链(不部分采用);
- * 空集 {symbols:[]} 是合法应答(可解析但无命中),照常返回。
+ * workspace/symbol lookup face rust service (RUST-139 batch 4 wiring): under
+ * the serve track, request kode-server workspace/symbol. Rust face = the
+ * corpus entity-kind def root set + the effective folding closure
+ * (first-wins dedup) + the component-slot standalone face + case-insensitive /
+ * trimmed prefix + the three-key sort rootName -> symbolName -> line;
+ * returning {symbols:[hit faces]}. The corpus enters through didOpen; the
+ * lookup face does not mirror documents (there is no document context).
+ * Honest boundary: vscode.SymbolInformation/Location/Position construction
+ * belongs to the TS thin shell; truncating the result set (the LSP limit)
+ * belongs to the TS request side. A non-serve track / unwired gate /
+ * cancellation / any failure / malformed response -> null, and the caller
+ * takes its existing TS searchDefSymbolsByPrefix chain (no partial adoption);
+ * an empty set {symbols:[]} is a legal response (resolvable but no hits) and
+ * is returned as usual.
  */
 export async function serveWorkspaceSymbolsFromRust(
   query: string,
@@ -1240,9 +1333,10 @@ export async function serveWorkspaceSymbolsFromRust(
 }
 
 /**
- * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
- * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值
- * (铁律:Rust 结果只进差异日志)。
+ * .def definition-jump shadow cross-check: after settling the ProviderResult
+ * (which may be thenable), adapt it into the TS Location face and mirror it
+ * to the gate. Fire-and-forget; it does not change the provider's return value
+ * (iron rule: Rust results only go to the diff log).
  */
 export function shadowCompareDefinition(
   document: DocumentLike,
@@ -1269,10 +1363,12 @@ export function shadowCompareDefinition(
 }
 
 /**
- * 语料镜像腿(E-1):.def/types.xml/entities.xml/alias.xml 的 open/change 同步
- * 给 Rust server。由文档快照更新驱动(开档/改动即镜像),不经
- * validateDocument —— 诊断开关关闭时语料同步不受影响,definition 与
- * 注册类型诊断才有同输入。best-effort:非 shadow/未配 serverPath 零开销。
+ * Corpus mirror leg (E-1): sync the open/change of .def/types.xml/entities.xml/
+ * alias.xml to the Rust server. Driven by document snapshot updates (mirror on
+ * open/change), and does not go through validateDocument -- so corpus syncing
+ * is unaffected when diagnostics are switched off, and only then do
+ * definition and registered-type diagnostics share the same input.
+ * Best-effort: a non-shadow setup or a missing serverPath is zero overhead.
  */
 export function shadowMirrorCorpusDocument(document: DocumentLike): void {
   const gate = shadowGate;
@@ -1286,8 +1382,11 @@ export function shadowMirrorCorpusDocument(document: DocumentLike): void {
 }
 
 /**
- * 关文档清理腿(E-4):与镜像腿对称 —— 文档关闭/丢弃未保存修订后撤 Rust 侧
- * overlay 与版本账,连续开合不积累已关闭的文档。非 shadow/未装配门零开销。
+ * Document-close cleanup leg (E-4): symmetric with the mirror leg -- after a
+ * document is closed or its unsaved revisions discarded, retract the Rust-side
+ * overlay and version bookkeeping, so that repeated open/close cycles do not
+ * accumulate already-closed documents. A non-shadow setup or an unwired gate is
+ * zero overhead.
  */
 export function shadowReleaseCorpusDocument(document: DocumentLike): void {
   const gate = shadowGate;
@@ -1298,10 +1397,11 @@ export function shadowReleaseCorpusDocument(document: DocumentLike): void {
 }
 
 /**
- * .def 诊断影子对拍:validateDocument 算完诊断后调用。先镜像文档
- * (诊断面刷新腿,与 shadowMirrorCorpusDocument 同账本;同版本重入不重发),
- * 再把 TS 诊断面镜像给 gate.compare('textDocument/diagnostic')。
- * fire-and-forget。
+ * .def diagnostics shadow cross-check: called after validateDocument has
+ * computed the diagnostics. First mirror the document (the diagnostics-face
+ * refresh leg, on the same ledger as shadowMirrorCorpusDocument; a re-entry of
+ * the same version is not resent), then mirror the TS diagnostics face to
+ * gate.compare('textDocument/diagnostic'). Fire-and-forget.
  */
 export function shadowObserveDefDocument(
   document: DocumentLike,

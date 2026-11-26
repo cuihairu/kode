@@ -1,17 +1,22 @@
-//! KODE-CFG-008 配置问答面:`get_final_config` / `get_entry_scripts` /
-//! `get_database_schema` 三个 MCP 工具的纯逻辑实现(资产根读盘 + JSON 形)。
+//! KODE-CFG-008 config Q&A face: pure-logic implementations of the three MCP
+//! tools `get_final_config` / `get_entry_scripts` / `get_database_schema`
+//! (asset-root disk reads + JSON shape).
 //!
-//! 与既有面同源不复制:
-//! - 解析/合并/telnet/dbInterface 语义全部在 kode-parser `resolve_config`
-//!   (与 TS `$/kode/config/resolve` 消费通道、`derive_capabilities` 同一
-//!   真源);引擎写死 telnet 端口数值表复用 kode-server `config_rpc` 的
-//!   `ENGINE_TELNET_PORT_NUMBERS`(core 唯一真源,此处不另立常数)。
-//! - 数据库 schema 推导复用 `AssetKnowledge::db_schema_preview`
-//!   (kode-server `$/kode/databaseSchema/build` C-16 同源)。
+//! Same source as existing faces, no copying:
+//! - Parse/merge/telnet/dbInterface semantics all live in kode-parser
+//!   `resolve_config` (the same single source of truth as the TS
+//!   `$/kode/config/resolve` consumer channel and `derive_capabilities`); the
+//!   engine's hardcoded telnet port number table reuses kode-server
+//!   `config_rpc`'s `ENGINE_TELNET_PORT_NUMBERS` (the core's only source of
+//!   truth; no separate constant here).
+//! - Database schema derivation reuses `AssetKnowledge::db_schema_preview`
+//!   (same source as kode-server `$/kode/databaseSchema/build`, C-16).
 //!
-//! 边界:密码不回传值——MCP 客户端是外部 agent,遵守 CLONE-P5 立场
-//! (derive 面同款):`dbInterface` 只给连接要素 + `passwordAvailable`
-//! 标记,明文密码留空。读盘容错:单文件缺失如实记 `missing`,不 panic。
+//! Boundary: passwords never echo values back — MCP clients are external
+//! agents, honoring the CLONE-P5 stance (same as the derive face):
+//! `dbInterface` only gives connection elements + a `passwordAvailable` flag,
+//! with the plaintext password left empty. Disk-read tolerance: a missing
+//! single file is honestly recorded as `missing`, no panic.
 
 use std::path::{Path, PathBuf};
 
@@ -21,15 +26,17 @@ use serde_json::{json, Map, Value};
 
 use crate::kb::AssetKnowledge;
 
-/// 引擎根回溯深度上限(从资产根向上找 `<层>/kbe/res/server/` 兜底)。
+/// Engine-root ancestor-lookup depth cap (walking up from the asset root to find a `<tier>/kbe/res/server/` fallback).
 const ENGINE_ROOT_LOOKUP_DEPTH: usize = 4;
 
-/// 引擎 `KBE_RES_PATH` 环境变量名(与 resmgr.cpp `Resmgr::initialize` 同口径)。
+/// Engine `KBE_RES_PATH` env var name (same reading as resmgr.cpp `Resmgr::initialize`).
 const KBE_RES_PATH_ENV: &str = "KBE_RES_PATH";
 
-/// 按引擎装载口径分割 `KBE_RES_PATH` 的搜索段(resmgr.cpp `updatePaths`:
-/// 初始按 `;` 分;非 Windows 且段数 <2 时改用 `:`,Windows 保留 `;` 防盘符
-/// 被切开)。空段剔除,段尾补 `/`(与引擎 `respaths_` 一致)。
+/// Splits `KBE_RES_PATH` into search segments per the engine's load semantics
+/// (resmgr.cpp `updatePaths`: initially split on `;`; on non-Windows with fewer
+/// than 2 segments switch to `:`, Windows keeps `;` so drive letters are not
+/// cut apart). Empty segments dropped, trailing `/` appended (matching the
+/// engine's `respaths_`).
 fn split_res_path(raw: &str) -> Vec<String> {
     let mut segments: Vec<String> = if raw.contains(';') {
         raw.split(';')
@@ -56,9 +63,10 @@ fn split_res_path(raw: &str) -> Vec<String> {
     segments
 }
 
-/// 引擎 `matchRes` 同口径(resmgr.cpp:194-212):按 `KBE_RES_PATH` 段序拼
-/// `res` 相对路径,`is_file` 即命中,返回**首个命中**。环境变量未设/无命中
-/// → None(调用方回落资产根/回溯兜底,不虚构)。
+/// Same reading as the engine's `matchRes` (resmgr.cpp:194-212): joins the `res`
+/// relative path against the `KBE_RES_PATH` segment order, a hit on `is_file`
+/// wins, returns the **first hit**. Env var unset / no hit → None (the caller
+/// falls back to the asset root / ancestor lookup; nothing is fabricated).
 fn match_res_path(relative: &str) -> Option<PathBuf> {
     let raw = std::env::var(KBE_RES_PATH_ENV).ok()?;
     let segments = split_res_path(&raw);
@@ -71,20 +79,22 @@ fn match_res_path(relative: &str) -> Option<PathBuf> {
     None
 }
 
-/// 元件配置定位:引擎 `KBE_RES_PATH` 命中优先(`matchRes("server/kbengine.xml")`
-/// 同口径);环境变量未设/无命中 → 资产根 `{root}/res/server/kbengine.xml`
-/// (与扩展侧 `resolveCustomConfigXmlPath` 的资产根语义一致)。
+/// Component config location: an engine `KBE_RES_PATH` hit wins (same reading as
+/// `matchRes("server/kbengine.xml")`); env unset / no hit → asset root
+/// `{root}/res/server/kbengine.xml` (matching the extension side's
+/// `resolveCustomConfigXmlPath` asset-root semantics).
 fn custom_config_path(root: &Path) -> PathBuf {
     match_res_path("server/kbengine.xml")
         .unwrap_or_else(|| root.join("res").join("server").join("kbengine.xml"))
 }
 
-/// 引擎 defaults 定位:引擎 `KBE_RES_PATH` 命中优先(`matchRes(
-/// "server/kbengine_defaults.xml")` 同口径,引擎 `kbe/res/server/` 段在先);
-/// 环境变量未设/无命中 → 兜底 1. 资产根自身 `{root}/res/server/` 拷贝;
-/// 2. 资产根向上回溯 ≤4 层的 `<层>/kbe/res/server/kbengine_defaults.xml`
-/// (典型布局:`<ws>/assets` + `<ws>/kbe` 同级)。
-/// 找不到 → None(如实 `null`,不猜 defaults 存在)。
+/// Engine defaults location: an engine `KBE_RES_PATH` hit wins (same reading as
+/// `matchRes("server/kbengine_defaults.xml")`, the engine `kbe/res/server/`
+/// segment comes first); env unset / no hit → fallbacks: 1. the asset root's own
+/// `{root}/res/server/` copy; 2. walking up from the asset root ≤4 tiers to a
+/// `<tier>/kbe/res/server/kbengine_defaults.xml` (typical layout: `<ws>/assets`
+/// and `<ws>/kbe` as siblings).
+/// Not found → None (honest `null`; never assumes defaults exist).
 fn defaults_config_path(root: &Path) -> Option<PathBuf> {
     if let Some(found) = match_res_path("server/kbengine_defaults.xml") {
         return Some(found);
@@ -116,8 +126,8 @@ fn read_opt(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// ConfigNode → JSON(与 kode-server config_rpc `config_node_to_json` 同形:
-/// sourceComments 空则省,TS 可选字段同形)。
+/// ConfigNode → JSON (same shape as kode-server config_rpc `config_node_to_json`:
+/// sourceComments omitted when empty, same as the TS optional field).
 fn config_node_to_json(node: &ConfigNode) -> Value {
     let children: Vec<Value> = node.children.iter().map(config_node_to_json).collect();
     let mut map = Map::new();
@@ -138,7 +148,7 @@ fn config_node_to_json(node: &ConfigNode) -> Value {
     Value::Object(map)
 }
 
-/// f64 → JSON 数(整值落整数,与 config_rpc `json_number` 同口径)。
+/// f64 → JSON number (integral values become integers, same reading as config_rpc `json_number`).
 fn json_number(value: f64) -> Value {
     if value.fract() == 0.0 && value.abs() < 9e15 {
         Value::Number(serde_json::Number::from(value as i64))
@@ -149,7 +159,7 @@ fn json_number(value: f64) -> Value {
     }
 }
 
-/// 引擎写死 telnet 端口表 → `{component: port}`(数值表 kode-server 真源)。
+/// Engine hardcoded telnet port table → `{component: port}` (the number table's source of truth is kode-server).
 fn telnet_default_ports_json() -> Value {
     let mut map = Map::new();
     for component in ENGINE_DEFAULT_TELNET_PORTS.iter() {
@@ -163,7 +173,7 @@ fn telnet_default_ports_json() -> Value {
     Value::Object(map)
 }
 
-/// dbmgr 数据库接口连接要素 → JSON(CLONE-P5 立场:密码不回传值)。
+/// dbmgr database interface connection elements → JSON (CLONE-P5 stance: the password value is never echoed back).
 fn db_interface_json(db: &kode_parser::config::DatabaseInterfaceConfig) -> Value {
     json!({
         "host": db.host,
@@ -172,14 +182,16 @@ fn db_interface_json(db: &kode_parser::config::DatabaseInterfaceConfig) -> Value
         "databaseName": db.database_name,
         "encrypt": db.encrypt,
         "characterSet": db.character_set,
-        // 明文密码不给 MCP 客户端;encrypt=false 且配置非空时以标记代值。
+        // The plaintext password is never handed to MCP clients; when encrypt=false
+        // and the config is non-empty a flag stands in for the value.
         "password": Value::Null,
         "passwordAvailable": db.plain_password.is_some(),
     })
 }
 
-/// 文档序首个名匹配子树(DFS;与 kode-parser first_node 同语义,此处只读
-/// 已解析树,不复制解析语义)。
+/// First name-matching subtree in document order (DFS; same semantics as
+/// kode-parser first_node; here it only reads the already-parsed tree and does
+/// not duplicate parsing semantics).
 fn first_node<'a>(node: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
     node.children
         .iter()
@@ -191,17 +203,19 @@ fn first_node<'a>(node: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
         })
 }
 
-/// 叶子读值(trim 后非空)。
+/// Leaf value read (non-empty after trim).
 fn leaf_text(node: &ConfigNode, name: &str) -> Option<String> {
     first_node(node, name)
         .map(|child| child.text.trim().to_string())
         .filter(|t| !t.is_empty())
 }
 
-/// 密码脱敏:树内任何名为 `password` 的节点值替换为占位符(MCP 客户端是
-/// 外部 agent,CLONE-P5 立场全面收口——不只 dbInterface 字段,合成树里的
-/// `<password>` 叶子同样不外泄;结构/源注释保留,消费端仍能看到「此处有
-/// 密码配置」)。
+/// Password redaction: any node named `password` in the tree gets its value
+/// replaced by a placeholder (MCP clients are external agents; the CLONE-P5
+/// stance closes this fully — not just the dbInterface field, the `<password>`
+/// leaves in the synthesized tree likewise never leak; structure/source
+/// comments are kept so consumers can still see "a password is configured
+/// here").
 fn redact_node(node: &ConfigNode) -> ConfigNode {
     let mut out = node.clone();
     if out.name == "password" && !out.text.trim().is_empty() {
@@ -211,9 +225,11 @@ fn redact_node(node: &ConfigNode) -> ConfigNode {
     out
 }
 
-/// `get_final_config`:解析元件配置(+可选同目录 defaults),一次出全
-/// 合成树 / telnet 速览 / 引擎写死端口表 / 数据库连接要素。密码值全树
-/// 脱敏(树内 `<password>` 叶子与 telnet 侧都以占位/布尔标记出面)。
+/// `get_final_config`: parses the component config (+ optional same-tree
+/// defaults) and answers in one shot with the synthesized trees / telnet summary
+/// / engine hardcoded port table / database connection elements. Password values
+/// are redacted across the whole tree (both `<password>` leaves in the tree and
+/// the telnet side surface a placeholder / boolean flag).
 pub fn final_config(root: &Path) -> Value {
     let custom_path = custom_config_path(root);
     let defaults_path = defaults_config_path(root);
@@ -255,8 +271,9 @@ pub fn final_config(root: &Path) -> Value {
     })
 }
 
-/// 组件 → `scripts/` 角色目录序列(官方 python_assets 模板口径;interface
-/// 单复数两者都认,复数在前与 TS `INTERFACE_SCRIPT_FOLDERS` 同序)。
+/// Component → `scripts/` role directory sequence (official python_assets template
+/// reading; both singular/plural `interface` spellings are accepted, plural first
+/// matching the TS `INTERFACE_SCRIPT_FOLDERS` order).
 const COMPONENT_SCRIPT_DIRS: &[(&str, &[&str])] = &[
     ("baseapp", &["base"]),
     ("cellapp", &["cell"]),
@@ -267,23 +284,26 @@ const COMPONENT_SCRIPT_DIRS: &[(&str, &[&str])] = &[
     ("bots", &["bots"]),
 ];
 
-/// 入口脚本模块名的引擎默认值(entryScriptFile 缺省 = kbemain)。
+/// Engine default for the entry script module name (entryScriptFile defaults to kbemain).
 const DEFAULT_ENTRY_MODULE: &str = "kbemain";
 
-/// 从(合并缺省则元件侧)配置树读 `<{component}><entryScriptFile>` 覆盖值。
+/// Reads the `<{component}><entryScriptFile>` override from the config tree
+/// (merged, or the component side when defaults are absent).
 fn entry_module_override(tree: Option<&ConfigNode>, component: &str) -> Option<String> {
     let section = first_node(tree?, component)?;
     leaf_text(section, "entryScriptFile")
 }
 
-/// `get_entry_scripts`:每个服务端组件一条入口脚本事实(module / path /
-/// exists)+ 共享引擎包装脚本一条(CFG-006 TS `findEngineEntryScript` 同
-/// 约定:`scripts/kbengine.py`)。路径/存在性如实读盘,不预填不猜。
+/// `get_entry_scripts`: one entry-script fact (module / path / exists) per
+/// server component + one for the shared engine wrapper script (same convention
+/// as CFG-006's TS `findEngineEntryScript`: `scripts/kbengine.py`). Path/existence
+/// read honestly from disk; nothing prefilled or guessed.
 pub fn entry_scripts(root: &Path) -> Value {
     let custom_text = read_opt(&custom_config_path(root));
     let defaults_text = defaults_config_path(root).as_deref().and_then(read_opt);
     let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
-    // entryScriptFile 是引擎 defaults 键:合并树在则查合并,否则查元件侧。
+    // entryScriptFile is an engine defaults key: query the merged tree when
+    // present, else the component side.
     let tree = resolved.merged.as_ref().or(resolved.custom_tree.as_ref());
 
     let scripts_dir = root.join("scripts");
@@ -292,10 +312,11 @@ pub fn entry_scripts(root: &Path) -> Value {
         .map(|(component, dirs)| {
             let module = entry_module_override(tree, component)
                 .unwrap_or_else(|| DEFAULT_ENTRY_MODULE.to_string());
-            // 目录序列:优先取实际含 `{module}.py` 的目录(interface 单复数
-            // 两目录并存时以文件为准);都没有则回落第一个存在的目录,再
-            // 回落首目录如实 exists:false(消费端拿「missing」诊断,同 TS
-            // 派生立场)。
+            // Directory sequence: prefer the directory that actually holds
+            // `{module}.py` (when both singular/plural interface directories exist,
+            // the file decides); if neither has it, fall back to the first existing
+            // directory, then to the first directory with an honest exists:false
+            // (consumers get a "missing" diagnosis, same as the TS derived stance).
             let dir = dirs
                 .iter()
                 .find(|d| scripts_dir.join(d).join(format!("{module}.py")).is_file())
@@ -312,7 +333,7 @@ pub fn entry_scripts(root: &Path) -> Value {
         })
         .collect();
 
-    // 共享引擎入口包装脚本(debugpy 注入点;TS CFG-006 单一事实同款)。
+    // Shared engine entry wrapper script (the debugpy injection point; same single fact as TS CFG-006).
     let wrapper = scripts_dir.join("kbengine.py");
     facts.push(json!({
         "process": "baseapp",
@@ -324,9 +345,10 @@ pub fn entry_scripts(root: &Path) -> Value {
     json!({ "scriptsRoot": scripts_dir.to_string_lossy(), "entryScripts": facts })
 }
 
-/// `get_database_schema`:C-16 同源推导(kode-server databaseSchema/build)
-/// 的 schema 问答面。返回每实体表集 + 表名索引 + def 源引用;entity 缺省 =
-/// 全部实体。entity 未知名 → Err(与 db_schema_preview 同错面)。
+/// `get_database_schema`: the schema Q&A face over the C-16 same-source derivation
+/// (kode-server databaseSchema/build). Returns each entity's table set + a
+/// table-name index + def source references; entity defaults to all entities.
+/// Unknown entity name → Err (same error face as db_schema_preview).
 pub fn database_schema(knowledge: &AssetKnowledge, entity: Option<&str>) -> Result<Value, String> {
     let preview = knowledge.db_schema_preview(entity)?;
     let mut table_index = Map::new();
@@ -357,8 +379,9 @@ pub fn database_schema(knowledge: &AssetKnowledge, entity: Option<&str>) -> Resu
     }))
 }
 
-/// 沿点分路径走到目标节点(跳过 `<root>`/`<defaults>` 文档元素包裹段,
-/// 目录键都是去掉包裹段后的相对路径)。段未命中 → None。
+/// Walks a dotted path to the target node (skipping the `<root>`/`<defaults>`
+/// document-element wrapper; directory keys are all relative paths without the
+/// wrapper). A segment miss → None.
 fn node_at<'a>(tree: Option<&'a ConfigNode>, key: &str) -> Option<&'a ConfigNode> {
     let mut current = tree?;
     if current.name.is_empty() && current.children.len() == 1 {
@@ -373,7 +396,8 @@ fn node_at<'a>(tree: Option<&'a ConfigNode>, key: &str) -> Option<&'a ConfigNode
     Some(current)
 }
 
-/// 节点 → 值形:叶子取 trim 后文本;容器如实列子键名;空节点 → null。
+/// Node → value shape: leaves take the trimmed text; containers honestly list
+/// child key names; empty nodes → null.
 fn node_value(node: &ConfigNode) -> Value {
     let text = node.text.trim();
     if !text.is_empty() {
@@ -390,14 +414,18 @@ fn node_value(node: &ConfigNode) -> Value {
     ))
 }
 
-/// `why_setting`:对给定配置键答「值 + 中英含义 + file:line 出处」。
+/// `why_setting`: answers a given config key with "value + meaning in Chinese and
+/// English + file:line origin".
 ///
-/// 值 = resolve_config 生效树(合并缺省则元件侧)沿点分路径的叶子值;
-/// 中英含义 + 出处 = 引擎 defaults 文案库(serverConfigCatalog,经
-/// config_catalog 快照)curated 条目;出处是权威 file:line(如
-/// `kbe/res/server/kbengine_defaults.xml:618`),另附解析树该节点的
-/// sourceComments(原始双语注释)作交叉佐证。键不在文案库 → found:false
-/// 如实(值仍解析,含义/出处留空,不虚构)。键在树但非叶子 → 值列子键名。
+/// Value = the leaf value along the dotted path in the resolve_config effective
+/// tree (merged, or the component side when defaults are absent); meaning in
+/// Chinese and English + origin = curated entries from the engine defaults
+/// catalog (serverConfigCatalog, via the config_catalog snapshot); the origin is
+/// the authoritative file:line (e.g. `kbe/res/server/kbengine_defaults.xml:618`),
+/// plus the parsed tree node's sourceComments (original bilingual comments) as
+/// cross-corroboration. Key not in the catalog → found:false honestly (the value
+/// is still parsed; meaning/origin left empty, nothing fabricated). Key in the
+/// tree but not a leaf → the value lists child key names.
 pub fn why_setting(root: &Path, key: &str) -> Result<Value, String> {
     let key = key.trim();
     if key.is_empty() {
@@ -457,10 +485,13 @@ pub fn why_setting(root: &Path, key: &str) -> Result<Value, String> {
     Ok(Value::Object(out))
 }
 
-/// `list_config_settings`:引擎 defaults 文案库全量条目(每配置项的中英
-/// 含义 + 权威 file:line 出处 + 分组),可选按 group / 前缀过滤;每项附
-/// 生效值(resolve_config 生效树解析,缺省值 null)。答「XML 配置每个选项
-/// 的含义」。group 未知名 → 空集如实(附可用分组),不报错。
+/// `list_config_settings`: the full set of engine defaults catalog entries (each
+/// config item's meaning in Chinese and English + authoritative file:line origin
+/// + group), optionally filtered by group / prefix; each item carries its
+///
+/// Effective value (resolved from the resolve_config effective tree, null when
+/// absent). Answers "what each XML config option means". Unknown group name →
+/// empty set honestly (with the available groups listed), no error.
 pub fn list_config_settings(root: &Path, group: Option<&str>, prefix: Option<&str>) -> Value {
     let custom_path = custom_config_path(root);
     let defaults_path = defaults_config_path(root);
@@ -518,7 +549,8 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Mutex;
 
-    /// `KBE_RES_PATH` 是进程全局,涉及它的测试必须串行(避免并发串味)。
+    /// `KBE_RES_PATH` is process-global; tests touching it must run serially (to
+    /// avoid cross-contamination).
     static RES_PATH_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn fixture_root() -> PathBuf {
@@ -535,7 +567,8 @@ mod tests {
         std::fs::write(conf.join(name), text).unwrap();
     }
 
-    /// 临时设置 KBE_RES_PATH,离开作用域恢复原值(测试串行由调用方的锁保证)。
+    /// Temporarily sets KBE_RES_PATH and restores the previous value on scope exit
+    /// (test serialization is guaranteed by the caller's lock).
     struct ResPathEnvGuard {
         previous: Option<String>,
     }
@@ -543,8 +576,9 @@ mod tests {
     impl ResPathEnvGuard {
         fn set(value: &str) -> Self {
             let previous = std::env::var(KBE_RES_PATH_ENV).ok();
-            // edition 2021 下 set_var/remove_var 是安全函数;并发序列性由
-            // 调用方持有的 RES_PATH_ENV_LOCK 保证(本进程内无并发读写)。
+            // Under edition 2021, set_var/remove_var are safe functions; concurrency
+            // serialization is guaranteed by the caller-held RES_PATH_ENV_LOCK (no
+            // concurrent reads/writes within this process).
             std::env::set_var(KBE_RES_PATH_ENV, value);
             Self { previous }
         }
@@ -552,7 +586,7 @@ mod tests {
 
     impl Drop for ResPathEnvGuard {
         fn drop(&mut self) {
-            // 同上,锁在 guard 存活期间一直持有。
+            // Same as above; the lock is held for the guard's whole lifetime.
             match &self.previous {
                 Some(value) => std::env::set_var(KBE_RES_PATH_ENV, value),
                 None => std::env::remove_var(KBE_RES_PATH_ENV),
@@ -560,17 +594,20 @@ mod tests {
         }
     }
 
-    /// 配置解析面测试的统一隔离:解析函数(`custom_config_path` /
-    /// `defaults_config_path` → `match_res_path`)读进程级 `KBE_RES_PATH`,
-    /// 不隔离就会与两个 env 优先级测试并发互染(cargo 默认多线程跑同一测试
-    /// 二进制)。持有同一把锁并在测试期间置空值——空值 = 无可用段,解析回落
-    /// 资产根,与「env 未设」同语义。
+    /// Unified isolation for config-parse-face tests: the parse functions
+    /// (`custom_config_path` / `defaults_config_path` → `match_res_path`) read the
+    /// process-level `KBE_RES_PATH`, so without isolation they cross-contaminate
+    /// the two env-priority tests concurrently (cargo runs one test binary
+    /// multi-threaded by default). Hold the same lock and set an empty value for
+    /// the test duration — empty = no usable segment, parsing falls back to the
+    /// asset root, same semantics as "env unset".
     fn config_env_isolation() -> (std::sync::MutexGuard<'static, ()>, ResPathEnvGuard) {
         let lock = RES_PATH_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         (lock, ResPathEnvGuard::set(""))
     }
 
-    /// 引擎 `matchRes` 同口径:`KBE_RES_PATH` 段序首个命中即采用,资产根只作兜底。
+    /// Same reading as the engine's `matchRes`: the first hit in `KBE_RES_PATH`
+    /// segment order is taken, the asset root only serves as a fallback.
     #[test]
     fn res_path_env_takes_priority_over_asset_root() {
         let _lock = RES_PATH_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -579,7 +616,7 @@ mod tests {
         let assets = base.join("assets");
         std::fs::create_dir_all(engine_res.join("server")).unwrap();
         std::fs::create_dir_all(assets.join("res").join("server")).unwrap();
-        // 引擎段 defaults(真源) + 资产段 custom(覆盖)
+        // Engine-segment defaults (source of truth) + asset-segment custom (overrides)
         std::fs::write(
             engine_res.join("server").join("kbengine_defaults.xml"),
             "<root><dbmgr><databaseInterfaces><default><host>engine-host</host>\
@@ -592,7 +629,8 @@ mod tests {
              </default></databaseInterfaces></dbmgr></root>",
         )
         .unwrap();
-        // 资产根下再放一份「假的」defaults,验证环境变量优先于资产根
+        // Also place a "fake" defaults under the asset root, verifying the env var
+        // takes precedence over the asset root
         std::fs::write(
             assets
                 .join("res")
@@ -606,30 +644,31 @@ mod tests {
         let res_path = format!("{}/;{}/", engine_res.display(), assets.display());
         let _env = ResPathEnvGuard::set(&res_path);
         let payload = final_config(&assets);
-        // defaults 取引擎段(环境变量优先),不取资产根那份
+        // defaults comes from the engine segment (env var first), not the asset-root copy
         assert!(
             payload["defaultsPath"]
                 .as_str()
                 .unwrap()
                 .replace('\\', "/")
                 .contains("engine/kbe/res/server/kbengine_defaults.xml"),
-            "defaults 应按 KBE_RES_PATH 命中引擎段: {}",
+            "defaults should hit the engine segment via KBE_RES_PATH: {}",
             payload["defaultsPath"]
         );
-        // custom 取资产段(引擎段无 kbengine.xml → 命中资产段)
+        // custom comes from the asset segment (engine segment has no kbengine.xml → hits the asset segment)
         assert!(
             payload["configPath"]
                 .as_str()
                 .unwrap()
                 .replace('\\', "/")
                 .contains("assets/res/server/kbengine.xml"),
-            "custom 应按 KBE_RES_PATH 命中资产段: {}",
+            "custom should hit the asset segment via KBE_RES_PATH: {}",
             payload["configPath"]
         );
         std::fs::remove_dir_all(&base).ok();
     }
 
-    /// 环境变量未设时回落到资产根 / 向上回溯 `kbe/`(独立部署无 env 的常态)。
+    /// When the env var is unset, fall back to the asset root / walk up to `kbe/`
+    /// (the norm for standalone deployments without the env).
     #[test]
     fn without_res_path_env_falls_back_to_asset_root_and_kbe_ancestor() {
         let _lock = RES_PATH_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -651,46 +690,47 @@ mod tests {
         )
         .unwrap();
 
-        let _env = ResPathEnvGuard::set(""); // 空值 = 无可用段
+        let _env = ResPathEnvGuard::set(""); // empty value = no usable segment
         let payload = final_config(&assets);
         assert_eq!(payload["dbInterface"]["host"], "fallback-host");
-        // 资产根无 defaults → 回溯到 <base>/kbe/res/server/
+        // Asset root has no defaults → walk up to <base>/kbe/res/server/
         assert!(
             payload["defaultsPath"]
                 .as_str()
                 .unwrap()
                 .replace('\\', "/")
                 .contains("kbe/res/server/kbengine_defaults.xml"),
-            "应回溯祖先 kbe/ 定位 defaults: {}",
+            "should walk up the ancestor kbe/ to locate defaults: {}",
             payload["defaultsPath"]
         );
         std::fs::remove_dir_all(&base).ok();
     }
 
-    /// 引擎 `KBE_RES_PATH` 分割:分号优先,段尾补 `/`,空段剔除。
+    /// Engine `KBE_RES_PATH` splitting: semicolon first, trailing `/` appended, empty segments dropped.
     #[test]
     fn split_res_path_matches_engine_semantics() {
         assert_eq!(
             split_res_path("/a/kbe/res/;/b/assets/"),
             vec!["/a/kbe/res/", "/b/assets/"]
         );
-        // 无分号时按冒号分(非 Windows 引擎口径)
+        // Split on colon when there is no semicolon (non-Windows engine reading)
         assert_eq!(
             split_res_path("/a/kbe/res:/b/assets"),
             vec!["/a/kbe/res/", "/b/assets/"]
         );
-        // 单段无分隔符:trim 后整段一条,段尾照常补 `/`
+        // Single segment with no separator: one trimmed segment, trailing `/` appended as usual
         assert_eq!(split_res_path("/only"), vec!["/only/"]);
         assert_eq!(split_res_path("  rel "), vec!["rel/"]);
         assert!(split_res_path("   ").is_empty());
     }
 
-    /// ResPathEnvGuard 两侧恢复面:环境变量**先前已设值**时,guard drop
-    /// 恢复该值(而非删除)——Some 臂;隔离锁全程持有防并发写。
+    /// ResPathEnvGuard's both-side restore face: when the env var **was already
+    /// set**, guard drop restores that value (rather than removing it) — the Some
+    /// arm; the isolation lock is held throughout to prevent concurrent writes.
     #[test]
     fn res_path_env_guard_restores_previous_value_on_drop() {
         let _iso = config_env_isolation();
-        // 预置一个已存值:内层 guard 捕获 Some("/prev/") → drop 恢复它。
+        // Preset a pre-existing value: the inner guard captures Some("/prev/") → drop restores it.
         std::env::set_var(KBE_RES_PATH_ENV, "/prev/");
         {
             let _inner = ResPathEnvGuard::set("/tmp/x/");
@@ -708,7 +748,7 @@ mod tests {
 
     #[test]
     fn json_number_keeps_fraction_and_rejects_non_finite() {
-        // 整值落整数;分数保浮点;NaN/Inf → null(绝不虚构数)。
+        // Integral values become integers; fractions stay floats; NaN/Inf → null (never fabricate a number).
         assert_eq!(json_number(3306.0), serde_json::json!(3306));
         assert_eq!(json_number(1.5), serde_json::json!(1.5));
         assert_eq!(json_number(f64::NAN), Value::Null);
@@ -718,7 +758,7 @@ mod tests {
     #[test]
     fn final_config_merges_defaults_and_exposes_db_interface() {
         let _iso = config_env_isolation();
-        // defaults + 元件合并 → dbInterface 出面(密码不给值,只给可用标记)。
+        // defaults + component merged → dbInterface surfaces (the password is not given as a value, only an availability flag).
         let root = std::env::temp_dir().join(format!("kode-mcp-dbi-{}", std::process::id()));
         write_config(
             &root,
@@ -736,7 +776,7 @@ mod tests {
             "<root>\n<baseapp>\n<backupPeriod> 500 </backupPeriod>\n</baseapp>\n</root>\n",
         );
         let payload = final_config(&root);
-        // defaultsPath 有 defaults → 字符串(非 null)。
+        // defaultsPath has defaults → a string (not null).
         assert!(payload["defaultsPath"]
             .as_str()
             .unwrap()
@@ -748,7 +788,7 @@ mod tests {
         assert_eq!(db["databaseName"], "kbe_db");
         assert_eq!(db["encrypt"], false);
         assert_eq!(db["characterSet"], "utf8mb4");
-        // 密码永远不给值:标记可用即可。
+        // The password value is never given: an availability flag suffices.
         assert_eq!(db["password"], Value::Null);
         assert_eq!(db["passwordAvailable"], true);
         assert!(!payload.to_string().contains("db-pass"));
@@ -758,8 +798,9 @@ mod tests {
     #[test]
     fn why_setting_reports_defaults_path_and_skips_empty_segments() {
         let _iso = config_env_isolation();
-        // 点分键含空段(baseapp..backupPeriod):空段跳过,值照常解析;
-        // defaults 在 → defaultsPath 字符串。
+        // Dotted key has an empty segment (baseapp..backupPeriod): empty segments
+        // are skipped and the value parses as usual; defaults present → defaultsPath
+        // is a string.
         let root = std::env::temp_dir().join(format!("kode-mcp-why-{}", std::process::id()));
         write_config(
             &root,
@@ -784,12 +825,12 @@ mod tests {
     fn database_schema_builds_table_index() {
         let k = crate::kb::AssetKnowledge::load(&fixture_root());
         let out = crate::config_qa::database_schema(&k, Some("Avatar")).expect("schema");
-        // 表名索引:Avatar 持久属性 → 至少一张表按名入索引。
+        // Table-name index: Avatar persistent properties → at least one table indexed by name.
         let index = out["tableIndex"].as_object().expect("tableIndex");
         assert!(!index.is_empty(), "expected indexed tables for Avatar");
         let entity = out["entity"].as_str().unwrap();
         assert_eq!(entity, "Avatar");
-        // 未知名 → Err(与 db_schema_preview 同错面)。
+        // Unknown name → Err (same error face as db_schema_preview).
         assert!(crate::config_qa::database_schema(&k, Some("NoSuch")).is_err());
     }
 
@@ -797,14 +838,14 @@ mod tests {
     fn final_config_reads_component_xml_and_reports_missing_defaults() {
         let _iso = config_env_isolation();
         let payload = final_config(&fixture_root());
-        // 元件配置在:dbmgr 段 + databaseInterfaces 读得到。
+        // Component config present: the dbmgr section + databaseInterfaces are readable.
         assert!(payload["customTree"].is_object(), "custom tree parsed");
         assert!(payload["merged"].is_null(), "no defaults → merged 不猜");
         assert!(payload["defaultsPath"].is_null());
-        // 引擎写死端口表:loginapp=31000 问答面。
+        // Engine hardcoded port table: loginapp=31000 on the Q&A face.
         assert_eq!(payload["telnetDefaultPorts"]["loginapp"], 31000);
         assert_eq!(payload["telnetDefaultPorts"]["cellapp"], 50000);
-        // notes 如实记录 defaults 缺席。
+        // notes honestly records the absence of defaults.
         let notes = payload["notes"].as_array().unwrap();
         assert!(notes
             .iter()
@@ -827,7 +868,7 @@ mod tests {
     #[test]
     fn final_config_redacts_passwords_everywhere() {
         let _iso = config_env_isolation();
-        // 带 <password> 值的临时资产根:telnet_service 段 + databaseInterfaces。
+        // A temp asset root carrying `<password>` values: telnet_service section + databaseInterfaces.
         let root = std::env::temp_dir().join(format!("kode-mcp-redact-{}", std::process::id()));
         let conf = root.join("res").join("server");
         std::fs::create_dir_all(&conf).unwrap();
@@ -846,12 +887,13 @@ mod tests {
             "telnet password leaked: {text}"
         );
         assert!(!text.contains("s3cret-db"), "db password leaked: {text}");
-        // 占位/布尔标记如实出面(结构不丢)。
+        // The placeholder / boolean flag surfaces honestly (structure is not lost).
         assert!(text.contains("[redacted]"));
         assert_eq!(payload["customTelnet"]["passwordSet"], true);
         assert_eq!(payload["customTelnet"]["port"], 32000);
-        // db 侧:无 defaults → merged 不猜 → dbInterface 缺席,但 db 密码在
-        // customTree 内且已被脱敏(上面的 !contains 断言覆盖)。
+        // db side: no defaults → merged is not guessed → dbInterface is absent, but
+        // the db password lives in customTree and has been redacted (covered by the
+        // !contains assertions above).
         assert!(payload["dbInterface"].is_null());
         std::fs::remove_dir_all(&root).ok();
     }
@@ -865,8 +907,9 @@ mod tests {
             .iter()
             .map(|f| (f["process"].as_str().unwrap(), f))
             .collect();
-        // baseapp → scripts/base/kbemain.py 存在(组件事实按 module 精确取,
-        // 共享包装脚本同属 baseapp process,不能按 process 键去重)。
+        // baseapp → scripts/base/kbemain.py exists (component facts are picked
+        // precisely by module; the shared wrapper script also belongs to the baseapp
+        // process, so dedupe by the process key is not possible).
         let base = facts
             .iter()
             .find(|f| f["process"] == "baseapp" && f["module"] == "kbemain")
@@ -877,7 +920,7 @@ mod tests {
             .unwrap()
             .replace('\\', "/")
             .ends_with("scripts/base/kbemain.py"));
-        // interface 单复数回退:interfaces 目录无 kbemain.py → 落 interface/。
+        // Singular/plural interface fallback: the interfaces directory has no kbemain.py → lands on interface/.
         let interfaces = by_process["interfaces"];
         assert!(interfaces["path"]
             .as_str()
@@ -885,7 +928,7 @@ mod tests {
             .replace('\\', "/")
             .ends_with("scripts/interface/kbemain.py"));
         assert_eq!(interfaces["exists"], true);
-        // 共享引擎包装脚本:夹具无 scripts/kbengine.py → exists:false 如实。
+        // Shared engine wrapper script: the fixture has no scripts/kbengine.py → exists:false honestly.
         let wrapper_fact = facts
             .iter()
             .find(|f| f["module"] == "kbengine")
@@ -907,22 +950,22 @@ mod tests {
             "dbmgr.account_system.account_registration.enable",
         )
         .expect("answer");
-        // 值来自元件侧(无 defaults → 合并不猜,取 custom_tree)。
+        // The value comes from the component side (no defaults → merge not guessed, take custom_tree).
         assert_eq!(payload["value"], "true");
-        // 中英含义来自文案库(curated)。
+        // The meaning in Chinese and English comes from the catalog (curated).
         assert_eq!(payload["found"], true);
         assert!(payload["meaningZh"].as_str().unwrap().contains("开放注册"));
         assert!(payload["meaningEn"]
             .as_str()
             .unwrap()
             .contains("registration"));
-        // 出处 = 权威 file:line(文案库 source)。
+        // Origin = the authoritative file:line (the catalog's source).
         assert!(payload["origin"]
             .as_str()
             .unwrap()
             .contains("kbengine_defaults.xml"));
         assert_eq!(payload["group"], "account");
-        // 解析树该节点原始双语注释作交叉佐证。
+        // The parsed tree node's original bilingual comments serve as cross-corroboration.
         let comments = payload["sourceComments"].as_array().unwrap();
         assert!(
             !comments.is_empty(),
@@ -949,7 +992,7 @@ mod tests {
     #[test]
     fn why_setting_catalog_key_absent_in_tree_is_honest_null_value() {
         let _iso = config_env_isolation();
-        // baseapp.archivePeriod 在文案库但元件侧未配置(无 defaults 不猜)。
+        // baseapp.archivePeriod is in the catalog but not configured on the component side (no defaults, not guessed).
         let payload = why_setting(&fixture_root(), "baseapp.archivePeriod").expect("answer");
         assert_eq!(payload["found"], true);
         assert!(payload["meaningZh"].as_str().unwrap().contains("存档"));
@@ -959,7 +1002,7 @@ mod tests {
     #[test]
     fn why_setting_section_key_lists_children() {
         let _iso = config_env_isolation();
-        // dbmgr.account_system 是容器段 → 值如实列子键名。
+        // dbmgr.account_system is a container section → the value honestly lists child key names.
         let payload = why_setting(&fixture_root(), "dbmgr.account_system").expect("answer");
         assert_eq!(payload["found"], true);
         let value = payload["value"].as_str().unwrap();
@@ -973,14 +1016,14 @@ mod tests {
         let payload = list_config_settings(&fixture_root(), None, None);
         let settings = payload["settings"].as_array().unwrap();
         assert!(settings.len() > 200, "full catalog enumerated");
-        // 每项都有中英含义 + 出处 + 分组。
+        // Every item has a meaning in Chinese and English + origin + group.
         for s in settings.iter().take(50) {
             assert!(!s["meaningZh"].as_str().unwrap().is_empty());
             assert!(!s["meaningEn"].as_str().unwrap().is_empty());
             assert!(s["origin"].as_str().unwrap().contains("kbe/"));
             assert!(!s["group"].as_str().unwrap().is_empty());
         }
-        // 元件侧配置的键附真实生效值(其余为 null,不虚构)。
+        // Keys configured on the component side carry their real effective value (others are null, never fabricated).
         let reg = settings
             .iter()
             .find(|s| s["key"] == "dbmgr.account_system.account_registration.enable")
@@ -991,7 +1034,7 @@ mod tests {
             .find(|s| s["key"] == "baseapp.archivePeriod")
             .expect("archive key present");
         assert!(absent["value"].is_null());
-        // groupCounts 覆盖全部组。
+        // groupCounts covers all groups.
         assert!(payload["groupCounts"]["account"].as_u64().unwrap() > 0);
         assert_eq!(payload["count"].as_u64().unwrap() as usize, settings.len());
     }
@@ -1011,7 +1054,7 @@ mod tests {
             .iter()
             .all(|s| s["key"].as_str().unwrap().starts_with("baseapp.")));
 
-        // 未知名组 → 空集如实,不报错。
+        // Unknown group name → empty set honestly, no error.
         let none = list_config_settings(&fixture_root(), Some("no-such-group"), None);
         assert_eq!(none["count"], 0);
         assert!(none["settings"].as_array().unwrap().is_empty());

@@ -1,29 +1,41 @@
 /**
- * KSEM-CELL-08:cellData 已知字段写入类型校验诊断。
- * 数据源 = CELL-04 键宇宙(fetchCellDataKeys:kind/typeLabel/sourceFile/
- * sourceLine);写点/别名/常量键复用 CELL-06/07(scanCellDataKeyOperations +
- * cellDataAliasState/resolveCellDataConstantKey)。引擎事实(datatypes.cpp
- * `DataTypes::initialize` 注册表,与 kbengineMetadata 同源):整数标量带宽与
- * 符号定范围;FLOAT/DOUBLE 数值;STRING/UNICODE 字符串;BLOB 字节流;
- * VECTOR2/3/4 定长数值向量;PYTHON 与 PY_DICT/PY_TUPLE/PY_LIST/ENTITYCALL
- * 收 Python 对象面不查;ARRAY/FIXED_DICT/types.xml 自定义别名结构未知 →
- * 不查(诚实)。
+ * KSEM-CELL-08: write-type validation diagnostics for known cellData fields.
+ * Data source = the CELL-04 key universe (fetchCellDataKeys: kind/typeLabel/
+ * sourceFile/sourceLine); write sites / aliases / constant keys reuse
+ * CELL-06/07 (scanCellDataKeyOperations + cellDataAliasState /
+ * resolveCellDataConstantKey). Engine facts (the datatypes.cpp
+ * `DataTypes::initialize` registry, same source as kbengineMetadata): integer
+ * scalar bit width and sign fix the range; FLOAT/DOUBLE numeric;
+ * STRING/UNICODE string; BLOB byte stream; VECTOR2/3/4 fixed-length numeric
+ * vector; PYTHON and PY_DICT/PY_TUPLE/PY_LIST/ENTITYCALL take the Python
+ * object surface and are not checked; ARRAY/FIXED_DICT/types.xml custom alias
+ * structures are unknown -> not checked (honest boundary).
  *
- * 纯逻辑层,不 import vscode。判定(保守面,误报=0 优先):
- * - 只查 `write`(下标 `= ` 直赋;增强赋值/`.get` 归读不参与);
- * - 接收者须有效:self.cellData 直写,或 CELL-07 别名最近赋值仍是
- *   `= self.cellData`(重绑定后写的是别的字典,不查);别名逃逸不影响写型
- *   (逃逸只降读点存在性,字典形状不变);
- * - 键在宇宙且有 typeLabel;未知键/无类型/类型不在标量表 → 不查(未知键归
+ * Pure logic layer, does not import vscode. Judgement (conservative surface,
+ * false positive = 0 first):
+ * - only `write` is checked (index `= ` direct assignment; augmented
+ *   assignment / `.get` count as reads and do not participate);
+ * - the receiver must be valid: a direct write to self.cellData, or the most
+ *   recent assignment of a CELL-07 alias is still `= self.cellData` (after a
+ *   rebinding, the write targets a different dict, so no check); alias escape
+ *   does not affect the write type (escaping only lowers read-site
+ *   existence, the dict shape stays the same);
+ * - the key is in the universe and has a typeLabel; unknown key / no type /
+ *   type not in the scalar table -> no check (unknown keys belong to
  *   CELL-09/10);
- * - RHS 须**整段单行字面量**(尾随内容/跨行残缺/名字/调用 → 不猜);
- * - 结构面:字符串→数值/向量、None/字典/集合→数值/字符串/字节流/向量、
- *   列表→数值/字符串标量、字节串→字符串/数值 = 错配;bool 是 int 子类不报;
- *   浮点字面量→整数标量报(与声明结构不符);
- * - 范围面:整数字面量超引擎标量范围(负入无符号/越界)报;
- * - VECTOR2/3/4:序列字面量元数按语法可数——元数不符报;元数相符时元素全
- *   数值字面量不报、元素是其他字面量(字符串/None/字典)报、元素含未知表
- *   达式不猜。
+ * - the RHS must be a **whole single-line literal** (trailing content /
+ *   broken multi-line / name / call -> no guessing);
+ * - structure surface: string -> numeric/vector, None/dict/set ->
+ *   numeric/string/byte stream/vector, list -> numeric/string scalar,
+ *   bytes -> string/numeric = mismatch; bool is an int subclass, not
+ *   reported; float literal -> integer scalar is reported (does not match
+ *   the declared structure);
+ * - range surface: an integer literal outside the engine scalar range
+ *   (negative into unsigned / out of bounds) is reported;
+ * - VECTOR2/3/4: the arity of a sequence literal is countable from syntax --
+ *   an arity mismatch is reported; when the arity matches, all-numeric
+ *   literal elements are not reported, other literals (string/None/dict) are
+ *   reported, and elements containing an unknown expression are not guessed.
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -120,7 +132,7 @@ const RADIX_INT = /^[-+]?(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+)$/;
 const FLOAT_LITERAL =
   /^[-+]?(?:\d[\d_]*\.(?:\d[\d_]*)?(?:[eE][-+]?\d+)?|\.\d[\d_]*(?:[eE][-+]?\d+)?|\d[\d_]*[eE][-+]?\d+)$/;
 
-/** RHS 整段字面量分类(整段恰为一个字面量才给类;残缺/尾随表达式 → unknown)。 */
+/** Classify the whole RHS literal (a class is given only when the whole segment is exactly one literal; broken/trailing expression -> unknown). */
 export function classifyCellDataWriteValue(text: string): ValueLiteral {
   const s = text.trim();
   if (!s) {
@@ -133,7 +145,7 @@ export function classifyCellDataWriteValue(text: string): ValueLiteral {
     return { class: 'bool' };
   }
   if (DEC_INT.test(s) || RADIX_INT.test(s)) {
-    // BigInt 精确解析(十进制/0x/0o/0b 同构;64 位边界不落 double 取整)
+    // Parse exactly via BigInt (decimal/0x/0o/0b are isomorphic; 64-bit boundaries do not fall into double rounding)
     return { class: 'int', value: BigInt(s.replace(/_/g, '')) };
   }
   if (FLOAT_LITERAL.test(s)) {
@@ -141,7 +153,7 @@ export function classifyCellDataWriteValue(text: string): ValueLiteral {
   }
   const stringLiteral = /^([rRuUbBfF]{0,2})(['"])/.exec(s);
   if (stringLiteral) {
-    // 尾随内容(拼接/属性访问)不猜:引号闭后必须收尾
+    // No guessing on trailing content (concatenation/attribute access): the string must end right after the closing quote
     const quote = stringLiteral[2];
     const body = s.slice(stringLiteral[0].length);
     const close = scanQuotedEnd(body, quote);
@@ -154,12 +166,12 @@ export function classifyCellDataWriteValue(text: string): ValueLiteral {
     const sequenceClass = s[0] === '[' ? 'list' : 'tuple';
     const inner = scanBracketBody(s);
     if (inner === null) {
-      return { class: 'unknown' }; // 跨行/未闭合:类可判但元数不可数,不猜
+      return { class: 'unknown' }; // multi-line/unclosed: class is decidable but arity is not countable, no guessing
     }
     const rawElements = splitTopLevelCommas(inner);
     const isTupleSingleton = sequenceClass === 'tuple' && rawElements.length === 1 && !inner.includes(',');
     if (isTupleSingleton) {
-      // `(5)` 是括号表达式不是元组;`, `(尾逗号)才是单元素元组
+      // `(5)` is a parenthesized expression, not a tuple; `, ` (trailing comma) is what makes a single-element tuple
       const innerLiteral = classifyCellDataWriteValue(rawElements[0]);
       return innerLiteral.class === 'unknown' ? { class: 'unknown' } : innerLiteral;
     }
@@ -167,7 +179,7 @@ export function classifyCellDataWriteValue(text: string): ValueLiteral {
       return { class: 'sequence', sequenceClass, arity: 0, elements: [] };
     }
     const elements = rawElements.map(element => classifyCellDataWriteValue(element));
-    // 元素含 unknown(名字/调用/残缺)→ 只保元数,元素面不猜
+    // Elements containing unknown (names/calls/broken) -> keep the arity only, do not guess the element surface
     const allKnown = elements.every(element => element.class !== 'unknown');
     return {
       class: 'sequence',
@@ -179,17 +191,17 @@ export function classifyCellDataWriteValue(text: string): ValueLiteral {
   if (s[0] === '{') {
     const inner = scanBracketBody(s);
     if (inner === null) {
-      return { class: 'unknown' }; // 跨行/残缺/尾随表达式:不猜
+      return { class: 'unknown' }; // multi-line/broken/trailing expression: no guessing
     }
     if (inner.trim() === '') {
-      return { class: 'dict' }; // 空 `{}` 是 dict 不是 set
+      return { class: 'dict' }; // an empty `{}` is a dict, not a set
     }
     return hasTopLevelColon(inner) ? { class: 'dict' } : { class: 'set' };
   }
   return { class: 'unknown' };
 }
 
-/** 引号体内扫描:返回闭引号后的下标(未闭合 → null)。处理 `\` 转义。 */
+/** Scan inside a quoted body: return the index right after the closing quote (unclosed -> null). Handles `\` escapes. */
 function scanQuotedEnd(body: string, quote: string): number | null {
   for (let index = 0; index < body.length; index += 1) {
     if (body[index] === '\\') {
@@ -197,7 +209,7 @@ function scanQuotedEnd(body: string, quote: string): number | null {
       continue;
     }
     if (body[index] === quote) {
-      // 三引号:同字符连三次才闭
+      // Triple quote: it only closes when the same character appears three times in a row
       if (body.slice(index, index + 3) === quote.repeat(3)) {
         return index + 3;
       }
@@ -207,7 +219,7 @@ function scanQuotedEnd(body: string, quote: string): number | null {
   return null;
 }
 
-/** 首括号体:返回首括号配对体的内部文本(必须闭合且收尾;否则 null)。 */
+/** First bracket body: return the inner text of the first bracket pair (must be closed and terminal; otherwise null). */
 function scanBracketBody(s: string): string | null {
   const open = s[0];
   const close = open === '[' ? ']' : open === '(' ? ')' : '}';
@@ -228,7 +240,7 @@ function scanBracketBody(s: string): string | null {
     } else if (ch === close) {
       depth -= 1;
       if (depth === 0) {
-        // 括号体闭合后必须收尾(尾随表达式=更大表达式的一部分,整段不猜)
+        // The bracket body must be terminal after closing (a trailing expression means this is part of a larger expression, so do not guess the whole segment)
         if (s.slice(index + 1).trim() !== '') {
           return null;
         }
@@ -240,7 +252,7 @@ function scanBracketBody(s: string): string | null {
   return null;
 }
 
-/** 顶层逗号切分(深度/引号感知;空段剔除)。 */
+/** Split on top-level commas (depth/quote aware; empty segments dropped). */
 function splitTopLevelCommas(body: string): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -270,7 +282,7 @@ function splitTopLevelCommas(body: string): string[] {
   return parts.filter(part => part.trim() !== '');
 }
 
-/** 顶层冒号判定(深度/引号感知;dict 字面量与 set 字面量的分界)。 */
+/** Top-level colon test (depth/quote aware; the boundary between dict literals and set literals). */
 function hasTopLevelColon(body: string): boolean {
   let depth = 0;
   let index = 0;
@@ -296,7 +308,7 @@ function hasTopLevelColon(body: string): boolean {
   return false;
 }
 
-/** actual 文案。 */
+/** actual text. */
 function actualLabel(literal: ValueLiteral): string {
   switch (literal.class) {
     case 'none':

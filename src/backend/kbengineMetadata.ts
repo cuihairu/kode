@@ -4,19 +4,25 @@ export interface KBEngineMetadataItem {
   documentation: string;
 }
 
-// 类型集合严格按 KBEngine 引擎源码校准：
-// - 基础类型注册表: kbe/src/lib/entitydef/datatypes.cpp `DataTypes::initialize`
-//   (UINT8..UINT64, INT8..INT64, STRING, UNICODE, FLOAT, DOUBLE, PYTHON, PY_DICT,
-//    PY_TUPLE, PY_LIST, ENTITYCALL, BLOB, VECTOR2/3/4)
-// - ARRAY: .def 属性内联写法 `<Type>ARRAY<of>元素类型</of></Type>`
-//   (kbe/src/lib/entitydef/entitydef.cpp 属性加载对 "ARRAY" 特判,
-//    FixedArrayType::initialize 强制要求 <of> 子节点)
-// - FIXED_DICT: 仅支持在 scripts/entity_defs/types.xml 中以别名声明
-//   (DataTypes::loadTypes 特判 "FIXED_DICT", FixedDictType::initialize 强制要求
-//    <Properties> 子节点, 字段支持 Type/Persistent/DatabaseLength),
-//   .def 属性通过别名名引用。引擎不解析 def 属性内联的 FIXED_DICT。
-// 引擎注册表中不存在的类型(如 BOOL、TUPLE)不列入,防止补全生成引擎无法加载的定义。
-/** 引擎 def 类型名常量:FIXED_DICT(types.xml 别名声明形态;全仓判定/比较位统一引用,不再各写字面量) */
+// The type set is calibrated strictly against the KBEngine engine sources:
+// - base type registry: kbe/src/lib/entitydef/datatypes.cpp
+//   `DataTypes::initialize`
+//   (UINT8..UINT64, INT8..INT64, STRING, UNICODE, FLOAT, DOUBLE, PYTHON,
+//    PY_DICT, PY_TUPLE, PY_LIST, ENTITYCALL, BLOB, VECTOR2/3/4)
+// - ARRAY: the .def property inline form
+//   `<Type>ARRAY<of>element type</of></Type>`
+//   (kbe/src/lib/entitydef/entitydef.cpp property loading special-cases
+//    "ARRAY"; FixedArrayType::initialize requires an <of> child node)
+// - FIXED_DICT: only supported as an alias declaration in
+//   scripts/entity_defs/types.xml
+//   (DataTypes::loadTypes special-cases "FIXED_DICT";
+//    FixedDictType::initialize requires a <Properties> child node; fields
+//    support Type/Persistent/DatabaseLength); .def properties reference it
+//   by the alias name. The engine does not parse a FIXED_DICT inlined in a
+//   def property.
+// Types absent from the engine registry (e.g. BOOL, TUPLE) are not listed,
+// so completion never generates definitions the engine cannot load.
+/** Engine def type name constant: FIXED_DICT (the types.xml alias declaration shape; every judgement/comparison site in the repo references this instead of writing its own literal) */
 export const FIXED_DICT_TYPE_NAME = 'FIXED_DICT';
 
 export const KBENGINE_TYPES: KBEngineMetadataItem[] = [
@@ -45,9 +51,10 @@ export const KBENGINE_TYPES: KBEngineMetadataItem[] = [
   { name: FIXED_DICT_TYPE_NAME, detail: '固定字典容器', documentation: '在 scripts/entity_defs/types.xml 中以别名声明,需 <Properties> 子节点;.def 属性通过别名名引用。' }
 ];
 
-// 来源: kbe/src/lib/entitydef/entitydef.cpp(g_entityFlagMapping 12 项映射)、
-// common.cpp(stringToEntityDataFlags)、common.h(EntityDataFlags 位与
-// EntityDataFlagRelation 关系组)。逐旗标运行时语义 = 掩码成员关系。
+// Sources: kbe/src/lib/entitydef/entitydef.cpp (the g_entityFlagMapping 12
+// entries), common.cpp (stringToEntityDataFlags), common.h (the
+// EntityDataFlags bits and the EntityDataFlagRelation groups). Per-flag
+// runtime semantics = mask membership.
 export const KBENGINE_FLAGS: KBEngineMetadataItem[] = [
   {
     name: 'CELL_PUBLIC',
@@ -111,7 +118,7 @@ export const KBENGINE_FLAGS: KBEngineMetadataItem[] = [
   }
 ];
 
-// 来源: kbe/src/lib/entitydef/entitydef.cpp::loadDetailLevelInfo
+// Source: kbe/src/lib/entitydef/entitydef.cpp::loadDetailLevelInfo
 export const DETAIL_LEVELS = ['NEAR', 'MEDIUM', 'FAR'];
 
 export const KBENGINE_RELOAD_FUNCTIONS: KBEngineMetadataItem[] = [

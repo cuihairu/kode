@@ -39,8 +39,9 @@ export interface WatcherQueryResult {
 }
 
 /**
- * machine 发现的可注入目标。生产默认 127.0.0.1:20086(引擎广播端口);
- * 测试/仿真通过覆盖 host/port 指向本地仿真器,避免固定端口争用。
+ * Injectable target of the machine discovery. Production default is 127.0.0.1:20086 (the engine
+ * broadcast port); tests/simulation override host/port to point at a local simulator, avoiding
+ * contention on the fixed port.
  */
 export interface MachineDiscoveryOptions {
   host?: string;
@@ -49,8 +50,8 @@ export interface MachineDiscoveryOptions {
 }
 
 export const MACHINE_MSG_QUERY_ALL_INTERFACES = 4;
-// 引擎侧依据:CONSOLE_WATCHERCB_MSGID = 65502(kbe/src/lib/helper/console_helper.h);
-// KBE_MACHINE_BROADCAST_SEND_PORT = KBE_PORT_START + 86(kbe/src/lib/network/common.h)。
+// Engine-side basis: CONSOLE_WATCHERCB_MSGID = 65502 (kbe/src/lib/helper/console_helper.h);
+// KBE_MACHINE_BROADCAST_SEND_PORT = KBE_PORT_START + 86 (kbe/src/lib/network/common.h).
 export const CONSOLE_WATCHER_CB_MSG_ID = 65502;
 export const CONSOLE_PROFILE_CB_MSG_ID = 65503;
 // kbe/res/server/messages_fixed_defaults.xml:<Cellappmgr::querySpaces><id>50003</id>
@@ -58,19 +59,19 @@ export const CELLAPPMGR_QUERY_SPACES_MSG_ID = 50003;
 export const MACHINE_BROADCAST_PORT = 20086;
 
 // ---------------------------------------------------------------------------
-// guiconsole console 链路期一(KB-GC-001)协议常量。引擎树
-// kode 仓 ../kbengine @3082ab5 逐条引证,进 watcherProtocolAudit 审计锁:
-// - 701/702/703 出自 kbe/res/server/messages_fixed_defaults.xml
+// guiconsole console link phase one (KB-GC-001) protocol constants. The engine tree
+// kode repo ../kbengine @3082ab5 is cited item by item, locked into the watcherProtocolAudit audit:
+// - 701/702/703 come from kbe/res/server/messages_fixed_defaults.xml
 //   <Logger::onAppActiveTick>/<Logger::registerLogWatcher>/<Logger::deregisterLogWatcher>;
-// - 65501 = console_helper.h:10 CONSOLE_LOG_MSGID(代码强制号,不在 XML);
-// - KBELOG_TYPES 位并集 = 0x7ff(debug_helper.h:46-47)。
+// - 65501 = console_helper.h:10 CONSOLE_LOG_MSGID (a code-mandated id, not in the XML);
+// - the KBELOG_TYPES bitwise union = 0x7ff (debug_helper.h:46-47).
 export const LOGGER_APP_ACTIVE_TICK_MSG_ID = 701;
 export const LOGGER_REGISTER_LOG_WATCHER_MSG_ID = 702;
 export const LOGGER_DEREGISTER_LOG_WATCHER_MSG_ID = 703;
 export const CONSOLE_LOG_MSG_ID = 65501;
 export const KBELOG_TYPES_MASK = 0x7ff;
 
-/** logger logstream 级别名 ↔ KBELOG 位(debug_helper.h:35-44/55-68) */
+/** logger logstream level name ↔ KBELOG bit (debug_helper.h:35-44/55-68) */
 export const KBELOG_LEVEL_BITS: Record<string, number> = {
   UNKNOWN: 0x00,
   PRINT: 0x01,
@@ -90,8 +91,8 @@ export function kbelogLevelBit(level: string): number {
   return KBELOG_LEVEL_BITS[level] ?? 0x00;
 }
 
-// 与引擎 COMPONENT_TYPE 枚举(kbe/src/lib/common/common.h)逐值对齐:
-// UNKNOWN=0 … INTERFACES=13,TOOL=14;COMPONENT_END_TYPE=15 为哨兵不收录。
+// Aligned value by value with the engine COMPONENT_TYPE enum (kbe/src/lib/common/common.h):
+// UNKNOWN=0 … INTERFACES=13, TOOL=14; COMPONENT_END_TYPE=15 is a sentinel and is not collected.
 export const COMPONENT_NAMES = [
   'unknown',
   'dbmgr',
@@ -322,12 +323,13 @@ export function buildFrame(messageId: number, body: Buffer): Buffer {
 }
 
 /**
- * 定长消息帧:仅 2 字节消息号 + 定长 body,无长度字段。
- * 引擎 Bundle::startMessage 只在 msgLen==NETWORK_VARIABLE_MESSAGE 时插入长度字段
- * (bundle.cpp:303-309);NETWORK_FIXED_MESSAGE 的 701 onAppActiveTick 不带长度
- * (logger_interface.h:52 LOGGER_MESSAGE_DECLARE_ARGS2(onAppActiveTick,...,NETWORK_FIXED_MESSAGE))。
- * 误用 buildFrame 会给引擎多塞 2 字节长度,使其把长度当 COMPONENT_TYPE 前 2 字节读,
- * 参数错位(component_active_report_handler.cpp:67-71 按 INT32+UINT64 定长读)。
+ * Fixed-length message frame: only the 2-byte message id + a fixed-length body, no length field.
+ * The engine Bundle::startMessage inserts a length field only when msgLen==NETWORK_VARIABLE_MESSAGE
+ * (bundle.cpp:303-309); the NETWORK_FIXED_MESSAGE 701 onAppActiveTick carries no length
+ * (logger_interface.h:52 LOGGER_MESSAGE_DECLARE_ARGS2(onAppActiveTick,...,NETWORK_FIXED_MESSAGE)).
+ * Misusing buildFrame would stuff 2 extra length bytes to the engine, making it read that length
+ * as the first 2 bytes of COMPONENT_TYPE and shift every argument (component_active_report_handler.cpp:67-71
+ * reads fixed INT32+UINT64).
  */
 export function buildFixedFrame(messageId: number, body: Buffer): Buffer {
   const buffer = Buffer.alloc(2 + body.length);
@@ -529,9 +531,9 @@ function ipv4ToBytes(value: string): Buffer {
 }
 
 /**
- * parseComponentInfo 的逆过程:按线序全 LE 编码组件广播包。
- * machine 侧(与本地仿真器)用它构造应答,客户端用 parseComponentInfo
- * 解析——同一份协议规格的正反两面,防止两侧漂移。
+ * The inverse of parseComponentInfo: encodes the component broadcast packet fully LE in wire order.
+ * The machine side (and the local simulator) uses it to build the reply, the client uses
+ * parseComponentInfo to parse it — the two sides of one protocol spec, keeping both from drifting.
  */
 export function buildComponentInfo(info: KBEngineComponentInfo): Buffer {
   const parts: Buffer[] = [];
@@ -591,8 +593,8 @@ export function buildComponentInfo(info: KBEngineComponentInfo): Buffer {
 }
 
 /**
- * watcher 值编码:string→STRING(12)、bigint→UINT64(4)、boolean→BOOL(13)、
- * 其余 number→UINT32(3)。取值类型集与 parseWatcherFrame 的读取矩阵一致。
+ * watcher value encoding: string→STRING (12), bigint→UINT64 (4), boolean→BOOL (13),
+ * any other number→UINT32 (3). The set of value types matches parseWatcherFrame's read matrix.
  */
 export function encodeWatcherValue(value: string | number | bigint | boolean): Buffer {
   const typeTag = (type: number): Buffer => Buffer.from([type]);
@@ -620,8 +622,8 @@ export function encodeWatcherValue(value: string | number | bigint | boolean): B
 }
 
 /**
- * 构造 type 0 值帧 body:首字节 type 标记 + 若干
- * path/name/watcherId/valueType/value 元组(与 parseWatcherFrame 对偶)。
+ * Builds the type 0 value-frame body: the leading type tag byte + a run of
+ * path/name/watcherId/valueType/value tuples (dual to parseWatcherFrame).
  */
 export function buildWatcherValueFrameBody(
   path: string,
@@ -639,8 +641,8 @@ export function buildWatcherValueFrameBody(
 }
 
 /**
- * 构造 type 1 目录帧 body:首字节 type 标记 + rootPath + keys cstring 串。
- * rootPath 传 '/' 时 parseWatcherFrame 归一为 ''。
+ * Builds the type 1 directory-frame body: the leading type tag byte + rootPath + the keys cstring run.
+ * When rootPath is '/', parseWatcherFrame normalizes it to ''.
  */
 export function buildWatcherDirFrameBody(rootPath: string, keys: string[]): Buffer {
   return Buffer.concat([Buffer.from([1]), buildCString(rootPath), ...keys.map(key => buildCString(key))]);
@@ -707,10 +709,10 @@ export function parseProfileFrame(body: Buffer, component: KBEngineComponentInfo
     return { ...base, kind: 'networkprofile', timingLength, rows };
   }
 
-  // cprofile(引擎 ProfileKind=1):CProfileHandler::timeout() 写序
-  // (profile_handler.cpp:95-128)= timinglen_ → size-1(除 RunningTime 外行数)
-  // → 每行(name,count,lastTime,sumTime,lastIntTime,sumIntTime)。漏读
-  // timingLength 会让行数据整体错位(KR-AUD-68)。
+  // cprofile (engine ProfileKind=1): the write order of CProfileHandler::timeout()
+  // (profile_handler.cpp:95-128) = timinglen_ → size-1 (row count excluding RunningTime)
+  // → per row (name,count,lastTime,sumTime,lastIntTime,sumIntTime). Failing to read
+  // timingLength would shift the whole row data (KR-AUD-68).
   timingLength = reader.readUInt32();
   const rows: CProfileRow[] = [];
   const count = reader.readUInt32();
@@ -801,9 +803,10 @@ export async function discoverLocalComponents(
     });
 
     socket.bind(0, '0.0.0.0', () => {
-      // machine 发现本就是广播协议:目标可为 127.0.0.1(同机直查)或广播地址
-      // (异机真机联验),后者必须带 SO_BROADCAST 才能发出;测试注入的假 socket
-      // 无该方法,可选调用放行
+      // machine discovery is by nature a broadcast protocol: the target can be 127.0.0.1 (direct
+      // same-machine query) or a broadcast address (real-machine cross-machine verification),
+      // the latter must carry SO_BROADCAST to send; a fake socket injected by tests has no such
+      // method, the optional call is allowed through
       socket.setBroadcast?.(true);
       const address = socket.address();
       if (typeof address === 'string') {
@@ -854,13 +857,15 @@ export async function queryWatcherPath(
       }
 
       settled = true;
-      // 不可达(批72 定性):该 if 的隐式 else 臂(v8-to-istanbul 记为 arm#1
-      // armLoc=undefined)对应"初始 setTimeout(finish, timeoutMs)在 connect
-      // 之前触发"的竞态路径。真实网络环境下 connect 几乎总在 800ms
-      // 内完成,且测试层以 fake timers 推进+先发 connect 的顺序覆盖主流路径,
-      // 竞态窗口既难稳定复现也不属功能性缺陷。真臂行为由既有
-      // kbengineProtocolGaps.test.ts 中"lets a late data frame rearm the timer"
-      // 与"keeps the resolved result when a late socket error arrives"用例锁定。
+      // Unreachable (batch 72 verdict): the implicit else arm of this if (recorded by
+      // v8-to-istanbul as arm#1 armLoc=undefined) corresponds to the race path where "the
+      // initial setTimeout(finish, timeoutMs) fires before connect". Under a real network
+      // environment connect almost always completes within 800ms, and the test layer covers
+      // the mainstream path with fake timers advanced in a connect-first order; the race
+      // window is both hard to reproduce reliably and not a functional defect. The real-arm
+      // behavior is locked by the existing kbengineProtocolGaps.test.ts cases "lets a late
+      // data frame rearm the timer" and "keeps the resolved result when a late socket error
+      // arrives".
       /* istanbul ignore start */
       if (timeout) {
       /* istanbul ignore stop */
@@ -1024,32 +1029,33 @@ export async function querySpaces(component: KBEngineComponentInfo, timeoutMs = 
 }
 
 // ---------------------------------------------------------------------------
-// guiconsole console 链路期一(KB-GC-001)帧构造/解析。
+// guiconsole console link phase one (KB-GC-001) frame building/parsing.
 export interface LogWatcherRequestOptions {
   uid: number;
-  /** KBELOG 位掩码(debug_helper.h:35-44),全量=KBELOG_TYPES_MASK */
+  /** KBELOG bit mask (debug_helper.h:35-44), the full set = KBELOG_TYPES_MASK */
   logtypes: number;
   globalOrder: number;
   groupOrder: number;
-  /** 空串=不过滤日期 */
+  /** empty string = no date filter */
   date: string;
-  /** 空串=不过滤关键字 */
+  /** empty string = no keyword filter */
   keyStr: string;
-  /** 过滤的组件类型;引擎位图语义为「点名的类型才放行」(logwatcher.cpp:86-90),
-   * 空数组=不点名=一条都不放行——调用方要全量时须显式传全部服务端类型 */
+  /** the component types to filter; the engine bitmap semantics is "only the named types pass" (logwatcher.cpp:86-90),
+   * empty array = nothing named = not a single one passes — a caller wanting everything must explicitly pass all server-side types */
   componentTypes: number[];
   isfind: boolean;
   first: boolean;
 }
 
 /**
- * 702 registerLogWatcher body,线序照写侧 guiconsole
- * LogWindow.cpp:376-433(读侧 logwatcher.cpp:37-70 互逆):
- * uid i32 / logtypes u32 / globalOrder i32(COMPONENT_ORDER=platform.h:346) /
+ * 702 registerLogWatcher body, wire order per the writer side in guiconsole
+ * LogWindow.cpp:376-433 (the dual of reader side logwatcher.cpp:37-70):
+ * uid i32 / logtypes u32 / globalOrder i32 (COMPONENT_ORDER=platform.h:346) /
  * groupOrder i32 / date cstr / keyStr cstr / count i8 /
- * count×COMPONENT_TYPE(Bundle::operator<< 固定 int32,bundle.h:227-231) /
- * isfind bool(i8) / first bool(i8,bundle.h:239-242)。
- * XML 声明的 UINT8_ARRAY 与真实写侧不符——按写侧(设计文档 §1.4 解码陷阱)。
+ * count×COMPONENT_TYPE (Bundle::operator<< fixed int32, bundle.h:227-231) /
+ * isfind bool (i8) / first bool (i8, bundle.h:239-242).
+ * The XML-declared UINT8_ARRAY disagrees with the real writer side — follow the
+ * writer side (design doc §1.4 decoding trap).
  */
 export function buildLogWatcherRequestBody(options: LogWatcherRequestOptions): Buffer {
   const parts: Buffer[] = [];
@@ -1078,10 +1084,10 @@ export function buildLogWatcherRequestBody(options: LogWatcherRequestOptions): B
   return Buffer.concat(parts);
 }
 
-/** 服务端组件全量(位图全点名):logger/cellapp/baseapp/三 mgr/dbmgr/loginapp/bots/interfaces/machine */
+/** The full set of server-side components (the bitmap names every type): logger/cellapp/baseapp/the three mgrs/dbmgr/loginapp/bots/interfaces/machine */
 export const SERVER_COMPONENT_TYPES = [1, 2, 3, 4, 5, 6, 8, 10, 11, 13];
 
-/** 701 onAppActiveTick body:INT32 COMPONENT_TYPE + UINT64 COMPONENT_ID(xml Logger::onAppActiveTick:701) */
+/** 701 onAppActiveTick body: INT32 COMPONENT_TYPE + UINT64 COMPONENT_ID (xml Logger::onAppActiveTick:701) */
 export function buildAppActiveTickBody(componentType: number, componentID: bigint): Buffer {
   const body = Buffer.alloc(12);
   body.writeInt32LE(componentType, 0);
@@ -1090,9 +1096,9 @@ export function buildAppActiveTickBody(componentType: number, componentID: bigin
 }
 
 /**
- * 65501 body = appendBlob(u32 长度 + 字节,bundle.h:324-328),载荷为一条
- * logstream 文本(logger 每条命中日志单独 push 一个 Bundle,logwatcher.cpp:105-112)。
- * 截断/残帧返回 null(不猜文本);空 blob 返回 []。
+ * 65501 body = appendBlob (u32 length + bytes, bundle.h:324-328); the payload is a single
+ * logstream text line (the logger pushes one Bundle per matched log line, logwatcher.cpp:105-112).
+ * Truncated/partial frames return null (the text is never guessed); an empty blob returns [].
  */
 export function parseConsoleLogBody(body: Buffer): string[] | null {
   if (body.length < 4) {
@@ -1110,22 +1116,23 @@ export function parseConsoleLogBody(body: Buffer): string[] | null {
 }
 
 export interface ParsedLogStream {
-  /** 归一后的级别名(空白天名=PRINT,debug_helper.h:53) */
+  /** the normalized level name (a blank-day name = PRINT, debug_helper.h:53) */
   level: string;
   component: string;
   groupOrder: number;
   uid: number;
   componentID: string;
   timestamp: string;
-  /** 消息体(可能含换行的 traceback,原样保留) */
+  /** the message body (possibly a multi-line traceback, preserved as-is) */
   message: string;
 }
 
 /**
- * 解析 logger.cpp:265-280 拼出的 logstream 文本:
- *   `<级别名> <组件名><两位 groupOrder> <uid> <componentID> [YYYY-MM-DD HH:MM:SS mmm] - <消息体>`
- * 级别名表带前导空白("   ERROR"/" WARNING"/PRINT 全空白,debug_helper.h:55-68);
- * 解析不出结构返回 null,调用方原样呈现原始文本,不冒充结构化行。
+ * Parses the logstream text assembled by logger.cpp:265-280:
+ *   `<level name> <component name><two-digit groupOrder> <uid> <componentID> [YYYY-MM-DD HH:MM:SS mmm] - <message body>`
+ * The level-name column carries leading whitespace ("   ERROR"/" WARNING"/PRINT all-blank, debug_helper.h:55-68);
+ * when no structure can be parsed, return null and the caller renders the raw text as-is,
+ * never masquerading it as a structured line.
  */
 export function parseLogStream(text: string): ParsedLogStream | null {
   const pattern =
@@ -1142,8 +1149,9 @@ export function parseLogStream(text: string): ParsedLogStream | null {
     uid: Number.parseInt(match[4], 10),
     componentID: match[5],
     timestamp: match[6].trim(),
-    // 真机样本(KB-GC-001 imac 实测):blob 末尾带引擎自加的换行,剥离尾部
-    // 换行(消息体内部换行/traceback 原样保留)
+    // Real-machine samples (KB-GC-001 imac live test): the blob ends with an engine-added
+    // newline; strip the trailing newline (newlines inside the message body / a traceback
+    // are preserved as-is)
     message: match[7].replace(/\n+$/, '')
   };
 }

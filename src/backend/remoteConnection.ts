@@ -1,7 +1,9 @@
 /**
- * 远程连接分派(IDE-PDBG-004):debug.json 声明组件走本地还是哪台
- * ssh/config 主机(默认本地),debug 与 py-spy 按所选主机分派——远程 =
- * ssh 前缀跑命令 / -L 隧道转发端口,连不上如实报错不假成功。
+ * Remote connection dispatch (IDE-PDBG-004): whether a component declared in
+ * debug.json runs locally or on which ssh/config host (local by default);
+ * debug and py-spy are dispatched by the chosen host -- remote = run the
+ * command under an ssh prefix / forward the port with an -L tunnel, and a
+ * connection failure is reported honestly rather than faked as a success.
  */
 
 import { spawn, type ChildProcess } from 'child_process';
@@ -10,14 +12,16 @@ import * as path from 'path';
 import { defaultTcpConnect, type TcpConnectFn } from './debugpyPortProbe';
 import { dedupeSshHosts, parseSshConfig, type SshHostEntry } from './sshConfig';
 
-/** 'local' = 本地直跑(默认);否则经该 ssh 主机 */
+/** 'local' = run locally (default); otherwise go through that ssh host */
 export type ServerConnection = 'local' | { ssh: SshHostEntry };
 
 /**
- * 连接分派解析,优先级:组件级 sshHost(debug.json,工程内共享)> debug.json
- * 全局 defaultSshHost > 视图选中的服务器(本会话态)> 本地。空串/'local'
- * 都归本地;别名不在 ~/.ssh/config 里也按裸主机名连(HostName 缺省 =
- * 别名,ssh 语义)。
+ * Connection dispatch resolution, priority: component-level sshHost
+ * (debug.json, shared within the project) > the debug.json global
+ * defaultSshHost > the server selected in the view (this session's state) >
+ * local. An empty string / 'local' both map to local; an alias absent from
+ * ~/.ssh/config is still connected to as a bare hostname (HostName defaulting
+ * to the alias is ssh's semantics).
  */
 export function resolveComponentConnection(
   componentSshHost: string | undefined,
@@ -42,16 +46,20 @@ export function resolveComponentConnection(
 }
 
 /**
- * ssh 位置参数注入防线:目标/跳板来自项目共享的半信任输入
- * (.kbengine/debug.json、~/.ssh/config)。ssh 位置参数不依赖 shell 词法,
- * `-oProxyCommand=…` 形状的目标会被解析成本地执行的选项而非主机名,
- * 空白与控制字符同样切出额外 token。前导 '-' 与空白/控制字符一律拒收。
+ * Defense line against ssh positional-argument injection: the target / jump
+ * host come from project-shared, half-trusted input (.kbengine/debug.json,
+ * ~/.ssh/config). ssh positional arguments do not depend on shell tokenizing,
+ * so a target shaped like `-oProxyCommand=...` gets parsed as an option
+ * executed locally instead of a hostname, and whitespace or control characters
+ * likewise split out extra tokens. A leading '-' and any whitespace / control
+ * character are rejected outright.
  */
 function sshTokenProblem(token: string, label: string): string | null {
   if (token.length === 0) { return `${label} 为空`; }
   if (token.startsWith('-')) { return `${label} 以 '-' 开头(会被 ssh 当选项解析):${token}`; }
-  // 码点判定(不用字符类正则,eslint no-control-regex):空白切 token、
-  // C0/DEL 控制字符进 ssh 位置参数无意义且有注入形态风险
+  // Code point verdict (no character-class regex, eslint no-control-regex):
+  // whitespace splits the token, and C0/DEL control characters in an ssh
+  // positional argument are meaningless and carry injection-shape risk
   let control = false;
   for (const ch of token) {
     const code = ch.charCodeAt(0);
@@ -61,7 +69,7 @@ function sshTokenProblem(token: string, label: string): string | null {
   return null;
 }
 
-/** 目标声明非法时非 null;合法返回 null */
+/** Non-null when the target declaration is illegal; returns null when it is legal */
 export function validateSshEntry(entry: SshHostEntry): string | null {
   const problems = [
     sshTokenProblem(entry.host, 'host'),
@@ -71,7 +79,7 @@ export function validateSshEntry(entry: SshHostEntry): string | null {
   return problems.length > 0 ? problems.join('; ') : null;
 }
 
-/** ssh 公共旗标:BatchMode 免交互(密钥/agent 就绪才连得上,卡密码就是失败) */
+/** Common ssh flags: BatchMode is non-interactive (it only connects once the key/agent is ready, and hanging on a password prompt means failure) */
 function sshCommonArgs(entry: SshHostEntry): string[] {
   const problem = validateSshEntry(entry);
   if (problem) {
@@ -90,27 +98,29 @@ function sshCommonArgs(entry: SshHostEntry): string[] {
 }
 
 /**
- * 远程命令:`ssh [-o BatchMode=yes] [-J 跳板] [-p 端口] [user@]host -- <命令…>`
- * —— py-spy 探测/安装/dump 都经它跑在远端。
+ * Remote command: `ssh [-o BatchMode=yes] [-J jump host] [-p port] [user@]host
+ * -- <command...>` -- py-spy probing/installing/dumping all run remotely
+ * through it.
  */
 export function buildSshExecArgs(entry: SshHostEntry, remoteCommand: string[]): string[] {
   return [...sshCommonArgs(entry), '--', ...remoteCommand];
 }
 
 /**
- * 端口隧道:`ssh … -N -L localPort:127.0.0.1:remotePort` —— 端口模式
- * connect 附加经隧道打到远端 debugpy 监听口。
+ * Port tunnel: `ssh ... -N -L localPort:127.0.0.1:remotePort` -- the connect
+ * attach in port mode reaches the remote debugpy listening port through the
+ * tunnel.
  */
 export function buildSshTunnelArgs(entry: SshHostEntry, localPort: number, remotePort: number): string[] {
   return [...sshCommonArgs(entry), '-N', '-L', `${localPort}:127.0.0.1:${remotePort}`];
 }
 
-/** 首选端口被占则换临时口:先探再试(远端口的本地形状最可读);preferred=0 = 直接要临时口 */
+/** If the preferred port is taken, switch to a temporary port: probe first, then try (the local shape of the remote port is the most readable); preferred=0 = ask for a temporary port directly */
 export function pickFreeLocalPort(preferred: number): Promise<number> {
   return new Promise(resolve => {
     const server = net.createServer();
     server.once('error', () => {
-      // 首选被占:让内核分个临时口
+      // The preferred port is taken: let the kernel hand out a temporary port
       const fallback = net.createServer();
       fallback.once('error', () => resolve(0));
       fallback.listen(0, '127.0.0.1', () => {
@@ -119,7 +129,7 @@ export function pickFreeLocalPort(preferred: number): Promise<number> {
       });
     });
     server.listen(preferred, '127.0.0.1', () => {
-      // 回实际绑定口:preferred=0 时内核分的就是这里的口
+      // Return the actually bound port: when preferred=0, this is exactly the port the kernel assigned
       const port = (server.address() as net.AddressInfo).port;
       server.close(() => resolve(port));
     });
@@ -128,15 +138,15 @@ export function pickFreeLocalPort(preferred: number): Promise<number> {
 
 export interface SshTunnel {
   localPort: number;
-  /** 杀隧道进程(附加结束/失败都调,不留后台 ssh) */
+  /** Kill the tunnel process (called both when the attach ends and on failure, leaving no background ssh behind) */
   stop(): void;
 }
 
 export interface TunnelDeps {
-  /** 注入面:真实 spawn ssh;测试替身记账 */
+  /** Injection surface: really spawn ssh; a test stand-in records the calls */
   spawnTunnel?(args: string[]): { onExit(cb: () => void): void; kill(): void };
   probe?: TcpConnectFn;
-  /** 本地隧道端口起等的窗口(默认 3s) */
+  /** Window to wait for the local tunnel port to come up (default 3s) */
   waitMs?: number;
 }
 
@@ -158,8 +168,10 @@ const defaultSpawnTunnel = (args: string[]): { onExit(cb: () => void): void; kil
 };
 
 /**
- * 起 -L 隧道并等本地端口真开(ssh 连不上跳板/目标时 -N 进程退出、本地
- * 口不会开——窗口内没开就如实报失败,不朝空隧道附加)。
+ * Bring up the -L tunnel and wait for the local port to really open (when ssh
+ * cannot reach the jump host / target, the -N process exits and the local
+ * port never opens -- if it has not opened within the window, report failure
+ * honestly instead of attaching to an empty tunnel).
  */
 export async function openSshTunnel(
   entry: SshHostEntry,
@@ -182,7 +194,7 @@ export async function openSshTunnel(
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
     if (exited) {
-      child.kill(); // 已退出的进程再 kill 是 no-op,记账面统一走这里
+      child.kill(); // killing an already-exited process is a no-op; the bookkeeping surface goes through this spot uniformly
       return {
         ok: false,
         reason: `ssh 隧道进程退出:${entry.host} 的 ${remotePort} 隧道未建立(检查跳板链/主机可达/免密登录 BatchMode)`
@@ -211,13 +223,13 @@ export async function openSshTunnel(
 
 export interface SshHostsSnapshot {
   hosts: SshHostEntry[];
-  /** 读的配置文件路径(tooltip/报错可定位) */
+  /** Path of the config file that was read (a tooltip / error can point at it) */
   configPath: string;
-  /** 文件在不在(不在 = 空表,正常事——视图只剩本地+手动项) */
+  /** Whether the file exists (absent = an empty table, which is normal -- the view is left with local + manual entries) */
   configExists: boolean;
 }
 
-/** 读 ssh config 主机表(注入读函数;文件不存在 = 空表,不抛) */
+/** Read the ssh config host table (the reading function is injected; a missing file = an empty table, no throw) */
 export async function readSshHosts(
   readFile: (path: string) => Promise<string>,
   configPath: string
@@ -230,7 +242,7 @@ export async function readSshHosts(
   }
 }
 
-/** 真实读面:~/.ssh/config */
+/** The real reading surface: ~/.ssh/config */
 export async function readSshHostsFromHome(
   readFile: (path: string) => Promise<string>,
   homeDir: string

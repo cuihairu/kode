@@ -1,6 +1,7 @@
-//! 压力车道 CLI 冒烟(COV-004):真实拉起 kode-scheduler-stress 二进制,
-//! 走 main 全链(参数/环境解析 → 风暴合并探针 → run_stress → STRESS-OK 报告)。
-//! 违规臂(exit 1)只在真实不变量破坏时可达,不伪造。
+//! Stress lane CLI smoke test (COV-004): really spawns the kode-scheduler-stress binary and walks
+//! the whole main chain (argument/env parsing → storm merge probe → run_stress → the STRESS-OK
+//! report).
+//! The violation arm (exit 1) is reachable only on a genuine broken invariant, never faked.
 
 use std::process::Command;
 
@@ -55,8 +56,9 @@ fn stress_bin_cli_args_full_run() {
 
 #[test]
 fn stress_bin_env_overrides_and_parse_fallback() {
-    // 环境变量注入(cooldown 需显式 0,否则 50ms/op 拖慢);
-    // --seed 非数字 → parse 失败回退缺省 1。
+    // Environment-variable injection (cooldown must be explicitly 0, otherwise 50ms/op slows
+    // things down);
+    // --seed non-numeric → parsing fails and falls back to the default 1.
     let (ok, stdout, stderr) = run_bin(
         &["--cooldown", "0", "--seed", "xyz"],
         &[("KODE_STRESS_OPS", "50"), ("KODE_STRESS_CHECK_EVERY", "25")],

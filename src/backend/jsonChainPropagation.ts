@@ -1,43 +1,52 @@
 /**
- * KSEM-SER-10:JSON dumps/loads 链传播(纯核心,零 vscode 依赖)。
+ * KSEM-SER-10: JSON dumps/loads chain propagation (pure core, zero vscode dependency).
  *
- * 验收口径(todo.md SEM-026,旧 KSEM-SER-10):仅对有绑定或可证明来源
- * 的 dumps/loads 链传播结构;处理 JSON key/tuple/数值转换,来源不明则
- * 未知。
+ * Acceptance convention (todo.md SEM-026, formerly KSEM-SER-10): propagate
+ * dumps/loads chain structures only with a binding or a provable source;
+ * handle JSON key/tuple/number conversions; unknown source → unknown.
  *
- * 消费契约(SER-08 设计 §4,docs/review/2026-11-14-ksem-ser-08-project-
+ * Consumer contract (SER-08 design §4, docs/review/2026-11-14-ksem-ser-08-project-
  * schema-design.md):
- *  - dumps(obj) 仅当 obj 来源可证明(SER-09 dictFormatDerivation 推导 /
- *    本模块链面 loads 结果 / 字典字面量实参)才传播;来源不明 → 未知;
- *  - loads(path) 仅 schema 绑定命中才给结构;.kbengine/serialization.json
- *    的解析见 parseSerializationSchema(标量族真源 = CELL-08
- *    SCALAR_FAMILIES,src/backend/scalarFamilies.ts);
- *  - JSON 语义转换:dumps 方向 tuple→list;key 恒 str(非字符串键在
- *    SER-09 模型内本是动态键 → 开放宇宙,字符串键面天然成立);数值
- *    int/float 与 bool/None 经 Python json 往返同型,不谎报转换;
- *  - 无 schema / 绑定未命中 / 来源不明 → 零声称(未知不是诊断,静默
- *    即诚实,SER-08 §3 三禁;schema 校验失败明细经 errors 返回,诊断
- *    装配属 configContract 车道,本核心不发诊断)。
+ *  - dumps(obj) propagates only with a provable source (SER-09 dictFormatDerivation /
+ *    chain-face loads result / dict literal argument); unproven source → unknown;
+ *  - loads(path) yields a structure only on a schema binding hit; parsing of
+ *    .kbengine/serialization.json is parseSerializationSchema (scalar family
+ *    source of truth = CELL-08 SCALAR_FAMILIES, src/backend/scalarFamilies.ts);
+ *  - JSON semantic conversion: dumps direction tuple→list; key is always str
+ *    (non-string keys are dynamic keys inside the SER-09 model → open universe,
+ *    so the string-key face holds naturally); int/float and bool/None keep
+ *    their types through the Python json round trip, no fabricated conversion;
+ *  - no schema / binding miss / unproven source → zero claims (unknown is not a
+ *    diagnostic, silence is honesty, SER-08 §3 three prohibitions; schema
+ *    validation failure details return via errors, diagnostic wiring belongs
+ *    to the configContract lane, this core emits no diagnostics).
  *
- * 推导模型(模块作用域 v1,行序流敏感):
- *  - 链状态按行序推进:carrier(dumps 产物,JSON 串)/ value(loads 产物
- *    或别名)/ dead;任何其他赋值/增量写/条件体内赋值 → dead(条件体
- *    可能不执行,不能声称);def/class 体绝不落入(SER-09 同律);
- *  - import 证据才绑定调用形:`import json`/`import json as X` →
- *    `X.dumps/loads`;`from json import dumps as D, loads` → 裸名(含
- *    括号续行形态);绑定名被重绑定即死;
- *  - 调用实参 v1 收紧:单实参(顶层逗号=关键字/多实参形态 → 未知)、
- *    闭括号在同一行、调用后有后缀(方法链/三元)→ 未知;
- *  - dumps 实参解析:裸名查链状态(value 可传,carrier 是串不传)→
- *    SER-09 map 兜底(代码事实侧,流不敏感 v1);`{` 字典字面量实参
- *    (含多行,matchDictBraces 配对)走 classifyValue;非字典顶层
- *    (串/列表/元组字面量、调用)不声称——本 map 只承载 dict 结构面;
- *  - loads 实参解析:引号串字面量 → schema 绑定 fnmatch(Python
- *    fnmatch 语义,`*` 跨目录),恰一命中才声称,歧义/零命中 → 未知;
- *    裸名 → 链 carrier;其余(f 串/拼接/调用)→ 未知。
+ * Derivation model (module scope v1, line-order flow sensitive):
+ *  - chain state advances in line order: carrier (dumps product, JSON string) /
+ *    value (loads product or alias) / dead; any other assignment / augmented
+ *    write / conditional-body assignment → dead (the body may not run, no
+ *    claim); def/class bodies never fold in (SER-09 same rule);
+ *  - only import evidence binds call shapes: `import json`/`import json as X`
+ *    → `X.dumps/loads`; `from json import dumps as D, loads` → bare names
+ *    (including the parenthesized continuation shape); a rebound binding name dies;
+ *  - call arguments tightened in v1: single argument (top-level comma =
+ *    keyword/multi-argument shape → unknown), closing paren on the same line,
+ *    suffix after the call (method chain/ternary) → unknown;
+ *  - dumps argument resolution: bare name checks chain state (value passes,
+ *    carrier is a string and does not) → SER-09 map fallback (code-fact side,
+ *    flow-insensitive v1); `{` dict literal argument (multi-line included,
+ *    matchDictBraces pairing) goes through classifyValue; non-dict top level
+ *    (string/list/tuple literal, call) claims nothing -- this map carries only
+ *    the dict structure face;
+ *  - loads argument resolution: quoted string literal → schema binding
+ *    fnmatch (Python fnmatch semantics, `*` crosses directories); claim only
+ *    on exactly one hit, ambiguity/zero hits → unknown; bare name → chain
+ *    carrier; the rest (f-string/concatenation/call) → unknown.
  *
- * raw/masked 双行口径同族(SER-04/05/06/09):形状判定走掩码行(注释/
- * 字符串位天然不中),串实参内容走原文行(掩码抹引号成 '_'),列对齐。
+ * raw/masked dual-line convention, same family as SER-04/05/06/09: shape
+ * detection runs on masked lines (comment/string positions never match),
+ * string argument contents come from the raw line (masking erases quotes to
+ * '_'), column-aligned.
  */
 
 import { pythonCodeLines } from './pythonParser';
@@ -51,32 +60,33 @@ import {
 } from './dictFormatDerivation';
 import { SCALAR_FAMILIES } from './scalarFamilies';
 
-// ── schema 文件(.kbengine/serialization.json,SER-08 设计 §2.1)──
+// ── schema file (.kbengine/serialization.json, SER-08 design §2.1)──
 
-/** 字段类型:标量族名(SCALAR_FAMILIES)/ [元素类型] 数组 / type 引用。 */
+/** Field type: scalar family name (SCALAR_FAMILIES) / [element type] array / type reference. */
 export type SchemaFieldType =
   | { kind: 'scalar'; family: string }
   | { kind: 'list'; element: SchemaFieldType }
   | { kind: 'ref'; type: string };
 
-/** 解析后的 schema:types(type id → 字段表)+ json.loads/json.load 绑定表。 */
+/** Parsed schema: types (type id → field table) + json.loads/json.load binding tables. */
 export interface SerializationSchema {
-  /** schema_version(项目作者维护;缺失/非整数 → null,仅展示不推断)。 */
+  /** schema_version (maintained by the project author; missing/non-integer → null, display only, no inference). */
   version: number | null;
   types: ReadonlyMap<string, ReadonlyMap<string, SchemaFieldType>>;
   loadsBindings: ReadonlyArray<{ path: string; type: string }>;
-  /** json.load(open(...)) 面绑定(键 'json.load';KSEM-CFG-07 起消费)。 */
+  /** json.load(open(...)) face bindings (key 'json.load'; consumed since KSEM-CFG-07). */
   loadBindings: ReadonlyArray<{ path: string; type: string }>;
 }
 
 export interface SchemaParseResult {
-  /** null = 无 schema 可用(非 JSON/顶层形状不对;零声称)。部分字段
-   * 校验失败时 schema 仍带有效部分,失败明细在 errors(诊断车道展示)。 */
+  /** null = no schema available (not JSON / bad top-level shape; zero claims).
+   * When some fields fail validation the schema still carries the valid part;
+   * failure details are in errors (shown on the diagnostic lane). */
   schema: SerializationSchema | null;
   errors: string[];
 }
 
-/** schema 解析(校验失败明细在 errors;装配面应记诊断,本核心不发)。 */
+/** Schema parsing (validation failure details in errors; the wiring face should record diagnostics, this core emits none). */
 export function parseSerializationSchema(text: string): SchemaParseResult {
   let doc: unknown;
   try {
@@ -94,7 +104,7 @@ export function parseSerializationSchema(text: string): SchemaParseResult {
   if (version === null) {
     errors.push('schema_version must be an integer');
   }
-  // 先收全 type id(引用可前向;环检测在建字段表后统一做)
+  // Collect all type ids first (references may be forward; cycle detection runs uniformly after the field tables are built)
   const rawTypes = root['types'];
   const knownTypes = new Set<string>();
   if (rawTypes !== undefined &&
@@ -126,8 +136,9 @@ export function parseSerializationSchema(text: string): SchemaParseResult {
       fieldsOf.set(id, fields);
     }
   }
-  // 环:ref 闭包含环的 type 造不出闭字面量,整 type 淘汰(级联:
-  // 引用它的 type 字段解析不出 → 消费面零声称)
+  // Cycles: a type whose ref closure contains a cycle cannot build a closed
+  // literal, so the whole type is dropped (cascade: types referencing it fail
+  // field resolution → zero claims on the consumer face)
   const wellFounded = wellFoundedTypes(fieldsOf);
   for (const id of [...fieldsOf.keys()]) {
     if (!wellFounded.has(id)) {
@@ -135,8 +146,9 @@ export function parseSerializationSchema(text: string): SchemaParseResult {
       fieldsOf.delete(id);
     }
   }
-  // bindings:'json.loads'(SER-10)与 'json.load'(KSEM-CFG-07 起消费,
-  // open(串) 配装载面)两个键,条目形状与校验同构;其余键预留不报错不消费。
+  // bindings: two keys, 'json.loads' (SER-10) and 'json.load' (consumed since
+  // KSEM-CFG-07, paired with open(string) on the loading face); entry shape and
+  // validation are isomorphic; other keys stay reserved -- no error, not consumed.
   const rawBindings = root['bindings'];
   const loadsBindings: Array<{ path: string; type: string }> = [];
   const loadBindings: Array<{ path: string; type: string }> = [];
@@ -176,7 +188,7 @@ export function parseSerializationSchema(text: string): SchemaParseResult {
         }
         const dupKey = `${path}\u0000${type}`;
         if (seen.has(dupKey)) {
-          continue; // 全同条目去重(同 path 同 type 不算歧义)
+          continue; // exact-duplicate entries dedupe (same path + same type is not ambiguity)
         }
         seen.add(dupKey);
         into.push({ path, type });
@@ -189,7 +201,7 @@ export function parseSerializationSchema(text: string): SchemaParseResult {
   };
 }
 
-/** 字段类型解析(标量族名 → SCALAR_FAMILIES;其余串 → type 引用)。 */
+/** Field type resolution (scalar family name → SCALAR_FAMILIES; other strings → type reference). */
 function schemaFieldTypeFrom(
   spec: unknown,
   knownTypes: ReadonlySet<string>,
@@ -218,7 +230,7 @@ function schemaFieldTypeFrom(
   return null;
 }
 
-/** 不动点:ref 全部落在良基 type 上的 type 才可造闭字面量。 */
+/** Fixpoint: only types whose refs all land on well-founded types can build a closed literal. */
 function wellFoundedTypes(
   fieldsOf: ReadonlyMap<string, ReadonlyMap<string, SchemaFieldType>>
 ): Set<string> {
@@ -248,13 +260,13 @@ function wellFoundedTypes(
   return valid;
 }
 
-// ── 链传播推导 ──
+// ── chain propagation derivation ──
 
-/** 链状态:carrier = dumps 产物(JSON 串,值结构 fmt);value = loads
- * 产物/别名(dict 结构 fmt);dead = 不可证明。 */
+/** Chain state: carrier = dumps product (JSON string, value structure fmt);
+ * value = loads product/alias (dict structure fmt); dead = unprovable. */
 type ChainState =
   | { kind: 'carrier'; fmt: DictFormat }
-  | { kind: 'value'; fmt: DictFormat; /** schema 绑定 type id(KSEM-CFG-07 起;SER-09 推导面无) */ typeId?: string | null }
+  | { kind: 'value'; fmt: DictFormat; /** schema binding type id (since KSEM-CFG-07; absent on the SER-09 derivation face) */ typeId?: string | null }
   | { kind: 'dead' };
 
 interface BindingFlags {
@@ -263,8 +275,9 @@ interface BindingFlags {
 }
 
 /**
- * JSON 链结构推导入口:模块作用域变量 → dict 结构 map(只含可证明的
- * loads 产物/别名;carrier 是 JSON 串不声称 dict,不入 map)。
+ * JSON chain structure derivation entry: module-scope variables → a dict
+ * structure map (provable loads products/aliases only; the carrier is a JSON
+ * string, claims no dict, stays out of the map).
  */
 function walkJsonChains(
   text: string,
@@ -272,7 +285,7 @@ function walkJsonChains(
   interestLines?: ReadonlyArray<number>
 ): {
   states: ReadonlyMap<string, ChainState>;
-  /** 行前快照(该行尚未执行时的状态;行 ≥ 总行数 → 终态);未请求行无条目 */
+  /** pre-line snapshot (state as of before the line runs; line ≥ total lines → final state); unrequested lines have no entry */
   snapshots: Map<number, ReadonlyMap<string, ChainState>>;
 } {
   const masked = pythonCodeLines(text);
@@ -322,18 +335,19 @@ function walkJsonChains(
       }
     }
   };
-  /** dumps 实参 → 结构:裸名(value 可传 / SER-09 兜底)或字典字面量
-   * (含多行);其余(串字面量/调用/非字典顶层)→ null 不声称。 */
+  /** dumps argument → structure: bare name (value passes / SER-09 fallback) or
+   * dict literal (multi-line included); the rest (string literal/call/non-dict
+   * top level) → null, no claim. */
   const dumpsArgFormat = (argMaskedTrim: string, line: number): DictFormat | null => {
     if (/^[A-Za-z_]\w*$/.test(argMaskedTrim)) {
       const state = states.get(argMaskedTrim);
       if (state && state.kind === 'value') {
-        return state.fmt; // loads 产物/别名可传
+        return state.fmt; // loads product/alias passes
       }
-      return dictFormats.get(argMaskedTrim) ?? null; // SER-09 代码事实侧
+      return dictFormats.get(argMaskedTrim) ?? null; // SER-09 code-fact side
     }
     if (!argMaskedTrim.startsWith('{')) {
-      return null; // 串字面量/调用/其他 → 顶层非字典或不可证明
+      return null; // string literal/call/other → non-dict top level or unprovable
     }
     const real = realLines[line] ?? '';
     const realIndent = real.length - real.trimStart().length;
@@ -344,13 +358,13 @@ function walkJsonChains(
     }
     const literal = sliceLines(realLines, line, braceAt, matched.endLine, matched.endColumn);
     const classified = classifyValue(literal);
-    return classified.kind === 'dict' ? classified.dict : null; // 非字典顶层不声称
+    return classified.kind === 'dict' ? classified.dict : null; // non-dict top level claims nothing
   };
 
   let line = 0;
   while (line < masked.length) {
     if (interest !== null && interest.has(line)) {
-      snapshots.set(line, new Map(states)); // 行前快照:该行自身赋值未执行
+      snapshots.set(line, new Map(states)); // pre-line snapshot: the line's own assignment has not run yet
     }
     const m = masked[line] ?? '';
     if (m.trim().length === 0) {
@@ -378,12 +392,12 @@ function walkJsonChains(
       continue;
     }
     if (scopeIndents.length > 0) {
-      line += 1; // 函数体:模块链面不入(同名跨作用域合流是谎报)
+      line += 1; // function body: stays out of the module chain face (merging same-name cross-scope states would be a false report)
       continue;
     }
     const conditional = blockIndents.length > 0;
 
-    // ── import 证据(含分支体内 try:import——用到了就必然已导入)──
+    // ── import evidence (including try:import inside branch bodies -- if it is used, it is necessarily imported)──
     const impAttr = /^import\s+json(?:\s+as\s+([A-Za-z_]\w*))?$/.exec(trimmed);
     if (impAttr) {
       attrJson.set(impAttr[1] ?? 'json', { from: line, killed: false });
@@ -395,7 +409,7 @@ function walkJsonChains(
       let itemsText = impFrom[1];
       let endLine = line;
       if (itemsText.includes('(') && !itemsText.includes(')')) {
-        // 括号续行:收整到闭括号行(有界 8 行;未闭 → 无绑定诚实)
+        // parenthesized continuation: gather up to the closing-paren line (bounded to 8 lines; unclosed → honestly no binding)
         let closed = false;
         while (!closed && endLine - line < 8) {
           endLine += 1;
@@ -429,15 +443,15 @@ function walkJsonChains(
       continue;
     }
 
-    // ── NAME = 调用(json.loads/dumps/load 属性形或绑定裸名;其余调用 =
-    // 不可证明写点 → 作废)──
+    // ── NAME = call (json.loads/dumps/load attribute form or bound bare name;
+    // any other call = unprovable write point → kill)──
     const callAssign =
       /^([A-Za-z_]\w*)\s*(?::[^=]*?)?=(?![=>])\s*(?:([A-Za-z_]\w*)\s*\.\s*)?([A-Za-z_]\w*)\s*\(/.exec(trimmed);
     if (callAssign) {
       const [, name, attr, fn] = callAssign;
       const parenAt = callAssign[0].length - 1;
       const argSpan = topLevelParenSpan(trimmed, parenAt);
-      // 绑定判定与实参形状解耦(跨行实参也要先认出 dumps/loads/load 角色)
+      // binding detection decoupled from argument shape (multi-line arguments still need the dumps/loads/load role recognized first)
       let role: 'loads' | 'dumps' | 'load' | null = null;
       if (attr !== undefined) {
         if (fn === 'loads' && bound(attrJson, attr, line)) {
@@ -455,18 +469,19 @@ function walkJsonChains(
         role = 'load';
       }
       if (role === null) {
-        killName(name); // 绑定不成立:写点作废
+        killName(name); // binding does not hold: write point killed
         line += 1;
         continue;
       }
       if (argSpan !== null && trimmed.slice(argSpan.end + 1).trim().length !== 0) {
-        killName(name); // 调用带后缀(方法链/三元):写点作废
+        killName(name); // call has a suffix (method chain/ternary): write point killed
         line += 1;
         continue;
       }
       if (argSpan === null) {
-        // 跨行调用:仅 dumps 的多行字典字面量实参展开(matchDictBraces
-        // 配对,闭括号须随字面量同行收口);其余跨行形态 v1 未知
+        // multi-line call: only dumps unfolds a multi-line dict literal argument
+        // (matchDictBraces pairing, closing paren must sit on the literal's last
+        // line); other multi-line shapes are v1 unknown
         if (role !== 'dumps') {
           killName(name);
           line += 1;
@@ -499,7 +514,7 @@ function walkJsonChains(
         let typeId: string | null = null;
         if (role === 'loads') {
           if (argMaskedTrim.startsWith('_')) {
-            // 串字面量实参:掩码行首 '_' = 引号位,路径内容走原文行
+            // string literal argument: a leading '_' on the masked line marks a quote position, path contents come from the raw line
             const argRealTrim = (realLines[line] ?? '').trim().slice(argSpan.start + 1, argSpan.end);
             if (isQuotedLiteral(argRealTrim.trim())) {
               const hit = schemaPathBinding(argRealTrim.trim().slice(1, -1), schema, 'json.loads');
@@ -507,13 +522,14 @@ function walkJsonChains(
               typeId = hit.typeId;
             }
           } else if (/^[A-Za-z_]\w*$/.test(argMaskedTrim)) {
-            // 链 carrier(loads 只吃串;value/dict 名不是 JSON 串不传)
+            // chain carrier (loads only takes strings; value/dict names are not JSON strings, do not pass)
             const state = states.get(argMaskedTrim);
             fmt = state && state.kind === 'carrier' ? state.fmt : null;
           }
         } else {
-          // json.load(open(串字面量)):open 首实参引号串才绑;其余形态
-          // (变量路径/非 open 实参)不可证明
+          // json.load(open(string literal)): binds only on a quoted-string
+          // first open argument; other shapes (variable path / non-open
+          // argument) are unprovable
           const argRealTrim = (realLines[line] ?? '').trim().slice(argSpan.start + 1, argSpan.end);
           const hit = loadOpenPath(argMaskedTrim, argRealTrim, schema);
           fmt = hit.fmt;
@@ -525,20 +541,20 @@ function walkJsonChains(
           states.set(name, { kind: 'value', fmt, typeId });
         }
       } else {
-        // 单实参收紧:顶层逗号 = 关键字/多实参形态 → 未知
+        // single-argument tightening: top-level comma = keyword/multi-argument shape → unknown
         const hasKwargs = topLevelHasComma(argMaskedTrim);
         const fmt = hasKwargs ? null : dumpsArgFormat(argMaskedTrim, line);
         if (conditional || fmt === null) {
           killName(name);
         } else {
-          states.set(name, { kind: 'carrier', fmt: jsonFormat(fmt) }); // dumps 方向转换
+          states.set(name, { kind: 'carrier', fmt: jsonFormat(fmt) }); // dumps-direction conversion
         }
       }
       line += 1;
       continue;
     }
 
-    // ── NAME = 裸名(别名透传;carrier 别名仍是 carrier)──
+    // ── NAME = bare name (alias passthrough; a carrier's alias is still a carrier)──
     const alias = /^([A-Za-z_]\w*)\s*(?::[^=]*?)?=(?![=>])\s*([A-Za-z_]\w*)$/.exec(trimmed);
     if (alias) {
       const [, name, of] = alias;
@@ -556,7 +572,7 @@ function walkJsonChains(
       continue;
     }
 
-    // ── 其余赋值/写点/删除:目标一律作废 ──
+    // ── other assignments/write points/deletes: targets are killed unconditionally ──
     const generic = /^([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*(?::[^=]*?)?=(?![=>])/.exec(trimmed);
     if (generic) {
       killTargets(generic[1]);
@@ -589,8 +605,9 @@ function walkJsonChains(
     }
     line += 1;
   }
-  // 快照补齐:跳过区(dumps/import 跨行字面量中段)行前状态 = 前一快照
-  // 顺延(该区不处理任何赋值,状态未变);行 ≥ 全文尾行 → 终态
+  // snapshot completion: skipped regions (middle of dumps/import multi-line
+  // literals) carry the previous snapshot forward (no assignment is processed
+  // there, state unchanged); line ≥ the file's last line → final state
   if (interest !== null) {
     for (const want of interest) {
       if (!snapshots.has(want)) {
@@ -609,8 +626,9 @@ function walkJsonChains(
   return { states, snapshots };
 }
 
-/** SER-10 契约面:模块作用域变量 → dict 结构 map(只含可证明的 loads
- * 产物/别名;carrier 是 JSON 串不声称 dict,不入 map)。 */
+/** SER-10 contract face: module-scope variables → a dict structure map
+ * (provable loads products/aliases only; the carrier is a JSON string, claims
+ * no dict, stays out of the map). */
 export function deriveJsonChainStructures(
   text: string,
   schema: SerializationSchema | null
@@ -625,11 +643,13 @@ export function deriveJsonChainStructures(
   return out;
 }
 
-/** CFG-07 字段访问面的链态供给:value 态附 schema 绑定 type id;
- * 请求行的行前快照(该行赋值未执行;def 体行=入体态;行 ≥ 尾行=终态)。 */
+/** CFG-07 field-access face chain-state supply: value states carry the schema
+ * binding type id; pre-line snapshots of the requested lines (the line's own
+ * assignment not yet executed; def body lines = state at body entry; line ≥
+ * last line = final state). */
 export interface JsonChainTypedValue {
   fmt: DictFormat;
-  /** schema 绑定 type id(schema 绑定 loads/load 产物才有;SER-09 推导/链别名 = null) */
+  /** schema binding type id (present only on schema-bound loads/load products; SER-09 derivation / chain alias = null) */
   typeId: string | null;
 }
 
@@ -652,8 +672,9 @@ export function deriveJsonChainTypedValues(
   return out;
 }
 
-/** schema 绑定命中:fnmatch 恰一命中 → type id + 闭字面量结构;
- * 零命中/歧义 → 双 null 零声称(三禁:不凭名字/路径推定)。 */
+/** Schema binding hit: exactly one fnmatch hit → type id + closed literal
+ * structure; zero hits/ambiguity → double null, zero claims (three
+ * prohibitions: never infer from names/paths). */
 interface SchemaPathHit {
   fmt: DictFormat | null;
   typeId: string | null;
@@ -672,7 +693,7 @@ function schemaPathBinding(
   for (const binding of table) {
     if (fnmatchToRegExp(binding.path).test(path)) {
       if (hit !== null) {
-        return { fmt: null, typeId: null }; // 歧义:不取第一条、不取最长 glob(SER-08 §2.2)
+        return { fmt: null, typeId: null }; // ambiguity: take neither the first entry nor the longest glob (SER-08 §2.2)
       }
       hit = binding.type;
     }
@@ -683,9 +704,10 @@ function schemaPathBinding(
   return { fmt: schemaTypeFormat(hit, schema, new Set()), typeId: hit };
 }
 
-/** json.load(open(...)) 实参面:open 首实参引号串字面量 → 路径绑定;
- * open 其余实参(encoding 等)容忍不校验;变量路径/非引号串/非 open
- * 形态 → 双 null 不可证明。掩码行与原文行等列。 */
+/** json.load(open(...)) argument face: open's first argument as a quoted
+ * string literal → path binding; open's other arguments (encoding etc.) are
+ * tolerated without validation; variable path / non-quoted-string / non-open
+ * shapes → double null, unprovable. Masked and raw lines share columns. */
 function loadOpenPath(
   argMaskedTrim: string,
   argRealTrim: string,
@@ -717,7 +739,7 @@ function loadOpenPath(
   }
   const firstMasked = argMaskedTrim.slice(innerStart, end).trim();
   if (!/^_+$/.test(firstMasked)) {
-    return { fmt: null, typeId: null }; // 变量路径/空/关键字形态 → 不可证明
+    return { fmt: null, typeId: null }; // variable path / empty / keyword shape → unprovable
   }
   const firstReal = argRealTrim.slice(innerStart, innerStart + (end - innerStart)).trim();
   if (!isQuotedLiteral(firstReal)) {
@@ -726,7 +748,7 @@ function loadOpenPath(
   return schemaPathBinding(firstReal.slice(1, -1), schema, 'json.load');
 }
 
-/** schema type → 闭字面量格式(字段全必有;环/未定义 → null 零声称)。 */
+/** schema type → closed literal format (all fields required; cycle/undefined → null, zero claims). */
 function schemaTypeFormat(
   typeId: string,
   schema: SerializationSchema,
@@ -742,7 +764,7 @@ function schemaTypeFormat(
   for (const [fname, ft] of fields) {
     const kind = schemaFieldKind(ft, schema, next);
     if (kind === null) {
-      return null; // 字段解析失败 → 整 type 零声称(不半声称)
+      return null; // field resolution failed → the whole type claims zero (no half claims)
     }
     required.set(fname, kind);
   }
@@ -763,7 +785,7 @@ function schemaFieldKind(
       : ft.element.kind === 'ref'
         ? refFieldKind(ft.element.type, schema, visiting)
         : null;
-    return { kind: 'list', element }; // null = 元素宇宙开放,list 本身仍真
+    return { kind: 'list', element }; // null = open element universe, the list itself is still true
   }
   return refFieldKind(ft.type, schema, visiting);
 }
@@ -777,8 +799,9 @@ function refFieldKind(
   return inner !== null ? { kind: 'dict', dict: inner } : null;
 }
 
-/** 标量族 → JSON 值面(bytes 非 JSON 值不声称;vector 是数值序列,
- * 定长/元素面不声称——整数混入不谎报 float)。 */
+/** Scalar family → JSON value face (bytes is not a JSON value, no claim;
+ * vector is a numeric sequence, fixed-length/element face unclaimed -- an
+ * integer mixed in is not falsely reported as float). */
 function scalarFamilyKind(family: string): DictValueKind | null {
   const familyEntry = SCALAR_FAMILIES.get(family);
   if (!familyEntry) {
@@ -798,9 +821,10 @@ function scalarFamilyKind(family: string): DictValueKind | null {
   }
 }
 
-/** dumps 方向 JSON 语义转换:tuple→list;list/dict 递归;标量同型
- * (int→int/float→float/bool/None/str;Python json 往返不谎报转换);
- * key 恒 str 在模型内天然成立(SER-09 非字符串键=动态键→开放宇宙)。 */
+/** dumps-direction JSON semantic conversion: tuple→list; list/dict recurse;
+ * scalars keep their type (int→int/float→float/bool/None/str; the Python json
+ * round trip does not fabricate conversions); key is always str, which holds
+ * naturally in the model (SER-09 non-string key = dynamic key → open universe). */
 function jsonFormat(fmt: DictFormat): DictFormat {
   if (fmt.kind === 'literal') {
     return {
@@ -839,8 +863,8 @@ function mapValues<K, V, R>(
   return out;
 }
 
-/** 实参文本顶层逗号(掩码行串内容已抹空,深度扫描即可;有关键字/
- * 多实参形态 → true)。 */
+/** Top-level comma in argument text (masked lines blank out string contents,
+ * so a depth scan suffices; keyword/multi-argument shape → true). */
 function topLevelHasComma(text: string): boolean {
   let depth = 0;
   for (const ch of text) {
@@ -855,8 +879,9 @@ function topLevelHasComma(text: string): boolean {
   return false;
 }
 
-/** trimmed 文本中 parenAt 起 top-level 闭括号位(掩码行串内容已抹空,
- * 引号内括号不计数;未闭 → null)。 */
+/** Position of the top-level closing paren from parenAt in the trimmed text
+ * (masked lines blank out string contents, parens inside quotes do not count;
+ * unclosed → null). */
 function topLevelParenSpan(
   trimmed: string,
   parenAt: number
@@ -876,8 +901,8 @@ function topLevelParenSpan(
   return null;
 }
 
-/** 多行字面量切片(自 startLine/startColumn 至 endLine/endColumn,
- * '\n' 接行——classifyValue 的行号口径)。 */
+/** Multi-line literal slice (from startLine/startColumn to endLine/endColumn,
+ * lines joined with '\n' -- the line-number convention of classifyValue). */
 function sliceLines(
   realLines: readonly string[],
   startLine: number,
@@ -896,8 +921,8 @@ function sliceLines(
   return parts.join('\n');
 }
 
-// ── Python fnmatch 语义(design §5:path glob 与 .kbengine/ 既有用法
-// 一致;`*` 跨目录无路径语义)──
+// ── Python fnmatch semantics (design §5: path glob agrees with the existing
+// .kbengine/ usage; `*` crosses directories, no path semantics)──
 
 const fnmatchCache = new Map<string, RegExp>();
 
@@ -934,8 +959,8 @@ function fnmatchToRegExp(pattern: string): RegExp {
   return re;
 }
 
-/** 绑定 glob(SER-08 fnmatch 语义)对具体路径命中(CFG-08 结构注册表
- * 同用;RegExp 缓存共享)。 */
+/** Binding glob (SER-08 fnmatch semantics) matched against a concrete path
+ * (shared with the CFG-08 structure registry; the RegExp cache is shared). */
 export function schemaGlobMatches(pattern: string, path: string): boolean {
   return fnmatchToRegExp(pattern).test(path);
 }

@@ -1,10 +1,12 @@
-//! Golden 验收(CLONE-P3 门,plan §6/§7):代表性 Avatar 虚拟 Fixture →
-//! 归档 → 导入计划黄金断言。
+//! Golden acceptance (CLONE-P3 gate, plan §6/§7): representative Avatar virtual
+//! fixture → archive → import plan golden assertions.
 //!
-//! 虚拟 Fixture 不经真实 MySQL(PDC-0003/0007 被阻塞):归档以 ArchiveWriter
-//! 现场构造(真实帧格式/校验和),目标现场以 TargetSnapshot 给出,断言
-//! 执行序、占位共享、唯一键重建、策略覆写、账号绑定告警与预演摘要——
-//! 计划期全程不触库,语句一律 `?` 参数化。
+//! The virtual fixture does not go through a real MySQL (PDC-0003/0007 are
+//! blocked): the archive is built on the spot with ArchiveWriter (real frame
+//! format / checksums), the target surface is given via TargetSnapshot, asserting
+//! execution order, placeholder sharing, unique key rebuild, policy overrides,
+//! account binding warnings and the dry-run summary — the planning phase never
+//! touches the database, statements are always `?` parameterized.
 
 use std::collections::BTreeMap;
 
@@ -25,7 +27,8 @@ fn field(name: &str, type_label: &str) -> DerivedField {
     }
 }
 
-/// 根表 + ARRAY(items)+ ENTITY_COMPONENT(gold)三级代表结构。
+/// Root table + ARRAY (items) + ENTITY_COMPONENT (gold), the three-level
+/// representative structure.
 fn avatar_derived() -> CloneSchema {
     let root = DerivedTable {
         name: "tbl_Avatar".into(),
@@ -127,7 +130,8 @@ fn row(table: &str, values: Vec<TypedValue>) -> TypedRow {
     }
 }
 
-/// 写归档:根行 id=7(name=hero)+ items 两行(100/101)+ gold 一行(200)。
+/// Writes the archive: root row id=7 (name=hero) + two items rows (100/101) + one
+/// gold row (200).
 fn write_fixture_archive(dir: &std::path::Path) -> std::path::PathBuf {
     let path = dir.join("avatar.kdpclone");
     let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
@@ -206,7 +210,8 @@ fn golden_import_plan_for_representative_avatar() {
     let archive_path = write_fixture_archive(&dir);
     let archive = Archive::open(&archive_path, None).unwrap();
 
-    // 目标现场:sm_name 唯一键,且已占用 hero → 触发本地重建。
+    // Target surface: sm_name unique key, already occupied by "hero" → triggers a
+    // local rebuild.
     let mut snapshot = TargetSnapshot::default();
     snapshot.unique_keys.push(UniqueKey {
         table: "tbl_Avatar".into(),
@@ -225,7 +230,8 @@ fn golden_import_plan_for_representative_avatar() {
     )
     .unwrap();
 
-    // ---- 执行序:父先子后(根表必为首,两张子表都在根之后) ----
+    // ---- Execution order: parents before children (the root table must be
+    // first, both child tables after it) ----
     assert_eq!(plan.order.first().map(String::as_str), Some("tbl_Avatar"));
     let root_pos = plan.order.iter().position(|t| t == "tbl_Avatar").unwrap();
     for child in ["tbl_Avatar_items", "tbl_Avatar_gold"] {
@@ -235,7 +241,7 @@ fn golden_import_plan_for_representative_avatar() {
         );
     }
 
-    // ---- 语句面:逐表计数 + 全列参数化 ----
+    // ---- Statement face: per-table counts + all columns parameterized ----
     assert_eq!(plan.statements.len(), 4);
     assert_eq!(
         plan.summary.statements_per_table,
@@ -252,12 +258,13 @@ fn golden_import_plan_for_representative_avatar() {
         root_stmt.insert_sql,
         "INSERT INTO tbl_Avatar (id, sm_autoLoad, sm_name) VALUES (?, ?, ?)"
     );
-    // 新主键占位 / 策略覆写 / 唯一键重建。
+    // New primary key placeholder / policy override / unique key rebuild.
     assert_eq!(root_stmt.cells[0], PlannedCell::NewKey { placeholder: 1 });
     assert_eq!(root_stmt.cells[1], PlannedCell::PolicyOverride);
     assert_eq!(root_stmt.cells[2], PlannedCell::Remapped);
 
-    // ---- 子行引用根行同一占位(parentID 列) ----
+    // ---- Child rows reference the root row's same placeholder (parentID
+    // column) ----
     let items = &plan.statements[1];
     assert_eq!(items.table, "tbl_Avatar_items");
     assert_eq!(items.cells[0], PlannedCell::NewKey { placeholder: 2 });
@@ -266,7 +273,8 @@ fn golden_import_plan_for_representative_avatar() {
     assert_eq!(gold.table, "tbl_Avatar_gold");
     assert_eq!(gold.cells[1], PlannedCell::KeyReference { placeholder: 1 });
 
-    // ---- 唯一键冲突:hero → hero_imported1(目标占用驱动) ----
+    // ---- Unique key conflict: hero → hero_imported1 (driven by target
+    // occupancy) ----
     assert_eq!(plan.conflicts.len(), 1);
     assert_eq!(plan.conflicts[0].table, "tbl_Avatar");
     assert_eq!(plan.conflicts[0].column, "sm_name");
@@ -276,7 +284,8 @@ fn golden_import_plan_for_representative_avatar() {
     );
     assert_eq!(plan.summary.unique_conflicts, 1);
 
-    // ---- 映射账本:类别与去向(占位单调,父键共享一条) ----
+    // ---- Mapping ledger: categories and destinations (placeholders monotonic,
+    // parent key shared as one entry) ----
     assert_eq!(
         plan.idmap.get("tbl_Avatar", "id", &TypedValue::BigUInt(7)),
         Some(&MappedId::Allocated { placeholder: 1 })
@@ -289,24 +298,26 @@ fn golden_import_plan_for_representative_avatar() {
     let counts = plan.idmap.counts_by_category();
     assert_eq!(counts.get(&IdCategory::RootKey), Some(&1));
     assert_eq!(counts.get(&IdCategory::ChildRowKey), Some(&3));
-    // 两张子表各自的 (表,parentID,7) 键 → 两条映射(表名入键,§6.3)。
+    // Each child table's own (table, parentID, 7) key → two mappings (table name is
+    // part of the key, §6.3).
     assert_eq!(counts.get(&IdCategory::ParentReference), Some(&2));
     assert_eq!(counts.get(&IdCategory::RebuiltIdentity), Some(&1));
 
-    // ---- 账号绑定:无声明规则 → 不宣称可登录(PDC-0306) ----
+    // ---- Account binding: no declared rule → no login claim (PDC-0306) ----
     assert!(!plan.account_binding.login_ready);
     assert!(plan
         .account_binding
         .note
         .contains("NOT be visible to any local account"));
 
-    // ---- 版本对账:归档不记源引擎版本,如实陈述 ----
+    // ---- Version reconciliation: the archive does not record the source engine
+    // version, stated honestly ----
     assert!(plan
         .schema_notes
         .iter()
         .any(|n| n.contains("does not record the source engine version")));
 
-    // ---- 摘要(验收门:逐表逐类别) ----
+    // ---- Summary (acceptance gate: per table per category) ----
     assert_eq!(plan.summary.mode, ImportMode::AllocateNewIds);
     assert_eq!(plan.summary.autoload_policy, AutoLoadPolicy::ForceDisabled);
     assert!(!plan.summary.login_ready);
@@ -314,7 +325,8 @@ fn golden_import_plan_for_representative_avatar() {
     assert_eq!(plan.summary.id_categories.get("root-entity-key"), Some(&1));
     assert_eq!(plan.summary.id_categories.get("child-row-key"), Some(&3));
 
-    // ---- 计划可序列化审计(不内嵌敏感原值,语句全 `?`) ----
+    // ---- Plan serializable audit (no sensitive original values embedded, all
+    // statements `?`) ----
     let json = serde_json::to_value(&plan).unwrap();
     assert!(json
         .get("statements")

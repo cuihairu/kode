@@ -1,16 +1,23 @@
 /**
- * 批 A2(2026-11-18 巡检单 kode-ruff-format-statusbar.md):pyproject.toml
- * [tool.ruff] 检测与引导。ruff 配置发现=从被格式化文件向上找最近
- * pyproject.toml 的 [tool.ruff] / ruff.toml,无配置=默认 line-length 88。
- * 本核在**工作区根**做三件事(默认开启,`kbengine.ruff.ensureConfig` 可关):
- * - 根目录已有 ruff.toml/.ruff.toml 或 pyproject.toml 已含 [tool.ruff] →
- *   不动(红线:绝不改已有 [tool.ruff] 内容);
- * - 无 pyproject.toml → 确认后生成最小文件([project] 名占位可安全推断才带
- *   + [tool.ruff] line-length=88 + 生成标注 + 常用值注释);
- * - 有 pyproject.toml 无段 → 确认后**安全追加**(原内容逐字节保留;追加前
- *   守卫扫描,任何存疑=如实 unsafe 跳过,绝不写可能损坏的 TOML)。
- * 同意式:弹窗带内容预览,拒绝则会话内不再问。纯核零 vscode 依赖,
- * UI/文件面全经 deps 注入(单测驱动纯编排)。
+ * batch A2 (2026-11-18 inspection ticket kode-ruff-format-statusbar.md):
+ * pyproject.toml [tool.ruff] detection and bootstrapping. Ruff config discovery
+ * = searching upward from the formatted file for the nearest pyproject.toml's
+ * [tool.ruff] / ruff.toml; no config = the default line-length 88. This core
+ * does three things at the **workspace root** (on by default, turn off via
+ * `kbengine.ruff.ensureConfig`):
+ * - the root already has ruff.toml/.ruff.toml, or pyproject.toml already has
+ *   [tool.ruff] → untouched (red line: never modify existing [tool.ruff]
+ *   content);
+ * - no pyproject.toml → after confirmation generate a minimal file ([project]
+ *   name placeholder only when it can be safely inferred + [tool.ruff]
+ *   line-length=88 + generated-by note + common-values comment);
+ * - pyproject.toml without the section → after confirmation **safely append**
+ *   (original content preserved byte-for-byte; a guard scan before appending,
+ *   anything doubtful = honestly skipped as unsafe, never writing potentially
+ *   corrupted TOML).
+ * Consent-based: the dialog carries a content preview; declining means no more
+ * asking this session. Pure core, zero vscode dependencies; the UI/file faces
+ * are all injected via deps (unit tests drive pure orchestration).
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -18,7 +25,7 @@ import { l10nText } from '../nlsRuntime';
 const CREATE_ACTION = l10nText('Create');
 const SKIP_ACTION = l10nText('Not now');
 
-/** 追加段(独立常量:测试与弹窗预览共用同一份真文本,不二次拼装)。 */
+/** The append block (a standalone constant: tests and the dialog preview share one real text, no second assembly). */
 export const RUFF_APPEND_BLOCK = [
   '# Added by Kode (KBEngine extension). Feel free to edit. / 由 Kode 添加,可自由修改。',
   '[tool.ruff]',
@@ -28,7 +35,7 @@ export const RUFF_APPEND_BLOCK = [
   'line-length = 88'
 ].join('\n');
 
-/** 逐行识别 [tool.ruff] 表头(含子表);注释伪装与非表头行不认。 */
+/** Recognize [tool.ruff] table headers line by line (subtables included); comment-disguised and non-header lines are not accepted. */
 export function hasToolRuffSection(text: string): boolean {
   for (const rawLine of text.split('\n')) {
     const line = rawLine.trim();
@@ -49,8 +56,9 @@ export function hasToolRuffSection(text: string): boolean {
 }
 
 /**
- * [tool] 表下是否已有内联 `ruff = ...` 键——此时追加 [tool.ruff] 表会构成
- * TOML 重复键,必须拒绝。
+ * Whether an inline `ruff = ...` key already exists under the [tool] table —
+ * appending a [tool.ruff] table would then form a duplicate TOML key and must
+ * be refused.
  */
 function hasInlineToolRuffKey(text: string): boolean {
   let inToolSection = false;
@@ -75,11 +83,15 @@ function hasInlineToolRuffKey(text: string): boolean {
 }
 
 /**
- * 全文一趟字符串感知扫描,返回结尾是否处于「干净落点」:
- * - 不在未闭合的字符串里('''/"""/带转义的单双引号);
- * - 括号深度([ ] { })归零(不在跨行数组/内联表里);
- * - '#' 只在字符串外当行注释。
- * 任何存疑 → false(调用方如实 unsafe,绝不写可能损坏的 TOML)。
+ * A one-pass string-aware scan of the whole text, returning whether the end sits
+ * at a "clean landing point":
+ * - not inside an unterminated string (triple-quoted / escaped single or double
+ *   quotes);
+ * - bracket depth ([ ] { }) back to zero (not inside a multi-line array or
+ *   inline table);
+ * - '#' counts as a line comment only outside strings.
+ * Anything doubtful → false (the caller honestly reports unsafe, never writing
+ * potentially corrupted TOML).
  */
 function endsAtCleanTomlBoundary(text: string): boolean {
   let quote: '"' | "'" | null = null;
@@ -90,7 +102,7 @@ function endsAtCleanTomlBoundary(text: string): boolean {
     const next = text[i + 1];
     if (quote) {
       if (quote === '"' && ch === '\\') {
-        i++; // 转义消费下一字符
+        i++; // an escape consumes the next character
         continue;
       }
       if (triple) {
@@ -113,7 +125,7 @@ function endsAtCleanTomlBoundary(text: string): boolean {
       continue;
     }
     if (ch === '#') {
-      // 行注释:跳到行尾
+      // line comment: skip to the line end
       while (i < text.length && text[i] !== '\n') {
         i++;
       }
@@ -132,8 +144,10 @@ function endsAtCleanTomlBoundary(text: string): boolean {
 }
 
 /**
- * 安全追加 [tool.ruff] 段:原内容逐字节保留,只在结尾补段。
- * 返回 null=不安全/已有段(调用方如实跳过,绝不部分写)。
+ * Safely append the [tool.ruff] section: original content preserved
+ * byte-for-byte, only the section appended at the end.
+ * Returns null = unsafe / section already present (the caller honestly skips,
+ * never partially writing).
  */
 export function appendToolRuffSection(original: string): string | null {
   if (hasToolRuffSection(original) || hasInlineToolRuffKey(original)) {
@@ -143,13 +157,13 @@ export function appendToolRuffSection(original: string): string | null {
     return null;
   }
   if (/\\\s*$/.test(original)) {
-    return null; // 行 continuation 悬空
+    return null; // a dangling line continuation
   }
   const glue = original.endsWith('\n') ? '' : '\n';
   return `${original}${glue}\n${RUFF_APPEND_BLOCK}\n`;
 }
 
-/** 根名安全推断:小写字母/数字/连字符/下划线/点,不以非法字符开头;失败=null(省略 [project])。 */
+/** Safe root-name inference: lowercase letters/digits/hyphens/underscores/dots, not starting with an illegal character; failure = null (omit [project]). */
 function sanitizeProjectName(rootPath: string): string | null {
   const base = rootPath.split(/[\\/]/).filter(Boolean).pop() ?? '';
   const sanitized = base
@@ -159,7 +173,7 @@ function sanitizeProjectName(rootPath: string): string | null {
   return /^[a-z0-9]/.test(sanitized) && sanitized.length > 0 ? sanitized : null;
 }
 
-/** 生成最小 pyproject.toml;rootName=null 时省略 [project](仅 [tool.ruff] 合法)。 */
+/** Generate a minimal pyproject.toml; with rootName=null omit [project] ([tool.ruff] alone is valid). */
 export function buildCreateContent(rootName: string | null): string {
   const lines = [
     '# Generated by Kode (KBEngine extension). Feel free to edit. / 由 Kode 生成,可自由修改。',
@@ -184,22 +198,24 @@ export type RuffConfigEnsureOutcome =
   | 'write-failed';
 
 export interface RuffConfigEnsureDeps {
-  /** `kbengine.ruff.ensureConfig`;false=完全不生成(零检测零弹窗)。 */
+  /** `kbengine.ruff.ensureConfig`; false = no generation at all (zero detection, zero dialogs). */
   getSettingEnabled(): boolean;
-  /** 工作区根绝对路径;null=无根。 */
+  /** Workspace root absolute path; null = no root. */
   workspaceRoot(): string | null;
-  /** 根目录下文件存在性。 */
+  /** File existence under the root. */
   rootFileExists(name: string): boolean;
-  /** 读根目录文件文本;不存在=null。 */
+  /** Read a root file's text; missing = null. */
   readFileText(name: string): string | null;
-  /** 写根目录文件;返回是否成功。 */
+  /** Write a root file; returns success. */
   writeFileText(name: string, content: string): boolean;
   showInformationMessage(message: string, ...items: string[]): Thenable<string | undefined>;
 }
 
 /**
- * 会话工厂:一次问过就记住(拒绝→会话内不再问;就绪/已写→幂等 not-needed)。
- * 每个扩展宿主建一次,装配层持有;测试每次新建拿干净状态。
+ * Session factory: once asked, remembered (declined → not asked again this
+ * session; ready / already written → idempotent not-needed). Created once per
+ * extension host and held by the wiring layer; tests create a fresh one each
+ * time for clean state.
  */
 export function createRuffConfigEnsureSession(): {
   ensure(deps: RuffConfigEnsureDeps): Promise<RuffConfigEnsureOutcome>;
@@ -221,7 +237,8 @@ export function createRuffConfigEnsureSession(): {
       if (!root) {
         return 'no-root';
       }
-      // ruff 专属配置文件已存在 → ruff 全部行为已读它,无需 pyproject 段。
+      // A ruff-specific config file exists → all of ruff's behavior already reads
+      // it; no pyproject section needed.
       if (deps.rootFileExists('ruff.toml') || deps.rootFileExists('.ruff.toml')) {
         resolved = true;
         return 'not-needed';
@@ -243,8 +260,10 @@ export function createRuffConfigEnsureSession(): {
       } else {
         const appended = appendToolRuffSection(pyproject);
         if (appended === null) {
-          // 存疑如实跳过(ruff 无配置也按默认 88 行为不变),不弹窗不写;
-          // 不置 resolved:用户修好文件后同会话可再试。
+          // Doubtful → honestly skipped (with no ruff config the behavior is
+          // unchanged at the default line length 88); no dialog, no write;
+          // resolved is not set: the user can retry in the same session after
+          // fixing the file.
           return 'unsafe-append';
         }
         target = 'pyproject.toml';
@@ -266,9 +285,11 @@ export function createRuffConfigEnsureSession(): {
 }
 
 /**
- * 宿主共享会话:装配层(utilityCommands)注入 vscode 面 deps 一次;命令/生成器
- * 多个入口共用同一会话(会话内「问过就记住」语义跨入口成立)。未接线
- * (激活序/测试面)→ 'unwired' 如实返回,不冒充任何检测结果。
+ * Host-shared session: the wiring layer (utilityCommands) injects the vscode
+ * face deps once; multiple command/generator entries share the same session
+ * (the "asked means remembered" semantics holds across entries within a
+ * session). Unwired (activation order / test face) → 'unwired' returned
+ * honestly, never posing as any detection result.
  */
 let sharedWiring: { deps: RuffConfigEnsureDeps; session: ReturnType<typeof createRuffConfigEnsureSession> } | null =
   null;

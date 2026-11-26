@@ -31,7 +31,11 @@ impl Drop for ServerProc {
 
 /// taskset -c 0 下拉起真二进制;taskset 缺席 → None(调用方跳过)。
 fn spawn_single_core_server() -> Option<ServerProc> {
-    let probe = Command::new("taskset").arg("-c").arg("0").arg("true").output();
+    let probe = Command::new("taskset")
+        .arg("-c")
+        .arg("0")
+        .arg("true")
+        .output();
     if probe.is_err() {
         return None;
     }
@@ -197,18 +201,12 @@ fn single_core_exit_bounded_with_queued_background_jobs() {
     );
     let _ = wait_response(&server, 20, Duration::from_secs(30));
     let started = Instant::now();
-    send(
-        &mut server,
-        &json!({ "jsonrpc": "2.0", "method": "exit" }),
-    );
+    send(&mut server, &json!({ "jsonrpc": "2.0", "method": "exit" }));
     let deadline = Duration::from_secs(10);
     loop {
         match server.child.try_wait().expect("try wait") {
             Some(status) => {
-                assert!(
-                    status.success(),
-                    "shutdown+exit 应干净退出: {status}"
-                );
+                assert!(status.success(), "shutdown+exit 应干净退出: {status}");
                 assert!(
                     started.elapsed() < deadline,
                     "排队后台 job 时退出超预算: {:?}",

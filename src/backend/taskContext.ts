@@ -1,16 +1,18 @@
 /**
- * 保存可重复运行的任务上下文(IDE-TSK-006):测试面板首跑时把 profile
- * 四要素(profileId/assetsRoot/engineRoot/解释器+来源)整量快照进
- * workspaceState;重跑钉住快照——活动 profile 切换、profile 字段漂
- * 移只出提示不换根,盘上根/解释器消失如实拒绝;换根唯一显式入口
- * =跑一次 kbengine.tests.list 重新捕获。验收:重跑使用同一
- * profile/解释器/环境,不悄然换到另一个根。
+ * Persist a re-runnable task context (IDE-TSK-006): on the test panel's first run,
+ * snapshot the profile's four elements (profileId/assetsRoot/engineRoot/
+ * interpreter + source) wholesale into workspaceState; re-runs pin the snapshot —
+ * an active profile switch or profile field drift only produces a note and never
+ * changes roots, and a root/interpreter that vanished from disk is honestly
+ * refused; the only explicit entry to change roots is running kbengine.tests.list
+ * once to re-capture. Acceptance: re-runs use the same profile/interpreter/
+ * environment and never silently switch to another root.
  */
 
 import * as path from 'path';
 import type { ProjectProfile } from '../projectProfiles';
 
-/** 可重复运行的任务上下文(一次性快照,之后与 profile 记录解耦) */
+/** Re-runnable task context (a one-shot snapshot, decoupled afterwards from the profile record) */
 export interface TaskRunContext {
   profileId: string;
   displayName: string;
@@ -20,10 +22,10 @@ export interface TaskRunContext {
   interpreterSource: string;
 }
 
-/** workspaceState 持久化键(JSON 字符串形态) */
+/** workspaceState persistence key (JSON string form) */
 export const TEST_TASK_CONTEXT_STORAGE_KEY = 'kbengine.testTaskContext';
 
-/** 整量快照:之后改 profile 记录不影响已存上下文 */
+/** Wholesale snapshot: later edits to the profile record do not affect the stored context */
 export function captureTaskRunContext(profile: ProjectProfile): TaskRunContext {
   return {
     profileId: profile.id,
@@ -35,7 +37,7 @@ export function captureTaskRunContext(profile: ProjectProfile): TaskRunContext {
   };
 }
 
-/** 漂移清单:两快照不一致的字段逐条点名(空=一致) */
+/** Drift list: names each field where the two snapshots disagree (empty = identical) */
 export function compareTaskRunContexts(pinned: TaskRunContext, current: TaskRunContext): string[] {
   const drifts: string[] = [];
   if (pinned.assetsRoot !== current.assetsRoot) {
@@ -59,10 +61,12 @@ export type PreparedTestRun =
   | { outcome: 'refuse'; message: string };
 
 /**
- * 重跑协议:有已存上下文则钉住它(重跑=同一 profile/解释器/环境);
- * 盘上根/解释器消失或存储损坏如实拒绝,不悄然换根。提示面(notes)
- * 只说明不拦截:活动 profile 换了/字段漂了,重跑仍用已存上下文,
- * 想换根先跑 kbengine.tests.list 显式重新捕获。
+ * Re-run protocol: with a stored context, pin it (a re-run = the same profile/
+ * interpreter/environment); a root/interpreter that vanished from disk or a
+ * corrupted store is honestly refused, never silently switching roots. The note
+ * face (notes) only explains, it does not block: if the active profile changed or
+ * drifted, the re-run still uses the stored context; to change roots, run
+ * kbengine.tests.list first to re-capture explicitly.
  */
 export function prepareTestRun(
   activeProfile: ProjectProfile | null,
@@ -126,7 +130,7 @@ export function prepareTestRun(
   return { outcome: 'run', context: pinned, notes };
 }
 
-/** 上下文的执行面 cwd(scripts 根) */
+/** The execution-face cwd of the context (the scripts root) */
 export function taskContextScriptsRoot(context: TaskRunContext): string {
   return path.join(context.assetsRoot, 'scripts');
 }

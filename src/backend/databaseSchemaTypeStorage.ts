@@ -16,15 +16,19 @@ import {
   type SchemaBuildProgress
 } from './databaseSchemaCore';
 
-// ---- types.xml 类型的落库形态与使用处反扫(批134) ----
+// ---- persisted shape and usage-site back-scan for types.xml types (batch 134) ----
 //
-// 落库规则只有 schema 构建器这一套实现(别名解析/列展开/子表命名都在上面),
-// 这里只把它的产出换成两种视图:
-// - getTypeStorageShape:给 types.xml 悬停的形态数据(FIXED_DICT 顶层键 /
-//   ARRAY 元素递归一层),不重复落库规则;
-// - buildTypeStorageUsageIndex / findTypeStorageUsages:遍历实体快照,把每个
-//   非合成列按 declaredType(原始 <Type> 文本)归档成「类型 → 真实落点」,
-//   落点表/列直接取快照,types.xml 的 CodeLens 与悬停都消费它。
+// The persistence rules have exactly one implementation, the schema builder
+// (alias resolution / column expansion / sub-table naming all live up there);
+// here we only re-render its output as two views:
+// - getTypeStorageShape: shape data for types.xml hovers (FIXED_DICT top-level
+//   keys / one level of ARRAY element recursion), without repeating the
+//   persistence rules;
+// - buildTypeStorageUsageIndex / findTypeStorageUsages: walk the entity
+//   snapshots and file every non-synthetic column under its declaredType (the
+//   raw <Type> text) as "type -> actual landing spot"; the landing table/column
+//   is taken straight from the snapshot, and both the types.xml CodeLens and
+//   the hover consume it.
 
 export type TypeStorageShape =
   | { kind: 'builtin'; rawType: string; typeName: string; columnType: string | null }
@@ -33,17 +37,17 @@ export type TypeStorageShape =
   | { kind: 'unresolved'; rawType: string };
 
 export interface TypeStorageUsage {
-  /** 使用处所在实体(数组/FD 键落点跟随实体属性) */
+  /** Entity the usage site belongs to (ARRAY / FD-key landing spots follow the entity property) */
   entity: string;
-  /** 声明路径,如 itemId / items[] / skills[].count */
+  /** Declared path, e.g. itemId / items[] / skills[].count */
   property: string;
-  /** 落点表名(tbl_...) */
+  /** Landing table name (tbl_...) */
   table: string;
-  /** 落点列名(sm_...) */
+  /** Landing column name (sm_...) */
   column: string;
-  /** 声明处文件(实体 def 或 types.xml 的 FD 键声明) */
+  /** Declaration-site file (the entity def, or the FD key declaration in types.xml) */
   defFile: string;
-  /** 声明处行号(1 起) */
+  /** Declaration-site line number (1-based) */
   line: number;
 }
 
@@ -58,7 +62,7 @@ export function getTypeStorageShape(typesXmlPath: string | null, typeName: strin
     typeAliases: parseTypeAliases(typesXmlPath, undefined, buildSchemaSourcePorts().readInputFile),
     entityHasCell: false,
     inputVersions: new Map(),
-    // IDE-SCH-004:形态查询不产快照,消费记账落空 Map(占位,不入缓存)
+    // IDE-SCH-004: shape queries produce no snapshot; consumption bookkeeping lands in an empty Map (placeholder, not cached)
     typeRegistryPath: null,
     typeRegistryConsumed: new Map<string, string>(),
     ports: buildSchemaSourcePorts()
@@ -68,7 +72,7 @@ export function getTypeStorageShape(typesXmlPath: string | null, typeName: strin
 
 function typeShapeOf(typeName: string, context: BuildContext, seen: Set<string>): TypeStorageShape {
   if (seen.has(typeName)) {
-    // 别名环:引擎 resolveAlias 同样按 seen 短路,形态层面不再展开
+    // Alias cycle: the engine's resolveAlias short-circuits on seen the same way, so the shape level does not expand further
     return { kind: 'unresolved', rawType: typeName };
   }
   seen.add(typeName);
@@ -91,7 +95,7 @@ function typeShapeOf(typeName: string, context: BuildContext, seen: Set<string>)
     };
   }
   if (resolved.kind === 'array') {
-    // 元素类型 = <of> 的文本(与 parseArrayElementDescriptor 同一读法)
+    // Element type = the text of <of> (same reading as parseArrayElementDescriptor)
     const rawElementType = getScalarChildValue(resolved.node, 'of');
     return {
       kind: 'array',
@@ -102,9 +106,11 @@ function typeShapeOf(typeName: string, context: BuildContext, seen: Set<string>)
   return { kind: 'unresolved', rawType: typeName };
 }
 
-// IDE-SCH-008:按实体增量维护——usage 记录按实体存放,快照对象身份一致则复用
-// 该实体的记录(修改一个实体只重建它自己,无关实体记录对象原样保留),
-// 聚合索引由记录懒聚合,记录未变时聚合也复用。
+// IDE-SCH-008: incremental maintenance per entity -- usage records are kept
+// per entity, and the records for an entity are reused when the snapshot object
+// identity is unchanged (editing one entity rebuilds only that one, record
+// objects for unrelated entities are kept as they are); the aggregate index is
+// aggregated lazily from the records and reused while the records are unchanged.
 interface TypeStorageUsageEntityRecord {
   snapshot: DatabaseSchemaSnapshot | null;
   usages: Array<{ typeName: string; usage: TypeStorageUsage }>;
@@ -150,7 +156,7 @@ function refreshTypeStorageUsageRecord(workspaceRoot: string, entityName: string
   const snapshot = getDatabaseSchemaSnapshot(entityName, workspaceRoot);
   const existing = state.entityRecords.get(entityName);
   if (existing && existing.snapshot === snapshot) {
-    return false; // 快照对象未变:该实体贡献的记录原样复用
+    return false; // snapshot object unchanged: records contributed by this entity are reused as-is
   }
   state.entityRecords.set(entityName, {
     snapshot,
@@ -159,9 +165,12 @@ function refreshTypeStorageUsageRecord(workspaceRoot: string, entityName: string
   return true;
 }
 
-/** IDE-AUD-013(F13):分阶段冷构建用的单实体刷新面——异步构建管线在单实体
- * 内部按预算让路(属性循环/组件/父链递归),中段取消经 gate 立即止步。
- * 返回 'cancelled' 即该实体未完整处理(记录不更新,调用方应止步不发布)。 */
+/** IDE-AUD-013 (F13): single-entity refresh surface for phased cold builds --
+ * the async build pipeline yields within a single entity according to the
+ * budget (property loops / components / parent-chain recursion), and a
+ * mid-flight cancellation stops immediately through the gate.
+ * Returning 'cancelled' means the entity was not fully processed (the record
+ * is not updated, and the caller should stop without publishing). */
 async function refreshTypeStorageUsageRecordAsync(
   workspaceRoot: string,
   entityName: string,
@@ -170,7 +179,7 @@ async function refreshTypeStorageUsageRecordAsync(
 ): Promise<'updated' | 'unchanged' | 'cancelled'> {
   const state = typeStorageUsageState;
   if (!state) {
-    return 'cancelled'; // 状态已弃置:无法记录,调用方应止步
+    return 'cancelled'; // state already discarded: cannot record, the caller should stop
   }
   let cancelled = false;
   const snapshot = await buildDatabaseSchemaSnapshotAsync(entityName, workspaceRoot, {
@@ -185,11 +194,11 @@ async function refreshTypeStorageUsageRecordAsync(
     }
   });
   if (cancelled) {
-    return 'cancelled'; // 中段取消:未产出可用快照,不更新记录
+    return 'cancelled'; // mid-flight cancel: no usable snapshot produced, record not updated
   }
   const existing = state.entityRecords.get(entityName);
   if (existing && existing.snapshot === snapshot) {
-    return 'unchanged'; // 快照对象未变:该实体贡献的记录原样复用
+    return 'unchanged'; // snapshot object unchanged: records contributed by this entity are reused as-is
   }
   state.entityRecords.set(entityName, {
     snapshot,
@@ -215,7 +224,7 @@ function rebuildTypeStorageUsageAggregate(state: NonNullable<typeof typeStorageU
   return index;
 }
 
-/** 后台任务派发器:渲染面不建索引,交后台线程外排队(extension 注册调度器) */
+/** Background task dispatcher: the rendering surface does not build the index; it is queued off the background thread (the extension registers the dispatcher) */
 export type BackgroundSchemaTaskDispatcher = (run: () => Promise<void>) => Promise<void>;
 let typeStorageUsageBackgroundDispatcher: BackgroundSchemaTaskDispatcher | null = null;
 
@@ -227,20 +236,20 @@ const pendingTypeStorageColdBuildRoots = new Set<string>();
 let typeStorageColdBuildChain: Promise<void> = Promise.resolve();
 const typeStorageUsageIndexListeners = new Set<() => void>();
 
-/** 冷构建完成(发布)监听:渲染面据此刷新(types.xml CodeLens 重渲染) */
+/** Cold-build completion (publish) listener: the rendering surface refreshes on it (re-renders the types.xml CodeLens) */
 export function onTypeStorageUsageIndexPublished(listener: () => void): () => void {
   typeStorageUsageIndexListeners.add(listener);
   return () => { typeStorageUsageIndexListeners.delete(listener); };
 }
 
-/** 测试面:等在途冷构建链排干 */
+/** Test surface: wait for the in-flight cold-build chain to drain */
 export async function flushTypeStorageUsageColdBuildForTests(): Promise<void> {
   while (pendingTypeStorageColdBuildRoots.size > 0) {
     await typeStorageColdBuildChain;
   }
 }
 
-/** 残留任务量规(P0-4b 审核重开 2026-10-28):在途冷构建根数(只读)。 */
+/** Residual-task gauge (P0-4b audit reopened 2026-10-28): number of in-flight cold-build roots (read-only). */
 export function getPendingTypeStorageColdBuildCount(): number {
   return pendingTypeStorageColdBuildRoots.size;
 }
@@ -250,10 +259,13 @@ const defaultBackgroundDispatch: BackgroundSchemaTaskDispatcher = run =>
     setImmediate(() => { void run().then(resolve, resolve); });
   });
 
-/** IDE-SCH-009 只读反查面:聚合已发布则纯读返回——零快照探测,新鲜度由
- * 事件面(watcher→按实体替换/整表置空)承担。2026-10-28 审核整改:冷路径
- * (无状态)不再在交互线程整表构建——派发后台一次构建,本次渲染拿空表,
- * 构建完成后经 onTypeStorageUsageIndexPublished 通知渲染面刷新。 */
+/** IDE-SCH-009 read-only back-lookup surface: if the aggregate is published,
+ * return it with a pure read -- zero snapshot probing; freshness is carried by
+ * the event surface (watcher -> per-entity replacement / whole-table reset).
+ * 2026-10-28 audit remediation: the cold path (no state) no longer builds the
+ * whole table on the interaction thread -- it dispatches one background build,
+ * this render gets an empty table, and once the build finishes the rendering
+ * surface is notified to refresh via onTypeStorageUsageIndexPublished. */
 export function getTypeStorageUsageIndexReadOnly(workspaceRoot: string): Map<string, TypeStorageUsage[]> {
   if (typeStorageUsageState && typeStorageUsageState.key === workspaceRoot) {
     return typeStorageUsageState.index || rebuildTypeStorageUsageAggregate(typeStorageUsageState);
@@ -264,20 +276,22 @@ export function getTypeStorageUsageIndexReadOnly(workspaceRoot: string): Map<str
 
 function scheduleTypeStorageUsageColdBuild(workspaceRoot: string): void {
   if (pendingTypeStorageColdBuildRoots.has(workspaceRoot)) {
-    return; // 同根冷构建在途:去重
+    return; // a cold build for the same root is in flight: dedupe
   }
   pendingTypeStorageColdBuildRoots.add(workspaceRoot);
   const dispatch = typeStorageUsageBackgroundDispatcher ?? defaultBackgroundDispatch;
   typeStorageColdBuildChain = typeStorageColdBuildChain
     .then(() => dispatch(async () => {
       try {
-        // IDE-REV-013:冷索引逐实体分阶段——不再单个 setImmediate 回调里同步
-        // 遍历全部实体;预算让出宿主+取消检查,中途取消弃部分状态重新可调度
+        // IDE-REV-013: the cold index is phased per entity -- no longer walking
+        // all entities synchronously inside a single setImmediate callback; the
+        // budget yields to the host plus cancellation checks, and a mid-flight
+        // cancel discards the partial state so it can be rescheduled
         const outcome = await buildTypeStorageUsageIndexPhased(workspaceRoot, {
           shouldContinue: () => !typeStorageColdBuildCancelFlags.has(workspaceRoot)
         });
         if (outcome.stopped && typeStorageUsageState?.key === workspaceRoot) {
-          typeStorageUsageState = null; // 部分记录不可当聚合:弃置,下次查询重调度
+          typeStorageUsageState = null; // partial records cannot serve as the aggregate: discard, reschedule on next query
         }
       } finally {
         pendingTypeStorageColdBuildRoots.delete(workspaceRoot);
@@ -292,10 +306,10 @@ function scheduleTypeStorageUsageColdBuild(workspaceRoot: string): void {
   });
 }
 
-// IDE-REV-013:调度面取消标记(键=根);在飞冷构建在实体边界看到即止步
+// IDE-REV-013: scheduling-surface cancel flags (key = root); an in-flight cold build stops as soon as it sees one at an entity boundary
 const typeStorageColdBuildCancelFlags = new Set<string>();
 
-/** IDE-REV-013:取消某根在飞 type storage 冷构建;无在飞构建返回 false */
+/** IDE-REV-013: cancel an in-flight type storage cold build for a root; returns false when no build is in flight */
 export function cancelTypeStorageUsageColdBuild(workspaceRoot: string): boolean {
   if (!pendingTypeStorageColdBuildRoots.has(workspaceRoot)) {
     return false;
@@ -304,40 +318,42 @@ export function cancelTypeStorageUsageColdBuild(workspaceRoot: string): boolean 
   return true;
 }
 
-/** IDE-REV-013:分阶段冷构建的让路与取消注入面 */
+/** IDE-REV-013: injection surface for yielding and cancellation of phased cold builds */
 export interface TypeStorageUsageColdBuildOptions {
-  /** 每实体边界(及每次让路后)调用;返回 false 即止步不发布 */
+  /** Called at each entity boundary (and after each yield); returning false stops the build without publishing */
   shouldContinue?: () => boolean | Promise<boolean>;
-  /** 让出宿主(缺省 setImmediate) */
+  /** Yield to the host (setImmediate by default) */
   yieldControl?: () => Promise<void>;
-  /** 连续执行时间预算(毫秒,超即让路;缺省 25ms,与诊断时间片同口径) */
+  /** Continuous-execution time budget (milliseconds; yields once exceeded; default 25ms, same contract as the diagnostic time slice) */
   entityBudgetMs?: number;
 }
 
-/** IDE-REV-013:一次分阶段冷构建的结果量规(测试/观测面) */
+/** IDE-REV-013: outcome gauge for one phased cold build (test/observability surface) */
 export interface TypeStorageUsageColdBuildOutcome {
-  /** 处理完成的实体数(止步前) */
+  /** Number of entities fully processed (before stopping) */
   entities: number;
-  /** 是否因取消止步(true=未发布聚合) */
+  /** Whether the build stopped due to cancellation (true = aggregate not published) */
   stopped: boolean;
-  /** 让出宿主次数(真实让路面,非 beforeBuild 假闸门) */
+  /** Number of host yields (a real yield surface, not a beforeBuild fake gate) */
   yields: number;
-  /** 两次让路之间最长连续执行时长(毫秒)——最大连续阻塞量规 */
+  /** Longest continuous execution between two yields (milliseconds) -- the max continuous blocking gauge */
   maxSliceMs: number;
 }
 
 let lastTypeStorageColdBuildGauge: TypeStorageUsageColdBuildOutcome | null = null;
 
-/** IDE-REV-013:读最近一次分阶段冷构建量规(测试面) */
+/** IDE-REV-013: read the gauge of the most recent phased cold build (test surface) */
 export function getTypeStorageColdBuildGaugeForTests(): TypeStorageUsageColdBuildOutcome | null {
   return lastTypeStorageColdBuildGauge;
 }
 
 /**
- * IDE-REV-013:type storage 冷索引分阶段构建——逐实体刷新 usage 记录,
- * 实体边界检查取消;连续执行超过预算(缺省 25ms)让出宿主再续。止步
- * (取消)不发布聚合,部分记录由调用方裁断弃置。同步面
- * buildTypeStorageUsageIndex 保持查询/测试口径不变。
+ * IDE-REV-013: phased build of the type storage cold index -- refreshes usage
+ * records entity by entity, checking for cancellation at entity boundaries;
+ * when continuous execution exceeds the budget (default 25ms) it yields to the
+ * host and resumes. Stopping (cancellation) does not publish the aggregate;
+ * the caller decides whether to discard the partial records. The synchronous
+ * surface buildTypeStorageUsageIndex keeps the query/test contract unchanged.
  */
 export async function buildTypeStorageUsageIndexPhased(
   workspaceRoot: string,
@@ -353,8 +369,10 @@ export async function buildTypeStorageUsageIndexPhased(
   const yieldControl = options.yieldControl ?? (() => new Promise<void>(resolve => { setImmediate(resolve); }));
   const budgetMs = options.entityBudgetMs ?? 25;
 
-  // IDE-AUD-013(F13):共享让路量规——单实体内部(属性循环/组件/父链递归)
-  // 与实体边界让路记入同一把量规,最大连续片跨两者连续测量。
+  // IDE-AUD-013 (F13): shared yield gauge -- yields inside a single entity
+  // (property loops / components / parent-chain recursion) and yields at entity
+  // boundaries are recorded in the same gauge; the max continuous slice is
+  // measured continuously across both.
   const progress: SchemaBuildProgress = { sliceStart: Date.now(), budgetMs, yields: 0, maxSliceMs: 0 };
   const gate = async (): Promise<boolean> => {
     await yieldControl();
@@ -365,12 +383,12 @@ export async function buildTypeStorageUsageIndexPhased(
   let stopped = false;
   for (const entry of entries) {
     if (!(await shouldContinue())) {
-      stopped = true; // 实体边界止步:后续实体不再处理
+      stopped = true; // stopped at an entity boundary: remaining entities are not processed
       break;
     }
     const status = await refreshTypeStorageUsageRecordAsync(workspaceRoot, entry.name, progress, gate);
     if (status === 'cancelled') {
-      stopped = true; // 单实体内部让路后取消:该实体未完整处理,止步不发布
+      stopped = true; // cancelled after a yield inside a single entity: that entity was not fully processed, stop without publishing
       break;
     }
     entities += 1;
@@ -380,7 +398,7 @@ export async function buildTypeStorageUsageIndexPhased(
       progress.yields += 1;
       await yieldControl();
       if (!(await shouldContinue())) {
-        stopped = true; // 让路后取消:续批前止步
+        stopped = true; // cancelled after a yield: stop before continuing the batch
         break;
       }
       progress.sliceStart = Date.now();
@@ -395,10 +413,10 @@ export async function buildTypeStorageUsageIndexPhased(
   };
   lastTypeStorageColdBuildGauge = gauge;
   if (stopped) {
-    return gauge; // 不清亡灵/不聚合:部分状态由调用方弃置
+    return gauge; // no stale-record cleanup / no aggregation: the caller discards the partial state
   }
   for (const name of [...state.entityRecords.keys()]) {
-    if (!liveEntities.has(name)) { // 实体已不在定义清单:清掉亡灵记录
+    if (!liveEntities.has(name)) { // entity no longer in the definition list: clear its stale record
       state.entityRecords.delete(name);
     }
   }
@@ -411,15 +429,17 @@ export function findTypeStorageUsagesReadOnly(workspaceRoot: string, typeName: s
 }
 
 /**
- * IDE-SCH-008 事件面:实体 def 变更后只替换该实体贡献的 usage 记录,
- * 其余实体的记录对象保持不变,聚合索引按需重聚(不全仓重建)。
+ * IDE-SCH-008 event surface: after an entity def change, only the usage records
+ * contributed by that entity are replaced; record objects of the other entities
+ * stay untouched, and the aggregate index is re-aggregated on demand (no full
+ * repository rebuild).
  */
 export function replaceTypeStorageUsageForEntity(workspaceRoot: string, entityName: string): void {
   if (!typeStorageUsageState || typeStorageUsageState.key !== workspaceRoot) {
-    return; // 尚无索引:下一次查询本身就是全新构建
+    return; // no index yet: the next query itself is a fresh build
   }
   if (refreshTypeStorageUsageRecord(workspaceRoot, entityName)) {
-    rebuildTypeStorageUsageAggregate(typeStorageUsageState); // 只重聚既有记录,不逐实体探快照
+    rebuildTypeStorageUsageAggregate(typeStorageUsageState); // re-aggregate existing records only, no per-entity snapshot probing
   }
 }
 
@@ -429,7 +449,7 @@ export function buildTypeStorageUsageIndex(workspaceRoot: string): Map<string, T
   }
   const state = typeStorageUsageState;
 
-  // 逐实体按快照身份自愈:无关实体零成本复用,变更实体仅重建自身
+  // Self-healing per entity by snapshot identity: unrelated entities are reused at zero cost, changed entities rebuild only themselves
   const entries = getDefinitionEntries(workspaceRoot, 'entity').filter(entry => entry.exists);
   let changed = false;
   const liveEntities = new Set(entries.map(entry => entry.name));
@@ -439,7 +459,7 @@ export function buildTypeStorageUsageIndex(workspaceRoot: string): Map<string, T
     }
   }
   for (const name of [...state.entityRecords.keys()]) {
-    if (!liveEntities.has(name)) { // 实体已不在定义清单:清掉亡灵记录
+    if (!liveEntities.has(name)) { // entity no longer in the definition list: clear its stale record
       state.entityRecords.delete(name);
       changed = true;
     }
@@ -467,7 +487,7 @@ export function indexTypeStorageUsagesBySourceLine(
   return indexTypeStorageUsageEntries(buildTypeStorageUsageIndex(workspaceRoot), sourceFile);
 }
 
-/** IDE-SCH-009:从已取到的聚合(通常只读面)按源码行编组,不触发任何构建 */
+/** IDE-SCH-009: group an already-fetched aggregate (usually the read-only surface) by source line, triggering no build */
 export function indexTypeStorageUsageEntries(
   index: Map<string, TypeStorageUsage[]>,
   sourceFile: string

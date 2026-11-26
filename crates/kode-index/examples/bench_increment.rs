@@ -1,10 +1,12 @@
-//! 索引增量/热更新墙钟基准(RUST-102 旧 SYNTAX-006 余项:release 实测,
-//! 禁止 debug build 结论)。
+//! Index increment/hot-update wall-clock benchmark (the RUST-102 leftover of the old
+//! SYNTAX-006 item: measured in release, debug build conclusions are forbidden).
 //!
-//! 运行:`cargo run -p kode-index --release --example bench_increment`
-//! 五块:①N 文件首扫全量 ②热更新形态(单文件编辑→增量重建耗时分布)
-//! ③同文本零重建证明 ④rename/delete 增量面 ⑤根级失效 vs 单文件增量。
-//! 热更新形态=编辑器真实接入形态:文档改一版→update 一次→观测该次墙钟。
+//! Run: `cargo run -p kode-index --release --example bench_increment`
+//! Five blocks: (1) first full scan of N files (2) the hot-update shape (single-file edit ->
+//! incremental rebuild latency distribution) (3) proof of zero rebuilds for identical text
+//! (4) the rename/delete increment face (5) root-level invalidation vs single-file increment.
+//! The hot-update shape is the real editor integration shape: the document changes one
+//! revision -> one update -> observe that update's wall clock.
 
 use std::time::Instant;
 
@@ -20,7 +22,7 @@ fn percentile(samples: &mut [u128], p: f64) -> u128 {
     samples[idx]
 }
 
-/// 真实形态实体 def:entity 声明 + Parent + 属性 + 三分面方法。
+/// A real-shape entity def: entity declaration + Parent + properties + three facet methods.
 fn gen_entity_def(name: &str, parent: Option<&str>, props: usize) -> String {
     let mut s = format!("<root>\n\t<Entity>\n\t\t<EntityName>{name}</EntityName>\n");
     if let Some(p) = parent {
@@ -62,7 +64,8 @@ fn key(idx: usize) -> DocumentKey {
 }
 
 fn main() {
-    // 语料:2000 文件,每个 64 属性 + 12 方法;继承链每 8 文件一环。
+    // Corpus: 2000 files, each with 64 properties + 12 methods; the inheritance chain is
+    // one link per 8 files.
     let corpus: Vec<(DocumentKey, String)> = (0..2000)
         .map(|i| {
             let parent = if i % 8 == 7 {
@@ -84,7 +87,7 @@ fn main() {
         total_bytes / corpus.len()
     );
 
-    // ① 首扫全量:update_batch 一次提交
+    // (1) First full scan: a single update_batch submission
     let mut index = SymbolIndex::new();
     let t0 = Instant::now();
     let batch: Vec<(DocumentKey, String)> =
@@ -100,14 +103,17 @@ fn main() {
         total_bytes as f64 / 1024.0 / 1024.0 / full.as_secs_f64()
     );
 
-    // ② 热更新形态:单文件编辑→update,300 次(每次真实修改文本→必重建),
-    //    观测单次增量重建墙钟。这是编辑器接入的稳态交互形态。
+    // (2) Hot-update shape: single-file edit -> update, 300 rounds (each round genuinely
+    //    modifies the text -> a rebuild is mandatory), observing the wall clock of one
+    //    incremental rebuild. This is the steady-state interactive shape of the editor
+    //    integration.
     let (hot_key, _) = corpus[0].clone();
     let base_text = &corpus[0].1;
     let mut hot: Vec<u128> = Vec::with_capacity(300);
     for round in 0..300 {
         let mut text = base_text.clone();
-        // 真实编辑:改一个属性 flags(第 round 处),文本必变→指纹必失配。
+        // A genuine edit: change one property's flags (at the `round`th one), so the text
+        // must change -> the fingerprint must miss.
         let needle = format!("prop{}", round % 64);
         if let Some(pos) = text.find(&needle) {
             let at = text[pos..]
@@ -133,7 +139,8 @@ fn main() {
         hot.iter().copied().max().unwrap_or(0),
     );
 
-    // ③ 同文本零重建:未变文档 update 必 cache-hit(不 bump generation)。
+    // (3) Zero rebuilds for identical text: updating an unchanged document must always be a
+    // cache hit (no generation bump).
     let gen_before = index.generation();
     let t0 = Instant::now();
     for _ in 0..1000 {
@@ -148,7 +155,7 @@ fn main() {
         idle.as_micros() as f64 / 1000.0
     );
 
-    // ④ rename/delete 增量面:remove+update(rename 语义)与纯 remove。
+    // (4) The rename/delete increment face: remove+update (rename semantics) and plain remove.
     let t0 = Instant::now();
     for i in 0..50 {
         let k = key(3000 + i);
@@ -177,8 +184,10 @@ fn main() {
         remove_miss.as_secs_f64() * 1000.0
     );
 
-    // ⑤ 根级失效 vs 单文件:invalidate_root 全根重扫(2000 文件)必须仍线性可控,
-    //    且与首扫同数量级(同一实现路径,无隐藏超线性)。
+    // (5) Root-level invalidation vs single file: invalidate_root rescanning the whole root
+    //    (2000 files) must still be linear and controllable, and within the same order of
+    //    magnitude as the first scan (the same implementation path, no hidden
+    //    super-linearity).
     let t0 = Instant::now();
     let touched = index.invalidate_root(RootId(1));
     let root_inv = t0.elapsed();
@@ -194,7 +203,8 @@ fn main() {
     );
     assert_eq!(receipt.rebuilds, corpus.len() as u64, "根级失效后全量重扫");
 
-    // ⑥ 巨型单文件:2 万属性 def 首插/重解析(热更新最坏单文件形态)。
+    // (6) A giant single file: a def with 20,000 properties, first insertion/reparse (the
+    // worst single-file shape for hot updates).
     let mega = gen_entity_def("MEGA", None, 20_000);
     let mega_key = DocumentKey::new(
         RootId(1),

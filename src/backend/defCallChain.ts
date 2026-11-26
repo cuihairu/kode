@@ -54,14 +54,15 @@ const RECEIVER_SECTION_TO_METHOD_SECTION: Record<
   client: 'ClientMethods'
 };
 
-/** Exposed 方法入边的合成 client 源节点 id(唯一,纯来源,不进 BFS 前沿) */
+/** Synthetic client source node id for Exposed method in-edges (unique, a pure source, not part of the BFS frontier) */
 const CLIENT_SOURCE_NODE_ID = 'client';
 
 export function renderDefCallChainMermaid(chain: DefCallChain): string {
   const lines = ['flowchart TD'];
   for (const node of chain.nodes) {
-    // client 源用 stadium 形状,与普通解析框(方角)/未解析框(也 stadium 但带
-    // "(?)" 签名)视觉可辨。
+    // The client source uses a stadium shape so it stays visually distinct
+    // from resolved boxes (square corners) and unresolved boxes (also stadium,
+    // but carrying a "(?)" signature).
     const shape = node.id === CLIENT_SOURCE_NODE_ID
       ? `(["${node.signature}"])`
       : node.resolved ? `["${node.signature}"]` : `(["${node.signature}"])`;
@@ -113,7 +114,7 @@ function unresolvedNode(
   };
 }
 
-/** Exposed 方法入边的合成 client 源节点:纯来源,不携带 def 方法语义 */
+/** Synthetic client source node for Exposed method in-edges: a pure source, carrying no def method semantics */
 function clientSourceNode(): DefCallChainNode {
   return {
     id: CLIENT_SOURCE_NODE_ID,
@@ -137,14 +138,16 @@ function findBoundMethod(
   );
 }
 
-/** 普通 self.<name>( 调用:只认直接调用形,接收者关键字(cell/base/client)排除 */
+/** Plain self.<name>( calls: only the direct call shape is recognized; receiver keywords (cell/base/client) are excluded */
 const PLAIN_SELF_CALL_PATTERN = /\bself\.([A-Za-z_][A-Za-z0-9_]*)\(/g;
 const RECEIVER_KEYWORDS = new Set<DefCallChainEdge['receiver']>(['cell', 'base', 'client']);
 
 /**
- * 扫描普通 self.<name>( 调用(cell/base/client 排除)。这些调用归属封闭方法自身
- * 的 def 段:cell 脚本里 self.moveToPoint() → CellMethods,base 脚本 → BaseMethods,
- * client 脚本 → ClientMethods。接收者按 ownSection 反查表定。
+ * Scan for plain self.<name>( calls (cell/base/client excluded). These calls
+ * belong to the def section of the enclosing method: in a cell script
+ * self.moveToPoint() goes to CellMethods, in a base script to BaseMethods,
+ * in a client script to ClientMethods. The receiver is resolved through the
+ * ownSection lookup table.
  */
 function findPlainSelfCalls(
   text: string,
@@ -189,8 +192,10 @@ function receiverCallsInMethod(
     return [];
   }
   const bodyStart = methodBlock.line;
-  // KR-AUD-70:endLine 截尾——methodBlock.endLine 是缩进边界,缺它则把同文件
-  // 后续兄弟方法体整个并进当前方法调用面(sibling 调用误归属)。
+  // KR-AUD-70: endLine truncation -- methodBlock.endLine is the indentation
+  // boundary; without it the bodies of later sibling methods in the same file
+  // would be folded into the current method's call surface (sibling calls
+  // mis-attributed).
   const bodyText = lines.slice(bodyStart, methodBlock.endLine).join('\n');
   return [
     ...findPythonReceiverCalls(bodyText),
@@ -234,7 +239,8 @@ export function buildDefCallChain(
   const nodes = new Map<string, DefCallChainNode>([[rootNode.id, rootNode]]);
   const edges = new Map<string, DefCallChainEdge>();
   const visited = new Set<string>();
-  // 记录每个已入链的解析方法节点 → def,供 Exposed 入边收尾(只对真 def 方法)。
+  // Record each resolved method node already in the chain -> def, for closing
+  // out Exposed in-edges later (only for real def methods).
   const nodeDefinitions = new Map<string, IndexedMethodDefinition>([
     [rootNode.id, rootDefinition]
   ]);
@@ -246,9 +252,11 @@ export function buildDefCallChain(
   for (let currentDepth = 0; currentDepth < depth && frontier.length > 0; currentDepth += 1) {
     const nextFrontier: typeof frontier = [];
     for (const { node, definition } of frontier) {
-      // visited 去重无触发输入——节点只在 `!nodes.has(targetNode.id)` 时才入
-      // nextFrontier(下方 push 臂),nodes 单调增长故每节点最多入 frontier 一次,
-      // visited 恒未含当前节点(自环/互调均被 nodes.has 闸住,不重入队)。
+      // The visited dedup has no triggering input -- a node only enters
+      // nextFrontier when `!nodes.has(targetNode.id)` (the push arm below);
+      // nodes grows monotonically, so each node enters the frontier at most
+      // once, and visited never contains the current node (self-loops and
+      // mutual calls are both gated by nodes.has, so nothing is re-queued).
       /* istanbul ignore start */
       if (visited.has(node.id)) {
         continue;
@@ -293,8 +301,9 @@ export function buildDefCallChain(
     frontier = nextFrontier;
   }
 
-  // Part A:Exposed 方法收 client 入边。client 源唯一(仅一个节点),每个 exposed
-  // 方法一条入边;client 源纯来源,不进 BFS(不 push 到任何 frontier)。
+  // Part A: Exposed methods get a client in-edge. The client source is unique
+  // (a single node); each exposed method gets one in-edge. The client source is
+  // a pure source and does not enter the BFS (never pushed to any frontier).
   const exposedNodeIds = [...nodeDefinitions.entries()]
     .filter(([, method]) => method.exposed)
     .map(([nodeId]) => nodeId);
@@ -321,10 +330,12 @@ export function buildDefCallChain(
 }
 
 /**
- * 2026-11-24 批 E:Python 原文改由共享原文缓存持有(见 readDiskPythonFile),
- * 本钩子从「整清本面私有缓存」降为「按路径精确失效」。共享缓存的
- * stat(mtimeMs+size) 双键校验仍是新鲜度兜底;无路径调用位不再需要清——
- * 条目由 stat 校验按需重读,无需外部清表。
+ * 2026-11-24 batch E: the Python source text is now held by the shared source
+ * text cache (see readDiskPythonFile), so this hook was downgraded from
+ * "clear this surface's private cache wholesale" to "invalidate precisely by
+ * path". The shared cache's stat(mtimeMs+size) dual-key check remains the
+ * freshness fallback; path-less call sites no longer need clearing -- entries
+ * are re-read on demand by the stat check, so no external table wipe is needed.
  */
 export function clearDefCallChainFileCache(pythonPath?: string): void {
   if (pythonPath !== undefined) {
@@ -333,13 +344,17 @@ export function clearDefCallChainFileCache(pythonPath?: string): void {
 }
 
 /**
- * RUST-003 判据②「打开文件内存优先」:已打开的 .py 取编辑器缓冲区,不读盘、
- * **不入盘缓存**——mtime/size 不随未保存编辑变化,入缓存会让缓冲区改动被一次
- * 陈旧盘读永久盖回。未打开才回落磁盘。
+ * RUST-003 criterion (2), "opened files come from memory first": an already
+ * opened .py is taken from the editor buffer -- no disk read and **no disk
+ * cache entry** -- because mtime/size do not change with unsaved edits, and
+ * caching would let a stale disk read permanently mask buffer changes. Only
+ * when the file is not open do we fall back to disk.
  *
- * 身份键用 canonical identity(`normalizeFileIdentity`,词法折叠 `..`、盘符/UNC
- * 大小写规则),非 `path.normalize`:后者不折叠 `..`、不套盘符规则,同一文件
- * 的不同拼法会形成两个条目,命中率与失效判定同时失真。
+ * The identity key is the canonical identity (`normalizeFileIdentity`, which
+ * folds `..` lexically and applies drive-letter/UNC case rules), not
+ * `path.normalize`: the latter neither folds `..` nor applies drive-letter
+ * rules, so different spellings of the same file would form two entries,
+ * distorting both hit rate and invalidation judgement.
  */
 function readPythonFileWithMtimeCache(filePath: string): string | null {
   const identity = normalizeFileIdentity(filePath);
@@ -349,15 +364,17 @@ function readPythonFileWithMtimeCache(filePath: string): string | null {
     }
     return document.getText();
   }
-  // 文件系统访问仍用原拼写 filePath——identity 已折叠 `..`/`.` 段,不是
-  // 必然存在的盘路径;identity 只作缓冲区匹配键。
+  // Filesystem access still uses the original spelling filePath -- identity
+  // has folded `..`/`.` segments, so it is not necessarily an on-disk path;
+  // identity serves only as the buffer-matching key.
   return readDiskPythonFile(filePath);
 }
 
 function readDiskPythonFile(filePath: string): string | null {
   try {
-    // 共享原文缓存记账入口(2026-11-24 批 E):同 stat(mtimeMs+size) 双键
-    // 校验、64MiB LRU 有界、跨面共享——替掉本面原有无界私有缓存。
+    // Shared source text cache accounting entry point (2026-11-24 batch E):
+    // same stat(mtimeMs+size) dual-key check, 64MiB LRU bounded, shared across
+    // surfaces -- replaces this surface's former unbounded private cache.
     return readFileSyncUtf8Recorded(filePath);
   } catch {
     return null;

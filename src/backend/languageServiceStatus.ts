@@ -1,16 +1,18 @@
 /**
- * RUST-219(旧 UI-002)语言服务状态栏纯核:Core/索引生命周期 + engine
- * profile + 资源根 + 索引进度,单状态栏项。判定同源:索引计数来自
- * IndexScheduler.getStatus(RUST-187 同源探针),profile/资源根来自活动
- * profile(PRJ-010)。诚实边界:「partial(部分索引)」无数据面——
- * SchedulerStatus 只有 failed/queued/running 三计数,不冒充 partial 态;
- * 探针缺省 null = 面不可用,如实显示「未知」不装就绪。
+ * Pure core of the RUST-219 (formerly UI-002) language service status bar: Core / index
+ * lifecycle + engine profile + resource root + index progress, in a single status-bar item.
+ * Same-source determination: the index counts come from IndexScheduler.getStatus (the same
+ * probe as RUST-187), and profile / resource root come from the active profile (PRJ-010).
+ * Honest boundary: "partial (partially indexed)" has no data face -- SchedulerStatus carries
+ * only the failed/queued/running three counts, so a partial state is never passed off; a probe
+ * default of null = the face is unavailable, displayed honestly as "unknown" instead of
+ * pretending readiness.
  *
- * 状态机(判定顺序固定,先失败后忙碌后就绪):
- * - failed > 0 → error 脸(终态失败,附三计数)
- * - running/queued > 0 → busy 脸(索引推进中,附运行/排队计数)
- * - 全零 → ready 脸;profile/资源根已知则缀在后面
- * - index = null → 未知脸(面不可用,不判定)
+ * The state machine (a fixed decision order: failure first, then busy, then ready):
+ * - failed > 0 -> the error face (a terminal failure, carrying the three counts)
+ * - running/queued > 0 -> the busy face (index progress under way, carrying the running/queued counts)
+ * - all zero -> the ready face; a known profile / resource root is appended after it
+ * - index = null -> the unknown face (the face is unavailable; no judgement is made)
  */
 
 export interface LanguageServiceIndexCounts {
@@ -20,32 +22,34 @@ export interface LanguageServiceIndexCounts {
 }
 
 export interface LanguageServiceStatusInputs {
-  /** 活动 profile 展示名;null = 未设置活动 profile */
+  /** The active profile's display name; null = no active profile set */
   profileName: string | null;
-  /** 资源根展示名(assetsRoot 基名);null = 未知/未设置 */
+  /** The resource root's display name (the assetsRoot basename); null = unknown/not set */
   resourceRoot: string | null;
-  /** 索引调度计数;null = 面不可用(调度器未注入/已释放) */
+  /** Index scheduler counts; null = the face is unavailable (the scheduler not injected / already released) */
   index: LanguageServiceIndexCounts | null;
-  /** 最近一轮索引忙起时刻(epoch ms);null/缺省=从未建过(就绪态不加建立行) */
+  /** The moment the most recent index round turned busy (epoch ms); null/absent = never started (the ready state adds no build line) */
   lastBuildStartedAt?: number | null;
-  /** 最近一轮索引跑空时刻(epoch ms);null/缺省=从未建完(就绪态不加建立行) */
+  /** The moment the most recent index round drained (epoch ms); null/absent = never completed (the ready state adds no build line) */
   lastBuildCompletedAt?: number | null;
-  /** INDEX-DISCIPLINE-001:输入纪律观测(合并器待合并数+语法门拦截数);
-   * null/缺省=面未注入(tooltip 不加该行,不冒充)。 */
+  /** INDEX-DISCIPLINE-001: input-discipline observations (the coalescer's pending merges + the
+   * syntax gate's interceptions); null/absent = the face was not injected (the tooltip adds no
+   * line and does not pass it off). */
   indexDiscipline?: { coalescerPending: number; syntaxGateSkipped: number } | null;
 }
 
 export interface LanguageServiceStatusView {
   text: string;
   tooltip: string;
-  /** true = 有终态失败(宿主可据此强调) */
+  /** true = there is a terminal failure (the host may emphasize on this basis) */
   hasFailures: boolean;
-  /** true = 索引在推进(运行或排队非零;宿主据此保活轮询) */
+  /** true = the index is progressing (running or queued non-zero; the host keeps the poll alive on this basis) */
   isBusy: boolean;
 }
 
-/** 状态栏项最小面:真 vscode.StatusBarItem 的结构子集,测试用假体同形
- * (tooltip/command 宽为最小结构:真项接受 MarkdownString/Command,后端零 vscode 依赖) */
+/** The status-bar item's minimal face: a structural subset of the real vscode.StatusBarItem, and
+ * test fakes share the same shape (tooltip/command widened to the minimal structure: the real item
+ * accepts MarkdownString/Command, while the backend keeps zero vscode dependencies) */
 export interface LanguageServiceStatusBarItemLike {
   text: string;
   tooltip?: string | { value: string };
@@ -55,10 +59,12 @@ export interface LanguageServiceStatusBarItemLike {
 }
 
 /**
- * 索引建立时间行(批 B):就绪态 tooltip 专用。completedAt 缺失(从未建完)
- * → null 不加行;耗时=completed-started,起止缺一或倒挂 → 只给时刻不编耗时。
- * 时刻用本地时区固定 `YYYY-MM-DD HH:mm:ss` 格式(不随宿主 locale 漂移,
- * 测试可锁);耗时分档:毫秒 / x.x 秒 / x 分 y 秒 / x 小时 y 分 z 秒。
+ * The index build time line (batch B): exclusive to the ready-state tooltip. A missing
+ * completedAt (never completed) -> null, no line; the duration = completed-started, and if
+ * either end is missing or they are inverted -> only the moment is given, no duration invented.
+ * The moment uses the local time zone in the fixed `YYYY-MM-DD HH:mm:ss` format (it does not
+ * drift with the host locale, so tests can pin it); the duration tiers: milliseconds / x.x s /
+ * x min y s / x h y min z s.
  */
 export function formatIndexBuildTimeLine(
   startedAt: number | null | undefined,
@@ -90,7 +96,7 @@ export function formatIndexBuildTimeLine(
   return `索引建立：${stamp}${durationPart}。`;
 }
 
-/** 纯核:输入 → 状态栏文案。判定顺序固定(未知→失败→忙碌→就绪)。 */
+/** Pure core: inputs -> the status-bar wording. The decision order is fixed (unknown -> failed -> busy -> ready). */
 export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs): LanguageServiceStatusView {
   const suffixParts: string[] = [];
   if (inputs.profileName) {
@@ -111,8 +117,10 @@ export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs):
   }
 
   const { failed, queued, running } = inputs.index;
-  // INDEX-DISCIPLINE-001:输入纪律观测行(合并器待合并+语法门拦截)——
-  // 面注入才有,用户能看见「保存才进队列 + 烂文件被拦」纪律在工作。
+  // INDEX-DISCIPLINE-001: the input-discipline observation line (the coalescer's pending merges +
+  // the syntax gate's interceptions) --
+  // present only when the face is injected, so the user can see the "only queued on save +
+  // broken files are intercepted" discipline working.
   const disciplineLine = inputs.indexDiscipline
     ? `\n索引输入队列：待合并 ${inputs.indexDiscipline.coalescerPending}（语法门拦截 ${inputs.indexDiscipline.syntaxGateSkipped}）。`
     : '';
@@ -132,8 +140,9 @@ export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs):
       isBusy: true
     };
   }
-  // 就绪态专属:最近一轮建立时刻+耗时行;从未建完(completedAt null)不加,
-  // 运行中/失败/未知态不加(完成时刻只对「已就绪」有陈述意义)。
+  // Exclusive to the ready state: the most recent build moment + the duration line; not added when
+  // never completed (completedAt null), and not added in the running/failed/unknown states (the
+  // completion moment only means something for "already ready").
   const buildLine = formatIndexBuildTimeLine(inputs.lastBuildStartedAt, inputs.lastBuildCompletedAt);
   return {
     text: `$(check) Kode 索引: 就绪${suffix}`,
@@ -144,7 +153,7 @@ export function buildLanguageServiceStatus(inputs: LanguageServiceStatusInputs):
   };
 }
 
-/** 定时器最小面:测试注入假钟,生产注入真 setInterval/clearInterval */
+/** The timers' minimal face: tests inject a fake clock, production injects the real setInterval/clearInterval */
 export interface LanguageServiceStatusTimers {
   setInterval(handler: () => void, ms: number): unknown;
   clearInterval(handle: unknown): void;
@@ -152,18 +161,19 @@ export interface LanguageServiceStatusTimers {
 
 export interface LanguageServiceStatusControllerDeps {
   createItem(): LanguageServiceStatusBarItemLike;
-  /** 同源取数:profile/资源根/索引计数(宿主组装,纯核不碰 vscode/memento) */
+  /** Same-source data gathering: profile / resource root / index counts (assembled by the host; the pure core touches neither vscode nor memento) */
   collectInputs(): LanguageServiceStatusInputs;
   timers: LanguageServiceStatusTimers;
-  /** 忙碌保活轮询间隔毫秒;默认 1000 */
+  /** The busy keep-alive poll interval in milliseconds; default 1000 */
   readonly pollMs?: number;
-  /** 点击状态栏打开的命令;默认 kbengine.profile.health */
+  /** The command opened by clicking the status bar; default kbengine.profile.health */
   readonly clickCommand?: string;
 }
 
 /**
- * 状态栏控制器:事件触发 refresh(宿主订阅活动 profile/配置/保存事件),
- * 忙碌期保活轮询(最后一态 busy 才 setInterval,落定即停),dispose 全清。
+ * The status-bar controller: events trigger refresh (the host subscribes to active-profile /
+ * config / save events), and a keep-alive poll runs while busy (setInterval only while the last
+ * state is busy, stopping as soon as it settles); dispose clears everything.
  */
 export class LanguageServiceStatusController {
   private readonly deps: LanguageServiceStatusControllerDeps;
@@ -179,7 +189,7 @@ export class LanguageServiceStatusController {
     this.refresh();
   }
 
-  /** 取数→渲染;忙碌则保活轮询,落定则停轮询 */
+  /** Gather -> render; a busy view keeps the poll alive, a settled one stops it */
   refresh(): void {
     if (this.disposed) {
       return;

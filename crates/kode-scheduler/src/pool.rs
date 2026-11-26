@@ -1,40 +1,45 @@
-//! CORE-010 CPU 池容量门(基础版):交互预留 + 后台硬上限。
+//! CORE-010 CPU pool capacity gate (baseline): interactive reservation + background hard ceiling.
 //!
-//! 纯决策核,零运行时依赖:派发线程/真正 worker 池的接线属 server 装配面
-//! (随 provider 单);本模块只锁定**准入不变量**——
+//! Pure decision core, zero runtime dependencies: wiring the dispatch threads / the real worker
+//! pool belongs to the server assembly surface (with the provider); this module only locks down
+//! the **admission invariants** —
 //!
-//! - **交互预留**:`interactive_reserved` 容量恒为交互请求保留;后台满载时
-//!   交互请求仍可入(预留位语义),绝不排队等后台让位;
-//! - **后台硬上限**:`background_max` 是后台 worker 并发的硬顶,任何情况下
-//!   不得越过(绝不把 CPU 全核占满);
-//! - **总量守恒**:交互 + 后台在飞数恒 ≤ `total`,后台准入绝不挤占交互预留
-//!   (可派发后台数 = min(background_max, total − interactive_reserved −
-//!   interactive_in_flight));
-//! - **释放记账**:释放超过在飞数 = 调用方 bug,如实拒绝(返回 false)不改
-//!   计数,绝不静默下溢。
+//! - **Interactive reservation**: the `interactive_reserved` capacity is always kept for
+//!   interactive requests; when background is saturated, interactive requests can still enter
+//!   (reserved-slot semantics) and never queue waiting for background to yield;
+//! - **Background hard ceiling**: `background_max` is the hard ceiling of background worker
+//!   concurrency and must never be exceeded under any circumstances (never occupy every CPU core);
+//! - **Total conservation**: interactive + background in-flight count is always ≤ `total`, and
+//!   background admissions never crowd out the interactive reservation (dispatchable background
+//!   count = min(background_max, total − interactive_reserved − interactive_in_flight));
+//! - **Release accounting**: releasing beyond the in-flight count = caller bug; reject it
+//!   truthfully (return false) without changing counts, and never silently underflow.
 
-/// CPU 池预算(CORE-010)。
+/// CPU pool budget (CORE-010).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PoolBudget {
-    /// 容量总量(通常 = 可用核数;由装配面喂,纯核不读环境)。
+    /// Total capacity (usually the available core count; fed by the assembly surface, the pure
+    /// core does not read the environment).
     pub total: usize,
-    /// 交互预留容量(恒保留给交互请求)。
+    /// Reserved capacity for interactive requests (always kept).
     pub interactive_reserved: usize,
-    /// 后台 worker 并发硬上限。
+    /// Hard ceiling of background worker concurrency.
     pub background_max: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PoolBudgetError {
-    /// total 为 0(无意义)。
+    /// total is 0 (meaningless).
     ZeroTotal,
-    /// 交互预留 + 后台硬上限超出总量(预算不自洽)。
+    /// Interactive reservation + background hard ceiling exceed the total (budget not
+    /// self-consistent).
     Overcommitted,
 }
 
 impl PoolBudget {
-    /// 由总核数推导缺省预算:交互预留 1;后台 = 其余容量的 3/4(向下取整,
-    /// 至少 1——单核机后台 0,全量让给交互)。
+    /// Derive the default budget from the total core count: one interactive reserve; background =
+    /// 3/4 of the remaining capacity (rounded down, at least 1 — on a single-core machine
+    /// background is 0 and everything yields to interactive).
     pub fn from_total(total: usize) -> PoolBudget {
         let remaining = total.saturating_sub(1);
         let background_max = if remaining == 0 {
@@ -49,7 +54,7 @@ impl PoolBudget {
         }
     }
 
-    /// 预算自洽性:total ≥ 1 且 interactive_reserved + background_max ≤ total。
+    /// Budget self-consistency: total ≥ 1 and interactive_reserved + background_max ≤ total.
     pub fn validate(&self) -> Result<(), PoolBudgetError> {
         if self.total == 0 {
             return Err(PoolBudgetError::ZeroTotal);
@@ -61,7 +66,8 @@ impl PoolBudget {
     }
 }
 
-/// 池准入门:记账交互/后台在飞数并执行 CORE-010 准入不变量。
+/// Pool admission gate: accounts for interactive/background in-flight counts and enforces the
+/// CORE-010 admission invariants.
 #[derive(Debug)]
 pub struct WorkerPoolGate {
     budget: PoolBudget,
@@ -70,7 +76,8 @@ pub struct WorkerPoolGate {
 }
 
 impl WorkerPoolGate {
-    /// 预算不自洽即在构造期拒绝(绝不带病运行)。
+    /// A non-self-consistent budget is rejected at construction time (never run with a sick
+    /// budget).
     pub fn new(budget: PoolBudget) -> Result<WorkerPoolGate, PoolBudgetError> {
         budget.validate()?;
         Ok(WorkerPoolGate {
@@ -92,8 +99,9 @@ impl WorkerPoolGate {
         self.background_running
     }
 
-    /// 交互准入:只要总占用 < total 即放行(预留位语义——后台满载也拦不住
-    /// 交互请求;恒有 ≥ interactive_reserved 的交互可用容量)。
+    /// Interactive admission: admitted as long as total occupancy < total (reserved-slot
+    /// semantics — even a saturated background cannot block interactive requests; there is always
+    /// ≥ interactive_reserved of capacity available to interactive work).
     pub fn try_admit_interactive(&mut self) -> bool {
         if self.interactive_running + self.background_running >= self.budget.total {
             return false;
@@ -102,7 +110,8 @@ impl WorkerPoolGate {
         true
     }
 
-    /// 后台准入:双重硬闸 = background_max 顶 + 总量守恒(绝不挤占交互预留)。
+    /// Background admission: double hard gate = the background_max ceiling + total conservation
+    /// (never crowds out the interactive reservation).
     pub fn try_admit_background(&mut self) -> bool {
         if self.background_running >= self.budget.background_max {
             return false;
@@ -116,7 +125,8 @@ impl WorkerPoolGate {
         true
     }
 
-    /// 释放一个交互位;无在飞可释放 = 调用方 bug,拒绝且不改计数。
+    /// Release one interactive slot; nothing in flight to release = caller bug, rejected and the
+    /// counts are left untouched.
     pub fn release_interactive(&mut self) -> bool {
         if self.interactive_running == 0 {
             return false;
@@ -125,7 +135,8 @@ impl WorkerPoolGate {
         true
     }
 
-    /// 释放一个后台位;无在飞可释放 = 调用方 bug,拒绝且不改计数。
+    /// Release one background slot; nothing in flight to release = caller bug, rejected and the
+    /// counts are left untouched.
     pub fn release_background(&mut self) -> bool {
         if self.background_running == 0 {
             return false;
@@ -145,7 +156,7 @@ mod tests {
         assert_eq!(b.interactive_reserved, 1);
         assert_eq!(b.background_max, 5, "剩余 7 的 3/4 向下取整");
         assert!(b.validate().is_ok());
-        // 单核机:后台 0,交互独占(绝不占满全核)。
+        // Single-core machine: background 0, interactive exclusive (never occupy all cores).
         let single = PoolBudget::from_total(1);
         assert_eq!(single.interactive_reserved, 1);
         assert_eq!(single.background_max, 0);
@@ -179,21 +190,24 @@ mod tests {
         let mut gate = WorkerPoolGate::new(PoolBudget::from_total(8)).expect("valid budget");
         while gate.try_admit_background() {}
         assert_eq!(gate.background_running(), 5, "后台顶到硬上限");
-        // 后台满载:交互请求仍立即可入(预留位语义,绝不排队等后台让位)。
+        // Background saturated: an interactive request can still enter immediately (reserved-slot
+        // semantics, never queueing for background to yield).
         assert!(gate.try_admit_interactive(), "交互预留位不得被后台吞掉");
     }
 
     #[test]
     fn background_hard_cap_never_exceeded_and_reservation_protected() {
         let mut gate = WorkerPoolGate::new(PoolBudget::from_total(8)).expect("valid budget");
-        // 交互占满除预留外的容量:后台准入必须让位(绝不挤占交互预留)。
+        // Interactive fills up all capacity except the reservation: background admissions must
+        // yield (never crowding out the interactive reservation).
         while gate.try_admit_interactive() {}
         assert!(
             !gate.try_admit_background(),
             "仅剩交互预留容量时后台不得准入"
         );
         assert_eq!(gate.background_running(), 0);
-        // 8 个交互里放回两个:非预留容量 7 空出 1 位(7−6),后台才可入。
+        // Put two back from the 8 interactive slots: the 7 non-reserved slots free up 1
+        // (7−6), and only then can background enter.
         gate.release_interactive();
         gate.release_interactive();
         assert!(gate.try_admit_background(), "腾出非预留位后后台可入");
@@ -205,7 +219,7 @@ mod tests {
         let budget = PoolBudget::from_total(4);
         let mut gate = WorkerPoolGate::new(budget).expect("valid budget");
         let mut admitted = 0;
-        // 交替准入直到两侧都拒绝:总占用不得越过 total。
+        // Alternate admissions until both sides reject: total occupancy must not cross total.
         loop {
             let i = gate.try_admit_interactive();
             let b = gate.try_admit_background();
@@ -237,11 +251,11 @@ mod tests {
         assert!(gate.release_background());
         assert!(!gate.release_background(), "二次释放不得下溢");
         assert_eq!(gate.background_running(), 0);
-        // 释放后容量恢复:后台可重新准入。
+        // After release, capacity recovers: background can be admitted again.
         assert!(gate.try_admit_background());
     }
 
-    /// budget() 读取面:构造期校验过的预算原样可见。
+    /// The budget() read surface: the budget validated at construction time is visible as is.
     #[test]
     fn budget_getter_returns_validated_budget() {
         let budget = PoolBudget::from_total(6);

@@ -1,19 +1,25 @@
-//! def 分析 lint 规则注册表(uv/ruff 口径):把 .def 分析规则收口到 Rust。
+//! def analysis lint rule registry (uv/ruff style): consolidates .def analysis
+//! rules into Rust.
 //!
-//! 命令面 `$/kode/lint/analyzeDef`(经 `$/kode/rpc` 单臂派发):入参
-//! `{text, inheritedNames?, knownTypes?}`,出 `{findings:[...]}`。每条 finding
-//! 与 TS `analyzeDefDocument` 输出同形(`check`/`severity`/`line`/`offset`/
-//! `length`/`name?`/`message`),TS 侧 `ok:true` 直接消费,`ok:false` 回退
-//! TS 兜底。`offset`/`length` 为 UTF-16 码元偏移(与 vscode positionAt 同
-//! 坐标系),`line` 为 1 基。
+//! Command face `$/kode/lint/analyzeDef` (dispatched as a single arm via
+//! `$/kode/rpc`): input `{text, inheritedNames?, knownTypes?}`, output
+//! `{findings:[...]}`. Each finding has the same shape as the TS
+//! `analyzeDefDocument` output (`check`/`severity`/`line`/`offset`/`length`/
+//! `name?`/`message`); the TS side consumes it directly on `ok:true` and falls
+//! back to the TS fallback on `ok:false`. `offset`/`length` are UTF-16 code
+//! unit offsets (same coordinate system as vscode positionAt); `line` is 1-based.
 //!
-//! 规则分两类:
-//! - 分析建议(analyzeDefDocument 面):幻影类型/缺 Type/重复 Type/大字段全体
-//!   广播/DetailLevel 冗余/Python 关键字/方法-属性同名/引擎受限名/继承链同名;
-//! - 结构校验(diagnostics.rs 语料子集面):未知 Type 引用/未知 Flags 值/
-//!   未知 DetailLevel/重复定义(旗标作用域 Warning+Info 成对)/属性缺 Flags。
+//! Rules come in two classes:
+//! - Analysis advice (analyzeDefDocument face): phantom types / missing Type /
+//!   duplicate Type / large-field broadcast to all clients / DetailLevel
+//!   redundancy / Python keywords / method-property name clashes /
+//!   engine-restricted names / inherited-chain name clashes;
+//! - Structural validation (diagnostics.rs corpus-subset face): unknown Type
+//!   references / unknown Flags values / unknown DetailLevel / duplicate
+//!   definitions (flag-scope pairs of Warning+Info) / properties missing Flags.
 //!
-//! 规则注册顺序稳定(registry 为 Vec),输出按规则序分组,不依赖 HashMap 序。
+//! Rule registration order is stable (registry is a Vec); output is grouped by
+//! rule order and does not depend on HashMap order.
 
 pub mod rules;
 
@@ -28,55 +34,59 @@ use kode_parser::xml::Document;
 use crate::rpc::RpcRegistry;
 
 // ---------------------------------------------------------------------------
-// Finding(与 TS DefAnalysisFinding 同形)
+// Finding (same shape as TS DefAnalysisFinding)
 // ---------------------------------------------------------------------------
 
-/// 一个 lint finding 的定位区间(UTF-16 码元,与 offset/length 同坐标系)。
+/// Location range of one lint finding (UTF-16 code units, same coordinate
+/// system as offset/length).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct RangeFace {
     pub offset: usize,
     pub length: usize,
 }
 
-/// 双向定位面(def↔Python 一致性规则用):目标 Python 文件 + 类名。
-/// 消费方(TS)据此构造 vscode.Diagnostic.relatedInformation 与 CodeAction 目标。
+/// Bidirectional location face (used by the def↔Python consistency rules):
+/// target Python file + class name. The consumer (TS) builds
+/// vscode.Diagnostic.relatedInformation and CodeAction targets from it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelatedFace {
-    /// 目标 Python 文件路径(平台路径)。
+    /// Target Python file path (platform path).
     pub file: String,
-    /// 目标 Python 类名(同名实体类)。
+    /// Target Python class name (entity class of the same name).
     pub class_name: String,
 }
 
-/// 一条 lint finding(与 TS `analyzeDefDocument` 输出同形;`code` 为
-/// `check` 的别名,`range` 为定位区间的自描述面,二者皆与 `check`/`offset`/
-/// `length` 冗余,仅供消费方按需取用,不影响 TS 直用)。
+/// One lint finding (same shape as the TS `analyzeDefDocument` output; `code`
+/// aliases `check`, and `range` is a self-describing location face — both are
+/// redundant with `check`/`offset`/`length`, offered for consumers to use as
+/// needed and harmless for direct TS consumption).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Finding {
     pub check: &'static str,
     pub code: &'static str,
     pub severity: &'static str,
-    /// 1 基行号(报告展示用)。
+    /// 1-based line number (for report display).
     pub line: usize,
-    /// 0 基 UTF-16 码元偏移(诊断定位用)。
+    /// 0-based UTF-16 code unit offset (for diagnostic location).
     pub offset: usize,
     pub length: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub message: String,
     pub range: RangeFace,
-    /// 双向定位面(def↔Python 一致性规则):目标 Python 文件 + 类名。
-    /// 其余规则不设(省略)。
+    /// Bidirectional location face (def↔Python consistency rules): target
+    /// Python file + class name. Other rules leave it unset (omitted).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub related: Option<RelatedFace>,
 }
 
 // ---------------------------------------------------------------------------
-// 继承链同名输入面(TS collectInheritedNames 的 JSON 形)
+// Inherited-chain name-clash input face (JSON form of TS collectInheritedNames)
 // ---------------------------------------------------------------------------
 
-/// 祖先闭包面上一个名字的声明聚合(跨祖先并集)。
+/// Declaration aggregate for one name on the ancestor-closure face (union
+/// across ancestors).
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct InheritedNameInfo {
@@ -88,31 +98,34 @@ pub struct InheritedNameInfo {
     pub method_sources: Vec<String>,
 }
 
-/// 名字 → 祖先声明聚合(analyzeDefDocument 的可选入参)。
+/// Name → ancestor declaration aggregate (optional input to analyzeDefDocument).
 pub type InheritedNames = BTreeMap<String, InheritedNameInfo>;
 
 // ---------------------------------------------------------------------------
-// def↔Python 一致性输入面(任务 C-19:def-method-missing-in-python 规则)
+// def↔Python consistency input face (task C-19: def-method-missing-in-python rule)
 // ---------------------------------------------------------------------------
 
-/// 单个方法段(base/cell/client)的 Python 侧上下文:该段属主文件 + 类内
-/// 已实现方法集合(做集合差的减数)。`python_file` 空 = 无法核验,该段不产
-/// finding(零误报口径)。
+/// Python-side context for a single method section (base/cell/client): the
+/// section's owner file + the set of methods implemented inside the class
+/// (the minuend of the set difference). Empty `python_file` = cannot verify,
+/// the section produces no finding (zero-false-positive discipline).
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PythonParitySection {
-    /// 该段属主 Python 文件路径(目标定位用)。
+    /// Owner Python file path of this section (for target location).
     pub python_file: String,
-    /// 该段 Python 类内已实现的方法名集合。
+    /// Set of method names implemented inside this section's Python class.
     pub implemented_methods: Vec<String>,
 }
 
-/// def↔Python 一致性检查输入(`pythonParity` 可选入参,TS 直传)。三段缺省
-/// 均可省(缺省段不核验);`python_class` 空 = 调用方未提供上下文,规则零产出。
+/// Input for the def↔Python consistency check (`pythonParity` optional input,
+/// passed through by TS). All three sections default to being omittable
+/// (omitted sections are not verified); empty `python_class` = the caller
+/// provided no context, the rule produces nothing.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PythonParityInput {
-    /// 目标 Python 实体类名(消息与定位用)。
+    /// Target Python entity class name (for messages and location).
     pub python_class: String,
     pub base: Option<PythonParitySection>,
     pub cell: Option<PythonParitySection>,
@@ -120,29 +133,32 @@ pub struct PythonParityInput {
 }
 
 // ---------------------------------------------------------------------------
-// 规则上下文与 trait
+// Rule context and trait
 // ---------------------------------------------------------------------------
 
-/// 规则执行的只读上下文:文档解析视图 + 原文 + 行映射 + 继承面 + 已知类型。
+/// Read-only context for rule execution: parsed document view + raw text +
+/// line map + inherited face + known types.
 #[derive(Debug)]
 pub struct RuleContext<'a> {
     pub text: &'a str,
     pub doc: &'a Document,
     pub line_map: &'a LineMap,
     pub inherited: &'a InheritedNames,
-    /// 已知类型并集(内建 ∪ 调用方提供的语料)。
+    /// Union of known types (builtins ∪ caller-provided corpus).
     pub known_types: &'a BTreeSet<String>,
-    /// def↔Python 一致性输入(C-19);缺省空 → parity 规则零产出。
+    /// def↔Python consistency input (C-19); defaults to empty → parity rules
+    /// produce nothing.
     pub python: PythonParityInput,
 }
 
-/// 一条 lint 规则:稳定 id + 对上下文产出 findings(规则内部自保序)。
+/// One lint rule: stable id + produces findings against the context (each rule
+/// keeps its own ordering).
 pub trait Rule {
     fn id(&self) -> &'static str;
     fn check(&self, ctx: &RuleContext) -> Vec<Finding>;
 }
 
-/// 规则注册表:顺序稳定(Vec),按注册序执行。
+/// Rule registry: order-stable (Vec), executed in registration order.
 pub struct RuleRegistry {
     rules: Vec<Box<dyn Rule>>,
 }
@@ -160,7 +176,8 @@ impl RuleRegistry {
         RuleRegistry { rules: Vec::new() }
     }
 
-    /// 追加一条规则;重复注册同一 id 是编程错误,panic 防静默覆盖。
+    /// Append one rule; registering the same id twice is a programming error —
+    /// panic to prevent silent override.
     pub fn push(&mut self, rule: Box<dyn Rule>) {
         assert!(
             !self.rules.iter().any(|r| r.id() == rule.id()),
@@ -178,7 +195,7 @@ impl RuleRegistry {
         self.rules.is_empty()
     }
 
-    /// 按注册序执行全部规则,聚合 findings。
+    /// Run all rules in registration order, aggregating findings.
     pub fn run(&self, ctx: &RuleContext) -> Vec<Finding> {
         let mut out = Vec::new();
         for rule in &self.rules {
@@ -194,7 +211,8 @@ impl Default for RuleRegistry {
     }
 }
 
-/// 全量规则注册表(def 分析建议 + 结构校验,注册序 = 稳定输出序)。
+/// Full rule registry (def analysis advice + structural validation;
+/// registration order = stable output order).
 pub fn all_rules() -> RuleRegistry {
     let mut reg = RuleRegistry::new();
     rules::register_all(&mut reg);
@@ -202,16 +220,18 @@ pub fn all_rules() -> RuleRegistry {
 }
 
 // ---------------------------------------------------------------------------
-// 命令面
+// Command face
 // ---------------------------------------------------------------------------
 
-/// 注册 `$/kode/lint/analyzeDef` 到通用 RPC 面(ServerState::new() 调用)。
+/// Register `$/kode/lint/analyzeDef` into the generic RPC face (called from
+/// ServerState::new()).
 pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/lint/analyzeDef", handle_analyze_def);
 }
 
-/// `$/kode/lint/analyzeDef` handler:入参 `{text, inheritedNames?, knownTypes?}`
-/// 出 `{findings:[...]}`。Err = 输入缺失/内部错误(TS 兜底回退路径)。
+/// `$/kode/lint/analyzeDef` handler: input `{text, inheritedNames?,
+/// knownTypes?}`, output `{findings:[...]}`. Err = missing input / internal
+/// error (TS fallback path).
 fn handle_analyze_def(params: Value) -> Result<Value, String> {
     let text = params
         .get("text")
@@ -235,8 +255,9 @@ fn handle_analyze_def(params: Value) -> Result<Value, String> {
     Ok(serde_json::json!({ "findings": findings }))
 }
 
-/// 对一份 .def 文本运行全量 lint 规则(与 RPC handler 同口径,供单测直用;
-/// Python 一致性输入缺省 → parity 规则零产出,既有调用方不变)。
+/// Run the full lint rule set over one .def text (same discipline as the RPC
+/// handler, for direct unit-test use; Python consistency input defaults to
+/// empty → parity rules produce nothing, existing callers unchanged).
 pub fn analyze_def(
     text: &str,
     inherited: &InheritedNames,
@@ -245,7 +266,8 @@ pub fn analyze_def(
     analyze_def_with_python(text, inherited, known_types, PythonParityInput::default())
 }
 
-/// 对一份 .def 文本运行全量 lint 规则,带 def↔Python 一致性输入(C-19)。
+/// Run the full lint rule set over one .def text, with def↔Python consistency
+/// input (C-19).
 pub fn analyze_def_with_python(
     text: &str,
     inherited: &InheritedNames,
@@ -254,7 +276,8 @@ pub fn analyze_def_with_python(
 ) -> Result<Vec<Finding>, String> {
     let doc = kode_parser::xml::parse(text, true);
     if doc.root().is_none() {
-        // 无根文档:TS analyzeDefDocument 早退空面,同口径。
+        // Rootless document: TS analyzeDefDocument early-returns an empty face,
+        // same discipline.
         return Ok(Vec::new());
     }
     let line_map = LineMap::new(text);
@@ -277,11 +300,11 @@ pub fn analyze_def_with_python(
 }
 
 // ---------------------------------------------------------------------------
-// finding 构造助手(规则共用)
+// Finding construction helpers (shared by rules)
 // ---------------------------------------------------------------------------
 
-/// 字节 span → UTF-16 码元偏移(与 vscode positionAt 同坐标系;span 为
-/// 字符边界,parser 产出保证)。
+/// Byte span → UTF-16 code unit offset (same coordinate system as vscode
+/// positionAt; spans are on char boundaries, guaranteed by the parser).
 pub(crate) fn byte_offset_to_utf16(text: &str, offset: usize) -> usize {
     let offset = offset.min(text.len());
     let mut count = 0usize;
@@ -296,7 +319,8 @@ pub(crate) fn byte_offset_to_utf16(text: &str, offset: usize) -> usize {
     count
 }
 
-/// 由字节 span 构造 finding:换算 UTF-16 offset/length 与 1 基行号。
+/// Build a finding from a byte span: converts UTF-16 offset/length and the
+/// 1-based line number.
 pub(crate) fn make_finding(
     check: &'static str,
     severity: &'static str,

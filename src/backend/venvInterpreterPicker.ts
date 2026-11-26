@@ -1,16 +1,20 @@
 /**
- * 解释器状态栏展示、QuickPick 选择与一键创建 venv(PY-ENV 二期)。
- * 状态栏项显示当前解释器(venv 名/版本/来源徽标 auto|configured|PATH|
- * missing),点击进 QuickPick:当前项打头(✓),其后是工作区发现的环境,
- * PATH 解释器,列表尾「创建新 venv…」。选中写入
- * kbengine.python.interpreterPath(workspace 级)即刻生效——解析链每次读
- * 实时配置,无需重载。创建流:选目录(默认 <root>/.venv)→ 基础解释器
- * (PATH 链)缺失如实提示绝不伪造 → 进度态跑 python -m venv → 完成后直接
- * 对目标验真(不依赖扫描范围)再自动选中;命令失败带 stderr、建出但验不过
- * 的环境绝不入选。
+ * Interpreter status-bar display, QuickPick selection, and one-click venv creation
+ * (PY-ENV phase 2). The status-bar item shows the current interpreter (venv name /
+ * version / source badge auto|configured|PATH|missing); clicking opens the QuickPick:
+ * the current item first (✓), then the environments discovered in the workspace, PATH
+ * interpreters, and at the end of the list "create a new venv…". A selection writes
+ * kbengine.python.interpreterPath (workspace level) and takes effect immediately — the
+ * resolution chain reads live configuration every time, no reload needed. Creation
+ * flow: pick a directory (defaults to <root>/.venv) → if the base interpreter (PATH
+ * chain) is missing, report honestly and never fabricate → run python -m venv in
+ * progress state → on completion, verify the target directly (independent of scan
+ * scope) and then select it automatically; command failures carry stderr, and an
+ * environment that was built but fails verification is never selected.
  *
- * 全部交互面依赖注入(showQuickPick/进度/spawn/设置写入),本模块不直接
- * import vscode——单测用内存替身;extension.ts 只做薄装配。
+ * All interaction faces are dependency-injected (showQuickPick / progress / spawn /
+ * settings write); this module does not import vscode directly — unit tests use
+ * in-memory stand-ins; extension.ts only does thin wiring.
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -25,7 +29,7 @@ import {
 import type { InterpreterResolution, InterpreterSource } from '../profileInterpreter';
 import { DEFAULT_VENV_DIRECTORY_NAMES } from './quickActionConfig';
 
-/** 状态栏/选择器的来源徽标:配置>自动>PATH,缺失明说 */
+/** Source badge for the status bar / picker: configured > auto > PATH, with missing stated plainly */
 export function interpreterSourceBadge(source: InterpreterSource): string {
   switch (source) {
     case 'setting':
@@ -39,27 +43,31 @@ export function interpreterSourceBadge(source: InterpreterSource): string {
   }
 }
 
-/** Python 解释器选择器状态栏项的属主扩展(2026-11-10 用户令,venv/Pylance
- * 去重):ms-python.python 在状态栏渲染解释器选择器,本扩展再显示一个相同
- * venv 是重复。 */
+/** Owning extension of the Python interpreter picker status-bar item (2026-11-10 user order, venv/Pylance
+ * dedup): ms-python.python already renders the interpreter picker in the status bar; showing the same
+ * venv from this extension too is a duplicate. */
 export const PYTHON_INTERPRETER_EXTENSION_ID = 'ms-python.python';
 
 /**
- * 解释器状态栏项是否应显示(venv/Pylance 去重;2026-11-17 收紧为安装即让位):
- * Python 扩展**已安装** → 隐藏本扩展的项;未安装 → 显示本扩展项。
+ * Whether the interpreter status-bar item should be shown (venv/Pylance dedup;
+ * tightened on 2026-11-17 to yield upon installation): the Python extension
+ * **installed** → hide this extension's item; not installed → show this extension's item.
  *
- * 为什么按安装而非 isActive 判:它是懒激活扩展,本扩展先激活时它多半还没
- * 激活——按 isActive 判我们先出镜,等它激活后状态栏双份,而
- * extensions.onDidChange 只在安装/卸载/启用/禁用发火(激活不发),补判无门。
- * 安装即让位=管理权在安装时就成立,从起初无双份窗口。纯决策,安装事实由
- * 调用方采集(getExtension(...) !== undefined),便于单测。隐藏时不丢功能:
- * 选择/创建 venv 仍经命令面板 kbengine.python.selectInterpreter / createVenv。
+ * Why install-based rather than isActive: it is a lazily activated extension, so when
+ * this extension activates first, it mostly has not activated yet — judging by
+ * isActive means we appear first, then after it activates the status bar shows both,
+ * while extensions.onDidChange only fires on install/uninstall/enable/disable (not on
+ * activation), leaving no hook to re-check. Yield-upon-install means ownership holds at
+ * install time, with no double-entry window from the start. Pure decision; the install
+ * fact is gathered by the caller (getExtension(...) !== undefined), which keeps unit
+ * tests easy. No functionality is lost while hidden: selecting/creating a venv still
+ * goes through the command palette kbengine.python.selectInterpreter / createVenv.
  */
 export function shouldShowInterpreterStatusBar(pythonExtensionInstalled: boolean): boolean {
   return !pythonExtensionInstalled;
 }
 
-/** 状态栏一行文案:$(python) <名> <版本>(徽标);缺失态明说 */
+/** Status-bar one-liner: $(python) <name> <version> (badge); the missing state is stated plainly */
 export function interpreterStatusBarText(
   resolution: InterpreterResolution,
   version?: string | null
@@ -69,11 +77,14 @@ export function interpreterStatusBarText(
   }
   const segments = resolution.interpreterPath.split(/[\\/]/);
   const last = segments[segments.length - 1] ?? resolution.interpreterPath;
-  // 环境布局(.../<env>/bin|Scripts/python*)独立于来源识别:选中的 venv 写进
-  // 设置后来源变 configured,状态栏仍要显示环境目录名,不能退化成 python。
-  // 但环境目录名只在确知是环境时顶上——来源=venv(工作区扫描已验真)或目录
-  // 名命中 venv 命名名单(.venv/venv/.kbenv);否则(/usr/bin/python3、/opt/py/
-  // bin/python 这类系统/裸路径)退回二进制名,不猜一个环境出来。
+  // The environment layout (.../<env>/bin|Scripts/python*) is independent of source
+  // identification: once a selected venv is written into settings its source becomes
+  // configured, and the status bar must still show the environment directory name, not
+  // degrade to python. But the environment directory name only takes over when the
+  // directory is known to be an environment — source = venv (already verified by the
+  // workspace scan) or the directory name hits the venv naming list (.venv/venv/.kbenv);
+  // otherwise (/usr/bin/python3, /opt/py/bin/python and the like — system/bare paths)
+  // fall back to the binary name rather than guessing an environment into existence.
   const parent = segments[segments.length - 2];
   const inEnvLayout = parent === 'bin' || parent === 'Scripts';
   const parentDirName = segments[segments.length - 3];
@@ -86,26 +97,26 @@ export function interpreterStatusBarText(
   return `$(python) ${name}${versionPart} (${interpreterSourceBadge(resolution.interpreterSource)})`;
 }
 
-/** QuickPick 单条目(测试与装配共用形状) */
+/** A single QuickPick item (shape shared by tests and wiring) */
 export interface InterpreterPickItem {
   label: string;
   description?: string;
   detail?: string;
-  /** 该条对应要写入的设置值;create 条目无 */
+  /** The settings value to write for this item; absent for the create item */
   interpreterPath?: string;
-  /** 当前生效项(✓ 打头) */
+  /** Currently active item (✓ first) */
   current?: boolean;
-  /** 工作区发现的环境 */
+  /** Environment discovered in the workspace */
   venv?: DiscoveredVenv;
-  /** PATH 解释器条目 */
+  /** PATH interpreter item */
   pathEntry?: boolean;
-  /** 「创建新 venv…」条目 */
+  /** The "create a new venv…" item */
   create?: boolean;
 }
 
 export const VENV_CREATE_ITEM_LABEL = l10nText('$(add) Create a new venv…');
 
-/** 选择器条目组装(纯函数):当前 → 发现的环境 → PATH → 创建 */
+/** Picker item assembly (pure function): current → discovered environments → PATH → create */
 export function buildInterpreterPickItems(inputs: {
   current: InterpreterResolution;
   discovered: DiscoveredVenv[];
@@ -142,8 +153,8 @@ export function buildInterpreterPickItems(inputs: {
 }
 
 export interface SelectInterpreterDeps {
-  /** 同步或异步都收(异步面=KODE-RESP-010 缓存发现;热值即时返回,冷值在途
-   * 扫描不卡主线程),调用处无需区分 */
+  /** Accepts both sync and async (the async face = KODE-RESP-010 cached discovery; a hot value returns
+   * immediately, a cold value's in-flight scan never blocks the main thread), so callers need not distinguish */
   current: () => InterpreterResolution | Promise<InterpreterResolution>;
   discovered: () => DiscoveredVenv[] | Promise<DiscoveredVenv[]>;
   pathInterpreter: () => string | null;
@@ -154,10 +165,12 @@ export interface SelectInterpreterDeps {
 }
 
 /**
- * 选择命令体:选中环境 → 写 kbengine.python.interpreterPath(即刻生效,
- * 解析链读实时配置);Esc 零写入;「创建新 venv…」转创建流。current/discovered
- * 允许异步——装配处接缓存异步发现(KODE-RESP-010)后,列表先出已有候选
- * (缓存热值),冷启动也只有一段带预算的异步扫描,不卡命令线程。
+ * Select command body: pick an environment → write kbengine.python.interpreterPath
+ * (effective immediately; the resolution chain reads live configuration); Esc writes
+ * nothing; the "create a new venv…" item switches to the creation flow. current/
+ * discovered may be async — once the wiring layer hooks the cached async discovery
+ * (KODE-RESP-010), the list first shows existing candidates (hot cache values), and a
+ * cold start only runs one budgeted async scan, never blocking the command thread.
  */
 export async function selectInterpreter(
   deps: SelectInterpreterDeps
@@ -192,30 +205,33 @@ export async function selectInterpreter(
 export interface CreateVenvDeps {
   workspaceRoot: string | undefined;
   /**
-   * 选放置 venv 的父目录(对话框只能选已存在的目录,默认工作区根);
-   * null=用户取消。目标目录固定为所选父目录下的 .venv(python -m venv
-   * 自己落目录,不要求父目录里预先存在 .venv)。
+   * Pick the parent directory to place the venv in (the dialog can only pick an
+   * existing directory, defaults to the workspace root);
+   * null = user canceled. The target directory is fixed to .venv under the picked
+   * parent (python -m venv creates the directory itself; the parent is not required to
+   * already contain a .venv).
    */
   pickTargetParentDir: (defaultDir: string) => Promise<string | null>;
-  /** 基础解释器(设置存在才采用 → PATH 链);null=缺失(如实提示,绝不伪造) */
+  /** Base interpreter (settings value adopted only when present → PATH chain); null = missing (report honestly, never fabricate) */
   baseInterpreter: () => string | null;
-  /** 目标目录已存在且非空(占用,拒绝创建) */
+  /** The target directory exists and is non-empty (occupied; refuse to create) */
   targetDirectoryExistsNonEmpty: (dir: string) => boolean;
-  /** 进度态里跑 python -m venv(异步,不阻塞扩展宿主) */
+  /** Run python -m venv in progress state (async, does not block the extension host) */
   runVenvModule: (
     baseInterpreterPath: string,
     targetDir: string
   ) => Promise<{ exitCode: number | null; stderr: string }>;
-  /** 创建后直接对目标目录验真(不依赖扫描范围;null=验不过) */
+  /** Verify the target directory directly after creation (independent of scan scope; null = fails verification) */
   verifyTarget: (dir: string) => string | null;
   writeInterpreterSetting: (value: string | null) => Promise<void>;
   report: (message: string) => Promise<void>;
 }
 
 /**
- * 创建流:选父目录 → 占用预检 → 基础解释器缺失如实拒绝 → python -m venv
- * (失败带 stderr)→ 目标直接验真 → 自动选中写入设置。每一步失败都明说
- * 原因,不伪造成功。
+ * Creation flow: pick a parent directory → occupancy precheck → refuse honestly when
+ * the base interpreter is missing → python -m venv (failures carry stderr) → verify the
+ * target directly → select it automatically and write the setting. Every step states
+ * its failure reason plainly; success is never fabricated.
  */
 export async function createVenvFlow(deps: CreateVenvDeps): Promise<'created' | null> {
   if (!deps.workspaceRoot) {
@@ -250,9 +266,10 @@ export async function createVenvFlow(deps: CreateVenvDeps): Promise<'created' | 
     );
     return null;
   }
-  // 创建后直接对目标验真(环境证据 + 解释器二进制),不依赖扫描范围——
-  // 目标在扫描深度之外也照常选用;验不过(缺 pyvenv.cfg 或二进制)如实
-  // 报告,绝不把没验证的路径写进设置。
+  // Verify the target directly after creation (environment evidence + interpreter
+  // binary), independent of scan scope — the target is selected as usual even when it
+  // sits beyond the scan depth; a verification failure (missing pyvenv.cfg or binary)
+  // is reported honestly; an unverified path is never written into settings.
   const interpreterPath = deps.verifyTarget(target);
   if (!interpreterPath) {
     await deps.report(
@@ -268,7 +285,7 @@ export async function createVenvFlow(deps: CreateVenvDeps): Promise<'created' | 
   return 'created';
 }
 
-/** 异步跑一个进程,collect stdout/stderr,超时 kill;不阻塞扩展宿主 */
+/** Run a process asynchronously, collect stdout/stderr, kill on timeout; does not block the extension host */
 const runProcess = (
   file: string,
   args: string[],
@@ -294,8 +311,9 @@ const runProcess = (
     child.on('close', code => finish(code, stderrTail));
   });
 
-/** 真实依赖侧:进度态里跑 python -m venv(异步,超时 kill);onSpawn 供
- * withProgress 取消令牌接子进程柄(RUST-222,取消=kill,半成品由验真面如实拒) */
+/** Real dependency side: run python -m venv in progress state (async, kill on timeout); onSpawn lets the
+ * withProgress cancel token take the child-process handle (RUST-222, cancel = kill; the half-built result is
+ * honestly rejected by the verification face) */
 export const runVenvModuleProcess = (
   base: string,
   target: string,
@@ -303,7 +321,7 @@ export const runVenvModuleProcess = (
 ): Promise<{ exitCode: number | null; stderr: string }> =>
   runProcess(base, ['-m', 'venv', target], 300_000, onSpawn);
 
-/** 真实依赖侧:异步探 <python> --version(5s 超时);失败如实 null */
+/** Real dependency side: probe <python> --version asynchronously (5s timeout); failure honestly returns null */
 export const probePythonVersion = async (interpreterPath: string): Promise<string | null> => {
   try {
     const output = await new Promise<string>((resolve, reject) => {
@@ -326,5 +344,5 @@ export const probePythonVersion = async (interpreterPath: string): Promise<strin
   }
 };
 
-/** 真实依赖侧:扫描工作区根(导出转发,便于装配处单一 import) */
+/** Real dependency side: scan the workspace root (re-export so the wiring layer has a single import) */
 export const scanWorkspaceVenvs = scanVenvs;

@@ -1,17 +1,17 @@
-//! Python 词法掩码(AUDIT-005 B2 车道批 2;TS 源 =
-//! src/backend/pythonLexicalMask.ts,逐语义忠实移植)。
+//! Python lexical mask (AUDIT-005 B2 lane batch 2; TS source =
+//! src/backend/pythonLexicalMask.ts, a faithful port preserving each semantic).
 //!
-//! 一次全文扫描:注释与字符串字面量(普通/三引号/原始/字节前缀)替换为
-//! 同长度空白,f-string 的 `{...}` 表达式部分保留为可见代码、字面量部分
-//! 掩掉。掩码保长保行(换行不掩),所有列偏移不变。词元 = ASCII `[A-Za-z0-9_]`
-//! (JS `\w` 无 u 标志 = ASCII;Rust regex 默认 Unicode 语义不同,故手写)。
+//! One full-text scan: comments and string literals (plain/triple-quoted/raw/byte-prefixed) are replaced with
+//! same-length whitespace; an f-string's `{...}` expression parts stay as visible code while the literal parts
+//! are masked. The mask preserves length and lines (newlines are not masked), so all column offsets are unchanged. Word chars = ASCII `[A-Za-z0-9_]`
+//! (JS `\w` without the u flag = ASCII; Rust regex defaults to different Unicode semantics, hence hand-written).
 //!
-//! 产物为 UTF-16 码元(`Vec<u16>`):TS 的 `match.index` 是 UTF-16 码元列
-//! (JS 字符串按码元索引,`split('')` 亦按码元),对拍需同基底;非 ASCII
-//! 字符(中文注释/字符串)按码元掩空白(码元 ≥0x80 非词元非点,不影响
-//! `self.` 匹配,只作边界),字节计数不可用(多字节漂移)。
+//! The product is UTF-16 code units (`Vec<u16>`): TS's `match.index` is a UTF-16 code-unit column
+//! (JS strings index by code unit, and `split('')` also splits by code unit), so comparison needs the same base; non-ASCII
+//! characters (Chinese comments/strings) are masked as whitespace per code unit (a code unit >=0x80 is neither a word char nor a dot, so it does not affect
+//! `self.` matching, only acts as a boundary); byte counting is unusable (multi-byte drift).
 
-/// ASCII 词元(JS `\w`;trap 族共用判定,单源语义;码元常量 = a-z/A-Z/0-9/_)
+/// ASCII word char (JS `\w`; shared decision for the trap family, single-source semantics; code-unit constants = a-z/A-Z/0-9/_)
 pub(crate) fn is_word(code: u16) -> bool {
     matches!(code, 0x61..=0x7A | 0x41..=0x5A | 0x30..=0x39 | 0x5F)
 }
@@ -20,12 +20,12 @@ fn is_quote(code: u16) -> bool {
     code == b'"' as u16 || code == b'\'' as u16
 }
 
-/// text[at..] 是否以 `quote` 重复 `count` 次开头(含边界)
+/// Whether text[at..] starts with `quote` repeated `count` times (boundary inclusive)
 fn quote_run_at(text: &[u16], at: usize, quote: u16, count: usize) -> bool {
     at + count <= text.len() && text[at..at + count].iter().all(|&code| code == quote)
 }
 
-/// 引号前的字符串前缀(如 r/f/rb/fr;非前缀字母串(如标识符)返回空串)
+/// String prefix before the quote (e.g. r/f/rb/fr; a non-prefix letter string such as an identifier returns the empty string)
 fn string_prefix_before(text: &[u16], quote_index: usize) -> &[u16] {
     let mut start = quote_index;
     while start > 0 && is_word(text[start - 1]) {
@@ -43,16 +43,16 @@ fn string_prefix_before(text: &[u16], quote_index: usize) -> &[u16] {
     }
 }
 
-/// f-string 判定(TS `/f/i.test(prefix)`;无前缀 = 非 f)
+/// f-string decision (TS `/f/i.test(prefix)`; no prefix = not an f-string)
 fn is_fstring(text: &[u16], quote_index: usize) -> bool {
     string_prefix_before(text, quote_index)
         .iter()
         .any(|&code| matches!(code as u8, b'f' | b'F'))
 }
 
-/// 掩掉 text[start..] 起的一个字符串字面量(含引号),返回结束后的下标。
-/// f-string:字面量部分掩掉,遇 `{`(非 `{{`)进入表达式段——表达式段保持
-/// 可见,内嵌字符串/注释递归掩掉,配对 `}` 回到字面量段。
+/// Mask one string literal starting at text[start..] (quotes included), returning the index after it ends.
+/// f-string: the literal part is masked; on `{` (not `{{`) enter the expression section -- the expression section stays
+/// visible; nested strings/comments are masked recursively; a matching `}` returns to the literal section.
 fn mask_string_at(text: &[u16], out: &mut [u16], start: usize) -> usize {
     let n = text.len();
     let quote = text[start];
@@ -111,7 +111,7 @@ fn mask_string_at(text: &[u16], out: &mut [u16], start: usize) -> usize {
             i += 1;
             continue;
         }
-        // 普通字符串:掩到结束引号/行尾(转义成对跳过)
+        // Plain string: mask up to the closing quote / end of line (escaped pairs skipped)
         if code == b'\\' as u16 {
             blank(text, out, i, i + 2);
             i += 2;
@@ -119,7 +119,7 @@ fn mask_string_at(text: &[u16], out: &mut [u16], start: usize) -> usize {
         }
         if code == quote {
             if triple && !quote_run_at(text, i, quote, 3) {
-                blank(text, out, i, i + 1); // 三引号串内的单引号,掩 1 字符继续
+                blank(text, out, i, i + 1); // single quote inside a triple-quoted string, mask 1 char and continue
                 i += 1;
                 continue;
             }
@@ -127,7 +127,7 @@ fn mask_string_at(text: &[u16], out: &mut [u16], start: usize) -> usize {
             return i + open_len;
         }
         if !triple && (code == b'\n' as u16 || code == b'\r' as u16) {
-            return i; // 未闭合单引号串终止于行尾(换行不掩)
+            return i; // unclosed single-quoted string ends at end of line (newline not masked)
         }
         blank(text, out, i, i + 1);
         i += 1;
@@ -135,7 +135,7 @@ fn mask_string_at(text: &[u16], out: &mut [u16], start: usize) -> usize {
     n
 }
 
-/// 掩 [from..to)(换行/回车不掩,保行)
+/// Mask [from..to) (newline/CR not masked, preserving lines)
 fn blank(text: &[u16], out: &mut [u16], from: usize, to: usize) {
     let end = to.min(text.len());
     for k in from..end {
@@ -145,7 +145,7 @@ fn blank(text: &[u16], out: &mut [u16], from: usize, to: usize) {
     }
 }
 
-/// 顶层代码段掩一行内注释(到行尾)
+/// Mask a comment within one line in top-level code (to end of line)
 fn mask_comment_at(text: &[u16], out: &mut [u16], start: usize) -> usize {
     let n = text.len();
     let mut j = start;
@@ -160,7 +160,7 @@ fn mask_comment_at(text: &[u16], out: &mut [u16], start: usize) -> usize {
     j
 }
 
-/// 全文一次扫描产出掩码(UTF-16 码元,与输入等码元长,换行原样保留)。
+/// One full-text scan produces the mask (UTF-16 code units, same code-unit length as the input, newlines preserved as-is).
 pub fn mask_python_non_code(text: &str) -> Vec<u16> {
     let original: Vec<u16> = text.encode_utf16().collect();
     let mut out = original.clone();
@@ -221,7 +221,7 @@ mod tests {
         assert!(masked.contains("x = 1 "));
         assert!(!masked.contains("comment"));
         assert!(!masked.contains("a,b"));
-        // f-string 表达式段可见
+        // f-string expression section visible
         assert!(masked.contains("value"));
         assert!(!masked.contains("lit"));
     }
@@ -236,35 +236,35 @@ mod tests {
 
     #[test]
     fn masks_non_ascii_without_panic_and_preserves_code() {
-        // 非 ASCII(中文注释/字符串)按码元掩空白,不 panic、不漂移
+        // Non-ASCII (Chinese comments/strings) masked as whitespace per code unit, no panic, no drift
         let text = "# 中文注释 self.velocity\nprint('速度', self.position)\n";
         let masked = to_string(&mask_python_non_code(text));
         assert!(!masked.contains("velocity"));
-        // 可见代码自访问保留
+        // Visible-code self-access preserved
         assert!(masked.contains("self.position"));
     }
 
-    /// f-string 深臂:{{ 字面转义/表达式内注释/内嵌字符串/字面段反斜杠
-    /// 转义/表达式嵌套大括号——字面段全掩,表达式段代码可见、非代码递归掩。
+    /// f-string deep arm: {{ literal escapes / comments inside expressions / nested strings / literal-section backslash
+    /// escapes / nested braces in expressions -- the literal section is fully masked; in the expression section code stays visible and non-code is masked recursively.
     #[test]
     fn masks_fstring_literal_escapes_and_nested_expression_faces() {
         let text = "d = f\"{{lit}} {a # note\n} {'k'} \\t { {'x': 1} } tail\"\n";
         let masked = to_string(&mask_python_non_code(text));
-        // 字面段与转义全掩
+        // Literal section and escapes fully masked
         assert!(!masked.contains("lit"));
         assert!(!masked.contains("note"), "comment inside f-expr masked");
         assert!(!masked.contains("k"), "nested string inside f-expr masked");
         assert!(!masked.contains("x"), "string in nested braces masked");
         assert!(!masked.contains("tail"));
-        // 表达式段代码可见
+        // Expression section code visible
         assert!(masked.contains("a"), "f-expr code stays visible");
         assert!(masked.contains("1"), "nested dict value stays visible");
-        // 码元长度守恒
+        // Code-unit length conserved
         assert_eq!(masked.encode_utf16().count(), text.encode_utf16().count());
     }
 
-    /// 普通字符串深臂:转义对/三引号内嵌单引号/非法前缀引号/未闭合到
-    /// 行尾与到 EOF——换行保留、后续代码不误伤。
+    /// Plain-string deep arm: escape pairs / single quotes nested in triple quotes / quotes with illegal prefixes / unclosed to
+    /// end of line and to EOF -- newlines preserved, following code not collateral-damaged.
     #[test]
     fn masks_plain_escapes_embedded_quotes_and_unterminated_strings() {
         let text = concat!(
@@ -294,7 +294,7 @@ mod tests {
             "unterminated masks to EOL"
         );
         assert!(masked.contains("z = 1"), "next line unaffected");
-        // 无尾换行的未闭合串:掩到 EOF,不越界不 panic。
+        // Unclosed string without a trailing newline: mask to EOF, no out-of-bounds, no panic.
         let eof_text = "x = \"abc";
         let eof_masked = to_string(&mask_python_non_code(eof_text));
         assert!(!eof_masked.contains("abc"));

@@ -1,14 +1,21 @@
-// 最终配置注释文案库(用户令:final XML config 增强——按子分类 + 逐项作用注释)。
+// Final-config comment doc library (user order: enhanced final XML config —
+// sub-categorization plus per-item effect comments).
 //
-// 数据文件(便于维护,文案与分组全部集中在这里,渲染侧不写字):
-// - kbe/res/server/kbengine_defaults.xml 引擎自带的双语注释逐条收割,source 即该
-//   注释所在行(取证锚点);引擎没写注释的键人工补齐,source 指向引擎读取点
-//   kbe/src/lib/server/serverconfig.cpp 等源码行,均不虚构语义;
-// - 分组主轴:顶层段即进程(kbengine_defaults.xml 段名 = 进程名,serverconfig.cpp
-//   逐段 getRootNode 读取),故段内子分类取功能轴(network/db/log/...)。
+// Data file (for maintainability, all copy and grouping lives here; the render
+// side writes none):
+// - kbe/res/server/kbengine_defaults.xml's engine-shipped bilingual comments are
+//   harvested one by one; source is the line that comment sits on (the evidence
+//   anchor). Keys the engine did not comment are filled in manually, with source
+//   pointing at the engine's read sites, kbe/src/lib/server/serverconfig.cpp and
+//   other source lines — semantics are never fabricated;
+// - the grouping axis: a top-level section is a process (kbengine_defaults.xml
+//   section names = process names, read section by section by serverconfig.cpp's
+//   getRootNode), so in-section sub-categorization uses the functional axis
+//   (network/db/log/...).
 //
-// 每条目:zh/en 双语必填,source 必填(取证),group 见 SERVER_CONFIG_GROUP_ORDER。
-// 查不到的配置项一律落到 custom 子分类并标「未识别」。
+// Per entry: zh/en bilingual required, source required (evidence), group per
+// SERVER_CONFIG_GROUP_ORDER. Config items not found fall into the custom
+// sub-category and are marked "unrecognized".
 
 export type ServerConfigGroup =
   | 'process'
@@ -24,13 +31,13 @@ export type ServerConfigGroup =
   | 'general'
   | 'custom';
 
-/** 子分类展示名(zh/en 按 VS Code 显示语言取用) */
+/** Sub-category display names (zh/en selected by the VS Code display language) */
 export interface ServerConfigGroupMeta {
   zh: string;
   en: string;
 }
 
-/** 子分类表:渲染注释时的「【分类】」标签与排序依据 */
+/** Sub-category table: the [category] label used when rendering comments and the sort basis */
 export const SERVER_CONFIG_GROUPS: Record<ServerConfigGroup, ServerConfigGroupMeta> = {
   process: { zh: "进程与启动", en: "Process & Startup" },
   net: { zh: "网络与连接", en: "Network & Transport" },
@@ -46,7 +53,7 @@ export const SERVER_CONFIG_GROUPS: Record<ServerConfigGroup, ServerConfigGroupMe
   custom: { zh: "自定义配置(未识别)", en: "Custom (unrecognized)" },
 };
 
-/** 子分类排序(自定义配置永远排最后,读者先看引擎认识的项) */
+/** Sub-category ordering (custom config always last, so readers see engine-known items first) */
 export const SERVER_CONFIG_GROUP_ORDER: readonly ServerConfigGroup[] = [
   'process',
   'net',
@@ -62,21 +69,22 @@ export const SERVER_CONFIG_GROUP_ORDER: readonly ServerConfigGroup[] = [
   'custom'
 ];
 
-/** 单条配置项的作用说明(双语 + 取证 + 子分类) */
+/** One config item's effect description (bilingual + evidence + sub-category) */
 export interface ServerConfigItemDoc {
-  /** 中文作用说明 */
+  /** Chinese effect description */
   zh: string;
   /** English description */
   en: string;
-  /** 取证来源:引擎配置文件/源码的 file:line(或区间) */
+  /** Evidence source: file:line (or range) in the engine config file/source */
   source: string;
-  /** 功能子分类 */
+  /** Functional sub-category */
   group: ServerConfigGroup;
 }
 
 /**
- * 配置项文案库:键为去掉配置根(<root>/<defaults> 等包裹段)后的点分路径,
- * 如 `baseapp.archivePeriod`、`trace_packet.disables`。
+ * Config-item doc library: keys are dotted paths after stripping the config root
+ * (the <root>/<defaults> wrapper sections), e.g. `baseapp.archivePeriod`,
+ * `trace_packet.disables`.
  */
 export const SERVER_CONFIG_ITEM_DOCS: Readonly<Record<string, ServerConfigItemDoc>> = {
   "baseapp": { zh: "baseapp 进程:管理 base 实体、备份存档与客户端登录转发", en: "baseapp process: owns base entities, backup/archiving and client login forwarding", source: "kbe/res/server/kbengine_defaults.xml:588-716", group: 'process' },
@@ -335,8 +343,10 @@ export const SERVER_CONFIG_ITEM_DOCS: Readonly<Record<string, ServerConfigItemDo
 };
 
 /**
- * 找不到含义的自定义配置项(kbengine.xml 里自加、引擎默认配置与文档都没有)统一
- * 归入「自定义配置」子分类并标注「未识别」——不猜语义。
+ * Custom config items whose meaning cannot be found (added by hand in
+ * kbengine.xml, absent from both the engine defaults and the docs) are uniformly
+ * grouped into the "custom config" sub-category and marked "unrecognized" —
+ * semantics are never guessed.
  */
 export const SERVER_CONFIG_UNKNOWN_DOC: ServerConfigItemDoc = {
   zh: '未在 KBEngine 引擎默认配置(kbe/res/server/kbengine_defaults.xml)与官方文档中找到该项,含义未识别;如需说明请补进文案库 src/serverConfigCatalog.ts',
@@ -345,12 +355,12 @@ export const SERVER_CONFIG_UNKNOWN_DOC: ServerConfigItemDoc = {
   group: 'custom'
 };
 
-/** VS Code 显示语言是否中文(zh-cn/zh-tw/... 均按中文出注释,对齐 summaryForLanguage) */
+/** Whether the VS Code display language is Chinese (zh-cn/zh-tw/... all emit Chinese comments, aligned with summaryForLanguage) */
 export function isZhConfigLanguage(language: string | undefined): boolean {
   return (language ?? '').toLowerCase().startsWith('zh');
 }
 
-/** 按显示语言取文案;该语言缺位时回落另一种语言(不返回空串) */
+/** Take the copy by display language; fall back to the other language when this one is missing (never returning an empty string) */
 export function configItemDocBody(
   doc: Pick<ServerConfigItemDoc, 'zh' | 'en'>,
   language: string | undefined
@@ -361,9 +371,11 @@ export function configItemDocBody(
   return doc.en || doc.zh;
 }
 
-// 裸键索引:只收录「末段在库内唯一」的键,供无包裹段的解析路径回落(与
-// serverConfigHover 的 `段.标签` → `标签` 查表口径一致;歧义键不收,宁可判
-// 未识别也不张冠李戴)。
+// Bare-key index: only keys whose final segment is unique in the library are
+// included, for the fallback path of resolutions with no wrapper section (the
+// same table lookup contract as serverConfigHover's `section.label` →
+// `label`; ambiguous keys are not included — better ruled unrecognized than
+// mismatched).
 const BARE_NAME_INDEX: Readonly<Record<string, ServerConfigItemDoc>> = (() => {
   const count = new Map<string, number>();
   for (const key of Object.keys(SERVER_CONFIG_ITEM_DOCS)) {
@@ -381,8 +393,9 @@ const BARE_NAME_INDEX: Readonly<Record<string, ServerConfigItemDoc>> = (() => {
 })();
 
 /**
- * 按节点路径查文案:先查整路径,再查去掉配置根段的路径,最后查无歧义裸键。
- * 三段都落空返回 null(调用方按「自定义配置·未识别」处理)。
+ * Look up the doc by node path: the full path first, then the path with the
+ * config-root segment stripped, finally the unambiguous bare key. All three
+ * missing → null (the caller treats it as "custom config, unrecognized").
  */
 export function findServerConfigItemDoc(pathSegments: readonly string[]): ServerConfigItemDoc | null {
   if (pathSegments.length === 0) {

@@ -1,51 +1,59 @@
 /**
- * RPC 方法标记(批126 用户令:Python 实现里看不出哪些函数是 def 声明的 RPC)
+ * RPC method CodeLens (batch 126 user order: one cannot tell from a Python
+ * implementation which functions are RPCs declared in the .def)
  *
- * 纯逻辑层,不 import vscode。Python 实现脚本里每个 def 声明行交给外部
- * 解析器判定是否命中实体 def 的方法声明(数据源 EntityMappingManager 的
- * owner-aware 方法索引,与 F12 反向跳转同源);命中才产出一行 CodeLens,
- * 未在 def 声明的普通函数不出 lens——这就是"哪些是 RPC"的视觉分界。
- * 解析回包与 lens 规格交 languageProviders 装配成 vscode.CodeLens。
+ * Pure logic layer, does not import vscode. Each def declaration line in a
+ * Python implementation script is handed to the external resolver to decide
+ * whether it hits an entity-def method declaration (the data source is
+ * EntityMappingManager's owner-aware method index, same source as the F12
+ * reverse jump); only hits produce a CodeLens line, plain functions not declared
+ * in the def produce no lens — that is the visual boundary of "which are RPCs".
+ * The resolver reply and lens specs are assembled into vscode.CodeLens by
+ * languageProviders.
  *
- * 已知边界(收窄后口径):同名命中不分实现归属的历史问题,已由形参闸门
- * 兜住主要误标面——def 声明了 <Arg> 时,被标 lens 的 python def 行必须与
- * 声明形参个数相等、有注解的类型对得上(闸门本体
- * EntityMappingManager.pythonSignatureMatchesDeclaredArgs,与全项目回退
- * 扫描同源),不符则该行不出 lens;闭包脚本里与某实体 def 声明同名且恰好
- * 同签名的辅助函数仍会出 lens(未声明 <Arg> 的方法维持按名命中现状)。
+ * Known boundaries (post-narrowing contract): the historical problem of
+ * name-only hits not attributing the implementation is mostly contained by the
+ * parameter gate — when the def declares <Arg>, the python def line carrying the
+ * lens must have the same number of parameters and matching annotated types
+ * (the gate itself is
+ * EntityMappingManager.pythonSignatureMatchesDeclaredArgs, same source as the
+ * project-wide fallback scan); otherwise the line gets no lens; helper functions
+ * inside closure scripts that share a name and coincidentally the same signature
+ * with some entity def declaration still get a lens (methods without a declared
+ * <Arg> keep the name-only match status quo).
  */
 
 import { DefMethodSection } from './defParser';
 
-/** def 声明行解析结果(不依赖 vscode 的位置口径) */
+/** Parsed def declaration line (position contract without a vscode dependency) */
 export interface PythonMethodDeclaration {
-  /** 文档行(0 起) */
+  /** Document line (0-based) */
   line: number;
-  /** 方法名在声明行内的起始列(0 起) */
+  /** Start column of the method name within the declaration line (0-based) */
   character: number;
   methodName: string;
 }
 
-/** 一个 def 方法声明命中(CodeLens 展示与跳转所需的最小面) */
+/** One def method declaration hit (the minimum face CodeLens display and jump need) */
 export interface RpcMethodHit {
   methodName: string;
   section: DefMethodSection;
-  /** 声明所在 def 文件 */
+  /** The def file where it is declared */
   defFile: string;
-  /** 声明行(1 起,与 entityMapping 的 EntityMethodDefinitionLocation 同口径) */
+  /** Declaration line (1-based, same contract as entityMapping's EntityMethodDefinitionLocation) */
   defLine: number;
-  /** 声明为 Exposed(客户端可请求) */
+  /** Declared Exposed (requestable by the client) */
   exposed: boolean;
 }
 
-/** 一行 CodeLens 的装配规格(provider 层据此构造 vscode.CodeLens) */
+/** Assembly spec of one CodeLens line (the provider layer builds vscode.CodeLens from it) */
 export interface RpcCodeLensSpec {
   declaration: PythonMethodDeclaration;
   hit: RpcMethodHit;
   title: string;
 }
 
-/** Python 方法声明:`def name(` 与 `async def name(`,行首允许任意缩进 */
+/** Python method declaration: `def name(` and `async def name(`, arbitrary leading indent allowed */
 export const METHOD_DECLARATION_PATTERN = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
 
 export function findPythonMethodDeclarations(text: string): PythonMethodDeclaration[] {
@@ -65,10 +73,10 @@ export function findPythonMethodDeclarations(text: string): PythonMethodDeclarat
   return declarations;
 }
 
-/** lens 标题:`RPC · <区块>`,声明为 Exposed 与来源 def 名分列其后 */
+/** Lens title: `RPC · <section>`, followed by the Exposed flag and the source def name */
 export function defaultRpcCodeLensTitle(hit: RpcMethodHit): string {
   const exposure = hit.exposed ? ' · Exposed' : '';
-  // def 路径可能来自 Windows 工程(`\` 分隔),按两种分隔符取 basename
+  // The def path may come from a Windows project (`\` separators); take the basename by both separators
   const segments = hit.defFile.split(/[\\/]/);
   return `RPC · ${hit.section}${exposure} · ${segments[segments.length - 1]}`;
 }

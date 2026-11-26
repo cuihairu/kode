@@ -1,31 +1,36 @@
 /**
- * 运行时 revision 的证据来源标签(IDE-HOT-008):三类证据各自带来源标
- * 签——fileHash(本地对文件内容重算的哈希)/semanticHash(结构指纹)/
- * engineDigest(运行时回执报告的 digest),展示逐条点名不混叫。跨类
- * 不比较:即便 fileHash 与 engineDigest 的值巧合相同也不判「一致」
- * (本地哈希不能冒充运行时证据);同类值比对是协议内验证手段(HOT-004
- * 的 digest 重算即 fileHash 证据的用途),跨类只各自展示。证据集合报
- * 告只列实际提供的种类,缺的种类不填空不冒充。
+ * Evidence source labels for runtime revision (IDE-HOT-008): the three kinds
+ * of evidence each carry a source label -- fileHash (a hash recomputed locally
+ * over the file content) / semanticHash (the structural fingerprint) /
+ * engineDigest (the digest reported by the runtime receipt), displayed one by
+ * one with named sources and never mixed up. Kinds are never compared across
+ * categories: even if a fileHash and an engineDigest value coincidentally
+ * match, they are never judged "identical" (a local hash cannot masquerade
+ * as runtime evidence); comparing same-kind values is an in-protocol
+ * verification means (HOT-004's digest recomputation is the very use of
+ * the fileHash evidence), and across categories each is just displayed. An
+ * evidence-set report only lists the kinds actually provided, and a missing
+ * kind is neither padded nor faked.
  */
 
 export type HotReloadRevisionEvidenceKind = 'fileHash' | 'semanticHash' | 'engineDigest';
 
 export interface HotReloadRevisionEvidence {
   kind: HotReloadRevisionEvidenceKind;
-  /** 完整指纹值(hex),展示面截断、存取面全量 */
+  /** Full fingerprint value (hex); the display surface truncates it, the store surface keeps it whole */
   value: string;
-  /** 来源说明(谁算的/从哪来) */
+  /** Source description (who computed it / where it came from) */
   origin: string;
 }
 
-/** 三类标签各自点名来源,不共用笼统说法 */
+/** The three labels each name their own source; no catch-all shared phrasing */
 export const revisionEvidenceLabel: Record<HotReloadRevisionEvidenceKind, string> = {
   fileHash: 'fileHash(本地文件内容哈希重算)',
   semanticHash: 'semanticHash(结构语义指纹)',
   engineDigest: 'engineDigest(运行时回执报告)'
 };
 
-/** 证据构造:空/纯空白值不成证据,拒绝 */
+/** Evidence construction: an empty / whitespace-only value does not become evidence -- reject it */
 export function makeRevisionEvidence(
   kind: HotReloadRevisionEvidenceKind,
   value: string,
@@ -37,7 +42,7 @@ export function makeRevisionEvidence(
   return { kind, value, origin };
 }
 
-/** 单条展示:来源标签+截断值(前 12 位)+origin */
+/** Single-item display: source label + truncated value (first 12 chars) + origin */
 export function formatRevisionEvidence(evidence: HotReloadRevisionEvidence): string {
   const origin = evidence.origin.length > 0 ? `,${evidence.origin}` : '';
   return `${revisionEvidenceLabel[evidence.kind]}: ${evidence.value.slice(0, 12)}…${origin}`;
@@ -46,8 +51,10 @@ export function formatRevisionEvidence(evidence: HotReloadRevisionEvidence): str
 export type RevisionEvidenceComparison = 'match' | 'mismatch' | 'incomparable';
 
 /**
- * 证据比对:同类比值(同=match/异=mismatch);跨类一律 incomparable——
- * 值巧合相同也不判一致,本地哈希不冒充运行时证据。
+ * Evidence comparison: same-kind values (equal = match / different =
+ * mismatch); cross-category is always incomparable -- a coincidental value
+ * match is never judged identical, and a local hash never masquerades as
+ * runtime evidence.
  */
 export function compareRevisionEvidence(
   a: HotReloadRevisionEvidence,
@@ -59,7 +66,7 @@ export function compareRevisionEvidence(
   return a.value === b.value ? 'match' : 'mismatch';
 }
 
-/** 证据集合展示:逐行带标签,只列提供的种类(缺的不填空) */
+/** Evidence-set display: line by line with labels, listing only the kinds provided (missing ones are not padded) */
 export function formatRevisionEvidenceReport(
   evidences: Partial<Record<HotReloadRevisionEvidenceKind, HotReloadRevisionEvidence>>
 ): string {
@@ -77,10 +84,12 @@ export function formatRevisionEvidenceReport(
 }
 
 /**
- * 运行时回执的 digest 提取(IDE-REV-027 接线):回包体是 JSON 对象且带
- * 非空 digest 与非空 file 回显才算运行时报告过 digest;file 回显用于归
- * 属——回执不点名该文件就不把 digest 记到它名下(归属不猜)。非 JSON/
- * 缺 digest/缺回显一律 null。
+ * Digest extraction from the runtime receipt (IDE-REV-027 wiring): only a
+ * reply body that is a JSON object carrying a non-empty digest and a
+ * non-empty file echo counts as the runtime having reported a digest; the
+ * file echo is used for attribution -- if the receipt does not name that
+ * file, the digest is not recorded under it (attribution is never guessed
+ * at). Not-JSON / missing digest / missing echo all return null.
  */
 export function parseEngineDigestReceipt(
   body: string | undefined
@@ -107,16 +116,18 @@ export function parseEngineDigestReceipt(
   return { digest: receipt.digest, file: receipt.file };
 }
 
-/** 引擎回执 digest 证据册条目:值 + 入册时刻(展示用「最近一次回执」口径) */
+/** An engine-receipt digest evidence-register entry: value + the moment it was registered (the "most recent receipt" display convention) */
 export interface EngineDigestRecord {
   digest: string;
   at: number;
 }
 
 /**
- * 会话内引擎 digest 证据册(IDE-REV-027):按 (rootId,targetId,file) 记
- * 最近一次运行时回执报告的 digest——它是运行时证据(engineDigest 类),
- * 与本地重算的 fileHash 各自展示,跨类不比较、不互相冒充。
+ * In-session engine digest evidence register (IDE-REV-027): records, per
+ * (rootId,targetId,file), the digest of the most recent runtime receipt --
+ * it is runtime evidence (the engineDigest kind), displayed alongside the
+ * locally recomputed fileHash, and across categories never compared and
+ * never impersonating one another.
  */
 export class HotReloadEngineDigestRegister {
   private readonly byKeyFile = new Map<string, EngineDigestRecord>();
@@ -126,7 +137,7 @@ export class HotReloadEngineDigestRegister {
     this.now = deps.now ?? Date.now;
   }
 
-  /** 原始回包体喂入:协议面认得(非空 digest+逐字回显该文件)才入册 */
+  /** Feed the raw reply body in: only the protocol surface accepts it (non-empty digest + a byte-identical echo of that file) for registration */
   note(key: { rootId: string; targetId: string }, file: string, body: string | undefined): void {
     const receipt = parseEngineDigestReceipt(body);
     if (!receipt || receipt.file !== file) {
@@ -138,7 +149,7 @@ export class HotReloadEngineDigestRegister {
     });
   }
 
-  /** 该 (目标,文件) 最近一次运行时回执 digest;无记录=null(如实缺) */
+  /** The most recent runtime-receipt digest for that (target, file); no record = null (honestly absent) */
   receipt(key: { rootId: string; targetId: string }, file: string): EngineDigestRecord | null {
     return this.byKeyFile.get(`${key.rootId}::${key.targetId}\u0000${file}`) ?? null;
   }

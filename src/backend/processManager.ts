@@ -11,25 +11,27 @@ export interface ProcessSpawnRequest {
   env?: NodeJS.ProcessEnv;
   component?: string;
   readyAfterMs?: number;
-  /** IDE-RUN-003 就绪探针:给出即取代固定宽限期,探针通过才推进 running */
+  /** The IDE-RUN-003 readiness probe: when given, it replaces the fixed grace period, and the state advances to running only once the probe passes */
   readiness?: ProcessReadiness;
 }
 
 /**
- * 就绪探针(RUN-003):probe 返回 true 才把状态推进 running;返回 false 或
- * 抛异常都视为未就绪,继续轮询。进程退出即停轮询。
- * RUN-004:timeoutMs 到期或 cancelHandle 置位即放弃等待——轮询终止、回调
- * onGiveUp、绝不推进 running;放弃只结束等待,进程本体不受影响。
+ * The readiness probe (RUN-003): the state advances to running only when probe returns true; a
+ * false result or a thrown exception both count as not ready, and polling continues. Polling stops
+ * when the process exits.
+ * RUN-004: when timeoutMs elapses or the cancelHandle is set, the wait is given up -- polling ends,
+ * onGiveUp is called, and running is never advanced; giving up only ends the wait, the process
+ * itself is untouched.
  */
 export interface ProcessReadiness {
   probe: () => Promise<boolean> | boolean;
-  /** 轮询间隔,默认 250ms */
+  /** The polling interval, 250ms by default */
   intervalMs?: number;
-  /** 等待上限:到期放弃(缺省无上限) */
+  /** The waiting cap: give up when it elapses (no cap by default) */
   timeoutMs?: number;
-  /** 取消柄:置 aborted 即放弃 */
+  /** The cancellation handle: give up once aborted is set */
   cancelHandle?: { aborted: boolean };
-  /** 放弃回调(超时/取消) */
+  /** The give-up callback (a timeout/cancellation) */
   onGiveUp?: (reason: 'timeout' | 'cancelled') => void;
 }
 
@@ -55,15 +57,16 @@ export interface ManagedProcessEvent {
 export type ProcessSpawnRunner = (request: ProcessSpawnRequest) => ChildProcess;
 
 /**
- * WIN-2:Windows 上 Node 直 spawn 批处理被拒(EINVAL,CVE-2024-27980)且裸名
- * 不解析 PATHEXT——.cmd/.bat 统一经 `cmd /d /c` 运行(`@` 抑制命令回显)。
- * 组件 defaultArgs 为无空格 token(--key=value 口径),透传安全;其余平台/
- * 扩展原样 spawn。真实 .exe 引擎不受影响。
+ * WIN-2: on Windows, a direct Node spawn of a batch file is rejected (EINVAL, CVE-2024-27980), and
+ * a bare name does not resolve PATHEXT -- .cmd/.bat are run through `cmd /d /c` uniformly (`@`
+ * suppresses command echo). A component's defaultArgs are space-free tokens (the --key=value
+ * convention), so passing them through is safe; other platforms/extensions spawn as is. A real
+ * .exe engine is unaffected.
  *
- * 双签名镜像 child_process.spawn:未给 stdio 的调用面拿
- * ChildProcessWithoutNullStreams(stdout/stderr 非空可直接挂)。
+ * The dual signature mirrors child_process.spawn: a caller that gives no stdio gets a
+ * ChildProcessWithoutNullStreams (stdout/stderr are non-null and can be attached directly).
  */
-/** 可注入 spawn(与 child_process.spawn 三参形态同构):测试替身验证命令行组装,不真起子进程 */
+/** An injectable spawn (isomorphic with child_process.spawn's three-argument form): a test stand-in verifies the command-line assembly without really starting a child process */
 export type SpawnLike = (
   command: string,
   args: readonly string[],
@@ -88,12 +91,13 @@ export function spawnProcess(
   spawnFn: SpawnLike = (cmd, spawnArgs, spawnOptions) => spawn(cmd, spawnArgs, spawnOptions ?? {})
 ): ChildProcess {
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
-    // ComSpec 绝对路径:调用面可能收窄 PATH(测试/沙箱),PATH 里找不到 cmd.exe。
+    // The absolute ComSpec path: the caller's face may narrow PATH (tests/sandbox), where cmd.exe is not found in PATH.
     const shell = process.env.ComSpec || 'cmd.exe';
-    // 审核发现:`@${command}` 交给 Node 默认引号规则,路径含空格时 Node 把
-    // 整串再包引号并反斜杠转义,cmd /c 的引号保留判定被破坏,命令在首个
-    // 空格处截断(Program Files 等)。windowsVerbatimArguments 自负整行:
-    // `@` 留在引号外(cmd 的前缀修饰符),含空白/特殊字符的 token 自包引号。
+    // Audit finding: handing `@${command}` to Node's default quoting rules means that a path with
+    // spaces gets the whole string re-wrapped in quotes and backslash-escaped, breaking cmd /c's
+    // quote-preservation test and truncating the command at the first space (Program Files and the
+    // like). windowsVerbatimArguments owns the whole line: `@` stays outside the quotes (cmd's
+    // prefix modifier), and a token with whitespace/special characters wraps itself in quotes.
     const line = [`@${quoteForCmd(command)}`, ...args.map(token => quoteForCmd(token))].join(' ');
     return spawnFn(shell, ['/d', '/c', line], {
       ...(options ?? {}),
@@ -103,7 +107,7 @@ export function spawnProcess(
   return spawnFn(command, [...args], options ?? {});
 }
 
-/** cmd 命令行 token 引用:含空白/引号/cmd 元字符时整体包双引号,内嵌引号双写。 */
+/** cmd command-line token quoting: a token with whitespace/quotes/cmd metacharacters is wrapped whole in double quotes, with embedded quotes doubled. */
 function quoteForCmd(token: string): string {
   if (!/[\s"&|<>^]/.test(token)) {
     return token;
@@ -113,13 +117,16 @@ function quoteForCmd(token: string): string {
 
 
 /**
- * 进程树终止(RUN-007):清理由组件派生的子进程。
- * - POSIX:启动即 detached 进程组长(setsid),负 pid 信号杀全组;组长已
- *   回收(ESRCH)或并非组长时回落 child.kill(单 pid 语义,测试替身同型)
- * - Windows:无进程组语义,taskkill /PID /T /F 按进程树递归终止
- * - R2-F23:无效 PID(缺失/0/负/非整数)绝不发信号——process.kill(-0) 命中
- *   调用方自身进程组(误杀宿主组),taskkill /PID 0 同理;spawn 失败时
- *   child.pid 为空落 0,停止/升级击杀/dispose 三路都经此闸挡下
+ * Process-tree termination (RUN-007): clean up the child processes a component derived.
+ * - POSIX: start as a detached process-group leader (setsid), and a negative-pid signal kills the
+ *   whole group; when the leader has already been reaped (ESRCH) or is not a leader at all, fall
+ *   back to child.kill (single-pid semantics, a test stand-in has the same shape)
+ * - Windows: there is no process-group semantics, so taskkill /PID /T /F terminates recursively by
+ *   process tree
+ * - R2-F23: an invalid PID (missing/0/negative/non-integer) never gets a signal --
+ *   process.kill(-0) would hit the caller's own process group (mistakenly killing the host group),
+ *   and taskkill /PID 0 likewise; when spawn fails child.pid is empty and lands on 0, and the
+ *   stop / escalated kill / dispose paths are all stopped here at this gate
  */
 export const killProcessTree = async (
   pid: number,
@@ -144,8 +151,9 @@ export const killProcessTree = async (
           resolve(true);
           return;
         }
-        // taskkill 失败(进程已退出/PID 不存在/测试替身假 pid):回落
-        // child.kill——与 POSIX 分支同语义,否则 stop 干等到超时升级。
+        // taskkill failed (the process already exited / the PID does not exist / a test stand-in's fake pid):
+        // fall back to child.kill -- the same semantics as the POSIX branch, otherwise stop would
+        // dry-wait until the timeout escalation.
         resolve(child ? child.kill(signal) : false);
       });
       taskkill.on('error', () => resolve(child ? child.kill(signal) : false));
@@ -178,7 +186,7 @@ export class ProcessManager {
         cwd: request.cwd,
         env: request.env,
         windowsHide: true,
-        // POSIX 下设进程组长:停止时可负 pid 杀全组(RUN-007);Windows 树杀走 taskkill
+        // On POSIX, become a process-group leader: a stop can then kill the whole group with a negative pid (RUN-007); Windows kills the tree via taskkill
         detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe']
       }));
@@ -248,10 +256,12 @@ export class ProcessManager {
         component,
         text: `进程退出: code=${exitCode}, signal=${signal}`
       });
-      // 终局语义按管理器自身账判:stop()/dispose() 树杀走组信号主路径时不经
-      // child.kill,child.killed 仍为 false——只看它会把我们主动停掉的进程
-      // 误报成 error(回落路径却报 exited,同动作两语义)。stopping 账在册
-      // =主动停止,signal 终局也算 exited;进程自己带信号死掉才是 error。
+      // The terminal semantics are judged from the manager's own ledger: when stop()/dispose() kills the
+      // tree via the group-signal main path it never goes through child.kill, so child.killed is
+      // still false -- trusting it alone would misreport a process we deliberately stopped as an
+      // error (while the fallback path reports exited, two semantics for the same action). A
+      // stopping entry on the ledger = a deliberate stop, and a signal-terminated outcome also
+      // counts as exited; only a process that dies of its own signal is an error.
       const stopping = this.states.get(request.id) === 'stopping';
       this.emitState({
         id: request.id,
@@ -280,14 +290,19 @@ export class ProcessManager {
   }
 
   /**
-   * 就绪探针轮询(RUN-003):进程仍在册且未退出才继续;探针通过恰一次推进
-   * running。探针异常吞作未就绪——探针后端自身抖动不该误判进程状态。
-   * RUN-004:超时/取消即终局放弃——回调 onGiveUp 后不再排程,此后服务
-   * 真的就绪也不会误标 running。
-   * IDE-REV-005:等待边界不依赖 probe 回包——盯守计时器独立采样取消与
-   * 截止(cancelHandle 是轮询标志无事件可订阅,采样间隔同 intervalMs;
-   * 截止另有一次性硬定时器兜底),probe 永不结束也按时终局;终局后迟到
-   * 回包不改终态不二次报,计时器全清,其他 target 各自独立不受连坐。
+   * The readiness-probe polling (RUN-003): it continues only while the process is still on the
+   * ledger and has not exited; a passing probe advances to running exactly once. A probe exception
+   * is swallowed as not-ready -- the probe backend's own jitter must not misjudge the process
+   * state.
+   * RUN-004: a timeout/cancellation is a terminal give-up -- once onGiveUp has been called nothing
+   * is scheduled again, so even a service that truly becomes ready afterwards is not mislabelled
+   * running.
+   * IDE-REV-005: the waiting boundary does not rely on the probe's reply -- the watchdog timers
+   * sample cancellation and the deadline independently (cancelHandle is a polled flag with no
+   * subscribable event, sampled at the same interval as intervalMs; the deadline additionally has
+   * a one-shot hard timer as a backstop), so a probe that never ends still settles on time; after
+   * the terminal state a late reply neither changes it nor reports a second time, all timers are
+   * cleared, and other targets each stay independent without collateral damage.
    */
   private scheduleReadinessProbe(
     request: ProcessSpawnRequest,
@@ -318,7 +333,7 @@ export class ProcessManager {
     if (readiness.cancelHandle || readiness.timeoutMs !== undefined) {
       cancelSampler = setInterval(() => {
         if (gaveUp) { stopWatchdog(); return; }
-        // 进程已不在册/已退出:等待面随之收场,无需继续盯守
+        // The process is no longer on the ledger / has exited: the waiting face winds down with it, no need to keep watching
         if (this.processes.get(request.id)?.process !== child ||
             child.exitCode !== null || child.signalCode !== null) {
           stopWatchdog();
@@ -362,8 +377,8 @@ export class ProcessManager {
       if (gaveUp) return;
       if (this.processes.get(request.id)?.process !== child) return;
       if (child.exitCode !== null || child.signalCode !== null) return;
-      // IDE-REV-004:probe 挂起跨过取消/截止,回包后必须复核终局条件——
-      // 迟到的 true 不得把已放弃的等待又推进 running,如实报对应原因
+      // IDE-REV-004: a probe that hangs across a cancellation/deadline must have the terminal conditions re-checked once its reply arrives --
+      // a late true must not advance an already-given-up wait to running again; report the corresponding reason honestly
       if (readiness.cancelHandle?.aborted) {
         giveUp('cancelled');
         return;
@@ -428,27 +443,29 @@ export class ProcessManager {
           return;
         }
         managed.process.once('exit', resolveExited);
-        // KR-AUD-39:spawn 失败的子进程 error-only——只发 error 永不发 exit,
-        // 等待面同样认 error 为终局,不再干等超时升级击杀
+        // KR-AUD-39: a child process whose spawn failed is error-only -- it emits error and never exit,
+        // so the waiting face likewise treats error as terminal and no longer dry-waits for the
+        // timeout escalation kill
         managed.process.once('error', resolveExited);
       });
 
       timer = setTimeout(() => {
-        // RUN-007:升级击杀同样走进程树,孙进程不残留
+        // RUN-007: the escalated kill likewise goes through the process tree, so no grandchild processes are left behind
         void killProcessTree(managed.pid, 'SIGKILL', managed.process);
-        // KR-AUD-39 兜底:击杀被 R2-F23 无效 pid 闸挡下或进程装死时 exit 仍
-        // 不来——等待面按时终结,stop 绝不悬挂。先给 SIGKILL 一个短暂的真
-        // 实终局窗口,让 exit/error 正常触发(日志/状态完整),窗口内不来
-        // 才兜底 resolve。
+        // The KR-AUD-39 backstop: when the kill is stopped by the R2-F23 invalid-pid gate, or the process
+        // hangs, exit still never arrives -- the waiting face ends on schedule, and stop never
+        // hangs. First give SIGKILL a brief genuine terminal window so exit/error fire normally
+        // (logs/state complete); only when they do not arrive within it does the fallback resolve.
         setTimeout(() => {
-          // WIN:极端调度下 taskkill 的 error/exit 事件迟到,窗口内 child.kill
-          // 也没跑到——兜底前补一次单进程 kill,保证 exit 先于 resolve:否则
-          // 进程滞留 processes,后续 start 复用旧实例(restart 断裂面)。
+          // WIN: under extreme scheduling taskkill's error/exit events arrive late and child.kill
+          // never ran inside the window -- issue one single-process kill before the fallback to
+          // guarantee exit precedes resolve: otherwise the process lingers in processes and a
+          // later start reuses the stale instance (the restart fracture face).
           managed.process.kill('SIGKILL');
           resolveExited();
         }, 250);
       }, timeoutMs);
-      // RUN-007:停止即进程树终止(POSIX 负 pid 组信号/Windows taskkill /T)
+      // RUN-007: stopping means process-tree termination (POSIX negative-pid group signal / Windows taskkill /T)
       void killProcessTree(managed.pid, 'SIGTERM', managed.process);
       await exited;
       return true;
@@ -465,19 +482,19 @@ export class ProcessManager {
 
   async dispose(): Promise<void> {
     const managed = Array.from(this.processes.values());
-    // 主动销毁先落 stopping 账:exit 事件终局语义(见 exit 处理)据此判
-    // exited 而非 error,与 stop() 同口径
+    // A deliberate destruction records the stopping ledger first: the exit event's terminal semantics (see the exit handling) then judge it as
+    // exited rather than error, on the same terms as stop()
     for (const item of managed) {
       this.states.set(item.id, 'stopping');
     }
     await Promise.all(managed.map(item => {
-      // RUN-007:dispose 同样树杀,不留孙进程
+      // RUN-007: dispose likewise kills the tree, leaving no grandchild processes behind
       void killProcessTree(item.pid, 'SIGKILL', item.process);
       return new Promise<void>(resolve => {
         if (item.process.exitCode !== null || item.process.signalCode !== null) resolve();
         item.process.once('exit', resolve);
-        // KR-AUD-39 同族:spawn 失败子进程 error-only(只发 error 不发 exit),
-        // dispose 等待面认 error 为终局,不悬挂
+        // The KR-AUD-39 same family: a spawn-failed child process is error-only (it emits error and never
+        // exit), so the dispose waiting face treats error as terminal and does not hang
         item.process.once('error', resolve);
       });
     }));

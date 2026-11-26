@@ -1,44 +1,47 @@
 /**
- * profile 的构建任务描述(IDE-TSK-001):一个 profile(assets 根 + 解释器)
- * → 一条可精确预览的脚本编译检查任务。四要素 command/args/cwd/env 全部
- * 由 profile 派生且与预览逐字一致——TSK-002 的 TaskProvider 按此描述
- * 注册,TSK-003 的 problem matcher 吃同一输出(compileall -q 只吐错误行)。
- * 任务本体是解释器 `-m compileall` 资产 scripts 目录:纯语法编译,不
- * import 引擎模块,任何 profile 解释器都能跑。
+ * Build task spec for a profile (IDE-TSK-001): one profile (assets root +
+ * interpreter) yields one precisely previewable script compile-check task.
+ * All four elements command/args/cwd/env derive from the profile and match
+ * the preview verbatim -- TSK-002's TaskProvider registers by this spec and
+ * TSK-003's problem matcher consumes the same output (compileall -q only
+ * emits error lines). The task itself runs the interpreter's `-m compileall`
+ * over the assets scripts directory: pure syntax compilation, no engine
+ * module imports, runnable by any profile interpreter.
  */
 
-/** 任务类型标识(vscode TaskDefinition.type;TSK-002 TaskProvider 注册面) */
+/** Task type id (vscode TaskDefinition.type; the TSK-002 TaskProvider registration surface) */
 export const BUILD_TASK_TYPE = 'kbengine.build';
 
 export interface BuildTaskSpecInput {
   id: string;
   displayName: string;
   assetsRoot: string;
-  /** null=profile 未选解释器,回退 PATH 上的 python3(明细如实标注) */
+  /** null = no interpreter chosen for the profile, falls back to python3 on PATH (noted as-is in the detail) */
   interpreterPath: string | null;
 }
 
 export interface BuildTaskSpec {
   type: typeof BUILD_TASK_TYPE;
   profileId: string;
-  /** 任务名(任务列表展示:profile 显示名 + 动作) */
+  /** Task name (shown in the task list: profile display name + action) */
   name: string;
   command: string;
   args: readonly string[];
   cwd: string;
   env: Record<string, string>;
-  /** 逐行执行明细(回退标注等;预览与任务详情共用) */
+  /** Per-line execution detail (fallback annotations etc.; shared by preview and task detail) */
   detail: readonly string[];
 }
 
-/** 解释器缺失时的回退(与 debugpy 同步源链同口径:PATH 上的 python3) */
+/** Fallback when no interpreter is available (same contract as the debugpy source chain: python3 on PATH) */
 const FALLBACK_INTERPRETER = 'python3';
 
 /**
- * 派生脚本编译检查任务:command=profile 解释器(缺则回退 python3 并
- * 标注),args=`-m compileall -q <assets>/scripts`,cwd=assets 根,
- * env 只带 PYTHONUTF8=1(compileall 错误行里的路径按 UTF-8 稳定输出,
- * Windows 默认 GBK 控制台不乱码)。
+ * Derive the script compile-check task: command = profile interpreter (falls
+ * back to python3 with an annotation when missing), args =
+ * `-m compileall -q <assets>/scripts`, cwd = assets root, env carries only
+ * PYTHONUTF8=1 (paths inside compileall error lines print stably as UTF-8,
+ * avoiding mojibake on the Windows default GBK console).
  */
 export function buildScriptCheckTaskSpec(profile: BuildTaskSpecInput): BuildTaskSpec {
   const assetsRoot = profile.assetsRoot.replace(/\/+$/, '');
@@ -63,12 +66,14 @@ export function buildScriptCheckTaskSpec(profile: BuildTaskSpecInput): BuildTask
   };
 }
 
-/** 预览参数加引号规则:含空白即加双引号(与 shell 拆词一致) */
+/** Preview argument quoting rule: double-quote whenever it contains whitespace (matching shell word splitting) */
 const quoteIfNeeded = (value: string): string => (/\s/.test(value) ? `"${value}"` : value);
 
 /**
- * 预览=准确执行内容:cd 行 + 命令行原文(逐参数按 shell 拆词规则加引号)
- * + env 逐条 + 明细行。任务列表/执行详情直接展示这段文本,所见即所跑。
+ * Preview = exactly what gets executed: the cd line + the command line verbatim
+ * (each argument quoted per shell word-splitting rules) + one env entry each +
+ * the detail lines. The task list / execution detail display this text directly,
+ * so what you see is what runs.
  */
 export function formatBuildTaskPreview(spec: BuildTaskSpec): string {
   const commandLine = [spec.command, ...spec.args].map(quoteIfNeeded).join(' ');

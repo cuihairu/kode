@@ -26,9 +26,10 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# 回调分类:名字取自本仓库已 grounding 的知识页(engine-called 才入组;
-# entry-script-spi-methods.md / api-core-concepts.md / 机制文),其余
-# def onXxx(...) 一律归 project-defined(项目自定义 handler,引擎不调用)。
+# Callback classification: names taken from the knowledge pages already grounded
+# in this repo (only engine-called ones are grouped; entry-script-spi-methods.md /
+# api-core-concepts.md / mechanism docs); every remaining def onXxx(...) goes to
+# project-defined (a project's own handler, never called by the engine).
 CALLBACK_GROUPS = {
     "entity lifecycle": [
         "onCreate", "onDestroy", "onGetCell", "onLoseCell", "onRestore",
@@ -77,8 +78,8 @@ def scan_file(path: Path, library: dict[str, list[dict]]) -> dict:
     text = path.read_text(encoding="utf-8", errors="replace")
     out = {
         "kbengineModule": Counter(),   # KBEngine.<attr>
-        "entityApi": Counter(),        # 库成员的 self.X / obj.X 调用(按 member)
-        "entityApiDomains": Counter(), # member@domain 计数
+        "entityApi": Counter(),        # self.X / obj.X calls of library members (per member)
+        "entityApiDomains": Counter(), # member@domain counts
         "callbacks": Counter(),        # def onXxx(...)
         "parseError": None,
     }
@@ -90,11 +91,11 @@ def scan_file(path: Path, library: dict[str, list[dict]]) -> dict:
 
     class Visitor(ast.NodeVisitor):
         def visit_Attribute(self, node: ast.Attribute) -> None:
-            # KBEngine.<attr>(任意上下文:调用或取值都算使用)
+            # KBEngine.<attr> (any context: a call or a value read both count as usage)
             if isinstance(node.value, ast.Name) and node.value.id == "KBEngine":
                 out["kbengineModule"][node.attr] += 1
-            # <obj>.<member> 其中 member 在库中:计一次使用。
-            # self.X 为主;其他接收者也计(如 other.cellData 读取)。
+            # <obj>.<member> where member is in the library: count one usage.
+            # self.X is the main case; other receivers count too (e.g. reading other.cellData).
             if node.attr in library:
                 out["entityApi"][node.attr] += 1
                 for entry in library[node.attr]:
@@ -106,7 +107,7 @@ def scan_file(path: Path, library: dict[str, list[dict]]) -> dict:
                 out["callbacks"][node.name] += 1
             self.generic_visit(node)
 
-        # async def 同口径。
+        # Same semantics for async def.
         visit_AsyncFunctionDef = visit_FunctionDef
 
     Visitor().visit(tree)
@@ -178,7 +179,7 @@ def main() -> int:
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
 
-    # ---- Markdown 报告(stdout,确定性排序) ----
+    # ---- Markdown report (stdout, deterministic ordering) ----
     w = sys.stdout.write
     w(f"# KBEngine API usage scan\n\nScanned {total_files} Python files across "
       f"{len(args.roots)} trees.\n\n")

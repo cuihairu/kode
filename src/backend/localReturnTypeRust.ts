@@ -1,29 +1,36 @@
 /**
- * 局部变量返回注解接收者定型收编 Rust(精确性主车道批 D):`$/kode/python/localReturnType`
- * 的 TS 装配面。引擎本体=kode-python local_return.rs(TS
- * pythonReturnTypeInference.ts 级联兜底删除后的同文件可推导子集:同文件 def
- * 调用/self 方法/类限定/链式/别名链,matchingAssignments 同域口径);TS 链
- * 保留 import 绑定路径为兜底(kbengine.core.backend=ts 杀开关语义不变)。
- * 入参 lines 为调用方行数组原样,hoverLine 0 基,hoverColumn 0 基 UTF-16 列
- * (缺省 = 保守回退行首非空白列,绝不伪造整行最后写点),versionKey 为
- * flowVersionKeyForDocument 产物的不透明缓存键。响应 ret 缺失/畸形
- * (target/annotation/methodName 任一非串)整面弃用返回 null(hover 回落
- * TS 链)——禁止部分采用;Rust ret:null 与 TS 链 miss 同判据。装配面预检
- * (词空/全大写常量/行越界)与 TS Impl 守卫同判据先行短路不发 RPC。
+ * Absorbing the local-variable return annotation into Rust (the precision main lane, batch D):
+ * the TS wiring face for `$/kode/python/localReturnType`. The engine body =
+ * kode-python local_return.rs (the same-file derivable subset of
+ * TS pythonReturnTypeInference.ts after its cascade fallback was deleted: same-file def
+ * calls / self methods / class qualification / chains / alias chains, with
+ * matchingAssignments under the same-scope accounting); the TS chain keeps the import-binding
+ * path as a fallback (the kill-switch semantics of kbengine.core.backend=ts are unchanged).
+ * The input lines is the caller's line array as-is, hoverLine is 0-based, hoverColumn is a
+ * 0-based UTF-16 column (absent = conservatively fall back to the line's first non-whitespace
+ * column, never fabricating the line's last write point), and versionKey is an opaque cache
+ * key produced by flowVersionKeyForDocument. A missing/malformed response ret (any of
+ * target/annotation/methodName not a string) discards the whole face and returns null (hover
+ * falls back to the TS chain) -- partial adoption is forbidden; Rust ret:null and a TS-chain
+ * miss share the same criterion. The wiring face's pre-checks (empty word / all-uppercase
+ * constant / out-of-range line) short circuit on the same criterion as the TS Impl guards,
+ * without sending an RPC.
  */
 import { awaitWithInteractiveBudget, getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 const LOCAL_RETURN_RUST_METHOD = '$/kode/python/localReturnType';
 
 /**
- * 交互请求端到端预算(KBUG-TIME-02):从发起(含 client.start/排队/响应)
- * 到降级 null 的总时长。transport 层硬超时在本预算之外再等
- * +2000ms 兜底拒绝(显式计入清理窗口,资源照常回收)。后台命令面
- * (messageTable/def lint 等)不经此预算,沿用各自语义。
+ * End-to-end budget for an interactive request (KBUG-TIME-02): the total elapsed time from
+ * issuance (including client.start/queuing/response) down to degrading to null. The transport
+ * layer's hard timeout waits a further +2000ms beyond this budget for a fallback rejection
+ * (explicitly accounting for the cleanup window, so resources are reclaimed as usual). The
+ * background command face (messageTable/def lint etc.) does not go through this budget and
+ * keeps its own semantics.
  */
 export const LOCAL_RETURN_RUST_BUDGET_MS = 2000;
 
-/** Rust 局部返回注解面(与 TS LocalVariableReturnType 字段同形) */
+/** The Rust local return annotation face (same field shape as the TS LocalVariableReturnType) */
 export interface LocalReturnTypeFace {
   target: string;
   annotation: string;
@@ -31,10 +38,12 @@ export interface LocalReturnTypeFace {
 }
 
 /**
- * Rust-first 局部变量返回注解:无门/失败/畸形/非法入参一律 null(纯函数回退
- * 面)。词空/全大写常量/行越界与 TS 链判据一致,不发 RPC。整次调用(含
- * client.start/排队/响应)受 LOCAL_RETURN_RUST_BUDGET_MS 端到端预算约束,
- * 到期或 isCancelled() 为真即降级 null(KBUG-TIME-03/04,不再无限等待)。
+ * Rust-first local variable return annotation: no gate / failure / malformed / illegal input
+ * all yield null (the pure-function fallback face). An empty word / all-uppercase constant /
+ * out-of-range line matches the TS chain's criterion and sends no RPC. The entire call
+ * (including client.start/queuing/response) is bounded end to end by
+ * LOCAL_RETURN_RUST_BUDGET_MS, degrading to null on expiry or when isCancelled() is true
+ * (KBUG-TIME-03/04, no more unbounded waiting).
  */
 export async function inferLocalReturnTypeFromRust(
   lines: readonly string[],
@@ -48,13 +57,13 @@ export async function inferLocalReturnTypeFromRust(
   if (!gate) {
     return null;
   }
-  // TS Impl 同款守卫(全大写/下划线常量名不查询)
+  // The same guards as the TS Impl (an all-uppercase/underscore constant name is not queried)
   if (!word || hoverLine < 0 || hoverLine >= lines.length || /^[A-Z_][A-Z0-9_]*$/.test(word)) {
     return null;
   }
   const params: Record<string, unknown> = { lines, hoverLine, word };
   if (hoverColumn !== undefined) {
-    // KBUG-ORDER-04:同行光标列透传(0 基 UTF-16;负值不传,Rust 侧同保守回退)
+    // KBUG-ORDER-04: pass through the cursor column on the same line (0-based UTF-16; a negative value is not sent, and the Rust side makes the same conservative fallback)
     if (hoverColumn >= 0) {
       params.hoverColumn = hoverColumn;
     }

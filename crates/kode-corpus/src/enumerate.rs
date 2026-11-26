@@ -1,8 +1,9 @@
-//! 确定性 `.py` 枚举。
+//! Deterministic `.py` enumeration.
 //!
-//! 直接复用 [`kode_vfs::walk::scan`] 的 VFS-007/010 语义(默认排除、目录 symlink
-//! 不跟随、深度封顶、读目录失败跳过),再按 [`FileKind::Python`] 过滤。这样
-//! Python 语料层与后续索引层看到的是同一套文件边界,不另造第二套扫描器。
+//! Reuses the VFS-007/010 semantics of [`kode_vfs::walk::scan`] directly (default
+//! excludes, directory symlinks not followed, depth cap, unreadable directories skipped),
+//! then filters by [`FileKind::Python`]. This way the Python corpus layer and the later
+//! index layer see the same file boundaries, instead of a second scanner being invented.
 
 use std::collections::BTreeSet;
 use std::io;
@@ -10,10 +11,11 @@ use std::path::{Path, PathBuf};
 
 use kode_vfs::walk::{self, FileKind, WalkOptions};
 
-/// TS `PY_SCAN_EXCLUDE` 中 VFS 默认集之外的项目(并集后与 TS 同口径)。
+/// The entries of TS `PY_SCAN_EXCLUDE` beyond the VFS default set (the union matches the TS contract).
 ///
-/// `tests/fixtures/**` 与业务脚本不受影响;排除只为避免把引擎构建树/依赖树
-/// 当成语料(实测 30k/117k 文件差异见 `src/pythonClassIndex.ts:56-63`)。
+/// `tests/fixtures/**` and business scripts are unaffected; the exclusions only keep engine
+/// build trees/dependency trees from being treated as corpus (the measured 30k/117k file gap is
+/// documented at `src/pythonClassIndex.ts:56-63`).
 pub const DEFAULT_PY_EXCLUDED_DIRS: &[&str] = &[
     "node_modules",
     "third_party",
@@ -30,16 +32,16 @@ pub const DEFAULT_PY_EXCLUDED_DIRS: &[&str] = &[
     "__pycache__",
 ];
 
-/// `.py` 枚举选项。
+/// Options for `.py` enumeration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumerateOptions {
-    /// 排除目录名(精确匹配,在 [`DEFAULT_PY_EXCLUDED_DIRS`] 之上追加)。
+    /// Excluded directory names (exact match, appended on top of [`DEFAULT_PY_EXCLUDED_DIRS`]).
     pub excluded_dirs: BTreeSet<String>,
-    /// 追加通配排除(整组件匹配,仅支持 `*`)。
+    /// Additional wildcard exclusions (whole component match, only `*` supported).
     pub user_exclude_globs: Vec<String>,
-    /// 最大目录深度(根为 0)。
+    /// Maximum directory depth (root is 0).
     pub max_depth: usize,
-    /// 排序后截断上限(`None` = 不截断;用于探针/有界扫描)。
+    /// Truncation cap applied after sorting (`None` = no truncation; used for probes/bounded scans).
     pub max_files: Option<usize>,
 }
 
@@ -57,29 +59,29 @@ impl Default for EnumerateOptions {
     }
 }
 
-/// 单个 Python 语料文件。
+/// A single Python corpus file.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PythonFile {
-    /// 文件系统路径(与扫描根同基准)。
+    /// Filesystem path (relative to the same base as the scan root).
     pub path: PathBuf,
-    /// 相对扫描根的 `/` 分隔路径(排序键与 golden 稳定标识)。
+    /// `/`-separated path relative to the scan root (sort key and stable golden identity).
     pub relative_path: String,
 }
 
-/// 枚举统计(跳过原因可见,不静默)。
+/// Enumeration statistics (skip reasons stay visible, never silent).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EnumerateStats {
-    /// 扫描器看到的全部文件数(含非 `.py`)。
+    /// All files the scanner saw (including non-`.py` ones).
     pub visited_files: usize,
-    /// 命中的 `.py` 文件数。
+    /// Number of `.py` files matched.
     pub matched_files: usize,
-    /// 读失败被跳过的目录数。
+    /// Number of directories skipped because reading failed.
     pub skipped_dirs: usize,
-    /// 是否因 `max_files` 截断。
+    /// Whether the file list was truncated by `max_files`.
     pub truncated: bool,
 }
 
-/// 一次枚举的结果。
+/// The result of one enumeration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enumeration {
     pub root: PathBuf,
@@ -87,7 +89,7 @@ pub struct Enumeration {
     pub stats: EnumerateStats,
 }
 
-/// 枚举根目录下的 `.py` 文件(排序遍历 + 相对路径字典序)。
+/// Enumerate `.py` files under the root directory (sorted traversal + lexicographic relative paths).
 pub fn enumerate_python_files(root: &Path, options: &EnumerateOptions) -> io::Result<Enumeration> {
     let metadata = std::fs::metadata(root)?;
     if !metadata.is_dir() {

@@ -1,20 +1,25 @@
-// C-17:进程拓扑定义期错配预警的 Rust 权威实现接线面——`$/kode/processTopology/validate`。
+// C-17: wiring surface for the Rust-authoritative definition-time mismatch
+// warning for process topology -- `$/kode/processTopology/validate`.
 //
-// 边界(镜像 defMd5Rust/databaseSchemaRust「输入收集留 TS、校验归 Rust」):清单
-// 原文 + entities.xml 原文 + def 原文集合经 RPC 直传,Rust 解析清单、推导实体
-// 内容(闭包)、跑 M1-M6/D1-D3/O1-O2 规则并返回定位精确的 findings。Rust 不可
-// 用(无门/未配 serverPath/调用失败/形状不合规)返回 null,调用方零发现静默
-// (诊断功能不阻塞,错误不出现在诊断面)。无 TS 镜像——Rust 单一实现。
+// Boundary (mirrors defMd5Rust/databaseSchemaRust "input collection stays in
+// TS, validation belongs to Rust"): the manifest text + entities.xml text + the
+// set of def texts are passed straight over RPC, and Rust parses the manifest,
+// derives entity contents (closure walk), runs the M1-M6/D1-D3/O1-O2 rules and
+// returns precisely located findings. When Rust is unavailable (no gate / no
+// serverPath configured / call failure / shape mismatch) this returns null and
+// the caller stays silent with zero findings (the diagnostics feature must not
+// block; errors do not surface on the diagnostics face). There is no TS mirror --
+// Rust is the single implementation.
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
-/** Rust `$/kode/processTopology/validate` 入参(镜像 BuildParams) */
+/** Rust `$/kode/processTopology/validate` inputs (mirrors BuildParams) */
 export interface ProcessTopologyRustParams {
-  /** `<root>/process_topology.xml` 原文 */
+  /** raw text of `<root>/process_topology.xml` */
   manifestText: string;
-  /** `scripts/entities.xml` 原文(可选) */
+  /** raw text of `scripts/entities.xml` (optional) */
   entitiesXmlText?: string;
-  /** 全部 def 原文集合(实体/接口/组件,闭包走查用) */
+  /** raw text of every def (entities/interfaces/components, for the closure walk) */
   defs: Array<{
     name: string;
     category: string;
@@ -23,35 +28,37 @@ export interface ProcessTopologyRustParams {
   }>;
 }
 
-/** 关联信息(relatedInformation 数据) */
+/** related information (relatedInformation payload) */
 export interface ProcessTopologyRelated {
   filePath: string;
   line: number;
   message: string;
 }
 
-/** 单条发现(诊断项原始数据,TS 侧只做位置映射) */
+/** a single finding (raw diagnostic data; the TS side only maps locations) */
 export interface ProcessTopologyFinding {
   /** "manifest" | "def" */
   target: string;
   filePath: string;
-  /** 1 基行号 */
+  /** 1-based line number */
   line: number;
-  /** 诊断严重级别(2=Warning) */
+  /** diagnostic severity (2=Warning) */
   severity: number;
   message: string;
   code: string;
   related?: ProcessTopologyRelated[];
 }
 
-/** Rust 输出:findings 数组 */
+/** Rust output: the findings array */
 export interface ProcessTopologyRustResult {
   findings: ProcessTopologyFinding[];
 }
 
 /**
- * 进程拓扑校验(经 Rust):收集完成调用,返回 findings;Rust 不可用/失败/形状
- * 不合规返回 null。诊断侧对 null 做零发现处理(功能静默,不误报)。
+ * Process topology validation (via Rust): call once collection is done and the
+ * findings are returned; returns null when Rust is unavailable / the call fails
+ * / the shape mismatches. The diagnostics side treats null as zero findings
+ * (the feature stays silent and never over-reports).
  */
 export async function validateProcessTopologyInRust(
   params: ProcessTopologyRustParams

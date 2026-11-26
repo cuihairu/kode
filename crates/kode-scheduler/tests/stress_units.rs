@@ -1,9 +1,10 @@
-//! RUST-083(旧 CORE-018)压力车道默认门禁:小规模不变量车道进 cargo test
-//! (长跑 lane 见 src/bin/kode-scheduler-stress.rs 与 CI)。
+//! RUST-083 (formerly CORE-018) stress-lane default gate: the small-scale invariant lane runs
+//! inside cargo test (for the long-running lane see src/bin/kode-scheduler-stress.rs and CI).
 //!
-//! 检测面与长跑同源(同 `kode_scheduler::stress` 入口),窗口收紧使 debug
-//! 构建下秒级完成;任一不变量破坏(死锁/永久 pending/计数不守恒/取消泄漏/
-//! 内存无界/keyed 假 pending)即测试红。
+//! The detection surface shares its origin with the long run (the same `kode_scheduler::stress`
+//! entry point), and the tightened window finishes in seconds under a debug build; any broken
+//! invariant (deadlock / permanently pending / non-conserved counts / cancellation leak /
+//! unbounded memory / keyed false-pending) turns the test red.
 
 use kode_scheduler::stress::{run_stress, stress_storm_probe, StressOptions};
 use kode_scheduler::MAX_RETAINED_TERMINAL_TASKS;
@@ -14,7 +15,8 @@ fn small_opts(total_ops: u64) -> StressOptions {
         max_queued: 0,
         interactive_cooldown_ms: 50,
         starvation_limit_ms: 5_000,
-        // 小窗口高频检查:队列保持浅,debug 构建秒级完成且检查面覆盖率高。
+        // Small window, high check frequency: the queue stays shallow, a debug build finishes in
+        // seconds, and the check-surface coverage is high.
         check_every: 200,
         cancel_rate_pct: 5,
     }
@@ -39,7 +41,8 @@ fn stress_lane_small_seed_holds_all_invariants() {
 
 #[test]
 fn stress_lane_cancel_heavy_holds_conservation() {
-    // 高取消率:取消泄漏(取消后复活/计数丢失)在此压力下最易暴露。
+    // High cancellation rate: cancellation leaks (a cancelled task reviving / lost counts) are
+    // most likely to surface under this pressure.
     let opts = StressOptions {
         cancel_rate_pct: 40,
         ..small_opts(5_000)
@@ -60,7 +63,7 @@ fn stress_lane_cancel_heavy_holds_conservation() {
 
 #[test]
 fn stress_lane_bounded_queue_holds_memory_ceiling() {
-    // 有界队列(max_queued=64):队列满淘汰面 + 内存闸共存。
+    // Bounded queue (max_queued=64): the queue-full eviction surface and the memory gate coexist.
     let opts = StressOptions {
         max_queued: 64,
         ..small_opts(4_000)
@@ -71,7 +74,8 @@ fn stress_lane_bounded_queue_holds_memory_ceiling() {
 
 #[test]
 fn stress_lane_seeds_diverge() {
-    // seed 复现面:不同 seed 必须产生不同负载(此前 |1 折叠偶数 seed 的缺陷)。
+    // Seed reproduction surface: different seeds must produce different loads (there was a prior
+    // defect where |1 collapsed even seeds).
     let a = run_stress(2, small_opts(2_000)).expect("seed=2");
     let b = run_stress(3, small_opts(2_000)).expect("seed=3");
     assert_ne!(
@@ -83,7 +87,8 @@ fn stress_lane_seeds_diverge() {
 
 #[test]
 fn storm_probe_monotone_versions_never_drop_events() {
-    // 单调版本下任何丢弃都是缺陷:长跑抽 20 万事件面做默认门。
+    // Under monotonic versions any drop is a defect: the default gate samples the 200k-event
+    // storm surface from the long run.
     let (seen, merged, landed) = stress_storm_probe(11, 200_000).expect("风暴面无事件丢失");
     assert_eq!(seen, merged + landed as u64, "事件总数 = 合并数 + 落盘数");
     assert!(merged > 0, "8 文件高密度下必然产生合并");
@@ -91,8 +96,8 @@ fn storm_probe_monotone_versions_never_drop_events() {
 
 #[test]
 fn stress_dense_sampling_captures_queued_peak() {
-    // check_every=1 每操作即采样:入队瞬时排队深度进峰值面(否则峰值
-    // 恒 0,采样臂形同虚设)。
+    // check_every=1 samples on every operation: the transient queue depth at enqueue time reaches
+    // the peak surface (otherwise the peak would stay 0 and the sampling arm would be useless).
     let opts = StressOptions {
         total_ops: 2_000,
         max_queued: 0,

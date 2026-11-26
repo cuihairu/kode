@@ -1,11 +1,16 @@
 /**
- * 单表只读数据预览(IDE-DB-002):只执行白名单允许的查询——生成的语
- * 句固定 `SELECT * FROM \`表\` LIMIT N` 形状,执行前再过 databaseDrift
- * 现有 assertReadOnlyStatement 自证(双保险);默认结果有条数上限(默
- * 认 100,显式上限不许超硬顶 1000),runner 无视 LIMIT 多回行时结果面
- * 再裁一次并标 truncated;表名只收标识符字符(含反引号/空白/分号一
- * 律拒绝,不拼进语句)。实际连接与执行走 databaseDrift/registry 既有
- * 面,本模块只管预览语句形状、上限与结果裁剪。
+ * Single-table read-only data preview (IDE-DB-002): only queries allowed by
+ * the whitelist are executed -- the generated statement is fixed to the
+ * `SELECT * FROM \`table\` LIMIT N` shape and, right before execution, it is
+ * re-proven against the existing assertReadOnlyStatement in databaseDrift
+ * (defense in depth); results carry a default row-count cap (default 100, and
+ * an explicit cap may not exceed the hard top of 1000). If the runner ignores
+ * LIMIT and returns more rows, the result surface trims again and marks the
+ * result truncated. Table names accept identifier characters only (backticks /
+ * whitespace / semicolons are rejected outright and never spliced into the
+ * statement). The actual connection and execution go through the existing
+ * databaseDrift/registry surfaces; this module only manages the preview
+ * statement shape, the caps, and result trimming.
  */
 
 import { assertReadOnlyStatement, type QueryResult } from './databaseDrift';
@@ -17,7 +22,7 @@ const TABLE_NAME_PATTERN = /^[A-Za-z0-9_$]+$/;
 
 export type TablePreviewStatement = { sql: string } | { error: string };
 
-/** 预览语句:白名单形状+条数上限烧进语句;表名/上限不合法直接拒绝 */
+/** Preview statement: the whitelist shape plus the row-count cap are burned into the statement; an illegal table name or cap is rejected outright */
 export function buildTablePreviewStatement(table: string, options: { limit?: number } = {}): TablePreviewStatement {
   if (!TABLE_NAME_PATTERN.test(table)) {
     return { error: `表名不合法(只允许字母/数字/下划线/美元符):${JSON.stringify(table)}` };
@@ -40,12 +45,12 @@ export type TablePreviewResult =
       rows: QueryResult['rows'];
       returnedRows: number;
       limit: number;
-      /** runner 回行超上限被裁过 */
+      /** The runner returned more rows than the cap, so they were trimmed */
       truncated: boolean;
     }
   | { kind: 'error'; message: string };
 
-/** 执行预览:语句自证白名单 → 注入 runner → 结果面裁到上限 */
+/** Run the preview: self-prove the statement against the whitelist -> injected runner -> trim the result surface to the cap */
 export async function previewTableData(
   table: string,
   deps: TablePreviewDeps,

@@ -1,7 +1,7 @@
-//! MessageTable 输出 JSON 形状。
+//! Output JSON shape of the MessageTable.
 
 // ---------------------------------------------------------------------------
-// 输出 JSON 结构(与 TS renderMessageTableJson 同形;全量条目)
+// Output JSON structure (same shape as TS renderMessageTableJson; full entry set)
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, serde::Serialize)]
@@ -43,7 +43,7 @@ pub(super) struct PropertyJson {
     pub(super) declared_utype: Option<i64>,
     #[serde(rename = "aliasID")]
     pub(super) alias_id: Option<i64>,
-    /// 组件槽 `<Persistent>`(缺省 true);普通属性不透出(null)。
+    /// Component slot `<Persistent>` (defaults to true); plain properties do not expose it (null).
     pub(super) persistent: Option<bool>,
     pub(super) origin: String,
     pub(super) origin_kind: String,

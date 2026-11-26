@@ -1,20 +1,20 @@
-//! kode2 KBEngine 协议引擎(todo PA-003 Phase 2)。
+//! kode2 KBEngine protocol engine (todo PA-003 Phase 2).
 //!
-//! 完全脱离 Wireshark 的 KBEngine 协议解析库;MVP = Client↔Server。
-//! 模块边界(验收原文):
-//! - `cursor`:零拷贝边界检查读取(引擎字符串语义逐条对齐,PA-001 §3.1);
-//! - `framing`:三种长度形状 + TCP 粘包/拆包(packet_reader.cpp:31-250 状态机);
-//! - `messages`:message ID 静态段 + 动态导入段(onImportClientMessages,§5.2);
-//! - `codec`:基础类型 + ARRAY/FIXED_DICT containers;
-//! - `entity`:实体方法载荷解码(属性同步流 TODO-3 未取证 → Raw 保留不编造);
-//! - `session`:每 Flow(loginapp/baseapp)独立表 + 握手阶段观察;
-//! - `cache`:schema hash → 编译产物缓存。
+//! KBEngine protocol parsing library fully independent of Wireshark; MVP = Client↔Server.
+//! Module boundaries (from the acceptance text):
+//! - `cursor`: zero-copy bounds-checked reads (engine string semantics aligned item by item, PA-001 §3.1);
+//! - `framing`: three length shapes + TCP sticky-packet/split-packet handling (packet_reader.cpp:31-250 state machine);
+//! - `messages`: static message ID segment + dynamically imported segment (onImportClientMessages, §5.2);
+//! - `codec`: basic types + ARRAY/FIXED_DICT containers;
+//! - `entity`: entity method payload decoding (property sync stream TODO-3 not yet evidenced → kept as Raw, not fabricated);
+//! - `session`: per-Flow (loginapp/baseapp) independent tables + handshake phase observation;
+//! - `cache`: schema hash → compiled artifact cache.
 //!
-//! 红线(验收原文,全部有测试):失败不 panic / 不越界 / 内存有上限
-//! ([`codec::DecodeLimits`] + `FramingConfig::max_message_len`)/ 递归类型有界
-//! (深度上限)/ 未知类型 Raw 保留。
+//! Red lines (from the acceptance text, all covered by tests): no panic on failure /
+//! no out-of-bounds access / memory bounded ([`codec::DecodeLimits`] + `FramingConfig::max_message_len`)
+//! / recursive types bounded (depth cap) / unknown types kept as Raw.
 //!
-//! 取证依据:docs/kbengine-wire-protocol.md(PA-001,引擎基准 bf1a9cd6 / v2.5.10)。
+//! Evidence basis: docs/kbengine-wire-protocol.md (PA-001, engine baseline bf1a9cd6 / v2.5.10).
 
 pub mod cache;
 pub mod codec;

@@ -46,10 +46,9 @@ struct Golden {
 
 #[test]
 fn semantic_tokens_golden_structure_is_complete() {
-    let committed = std::fs::read_to_string(
-        repo_root().join(kode_server::semantic_tokens::GOLDEN_REL_PATH),
-    )
-    .expect("golden");
+    let committed =
+        std::fs::read_to_string(repo_root().join(kode_server::semantic_tokens::GOLDEN_REL_PATH))
+            .expect("golden");
     let value: Golden =
         serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     assert!(value.corpus.len() >= 8, "语料应覆盖边界形态族");
@@ -59,7 +58,11 @@ fn semantic_tokens_golden_structure_is_complete() {
             "语料条目形: {entry}"
         );
     }
-    assert_eq!(value.probes.len(), value.outcomes.len(), "探测数与产出数一致");
+    assert_eq!(
+        value.probes.len(),
+        value.outcomes.len(),
+        "探测数与产出数一致"
+    );
     assert!(value.probes.len() >= 16, "探测面规模(8 spans + 8 encoded)");
     let mut lit = std::collections::BTreeSet::new();
     for probe in &value.probes {
@@ -87,16 +90,14 @@ fn semantic_tokens_golden_structure_is_complete() {
                     );
                     let line = span["line"].as_u64().expect("line") as usize;
                     let start = span["startCharacter"].as_u64().expect("startCharacter") as usize;
-                    assert!(
-                        (line, start) >= prev,
-                        "spans 应按行/列升序: {span}"
-                    );
+                    assert!((line, start) >= prev, "spans 应按行/列升序: {span}");
                     prev = (line, start);
                     let length = span["length"].as_u64().expect("length");
                     assert!(length > 0, "span 长度应正: {span}");
                     for modifier in span["modifiers"].as_array().expect("modifiers") {
                         assert!(
-                            ["declaration", "async"].contains(&modifier.as_str().expect("modifier")),
+                            ["declaration", "async"]
+                                .contains(&modifier.as_str().expect("modifier")),
                             "未知 modifier: {modifier}"
                         );
                     }

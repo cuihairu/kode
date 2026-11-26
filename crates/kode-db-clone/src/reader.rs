@@ -1,17 +1,17 @@
-//! 源库只读导出(PDC-0201/0202)。
+//! Read-only export from the source database (PDC-0201/0202).
 //!
-//! 接口层读写隔离:[`ReadOnlyExecutor`] 只暴露 `query`/`execute`(事务控制),
-//! 无任何 DML 方法;执行前再经 [`validate_readonly`] 白名单(仅 SELECT/SHOW/
-//! DESCRIBE/EXPLAIN + `SET SESSION TRANSACTION READ ONLY` + 事务控制),双层防线。
+//! Interface-layer read/write isolation: [`ReadOnlyExecutor`] exposes only `query`/`execute` (transaction control),
+//! with no DML methods at all; before execution [`validate_readonly`] applies an allowlist again
+//! (only SELECT/SHOW/DESCRIBE/EXPLAIN + `SET SESSION TRANSACTION READ ONLY` + transaction control) — a double line of defense.
 //!
-//! 一致性:同一执行器/事务内按关系图 DFS 读主表与全部子表(避免主表读版本 A、
-//! 子表读版本 B)。先 `SET SESSION TRANSACTION READ ONLY`,再尝试
-//! `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`(MySQL 8 形态);
-//! 驱动不支持该组合时回退 `START TRANSACTION WITH CONSISTENT SNAPSHOT`
-//! (会话级只读已保证写隔离)——与计划 §5.2「在支持条件下使用,检查驱动行为」一致。
+//! Consistency: within one executor/transaction, the main table and all child tables are read by graph DFS
+//! (avoiding the main table reading version A while child tables read version B). First `SET SESSION TRANSACTION READ ONLY`,
+//! then try `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY` (the MySQL 8 form);
+//! if the driver does not support that combination, fall back to `START TRANSACTION WITH CONSISTENT SNAPSHOT`
+//! (session-level read-only already guarantees write isolation) — consistent with plan §5.2 "use where supported, check driver behavior".
 //!
-//! 资源:行数/字节预算与墙钟超时在查询间检查,取消旗标(PDC-0202);
-//! 超预算报错、取消/超时返回 `cancelled=true` 且调用方丢弃临时产物——诚实截断不伪完整。
+//! Resources: row/byte budgets and wall-clock timeout are checked between queries, plus a cancel flag (PDC-0202);
+//! over-budget errors, and cancel/timeout return `cancelled=true` with the caller discarding temporary output — honest truncation, never faked as complete.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,7 +22,7 @@ use crate::error::{CloneError, CloneResult};
 use crate::planner::QueryPlan;
 use crate::value::{TypedRow, TypedValue};
 
-/// 绑定参数(只读 SELECT 的 `?`)。
+/// Bound parameters (the `?` of read-only SELECTs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlValue {
     I64(i64),
@@ -30,15 +30,15 @@ pub enum SqlValue {
     Str(String),
 }
 
-/// 只读语句面(PDC-0201):无 DML 方法;写路径仅事务控制语句。
+/// Read-only statement face (PDC-0201): no DML methods; the write path only carries transaction control statements.
 pub trait ReadOnlyExecutor {
-    /// 参数化查询(SELECT/SHOW/DESCRIBE/EXPLAIN),返回字符串单元格行。
+    /// Parameterized query (SELECT/SHOW/DESCRIBE/EXPLAIN), returns rows of string cells.
     fn query(&self, sql: &str, params: &[SqlValue]) -> CloneResult<Vec<Vec<Option<String>>>>;
-    /// 语句(事务控制),无结果集。
+    /// Statement (transaction control), no result set.
     fn execute(&self, sql: &str) -> CloneResult<()>;
 }
 
-/// 只读白名单校验(PDC-0201):非白名单语句一律拒绝(fail-closed)。
+/// Read-only allowlist validation (PDC-0201): non-allowlisted statements are always refused (fail-closed).
 pub fn validate_readonly(sql: &str) -> CloneResult<()> {
     let trimmed = sql.trim_start();
     let first_word = trimmed
@@ -64,7 +64,7 @@ pub fn validate_readonly(sql: &str) -> CloneResult<()> {
     }
 }
 
-/// 导出预算(PDC-0202):行数/体积上限与墙钟超时。
+/// Export budget (PDC-0202): row/size caps and wall-clock timeout.
 #[derive(Debug, Clone)]
 pub struct ExportBudget {
     pub max_rows: u64,
@@ -82,7 +82,7 @@ impl ExportBudget {
     }
 }
 
-/// 取消控制(跨线程/信号取消):查询间检查。
+/// Cancellation control (cross-thread/signal cancel): checked between queries.
 #[derive(Debug, Clone, Default)]
 pub struct ExportControl {
     cancel: Arc<AtomicBool>,
@@ -100,22 +100,22 @@ impl ExportControl {
     }
 }
 
-/// 行流式汇(PDC-0204):一次一行,不无上限累积。
+/// Streaming row sink (PDC-0204): one row at a time, never unbounded accumulation.
 pub trait RowSink {
-    /// 写一行;返回该行编码体积(供字节预算记账)。
+    /// Writes one row; returns the row's encoded size (for byte budget accounting).
     fn write_row(&mut self, table: &str, row: &TypedRow) -> CloneResult<u64>;
-    /// 表读完回调(逐表计数,供 manifest/校验)。
+    /// End-of-table callback (per-table counts, for manifest/verification).
     fn end_table(&mut self, table: &str, count: u64) -> CloneResult<()>;
 }
 
-/// 导出结果:成功或取消(取消时部分行可能已进汇,调用方决定丢弃)。
+/// Export outcome: success or cancelled (when cancelled, some rows may already be in the sink; the caller decides whether to discard).
 #[derive(Debug)]
 pub struct ExportOutcome {
     pub stats: ExportStats,
     pub cancelled: bool,
 }
 
-/// 逐表/总量统计。
+/// Per-table/total statistics.
 #[derive(Debug, Clone, Default)]
 pub struct ExportStats {
     pub per_table: BTreeMap<String, u64>,
@@ -124,7 +124,7 @@ pub struct ExportStats {
     pub duration: Duration,
 }
 
-/// 源库只读导出器。
+/// Read-only exporter for the source database.
 pub struct SourceReader<'a> {
     executor: &'a dyn ReadOnlyExecutor,
 }
@@ -140,7 +140,7 @@ impl<'a> SourceReader<'a> {
         Self { executor }
     }
 
-    /// 执行计划:单事务内按关系图 DFS 读根表+全部子表(父先子后)。
+    /// Executes the plan: within a single transaction, reads the root table + all child tables via graph DFS (parent before child).
     pub fn export(
         &self,
         plan: &QueryPlan,
@@ -154,7 +154,7 @@ impl<'a> SourceReader<'a> {
             validate_readonly(&q.select_sql)?;
         }
 
-        // 只读会话 + 一致性快照事务(带回退)。
+        // Read-only session + consistent snapshot transaction (with fallback).
         self.executor.execute("SET SESSION TRANSACTION READ ONLY")?;
         match self
             .executor
@@ -195,7 +195,7 @@ impl<'a> SourceReader<'a> {
                 Ok(ExportOutcome { stats, cancelled })
             }
             Err(e) => {
-                // 任何错误路径:回滚(保证事务不悬挂),错误信息经日志脱敏由调用方处理。
+                // Any error path: roll back (guarantees the transaction never hangs); error text goes through log redaction handled by the caller.
                 let _ = self.executor.execute("ROLLBACK");
                 Err(e)
             }
@@ -265,7 +265,7 @@ impl<'a> SourceReader<'a> {
         Ok(control.is_cancelled() || started.elapsed() > budget.timeout)
     }
 
-    /// 行 → 类型化行:按计划列序,列型用派生列型(PDC-0203 有类型编码)。
+    /// Row → typed row: in plan column order, with column types from the derived types (PDC-0203 typed encoding).
     fn typed_row(
         &self,
         table: &str,
@@ -292,7 +292,7 @@ impl<'a> SourceReader<'a> {
     }
 }
 
-/// 行内 id 列(计划列序以 id 起头;缺失记 0——导入侧按 parentID 关系对账)。
+/// The id column within a row (plan column order starts with id; missing records 0 — the import side reconciles via the parentID relation).
 fn child_id_of(row: &TypedRow) -> u64 {
     match row.values.first() {
         Some(TypedValue::UInt(v)) => *v,
@@ -412,7 +412,7 @@ mod tests {
         (plan, schema)
     }
 
-    /// 内存执行器:记录语句与参数,断言零 DML。
+    /// In-memory executor: records statements and parameters, asserts zero DML.
     struct FakeExecutor {
         rows: BTreeMap<String, Vec<Vec<Option<String>>>>,
         statements: RefCell<Vec<String>>,
@@ -461,7 +461,7 @@ mod tests {
                 .and_then(|s| s.split('`').next())
                 .unwrap_or("")
                 .to_string();
-            // 按绑定参数过滤行(模拟真实 `?` 语义):任一单元格等于参数值即保留。
+            // Filters rows by bound parameters (mimicking real `?` semantics): a row is kept if any cell equals a parameter value.
             let all = self.rows.get(&table).cloned().unwrap_or_default();
             let filtered: Vec<_> = all
                 .into_iter()
@@ -499,7 +499,7 @@ mod tests {
         }
     }
 
-    /// 收集型行汇。
+    /// Collecting row sink.
     struct CollectSink {
         rows: Vec<TypedRow>,
         counts: BTreeMap<String, u64>,
@@ -574,12 +574,12 @@ mod tests {
         assert_eq!(out.stats.total_rows, 4);
         assert_eq!(out.stats.per_table["tbl_Avatar_items"], 2);
         assert_eq!(out.stats.per_table["tbl_Avatar_items_mods"], 1);
-        // 读序:根先,子后(DFS)。
+        // Read order: root first, children after (DFS).
         assert_eq!(sink.rows[0].values[2], TypedValue::Text("Alice".into()));
-        assert_eq!(exec.write_count(), 0, "零 DML 语句");
+        assert_eq!(exec.write_count(), 0, "zero DML statements");
         assert_eq!(*exec.commits.borrow(), 1);
         assert_eq!(*exec.rollbacks.borrow(), 0);
-        // 全部 SQL 过白名单。
+        // All SQL passes the allowlist.
         for s in exec.statements.borrow().iter() {
             validate_readonly(s).unwrap();
         }
@@ -651,7 +651,7 @@ mod tests {
             .export(&plan, 100, &mut sink, &budget, &ExportControl::new())
             .unwrap_err();
         assert!(matches!(err, CloneError::BudgetExceeded { .. }));
-        assert_eq!(*exec.rollbacks.borrow(), 1, "预算超限必须回滚");
+        assert_eq!(*exec.rollbacks.borrow(), 1, "over budget must roll back");
         assert_eq!(*exec.commits.borrow(), 0);
     }
 
@@ -689,7 +689,7 @@ mod tests {
             .export(&plan, 100, &mut sink, &ExportBudget::unlimited(), &control)
             .unwrap();
         assert!(out.cancelled);
-        assert_eq!(*exec.rollbacks.borrow(), 1, "取消必须回滚");
+        assert_eq!(*exec.rollbacks.borrow(), 1, "cancel must roll back");
         assert_eq!(*exec.commits.borrow(), 0);
     }
 
@@ -726,7 +726,7 @@ mod tests {
                 .borrow()
                 .iter()
                 .any(|s| s == "START TRANSACTION WITH CONSISTENT SNAPSHOT"),
-            "回退到非组合形态"
+            "falls back to the non-combined form"
         );
     }
 
@@ -736,7 +736,7 @@ mod tests {
         let rows = BTreeMap::from([(
             "tbl_Avatar".to_string(),
             vec![vec![Some("100".into()), Some("0".into())]],
-        )]); // 3 列计划,2 值
+        )]); // plan has 3 columns, row has 2 values
         let exec = FakeExecutor::new(rows);
         let reader = SourceReader::new(&exec);
         let mut sink = CollectSink {
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn source_reader_debug_renders_type_name_only() {
-        // Debug 是日志面:只暴露类型名,不倾倒执行器内部状态。
+        // Debug is the log face: exposes only the type name, never dumps executor internal state.
         let exec = FakeExecutor::new(BTreeMap::new());
         let reader = SourceReader::new(&exec);
         let rendered = format!("{reader:?}");
@@ -778,8 +778,8 @@ mod tests {
 
     #[test]
     fn byte_budget_exceeded_reports_limit_and_rolls_back() {
-        // 字节预算:首行编码即超限 → BudgetExceeded(如实带 limit/requested),
-        // 回滚不留半套。
+        // Byte budget: the first row's encoding already exceeds the cap → BudgetExceeded (honestly carrying limit/requested),
+        // rolling back with no half-done set left behind.
         let (plan, _schema) = fixture();
         let rows = BTreeMap::from([(
             "tbl_Avatar".to_string(),
@@ -806,18 +806,25 @@ mod tests {
         match err {
             CloneError::BudgetExceeded { limit, requested } => {
                 assert_eq!(limit, 1);
-                assert!(requested > 1, "requested 必须是真实累计字节数");
+                assert!(
+                    requested > 1,
+                    "requested must be the real cumulative byte count"
+                );
             }
             other => panic!("expected BudgetExceeded, got {other:?}"),
         }
-        assert_eq!(*exec.rollbacks.borrow(), 1, "字节预算超限必须回滚");
+        assert_eq!(
+            *exec.rollbacks.borrow(),
+            1,
+            "byte budget overrun must roll back"
+        );
         assert_eq!(*exec.commits.borrow(), 0);
     }
 
     #[test]
     fn child_id_of_reads_first_column_across_id_kinds() {
-        // id 列形态:UInt/Int/BigUInt 取原值;非数值(缺列/文本)记 0,
-        // 由导入侧按 parentID 关系对账。
+        // id column kinds: UInt/Int/BigUInt take the raw value; non-numeric (missing column/text) records 0,
+        // with the import side reconciling via the parentID relation.
         let row = |v: TypedValue| TypedRow {
             table: "t".into(),
             values: vec![v, TypedValue::Text("x".into())],
@@ -835,7 +842,7 @@ mod tests {
 
     #[test]
     fn fake_executor_filters_rows_by_i64_and_str_params() {
-        // Fake 的 `?` 语义:任一单元格等于参数字符串化值即保留(I64/Str 同规)。
+        // The fake's `?` semantics: a row is kept if any cell equals the stringified parameter value (same rule for I64/Str).
         let rows = BTreeMap::from([(
             "tbl_Avatar".to_string(),
             vec![
@@ -844,7 +851,7 @@ mod tests {
             ],
         )]);
         let exec = FakeExecutor::new(rows);
-        // I64:数值形态匹配命中一行;不存在的值零命中。
+        // I64: numeric-form match hits one row; a nonexistent value hits zero rows.
         let got = exec
             .query("SELECT * FROM `tbl_Avatar`", &[SqlValue::I64(8)])
             .unwrap();
@@ -854,7 +861,7 @@ mod tests {
             .query("SELECT * FROM `tbl_Avatar`", &[SqlValue::I64(-7)])
             .unwrap()
             .is_empty());
-        // Str:文本匹配命中一行。
+        // Str: text match hits one row.
         let got = exec
             .query(
                 "SELECT * FROM `tbl_Avatar`",

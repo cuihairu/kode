@@ -3,82 +3,99 @@ import { ChildProcessWithoutNullStreams } from 'child_process';
 import { spawnProcess } from './processManager';
 
 /**
- * RUST-002 判据③：脚本执行须独立的可复用执行服务。
+ * RUST-002 criterion ③: script execution must be an independent, reusable
+ * execution service.
  *
- * 现状差距（2026-11-15 审计）：Python 脚本执行面全是「每次调用新起一次解释器
- * 并等它退出」——热更保存语法闸每次定稿都 spawn 一个解释器跑 compile()。
- * 本模块把其中最频繁又无状态的一面换成**常驻解释器 + stdin/stdout 帧协议**：
- * 一个进程承载任意多次编译，只在退出/故障/超时后重建。与 Rust Core
- * （kodeCoreClient 单进程 + stdio LSP 多路复用）同构。
+ * Current gap (2026-11-15 audit): the Python script execution face is entirely
+ * "spawn a fresh interpreter per call and wait for it to exit" -- the hot-
+ * reload save syntax gate spawns an interpreter to run compile() on every
+ * finalize. This module swaps the most frequent, stateless face for a
+ * **resident interpreter + stdin/stdout frame protocol**: one process carries
+ * any number of compilations, rebuilt only on exit / fault / timeout. Same
+ * shape as the Rust Core (kodeCoreClient single process + stdio LSP
+ * multiplexing).
  *
- * 帧协议（双向）：`<十进制字节长度>\n<恰好那么多字节>\n`。
- * - 长度前缀使多行源码跨帧无损传递，换行只作分隔不进载荷（长度即边界）；
- * - 长度恒为 **utf-8 字节数**。解释器侧回包 `ensure_ascii=False` 时载荷可含
- *   非 ASCII（中文/弯引号语法错误文案），字节数>字符数——收包侧全程按
- *   Buffer 字节流缓冲与切分（KODE-FULL-001:旧实现 setEncoding 成字符串后按
- *   字符 slice,非 ASCII 回包永远切不出等长载荷,语法错误被误收口成基建
- *   超时,热更语法闸随之 fail-open）。
+ * Frame protocol (bidirectional): `<decimal byte length>\n<exactly that many
+ * bytes>\n`.
+ * - the length prefix carries multi-line source losslessly across frames; newlines
+ *   are only separators and never part of the payload (the length is the boundary);
+ * - the length is always a **utf-8 byte count**. When the interpreter side replies
+ *   with `ensure_ascii=False` the payload may contain non-ASCII (Chinese / smart
+ *   quotes syntax-error text), so bytes > characters -- the receive side buffers
+ *   and splits on the raw Buffer byte stream throughout (KODE-FULL-001: the old
+ *   implementation called setEncoding into a string and then sliced by character,
+ *   so a non-ASCII reply could never be cut into an equal-length payload, syntax
+ *   errors got mis-bundled into an infrastructure timeout, and the hot-reload
+ *   syntax gate then failed open).
  *
- * 并发与超时语义：协议是单请求-单回包。并发指令进**队列**按 FIFO 兑现
- * （不拒、不乱序）。**超时不摘队**——迟到的帧会串到下一条请求上造成错位，
- * 故超时即拆掉子进程并按故障兑现，下一次 runCompile 惰性重建：宁可重付一次
- * 进程启动，也不交出错位的判定结果。
+ * Concurrency and timeout semantics: the protocol is one request, one reply.
+ * Concurrent commands go into a **queue** and are served in FIFO order
+ * (never rejected, never reordered). **A timeout does not dequeue** -- a late
+ * frame would land on the next request and misalign everything, so a timeout
+ * tears down the child process and settles it as a fault; the next runCompile
+ * lazily rebuilds: one extra process-startup cost is preferred over a
+ * misaligned verdict.
  *
- * 执行器语义红线：**只 compile() 不执行**，用户代码永不运行（迁移自
- * 一次性编译模块的语义，不得扩大权限）。
+ * Executor semantic red line: **compile() only, never execute** -- user code
+ * never runs (carried over from the one-shot compilation module; the scope of
+ * authority must not widen).
  */
 
-/** 单条编译指令 */
+/** A single compilation command */
 export interface PythonCompileTask {
   readonly content: string;
 }
 
 /**
- * 执行服务判定结果。ok=false 时 error 为解释器侧错误行。
- * infra=true 区分「执行服务自身故障」与「真语法错误」——调用方（热更语法闸）
- * 据此 fail-open（故障放行不拦热更），语法错误才拦。
+ * Execution service verdict result. When ok=false, error is an interpreter-side
+ * error line.
+ * infra=true distinguishes "the execution service itself is at fault" from "a
+ * genuine syntax error" -- the caller (the hot-reload syntax gate) uses this to
+ * fail-open (a fault lets the hot-reload through), while a syntax error blocks.
  */
 export interface PythonExecOutcome {
   readonly ok: boolean;
   readonly error?: string;
-  /** 故障类失败（进程退出/超时/未就绪/回包不可解析）；语法错误不设此位 */
+  /** Failure class (process exit / timeout / not ready / unparsable reply); never set for a syntax error */
   readonly infra?: boolean;
 }
 
-/** 服务句柄 */
+/** Service handle */
 export interface PythonExecService {
   runCompile(task: PythonCompileTask): Promise<PythonExecOutcome>;
-  /** 永久关闭:后续调用如实报「未启动」,不再重建 */
+  /** Permanent shutdown: subsequent calls report honestly "not started"; never rebuilt */
   dispose(): void;
-  /** 当前常驻子进程 pid；未起或已回收时 0 */
+  /** Current resident child process pid; 0 when not started or already reclaimed */
   pid(): number;
-  /** 排队等待回包的指令数（含在途） */
+  /** Number of commands queued waiting for a reply (including in-flight ones) */
   pendingCount(): number;
 }
 
 export interface PythonExecServiceOptions {
-  /** 单条指令等待上限；默认 5000ms（与旧一次性编译路径同口径） */
+  /** Per-command wait cap; defaults to 5000ms (same criterion as the old one-shot compilation path) */
   readonly timeoutMs?: number;
-  /** 握手帧等待上限；默认 2000ms */
+  /** Handshake-frame wait cap; defaults to 2000ms */
   readonly handshakeTimeoutMs?: number;
-  /** 解释器可执行文件；缺省 python3。变更须新建服务(旧进程解释器已陈旧) */
+  /** Interpreter executable; defaults to python3. Changing it requires a new service (the old process's interpreter is stale) */
   readonly interpreter?: string;
-  /** 注入以便测试；默认 spawnProcess（真起子进程） */
+  /** Injected for tests; defaults to spawnProcess (really starts a child process) */
   readonly spawn?: typeof spawnProcess;
 }
 
-/** 与旧一次性编译路径同口径的默认等待窗 */
+/** Default wait window, same criterion as the old one-shot compilation path */
 export const PYTHON_EXEC_TIMEOUT_MS = 5000;
-/** 握手（等 ready 帧）默认上限 */
+/** Default cap for the handshake (waiting for the ready frame) */
 export const PYTHON_EXEC_HANDSHAKE_TIMEOUT_MS = 2000;
 
 /**
- * 常驻服务内的执行器源码。协议：stdin 逐帧读源码 → compile() → stdout 逐帧回
- * `{ok:true}` 或 `{ok:false,error:<错误行>}`。
+ * Executor source running inside the resident service. Protocol: read source
+ * frame by frame from stdin -> compile() -> reply frame by frame on stdout with
+ * `{ok:true}` or `{ok:false,error:<error line>}`.
  *
- * 只 import json/sys/traceback——零副作用、不执行用户代码；compile() 的
- * filename 保留诊断文件名便于定位。stdin 全程走二进制 buffer（不与 text
- * 包装层混用，避免 readline/read 交错读乱）。
+ * Only imports json/sys/traceback -- zero side effects, never executes user
+ * code; compile()'s filename keeps the diagnostic filename for locating errors.
+ * stdin stays on a binary buffer throughout (never mixed with a text wrapper
+ * layer, avoiding interleaved readline/read corruption).
  */
 export const PYTHON_EXEC_SERVICE_SOURCE = `import json
 import sys
@@ -129,7 +146,7 @@ while True:
         write_frame({"ok": False, "error": str(error)})
 `;
 
-/** 帧编码：字节长度前缀 + 载荷 + 换行分隔 */
+/** Frame encoding: byte-length prefix + payload + newline separator */
 function encodeFrame(payload: string): string {
   return `${Buffer.byteLength(payload, 'utf8')}\n${payload}\n`;
 }
@@ -140,10 +157,12 @@ interface PendingCall {
 }
 
 /**
- * 建常驻 Python 执行服务。
+ * Build a resident Python execution service.
  *
- * 生命周期：**惰性 spawn**（首次 runCompile 才起）→ 等 `ready` 帧 → 逐帧按
- * FIFO 兑现请求 → 退出/故障/超时即拆掉，下一次调用重建。dispose 是永久关闭。
+ * Lifecycle: **lazy spawn** (started on the first runCompile) -> wait for the
+ * `ready` frame -> serve requests frame by frame in FIFO order -> on
+ * exit / fault / timeout, tear down and the next call rebuilds. dispose is a
+ * permanent shutdown.
  */
 export function createPythonExecService(options: PythonExecServiceOptions = {}): PythonExecService {
   const timeoutMs = options.timeoutMs ?? PYTHON_EXEC_TIMEOUT_MS;
@@ -175,7 +194,7 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
     }
   };
 
-  /** 拆掉当前子进程并让在途请求如实失败；disposed 之外一律可重建 */
+  /** Tear down the current child process and fail in-flight requests honestly; always rebuildable except when disposed */
   const teardown = (reason?: string): void => {
     if (!child) {
       ready = false;
@@ -193,11 +212,12 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
       reason ?? `解释器进程退出(code=${exitCode}, signal=${signal})${stderrTail.trim() ? `: ${lastLine(stderrTail)}` : ''}`
     );
     if (target.exitCode === null && target.signalCode === null) {
-      // 仍在跑(超时/故障主动拆)才需要击杀;已自然退出的不重复击杀
+      // Still running (a timeout/fault-triggered teardown) so kill it;
+      // a child that already exited naturally is not killed again
       try {
         target.kill('SIGKILL');
       } catch {
-        // 已退出的子进程击杀失败:无害
+        // Killing an already-exited child process fails: harmless
       }
     }
   };
@@ -211,10 +231,10 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
       stdoutBytes = decoded.remainder;
       if (!ready) {
         ready = true;
-        continue; // 首帧=握手证据,不作为请求回包
+        continue; // first frame = handshake evidence, not a request reply
       }
       if (queue.length === 0) {
-        continue; // 无在途请求的迟到帧:如实丢弃,不冒充结果
+        continue; // a late frame with no in-flight request: dropped honestly, never impersonating a result
       }
       let parsed: { ok?: boolean; error?: string };
       try {
@@ -228,12 +248,16 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
   };
 
   const wire = (proc: ChildProcessWithoutNullStreams): void => {
-    // KODE-FULL-002:代际守卫——超时/故障拆掉旧进程后新进程已接管(child!==proc),
-    // 旧进程迟到的 exit/error/stdout 帧不再属于本代,一律忽略;否则旧 exit
-    // 会把新进程一并 teardown,旧残字节会污染新代帧缓冲
+    // KODE-FULL-002: generation guard -- once a timeout/fault teardown has
+    // replaced the old process (child !== proc), a late exit/error/stdout
+    // frame from the old process no longer belongs to this generation and is
+    // ignored outright; otherwise the old exit would take the new process down
+    // with it, and stale residual bytes would pollute the new generation's
+    // frame buffer
     const stale = (): boolean => child !== proc;
-    // KODE-FULL-001:stdout 保持字节流(不 setEncoding)——帧边界按字节判定,
-    // 多字节字符跨 chunk 断裂也不会被逐块 utf8 解码弄脏
+    // KODE-FULL-001: stdout stays a byte stream (no setEncoding) -- frame
+    // boundaries are judged by bytes, and a multibyte character split across
+    // chunks is not corrupted by per-chunk utf8 decoding
     proc.stderr.setEncoding('utf8');
     proc.stdout.on('data', chunk => {
       if (stale()) { return; }
@@ -242,7 +266,8 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
     });
     proc.stderr.on('data', chunk => {
       if (stale()) { return; }
-      // 有界尾部(错误行取最后一行),不随长会话无界增长
+      // Bounded tail (error lines take the last line); it never grows
+      // unboundedly over a long session
       stderrTail = `${stderrTail}${String(chunk)}`.slice(-2048);
     });
     proc.on('error', error => {
@@ -255,7 +280,7 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
     });
   };
 
-  /** 惰性起进程并等握手帧；失败返回 false（调用方按未启动如实上报） */
+  /** Lazy-spawn the process and wait for the handshake frame; returns false on failure (the caller reports "not started" honestly) */
   const ensureStarted = async (): Promise<boolean> => {
     if (disposed) {
       return false;
@@ -318,8 +343,9 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
       const call: PendingCall = {
         resolve: outcome => resolveCall(outcome),
         timer: setTimeout(() => {
-          // 超时=卡死:摘队会串帧,故直接拆服务(在途其余请求同批失败),
-          // 下一次调用重建——不错位、不悬挂
+          // Timeout = stuck: dequeueing would misalign frames, so the service is
+          // torn down directly (the other in-flight requests fail in the same
+          // batch), and the next call rebuilds -- no misalignment, no hang
           const index = queue.indexOf(call);
           if (index >= 0) {
             settle(index, { ok: false, error: `编译超时(${timeoutMs}ms)`, infra: true });
@@ -345,9 +371,12 @@ export function createPythonExecService(options: PythonExecServiceOptions = {}):
 }
 
 /**
- * 帧解码(字节管道):无完整帧返回 null;消费掉已解码帧并返回载荷与余量。
- * KODE-FULL-001:长度=字节数,缓冲/切分/余量全程 Buffer——按字节切出的
- * 载荷再整体 utf8 解码,非 ASCII 载荷与跨 chunk 断裂的多字节字符都无损。
+ * Frame decoding (byte pipeline): return null when no complete frame; consume
+ * a decoded frame and return the payload plus the remainder.
+ * KODE-FULL-001: length = byte count; buffering, slicing and the remainder all
+ * live on Buffer -- a payload sliced out by bytes is then utf8-decoded as a
+ * whole, so non-ASCII payloads and multibyte characters split across chunks are
+ * lossless.
  */
 function decodeFrame(buffer: Buffer): { body: string; remainder: Buffer } | null {
   const headerEnd = buffer.indexOf(0x0a);
@@ -356,12 +385,12 @@ function decodeFrame(buffer: Buffer): { body: string; remainder: Buffer } | null
   }
   const sizeText = buffer.subarray(0, headerEnd).toString('ascii');
   if (!/^\d{1,10}$/.test(sizeText)) {
-    // 帧边界已被破坏:清缓冲避免死锁
+    // The frame boundary has been destroyed: clear the buffer to avoid a deadlock
     return { body: '', remainder: Buffer.alloc(0) };
   }
   const size = Number(sizeText);
   const payloadStart = headerEnd + 1;
-  // 帧完整 = 载荷 size 字节 + 1 字节帧尾换行都已到达
+  // A complete frame = the payload's `size` bytes plus the 1-byte frame-ending newline have arrived
   if (buffer.length < payloadStart + size + 1) {
     return null;
   }
@@ -369,7 +398,7 @@ function decodeFrame(buffer: Buffer): { body: string; remainder: Buffer } | null
   return { body: payload, remainder: buffer.subarray(payloadStart + size + 1) };
 }
 
-/** 取最后一行非空文本(错误行展示用) */
+/** Take the last non-empty text line (for error-line display) */
 function lastLine(text: string): string {
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   return lines.length > 0 ? lines[lines.length - 1] : '';

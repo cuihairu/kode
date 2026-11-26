@@ -1,17 +1,20 @@
 /**
- * `.kbengine/debug.json` 的 JSON Schema(功能差距盘点 G3,
- * docs/reference-feature-gap.md):VS Code 的 JSON 扩展按
- * `contributes.jsonValidation` 校验该文件,配置写错在编辑器里直接标红。
+ * JSON Schema for `.kbengine/debug.json` (feature-gap inventory G3,
+ * docs/reference-feature-gap.md): VS Code's JSON extension validates that
+ * file via `contributes.jsonValidation`, so a mis-written config is flagged
+ * red directly in the editor.
  *
- * VS Code 的 jsonValidation 通过 url 加载扩展内的 JSON 文件,因此 schema
- * 存在两处:本模块的构建产物与 schemas/kbengine-debug.schema.json。测试锁定
- * 两者结构一致,枚举一律取自 quickActionConfig.ts 的解析口径(HTTP_METHODS、
- * QUICK_ACTION_TYPES),避免 schema 与解析器各说各话。
+ * VS Code's jsonValidation loads JSON files inside the extension by url, so
+ * the schema exists in two places: this module's build artifact and
+ * schemas/kbengine-debug.schema.json. Tests lock the two to identical
+ * structure, with enums always taken from quickActionConfig.ts's parsing
+ * contract (HTTP_METHODS, QUICK_ACTION_TYPES) so the schema and the parser
+ * never diverge.
  */
 
 import { HTTP_METHODS, QUICK_ACTION_TYPES } from './quickActionConfig';
 
-/** VS Code jsonValidation 的文件匹配(覆盖工作区根与各级子文件夹) */
+/** File match for VS Code jsonValidation (covers the workspace root and nested folders at every level) */
 export const KBENGINE_DEBUG_JSON_FILE_MATCH = '**/.kbengine/debug.json';
 
 interface JsonSchemaObject {
@@ -36,7 +39,7 @@ const integer = (description: string): JsonSchemaObject => ({
   description
 });
 
-/** 动作共享字段(schema 与解析器默认值一致:confirm 默认 true、source 默认 manual) */
+/** Shared action fields (schema and parser defaults agree: confirm defaults to true, source defaults to manual) */
 const ACTION_SHARED_PROPERTIES: Record<string, JsonSchemaObject> = {
   name: text('动作名(必填,展示在动作清单里)'),
   confirm: {
@@ -119,7 +122,7 @@ const HTTP_REQUEST_SCHEMA: JsonSchemaObject = {
   }
 };
 
-/** 构建 schema(构建产物即 package.json 内联对象的唯一真源) */
+/** Build the schema (this build artifact is the single source of truth for the object inlined in package.json) */
 export function buildKbengineDebugJsonSchema(): JsonSchemaObject {
   return {
     $schema: 'http://json-schema.org/draft-07/schema#',
@@ -187,5 +190,5 @@ export function buildKbengineDebugJsonSchema(): JsonSchemaObject {
   };
 }
 
-/** 构建产物(供清单内联对象对拍) */
+/** Built artifact (used for parity comparison against the manifest's inlined object) */
 export const kbengineDebugJsonSchema = buildKbengineDebugJsonSchema();

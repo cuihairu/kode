@@ -1,19 +1,24 @@
 /**
- * 最小项目创建模板清单(IDE-PRJ-007):一份明确的目录/文件清单,定义
- * "新建一个最小 KBEngine 空项目"要落盘的全部内容。清单与
- * workspaceDiscovery.DISCOVERY_CONVENTIONS 的 scripts 布局对齐
- * (demo/assets 同构),建出的骨架可被 projectImport.identifyProjectLayout
- * 在 entities/defs/scripts 三面全部识别(IDE-PRJ-008 的"可被导入"前置)。
+ * Minimal project creation template manifest (IDE-PRJ-007): an explicit
+ * directory/file manifest defining everything that must land on disk when
+ * "creating a minimal empty KBEngine project". The manifest lines up with
+ * the scripts layout of workspaceDiscovery.DISCOVERY_CONVENTIONS (same
+ * shape as demo/assets), and the skeleton it builds is recognized by
+ * projectImport.identifyProjectLayout on all three faces — entities/defs/
+ * scripts (the "importable" precondition of IDE-PRJ-008).
  *
- * 本模块是纯清单+预检+预览面:planProjectCreation 只做存在性探测不改盘,
- * 已有目标冲突如实摊开在 plan.conflicts(拒绝语义=冲突非空,命令层接线);
- * 预览项逐条给准确绝对路径,与生成器确认面(generationConfirm)同构。
+ * This module is a pure manifest + precheck + preview face:
+ * planProjectCreation only probes for existence and never writes to disk;
+ * conflicts with existing targets are laid out honestly in
+ * plan.conflicts (rejection semantics = non-empty conflicts, wired at the
+ * command layer); each preview item carries an exact absolute path, same
+ * shape as the generator confirmation face (generationConfirm).
  */
 
 import * as path from 'path';
 import type { GenerationPlanItem } from '../generationConfirm';
 
-/** 清单条目:目录(只建空目录)或文件(相对路径+完整内容) */
+/** Manifest entry: a directory (only an empty directory is created) or a file (relative path + full content) */
 export interface ProjectTemplateDirectory {
   kind: 'directory';
   relativePath: string;
@@ -28,10 +33,13 @@ export interface ProjectTemplateFile {
 export type ProjectTemplateEntry = ProjectTemplateDirectory | ProjectTemplateFile;
 
 /**
- * 最小模板(scripts 布局,父目录先于子条目):
- * scripts/entities.xml 空注册表 + scripts/entity_defs(含空 types.xml)
- * + scripts/base、scripts/cell 两个服务端角色目录(与角色分析根同口径)。
- * 引擎仓不是模板的一部分——空项目 engineRoot 未识别是常态,导入如实 null。
+ * Minimal template (scripts layout, parent directories before child
+ * entries): scripts/entities.xml as an empty registry + scripts/entity_defs
+ * (containing an empty types.xml) + the two server-side role directories
+ * scripts/base and scripts/cell (same roots as the role analysis).
+ * The engine repository is not part of the template — an unrecognized
+ * engineRoot on an empty project is the norm, and import returns honest
+ * null.
  */
 export const MINIMAL_PROJECT_TEMPLATE: readonly ProjectTemplateEntry[] = [
   { kind: 'directory', relativePath: 'scripts' },
@@ -42,12 +50,12 @@ export const MINIMAL_PROJECT_TEMPLATE: readonly ProjectTemplateEntry[] = [
   { kind: 'directory', relativePath: 'scripts/cell' }
 ];
 
-/** 清单读取(防御性拷贝,调用方改Listing 不影响清单本身) */
+/** Manifest read (defensive copies, so a caller mutating the listing cannot affect the manifest itself) */
 export function listMinimalProjectTemplate(): ProjectTemplateEntry[] {
   return MINIMAL_PROJECT_TEMPLATE.map(entry => ({ ...entry }));
 }
 
-/** 预检依赖(注入以便测试;产品面走真实 fs.existsSync) */
+/** Precheck dependency (injected for tests; the product face uses the real fs.existsSync) */
 export interface ProjectCreationDeps {
   exists: (path: string) => boolean;
 }
@@ -65,17 +73,21 @@ export interface ProjectCreationConflict {
 export interface ProjectCreationPlan {
   targetRoot: string;
   entries: ProjectCreationPlanEntry[];
-  /** 已有目标冲突全集(非空 = 命令层必须拒绝,不写半套) */
+  /** Full set of conflicts with existing targets (non-empty = the command layer must reject, never writing a half set) */
   conflicts: ProjectCreationConflict[];
 }
 
 /**
- * 落盘预检:清单逐条映射到目标根下的绝对路径,已存在的目标(文件或目录
- * 皆算)如实进 conflicts;冲突不截短 entries——清单始终完整摊开,拒绝由
- * 调用方按 conflicts 非空执行。
+ * Disk-write precheck: each manifest entry is mapped to an absolute path
+ * under the target root, and any already-existing target (file or
+ * directory alike) goes into conflicts honestly; a conflict does not
+ * truncate entries — the manifest stays fully laid out and the caller
+ * enforces rejection by testing that conflicts is non-empty.
  *
- * entries 缺省为最小模板;DEMO-GAME-006 起 demo 游戏模板(磁盘装载,
- * demoGameTemplate.loadDemoGameTemplateEntries)也走同一预检/预览/落盘面。
+ * entries defaults to the minimal template; since DEMO-GAME-006 the demo
+ * game template (loaded from disk via
+ * demoGameTemplate.loadDemoGameTemplateEntries) travels through the same
+ * precheck / preview / disk-write face.
  */
 export function planProjectCreation(
   targetRoot: string,
@@ -93,9 +105,11 @@ export function planProjectCreation(
 }
 
 /**
- * 预览项:每条清单一行,标签区分新增目录/新增文件,description 为准确
- * 绝对路径(与写入同源:同一 absolutePath)。供确认面(008 命令层接
- * generationConfirm.confirmGenerationPlanItems)直接使用。
+ * Preview items: one line per manifest entry, the label distinguishing a
+ * new directory from a new file, and the description the exact absolute
+ * path (same source as the write: the same absolutePath). Used directly by
+ * the confirmation face (008 wires the command layer into
+ * generationConfirm.confirmGenerationPlanItems).
  */
 export function buildProjectCreationPreviewItems(plan: ProjectCreationPlan): GenerationPlanItem[] {
   return plan.entries.map(({ entry, absolutePath }) => ({

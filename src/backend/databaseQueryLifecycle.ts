@@ -1,18 +1,27 @@
 /**
- * 只读查询的取消与超时(IDE-DB-003):慢查询到点立即返回 timeout/
- * cancelled 态(不干等),但连接释放等底层结算后 close 恰一次——慢查
- * 询结束等待并释放连接;轮询循环在结算/取消/超时任一成立即退,不滞
- * 留后台轮询;底层失败如实 failed 态带原错误,释放路径不跳过;close
- * 失败经 released 暴露,不影响已定终态。时钟/打盹/取消探针全部注入,
- * 快查询在宏任务边界内结算则零打盹。
+ * Cancellation and timeout for read-only queries (IDE-DB-003): a slow query
+ * returns timeout/cancelled state immediately when the deadline hits (no busy
+ * waiting), but the connection release waits for the underlying settlement and
+ * closes exactly once -- the slow query finishes waiting and releases the
+ * connection; the polling loop exits as soon as settlement/cancel/timeout
+ * holds, never lingering as a background poller; an underlying failure is
+ * reported honestly as failed state with the original error, and the release
+ * path is never skipped; a close failure is exposed via released without
+ * affecting the already-settled final state. Clock/sleep/cancel probes are all
+ * injected; a fast query settling within a macrotask boundary sleeps zero
+ * times.
  *
- * IDE-REV-014:释放等待有上限(releaseDeadlineMs,默认 5000ms)——底层
- * 查询永不结算时不再无限挂 released:到点注入 destroy 即强制销毁连接
- * (未注入则退回 close);释放或销毁合计恰一次,晚到的成功/失败不触发
- * 第二次释放。
+ * IDE-REV-014: the release wait is bounded (releaseDeadlineMs, default
+ * 5000ms) -- when the underlying query never settles, released no longer
+ * hangs forever: at the deadline an injected destroy forces the connection to
+ * be destroyed (falls back to close when not injected); release or destroy
+ * happens exactly once in total, and a late success/failure does not trigger
+ * a second release.
  *
- * IDE-AUD-009:预取消不发起查询(run 零调用);轮询序取消/超时先于
- * 结算判定——与查询同拍到达的取消/超时不被晚到成功冒充成 completed。
+ * IDE-AUD-009: a pre-cancel never issues the query (run is called zero
+ * times); in the polling order cancel/timeout are evaluated before
+ * settlement -- a cancel/timeout arriving in the same tick as the query is
+ * not masked into completed by a late success.
  */
 
 export type ReadOnlyQueryLifecycleOutcome<T> =
@@ -26,11 +35,11 @@ export interface QueryLifecycleOptions {
   isCancelled(): boolean;
   now(): number;
   sleep(ms: number): Promise<void>;
-  /** 轮询步长(默认 25ms);快查询零打盹 */
+  /** Polling step (default 25ms); fast queries sleep zero times */
   pollMs?: number;
-  /** IDE-REV-014:释放等待上限(默认 5000ms)——到点底层仍未结算即走强制销毁 */
+  /** IDE-REV-014: release-wait upper bound (default 5000ms) -- if the underlying query is still unsettled at the deadline, force-destroy kicks in */
   releaseDeadlineMs?: number;
-  /** IDE-REV-014:强制销毁面(挂在永不结算查询上的连接);未注入退回 close */
+  /** IDE-REV-014: force-destroy surface (for connections stuck on a never-settling query); falls back to close when not injected */
   destroy?: () => Promise<void> | void;
 }
 
@@ -43,8 +52,9 @@ interface RunHolder<T> {
 const DEFAULT_RELEASE_DEADLINE_MS = 5000;
 
 /**
- * 生命周期包装:轮询探针(取消/超时)与底层执行并行;任一终态返回,
- * released 统一等底层结算(有上限)→ close/destroy 恰一次。
+ * Lifecycle wrapper: polling probes (cancel/timeout) run in parallel with the
+ * underlying execution; any final state returns, and released uniformly awaits
+ * the underlying settlement (bounded) -> close/destroy exactly once.
  */
 export async function runReadOnlyQueryLifecycle<T>(
   run: () => Promise<T>,
@@ -55,7 +65,7 @@ export async function runReadOnlyQueryLifecycle<T>(
   const startedAt = options.now();
   const deadline = startedAt + options.timeoutMs;
 
-  // IDE-AUD-009:预取消——查询根本不发起(run 零调用),释放即 close 恰一次
+  // IDE-AUD-009: pre-cancel -- the query is never issued at all (run called zero times); release is close exactly once
   if (options.isCancelled()) {
     return {
       kind: 'cancelled',
@@ -77,10 +87,10 @@ export async function runReadOnlyQueryLifecycle<T>(
       runState.error = error;
     }
   );
-  // 宏任务边界:同步/近同步完成的查询在此落标,零打盹
+  // Macrotask boundary: queries that complete synchronously/near-synchronously are marked here, zero sleeps
   await new Promise<void>(resolve => setImmediate(resolve));
   for (;;) {
-    // IDE-AUD-009:终态原因优先——同拍完成不冒充 completed
+    // IDE-AUD-009: the final-state reason wins -- a same-tick completion is not passed off as completed
     if (options.isCancelled()) {
       return { kind: 'cancelled', elapsedMs: options.now() - startedAt, released: releaseAfter(running, close, options, () => runState.state !== 'pending') };
     }
@@ -98,10 +108,13 @@ export async function runReadOnlyQueryLifecycle<T>(
 }
 
 /**
- * released 面:等底层结算(失败已在状态面呈现,此处吞掉)→ close 恰一次;
- * IDE-REV-014:等待有上限——到点仍未结算即走 destroy 强制销毁(未注入退回
- * close),释放或销毁合计恰一次,晚到结算不重复释放。已结算的快查询不
- * 排限等打盹(零打盹口径保持)。
+ * released surface: await the underlying settlement (failures are already
+ * surfaced in the state, swallowed here) -> close exactly once;
+ * IDE-REV-014: the wait is bounded -- if it is still unsettled at the deadline,
+ * destroy force-destroys it (falls back to close when not injected); release
+ * or destroy happens exactly once in total, and a late settlement does not
+ * release again. An already-settled fast query does not queue a deadline wait
+ * or sleep (the zero-sleep contract is preserved).
  */
 function releaseAfter(
   running: Promise<void>,

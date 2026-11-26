@@ -170,7 +170,10 @@ fn diagnostic_layering_golden_structure_is_complete() {
                 .layer_for_check
                 .get(&finding.check)
                 .expect("决策表逐码在场");
-            hit_files.entry(layer.as_str()).or_default().insert(&file.file);
+            hit_files
+                .entry(layer.as_str())
+                .or_default()
+                .insert(&file.file);
         }
     }
     for stats in &value.replay_stats {

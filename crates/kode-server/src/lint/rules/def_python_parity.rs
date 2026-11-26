@@ -1,19 +1,19 @@
-//! def↔Python 方法一致性规则(任务 C-19 交付①)。
+//! def<->Python method parity rule (task C-19 deliverable 1).
 //!
-//! 规则 id `def-method-missing-in-python`:def 中声明的方法在对应同名
-//! Python 实体类中无实现 → warning 诊断。定位在 def 文件方法名行,finding
-//! 携带 [`RelatedFace`](super::RelatedFace)(目标 Python 文件 + 类名,双向
-//! 定位)。
+//! Rule id `def-method-missing-in-python`: a method declared in the def has no implementation in the corresponding
+//! same-named Python entity class -> warning diagnostic. Anchored at the method-name line in the def file; the finding
+//! carries [`RelatedFace`](super::RelatedFace) (target Python file + class name, bidirectional
+//! location).
 //!
-//! 输入面 [`PythonParityInput`](super::PythonParityInput)(经
-//! `$/kode/lint/analyzeDef` 的 `pythonParity` 可选入参,TS 侧已解析好
-//! Python 符号表后直传):按段(base/cell/client)给出该段属主 Python 文件与
-//! 该类已实现方法集合。规则对三段做集合差:
-//! - 该段上下文缺失(None)→ 该段不产 finding(无法核验,零误报);
-//! - 该段上下文在位 → 段内方法不在已实现集合 → 产 warning。
+//! Input face [`PythonParityInput`](super::PythonParityInput) (via
+//! the `pythonParity` optional input of `$/kode/lint/analyzeDef`; the TS side has already parsed the
+//! Python symbol table and passes it straight through): per section (base/cell/client) it gives the section owner's Python file and
+//! that class's set of implemented methods. The rule takes the set difference over the three sections:
+//! - Section context missing (None) -> that section produces no finding (unverifiable, zero false positives);
+//! - Section context present -> a section method absent from the implemented set -> warning.
 //!
-//! 反向(Python 有 def 无)不在本规则(任务口径默认关闭可配,防误报),本
-//! 规则只做正向(def 有 Python 无)。
+//! The reverse direction (Python has it, def does not) is not in this rule (task scope: off by default, configurable, to avoid false positives);
+//! this rule only does the forward direction (def has it, Python does not).
 
 use std::collections::BTreeSet;
 
@@ -23,9 +23,9 @@ use crate::lint::{make_finding, Finding, Rule};
 use crate::lint::{PythonParityInput, PythonParitySection};
 use crate::lint::{RelatedFace, RuleContext};
 
-/// 三方法段内 (方法元素下标, 段名) 列表(段序 Base → Cell → Client)。
-/// 与 `rules::all_methods_with_section` 同口径;本规则独立持有,避免改动
-/// `rules.rs` 的共享面(wt/topology 并行在改 rules.rs)。
+/// List of (method element index, section name) within the three method sections (section order Base -> Cell -> Client).
+/// Same stance as `rules::all_methods_with_section`; this rule holds its own copy to avoid touching
+/// the shared surface of `rules.rs` (wt/topology sessions are editing rules.rs in parallel).
 fn methods_with_section(doc: &Document) -> Vec<(usize, &'static str)> {
     const SECTIONS: &[(&str, &str)] = &[
         ("BaseMethods", "base"),
@@ -46,7 +46,7 @@ fn methods_with_section(doc: &Document) -> Vec<(usize, &'static str)> {
     out
 }
 
-/// 段名 → 该段 Python 上下文(缺失 = 该段无法核验,不产 finding)。
+/// Section name -> that section's Python context (missing = that section is unverifiable, no finding).
 fn section_input<'a>(py: &'a PythonParityInput, section: &str) -> Option<&'a PythonParitySection> {
     match section {
         "base" => py.base.as_ref(),
@@ -56,7 +56,7 @@ fn section_input<'a>(py: &'a PythonParityInput, section: &str) -> Option<&'a Pyt
     }
 }
 
-/// def↔Python 方法一致性规则(正向:def 有 Python 无)。
+/// def<->Python method parity rule (forward: def has it, Python does not).
 #[derive(Debug)]
 pub struct DefMethodMissingInPythonRule;
 
@@ -67,7 +67,7 @@ impl Rule for DefMethodMissingInPythonRule {
 
     fn check(&self, ctx: &RuleContext) -> Vec<Finding> {
         let py = &ctx.python;
-        // 调用方未提供任何段上下文 → 无法核验,零产出(兼容既有调用方)。
+        // Caller provided no section context at all -> unverifiable, zero output (compatible with existing callers).
         if py.python_class.is_empty()
             || (py.base.is_none() && py.cell.is_none() && py.client.is_none())
         {

@@ -1,20 +1,32 @@
 /**
- * HR-EXT-007(RUST-411)SDK 示例面:第三方写热更 provider 的两条最短路径。
- * 纯逻辑零 vscode/IO——示例即代码,也是它的集成测试对象。
+ * HR-EXT-007 (RUST-411) SDK example face: the two shortest paths for a
+ * third party to write a hot reload provider. Pure logic, zero vscode/IO —
+ * the examples are the code and are also their own integration test
+ * subjects.
  *
- * 不建平行抽象,两例都收编既有 face:
- * ① stub=零 IO 记录型 provider。证明「不触任何能力面」的 provider 形态:
- *   只把收到的请求记账,不联网不读盘不起进程,返回如实 ok;
- * ② mock HTTP=同一 `createTemplateHotfixSendProvider` 工厂 + 脚本化
- *   `HttpTransport`。证明 HTTP provider 的实现=模板(HR-EXT-006)+ 传输通道,
- *   与内置 `kbengine.http-hotfix` 同契约——只是 transport 换成脚本。
+ * No parallel abstraction is built; both examples are folded into the
+ * existing faces:
+ * ① stub = a zero-IO recording provider. It demonstrates the provider shape
+ *   that "touches no capability face": it only records the requests it
+ *   receives — no network, no disk, no spawned processes — and honestly
+ *   returns ok;
+ * ② mock HTTP = the same `createTemplateHotfixSendProvider` factory + a
+ *   scripted `HttpTransport`. It demonstrates that an HTTP provider's
+ *   implementation = a template (HR-EXT-006) + the transport channel, with
+ *   the same contract as the built-in `kbengine.http-hotfix` — only the
+ *   transport is swapped for a script.
  *
- * 权限口径如实(HR-EXT-004):stub 零声明 → 缺省策略对 send 面 granted=false
- * 并点名缺 network(它确实没声明任何能力,策略也不替它猜);mock 声明
- * workspace+network(与内置同契约)→ send 面 granted=true。
- * 解析与权限是**分层**不是同一道闸:`registry.resolve*` 不含权限假设
- * (解析序=注册序先到先应答),权限判定由宿主挂载期显式调用策略——示例把
- * 两者并置分别断言,不混判。
+ * Permission conventions are honest (HR-EXT-004): the stub declares nothing
+ * -> the default policy yields granted=false for the send face and names
+ * network as the missing capability (it truly declared no capability, and
+ * the policy does not guess for it either); the mock declares
+ * workspace+network (same contract as the built-in) -> granted=true for the
+ * send face.
+ * Resolution and permissions are **layered**, not one gate:
+ * `registry.resolve*` carries no permission assumption (resolution order =
+ * registration order, first come first answered), and the permission verdict
+ * is the host explicitly invoking the policy at mount time — the examples
+ * juxtapose the two and assert them separately, never conflating them.
  */
 
 import {
@@ -38,13 +50,16 @@ import type {
   OutgoingHttpRequest
 } from './httpRequestService';
 
-/** 示例 provider id 前缀:与内置 `kbengine.*` 分命名空间,注册不撞 id */
+/** Example provider id prefix: its own namespace apart from the built-in `kbengine.*`, so registration never collides on id */
 export const EXAMPLE_STUB_PROVIDER_ID = 'example.stub-hotfix';
 
 /**
- * stub provider:零 IO 记录型。集成测试用它断言「宿主把请求递给了谁」——
- * 每次 send 记一条原始请求,原样回 ok,绝不假装发过网络。
- * `calls` 随每次 send 增长(同一实例内累积),供断言取用。
+ * stub provider: zero-IO recording kind. Integration tests use it to assert
+ * "which provider the host handed the request to" — every send records one
+ * raw request, answers ok verbatim, and never pretends to have touched the
+ * network.
+ * `calls` grows with every send (accumulated within the same instance) for
+ * assertions to consume.
  */
 export interface StubHotReloadProvider extends HotReloadProvider {
   readonly calls: readonly HotReloadProviderSendRequest[];
@@ -65,7 +80,7 @@ export function createStubHotReloadProvider(): StubHotReloadProvider {
   };
 }
 
-/** mock transport 记录到的每条真实 HTTP 出口请求(url 即模板展开结果) */
+/** Each real HTTP outgoing request the mock transport records (the url is the template expansion result) */
 export interface MockHttpCall {
   readonly url: string;
   readonly method: string;
@@ -74,19 +89,20 @@ export interface MockHttpCall {
 }
 
 export interface MockHttpHotfixOptions {
-  /** 模板条目;缺省=内置示例(与内置 HTTP hotfix 同契约形态) */
+  /** The template entry; defaults to the built-in example (same contract shape as the built-in HTTP hotfix) */
   readonly entry?: HttpRequestEntry;
-  /** 脚本化应答:按调用序取,第 n 次用 responses[n-1];越界回退 defaultResponse */
+  /** Scripted responses: taken in call order, the nth call uses responses[n-1]; out of range falls back to defaultResponse */
   readonly responses?: readonly HttpExecutionResult[];
   readonly defaultResponse?: HttpExecutionResult;
   /**
-   * 其余发送 deps(scriptRoot/timeoutMs/...);transport 由 mock 接管,
-   * 传进来也不生效——mock 的整点就是 transport 被脚本替掉。
+   * The remaining send deps (scriptRoot / timeoutMs / ...); the transport is
+   * taken over by the mock, so passing one in has no effect — the whole point
+   * of the mock is that the transport is replaced by a script.
    */
   readonly sendDeps?: Omit<DefaultHotfixSendDeps, 'transport'>;
 }
 
-/** mock HTTP provider:同一工厂 + 脚本 transport,与内置同契约 */
+/** mock HTTP provider: the same factory + a scripted transport, same contract as the built-in */
 export interface MockHttpHotfixProvider extends HotReloadProvider {
   readonly calls: readonly MockHttpCall[];
 }
@@ -118,11 +134,15 @@ export function createMockHttpHotfixProvider(
 }
 
 /**
- * 缺省权限策略下两例的判定并置(集成测试断言面):
- * - stub 零声明 → send 面 granted=false,missing=['network'],reason 点名 id;
- * - mock 声明 workspace+network → send 面 granted=true。
- * 策略本身不在此实现,直接用既有 `createDefaultHotReloadPermissionPolicy`,
- * 只把并置结论收成一枚函数,不另造判定逻辑。
+ * The side-by-side verdicts for the two examples under the default
+ * permission policy (the integration test assertion face):
+ * - stub declares nothing -> granted=false for the send face,
+ *   missing=['network'], and the reason names the id;
+ * - mock declares workspace+network -> granted=true for the send face.
+ * The policy itself is not implemented here; it just uses the existing
+ * `createDefaultHotReloadPermissionPolicy` directly, gathering the
+ * juxtaposed conclusions into a single function without inventing new
+ * verdict logic.
  */
 export function examplePermissionVerdicts(
   policy: HotReloadPermissionPolicy,

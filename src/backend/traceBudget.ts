@@ -1,34 +1,38 @@
 /**
- * KFLOW 受控采集预算登记处(FLOW-029):预登记采集时间/容量/开销预算——
- * 采集面的默认值与硬顶唯一出处,运行面(traceCaptureRun)与报告/测试引用
- * 同一常量,不散落第二处。
+ * KFLOW controlled-capture budget registry (FLOW-029): pre-registered capture
+ * time/capacity/overhead budgets — the single source for the capture face's
+ * defaults and hard caps; the run face (traceCaptureRun) and reports/tests
+ * reference the same constants, never a second scattered copy.
  *
- * 验收原文:「预登记采集时间/容量/开销预算,测停止/断连/引擎退出/丢事件/
- * 时钟偏差;报告实际采样边界。」
+ * Acceptance text: "Pre-register capture time/capacity/overhead budgets; test
+ * stop/disconnect/engine exit/dropped events/clock skew; report the actual
+ * sampling boundary."
  *
- * 数值依据(2026-11-14 本机实测,CPython 3.14.4,scripts/trace/
- * monitoring_capture.py + workload_loop.py,3 次取最小):
- *   - 每事件开销 0.018-0.024ms(4012 事件 ~96ms/40012 事件 ~714ms/
- *     100012 事件 ~1787ms,线性无超线性);
- *   - 详见 docs/perf/2026-11-14-kflow-029-capture-budget-and-overhead.md。
- * 预算=实测值加裕量登记,超预算是报告事件不是静默通过。纯核心零 vscode
- * 依赖;预算不改变 FLOW-025 红线(默认关闭/可关闭/有界)。
+ * Numeric basis (2026-11-14 measured on this machine, CPython 3.14.4,
+ * scripts/trace/monitoring_capture.py + workload_loop.py, minimum of 3 runs):
+ *   - per-event overhead 0.018-0.024ms (4012 events ~96ms / 40012 events ~714ms /
+ *     100012 events ~1787ms, linear, no super-linearity);
+ *   - see docs/perf/2026-11-14-kflow-029-capture-budget-and-overhead.md.
+ * A budget = the measured value registered with headroom; exceeding the budget is
+ * a report event, never a silent pass. Pure core with zero vscode dependencies;
+ * the budget does not change the FLOW-025 red line (defaults to off / can be
+ * turned off / bounded).
  */
 
 export interface TraceCaptureBudget {
-  /** 容量默认:受控采集未显式给 maxEvents 时的缺省缓冲界 */
+  /** Capacity default: the default buffer bound when a controlled capture is not given maxEvents explicitly */
   defaultMaxEvents: number;
-  /** 容量硬顶:显式请求也不得超过(工件体积/开销天花板) */
+  /** Capacity hard cap: even an explicit request must not exceed it (artifact size/overhead ceiling) */
   hardMaxEventsCap: number;
-  /** 时间默认:受控采集未显式给 timeoutMs 时的缺省超时(ms) */
+  /** Time default: the default timeout when a controlled capture is not given timeoutMs explicitly (ms) */
   defaultTimeoutMs: number;
-  /** 时间硬顶:显式请求也不得超过(ms) */
+  /** Time hard cap: even an explicit request must not exceed it (ms) */
   hardTimeoutMsCap: number;
-  /** 开销预算:每事件允许的采集开销上限(ms);实测约 0.02,预算给 2.5 倍裕量 */
+  /** Overhead budget: the per-event capture overhead cap allowed (ms); measured ~0.02, the budget gives 2.5x headroom */
   overheadBudgetPerEventMs: number;
 }
 
-/** 预登记预算(唯一出处;改值须同步报告 docs/perf/kflow-029)。 */
+/** Pre-registered budget (single source; changing a value must sync the report docs/perf/kflow-029). */
 export const TRACE_CAPTURE_BUDGET: TraceCaptureBudget = {
   defaultMaxEvents: 20000,
   hardMaxEventsCap: 200000,
@@ -38,9 +42,9 @@ export const TRACE_CAPTURE_BUDGET: TraceCaptureBudget = {
 };
 
 export interface CaptureBudgetInput {
-  /** 显式容量请求(缺省=default;超硬顶即拒) */
+  /** Explicit capacity request (defaults to default; over the hard cap is rejected) */
   maxEvents?: number;
-  /** 显式超时请求 ms(缺省=default;超硬顶即拒) */
+  /** Explicit timeout request in ms (defaults to default; over the hard cap is rejected) */
   timeoutMs?: number;
 }
 
@@ -50,8 +54,9 @@ export interface ResolvedCaptureBudget {
 }
 
 /**
- * 解析生效预算:缺省→默认;非法(非正整数/非正数)即拒;超硬顶即拒
- * (错误消息带预算值,报告可回查)。
+ * Resolve the effective budget: missing -> defaults to the default; invalid (not a
+ * positive integer / not a positive number) is rejected; over the hard cap is
+ * rejected (the error message carries the budget values so reports can trace back).
  */
 export function resolveCaptureBudgets(input: CaptureBudgetInput): ResolvedCaptureBudget {
   const maxEvents = input.maxEvents ?? TRACE_CAPTURE_BUDGET.defaultMaxEvents;
@@ -75,7 +80,7 @@ export function resolveCaptureBudgets(input: CaptureBudgetInput): ResolvedCaptur
   return { maxEvents, timeoutMs };
 }
 
-/** 预算摘要(UI/报告直接引用)。 */
+/** Budget summary (referenced directly by UI/reports). */
 export function describeCaptureBudget(): string {
   const budget = TRACE_CAPTURE_BUDGET;
   return (

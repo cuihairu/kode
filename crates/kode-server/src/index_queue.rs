@@ -1,21 +1,21 @@
-//! RUST-070/071/073:索引刷新队列——hover 语料 ingest 装配线(生产接线)。
-//! RUST-082:didChange debounce 风暴缓冲(时间窗合并 + max latency)。
+//! RUST-070/071/073: index refresh queue -- the hover-corpus ingest assembly line (production wiring).
+//! RUST-082: didChange debounce storm buffer (time-window coalescing + max latency).
 //!
-//! CORE-005「局部依赖刷新让位直接语义查询」:didOpen/didChange/didClose 的
-//! hover 语料 ingest 不再在 stdio 泵线程内联执行(镜像洪水逐文件解析会把
-//! 交互帧压在后面),改为入 kode-scheduler 调度队列(DEPENDENCY_UPDATE),
-//! 主循环空闲切片 + 请求入口「先刷新所需文件」驱动。CORE-008:同文件同版
-//! 本合并、旧版本让位(取消旧队新),一次输入风暴收敛为至多一个待执行任务;
-//! CORE-006:有界队列(超限诚实拒绝计数,不静默积压)。执行体取「执行时刻
-//! 真相」:overlay 优先(打开文档),回落磁盘,读盘失败=真正逐出(VFS-012
-//! 修订同口径)——入队时的 open/change/close 语境不携带,幂等可合并。
+//! CORE-005 "local dependency refresh yields to direct semantic queries": the hover-corpus ingest of didOpen/didChange/didClose no longer runs inline on the stdio pump thread
+//! (parsing a mirror flood file by file would push interactive frames behind it); instead it enters a kode-scheduler dispatch queue (DEPENDENCY_UPDATE),
+//! driven by main-loop idle slices plus the request entry's "freshen the needed files first". CORE-008: same file same
+//! version merges and an older version yields (cancel the old, queue the new); one input storm converges to at most one pending task;
+//! CORE-006: bounded queue (over-limit honestly counts a rejection, never silently accumulates). The executor takes "the truth at execution time":
+//! overlay first (open document), falls back to disk, and a failed disk read = a true eviction (VFS-012
+//! revision, same stance) -- the open/change/close context at enqueue time is not carried, so tasks are idempotent and mergeable.
 //!
-//! RUST-082(CORE-017):didChange 先入 StormBuffer 时间窗(同文件并一/
-//! 最新版本胜出),窗口到期(≤ max latency)或缓冲超限才整批移交调度队列
-//! ——连续敲键不再逐版本入队执行;didOpen/didClose 不过窗(open=交互即时
-//! 需求,close=状态转移),请求入口对该文件缓冲立即移交(take_file)保
-//! 「打开文档请求即新鲜」。delete/create 语义=执行时刻真相(盘上无→逐出、
-//! 盘上有→回读)天然合并,无独立 watch 面(诚实边界,不假称 fs-watch 在岗)。
+//!
+//! RUST-082 (CORE-017): didChange first enters the StormBuffer time window (same-file merge / newest version wins);
+//! only when the window expires (<= max latency) or the buffer overflows is the whole batch handed to the dispatch queue
+//! -- continuous typing no longer enqueues and executes per version; didOpen/didClose bypass the window (open = an immediate interactive
+//! need, close = a state transition), and the request entry hands the buffered events for that file over immediately (take_file), keeping
+//! "an open-document request is immediately fresh". delete/create semantics = the truth at execution time (absent on disk -> evict;
+//! present on disk -> re-read), which merges naturally; there is no separate watch face (honest boundary, no pretense that fs-watch is on duty).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -35,78 +35,78 @@ use kode_index::ChangeCategory;
 
 use crate::hover::HoverEngine;
 
-/// 有界队列上限(CORE-006)。语料量级(千级 def 文件)远低于此;超限拒新
-/// 计入 `rejectedQueueFull`(健康面),不静默积压不静默丢失语义——被拒文件
-/// 至下次变更前无索引条目,属诚实缺口不装完整。
+/// Bounded-queue cap (CORE-006). The corpus scale (thousands of def files) sits far below this; a rejection over the cap
+/// counts into `rejectedQueueFull` (health face); never silently accumulate, never silently lose semantics -- a rejected file
+/// has no index entries until its next change; an honest gap, not a pretense of completeness.
 pub const INDEX_QUEUE_MAX: usize = 8192;
 
-/// 请求入口排水预算(条):freshen 自键 + FIFO 追赶至多 N 条,其余留给
-/// 空闲切片——小语料(测试/小仓)单请求即全量就绪,大语料请求不背全量洪水。
+/// Request-entry drain budget (entries): freshen its own key + catch up FIFO at most N entries, leaving the rest to
+/// idle slices -- a small corpus (tests / small repos) becomes fully ready in one request; a large-corpus request does not carry the full flood.
 pub const REQUEST_DRAIN_BUDGET: usize = 16;
 
-/// RESP-001:请求排水墙钟顶(ms)。条数上限保留(小语料单请求全量就绪
-/// 口径不变),叠加墙钟界——条数约束不了响应时间,时间才能:慢盘/大文件
-/// 下交互请求在无关追赶上最多付这么多,余量留给空闲切片。
+/// RESP-001: request-drain wall-clock cap (ms). The entry cap is kept (small corpus: fully ready in one request,
+/// stance unchanged) with a wall-clock bound stacked on -- entry counts cannot bound response time, time can: on a slow disk / large file,
+/// an interactive request pays at most this much on unrelated catch-up, leaving the remainder to idle slices.
 pub const REQUEST_DRAIN_BUDGET_MS: u64 = 4;
 
-/// RESP-001:空闲 tick 大切片墙钟顶(ms)。空闲期追赶可以更拼,同样有界
-/// (条数 64 保留为上限)。
+/// RESP-001: idle-tick large-slice wall-clock cap (ms). Idle catch-up can push harder but stays bounded likewise
+/// (the 64-entry count is kept as the upper bound).
 pub const IDLE_SLICE_BUDGET_MS: u64 = 16;
 
-/// didChange debounce 时间窗(CORE-017 max latency):窗口内同文件多版本
-/// 并一,窗口到期整批移交——最坏延迟 = 窗口时长,连续输入下至多每窗一批
-/// (延迟有界,绝不无限推迟)。
+/// didChange debounce time window (CORE-017 max latency): multiple versions of the same file within the window merge into one,
+/// and the whole batch is handed over on window expiry -- worst-case latency = the window duration; under continuous input, at most one batch per window
+/// (bounded latency, never postponed indefinitely).
 pub const DID_CHANGE_DEBOUNCE_MS: u64 = 300;
 
-/// 风暴缓冲文件数上限:超限先强制落批(延迟换吞吐的诚实界——极端风暴下
-/// 不积压、不限延迟到无限,先保住旧批进队列)。
+/// Storm-buffer file cap: on overflow, force a batch out first (an honest latency-for-throughput bound -- under an extreme storm,
+/// never accumulate, never defer latency to infinity; first get the old batch into the queue).
 pub const STORM_BUFFER_MAX_FILES: usize = 512;
 
-/// 身份键:`root:path`(dedup/freshen/purge/风暴缓冲四面同源)。
+/// Identity key: `root:path` (a single source shared by the dedup/freshen/purge/storm-buffer faces).
 pub fn identity_of(key: &DocumentKey) -> String {
     format!("{}:{}", key.root.0, key.uri.as_path())
 }
 
-/// 索引刷新观测快照(健康面 `ingest` 键同源)。
+/// Index-refresh observation snapshot (same source as the health face's `ingest` key).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct IndexQueueSnapshot {
-    /// 当前在队条数。
+    /// Entries currently queued.
     pub queued: u64,
-    /// 累计入队(让位重入队计入)。
+    /// Cumulative enqueues (yield re-enqueues count).
     pub enqueued: u64,
-    /// 同文件同版本合并(未入队)。
+    /// Same-file same-version merges (not enqueued).
     pub merged: u64,
-    /// 过期版本丢弃(新任务比在队旧)。
+    /// Stale-version drops (the new task is older than the queued one).
     pub stale_dropped: u64,
-    /// 队列满拒绝。
+    /// Queue-full rejections.
     pub rejected_queue_full: u64,
-    /// 累计执行成功。
+    /// Cumulative successful executions.
     pub executed: u64,
-    /// 撤根清除的待执行条目。
+    /// Pending entries cleared by root purge.
     pub purged: u64,
-    /// RUST-082:风暴缓冲累计收到事件。
+    /// RUST-082: total events received by the storm buffer.
     pub storm_seen: u64,
-    /// RUST-082:风暴缓冲并一掉的事件。
+    /// RUST-082: events merged away by the storm buffer.
     pub storm_merged: u64,
-    /// RUST-082:当前缓冲中的文件数。
+    /// RUST-082: files currently in the buffer.
     pub storm_buffered: u64,
-    /// RUST-082:窗口到期整批移交次数(max latency 兑现记账)。
+    /// RUST-082: whole-batch handovers on window expiry (the max-latency accounting).
     pub storm_deadline_flushes: u64,
-    /// RUST-082:缓冲超限强制落批次数。
+    /// RUST-082: forced batch-outs on buffer overflow.
     pub storm_forced_flushes: u64,
-    /// RUST-120-W:ingest 判类 identical(指纹命中,索引态零变异)。
+    /// RUST-120-W: ingest classed identical (fingerprint hit; the index state is untouched).
     pub ingest_identical: u64,
-    /// RUST-120-W:ingest 判类 body-only(注册事实全等,视图零写不 bump)。
+    /// RUST-120-W: ingest classed body-only (registered facts fully equal; the view is written nowhere and no bump).
     pub ingest_body_only: u64,
-    /// RUST-120-W:ingest 判类 signature(重灌视图 + bump)。
+    /// RUST-120-W: ingest classed signature (re-populate the view + bump).
     pub ingest_signature: u64,
-    /// RUST-120-W:执行时刻真相逐出(盘上无文件)。
+    /// RUST-120-W: eviction by execution-time truth (the file is absent on disk).
     pub ingest_removed: u64,
 }
 
-/// RUST-120-W:分类失效计数(执行体在执行时刻记账;队列持有原件,闭包
-/// 持有克隆;单线程 Rc/RefCell 世界,done_log 同模式)。字段由
-/// [`record_ingest`] 记账,读经 [`IndexQueue::snapshot`]。
+/// RUST-120-W: per-class invalidation counts (accounted by the executor at execution time; the queue holds the original,
+/// the closure holds a clone; a single-threaded Rc/RefCell world, the same pattern as done_log). The fields are
+/// accounted by [`record_ingest`], read via [`IndexQueue::snapshot`].
 #[derive(Debug, Default)]
 pub struct IngestCounts {
     identical: u64,
@@ -124,59 +124,59 @@ fn record_ingest(counts: &Rc<RefCell<IngestCounts>>, change: ChangeCategory) {
     }
 }
 
-/// RESP-001:磁盘回落读函数(注入位)。参数=native 路径字符串。
+/// RESP-001: disk-fallback read function (injection point). The argument = a native path string.
 pub type DiskReadFn = Rc<dyn Fn(&str) -> std::io::Result<String>>;
 
-/// RESP-001b:跨线程读函数(读线程所有)。同 [`DiskReadFn`] 但
-/// `Arc + Send + Sync`,供 [`IngestReadThread::spawn`] 与
-/// [`IndexQueue::with_off_thread_reader`] 注入位共用。
+/// RESP-001b: cross-thread read function (owned by the read thread). Same as [`DiskReadFn`] but
+/// `Arc + Send + Sync`, shared as the injection point by [`IngestReadThread::spawn`] and
+/// [`IndexQueue::with_off_thread_reader`].
 pub type SharedDiskReadFn = std::sync::Arc<dyn Fn(&str) -> std::io::Result<String> + Send + Sync>;
 
-/// 生产读函数:`std::fs::read_to_string` 直通。
+/// Production read function: a pass-through to `std::fs::read_to_string`.
 fn default_disk_reader() -> DiskReadFn {
     Rc::new(|path| std::fs::read_to_string(path))
 }
 
-// ---- RESP-001b:专用读盘线程 ------------------------------------------------
+// ---- RESP-001b: dedicated disk-read thread ------------------------------------------------
 //
-// 动机:Batch-1(墙钟切片)界住了「任务间」停顿,单任务内的读盘仍在协议
-// 线程上(慢盘/大文件=单文件无响应间隔)。专用读线程把「读」整体搬离协议
-// 线程(读线程只做 reader(path),生产=std::fs;不做解析,解析仍在切片
-// 预算内)。两拍:任务执行体只「登记在册+投递读任务」即返回(不应用
-// 不逐出);读毕经 done 泵**直接应用**(poll_reads 同线程校验执行时刻
-// 真相:overlay 已开→弃盘读[盘上快照不得冲掉未保存修订],否则应用读
-// 结果/读失败逐出)。不经调度核重入队——同身份两份 done 在切片前齐到
-// 会撞同 file 同 version 的 Merged 判定吞掉第二拍(实测竞态),直接
-// 应用天然 FIFO 保序:新旧两读都应用,终态=最后一读;撤销
-// (purge_root/purge_key)摘名后到达的 done 全弃(晚到复活防线,与
-// pending 摘除同语义)。
+// Motivation: Batch-1 (wall-clock slices) bounded the "between-tasks" pauses, but disk reads within a single task still ran on the
+// protocol thread (slow disk / large file = a per-file unresponsive interval). A dedicated read thread moves "reading" entirely off the
+// protocol thread (the read thread only does reader(path), production = std::fs; it does not parse -- parsing still runs inside the slice
+// budget). Two beats: the task executor only "registers + posts a read task" and returns (no applying,
+// no evicting); once read, the done pump **applies directly** (poll_reads verifies the execution-time truth on the same thread:
+// if an overlay is open, drop the disk read [an on-disk snapshot must not wash away unsaved revisions]; otherwise apply the read
+// result / evict on read failure). It does not re-enter the dispatch core's queue -- if two done items for the same identity arrive together before a slice,
+// the same-file same-version Merged decision would swallow the second beat (a race observed in practice); applying
+// directly is naturally FIFO order-preserving: both the old and new reads apply, and the final state = the last read; after a purge
+// (purge_root/purge_key) removes the name, any done arriving afterwards is discarded (the late-revival defense, the same
+// semantics as the pending removal).
 
-/// 读线程请求(身份+原生路径)。
+/// Read-thread request (identity + native path).
 struct DiskReadJob {
     identity: String,
     path: String,
 }
 
-/// 读线程完成(身份+结果;FIFO 到达,同身份保序)。
+/// Read-thread completion (identity + result; arrives in FIFO, order-preserving per identity).
 struct DiskReadDone {
     identity: String,
     result: std::io::Result<String>,
 }
 
-/// 专用读盘线程句柄:主线程独占驱动(wanted/stash 台账同线程无锁);
-/// OS 线程仅 `reader(path)`。句柄弃置(所有 Sender drop)后线程自然退出,
-/// 不 join(在途 hung 读不阻塞关停语义——进程退出即收)。
+/// Dedicated disk-read thread handle: driven exclusively by the main thread (the wanted/stash ledgers stay on one thread, lock-free);
+/// the OS thread only runs `reader(path)`. Once the handle is dropped (all Senders dropped), the thread exits naturally;
+/// not joined (an in-flight hung read does not block shutdown semantics -- process exit collects it).
 pub(crate) struct IngestReadThread {
     job_tx: mpsc::Sender<DiskReadJob>,
     done_rx: mpsc::Receiver<DiskReadDone>,
-    /// 在册需求(身份→在飞份数):submit 递增,完成递减,purge 摘名。
-    /// done 到达时无名(计数已尽/已撤销)= 无主读,即弃。
+    /// Registered demand (identity -> in-flight count): submit increments, completion decrements, purge removes the name.
+    /// A done arriving with no name (count exhausted / already purged) = an unowned read, discarded.
     wanted: HashMap<String, usize>,
 }
 
 impl IngestReadThread {
-    /// 起读线程;reader 须 Send+Sync(线程所有——主线程 Rc 注入位
-    /// [`DiskReadFn`] 不适用于此,测试慢读/错读用 Arc 闭包注入)。
+    /// Spawn the read thread; the reader must be Send+Sync (owned by the thread -- the main-thread Rc injection point
+    /// [`DiskReadFn`] does not fit here; tests inject slow/failing reads with Arc closures).
     fn spawn(reader: SharedDiskReadFn) -> Rc<RefCell<Self>> {
         let (job_tx, job_rx) = mpsc::channel::<DiskReadJob>();
         let (done_tx, done_rx) = mpsc::channel::<DiskReadDone>();
@@ -192,7 +192,7 @@ impl IngestReadThread {
                         })
                         .is_err()
                     {
-                        // 句柄侧已弃:余读无主,退出。
+                        // Handle side dropped: remaining reads are unowned; exit.
                         break;
                     }
                 }
@@ -205,7 +205,7 @@ impl IngestReadThread {
         }))
     }
 
-    /// 登记在册+投递读任务(份数制:重复投递允许,FIFO 保序逐份消费)。
+    /// Register demand + post a read task (count-based: duplicate posting allowed, consumed one by one in FIFO order).
     fn submit(&mut self, identity: &str, path: &str) {
         *self.wanted.entry(identity.to_string()).or_insert(0) += 1;
         let _ = self.job_tx.send(DiskReadJob {
@@ -218,7 +218,7 @@ impl IngestReadThread {
         self.done_rx.try_recv().ok()
     }
 
-    /// 完成消费在册计数;无名(已撤销/计数已尽)= 无主读,返回 false。
+    /// Consume the registered count on completion; no name (purged / count exhausted) = an unowned read, returns false.
     fn consume_wanted(&mut self, identity: &str) -> bool {
         match self.wanted.get_mut(identity) {
             Some(count) if *count > 0 => {
@@ -232,53 +232,54 @@ impl IngestReadThread {
         }
     }
 
-    /// 撤销:在册摘名(此后到达的 done=无主,即弃)。
+    /// Cancel: remove the name from the ledger (a done arriving afterwards = unowned, discarded).
     fn purge(&mut self, identity: &str) {
         self.wanted.remove(identity);
     }
 
-    /// 撤根:该根全部在册读摘名(身份前缀 `root:`;任务已结算但读在飞
-    /// 的身份不在 pending 台账里,根级摘除补齐这条缝——晚到复活防线)。
+    /// Root purge: remove the names of all registered reads under this root (identity prefix `root:`; identities whose task has settled but whose read is still
+    /// in flight are not in the pending ledger; the root-level removal closes this gap -- the late-revival defense).
     fn purge_root(&mut self, root: RootId) {
         let prefix = format!("{}:", root.0);
-        self.wanted.retain(|identity, _| !identity.starts_with(&prefix));
+        self.wanted
+            .retain(|identity, _| !identity.starts_with(&prefix));
     }
 
-    /// 该身份是否仍有读在途(stale 缺口判据的读线程延伸)。
+    /// Whether this identity still has a read in flight (the read-thread extension of the stale-gap criterion).
     fn in_flight(&self, identity: &str) -> bool {
         self.wanted.contains_key(identity)
     }
 
-    /// 是否有任意读在途(泵切片「队列空但读在飞」的等待判据)。
+    /// Whether any read is in flight (the pump slice's "queue empty but reads in flight" waiting criterion).
     fn any_in_flight(&self) -> bool {
         !self.wanted.is_empty()
     }
 }
 
-/// 索引刷新队列:kode-scheduler 调度核 + 身份台账(pending)+ 风暴缓冲。
+/// Index refresh queue: the kode-scheduler dispatch core + the identity ledger (pending) + the storm buffer.
 pub struct IndexQueue {
     sched: Scheduler,
-    /// identity → (task id, RootId):freshen 指名面 + 撤根 purge 面。
+    /// identity -> (task id, RootId): the freshen named-key face + the root-purge face.
     pending: HashMap<String, (u64, RootId)>,
-    /// 执行回执日志:包装闭包完成后推 identity,泵侧对账清台账。
-    /// Rc 共享(闭包持有克隆,队列持有原件;单线程 Rc/RefCell 世界)。
+    /// Execution receipt log: after the wrapped closure completes, push the identity; the pump side reconciles and clears the ledger.
+    /// Rc-shared (the closure holds a clone, the queue holds the original; a single-threaded Rc/RefCell world).
     done_log: Rc<RefCell<Vec<String>>>,
     counters: IndexQueueSnapshot,
-    /// RUST-120-W:分类失效计数(闭包执行时刻记账,snapshot 合并)。
+    /// RUST-120-W: per-class invalidation counts (accounted at closure execution time, merged into snapshot).
     ingest_counts: Rc<RefCell<IngestCounts>>,
-    /// RUST-082:didChange 风暴缓冲(时间窗合并;核心 record 的内部超限
-    /// 强制 flush 会静默丢弃返回值,包装侧恒在 record 前预排水,绝不触发)。
+    /// RUST-082: the didChange storm buffer (time-window coalescing; the core record's internal overflow forced-flush
+    /// silently drops its return value, so the wrapper always pre-drains before record and never triggers it).
     storm: StormBuffer,
-    /// identity → RootId:缓冲事件移交时重建 DocumentKey 用。
+    /// identity -> RootId: used to rebuild DocumentKey when handing over buffered events.
     storm_roots: HashMap<String, RootId>,
-    /// 窗口到期时刻(首事件落窗时置位;缓冲清空后复位)。
+    /// Window expiry instant (set when the first event lands in the window; reset once the buffer empties).
     storm_deadline: Option<Instant>,
-    /// 引擎句柄(入队时构建执行时刻真相执行体)。
+    /// Engine handle (builds the execution-time-truth executor at enqueue time).
     store: Rc<RefCell<kode_vfs::DocumentStore>>,
     hover: Rc<RefCell<HoverEngine>>,
-    /// RESP-001:磁盘回落读函数(测试注入口,慢盘/大文件模拟)。
+    /// RESP-001: disk-fallback read function (a test injection point simulating slow disk / large files).
     disk_reader: DiskReadFn,
-    /// RESP-001b:专用读盘线程(None=内联读盘,既有语义/既有测试口径)。
+    /// RESP-001b: the dedicated disk-read thread (None = inline disk reads, the existing semantics / existing test stance).
     reads: Option<Rc<RefCell<IngestReadThread>>>,
 }
 
@@ -300,9 +301,9 @@ impl IndexQueue {
         IndexQueue::with_disk_reader(store, hover, default_disk_reader())
     }
 
-    /// RESP-001b:同 [`IndexQueue::new`],磁盘回落读走专用读线程(协议
-    /// 线程绝不内联读盘);reader 须 Send+Sync(读线程所有,测试注入
-    /// 慢读/错读/阻塞读)。
+    /// RESP-001b: same as [`IndexQueue::new`], but disk-fallback reads go through the dedicated read thread (the
+    /// protocol thread never reads the disk inline); the reader must be Send+Sync (owned by the read thread; tests inject
+    /// slow / failing / blocking reads).
     pub fn with_off_thread_reader(
         store: Rc<RefCell<kode_vfs::DocumentStore>>,
         hover: Rc<RefCell<HoverEngine>>,
@@ -313,8 +314,8 @@ impl IndexQueue {
         queue
     }
 
-    /// RESP-001:同 [`IndexQueue::new`],磁盘回落读经注入位 `disk_reader`
-    /// (生产=`std::fs::read_to_string`;测试注入慢读,模拟慢盘/大文件)。
+    /// RESP-001: same as [`IndexQueue::new`], but disk-fallback reads go through the injection point `disk_reader`
+    /// (production = `std::fs::read_to_string`; tests inject slow reads to simulate a slow disk / large files).
     pub fn with_disk_reader(
         store: Rc<RefCell<kode_vfs::DocumentStore>>,
         hover: Rc<RefCell<HoverEngine>>,
@@ -322,9 +323,9 @@ impl IndexQueue {
     ) -> IndexQueue {
         IndexQueue {
             sched: Scheduler::new(SchedulerOptions {
-                // CORE-006:有界队列。交互冷却/饥饿晋升属 ≥BACKGROUND_FULL
-                // 语义,本队列恒 DEPENDENCY_UPDATE(is_interactive=true),
-                // 冷却不适用(如实登记,不假称防饥饿机制在岗)。
+                // CORE-006: bounded queue. Interactive cooldown / starvation promotion belong to >=BACKGROUND_FULL
+                // semantics; this queue is always DEPENDENCY_UPDATE (is_interactive=true),
+                // so cooldown does not apply (honestly registered, no pretense that an anti-starvation mechanism is on duty).
                 max_queued: Some(INDEX_QUEUE_MAX),
                 ..SchedulerOptions::default()
             }),
@@ -342,31 +343,31 @@ impl IndexQueue {
         }
     }
 
-    /// didOpen:语料 ingest 立即入队(open=交互即时需求,不过风暴窗)。
-    /// 同文件同版本在队即合并;新版本让位(旧任务被调度核取消,台账指向
-    /// 新 id);过期丢弃;队满诚实拒绝。
+    /// didOpen: enqueue the corpus ingest immediately (open = an immediate interactive need, bypassing the storm window).
+    /// Same-file same-version already queued merges; a new version yields (the old task is cancelled by the dispatch core and the ledger points at
+    /// the new id); stale versions drop; queue-full rejects honestly.
     pub fn request_open(&mut self, key: &DocumentKey, version: u64) -> EnqueueDecision {
         self.enqueue_refresh(key, Some(version))
     }
 
-    /// RUST-125:打开事件触达解析缓存(驱逐缓刑一轮)——「当前打开文件
-    /// 优先」的索引侧兑现。编辑面由 didChange→update 自然触达;长置未动
-    /// 的打开文件缓刑后被逐=诚实冷逐出(缓刑非硬 pin,超预算不无界驻留)。
+    /// RUST-125: an open event touches the parse cache (one round of eviction reprieve) -- the index-side fulfillment of "the currently
+    /// open file first". The edit face touches it naturally via didChange->update; an open file untouched for a long time
+    /// gets evicted after its reprieve = an honest cold eviction (a reprieve is not a hard pin; beyond budget it does not stay resident unboundedly).
     pub fn note_buffer_open(&self, key: &DocumentKey) {
         self.hover.borrow_mut().index.note_buffer_activity(key);
     }
 
-    /// didClose:刷新入队(version=None 与 Some 不同键,close 后必让位重
-    /// 入队,不合并;执行时刻真相决定回读磁盘还是逐出)。
+    /// didClose: enqueue a refresh (version=None and Some are different keys, so after close it must always yield and re-
+    /// enqueue, never merge; the execution-time truth decides between re-reading the disk and evicting).
     pub fn request_close(&mut self, key: &DocumentKey) -> EnqueueDecision {
         self.enqueue_refresh(key, None)
     }
 
-    /// didChange:入风暴缓冲(时间窗合并;同文件并一/最新版本胜出)。
-    /// 返回是否与缓冲内同文件事件合并。缓冲超限先强制落批(移交调度队列),
-    /// 绝不让核心 record 的内部 flush 静默吞事件。
+    /// didChange: enter the storm buffer (time-window coalescing; same-file merge / newest version wins).
+    /// Returns whether it merged with a same-file event already in the buffer. On buffer overflow, force a batch out first (hand over to the dispatch queue);
+    /// never let the core record's internal flush silently swallow events.
     pub fn record_change(&mut self, key: &DocumentKey, version: u64) -> bool {
-        // 预排水:缓冲将满先整批移交(延迟换吞吐的诚实界)。
+        // Pre-drain: hand the whole batch over before the buffer fills (the honest latency-for-throughput bound).
         if self.storm.buffered() >= STORM_BUFFER_MAX_FILES {
             self.drain_storm();
             self.counters.storm_forced_flushes += 1;
@@ -378,8 +379,8 @@ impl IndexQueue {
         self.storm.record(identity, version, DEPENDENCY_UPDATE)
     }
 
-    /// RUST-082:窗口到期整批移交(max latency 兑现)——到期才搬,未到期
-    /// 一律不动。返回移交条数。连续输入下至多每窗一批,绝不无限推迟。
+    /// RUST-082: whole-batch handover on window expiry (max latency fulfilled) -- move only on expiry; before expiry,
+    /// never touch anything. Returns the number of entries handed over. Under continuous input, at most one batch per window, never postponed indefinitely.
     pub fn flush_due(&mut self, now: Instant) -> usize {
         match self.storm_deadline {
             Some(deadline) if now >= deadline => {
@@ -393,9 +394,9 @@ impl IndexQueue {
         }
     }
 
-    /// 请求所需文件先刷新(RUST-082 接线面):该文件的缓冲事件立即移交
-    /// 调度队列,不等窗口——请求入口随后的 freshen 即可执行它。返回是否
-    /// 有缓冲事件被移交。
+    /// Freshen the files a request needs first (the RUST-082 wiring face): the buffered events for that file are handed over to the
+    /// dispatch queue immediately, without waiting for the window -- the request entry's subsequent freshen can then execute them. Returns whether
+    /// any buffered events were handed over.
     pub fn take_buffered(&mut self, identity: &str) -> bool {
         match self.storm.take_file(identity) {
             Some(event) => {
@@ -411,7 +412,7 @@ impl IndexQueue {
         }
     }
 
-    /// 移交缓冲→调度队列(整批,插入序稳定;StormBuffer.flush 每文件一条)。
+    /// Hand the buffer over to the dispatch queue (whole batch, insertion order stable; StormBuffer.flush yields one entry per file).
     fn drain_storm(&mut self) -> usize {
         let events = self.storm.flush();
         let count = events.len();
@@ -425,8 +426,8 @@ impl IndexQueue {
         count
     }
 
-    /// 按身份重建 DocumentKey 并入队(风暴移交路径;身份来自真实键,解析
-    /// 失败不可达——不伪造计数)。
+    /// Rebuild DocumentKey from the identity and enqueue (the storm handover path; the identity comes from a real key, so parse
+    /// failure is unreachable -- no fabricated counters).
     fn enqueue_identity(&mut self, identity: &str, root: RootId, version: Option<u64>) -> bool {
         let Some((_, path)) = identity.split_once(':') else {
             return false;
@@ -439,8 +440,8 @@ impl IndexQueue {
         true
     }
 
-    /// 入队一次刷新(时间点无关:执行时按真相重放)。同文件同版本在队
-    /// 即合并;新版本让位;过期丢弃;队满诚实拒绝。
+    /// Enqueue one refresh (time-point agnostic: replayed against the truth at execution time). Same-file same-version already
+    /// queued merges; a new version yields; stale versions drop; queue-full rejects honestly.
     fn enqueue_refresh(&mut self, key: &DocumentKey, version: Option<u64>) -> EnqueueDecision {
         let identity = identity_of(key);
         let done_log = Rc::clone(&self.done_log);
@@ -484,7 +485,7 @@ impl IndexQueue {
         outcome.decision
     }
 
-    /// 泵切片:至多执行 `max_tasks` 条,返回实际执行数(Ran 计)。
+    /// Pump slice: execute at most `max_tasks` entries, returning how many actually ran (the Ran count).
     pub fn pump_budgeted(&mut self, max_tasks: usize) -> usize {
         self.poll_reads();
         let mut ran = 0;
@@ -500,11 +501,11 @@ impl IndexQueue {
         ran
     }
 
-    /// RESP-001:泵切片(墙钟版):至多 `max_tasks` 条**且**不越过
-    /// `deadline`(条数与时间双界——条数约束不了响应时间)。预算在任务
-    /// 间检查,单任务超支不可抢占(最坏无响应间隔=单任务解析时长——
-    /// RESP-001b 读盘已离线)。RESP-001b:切片前先泵读线程完成(读毕的
-    /// 身份重入队,同切片内即可应用)。返回实际执行数。
+    /// RESP-001: pump slice (wall-clock version): at most `max_tasks` entries **and** never past
+    /// `deadline` (a dual bound of entries and time -- entry counts cannot bound response time). The budget is checked between tasks;
+    /// a single task overrunning cannot be preempted (the worst-case unresponsive interval = one task's parse duration --
+    /// RESP-001b has moved disk reads off-thread). RESP-001b: pump read-thread completions before the slice (a read's
+    /// identity re-enqueues, so it can apply within the same slice). Returns how many actually ran.
     pub fn pump_budgeted_until(&mut self, max_tasks: usize, deadline: Instant) -> usize {
         let mut ran = 0;
         loop {
@@ -517,9 +518,9 @@ impl IndexQueue {
                     ran += 1;
                     self.settle_done();
                 }
-                // 队列空但读在飞:切片余量内让读线程交货再应用(请求排水
-                // 因此能在自身预算内拿到读毕索引,不必等下一 tick);读不在
-                // 飞则无事可做,提前收工。
+                // Queue empty but reads in flight: within the slice's remaining budget, let the read thread deliver and apply (request
+                // drains can therefore obtain the read-completed index within their own budget instead of waiting for the next tick); with no read
+                // in flight there is nothing to do -- finish early.
                 kode_scheduler::Pump::Idle => {
                     if self.reads_in_flight() {
                         std::thread::sleep(Duration::from_millis(1));
@@ -533,16 +534,16 @@ impl IndexQueue {
         ran
     }
 
-    /// RESP-001b:是否有任意读在途(泵等待判据;无读线程恒 false)。
+    /// RESP-001b: whether any read is in flight (the pump's waiting criterion; always false with no read thread).
     fn reads_in_flight(&self) -> bool {
         self.reads
             .as_ref()
             .is_some_and(|reads| reads.borrow().any_in_flight())
     }
 
-    /// 请求所需文件先刷新(打开文档小范围交互 > 局部刷新):该键有待执行
-    /// 任务则立即插队执行,返回是否执行。RESP-001b:先泵读线程完成——读
-    /// 毕重入队的任务可在本次插队里应用(stash 命中)。
+    /// Freshen the files a request needs first (a narrow open-document interaction > local refresh): if this key has a pending
+    /// task, jump the queue and execute it immediately, returning whether it ran. RESP-001b: pump read-thread completions first -- a
+    /// task whose read finished and re-enqueued can apply in this very jump (a stash hit).
     pub fn freshen(&mut self, identity: &str) -> bool {
         self.poll_reads();
         let id = match self.pending.get(identity) {
@@ -556,10 +557,10 @@ impl IndexQueue {
         ran
     }
 
-    /// 撤根扇出:该根的待执行刷新全部摘除(RUST-069-W 撤根清缓存语义的
-    /// 队列侧延伸——撤根后残留刷新任务会把旧根语料重新灌回=复活缺陷),
-    /// 该根的风暴缓冲事件一并摘除(同语义)。RESP-001b:该根在途读盘/
-    /// 已读 stash 一并摘名(晚到 done=无主,即弃)。
+    /// Root-purge fan-out: remove all pending refreshes under this root (the queue-side extension of RUST-069-W's root-purge cache-clearing semantics --
+    /// leftover refresh tasks after a root purge would re-populate the old root's corpus = a revival defect),
+    /// and also remove this root's storm-buffered events (the same semantics). RESP-001b: also remove the names of this root's in-flight
+    /// reads / already-read stash entries (a late done = unowned, discarded).
     pub fn purge_root(&mut self, root: RootId) -> usize {
         let doomed: Vec<String> = self
             .pending
@@ -576,12 +577,12 @@ impl IndexQueue {
                 }
             }
         }
-        // RESP-001b:在册读根级摘名——含任务已结算但读在飞的身份(不在
-        // pending 台账,上面循环摘不到)。
+        // RESP-001b: root-level name removal for registered reads -- including identities whose task settled but whose read is still in flight (not in
+        // the pending ledger, so the loop above cannot remove them).
         if let Some(reads) = &self.reads {
             reads.borrow_mut().purge_root(root);
         }
-        // 风暴缓冲同根事件一并摘除(缓冲移交会把被撤根语料重新灌回)。
+        // Storm-buffered events of the same root are removed as well (a buffer handover would re-populate the purged root's corpus).
         let buffered_doomed: Vec<String> = self
             .storm_roots
             .iter()
@@ -603,11 +604,11 @@ impl IndexQueue {
         purged
     }
 
-    /// RUST-131-W:单文件撤销的队列侧延伸(生产文件事件 delete/rename 旧
-    /// URI 共用)——该身份的待执行刷新与风暴缓冲事件全部摘除。文件已删/
-    /// 已改名后残留刷新会把旧 URI 语料重新灌回 = 晚到复活缺陷(撤根
-    /// purge_root 同语义,定域到单身份)。RESP-001b:在途读盘/已读 stash
-    /// 一并摘名。返回摘除条数。
+    /// RUST-131-W: the queue-side extension of single-file cancellation (shared by production file events delete/rename of the old
+    /// URI) -- remove all pending refreshes and storm-buffered events for this identity. After a file is deleted/
+    /// renamed, a leftover refresh would re-populate the old URI's corpus = the late-revival defect (the same
+    /// semantics as purge_root, scoped to a single identity). RESP-001b: also remove the names of in-flight
+    /// reads / already-read stash entries. Returns the number removed.
     pub fn purge_key(&mut self, identity: &str) -> usize {
         let mut purged = 0;
         if let Some(&(id, _)) = self.pending.get(identity) {
@@ -630,9 +631,9 @@ impl IndexQueue {
         purged
     }
 
-    /// RUST-133:该身份是否仍有待执行刷新(排程 pending、风暴缓冲或——
-    /// RESP-001b——读在途/待应用)——索引缺口 stale 面的判据(缺口=
-    /// 刷新已在路上,非真缺)。
+    /// RUST-133: whether this identity still has a pending refresh (scheduled pending, storm buffer, or --
+    /// RESP-001b -- a read in flight / awaiting application) -- the criterion for the index gap's stale face (a gap =
+    /// a refresh already on its way, not a true gap).
     pub fn has_pending(&self, identity: &str) -> bool {
         self.pending.contains_key(identity)
             || self.storm_roots.contains_key(identity)
@@ -642,7 +643,7 @@ impl IndexQueue {
                 .is_some_and(|reads| reads.borrow().in_flight(identity))
     }
 
-    /// 观测快照(健康面同源)。
+    /// Observation snapshot (same source as the health face).
     pub fn snapshot(&self) -> IndexQueueSnapshot {
         let ingest = self.ingest_counts.borrow();
         IndexQueueSnapshot {
@@ -658,7 +659,7 @@ impl IndexQueue {
         }
     }
 
-    /// 执行回执对账:已完成的 identity 出台账。
+    /// Execution-receipt reconciliation: completed identities leave the ledger.
     fn settle_done(&mut self) {
         for identity in self.done_log.borrow_mut().drain(..) {
             if self.pending.remove(&identity).is_some() {
@@ -667,19 +668,19 @@ impl IndexQueue {
         }
     }
 
-    /// RESP-001b:读线程完成泵——在册校验(已撤销/无主的读结果即弃,防
-    /// 晚到复活)→ 按执行时刻真相**直接应用**(overlay 已开→弃盘读,盘上
-    /// 快照不得冲掉未保存修订;否则入索引/读失败逐出)。不经调度核重入队
-    /// (同 file 同 version 的 Merged 判定会吞第二拍,实测竞态)。各泵切片/
-    /// freshen 入口先走这里(读毕延迟 ≤ PUMP_TICK)。返回应用条数。无读
-    /// 线程(None)= 0,既有内联语义不受扰。
+    /// RESP-001b: the read-thread completion pump -- ledger check (a purged/unowned read result is discarded, guarding
+    /// against late revival) -> **apply directly** per the execution-time truth (an overlay open -> drop the disk read; an on-disk
+    /// snapshot must not wash away unsaved revisions; otherwise index it / evict on read failure). It does not re-enter the dispatch core's queue
+    /// (the same-file same-version Merged decision would swallow the second beat, a race observed in practice). Each pump slice /
+    /// freshen entry goes through here first (read completion latency <= PUMP_TICK). Returns the number applied. With no read
+    /// thread (None) = 0; the existing inline semantics are undisturbed.
     fn poll_reads(&mut self) -> usize {
         let Some(reads) = self.reads.clone() else {
             return 0;
         };
         let mut applied = 0;
         loop {
-            // 先取一条完成,再做应用(应用要借 store/hover,不能持读线程借)。
+            // Take one completion first, then apply (applying borrows store/hover, so it cannot hold the read-thread borrow).
             let done = {
                 let mut rt = reads.borrow_mut();
                 loop {
@@ -689,13 +690,13 @@ impl IndexQueue {
                     if rt.consume_wanted(&done.identity) {
                         break done;
                     }
-                    // 无主读(已撤销):弃,取下一条。
+                    // Unowned read (already purged): discard, take the next one.
                 }
             };
             let Some(key) = key_from_identity(&done.identity) else {
                 continue;
             };
-            // 执行时刻真相:overlay 已开 → 盘读让位(overlay 任务自有真相)。
+            // Execution-time truth: an overlay is open -> the disk read yields (the overlay task carries its own truth).
             if self.store.borrow().open_buffer(&key).is_some() {
                 continue;
             }
@@ -714,10 +715,10 @@ impl IndexQueue {
     }
 }
 
-/// 构造刷新执行体(执行时刻真相重放):overlay 优先(打开文档未保存修订
-/// 不被盘上快照冲掉),回落磁盘,读盘失败=真正逐出(close ≠ 删除,VFS-012
-/// 修订同口径)。RESP-001b:`reads` 挂读线程时回落读只投递读线程(应用
-/// 在 done 泵;协议线程绝不内联读盘);None=内联(既有语义/既有测试口径)。
+/// Build the refresh executor (execution-time-truth replay): overlay first (so an open document's unsaved revisions
+/// are not washed away by the on-disk snapshot), fall back to disk, and a failed disk read = a true eviction (close != delete, the VFS-012
+/// revision, same stance). RESP-001b: when `reads` carries a read thread, the fallback read only posts to the read thread (application
+/// happens in the done pump; the protocol thread never reads the disk inline); None = inline (the existing semantics / existing test stance).
 pub(crate) fn ingest_refresh_task(
     store: Rc<RefCell<kode_vfs::DocumentStore>>,
     hover: Rc<RefCell<HoverEngine>>,
@@ -732,17 +733,17 @@ pub(crate) fn ingest_refresh_task(
             let change = hover.borrow_mut().update(key, &text);
             record_ingest(&counts, change);
         } else if let Some(reads) = &reads {
-            // RESP-001b:登记在册+投递读任务即返回(不应用不逐出);读毕由
-            // done 泵(poll_reads)按执行时刻真相直接应用——应用不在此处,
-            // 调度核重入队会撞同 file 同 version 的 Merged 判定。
+            // RESP-001b: register + post the read task and return (no applying, no evicting); once read, the
+            // done pump (poll_reads) applies directly per the execution-time truth -- application does not happen here,
+            // since re-entering the dispatch core's queue would hit the same-file same-version Merged decision.
             let identity = identity_of(&key);
             reads
                 .borrow_mut()
                 .submit(&identity, &key.uri.to_native_path());
         } else {
-            // 磁盘回落用原生路径:canonical `/C:/...` 形态在 Windows 上非
-            // 有效路径(相对当前盘根解析),直喂 std::fs 读盘恒败=关闭文档
-            // 回落全走逐出臂。RESP-001:读经注入位(生产=std::fs)。
+            // Disk fallback uses the native path: the canonical `/C:/...` form is not a valid path on Windows
+            // (parsed relative to the current drive root); feeding it straight to std::fs always fails = the close-document
+            // fallback would always take the eviction arm. RESP-001: reads go through the injection point (production = std::fs).
             match disk_reader(&key.uri.to_native_path()) {
                 Ok(text) => {
                     let change = hover.borrow_mut().update(key, &text);
@@ -758,8 +759,8 @@ pub(crate) fn ingest_refresh_task(
     })
 }
 
-/// 从身份 `root:path` 重建 DocumentKey(读线程 done 应用路径;与
-/// [`replay_key`] 同源形状)。解析失败不可达(身份来自真实键)。
+/// Rebuild DocumentKey from the identity `root:path` (the read-thread done application path; the same shape as
+/// [`replay_key`]). Parse failure is unreachable (the identity comes from a real key).
 fn key_from_identity(identity: &str) -> Option<DocumentKey> {
     let (root_raw, path) = identity.split_once(':')?;
     let root = root_raw.parse::<u32>().ok()?;
@@ -767,7 +768,7 @@ fn key_from_identity(identity: &str) -> Option<DocumentKey> {
     Some(DocumentKey::new(RootId(root), uri))
 }
 
-/// 从 uri 重放 DocumentKey(风暴移交侧身份重建与测试构造共用)。
+/// Replay DocumentKey from a uri (shared by the storm handover side's identity rebuild and test construction).
 pub fn replay_key(root: RootId, path: &str) -> Option<DocumentKey> {
     CanonicalUri::parse(path)
         .ok()
@@ -809,13 +810,13 @@ mod tests {
         let mut q = test_queue();
         let k = key(1, "/w/A.def");
         assert_eq!(q.request_open(&k, 1), EnqueueDecision::Queued);
-        // 新版本让位:旧任务取消,新任务入队,台账指向新 id。
+        // New version yields: the old task is cancelled, the new task enqueues, and the ledger points at the new id.
         assert_eq!(q.request_open(&k, 2), EnqueueDecision::Queued);
-        // 过期版本丢弃:比在队旧,不入队。
+        // Stale version dropped: older than the queued one, not enqueued.
         assert_eq!(q.request_open(&k, 1), EnqueueDecision::StaleDropped);
         let snap = q.snapshot();
         assert_eq!((snap.queued, snap.stale_dropped), (1, 1));
-        // 排水只执行一次(风暴收敛=至多一个待执行)。
+        // Drain executes only once (storm convergence = at most one pending execution).
         assert_eq!(q.pump_budgeted(16), 1);
         let snap = q.snapshot();
         assert_eq!((snap.queued, snap.executed), (0, 1));
@@ -828,14 +829,14 @@ mod tests {
         let b = key(1, "/w/B.def");
         q.request_open(&a, 1);
         q.request_open(&b, 1);
-        // 指名后入队者立即执行(插队)。
+        // The named key's enqueued task executes immediately (queue jump).
         let ident_b = identity_of(&b);
         assert!(q.freshen(&ident_b));
         let snap = q.snapshot();
         assert_eq!((snap.queued, snap.executed), (1, 1));
-        // 未在队键 false 不动作。
+        // A key not in the queue returns false and does nothing.
         assert!(!q.freshen("9:/w/none.def"));
-        // 其余照常切片排水。
+        // The rest drain by slices as usual.
         assert_eq!(q.pump_budgeted(16), 1);
         assert_eq!(q.snapshot().executed, 2);
     }
@@ -863,7 +864,7 @@ mod tests {
         assert_eq!(q.purge_root(RootId(2)), 1);
         let snap = q.snapshot();
         assert_eq!((snap.queued, snap.purged), (1, 1));
-        // 执行剩余:被 purge 的键不执行。
+        // Execute the rest: purged keys do not run.
         assert_eq!(q.pump_budgeted(16), 1);
         let snap = q.snapshot();
         assert_eq!((snap.executed, snap.purged), (1, 1));
@@ -872,7 +873,7 @@ mod tests {
     #[test]
     fn queue_full_rejects_new_work_and_counts_honestly() {
         let mut q = test_queue();
-        // 有界队列(CORE-006):超过上限的新工作诚实拒绝(计数),不静默积压。
+        // Bounded queue (CORE-006): new work beyond the cap is honestly rejected (counted), never silently accumulated.
         for i in 0..INDEX_QUEUE_MAX {
             assert_eq!(
                 q.request_open(&key(1, &format!("/w/F{i}.def")), 1),
@@ -892,9 +893,9 @@ mod tests {
 
     #[test]
     fn ingest_refresh_task_replays_time_of_execution_truth() {
-        // 执行时刻真相:入队时无 overlay,执行时打开 → 取 overlay 文本;
-        // 全程未打开 → 读盘;盘上也无 → 逐出。真盘临时 def 文件验证,
-        // 索引面以 symbol_count 变化为证(def 语料入库才有符号)。
+        // Execution-time truth: no overlay at enqueue, open at execution -> take the overlay text;
+        // never opened -> read the disk; absent on disk too -> evict. Verified with a real-disk temp def file,
+        // with the index face proven by the symbol_count change (symbols exist only once def corpus is filed).
         const T_DEF: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE_AND_CLIENT </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
         let dir = std::env::temp_dir().join(format!("kode-iq-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -906,7 +907,7 @@ mod tests {
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
 
         let mut q = IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
-        // 未打开:执行读盘 → def 语料入库(symbol_count > 0)。
+        // Not opened: execute the disk read -> def corpus filed (symbol_count > 0).
         q.request_open(&k, 1);
         assert_eq!(q.pump_budgeted(4), 1);
         assert!(
@@ -914,7 +915,7 @@ mod tests {
             "盘上 def 文件应入索引"
         );
 
-        // 关闭且盘上仍在:回落磁盘(不逐出)。
+        // Closed but still on disk: fall back to the disk (no eviction).
         store.borrow_mut().close(&k);
         q.request_close(&k);
         assert_eq!(q.pump_budgeted(4), 1);
@@ -923,7 +924,7 @@ mod tests {
             "关闭后盘上文件仍应喂补全/悬停"
         );
 
-        // 删除盘上文件 + 关闭态:执行=真正逐出(symbol_count 回 0)。
+        // File deleted on disk + closed state: executing = a true eviction (symbol_count back to 0).
         std::fs::remove_file(&path).unwrap();
         q.request_close(&k);
         assert_eq!(q.pump_budgeted(4), 1);
@@ -933,9 +934,9 @@ mod tests {
 
     #[test]
     fn wall_clock_budget_stops_slice_between_tasks() {
-        // RESP-001:条数上限内,墙钟到期即停——慢读注入下切片不吞协议
-        // 线程。三键全走磁盘臂(注入 40ms/次慢读),deadline=25ms:首任务
-        // 执行后时间尽,切片停在 1(条数界 4 不会先到;预算在任务间检查)。
+        // RESP-001: within the entry cap, stop when the wall clock expires -- with slow-read injection, a slice never swallows the
+        // protocol thread. All three keys take the disk arm (a 40ms-per-read slow injection), deadline=25ms: after the first task
+        // runs, the time is up and the slice stops at 1 (the 4-entry bound would not be hit first; the budget is checked between tasks).
         let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         let slow: DiskReadFn = Rc::new(|_| {
@@ -950,14 +951,17 @@ mod tests {
         let deadline = Instant::now() + Duration::from_millis(25);
         let ran = q.pump_budgeted_until(4, deadline);
         assert_eq!(ran, 1, "墙钟到期应停在首任务后(条数界 4 未到)");
-        // 余下两键由后续切片续跑(不丢)。
-        assert_eq!(q.pump_budgeted_until(4, Instant::now() + Duration::from_secs(5)), 2);
+        // The remaining two keys continue in later slices (not lost).
+        assert_eq!(
+            q.pump_budgeted_until(4, Instant::now() + Duration::from_secs(5)),
+            2
+        );
     }
 
     #[test]
     fn injected_disk_reader_supplies_text_without_fs() {
-        // RESP-001:读注入位供文本:盘上无文件也能走 ingest 全链(慢读
-        // 模拟的基准形态);读成功不得逐出(removed==0)。
+        // RESP-001: the read injection point supplies text: the full ingest chain runs even when the file is absent on disk (the base
+        // shape for slow-read simulation); a successful read must not evict (removed==0).
         let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         let reader: DiskReadFn = Rc::new(|_| {
@@ -972,8 +976,13 @@ mod tests {
         assert_eq!(snap.ingest_removed, 0, "注入读成功不得逐出");
     }
 
-    /// RESP-001b:泵直到谓词为真(读线程往返有真实线程调度延迟)。
-    fn pump_until(q: &mut IndexQueue, budget_ms: u64, wait_ms: u64, mut done: impl FnMut(&IndexQueue) -> bool) -> bool {
+    /// RESP-001b: pump until the predicate holds (the read-thread round trip has real thread-scheduling latency).
+    fn pump_until(
+        q: &mut IndexQueue,
+        budget_ms: u64,
+        wait_ms: u64,
+        mut done: impl FnMut(&IndexQueue) -> bool,
+    ) -> bool {
         let deadline = Instant::now() + Duration::from_millis(wait_ms);
         loop {
             q.pump_budgeted_until(64, Instant::now() + Duration::from_millis(budget_ms));
@@ -989,30 +998,27 @@ mod tests {
 
     #[test]
     fn off_thread_read_applies_after_roundtrip() {
-        // 两拍:首轮投递不应用;读毕 done 泵按执行时刻真相直接应用。
-        // 读线程注入 reader 供文本(免 fs;往返真实线程)。
+        // Two beats: the first round only posts, no applying; once read, the done pump applies directly per the execution-time truth.
+        // The read thread's injected reader supplies the text (no fs; a real-thread round trip).
         let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         const T_DEF: &str =
             "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t</hp>\n\t</Properties>\n</root>\n";
         let text = T_DEF.to_string();
         let reader = std::sync::Arc::new(move |_: &str| Ok(text.clone()));
-        let mut q = IndexQueue::with_off_thread_reader(
-            Rc::clone(&store),
-            Rc::clone(&hover),
-            reader,
-        );
+        let mut q =
+            IndexQueue::with_off_thread_reader(Rc::clone(&store), Rc::clone(&hover), reader);
         let k = key(1, "/w/offthread.def");
         assert_eq!(q.request_open(&k, 1), EnqueueDecision::Queued);
-        // 任务只执行一次(投递拍;应用不经调度核,无重入队=无第二次执行);
-        // 切片在墙钟界内等读交货,快读通常同切片应用。
-        assert_eq!(q.pump_budgeted_until(8, Instant::now() + Duration::from_secs(5)), 1);
-        let applied = pump_until(
-            &mut q,
-            100,
-            4000,
-            |_| hover.borrow().index.symbol_count() > 0,
+        // The task executes only once (the posting beat; application bypasses the dispatch core, no re-enqueue = no second execution);
+        // the slice waits for the read to deliver within the wall-clock bound; a fast read usually applies within the same slice.
+        assert_eq!(
+            q.pump_budgeted_until(8, Instant::now() + Duration::from_secs(5)),
+            1
         );
+        let applied = pump_until(&mut q, 100, 4000, |_| {
+            hover.borrow().index.symbol_count() > 0
+        });
         assert!(applied, "读毕应经 done 泵直接应用入索引");
         let snap = q.snapshot();
         assert_eq!(snap.ingest_removed, 0, "读成功不得逐出");
@@ -1021,37 +1027,29 @@ mod tests {
 
     #[test]
     fn off_thread_purged_read_result_is_dropped() {
-        // 撤销防线:purge 摘名后到达的 done=无主即弃——不重入队、不灌语料
-        // (晚到复活防线,与 pending 摘除同语义)。reader 阻塞到 purge 之后
-        // 才放行,钉「读完成晚于撤销」的时序。
+        // Cancellation defense: a done arriving after purge removed the name = unowned, discarded -- no re-enqueue, no corpus
+        // re-population (the late-revival defense, the same semantics as the pending removal). The reader blocks until after the purge
+        // releases, pinning the ordering "the read completes later than the cancellation".
         let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         let (go_tx, go_rx) = mpsc::channel::<()>();
         let go_rx = std::sync::Mutex::new(go_rx);
         let reader = std::sync::Arc::new(move |_: &str| {
-            // Receiver 非 Sync:Mutex 包一层(读线程内独占 recv)。
+            // The Receiver is not Sync: wrap it in a Mutex (exclusive recv inside the read thread).
             let _ = go_rx.lock().unwrap().recv();
             Ok("<root></root>".to_string())
         });
-        let mut q = IndexQueue::with_off_thread_reader(
-            Rc::clone(&store),
-            Rc::clone(&hover),
-            reader,
-        );
+        let mut q =
+            IndexQueue::with_off_thread_reader(Rc::clone(&store), Rc::clone(&hover), reader);
         let k = key(1, "/w/purged.def");
         q.request_open(&k, 1);
         q.pump_budgeted_until(8, Instant::now() + Duration::from_secs(5));
-        // 读在途时撤根:在册摘名。
+        // Root purge while a read is in flight: remove the ledger name.
         q.purge_root(RootId(1));
-        // 放行读线程:done 到达但无名 → 弃(空 def 也有文件级符号,断言
-        // 以「撤销后零 ingest」为准)。
+        // Release the read thread: the done arrives but has no name -> discarded (even an empty def has file-level symbols, so the
+        // assertion keys on "zero ingest after the purge").
         let _ = go_tx.send(());
-        let quiesced = pump_until(
-            &mut q,
-            100,
-            2000,
-            |q| q.snapshot().queued == 0,
-        );
+        let quiesced = pump_until(&mut q, 100, 2000, |q| q.snapshot().queued == 0);
         assert!(quiesced);
         let snap = q.snapshot();
         assert_eq!(
@@ -1064,8 +1062,8 @@ mod tests {
 
     #[test]
     fn off_thread_superseded_read_eventually_correct() {
-        // FIFO 终态正确:新版本入队时旧读在途 → 两份读都投递(FIFO 保序),
-        // 逐份应用,终态=最后一读(超集版本收编,不留旧文本)。
+        // FIFO final state is correct: a new version enqueues while the old read is in flight -> both reads are posted (FIFO order preserved),
+        // applied one by one; the final state = the last read (the superset version wins, no old text left behind).
         let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         let calls = std::sync::atomic::AtomicUsize::new(0);
@@ -1077,13 +1075,10 @@ mod tests {
                 "<root>\n\t<Properties>\n\t\t<a>\n\t\t\t<Type> UINT32 </Type>\n\t\t</a>\n\t\t<b>\n\t\t\t<Type> UINT32 </Type>\n\t\t</b>\n\t</Properties>\n</root>\n".to_string()
             })
         });
-        let mut q = IndexQueue::with_off_thread_reader(
-            Rc::clone(&store),
-            Rc::clone(&hover),
-            reader,
-        );
+        let mut q =
+            IndexQueue::with_off_thread_reader(Rc::clone(&store), Rc::clone(&hover), reader);
         let k = key(1, "/w/superseded.def");
-        // 孤立 oracle:终态应等于第二份文本的符号数。
+        // Standalone oracle: the final state should equal the second text's symbol count.
         let mut oracle = HoverEngine::new();
         oracle.update(
             key(1, "/oracle.def"),
@@ -1094,15 +1089,12 @@ mod tests {
 
         q.request_open(&k, 1);
         q.pump_budgeted_until(8, Instant::now() + Duration::from_secs(5));
-        // 旧读在途时新版本入队(执行时 stash 未命中 → 再投递一份)。
+        // A new version enqueues while the old read is in flight (a stash miss at execution -> post one more).
         q.request_open(&k, 2);
         q.pump_budgeted_until(8, Instant::now() + Duration::from_secs(5));
-        let settled = pump_until(
-            &mut q,
-            100,
-            4000,
-            |q| !q.has_pending(&identity_of(&k)) && q.snapshot().queued == 0,
-        );
+        let settled = pump_until(&mut q, 100, 4000, |q| {
+            !q.has_pending(&identity_of(&k)) && q.snapshot().queued == 0
+        });
         assert!(settled, "两份读应都消费完");
         assert_eq!(
             hover.borrow().index.symbol_count(),
@@ -1113,9 +1105,9 @@ mod tests {
 
     #[test]
     fn off_thread_read_error_evicts_on_apply() {
-        // 读失败=真正逐出(close ≠ 删除,VFS-012 同口径)——离线读不改变
-        // 逐出语义,只是延后到次轮回放。首读成功入索引,次读失败 → 应用时
-        // 逐出(removed==1,符号归零)。
+        // A failed read = a true eviction (close != delete, the VFS-012 stance) -- an off-thread read does not change
+        // the eviction semantics, only defers it to the next round's replay. The first read succeeds and indexes; the second read fails -> at application
+        // it evicts (removed==1, symbols back to zero).
         let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         let calls = std::sync::atomic::AtomicUsize::new(0);
@@ -1126,49 +1118,35 @@ mod tests {
                 Err(std::io::Error::new(std::io::ErrorKind::NotFound, "gone"))
             }
         });
-        let mut q = IndexQueue::with_off_thread_reader(
-            Rc::clone(&store),
-            Rc::clone(&hover),
-            reader,
-        );
+        let mut q =
+            IndexQueue::with_off_thread_reader(Rc::clone(&store), Rc::clone(&hover), reader);
         let k = key(1, "/w/err.def");
         q.request_open(&k, 1);
-        let ingested = pump_until(
-            &mut q,
-            100,
-            4000,
-            |_| hover.borrow().index.symbol_count() > 0,
-        );
+        let ingested = pump_until(&mut q, 100, 4000, |_| {
+            hover.borrow().index.symbol_count() > 0
+        });
         assert!(ingested, "首读应入索引");
-        // 次刷新读失败 → 逐出。
+        // The second refresh's read fails -> evict.
         q.request_close(&k);
-        let evicted = pump_until(
-            &mut q,
-            100,
-            4000,
-            |q| {
-                let snap = q.snapshot();
-                snap.ingest_removed == 1 && hover.borrow().index.symbol_count() == 0
-            },
-        );
+        let evicted = pump_until(&mut q, 100, 4000, |q| {
+            let snap = q.snapshot();
+            snap.ingest_removed == 1 && hover.borrow().index.symbol_count() == 0
+        });
         assert!(evicted, "读失败应逐出且符号归零");
     }
 
     #[test]
     fn off_thread_slow_read_keeps_pump_slices_responsive() {
-        // 响应性证明:慢读(120ms/文件)在飞时,泵切片毫秒级返回——协议
-        // 线程绝不内联等读(内联形态=5 文件 ≥600ms,断言阈值 100ms 区分)。
+        // Responsiveness proof: while slow reads (120ms/file) are in flight, a pump slice returns in milliseconds -- the
+        // protocol thread never waits for reads inline (inline = 5 files >=600ms; the 100ms assertion threshold separates the two).
         let store = Rc::new(RefCell::new(kode_vfs::DocumentStore::new()));
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         let reader = std::sync::Arc::new(|_: &str| {
             std::thread::sleep(Duration::from_millis(120));
             Ok("<root></root>".to_string())
         });
-        let mut q = IndexQueue::with_off_thread_reader(
-            Rc::clone(&store),
-            Rc::clone(&hover),
-            reader,
-        );
+        let mut q =
+            IndexQueue::with_off_thread_reader(Rc::clone(&store), Rc::clone(&hover), reader);
         for i in 0..5 {
             q.request_open(&key(1, &format!("/w/slow{i}.def")), 1);
         }
@@ -1183,9 +1161,9 @@ mod tests {
 
     #[test]
     fn ingest_counters_classify_identical_body_only_signature_removed() {
-        // RUST-120-W:执行体按类别记账(健康面 ingest 四键同源)。def 语料:
-        // 同文本重开=identical;尾注(已登记位置全不变)=body-only;属性
-        // 类型变更=signature;盘上删除后的 close=removed。
+        // RUST-120-W: the executor accounts per class (the same source as the health face's four ingest keys). def corpus:
+        // reopening the same text = identical; a trailing note (all registered positions unchanged) = body-only; a property
+        // type change = signature; a close after on-disk deletion = removed.
         const T_DEF: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
         let dir = std::env::temp_dir().join(format!("kode-iqc-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1197,13 +1175,13 @@ mod tests {
         let hover = Rc::new(RefCell::new(HoverEngine::new()));
         let mut q = IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
 
-        // 首次入库 = signature。
+        // First filing = signature.
         q.request_open(&k, 1);
         assert_eq!(q.pump_budgeted(4), 1);
         let snap = q.snapshot();
         assert_eq!(snap.ingest_signature, 1);
 
-        // 同文本重开 = identical(指纹命中,generation 不动)。
+        // Reopening the same text = identical (fingerprint hit, generation untouched).
         let gen0 = hover.borrow().index.generation();
         q.request_open(&k, 2);
         assert_eq!(q.pump_budgeted(4), 1);
@@ -1211,7 +1189,7 @@ mod tests {
         assert_eq!(snap.ingest_identical, 1);
         assert_eq!(hover.borrow().index.generation(), gen0);
 
-        // 尾注追加 = body-only(零失效)。
+        // Appending a trailing note = body-only (zero invalidations).
         std::fs::write(&path, format!("{T_DEF}\n<!-- tail -->\n")).unwrap();
         q.request_open(&k, 3);
         assert_eq!(q.pump_budgeted(4), 1);
@@ -1219,7 +1197,7 @@ mod tests {
         assert_eq!(snap.ingest_body_only, 1);
         assert_eq!(hover.borrow().index.generation(), gen0);
 
-        // 属性类型变更 = signature(generation bump,视图反映新类型)。
+        // A property type change = signature (generation bump, the view reflects the new type).
         let t16 = T_DEF.replace("UINT32", "UINT16");
         std::fs::write(&path, &t16).unwrap();
         q.request_open(&k, 4);
@@ -1228,7 +1206,7 @@ mod tests {
         assert_eq!(snap.ingest_signature, 2);
         assert_eq!(hover.borrow().index.generation(), gen0 + 1);
 
-        // 盘上删除 + close = removed(逐出记账)。
+        // On-disk deletion + close = removed (accounted as an eviction).
         std::fs::remove_file(&path).unwrap();
         q.request_close(&k);
         assert_eq!(q.pump_budgeted(4), 1);
@@ -1240,9 +1218,9 @@ mod tests {
 
     #[test]
     fn did_change_same_text_via_storm_take_buffered_classifies_identical() {
-        // RUST-120-W E2E 形状复刻:didOpen v1 → pump;didChange v2(同文本
-        // 全量替换)→ 风暴缓冲 → 请求入口 take_buffered + freshen → 分类
-        // = identical(与 kodeCoreDifferentialInvalidation e2e 对账)。
+        // RUST-120-W E2E shape replication: didOpen v1 -> pump; didChange v2 (a full same-text
+        // replacement) -> storm buffer -> request entry take_buffered + freshen -> classed
+        // = identical (reconciled with the kodeCoreDifferentialInvalidation e2e).
         const T_DEF: &str = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
         let dir = std::env::temp_dir().join(format!("kode-iqs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1258,8 +1236,8 @@ mod tests {
         assert_eq!(q.pump_budgeted(4), 1);
         assert_eq!(q.snapshot().ingest_signature, 1);
 
-        // didChange v2:同文本全量替换(overlay 文本=盘上文本,变更语义在
-        // 分类面等价)+ 风暴缓冲记录(生产 handle_did_change 同型)。
+        // didChange v2: a full same-text replacement (overlay text = on-disk text, so the change semantics are equivalent on
+        // the classification face) + a storm-buffer record (the same shape as production handle_did_change).
         let ident = identity_of(&k);
         q.record_change(&k, 2);
         assert!(q.take_buffered(&ident), "缓冲中的 v2 应被立即移交");
@@ -1272,8 +1250,8 @@ mod tests {
 
     #[test]
     fn did_change_storm_buffers_merge_and_flushes_at_deadline() {
-        // 时间窗合并:同文件多版本并一(最新胜出);窗口未到期一律不动;
-        // 到期整批移交 → 每文件一条入队(最新版本),max latency 兑现。
+        // Time-window coalescing: multiple versions of the same file merge into one (newest wins); before window expiry nothing moves;
+        // on expiry the whole batch hands over -> one entry per file enqueued (the newest version), fulfilling max latency.
         let mut q = test_queue();
         let a = key(1, "/w/A.def");
         let b = key(1, "/w/B.def");
@@ -1288,11 +1266,11 @@ mod tests {
             (4, 2, 2)
         );
         assert_eq!(q.snapshot().queued, 0, "窗口未到期不入调度队列");
-        // 未到期不动(max latency 上界内允许等)。
+        // Before expiry, nothing moves (waiting is allowed within the max-latency upper bound).
         assert_eq!(q.flush_due(at(t0, DID_CHANGE_DEBOUNCE_MS - 1)), 0);
         assert_eq!(q.snapshot().storm_buffered, 2);
-        // 到期整批移交:每文件一条(最新版本),窗口记账落账。
-        // deadline = record 时刻真实时钟 + 窗口,取两倍窗宽越过它。
+        // On expiry the whole batch hands over: one entry per file (the newest version), the window accounting books it.
+        // deadline = the real clock at record time + the window; sleep two window widths to cross it.
         assert_eq!(q.flush_due(at(t0, DID_CHANGE_DEBOUNCE_MS * 2)), 2);
         let snap = q.snapshot();
         assert_eq!(
@@ -1304,7 +1282,7 @@ mod tests {
             (2, 0, 1)
         );
         assert_eq!(snap.enqueued, 2, "移交即入队");
-        // 到期后缓冲空:再 flush_due 不重复记账。
+        // After expiry the buffer is empty: a further flush_due does not double-book.
         assert_eq!(q.flush_due(at(t0, DID_CHANGE_DEBOUNCE_MS * 4)), 0);
         assert_eq!(q.snapshot().storm_deadline_flushes, 1);
     }
@@ -1325,7 +1303,7 @@ mod tests {
             "a 入队,b 留缓冲"
         );
         assert_eq!(snap.enqueued, 1);
-        // 摘空后窗口复位;未缓冲键 false。
+        // The window resets after the buffer empties; a key never buffered returns false.
         assert!(q.take_buffered(&identity_of(&b)));
         assert_eq!(q.snapshot().storm_buffered, 0);
         assert!(!q.take_buffered(&ident_a));
@@ -1334,15 +1312,15 @@ mod tests {
 
     #[test]
     fn storm_overflow_forces_batch_handoff_before_core_silent_flush() {
-        // 缓冲超限:包装侧 record 前预排水(整批移交调度队列),绝不触发
-        // 核心 record 的内部 flush(其返回值被丢弃=静默吞事件)。
+        // Buffer overflow: the wrapper pre-drains before record (handing the whole batch to the dispatch queue), never triggering
+        // the core record's internal flush (whose return value is dropped = silently swallowing events).
         let mut q = test_queue();
         for i in 0..STORM_BUFFER_MAX_FILES {
             assert!(!q.record_change(&key(1, &format!("/w/F{i}.def")), 1));
         }
         assert_eq!(q.snapshot().storm_buffered, STORM_BUFFER_MAX_FILES as u64);
         assert_eq!(q.snapshot().storm_forced_flushes, 0);
-        // 第 MAX+1 个文件触发预排水:旧批全部入队,新批独占缓冲。
+        // The (MAX+1)-th file triggers the pre-drain: the old batch enqueues entirely, and the new batch owns the buffer alone.
         assert!(!q.record_change(&key(1, "/w/overflow.def"), 1));
         let snap = q.snapshot();
         assert_eq!(snap.enqueued, STORM_BUFFER_MAX_FILES as u64);
@@ -1353,7 +1331,7 @@ mod tests {
 
     #[test]
     fn purged_root_drops_buffered_change_events_too() {
-        // 撤根:在队任务 + 风暴缓冲事件同根全摘(移交不得复活被撤根语料)。
+        // Root purge: queued tasks + storm-buffered events of the same root are all removed (a handover must not revive purged-root corpus).
         let mut q = test_queue();
         let keep = key(1, "/w/A.def");
         let drop = key(2, "/w/B.def");
@@ -1363,15 +1341,15 @@ mod tests {
         assert_eq!(q.purge_root(RootId(2)), 1, "缓冲中同根事件计 1(合并态)");
         let snap = q.snapshot();
         assert_eq!((snap.queued, snap.storm_buffered, snap.purged), (1, 0, 1));
-        // 排水:被撤根缓冲事件不复活。
+        // Drain: purged-root buffered events do not revive.
         assert_eq!(q.pump_budgeted(16), 1);
         assert_eq!(q.snapshot().executed, 1);
     }
 
     #[test]
     fn flushed_change_ingests_latest_version_into_engine() {
-        // 内容级:风暴窗并一后移交执行的 ingest = 最新版本语料(引擎中
-        // 最新版本独有属性在库)。
+        // Content level: the ingest executed after the storm-window merge = the newest version's corpus (the newest version's exclusive
+        // property is in the engine index).
         const T_DEF: &str = "<root>\n\t<Properties>\n\t\t<{prop}>\n\t\t\t<Type> UINT32 </Type>\n\t\t</{prop}>\n\t</Properties>\n</root>\n";
         let dir = std::env::temp_dir().join(format!("kode-iq-storm-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1385,7 +1363,7 @@ mod tests {
         let t0 = Instant::now();
         assert!(!q.record_change(&k, 1));
         assert!(q.record_change(&k, 2));
-        // 最新版本内容写入盘上(overlay 未开 → 执行时刻真相读盘)。
+        // The newest version's content is written to disk (no overlay open -> the execution-time truth reads the disk).
         std::fs::write(&path, T_DEF.replace("{prop}", "v3only")).unwrap();
         assert!(q.record_change(&k, 3));
         assert_eq!(q.flush_due(at(t0, DID_CHANGE_DEBOUNCE_MS * 2)), 1);
@@ -1405,11 +1383,11 @@ mod tests {
     #[test]
     fn enqueue_identity_defense_arms_and_happy_path() {
         let mut q = test_queue();
-        // 无冒号:split 防御臂(生产身份恒 root:path,identity_of 造不出)。
+        // No colon: the split defensive arm (a production identity is always root:path; identity_of cannot produce one).
         assert!(!q.enqueue_identity("nocolon", RootId(1), Some(1)));
-        // 冒号后非本地 uri:scheme 面解析失败防御臂,不伪造入队。
+        // Non-local uri after the colon: the scheme-face parse-failure defensive arm; no fabricated enqueues.
         assert!(!q.enqueue_identity("1:http://x/y", RootId(1), Some(1)));
-        // 合法身份整链走 enqueue_refresh,真实入队一条。
+        // A legal identity walks the full enqueue_refresh chain, really enqueuing one entry.
         let k = key(1, "/w/A.def");
         assert!(q.enqueue_identity(&identity_of(&k), RootId(1), Some(1)));
         assert_eq!(q.snapshot().queued, 1);
@@ -1427,12 +1405,12 @@ mod tests {
 
     #[test]
     fn replay_key_round_trip_and_bad_path_faces() {
-        // 身份重建 round-trip:identity_of 拆段回放与原键相等。
+        // Identity rebuild round trip: replaying identity_of's segments equals the original key.
         let k = key(3, "/w/C.def");
         let ident = identity_of(&k);
         let path = ident.split_once(':').unwrap().1;
         assert_eq!(replay_key(RootId(3), path), Some(k));
-        // 非 scheme uri 与空白输入拒绝。
+        // Non-scheme uris and blank inputs are rejected.
         assert_eq!(replay_key(RootId(3), "http://x/y"), None);
         assert_eq!(replay_key(RootId(3), "  "), None);
     }

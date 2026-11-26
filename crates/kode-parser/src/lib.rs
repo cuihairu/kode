@@ -1,18 +1,18 @@
-//! kode-parser:KBEngine `.def` / entities.xml / types.xml / alias.xml 逐字节解析器
-//! (kode2 PR-005,书 §6.1/§17 PR-005 基础版)。
+//! kode-parser: byte-faithful parser for KBEngine `.def` / entities.xml / types.xml / alias.xml
+//! (kode2 PR-005, book §6.1/§17 PR-005 baseline).
 //!
-//! 模块:
-//! - [`xml`]:字节级 XML 状态机,arena 树 + 精确 span + 容错恢复(SYNTAX-002/003);
-//! - [`diag`]:结构化诊断 / Span / LineMap;
-//! - [`model`]:`.def` 语义(属性/旗标/方法/组件/继承)、entities/types/alias
-//!   提取,未知字段保留(SYNTAX-005,SEM-006..008 基础);
-//! - [`dep`]:增量重构注册表(指纹零重建 + 反向依赖索引,VFS-011 复用);
-//! - [`def_format`]:`.def` 原生格式化核(KODE-SYN-006:深度缩进 + span 逐字
-//!   回写 + 行级极小编辑集,任何解析诊断安全退回);
-//! - [`json`]:对拍 golden 序列化(零依赖 JSON 写出)。
+//! Modules:
+//! - [`xml`]: byte-level XML state machine, arena tree + exact spans + fault-tolerant recovery (SYNTAX-002/003);
+//! - [`diag`]: structured diagnostics / Span / LineMap;
+//! - [`model`]: `.def` semantics (properties/flags/methods/components/inheritance), entities/types/alias
+//!   extraction, unknown-field preservation (SYNTAX-005, SEM-006..008 baseline);
+//! - [`dep`]: incremental reparsing registry (fingerprint-based zero rebuild + reverse dependency index, reused for VFS-011);
+//! - [`def_format`]: native `.def` formatting core (KODE-SYN-006: depth-based indentation + span-faithful
+//!   rewrite + line-level minimal edit set, safe fallback to original text on any parse diagnostic);
+//! - [`json`]: golden serialization for parity comparison (dependency-free JSON writer).
 //!
-//! 铁律:除密码学外零第三方 crate(本 crate 仅依赖 workspace 内 kode-vfs);
-//! 任何输入不 panic(见 tests/blind.rs 变异抽验)。
+//! Iron rules: no third-party crates except cryptography (this crate only depends on the workspace-local kode-vfs);
+//! no panics on any input (see tests/blind.rs mutation sampling).
 
 pub mod config;
 pub mod config_derive;

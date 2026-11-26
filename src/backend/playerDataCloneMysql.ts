@@ -1,19 +1,25 @@
 /**
- * Player Data Clone 的 mysql 会话面(CLONE-P5 / PDC-0501..0506):
- * - 建连/测试连接(0501):mysql2 动态注入(生产 import('mysql2/promise'),
- *   测试替身注入),连接即 SET 只读会话(源/探测面);目标 Apply 面同一条
- *   连接上显式 START TRANSACTION 写入。
- * - information_schema 探测:物理表(列型/引擎/主键/唯一索引)→ Rust
- *   planExport/planImport 的 physicalTables;唯一键清单 → 目标快照。
- * - 目标快照探测:按归档内实际出现的唯一键值做 WHERE IN 有界探测(不整列扫)。
- * - Apply 执行器(0505/0506):TS 侧驱动 mysql2 单事务,语义对齐 crate
- *   apply.rs —— begin → 按计划父先子后逐句(NewKey 绑 NULL 交 AUTO_INCREMENT,
- *   insertId 回填占位,KeyReference 绑回填值)→ 任何失败/取消 ROLLBACK →
- *   全成才 COMMIT → 逐表 COUNT 核对 → 逆拓扑清理计划(只生成不执行)。
- *   这是 §6.2「单事务」在无 Rust MySQL 客户端前提下的显式取舍(PDC-0506),
- *   语义由 tests/playerDataCloneApply.test.ts 与 Rust golden_apply 双面锁定。
+ * Player Data Clone's mysql session face (CLONE-P5 / PDC-0501..0506):
+ * - Connect / test connection (0501): mysql2 is injected dynamically (production uses
+ *   import('mysql2/promise'), tests inject a stand-in), and the connection sets a read-only
+ *   session as soon as it opens (the source/probe face); the target Apply face writes by
+ *   issuing an explicit START TRANSACTION on that same connection.
+ * - information_schema probing: the physical tables (column types/engine/primary key/unique
+ *   indexes) feed Rust planExport/planImport's physicalTables; the unique-key list feeds the
+ *   target snapshot.
+ * - Target snapshot probing: a bounded WHERE IN probe driven by the unique-key values that
+ *   actually appear inside the archive (no full-column scan).
+ * - The Apply executor (0505/0506): the TS side drives a single mysql2 transaction, its
+ *   semantics aligned with crate apply.rs -- begin -> statement by statement in plan order,
+ *   parents before children (a NewKey binds NULL to AUTO_INCREMENT, the insertId backfills the
+ *   placeholder, a KeyReference binds the backfilled value) -> any failure/cancellation is a
+ *   ROLLBACK -> only when everything succeeded a COMMIT -> a per-table COUNT reconciliation ->
+ *   an inverse-topological cleanup plan (generated only, never executed).
+ *   This is the explicit trade-off for section 6.2's "single transaction" given that there is no
+ *   Rust MySQL client available (PDC-0506), and the semantics are pinned on both faces by
+ *   tests/playerDataCloneApply.test.ts and the Rust golden_apply.
  *
- * 无 vscode 依赖(命令层注入 UI 面)。
+ * No vscode dependency (the command layer injects the UI face).
  */
 
 import { assertReadOnlyStatement } from './databaseDrift';
@@ -29,7 +35,7 @@ import {
   type TypedValueWire
 } from './playerDataCloneWire';
 
-/** mysql2/promise 连接子集(query 支持参数;end 释放)。 */
+/** The mysql2/promise connection subset (query supports parameters; end releases it). */
 export interface CloneMysqlConnection {
   query(sql: string, values?: unknown[]): Promise<[unknown, unknown]>;
   streamRows?(sql: string, values: unknown[]): Readable;
@@ -49,7 +55,7 @@ export interface CloneMysqlModule {
   }): Promise<CloneMysqlConnection>;
 }
 
-/** 生产默认:mysql2 动态载入(与 databaseDrift 同款,失败如实抛)。 */
+/** Production default: mysql2 loaded dynamically (the same pattern as databaseDrift; a failure is thrown as is). */
 export const loadMysqlModule = async (): Promise<CloneMysqlModule> =>
   (await import('mysql2/promise')) as unknown as CloneMysqlModule;
 
@@ -61,7 +67,7 @@ export interface CloneConnectionConfig {
   database: string;
 }
 
-/** 建连;探测/导出面默认置只读会话,Apply 面显式 readonly:false 开写事务。 */
+/** Open the connection; the probe/export faces set a read-only session by default, the Apply face passes readonly:false explicitly to open a write transaction. */
 export async function openCloneSession(
   config: CloneConnectionConfig,
   options: { readonly?: boolean } = {},
@@ -92,7 +98,7 @@ export async function openCloneSession(
   return connection;
 }
 
-/** 测试连接(0501):连通性 + 引擎/服务器版本信息。 */
+/** Test the connection (0501): connectivity + engine/server version info. */
 export async function testCloneConnection(
   connection: CloneMysqlConnection
 ): Promise<{ ok: true; version: string } | { ok: false; reason: string }> {
@@ -107,7 +113,7 @@ export async function testCloneConnection(
 
 const IDENT = /^[A-Za-z0-9_]+$/;
 
-/** information_schema 探测:表引擎/列型/主键/唯一索引 → PhysicalTableWire[]。 */
+/** information_schema probing: table engine/column types/primary key/unique indexes -> PhysicalTableWire[]. */
 export async function probePhysicalTables(
   connection: CloneMysqlConnection,
   tableNames: string[]
@@ -169,7 +175,7 @@ export async function probePhysicalTables(
   return tables;
 }
 
-/** 计划语句 → 每表列序(归档行值序与之一一对应;apply/探测共用)。 */
+/** Plan statements -> the per-table column order (the archive row value order corresponds to it one to one; shared by apply/probe). */
 export function columnOrderFromPlan(plan: ImportPlanWire): Map<string, string[]> {
   const order = new Map<string, string[]>();
   for (const statement of plan.statements) {
@@ -181,8 +187,10 @@ export function columnOrderFromPlan(plan: ImportPlanWire): Map<string, string[]>
 }
 
 /**
- * 归档行 → 目标快照候选:声明唯一列在归档内出现的值(有界,不整列扫)。
- * 列位取自 pass-1 计划的列序(归档行不带列名,值序=导出列序)。
+ * Archive rows -> target-snapshot candidates: the values that appear inside the archive for a
+ * declared unique column (bounded, no full-column scan). The column positions come from the
+ * pass-1 plan's column order (archive rows carry no column names, value order = export column
+ * order).
  */
 export function uniqueValuesFromRows(
   rowsByTable: Map<string, TypedRowWire[]>,
@@ -210,8 +218,8 @@ export function uniqueValuesFromRows(
 }
 
 /**
- * 目标既有值探测:对快照候选值逐列 WHERE IN(只读会话),命中即回填
- * existingValues(Rust 冲突预演的输入)。
+ * Probing the target's existing values: a WHERE IN per column over the snapshot candidate values
+ * (a read-only session); a hit backfills existingValues (the input to Rust's conflict preview).
  */
 export async function probeExistingValues(
   connection: CloneMysqlConnection,
@@ -239,9 +247,11 @@ export async function probeExistingValues(
       `SELECT ${column} AS v FROM ${table} WHERE ${column} IN (${placeholders})`,
       binds
     );
-    // 按该列候选值自身类型反推物理列型提示:整型/二进制/时间列 DB 返回值
-    // 须与候选同型归键才能比对命中——硬编码 'varchar' 令整型等列 present
-    // 恒空(所有值误判为不存在,唯一键冲突/重复重建漏报)
+    // The physical column-type hint is back-derived from the candidate values' own type: a
+    // DB-returned value for an integer/binary/timestamp column must be keyed the same way as the
+    // candidate for a comparison to hit -- a hard-coded 'varchar' leaves present empty for integer
+    // and the like columns (every value misjudged as absent, so a unique-key conflict / duplicate
+    // rebuild is missed)
     const hint = columnTypeHintFor(values);
     const present = new Set(
       (Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : []).map(r =>
@@ -261,7 +271,7 @@ function typedValueKeyOf(value: TypedValueWire): string {
   return `${value.t}:${String(value.v ?? '')}`;
 }
 
-/** TypedValueWire 类型标签 → 物理列型提示(cellToTypedValue 逆映射,归键同型)。 */
+/** TypedValueWire type tag -> the physical column-type hint (the inverse mapping of cellToTypedValue, keyed with the same type). */
 function columnTypeHintFor(values: TypedValueWire[]): string {
   switch (values[0]?.t) {
     case 'int':
@@ -283,14 +293,14 @@ function columnTypeHintFor(values: TypedValueWire[]): string {
   }
 }
 
-/** Apply 取消(§6.4:Apply 期取消 → 回滚)。 */
+/** An Apply cancellation (section 6.4: a cancellation during Apply -> a rollback). */
 export class CloneApplyCancelledError extends Error {
   constructor() {
     super('clone import cancelled before commit; transaction rolled back');
   }
 }
 
-/** 导出/通用取消(只读面无事务,中断即停)。 */
+/** An export/general cancellation (the read-only face holds no transaction, so an interruption just stops). */
 export class CloneCancelledError extends Error {
   constructor() {
     super('clone operation cancelled before completion');
@@ -342,9 +352,11 @@ async function readOnlyControlQuery(
 }
 
 /**
- * 执行导出计划(只读会话):根表按 DBID 一次,子表按父行 id 逐次
- * (引擎 parentID 关系);行值按 column_types 归型为有类型 wire。
- * 语句先过只读白名单断言(计划来自 Rust,仍不豁免)。
+ * Execute the export plan (a read-only session): the root table once by DBID, a child table once
+ * per already-collected parent row id (the engine's parentID relation); row values are typed
+ * into typed wires according to column_types.
+ * Every statement passes the read-only whitelist assertion first (the plan comes from Rust and is
+ * still not exempt).
  */
 export async function executeExportPlan(
   connection: CloneMysqlConnection,
@@ -423,7 +435,7 @@ export async function executeExportPlan(
     if (query.filter.kind === 'root-id') {
       await runQuery([rootDbid]);
     } else if (query.filter.kind === 'parent-id') {
-      // parent-id:对该表逻辑父(引擎 parentID)的每个已收集行 id 各跑一次。
+      // parent-id: run once for each already-collected row id of this table's logical parent (the engine's parentID).
       const parentIdList = idsByTable.get(query.parent_table ?? '') ?? [];
       for (const parentId of parentIdList) {
         if (options.shouldCancel?.()) {
@@ -449,11 +461,11 @@ export interface CloneApplyProgress {
 
 export interface CloneApplyResult {
   insertedPerTable: Record<string, number>;
-  /** 占位 → 数据库真实新主键(PDC-0402 回填)。 */
+  /** Placeholder -> the real new primary key from the database (the PDC-0402 backfill). */
   resolvedIds: Record<number, number | string>;
   newRootId: number | string | null;
   verify: Array<{ table: string; expected: number; found: number; ok: boolean }>;
-  /** 逆拓扑清理计划(只生成不执行,PDC-0408)。 */
+  /** The inverse-topological cleanup plan (generated only, never executed, PDC-0408). */
   cleanup: Array<{ sql: string; params: unknown[] }>;
 }
 
@@ -463,8 +475,9 @@ interface ResultSetHeaderLike {
 }
 
 /**
- * 单事务执行导入计划(语义对齐 crate apply.rs;语句值面由 rowsByTable 给)。
- * 失败/取消 → ROLLBACK 后抛出,绝不留半个角色。
+ * Execute the import plan in a single transaction (semantics aligned with crate apply.rs; the
+ * statement values come from rowsByTable).
+ * A failure/cancellation -> ROLLBACK and then a throw, never leaving a half-applied role behind.
  */
 export async function applyImportPlan(
   connection: CloneMysqlConnection,
@@ -546,14 +559,15 @@ export async function applyImportPlan(
     throw new CloneCommitUnknownError(`COMMIT outcome unknown: ${String(error)}`);
   }
 
-  // ---- 提交后逐表核对(PDC-0406;失败如实报,不回滚已提交事务) ----
+  // ---- The post-commit per-table reconciliation (PDC-0406; a failure is reported as is, the committed transaction is never rolled back) ----
   const verify: CloneApplyResult['verify'] = [];
   try {
   for (const table of plan.order) {
     const ids = newIdsForTable(plan, resolvedIds, rowsByTable, table);
     const expected = insertedPerTable[table] ?? 0;
-    // 与 Rust apply.rs 同口径:只跳过 expected===0;id 集空(计划缺 id 列)
-    // 让 IN () 查询如实报错,不做静默空核对
+    // Same accounting as the Rust apply.rs: only expected===0 is skipped; an empty id set (the plan
+    // lacks an id column) is left to make the IN () query error out honestly, with no silent empty
+    // reconciliation
     if (expected === 0) {
       continue;
     }
@@ -572,7 +586,7 @@ export async function applyImportPlan(
     throw new ClonePostCommitError(`committed; verification failed: ${String(error)}`);
   }
 
-  // ---- 清理计划:逆拓扑序,只生成(PDC-0408) ----
+  // ---- The cleanup plan: inverse topological order, generated only (PDC-0408) ----
   const cleanup: CloneApplyResult['cleanup'] = [];
   for (const table of [...plan.order].reverse()) {
     const ids = newIdsForTable(plan, resolvedIds, rowsByTable, table);
@@ -586,9 +600,10 @@ export async function applyImportPlan(
     });
   }
 
-  // 根表新主键(UI 句柄面):allocate=数据库分配值,preserve=归档原值——
-  // 与 Rust apply.rs 同口径,取根表 id 集首项再提标量(typed_id_to_u64);
-  // 只认 new-key 占位会令 preserve 模式恒 null
+  // The root table's new primary key (the UI handle face): allocate = the database-assigned value,
+  // preserve = the archive's original value -- same accounting as the Rust apply.rs: take the
+  // first item of the root table's id set and then extract the scalar (typed_id_to_u64); honoring
+  // only new-key placeholders would make preserve mode always null
   const rootTable = plan.order[0];
   const rootIds = rootTable ? newIdsForTable(plan, resolvedIds, rowsByTable, rootTable) : [];
   const newRootId = rootIds.length > 0 ? typedIdScalar(rootIds[0]) : null;
@@ -647,9 +662,10 @@ function newIdsForTable(
           ids.push(tvBigUInt(id));
         }
       } else if (cell.kind === 'literal' && cellIndex === idColumnIndex) {
-        // preserve 模式主键列是归档原值(计划期不产占位):只认占位会空集
-        // → 核对静默跳过/清理计划缺失/根句柄恒 null(与 Rust new_ids_for_table
-        // Literal if id_col == Some(idx) 臂同口径)
+        // In preserve mode the primary key column is the archive's original value (planning produces no
+        // placeholder): honoring only placeholders would leave an empty set -> the reconciliation
+        // silently skipped / the cleanup plan missing / the root handle always null (the same
+        // accounting as the Rust new_ids_for_table `Literal if id_col == Some(idx)` arm)
         const value = rowsByTable.get(table)?.[statement.row_index]?.values[cellIndex];
         if (value) {
           ids.push(value);
@@ -660,7 +676,7 @@ function newIdsForTable(
   return ids;
 }
 
-/** 主键绑定值 → 标量(UI 句柄;非整型族=null,与 Rust typed_id_to_u64 同口径)。 */
+/** A primary-key bound value -> scalar (the UI handle; a non-integer family = null, same accounting as the Rust typed_id_to_u64). */
 function typedIdScalar(value: TypedValueWire): number | string | null {
   if (value.t === 'big-u-int' || value.t === 'u-int' || value.t === 'int') {
     return typeof value.v === 'number' || typeof value.v === 'string' ? value.v : String(value.v);

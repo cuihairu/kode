@@ -1,32 +1,36 @@
-//! kode-root — KBE 根发现(PR-006,书 §5 VFS-009 完整版 + §17 PR-006, PH1-05)。
+//! kode-root — KBE root discovery (PR-006, book §5 VFS-009 full edition + §17 PR-006, PH1-05).
 //!
-//! 职责:识别工作区内的 KBEngine 资源根(实体定义目录 / entities.xml /
-//! types.xml / 服务器资产根 / 引擎源码根 / 引擎消息表),识别优先级与策略
-//! 全部可测;引擎配置规则从 TS discovery 移植并逐条证据化(见
-//! [`conventions`] 模块内的 `src/workspaceDiscovery.ts:行号` 注记)。
+//! Responsibility: identify KBEngine resource roots inside the workspace (entity
+//! definition directories / entities.xml / types.xml / server asset root / engine
+//! source root / engine message tables). The identification priority and strategy
+//! are fully testable; the engine config rules are ported from TS discovery with
+//! per-rule evidence (see the `src/workspaceDiscovery.ts:line` notes in the
+//! [`conventions`] module).
 //!
-//! ROOT 条目 ledger(基础版;与 docs/kode2/pr-006.md 对应):
+//! ROOT entry ledger (basic edition; corresponds to docs/kode2/pr-006.md):
 //!
-//! | 条目 | 内容 | 落点 |
+//! | Entry | Content | Location |
 //! |---|---|---|
-//! | ROOT-001 | 根识别优先级分层可测:显式配置 > 记忆选择 > 约定链 > 有界深扫描;多候选宁缺勿猜(歧义回诊断,不猜) | [`resolve`] |
-//! | ROOT-002 | 平台路径规则:Windows 大小写折叠+盘符大写 / macOS 默认折叠(声明) / Linux 敏感 / WSL UNC 前缀语义 | [`platform`] |
-//! | ROOT-003 | 逐平台典型树夹具:linux_assets / engine_repo / multi_ambiguous 等,夹具即验收 | `tests/fixtures/` |
-//! | ROOT-004 | submodule / vendored 判定:.gitmodules 命名或 .git 标记 = 仓边界;vendored 组件名单 = 厂边界;边界内锚点降级不误导根 | [`scan`] |
-//! | ROOT-005 | mount 循环判定:跟随模式下 canonical 身份 visited 集 + 深度封顶,绑定挂载环终止有保障 | [`scan`] |
-//! | ROOT-006 | 别名路径判定:`//`、`./`、`..`、尾 `/`、symlink 别名 → 同一根身份只记一次 | [`platform`] + [`scan`] |
-//! | ROOT-007 | 符号链接循环判定:默认不跟随目录 symlink(VFS-010 口径);显式跟随带环护栏,不挂死 | [`scan`] |
-//! | ROOT-008 | 引擎配置规则移植并证据化:约定链/探针/锚点全部对齐 TS 实现,注释带 file:line | [`conventions`] |
-//! | ROOT-009 | 敏感目录不动:.git/node_modules/.vscode/out/dist/点前缀目录剪枝,逐目录逐文件级可断言(visited 台账) | [`scan`] |
-//! | ROOT-010 | 与 TS discovery 对拍:Rust dump-golden 生成 → TS vitest 用现有 scanWorkspaceAnchors 复算,双向门禁 | `tests/golden/` + `tests/kodeRootParity.test.ts` |
-//! | ROOT-011 | UR+Path 双支持:输入可为 `file://` URI 或原始路径,统一走 kode-vfs CanonicalUri | [`platform`] |
-//! | ROOT-012 | 诊断输出仅新启:发现报告/诊断只在冷跑产生,缓存命中不重复发(报告带 from_cache 旗标) | [`resolve`] |
-//! | ROOT-013 | 有界深扫描:深度 7 / 条目 20000 上限与 TS 同源,触顶截断如实标注(零命中 ≠ 没有) | [`scan`] |
-//! | ROOT-014 | 多根注册与归属:注册顺序=优先顺序、最长前缀归属、平台折叠感知、冲突出诊断 | [`resolve`] |
-//! | ROOT-015 | 引擎侧定位家族:kbe 源码根锚点 + 消息表双名四级 + 资产根家族,全对齐 TS 口径 | [`resolve`] |
+//! | ROOT-001 | Layered, testable root-identification priority: explicit config > remembered selection > convention chain > bounded deep scan; with multiple candidates prefer no guess over a wrong guess (ambiguity goes to diagnostics, never guessed) | [`resolve`] |
+//! | ROOT-002 | Platform path rules: Windows case folding + drive-letter uppercasing / macOS folds by default (declared) / Linux is case sensitive / WSL UNC prefix semantics | [`platform`] |
+//! | ROOT-003 | Per-platform canonical tree fixtures: linux_assets / engine_repo / multi_ambiguous etc.; the fixture is the acceptance test | `tests/fixtures/` |
+//! | ROOT-004 | submodule / vendored determination: named in .gitmodules or carrying a .git marker = repo boundary; vendored component list = vendor boundary; anchors inside a boundary are downgraded so they never mislead root detection | [`scan`] |
+//! | ROOT-005 | Mount cycle determination: in follow mode, a visited set of canonical identities + a depth cap guarantee termination of bind-mount cycles | [`scan`] |
+//! | ROOT-006 | Alias-path determination: `//`, `./`, `..`, trailing `/`, symlink aliases -> the same root identity is recorded only once | [`platform`] + [`scan`] |
+//! | ROOT-007 | Symlink cycle determination: directory symlinks are not followed by default (VFS-010 semantics); explicit following carries a cycle guard and never hangs | [`scan`] |
+//! | ROOT-008 | Engine config rules ported with evidence: convention chain/probes/anchors all aligned to the TS implementation, comments carry file:line | [`conventions`] |
+//! | ROOT-009 | Sensitive directories untouched: .git/node_modules/.vscode/out/dist/dot-prefixed directories are pruned, assertable per directory and per file (visited ledger) | [`scan`] |
+//! | ROOT-010 | Parity with TS discovery: Rust dump-golden generates -> TS vitest recomputes with the existing scanWorkspaceAnchors, bidirectional gate | `tests/golden/` + `tests/kodeRootParity.test.ts` |
+//! | ROOT-011 | UR+Path dual support: input may be a `file://` URI or a raw path, both normalized through kode-vfs CanonicalUri | [`platform`] |
+//! | ROOT-012 | Diagnostics only on fresh discovery: discovery reports/diagnostics are produced only on cold runs and are not re-emitted on cache hits (reports carry a from_cache flag) | [`resolve`] |
+//! | ROOT-013 | Bounded deep scan: depth 7 / 20000 entries caps share the same origin as TS; hitting a cap is honestly marked as truncated (zero hits ≠ absent) | [`scan`] |
+//! | ROOT-014 | Multi-root registration and ownership: registration order = priority order, longest-prefix ownership, platform-folding awareness, conflicts surface as diagnostics | [`resolve`] |
+//! | ROOT-015 | Engine-side locating family: kbe source root anchor + message-table dual-name four-tier + asset root family, all aligned to the TS semantics | [`resolve`] |
 //!
-//! 与 kode-vfs 的关系:VFS-009 的 RootRegistry 仍是文档归属的身份层;
-//! 本 crate 是"哪些目录配得上当根"的发现层,发现结果交给 RootRegistry 注册。
+//! Relationship to kode-vfs: the VFS-009 RootRegistry remains the identity layer for
+//! document ownership; this crate is the discovery layer that decides "which
+//! directories deserve to be roots", and its findings are handed to RootRegistry for
+//! registration.
 
 pub mod conventions;
 pub mod diag;

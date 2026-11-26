@@ -1,9 +1,11 @@
-//! CLONE-P6 硬化测试(计划书 §10 矩阵收口 / Phase 6 PDC-0602/0603/0605):
-//! 抗篡改 fuzz、深层嵌套、规模预算/取消/超时、跨平台路径。
+//! CLONE-P6 hardening tests (plan doc §10 matrix closure / Phase 6
+//! PDC-0602/0603/0605): tamper-resistant fuzz, deep nesting, scale budget /
+//! cancel / timeout, cross-platform paths.
 //!
-//! 全部经公开 API、无新增依赖(PDC-0601 真实 MySQL 属 mysql_real.rs,
-//! 独立门控)。断言面向「绝不静默接受损坏」而非「特定错误文案」,
-//! 以便任一帧布局变更都能被本套件捕获。
+//! Everything goes through the public API with no new dependencies (PDC-0601's
+//! real MySQL lives in mysql_real.rs, gated separately). Assertions target "never
+//! silently accept corruption" rather than "specific error messages", so that any
+//! frame layout change gets caught by this suite.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -21,7 +23,7 @@ use kode_db_clone::schema::{CloneSchema, DerivedField, DerivedTable, SchemaSourc
 use kode_db_clone::value::{TypedRow, TypedValue};
 
 // ---------------------------------------------------------------------------
-// 夹具助手
+// Fixture helpers
 // ---------------------------------------------------------------------------
 
 fn temp_dir(tag: &str) -> PathBuf {
@@ -52,7 +54,7 @@ fn row(table: &str, values: Vec<TypedValue>) -> TypedRow {
     }
 }
 
-/// 写一个最小归档(Avatar 根 + 1 行),返回路径。
+/// Writes a minimal archive (Avatar root + 1 row), returns the path.
 fn write_small_archive(dir: &Path, name: &str) -> PathBuf {
     let path = dir.join(name);
     let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
@@ -75,11 +77,14 @@ fn write_small_archive(dir: &Path, name: &str) -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
-// PDC-0602:抗篡改 fuzz(无加密档的每一字节都被认证或结构性约束)
+// PDC-0602: tamper-resistant fuzz (every byte of the unencrypted archive is
+// authenticated or structurally constrained)
 // ---------------------------------------------------------------------------
 
-/// 逐字节翻转:任一变位都必须被检出——或开档报错,或开出的内容与原件
-/// 逐文件一致(非语义字节的静默接受不构成损坏,但任何内容变化必须被拒)。
+/// Byte-by-byte flipping: every mutation must be detected — either opening the
+/// archive errors, or the opened content matches the original file-by-file
+/// (silent acceptance of non-semantic bytes does not count as corruption, but any
+/// content change must be rejected).
 #[test]
 fn archive_single_byte_mutation_never_silently_corrupts() {
     let dir = temp_dir("fuzz-mut");
@@ -89,7 +94,7 @@ fn archive_single_byte_mutation_never_silently_corrupts() {
     let n = original.len();
     assert!(n > 100, "archive should have real frames, got {n} bytes");
 
-    // 全字节扫描(小档) + 步进采样(大档兜底)。
+    // Full-byte scan (small archive) + stepped sampling (fallback for large ones).
     let step = (n / 8192).max(1);
     let mut silently_corrupt = Vec::new();
     for i in (0..n).step_by(step) {
@@ -100,7 +105,8 @@ fn archive_single_byte_mutation_never_silently_corrupts() {
         match Archive::open(&mpath, None) {
             Err(_) => {}
             Ok(mutated) => {
-                // 开档成功:必须与原件逐逻辑文件一致(否则是静默语义变化)。
+                // The archive opened: must match the original per logical file
+                // (otherwise it is a silent semantic change).
                 for f in mutated.meta().files.iter() {
                     if mutated.file(f) != pristine.file(f) {
                         silently_corrupt.push((i, f.clone()));
@@ -117,7 +123,8 @@ fn archive_single_byte_mutation_never_silently_corrupts() {
     );
 }
 
-/// 逐长度截断:任何短于原件的字节串都不能开档。
+/// Length-by-length truncation: no byte string shorter than the original may
+/// open.
 #[test]
 fn archive_truncation_never_opens() {
     let dir = temp_dir("fuzz-trunc");
@@ -126,7 +133,7 @@ fn archive_truncation_never_opens() {
     let n = original.len();
     assert!(Archive::open(&path, None).is_ok());
 
-    // 全长度扫描。
+    // Scan every length.
     let mut opened = Vec::new();
     for len in 0..n {
         let tpath = dir.join("trunc.kdp");
@@ -141,13 +148,15 @@ fn archive_truncation_never_opens() {
     );
 }
 
-/// 帧内字节翻转(载荷区):必然被帧级 SHA 或清单校验和检出。
+/// Byte flipping inside a frame (payload area): always detected by frame-level
+/// SHA or the manifest checksum.
 #[test]
 fn archive_payload_mutation_always_detected() {
     let dir = temp_dir("fuzz-payload");
     let path = write_small_archive(&dir, "orig.kdp");
     let original = std::fs::read(&path).unwrap();
-    // 从头部之后开始(头部是魔数/版本/旗标,另测);覆盖全部载荷与帧头。
+    // Start after the header (the header is magic/version/flags, tested
+    // separately); covers the whole payload and the frame headers.
     let mut opened = 0usize;
     for i in 42..original.len() {
         let mut bytes = original.clone();
@@ -166,10 +175,11 @@ fn archive_payload_mutation_always_detected() {
 }
 
 // ---------------------------------------------------------------------------
-// PDC-0602:深层嵌套(父链)与环
+// PDC-0602: deep nesting (parent chains) and cycles
 // ---------------------------------------------------------------------------
 
-/// 1000 层父链:拓扑序长度正确、父先子后、不爆栈。
+/// A 1000-level parent chain: topological order length correct, parents before
+/// children, no stack overflow.
 #[test]
 fn deep_parent_chain_orders_without_overflow() {
     let depth = 1000usize;
@@ -195,7 +205,7 @@ fn deep_parent_chain_orders_without_overflow() {
     let graph = RelationGraph::build(&schema, &schema.tables).unwrap();
     let order = graph.topological_order(&schema);
     assert_eq!(order.len(), depth);
-    // 根在前;每个子表必须出现在其父之后。
+    // Root first; every child table must appear after its parent.
     assert_eq!(order[0], "tbl_C0");
     let mut pos = BTreeMap::new();
     for (idx, name) in order.iter().enumerate() {
@@ -211,11 +221,11 @@ fn deep_parent_chain_orders_without_overflow() {
     }
 }
 
-/// 深层环仍被拒(fail-closed),不静默输出。
+/// A deep cycle is still rejected (fail-closed), never silently output.
 #[test]
 fn deep_cycle_is_rejected() {
     let mut tables = Vec::new();
-    // A→B→C→A 环。
+    // A→B→C→A cycle.
     for (i, name) in ["tbl_A", "tbl_B", "tbl_C"].iter().enumerate() {
         let parent = match i {
             0 => Some("tbl_C".to_string()),
@@ -239,7 +249,7 @@ fn deep_cycle_is_rejected() {
 }
 
 // ---------------------------------------------------------------------------
-// PDC-0603:规模(十万级子行)、预算、取消、超时
+// PDC-0603: scale (hundred-thousand-level child rows), budget, cancel, timeout
 // ---------------------------------------------------------------------------
 
 const SUB_ROWS: u64 = 100_000;
@@ -348,7 +358,8 @@ impl RowSink for CollectSink {
     }
 }
 
-/// 十万级子行导出:全量成功、计数准确、逐表行数正确。
+/// Exporting a hundred-thousand-level child row count: full success, exact
+/// counts, per-table row counts correct.
 #[test]
 fn large_subtable_exports_with_correct_counts() {
     let exec = FakeExec::new(SUB_ROWS);
@@ -370,7 +381,8 @@ fn large_subtable_exports_with_correct_counts() {
     assert_eq!(sink.counts["tbl_Avatar_items"], SUB_ROWS);
 }
 
-/// 行预算:超限即 BudgetExceeded(诚实拒绝,不静默截断)。
+/// Row budget: exceeding it is BudgetExceeded (honest rejection, no silent
+/// truncation).
 #[test]
 fn large_subtable_exceeding_row_budget_fails_closed() {
     let exec = FakeExec::new(SUB_ROWS);
@@ -390,7 +402,8 @@ fn large_subtable_exceeding_row_budget_fails_closed() {
     );
 }
 
-/// 预取消:取消旗标在首行前即生效 → cancelled=true,不报成功。
+/// Pre-cancelled: the cancel flag takes effect before the first row →
+/// cancelled=true, no success reported.
 #[test]
 fn pre_cancelled_export_reports_cancelled() {
     let exec = FakeExec::new(SUB_ROWS);
@@ -410,7 +423,7 @@ fn pre_cancelled_export_reports_cancelled() {
     assert!(out.cancelled);
 }
 
-/// 零超时:墙钟超时即 cancelled=true。
+/// Zero timeout: a wall-clock timeout means cancelled=true.
 #[test]
 fn timed_out_export_reports_cancelled() {
     let exec = FakeExec::new(SUB_ROWS);
@@ -428,10 +441,11 @@ fn timed_out_export_reports_cancelled() {
 }
 
 // ---------------------------------------------------------------------------
-// PDC-0605:跨平台路径与密钥存储
+// PDC-0605: cross-platform paths and key storage
 // ---------------------------------------------------------------------------
 
-/// 反斜杠是 Unix 合法文件名字符;归档打开不得依赖目录分隔符假设。
+/// A backslash is a legal Unix filename character; opening an archive must not
+/// depend on directory-separator assumptions.
 #[test]
 fn archive_open_handles_backslash_in_name() {
     let dir = temp_dir("paths");
@@ -444,7 +458,7 @@ fn archive_open_handles_backslash_in_name() {
     assert_eq!(rows[0].values[0], TypedValue::BigUInt(7));
 }
 
-/// 点前缀文件名(隐藏/特殊名)可写可开。
+/// Dot-prefixed filenames (hidden / special names) can be written and opened.
 #[test]
 fn archive_open_handles_dotfile_name() {
     let dir = temp_dir("paths-dot");
@@ -453,7 +467,8 @@ fn archive_open_handles_dotfile_name() {
     assert_eq!(a.meta().entity, "Avatar");
 }
 
-/// 关系边分类在跨平台下保持稳定(RelationKind 标签不变)。
+/// Relation-edge classification stays stable cross-platform (RelationKind labels
+/// unchanged).
 #[test]
 fn relation_kind_label_is_stable() {
     assert_eq!(RelationKind::EngineGenerated.label(), "engine-generated");

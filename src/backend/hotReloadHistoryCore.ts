@@ -1,81 +1,99 @@
 /**
- * 热更历史库纯核(HR-PR-06,书 §19.4 ui-status):
- * - 零 vscode 导入、零 IO:容量/时钟注入,装配面(TreeView/面板/装饰)只消费
- *   本核的查询面,与 hotReloadSavePipeline 同边界;
- * - HR-UI-002/006/HR-MOD-014 字段形状:每条历史同时存 fullModule 与
- *   requestModule(HR-MOD-014)+fileUri/targetId/时间/请求 id/状态/错误摘要,
- *   树节点标题取 fullModule,tooltip 字段投影含 requestModule/URI/target/
- *   时间/请求 id——用户看到的名称与请求名称分开呈现(HR-UI-006);
- * - HR-UI-010/014 同路径不同 target 是两条独立历史(targetId 是行身份的
- *   一部分),过滤按 fullModule 子串(大小写不敏)/targetId/状态/时间范围;
- * - HR-UI-009 状态语义与 hotReloadStatus 同口径:sent-unverified 是 2xx 无
- *   业务回执的如实态,applied 只在引擎回执核验后;状态迁移单向
- *   sent-unverified→applied/failed,终态不回退(回退=伪造,拒并如实返回
- *   false),requestId 不存在也如实 false;
- * - HR-UI-007 高频合并:同 requestId 在合并窗内的多次更新合并为一条取末态
- *   (纯决策,UI 适配面拿合并结果决定重渲染节流),容量有界环形淘汰最旧;
- * - 分页窗口(offset/pageSize+total/hasMore)给虚拟滚动与增量加载用;
- * - 分组(recent/byFile/byTarget)供 HR-UI-002 树视图:组内保持最新在前;
- * - RUST-368 保留时间限额(maxAgeMs+pruneExpired,纯机制)与脱敏导出
- *   (redactHistoryEntry 白名单投影+buildHistoryExport,零 body/header)。
+ * Pure core of the hot reload history store (HR-PR-06, book §19.4 ui-status):
+ * - zero vscode imports, zero IO: capacity/clock are injected, and the wiring
+ *   face (TreeView/panel/decorations) only consumes this core's query face, at
+ *   the same boundary as hotReloadSavePipeline;
+ * - HR-UI-002/006/HR-MOD-014 field shape: every history row stores both
+ *   fullModule and requestModule (HR-MOD-014) plus fileUri/targetId/time/
+ *   request id/status/error summary; tree node titles take fullModule and the
+ *   tooltip projection carries requestModule/URI/target/time/request id — the
+ *   name the user sees is presented apart from the name the request carries
+ *   (HR-UI-006);
+ * - HR-UI-010/014 the same path with a different target is two independent
+ *   history rows (targetId is part of the row identity); filtering runs on the
+ *   fullModule substring (case-insensitive)/targetId/status/time range;
+ * - HR-UI-009 status semantics follow the same convention as hotReloadStatus:
+ *   sent-unverified is the honest state for a 2xx with no business receipt, and
+ *   applied only after the engine receipt has been verified; transitions are
+ *   one-way sent-unverified→applied/failed and terminal states never regress
+ *   (a regression is fabrication, refused and honestly returned as false); a
+ *   nonexistent requestId is also honestly false;
+ * - HR-UI-007 high-frequency coalescing: several updates for the same requestId
+ *   inside the merge window collapse into one row keeping the final state (a
+ *   pure decision; the UI adapter face uses the merged result to decide re-
+ *   render throttling); capacity is bounded with ring eviction of the oldest;
+ * - the paging window (offset/pageSize+total/hasMore) serves virtual scrolling
+ *   and incremental loading;
+ * - grouping (recent/byFile/byTarget) feeds the HR-UI-002 tree view: newest
+ *   first within each group;
+ * - RUST-368 retention limit (maxAgeMs+pruneExpired, pure mechanism) and the
+ *   redacted export (redactHistoryEntry whitelist projection +
+ *   buildHistoryExport, zero body/header).
  *
- * 装配接线(TreeView/面板注册、i18n 渲染、a11y、生命周期绑定)不在本核。
+ * Wiring (TreeView/panel registration, i18n rendering, a11y, lifecycle binding)
+ * is not part of this core.
  */
 
 import type { HotReloadErrorReason } from './hotReloadErrorReason';
 
-/** HR-UI-009 状态口径(与 hotReloadStatus 同语义,独立枚举不引 vscode 面) */
+/** HR-UI-009 status convention (same semantics as hotReloadStatus; a separate enum so the vscode face is not imported) */
 export type HotReloadHistoryStatus = 'sent-unverified' | 'applied' | 'failed';
 
 export interface HotReloadHistoryInput {
-  /** 请求关联 id(HR-HTTP-014 每次执行生成;重放同 id=幂等替换不重复成行) */
+  /** Request-associated id (generated per execution, HR-HTTP-014; replaying the same id = idempotent replacement, no duplicate row) */
   readonly requestId: string;
-  /** 完整模块名(树标题/搜索主键,HR-UI-006) */
+  /** Full module name (tree title / primary search key, HR-UI-006) */
   readonly fullModule: string;
-  /** 发送模块名(请求实际携带,HR-UI-006 详情) */
+  /** Sent module name (what the request actually carries, HR-UI-006 detail) */
   readonly requestModule: string;
-  /** 规范化文件路径(canonicalizeScriptFilePath 产物) */
+  /** Normalized file path (output of canonicalizeScriptFilePath) */
   readonly fileUri: string;
-  /** 目标环境 id(行身份的一部分:同文件不同目标=两行,HR-UI-010/014) */
+  /** Target environment id (part of the row identity: same file, different target = two rows, HR-UI-010/014) */
   readonly targetId: string;
-  /** HR-UI-014 工作区根 fsPath(resolveRootId 产物):同模块多 workspace
-   *  归属区分维度(行身份已含于 requestId 前缀);可选=旧持久化行无此
-   *  字段(渲染占位不丢行),活记录恒非空 */
+  /** HR-UI-014 workspace root fsPath (output of resolveRootId): the dimension that
+   *  disambiguates which workspace a same-module row belongs to (row identity is
+   *  already carried by the requestId prefix); optional = old persisted rows lack
+   *  this field (rendered as a placeholder without dropping the row); live rows
+   *  are always non-empty */
   readonly rootId?: string;
-  /** 时钟毫秒 */
+  /** Clock milliseconds */
   readonly time: number;
   readonly status: HotReloadHistoryStatus;
-  /** 失败/拦截摘要(如 HTTP 状态、错误分类;密钥/header 一律不落) */
+  /** Failure/interception summary (e.g. HTTP status, error category; keys/headers are never recorded) */
   readonly errorSummary?: string;
   /**
-   * 触发源(HR-STATE-007 九要素「trigger」,同 IDE-HOT-102 审计「谁」):
-   * watcher-auto / command / retry / temp-edit;未提供=来源未记录(如实
-   * 缺省,不猜来源)。
+   * Trigger source (the "trigger" of the HR-STATE-007 nine elements, same as the
+   * "who" of the IDE-HOT-102 audit): watcher-auto / command / retry / temp-edit;
+   * not provided = source unrecorded (honestly defaults, never guessed).
    */
   readonly trigger?: string;
   /**
-   * 发送耗时毫秒(HR-STATE-007 九要素「duration」):发送发起锚点到落账时刻;
-   * 发送前的基准冻结记录无耗时(如实缺省,不冒充 0)。
+   * Send duration in milliseconds (the "duration" of the HR-STATE-007 nine
+   * elements): from the send-initiation anchor to the moment it lands in the
+   * ledger; the baseline freeze performed before the send has no duration
+   * (honestly defaults, never impersonates 0).
    */
   readonly durationMs?: number;
   /**
-   * 错误原因七类定性(HR-STATE-007 九要素「errorCategory」,HR-STATE-010
-   * 同源分类):与 errorSummary 自由文本互补——summary 是带建议的原文,
-   * 这里是可过滤的定性枚举。
+   * Seven-category error classification (the "errorCategory" of the
+   * HR-STATE-007 nine elements; HR-STATE-010 shares the same classification
+   * source): complementary to the free-text errorSummary — summary is the
+   * original text with advice, this is the filterable qualitative enum.
    */
   readonly errorCategory?: HotReloadErrorReason;
   /**
-   * 发送时点冻结的内容 sha256(HR-STATE-007 九要素「hash」):与投递台账
-   * sentDigest 同源,是「这次发出去的到底哪份内容」的可复核依据;读取失败
-   * =如实缺省。
+   * Content sha256 frozen at send time (the "hash" of the HR-STATE-007 nine
+   * elements): same source as the delivery ledger's sentDigest, it is the
+   * re-verifiable basis for "exactly which content went out this time"; a read
+   * failure = honestly defaults.
    */
   readonly hash?: string;
 }
 
-/** 历史行(只读视图;状态更新经 updateStatus,外部不可变改) */
+/** History row (read-only view; status updates go through updateStatus; immutable from outside) */
 export type HotReloadHistoryEntry = HotReloadHistoryInput;
 
-/** 单向迁移表:仅 sent-unverified 可推进;终态回退/自迁移一律拒 */
+/** One-way transition table: only sent-unverified may advance; terminal regressions/self-transitions are always refused */
 const ALLOWED_TRANSITIONS: Readonly<Record<HotReloadHistoryStatus, readonly HotReloadHistoryStatus[]>> = {
   'sent-unverified': ['applied', 'failed'],
   applied: [],
@@ -83,25 +101,25 @@ const ALLOWED_TRANSITIONS: Readonly<Record<HotReloadHistoryStatus, readonly HotR
 };
 
 export interface HotReloadHistoryFilter {
-  /** fullModule 大小写不敏子串匹配 */
+  /** fullModule case-insensitive substring match */
   readonly fullModuleContains?: string;
-  /** HR-STATE-007 requestModule 子串(大小写不敏):发送名与显示名分开可查 */
+  /** HR-STATE-007 requestModule substring (case-insensitive): the sent name and the displayed name are queryable separately */
   readonly requestModuleContains?: string;
   readonly targetId?: string;
-  /** HR-UI-014 按工作区根精确过滤(同 targetId 口径:命中即等于) */
+  /** HR-UI-014 exact filter on the workspace root (same convention as targetId: a hit means equality) */
   readonly rootId?: string;
   readonly fileUri?: string;
   readonly status?: HotReloadHistoryStatus;
-  /** 时间范围含边界 [from,to];undefined=不限 */
+  /** Time range inclusive of bounds [from,to]; undefined = unlimited */
   readonly timeFrom?: number;
   readonly timeTo?: number;
-  /** HR-STATE-007 按触发源过滤(watcher-auto/command/retry/temp-edit) */
+  /** HR-STATE-007 filter by trigger source (watcher-auto/command/retry/temp-edit) */
   readonly trigger?: string;
-  /** HR-STATE-007 按错误七类定性过滤(HR-STATE-010 同源枚举) */
+  /** HR-STATE-007 filter by the seven error categories (HR-STATE-010 same-source enum) */
   readonly errorCategory?: HotReloadErrorReason;
-  /** HR-STATE-007 内容哈希前缀过滤(短前缀即辨来源;空串=不限定) */
+  /** HR-STATE-007 content hash prefix filter (a short prefix identifies the source; empty string = unrestricted) */
   readonly hash?: string;
-  /** HR-STATE-007 送达耗时范围含边界 [from,to](ms);无耗时行不命中 */
+  /** HR-STATE-007 delivery duration range inclusive of bounds [from,to] (ms); rows without a duration never match */
   readonly durationFrom?: number;
   readonly durationTo?: number;
 }
@@ -113,9 +131,11 @@ export interface HotReloadHistoryPage<T> {
 }
 
 /**
- * RUST-368 脱敏导出行:显式安全字段白名单(九要素+双名+file+requestId)。
- * 与「无需持久化所有 HTTP body」同源——这里只投影清单字段,任何新增字段
- * (HTTP body/header/令牌)默认不进导出,不靠事后抹除。
+ * RUST-368 redacted export row: an explicit safe-field whitelist (nine elements
+ * + dual names + file + requestId). Same source as "no need to persist every
+ * HTTP body" — only the listed fields are projected here, so any future field
+ * (HTTP body/header/token) stays out of the export by default, with no reliance
+ * on scrubbing after the fact.
  */
 export interface HotReloadHistoryExportRow {
   readonly requestId: string;
@@ -123,7 +143,7 @@ export interface HotReloadHistoryExportRow {
   readonly requestModule: string;
   readonly fileUri: string;
   readonly targetId: string;
-  /** HR-UI-014 工作区根(显式入白名单:新字段默认被白名单静默排除) */
+  /** HR-UI-014 workspace root (explicitly added to the whitelist: new fields are silently excluded by the whitelist by default) */
   readonly rootId?: string;
   readonly time: number;
   readonly status: HotReloadHistoryStatus;
@@ -134,7 +154,7 @@ export interface HotReloadHistoryExportRow {
   readonly hash?: string;
 }
 
-/** RUST-368 脱敏导出文档(schemaVersion 钉形状,便于日后演进) */
+/** RUST-368 redacted export document (schemaVersion pins the shape, easing later evolution) */
 export interface HotReloadHistoryExport {
   readonly schemaVersion: 1;
   readonly exportedAt: number;
@@ -143,17 +163,19 @@ export interface HotReloadHistoryExport {
 }
 
 export interface HotReloadHistoryOptions {
-  /** 容量(缺省 200):超出淘汰最旧(HR-UI-007 上千记录靠分页+淘汰,不全量驻留) */
+  /** Capacity (defaults to 200): overflow evicts the oldest (HR-UI-007 relies on paging + eviction for thousands of records, never resident in full) */
   readonly capacity?: number;
   /**
-   * 保留时间限额 ms(RUST-368;缺省不启用=纯核不擅自定政策):pruneExpired
-   * 淘汰 time 早于 nowMs-maxAgeMs 的行。政策值由装配面给(view 的
-   * HOT_RELOAD_HISTORY_MAX_AGE_MS),核心只管机制。
+   * Retention time limit in ms (RUST-368; not enabled by default = the pure
+   * core does not set policy on its own): pruneExpired evicts rows whose time
+   * is earlier than nowMs-maxAgeMs. The policy value comes from the wiring
+   * face (the view's HOT_RELOAD_HISTORY_MAX_AGE_MS); the core only owns the
+   * mechanism.
    */
   readonly maxAgeMs?: number;
 }
 
-/** 合并输入:同 requestId 在窗内的更新序列 */
+/** Coalescing input: the update sequence for one requestId inside the window */
 export interface HotReloadHistoryUpdate {
   readonly requestId: string;
   readonly status: HotReloadHistoryStatus;
@@ -162,10 +184,14 @@ export interface HotReloadHistoryUpdate {
 }
 
 /**
- * HR-UI-007 高频合并(纯函数):同 requestId 在 windowMs 内的多条更新合并
- * 为一条取末条状态/时间(跨窗不合并);不同 requestId 各自独立。
- * 事件序按输入序(调用方保证时序);status 单向语义由调用方的历史库迁移
- * 面保证,本函数只做呈现层合并不改迁移规则。
+ * HR-UI-007 high-frequency coalescing (pure function): several updates for the
+ * same requestId within windowMs collapse into one row keeping the last
+ * status/time (updates across the window do not merge); different requestIds
+ * stay independent.
+ * Event order follows input order (the caller guarantees timing); the one-way
+ * status semantics are guaranteed by the caller's history-store transition
+ * face, so this function only coalesces the presentation layer without
+ * changing transition rules.
  */
 export function coalesceHistoryUpdates(
   updates: readonly HotReloadHistoryUpdate[],
@@ -189,18 +215,23 @@ export function coalesceHistoryUpdates(
 }
 
 /**
- * HR-UI-007 虚拟滚动窗口(纯决策,面板渲染面据此只渲染视口行):
- * - 输入全部夹紧(负值如实取 0/1,不产负窗口),totalRows=0 如实空窗;
- * - overscan 上下各扩 N 行,滚动时视口边缘不露白;
- * - totalHeightPx = 行数×行高,滚动条按内容区总高给(不因只渲染窗口行而缩)。
- * webview 侧滚动更新用同一公式的 JS 镜像(本函数是规格,TS 测试钉住)。
+ * HR-UI-007 virtual scroll window (a pure decision; the panel rendering face
+ * uses it to render only the viewport rows):
+ * - every input is clamped (negative values honestly take 0/1, never a
+ *   negative window), and totalRows=0 is honestly an empty window;
+ * - overscan extends N rows up and down so the viewport edges never show gaps
+ *   while scrolling;
+ * - totalHeightPx = rows x row height, so the scrollbar is sized by the total
+ *   content height (it does not shrink because only the window rows render).
+ * The webview-side scroll update uses a JS mirror of this same formula (this
+ * function is the spec, pinned down by TS tests).
  */
 export interface VirtualScrollWindow {
-  /** 首个渲染行(含) */
+  /** First rendered row (inclusive) */
   readonly startIndex: number;
-  /** 渲染终止行(不含;clamp 后恒 ≥ startIndex) */
+  /** Last rendered row (exclusive; after clamping always >= startIndex) */
   readonly endIndex: number;
-  /** 内容区总高(px;滚动条依据) */
+  /** Total content height (px; the basis for the scrollbar) */
   readonly totalHeightPx: number;
 }
 
@@ -216,7 +247,7 @@ export function computeVirtualScrollWindow(opts: {
   const viewportHeightPx = Math.max(0, opts.viewportHeightPx);
   const scrollTopPx = Math.max(0, opts.scrollTopPx);
   const overscanRows = Math.max(0, Math.floor(opts.overscanRows));
-  // 滚过尾:first 也夹到 totalRows(越尾=尾后空窗,不产 start>end 的倒挂窗口)
+  // Scrolled past the tail: first is clamped to totalRows too (past the tail = an empty window after the end; never produces an inverted window with start > end)
   const first = Math.min(totalRows, Math.max(0, Math.floor(scrollTopPx / rowHeightPx) - overscanRows));
   const last = Math.min(totalRows, Math.ceil((scrollTopPx + viewportHeightPx) / rowHeightPx) + overscanRows);
   return {
@@ -226,12 +257,12 @@ export function computeVirtualScrollWindow(opts: {
   };
 }
 
-/** HR-UI-006 树节点标题投影:fullModule 优先,缺如实占位 */
+/** HR-UI-006 tree node title projection: fullModule first, honestly a placeholder when absent */
 export function buildHistoryEntryLabel(entry: HotReloadHistoryEntry): string {
   return entry.fullModule.length > 0 ? entry.fullModule : entry.requestModule || '(unknown module)';
 }
 
-/** HR-UI-002/006 tooltip 字段投影(结构化行,UI 面再渲染;不拼 HTML) */
+/** HR-UI-002/006 tooltip field projection (structured lines; the UI face renders them; no HTML assembly) */
 export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): string[] {
   const lines: string[] = [];
   if (entry.fullModule.length > 0 && entry.requestModule !== entry.fullModule) {
@@ -240,13 +271,13 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
   lines.push(`module: ${entry.fullModule || entry.requestModule}`);
   lines.push(`file: ${entry.fileUri}`);
   lines.push(`target: ${entry.targetId || '(default)'}`);
-  // HR-UI-014 工作区根(缺失根无「默认根」概念,如实报 unrecorded;
-  // 活记录恒非空,占位只现于旧持久化行)
+  // HR-UI-014 workspace root (a missing root has no "default root" notion, honestly reported as unrecorded;
+  // live rows are always non-empty, so the placeholder only appears on old persisted rows)
   lines.push(`root: ${entry.rootId || '(unrecorded)'}`);
   lines.push(`time: ${new Date(entry.time).toISOString()}`);
   lines.push(`requestId: ${entry.requestId}`);
   lines.push(`status: ${entry.status}`);
-  // HR-STATE-007 可检索九要素的其余四要素(缺省如实不呈现,不伪造占位)
+  // The remaining four of the HR-STATE-007 searchable nine elements (absent values are honestly not shown; no fabricated placeholder)
   if (entry.trigger !== undefined) {
     lines.push(`trigger: ${entry.trigger}`);
   }
@@ -266,11 +297,13 @@ export function buildHistoryEntryTooltipLines(entry: HotReloadHistoryEntry): str
 }
 
 /**
- * RUST-368 脱敏投影(白名单):逐字段显式拷贝,缺省如实缺省(不伪造空值)。
- * 白名单外的键(未来若出现的 body/header/令牌等)一律不进导出。
+ * RUST-368 redaction projection (whitelist): an explicit field-by-field copy;
+ * absent values stay honestly absent (no fabricated empty values).
+ * Keys outside the whitelist (any body/header/token that may appear later)
+ * never make it into the export.
  */
 export function redactHistoryEntry(entry: HotReloadHistoryEntry): HotReloadHistoryExportRow {
-  // 逐字段显式拷贝(缺省如实缺省,不伪造空值);白名单外键一律不进。
+  // An explicit field-by-field copy (absent values stay honestly absent, no fabricated empty values); keys outside the whitelist never enter.
   return {
     requestId: entry.requestId,
     fullModule: entry.fullModule,
@@ -289,8 +322,10 @@ export function redactHistoryEntry(entry: HotReloadHistoryEntry): HotReloadHisto
 }
 
 /**
- * RUST-368 脱敏导出文档:全量行按记录序逐行投影+元信息(count 与
- * entries.length 恒等,如实报数量);序列化(JSON.stringify)交给调用方。
+ * RUST-368 redacted export document: every row is projected one by one in
+ * record order plus metadata (count always equals entries.length, so the
+ * quantity is reported honestly); serialization (JSON.stringify) is left to
+ * the caller.
  */
 export function buildHistoryExport(
   entries: readonly HotReloadHistoryEntry[],
@@ -304,11 +339,11 @@ export function buildHistoryExport(
   };
 }
 
-/** 热更历史库(纯核):记录/推进/过滤/分组/分页 */
+/** Hot reload history store (pure core): record/advance/filter/group/page */
 export class HotReloadHistoryCore {
   private readonly capacity: number;
   private readonly maxAgeMs: number | undefined;
-  /** 插入序即新旧序(append-only;requestId 替换原位不动序) */
+  /** Insertion order is the age order (append-only; a requestId replacement stays in place without moving the order) */
   private readonly rows: HotReloadHistoryEntry[] = [];
   private readonly indexByRequest = new Map<string, number>();
 
@@ -317,15 +352,17 @@ export class HotReloadHistoryCore {
     this.maxAgeMs = options.maxAgeMs;
   }
 
-  /** 自省:当前行数(测试/装配面核查) */
+  /** Introspection: current row count (checked by tests / the wiring face) */
   size(): number {
     return this.rows.length;
   }
 
   /**
-   * HR-STATE-011 clear-history:清空全部历史(行+按 requestId 索引一并
-   * 丢弃)。只清内存,持久化清空由调用方(persist.save([]))负责——本核
-   * 无持久化知识,不越界猜宿主的落盘面。
+   * HR-STATE-011 clear-history: clears the entire history (rows plus the
+   * requestId index are dropped together). Only memory is cleared; the
+   * persisted clear is the caller's job (persist.save([])) — this core knows
+   * nothing of persistence and does not reach beyond its boundary to guess the
+   * host's disk-write face.
    */
   clear(): void {
     this.rows.length = 0;
@@ -333,9 +370,11 @@ export class HotReloadHistoryCore {
   }
 
   /**
-   * RUST-368 保留时间限额淘汰:剔除 time 早于 nowMs-maxAgeMs 的行,保序
-   * 重排索引,返回淘汰数。未启用 maxAgeMs=如实 no-op(0);边界含
-   * time==nowMs-maxAgeMs(>= 保留)。不假设 time 有序(乱序插入也如实保序)。
+   * RUST-368 retention limit eviction: removes rows whose time is earlier than
+   * nowMs-maxAgeMs, rebuilds the index preserving order, and returns the
+   * eviction count. maxAgeMs not enabled = honestly a no-op (0); the cutoff is
+   * inclusive of time==nowMs-maxAgeMs (>= retained). No assumption that time
+   * is ordered (out-of-order insertion also keeps its order honestly).
    */
   pruneExpired(nowMs: number): number {
     if (this.maxAgeMs === undefined) {
@@ -364,8 +403,10 @@ export class HotReloadHistoryCore {
   }
 
   /**
-   * 记录一次发送。同 requestId 已存在 → 原位幂等替换(不重复成行,顺序
-   * 不动);新 id 追加到最新位,超容量淘汰最旧并如实清其索引。
+   * Record one send. An existing requestId → idempotent replacement in place
+   * (no duplicate row, order untouched); a new id is appended at the newest
+   * position, and over capacity the oldest is evicted with its index honestly
+   * cleared.
    */
   record(input: HotReloadHistoryInput): void {
     const existing = this.indexByRequest.get(input.requestId);
@@ -380,7 +421,7 @@ export class HotReloadHistoryCore {
       if (evicted) {
         this.indexByRequest.delete(evicted.requestId);
       }
-      // shift 后全体索引前移一位
+      // After shift, every index moves up by one position
       for (const [id, index] of this.indexByRequest) {
         this.indexByRequest.set(id, index - 1);
       }
@@ -388,9 +429,12 @@ export class HotReloadHistoryCore {
   }
 
   /**
-   * HR-UI-009 状态推进:sent-unverified→applied(回执核验)或→failed。
-   * 终态(applied/failed)不回退、同态自迁移拒——伪造回退如实拒并返回
-   * false;requestId 不存在(已被淘汰/未记录)也如实 false。
+   * HR-UI-009 status advancement: sent-unverified→applied (receipt verified)
+   * or →failed.
+   * Terminal states (applied/failed) never regress and same-state self-
+   * transitions are refused — a fabricated regression is honestly refused with
+   * false; a nonexistent requestId (evicted / never recorded) is also honestly
+   * false.
    */
   updateStatus(requestId: string, status: HotReloadHistoryStatus, errorSummary?: string): boolean {
     const index = this.indexByRequest.get(requestId);
@@ -409,17 +453,17 @@ export class HotReloadHistoryCore {
     return true;
   }
 
-  /** 全量行(插入序,最旧在前);调用方要最新在前用 newestFirst */
+  /** All rows (insertion order, oldest first); callers wanting newest first should use newestFirst */
   entries(): readonly HotReloadHistoryEntry[] {
     return [...this.rows];
   }
 
-  /** 最新在前视图(HR-UI-002 最近更新组) */
+  /** Newest-first view (the HR-UI-002 "recently updated" group) */
   newestFirst(): readonly HotReloadHistoryEntry[] {
     return [...this.rows].reverse();
   }
 
-  /** HR-UI-010 过滤:全条件 AND;fullModule 子串大小写不敏 */
+  /** HR-UI-010 filtering: all conditions ANDed; fullModule substring is case-insensitive */
   filter(query: HotReloadHistoryFilter): HotReloadHistoryEntry[] {
     const needle = query.fullModuleContains?.toLowerCase();
     const requestNeedle = query.requestModuleContains?.toLowerCase();
@@ -464,8 +508,8 @@ export class HotReloadHistoryCore {
       ) {
         return false;
       }
-      // 耗时区间:无耗时(发送前基准冻结/未记录)不命中区间查询,
-      // 不计 0 也不计 ∞(如实缺省)
+      // Duration interval: a row with no duration (pre-send baseline freeze / unrecorded) never matches an interval query —
+      // it is counted as neither 0 nor infinity (honestly absent)
       if (
         (query.durationFrom !== undefined || query.durationTo !== undefined) &&
         entry.durationMs === undefined
@@ -483,7 +527,8 @@ export class HotReloadHistoryCore {
   }
 
   /**
-   * HR-UI-007 分页窗口(虚拟滚动/增量加载的数据面):offset 越界如实空页。
+   * HR-UI-007 paging window (the data face for virtual scrolling / incremental
+   * loading): an out-of-bounds offset is honestly an empty page.
    */
   static page<T>(
     rows: readonly T[],
@@ -500,17 +545,17 @@ export class HotReloadHistoryCore {
     };
   }
 
-  /** HR-UI-002 按文件分组:组键按首次出现序(最新在前遍历),组内最新在前 */
+  /** HR-UI-002 group by file: group keys ordered by first appearance (iterating newest first), newest first within a group */
   static groupByFile(rows: readonly HotReloadHistoryEntry[]): Map<string, HotReloadHistoryEntry[]> {
     return HotReloadHistoryCore.groupBy(rows, entry => entry.fileUri);
   }
 
-  /** HR-UI-002/014 按目标分组:同路径不同 target 落不同组 */
+  /** HR-UI-002/014 group by target: the same path with a different target falls into a different group */
   static groupByTarget(rows: readonly HotReloadHistoryEntry[]): Map<string, HotReloadHistoryEntry[]> {
     return HotReloadHistoryCore.groupBy(rows, entry => entry.targetId);
   }
 
-  /** HR-UI-014 按工作区根分组:同模块多 workspace 落不同组 */
+  /** HR-UI-014 group by workspace root: a same-module multi-workspace set falls into different groups */
   static groupByRoot(rows: readonly HotReloadHistoryEntry[]): Map<string, HotReloadHistoryEntry[]> {
     return HotReloadHistoryCore.groupBy(rows, entry => entry.rootId ?? '');
   }

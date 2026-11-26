@@ -1,11 +1,14 @@
 /**
- * 快速执行动作纯层(设计 1.8 数据结构 / 1.5 变量替换 / 1.4 脚本词表分类)。
+ * Pure layer for quick execute actions (design 1.8 data structures / 1.5 variable substitution /
+ * 1.4 script word-list classification).
  *
- * 动作由 `.kbengine/debug.json` 的顶层 `quickActions` 定义,不塞进 `debug` 段
- * (1.3 边界:动作不是调试配置)。三类执行后端:command(VS Code 命令)、
- * script(本地脚本)、http(本地热更新接口)——白名单式,不做万能 shell 执行。
+ * Actions are defined by the top-level `quickActions` of `.kbengine/debug.json`, not stuffed
+ * into the `debug` section (1.3 boundary: actions are not debug configurations). Three
+ * execution backends: command (VS Code command), script (local script), http (local hot-reload
+ * endpoint) -- whitelist style, no do-anything shell execution.
  *
- * 变量在执行时解析(非扫描/注册时);未知变量一律抛错,绝不静默空串替换(1.5)。
+ * Variables are resolved at execution time (not at scan/registration time); unknown variables
+ * always throw, never silently replaced with an empty string (1.5).
  */
 
 import type { BatchScriptCandidate } from './quickActionScanner';
@@ -43,13 +46,15 @@ export interface QuickActionHttp extends QuickActionShared {
   body?: string;
 }
 
-/** venv 自动查找目录名默认清单(2026-10-30 用户令:环境目录不写死——团队各
- * 有 .kbenv/.venv/venv 习惯):显式 venv.path 之外按此清单在动作目录、
- * 配置根逐名探测;设置 kbengine.python.venvDirectories 可改清单。 */
+/** Default list of directory names for automatic venv discovery (2026-10-30 user order: environment
+ * directories are not hard-coded -- each team has its own .kbenv/.venv/venv habit): beyond an
+ * explicit venv.path, probe each name on this list under the action directory and the config root;
+ * the kbengine.python.venvDirectories setting can change the list. */
 export const DEFAULT_VENV_DIRECTORY_NAMES: readonly string[] = ['.venv', 'venv', '.kbenv'];
 
-/** 设置原始值 → venv 目录名清单:非数组/全无效回落默认;过滤空串、'.'/'..'
- * 与含路径分隔符的项(清单只允许单段目录名,防拼出探测点逃逸)。 */
+/** Raw setting value -> list of venv directory names: non-array or all-invalid falls back to the
+ * default; filters out empty strings, '.'/'..', and entries containing path separators (the list
+ * only allows single-segment directory names, preventing assembled probe-point escapes). */
 export function normalizeVenvDirectoryNames(raw: unknown): string[] {
   const fallback = [...DEFAULT_VENV_DIRECTORY_NAMES];
   if (!Array.isArray(raw)) {
@@ -63,7 +68,7 @@ export function normalizeVenvDirectoryNames(raw: unknown): string[] {
   return names.length > 0 ? names : fallback;
 }
 
-/** 独立「HTTP 请求」视图配置；不混入旧 quickActions 后端清单。 */
+/** Configuration for the standalone "HTTP request" view; never mixed into the legacy quickActions backend list. */
 export interface HttpRequestConfig {
   name?: string;
   method: string;
@@ -74,12 +79,12 @@ export interface HttpRequestConfig {
 
 export type QuickAction = QuickActionCommand | QuickActionScript | QuickActionHttp;
 
-/** 路径变量形态:写配置用字面串,执行时才换成实际工作区根 */
+/** The path variable shape: written into config as a literal string, swapped for the actual workspace root only at execution time */
 export const WORKSPACE_FOLDER_VAR = '${workspaceFolder}';
 
-/** http 后端可接受的方法(解析时统一大写;debug.json schema 的枚举同集合) */
+/** Methods the http backend accepts (uppercased at parse time; same set as the debug.json schema enum) */
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'HEAD', 'OPTIONS'];
-/** 三个执行后端(解析器只收这三种;debug.json schema 的枚举同集合) */
+/** The three execution backends (the parser only accepts these three; same set as the debug.json schema enum) */
 export const QUICK_ACTION_TYPES = ['command', 'script', 'http'];
 const SERVER_WORDS = ['start', 'stop', 'restart', 'boot', 'server'];
 const EXPORT_WORDS = ['export', 'convert', '导表'];
@@ -93,7 +98,7 @@ export function stripExtension(fileName: string): string {
   return fileName.replace(/\.[^/.]+$/, '');
 }
 
-/** 非空字符串才收(name/script/command/url 共用),坏条目逐条剔除不整表失败 */
+/** Only non-empty strings are accepted (shared by name/script/command/url); bad entries are dropped one by one instead of failing the whole table */
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
@@ -127,11 +132,11 @@ function parseSharedFields(record: Record<string, unknown>, name: string): Quick
 
 interface ParsedQuickAction {
   action: QuickAction;
-  /** 非致命告警(如 background 非布尔按前台执行):条目照收,提醒必须发 */
+  /** Non-fatal warning (e.g. a non-boolean background executed in the foreground): the entry is kept as-is, the reminder must be sent */
   warning?: string;
 }
 
-/** 告警里展示用户原值的预览(JSON 优先,BigInt/循环等 stringify 不了退 String) */
+/** Preview showing the user's original value in warnings (JSON first; falls back to String when stringify fails on BigInt/cycles etc.) */
 function previewConfigValue(value: unknown): string {
   try {
     return JSON.stringify(value) ?? String(value);
@@ -179,9 +184,10 @@ function parseQuickAction(item: unknown): ParsedQuickAction | null {
         ...(typeof venvRecord.path === 'string' ? { path: venvRecord.path } : {})
       };
     }
-    // background 非布尔(用户令 2026-10-27 ①实测定性):不再静默回落——
-    // "background": "true" 这类 JSON5 习惯写法此前无声变前台,「写了 true
-    // 还是弹终端」无迹可查。条目保留按前台执行,但逐条告警说清写法。
+    // background not a boolean (user order 2026-10-27, empirically characterized): no more silent
+    // fallback -- JSON5-style writings like "background": "true" used to silently become foreground,
+    // leaving "I wrote true and it still pops a terminal" untraceable. The entry is kept and executed
+    // in the foreground, but a per-entry warning spells out the correct writing.
     let background = false;
     let warning: string | undefined;
     if (typeof record.background === 'boolean') {
@@ -189,7 +195,7 @@ function parseQuickAction(item: unknown): ParsedQuickAction | null {
     } else if (record.background !== undefined) {
       warning = `快速动作「${name}」的 background 不是布尔(收到 ${previewConfigValue(record.background)}),已按前台执行;请写 true 或 false(不带引号)`;
     }
-    // cwd 未给即默认;给了但不是字符串时回落默认值(不按坏条目剔除)
+    // cwd defaults when absent; when present but not a string, fall back to the default value (not dropped as a bad entry)
     const cwd = typeof record.cwd === 'string' ? (record.cwd as string) : WORKSPACE_FOLDER_VAR;
     const action: QuickAction = { ...shared, type, script, background, cwd, ...(venv ? { venv } : {}) };
     return warning === undefined ? { action } : { action, warning };
@@ -208,7 +214,7 @@ function parseQuickAction(item: unknown): ParsedQuickAction | null {
 export function parseQuickActionConfigs(raw: unknown): {
   actions: QuickAction[];
   invalidCount: number;
-  /** 非致命告警(条目已收,写法有问题):装配层逐条播报,不静默 */
+  /** Non-fatal warnings (entries kept, the writing has problems): the wiring layer broadcasts each one, never silently */
   warnings: string[];
 } {
   if (!Array.isArray(raw)) {
@@ -231,7 +237,7 @@ export function parseQuickActionConfigs(raw: unknown): {
   return { actions, invalidCount, warnings };
 }
 
-/** 解析顶层 httpRequests；method/url 缺失或字段类型错误逐条计为无效。 */
+/** Parse the top-level httpRequests; missing method/url or wrong field types count each entry as invalid. */
 export function parseHttpRequestConfigs(raw: unknown): { requests: HttpRequestConfig[]; invalidCount: number } {
   if (!Array.isArray(raw)) return { requests: [], invalidCount: 0 };
   const requests: HttpRequestConfig[] = [];
@@ -265,28 +271,31 @@ export function parseHttpRequestConfigs(raw: unknown): { requests: HttpRequestCo
   return { requests, invalidCount };
 }
 
-/** 变量解析可用的工作区根(由 quickActions 从 vscode.workspace 映射) */
+/** Workspace roots available to variable resolution (mapped from vscode.workspace by quickActions) */
 export type WorkspaceFolderRef = VariableFolderRef;
 
 /**
- * 命令侧变量替换(批141 起委派 src/variableSubstitution,替换逻辑单一真源):
- * 官方变量表全覆盖,未解析一律抛错——静默空串替换会把脚本跑成「路径为空」
- * 的假成功,比报错更糟(${config:} / ${command:} 这类需要真实 VS Code
- * 调试上下文的变量不在本扩展的解析能力内,同样如实报错)。
+ * Command-side variable substitution (delegated to src/variableSubstitution since batch 141;
+ * a single source of truth for substitution logic): the official variable table is fully
+ * covered and unresolved variables always throw -- silent empty-string substitution would run
+ * the script into a fake "path is empty" success, worse than reporting an error (${config:} /
+ * ${command:} style variables that need a real VS Code debug context are beyond this
+ * extension's resolution ability and honestly error out the same way).
  */
 export function resolveActionVariables(
   text: string,
   folders: readonly WorkspaceFolderRef[] = []
 ): string {
   const resolved = substituteVariables(text, { folders }, 'throw');
-  // 工作区根自带前导 '/',与文本里写死的路径分隔符相遇会产生 '//';折叠成单个
-  // (':' 后的 '//' 是 URL 协议分隔,保留不动)
+  // Workspace roots carry a leading '/', which meets path separators hard-coded in the text and
+  // produces '//'; collapse to a single slash ('//' after ':' is a URL protocol separator, left alone)
   return resolved.replace(/([^:])\/{2,}/g, match => `${match[0]}/`);
 }
 
 /**
- * 脚本词表分类(1.4):启停词优先于导表词,两者都命中归启停(server)。
- * 命中不到返回 null——首装扫描只收这两类,不做泛化。
+ * Script word-list classification (1.4): start/stop words take priority over export words;
+ * hitting both classifies as start/stop (server). No hit returns null -- the first-install scan
+ * only collects these two categories, no generalization.
  */
 export function classifyBatchScript(scriptName: string): QuickActionCategory | null {
   const lower = scriptName.toLowerCase();
@@ -300,8 +309,9 @@ export function classifyBatchScript(scriptName: string): QuickActionCategory | n
 }
 
 /**
- * 把扫描候选构造成可写入配置的 script 动作:脚本路径与 cwd 都锚定
- * ${workspaceFolder},启停类默认后台(起服不等退出码)。
+ * Build scanned candidates into script actions writable to config: both the script path and cwd
+ * are anchored to ${workspaceFolder}; start/stop scripts default to background (starting the
+ * server does not wait for an exit code).
  */
 export function buildScannedActions(
   candidates: readonly BatchScriptCandidate[],
@@ -340,7 +350,7 @@ export function buildScannedActions(
       background: lowerName.startsWith('start') || lowerName.startsWith('boot'),
       confirm: true,
       source: 'scan',
-      // 词表外脚本无分类:省略该键(schema「可省」),不写 null 也不编造类别
+      // Scripts outside the word lists have no category: omit the key (the schema allows omitting it); neither write null nor invent a category
       ...(candidate.category === null ? {} : { category: candidate.category })
     };
   });

@@ -1,30 +1,37 @@
 /**
- * KFLOW trace 事件协议(FLOW-002 契约的 G3 运行时调用栈模型,FLOW-023 交付)。
+ * KFLOW trace event protocol (the G3 runtime call-stack model of the FLOW-002 contract,
+ * delivered by FLOW-023).
  *
- * 上位契约:docs/design/kflow-three-graph-contract.md §1-G3 + §2-R2/R4;采集
- * 渠道能力边界以 FLOW-022 核实报告为准(docs/review/
- * 2026-11-14-kflow-trace-01-feasibility.md)。验收映射:
- *   会话/进程/线程/实体 = TraceSession/TraceProcessRecord/TraceThreadRecord/
- *              事件 entityId(未知=null 如实);
- *   时间      = 事件 timestamp + TraceClockDomain(跨进程时钟不可比时链接层
- *              只走因果边,不比时间——R4 落点);
- *   帧        = TraceFrame(真实帧顺序=同线程 seq/parentSeq 链);
- *   消息关联  = message-send/receive 事件 + correlationId(唯一跨进程因果边);
- *   来源      = TraceSource(采集器标识+采样事实;R2 runtime-source 分型);
- *   丢失标记 = TraceLossRecord + drop 事件(数量对账)。
+ * Governing contract: docs/design/kflow-three-graph-contract.md §1-G3 + §2-R2/R4; the
+ * collector-channel capability boundary follows the FLOW-022 verification report
+ * (docs/review/2026-11-14-kflow-trace-01-feasibility.md). Acceptance mapping:
+ *   session/process/thread/entity = TraceSession/TraceProcessRecord/TraceThreadRecord/
+ *              event entityId (unknown = null, honestly);
+ *   time      = event timestamp + TraceClockDomain (when cross-process clocks are not
+ *              comparable, the linking layer only walks causal edges, never compares
+ *              time — the R4 landing point);
+ *   frame     = TraceFrame (real frame order = the same-thread seq/parentSeq chain);
+ *   message correlation = message-send/receive events + correlationId (the only
+ *              cross-process causal edge);
+ *   source    = TraceSource (collector identity + sampling facts; R2 runtime-source
+ *              typing);
+ *   loss marks = TraceLossRecord + drop events (count reconciliation).
  *
- * 两条构造期红线(不伪装共享栈,FLOW-023 验收原文):
- *   1. 同步栈边(parentSeq/return 链)只允许同进程同线程——跨线程/跨进程
- *      引用直接抛错;跨进程衔接唯一合法形态是消息因果边(correlationId);
- *   2. 来源与采样面绑定成表(setprofile→complete-within-window、
- *      py-spy-record→sampled 等),配错即抛——采样栈不冒充完整请求轨迹
- *      (FLOW-022 结论落到协议层)。
+ * Two construction-time red lines (no pretending to share a stack, FLOW-023 acceptance
+ * wording):
+ *   1. Synchronous stack edges (parentSeq/return chains) only allow same process, same
+ *      thread — cross-thread/cross-process references throw immediately; the only legal
+ *      form of cross-process linkage is a message causal edge (correlationId);
+ *   2. Source and sample face are bound in a table (setprofile→complete-within-window,
+ *      py-spy-record→sampled, etc.); a mismatch throws — a sampled stack never poses as
+ *      a complete request trajectory (the FLOW-022 conclusion lands at the protocol layer).
  *
- * 纯协议面(类型+构造校验+关系裁定),零 vscode 依赖;采集入口是 FLOW-025
- * 独立增量,导入/回放消费面在 FLOW-024/028。
+ * Pure protocol face (types + construction validation + relation rulings), zero vscode
+ * dependencies; the capture entry is the independent FLOW-025 increment; the
+ * import/replay consumer faces are FLOW-024/028.
  */
 
-/** 运行时进程角色(G3 观察,KSEM 身份事实同源;bridge:* 同 G2 口径)。 */
+/** Runtime process role (G3 observation, same source as KSEM identity facts; bridge:* follows the G2 semantics). */
 export type TraceProcessRole =
   | 'client'
   | 'base'
@@ -35,8 +42,8 @@ export type TraceProcessRole =
   | 'bridge:other'
   | 'unknown';
 
-/** 采集器形态(与 FLOW-022 五渠道一一对应;settrace 只进协议不进产品面;
- *  sys-monitoring=PEP 669 受控逐事件面,3.12+,FLOW-024 已验证来源)。 */
+/** Collector kind (one-to-one with the five FLOW-022 channels; settrace enters the protocol only, not the product face;
+ *  sys-monitoring = the PEP 669 controlled per-event face, 3.12+, source verified by FLOW-024). */
 export type TraceCollectorKind =
   | 'setprofile'
   | 'settrace'
@@ -47,11 +54,11 @@ export type TraceCollectorKind =
   | 'log-evidence';
 
 /**
- * 采样面(不得宣称的边界由 describeSampleFace 给出):
- *   complete-within-window —— 受控窗口内逐事件完整(窗口外未知);
- *   sampled                —— 采样,样本之间的调用不可见;
- *   stop-only              —— 单次停止/瞬时栈,无连续性;
- *   sparse-points          —— 稀疏证据点(日志面),无栈序列。
+ * Sample face (the must-not-claim boundaries are given by describeSampleFace):
+ *   complete-within-window —— complete per event inside a controlled window (unknown outside);
+ *   sampled                —— sampled, calls between samples are invisible;
+ *   stop-only              —— a single stop/ephemeral stack, no continuity;
+ *   sparse-points          —— sparse evidence points (log face), no stack sequence.
  */
 export type TraceSampleFace =
   | 'complete-within-window'
@@ -61,16 +68,16 @@ export type TraceSampleFace =
 
 export interface TraceSource {
   kind: TraceCollectorKind;
-  /** 采集器/解释器版本;未知=null 如实(不猜) */
+  /** Collector/interpreter version; unknown = null, honestly (no guessing) */
   collectorVersion: string | null;
   sampleFace: TraceSampleFace;
-  /** 采样率(record 面=N Hz;其余面恒 null) */
+  /** Sampling rate (record face = N Hz; other faces always null) */
   samplingHz: number | null;
-  /** 受控窗口说明(complete-within-window 必填;其余 null) */
+  /** Controlled-window note (required for complete-within-window; null otherwise) */
   windowNote: string | null;
 }
 
-/** 时间基准:事件 timestamp 的含义由 basis 解释;unknown=如实,链接层禁比时间。 */
+/** Clock basis: the meaning of an event timestamp is interpreted by basis; unknown = honest, the linking layer must not compare times. */
 export interface TraceClockDomain {
   basis: 'epoch-ms' | 'process-mono' | 'unknown';
   note: string | null;
@@ -79,9 +86,9 @@ export interface TraceClockDomain {
 export interface TraceProcessRecord {
   processId: string;
   role: TraceProcessRole;
-  /** 进程名/命令行摘要;未知=null */
+  /** Process name/command-line summary; unknown = null */
   name: string | null;
-  /** 引擎目标 Python 版本(与采集组件配对核对用);未知=null */
+  /** Engine target Python version (for pairing checks with the capture component); unknown = null */
   enginePythonVersion: string | null;
 }
 
@@ -91,10 +98,10 @@ export interface TraceThreadRecord {
   name: string | null;
 }
 
-/** 真实栈帧(G3 专用;G2 不使用本类型——R1 词汇分界)。 */
+/** Real stack frame (G3 only; G2 does not use this type — the R1 vocabulary boundary). */
 export interface TraceFrame {
   file: string;
-  /** 1 基行号(保留来源口径,不换算) */
+  /** 1-based line number (keeps the source semantics, no conversion) */
   line: number;
   function: string;
   className: string | null;
@@ -109,9 +116,9 @@ export type TraceDropReason =
 
 export interface TraceDropEvent {
   seq: number;
-  /** 记账时间;采集侧结束时汇总的丢失可能无时间戳=省略(不造假时间轴) */
+  /** Ledger time; loss summarized when the capture side ends may have no timestamp = omitted (no fabricated timeline) */
   timestamp?: number;
-  /** 归属进程;会话级丢失=null */
+  /** Owning process; session-level loss = null */
   processId: string | null;
   reason: TraceDropReason;
   count: number;
@@ -119,56 +126,56 @@ export interface TraceDropEvent {
 }
 
 export interface TraceLossRecord {
-  /** 丢弃总数(构造期与 drops 计数对账,不一致抛错) */
+  /** Total dropped count (reconciled against the drops counts at construction; a mismatch throws) */
   totalDropped: number;
   drops: TraceDropEvent[];
-  /** 完整性备注(如「采样面:样本间不可见」;来源如实陈述) */
+  /** Completeness note (e.g. "sample face: invisible between samples"; an honest statement of the source) */
   completenessNote: string;
 }
 
 interface TraceEventCommon {
-  /** 会话内唯一、由构造器严格递增分配(调用方不携带) */
+  /** Unique within the session, strictly increasing, assigned by the constructor (callers do not carry it) */
   seq: number;
   timestamp: number;
   processId: string;
   threadId: string;
-  /** 实体身份(如 'Avatar#42');观察不到=null 如实 */
+  /** Entity identity (e.g. 'Avatar#42'); unobservable = null, honestly */
   entityId: string | null;
 }
 
 export interface TraceCallEvent extends TraceEventCommon {
   kind: 'call';
   frame: TraceFrame;
-  /** 同线程同步栈边:父 call 的 seq(线程根=null);跨线程/跨进程引用构造期抛错 */
+  /** Same-thread synchronous stack edge: the parent call's seq (thread root = null); cross-thread/cross-process references throw at construction */
   parentSeq: number | null;
 }
 
 export interface TraceReturnEvent extends TraceEventCommon {
   kind: 'return';
-  /** 对应 call 的 seq(同线程,构造期校验) */
+  /** The corresponding call's seq (same thread, validated at construction) */
   correspondsToCallSeq: number;
   returnValueNote: string | null;
 }
 
 export interface TraceExceptionEvent extends TraceEventCommon {
   kind: 'exception';
-  /** 抛出位置所在 call 的 seq;未知=null */
+  /** The seq of the call where the throw occurred; unknown = null */
   atSeq: number | null;
   exceptionType: string | null;
   message: string | null;
-  /** 是否向上传播;未知=null */
+  /** Whether it propagates upward; unknown = null */
   propagated: boolean | null;
 }
 
 export interface TraceMessageSendEvent extends TraceEventCommon {
   kind: 'message-send';
   fromEntityId: string | null;
-  /** 目标进程(如 entities.get 引擎引用观察不到目标=null) */
+  /** Target process (e.g. entities.get, an engine reference whose target is unobservable = null) */
   toProcessId: string | null;
   toRole: TraceProcessRole | null;
   toEntityId: string | null;
   methodName: string;
-  /** 跨进程因果边唯一载体;来源没有关联 ID=null(只允许候选关联,不宣称因果) */
+  /** The sole carrier of a cross-process causal edge; the source has no correlation ID = null (candidate correlation only, no causal claim) */
   correlationId: string | null;
 }
 
@@ -176,7 +183,7 @@ export interface TraceMessageReceiveEvent extends TraceEventCommon {
   kind: 'message-receive';
   methodName: string;
   fromEntityId: string | null;
-  /** 派发进入的首帧(观察不到=null) */
+  /** The first frame entered at dispatch (unobservable = null) */
   frame: TraceFrame | null;
   correlationId: string | null;
 }
@@ -198,7 +205,7 @@ export interface TraceSession {
   loss: TraceLossRecord;
 }
 
-/** 采集形态与采样面的合法配对表(FLOW-022 结论;配错即抛)。 */
+/** Legal pairing table between collector kind and sample face (FLOW-022 conclusion; a mismatch throws). */
 const COLLECTOR_FACE_TABLE: Record<TraceCollectorKind, TraceSampleFace> = {
   setprofile: 'complete-within-window',
   settrace: 'complete-within-window',
@@ -209,7 +216,7 @@ const COLLECTOR_FACE_TABLE: Record<TraceCollectorKind, TraceSampleFace> = {
   'log-evidence': 'sparse-points'
 };
 
-/** 采样面的不得宣称边界(R2/R3 呈现层直接引用的口径)。 */
+/** The sample-face must-not-claim boundaries (semantics cited directly by the R2/R3 presentation layer). */
 export function describeSampleFace(face: TraceSampleFace): string {
   switch (face) {
     case 'complete-within-window':
@@ -223,9 +230,9 @@ export function describeSampleFace(face: TraceSampleFace): string {
   }
 }
 
-/** 分布式 Omit(联合类型逐成员去掉 seq,保住判别字段) */
+/** Distributed Omit (removes seq per union member, preserving the discriminant field) */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-/** 事件输入面(不携带 seq,构造器统一分配);导入面/采集装配共用。 */
+/** Event input face (carries no seq; the constructor assigns it uniformly); shared by the import face and the capture wiring. */
 export type TraceEventInput = DistributiveOmit<TraceEvent, 'seq'>;
 
 export interface TraceSessionInput {
@@ -234,20 +241,22 @@ export interface TraceSessionInput {
   clock: TraceClockDomain;
   processes: TraceProcessRecord[];
   threads: TraceThreadRecord[];
-  /** 事件(不携带 seq,构造器统一分配) */
+  /** Events (no seq carried; assigned uniformly by the constructor) */
   events: TraceEventInput[];
-  /** 会话级/进程级丢弃记录(不携带 seq/timestamp 的简式 + 可选时间戳) */
+  /** Session-level/process-level drop records (the compact form without seq/timestamp + optional timestamp) */
   drops?: Array<Omit<TraceDropEvent, 'seq' | 'timestamp'> & { timestamp?: number }>;
   completenessNote?: string;
 }
 
 /**
- * 构造 trace 会话:分配 seq、校验红线。校验失败抛错(诚实失败,不静默裁剪):
- *   - 来源/采样面配对表;
- *   - timestamp 同线程单调不降;
- *   - parentSeq/correspondsToCallSeq 必须指向**同线程**更早事件(跨线程/
- *     跨进程同步栈边=伪装共享栈,直接拒绝);
- *   - drop 计数与 totalDropped 对账。
+ * Build a trace session: assign seq, validate red lines. Validation failures throw
+ * (honest failure, no silent trimming):
+ *   - the source/sample-face pairing table;
+ *   - per-thread monotone non-decreasing timestamps;
+ *   - parentSeq/correspondsToCallSeq must point at an **earlier same-thread** event
+ *     (cross-thread/cross-process synchronous stack edges = a disguised shared stack,
+ *     rejected outright);
+ *   - the drop counts reconcile against totalDropped.
  */
 export function buildTraceSession(input: TraceSessionInput): TraceSession {
   const face = COLLECTOR_FACE_TABLE[input.source.kind];
@@ -322,7 +331,7 @@ export function buildTraceSession(input: TraceSessionInput): TraceSession {
     events.push({ ...raw, seq } as TraceEvent);
   }
 
-  // 丢失标记:totalDropped 由构造器按 drops 计数生成(调用方不另行报数)
+  // Loss marks: totalDropped is generated by the constructor from the drops counts (callers do not report numbers separately)
   let dropSeq = nextSeq;
   let totalDropped = 0;
   const drops: TraceDropEvent[] = [];
@@ -351,7 +360,7 @@ export function buildTraceSession(input: TraceSessionInput): TraceSession {
   };
 }
 
-/** 消息关联裁定(FLOW-027 前置):只有两侧 correlationId 非空且相等才是因果边。 */
+/** Message correlation ruling (the FLOW-027 precondition): only when both sides carry a non-null equal correlationId is it a causal edge. */
 export type TraceMessageRelation =
   | { kind: 'causal'; correlationId: string }
   | { kind: 'candidate'; reason: string };

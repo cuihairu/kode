@@ -1,8 +1,10 @@
-//! kode-mcp bin:stdio MCP server。
+//! kode-mcp bin: stdio MCP server.
 //!
-//! 参数:[--probe] [资产根](缺省当前目录);其余参数 = 额外知识
-//! 路径(search_docs 在此+资产根下收 `.md`,游戏配置需求文档等)。
-//! `--probe`:探活模式(跳过语料装载,只服务握手面;扩展健康探针用)。
+//! Arguments: [--probe] [asset root] (defaults to the current directory);
+//! remaining arguments = extra knowledge paths (search_docs collects `.md`
+//! files here plus under the asset root, e.g. game configuration specs).
+//! `--probe`: liveness mode (skips corpus loading, serves the handshake face
+//! only; used by the extension health probe).
 
 use std::path::PathBuf;
 

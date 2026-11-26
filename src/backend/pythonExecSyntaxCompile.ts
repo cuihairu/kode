@@ -2,21 +2,25 @@ import type { SyntaxVerdict } from './hotReloadSavePipeline';
 import type { PythonExecOutcome, PythonExecService } from './pythonExecService';
 
 /**
- * RUST-002 判据③：把常驻 Python 执行服务适配成热更语法闸的 compile 面。
+ * RUST-002 criterion 3: adapt the resident Python exec service into the compile
+ * face of the hot-reload syntax gate.
  *
- * 纯核:零 vscode、零 child_process——执行服务经工厂注入(装配面给真服务,
- * 测试给替身)。
+ * Pure core: no vscode, no child_process -- the exec service is injected via a
+ * factory (the wiring surface passes the real service, tests pass a stub).
  *
- * 失败语义必须分两路,不能混:
- * - 执行服务故障(infra:进程退出/超时/未就绪/回包不可解析)→ **reject**,
- *   交给热更语法闸走 fail-open(检查器不可用不得拦热更);
- * - 真语法错误 → resolve `{ok:false, errors:[行]}`,**不拆服务**(进程健康)。
- * 混为一谈会让解释器抖动把热更静默放行成「无错」,或让语法错误被当成故障吞掉。
+ * Failure semantics must split into two paths and must not be mixed:
+ * - exec service fault (infra: process exit / timeout / not ready / reply not
+ *   parseable) -> **reject**, letting the hot-reload syntax gate fail open
+ *   (an unavailable checker must not block hot reload);
+ * - a genuine syntax error -> resolve `{ok:false, errors:[line]}` and **keep the
+ *   service alive** (the process is healthy).
+ * Muddling the two would let interpreter jitter silently wave hot reload through
+ * as "no error", or have a syntax error swallowed as a fault.
  */
 export interface ExecServiceCompileOptions {
-  /** 解析 Python 解释器路径;null=解析不到(设置/venv/PATH 全落空) */
+  /** Resolve the Python interpreter path; null = unresolvable (settings/venv/PATH all missed) */
   readonly resolveInterpreter: () => string | null;
-  /** 建常驻执行服务;每次调用一个新服务句柄 */
+  /** Create the resident exec service; a fresh service handle per call */
   readonly createService: (interpreter: string) => PythonExecService;
 }
 
@@ -25,7 +29,7 @@ export type ExecServiceCompile = (content: string) => Promise<SyntaxVerdict>;
 export function createExecServiceCompile(options: ExecServiceCompileOptions): {
   compile: ExecServiceCompile;
   dispose: () => void;
-  /** 当前服务句柄(测试断言复用/重建);未建时 null */
+  /** The current service handle (for tests to assert reuse/rebuild); null when not created */
   service: () => PythonExecService | null;
 } {
   let service: PythonExecService | null = null;
@@ -49,7 +53,7 @@ export function createExecServiceCompile(options: ExecServiceCompileOptions): {
         return { ok: true };
       }
       if (outcome.infra) {
-        // 故障面:拆掉待重建,并按闸门口契约以 reject 表达(fail-open)
+        // Fault face: tear down for later rebuild, and express it as a reject per the gate's contract (fail-open)
         const error = outcome.error ?? '执行服务故障';
         release();
         throw new Error(error);

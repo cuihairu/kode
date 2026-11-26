@@ -1,24 +1,35 @@
 import * as vscode from 'vscode';
 
-// 统一索引工作日志(WARM-VISIBILITY-004 刀 B,2026-11-20):
-// 索引相关日志此前散落多个通道(jumpLog → 「KBEngine Navigation」默认关、
-// Runtime/Compatibility/Console 各自独立),用户不知道看哪个,判断不了
-// 「索引引擎在工作还是死了」。本模块 = 常开的「KBEngine Index」通道,
-// 汇总五源关键事件:
-//   - discovery    发现链(def 首扫起扫/完成/慢文件/失败重试)
-//   - event-index  事件/方法索引(冷扫起扫/完成、缓存恢复)
-//   - python-index python 类索引(全扫起扫/节流进度/完成/断点采纳/待补)
-//   - cache        预热磁盘缓存(命中注入/恢复/预热完成)
-//   - server       kode-server 进程生命周期(spawned/ready/exit/重启循环;
-//                  FREEZE 刀3 心跳,仅 Rust 辅助进程真跑起来才有行)
-// 每行带相对时间戳(首行 [+0.0s] 锚定)。
+// Unified index work log (WARM-VISIBILITY-004 blade B, 2026-11-20):
+// index-related logs used to be scattered across several channels (jumpLog ->
+// the "KBEngine Navigation" channel defaulting to off; Runtime /
+// Compatibility / Console each independent), so the user had no idea which
+// one to read and could not judge "is the index engine alive or dead". This
+// module = the always-on "KBEngine Index" channel, aggregating key events
+// from five sources:
+//   - discovery    the discovery chain (def first-scan start / completion /
+//                  slow files / failed retries)
+//   - event-index  event/method index (cold-scan start / completion, cache
+//                  recovery)
+//   - python-index python class index (full-scan start / throttled progress /
+//                  completion / checkpoint adoption / pending gap)
+//   - cache        warmup disk cache (hit injection / restore / warmup done)
+//   - server       kode-server process lifecycle (spawned / ready / exit /
+//                  restart loop; FREEZE blade-3 heartbeat, a line appears only
+//                  when the Rust helper process is actually running)
+// Every line carries a relative timestamp (the first line anchors [+0.0s]).
 //
-// 常开红线(用户教训:Navigation 通道因 jumpLog 默认 false 整个静默):
-// 本通道无开关,关键事实行(起扫/完成/缓存/恢复)恒出。任务书「开关 off
-// 不镜像」按「决策路径流量(jumpLog debug/决策行)不进本通道」实现——
-// 镜像面只有两条既有事实行(def 全量索引完成 / def 解析慢文件),内容与
-// Navigation 通道一对一;jumpLog 关闭时 Navigation 静默,本通道照出。
-// 测试桩按通道名入账(windowState.channels),与 navigationLog 同一基建。
+// Always-on red line (user lesson: the Navigation channel went fully silent
+// because jumpLog defaults to false): this channel has no switch, and key
+// fact lines (scan start / completion / cache / recovery) always come out.
+// The task brief's "no mirroring when the switch is off" is implemented as
+// "decision-path traffic (jumpLog debug / decision lines) never enters this
+// channel" — the mirrored face is only the two pre-existing fact lines (def
+// full index completion / def parsing slow files), one-to-one in content with
+// the Navigation channel; when jumpLog is off the Navigation channel goes
+// silent while this channel keeps emitting.
+// The test stub records by channel name (windowState.channels), the same
+// infrastructure as navigationLog.
 
 export type IndexLogSource = 'discovery' | 'event-index' | 'python-index' | 'cache' | 'server';
 
@@ -28,9 +39,9 @@ const RECENT_LIMIT = 400;
 const recentLines: string[] = [];
 
 let channel: vscode.OutputChannel | undefined;
-/** 相对时间锚(首行时刻);null = 还没发过行 */
+/** Relative-time anchor (the moment of the first line); null = no line emitted yet */
 let anchorMs: number | null = null;
-/** 测试时钟注入(时间戳断言确定性) */
+/** Test clock injection (deterministic timestamp assertions) */
 let testClock: (() => number) | null = null;
 
 export function setIndexLogClockForTests(clock: (() => number) | null): void {
@@ -45,13 +56,15 @@ export function getIndexLogRecentLines(): readonly string[] {
 
 export function clearIndexLogRecentLines(): void {
   recentLines.length = 0;
-  // 测试便利:清环形缓冲同时重置时间锚,断言可从 [+0.0s] 重新数起
+  // Test convenience: clearing the ring buffer also resets the time anchor, so assertions can count anew from [+0.0s]
   anchorMs = null;
 }
 
 /**
- * 索引关键事件行。message 惰性形式与 jumpLog 同(未启用面零拼接开销——
- * 本通道常开,惰性主要为调用点统一风格;真正要省的是别把高频循环塞进来)。
+ * Index key event line. The lazy message form matches jumpLog (zero
+ * concatenation cost on a disabled face — this channel is always on, so the
+ * laziness is mostly about keeping call sites stylistically uniform; what
+ * really matters is not stuffing high-frequency loops in here).
  */
 export function indexLog(source: IndexLogSource, message: string | (() => string)): void {
   const text = typeof message === 'function' ? message() : message;

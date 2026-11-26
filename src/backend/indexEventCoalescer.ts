@@ -1,42 +1,50 @@
 /**
- * INDEX-DISCIPLINE-001 ①:索引重扫事件合并器——TS 薄壳(Rust 主路径 +
- * TS 回退,模式照 ruffLint 先例)。
+ * INDEX-DISCIPLINE-001 ①: index rescan event coalescer — thin TS shell
+ * (Rust main path + TS fallback, pattern after the ruffLint precedent).
  *
- * 用户令(2026-11-18):「频繁修改的文件要合并队列,最近修改的合并放队尾,
- * 同一文件反复建索引不对」+「必须文件保存落盘了之后才放到队列」。
+ * User order (2026-11-18): "frequently modified files must be merged in the
+ * queue, the most recently modified ones merged at the tail, repeatedly
+ * reindexing the same file is wrong" + "a file may only enter the queue after
+ * it has actually been saved to disk".
  *
- * 架构分工(用户令:合并器核心逻辑落 Rust,TS 只做 vscode 事件接线薄壳):
- * - **决策核在 Rust** `$/kode/events/coalesce`(kode-server
- *   event_coalesce.rs,纯函数):窗口到期判定 / dirty 尾随顺延 / flush
- *   按「最近修改的最后出」排序;
- * - **状态+定时器在 TS 本壳**(vscode 事件层属性):pending Map(latest-wins
- *   同文件并一)+ 300ms 轮询钟 + isDirty 采样 + 重扫描入队;
- * - **TS 回退**:Rust 无门/失败时用镜像决策核 `decideCoalesceFlush`(语义
- *   与 Rust 同构,vitest 契约用例锁两面一致)。
+ * Architecture split (user order: the coalescer's core logic lands in Rust,
+ * TS is only a thin shell wiring vscode events):
+ * - **Decision core in Rust** `$/kode/events/coalesce` (kode-server
+ *   event_coalesce.rs, pure function): window-expiry judgment / dirty tail
+ *   deferral / flush sorted by "most recently modified goes last";
+ * - **State + timer in this TS shell** (vscode event layer properties):
+ *   pending Map (latest-wins, same file merged into one) + 300ms polling
+ *   clock + isDirty sampling + rescan enqueue;
+ * - **TS fallback**: when the Rust gate is absent or fails, use the mirrored
+ *   decision core `decideCoalesceFlush` (semantics isomorphic to Rust,
+ *   vitest contract cases lock both faces to the same behavior).
  *
- * 消费面纪律:push 的只能是「已落盘」的变更信号(onDidSave / watcher 外部
- * 写盘);编辑事件(didChange)绝不 push(②只认落盘——那是
- * pythonClassIndex.onDocumentChanged 的标脏登记路径,与本壳无关)。
+ * Consumer-face discipline: only "already saved to disk" change signals may
+ * be pushed (onDidSave / external watcher writes); edit events (didChange)
+ * are never pushed (② only recognizes disk saves — that is the dirty-marking
+ * registration path of pythonClassIndex.onDocumentChanged, unrelated to this
+ * shell).
  *
- * 零 vscode import(定时器/脏采样/入队全注入;单测用假钟+假回调驱动)。
+ * Zero vscode imports (timer / dirty sampling / enqueue are all injected;
+ * unit tests drive it with a fake clock + fake callbacks).
  */
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
-/** 合并窗口(毫秒);与 Rust DEFAULT_COALESCE_WINDOW_MS 同值。 */
+/** Coalesce window (ms); same value as Rust DEFAULT_COALESCE_WINDOW_MS. */
 export const INDEX_COALESCE_WINDOW_MS = 300;
 
-/** dirty 顺延总上限(毫秒);与 Rust DEFAULT_COALESCE_MAX_DEFER_MS 同值。 */
+/** Overall cap on dirty deferral (ms); same value as Rust DEFAULT_COALESCE_MAX_DEFER_MS. */
 export const INDEX_COALESCE_MAX_DEFER_MS = 5000;
 
-/** pending 条目(喂给决策核的形状;`first/lastPushedAtMs` 为单调时钟)。 */
+/** pending entry (the shape fed to the decision core; `first/lastPushedAtMs` are monotonic clocks). */
 export interface CoalescePendingEntry {
   file: string;
   firstPushedAtMs: number;
   lastPushedAtMs: number;
 }
 
-/** 决策结果:`flush` 按最后推送时刻升序(最近修改的落队尾)。 */
+/** Decision result: `flush` ascending by last push time (most recently modified lands at the tail). */
 export interface CoalesceDecision {
   flush: string[];
   defer: string[];
@@ -44,8 +52,9 @@ export interface CoalesceDecision {
 }
 
 /**
- * TS 镜像决策核:与 Rust `decide_coalesce` 同构(窗口 hold → dirty 顺延 →
- * flush 按 last 升序)。Rust 不可用时的回退;测试面锁两面语义一致。
+ * TS mirrored decision core: isomorphic to Rust `decide_coalesce` (window
+ * hold -> dirty deferral -> flush ascending by last). Fallback when Rust is
+ * unavailable; the test face locks both faces to the same semantics.
  */
 export function decideCoalesceFlush(
   pending: readonly CoalescePendingEntry[],
@@ -72,7 +81,7 @@ export function decideCoalesceFlush(
   return { flush: flushWithTime.map(item => item.file), defer, hold };
 }
 
-/** Rust 决策核调用:无门/失败/应答畸形 → null(调用方走 TS 回退)。 */
+/** Rust decision core call: no gate / failure / malformed response -> null (the caller takes the TS fallback). */
 async function decideViaRust(
   pending: readonly CoalescePendingEntry[],
   dirtyFiles: readonly string[],
@@ -108,32 +117,34 @@ async function decideViaRust(
 }
 
 export interface IndexEventCoalescerDeps {
-  /** 单调时钟(默认 Date.now;测试注入假钟)。 */
+  /** Monotonic clock (defaults to Date.now; tests inject a fake clock). */
   now?(): number;
-  /** 文件当前是否编辑中(未保存)——flush 时的 dirty 采样。 */
+  /** Whether the file is currently being edited (unsaved) — the dirty sampling at flush time. */
   isDirty(file: string): boolean;
-  /** 重扫描入队面(盘真相消费面,即 pythonClassIndex.onFileChanged)。 */
+  /** Rescan enqueue face (the disk-truth consumer face, i.e. pythonClassIndex.onFileChanged). */
   enqueueReindex(file: string): void;
-  /** 决策核注入(默认 Rust 主路径+TS 回退;测试可直钉镜像核)。 */
+  /** Decision core injection (default Rust main path + TS fallback; tests can pin the mirror core directly). */
   decide?(pending: readonly CoalescePendingEntry[], dirtyFiles: readonly string[], nowMs: number): Promise<CoalesceDecision | null>;
   windowMs?: number;
   maxDeferMs?: number;
 }
 
 export interface IndexEventCoalescer {
-  /** 已落盘变更入列(同文件 N 次 → Map 并一,最新覆盖)。 */
+  /** Enqueue an already-saved change (N pushes of the same file -> one Map entry, newest wins). */
   push(file: string): void;
   dispose(): void;
-  /** 待合并条数(状态栏 tooltip 观测面)。 */
+  /** Number of entries awaiting coalescing (status-bar tooltip observation face). */
   getPendingCount(): number;
-  /** 测试观测面:累计入列/入队/当前顺延数。 */
+  /** Test observation face: cumulative enqueued / queued / currently deferred counts. */
   getStatsForTests(): { pushed: number; flushed: number; deferred: number };
 }
 
 /**
- * 合并器壳:pending 非空时才有轮询钟(空转零定时器);轮询节奏=窗口时长。
- * flush 按决策序逐个入队(最近修改的最后出=队尾);dirty 顺延件留在
- * pending 等下一窗;async 决策期间不重入。
+ * Coalescer shell: the polling clock exists only while pending is non-empty
+ * (zero timers when idle); polling cadence = window duration. flush enqueues
+ * one by one in decision order (most recently modified leaves last = tail);
+ * dirty-deferred entries stay in pending awaiting the next window; no
+ * reentrancy while an async decision is in flight.
  */
 export function createIndexEventCoalescer(deps: IndexEventCoalescerDeps): IndexEventCoalescer {
   const windowMs = deps.windowMs ?? INDEX_COALESCE_WINDOW_MS;
@@ -145,8 +156,10 @@ export function createIndexEventCoalescer(deps: IndexEventCoalescerDeps): IndexE
   let flushed = 0;
   let deferred = 0;
 
-  // 默认决策链:Rust 主路径,无门/失败 → TS 镜像核兜底(ruffLint 先例的
-  // 「行为不变降级」口径:门永远有答案,壳绝不因决策核缺席而卡死队列)。
+  // Default decision chain: Rust main path, no gate / failure -> the TS mirror
+  // core as backstop (the "behavior-unchanged degradation" convention from the
+  // ruffLint precedent: the gate always yields an answer, and the shell never
+  // jams the queue just because the decision core is absent).
   const decide = deps.decide ??
     (async (entries: readonly CoalescePendingEntry[], dirtyFiles: readonly string[], nowMs: number) =>
       (await decideViaRust(entries, dirtyFiles, nowMs, windowMs, maxDeferMs)) ??

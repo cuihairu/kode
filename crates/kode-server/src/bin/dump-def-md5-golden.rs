@@ -1,10 +1,12 @@
-//! def MD5 对拍 golden 生成器:输出引擎 `EntityDef::md5()` 重放样本
-//! (demo-assets/parity-project/最小锚点)JSON,内置规范推导(provenance 引
-//! kbengine 源 file:line)为权威;与引擎交叉验证尽力(链接依赖重则跳过,
-//! 规范推导保持权威,同 wire-probe 先例)。
+//! def MD5 parity golden generator: emits the engine `EntityDef::md5()`
+//! replay sample (demo-assets/parity-project/ minimal anchor) as JSON; the
+//! built-in normative derivation (provenance citing kbengine source file:line)
+//! is authoritative; cross-validation against the engine is best effort
+//! (skipped when the linking dependency is heavy, normative derivation stays
+//! authoritative, same precedent as wire-probe).
 
 fn main() {
-    // repo_root = crate 的上级上级(workspace 根),cargo 以 package dir 为 cwd。
+    // repo_root = two levels above the crate (workspace root); cargo runs with the package dir as cwd.
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())

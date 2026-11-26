@@ -1,47 +1,56 @@
 /**
- * 临时编辑热重载 quick action(书 docs/kode2/KODE_2_COMPLETE_TODO.md §19,
- * HR-PR-02 附带的临时编辑腿):先临时编辑 → 可选自动还原 → reloadScript →
- * 结果回显。
- * - 临时编辑 = 在原内容尾部追加一行注释性标记(不动原语义,Python 注释安全);
- * - 自动还原默认开,还原失败即中止 reloadScript(不把带标记的半成品发给引擎);
- * - reloadScript 不另起第二套 HTTP:按名触发既有 quick action 通道
- *   (HTTP 与终端两条腿都从 QuickActionManager.runByName 走);
- * - 结果回显走输出通道(流水)+ 问题通道(失败置诊断,成功清除);
- * - 成功语义铁律:传输通道回执可用 ≠ 引擎已应用。无可信回执一律如实报
- *   「已发送(未确认)」,outcome 的 applied 字面量类型恒为 false,
- *   编译期就不可能谎报「已热更新」(书 §19.1 HTTP 成功分类)。
- * 纯逻辑(双名称解析/设置读取/临时编辑内容)与执行编排分家,测试用假腿驱动。
+ * Temporary-edit hot reload quick action (book docs/kode2/KODE_2_COMPLETE_TODO.md §19,
+ * the temporary-edit leg carried by HR-PR-02): temp edit first → optional auto
+ * restore → reloadScript → echo the result.
+ * - temp edit = appending one line of comment marker at the tail of the original
+ *   content (leaving the original semantics untouched; a Python comment is safe);
+ * - auto restore is on by default, and a failed restore aborts reloadScript (never
+ *   sending the marked half-product to the engine);
+ * - reloadScript does not stand up a second HTTP mechanism: it triggers the
+ *   existing quick action channel by name (both the HTTP and terminal legs go
+ *   through QuickActionManager.runByName);
+ * - the result echo goes through the output channel (stream) + the problems
+ *   channel (a failure sets diagnostics, success clears them);
+ * - the iron rule of success semantics: a usable transport receipt is not the
+ *   engine having applied it. Without a trusted receipt, always report honestly
+ *   "sent (unconfirmed)"; the applied literal type of the outcome is always
+ *   false, so claiming "hot reloaded" is impossible even at compile time
+ *   (book §19.1 HTTP success classification).
+ * The pure logic (dual-name resolution / settings read / temp edit content) is
+ * kept apart from the execution orchestration; tests drive it with fake legs.
  */
 
 import type { ConfigReader } from '../hotReload';
 
-/** 临时编辑标记前缀:追加行为 `# kode-temp-reload <ISO 时间戳>` */
+/** Temp edit marker prefix: the appended line is `# kode-temp-reload <ISO timestamp>` */
 export const TEMP_EDIT_MARKER_TAG = 'kode-temp-reload';
 
-/** 双名称模型(书 §19.1):UI/回显用 fullModule,请求详情用 requestModule */
+/** Dual-name model (book §19.1): UI/echo uses fullModule, request detail uses requestModule */
 export interface ModuleDualName {
-  /** 脚本资源根相对的全部目录段 + 文件短名:entities.fight.FightAI */
+  /** All directory segments relative to the script asset root + the file stem: entities.fight.FightAI */
   readonly fullModule: string;
-  /** 直接父目录名 + 文件短名:fight.FightAI */
+  /** The immediate parent dir name + the file stem: fight.FightAI */
   readonly requestModule: string;
-  /** 文件名去结尾 .py:FightAI(.pyi/.pyc 不假匹配,$ 锚点) */
+  /** The file name with its trailing .py stripped: FightAI (.pyi/.pyc never match spuriously, anchored by $) */
   readonly fileStem: string;
-  /** 直接父目录名:fight */
+  /** The immediate parent dir name: fight */
   readonly parentName: string;
 }
 
-/** 双名称解析结果:解析失败给 explicit unsupported 原因,不擅自猜名 */
+/** Dual-name resolution result: a failure yields an explicit unsupported reason; the name is never guessed */
 export type ModuleDualNameResult =
   | ModuleDualName
   | { readonly unsupported: string; readonly reason: ModuleDualNameUnsupportedReason };
 
 /**
- * unsupported 的机器可读归类(HR-MOD-002 诊断码,唯一实现=本函数的返回,
- * 上层 ModuleResolver 面按码出 diagnostics,不再各写一套字符串判读):
- * - no-root 未配置脚本资源根 / not-python 非 .py / out-of-root 根外文件
- * - traversal 空段或 `..` 穿越 / empty-stem 短名为空
- * - init-file `__init__.py` 特殊文件(HR-MOD-007 验证前跳过)
- * - root-level 根下单层脚本(HR-MOD-008 默认 unresolved)
+ * Machine-readable classification of unsupported (HR-MOD-002 diagnostic codes;
+ * the only implementation is this function's return value, so the upper
+ * ModuleResolver face emits diagnostics by code instead of each writing its own
+ * string interpretation):
+ * - no-root: script asset root not configured / not-python: not a .py / out-of-root: a file outside the root
+ * - traversal: an empty segment or `..` traversal / empty-stem: an empty stem
+ * - init-file: the `__init__.py` special file (skipped before verification, HR-MOD-007)
+ * - root-level: a single-level script right under the root (unresolved by default, HR-MOD-008)
  */
 export type ModuleDualNameUnsupportedReason =
   | 'no-root'
@@ -52,12 +61,14 @@ export type ModuleDualNameUnsupportedReason =
   | 'init-file'
   | 'root-level';
 
-/** 双名称解析选项(HR-MOD-008:显式 single-level fallback 配置) */
+/** Dual-name resolution options (HR-MOD-008: an explicit single-level fallback setting) */
 export interface ModuleDualNameOptions {
   /**
-   * 根下单层脚本(`scripts/Foo.py`)默认判 unresolved;此开关显式打开时
-   * 回落裸短名 fullModule=requestModule=Foo(引擎进程根直下文件 sys.modules
-   * 里就是裸名)。默认关=书 §19.1「默认标 unresolved」口径。
+   * A single-level script under the root (`scripts/Foo.py`) is judged
+   * unresolved by default; when this switch is explicitly on, it falls back to
+   * the bare stem fullModule=requestModule=Foo (a file right under the engine
+   * process root is literally the bare name in sys.modules). Off by default =
+   * the book §19.1 "mark unresolved by default" convention.
    */
   readonly allowRootLevelStem?: boolean;
 }
@@ -69,20 +80,29 @@ const trimSlashes = (value: string): string => value.replace(/\/+$/, '');
 const splitSegments = (value: string): string[] => toPosix(value).split('/');
 
 /**
- * 双名称纯解析(书 §19.1 规则 + 四个示例;HR-MOD-002 纯函数口径,无 IO):
- * - 文件必须以 .py 结尾(仅去结尾后缀,.pyi/.pyc 不假匹配);
- * - 文件必须严格落在脚本资源根内,含 `..` 路径穿越一律拒绝;
- * - `__init__.py` 判 unsupported(HR-MOD-007:真实服务验证前跳过);
- * - 根下单层脚本判 unsupported(HR-MOD-008:默认未解析,需显式 fallback);
- * - requestModule = 直接父目录 + '.' + 文件短名;fullModule = 全部目录段 + 短名。
+ * Pure dual-name resolution (book §19.1 rules + the four examples; the
+ * HR-MOD-002 pure-function convention, no IO):
+ * - the file must end with .py (only the trailing suffix is stripped; .pyi/.pyc
+ *   never match spuriously);
+ * - the file must sit strictly inside the script asset root; any `..` path
+ *   traversal is refused outright;
+ * - `__init__.py` is judged unsupported (HR-MOD-007: skipped before real service
+ *   verification);
+ * - a single-level script under the root is judged unsupported (HR-MOD-008:
+ *   unresolved by default, requiring an explicit fallback);
+ * - requestModule = immediate parent dir + '.' + file stem; fullModule = all
+ *   directory segments + stem.
  */
 /**
- * KBEngine 进程角色目录名(scripts/{base,cell,client,bots})。它们是**进程装载根**
- * (baseapp 按 scripts/base、cellapp 按 scripts/cell 装载,KB-API-007: bots 的
- * 脚本面是 client 面),不是 Python 模块段——引擎进程 sys.modules 里没有这些
- * 前缀。即使目录里带 __init__.py 也不得作模块段:带着 base./cell. 前缀的
- * module_name 服务端认不出,请求被收下却重载不到任何模块(2026-11-12 用户报障:
- * 热更「发了但不生效」的直接原因)。模块名推导统一按此集合剥段。
+ * KBEngine process role directory names (scripts/{base,cell,client,bots}). These
+ * are **process load roots** (baseapp loads scripts/base, cellapp loads
+ * scripts/cell; KB-API-007: the script face of bots is the client face), not
+ * Python module segments — the engine process's sys.modules holds no such
+ * prefixes. Even a directory carrying __init__.py must not count as a module
+ * segment: a module_name prefixed with base./cell. is unrecognized by the
+ * server, so the request is accepted yet no module is ever reloaded (the 2026-11-12
+ * user report: the direct cause of hot reload "sent but not taking effect").
+ * Module name derivation strips segments uniformly against this set.
  */
 export const PYTHON_PROCESS_ROLE_DIRS: ReadonlySet<string> =
   new Set(['base', 'cell', 'client', 'bots']);
@@ -100,7 +120,7 @@ export function resolveModuleDualName(
   if (!file.toLowerCase().endsWith('.py')) {
     return { unsupported: `非 .py 文件不可热更: ${file}`, reason: 'not-python' };
   }
-  // 严格前缀 + 边界整段:防止 /ws/scripts2 顶替 /ws/scripts 的假包含
+  // Strict prefix + whole boundary segment: prevents /ws/scripts2 from masquerading as containment of /ws/scripts
   if (file !== root && !file.startsWith(`${root}/`)) {
     return { unsupported: `文件不在脚本资源根内: ${file} ∉ ${root}`, reason: 'out-of-root' };
   }
@@ -118,7 +138,7 @@ export function resolveModuleDualName(
   const directories = segments.slice(0, -1);
   if (directories.length === 0) {
     if (options.allowRootLevelStem === true) {
-      // HR-MOD-008 显式 fallback:进程根直下文件引擎按裸短名装载
+      // HR-MOD-008 explicit fallback: a file right under the process root is loaded by the engine under its bare stem
       return { fullModule: stem, requestModule: stem, fileStem: stem, parentName: '' };
     }
     return {
@@ -127,10 +147,11 @@ export function resolveModuleDualName(
     };
   }
   const parentName = directories[directories.length - 1];
-  // 进程角色目录(base/cell/client/bots)是引擎的进程装载根,不是 Python 模块段——
-  // 引擎 sys.modules 里没有这些前缀(baseapp 按 scripts/base 作进程目录装载)。
-  // 即使该目录带 __init__.py 也不作段:带上前缀的 module_name 服务端认不出,
-  // 请求会被收下却重载不到任何模块。
+  // Process role directories (base/cell/client/bots) are the engine's process load roots, not
+  // Python module segments — the engine's sys.modules holds no such prefixes (baseapp loads scripts/base
+  // as its process directory). Even a directory carrying __init__.py is not taken as a segment: a
+  // module_name carrying the prefix is unrecognized by the server, and the request is accepted
+  // yet no module is ever reloaded.
   const moduleDirs = directories.filter(segment => !PYTHON_PROCESS_ROLE_DIRS.has(segment.toLowerCase()));
   const lastModuleDir = moduleDirs.length > 0 ? moduleDirs[moduleDirs.length - 1] : '';
   return {
@@ -141,15 +162,15 @@ export function resolveModuleDualName(
   };
 }
 
-/** 临时编辑热重载设置(kbengine.hotReload.tempEdit 段) */
+/** Temporary-edit hot reload settings (the kbengine.hotReload.tempEdit section) */
 export interface TempEditReloadSettings {
-  /** 总开关,默认关(与 kbengine.hotReload.enabled 同口径防误触) */
+  /** Master switch, off by default (the same convention as kbengine.hotReload.enabled, guarding against accidental triggers) */
   readonly enabled: boolean;
-  /** reloadScript 按名触发的 quick action 名(留空视为配置错误,中止) */
+  /** The quick action name that reloadScript triggers by name (leaving it empty is a configuration error and aborts) */
   readonly actionName: string;
-  /** reloadScript 发送前是否自动还原原始内容(默认开) */
+  /** Whether to auto restore the original content before reloadScript sends (on by default) */
   readonly autoRestore: boolean;
-  /** 脚本资源根(双名称解析起点;留空则回显模块名未解析) */
+  /** Script asset root (the starting point of dual-name resolution; empty means the echoed module name is unresolved) */
   readonly scriptRoot: string;
 }
 
@@ -160,7 +181,7 @@ export const TEMP_EDIT_DEFAULTS: Readonly<TempEditReloadSettings> = Object.freez
   scriptRoot: ''
 });
 
-/** 容忍式读取:类型不符回落默认,配置写坏不拖垮执行(与 hotReload 同口径) */
+/** Tolerant read: a mismatched type falls back to the default, so a broken configuration never drags execution down (the same convention as hotReload) */
 export function readTempEditReloadSettings(reader: ConfigReader): TempEditReloadSettings {
   const enabled = reader.get<boolean>('enabled', TEMP_EDIT_DEFAULTS.enabled);
   const actionName = reader.get<string>('actionName', TEMP_EDIT_DEFAULTS.actionName);
@@ -174,7 +195,7 @@ export function readTempEditReloadSettings(reader: ConfigReader): TempEditReload
   };
 }
 
-/** 从 kbengine.hotReload 段原始值解出 tempEdit 子段读取器(段内扁平键) */
+/** Derives a tempEdit subsection reader from the raw values of the kbengine.hotReload section (flat keys inside the section) */
 export const tempEditSectionReader = (hotReloadSection: unknown): ConfigReader => ({
   get: <T>(key: string, defaultValue: T): T => {
     const section = hotReloadSection as Record<string, unknown> | undefined;
@@ -186,30 +207,33 @@ export const tempEditSectionReader = (hotReloadSection: unknown): ConfigReader =
 });
 
 /**
- * 临时编辑内容:原内容尾部追加一行注释标记(时间戳由调用方注入,纯函数
- * 不取钟)。Python 注释行不动原语义;原内容缺尾换行先补齐再追加。
+ * Temporary edit content: appends one line of comment marker at the tail of the
+ * original content (the timestamp is injected by the caller, since this pure
+ * function never reads the clock). A Python comment line leaves the original
+ * semantics untouched; if the original content lacks a trailing newline it is
+ * padded first, then the marker is appended.
  */
 export function applyTempEdit(original: string, stamp: string): string {
   const separator = original.length > 0 && !original.endsWith('\n') ? '\n' : '';
   return `${original}${separator}# ${TEMP_EDIT_MARKER_TAG} ${stamp}\n`;
 }
 
-/** 执行对象(活动编辑器文档的最小投影) */
+/** Execution subject (the minimal projection of the active editor document) */
 export interface TempEditReloadDoc {
   readonly fsPath: string;
-  /** 回显用展示名(通常文件名) */
+  /** Display name used for echoing (usually the file name) */
   readonly label: string;
 }
 
-/** 执行通道注入:读写文件 / reload 通道 / 输出与问题回显 / 时钟 */
+/** Injected execution channels: file read/write / reload channel / output and problems echo / clock */
 export interface TempEditReloadDeps {
   readFile: (doc: TempEditReloadDoc) => Promise<string>;
   writeFile: (doc: TempEditReloadDoc, content: string) => Promise<void>;
-  /** reloadScript 通道:按名触发既有 quick action(HTTP/终端两条腿复用) */
+  /** The reloadScript channel: triggers the existing quick action by name (reusing the HTTP/terminal legs) */
   runReloadAction: (actionName: string) => Promise<boolean>;
-  /** 输出通道回显(每行一条) */
+  /** Output channel echo (one line each) */
   log: (line: string) => void;
-  /** 问题通道回显:null = 清除该文件的诊断 */
+  /** Problems channel echo: null = clear this file's diagnostics */
   reportProblem: (doc: TempEditReloadDoc, message: string | null) => void;
   now?: () => Date;
 }
@@ -224,17 +248,17 @@ export type TempEditReloadPhase =
 
 export interface TempEditReloadOutcome {
   readonly phase: TempEditReloadPhase;
-  /** 仅传输层:reload 通道回执可用(不代表引擎已应用) */
+  /** Transport layer only: the reload channel receipt was usable (not a claim that the engine applied it) */
   readonly transportOk: boolean;
-  /** 恒为 false:无可信 applied 回执(书 §19.1,accepted≠applied) */
+  /** Always false: there is no trusted applied receipt (book §19.1, accepted≠applied) */
   readonly applied: false;
-  /** 结果一句话(回显/弹窗同源) */
+  /** A one-sentence result (the same source for echo and popup) */
   readonly detail: string;
-  /** 双名称解析结果(best-effort;未配置根时为 unsupported) */
+  /** Dual-name resolution result (best-effort; unsupported when no root is configured) */
   readonly dualName: ModuleDualNameResult;
 }
 
-/** 结束口径统一的失败回执:置问题诊断 + 流水 + outcome */
+/** The uniformly phrased failure receipt at the end: sets the problems diagnostics + the stream line + the outcome */
 const failedOutcome = (
   phase: TempEditReloadPhase,
   detail: string,
@@ -242,9 +266,10 @@ const failedOutcome = (
 ): TempEditReloadOutcome => ({ phase, transportOk: false, applied: false, detail, dualName });
 
 /**
- * 执行编排(书 HR-PR-02 指定顺序):临时编辑 → 可选自动还原 → reloadScript
- * → 结果回显。还原失败即中止请求;reload 通道回执只决定 transportOk,
- * 一律不宣称 applied。
+ * Execution orchestration (the order prescribed by book HR-PR-02): temp edit →
+ * optional auto restore → reloadScript → echo the result. A failed restore
+ * aborts the request; the reload channel receipt only decides transportOk and
+ * never claims applied.
  */
 export async function runTempEditReload(
   doc: TempEditReloadDoc,
@@ -261,7 +286,7 @@ export async function runTempEditReload(
     return failedOutcome('missing-action', detail, dualName);
   }
 
-  // 第 1 步:临时编辑
+  // Step 1: the temporary edit
   deps.log(`▶ 临时编辑热重载[${doc.label}] 第 1 步:写入临时编辑 · ${dualEcho}`);
   let original: string;
   try {
@@ -285,7 +310,7 @@ export async function runTempEditReload(
   }
   deps.log(`✓ 临时编辑热重载[${doc.label}] 临时编辑已写入(${TEMP_EDIT_MARKER_TAG} ${stamp})`);
 
-  // 第 2 步:可选自动还原(先还原后请求;还原失败不把带标记内容发给引擎)
+  // Step 2: the optional auto restore (restore before requesting; a failed restore never sends the marked content to the engine)
   if (settings.autoRestore) {
     deps.log(`↩ 临时编辑热重载[${doc.label}] 第 2 步:自动还原原始内容`);
     try {
@@ -302,7 +327,7 @@ export async function runTempEditReload(
     deps.log(`↹ 临时编辑热重载[${doc.label}] 第 2 步跳过:autoRestore=false,临时编辑保留在盘上`);
   }
 
-  // 第 3 步:reloadScript(复用既有 quick action 通道,HTTP/终端两条腿)
+  // Step 3: reloadScript (reusing the existing quick action channel, the HTTP/terminal legs)
   deps.log(
     `▶ 临时编辑热重载[${doc.label}] 第 3 步 reloadScript:quick action「${settings.actionName}」(HTTP/终端通道复用)`
   );
@@ -323,7 +348,7 @@ export async function runTempEditReload(
     return failedOutcome('sent-failed', detail, dualName);
   }
 
-  // 第 4 步:结果回显——只如实报「已发送(未确认)」,不显示「已热更新」
+  // Step 4: echoing the result — it only honestly reports "sent (unconfirmed)" and never displays "hot reloaded"
   deps.log(
     `● 临时编辑热重载[${doc.label}] 结果:请求已发送(未确认)。传输通道回执可用,但无引擎 applied 确认(accepted≠applied),不显示「已热更新」。`
   );

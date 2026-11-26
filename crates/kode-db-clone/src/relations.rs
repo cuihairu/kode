@@ -1,26 +1,32 @@
-//! 关系分类(plan §4.2):引擎确定(ARRAY/组件子表 + parentID)、真实 FK、业务显式声明、
-//! 未明(pickle 内嵌 ID)、外部(kbe_ 表)。
+//! Relation classification (plan §4.2): engine-certain (ARRAY/component child
+//! tables + parentID), real FKs, explicit business declarations, unresolved (IDs
+//! embedded in pickles), external (kbe_ tables).
 //!
-//! 引擎事实(source-evidence §4/§5):子表 `parentID` 是纯逻辑列,无数据库外键;父表先插入,
-//! 取 `LAST_INSERT_ID` 再按 `parentID` 写子表。关系图以派生 schema 的表结构为输入。
+//! Engine facts (source-evidence §4/§5): the child table's `parentID` is a purely
+//! logical column with no database foreign key; the parent row is inserted first,
+//! `LAST_INSERT_ID` is taken, then the child table is written keyed by `parentID`.
+//! The relation graph takes the derived schema's table structure as input.
 
 use std::collections::BTreeMap;
 
 use crate::error::{CloneError, CloneResult};
 use crate::schema::{CloneSchema, DerivedTable};
 
-/// 关系类别(plan §4.2 A–E,命名对齐计划书 PDC-0104)。
+/// Relation kinds (plan §4.2 A–E, naming aligned with the plan doc PDC-0104).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RelationKind {
-    /// 引擎生成(§4.2-A):ARRAY/组件子表 + parentID 列(无 DB 外键,纯逻辑)。
+    /// Engine generated (§4.2-A): ARRAY/component child tables + parentID column
+    /// (no DB foreign key, purely logical).
     EngineGenerated,
-    /// 真实数据库外键(§4.2-B;引擎当前为空,预留)。
+    /// Real database foreign key (§4.2-B; currently empty in the engine,
+    /// reserved).
     ForeignKey,
-    /// 项目显式声明(§4.2-C:Account.characters、guildDBID 等,由用户声明)。
+    /// Project explicit declaration (§4.2-C: Account.characters, guildDBID etc.,
+    /// declared by the user).
     ProjectDeclared,
-    /// 未明(§4.2-D:pickle blob 内嵌 ID,不触碰)。
+    /// Unresolved (§4.2-D: IDs embedded in pickle blobs, untouched).
     Unresolved,
-    /// 外部(§4.2-E:kbe_ 内部表,排除)。
+    /// External (§4.2-E: kbe_ internal tables, excluded).
     External,
 }
 
@@ -36,30 +42,34 @@ impl RelationKind {
     }
 }
 
-/// 一条关系:子表经 parentID 挂到父表(或显式声明)。
+/// One relation: a child table attached to a parent via parentID (or an explicit
+/// declaration).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Relation {
     pub child_table: String,
     pub parent_table: String,
     pub kind: RelationKind,
-    /// 关系来源属性路径(子表 property_path)。
+    /// Source property path of the relation (the child table's property_path).
     pub via_property: Option<String>,
-    /// 关系携带的载荷列(ARRAY 的 sm_value 等;FK/业务为声明)。
+    /// Payload columns carried by the relation (sm_value for ARRAY etc.; FK /
+    /// business ones come from declarations).
     pub payload_columns: Vec<String>,
 }
 
-/// 关系图:以派生 schema 构建,提供遍历顺序(父先子后)与环检测。
+/// Relation graph: built from the derived schema, provides traversal order
+/// (parents before children) and cycle detection.
 #[derive(Debug, Clone, Default)]
 pub struct RelationGraph {
-    /// 子表 → 关系。
+    /// child table → relation.
     pub edges: BTreeMap<String, Relation>,
-    /// 表 → 直接子表(父先序)。
+    /// table → direct children (parents-first order).
     pub children: BTreeMap<String, Vec<String>>,
 }
 
 impl RelationGraph {
-    /// 由已解析 schema 构建关系图。仅对通过 SchemaResolver 校验的表建边
-    /// (deny/missing 表不入图)。
+    /// Builds the relation graph from a resolved schema. Edges are created only
+    /// for tables that passed SchemaResolver validation (deny/missing tables do
+    /// not enter the graph).
     pub fn build(schema: &CloneSchema, tables: &[DerivedTable]) -> CloneResult<Self> {
         let mut edges = BTreeMap::new();
         let mut children: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -71,7 +81,8 @@ impl RelationGraph {
 
         for table in tables {
             if let Some(parent) = &table.parent_table_name {
-                // 子表父引用必须落在已解析表集内(fail-closed:不猜未校验表)。
+                // The child table's parent reference must land inside the resolved
+                // table set (fail-closed: no guessing about unvalidated tables).
                 if !included.contains_key(parent) {
                     return Err(CloneError::InvalidRule(format!(
                         "child table `{}` references `{parent}` which was not resolved",
@@ -97,7 +108,8 @@ impl RelationGraph {
             }
         }
 
-        // 环检测:DFS 三色。引擎规则父先子后,任何环都是非预期(plan §4.3 fail-closed)。
+        // Cycle detection: three-color DFS. Engine rules are parents-before-children;
+        // any cycle is unexpected (plan §4.3 fail-closed).
         let mut state: BTreeMap<String, u8> = BTreeMap::new();
         for table in &schema.tables {
             if edges.contains_key(&table.name) {
@@ -108,7 +120,8 @@ impl RelationGraph {
         Ok(Self { edges, children })
     }
 
-    /// 父先子后的导出/导入遍历序(根表在前,子表沿关系图 DFS 后序即父先)。
+    /// Export/import traversal order, parents before children (root table first;
+    /// child tables follow the relation graph's DFS order, i.e. parents first).
     pub fn topological_order(&self, schema: &CloneSchema) -> Vec<String> {
         let root = schema
             .tables
@@ -120,7 +133,8 @@ impl RelationGraph {
         if let Some(root) = root {
             self.dfs(&root, &mut visited, &mut order);
         }
-        // 孤立的非根表(无 parent 引用且未访问)按名序补齐,保证全量覆盖。
+        // Orphan non-root tables (no parent reference and not yet visited) are
+        // appended in name order to guarantee full coverage.
         for table in &schema.tables {
             if !visited.contains_key(&table.name) {
                 self.dfs(&table.name, &mut visited, &mut order);
@@ -129,7 +143,8 @@ impl RelationGraph {
         order
     }
 
-    /// 先序(父先于全部子表):引擎要求父行先插入、子表按 parentID 后写。
+    /// Pre-order (parents before all their children): the engine requires parent
+    /// rows to be inserted first, child tables written later keyed by parentID.
     fn dfs(&self, node: &str, visited: &mut BTreeMap<String, bool>, order: &mut Vec<String>) {
         if visited.get(node).copied().unwrap_or(false) {
             return;
@@ -144,7 +159,7 @@ impl RelationGraph {
     }
 }
 
-/// DFS 三色环检测(0 未访/1 在访/2 已访)。
+/// Three-color DFS cycle detection (0 unvisited / 1 in-progress / 2 done).
 fn visit(
     node: &str,
     edges: &BTreeMap<String, Relation>,
@@ -164,9 +179,10 @@ fn visit(
     Ok(())
 }
 
-/// 分类:表名 `kbe_` → External;否则子表由 parentID 挂载 → EngineGenerated
-/// (引擎无 DB 外键,source-evidence §5)。显式业务关系由 rules 层单独声明,
-/// 此处不做字符串猜测。
+/// Classification: table name starting with `kbe_` → External; otherwise the
+/// child table is attached via parentID → EngineGenerated (the engine has no DB
+/// foreign keys, source-evidence §5). Explicit business relations are declared
+/// separately by the rules layer; no string guessing here.
 fn classify(
     child: &str,
     _parent: &str,
@@ -179,7 +195,8 @@ fn classify(
     }
 }
 
-/// 关系载荷列:子表去掉 id/parentID/sm_autoLoad 后的业务列。
+/// Relation payload columns: the child table's business columns with
+/// id/parentID/sm_autoLoad removed.
 fn payload_columns(table: &DerivedTable) -> Vec<String> {
     table
         .fields
@@ -250,7 +267,8 @@ mod tests {
 
     #[test]
     fn rejects_cycle() {
-        // a↔b 互为父:CloneSchema::new 允许(父引用存在),RelationGraph 环检测须拒绝。
+        // a↔b are each other's parents: CloneSchema::new allows it (the parent
+        // references exist), RelationGraph cycle detection must reject it.
         let schema = CloneSchema::new(
             "Avatar".into(),
             vec![
@@ -274,7 +292,8 @@ mod tests {
             ],
         )
         .unwrap();
-        // 只把子表纳入 resolved:其父(根)不在已解析集内 → fail-closed,不猜关系。
+        // Only the child table is included in resolved: its parent (the root) is
+        // not in the resolved set → fail closed, no guessed relation.
         let resolved = vec![schema.tables[1].clone()];
         let err = RelationGraph::build(&schema, &resolved).unwrap_err();
         assert!(matches!(err, CloneError::InvalidRule(_)));

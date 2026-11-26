@@ -1,9 +1,11 @@
 /**
- * 纯 schema 推导核心(IDE-ARC-004 抽离):表/列推导全管线——类型描述符、
- * def/types.xml 解析、别名解析、父链/组件合并、mysql 建表。零 vscode 依赖
- * (不 import vscode,不读工作区/配置;文件读取走共享快照服务)。VS Code
- * 收集/缓存/渲染留在 databaseSchema(适配面),虚拟文档 provider 在
- * databaseSchemaPresentation(装配展示面)。
+ * Pure schema derivation core (extracted per IDE-ARC-004): the full table/column
+ * derivation pipeline -- type descriptors, def/types.xml parsing, alias
+ * resolution, parent-chain/component merging, mysql table building. Zero vscode
+ * dependency (no vscode import, no workspace/config reads; file reads go
+ * through the shared snapshot service). VS Code collection/caching/rendering
+ * stays in databaseSchema (adapter surface); the virtual document provider
+ * lives in databaseSchemaPresentation (assembly/presentation surface).
  */
 import * as path from 'path';
 import * as fs from 'fs';
@@ -21,10 +23,12 @@ import {
 import { normalizeFileIdentity } from './pathIdentity';
 import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
-// R2-F24(IDE-AUD-051):本模块自足于普通 Node——源访问(def 文件发现/实体
-// 登记/共享快照读取)全部经 SchemaSourcePorts 注入,不 import 任何传递
-// 依赖 vscode 的模块(definitionWorkspace/sharedFileSnapshot 由适配层
-// databaseSchemaSource 包装)。下列类型镜像这两个模块的对应形状。
+// R2-F24 (IDE-AUD-051): this module is self-sufficient in plain Node -- source
+// access (def file discovery / entity registry / shared snapshot reads) is all
+// injected via SchemaSourcePorts, and no module transitively depending on
+// vscode is imported (definitionWorkspace/sharedFileSnapshot are wrapped by the
+// adapter layer databaseSchemaSource). The types below mirror the
+// corresponding shapes of those two modules.
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 
 export interface RegisteredEntityInfo {
@@ -51,14 +55,14 @@ export interface SchemaSourcePorts {
   readInputFile(filePath: string): SchemaInputSnapshot | null;
 }
 
-/** resolveEntityHasCell 只消费 entityScriptsRoot;适配层传整份布局也结构性兼容 */
+/** resolveEntityHasCell only consumes entityScriptsRoot; passing the whole layout from the adapter is also structurally compatible */
 export interface SchemaLayout {
   entityScriptsRoot: string | null;
 }
 
-/** 引擎默认库表前缀(entity_table_mysql.cpp 的 TABLE_PREFIX) */
+/** Engine-default database table prefix (TABLE_PREFIX in entity_table_mysql.cpp) */
 export const DB_TABLE_PREFIX = 'tbl_';
-/** 引擎默认列前缀 */
+/** Engine-default column prefix */
 export const DB_COLUMN_PREFIX = 'sm_';
 
 export type RuntimeScope = 'base' | 'cell' | 'client';
@@ -74,7 +78,7 @@ export interface DefSourceRef {
 export interface PersistentPropertyDescriptor {
   name: string;
   typeName: string;
-  /** 属性声明处的原始 <Type> 文本(别名不解析):types.xml 反扫按它命中使用处 */
+  /** Raw <Type> text at the property declaration site (aliases unresolved): the types.xml reverse scan matches usage sites by it */
   declaredType?: string;
   persistent: boolean;
   databaseLength?: number;
@@ -92,21 +96,23 @@ export interface PersistentPropertyDescriptor {
 export interface TableFieldDescriptor {
   name: string;
   typeLabel: string;
-  /** 落列属性的原始 <Type> 文本(别名不解析);合成引擎列没有声明处 */
+  /** Raw <Type> text of the landed column property (aliases unresolved); synthetic engine columns have no declaration site */
   declaredType?: string;
   sourcePath: string;
   source: DefSourceRef;
-  /** 有效落库长度(STRING/UNICODE 未配置时已折算引擎默认 255) */
+  /** Effective database length (already folded to the engine default 255 for STRING/UNICODE when unconfigured) */
   databaseLength?: number;
-  /** 声明处是否显式配置了 DatabaseLength(>0)——容量提示(IDE-DB-001)区分
-   * 「已配置 N」与「未配置→引擎默认 255」;Rust 侧 FieldSchema 同名镜像 */
+  /** Whether DatabaseLength (>0) was explicitly configured at the declaration site -- the
+   * capacity hint (IDE-DB-001) distinguishes "configured N" from
+   * "unconfigured -> engine default 255"; the Rust-side FieldSchema mirrors this field */
   databaseLengthSpecified?: boolean;
   defaultValue?: string;
   indexType?: string;
   identifier: boolean;
   flags?: string;
-  /** 引擎结构列(id/sm_autoLoad/parentID/位置朝向六列):不由 def 属性推导,
-   *  「属性列集」SQL 模板据此把它们剔掉 */
+  /** Engine structural columns (id / sm_autoLoad / parentID / the six
+   * position-and-orientation columns): not derived from def properties; the
+   * "property column set" SQL template uses this to strip them out */
   synthetic?: boolean;
 }
 
@@ -119,9 +125,11 @@ export interface TableSchemaDescriptor {
   propertyPath?: string;
   fields: TableFieldDescriptor[];
 }
-// types.xml 别名条目(批98 对齐 DataTypes::loadTypes):根节点直接子元素的标签名
-// 即别名,首个文本子节点为类型指引——"FIXED_DICT"/"ARRAY" 为结构别名(结构体
-// 就地声明在同一元素下),其余文本按内置类型或别名链解析。
+// types.xml alias entry (batch 98 aligns with DataTypes::loadTypes): the tag
+// name of a direct child element of the root node is the alias, and its first
+// text child node is the type directive -- "FIXED_DICT"/"ARRAY" are structural
+// aliases (struct declared inline under the same element), other text is
+// resolved against builtin types or alias chains.
 export type TypeAliasEntry =
   | { kind: 'builtin'; target: string }
   | { kind: 'fixedDict'; node: DefElementNode; document: DefDocument; filePath: string }
@@ -143,19 +151,21 @@ export interface BuildContext {
   componentScopesCache: Map<string, RuntimeScope[]>;
   typeAliases: Map<string, TypeAliasEntry>;
   entityHasCell: boolean;
-  /** IDE-SNP-006:构建期消费的共享快照输入(fsPath → 来源域+版本),随快照发出 */
+  /** IDE-SNP-006: shared snapshot inputs consumed at build time (fsPath -> origin domain + version), emitted with the snapshot */
   inputVersions: Map<string, SchemaVersionRef>;
-  /** IDE-SCH-004:本次构建消费的类型注册表文件(types.xml 路径,无则 null) */
+  /** IDE-SCH-004: type registry file consumed by this build (types.xml path, or null when absent) */
   typeRegistryPath: string | null;
-  /** IDE-SCH-004:消费的别名 → 构建期解析摘要(随快照发出,注册表变更按消费比对) */
+  /** IDE-SCH-004: consumed alias -> build-time resolution digest (emitted with the snapshot; registry changes are compared against consumption) */
   typeRegistryConsumed: Map<string, string>;
-  /** R2-F24:源访问端口(文件发现/实体登记/快照读),由适配层注入 */
+  /** R2-F24: source-access ports (file discovery / entity registry / snapshot reads), injected by the adapter layer */
   ports: SchemaSourcePorts;
 }
 
 /**
- * IDE-SNP-006:经共享快照读构建输入并记录版本引用(清单数据面);
- * 读失败不记条目——文件出现/消失由 watcher 事件面裁断,清单只锁版本漂移。
+ * IDE-SNP-006: read build inputs through the shared snapshot and record version
+ * references (manifest data surface);
+ * a failed read records no entry -- file appearance/disappearance is ruled on by
+ * the watcher event surface; the manifest only pins version drift.
  */
 function readSchemaInputFile(filePath: string, context: BuildContext): string | null {
   const snapshot = context.ports.readInputFile(filePath);
@@ -166,9 +176,11 @@ function readSchemaInputFile(filePath: string, context: BuildContext): string | 
   return snapshot.content;
 }
 
-// 旗标 → 运行域成员映射,成员集对齐引擎 common.h 的三个域掩码
-// (ENTITY_BASE/CELL/CLIENT_DATA_FLAGS)与 entitydef.cpp g_entityFlagMapping 的
-// 12 个旗标名(CELL 别名落到 CELL_PUBLIC 位,域成员不变)。
+// Flag -> runtime-scope membership map; the membership sets align with the
+// three scope masks in the engine's common.h
+// (ENTITY_BASE/CELL/CLIENT_DATA_FLAGS) and the 12 flag names in
+// entitydef.cpp's g_entityFlagMapping (the CELL alias lands on the CELL_PUBLIC
+// bit; scope membership is unchanged).
 const FLAG_SCOPE_MAP: Record<string, RuntimeScope[]> = {
   BASE: ['base'],
   BASE_AND_CLIENT: ['base', 'client'],
@@ -205,18 +217,22 @@ const SIMPLE_DB_TYPE_LABELS: Record<string, string> = {
   ENTITYCALL: 'blob'
 };
 
-// 引擎 EntityDef::loadInterfaces 只接受这四种拼写的包装层与内层元素,
-// 内层元素的标签名即接口名(getKey),不接受其它拼写、不跟随 Parent。
+// The engine's EntityDef::loadInterfaces only accepts these four spellings for
+// the wrapper layer and the inner element; the inner element's tag name is the
+// interface name (getKey). No other spelling is accepted, and Parent is not
+// followed.
 const INTERFACE_SPELLINGS = new Set(['Interface', 'interface', 'Type', 'type']);
 
-// 引擎内建类型(DataTypes::getDataType 注册名):标量/字符/blob 集与向量集。
-// 别名链指向它们时复用同一内建实例(addDataType 只改 aliasName,getName()
-// 保持内建名),DB 层 createItem 按该实例分派 mysql 列型。
+// Engine builtin types (DataTypes::getDataType registration names): the
+// scalar/char/blob set and the vector set.
+// When an alias chain points at them, the same builtin instance is reused
+// (addDataType only changes aliasName; getName() keeps the builtin name), and
+// the DB layer's createItem dispatches the mysql column type by that instance.
 const BUILTIN_DB_TYPE_NAMES = new Set([
   ...Object.keys(SIMPLE_DB_TYPE_LABELS),
   'VECTOR2', 'VECTOR3', 'VECTOR4'
 ]);
-/** IDE-SCH-001:纯推导输入——收集面读好的显式输入(不缺省、不读环境) */
+/** IDE-SCH-001: pure derivation input -- explicit inputs already read by the collection surface (no defaults, no environment reads) */
 export interface DatabaseSchemaDerivationInput {
   readonly entityName: string;
   readonly defFilePath: string;
@@ -231,9 +247,11 @@ export interface DatabaseSchemaDerivationResult {
 }
 
 /**
- * IDE-SCH-001:不访问 VS Code 的 schema 推导函数——相同显式输入恒同表/列;
- * 内部不读配置/文件/工作区(输入收集是快照面的职责)。数据库连接要素
- * (database)是配置面,不属于表/列推导,留在快照面。
+ * IDE-SCH-001: a schema derivation function that does not touch VS Code -- the
+ * same explicit inputs always yield the same tables/columns; internally it reads
+ * no config/files/workspace (input collection is the snapshot surface's job).
+ * Database connection details (database) belong to the config surface, not to
+ * table/column derivation, and stay on the snapshot surface.
  */
 export function deriveDatabaseTables(
   input: DatabaseSchemaDerivationInput
@@ -249,8 +267,10 @@ export function deriveDatabaseTables(
   const tableIndex = new Map<string, TableSchemaDescriptor>(tables.map(table => [table.name, table]));
   return { tables, tableIndex };
 }
-/** IDE-REV-039:types.xml 读取+清单记账(与解析分离——生成器把内容解析经
- * ParseDefPhase 让给 worker;事件面/直调面仍走 parseTypeAliases 整段)。 */
+/** IDE-REV-039: types.xml read + manifest bookkeeping (separated from parsing --
+ * the generator hands content parsing to the worker via
+ * ParseDefPhase; the event surface / direct-call surface still go through the
+ * full parseTypeAliases). */
 export function readTypeAliasesContent(
   typesXmlPath: string | null,
   inputVersions?: Map<string, SchemaVersionRef>,
@@ -260,8 +280,10 @@ export function readTypeAliasesContent(
     return null;
   }
 
-  // IDE-SNP-003:types.xml 同一共享快照(未保存别名修改进 schema);R2-F24:
-  // 读取经注入的端口,适配层传 sharedFileSnapshot 包装,Node 直调传自备读取
+  // IDE-SNP-003: types.xml uses the same shared snapshot (unsaved alias edits
+  // flow into the schema); R2-F24:
+  // reads go through the injected port -- the adapter layer passes the
+  // sharedFileSnapshot wrapper, Node direct calls pass their own reader
   const snapshot = readInputFile ? readInputFile(typesXmlPath) : null;
   if (!snapshot) {
     return null;
@@ -283,8 +305,9 @@ export function parseTypeAliases(
     : new Map<string, TypeAliasEntry>();
 }
 
-/** IDE-REV-039:已解析文档面(生成器经 ParseDefPhase 让 worker 解析后调用;
- * 与 parseTypeAliasesFromContent 同一分类规则)。 */
+/** IDE-REV-039: parsed-document surface (called by the generator after the worker
+ * parses via ParseDefPhase; same classification rules as
+ * parseTypeAliasesFromContent). */
 export function parseTypeAliasesFromDocument(
   document: DefDocument,
   filePath: string
@@ -295,9 +318,11 @@ export function parseTypeAliasesFromDocument(
   }
 
   for (const item of getDirectChildElements(document.root)) {
-    // 引擎 DataTypes::loadTypes:别名 = 条目标签名,类型指引 = 首个文本子节点
-    // (getValStr(FirstChild)),"FIXED_DICT"/"ARRAY" 走结构解析,其余文本按
-    // 已注册类型(内置或更早的别名)复用同一实例。
+    // Engine DataTypes::loadTypes: the alias = the entry's tag name, the type
+    // directive = the first text child node
+    // (getValStr(FirstChild)); "FIXED_DICT"/"ARRAY" go through structural
+    // parsing, other text reuses the same instance of the already-registered
+    // type (builtin or an earlier alias).
     const directive = getElementText(item).trim();
     if (directive === FIXED_DICT_TYPE_NAME) {
       aliases.set(item.name, { kind: 'fixedDict', node: item, document, filePath });
@@ -313,14 +338,18 @@ export function parseTypeAliasesFromDocument(
   return aliases;
 }
 
-/** IDE-SCH-004:内容面解析(注册表失效比对重用——事件时对当前内容解析一遍,
- * 与构建期同一分类规则,不落盘不记清单) */
+/** IDE-SCH-004: content-surface parsing (reused for registry invalidation
+ * comparison -- at event time, parse the current content once, with the same
+ * classification rules as build time; nothing is written to disk and no
+ * manifest entry is recorded) */
 export function parseTypeAliasesFromContent(content: string, filePath: string): Map<string, TypeAliasEntry> {
   return parseTypeAliasesFromDocument(parseDefDocument(content), filePath);
 }
 
-/** IDE-SCH-004:结构别名的稳定摘要——元素名+排序属性+子树(纯空白文本节点
- * 跳过,重排版不误判);字典/数组别名的字段集或元素类型变了摘要就变。 */
+/** IDE-SCH-004: stable digest of a structural alias -- element name + sorted
+ * attributes + subtree (pure-whitespace text nodes are skipped, so reformatting
+ * is not a false positive); when a dict/array alias's field set or element type
+ * changes, the digest changes too. */
 function defNodeDigest(node: DefNode): string {
   if (node.kind !== 'element') {
     const text = node.text.trim();
@@ -336,9 +365,11 @@ function defNodeDigest(node: DefNode): string {
   return `<${node.name} ${attributes}>${children}`;
 }
 
-/** IDE-SCH-004:别名在给定别名表下的解析摘要(别名变更比对的唯一权威):
- * b:内建名 / d:字典结构摘要 / a:数组结构摘要 / u:未解析;别名链取链尾结果,
- * 上游别名改指向,下游消费者的摘要同样漂移。 */
+/** IDE-SCH-004: resolution digest of an alias under a given alias table (the
+ * sole authority for alias-change comparison):
+ * b: builtin name / d: dict structural digest / a: array structural digest /
+ * u: unresolved; an alias chain takes the chain-tail result, so when an
+ * upstream alias changes its target, downstream consumers' digests drift too. */
 export function aliasDigestInMap(aliasName: string, aliases: Map<string, TypeAliasEntry>, seen = new Set<string>()): string {
   const entry = aliases.get(aliasName);
   if (!entry || entry.kind === 'unresolved') {
@@ -367,23 +398,28 @@ export function resolveAliasType(typeName: string, context: BuildContext, seen =
 
   const entry = context.typeAliases.get(typeName);
   if (!entry || entry.kind === 'unresolved') {
-    // IDE-SCH-004:未解析的名字也记 'u' 摘要——它后来在 types.xml 里出现
-    // (或别名被删)时,消费方摘要漂移,照常失效(SNP-003 脏缓冲加别名口径)
+    // IDE-SCH-004: unresolved names also get an 'u' digest -- when the name
+    // later appears in types.xml
+    // (or the alias is deleted), the consumer's digest drifts and it
+    // invalidates as usual (SNP-003 dirty-buffer-plus-alias semantics)
     if (context.typeRegistryPath) {
       context.typeRegistryConsumed.set(typeName, 'u');
     }
     return { kind: 'unresolved' };
   }
 
-  // IDE-SCH-004:消费面记账——命中的别名记下解析摘要(链尾结果),快照带
-  // 出去作注册表变更的比对轴;同别名重复命中记同值,幂等
+  // IDE-SCH-004: consumption-surface bookkeeping -- a hit alias records its
+  // resolution digest (the chain-tail result), carried out with the snapshot
+  // as the comparison axis for registry changes; repeated hits on the same
+  // alias record the same value, so this is idempotent
   context.typeRegistryConsumed.set(typeName, aliasDigestInMap(typeName, context.typeAliases));
 
   if (entry.kind === 'fixedDict' || entry.kind === 'array') {
     return entry;
   }
 
-  // 指引直接落内建类型:复用同一内建实例(引擎 getDataType 只认注册名)
+  // The directive lands directly on a builtin type: reuse the same builtin instance
+  // (the engine's getDataType only recognizes registration names)
   if (BUILTIN_DB_TYPE_NAMES.has(entry.target)) {
     return { kind: 'builtin', typeName: entry.target };
   }
@@ -396,8 +432,10 @@ export function resolveAliasType(typeName: string, context: BuildContext, seen =
   return resolveAliasType(entry.target, context, seen);
 }
 
-// 引擎加载语义下的有效类型名:别名解析到被指向的同一实例(DataTypes::addDataType
-// 只改 aliasName,getName() 保持内置名,DB 层 createItem 按 getName() 分派)。
+// Effective type name under engine load semantics: an alias resolves to the
+// same instance it points at (DataTypes::addDataType
+// only changes aliasName, getName() keeps the builtin name, and the DB layer's
+// createItem dispatches by getName()).
 function resolveEffectiveTypeName(typeName: string, context: BuildContext): string {
   const resolved = resolveAliasType(typeName, context);
   if (resolved.kind === 'builtin') {
@@ -412,34 +450,43 @@ function resolveEffectiveTypeName(typeName: string, context: BuildContext): stri
   return typeName;
 }
 
-/** IDE-AUD-013(F13):单实体 schema 内部计算的让路量规——异步驱动在每次
- * 让路(阶段闸/属性闸)后重置 sliceStart 并记账;生成器只看 budget 判断是否
- * 让路。同步面(schemaBuildPhases 无 progress)恒不触发,行为与原整段一致。 */
+/** IDE-AUD-013(F13): yield gauges computed inside a single-entity schema --
+ * the async driver resets sliceStart and records bookkeeping after every
+ * yield (phase gate / property gate); the generator only looks at budget to
+ * decide whether to yield. The sync surface (schemaBuildPhases with no
+ * progress) never triggers, matching the original monolithic behavior. */
 export interface SchemaBuildProgress {
-  /** 上次让路(或构建起)时间戳 */
+  /** Timestamp of the last yield (or build start) */
   sliceStart: number;
-  /** 连续执行预算(ms);Infinity=不按预算让路 */
+  /** Continuous execution budget (ms); Infinity = never yield on budget */
   budgetMs: number;
-  /** 让路次数(量规) */
+  /** Number of yields (gauge) */
   yields: number;
-  /** 两次让路之间最长连续执行(量规) */
+  /** Longest continuous run between two yields (gauge) */
   maxSliceMs: number;
 }
 
-/** IDE-AUD-013(F13):超预算即让路——生成器在此 yield 'phase-gate',由驱动
- * 决定是否真正放弃宿主(异步面 await,同步面直通忽略)。无 progress(同步
- * 面)恒不 yield,行为与原同步函数一致。 */
+/** IDE-AUD-013(F13): yield once the budget is exceeded -- the generator yields
+ * 'phase-gate' here, and the driver decides whether to actually give up the
+ * host (async surface awaits, sync surface passes straight through and
+ * ignores). Without progress (sync surface) it never yields, matching the
+ * original synchronous function. */
 function* maybeYieldForBudget(progress: SchemaBuildProgress | undefined): Generator<'phase-gate', void, void> {
   if (progress && Date.now() - progress.sliceStart >= progress.budgetMs) {
     yield 'phase-gate';
   }
 }
 
-// IDE-REV-039:def XML 解析相位(回填槽,镜像 DerivePhase)——生成器把解析输入
-// 交给驱动(异步驱动 await worker 移出宿主、同步驱动直通 parseDefDocument),
-// 驱动把文档写回槽后经 next() 恢复生成器,生成器从槽读文档。单次构建一个解析
-// 相位恰对应一次解析,槽无需跨构建共享。DefDocument 是纯 plain object 图
-// (parent/document 回引成环),structured clone 支持环与共享引用。
+// IDE-REV-039: def XML parse phase (backfill slot, mirroring DerivePhase) --
+// the generator hands the parse input
+// to the driver (async driver awaits the worker to move it off the host, sync
+// driver goes straight to parseDefDocument),
+// the driver writes the document back into the slot and resumes the generator
+// via next(), and the generator reads the document from the slot. One parse
+// phase per build corresponds to exactly one parse, so the slot needs no
+// sharing across builds. DefDocument is a plain-object graph
+// (parent/document back-references form cycles), which structured clone
+// supports.
 export interface ParseDefPhase {
   parseDef: {
     text: string;
@@ -448,7 +495,7 @@ export interface ParseDefPhase {
   };
 }
 
-/** schema 构建生成器的让路相位:阶段闸或 def 解析(两者都让驱动处理)。 */
+/** Yield phase of the schema build generator: phase gate or def parse (both are handled by the driver). */
 export type SchemaYieldPhase = 'phase-gate' | ParseDefPhase;
 
 export function* collectPersistentPropertiesForDefinition(

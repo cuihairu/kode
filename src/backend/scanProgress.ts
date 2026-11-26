@@ -1,32 +1,44 @@
 /**
- * SCAN-RESUME-001 扫描断点续扫纯核(2026-11-18 用户令「扫描一半可以关闭
- * 重新打开可以继续扫描」):python 类索引全量扫描分块推进(16 路并发读、逐块
- * loadFile→commitParsedFile 逐文件提交),本模块把「已完成且已提交的分块」
- * 落盘为断点,中断(关窗/崩溃)后重开指纹匹配的文件直接采纳(直取路径,
- * 与 indexDiskCache 恢复同构),只扫剩余部分。
+ * SCAN-RESUME-001 scan checkpoint resume pure core (2026-11-18 user order "a scan
+ * that is half done may be closed and reopened, and the scan continues"): the
+ * python class index full scan advances in chunks (16 concurrent reads, per chunk
+ * loadFile -> commitParsedFile committing file by file); this module persists the
+ * "chunks already completed and committed" as a checkpoint, and on reopen after an
+ * interruption (window close/crash) adopts files whose fingerprints match
+ * directly (the fast-path, isomorphic with the indexDiskCache restore), scanning
+ * only the remainder.
  *
- * 布局:<index-cache>/scan-progress/{progress.json, chunk-N.json}
- * - chunk-N.json = 分块载荷(不可变,一次写成):该块已提交文件的
- *   {path, mtimeMs, size, version, parsed}——parsed 为 ParsedPythonFile 的
- *   JSON 投影(Map→条目数组),恢复侧重建 Map 后走 commitParsedFile 同一面,
- *   不重读盘不重解析。
- * - progress.json = 提交点:schema/kodeVersion 版本门 + 已完成分块号清单
- *   (分块完成序≠入队序,清单是集合语义;chunksDone 为计数观测面)。
- *   产物先写、meta 后写;meta 未列出的分块 = 不存在(下次照扫)。
- * - 写失败静默:断点只是加速不是承诺;meta 列了但分块文件损坏 → 整体弃用
- *   (等同无断点全扫,不 crash)。
+ * Layout: <index-cache>/scan-progress/{progress.json, chunk-N.json}
+ * - chunk-N.json = the chunk payload (immutable, written once): the {path,
+ *   mtimeMs, size, version, parsed} of the files committed in that chunk — parsed
+ *   is the JSON projection of ParsedPythonFile (Map -> entry array); the restore
+ *   side rebuilds the Map and goes through the same commitParsedFile face, without
+ *   re-reading the disk or re-parsing.
+ * - progress.json = the commit point: the schema/kodeVersion version gate + the
+ *   list of completed chunk numbers (chunk completion order differs from enqueue
+ *   order, the list is set semantics; chunksDone is the count observation face).
+ *   Products are written first, the meta afterwards; a chunk not listed by meta =
+ *   does not exist (scanned as usual next time).
+ * - Write failure is silent: a checkpoint is only an accelerator, not a promise;
+ *   if meta lists a chunk but the chunk file is corrupt -> discard the whole thing
+ *   (a full scan without a checkpoint, no crash).
  *
- * 诚实口径红线:断点恢复发生在扫描内部(采纳=一次分块完成),查询面
- * loading/partial 口径不动——半成品索引不提前对外服务;指纹漂移(mtime/size
- * 任一不符)绝不复用,宁可重扫不错续。
+ * The honesty ruling red line: checkpoint restore happens inside the scan itself
+ * (adoption = one chunk completing), the query face loading/partial ruling is
+ * untouched — a half-built index is never served early; fingerprint drift (mtime/
+ * size mismatch on either) is never reused, rather re-scan than mis-resume.
  *
- * 与任务书 progress.json 形状的两处有意偏差(工程口径):
- * - files 指纹清单分布在 chunk-N.json 内而非 progress.json——meta 保持
- *   微小(每分块重写一次是 O(分块数) 不是 O(文件数),巨仓不写放大);
- * - chunksDone 数字升格为 chunks 分块号清单——分块完成序随 IO 时序翻动,
- *   计数会把「未完成的第 N 块之后全部错记」。
+ * Two intentional deviations from the task sheet's progress.json shape
+ * (engineering ruling):
+ * - the files fingerprint list lives inside chunk-N.json rather than
+ *   progress.json — keeping meta small (rewriting per chunk is O(chunk count), not
+ *   O(file count), so a huge repo does not write-amplify);
+ * - the chunksDone number is promoted into a chunks chunk-number list — chunk
+ *   completion order swings with IO timing, and a count would mis-record "everything
+ *   after the unfinished Nth chunk".
  *
- * 本模块零 vscode 依赖(纯核);IO 全注入(测试容错臂)。
+ * This module has zero vscode dependencies (pure core); IO is all injected (the
+ * test fault-injection arm).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -38,7 +50,7 @@ export const SCAN_PROGRESS_DIR_NAME = 'scan-progress';
 const META_FILE = 'progress.json';
 const chunkFileOf = (index: number): string => `chunk-${index}.json`;
 
-/** 断点条目载荷:ParsedPythonFile 的 JSON 投影(Map 序列化为条目数组) */
+/** Checkpoint entry payload: the JSON projection of ParsedPythonFile (Map serialized as an entry array) */
 export interface SerializedPythonClassDef {
   name: string;
   bases: string[];
@@ -56,7 +68,7 @@ export interface SerializedParsedPythonFile {
   instanceAssignments: Array<{ variable: string; className: string; line: number }>;
 }
 
-/** 分块载荷单条:文件指纹 + 版本 + 解析投影 */
+/** One chunk payload entry: the file fingerprint + version + parse projection */
 export interface ScanProgressEntry {
   path: string;
   mtimeMs: number;
@@ -65,16 +77,16 @@ export interface ScanProgressEntry {
   parsed: SerializedParsedPythonFile;
 }
 
-/** 提交点 meta:版本门 + 已完成分块号清单 */
+/** Commit-point meta: the version gate + the list of completed chunk numbers */
 export interface ScanProgressMetaFile {
   schema: string;
-  /** 溯源用:写断点时的扩展版本号。不作淘汰键(见 readScanProgress 版本门) */
+  /** For tracing: the extension version when the checkpoint was written. Not an eviction key (see the readScanProgress version gate) */
   kodeVersion: string;
   chunks: number[];
   chunksDone: number;
 }
 
-/** IO 注入面(默认同步 fs;测试注入失败/损坏臂) */
+/** IO injection face (defaults to the sync fs; tests inject failure/corruption arms) */
 export interface ScanProgressIo {
   readText(file: string): string | null;
   writeTextAtomic(file: string, content: string): void;
@@ -146,7 +158,7 @@ export function restoreSerializedParsedPythonFile(serialized: SerializedParsedPy
   };
 }
 
-/** 序列化投影往返等价断言面(测试/自检用) */
+/** Serialization projection round-trip equality assertion face (for tests/self-checks) */
 export function parsedPythonFileEqualsRoundtrip(
   original: ParsedPythonFile,
   restored: ParsedPythonFile
@@ -178,8 +190,8 @@ const isEntryShape = (value: unknown): value is ScanProgressEntry => {
     && !!entry.parsed && typeof entry.parsed === 'object';
 };
 
-/** 读断点:版本门(分级,只认破坏性变更,见下方注释)→ 逐分块读载荷
- * (meta 列了但文件缺失/损坏 → 整体弃用 null,不部分采纳半截)。 */
+/** Read the checkpoint: the version gate (tiered, only recognizes breaking changes, see the note below) -> read payloads chunk by chunk
+ * (meta lists it but the file is missing/corrupt -> discard the whole thing as null, never partially adopting half). */
 export function readScanProgress(
   dir: string,
   expected: { schemaVersion: string; kodeVersion: string },
@@ -189,10 +201,12 @@ export function readScanProgress(
   if (!meta || typeof meta !== 'object' || typeof meta.schema !== 'string') {
     return null;
   }
-  // 版本门(2026-11-18 用户拍板,纠正 2fe69ff3):唯一淘汰键 = schema 格式
-  // 常量,与 indexDiskCache 同口径;引擎版本/扩展版本号都不参与,数据准确
-  // 性由逐文件 mtime+size 快照管。meta 里遗留的 engineMajor 键(旧形态
-  // 断点)被解析自然忽略,不因此作废。
+  // Version gate (2026-11-18 user ruling, correcting 2fe69ff3): the only eviction
+  // key = the schema format constant, the same ruling as indexDiskCache; neither
+  // the engine version nor the extension version participates, and data accuracy
+  // is governed by the per-file mtime+size snapshot. A leftover engineMajor key in
+  // meta (an old-shape checkpoint) is naturally ignored by the parse, not
+  // invalidated because of it.
   if (meta.schema !== expected.schemaVersion) {
     return null;
   }
@@ -213,9 +227,10 @@ export function readScanProgress(
   return { meta, entries };
 }
 
-/** 清场(删 meta+全部分块文件;失败静默——断点是加速不是承诺)。
- *  先读 meta 拿分块清单再删(顺序不能反);meta 已不在 → 孤儿 chunk 文件
- *  永不被读(读侧以 meta 为准),不构成正确性面,留待下轮同号覆盖。 */
+/** Clean up (delete meta + all chunk files; silent on failure — a checkpoint is an accelerator, not a promise).
+ *  Read meta to get the chunk list before deleting (the order must not be reversed); meta already gone -> an orphan
+ *  chunk file is never read (the read side treats meta as authoritative), which is not a correctness face and is left
+ *  for the next round's same-numbered overwrite. */
 export function clearScanProgressDir(dir: string, io: ScanProgressIo = defaultScanProgressIo): void {
   const meta = parseJson<ScanProgressMetaFile>(io.readText(path.join(dir, META_FILE)));
   if (meta && Array.isArray(meta.chunks)) {
@@ -224,7 +239,7 @@ export function clearScanProgressDir(dir: string, io: ScanProgressIo = defaultSc
         try {
           io.deleteFile(path.join(dir, chunkFileOf(index)));
         } catch {
-          // 静默
+          // silent
         }
       }
     }
@@ -232,12 +247,12 @@ export function clearScanProgressDir(dir: string, io: ScanProgressIo = defaultSc
   try {
     io.deleteFile(path.join(dir, META_FILE));
   } catch {
-    // 静默
+    // silent
   }
 }
 
-/** 恢复计划:指纹匹配(当前 stat 与断点指纹逐字段相等)→ 采纳;漂移/新增/
- * 断点缺席 → 照扫;断点里有但发现清单没有的文件(已删除) → 丢弃不复用。 */
+/** Resume plan: fingerprint match (the current stat equals the checkpoint fingerprint field by field) -> adopt; drifted/new/
+ * checkpoint absent -> scan as usual; a file present in the checkpoint but missing from the discovery list (deleted) -> drop, never reused. */
 export function planResume(
   entries: ScanProgressEntry[],
   files: string[],
@@ -245,8 +260,9 @@ export function planResume(
 ): { adopt: Map<string, ScanProgressEntry>; scan: string[] } {
   const byPath = new Map<string, ScanProgressEntry>();
   for (const entry of entries) {
-    // 良构断点里一个文件只属一个分块;防御性去重取先见(若出现重复条目,
-    // 两者指纹同源同轮,取谁等价)
+    // In a well-formed checkpoint a file belongs to only one chunk; defensively
+    // dedupe by keeping the first sighting (if duplicate entries appear, both
+    // fingerprints come from the same source and round, so taking either is equivalent)
     if (!byPath.has(entry.path)) {
       byPath.set(entry.path, entry);
     }
@@ -265,7 +281,7 @@ export function planResume(
   return { adopt, scan };
 }
 
-/** recordChunk 输入:已提交文件的版本+解析(指纹由控制器自查盘) */
+/** recordChunk input: the version+parse of a committed file (the fingerprint is probed from disk by the controller) */
 export interface ScanChunkCommit {
   path: string;
   version: number;
@@ -273,10 +289,12 @@ export interface ScanChunkCommit {
 }
 
 /**
- * 断点控制器(纯核,IO 注入):PythonClassIndex 全扫分块完成时 recordChunk
- * (setImmediate 节拍异步落盘,静默失败);扫描起点 loadResumePlan(读断点+
- * 清场,计划驻内存);全量零失败收尾 complete(清场——断点使命完成)。
- * 部分失败/取消:不 complete,已记录分块留盘供下轮续扫。
+ * Checkpoint controller (pure core, IO injected): when a PythonClassIndex full-scan
+ * chunk completes, recordChunk (persisted asynchronously on the setImmediate tick,
+ * silent failure); at the scan start loadResumePlan (read the checkpoint + clean
+ * up, the plan stays in memory); on a full scan with zero failures complete (clean
+ * up — the checkpoint's mission is done). Partial failure/cancellation: no
+ * complete, recorded chunks stay on disk for the next round's resume.
  */
 export class ScanProgressController {
   private readonly dir: string;
@@ -295,7 +313,7 @@ export class ScanProgressController {
     this.io = io;
   }
 
-  /** 扫描起点:读断点出计划并清场(含版本门作废的陈旧断点);无断点 → null */
+  /** Scan start: read the checkpoint into a plan and clean up (including stale checkpoints invalidated by the version gate); no checkpoint -> null */
   loadResumePlan(files: string[]): { adopt: Map<string, ScanProgressEntry>; scan: string[] } | null {
     const loaded = readScanProgress(this.dir, {
       schemaVersion: SCAN_PROGRESS_SCHEMA_VERSION,
@@ -309,8 +327,8 @@ export class ScanProgressController {
     return planResume(loaded.entries, files, file => this.io.stat(file));
   }
 
-  /** 分块完成:载荷先写、meta 后写(meta=提交点);setImmediate 节拍串行,
-   *  失败静默(该块下次照扫,断点只是加速)。 */
+  /** Chunk complete: the payload is written first, the meta afterwards (meta = the commit point); serialized on the
+   *  setImmediate tick, silent failure (that chunk is scanned as usual next time; a checkpoint is only an accelerator). */
   recordChunk(chunkIndex: number, commits: ScanChunkCommit[]): void {
     if (commits.length === 0) {
       return;
@@ -319,7 +337,7 @@ export class ScanProgressController {
     for (const commit of commits) {
       const stat = this.io.stat(commit.path);
       if (!stat) {
-        continue; // 无诚实指纹(盘上已不可 stat):不入断点,下次照扫
+        continue; // no honest fingerprint (no longer statable on disk): not in the checkpoint, scanned as usual next time
       }
       entries.push({
         path: commit.path,
@@ -350,19 +368,19 @@ export class ScanProgressController {
           };
           this.io.writeTextAtomic(path.join(this.dir, META_FILE), JSON.stringify(meta));
         } catch {
-          // 静默:断点写失败不影响扫描本身
+          // silent: a checkpoint write failure does not affect the scan itself
         }
         resolve();
       });
     }));
   }
 
-  /** 写链落定观测面(测试/收尾前 flush 用) */
+  /** Write-chain settle observation face (for tests / flushing before closing) */
   settle(): Promise<void> {
     return this.writeChain;
   }
 
-  /** 全量零失败收尾:断点使命完成,清场(失败静默) */
+  /** Full-scan zero-failure closing: the checkpoint's mission is done, clean up (silent failure) */
   complete(): void {
     this.writeChain = this.writeChain.then(() => new Promise<void>(resolve => {
       setImmediate(() => {

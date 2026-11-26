@@ -1,6 +1,7 @@
-//! 对拍 golden 生成器(ROOT-010):扫 fixture 树,输出锚点集 JSON。
+//! Parity golden generator (ROOT-010): scans the fixture trees and emits the anchor
+//! set JSON.
 //!
-//! 用法(仓库根):
+//! Usage (from the repo root):
 //!   cargo run -p kode-root --bin dump-golden -- . \
 //!     > crates/kode-root/tests/golden/root-parity.json
 

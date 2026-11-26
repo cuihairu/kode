@@ -536,8 +536,14 @@ fn callgraph_oversized_arrays_page_and_resume_exactly() {
     let params = json!({ "files": [{ "path": "/w/wide.py", "text": text }] });
     let first = callgraph(params.clone());
     let stats = first.get("stats").expect("stats 键在");
-    let edge_total = stats.get("edgeCount").and_then(|v| v.as_u64()).expect("edgeCount");
-    let node_total = stats.get("nodeCount").and_then(|v| v.as_u64()).expect("nodeCount");
+    let edge_total = stats
+        .get("edgeCount")
+        .and_then(|v| v.as_u64())
+        .expect("edgeCount");
+    let node_total = stats
+        .get("nodeCount")
+        .and_then(|v| v.as_u64())
+        .expect("nodeCount");
     let dataflow_total = stats
         .get("dataflowCount")
         .and_then(|v| v.as_u64())
@@ -548,7 +554,11 @@ fn callgraph_oversized_arrays_page_and_resume_exactly() {
         assert!(first.get(key).is_some(), "大结果应携带 {key}");
     }
     assert!(
-        first.get("edges").and_then(|v| v.as_array()).map(|a| a.len() as u64).unwrap_or(0)
+        first
+            .get("edges")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len() as u64)
+            .unwrap_or(0)
             < edge_total,
         "首页边必为有界子集"
     );
@@ -612,12 +622,15 @@ fn callgraph_reverse_index_pages_across_many_files() {
         })
         .collect();
     let first = callgraph(json!({ "files": files }));
-    let rp = first
-        .get("reversePage")
-        .unwrap_or_else(|| panic!("反索引应入页(6000 键): keys={}", {
-            first.get("reverseIndex").and_then(|v| v.as_object())
-                .map(|m| m.len()).unwrap_or(0)
-        }));
+    let rp = first.get("reversePage").unwrap_or_else(|| {
+        panic!("反索引应入页(6000 键): keys={}", {
+            first
+                .get("reverseIndex")
+                .and_then(|v| v.as_object())
+                .map(|m| m.len())
+                .unwrap_or(0)
+        })
+    });
     let total = rp.get("total").and_then(|v| v.as_u64()).expect("total");
     assert_eq!(total, n as u64, "反索引条目总数 = 文件数");
     // 续取累计全量键。

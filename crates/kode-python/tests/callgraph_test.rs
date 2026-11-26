@@ -1,9 +1,9 @@
-//! 调用图 + KBEngine 特化边测试(C-20 交付①)。
+//! Call-graph + KBEngine specialized-edge tests (C-20 delivery item 1).
 
 use kode_python::callgraph::{extract_call_graph, extract_call_graph_detailed};
 use kode_python::{parse_ast_symbols, EdgeKind, ParsedAst, PyCallGraph};
 
-/// KBEngine 实体脚本样例(覆盖四类特化边 + 本地/自身/API 调用)。
+/// KBEngine entity-script sample (covers the four specialized-edge kinds + local/self/API calls).
 const KB_ENTITY: &str = r#"
 import KBEngine
 import math
@@ -41,7 +41,7 @@ fn edges_of(src: &str) -> Vec<kode_python::CallEdge> {
 #[test]
 fn extracts_kbengine_specialized_edges() {
     let edges = edges_of(KB_ENTITY);
-    // 全部在 Avatar.take_damage 内(7 条)+ Avatar.onDeath(0)+ 模块级 helper 无
+    // All inside Avatar.take_damage (7 edges) + Avatar.onDeath (0) + the module-level helper has none
     let methods: Vec<&kode_python::CallEdge> =
         edges.iter().filter(|e| e.caller == "take_damage").collect();
     assert_eq!(methods.len(), 9, "应收集到 9 条调用边: {methods:#?}");
@@ -54,7 +54,7 @@ fn extracts_kbengine_specialized_edges() {
     assert!(kinds.contains(&EdgeKind::Local));
     assert!(kinds.contains(&EdgeKind::SelfMethod));
 
-    // 每条边断言 callee/receiver/kind
+    // Each edge asserts callee/receiver/kind
     let find = |callee: &str| -> kode_python::CallEdge {
         let edge = methods
             .iter()
@@ -94,9 +94,9 @@ fn callers_of_lists_affected_call_sites() {
     let on_damage = graph.callers_of("onDamage");
     assert_eq!(on_damage.len(), 1);
     assert_eq!(on_damage[0].caller, "take_damage");
-    // helper 本地函数调用一处
+    // helper: one local function call
     assert_eq!(graph.callers_of("helper").len(), 1);
-    // 无调用 → 空
+    // No call -> empty
     assert!(graph.callers_of("nonexistent").is_empty());
 }
 
@@ -104,11 +104,11 @@ fn callers_of_lists_affected_call_sites() {
 fn module_level_call_edges_captured() {
     let src = "def init():\n    pass\n\ndef setup():\n    init()\n\ninit()\n";
     let edges = edges_of(src);
-    // 模块顶层 init() 调用(caller=<module>)与 setup 内 init() 各一条
+    // One module-top-level init() call (caller=<module>) and one init() inside setup
     let module_calls: Vec<_> = edges.iter().filter(|e| e.caller == "<module>").collect();
     assert_eq!(module_calls.len(), 1);
     assert_eq!(module_calls[0].callee, "init");
-    // setup 内 init() → Local(init 是本文件模块级函数)
+    // init() inside setup -> Local (init is a module-level function of this file)
     let setup_calls: Vec<_> = edges.iter().filter(|e| e.caller == "setup").collect();
     assert_eq!(setup_calls.len(), 1);
     assert_eq!(setup_calls[0].kind, EdgeKind::Local);
@@ -158,22 +158,24 @@ fn unknown_bare_name_not_local() {
 
 #[test]
 fn empty_and_invalid_source_tolerant() {
-    // 空文件 → 0 边
+    // Empty file -> 0 edges
     assert!(edges_of("").is_empty());
-    // 语法错误文件 → 不 panic,尽力产出
+    // Syntax-error file -> does not panic, best-effort production
     let edges = edges_of("def broken(:\n    pass\n");
     let _ = edges;
 }
 
 // ---------------------------------------------------------------------------
-// KODE-AUD-008:调用图遗漏语义修复验证。
-// 嵌套 def/class 此前整体跳过(体内调用全漏)、match pattern guard 此前不走查。
-// 判别性:修复前边缺失,修复后断言成立。
+// KODE-AUD-008: verification of the call-graph missing-semantics fix.
+// Nested def/class used to be skipped wholesale (in-body calls all missed);
+// match pattern guards used not to be walked.
+// Discriminating: before the fix edges are missing, after the fix the assertions hold.
 // ---------------------------------------------------------------------------
 
-/// 嵌套函数(def inner 于 def outer 体内)作为独立调用方:体内 `foo()` 调用
-/// 以 caller="inner" 记录(旧实现 walk_stmt 对嵌套 FunctionDef 整体 no-op,
-/// 边全漏);外层函数调用仍由外层走查记录,不重叠。
+/// A nested function (def inner inside def outer's body) as an independent caller: the in-body
+/// `foo()` call is recorded with caller="inner" (the old implementation's walk_stmt was a
+/// no-op for nested FunctionDef, so all edges were missed); outer-function calls are still
+/// recorded by the outer walk, without overlap.
 #[test]
 fn nested_def_calls_recorded() {
     let src =
@@ -184,8 +186,9 @@ fn nested_def_calls_recorded() {
     assert_eq!(e.kind, EdgeKind::Local, "foo 是模块级函数 → Local");
 }
 
-/// 嵌套类(方法体内 class Inner)的方法作为独立调用方:Inner.run 体内
-/// `foo()` 以 caller="run"、caller_class="Inner" 记录(旧实现漏)。
+/// A nested class (class Inner inside a method body)'s method as an independent caller: the
+/// `foo()` inside Inner.run is recorded with caller="run", caller_class="Inner" (missed by the
+/// old implementation).
 #[test]
 fn nested_class_method_calls_recorded() {
     let src = "def foo():\n    pass\n\nclass Outer:\n    def method(self):\n        class Inner:\n            def run(self):\n                foo()\n";
@@ -198,8 +201,8 @@ fn nested_class_method_calls_recorded() {
     assert_eq!(e.kind, EdgeKind::Local);
 }
 
-/// match pattern guard(`case 1 if foo():`)内调用:旧实现只走 subject 与
-/// case.body,guard 漏;修复走查 guard。
+/// Calls inside a match pattern guard (`case 1 if foo():`): the old implementation walked only
+/// the subject and case.body, missing the guard; the fix walks the guard.
 #[test]
 fn match_guard_calls_recorded() {
     let src = "def foo():\n    pass\n\ndef f(x):\n    match x:\n        case 1 if foo():\n            pass\n";
@@ -210,9 +213,10 @@ fn match_guard_calls_recorded() {
     );
 }
 
-/// KR-AUD-20(KODE-AUD-008 残留面):方法体内嵌套 def 此前继承外层
-/// caller_class,产伪 (Foo, inner) 类方法边。修复:嵌套 def 体走查传
-/// caller_class=None——嵌套函数不是外层类的方法。
+/// KR-AUD-20 (the residual face of KODE-AUD-008): a def nested inside a method body used to
+/// inherit the outer caller_class, producing a spurious (Foo, inner) class-method edge. Fix:
+/// the nested def body walk passes caller_class=None -- a nested function is not a method of
+/// the outer class.
 #[test]
 fn nested_def_in_method_has_no_class_method_edge_kraud20() {
     let src = "class Foo:\n    def method(self):\n        def inner():\n            helper()\n        inner()\n\ndef helper():\n    pass\n";
@@ -227,17 +231,18 @@ fn nested_def_in_method_has_no_class_method_edge_kraud20() {
         .find(|e| e.caller == "inner" && e.callee == "helper")
         .expect("嵌套 def 体内调用边保持");
     assert_eq!(e.caller_class, None);
-    // 外层方法的调用边不受影响。
+    // The outer method's call edges are unaffected.
     assert!(
         es.iter()
             .any(|e| e.caller == "method" && e.callee == "inner"),
-        "外层方法走查保持"
+        "the outer method's walk is preserved"
     );
 }
 
-/// KR-AUD-21:口径统一——lambda 体内调用此前归外层 caller,嵌套 def 归自身
-/// (KODE-AUD-008 口径)。统一为 lambda 体同样以自身 "<lambda>" 为 caller,
-/// caller_class=None(与 KR-AUD-20 嵌套 def 不继承 caller_class 同口径)。
+/// KR-AUD-21: semantics unification -- lambda-body calls used to be attributed to the outer
+/// caller while nested defs were attributed to themselves (the KODE-AUD-008 contract). Unified
+/// so a lambda body likewise uses its own "<lambda>" as caller, caller_class=None (the same
+/// contract as KR-AUD-20's nested defs not inheriting caller_class).
 #[test]
 fn lambda_body_calls_recorded_as_own_caller_kraud21() {
     let src = "def foo():\n    pass\n\ndef outer():\n    f = lambda: foo()\n    return f()\n";
@@ -255,14 +260,16 @@ fn lambda_body_calls_recorded_as_own_caller_kraud21() {
 }
 
 // ---------------------------------------------------------------------------
-// 覆盖率补充:逐条覆盖 walk_stmt / walk_expr / dotted_chain / classify 分支。
-// 每条断言真实语义(边存在、分类正确、调用点列号对齐),不做空断言。
+// Coverage supplements: covering the walk_stmt / walk_expr / dotted_chain / classify branches
+// one by one. Each assertion pins real semantics (edges present, classification right, call-site
+// columns aligned); no empty assertions.
 // ---------------------------------------------------------------------------
 
-/// 详细变体与基础变体产出逐条对齐(边集相等、顺序一致),且列号 ≥ 0
-/// (调用点列号 0-based UTF-16;符号表 per-method calls 消费面)。
-/// 源码三路齐备:类方法边、模块级函数边、模块顶层语句边——三类 caller
-/// 的闭包写入路径各有至少一条边可产。
+/// The detailed variant's output aligns with the base variant item by item (equal edge sets, same
+/// order), and columns are >= 0 (call-site columns are 0-based UTF-16; the symbol table's
+/// per-method calls consumption face). All three source routes are present: a class-method edge,
+/// a module-level-function edge, and a module-top-level-statement edge -- each of the three
+/// caller closure write paths has at least one edge it can produce.
 #[test]
 fn detailed_variant_aligns_with_base_and_has_columns() {
     let src = "def target():\n    pass\n\ndef helper():\n    target()\n\nclass Avatar:\n    def on_damage(self):\n        helper()\n\nclass Empty:\n    x = 1\n\nhelper()\n";
@@ -271,20 +278,22 @@ fn detailed_variant_aligns_with_base_and_has_columns() {
     let base = extract_call_graph(&ast, &symbols);
     let detailed = extract_call_graph_detailed(&ast, &symbols);
     assert_eq!(detailed.len(), base.len(), "边数应逐条对齐");
-    // 三路各一条:helper→target(模块级函数)、Avatar.on_damage→helper(类方法)、
-    // <module>→helper(顶层语句);Empty 无方法 → if let 假分支照常走完。
+    // One per route: helper->target (module-level function), Avatar.on_damage->helper
+    // (class method), <module>->helper (top-level statement); Empty has no methods -> the
+    // if-let false branch is walked as usual.
     assert_eq!(detailed.len(), 3, "应有 3 条边: {detailed:#?}");
     for (i, (edge, col)) in detailed.iter().enumerate() {
         assert_eq!(edge, &base[i], "第 {i} 条边应与基础变体一致");
-        // 调用点列号 0-based;类方法内与函数体内调用非行首,列号 > 0;
-        // 模块顶层 helper() 在行首,列号可为 0。
+        // Call-site columns are 0-based; calls inside a class method or a function body are not
+        // at line start, column > 0; the module-top-level helper() is at line start, column can be 0.
         match edge.caller.as_str() {
             "on_damage" | "helper" => assert!(*col > 0, "体内调用列号应为正: {col}"),
             "<module>" => assert_eq!(*col, 0, "模块顶层调用列号应为 0: {col}"),
             other => panic!("意外 caller {other}: {edge:?}"),
         }
     }
-    // 三路 caller 归属:类方法带类名,顶层语句是 <module>,模块级函数无类名。
+    // Caller attribution across the three routes: class methods carry the class name, top-level
+    // statements are <module>, module-level functions carry no class name.
     assert!(
         detailed
             .iter()
@@ -303,8 +312,8 @@ fn detailed_variant_aligns_with_base_and_has_columns() {
     );
 }
 
-/// walk_stmt 的 AnnAssign(带值/不带值)、Delete、Raise、Assert、elif、
-/// While、With 分支:各构造内调用应被走查,调用点分类正确。
+/// walk_stmt's AnnAssign (with/without value), Delete, Raise, Assert, elif, While, With branches:
+/// calls inside each construct should be walked and the call sites classified correctly.
 #[test]
 fn control_flow_and_misc_stmt_calls_walked() {
     let src = r#"

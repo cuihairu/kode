@@ -1,17 +1,22 @@
-//! 项目 Markdown 文档索引(KODE-MCP-KB-001 ⑥):`search_docs` 工具。
+//! Project Markdown doc index (KODE-MCP-KB-001 ⑥): the `search_docs` tool.
 //!
-//! 在资产根 + 配置的额外路径(CLI 附加参数,游戏配置需求文档等)下递归
-//! 收集 `.md` 文件并做大小写不敏感全文检索,答「项目文档里讲了什么」。
-//! 与 `explain`(编译期内嵌 docs/knowledge 机制文章)互补:本面索引的是
-//! **用户自己的项目文档**,不是 kode 内嵌知识文章。
+//! Recursively collects `.md` files under the asset root + configured extra
+//! paths (CLI extra arguments, game design requirement docs, etc.) and runs a
+//! case-insensitive full-text search, answering "what do the project docs say".
+//! Complementary to `explain` (the compile-time embedded docs/knowledge
+//! mechanism articles): this face indexes **the user's own project docs**, not
+//! kode's embedded knowledge articles.
 //!
-//! 边界(诚实):单文件读上限 1MB、文件数上限 5000、跳过 target/
-//! node_modules/.git/.kbengine 等噪音目录;命中给 file/title/headings/
-//! snippet,不整篇回传(大文档按需另读)。Excel 数据未纳入——需解析依赖
-//! (calamine 类),KODE-CFG-016 已以 Excel 派生 schema 另面承接。root 是
-//! 资产根时,项目根旁的常规文档目录(docs/、doc/)自动并入扫描根
-//! (KODE-MCP-DOCS-001,用户令 2026-11-11「把项目根目录下的 docs 之类的
-//! 目录扫描进去」)——CLI 附加参数之外的零配置兜底。
+//! Boundaries (honest): 1MB per-file read cap, 5000-file cap, skip noise dirs
+//! like target/node_modules/.git/.kbengine; hits give file/title/headings/
+//! snippet, not the whole document (large docs read separately on demand).
+//! Excel data is not covered — it needs a parsing dependency (calamine-class);
+//! KODE-CFG-016 already handles it on another face via Excel-derived schema.
+//! When root is the asset root, conventional doc directories beside the project
+//! root (docs/, doc/) are folded into the scan roots automatically
+//! (KODE-MCP-DOCS-001, user order 2026-11-11 "scan in directories like docs
+//! under the project root") — a zero-config fallback beyond the CLI extra
+//! arguments.
 
 use std::path::{Path, PathBuf};
 
@@ -30,16 +35,20 @@ const SKIP_DIRS: &[&str] = &[
     "build",
 ];
 
-/// 常规文档目录名(存在才收;只认这两个,不发明更多)。
+/// Conventional doc directory names (only collected when they exist; just these
+/// two, no inventions).
 const CONVENTIONAL_DOC_DIRS: &[&str] = &["docs", "doc"];
 
-/// root 旁可自动并入的项目文档目录。
+/// Project doc directories beside root that can be folded in automatically.
 ///
-/// 只在「root 确是资产根」时向上探一层(父目录 = 项目根,docs 挂那里是
-/// KBEngine 工程惯例):root 名为 assets/server_assets/asset,或 root 过
-/// 引擎装载探针 `res/server/kbengine.xml`(与扩展资产根验收同源)。其余
-/// 形态(root=项目根本身、任意目录、临时目录)绝不向上逃逸——root=项目
-/// 根时 docs 已在 root 内,父旁的 docs 属于别的工程。返回按目录名定序。
+/// Probes one level up only when "root really is the asset root" (the parent
+/// directory = project root; docs hanging there is KBEngine project
+/// convention): root is named assets/server_assets/asset, or root passes the
+/// engine load probe `res/server/kbengine.xml` (same source as the extension's
+/// asset-root acceptance). Any other shape (root = the project root itself, an
+/// arbitrary directory, a temp dir) never escapes upward — when root = the
+/// project root, docs is already inside root and a parent-side docs belongs to
+/// a different project. Returns ordered by directory name.
 fn conventional_doc_roots(root: &Path) -> Vec<PathBuf> {
     let root_is_assets = matches!(
         root.file_name().and_then(|name| name.to_str()),
@@ -62,8 +71,9 @@ fn conventional_doc_roots(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// 递归收集资产根 + 额外路径 + 常规项目文档目录下的 `.md` 文件(确定序、
-/// 去重、封顶;重复根经 bounded_scan canonical visited 集合只走一次)。
+/// Recursively collects `.md` files under the asset root + extra paths +
+/// conventional project doc directories (deterministic order, dedup, capped;
+/// duplicate roots are walked once via bounded_scan's canonical visited set).
 fn collect_md(root: &Path, extra: &[PathBuf]) -> crate::bounded_scan::Scan {
     let mut roots = vec![root.to_path_buf()];
     roots.extend_from_slice(extra);
@@ -79,8 +89,8 @@ fn read_capped(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// 文档标题:首个 ATX `# ` 或 Setext 一级标题(标题行 + `===`/`---` 下划
-/// 线;空则空串)。
+/// Doc title: the first ATX `# ` or Setext level-1 heading (heading line +
+/// `===`/`---` underline; empty string when absent).
 fn title_of(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     for (i, line) in lines.iter().enumerate() {
@@ -88,7 +98,7 @@ fn title_of(text: &str) -> String {
         if t.starts_with("# ") {
             return t.trim_start_matches("# ").trim().to_string();
         }
-        // Setext:标题行后紧跟 `===`/`---`(纯符号行)。
+        // Setext: a `===`/`---` (pure-symbol line) immediately after the heading line.
         if let Some(next) = lines.get(i + 1) {
             let n = next.trim();
             if (n.starts_with('=') && n.bytes().all(|b| b == b'='))
@@ -101,7 +111,8 @@ fn title_of(text: &str) -> String {
     String::new()
 }
 
-/// 命中行的前文片段(取首个含查询的行,trim 截断——避免字节索引错位)。
+/// Snippet around the hit (first line containing the query, trimmed and
+/// truncated — avoiding byte-index misalignment).
 fn snippet_of(text: &str, query_lower: &str) -> String {
     text.lines()
         .find(|l| l.to_lowercase().contains(query_lower))
@@ -109,8 +120,8 @@ fn snippet_of(text: &str, query_lower: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Markdown 标题行判定:一个或多个 `#` 后随空格或行尾(#/##/###...,含空
-/// 标题行)。
+/// Markdown heading-line test: one or more `#` followed by a space or end of
+/// line (#/##/###..., including empty heading lines).
 fn is_heading(line: &str) -> bool {
     let t = line.trim_start();
     if !t.starts_with('#') {
@@ -120,7 +131,7 @@ fn is_heading(line: &str) -> bool {
     after.is_empty() || after.starts_with(' ')
 }
 
-/// 全部 Markdown 标题(截 8 条)。
+/// All Markdown headings (capped at 8).
 fn headings_of(text: &str) -> Vec<String> {
     text.lines()
         .filter(|l| is_heading(l))
@@ -129,9 +140,10 @@ fn headings_of(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// `search_docs`:在资产根 + 额外路径的 `.md` 里大小写不敏感检索 query,
-/// 返回命中文件的事实(file/title/headings/snippet)。空 query → Err;
-/// 无命中 → 空集如实。limit 缺省 20。
+/// `search_docs`: case-insensitive search for the query across `.md` files under
+/// the asset root + extra paths, returning facts for hit files
+/// (file/title/headings/snippet). Empty query → Err; no hits → an honest empty
+/// set. limit defaults to 20.
 pub fn search_docs(
     root: &Path,
     extra: &[PathBuf],
@@ -143,8 +155,9 @@ pub fn search_docs(
         return Err("empty search query".to_string());
     }
     let q = query.to_lowercase();
-    // 每次调用重走(有界:文件数封顶、读文件封顶 1MB);进程根+额外路径
-    // 固定,走查代价是目录枚举,非内容读,可接受且无陈旧索引风险。
+    // Re-walk on every call (bounded: file count capped, reads capped at 1MB per
+    // file); the process root + extra paths are fixed, the walk cost is directory
+    // enumeration, not content reads — acceptable and free of stale-index risk.
     let scan = collect_md(root, extra);
     let scanned = scan.files.len();
     let mut errors = scan.errors;
@@ -261,8 +274,9 @@ mod tests {
 
     #[test]
     fn sibling_project_docs_are_auto_included_for_assets_root() {
-        // root = <proj>/assets(名字命中):项目根旁 docs/ 自动并入
-        // (KODE-MCP-DOCS-001,用户令「项目根目录下的 docs 之类的目录」)。
+        // root = <proj>/assets (name match): docs/ beside the project root folds in
+        // automatically (KODE-MCP-DOCS-001, user order "directories like docs under
+        // the project root").
         let proj = std::env::temp_dir().join(format!("kode-mcp-docs-sib-{}", std::process::id()));
         let assets = proj.join("assets");
         let docs = proj.join("docs");
@@ -281,8 +295,9 @@ mod tests {
 
     #[test]
     fn engine_probe_root_and_doc_dir_also_auto_include() {
-        // 探针形态:root 名不叫 assets,但 root/res/server/kbengine.xml 在
-        // ——同样认定为资产根(与扩展资产根验收同源);doc/ 备用名同样收。
+        // Probe shape: root is not named assets, but root/res/server/kbengine.xml
+        // exists — still recognized as the asset root (same source as the
+        // extension's asset-root acceptance); the doc/ alternate name folds in too.
         let proj = std::env::temp_dir().join(format!("kode-mcp-docs-probe-{}", std::process::id()));
         let assets = proj.join("server_root");
         let probe = assets.join("res").join("server");
@@ -303,8 +318,9 @@ mod tests {
 
     #[test]
     fn no_parent_escape_without_assets_marker() {
-        // root 不是资产根(名字不命中、无探针):绝不向上逃逸——root=项目
-        // 根时父旁的 docs 属于别的工程,并入是污染。
+        // root is not the asset root (no name match, no probe): never escapes
+        // upward — when root = the project root, a parent-side docs belongs to a
+        // different project and folding it in would be pollution.
         let proj = std::env::temp_dir().join(format!("kode-mcp-docs-noesc-{}", std::process::id()));
         let root = proj.join("plain");
         let docs = proj.join("docs");
@@ -318,8 +334,8 @@ mod tests {
 
     #[test]
     fn explicit_extra_matching_sibling_docs_is_not_double_counted() {
-        // 显式 CLI 附加参数与自动并入的兄弟 docs 同目录:canonical visited
-        // 去重,scanned 不翻倍。
+        // An explicit CLI extra path coinciding with the auto-folded sibling docs:
+        // canonical visited dedup, scanned does not double.
         let proj = std::env::temp_dir().join(format!("kode-mcp-docs-dup-{}", std::process::id()));
         let assets = proj.join("assets");
         let docs = proj.join("docs");
@@ -338,12 +354,13 @@ mod tests {
             std::env::temp_dir().join(format!("kode-mcp-docs-setext-{}", std::process::id()));
         let dir = root.join("docs");
         std::fs::create_dir_all(&dir).unwrap();
-        // Setext 一级标题:`===` 下划线。
+        // Setext level-1 heading: `===` underline.
         std::fs::write(dir.join("a.md"), "网络设计\n===\n\n登录流程细节。\n").unwrap();
         let out = search_docs(&root, &[], "登录", 20).expect("answer");
         assert_eq!(out["count"], 1);
         assert_eq!(out["matches"][0]["title"], "网络设计");
-        // 超 1MB 文件:跳过并计入 scan_errors(不静默);a.md 无此词 → 空集如实。
+        // Files over 1MB: skipped and counted in scan_errors (not silently); a.md
+        // lacks the term → an honest empty set.
         let mut big = String::from("needle\n");
         big.push_str(&"x".repeat(1_000_001));
         std::fs::write(dir.join("big.md"), &big).unwrap();
@@ -356,12 +373,13 @@ mod tests {
     #[test]
     fn setext_dash_underline_and_title_edges() {
         assert_eq!(title_of("标题\n---\ntext\n"), "标题");
-        // 无标题 → 空串;`#` 无空格不是 ATX 标题;有下一行但非下划线 → 非
-        // Setext,继续回落空串。
+        // No title → empty string; `#` without a space is not an ATX heading; a next
+        // line exists but is not an underline → not Setext, still falls back to the
+        // empty string.
         assert_eq!(title_of("just text\n"), "");
         assert_eq!(title_of("#no-space\n"), "");
         assert_eq!(title_of("hello\nworld\n"), "");
-        // is_heading:空标题行(`#`)算标题。
+        // is_heading: an empty heading line (`#`) still counts as a heading.
         assert!(is_heading("#"));
         assert!(is_heading("## x"));
         assert!(!is_heading("#no"));

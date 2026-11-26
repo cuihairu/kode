@@ -1,18 +1,24 @@
 /**
- * 网络包结构生成——引擎装载模拟半边(SRC-012 自 messageTable.ts 纯移动迁出)。
+ * Network packet structure generation -- the engine-load simulation half
+ * (SRC-012, moved out of messageTable.ts as a pure move).
  *
- * 内容:引擎常量表(g_entityFlagMapping/三域位集/组件类型号/基元 utype 表/
- * 保留属性名/utype 上界/aliasID 常量/方法装载序)、装配态 ModuleAssembly、
- * 引擎装载语义的逐步模拟(loadDefIntoModule、loadSourceDef、loadTypesXml、
- * simulateProperty、allocatePropertyUtype、registerComponentSlot、
- * simulateMethod、parseMethodArg、assignAliasIds 等)。
+ * Contents: engine constant tables (g_entityFlagMapping / three-domain bit
+ * sets / component type numbers / primitive utype table / reserved property
+ * names / utype upper bound / aliasID constants / method load order), the
+ * ModuleAssembly assembly state, and the step-by-step simulation of engine
+ * load semantics (loadDefIntoModule, loadSourceDef, loadTypesXml,
+ * simulateProperty, allocatePropertyUtype, registerComponentSlot,
+ * simulateMethod, parseMethodArg, assignAliasIds, etc.).
  *
- * 功能规格与引擎语义逐条引用(file:line)见 messageTable.ts 模块头,本文件
- * 不重复规格叙述;函数级注释照录原位原文。类型词汇(MessageTable/条目/
- * DefTreeSource 等)自 messageTable 仅类型导入,运行时无环
- * (messageTableRender.ts 同口径);公开入口 messageTable.ts 的
- * buildMessageTable 经本文件导出的装配函数驱动(PRIMITIVE_TYPE_UTYPES 播种
- * → loadTypesXml → loadDefIntoModule → assignAliasIds)。
+ * For the functional spec and engine semantics cited item by item
+ * (file:line), see the messageTable.ts module header; this file does not
+ * repeat the spec narrative, and function-level comments are carried over
+ * verbatim from their original position. The type vocabulary (MessageTable /
+ * entry / DefTreeSource, etc.) is type-only imported from messageTable, so
+ * there is no runtime cycle (same policy as messageTableRender.ts); the
+ * public entry buildMessageTable in messageTable.ts is driven through the
+ * assembly functions exported here (PRIMITIVE_TYPE_UTYPES seeding ->
+ * loadTypesXml -> loadDefIntoModule -> assignAliasIds).
  */
 
 import {
@@ -42,12 +48,15 @@ import type {
   TypeUtypeEntry
 } from './messageTable';
 
-// g_entityFlagMapping 12 项(entitydef.cpp L161-174),值为 EntityDataFlags 位
-// (common.h L19-30)。查找前 toupper(引擎 std::transform),大小写不敏感。
-// 注意:这是 utype 注册的**线位事实**(common.h L19-30 位集),与可见性域位表
-// (单一来源 Rust src/generated/flagDomains.ts)是两份不同的引擎事实——如
-// OWN_CLIENT(0x10)同时在 ENTITY_CELL_DATA_FLAGS 与 ENTITY_CLIENT_DATA_FLAGS
-// 里,而域位表只给 ['client']。两者不可互相推导,勿合并。
+// g_entityFlagMapping, 12 entries (entitydef.cpp L161-174); values are
+// EntityDataFlags bits (common.h L19-30). Lookup applies toupper first (the
+// engine's std::transform), so it is case-insensitive.
+// Note: this is the **bit-set fact** for utype registration (the common.h
+// L19-30 bit set) and a distinct engine fact from the visibility-domain bit
+// table (single source: Rust src/generated/flagDomains.ts) -- e.g. OWN_CLIENT
+// (0x10) appears in both ENTITY_CELL_DATA_FLAGS and ENTITY_CLIENT_DATA_FLAGS,
+// while the domain bit table only gives ['client']. The two cannot be derived
+// from each other; do not merge them.
 const PROPERTY_FLAG_BITS: Record<string, number> = {
   CELL: 0x01,
   CELL_AND_CLIENT: 0x08,
@@ -63,21 +72,23 @@ const PROPERTY_FLAG_BITS: Record<string, number> = {
   OWN_CLIENT: 0x10
 };
 
-// common.h L141-147:三域位集
+// common.h L141-147: three-domain bit sets
 const ENTITY_BASE_DATA_FLAGS = 0x40 | 0x20;
 const ENTITY_CELL_DATA_FLAGS = 0x01 | 0x02 | 0x04 | 0x08 | 0x80 | 0x10;
 const ENTITY_CLIENT_DATA_FLAGS = 0x20 | 0x04 | 0x08 | 0x80 | 0x10;
 
-// 组件类型号(common.h L78-82),addPropertyDescription 冲突报错按域打印
+// Component type numbers (common.h L78-82); addPropertyDescription conflict
+// errors print per domain
 const DOMAIN_COMPONENT_TYPE: Record<'cell' | 'base' | 'client', number> = {
   cell: 5,
   base: 6,
   client: 7
 };
 
-// 基元类型 utype 表:DataTypes::initialize 顺序(datatypes.cpp L54-79)。
-// 全部以 did=0 构造,DataType 构造函数按 _g_dataTypeUID++(初值 1)分配
-// (datatype.cpp L87-92),故 utype = 该顺序位置。
+// Primitive type utype table: DataTypes::initialize order (datatypes.cpp
+// L54-79). All are constructed with did=0; the DataType constructor allocates
+// by _g_dataTypeUID++ (initial value 1) (datatype.cpp L87-92), so utype = the
+// position in that order.
 export const PRIMITIVE_TYPE_UTYPES: ReadonlyArray<readonly [string, number]> = [
   ['UINT8', 1],
   ['UINT16', 2],
@@ -102,11 +113,14 @@ export const PRIMITIVE_TYPE_UTYPES: ReadonlyArray<readonly [string, number]> = [
   ['VECTOR4', 21]
 ];
 
-// 引擎保留属性名(common.h L125-155 ENTITY_LIMITED_PROPERTYS,静态表部分):
-// validDefPropertyName 命中即报 limited 并失败。原表两处相邻字符串字面量缺
-// 逗号("component" "databaseID"、"interface" ""),C++ 拼接语义下引擎实际
-// 比对的是 "componentdatabaseID" 与 "interface",照引擎实效收录。另一臂
-// (运行时比对 KBEngine.Entity 的 Python 属性名)静态不可复现,不入表
+// Engine-reserved property names (common.h L125-155 ENTITY_LIMITED_PROPERTYS,
+// the static-table part): a validDefPropertyName hit reports limited and
+// fails. Two adjacent string literals in the original table are missing a
+// comma ("component" "databaseID", "interface" ""), so under C++ literal
+// concatenation semantics the engine actually compares "componentdatabaseID"
+// and "interface"; recorded as the engine effectively behaves. The other arm
+// (runtime comparison against KBEngine.Entity Python attribute names) is not
+// statically reproducible and is not included in the table.
 const LIMITED_PROPERTY_NAMES: ReadonlySet<string> = new Set<string>([
   'id',
   'position',
@@ -138,10 +152,12 @@ const LIMITED_PROPERTY_NAMES: ReadonlySet<string> = new Set<string>([
   'interface'
 ]);
 
-// ENTITY_METHOD_UID 上界:uint16,超界引擎报溢出(entitydef.cpp L1372-1378)
+// ENTITY_METHOD_UID upper bound: uint16; beyond it the engine reports overflow
+// (entitydef.cpp L1372-1378)
 const METHOD_UTYPE_MAX = 65535;
-// aliasID:1 字节;属性从 4 起(common.h ENTITY_BASE_PROPERTY_ALIASID,1-3 保留
-// position/direction/spaceID),超 255 回退 -1
+// aliasID: 1 byte; properties start at 4 (common.h
+// ENTITY_BASE_PROPERTY_ALIASID, 1-3 reserved for position/direction/spaceID);
+// beyond 255 fall back to -1
 const ALIAS_ID_PROPERTY_BASE = 4;
 const ALIAS_ID_MAX = 255;
 
@@ -151,54 +167,61 @@ const METHOD_LOAD_ORDER: ReadonlyArray<DefMethodSection> = [
   'ClientMethods'
 ];
 
-/** 装配态:引擎全局计数器与模块内已注册名的模拟 */
+/** Assembly state: simulation of the engine's global counters and the names already registered inside the module */
 export interface ModuleAssembly {
-  /** 装载目标实体名(引擎 ERROR_MSG 里 {module} 均指它,非各 def 来源名) */
+  /** Name of the entity being loaded ({module} in engine ERROR_MSG always refers to it, not to each def's source name) */
   entityName: string;
   usedUtypes: Set<number>;
   autoCounter: number;
-  /** 方法 utype → 持有者(冲突报错点名用) */
+  /** Method utype -> holder (used to name the holder in conflict errors) */
   holders: Map<number, { name: string }>;
-  /** 属性 utype 空间(g_propertyUtypeAuto/g_propertyUtypes,与方法独立) */
+  /** Property utype space (g_propertyUtypeAuto/g_propertyUtypes, independent of methods) */
   propertyUsedUtypes: Set<number>;
   propertyAutoCounter: number;
   propertyHolders: Map<number, { name: string; domains: Set<'cell' | 'base' | 'client'> }>;
-  /** 三张方法名表(scriptdef_module.cpp methodXxxDescr_) */
+  /** The three method-name tables (scriptdef_module.cpp methodXxxDescr_) */
   methodNamesBySection: Record<DefMethodSection, Set<string>>;
-  /** hasMethodName:三段任一(scriptdef_module.cpp L1049-1055) */
+  /** hasMethodName: any of the three sections (scriptdef_module.cpp L1049-1055) */
   allMethodNames: Set<string>;
-  /** 三域属性名表(addPropertyDescription 按域查重) */
+  /** Three-domain property-name tables (addPropertyDescription checks duplicates per domain) */
   propertyDomains: Record<'cell' | 'base' | 'client', Set<string>>;
-  /** hasPropertyName:三域任一(scriptdef_module.cpp L1041-1046) */
+  /** hasPropertyName: any of the three domains (scriptdef_module.cpp L1041-1046) */
   allPropertyNames: Set<string>;
-  /** hasComponentName:组件槽名,随装配序累积 */
+  /** hasComponentName: component slot names, accumulated in assembly order */
   componentNames: Set<string>;
   registry: Map<string, number>;
-  /** 已占用 EntityComponentType 的组件类型名(引擎模块缓存语义,重复引用不重占) */
+  /** Component type names that already claimed an EntityComponentType (engine module-cache semantics; repeated references do not claim again) */
   seenComponentTypes: Set<string>;
   types: TypeUtypeEntry[];
   issues: MessageTableIssue[];
-  /** _g_dataTypeUID 等价:def 内联类型接续点(types.xml 用户类型之后) */
+  /** _g_dataTypeUID equivalent: continuation point for def inline types (after the types.xml user types) */
   nextTypeUtype: number;
   methods: MessageMethodEntry[];
   properties: MessagePropertyEntry[];
   sources: Array<{ name: string; kind: 'own' | 'interface' | 'parent'; filePath: string }>;
   visited: Set<string>;
   /**
-   * 接口装载路径(KR-AUD-67):接口递归自身 Interfaces 后存在成环可能
-   * (引擎 loadInterfaces 无去重,互指接口会无限递归),path 守卫截断;
-   * 重复声明(菱形)不走此守卫,靠撞名冲突如实报出(与引擎一致)。
+   * Interface load path (KR-AUD-67): after an interface recurses into its own
+   * Interfaces, a cycle is possible (the engine's loadInterfaces has no dedup,
+   * mutually-referencing interfaces recurse forever); the path guard truncates.
+   * Duplicate declarations (diamonds) do not go through this guard; they are
+   * reported faithfully via name-collision conflicts (consistent with the
+   * engine).
    */
   interfacePath: Set<string>;
 }
 
 /**
- * 单份 def 并入模块(引擎 loadDefInfo 递归单元):
- * 属性 → Cell → Base → Client 方法 → 接口声明序递归 → 组件槽名 →(非接口)父类递归。
- * 接口 origin 与实体同走 Interfaces 递归 + 组件槽注册(引擎 loadInterfaces 对每个
- * 接口调 loadComponents 与递归 loadInterfaces,entitydef.cpp L598-638),但跳过父类
- * (loadInterfaces 路径不调 loadParentClass)。
- * 父链是线性的(每份 def 单父),同文件重入即父链成环(引擎无限递归,kode 截断)。
+ * Merge a single def into the module (engine loadDefInfo recursion unit):
+ * properties -> Cell -> Base -> Client methods -> interfaces in declaration
+ * order recursion -> component slot names -> (non-interface) parent recursion.
+ * An interface origin walks the same Interfaces recursion + component slot
+ * registration as an entity (the engine's loadInterfaces calls loadComponents
+ * and recursively loadInterfaces for each interface, entitydef.cpp L598-638),
+ * but skips the parent (the loadInterfaces path does not call loadParentClass).
+ * The parent chain is linear (each def has a single parent); re-entering the
+ * same file means the parent chain cycles (the engine recurses forever; kode
+ * truncates).
  */
 export function loadDefIntoModule(
   moduleName: string,
@@ -208,11 +231,15 @@ export function loadDefIntoModule(
   assembly: ModuleAssembly
 ): void {
   const visitKey = normalizeSourceKey(local.owner.filePath);
-  // 成环守卫罩两处(引擎两处递归均无去重,同文件重入即环,kode 截断报错):
-  // 1. 实体 own+父链:parent-cycle。
-  // 2. 接口自身 Interfaces 递归(KR-AUD-67):interface-cycle,path 守卫
-  //    (进栈/出栈),菱形重复声明不经此守卫——引擎对重复声明每次完整装载,
-  //    第二次撞名字报 [X] is exist!,kode 由既有撞名冲突如实报出。
+  // The cycle guard covers both recursions (neither engine recursion dedups;
+  // re-entering the same file is a cycle; kode truncates and reports an error):
+  // 1. Entity own + parent chain: parent-cycle.
+  // 2. An interface recursing into its own Interfaces (KR-AUD-67):
+  //    interface-cycle, via the path guard (push/pop). Diamond duplicate
+  //    declarations bypass this guard -- the engine fully loads every
+  //    duplicate declaration, and the second name collision reports
+  //    [X] is exist!; kode reports it faithfully through the existing
+  //    name-collision conflict.
   if (originKind === 'interface') {
     if (assembly.interfacePath.has(visitKey)) {
       assembly.issues.push({
@@ -228,7 +255,7 @@ export function loadDefIntoModule(
     assembly.issues.push({
       kind: 'parent-cycle',
       fatal: true,
-      /* istanbul ignore next -- 重入者必经父链到达,parentLine 必已定义,null 臂不可达 */
+      /* istanbul ignore next -- a re-entrant always arrives via the parent chain, so parentLine is always defined; the null arm is unreachable */
       line: local.parentLine ?? null,
       message: `父类链成环:${assembly.entityName} 装载中重入 ${moduleName}(引擎递归装载无法终止,kode 截断该分支)`
     });
@@ -250,7 +277,8 @@ export function loadDefIntoModule(
     }
   }
 
-  // 接口声明序递归(接口 origin 同样递归自身 Interfaces,引擎 L628-638)
+  // Interfaces recursion in declaration order (an interface origin likewise
+  // recurses into its own Interfaces, engine L628-638)
   for (const interfaceRef of local.interfaces) {
     const interfaceLocal = loadSourceDef(interfaceRef.name, 'interface', source, assembly);
     if (!interfaceLocal) {
@@ -259,14 +287,18 @@ export function loadDefIntoModule(
     loadDefIntoModule(interfaceRef.name, interfaceLocal, 'interface', source, assembly);
   }
 
-  // 组件槽注册(loadComponents 在接口后父类前;接口 origin 同样注册,引擎 L617-625):
-  // 槽是一个属性(addComponentProperty → addPropertyDescription 三域),占属性 utype,
-  // hasClient 计入 aliasID;组件 def 树本身是独立模块,不并入(见模块头)
+  // Component slot registration (loadComponents runs after interfaces and
+  // before the parent; an interface origin registers too, engine L617-625):
+  // a slot is one property (addComponentProperty -> addPropertyDescription
+  // across the three domains), it claims a property utype, and hasClient
+  // counts toward aliasID. The component def tree itself is a separate module
+  // and is not merged in (see the module header).
   for (const component of local.components) {
     registerComponentSlot(moduleName, component, source, assembly);
   }
 
-  // 引擎 loadInterfaces 路径不调 loadParentClass:接口 origin 到此为止
+  // The engine's loadInterfaces path does not call loadParentClass: an
+  // interface origin stops here
   if (originKind !== 'interface' && local.parentName) {
     const parentLocal = loadSourceDef(local.parentName, 'entity', source, assembly);
     if (!parentLocal) {
@@ -288,7 +320,8 @@ function loadSourceDef(
 ): LocalDefinitionSemantics | null {
   const local = source.loadDef(name, kind);
   if (!local) {
-    // 引擎 openSection 失败 → return false,外层报 failed to load ... interface/parentClass
+    // Engine openSection failure -> return false; the outer layer reports
+    // failed to load ... interface/parentClass
     const outer = kind === 'interface' ? 'interface' : 'parentClass';
     assembly.issues.push({
       kind: kind === 'interface' ? 'interface-file-missing' : 'parent-file-missing',
@@ -301,10 +334,13 @@ function loadSourceDef(
 }
 
 /**
- * types.xml 装载模拟(datatypes.cpp loadTypes L107-186):root 子元素 = 别名名,
- * 文档序。FIXED_DICT/ARRAY 是别名元素的直接子元素(非文本),创建用户类型
- * 占新 utype(构造先于 initialize,失败也占);别名共享目标 utype;重名
- * (大小写不敏感)报错但装载继续;下划线前缀/未知目标 → loadTypes 失败。
+ * types.xml load simulation (datatypes.cpp loadTypes L107-186): the child
+ * elements of root are alias names, in document order. FIXED_DICT/ARRAY are
+ * direct child elements of the alias element (not text); creating a user type
+ * claims a new utype (construction precedes initialize, so it is claimed even
+ * on failure); an alias shares the target utype; duplicate names
+ * (case-insensitive) report an error but loading continues; an underscore
+ * prefix / unknown target -> loadTypes fails.
  */
 export function loadTypesXml(origin: string, typesXml: string, assembly: ModuleAssembly): void {
   let document: DefDocument;
@@ -340,9 +376,11 @@ export function loadTypesXml(origin: string, typesXml: string, assembly: ModuleA
     const fixedDictNode = getDirectChildElement(aliasNode, FIXED_DICT_TYPE_NAME);
     const arrayNode = getDirectChildElement(aliasNode, 'ARRAY');
     const childText = getElementText(aliasNode).trim();
-    // addDataType 大小写不敏感查重(dataTypesLowerName_);重名报错但装载继续:
-    // FIXED_DICT/ARRAY 的 utype 已被构造函数消费(uid_dataTypes_ 注册),
-    // 名字不覆盖;别名无新类型不占号
+    // addDataType checks for duplicates case-insensitively
+    // (dataTypesLowerName_); duplicate names report an error but loading
+    // continues: the FIXED_DICT/ARRAY utype was already consumed by the
+    // constructor (registered in uid_dataTypes_) and the name is not
+    // overwritten; an alias creates no new type and claims no number
     if (hasAliasName(assembly, aliasName)) {
       assembly.issues.push({
         kind: 'duplicate-type-alias',
@@ -373,7 +411,8 @@ export function loadTypesXml(origin: string, typesXml: string, assembly: ModuleA
           line,
           message: `DataTypes::loadTypes: parse FIXED_DICT [${aliasName}] error!`
         });
-        // 引擎:new FixedDictType 构造先占号,initialize 失败后别名不注册
+        // Engine: the new FixedDictType constructor claims the number first,
+        // so the alias is not registered after an initialize failure
         consumeUserType(aliasName, line, 'fixed-dict');
         continue;
       }
@@ -395,7 +434,8 @@ export function loadTypesXml(origin: string, typesXml: string, assembly: ModuleA
           line,
           message: `DataTypes::loadTypes: parse ARRAY [${aliasName}] error!`
         });
-        // 引擎:类型构造已占号,initialize 失败后别名不注册
+        // Engine: type construction already claimed the number, so the alias
+        // is not registered after an initialize failure
         consumeUserType(aliasName, line, 'array');
         continue;
       }
@@ -455,7 +495,8 @@ export function loadTypesXml(origin: string, typesXml: string, assembly: ModuleA
     assembly.types.push({ name, utype, kind, aliasedTo, line, origin });
   }
 
-  // 占号不注册名(引擎 uid_dataTypes_ 有、名字不可达)
+  // Claim a number without registering a name (present in the engine's
+  // uid_dataTypes_ but the name is unreachable)
   function consumeUserType(name: string, line: number, kind: 'fixed-dict' | 'array'): void {
     const utype = assembly.nextTypeUtype++;
     assembly.types.push({ name, utype, kind, aliasedTo: null, line, origin });
@@ -468,11 +509,14 @@ function lookupType(name: string, assembly: ModuleAssembly): number | null {
 }
 
 /**
- * 属性装载模拟(loadDefPropertys L1097-1311 装载序):保留名检查 → flags
- * 校验(必填/查表/须含 base 或 cell 位)→ Type 校验(缺失报错,未注册静默
- * 失败;ARRAY 内联类型占号)→ 属性 utype 分配(calcDefPropertyUType,独立
- * 空间)→ cell→base→client 域添加(名冲突:方法名/组件槽名/同域同名,内部
- * 报错后外层再补一条 addPropertyDescription 汇总)。
+ * Property load simulation (loadDefPropertys L1097-1311 load order):
+ * reserved-name check -> flags validation (required / table lookup / must
+ * contain a base or cell bit) -> Type validation (missing reports an error,
+ * unregistered fails silently; an ARRAY inline type claims a number) ->
+ * property utype allocation (calcDefPropertyUType, independent space) ->
+ * cell->base->client domain addition (name conflicts: method name /
+ * component slot name / same-domain duplicate; after the internal error the
+ * outer layer appends one more addPropertyDescription summary error).
  */
 function simulateProperty(
   moduleName: string,
@@ -507,8 +551,10 @@ function simulateProperty(
     return;
   }
 
-  // 空 Flags 文本与缺 Flags 节点解析层不区分(getScalarChildValue 同给
-  // undefined),统一按缺节点报(引擎对空文本走 not fount flags[] 臂)
+  // An empty Flags text and a missing Flags node are indistinguishable at
+  // the parse layer (getScalarChildValue yields undefined for both), so both
+  // report as a missing node (the engine routes empty text through the
+  // not fount flags[] arm)
   if (property.flags === undefined) {
     assembly.issues.push({
       kind: 'property-flags-missing',
@@ -530,9 +576,11 @@ function simulateProperty(
     });
     return;
   }
-  // 引擎保留此臂(hasBaseFlags<=0 && hasCellFlags<=0 报错),但 g_entityFlagMapping
-  // 全部 12 表项的值均落在 base(0x60)∪cell(0x9F)位集内(含 OWN_CLIENT=0x10,
-  // 归 cell+client),查表成功者恒过此关,引擎内该臂实际不可达;照形状保留
+  // The engine keeps this arm (hasBaseFlags<=0 && hasCellFlags<=0 reports an
+  // error), but all 12 g_entityFlagMapping entries fall within the base
+  // (0x60) ∪ cell (0x9F) bit sets (including OWN_CLIENT=0x10, counted under
+  // cell+client), so every successful lookup passes this check and the arm
+  // is actually unreachable inside the engine; kept to preserve the shape
   /* istanbul ignore start */
   if ((flagBits & ENTITY_BASE_DATA_FLAGS) <= 0 && (flagBits & ENTITY_CELL_DATA_FLAGS) <= 0) {
     assembly.issues.push({
@@ -559,8 +607,10 @@ function simulateProperty(
     return;
   }
   if (property.typeName === 'ARRAY') {
-    // 引擎内联 FixedArrayType:{module}_{property} 名不注册,构造即占号;
-    // 属性侧 <of> 链解析层未带出(单层计),方法参数侧走全递归
+    // Engine-inline FixedArrayType: the {module}_{property} name is not
+    // registered, and construction claims the number immediately. On the
+    // property side the parse layer does not carry out the <of> chain
+    // (counted as a single level); the method-argument side recurses fully
     assembly.types.push({
       name: `${assembly.entityName}_${property.name}`,
       utype: assembly.nextTypeUtype++,
@@ -579,8 +629,10 @@ function simulateProperty(
     return;
   }
 
-  // 属性 utype(calcDefPropertyUType L1018-1094):显式登记/溢出/冲突(按
-  // 持有者注册域逐条报)/自动取最小未占用;分配先于名字三查(引擎顺序)
+  // Property utype (calcDefPropertyUType L1018-1094): explicit registration /
+  // overflow / conflict (reported per registered domain of the holder) /
+  // automatic allocation taking the smallest unused value; allocation
+  // precedes the three name checks (engine order)
   const declared = property.utype !== undefined && property.utype !== null && property.utype > 0
     ? property.utype
     : null;
@@ -596,10 +648,13 @@ function simulateProperty(
     return;
   }
 
-  // addPropertyDescription 名字三查(scriptdef_module.cpp L533-599),逐域
-  // 添加时触发:方法名(父类属性后装时会撞子类已装方法)→ 组件槽名 → 同域
-  // 同名。内部报错后引擎外层再补汇总报错(entitydef.cpp L1287-1292);
-  // registeredDomains 必非空(过 base/cell 位检查者至少落一域)
+  // addPropertyDescription three name checks (scriptdef_module.cpp
+  // L533-599), triggered as each domain is added: method name (a parent
+  // property loaded later collides with an already-loaded child method) ->
+  // component slot name -> same-domain duplicate. After the internal error
+  // the engine's outer layer appends the summary error (entitydef.cpp
+  // L1287-1292). registeredDomains is never empty (anything passing the
+  // base/cell bit check lands in at least one domain)
   const firstDomain = registeredDomains[0] as 'cell' | 'base' | 'client';
   const reportAddFailure = (kind: MessageTableIssueKind, message: string): void => {
     assembly.issues.push({ kind, fatal: true, line: property.line, message });
@@ -653,9 +708,11 @@ function simulateProperty(
 }
 
 /**
- * 属性 utype 分配(calcDefPropertyUType L1018-1094):独立于方法 utype 的
- * 计数器与已用集。冲突按持有者注册域逐条报(引擎逐域 findPropertyDescription
- * 命中逐条 ERROR);溢出/冲突均不入已用表(引擎 push 在检查之后)。
+ * Property utype allocation (calcDefPropertyUType L1018-1094): counters and
+ * used set independent of method utypes. Conflicts are reported per
+ * registered domain of the holder (the engine runs findPropertyDescription
+ * per domain and emits one ERROR per hit); overflow and conflict alike do
+ * not enter the used table (the engine pushes after the checks).
  */
 function allocatePropertyUtype(
   declared: number | null,
@@ -703,16 +760,22 @@ function allocatePropertyUtype(
 }
 
 /**
- * 组件槽注册(loadComponents L650-820):槽 = 一个三域属性(BASE|CELL_PUBLIC|
- * 客户端位),占属性 utype;组件类型名首见时构造 EntityComponentType 占一个
- * DataType utype(模块缓存语义,重复引用不重占);名字查重沿用 addPropertyDescription。
- * 组件 def 树(独立 ScriptDefModule)不并入实体模块,见模块头边界说明。
+ * Component slot registration (loadComponents L650-820): a slot is one
+ * three-domain property (BASE|CELL_PUBLIC| client bits) and claims a property
+ * utype. The first time a component type name appears, an EntityComponentType
+ * is constructed, claiming one DataType utype (module-cache semantics; repeated
+ * references do not claim again). Name dedup reuses addPropertyDescription.
+ * The component def tree (a separate ScriptDefModule) is not merged into the
+ * entity module; see the module-header boundary note.
  */
 /**
- * 组件模块域面(引擎 isComponentModule ScriptDefModule 的 hasX 近似)。
- * autoMatchCompOwn 的脚本文件面(scripts/{base,cell}/components/<name>.py)
- * 纯函数不可见,按 def 段近似:非空属性域/方法段即有对应域。与 Rust
- * message_table.rs analyze_component_module 同构(TS↔Rust 对拍一致)。
+ * Component module domain surface (an approximation of the engine
+ * isComponentModule ScriptDefModule's hasX checks). The script-file side of
+ * autoMatchCompOwn (scripts/{base,cell}/components/<name>.py) is invisible to
+ * a pure function, so it is approximated from the def sections: a non-empty
+ * property domain / method section means the corresponding domain is present.
+ * Isomorphic to Rust message_table.rs analyze_component_module
+ * (TS/Rust cross-check agrees).
  */
 interface ComponentModuleFace {
   hasBase: boolean;
@@ -795,14 +858,15 @@ function analyzeComponentModule(
       face.cellExposed ||= pv.cellExposed;
     }
   }
-  // autoMatchCompOwn L322-328 近似:exposed base/cell 方法在最终 hasX 上推 client
+  // autoMatchCompOwn L322-328 approximation: exposed base/cell methods
+  // promote client onto the final hasX set
   if ((face.hasBase && face.baseExposed) || (face.hasCell && face.cellExposed)) {
     face.hasClient = true;
   }
   return face;
 }
 
-/** 引擎 loadComponents L793-808 新载分支:槽 flags 串派生(与 Rust 同构)。 */
+/** Engine loadComponents L793-808 fresh-load branch: derive the slot flags string (isomorphic to Rust). */
 function deriveComponentSlotFlags(hasBase: boolean, hasCell: boolean, hasClient: boolean): string {
   const parts: string[] = [];
   if (hasBase) {
@@ -822,7 +886,7 @@ function deriveComponentSlotFlags(hasBase: boolean, hasCell: boolean, hasClient:
   return parts.join('|');
 }
 
-/** 槽域位注册集(引擎 addComponentProperty L864-874:cell→base→client,仅命中域登记)。 */
+/** Slot domain-bit registration set (engine addComponentProperty L864-874: cell->base->client, only hit domains are registered). */
 function slotDomains(
   hasBase: boolean,
   hasCell: boolean,
@@ -857,8 +921,10 @@ function registerComponentSlot(
     return;
   }
 
-  // 组件 def 域面(缺失/结构错误 → 报 issue + 既有硬编码三域回落,宽容续行
-  // 与缺失 parent/interface 同口径;与 Rust register_component_slot 同构)。
+  // Component def domain surface (missing / structural error -> report an
+  // issue plus the existing hardcoded three-domain fallback; the lenient
+  // continue matches the missing parent/interface policy; isomorphic to Rust
+  // register_component_slot).
   let flags: string;
   let hasClient: boolean;
   let domains: ('cell' | 'base' | 'client')[];
@@ -914,11 +980,14 @@ function registerComponentSlot(
   }
   entry.utype = utype;
 
-  // 引擎顺序:addComponentProperty 逐域 addPropertyDescription,名字三查命中
-  // 则该域不登记(逐域独立尝试,失败仅终止本域);随后 addComponentDescription
-  // 对 addComponentProperty 返回值不检查、无条件执行(entitydef.cpp L742-746),
-  // 故槽名即使名字三查失败也登记进 componentDescr_——后续(父链)方法同名时
-  // 报 component 冲突而非 property 冲突
+  // Engine order: addComponentProperty calls addPropertyDescription per
+  // domain; if the three name checks hit, that domain is not registered
+  // (each domain is attempted independently and a failure only ends that
+  // domain). Then addComponentDescription does not check the
+  // addComponentProperty return value and runs unconditionally (entitydef.cpp
+  // L742-746), so the slot name registers into componentDescr_ even when the
+  // three name checks fail -- a later (parent-chain) method with the same
+  // name then reports a component conflict rather than a property conflict
   if (assembly.allMethodNames.has(component.slotName)) {
     assembly.issues.push({
       kind: 'property-method-name-conflict',
@@ -948,7 +1017,9 @@ function registerComponentSlot(
       assembly.propertyDomains[domain].add(component.slotName);
       registered = true;
     }
-    // 引擎 hasPropertyName 查逐域属性表:仅当至少一域登记成功才算属性名占用
+    // The engine's hasPropertyName checks the per-domain property tables: a
+    // property name counts as taken only when at least one domain registered
+    // successfully
     if (registered) {
       assembly.allPropertyNames.add(component.slotName);
     }
@@ -956,7 +1027,7 @@ function registerComponentSlot(
   assembly.componentNames.add(component.slotName);
 }
 
-/** common.h L141-147 三域位集:域命中的属性表才会走 addPropertyDescription */
+/** common.h L141-147 three-domain bit sets: only property tables hit by a domain go through addPropertyDescription */
 function domainBitsOf(domain: 'cell' | 'base' | 'client'): number {
   if (domain === 'cell') {
     return ENTITY_CELL_DATA_FLAGS;
@@ -965,9 +1036,12 @@ function domainBitsOf(domain: 'cell' | 'base' | 'client'): number {
 }
 
 /**
- * 单方法装载模拟(loadDef*Methods):参数序列(Arg 文档序,ARRAY 递归)→
- * utype 分配(显式登记/冲突点名/自动取最小未占用)→ 名字三查(属性名/组件
- * 槽名/同段同名)。任一致命问题该方法不添加(utype/name 不登记)。
+ * Single-method load simulation (loadDef*Methods): argument sequence (Arg in
+ * document order, ARRAY recursed) -> utype allocation (explicit registration /
+ * conflict names the holder / automatic takes the smallest unused) -> three
+ * name checks (property name / component slot name / duplicate within the
+ * same section). Any fatal problem means the method is not added
+ * (utype/name are not registered).
  */
 function simulateMethod(
   moduleName: string,
@@ -1005,12 +1079,13 @@ function simulateMethod(
     }
   }
   if (!argsOk) {
-    // 引擎:return false,utype 不分配、方法不添加
+    // Engine: return false, no utype is allocated and the method is not added
     entry.status = 'arg-load-failed';
     return;
   }
 
-  // 名字三查(引擎 addXxxMethodDescription,顺序:属性名 → 组件槽名 → 同段同名)
+  // Three name checks (engine addXxxMethodDescription, order: property name ->
+  // component slot name -> duplicate within the same section)
   if (assembly.allPropertyNames.has(method.name)) {
     assembly.issues.push({
       kind: 'method-property-name-conflict',
@@ -1056,7 +1131,8 @@ function simulateMethod(
       entry.status = 'utype-overflow';
       return;
     }
-    // 引擎先 push 再查:重复也登记(向量可含重复值,Set 语义等价)
+    // The engine pushes before checking, so duplicates also register (the
+    // vector may contain duplicate values; Set semantics are equivalent)
     assembly.usedUtypes.add(declared);
     const holder = assembly.holders.get(declared);
     if (holder) {
@@ -1071,7 +1147,8 @@ function simulateMethod(
     }
     resolvedUtype = declared;
   } else {
-    // 自动分配:计数器逐次自增跳过已占用(引擎 while 循环语义)
+    // Automatic allocation: the counter increments one step at a time,
+    // skipping used values (engine while-loop semantics)
     while (assembly.usedUtypes.has(assembly.autoCounter)) {
       assembly.autoCounter += 1;
     }
@@ -1087,10 +1164,12 @@ function simulateMethod(
 }
 
 /**
- * 参数序列解析:直文本查注册表(区分大小写);ARRAY 走 <of> 递归。
- * 引擎报错字面:未知类型 dataType[X] not found;缺 of;of 类型未注册;
- * 嵌套失败 Array is wrong.(逐层)。内联数组类型构造即占号,嵌套级注册
- * _{名}_ArrayType 名。
+ * Argument sequence parsing: plain text looks up the registry (case-sensitive);
+ * ARRAY walks the <of> recursion. Engine error literals: unknown type
+ * dataType[X] not found; missing of; the of type is unregistered; nested
+ * failure Array is wrong. (level by level). An inline array type claims its
+ * number at construction, and nested levels register the _{name}_ArrayType
+ * name.
  */
 function parseMethodArg(
   method: DefinitionMethod,
@@ -1113,8 +1192,9 @@ function parseMethodArg(
     return { name: argType.name, ofType: null, utype, line };
   }
 
-  // ARRAY:内联类型构造即占号(引擎 FixedArrayType 构造函数),
-  // 名 {module}_{method} 不注册名;module 取装载实体名(引擎传参口径)
+  // ARRAY: the inline type claims its number at construction (engine
+  // FixedArrayType constructor); the {module}_{method} name is not registered;
+  // module takes the entity name being loaded (engine argument convention)
   const inlineName = `${assembly.entityName}_${method.name}`;
   const arrayUtype = assembly.nextTypeUtype++;
   assembly.types.push({
@@ -1151,7 +1231,8 @@ function parseMethodArg(
     assembly
   );
   if (elementEntry === null) {
-    // 顶层统一补:loadDef*Methods 对 initialize 失败的共享报错
+    // Appended uniformly at the top level: the shared loadDef*Methods error
+    // for an initialize failure
     assembly.issues.push({
       kind: 'unknown-arg-type',
       fatal: true,
@@ -1169,10 +1250,11 @@ function parseMethodArg(
 }
 
 /**
- * ARRAY <of> 递归:of 文本为 ARRAY → 嵌套内联类型(引擎命名
- * _{parent}_ArrayType 并注册名);否则查注册表。只报 initialize 层错误
- * (子先报、父补 Array is wrong.);顶层 loadDef*Methods 的
- * dataType[ARRAY] not found 由 parseMethodArg 统一补。
+ * ARRAY <of> recursion: if the of text is ARRAY -> nested inline type (the
+ * engine names it _{parent}_ArrayType and registers the name); otherwise look
+ * up the registry. Only initialize-level errors are reported (the child reports
+ * first, the parent appends Array is wrong.); the top-level loadDef*Methods
+ * dataType[ARRAY] not found error is appended uniformly by parseMethodArg.
  */
 function parseArrayOfType(
   method: DefinitionMethod,
@@ -1183,7 +1265,8 @@ function parseArrayOfType(
 ): MessageArgEntry | null {
   const line = method.line;
   if (ofType.name === 'ARRAY') {
-    // 嵌套数组:构造即占号(datatypes.cpp L1673-1683),childName 注册名
+    // Nested array: construction claims the number immediately
+    // (datatypes.cpp L1673-1683); childName is registered
     const childName = `_${parentName}_ArrayType`;
     const childUtype = assembly.nextTypeUtype++;
     assembly.types.push({
@@ -1194,7 +1277,8 @@ function parseArrayOfType(
       line,
       origin
     });
-    // 缺内层 <of> 节点:子 initialize 先报 not found "of".(引擎顺序)
+    // Missing inner <of> node: the child initialize reports not found "of".
+    // first (engine order)
     if (!ofType.ofType) {
       assembly.issues.push({
         kind: 'array-of-missing',
@@ -1207,7 +1291,8 @@ function parseArrayOfType(
       ? parseArrayOfType(method, ofType.ofType, childName, origin, assembly)
       : null;
     if (nested === null) {
-      // 本层 initialize 因子层失败而失败:补 Array is wrong.
+      // This level's initialize fails because the child level failed: append
+      // Array is wrong.
       assembly.issues.push({
         kind: 'array-init-failed',
         fatal: true,
@@ -1233,9 +1318,11 @@ function parseArrayOfType(
 }
 
 /**
- * aliasID 分配(scriptdef_module.cpp onLoaded L116-196,仅 entitydefAliasID
- * 开启):hasClient 属性按名升序从 4 起;ClientMethods(全部已并入模块)按名
- * 升序从 1 起。计数超 255 各自全部回退 -1(无报错静默禁用)。
+ * aliasID assignment (scriptdef_module.cpp onLoaded L116-196, only when
+ * entitydefAliasID is enabled): hasClient properties start at 4 in
+ * ascending name order; ClientMethods (all of which have been merged into the
+ * module) start at 1 in ascending name order. If a counter exceeds 255,
+ * every entry in that group falls back to -1 (silently disabled, no error).
  */
 export function assignAliasIds(assembly: ModuleAssembly, aliasIdEnabled: boolean): void {
   if (!aliasIdEnabled) {
@@ -1253,7 +1340,7 @@ export function assignAliasIds(assembly: ModuleAssembly, aliasIdEnabled: boolean
   assignAliasRange(clientMethods, 1);
 }
 
-/** 顺序编号;末号超 255 时引擎静默全部回退 -1(不使用 aliasID,无报错) */
+/** Sequential numbering; when the final number exceeds 255 the engine silently falls back to -1 for all entries (aliasID unused, no error) */
 function assignAliasRange(entries: Array<{ aliasID: number | null }>, start: number): void {
   let next = start;
   for (const entry of entries) {

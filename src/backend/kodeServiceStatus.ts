@@ -1,23 +1,27 @@
 /**
- * Kode 语言服务(MCP/LSP)状态栏标签纯面(2026-11-10 用户令「如何提示 lsp 和
- * mcp 的状态是否开启」):核心(LSP kode-server 服务轨道)与 Kode MCP 二进制
- * 在位面的状态栏文案/tooltip 纯函数。事实采集与状态栏装配在
- * ../activate/kodeServiceStatus.ts(依赖 vscode 宿主);本模块零 vscode 依赖,
- * 单测直接导入。源串全英文(l10n 约定),zh-cn 译文在 l10n/bundle.
- * l10n.zh-cn.json。
+ * Pure face for the status-bar label of the Kode language service (MCP/LSP) (user order
+ * 2026-11-10 "how to indicate whether the lsp and mcp states are on"): pure functions for the
+ * status-bar text/tooltip of the core (the LSP kode-server service track) and of the Kode MCP
+ * binary-presence face. Fact collection and status-bar wiring live in
+ * ../activate/kodeServiceStatus.ts (which depends on the vscode host); this module has zero
+ * vscode dependencies and unit tests import it directly. The source strings are all English
+ * (the l10n convention), and the zh-cn translations live in l10n/bundle.l10n.zh-cn.json.
  *
- * 状态定义(如实):
- * - 核心(kode-server):backend=rust 且 serverPath 命中 → Rust 服务轨道;
- *   backend=rust 但二进制未找到 → Rust 降级 TS(自动发现落空,服务回落);
- *   backend=ts → 纯 TS;backend=shadow → 双轨影子对拍。
- * - Kode MCP(kode-mcp):**内建 MCP**(2026-11-13 用户令「内置 mcp,点击
- *   开启,默认开启」,推翻 2026-11-10「不托管」口径):扩展经 VS Code 原生
- *   MCP 扩展 API 注册服务器定义(kodeMcpHost.ts,默认 kbengine.mcp.enabled=
- *   true),状态栏项点击即启停;三可见态=已构建(二进制在位+开启)/未构建
- *   (开启但二进制缺)/已关闭(用户关)。
- * - 核心 tooltip 另带「引擎版本」行(RUST-136 增量⑤):引擎版本属环境事实,
- *   不是 hover 面(增量④ 已作废),故落状态栏;装配层传入 engineVersionDetect
- *   链的探测结果,null=未检出显式「未检测到」。
+ * State definitions (as they are):
+ * - core (kode-server): backend=rust and serverPath hits -> the Rust service track;
+ *   backend=rust but the binary was not found -> Rust falling back to TS (auto-discovery
+ *   missed, the service falls back); backend=ts -> pure TS; backend=shadow -> dual-track shadow
+ *   comparison.
+ * - Kode MCP (kode-mcp): a **built-in MCP** (user order 2026-11-13 "built-in mcp, enabled by
+ *   a click, on by default", overturning the 2026-11-10 "not hosted" accounting): the extension
+ *   registers server definitions through the VS Code native MCP extension API (kodeMcpHost.ts,
+ *   with kbengine.mcp.enabled=true by default), and clicking the status-bar item toggles it;
+ *   the three visible states = built (the binary is present + on) / not built (on but the binary
+ *   is missing) / off (the user turned it off).
+ * - the core tooltip also carries an "engine version" line (RUST-136 increment 5): the engine
+ *   version is an environmental fact, not the hover face (increment 4 was voided), so it lands in
+ *   the status bar; the wiring layer passes in the probe result of the engineVersionDetect
+ *   chain, and null = not detected, displayed explicitly as "not detected".
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -26,11 +30,11 @@ import type { KodeMcpProbeResult } from '../kodeMcpHealthProbe';
 
 export interface KodeCoreStateLite {
   mode: 'ts' | 'rust' | 'shadow';
-  /** kode-server 二进制路径;空 = 自动发现落空(Rust 不可用) */
+  /** The kode-server binary path; empty = auto-discovery missed (Rust unavailable) */
   serverPath: string;
 }
 
-/** 核心状态栏文案:$(circuit-board)=运行/$(warning)=降级/$(beaker)=影子对拍 */
+/** Core status-bar text: $(circuit-board)=running / $(warning)=degraded / $(beaker)=shadow comparison */
 export function coreStatusBarText(state: KodeCoreStateLite | null): string {
   if (!state) {
     return l10nText('$(circuit-board) Kode LSP: not initialized');
@@ -46,7 +50,7 @@ export function coreStatusBarText(state: KodeCoreStateLite | null): string {
   return l10nText('$(circuit-board) Kode LSP: TS');
 }
 
-/** 索引格式行(ENGINE-WORDING-006):kode 索引数据兼容键展示位,与 KBEngine 引擎版本分词 */
+/** Index format line (ENGINE-WORDING-006): the display slot for the kode index data compatibility key, kept apart from the KBEngine engine version */
 function indexFormatSchemaLine(): string {
   return l10nText(
     'Index format schema={version} (kode index data compat key, unrelated to the KBEngine engine version)',
@@ -55,10 +59,11 @@ function indexFormatSchemaLine(): string {
 }
 
 /**
- * 引擎版本行(RUST-136 增量⑤):数据源=既有 engineVersionDetect 检测链
- * (findEngineRoot + readEngineVersionMarker,见 ../activate 装配)。null=
- * 未检出/探测失败,显式「未检测到」不猜;绝不回落 kbengine.engineVersion
- * 设置值(那是用户声明口径,不是引擎树里的标记事实)。
+ * Engine version line (RUST-136 increment 5): the data source = the existing
+ * engineVersionDetect detection chain (findEngineRoot + readEngineVersionMarker, see the
+ * ../activate wiring). null = not detected / the probe failed, shown explicitly as "not
+ * detected" and never guessed; it never falls back to the kbengine.engineVersion setting value
+ * (that is the user's declared accounting, not the marker fact in the engine tree).
  */
 export function engineVersionLine(engineVersion: string | null): string {
   return engineVersion
@@ -66,7 +71,7 @@ export function engineVersionLine(engineVersion: string | null): string {
     : l10nText('KBEngine engine version: not detected (no version marker readable in the engine tree)');
 }
 
-/** 核心 tooltip:当前服务轨道与依据(路径/降级原因)+ 引擎版本行 + 固定索引格式行 */
+/** Core tooltip: the current service track and its basis (path / fallback reason) + the engine version line + the fixed index format line */
 export function coreStatusBarTooltip(
   state: KodeCoreStateLite | null,
   engineVersion?: string | null
@@ -89,18 +94,20 @@ function coreStatusBarTooltipBody(state: KodeCoreStateLite | null): string {
   return l10nText('kbengine.core.backend=ts (pure TS service)');
 }
 
-/** MCP 活性探针面(2026-11-24 MCP 活性灯批;装配层维护的最近一轮快照):
- * probing=在途;last=null=尚未探过(激活窗口);last=最近一轮结果 */
+/** The MCP liveness probe face (the 2026-11-24 MCP liveness-light batch; the most recent
+ * snapshot kept by the wiring layer): probing = in flight; last=null = never probed (the
+ * activation window); last = the most recent round's result */
 export interface KodeMcpProbeFace {
   probing: boolean;
   last: KodeMcpProbeResult | null;
 }
 
 /**
- * MCP 状态栏文案:$(plug) built / not built / off(内建 MCP 三可见态)+
- * 活性两态(已构建+已开启时探针有账才翻脸):ok=探活通过;no reply=探活
- * 失败(进程拉不起来/握手无应答——「已构建」只说明二进制在位,不代表能
- * 拉起能应答)。
+ * MCP status-bar text: $(plug) built / not built / off (the three visible states of the built-in
+ * MCP) + the two liveness states (the face flips only when the probe has an account while built
+ * + on): ok = the liveness probe passed; no reply = the liveness probe failed (the process will
+ * not come up / the handshake gets no answer -- "built" only says the binary is present, it does
+ * not mean it can be launched and will answer).
  */
 export function mcpStatusBarText(
   binaryFound: boolean,
@@ -121,7 +128,7 @@ export function mcpStatusBarText(
   return l10nText('$(plug) Kode MCP: built');
 }
 
-/** 活性探针行(已构建+已开启才探;probing/未探/通过/失败四口吻如实) */
+/** The liveness probe line (probed only when built + on; the four honest tones: probing / not yet probed / passed / failed) */
 function mcpProbeLine(probe: KodeMcpProbeFace): string {
   if (probe.last?.ok) {
     return l10nText(
@@ -137,8 +144,9 @@ function mcpProbeLine(probe: KodeMcpProbeFace): string {
   return l10nText('Liveness probe: running (first probe after activation)');
 }
 
-/** MCP tooltip:内建托管事实 + 点击启停提示(点击=kbengine.mcp.toggle)+
- * 活性探针行(已构建+已开启时;结果=最近一轮,不做周期轮询) */
+/** MCP tooltip: the built-in hosting fact + the click-to-toggle hint (click = kbengine.mcp.toggle)
+ * + the liveness probe line (when built + on; the result = the most recent round, with no
+ * periodic polling) */
 export function mcpStatusBarTooltip(
   binaryFound: boolean,
   enabled: boolean,

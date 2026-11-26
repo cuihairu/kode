@@ -1,26 +1,33 @@
 /**
- * KBEngine Python API 文档 hover(C-21):三类触发点的文档段数据源与纯渲染。
+ * KBEngine Python API docs hover (C-21): doc-section data source and pure
+ * rendering for three kinds of trigger points.
  *
- * 触发点:
- *  A. `KBEngine.<api>` 成员访问(module 函数/常量);
- *  B. 实体内建属性/通道 hover 的文档追加段(通道/内建 attr 语义,由
- *     languageProviders 的内建属性面调用,本模块只出文档段文本);
- *  C. 生命周期回调 `def onX(...)` 声明行(callback 类条目)。
+ * Trigger points:
+ *  A. `KBEngine.<api>` member access (module functions/constants);
+ *  B. the appended doc section of an entity builtin property/channel hover
+ *     (channel/builtin attr semantics, invoked by the builtin property face of
+ *     languageProviders; this module only produces the doc-section text);
+ *  C. the `def onX(...)` declaration line of a lifecycle callback
+ *     (callback-kind entries).
  *
- * 正本 = docs/knowledge/api-*.md(KB-API 批次源码 grounding)→
- * scripts/generate-api-docs.mjs → src/generated/apiDocs.ts(TS 镜像)与
- * crates/kode-server/assets/api-docs.json(kode-server 嵌入面)同源,
- * tests/apiDocsParity.test.ts 锁一致。zh 缺条目回退 en,不猜不编。
+ * Source of truth = docs/knowledge/api-*.md (KB-API batch source-code
+ * grounding) -> scripts/generate-api-docs.mjs -> src/generated/apiDocs.ts (the
+ * TS mirror) and crates/kode-server/assets/api-docs.json (the kode-server
+ * embedded face) share the same origin; tests/apiDocsParity.test.ts locks
+ * consistency. A missing zh entry falls back to en: never guess, never
+ * invent.
  *
- * 查询语义:按当前脚本面(base/cell/client)精确优先;面未命中或无面时,
- * 跨域唯一命中才返回;多域歧义返回候选列表(消费端如实呈现两面),绝不
- * 静默挑一个。
+ * Lookup semantics: prefer an exact match on the current script face
+ * (base/cell/client); when the face does not match or there is no face, return
+ * only a unique cross-domain hit; a multi-domain ambiguity returns the
+ * candidate list (the consumer honestly shows both faces), never silently
+ * picking one.
  */
 
 import { API_DOC_ENTRIES, type ApiDocEntry } from '../generated/apiDocs';
 import type { HoverLanguage } from '../hoverLocale';
 
-/** 脚本面(kbengine.entityBuiltinProperties 的 face)→ 文档库域 */
+/** Script face (the face of kbengine.entityBuiltinProperties) -> doc library domain */
 const FACE_TO_DOMAIN: Record<string, string> = {
   baseapp: 'base',
   cellapp: 'cell',
@@ -28,7 +35,7 @@ const FACE_TO_DOMAIN: Record<string, string> = {
   logger: 'logger', dbmgr: 'dbmgr', interfaces: 'interfaces', loginapp: 'loginapp'
 };
 
-/** 文档库域代称(bots 脚本目录按 client 面惯例,另试 bots 域) */
+/** Doc library domain aliases (the bots script directory follows the client-face convention; the bots domain is tried as well) */
 export function apiDocDomainsForFace(face: string | null | undefined): string[] {
   const primary = face ? FACE_TO_DOMAIN[face] : undefined;
   return primary ? [primary, ...(primary === 'client' ? ['bots'] : [])] : [];
@@ -36,7 +43,7 @@ export function apiDocDomainsForFace(face: string | null | undefined): string[] 
 
 export interface ApiDocHit {
   readonly entry: ApiDocEntry;
-  /** 按 locale 解析后的摘要(zh 缺失回退 en) */
+  /** Summary resolved for the locale (falls back to en when zh is missing) */
   readonly summary: string;
   readonly locale: HoverLanguage;
 }
@@ -68,8 +75,9 @@ export function lookupApiDoc(
       return { kind: 'hit', hit: { entry: inDomain[0], summary: localize(inDomain[0], locale), locale } };
     }
     if (inDomain.length > 1) {
-      // 同域同名多 owner(entity.cell 与 KBEngine.component 之类撞名):
-      // 仍按唯一 owner 消歧,分不出才如实歧义
+      // Same domain, same name, multiple owners (name collisions such as
+      // entity.cell versus KBEngine.component): still disambiguate by a unique
+      // owner, and report an honest ambiguity only when that is impossible
       const owners = new Set(inDomain.map(entry => entry.owner));
       if (owners.size === 1) {
         return { kind: 'hit', hit: { entry: inDomain[0], summary: localize(inDomain[0], locale), locale } };
@@ -101,7 +109,7 @@ const DOMAIN_LABEL: Record<string, string> = {
   core: 'core'
 };
 
-/** 单条命中 → markdown 文档段(签名代码块 + 本地化摘要 + 溯源锚) */
+/** One hit -> markdown doc section (signature code block + localized summary + source anchor) */
 export function formatApiDocHover(lookup: ApiDocLookup): string {
   if (lookup.kind === 'miss') {
     return '';
@@ -129,7 +137,7 @@ export function formatApiDocHover(lookup: ApiDocLookup): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** B 触发点:内建属性/通道 hover 的追加文档段(命中才非空;不重复签名) */
+/** Trigger point B: the appended doc section of a builtin property/channel hover (non-empty only on a hit; the signature is not repeated) */
 export function formatApiDocSupplement(name: string, domains: readonly string[], locale: HoverLanguage): string {
   const lookup = lookupApiDoc(name, domains, locale);
   if (lookup.kind !== 'hit' || !lookup.hit.summary) {
@@ -139,7 +147,7 @@ export function formatApiDocSupplement(name: string, domains: readonly string[],
   return `\n---\n${summary} _(API 文档 · ${entry.page})_\n`;
 }
 
-/** A 触发点判定:光标是否落在 `KBEngine.<member>` 的 member 上 */
+/** Trigger point A decision: whether the cursor lands on the member of `KBEngine.<member>` */
 export function getKbengineApiAccessAtPosition(
   lineText: string,
   character: number
@@ -156,7 +164,7 @@ export function getKbengineApiAccessAtPosition(
   return null;
 }
 
-/** C 触发点判定:光标是否落在 `def <name>(...)` 声明行的函数名上 */
+/** Trigger point C decision: whether the cursor lands on the function name of a `def <name>(...)` declaration line */
 export function getPythonCallbackDefinitionAtPosition(
   lineText: string,
   character: number
@@ -170,7 +178,7 @@ export function getPythonCallbackDefinitionAtPosition(
   if (character < start || character > end) {
     return null;
   }
-  // 只认文档库 callback 类条目(生命周期钩子),普通方法定义不给文档
+  // Only accept callback-kind entries in the doc library (lifecycle hooks); ordinary method definitions get no docs
   const hasCallbackEntry = API_DOC_ENTRIES.some(
     entry => entry.member === match[2] && entry.kind === 'callback'
   );

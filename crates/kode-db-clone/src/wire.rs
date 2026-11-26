@@ -1,20 +1,24 @@
-//! 接入现有表结构推导输出(PDC-0102)。
+//! Wiring in the existing table-structure derivation output (PDC-0102).
 //!
-//! kode-server 的 `$/kode/databaseSchema/build` 以 camelCase JSON 输出
-//! `{ tables: [...], tableIndex: {...} }`(database_schema.rs 的 TablesResult,
-//! 已 derive Serialize)。本模块按同一 wire 形状反序列化,机械转换为
-//! [`CloneSchema`],使计划器消费的是与 RPC 输出逐字节同源的数据——接入点
-//! 即「现有推导输出 → 计划器」,无需 kode-server 公开内部类型。
+//! kode-server's `$/kode/databaseSchema/build` outputs camelCase JSON
+//! `{ tables: [...], tableIndex: {...} }` (the TablesResult of database_schema.rs,
+//! already derive Serialize). This module deserializes the same wire shape and
+//! mechanically converts it into [`CloneSchema`], so the planner consumes data
+//! byte-for-byte identical to the RPC output — the wiring point is "existing
+//! derivation output → planner", requiring kode-server to expose no internal
+//! types.
 //!
-//! 只取计划所需字段(name/kind/parent/propertyPath/fields{name,typeLabel,identifier,synthetic}),
-//! 其余 wire 字段(title/source/sourcePath/...)忽略——计划器不依赖展示元数据。
+//! Only the fields the plan needs are taken
+//! (name/kind/parent/propertyPath/fields{name,typeLabel,identifier,synthetic});
+//! the other wire fields (title/source/sourcePath/...) are ignored — the planner
+//! does not depend on presentation metadata.
 
 use serde::Deserialize;
 
 use crate::error::{CloneError, CloneResult};
 use crate::schema::{CloneSchema, DerivedField, DerivedTable, SchemaSource};
 
-/// kode-server databaseSchema/build 输出的 wire 形状(camelCase)。
+/// Wire shape of kode-server's databaseSchema/build output (camelCase).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DerivationWire {
@@ -46,7 +50,8 @@ pub struct WireField {
     pub synthetic: Option<bool>,
 }
 
-/// 从 kode-server 推导输出 JSON 构建 [`CloneSchema`](crate::CloneSchema)。
+/// Builds a [`CloneSchema`](crate::CloneSchema) from kode-server's derivation
+/// output JSON.
 impl CloneSchema {
     pub fn from_derivation(json: &str) -> CloneResult<Self> {
         let wire: DerivationWire = serde_json::from_str(json).map_err(|e| {
@@ -88,8 +93,9 @@ impl CloneSchema {
                         },
                     })
                     .collect();
-                // kode-server 根表 kind 为 "entity"(database_schema.rs),本层以
-                // "root" 归一,使 CloneSchema::new 的「恰一根表」校验成立。
+                // kode-server's root table kind is "entity" (database_schema.rs);
+                // this layer normalizes it to "root" so that CloneSchema::new's
+                // "exactly one root table" validation holds.
                 let kind = if t.kind == "entity" {
                     "root".to_string()
                 } else {
@@ -113,8 +119,9 @@ impl CloneSchema {
 mod tests {
     use super::*;
 
-    /// 一段与 kode-server databaseSchema/build 输出同形的 camelCase JSON
-    /// (字段名/serde 形状照 database_schema.rs 的输出,含展示字段以示忽略)。
+    /// A camelCase JSON snippet shaped like kode-server's databaseSchema/build
+    /// output (field names / serde shape per database_schema.rs's output, including
+    /// presentation fields to demonstrate they are ignored).
     const DERIVATION_JSON: &str = r#"
     {
       "tables": [
@@ -160,13 +167,16 @@ mod tests {
         assert_eq!(schema.tables.len(), 2);
         let root = &schema.tables[0];
         assert_eq!(root.name, "tbl_Avatar");
-        assert_eq!(root.kind, "root", "kode-server 的 entity kind 归一为 root");
+        assert_eq!(
+            root.kind, "root",
+            "kode-server's entity kind normalizes to root"
+        );
         let name_field = root
             .fields
             .iter()
             .find(|f| f.name == "sm_name")
             .expect("sm_name field");
-        assert!(name_field.identifier, "identifier 保留");
+        assert!(name_field.identifier, "identifier kept");
         assert_eq!(name_field.source, SchemaSource::Def);
         let id_field = root.fields.iter().find(|f| f.name == "id").unwrap();
         assert_eq!(id_field.source, SchemaSource::Synthetic);
@@ -190,8 +200,9 @@ mod tests {
 
     #[test]
     fn derivation_without_entity_or_root_table_is_rejected_by_one_root_gate() {
-        // 没有任何 entity/root 表:entity_name 回落首表名(防御性计算),
-        // 但「恰一根表」闸随即拒绝 —— 不猜测实体边界。
+        // No entity/root table at all: entity_name falls back to the first table's
+        // name (defensive computation), but the "exactly one root table" gate
+        // immediately rejects — no guessing of entity boundaries.
         let err = CloneSchema::from_derivation(
             r#"{
               "tables": [

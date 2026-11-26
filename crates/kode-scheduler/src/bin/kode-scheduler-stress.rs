@@ -1,19 +1,20 @@
-//! 调度器长期压力车道 CLI(RUST-083 旧 CORE-018)。
+//! Scheduler long-running stress lane CLI (RUST-083's former CORE-018).
 //!
-//! 用法:
-//!   cargo run -p kode-scheduler --bin kode-scheduler-stress [选项]
-//!     --ops 100000       入队操作总数(缺省 100000)
-//!     --seed 1           随机种子(缺省 1;失败时按同 seed 回放)
-//!     --max-queued 0     有界队列上限,0 = 无界
-//!     --cooldown 50      交互冷却 ms
-//!     --starvation 5000  后台抗饥饿上限 ms
-//!     --check-every 1000 每 N 个操作断言一次全部不变量
-//!     --cancel-pct 5     取消注入比例(0..=100)
+//! Usage:
+//!   cargo run -p kode-scheduler --bin kode-scheduler-stress [options]
+//!     --ops 100000       total enqueue operations (default 100000)
+//!     --seed 1           random seed (default 1; on failure, replay with the same seed)
+//!     --max-queued 0     bounded queue ceiling, 0 = unbounded
+//!     --cooldown 50      interactive cooldown in ms
+//!     --starvation 5000  background anti-starvation ceiling in ms
+//!     --check-every 1000 assert every invariant once every N operations
+//!     --cancel-pct 5     cancellation injection ratio (0..=100)
 //!
-//! 退出码 0 = 全部不变量成立;非 0 = 发现违规(死锁/永久 pending/取消泄漏/
-//! 内存无界),stdout 输出违规分类与诊断,供 CI 归档。
+//! Exit code 0 = every invariant holds; non-zero = a violation was found (deadlock / permanent
+//! pending / cancellation leak / unbounded memory), with the violation kind and diagnostics on
+//! stdout for CI archiving.
 //!
-//! CI 里的 long-running 跑法:KODE_STRESS_OPS=2000000(见 .github/workflows/ci.yml)。
+//! The long-running CI shape: KODE_STRESS_OPS=2000000 (see .github/workflows/ci.yml).
 
 use kode_scheduler::stress::{run_stress, stress_storm_probe, StressOptions};
 use std::env;
@@ -32,7 +33,8 @@ fn parse_u64(text: &str, fallback: u64) -> u64 {
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    // CI 长跑经环境变量注大;命令行参数优先(本地复现用)。
+    // The CI long run injects a large value via environment variable; command-line arguments win
+    // (for local reproduction).
     let total_ops = parse_u64(
         &arg(
             &args,
@@ -106,7 +108,8 @@ starvation={starvation_limit_ms}ms check_every={check_every} cancel_pct={cancel_
 
     let elapsed = std::time::Instant::now();
 
-    // 风暴合并面:高密度同文件事件,查事件丢失/无法排空。
+    // Storm merging surface: high-density same-file events, checking for lost events / inability
+    // to drain.
     let storm_events = 100_000 + 1000 * total_ops.min(100_000);
     match stress_storm_probe(seed, storm_events) {
         Ok((seen, merged, landed)) => eprintln!(

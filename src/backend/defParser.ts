@@ -23,9 +23,11 @@ interface ParsedDocumentCacheEntry {
 
 const MAX_PARSED_DOCUMENT_CACHE_ENTRIES = 8;
 /**
- * IDE-SNP-007:缓存字节预算(utf8)。不变式 = 条目 ≤ 8 且 总字节 ≤ 预算,
- * 二者越线都按 LRU 淘汰;唯一例外是「单份文档自身超预算」——保留为独占
- * 一条(8 条目缓存不被任意大的文本无限占住,超大文档退化为逐次重解析)。
+ * IDE-SNP-007: cache byte budget (utf8). Invariant = entries <= 8 and total
+ * bytes <= budget; breaching either limit evicts by LRU. The only exception is
+ * "a single document exceeding the budget on its own" -- it is kept as a lone
+ * entry (the 8-entry cache is not held hostage indefinitely by arbitrarily
+ * large text; oversized documents degrade to re-parsing each time).
  */
 const MAX_PARSED_DOCUMENT_CACHE_BYTES = 8 * 1024 * 1024;
 let parsedDocumentCacheByteBudget = MAX_PARSED_DOCUMENT_CACHE_BYTES;
@@ -58,26 +60,29 @@ function evictParsedDocumentCacheOverflow(): void {
   }
 }
 
-/** 测试面:注入字节预算(默认 8MiB) */
+/** Test surface: inject the byte budget (default 8MiB) */
 export function setParsedDocumentCacheByteBudgetForTests(bytes: number): void {
   parsedDocumentCacheByteBudget = bytes;
 }
 
-/** 测试面:清空解析缓存 */
+/** Test surface: clear the parse cache */
 export function clearParsedDocumentCacheForTests(): void {
   parsedDocumentCache.clear();
 }
 
-/** RUST-221 生产维护面:kbengine.diagnostics.clearCaches 消费(与测试面同体,
- * 正式别名供命令接线,测试面名字不进生产调用点) */
+/** RUST-221 production maintenance surface: consumed by kbengine.diagnostics.clearCaches
+ * (same body as the test surface; the official alias exists for command wiring, so the
+ * test-surface name does not appear at production call sites) */
 export function clearParsedDocumentCache(): void {
   parsedDocumentCache.clear();
 }
 
-/** IDE-AUD-048/R2-F12:按原文逐出全局解析缓存条目(内容键,不区分来源根)。
- *  根移除时把该根已释放文档的原文交给这里,长会话不再持有其 XML AST;
- *  其余根若复用同内容,下次访问重解析(正确性不变,只是缓存未命中)。
- *  返回实际逐出的条目数。 */
+/** IDE-AUD-048/R2-F12: evict global parse-cache entries by source text (content-keyed, not
+ *  distinguished by source root). When a root is removed, the source text of documents already
+ *  released by that root is handed here, so a long session no longer holds their XML AST;
+ *  other roots reusing the same content re-parse on next access (correctness unchanged,
+ *  just a cache miss).
+ *  Returns the number of entries actually evicted. */
 export function releaseParsedDocuments(texts: Iterable<string>): number {
   let removed = 0;
   for (const text of texts) {
@@ -88,14 +93,15 @@ export function releaseParsedDocuments(texts: Iterable<string>): number {
   return removed;
 }
 
-/** 观测面:当前缓存条目数与总字节 */
+/** Observability surface: current cache entry count and total bytes */
 export function getParsedDocumentCacheStats(): { entries: number; bytes: number } {
   return { entries: parsedDocumentCache.size, bytes: parsedDocumentCacheBytes() };
 }
 
-/** IDE-REV-031:现场报告容量面——条目数/条目上限、utf8 实测字节/字节预算
- * (预算=当前配置值,测试可注入)。填充/淘汰后从这里核对,容量就是缓存
- * 实际持有的条目与字节,不是累计命中计数。 */
+/** IDE-REV-031: capacity surface for on-site reports -- entry count / entry cap,
+ * measured utf8 bytes / byte budget (budget = current configured value, injectable
+ * in tests). Verify from here after fills/evictions; capacity is what the cache
+ * actually holds in entries and bytes, not a cumulative hit count. */
 export function getParsedDocumentCacheGauge(): {
   entries: number;
   maxEntries: number;
@@ -123,7 +129,7 @@ export interface DefElementNode {
   closeTagStart: number;
   closeTagEnd: number;
   selfClosing: boolean;
-  /** 所属解析文档,供结构节点保留原始 file:line 映射 */
+  /** Owning parsed document, letting structural nodes retain the original file:line mapping */
   document: DefDocument;
 }
 
@@ -365,8 +371,9 @@ export function findAncestorElement(
 }
 
 function computeLineStarts(text: string): number[] {
-  // 批92 性能优化:逐字符扫描换成 indexOf 分段跳转,产出与逐字符版本
-  // 完全一致的行起点表(每处 '\n' 的下一字符偏移)。
+  // Batch 92 performance optimization: replaced the per-character scan with
+  // indexOf segment jumps, producing a line-start table identical to the
+  // per-character version (the offset of the next character after each '\n').
   const lineStarts = [0];
   let from = 0;
   let newline = text.indexOf('\n', from);
@@ -387,9 +394,12 @@ function normalizePreserveOrderNodes(
   const nodes: DefNode[] = [];
 
   for (const rawNode of rawNodes) {
-    // 不可达(批62 定性):vendor fxp 在 preserveOrder 下数组元素恒为对象——顶层注释/
-    // 内联注释/xml 声明/doctype/CDATA/处理指令/纯文本/混合元素八种输入实测均产出
-    // {"#text":...} 或 {"?pi":...} 形态对象,无字符串或 null 元素,该守卫无触发路径。
+    // Unreachable (batch 62 characterization): under preserveOrder, the vendored
+    // fxp always yields objects for array elements -- eight input shapes tested
+    // (top-level comments / inline comments / xml declarations / doctype / CDATA /
+    // processing instructions / plain text / mixed elements) all produce
+    // {"#text":...} or {"?pi":...} shaped objects; there are no string or null
+    // elements, so this guard has no trigger path.
     /* istanbul ignore start */
     if (!rawNode || typeof rawNode !== 'object') {
       continue;
@@ -410,9 +420,11 @@ function normalizePreserveOrderNodes(
       if (name === '#text') {
         nodes.push({
           kind: 'text',
-          // 不可达(批63 定性):fxp 在 preserveOrder 下把文本与 CDATA 一律产成
-          // {"#text":"字符串"},#text 作标签名被 fxp 拒绝(Invalid tag name),非字符串
-          // 值无从进入本行;仅覆盖右侧 '' 臂需手工伪造 rawNodes,公开入口无此路径。
+          // Unreachable (batch 63 characterization): under preserveOrder, fxp always
+          // produces text and CDATA as {"#text":"string"}; a #text tag name is rejected
+          // by fxp (Invalid tag name), and non-string values have no way to reach this
+          // line; covering only the '' arm on the right requires hand-forging rawNodes,
+          // which no public entry point does.
           /* istanbul ignore start */
           text: typeof value === 'string' ? value : '',
           /* istanbul ignore stop */
@@ -439,11 +451,13 @@ function normalizePreserveOrderNodes(
         document: null as unknown as DefDocument
       };
 
-      // 不可达(批63 定性):preserveOrder 输出的元素值恒为子节点数组 —— 空元素给
-      // [],带文本的给 [{"#text":...}],混合/嵌套的给更长的数组;标量元素值只在
-      // parseTagValue:true 等非本仓库配置下出现(本文件固定
-      // {preserveOrder:true, ignoreAttributes:false, trimValues:false,
-      // parseTagValue:false}),故右侧 [] 臂不可触发。
+      // Unreachable (batch 63 characterization): element values from preserveOrder
+      // output are always child-node arrays -- empty elements get [], text-bearing
+      // ones get [{"#text":...}], mixed/nested ones get longer arrays; scalar element
+      // values only appear under configurations not used in this repo such as
+      // parseTagValue:true (this file pins {preserveOrder:true,
+      // ignoreAttributes:false, trimValues:false, parseTagValue:false}), so the []
+      // arm on the right cannot trigger.
       /* istanbul ignore start */
       element.children = Array.isArray(value)
         ? normalizePreserveOrderNodes(value, element)
@@ -471,9 +485,12 @@ function normalizeAttributes(rawAttributes: unknown): Record<string, string> {
   const attributes: Record<string, string> = {};
   for (const [name, value] of Object.entries(rawAttributes)) {
     const normalizedName = name.replace(/^@_/, '');
-    // 不可达(批63 定性):fxp 的 :@ 属性表在 parseTagValue:false 下把每个 @_ 值
-    // 原样留作字符串(含空串属性 @="" 与实体引用),非字符串值与其中的 ?? 双臂
-    // 都无触发路径 —— 三处契约守卫同因:归一化层收到的形状完全由 vendor fxp 决定。
+    // Unreachable (batch 63 characterization): fxp's :@ attribute table leaves every
+    // @_ value verbatim as a string under parseTagValue:false (including empty
+    // attributes @="" and entity references), and neither the non-string value nor
+    // the ?? arms has any trigger path -- the same cause for all three contract
+    // guards: the shape reaching the normalization layer is decided entirely by the
+    // vendored fxp.
     /* istanbul ignore start */
     attributes[normalizedName] = typeof value === 'string' ? value : String(value ?? '');
     /* istanbul ignore stop */
@@ -487,8 +504,10 @@ function tokenizeXml(text: string): XmlTagToken[] {
   const openTagRegex = /<\s*(\/)?\s*([A-Za-z_][A-Za-z0-9_]*)\b/;
   let cursor = 0;
 
-  // KR-AUD-75:逐 '<' 扫描替代全量正则——属性值内的 '>'(引号包裹)不算标签
-  // 边界;注释/CDATA 段整体跳过,内部伪标签不再注入 token 造成定位 desync。
+  // KR-AUD-75: scan '<' one at a time instead of a whole-text regex -- a '>'
+  // inside an attribute value (quoted) is not a tag boundary; comment/CDATA
+  // sections are skipped wholesale, so pseudo-tags inside them no longer inject
+  // tokens and cause positioning desync.
   while (cursor < text.length) {
     const lt = text.indexOf('<', cursor);
     if (lt === -1) break;
@@ -532,7 +551,7 @@ function tokenizeXml(text: string): XmlTagToken[] {
       scan++;
     }
     if (tagEnd === -1) {
-      // 未闭合标签:跳过,等待下一个 '<'
+      // Unclosed tag: skip, wait for the next '<'
       cursor = lt + 1;
       continue;
     }

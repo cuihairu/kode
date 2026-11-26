@@ -1,25 +1,30 @@
 /**
- * KSEM-SER-11:pickle/PYTHON 边界(纯核心,零 vscode 依赖,零执行)。
+ * KSEM-SER-11: the pickle/PYTHON boundary (pure core, zero vscode dependencies, zero execution).
  *
- * 引擎口径(SER-01 §3 / SER-02 §3 / wire golden):PYTHON/PY_DICT/PY_TUPLE/
- * PY_LIST 四族走 CPython pickle 字节透传(datatype.cpp:1225-1242/:1288-1296/
- * :1344-1352/:1400-1408,DB 落 BLOB 列 entity_table_mysql.cpp:699-711)——
- * pickle 桶不透明,无字段结构可静态展开。
+ * Engine accounting (SER-01 section 3 / SER-02 section 3 / wire golden): the four families
+ * PYTHON/PY_DICT/PY_TUPLE/PY_LIST pass through as raw CPython pickle bytes (datatype.cpp
+ * :1225-1242/:1288-1296/:1344-1352/:1400-1408, the DB stores a BLOB column
+ * entity_table_mysql.cpp:699-711) -- the pickle bucket is opaque, with no field structure to
+ * unfold statically.
  *
- * 三条验收(todo.md):
- * ① 保留已有对象类型可传递证据:边界闸对 implementedBy 对象类型(STRUCT-07:
- *    内存形式=实现类)、非 impl FIXED_DICT/FixedArray 键位面全数放行;
- *    GEN-DEF-1c <Default> 字面量精化(def 声明、引擎 Py_eval_input 求值)
- *    经 pickleObjectEvidence 透传——这是 pickle 桶唯一合法的结构侧证据,
- *    证据来自 def 注册声明,不是运行时反序列化产物。
- * ② 不把裸 PYTHON 当 FIXED_DICT:引擎族名优先于同名自定义类型注册,
- *    pickle 桶恒零字段/键位声称(structureClaimGate 铁面)。
- * ③ 不执行反序列化不可信数据来推断:scanPickleDeserialization 纯静态识别
- *    项目码 pickle.loads/cPickle.loads 调用形态(import 证据绑定、掩码行,
- *    与 json 链同纪律),结构声称恒空且类型层不可能产出(never[])——
- *    pickle 无 schema 绑定机制,与 json.loads(SER-10:经
- *    .kbengine/serialization.json 绑定才有声称)相反;本模块零子进程、
- *    零动态求值,任何反序列化执行都不存在。
+ * Three acceptance criteria (todo.md):
+ * 1. evidence that existing object types can be passed through: the boundary gate passes every
+ *    implementedBy object type (STRUCT-07: in-memory form = the implementing class) and every
+ *    non-impl FIXED_DICT/FixedArray key-position surface through fully; GEN-DEF-1c <Default>
+ *    literal refinement (def declared, evaluated by the engine with Py_eval_input) passes
+ *    through via pickleObjectEvidence -- this is the pickle bucket's only legitimate
+ *    structural-side evidence, and the evidence comes from the def registration declaration,
+ *    not from a runtime deserialization product.
+ * 2. never treat a bare PYTHON as a FIXED_DICT: the engine family name takes precedence over a
+ *    same-named custom type registration, and the pickle bucket always claims zero
+ *    fields/keys (the structureClaimGate iron face).
+ * 3. never execute deserialization of untrusted data to infer: scanPickleDeserialization is a
+ *    purely static recognition of project-code pickle.loads/cPickle.loads call forms (import
+ *    evidence binding, masked lines, the same discipline as the json chain); structural claims
+ *    are always empty and impossible to produce at the type level (never[]) -- pickle has no
+ *    schema-binding mechanism, in contrast to json.loads (SER-10: a claim is made only after
+ *    hitting a .kbengine/serialization.json binding); this module has zero subprocesses and
+ *    zero dynamic evaluation, so no deserialization execution exists.
  */
 
 import type { CustomTypeInfo } from '../definitionWorkspace';
@@ -29,13 +34,15 @@ import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './pythonLitera
 import { pythonCodeLines } from './pythonParser';
 
 // ---------------------------------------------------------------------------
-// pickle 桶内存形式登记(SER-02 §3 解码产物;单一真源=GEN-DEF-1c 基类表)
+// registry of the pickle bucket's in-memory forms (SER-02 section 3 decode product; the single
+// source of truth is the GEN-DEF-1c base-class table)
 // ---------------------------------------------------------------------------
 
-/** pickle 桶内存形式:PYTHON=任意 PyObject,PY_DICT/PY_TUPLE/PY_LIST=dict/tuple/list。 */
+/** the pickle bucket's in-memory form: PYTHON=any PyObject, PY_DICT/PY_TUPLE/PY_LIST=dict/tuple/list. */
 export type PickleMemoryForm = 'any' | 'dict' | 'tuple' | 'list';
 
-/** 基类注解串 → 内存形式(PYTHON_FAMILY_BASE 值域归一,不自造第二套族表)。 */
+/** base-class annotation string -> in-memory form (a PYTHON_FAMILY_BASE value-range
+ * normalization; no second family table is invented). */
 const MEMORY_FORM_BY_ANNOTATION: Readonly<Record<string, PickleMemoryForm>> = {
   Any: 'any',
   dict: 'dict',
@@ -43,28 +50,32 @@ const MEMORY_FORM_BY_ANNOTATION: Readonly<Record<string, PickleMemoryForm>> = {
   list: 'list'
 };
 
-/** 引擎 pickle 族名 → 内存形式;非族名(大小写不同/未注册)→ null。 */
+/** engine pickle family name -> in-memory form; a non-family name (different case / unregistered) -> null. */
 export function pickleFamilyMemoryFormOf(typeName: string): PickleMemoryForm | null {
   const base = PYTHON_FAMILY_BASE[typeName];
   return base === undefined ? null : (MEMORY_FORM_BY_ANNOTATION[base] ?? null);
 }
 
 // ---------------------------------------------------------------------------
-// pickle 桶对象证据(GEN-DEF-1c 声明精化透传,验收①)
+// pickle bucket object evidence (GEN-DEF-1c declaration refinement pass-through, acceptance 1)
 // ---------------------------------------------------------------------------
 
-/** pickle 桶对象证据:内存形式 + def 声明精化注解 + 零字段声称标记。 */
+/** pickle bucket object evidence: in-memory form + def-declaration refinement annotation +
+ * a zero-field-claim marker. */
 export interface PickleObjectEvidence {
   kind: 'pickleOpaque';
   memoryForm: PickleMemoryForm;
-  /** GEN-DEF-1c:无 Default/解析失败/None/基类形态不符 → 基类注解
-   * (Any/dict/tuple/list);有合法字面量 → 精确注解。既有面原样透传。 */
+  /** GEN-DEF-1c: no Default/parse failure/None/base-form mismatch -> the base annotation
+   * (Any/dict/tuple/list); a legal literal -> the precise annotation. Existing faces pass
+   * through unchanged. */
   declaredAnnotation: string;
-  /** 字段结构声称:恒 none——pickle 桶无键位面(验收②)。 */
+  /** the field-structure claim: always none -- the pickle bucket has no key-position face
+   * (acceptance 2). */
   fieldClaims: 'none';
 }
 
-/** 仅 pickle 桶族返回证据;非族名 → null(闸路由到别类证据面)。 */
+/** only the pickle bucket families return evidence; a non-family name -> null (the gate routes
+ * it to another evidence face). */
 export function pickleObjectEvidence(
   typeName: string,
   defaultValue?: string
@@ -82,10 +93,12 @@ export function pickleObjectEvidence(
 }
 
 // ---------------------------------------------------------------------------
-// 结构声称边界闸(验收②铁面:裸 PYTHON 恒不落 FIXED_DICT 类声称)
+// the structure-claim boundary gate (acceptance 2 iron face: a bare PYTHON never lands in a
+// FIXED_DICT-class claim)
 // ---------------------------------------------------------------------------
 
-/** def 属性类型标签 → 允许的声称面。各面消费前先过闸;pickle 桶恒零声称。 */
+/** a def property type label -> the claim faces it is allowed. Every face runs through the gate
+ * first; the pickle bucket always claims zero. */
 export type StructureClaimGate =
   | { kind: 'pickleOpaque'; memoryForm: PickleMemoryForm; fieldClaims: 'none' }
   | { kind: 'object'; info: CustomTypeInfo }
@@ -97,17 +110,19 @@ export type StructureClaimGate =
 const FIXED_ARRAY_ANNOTATION = /^FixedArray\[(.+)\]$/;
 
 /**
- * 边界闸:typeLabel(def 属性 <Type> 文本或代码注解名)+ 自定义类型注册 →
- * 该类型允许的声称面。判定序:
- * 1. 引擎 pickle 族名优先——同名自定义类型注册不能给 pickle 桶结构(验收②);
- * 2. FIXED_DICT 别名:implementedBy → object(STRUCT-07:内存形式=实现类,
- *    Properties 键位=传输形式,对象契约面放行);非 impl → fixedDict(键位面接管);
- * 3. FixedArray[X]:元素须非 impl FD 才给元素结构(与
- *    fixedDictSubscript.chainStateFromAnnotation 同口径);其余 element null
- *    (容器是数组,元素面诚实断链);
- * 4. 引擎标量(SCALAR_FAMILIES 真源)→ scalar;
- * 5. 其余(VECTOR/BLOB/ENTITYCALL/未注册/畸形)→ unknown:本闸零声称,
- *    各车道(VISUAL/pyi/调用图)自有自己的面。
+ * The boundary gate: typeLabel (the def property <Type> text or a code annotation name) +
+ * the custom type registry -> the claim faces this type is allowed. The determination order:
+ * 1. an engine pickle family name first -- a same-named custom type registration cannot give
+ *    the pickle bucket structure (acceptance 2);
+ * 2. a FIXED_DICT alias: implementedBy -> object (STRUCT-07: in-memory form = the implementing
+ *    class, the Properties key positions = the transmission form, the object-contract face is
+ *    passed); non-impl -> fixedDict (the key-position face takes over);
+ * 3. FixedArray[X]: the element must be a non-impl FD for it to get element structure (the same
+ *    accounting as fixedDictSubscript.chainStateFromAnnotation); otherwise element is null (the
+ *    container is an array, and the element face is honestly broken);
+ * 4. an engine scalar (SCALAR_FAMILIES, the single source of truth) -> scalar;
+ * 5. the rest (VECTOR/BLOB/ENTITYCALL/unregistered/malformed) -> unknown: this gate makes zero
+ *    claims, and each lane (VISUAL/pyi/call-graph) has its own face.
  */
 export function structureClaimGate(
   typeLabel: string,
@@ -141,20 +156,24 @@ export function structureClaimGate(
 }
 
 // ---------------------------------------------------------------------------
-// 项目码 pickle 反序列化零声称扫描(验收③:识别形态,声称恒零)
+// project-code pickle deserialization zero-claim scanning (acceptance 3: recognize the form,
+// claims stay zero)
 // ---------------------------------------------------------------------------
 
-/** 识别到的反序列化直接调用点(import 证据成立、模块作用域、掩码行)。 */
+/** the deserialization direct call sites recognized (import evidence holds, module scope,
+ * masked lines). */
 export interface PickleDeserializationScan {
-  /** 计数面:模块面顶层直接调用形态(`alias.loads(…)` / 绑定裸名/别名
-   * `loads(…)`,简单名/下标目标赋值形或语句形)。计数只为证明「形态可识别
-   * 而声称恒零」的对照面;引用/callback(`map(pickle.loads, xs)`)、函数体内
-   * 调用、未绑定接收者(`obj.loads`)、序列化方向(`dumps`)、属性目标/
-   * 增量赋值形态(`self.x = loads(…)` / `s += loads(…)`,json 链同界)不属
-   * 反序列化调用点。 */
+  /** the count face: top-level direct call forms in the module face (`alias.loads(…)` /
+   * a bound bare name or alias `loads(…)`, subscript-target assignment forms or statement
+   * forms). The count only proves that the "form is recognizable while claims stay zero"
+ * pairing; references/callbacks (`map(pickle.loads, xs)`), calls inside a function body,
+   * unbound receivers (`obj.loads`), the serialization direction (`dumps`), attribute targets/
+   * incremental assignment forms (`self.x = loads(…)` / `s += loads(…)`, the json chain has the
+   * same boundary) are not deserialization call sites. */
   recognizedCalls: number;
-  /** 结构声称:恒空,类型层即不可能产出(never[])——pickle 无 schema 绑定
-   * 机制,调用点可数而结构不可推(对照 json.loads:SER-10 schema 命中才声称)。 */
+  /** the structure claim: always empty, impossible to produce at the type level (never[]) --
+   * pickle has no schema-binding mechanism; call sites are countable but structure is not
+   * inferable (contrast json.loads: SER-10, a claim is made only on an schema hit). */
   readonly structureClaims: readonly never[];
 }
 
@@ -164,10 +183,11 @@ interface BindingFlags {
 }
 
 /**
- * 纯静态扫描项目码的 pickle 反序列化调用形态(与 json 链同纪律:掩码行、
- * import 证据绑定、绑定名重绑即死、def/class 体不入模块面)。零执行:
- * 不跑 Python、不读 pickle 字节、不求值任何表达式——调用点数得出,
- * 结构永远数不出。
+ * A purely static scan of project code for the pickle deserialization call form (the json
+ * chain's discipline: masked lines, import-evidence binding, a rebound binding name is dead, a
+ * def/class body does not enter the module face). Zero execution: it does not run Python, read
+ * pickle bytes, or evaluate any expression -- the number of call sites comes out, and the
+ * structure never does.
  */
 export function scanPickleDeserialization(text: string): PickleDeserializationScan {
   const masked = pythonCodeLines(text);
@@ -194,7 +214,7 @@ export function scanPickleDeserialization(text: string): PickleDeserializationSc
       line += 1;
       continue;
     }
-    // ── import 证据(模块面;函数体内 import 不入)──
+    // -- import evidence (module face; an import inside a function body does not enter) --
     const impAttr = /^import\s+(pickle|cPickle)(?:\s+as\s+([A-Za-z_]\w*))?$/.exec(trimmed);
     if (impAttr) {
       attrModules.set(impAttr[2] ?? impAttr[1], { from: line, killed: false });
@@ -206,7 +226,8 @@ export function scanPickleDeserialization(text: string): PickleDeserializationSc
       let itemsText = impFrom[2];
       let endLine = line;
       if (itemsText.includes('(') && !itemsText.includes(')')) {
-        // 括号续行:收整到闭括号行(有界 8 行;未闭 → 无绑定诚实)
+        // a parenthesized continuation: collect through to the closing paren line (bounded to 8
+        // lines; unclosed -> no binding, honest)
         let closed = false;
         while (!closed && endLine - line < 8) {
           endLine += 1;
@@ -234,7 +255,7 @@ export function scanPickleDeserialization(text: string): PickleDeserializationSc
       line = endLine + 1;
       continue;
     }
-    // ── 绑定名重绑即死(绑定证据不再成立;多目标一并)──
+    // -- a rebound binding name is dead (the binding evidence no longer holds; multiple targets together) --
     const assignHead =
       /^([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*(?::[^=]*?)?=(?![=>])/.exec(trimmed);
     if (assignHead) {
@@ -250,7 +271,7 @@ export function scanPickleDeserialization(text: string): PickleDeserializationSc
         }
       }
     }
-    // ── 调用识别(顶层赋值形/语句形;计数不受实参形态影响)──
+    // -- call recognition (the top-level assignment form / statement form; the count is unaffected by the argument shape) --
     const callAt =
       /^(?:([A-Za-z_]\w*(?:\s*\[[^\]=]*\])?)\s*(?::[^=]*?)?=\s*(?![=>]))?(?:([A-Za-z_]\w*)\s*\.\s*)?([A-Za-z_]\w*)\s*\(/.exec(
         trimmed

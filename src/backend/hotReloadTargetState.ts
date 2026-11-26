@@ -1,13 +1,15 @@
 /**
- * 按 rootId 与 targetId 隔离热更新状态(IDE-HOT-001):热更投递结果台
- * 账按「文件归属扫描根 rootId × 服务实例 targetId」双维隔离——同文
- * 件发给不同实例各自落各自的记录,后一个目标的失败/成功既不覆盖也
- * 不复用前一个目标的绿色状态;查别的目标拿不到邻居的记录。后续回
- * 执面(sent_unverified/accepted/applied,HOT-002..004)都在这同一
- * 键上收紧,不另立第二套目标身份。
+ * Hot reload state isolated by rootId and targetId (IDE-HOT-001): the hot
+ * reload delivery result ledger is isolated on two dimensions — "the scanning
+ * root rootId the file belongs to × the service instance targetId" — so the same
+ * file sent to different instances each lands its own record, and the later
+ * target's failure/success neither overrides nor reuses the earlier target's
+ * green state; querying a different target never reaches a neighbour's record.
+ * The later receipt face (sent_unverified/accepted/applied, HOT-002..004) all
+ * tighten on this same key rather than standing up a second target identity.
  */
 
-/** 投递目标 = rootId(文件归属扫描根) + targetId(服务实例) */
+/** Delivery target = rootId (the scanning root the file belongs to) + targetId (the service instance) */
 export interface HotReloadTargetKey {
   rootId: string;
   targetId: string;
@@ -15,137 +17,160 @@ export interface HotReloadTargetKey {
 
 export const HOT_RELOAD_TARGET_KEY_SEPARATOR = '::';
 
-/** 目标键的稳定串形(日志/展示用;串回拆由调用方按 :: 切) */
+/** Stable string form of the target key (for logs/display; splitting it back is the caller's job, on ::) */
 export function buildHotReloadTargetKeyId(key: HotReloadTargetKey): string {
   return `${key.rootId}${HOT_RELOAD_TARGET_KEY_SEPARATOR}${key.targetId}`;
 }
 
-/** 四态:发出未确认(绿但未证实)/回执 accepted(HOT-003)/applied 已核验(HOT-004)/失败 */
+/** Four states: sent unverified (green but unconfirmed) / receipt accepted (HOT-003) / applied verified (HOT-004) / failed */
 export type HotReloadDeliveryOutcome = 'sent-unverified' | 'accepted' | 'applied' | 'failed';
 
 export interface HotReloadDeliveryRecord {
   rootId: string;
   targetId: string;
-  /** 绝对路径 */
+  /** Absolute path */
   file: string;
   outcome: HotReloadDeliveryOutcome;
-  /** 失败原因/补充说明 */
+  /** Failure reason / supplementary note */
   detail?: string;
-  /** 记录时刻(注入时钟,ms) */
+  /** Record moment (injected clock, ms) */
   recordedAt: number;
   /**
-   * 发送代际(IDE-AUD-005):同 (rootId,targetId,file) 每次新发送递增。
-   * 回执/注解/核验结算都绑定所属代际写回——旧代异步回执绝不改新代记录
-   * (否则晚到的第一次核验会把第二次的失败翻成 applied)。
+   * Send generation (IDE-AUD-005): increments on each new send for the same
+   * (rootId,targetId,file). Receipts/annotations/verification settlements are
+   * written back bound to their generation — a stale generation's async receipt
+   * never mutates a newer generation's record (otherwise a late first-round
+   * verification would flip the second round's failure into applied).
    */
   attempt: number;
   /**
-   * 发送时点冻结的内容 sha256(IDE-AUD-006):发送前读一次所发内容算的核验
-   * 基准。响应后核验用它,绝不再读文件当前内容冒充所发版本(响应后文件已
-   * 变也不影响判定)。读取失败=无基准(如实 undefined,核验面注解阻塞)。
+   * Content sha256 frozen at send time (IDE-AUD-006): the verification baseline
+   * computed by reading the sent content once before sending. Post-response
+   * verification uses it and never re-reads the file's current content to
+   * impersonate the sent version (nor is the decision affected if the file has
+   * changed since). A failed read = no baseline (honestly undefined; the
+   * verification face blocks the annotation).
    */
   sentDigest?: string;
   /**
-   * 触发源(IDE-HOT-102 审计五要素「谁」):watcher-auto(自动监视)/
-   * command(手动)/retry(重试)/temp-edit(临时编辑);未提供=来源未记录。
+   * Trigger source (the "who" of the IDE-HOT-102 audit five elements):
+   * watcher-auto (automatic watching) / command (manual) / retry / temp-edit
+   * (temporary edit); not provided = source unrecorded.
    */
   source?: string;
   /**
-   * 发送耗时(HR-STATE-007 可检索历史九要素「duration」):发送发起锚点到
-   * 本条落账时刻的毫秒数(回执/失败路径);发送前的基准冻结路径无耗时
-   * (如实 undefined,不冒充 0)。
+   * Send duration (the "duration" of the HR-STATE-007 searchable-history nine
+   * elements): the milliseconds from the send-initiation anchor to the moment
+   * this row lands in the ledger (receipt/failure paths); the pre-send baseline
+   * freeze path has no duration (honestly undefined, never impersonating 0).
    */
   durationMs?: number;
   /**
-   * 通道(IDE-HOT-102 审计五要素「通道」):kbengine-official/http(部署通道)
-   * 或 actionName:<名>(quick action 回落通道);未提供=通道未记录。
+   * Channel (the "channel" of the IDE-HOT-102 audit five elements):
+   * kbengine-official/http (the deployment channel) or actionName:<name> (the
+   * quick action fallback channel); not provided = channel unrecorded.
    */
   channel?: string;
   /**
-   * 完整模块名(HR-MOD-014 双名同存:用户看到的名字=entities.fight.FightAI);
-   * 与 requestModule 成对,缺省=该记录无模块名(如实未给,不猜包结构)。
+   * Full module name (HR-MOD-014 dual names coexist: the name the user sees =
+   * entities.fight.FightAI); paired with requestModule — absent = this record
+   * has no module name (honestly not given, never guessed from the package
+   * structure).
    */
   fullModule?: string;
   /**
-   * 请求模块名(HR-MOD-014 双名同存:实际发送的名字=fight.FightAI)。
-   * 双名同存是排查「用户看到的名字 ≠ 请求名字」的唯一现场依据。
+   * Request module name (HR-MOD-014 dual names coexist: the name actually sent =
+   * fight.FightAI). The dual names coexisting is the only on-site evidence for
+   * tracing "the name the user sees != the name the request carries".
    */
   requestModule?: string;
 }
 
 /**
- * 文件版本事件(HOT-VER 状态栏版本号):一个文件的版本史,按发生序追加。
- * 只描述「盘上内容变了几次/基线在哪」,不声称已生效——生效与否仍由投递
- * 回执面(applied 双证核验)说了算,版本号与五种状态正交。
+ * File version event (the HOT-VER status bar version number): the version
+ * history of one file, appended in the order it happened. It only describes
+ * "how many times the on-disk content changed / where the baseline is" and never
+ * claims it took effect — whether it took effect is still decided by the
+ * delivery receipt face (the applied dual-evidence verification), and the version
+ * number is orthogonal to the five states.
  */
 export type HotReloadFileVersionEventKind = 'tracked' | 'bump' | 'delivery' | 'baseline';
 
 export interface HotReloadFileVersionEvent {
-  /** 事件时刻(注入时钟,ms) */
+  /** Event moment (injected clock, ms) */
   at: number;
   kind: HotReloadFileVersionEventKind;
-  /** 事件落账后该文件的版本(单调整数) */
+  /** The file's version after this event lands in the ledger (a monotonic integer) */
   version: number;
-  /** delivery 专属:send=新一次发送,receipt=回执/注解写回 */
+  /** delivery only: send = a new send, receipt = a receipt/annotation write-back */
   stage?: 'send' | 'receipt';
   outcome?: HotReloadDeliveryOutcome;
   attempt?: number;
-  /** 发送时点冻结内容 sha256 前 8 位(报告展示用;全量基准仍在记录 sentDigest) */
+  /** First 8 chars of the content sha256 frozen at send time (for report display; the full baseline still lives in the record's sentDigest) */
   digest8?: string;
   rootId?: string;
   targetId?: string;
-  /** delivery 专属:完整模块名(HR-MOD-014 双名同存,来源=发送记录) */
+  /** delivery only: full module name (HR-MOD-014 dual names coexist, sourced from the send record) */
   fullModule?: string;
-  /** delivery 专属:请求模块名(HR-MOD-014 双名同存,来源=发送记录) */
+  /** delivery only: request module name (HR-MOD-014 dual names coexist, sourced from the send record) */
   requestModule?: string;
 }
 
 export interface HotReloadFileVersionState {
   readonly file: string;
-  /** 盘上当前版本(首次跟踪=1,token 变 +1,绝不倒退) */
+  /** Current on-disk version (first tracking = 1, +1 when the token changes, never rewinds) */
   version: number;
-  /** 基线版本(最近一次 applied 且 digest 与盘上一致时追平;≤ version,只前进) */
+  /** Baseline version (caught up at the most recent applied whose digest matches the disk; <= version, forward only) */
   baseline: number;
-  /** 最近一次采到的盘上版本 token(mtimeMs:size);undefined=尚未采样 */
+  /** Last sampled on-disk version token (mtimeMs:size); undefined = not yet sampled */
   token?: string;
-  /** 变更序号(tracked/bump 各 +1):「最近变更文件」回落的稳定排序,不靠时钟 */
+  /** Change sequence (tracked/bump each +1): the stable sort for "recently changed files", relying on no clock */
   seq: number;
   readonly events: HotReloadFileVersionEvent[];
 }
 
-/** noteFileVersion 的结果:建档/跳号/补采 token/无变化 */
+/** The result of noteFileVersion: created / number skipped / token adopted / unchanged */
 export type HotReloadFileVersionChange = 'tracked' | 'bump' | 'adopted' | 'unchanged';
 
-/** 单文件版本史事件上限(会话内防无界增长;超出丢最旧,版本号本身不丢) */
+/** Cap on version-history events per file (guards against unbounded growth within a session; overflow drops the oldest, the version number itself is never lost) */
 export const HOT_RELOAD_VERSION_EVENT_CAP = 200;
 
 export interface HotReloadTargetStateDeps {
   now(): number;
   /**
-   * 台账写入后回调(IDE-HOT-100 呈现面):任何一条记录落账/升级(新发送、
-   * 回执升级、注解写回)都触发一次;被拒的旧代写回(record 返回 undefined,
-   * 记录原样不动)不触发。接线方借它刷文件树角标/CodeLens 状态点,使呈
-   * 现面跟住台账事实(回执落地即时反映,不等下次保存)。
+   * Callback after a ledger write (the IDE-HOT-100 presentation face): fired
+   * once whenever any record lands in / is upgraded by the ledger (a new send,
+   * a receipt upgrade, an annotation write-back); a refused stale-generation
+   * write-back (record returning undefined, the record left as it was) does not
+   * fire it. The wiring side uses it to refresh file tree badges / CodeLens
+   * status dots so the presentation face tracks the ledger's facts (a landed
+   * receipt is reflected immediately, not waiting for the next save).
    */
   onRecorded?: () => void;
   /**
-   * 台账单条写入回调(HR-PR-06 接线批):与 onRecorded 同点位触发,携带
-   * 最终记录(新发送/回执升级/注解写回各一次);被拒的旧代写回不触发。
-   * 接线方据此把台账事实投影进历史面板,不再轮询。
+   * Per-record ledger write callback (the HR-PR-06 wiring batch): fired at the
+   * same point as onRecorded but carrying the final record (one per new send /
+   * receipt upgrade / annotation write-back); a refused stale-generation write-
+   * back does not fire it. The wiring side projects the ledger's facts into the
+   * history panel from this instead of polling.
    */
   onRecord?: (record: HotReloadDeliveryRecord) => void;
   /**
-   * 模块双名解析口(HR-MOD-014):按 file 求「用户看到的完整名/实际请求名」
-   * 落进投递记录与版本事件日志(排查「看到的名称 ≠ 请求名字」)。返回
-   * undefined=双名不可解(如实不写,不回落 stem 冒充);未提供解析口=
-   * 不落双名。零 IO,纯字符串解析;接线方注入,本面不读配置。
+   * Module dual-name resolution hook (HR-MOD-014): given a file, resolves "the
+   * full name the user sees / the name actually requested" and lands it in the
+   * delivery record and the version event log (to trace "the displayed name !=
+   * the request name"). Returning undefined = the dual names are unresolvable
+   * (honestly written as absent, never falling back to a stem to impersonate);
+   * no hook provided = no dual names landed. Zero IO, pure string resolution;
+   * injected by the wiring side, this face never reads configuration.
    */
   resolveModuleNames?(file: string): { fullModule: string; requestModule: string } | undefined;
 }
 
 /**
- * 双维隔离台账:内层 rootId → targetId → file → 最新一条记录。
- * 同目标同文件重发=覆盖为最新一次(重试语义),跨目标零牵连。
+ * Two-dimensionally isolated ledger: inner rootId → targetId → file → the
+ * latest record. Resending the same file for the same target = overwrite with
+ * the newest one (retry semantics); zero cross-target entanglement.
  */
 export class HotReloadTargetStateStore {
   private readonly now: () => number;
@@ -153,14 +178,16 @@ export class HotReloadTargetStateStore {
   private readonly onRecord?: (record: HotReloadDeliveryRecord) => void;
   private readonly resolveModuleNames?: (file: string) => { fullModule: string; requestModule: string } | undefined;
   private readonly targets = new Map<string, Map<string, Map<string, HotReloadDeliveryRecord>>>();
-  /** IDE-AUD-005:发送代际计数——(rootId::targetId::file) → 已发生的发送次数 */
+  /** IDE-AUD-005: send generation counter — (rootId::targetId::file) → the number of sends that have happened */
   private readonly attempts = new Map<string, number>();
   /**
-   * HOT-VER 文件版本簿:file → 版本状态。与投递台账同一对象同一生命周期
-   * (不新开存储):基线随台账存亡,watcher 事件流与手动触发路径写同一份计数。
+   * The HOT-VER file version book: file → version state. It shares the same
+   * object and lifecycle as the delivery ledger (no separate storage): the
+   * baseline lives and dies with the ledger, and the watcher event stream and
+   * manual trigger paths write the same counters.
    */
   private readonly versionStates = new Map<string, HotReloadFileVersionState>();
-  /** 版本变更序号(tracked/bump 各 +1):「最近变更文件」回落的稳定排序 */
+  /** Version change sequence (tracked/bump each +1): the stable sort for "recently changed files" */
   private versionSeq = 0;
 
   constructor(deps: HotReloadTargetStateDeps) {
@@ -171,11 +198,15 @@ export class HotReloadTargetStateStore {
   }
 
   /**
-   * 落一条记录。两种写法:
-   * - 不带 options.attempt = 新发送(重发=新一次投递):推进代际并覆盖为最新一次;
-   * - 带 options.attempt = 绑定所属发送代际的写回(回执/注解/核验结算):
-   *   当前记录已换代(更新的发送在途)则拒绝——返回 undefined,记录原样不动,
-   *   旧代异步结果绝不改新代记录(IDE-AUD-005)。
+   * Land one record. Two ways to write:
+   * - without options.attempt = a new send (a resend = a new delivery): the
+   *   generation advances and the record is overwritten with the newest one;
+   * - with options.attempt = a write-back bound to its send generation
+   *   (receipt/annotation/verification settlement): if the current record has
+   *   already moved to a later generation (a newer send is in flight) it is
+   *   refused — returns undefined and the record stays as it was, so a stale
+   *   generation's async result never mutates a newer generation's record
+   *   (IDE-AUD-005).
    */
   record(
     key: HotReloadTargetKey,
@@ -197,31 +228,35 @@ export class HotReloadTargetStateStore {
       if (options.detail !== undefined) {
         updated.detail = options.detail;
       }
-      // KODE-AUD-003:回执路径漏写 options.sentDigest——hotReload.ts:377 与
-      // hotReloadRetryCommand.ts:138 都经带 attempt 的写回把发送时点冻结的
-      // 内容 sha256 基准带进台账(IDE-AUD-006「可审计」),此前该分支只补
-      // detail,sentDigest 被静默丢弃,记录恒无基准,hotReloadFileState 的
-      // applied 基线回落重算。与 detail 同模式:提供了才覆写,未提供保留旧值。
+      // KODE-AUD-003: the receipt path was missing options.sentDigest — both
+      // hotReload.ts:377 and hotReloadRetryCommand.ts:138 carry the send-time
+      // frozen content sha256 baseline into the ledger via the attempt-bound
+      // write-back (the IDE-AUD-006 "auditable" requirement). This branch used
+      // to fill only detail, silently dropping sentDigest, so records never had
+      // a baseline and hotReloadFileState's applied baseline fell back to a
+      // recomputation. Same pattern as detail: an override only when provided;
+      // otherwise the old value is kept.
       if (options.sentDigest !== undefined) {
         updated.sentDigest = options.sentDigest;
       }
-      // IDE-HOT-102:触发源/通道与 detail/sentDigest 同模式——提供了才覆写,
-      // 未提供保留旧值(回执写回不动首次发送记录的来源/通道)。
+      // IDE-HOT-102: source/channel follow the same pattern as detail/sentDigest —
+      // an override only when provided, otherwise the old value is kept (a
+      // receipt write-back never touches the first send's source/channel).
       if (options.source !== undefined) {
         updated.source = options.source;
       }
       if (options.channel !== undefined) {
         updated.channel = options.channel;
       }
-      // HR-MOD-014 双名:与 source/channel 同模式,提供了才覆写,未提供保留旧值。
+      // HR-MOD-014 dual names: the same pattern as source/channel, an override only when provided, otherwise the old value is kept.
       if (options.fullModule !== undefined) {
         updated.fullModule = options.fullModule;
       }
       if (options.requestModule !== undefined) {
         updated.requestModule = options.requestModule;
       }
-      // HR-STATE-007 发送耗时:回执写回是该次发送的真实耗时来源,同模式
-      // 提供了才覆写(未提供=发送前基准冻结路径无耗时,不冒充 0)。
+      // HR-STATE-007 send duration: the receipt write-back is the real duration source for that send, overriding only when provided
+      // in the same pattern (not provided = the pre-send baseline freeze path has no duration, never impersonating 0).
       if (options.durationMs !== undefined) {
         updated.durationMs = options.durationMs;
       }
@@ -247,16 +282,16 @@ export class HotReloadTargetStateStore {
     if (options.sentDigest !== undefined) {
       record.sentDigest = options.sentDigest;
     }
-    // IDE-HOT-102:首次发送记录带触发源/通道(审计五要素);未提供=该记录
-    // 无来源/通道字段(旧调用面如实无,不虚构)。
+    // IDE-HOT-102: the first send record carries the trigger source/channel (the audit five elements);
+    // not provided = this record has no source/channel fields (the old caller faces honestly lack them; nothing is fabricated).
     if (options.source !== undefined) {
       record.source = options.source;
     }
     if (options.channel !== undefined) {
       record.channel = options.channel;
     }
-    // HR-MOD-014 双名同存:显式给定优先,否则走注入解析口(file→双名);
-    // 都不可得=该记录无双名字段(如实未给,不回落 stem 冒充包结构)。
+    // HR-MOD-014 dual names coexist: an explicit pair takes priority, otherwise the injected resolution hook (file → dual names) is used;
+    // when neither is available = this record has no dual-name fields (honestly not given; never falling back to a stem to impersonate the package structure).
     if (options.fullModule !== undefined && options.requestModule !== undefined) {
       record.fullModule = options.fullModule;
       record.requestModule = options.requestModule;
@@ -278,11 +313,14 @@ export class HotReloadTargetStateStore {
   }
 
   /**
-   * 采样文件的盘上版本(HOT-VER 状态栏版本号):token 与最近一次相同=无变化;
-   * 不同=+1(回退到旧内容也算新一次变化,版本只前进绝不倒退);无记录且
-   * token 不可得=不建档(未跟踪如实缺席)。首次建档记 v1、基线同为 1。
-   * watcher 事件流与手动触发路径共用本方法——同一文件同一 token 只 +1,
-   * 两条路径不产生两套计数。
+   * Sample the file's on-disk version (the HOT-VER status bar version number):
+   * a token identical to the last one = no change; different = +1 (rolling back
+   * to old content also counts as a new change — the version only moves forward
+   * and never rewinds); no record and no obtainable token = no file created
+   * (untracked, honestly absent). The first creation records v1 with the
+   * baseline also 1. The watcher event stream and the manual trigger paths
+   * share this method — the same file with the same token only +1s once, and
+   * the two paths never produce two separate counters.
    */
   noteFileVersion(
     file: string,
@@ -308,11 +346,11 @@ export class HotReloadTargetStateStore {
       return { state, change: 'tracked' };
     }
     if (token === undefined) {
-      // 盘上版本不可得(stat 失败):不猜、不跳号,原样返回
+      // The on-disk version is unobtainable (stat failed): no guessing, no skipped number — return as is
       return { state: existing, change: 'unchanged' };
     }
     if (existing.token === undefined) {
-      // 记录先行(手动发送先建档、token 未知):首次采样只补 token,不跳号
+      // The record came first (a manual send created the file before the token was known): the first sampling only fills in the token, without skipping a number
       existing.token = token;
       return { state: existing, change: 'adopted' };
     }
@@ -326,19 +364,21 @@ export class HotReloadTargetStateStore {
     return { state: existing, change: 'bump' };
   }
 
-  /** 已跟踪文件的版本状态(未跟踪=undefined,不虚构版本号) */
+  /** Version state of a tracked file (untracked = undefined; no fabricated version number) */
   fileVersion(file: string): HotReloadFileVersionState | undefined {
     return this.versionStates.get(file);
   }
 
-  /** 全部已跟踪文件(按建档序) */
+  /** All tracked files (in creation order) */
   fileVersions(): HotReloadFileVersionState[] {
     return [...this.versionStates.values()];
   }
 
   /**
-   * 基线追平到当前版本(HOT-VER:applied 回执且 digest 与当前盘上一致时调用):
-   * 只前进不后退,已追平返回 false(幂等);基线恒 ≤ 当前版本。
+   * Catch the baseline up to the current version (HOT-VER: called when an
+   * applied receipt lands and the digest matches the current disk): forward
+   * only, never backward; an already-caught-up call returns false
+   * (idempotent); the baseline is always <= the current version.
    */
   advanceFileVersionBaseline(file: string, at?: number): boolean {
     const state = this.versionStates.get(file);
@@ -350,7 +390,7 @@ export class HotReloadTargetStateStore {
     return true;
   }
 
-  /** 该文件全部 applied 记录的发送时点冻结 digest(跨目标;无=[]) */
+  /** The send-time frozen digests of every applied record for this file (across targets; none = []) */
   appliedSentDigestsForFile(file: string): string[] {
     const digests: string[] = [];
     for (const byTarget of this.targets.values()) {
@@ -364,7 +404,7 @@ export class HotReloadTargetStateStore {
     return digests;
   }
 
-  /** 首次跟踪建档(无 token):手动发送先于任何采样时用,后续采样补 token 不跳号 */
+  /** First-tracking file creation (without a token): used when a manual send precedes any sampling; later sampling fills in the token without skipping a number */
   private ensureFileVersionState(file: string, at: number): HotReloadFileVersionState {
     const existing = this.versionStates.get(file);
     if (existing) {
@@ -383,10 +423,13 @@ export class HotReloadTargetStateStore {
   }
 
   /**
-   * 投递事件进版本史(报告面):新发送推一条;回执改写 outcome 推一条;
-   * 同代同态写回(如补落 sentDigest)并入既有事件,不重复计数。
-   * 事件盖章的是写回时已知的版本——盘上采样滞后一拍时报告按时间序读,徽标
-   * 号本身始终以最近一次采样为准。
+   * Delivery events into the version history (the report face): a new send
+   * pushes one event; a receipt rewriting the outcome pushes one; a
+   * same-generation same-state write-back (e.g. backfilling sentDigest) merges
+   * into the existing event instead of double counting. The event stamps the
+   * version known at write-back time — when the on-disk sampling lags one beat,
+   * the report reads in time order, while the badge number itself always
+   * follows the most recent sampling.
    */
   private noteDeliveryEvent(
     file: string,
@@ -416,8 +459,8 @@ export class HotReloadTargetStateStore {
       ...(next.sentDigest !== undefined ? { digest8: next.sentDigest.slice(0, 8) } : {}),
       rootId: next.rootId,
       targetId: next.targetId,
-      // HR-MOD-014 双名同存:版本事件日志与投递记录同源盖章,排查
-      // 「看到的名称 ≠ 请求名字」的现场(无双名=该事件如实验证未给)。
+      // HR-MOD-014 dual names coexist: the version event log is stamped from the same source as the delivery record,
+      // the on-site evidence for tracing "the displayed name != the request name" (no dual names = this event honestly has none).
       ...(next.fullModule !== undefined ? { fullModule: next.fullModule } : {}),
       ...(next.requestModule !== undefined ? { requestModule: next.requestModule } : {})
     });
@@ -448,7 +491,7 @@ export class HotReloadTargetStateStore {
     return this.targets.get(key.rootId)?.get(key.targetId)?.get(file);
   }
 
-  /** 有记录的目标(按 rootId、targetId 字典序,输出稳定) */
+  /** Targets that have records (by rootId, targetId lexicographic order; stable output) */
   targetsWithRecords(): HotReloadTargetKey[] {
     const keys: HotReloadTargetKey[] = [];
     for (const [rootId, byTarget] of [...this.targets.entries()].sort(([a], [b]) => a.localeCompare(b))) {
@@ -459,7 +502,7 @@ export class HotReloadTargetStateStore {
     return keys;
   }
 
-  /** 某目标名下有记录的文件(按写入序) */
+  /** Files with records under a target (in write order) */
   files(key: HotReloadTargetKey): string[] {
     const byFile = this.targets.get(key.rootId)?.get(key.targetId);
     return byFile ? [...byFile.keys()] : [];

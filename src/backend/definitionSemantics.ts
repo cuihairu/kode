@@ -48,9 +48,9 @@ export interface DefinitionComponentRef {
   typeName: string;
   line: number;
   owner: DefinitionOwnerRef;
-  /** 组件槽 <Utype> 子值(批123);null = 未声明,占用属性 utype 空间 */
+  /** Component slot <Utype> child value (batch 123); null = not declared, occupies the property utype space */
   utype: number | null;
-  /** 组件槽 <Persistent>(IDE-RUST-006);undefined = 缺省(引擎默认 true) */
+  /** Component slot <Persistent> (IDE-RUST-006); undefined = omitted (engine default is true) */
   persistent?: boolean;
 }
 
@@ -60,7 +60,7 @@ export interface DefinitionProperty {
   line: number;
   typeName?: string;
   flags?: string;
-  /** <Utype> 子值(批123);null = 未声明。属性 utype 与方法 utype 是两套独立空间 */
+  /** <Utype> child value (batch 123); null = not declared. Property utype and method utype are two independent spaces */
   utype?: number | null;
   persistent?: boolean;
   identifier?: boolean;
@@ -75,9 +75,10 @@ export interface DefinitionProperty {
 }
 
 /**
- * 结构化参数序列条目(批123)。name = <Arg> 直文本(如 UINT8 / ARRAY);
- * ARRAY 时 ofType 为 <of> 子解析结果,嵌套 ARRAY 递归(对齐引擎
- * FixedArrayType::initialize 的 <of> 递归链)。
+ * Structured argument-sequence entry (batch 123). name = the direct text of
+ * <Arg> (e.g. UINT8 / ARRAY); for ARRAY, ofType is the parsed <of> child, and
+ * nested ARRAY recurses (matching the engine's FixedArrayType::initialize
+ * <of> recursion chain).
  */
 export interface DefinitionArgType {
   name: string;
@@ -89,12 +90,12 @@ export interface DefinitionMethod {
   line: number;
   section: DefMethodSection;
   args: string[];
-  /** 与 args 一一对应的结构化参数序列(批123:含 ARRAY 的 of 链) */
+  /** Structured argument sequence corresponding 1:1 to args (batch 123: includes the ARRAY of chain) */
   argTypes: DefinitionArgType[];
   exposed: boolean;
-  /** <Utype> 子值(批123);null = 未声明。引擎口径:≤0 视同未设置,>65535 溢出报错 */
+  /** <Utype> child value (batch 123); null = not declared. Engine semantics: <= 0 counts as unset, > 65535 overflows with an error */
   utype: number | null;
-  /** <ReturnType> 子值直文本(用户令 2026-10-27 任务2:定义点 inlay 的 -> 提示);null = 未声明 */
+  /** <ReturnType> child value as direct text (user order 2026-10-27 task 2: the -> hint in definition-site inlay); null = not declared */
   returnType: string | null;
   owner: DefinitionOwnerRef;
   source: DefinitionMemberSource;
@@ -141,11 +142,15 @@ export interface ResolvedDefinitionSemantics {
 }
 
 /**
- * RUST-003:身份集合化缓存条目——identitySet 是本次语义消费过的全部文件
- * (归一路径键 → 快照 {source,version} 令牌)。命中前逐文件重探令牌,任一
- * 漂移即判过期重解析;消费文件集取自 ResolutionContext.visited(解析链每
- * 进一个 def 即登记),入口与父/接口文件一并兜住——只验入口会漏掉「入口
- * 没变、父文件变了」的窗口。键内身份替代失效调用,不依赖任何 clear()。
+ * RUST-003: identity-set-based cache entry -- identitySet covers every file
+ * consumed by this semantic resolution (normalized path key -> snapshot
+ * {source,version} token). Before a hit, each file's token is re-probed; any
+ * drift marks the entry stale and triggers a re-parse. The consumed file set
+ * comes from ResolutionContext.visited (every def entered by the resolution
+ * chain is registered), covering the entry file together with parent/interface
+ * files -- validating only the entry would miss the "entry unchanged, parent
+ * changed" window. Identity inside the key replaces invalidation calls; no
+ * clear() is relied on.
  */
 interface IdentityCachedEntry<T> {
   readonly identitySet: ReadonlyMap<string, string>;
@@ -154,23 +159,25 @@ interface IdentityCachedEntry<T> {
 
 interface ResolutionContext {
   allowComponents: boolean;
-  /** 环守卫:进入即登记、离开即回退(DFS 回溯),不代表消费集 */
+  /** Cycle guard: registered on entry, unwound on exit (DFS backtracking); does NOT represent the consumed set */
   visited: Set<string>;
-  /** RUST-003:消费记录——解析全程触及过的 def 文件(只增不减),缓存
-   * 身份集合的事实源;visited 是环守卫会回退,不能当消费集用。 */
+  /** RUST-003: consumption record -- every def file touched during resolution (add-only), the source of
+   * truth for the cache identity set; visited is a cycle guard that unwinds and cannot serve as the
+   * consumed set. */
   consumed: Set<string>;
-  /** IDE-IDX-002:解析起点根(精确路径入口带):父/接口按名回解先本根,缓存按根分区 */
+  /** IDE-IDX-002: origin root of the resolution (carried by exact-path entries): parent/interface by-name resolution prefers this root, and the cache is partitioned per root */
   originRoot?: string;
 }
 
 export class DefinitionSemanticsLoader {
-  // RUST-003:缓存条目身份化——值是「身份令牌+语义」而非裸语义。命中前
-  // 重探入口文件身份,漂移即重解析:键内身份替代失效调用,loader 实例
-  // 短命(单查询/单轮扫描),存续期内文件被改也吃不到旧值。
+  // RUST-003: cache entries are identity-carrying -- the value is "identity tokens + semantics", not bare semantics.
+  // Before a hit, the entry file's identity is re-probed; drift triggers a re-parse. Identity inside the key
+  // replaces invalidation calls, and loader instances are short-lived (one query / one scan round), so a file
+  // changed during the instance's lifetime cannot yield a stale value.
   private localCache = new Map<string, IdentityCachedEntry<LocalDefinitionSemantics | null>>();
   private resolvedCache = new Map<string, IdentityCachedEntry<ResolvedDefinitionSemantics | null>>();
 
-  /** RUST-003:身份集合全量重探——任一消费文件的令牌漂移即判过期。 */
+  /** RUST-003: full re-probe of the identity set -- any consumed file's token drifting marks the entry stale. */
   private identitySetMatches(identitySet: ReadonlyMap<string, string>): boolean {
     for (const [pathKey, token] of identitySet) {
       if (this.identityTokenFor(pathKey) !== token) {
@@ -180,8 +187,8 @@ export class DefinitionSemanticsLoader {
     return true;
   }
 
-  /** RUST-003:visited(解析消费文件集)→ 身份集合;任一文件探不到身份
-   * (已删除等)返回 null,调用方不落缓存、后续每次现解析(诚实口径)。 */
+  /** RUST-003: visited (the resolution-consumed file set) -> identity set; if any file's identity cannot be
+   * probed (deleted, etc.), returns null so the caller skips the cache and re-parses each time (honest semantics). */
   private identitySetFromVisited(
     visited: ReadonlySet<string>
   ): ReadonlyMap<string, string> | null {
@@ -196,15 +203,15 @@ export class DefinitionSemanticsLoader {
     return identitySet;
   }
 
-  /** 单根(既有口径)或多根(workspace 顶层 ∪ assetsRoot,2026-10-16 扫描根修正) */
+  /** Single root (existing contract) or multiple roots (workspace top level union assetsRoot; 2026-10-16 scan-root correction) */
   constructor(private readonly workspaceRoot: string | string[]) {}
 
   private get workspaceRoots(): string[] {
     return Array.isArray(this.workspaceRoot) ? this.workspaceRoot : [this.workspaceRoot];
   }
 
-  /** RUST-003:轻量身份令牌——快照 {source,version} 字符串化;探不到返回
-   * null,调用方对 null 一律不落缓存(无身份不记忆,诚实口径)。 */
+  /** RUST-003: lightweight identity token -- the snapshot {source,version} stringified; returns
+   * null when it cannot be probed, and callers never cache on null (no identity, no memory; honest semantics). */
   private identityTokenFor(filePath: string): string | null {
     const identity = readSharedFileSnapshotIdentity(filePath);
     if (!identity) {
@@ -221,13 +228,15 @@ export class DefinitionSemanticsLoader {
     const cacheKey = this.partitionedCacheKey(buildCacheKey(category, name), originRoot);
     const filePath = this.resolveDefinitionFile(name, category, originRoot);
     if (!filePath) {
-      // 路径解析失败不记负缓存:根集合在 loader 生命周期内稳定,重走解析
-      // 只付逐根 existsSync,换来文件后建当轮可见(RUST-003 身份化口径)。
+      // Path-resolution failure does not record a negative cache entry: the root set is stable over the
+      // loader's lifetime, so re-walking resolution only costs per-root existsSync calls, and in exchange a
+      // file created later becomes visible in the same round (RUST-003 identity-carrying semantics).
       return null;
     }
 
-    // RUST-003:命中前重探入口文件身份——磁盘 mtime 变/缓冲区 version 前进
-    // 都算漂移,漂移即重解析;探不到身份(文件消失)不落缓存每次现读。
+    // RUST-003: before a hit, re-probe the entry file's identity -- a changed on-disk mtime or an advanced
+    // buffer version both count as drift, and drift triggers a re-parse; when identity cannot be probed
+    // (file gone), nothing is cached and every lookup reads fresh.
     const identityToken = this.identityTokenFor(filePath);
     const entryKey = normalizeLookupPath(filePath);
     const cached = this.localCache.get(cacheKey);
@@ -239,11 +248,12 @@ export class DefinitionSemanticsLoader {
       return cached.value;
     }
 
-    // IDE-SNP-002:文本事实源走共享快照——打开的 def 以编辑器缓冲区优先
-    // (未保存的属性/方法声明可见),未打开文件照旧磁盘补载。
+    // IDE-SNP-002: the text source of truth is the shared snapshot -- an open def prefers the editor buffer
+    // (unsaved property/method declarations are visible); unopened files still load from disk as before.
     const content = readSharedFileSnapshot(filePath)?.content ?? null;
     if (!content) {
-      // 无内容(读盘失败):仅在身份在探时记账 null——身份漂移后当轮重试
+      // No content (disk read failure): record null only when identity could be probed -- retry this round
+      // after identity drift
       if (identityToken !== null) {
         this.localCache.set(cacheKey, {
           identitySet: new Map([[entryKey, identityToken]]),
@@ -273,9 +283,10 @@ export class DefinitionSemanticsLoader {
     }
   }
 
-  /** 原文直传面(Rust 命令级 RPC 语料用):按名取文件原文+路径,不解析。
-   * 与 loadLocal 同一事实源(共享快照:打开缓冲区优先,未打开磁盘补载),
-   * 但跳过语义解析——Rust 侧负责解析,TS 侧只收集原文。 */
+  /** Raw-text passthrough surface (for Rust command-level RPC corpora): fetch a file's raw text plus path
+   * by name, without parsing. Shares the same source of truth as loadLocal (shared snapshot: open buffer
+   * first, disk fallback when not open), but skips semantic parsing -- the Rust side owns parsing and the
+   * TS side only collects raw text. */
   loadLocalRaw(
     name: string,
     category: DefinitionSemanticCategory,
@@ -298,8 +309,9 @@ export class DefinitionSemanticsLoader {
     allowComponents = true
   ): ResolvedDefinitionSemantics | null {
     const cacheKey = `${buildCacheKey(category, name)}::${allowComponents ? 'components' : 'plain'}`;
-    // RUST-003:解析消费集(入口+父/接口/组件链)身份全量重探——visited
-    // 由解析链逐文件登记,是完整消费集;身份漂移即重解析。
+    // RUST-003: full identity re-probe of the resolution-consumed set (entry + parent/interface/component
+    // chain) -- visited is registered file-by-file along the resolution chain and is the complete consumed
+    // set; identity drift triggers a re-parse.
     const cached = this.resolvedCache.get(cacheKey);
     if (cached && this.identitySetMatches(cached.identitySet)) {
       return cached.value;
@@ -319,9 +331,10 @@ export class DefinitionSemanticsLoader {
   }
 
   /**
-   * IDE-IDX-001:按精确 def 路径加载入口——绕过名字解析的逐根首命中,
-   * 直接解析指定文件(双根同名时调用方指 B 就拿 B)。缓存按路径分区,
-   * 与名字缓存互不串扰;文件不可读/解析失败回 null,不虚建语义。
+   * IDE-IDX-001: load an entry by exact def path -- bypasses the name-resolution per-root first hit and
+   * parses the specified file directly (with two same-named roots, the caller asking for B gets B). The
+   * cache is partitioned per path and never cross-talks with the name cache; unreadable files / parse
+   * failures return null rather than fabricating semantics.
    */
   loadResolvedAt(
     defPath: string,
@@ -330,7 +343,7 @@ export class DefinitionSemanticsLoader {
     allowComponents = true
   ): ResolvedDefinitionSemantics | null {
     const cacheKey = `at:${normalizeLookupPath(defPath)}::${buildCacheKey(category, name)}::${allowComponents ? 'components' : 'plain'}`;
-    // RUST-003:同名字入口——消费集(入口文件+链内父/接口)身份全量重探。
+    // RUST-003: same-named entry point -- full identity re-probe of the consumed set (entry file plus the chain's parents/interfaces).
     const cached = this.resolvedCache.get(cacheKey);
     if (cached && this.identitySetMatches(cached.identitySet)) {
       return cached.value;
@@ -339,9 +352,10 @@ export class DefinitionSemanticsLoader {
       allowComponents,
       visited: new Set<string>(),
       consumed: new Set<string>(),
-      // IDE-IDX-002:精确路径入口的起点根——父/接口按名回解先本根(旧内部
-      // 兜底建上下文时携带;恒传 context 后必须在这里补齐,否则双根同名父
-      // 回解退化为逐根首命中,A/B 同名定义串根)
+      // IDE-IDX-002: origin root for exact-path entries -- parent/interface by-name resolution prefers this
+      // root (the old internal fallback context builder carried it; now that context is always passed in, it
+      // must be filled in here, otherwise same-named parent resolution across two roots degenerates to per-
+      // root first hit and same-named A/B definitions cross roots)
       originRoot: this.originRootOf(defPath)
     };
     const resolved = this.loadResolvedAtInternal(defPath, name, category, allowComponents, context);
@@ -359,7 +373,7 @@ export class DefinitionSemanticsLoader {
     allowComponents: boolean,
     context?: ResolutionContext
   ): ResolvedDefinitionSemantics | null {
-    // IDE-SNP-002:精确路径入口同样走共享快照(打开文档缓冲区优先)。
+    // IDE-SNP-002: exact-path entries also go through the shared snapshot (open document buffer first).
     const content = readSharedFileSnapshot(defPath)?.content ?? null;
     if (!content) {
       return null;
@@ -390,17 +404,18 @@ export class DefinitionSemanticsLoader {
   }
 
   /**
-   * IDE-IDX-001:从已定位的本地语义出发解析(名字入口与精确路径入口共用);
-   * visited 按 owner 文件路径去重,离开即回退。
+   * IDE-IDX-001: resolve from already-located local semantics (shared by the name entry and the exact-path
+   * entry); visited dedupes by owner file path and unwinds on exit.
    */
   /**
-   * effective 合并键:属性路径 + 旗标桶集签名。引擎判重是「桶内按名唯一」
-   * (scriptdef_module.cpp:585-593;桶路由 entitydef.cpp:1284-1297)——桶集
-   * 不相交的同名属性合法共存(如 BASE+Persistent 与 ALL_CLIENTS 双条,各有
-   * 独立 utype);桶集相同引擎必拒载,这里保持首条遮蔽语义(lint 已报)。
-   * 分析:docs/review/2026-11-10-def-duplicate-property-and-owner-only-flags.md。
+   * Effective merge key: property path + flag-bucket-set signature. The engine dedupes as "unique by name
+   * within a bucket" (scriptdef_module.cpp:585-593; bucket routing entitydef.cpp:1284-1297) -- same-named
+   * properties with disjoint bucket sets legitimately coexist (e.g. a BASE+Persistent entry and an
+   * ALL_CLIENTS entry, each with its own utype); identical bucket sets make the engine refuse to load, and
+   * here the first entry keeps its shadowing semantics (already reported by lint).
+   * Analysis: docs/review/2026-11-10-def-duplicate-property-and-owner-only-flags.md.
    */
-  // eslint-disable-next-line no-invalid-this -- 无状态纯函数,static 化会破坏本文件类内私有的排版惯例
+  // eslint-disable-next-line no-invalid-this -- stateless pure function; making it static would break this file's in-class layout convention
   private effectivePropertyKey(property: DefinitionProperty): string {
     const domains = propertyFlagDomainList(property.flags).slice().sort();
     return domains.length > 0
@@ -548,8 +563,8 @@ export class DefinitionSemanticsLoader {
         }
       }
 
-      // KR-AUD-72:引擎对接口 def 从不调 loadParentClass(entitydef.cpp:611-638
-      // 接口只走 loadAllDefDescriptions),接口语义不得合并 Parent。
+      // KR-AUD-72: the engine never calls loadParentClass for interface defs (entitydef.cpp:611-638 --
+      // interfaces only go through loadAllDefDescriptions), so interface semantics must not merge Parent.
       if (local.parentName && category !== 'interface') {
         const parentCategory = category === 'component' ? 'component' : 'entity';
         const parentResolved = this.loadResolvedInternal(local.parentName, parentCategory, {
@@ -648,12 +663,12 @@ export class DefinitionSemanticsLoader {
     }
   }
 
-  /** IDE-IDX-002:名字缓存键按根分区(有起点根时打标),A/B 同名互不串扰。 */
+  /** IDE-IDX-002: name cache key is partitioned per root (tagged when an origin root exists), so same-named A/B never cross-talk. */
   private partitionedCacheKey(base: string, originRoot?: string): string {
     return originRoot ? `${base}@${normalizeLookupPath(originRoot)}` : base;
   }
 
-  /** 精确 def 路径所属的根(不在任何根下 → undefined,回退不分端口径)。 */
+  /** Root the exact def path belongs to (under no root -> undefined, falls back to the unpartitioned semantics). */
   private originRootOf(defPath: string): string | undefined {
     const normalized = normalizeLookupPath(defPath);
     return this.workspaceRoots.find(
@@ -666,9 +681,11 @@ export class DefinitionSemanticsLoader {
     category: DefinitionSemanticCategory,
     originRoot?: string
   ): string | null {
-    // 逐根解析:workspace 顶层与 assetsRoot 各自按约定布局找,先命中先用
-    // (多根工程里 def 与脚本可能分属两个根);IDE-IDX-002 起有解析起点根时
-    // 起点根优先(同名父/接口先回本根),其余根仍按原次序兜底。
+    // Per-root resolution: the workspace top level and assetsRoot are each searched by their conventional
+    // layout, first hit wins (in a multi-root project defs and scripts may live under two different roots);
+    // since IDE-IDX-002, when there is an origin root for the resolution, that root takes priority (same-named
+    // parent/interface resolves back to this root first), with the remaining roots still falling back in their
+    // original order.
     for (const root of this.orderedRoots(originRoot)) {
       const found = category === 'entity'
         ? findEntityDefinitionFile(name, root)
@@ -680,7 +697,7 @@ export class DefinitionSemanticsLoader {
     return null;
   }
 
-  /** 起点根置前(其余根保持原次序;未知起点根原样返回)。 */
+  /** Moves the origin root to the front (remaining roots keep their original order; an unknown origin root is returned as-is). */
   private orderedRoots(originRoot?: string): string[] {
     if (!originRoot || !this.workspaceRoots.includes(originRoot)) {
       return this.workspaceRoots;
@@ -729,8 +746,8 @@ export function parseLocalDefinition(
   }
 
   const parentNode = getDirectChildElement(root, 'Parent');
-  // Parent 取名同引擎 enterNode/getKey(文本取文本、元素取标签名),与
-  // defRenamer 的 parseDefFileSemantics 共用同一实现,不再各写一份
+  // Taking the Parent name mirrors the engine's enterNode/getKey (text -> text, element -> tag name);
+  // the same implementation is shared with defRenamer's parseDefFileSemantics instead of writing two copies
   const parentName = parentNode ? getReferenceTargetName(parentNode) : '';
   const interfaceRefs = parseInterfaceRefs(document, getDirectChildElement(root, 'Interfaces'));
   const componentRefs = parseComponentRefs(document, getDirectChildElement(root, 'Components'), owner);
@@ -765,10 +782,10 @@ function parseInterfaceRefs(
 
   const interfaces: DefinitionInterfaceRef[] = [];
   for (const child of getDirectChildElements(interfacesNode)) {
-    // 引擎 loadInterfaces(entitydef.cpp L559-561)只装载 wrapper 标签为
-    // interface/Interface/type/Type 四拼写的子元素(大小写敏感精确比对),
-    // 其余 continue——直取形态(<MoveIface/>)引擎静默跳过,不产生混入;
-    // 取名语义与 <Parent> 同:首个非注释子节点,文本取文本、元素取标签名
+    // The engine's loadInterfaces (entitydef.cpp L559-561) only loads child elements whose wrapper tag is one of
+    // the four spellings interface/Interface/type/Type (case-sensitive exact comparison); anything else is
+    // skipped with continue -- the direct form (<MoveIface/>) is silently skipped by the engine and produces no
+    // mixin. Name-taking semantics match <Parent>: the first non-comment child node, text -> text, element -> tag name
     if (!INTERFACE_WRAPPER_NAMES.has(child.name)) {
       continue;
     }
@@ -873,12 +890,13 @@ function parseProperties(
         arrayElement: undefined
       };
 
-      // 不可达(批66 定性):此处位于 `if (arrayOfType)` 块内,而 arrayOfType
-      // 只能由上一行三元取 typeNode 非空臂得到(getScalarChildValue 命中才
-      // 产出真值),typeNode 是不可变 const ⇒ 重检恒走真臂,`: undefined`
-      // 假臂无触发路径。语句与两分支条目随区间移出分母(TESTING.md 分母
-      // 口径据实登记);真臂行为已由既有 ARRAY of <Type> 内嵌 <Properties>
-      // 递归用例覆盖锁定。
+      // Unreachable (batch 66 ruling): this sits inside the `if (arrayOfType)` block, and arrayOfType can only
+      // come from the previous line's ternary taking the non-null arm of typeNode (getScalarChildValue yields a
+      // truthy value only on a hit); typeNode is an immutable const, so the recheck always takes the true arm
+      // and the `: undefined` false arm has no trigger path. The statement and its two branch entries are moved
+      // out of the denominator via the range ignore (registered as-is per the TESTING.md denominator
+      // contract); the true-arm behavior is already locked by the existing ARRAY of <Type> with nested
+      // <Properties> recursion test case.
       /* istanbul ignore start */
       const nestedArrayPropertiesNode = typeNode ? getDirectChildElement(typeNode, 'Properties') : undefined;
       /* istanbul ignore stop */
@@ -912,16 +930,17 @@ function parseMethods(
     }
 
     for (const methodNode of getDirectChildElements(sectionNode)) {
-      // args 与 argTypes 同一循环产出,保证 1:1(空文本 Arg 两处一致剔除)
+      // args and argTypes are produced in the same loop, guaranteeing 1:1 (an empty-text Arg is dropped consistently in both)
       const args: string[] = [];
       const argTypes: DefinitionArgType[] = [];
       for (const argNode of getDirectChildElementsByName(methodNode, 'Arg')) {
-        // 引擎读型口径(entitydef.cpp:1625-1643 + xml.cpp:121-127 getValStr
-        // 只认文本节点,元素节点 ToText()=NULL 返回空串):Arg 的第一个子节点
-        // 必须是直文本(`<Arg> STRING </Arg>`);元素形态 `<Arg><Type>STRING</Type>`
-        // 的首子节点是元素 → getValStr 得空串 → dataType[] not found → 引擎
-        // 启动中止。直文本为空=未声明(空文本 Arg 两处一致剔除),不认元素形态
-        // (与引擎同口径,不让解析器接受引擎视为致命的形态)。
+        // The engine's type-reading contract (entitydef.cpp:1625-1643 + xml.cpp:121-127 getValStr only
+        // accepts text nodes; an element node's ToText() is NULL and returns an empty string): the first
+        // child node of Arg must be direct text (`<Arg> STRING </Arg>`); with the element form
+        // `<Arg><Type>STRING</Type>`, the first child is an element -> getValStr yields an empty string ->
+        // dataType[] not found -> the engine aborts at startup. Empty direct text = not declared (empty-text
+        // Args are dropped consistently in both places); the element form is not accepted (matching the engine
+        // contract, so the parser does not accept a form the engine treats as fatal).
         const argName = getElementText(argNode).trim();
         if (!argName) {
           continue;
@@ -950,10 +969,10 @@ function parseMethods(
   return methods;
 }
 
-// 引擎 Arg 解析(entitydef.cpp loadDef*Methods):<Arg> 直文本即类型名;
-// "ARRAY" 走 FixedArrayType::initialize,读 <of> 子,嵌套递归。缺 <of> 节点
-// 与空 <of></of> 分开保留(ofType: {name:''}):引擎前者报 not found "of".、
-// 后者报 key[ARRAY] did not find type[]!,生成侧按此分流
+// The engine's Arg parsing (entitydef.cpp loadDef*Methods): the direct text of <Arg> is the type name;
+// "ARRAY" goes through FixedArrayType::initialize, reads the <of> child, and recurses for nesting. A missing
+// <of> node and an empty <of></of> are preserved distinctly (ofType: {name:''}): the engine reports not found "of".
+// for the former and key[ARRAY] did not find type[]! for the latter, and the generator side branches on that
 function parseArgType(argNode: DefElementNode, name: string): DefinitionArgType {
   if (name !== 'ARRAY') {
     return { name };
@@ -969,8 +988,9 @@ function parseArgType(argNode: DefElementNode, name: string): DefinitionArgType 
   return { name, ofType: parseArgType(ofNode, ofName) };
 }
 
-// 引擎 getValInt 语义:非数字文本得 0(视同未设置,自动分配);溢出判定不在
-// 解析层,由生成侧按 >65535 做(uint16 截断比对,engine 层报错)
+// The engine's getValInt semantics: non-numeric text yields 0 (treated as unset and auto-assigned); the overflow
+// check does not live in the parsing layer, the generator side enforces it as >65535 (uint16 truncation
+// comparison, reported as an error at the engine layer)
 function parseUtypeValue(text: string | undefined): number | null {
   if (text === undefined) {
     return null;
@@ -1024,11 +1044,12 @@ function buildCacheKey(category: DefinitionSemanticCategory, name: string): stri
 }
 
 /**
- * effective 合并键:属性路径 + 旗标桶集签名。引擎判重是「桶内按名唯一」
- * (scriptdef_module.cpp:585-593;桶路由 entitydef.cpp:1284-1297)——桶集
- * 不相交的同名属性合法共存(如 BASE+Persistent 与 ALL_CLIENTS 双条,各有
- * 独立 utype);桶集相同引擎必拒载,这里保持首条遮蔽语义(lint 已报)。
- * 分析:docs/review/2026-11-10-def-duplicate-property-and-owner-only-flags.md。
+ * Effective merge key: property path + flag-bucket-set signature. The engine dedupes as "unique by name
+ * within a bucket" (scriptdef_module.cpp:585-593; bucket routing entitydef.cpp:1284-1297) -- same-named
+ * properties with disjoint bucket sets legitimately coexist (e.g. a BASE+Persistent entry and an ALL_CLIENTS
+ * entry, each with its own utype); identical bucket sets make the engine refuse to load, and here the first
+ * entry keeps its shadowing semantics (already reported by lint).
+ * Analysis: docs/review/2026-11-10-def-duplicate-property-and-owner-only-flags.md.
  */
 function effectivePropertyKey(property: DefinitionProperty): string {
   const domains = propertyFlagDomainList(property.flags).slice().sort();
@@ -1051,10 +1072,10 @@ function createSource(
 }
 
 function buildInheritanceLabel(prefix: 'Mixin' | 'Parent', chain: string[]): string {
-  // 不可达(批62 定性):五处调用(本文件 L249/304/329/384 与 createSource)传入的
-  // chain 都以字面量名打头([interfaceRef.name] / [local.parentName] / parentChain
-  // .concat(...)),长度恒 ≥1;createSource 的形参默认值 [] 只与 kind='local'
-  // 的调用同现(走 'Own' 分支),故空链臂无触发路径。
+  // Unreachable (batch 62 ruling): the five call sites (L249/304/329/384 in this file plus createSource) all pass
+  // a chain headed by a literal name ([interfaceRef.name] / [local.parentName] / parentChain
+  // .concat(...)), so the length is always >= 1; createSource's default parameter [] only occurs together with
+  // kind='local' calls (which take the 'Own' branch), so the empty-chain arm has no trigger path.
   /* istanbul ignore start */
   if (chain.length === 0) {
     return prefix;

@@ -1,7 +1,7 @@
-//! PA-003 framing 验收 + Fuzz/边界测试(红先行)。
+//! PA-003 framing acceptance + Fuzz/boundary tests (red first).
 //!
-//! 三种长度形状(§4.2)/ packetAlwaysContainLength(§4.3)/ TCP 粘包拆包
-//! (§4.4)/ 内存上限红线;确定性 PRNG 驱动(无外部 fuzz 框架)。
+//! The three length shapes (§4.2) / packetAlwaysContainLength (§4.3) / TCP sticky and split packets
+//! (§4.4) / the memory cap red line; driven by a deterministic PRNG (no external fuzz framework).
 
 use kode_kbengine_protocol::error::DecodeErrorKind;
 use kode_kbengine_protocol::framing::{FrameParser, FramingConfig, LengthSpec};
@@ -26,12 +26,12 @@ fn config_with(map: &MessageMap, always_len: bool) -> FramingConfig {
 }
 
 // ---------------------------------------------------------------------------
-// 三种长度形状(§4.2)
+// The three length shapes (§4.2)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn fixed_message_has_no_length_field() {
-    // Loginapp::importClientMessages(id=5,定长 0):线上只有 2B id
+    // Loginapp::importClientMessages (id=5, fixed 0): only the 2B id on the wire
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
     let mut p = FrameParser::new(config_with(&map, false));
     let frames = p.feed(&5u16.to_le_bytes()).unwrap();
@@ -40,14 +40,15 @@ fn fixed_message_has_no_length_field() {
     assert_eq!(frames[0].payload, b"");
     assert_eq!(frames[0].length_spec, LengthSpec::Fixed(0));
 
-    // 定长非零:Client::onHelloCB(id=521)定长 0;找一条定长>0 的不存在(基线
-    // 固定表除 id=521/4/5 等无参消息外全带变长参数),用合成 spec 验证。
+    // Non-zero fixed length: Client::onHelloCB (id=521) is fixed 0; no fixed>0 entry exists (the baseline
+    // fixed table carries variable arguments for everything except parameterless messages like id=521/4/5),
+    // so a synthetic spec is used for verification.
     let mut map2 = map.clone();
     map2.insert_spec(900, "Demo::fixed8".into(), MessageLength::Fixed(8));
     let mut p = FrameParser::new(config_with(&map2, false));
     let mut bytes = 900u16.to_le_bytes().to_vec();
     bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
-    bytes.push(0xAA); // 粘包的下一条(垃圾尾随留在缓冲)
+    bytes.push(0xAA); // the next coalesced message (the trailing garbage residue stays in the buffer)
     let frames = p.feed(&bytes).unwrap();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].payload, &[1, 2, 3, 4, 5, 6, 7, 8]);
@@ -56,7 +57,7 @@ fn fixed_message_has_no_length_field() {
 #[test]
 fn variable_and_extended_length_shapes() {
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
-    // 变长:Loginapp::login(id=3):u16 msgLen = 载荷(不含 id+len 头)
+    // Variable: Loginapp::login (id=3): u16 msgLen = the payload (excluding the id+len header)
     let mut p = FrameParser::new(config_with(&map, false));
     let mut bytes = 3u16.to_le_bytes().to_vec();
     bytes.extend_from_slice(&4u16.to_le_bytes());
@@ -66,13 +67,13 @@ fn variable_and_extended_length_shapes() {
     assert_eq!(frames[0].payload, b"body");
     assert_eq!(frames[0].length_spec, LengthSpec::Variable);
 
-    // 扩展长度:u16=65535 哨兵 + u32 实长(bundle.cpp:358-368 / packet_reader.cpp:116-167)
+    // Extended length: u16=65535 sentinel + u32 actual length (bundle.cpp:358-368 / packet_reader.cpp:116-167)
     let mut map2 = map.clone();
     map2.insert_spec(901, "Demo::big".into(), MessageLength::Variable);
     let mut p = FrameParser::new(config_with(&map2, false));
     let mut bytes = 901u16.to_le_bytes().to_vec();
     bytes.extend_from_slice(&65535u16.to_le_bytes()); // ff ff
-    bytes.extend_from_slice(&70000u32.to_le_bytes()); // u32 实长
+    bytes.extend_from_slice(&70000u32.to_le_bytes()); // u32 actual length
     bytes.extend_from_slice(&vec![0xABu8; 70000]);
     let frames = p.feed(&bytes).unwrap();
     assert_eq!(frames.len(), 1);
@@ -82,10 +83,10 @@ fn variable_and_extended_length_shapes() {
 
 #[test]
 fn always_contain_length_forces_length_field() {
-    // §4.3:packetAlwaysContainLength=true → 定长消息线上也带 u16 长度
+    // §4.3: packetAlwaysContainLength=true → fixed messages also carry a u16 length on the wire
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
     let mut p = FrameParser::new(config_with(&map, true));
-    // id=5 原定长 0 → 现在带 u16 len=0
+    // id=5 was fixed 0 → now carries u16 len=0
     let mut bytes = 5u16.to_le_bytes().to_vec();
     bytes.extend_from_slice(&0u16.to_le_bytes());
     let frames = p.feed(&bytes).unwrap();
@@ -94,14 +95,14 @@ fn always_contain_length_forces_length_field() {
 }
 
 // ---------------------------------------------------------------------------
-// TCP 粘包 / 拆包(§4.4)
+// TCP sticky packets / split packets (§4.4)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn coalesced_messages_split_in_one_feed() {
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
     let mut p = FrameParser::new(config_with(&map, false));
-    // 三条连发:importClientMessages(定长) + login(变长) + importClientMessages
+    // Three back-to-back frames: importClientMessages (fixed) + login (variable) + importClientMessages
     let mut bytes = 5u16.to_le_bytes().to_vec();
     bytes.extend_from_slice(&3u16.to_le_bytes());
     bytes.extend_from_slice(&2u16.to_le_bytes());
@@ -124,7 +125,7 @@ fn fragmented_message_reassembles_across_feeds() {
         b.extend_from_slice(b"body");
         b
     };
-    // 逐字节喂入:中途喂入不产帧、不报错
+    // Feed byte by byte: a partial feed emits no frame and raises no error
     let mut got = 0;
     for (i, b) in full.iter().enumerate() {
         let frames = p.feed(&[*b]).unwrap();
@@ -139,7 +140,7 @@ fn fragmented_message_reassembles_across_feeds() {
 }
 
 // ---------------------------------------------------------------------------
-// 红线:失败不 panic / 内存有上限 / 未知 id 策略
+// Red lines: no panic on failure / memory bounded / unknown id policy
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -150,18 +151,19 @@ fn oversized_extended_length_rejected_by_cap() {
     let mut p = FrameParser::new(config_with(&map2, false));
     let mut bytes = 901u16.to_le_bytes().to_vec();
     bytes.extend_from_slice(&65535u16.to_le_bytes());
-    bytes.extend_from_slice(&(0xFFFF_FFFFu32).to_le_bytes()); // 实长声明 4 GiB
+    bytes.extend_from_slice(&(0xFFFF_FFFFu32).to_le_bytes()); // actual length declaring 4 GiB
     let err = p.feed(&bytes).unwrap_err();
     assert!(matches!(err.kind, DecodeErrorKind::MemoryLimit));
-    // 解析器仍可用(未 panic、状态复位为可继续)
+    // The parser is still usable (no panic, state reset to a resumable position)
     assert!(p.pending_buffer_len() < usize::MAX);
 }
 
 #[test]
 fn multi_frame_chunk_totaling_over_cap_still_parses_all_frames() {
-    // 上限约束的是「解完帧后的余量」而非总缓冲:一整块合法帧序列合计超过
-    // max_message_len+8 时,旧实现(先判总缓冲)整块作废,合法数据静默丢失;
-    // 新实现先解出全部完整帧,再对残留判上限。
+    // The cap constrains the "remainder after the frames are resolved", not the total buffer: when a whole run of
+    // legal frames totals over max_message_len+8, the old implementation (which judged the total buffer first)
+    // invalidated the whole block and legal data was silently lost; the new one resolves all complete frames first
+    // and only then applies the cap to the residue.
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
     let mut map2 = map.clone();
     map2.insert_spec(903, "Demo::fixed60k".into(), MessageLength::Fixed(60_000));
@@ -179,12 +181,13 @@ fn multi_frame_chunk_totaling_over_cap_still_parses_all_frames() {
 
 #[test]
 fn error_reset_folds_discarded_bytes_into_stream_offset() {
-    // 错误复位丢弃的字节(含已解出但随 Err 丢弃的帧 + 未成帧的残留)必须
-    // 同步推进 abs_base:否则恢复后的 stream_offset 从旧基点重新计数,
-    // 系统性少报(违背「本 parser 生命周期内累计」契约)。
+    // The bytes discarded by an error reset (including frames already resolved but dropped with the Err,
+    // plus unframed residue) must advance abs_base in lockstep: otherwise the recovered stream_offset re-counts
+    // from the stale base point and under-reports systematically (violating the "accumulated over this parser's
+    // lifetime" contract).
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
     let mut p = FrameParser::new(config_with(&map, false));
-    // feed1:两帧 id=5(各 2B),offsets 0/2;compact 后 abs_base=4
+    // feed1: two frames of id=5 (2B each), offsets 0/2; after compact abs_base=4
     let frames = p
         .feed(&[5u16.to_le_bytes(), 5u16.to_le_bytes()].concat())
         .unwrap();
@@ -192,12 +195,12 @@ fn error_reset_folds_discarded_bytes_into_stream_offset() {
         frames.iter().map(|f| f.stream_offset).collect::<Vec<_>>(),
         vec![0, 2]
     );
-    // feed2:一帧好帧(进 out)+ 坏帧(unknown id)→ Err,好帧随 Err 丢弃
+    // feed2: one good frame (into out) + one bad frame (unknown id) → Err, the good frame is dropped with the Err
     let mut chunk = 5u16.to_le_bytes().to_vec();
     chunk.extend_from_slice(&60000u16.to_le_bytes());
     chunk.extend_from_slice(&[1, 2, 3, 4]);
     assert!(p.feed(&chunk).is_err());
-    // feed3:恢复帧的 offset 必须越过 feed2 全部 8 字节(feed1 的 4 + feed2 的 8 = 12)
+    // feed3: the recovered frame's offset must skip past all 8 bytes of feed2 (feed1's 4 + feed2's 8 = 12)
     let frames = p.feed(&5u16.to_le_bytes()).unwrap();
     assert_eq!(frames[0].stream_offset, 12);
 }
@@ -206,17 +209,17 @@ fn error_reset_folds_discarded_bytes_into_stream_offset() {
 fn unknown_id_policy_fail_is_default() {
     let map = MessageMap::from_static(&build_message_table(&engine_defaults_xml(), None));
     let mut p = FrameParser::new(config_with(&map, false));
-    let mut bytes = 60000u16.to_le_bytes().to_vec(); // 表中不存在的 id
+    let mut bytes = 60000u16.to_le_bytes().to_vec(); // an id absent from the table
     bytes.extend_from_slice(&[1, 2, 3, 4]);
     let err = p.feed(&bytes).unwrap_err();
     assert!(matches!(err.kind, DecodeErrorKind::UnknownMessageId));
 }
 
 // ---------------------------------------------------------------------------
-// Fuzz:确定性伪随机流 + 全前缀扫描
+// Fuzz: deterministic pseudo-random streams + an all-prefix sweep
 // ---------------------------------------------------------------------------
 
-/// xorshift64* 确定性 PRNG(fuzz 驱动可复现)。
+/// xorshift64* deterministic PRNG (keeps the fuzz driver reproducible).
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -246,7 +249,7 @@ fn fuzz_random_streams_never_panic() {
         for _ in 0..len {
             chunk.push(rng.byte());
         }
-        // 允许 Ok 或 Err,唯一红线是绝不 panic / 不越界 / 不失控分配。
+        // Ok or Err is both acceptable; the only red line is never panicking / reading out of bounds / allocating runaway.
         let _ = p.feed(&chunk);
     }
 }
@@ -267,12 +270,12 @@ fn fuzz_every_prefix_of_valid_stream_never_panics() {
     full.extend_from_slice(b"hi");
     for cut in 0..full.len() {
         let mut p = FrameParser::new(cfg.clone());
-        // 截断在任意字节位:要么 Err(完整体后垃圾 0x04 00 … 被当新 id),要么 Ok
+        // Truncated at any byte position: either Err (the trailing garbage 0x04 00 … after the full body is read as a new id) or Ok
         let _ = p.feed(&full[..cut]);
     }
-    // 完整体本身:5(定长) + 901 扩展 + 901?——最后 04 00 是未知 id(Err 可接受)
+    // The complete body itself: 5 (fixed) + 901 extended + 901? — the trailing 04 00 is an unknown id (Err acceptable)
     let mut p = FrameParser::new(cfg.clone());
-    let _ = p.feed(&full[..13]); // id5 + id901 + sentinel + u32 + 3B 载荷
+    let _ = p.feed(&full[..13]); // id5 + id901 + sentinel + u32 + 3B payload
     let frames = p.feed(&full[13..]).unwrap_or_default();
     assert!(frames.len() <= 1);
 }
@@ -285,7 +288,7 @@ fn fuzz_truncated_encrypted_envelopes_never_panic() {
     for cut in 0..v.len() {
         let _ = kode_kbengine_protocol::framing::parse_encrypted_envelope(&v[..cut]);
     }
-    // 长度声明 65535 级别:cap 拒绝
+    // A 65535-class declared length: the cap rejects it
     let mut big = (0xFFFFu16).to_le_bytes().to_vec();
     big.push(7);
     assert!(kode_kbengine_protocol::framing::parse_encrypted_envelope(&big).is_err());

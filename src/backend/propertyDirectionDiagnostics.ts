@@ -1,32 +1,48 @@
-// GEN-DEF-1e ④:方向违规诊断(属性面)——python 脚本里对 def 属性的访问,
-// 若访问位置(进程作用域 / 接收者段)不在属性 Flags 推导的三域位内,标 Warning;
-// 进程作用域按 py 文件所在段已知信息推断,不足则降级标 Information(不标
-// Error,用户令「不足则标 info 不标 error」)。
+// GEN-DEF-1e ④: direction-violation diagnostics (property face) — accesses
+// to def properties in Python scripts are flagged Warning when the access
+// position (process scope / receiver segment) falls outside the three
+// domains derived from the property Flags; the process scope is inferred
+// from what the py file's own section is known to be, and when that is not
+// enough it degrades to Information (never Error, user order "when unsure,
+// flag info, not error").
 //
-// cellData 通道(2026-11-10 用户报障收编):baseapp 对带 cell 部件的实体自动
-// 装 self.cellData dict(kbe/src/server/baseapp/entity.cpp:238,createCellData
-// :250-308 装全部 cell 桶属性默认值+position/direction;cell 创建时整 dict 作
-// 初值流给 cellapp baseapp.cpp:2561)——base 侧合法的 cell 属性通道是
-// self.cellData["x"],不是直接属性。分析产出分两条流:
-//   诊断流(下划线):真方向违规(Warning)与作用域不足(Information);
-//   提示流(inlay 淡色小字,用户令 2026-11-10「不要下划线,很容易以为是
-//   错误」「就提示复制属性开头,颜色变下就行」):
-//     1) 复制属性:__init__ 里 self.y = self.cellData["x"] 取值的,y 是 cell
-//        侧 def 字段 x 的 base 侧副本——赋值行与裸访问处渲染
-//        「复制属性 x: <type> · <domains>」;
-//     2) cellData["key"] 的 key 对 def 解析:def 键渲染 key 的 def 面
-//        「key: <type> · <domains>」,域位不含 cell 追加「不在 cellData」;
-//        非 def 键(position/direction/脚本自塞键)一律跳过,不发明。
-//     __init__ 里赋值但右侧非 cellData 的:暂不展示也不报错(用户令
-//     「暂时复制属性吧」),仅作误报治理(不再标 Warning)。
+// cellData channel (absorbed from a 2026-11-10 user bug report): baseapp
+// automatically fills in a self.cellData dict for entities carrying a cell
+// part (kbe/src/server/baseapp/entity.cpp:238; createCellData:250-308 loads
+// the defaults of every cell-bucket property plus position/direction; at
+// cell creation the whole dict streams to cellapp as the initial values,
+// baseapp.cpp:2561) — on the base side the legitimate channel for a cell
+// property is self.cellData["x"], not the bare property. Analysis emits two
+// streams:
+//   diagnostic stream (underline): true direction violations (Warning) and
+//     insufficient scope (Information);
+//   hint stream (pale inline text, user order 2026-11-10 "no underlines, it
+//     reads too easily as an error" and "just hint the copied property's
+//     beginning, changing the color is enough"):
+//     1) copied property: when __init__ reads self.y = self.cellData["x"],
+//        y is the base-side copy of the cell-side def field x — the
+//        assignment line and the bare access render
+//        "copied property x: <type> · <domains>";
+//     2) the key of cellData["key"] is resolved against the def: a def key
+//        renders the key's def face "key: <type> · <domains>", and when the
+//        domains lack cell, "not in cellData" is appended; non-def keys
+//        (position/direction/script-added keys) are always skipped, never
+//        invented.
+//     Assignments in __init__ whose right side is not cellData: not shown
+//     and not reported for now (user order "just copied properties for
+//     now"), handled purely as false-positive suppression (no longer
+//     flagged Warning).
 //
-// 方法面方向违规已由 receiverNoneDiagnostics 的 sectionMismatch
-// (kbengine.sectionMismatch)覆盖;本模块只补属性面(属性 Flags 域位)。
+// Method-face direction violations are already covered by
+// receiverNoneDiagnostics' sectionMismatch (kbengine.sectionMismatch); this
+// module only adds the property face (property Flags domains).
 //
-// 纯逻辑层,不 import vscode:扫 self.<属性路径> / self.<role>.<属性路径> 访问,
-// 属性域位经外部解析器回包(与属性 CodeLens 同索引同口径——provider 层把
-// EntityMappingManager.resolvePropertyDefinitionInfo 回包装配成
-// PropertyDirectionHit),本层不自己读 def 文件。
+// Pure logic layer, does not import vscode: scans self.<property path> /
+// self.<role>.<property path> accesses; property domains arrive via an
+// external resolver's reply (same index and same contract as the property
+// CodeLens — the provider layer assembles the
+// EntityMappingManager.resolvePropertyDefinitionInfo replies into
+// PropertyDirectionHit); this layer never reads def files itself.
 
 import { findPythonSelfPropertyAccesses } from './propertyCodeLens';
 import { l10nText } from '../nlsRuntime';
@@ -36,22 +52,24 @@ import type { PropertyFlagDomain } from './defAnalyzer';
 
 export const PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionViolation';
 export const PROPERTY_DIRECTION_SCOPE_UNKNOWN_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionScopeUnknown';
-/** __init__ 影子属性(普通赋值):脚本自维护的同名属性,误报治理不标 Warning */
+/** __init__ shadow property (plain assignment): a same-named property maintained by the script, false-positive suppression so no Warning */
 export const PROPERTY_DIRECTION_SHADOW_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionShadowAttribute';
-/** 复制属性提示:右侧取自 self.cellData,提示为 cell 侧字段的副本值 */
+/** Copied-property hint: the right side reads from self.cellData; the hint marks a copy of a cell-side field's value */
 export const PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionCellDataCopy';
-/** cellData["key"] 的 key 对 def 解析面(含「不在 cellData」标记) */
+/** The key of cellData["key"] resolved against the def (including the "not in cellData" marker) */
 export const PROPERTY_DIRECTION_CELL_DATA_KEY_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionCellDataKey';
 export const PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
-/** 进程作用域三域(与属性域位同名词) */
+/** The three process-scope domains (same terms as the property domains) */
 export type PropertyDirectionScope = 'base' | 'cell' | 'client';
 
 /**
- * 进程作用域推断:按 py 文件所在段已知信息(demo 资产目录 scripts/base|
- * cell|client|bots)。
- * 与 inferMethodSectionFromPythonFile 同口径(同源路径规则),仅把 def 方法段
- * 映射回作用域名;非角色目录(scripts/common/、根级)返回 undefined = 不足。
+ * Process-scope inference from what the py file's section is known to be
+ * (demo asset directories scripts/base|cell|client|bots).
+ * Same contract as inferMethodSectionFromPythonFile (same path rules at the
+ * source), only mapping the def method section back to a scope name;
+ * non-role directories (scripts/common/, root level) return undefined =
+ * insufficient.
  */
 export function inferProcessScopeFromPythonFile(
   filePath: string
@@ -68,46 +86,46 @@ export function inferProcessScopeFromPythonFile(
   }
 }
 
-/** 一处属性访问的 def 声明面(方向判定所需的最小面;domains 由 Flags 推导) */
+/** The def declaration face of one property access (minimal face the direction ruling needs; domains derived from Flags) */
 export interface PropertyDirectionHit {
   propertyName: string;
   domains: PropertyFlagDomain[];
   defFile: string;
   defLine: number;
-  /** def <Type> 直文本(复制属性/cellData 键提示展示用;缺省不带类型段) */
+  /** def <Type> verbatim text (for copied-property/cellData key hint display; omitted when there is no type segment) */
   typeName?: string;
 }
 
 export interface PropertyDirectionFinding {
-  /** 访问行(0 起) */
+  /** Access line (0-based) */
   line: number;
-  /** 属性名在访问行内的起始列(0 起;接收者限定已跳过 self.<role>.) */
+  /** Start column of the property name within the access line (0-based; a receiver qualifier has already skipped self.<role>.) */
   character: number;
-  /** 属性名长度(高亮区间) */
+  /** Property name length (highlight range) */
   length: number;
-  /** 属性路径(已剥接收者前缀,如 cell.hp → hp) */
+  /** Property path (receiver prefix stripped, e.g. cell.hp → hp) */
   propertyPath: string;
-  /** self.<role>.<prop> 的接收者(有则访问域=接收者) */
+  /** Receiver of self.<role>.<prop> (when present the access domain = the receiver) */
   receiver?: PropertyDirectionScope;
-  /** 文件作用域(无接收者时访问域=文件作用域) */
+  /** File scope (without a receiver the access domain = the file scope) */
   fileScope?: PropertyDirectionScope;
   domains: PropertyFlagDomain[];
   message: string;
   severity: 'Warning' | 'Information';
   code: string;
-  /** 复制属性/cellData 键流的 RHS 键名(提示展示用) */
+  /** RHS key name of the copied-property/cellData key stream (for hint display) */
   cellDataKey?: string;
-  /** 提示锚列(self.<名> token / cellData 访问表达式之后;提示流用) */
+  /** Hint anchor column (after the self.<name> token / the cellData access expression; used by the hint stream) */
   endCharacter?: number;
-  /** def <Type> 直文本(提示展示用;解析未命中不带) */
+  /** def <Type> verbatim text (for hint display; absent when resolution missed) */
   typeName?: string;
-  /** def 声明文件(提示流导航目标;解析未命中不带) */
+  /** def declaration file (hint-stream navigation target; absent when resolution missed) */
   defFile?: string;
-  /** def 声明行(0 起;提示流导航目标) */
+  /** def declaration line (0-based; hint-stream navigation target) */
   defLine?: number;
 }
 
-/** 接收者段 → 属性域位(与 PYTHON_RECEIVER_SECTIONS 段名一一对应) */
+/** Receiver segment → property domain (one-to-one with PYTHON_RECEIVER_SECTIONS segment names) */
 const RECEIVER_SCOPE: Record<string, PropertyDirectionScope> = {
   cell: 'cell',
   base: 'base',
@@ -117,33 +135,38 @@ const RECEIVER_SCOPE: Record<string, PropertyDirectionScope> = {
 const domainLabel = (domains: readonly PropertyFlagDomain[]): string =>
   domains.length > 0 ? domains.join('|') : l10nText('(Flags not configured)');
 
-/** __init__ 内一处 self.<名> = 赋值的位置面 */
+/** Position face of one self.<name> = assignment inside __init__ */
 export interface InitAssignmentSite {
-  /** 赋值行(0 起) */
+  /** Assignment line (0-based) */
   line: number;
-  /** self.<名> token 结束列(0 起;复制属性 inlay 锚在其后) */
+  /** End column of the self.<name> token (0-based; the copied-property inlay anchors after it) */
   character: number;
 }
 
-/** __init__ 内 self.<属性> = 赋值的扫描结果面 */
+/** Scan-result face of the self.<property> = assignments inside __init__ */
 export interface InitAssignedSelfProperties {
-  /** __init__ 里赋过值的属性名(影子属性全体,误报治理面) */
+  /** Property names assigned in __init__ (the full shadow-property set, the false-positive suppression face) */
   names: Set<string>;
-  /** 名称 → 赋值位置(self.<名> token 之后) */
+  /** Name → assignment position (after the self.<name> token) */
   sites: Map<string, InitAssignmentSite>;
-  /** 名称 → RHS 引用的 cellData 键(self.y = self.cellData["x"] 的 x) */
+  /** Name → the cellData key its RHS reads (the x of self.y = self.cellData["x"]) */
   cellDataCopyKeys: Map<string, string>;
 }
 
 /**
- * __init__ 内的 self.<属性> = 赋值扫描(纯行扫描,与模块同为保守词法面,
- * 不 import vscode、不引入 AST):脚本在 __init__ 里给同名属性赋值
- * (self.spaceUType = self.cellData["spaceUType"] 等)即声明了「自维护影子
- * 属性」——引擎域外的裸访问不再是失效引用(引擎 GenericGetAttr 落到实例
- * __dict__ 的影子值上),误报治理不再标 Warning(用户令)。右侧引用
- * self.cellData 的把键名记下来(2026-11-10 用户令:提示是 cell 对应属性的
- * copy 值,带 key/类型/域位)。多类各自扫,__init__ 出块(缩进回落)即收手;
- * `==`/`+=`/注解赋值不计(保守,宁漏勿错)。
+ * Scan of the self.<property> = assignments inside __init__ (pure line scan,
+ * the same conservative lexical face as the module — no vscode import, no
+ * AST): a script assigning a same-named property inside __init__
+ * (self.spaceUType = self.cellData["spaceUType"] etc.) declares a
+ * "self-maintained shadow property" — bare accesses outside the engine's
+ * domain are no longer dead references (the engine's GenericGetAttr lands
+ * on the shadow value in the instance __dict__), so false-positive
+ * suppression stops flagging Warning (user order). Right sides reading
+ * self.cellData have their key names recorded (2026-11-10 user order: the
+ * hint is the copy value of the matching cell property, carrying
+ * key/type/domains). Each class scans independently; the scan stops once
+ * __init__ exits its block (indent falls back); `==`/`+=`/annotated
+ * assignments do not count (conservative, prefer misses over wrong hits).
  */
 export function findInitAssignedSelfProperties(text: string): InitAssignedSelfProperties {
   const names = new Set<string>();
@@ -166,7 +189,7 @@ export function findInitAssignedSelfProperties(text: string): InitAssignedSelfPr
     }
     const indent = line.length - line.trimStart().length;
     if (indent <= initIndent) {
-      initIndent = -1; // 出块;下一个 def __init__(下一类)重新进入
+      initIndent = -1; // block exited; the next def __init__ (next class) re-enters
       continue;
     }
     const assign = /^(\s*)self\.(\w+)\s*=(?!=)(.*)$/.exec(line);
@@ -189,15 +212,15 @@ export function findInitAssignedSelfProperties(text: string): InitAssignedSelfPr
   return { names, sites, cellDataCopyKeys };
 }
 
-/** 一处 self.cellData["key"] / self.cellData.get("key") 访问的结构面 */
+/** Structure face of one self.cellData["key"] / self.cellData.get("key") access */
 export interface CellDataKeyAccess {
-  /** 访问行(0 起) */
+  /** Access line (0-based) */
   line: number;
-  /** key 起始列(0 起,UTF-16 码元;不含引号) */
+  /** Key start column (0-based, UTF-16 code units; quotes excluded) */
   character: number;
-  /** key 长度(高亮区间) */
+  /** Key length (highlight range) */
   length: number;
-  /** 整个访问表达式的结束列(inlay 提示锚在其后) */
+  /** End column of the whole access expression (the inlay hint anchors after it) */
   accessEnd: number;
   key: string;
 }
@@ -206,9 +229,11 @@ const CELL_DATA_ACCESS_PATTERN =
   /self\.cellData\s*(?:\[\s*(["'])([^"'\]]+)\1\s*\]|\.get\s*\(\s*(["'])([^"')]+)\3)/g;
 
 /**
- * 全文扫 self.cellData["key"] / self.cellData.get("key") 访问(与
- * findPythonSelfPropertyAccesses 同款朴素行级正则,无掩码同口径)。
- * 位置指向 key 本身(引号内),供提示锚定;accessEnd 指向表达式尾。
+ * Scans the whole text for self.cellData["key"] / self.cellData.get("key")
+ * accesses (the same plain line-level regex as
+ * findPythonSelfPropertyAccesses, same contract, no masking).
+ * Positions point at the key itself (inside the quotes) for hint anchoring;
+ * accessEnd points at the end of the expression.
  */
 export function findCellDataKeyAccesses(text: string): CellDataKeyAccess[] {
   const accesses: CellDataKeyAccess[] = [];
@@ -233,7 +258,7 @@ export function findCellDataKeyAccesses(text: string): CellDataKeyAccess[] {
   return accesses;
 }
 
-/** 一次词法扫描束(三扫描面:AUDIT-005 B2 批 7 起 Rust 面可供给,判定核共用) */
+/** One lexical scan bundle (three scan faces: the Rust face can supply it since AUDIT-005 B2 batch 7, shared by the ruling core) */
 export interface PropertyDirectionScanBundle {
   accesses: ReturnType<typeof findPythonSelfPropertyAccesses>;
   initAssigned: InitAssignedSelfProperties;
@@ -288,7 +313,7 @@ function scanCellDataCopyScopes(text: string): Map<number, CellDataCopyScope> {
   return byLine;
 }
 
-/** 本地扫描束(兜底与缺省路径;Rust 面同形供给,判定核零分叉) */
+/** Local scan bundle (fallback and default path; the Rust face supplies the same shape, zero divergence in the ruling core) */
 export function scanBundleOf(text: string): PropertyDirectionScanBundle {
   return {
     accesses: findPythonSelfPropertyAccesses(text),
@@ -298,12 +323,17 @@ export function scanBundleOf(text: string): PropertyDirectionScanBundle {
 }
 
 /**
- * 属性方向违规判定(纯函数):每处 self.<prop> / self.<role>.<prop> 访问,
- * 属性在 def 有声明(解析器命中)且访问域不在 Flags 域位内 → Warning;
- * 无接收者的裸 self.<prop> 且文件作用域不足 → Information(降级,不标 Error)。
- * 解析器未命中(非 def 属性/纯 python 属性)一律跳过,不诊断。
- * bundle 缺省本地扫描;Rust 面(buildPropertyDirectionScanBundleWithRust)同形
- * 供给时判定核逐位同语义(两流完整保留,消息渲染留本模块)。
+ * Property direction-violation ruling (pure function): for each
+ * self.<prop> / self.<role>.<prop> access where the property has a def
+ * declaration (resolver hit) and the access domain falls outside the Flags
+ * domains → Warning; a bare self.<prop> without receiver plus an
+ * insufficient file scope → Information (downgraded, never Error).
+ * Resolver misses (non-def properties / pure python properties) are always
+ * skipped, never diagnosed.
+ * bundle defaults to the local scan; when the Rust face
+ * (buildPropertyDirectionScanBundleWithRust) supplies the same shape, the
+ * ruling core is bit-for-bit the same semantics (both streams fully
+ * preserved, message rendering stays in this module).
  */
 export function findPropertyDirectionFindings(
   text: string,
@@ -315,8 +345,9 @@ export function findPropertyDirectionFindings(
   const fileScope = inferProcessScopeFromPythonFile(filePath);
   const initAssigned = bundle.initAssigned;
   const findings: PropertyDirectionFinding[] = [];
-  // 复制属性提示已覆盖的裸访问(行\u0000名):赋值行 LHS 若同时被访问扫描
-  // 命中,赋值位提示不重复出
+  // Bare accesses already covered by a copied-property hint (line\u0000name):
+  // when the assignment-line LHS is also hit by the access scan, the
+  // assignment-position hint is not emitted twice
   const emitted = new Set<string>();
 
   for (const access of bundle.accesses) {
@@ -362,17 +393,17 @@ export function findPropertyDirectionFindings(
 
     const hit = resolve(propertyPath, propertyPath.split('.')[0]);
     if (!hit) {
-      continue; // 非 def 属性,不诊断
+      continue; // not a def property, not diagnosed
     }
     const domains = hit.domains;
-    // 属性名 token 列:裸 self.<prop> 从 root 起;接收者限定跳过 self.<role>.
+    // Property-name token column: a bare self.<prop> starts at the root; a receiver qualifier skips self.<role>.
     const charStart = receiver
       ? access.character + root.length + 1
       : access.character;
 
     const accessedDomain = receiver ?? fileScope;
     if (!accessedDomain) {
-      // 无接收者且文件作用域不足(不在六角色目录段):降级为参考信息
+      // No receiver and insufficient file scope (not under one of the six role directory sections): downgraded to reference info
       findings.push({
         line: access.line,
         character: charStart,
@@ -392,14 +423,18 @@ export function findPropertyDirectionFindings(
     }
 
     if (domains.length === 0) {
-      continue; // Flags 未配置 → 无域位可判,不发明方向
+      continue; // Flags not configured → no domain to judge, the direction is never invented
     }
     if (!domains.includes(accessedDomain)) {
-      // 误报治理:同文件 __init__ 里给同名属性赋值 = 脚本自维护影子属性,
-      // 引擎域外裸访问落到实例 __dict__ 的影子值上,不再是失效引用——不标
-      // Warning(用户令「不要下划线」);右侧取自 self.cellData 的进一步出
-      // 「复制属性」提示(带 key/类型/域位,用户令「就提示复制属性开头」);
-      // 接收者限定形式(self.base.x 等)不走实体属性解析,影子不生效,维持原判。
+      // False-positive suppression: a same-named property assigned in this
+      // file's __init__ = a script-maintained shadow property; bare accesses
+      // outside the engine's domain land on the shadow value in the instance
+      // __dict__ and are no longer dead references — no Warning (user order
+      // "no underlines"); right sides reading self.cellData additionally emit
+      // a "copied property" hint (with key/type/domains, user order "just hint
+      // the copied property's beginning"); receiver-qualified forms
+      // (self.base.x etc.) do not go through entity property resolution, the
+      // shadow does not apply, and the original ruling stands.
       const shadowRoot = propertyPath.split('.')[0];
       if (!receiver && initAssigned.names.has(shadowRoot)) {
         const cellKey = initAssigned.cellDataCopyKeys.get(shadowRoot);
@@ -465,9 +500,12 @@ export function findPropertyDirectionFindings(
     }
   }
 
-  // 复制属性提示(赋值位):self.y = self.cellData["x"] 的 self.y 之后渲染
-  // key 的 def 面——裸访问提示已覆盖同一行同名时不重复出(用户令「就提示
-  // 复制属性开头」);右侧非 cellData 的赋值暂不展示(用户令「暂时复制属性」)。
+  // Copied-property hint (assignment position): after the self.y of
+  // self.y = self.cellData["x"], render the key's def face — when the bare
+  // access hint already covers the same line and name, do not emit twice
+  // (user order "just hint the copied property's beginning"); assignments
+  // whose right side is not cellData are not shown for now (user order
+  // "copied properties only for now").
   for (const [name, site] of initAssigned.sites) {
     const key = initAssigned.cellDataCopyKeys.get(name);
     if (key === undefined || emitted.has(`${site.line}\u0000${name}`)) {
@@ -475,7 +513,7 @@ export function findPropertyDirectionFindings(
     }
     const keyHit = resolve(key, key);
     if (!keyHit || keyHit.domains.length === 0) {
-      continue; // 键不是 def 属性 / Flags 未配置 → def 面不可知,宁缺勿错
+      continue; // the key is not a def property / Flags not configured → the def face is unknown, prefer missing over wrong
     }
     findings.push({
       line: site.line,
@@ -497,14 +535,16 @@ export function findPropertyDirectionFindings(
     });
   }
 
-  // cellData 键提示:self.cellData["key"] 的 key 逐个对 def 解析——def 键渲染
-  // key 的 def 面(key: 类型 · 域位),域位不含 cell 追加「不在 cellData」
-  // (引擎不会把它放进 cellData);非 def 键(position/direction 引擎自塞键、
-  // 脚本自塞键)一律跳过,不发明。
+  // cellData key hints: each key of self.cellData["key"] is resolved against
+  // the def — a def key renders the key's def face (key: type · domains),
+  // with "not in cellData" appended when the domains lack cell (the engine
+  // never puts it into cellData); non-def keys (position/direction
+  // engine-added keys, script-added keys) are always skipped, never
+  // invented.
   for (const access of bundle.cellDataAccesses) {
     const hit = resolve(access.key, access.key);
     if (!hit || hit.domains.length === 0) {
-      continue; // 非 def 键 / Flags 未配置 → 无域位可判,不发明
+      continue; // non-def key / Flags not configured → no domain to judge, never invented
     }
     const carries = hit.domains.includes('cell');
     findings.push({
@@ -537,7 +577,7 @@ export function findPropertyDirectionFindings(
   return findings;
 }
 
-/** 提示流(下划线之外)出哪些码;诊断流只出违规与作用域不足 */
+/** Which codes go to the hint stream (everything besides underlines); the diagnostic stream emits only violations and insufficient scope */
 const HINT_STREAM_CODES = new Set([
   PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE,
   PROPERTY_DIRECTION_CELL_DATA_KEY_DIAGNOSTIC_CODE
@@ -549,12 +589,16 @@ const DIAGNOSTIC_STREAM_CODES = new Set([
 ]);
 
 /**
- * 提示短文案(用户令「就提示复制属性开头」):复制属性 =
- * 「复制属性 key: 类型 · cell」;cellData 键 = 「key: 类型 · cell」。
- * 标签展示 cell 面(用户令 2026-11-11:base 侧读到的就是 cell 侧同步来的
- * 那份,裸并集 cell|client 是噪音);域位不含 cell 保持原域位并追加
- * 「不在 cellData」(引擎不会把它放进 cellData,副本永远读不到值)。
- * 完整域位并集留悬停全文(诊断消息同源),不丢信息。
+ * Hint short copy (user order "just hint the copied property's beginning"):
+ * copied property = "copied property key: type · cell"; cellData key =
+ * "key: type · cell".
+ * The label shows the cell face (user order 2026-11-11: what the base side
+ * reads is exactly the copy synced from the cell side; the bare union
+ * cell|client is noise); when the domains lack cell, keep the original
+ * domains and append "not in cellData" (the engine never puts it into
+ * cellData, so the copy can never read a value).
+ * The full domain union stays in the hover text (same source as the
+ * diagnostic message); no information is lost.
  */
 export function shadowHintLabelOf(finding: PropertyDirectionFinding): string {
   const inCellData = finding.domains.includes('cell');
@@ -575,22 +619,23 @@ export function shadowHintLabelOf(finding: PropertyDirectionFinding): string {
   return inCellData ? label : `${label} · ${l10nText('not in cellData')}`;
 }
 
-/** 一条淡色内嵌提示的纯数据形态(provider 层转 vscode.InlayHint,测试免 vscode 依赖) */
+/** Pure-data shape of one pale inline hint (the provider layer converts to vscode.InlayHint, tests stay vscode-free) */
 export interface PropertyDirectionShadowHintItem {
-  /** 锚点(self.<名> token / cellData 访问表达式之后) */
+  /** Anchor (after the self.<name> token / the cellData access expression) */
   position: { line: number; character: number };
-  /** 短文案(「复制属性 …」/「key: 类型 · cell」) */
+  /** Short copy ("copied property …" / "key: type · cell") */
   label: string;
-  /** 悬停全文(诊断级解释同源,完整域位并集在此) */
+  /** Hover full text (same source as the diagnostic-level explanation; the full domain union lives here) */
   tooltip: string;
   code: string;
-  /** def 声明落点(文件路径 + 0 起行;导航面与非复制提示 F12 一致,解析未命中不带) */
+  /** def declaration landing spot (file path + 0-based line; same navigation face as non-copy hints' F12; absent when resolution missed) */
   location?: { uri: string; line: number };
 }
 
 /**
- * 提示流入口(同步):开关口 enabled=false 零产出;只出复制属性与
- * cellData 键两类淡色内嵌提示,永不出下划线(用户令)。
+ * Hint stream entry (sync): enabled=false at the switch yields nothing;
+ * emits only the two pale inline hint kinds — copied property and cellData
+ * key — and never an underline (user order).
  */
 export function propertyDirectionShadowHintItems(
   text: string,
@@ -618,11 +663,15 @@ export function propertyDirectionShadowHintItems(
 }
 
 /**
- * 异步面:先按 (propertyPath, rootSymbol) 预解析全部去重访问(异步解析器,
- * 如 EntityMappingManager.resolvePropertyDefinitionInfo),再以同步查表
- * 解析器走 findPropertyDirectionFindings——纯判定逻辑零重复,与属性 CodeLens
- * 的「同一属性多处访问只解析一次」同口径。bundle 缺省本地扫描;Rust 面同形
- * 供给时预解析与判定核走同一束(零双扫)。
+ * Async face: first pre-resolve all deduplicated accesses by
+ * (propertyPath, rootSymbol) (async resolver, e.g.
+ * EntityMappingManager.resolvePropertyDefinitionInfo), then run
+ * findPropertyDirectionFindings with a sync lookup-table resolver — the
+ * pure ruling logic is duplicated zero times, same contract as the
+ * property CodeLens's "an access to the same property in many places
+ * resolves once". bundle defaults to the local scan; when the Rust face
+ * supplies the same shape, pre-resolution and the ruling core share one
+ * bundle (zero double scans).
  */
 export async function findPropertyDirectionFindingsAsync(
   text: string,
@@ -652,8 +701,10 @@ export async function findPropertyDirectionFindingsAsync(
       cache.set(key, (await resolve(propertyPath, rootSymbol)) ?? null);
     }
   }
-  // cellData 键与复制属性键也预解析:同步核同样走 resolve,漏预解析会让
-  // 缓存未命中(get 返回 undefined)被当「非 def 属性」静默跳过
+  // cellData keys and copied-property keys are pre-resolved too: the sync
+  // core goes through resolve as well, and a missed pre-resolution would
+  // let a cache miss (get returning undefined) be silently treated as a
+  // "non-def property"
   const cellKeys = new Set<string>([
     ...bundle.cellDataAccesses.map(access => access.key),
     ...bundle.initAssigned.cellDataCopyKeys.values()
@@ -672,9 +723,11 @@ export async function findPropertyDirectionFindingsAsync(
 }
 
 /**
- * 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖):
- * 只出真违规(Warning)与作用域不足(Information);影子/复制属性/cellData
- * 键走提示流(见 propertyDirectionShadowHintItems),不出下划线。
+ * Diagnostic items (pure data; the extension side converts to
+ * vscode.Diagnostic, tests stay vscode-free): emits only true violations
+ * (Warning) and insufficient scope (Information); shadow/copied property/
+ * cellData keys travel the hint stream (see
+ * propertyDirectionShadowHintItems), no underlines.
  */
 export function propertyDirectionDiagnosticItems(
   text: string,
@@ -699,7 +752,7 @@ export function propertyDirectionDiagnosticItems(
     }));
 }
 
-/** 提示流入口(异步):预解析去重后同步判定,与诊断流同一份分析核;bundle 缺省本地扫描(Rust 面同形供给时零双扫,批 7) */
+/** Hint stream entry (async): sync ruling after pre-resolving dedup, one analysis core shared with the diagnostic stream; bundle defaults to the local scan (zero double scans when the Rust face supplies the same shape, batch 7) */
 export async function propertyDirectionShadowHintItemsAsync(
   text: string,
   filePath: string,
@@ -731,8 +784,9 @@ export async function propertyDirectionShadowHintItemsAsync(
 }
 
 /**
- * 入口(异步):开关口 enabled=false 零产出;解析器异步(预解析去重后同步
- * 判定,与同步入口同产出口径)。
+ * Entry (async): enabled=false at the switch yields nothing; the resolver
+ * is async (sync ruling after pre-resolving dedup, the same emission
+ * contract as the sync entry).
  */
 export async function propertyDirectionDiagnosticItemsAsync(
   text: string,
@@ -762,7 +816,7 @@ export async function propertyDirectionDiagnosticItemsAsync(
       })));
 }
 
-/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖) */
+/** Diagnostic item (pure data; the extension side converts to vscode.Diagnostic, tests stay vscode-free) */
 export interface PropertyDirectionDiagnosticItem {
   range: {
     start: { line: number; character: number };

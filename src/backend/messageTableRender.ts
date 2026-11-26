@@ -1,7 +1,8 @@
-// SRC-012:messageTable.ts 渲染半边迁出(纯移动):人读 Markdown(renderMessageTableMarkdown)
-// + 机读 JSON(renderMessageTableJson)及私有渲染辅助(renderArgSignature/renderArg/
-// renderCellAliasId)。区域原文零改动;仅类型导入(自 messageTable,运行时无环),
-// 公开入口在 messageTable.ts 经 re-export 保持既有导入路径不变。
+// SRC-012: the rendering half moved out of messageTable.ts (a pure move): the human-readable
+// Markdown (renderMessageTableMarkdown) + the machine-readable JSON (renderMessageTableJson)
+// and the private rendering helpers (renderArgSignature/renderArg/renderCellAliasId). The
+// section's source text is unchanged; only a type import (from messageTable, no runtime cycle),
+// and the public entries in messageTable.ts keep the existing import paths via re-export.
 import type { MessageArgEntry, MessageMethodEntry, MessageTable } from './messageTable';
 
 export function renderMessageTableMarkdown(table: MessageTable): string {
@@ -79,7 +80,7 @@ export function renderMessageTableMarkdown(table: MessageTable): string {
     lines.push('| 属性 | 类型 | Flags | utype | aliasID | 来源 | 行 |');
     lines.push('|------|------|-------|-------|---------|------|----|');
     for (const property of table.clientProperties) {
-      // 到达此臂时 aliasID 已由 assignAliasIds 赋值(数字或 -1),与 renderCellAliasId 同口径
+      // By this arm aliasID has already been assigned by assignAliasIds (a number, or -1), same accounting as renderCellAliasId
       lines.push(`| ${property.name} | ${property.typeName ?? '—'} | ${property.flags} | ${property.utype ?? '—'} | ${String(property.aliasID)} | ${property.origin} | ${property.line} |`);
     }
     if (table.clientProperties.some(property => property.aliasID === -1)) {
@@ -129,11 +130,11 @@ function renderCellAliasId(method: MessageMethodEntry, aliasIdEnabled: boolean):
   if (!aliasIdEnabled || method.section !== 'ClientMethods') {
     return '—';
   }
-  // 到达此臂时 aliasID 已由 assignAliasIds 赋值(可能 -1 表示超限回退)
+  // By this arm aliasID has already been assigned by assignAliasIds (-1 may mean the over-limit fallback)
   return String(method.aliasID);
 }
 
-/** 机读 JSON:与 MessageTable 同形的纯数据(可直接 JSON.parse 消费) */
+/** Machine-readable JSON: pure data with the same shape as MessageTable (consumable by JSON.parse directly) */
 export function renderMessageTableJson(table: MessageTable): string {
   return JSON.stringify(
     {

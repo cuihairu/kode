@@ -1,8 +1,12 @@
-// AI 命令惰性注册(AI-001):默认全关——未配置 kbengine.ai.baseUrl 且宿主
-// 无 vscode.lm 模型时,一个 AI 命令都不注册(零成本,不进命令面板)。可用
-// 时注册 key 管理两命令与对话面板(AI-002):key 只进 SecretStorage
-// (AI_API_KEY_SECRET),绝不落 settings.json;输入框 password 形态,空输入
-// 不落盘。注册失败静默——AI 面不碍主链(activate fire-and-forget)。
+// Lazy registration of AI commands (AI-001): off by default — when
+// kbengine.ai.baseUrl is not configured and the host has no vscode.lm model, not
+// a single AI command is registered (zero cost, nothing enters the command
+// palette). When available, registers the two key-management commands and the
+// chat panel (AI-002): the key only goes into SecretStorage
+// (AI_API_KEY_SECRET) and never into settings.json; the input box is in password
+// form, and an empty input writes nothing to disk. A registration failure is
+// silent — the AI surface must not block the main chain (activate is
+// fire-and-forget).
 import * as vscode from 'vscode';
 
 import { AI_API_KEY_SECRET, isAiFaceAvailable, type AiSecretsStore } from './aiClient';
@@ -40,12 +44,13 @@ export async function registerAiCommands(
     vscode.commands.registerCommand('kbengine.ai.chat', () => openAiChatPanel(secrets))
   ];
   context.subscriptions.push(...disposables);
-  // AI-003 建议层:CodeAction provider(python+kbengine-def)+ explainFix
-  // 命令+只读虚拟 scheme,与命令同惰性块注册(未配置时零注册)
+  // AI-003 suggestion layer: CodeAction provider (python + kbengine-def) + the
+  // explainFix command + a read-only virtual scheme, registered in the same lazy
+  // block as the commands (zero registration when unconfigured)
   registerAiExplainFix(context, secrets);
-  // AI-004 建议层:suggestStub 命令+只读虚拟 scheme(模板真源零写入)
+  // AI-004 suggestion layer: suggestStub command + read-only virtual scheme (zero writes to the template source of truth)
   registerAiStubSuggest(context, secrets);
-  // AI-005 分析面:analyzeArchitecture 命令(结构化摘要喂 AI,报告零落盘)
+  // AI-005 analysis surface: the analyzeArchitecture command (structured digest fed to AI, zero disk footprint for the report)
   registerAiArchitecture(context, secrets);
   return {
     registered: true,

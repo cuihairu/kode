@@ -1,35 +1,35 @@
-//! hover 响应链(PR-010,书 §8 LSP-003 / §17 PR-010 / PH1-03 垂直切片)。
+//! The hover response chain (PR-010, book §8 LSP-003 / §17 PR-010 / PH1-03 vertical slice).
 //!
-//! 本单任务分发提到的「HOVER-001..013」在书 KODE_2_COMPLETE_TODO.md 中无该前缀
-//! 条目(§8 为 LSP 系列),与 PR-008 的 TYPE 前缀同情况:本模块按 §17 PR-010 原文
-//! + LSP-003 落地,链面编号在 docs/kode2/pr-010.md 里定义并逐条映射书条目,不冒领。
+//! The "HOVER-001..013" codes mentioned in this ticket's dispatch have no such prefix entries in the book's KODE_2_COMPLETE_TODO.md
+//! (§8 is the LSP series), the same situation as PR-008's TYPE prefix: this module follows §17 PR-010's original text
+//! + LSP-003, and the chain-face numbering is defined in docs/kode2/pr-010.md with item-by-item mapping to book entries, claiming nothing extra.
 //!
-//! 响应链(定位 → 文档 → 签名 → 继承成员),全部纯同步、零 IO:
-//! - 定位:UTF-16 position → 词 → 本文件声明符号(六类,PR-007 同面);
-//!   `.def` 的 `<Parent>` 标签/取值词触发继承链面;
-//! - 文档:符号种类 + 所属段(与 TS getSectionLabel 同源的面)+ 来源文件;
-//! - 签名:属性(Type/Flags/Default/DetailLevel/DatabaseLength/Identifier/
-//!   Persistent)、方法(facet/Arg/Exposed)、
-//!   组件(Type/Persistent)、类型声明(kind/重定向目标)、别名(Type 目标)、
-//!   实体注册(def 存在性)、def 实体本体(Parent);
-//! - 继承成员:def 链(parent 递归 + interfaces 平铺 + components 挂接,与 TS
-//!   buildDefChain 同口径,环截断显式标注)+ 链上各祖先的属性/方法成员展开。
+//! The response chain (locate -> document -> signature -> inherited members), all purely synchronous, zero IO:
+//! - Locate: UTF-16 position -> word -> symbols declared in this file (six kinds, the same face as PR-007);
+//!   a `.def`'s `<Parent>` tag/value word triggers the inheritance-chain face;
+//! - Document: symbol kind + owning section (the face sharing a source with TS getSectionLabel) + the origin file;
+//! - Signature: properties (Type/Flags/Default/DetailLevel/DatabaseLength/Identifier/
+//!   Persistent), methods (facet/Arg/Exposed),
+//!   components (Type/Persistent), type declarations (kind / redirect target), aliases (the Type target),
+//!   entity registrations (def existence), and def entity bodies (Parent);
+//! - Inherited members: the def chain (parent recursion + interfaces flattened + components attached, the same stance as TS
+//!   buildDefChain, cycles truncated with explicit marking) + the property/method member expansion of each ancestor on the chain.
 //!
-//! RUST-136 追加三面(仍是零 IO,语料可推导):
-//! - 来源(source):悬停词所在文档 + 命中声明行(1 基);
-//! - 可用分面(facets):def 实体本体面给本 def 方法三段非空段(base→cell→
-//!   client 序);方法面 markdown 渲染 Facet 行(symbol.facet 既有结构面);
-//! - 注释(comment):声明紧邻上方的 `<!-- -->` 注释块(空白行可间隔,遇内容
-//!   行即停)。版本面不在语料可推导域(引擎版本=TS kbengine.engineVersion
-//!   声明口径,供给链归 RUST-113 域,未做不装);完整类型解析(types.xml
-//!   FIXED_DICT 字段名)留 parser 模型扩展,同未做。
+//! RUST-136 adds three faces (still zero IO, derivable from the corpus):
+//! - Source: the document holding the hovered word + the hit declaration line (1-based);
+//! - Available facets: the def-entity-body face gives this def's non-empty method sections among the three (base->cell->
+//!   client order); the method face's markdown renders a Facet line (from the existing symbol.facet structural face);
+//! - Comment: the `<!-- -->` comment block immediately above the declaration (blank lines may intervene, stopping at the first
+//!   content line). The version face is outside the corpus-derivable domain (the engine version = TS kbengine.engineVersion's
+//!   declared stance; its supply chain belongs to the RUST-113 domain, not built and not wired); full type resolution (types.xml
+//!   FIXED_DICT field names) is left to a parser-model extension, likewise not built.
 //!
-//! ARCH-012 红线:不做任何性能宣称;结构保证只有一条(LSP-003 禁阻塞):查询
-//! 只碰本文件已持有的文本与已入库语料视图,无磁盘扫描、无全仓遍历。
+//! ARCH-012 red line: no performance claims; the only structural guarantee (LSP-003 forbids blocking): a query
+//! only touches the text this file already holds and the filed-corpus view -- no disk scans, no whole-repo walks.
 //!
-//! 对拍:TS 侧 `tests/kodeHoverParity.test.ts` 用 defParser/compositionRoots/
-//! buildDefChain 复算同一语料的 hover 面,与 [`dump_hover_golden`] 生成的
-//! golden 逐字段比对(双向门禁,PR-005/007/008 同构)。
+//! Comparison: the TS side's `tests/kodeHoverParity.test.ts` recomputes the same corpus's hover face with defParser/compositionRoots/
+//! buildDefChain and compares field by field against the golden produced by [`dump_hover_golden`]
+//! (a bidirectional gate, isomorphic with PR-005/007/008).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -45,29 +45,29 @@ use kode_parser::model::{
 use kode_vfs::store::{DocumentKey, RootId};
 
 // ---------------------------------------------------------------------------
-// 响应模型(结构化面;markdown 渲染只为 LSP contents 兼容,不是对拍面)
+// Response model (the structured face; markdown rendering exists only for LSP contents compatibility, not the comparison face)
 // ---------------------------------------------------------------------------
 
-/// 一条 hover 响应:符号身份 + 来源面 + 签名面 + 继承面(仅 def 实体)。
+/// One hover response: symbol identity + source face + signature face + inheritance face (def entity bodies only).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverResponse {
-    /// 单请求唯一 face。shadow 对拍先比 face,face 不同即 diff,绝不跨 face
-    /// 归一化;同 face 才进入正文严格比较。
+    /// The request's single face. Shadow comparison compares face first; a different face is a diff, never normalized
+    /// across faces; only the same face proceeds to strict body comparison.
     pub face: HoverFace,
     pub symbol: HoverSymbol,
-    /// 来源面:悬停词所在文档(canonical 路径)+ 命中声明行(1 基)。悬停词
-    /// 所在文档即声明文档(定位只在本文件声明符号上成立),行 = 各 face 的
-    /// 命中声明行。纯内存,零 IO(RUST-136)。
+    /// Source face: the document holding the hovered word (canonical path) + the hit declaration line (1-based). The hovered
+    /// word's document is the declaration document (locating only holds over symbols declared in this file), and line = each face's
+    /// hit declaration line. Pure memory, zero IO (RUST-136).
     pub source: HoverSource,
     pub signature: HoverSignature,
-    /// def 实体悬停与 `<Parent>` 悬停时的继承闭包面;其余为 None。
+    /// The inheritance-closure face when hovering a def entity or a `<Parent>`; None otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inherited: Option<InheritedChain>,
 }
 
-/// 来源面(RUST-136):file = 悬停文档 canonical 路径(golden 语境 = 语料键
-/// 相对路径,与 golden files[].file 同源),line = 命中声明行(1 基)。
+/// Source face (RUST-136): file = the hover document's canonical path (in the golden context = the corpus key's
+/// relative path, sharing a source with golden files[].file); line = the hit declaration line (1-based).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverSource {
@@ -75,7 +75,7 @@ pub struct HoverSource {
     pub line: usize,
 }
 
-/// hover provider face(每请求恰一个)。
+/// The hover provider face (exactly one per request).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum HoverFace {
@@ -88,71 +88,71 @@ pub enum HoverFace {
     AliasXml,
 }
 
-/// 符号身份(定位结果)。`kind`/`facet` 与 PR-007 符号面同一字面量。
+/// Symbol identity (the locate result). `kind`/`facet` use the same literals as the PR-007 symbol face.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverSymbol {
     pub name: String,
     pub kind: String,
     pub facet: Option<String>,
-    /// 所属段:与 TS getSectionLabel 输入同源(Entity/Properties/Components/
+    /// Owning section: sharing an input source with TS getSectionLabel (Entity/Properties/Components/
     /// BaseMethods/CellMethods/ClientMethods/Entities/Types/Aliases)。
     pub section: &'static str,
 }
 
-/// 签名面:按符号种类填充,不适用字段为 null(键恒在,对拍两侧同形)。
+/// Signature face: filled by symbol kind; inapplicable fields are null (keys always present, both comparison sides share the shape).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverSignature {
-    /// 属性:`<Type>` 直接文本首 token。
+    /// Property: the first token of the `<Type>` direct text.
     pub r#type: Option<String>,
-    /// 完整类型(RUST-136 增量②):`<Type>` token 经根内 types.xml 声明
-    /// 递归展开的可读全文(FIXED_DICT 键字段名/ARRAY 元素;深度护栏 ≤3;
-    /// 展开与原 token 相同(内建/缺席/空 FD/ARRAY 无 of)= null)。两消费面:
-    /// def 属性 + types.xml 声明本体。
+    /// Full type (RUST-136 increment 2): the `<Type>` token recursively expanded via the root's types.xml declarations
+    /// into a readable full text (FIXED_DICT key field names / ARRAY elements; depth guard <= 3;
+    /// an expansion equal to the original token (builtin / absent / empty FD / ARRAY without of) = null). Two consumer faces:
+    /// def properties + types.xml declaration bodies.
     pub full_type: Option<String>,
-    /// 属性:`<Flags>` 原文(trim)。
+    /// Property: the `<Flags>` raw text (trimmed).
     pub flags: Option<String>,
-    /// 属性:`<Default>` 原文(trim)。
+    /// Property: the `<Default>` raw text (trimmed).
     pub default_value: Option<String>,
-    /// 属性:`<DetailLevel>`(遗留拼写同识别)。
+    /// Property: `<DetailLevel>` (legacy spellings recognized too).
     pub detail_level: Option<String>,
-    /// 属性:`<DatabaseLength>` 原文(trim)。
+    /// Property: the `<DatabaseLength>` raw text (trimmed).
     pub database_length: Option<String>,
-    /// 属性:`<Identifier>` 原文(trim)。
+    /// Property: the `<Identifier>` raw text (trimmed).
     pub identifier: Option<String>,
-    /// 属性/组件:`<Persistent>` truthy;无标签为 null。
+    /// Property/component: `<Persistent>` truthiness; null when the tag is absent.
     pub persistent: Option<bool>,
-    /// 方法:Arg 个数。
+    /// Method: the number of Args.
     pub arg_count: Option<usize>,
-    /// 方法:`<Arg>` 文本(按出现顺序)。
+    /// Method: the `<Arg>` texts (in order of appearance).
     pub args: Option<Vec<String>>,
-    /// 方法:`<Exposed>` truthy。
+    /// Method: `<Exposed>` truthiness.
     pub exposed: Option<bool>,
-    /// 组件:`<Type>` 值(组件 def 名)。
+    /// Component: the `<Type>` value (the component def name).
     pub component_type: Option<String>,
-    /// types.xml 声明:fixedDict | array | builtin(与 TS parseTypesXml 同字面量)。
+    /// types.xml declaration: fixedDict | array | builtin (the same literals as TS parseTypesXml).
     pub type_kind: Option<String>,
-    /// types.xml 重定向条目的目标(非 FIXED_DICT/ARRAY 的指引首 token)。
+    /// The target of a types.xml redirect entry (the first token of a directive that is not FIXED_DICT/ARRAY).
     pub alias_target: Option<String>,
-    /// alias.xml:`<Type>` 目标。
+    /// alias.xml: the `<Type>` target.
     pub alias_type: Option<String>,
-    /// entities.xml 注册项:命中的 def 路径(语料内首见);未命中给约定名。
+    /// entities.xml registration: the hit def path (first seen in the corpus); a conventional name when there is no hit.
     pub def_file: Option<String>,
-    /// entities.xml 注册项:def 是否在已入库语料中。
+    /// entities.xml registration: whether the def is in the filed corpus.
     pub def_exists: Option<bool>,
-    /// def 实体本体:`<Parent>` 名。
+    /// Def entity body: the `<Parent>` name.
     pub parent: Option<String>,
-    /// 注释面(RUST-136):声明紧邻上方的 `<!-- -->` 注释块(空白行可间隔,
-    /// 遇首个非注释内容行即停;逐行去标记 trim,块首尾空行丢,多行 '\n'
-    /// 连接)。无 = null。
+    /// Comment face (RUST-136): the `<!-- -->` comment block immediately above the declaration (blank lines may intervene,
+    /// stopping at the first non-comment content line; strip markers and trim line by line, drop leading/trailing blank lines, join multiple lines with '\n').
+    /// None when absent.
     pub comment: Option<String>,
-    /// 可用分面(RUST-136):def 实体本体面 = 本 def 方法三段非空段
-    /// (base→cell→client 序);其余面恒空数组(键恒在)。
+    /// Available facets (RUST-136): the def-entity-body face = this def's non-empty sections among the three method sections
+    /// (base->cell->client order); all other faces are always an empty array (keys always present).
     pub facets: Vec<String>,
 }
 
-/// 继承链节点(def 链三面共用):存在性 = 路径在已入库语料中。
+/// Inheritance-chain node (shared by the three def-chain faces): existence = the path is in the filed corpus.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainNodeInfo {
@@ -160,7 +160,7 @@ pub struct ChainNodeInfo {
     pub exists: bool,
 }
 
-/// 链上单个祖先的成员展开(继承成员面)。
+/// The member expansion of a single ancestor on the chain (the inherited-members face).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemberSummary {
@@ -184,9 +184,9 @@ pub struct MemberMethod {
     pub facet: &'static str,
 }
 
-/// def 链面(与 TS buildDefChain 输出同构 + 成员展开):
-/// parent 链从紧邻父起;interfaces/components 为闭包内平铺(同名去重首见保序);
-/// 接口 def 不跟随 Parent;环截断显式标注,绝不死循环。
+/// Def-chain face (isomorphic with the TS buildDefChain output + member expansion):
+/// the parent chain starts at the immediate parent; interfaces/components are flattened within the closure (same-named entries deduplicated, first-seen kept, order preserved);
+/// interface defs do not follow Parent; cycles are truncated with explicit marking, never looping forever.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InheritedChain {
@@ -197,8 +197,8 @@ pub struct InheritedChain {
     pub members: Vec<MemberSummary>,
 }
 
-/// 段名 → TS getSectionLabel 同款中文区块措辞(PR-012 门 §1.3-③ 渲染面对齐;
-/// 未映射段保留原文,TS 侧该段走另一悬停面,不在此对齐范围)。
+/// Section name -> the same Chinese section wording as TS getSectionLabel (aligned with the PR-012 gate §1.3-(3) rendering face;
+/// unmapped sections keep the raw text; on the TS side those sections go through another hover face, outside this alignment's scope).
 fn section_label(section: &str) -> &str {
     match section {
         "Properties" => "属性区块",
@@ -212,15 +212,15 @@ fn section_label(section: &str) -> &str {
 }
 
 // ---------------------------------------------------------------------------
-// RUST-136 增量②:fullType 展开(与 tests/kodeHoverParity.test.ts TS 镜像
-// 同算法——递归深度护栏、分隔符、null 判据逐条对应)
+// RUST-136 increment 2: fullType expansion (the same algorithm as the tests/kodeHoverParity.test.ts TS mirror --
+// recursion depth guard, separators, and null criteria all map item for item)
 // ---------------------------------------------------------------------------
 
-/// 展开递归深度护栏:超过即按原文 token 呈现(防环/防爆炸)。
+/// The expansion recursion depth guard: past it the raw token is presented (cycle/blowup protection).
 const FULL_TYPE_MAX_DEPTH: usize = 3;
 
-/// 根内 types.xml 声明表:路径字典序(BTreeMap 键序),同名首见
-/// (entry/or_insert);根隔离 = path_roots 归属核对(KBUG-ROOT 口径)。
+/// The root's types.xml declaration table: path lexicographic order (BTreeMap key order), first-seen for same names
+/// (entry/or_insert); root isolation = a path_roots ownership check (the KBUG-ROOT stance).
 fn root_types_table<'a>(
     types_files: &'a BTreeMap<String, kode_parser::model::TypesFile>,
     path_roots: &'a BTreeMap<String, RootId>,
@@ -238,8 +238,8 @@ fn root_types_table<'a>(
     table
 }
 
-/// token 经声明表递归展开:FD → `FIXED_DICT { 名: 展示, … }`,ARRAY →
-/// `ARRAY<展开>`;内建/缺席/空 FD/ARRAY 无 of → 原 token;深度 ≥ 护栏 → 原 token。
+/// Expand a token recursively through the declaration table: FD -> `FIXED_DICT { name: display, ... }`, ARRAY ->
+/// `ARRAY<expanded>`; builtin / absent / empty FD / ARRAY without of -> the original token; depth >= the guard -> the original token.
 fn expand_type_token(table: &BTreeMap<&str, &TypeDecl>, tok: &str, depth: usize) -> String {
     if depth >= FULL_TYPE_MAX_DEPTH {
         return tok.to_string();
@@ -268,8 +268,8 @@ fn expand_type_token(table: &BTreeMap<&str, &TypeDecl>, tok: &str, depth: usize)
     }
 }
 
-/// FD 键字段展示:ARRAY 字段走 `<of>` 元素展开(无 of = `ARRAY`),
-/// 其余 token 直展开(深度沿用调用方已 +1 的层)。
+/// FD key-field display: ARRAY fields expand through the `<of>` element (no of = `ARRAY`);
+/// other tokens expand directly (the depth continues from the caller's already-incremented level).
 fn expand_field(table: &BTreeMap<&str, &TypeDecl>, f: &TypeField, depth: usize) -> String {
     if f.directive == "ARRAY" {
         return match &f.of_ref {
@@ -280,8 +280,8 @@ fn expand_field(table: &BTreeMap<&str, &TypeDecl>, f: &TypeField, depth: usize) 
     expand_type_token(table, &f.directive, depth)
 }
 
-/// def 属性面:ARRAY 指引走 `<of>` 元素展开,其余 token 直展开;
-/// 展开与原 token 相同 → None。
+/// The def property face: ARRAY directives expand through the `<of>` element, other tokens expand directly;
+/// an expansion equal to the original token -> None.
 fn full_type_of_property(
     table: &BTreeMap<&str, &TypeDecl>,
     tok: Option<&str>,
@@ -301,8 +301,8 @@ fn full_type_of_property(
     }
 }
 
-/// LSP contents 用 markdown 渲染(属性/方法面与 TS getSymbolHover 逐字节同
-/// 文案同尾随空白,PR-012 门 §1.3-③;其余面为 Rust 侧措辞,非对拍面)。
+/// Render LSP contents as markdown (the property/method faces are byte-for-byte identical to TS getSymbolHover in
+/// text and trailing whitespace, PR-012 gate §1.3-(3); the other faces use Rust-side wording and are not the comparison face).
 pub fn render_markdown(response: &HoverResponse) -> String {
     let mut md = String::new();
     md.push_str(&format!("**{}**\n\n", response.symbol.name));
@@ -310,7 +310,7 @@ pub fn render_markdown(response: &HoverResponse) -> String {
         "{}中的自定义定义。\n\n",
         section_label(response.symbol.section)
     ));
-    // RUST-136 来源面:声明文档:声明行(1 基)。
+    // RUST-136 source face: the declaration document; the declaration line (1-based).
     md.push_str(&format!(
         "**Source**: `{}:{}`\n\n",
         response.source.file, response.source.line
@@ -318,12 +318,12 @@ pub fn render_markdown(response: &HoverResponse) -> String {
     let s = &response.signature;
     let kind = response.symbol.kind.as_str();
     if kind == "property" {
-        // 属性面:字段序/措辞/尾随空白与 TS getSymbolHover 属性区块逐字节同
+        // Property face: field order/wording/trailing whitespace are byte-for-byte identical to TS getSymbolHover's property block
         // (languageProviders.ts:1623-1649:Type→Flags→Default→DetailLevel→
-        // DatabaseLength→Identifier)。TS 属性面不渲染 **Persistent**,Rust 同脸
-        // 不再单侧输出;数据库存储段需 DB 快照(FS/DB 面),划归边界。
-        // RUST-136 增量②:**Full Type** 行为 Rust 侧增面(TS 生产 hover 未跟,
-        // 对拍面=golden 数据面非 markdown),紧随 Type 行。
+        // through DatabaseLength->Identifier). The TS property face does not render **Persistent**; the Rust face, being the same face,
+        // no longer emits it on one side only; the database-storage section needs a DB snapshot (the FS/DB face), an attribution boundary.
+        // RUST-136 increment 2: the **Full Type** line is a Rust-side added face (TS production hover has not followed,
+        // the comparison face = the golden data face, not the markdown), placed right after the Type line.
         if let Some(t) = &s.r#type {
             md.push_str(&format!("**Type**: `{t}`\n\n"));
         }
@@ -349,9 +349,9 @@ pub fn render_markdown(response: &HoverResponse) -> String {
         return md;
     }
     if kind == "method" {
-        // 方法面:与 TS 同构 —— **Args** 行不带尾随空行(由 Exposed 段的
-        // 前导空行衔接);无 Args 时以 **参数个数** 行的尾随空行收尾。
-        // RUST-136 分面行:symbol.facet(base/cell/client)即方法所属段。
+        // Method face: isomorphic with TS -- the **Args** line carries no trailing blank line (the Exposed section's
+        // leading blank line connects); with no Args, the **argument count** line's trailing blank line closes it.
+        // RUST-136 facet line: symbol.facet (base/cell/client) is the method's owning section.
         if let Some(facet) = &response.symbol.facet {
             md.push_str(&format!("**Facet**: `{facet}`\n\n"));
         }
@@ -413,7 +413,7 @@ pub fn render_markdown(response: &HoverResponse) -> String {
     if let Some(def_file) = &s.def_file {
         md.push_str(&format!("**Definition**: `{def_file}`\n\n"));
     }
-    // RUST-136 可用分面:实体本体面的方法三段非空段(base→cell→client 序)。
+    // RUST-136 available facets: the entity-body face's non-empty sections among the three method sections (base->cell->client order).
     if !s.facets.is_empty() {
         let names: Vec<String> = s.facets.iter().map(|f| format!("`{f}`")).collect();
         md.push_str(&format!("**Facets**: {}\n\n", names.join("、")));
@@ -469,13 +469,13 @@ pub fn render_markdown(response: &HoverResponse) -> String {
             ));
         }
     }
-    // RUST-136 注释面:声明紧邻上方 `<!-- -->` 块,引用块逐行渲染。
+    // RUST-136 comment face: the `<!-- -->` block immediately above the declaration, rendered line by line as a quote block.
     append_doc_block(&mut md, &s.comment);
     md.trim_end().to_string()
 }
 
-/// RUST-136 注释面块(`<!-- -->` 紧邻上方声明注释,引用块逐行渲染);属性/
-/// 方法早退分支与通用尾三段渲染路径共享,保证注释面在所有 face 出现。
+/// RUST-136 comment-face block (the `<!-- -->` declaration comment immediately above, rendered line by line as a quote block); the
+/// property/method early-return branches and the generic tail share the three-section rendering path, so the comment face appears on every face.
 fn append_doc_block(md: &mut String, comment: &Option<String>) {
     let Some(doc) = comment else {
         return;
@@ -495,8 +495,8 @@ fn chain_node_label(node: &ChainNodeInfo) -> String {
     }
 }
 
-/// 实体本体面可用分面(RUST-136):本 def 方法三段非空段(base→cell→client
-/// 固定序);继承面方法不在本面(链上成员已逐祖先携带 facet)。
+/// The entity-body face's available facets (RUST-136): this def's non-empty sections among the three method sections (the fixed
+/// base->cell->client order); inherited-face methods are not on this face (chain members already carry their facet per ancestor).
 fn entity_facets(def: &DefFile) -> Vec<String> {
     let mut out = Vec::new();
     if !def.base_methods.is_empty() {
@@ -511,34 +511,34 @@ fn entity_facets(def: &DefFile) -> Vec<String> {
     out
 }
 
-/// 声明行(1 基)紧邻上方的 `<!-- -->` 注释块(RUST-136 注释面)。规则:
-/// 自声明行上一行向上扫,空白行可间隔,遇首个非注释内容行即停;跨行注释
-/// (`<!--` 开、`-->` 闭分行)向上续;逐行去标记后 trim,块首尾空行丢弃,
-/// 多行以 '\n' 连接。畸形未闭合注释到顶按已收内容返回(诚实:不抬高成
-/// 错误);声明行自身的同行尾注释不在扫描域(不属于「上方」)。
+/// The `<!-- -->` comment block immediately above the declaration line (1-based) (the RUST-136 comment face). Rules:
+/// scan upward from the line above the declaration; blank lines may intervene, stopping at the first non-comment content line; a multi-line comment
+/// (`<!--` opens, `-->` closes on separate lines) continues upward; strip markers and trim line by line, drop the block's leading/trailing blank lines, and
+/// join multiple lines with '\n'. A malformed unclosed comment returns what was collected so far at the top (honestly: not escalated to
+/// an error); a same-line trailing comment on the declaration line itself is outside the scan domain (it is not "above").
 fn preceding_comment(text: &str, decl_line1: usize) -> Option<String> {
     if decl_line1 <= 1 {
         return None;
     }
     let lines: Vec<&str> = text.split('\n').collect();
     let mut pieces: Vec<String> = Vec::new();
-    let mut in_comment = false; // 已见 `-->` 尾、向上找 `<!--` 开的跨行态
-    let mut idx = decl_line1 - 2; // 0 基:声明行上一行
+    let mut in_comment = false; // the multi-line state: a `-->` tail was seen, scanning upward for the `<!--` opening
+    let mut idx = decl_line1 - 2; // 0-based: the line above the declaration
     while let Some(line) = lines.get(idx) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             if in_comment {
-                break; // 跨行注释中间的空白行:块到此为止
+                break; // a blank line inside a multi-line comment: the block ends here
             }
         } else {
             let opens = trimmed.contains("<!--");
             let closes = trimmed.contains("-->");
             if !opens && !closes {
-                break; // 非注释内容行:停
+                break; // a non-comment content line: stop
             }
             if closes {
-                // 内容 = 最后 `<!--` 之后到其后首个 `-->` 之前(无 `<!--` 则
-                // 行首起);`-->` 不在行尾也边界安全。
+                // Content = after the last `<!--` up to before its first `-->` (when there is no `<!--`,
+                // from the line start); boundary-safe even when `-->` is not at the line end.
                 let start = trimmed.rfind("<!--").map(|p| p + 4).unwrap_or(0);
                 let end = trimmed[start..]
                     .find("-->")
@@ -549,12 +549,12 @@ fn preceding_comment(text: &str, decl_line1: usize) -> Option<String> {
                     pieces.push(content.to_string());
                 }
                 if opens {
-                    break; // 同行闭合:块首
+                    break; // closed on the same line: the block start
                 }
-                in_comment = true; // 跨行注释尾,向上续
+                in_comment = true; // a multi-line comment tail, continue upward
             } else {
-                // 只有 `<!--`(跨行注释开行):仅在跨行态内算块首,否则视为
-                // 内容行(一个未闭合的 `<!--` 悬在内容上方不算注释块)。
+                // Only `<!--` (a multi-line comment opening line): counts as the block start only within the multi-line state, otherwise treated
+                // as a content line (an unclosed `<!--` hanging above content does not count as a comment block).
                 if !in_comment {
                     break;
                 }
@@ -563,7 +563,7 @@ fn preceding_comment(text: &str, decl_line1: usize) -> Option<String> {
                 if !content.is_empty() {
                     pieces.push(content.to_string());
                 }
-                break; // 块首:收毕
+                break; // the block start: collection complete
             }
         }
         if idx == 0 {
@@ -579,42 +579,42 @@ fn preceding_comment(text: &str, decl_line1: usize) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// HoverEngine:语料视图 + 定位 + 响应链
+// HoverEngine: corpus views + locating + the response chain
 // ---------------------------------------------------------------------------
 
-/// RUST-078-W:hover 解析驻留预算(权重单位 = 驻留解析产物自有字符串字节;
-/// RUST-129 实测 def 形态 RSS ≈ 权重 ×3,256 MiB 权重 ≈ 768 MiB RSS,与暖门
-/// 压力预算同量级)。超预算按二次机会近似 LRU 驱逐,缓存丢失不丢正确性
-/// (被驱逐文件再 update 即重建)。
+/// RUST-078-W: the hover parse residency budget (the weight unit = the resident parse products' own string bytes;
+/// RUST-129 measured a def-shaped RSS of about weight x 3, so a 256 MiB weight is roughly 768 MiB RSS, the same order as the warm-gate
+/// stress budget). Over budget it evicts via a second-chance approximated LRU; losing a cache entry loses no correctness
+/// (a re-update of the evicted file rebuilds it).
 pub const HOVER_PARSE_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
 
-/// hover 引擎:持有符号索引与已入库 def 语料视图,纯内存应答。
+/// The hover engine: holds the symbol index and the filed def-corpus views, answering purely from memory.
 #[derive(Debug)]
 pub struct HoverEngine {
     pub index: kode_index::SymbolIndex,
-    /// def 语义视图:**按路径**键(与 TS 逐路径读文件同语义,跨语料同名
-    /// 实体互不串扰)。
+    /// Def semantic views: keyed **by path** (the same semantics as TS reading files per path; same-named entities across corpora
+    /// never interfere with each other).
     def_files: BTreeMap<String, DefFile>,
-    /// 实体名(file stem)→ 同根候选路径(entities.xml 注册项的 defFile 面;
-    /// KBUG-ROOT:按 DocumentKey.root 隔离,跨工程根同名互不借用;根内按
-    /// 入库序,同名多候选歧义不硬猜首见)。
+    /// Entity name (file stem) -> same-root candidate paths (the entities.xml registration's defFile face;
+    /// KBUG-ROOT: isolated by DocumentKey.root, so same-named entries across project roots never borrow from each other; within a root, by
+    /// filing order; ambiguous same-name multi-candidates are not force-guessed as first-seen).
     pub(crate) def_by_name: BTreeMap<(RootId, String), Vec<String>>,
-    /// 已入库 def 文件路径(存在性判定,对应 TS 的 fs.existsSync 面)。
+    /// Filed def file paths (the existence check, corresponding to TS's fs.existsSync face).
     pub(crate) corpus_defs: BTreeSet<String>,
-    /// entities.xml 所在目录(defsRoot 向上探测用)。
+    /// The directory holding entities.xml (for the defsRoot upward probe).
     entities_dirs: BTreeSet<String>,
-    /// entities.xml 语料视图(Phase2 诊断/定义面:按路径键)。
+    /// The entities.xml corpus view (the Phase2 diagnostic/definition face: keyed by path).
     pub(crate) entities_files: BTreeMap<String, kode_parser::model::EntitiesFile>,
-    /// types.xml 语料视图(PR-011 补全类型面:按路径键,跨语料同名不串扰)。
+    /// The types.xml corpus view (the PR-011 type completion face: keyed by path, no cross-corpus same-name interference).
     pub(crate) types_files: BTreeMap<String, kode_parser::model::TypesFile>,
-    /// alias.xml 语料视图(PR-011 补全别名面)。
+    /// The alias.xml corpus view (the PR-011 alias completion face).
     pub(crate) alias_files: BTreeMap<String, kode_parser::model::AliasFile>,
-    /// def/types 语料**原文**(RUST-138 references 引用位扫描要逐文件全文
-    /// 重扫,解析模型不含原文坐标)。BodyOnly(模型同文本异)也刷新——
-    /// 引用位行号直接依赖原文,不得用旧文本。
+    /// The def/types corpus **raw text** (the RUST-138 references occurrence scan needs a per-file full-text
+    /// rescan; the parse model carries no raw-text coordinates). BodyOnly (model-equal, text-different) refreshes too --
+    /// occurrence line numbers depend directly on the raw text; the old text must not be used.
     texts: BTreeMap<String, String>,
-    /// 路径 → 所属根(RUST-069-W):路径键语料视图不记根,撤根扇出靠这张
-    /// 归属表定域清除;update 登记,remove/invalidate_root 摘除。
+    /// Path -> owning root (RUST-069-W): the path-keyed corpus views do not record roots, so the root-purge fan-out relies on this
+    /// ownership table to scope the clearing; update registers, remove/invalidate_root removes.
     path_roots: BTreeMap<String, RootId>,
 }
 
@@ -624,8 +624,8 @@ impl Default for HoverEngine {
     }
 }
 
-/// RUST-069-W:HoverEngine 以共享缓存消费面身份登记进 WorkspaceSession,
-/// 撤根时由 session 按登记序扇出根级失效(回执名 hover-engine)。
+/// RUST-069-W: HoverEngine registers into WorkspaceSession as a shared-cache consumer face;
+/// on root purge the session fans out root-level invalidation in registration order (the receipt name hover-engine).
 impl kode_scheduler::RootInvalidationSink for HoverEngine {
     fn invalidate_root(&mut self, root: RootId) -> usize {
         HoverEngine::invalidate_root(self, root)
@@ -652,11 +652,11 @@ impl HoverEngine {
         }
     }
 
-    /// 单文件入库:符号索引 + 语料视图同步维护,按变化类别差异化失效
-    /// (RUST-120-W):`Identical` = 文本指纹命中 ⇒ 语料模型必同 ⇒ 视图零写;
-    /// `BodyOnly` = 注册事实(语料模型)全等 ⇒ 视图零写(index 层亦未 bump
-    /// generation,持有快照的读者全部存活);`Signature` = 重灌视图。
-    /// 语料四类之外的文件(.py 等)无语料视图,类别 = 索引层判定。
+    /// File a single document: maintain the symbol index + corpus views together, invalidating differentially by change class
+    /// (RUST-120-W): `Identical` = the text fingerprint hits => the corpus model must be equal => the views are written nowhere;
+    /// `BodyOnly` = registered facts (the corpus model) fully equal => the views are written nowhere (the index layer does not bump
+    /// the generation either, so readers holding snapshots all survive); `Signature` = re-populate the views.
+    /// Files outside the four corpus classes (.py etc.) have no corpus views; the class = the index layer's judgement.
     pub fn update(&mut self, key: DocumentKey, text: &str) -> ChangeCategory {
         let report = self.index.update(key.clone(), text);
         if report.change == ChangeCategory::Identical {
@@ -666,13 +666,13 @@ impl HoverEngine {
         match file_kind_of_uri(&key.uri) {
             FileKind::Def => {
                 let parsed = parse_def(text);
-                // 原文驻留在模型等价早退**之前**:BodyOnly(模型同文本异,
-                // 如注释增删)也必须刷新——references 引用位坐标依赖原文行位。
+                // Raw-text residency sits **before** the model-equality early return: BodyOnly (model-equal, text-different,
+                // e.g. comment additions/removals) must refresh too -- references occurrence coordinates depend on raw-text line positions.
                 self.texts.insert(path.clone(), text.to_string());
                 if self.def_files.get(&path) == Some(&parsed) {
                     return ChangeCategory::BodyOnly;
                 }
-                // RUST-069-W:登记路径归属(撤根扇出的定域依据)。
+                // RUST-069-W: register the path ownership (the scoping basis for the root-purge fan-out).
                 self.path_roots.insert(path.clone(), key.root);
                 self.corpus_defs.insert(path.clone());
                 self.def_files.insert(path.clone(), parsed);
@@ -698,7 +698,7 @@ impl HoverEngine {
             }
             FileKind::Types => {
                 let parsed = parse_types(text);
-                // 同 def:原文驻留在早退之前,BodyOnly 亦刷新。
+                // Same def: raw-text residency sits before the early return, so BodyOnly refreshes too.
                 self.texts.insert(path.clone(), text.to_string());
                 if self.types_files.get(&path) == Some(&parsed) {
                     return ChangeCategory::BodyOnly;
@@ -723,7 +723,7 @@ impl HoverEngine {
         }
     }
 
-    /// 文件移除(VFS-012 下游清理:符号 + 语料视图连带)。
+    /// File removal (the VFS-012 downstream cleanup: symbols + corpus views along with it).
     pub fn remove(&mut self, key: &DocumentKey) -> usize {
         let removed = self.index.remove(key);
         let path = key.uri.as_path().to_string();
@@ -741,8 +741,8 @@ impl HoverEngine {
         removed
     }
 
-    /// 同根同名 def 候选(入库序)。KBUG-ROOT:查询方 DocumentKey.root 定域,
-    /// 跨根不借用;无候选返回空切片。
+    /// Same-root same-name def candidates (filing order). KBUG-ROOT: the caller's DocumentKey.root scopes it,
+    /// no borrowing across roots; returns an empty slice when there are no candidates.
     pub(crate) fn def_candidates(&self, root: RootId, name: &str) -> &[String] {
         self.def_by_name
             .get(&(root, name.to_string()))
@@ -750,10 +750,10 @@ impl HoverEngine {
             .unwrap_or(&[])
     }
 
-    /// RUST-134:py 文件名 stem → 根内唯一语料 def 路径(实体归属,共享
-    /// 补全查询用)。先 entities.xml 注册候选(注册表真相);空则根内语料
-    /// stem 扫描回落(TS entitiesByName 口径);零命中/多命中 None 让位
-    /// 调用方既有链,绝不硬猜。
+    /// RUST-134: a py file-name stem -> the unique corpus def path within the root (entity ownership, shared
+    /// by completion queries). First the entities.xml registered candidates (the registry truth); if empty, the in-root corpus
+    /// stem scan falls back (the TS entitiesByName stance); zero/multiple hits return None, yielding to
+    /// the caller's existing chain, never force-guessing.
     pub(crate) fn corpus_def_for_entity(&self, root: RootId, entity: &str) -> Option<String> {
         let registered = self.def_candidates(root, entity);
         match registered {
@@ -775,26 +775,26 @@ impl HoverEngine {
         }
     }
 
-    /// RUST-134:语料 def 路径 → 已入库 DefFile 视图(共享补全查询读面;
-    /// completion.rs 与 hover 同饮一江水,不各自再开字段口子)。
+    /// RUST-134: a corpus def path -> the filed DefFile view (the shared completion-query read face;
+    /// completion.rs and hover drink from the same river; no separate field openings for each).
     pub(crate) fn corpus_def(&self, path: &str) -> Option<&DefFile> {
         self.def_files.get(path)
     }
 
-    /// RUST-138:语料原文读面(references 引用位扫描;def/types 入库驻留)。
+    /// RUST-138: the corpus raw-text read face (the references occurrence scan; def/types reside on filing).
     pub(crate) fn corpus_text(&self, path: &str) -> Option<&str> {
         self.texts.get(path).map(|text| text.as_str())
     }
 
-    /// RUST-138:路径 → 所属根(references 同根声明定域读面)。
+    /// RUST-138: path -> owning root (the references same-root declaration scoping read face).
     pub(crate) fn path_root_of(&self, path: &str) -> Option<RootId> {
         self.path_roots.get(path).copied()
     }
 
-    /// 根级失效(RUST-069-W 撤根扇出):清该根全部驻留——符号索引 + 路径键
-    /// 语料视图(按 path_roots 归属定域,不误伤留存根)+ 根键 def 候选 +
-    /// entities 目录派生集(目录无根身份,按幸存 entities.xml 重算)。
-    /// 返回清除条目数(回执记账:索引清除数 + 路径键条目数 + def 候选键数)。
+    /// Root-level invalidation (the RUST-069-W root-purge fan-out): clear everything this root holds -- the symbol index + the path-keyed
+    /// corpus views (scoped by path_roots ownership, sparing surviving roots) + the root-keyed def candidates +
+    /// the entities-directory derived set (the directory has no root identity; recompute from the surviving entities.xml).
+    /// Returns the number of cleared entries (receipt accounting: index clears + path-key entries + def candidate keys).
     pub fn invalidate_root(&mut self, root: RootId) -> usize {
         let mut cleared = self.index.invalidate_root(root);
         let owned: Vec<String> = self
@@ -825,7 +825,7 @@ impl HoverEngine {
         cleared
     }
 
-    /// 交互入口:UTF-16 position → 词 → 响应链。
+    /// The interactive entry: UTF-16 position -> word -> the response chain.
     pub fn hover(
         &self,
         key: &DocumentKey,
@@ -840,7 +840,7 @@ impl HoverEngine {
         self.hover_word(key, text, &word, line as usize + 1)
     }
 
-    /// 声明行入口(golden 生成用):声明行号(1 起)+ 符号名 → 响应链。
+    /// The declaration-line entry (for golden generation): the declaration line number (1-based) + the symbol name -> the response chain.
     pub fn hover_at_line(
         &self,
         key: &DocumentKey,
@@ -854,7 +854,7 @@ impl HoverEngine {
         self.hover_word(key, text, word, line1)
     }
 
-    /// 响应链主体:先试 `<Parent>` 继承面,再按声明符号出签名面。
+    /// The response-chain body: try the `<Parent>` inheritance face first, then produce the signature face per the declared symbol.
     fn hover_word(
         &self,
         key: &DocumentKey,
@@ -863,8 +863,8 @@ impl HoverEngine {
         line1: usize,
     ) -> Option<HoverResponse> {
         let path = key.uri.as_path();
-        // 来源面:命中声明行在各 face 都是 `x.line == line1` 的 find 结果,
-        // 故 line 恒取 line1(RUST-136)。
+        // Source face: the hit declaration line is the find result of `x.line == line1` on every face,
+        // so line always takes line1 (RUST-136).
         let source = HoverSource {
             file: path.to_string(),
             line: line1,
@@ -873,8 +873,8 @@ impl HoverEngine {
             FileKind::Def => {
                 let def = parse_def(text);
                 let entity = def_entity_name(path)?;
-                // `<Parent>` 标签/取值词 → 继承链面(TS getDefChainHover 同触发面:
-                // 无 Parent 也给链面,如实呈现"无声明")。
+                // A `<Parent>` tag/value word -> the inheritance-chain face (the same trigger face as TS getDefChainHover:
+                // a chain face is given even with no Parent, honestly presenting "no declaration").
                 if word == "Parent" || Some(word) == def.parent.as_deref() {
                     return Some(HoverResponse {
                         face: HoverFace::DefEntity,
@@ -902,7 +902,7 @@ impl HoverEngine {
                             .properties
                             .iter()
                             .find(|p| p.name == word && p.line == line1)?;
-                        // RUST-136 增量②:根内声明表展开 fullType(ARRAY 走 `<of>`)。
+                        // RUST-136 increment 2: expand fullType via the in-root declaration table (ARRAY goes through `<of>`).
                         let table = root_types_table(&self.types_files, &self.path_roots, key.root);
                         let full_type = full_type_of_property(
                             &table,
@@ -984,7 +984,7 @@ impl HoverEngine {
                         },
                         inherited: Some(self.chain_face(path, &def)),
                     }),
-                    // def 文件不出类型/别名符号。
+                    // Def files produce no type/alias symbols.
                     SymbolKind::Type | SymbolKind::Alias => None,
                 }
             }
@@ -1030,8 +1030,8 @@ impl HoverEngine {
                     Some(d) if d != "ARRAY" && d != "FIXED_DICT" => Some(d.to_string()),
                     _ => None,
                 };
-                // RUST-136 增量②:声明本体展开(同名首见表,悬停项可能被更早
-                // 声明遮蔽——两镜像同表同判据)。
+                // RUST-136 increment 2: declaration-body expansion (a first-seen same-name table; the hovered item may be shadowed by an earlier
+                // declaration -- both mirrors share the same table and criteria).
                 let table = root_types_table(&self.types_files, &self.path_roots, key.root);
                 let full_type = match expand_type_token(&table, word, 0) {
                     s if s == word => None,
@@ -1083,10 +1083,10 @@ impl HoverEngine {
         }
     }
 
-    /// def 链面:与 TS buildDefChain 同算法(def 视图替代 fs 读),含成员展开。
-    /// 入口语义面取**悬停文件自身**的解析结果(`entry`),不做按名全局查——
-    /// 多语料同名实体的视图互不串扰(父/接口/组件按路径在语料内求存在性)。
-    /// PR-011 起供 completion 继承成员面复用(crate 内)。
+    /// The def-chain face: the same algorithm as TS buildDefChain (def views replace fs reads), including member expansion.
+    /// The entry's semantic face takes **the hover file's own** parse result (`entry`), never a by-name global lookup --
+    /// views of same-named entities across corpora never interfere (parent/interface/component existence is resolved per path within the corpus).
+    /// Since PR-011 this is reused by completion's inherited-members face (within the crate).
     pub(crate) fn chain_face(&self, path: &str, entry: &DefFile) -> InheritedChain {
         let mut face = InheritedChain {
             parent_chain: Vec::new(),
@@ -1102,7 +1102,7 @@ impl HoverEngine {
         let mut seen_components: BTreeSet<String> = BTreeSet::new();
         let mut seen_files: BTreeSet<String> = BTreeSet::from([path.to_string()]);
 
-        // 闭包三面收集:同名去重首见保序(TS collectFlatDecls 同口径)。
+        // Closure three-face collection: same-name dedup keeping first-seen and order (the same stance as TS collectFlatDecls).
         fn collect(
             face: &mut InheritedChain,
             defs_root: &str,
@@ -1145,7 +1145,7 @@ impl HoverEngine {
                 &mut seen_components,
                 cdef,
             );
-            // 接口 def 不跟随 Parent(引擎 loadInterfaces 口径)。
+            // Interface defs do not follow Parent (the engine loadInterfaces stance).
             let parent = match category {
                 Category::Interface => None,
                 _ => cdef.parent.clone(),
@@ -1168,8 +1168,8 @@ impl HoverEngine {
                 break;
             }
             seen_files.insert(parent_path.clone());
-            // 成员展开 + 前进:按**路径**读该父的 def 视图(与 TS 逐路径
-            // 读文件同语义);未入库按缺文件处理,绝不虚构。
+            // Member expansion + advance: read that parent's def view **by path** (the same semantics as TS
+            // reading files per path); treat unfiled as a missing file, never fabricating.
             match self.def_files.get(&parent_path) {
                 Some(pdef) => {
                     face.members.push(MemberSummary {
@@ -1201,13 +1201,13 @@ impl HoverEngine {
         face
     }
 
-    /// entities.xml 语料视图(Phase2 诊断/定义面只读)。
+    /// The entities.xml corpus view (read-only, for the Phase2 diagnostic/definition face).
     pub(crate) fn entities_files(&self) -> &BTreeMap<String, kode_parser::model::EntitiesFile> {
         &self.entities_files
     }
 
-    /// defsRoot 探测(TS findEntityDefsRootFromFile 同规则):向上找含
-    /// entities.xml 的目录;文件在 `entity_defs/` 内时根取该子目录。
+    /// The defsRoot probe (the same rules as TS findEntityDefsRootFromFile): walk upward for a directory containing
+    /// entities.xml; when the file is inside `entity_defs/`, the root is that subdirectory.
     pub(crate) fn defs_root(&self, path: &str) -> Option<String> {
         let mut dir = parent_dir(path)?;
         loop {
@@ -1230,8 +1230,8 @@ pub(crate) enum Category {
     Component,
 }
 
-/// 文件在 defsRoot 下的类别(TS categoryOf 同规则:相对段含 interfaces/
-/// components 判定)。
+/// A file's category under defsRoot (the same rules as TS categoryOf: the relative path containing interfaces/
+/// components decides).
 pub(crate) fn category_of(defs_root: &str, path: &str) -> Category {
     if !path.starts_with(&format!("{defs_root}/")) {
         return Category::Entity;
@@ -1281,16 +1281,16 @@ fn hover_symbol(record: &kode_index::symbol::SymbolRecord, section: &'static str
     }
 }
 
-/// 父目录(路径用 `/`;无父返回 None)。
+/// The parent directory (paths use `/`; returns None when there is no parent).
 pub(crate) fn parent_dir(path: &str) -> Option<&str> {
     path.rsplit_once('/').map(|(dir, _)| dir)
 }
 
 // ---------------------------------------------------------------------------
-// 词提取(HOVER 定位层;UTF-16 character ↔ char 边界)
+// Word extraction (the HOVER locating layer; UTF-16 character <-> char boundaries)
 // ---------------------------------------------------------------------------
 
-/// 该行(0 起)的字节区间(不含行终止符;缺行返回 None)。
+/// The byte range of the given line (0-based), excluding the line terminator; returns None when the line is missing.
 fn line_bounds(text: &str, line0: u32) -> Option<(usize, usize)> {
     let mut line: u32 = 0;
     let mut start = 0usize;
@@ -1317,12 +1317,12 @@ fn is_word_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
 }
 
-/// LSP 词提取:character 按 UTF-16 计;光标在词内或紧贴词尾均可命中
-/// (VS Code 语义的子集:emoji 等 astral 字符按 UTF-16 双单位正确跨界)。
+/// LSP word extraction: character counts in UTF-16; a hit works with the cursor inside the word or right at its end
+/// (a subset of VS Code semantics: astral characters such as emoji correctly straddle boundaries as two UTF-16 units).
 pub fn word_at(text: &str, line0: u32, character: u32) -> Option<String> {
     let (s, e) = line_bounds(text, line0)?;
     let line = text[s..e].trim_end_matches('\r');
-    // (utf16 起点, char) 序列。
+    // The sequence of (utf16 start, char) pairs.
     let mut chars: Vec<(u32, char)> = Vec::new();
     let mut acc = 0u32;
     for ch in line.chars() {
@@ -1332,12 +1332,12 @@ pub fn word_at(text: &str, line0: u32, character: u32) -> Option<String> {
     if chars.is_empty() {
         return None;
     }
-    // 光标覆盖的 char(character 落在某 char 的 utf16 区间内),行尾取最后一字。
+    // The char the cursor covers (character falls within some char's utf16 range); at line end take the last char.
     let idx = chars
         .iter()
         .position(|(start, ch)| character < start + ch.len_utf16() as u32)
         .unwrap_or(chars.len() - 1);
-    // 词内命中;否则紧贴词尾(光标在前一 char 结束处)也可命中。
+    // A hit inside the word; otherwise right at the word's end (the cursor at the previous char's end) also hits.
     let mut anchor = idx;
     if !is_word_char(chars[idx].1) {
         if idx > 0 && character == chars[idx].0 && is_word_char(chars[idx - 1].1) {
@@ -1359,10 +1359,10 @@ pub fn word_at(text: &str, line0: u32, character: u32) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// 对拍 golden(只写不读;TS 侧 tests/kodeHoverParity.test.ts 复算)
+// Comparison golden (write-only, never read back; recomputed by the TS side's tests/kodeHoverParity.test.ts)
 // ---------------------------------------------------------------------------
 
-/// golden 文件名(仓库相对)。
+/// The golden file name (relative to the repo root).
 pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/hover-parity.json";
 
 #[derive(Debug, Serialize)]
@@ -1388,7 +1388,7 @@ struct GoldenDump {
     files: Vec<GoldenFile>,
 }
 
-/// 语料文件 → ParsedUnit(kind 字符串来自 collect_corpus)。
+/// Corpus file -> ParsedUnit (the kind string comes from collect_corpus).
 fn parse_by_kind(kind: &str, text: &str) -> Option<ParsedUnit> {
     match kind {
         "def" => Some(ParsedUnit::Def(parse_def(text))),
@@ -1399,12 +1399,12 @@ fn parse_by_kind(kind: &str, text: &str) -> Option<ParsedUnit> {
     }
 }
 
-/// 整个语料的 hover golden JSON(每文件每声明符号一条响应链)。
+/// The hover golden JSON for the whole corpus (one response chain per declared symbol per file).
 pub fn dump_hover_golden(repo_root: &std::path::Path) -> String {
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let registry = crate::golden_corpus::corpus_registry();
     let mut engine = HoverEngine::new();
-    // 先全量入库(字典序 = TS 语料序;键 = 各语料工程根,KBUG-ROOT 隔离)。
+    // File everything first (lexicographic order = the TS corpus order; keys = each corpus project root, KBUG-ROOT isolation).
     for (path, (_kind, text)) in &files {
         engine.update(crate::golden_corpus::corpus_key(&registry, path), text);
     }
@@ -1454,7 +1454,7 @@ mod tests {
     #[test]
     fn update_round_trips_per_file_kind() {
         let mut e = HoverEngine::new();
-        // Def:首入 Signature;同文本 Identical;注释增删(模型同文本异)BodyOnly。
+        // Def: first filing is Signature; same text is Identical; comment additions/removals (model-equal, text-different) are BodyOnly.
         let def_path = "/p/scripts/entity_defs/Avatar.def";
         let def_text = "<root>\n\t<Properties>\n\t</Properties>\n</root>\n";
         assert!(matches!(
@@ -1470,7 +1470,7 @@ mod tests {
             e.update(key(def_path), &def_commented),
             ChangeCategory::BodyOnly
         ));
-        // Entities / Types / Alias:同构往返(首 Signature,模型等价再入 BodyOnly)。
+        // Entities / Types / Alias: isomorphic round trips (first Signature, then model-equal refiling as BodyOnly).
         for (path, text) in [
             ("/p/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
             ("/p/scripts/entity_defs/types.xml", "<root>\n</root>\n"),
@@ -1486,8 +1486,8 @@ mod tests {
                 "{path} 模型等价再入必须 BodyOnly"
             );
         }
-        // 语料四类之外(.py):索引层负缓存拦死(非 KBEngine 声明文件)→
-        // update 恒 Identical 早退,语料模型零写。
+        // Outside the four corpus classes (.py): the index layer's negative cache blocks outright (not a KBEngine declaration file) ->
+        // update always early-returns as Identical, writing nothing to the corpus model.
         assert!(matches!(
             e.update(
                 key("/p/scripts/base/Avatar.py"),
@@ -1546,7 +1546,7 @@ mod tests {
         let md = render_markdown(&resp("entity", HoverSignature::default(), Some(chain)));
         assert!(md.contains("**Parent 链**"), "{md}");
         assert!(md.contains(";检测到环,已截断"), "{md}");
-        // 无环链:同段渲染但零环注记。
+        // An acyclic chain: the same rendering but no cycle annotation.
         let plain = InheritedChain {
             parent_chain: vec![ChainNodeInfo {
                 name: "Monster".into(),
@@ -1564,18 +1564,18 @@ mod tests {
 
     #[test]
     fn preceding_comment_block_boundary_faces() {
-        // 跨行态内遇空行:块到此截断,只收 `-->` 行内容。
+        // A blank line within the multi-line state: the block truncates here, collecting only the `-->` line's content.
         let mid = preceding_comment("<!-- top\n\nmid -->\nDECL\n", 4);
         assert_eq!(mid.as_deref(), Some("mid"));
-        // 未闭合 `<!--` 悬在内容上方(非跨行态):不算注释块。
+        // An unclosed `<!--` hanging above content (not in the multi-line state): does not count as a comment block.
         assert_eq!(preceding_comment("<!-- dangling\nDECL\n", 2), None);
-        // 注释链直抵文件首行(idx==0 收毕)。
+        // The comment chain reaches the file's first line (collection completes at idx==0).
         assert!(preceding_comment("one -->\ntwo -->\nDECL\n", 3).is_some());
     }
 
     #[test]
     fn corpus_def_multi_candidate_is_none() {
-        // 同根同 stem 双 def:多候选不硬猜 → None。
+        // Two same-root same-stem defs: multiple candidates are not force-guessed -> None.
         let mut e = HoverEngine::new();
         let t = "<root>\n</root>\n";
         e.update(key("/p/scripts/entity_defs/Avatar.def"), t);
@@ -1585,7 +1585,7 @@ mod tests {
 
     #[test]
     fn misc_helpers_direct_faces() {
-        // defsRoot 前缀不命中 → Entity 兜底;命中走 interfaces 判定。
+        // A defsRoot prefix miss -> the Entity fallback; a hit goes through the interfaces judgement.
         assert_eq!(
             category_of("/defs", "/elsewhere/Avatar.def"),
             Category::Entity
@@ -1594,11 +1594,11 @@ mod tests {
             category_of("/defs", "/defs/interfaces/ROLE.def"),
             Category::Interface
         );
-        // 末行无换行符:区间收到文本末(line==line0 兜底臂)。
+        // The last line has no newline: the range extends to the text end (the line==line0 fallback arm).
         assert_eq!(line_bounds("ab\ncd", 1), Some((3, 5)));
-        // 文本以换行收尾:末空行走循环后兜底臂(区间空)。
+        // The text ends with a newline: the trailing empty line takes the post-loop fallback arm (an empty range).
         assert_eq!(line_bounds("ab\n", 1), Some((3, 3)));
-        // parse_by_kind:types/alias 两臂 + 未知 kind None。
+        // parse_by_kind: the types/alias two arms + None for an unknown kind.
         assert!(matches!(
             parse_by_kind("types", "<root/>"),
             Some(ParsedUnit::Types(_))
@@ -1612,9 +1612,9 @@ mod tests {
 
     #[test]
     fn full_type_display_faces() {
-        // 语料:自引用 FD(深度护栏 + 防环)+ ARRAY 包装 + builtin 条目。
+        // Corpus: a self-referencing FD (depth guard + cycle protection) + an ARRAY wrapper + builtin entries.
         let types_text = "<root>\n <SPACE_VECTOR>\n  FIXED_DICT\n  <Properties>\n   <x>\n    <Type> FLOAT </Type>\n   </x>\n   <slots>\n    <Type>\n     ARRAY\n     <of> UINT32 </of>\n    </Type>\n   </slots>\n   <deep>\n    <Type> SPACE_VECTOR </Type>\n   </deep>\n  </Properties>\n </SPACE_VECTOR>\n <TELEPORT_POINTS>\n  ARRAY\n  <of> SPACE_VECTOR </of>\n </TELEPORT_POINTS>\n <PLAIN>\n  UINT32\n </PLAIN>\n</root>\n";
-        // def 属性四面:FD token / ARRAY<of> 双层 / 内建(=null) / ARRAY 无 of(=null)。
+        // The def property's four faces: FD token / the ARRAY<of> double layer / builtin (=null) / ARRAY without of (=null).
         let def_text = "<root>\n <Properties>\n  <pos>\n   <Type> SPACE_VECTOR </Type>\n  </pos>\n  <path>\n   <Type> ARRAY <of> TELEPORT_POINTS </of> </Type>\n  </path>\n  <count>\n   <Type> UINT32 </Type>\n  </count>\n  <broken>\n   <Type> ARRAY </Type>\n  </broken>\n </Properties>\n</root>\n";
         let mut e = HoverEngine::new();
         assert!(matches!(
@@ -1625,7 +1625,7 @@ mod tests {
             e.update(key("/p/scripts/entity_defs/Avatar.def"), def_text),
             ChangeCategory::Signature
         ));
-        // 深度护栏:0/1/2 层展开,第 3 层起按原文 token(自引用不死循环)。
+        // Depth guard: levels 0/1/2 expand; from level 3 the raw token is used (a self-reference never loops).
         let inner2 = "FIXED_DICT { x: FLOAT, slots: ARRAY<UINT32>, deep: SPACE_VECTOR }";
         let inner1 = format!(
             "FIXED_DICT {{ x: FLOAT, slots: ARRAY<UINT32>, deep: {} }}",
@@ -1643,8 +1643,8 @@ mod tests {
         let path = e
             .hover_at_line(&def_key, def_text, 6, "path")
             .expect("path 悬停");
-        // 属性 ARRAY<of> 从深度 1 起算:内层 FD 在深度 2 展开,其内引用按护栏
-        // 原文呈现(与 pos 的深度 0 起算差一层,两镜像同判据)。
+        // A property's ARRAY<of> counts from depth 1: the inner FD expands at depth 2, and references inside it present the raw
+        // token per the guard (one level more than pos's depth-0 baseline; both mirrors share the same criteria).
         assert_eq!(
             path.signature.full_type.as_deref(),
             Some(format!("ARRAY<ARRAY<{inner2}>>").as_str())
@@ -1657,13 +1657,13 @@ mod tests {
             .hover_at_line(&def_key, def_text, 12, "broken")
             .expect("broken 悬停");
         assert_eq!(broken.signature.full_type, None, "ARRAY 无 of→null");
-        // markdown 渲染:**Full Type** 行紧随 **Type**。
+        // Markdown rendering: the **Full Type** line immediately follows **Type**.
         let md = render_markdown(&pos);
         let type_at = md.find("**Type**: `SPACE_VECTOR`").expect("Type 行");
         let full_at = md.find("**Full Type**:").expect("Full Type 行");
         assert!(full_at > type_at, "{md}");
         assert!(md.contains(&format!("**Full Type**: `{outer}`")), "{md}");
-        // types.xml 声明面:FD/ARRAY 展开,builtin=null。
+        // The types.xml declaration face: FD/ARRAY expand, builtin=null.
         let types_key = key("/p/scripts/entity_defs/types.xml");
         let sv = e
             .hover_at_line(&types_key, types_text, 2, "SPACE_VECTOR")
@@ -1672,7 +1672,7 @@ mod tests {
         let tp = e
             .hover_at_line(&types_key, types_text, 19, "TELEPORT_POINTS")
             .expect("TELEPORT_POINTS 悬停");
-        // 声明面深度 0 起算,ARRAY 元素消耗一层:内层 FD 在深度 1 展开。
+        // The declaration face counts from depth 0, and the ARRAY element consumes one: the inner FD expands at depth 1.
         assert_eq!(
             tp.signature.full_type.as_deref(),
             Some(format!("ARRAY<{inner1}>").as_str())
@@ -1681,7 +1681,7 @@ mod tests {
             .hover_at_line(&types_key, types_text, 23, "PLAIN")
             .expect("PLAIN 悬停");
         assert_eq!(plain.signature.full_type, None, "builtin 声明→null");
-        // markdown:声明面 TypeKind 后跟 Full Type 行。
+        // Markdown: the declaration face's TypeKind is followed by the Full Type line.
         let tp_md = render_markdown(&tp);
         assert!(tp_md.contains("**TypeKind**: `array`"), "{tp_md}");
         assert!(

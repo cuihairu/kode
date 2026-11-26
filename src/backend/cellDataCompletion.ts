@@ -1,33 +1,39 @@
 /**
- * cellData 键补全(KSEM-CELL-04):`self.cellData["<片段>"]` /
- * `self.cellData.get("<片段>")` 字符串键位置的键补全数据面。
+ * cellData key completion (KSEM-CELL-04): the key completion data surface for
+ * `self.cellData["<fragment>"]` / `self.cellData.get("<fragment>")` string key
+ * positions.
  *
- * 分工(与 analyzeDef 同口径):键宇宙计算在 Rust(`$/kode/semantics/
- * cellDataKeys`:CELL-01 字段集 + CELL-02 内建键 + CELL-03 组件槽,域位真值
- * flag_domains);本模块只做上下文探测、角色/实体隔离、def 宇宙闭包收集
- * (BFS:Parent/Interfaces/组件类型,经 parseDefFileSemantics 出边)与
- * RPC 装配。def 文本流 TS→Rust 按请求供给,引擎不扫盘不缓存。
+ * Division of labour (same contract as analyzeDef): the key universe is computed
+ * in Rust (`$/kode/semantics/cellDataKeys`: CELL-01 field set + CELL-02 builtin
+ * keys + CELL-03 component slots, domain bits via flag_domains); this module
+ * only does context detection, role/entity isolation, def universe closure
+ * collection (BFS: Parent/Interfaces/component types, outgoing edges through
+ * parseDefFileSemantics) and RPC assembly. def text streams TS -> Rust
+ * per request; the engine neither scans disk nor caches.
  *
- * 诚实边界:
- * - 角色/实体隔离:仅 `scripts/cell/<Name>.py` 与 `scripts/base/<Name>.py`
- *   接管(cell/base 面可达 cellData;base 面是副本,键集同源);client/bots
- *   与其他角色不接管(不混入其他实体/角色);
- * - Rust 不可用(无 gate/调用失败/形状不合规)→ null,调用方不补全,
- *   不造键;实体 def 缺 → 缺席贡献,不猜;
- * - 替换范围 = 引号内键片段的精确区间(不含引号)。
+ * Honest boundary:
+ * - role/entity isolation: only `scripts/cell/<Name>.py` and
+ *   `scripts/base/<Name>.py` are taken over (cell/base faces can reach
+ *   cellData; the base face is a copy with a same-origin key set); client/bots
+ *   and other roles are not taken over (no mixing in other entities/roles);
+ * - Rust unavailable (no gate / call failure / non-conforming shape) -> null,
+ *   the caller does not complete, no keys invented; entity def missing ->
+ *   absent contribution, no guessing;
+ * - replacement range = the exact range of the key fragment inside the quotes
+ *   (quotes excluded).
  */
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { parseDefFileSemantics } from './defRenamer';
 
 export const CELL_DATA_KEYS_METHOD = '$/kode/semantics/cellDataKeys';
 
-/** 随请求供给的 def 宇宙面(与 Rust 契约 {name,text} 同形)。 */
+/** def universe face supplied with the request (same shape as the Rust contract {name,text}). */
 export interface CellDataDefSource {
   name: string;
   text: string;
 }
 
-/** Rust 返回的一条 cellData 键(kind 内部标签:defField/builtin/componentSlot)。 */
+/** One cellData key returned by Rust (kind is an internal label: defField/builtin/componentSlot). */
 export interface CellDataKeyEntry {
   key: string;
   kind: 'defField' | 'builtin' | 'componentSlot';
@@ -36,8 +42,7 @@ export interface CellDataKeyEntry {
   sourceLine?: number | null;
 }
 
-/** 诊断关联跳转面(KSEM-CELL-14):声明锚点解析产物(纯数据,publish 面
- * 转 vscode.DiagnosticRelatedInformation)。file=绝对路径;line=0 基 vscode 行。 */
+/** Diagnostic related-information link surface (KSEM-CELL-14): declaration anchor resolution output (pure data, converted to vscode.DiagnosticRelatedInformation on the publish face). file = absolute path; line = 0-based vscode line. */
 export interface CellDataRelatedLocation {
   file: string;
   line: number;
@@ -45,9 +50,11 @@ export interface CellDataRelatedLocation {
 }
 
 /**
- * sourceFile 锚点解析(KSEM-CELL-14):`{from}.def` 名 → 宇宙内类别 → 真实
- * 路径(pythonDefinition 的 cellData-key 跳转同口径)。内建键的引擎证据路径
- * (server/baseapp/entity.cpp:250)与解析不出的名字 → null,不造假跳转。
+ * sourceFile anchor resolution (KSEM-CELL-14): `{from}.def` name -> category
+ * inside the universe -> real path (same contract as the pythonDefinition
+ * cellData-key go-to). The engine evidence path for builtin keys
+ * (server/baseapp/entity.cpp:250) and unresolvable names -> null; no fake
+ * related-information link is invented.
  */
 export function resolveCellDataDeclAnchor(
   sourceFile: string | null | undefined,
@@ -66,18 +73,19 @@ export function resolveCellDataDeclAnchor(
   return targetPath ? { file: targetPath } : null;
 }
 
-/** 键补全上下文(替换区间面)。 */
+/** Key completion context (replacement range surface). */
 export interface CellDataKeyCompletionContext {
-  /** 已键入的键片段(可为空串:光标紧跟引号/`[`)。 */
+  /** Key fragment already typed (may be an empty string: the cursor sits right after the quote / `[`). */
   partial: string;
-  /** 替换起点(0 基字符列;终点=光标列)。 */
+  /** Replacement start (0-based character column; end = cursor column). */
   replaceStart: number;
 }
 
 /**
- * 光标处是否在 cellData 字符串键位置。同行探测(与 propertyDirection
- * 键访问扫描同口径):`self.cellData["x` / `self.cellData['x` /
- * `self.cellData.get("x`;闭引号/闭括号后的位置不是键位置。
+ * Whether the cursor is at a cellData string key position. Same-line detection
+ * (same contract as the propertyDirection key-access scan):
+ * `self.cellData["x` / `self.cellData['x` / `self.cellData.get("x`; a position
+ * after the closing quote/paren is not a key position.
  */
 export function cellDataKeyCompletionContext(
   lines: readonly string[],
@@ -89,12 +97,12 @@ export function cellDataKeyCompletionContext(
     return null;
   }
   const text = row.slice(0, character);
-  // 已开引号 + 片段(片段内无引号无反斜杠——首个同引号即闭)。
+  // Open quote + fragment (no quote and no backslash inside the fragment -- the first matching quote closes it).
   const quoted = text.match(/self\.cellData\s*(?:\[\s*|\.get\s*\(\s*)(["'])([^"'\\]*)$/);
   if (quoted) {
     return { partial: quoted[2], replaceStart: character - quoted[2].length };
   }
-  // 光标紧跟 `[` / `.get(`(还没打引号):空片段区间,插入即引号后位置。
+  // Cursor right after `[` / `.get(` (no quote typed yet): empty fragment range, the insertion lands right after the quote position.
   if (/self\.cellData\s*(?:\[\s*|\.get\s*\(\s*)$/.test(text)) {
     return { partial: '', replaceStart: character };
   }
@@ -102,8 +110,9 @@ export function cellDataKeyCompletionContext(
 }
 
 /**
- * 实体脚本角色/实体名(KBEngine 布局 KR-AUD-74:scripts/<part>/<Name>.py)。
- * 仅 cell/base 两面接管;client/bots 面 cellData 不可达,返回 null。
+ * Entity script role/entity name (KBEngine layout KR-AUD-74: scripts/<part>/<Name>.py).
+ * Only the cell/base faces are taken over; on the client/bots faces cellData is
+ * unreachable, so null is returned.
  */
 export function cellScriptRoleAndEntity(
   fileName: string
@@ -117,11 +126,13 @@ export function cellScriptRoleAndEntity(
 }
 
 /**
- * def 宇宙闭包(BFS):实体自身 + Parent 链 + Interfaces + 组件类型(组件 def
- * 的 Parent 也是组件、接口不走 Parent 边——与 collectInheritedNames 出边
- * 同口径)。缺文件跳过不造;visited 环安全。
+ * def universe closure (BFS): the entity itself + Parent chain + Interfaces +
+ * component types (a component def's Parent is also a component; interfaces do
+ * not traverse Parent edges -- same outgoing-edge contract as
+ * collectInheritedNames). Missing files are skipped, not invented; the visited
+ * set is cycle-safe.
  */
-/** def 宇宙条目(带来源类别;KSEM-CELL-05 跳转按类别解析 `{from}.def`)。 */
+/** def universe entry (with source category; the KSEM-CELL-05 go-to resolves `{from}.def` by category). */
 export interface CellDataDefSourceWithCategory extends CellDataDefSource {
   category: 'entity' | 'interface' | 'component';
 }
@@ -144,7 +155,7 @@ export function collectCellDataDefUniverseWithCategory(
     seen.add(key);
     const text = findDefText(current.name, current.category);
     if (text === null) {
-      continue; // 缺文件:该贡献缺席,不猜
+      continue; // missing file: that contribution is absent, no guessing
     }
     defs.push({ name: current.name, category: current.category, text });
     const semantics = parseDefFileSemantics(text);
@@ -152,7 +163,7 @@ export function collectCellDataDefUniverseWithCategory(
       continue;
     }
     if (semantics.parentName && current.category !== 'interface') {
-      // 组件 def 的父也是组件;实体 def 的父是实体。
+      // A component def's parent is also a component; an entity def's parent is an entity.
       queue.push({
         name: semantics.parentName,
         category: current.category === 'component' ? 'component' : 'entity'
@@ -168,7 +179,7 @@ export function collectCellDataDefUniverseWithCategory(
   return defs;
 }
 
-/** def 宇宙闭包(BFS;不带类别,补全面消费)。 */
+/** def universe closure (BFS; without category, consumed by the completion face). */
 export function collectCellDataDefUniverse(
   entity: string,
   findDefText: (name: string, category: 'entity' | 'interface' | 'component') => string | null

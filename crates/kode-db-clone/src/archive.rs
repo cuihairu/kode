@@ -1,17 +1,28 @@
-//! 玩家数据归档(PDC-0204/0206/0207):帧式容器 + 清单 + SHA-256 完整性 + 临时文件原子提交。
+//! Player data archive (PDC-0204/0206/0207): a frame-based container plus a
+//! manifest plus SHA-256 integrity plus atomic temp-file commit.
 //!
-//! 格式:11 字节头(魔数 `KDPCLONE1` + 格式版本 + 标志位,bit0=加密),其后为帧序列。
-//! 每帧:`u32` 名长 + 名 + [12 字节 nonce(加密时)] + `u64` 载荷长 + 32 字节
-//! SHA-256(明文) + 载荷(明文或 chacha20poly1305 密文,头部整体作 AEAD 关联数据)。
-//! 逻辑文件:`manifest.json`(索引,最后写入——截断即缺清单)、`data/<表>.rows.jsonl`
-//! (逐行类型化值)、`relations.json`、`redaction-report.json`、`checksums.json`。
+//! Format: an 11-byte header (magic `KDPCLONE1` + format version + flags,
+//! bit0=encrypted), followed by a frame sequence. Each frame: `u32` name
+//! length + name + [12-byte nonce when encrypted] + `u64` payload length +
+//! 32-byte SHA-256 (of the plaintext) + payload (plaintext or
+//! chacha20poly1305 ciphertext, with the whole header as AEAD associated
+//! data). Logical files: `manifest.json` (the index, written last —
+//! truncation means a missing manifest), `data/<table>.rows.jsonl`
+//! (typed values per line), `relations.json`, `redaction-report.json`,
+//! `checksums.json`.
 //!
-//! 写入面:[`ArchiveWriter`] 是行汇,行先按表缓冲(预算已在上游约束),`finalize`
-//! 落盘全部帧;全程写临时文件,`sync_all` 后原子 rename,中断/Drop 清理,目标路径
-//! 永不出现半成品。读取面:[`Archive::open`] 校验魔数/格式版本/大小上限/解密/
-//! 逐帧 SHA-256/清单与帧集一致/逐表与逐文件校验和互核,任一不符 fail-closed。
-//! 加密开关(PDC-0205):传密钥即逐帧 AEAD;密钥经 keystore.rs 独立存储,绝不入档。
-//! 脱敏开关(PDC-0205):[`write_archive`] 经 RedactingSink 按策略默认脱敏并出报告。
+//! Write face: [`ArchiveWriter`] is a row sink — rows are buffered per table
+//! first (the budget is already constrained upstream), and `finalize` flushes
+//! every frame; it writes a temp file throughout, does an atomic rename after
+//! `sync_all`, and cleans up on interruption/Drop, so the target path never
+//! shows a half-finished artifact. Read face: [`Archive::open`] checks the
+//! magic / format version / size cap / decryption / per-frame SHA-256 /
+//! manifest-frame set agreement / per-table and per-file checksum
+//! cross-checks, and fails closed on any mismatch.
+//! Encryption switch (PDC-0205): passing a key enables per-frame AEAD; the
+//! key is stored separately via keystore.rs and never enters the archive.
+//! Redaction switch (PDC-0205): [`write_archive`] redacts by the policy
+//! default through RedactingSink and emits a report.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
@@ -30,35 +41,39 @@ use crate::redact::{RedactingSink, RedactionReport, SensitivityPolicy};
 use crate::relations::{Relation, RelationKind};
 use crate::value::{hex_encode, TypedRow};
 
-/// 归档清单(manifest.json):索引 + 逐表计数/字节/校验和。
+/// Archive manifest (manifest.json): the index plus per-table counts / bytes
+/// / checksums.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveMeta {
     pub format: String,
     pub version: u8,
-    /// 克隆的实体名(如 Avatar)。
+    /// Name of the cloned entity (e.g. Avatar).
     pub entity: String,
-    /// 生成时刻(Unix 秒;不依赖本地时区表述)。
+    /// Generation time (Unix seconds; does not rely on a local-timezone
+    /// rendering).
     pub created_at_unix: u64,
     pub encrypted: bool,
     pub total_rows: u64,
-    /// 数据帧明文字节合计(不含容器开销)。
+    /// Total plaintext bytes of the data frames (excluding container
+    /// overhead).
     pub total_bytes: u64,
     pub tables: Vec<TableMeta>,
-    /// 全部逻辑文件名(含 manifest.json 自身)。
+    /// Every logical file name (including manifest.json itself).
     pub files: Vec<String>,
 }
 
-/// 单表归档摘要。
+/// Per-table archive summary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableMeta {
     pub name: String,
     pub rows: u64,
     pub bytes: u64,
-    /// 数据帧明文的 SHA-256(小写十六进制)。
+    /// SHA-256 of the data-frame plaintext (lowercase hexadecimal).
     pub sha256: String,
 }
 
-/// 归档写入器:行汇 + 帧序列化 + 临时文件原子提交。
+/// Archive writer: a row sink plus frame serialization plus atomic
+/// temp-file commit.
 #[derive(Debug)]
 pub struct ArchiveWriter {
     target: PathBuf,
@@ -66,24 +81,29 @@ pub struct ArchiveWriter {
     file: Option<BufWriter<File>>,
     key: Option<ArchiveKey>,
     encrypted: bool,
-    /// 已写字节(含头),用于大小上限记账。
+    /// Bytes written so far (including the header), used for size-cap
+    /// accounting.
     written: u64,
     entity: String,
-    /// 表 → 已编码行(jsonl 字节;finalize 时落帧)。
+    /// Table → encoded rows (jsonl bytes; flushed to frames at finalize).
     pending: BTreeMap<String, Vec<u8>>,
-    /// 表 → 已流入行数。
+    /// Table → number of rows streamed in.
     pending_rows: BTreeMap<String, u64>,
-    /// 表 → end_table 累计计数(与流入数互核,防计数漂移)。
+    /// Table → cumulative end_table counts (cross-checked against the
+    /// streamed counts to prevent count drift).
     touched: BTreeMap<String, u64>,
-    /// 已落帧的逻辑文件名 → 明文 SHA-256(生成 checksums.json)。
+    /// Flushed logical file name → plaintext SHA-256 (feeds
+    /// checksums.json).
     files_sha: BTreeMap<String, String>,
     committed: bool,
 }
 
-/// 32 字节归档密钥(见 keystore.rs)。
+/// 32-byte archive key (see keystore.rs).
 type ArchiveKey = [u8; 32];
 
-/// 同目录唯一临时名(`.{name}.tmp-{pid}-{seq}`;rename 原子性要求同文件系统)。
+/// A unique temp name in the same directory
+/// (`.{name}.tmp-{pid}-{seq}`; rename atomicity requires the same file
+/// system).
 fn temp_path(target: &Path) -> PathBuf {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let name = target
@@ -96,7 +116,8 @@ fn temp_path(target: &Path) -> PathBuf {
 }
 
 impl ArchiveWriter {
-    /// 建写入器并落格式头;传密钥即逐帧加密(PDC-0205 开关)。
+    /// Create the writer and write the format header; passing a key enables
+    /// per-frame encryption (the PDC-0205 switch).
     pub fn new(target: &Path, key: Option<ArchiveKey>, entity: &str) -> CloneResult<Self> {
         let tmp = temp_path(target);
         let f = File::create(&tmp).map_err(|e| {
@@ -125,7 +146,8 @@ impl ArchiveWriter {
         })
     }
 
-    /// 写一帧:SHA-256(明文)入头,加密时头部整体作 AEAD 关联数据。
+    /// Write one frame: SHA-256 (of the plaintext) goes into the header; when
+    /// encrypted, the whole header serves as AEAD associated data.
     fn write_frame(&mut self, name: &str, plaintext: &[u8]) -> CloneResult<()> {
         if self.files_sha.contains_key(name) {
             return Err(CloneError::ArchiveError(format!(
@@ -181,14 +203,18 @@ impl ArchiveWriter {
         Ok(())
     }
 
-    /// 落盘全部帧并原子提交:数据帧 → relations → 脱敏报告 → 校验和 → 清单
-    /// (清单最后写入,截断的归档必然缺清单而被拒绝)。成功前目标路径不存在。
+    /// Flush every frame and commit atomically: data frames → relations →
+    /// redaction report → checksums → manifest (the manifest is written last,
+    /// so a truncated archive necessarily lacks it and is rejected). The
+    /// target path does not exist until success.
     pub fn finalize(
         mut self,
         relations: &[Relation],
         report: &RedactionReport,
     ) -> CloneResult<ArchiveMeta> {
-        // 计数互核:每表 end_table 累计必须等于实际流入行数(防静默丢行)。
+        // Count cross-check: each table's cumulative end_table value must
+        // equal the rows actually streamed (guards against silently dropped
+        // rows).
         for (table, counted) in &self.touched {
             let streamed = self.pending_rows.get(table).copied().unwrap_or(0);
             if *counted != streamed {
@@ -212,7 +238,8 @@ impl ArchiveWriter {
             .map_err(|e| CloneError::ArchiveError(format!("encode redaction report: {e}")))?;
         self.write_frame("redaction-report.json", &rep_bytes)?;
 
-        // 数据帧:一表一文件(缓冲在本地,避免借用冲突)。
+        // Data frames: one file per table (buffered locally to avoid borrow
+        // conflicts).
         let mut pending = std::mem::take(&mut self.pending);
         let mut names: BTreeSet<String> = pending.keys().cloned().collect();
         names.extend(self.touched.keys().cloned());
@@ -240,8 +267,10 @@ impl ArchiveWriter {
             .map_err(|e| CloneError::ArchiveError(format!("encode checksums: {e}")))?;
         self.write_frame("checksums.json", &sum_bytes)?;
 
-        // 此刻 files_sha 已含 data/*、relations.json、redaction-report.json、checksums.json;
-        // manifest 即将写入,追加其名即成完整帧集(无重复)。
+        // At this point files_sha already contains data/*, relations.json,
+        // redaction-report.json and checksums.json; the manifest is about to
+        // be written, and appending its name yields the complete frame set
+        // (no duplicates).
         let mut files: Vec<String> = self.files_sha.keys().cloned().collect();
         files.push("manifest.json".into());
         files.sort();
@@ -264,7 +293,8 @@ impl ArchiveWriter {
             .map_err(|e| CloneError::ArchiveError(format!("encode manifest: {e}")))?;
         self.write_frame("manifest.json", &manifest_bytes)?;
 
-        // 原子提交:刷盘 + fsync + rename(同目录临时文件保证同文件系统)。
+        // Atomic commit: flush + fsync + rename (a temp file in the same
+        // directory guarantees the same file system).
         let mut f = self
             .file
             .take()
@@ -277,7 +307,8 @@ impl ArchiveWriter {
         drop(f);
         fs::rename(&self.tmp, &self.target)
             .map_err(|e| CloneError::ArchiveError(format!("commit archive: {e}")))?;
-        // 目录 fsync 尽力而为(部分平台不支持打开目录)。
+        // Directory fsync on a best-effort basis (some platforms cannot open
+        // directories).
         if let Some(dir) = self.target.parent() {
             if let Ok(d) = File::open(dir) {
                 let _ = d.sync_all();
@@ -309,7 +340,8 @@ impl RowSink for ArchiveWriter {
     }
 
     fn end_table(&mut self, table: &str, count: u64) -> CloneResult<()> {
-        // walk 每轮父行递归都会回调;此处只累计,帧统一在 finalize 落盘。
+        // walk's per-round parent-row recursion calls back here; we only
+        // accumulate — frames are flushed uniformly at finalize.
         *self.touched.entry(table.to_string()).or_insert(0) += count;
         Ok(())
     }
@@ -317,14 +349,16 @@ impl RowSink for ArchiveWriter {
 
 impl Drop for ArchiveWriter {
     fn drop(&mut self) {
-        // 未提交(中断/取消/出错)→ 清理临时文件,目标路径永不出现半成品。
+        // Not committed (interrupted/cancelled/errored) → remove the temp
+        // file; the target path never shows a half-finished artifact.
         if !self.committed {
             let _ = fs::remove_file(&self.tmp);
         }
     }
 }
 
-/// 已验证归档:帧名 → 明文。`open` 已完成全部完整性校验。
+/// A verified archive: frame name → plaintext. `open` has completed every
+/// integrity check.
 #[derive(Debug)]
 pub struct Archive {
     files: BTreeMap<String, Vec<u8>>,
@@ -332,8 +366,10 @@ pub struct Archive {
 }
 
 impl Archive {
-    /// 开档并做全部校验:魔数/格式版本/大小上限/加密旗标与密钥匹配/逐帧
-    /// SHA-256/帧集与清单一致/逐表与逐文件校验和互核。任一不符即拒绝。
+    /// Open the archive and run every check: magic / format version / size
+    /// cap / encrypted flag matching the key / per-frame SHA-256 / frame set
+    /// matching the manifest / per-table and per-file checksum cross-checks.
+    /// Any mismatch is rejected.
     pub fn open(path: &Path, key: Option<&ArchiveKey>) -> CloneResult<Self> {
         let file =
             File::open(path).map_err(|e| CloneError::ArchiveError(format!("open archive: {e}")))?;
@@ -375,7 +411,8 @@ impl Archive {
         Self::verify(files, encrypted)
     }
 
-    /// 检视:开档校验后仅返回清单(调用方拿到已验证的索引,不加载逐行解析)。
+    /// Inspect: run the open checks and return only the manifest (the caller
+    /// gets a verified index without loading and parsing rows).
     pub fn inspect(path: &Path, key: Option<&ArchiveKey>) -> CloneResult<ArchiveMeta> {
         Archive::open(path, key).map(|a| a.meta)
     }
@@ -397,7 +434,8 @@ impl Archive {
                 "manifest encrypted flag disagrees with the archive header".into(),
             ));
         }
-        // 帧集必须与清单文件清单完全一致(多帧=外来内容,缺帧=截断)。
+        // The frame set must exactly match the manifest file list (extra
+        // frames = foreign content, missing frames = truncation).
         if files.len() != meta.files.len()
             || files.keys().any(|k| !meta.files.iter().any(|f| f == k))
             || meta.files.iter().any(|f| !files.contains_key(f))
@@ -406,7 +444,7 @@ impl Archive {
                 "archive frames do not match the manifest file list".into(),
             ));
         }
-        // checksums.json 与实际帧逐项互核。
+        // checksums.json cross-checked against the actual frames one by one.
         let sum_bytes = files.get("checksums.json").ok_or_else(|| {
             CloneError::ArchiveError("archive has no checksums.json frame".into())
         })?;
@@ -423,7 +461,8 @@ impl Archive {
                 )));
             }
         }
-        // 逐表互核:数据帧存在、SHA 与清单一致、计数与字节合计一致。
+        // Per-table cross-checks: the data frame exists, its SHA matches the
+        // manifest, and the counts and byte totals agree.
         let mut rows_sum = 0u64;
         let mut bytes_sum = 0u64;
         for t in &meta.tables {
@@ -452,17 +491,18 @@ impl Archive {
         Ok(Self { files, meta })
     }
 
-    /// 已验证清单。
+    /// The verified manifest.
     pub fn meta(&self) -> &ArchiveMeta {
         &self.meta
     }
 
-    /// 逻辑文件内容(明文)。
+    /// Logical file content (plaintext).
     pub fn file(&self, name: &str) -> Option<&[u8]> {
         self.files.get(name).map(|v| v.as_slice())
     }
 
-    /// 读一张表的类型化行(jsonl 逐行解析;行内表名与文件名互核)。
+    /// Read a table's typed rows (jsonl parsed line by line; the in-row table
+    /// name cross-checks against the file name).
     pub fn table_rows(&self, table: &str) -> CloneResult<Vec<TypedRow>> {
         let fname = format!("data/{table}.rows.jsonl");
         let data = self
@@ -496,7 +536,8 @@ use format::{
 };
 pub use format::{is_encrypted, MAX_ARCHIVE_SIZE};
 
-/// 由计划收集关系记录(归档 relations.json 的内容;子表 → 父表 parentID 关系)。
+/// Collect relation records from the plan (the content of the archive's
+/// relations.json; child table → parent table parentID relations).
 pub fn relations_from_plan(plan: &QueryPlan) -> Vec<Relation> {
     plan.queries
         .iter()
@@ -512,8 +553,10 @@ pub fn relations_from_plan(plan: &QueryPlan) -> Vec<Relation> {
         .collect()
 }
 
-/// 一站式导出:只读源库 → 按策略脱敏 → 归档落盘(PDC-0201/0202/0204/0205/0206)。
-/// 取消/超时不产档:临时产物随 Drop 清理,目标路径永不出现半成品。
+/// One-shot export: read-only source DB → policy-based redaction → archive
+/// to disk (PDC-0201/0202/0204/0205/0206). Cancellation / timeout produce no
+/// archive: temp artifacts are cleaned up on Drop, and the target path never
+/// shows a half-finished artifact.
 #[allow(clippy::too_many_arguments)]
 pub fn write_archive(
     path: &Path,
@@ -580,7 +623,8 @@ mod tests {
         let row = avatar_row(1001, "Alice");
         w.write_row("tbl_Avatar", &row).unwrap();
         w.end_table("tbl_Avatar", 1).unwrap();
-        // 零行表:end_table 只有无行回调也须出档并计数 0。
+        // Zero-row table: end_table with only a zero-row callback must still
+        // produce a frame counted as 0.
         w.end_table("tbl_Empty", 0).unwrap();
         let meta = w
             .finalize(&[relation_fixture()], &RedactionReport { entries: vec![] })
@@ -618,13 +662,14 @@ mod tests {
             .unwrap();
         assert!(meta.encrypted);
 
-        // 无钥/错钥一律拒绝;对钥才可读,明文与原行一致。
+        // Missing/wrong keys are always rejected; only the right key can
+        // read it, and the plaintext matches the original row.
         assert!(Archive::open(&path, None).is_err());
         assert!(Archive::open(&path, Some(&[9u8; 32])).is_err());
         let arc = Archive::open(&path, Some(&key)).unwrap();
         assert_eq!(arc.table_rows("tbl_Avatar").unwrap(), vec![row.clone()]);
 
-        // 明文归档配钥 = 用法错误,拒绝。
+        // Supplying a key for a plaintext archive = usage error, rejected.
         let plain = dir.join("plain.kdp");
         let mut w = ArchiveWriter::new(&plain, None, "Avatar").unwrap();
         w.write_row("tbl_Avatar", &row).unwrap();
@@ -646,7 +691,7 @@ mod tests {
             .unwrap();
         let bytes = fs::read(&path).unwrap();
 
-        // 翻转末字节(清单载荷)→ SHA 不符。
+        // Flip the last byte (manifest payload) → SHA mismatch.
         let mut bad = bytes.clone();
         let last = bad.len() - 1;
         bad[last] ^= 0xff;
@@ -654,14 +699,14 @@ mod tests {
         fs::write(&bad_path, &bad).unwrap();
         assert!(Archive::open(&bad_path, None).is_err());
 
-        // 截断 → 帧残缺。
+        // Truncation → broken frames.
         let mut cut = bytes.clone();
         cut.truncate(cut.len() - 6);
         let cut_path = dir.join("cut.kdp");
         fs::write(&cut_path, &cut).unwrap();
         assert!(Archive::open(&cut_path, None).is_err());
 
-        // 版本闸:未知版本拒绝,不猜测。
+        // Version gate: unknown versions are rejected, not guessed at.
         let mut ver = bytes;
         ver[9] = 42;
         let ver_path = dir.join("ver.kdp");
@@ -691,7 +736,8 @@ mod tests {
         assert!(w
             .finalize(&[], &RedactionReport { entries: vec![] })
             .is_err());
-        // 目标路径不存在(finalize 未到 rename),临时文件被 Drop 清理。
+        // The target path does not exist (finalize never reached rename) and
+        // the temp file was cleaned up by Drop.
         assert!(!path.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
         let _ = fs::remove_dir_all(&dir);
@@ -704,12 +750,13 @@ mod tests {
         {
             let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
             w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
-            // 不 finalize:模拟中断,Drop 必须清场。
+            // No finalize: simulating an interruption, Drop must clean up.
         }
         assert!(!path.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
 
-        // 取消的导出经 write_archive:报错且不产档。
+        // A cancelled export through write_archive: it errors and writes no
+        // archive.
         let plan = plan_fixture();
         let db = FakeDb::new();
         let control = ExportControl::new();
@@ -737,9 +784,9 @@ mod tests {
         let path = dir.join("a.kdp");
         let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
         w.write_frame("relations.json", b"{}").unwrap();
-        // 重复帧名拒绝。
+        // Duplicate frame names are rejected.
         assert!(w.write_frame("relations.json", b"{}").is_err());
-        // 空名/超长名拒绝。
+        // Empty or over-long names are rejected.
         assert!(w.write_frame("", b"{}").is_err());
         let long = "x".repeat(256);
         assert!(w.write_frame(&long, b"{}").is_err());
@@ -750,19 +797,21 @@ mod tests {
     fn internal_writer_states_are_refused() {
         let dir = test_dir("writerstate");
         let path = dir.join("a.kdp");
-        // 加密旗标与密钥不一致 → 写帧拒绝。
+        // Encrypted flag disagreeing with the key → frame write rejected.
         let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
         w.encrypted = true;
         w.key = None;
         assert!(w.write_frame("x.json", b"{}").is_err());
         drop(w);
-        // 已收口的写入器(重复 finalize)再写帧 → 拒绝。
+        // A writer already finished (duplicate finalize) writing a frame again
+        // → rejected.
         let path2 = dir.join("b.kdp");
         let mut w = ArchiveWriter::new(&path2, None, "Avatar").unwrap();
         w.file = None;
         assert!(w.write_frame("x.json", b"{}").is_err());
         drop(w);
-        // 临时目录建不出来的目标路径 → new 报 ArchiveError。
+        // A target path whose temp directory cannot be created → new reports
+        // ArchiveError.
         let bad = dir.join("no-such-dir").join("c.kdp");
         assert!(matches!(
             ArchiveWriter::new(&bad, None, "Avatar"),
@@ -776,7 +825,8 @@ mod tests {
     fn finalize_and_sink_guards_are_enforced() {
         let dir = test_dir("sinkguard");
         let path = dir.join("a.kdp");
-        // 流入行但从未 end_table → finalize 拒绝且不产档。
+        // Rows streamed but end_table never called → finalize rejects and
+        // writes no archive.
         {
             let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
             w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
@@ -785,7 +835,8 @@ mod tests {
                 .is_err());
         }
         assert!(!path.exists());
-        // 行声称的表与流入表不一致 → write_row 拒绝。
+        // The row's claimed table disagreeing with the streamed table →
+        // write_row rejects.
         let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
         let mut liar = avatar_row(2, "B");
         liar.table = "tbl_Other".into();
@@ -796,20 +847,20 @@ mod tests {
     #[test]
     fn read_frames_rejects_malformed_frame_stream() {
         use std::io::Cursor;
-        // 帧名长度越界(0 / >255)。
+        // Frame name length out of bounds (0 / >255).
         let mut bad = Vec::new();
         bad.extend_from_slice(&0u32.to_le_bytes());
         assert!(read_frames(&mut Cursor::new(&bad), false, None).is_err());
         let mut big = Vec::new();
         big.extend_from_slice(&300u32.to_le_bytes());
         assert!(read_frames(&mut Cursor::new(&big), false, None).is_err());
-        // 半个帧头 = 截断,不猜测。
+        // Half a frame header = truncation, no guessing.
         let partial = [1u8, 2];
         assert!(
             matches!(read_frames(&mut Cursor::new(&partial), false, None).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("truncated")),
             "expected truncation"
         );
-        // 帧长溢出(u64 顶格 + AEAD 标签)。
+        // Frame length overflow (u64 max + AEAD tag).
         let name = b"f.json";
         let mut overflow = Vec::new();
         overflow.extend_from_slice(&(name.len() as u32).to_le_bytes());
@@ -817,7 +868,7 @@ mod tests {
         overflow.extend_from_slice(&u64::MAX.to_le_bytes());
         overflow.extend_from_slice(&[0u8; 32]);
         assert!(read_frames(&mut Cursor::new(&overflow), false, None).is_err());
-        // 重复帧名。
+        // Duplicate frame names.
         let sha: [u8; 32] = Sha256::digest(b"payload").into();
         let mut dup = Vec::new();
         for _ in 0..2 {
@@ -828,21 +879,21 @@ mod tests {
             dup.extend_from_slice(b"payload");
         }
         assert!(read_frames(&mut Cursor::new(&dup), false, None).is_err());
-        // 加密帧流但未提供密钥。
+        // Encrypted frame stream but no key supplied.
         let mut enc = Vec::new();
         enc.extend_from_slice(&(name.len() as u32).to_le_bytes());
         enc.extend_from_slice(name);
         enc.extend_from_slice(&[0u8; 12]); // nonce
         enc.extend_from_slice(&16u64.to_le_bytes());
         enc.extend_from_slice(&sha);
-        enc.extend_from_slice(&[0u8; 32]); // 密文 = 明文 16 + 标签 16
+        enc.extend_from_slice(&[0u8; 32]); // ciphertext = 16 plaintext + 16 tag
         assert!(read_frames(&mut Cursor::new(&enc), true, None).is_err());
     }
 
     #[test]
     fn open_rejects_bad_magic_and_verify_rejects_tampered_manifests() {
         let dir = test_dir("verify");
-        // 坏魔数。
+        // Bad magic.
         let bad_magic = dir.join("magic.kdp");
         fs::write(&bad_magic, b"NOTAKODE!0000").unwrap();
         assert!(
@@ -888,17 +939,17 @@ mod tests {
             files
         };
 
-        // 1) 缺 manifest。
+        // 1) Missing manifest.
         assert!(
             matches!(Archive::verify(build(&[]), false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("manifest")),
             "expected missing manifest"
         );
-        // 2) manifest 不是 JSON。
+        // 2) manifest is not JSON.
         assert!(
             matches!(Archive::verify(build(&[("manifest.json", b"not json".to_vec())]), false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("not valid")),
             "expected invalid manifest"
         );
-        // 3) format 名不符。
+        // 3) format name mismatch.
         let wrong_fmt_files = build(&[(
             "manifest.json",
             manifest(&good_list, tables.clone(), 1, data.len() as u64, "other"),
@@ -907,12 +958,13 @@ mod tests {
             matches!(Archive::verify(wrong_fmt_files, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("format")),
             "expected format mismatch"
         );
-        // 4) manifest 加密旗标与帧流不符。
+        // 4) The manifest encrypted flag disagrees with the frame stream.
         let mut enc_files = build(&[(
             "manifest.json",
             manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
         )]);
-        // 重写 manifest 置 encrypted: true(直接构造,避免 helper 只出 false)。
+        // Rewrite the manifest with encrypted: true (built directly, since the
+        // helper only emits false).
         enc_files.insert(
             "manifest.json".to_string(),
             serde_json::json!({
@@ -928,7 +980,7 @@ mod tests {
             matches!(Archive::verify(enc_files, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("encrypted")),
             "expected encrypted flag mismatch"
         );
-        // 5) 帧集与清单不一致(多帧)。
+        // 5) The frame set disagrees with the manifest (extra frame).
         let extra = build(&[
             (
                 "manifest.json",
@@ -940,7 +992,9 @@ mod tests {
             matches!(Archive::verify(extra, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("do not match")),
             "expected frame list mismatch"
         );
-        // 6) 缺 checksums.json(帧集与清单都不含它 → 文件清单比对通过,查 checksums 时失败)。
+        // 6) Missing checksums.json (neither the frame set nor the manifest
+        // contains it → the file-list comparison passes, and the checksums
+        // lookup fails).
         let short_list = [frame.0, "manifest.json"];
         let no_sum: BTreeMap<String, Vec<u8>> = [
             (frame.0.to_string(), data.to_vec()),
@@ -961,7 +1015,7 @@ mod tests {
             matches!(Archive::verify(no_sum, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("checksums.json")),
             "expected missing checksums"
         );
-        // 7) checksums.json 引用不存在的文件。
+        // 7) checksums.json references a nonexistent file.
         let ghost = format!(
             "{{\"{}\": \"{}\", \"data/tbl_Ghost.rows.jsonl\": \"{}\"}}",
             frame.0,
@@ -982,7 +1036,7 @@ mod tests {
             ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("tbl_Ghost")),
             "expected ghost checksum entry"
         );
-        // 8) 校验和不符。
+        // 8) Checksum mismatch.
         let bad_sum = format!(
             "{{\"{}\": \"{}\"}}",
             frame.0,
@@ -1002,7 +1056,7 @@ mod tests {
             ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("checksum mismatch")),
             "expected checksum mismatch"
         );
-        // 9) 清单里的表缺数据帧。
+        // 9) A manifest table missing its data frame.
         let ghost_table = serde_json::json!([
             {"name": "tbl_A", "rows": 1, "bytes": data.len(), "sha256": sha},
             {"name": "tbl_B", "rows": 0, "bytes": 0, "sha256": hex_encode(Sha256::digest(b"").as_slice())},
@@ -1017,7 +1071,8 @@ mod tests {
             ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("tbl_B")),
             "expected missing table frame"
         );
-        // 10) 表 SHA 不符 + 行声称的表与文件名互核。
+        // 10) Table SHA mismatch + the in-row table name cross-checked
+        // against the file name.
         let wrong_sha = serde_json::json!([
             {"name": "tbl_A", "rows": 1, "bytes": data.len(), "sha256": hex_encode(Sha256::digest(b"other").as_slice())},
         ]);
@@ -1031,7 +1086,7 @@ mod tests {
             ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("sha256 mismatch")),
             "expected table sha mismatch"
         );
-        // 11) 清单合计与表条目不符。
+        // 11) Manifest totals disagree with its table entries.
         assert!(
             matches!(Archive::verify(
                 build(&[(
@@ -1048,7 +1103,8 @@ mod tests {
             ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("totals disagree")),
             "expected totals mismatch"
         );
-        // 12) 合法构造通过 + 行表名与文件名互核(table_rows)。
+        // 12) A valid construction passes + the row table name cross-checked
+        // against the file name (table_rows).
         let ok_files = build(&[(
             "manifest.json",
             manifest(&good_list, tables, 1, data.len() as u64, "kdpclone"),
@@ -1056,7 +1112,7 @@ mod tests {
         let arc = Archive::verify(ok_files, false).unwrap();
         assert_eq!(arc.meta().entity, "Avatar");
         assert_eq!(arc.table_rows("tbl_A").unwrap().len(), 1);
-        // 行内 table 与文件名不符 → 拒绝。
+        // The in-row table disagreeing with the file name → rejected.
         let liar_row = b"{\"table\":\"tbl_Liar\",\"values\":[]}\n";
         let liar_sha = hex_encode(Sha256::digest(liar_row).as_slice());
         let liar_frame = ("data/tbl_A.rows.jsonl", liar_row);
@@ -1097,8 +1153,9 @@ mod tests {
 
     #[test]
     fn crafted_manifest_helpers_match_real_writer_shape() {
-        // 交叉验证:真实 writer 的 checksums.json/manifest 形状可被 verify 接受,
-        // 防止上面手工构造的清单与实现漂移。
+        // Cross-validation: the real writer's checksums.json/manifest shapes
+        // are accepted by verify, guarding against the hand-built manifests
+        // above drifting from the implementation.
         let dir = test_dir("shape");
         let path = dir.join("shape.kdp");
         let mut w = ArchiveWriter::new(&path, None, "Shape").unwrap();
@@ -1155,7 +1212,8 @@ mod tests {
         }
     }
 
-    /// 假源库:记录每条语句,按表回固定行。
+    /// Fake source DB: records every statement and returns fixed rows per
+    /// table.
     struct FakeDb {
         calls: RefCell<Vec<String>>,
     }
@@ -1215,7 +1273,7 @@ mod tests {
             &ExportControl::new(),
         )
         .unwrap();
-        // 2 根行(第二个根无子行)+ 1 背包行。
+        // 2 root rows (the second root has no children) + 1 bag row.
         assert_eq!(meta.total_rows, 3);
         assert_eq!(meta.tables.len(), 2);
 
@@ -1228,14 +1286,15 @@ mod tests {
         assert_eq!(bags.len(), 1);
         assert_eq!(bags[0].values[2], TypedValue::Int(3));
 
-        // 关系记录进了档。
+        // The relation record made it into the archive.
         let rels: Vec<Relation> =
             serde_json::from_slice(arc.file("relations.json").unwrap()).unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].child_table, "tbl_Bag");
         assert_eq!(rels[0].parent_table, "tbl_Avatar");
 
-        // 只读证据:会话只读 + 快照事务 + 提交,且每条语句过只读白名单。
+        // Read-only evidence: session read-only + snapshot transaction +
+        // commit, with every statement passing the read-only whitelist.
         let calls = db.calls.borrow();
         assert_eq!(calls[0], "SET SESSION TRANSACTION READ ONLY");
         assert!(calls.iter().any(|c| c.starts_with("START TRANSACTION")));
@@ -1251,7 +1310,8 @@ mod tests {
 
     #[test]
     fn is_encrypted_peeks_header_without_a_key() {
-        // 读侧加密位探测:加密档 true、明文档 false,均无需钥匙。
+        // Read-side encryption-bit probe: true for an encrypted archive,
+        // false for a plaintext one, neither needing a key.
         let dir = test_dir("peek");
         let plain = dir.join("plain.kdp");
         let mut w = ArchiveWriter::new(&plain, None, "Avatar").unwrap();
@@ -1269,7 +1329,8 @@ mod tests {
             .unwrap();
         assert!(is_encrypted(&secret).unwrap());
 
-        // 头部残缺:小于头长如实报错,不猜加密位。
+        // Broken header: smaller than the header length reports the error
+        // honestly, without guessing the encryption bit.
         let short = dir.join("short.kdp");
         fs::write(&short, b"KDP").unwrap();
         assert!(matches!(
@@ -1277,7 +1338,7 @@ mod tests {
             CloneError::ArchiveError(ref m) if m.contains("smaller than its header")
         ));
 
-        // 坏魔数:不是本格式档案,拒绝。
+        // Bad magic: not an archive of this format, rejected.
         let bad_magic = dir.join("badmagic.kdp");
         fs::write(&bad_magic, [0u8; HEADER_LEN]).unwrap();
         assert!(matches!(
@@ -1285,7 +1346,7 @@ mod tests {
             CloneError::ArchiveError(ref m) if m.contains("bad magic")
         ));
 
-        // 版本不符:拒绝猜测。
+        // Version mismatch: rejected rather than guessed at.
         let mut bad_version = MAGIC.to_vec();
         bad_version.push(FORMAT_VERSION + 1);
         bad_version.push(0);

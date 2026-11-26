@@ -246,7 +246,9 @@ fn dispatch_generates_python_entity_and_fixed_dicts() {
     // Exposed 包装:base_call_/cell_call_ 前缀 + 发送接缝
     assert!(py.contains("    def base_call_createAvatar(self, arg0: int) -> None:"));
     assert!(py.contains("self.on_base_outgoing('createAvatar', [arg0])"));
-    assert!(py.contains("    def cell_call_moveTo(self, arg0: tuple[float, float, float]) -> None:"));
+    assert!(
+        py.contains("    def cell_call_moveTo(self, arg0: tuple[float, float, float]) -> None:")
+    );
     assert!(py.contains("self.on_cell_outgoing('moveTo', [arg0])"));
     assert!(py.contains("    def on_base_outgoing(self, _method: str, _args: list) -> None:"));
     assert!(py.contains("    def on_cell_outgoing(self, _method: str, _args: list) -> None:"));

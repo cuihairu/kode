@@ -1,33 +1,38 @@
 /**
- * 引擎标量族真源(KSEM-SER-10 自 CELL-08 cellDataWriteCheck 抽出为纯模块)。
+ * Engine scalar family source of truth (KSEM-SER-10, extracted from CELL-08
+ * cellDataWriteCheck into a pure module).
  *
- * 数据源 = datatypes.cpp `DataTypes::initialize` 注册表,与 kbengineMetadata
- * 同源:整数标量带宽与符号定范围;FLOAT/DOUBLE 数值;STRING/UNICODE 字符串;
- * BLOB 字节流;VECTOR2/3/4 定长数值向量;PYTHON 与 PY_DICT/PY_TUPLE/PY_LIST/
- * ENTITYCALL 收 Python 对象面不查;ARRAY/FIXED_DICT/types.xml 自定义别名
- * 结构未知 → 不查(诚实)。
+ * Data source = the datatypes.cpp `DataTypes::initialize` registry, the same source
+ * as kbengineMetadata: integer scalars are ranged by bandwidth and signedness;
+ * FLOAT/DOUBLE numbers; STRING/UNICODE strings; BLOB byte streams; VECTOR2/3/4
+ * fixed-length numeric vectors; PYTHON and PY_DICT/PY_TUPLE/PY_LIST/ENTITYCALL
+ * accept Python objects so no check; ARRAY/FIXED_DICT/types.xml custom aliases
+ * have unknown structure -> no check (honest).
  *
- * 零 vscode 依赖(cellDataWriteCheck 经 nlsRuntime 间接依赖 vscode,序列化
- * schema 车道 SER-08/SER-10 的纯核心不能拖该依赖图,故表住这里,消费方
- * 各自 import;CELL-08 行为零变化)。
+ * Zero vscode dependencies (cellDataWriteCheck depends on vscode indirectly via
+ * nlsRuntime; the pure core of the serialization schema lane SER-08/SER-10 must not
+ * drag that dependency graph, so the table lives here and consumers import it
+ * themselves; CELL-08 behavior unchanged).
  */
 
-/** 引擎标量族(datatypes.cpp 注册表;范围=带宽与符号的封闭区间)。 */
+/** Engine scalar families (the datatypes.cpp registry; range = the closed interval from bandwidth and signedness). */
 export interface ScalarFamily {
-  /** 值类:integer 标量(int/bool 可入)/float 标量/字符串/字节流/定长向量。 */
+  /** Value class: integer scalar (int/bool admitted) / float scalar / string / byte stream / fixed-length vector. */
   kind: 'integer' | 'float' | 'str' | 'bytes' | 'vector';
-  /** integer 族范围(BigInt 精确边界;缺省=不设界)。 */
+  /** integer family range (exact BigInt bounds; defaults to unbounded). */
   min?: bigint;
   max?: bigint;
-  /** vector 族元数。 */
+  /** vector family arity. */
   arity?: number;
-  /** 提示文案里的期望段(`UINT16 (int 0..65535)`)。 */
+  /** The expectation segment in the hint text (`UINT16 (int 0..65535)`). */
   label: string;
 }
 
-/** 引擎标量类型表;不在表内的类型(PYTHON 族、ARRAY、FIXED_DICT、自定义别名)不查。 */
-// 范围界一律 BigInt()(tsconfig target < ES2020 禁字面量 0n;64 位界以字符串
-// 入参保精度),写入值同以 BigInt 精确解析——边界判定无 double 取整死区。
+/** Engine scalar type table; types not in the table (the PYTHON family, ARRAY, FIXED_DICT, custom aliases) are not checked. */
+// Range bounds always via BigInt() (tsconfig target < ES2020 forbids the 0n
+// literal; 64-bit bounds enter as strings to preserve precision), and written
+// values are likewise parsed exactly with BigInt — no double rounding dead zone in
+// boundary decisions.
 export const SCALAR_FAMILIES: ReadonlyMap<string, ScalarFamily> = new Map([
   ['UINT8', { kind: 'integer', min: BigInt(0), max: BigInt(255), label: 'UINT8 (int 0..255)' }],
   ['UINT16', { kind: 'integer', min: BigInt(0), max: BigInt(65535), label: 'UINT16 (int 0..65535)' }],

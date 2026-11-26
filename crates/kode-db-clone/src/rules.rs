@@ -1,41 +1,45 @@
-//! 显式规则层(plan §4.2-C / §5):业务显式关系(Account.characters、guildDBID)、
-//! 身份列(跨克隆稳定的外部标识)、投影(列子集)。
+//! Explicit rules layer (plan §4.2-C / §5): explicit business relations
+//! (Account.characters, guildDBID), identity columns (external identifiers that
+//! stay stable across clones), projections (column subsets).
 //!
-//! 规则由调用方(接入 kode-server 时从用户配置/声明加载)提供;本层只应用,
-//! 不做字符串猜测。引擎确定关系(§4.2-A)不需要规则。
+//! Rules are supplied by the caller (loaded from user configuration/declarations
+//! when wired into kode-server); this layer only applies them and never guesses
+//! from strings. Engine-certain relations (§4.2-A) need no rules.
 
 use crate::error::{CloneError, CloneResult};
 use crate::schema::{CloneSchema, DerivedField, DerivedTable};
 
-/// 关系规则动作。
+/// Relation rule action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationRuleAction {
-    /// 跟随该关系(纳入导出/导入)。
+    /// Follow the relation (include in export/import).
     Follow,
-    /// 跳过(不随克隆迁移,记录但不报错)。
+    /// Skip (not migrated with the clone, recorded but not an error).
     Skip,
-    /// 视作错误(fail-closed)。
+    /// Treat as an error (fail-closed).
     Error,
 }
 
-/// 业务显式关系(§4.2-C):由用户声明,非引擎派生。
+/// Explicit business relation (§4.2-C): declared by the user, not derived from
+/// the engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelationRule {
-    /// 声明方实体(如 Account)。
+    /// Declaring entity (e.g. Account).
     pub entity: String,
-    /// 声明路径(如 characters)。
+    /// Declared path (e.g. characters).
     pub property_path: String,
-    /// 子表(被引用侧)。
+    /// Child table (the referenced side).
     pub child_table: String,
-    /// 父表(引用侧)。
+    /// Parent table (the referencing side).
     pub parent_table: String,
-    /// 子表上指向父表的逻辑列。
+    /// Logical column on the child table pointing at the parent.
     pub join_column: String,
     pub action: RelationRuleAction,
     pub note: Option<String>,
 }
 
-/// 身份列:跨克隆保持稳定语义的外部标识(如账号名/guid),Phase 3 IDMapper 据此对映射。
+/// Identity column: an external identifier (account name / guid etc.) whose
+/// semantics stay stable across clones; the Phase 3 IDMapper aligns mappings by it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityRule {
     pub entity: String,
@@ -43,7 +47,8 @@ pub struct IdentityRule {
     pub column: String,
 }
 
-/// 投影规则:表内列子集(include 为 None 表示全含;exclude 剔除)。
+/// Projection rule: a column subset within a table (include None means all
+/// included; exclude removes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectRule {
     pub table: String,
@@ -63,7 +68,7 @@ impl ProjectRule {
     }
 }
 
-/// 规则集(应用层入口)。
+/// Rule set (the application layer's entry point).
 #[derive(Debug, Clone, Default)]
 pub struct RuleSet {
     pub relations: Vec<RelationRule>,
@@ -72,7 +77,8 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    /// 投影一张派生表(按规则裁剪字段;恒保留 id/parentID/sm_autoLoad 结构列)。
+    /// Projects a derived table (trims fields per rules; the structural columns
+    /// id/parentID/sm_autoLoad are always kept).
     pub fn project(&self, table: &DerivedTable) -> DerivedTable {
         let Some(rule) = self.projections.iter().find(|r| r.table == table.name) else {
             return table.clone();
@@ -89,7 +95,8 @@ impl RuleSet {
         projected
     }
 
-    /// 应用关系规则(把声明的关系归为 ExplicitBusiness / Skip / Error)。
+    /// Applies relation rules (classifying declared relations as
+    /// ExplicitBusiness / Skip / Error).
     pub fn apply_relation(
         &self,
         entity: &str,
@@ -108,7 +115,8 @@ impl RuleSet {
         Ok(None)
     }
 
-    /// 身份列:返回该表被声明为身份载体的列(若有)。
+    /// Identity column: returns the column declared as this table's identity
+    /// carrier, if any.
     pub fn identity_column(&self, table: &str) -> Option<&str> {
         self.identities
             .iter()
@@ -116,7 +124,8 @@ impl RuleSet {
             .map(|r| r.column.as_str())
     }
 
-    /// 校验规则自洽:投影/身份引用的表与列须在派生 schema 内存在(fail-closed)。
+    /// Validates rule self-consistency: tables and columns referenced by
+    /// projections/identities must exist in the derived schema (fail-closed).
     pub fn validate(&self, schema: &CloneSchema) -> CloneResult<()> {
         for rule in &self.projections {
             let table = schema.table_index.get(&rule.table).ok_or_else(|| {
@@ -261,13 +270,14 @@ mod tests {
             rules.apply_relation("Account", "characters").unwrap(),
             Some(RelationRuleAction::Follow)
         );
-        // 未声明关系 → 引擎确定路径,无显式规则。
+        // Undeclared relation → engine-certain path, no explicit rule.
         assert_eq!(rules.apply_relation("Account", "inventory").unwrap(), None);
     }
 
     #[test]
     fn project_rule_allows_exclude_hit_and_include_none_means_all() {
-        // exclude 命中 → false;include=None 语义 = 全含(未被 exclude 的都 true)。
+        // exclude hit → false; include=None semantics = all included (everything
+        // not excluded is true).
         let rule = ProjectRule {
             table: "tbl_Avatar".into(),
             include_columns: None,
@@ -280,8 +290,8 @@ mod tests {
 
     #[test]
     fn project_exclude_trims_column_but_structural_columns_survive() {
-        // 结构列(id/parentID/sm_autoLoad)不受 exclude 影响,恒保留;
-        // 非结构列按规则剔除。
+        // Structural columns (id/parentID/sm_autoLoad) are unaffected by exclude and
+        // always kept; non-structural columns are trimmed per the rule.
         let t = table("tbl_Avatar");
         let rules = RuleSet {
             projections: vec![ProjectRule {
@@ -299,7 +309,7 @@ mod tests {
     #[test]
     fn validate_rejects_projection_unknown_table_and_excluded_column() {
         let schema = CloneSchema::new("Avatar".into(), vec![table("tbl_Avatar")]).unwrap();
-        // 投影引用未知表:fail-closed。
+        // Projection references an unknown table: fail closed.
         let unknown_table = RuleSet {
             projections: vec![ProjectRule {
                 table: "tbl_Ghost".into(),
@@ -314,7 +324,7 @@ mod tests {
                 .contains("projection references unknown table `tbl_Ghost`"),
             "{err}"
         );
-        // exclude 引用未知列:fail-closed。
+        // exclude references an unknown column: fail closed.
         let unknown_column = RuleSet {
             projections: vec![ProjectRule {
                 table: "tbl_Avatar".into(),
@@ -334,7 +344,7 @@ mod tests {
     #[test]
     fn validate_rejects_identity_unknown_table_and_column() {
         let schema = CloneSchema::new("Avatar".into(), vec![table("tbl_Avatar")]).unwrap();
-        // 身份规则引用未知表:fail-closed。
+        // Identity rule references an unknown table: fail closed.
         let unknown_table = RuleSet {
             identities: vec![IdentityRule {
                 entity: "Avatar".into(),
@@ -349,7 +359,7 @@ mod tests {
                 .contains("identity references unknown table `tbl_Ghost`"),
             "{err}"
         );
-        // 身份列不在表内:fail-closed。
+        // Identity column not in the table: fail closed.
         let unknown_column = RuleSet {
             identities: vec![IdentityRule {
                 entity: "Avatar".into(),
@@ -364,7 +374,7 @@ mod tests {
                 .contains("identity column `ghost` not in table `tbl_Avatar`"),
             "{err}"
         );
-        // 合法身份列通过,且 identity_column 查得到。
+        // A valid identity column passes and identity_column can find it.
         let ok = RuleSet {
             identities: vec![IdentityRule {
                 entity: "Avatar".into(),
@@ -385,8 +395,9 @@ mod tests {
 
     #[test]
     fn validate_passes_for_projection_with_valid_include_and_exclude() {
-        // include+exclude 都引用表内合法列:校验通过;exclude 命中合法列即
-        // 走已知列分支,不再误报。
+        // include+exclude both reference valid columns of the table: validation
+        // passes; an exclude hit on a valid column takes the known-column branch and
+        // no longer false-reports.
         let schema = CloneSchema::new("Avatar".into(), vec![table("tbl_Avatar")]).unwrap();
         let rules = RuleSet {
             projections: vec![ProjectRule {

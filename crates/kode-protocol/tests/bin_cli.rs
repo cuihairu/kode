@@ -1,6 +1,6 @@
-//! dump-protocol-schema CLI 冒烟:CARGO_BIN_EXE 真实拉起二进制,stdout 必须
-//! 是带版本头的合法 JSON Schema(RUST-055 单一真源导出链的 bin 腿;与
-//! kode-index/tests/bin_cli.rs 同构)。
+//! dump-protocol-schema CLI smoke test: CARGO_BIN_EXE really launches the binary, and stdout must be
+//! a valid JSON Schema with a version header (the bin leg of the RUST-055 single-source export chain;
+//! isomorphic to kode-index/tests/bin_cli.rs).
 
 use std::process::Command;
 
@@ -18,7 +18,8 @@ fn dump_protocol_schema_cli_emits_versioned_schema() {
         kode_protocol::PROTOCOL_VERSION,
         "版本头与 Rust 常量同源(TS 门三方对账的 Rust 腿)"
     );
-    // 聚合根字段即类型清单:wire 顶层面齐备,$defs 收全部子类型。
+    // The aggregation root's fields are the type inventory: the wire top-level faces are complete,
+    // and `$defs` collects all sub-types.
     for key in [
         "request",
         "notification",

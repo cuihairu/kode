@@ -1,20 +1,20 @@
-//! `$/kode/dependency/graph` —— def 依赖图推导(IDE-RUST-007)。
+//! `$/kode/dependency/graph` -- def dependency-graph derivation (IDE-RUST-007).
 //!
-//! 从 entities.xml 登记实体出发 → 实体 def → Parent(继承)/Interfaces(is-a)/
-//! Components(has-a 槽)/属性类型(property-type)→ types.xml 对象类 → ImplementedBy
-//! python 实现(implements)与 def 方法段 → python 实现文件(method-impl)。
-//! 全部边反向可索引(reverseEdges);输出三路径(entities.xml/defsRoot/types.xml)。
+//! Starting from entities registered in entities.xml -> entity def -> Parent (inheritance) / Interfaces (is-a) /
+//! Components (has-a slots) / property types (property-type) -> types.xml object classes -> ImplementedBy
+//! python implementations (implements) and def method sections -> python implementation files (method-impl).
+//! All edges are reverse-indexable (reverseEdges); outputs three paths (entities.xml/defsRoot/types.xml).
 //!
-//! 边界:图拓扑推导归 Rust;python 文件路径解析(脚本目录约定 + ImplementedBy
-//! 模块解析,配置/文件系统感知)由 TS 解析成 map 传入,不在此重复。
+//! Boundary: graph-topology derivation belongs to Rust; python file path resolution (script-directory convention + ImplementedBy
+//! module resolution, config/filesystem aware) is resolved by TS into a map passed in, not duplicated here.
 //!
-//! 解析口径:
-//! - def Parent/Interfaces 用 Document 双形态(文本/元素,镜像 message_table 的
-//!   node_value + wrapper 四拼写过滤)——kode-parser extract_def 只认文本形态,
-//!   元素形态(`<Parent><X/></Parent>`)在此覆盖,与 TS entityDependency 同。
-//! - types.xml 对象类双形态检测(元素形态 `<X><FIXED_DICT>…` 镜像 message_table
-//!   load_types_xml;文本形态 `<X> FIXED_DICT …` 同 kode-parser extract_types
-//!   文本指引——真实资产 types.xml 主形态,只认元素形态会全丢)。
+//! Resolution stance:
+//! - def Parent/Interfaces use the Document dual form (text/element, mirroring message_table's
+//!   node_value + four-spelling wrapper filtering) -- kode-parser extract_def only recognizes the text form,
+//!   the element form (`<Parent><X/></Parent>`) is covered here, same as TS entityDependency.
+//! - types.xml object-class dual-form detection (the element form `<X><FIXED_DICT>…` mirrors message_table
+//!   load_types_xml; the text form `<X> FIXED_DICT …` follows kode-parser extract_types'
+//!   text directive -- the primary form of the real asset types.xml; recognizing only the element form would lose everything).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -34,7 +34,7 @@ fn graph_handler(params: Value) -> Result<Value, String> {
 }
 
 // ---------------------------------------------------------------------------
-// 入参提取(镜像 message_table.rs 的 defs/paths map 模式)
+// Input extraction (mirrors message_table.rs's defs/paths map pattern)
 // ---------------------------------------------------------------------------
 
 fn opt_str(params: &Value, key: &str) -> String {
@@ -57,7 +57,7 @@ fn string_map(params: &Value, key: &str) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-/// pythonFiles 值形态:String(单文件)或 Array(多文件,base/cell/client 各一)。
+/// pythonFiles value shape: String (single file) or Array (multiple files, one each for base/cell/client).
 fn string_list_map(params: &Value, key: &str) -> HashMap<String, Vec<String>> {
     params
         .get(key)
@@ -82,10 +82,10 @@ fn string_list_map(params: &Value, key: &str) -> HashMap<String, Vec<String>> {
 }
 
 // ---------------------------------------------------------------------------
-// xml 辅助(镜像 message_table.rs scalar_child/node_value)
+// xml helpers (mirror message_table.rs scalar_child/node_value)
 // ---------------------------------------------------------------------------
 
-/// 子元素文本 trim;空回落首个子元素名;仍空 → None。
+/// Trim the child element text; empty falls back to the first child element's name; still empty -> None.
 fn node_value(doc: &Document, idx: usize, name: &str) -> Option<String> {
     let child = doc.child_element(idx, name)?;
     let text = doc.element(child).text(doc).trim().to_string();
@@ -97,7 +97,7 @@ fn node_value(doc: &Document, idx: usize, name: &str) -> Option<String> {
         .map(|&c| doc.element(c).name.clone())
 }
 
-/// Interfaces 段:引擎只认 wrapper 四拼写,取名文本取文本、元素取标签名。
+/// Interfaces section: the engine only accepts the four wrapper spellings; naming takes text for text, tag name for elements.
 fn parse_interfaces(doc: &Document, root: usize) -> Vec<String> {
     doc.child_element(root, "Interfaces")
         .map(|ifaces| {
@@ -123,12 +123,12 @@ fn parse_interfaces(doc: &Document, root: usize) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// types.xml 对象类名(FIXED_DICT/ARRAY 声明),双形态并集:
-/// - 元素形态(`<X><FIXED_DICT>…`,与 message_table load_types_xml 同检测);
-/// - 文本形态(`<X> FIXED_DICT …`,引擎模板主形态,与 kode-parser
-///   extract_types 文本指引同口径)。此前只认元素形态——真实资产 types.xml
-///   全文本形态(FIXED_DICT 是文本指引而非子元素)→ 对象类集为空,
-///   property-type/type 节点全丢(AUDIT-002 对拍实测发现)。
+/// types.xml object-class names (FIXED_DICT/ARRAY declarations), union of both forms:
+/// - element form (`<X><FIXED_DICT>…`, same detection as message_table load_types_xml);
+/// - text form (`<X> FIXED_DICT …`, the engine template's primary form, matching kode-parser
+///   extract_types' text directive). Previously only the element form was recognized -- the real asset types.xml
+///   is entirely text-form (FIXED_DICT is a text directive, not a child element) -> the object-class set came back empty,
+///   losing all property-type/type nodes (found by AUDIT-002 comparison in practice).
 fn object_class_names(types_xml: &str) -> HashSet<String> {
     let mut names = HashSet::new();
     let doc = parse_xml(types_xml, false);
@@ -151,7 +151,7 @@ fn object_class_names(types_xml: &str) -> HashSet<String> {
 }
 
 // ---------------------------------------------------------------------------
-// 图模型
+// Graph model
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,7 +178,7 @@ impl NodeKind {
 }
 
 struct Builder {
-    /// 节点 id(有序)→ 节点 JSON。
+    /// Node id (ordered) -> node JSON.
     nodes: BTreeMap<String, Value>,
     /// (from, to, kind, label)。
     edges: Vec<(String, String, &'static str, Option<String>)>,
@@ -190,7 +190,7 @@ struct Builder {
     categories: HashMap<String, String>,
     python_files: HashMap<String, Vec<String>>,
     type_impls: HashMap<String, String>,
-    /// types.xml 对象类名。
+    /// types.xml object-class name.
     object_classes: HashSet<String>,
     registered: HashSet<String>,
 
@@ -230,7 +230,7 @@ impl Builder {
             .unwrap_or_else(|| format!("{}/{name}.def", self.defs_root))
     }
 
-    /// categories 查表,缺省回落 hint。
+    /// Looked up in categories; defaults to falling back to hint.
     fn resolve_kind(&self, name: &str, hint: NodeKind) -> NodeKind {
         match self.categories.get(name).map(|s| s.as_str()) {
             Some("entity") | Some("def") => NodeKind::Def,
@@ -302,18 +302,18 @@ impl Builder {
 
     fn walk_def(&mut self, name: &str, hint: NodeKind) {
         if !self.visited.insert(name.to_string()) {
-            return; // 环守卫:已走过
+            return; // cycle guard: already visited
         }
         let text = match self.defs.get(name) {
             Some(t) => t.clone(),
-            None => return, // 缺 def 文本:仅 stub 节点,不递归
+            None => return, // def text missing: stub node only, no recursion
         };
         let kind = self.resolve_kind(name, hint);
         let from_id = format!("{}:{name}", kind.as_str());
 
         let doc = parse_xml(&text, true);
         let d = extract_def(&doc, &text);
-        // Parent/Interfaces 双形态覆盖(kode-parser extract_def 只认文本形态)。
+        // Parent/Interfaces dual-form coverage (kode-parser extract_def only recognizes the text form).
         let parent = doc.root().and_then(|r| node_value(&doc, r, "Parent"));
         let interfaces = doc
             .root()
@@ -344,7 +344,7 @@ impl Builder {
             self.walk_def(iface, NodeKind::Interface);
         }
 
-        // Components → has-a(槽名 label)
+        // Components -> has-a (slot name as label)
         for comp in &d.components {
             let t = comp
                 .component_type
@@ -357,7 +357,7 @@ impl Builder {
             self.walk_def(&t, NodeKind::Component);
         }
 
-        // Properties → property-type(types.xml 对象类或实体 def)
+        // Properties -> property-type (types.xml object class or entity def)
         for prop in &d.properties {
             for tr in &prop.type_refs {
                 if self.object_classes.contains(tr) {
@@ -380,7 +380,7 @@ impl Builder {
             }
         }
 
-        // 方法段 → python 实现文件
+        // Method sections -> python implementation files
         let has_methods = !d.base_methods.is_empty()
             || !d.cell_methods.is_empty()
             || !d.client_methods.is_empty();
@@ -405,7 +405,7 @@ impl Builder {
             self.registered.insert(e.name.clone());
         }
 
-        // 起点:登记实体 → entity 节点 + def 节点 + registration 边 + walk_def
+        // Starting points: registered entities -> entity node + def node + registration edge + walk_def
         for e in &entities_file.entities {
             let mut types = Vec::new();
             let attr = |key: &str| {
@@ -431,7 +431,7 @@ impl Builder {
             self.walk_def(&e.name, NodeKind::Def);
         }
 
-        // ImplementedBy → python 实现(type 节点反向边)
+        // ImplementedBy -> python implementation (reverse edge from the type node)
         let impls: Vec<(String, String)> = self
             .type_impls
             .iter()
@@ -441,9 +441,9 @@ impl Builder {
             if !self.object_classes.contains(&type_name) {
                 continue;
             }
-            // 确保 type:{name} 节点存在:仅 property-type 引用路径会建 type 节点,
-            // 若该类型只被 ImplementedBy 引用(不挂任何实体属性),from 端会悬空,
-            // 前端 mermaid 渲染成无样式隐式节点——先补建再推边。
+            // Ensure the type:{name} node exists: only the property-type reference path creates type nodes,
+            // so if the type is referenced only by ImplementedBy (attached to no entity property), the from end would dangle,
+            // rendering as an unstyled implicit node in the frontend mermaid -- create it first, then push the edge.
             let type_id = format!("type:{type_name}");
             let type_path = self.types_xml_path.clone();
             self.ensure_node(&type_id, NodeKind::Type, &type_name, &type_path, None);
@@ -457,7 +457,7 @@ impl Builder {
     }
 
     fn finish(self) -> Value {
-        // 反向索引
+        // Reverse index
         let mut reverse: BTreeMap<String, Vec<Value>> = BTreeMap::new();
         for (from, to, kind, label) in &self.edges {
             let mut entry = json!({ "from": from, "kind": kind });
@@ -480,7 +480,7 @@ impl Builder {
             })
             .collect();
 
-        // stats:各 kind 计数
+        // stats: per-kind counts
         let mut c_entity = 0i64;
         let mut c_def = 0i64;
         let mut c_interface = 0i64;

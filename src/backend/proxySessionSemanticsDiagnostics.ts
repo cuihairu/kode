@@ -1,18 +1,26 @@
-// QA-001b(2026-11-22):Proxy 会话语义检查面(两个分歧臂,判例源
-// docs/knowledge/proxy-session-semantics.md §4/§6,引擎头 55a66552):
-//   - onLogOnAttempt 返回值矩阵:switch 仅 LOG_ON_ACCEPT 有独立分支(接管+
-//     重建代理链);LOG_ON_WAIT_FOR_DESTROY 与 default 同支(baseapp.cpp:
-//     4020-4021)→ loginBaseappFailed(SERVER_ERR_ACCOUNT_IS_ONLINE)=实际效果
-//     同拒绝。脚本真正能稳定依赖的只有 accept/reject;返回 WAIT_FOR_DESTROY
-//     是依赖未落地理想语义的分歧臂 → 报;
-//   - giveClientTo 五前置校验边界:源已销毁/源无客户端/目标已销毁/目标是
-//     自己/目标已有客户端,失败触发 onGiveClientToFailure(非迁移中途网络
-//     失败)。可证形态=目标是自己(`giveClientTo(self)`)→ 前置校验必败 → 报;
-//     其余四前置非静态可证 → 不猜。
+// QA-001b (2026-11-22): Proxy session-semantics checking face (two
+// divergence arms; rulings sourced from docs/knowledge/proxy-session-semantics.md
+// §4/§6, engine head 55a66552):
+//   - the onLogOnAttempt return-value matrix: the switch gives only
+//     LOG_ON_ACCEPT an independent branch (takeover + rebuild the proxy
+//     chain); LOG_ON_WAIT_FOR_DESTROY shares the default branch
+//     (baseapp.cpp:4020-4021) → loginBaseappFailed
+//     (SERVER_ERR_ACCOUNT_IS_ONLINE) = effectively a rejection. The only
+//     returns a script can reliably depend on are accept/reject; returning
+//     WAIT_FOR_DESTROY is the divergence arm depending on ideal semantics
+//     that are not implemented → report;
+//   - the five giveClientTo pre-check boundaries: source destroyed / source
+//     has no client / target destroyed / target is self / target already has
+//     a client; a failure triggers onGiveClientToFailure (not a mid-migration
+//     network failure). The statically provable shape = the target is self
+//     (`giveClientTo(self)`) → the pre-check must fail → report; the other
+//     four pre-checks are not statically provable → do not guess.
 //
-// 只对 baseapp 实体脚本(Proxy 会话域)接管;面不明/非 baseapp 零产出(普通
-// Python 类与 cellapp/client 不猜)。纯逻辑层,不 import vscode;Rust 面本族
-// 未收编(收编归后续批)。
+// Takes over only baseapp entity scripts (the Proxy session domain); unclear
+// faces / non-baseapp yield nothing (no guessing for plain Python classes
+// and cellapp/client). Pure logic layer, does not import vscode; the Rust
+// face has not absorbed this family yet (absorption belongs to a later
+// batch).
 
 import { maskPythonNonCode } from './pythonLexicalMask';
 import { l10nText } from '../nlsRuntime';
@@ -21,20 +29,21 @@ import type { EntityComponentFace } from './entityBuiltinProperties';
 export const PROXY_SESSION_DIAGNOSTIC_CODE = 'kbengine.proxySessionSemantics';
 export const PROXY_SESSION_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
-/** 一处 Proxy 会话语义发现(诊断面所需最小信息) */
+/** One Proxy session-semantics finding (the minimal information the diagnostic face needs) */
 export interface ProxySessionFinding {
-  /** 行(0 起) */
+  /** Line (0-based) */
   line: number;
-  /** 起始列(0 起) */
+  /** Start column (0-based) */
   character: number;
-  /** 高亮长度 */
+  /** Highlight length */
   length: number;
   kind: 'logon-attempt-wait-for-destroy' | 'give-client-to-self';
   message: string;
 }
 
 /**
- * 臂 1 消息:WAIT_FOR_DESTROY 未落地为独立排队流程,实际同拒绝。
+ * Arm 1 message: WAIT_FOR_DESTROY has not landed as an independent queued
+ * flow; it is effectively the same as a rejection.
  */
 export function renderLogOnAttemptWaitForDestroyMessage(): string {
   return l10nText(
@@ -43,7 +52,7 @@ export function renderLogOnAttemptWaitForDestroyMessage(): string {
 }
 
 /**
- * 臂 2 消息:目标是自己 = 前置校验必败。
+ * Arm 2 message: the target is the caller itself = the pre-check must fail.
  */
 export function renderGiveClientToSelfMessage(): string {
   return l10nText(
@@ -52,9 +61,11 @@ export function renderGiveClientToSelfMessage(): string {
 }
 
 /**
- * Proxy 会话语义判定(纯函数):两分歧臂可证形态。
- * faces 由调用方提供(getEntityComponentFacesForPythonFile);只含 baseapp
- * 才接管(Proxy 会话域),面不明(null/空)或非 baseapp → 零产出。
+ * Proxy session-semantics ruling (pure function): the provable shapes of the
+ * two divergence arms.
+ * faces is provided by the caller (getEntityComponentFacesForPythonFile);
+ * takeover happens only when it includes baseapp (the Proxy session
+ * domain) — an unclear face (null/empty) or non-baseapp yields nothing.
  */
 export function findProxySessionFindings(
   text: string,
@@ -67,8 +78,10 @@ export function findProxySessionFindings(
   const lines = masked.split(/\r?\n/);
   const findings: ProxySessionFinding[] = [];
 
-  // 臂 1:onLogOnAttempt 方法体内 return 引用 LOG_ON_WAIT_FOR_DESTROY。
-  // 方法边界=缩进回落(逐方法定位,不跨方法误报)。
+  // Arm 1: a return inside the onLogOnAttempt method body referencing
+  // LOG_ON_WAIT_FOR_DESTROY.
+  // Method boundary = indentation falling back (locating per method, so no
+  // cross-method false positives).
   for (let i = 0; i < lines.length; i += 1) {
     const defMatch = /^\s*def\s+onLogOnAttempt\s*\(/.exec(lines[i]);
     if (!defMatch) {
@@ -97,7 +110,7 @@ export function findProxySessionFindings(
     }
   }
 
-  // 臂 2:giveClientTo(self)(目标是自己,任一接收者均前置校验必败)。
+  // Arm 2: giveClientTo(self) (the target is self; the pre-check must fail for any receiver).
   const givePattern = /\bgiveClientTo\s*\(\s*self\s*\)/;
   for (let i = 0; i < lines.length; i += 1) {
     const match = givePattern.exec(lines[i]);
@@ -114,7 +127,7 @@ export function findProxySessionFindings(
   return findings;
 }
 
-/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖) */
+/** Diagnostic item (pure data; the extension side converts to vscode.Diagnostic, tests stay vscode-free) */
 export interface ProxySessionDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -126,7 +139,7 @@ export interface ProxySessionDiagnosticItem {
   code: string;
 }
 
-/** findings → 诊断项(纯数据;test 免 vscode) */
+/** findings → diagnostic items (pure data; tests stay vscode-free) */
 export function proxySessionFindingsToItems(
   findings: readonly ProxySessionFinding[]
 ): ProxySessionDiagnosticItem[] {

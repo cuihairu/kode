@@ -3,16 +3,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * 打包二进制发现结果:路径为空 = 该面无可运行产物;rejectedReason 非空 =
- * bin/ 面上找到了同名文件但魔数与当前平台不符(错平台包落盘),按缺失处理,
- * 原因交由调用方直显(不再以「未安装」假象呈现哑挂形状)。
+ * Packaged binary discovery result: an empty path = that face has no runnable artifact; a
+ * non-empty rejectedReason = a file with the same name was found in the bin/ face but its
+ * magic number does not match the current platform (a wrong-platform package landed on disk),
+ * so it is treated as missing, and the reason is shown directly by the caller (the dull
+ * hang shape is no longer presented under the guise of "not installed").
  */
 export interface NativeBinaryReport {
   readonly path: string;
   readonly rejectedReason: string | null;
 }
 
-/** 平台期望的镜像魔数(win32=PE 的 MZ;linux=ELF;darwin=Mach-O/fat) */
+/** Image magic numbers expected for a platform (win32 = PE's MZ; linux = ELF; darwin = Mach-O/fat) */
 function expectedMagics(platform: NodeJS.Platform): readonly string[] {
   switch (platform) {
     case 'win32': return ['4d5a'];
@@ -21,9 +23,9 @@ function expectedMagics(platform: NodeJS.Platform): readonly string[] {
   }
 }
 
-/** 读文件头 4 字节的十六进制;不可读返回 null。 */
+/** Hex of the first 4 bytes of a file; returns null when unreadable. */
 function readHeaderHex(file: string): string | null {
-  // openSync 返回文件描述符(number),非 promises 面的 FileHandle
+  // openSync returns a file descriptor (a number), not a promises-face FileHandle
   let handle: number | null = null;
   try {
     handle = fs.openSync(file, 'r');
@@ -37,21 +39,21 @@ function readHeaderHex(file: string): string | null {
   }
 }
 
-/** 镜像格式与平台相符?只用于 bin/ 打包面(dev 构建是本机产物,不属本门)。 */
+/** Does the image format match the platform? Used only for the bin/ packaging face (a dev build is a local artifact and is not subject to this gate). */
 function matchesPlatformFormat(file: string, platform: NodeJS.Platform): boolean {
   const header = readHeaderHex(file);
   if (header === null) { return false; }
   return expectedMagics(platform).includes(header);
 }
 
-/** 错平台包的用户可读原因(直显面;platform 形态与 VSIX 平台名同口径) */
+/** User-readable reason for a wrong-platform package (the direct-display face; the platform form uses the same accounting as VSIX platform names) */
 function platformPackageMismatchReason(platform: NodeJS.Platform): string {
   return `安装的平台包与当前系统不匹配（当前 ${platform}），请安装 ${platform} 平台包`;
 }
 
 /**
- * 打包二进制发现(带诊断原因)。Packaged binaries run on the extension host
- * (including SSH/WSL), not the UI host.
+ * Packaged binary discovery (carrying a diagnostic reason). Packaged binaries run on the
+ * extension host (including SSH/WSL), not the UI host.
  */
 export function discoverNativeBinaryReport(
   extensionRoot: string,
@@ -75,9 +77,11 @@ export function discoverNativeBinaryReport(
       continue;
     }
     if (directory === 'bin' && !matchesPlatformFormat(candidate, platform)) {
-      // 错平台包落盘(如 linux-x64 的 ELF 落在 win32 扩展目录):spawn 只会
-      // 得到 exec format error / ENOENT 同形哑挂,先按缺失处理让回落路径接手,
-      // 原因记进 report 由调用方直显,不再呈现「未安装」假象。
+      // A wrong-platform package landed on disk (e.g. a linux-x64 ELF in a win32 extension
+      // directory): spawning would only produce an exec format error / ENOENT with the same
+      // dull-hang shape, so treat it as missing first and let the fallback path take over;
+      // the reason is recorded in the report for the caller to display directly, and the
+      // "not installed" guise is no longer presented.
       rejectedReason = platformPackageMismatchReason(platform);
       continue;
     }
@@ -86,7 +90,7 @@ export function discoverNativeBinaryReport(
   return { path: '', rejectedReason };
 }
 
-/** 签名保持向后兼容:六个生产调用点只取路径。 */
+/** The signature stays backward compatible: the six production call sites only take the path. */
 export function discoverNativeBinary(
   extensionRoot: string,
   name: string,
@@ -95,10 +99,11 @@ export function discoverNativeBinary(
   return discoverNativeBinaryReport(extensionRoot, name, platform).path;
 }
 
-/** 打包面完整性:bin/<executable> 的 sha256 必须与 bin/manifest.json 记录一致。
- * manifest 缺失/不可读/未登记该文件=无主张可校验,放行(向后兼容);记录不匹配
- * =二进制在安装后被替换,不放行。只约束打包面 bin/,dev 构建(target/*)无
- * manifest 不校验。 */
+/** Packaged-face integrity: the sha256 of bin/<executable> must match what bin/manifest.json
+ * records. A missing/unreadable manifest, or one that does not list the file, means there is
+ * no claim to verify, so it passes (backward compatible); a mismatched record = the binary was
+ * replaced after install, which does not pass. This only constrains the packaged bin/ face; a
+ * dev build (target/*) has no manifest and is not verified. */
 function matchesPackagedManifest(extensionRoot: string, executable: string): boolean {
   try {
     const manifest = JSON.parse(

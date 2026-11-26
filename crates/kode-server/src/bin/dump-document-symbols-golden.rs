@@ -1,8 +1,11 @@
-//! document symbols 对拍 golden 生成器:遍历 fixture 语料 def 文件,输出
-//! Outline 符号树(四段容器+段内声明,range/selectionRange 全跨度)JSON。
+//! document symbols parity golden generator: walks the fixture corpus def
+//! files and emits the Outline symbol tree (four-section containers + in-section
+//! declarations, full-span range/selectionRange) JSON.
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodeDocumentSymbolsParity.test.ts
-//! 用现有 defParser 原语复算对拍(双向门禁,definition/references 同构)。
+//! The golden file is produced by Rust; the TS side
+//! tests/kodeDocumentSymbolsParity.test.ts recomputes with the existing
+//! defParser primitives and compares (two-way gate, isomorphic with
+//! definition/references).
 
 fn main() {
     let repo_root = std::env::args().nth(1).unwrap_or_else(|| String::from("."));

@@ -1,4 +1,4 @@
-//! aliasID 分配(TS assignAliasIds + assignAliasRange)。
+//! aliasID assignment (TS assignAliasIds + assignAliasRange).
 
 use crate::message_table::assembly::Assembly;
 use crate::message_table::constants::{ALIAS_ID_MAX, ALIAS_ID_PROPERTY_BASE};

@@ -15,7 +15,8 @@ fn repo_root() -> std::path::PathBuf {
 #[test]
 fn document_symbols_golden_matches_regenerated_dump() {
     let regenerated = dump_document_symbols_golden(&repo_root());
-    let golden_path = repo_root().join(kode_server::document_symbols::DOCUMENT_SYMBOLS_GOLDEN_REL_PATH);
+    let golden_path =
+        repo_root().join(kode_server::document_symbols::DOCUMENT_SYMBOLS_GOLDEN_REL_PATH);
     let committed = std::fs::read_to_string(&golden_path)
         .expect("golden 文件缺失: crates/kode-server/tests/golden/document-symbols-parity.json");
     let committed = committed.trim_end_matches('\n');
@@ -75,7 +76,14 @@ fn document_symbols_golden_structure_is_complete() {
 fn count(symbols: &[serde_json::Value]) -> usize {
     symbols
         .iter()
-        .map(|s| 1 + count(s["children"].as_array().map(|c| c.as_slice()).unwrap_or(&[])))
+        .map(|s| {
+            1 + count(
+                s["children"]
+                    .as_array()
+                    .map(|c| c.as_slice())
+                    .unwrap_or(&[]),
+            )
+        })
         .sum()
 }
 
@@ -94,7 +102,10 @@ fn assert_symbol_shape(symbol: &serde_json::Value) {
             && symbol["selectionRange"]["start"]["character"].is_u64(),
         "符号 selectionRange 键形不对: {symbol}"
     );
-    assert!(symbol["children"].is_array(), "符号缺 children 数组: {symbol}");
+    assert!(
+        symbol["children"].is_array(),
+        "符号缺 children 数组: {symbol}"
+    );
     for child in symbol["children"].as_array().expect("children") {
         assert_symbol_shape(child);
     }

@@ -486,9 +486,8 @@ const AVATAR_PY: &str = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):
 fn py_self_completion_lists_own_then_facet_methods_then_chain() {
     let engine = loaded_engine();
     // 行 6(1 起)= `\t\tself.`,col 7 = 行尾全量点。
-    let response =
-        complete_at(&engine, "ws/scripts/base/Avatar.py", AVATAR_PY, 6, 7)
-            .expect("py self. 位应判面");
+    let response = complete_at(&engine, "ws/scripts/base/Avatar.py", AVATAR_PY, 6, 7)
+        .expect("py self. 位应判面");
     assert_eq!(response.context.kind, "self");
     assert_eq!(response.context.section, "Entity");
     assert_eq!(response.context.entity.as_deref(), Some("Avatar"));
@@ -533,17 +532,15 @@ fn py_self_completion_filters_fragment_case_insensitively() {
     let py = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.HP\n";
     // col 9 = `self.HP` 行尾,fragment="HP"。
     let response =
-        complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 9)
-            .expect("过滤位应判面");
+        complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 9).expect("过滤位应判面");
     assert_eq!(response.context.fragment, "HP");
     assert_eq!(labels(&response), vec!["hp".to_string()]);
     assert_eq!(response.items[0].detail.as_deref(), Some("UINT32"));
     assert_eq!(response.items[0].inherited_from, None);
     // 无命中:片段存在但判面成立(items 空,不是 None)。
     let py_none = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.zzz\n";
-    let response =
-        complete_at(&engine, "ws/scripts/base/Avatar.py", py_none, 6, 10)
-            .expect("无命中也是判面成立");
+    let response = complete_at(&engine, "ws/scripts/base/Avatar.py", py_none, 6, 10)
+        .expect("无命中也是判面成立");
     assert!(response.items.is_empty());
 }
 
@@ -580,8 +577,8 @@ fn py_self_completion_yields_none_outside_first_self_segment() {
 fn py_module_alias_face_still_wins_over_self_arm() {
     let engine = loaded_engine();
     let py = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tKBEngine.\n";
-    let response = complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 13)
-        .expect("KBEngine. 位应判面");
+    let response =
+        complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 13).expect("KBEngine. 位应判面");
     assert_eq!(response.context.kind, "module");
     assert_eq!(response.context.section, "KBEngine");
 }
@@ -611,7 +608,10 @@ fn lsp_projection_locks_order_and_emits_def_resolve_data() {
         assert_eq!(item["filterText"], item["label"]);
     }
     // 本类属性 data:source=def + 实体归属 + 类型;无 snippet(XML 面)。
-    let hp = items.iter().find(|i| i["label"] == serde_json::json!("hp")).unwrap();
+    let hp = items
+        .iter()
+        .find(|i| i["label"] == serde_json::json!("hp"))
+        .unwrap();
     assert_eq!(hp["data"]["source"], serde_json::json!("def"));
     assert_eq!(hp["data"]["root"], serde_json::json!(0));
     assert_eq!(hp["data"]["entity"], serde_json::json!("Avatar"));
@@ -619,7 +619,10 @@ fn lsp_projection_locks_order_and_emits_def_resolve_data() {
     assert_eq!(hp["data"]["inheritedFrom"], serde_json::Value::Null);
     assert!(hp.get("insertText").is_none(), "def XML 面无 snippet");
     // 继承属性 data:inheritedFrom 定位祖先。
-    let name = items.iter().find(|i| i["label"] == serde_json::json!("name")).unwrap();
+    let name = items
+        .iter()
+        .find(|i| i["label"] == serde_json::json!("name"))
+        .unwrap();
     assert_eq!(name["data"]["inheritedFrom"], serde_json::json!("BaseApp"));
 }
 
@@ -628,14 +631,23 @@ fn lsp_projection_py_self_and_module_method_items_get_snippets() {
     let engine = loaded_engine();
     // py self 面:method 条目 snippet `name($0)`(format 2),property plain。
     let py = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.\n";
-    let response = complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 7)
-        .expect("py self. 位应判面");
+    let response =
+        complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 7).expect("py self. 位应判面");
     let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
     let items = lsp["items"].as_array().expect("items");
-    let method = items.iter().find(|i| i["kind"] == serde_json::json!(2)).unwrap();
+    let method = items
+        .iter()
+        .find(|i| i["kind"] == serde_json::json!(2))
+        .unwrap();
     assert_eq!(method["insertTextFormat"], serde_json::json!(2));
-    assert_eq!(method["insertText"], serde_json::json!(format!("{}($0)", method["label"].as_str().unwrap())));
-    let prop = items.iter().find(|i| i["kind"] == serde_json::json!(10)).unwrap();
+    assert_eq!(
+        method["insertText"],
+        serde_json::json!(format!("{}($0)", method["label"].as_str().unwrap()))
+    );
+    let prop = items
+        .iter()
+        .find(|i| i["kind"] == serde_json::json!(10))
+        .unwrap();
     assert!(prop.get("insertText").is_none(), "属性条目 plain");
     // module 面:function 条目 snippet + signature 进 data。
     let py_mod = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tKBEngine.\n";
@@ -643,7 +655,10 @@ fn lsp_projection_py_self_and_module_method_items_get_snippets() {
         .expect("KBEngine. 位应判面");
     let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
     let items = lsp["items"].as_array().expect("items");
-    let function = items.iter().find(|i| i["kind"] == serde_json::json!(3)).unwrap();
+    let function = items
+        .iter()
+        .find(|i| i["kind"] == serde_json::json!(3))
+        .unwrap();
     assert_eq!(function["insertTextFormat"], serde_json::json!(2));
     assert_eq!(function["data"]["source"], serde_json::json!("module"));
     assert_eq!(function["data"]["process"], serde_json::json!("base"));
@@ -671,11 +686,16 @@ fn resolve_enriches_def_property_and_inherited_member_documentation() {
         .unwrap()
         .clone();
     let resolved = kode_server::resolve_item(&engine, &hp);
-    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    let doc = resolved["documentation"]["value"]
+        .as_str()
+        .expect("documentation");
     assert!(doc.contains("**hp**"), "标题: {doc}");
     assert!(doc.contains("`UINT32`"), "类型面: {doc}");
     assert!(doc.contains("`BASE_AND_CLIENT`"), "Flags 面: {doc}");
-    assert!(doc.contains("ws/scripts/entity_defs/Avatar.def"), "来源路径: {doc}");
+    assert!(
+        doc.contains("ws/scripts/entity_defs/Avatar.def"),
+        "来源路径: {doc}"
+    );
     // 继承成员:定位祖先 def,文档带「继承自」+ 祖先来源。
     let name = lsp["items"]
         .as_array()
@@ -685,10 +705,15 @@ fn resolve_enriches_def_property_and_inherited_member_documentation() {
         .unwrap()
         .clone();
     let resolved = kode_server::resolve_item(&engine, &name);
-    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    let doc = resolved["documentation"]["value"]
+        .as_str()
+        .expect("documentation");
     assert!(doc.contains("`STRING`"), "祖先类型: {doc}");
     assert!(doc.contains("继承自 BaseApp"), "继承标注: {doc}");
-    assert!(doc.contains("ws/scripts/entity_defs/BaseApp.def"), "祖先来源: {doc}");
+    assert!(
+        doc.contains("ws/scripts/entity_defs/BaseApp.def"),
+        "祖先来源: {doc}"
+    );
 }
 
 #[test]
@@ -708,7 +733,9 @@ fn resolve_enriches_method_signature_and_facet_documentation() {
     let item = lsp["items"][0].clone();
     assert_eq!(item["label"], serde_json::json!("reqCastSkill"));
     let resolved = kode_server::resolve_item(&engine, &item);
-    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    let doc = resolved["documentation"]["value"]
+        .as_str()
+        .expect("documentation");
     assert!(doc.contains("分面:base"), "分面: {doc}");
     assert!(doc.contains("reqCastSkill(skillId)"), "签名(带 Arg): {doc}");
     assert!(doc.contains("来源:"), "来源: {doc}");
@@ -730,7 +757,9 @@ fn resolve_enriches_type_alias_entity_documentation() {
     let item = lsp["items"][0].clone();
     assert_eq!(item["data"]["source"], serde_json::json!("entity"));
     let resolved = kode_server::resolve_item(&engine, &item);
-    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    let doc = resolved["documentation"]["value"]
+        .as_str()
+        .expect("documentation");
     assert!(doc.contains("实体声明:"), "实体文档: {doc}");
     assert!(doc.contains(".def"), "声明路径: {doc}");
 }

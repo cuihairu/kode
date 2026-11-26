@@ -1,69 +1,93 @@
 /**
- * 热更保存事件流水线纯核(HR-PR-04,书 §19.4):
- * - 零 IO、零 vscode 导入:时钟/定时器/快照读/语法检查全部注入,装配面
- *   才决定真实现(与 kode-vfs VFS-001、hotReloadModuleIdentity 同边界);
- * - HR-WATCH-006 每文件去抖(尾窗)+ 全局 max-delay 封顶:同一文件连发
- *   事件合并重排窗,排窗以 max-delay 为上限(save storm 至多推迟到
- *   max-delay,封顶截断如实记 max-delay-capped 因);
- * - HR-WATCH-003/009 事件源标记(save/disk-change)归并:同一写盘动作
- *   触发 save 事件与 disk 事件时按同文件同 pending 归并(去重不双发),
- *   归并为 FileChanged{uri,revision,diskHash,source,time} 并记录合并原因;
- * - HR-WATCH-007 写入稳定:短窗连续快照一致才发,超探测上限如实发
- *   (unstable 原因记录),读不到(已删除)如实丢弃;
- * - HR-WATCH-010 canonical URI + targetId + 内容哈希去重:同内容同目标
- *   不重复发(HR-PR-02 canonicalizeScriptFilePath 复用);
- * - HR-WATCH-008 投递指纹与去重指纹分离:指纹在批次交给发送面的那一刻
- *   记(本核不知投递成败),投递失败由装配调 forgetSent 撤回,同内容
- *   变更照发——不在定稿时记,否则一次失败即永久跳过同内容;
- * - HR-WATCH-011 版本守卫:响应到达时 sent revision 落后当前 revision
- *   即 stale,不得把旧响应写成新版本成功(isStaleResponse 纯判)。
- *   revision 只随「实际发出的新内容版本」递增——去重/语法拦截不占号,
- *   否则在途的同内容响应会被误判 stale;
- * - 波次归集:同一去抖窗内定稿的文件合成一批发出(波次冲口 batchFlushMs
- *   到期归集),批次出口判批量预览阈值,同窗多文件天然成批;
- * - HR-WATCH-012 语法闸:注入检查器不通过 → blocked,不默认发送半成品;
- * - HR-WATCH-014 dispose 清空待提交队列(pending/波次/预览滞留);
- * - HR-WATCH-016 批量预览:超阈值批次只出预览,不自动发,显式放行才发,
- *   滞留期间新批次并入同一滞留批次;
- * - HR-WATCH-017 诊断事件:trigger/filtered/debounced/deduped/blocked/
- *   scheduled/preview/flushed 全量可注入观察。
+ * Hot reload save event pipeline pure core (HR-PR-04, book §19.4):
+ * - Zero IO, zero vscode imports: the clock/timers/snapshot reads/syntax
+ *   checks are all injected; the wiring layer decides the real
+ *   implementations (same boundary as kode-vfs VFS-001 and
+ *   hotReloadModuleIdentity);
+ * - HR-WATCH-006 per-file debounce (trailing window) + a global max-delay
+ *   cap: consecutive events on the same file merge and reschedule the
+ *   window, the window is bounded by max-delay (a save storm is delayed at
+ *   most until max-delay; capping is honestly recorded as a
+ *   max-delay-capped reason);
+ * - HR-WATCH-003/009 event source markers (save/disk-change) coalescing:
+ *   when one disk write triggers both a save event and a disk event, they
+ *   are merged per same-file same-pending (deduplicated, never sent twice),
+ *   merged into FileChanged{uri,revision,diskHash,source,time} with the
+ *   merge reason recorded;
+ * - HR-WATCH-007 write stability: only emit once consecutive snapshots in a
+ *   short window agree; past the probe cap, emit honestly anyway (the
+ *   unstable reason is recorded); unreadable (deleted) is honestly dropped;
+ * - HR-WATCH-010 canonical URI + targetId + content hash deduplication: the
+ *   same content for the same target is not sent twice (HR-PR-02
+ *   canonicalizeScriptFilePath reused);
+ * - HR-WATCH-008 separating the dispatch fingerprint from the dedup
+ *   fingerprint: the fingerprint is recorded at the moment a batch is
+ *   handed to the send face (this core does not know whether delivery
+ *   succeeds); a failed delivery is withdrawn by the wiring layer calling
+ *   forgetSent, and the same content change is still sent -- not recorded
+ *   at finalization, otherwise one failure would skip the same content
+ *   forever;
+ * - HR-WATCH-011 revision guard: when a response arrives and its sent
+ *   revision lags the current revision, it is stale and must not be
+ *   written down as a success for a newer revision (isStaleResponse is a
+ *   pure check).
+ *   The revision only increments with "actually sent new content" --
+ *   dedup/syntax interception does not consume a number, otherwise an
+ *   in-flight response for the same content would be misjudged as stale;
+ * - Wave gathering: files finalized inside the same debounce window are
+ *   bundled into one emit (the wave flush outlet batchFlushMs expires and
+ *   gathers them), the batch outlet checks the batch preview threshold,
+ *   and multiple files in the same window naturally form a batch;
+ * - HR-WATCH-012 syntax gate: the injected checker failing -> blocked, never
+ *   sending a half-finished product by default;
+ * - HR-WATCH-014 dispose clears the queue awaiting commit (pending/wave/
+ *   preview stagnation);
+ * - HR-WATCH-016 batch preview: batches above the threshold only produce a
+ *   preview, nothing is auto-sent, an explicit release sends them, and new
+ *   batches during the stagnation merge into the same stagnant batch;
+ * - HR-WATCH-017 diagnostic events: trigger/filtered/debounced/deduped/
+ *   blocked/scheduled/preview/flushed are all observable via injection.
  *
- * 装配接线(vscode 事件绑定、配置面、默认开关)不在本核;HR-WATCH-001
- * 「默认 off」与用户 2026-11-06 令(零配置默认开、保存即自动发)冲突,
- * 冲突解决权在用户,接线批随配置面定夺。
+ * The wiring (vscode event binding, config face, default switches) is not in
+ * this core; HR-WATCH-001 "default off" conflicts with the user order of
+ * 2026-11-06 (zero-config default on, auto-send on save); the user holds
+ * the right to resolve the conflict, and the wiring batch decides together
+ * with the config face.
  */
 
 import { canonicalizeScriptFilePath } from './hotReloadModuleIdentity';
 
-/** 定时器注入面:本核自持类型,不 import src/hotReload(那会顺带 vscode 进测试图) */
+/** Timer injection face: this core owns the types itself, never importing src/hotReload (that would drag vscode into the test graph) */
 export interface SavePipelineTimerDeps {
   readonly set: (callback: () => void, delayMs: number) => unknown;
   readonly clear: (handle: unknown) => void;
 }
 
-/** 事件源:编辑器保存 / 磁盘变更(HR-WATCH-003 原生 watcher 与 save 重叠去重) */
+/** Event source: editor save / disk change (HR-WATCH-003 dedups the overlap between the native watcher and save) */
 export type HotReloadEventSource = 'save' | 'disk-change';
 
-/** HR-WATCH-009 归并后的文件变更记录:诊断与发送消费的唯一形状 */
+/** HR-WATCH-009 coalesced file change record: the single shape consumed by diagnostics and sending */
 export interface FileChanged {
-  /** 规范化路径(canonicalizeScriptFilePath 产物;file:// 剥 scheme 等) */
+  /** Canonicalized path (the canonicalizeScriptFilePath product; strips the file:// scheme, etc.) */
   readonly uri: string;
-  /** 每文件单调递增版本号:仅实际发出的新内容版本才递增(去重/语法拦截不递增,
-   *  否则 deduped offer 白占版本号,会把同内容的在途响应误判 stale) */
+  /** Per-file monotonically increasing version: only the actually sent new
+   *  content version increments it (dedup/syntax interception do not increment
+   *  it, otherwise a deduped offer would waste a version number and an
+   *  in-flight response for the same content would be misjudged as stale) */
   readonly revision: number;
-  /** 发送时内容哈希;读不到为空串(如实,不猜) */
+  /** Content hash at send time; empty string when unreadable (honest, no guessing) */
   readonly diskHash: string;
-  /** 归并后代表事件源(最新一次) */
+  /** Representative event source after coalescing (the most recent one) */
   readonly source: HotReloadEventSource;
-  /** 时钟毫秒 */
+  /** Clock milliseconds */
   readonly time: number;
-  /** 归并进本条的原始事件数(≥1) */
+  /** Number of raw events coalesced into this record (>= 1) */
   readonly coalesced: number;
-  /** 合并原因(诊断口径:debounced/disk-save-overlap/unstable 等逐项加分号) */
+  /** Merge reason (diagnostic convention: debounced/disk-save-overlap/unstable and the like, one per item, joined with semicolons) */
   readonly coalesceReason: string;
 }
 
-/** HR-WATCH-017 诊断事件类型 */
+/** HR-WATCH-017 diagnostic event type */
 export type SavePipelineDiagnosticType =
   | 'trigger'
   | 'filtered'
@@ -81,55 +105,58 @@ export interface SavePipelineDiagnostic {
   readonly time: number;
 }
 
-/** 快照读取(注入):null=读不到(已删除/不可读),hash 空串=读得到但哈不出 */
+/** Snapshot read (injected): null=unreadable (deleted/unreadable), empty hash string=readable but unhashable */
 export interface FileSnapshot {
   readonly hash: string;
   readonly content: string;
 }
 
-/** 语法闸判定形状(HR-WATCH-012):ok=false 即拦,errors 逐条进诊断 */
+/** Syntax gate verdict shape (HR-WATCH-012): ok=false blocks, errors go into diagnostics one by one */
 export type SyntaxVerdict = { readonly ok: boolean; readonly errors?: readonly string[] };
 
-/** 轻量语法检查注入面(HR-WATCH-012):检查器本体由装配决定,不通过即拦;
- *  同步判定或 Promise 判定皆可(真解释器编译是异步面)。 */
+/** Lightweight syntax-check injection face (HR-WATCH-012): the wiring layer
+ *  decides the checker itself; failing it blocks; either a synchronous verdict
+ *  or a Promise verdict works (a real interpreter compile is an async face). */
 export type SyntaxCheck = (content: string) => SyntaxVerdict | Promise<SyntaxVerdict>;
 
-/** 阵列输出模式:auto=直接发;preview-release=预览放行(HR-WATCH-016) */
+/** Emit mode: auto=send directly; preview-release=preview release (HR-WATCH-016) */
 export type SavePipelineEmitMode = 'auto' | 'preview-release';
 
 export interface HotReloadSavePipelineOptions {
-  /** 每文件去抖窗(缺省 500ms,与 HOT_RELOAD_DEFAULT_DEBOUNCE_MS 同值) */
+  /** Per-file debounce window (defaults to 500ms, same value as HOT_RELOAD_DEFAULT_DEBOUNCE_MS) */
   readonly debounceMs?: number;
-  /** 全局最大推迟上限(缺省 5000ms):pending 首事件起超此限强制冲(HR-WATCH-006) */
+  /** Global maximum delay cap (defaults to 5000ms): forced flush once a pending entry exceeds it from its first event (HR-WATCH-006) */
   readonly maxDelayMs?: number;
-  /** 稳定窗(缺省 200ms):两拍快照一致才算写稳;0=不做稳定等待 */
+  /** Stability window (defaults to 200ms): the write is stable only when two snapshots agree; 0=no stability waiting */
   readonly stabilityWindowMs?: number;
-  /** 稳定探测上限(缺省 3):超限如实发并记 unstable 原因(HR-WATCH-007) */
+  /** Stability probe cap (defaults to 3): past the cap, emit honestly and record an unstable reason (HR-WATCH-007) */
   readonly maxStabilityProbes?: number;
-  /** 批量预览阈值(缺省 50):一波触及超过此数的批次只预览不放行(HR-WATCH-016) */
+  /** Batch preview threshold (defaults to 50): a batch that reaches more than this only previews, never releases (HR-WATCH-016) */
   readonly batchPreviewThreshold?: number;
   /**
-   * 波次冲出口(缺省=debounceMs):本波最后一次定稿后延时归集,同窗多文件
-   * 合成一批。0=定稿即发(不起归集窗;装配接线默认,与既有全局去抖时序同感)
+   * Wave flush outlet (defaults to debounceMs): after the last finalization of
+   * this wave, gather after the delay; multiple files in the same window form
+   * one batch. 0=emit immediately on finalization (no gathering window; the
+   * wiring default, matching the existing global debounce timing feel)
    */
   readonly batchFlushMs?: number;
-  /** 定时器注入(缺省真 setTimeout;测试用内存时钟) */
+  /** Timer injection (defaults to the real setTimeout; tests use an in-memory clock) */
   readonly timers?: SavePipelineTimerDeps;
-  /** 时钟注入(缺省 Date.now) */
+  /** Clock injection (defaults to Date.now) */
   readonly now?: () => number;
-  /** 快照读取(注入即启用稳定等待与语法闸的内容面;缺省=无稳定等待) */
+  /** Snapshot read (injecting it enables the content face of stability waiting and the syntax gate; omitted=no stability waiting) */
   readonly readSnapshot?: (file: string) => Promise<FileSnapshot | null>;
-  /** 语法闸(注入即启用;不注入=无检查,如实不拦) */
+  /** Syntax gate (injecting it enables it; omitted=no check, honestly not blocking) */
   readonly checkSyntax?: SyntaxCheck;
-  /** 目标归属(去重键的一部分;缺省空串=无目标维度) */
+  /** Target ownership (part of the dedup key; defaults to empty string=no target dimension) */
   readonly targetOf?: (file: string) => string;
-  /** HR-WATCH-017 诊断事件出口 */
+  /** HR-WATCH-017 diagnostic event outlet */
   readonly onDiagnostic?: (diagnostic: SavePipelineDiagnostic) => void;
-  /** 阵列出口(发送消费面) */
+  /** Emit outlet (the face consumed by sending) */
   readonly onEmit: (events: readonly FileChanged[], mode: SavePipelineEmitMode) => void;
 }
 
-/** 定稿中状态:首拍时刻 / 最新事件源 / 归并计数 / 原因累计 / 去抖 timer */
+/** Finalizing state: first offer time / latest event source / coalesce count / accumulated reasons / debounce timer */
 interface PendingEntry {
   firstOfferAt: number;
   lastSource: HotReloadEventSource;
@@ -138,12 +165,12 @@ interface PendingEntry {
   timer: unknown;
 }
 
-/** HR-WATCH-011 版本守卫(纯判):响应的 sent revision 落后即 stale,不得记新版本成功 */
+/** HR-WATCH-011 revision guard (pure check): a response whose sent revision lags is stale, never recorded as a success for a newer revision */
 export function isStaleResponse(sentRevision: number, currentRevision: number): boolean {
   return sentRevision < currentRevision;
 }
 
-/** HR-WATCH-010 去重键(纯):canonical URI + targetId + 内容哈希,三同即重复 */
+/** HR-WATCH-010 dedup key (pure): canonical URI + targetId + content hash; all three equal means a duplicate */
 export function isDuplicateUpdate(
   a: { readonly uri: string; readonly targetId: string; readonly hash: string },
   b: { readonly uri: string; readonly targetId: string; readonly hash: string }
@@ -165,30 +192,35 @@ const DEFAULT_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
   '.ruff_cache'
 ]);
 
-/** 备份/临时文件形态:.swp/.swo/.bak/.tmp/尾 ~ /首尾 #(编辑器锁与原子写残留) */
+/** Backup/temp file shapes: .swp/.swo/.bak/.tmp/trailing ~ / leading-and-trailing # (editor locks and atomic-write leftovers) */
 const isBackupLike = (name: string): boolean =>
   /\.(swp|swo|bak|tmp)$/i.test(name) || name.endsWith('~') || (name.startsWith('#') && name.endsWith('#'));
 
 export interface WatchableFileOptions {
-  /** 收录扩展名(小写含点);缺省只认 .py(热更流水线本职是 python 模块重载) */
+  /** Accepted extensions (lowercase, with the dot); defaults to only .py (the hot reload pipeline's day job is python module reload) */
   readonly extensions?: readonly string[];
-  /** 脚本资源根集合:给出即只收根内文件(严格前缀+整段边界);缺省不限根 */
+  /** Script resource root set: when given, only accept files inside the roots (strict prefix + whole-segment boundary); omitted=no root restriction */
   readonly roots?: readonly string[];
-  /** 额外排除目录段(与默认排除表并集);缺省只用默认表 */
+  /** Extra excluded directory segments (union with the default exclusion table); omitted=only the default table */
   readonly excludedDirs?: readonly string[];
-  /** RUST-337 路径拒绝表:命中即不收(严格前缀+整段边界,与 roots 同
-   * canonical 化;拒绝优先于根许可——同文件既在许可根又在拒绝表=拒绝);
-   * 缺省=空表(行为逐字不变)。 */
+  /** RUST-337 path deny list: a hit means not accepted (strict prefix +
+   * whole-segment boundary, canonicalized the same way as roots; deny wins
+   * over root permission -- a file inside a permitted root but on the deny
+   * list=denied); omitted=empty list (behavior unchanged verbatim). */
   readonly denyPaths?: readonly string[];
-  /** RUST-337 路径许可表:给出即只收表内文件(严格前缀+整段边界,与
-   * denyPaths/roots 同 canonical 化;拒绝优先于许可——同文件既在拒绝表
-   * 又在许可表=拒绝;空表=不限,行为逐字不变);缺省=空表。 */
+  /** RUST-337 path allow list: when given, only accept files inside the list
+   * (strict prefix + whole-segment boundary, canonicalized the same way as
+   * denyPaths/roots; deny wins over allow -- a file on both the deny list
+   * and the allow list=denied; an empty list=no restriction, behavior
+   * unchanged verbatim); omitted=empty list. */
   readonly allowPaths?: readonly string[];
 }
 
 /**
- * HR-WATCH-004 纯过滤:只收已声明根内、扩展名准许、目录段不在排除表、
- * 文件名非备份/临时形态的脚本文件。纯词法判定,零 IO。
+ * HR-WATCH-004 pure filter: only accept script files inside the declared
+ * roots, with an accepted extension, whose directory segments are not in the
+ * exclusion table, and whose file name is not a backup/temp shape.
+ * Pure lexical decision, zero IO.
  */
 export function isWatchableScriptFile(fsPath: string, options: WatchableFileOptions = {}): boolean {
   const posix = fsPath.replace(/\\/g, '/');
@@ -214,7 +246,7 @@ export function isWatchableScriptFile(fsPath: string, options: WatchableFileOpti
     }
   }
   const roots = (options.roots ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
-  // RUST-337 路径拒绝表/许可表与根许可同 canonical 化同整段边界;拒绝优先。
+  // RUST-337 the path deny list/allow list is canonicalized with the same whole-segment boundary as root permission; deny wins.
   const denyPaths = (options.denyPaths ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
   const allowPaths = (options.allowPaths ?? []).map(root => canonicalizeScriptFilePath(root)).filter(root => root.length > 0);
   if (denyPaths.length === 0 && roots.length === 0 && allowPaths.length === 0) {
@@ -236,14 +268,14 @@ export function isWatchableScriptFile(fsPath: string, options: WatchableFileOpti
   return roots.some(root => canonical === root || canonical.startsWith(`${root}/`));
 }
 
-/** 热更保存事件流水线(纯核;事件绑定与发送消费由装配接线) */
-/** 三队列一快照(HR-UI-004 实时队列面;UI 消费口单次取全,免三次往返) */
+/** Hot reload save event pipeline (pure core; event binding and send consumption are wired by the wiring layer) */
+/** Three queues and one snapshot (HR-UI-004 live queue face; the UI consumer takes everything in one call, avoiding three round trips) */
 export interface SavePipelineQueueSnapshot {
-  /** 归并中(同文件事件合并未定稿) */
+  /** Coalescing (same-file events merged, not yet finalized) */
   readonly pending: readonly string[];
-  /** 预览滞留(HR-WATCH-016 批量预览未放行) */
+  /** Preview stagnation (HR-WATCH-016 batch preview not yet released) */
   readonly previewHeld: readonly string[];
-  /** 本波已定稿未发出 */
+  /** Finalized this wave, not yet emitted */
   readonly wave: readonly string[];
 }
 
@@ -263,27 +295,32 @@ export class HotReloadSavePipeline {
   private readonly onEmit: (events: readonly FileChanged[], mode: SavePipelineEmitMode) => void;
 
   private readonly pending = new Map<string, PendingEntry>();
-  /** 正在稳定等待/定稿中的 uri:防异步两拍快照期内同文件并行起第二个定稿 */
+  /** URIs currently stability-waiting/finalizing: prevents a parallel second finalization of the same file during the async two-snapshot window */
   private readonly settling = new Set<string>();
   private readonly revisionByUri = new Map<string, number>();
   private readonly lastSentByUri = new Map<string, { targetId: string; hash: string; revision: number }>();
-  /** 预览滞留批次(HR-WATCH-016):存定稿事件,放行时原样发出 */
+  /** Preview-stagnant batch (HR-WATCH-016): holds finalized events, emitted as-is on release */
   private previewEvents: FileChanged[] = [];
-  /** 波次缓冲:同一 debounce 窗内定稿的文件合成一批,冲口到期归集 */
+  /** Wave buffer: files finalized inside the same debounce window form one batch, gathered when the flush outlet expires */
   private wave: FileChanged[] = [];
   private waveTimer: unknown;
-  /** 本波是否已开冲口:避免每文件各起一个冲口,波尾被反复拉长 */
+  /** Whether this wave already opened its flush outlet: avoids one outlet per file, so the wave tail is not repeatedly stretched */
   private waveArmed = false;
   /**
-   * HR-STATE-011 暂停:入口照常收(事件在 pending/波次内累积),出口(波次
-   * 归集)按住不放,恢复时一次放出。pause 只挡波次归集,不挡显式预览放行
-   * (放行本身是用户点出来的「就发这批」,与「先都别自动发」不冲突)。
+   * HR-STATE-011 pause: the inlet keeps accepting (events accumulate inside
+   * pending/the wave), the outlet (wave gathering) is held back and released
+   * all at once on resume. pause only blocks wave gathering, not an explicit
+   * preview release (releasing is the user clicking "send exactly this
+   * batch", which does not conflict with "nothing auto-sent for now").
    */
   private paused = false;
   /**
-   * HR-STATE-011 取消:定稿在途(settling)的文件此刻还摘不干净,定稿落到
-   * 波次前按此集丢弃;同文件再 offer 的全新 pending 条目不受旧标记影响
-   * (标记在定稿丢弃时消费,旧定稿先落先消费,同 uri 定稿不并行)。
+   * HR-STATE-011 cancel: a file whose finalization is in flight (settling)
+   * cannot be fully plucked right now, so it is dropped per this set before
+   * it lands in the wave; a brand-new pending entry from re-offering the same
+   * file is unaffected by the old marker (the marker is consumed when the
+   * finalization is dropped; the older finalization lands and consumes first;
+   * finalizations of the same uri never run in parallel).
    */
   private readonly cancelled = new Set<string>();
   private disposed = false;
@@ -307,22 +344,22 @@ export class HotReloadSavePipeline {
     this.onEmit = options.onEmit;
   }
 
-  /** 自省:当前 pending 文件(归并中,未定稿) */
+  /** Introspection: the current pending files (coalescing, not finalized) */
   pendingFiles(): string[] {
     return [...this.pending.keys()];
   }
 
-  /** 自省:预览滞留批次文件(HR-WATCH-016) */
+  /** Introspection: the preview-stagnant batch files (HR-WATCH-016) */
   previewHeldFiles(): string[] {
     return this.previewEvents.map(event => event.uri);
   }
 
-  /** 自省:本波已定稿未发出的文件 */
+  /** Introspection: files finalized this wave but not yet emitted */
   waveFiles(): string[] {
     return this.wave.map(event => event.uri);
   }
 
-  /** 自省:三队列一快照(HR-UI-004 实时队列面单次取全) */
+  /** Introspection: the three-queue one-shot snapshot (HR-UI-004 live queue face taken in a single call) */
   queueSnapshot(): SavePipelineQueueSnapshot {
     return {
       pending: this.pendingFiles(),
@@ -331,15 +368,17 @@ export class HotReloadSavePipeline {
     };
   }
 
-  /** 自省:文件当前版本号(HR-WATCH-011 响应面快照用;未定稿过=0) */
+  /** Introspection: the file's current version (for the HR-WATCH-011 response-face snapshot; never finalized=0) */
   revisionOf(file: string): number {
     return this.revisionByUri.get(canonicalizeScriptFilePath(file)) ?? 0;
   }
 
   /**
-   * 登记一次原始事件(save 或 disk-change)。同文件已有 pending → 归并
-   * (coalesced+1;save 后紧跟的 disk 事件记 disk-save-overlap 原因,
-   * 不双发 HR-WATCH-003 重叠去重);无 pending → 新起去抖窗。
+   * Register one raw event (save or disk-change). A pending entry for the
+   * same file already exists -> coalesce (coalesced+1; a disk event
+   * immediately following a save records the disk-save-overlap reason, never
+   * sent twice, HR-WATCH-003 overlap dedup); no pending entry -> start a new
+   * debounce window.
    */
   offer(file: string, source: HotReloadEventSource): void {
     if (this.disposed) {
@@ -359,9 +398,11 @@ export class HotReloadSavePipeline {
       if (overlap) {
         existing.reasons.push('disk-save-overlap');
       }
-      // 真去抖=尾窗:再发事件重排去抖窗;窗口预算以 max-delay 为上限,
-      // save storm 只能推迟到 max-delay,不会无限推迟(HR-WATCH-006)。
-      // 封顶截断如实记因(max-delay-capped),到期面不再补判。
+      // Real debouncing=trailing window: another event reschedules the debounce
+      // window; the window budget is capped at max-delay, so a save storm only
+      // delays until max-delay and never indefinitely (HR-WATCH-006).
+      // The capping truncation is honestly recorded as a reason
+      // (max-delay-capped); the expiry face does not re-decide it.
       const elapsed = time - existing.firstOfferAt;
       const remaining = Math.min(this.debounceMs, Math.max(0, this.maxDelayMs - elapsed));
       if (remaining < this.debounceMs && !existing.reasons.includes('max-delay-capped')) {
@@ -375,7 +416,7 @@ export class HotReloadSavePipeline {
       });
       return;
     }
-    // 首窗也受 max-delay 封顶:maxDelay < debounce 时窗即封顶(HR-WATCH-006)
+    // The first window is also capped by max-delay: when maxDelay < debounce the window is capped outright (HR-WATCH-006)
     const firstWindow = Math.min(this.debounceMs, this.maxDelayMs);
     const entry: PendingEntry = {
       firstOfferAt: time,
@@ -389,7 +430,7 @@ export class HotReloadSavePipeline {
     this.schedule(entry, uri, firstWindow);
   }
 
-  /** 预览放行(HR-WATCH-016):用户显式放行滞留批次;无滞留如实空放 */
+  /** Preview release (HR-WATCH-016): the user explicitly releases the stagnant batch; no stagnation=honest empty release */
   releasePreview(): void {
     if (this.disposed || this.previewEvents.length === 0) {
       return;
@@ -402,21 +443,24 @@ export class HotReloadSavePipeline {
   }
 
   /**
-   * HR-STATE-011 暂停:按住波次归集(已定稿/在途事件继续在 pending/波次/预览
-   * 滞留内累积),恢复时由 resume 一次放出。重复暂停是幂等的(状态位)。
+   * HR-STATE-011 pause: hold back wave gathering (finalized/in-flight events
+   * keep accumulating inside pending/wave/preview stagnation), released all at
+   * once by resume on recovery. Repeated pauses are idempotent (a state flag).
    */
   pause(): void {
     this.paused = true;
   }
 
-  /** 暂停中的波次是否被按住(队列面自省,呈现「已暂停,待发 N 文件」用) */
+  /** Whether the paused wave is held back (queue-face introspection, used to present "paused, N files awaiting send") */
   isPaused(): boolean {
     return this.paused;
   }
 
   /**
-   * HR-STATE-011 恢复:清状态位并立刻冲一次波次(暂停期间归集好的批次
-   * 当场放出,不等下一个冲口)。重复恢复幂等(波次已空则无动作)。
+   * HR-STATE-011 resume: clear the state flag and flush the wave immediately
+   * (the batch gathered during the pause is emitted on the spot, without
+   * waiting for the next flush outlet). Repeated resumes are idempotent
+   * (an empty wave means no action).
    */
   resume(): void {
     this.paused = false;
@@ -424,9 +468,12 @@ export class HotReloadSavePipeline {
   }
 
   /**
-   * HR-STATE-011 取消:摘掉单个文件尚未发出的那一侧,返回摘到的队列(调用
-   * 面照实报「从哪摘的」,「未找到」如实 none,不假装取消)。已发出的批次
-   * 不召回(发送面已持有,幂等靠回执口径,不由本核回卷)。
+   * HR-STATE-011 cancel: pluck the not-yet-emitted side of a single file and
+   * return the queue it was plucked from (the caller face reports honestly
+   * "where it was plucked from"; "not found"=honestly none, never a fake
+   * cancel). Already-emitted batches are not recalled (the send face already
+   * holds them; idempotence relies on the receipt convention, not on this
+   * core rolling back).
    */
   cancel(file: string): 'pending' | 'preview-held' | 'wave' | 'in-flight' | 'none' {
     const uri = canonicalizeScriptFilePath(file);
@@ -456,7 +503,7 @@ export class HotReloadSavePipeline {
       return 'wave';
     }
     if (this.settling.has(uri)) {
-      // 定稿在途:此刻摘不到,标记后由 settle 在入波前丢弃
+      // Finalization in flight: cannot be plucked right now; mark it and let settle drop it before it enters the wave
       this.cancelled.add(uri);
       this.diagnostic({ type: 'filtered', uri, detail: '定稿在途,标记取消待入波前丢弃' });
       return 'in-flight';
@@ -465,9 +512,12 @@ export class HotReloadSavePipeline {
   }
 
   /**
-   * HR-WATCH-008:投递失败撤回指纹,下次同内容变更照发,不永久跳过。
-   * 指纹本身在批次交给发送面的那一刻记(见 emitBatch/releasePreview);
-   * 本核不判投递成败,失败由装配按发送结果回调本方法。
+   * HR-WATCH-008: withdraw the fingerprint after a failed delivery so the
+   * next change of the same content is still sent, never skipped forever.
+   * The fingerprint itself is recorded at the moment the batch is handed to
+   * the send face (see emitBatch/releasePreview); this core does not judge
+   * delivery success, and on failure the wiring layer calls this method per
+   * the send result.
    */
   forgetSent(file: string, revision?: number): void {
     const uri = canonicalizeScriptFilePath(file);
@@ -476,7 +526,7 @@ export class HotReloadSavePipeline {
     }
   }
 
-  /** 批次已交发送面:此刻记指纹(同内容同目标不再重发) */
+  /** The batch has been handed to the send face: record the fingerprint now (same content, same target, never sent again) */
   private markSent(events: readonly FileChanged[]): void {
     for (const event of events) {
       if (event.diskHash.length > 0) {
@@ -489,7 +539,7 @@ export class HotReloadSavePipeline {
     }
   }
 
-  /** HR-WATCH-014:停用/销毁清空待提交队列(pending+波次+预览滞留),后续事件不再受理 */
+  /** HR-WATCH-014: deactivate/destroy clears the queue awaiting commit (pending + wave + preview stagnation); later events are no longer accepted */
   dispose(): void {
     this.disposed = true;
     for (const entry of this.pending.values()) {
@@ -516,14 +566,16 @@ export class HotReloadSavePipeline {
     this.diagnostic({ type: 'scheduled', uri, detail: `${delayMs}ms` });
   }
 
-  /** 单文件到期:稳定等待 → 入波次缓冲(max-delay 已在排窗面封顶,HR-WATCH-006) */
+  /** Single file due: stability wait -> into the wave buffer (max-delay is already capped at the window-scheduling face, HR-WATCH-006) */
   private async due(uri: string): Promise<void> {
     const entry = this.pending.get(uri);
     if (!entry || this.disposed || this.settling.has(uri)) {
       return;
     }
-    // 快照读面服务两件事:稳定窗两拍比对(窗>0)与语法闸的内容面(窗=0 时
-    // 单拍直取内容——闸没有内容就是死面,如实接通)。两者都不需要时不读。
+    // The snapshot-read face serves two things: the two-snapshot comparison of
+    // the stability window (window > 0) and the content face of the syntax gate
+    // (at window=0 a single snapshot is read directly -- a gate without content
+    // is a dead face, so wire it honestly). Neither needed means no read.
     if (this.readSnapshot && (this.stabilityWindowMs > 0 || this.checkSyntax)) {
       await this.awaitStable(uri, entry, 0);
       return;
@@ -532,9 +584,12 @@ export class HotReloadSavePipeline {
   }
 
   /**
-   * HR-WATCH-007 写入稳定:两拍快照一致才发;超探测上限如实发并记 unstable。
-   * settling 守卫:稳定等待是异步两拍,期间同文件再 offer 只会重排去抖窗
-   * (见 offer),不得并行起第二个稳定/定稿流程,否则同 uri 双发。
+   * HR-WATCH-007 write stability: emit only once two snapshots agree; past
+   * the probe cap, emit honestly anyway and record unstable.
+   * settling guard: stability waiting is an async two-snapshot process, during
+   * which re-offering the same file merely reschedules the debounce window
+   * (see offer) -- never starting a second parallel stability/finalization
+   * flow, otherwise the same uri would be sent twice.
    */
   private async awaitStable(uri: string, entry: PendingEntry, probe: number): Promise<void> {
     if (!this.pending.has(uri) || this.disposed) {
@@ -544,7 +599,7 @@ export class HotReloadSavePipeline {
     try {
       const first = await this.readSnapshot?.(uri);
       if (!this.pending.has(uri) || this.disposed) {
-        return; // 等待期间被 dispose/冲走:如实让位
+        return; // disposed/flushed away during the wait: yield honestly
       }
       if (first === null || first === undefined) {
         this.pending.delete(uri);
@@ -552,8 +607,10 @@ export class HotReloadSavePipeline {
         return;
       }
       if (this.stabilityWindowMs === 0) {
-        // 窗 0=不做稳定等待(单拍直取内容):读一次即定稿——语法闸的内容面
-        // 由此送达(闸没有内容就是死面);真实哈希也进去重指纹面
+        // Window 0=no stability waiting (a single snapshot is read directly):
+        // one read finalizes -- the syntax gate's content face arrives through
+        // here (a gate without content is a dead face); the real hash also
+        // feeds the dedup fingerprint face
         await this.settle(uri, entry, first.hash, first.content);
         return;
       }
@@ -584,10 +641,14 @@ export class HotReloadSavePipeline {
       await this.awaitStable(uri, entry, probe + 1);
     } finally {
       this.settling.delete(uri);
-      // KODE-FULL-014:定稿/稳定等待期间新到的保存,其去抖窗到期时被上面
-      // settling 守卫挡回,只留下无 timer 的 pending——不补排的话最新保存
-      // 要等第三次事件才被推动(检查耗时超过去抖窗即触发)。当前代收口
-      // 时检查补排,窗口按 offer 同款 max-delay 封顶规则重算,最新保存必被处理。
+      // KODE-FULL-014: a save arriving during finalization/stability waiting has
+      // its debounce window bounce off the settling guard above, leaving only a
+      // pending entry without a timer -- without rescheduling, the newest save
+      // would have to wait for a third event to be driven (triggered whenever
+      // the check takes longer than the debounce window). Check and
+      // reschedule at this collection outlet, recomputing the window under the
+      // same max-delay capping rule as offer, so the newest save is always
+      // handled.
       const late = this.pending.get(uri);
       if (!this.disposed && late && late.timer === undefined) {
         const elapsed = this.now() - late.firstOfferAt;
@@ -604,16 +665,19 @@ export class HotReloadSavePipeline {
     });
   }
 
-  /** 定稿:语法闸 → 去重 → 入波次缓冲(波尾归集成批) */
+  /** Finalize: syntax gate -> dedup -> into the wave buffer (gathered into a batch at the wave tail) */
   private async settle(uri: string, entry: PendingEntry, hash = '', content = ''): Promise<void> {
     if (!this.pending.has(uri) || this.disposed) {
       return;
     }
     this.pending.delete(uri);
     const targetId = this.targetOf(uri);
-    // 语法闸只检一次(HR-WATCH-012):不通过即拦,不默认发送半成品。
-    // 异步检查器(真解释器编译)在此等待;期间 dispose 由 flushWave 的
-    // disposed 守卫兜住(不假发),再 offer 走全新 pending 条目不串批
+    // The syntax gate is checked only once (HR-WATCH-012): failing it blocks,
+    // never sending a half-finished product by default.
+    // An async checker (a real interpreter compile) waits here; a dispose
+    // during that wait is caught by flushWave's disposed guard (no fake emit),
+    // and re-offering goes through a brand-new pending entry, not crossing
+    // batches
     if (this.checkSyntax && content.length > 0) {
       const verdict = await this.checkSyntax(content);
       if (this.disposed) {
@@ -638,18 +702,26 @@ export class HotReloadSavePipeline {
       this.diagnostic({ type: 'deduped', uri, detail: '同内容同目标,不重复发送' });
       return;
     }
-    // HR-STATE-011 取消:定稿在途被 cancel 标记,入波前丢弃。检查放语法闸
-    // 与去重之后——异步语法闸等待期间(真解释器编译)用户取消必须照收;
-    // 标记消费时点删除,同文件再 offer 的全新条目不受旧标记影响(同 uri
-    // 定稿不并行,旧定稿先消费)。不占版本号:未发出的内容不递增。
+    // HR-STATE-011 cancel: a finalization in flight marked by cancel is
+    // dropped before entering the wave. The check sits after the syntax gate
+    // and dedup -- a user cancel must still be accepted during an async syntax
+    // gate wait (a real interpreter compile); the marker is deleted at its
+    // consumption point, so a brand-new entry from re-offering the same file
+    // is unaffected by the old marker (same-uri finalizations never run in
+    // parallel; the older finalization consumes first). It does not consume a
+    // version number: content that is never sent does not increment.
     if (this.cancelled.delete(uri)) {
       this.diagnostic({ type: 'filtered', uri, detail: '已取消,定稿不入波次' });
       return;
     }
-    // 去重指纹不在此记录:本核不知投递成败,指纹在批次实际发出时
-    // 由 recordSent 记录(否则一次失败就永久跳过同内容,HR-WATCH-008)。
-    // 版本号只随「实际发出的新内容版本」递增:去重/拦截不占号,否则在途的
-    // 同内容响应会被 isStaleResponse 误判 stale(HR-WATCH-011)。
+    // The dedup fingerprint is not recorded here: this core does not know
+    // whether delivery succeeds, so the fingerprint is recorded by recordSent
+    // when the batch is actually emitted (otherwise one failure would skip the
+    // same content forever, HR-WATCH-008).
+    // The version number only increments with "actually sent new content":
+    // dedup/interception does not consume a number, otherwise an in-flight
+    // response for the same content would be misjudged as stale by
+    // isStaleResponse (HR-WATCH-011).
     const revision = (this.revisionByUri.get(uri) ?? 0) + 1;
     this.revisionByUri.set(uri, revision);
     const event: FileChanged = {
@@ -663,8 +735,11 @@ export class HotReloadSavePipeline {
     };
     this.wave.push(event);
     if (this.batchFlushMs === 0) {
-      // 0 冲口=定稿即发(装配接线默认,与既有全局去抖时序同感):不起归集
-      // 窗,本批立即出窗;波次归集窗(>0)为配置面子批预留,核机制不变
+      // Flush outlet 0=emit on finalization (the wiring default, matching the
+      // existing global debounce timing feel): no gathering window is started
+      // and this batch leaves the window immediately; the wave gathering
+      // window (> 0) is reserved for config-face sub-batching, the core
+      // mechanism is unchanged
       this.flushWave();
       return;
     }
@@ -687,7 +762,7 @@ export class HotReloadSavePipeline {
     return reasons.length > 0 ? reasons.join(';') : 'single';
   }
 
-  /** 波尾归集:同窗定稿文件合成一批发出;HR-STATE-011 暂停时按住不放 */
+  /** Wave-tail gathering: files finalized in the same window are emitted as one batch; held back while paused under HR-STATE-011 */
   private flushWave(): void {
     if (this.disposed || this.wave.length === 0 || this.paused) {
       return;
@@ -697,10 +772,10 @@ export class HotReloadSavePipeline {
     this.emitBatch(events);
   }
 
-  /** 批次出口:超阈值只预览不放行(HR-WATCH-016),否则直接发 */
+  /** Batch outlet: above the threshold only preview, no release (HR-WATCH-016); otherwise send directly */
   private emitBatch(events: readonly FileChanged[]): void {
     if (this.previewEvents.length > 0) {
-      // 已有滞留批次:并入滞留队列维持单一批次形态,等显式放行
+      // An stagnant batch already exists: merge into the stagnant queue to keep a single-batch shape, waiting for an explicit release
       this.previewEvents.push(...events);
       this.diagnostic({
         type: 'preview',

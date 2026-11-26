@@ -1,11 +1,13 @@
-// IDE-MET-002/REL-004:扩展产物的构建提交标识。构建脚本
-// scripts/write-build-commit.mjs 在 compile 前把 git rev-parse HEAD 写进
-// out/buildCommit.json;VSIX 打包面保留该文件(.vscodeignore
-// !out/buildCommit.json),安装后位于 <ext>/out/buildCommit.json,运行时
-// 从 extensionPath/out 读取——安装产物报告的提交与构建输入一致。任何
-// 缺失/损坏都落 'unknown' 不猜,绝不回落源码目录的 git 状态(源码目录
-// 版本不冒充已安装版本)——报告读者能把 package version 与源码 SHA
-// 分开对账。
+// IDE-MET-002/REL-004: build commit identity for the extension artifact. The
+// build script scripts/write-build-commit.mjs writes git rev-parse HEAD into
+// out/buildCommit.json before compile; the VSIX packaging surface keeps that
+// file (.vscodeignore !out/buildCommit.json), so after installation it lives at
+// <ext>/out/buildCommit.json and is read from extensionPath/out at runtime —
+// the commit reported by an installed artifact matches its build inputs. Any
+// missing/corrupt case falls back to 'unknown' without guessing, and never
+// falls back to the git state of the source tree (the source tree's version
+// must not masquerade as the installed version) — readers of the report can
+// reconcile package version and source SHA separately.
 import * as fs from 'fs';
 import { join } from 'path';
 
@@ -13,7 +15,7 @@ interface BuildCommitFile {
   commit?: unknown;
 }
 
-/** 读 extensionPath/out/buildCommit.json 的构建提交;读不到/损坏/字段异常=unknown */
+/** Reads the build commit from extensionPath/out/buildCommit.json; unreadable/corrupt/odd field = unknown */
 export function readBuildCommit(extensionPath: string): string {
   try {
     const raw = fs.readFileSync(join(extensionPath, 'out', 'buildCommit.json'), 'utf8');

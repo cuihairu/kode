@@ -1,24 +1,28 @@
 /**
- * 端口模式前置探测(IDE-PDBG-002):connect 附加前先探 debugpy 端口的
- * TCP 可达性。端口通 → 直接附加零多余弹窗;端口不通 → 分开说两种原因:
- * ① 端口未开(引擎进程还没起 debugpy 监听——autoDebugpy 注入 /
- * waitAtStartup 引导 / 代码内 debugpy.listen 都是起监听的路径);② 本机
- * 解释器链没装 debugpy(既有 debugpyPreflight 面)→ 给一键安装动作与
- * 手装指引。装好包本身不会把端口开起来——引擎侧起监听的事如实说明,
- * 装完/端口开了才附加,绝不假成功。
+ * Port-mode preflight probe (IDE-PDBG-002): before a connect attach, probe
+ * the debugpy port's TCP reachability. Port reachable -> attach directly
+ * with zero extra popups; port unreachable -> say the two causes apart:
+ * (1) port not open (the engine process has not started a debugpy listener
+ * yet -- autoDebugpy injection, waitAtStartup guidance, and debugpy.listen
+ * in code are all paths that start a listener); (2) debugpy is missing from
+ * the local interpreter chain (the existing debugpyPreflight surface) ->
+ * offer a one-click install action plus a manual install guide. Installing
+ * the package by itself does not open the port -- the listener must be
+ * started on the engine side, stated as it is; attach only once the install
+ * is done and the port is open, never a false success.
  */
 
 import * as net from 'net';
 import type { DebugpyPreflightStatus } from './debugpyPreflight';
 import { killProcessTree, spawnProcess } from './processManager';
 
-/** 端口探测超时:与 telnet 探测同口径(1.5s),不通就分类,不干等 */
+/** Port probe timeout: same contract as the telnet probe (1.5s); classify on failure rather than waiting it out */
 export const DEBUGPY_PORT_PROBE_TIMEOUT_MS = 1500;
 
 export interface TcpProbeResult {
   open: boolean;
-  /** !open 时的未开归类:refused=没人监听 / timeout=网络不通或被防火墙静默 /
-   * unresolved-host=主机名解析不了 / unknown=其它(带 detail) */
+  /** Closed classification when !open: refused=nobody listening / timeout=network unreachable or silently dropped by a firewall /
+   * unresolved-host=hostname cannot be resolved / unknown=other (with detail) */
   reason?: 'refused' | 'timeout' | 'unresolved-host' | 'unknown';
   detail?: string;
 }
@@ -29,7 +33,7 @@ export type TcpConnectFn = (
   timeoutMs: number
 ) => Promise<TcpProbeResult>;
 
-/** 真实探测:net.connect,通即开;异常按 code 归类;超时杀套接字;永不抛 */
+/** Real probe: net.connect, reachable means open; errors classified by code; socket killed on timeout; never throws */
 export const defaultTcpConnect: TcpConnectFn = (host, port, timeoutMs) =>
   new Promise(resolve => {
     try {
@@ -54,9 +58,12 @@ export const defaultTcpConnect: TcpConnectFn = (host, port, timeoutMs) =>
         } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
           finish({ open: false, reason: 'unresolved-host', detail: error.code });
         } else if (
-          // WIN:不通/被丢弃在 win32 上常即时报 ETIMEDOUT/EHOSTUNREACH/ENETUNREACH
-          // 而非等截止——口径同「timeout=网络不通或被防火墙丢弃」;detail 保留
-          // 码并注明探测截止毫秒(调用面与断言都按截止口径消费)。
+          // WIN: unreachable/dropped on win32 usually reports
+          // ETIMEDOUT/EHOSTUNREACH/ENETUNREACH immediately instead of waiting
+          // for the deadline -- same contract as "timeout = network
+          // unreachable or dropped by a firewall"; detail keeps the code and
+          // notes the probe deadline in ms (callers and assertions both
+          // consume the deadline contract).
           error.code === 'ETIMEDOUT' ||
           error.code === 'EHOSTUNREACH' ||
           error.code === 'ENETUNREACH' ||
@@ -73,7 +80,7 @@ export const defaultTcpConnect: TcpConnectFn = (host, port, timeoutMs) =>
     }
   });
 
-/** 未开原因的一行口径(弹窗/日志共用,不各说各话) */
+/** One-line phrasing for the closed reason (shared by popup and log so they never disagree) */
 export function portClosedReasonText(probe: TcpProbeResult): string {
   switch (probe.reason) {
     case 'refused':
@@ -87,7 +94,7 @@ export function portClosedReasonText(probe: TcpProbeResult): string {
   }
 }
 
-/** 引擎侧起监听的三条现成路径(端口未开时的指引口径,单一真源) */
+/** The three ready-made paths for starting the listener on the engine side (guidance contract when the port is closed; single source of truth) */
 const LISTEN_GUIDANCE =
   '引擎进程需先起 debugpy 监听:kbengine.debug.autoDebugpy 启动注入 / kbengine.debug.waitAtStartup 启动等待引导 / 代码内 debugpy.listen(端口)';
 
@@ -99,21 +106,26 @@ export type PortClosedCause =
   | 'interpreter-missing';
 
 export interface PortClosedGuidance {
-  /** 未开主因口径(端口未开与未装 debugpy 分开说) */
+  /** Primary-cause contract when closed (port-not-open and debugpy-missing stated separately) */
   cause: PortClosedCause;
-  /** 弹窗一行文案 */
+  /** One-line popup text */
   message: string;
-  /** 解释器在位且缺包/过老时的一键安装动作名;其余 undefined */
+  /** One-click install action name when the interpreter is present but the package is missing/too old; otherwise undefined */
   installAction?: string;
 }
 
 /**
- * 端口不通时的主因判定:本机解释器链没装/版本与引擎目标不兼容 → 归因
- * debugpy(有策略才给一键安装——安装参数取预检的精确 spec,不再盲 -U
- * 装最新;目标未知不给安装动作);目标未知 → 归因 target-unknown(先
- * 设置 kbengine.debug.pythonTarget);解释器缺位 → 归因解释器(给设置
- * 指引);预检在位可用 → 归因端口未开(引擎侧没起监听,给起监听指引)。
- * preflight null(探测面不可用)按端口未开说,不猜。
+ * Primary-cause decision when the port is unreachable: debugpy missing from
+ * the local interpreter chain / version incompatible with the engine target
+ * -> attribute to debugpy (offer one-click install only when there is a
+ * policy -- install args come from the preflight's exact spec, no blind -U
+ * to latest anymore; no install action when the target is unknown);
+ * target unknown -> attribute to target-unknown (set
+ * kbengine.debug.pythonTarget first); interpreter missing -> attribute to
+ * the interpreter (give settings guidance); preflight present and usable
+ * -> attribute to port-not-listening (no listener on the engine side, give
+ * listener-start guidance). preflight null (probe surface unavailable) is
+ * reported as port-not-listening, no guessing.
  */
 export function buildPortClosedGuidance(
   probe: TcpProbeResult,
@@ -127,7 +139,7 @@ export function buildPortClosedGuidance(
     return {
       cause: preflight.kind,
       message: `debugpy 端口未开(${reason}),且本机 Python ${preflight.interpreterPath} ${verb}`,
-      // 目标未知/无支持线时不给一键安装(不盲装版本);有策略才给精确 pin
+      // No one-click install when the target is unknown / has no supported line (no blind version install); exact pin only with a policy
       installAction: preflight.installSpec === null ? undefined : '一键安装 debugpy'
     };
   }
@@ -151,14 +163,14 @@ export function buildPortClosedGuidance(
   };
 }
 
-/** 装完包端口仍未开的如实口径(下一步引导的基线事实):装包 ≠ 起监听,不附加不假成功;怎么起监听由 buildPortNextStepMessage 接着说 */
+/** Honest contract for the port still being closed after install (baseline fact for next-step guidance): installing the package is not the same as starting a listener -- do not attach and do not report false success; how to start the listener is spelled out by buildPortNextStepMessage */
 export function buildAfterInstallStillClosedMessage(host: string, port: number): string {
   return `debugpy 已装好,但 ${host}:${port} 仍未开——装包不会自己起监听`;
 }
 
-/** 手装指引:给可复制的精确安装命令(来自预检 installSpec,不再写死 -U)
- * 与后续两步(同步进资产树 + 引擎侧起监听);installCommand null=目标
- * 未知,指引先设置目标,不盲装 */
+/** Manual install guide: a copyable exact install command (from the preflight installSpec, no longer a hard-coded -U)
+ * plus the two follow-up steps (sync into the asset tree + start the listener on the engine side); installCommand null = target
+ * unknown, so the guide says to set the target first, no blind install */
 export function buildManualInstallGuide(
   interpreterPath: string,
   installCommand: string | null,
@@ -171,19 +183,20 @@ export function buildManualInstallGuide(
 }
 
 /**
- * 端口模式「下一步」动作名(IDE-PDBG-002 死路修复):分诊完/装完之后
- * 弹窗上的三个控件文案,分诊、引导与测试共用这一个真源,不各说各话。
+ * Port-mode "next step" action names (IDE-PDBG-002 dead-end fix): the three
+ * control labels on the popup after triage/install; triage, guidance and
+ * tests all share this single source of truth so they never disagree.
  */
 export const PORT_NEXT_STEP_ACTIONS = {
-  /** 一键经 telnet 发 debugpy.listen 起监听,成功后立刻重探并附加 */
+  /** One-click: send debugpy.listen over telnet to start the listener; re-probe and attach immediately on success */
   startListen: '起监听并附加',
-  /** 再探一次端口:已从别处起监听(等待引导/自埋代码)时直接接上 */
+  /** Probe the port again: attach directly when a listener has been started elsewhere (wait guidance / embedded code) */
   retry: '重试附加',
-  /** 三条起监听路径 + 资产树同步 + 可复制的单进程命令 */
+  /** The three listener paths + asset-tree sync + a copyable single-process command */
   listenGuide: '起监听指引'
 } as const;
 
-/** 下一步引导的三个动作(顺序即弹窗按钮顺序) */
+/** The three next-step guidance actions (order matches the popup button order) */
 export const PORT_NEXT_STEP_ACTION_LIST: readonly string[] = [
   PORT_NEXT_STEP_ACTIONS.startListen,
   PORT_NEXT_STEP_ACTIONS.retry,
@@ -191,17 +204,21 @@ export const PORT_NEXT_STEP_ACTION_LIST: readonly string[] = [
 ];
 
 /**
- * 端口仍未开时的下一步引导文案:基线事实(端口未开/装完仍未开)原样在前,
- * 后面接「怎么走到监听」与 launch.json 落点。按钮名不重复写进文案
- * (PORT_NEXT_STEP_ACTIONS 是按钮的单一真源)。
+ * Next-step guidance text while the port is still closed: the baseline fact
+ * (port closed / still closed after install) verbatim up front, followed by
+ * "how to reach a listener" and the launch.json landing point. Button names
+ * are not repeated in the text (PORT_NEXT_STEP_ACTIONS is the single source
+ * of truth for buttons).
  */
 export function buildPortNextStepMessage(baseMessage: string, launchNote: string): string {
   return `${baseMessage};下一步:${LISTEN_GUIDANCE};${launchNote}`;
 }
 
 /**
- * 起监听手动指引:引擎内 import 的是资产树包(先 debugpySync),三条现成
- * 监听路径,外加单进程可复制命令——一键面失败/没接线时的兜底口径。
+ * Manual listener-start guide: what the engine imports is the asset-tree
+ * package (run debugpySync first), the three ready-made listener paths, plus
+ * a copyable single-process command -- the fallback contract when the
+ * one-click surface fails or is not wired up.
  */
 export function buildListenManualGuide(port: number): string {
   return (
@@ -213,27 +230,27 @@ export function buildListenManualGuide(port: number): string {
 
 export interface DebugpyInstallResult {
   ok: boolean;
-  /** 成功给 stdout 末行(版本落点);失败给原因(stderr/stdout 尾部),如实报错不假成功 */
+  /** On success the last stdout line (where the version landed); on failure the cause (stderr/stdout tail) -- report the error as it is, never a false success */
   detail: string;
 }
 
 export type DebugpyInstallRunner = (
   interpreterPath: string,
-  /** pip 子命令+参数(来自预检 installSpec,如 ['install','debugpy==1.7.0'];
-   * 不再统一 -U 盲装最新——DBG-COMPAT-02) */
+  /** pip subcommand + args (from the preflight installSpec, e.g. ['install','debugpy==1.7.0'];
+   * no longer a uniform -U blind install of latest -- DBG-COMPAT-02) */
   pipArgs: string[]
 ) => Promise<DebugpyInstallResult>;
 
-/** pip 安装截止:挂起的 pip 不永久等待,超时组杀不留构建孙进程孤儿。 */
+/** pip install deadline: a hung pip is never waited on forever; on timeout kill the whole process group so no build grandchild is orphaned. */
 let INSTALL_TIMEOUT_MS = 120_000;
 
-/** 测试注入口:覆写 defaultDebugpyInstallRunner 的截止毫秒数(生产口径 120s)。 */
+/** Test injection point: override the deadline in ms for defaultDebugpyInstallRunner (production contract 120s). */
 export function setDebugpyInstallTimeoutMsForTests(ms: number | null): void {
   INSTALL_TIMEOUT_MS = ms ?? 120_000;
 }
 
-/** 真实安装:`<解释器> -m pip <pipArgs>`(精确版本来自目标策略);起不来/
- * 超时/非零退出都算失败,永不抛 */
+/** Real install: `<interpreter> -m pip <pipArgs>` (the exact version comes from the target policy); failure to
+ * start / timeout / non-zero exit all count as failure, and it never throws */
 export const defaultDebugpyInstallRunner: DebugpyInstallRunner = (interpreterPath, pipArgs) =>
   new Promise(resolve => {
     try {

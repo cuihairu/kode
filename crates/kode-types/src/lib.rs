@@ -1,27 +1,35 @@
-//! kode2 PR-008 —— KBEngine 类型图 IR(书 §6.2 SEM-002/004/005/013 基础版)。
+//! kode2 PR-008 —— KBEngine type graph IR (book §6.2 SEM-002/004/005/013
+//! baseline).
 //!
-//! 四类输入(types.xml / alias.xml / *.def / entities.xml,由 kode-parser 解析)
-//! 归一成一张有向类型图:
-//! - 节点 [`TypeNode`]:别名(重定向)、数组、FixedDict、用户类型(实体)、
-//!   Unknown/Error(RUST-104-W opt-in 形态);引擎内建标量不建节点,只作
-//!   引用终点(见 [`builtin`])。变体集与 SEM-002 的 IR 清单(Builtin/Alias/
-//!   Array/FixedDict/UserType/EntityRef/Component/Unknown/Error)对齐:
-//!   Builtin 以引用终点表示,EntityRef/Component 为边种(见 [`EdgeKind`]),
-//!   Unknown/Error 为显式节点变体(构建器永不自动物化,分类仍
-//!   [`TypeClass::Unknown`],SEM-013 不借用任意类型掩盖缺失);Optional 为
-//!   槽位面 [`OptionalSlot`]——引擎无 Optional 类型节点,可选性只在
-//!   implementedBy/<of> 槽位且两义分明(引擎可选 vs 引擎拒收)。
-//! - 边 [`TypeEdge`]:别名指向 / 数组元素 / FixedDict 字段 / 属性类型引用 /
-//!   组件归属 / 实体继承。
-//! - 链求值:[`TypeGraph::resolve_alias_chain`](SEM-004 别名链+循环诊断)、
-//!   [`TypeGraph::resolve_inheritance`](实体继承链)——环显式诊断、有限截断,
-//!   绝不死循环(与 IDX-005 同一保障)。
-//! - 全图环检测:[`TypeGraph::find_cycles`] 对全部命名边做迭代式三色 DFS,
-//!   每个回边报告一条环路径。
+//! Four input kinds (types.xml / alias.xml / *.def / entities.xml, parsed by
+//! kode-parser) are normalized into one directed type graph:
+//! - Nodes [`TypeNode`]: alias (redirect), array, FixedDict, user type
+//!   (entity), Unknown/Error (RUST-104-W opt-in forms); engine builtin scalars
+//!   build no node and serve only as reference terminals (see [`builtin`]).
+//!   The variant set aligns with SEM-002's IR list (Builtin/Alias/
+//!   Array/FixedDict/UserType/EntityRef/Component/Unknown/Error): Builtin is
+//!   expressed as a reference terminal, EntityRef/Component as edge kinds (see
+//!   [`EdgeKind`]), and Unknown/Error as explicit node variants (the builder
+//!   never materializes them automatically; classification stays
+//!   [`TypeClass::Unknown`], and SEM-013 does not borrow some arbitrary type to
+//!   hide the absence); Optional is the slot face [`OptionalSlot`] — the engine
+//!   has no Optional type node, and optionality only appears in
+//!   implementedBy/<of> slots, where the two meanings are distinct (engine
+//!   optional vs engine rejection).
+//! - Edges [`TypeEdge`]: alias target / array element / FixedDict field /
+//!   property type reference / component ownership / entity inheritance.
+//! - Chain evaluation: [`TypeGraph::resolve_alias_chain`] (SEM-004 alias
+//!   chain + cycle diagnosis), [`TypeGraph::resolve_inheritance`] (entity
+//!   inheritance chain) — cycles are diagnosed explicitly and truncated at a
+//!   bound, never looping forever (the same guarantee as IDX-005).
+//! - Whole-graph cycle detection: [`TypeGraph::find_cycles`] runs an iterative
+//!   three-color DFS over all named edges, reporting one cycle path per back
+//!   edge.
 //!
-//! 对拍 golden(只写不读)在 [`golden`]:TS 侧 `tests/kodeTypesParity.test.ts`
-//! 用现有 defParser/compositionRoots 原语复算同一语料,双向门禁与 PR-005/007
-//! 同构。fixture 驱动,按 ARCH-012 不做性能对比。
+//! The parity golden (write-only, never read) lives in [`golden`]: the TS side
+//! `tests/kodeTypesParity.test.ts` recomputes the same corpus with the existing
+//! defParser/compositionRoots primitives — a bidirectional gate isomorphic to
+//! PR-005/007. Fixture driven; per ARCH-012 no performance comparison.
 
 pub mod builtin;
 pub mod golden;

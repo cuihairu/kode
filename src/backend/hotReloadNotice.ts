@@ -1,35 +1,42 @@
 /**
- * 首激活非模态提示(用户令 2026-11-06):热更默认开启后,第一次激活弹一次
- * 「保存 .py 会自动发到 127.0.0.1:8090/hotfix,一键关在状态栏/命令」的提示。
+ * First-activation non-modal notice (user order 2026-11-06): once hot reload
+ * is on by default, the first activation pops a one-time notice: "saving a
+ * .py automatically sends a request to 127.0.0.1:8090/hotfix; one-click off
+ * lives in the status bar / commands".
  *
- * - 非模态:走 showInformationMessage(默认非 modal),不挡编辑器;
- * - 可永久关闭:弹出即记 flag(workspaceState),此后不再打扰;
- * - 选「立即关闭」直接写回配置把热更关掉(不等用户自己找开关)。
+ * - Non-modal: goes through showInformationMessage (non-modal by default) and
+ *   never blocks the editor;
+ * - Permanently dismissible: the flag is recorded (workspaceState) as soon as
+ *   it pops, so it never nags again;
+ * - Choosing "Turn off now" writes the config back and turns hot reload off
+ *   (the user is not left hunting for the switch).
  */
 
 import { l10nText } from '../nlsRuntime';
 
 export const HOT_RELOAD_NOTICE_KEY = 'kbengine.hotReload.firstRunNotice';
 
-// 取词在调用期(notice 弹出时):默认英文 locale 出英文源串,zh-cn bundle 出中文
+// Word lookup happens at call time (when the notice pops): the default English locale yields the English source string, the zh-cn bundle yields Chinese
 export const HOT_RELOAD_NOTICE_MESSAGE = l10nText(
   'Auto hot reload is on by default: saving a .py sends a hot-reload request to http://127.0.0.1:8090/hotfix?module_name=<module name> (both query and body carry module_name, compatible with different server sides; duplicate values are harmless); failures are shown honestly when the engine is not running. To turn it off: click the hot-reload item in the status bar, or run the kbengine.hotReload.toggle command.'
 );
 
 export interface HotReloadNoticeDeps {
-  /** 是否已提示过(flag 在工作区状态里) */
+  /** Whether the notice has already been shown (flag lives in workspace state) */
   isShown(): boolean;
-  /** 记下「已提示过」,保证只弹一次 */
+  /** Record "already shown" so it only ever pops once */
   markShown(): PromiseLike<void> | void;
-  /** 非模态提示;返回用户点的按钮(没点/关窗为 undefined) */
+  /** Non-modal notice; returns the button the user clicked (undefined if dismissed/closed) */
   show(message: string, ...items: string[]): PromiseLike<string | undefined>;
-  /** 用户点「立即关闭」:写回配置关掉热更 */
+  /** User clicked "Turn off now": write the config back and turn hot reload off */
   turnOff(): Promise<void> | void;
 }
 
 /**
- * 首次激活提示。已提示过直接返回 false(零打扰);未提示则记 flag 再弹,
- * 返回是否真的弹了。任何一步抛错都不影响激活链(调用方 fire-and-forget)。
+ * First-activation notice. If already shown, returns false immediately
+ * (zero disturbance); otherwise records the flag and pops, returning whether
+ * it actually popped. Any thrown error never affects the activation chain
+ * (the caller is fire-and-forget).
  */
 export async function showHotReloadFirstRunNotice(deps: HotReloadNoticeDeps): Promise<boolean> {
   if (deps.isShown()) {

@@ -6,37 +6,45 @@ import {
   parseDefFileSemantics
 } from './defRenamer';
 
-// def 链合并呈现(source-analysis 设计 D5 剩余段):把一个 def 的继承闭包
-// 整理成「Parent 链(递归)+ interfaces/ 平铺 + components/ 挂接」三面,
-// 与引擎归并口径一致(entitydef.cpp:890-924、551-639、642-771):
-// - 实体 Parent 平铺在定义根,组件 def 的 Parent 在 components/ 内解析;
-// - 接口固定解析到 interfaces/,且接口 def 装载时不读 Parent(loadInterfaces
-//   不走 loadParentClass),链不穿过接口;
-// - 各级 def 的 <Interfaces> 均平铺进闭包,同名去重首见保序;
-// - 组件挂接取 <Components> 槽的 <Type> 值(组件 def 名)。
-// 引擎 loadParentClass 未见防环,kode 必须带 visited 截断(D5 明文),
-// 截断发生时如实标记,不静默。
+// Merged presentation of the def chain (remaining segment of the source-analysis
+// design D5): a def's inheritance closure is organized into three surfaces --
+// the "Parent chain (recursive) + interfaces/ flattened + components/ attached"
+// -- matching the engine's merge semantics (entitydef.cpp:890-924, 551-639,
+// 642-771):
+// - an entity's Parent is flattened at the definition root, while a component
+//   def's Parent is resolved inside components/;
+// - interfaces are always resolved into interfaces/, and an interface def does
+//   not read Parent when loaded (loadInterfaces does not go through
+//   loadParentClass), so the chain does not pass through interfaces;
+// - every def level's <Interfaces> are flattened into the closure, with
+//   same-name dedup keeping the order of first appearance;
+// - a component attachment takes the <Type> value of the <Components> slot
+//   (the component def name).
+// No cycle protection is visible in the engine's loadParentClass, so kode must
+// truncate with a visited set (D5 states this explicitly); when truncation
+// happens it is reported honestly, never silently.
 
 export interface DefChainNode {
   name: string;
-  /** def 文件绝对路径;缺文件(纯脚本父类等)为 null,不虚构 */
+  /** Absolute path of the def file; null when the file is missing (e.g. a script-only parent class) -- never fabricated */
   defPath: string | null;
 }
 
 export interface DefChainInfo {
-  /** 紧邻父起逐层向上 */
+  /** Layer-by-layer walk upward, starting at the immediate parent */
   parentChain: DefChainNode[];
-  /** 闭包内各级接口平铺,同名去重首见保序 */
+  /** Interfaces of every closure level, flattened; same-name dedup keeps the order of first appearance */
   interfaces: DefChainNode[];
-  /** 闭包内各级组件槽挂接,同名去重首见保序 */
+  /** Component slot attachments of every closure level; same-name dedup keeps the order of first appearance */
   components: DefChainNode[];
-  /** Parent 递归发生环并被 visited 截断时为 true */
+  /** True when the Parent recursion hit a cycle and was truncated by the visited set */
   cycleTruncated: boolean;
 }
 
 const readFileOrNull = (filePath: string): string | null => {
   try {
-    // 共享原文缓存记账入口(2026-11-24 缓存收口批):定义链遍历与定义/引用链共享缓存原文
+    // Shared source text cache accounting entry point (2026-11-24 cache close-out batch):
+    // chain traversal shares cached source text with the definition/reference chain
     return readFileSyncUtf8Recorded(filePath);
   } catch {
     return null;
@@ -85,9 +93,11 @@ export function buildDefChain(
       const defPath = path.join(defsRoot, 'interfaces', `${name}.def`);
       const defExists = fs.existsSync(defPath);
       interfaces.push({ name, defPath: defExists ? defPath : null });
-      // KR-AUD-76:引擎 loadInterfaces 对接口 def 递归装载其自身 Interfaces
-      // (entitydef.cpp:611-638)并连带 loadComponents——嵌套接口与嵌套接口的
-      // 组件槽同样入链;seenInterfaceNames 防环(每名只展开一次)。
+      // KR-AUD-76: the engine's loadInterfaces recursively loads an interface def's
+      // own Interfaces (entitydef.cpp:611-638) and also runs loadComponents --
+      // nested interfaces and a nested interface's component slots enter the
+      // chain too; seenInterfaceNames guards against cycles (each name is
+      // expanded once).
       if (defExists) {
         const defContent = readText(defPath);
         if (defContent !== null) {
@@ -115,7 +125,7 @@ export function buildDefChain(
     while (current) {
       const semantics = parseDefFileSemantics(current.content);
       const category = categoryOf(defsRoot, current.path);
-      // 接口 def 不跟随 Parent(引擎 loadInterfaces 口径,resolveLinkPaths 同注)
+      // An interface def does not follow Parent (engine loadInterfaces semantics; resolveLinkPaths carries the same note)
       const parentName = semantics?.parentName && category !== 'interface'
         ? semantics.parentName
         : null;

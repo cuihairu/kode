@@ -1,29 +1,41 @@
 /**
- * KSEM-CFG-10 联动配置修改影响(纯核心,零 vscode 依赖)。
+ * KSEM-CFG-10 coupled config-modification impact (pure core, zero vscode dependency).
  *
- * 验收口径(todo.md SEM-040,旧 KSEM-CFG-10):改 key/类型列出读取点、
- * 默认回退及受影响模块;修改未保存内容也刷新,禁止覆盖用户配置。
+ * Acceptance contract (todo.md SEM-040, formerly KSEM-CFG-10): when a key/type
+ * is changed, list the read points, the default fallback, and the affected
+ * modules; also refresh when unsaved content is modified, and never overwrite
+ * user configuration.
  *
- * 零写入面:本模块只产出示数据,没有任何写文件/写配置的通道——验收
- * 「禁止覆盖用户配置」由构造保证(无 CodeAction、无 fs 写、无命令)。
+ * Zero write surface: this module only produces display data and has no channel
+ * for writing files/config — the acceptance item "must not overwrite user
+ * configuration" is guaranteed by construction (no CodeAction, no fs writes,
+ * no commands).
  *
- * 「修改未保存内容也刷新」由调用方满足:树/路径入参来自文档实文本
- * (悬停面现解析被悬停文档,盘上缓存树被实文本顶替),本模块是纯函数,
- * 给什么算什么,不自行读盘。
+ * "Also refresh for unsaved content" is satisfied by the caller: the tree/path
+ * inputs come from the document's actual text (the hover surface parses the
+ * hovered document on the spot, and the on-disk cached tree is displaced by the
+ * actual text); this module is a pure function — it computes what it is given
+ * and never reads from disk itself.
  *
- * 两入口:
- *  - computeKeyImpact:一条配置路径的改动影响面。
- *    · engine-xml:受影响模块(路径首段=进程段)/ 默认回退(删除元件覆盖
- *      或键后引擎采用的 defaults 叶值;无引擎默认=仅元件配置键,删除即
- *      失效)/ 读取点=引擎进程内消费(引擎 XML 配置用户代码不直接读,
- *      不硬造读取点);
- *    · project-json:读取点=CFG-08 结构注册表命中该路径的绑定 glob 的
- *      readers(去重)/ 受影响模块=读取点所在文件 / 默认回退零声称
- *      (JSON 配置无引擎默认);未覆盖路径=readers 空+known(改了没人读,
- *      这是诚实结论不是缺数据);
- *  - computeTypeImpact:serialization.json 一个类型的改动影响面=绑定该
- *    类型的 glob + 各 glob 读取点合并 + 受影响文件;删除绑定后读取点
- *    失去类型信息(CFG-07 类型面静默),读取点本身不受影响(诚实注记)。
+ * Two entry points:
+ *  - computeKeyImpact: the change impact surface of a single config path.
+ *    · engine-xml: affected module (first path segment = process section) /
+ *      default fallback (the defaults leaf value the engine adopts after the
+ *      component override or key is removed; no engine default = a
+ *      component-config-only key, so removal disables it) / read points =
+ *      consumption inside the engine process (engine XML config is not read
+ *      directly by user code, so no read points are fabricated);
+ *    · project-json: read points = the readers of the bound glob that hits this
+ *      path in the CFG-08 structure registry (deduplicated) / affected modules
+ *      = the files containing the read points / zero claim on the default
+ *      fallback (JSON config has no engine defaults); an uncovered path = empty
+ *      readers + known (changing it is read by nobody — that is an honest
+ *      conclusion, not missing data);
+ *  - computeTypeImpact: the change impact surface of a single type in
+ *    serialization.json = the globs bound to that type + the merged read points
+ *    of each glob + the affected files; after a binding is removed the read
+ *    points lose their type information (the CFG-07 type surface goes silent),
+ *    while the read points themselves are unaffected (an honest note).
  */
 
 import { normalizeRootNode } from './configFieldIdentity';
@@ -45,38 +57,41 @@ export interface ConfigImpactReader {
 
 export interface ConfigKeyImpact {
   path: string;
-  /** 受影响模块:engine-xml = 路径首段(进程段);project-json = null
-   * (JSON 路径无进程段,受影响面走 affectedFiles) */
+  /** Affected module: engine-xml = the first path segment (process section);
+   * project-json = null (JSON paths have no process section, the affected
+   * surface goes through affectedFiles) */
   section: string | null;
-  /** 默认回退:删除键/元件覆盖后引擎采用的 defaults 叶值;value null =
-   * defaults 有定义但是容器段(回落默认结构);fallback null = 无引擎默认
-   * (仅元件配置键,删除即失效) */
+  /** Default fallback: the defaults leaf value the engine adopts after the key /
+   * component override is removed; value null = defaults defines it but it is a
+   * container section (falls back to the default structure); fallback null = no
+   * engine default (a component-config-only key, removal disables it) */
   fallback: { value: string | null; sensitive: boolean } | null;
-  /** false = defaults 树不可得,回退面零声称 */
+  /** false = the defaults tree is unavailable, zero claim on the fallback surface */
   fallbackKnown: boolean;
-  /** 代码读取点(去重;engine-xml 恒空=引擎内消费) */
+  /** Code read points (deduplicated; always empty for engine-xml = consumed inside the engine) */
   readers: ConfigImpactReader[];
-  /** false = 注册表未参与,读取点零声称(project-json 且 structure=null) */
+  /** false = the registry did not participate, zero claim on read points
+   * (project-json with structure = null) */
   readersKnown: boolean;
-  /** engine-xml = 引擎进程内消费 */
+  /** engine-xml = consumption inside the engine process */
   engineInternal: boolean;
-  /** 受影响文件(读取点所在,唯一排序;engine-xml 恒空) */
+  /** Affected files (where the read points live, unique and sorted; always empty for engine-xml) */
   affectedFiles: string[];
 }
 
 export interface ConfigTypeImpact {
   typeId: string;
-  /** 绑定该类型的 glob + loader(loads/load 两表合并,去重) */
+  /** Globs + loaders bound to that type (the loads/load tables merged, deduplicated) */
   bindings: ReadonlyArray<{ glob: string; loader: 'json.loads' | 'json.load' }>;
-  /** 绑定路径的合并读取点(去重) */
+  /** Merged read points of the bound paths (deduplicated) */
   readers: ConfigImpactReader[];
-  /** 受影响文件(读取点所在,唯一排序) */
+  /** Affected files (where the read points live, unique and sorted) */
   files: string[];
-  /** 诚实注记:删除绑定后读取点失去类型信息(CFG-07 类型面静默) */
+  /** Honest note: after a binding is removed the read points lose their type information (the CFG-07 type surface goes silent) */
   fallbackNote: string;
 }
 
-/** 点分路径取叶/容器节点(空名包裹归一与 CFG-06 同口径)。 */
+/** Fetch the leaf/container node for a dot-separated path (empty-name wrapper normalization follows the CFG-06 contract). */
 function nodeAtPath(tree: ConfigXmlNode, path: string): ConfigXmlNode | null {
   let node = normalizeRootNode(tree);
   for (const segment of path.split('.')) {
@@ -89,7 +104,7 @@ function nodeAtPath(tree: ConfigXmlNode, path: string): ConfigXmlNode | null {
   return node;
 }
 
-/** 读取点去重合并(结构来源 → 读取点面)。 */
+/** Merge read points with deduplication (structure sources → read-point surface). */
 function mergeReaders(sources: ReadonlyArray<ConfigStructureSource>): ConfigImpactReader[] {
   const out: ConfigImpactReader[] = [];
   for (const s of sources) {
@@ -101,8 +116,10 @@ function mergeReaders(sources: ReadonlyArray<ConfigStructureSource>): ConfigImpa
 }
 
 /**
- * 一条配置路径的改动影响面。返回 null = engine-xml 面两棵树都没有该
- * 路径(诚实无面,不渲染);project-json 面恒有结果(空面=诚实结论)。
+ * The change impact surface of a single config path. Returning null = neither
+ * tree on the engine-xml face contains the path (honestly no surface, nothing
+ * rendered); the project-json face always returns a result (an empty surface =
+ * an honest conclusion).
  */
 export function computeKeyImpact(opts: {
   path: string;

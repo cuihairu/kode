@@ -1,9 +1,10 @@
-//! 手写参数解析(验收面的 CLI 形状;零第三方依赖)。
+//! Hand-written argument parsing (the CLI shape required by the acceptance face; zero third-party
+//! dependencies).
 
 use std::collections::BTreeMap;
 
-/// 解析后的参数:`--opt value` / `--opt=value` 进 `options`(可重复选项
-/// 按 key 聚合为多值),孤立 `--flag` 进 `flags`,其余为位置参数。
+/// Parsed arguments: `--opt value` / `--opt=value` go into `options` (repeatable options aggregate
+/// per key as multiple values), a lone `--flag` goes into `flags`, everything else is positional.
 #[derive(Debug, Default)]
 pub struct Args {
     pub positionals: Vec<String>,
@@ -35,7 +36,7 @@ impl Args {
     }
 }
 
-/// 子命令树(验收原文逐条)。
+/// Subcommand tree (one variant per acceptance-text entry).
 #[derive(Debug)]
 pub enum Command {
     /// `schema validate --project <dir> [--defaults <xml>]`
@@ -78,16 +79,16 @@ pub enum Command {
         defaults: Option<String>,
         records_out: Option<String>,
     },
-    /// `analyze --records <file|->`:PA-005 分析引擎(记录 JSON → 报告 JSON)。
+    /// `analyze --records <file|->`: the PA-005 analysis engine (records JSON -> report JSON).
     Analyze { records: String },
 }
 
-/// 退出码约定:0 成功;1 语义失败(validate 不过 / diff 不兼容 / 选择器未命中);
-/// 2 用法错误。
+/// Exit-code contract: 0 success; 1 semantic failure (validate does not pass / diff incompatible /
+/// selector missed); 2 usage error.
 #[derive(Debug)]
 pub struct Parsed {
     pub command: Command,
-    /// 解析失败时的用法/错误文案(stderr)。
+    /// Usage/error text on parse failure (written to stderr).
     pub usage_error: Option<String>,
 }
 
@@ -288,7 +289,7 @@ mod tests {
         list.iter().map(|s| s.to_string()).collect()
     }
 
-    /// 用法错误的命令面:usage_error 必须带文案,命令本身是 no-op。
+    /// Usage-error command face: usage_error must carry text, and the command itself is a no-op.
     fn assert_usage_error(parsed: &Parsed, needle: &str) {
         assert!(
             parsed.usage_error.as_deref().unwrap_or("").contains(needle),
@@ -310,14 +311,15 @@ mod tests {
 
     #[test]
     fn equals_form_and_valueless_flag_are_parsed() {
-        // `--opt=value` 进 options;孤立 `--defaults`(无值)进 flags。
+        // `--opt=value` goes into options; a lone `--defaults` (no value) goes into flags.
         let parsed = parse_args(&args(&[
             "schema",
             "validate",
             "--project=/w/demo",
             "--defaults",
         ]));
-        // 无值的 --defaults 不冒充选项:变体与字段一并校验,失败打印完整命令。
+        // The valueless --defaults does not masquerade as an option: the variant and its fields are
+        // checked together, and a failure prints the full command.
         assert!(
             matches!(
                 &parsed.command,
@@ -335,7 +337,7 @@ mod tests {
         let mut a = Args::default();
         a.insert("flow".into(), "loginapp".into());
         a.insert("flow".into(), "baseapp".into());
-        // opt 取最后值(可重复选项的 LSP 习惯:后者覆盖)。
+        // opt takes the last value (the LSP habit for repeatable options: later overrides earlier).
         assert_eq!(a.opt("flow"), Some("baseapp"));
         assert_eq!(a.opt("missing"), None);
         assert_eq!(a.opt_all("flow"), vec!["loginapp", "baseapp"]);
@@ -347,19 +349,19 @@ mod tests {
 
     #[test]
     fn schema_subcommand_usage_errors() {
-        // validate 缺 --project。
+        // validate without --project.
         let p = parse_args(&args(&["schema", "validate"]));
         assert_usage_error(&p, "schema validate requires --project");
-        // build 缺 --project。
+        // build without --project.
         let p = parse_args(&args(&["schema", "build"]));
         assert_usage_error(&p, "schema build requires --project");
-        // diff 缺 --new。
+        // diff without --new.
         let p = parse_args(&args(&["schema", "diff", "--old", "a.json"]));
         assert_usage_error(&p, "schema diff requires --old");
-        // inspect 缺 --schema。
+        // inspect without --schema.
         let p = parse_args(&args(&["schema", "inspect"]));
         assert_usage_error(&p, "schema inspect requires --schema");
-        // message-id 不是 u16。
+        // message-id is not a u16.
         let p = parse_args(&args(&[
             "schema",
             "inspect",
@@ -369,10 +371,10 @@ mod tests {
             "99999",
         ]));
         assert_usage_error(&p, "--message-id expects a u16");
-        // 未知 schema 子命令。
+        // Unknown schema subcommand.
         let p = parse_args(&args(&["schema", "frobnicate"]));
         assert_usage_error(&p, "schema subcommands: validate | build | diff | inspect");
-        // 完全未知命令(取首个参数入文案)。
+        // Completely unknown command (the first argument goes into the message).
         let p = parse_args(&args(&["frobnicate", "--x"]));
         assert_usage_error(&p, "unknown command: frobnicate");
     }
@@ -385,16 +387,16 @@ mod tests {
 
     #[test]
     fn capture_subcommand_usage_errors() {
-        // capture 后不是 analyze。
+        // The token after capture is not analyze.
         let p = parse_args(&args(&["capture", "replay"]));
         assert_usage_error(&p, "capture subcommands: analyze");
-        // analyze 但既无 --pcap 也无 --raw-flow。
+        // analyze with neither --pcap nor --raw-flow.
         let p = parse_args(&args(&["capture", "analyze"]));
         assert_usage_error(&p, "requires --pcap <file|-> or at least one --raw-flow");
-        // pcap 模式缺 --flow-map。
+        // pcap mode without --flow-map.
         let p = parse_args(&args(&["capture", "analyze", "--pcap", "x.pcap"]));
         assert_usage_error(&p, "pcap mode requires --flow-map");
-        // flow-map 条目没有 `=`。
+        // A flow-map entry without `=`.
         let p = parse_args(&args(&[
             "capture",
             "analyze",
@@ -404,7 +406,7 @@ mod tests {
             "loginapp",
         ]));
         assert_usage_error(&p, "bad --flow-map entry: loginapp");
-        // flow-map 端口不是 u16。
+        // A flow-map port that is not a u16.
         let p = parse_args(&args(&[
             "capture",
             "analyze",
@@ -437,7 +439,7 @@ mod tests {
             "r.json",
         ]));
         assert!(p.usage_error.is_none());
-        // raw-flow 反复出现按序收录;pcap 未传时保持 None。
+        // Repeated raw-flow entries are collected in order; pcap stays None when not passed.
         assert!(
             matches!(&p.command, Command::CaptureAnalyze { pcap, tshark, flow_map, raw_flows, defaults, records_out }
                 if pcap.is_none()
@@ -468,7 +470,7 @@ mod tests {
             "/usr/bin/tshark",
         ]));
         assert!(p.usage_error.is_none());
-        // flow-map 解析成 (flow, 端口) 对,端口按 u16。
+        // flow-map parses into (flow, port) pairs, the port as a u16.
         assert!(
             matches!(&p.command, Command::CaptureAnalyze { pcap, tshark, flow_map, .. }
                 if pcap.as_deref() == Some("c.pcap")
@@ -486,7 +488,7 @@ mod tests {
     #[test]
     fn decode_defaults_flow_and_direction() {
         let p = parse_args(&args(&["decode", "--hex", "00"]));
-        // decode 缺省 flow/direction 为 loginapp/c2s。
+        // decode defaults flow/direction to loginapp/c2s.
         assert!(
             matches!(&p.command, Command::Decode { hex, flow, direction, .. }
                 if hex.as_str() == "00"
@@ -507,7 +509,7 @@ mod tests {
             "--message-id",
             "502",
         ]));
-        // message-id 502 解析为 Some(502)。
+        // message-id 502 parses to Some(502).
         assert!(
             matches!(
                 &p.command,
@@ -520,8 +522,8 @@ mod tests {
 
     #[test]
     fn no_op_command_carries_empty_validate_shape() {
-        // no_op_command 只在用法错误时出现:形状固定(空 project),不执行 IO。
-        // no_op_command 只在用法错误时出现:形状固定(空 project),不执行 IO。
+        // no_op_command only appears on usage errors: fixed shape (empty project), no IO performed.
+        // no_op_command only appears on usage errors: fixed shape (empty project), no IO performed.
         let cmd = no_op_command();
         assert!(
             matches!(

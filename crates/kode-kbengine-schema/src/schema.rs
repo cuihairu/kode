@@ -1,4 +1,4 @@
-//! Schema IR + canonical JSON + SHA-256 摘要(todo PA-002「JSON+Hash」)。
+//! Schema IR + canonical JSON + the SHA-256 digest (todo PA-002 "JSON+Hash").
 
 use std::collections::BTreeMap;
 
@@ -8,14 +8,14 @@ use sha2::{Digest, Sha256};
 use crate::messages::MessageTable;
 use crate::wire::WireType;
 
-/// 单实体线格式条目(属性 + 三段方法,全部为线类型)。
+/// One entity wire-format entry (properties + the three method segments, all as wire types).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EntityWireInfo {
     pub name: String,
     pub parent: Option<String>,
     pub interfaces: Vec<String>,
     pub volatile: bool,
-    /// 合并序:父 → 接口 → 自身;flags 保留规范化 token。
+    /// Merge order: parent → interfaces → own; flags keep their normalized tokens.
     pub properties: Vec<EntityPropertyWire>,
     pub base_methods: Vec<EntityMethodWire>,
     pub cell_methods: Vec<EntityMethodWire>,
@@ -26,7 +26,7 @@ pub struct EntityWireInfo {
 pub struct EntityPropertyWire {
     pub name: String,
     pub ty: WireType,
-    /// 规范化旗标(BASE_AND_CLIENT / ALL_CLIENTS / ...;同步面用)。
+    /// Normalized flags (BASE_AND_CLIENT / ALL_CLIENTS / ...; used by the sync plane).
     pub flags: Vec<String>,
 }
 
@@ -37,23 +37,23 @@ pub struct EntityMethodWire {
     pub args: Vec<WireType>,
 }
 
-/// Schema IR(项目级;canonical 序:BTreeMap + id 升序 Vec)。
+/// The Schema IR (project level; canonical order: BTreeMap + Vec ascending by id).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Schema {
-    /// IR 版本(结构演进时递增)。
+    /// IR version (bumped when the structure evolves).
     pub schema_version: u32,
-    /// 取证的引擎基准(PA-001:bf1a9cd6 / v2.5.10)。
+    /// The engine baseline taken as evidence (PA-001: bf1a9cd6 / v2.5.10).
     pub engine_baseline: String,
-    /// §4.3 packetAlwaysContainLength(引擎默认 false)。
+    /// §4.3 packetAlwaysContainLength (engine default false).
     pub packet_always_contain_length: bool,
-    /// 别名线类型表(types.xml + alias.xml;名字 → 已展开线类型)。
+    /// The alias wire-type table (types.xml + alias.xml; name → the expanded wire type).
     pub aliases: BTreeMap<String, WireType>,
-    /// 实体线格式(entities.xml 注册 ∩ .def 落盘)。
+    /// Entity wire formats (entities.xml registrations ∩ .def on disk).
     pub entities: BTreeMap<String, EntityWireInfo>,
-    /// entities.xml 注册但 .def 缺失(诊断保留,不编造空条目)。
+    /// Registered in entities.xml but the .def is missing (kept as a diagnostic; no empty entry is fabricated).
     pub missing_entities: Vec<String>,
     pub messages: MessageTable,
-    /// 构建诊断(SYNTAX-005 同规:坏输入不失败,逐条可定位)。
+    /// Build diagnostics (same rule as SYNTAX-005: bad input does not fail, each item locatable).
     pub diagnostics: Vec<String>,
 }
 
@@ -61,15 +61,16 @@ impl Schema {
     pub const SCHEMA_VERSION: u32 = 1;
     pub const ENGINE_BASELINE: &str = "kbengine bf1a9cd6f4a82dd715fcf4a69697382ed531b4c0 (v2.5.10)";
 
-    /// 已展开的别名线类型(types.xml/alias.xml;未知名返回 None)。
+    /// The expanded alias wire type (types.xml/alias.xml; unknown names return None).
     pub fn resolve_alias(&self, name: &str) -> Option<&WireType> {
         self.aliases.get(name)
     }
 
-    /// canonical JSON:serde_json 结构序 + BTreeMap 字典序 + Vec id 升序,
-    /// 相同输入字节级一致(无时间戳/路径等不稳定字段)。
+    /// Canonical JSON: serde_json structural order + BTreeMap lexicographic order + Vec ascending by id;
+    /// byte-identical for identical input (no unstable fields such as timestamps/paths).
     pub fn to_canonical_json(&self) -> String {
-        // entry 序已在构建时排序;此处再兜底排序一次(防御手工构造)。
+        // The entry order is already sorted at build time; sort once more here as a fallback (a defense
+        // against hand-built values).
         let mut sorted = self.clone();
         sorted
             .messages
@@ -78,7 +79,7 @@ impl Schema {
         serde_json::to_string(&sorted).expect("Schema is JSON-serializable")
     }
 
-    /// SHA-256(canonical JSON UTF-8 字节);hex 小写。
+    /// SHA-256 (the canonical JSON UTF-8 bytes); lowercase hex.
     pub fn hash_hex(&self) -> String {
         let mut h = Sha256::new();
         h.update(self.to_canonical_json().as_bytes());

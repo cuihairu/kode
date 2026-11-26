@@ -1,9 +1,12 @@
 /**
- * RUST-221(旧 UI-004)缓存维护纯核:kbengine.diagnostics.clearCaches 的
- * 确认文案与清后摘要渲染。诚实边界:三条缓存都是内存缓存——清掉只影响
- * 下次查询的冷启动延迟,不动磁盘与工作区文件,无数据丢失(与「勿要求用户
- * 清空 workspace 才能修」直接对答);文案如实列范围与影响,不夸大「修复」。
- * 动作组合(确认→清→报)在接线层,纯核只渲染。
+ * RUST-221 (former UI-004) cache maintenance pure core: the confirmation copy
+ * and the post-clear summary rendering for kbengine.diagnostics.clearCaches.
+ * Honest boundary: all three caches are in-memory caches -- clearing them only
+ * affects the cold-start latency of the next query, it does not touch disk or
+ * workspace files, and nothing is lost (a direct answer to "never ask the user
+ * to wipe their workspace to fix things"); the copy lists the scope and impact
+ * as-is and does not overstate "repair". The action chain (confirm -> clear ->
+ * report) lives in the wiring layer; the pure core only renders.
  */
 
 export interface CacheClearEntryGauge {
@@ -17,7 +20,7 @@ export interface CacheClearBeforeAfter {
   after: number;
 }
 
-/** 确认对话框文案:范围(三缓存+在册条数)+影响(内存缓存重建,无数据丢失) */
+/** Confirmation dialog copy: scope (three caches + entry counts) + impact (in-memory caches are rebuilt, no data loss) */
 export function renderCacheClearConfirmation(gauges: readonly CacheClearEntryGauge[]): string {
   const scope = gauges.map(gauge => `${gauge.label} ${String(gauge.entries)} 条`).join('、');
   return [
@@ -27,7 +30,7 @@ export function renderCacheClearConfirmation(gauges: readonly CacheClearEntryGau
   ].join('\n');
 }
 
-/** 清后摘要:逐缓存清掉条数(前后差),全部为零时如实说明 */
+/** Post-clear summary: entries cleared per cache (before/after delta); states as-is when everything is zero */
 export function renderCacheClearedReport(beforeAfter: readonly CacheClearBeforeAfter[]): string {
   const lines: string[] = [];
   let total = 0;

@@ -1,25 +1,25 @@
-//! PhysicalSchema 的 information_schema 读取器(PDC-0103)。
+//! information_schema reader for PhysicalSchema (PDC-0103).
 //!
-//! 生成只读 `information_schema.TABLES/COLUMNS/STATISTICS` 查询(参数经标识符
-//! 引用绑定 schema 名,来自连接配置非用户输入),按行组装 [`PhysicalTable`]。
-//! 行获取经 [`RowSource`] 抽象:真实库用只读连接(Phase 2 PDC-0202 的
-//! REPEATABLE READ 只读事务),测试/虚拟 Fixture 用内存行源。
+//! Generates read-only `information_schema.TABLES/COLUMNS/STATISTICS` queries (the schema name is bound
+//! via an identifier reference; it comes from connection config, not user input) and assembles [`PhysicalTable`]s row by row.
+//! Row access goes through the [`RowSource`] abstraction: real databases use a read-only connection
+//! (Phase 2 PDC-0202's REPEATABLE READ read-only transaction); tests/virtual fixtures use an in-memory row source.
 //!
-//! 漂移检查不在本模块(SchemaResolver::resolve 负责派生↔物理比对);本模块
-//! 只把 information_schema 行变成物理表结构,不解释语义。
+//! Drift checking is not in this module (SchemaResolver::resolve handles derived↔physical comparison); this module
+//! only turns information_schema rows into physical table structures, without interpreting semantics.
 
 use std::collections::BTreeMap;
 
 use crate::error::{CloneError, CloneResult};
 use crate::schema::PhysicalTable;
 
-/// 行源:执行一条 SQL 返回字符串单元格行(单元格为 NULL 时 None)。
-/// 生产实现由 Phase 2 只读连接提供;此处接口面保持无驱动依赖。
+/// Row source: executes one SQL statement and returns rows of string cells (None when a cell is NULL).
+/// The production implementation is provided by the Phase 2 read-only connection; this interface face stays driver-free.
 pub trait RowSource {
     fn query(&self, sql: &str) -> CloneResult<Vec<Vec<Option<String>>>>;
 }
 
-/// 内存行源(测试/虚拟 Fixture):按 SQL 子串匹配预置行。
+/// In-memory row source (tests/virtual fixtures): matches canned rows by SQL substring.
 #[derive(Debug)]
 pub struct VecRowSource(pub Vec<(String, Vec<Vec<Option<String>>>)>);
 
@@ -33,7 +33,7 @@ impl RowSource for VecRowSource {
     }
 }
 
-/// information_schema 读取器。
+/// information_schema reader.
 pub struct InformationSchemaReader<'a> {
     rows: &'a dyn RowSource,
     schema_name: String,
@@ -41,7 +41,7 @@ pub struct InformationSchemaReader<'a> {
 
 impl std::fmt::Debug for InformationSchemaReader<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // 行源是 dyn,不展开(避免要求 RowSource: Debug)。
+        // The row source is a dyn, not expanded (avoids requiring RowSource: Debug).
         f.debug_struct("InformationSchemaReader")
             .field("schema_name", &self.schema_name)
             .finish()
@@ -56,7 +56,7 @@ impl<'a> InformationSchemaReader<'a> {
         }
     }
 
-    /// 只读 TABLES 查询(表名 + 引擎)。
+    /// Read-only TABLES query (table name + engine).
     fn tables_sql(&self) -> String {
         format!(
             "SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = {}",
@@ -64,7 +64,7 @@ impl<'a> InformationSchemaReader<'a> {
         )
     }
 
-    /// 只读 COLUMNS 查询(表名 + 列名 + 列型,按序)。
+    /// Read-only COLUMNS query (table name + column name + column type, in order).
     fn columns_sql(&self) -> String {
         format!(
             "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS \
@@ -73,7 +73,7 @@ impl<'a> InformationSchemaReader<'a> {
         )
     }
 
-    /// 只读 STATISTICS 查询(表名 + 索引名 + 列名 + 非唯一;PRIMARY 即主键)。
+    /// Read-only STATISTICS query (table name + index name + column name + non-unique; PRIMARY is the primary key).
     fn statistics_sql(&self) -> String {
         format!(
             "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE FROM information_schema.STATISTICS \
@@ -82,14 +82,14 @@ impl<'a> InformationSchemaReader<'a> {
         )
     }
 
-    /// 读全库物理表结构并包装为 [`VirtualSchema`](crate::VirtualSchema)(实现
-    /// `PhysicalSchema`,可直接交 SchemaResolver::resolve)。查询失败 → fail-closed
-    /// (不返回空集冒充「无表」)。
+    /// Reads the physical table structures of the whole database and wraps them as [`VirtualSchema`](crate::VirtualSchema)
+    /// (implements `PhysicalSchema`, ready to hand to SchemaResolver::resolve). Query failure → fail-closed
+    /// (never returns an empty set masquerading as "no tables").
     pub fn load(&self) -> CloneResult<crate::schema::VirtualSchema> {
         Ok(crate::schema::VirtualSchema::new(self.read_all()?))
     }
 
-    /// 读全库物理表结构(原始表列表)。
+    /// Reads the physical table structures of the whole database (raw table list).
     pub fn read_all(&self) -> CloneResult<Vec<PhysicalTable>> {
         let table_rows = self.rows.query(&self.tables_sql())?;
         let column_rows = self.rows.query(&self.columns_sql())?;
@@ -110,7 +110,7 @@ impl<'a> InformationSchemaReader<'a> {
                 },
             );
         }
-        // 表查询必须覆盖列查询(列无表行 → fail-closed,不猜)。
+        // The table query must cover the column query (a column row with no table row → fail-closed, no guessing).
         for row in &column_rows {
             let name = row
                 .first()
@@ -127,7 +127,7 @@ impl<'a> InformationSchemaReader<'a> {
             let col_type = row.get(2).and_then(|v| v.clone()).unwrap_or_default();
             table.columns.insert(column, col_type);
         }
-        // 索引:PRIMARY → 主键列(按序);其余按 INDEX_NAME 分组。
+        // Indexes: PRIMARY → primary key columns (in order); the rest grouped by INDEX_NAME.
         let mut index_cols: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
         let mut primary_keys: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for row in &stat_rows {
@@ -160,8 +160,8 @@ impl<'a> InformationSchemaReader<'a> {
     }
 }
 
-/// 字符串字面量引用(单引号转义):`TABLE_SCHEMA` 等是字符串列,值必须作
-/// 字符串字面量比对,不能当反引号标识符(后者在真实 MySQL 报 Unknown column)。
+/// String-literal quoting (single-quote escaped): `TABLE_SCHEMA` and friends are string columns, so values must be
+/// compared as string literals, not backtick identifiers (the latter errors with Unknown column on real MySQL).
 fn quote_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
@@ -170,7 +170,7 @@ fn quote_string(value: &str) -> String {
 mod tests {
     use super::*;
 
-    /// 合成 information_schema 行(模拟真实返回)。
+    /// Synthetic information_schema rows (mimics a real return).
     fn canned_rows() -> VecRowSource {
         VecRowSource(vec![
             (
@@ -282,25 +282,34 @@ mod tests {
 
     #[test]
     fn quotes_schema_as_string_literal() {
-        // TABLE_SCHEMA 是字符串列:值必须作单引号字面量(内嵌单引号双写),
-        // 不能作反引号标识符(后者在真实 MySQL/MariaDB 报 Unknown column)。
+        // TABLE_SCHEMA is a string column: values must be single-quoted literals (embedded single quotes doubled),
+        // never backtick identifiers (the latter errors with Unknown column on real MySQL/MariaDB).
         let rows = canned_rows();
         let reader = InformationSchemaReader::new(&rows, "kbe'game");
         let sql = reader.tables_sql();
         assert!(
             sql.contains("TABLE_SCHEMA = 'kbe''game'"),
-            "单引号转义: {sql}"
+            "single-quote escaping: {sql}"
         );
-        assert!(!sql.contains("`kbe"), "schema 值不得作反引号标识符: {sql}");
+        assert!(
+            !sql.contains("`kbe"),
+            "schema values must not be backtick identifiers: {sql}"
+        );
         for s in [reader.columns_sql(), reader.statistics_sql()] {
-            assert!(s.contains("TABLE_SCHEMA = 'kbe''game'"), "单引号转义: {s}");
-            assert!(!s.contains("`kbe"), "schema 值不得作反引号标识符: {s}");
+            assert!(
+                s.contains("TABLE_SCHEMA = 'kbe''game'"),
+                "single-quote escaping: {s}"
+            );
+            assert!(
+                !s.contains("`kbe"),
+                "schema values must not be backtick identifiers: {s}"
+            );
         }
     }
 
     #[test]
     fn read_all_uses_readonly_queries_only() {
-        // 读者生成的查询只含 information_schema 读取(SELECT),绝无 DML。
+        // Queries the reader generates contain only information_schema reads (SELECT), never DML.
         let rows = canned_rows();
         let reader = InformationSchemaReader::new(&rows, "kbe");
         for sql in [
@@ -308,7 +317,7 @@ mod tests {
             reader.columns_sql(),
             reader.statistics_sql(),
         ] {
-            assert!(sql.starts_with("SELECT "), "只读 SELECT: {sql}");
+            assert!(sql.starts_with("SELECT "), "read-only SELECT: {sql}");
             assert!(!sql.contains("INSERT") && !sql.contains("UPDATE") && !sql.contains("DELETE"));
         }
     }
@@ -345,7 +354,7 @@ mod tests {
 
     #[test]
     fn column_row_for_table_absent_from_tables_result_is_drift() {
-        // 列查询出现 TABLES 没有的表:fail-closed,不猜表结构。
+        // The column query yields a table TABLES does not have: fail-closed, no guessing at table structure.
         let rows = rows_with(
             vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
             vec![vec![
@@ -366,7 +375,7 @@ mod tests {
 
     #[test]
     fn column_row_missing_column_name_is_drift() {
-        // 列行缺列名(NULL):fail-closed。
+        // Column row missing its column name (NULL): fail-closed.
         let rows = rows_with(
             vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
             vec![vec![Some("tbl_Avatar".into()), None, Some("bigint".into())]],
@@ -383,7 +392,7 @@ mod tests {
 
     #[test]
     fn statistics_row_missing_table_name_is_drift() {
-        // 索引行缺表名(NULL):fail-closed。
+        // Index row missing its table name (NULL): fail-closed.
         let rows = rows_with(
             vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
             vec![],
@@ -405,7 +414,7 @@ mod tests {
 
     #[test]
     fn statistics_row_for_table_absent_from_tables_result_is_drift() {
-        // 索引查询出现 TABLES 没有的表:fail-closed。
+        // The index query yields a table TABLES does not have: fail-closed.
         let rows = rows_with(
             vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
             vec![],
@@ -427,12 +436,15 @@ mod tests {
 
     #[test]
     fn reader_debug_renders_schema_name_only() {
-        // Debug 是日志面:展示 schema 名,行源是 dyn 不展开。
+        // Debug is the log face: shows the schema name; the row source is a dyn and is not expanded.
         let rows = canned_rows();
         let reader = InformationSchemaReader::new(&rows, "kbe_game");
         let rendered = format!("{reader:?}");
         assert!(rendered.contains("InformationSchemaReader"), "{rendered}");
         assert!(rendered.contains("kbe_game"), "{rendered}");
-        assert!(!rendered.contains("tbl_Avatar"), "行源不展开: {rendered}");
+        assert!(
+            !rendered.contains("tbl_Avatar"),
+            "row source not expanded: {rendered}"
+        );
     }
 }

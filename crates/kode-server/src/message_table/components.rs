@@ -1,4 +1,4 @@
-//! 组件模块面分析与槽注册(TS loadComponents)。
+//! Component-module face analysis and slot registration (TS loadComponents).
 
 use std::collections::HashSet;
 
@@ -13,9 +13,9 @@ use crate::message_table::views::{CompView, DefView};
 
 // ---------------------------------------------------------------------------
 
-/// 组件模块面(引擎 isComponentModule ScriptDefModule 的 hasX 近似)。
-/// autoMatchCompOwn 的脚本文件面(scripts/{base,cell}/components/<name>.py)
-/// 纯函数不可见,按 def 段近似:非空属性域/方法段即有对应域。
+/// Component-module face (approximation of the engine's isComponentModule ScriptDefModule hasX flags).
+/// Script-file face of autoMatchCompOwn (scripts/{base,cell}/components/<name>.py)
+/// is invisible to pure functions, so approximate from def sections: a non-empty property domain / method section means the corresponding domain is present.
 pub(super) struct ComponentModuleFace {
     has_base: bool,
     has_cell: bool,
@@ -34,11 +34,11 @@ impl ComponentModuleFace {
     }
 }
 
-/// 组件模块域面:自身 + 接口 + 父类(components/ 下)递归累计。
-/// 引擎装载序 loadAllDefDescriptions → loadInterfaces → loadParentClass
-/// → autoMatchCompOwn;属性域位(loadDefPropertys L1150-1160)+ 方法段
-/// (addBase/Cell/ClientMethodDescription setter)累计 hasX;autoMatchCompOwn
-/// L322-328 近似:exposed base/cell 方法在最终 hasBase/hasCell 上推 client。
+/// Component-module domain face: accumulated recursively from own + interfaces + parents (under components/).
+/// Engine load order: loadAllDefDescriptions -> loadInterfaces -> loadParentClass
+/// -> autoMatchCompOwn; property domain bits (loadDefPropertys L1150-1160) plus method sections
+/// (addBase/Cell/ClientMethodDescription setters) accumulate hasX; autoMatchCompOwn
+/// L322-328 approximation: exposed base/cell methods promote client onto the final hasBase/hasCell.
 pub(super) fn analyze_component_module(
     type_name: &str,
     source: &Source,
@@ -74,7 +74,7 @@ pub(super) fn analyze_component_module(
     Some(face)
 }
 
-/// 单份组件 def 视图并入域面(属性 Flags 位 + 方法段)。
+/// Merge a single component def view into the domain face (property Flags bits + method sections).
 pub(super) fn merge_def_view_face(local: &DefView, face: &mut ComponentModuleFace) {
     for property in &local.properties {
         let Some(flags_text) = property.flags.as_deref() else {
@@ -115,10 +115,10 @@ pub(super) fn merge_def_view_face(local: &DefView, face: &mut ComponentModuleFac
     }
 }
 
-/// 引擎 loadComponents L793-808 新载分支:槽 flags 串派生。
-/// ED_FLAG_UNKOWN 起,hasBase→BASE(0x40),hasCell→CELL_PUBLIC(0x01),
+/// Engine loadComponents L793-808 fresh-load branch: derive the slot flags string.
+/// Starting from ED_FLAG_UNKOWN: hasBase -> BASE (0x40), hasCell -> CELL_PUBLIC (0x01),
 /// hasClient→hasBase?BASE_AND_CLIENT(0x20)+hasCell?ENTITY_CLIENT_DATA_FLAGS
-/// 位组(0x04|0x08|0x80|0x10)。
+/// bit group (0x04|0x08|0x80|0x10).
 pub(super) fn derive_component_slot_flags(
     has_base: bool,
     has_cell: bool,
@@ -142,8 +142,8 @@ pub(super) fn derive_component_slot_flags(
     parts.join("|")
 }
 
-/// 槽域位注册集(引擎 addComponentProperty L864-874:cell→base→client,
-/// 仅 flags 位命中的域登记)。
+/// Slot domain-bit registration set (engine addComponentProperty L864-874: cell -> base -> client,
+/// only domains whose flags bits hit get registered).
 pub(super) fn slot_domains(has_base: bool, has_cell: bool, has_client: bool) -> Vec<&'static str> {
     let mut domains = Vec::new();
     if has_cell {
@@ -177,9 +177,9 @@ pub(super) fn register_component_slot(
         return;
     }
 
-    // 组件 def 域面(缺失/结构错误 → 报 issue + 既有硬编码三域回落,宽容续行
-    // 与缺失 parent/interface 同口径;引擎该情形整表失败,此处按 message_table
-    // 既有宽容口径报 issue 续行)。
+    // Component def domain face (missing/structural error -> report issue + fall back to the existing hardcoded three domains, continue leniently
+    // same stance as missing parent/interface; the engine fails the whole table in that case, here we follow message_table's
+    // existing lenient stance: report issue and continue).
     let (flags, has_client, domains) =
         match analyze_component_module(&component.type_name, source, &mut HashSet::new()) {
             Some(face) => (

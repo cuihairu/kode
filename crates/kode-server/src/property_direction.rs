@@ -579,7 +579,8 @@ mod tests {
 
     #[test]
     fn init_assignment_crlf_preserves_cell_data_copy() {
-        let text = "class A:\r\n    def __init__(self):\r\n        self.hp = self.cellData[\"hp\"]\r\n";
+        let text =
+            "class A:\r\n    def __init__(self):\r\n        self.hp = self.cellData[\"hp\"]\r\n";
         let (names, sites, keys) = scan_init_assignments(text);
         assert_eq!(names, vec!["hp"]);
         assert_eq!(sites[0].line, 2);

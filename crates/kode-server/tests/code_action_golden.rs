@@ -50,16 +50,32 @@ fn code_action_golden_structure_is_complete() {
         repo_root().join(kode_server::code_action::CODE_ACTION_GOLDEN_REL_PATH),
     )
     .expect("golden");
-    let value: Golden = serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
+    let value: Golden =
+        serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
     // 语料规模与自含性
     assert!(value.corpus.len() >= 10, "语料应覆盖边界形态族");
     for entry in &value.corpus {
-        assert!(entry["name"].is_string() && entry["text"].is_string(), "语料条目形: {entry}");
+        assert!(
+            entry["name"].is_string() && entry["text"].is_string(),
+            "语料条目形: {entry}"
+        );
     }
-    assert_eq!(value.probes.len(), value.outcomes.len(), "探测数与产出数一致");
+    assert_eq!(
+        value.probes.len(),
+        value.outcomes.len(),
+        "探测数与产出数一致"
+    );
     assert!(value.probes.len() >= 300, "探测面规模(逐行×receiver×滑窗)");
     // 七面全覆盖审计
-    let faces = ["insertion", "stub", "suggestions", "receiverFace", "guardEdit", "wrapEdit", "fdEdit"];
+    let faces = [
+        "insertion",
+        "stub",
+        "suggestions",
+        "receiverFace",
+        "guardEdit",
+        "wrapEdit",
+        "fdEdit",
+    ];
     let mut lit = std::collections::BTreeSet::new();
     for probe in &value.probes {
         lit.insert(probe["face"].as_str().expect("probe face").to_string());
@@ -81,19 +97,27 @@ fn code_action_golden_structure_is_complete() {
             "suggestions" => assert!(outcome["hits"].is_array(), "suggestions 产出形"),
             "receiverFace" => {
                 let receiver = &outcome["receiver"];
-                assert!(receiver.is_null() || receiver.is_string(), "receiverFace 产出形");
+                assert!(
+                    receiver.is_null() || receiver.is_string(),
+                    "receiverFace 产出形"
+                );
             }
             "guardEdit" => {
                 let edit = &outcome["edit"];
                 if !edit.is_null() {
-                    assert!(edit["line"].is_u64() && edit["text"].is_string(), "guard 形: {edit}");
+                    assert!(
+                        edit["line"].is_u64() && edit["text"].is_string(),
+                        "guard 形: {edit}"
+                    );
                 }
             }
             "wrapEdit" => {
                 let edit = &outcome["edit"];
                 if !edit.is_null() {
                     assert!(
-                        edit["startLine"].is_u64() && edit["endLine"].is_u64() && edit["text"].is_string(),
+                        edit["startLine"].is_u64()
+                            && edit["endLine"].is_u64()
+                            && edit["text"].is_string(),
                         "wrap 形: {edit}"
                     );
                     assert!(
@@ -106,7 +130,9 @@ fn code_action_golden_structure_is_complete() {
                 let edit = &outcome["edit"];
                 if !edit.is_null() {
                     assert!(
-                        edit["startLine"].is_u64() && edit["endLine"].is_u64() && edit["text"].is_string(),
+                        edit["startLine"].is_u64()
+                            && edit["endLine"].is_u64()
+                            && edit["text"].is_string(),
                         "fd 形: {edit}"
                     );
                     // 习语三行:_fd = / _fd..= / self.. = _fd

@@ -1,4 +1,4 @@
-//! 报告形状 + 异常检测 + Entity 时间线(PA-005)。
+//! Report shape + anomaly detection + the Entity timeline (PA-005).
 
 use std::collections::BTreeSet;
 
@@ -16,7 +16,8 @@ pub struct ReportMeta {
     pub unknown_messages: usize,
 }
 
-/// JSON 报告(验收「独立分析一组解码消息出 JSON 报告」;全部节确定性序)。
+/// The JSON report (the acceptance item "independently analyze a set of decoded messages and
+/// produce a JSON report"; every section in deterministic order).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Report {
     pub meta: ReportMeta,
@@ -31,12 +32,12 @@ pub struct Report {
 
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisOptions {
-    /// 预留:报告面开关(当前能力面全覆盖)。
+    /// Reserved: report face switches (the current capability face is fully covered).
     pub _private: (),
 }
 
 // ---------------------------------------------------------------------------
-// anomalies(验收「未知消息/非法长度/Schema 不匹配」)
+// anomalies (the acceptance item "unknown messages / illegal length / Schema mismatch")
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -54,13 +55,14 @@ pub struct AnomalyReport {
     pub total: usize,
 }
 
-/// 取证最小长度表(docs/kbengine-wire-protocol.md §6/§7 定长/定形消息;
-/// 只收**双端形状确证**的条目,载荷低于最小值 = 非法长度;变长消息的
-/// 字段级形状取证未完备的条目不收,不编造)。
+/// Forensic minimum length table (docs/kbengine-wire-protocol.md §6/§7 fixed-length/
+/// fixed-shape messages; only entries **confirmed by both ends' shapes** are included, and
+/// a payload below the minimum = illegal length; entries for variable-length messages whose
+/// field-level shape forensics are incomplete are not included and never fabricated).
 const MIN_PAYLOAD_LEN: &[(&str, usize)] = &[
     ("Client::onLoginSuccessfully", 8), // 1+1(cstring×2)+2(u16)+4(blob u32 len)
     ("Client::onLoginFailed", 6),       // 2(u16)+4(blob len)
-    ("Client::onEntityEnterWorld", 8),  // i32 + u32(固定 8)
+    ("Client::onEntityEnterWorld", 8),  // i32 + u32 (fixed 8)
     ("Client::onEntityLeaveWorld", 8),
     ("Client::onEntityEnterSpace", 8),
     ("Client::onEntityLeaveSpace", 8),
@@ -68,12 +70,12 @@ const MIN_PAYLOAD_LEN: &[(&str, usize)] = &[
     ("Client::onControlEntity", 5),
     ("Client::onLoginBaseappFailed", 2),
     ("Client::onStreamDataCompleted", 2),
-    ("Baseapp::reloginBaseapp", 12), // u64 + i32(固定 12)
+    ("Baseapp::reloginBaseapp", 12), // u64 + i32 (fixed 12)
     ("Client::onCreatedEntity", 5),  // i32 + ≥1(cstring)
 ];
 
-/// Schema 不匹配类:解码期异常 kind 透传(PA-004 decode 面的
-/// invalid_string/memory_limit/depth_limit 等)即 Schema 违约证据。
+/// Schema mismatch class: decode-time anomaly kinds passed through (the PA-004 decode face's
+/// invalid_string/memory_limit/depth_limit etc.) are evidence of a Schema breach.
 fn passthrough_kind(kind: &str) -> bool {
     !matches!(kind, "unknown_message_id")
 }
@@ -110,7 +112,7 @@ pub fn detect_anomalies(records: &[Record]) -> AnomalyReport {
                 }
             }
         }
-        // 解码期异常透传(Schema 不匹配证据;不重复计数 unknown id)。
+        // Decode-time anomaly pass-through (evidence of a Schema mismatch; unknown id is not counted twice).
         if let Some(a) = &r.anomaly {
             if passthrough_kind(&a.kind) {
                 out.items.push(Anomaly {
@@ -128,10 +130,10 @@ pub fn detect_anomalies(records: &[Record]) -> AnomalyReport {
 }
 
 // ---------------------------------------------------------------------------
-// Entity 事件 + RPC 时间线(验收「Entity 事件与 RPC 时间线」)
+// Entity events + RPC timeline (the acceptance item "Entity events and the RPC timeline")
 // ---------------------------------------------------------------------------
 
-/// 实体事件消息面(PA-001 §7;server→client 实体生命线 + 客户端转发面)。
+/// Entity event message face (PA-001 §7; the server->client entity life line + the client forwarding face).
 fn is_entity_event(name: &str) -> bool {
     const EVENTS: &[&str] = &[
         "Client::onEntityEnterWorld",
@@ -163,11 +165,11 @@ pub struct EntityEvent {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct EntityTimeline {
-    /// 事件序(输入序 = 线上序;确定性)。
+    /// Event order (input order = wire order; deterministic).
     pub events: Vec<EntityEvent>,
-    /// 远程调用子集(RPC 时间线)。
+    /// The remote-call subset (the RPC timeline).
     pub rpcs: Vec<EntityEvent>,
-    /// 去重实体数。
+    /// Deduplicated entity count.
     pub entities: usize,
 }
 

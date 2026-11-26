@@ -1,8 +1,11 @@
-//! references 对拍 golden 生成器:遍历 fixture 语料,输出每文件每符号探针
-//! (Parent/Type/Arg/of 取值词、types.xml 顶层声明名)的引用位 JSON。
+//! references parity golden generator: walks the fixture corpus and emits the
+//! reference positions JSON for every symbol probe in every file (Parent/Type/
+//! Arg/of value words, types.xml top-level declaration names).
 //!
-//! golden 文件由 Rust 产出、TS 侧 tests/kodeReferencesParity.test.ts 用现有
-//! defParser 原语复算对拍(双向门禁:Rust 测试重生成比对 + vitest 复算)。
+//! The golden file is produced by Rust; the TS side
+//! tests/kodeReferencesParity.test.ts recomputes with the existing defParser
+//! primitives and compares (two-way gate: the Rust test regenerates and
+//! compares + vitest recomputes).
 
 fn main() {
     let repo_root = std::env::args().nth(1).unwrap_or_else(|| String::from("."));

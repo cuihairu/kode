@@ -1,34 +1,53 @@
-//! LANG-NAR-1 语义引擎流敏感窄化(RUST-MIGRATION-AUDIT-006 B1 车道批 1)。
+//! LANG-NAR-1 semantics engine flow-sensitive narrowing (RUST-MIGRATION-AUDIT-006 B1 lane batch 1).
 //!
-//! TS `src/backend/selfAttributeFlowTypes.ts`(567 行)移植:行扫描器/守卫/
-//! 类型推导段逐字保真;类跨度提取段在精确性主车道批 A 换道 ruff AST
-//! (class_spans_from_ast)——域正确性升级(嵌套类/条件 def 真域、未闭合
-//! 文件不再吞尾),行扫描语义仍以 TS 引擎为基准(平铺文件跨度等值,见
-//! ClassSpan 注)。TS 引擎冻结为杀开关兜底,不再作字节对拍基准(输出
-//! 合法变好,split-parity:未触及维度保留深等,升级维度精度断言)。
+//! Port of TS `src/backend/selfAttributeFlowTypes.ts` (567 lines): the line
+//! scanner / guard / type inference sections are kept verbatim; the class span
+//! extraction section was rerouted to ruff AST in precision main lane batch A
+//! (class_spans_from_ast) - a domain correctness upgrade (true domains for
+//! nested classes / conditional def, unterminated files no longer swallow the
+//! tail), while line scanning semantics still take the TS engine as the
+//! reference (spans equal for flat files, see the ClassSpan note). The TS
+//! engine is frozen as a kill-switch fallback and is no longer the byte parity
+//! comparison baseline (output may improve legitimately, split-parity:
+//! untouched dimensions keep deep equality, upgraded dimensions get precision
+//! asserts).
 //!
-//! 移植口径(逐字对齐要点):
-//! - 全程 UTF-16 码元(与 JS 字符串索引同基底);行走查器吃调用方原样行
-//!   (inlay 路原文/诊断路掩码行,Rust 不二次掩码——与 TS 纯函数同契约);
-//! - 类跨度路径 = 行 join('\n') → UTF-8 → ruff 容错解析(部分 AST,半成品
-//!   文件尽力产出)→ AST 走查产 ClassSpan{name,start_line,end_line,
-//!   method_lines:名→def 名行,method_domains:真实体域}。装饰器不计行号
-//!   (ruff class/def range 含 @ 前缀,取 name.range 起点校正);end_line=
-//!   语句末字符行+1(排他);嵌套类自成一个 ClassSpan、类体控制块内 def
-//!   仍归类(与旧展平口径同员),def 体内不下行(与旧 scope.function 同员);
-//! - 正则全部手工展开成扫描器,左优先交替 + 回溯语义逐字保真
-//!   (anyBlockOpen 的 `else` 命中后词边界失败不换关键字的 JS 行为等);
-//!   `\s` 取 JS 全类(含  /　/﻿ 等),`\w` = `[A-Za-z0-9_]`;
-//! - 类型集合 BTreeSet(输出恒排序,与 TS `[...set].sort()` 等值;非 BMP
-//!   码点排序差 = 字节序 vs UTF-16 码元序,类型原子皆 ASCII 不触);
-//! - `SelfAttributeFlowOptions` 回调面不在 RPC 契约(生产恒 undefined),
-//!   Rust 无此参数——调用/裸名解析恒空集(与生产 TS 行为一致);
-//! - KODE-PERF-001 版本键 LRU 解析缓存:max=8 触碰移尾/逐最旧,键=TS 传来的
-//!   不透明字符串(flowVersionKeyForDocument 产物);无键=现解析不缓存(纯函数
-//!   回退逐字节一致)。缓存值只存引擎所需的类跨度(与 TS 缓存整份
-//!   ParsedPythonFile 对引擎行为等值)。
+//! Porting contract (verbatim alignment points):
+//! - UTF-16 code units throughout (same basis as JS string indexing); the line
+//!   walker consumes the caller's lines as given (inlay path raw text /
+//!   diagnostics path masked lines, Rust does not mask a second time - same
+//!   contract as the TS pure function);
+//! - class span path = lines join('\n') -> UTF-8 -> ruff tolerant parse
+//!   (partial AST, best effort for half-finished files) -> AST walk producing
+//!   ClassSpan{name,start_line,end_line,method_lines:name->def name line,
+//!   method_domains:true body domain}. Decorators do not count as lines
+//!   (ruff class/def range includes the @ prefix, corrected to the name.range
+//!   start); end_line = last statement character line + 1 (exclusive); a nested
+//!   class becomes its own ClassSpan, a def inside a class body control block
+//!   still belongs to the class (same membership as the old flattened
+//!   semantics), no descent into a def body (same membership as the old
+//!   scope.function);
+//! - every regex is manually expanded into a scanner, leftmost-priority
+//!   alternation + backtracking semantics kept verbatim (including the JS
+//!   behavior of anyBlockOpen not switching keyword after `else` matches but
+//!   fails the word boundary);
+//!   `\s` takes the full JS class (including  /　/﻿ etc.), `\w` = `[A-Za-z0-9_]`;
+//! - the type collection is a BTreeSet (output always sorted, equal to TS
+//!   `[...set].sort()`; the non-BMP code point ordering difference = byte
+//!   order vs UTF-16 code unit order, all type atoms are ASCII so untouched);
+//! - the `SelfAttributeFlowOptions` callback surface is not in the RPC
+//!   contract (always undefined in production), Rust has no such parameter -
+//!   call / bare name resolution is always the empty set (consistent with
+//!   production TS behavior);
+//! - KODE-PERF-001 version keyed LRU parse cache: max=8, touch moves to
+//!   tail / evict the oldest, key = the opaque string passed by TS (product of
+//!   flowVersionKeyForDocument); no key = parse now without caching (pure
+//!   function fallback, byte for byte identical). The cache value stores only
+//!   the class spans the engine needs (equivalent in engine behavior to TS
+//!   caching the whole ParsedPythonFile).
 //!
-//! 诚实边界:类型以原子注解字符串集合表示,推不出即空集(不硬造 Any)。
+//! Honest boundary: types are represented as a set of annotation string atoms;
+//! when nothing can be inferred the set is empty (never fabricate Any).
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
@@ -38,12 +57,12 @@ use crate::parse::ParsedAst;
 use ruff_python_ast as ast;
 use ruff_text_size::Ranged;
 
-/// 版本键 LRU 容量(TS PARSE_CACHE_MAX_ENTRIES = 8)
+/// Version key LRU capacity (TS PARSE_CACHE_MAX_ENTRIES = 8)
 pub const PARSE_CACHE_MAX_ENTRIES: usize = 8;
 
-// ---- 基础字符类(JS 语义) --------------------------------------------------
+// ---- basic character classes (JS semantics) -------------------------------
 
-/// JS `\s` 全类(码元):\t \n \v \f \r 空格      -
+/// JS `\s` full class (code units): \t \n \v \f \r space      -
 ///
 pub(crate) fn is_js_space(code: u16) -> bool {
     matches!(code, 0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20)
@@ -58,12 +77,12 @@ pub(crate) fn is_js_space(code: u16) -> bool {
         || code == 0xFEFF
 }
 
-/// JS 行终止符(`.` 排除集;行内孤立 `\r`/U+2028/U+2029 使 `.+/$` 形失配)
+/// JS line terminators (the `.` exclusion set; a lone `\r`/U+2028/U+2029 inside a line makes the `.+/$` shape mismatch)
 pub(crate) fn is_js_line_terminator(code: u16) -> bool {
     matches!(code, 0x0A | 0x0D | 0x2028 | 0x2029)
 }
 
-/// TS 词首字符类 `[A-Za-z_]`(不含数字)
+/// TS word start character class `[A-Za-z_]` (digits excluded)
 pub(crate) fn is_name_start(code: u16) -> bool {
     code == 0x5F || (0x41..=0x5A).contains(&code) || (0x61..=0x7A).contains(&code)
 }
@@ -73,10 +92,11 @@ pub(crate) fn is_word(code: u16) -> bool {
     is_name_start(code) || (0x30..=0x39).contains(&code)
 }
 
-// ---- pythonCodeLines 掩码(pythonParser.ts:26-51 逐字移植) -----------------
+// ---- pythonCodeLines masking (verbatim port of pythonParser.ts:26-51) ------
 
-/// `content.split(/\r?\n/)`(尾随 `\r` 剥离)。attributeNone 诊断面复用:
-/// 掩码文本行数组与 TS `maskedText.split(/\r?\n/)` 同法。
+/// `content.split(/\r?\n/)` (trailing `\r` stripped). Reused by the
+/// attributeNone diagnostics surface: the masked text line array is produced
+/// the same way as TS `maskedText.split(/\r?\n/)`.
 pub fn split_crlf(content: &[u16]) -> Vec<Vec<u16>> {
     let mut lines = Vec::new();
     let mut current = Vec::new();
@@ -97,9 +117,9 @@ pub fn split_crlf(content: &[u16]) -> Vec<Vec<u16>> {
     lines
 }
 
-// ---- 行基础判定(行扫描器/AST 跨度共用) ------------------------------------
+// ---- line level predicates (shared by line scanner and AST spans) ----------
 
-/// 行首 `[ \t]*` 缩进(tab 计 4)
+/// Leading `[ \t]*` indentation (tab counts as 4)
 fn indent_of(line: &[u16]) -> usize {
     let mut indent = 0usize;
     for &code in line {
@@ -114,7 +134,7 @@ fn indent_of(line: &[u16]) -> usize {
     indent
 }
 
-/// `^\s*$`(JS \s 全类)
+/// `^\s*$` (the full JS \s class)
 fn is_blank(line: &[u16]) -> bool {
     line.iter().all(|&code| is_js_space(code))
 }
@@ -128,9 +148,10 @@ fn is_comment_only(line: &[u16]) -> bool {
     i == line.len() || line[i] == 0x23
 }
 
-// ---- 类跨度提取(ruff AST 派生;精确性主车道批 A) --------------------------
+// ---- class span extraction (derived from ruff AST; precision main lane batch A)
 
-/// 方法真实体域(0 起,含尾):def 名行 .. def 语句末字符行。
+/// The true body domain of a method (0 based, inclusive of the tail): from the
+/// def name line to the last character line of the def statement.
 #[derive(Debug, Clone)]
 pub struct MethodDomain {
     pub name: String,
@@ -138,28 +159,35 @@ pub struct MethodDomain {
     pub end_line: usize,
 }
 
-/// 类跨度(引擎所需字段;TS methods 的 character 列引擎不读,不移植)
+/// Class span (the fields the engine needs; the character column of TS
+/// methods is never read by the engine, so it is not ported)
 #[derive(Debug, Clone)]
 pub struct ClassSpan {
     pub name: String,
-    /// 0 起起始行(class 名行;装饰器不计——ruff range 含 @ 前缀,名行校正)
+    /// 0 based start line (the class name line; decorators do not count - the ruff range includes the @ prefix, corrected to the name line)
     pub start_line: usize,
-    /// 0 起结束行(不含)= 类语句末字符行 + 1(尾随空行/注释不再计入类;
-    /// 未闭合到 EOF 时自然收敛于文末)
+    /// 0 based end line (excluded) = last class statement character line + 1
+    /// (trailing blank lines / comments no longer belong to the class; when
+    /// the class is not closed before EOF it naturally converges at the end
+    /// of the file)
     pub end_line: usize,
-    /// 方法名 → 0 起 def 名行(同名后者覆盖,与旧 HashMap 语义一致)
+    /// method name -> 0 based def name line (for duplicates the later one wins,
+    /// consistent with the old HashMap semantics)
     pub method_lines: HashMap<String, usize>,
-    /// 方法真实体域(enclosing_method 内含最小域者胜;嵌套类/条件 def 归属修正)
+    /// true method body domains (among the enclosing_method candidates the
+    /// innermost domain wins; nested class / conditional def attribution
+    /// corrected)
     pub method_domains: Vec<MethodDomain>,
 }
 
-/// 语句末字符所在行(0 起;range end 为排他字节 offset,容错空 range 饱和回退)。
+/// Line of the last statement character (0 based; range end is an exclusive byte offset, a tolerant saturating fallback for an empty range).
 fn last_char_line(ast: &ParsedAst, range: ruff_text_size::TextRange) -> usize {
     ast.line_col(range.end().to_u32().saturating_sub(1)).0
 }
 
-/// KBUG-ORDER:0 基行 + 0 基 UTF-16 列(与 VSCode Position.character 同口径;
-/// line_col 产物即 UTF-16 列,代理对计 2)。字典序 = 源码执行序。
+/// KBUG-ORDER: 0 based line + 0 based UTF-16 column (same semantics as VSCode
+/// Position.character; the line_col product is already a UTF-16 column, a
+/// surrogate pair counting as 2). Lexicographic order = source execution order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Pos {
     pub(crate) line: usize,
@@ -176,16 +204,19 @@ fn stmt_end_pos(ast: &ParsedAst, range: ruff_text_size::TextRange) -> Pos {
     Pos { line, col }
 }
 
-/// 类跨度 = ruff 容错解析后的 AST 走查(半成品文件尽力产出部分跨度)。
+/// Class spans = an AST walk over the ruff tolerant parse result (a half-finished file still yields partial spans on a best effort basis).
 pub fn class_spans_from_ast(ast: &ParsedAst) -> Vec<ClassSpan> {
     let mut classes: Vec<ClassSpan> = Vec::new();
     walk_class_scopes(ast, &ast.module().body, None, &mut classes);
     classes
 }
 
-/// 作用域走查:类体直系 + 控制块内 def 仍归属当前类(与旧展平口径同员);
-/// def 体内不下行(函数内类/方法不入表,与旧 scope.function 口径同员);
-/// 嵌套类自成一个 ClassSpan(其方法归嵌套类,不归外层类)。
+/// Scope walk: class body direct children plus defs inside control blocks still
+/// belong to the current class (same membership as the old flattened
+/// semantics); no descent into a def body (classes / methods inside a function
+/// are not recorded, same membership as the old scope.function semantics);
+/// a nested class becomes its own ClassSpan (its methods belong to the nested
+/// class, not to the outer class).
 fn walk_class_scopes(
     ast: &ParsedAst,
     body: &[ast::Stmt],
@@ -253,11 +284,14 @@ fn walk_class_scopes(
     }
 }
 
-// ---- 赋值类型索引(精确性主车道批 B:typeOfExpr AST 化) ---------------------
+// ---- assignment type index (precision main lane batch B: typeOfExpr on the AST)
 
-/// 赋值类型索引:键 = (0 起起始行, 目标名),值 = RHS(或无值注解)类型集合。
-/// 「键在、值空」= 赋值成立但类型推不出(替换语义:空集覆盖旧值=诚实未知);
-/// 「键不在」= 该行无此目标赋值(状态保留)。两义必须分开承载。
+/// Assignment type index: key = (0 based start line, target name), value = the
+/// RHS (or value-less annotation) type set.
+/// "Key present, value empty" = the assignment holds but no type can be derived
+/// (replacement semantics: the empty set overwrites the old value = honest
+/// unknown); "key absent" = that target is not assigned on that line (state
+/// preserved). The two meanings must be carried separately.
 #[derive(Debug, Clone, Default)]
 pub struct AssignmentTypes {
     map: HashMap<(usize, String), TypeSet>,
@@ -268,15 +302,18 @@ impl AssignmentTypes {
         self.map.insert((line, name.to_string()), types);
     }
 
-    /// attr 以 UTF-16 码元查询(与行扫描器同一目标形态)。
+    /// attr is queried in UTF-16 code units (same target shape as the line scanner).
     fn get(&self, line: usize, name: &[u16]) -> Option<&TypeSet> {
         let key = String::from_utf16(name).ok()?;
         self.map.get(&(line, key))
     }
 }
 
-/// 类体直系赋值索引(基线面):键 = (类起始行, 行, 名)。带类身份——嵌套类
-/// 直系条目不进外层类基线(旧引擎靠缩进过滤排除,AST 面以身份键同语义)。
+/// Class body direct assignment index (baseline surface): key = (class start
+/// line, line, name). Carries class identity - nested class direct entries do
+/// not enter the outer class baseline (the old engine excluded them via indent
+/// filtering; the AST surface achieves the same semantics with an identity
+/// key).
 #[derive(Debug, Clone, Default)]
 pub struct ClassAssignmentTypes {
     map: HashMap<(usize, usize, String), TypeSet>,
@@ -294,10 +331,12 @@ impl ClassAssignmentTypes {
     }
 }
 
-/// 表达式类型(字面量面;ruff AST 节点直接推导)。
-/// None/bool/int/float/complex/str(bytes/f/t 串分型)/list/set/dict/tuple/
-/// ellipsis;walrus→内层;数值/逻辑一元;其余(调用/属性链/裸名/二元运算/
-/// 推导式/lambda/ternary)→ 空集(不硬造;调用与裸名归批 C)。
+/// Expression types (literal surface; derived directly from ruff AST nodes).
+/// None/bool/int/float/complex/str (bytes/f/t strings typed separately)/list/
+/// set/dict/tuple/ellipsis; walrus -> the inner expression; numeric / logical
+/// unary; everything else (call / attribute chain / bare name / binary op /
+/// comprehension / lambda / ternary) -> the empty set (nothing fabricated;
+/// calls and bare names belong to batch C).
 fn ast_type_of_expr(expr: &ast::Expr) -> TypeSet {
     match expr {
         ast::Expr::NoneLiteral(_) => atom("None"),
@@ -320,7 +359,7 @@ fn ast_type_of_expr(expr: &ast::Expr) -> TypeSet {
         ast::Expr::UnaryOp(u) => match u.op {
             ast::UnaryOp::Not => atom("bool"),
             ast::UnaryOp::UAdd | ast::UnaryOp::USub => match numeric_atom(&u.operand) {
-                // -x/+x 保型;bool 经 -/+ 落 int(-True == -1);其余不造
+                // -x/+x keeps the type; bool under -/+ lands on int (-True == -1); nothing else is fabricated
                 NumericAtom::IntOrBool => atom("int"),
                 NumericAtom::Float => atom("float"),
                 NumericAtom::Complex => atom("complex"),
@@ -335,8 +374,9 @@ fn ast_type_of_expr(expr: &ast::Expr) -> TypeSet {
     }
 }
 
-/// 数值一元操作数分类(直接按 AST 形态;括号被 ruff 剥除,walrus 取内层,
-/// 嵌套 +/- 继续下钻)。
+/// Numeric unary operand classification (directly from the AST shape; parens
+/// are stripped by ruff, walrus takes the inner expression, nested +/- keep
+/// drilling down).
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum NumericAtom {
     IntOrBool,
@@ -361,8 +401,10 @@ fn numeric_atom(expr: &ast::Expr) -> NumericAtom {
     }
 }
 
-/// 注解文本原子:源文本按节点字节区间切片 + trim(与旧「`[^=#]+?` 捕获
-/// trim」口径一致——引号注解带引号、联合注解整串一个原子);空串不产原子。
+/// Annotation text atom: slice the source text by the node byte range + trim
+/// (same semantics as the old "`[^=#]+?` capture then trim" - a quoted
+/// annotation keeps its quotes, a union annotation is one whole atom); an
+/// empty string produces no atom.
 fn annotation_text(ast: &ParsedAst, expr: &ast::Expr) -> Option<String> {
     let start = expr.range().start().to_u32() as usize;
     let end = expr.range().end().to_u32() as usize;
@@ -378,18 +420,30 @@ fn is_self_receiver(expr: &ast::Expr) -> bool {
     matches!(expr, ast::Expr::Name(n) if n.id.as_str() == "self")
 }
 
-/// 批 C:in-file 调用/裸名推导(补可推导真值)。RHS 不再止步字面量:
-/// - 同文件模块级 def `-> T` 注解(`name(...)` 直取;重名歧义=未知,不取首定义硬猜);
-/// - `A.m(...)` 类限定方法注解(同类名多个=歧义不猜);`self.m(...)` 所在类限定;
-/// - 链式 `recv.m(...)`:接收者可推导出唯一原子且恰为同类名时取该方法注解;
-/// - 方法域内局部裸名赋值链(最近写点胜=替换语义,有界跳数 + visited 防环);
-/// - `self.z` 读 → 类属性基线(批 B 收敛基线图,RAW 索引上算,备忘录防重算);
-/// - await 壳透明;walrus 目标登记为局部写点(顶层/元素级,更深层诚实漏)。
+/// Batch C: in-file call / bare name inference (adds genuinely derivable
+/// truth). The RHS no longer stops at literals:
+/// - same-file module-level def `-> T` annotation (`name(...)` taken
+///   directly; duplicated name ambiguity = unknown, never guess the first
+///   definition);
+/// - `A.m(...)` class qualified method annotation (several classes with the
+///   same name = ambiguous, do not guess); `self.m(...)` qualified by the
+///   enclosing class;
+/// - chained `recv.m(...)`: take that method annotation when the receiver
+///   derives to a single atom that happens to be the same class name;
+/// - local bare name assignment chain inside the method domain (nearest write
+///   site wins = replacement semantics, bounded hops + visited set against
+///   cycles);
+/// - `self.z` read -> class attribute baseline (batch B converged baseline
+///   map, computed over the RAW index, memoized against recomputation);
+/// - the await shell is transparent; a walrus target is registered as a local
+///   write site (top level / element level, deeper nesting is honestly missed).
 ///
-/// 诚实边界:无注解/未知 callee/环/越域 → 空集,绝不猜。
+/// Honest boundary: no annotation / unknown callee / cycle / out of domain ->
+/// the empty set, never guess.
 const RESOLVE_MAX_HOPS: usize = 4;
 
-/// 模块级 def 返回注解:Single(注解或无)= 唯一定义;Ambiguous = 同名多个。
+/// Return annotation of a module-level def: Single (the annotation, or none) =
+/// the only definition; Ambiguous = several with the same name.
 #[derive(Debug, Clone)]
 pub(crate) enum DefReturn {
     Single(Option<String>),
@@ -398,30 +452,34 @@ pub(crate) enum DefReturn {
 
 #[derive(Debug, Clone)]
 pub(crate) enum CalleeShape {
-    /// f(...)——解析期经 [`ResolveState::callee_atom_at`]:流位置的声明
-    /// 前置绑定裁定(def 表/唯一类名二选一,且先被写点/局部 def 绑定则
-    /// 声明表不可用;None = 前置绑定缺失/歧义/被绑定遮蔽)
+    /// f(...) - resolved at parse time through
+    /// [`ResolveState::callee_atom_at`]: the declaration pre-binding ruling at
+    /// the flow position (the def table or the unique class name, whichever;
+    /// and if it was already bound by a write site / a local def then the
+    /// declaration table is unavailable; None = pre-binding missing /
+    /// ambiguous / shadowed by a binding)
     Name(String),
     /// A.m(...)
     Qualified { class: String, method: String },
-    /// self.m(...) —— 所在类限定
+    /// self.m(...) - qualified by the enclosing class
     SelfMethod(String),
-    /// <expr>.m(...) —— 接收者推导出唯一同类名时取该方法注解
+    /// <expr>.m(...) - take that method annotation when the receiver derives to
+    /// a unique class name
     Chained {
         receiver: Box<RhsShape>,
         method: String,
     },
 }
 
-/// RHS 形态快照(owned;AST 在解析派生后即弃,只留可推导面)。
+/// RHS shape snapshot (owned; the AST is discarded right after parse-time derivation, keeping only the derivable surface).
 #[derive(Debug, Clone)]
 pub(crate) enum RhsShape {
-    /// 字面量面(批 B)已定型
+    /// Literal surface (batch B), already finalized
     Typed(TypeSet),
     Call(CalleeShape),
-    /// self.z 读 → 类属性基线
+    /// self.z read -> class attribute baseline
     SelfAttr(String),
-    /// 局部裸名(方法域内最近写点链)
+    /// local bare name (the nearest write site chain within the method domain)
     Local(String),
     Unknown,
 }
@@ -432,22 +490,26 @@ enum EntryKind {
     ClassDirect,
 }
 
-/// 批 D localReturnType 面:裸名写点全域表条目(模块/类体/方法体三域同表,
-/// 面查询按作用域链自筛;shape 为 owned 快照)。
+/// Batch D localReturnType surface: entry of the global bare name write site
+/// table (module / class body / method body share one table, the surface
+/// query filters itself by the scope chain; shape is an owned snapshot).
 #[derive(Debug, Clone)]
 pub(crate) struct BareWrite {
     pub(crate) line: usize,
-    /// KBUG-ORDER:写点(赋值目标/语句头)0 基 UTF-16 列
+    /// KBUG-ORDER: 0 based UTF-16 column of the write site (assignment target / statement head)
     pub(crate) col: usize,
-    /// KBUG-ORDER:写点所在语句末字符位(时间边界判「光标是否越过本句」)
+    /// KBUG-ORDER: last character position of the statement holding the write site (the time boundary deciding "has the cursor passed this statement")
     pub(crate) stmt_end: Pos,
-    /// KBUG-ORDER-03:RHS 起始位(别名/RHS 读回溯的时间边界——只看严格
-    /// 先于该位的绑定,自引用/同行后写不可见)
+    /// KBUG-ORDER-03: RHS start position (the time boundary for alias / RHS
+    /// read traceback - only bindings strictly before that position are
+    /// visible, self reference / a later write on the same line is invisible)
     pub(crate) rhs_pos: Pos,
     pub(crate) shape: RhsShape,
-    /// 写点所在类(方法体写点;类体直系=该类;模块层=None)
+    /// the class the write site is in (method body write site; class body
+    /// direct child = that class; module level = None)
     pub(crate) class_start: Option<usize>,
-    /// 写点最内所属 def 名行(嵌套 def 各归各;类体直系/模块层=None)
+    /// the innermost def name line the write site belongs to (nested defs
+    /// each go to their own; class body direct child / module level = None)
     pub(crate) method_start: Option<usize>,
 }
 
@@ -460,31 +522,46 @@ impl BareWrite {
     }
 }
 
-/// KBUG-SCOPE:函数/lambda 词法域(作用域链与参数遮蔽判定的 AST 事实)。
-/// 全部 def(模块/方法/嵌套)+ 直接赋值 lambda 入表;start/end = 真实体域
-/// (0 起含尾;lambda = 表达式行域;体首行 min 名行兼容同行体)。
+/// KBUG-SCOPE: function / lambda lexical domain (the AST facts behind the
+/// scope chain and parameter shadowing decisions).
+/// Every def (module / method / nested) plus directly assigned lambdas are
+/// recorded; start/end = the true body domain (0 based, inclusive of the
+/// tail; a lambda = the expression line domain; the body first line is the
+/// min of the name line to accommodate same-line bodies).
 #[derive(Debug, Clone)]
 pub(crate) struct FnDomain {
-    /// def 名行 / lambda 赋值行(写点归属键,与 BareWrite.method_start 同口径)
+    /// def name line / lambda assignment line (the write site attribution key,
+    /// same semantics as BareWrite.method_start)
     pub(crate) header_line: usize,
     pub(crate) start_line: usize,
     pub(crate) end_line: usize,
-    /// 位置/仅关键字/*args/**kwargs 参数全量(参数位一律本域绑定,遮蔽外层)
+    /// the full positional / keyword-only / *args / **kwargs parameter list
+    /// (a parameter position always binds in this domain, shadowing the
+    /// outer ones)
     pub(crate) params: Vec<String>,
-    /// 本域直系 def 名(控制块内 def 同员;嵌套 def 体不下行——属内层域)。
-    /// 局部 def 即本域名字绑定(BIND-02:遮蔽模块声明表)
+    /// def names direct in this domain (defs inside control blocks have the
+    /// same membership; no descent into a nested def body - that belongs to
+    /// the inner domain).
+    /// A local def is a name binding of this domain (BIND-02: it shadows the
+    /// module declaration table)
     pub(crate) def_names: Vec<String>,
-    /// `global` 声明名(本域不绑定;域内写点改记模块名空间)
+    /// `global` declaration names (not bound in this domain; write sites
+    /// inside the domain are recorded in the module name space)
     pub(crate) globals: Vec<String>,
-    /// `nonlocal` 声明名(本域不绑定,解向外层函数域)
+    /// `nonlocal` declaration names (not bound in this domain, resolved in
+    /// the outer function domain)
     pub(crate) nonlocals: Vec<String>,
 }
 
-// ---- KBUG-CFGFLOW:域内语句流树(写点裁定从「文本最近」升级为流敏感可达)----
+// ---- KBUG-CFGFLOW: the intra-domain statement flow tree (write site ruling
+//      upgraded from "textually nearest" to flow-sensitive reachability) ----
 
-/// 域内语句流树快照:def/class 头是直线一步(体属他域;其体内 global 写点
-/// 借 span 命中,执行序 = 语句序);with 体平铺(直线执行);Try/Match 保守
-/// 并集;Loop 保守(0 次 + ≥1 次并集);Return/Raise/Break/Continue = 终止。
+/// Intra-domain statement flow tree snapshot: a def/class head is a straight
+/// line step (its body belongs to another domain; a global write site inside
+/// it is reached through the span hit, execution order = statement order); a
+/// with body is flattened (straight line execution); Try/Match are a
+/// conservative union; Loop is conservative (0 iterations + >=1 iterations
+/// union); Return/Raise/Break/Continue = termination.
 #[derive(Debug, Clone)]
 pub(crate) enum FlowStmt {
     Simple {
@@ -494,8 +571,9 @@ pub(crate) enum FlowStmt {
     Branch {
         start: Pos,
         end: Pos,
-        /// 静态可证测试真值(布尔/None/数值/字符串字面量;名字不折叠——
-        /// 可能被重绑定,不执行用户代码,其余条件保留候选)
+        /// statically provable test truth (boolean / None / numeric / string
+        /// literal; names are not folded - they may be rebound, no user code is
+        /// executed, the remaining conditions keep their candidates)
         test_const: Option<bool>,
         then_body: Vec<FlowStmt>,
         then_span: (Pos, Pos),
@@ -509,7 +587,7 @@ pub(crate) enum FlowStmt {
         body_span: (Pos, Pos),
         orelse: Vec<FlowStmt>,
     },
-    /// Try/except/else/finally 与 Match case 的保守并集块
+    /// Conservative union block for Try/except/else/finally and Match case
     Join {
         start: Pos,
         end: Pos,
@@ -533,8 +611,10 @@ impl FlowStmt {
     }
 }
 
-/// 流值:查询位该名的可达写点候选(One=唯一确定;Many=合流多候选,
-/// maybe_unbound=含未绑定路径——诚实未知,绝不任取)。
+/// Flow value: the reachable write site candidates for that name at the query
+/// position (One = uniquely determined; Many = merged several candidates,
+/// maybe_unbound = contains an unbound path - honestly unknown, never pick
+/// one at will).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum FlowVal {
     Unbound,
@@ -598,8 +678,10 @@ fn span_has_write(writes: &[&BareWrite], span: (Pos, Pos)) -> bool {
         .any(|w| w.pos() >= span.0 && w.pos() <= span.1)
 }
 
-/// 静态可证测试真值:仅字面量折叠(布尔/None/数值/字符串/bytes + 一元 not;
-/// 名字不折叠——可能被重绑定;不执行用户代码,其余条件保留候选)。
+/// Statically provable test truth: literal folding only (boolean / None /
+/// numeric / string / bytes + unary not; names are not folded - they may be
+/// rebound; no user code is executed, the remaining conditions keep their
+/// candidates).
 fn constant_bool(expr: &ast::Expr) -> Option<bool> {
     match expr {
         ast::Expr::BooleanLiteral(b) => Some(b.value),
@@ -637,7 +719,7 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
                 });
             }
             ast::Stmt::For(s) => {
-                // async for 同型(is_async 旗标;流形态一致)
+                // async for is the same shape (is_async flag; the flow shape is identical)
                 let b = build_flow_tree(ast, &s.body);
                 let bs = tree_span(&b);
                 out.push(FlowStmt::Loop {
@@ -687,7 +769,7 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
                 out.push(FlowStmt::Join { start, end, blocks });
             }
             ast::Stmt::With(s) => {
-                // with 体直线执行:头一步 + 体平铺
+                // with body executes straight: one head step + a flattened body
                 out.push(FlowStmt::Simple { start, end: start });
                 out.extend(build_flow_tree(ast, &s.body));
             }
@@ -695,8 +777,10 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
             | ast::Stmt::Raise(_)
             | ast::Stmt::Break(_)
             | ast::Stmt::Continue(_) => {
-                // 终止语句整句为域(悬 return x 的表达式位仍在句内,不误判
-                // 「终止后不可达」;句尾之后的位才是不可达)
+                // a terminator statement spans the whole statement as its domain (the
+                // expression position of a dangling return x is still inside the statement,
+                // so we do not misjudge "unreachable after termination"; only positions
+                // after the statement end are unreachable)
                 out.push(FlowStmt::Terminator { pos: start, end });
             }
             _ => out.push(FlowStmt::Simple { start, end }),
@@ -705,8 +789,8 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
     out
 }
 
-/// if/elif/else 链构建(ruff 平铺 elif_else_clauses 重建为嵌套 Branch:
-/// 有 test = elif 递归,无 test = else 体)。
+/// if/elif/else chain construction (ruff flattens elif_else_clauses; rebuilt
+/// into nested Branch: with test = elif recursion, without test = else body).
 fn build_if_chain(
     ast: &ParsedAst,
     test: &ast::Expr,
@@ -749,8 +833,10 @@ fn build_if_chain(
     }
 }
 
-/// 域语句块求值:返回 (查询落点值[query 在块内时 Some], 块出口)。
-/// cur = 块入口该名值;query = hover 位(usize::MAX 行 = 整块执行取出口)。
+/// Evaluate a statement block within the domain: returns (the value at the
+/// query landing point [Some when query is inside the block], the block exit).
+/// cur = the value of that name at block entry; query = the hover position
+/// (usize::MAX line = execute the whole block and take the exit).
 fn eval_block(
     stmts: &[FlowStmt],
     writes: &[&BareWrite],
@@ -760,13 +846,14 @@ fn eval_block(
     for stmt in stmts {
         let (start, end) = stmt.span();
         if start > query {
-            break; // 后续语句未执行(执行序 = Pos 字典序严格递增)
+            break; // the following statements do not execute (execution order = Pos lexicographic strictly increasing)
         }
         if query > end {
             match stmt {
                 FlowStmt::Simple { .. } => {
-                    // 整句已执行完:句内全部写点生效(执行序后写胜;无 RHS
-                    // 边界问题——query 已越过整句)
+                    // the whole statement has finished executing: every write site inside it
+                    // takes effect (in execution order the later write wins; no RHS boundary
+                    // concern - query has already passed the whole statement)
                     if let Some(w) = writes
                         .iter()
                         .rev()
@@ -790,9 +877,10 @@ fn eval_block(
                     else_body,
                     ..
                 } => {
-                    // 合流:各分支出口并集;终止分支不达语句后 = 剔除
-                    // (CFGFLOW-04);静态死分支不产出口(CFGFLOW-02);
-                    // 无 else = 入口值路径(CFGFLOW-03)
+                    // merge: union of each branch exit; a terminated branch not reaching
+                    // past the statement = dropped (CFGFLOW-04); a statically dead branch
+                    // produces no exit (CFGFLOW-02); no else = the entry value path
+                    // (CFGFLOW-03)
                     let mut live: Vec<FlowVal> = Vec::new();
                     let mut any_live = false;
                     if *test_const != Some(false) {
@@ -828,8 +916,9 @@ fn eval_block(
                     cur = fold_vals(live);
                 }
                 FlowStmt::Loop { body, orelse, .. } => {
-                    // 保守:0 次执行(入口值)+ ≥1 次(体出口;break/continue
-                    // 路径值同并入——过近似 = 诚实未知方向)
+                    // conservative: 0 iterations (entry value) + >=1 iterations (body exit;
+                    // break/continue path values folded in as well - over-approximation =
+                    // honestly unknown direction)
                     let (_, be) = eval_block(body, writes, cur.clone(), END_OF_FILE);
                     let mut live = vec![cur.clone(), be.val];
                     if !orelse.is_empty() {
@@ -849,16 +938,18 @@ fn eval_block(
             }
             continue;
         }
-        // query 落在本语句位域内
+        // query falls inside this statement position domain
         match stmt {
             FlowStmt::Simple { .. } => {
                 if let Some(w) = writes.iter().find(|w| {
                     w.pos() >= start
                         && w.pos() <= end
                         && w.pos() <= query
-                        // KBUG-ORDER 时间边界:光标仍在本写点语句域内 → 悬停
-                        // 目标(先于 RHS 起始位)= 新值、悬停 RHS 内 = 旧值;
-                        // 已越过本句(同行后句/经由 def 头跨度命中)= 生效
+                        // KBUG-ORDER time boundary: cursor still inside this write site
+                        // statement domain -> hovering the target (before the RHS start
+                        // position) = the new value, hovering inside the RHS = the old value;
+                        // having passed this statement (a later statement on the same line /
+                        // reached via a def head span) = in effect
                         && (query > w.stmt_end || query < w.rhs_pos)
                 }) {
                     cur = FlowVal::One(w.pos());
@@ -886,7 +977,7 @@ fn eval_block(
             } => {
                 if query >= then_span.0 && query <= then_span.1 {
                     if *test_const == Some(false) {
-                        // 静态死分支内查询 = 不可达,诚实未绑定
+                        // query inside a statically dead branch = unreachable, honestly unbound
                         return (
                             Some(FlowVal::Unbound),
                             BlockExit {
@@ -911,7 +1002,7 @@ fn eval_block(
                         return eval_block(eb, writes, cur, query);
                     }
                 }
-                // 头行/行间隙:语句起点值
+                // head line / line gap: the statement start value
                 let exit = BlockExit {
                     val: cur.clone(),
                     terminated: false,
@@ -925,7 +1016,8 @@ fn eval_block(
                     let (qv, _) = eval_block(body, writes, cur.clone(), query);
                     let qv = qv.unwrap_or_else(|| cur.clone());
                     if span_has_write(writes, *body_span) {
-                        // 环回保守:体内该名任一写点在 ≥2 次迭代可达
+                        // loop-back conservative: any write site of that name in the body is
+                        // reachable in >=2 iterations
                         let mut vals = vec![qv];
                         vals.extend(
                             writes
@@ -958,7 +1050,7 @@ fn eval_block(
                     if query >= span.0 && query <= span.1 {
                         let (qv, _) = eval_block(blk, writes, cur.clone(), query);
                         let qv = qv.unwrap_or_else(|| cur.clone());
-                        // 异常/匹配路径保守:入口值并存
+                        // exception / match path conservative: kept alongside the entry value
                         let exit = BlockExit {
                             val: cur.clone(),
                             terminated: false,
@@ -983,15 +1075,18 @@ fn eval_block(
     )
 }
 
-/// 「整块执行到出口」哨兵位(usize::MAX 行;任何真实写点位/span 都先于它,
-/// eval_block 只做大小比较,不触文件真实末行)。
+/// The "whole block executed to exit" sentinel position (usize::MAX line; every
+/// real write position/span sorts before it, eval_block only compares sizes and
+/// never touches the real end of the file).
 static END_OF_FILE: Pos = Pos {
     line: usize::MAX,
     col: 0,
 };
 
-/// 域流树查询:hover 位该名的流敏感可达写点值(终止后查询 = 不可达,诚实
-/// 未绑定;位间隙 = 前语句出口值)。
+/// Flow tree query within the domain: the flow-sensitive reachable write site
+/// value of that name at the hover position (query after termination =
+/// unreachable, honestly unbound; a gap between positions = the previous
+/// statement exit value).
 pub(crate) fn flow_query_value(tree: &[FlowStmt], writes: &[&BareWrite], query: Pos) -> FlowVal {
     let (qv, exit) = eval_block(tree, writes, FlowVal::Unbound, query);
     match qv {
@@ -1006,7 +1101,7 @@ struct DeferredEntry {
     kind: EntryKind,
     line: usize,
     name: String,
-    /// 注解原子(AnnAssign;`X: T` 无值也成立)
+    /// Annotation atom (AnnAssign; `X: T` without a value also counts)
     ann: Option<String>,
     value: RhsShape,
     class_start: Option<usize>,
@@ -1016,28 +1111,34 @@ struct DeferredEntry {
 #[derive(Debug, Default)]
 struct BuildContext {
     entries: Vec<DeferredEntry>,
-    /// 方法域内局部裸名写点:(方法起始行, 名) → [(行, RHS 形态)](源序追加)
+    /// Local bare name write sites within a method domain: (method start line,
+    /// name) -> [(line, RHS shape)] (appended in source order)
     locals: HashMap<(usize, String), Vec<(usize, RhsShape)>>,
-    /// 批 D localReturnType 面:裸名写点全域表(名 → 源序写点,三域同表)
+    /// Batch D localReturnType surface: the global bare name write site table
+    /// (name -> write sites in source order, one table for all three domains)
     bare_writes: HashMap<String, Vec<BareWrite>>,
-    /// KBUG-SCOPE:函数/lambda 词法域表(源序追加,build 末按体首行排序)
+    /// KBUG-SCOPE: function / lambda lexical domain table (appended in source
+    /// order, sorted by body first line at the end of build)
     fn_domains: Vec<FnDomain>,
-    /// KBUG-SCOPE:类体 `global` 声明(类名行 → 名;类体直系写点改记模块域)
+    /// KBUG-SCOPE: class body `global` declarations (class name line -> names;
+    /// class body direct write sites are recorded in the module domain instead)
     scope_globals: HashMap<usize, Vec<String>>,
-    /// KBUG-CFGFLOW:函数域语句流树(header_line → 树)
+    /// KBUG-CFGFLOW: function domain statement flow tree (header_line -> tree)
     fn_trees: HashMap<usize, Vec<FlowStmt>>,
-    /// KBUG-CFGFLOW:类体语句流树(类名行 → 树)
+    /// KBUG-CFGFLOW: class body statement flow tree (class name line -> tree)
     class_trees: HashMap<usize, Vec<FlowStmt>>,
-    /// 模块级 def `-> T` 表
+    /// Module-level def `-> T` table
     def_returns: HashMap<String, DefReturn>,
-    /// 类名 → 类名行(同名多个 = 歧义源)
+    /// Class name -> class name line (several with the same name = ambiguity source)
     class_names: HashMap<String, Vec<usize>>,
-    /// 类名行 → 方法名 → return 注解收集(>1 个同名方法 = 歧义)
+    /// Class name line -> method name -> collected return annotations (>1 method
+    /// with the same name = ambiguous)
     class_methods: HashMap<usize, HashMap<String, Vec<Option<String>>>>,
 }
 
-/// RHS 形态抽取:字面量定型优先(批 B),其余按调用/属性/裸名形态留 owned 快照;
-/// await 壳透明(括号已被 ruff 剥除)。
+/// RHS shape extraction: literal typing first (batch B), everything else kept
+/// as an owned snapshot by call / attribute / bare name shape; the await shell
+/// is transparent (parens are already stripped by ruff).
 fn rhs_shape(expr: &ast::Expr) -> RhsShape {
     let typed = ast_type_of_expr(expr);
     if !typed.is_empty() {
@@ -1048,7 +1149,8 @@ fn rhs_shape(expr: &ast::Expr) -> RhsShape {
             RhsShape::Call(match &*c.func {
                 ast::Expr::Name(n) => CalleeShape::Name(n.id.to_string()),
                 ast::Expr::Attribute(a) => {
-                    // self 接收者先行判(self 是 Name,先查接收者再归类限定)
+                    // judge the self receiver first (self is a Name, check the receiver
+                    // before classifying the qualification)
                     let recv = &*a.value;
                     if is_self_receiver(recv) {
                         CalleeShape::SelfMethod(a.attr.to_string())
@@ -1077,8 +1179,9 @@ fn rhs_shape(expr: &ast::Expr) -> RhsShape {
     }
 }
 
-/// RHS 内 walrus 目标登记为局部写点(顶层 Named + 元组/列表元素 + await 内层;
-/// 更深层嵌套诚实漏,不入链)。
+/// Walrus targets inside the RHS are registered as local write sites (top level
+/// Named + tuple/list elements + await inner layer; deeper nesting is honestly
+/// missed and does not enter the chain).
 fn record_walrus_locals(
     expr: &ast::Expr,
     line: usize,
@@ -1112,8 +1215,9 @@ fn record_walrus_locals(
     }
 }
 
-/// KBUG-SCOPE:直接赋值 lambda 的词法域登记(header=赋值行 = 写点归属键;
-/// 体域 = lambda 表达式行域;无 global/nonlocal 面)。
+/// KBUG-SCOPE: lexical domain registration for a directly assigned lambda
+/// (header = the assignment line = the write site attribution key; body domain
+/// = the lambda expression line domain; no global/nonlocal surface).
 fn record_lambda_domain(ast: &ParsedAst, l: &ast::ExprLambda, line: usize, ctx: &mut BuildContext) {
     let start_line = ast.line_col(l.range.start().to_u32()).0;
     let end_line = last_char_line(ast, l.range);
@@ -1132,22 +1236,26 @@ fn record_lambda_domain(ast: &ParsedAst, l: &ast::ExprLambda, line: usize, ctx: 
     });
 }
 
-/// 参数名全量(位置/仅位置/仅关键字/vararg/kwarg;注解与默认值无关——
-/// 参数位一律本域绑定)。
+/// The full parameter name list (positional / positional-only / keyword-only /
+/// vararg / kwarg; annotations and defaults are irrelevant - a parameter
+/// position always binds in this domain).
 fn param_names(parameters: &ast::Parameters) -> Vec<String> {
     parameters.iter().map(|p| p.name().id.to_string()).collect()
 }
 
-/// 函数/类体 `global`/`nonlocal` 声明名(控制块内声明仍归属直接宿主域;
-/// 嵌套 def/class 不下行——声明只归其直接宿主)。
+/// `global`/`nonlocal` declaration names in a function / class body (a
+/// declaration inside a control block still belongs to the direct host domain;
+/// no descent into nested def/class - a declaration belongs only to its direct
+/// host).
 fn declared_names(body: &[ast::Stmt], global: bool, nonlocal: bool) -> Vec<String> {
     let mut out = Vec::new();
     collect_declared(body, global, nonlocal, &mut out);
     out
 }
 
-/// 本域直系 def 名(BIND-02 局部 def 绑定素材;控制块内 def 同员,嵌套
-/// def 体不下行——属内层域)。
+/// def names direct in this domain (the BIND-02 local def binding material;
+/// defs inside control blocks have the same membership, no descent into a
+/// nested def body - that belongs to the inner domain).
 fn declared_def_names(body: &[ast::Stmt]) -> Vec<String> {
     let mut out = Vec::new();
     collect_declared_def_names(body, &mut out);
@@ -1233,12 +1341,17 @@ fn collect_declared(body: &[ast::Stmt], global: bool, nonlocal: bool, out: &mut 
     }
 }
 
-/// 全模块赋值走查:收集条目快照(方法级 `self.<attr>` 面 + 类体直系裸名面,
-/// 类身份键=类名行——装饰器不计,与 ClassSpan.start_line 同口径)+ 模块级 def/
-/// 类名/类方法表/局部写点。同行复合语句头的体不收集(`if c: self.x = 1` 依
-/// 条件执行,扫描按行序把它当普通行——与旧引擎「行首非 self 不匹配」同语义)。
-/// 收集期产物全量表格(流面与 localReturnType 面同源消费;批 D 起
-/// assignments_from_ast 一并交还,FlowParse 携带)。
+/// Whole-module assignment walk: collect entry snapshots (the method-level
+/// `self.<attr>` surface + the class body direct bare name surface, class
+/// identity key = the class name line - decorators do not count, same
+/// semantics as ClassSpan.start_line) plus the module-level def / class name /
+/// class method tables / local write sites. The body of a same-line composite
+/// statement head is not collected (`if c: self.x = 1` runs conditionally, and
+/// the scan treats it as an ordinary line in line order - the same semantics
+/// as the old engine's "the line does not start with self").
+/// The collection products are full tables (consumed by the flow surface and
+/// the localReturnType surface from the same source; from batch D on,
+/// assignments_from_ast hands them back together and FlowParse carries them).
 struct FlowTables {
     assignments: AssignmentTypes,
     class_direct: ClassAssignmentTypes,
@@ -1260,7 +1373,8 @@ fn assignments_from_ast(
     classes: &[ClassSpan],
 ) -> Result<FlowTables, &'static str> {
     let mut ctx = BuildContext::default();
-    // 模块级 def `-> T` 表(控制块内的模块级 def 同员;类/函数体内不入)
+    // module-level def `-> T` table (module-level defs inside control blocks
+    // have the same membership; defs inside a class / function body do not enter)
     let mut module_defs: HashMap<String, Vec<Option<String>>> = HashMap::new();
     collect_module_defs(ast, &ast.module().body, &mut module_defs);
     for (name, rets) in module_defs {
@@ -1273,8 +1387,9 @@ fn assignments_from_ast(
     }
     walk_assignments(ast, &ast.module().body, None, &mut ctx, None, None);
 
-    // RAW(字面量面)索引:基线图与防环推导都以它为底(推导不叠加推导,
-    // 保证基线与条目解耦、无解析顺序依赖)
+    // RAW (literal surface) index: both the baseline map and the cycle-safe
+    // derivation rest on it (derivation never stacks on derivation, keeping the
+    // baseline decoupled from the entries and free of parse order dependence)
     let mut raw = AssignmentTypes::default();
     let mut raw_direct = ClassAssignmentTypes::default();
     cancel::check_point()?;
@@ -1294,7 +1409,8 @@ fn assignments_from_ast(
         }
     }
 
-    // 推导期:非字面量形态按上下文解析(基线图备忘录/方法表/局部链)
+    // derivation phase: non-literal shapes are resolved by context (baseline
+    // map memo / method table / local chain)
     let mut state = ResolveState {
         lines,
         classes,
@@ -1332,7 +1448,8 @@ fn assignments_from_ast(
             }
         }
     }
-    // RUST-072:终检——取消落在最后一个 entry 推导中也不产部分表。
+    // RUST-072: final check - cancellation landing in the last entry derivation still
+    // yields no partial table.
     cancel::check_point()?;
     Ok(FlowTables {
         assignments: final_map,
@@ -1343,7 +1460,8 @@ fn assignments_from_ast(
         class_methods: ctx.class_methods,
         bare_writes: ctx.bare_writes,
         fn_domains: {
-            // 体首行序(嵌套域按行域嵌套,链构造按 start_line 降序取最内)
+            // body first line order (nested domains nest by line domain;
+            // chain construction takes the innermost by start_line descending)
             let mut domains = ctx.fn_domains;
             domains.sort_by_key(|d| (d.start_line, d.end_line));
             domains
@@ -1355,7 +1473,9 @@ fn assignments_from_ast(
     })
 }
 
-/// 模块级 def 收集(控制块内同员;类/函数体内 def 不入裸名调用表)。
+/// Module-level def collection (defs inside control blocks have the same
+/// membership; defs inside a class / function body do not enter the bare name
+/// call table).
 fn collect_module_defs(
     ast: &ParsedAst,
     body: &[ast::Stmt],
@@ -1402,7 +1522,9 @@ fn collect_module_defs(
     }
 }
 
-/// 类体方法表收集(控制块内 def 同员=批 A 成员口径;嵌套类/嵌套函数不入)。
+/// Class body method table collection (defs inside control blocks have the
+/// same membership = batch A membership semantics; nested classes / nested
+/// functions do not enter).
 fn collect_class_methods(
     ast: &ParsedAst,
     body: &[ast::Stmt],
@@ -1462,13 +1584,14 @@ fn walk_assignments(
     method_start: Option<usize>,
 ) {
     for stmt in body {
-        // RUST-072:已取消即静默短路(签名不变;外层协作点拦住不产部分表)
+        // RUST-072: once cancelled, short circuit silently (signature unchanged; the outer
+        // cooperation point stops any partial table from being produced)
         if cancel::is_cancelled() {
             return;
         }
         let start_line = stmt_start_line(ast, stmt.range());
         if header_line == Some(start_line) {
-            continue; // 同行复合语句体的赋值不收集(条件执行不硬套)
+            continue; // assignments in the body of a same line composite statement are not collected (conditional execution, not force-applied)
         }
         match stmt {
             ast::Stmt::Assign(a) => index_assign(ast, a, None, ctx, class_start, method_start),
@@ -1476,8 +1599,8 @@ fn walk_assignments(
                 index_ann_assign(ast, a, None, ctx, class_start, method_start)
             }
             ast::Stmt::ClassDef(cls) => {
-                // 类身份 = 类名行(装饰器不计;与 ClassSpan.start_line 同口径,
-                // 基线查找才能命中)
+                // class identity = the class name line (decorators do not count; same
+                // semantics as ClassSpan.start_line, so the baseline lookup can hit)
                 let cls_line = ast.line_col(cls.name.range.start().to_u32()).0;
                 ctx.class_names
                     .entry(cls.name.id.to_string())
@@ -1486,21 +1609,26 @@ fn walk_assignments(
                 let mut methods = HashMap::new();
                 collect_class_methods(ast, &cls.body, &mut methods);
                 ctx.class_methods.insert(cls_line, methods);
-                // KBUG-SCOPE:类体 `global` 声明 → 类体直系写点改记模块名空间
-                // (读侧据此放行为模块绑定;嵌套 def 不下行,声明归直接宿主)。
+                // KBUG-SCOPE: class body `global` declaration -> class body direct
+                // write sites are recorded in the module name space instead (the read
+                // side uses this to allow module bindings; nested defs are not descended
+                // into, the declaration belongs to its direct host).
                 let cls_globals = declared_names(&cls.body, true, false);
                 if !cls_globals.is_empty() {
                     ctx.scope_globals.insert(cls_line, cls_globals);
                 }
-                // KBUG-CFGFLOW:类体直系语句流树(类体直系读的流敏感裁定)
+                // KBUG-CFGFLOW: class body direct statement flow tree (the flow sensitive
+                // ruling of class body direct reads)
                 ctx.class_trees
                     .insert(cls_line, build_flow_tree(ast, &cls.body));
-                // 类体直系裸名赋值/注解 → class_direct(基线面);嵌套块与
-                // 嵌套类体内不入(与旧基线「类体缩进直系行」同域)。
+                // class body direct bare name assignment / annotation ->
+                // class_direct (the baseline surface); nested blocks and nested class
+                // bodies do not enter (same domain as the old baseline "class body
+                // indented direct lines").
                 for direct in &cls.body {
                     let line = stmt_start_line(ast, direct.range());
                     if line == start_line {
-                        continue; // `class A: x = 1` 同行直系:基线行域不含类行
+                        continue; // `class A: x = 1` same line direct child: the baseline line domain excludes the class line
                     }
                     match direct {
                         ast::Stmt::Assign(a) => {
@@ -1512,14 +1640,17 @@ fn walk_assignments(
                         _ => {}
                     }
                 }
-                // 递归方法体/控制块/嵌套类(直系已在上面收过;此处再走以
-                // self.<attr>/嵌套类面继续——类体直系裸名不会重复入表)
+                // recurse into method bodies / control blocks / nested classes (direct
+                // children were already collected above; this walk continues the
+                // self.<attr> / nested class surfaces - class body direct bare names
+                // are not double recorded)
                 walk_assignments(ast, &cls.body, Some(start_line), ctx, Some(cls_line), None);
             }
             ast::Stmt::FunctionDef(fun) => {
                 let fun_line = ast.line_col(fun.name.range.start().to_u32()).0;
-                // KBUG-SCOPE:词法域登记(体域 + 参数全量 + global/nonlocal
-                // 声明;嵌套 def 自成一域,与外层域按行域嵌套)。
+                // KBUG-SCOPE: lexical domain registration (body domain + the full
+                // parameter list + global/nonlocal declarations; a nested def forms its
+                // own domain, nesting with the outer domain by line domain).
                 let body_start = fun
                     .body
                     .first()
@@ -1539,7 +1670,8 @@ fn walk_assignments(
                     globals: declared_names(&fun.body, true, false),
                     nonlocals: declared_names(&fun.body, false, true),
                 });
-                // KBUG-CFGFLOW:本域直系语句流树(写点流敏感裁定素材)
+                // KBUG-CFGFLOW: the direct statement flow tree of this domain (material for
+                // the flow sensitive write site ruling)
                 ctx.fn_trees
                     .insert(fun_line, build_flow_tree(ast, &fun.body));
                 walk_assignments(
@@ -1646,10 +1778,12 @@ fn walk_assignments(
     }
 }
 
-/// Assign 收集:目标 Attribute(self.<attr>) → 方法级面;裸名/元组解包目标
-/// (仅类体直系语境)→ class_direct 面。单 Tuple 目标与等长 Tuple 值逐位配对
-/// (`self.x, self.y = 1, 2`;可推导真值);否则全目标共享 RHS 推导(推不出=
-/// 空集替换)。
+/// Assign collection: an Attribute target (self.<attr>) -> the method level
+/// surface; bare name / tuple unpack targets (only in the class body direct
+/// context) -> the class_direct surface. A single Tuple target paired position
+/// by position with an equal length Tuple value (`self.x, self.y = 1, 2`; a
+/// derivable truth); otherwise all targets share the RHS derivation
+/// (underivable = replacement by the empty set).
 fn index_assign(
     ast: &ParsedAst,
     a: &ast::StmtAssign,
@@ -1660,13 +1794,17 @@ fn index_assign(
 ) {
     let line = stmt_start_line(ast, a.range);
     record_walrus_locals(&a.value, line, method_start, ctx);
-    // KBUG-SCOPE:直接赋值 lambda 自成一域(参数遮蔽判定;调用/推导式内
-    // 嵌套 lambda 不入表——其体内无裸名写点,越界读按未绑定诚实处理)。
+    // KBUG-SCOPE: a directly assigned lambda forms its own domain (parameter
+    // shadowing decision; nested lambdas inside a call / comprehension do not
+    // enter the table - their body has no bare name write site, an out of range
+    // read is honestly treated as unbound).
     if let ast::Expr::Lambda(l) = &*a.value {
         record_lambda_domain(ast, l, line, ctx);
     }
-    // 元组解包配对:单 Tuple 目标 × 等长 Tuple 值,无 starred 元素
-    // (KBUG-ORDER:逐元素记位——目标位/RHS 元素位,交换读旧值边界按元素裁定)
+    // tuple unpack pairing: a single Tuple target x an equal length Tuple
+    // value, no starred elements (KBUG-ORDER: record positions element by
+    // element - target position / RHS element position, the "read the old value
+    // when swapped" boundary is ruled per element)
     if let ast::Expr::Tuple(value_tuple) = &*a.value {
         if a.targets.len() == 1 {
             if let ast::Expr::Tuple(target_tuple) = &a.targets[0] {
@@ -1678,8 +1816,10 @@ fn index_assign(
                         .all(|e| !matches!(e, ast::Expr::Starred(_)))
                 {
                     let stmt_end = stmt_end_pos(ast, a.range);
-                    // 同时赋值:全部目标在整句完成时一起绑定——RHS 边界统一取
-                    // 整个值元组起始位(RHS 域内悬停一律读旧值,不逐元素放行)
+                    // simultaneous assignment: all targets bind together when the whole
+                    // statement completes - the RHS boundary uniformly takes the start
+                    // position of the whole value tuple (hovering inside the RHS domain
+                    // always reads the old value, no per element release)
                     let tuple_rhs = stmt_pos(ast, value_tuple.range());
                     for (target, value) in target_tuple.elts.iter().zip(value_tuple.elts.iter()) {
                         push_entry(
@@ -1705,7 +1845,8 @@ fn index_assign(
     let rhs_pos = stmt_pos(ast, a.value.range());
     let stmt_end = stmt_end_pos(ast, a.range);
     for target in &a.targets {
-        // 链式赋值 `x = y = v`:各目标记各自位,同一 RHS 起始位
+        // chained assignment `x = y = v`: each target records its own position, the
+        // same RHS start position
         push_entry(
             line,
             stmt_pos(ast, target.range()),
@@ -1722,8 +1863,9 @@ fn index_assign(
     }
 }
 
-/// AnnAssign 收集:注解文本原子 +(有值时)RHS 推导;无值注解 = 声明知识
-/// (与类级 `X: T` 旧口径同语义)。
+/// AnnAssign collection: the annotation text atom plus (when valued) the RHS
+/// derivation; a value-less annotation = declaration knowledge (same semantics
+/// as the old class level `X: T`).
 fn index_ann_assign(
     ast: &ParsedAst,
     a: &ast::StmtAnnAssign,
@@ -1737,7 +1879,8 @@ fn index_ann_assign(
     let value_shape = match &a.value {
         Some(v) => {
             record_walrus_locals(v, line, method_start, ctx);
-            // KBUG-SCOPE:注解赋值 lambda 同员入域表
+            // KBUG-SCOPE: an annotated assignment lambda enters the domain table with
+            // the same membership
             if let ast::Expr::Lambda(l) = v.as_ref() {
                 record_lambda_domain(ast, l, line, ctx);
             }
@@ -1747,7 +1890,8 @@ fn index_ann_assign(
     };
     let rhs_pos = match &a.value {
         Some(v) => stmt_pos(ast, v.range()),
-        // 无值注解 = 声明知识,无 RHS 读边界(注解尾前即生效)
+        // a value-less annotation = declaration knowledge, no RHS read boundary
+        // (effective before the annotation tail)
         None => stmt_end_pos(ast, a.annotation.range()),
     };
     push_entry(
@@ -1765,10 +1909,13 @@ fn index_ann_assign(
     );
 }
 
-/// 条目落表:`self.<attr>` → 方法级面(类语境=所在类,方法语境=所在方法);
-/// 裸名(仅类体直系语境)→ class_direct。其余目标(下标/starred/切片等)不收集。
-/// `pos`/`stmt_end`/`rhs_pos` = KBUG-ORDER 写点位/语句尾位/RHS 起始位
-/// (裸名面时间边界三件)。
+/// Entry recording: `self.<attr>` -> the method level surface (class context =
+/// the enclosing class, method context = the enclosing method); a bare name
+/// (only in the class body direct context) -> class_direct. Other targets
+/// (subscript / starred / slice etc.) are not collected.
+/// `pos` / `stmt_end` / `rhs_pos` = the KBUG-ORDER write site position /
+/// statement tail position / RHS start position (the three pieces of the bare
+/// name surface time boundary).
 #[allow(clippy::too_many_arguments)]
 fn push_entry(
     line: usize,
@@ -1798,8 +1945,10 @@ fn push_entry(
             }
         }
         ast::Expr::Name(name) => {
-            // 批 D localReturnType 面:裸名写点全域登记(模块/类体/方法体三域
-            // 同表;面查询按域门自筛,不影响既有链面语义)
+            // Batch D localReturnType surface: register the bare name write site
+            // globally (module / class body / method body share one table; the
+            // surface query filters by its domain gate, leaving the existing chain
+            // surface semantics untouched)
             ctx.bare_writes
                 .entry(name.id.to_string())
                 .or_default()
@@ -1812,8 +1961,10 @@ fn push_entry(
                     class_start,
                     method_start,
                 });
-            // 方法域内裸名写点 → 局部链面(最近写点解析的素材);类体直系
-            // (method_start=None)不入局部链(类级链不建模,诚实空)
+            // bare name write site inside a method domain -> the local chain
+            // surface (material for nearest write site resolution); class body
+            // direct (method_start=None) does not enter the local chain (a class
+            // level chain is not modelled, honestly empty)
             if let Some(ms) = method_start {
                 ctx.locals
                     .entry((ms, name.id.to_string()))
@@ -1836,8 +1987,10 @@ fn push_entry(
     }
 }
 
-/// 推导状态:RAW 索引(字面量面)+ 类跨度 + 收集面表格;基线图备忘录防每条目
-/// 重算。表格以引用携带(FlowParse 与收集期 BuildContext 两处同构消费)。
+/// Derivation state: RAW index (literal surface) + class spans + the collected
+/// surface tables; a baseline map memo prevents recomputing per entry. The
+/// tables are carried by reference (consumed isomorphically by both FlowParse
+/// and the collection phase BuildContext).
 pub(crate) struct ResolveState<'a> {
     pub(crate) lines: &'a [Vec<u16>],
     pub(crate) classes: &'a [ClassSpan],
@@ -1852,19 +2005,21 @@ pub(crate) struct ResolveState<'a> {
     pub(crate) baseline_memo: HashMap<(usize, String), TypeSet>,
 }
 
-/// 名字绑定事实:该名在流位置之前/之内是否被绑定,及其值原子。
-/// None = 域内参数/局部 def/全局(nonlocal 穿透)/重绑定歧义 → 声明表不可用;
-/// Some = 未被绑定(可用)或绑定为已知值(别名)。
+/// Name binding fact: whether that name is bound before / at the flow
+/// position, and its value atom.
+/// None = a domain parameter / local def / global (nonlocal passthrough) /
+/// rebinding ambiguity -> the declaration table is unavailable;
+/// Some = not bound (usable) or bound to a known value (an alias).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum CalleeBinding {
-    /// 未被绑定(前置 def/类名照常可用)
+    /// not bound (a preceding def / class name is still usable)
     Unbound,
-    /// 被绑定;值原子(单一原子 Some,否则/不可解 = None)
+    /// bound; the value atom (Some for a single atom, otherwise / unsolvable = None)
     Bound(Option<String>),
 }
 
 impl ResolveState<'_> {
-    /// FlowParse → 推导状态(localReturnType 面与流面同源)。
+    /// FlowParse -> derivation state (the localReturnType surface and the flow surface share the source).
     pub(crate) fn from_flow_parse<'a>(
         fp: &'a FlowParse,
         lines: &'a [Vec<u16>],
@@ -1888,7 +2043,7 @@ impl ResolveState<'_> {
         self.classes.iter().find(|c| c.start_line == class_start)
     }
 
-    /// 类属性基线(RAW 索引上收敛;备忘录)。
+    /// Class attribute baseline (converged over the RAW index; memoized).
     fn baseline(&mut self, class_start: usize, attr: &str) -> TypeSet {
         let key = (class_start, attr.to_string());
         if let Some(t) = self.baseline_memo.get(&key) {
@@ -1902,8 +2057,9 @@ impl ResolveState<'_> {
                 cls,
                 &attr.encode_utf16().collect::<Vec<u16>>(),
             )
-            // RUST-072:取消即空集占位——外层推导循环头 check_point 会
-            // 立即 Err,memo 随本 ResolveState 局部死亡,部分值零外泄。
+            // RUST-072: cancellation yields an empty set placeholder - the outer
+            // derivation loop head check_point errors immediately, the memo dies
+            // with this local ResolveState, and no partial value leaks out.
             .unwrap_or_default(),
             None => TypeSet::new(),
         };
@@ -1911,7 +2067,8 @@ impl ResolveState<'_> {
         out
     }
 
-    /// 方法注解原子(同名方法多个 = 歧义不猜)。
+    /// Method annotation atom (several methods with the same name = ambiguous,
+    /// do not guess).
     pub(crate) fn method_atom(&self, class_start: usize, method: &str) -> Option<String> {
         let rets = self.class_methods.get(&class_start)?.get(method)?;
         if rets.len() != 1 {
@@ -1920,7 +2077,8 @@ impl ResolveState<'_> {
         rets[0].clone()
     }
 
-    /// 唯一同类名(重名类 = 歧义不猜)。
+    /// Unique class of that name (duplicate class names = ambiguous, do not
+    /// guess).
     pub(crate) fn unique_class(&self, name: &str) -> Option<usize> {
         match self.class_names.get(name) {
             Some(v) if v.len() == 1 => Some(v[0]),
@@ -1928,8 +2086,9 @@ impl ResolveState<'_> {
         }
     }
 
-    /// 批 D:裸名 callee 原子——def 注解与唯一同类名二选一,并存=歧义不猜
-    /// (类实例化产类名原子;`x = Repo()` 流证据如实)。
+    /// Batch D: bare name callee atom - either the def annotation or the unique
+    /// class name; both present = ambiguous, do not guess (class instantiation
+    /// yields a class name atom; `x = Repo()` is flow evidence as it stands).
     pub(crate) fn callee_atom(&self, name: &str) -> Option<String> {
         let def = self.def_returns.get(name);
         let cls = self.class_names.get(name);
@@ -1940,14 +2099,19 @@ impl ResolveState<'_> {
         }
     }
 
-    /// KBUG-BIND:裸名声明前置绑定——按流位置的**词法作用域链**裁定该名是否
-    /// 被绑定(与 SCOPE 的值查找同链;`callee_atom` 声明表仅在 `Unbound` 时
-    /// 可用)。类体直系/模块域:裸名照常走声明表(模块绑定类名 A=B 只遮蔽
-    /// 裸名 A,类限定 A.load() 照常走原类——真实 import 场景合法)。
-    /// global/nonlocal 声明域穿透(名属模块/外层名空间,声明表可用)。
+    /// KBUG-BIND: pre-binding of a bare name declaration - rule whether that name
+    /// is bound by the **lexical scope chain** of the flow position (the same chain
+    /// as the SCOPE value lookup; the `callee_atom` declaration table is usable
+    /// only when `Unbound`). Class body direct / module domain: a bare name goes
+    /// through the declaration table as usual (a module binding of a class name
+    /// A=B only shadows the bare name A, a class qualified A.load() still goes to
+    /// the original class - legitimate in a real import scenario).
+    /// global/nonlocal declaration domains pass through (the name belongs to the
+    /// module / outer name space, the declaration table is usable).
     pub(crate) fn callee_binding(&self, name: &str, flow_line: usize) -> CalleeBinding {
         use CalleeBinding::*;
-        // 域内绑定:链上含 flow_line 的函数域(体首行降序,最内先行)
+        // binding inside the domain: function domains on the chain that contain
+        // flow_line (body first line descending, innermost first)
         let mut chain: Vec<&FnDomain> = self
             .fn_domains
             .iter()
@@ -1962,20 +2126,22 @@ impl ResolveState<'_> {
             if domain.globals.iter().any(|n| n == name)
                 || domain.nonlocals.iter().any(|n| n == name)
             {
-                continue; // global/nonlocal:名属模块/外层名空间,声明表可用
+                continue; // global/nonlocal: the name belongs to the module / outer name space, the declaration table is usable
             }
             if domain.params.iter().any(|n| n == name) || domain.def_names.iter().any(|n| n == name)
             {
-                return Bound(None); // 参数/局部 def 调用目标不定 → 声明表不可用
+                return Bound(None); // parameter / local def call target undetermined -> the declaration table is unavailable
             }
-            // 域内写点绑定(读前于写 = 调用位置在前,声明表可用)
+            // write site binding inside the domain (the read precedes the write =
+            // the call position comes first, the declaration table is usable)
             let writes = self.bare_writes.get(name).map(Vec::as_slice).unwrap_or(&[]);
             if writes
                 .iter()
                 .any(|w| w.method_start == Some(domain.header_line))
             {
-                // 绑定值 = 域内最近先行写点(别名链:Local 形态收值;调用/属性
-                // 形态不按声明表猜,收 None)
+                // bound value = the nearest preceding write site in the domain
+                // (alias chain: a Local shape collects the value; a call / attribute
+                // shape is not guessed from the declaration table, collect None)
                 return match writes
                     .iter()
                     .rev()
@@ -1988,11 +2154,12 @@ impl ResolveState<'_> {
                         },
                         _ => Bound(None),
                     },
-                    None => Unbound, // 域内绑定但调用位置在前 → 声明表照常
+                    None => Unbound, // bound in the domain but the call position comes first -> the declaration table as usual
                 };
             }
         }
-        // 类体直系位(不在任何函数域):本类体绑定(直系写点/直系 def)
+        // class body direct position (inside no function domain): binding in this
+        // class body (direct write sites / direct defs)
         let class_direct = self
             .classes
             .iter()
@@ -2016,13 +2183,14 @@ impl ResolveState<'_> {
                         RhsShape::Local(alias) => Bound(self.local_atom(alias, w.line)),
                         _ => Bound(None),
                     },
-                    None => Unbound, // 绑定在调用位置之后 → 声明表照常
+                    None => Unbound, // bound after the call position -> the declaration table as usual
                 };
             }
-            // 类体未绑定 → 落模块
+            // not bound in the class body -> fall through to the module
         }
-        // 模块域(KBUG-BIND-03:模块层重绑定 A=B / A=unknown 一样遮蔽
-        // 声明表;绑定在调用位置之后 = 前向引用,声明表照常)
+        // module domain (KBUG-BIND-03: a module level rebinding A=B / A=unknown
+        // likewise shadows the declaration table; a binding after the call
+        // position = a forward reference, the declaration table is as usual)
         let writes = self.bare_writes.get(name).map(Vec::as_slice).unwrap_or(&[]);
         let in_module = |w: &BareWrite| w.method_start.is_none() && w.class_start.is_none();
         if writes.iter().any(in_module) {
@@ -2035,17 +2203,20 @@ impl ResolveState<'_> {
                     RhsShape::Local(alias) => Bound(self.local_atom(alias, w.line)),
                     _ => Bound(None),
                 },
-                None => Unbound, // 绑定在调用位置之后 → 声明表照常
+                None => Unbound, // bound after the call position -> the declaration table as usual
             };
         }
         Unbound
     }
 
-    /// 裸名**身份原子**链(递归一次):唯一类名 / 有 def 声明的函数名本身
-    /// (非其返回注解——注解面由消费方按名再查;流面消费方对函数名套
-    /// callee_atom 即得返回注解原子,类名即实例化原子)。
+    /// Bare name **identity atom** chain (one recursion): the unique class name /
+    /// the function name itself when it has a def declaration (not its return
+    /// annotation - the annotation surface is looked up by name again on the
+    /// consumer side; a flow surface consumer applying callee_atom to a function
+    /// name gets the return annotation atom, a class name is an instantiation
+    /// atom).
     fn local_atom(&self, name: &str, flow_line: usize) -> Option<String> {
-        // 模块层最近先行写点(别名)
+        // the nearest preceding write site at module level (an alias)
         if let Some(w) = self
             .bare_writes
             .get(name)
@@ -2076,8 +2247,9 @@ impl ResolveState<'_> {
     }
 }
 
-/// RHS 形态推导(有界;环防;越域/未知 → 空集)。flow_line = 当前流位置
-/// (局部链最近写点 = 该位置之前最近一条)。
+/// RHS shape derivation (bounded; cycle guarded; out of domain / unknown ->
+/// the empty set). flow_line = the current flow position (the nearest local
+/// chain write site = the nearest one before that position).
 pub(crate) fn resolve_shape(
     state: &mut ResolveState,
     shape: &RhsShape,
@@ -2098,10 +2270,11 @@ pub(crate) fn resolve_shape(
         },
         RhsShape::Local(name) => {
             if !visited.insert((method_start.unwrap_or(usize::MAX), name.clone())) {
-                return TypeSet::new(); // 环
+                return TypeSet::new(); // cycle
             }
-            // 方法域内最近写点(类体直系 method_start=None 无局部链——模块层
-            // 回退仍可解,见下)
+            // the nearest write site inside a method domain (class body direct with
+            // method_start=None has no local chain - the module level fallback can
+            // still resolve it, see below)
             let method_found = method_start.and_then(|ms| {
                 state.locals.get(&(ms, name.clone())).and_then(|v| {
                     v.iter()
@@ -2111,8 +2284,11 @@ pub(crate) fn resolve_shape(
                 })
             });
             let found = method_found.or_else(|| {
-                // 模块层写点回退(批 D):模块域裸名对方法体/类体可见(Python
-                // 读语义);只认模块层写点(类体实例写点对方法体不可见,诚实漏)
+                // module level write site fallback (batch D): module domain bare
+                // names are visible to method / class bodies (Python read
+                // semantics); only module level write sites count (a class body
+                // instance write site is invisible to the method body, honestly
+                // missed)
                 state.bare_writes.get(name).and_then(|v| {
                     v.iter()
                         .rev()
@@ -2157,12 +2333,15 @@ fn resolve_callee(
         return TypeSet::new();
     }
     let ann = match callee {
-        // KBUG-BIND-02:先解析调用位置的绑定事实——参数/局部 def/域内
-        // 先行写点/别名绑定遮蔽模块声明表;仅 Unbound 时照常走声明表
-        // (动态 callable 未知不因同名声明确定)。
+        // KBUG-BIND-02: resolve the binding fact at the call position first -
+        // a parameter / local def / a preceding write site in the domain / an
+        // alias binding shadows the module declaration table; only when Unbound
+        // does the declaration table apply as usual (an unknown dynamic callable
+        // is not settled by a same-named declaration).
         CalleeShape::Name(n) => match state.callee_binding(n, flow_line) {
-            // 绑定值=身份原子(类名/函数名):流原子按该名再走声明表
-            // (函数名 → 其返回注解;类名 → 实例化原子)
+            // bound value = an identity atom (class name / function name): the flow
+            // atom goes through the declaration table again by that name (function
+            // name -> its return annotation; class name -> the instantiation atom)
             CalleeBinding::Bound(Some(atom)) => state.callee_atom(&atom),
             CalleeBinding::Bound(None) => None,
             CalleeBinding::Unbound => state.callee_atom(n),
@@ -2171,9 +2350,12 @@ fn resolve_callee(
             .unique_class(class)
             .and_then(|cls| state.method_atom(cls, method))
             .or_else(|| {
-                // 裸名接收者二义(批 D):`A.m(...)` 类限定之外还有「局部/模块
-                // 变量.m(...)」——变量原子链裁定(先类限定,非类名才走变量;
-                // 同名类与变量并存时类解释优先)
+                // bare name receiver ambiguity (batch D): besides the class
+                // qualification of `A.m(...)`, there is also "a local / module
+                // variable.m(...)" - decided by the variable atom chain (class
+                // qualification first, a variable only when it is not a class name;
+                // when a same-named class and variable coexist the class reading
+                // wins)
                 let var = RhsShape::Local(class.clone());
                 let atoms = resolve_shape(
                     state,
@@ -2204,7 +2386,7 @@ fn resolve_callee(
                 visited,
             );
             if recv.len() != 1 {
-                return TypeSet::new(); // 接收者不唯一/未知 → 不猜
+                return TypeSet::new(); // the receiver is not unique / unknown -> do not guess
             }
             let atom = recv.iter().next().unwrap();
             state
@@ -2218,36 +2400,43 @@ fn resolve_callee(
     }
 }
 
-// ---- 版本键 LRU 解析缓存(KODE-PERF-001 语义对齐) --------------------------
+// ---- version key LRU parse cache (KODE-PERF-001 semantics alignment) -------
 
-/// 一次解析的全量派生(类跨度 + 赋值类型索引 + 收集面表格),按 versionKey 缓存。
+/// The full derivation of one parse (class spans + assignment type index +
+/// collected surface tables), cached by versionKey.
 #[derive(Debug, Clone)]
 pub struct FlowParse {
     pub classes: Vec<ClassSpan>,
-    /// 方法级 `self.<attr>` 赋值类型(键=起始行;含嵌套函数体——扫描的缩进
-    /// 过滤使其不污染外层流,只在写点查询位命中)
+    /// Method level `self.<attr>` assignment types (key = start line; nested
+    /// function bodies included - the scan indent filtering keeps them from
+    /// polluting the outer flow, they only hit at the write site query position)
     pub assignments: AssignmentTypes,
-    /// 类体直系裸名赋值/注解类型(基线面;嵌套块/嵌套类体内不入,按类身份隔离)
+    /// Class body direct bare name assignment / annotation types (the baseline
+    /// surface; nested blocks / nested class bodies do not enter, isolated by
+    /// class identity)
     pub class_direct: ClassAssignmentTypes,
-    /// 批 D localReturnType 面:裸名写点全域表(名 → 源序写点)
+    /// Batch D localReturnType surface: the global bare name write site table
+    /// (name -> write sites in source order)
     pub(crate) bare_writes: HashMap<String, Vec<BareWrite>>,
-    /// KBUG-SCOPE:函数/lambda 词法域表(体首行序;作用域链/参数遮蔽素材)
+    /// KBUG-SCOPE: function / lambda lexical domain table (body first line order;
+    /// material for the scope chain / parameter shadowing)
     pub(crate) fn_domains: Vec<FnDomain>,
-    /// KBUG-SCOPE:类体 `global` 声明(类名行 → 名)
+    /// KBUG-SCOPE: class body `global` declarations (class name line -> names)
     pub(crate) scope_globals: HashMap<usize, Vec<String>>,
-    /// KBUG-CFGFLOW:函数域语句流树(header_line → 树)
+    /// KBUG-CFGFLOW: function domain statement flow tree (header_line -> tree)
     pub(crate) fn_trees: HashMap<usize, Vec<FlowStmt>>,
-    /// KBUG-CFGFLOW:类体语句流树(类名行 → 树)
+    /// KBUG-CFGFLOW: class body statement flow tree (class name line -> tree)
     pub(crate) class_trees: HashMap<usize, Vec<FlowStmt>>,
-    /// KBUG-CFGFLOW:模块语句流树
+    /// KBUG-CFGFLOW: module statement flow tree
     pub(crate) module_tree: Vec<FlowStmt>,
-    /// 模块级 def `-> T` 表
+    /// Module-level def `-> T` table
     pub(crate) def_returns: HashMap<String, DefReturn>,
-    /// 类名 → 类名行
+    /// Class name -> class name line
     pub(crate) class_names: HashMap<String, Vec<usize>>,
-    /// 类名行 → 方法名 → return 注解收集
+    /// Class name line -> method name -> collected return annotations
     pub(crate) class_methods: HashMap<usize, HashMap<String, Vec<Option<String>>>>,
-    /// 方法域内局部裸名写点(批 C 链素材;面与流共享)
+    /// Local bare name write sites within a method domain (batch C chain
+    /// material; shared by surface and flow)
     pub(crate) locals: HashMap<(usize, String), Vec<(usize, RhsShape)>>,
 }
 
@@ -2258,7 +2447,8 @@ struct ParseCacheEntry {
 
 static PARSE_CACHE: Mutex<Option<ParseCacheEntry>> = Mutex::new(None);
 
-/// 行列表 → 解析派生(UTF-16 行 join('\n') → String → ruff 容错解析)。
+/// Line list -> parse derivation (UTF-16 lines join('\n') -> String -> ruff
+/// tolerant parse).
 fn flow_parse_from_lines(lines: &[Vec<u16>]) -> Result<FlowParse, &'static str> {
     let mut content: Vec<u16> = Vec::new();
     for (idx, line) in lines.iter().enumerate() {
@@ -2291,7 +2481,8 @@ fn flow_parse_from_lines(lines: &[Vec<u16>]) -> Result<FlowParse, &'static str> 
     })
 }
 
-/// 行列表 → 全量派生(localReturnType 面 entry;versionKey 协议同流面)。
+/// Line list -> full derivation (localReturnType surface entry; the versionKey
+/// protocol is the same as the flow surface).
 pub fn flow_parse(
     lines: &[Vec<u16>],
     version_key: Option<&str>,
@@ -2306,7 +2497,7 @@ fn parse_with_version_cache(
     let key = match version_key {
         Some(key) => key,
         None => {
-            // 无键 = 现解析不缓存(纯函数回退)
+            // no key = parse now without caching (the pure function fallback)
             return flow_parse_from_lines(lines);
         }
     };
@@ -2317,14 +2508,15 @@ fn parse_with_version_cache(
     });
     if let Some(cached) = entry.map.get(key) {
         let cached = cached.clone();
-        // LRU 触碰:移到尾(最近使用)
+        // LRU touch: move to the tail (most recently used)
         if let Some(pos) = entry.order.iter().position(|k| k == key) {
             entry.order.remove(pos);
         }
         entry.order.push_back(key.to_string());
         return Ok(cached);
     }
-    // RUST-072:取消(Err)早穿——部分解析绝不入缓存。
+    // RUST-072: cancellation (Err) passes through early - a partial parse never
+    // enters the cache.
     let parsed = flow_parse_from_lines(lines)?;
     entry.map.insert(key.to_string(), parsed.clone());
     entry.order.push_back(key.to_string());
@@ -2336,21 +2528,22 @@ fn parse_with_version_cache(
     Ok(parsed)
 }
 
-/// 清缓存(测试注入口;生产不用)
+/// Clear the cache (a test injection point; unused in production)
 pub fn reset_self_attribute_flow_parse_cache_for_tests() {
     *PARSE_CACHE.lock().unwrap() = None;
 }
 
-// ---- 流类型集合运算 ---------------------------------------------------------
+// ---- flow type set operations ----------------------------------------------
 
 #[derive(Debug)]
 pub struct SelfAttributeFlow {
-    /// 去重排序的原子类型名;空 = 无法确定
+    /// Deduplicated sorted atom type names; empty = undeterminable
     pub types: Vec<String>,
-    /// 格式化注解串('list | None')或 None(types 空)
+    /// The formatted annotation string ('list | None') or None (types empty)
     pub annotation: Option<String>,
     pub has_none: bool,
-    /// 窄化生效:基类含 None 而查询位不含
+    /// The narrowing took effect: the baseline contains None while the query
+    /// position does not
     pub narrowed: bool,
 }
 
@@ -2374,7 +2567,8 @@ fn without_none(types: &TypeSet) -> TypeSet {
         .collect()
 }
 
-/// 排序 + ` | ` 联接(BTreeSet 迭代即升序;空集 → None)
+/// Sort + join with ` | ` (iterating a BTreeSet is already ascending; an empty
+/// set -> None)
 fn format_types(types: &TypeSet) -> Option<String> {
     if types.is_empty() {
         return None;
@@ -2382,7 +2576,8 @@ fn format_types(types: &TypeSet) -> Option<String> {
     Some(types.iter().cloned().collect::<Vec<_>>().join(" | "))
 }
 
-// ---- 行形态扫描器(正则手工展开,左优先 + 回溯语义) -------------------------
+// ---- line shape scanner (regexes manually expanded, leftmost priority +
+//      backtracking semantics) -----------------------------------------------
 
 /// `^\s*if\s+self\.ESC\s+is\s+None\s*:`
 fn none_guard(line: &[u16], attr: &[u16]) -> bool {
@@ -2461,7 +2656,7 @@ fn not_none_guard(line: &[u16], attr: &[u16]) -> bool {
             return false;
         }
     }
-    // 'self' 后应为 '.'
+    // a '.' should follow 'self'
     if line.get(i) != Some(&0x2Eu16) {
         return false;
     }
@@ -2491,9 +2686,12 @@ fn not_none_guard(line: &[u16], attr: &[u16]) -> bool {
     line.get(i) == Some(&0x3Au16)
 }
 
-/// 块开关键字交替(左优先序,与 TS 正则同序):if|elif|else|for|while|try|
-/// except|finally|with + `\b` 词界。JS 行为保真:某关键字命中但词界失败时,
-/// 继续试**后续**交替(如 `elsewhere`:'else' 词界失败,余者不匹配 → 整体否)。
+/// Block opening keyword alternation (leftmost priority order, same order as
+/// the TS regex): if|elif|else|for|while|try|except|finally|with + `\b` word
+/// boundary. JS behavior preserved: when a keyword matches but the word
+/// boundary fails, keep trying the **subsequent** alternatives (e.g.
+/// `elsewhere`: 'else' fails the word boundary, the rest do not match -> the
+/// whole thing is rejected).
 fn any_block_open(line: &[u16]) -> bool {
     const KEYWORDS: [&[u8]; 9] = [
         b"if", b"elif", b"else", b"for", b"while", b"try", b"except", b"finally", b"with",
@@ -2512,7 +2710,7 @@ fn any_block_open(line: &[u16]) -> bool {
             }
         }
         let after = i + keyword.len();
-        // \b:词元后界(行尾 = 界;非 \w = 界)
+        // \b: the boundary after the token (end of line = boundary; a non \w = boundary)
         if after == line.len() || !is_word(line[after]) {
             return true;
         }
@@ -2550,16 +2748,19 @@ fn atom(name: &str) -> TypeSet {
     set
 }
 
-// ---- 方法域定位与流走查器 ---------------------------------------------------
+// ---- method domain location and the flow walker ----------------------------
 
 struct MethodSpan {
     start_line: usize,
     end_line: usize,
 }
 
-/// 方法体界(0 起,含尾):AST 真实体域,全类集合中内含查询行的**最小域**
-/// 者胜(嵌套类行归嵌套类方法、条件 def 域不再越界吞邻;类外/方法间空隙 →
-/// None——空隙行不是使用位,落空即诚实)。
+/// Method body bounds (0 based, inclusive of the tail): the true AST body
+/// domain; among the set of all classes the **innermost domain** that contains
+/// the query line wins (nested class lines belong to the nested class method,
+/// a conditional def domain no longer overreaches and swallows its neighbors;
+/// outside a class / a gap between methods -> None - a gap line is not a use
+/// position, missing is the honest answer).
 fn enclosing_method(classes: &[ClassSpan], line: usize) -> Option<(MethodSpan, usize)> {
     let mut best: Option<(MethodSpan, usize)> = None;
     for (idx, cls) in classes.iter().enumerate() {
@@ -2587,7 +2788,8 @@ fn enclosing_method(classes: &[ClassSpan], line: usize) -> Option<(MethodSpan, u
     best
 }
 
-/// 方法体基础缩进:方法行后首个非空行缩进;无体行 = 方法行缩进 + 1
+/// Method body base indent: the indent of the first non-empty line after the
+/// method line; no body line = the method line indent + 1
 fn method_base_indent(lines: &[Vec<u16>], method: &MethodSpan) -> usize {
     let method_indent = lines
         .get(method.start_line)
@@ -2606,16 +2808,19 @@ fn method_base_indent(lines: &[Vec<u16>], method: &MethodSpan) -> usize {
 
 struct ScanResult {
     state: TypeSet,
-    /// then 分支以 return/raise 终止(不落到块后)
+    /// the then branch terminates with return/raise (does not fall past the block)
     terminal: bool,
-    /// 扫描在 stopAtLine 前停住(查询位在本块内)
+    /// the scan stops before stopAtLine (the query position is inside this block)
     reached_stop: bool,
 }
 
-/// 顺序扫描(同缩进层):赋值覆盖/两种 None 守卫/通用块并集/return raise 终止。
-/// stop 非空时到达查询行前停(写点恰是赋值行先落 RHS 语义再停)。赋值类型
-/// 取自 AST 索引(批 B):键在=赋值成立(空集=未知,替换语义);键不在=该行
-/// 无此赋值,状态保留。
+/// Sequential scan (at the same indent level): assignment override / the two
+/// None guards / generic block union / return raise termination.
+/// When stop is non-empty, stop upon reaching the query line (when the write
+/// site is exactly the assignment line, first apply the RHS semantics, then
+/// stop). Assignment types come from the AST index (batch B): key present = the
+/// assignment holds (an empty set = unknown, replacement semantics); key
+/// absent = no such assignment on that line, state preserved.
 #[allow(clippy::too_many_arguments)]
 fn scan_sequence(
     assignments: &AssignmentTypes,
@@ -2632,7 +2837,8 @@ fn scan_sequence(
     while line <= end_line {
         if let Some(stop) = stop_at_line {
             if line >= stop {
-                // 查询位:先落赋值语义(写点 inlay 显 RHS 类型)再停
+                // query position: first apply the assignment semantics (the write site
+                // inlay shows the RHS type), then stop
                 if let Some(types) = assignments.get(line, attr) {
                     return ScanResult {
                         state: types.clone(),
@@ -2655,10 +2861,10 @@ fn scan_sequence(
         }
         let this_indent = indent_of(text);
         if this_indent < indent {
-            break; // 去缩进:本序列结束
+            break; // dedent: this sequence ends
         }
         if this_indent > indent {
-            line += 1; // 更深缩进(块体)不属本层,跳过
+            line += 1; // a deeper indent (a block body) does not belong to this level, skip it
             continue;
         }
         if let Some(types) = assignments.get(line, attr) {
@@ -2681,7 +2887,8 @@ fn scan_sequence(
                 stop_at_line,
             );
             if inner.terminal {
-                // 早退:then 不落到块后;else 路径继续 → 去 None
+                // early exit: the then branch does not fall past the block; the else path
+                // continues -> None removed
                 state = union_types(&[&without_none(&state)]);
             } else {
                 state = union_types(&[&without_none(&state), &inner.state]);
@@ -2711,7 +2918,8 @@ fn scan_sequence(
                 stop_at_line,
             );
             if inner.terminal {
-                // 早退非 None 块:then 退出,else(X 可 None)继续 → 入口态
+                // early exit on the non-None block: the then branch exits, else (X may be
+                // None) continues -> the entry state
                 state = union_types(&[&state]);
             } else {
                 state = union_types(&[&state, &inner.state]);
@@ -2770,7 +2978,8 @@ fn scan_sequence(
     }
 }
 
-/// 块闭合行:首个缩进 <= 块行缩进的非空行前一行;无 = endLine
+/// Block closing line: the line before the first non-empty line whose indent is
+/// <= the block line indent; none = endLine
 fn find_block_end(lines: &[Vec<u16>], start_line: usize, end_line: usize, indent: usize) -> usize {
     for j in start_line + 1..=end_line {
         if let Some(text) = lines.get(j) {
@@ -2785,7 +2994,8 @@ fn find_block_end(lines: &[Vec<u16>], start_line: usize, end_line: usize, indent
     end_line
 }
 
-/// 块体实际缩进:块行后首个非空行缩进;无体行 = 块行缩进 + 1
+/// The actual block body indent: the indent of the first non-empty line after
+/// the block line; no body line = the block line indent + 1
 fn block_body_indent(lines: &[Vec<u16>], start_line: usize, end_line: usize) -> usize {
     for j in start_line + 1..=end_line {
         if let Some(text) = lines.get(j) {
@@ -2798,8 +3008,10 @@ fn block_body_indent(lines: &[Vec<u16>], start_line: usize, end_line: usize) -> 
     lines.get(start_line).map(|l| indent_of(l)).unwrap_or(0) + 1
 }
 
-/// 收敛基类:类级声明(注解 `X: T` T 优先 + 赋值 `X = ...` 推导)∪ __init__
-/// 体流扫描末态(尾部赋值覆盖)
+/// Converged baseline: class level declarations (annotation `X: T` with T first
+/// + assignment `X = ...` derivation) union the final state of the __init__
+///
+/// body flow scan (the tail assignment overrides)
 fn converged_baseline(
     class_direct: &ClassAssignmentTypes,
     assignments: &AssignmentTypes,
@@ -2814,8 +3026,9 @@ fn converged_baseline(
         .copied()
         .min()
         .unwrap_or(cls.end_line.saturating_sub(1));
-    // 类体直系赋值/注解(AST 收集面;`X: T` 无值=注解文本原子,`X: T = v`
-    // = 注解 + RHS 推导)
+    // class body direct assignment / annotation (the AST collection surface;
+    // `X: T` without a value = the annotation text atom, `X: T = v` = the
+    // annotation + the RHS derivation)
     let mut j = cls.start_line + 1;
     while j < first_method_line && j < cls.end_line {
         cancel::check_point()?;
@@ -2845,8 +3058,9 @@ fn converged_baseline(
     Ok(baseline)
 }
 
-/// 查询位自管属性流敏感类型(纯函数;与 TS inferSelfAttributeFlow 等值)。
-/// None 当:attr 空 / 查询行越界。
+/// The flow-sensitive type of a self-managed attribute at the query position (a
+/// pure function; equal to TS inferSelfAttributeFlow).
+/// None when: attr is empty / the query line is out of bounds.
 pub fn infer_self_attribute_flow(
     lines: &[Vec<u16>],
     query_line: usize,
@@ -2880,7 +3094,9 @@ pub fn infer_self_attribute_flow(
         );
         (result.state, baseline)
     } else {
-        // 类体/模块层:无方法流,直接用收敛基类(内含最小类者胜——嵌套类归属正确)
+        // class body / module level: no method flow, use the converged baseline
+        // directly (the innermost containing class wins - nested class attribution
+        // is correct)
         let cls = classes
             .iter()
             .filter(|c| query_line >= c.start_line && query_line < c.end_line)
@@ -2909,8 +3125,9 @@ pub fn infer_self_attribute_flow(
     }))
 }
 
-// ---- 单测(TS tests/selfAttributeFlowTypes.test.ts 关键例移植;回调面用例
-// ---- 留 TS 侧——生产契约无回调) -------------------------------------------
+// ---- unit tests (key examples ported from TS
+// ---- tests/selfAttributeFlowTypes.test.ts; callback surface cases stay on the
+// ---- TS side - the production contract has no callbacks) -------------------
 
 #[cfg(test)]
 mod tests {
@@ -2949,7 +3166,7 @@ mod tests {
         let f = flow(&body, 6, "TalentTree");
         assert!(!f.has_none);
         assert!(f.narrowed);
-        assert_eq!(f.annotation, None); // 调用注解解不出 → 空集,不硬造 Any
+        assert_eq!(f.annotation, None); // the call annotation cannot be resolved -> the empty set, no fabricated Any
     }
 
     #[test]
@@ -3239,8 +3456,8 @@ mod tests {
         assert_eq!(flow(&body, 6, "c").types, vec!["bool"]);
         assert_eq!(flow(&body, 7, "d").types, vec!["float"]);
         assert_eq!(flow(&body, 8, "e").types, vec!["tuple"]);
-        assert_eq!(flow(&body, 9, "f").annotation, None); // self 链不递归
-        assert_eq!(flow(&body, 10, "j").annotation, None); // 下标形态回落空集
+        assert_eq!(flow(&body, 9, "f").annotation, None); // the self chain is not recursive
+        assert_eq!(flow(&body, 10, "j").annotation, None); // the subscript shape falls back to the empty set
     }
 
     #[test]
@@ -3510,7 +3727,7 @@ mod tests {
             .expect("not cancelled")
             .unwrap();
         assert_eq!(a.annotation, b.annotation);
-        // 异键/无键照常
+        // a different key / no key proceeds as usual
         assert!(
             infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some("file:///a.py|10"))
                 .expect("not cancelled")
@@ -3521,7 +3738,7 @@ mod tests {
             .is_some());
     }
 
-    // ---- 精确性主车道批 A:AST 真域 ------------------------------------
+    // ---- precision main lane batch A: the true AST domains ------------------
 
     #[test]
     fn ast_span_shape_flat_and_nested() {
@@ -3550,7 +3767,8 @@ mod tests {
 
     #[test]
     fn decorated_class_and_def_lines_exclude_decorator() {
-        // ruff class/def range 含 @ 前缀;名行校正后与旧「def 名行」口径一致
+        // the ruff class/def range includes the @ prefix; after correcting to the
+        // name line this matches the old "def name line" semantics
         let src = "@deco\nclass A:\n    @prop\n    def m(self):\n        pass\n";
         let spans = class_spans_from_ast(&ParsedAst::new(src.to_string()));
         assert_eq!(spans[0].name, "A");
@@ -3562,8 +3780,11 @@ mod tests {
 
     #[test]
     fn nested_class_lines_attributed_to_inner_class() {
-        // 旧引擎:嵌套类体内查询行被外层类吞(先含者胜+下一方法起点−1),self.y
-        // 误绑到 Outer.m 的流;真域后归 Inner.n,且 Inner 域内查 x 不跨类硬套。
+        // old engine: a query line inside a nested class body was swallowed by the
+        // outer class (first container wins + the next method start - 1), so self.y
+        // was wrongly bound to the Outer.m flow; with the true domains it belongs to
+        // Inner.n, and querying x within the Inner domain no longer force-applies
+        // across classes.
         let body = [
             "class Outer:",
             "    def m(self):",
@@ -3579,8 +3800,10 @@ mod tests {
 
     #[test]
     fn trailing_class_body_lines_leave_method_domain() {
-        // 旧引擎把类尾行吞进最后方法域(下一方法起点−1→类尾);真域后类级行
-        // 不再继承方法流(查询 m 的写点仍得 int,类级行落基线=诚实空)。
+        // the old engine swallowed the class tail line into the last method domain
+        // (next method start - 1 -> the class tail); with the true domains a class
+        // level line no longer inherits the method flow (querying m still yields the
+        // int write site, a class level line falls to the baseline = honestly empty).
         let body = [
             "class A:",
             "    def m(self):",
@@ -3593,7 +3816,8 @@ mod tests {
 
     #[test]
     fn decorator_lines_are_not_method_domain() {
-        // 装饰器行不在任何方法域(与旧引擎同:类体分支=基线)
+        // decorator lines are inside no method domain (same as the old engine: the
+        // class body branch = the baseline)
         let body = [
             "class A:",
             "    @property",
@@ -3607,7 +3831,8 @@ mod tests {
 
     #[test]
     fn conditional_def_stays_within_its_true_body() {
-        // if TYPE_CHECKING 体内 def:成员归属类(旧展平口径同员),域取真实体
+        // defs inside an if TYPE_CHECKING body: membership goes to the class (same
+        // membership as the old flattened semantics), the domain is the true body
         let body = [
             "class A:",
             "    if TYPE_CHECKING:",
@@ -3621,12 +3846,13 @@ mod tests {
         assert_eq!(flow(&body, 6, "x").types, vec!["int"]);
     }
 
-    // ---- 批 B:typeOfExpr AST 化(字面量面推导升级) -------------------------
+    // ---- batch B: typeOfExpr on the AST (literal surface inference upgrade) -
 
     #[test]
     fn set_literal_not_dict() {
-        // 实测误导账本 #1:{1,2} 首尾字符嗅探误判 dict;AST 后 Set→set,
-        // 空 dict {} 仍 dict,调用 set() 仍不可推导(批 C)。
+        // misleading behavior ledger #1: {1,2} was misjudged as dict by first/last
+        // character sniffing; with the AST Set -> set, an empty dict {} is still dict,
+        // and a call to set() is still underivable (batch C).
         let body = [
             "class A:",
             "    def m(self):",
@@ -3642,7 +3868,8 @@ mod tests {
 
     #[test]
     fn paren_number_not_tuple() {
-        // 旧引擎按首尾字符 `(x)` 判 tuple:括号被 ruff 丢弃,(5) 就是 int。
+        // the old engine judged tuple by the first/last characters `(x)`: parens are
+        // dropped by ruff, (5) is simply an int.
         let body = [
             "class A:",
             "    def m(self):",
@@ -3669,7 +3896,8 @@ mod tests {
 
     #[test]
     fn multiline_rhs_fully_typed() {
-        // 旧引擎 RHS 截到行尾,跨行括号串解不出;AST 取整个表达式节点。
+        // the old engine truncated the RHS at the line end, so a parenthesized span
+        // across lines could not be resolved; the AST takes the whole expression node.
         let body = [
             "class A:",
             "    def m(self):",
@@ -3723,8 +3951,9 @@ mod tests {
 
     #[test]
     fn same_line_compound_not_typed() {
-        // `if c: self.x = 1` 条件执行不硬套(与旧引擎「行首非 self 不匹配」
-        // 同语义):按行序扫描把它当普通行,不收集。
+        // `if c: self.x = 1` runs conditionally and is not force-applied (the same
+        // semantics as the old engine "the line does not start with self"): the scan
+        // treats it as an ordinary line in line order and does not collect it.
         let body = [
             "class A:",
             "    def m(self, c):",
@@ -3745,14 +3974,16 @@ mod tests {
         ];
         assert_eq!(flow(&body, 4, "x").types, vec!["int"]);
         assert_eq!(flow(&body, 4, "y").types, vec!["int"]);
-        // RHS 不可推导:替换语义保留(空集覆盖),不回填旧值
+        // the RHS is underivable: the replacement semantics holds (the empty set
+        // overwrites), the old value is not backfilled
         assert_eq!(flow(&body, 4, "a").types, Vec::<String>::new());
         assert_eq!(flow(&body, 4, "b").types, Vec::<String>::new());
     }
 
     #[test]
     fn chained_targets_all_typed() {
-        // 旧引擎只取首个 RHS 捕获;AST 多目标各自入索引
+        // the old engine only took the first RHS capture; with the AST each target of
+        // a multi-target assignment enters the index
         let body = [
             "class A:",
             "    def m(self):",
@@ -3772,7 +4003,8 @@ mod tests {
             "        self.y: int",
             "        return self.x",
         ];
-        // 注解原子 + RHS 推导并存(与类级 AnnAssign 同口径)
+        // the annotation atom + the RHS derivation coexist (the same semantics as a
+        // class level AnnAssign)
         assert_eq!(flow(&body, 4, "x").types, vec!["MyClass", "None"]);
         assert_eq!(flow(&body, 4, "y").types, vec!["int"]);
     }
@@ -3794,8 +4026,10 @@ mod tests {
 
     #[test]
     fn docstring_assignment_not_fabricated() {
-        // 旧引擎逐行文本扫描:docstring 里的 `self.x = 1` 被当真赋值(int)。
-        // AST 后它是 StringLiteral 语句,不产赋值——假象消除,诚实空。
+        // the old engine scanned text line by line: `self.x = 1` inside a docstring
+        // was taken as a real assignment (int).
+        // With the AST it is a StringLiteral statement and produces no assignment -
+        // the illusion is gone, honestly empty.
         let body = [
             "class A:",
             "    def m(self):",
@@ -3809,8 +4043,8 @@ mod tests {
 
     #[test]
     fn semicolon_combo_each_typed() {
-        // 旧引擎 RHS 捕获吞到行尾(`1; self.b = 2` 整段当一个 RHS);AST 按
-        // 语句切分,各自推导。
+        // the old engine swallowed the RHS capture to the line end (`1; self.b = 2`
+        // treated as one whole RHS); the AST splits by statement and derives each.
         let body = [
             "class A:",
             "    def m(self):",
@@ -3823,7 +4057,8 @@ mod tests {
 
     #[test]
     fn module_call_annotation_hit() {
-        // 批 C:同文件 def `-> T` 注解直取(裸名调用面)
+        // batch C: take the same-file def `-> T` annotation directly (the bare name
+        // call surface)
         let body = [
             "def make_tree() -> Tree:",
             "    return None",
@@ -3838,12 +4073,13 @@ mod tests {
         let f = flow(&body, 8, "t");
         assert_eq!(f.types, vec!["Tree"]);
         assert!(!f.has_none);
-        assert!(f.narrowed); // 基线 None 被可推导调用覆盖 → 窄化如实
+        assert!(f.narrowed); // the baseline None is overwritten by a derivable call -> the narrowing is faithful
     }
 
     #[test]
     fn module_call_quoted_annotation_kept_raw() {
-        // 字符串注解切片带引号保留(与旧注解原子口径一致)
+        // a string annotation slice keeps its quotes (consistent with the old
+        // annotation atom semantics)
         let body = [
             "def make_cfg() -> \"Config\":",
             "    return None",
@@ -3872,7 +4108,8 @@ mod tests {
 
     #[test]
     fn module_call_ambiguous_name_not_guessed() {
-        // 同名两个模块级 def:歧义=未知,不取首定义硬猜
+        // two module-level defs with the same name: ambiguous = unknown, never guess
+        // the first definition
         let body = [
             "def make() -> Foo:",
             "    return None",
@@ -3918,7 +4155,8 @@ mod tests {
 
     #[test]
     fn qualified_class_ambiguous_not_guessed() {
-        // 同名类两个:类限定解析歧义 → 诚实空
+        // two classes with the same name: class qualified resolution is ambiguous ->
+        // honestly empty
         let body = [
             "class Repo:",
             "    def load(self) -> Row:",
@@ -3937,7 +4175,8 @@ mod tests {
 
     #[test]
     fn chained_call_via_class_atom() {
-        // 链式 f().g():f 注解恰为同类名 → 该类方法注解(实测误导账本 #5)
+        // chained f().g(): the f annotation is exactly a class name -> that class
+        // method annotation (misleading behavior ledger #5)
         let body = [
             "class Repo:",
             "    def load(self) -> Row:",
@@ -3956,7 +4195,7 @@ mod tests {
 
     #[test]
     fn chained_receiver_not_class_atom_honest_empty() {
-        // 接收者原子不是同类名(int)→ 不猜
+        // the receiver atom is not a class name (int) -> do not guess
         let body = [
             "class Repo:",
             "    def load(self) -> Row:",
@@ -3975,7 +4214,8 @@ mod tests {
 
     #[test]
     fn instantiation_flows_class_atom() {
-        // 批 D:callee 原子面补全——类实例化产类名原子(`x = Repo()` 流证据如实)
+        // batch D: callee atom surface completion - class instantiation yields a class
+        // name atom (`x = Repo()` is flow evidence as it stands)
         let body = [
             "class Repo:",
             "    pass",
@@ -3990,7 +4230,8 @@ mod tests {
 
     #[test]
     fn class_and_def_same_name_callee_atom_ambiguous() {
-        // 批 D:def 与唯一同类名并存 = 歧义,不猜(诚实空)
+        // batch D: a def and a unique same-named class coexisting = ambiguous, do
+        // not guess (honestly empty)
         let body = [
             "class Repo:",
             "    pass",
@@ -4008,7 +4249,8 @@ mod tests {
 
     #[test]
     fn qualified_bare_name_variable_receiver_in_flow() {
-        // 批 D:裸名接收者二义——非类名走变量原子链(模块 `repo` → Repo 原子)
+        // batch D: bare name receiver ambiguity - a non class name goes through the
+        // variable atom chain (module `repo` -> the Repo atom)
         let body = [
             "class Repo:",
             "    def load(self) -> Row:",
@@ -4059,7 +4301,8 @@ mod tests {
 
     #[test]
     fn local_chain_to_self_attr_baseline() {
-        // `x = self.z` → 类属性基线(深度 1);基线图在 RAW 索引上收敛
+        // `x = self.z` -> the class attribute baseline (depth 1); the baseline map is
+        // converged over the RAW index
         let body = [
             "class A:",
             "    def __init__(self):",
@@ -4086,14 +4329,16 @@ mod tests {
             "        self.x = y",
             "        return self.x",
         ];
-        // 最近写点胜(替换语义同 self.<attr> 面)
+        // the nearest write site wins (the replacement semantics, same as the
+        // self.<attr> surface)
         assert_eq!(flow(&body, 7, "x").types, vec!["None"]);
-        assert_eq!(flow(&body, 5, "x").types, Vec::<String>::new()); // y=1 之前:无写点
+        assert_eq!(flow(&body, 5, "x").types, Vec::<String>::new()); // before y=1: no write site
     }
 
     #[test]
     fn local_chain_cycle_honest_empty() {
-        // b = a; a = b(流序环):visited 防环 → 诚实空
+        // b = a; a = b (a cycle in flow order): the visited set guards against cycles
+        // -> honestly empty
         let body = [
             "class A:",
             "    def m(self):",
@@ -4107,7 +4352,8 @@ mod tests {
 
     #[test]
     fn local_chain_forward_reference_honest_empty() {
-        // a = b 在 b 写点之前:流序前向引用不可推导 → 诚实空
+        // a = b before the write site of b: a forward reference in flow order is
+        // underivable -> honestly empty
         let body = [
             "class A:",
             "    def m(self):",
@@ -4121,8 +4367,10 @@ mod tests {
 
     #[test]
     fn local_chain_hop_bound() {
-        // 有界跳数:条目形态深度 0,每解一层裸名 +1(RESOLVE_MAX_HOPS=4)
-        // → 4 具名变量链在界内(v1 形态深度 4),6 具名变量链越界诚实空
+        // bounded hops: an entry shape has depth 0, each bare name layer resolved adds
+        // 1 (RESOLVE_MAX_HOPS=4)
+        // -> a chain of 4 named variables is within the bound (the v1 shape has depth
+        // 4), a chain of 6 named variables exceeds it, honestly empty
         let body = [
             "class A:",
             "    def m(self):",
@@ -4142,7 +4390,8 @@ mod tests {
 
     #[test]
     fn guard_narrowing_with_call_annotation() {
-        // KBEngine 旗舰形态:__init__ None + 守卫后可推导调用 → 窄化如实
+        // the KBEngine flagship shape: __init__ None + a derivable call after the
+        // guard -> the narrowing holds faithfully
         let body = [
             "def make_tree() -> Tree:",
             "    return None",
@@ -4159,7 +4408,7 @@ mod tests {
         assert_eq!(f.types, vec!["Tree"]);
         assert!(!f.has_none);
         assert!(f.narrowed);
-        // 守卫前仍是 None 证据
+        // still the None evidence before the guard
         assert!(flow(&body, 7, "TalentTree").has_none);
     }
 
@@ -4179,7 +4428,8 @@ mod tests {
 
     #[test]
     fn string_content_assignment_not_fabricated() {
-        // 同 docstring 面:字符串字面量内容里的赋值形文本不是赋值
+        // the same docstring surface: assignment-shaped text inside a string literal
+        // is not an assignment
         let body = [
             "class A:",
             "    def m(self):",
@@ -4190,13 +4440,17 @@ mod tests {
         assert_eq!(flow(&body, 3, "x").types, Vec::<String>::new());
     }
 
-    // ---- COV-1 覆盖提满批(2026-11-19):按 llvm-cov 缺口清单逐臂补测 ----
-    // 命名规约:cov_<主题>;每条瞄准一组未盖行(注释给行域,防漂移后失义)。
+    // ---- COV-1 coverage top-up batch (2026-11-19): fill in tests arm by arm
+    // per the llvm-cov gap list ----
+    // Naming convention: cov_<topic>; each test targets a set of uncovered lines
+    // (the comments give the line ranges so the meaning survives later drift).
 
-    /// 流树构建臂:While(628-638)/Match Join+With(678-693),及查询定位
-    /// 分支:while 体内(943-948)/头行与体外(950-954)/match case 内
-    /// (956-967)/case 外(969-973)/if 头行间隙(915-919);else-of-真值
-    /// 死支查询(899-913)与 while-else(836-837)、双亡合流(820-826)。
+    /// Flow tree construction arms: While (628-638) / Match Join+With (678-693),
+    /// plus the query location branches: inside a while body (943-948) / the head
+    /// line and outside the body (950-954) / inside a match case (956-967) /
+    /// outside a case (969-973) / an if head line gap (915-919); a query in the
+    /// else-of-true dead branch (899-913), plus while-else (836-837) and a
+    /// doubly dead merge (820-826).
     #[test]
     fn cov_flow_tree_while_match_with_queries() {
         let body = [
@@ -4216,22 +4470,22 @@ mod tests {
             "            self.a = 4", // 13
             "        return self.a",  // 14
         ];
-        let at_header = flow(&body, 3, "a"); // 头行:入口值(None)
+        let at_header = flow(&body, 3, "a"); // head line: the entry value (None)
         assert!(at_header.has_none, "header query keeps entry None");
-        let in_body = flow(&body, 4, "a"); // 体内写点环回保守
+        let in_body = flow(&body, 4, "a"); // the write site in the body, loop back conservative
         assert!(
             in_body.types.iter().any(|t| t == "None" || t == "int"),
             "body query folds write/entry: {:?}",
             in_body.types
         );
-        let in_case = flow(&body, 9, "a"); // Join 块内
+        let in_case = flow(&body, 9, "a"); // inside the Join block
         assert!(
             in_case.types.iter().any(|t| t == "int"),
             "case body sees its write: {:?}",
             in_case.types
         );
-        let after = flow(&body, 14, "a"); // 全树合流
-                                          // while 0 次执行路径保守并入入口 None(CFGFLOW 保守过近似)
+        let after = flow(&body, 14, "a"); // the merge of the whole tree
+                                          // the while 0-iteration path is conservatively merged with the entry None (the CFGFLOW conservative over-approximation)
         assert_eq!(
             after.types,
             vec!["None".to_string(), "int".to_string(), "str".to_string()]
@@ -4244,12 +4498,12 @@ mod tests {
             "class K:",
             "    def m(self):",
             "        self.a = 'init'",
-            "        if False:",      // 3 死 then
+            "        if False:",      // 3 dead then
             "            self.a = 1", // 4
             "        if True:",       // 5
             "            self.a = 2", // 6
             "        else:",
-            "            self.a = 3", // 8 静态死 else:查询位 → Unbound
+            "            self.a = 3", // 8 statically dead else: the query position -> Unbound
             "        if None:",       // 9
             "            self.a = 4", // 10
             "        if 0:",          // 11
@@ -4264,7 +4518,8 @@ mod tests {
             "            self.a = 9", // 20
             "        return self.a",  // 21
         ];
-        // 写行命中短路:查询位=写点行时直接回该写值(即使身处静态死 else)
+        // write line hit short circuit: when the query position = the write site line,
+        // return that written value directly (even inside a statically dead else)
         assert_eq!(flow(&body, 8, "a").types, vec!["int".to_string()]);
         let dead_pass: Vec<&str> = vec![
             "class K:",
@@ -4273,15 +4528,17 @@ mod tests {
             "        if True:",
             "            self.a = 1",
             "        else:",
-            "            pass", // 6 查询位:死 else 内非写行 → 899-913 Unbound
+            "            pass", // 6 the query position: a non-write line inside the dead else -> 899-913 Unbound
         ];
-        // 死 else 内非写行:现实现并 then 出口+入口(实测钉板)
+        // a non-write line inside a dead else: the current implementation merges the
+        // then exit + the entry (pinned against the actual behavior)
         assert_eq!(
             flow(&dead_pass, 6, "a").types,
             vec!["int".to_string(), "str".to_string()]
         );
         let after = flow(&body, 21, "a");
-        // 死支不产出口:活写点(int)2/6/8/14/18 + 入口 str;None 写点(9)在死支
+        // a dead branch produces no exit: live write sites (int) 2/6/8/14/18 + the
+        // entry str; the None write site (9) is in the dead branch
         assert_eq!(after.types, vec!["int".to_string(), "str".to_string()]);
         assert!(!after.has_none, "{:?}", after.types);
     }
@@ -4292,16 +4549,17 @@ mod tests {
             "class K:",
             "    def m(self):",
             "        self.a = 'x'",
-            "        if True:", // 3 then 唯一活支且终止,无 else → any_live=false(820-826)
+            "        if True:", // 3 the then branch is the only live branch and terminates, no else -> any_live=false (820-826)
             "            return",
-            "        return self.a", // 5 查询位:合流终止后的非写行
+            "        return self.a", // 5 the query position: a non-write line after the terminated merge
         ];
-        // any_live=false(820-826):终止合流,终值=入口写点 str
+        // any_live=false (820-826): a terminated merge, the final value = the entry
+        // write site str
         assert_eq!(flow(&body, 5, "a").types, vec!["str".to_string()]);
     }
 
-    /// 数值/字面原子臂:complex 字面(308/326/357)、TString(313)、
-    /// 一元 ±(349-352)、walrus(350)。
+    /// Numeric / literal atom arms: complex literal (308/326/357), TString (313),
+    /// unary +/- (349-352), walrus (350).
     #[test]
     fn cov_numeric_atom_variants() {
         let body = [
@@ -4309,10 +4567,10 @@ mod tests {
             "    def m(self):",
             "        self.c = 1j",        // 2
             "        self.h = 2j",        // 3
-            "        self.d = -xx",       // 4 一元负,操作数名 → Unknown
+            "        self.d = -xx",       // 4 unary minus, the operand is a name -> Unknown
             "        self.e = +yy",       // 5
             "        self.f = (zz := 5)", // 6 walrus → int
-            "        self.g = t'hi'",     // 7 模板串 → str
+            "        self.g = t'hi'",     // 7 template string -> str
             "        return",
         ];
         assert_eq!(flow(&body, 2, "c").types, vec!["complex".to_string()]);
@@ -4327,8 +4585,8 @@ mod tests {
         assert_eq!(flow(&body, 7, "g").types, vec!["str".to_string()]);
     }
 
-    /// 行基础判定:tab 缩进(109-110)与行扫描器 none_guard/
-    /// not_none_guard/any_block_open 全臂直调。
+    /// Line level predicates: tab indent (109-110) and direct calls to every arm of
+    /// the line scanner none_guard / not_none_guard / any_block_open.
     #[test]
     fn cov_line_scanners_direct_arms() {
         assert_eq!(indent_of(&"\t x".encode_utf16().collect::<Vec<u16>>()), 5);
@@ -4337,20 +4595,25 @@ mod tests {
 
         let a = attr_u16("ESC");
         let u = |s: &str| -> Vec<u16> { s.encode_utf16().collect() };
-        // none_guard:命中 + 各失败位(词间无空格/缺点/属性不符/缺冒号)
+        // none_guard: a hit plus each failure position (no space between the words /
+        // a missing dot / the wrong attribute / a missing colon)
         assert!(none_guard(&u("    if self.ESC is None:"), &a));
         assert!(!none_guard(&u("    ifself.ESC is None:"), &a));
         assert!(!none_guard(&u("    if selfESC is None:"), &a));
         assert!(!none_guard(&u("    if self.OTHER is None:"), &a));
         assert!(!none_guard(&u("    if self.ESC is None"), &a));
         assert!(!none_guard(&u("    if self.ESC are None:"), &a));
-        // not_none_guard(整体未盖 → 全臂)。**现状钉板**:词循环要求
-        // `self` 后必须有空白再 `.`——正常 Python 形态 `self.ESC` 永假,
-        // 与 TS 真源(selfAttributeFlowTypes.ts notNoneGuard,`self\.` 无
-        // 空白)及本函数 doc 相悖;已登记 COV-1 finding,修复归独立批
-        // (会翻转 is_not_none_guard_terminal_and_block_stop 等钉板)。
-        assert!(!not_none_guard(&u("if self.ESC is not None:"), &a)); // 分歧形态
-        assert!(not_none_guard(&u("if self .ESC is not None:"), &a)); // 现状唯一接受形态
+        // not_none_guard (wholly uncovered -> every arm). **Pinned against the
+        // current state**: the word loop requires
+        // whitespace after `self` before `.` - the normal Python shape `self.ESC` is
+        // always false,
+        // which contradicts the TS true source (selfAttributeFlowTypes.ts
+        // notNoneGuard, `self\.` with no
+        // whitespace) and this function doc; a COV-1 finding has been filed, the fix
+        // belongs to an independent batch
+        // (it will flip pins such as is_not_none_guard_terminal_and_block_stop).
+        assert!(!not_none_guard(&u("if self.ESC is not None:"), &a)); // the divergent shape
+        assert!(not_none_guard(&u("if self .ESC is not None:"), &a)); // the only shape the current state accepts
         assert!(not_none_guard(
             &u("   if  self  .ESC  is  not  None  :"),
             &a
@@ -4359,15 +4622,17 @@ mod tests {
         assert!(!not_none_guard(&u("ifself .ESC is not None:"), &a));
         assert!(!not_none_guard(&u("if self .X is not None:"), &a));
         assert!(!not_none_guard(&u("if self .ESC are not None:"), &a));
-        // any_block_open:关键字 + 词界失败继续试后续交替
+        // any_block_open: on a keyword hit with a failed word boundary, keep trying
+        // the subsequent alternatives
         assert!(any_block_open(&u("  if x:")));
-        assert!(!any_block_open(&u("elsewhere = 1"))); // 'else' 词界败,余者不匹配
+        assert!(!any_block_open(&u("elsewhere = 1"))); // 'else' fails the word boundary, the rest do not match
         assert!(any_block_open(&u("finally:")));
         assert!(any_block_open(&u("with a as b:")));
         assert!(!any_block_open(&u("return 1")));
     }
 
-    /// LRU 逐出(2332-2334):容量 8,插 9 键必逐最旧。
+    /// LRU eviction (2332-2334): capacity 8, inserting 9 keys always evicts the
+    /// oldest.
     #[test]
     fn cov_parse_cache_lru_eviction() {
         reset_self_attribute_flow_parse_cache_for_tests();
@@ -4379,8 +4644,9 @@ mod tests {
         reset_self_attribute_flow_parse_cache_for_tests();
     }
 
-    /// 取消探针(RUST-072):Err 早穿(2869/2896 收敛臂须经缓存命中
-    /// 越过解析检查点才可达)。
+    /// Cancellation probe (RUST-072): Err passes through early (the 2869/2896
+    /// convergence arms are only reachable when a cache hit bypasses the parse
+    /// checkpoint).
     #[test]
     fn cov_cancel_probe_err_propagation() {
         use std::sync::atomic::AtomicBool;
@@ -4393,17 +4659,18 @@ mod tests {
             "        self.a = g",
             "        return self.a",
         ]);
-        // 预热两个域的缓存(方法域 + 类体域)
+        // warm the cache for both domains (the method domain + the class body domain)
         flow_parse(&lines, Some("cancel-warm")).expect("warm");
         infer_self_attribute_flow(&lines, 4, &attr_u16("a"), Some("cancel-warm"))
             .expect("infer warm");
         crate::cancel::set_probe(Some(Arc::new(AtomicBool::new(true))));
-        // 解析期检查点(flow_parse_from_lines 三检查点)
+        // parse time checkpoints (the three checkpoints of flow_parse_from_lines)
         assert!(matches!(
             flow_parse(&lines, None),
             Err(crate::cancel::CANCELLED_MSG)
         ));
-        // 缓存命中越过解析 → 收敛/方法域臂的 `?`(2869/2896)
+        // a cache hit bypasses the parse -> the `?` of the convergence / method domain
+        // arms (2869/2896)
         assert!(matches!(
             infer_self_attribute_flow(&lines, 4, &attr_u16("a"), Some("cancel-warm")),
             Err(crate::cancel::CANCELLED_MSG)
@@ -4415,37 +4682,38 @@ mod tests {
         crate::cancel::set_probe(None);
     }
 
-    /// 类体/模块体 walker 臂:while/with/match/try 各嵌套位
+    /// Class body / module body walker arms: the nested positions of
+    /// while/with/match/try
     /// (232-249,1167-1229,1381-1445,1586-1642)。
     #[test]
     fn cov_class_and_module_walker_stmt_kinds() {
         let body = [
             "flag = 1",
-            "while flag:", // 1 模块级 while(1381-1385)
+            "while flag:", // 1 module level while (1381-1385)
             "    def mod_w(): pass",
-            "with flag:", // 3 模块级 with(1385)
+            "with flag:", // 3 module level with (1385)
             "    def mod_x(): pass",
-            "match flag:", // 5 模块级 match(1395-1398)
+            "match flag:", // 5 module level match (1395-1398)
             "    case 1:",
             "        def mod_m(): pass",
             "class Outer:",
             "    y = 1",
-            "    while y:", // 10 类体 while(232-236,1428-1431,1586-1595)
+            "    while y:", // 10 class body while (232-236,1428-1431,1586-1595)
             "        class InW: pass",
-            "    with y:", // 12 类体 with(236,1432,1597-1606)
+            "    with y:", // 12 class body with (236,1432,1597-1606)
             "        class InX: pass",
-            "    match y:", // 14 类体 match(246-249,1442-1445,1631-1642)
+            "    match y:", // 14 class body match (246-249,1442-1445,1631-1642)
             "        case 1:",
             "            class InM: pass",
-            "    try:", // 17 类体 try(1433-1441)
+            "    try:", // 17 class body try (1433-1441)
             "        def cm(self): pass",
             "    except Exception:",
             "        pass",
-            "    for y2 in range(2):", // 21 类体 for(1424-1427)
+            "    for y2 in range(2):", // 21 class body for (1424-1427)
             "        def cm2(self): pass",
             "    def flow_method(self):",
             "        self.attr = None",
-            "        for i in range(3):", // 25 方法体 for(1167-1170,1208-1211)
+            "        for i in range(3):", // 25 method body for (1167-1170,1208-1211)
             "            def in_for(): pass",
             "        else:",
             "            self.attr = 2",
@@ -4459,7 +4727,7 @@ mod tests {
             "            case 1:",
             "                pass",
             "        if flag:",
-            "            if flag:", // elif 链(1421)
+            "            if flag:", // elif chain (1421)
             "                pass",
             "            elif flag:",
             "                pass",
@@ -4477,30 +4745,36 @@ mod tests {
         );
     }
 
-    /// 嵌套类最小域(2572-2573)与单行方法缩进回退(2602-2604)、
-    /// 单行类直系(1503)、类体 global(1493)、lambda 域(1742)。
+    /// The nested class innermost domain (2572-2573) and the single line method
+    /// indent fallback (2602-2604),
+    /// a single line class direct child (1503), class body global (1493), the
+    /// lambda domain (1742).
     #[test]
     fn cov_domain_picks_and_single_line_forms() {
         let nested = [
             "class A:",
             "    class B:",
             "        def inner(self):",
-            "            self.x = 1", // 3 查询位(嵌套类方法)
+            "            self.x = 1", // 3 the query position (nested class method)
             "    def outer(self):",
             "        self.x = 's'",
         ];
-        // 嵌套类方法域最小拾取(2572):inner 域写点可见
+        // nested class method domain innermost pick (2572): the inner domain write
+        // sites are visible
         assert_eq!(flow(&nested, 3, "x").types, vec!["int".to_string()]);
 
         let single = [
             "class S:",
-            "    def m(self): self.a = 1",    // 单行方法体
-            "    def n(self): return self.a", // 2 查询位
+            "    def m(self): self.a = 1",    // single line method body
+            "    def n(self): return self.a", // 2 the query position
         ];
-        // 单行 def 体:缩进回退吃臂(2602-2604),写点不进表 → 空集(实测钉板)
+        // single line def body: the indent fallback arm (2602-2604), the write site
+        // does not enter the table -> the empty set (pinned against the actual
+        // behavior)
         assert_eq!(flow(&single, 2, "a").types, Vec::<String>::new());
 
-        // 单行类 + 同行直系赋值(基线行域不含类行 continue)
+        // a single line class + a same line direct assignment (the baseline line
+        // domain excludes the class line continue)
         let one_line = ["class OL: x = 1", "def use(): return OL.x"];
         flow_parse(&lines_of(&one_line), None).expect("single-line class parses");
 
@@ -4508,48 +4782,54 @@ mod tests {
             "class L:",
             "    def m(self):",
             "        self.a = 1",
-            "        f = lambda: self.a", // 3 lambda 域登记(1742)+最小域拾取(2572)
+            "        f = lambda: self.a", // 3 lambda domain registration (1742) + the innermost domain pick (2572)
         ];
-        // lambda 最小域拾取(2572):域内查询可见先前写点
+        // lambda innermost domain pick (2572): a query within the domain sees the
+        // preceding write site
         assert_eq!(flow(&lam, 3, "a").types, vec!["int".to_string()]);
 
         let glob = [
-            "g = 1", // 模块名
+            "g = 1", // a module name
             "class G:",
-            "    global g", // 类体 global 声明(1493)
+            "    global g", // class body global declaration (1493)
             "    def m(self):",
             "        self.a = g", // 4
         ];
-        // 类体 global 声明(1493)后,方法内见模块名 g 的 int
+        // after the class body global declaration (1493), the int of the module name
+        // g is visible inside the method
         assert_eq!(flow(&glob, 4, "a").types, vec!["int".to_string()]);
     }
 
-    /// 绑定/被调臂:类体裸名绑定(2004-2019)、方法内 local 别名
-    /// (2015-2016)、模块级裸写别名(2053-2062)、global/nonlocal 让位
-    /// (1965)、未知接收者不猜(2207)、CalleeBinding 两态(2166-2167)。
+    /// Binding / callee arms: class body bare name binding (2004-2019), a local
+    /// alias inside a method
+    /// (2015-2016), a module level bare write alias (2053-2062),
+    /// global/nonlocal yielding (1965), an unknown receiver is not guessed (2207),
+    /// the two CalleeBinding states (2166-2167).
     #[test]
     fn cov_binding_and_callee_arms() {
         let body = [
-            "alias = list", // 模块级裸写(2053-2062)
+            "alias = list", // module level bare write (2053-2062)
             "class K:",
-            "    helper = dict", // 类体直系(2004-2019)
+            "    helper = dict", // class body direct child (2004-2019)
             "    def m(self):",
-            "        self.a = helper", // 4 类绑定名
-            "        b = alias",       // local 别名
+            "        self.a = helper", // 4 a class bound name
+            "        b = alias",       // a local alias
             "        self.b = b",      // 6 Local(alias) → local_atom
-            "        global alias",    // 1965 global 让位
+            "        global alias",    // 1965 global yielding
             "        self.c = alias",
-            "        self.d = self.unknown_attr.method()", // 2207 接收者不唯一
-            "        self.e = self.helper()",              // 2166/2167 被调绑定
-            "        self.f = make_unknown()",             // 未知名被调
+            "        self.d = self.unknown_attr.method()", // 2207 the receiver is not unique
+            "        self.e = self.helper()",              // 2166/2167 callee binding
+            "        self.f = make_unknown()",             // an unknown name callee
             "        nonlocal_marker = 1",
             "        def inner():",
-            "            nonlocal nonlocal_marker", // nonlocal 让位(同 1965 面)
+            "            nonlocal nonlocal_marker", // nonlocal yielding (the same surface as 1965)
             "            self.g = nonlocal_marker",
             "        return",
         ];
-        // 走通各查询位(吃臂为主;值断言只钉确定的)
-        // 裸名/别名绑定臂(2004-2062):local_atom 无类型面 → 空集(实测钉板)
+        // walk through every query position (mainly to consume the arms; value
+        // assertions only pin the certain ones)
+        // bare name / alias binding arms (2004-2062): local_atom has no type surface
+        // -> the empty set (pinned against the actual behavior)
         assert_eq!(flow(&body, 4, "a").types, Vec::<String>::new());
         assert_eq!(flow(&body, 6, "b").types, Vec::<String>::new());
         assert_eq!(flow(&body, 8, "c").types, Vec::<String>::new());
@@ -4561,7 +4841,8 @@ mod tests {
         let _ = flow(&body, 15, "g");
     }
 
-    /// Many 折叠(558-561):环内分支多写点 → 嵌套 Many 展平。
+    /// Many folding (558-561): several write sites in the loop branches -> nested
+    /// Many flattened.
     #[test]
     fn cov_flow_val_many_folding() {
         let body = [
@@ -4583,9 +4864,12 @@ mod tests {
         );
     }
 
-    /// 第二轮补针:嵌套 def 最小方法域拾取(2572-2573)、单行 def 头
-    /// 行查询(1467/2602)、类体 elif def 收集(1421-1422)、注解赋值
-    /// lambda 域登记(1742)、any_block_open 短行词长臂(2542)。
+    /// Second round of supplementary pins: the nested def innermost method domain
+    /// pick (2572-2573), a single line def head
+    /// line query (1467/2602), class body elif def collection (1421-1422), an
+    /// annotated assignment
+    /// lambda domain registration (1742), the any_block_open short line word length
+    /// arm (2542).
     #[test]
     fn cov_nested_def_minimal_method_domain() {
         let body = [
@@ -4593,7 +4877,7 @@ mod tests {
             "    def m(self):",
             "        self.a = None",
             "        def inner():",
-            "            self.a = 1", // 4 同时在 m 与 inner 域内 → 最小者胜
+            "            self.a = 1", // 4 inside both the m and inner domains -> the innermost wins
         ];
         assert_eq!(flow(&body, 4, "a").types, vec!["int".to_string()]);
     }
@@ -4602,10 +4886,12 @@ mod tests {
     fn cov_single_line_def_header_query() {
         let body = [
             "class S:",
-            "    def m(self): self.a = 1", // 1 单行 def:头行即查询位
+            "    def m(self): self.a = 1", // 1 single line def: the head line is the query position
             "    def n(self): return self.a",
         ];
-        // 单行 def 头行:体不另行,写点不进表 → 空集(实测钉板)
+        // single line def head line: the body is not a separate line, the write site
+        // does not enter the table -> the empty set (pinned against the actual
+        // behavior)
         assert_eq!(flow(&body, 1, "a").types, Vec::<String>::new());
     }
 
@@ -4629,7 +4915,7 @@ mod tests {
             "class L:",
             "    def m(self):",
             "        self.a = 1",
-            "        cb: Callable = lambda: self.a", // 3 注解赋值 lambda 入域表
+            "        cb: Callable = lambda: self.a", // 3 an annotated assignment lambda enters the domain table
         ];
         assert_eq!(flow(&body, 2, "a").types, vec!["int".to_string()]);
     }
@@ -4637,25 +4923,29 @@ mod tests {
     #[test]
     fn cov_any_block_open_short_line_and_boundaries() {
         let u = |s: &str| -> Vec<u16> { s.encode_utf16().collect() };
-        assert!(!any_block_open(&u("w"))); // 短于全部关键字(词长 continue 臂)
-        assert!(!any_block_open(&u("ifx:"))); // 词界失败
+        assert!(!any_block_open(&u("w"))); // shorter than every keyword (the word length continue arm)
+        assert!(!any_block_open(&u("ifx:"))); // the word boundary fails
         assert!(any_block_open(&u("except E:")));
     }
 
-    /// 第三轮补针:守卫扫描器尾臂(2428/2438-2439/2466/2479)、一元
-    /// walrus 数值臂(350)、方法内嵌类跨类域重叠(2572-2573)、单行块
-    /// 与无 dedent 块的扫描器尾(2783/2796)、单行复合语句早退(1700-1702)。
+    /// Third round of supplementary pins: the guard scanner tail arms
+    /// (2428/2438-2439/2466/2479), the unary
+    /// walrus numeric arm (350), a nested class overlapping class domains inside a
+    /// method (2572-2573), the scanner tail of a single line block
+    /// and a block without a dedent (2783/2796), single line composite statement
+    /// early exit (1700-1702).
     #[test]
     fn cov_guard_scanner_tail_arms() {
         let a = attr_u16("ESC");
         let u = |s: &str| -> Vec<u16> { s.encode_utf16().collect() };
-        // none_guard:is 前无空白(2428)/冒号前空白(2438-2439)
+        // none_guard: no whitespace before is (2428) / whitespace before the colon
+        // (2438-2439)
         assert!(!none_guard(&u("    if self.ESCis None:"), &a));
         assert!(none_guard(&u("    if self.ESC is None  :"), &a));
-        // not_none_guard:缺点(2466)/is 前无空白(2479)
+        // not_none_guard: a missing dot (2466) / no whitespace before is (2479)
         assert!(!not_none_guard(&u("if self x is not None:"), &a));
         assert!(!not_none_guard(&u("if self .ESCis not None:"), &a));
-        // any_block_open:词界失败后续试(2542 一带)
+        // any_block_open: keep trying after a failed word boundary (around 2542)
         assert!(!any_block_open(&u("iffy = 1")));
         assert!(!any_block_open(&u("elsewhere = 1")));
     }
@@ -4665,7 +4955,7 @@ mod tests {
         let body = [
             "class K:",
             "    def m(self):",
-            "        self.n = -(q := 5)", // 2 一元操作数=walrus → numeric_atom Named(350)
+            "        self.n = -(q := 5)", // 2 a unary operand = walrus -> numeric_atom Named (350)
         ];
         assert_eq!(flow(&body, 2, "n").types, vec!["int".to_string()]);
     }
@@ -4677,7 +4967,7 @@ mod tests {
             "    def outer(self):",       // 1
             "        class B:",           // 2
             "            def m(self):",   // 3
-            "                self.a = 1", // 4 同行在 A.outer 与 B.m 两域
+            "                self.a = 1", // 4 the same line inside both the A.outer and B.m domains
             "        return",             // 5
         ];
         assert_eq!(flow(&body, 4, "a").types, vec!["int".to_string()]);
@@ -4685,18 +4975,19 @@ mod tests {
 
     #[test]
     fn cov_scanner_block_tail_arms() {
-        // 块体直达方法尾(2783)/单行块无体行(2796)
+        // the block body reaches the method tail directly (2783) / a single line
+        // block with no body line (2796)
         let body = [
             "class K:",
             "    def m(self):",
             "        if c:",
-            "            self.a = 1", // 3 无 dedent 收尾 → find_block_end 兜底
+            "            self.a = 1", // 3 no dedent to close -> the find_block_end fallback
         ];
         assert_eq!(flow(&body, 3, "a").types, vec!["int".to_string()]);
         let single_block = [
             "class K:",
             "    def m(self):",
-            "        if c: pass", // 单行块:无体行
+            "        if c: pass", // a single line block: no body line
             "        self.a = 2",
         ];
         assert_eq!(flow(&single_block, 3, "a").types, vec!["int".to_string()]);
@@ -4707,22 +4998,26 @@ mod tests {
         let body = [
             "class K:",
             "    def m(self):",
-            "        if c: self.a = 1", // 2 单行复合:头体同行早退(1700-1702)
+            "        if c: self.a = 1", // 2 a single line composite: the head and body share a line, early exit (1700-1702)
             "        return self.a",
         ];
-        // 单行复合体:头体同行早退,写点不进表 → 空集(实测钉板)
+        // a single line composite body: head and body share a line, early exit, the
+        // write site does not enter the table -> the empty set (pinned against the
+        // actual behavior)
         assert_eq!(flow(&body, 3, "a").types, Vec::<String>::new());
     }
 
-    /// 第四轮补针:基线扫描块尾兜底(2783)/单行块体缩进(2796)/
-    /// 注释尾方法缩进回退(2602)/单行复合体早退(1467)。
+    /// Fourth round of supplementary pins: the baseline scan block tail fallback
+    /// (2783) / a single line block body indent (2796) /
+    /// the trailing comment method indent fallback (2602) / a single line composite
+    /// body early exit (1467).
     #[test]
     fn cov_baseline_scan_block_tails() {
         let body = [
             "class K:",
             "    def __init__(self):",
             "        if c:",
-            "            self.a = 1", // 3 方法尾无 dedent → find_block_end 兜底(2783)
+            "            self.a = 1", // 3 no dedent at the method tail -> the find_block_end fallback (2783)
             "    def m(self):",
             "        return self.a", // 5
         ];
@@ -4730,7 +5025,7 @@ mod tests {
         let single = [
             "class K:",
             "    def __init__(self):",
-            "        if c: pass", // 2 单行块:无体行(2796)
+            "        if c: pass", // 2 a single line block: no body line (2796)
             "        self.a = 1",
             "    def m(self):",
             "        return self.a", // 5
@@ -4744,7 +5039,7 @@ mod tests {
             "class S:",
             "    def m(self):",
             "        self.a = 1",
-            "    # 尾注释行", // 3 域内全注释 → method_base_indent 回退(2602)
+            "    # 尾注释行", // 3 all comments in the domain -> the method_base_indent fallback (2602)
         ];
         assert_eq!(flow(&body, 2, "a").types, vec!["int".to_string()]);
     }
@@ -4754,10 +5049,11 @@ mod tests {
         let body = [
             "class S:",
             "    def m(self):",
-            "        while c: self.a = 1", // 2 头体同行
+            "        while c: self.a = 1", // 2 the head and body share a line
             "        return self.a",
         ];
-        // 单行 while 体:写点不进表 → 空集(实测钉板)
+        // single line while body: the write site does not enter the table -> the
+        // empty set (pinned against the actual behavior)
         assert_eq!(flow(&body, 3, "a").types, Vec::<String>::new());
     }
 }

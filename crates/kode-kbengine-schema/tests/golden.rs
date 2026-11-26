@@ -1,6 +1,6 @@
-//! PA-002 Golden 测试:真实 fixture 项目的完整 Schema 快照对拍。
+//! PA-002 golden test: a full Schema snapshot parity comparison over a real fixture project.
 //!
-//! golden 文件 = Schema canonical JSON(字节级)。重生成:
+//! The golden file = the Schema canonical JSON (byte level). Regenerate:
 //!   KODE_SCHEMA_GOLDEN_BLESS=1 cargo test -p kode-kbengine-schema
 
 use std::path::PathBuf;

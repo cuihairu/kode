@@ -1,12 +1,17 @@
 /**
- * XML 注释文本工具:规范化、生成注释剥壳、源注释与文案库正文的同内容判定。
- * 独立成模块是为了让 serverConfigMerge(渲染期回写)与 serverConfigAnnotations
- * (挂文案库注释)共用同一套口径而不构成循环依赖(二者本就互相 import)。
+ * XML comment text utilities: normalization, generated-comment shell stripping,
+ * and the same-content decision between a source comment and the catalog body.
+ * Split into its own module so that serverConfigMerge (render-time write-back)
+ * and serverConfigAnnotations (attaching catalog comments) can share one
+ * contract without forming a circular dependency (they already import each
+ * other).
  */
 
 /**
- * XML 注释内容消毒:注释内部不得出现 `--`(XML 规范),结尾的 `-` 不能与
- * `-->` 拼出 `--`;空白统一压成单行(文案库已单行,这里兜底)。
+ * XML comment content sanitization: `--` must not appear inside a comment (XML
+ * spec), and a trailing `-` must not combine with `-->` to form `--`; whitespace
+ * is collapsed to a single line (the catalog is already single-line; this is a
+ * fallback).
  */
 export function sanitizeXmlComment(text: string): string {
   let comment = text.replace(/\s+/g, ' ').trim();
@@ -18,10 +23,12 @@ export function sanitizeXmlComment(text: string): string {
 }
 
 /**
- * 文案库生成注释剥壳取正文:`【子分类】正文〔来源: …〕`(中文)与
- * `[Group] body (source: …)`(英文)两构,去掉标签与出处后剩纯正文——
- * 用于判断该生成注释是否已被源注释覆盖(文案库多数正文即收割自 defaults
- * 源注释)。
+ * Strip the shell of a generated catalog comment and take the body: the Chinese
+ * shape (a fullwidth-bracket group tag, then the body, then a fullwidth "source"
+ * tail) and the English `[Group] body (source: …)` are the two shapes; after
+ * removing the tag and provenance the pure body remains — used to decide whether
+ * the generated comment is already covered by a source comment (most catalog
+ * bodies are harvested from defaults source comments).
  */
 export function generatedCommentBody(comment: string): string {
   return comment
@@ -33,17 +40,19 @@ export function generatedCommentBody(comment: string): string {
 }
 
 /**
- * 判重阈值:二元组覆盖率(见 bigramCoverage),须**双向都 ≥ 此值**才判同
- * (见 sourceCommentSameContent)。按真实 kbe/res/server/kbengine_defaults.xml
- * 的 169 个带源注释元素实测:同内容的收割对双向覆盖 ≥0.48(多数 1.0,即文案
- * 库正文逐字取自源注释);不同内容的保留对双向中较低者最高 0.36——0.4 落在
- * 空档里,两侧都不误判。
+ * Dedup threshold: bigram coverage (see bigramCoverage); both directions must be
+ * >= this value to rule "same" (see sourceCommentSameContent). Measured on the
+ * real kbe/res/server/kbengine_defaults.xml's 169 elements with source comments:
+ * same-content harvested pairs have bidirectional coverage >= 0.48 (mostly 1.0,
+ * i.e. the catalog body is verbatim from the source comment); different-content
+ * retained pairs peak at 0.36 for the lower direction — 0.4 falls in the gap,
+ * neither side misjudged.
  */
 const SAME_CONTENT_COVERAGE = 0.4;
-/** 短于该长度不判重:`16M`/`port` 这类短注释偶然撞字会误杀生成注释 */
+/** Below this length no dedup: short comments like `16M`/`port` colliding by chance would wrongly suppress generated comments */
 const SAME_CONTENT_MIN_LENGTH = 4;
 
-/** 字符二元组集合(去空白):`abc` → {ab,bc} */
+/** Character bigram set (whitespace removed): `abc` → {ab,bc} */
 function bigrams(text: string): Set<string> {
   const compact = text.replace(/\s+/g, '');
   const grams = new Set<string>();
@@ -53,7 +62,7 @@ function bigrams(text: string): Set<string> {
   return grams;
 }
 
-/** a 的二元组有多大比例出现在 b 里(1 = a 完全被 b 覆盖) */
+/** What fraction of a's bigrams appear in b (1 = a fully covered by b) */
 function bigramCoverage(a: string, b: string): number {
   const source = bigrams(a);
   if (source.size === 0) {
@@ -70,11 +79,17 @@ function bigramCoverage(a: string, b: string): number {
 }
 
 /**
- * 源注释与文案库正文是否同一内容(KODE-CFG-010 去重口径):**双向**二元组覆盖
- * 率都 ≥ 阈值才判同(交集)。曾用"任一方向 ≥ 阈值"(并集),实测会吞掉改写型真
- * 文档:「系统默认(system default)」与 EN 文案 zh 向仅 0.17 但 EN 向 0.67,
- * 被误压 2 处;`auth.password` 恰 0.40 边界同样误压。收割型逐字注释双向都是
- * 1.0,交集不受影响(压制数 139→135)。任一侧短于下限时不判(短注释撞字会误杀)。
+ * Whether a source comment and a catalog body are the same content (KODE-CFG-010
+ * dedup contract): **bidirectional** bigram coverage both >= the threshold rules
+ * "same" (intersection). An earlier "either direction >= threshold" (union) was
+ * measured to swallow rewritten true docs: the zh comment for "system default"
+ * (system default) vs the EN copy is only 0.17 zh-ward but 0.67 EN-ward, and was
+ * wrongly suppressed twice;
+ * `auth.password` sits exactly at the 0.40 boundary and was likewise wrongly
+ * suppressed. Verbatim harvested comments are 1.0 in both directions, so the
+ * intersection is unaffected (suppression count 139→135). Not judged when either
+ * side is shorter than the floor (short comments colliding by chance would be
+ * wrongly killed).
  */
 export function sourceCommentSameContent(left: string, right: string): boolean {
   const a = sanitizeXmlComment(left);

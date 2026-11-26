@@ -1,12 +1,14 @@
-//! 崩溃恢复台账门禁(PR-009:SCHED-021 面;书 §4 CORE-015 面 + IDX-010 崩溃写入护栏)。
+//! Crash-recovery ledger gate (PR-009: the SCHED-021 surface; book §4 CORE-015 surface + the
+//! IDX-010 crash-write guard).
 
 use std::collections::HashMap;
 
 use kode_scheduler::{load_journal, write_journal, TaskKind};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    // 序号后缀:同一测试进程内各用例共享 pid,同名目录会互相 remove_dir_all
-    // (并行线程下 write_journal 中途 NotFound)——每次调用必须唯一。
+    // Sequence-number suffix: the cases inside one test process share the same pid, and
+    // same-named directories would remove_dir_all each other (under parallel threads,
+    // write_journal hits a mid-run NotFound) — every call must be unique.
     static DIR_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let seq = DIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
@@ -64,7 +66,7 @@ fn journal_skips_corrupt_lines_without_losing_good_ones() {
     ));
     body.push_str("GARBAGE LINE\n");
     body.push_str("SCHEDJ1\tbogus-kind\t1\t-\t-\t-\n");
-    body.push_str("SCHEDJ1\tsingle-file-update\t99\t-\t-\t-\n"); // 非法优先级
+    body.push_str("SCHEDJ1\tsingle-file-update\t99\t-\t-\t-\n"); // invalid priority
     body.push_str(&format!(
         "{}\n",
         crate_line(&record(TaskKind::FullReindex, 3, None, None))
@@ -78,7 +80,7 @@ fn journal_skips_corrupt_lines_without_losing_good_ones() {
 }
 
 fn crate_line(rec: &kode_scheduler::TaskRecord) -> String {
-    // 与 journal.rs 行格式一致(供损坏行测试构造合法行)。
+    // Matches the journal.rs line format (lets the corrupt-line tests build a legal line).
     let file = rec.file.clone().unwrap_or_else(|| "-".to_string());
     let version = rec
         .version
@@ -102,7 +104,7 @@ fn journal_write_is_atomic_replacement() {
     .unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(!text.contains("STALE OLD CONTENT"));
-    // 临时文件不残留。
+    // No temporary file lingers.
     let leftovers: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .filter_map(|e| e.ok())
@@ -114,7 +116,7 @@ fn journal_write_is_atomic_replacement() {
 
 #[test]
 fn crash_recovery_replays_pending_and_drops_stale() {
-    // 崩溃前:3 个 queued 任务(1 个交互 + 2 个后台)。
+    // Before the crash: 3 queued tasks (1 interactive + 2 background).
     let mut before = kode_scheduler::Scheduler::default();
     before.enqueue(kode_scheduler::TaskSpec {
         kind: TaskKind::SingleFileUpdate,
@@ -146,12 +148,13 @@ fn crash_recovery_replays_pending_and_drops_stale() {
     let dir = temp_dir("recovery");
     let path = dir.join("sched.journal");
     write_journal(&path, &pending).unwrap();
-    // ——「崩溃」:不复用 before,从台账重建调度器 ——
+    // —— "the crash": do not reuse `before`; rebuild the scheduler from the ledger ——
 
     let mut after = kode_scheduler::Scheduler::default();
     let (records, corrupt) = load_journal(&path).unwrap();
     assert_eq!(corrupt, 0);
-    // /stale.def 在崩溃期间已被编辑到 v9:v2 的恢复记录过期,丢弃。
+    // /stale.def was already edited to v9 during the crash: the v2 recovery record is stale and
+    // is dropped.
     let mut current = HashMap::new();
     current.insert("/stale.def".to_string(), 9u64);
     let report = after.recover(records, &current, |rec| {
@@ -174,7 +177,8 @@ fn crash_recovery_replays_pending_and_drops_stale() {
 
 #[test]
 fn journal_unescapes_newline_roundtrip() {
-    // 换行转义:file 含真实 `\n` → 编码仍单行,解码还原。
+    // Newline escaping: a file containing a real `\n` → still a single line when encoded, restored
+    // on decode.
     let dir = temp_dir("newline");
     let path = dir.join("sched.journal");
     let rec = record(TaskKind::SingleFileUpdate, 1, Some("/a\nb.def"), None);
@@ -187,7 +191,8 @@ fn journal_unescapes_newline_roundtrip() {
 
 #[test]
 fn journal_tolerates_unknown_escape_and_trailing_backslash() {
-    // 崩溃恢复容错:未知转义序列与字段末孤立 `\` 按字面保留,不算损坏。
+    // Crash-recovery tolerance: an unknown escape sequence and a lone `\` at field end are kept
+    // literally, not counted as corruption.
     let dir = temp_dir("unknown-esc");
     let path = dir.join("sched.journal");
     std::fs::write(
@@ -204,7 +209,8 @@ fn journal_tolerates_unknown_escape_and_trailing_backslash() {
 
 #[test]
 fn journal_write_creates_nested_parent_dirs() {
-    // 写台账到不存在的深层父目录:先建目录(幂等),再原子落盘。
+    // Write the ledger to a nonexistent deep parent directory: create directories first
+    // (idempotent), then land atomically.
     let dir = temp_dir("nested");
     let path = dir.join("deep").join("sub").join("sched.journal");
     assert_eq!(
@@ -220,12 +226,12 @@ fn journal_write_creates_nested_parent_dirs() {
 #[test]
 fn journal_load_missing_file_is_empty_and_non_file_path_errors() {
     let dir = temp_dir("load-errors");
-    // 冷启动:文件不存在 = 空账,不算错误。
+    // Cold start: a missing file = an empty ledger, not an error.
     let missing = dir.join("no-such.journal");
     let (records, corrupt) = load_journal(&missing).unwrap();
     assert!(records.is_empty());
     assert_eq!(corrupt, 0);
-    // 路径是目录:非 NotFound IO 错误如实上抛,不吞。
+    // The path is a directory: a non-NotFound IO error is surfaced truthfully, not swallowed.
     let err = load_journal(&dir).unwrap_err();
     assert_ne!(err.kind(), std::io::ErrorKind::NotFound);
     let _ = std::fs::remove_dir_all(&dir);
@@ -245,7 +251,7 @@ fn journal_blank_lines_are_ignored() {
             Some(2)
         ))
     ));
-    body.push('\n'); // 空行:跳过,不算损坏
+    body.push('\n'); // blank line: skipped, not counted as corruption
     body.push_str(&format!(
         "{}\n",
         crate_line(&record(TaskKind::FullReindex, 3, None, None))
@@ -259,13 +265,15 @@ fn journal_blank_lines_are_ignored() {
 
 #[test]
 fn journal_tmp_name_has_no_double_dot_kraud24() {
-    // 旧实现 with_extension 拼临时名,无扩展名路径实测产出 `journal..tmp`(双点)。
-    // 修复后临时名 = 完整路径 + ".tmp"。
+    // The old implementation spliced the temp name with with_extension; measured, an extensionless
+    // path produced `journal..tmp` (a double dot).
+    // After the fix, the temp name = full path + ".tmp".
     let no_ext = std::path::Path::new("/run/kbe/journal");
     let tmp = kode_scheduler::journal::journal_tmp_path(no_ext);
     assert_eq!(tmp, std::path::Path::new("/run/kbe/journal.tmp"));
     assert!(!tmp.to_string_lossy().contains(".."));
-    // 带扩展名路径:临时名保持唯一后缀,不覆盖台账本体。
+    // A path with an extension: the temp name keeps its unique suffix and does not overwrite the
+    // ledger itself.
     let with_ext = std::path::Path::new("/run/kbe/sched.bin");
     let tmp2 = kode_scheduler::journal::journal_tmp_path(with_ext);
     assert_eq!(tmp2, std::path::Path::new("/run/kbe/sched.bin.tmp"));
@@ -289,8 +297,8 @@ fn write_journal_creates_missing_parent_dirs() {
 
 #[test]
 fn write_journal_errors_when_parent_blocked_by_file() {
-    // 父链被普通文件挡住:create_dir_all 失败 → 错误早退臂必须把 Err
-    // 如实带回(不落半成品)。
+    // The parent chain is blocked by a plain file: create_dir_all fails → the early-exit error
+    // arm must hand the Err back truthfully (without leaving a half-written file behind).
     let dir = temp_dir("blocked");
     let blocker = dir.join("blocker");
     std::fs::write(&blocker, b"not a dir").unwrap();
@@ -309,8 +317,8 @@ fn write_journal_errors_when_parent_blocked_by_file() {
 
 #[test]
 fn write_journal_empty_path_errors_without_dir_setup() {
-    // 空路径:parent() == None,目录准备段整段跳过,落盘段报错;
-    // 错误必须如实带回而非 panic。
+    // An empty path: parent() == None, the directory-preparation section is skipped entirely and
+    // the landing section errors; the error must be handed back truthfully rather than panicking.
     let records = vec![record(
         TaskKind::DependencyUpdate,
         2,

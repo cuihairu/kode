@@ -1,8 +1,9 @@
-//! 归档密钥独立存储(PDC-0205:默认加密归档,密钥不跟归档同存)。
+//! Independent archive key storage (PDC-0205: archives are encrypted by default; keys are never stored alongside the archive).
 //!
-//! [`KeyStore`] 抽象密钥的生成与读取;[`FileKeyStore`] 把密钥落在调用方指定的
-//! 独立目录(如用户数据目录),以 0600 权限写盘,且**拒绝**密钥目录落在归档
-//! 输出目录内——结构上保证「密钥不跟归档同存」。归档帧永不包含密钥材料。
+//! [`KeyStore`] abstracts key generation and retrieval; [`FileKeyStore`] places keys in a caller-specified
+//! separate directory (e.g. the user data directory), writes them to disk with 0600 permissions, and **refuses** a key
+//! directory located inside the archive output directory — structurally guaranteeing "keys are never stored with the archive".
+//! Archive frames never contain key material.
 
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
@@ -16,21 +17,21 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{CloneError, CloneResult};
 
-/// 32 字节密钥(chacha20poly1305 密钥长度)。
+/// 32-byte key (chacha20poly1305 key length).
 pub type ArchiveKey = [u8; 32];
 
-/// 密钥存储抽象。
+/// Key store abstraction.
 pub trait KeyStore {
-    /// 取密钥;不存在则生成并持久化。
+    /// Fetch the key; generate and persist one if absent.
     fn get_or_create(&self, id: &str) -> CloneResult<ArchiveKey>;
-    /// 密钥是否已存在(不读取)。
+    /// Whether the key already exists (without reading it).
     fn exists(&self, id: &str) -> bool;
 }
 
-/// 归档路径 → 密钥 id:绝对化路径的 SHA-256 十六进制(64 hex,字符全在
-/// `FileKeyStore` 安全集内)。不直接用路径字符串作 id——`/`/`\`/`:` 等会被
-/// 消毒成 `_`,不同路径可能撞名;哈希确定、无碰撞。id 稳定绑定归档所在
-/// 位置:归档移动/改名后 id 变化,读侧按「密钥缺失」如实报错,不猜。
+/// Archive path → key id: SHA-256 hex of the absolutized path (64 hex chars, all within
+/// `FileKeyStore`'s safe set). The path string itself is never used as the id — `/`, `\`, `:`, etc. would be
+/// sanitized to `_`, so different paths could collide; a hash is deterministic and collision-free. The id is stably bound
+/// to where the archive lives: moving/renaming the archive changes the id, and the read side honestly reports "key missing" rather than guessing.
 pub fn key_id_for_archive(path: &Path) -> String {
     let abs = key_absolutize(path);
     let mut hasher = Sha256::new();
@@ -39,13 +40,13 @@ pub fn key_id_for_archive(path: &Path) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// 文件密钥存储:独立目录 + 0600 权限。
+/// File-based key store: separate directory + 0600 permissions.
 pub struct FileKeyStore {
     root: PathBuf,
 }
 
 impl FileKeyStore {
-    /// 建立存储;`root` 必须与归档输出目录分离(本类型强制)。
+    /// Creates the store; `root` must be separate from the archive output directory (enforced by this type).
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
@@ -54,8 +55,8 @@ impl FileKeyStore {
         self.root.join(format!("{}.key", safe_id(id)))
     }
 
-    /// 密钥先落同目录临时件(独占创建即 0600、fsync),发布走 hard_link。
-    /// 撞名(陈旧临时件恰好复用同 pid)换计数重试。
+    /// Stages the key into a same-directory temp file (exclusively created at 0600, then fsynced); publishing goes through hard_link.
+    /// On a name collision (a stale temp file that happens to reuse the same pid), retries with a new counter value.
     fn stage_key_temp(&self, id: &str, key: &ArchiveKey) -> CloneResult<PathBuf> {
         let stem = safe_id(id);
         for _ in 0..8 {
@@ -74,8 +75,8 @@ impl FileKeyStore {
                 let _ = fs::remove_file(&tmp);
                 return Err(CloneError::InvalidRule(format!("stage key `{id}`: {e}")));
             }
-            // 权限钉死 0600:open 的 mode 位会被 umask 剥离,显式 chmod 保证
-            // 终态与旧实现完全一致(密钥材料永不出现在非 0600 的最终路径上)。
+            // Pin permissions at 0600: open's mode bits get stripped by the umask; an explicit chmod guarantees
+            // the final state exactly matches the old implementation (key material never sits on a non-0600 final path).
             #[cfg(unix)]
             if let Err(e) = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)) {
                 let _ = fs::remove_file(&tmp);
@@ -89,7 +90,7 @@ impl FileKeyStore {
     }
 }
 
-/// id 消毒:只允许安全字符,防路径穿越。
+/// id sanitization: only safe characters allowed, guards against path traversal.
 fn safe_id(id: &str) -> String {
     id.chars()
         .map(|c| {
@@ -102,11 +103,11 @@ fn safe_id(id: &str) -> String {
         .collect()
 }
 
-/// 临时件单调计数:进程内唯一化临时件名(pid 之外再加计数)。
+/// Monotonic temp-file counter: uniquifies temp file names within the process (a counter on top of the pid).
 static TEMP_KEY_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// 读取并校验密钥文件:非 32 字节按 InvalidData 如实报错(损坏文件绝不
-/// 静默重生成——重生成只会造出解不开既有归档的错误钥匙)。
+/// Reads and validates a key file: non-32-byte content is honestly reported as InvalidData (a corrupted file is never
+/// silently regenerated — regeneration would only mint a wrong key that cannot open the existing archives).
 fn read_key_file(path: &Path) -> std::io::Result<ArchiveKey> {
     let mut buf = Vec::new();
     fs::File::open(path)?.read_to_end(&mut buf)?;
@@ -114,8 +115,8 @@ fn read_key_file(path: &Path) -> std::io::Result<ArchiveKey> {
         .map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "key is not 32 bytes"))
 }
 
-/// 独占创建新文件;Unix 下创建即 0600(密钥材料在落盘瞬间就只有属主可读,
-/// 不存在「先默认权限再补 chmod」的暴露窗口)。
+/// Exclusively creates a new file; on Unix it is created at 0600 (key material is owner-readable only from the instant it
+/// hits disk — there is no "default permissions first, chmod later" exposure window).
 fn open_new_private(path: &Path) -> std::io::Result<fs::File> {
     #[cfg(unix)]
     {
@@ -146,8 +147,8 @@ impl std::fmt::Debug for FileKeyStore {
 impl KeyStore for FileKeyStore {
     fn get_or_create(&self, id: &str) -> CloneResult<ArchiveKey> {
         let path = self.key_path(id);
-        // 已发布密钥直接读:发布是原子的(见下),最终路径一经出现,内容必为
-        // 完整 32 字节;损坏文件如实报错,不静默重生成。
+        // A published key is read directly: publishing is atomic (see below), so once the final path exists its content is
+        // necessarily a complete 32 bytes; corrupted files are honestly reported, never silently regenerated.
         match read_key_file(&path) {
             Ok(key) => return Ok(key),
             Err(e) if e.kind() == ErrorKind::NotFound => {}
@@ -160,17 +161,17 @@ impl KeyStore for FileKeyStore {
             .map_err(|e| CloneError::InvalidRule(format!("generate key: {e}")))?;
         fs::create_dir_all(&self.root)
             .map_err(|e| CloneError::InvalidRule(format!("create key dir: {e}")))?;
-        // KODE-FULL-016:原子发布三步——
-        // 1. 同目录临时件独占创建(即 0600)+ 写满 32 字节 + fsync;
-        // 2. hard_link 到最终路径:目标已存在时以 AlreadyExists 失败,是
-        //    内核级 create-or-fail 原语——并发首建恰有一个赢家(跨进程成立);
-        // 3. 败者删自己的临时件、只读获胜密钥。
-        // 最终路径从不暴露部分内容;任何失败路径不残留文件;已存在密钥
-        // 绝不被覆盖(旧 fs::write 会互相截断,把先到者手里的钥匙悄悄换掉)。
+        // KODE-FULL-016: three-step atomic publish —
+        // 1. Exclusively create a same-directory temp file (0600 from creation) + write a full 32 bytes + fsync;
+        // 2. hard_link to the final path: fails with AlreadyExists when the target exists — this is a
+        //    kernel-level create-or-fail primitive, so exactly one winner exists under concurrent first creation (holds across processes);
+        // 3. Losers delete their own temp file and read the winning key.
+        // The final path never exposes partial content; no failure path leaves a file behind; an existing key
+        // is never overwritten (the old fs::write would truncate each other, silently swapping out the first arriver's key).
         let tmp = self.stage_key_temp(id, &key)?;
         match fs::hard_link(&tmp, &path) {
             Ok(()) => {
-                let _ = fs::remove_file(&tmp); // 链接计数归一:发布完成
+                let _ = fs::remove_file(&tmp); // link count back to one: publish complete
                 Ok(key)
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => {
@@ -190,7 +191,7 @@ impl KeyStore for FileKeyStore {
     }
 }
 
-/// 校验密钥目录不在归档输出目录内(密钥独立存储的结构性保证)。
+/// Verifies the key directory is not inside the archive output directory (the structural guarantee of independent key storage).
 pub fn ensure_key_outside_archive(key_root: &Path, archive_path: &Path) -> CloneResult<()> {
     let key_abs = key_absolutize(key_root);
     let archive_abs = key_absolutize(archive_path);
@@ -226,9 +227,9 @@ mod tests {
         let key = store.get_or_create("avatar-export").unwrap();
         assert_eq!(key.len(), 32);
         assert!(store.exists("avatar-export"));
-        // 重读一致(持久化,不是每次新生成)。
+        // Re-reading yields the same key (persisted, not newly generated each time).
         assert_eq!(store.get_or_create("avatar-export").unwrap(), key);
-        // 权限 0600。
+        // Permissions 0600.
         #[cfg(unix)]
         {
             let mode = fs::metadata(dir.join("avatar-export.key"))
@@ -246,7 +247,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         let store = FileKeyStore::new(&dir);
         store.get_or_create("../escape").unwrap();
-        // 路径穿越被拍平为 ___escape。
+        // Path traversal is flattened into ___escape.
         assert!(dir.join("___escape.key").exists());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -256,7 +257,7 @@ mod tests {
         let archive = std::env::temp_dir().join(format!("kode-arc-{}", std::process::id()));
         let inside = archive.join("keys");
         assert!(ensure_key_outside_archive(&inside, &archive).is_err());
-        // 再一个密钥目录仍在归档内 → 拒绝。
+        // Another key directory still inside the archive → refused.
         assert!(ensure_key_outside_archive(&archive.join("elsewhere"), &archive).is_err());
         let outside = std::env::temp_dir().join("kode-keys-elsewhere");
         assert!(ensure_key_outside_archive(&outside, &archive).is_ok());
@@ -269,19 +270,19 @@ mod tests {
         let rendered = format!("{store:?}");
         assert!(rendered.contains("FileKeyStore"), "{rendered}");
         assert!(rendered.contains("kode-key-dbg"), "{rendered}");
-        // 密钥材料本就不在结构里(仅 root 路径)。
+        // Key material is not in the struct at all (only the root path).
         assert!(!rendered.contains("key:"));
     }
 
     #[test]
     fn relative_paths_are_absolutized_for_containment() {
-        // 相对密钥目录按 cwd 解析后判定包含关系(覆盖非绝对路径分支)。
+        // A relative key directory is resolved against cwd before the containment check (covers the non-absolute-path branch).
         let cwd = std::env::current_dir().unwrap();
         let archive = cwd.join("kode-rel-arch");
-        // cwd 下的相对兄弟目录 → 不在归档路径之内,放行。
+        // A relative sibling directory under cwd → not inside the archive path, allowed.
         let sibling_rel = std::path::Path::new("kode-rel-keys");
         assert!(ensure_key_outside_archive(sibling_rel, &archive).is_ok());
-        // 相对路径解析后落在归档路径之内 → 拒绝。
+        // A relative path that resolves inside the archive path → refused.
         let nested_rel = std::path::Path::new("kode-rel-arch/keys");
         assert!(ensure_key_outside_archive(nested_rel, &archive).is_err());
     }
@@ -302,14 +303,14 @@ mod tests {
 
     #[test]
     fn key_id_for_archive_is_deterministic_and_path_bound() {
-        // 归档密钥 id = 绝对化路径的 SHA-256 十六进制:同路径恒定,不同路径不同;
-        // 64 hex 字符,字符集安全。绝不直接用路径串(会撞名)。
+        // Archive key id = SHA-256 hex of the absolutized path: constant for the same path, different for different paths;
+        // 64 hex chars with a safe character set. The raw path string is never used (it would collide).
         let a = key_id_for_archive(std::path::Path::new("/data/a.kdpclone"));
         let b = key_id_for_archive(std::path::Path::new("/data/a.kdpclone"));
         let c = key_id_for_archive(std::path::Path::new("/data/b.kdpclone"));
-        assert_eq!(a, b, "同路径恒定");
-        assert_ne!(a, c, "不同路径不同 id");
-        assert_eq!(a.len(), 64, "SHA-256 hex = 64 字符");
+        assert_eq!(a, b, "constant for the same path");
+        assert_ne!(a, c, "different paths get different ids");
+        assert_eq!(a.len(), 64, "SHA-256 hex = 64 chars");
         assert!(a.chars().all(|ch| ch.is_ascii_hexdigit()));
     }
 }

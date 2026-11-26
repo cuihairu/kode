@@ -1,17 +1,20 @@
 /**
- * RUST-167 类型预览纯核(RUST-166 同批次 RUST 泳道):把「API 类型树 /
- * typing coverage / 缺失映射 / 来源跳转」四件事归一成一棵可预览的节点树。
- * 零 vscode 依赖——数据全部来自既有生成面(entity 桩计划条目 + kbe_types
- * 桩计划条目/跳过表 + CustomTypeInfo 路径表),跳转一律用真实源行(1 起),
- * 沿 RUST-160 同一族判别:customTypeLine 在场=types.xml 族,否则 .def 族;
- * 解析不出真实路径的面如实不跳,绝不拿生成行号充当来源。
+ * RUST-167 type-preview pure core (the RUST-lane sibling of RUST-166): unifies
+ * the "API type tree / typing coverage / missing mappings / source jumps" four
+ * concerns into one previewable node tree. Zero vscode dependency — all data comes
+ * from existing generated faces (the entity stub-plan entries + the kbe_types stub
+ * plan entries/skip table + the CustomTypeInfo path table); jumps always use real
+ * source lines (1-based), following the same RUST-160 family discriminant: a
+ * customTypeLine present = the types.xml family, otherwise the .def family; faces
+ * whose real path cannot be resolved simply do not jump, honestly — a generated
+ * line number is never passed off as the source.
  */
 
 import type { EntityTypeStubEntry } from '../entityTypeStubs';
 import type { CustomTypeInfo } from '../definitionWorkspace';
 import type { PythonTypeStubEntry, PythonTypeStubSkipped } from '../pythonTypeStubs';
 
-/** 来源跳转目标:真实文件 + 1 基行 */
+/** A source-jump target: a real file + a 1-based line */
 export interface TypePreviewJump {
   uri: string;
   line: number;
@@ -24,7 +27,7 @@ export interface TypePreviewNode {
   children?: TypePreviewNode[];
 }
 
-/** typing 覆盖:全部注解位里已解析(不含 Any)的占比;anyCount=缺失映射候选数 */
+/** Typing coverage: the proportion of all annotation slots that resolved (excluding Any); anyCount = the count of missing-mapping candidates */
 export interface TypePreviewCoverage {
   total: number;
   resolved: number;
@@ -33,14 +36,14 @@ export interface TypePreviewCoverage {
 
 export interface TypePreviewInput {
   entities: readonly EntityTypeStubEntry[];
-  /** 实体名 → .def 绝对路径(def 族跳转目标;缺映射的面如实不跳) */
+  /** Entity name → .def absolute path (the .def-family jump target; a face lacking the mapping does not jump, honestly) */
   entityDefFiles: ReadonlyMap<string, string>;
   customTypes: readonly CustomTypeInfo[];
-  /** kbe_types 桩计划的 kept 条目(类/别名,携注解与源行) */
+  /** The kbe_types stub plan's kept entries (classes/aliases, carrying annotations and source lines) */
   typeEntries: readonly PythonTypeStubEntry[];
-  /** kbe_types 桩计划的跳过表(成环/重名作废,原因写明) */
+  /** The kbe_types stub plan's skip table (cyclic/duplicate names voided, with the reason stated) */
   typeSkipped: readonly PythonTypeStubSkipped[];
-  /** types.xml 绝对路径(types.xml 族跳转目标;缺省则该族如实不跳) */
+  /** The types.xml absolute path (the types.xml-family jump target; when absent, that family honestly does not jump) */
   typesXmlPath?: string;
 }
 
@@ -49,15 +52,16 @@ export interface TypePreviewModel {
   coverage: TypePreviewCoverage;
 }
 
-/** 注解里是否落到了 Any(RUST-157 纪律:Any 唯一合法语义=解析链诚实末端,
- * 所以含 Any 的注解位就是「缺失映射」的如实清单)。词边界判定:
- * FixedArray[Any] / Any 命中,MANY / AnyType 不命中。 */
+/** Whether an annotation landed on Any (the RUST-157 discipline: Any's only
+ * legitimate semantics is the honest end of the resolution chain, so an annotation
+ * slot containing Any is the honest list of "missing mappings"). Word-boundary
+ * matching: FixedArray[Any] / Any hits, MANY / AnyType do not. */
 function annotationHitsAny(annotation: string): boolean {
   return /\bAny\b/.test(annotation);
 }
 
 interface AnnotationPosition {
-  /** 展示名:`实体.属性` / `类型.字段` / 别名裸名 */
+  /** Display name: `entity.property` / `type.field` / a bare alias name */
   label: string;
   annotation: string;
   jump?: TypePreviewJump;
@@ -68,7 +72,7 @@ export function buildTypePreviewModel(input: TypePreviewInput): TypePreviewModel
     input.customTypes.map(info => [info.name, info])
   );
 
-  /** 类型面跳转:CustomTypeInfo 携真实文件路径;行取真实源行,缺任一不跳 */
+  /** The type-face jump: CustomTypeInfo carries a real file path; the line is the real source line, and a missing one means no jump */
   const typeJump = (name: string, line: number | null | undefined): TypePreviewJump | undefined => {
     const info = customByName.get(name);
     if (!info || typeof line !== 'number' || line <= 0) {
@@ -77,8 +81,8 @@ export function buildTypePreviewModel(input: TypePreviewInput): TypePreviewModel
     return { uri: info.filePath, line };
   };
 
-  /** 实体属性跳转(族判别同 RUST-160):customTypeLine 在场=types.xml 族,
-   * 否则 .def 族;对应路径缺失(未配 typesXmlPath / 实体不在注册表)不跳 */
+  /** The entity-property jump (family discrimination same as RUST-160): a customTypeLine present = the types.xml family,
+   *  otherwise the .def family; a missing corresponding path (no typesXmlPath configured / entity not registered) means no jump */
   const entityPropertyJump = (
     entityName: string,
     prop: { sourceLine: number; customTypeLine?: number }
@@ -90,7 +94,7 @@ export function buildTypePreviewModel(input: TypePreviewInput): TypePreviewModel
     return defFile ? { uri: defFile, line: prop.sourceLine } : undefined;
   };
 
-  // ---- 注解位收集(覆盖/缺失映射共用同一份事实) ----
+  // ---- Collect annotation slots (coverage / missing mappings share the same facts) ----
   const positions: AnnotationPosition[] = [];
   for (const entity of input.entities) {
     for (const prop of entity.properties) {
@@ -121,14 +125,15 @@ export function buildTypePreviewModel(input: TypePreviewInput): TypePreviewModel
     anyCount: anyPositions.length
   };
 
-  // ---- 树 ----
+  // ---- The tree ----
   const coverageLeaf: TypePreviewNode = {
     label: `typing 覆盖: ${coverage.resolved}/${coverage.total} 已解析`,
     description: `${coverage.anyCount} 处含 Any(未解析)`
   };
 
-  // 缺失映射组:Any 注解位逐条列(带跳转),加上被跳过的类型(成环/重名作废,
-  // 原因写明);零面时整组不出(诚实零缺失)
+  // Missing-mapping group: list Any annotation slots one by one (with jumps), plus
+  // the skipped types (cyclic/duplicate names voided, reason stated); the whole group
+  // does not appear when the face is empty (honest zero-missing)
   const missingChildren: TypePreviewNode[] = anyPositions.map(position => ({
     label: `${position.label}: ${position.annotation}`,
     jump: position.jump
@@ -144,7 +149,8 @@ export function buildTypePreviewModel(input: TypePreviewInput): TypePreviewModel
       ? { label: `缺失映射(${missingChildren.length})`, children: missingChildren }
       : null;
 
-  // 自定义类型组:类条目列字段、别名条目直接落叶子;源文件标签做 description
+  // Custom-type group: class entries list their fields, alias entries land directly as
+  // leaves; the source-file label becomes the description
   const typeNodes: TypePreviewNode[] = [];
   for (const entry of input.typeEntries) {
     if (entry.kind === 'alias') {
@@ -168,8 +174,9 @@ export function buildTypePreviewModel(input: TypePreviewInput): TypePreviewModel
   const typesGroup: TypePreviewNode | null =
     typeNodes.length > 0 ? { label: `自定义类型(${typeNodes.length})`, children: typeNodes } : null;
 
-  // 实体组:实体壳跳 .def(行 1=文件头;def 声明行不在桩计划里,不硬造),
-  // 属性按族跳,方法跳 def 方法面行
+  // Entity group: the entity shell jumps to the .def (line 1 = file header; the def
+  // declaration line is not in the stub plan, so it is not fabricated), properties
+  // jump per family, methods jump to the def method-face line
   const entityNodes: TypePreviewNode[] = input.entities.map(entity => {
     const defFile = input.entityDefFiles.get(entity.entity);
     const methodChildren: TypePreviewNode[] = [

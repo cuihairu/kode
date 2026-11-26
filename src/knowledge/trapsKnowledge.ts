@@ -1,33 +1,39 @@
-// C-23 交付①:KB-001 行为知识结构化(坑→lint/code action/hover 流水线
-// 的数据面)。数据源 = docs/knowledge/traps-index.md(KB-001 bucket ④
-// 语义陷阱索引)+ C-23 任务书背景例(2026-11-01 用户例)。每条增
-// applies_to / detection / fix 三字段:detection 非空的条目即 lint 规则
-// 候选(交付②的规则按 detectionKind 接线);detection=null 的条目如实
-// 标注不可静态检测,只供 hover 注记/文档,不冒充可检测。
+// C-23 delivery (1): KB-001 behaviour knowledge as structured data (the
+// data plane behind the trap -> lint / code action / hover pipeline).
+// Sources = docs/knowledge/traps-index.md (KB-001 bucket 4, the semantic
+// trap index) plus the background example from the C-23 task brief
+// (2026-11-01 user example). Every entry carries the three fields
+// applies_to / detection / fix: an entry with a non-null detection is a
+// lint rule candidate (the delivery-(2) rules wire up on detectionKind),
+// while a detection=null entry is honestly marked as not statically
+// detectable and only feeds hover annotations / docs, never claiming to
+// be detectable.
 //
-// 本模块纯数据 + 查表,不 import vscode。双语注记(noteZh/noteEn)供
-// hover 行为注记段(交付③)。来源(source)逐条指向知识库文章锚点,
-// 与 traps-index「本页不引入目标文章之外的主张」同一纪律。
+// This module is pure data + table lookups, and does not import vscode.
+// The bilingual notes (noteZh/noteEn) feed the hover behaviour note
+// section (delivery 3). Each source points at a knowledge-base article
+// anchor, following the same discipline as traps-index ("this page
+// introduces no claim beyond the article it cites").
 
-/** 静态检测模式 id(detection 非空的条目据此接 lint 规则) */
+/** Statically detectable pattern ids (entries with a non-null detection wire lint rules by this id) */
 export type TrapDetectionKind =
   | 'fixed-dict-nested-mutation'
   | 'destroyed-entity-container-capture'
   | 'timer-cancel-on-destroy';
 
-/** 一条结构化行为知识条目 */
+/** One structured behaviour-knowledge entry */
 export interface TrapKnowledgeEntry {
-  /** 条目 id(KB-001 域内编号) */
+  /** Entry id (numbered within the KB-001 domain) */
   id: string;
-  /** 适用面:属性类型/引擎 API(逗号分隔或描述文本) */
+  /** Applicable surface: property types / engine APIs (comma-separated or free text) */
   appliesTo: string;
-  /** 可静态检测的代码模式;null=不可静态检测(不接 lint,如实标注) */
+  /** Statically detectable code pattern; null = not statically detectable (no lint wiring, honestly marked) */
   detection: TrapDetectionKind | null;
-  /** 正确姿势(修复代码/习惯) */
+  /** The correct pattern (fix code / habit) */
   fix: string;
-  /** 事实来源(docs/knowledge 文章锚点或任务书记录) */
+  /** Source of truth (docs/knowledge article anchor or task-brief record) */
   source: string;
-  /** hover 双语注记 */
+  /** Bilingual hover notes */
   noteZh: string;
   noteEn: string;
 }
@@ -89,7 +95,7 @@ export const TRAP_KNOWLEDGE_ENTRIES: readonly TrapKnowledgeEntry[] = [
   }
 ];
 
-/** 按 detection 模式取条目(lint 规则/hover 注记接线面) */
+/** Look up entries by detection pattern (the wiring surface for lint rules / hover notes) */
 export function getTrapEntryByDetection(
   detection: TrapDetectionKind
 ): TrapKnowledgeEntry | null {

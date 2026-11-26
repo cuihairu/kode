@@ -1,15 +1,18 @@
 /**
- * Python 词法掩码(IDE-LINT-005):一次全文扫描,把注释与字符串字面量
- * (普通/三引号/原始/字节前缀)替换为同长度空白,f-string 的 `{...}` 表达式
- * 部分保留为可见代码、字面量部分掩掉。掩码保长保行(换行不掩),所有列
- * 偏移不变——receiver lint 的调用发现与 guard 分析都在掩码文本上做,天然
- * 不被字符串/注释内容误认(条件里的引号冒号、字面量里的 return 等)。
- * 每轮诊断计算只调一次(计数器供测试面核对),不逐命中重扫。
+ * Python lexical mask (IDE-LINT-005): one full-text scan replacing comments and
+ * string literals (plain / triple-quoted / raw / byte-prefixed) with whitespace of
+ * the same length, keeping the `{...}` expression parts of an f-string visible as
+ * code while masking its literal parts. The mask preserves length and lines
+ * (newlines are not masked), so every column offset is unchanged -- receiver lint's
+ * call discovery and guard analysis both run on the masked text and are therefore
+ * never misled by string/comment contents (quotes or colons inside conditions,
+ * a return inside a literal, etc.). It is called once per diagnostics pass (the
+ * counter is for the test face to check), never re-scanned per hit.
  */
 
 let maskPassCount = 0;
 
-/** 测试面:掩码全文扫描次数(每轮 compute 恰 1 次,与命中数无关) */
+/** Test face: number of full-text mask scans (exactly 1 per compute pass, independent of the hit count) */
 export function getPythonMaskPassCountForTests(): number {
   return maskPassCount;
 }
@@ -20,7 +23,7 @@ export function resetPythonMaskPassCountForTests(): void {
 
 const isQuote = (char: string): boolean => char === '"' || char === "'";
 
-/** 引号前的字符串前缀(如 r/f/rb/fr);非前缀字母串(如标识符)返回空 */
+/** String prefix preceding the quote (e.g. r/f/rb/fr); returns empty for a non-prefix letter run (such as an identifier) */
 const stringPrefixBefore = (text: string, quoteIndex: number): string => {
   let start = quoteIndex;
   while (start > 0 && /\w/.test(text[start - 1])) { start -= 1; }
@@ -29,9 +32,11 @@ const stringPrefixBefore = (text: string, quoteIndex: number): string => {
 };
 
 /**
- * 掩掉 text[start..] 起的一个字符串字面量(含引号),返回结束后的下标。
- * f-string:字面量部分掩掉,遇 `{`(非 `{{`)进入表达式段——表达式段保持
- * 可见,内嵌字符串/注释递归掩掉,配对 `}` 回到字面量段。
+ * Mask one string literal (including its quotes) starting at text[start..] and
+ * return the index after it.
+ * f-string: the literal parts are masked; hitting `{` (not `{{`) enters the
+ * expression section -- that section stays visible, nested strings/comments are
+ * masked recursively, and the matching `}` returns to the literal section.
  */
 function maskStringAt(text: string, out: string[], start: number): number {
   const n = text.length;
@@ -46,7 +51,7 @@ function maskStringAt(text: string, out: string[], start: number): number {
   };
   blank(start, start + openLen);
   let i = start + openLen;
-  let fexprDepth = 0; // >0:f-string 表达式段(代码可见)
+  let fexprDepth = 0; // >0: inside an f-string expression section (code stays visible)
   while (i < n) {
     const char = text[i];
     if (fexprDepth > 0) {
@@ -54,10 +59,10 @@ function maskStringAt(text: string, out: string[], start: number): number {
       if (char === '}') { fexprDepth -= 1; i += 1; continue; }
       if (char === '#') { i = maskCommentAt(text, out, i); continue; }
       if (isQuote(char)) { i = maskStringAt(text, out, i); continue; }
-      i += 1; continue; // 表达式代码保持可见
+      i += 1; continue; // expression code stays visible
     }
     if (fstring) {
-      // f-string 字面量段:掩掉;`{{` 转义随段掩,`{` 进入表达式段
+      // f-string literal section: masked; the `{{` escape is masked with the section, `{` enters the expression section
       if (char === quote && (!triple || text.slice(i, i + 3) === quote.repeat(3))) {
         const closeLen = triple ? 3 : 1;
         blank(i, i + closeLen);
@@ -70,7 +75,7 @@ function maskStringAt(text: string, out: string[], start: number): number {
       i += 1;
       continue;
     }
-    // 普通字符串:掩到结束引号/行尾(转义成对跳过)
+    // plain string: mask up to the closing quote / end of line (escape pairs are skipped together)
     if (char === '\\') { blank(i, i + 2); i += 2; continue; }
     if (char === quote) {
       if (triple && text.slice(i, i + 3) !== quote.repeat(3)) { blank(i, i + 1); i += 1; continue; }
@@ -84,7 +89,7 @@ function maskStringAt(text: string, out: string[], start: number): number {
   return n;
 }
 
-/** 顶层代码段掩一行内注释(到行尾) */
+/** Mask a single-line comment (up to end of line) within a top-level code section */
 function maskCommentAt(text: string, out: string[], start: number): number {
   const n = text.length;
   let j = start;
@@ -96,10 +101,13 @@ function maskCommentAt(text: string, out: string[], start: number): number {
 }
 
 /**
- * 全文一次扫描产出掩码文本(与输入等长,换行原样保留):
- * - 注释 → 空白;字符串字面量(含引号与前缀外内容)→ 空白;
- * - f-string `{...}` 表达式段保持可见,其中嵌套字符串/注释仍掩掉;
- * - `{{`/`}}` 是字面量花括号,随字面量段掩掉。
+ * One full-text scan produces the masked text (same length as the input, newlines
+ * preserved as-is):
+ * - comments -> whitespace; string literals (including quotes and non-prefix
+ *   content) -> whitespace;
+ * - f-string `{...}` expression sections stay visible, while nested strings/comments
+ *   inside them are still masked;
+ * - `{{`/`}}` are literal braces and are masked along with the literal section.
  */
 export function maskPythonNonCode(text: string): string {
   maskPassCount += 1;
@@ -110,7 +118,7 @@ export function maskPythonNonCode(text: string): string {
   while (i < n) {
     const char = text[i];
     if (fexprDepth > 0) {
-      // f-string 表达式段:代码可见,花括号记深,嵌套字符串/注释照掩
+      // f-string expression section: code stays visible, braces tracked as depth, nested strings/comments masked as usual
       if (char === '{') { fexprDepth += 1; i += 1; continue; }
       if (char === '}') { fexprDepth -= 1; i += 1; continue; }
       if (char === '#') { i = maskCommentAt(text, out, i); continue; }

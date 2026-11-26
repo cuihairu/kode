@@ -8,8 +8,8 @@
 
 use serde_json::json;
 
-use kode_protocol::{IncomingMessage, Notification, Request, RequestId, error_codes};
-use kode_server::{Outgoing, ServerState, handle_message};
+use kode_protocol::{error_codes, IncomingMessage, Notification, Request, RequestId};
+use kode_server::{handle_message, Outgoing, ServerState};
 
 fn request(id: i64, method: &str, params: serde_json::Value) -> IncomingMessage {
     IncomingMessage::Request(Request {

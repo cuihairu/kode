@@ -1,12 +1,15 @@
-//! 引擎内建类型表(对齐 engine DataTypes::getDataType 注册名;TS 侧
-//! `tests/kodeTypesParity.test.ts` 持同一清单副本,双侧一致才可对拍)。
+//! Engine builtin type table (aligned with the engine `DataTypes::getDataType`
+//! registration names; the TS side `tests/kodeTypesParity.test.ts` holds a copy
+//! of the same list — parity comparison only holds when both sides agree).
 //!
-//! 口径来源:src/databaseSchema.ts `SIMPLE_DB_TYPE_LABELS` + VECTOR2/3/4。
-//! `ARRAY`/`FIXED_DICT` 是容器指引字而非内建标量,单独由
-//! [`is_container_directive`] 识别;别名链终点落在两者任一(或图内节点)上
-//! 都算「已知」(见 [`is_known_terminal`])。
+//! Semantics source: src/databaseSchema.ts `SIMPLE_DB_TYPE_LABELS` + VECTOR2/3/4.
+//! `ARRAY`/`FIXED_DICT` are container directive words, not builtin scalars, and
+//! are recognized separately by [`is_container_directive`]; an alias chain
+//! terminal landing on either (or on a node inside the graph) counts as
+//! "known" (see [`is_known_terminal`]).
 
-/// 引擎内建类型名(全大写;查询侧大小写敏感,与引擎注册名一致)。
+/// Engine builtin type names (all uppercase; the lookup side is
+/// case-sensitive, matching the engine registration names).
 pub const BUILTIN_TYPES: &[&str] = &[
     "INT8",
     "INT16",
@@ -31,7 +34,7 @@ pub const BUILTIN_TYPES: &[&str] = &[
     "VECTOR4",
 ];
 
-/// 容器指引字(.def/types.xml `<Type>` 文本里的 ARRAY / FIXED_DICT)。
+/// Container directive words (ARRAY / FIXED_DICT in .def/types.xml `<Type>` text).
 pub const CONTAINER_DIRECTIVES: &[&str] = &["ARRAY", "FIXED_DICT"];
 
 pub fn is_builtin(name: &str) -> bool {
@@ -42,8 +45,10 @@ pub fn is_container_directive(name: &str) -> bool {
     CONTAINER_DIRECTIVES.contains(&name)
 }
 
-/// 别名链终点是否「已知」:内建标量、容器指引、图内命名节点(由调用方补查)
-/// 之外的名称视为 unknown(SEM-013:保留理由,不冒充内建)。
+/// Whether the terminal of an alias chain is "known": a builtin scalar, a
+/// container directive, or a named node inside the graph (looked up by the
+/// caller). Any other name is treated as unknown (SEM-013: the reason is kept
+/// intact rather than masquerading as a builtin).
 pub fn is_known_terminal(name: &str) -> bool {
     is_builtin(name) || is_container_directive(name)
 }

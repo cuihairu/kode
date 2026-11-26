@@ -1,24 +1,31 @@
-//! `$/kode/processTopology/validate` —— 进程拓扑定义期错配预警(C-17)。
+//! `$/kode/processTopology/validate` — process-topology definition-time mismatch
+//! warning (C-17).
 //!
-//! 交付①进程拓扑清单(部署清单文件 `process_topology.xml`,workspace 根,可选):
-//! 声明部署内进程与职能——每进程 name/role(参照 KBEngine COMPONENT_TYPE:
-//! dbmgr/loginapp/baseappmgr/cellappmgr/cellapp/baseapp/machine/logger/interfaces
-//! /bots 并可自定义)+ 入口命令行 entry + 监听 port + 依赖启动序 dependsOn +
-//! 承载实体 hosts(可选窄化)。
-//! 交付②定义期错配预警(接入 kode lint/diagnostics 体系):全部 warning 且
-//! 文件+行定位,可 CI 拦截。
+//! Deliverable (1), the process topology manifest (deployment manifest file
+//! `process_topology.xml`, workspace root, optional): declares the processes and
+//! their roles in the deployment — each process name/role (per KBEngine
+//! COMPONENT_TYPE: dbmgr/loginapp/baseappmgr/cellappmgr/cellapp/baseapp/machine/
+//! logger/interfaces/bots, and custom roles allowed) + entry command line +
+//! listening port + startup-order dependency dependsOn + hosted-entity hosts
+//! (optional narrowing).
+//! Deliverable (2), definition-time mismatch warnings (wired into the kode
+//! lint/diagnostics system): all warnings with file+line location, CI can block.
 //!
-//! 引擎地面真相(/home/cui/workspaces/kbengine,全部溯源):
-//! - COMPONENT_TYPE/COMPONENT_NAME(common.h:75-115);
-//! - 方法节→组件:CellMethods→CELLAPP_TYPE(entitydef.cpp:1324)、
-//!   BaseMethods→BASEAPP_TYPE(:1467)、ClientMethods→CLIENT_TYPE(:1610);
-//! - 属性旗标→域:ENTITY_BASE/CELL/CLIENT_DATA_FLAGS(entitydef/common.h:41-45);
-//! - 归属:cellapp 承载 hasCell() 实体、baseapp 承载 hasBase() 实体
-//!   (entity_app.h:573-578);dbmgr 按 uid 单实例查找(components.cpp:933)。
+//! Engine ground truth (/home/cui/workspaces/kbengine, fully sourced):
+//! - COMPONENT_TYPE/COMPONENT_NAME (common.h:75-115);
+//! - method section → component: CellMethods→CELLAPP_TYPE (entitydef.cpp:1324),
+//!   BaseMethods→BASEAPP_TYPE (:1467), ClientMethods→CLIENT_TYPE (:1610);
+//! - property flags → domain: ENTITY_BASE/CELL/CLIENT_DATA_FLAGS
+//!   (entitydef/common.h:41-45);
+//! - ownership: cellapp hosts hasCell() entities, baseapp hosts hasBase()
+//!   entities (entity_app.h:573-578); dbmgr looks up single instances by uid
+//!   (components.cpp:933).
 //!
-//! 边界:清单缺省=零发现(功能未启用,零误报);ClientMethods 不校验(客户端
-//! 游戏侧非服务端拓扑,如实记录);闭包(own→interfaces→components→parent)
-//! 镜像 message_table load_def_into_module 序,只累积内容不编号。
+//! Boundary: manifest defaults to absent = zero findings (feature not enabled,
+//! zero false positives); ClientMethods is not validated (the client game side
+//! is not server topology, honestly recorded); the closure
+//! (own→interfaces→components→parent) mirrors message_table load_def_into_module
+//! order, accumulating content only, no numbering.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -35,7 +42,8 @@ pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/processTopology/validate", build_handler);
 }
 
-/// 已知引擎组件角色名(common.h:99-115 COMPONENT_NAME 的服务端子集)。
+/// Known engine component role names (the server subset of COMPONENT_NAME,
+/// common.h:99-115).
 const KNOWN_ROLES: &[&str] = &[
     "machine",
     "logger",
@@ -52,7 +60,8 @@ const KNOWN_ROLES: &[&str] = &[
     "tool",
 ];
 
-/// 单例角色(每部署一个;SERVER_COMPONENTS 的 required 非可扩展项)。
+/// Singleton roles (one per deployment; the required, non-scalable entries of
+/// SERVER_COMPONENTS).
 const SINGLETON_ROLES: &[&str] = &[
     "machine",
     "logger",
@@ -64,7 +73,7 @@ const SINGLETON_ROLES: &[&str] = &[
 
 const SEVERITY_WARNING: u32 = 2;
 
-// 属性旗标 → 域(引擎 entitydef/common.h:41-45)。
+// Property flags → domain (engine entitydef/common.h:41-45).
 const BASE_FLAGS: &[&str] = &["BASE", "BASE_AND_CLIENT"];
 const CELL_FLAGS: &[&str] = &[
     "CELL_PUBLIC",
@@ -83,7 +92,7 @@ const CLIENT_FLAGS: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
-// 输入
+// Input
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -96,7 +105,8 @@ struct BuildParams {
     defs: Vec<DefInput>,
 }
 
-/// 单个 def 原文入参(原文直传 def_md5 风格;类别取 category==entity 优先)。
+/// Single def raw-text input (raw text passed through, def_md5 style; the
+/// category prefers category==entity).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefInput {
@@ -108,7 +118,7 @@ pub struct DefInput {
 }
 
 // ---------------------------------------------------------------------------
-// 输出
+// Output
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
@@ -134,7 +144,7 @@ pub struct Related {
 }
 
 // ---------------------------------------------------------------------------
-// 清单模型
+// Manifest model
 // ---------------------------------------------------------------------------
 
 struct ProcessNode {
@@ -227,14 +237,14 @@ fn parse_manifest(text: &str) -> Manifest {
     Manifest { processes }
 }
 
-/// 首个匹配子元素的直接文本 trim(空 → None)。
+/// Trimmed direct text of the first matching child element (empty → None).
 fn scalar_child(doc: &Document, idx: usize, name: &str) -> Option<String> {
     doc.child_element(idx, name)
         .map(|child| doc.element(child).text(doc).trim().to_string())
 }
 
 // ---------------------------------------------------------------------------
-// 实体内容(entities.xml 属性 + def 闭包)
+// Entity content (entities.xml properties + def closure)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default)]
@@ -244,11 +254,13 @@ struct EntityContent {
     line: usize,
     has_cell: bool,
     has_base: bool,
-    /// 客户端域内容只累积不校验(客户端属游戏侧,非服务端拓扑——如实记录)。
+    /// Client-domain content is accumulated but never validated (the client side
+    /// belongs to the game, not server topology — honestly recorded).
     #[allow(dead_code)]
     has_client: bool,
     persistent: bool,
-    /// 首个触发行的优先定位(def 方法段/持久属性行;回退实体行)。
+    /// Priority location of the first triggering line (def method section /
+    /// persistent property line; falls back to the entity line).
     cell_line: Option<usize>,
     base_line: Option<usize>,
     persistent_line: Option<usize>,
@@ -263,8 +275,10 @@ struct RegistryEntity {
     has_client: bool,
 }
 
-/// 解析 entities.xml 注册清单(flat `<Avatar hasBase="true"/>` 与分段
-/// `<ClientServerEntities>`/`<ServerOnlyEntities>` 两形态,同 TS getRegisteredEntities)。
+/// Parse the entities.xml registry manifest (both the flat
+/// `<Avatar hasBase="true"/>` form and the sectioned
+/// `<ClientServerEntities>`/`<ServerOnlyEntities>` form, same as TS
+/// getRegisteredEntities).
 fn parse_entity_registry(text: &str) -> Vec<RegistryEntity> {
     let doc = xml::parse(text, false);
     let lines = LineMap::new(text);
@@ -313,7 +327,7 @@ fn parse_entity_registry(text: &str) -> Vec<RegistryEntity> {
     out
 }
 
-/// def 名 → (DefInput 索引);按 category 优先 entity,回退其它类。
+/// def name → (DefInput index); by category, entity preferred, other categories as fallback.
 struct DefCorpus {
     by_name: HashMap<String, usize>,
     defs: Vec<DefInput>,
@@ -323,7 +337,8 @@ impl DefCorpus {
     fn new(defs: Vec<DefInput>) -> DefCorpus {
         let mut by_name: HashMap<String, usize> = HashMap::new();
         for (idx, def) in defs.iter().enumerate() {
-            // entity 优先登记(实体同名 def 覆盖接口/组件边角)。
+            // entity registered with priority (an entity's same-named def overrides
+            // the interface/component corner cases).
             if def.category == "entity" || !by_name.contains_key(&def.name) {
                 by_name.insert(def.name.clone(), idx);
             }

@@ -1,55 +1,62 @@
-// 激活分段时延解析(RUST-022 extension activation 段)。
+// Activation segmented latency parsing (RUST-022 extension activation segment).
 //
-// 数据源=宿主自己写的 exthost.log(info 级就有激活行,无需 --verbose 或
-// --prof-startup——实测 VS Code 1.141 的 --prof-startup 不额外落盘产物,
-// 但日志里 `_doActivateExtension`/`Eager extensions activated` 恒定 info 级)。
-// 本模块是纯解析核:输入日志文本,输出分段时刻与派生时延;不读盘、不起宿主,
-// 故单测可离线跑(见 tests/activationTiming.test.ts)。
+// Data source = the exthost.log the host itself writes (activation lines appear at
+// info level, so no --verbose or --prof-startup is needed — measured on VS Code 1.141,
+// --prof-startup writes no extra artifacts, but `_doActivateExtension`/`Eager
+// extensions activated` are always at info level in the log).
+// This module is a pure parsing core: it takes log text and outputs segment marks plus
+// derived latencies; it reads no files and starts no host, so unit tests can run
+// offline (see tests/activationTiming.test.ts).
 //
-// 诚实边界:宿主日志不含 `activate()` 返回时刻。可观测的最早结束标记是
-// 「Eager extensions activated」(全部启动期激活完成)。因此本模块给出的
-// activate 时长是「激活入口 → eager 全量完成」口径,是宿主侧可证下界,
-// 不等于扩展同步 activate 体的精确耗时(后者要扩展内埋点,
-// 见 docs/perf/2026-11-07-activation-views-first.md 的阶段计时)。
-// 日志里没有目标扩展的激活行时返回 null——不造数字。
+// Honest boundary: the host log contains no `activate()` return moment. The earliest
+// observable end marker is "Eager extensions activated" (all startup-phase activations
+// complete). So the activate duration this module reports uses the
+// "activation entry -> eager fully complete" contract, a host-side provable lower
+// bound, and is not the exact duration of the extension's synchronous activate body
+// (that needs instrumentation inside the extension; see the staged timing in
+// docs/perf/2026-11-07-activation-views-first.md).
+// Returns null when the log has no activation line for the target extension — no
+// invented numbers.
 
-/** 一次宿主运行里可观测的激活分段时刻(毫秒,日志时间戳解析值) */
+/** Observable activation segment marks in one host run (ms, parsed from log timestamps) */
 export interface ActivationSegments {
-  /** `Extension host with pid N started` —— 扩展宿主进程起 */
+  /** `Extension host with pid N started` — extension host process start */
   hostStartMs: number;
-  /** `ExtensionService#_doActivateExtension <id>` —— 本扩展激活入口 */
+  /** `ExtensionService#_doActivateExtension <id>` — this extension's activation entry */
   activateEnterMs: number;
-  /** `Eager extensions activated` —— 启动期激活全部完成 */
+  /** `Eager extensions activated` — all startup-phase activations complete */
   eagerActivatedMs: number | null;
-  /** `Extension host with pid N exiting with code N` —— 宿主退出(可选段) */
+  /** `Extension host with pid N exiting with code N` — host exit (optional segment) */
   hostExitMs: number | null;
 }
 
-/** 派生时延:全部由上面的时刻相减得到,不引入外部时钟 */
+/** Derived latencies: all obtained by subtracting the marks above, no external clock */
 export interface ActivationDerived {
-  /** 宿主起 → 本扩展激活入口 */
+  /** Host start -> this extension's activation entry */
   hostStartToActivateMs: number;
-  /** 激活入口 → eager 全量完成 */
+  /** Activation entry -> eager fully complete */
   activateToEagerMs: number | null;
-  /** 宿主起 → eager 全量完成 */
+  /** Host start -> eager fully complete */
   hostStartToEagerMs: number | null;
   /**
-   * 本扩展激活入口之后、Eager 完成之前**另有排队的启动期激活数**。
-   * 非 0 时 `activateToEagerMs` 是混合窗口(含其他扩展的激活体),
-   * 不能当成本扩展 activate() 的耗时——报告必须同时给这个数。
+   * **Number of other startup activations still queued** after this extension's
+   * activation entry and before eager completion.
+   * When non-zero, `activateToEagerMs` is a mixed window (includes other extensions'
+   * activation bodies) and cannot be taken as the cost of this extension's activate()
+   * — the report must give this number alongside.
    */
   trailingStartupActivations: number;
 }
 
 export interface ActivationReport {
   extensionId: string;
-  /** 触发激活的事件原文(如 workspaceContains 形态的 glob),无则 null */
+  /** Raw activation-triggering event (e.g. a workspaceContains-style glob), else null */
   activationEvent: string | null;
   segments: ActivationSegments;
   derived: ActivationDerived;
 }
 
-// 宿主日志行:`2026-11-15 13:16:19.842 [info] <消息>`,级别在方括号内
+// Host log line: `2026-11-15 13:16:19.842 [info] <message>`, level inside brackets
 const LINE_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) \[[a-z]+\] (.*)$/;
 const HOST_START_RE = /^Extension host with pid \d+ started$/;
 const HOST_EXIT_RE = /^Extension host with pid \d+ exiting with code \d+$/;
@@ -57,7 +64,7 @@ const EAGER_RE = /^Eager extensions activated$/;
 // `_doActivateExtension cuihairu.kode-kbengine, startup: true, activationEvent: '...'`
 const ACTIVATE_RE = /^ExtensionService#_doActivateExtension ([^,]+), startup: (true|false)(?:, activationEvent: (.+))?$/;
 
-/** 剥掉包裹的一对引号(日志里 activationEvent 形态为 'workspaceContains:...')。 */
+/** Strip a wrapping pair of quotes (activationEvent appears in the log as 'workspaceContains:...'). */
 const stripQuotes = (value: string): string =>
   value.length >= 2
     && ((value.startsWith("'") && value.endsWith("'"))
@@ -71,7 +78,7 @@ interface ActivationRecord {
   isStartup: boolean;
 }
 
-/** 解析宿主日志文本为目标扩展的激活分段报告;无目标激活行则 null。 */
+/** Parse host log text into an activation segment report for the target extension; null when there is no target activation line. */
 export function parseActivationLog(text: string, extensionId: string): ActivationReport | null {
   const hostStartMs: number[] = [];
   const hostExitMs: number[] = [];
@@ -107,7 +114,7 @@ export function parseActivationLog(text: string, extensionId: string): Activatio
     const isStartup = activate[2] === 'true';
     activations.push({ at, id, isStartup });
     if (id === extensionId && activateEnterMs === null) {
-      // 同一扩展若被多事件重复激活,取首次入口
+      // If the same extension is reactivated by multiple events, take the first entry
       activateEnterMs = at;
       activationEvent = activate[3] ? stripQuotes(activate[3].trim()) : null;
     }

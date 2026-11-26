@@ -1,10 +1,10 @@
 /**
- * KBEngine 日志解析器
- * 解析 KBEngine logger 发送的日志格式
+ * KBEngine log parser
+ * Parses the log format sent by the KBEngine logger
  */
 
 /**
- * 日志级别枚举
+ * Log level enum
  */
 export enum LogLevel {
   DEBUG = 0,
@@ -15,7 +15,7 @@ export enum LogLevel {
 }
 
 /**
- * 日志类型（KBEngine 内部定义）
+ * Log type (defined internally by KBEngine)
  */
 export enum LogType {
   LOG_TYPE_NORMAL = 0,
@@ -24,7 +24,7 @@ export enum LogType {
 }
 
 /**
- * 日志条目接口
+ * Log entry interface
  */
 export interface LogEntry {
   id: number;
@@ -38,13 +38,13 @@ export interface LogEntry {
 }
 
 /**
- * 日志解析器类
+ * Log parser class
  */
 export class LogParser {
   private static nextId = 0;
 
   /**
-   * 组件类型到名称的映射
+   * Mapping from component type to name
    */
   private static readonly COMPONENT_NAMES: { [key: number]: string } = {
     1: 'machine',
@@ -62,15 +62,15 @@ export class LogParser {
   };
 
   /**
-   * 解析 logger 消息
-   * @param data 从 logger 接收的原始数据
-   * @returns 解析后的日志条目
+   * Parse a logger message
+   * @param data the raw data received from the logger
+   * @returns the parsed log entry
    */
   static parseLoggerMessage(data: string): LogEntry | null {
     try {
       const trimmed = data.trimEnd();
 
-      // KBEngine logger.cpp 组装格式:
+      // The format assembled by KBEngine logger.cpp:
       // "   INFO dbmgr01 1000 12345 [2026-03-26 18:21:11 001] - message"
       const kbengineMatch = trimmed.match(
         /^\s*([A-Z_]+)\s+([a-z_]+?)(\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+\[(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{1,3})\]\s+-\s+([\s\S]*)$/i
@@ -125,40 +125,40 @@ export class LogParser {
   }
 
   /**
-   * 解析二进制格式的 LOG_ITEM
-   * @param buffer 二进制数据
-   * @returns 解析后的日志条目
+   * Parse a binary-format LOG_ITEM
+   * @param buffer the binary data
+   * @returns the parsed log entry
    */
   static parseBinaryLogItem(buffer: Buffer): LogEntry | null {
     try {
-      // 简化的二进制解析（实际需要根据 KBEngine 源码中的结构定义）
+      // Simplified binary parsing (in reality it needs the structure definitions from the KBEngine source)
       let offset = 0;
 
-      // 读取 ID (4 bytes)
+      // Read the ID (4 bytes)
       buffer.readUInt32LE(offset);
       offset += 4;
 
-      // 读取 logType (1 byte)
+      // Read logType (1 byte)
       const logType = buffer.readUInt8(offset);
       offset += 1;
 
-      // 读取 componentType (1 byte)
+      // Read componentType (1 byte)
       const componentType = buffer.readUInt8(offset);
       offset += 1;
 
-      // 读取 severity (1 byte)
+      // Read severity (1 byte)
       const severity = buffer.readUInt8(offset);
       offset += 1;
 
-      // 读取 timestamp (8 bytes)
+      // Read the timestamp (8 bytes)
       const timestamp = buffer.readDoubleLE(offset);
       offset += 8;
 
-      // 读取消息长度 (4 bytes)
+      // Read the message length (4 bytes)
       const messageLength = buffer.readUInt32LE(offset);
       offset += 4;
 
-      // 读取消息内容
+      // Read the message body
       const message = buffer.toString('utf8', offset, offset + messageLength);
 
       return {
@@ -177,7 +177,7 @@ export class LogParser {
   }
 
   /**
-   * 解析日志级别字符串
+   * Parse a log level string
    */
   private static parseLogLevel(levelStr: string): LogLevel {
     switch (levelStr.toUpperCase()) {
@@ -211,14 +211,14 @@ export class LogParser {
   }
 
   /**
-   * 解析非标准格式的日志
+   * Parse a non-standard-format log line
    */
   private static parseNonStandardFormat(data: string): LogEntry {
-    // 简单的启发式解析
+    // A simple heuristic parse
     const now = new Date();
     let level = LogLevel.INFO;
     let component = 'unknown';
-    // 尝试检测日志级别
+    // Try to detect the log level
     const lowerData = data.toLowerCase();
     if (lowerData.includes('error') || lowerData.includes('failed')) {
       level = LogLevel.ERROR;
@@ -230,7 +230,7 @@ export class LogParser {
       level = LogLevel.DEBUG;
     }
 
-    // 尝试提取组件名
+    // Try to extract the component name
     const componentMatch = data.match(/\b(machine|logger|dbmgr|baseappmgr|cellappmgr|loginapp|baseapp|cellapp|bots|interfaces|client)\d*\b/i);
     if (componentMatch) {
       component = componentMatch[1].toLowerCase();
@@ -248,7 +248,7 @@ export class LogParser {
   }
 
   /**
-   * 批量解析日志
+   * Parse logs in bulk
    */
   static parseBatch(data: string): LogEntry[] {
     const entries: LogEntry[] = [];
@@ -257,12 +257,14 @@ export class LogParser {
     for (const line of lines) {
       if (line.trim()) {
         const entry = this.parseLoggerMessage(line);
-        // 不可达(批71 定性):parseLoggerMessage 对任意字符串输入全函数
-        // (try 块内只有字符串方法、正则匹配、Date 构造与 \d 捕获组的
-        // Number() 转换,均不抛错;唯一 null 路径是 catch,而 catch 仅对
-        // 非字符串入参可达),parseBatch 逐行喂入 split(/\r?\n/) 的产物,
-        // 恒为字符串 ⇒ 判空假臂无触发路径。分支条目(含已覆盖真臂)随
-        // 区间移出分母,真臂行为由既有 parseBatch 用例锁定。
+        // Unreachable (determined in batch 71): parseLoggerMessage is total over any string
+        // input (inside the try block there are only string methods, regex matching, Date
+        // construction and Number() conversion of \d capture groups, none of which throw; the
+        // only null path is the catch, and the catch is reachable only for a non-string
+        // argument), while parseBatch feeds in the products of split(/\r?\n/) line by line,
+        // always strings => the false arm of this null check has no triggering path. The branch
+        // entry (including the already-covered true arm) moves out of the denominator with the
+        // range, and the true arm's behaviour is pinned by the existing parseBatch cases.
         /* istanbul ignore start */
         if (entry) {
         /* istanbul ignore stop */
@@ -275,7 +277,7 @@ export class LogParser {
   }
 
   /**
-   * 格式化日志条目为可读字符串
+   * Format a log entry into a readable string
    */
   static formatLogEntry(entry: LogEntry): string {
     const timestamp = entry.timestamp.toISOString();
@@ -285,14 +287,14 @@ export class LogParser {
   }
 
   /**
-   * 获取日志级别的显示名称
+   * Get the display name for a log level
    */
   static getLevelName(level: LogLevel): string {
     return LogLevel[level];
   }
 
   /**
-   * 获取日志级别的图标
+   * Get the icon for a log level
    */
   static getLevelIcon(level: LogLevel): string {
     switch (level) {
@@ -312,7 +314,7 @@ export class LogParser {
   }
 
   /**
-   * 获取日志级别的颜色
+   * Get the color for a log level
    */
   static getLevelColor(level: LogLevel): string {
     switch (level) {

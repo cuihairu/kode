@@ -1,9 +1,10 @@
-//! AST → 符号表(类/方法/属性/导入四表,C-20 交付④)。
+//! AST -> symbol tables (four tables: classes / methods / attributes / imports; C-20 delivery item 4).
 //!
-//! 与 kode-corpus 的词法表同构但基于 ruff AST:能正确识别装饰器/async/继承链,
-//! 且不依赖缩进启发式。产出 [`AstSymbols`],可经 [`AstSymbols::to_corpus`] 降级为
-//! [`kode_corpus::PythonModule`],供 C-19 一致性检查与 wt/parity 直接对拍
-//! (「替代 C-19 自建」)。
+//! Isomorphic to kode-corpus's lexical tables but based on the ruff AST: it recognizes decorators,
+//! async and inheritance chains correctly, and does not rely on indentation heuristics. It
+//! produces [`AstSymbols`], which can be degraded to [`kode_corpus::PythonModule`] via
+//! [`AstSymbols::to_corpus`] for the C-19 consistency check and direct wt/parity comparison
+//! ("replaces C-19's home-grown parser").
 
 use kode_corpus::{AttributeSymbol, ClassSymbol, ImportSymbol, MethodSymbol, PythonModule};
 use ruff_python_ast::{self as ast, Expr, Stmt};
@@ -14,15 +15,15 @@ use crate::model::{
 };
 use crate::parse::ParsedAst;
 
-/// 符号抽取结果(AST 符号表 + 解析错误,供诊断面)。
+/// Symbol extraction result (AST symbol tables + parse errors, for the diagnostics face).
 #[derive(Debug)]
 pub struct AstExtraction {
     pub symbols: AstSymbols,
-    /// ruff 语法错误(格式化字符串;空 = 无)。
+    /// ruff syntax errors (formatted strings; empty = none).
     pub errors: Vec<String>,
 }
 
-/// 解析并抽取 AST 符号表。
+/// Parse and extract the AST symbol tables.
 pub fn parse_ast_symbols(source: &str) -> AstExtraction {
     let ast = ParsedAst::new(source);
     let errors: Vec<String> = ast.errors().iter().map(|e| format!("{e:?}")).collect();
@@ -30,7 +31,7 @@ pub fn parse_ast_symbols(source: &str) -> AstExtraction {
     AstExtraction { symbols, errors }
 }
 
-/// 从已解析 AST 抽取符号表(纯函数,供增量面复用同一抽取)。
+/// Extract symbol tables from an already-parsed AST (pure function, so the incremental face can reuse the same extraction).
 pub fn extract(ast: &ParsedAst) -> AstSymbols {
     let mut out = AstSymbols {
         line_count: ast.line_count(),
@@ -53,8 +54,9 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
             Stmt::FunctionDef(f) => out.functions.push(extract_function(ast, f)),
             Stmt::Import(imp) => {
                 for alias in &imp.names {
-                    // KR-AUD-11:`import a.b` 绑定顶层名 `a`(Python 语义;
-                    // 跨文件解析按顶层名匹配),无 asname 时不再取全段 "a.b"。
+                    // KR-AUD-11: `import a.b` binds the top-level name `a` (Python semantics;
+                    // cross-file resolution matches on the top-level name); without an asname we no
+                    // longer take the full dotted path "a.b".
                     let binding = alias
                         .asname
                         .as_ref()
@@ -102,25 +104,28 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
     out
 }
 
-/// `import x.y.z`(无 asname)的绑定名 = 顶层首段 `x`(KR-AUD-11;含 asname
-/// 分支由调用方处理,此处只收无 asname 的全段名)。
+/// Binding name of `import x.y.z` (no asname) = the top-level first segment `x` (KR-AUD-11; the
+/// asname branch is handled by the caller -- this helper only takes the full dotted path when
+/// there is no asname).
 fn top_level_binding(name: &str) -> String {
     name.split('.').next().unwrap_or(name).to_string()
 }
 
-/// 函数作用域 import 绑定收集器(ruff visitor 递归,带行区间栈)。
-/// 与顶层 `imports` 表互补:顶层表是语义面(模块级绑定全文件可见),
-/// 本收集器把函数体内的 import 绑定按「内层函数行区间」归属——调用图
-/// 解析用调用点行号落区间判可见性:外层区间覆盖嵌套体(闭包可见),
-/// 兄弟/同名函数区间不相交(互不作保)。不按函数名键(裸名非作用域
-/// 唯一标识,复审第四轮残余)。
+/// Function-scope import binding collector (recursive ruff visitor, carrying a stack of line
+/// intervals). Complements the top-level `imports` table: that table is the semantic face
+/// (module-level bindings are visible file-wide), whereas this collector attributes import
+/// bindings inside function bodies by "inner-function line interval" -- call-graph resolution
+/// decides visibility by whether the call site's line number falls in the interval: an outer
+/// interval covers nested bodies (closure visibility), while sibling / same-named function
+/// intervals are disjoint (they do not cover each other). Not keyed by function name (a bare
+/// name is not a scope-unique identifier; residual from the fourth review round).
 struct ImportBindingCollector<'a> {
     ast: &'a ParsedAst,
-    /// 当前作用域层栈(外层在前)。
+    /// Stack of current scope layers (outer first).
     scope_stack: Vec<ScopeImportBindings>,
-    /// 已完成的作用域记录(层退出时从栈转存)。
+    /// Completed scope records (moved off the stack when a layer exits).
     collected: Vec<ScopeImportBindings>,
-    /// 模块顶层 Store 赋值遮蔽面(空栈时 push_shadow 落这里)。
+    /// Module-top-level Store assignment shadow surface (push_shadow lands here with an empty stack).
     module_shadows: std::collections::BTreeMap<String, usize>,
 }
 
@@ -135,8 +140,8 @@ impl<'a> ImportBindingCollector<'a> {
         });
     }
 
-    /// 退出当前作用域层:转存记录(空层丢弃——既无绑定也无遮蔽的层对
-    /// 解析无影响)。
+    /// Exit the current scope layer: move its record off the stack (empty layers are dropped --
+    /// a layer with neither bindings nor shadows has no effect on resolution).
     fn pop_scope_layer(&mut self) {
         if let Some(scope) = self.scope_stack.pop() {
             if !scope.bindings.is_empty() || !scope.shadows.is_empty() {
@@ -146,10 +151,12 @@ impl<'a> ImportBindingCollector<'a> {
     }
 
     fn push_binding(&mut self, binding: &str, line: usize, basename: &str, target_id: &str) {
-        // 记到最内层作用域层,保留最近一次绑定(同作用域重绑定取后者;
-        // 外层区间覆盖嵌套体,调用点行号包含判定实现闭包可见语义)。
-        // 同名多次 import 目标不同(basename 或目标身份 id)= 静态不裁决 →
-        // 记空 basename 歧义标记(解析层放弃该边;复审第十/十一轮残余)。
+        // Record into the innermost scope layer, keeping the most recent binding (a rebind inside the
+        // same scope takes the later one; an outer interval covers nested bodies, and the
+        // call-site line-number containment test implements closure-visibility semantics).
+        // The same name imported multiple times with different targets (basename or target
+        // identity id) = statically undecidable -> record an empty-basename ambiguity marker
+        // (the resolution layer drops that edge; residual from review rounds ten/eleven).
         if let Some(top) = self.scope_stack.last_mut() {
             let base = match top.bindings.get(binding) {
                 Some((_, existing_base, existing_tid))
@@ -169,8 +176,9 @@ impl<'a> ImportBindingCollector<'a> {
             Some(top) => {
                 top.shadows.insert(name.to_string(), line);
             }
-            // 模块顶层 Store 赋值 = 模块级遮蔽面(函数链未决时,模块 import
-            // 回退须先查此表——复审第九轮残余①)。
+            // Module-top-level Store assignment = the module-level shadow surface (when the function chain
+            // is undecidable, the module import fallback must consult this table first --
+            // residual from review round nine, item 1).
             None => {
                 self.module_shadows.insert(name.to_string(), line);
             }
@@ -211,8 +219,9 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                 return;
             }
             Stmt::ClassDef(cls) => {
-                // 类体是独立作用域层:类内 Store 名不污染外层函数 shadows
-                // (Python 裸名解析链不含类层,graph.rs 按 kind 过滤跳过)。
+                // The class body is its own scope layer: Store names inside the class do not pollute the outer
+                // function's shadows (Python's bare-name resolution chain does not include the
+                // class layer; graph.rs filters by kind and skips it).
                 let start = self.ast.line_col(cls.range.start().to_u32()).0;
                 let end = self.ast.line_col(cls.range.end().to_u32()).0;
                 self.push_scope_layer(ScopeKind::Class, start, end);
@@ -228,8 +237,9 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                         .as_ref()
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| top_level_binding(alias.name.as_str()));
-                    // 目标模块 basename:无别名绑顶层首段(import a.b 绑 a,
-                    // 文件 a.py);有别名绑末段(import a.b as c 的 c=b.py)。
+                    // Target module basename: without an alias it binds the top-level first segment (import a.b
+                    // binds a, file a.py); with an alias it binds the last segment (for import
+                    // a.b as c, c = b.py).
                     let basename = if alias.asname.is_some() {
                         alias
                             .name
@@ -248,8 +258,8 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
             Stmt::ImportFrom(impf) => {
                 let line = self.ast.line_col(impf.range.start().to_u32()).0;
                 for alias in &impf.names {
-                    // `from pkg import x` 的绑定名就是 `x`(无 asname 时),
-                    // 目标模块 basename 也是 x(pkg/x.py);`*` 导入不记。
+                    // For `from pkg import x` the binding name is `x` itself (no asname), and the target module
+                    // basename is also x (pkg/x.py); `*` imports are not recorded.
                     if alias.name.as_str() == "*" {
                         continue;
                     }
@@ -259,8 +269,8 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| alias.name.as_str().to_string());
                     let basename = alias.name.as_str().to_string();
-                    // 目标身份 id:module.x(相对导入带 level 前缀点,level
-                    // 不同的同名目标不得混同)。
+                    // Target identity id: module.x (relative imports carry `level` leading dots; same-named targets
+                    // at different levels must not be conflated).
                     let target_id = format!(
                         "{}{}.{}",
                         ".".repeat(impf.level as usize),
@@ -276,11 +286,13 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
     }
 
     fn visit_expr(&mut self, expr: &Expr) {
-        // 推导式与 lambda 是独立隐式作用域:目标 Store 名进自身层,不污染
-        // 外层函数 shadows(复审第六轮残余②)。
+        // Comprehensions and lambdas are independent implicit scopes: their target Store names go into
+        // their own layer and do not pollute the outer function's shadows (residual from review
+        // round six, item 2).
         match expr {
-            // 推导式:enter_comp_scope 内部完成整棵子树的走查并退出该层,
-            // 直接 return,防外层 walk_expr 二次走查把目标漏进外层 shadows。
+            // Comprehensions: enter_comp_scope walks the whole subtree and exits that layer
+            // internally, then we return directly, preventing the outer walk_expr from walking it
+            // again and leaking targets into the outer shadows.
             Expr::ListComp(e) => return self.enter_comp_scope(e.range, expr),
             Expr::SetComp(e) => return self.enter_comp_scope(e.range, expr),
             Expr::DictComp(e) => return self.enter_comp_scope(e.range, expr),
@@ -296,9 +308,9 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                 self.pop_scope_layer();
                 return;
             }
-            // Store 上下文的 Name = 本地绑定(赋值/增强赋值/walrus/for/with/
-            // 推导式目标)——计入当前层遮蔽集(带行号,供与 import 绑定按
-            // 位置裁决)。
+            // A Name in Store context = a local binding (assignment / augmented assignment / walrus /
+            // for / with / comprehension target) -- counted into the current layer's shadow set
+            // (with line number, so it can be adjudicated by position against import bindings).
             Expr::Name(n) if n.ctx.is_store() => {
                 let line = self.ast.line_col(n.range.start().to_u32()).0;
                 self.push_shadow(n.id.as_str(), line);
@@ -310,7 +322,8 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
 }
 
 impl<'a> ImportBindingCollector<'a> {
-    /// 进入推导式隐式作用域层,走查完整个表达式后退出(配对,不残留层)。
+    /// Enter the comprehension's implicit scope layer, walk the entire expression, then exit
+    /// (paired, no leftover layers).
     fn enter_comp_scope(&mut self, range: ruff_text_size::TextRange, expr: &Expr) {
         let start = self.ast.line_col(range.start().to_u32()).0;
         let end = self.ast.line_col(range.end().to_u32()).0;
@@ -320,7 +333,7 @@ impl<'a> ImportBindingCollector<'a> {
     }
 }
 
-/// 类名 → 类索引(供 C-19/wt-parity 查类方法)。
+/// Class name -> class index (for C-19 / wt-parity to look up class methods).
 pub fn class_index(symbols: &AstSymbols) -> std::collections::BTreeMap<&str, &AstClass> {
     symbols
         .classes
@@ -395,9 +408,10 @@ fn extract_function(ast: &ParsedAst, f: &ast::StmtFunctionDef) -> AstFunction {
     }
 }
 
-/// 形参名(posonly → pos → vararg → kwonly → kwarg 顺序;`self` 不计入)。
+/// Formal parameter names (posonly -> pos -> vararg -> kwonly -> kwarg order; `self` is excluded).
 ///
-/// 公开供 kode-server 的 dataflow 消费面复用(同一排序口径,防两套语义漂移)。
+/// Public so kode-server's dataflow consumer face can reuse it (the same ordering semantics, so
+/// the two implementations cannot drift apart).
 pub fn method_params(p: &ast::Parameters) -> Vec<String> {
     let mut out = Vec::new();
     let mut push = |name: &str| {
@@ -423,7 +437,7 @@ pub fn method_params(p: &ast::Parameters) -> Vec<String> {
     out
 }
 
-/// 装饰器源码文本(ruff 的 Decorator range 已含 `@`,按源码顺序)。
+/// Decorator source text (ruff's Decorator range already includes `@`; in source order).
 fn decorators(ast: &ParsedAst, list: &[ast::Decorator]) -> Vec<String> {
     list.iter()
         .map(|d| {
@@ -439,7 +453,7 @@ fn decorators(ast: &ParsedAst, list: &[ast::Decorator]) -> Vec<String> {
         .collect()
 }
 
-/// 递归收集方法体内 `self.<name> = ...` 属性写入。
+/// Recursively collect `self.<name> = ...` attribute writes inside a method body.
 fn collect_attributes(ast: &ParsedAst, class: &str, body: &[Stmt], out: &mut Vec<AstAttribute>) {
     for stmt in body {
         match stmt {
@@ -502,20 +516,20 @@ fn collect_attributes(ast: &ParsedAst, class: &str, body: &[Stmt], out: &mut Vec
                 collect_attributes(ast, class, &t.finalbody, out);
             }
             Stmt::Match(m) => {
-                // KODE-AUD-008:match case 体内 self.<attr>=... 此前漏收集。
+                // KODE-AUD-008: self.<attr> = ... inside match case bodies was previously missed.
                 for case in &m.cases {
                     collect_attributes(ast, class, &case.body, out);
                 }
             }
             Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {
-                // 嵌套 def/class 不收集(与 kode-corpus「类直属」口径一致)
+                // Nested def/class bodies are not collected (same semantics as kode-corpus's "directly owned by the class").
             }
             _ => {}
         }
     }
 }
 
-/// target 是 `self.<name>` 时返回 `<name>`。
+/// Returns `<name>` when target is `self.<name>`.
 fn self_attribute(_ast: &ParsedAst, expr: &Expr) -> Option<String> {
     if let Expr::Attribute(attr) = expr {
         if let Expr::Name(n) = attr.value.as_ref() {
@@ -527,7 +541,7 @@ fn self_attribute(_ast: &ParsedAst, expr: &Expr) -> Option<String> {
     None
 }
 
-/// 取表达式为 dotted identifier(如 `Base`、`kbe.Entity`);非标识符 → None。
+/// Reads the expression as a dotted identifier (e.g. `Base`, `kbe.Entity`); non-identifier -> None.
 fn dotted_name(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Name(n) => Some(n.id.as_str().to_string()),
@@ -539,7 +553,7 @@ fn dotted_name(expr: &Expr) -> Option<String> {
     }
 }
 
-/// 降级为 kode-corpus 词法表(C-19 / wt/parity 复用面)。
+/// Degrade to kode-corpus's lexical tables (the C-19 / wt/parity reuse face).
 impl AstSymbols {
     pub fn to_corpus(&self) -> PythonModule {
         let mut classes = Vec::new();

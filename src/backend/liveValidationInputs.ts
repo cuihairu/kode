@@ -1,16 +1,18 @@
 /**
- * 登记真实引擎联验所需输入(IDE-LIV-001):目标版本(kbengine 仓 URL+
- * ref)、组件地址(名词与 COMPONENT_NAMES 对齐,不自造)、启动条件三
- * 段清单。默认登记=全未登记+缺实例,状态文案明确「未测」——缺实例
- * 时绝不写成已联验;登记/满足是纯函数更新(原登记不可变)。联验执行
- * 面(LIV-003/004 真实查询)与协议号核对(LIV-002)各自另行落地,本
- * 模块只管输入登记与状态如实呈现。
+ * Registers the inputs a real-engine live validation needs (IDE-LIV-001): the target version
+ * (the kbengine repo URL + ref), component addresses (names aligned with COMPONENT_NAMES,
+ * never invented), and the three-part startup-condition list. The default register = nothing
+ * registered + no instance, and the status wording says "untested" explicitly -- when an
+ * instance is missing it is never written up as live-validated; registering/satisfying is a
+ * pure-function update (the original register is immutable). The live-validation execution face
+ * (LIV-003/004 real queries) and the protocol-number check (LIV-002) land separately; this
+ * module only handles input registration and presenting status honestly.
  */
 
 import { MACHINE_BROADCAST_PORT } from './kbengineProtocol';
 
 export interface LiveValidationEngineVersion {
-  /** 引擎仓地址(如 https://github.com/kbengine/kbengine) */
+  /** The engine repo address (e.g. https://github.com/kbengine/kbengine) */
   repoUrl?: string;
   /** tag/commit/branch */
   ref?: string;
@@ -18,11 +20,11 @@ export interface LiveValidationEngineVersion {
 }
 
 export interface LiveValidationComponentAddress {
-  /** COMPONENT_NAMES 现成名词 */
+  /** An existing COMPONENT_NAMES name */
   component: string;
   host?: string;
   port?: number;
-  /** 未登记时点名期望(如 machine 的广播口),登记面照此补 */
+  /** Names the expectation when unregistered (e.g. machine's broadcast port); the registration face fills it in accordingly */
   expected?: string;
   registered: boolean;
 }
@@ -36,13 +38,13 @@ export interface LiveValidationRegister {
   engineVersion: LiveValidationEngineVersion;
   componentAddresses: LiveValidationComponentAddress[];
   startupConditions: LiveValidationStartupCondition[];
-  /** 真实引擎实例是否可用(缺实例=未测的事实来源) */
+  /** Whether a real engine instance is available (a missing instance = the source of truth for "untested") */
   instanceAvailable: boolean;
-  /** 联验执行后回填(ISO 时刻);仅登记无联验不设 */
+  /** Backfilled after live validation runs (an ISO moment); not set for registration without a validation run */
   lastVerifiedAt?: string;
 }
 
-/** 联验需要的组件地址清单(watcher 路径查询与空间列表查询的参与面) */
+/** The component-address list live validation needs (the participants of the watcher path query and the spaces list query) */
 export const REQUIRED_LIVE_VALIDATION_COMPONENTS: Array<Pick<LiveValidationComponentAddress, 'component' | 'expected'>> = [
   { component: 'machine', expected: `广播口 ${MACHINE_BROADCAST_PORT}(组件发现入口)` },
   { component: 'cellappmgr', expected: '空间列表查询(Cellappmgr::querySpaces)的组件地址' },
@@ -50,13 +52,13 @@ export const REQUIRED_LIVE_VALIDATION_COMPONENTS: Array<Pick<LiveValidationCompo
   { component: 'baseapp', expected: 'watcher 路径查询的组件地址' }
 ];
 
-/** 联验启动条件清单 */
+/** The live-validation startup-condition list */
 export const REQUIRED_LIVE_VALIDATION_STARTUP_CONDITIONS: Array<Pick<LiveValidationStartupCondition, 'description'>> = [
   { description: 'demo 服务端启动并完成组件互相发现(machine/baseapp/cellapp 就绪)' },
   { description: '可登录的 demo 客户端账号(触发实体创建与空间负载)' }
 ];
 
-/** 默认登记:所需输入全未登记、缺实例(如实起点,不冒充) */
+/** The default register: none of the required inputs registered, no instance (an honest starting point, no passing off) */
 export function createUnregisteredLiveValidationRegister(): LiveValidationRegister {
   return {
     engineVersion: { registered: false },
@@ -79,7 +81,7 @@ export interface LiveValidationRegisterUpdate {
   startupConditions?: LiveValidationStartupCondition[];
 }
 
-/** 纯函数登记:按组件名/序合并更新,原登记对象不变 */
+/** Pure-function registration: merges the update by component name/order, the original register object unchanged */
 export function registerLiveValidationInputs(
   register: LiveValidationRegister,
   update: LiveValidationRegisterUpdate
@@ -98,7 +100,7 @@ export function registerLiveValidationInputs(
   };
 }
 
-/** 状态文案:逐项已登记/未登记、满足/未满足;缺实例明确「未测」 */
+/** Status wording: registered/unregistered and met/unmet item by item; a missing instance is explicitly "untested" */
 export function describeLiveValidationStatus(register: LiveValidationRegister): string {
   const lines: string[] = [];
   const version = register.engineVersion;

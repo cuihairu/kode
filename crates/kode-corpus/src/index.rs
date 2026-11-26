@@ -1,8 +1,9 @@
-//! 文件级增量 Python 语料索引。
+//! File-level incremental Python corpus index.
 //!
-//! 索引以 VFS 枚举结果为边界,用内容指纹判断是否需要重新探测编码和抽取词法表。
-//! 未变化文件直接复用上一轮结果;读失败、编码不支持或解码失败会进入 [`issues`],
-//! 不会静默产生乱码条目。
+//! The index is bounded by the VFS enumeration result and uses a content fingerprint to decide
+//! whether encoding detection and lexical table extraction must run again. Unchanged files reuse
+//! the previous round's result; read failures, unsupported encodings and decode failures land in
+//! [`issues`], so no mojibake entry is produced silently.
 //!
 //! [`issues`]: PythonCorpusIndex::issues
 
@@ -19,7 +20,7 @@ use crate::{
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
-/// 内容指纹(FNV-1a 64-bit,零依赖且跨平台稳定)。
+/// Content fingerprint (FNV-1a 64-bit, dependency free and stable across platforms).
 pub fn content_fingerprint(bytes: &[u8]) -> u64 {
     let mut hash = FNV_OFFSET_BASIS;
     for byte in bytes {
@@ -29,7 +30,7 @@ pub fn content_fingerprint(bytes: &[u8]) -> u64 {
     hash
 }
 
-/// 一个已索引的 Python 文件。
+/// One indexed Python file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedPythonFile {
     pub path: PathBuf,
@@ -37,19 +38,19 @@ pub struct IndexedPythonFile {
     pub fingerprint: u64,
     pub byte_len: usize,
     pub detection: EncodingDetection,
-    /// 解码后的源码(保留给 P1/P2 的落点与悬停层)。
+    /// The decoded source (kept for the P1/P2 definition and hover layers).
     pub source: String,
     pub module: PythonModule,
 }
 
-/// 索引问题分类。
+/// Classification of index issues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IndexIssueKind {
     Read,
     Decode,
 }
 
-/// 单个文件未进入索引的原因。
+/// Why one file did not make it into the index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexIssue {
     pub relative_path: String,
@@ -57,7 +58,7 @@ pub struct IndexIssue {
     pub message: String,
 }
 
-/// 一轮刷新的统计。
+/// Statistics for one refresh round.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct IndexStats {
     pub enumerated_files: usize,
@@ -70,7 +71,7 @@ pub struct IndexStats {
     pub truncated: bool,
 }
 
-/// 增量 Python 语料索引。
+/// Incremental Python corpus index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PythonCorpusIndex {
     root: PathBuf,
@@ -89,7 +90,7 @@ impl PythonCorpusIndex {
         }
     }
 
-    /// 按当前目录状态刷新索引。未变化文件按 `(fingerprint, byte_len)` 复用。
+    /// Refresh the index against the current directory state. Unchanged files are reused by `(fingerprint, byte_len)`.
     pub fn refresh(&mut self, options: &EnumerateOptions) -> io::Result<IndexStats> {
         let enumeration = enumerate_python_files(&self.root, options)?;
         let mut previous = std::mem::take(&mut self.files);
@@ -196,7 +197,7 @@ impl PythonCorpusIndex {
     }
 }
 
-/// 一次性建立索引。
+/// Build the index in one shot.
 pub fn index_python_corpus(
     root: &Path,
     options: &EnumerateOptions,
@@ -301,7 +302,8 @@ mod tests {
 
     #[test]
     fn accessors_expose_root_stats_files_and_emptiness() {
-        // 访问器:root/stats/files/len/is_empty 暴露刷新前后的完整状态。
+        // Accessors: root/stats/files/len/is_empty expose the full state before and
+        // after a refresh.
         let root = temp_dir("accessors");
         write(&root, "a.py", "class A:\n    pass\n");
         write(&root, "b.py", "class B:\n    pass\n");
@@ -327,7 +329,8 @@ mod tests {
 
     #[test]
     fn removed_files_are_counted_and_dropped_from_index() {
-        // 两轮刷新之间删除文件:removed_files 计数,且旧条目不再可查。
+        // A file deleted between two refresh rounds: counted in removed_files, and the
+        // stale entry is no longer queryable.
         let root = temp_dir("removed");
         write(&root, "a.py", "class A:\n    pass\n");
         write(&root, "gone.py", "class Gone:\n    pass\n");
@@ -346,7 +349,7 @@ mod tests {
 
     #[test]
     fn truncation_flag_propagates_from_enumeration() {
-        // max_files 截断:统计里的 truncated 与索引规模保持一致。
+        // Truncation by max_files: truncated in the stats stays consistent with index size.
         let root = temp_dir("truncated");
         write(&root, "a.py", "class A:\n    pass\n");
         write(&root, "b.py", "class B:\n    pass\n");
@@ -367,8 +370,9 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn read_failures_are_recorded_as_issues_without_aborting() {
-        // 悬空符号链接会被枚举按文件收录,但读取失败 → 记为 Read 问题,
-        // 不中断整轮刷新,也不静默产生空条目。
+        // A dangling symlink is collected by enumeration as a file, but the read fails
+        // -> recorded as a Read issue, without aborting the whole refresh and
+        // without silently producing an empty entry.
         let root = temp_dir("read-error");
         write(&root, "good.py", "class Good:\n    pass\n");
         std::os::unix::fs::symlink(root.join("gone.py"), root.join("dangling.py")).unwrap();

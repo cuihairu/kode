@@ -525,11 +525,7 @@ fn completion_on_py_self_lists_entity_members_from_def_corpus() {
         request(
             31,
             "textDocument/completion",
-            completion_params(
-                "file:///workspace/demo/scripts/base/Avatar.py",
-                5,
-                7,
-            ),
+            completion_params("file:///workspace/demo/scripts/base/Avatar.py", 5, 7),
         ),
     );
     let result = response_of(&out);
@@ -583,11 +579,7 @@ fn completion_on_py_non_self_or_non_entity_is_null() {
         request(
             32,
             "textDocument/completion",
-            completion_params(
-                "file:///workspace/demo/scripts/base/Avatar.py",
-                5,
-                12,
-            ),
+            completion_params("file:///workspace/demo/scripts/base/Avatar.py", 5, 12),
         ),
     );
     assert_eq!(response_of(&out), &serde_json::Value::Null);
@@ -612,11 +604,7 @@ fn completion_on_py_non_self_or_non_entity_is_null() {
         request(
             33,
             "textDocument/completion",
-            completion_params(
-                "file:///workspace/demo/scripts/base/Helper.py",
-                2,
-                7,
-            ),
+            completion_params("file:///workspace/demo/scripts/base/Helper.py", 2, 7),
         ),
     );
     assert_eq!(response_of(&out), &serde_json::Value::Null);
@@ -644,11 +632,7 @@ fn completion_resolve_roundtrip_enriches_documentation() {
         request(
             41,
             "textDocument/completion",
-            completion_params(
-                "file:///workspace/demo/scripts/base/Avatar.py",
-                5,
-                7,
-            ),
+            completion_params("file:///workspace/demo/scripts/base/Avatar.py", 5, 7),
         ),
     );
     let items = response_of(&out)["items"].as_array().expect("items");
@@ -663,7 +647,9 @@ fn completion_resolve_roundtrip_enriches_documentation() {
     );
     let resolved = response_of(&out);
     assert_eq!(resolved["label"], json!("hp"));
-    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    let doc = resolved["documentation"]["value"]
+        .as_str()
+        .expect("documentation");
     assert!(doc.contains("`UINT32`"), "类型面: {doc}");
     assert!(
         doc.contains("scripts/entity_defs/Avatar.def"),

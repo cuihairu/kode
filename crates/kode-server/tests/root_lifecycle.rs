@@ -109,7 +109,9 @@ fn open_entities(state: &mut ServerState, uri: &str) {
 /// 索引刷新队列,泵过后才真正入库(与生产时序一致)。
 fn pump_index(state: &mut ServerState) {
     // RESP-001b:泵=生产形态(墙钟界;读线程往返在预算内交货应用)。
-    state.index.pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
+    state
+        .index
+        .pump_budgeted_until(64, Instant::now() + Duration::from_millis(2000));
 }
 
 fn definition_at(state: &mut ServerState, id: i64, uri: &str) -> serde_json::Value {

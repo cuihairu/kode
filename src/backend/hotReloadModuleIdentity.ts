@@ -1,18 +1,26 @@
 /**
- * 热更模块身份纯面(HR-PR-02,书 docs/kode2/KODE_2_COMPLETE_TODO.md §19.3):
- * - HR-MOD-001 `HotReloadModuleIdentity` 九字段 DTO(workspaceId/rootId/
- *   fileUri/fullModule/requestModule/fileStem/parentName/language/sourceVersion);
- * - HR-MOD-002 纯解析器:输入 URI、明确资源根(单根或多根候选)、workspace
- *   身份、user override、single-level fallback 开关;输出 Result + 结构化
- *   diagnostics;零 IO、零 vscode 导入——所有输入都由调用方显式给,本面
- *   绝不隐式读盘/读配置;
- * - HR-MOD-005 字符串语义唯一来源=hotReloadTempEdit.resolveModuleDualName
- *   (角色目录剥段/`.py` 尾缀/`__init__`/穿越拒绝全部复用,本面只做根候选
- *   选择、URI 词法规范化、诊断码映射与 override,不另写一套模块名推导);
- * - HR-MOD-009 URI 词法规范化:file:// 解码、反斜杠、UNC(WSL `//wsl$`、
- *   `//wsl.localhost`、Remote SSH 挂载形)、重复斜杠、`.`/`..` 词法消解、
- *   盘符大写、大小写保留。符号链接消解与 fs 级大小写语义需 realpath/平台
- *   判定,属 IO 专项,纯面不做(与 crates/kode-vfs VFS-001 同边界)。
+ * Hot reload module identity pure face (HR-PR-02, book
+ * docs/kode2/KODE_2_COMPLETE_TODO.md §19.3):
+ * - HR-MOD-001 the `HotReloadModuleIdentity` nine-field DTO (workspaceId/
+ *   rootId/fileUri/fullModule/requestModule/fileStem/parentName/language/
+ *   sourceVersion);
+ * - HR-MOD-002 pure resolver: inputs are the URI, explicit resource roots
+ *   (single or multi-root candidates), workspace identity, user override,
+ *   the single-level fallback switch; output is a Result + structured
+ *   diagnostics; zero IO, zero vscode imports — every input is given
+ *   explicitly by the caller, this face never implicitly reads disk/config;
+ * - HR-MOD-005 the single source of string semantics =
+ *   hotReloadTempEdit.resolveModuleDualName (role directory stripping/`.py`
+ *   suffix/`__init__`/traversal rejection are all reused; this face only
+ *   does root candidate selection, URI lexical normalization, diagnostic
+ *   code mapping and override, and never writes a second module-name
+ *   derivation);
+ * - HR-MOD-009 URI lexical normalization: file:// decoding, backslashes,
+ *   UNC (WSL `//wsl$`, `//wsl.localhost`, Remote SSH mount shapes), repeated
+ *   slashes, `.`/`..` lexical resolution, drive-letter upper-casing, case
+ *   preservation. Symlink resolution and fs-level case semantics need
+ *   realpath/platform detection, belong to IO-specific work, and the pure
+ *   face does not do them (same boundary as crates/kode-vfs VFS-001).
  */
 
 import {
@@ -20,29 +28,29 @@ import {
   type ModuleDualNameUnsupportedReason
 } from './hotReloadTempEdit';
 
-/** HR-MOD-001:热更模块身份九字段 DTO。记录唯一化=targetId(通道侧)+rootId+fileUri */
+/** HR-MOD-001: hot reload module identity nine-field DTO. Record uniqueness = targetId (channel side) + rootId + fileUri */
 export interface HotReloadModuleIdentity {
-  /** 工作区身份(多根工作区归属);未给为空串,不猜 */
+  /** Workspace identity (multi-root workspace attribution); empty string when not given, no guessing */
   readonly workspaceId: string;
-  /** 脚本资源根身份(命中哪个候选根);未给为空串 */
+  /** Script resource root identity (which candidate root was hit); empty string when not given */
   readonly rootId: string;
-  /** 规范化后的本地形态路径(HR-MOD-009 canonicalizeScriptFilePath 产物) */
+  /** Normalized local-shape path (the canonicalizeScriptFilePath product of HR-MOD-009) */
   readonly fileUri: string;
-  /** 完整模块名(UI 展示名,书 §19.1):entities.fight.FightAI */
+  /** Full module name (the UI display name, book §19.1): entities.fight.FightAI */
   readonly fullModule: string;
-  /** 请求模块名(实际发送名,书 §19.1):fight.FightAI */
+  /** Request module name (the name actually sent, book §19.1): fight.FightAI */
   readonly requestModule: string;
-  /** 文件名去结尾 .py:FightAI */
+  /** File name without the trailing .py: FightAI */
   readonly fileStem: string;
-  /** 直接父目录名:fight;根下单层 fallback 时为空串 */
+  /** Immediate parent directory name: fight; empty string for a root-level single-level fallback */
   readonly parentName: string;
-  /** 目前唯一支持 python(非 .py 在解析器即拒) */
+  /** Only python is currently supported (non-.py is rejected right in the resolver) */
   readonly language: 'python';
-  /** 文档版本(调用方透传,防旧版本结果覆盖新版本) */
+  /** Document version (passed through by the caller, prevents an older version's result overwriting a newer one) */
   readonly sourceVersion?: number;
 }
 
-/** 结构化诊断码(与 core 的 ModuleDualNameUnsupportedReason 一一映射,另加身份面三码) */
+/** Structured diagnostic codes (one-to-one mapping with core's ModuleDualNameUnsupportedReason, plus three identity-face codes) */
 export type HotReloadModuleDiagnosticCode =
   | 'no-root'
   | 'out-of-root'
@@ -65,37 +73,42 @@ export type HotReloadModuleResolution =
   | { readonly ok: false; readonly diagnostics: readonly HotReloadModuleDiagnostic[] };
 
 export interface HotReloadModuleIdentityInput {
-  /** file:// URI 或本地路径(反斜杠/正斜杠均可,经词法规范化) */
+  /** file:// URI or local path (backslashes/forward slashes both fine, lexically normalized) */
   readonly fileUri: string;
-  /** 工作区身份;缺省空串(如实未给,不猜) */
+  /** Workspace identity; defaults to empty string (honestly absent, no guessing) */
   readonly workspaceId?: string;
-  /** 资源根身份标签;缺省空串 */
+  /** Resource root identity label; defaults to empty string */
   readonly rootId?: string;
-  /** 单根便捷形态(与既有 scriptRoot 设置同形);与 scriptRoots 并入同一候选集 */
+  /** Single-root convenience shape (same shape as the existing scriptRoot setting); merged into the same candidate set as scriptRoots */
   readonly scriptRoot?: string;
-  /** 多根候选集(HR-MOD-006:未唯一确定根则拒绝,不猜) */
+  /** Multi-root candidate set (HR-MOD-006: refuse when the root is not uniquely determined, no guessing) */
   readonly scriptRoots?: readonly string[];
-  /** HR-MOD-006 显式优先级(索引小=优先):只在多根命中>1 时生效,唯一最小秩
-   * 候选才赢(用户显式排序=配置,非猜测);未给/空=既有不猜拒绝;不在清单里
-   * 的根秩=+∞,绝不因优先级被提升。 */
+  /** HR-MOD-006 explicit priority (smaller index = higher priority): only
+   * effective when multi-root hits > 1, and only a unique minimum-rank
+   * candidate wins (user-specified ordering = configuration, not guessing);
+   * absent/empty = the existing refuse-without-guessing; roots not in the
+   * list rank +∞ and are never promoted by priority. */
   readonly rootPriority?: readonly string[];
-  /** 用户显式指定模块名:合法则替换 fullModule/requestModule,非法则拒绝(不静默回落) */
+  /** User-specified module name: a legal one replaces fullModule/requestModule, an illegal one is refused (never a silent fallback) */
   readonly userOverrideModule?: string;
-  /** HR-MOD-008 显式 single-level fallback;默认关=根下单层脚本 unresolved */
+  /** HR-MOD-008 explicit single-level fallback; defaults to off = a root-level single-segment script is unresolved */
   readonly allowRootLevelStem?: boolean;
-  /** 文档版本透传 */
+  /** Document version pass-through */
   readonly sourceVersion?: number;
 }
 
 const toPosix = (value: string): string => value.replace(/\\/g, '/');
 
 /**
- * 词法规范化(HR-MOD-009,纯字符串,零 IO):
- * file:// URI 剥 scheme(file://server/share 保留 `//` UNC 形)+ 有守卫的
- * percent 解码(解码失败原样保留,不抛);反斜杠转正斜杠;重复斜杠折叠
- * (行首 `//` UNC 保留);`.` 段删除、`..` 段词法上卷(绝对路径根处 `..`
- * 落根;相对路径无基底时 `..` 保留,交由上层穿越拒绝);Windows 盘符统一
- * 大写;其余大小写一律保留(HR-MOD-003)。
+ * Lexical normalization (HR-MOD-009, pure strings, zero IO):
+ * strips the scheme off a file:// URI (file://server/share keeps the `//`
+ * UNC shape) + guarded percent decoding (a failed decode is kept as-is, no
+ * throw); backslashes become forward slashes; repeated slashes collapse
+ * (a leading `//` UNC is preserved); `.` segments are dropped and `..`
+ * segments resolve lexically upward (`..` at an absolute path's root lands
+ * at the root; with no base for a relative path `..` is kept and left for
+ * the upper layer's traversal rejection); Windows drive letters are
+ * upper-cased; all other casing is preserved (HR-MOD-003).
  */
 export function canonicalizeScriptFilePath(input: string): string {
   let value = input.trim();
@@ -104,15 +117,17 @@ export function canonicalizeScriptFilePath(input: string): string {
   }
   if (value.toLowerCase().startsWith('file://')) {
     const rest = value.slice('file://'.length);
-    // file:///c:/x → /c:/x;file://server/share → //server/share(UNC)
+    // file:///c:/x → /c:/x; file://server/share → //server/share (UNC)
     value = rest.startsWith('/') ? rest : `//${rest}`;
   }
   value = toPosix(value);
-  // percent 解码只对路径体做,UNC 前缀 `//` 不受影响;坏转义原样保留不抛
+  // percent decoding applies only to the path body, the UNC `//` prefix is
+  // untouched; a bad escape is kept as-is, no throw
   try {
     value = decodeURIComponent(value);
   } catch {
-    // 非法 percent 序列(如裸 %):保留原样,后续按字面路径判定
+    // Invalid percent sequence (e.g. a bare %): keep as-is, judged later as
+    // a literal path
   }
   const unc = value.startsWith('//');
   const body = unc ? value.slice(2) : value;
@@ -128,7 +143,7 @@ export function canonicalizeScriptFilePath(input: string): string {
       if (stack.length > 0) {
         stack.pop();
       } else if (!absolute) {
-        stack.push(segment); // 相对路径无基底,`..` 保留待上层拒
+        stack.push(segment); // relative path with no base, `..` kept for the upper layer to reject
       }
       continue;
     }
@@ -138,13 +153,14 @@ export function canonicalizeScriptFilePath(input: string): string {
   if (unc) {
     result = `//${result.startsWith('/') ? result.slice(1) : result}`;
   }
-  // Windows 盘符统一大写:/c:/x → /C:/x;c:/x → C:/x(仅盘符,其余大小写不动)
+  // Windows drive letters upper-cased: /c:/x → /C:/x; c:/x → C:/x
+  // (drive letter only, other casing untouched)
   result = result.replace(/^\/([a-z]):/, (_m, drive: string) => `/${drive.toUpperCase()}:`);
   result = result.replace(/^([a-z]):/, (_m, drive: string) => `${drive.toUpperCase()}:`);
   return result.replace(/\/+$/, '');
 }
 
-/** 供诊断映射:core 不支持原因 → 身份面诊断码 */
+/** For diagnostic mapping: core unsupported reason → identity-face diagnostic code */
 const REASON_TO_CODE: Record<ModuleDualNameUnsupportedReason, HotReloadModuleDiagnosticCode> = {
   'no-root': 'no-root',
   'not-python': 'not-python',
@@ -155,7 +171,7 @@ const REASON_TO_CODE: Record<ModuleDualNameUnsupportedReason, HotReloadModuleDia
   'root-level': 'root-level'
 };
 
-/** user override 校验:非空、无空白、无点段边界问题;非法返回 null(调用方拒绝,不静默回落) */
+/** user override validation: non-empty, no whitespace, no dot-segment boundary problems; returns null when illegal (the caller refuses, never a silent fallback) */
 const validateOverrideModule = (value: string): string | null => {
   const trimmed = value.trim();
   if (
@@ -170,10 +186,10 @@ const validateOverrideModule = (value: string): string | null => {
   return trimmed;
 };
 
-/** 短名健壮性(HR-MOD-015 URL encoding/Unicode 面):空白与点不入模块名;Unicode 字母合法(PEP 3130) */
+/** Stem robustness (HR-MOD-015 URL encoding/Unicode face): whitespace and dots never enter a module name; Unicode letters are legal (PEP 3130) */
 const stemIsRepresentable = (stem: string): boolean => !/[\s.]/.test(stem);
 
-/** 根候选选择产物:唯一根 / 三拒绝态(不猜,列全候选) */
+/** Root candidate selection product: the unique root / three refusal states (no guessing, all candidates listed) */
 export type ScriptRootSelection =
   | { readonly kind: 'root'; readonly root: string }
   | { readonly kind: 'no-root' }
@@ -181,11 +197,15 @@ export type ScriptRootSelection =
   | { readonly kind: 'ambiguous-root'; readonly candidates: readonly string[] };
 
 /**
- * 根候选选择(HR-MOD-002/006 纯核,零 IO):roots 须已规范化+保序去重。
- * 多根命中>1 且给了显式优先级时,唯一有限最小秩候选才赢(索引小=优先,
- * 用户显式排序=配置非猜测);未给优先级/全未排/并列一律拒绝列全候选
- * (既有不猜口径)。不在清单里的根秩=+∞,绝不因优先级被提升。单根命中
- * 恒赢(与是否配置优先级无关)。
+ * Root candidate selection (HR-MOD-002/006 pure core, zero IO): roots must
+ * already be normalized + order-preserving deduped. With >1 multi-root hit
+ * and an explicit priority given, only a unique finite minimum-rank
+ * candidate wins (smaller index = higher priority, user-specified ordering
+ * = configuration not guessing); no priority / none ranked / a tie are all
+ * refused with the full candidate list (the existing no-guessing
+ * convention). Roots not in the list rank +∞ and are never promoted by
+ * priority. A single-root hit always wins (regardless of any priority
+ * configuration).
  */
 export function selectScriptRoot(
   canonical: string,
@@ -202,7 +222,8 @@ export function selectScriptRoot(
   if (candidates.length === 1) {
     return { kind: 'root', root: candidates[0] };
   }
-  // >1 命中:显式优先级裁决(唯一最小秩才赢;否则既有拒绝)
+  // >1 hit: explicit priority adjudication (only a unique minimum rank wins;
+  // otherwise the existing refusal)
   const ranked = priority
     ? [...new Set(priority.map(canonicalizeScriptFilePath).filter(root => root.length > 0))]
     : [];
@@ -232,10 +253,13 @@ export function selectScriptRoot(
 }
 
 /**
- * 纯解析器(HR-MOD-002):根候选选择 → 委托 resolveModuleDualName →
- * 诊断映射/override/DTO 组装。多根歧义(>1 候选含此文件)一律拒绝并
- * 列出全部命中根,绝不猜唯一根(HR-MOD-006);歧义拒绝同时从源头挡住
- * 跨根同名 fight.FightAI 误映射(HR-MOD-010 的解析器侧)。
+ * Pure resolver (HR-MOD-002): root candidate selection → delegate to
+ * resolveModuleDualName → diagnostic mapping/override/DTO assembly.
+ * Multi-root ambiguity (>1 candidate containing this file) is always
+ * refused with every hit root listed, never guessing a unique root
+ * (HR-MOD-006); the ambiguity refusal also blocks cross-root same-name
+ * fight.FightAI mis-mapping at the source (the resolver side of
+ * HR-MOD-010).
  */
 export function resolveHotReloadModuleIdentity(
   input: HotReloadModuleIdentityInput
@@ -247,9 +271,12 @@ export function resolveHotReloadModuleIdentity(
       diagnostics: [{ code: 'not-python', message: 'fileUri 为空,拒绝解析' }]
     };
   }
-  // RUST-424 重复根矩阵:同一规范化根出现多次(scriptRoots 重复项或 scriptRoot
-  // 与 scriptRoots 同根)只算一个候选——重复配置是用户侧同一根,≠HR-MOD-006
-  // 的多根歧义,必须去重后再判命中(否则同一根自造假 ambiguous)。保序去重。
+  // RUST-424 duplicate-root matrix: the same normalized root appearing more
+  // than once (scriptRoots duplicates, or scriptRoot sharing a root with
+  // scriptRoots) counts as one candidate — a duplicate configuration is the
+  // user's same root, != the HR-MOD-006 multi-root ambiguity, and hits must
+  // be judged after dedup (otherwise one root would fabricate its own
+  // ambiguous). Order-preserving dedup.
   const roots = [
     ...(input.scriptRoots ?? []).map(canonicalizeScriptFilePath),
     ...(input.scriptRoot !== undefined ? [canonicalizeScriptFilePath(input.scriptRoot)] : [])

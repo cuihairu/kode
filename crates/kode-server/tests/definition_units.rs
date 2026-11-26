@@ -529,7 +529,10 @@ fn def_arg_value_ambiguous_entity_candidates_is_null() {
 fn def_interfaces_segment_word_lands_on_interfaces_def_head() {
     let engine = engine_with(&[
         ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
-        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_INTERFACES_DEF),
+        (
+            "/w/scripts/entity_defs/Avatar.def",
+            AVATAR_WITH_INTERFACES_DEF,
+        ),
         ("/w/scripts/entity_defs/interfaces/Combat.def", MOB_DEF),
     ]);
     let key = key_of("/w/scripts/entity_defs/Avatar.def");
@@ -546,10 +549,15 @@ fn def_interfaces_segment_word_lands_on_interfaces_def_head() {
 fn def_interfaces_word_without_corpus_interface_is_null() {
     let engine = engine_with(&[
         ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
-        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_INTERFACES_DEF),
+        (
+            "/w/scripts/entity_defs/Avatar.def",
+            AVATAR_WITH_INTERFACES_DEF,
+        ),
     ]);
     let key = key_of("/w/scripts/entity_defs/Avatar.def");
-    assert!(engine.definition(&key, AVATAR_WITH_INTERFACES_DEF, 2, 3).is_none());
+    assert!(engine
+        .definition(&key, AVATAR_WITH_INTERFACES_DEF, 2, 3)
+        .is_none());
 }
 
 /// `<Type>` 取值词 types 未命中 → component def 回落(TS
@@ -592,11 +600,16 @@ fn def_type_value_falls_back_to_entity_def_head() {
 fn def_type_value_lowercase_custom_type_gated_null() {
     let engine = engine_with(&[
         ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
-        ("/w/scripts/entity_defs/Avatar.def", AVATAR_LOWERCASE_TYPE_DEF),
+        (
+            "/w/scripts/entity_defs/Avatar.def",
+            AVATAR_LOWERCASE_TYPE_DEF,
+        ),
         ("/w/scripts/types.xml", LOWERCASE_TYPES_XML),
     ]);
     let key = key_of("/w/scripts/entity_defs/Avatar.def");
-    assert!(engine.definition(&key, AVATAR_LOWERCASE_TYPE_DEF, 3, 10).is_none());
+    assert!(engine
+        .definition(&key, AVATAR_LOWERCASE_TYPE_DEF, 3, 10)
+        .is_none());
 }
 
 /// types.xml 嵌套 `<Type>` 取值词 → 本文件顶层声明行

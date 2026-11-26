@@ -1,35 +1,37 @@
-// C-17:进程拓扑 findings → 诊断规范映射(纯逻辑半边,无 vscode 依赖,可单测)。
+// C-17: process topology findings -> diagnostic spec mapping (the pure-logic half, no vscode
+// dependencies, unit-testable).
 //
-// 边界:findings(Rust 返回)带 1 基行号与文件路径,本模块按文件分组并解析
-// 目标 URI(manifest 用哨兵 "<manifest>" → 实际 process_topology.xml 路径;
-// def 用其 filePath),产出诊断规范;extension 侧按规范 + 文档文本换算
-// vscode.Range 并发布到独立集合 `kbengine-process-topology`。
+// Boundary: the findings (returned by Rust) carry 1-based line numbers and file paths; this
+// module groups them by file and resolves the target URI (the manifest uses the sentinel
+// "<manifest>" -> the real process_topology.xml path; a def uses its filePath) and produces
+// the diagnostic specs; the extension side converts the spec plus the document text into a
+// vscode.Range and publishes it into the dedicated collection `kbengine-process-topology`.
 
 import type { ProcessTopologyFinding } from './processTopologyRust';
 
-/** 清单文件在 findings 中的哨兵路径(Rust 侧约定) */
+/** Sentinel path for the manifest file inside findings (a convention on the Rust side) */
 export const MANIFEST_FINDING_SENTINEL = '<manifest>';
 
-/** 诊断 code 前缀(C-19 惯例 kbengine.<camelCase>) */
+/** Diagnostic code prefix (the C-19 convention kbengine.<camelCase>) */
 export const PROCESS_TOPOLOGY_DIAGNOSTIC_PREFIX = 'kbengine.processTopology';
 
-/** 单条诊断规范(定位=1 基行号;extension 侧换算 Range 需文档文本) */
+/** A single diagnostic spec (location = a 1-based line number; converting to a Range on the extension side needs the document text) */
 export interface ProcessTopologyDiagnosticSpec {
-  /** 目标文档 fsPath */
+  /** fsPath of the target document */
   filePath: string;
-  /** 1 基行号 */
+  /** 1-based line number */
   line: number;
   message: string;
   code: string;
-  /** 诊断严重级别(vscode.DiagnosticSeverity 数值;2=Warning) */
+  /** Diagnostic severity (a vscode.DiagnosticSeverity number; 2=Warning) */
   severity: number;
   related: Array<{ filePath: string; line: number; message: string }>;
 }
 
 /**
- * findings → 按文件分组的诊断规范。
- * `resolveManifestPath` 把哨兵 "<manifest>" 换成实际清单路径(workspace 根 +
- * process_topology.xml);def 类 finding 直接用其 filePath。
+ * findings -> diagnostic specs grouped by file.
+ * `resolveManifestPath` swaps the sentinel "<manifest>" for the real manifest path (the
+ * workspace root + process_topology.xml); a def finding uses its filePath directly.
  */
 export function mapFindingsToDiagnostics(
   findings: ProcessTopologyFinding[],
@@ -39,7 +41,7 @@ export function mapFindingsToDiagnostics(
   for (const finding of findings) {
     const filePath = resolveTargetPath(finding.filePath, resolveManifestPath);
     if (!filePath) {
-      // 清单路径不可解析(无 workspace 根)→ 跳过该条,不误报。
+      // The manifest path cannot be resolved (no workspace root) -> skip the entry rather than misreport.
       continue;
     }
     specs.push({

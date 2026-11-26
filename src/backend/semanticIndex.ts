@@ -1,36 +1,44 @@
 import { normalizeLookupPath } from './definitionSemantics';
 
-// 统一语义查询层(PR4,用户令 2026-10-23):多资产根模型 + 实体/Python类/类型
-// 注册关系的统一承载。查询 API 只返回条目与快照拷贝,不暴露内部 Map/遍历——
-// 消费端(EntityMappingManager 等)不允许自行扫描索引内部结构。
+// Unified semantic query layer (PR4, user order 2026-10-23): the multi-asset
+// root model plus the unified carrier of entity/Python-class/type registration
+// relations. The query APIs return entries and snapshot copies only, exposing no
+// internal Maps/traversals — consumers (EntityMappingManager etc.) must not scan
+// the index's internals themselves.
 //
-// 查找顺序显式策略(A4-5/A4-6 取证固化,不改行为只立约):
-// ① 同名实体:语义索引按注册序保存「每个实体名单一胜者」,后注册者覆盖先者
-//    ——与既有 EntityMappingManager.mappingIndexes(Map.set 同名覆盖)逐字节
-//    一致;冲突全根清单经 findEntityConflicts 暴露供取证/诊断,不静默吞掉。
-// ② Python 文件 → 实体:owner 归属文件精确匹配优先,未命中再按
-//    basename(去 .py)对实体名回落——与既有 findIndexForPythonFile 两段式
-//    一致;owner 匹配多个时取注册序首个(既有 [...values()].find 语义)。
-// ③ 根顺序:registerRoot 显式登记(工作区根在前、外部资产根按声明序),
-//    查询按该显式序列裁断,不依赖任何 Map 插入序。
+// Explicit lookup-order strategy (A4-5/A4-6 evidence-frozen; no behavior change,
+// only a contract):
+// (1) same-name entities: the semantic index keeps "one winner per entity name"
+//     in registration order, a later registration overwriting the earlier —
+//     byte-for-byte identical to the existing
+//     EntityMappingManager.mappingIndexes (Map.set same-name overwrite); the
+//     conflict's all-roots list is exposed via findEntityConflicts for
+//     evidence/diagnostics, never silently swallowed.
+// (2) Python file → entity: exact owner-file matching first, falling back to the
+//     basename (.py stripped) against entity names — the same two stages as the
+//     existing findIndexForPythonFile; with multiple owner matches, the first in
+//     registration order wins (the existing [...values()].find semantics).
+// (3) root order: registerRoot registers explicitly (workspace roots first,
+//     external asset roots in declaration order); queries are decided by that
+//     explicit sequence, independent of any Map insertion order.
 
 export interface SemanticRootDescriptor {
-  /** 稳定根 ID = 规范化路径(小写斜杠),跨平台可比较 */
+  /** Stable root ID = the normalized path (lowercase slashes), cross-platform comparable */
   readonly rootId: string;
   readonly normalizedPath: string;
-  /** 显式查找序(0 起),登记时分配,与 Map 插入序无关 */
+  /** Explicit lookup order (0-based), assigned at registration, independent of Map insertion order */
   readonly order: number;
 }
 
-/** 实体注册条目(EntityMappingManager 存索引时提交的语义投影) */
+/** Entity registration entry (the semantic projection EntityMappingManager submits when storing its index) */
 export interface SemanticEntityRegistration {
   readonly rootId: string;
   readonly entityName: string;
-  /** 规范化 .def 路径 */
+  /** Normalized .def path */
   readonly defFile: string;
-  /** 规范化 owner 归属 Python 文件(注册序保持提交顺序) */
+  /** Normalized owner-attributed Python files (registration order keeps the submission order) */
   readonly pythonFiles: readonly string[];
-  /** owner 归属(kind+名,注册序;实体/接口/组件各段去重) */
+  /** Owner attributions (kind+name, registration order; the entity/interface/component segments each deduped) */
   readonly owners: readonly SemanticOwnerRef[];
 }
 
@@ -47,20 +55,22 @@ export interface SemanticEntityEntry {
   readonly owners: readonly SemanticOwnerRef[];
 }
 
-/** 类型注册表快照(A4-3):查询纯内存,重建只由更新事件驱动 */
+/** Type-registry snapshot (A4-3): queries are pure in-memory, rebuilds driven only by update events */
 export interface SemanticTypeRegistrySnapshot<T = unknown> {
   readonly rootId: string;
   readonly aliasDiscovery: boolean;
-  /** 快照代号:事件失效后自增,观测/指标用 */
+  /** Snapshot generation: incremented after event invalidation, for observability/metrics */
   readonly generation: number;
-  /** 快照依赖的物理文件(规范化):失效通知按此精确裁断 */
+  /** The snapshot's physical file dependencies (normalized): invalidation notifications are decided precisely against these */
   readonly dependencies: readonly string[];
-  /** 注册表条目(结构由调用方持有,如 CustomTypeInfo[]) */
+  /** Registry entries (the structure is owned by the caller, e.g. CustomTypeInfo[]) */
   readonly entries: readonly T[];
   /**
-   * IDE-SNP-004:构建时各依赖文件的来源版本(依赖路径 → 打开文档的编辑
-   * 序号;构建时未打开为 undefined 或缺键)。脏 types.xml 版本前进即过期,
-   * 消费端按此判定——不逐次 stat 磁盘(重建只由事件/版本前进驱动)。
+   * IDE-SNP-004: the source version of each dependency file at build time
+   * (dependency path → the open document's edit sequence number; undefined or a
+   * missing key when not open at build time). A dirty types.xml version bump
+   * means stale; consumers decide by this — no per-query disk stat (rebuilds are
+   * driven only by events/version advances).
    */
   readonly sourceVersions?: Readonly<Record<string, number | undefined>>;
 }
@@ -76,22 +86,22 @@ interface TypeRegistryRecord<T = unknown> {
 export class SemanticIndex {
   private readonly roots = new Map<string, SemanticRootDescriptor>();
   private rootOrderCounter = 0;
-  /** 实体名 → 单一胜者(后注册覆盖,策略①) */
+  /** Entity name → the single winner (later registration overrides, strategy (1)) */
   private readonly entitiesByName = new Map<string, EntityRecord>();
-  /** 全根实体清单(同名冲突取证):规范化 def 路径 → 条目 */
+  /** All-roots entity list (same-name conflict evidence): normalized def path → entry */
   private readonly entitiesByDefFile = new Map<string, EntityRecord>();
-  /** owner 归属文件 → 实体列表(注册顺序,规范化路径) */
+  /** Owner-attributed file → entity list (registration order, normalized paths) */
   private readonly entitiesByPythonOwner = new Map<string, EntityRecord[]>();
-  /** Python 类名 → 实体(先到先得,与既有 ownerName 扫描序一致) */
+  /** Python class name → entity (first-come-first-served, same as the existing ownerName scan order) */
   private readonly entitiesByClassName = new Map<string, EntityRecord>();
-  /** kind:name → 实体(先到先得,接口/组件符号回溯用) */
+  /** kind:name → entity (first-come-first-served, for interface/component symbol backtracking) */
   private readonly entitiesByOwnerRef = new Map<string, EntityRecord>();
   private readonly typeRegistry = new Map<string, TypeRegistryRecord>();
   private typeRegistryGeneration = 0;
 
-  // ---- 根模型(A4-5) ----
+  // ---- Root model (A4-5) ----
 
-  /** 登记扫描根(规范化路径幂等):返回稳定 rootId */
+  /** Register a scan root (idempotent on the normalized path): returns the stable rootId */
   registerRoot(rootPath: string): string {
     const normalizedPath = normalizeLookupPath(rootPath);
     const existing = this.roots.get(normalizedPath);
@@ -108,12 +118,12 @@ export class SemanticIndex {
     return rootId;
   }
 
-  /** 根清单(显式 order 升序,拷贝) */
+  /** Root list (ascending explicit order, copied) */
   getRoots(): readonly SemanticRootDescriptor[] {
     return [...this.roots.values()].sort((left, right) => left.order - right.order);
   }
 
-  /** 文件所属根(最长前缀命中;无根归属返回 null) */
+  /** The file's owning root (longest-prefix match; null when owned by no root) */
   resolveRootIdForPath(filePath: string): string | null {
     const normalized = normalizeLookupPath(filePath);
     let best: SemanticRootDescriptor | null = null;
@@ -126,9 +136,9 @@ export class SemanticIndex {
     return best ? best.rootId : null;
   }
 
-  // ---- 实体注册与查询 ----
+  // ---- Entity registration and queries ----
 
-  /** 注册实体语义投影(同名覆盖=策略①;py owner/类名先到先得=策略②③) */
+  /** Register an entity's semantic projection (same-name overwrite = strategy (1); py owner/class name first-come-first-served = strategies (2)(3)) */
   registerEntity(registration: SemanticEntityRegistration): SemanticEntityEntry {
     const entry: SemanticEntityEntry = {
       rootId: registration.rootId,
@@ -158,7 +168,7 @@ export class SemanticIndex {
     return entry;
   }
 
-  /** 按 .def 路径移除实体注册(定向失效),返回被移除条目或 null */
+  /** Remove an entity registration by .def path (targeted invalidation); returns the removed entry or null */
   removeEntityByDefFile(defFile: string): SemanticEntityEntry | null {
     const normalized = normalizeLookupPath(defFile);
     const record = this.entitiesByDefFile.get(normalized);
@@ -184,9 +194,11 @@ export class SemanticIndex {
       }
     }
     this.entitiesByDefFile.delete(normalized);
-    // IDE-IDX-008:被删者是同名胜者时,从剩余同名条目重选胜者(最后注册者
-    // 胜,与注册覆盖口径一致)——删 B 的 Hero 不连坐 A 的 Hero,名字槽
-    // 始终指向仍存在的实体。
+    // IDE-IDX-008: when the removed entry was the same-name winner, re-elect a
+    // winner from the remaining same-name entries (the last-registered wins, the
+    // same contract as registration overwrite) — deleting B's Hero does not drag
+    // away A's Hero; the name slot always points at an entity that still
+    // exists.
     if (!this.entitiesByName.has(record.entry.entityName)) {
       let successor: EntityRecord | undefined;
       for (const candidate of this.entitiesByDefFile.values()) {
@@ -213,12 +225,12 @@ export class SemanticIndex {
     return [...this.entitiesByName.keys()];
   }
 
-  /** 实体名 → .def 路径(单一胜者,策略①) */
+  /** Entity name → .def path (single winner, strategy (1)) */
   getEntityDefFile(entityName: string): string | null {
     return this.entitiesByName.get(entityName)?.entry.defFile ?? null;
   }
 
-  /** 实体名 → 全部 def 文件(IDE-IDX-003:同名实体按调用根挑选,不做单一胜者) */
+  /** Entity name → all def files (IDE-IDX-003: same-name entities are chosen by the calling root, no single winner) */
   getEntityDefFilesByName(entityName: string): string[] {
     const out: string[] = [];
     for (const [defFile, record] of this.entitiesByDefFile) {
@@ -227,58 +239,60 @@ export class SemanticIndex {
     return out;
   }
 
-  /** 实体名 → 条目拷贝 */
+  /** Entity name → a copy of the entry */
   findEntityByName(entityName: string): SemanticEntityEntry | null {
     return this.entitiesByName.get(entityName)?.entry ?? null;
   }
 
-  /** 同名实体全根清单(冲突取证,注册序) */
+  /** The same-name entities' all-roots list (conflict evidence, registration order) */
   findEntityConflicts(entityName: string): readonly SemanticEntityEntry[] {
     const winner = this.entitiesByName.get(entityName)?.entry ?? null;
     const conflicts = [...this.entitiesByDefFile.values()]
       .map(record => record.entry)
       .filter(entry => entry.entityName === entityName);
-    // 胜者排首,其余按注册序
+    // The winner first, the rest in registration order
     return conflicts.sort((left, right) =>
       (left === winner ? -1 : right === winner ? 1 : 0));
   }
 
-  /** Python 文件 → 实体:owner 精确匹配优先,实体名回落(策略②) */
+  /** Python file → entity: exact owner match first, entity-name fallback (strategy (2)) */
   findEntityByPythonFile(pythonFile: string): SemanticEntityEntry | null {
     const normalized = normalizeLookupPath(pythonFile);
     const ownerRecord = this.entitiesByPythonOwner.get(normalized)?.[0];
     if (ownerRecord) {
       return ownerRecord.entry;
     }
-    // 实体名回落保持既有大小写敏感口径(原 path.basename 原样比对,不规范化)
+    // The entity-name fallback keeps the existing case-sensitive contract (the
+    // original path.basename compared verbatim, not normalized)
     const baseName = pythonFile.replace(/\\/g, '/').split('/').pop()
       ?.replace(/\.py$/i, '') ?? '';
     return this.entitiesByName.get(baseName)?.entry ?? null;
   }
 
-  /** Python 文件 → owner 归属实体(不做实体名回落;变更裁断用) */
+  /** Python file → owner-attributed entities (no entity-name fallback; used for change decisions) */
   findEntitiesByPythonOwner(pythonFile: string): readonly SemanticEntityEntry[] {
     const records = this.entitiesByPythonOwner.get(normalizeLookupPath(pythonFile)) ?? [];
     return records.map(record => record.entry);
   }
 
-  /** Python 类名 → owner 实体(既有 ownerName 回溯口径) */
+  /** Python class name → owner entity (the existing ownerName backtracking contract) */
   findEntityByClassName(className: string): SemanticEntityEntry | null {
     return this.entitiesByClassName.get(className)?.entry ?? null;
   }
 
-  /** owner(kind+名)归属实体(接口/组件符号回溯,注册序首中) */
+  /** owner (kind+name) attributed entity (interface/component symbol backtracking, first registration-order hit) */
   findEntitiesByOwner(kind: string, name: string): readonly SemanticEntityEntry[] {
     const record = this.entitiesByOwnerRef.get(`${kind}:${name}`);
     return record ? [record.entry] : [];
   }
 
-  // ---- 类型注册表快照(A4-3) ----
+  // ---- Type-registry snapshots (A4-3) ----
 
   /**
-   * 纯内存快照查询:不做任何文件系统检查(statSync 指纹已废除)。
-   * 键 = 规范化根路径 + aliasDiscovery 开关;未命中返回 undefined,由调用方
-   * 构建后 storeTypeRegistrySnapshot 回存。
+   * Pure in-memory snapshot query: no filesystem checks at all (the statSync
+   * fingerprint was retired). Key = the normalized root path + the aliasDiscovery
+   * switch; a miss returns undefined, and the caller builds then stores back via
+   * storeTypeRegistrySnapshot.
    */
   getTypeRegistrySnapshot<T = unknown>(rootPath: string, aliasDiscovery: boolean): SemanticTypeRegistrySnapshot<T> | undefined {
     const key = this.typeRegistryKey(rootPath, aliasDiscovery);
@@ -306,9 +320,11 @@ export class SemanticIndex {
   }
 
   /**
-   * 更新事件驱动失效(A4-3):物理文件变更通知 → 仅作废依赖该文件的快照。
-   * types.xml/alias.xml 路径由快照 dependencies 精确裁断;path 传空视为全量作废
-   * (测试/关停面用,生产热路径不走)。
+   * Update-event-driven invalidation (A4-3): a physical-file change notification
+   * → only snapshots depending on that file are voided. types.xml/alias.xml
+   * paths are decided precisely by the snapshot's dependencies; an empty path is
+   * treated as a full invalidation (test/shutdown face; the production hot path
+   * does not go through it).
    */
   notifySemanticFilesChanged(changedFiles: readonly string[]): number {
     const changed = new Set(changedFiles.map(normalizeLookupPath));
@@ -329,8 +345,10 @@ export class SemanticIndex {
   }
 
   /**
-   * IDE-IDX-015:整根摘除——该根下的类型注册表快照全删,根描述符注销。
-   * 键含 `#` 分隔符,前缀比对不会误伤同前缀的其他根(/ws/a vs /ws/ab)。
+   * IDE-IDX-015: whole-root removal — all type-registry snapshots under that
+   * root are deleted and the root descriptor deregistered. Keys carry the `#`
+   * separator, so prefix comparison never harms other roots sharing the prefix
+   * (/ws/a vs /ws/ab).
    */
   removeRoot(rootPath: string): number {
     const normalizedRoot = normalizeLookupPath(rootPath);
@@ -354,15 +372,17 @@ export class SemanticIndex {
   }
 }
 
-/** types.xml/alias.xml 判别(失效通知路由用) */
+/** types.xml/alias.xml discrimination (for routing invalidation notifications) */
 export function isTypeRegistryFile(filePath: string): boolean {
   const normalized = normalizeLookupPath(filePath);
   return normalized.endsWith('/types.xml') || normalized.endsWith('/alias.xml');
 }
 
-// 进程级共享实例:仅承载类型注册表快照仓(definitionWorkspace 查询与
-// EntityMappingManager 的失效通知必须命中同一份)。实体注册表由各
-// EntityMappingManager 自持(测试互不污染),不共享。
+// Process-level shared instance: carries only the type-registry snapshot store
+// (definitionWorkspace queries and EntityMappingManager's invalidation
+// notifications must hit the same one). Entity registries are held by each
+// EntityMappingManager itself (tests do not pollute each other) and are not
+// shared.
 let sharedTypeRegistryIndex: SemanticIndex | null = null;
 
 export function getSemanticIndex(): SemanticIndex {
@@ -372,7 +392,7 @@ export function getSemanticIndex(): SemanticIndex {
   return sharedTypeRegistryIndex;
 }
 
-/** 测试面:重置共享类型注册表快照仓(实体注册表不在共享实例里) */
+/** Test face: reset the shared type-registry snapshot store (entity registries are not in the shared instance) */
 export function resetSemanticTypeRegistryForTests(): void {
   sharedTypeRegistryIndex = new SemanticIndex();
 }

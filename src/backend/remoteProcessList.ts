@@ -1,7 +1,9 @@
 /**
- * 远程进程枚举与选择(IDE-PDBG-005):经 `ssh <host> -- ps -axo pid=,comm=`
- * 取远端进程清单,选择器口径与本地一致(共用 buildProcessPickItems,组件名
- * 命中置顶标 ✓);清单取不到如实报原因,绝不回落本地清单冒充远端。
+ * Remote process enumeration and selection (IDE-PDBG-005): fetch the remote process
+ * list via `ssh <host> -- ps -axo pid=,comm=`, with the picker ruling matching the
+ * local one (shared buildProcessPickItems, a component-name hit pinned to the top
+ * with ✓); when the list cannot be fetched, report the reason honestly, never fall
+ * back to the local list passing it off as remote.
  */
 
 import {
@@ -14,19 +16,21 @@ import { defaultSpawnRunner, type SpawnRunner } from './pyspyDump';
 import { buildSshExecArgs } from './remoteConnection';
 import type { SshHostEntry } from './sshConfig';
 
-/** 远端进程清单命令:与本地 makeProcessLister 完全同形,复用同一解析器 */
+/** The remote process list command: exactly the same shape as the local makeProcessLister, reusing the same parser */
 export const REMOTE_PS_ARGS = ['ps', '-axo', 'pid=,comm='];
 
 export interface RemoteProcessListing {
   ok: boolean;
   processes?: ProcessEntry[];
-  /** ok=false 时的一行可定位原因(ssh 退出码/超时/异常) */
+  /** A one-line locatable reason when ok=false (ssh exit code / timeout / exception) */
   reason?: string;
 }
 
 /**
- * 列远端进程:ssh 前缀跑 ps,退出码非 0/异常都如实归失败(BatchMode 免密
- * 语义与隧道同口径);成功但空输出 = 空清单(远端真没有可见进程)。
+ * List remote processes: run ps behind an ssh prefix; a non-zero exit code or an
+ * exception is honestly counted as failure (the BatchMode passwordless semantics
+ * share the tunnel's ruling); success with empty output = an empty list (the remote
+ * truly has no visible processes).
  */
 export async function listRemoteProcesses(
   entry: SshHostEntry,
@@ -34,7 +38,7 @@ export async function listRemoteProcesses(
   timeoutMs = 8000
 ): Promise<RemoteProcessListing> {
   try {
-    // 参数构建在 try 内:目标声明非法(前导 '-'/控制字符)按清单失败如实报
+    // Argument building stays inside the try: an illegal target declaration (a leading '-'/control characters) is honestly reported as a listing failure
     const run = await runner('ssh', buildSshExecArgs(entry, REMOTE_PS_ARGS), timeoutMs);
     if (run.exitCode !== 0) {
       const tail = `${run.stdout} ${run.stderr}`.trim().slice(-200);
@@ -49,7 +53,7 @@ export async function listRemoteProcesses(
   }
 }
 
-/** UI 注入面:vscode 窗口面返回 Thenable(非 Promise),统一按 unknown 收(await 后再收窄) */
+/** UI injection face: the vscode window face returns Thenable (not Promise), uniformly collected as unknown (awaited first, then narrowed) */
 export interface RemoteProcessPickerDeps {
   listRemote(): Promise<RemoteProcessListing>;
   showQuickPick(
@@ -60,8 +64,9 @@ export interface RemoteProcessPickerDeps {
 }
 
 /**
- * 远程 PID 选择(对齐本地 pickProcessId):清单失败/空清单如实报错返回
- * undefined(不弹选择器、不本地兜底);有清单则组件名命中置顶 ✓。
+ * Remote PID selection (aligned with the local pickProcessId): a listing failure /
+ * empty list reports honestly and returns undefined (no picker shown, no local
+ * fallback); with a list, a component-name hit is pinned to the top with ✓.
  */
 export async function pickRemoteProcessId(
   componentName: string,

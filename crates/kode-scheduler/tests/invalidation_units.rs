@@ -1,8 +1,9 @@
-//! 失效图 + 分批重建门禁(PR-009:SCHED-016/017 面;书 §17 PR-009 reverse DAG
-//! + §7 IDX-002/006/013 基础版)。
+//! Invalidation graph + batched-rebuild gate (PR-009: the SCHED-016/017 surface; book §17
+//! PR-009 reverse DAG + the §7 IDX-002/006/013 baseline).
 //!
-//! 断言口径:改一个文件 → 受影响集 = 自身 + 反向依赖文件(经 kode-index
-//! dependents_of),分批确定性切块;类型别名/继承边同样触发反向失效。
+//! Assertion semantics: changing one file → the affected set = itself + the reverse-dependent
+//! files (via kode-index dependents_of), and batching cuts it deterministically; type-alias and
+//! inheritance edges trigger reverse invalidation the same way.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -26,7 +27,8 @@ fn def_text(parent: Option<&str>, prop: &str, prop_type: &str) -> String {
     s
 }
 
-/// 六文件工作区:Avatar(基类)← Monster(继承 + PARITY_LIST 属性类型)。
+/// Six-file workspace: Avatar (the base class) ← Monster (inheritance + a PARITY_LIST property
+/// type).
 fn indexed_workspace() -> SymbolIndex {
     let mut index = SymbolIndex::new();
     let files = vec![
@@ -55,11 +57,11 @@ fn affected_set_includes_reverse_dependents_via_inheritance() {
         .iter()
         .map(|k| k.uri.as_path().to_string())
         .collect();
-    // 自身 + 继承方 Monster + 注册表 entities.xml 都依赖 Avatar 名字。
+    // Itself + the inheriting Monster + the registry entities.xml all depend on the Avatar name.
     assert!(paths.contains(&"/proj/entities/Avatar.def".to_string()));
     assert!(paths.contains(&"/proj/entities/Monster.def".to_string()));
     assert!(paths.contains(&"/proj/entities.xml".to_string()));
-    // 不相关文件不受影响(仅相关节点,IDEX-013 口径)。
+    // Unrelated files are untouched (only the relevant nodes; the IDEX-013 semantics).
     assert!(!paths
         .iter()
         .any(|p| p.ends_with("types.xml") || p.ends_with("alias.xml")));
@@ -69,7 +71,7 @@ fn affected_set_includes_reverse_dependents_via_inheritance() {
 fn affected_set_via_type_alias_dependency() {
     let index = indexed_workspace();
     let graph = InvalidationGraph::new(&index);
-    // alias.xml 声明 PARITY_LIST;Monster 的属性类型引用它 → 反向受影响。
+    // alias.xml declares PARITY_LIST; Monster's property type references it → reverse-affected.
     let affected = graph.affected_by(&key("/proj/alias.xml"));
     let paths: Vec<String> = affected
         .iter()
@@ -87,7 +89,8 @@ fn rebuild_batches_are_deterministic_and_capped() {
     let batches = graph.plan_rebuild_batches(&affected, 2);
     assert!(!batches.is_empty());
     assert!(batches.iter().all(|b| b.len() <= 2));
-    // 确定性:两批并集 = 受影响集,且批内按 (root, 路径) 升序。
+    // Determinism: the union of the batches = the affected set, and within a batch the keys are in
+    // (root, path) ascending order.
     let mut seen: Vec<String> = batches
         .iter()
         .flatten()
@@ -115,8 +118,9 @@ fn dependency_task_planning_labels_changed_file_and_batches() {
             Ok(())
         })
     });
-    // 每文件一批:变更文件本身 single-file-update,依赖文件 dependency-update
-    // (RUST-6 传递闭包:Monster + entities.xml 均受影响,共 3 个任务)。
+    // One batch per file: the changed file itself is a single-file-update, dependent files are
+    // dependency-updates (the RUST-6 transitive closure: Monster + entities.xml are both
+    // affected, 3 tasks in total).
     let mut kinds: Vec<(TaskKind, u8)> = specs
         .iter()
         .map(|s| {
@@ -132,7 +136,7 @@ fn dependency_task_planning_labels_changed_file_and_batches() {
     ];
     expected.sort();
     assert_eq!(kinds, expected);
-    // 执行面:任务体拿到各自批的文件清单。
+    // Execution surface: each task body receives the file list of its batch.
     for spec in specs {
         (spec.run)(&kode_scheduler::CancelToken::new()).unwrap();
     }
@@ -140,11 +144,13 @@ fn dependency_task_planning_labels_changed_file_and_batches() {
     assert_eq!(executed.len(), 3);
 }
 
-// RUST-6:affected_by 传递闭包 —— A 引 B、B 引 C,改 C 后 affected 含 B **和 A**。
+// RUST-6: the affected_by transitive closure — A references B and B references C; after C
+// changes, the affected set contains B **and A**.
 #[test]
 fn affected_set_propagates_transitive_chain() {
     let mut index = SymbolIndex::new();
-    // C.def 声明名字 "C";B.def Parent=C(依赖 C,声明 "B");A.def Parent=B(依赖 B)。
+    // C.def declares the name "C"; B.def has Parent=C (depends on C, declares "B"); A.def has
+    // Parent=B (depends on B).
     index.update_batch(&[
         (key("/proj/chain/C.def"), def_text(None, "hc", "UINT32")),
         (
@@ -169,7 +175,8 @@ fn affected_set_propagates_transitive_chain() {
     assert!(affected.contains(&key("/proj/chain/C.def")));
 }
 
-// RUST-6:环场景 A⇄B(调用反依赖)不死循环,有限步终止且集合正确。
+// RUST-6: the cycle scenario A ⇄ B (call reverse-dependency) does not loop forever — it
+// terminates in a finite number of steps with the right set.
 #[test]
 fn affected_set_terminates_on_dependency_cycle() {
     let index = SymbolIndex::new();
@@ -179,12 +186,12 @@ fn affected_set_terminates_on_dependency_cycle() {
     call.entry(a.clone()).or_default().insert(b.clone());
     call.entry(b.clone()).or_default().insert(a.clone());
     let graph = InvalidationGraph::with_call_dependents(&index, &call);
-    let affected = graph.affected_by(&a); // 旧实现会因无 visited 集而无法保证终止（防新增迭代逻辑死循环）;新实现 visited 集截断。
+    let affected = graph.affected_by(&a); // The old implementation had no visited set and could not guarantee termination (guards against new iteration logic deadlooping); the new one is cut off by the visited set.
     assert_eq!(affected.len(), 2);
     assert!(affected.contains(&a) && affected.contains(&b));
 }
 
-// C-20 交付③:调用反依赖 overlay 入失效 DAG —— 「改被调方文件 → 重算调用方文件」。
+// C-20 deliverable (3): the call reverse-dependency overlay enters the invalidation DAG — "change the callee's file → recompute the callers' files".
 #[test]
 fn affected_set_includes_call_dependents_overlay() {
     let index = indexed_workspace();
@@ -195,18 +202,19 @@ fn affected_set_includes_call_dependents_overlay() {
         .or_default()
         .insert(caller.clone());
 
-    // 无 overlay:只含自身
+    // Without the overlay: only the callee itself.
     let plain = InvalidationGraph::new(&index);
     assert!(!plain.affected_by(&callee).contains(&caller));
 
-    // 有 overlay:含调用方
+    // With the overlay: the caller is included.
     let graph = InvalidationGraph::with_call_dependents(&index, &call);
     let affected = graph.affected_by(&callee);
     assert!(affected.contains(&caller));
     assert!(affected.contains(&callee));
 }
 
-// C-20 交付③:多调用方折叠 + 自身不含(同文件调用不产跨文件条目)。
+// C-20 deliverable (3): multiple callers collapse into one entry + the callee itself is excluded
+// (a call within the same file produces no cross-file entry).
 #[test]
 fn call_dependents_overlay_dedupes_and_skips_self() {
     let index = indexed_workspace();
@@ -224,13 +232,14 @@ fn call_dependents_overlay_dedupes_and_skips_self() {
     let affected = graph.affected_by(&callee);
     assert!(affected.contains(&a));
     assert!(affected.contains(&b));
-    // 自身被受影响集去重后仅出现一次
+    // After the affected set is deduplicated, the callee itself appears exactly once.
     assert_eq!(affected.iter().filter(|k| **k == callee).count(), 1);
 }
 
-/// KR-AUD-23:plan_dependency_tasks 旧实现把 changed 与依赖一起按切块排序,
-/// max_batch 足够大时 changed 混进依赖批,SingleFileUpdate 高优先级丢失。
-/// 修复:changed 强制单独成批,恒 SingleFileUpdate + changed_priority。
+/// KR-AUD-23: the old plan_dependency_tasks implementation sorted the changed file together with
+/// the dependents for chunking; when max_batch was large enough the changed file was mixed into a
+/// dependent batch and the high priority of the SingleFileUpdate was lost.
+/// Fix: the changed file is forced into its own batch, always SingleFileUpdate + changed_priority.
 #[test]
 fn changed_file_always_gets_own_single_file_batch_kraud23() {
     let index = indexed_workspace();
@@ -256,7 +265,7 @@ fn changed_file_always_gets_own_single_file_batch_kraud23() {
         .map(|s| s.priority);
     assert_eq!(single_count, 1, "changed 恒单独成批: {specs:?}");
     assert_eq!(single_priority, Some(0), "changed 批保持 changed_priority");
-    // 执行面:changed 只在一个批出现。
+    // Execution surface: the changed file appears in exactly one batch.
     for spec in specs {
         (spec.run)(&kode_scheduler::CancelToken::new()).unwrap();
     }

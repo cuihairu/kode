@@ -1,17 +1,21 @@
 /**
- * KFLOW 回放实例级流转 HTML 呈现(FLOW-028 的纯字符串半边):把
- * traceReplayModel 渲染成零脚本静态页——真实组件实例泳道列,泳道内本地
- * 栈段(回调段/入口链,帧按段根深度缩进)+消息流(causal/candidate 徽标、
- * broadcast 标记、seq 锚)+缺失标记。
+ * KFLOW replay instance-level flow HTML presentation (the pure-string half of
+ * FLOW-028): renders traceReplayModel into a zero-script static page — real component
+ * instance lanes in columns, with each lane's local stack segments (callback segments
+ * / entry chains, frames indented by segment-root depth) + message flows
+ * (causal/candidate badges, broadcast markers, seq anchors) + missing markers.
  *
- * 安全纪律(与 configVisualizerPanelHtml 同族):
- * - 零脚本:CSP `default-src 'none'` 只放行内联 style;数据全部服务端
- *   (渲染期)转义,不存在前端拼 HTML 面;
- * - 文本一律 escapeHtml(含属性值,title 提示同理);
- * - 行号保留采集口径(1 基)原样展示,不换算不猜测。
+ * Security discipline (same family as configVisualizerPanelHtml):
+ * - Zero script: the CSP `default-src 'none'` only allows inline style; all data is
+ *   escaped server-side (at render time), so there is no front-end HTML-assembly face;
+ * - Text always goes through escapeHtml (attribute values included, title tooltips
+ *   likewise);
+ * - Line numbers keep the capture semantics (1-based) and are shown as-is, with no
+ *   conversion or guessing.
  *
- * 诚实边界直接来自模型:实例身份空=「来源未观察」;candidate 流带 reason
- * (FLOW-026 出处);缺失标记独立面。纯函数,零 vscode 依赖。
+ * Honest boundaries come straight from the model: an empty instance identity =
+ * "source not observed"; candidate flows carry a reason (the FLOW-026 provenance);
+ * missing markers are their own face. Pure functions, zero vscode dependency.
  */
 
 import { describeTraceReplayModel, type TraceReplayModel, type ReplayLane, type ReplayFlow } from './traceReplayModel';
@@ -24,9 +28,11 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// RUST-150:回放页零脚本(enableScripts=false 硬纪律)不可做滚动加载或
-// 虚拟列表,渲染面上限+如实截断提示是该约束下的正确形态——模型(数据面)
-// 不截断,只防一次渲染万级 DOM(采集预算 20000 事件,帧/流可达万级)。
+// RUST-150: the replay page is zero-script (the enableScripts=false hard rule) and
+// cannot do scroll loading or virtual lists, so a render-face cap + an honest
+// truncation note is the correct shape under that constraint — the model (the data
+// face) does not truncate; it only guards against rendering a ten-thousand-scale DOM
+// in one shot (the capture budget is 20000 events; frames/flows can reach that scale).
 export const TRACE_REPLAY_MAX_LANES = 24;
 export const TRACE_REPLAY_MAX_LANE_FRAMES = 2000;
 export const TRACE_REPLAY_MAX_LANE_FLOWS = 2000;
@@ -74,8 +80,9 @@ function laneHtml(lane: ReplayLane): string {
           .join('')}</div>`
       : '<div class="instances none">实例身份:来源未观察(事件无 entityId)</div>';
 
-  // RUST-150:帧预算跨 segment 消耗(按序取前缀),预算尽后剩余段如实空+
-  // 泳道级截断尾注,不静默丢帧。
+  // RUST-150: the frame budget is consumed across segments (taking prefixes in order);
+  // once the budget is exhausted the remaining segments are honestly empty + a
+  // lane-level truncation footnote; frames are never dropped silently.
   let framesRemaining = TRACE_REPLAY_MAX_LANE_FRAMES;
   let framesTotal = 0;
   const segments =
@@ -166,11 +173,11 @@ code{color:var(--vscode-charts-blue,#3794ff)}
 `;
 
 export interface TraceReplayHtmlOptions {
-  /** 页标题(面板给出) */
+  /** Page title (given by the panel) */
   title: string;
 }
 
-/** 渲染回放页(纯字符串;调用方自行入 webview html)。 */
+/** Render the replay page (pure string; the caller puts it into the webview html itself). */
 export function renderTraceReplayHtml(model: TraceReplayModel, options: TraceReplayHtmlOptions): string {
   const title = escapeHtml(options.title);
   const summary = escapeHtml(describeTraceReplayModel(model));

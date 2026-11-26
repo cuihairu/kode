@@ -1,7 +1,8 @@
-//! 归档容器格式原语:魔数/版本/标志位/头长/大小上限、帧序列读取(`read_frames`)、
-//! 帧 AEAD 加解密(`aead_seal`/`aead_open`)、头部加密位探测(`is_encrypted`)。
-//! 只认字节与帧边界,不构造清单(`ArchiveMeta`/`TableMeta` 留在 archive.rs);
-//! 写入面/读取面经 `use` 引回本层符号。
+//! Archive container format primitives: magic/version/flags/header length/size cap,
+//! frame-sequence reading (`read_frames`), frame AEAD encrypt/decrypt (`aead_seal`/`aead_open`),
+//! and header encryption-bit probing (`is_encrypted`).
+//! Deals only in bytes and frame boundaries, never builds the manifest (`ArchiveMeta`/`TableMeta` stay in archive.rs);
+//! the write face/read face pulls this layer's symbols back via `use`.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -15,22 +16,22 @@ use sha2::{Digest, Sha256};
 use super::ArchiveKey;
 use crate::error::{CloneError, CloneResult};
 
-/// 魔数(9 字节)。
+/// Magic number (9 bytes).
 pub(super) const MAGIC: &[u8; 9] = b"KDPCLONE1";
-/// 归档格式版本(读取面只认这一版;升级须新版本号+迁移读取)。
+/// Archive format version (the read face accepts only this version; upgrades require a new version number plus migration reads).
 pub(super) const FORMAT_VERSION: u8 = 1;
-/// 标志位:bit0 = 帧经 chacha20poly1305 加密。
+/// Flags: bit0 = frames are encrypted with chacha20poly1305.
 pub(super) const FLAG_ENCRYPTED: u8 = 0x01;
-/// 头长:魔数 9 + 版本 1 + 标志 1。
+/// Header length: magic 9 + version 1 + flags 1.
 pub(super) const HEADER_LEN: usize = MAGIC.len() + 2;
-/// 归档大小上限:开档与写档都按此拒绝(防解压/拼接攻击与失控导出)。
+/// Archive size cap: both opening and writing archives enforce this (guards against decompression/concatenation attacks and runaway exports).
 pub const MAX_ARCHIVE_SIZE: u64 = 4 * 1024 * 1024 * 1024;
-/// chacha20poly1305 认证标签长:帧头记的是**明文字节长**,加密时密文=明文+本值。
+/// chacha20poly1305 authentication tag length: the frame header records the **plaintext byte length**; when encrypted, ciphertext = plaintext + this value.
 pub(super) const AEAD_TAG_LEN: usize = 16;
-/// 清单里的格式名。
+/// Format name recorded in the manifest.
 pub(super) const FORMAT_NAME: &str = "kdpclone";
 
-/// 大小上限检查(开档按文件长度,写档按累计字节数)。
+/// Size cap check (opening uses file length; writing uses cumulative byte count).
 pub(super) fn enforce_size_cap(limit: u64, len: u64) -> CloneResult<()> {
     if len > limit {
         return Err(CloneError::ArchiveError(format!(
@@ -40,7 +41,7 @@ pub(super) fn enforce_size_cap(limit: u64, len: u64) -> CloneResult<()> {
     Ok(())
 }
 
-/// 帧序列读取:逐帧重建头部作 AEAD 关联数据,明文 SHA-256 逐帧核对。
+/// Frame-sequence reading: rebuilds each frame's header as AEAD associated data and verifies plaintext SHA-256 frame by frame.
 pub(super) fn read_frames(
     r: &mut dyn Read,
     encrypted: bool,
@@ -71,7 +72,7 @@ pub(super) fn read_frames(
         let mut sha = [0u8; 32];
         r.read_exact(&mut sha)
             .map_err(|e| CloneError::ArchiveError(format!("read frame checksum: {e}")))?;
-        // 帧头 data_len 为明文字节长;加密时密文多出认证标签长。
+        // Frame-header data_len is the plaintext byte length; when encrypted the ciphertext carries the extra authentication tag length.
         let payload_len = usize::try_from(if encrypted {
             data_len
                 .checked_add(AEAD_TAG_LEN as u64)
@@ -115,7 +116,7 @@ pub(super) fn read_frames(
     Ok(files)
 }
 
-/// 帧边界读取 `u32`:干净 EOF 返回 None(帧序列自然结束),半头即截断错误。
+/// Reads a `u32` at a frame boundary: clean EOF returns None (natural end of the frame sequence); a partial header is a truncation error.
 pub(super) fn read_u32_or_eof(r: &mut dyn Read) -> CloneResult<Option<u32>> {
     let mut buf = [0u8; 4];
     let mut filled = 0;
@@ -178,8 +179,8 @@ pub(super) fn aead_open(
         })
 }
 
-/// 只读头部加密位(不解析帧)。读侧用它决定是否需要向密钥存储要钥匙:
-/// 加密档无钥在 `Archive::open` 报错,提前探位可给「密钥缺失」更准的话术。
+/// Reads only the header encryption bit (does not parse frames). The read side uses it to decide whether to request a key from the keystore:
+/// an encrypted archive without a key errors in `Archive::open`; probing the bit early gives a more precise "key missing" message.
 pub fn is_encrypted(path: &Path) -> CloneResult<bool> {
     let mut f =
         File::open(path).map_err(|e| CloneError::ArchiveError(format!("open archive: {e}")))?;

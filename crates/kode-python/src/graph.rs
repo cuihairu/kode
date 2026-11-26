@@ -1,15 +1,17 @@
-//! 调用图聚合 + 供 kode-scheduler 失效 DAG 消费的反向索引(C-20 交付③)。
+//! Call-graph aggregation + the reverse index for kode-scheduler's invalidation DAG to consume
+//! (C-20 delivery item 3).
 //!
-//! - [`PyCallGraph`] 单文件(或聚合)调用边集合,提供查询面:
-//!   `callers_of`(被调名 → 调用点列表,即「改方法签名→受影响调用点全数列出」)、
-//!   `calls_of`(调用方 → 出边);
-//! - [`CallReverseIndex`] 被调方文件 → 调用方文件集,直接喂给
-//!   kode-scheduler 的 `InvalidationGraph::with_call_dependents`(跨文件反依赖,
-//!   使 `affected_by` 纳入「改被调方文件 → 重算调用方文件」)。
+//! - [`PyCallGraph`]: the call-edge set of one file (or an aggregate), providing the query faces:
+//!   `callers_of` (callee name -> call-site list, i.e. "change a method's signature -> list every
+//!   affected call site") and `calls_of` (caller -> outgoing edges);
+//! - [`CallReverseIndex`]: callee file -> set of caller files, fed directly into kode-scheduler's
+//!   `InvalidationGraph::with_call_dependents` (the cross-file reverse dependency, so that
+//!   `affected_by` includes "change the callee file -> recompute the caller files").
 //!
-//! 跨文件被调方解析是启发式(动态语言):裸名 → 全项目模块级函数;`self.*` →
-//! 调用方自身文件;模块绑定接收者 → 按文件名解析模块;未知 → 不产反依赖
-//! (宁缺毋滥,避免误失效)。
+//! Cross-file callee resolution is heuristic (dynamic language): bare name -> project-wide
+//! module-level functions; `self.*` -> the caller's own file; module-bound receiver -> resolve the
+//! module by file name; unknown -> produce no reverse dependency (prefer missing over wrong, to
+//! avoid spurious invalidation).
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -18,7 +20,7 @@ use kode_vfs::store::DocumentKey;
 
 use crate::model::{AstImport, AstSymbols, CallEdge};
 
-/// 调用图(按文件分组或聚合)。
+/// Call graph (grouped per file or aggregated).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PyCallGraph {
     pub edges: Vec<CallEdge>,
@@ -29,21 +31,21 @@ impl PyCallGraph {
         PyCallGraph { edges }
     }
 
-    /// 被调名 → 调用点(升序;「改方法签名→受影响调用点全数列出」)。
+    /// Callee name -> call sites (ascending; "change a method's signature -> list every affected call site").
     pub fn callers_of(&self, callee: &str) -> Vec<&CallEdge> {
         let mut v: Vec<&CallEdge> = self.edges.iter().filter(|e| e.callee == callee).collect();
         v.sort_by_key(|e| (e.caller.clone(), e.caller_line));
         v
     }
 
-    /// 调用方 → 出边(升序;无该调用方 → 空)。
+    /// Caller -> outgoing edges (ascending; none for that caller -> empty).
     pub fn calls_of(&self, caller: &str) -> Vec<&CallEdge> {
         let mut v: Vec<&CallEdge> = self.edges.iter().filter(|e| e.caller == caller).collect();
         v.sort_by_key(|e| e.caller_line);
         v
     }
 
-    /// 特定 EdgeKind 的边(可视化面板按类别着色用)。
+    /// Edges of a given EdgeKind (for the visualization panel to color by category).
     pub fn of_kind(&self, kind: crate::model::EdgeKind) -> Vec<&CallEdge> {
         self.edges.iter().filter(|e| e.kind == kind).collect()
     }
@@ -53,16 +55,16 @@ impl PyCallGraph {
     }
 }
 
-/// 被调方文件 → 调用方文件集(kode-scheduler 消费的跨文件反依赖)。
+/// Callee file -> set of caller files (the cross-file reverse dependency that kode-scheduler consumes).
 pub type CallReverseIndex = BTreeMap<DocumentKey, BTreeSet<DocumentKey>>;
 
-/// 构建跨文件调用反依赖。
+/// Build the cross-file call reverse dependencies.
 ///
-/// - `file_edges`:每文件的调用边(来自 [`crate::callgraph::extract_call_graph`]);
-/// - `file_symbols`:每文件 AST 符号表(跨文件被调方解析用)。
+/// - `file_edges`: the call edges of each file (from [`crate::callgraph::extract_call_graph`]);
+/// - `file_symbols`: the AST symbol tables of each file (used by cross-file callee resolution).
 ///
-/// 启发式解析(见模块头);返回被调方文件 → 调用方文件集,可作
-/// `InvalidationGraph::with_call_dependents` 的输入。
+/// Heuristic resolution (see the module header); returns callee file -> set of caller files, which
+/// can serve as input to `InvalidationGraph::with_call_dependents`.
 pub fn build_call_reverse_index(
     file_edges: &BTreeMap<DocumentKey, Vec<CallEdge>>,
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
@@ -83,13 +85,15 @@ pub fn build_call_reverse_index(
     rev
 }
 
-/// 跨进程边(`self.cell.*`/`self.base.*`/`self.client.*`)所在调用方文件集(RUST-7 uncertain 面)。
+/// Set of caller files that own cross-process edges (`self.cell.*`/`self.base.*`/`self.client.*`)
+/// (the RUST-7 uncertain face).
 ///
-/// 这些调用方有跨进程调用边,但被调方文件无法静态解析(见
-/// [`resolve_callee_file`] 的 KbeCrossProcess 短路),故不进
-/// [`build_call_reverse_index`] 的反向失效索引——另一进程侧文件变更不会
-/// 经调用边触发这些文件重扫。消费方可将本集并入保守重扫面(如 profile/
-/// 配置变更时全量重扫这些文件)。
+/// These callers have cross-process call edges, but the callee file cannot be resolved statically
+/// (see the KbeCrossProcess short-circuit in [`resolve_callee_file`]), so they do not enter the
+/// reverse invalidation index of [`build_call_reverse_index`] -- a change on the other process
+/// side will not trigger a rescan of these files via a call edge. Consumers can fold this set into
+/// a conservative rescan face (e.g. rescan these files in full when a profile / configuration
+/// changes).
 pub fn uncertain_cross_process_files(
     file_edges: &BTreeMap<DocumentKey, Vec<CallEdge>>,
 ) -> BTreeSet<DocumentKey> {
@@ -104,53 +108,64 @@ pub fn uncertain_cross_process_files(
         .collect()
 }
 
-/// 解析被调方所在文件(启发式;None = 无法解析/外部/歧义)。
+/// Resolve the file the callee lives in (heuristic; None = unresolvable / external / ambiguous).
 fn resolve_callee_file(
     caller_file: &DocumentKey,
     edge: &CallEdge,
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
 ) -> Option<DocumentKey> {
     let receiver = edge.receiver.as_deref().unwrap_or("");
-    // KbeCrossProcess(`self.cell.*`/`self.base.*`/`self.client.*`):base↔cell↔client 间接经配置关联,
-    // 被调方文件无法静态解析(实体类在另一进程侧的文件里,边里没有类名/文件名)。
-    // 旧实现落进下方 `self.` 分支按「同类」折叠回调用方文件,等于把跨进程边
-    // 无声丢弃。RUST-7:显式短路返回 None(行为不变:反索引不产边),但语义
-    // 不再冒充同类调用;uncertain 面由 [`uncertain_cross_process_files`]
-    // 单独标出,消费方可用它做保守重扫。TODO(设计现状):无日志门面(workspace
-    // 零第三方依赖铁律),warn 以查询面代替;若未来接入日志,在此处记 warn。
+    // KbeCrossProcess (`self.cell.*`/`self.base.*`/`self.client.*`): base<->cell<->client are only
+    // linked indirectly via configuration, so the callee file cannot be resolved statically (the
+    // entity class lives in a file on the other process side, and the edge carries no class name /
+    // file name). The older implementation fell into the `self.` branch below and folded it back
+    // to the caller file as "same class", silently dropping the cross-process edge. RUST-7: return
+    // None explicitly (behaviour unchanged: the reverse index yields no edge), but the semantics no
+    // longer masquerade as a same-class call; the uncertain face is marked separately by
+    // [`uncertain_cross_process_files`], which consumers can use for a conservative rescan.
+    // TODO (current design): there is no logging facade (the workspace keeps its strict
+    // zero-third-party-dependency rule), so the warn is replaced by a query face; if logging is
+    // wired in later, emit a warn here.
     if edge.kind == crate::model::EdgeKind::KbeCrossProcess {
         return None;
     }
     if receiver == "self" || receiver.starts_with("self.") {
-        // 自身类方法/属性 → 调用方文件(同类,非跨文件;返回自身以便上层折叠)
+        // Own class method / attribute -> the caller file (same class, not cross-file; return
+        // itself so the caller can fold it).
         return Some(caller_file.clone());
     }
     if receiver.is_empty() {
-        // KODE-AUD-008:裸名调用——若调用方文件自身定义了该模块级函数,
-        // 则为本地调用,不产跨文件边(防伪边:旧实现全项目搜会先命中
-        // 同名函数所在文件,把本地调用误指为跨文件)。
+        // KODE-AUD-008: bare-name call -- if the caller file itself defines that module-level
+        // function, it is a local call and no cross-file edge is produced (anti-false-edge: the
+        // older implementation searched the whole project and would hit the file holding a
+        // same-named function first, misattributing a local call as cross-file).
         if caller_defines_function(caller_file, file_symbols, &edge.callee) {
             return None;
         }
         return find_module_function(file_symbols, &edge.callee, caller_file);
     }
-    // 模块绑定接收者:`module.func` → 按目标模块 basename 找文件(排除调
-    // 用方自身)。KODE-AUD-008 复审残余:接收者首段也可能是实例变量
-    // (`avatar.heal()`,avatar 是局部对象而非模块)——不经 import 绑定核
-    // 验就按 basename 找文件,会把唯一同名文件误指为被调方(伪跨文件边)。
+    // Module-bound receiver: `module.func` -> find the file by the target module basename (excluding
+    // the caller itself). Residual from the KODE-AUD-008 review: the first segment of the receiver
+    // can also be an instance variable (`avatar.heal()`, where avatar is a local object, not a
+    // module) -- looking up a file by basename without checking the import binding would point the
+    // unique same-named file at as the callee (a false cross-file edge).
     //
-    // 绑定核验契约(保守歧义即放弃,复审第七/八/九轮定版):沿调用点所在
-    // 的 Function/Comprehension 作用域层自内向外走查——
-    // · 层内「只有」import 绑定且调用行不早于绑定行 → 模块绑定,按目标
-    //   模块 basename(别名取目标模块名,非绑定名)放行唯一性核验;
-    // · 层内有本地绑定(参数/Store 赋值;叠加 import 亦然——静态歧义)
-    //   → 不产边;
-    // · 层内未提及该名 → 继续向外;
-    // · 全链未决 → 模块顶层回退:顶层 Store 重绑定过该名 → 不产边(第九
-    //   轮残余①);否则按顶层 import 的目标 basename 唯一性核验。
-    // 已知粒度限制(保守漏边向,如实记录):同一行内 lambda 参数遮蔽与
-    // 外层调用行粒度不可分;调用行早于函数内 import 行时向外回退(该调用
-    // 在运行时本就 UnboundLocal,边无意义)。
+    // Binding-verification contract (conservative: ambiguity means giving up; finalized in review
+    // rounds seven/eight/nine): walk the Function/Comprehension scope layers containing the call
+    // site, innermost out --
+    // - a layer with an import binding ONLY and the call line not earlier than the binding line ->
+    //   module binding; run the uniqueness check on the target module basename (for an alias use
+    //   the target module name, not the binding name);
+    // - a layer with a local binding (parameter / Store assignment; the same when it overlaps an
+    //   import -- static ambiguity) -> no edge;
+    // - the name is not mentioned in the layer -> continue outward;
+    // - the whole chain undecidable -> module-top-level fallback: the name was rebound by a top-
+    //   level Store assignment -> no edge (residual from round nine, item 1); otherwise run the
+    //   uniqueness check on the target basename of the top-level import.
+    // Known granularity limits (the conservative, edge-missing direction, recorded honestly):
+    // lambda-parameter shadowing on the same line is indistinguishable from the granularity of the
+    // outer call line; when the call line is earlier than a function-local import line, fall back
+    // outward (at runtime that call is already UnboundLocal, so the edge is meaningless).
     if let Some(module) = receiver.split('.').next() {
         let resolved_file: Option<DocumentKey> = file_symbols
             .get(caller_file)
@@ -164,16 +179,17 @@ fn resolve_callee_file(
                             && edge.caller_line <= sc.end_line
                     })
                     .collect();
-                // 内层(起始行更大)先看;层内裁决,未决继续向外。
+                // Innermost first (larger start line); adjudicate within a layer, continue outward if undecidable.
                 in_scope.sort_by_key(|sc| std::cmp::Reverse(sc.start_line));
                 let mut resolved: Option<Option<String>> = None;
                 for sc in in_scope {
                     match (sc.bindings.get(module), sc.shadows.get(module)) {
-                        // 本地绑定存在即本地名(Python 静态局部性);叠加
-                        // import = 静态歧义,保守放弃。
+                        // A local binding present means it is a local name (Python static
+                        // locality); overlapping with an import = static ambiguity, give up
+                        // conservatively.
                         (Some(_), Some(_)) => resolved = Some(None),
                         (Some(&(bl, ref base, _)), None) => {
-                            // 空 basename = 目标身份冲突歧义标记。
+                            // An empty basename = the ambiguity marker for conflicting target identity.
                             if base.is_empty() {
                                 resolved = Some(None);
                             } else if edge.caller_line >= bl {
@@ -189,12 +205,13 @@ fn resolve_callee_file(
                 }
                 match resolved {
                     Some(basename) => {
-                        // Some(None)=本地/歧义不产边;Some(Some(base))=按目标
-                        // basename 唯一性核验。
+                        // Some(None) = local / ambiguous, no edge; Some(Some(base)) = run the
+                        // uniqueness check on the target basename.
                         basename.and_then(|base| find_module_file(file_symbols, &base, caller_file))
                     }
-                    // 作用域链未决 → 模块顶层回退:先查顶层重绑定遮蔽,再
-                    // 按顶层 import 的目标 basename 唯一性核验。
+                    // The scope chain was undecidable -> module-top-level fallback: first check the
+                    // top-level rebind shadow, then run the uniqueness check on the target basename
+                    // of the top-level import.
                     None => {
                         if s.module_shadows.contains_key(module) {
                             return None;
@@ -204,15 +221,17 @@ fn resolve_callee_file(
                         if hits.is_empty() {
                             return None;
                         }
-                        // 同名多次 import 目标不同 = 目标身份冲突,静态不
-                        // 裁决 → 放弃(复审第十/十二轮残余)。一致性按**实际
-                        // 目标身份**判(复审第十四轮残余):from=(层级,模块,
-                        // symbol);无别名普通 import 绑包本体=顶层首段身份;
-                        // 有别名普通 import 绑完整模块=全段身份。文件查找仍
-                        // 用 resolve_base 的 basename(查找口径与身份口径分
-                        // 离):`import a.a`(身份 a)与 `import a.a as a`(身份
-                        // a.a)basename 同为 a 但目标不同 → 弃边;`import a`
-                        // 与 `import a as a`(身份同为 a)不弃边。
+                        // The same name imported several times with different targets = conflicting target identity,
+                        // statically undecidable -> give up (residual from review rounds ten/twelve).
+                        // Consistency is judged by the **actual target identity** (residual from
+                        // review round fourteen): from = (level, module, symbol); an unaliased plain
+                        // import binds the package itself = the top-level first-segment identity; an
+                        // aliased plain import binds the whole module = the full-segment identity.
+                        // File lookup still uses resolve_base's basename (the lookup semantics and
+                        // the identity semantics are kept separate): `import a.a` (identity a) and
+                        // `import a.a as a` (identity a.a) share the basename a but differ in target
+                        // -> drop the edge; `import a` and `import a as a` (identity a for both) do
+                        // not drop the edge.
                         let resolve_target = |i: &AstImport| -> String {
                             if i.is_from {
                                 format!(
@@ -249,13 +268,13 @@ fn resolve_callee_file(
                 }
             })
             .unwrap_or(None);
-        // resolved_file 已按目标 basename 的唯一性核验结果定性。
+        // resolved_file has already been qualified by the uniqueness-check outcome on the target basename.
         return resolved_file;
     }
     None
 }
 
-/// 调用方文件是否定义模块级函数 `name`(本地调用判定)。
+/// Does the caller file define the module-level function `name` (local-call determination).
 fn caller_defines_function(
     caller_file: &DocumentKey,
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
@@ -267,8 +286,9 @@ fn caller_defines_function(
         .unwrap_or(false)
 }
 
-/// 全项目搜模块级函数 `name`(排除 `exclude` 调用方文件),恰一个定义 → 有;
-/// 零个或多个(歧义,宁缺毋滥避免误失效)→ None。
+/// Search the whole project for the module-level function `name` (excluding the caller file
+/// `exclude`); exactly one definition -> Some; zero or several (ambiguous, prefer missing over
+/// wrong to avoid spurious invalidation) -> None.
 fn find_module_function(
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
     name: &str,
@@ -287,8 +307,9 @@ fn find_module_function(
     }
 }
 
-/// 按模块绑定名(如 `os`、`utils`)找文件(basename 去 .py 匹配,排除
-/// `exclude` 调用方自身);恰一个匹配 → 有,歧义/零 → None。
+/// Find a file by module binding name (e.g. `os`, `utils`): match the basename with the `.py`
+/// suffix stripped, excluding the caller file `exclude` itself; exactly one match -> Some,
+/// ambiguous / zero -> None.
 fn find_module_file(
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
     module: &str,

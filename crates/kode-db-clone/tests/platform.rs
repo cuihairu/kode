@@ -1,9 +1,13 @@
-//! PDC-0605 跨平台验证(计划书 Phase 6):Windows/Linux/macOS 文件路径、密钥存储。
+//! PDC-0605 cross-platform verification (plan doc Phase 6): Windows/Linux/macOS
+//! file paths, key storage.
 //!
-//! 路径处理全经 PathBuf/.join(源码无硬编码 `/` 字符串拼接,已核),本文件从
-//! 公开 API 补跨平台边界测试:Windows 分隔符/盘符/空格/Unicode 的密钥 id 消毒
-//! 与路径 roundtrip。CLI 二进制 §8 明示"示例不等于现在存在的命令",未实现,
-//! 当前交付面=命令面板入口+Rust RPC;本文件不虚报 CLI。
+//! Path handling all goes through PathBuf/.join (the source has no hardcoded `/`
+//! string concatenation, already verified); this file adds cross-platform edge
+//! tests from the public API: sanitization of key ids containing Windows
+//! separators / drive letters / spaces / Unicode, and path roundtrips. The CLI
+//! binary is stated in §8 as "examples are not commands that exist now" and is not
+//! implemented; the current delivery face = command palette entry + Rust RPC; this
+//! file does not fabricate a CLI.
 
 use std::path::PathBuf;
 
@@ -21,14 +25,16 @@ fn temp_dir(tag: &str) -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
-// 1. 密钥 id 消毒:Windows 分隔符/盘符/空格载荷一律拍平,防路径穿越。
+// 1. Key id sanitization: Windows separators / drive letters / space payloads are
+// flattened without exception, guarding against path traversal.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn key_id_windows_separators_and_drive_are_sanitized() {
     let dir = temp_dir("win-id");
     let store = FileKeyStore::new(&dir);
-    // Windows 遍历载荷:反斜杠分隔、盘符、混合分隔、空格(Windows 常见)。
+    // Windows traversal payloads: backslash separators, drive letters, mixed
+    // separators, spaces (common on Windows).
     for (id, expect_file) in [
         (r"..\escape", "___escape.key"),
         (r"..\..\x", "______x.key"),
@@ -39,20 +45,21 @@ fn key_id_windows_separators_and_drive_are_sanitized() {
         store.get_or_create(id).unwrap();
         assert!(dir.join(expect_file).exists(), "`{id}` → {expect_file}");
     }
-    // 根下确无越界文件(消毒后仅允许 alnum/-/_)。
+    // Truly no out-of-bounds files under the root (after sanitization only
+    // alnum/-/_ are allowed).
     for entry in std::fs::read_dir(&dir).unwrap() {
         let name = entry.unwrap().file_name().into_string().unwrap();
         assert!(
             name.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'),
-            "越界文件名: {name}"
+            "out-of-bounds filename: {name}"
         );
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ---------------------------------------------------------------------------
-// 2. 密钥根/归档路径带空格+Unicode(Windows/macOS 常见)。
+// 2. Key roots / archive paths with spaces + Unicode (common on Windows/macOS).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -128,13 +135,13 @@ fn archive_roundtrip_on_space_and_unicode_path() {
     assert_eq!(meta.entity, "Avatar");
     assert_eq!(meta.total_rows, 1);
     assert!(!meta.encrypted);
-    // 重开核验:同一路径(含空格/Unicode)roundtrip 成功。
+    // Reopen verification: the same path (with spaces/Unicode) roundtrips.
     let reopened = kode_db_clone::archive::Archive::inspect(&archive_path, None).unwrap();
     assert_eq!(reopened.entity, "Avatar");
     assert_eq!(reopened.total_rows, 1);
     assert_eq!(reopened.tables[0].rows, 1);
-    // 文件真实存在且非空。
+    // The file really exists and is non-empty.
     let len = std::fs::metadata(&archive_path).unwrap().len();
-    assert!(len > 0, "归档文件非空");
+    assert!(len > 0, "archive file is non-empty");
     let _ = std::fs::remove_dir_all(&base);
 }

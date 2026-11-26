@@ -1,7 +1,7 @@
-//! PA-003 验收测试(红先行):cursor / codec / 动态消息表 / entity / session。
+//! PA-003 acceptance tests (red first): cursor / codec / dynamic message table / entity / session.
 //!
-//! 引擎语义依据 docs/kbengine-wire-protocol.md(PA-001 取证,基准 bf1a9cd6
-//! / v2.5.10);固定消息表快照与 PA-002 同源(tests/fixtures)。
+//! Engine semantics from docs/kbengine-wire-protocol.md (PA-001 forensics, baseline bf1a9cd6
+//! / v2.5.10); the fixed message table snapshot shares its source with PA-002 (tests/fixtures).
 
 use kode_kbengine_protocol::codec::{DecodeLimits, Value};
 use kode_kbengine_protocol::cursor::Cursor;
@@ -25,7 +25,7 @@ fn static_map() -> MessageMap {
 }
 
 // ---------------------------------------------------------------------------
-// cursor:零拷贝标量读取 + 边界(§3)
+// cursor: zero-copy scalar reads + bounds (§3)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -33,41 +33,41 @@ fn cursor_reads_le_scalars() {
     let data = [0x01u8, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
     let mut c = Cursor::new(&data);
     assert_eq!(c.read_u8().unwrap(), 0x01);
-    assert_eq!(c.read_u16().unwrap(), 0x0302); // 小端
+    assert_eq!(c.read_u16().unwrap(), 0x0302); // little-endian
     assert_eq!(c.read_u32().unwrap(), 0x07060504);
     assert_eq!(c.offset(), 7);
-    assert!(c.read_u16().is_err()); // 不越界、不 panic
+    assert!(c.read_u16().is_err()); // no out-of-bounds, no panic
 }
 
 #[test]
 fn cursor_string_engine_semantics() {
-    // STRING:NUL 结尾无前缀;读端遇非 ASCII(≥0x80)提前截断
-    // (memorystream.h:319-332)。
+    // STRING: NUL-terminated with no prefix; the reading end truncates early on non-ASCII (≥0x80)
+    // (memorystream.h:319-332).
     let mut c = Cursor::new(b"abc\0def");
     assert_eq!(c.read_cstring().unwrap(), "abc");
     assert_eq!(c.offset(), 4);
 
     let mut c = Cursor::new(&[0x61, 0xe4, 0xb8, 0xad, 0x00]);
-    assert_eq!(c.read_cstring().unwrap(), "a"); // 0xe4 非 ASCII → 截断
+    assert_eq!(c.read_cstring().unwrap(), "a"); // 0xe4 is non-ASCII → truncate
     assert_eq!(c.offset(), 1);
 
-    // 无 NUL 也不 panic:读到尾
+    // No NUL still does not panic: read to the end
     let mut c = Cursor::new(b"tail");
     assert_eq!(c.read_cstring().unwrap(), "tail");
 }
 
 #[test]
 fn cursor_prefixed_blob_and_eof_never_panic() {
-    // UNICODE/BLOB:u32 长度 + 内容(datatype.cpp:1129-1143,1448-1463)
+    // UNICODE/BLOB: u32 length + content (datatype.cpp:1129-1143, 1448-1463)
     let mut v = 5u32.to_le_bytes().to_vec();
     v.extend_from_slice(b"hello");
     let mut c = Cursor::new(&v);
     assert_eq!(c.read_blob(&DecodeLimits::default()).unwrap(), b"hello");
 
-    // 长度声明超出剩余 → 错误(带 offset),不 panic、不越界分配
+    // Declared length exceeds the remainder → error (with offset), no panic, no out-of-bounds allocation
     let mut c = Cursor::new(&[0xffu8, 0xff, 0xff, 0xff]);
     let err = c.read_blob(&DecodeLimits::default()).unwrap_err();
-    // u32 长度已读(4B)后才发现越限
+    // Over-cap is only detected after the u32 length has been read (4B)
     assert_eq!(err.offset, 4);
     assert!(matches!(
         err.kind,
@@ -76,7 +76,7 @@ fn cursor_prefixed_blob_and_eof_never_panic() {
 }
 
 // ---------------------------------------------------------------------------
-// codec:基础类型 + containers(ARRAY / FIXED_DICT)
+// codec: basic types + containers (ARRAY / FIXED_DICT)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -115,7 +115,7 @@ fn codec_unicode_blob_array_fixed_dict() {
         Value::Str("玩家A".into())
     );
 
-    // ARRAY<UINT32>: u32 count + elems(datatype.cpp:1837-1856)
+    // ARRAY<UINT32>: u32 count + elems (datatype.cpp:1837-1856)
     let mut v = 3u32.to_le_bytes().to_vec();
     for i in 0..3u32 {
         v.extend_from_slice(&i.to_le_bytes());
@@ -135,7 +135,7 @@ fn codec_unicode_blob_array_fixed_dict() {
         Value::Array(vec![Value::UInt(0), Value::UInt(1), Value::UInt(2)])
     );
 
-    // FIXED_DICT:声明序、不带键名(datatype.cpp:2592+)
+    // FIXED_DICT: declaration order, no key names on the wire (datatype.cpp:2592+)
     let mut v = Vec::new();
     v.extend_from_slice(&1.0f32.to_le_bytes());
     v.extend_from_slice(&2.0f32.to_le_bytes());
@@ -173,7 +173,7 @@ fn codec_unicode_blob_array_fixed_dict() {
 #[test]
 fn codec_unknown_and_entitycall_kept_raw() {
     let limits = DecodeLimits::default();
-    // 未知类型:Raw 保留剩余字节(红线:未知类型 Raw 保留)
+    // Unknown type: Raw keeps the remaining bytes (red line: unknown types retained as Raw)
     let mut c = Cursor::new(&[0xde, 0xad, 0xbe, 0xef]);
     let v = kode_kbengine_protocol::codec::decode_value(
         &WireType::Unresolved("MYSTERY".into()),
@@ -189,7 +189,7 @@ fn codec_unknown_and_entitycall_kept_raw() {
         }
         other => panic!("expected Raw, got {other:?}"),
     }
-    // ENTITYCALL:PA-001 TODO-2(线格式未逐字节取证)→ Raw 不编造
+    // ENTITYCALL: PA-001 TODO-2 (wire format not pinned byte-for-byte) → Raw, nothing fabricated
     let mut c = Cursor::new(&[1, 2, 3, 4]);
     assert!(matches!(
         kode_kbengine_protocol::codec::decode_value(&WireType::EntityCall, &mut c, &limits, 0)
@@ -201,7 +201,7 @@ fn codec_unknown_and_entitycall_kept_raw() {
 #[test]
 fn codec_memory_and_depth_limits() {
     let limits = DecodeLimits::default();
-    // u32::MAX 数组声明 + 截断输入 → 错误,无爆炸分配
+    // u32::MAX array declaration + truncated input → error, no exploding allocation
     let mut c = Cursor::new(&[0xffu8, 0xff, 0xff, 0xff, 1, 2, 3]);
     let err = kode_kbengine_protocol::codec::decode_value(
         &WireType::Array {
@@ -217,7 +217,7 @@ fn codec_memory_and_depth_limits() {
         DecodeErrorKind::UnexpectedEof | DecodeErrorKind::MemoryLimit
     ));
 
-    // 深度递归(ARRAY 套 ARRAY 套 …):限界报错,不栈溢出
+    // Deep recursion (ARRAY nested in ARRAY nested in ...): bounded error, no stack overflow
     let mut deep = Box::new(WireType::UInt8);
     for _ in 0..10_000 {
         deep = Box::new(WireType::Array { of: deep });
@@ -227,8 +227,9 @@ fn codec_memory_and_depth_limits() {
     let mut c = Cursor::new(&inner);
     let ty = WireType::Array { of: deep };
     let r = kode_kbengine_protocol::codec::decode_value(&ty, &mut c, &limits, 0);
-    // 深链安全:要么递归在计数层先耗尽数据(UnexpectedEof,逐层 u32 count
-    // 消费),要么 DepthLimit;任何一种都必须返回且不栈溢出。
+    // Deep-chain safety: either the recursion exhausts the data at the counting layer first
+    // (UnexpectedEof, consuming the per-level u32 count) or DepthLimit; either way it must
+    // return and not overflow the stack.
     match r {
         Ok(_) => panic!("10k-deep array with 5B data must not decode"),
         Err(e) => assert!(
@@ -242,22 +243,22 @@ fn codec_memory_and_depth_limits() {
 }
 
 // ---------------------------------------------------------------------------
-// 动态消息表(§5.2 onImportClientMessages)
+// Dynamic message table (§5.2 onImportClientMessages)
 // ---------------------------------------------------------------------------
 
-/// 构造一段真实形状的 onImportClientMessages 载荷(§5.2 记录序:
-/// u16 count + count × { u16 id, i16 len, str name, i8 argsType, u8 argsize, u8[argoutsize] })。
+/// Build an onImportClientMessages payload of real shape (§5.2 record order:
+/// u16 count + count × { u16 id, i16 len, str name, i8 argsType, u8 argsize, u8[argoutsize] }).
 fn sample_import_payload() -> Vec<u8> {
     let mut v = Vec::new();
     v.extend_from_slice(&2u16.to_le_bytes()); // count
-                                              // 记录 1:Baseapp::onRemoteMethodCall(增量 id=207+ 风格;此处用演示 id 1001)
+                                              // Record 1: Baseapp::onRemoteMethodCall (incremental id=207+ style; demo id 1001 used here)
     v.extend_from_slice(&1001u16.to_le_bytes());
-    v.extend_from_slice(&(-1i16).to_le_bytes()); // 变长
+    v.extend_from_slice(&(-1i16).to_le_bytes()); // variable length
     v.extend_from_slice(b"Baseapp_onRemoteMethodCall\0");
     v.push(-1i8 as u8); // argsType: variable args
     v.push(1); // argsize
     v.push(8); // INT32 (datatype2id: ENTITY_ID/INT32 = 8)
-               // 记录 2:定长 UINT32 消息
+               // Record 2: fixed-length UINT32 message
     v.extend_from_slice(&1002u16.to_le_bytes());
     v.extend_from_slice(&4i16.to_le_bytes());
     v.extend_from_slice(b"Baseapp_demoFixed\0");
@@ -282,20 +283,20 @@ fn dynamic_import_updates_message_map() {
     let fixed_msg = map.by_id(1002).unwrap();
     assert_eq!(fixed_msg.length, MessageLength::Fixed(4));
 
-    // 静态固定表条目仍在(id=5 importClientMessages 定长 0)
+    // The static fixed-table entry is still there (id=5 importClientMessages, fixed length 0)
     assert_eq!(map.by_id(5).unwrap().name, "Loginapp::importClientMessages");
 
-    // 坏载荷:count 声明 > 实际 → 错误不 panic
+    // Bad payload: declared count > actual → error, no panic
     let mut bad = 9u16.to_le_bytes().to_vec();
     bad.extend_from_slice(&1u16.to_le_bytes());
     assert!(map.apply_import(&bad, &DecodeLimits::default()).is_err());
 }
 
 // ---------------------------------------------------------------------------
-// session:双 Flow 独立 + 握手状态推进 + 自动应用动态导入
+// session: two independent Flows + handshake phase advancement + dynamic import applied automatically
 // ---------------------------------------------------------------------------
 
-/// 组帧helper:变长消息 frame(id + u16 len + payload)。
+/// Framing helper: variable-length message frame (id + u16 len + payload).
 fn var_frame(id: u16, payload: &[u8]) -> Vec<u8> {
     let mut v = id.to_le_bytes().to_vec();
     v.extend_from_slice(&(payload.len() as u16).to_le_bytes());
@@ -307,7 +308,7 @@ fn var_frame(id: u16, payload: &[u8]) -> Vec<u8> {
 fn session_login_flow_tracks_handshake_and_dynamic_table() {
     let mut session = Session::new(&build_message_table(&engine_defaults_xml(), None));
 
-    // 1. hello(id=4,Loginapp::hello,固定表变长)载荷 = str ver + str scriptVer + blob key
+    // 1. hello (id=4, Loginapp::hello, variable in the fixed table); payload = str ver + str scriptVer + blob key
     let mut hello_payload = Vec::new();
     hello_payload.extend_from_slice(b"2.5.10\0");
     hello_payload.extend_from_slice(b"1.0.0\0");
@@ -323,7 +324,7 @@ fn session_login_flow_tracks_handshake_and_dynamic_table() {
         Phase::HelloAckPending
     ));
 
-    // 2. importClientMessages(id=5,定长 0,无长度字段)
+    // 2. importClientMessages (id=5, fixed length 0, no length field)
     let f = 5u16.to_le_bytes().to_vec();
     let msgs = session.feed(ComponentRole::Loginapp, &f).unwrap();
     assert_eq!(msgs.len(), 1);
@@ -332,8 +333,8 @@ fn session_login_flow_tracks_handshake_and_dynamic_table() {
         Some("Loginapp::importClientMessages")
     );
 
-    // 3. onImportClientMessages(id=518):载荷 = UINT8_ARRAY(blob),先 u32 长度;
-    //    session 自动把载荷并入本 Flow 消息表
+    // 3. onImportClientMessages (id=518): payload = UINT8_ARRAY(blob), u32 length first;
+    //    the session merges the payload into this Flow's message table automatically
     let mut import_payload = (sample_import_payload().len() as u32)
         .to_le_bytes()
         .to_vec();
@@ -346,11 +347,11 @@ fn session_login_flow_tracks_handshake_and_dynamic_table() {
         msgs[0].name.as_deref(),
         Some("Client::onImportClientMessages")
     );
-    // 动态条目立即可用
+    // Dynamic entries usable immediately
     let map = session.flow(ComponentRole::Loginapp).unwrap();
     assert_eq!(map.by_id(1001).unwrap().name, "Baseapp_onRemoteMethodCall");
 
-    // 4. 用动态 id 组帧 → 能解码出方法载荷(INT32 entityID)
+    // 4. Frame with the dynamic id → the method payload decodes (INT32 entityID)
     let mut payload = 42i32.to_le_bytes().to_vec();
     payload.extend_from_slice(&7u32.to_le_bytes());
     let msgs = session
@@ -359,7 +360,7 @@ fn session_login_flow_tracks_handshake_and_dynamic_table() {
     assert_eq!(msgs[0].name.as_deref(), Some("Baseapp_onRemoteMethodCall"));
     assert!(matches!(msgs[0].values[0], Value::Int(42)));
 
-    // 双 Flow 独立:baseapp 未收到导入 → 1001 未知
+    // Flows are independent: baseapp never got the import → 1001 unknown
     let r = session.feed(ComponentRole::Baseapp, &var_frame(1001, &payload));
     assert!(r.is_err());
 }
@@ -367,8 +368,8 @@ fn session_login_flow_tracks_handshake_and_dynamic_table() {
 #[test]
 fn session_baseapp_entitydef_import_marks_phase() {
     let mut session = Session::new(&build_message_table(&engine_defaults_xml(), None));
-    // onImportClientEntityDef(id=519,载荷 = UINT8_ARRAY blob):别名段
-    // u16 aliassize + 条目(uid, str name, str aliasName)
+    // onImportClientEntityDef (id=519, payload = UINT8_ARRAY blob): alias segment
+    // u16 aliassize + entries (uid, str name, str aliasName)
     let mut body = Vec::new();
     body.extend_from_slice(&1u16.to_le_bytes());
     body.extend_from_slice(&100u16.to_le_bytes());
@@ -392,12 +393,12 @@ fn session_baseapp_entitydef_import_marks_phase() {
 }
 
 // ---------------------------------------------------------------------------
-// entity 方法载荷 + 加密信封 framing
+// entity method payloads + encrypted envelope framing
 // ---------------------------------------------------------------------------
 
 #[test]
 fn entity_remote_method_call_decode() {
-    // §7:i32 entityID + 逐参数(remote_entity_method.cpp:62-88)
+    // §7: i32 entityID + one value per argument (remote_entity_method.cpp:62-88)
     let mut payload = 77i32.to_le_bytes().to_vec();
     payload.extend_from_slice(&3u32.to_le_bytes()); // ARRAY<UINT32> count
     payload.extend_from_slice(&1u32.to_le_bytes());
@@ -418,7 +419,7 @@ fn entity_remote_method_call_decode() {
         Value::Array(vec![Value::UInt(1), Value::UInt(2), Value::UInt(3)])
     );
 
-    // 参数不足 → 错误不 panic
+    // Not enough arguments → error, no panic
     assert!(kode_kbengine_protocol::entity::decode_remote_method_call(
         &[77i32.to_le_bytes().as_slice(), &[0]].concat(),
         &[WireType::UInt32, WireType::UInt32],
@@ -429,38 +430,39 @@ fn entity_remote_method_call_decode() {
 
 #[test]
 fn encrypted_envelope_framed_without_crypto() {
-    // §8:加密帧 = u16 encLen + u8 padSize + Blowfish-ECB 密文;
-    // 引擎外只做信封定位,解密不在协议引擎范围(零第三方依赖)。
-    let payload = [0xaau8; 8 + 3]; // 8B 密文 + padSize 表示的 3B padding
+    // §8: encrypted frame = u16 encLen + u8 padSize + Blowfish-ECB ciphertext;
+    // outside the engine we only locate the envelope; decryption is out of scope for the protocol
+    // engine (zero third-party dependencies).
+    let payload = [0xaau8; 8 + 3]; // 8B ciphertext + 3B padding indicated by padSize
     let mut v = (payload.len() as u16).to_le_bytes().to_vec();
     v.push(3); // padSize
     v.extend_from_slice(&payload);
     let env = kode_kbengine_protocol::framing::parse_encrypted_envelope(&v).unwrap();
     assert_eq!(env.pad_size, 3);
     assert_eq!(env.ciphertext.len(), 11);
-    assert_eq!(env.declared_plaintext_len, 10); // encLen = 明文长 + 1(encryption_filter.cpp:56-66)
+    assert_eq!(env.declared_plaintext_len, 10); // encLen = plaintext length + 1 (encryption_filter.cpp:56-66)
 
-    // 截断 → 错误带 offset
+    // Truncated → error with offset
     let err = kode_kbengine_protocol::framing::parse_encrypted_envelope(&v[..5]).unwrap_err();
     assert!(err.offset > 0 || matches!(err.kind, DecodeErrorKind::UnexpectedEof));
 }
 
 // ---------------------------------------------------------------------------
-// 诊断:偏移定位
+// Diagnostics: offset locating
 // ---------------------------------------------------------------------------
 
 #[test]
 fn decode_errors_carry_offsets() {
     let limits = DecodeLimits::default();
-    // 错误偏移 = 失败处的绝对字节位(诊断模块口径)
-    let mut v = 1u32.to_le_bytes().to_vec(); // UNICODE 声明 1 字节
-    v.push(0x41); // 只有 1 字节内容(够)
-    v.push(0x42); // 多余?声明 1B → cursor 剩 1B 未消费,无错
+    // Error offset = the absolute byte position at the failure (the diagnostics module semantics)
+    let mut v = 1u32.to_le_bytes().to_vec(); // UNICODE declares 1 byte
+    v.push(0x41); // exactly 1 byte of content (sufficient)
+    v.push(0x42); // extra? declares 1B → the cursor leaves 1B unconsumed, no error
     let mut c = Cursor::new(&v);
     let r = kode_kbengine_protocol::codec::decode_value(&WireType::Unicode, &mut c, &limits, 0);
     assert!(r.is_ok());
 
-    // 截断:声明 10B 只给 2B
+    // Truncated: 10B declared, only 2B given
     let head = 10u32.to_le_bytes().to_vec();
     let mut c = Cursor::new(&head);
     let _ = c.read_bytes(2).unwrap();

@@ -97,8 +97,8 @@ fn json_has_key(json: &str, key: &str) -> bool {
 
 #[test]
 fn version_flag_prints_one_line_and_exits_zero() {
-    // PA-007 版本检测对端契约:任何位置出现 --version 即优先,
-    // 一行 `kode-kbengine <semver>`,exit 0,不解析其余参数。
+    // PA-007 version-detection counterpart contract: --version anywhere takes precedence,
+    // one line `kode-kbengine <semver>`, exit 0, the remaining arguments are not parsed.
     let cli = run_cli(&["--version"]);
     assert_eq!(cli.code, 0, "stderr={}", cli.err);
     assert!(
@@ -107,7 +107,7 @@ fn version_flag_prints_one_line_and_exits_zero() {
         cli.out
     );
     assert_eq!(cli.out.lines().count(), 1, "stdout={:?}", cli.out);
-    // 与子命令混排仍生效(版本优先)。
+    // Still effective when interleaved with subcommands (the version flag wins).
     let cli2 = run_cli(&["schema", "validate", "--version"]);
     assert_eq!(cli2.code, 0, "stderr={}", cli2.err);
     assert!(cli2.out.trim().starts_with("kode-kbengine "));
@@ -450,8 +450,9 @@ fn decode_hex_reports_unknown_id_as_anomaly_not_crash() {
 
 #[test]
 fn command_execution_error_exits_1_with_error_line() {
-    // dispatch 层 Err(区别于 CmdResult::fail 携码返回):--defaults 读不到
-    // → main 的 Err 面:stderr 一行 error:...,退出码 1,stdout 干净。
+    // Err at the dispatch layer (as opposed to CmdResult::fail returning with a code): an
+    // unreadable --defaults -> main's Err face: one `error:...` line on stderr, exit code 1,
+    // stdout clean.
     let cli = run_cli(&[
         "decode",
         "--hex",

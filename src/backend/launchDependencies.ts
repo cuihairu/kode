@@ -1,15 +1,17 @@
 /**
- * 启动项直接依赖(RUN-005):LaunchTargetSpec.dependsOn 声明直接依赖键
- * (组件名或 组件名#targetId),resolveLaunchOrder 拓扑排序并检测环
- * (报出环路径);isDependencySatisfied 是唯一「依赖成功」判据——记录在
- * 册且 status=Running 才算就绪,Starting/缺席/放弃等待(RUN-004)都不算。
- * 依赖排序是静态面,就绪判定是运行期面,两者分离(RUN-006 编排消费)。
+ * Direct dependencies of launch targets (RUN-005): LaunchTargetSpec.dependsOn declares
+ * direct dependency keys (a component name, or componentName#targetId); resolveLaunchOrder
+ * topologically sorts and detects cycles (reporting the cycle path);
+ * isDependencySatisfied is the sole "dependency succeeded" criterion -- it only counts when
+ * it is registered and status=Running; Starting/absent/given-up waiting (RUN-004) do not
+ * count. Dependency ordering is a static face and readiness checking is a runtime face; the
+ * two are kept separate (consumed by the RUN-006 orchestration).
  */
 
 export interface LaunchTargetSpec {
-  /** 目标键:组件名(默认实例)或 组件名#targetId */
+  /** Target key: a component name (the default instance) or componentName#targetId */
   key: string;
-  /** 直接依赖键;本组之外的依赖不参与排序,留给运行期就绪判定 */
+  /** Direct dependency keys; dependencies outside this group do not participate in the ordering and are left to the runtime readiness check */
   dependsOn: readonly string[];
 }
 
@@ -18,9 +20,11 @@ export type LaunchOrderResult =
   | { ok: false; kind: 'cycle'; cycle: string[] };
 
 /**
- * 拓扑排序(波次法):组内直接依赖全部已发射才可发射,同波按输入序(确定性);
- * 组外依赖不参与排序。一轮无进展即有环,沿组内依赖边走一圈报出环路径
- * (首尾同名)。
+ * Topological sort (wave method): a target may be emitted only once all of its in-group
+ * direct dependencies have been emitted; within a wave the input order applies
+ * (deterministic); dependencies outside the group do not participate. If a round makes no
+ * progress there is a cycle -- walk one loop along the in-group dependency edges and report
+ * the cycle path (same name at both ends).
  */
 export function resolveLaunchOrder(targets: readonly LaunchTargetSpec[]): LaunchOrderResult {
   const byKey = new Map(targets.map(target => [target.key, target]));
@@ -54,7 +58,7 @@ export function resolveLaunchOrder(targets: readonly LaunchTargetSpec[]): Launch
   return { ok: true, order };
 }
 
-/** 沿组内依赖边走一圈,报出首尾同名的环路径 */
+/** Walk one loop along the in-group dependency edges and report the cycle path with the same name at both ends */
 function findCyclePath(targets: readonly LaunchTargetSpec[]): string[] {
   const byKey = new Map(targets.map(target => [target.key, target]));
   const visited = new Set<string>();
@@ -93,16 +97,17 @@ function findCyclePath(targets: readonly LaunchTargetSpec[]): string[] {
   return [...targets.map(target => target.key)];
 }
 
-/** 就绪判定的最小面:登记键 → 状态(含 RUN-004 放弃标记) */
+/** Minimal face for the readiness check: registered key -> status (including the RUN-004 given-up marker) */
 export interface DependencyReadyState {
   status: string;
   readinessGivenUp?: 'timeout' | 'cancelled';
 }
 
 /**
- * 依赖就绪判定:登记键命中且 status=Running 才算成功。带 #targetId 的
- * 键查精确实例;纯组件名的键按「任一该组件实例就绪」(组件级依赖适用
- * 全部实例,RUN-001 多实例口径)。
+ * Dependency readiness check: it only counts as success when the registered key matches and
+ * status=Running. A key carrying #targetId looks up that exact instance; a bare component
+ * name key means "any instance of that component is ready" (a component-level dependency
+ * applies to all instances, the RUN-001 multi-instance accounting).
  */
 export function isDependencySatisfied(
   key: string,

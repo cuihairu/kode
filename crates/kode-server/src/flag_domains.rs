@@ -1,10 +1,10 @@
-//! flag→domain 真值表 golden 面: kode-parser `normalize_flag_tokens` +
-//! `flag_domains` 组合的 JSON 快照,供 TS 侧生成镜像对拍(单一来源 =
-//! Rust;TS `src/generated/flagDomains.ts` 是派生镜像,勿手改)。
+//! flag->domain truth-table golden face: a JSON snapshot of kode-parser `normalize_flag_tokens` +
+//! the `flag_domains` combination, for the TS side to generate a mirror for comparison (single source of truth =
+//! Rust; TS `src/generated/flagDomains.ts` is the derived mirror, do not hand-edit).
 
 use kode_parser::model::{flag_domains, normalize_flag_tokens};
 
-/// 规范旗标 token(与 model.rs `normalize_flag_tokens` 的 KNOWN 同集)。
+/// Canonical flag tokens (same set as KNOWN in model.rs `normalize_flag_tokens`).
 pub const CANONICAL: &[&str] = &[
     "BASE",
     "BASE_AND_CLIENT",
@@ -16,9 +16,9 @@ pub const CANONICAL: &[&str] = &[
     "OTHER_CLIENTS",
 ];
 
-/// 输出真值表 JSON(紧凑单行,同 hover golden 口径;尾部换行由调用方
-/// println 引入,不参与比对)。自校验:规范 token 经 normalize 恒等回显,
-/// 若 model.rs KNOWN 漂移先 panic 提示同步。
+/// Output truth-table JSON (compact single line, same stance as the hover golden; the trailing newline comes from
+/// the caller's println and does not participate in comparison). Self-check: canonical tokens normalize back to themselves,
+/// and a drift in model.rs KNOWN panics first to prompt a sync.
 pub fn dump_flag_domains_golden() -> String {
     for token in CANONICAL {
         assert_eq!(
@@ -32,10 +32,10 @@ pub fn dump_flag_domains_golden() -> String {
         .iter()
         .map(|t| (*t, flag_domains(&[t.to_string()])))
         .collect();
-    // normalize 矩阵:输入原文 → normalize_flag_tokens 输出。覆盖规范形、
-    // 4 个旧式别名(CELL/CELL_AND_CLIENT/CELL_AND_CLIENTS/CELL_AND_OTHER_
-    // CLIENTS)、遗留拼写(空白/连字符/大小写变体)、未知、空串、多 token。
-    // TS 侧生成的 normalizeFlagTokens 须逐例一致(遗留折叠面同源)。
+    // normalize matrix: raw input -> normalize_flag_tokens output. Covers canonical forms,
+    // the 4 legacy aliases (CELL/CELL_AND_CLIENT/CELL_AND_CLIENTS/CELL_AND_OTHER_
+    // CLIENTS), legacy spellings (whitespace/hyphen/case variants), unknowns, empty string, multi-token.
+    // The TS-side generated normalizeFlagTokens must match case for case (same source for the legacy-folding face).
     let normalize_cases: Vec<(&str, Vec<String>)> = vec![
         ("BASE", normalize_flag_tokens("BASE")),
         ("CELL", normalize_flag_tokens("CELL")),
@@ -79,5 +79,5 @@ pub fn dump_flag_domains_golden() -> String {
     serde_json::to_string(&value).expect("serialize flag-domains golden")
 }
 
-/// 提交侧 golden 相对仓库根路径(与 hover GOLDEN_REL_PATH 同约定)。
+/// Commit-side golden path relative to the repo root (same convention as hover GOLDEN_REL_PATH).
 pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/flag-domains-parity.json";

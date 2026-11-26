@@ -1,40 +1,49 @@
-//! 类型出处面(SEM-003/RUST-105):每个类型的 declaration/definition/
-//! reference source span、原始 root/version、生成映射。
+//! Type provenance face (SEM-003/RUST-105): for each type its
+//! declaration/definition/reference source span, the original root/version,
+//! and generation links.
 //!
-//! 全部为平行侧表/注册表,**不改节点/边构建语义**(既有 11+7 钉与消费面
-//! 零影响):
-//! - [`TypeOrigin`] 按节点下标平行,`push_node` 单隘口锁步盖章;绕过
-//!   `push_node` 的直接节点表写入不锁步(如 rpcargs 测试助手),读面
-//!   [`TypeGraph::origin_of`] 防御性返 `None`;
-//! - 引用点锚统一 = **引用方声明的 name span**(解析器对 types.xml 内层
-//!   `<of>`/`<Type>` 文本与 alias 指向不暴露独立 span;def 属性/组件锚在其
-//!   声明名上)——如实登记,不虚构引用文本自身的 span;
-//! - declaration/definition 的分工:types.xml/alias.xml 条目 = 声明出处
-//!   (节点 origin);实体 .def = 定义出处(节点 origin);entities.xml 注册
-//!   = 注册出处(无节点,既有口径,落
-//!   [`TypeGraph::entity_registration_origin`] 侧表);
-//! - 生成映射为 opt-in 注册表(生成管线现居 TS 侧 pythonTypeStubs/
-//!   entityTypeStubs,Rust 消费待接线),构建器永不自动填充。
+//! Everything here is a parallel side table / registry and **does not change
+//! node/edge construction semantics** (the existing 11+7 pins and the
+//! consuming sides are unaffected):
+//! - [`TypeOrigin`] runs parallel to node indices, stamped in lockstep through
+//!   the single `push_node` chokepoint; direct node-table writes that bypass
+//!   `push_node` (e.g. the rpcargs test helper) are not kept in lockstep, and
+//!   the read side [`TypeGraph::origin_of`] defensively returns `None`;
+//! - The reference-site anchor is uniformly **the referencing side's declared
+//!   name span** (the parser exposes no independent span for inner types.xml
+//!   `<of>`/`<Type>` text or alias targets; def properties/components are
+//!   anchored on their declared names) — registered as-is, without inventing
+//!   a span of the referenced text itself;
+//! - Division of labor between declaration/definition: types.xml/alias.xml
+//!   entries = declaration origin (node origin); an entity .def = definition
+//!   origin (node origin); entities.xml registration = registration origin
+//!   (no node; existing semantics, stored in the
+//!   [`TypeGraph::entity_registration_origin`] side table);
+//! - Generation links are an opt-in registry (the generation pipeline
+//!   currently lives on the TS side as pythonTypeStubs/entityTypeStubs, Rust
+//!   consumption pending wiring); the builder never auto-populates them.
 //!
-//! root/version 经 [`TypeGraph::set_ingest`] 上下文供给(由接线方在灌入前
-//! 设置;纯库面无自动来源)。
+//! root/version is supplied through the [`TypeGraph::set_ingest`] context
+//! (set by the wiring party before ingestion; the pure library face has no
+//! automatic source).
 
 use kode_parser::Span;
 
 use crate::graph::{EdgeKind, TypeId};
 
-/// 来源种类(与灌入入口一一对应)。
+/// Source kind (one-to-one with the ingestion entries).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeSourceKind {
-    /// types.xml 条目(声明出处)。
+    /// A types.xml entry (declaration origin).
     TypesXml,
-    /// alias.xml 条目(声明出处)。
+    /// An alias.xml entry (declaration origin).
     AliasXml,
-    /// 实体 .def(定义出处;name = 文件名去 .def)。
+    /// An entity .def (definition origin; name = file name minus .def).
     Def,
-    /// entities.xml 注册(注册出处,无节点)。
+    /// An entities.xml registration (registration origin, no node).
     EntitiesXml,
-    /// 直接构造(测试/物化/拒收标注,无源文件)。
+    /// Direct construction (tests/materialization/rejection marking, no source
+    /// file).
     Direct,
 }
 
@@ -50,22 +59,24 @@ impl TypeSourceKind {
     }
 }
 
-/// 节点出处:声明/定义 site + 原始 root/version。
+/// Node origin: declaration/definition site + original root/version.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeOrigin {
     pub source: TypeSourceKind,
-    /// 声明/定义名的 0 基字节区间(parser `name_span`;Direct = None)。
+    /// 0-based byte range of the declared/defined name (parser `name_span`;
+    /// Direct = None).
     pub span: Option<Span>,
-    /// 声明/定义行(parser 1 基 `line`;Direct = None)。
+    /// Declaration/definition line (parser 1-based `line`; Direct = None).
     pub line: Option<usize>,
-    /// 灌入时接线方供给的 root 身份(不透明字符串键;未设置 = None)。
+    /// root identity supplied by the wiring party at ingestion (opaque string
+    /// key; None when unset).
     pub root: Option<String>,
-    /// 灌入时接线方供给的文档版本。
+    /// Document version supplied by the wiring party at ingestion.
     pub version: Option<u64>,
 }
 
 impl TypeOrigin {
-    /// 直接构造出处(无源文件)。
+    /// Construct a direct origin (no source file).
     pub fn direct() -> TypeOrigin {
         TypeOrigin {
             source: TypeSourceKind::Direct,
@@ -77,8 +88,9 @@ impl TypeOrigin {
     }
 }
 
-/// 引用点记录:from 节点经 `kind` 边引用 `name`,锚在引用方声明的 name
-/// span(统一口径见模块doc)。
+/// Reference-site record: the `from` node references `name` via a `kind`
+/// edge, anchored on the referencing side's declared name span (unified
+/// semantics in the module doc).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeRefSite {
     pub from: TypeId,
@@ -88,19 +100,21 @@ pub struct TypeRefSite {
     pub line: Option<usize>,
 }
 
-/// 灌入上下文:接线方在 add_* 之前设置,随后全部出处盖章携带。
+/// Ingest context: set by the wiring party before the add_* calls; every
+/// subsequent origin stamp carries it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct IngestContext {
     pub root: Option<String>,
     pub version: Option<u64>,
 }
 
-/// 生成产物(SEM-003 生成映射;opt-in 注册,无自动填充)。
+/// Generated artifact (SEM-003 generation mapping; opt-in registration, no
+/// auto-population).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenerationKind {
-    /// pythonTypeStubs 的 kbe_types 自定义类型 stub。
+    /// kbe_types custom type stub from pythonTypeStubs.
     PyiStub,
-    /// entityTypeStubs 的实体 stub。
+    /// Entity stub from entityTypeStubs.
     EntityStub,
 }
 
@@ -113,7 +127,8 @@ impl GenerationKind {
     }
 }
 
-/// 一条生成映射:类型名 → 生成产物(kind + 产物路径)。
+/// One generation mapping: type name -> generated artifact (kind + artifact
+/// path).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationTarget {
     pub kind: GenerationKind,
@@ -121,9 +136,10 @@ pub struct GenerationTarget {
 }
 
 impl crate::graph::TypeGraph {
-    /// 设置灌入上下文(root/version 由接线方供给;纯库面无自动来源)。
-    /// 后续 `add_types`/`add_alias`/`add_def`/`register_entities` 的全部
-    /// 出处盖章携带;不影响已入图数据。
+    /// Set the ingest context (root/version supplied by the wiring party; the
+    /// pure library face has no automatic source). Every origin stamp of the
+    /// subsequent `add_types`/`add_alias`/`add_def`/`register_entities` calls
+    /// carries it; data already in the graph is not affected.
     pub fn set_ingest(&mut self, root: Option<&str>, version: Option<u64>) {
         self.ingest = IngestContext {
             root: root.map(|r| r.to_string()),
@@ -131,28 +147,32 @@ impl crate::graph::TypeGraph {
         };
     }
 
-    /// 清空灌入上下文(之后的灌入出处 root/version = None)。
+    /// Clear the ingest context (origins of later ingests get root/version =
+    /// None).
     pub fn clear_ingest(&mut self) {
         self.ingest = IngestContext::default();
     }
 
-    /// 节点出处(下标平行;绕过 `push_node` 的直接节点表写入不锁步,
-    /// 越界/缺位防御性返 `None`)。
+    /// Node origin (index-parallel; direct node-table writes bypassing
+    /// `push_node` are not in lockstep, so out-of-range/absent slots
+    /// defensively return `None`).
     pub fn origin_of(&self, id: TypeId) -> Option<&TypeOrigin> {
         self.origins.get(id.0 as usize)
     }
 
-    /// entities.xml 注册出处(未注册名返 `None`)。
+    /// entities.xml registration origin (`None` for unregistered names).
     pub fn entity_registration_origin(&self, name: &str) -> Option<&TypeOrigin> {
         self.entity_registrations.get(name)
     }
 
-    /// 按被引用名过滤引用点(输出按登记序 = 灌入序,稳定)。
+    /// Reference sites filtered by the referenced name (output in
+    /// registration order = ingestion order, stable).
     pub fn reference_sites(&self, name: &str) -> Vec<&TypeRefSite> {
         self.ref_sites.iter().filter(|s| s.name == name).collect()
     }
 
-    /// 登记生成映射(opt-in;同类型可多产物,按登记序保留)。
+    /// Register a generation mapping (opt-in; a type may have multiple
+    /// artifacts, kept in registration order).
     pub fn link_generation(&mut self, name: &str, target: GenerationTarget) {
         self.generation_links
             .entry(name.to_string())
@@ -160,7 +180,7 @@ impl crate::graph::TypeGraph {
             .push(target);
     }
 
-    /// 查询生成映射(未登记 = 空切片)。
+    /// Look up generation mappings (unregistered = empty slice).
     pub fn generation_targets(&self, name: &str) -> &[GenerationTarget] {
         self.generation_links
             .get(name)

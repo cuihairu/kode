@@ -1,9 +1,10 @@
-//! 输入记录(PA-004 records JSON 形状;多余字段 serde 忽略)。
+//! Input records (the PA-004 records JSON shape; extra fields are ignored by serde).
 
 use serde::{Deserialize, Serialize};
 
-/// 流方向(缺省时由消息名 owner 推导:`Client::` = s2c,其余 = c2s;
-/// PA-001 §6:上行消息以接收组件命名)。
+/// Flow direction (when absent it is derived from the message name's owner: `Client::` =
+/// s2c, anything else = c2s; PA-001 §6: uplink messages are named after the receiving
+/// component).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
     #[serde(rename = "c2s")]
@@ -12,7 +13,8 @@ pub enum Direction {
     ServerToClient,
 }
 
-/// PA-004 解码面记录的异常字段(kind/offset/message 原样透传)。
+/// The anomaly field recorded by the PA-004 decode face (kind/offset/message passed
+/// through as-is).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecordAnomaly {
     pub kind: String,
@@ -43,7 +45,8 @@ pub struct Record {
 }
 
 impl Record {
-    /// 方向:显式字段优先;否则按消息名 owner 推导(无名 → None)。
+    /// Direction: the explicit field takes priority; otherwise derive it from the message
+    /// name's owner (no name -> None).
     pub fn direction_or_derived(&self) -> Option<Direction> {
         if let Some(d) = self.direction {
             return Some(d);

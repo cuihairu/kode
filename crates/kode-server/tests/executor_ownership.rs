@@ -4,7 +4,9 @@
 //! serving/顺序面一律内联。新增 handler 注册即自动进断言面,漏登记(缺省
 //! Cpu 仍能跑但可审计)/陈旧 IO 登记(表内面已注销)直接红。
 
-use kode_server::executor::{execution_lane, rpc_job_kind, rpc_lane_class, ExecutionLane, PoolLane};
+use kode_server::executor::{
+    execution_lane, rpc_job_kind, rpc_lane_class, ExecutionLane, PoolLane,
+};
 use kode_server::ServerState;
 
 /// 顶层 method 面(非池):serving(hover/completion/definition/diagnostic/
@@ -36,10 +38,7 @@ fn every_registered_rpc_handler_is_routed_to_pool_with_lane_class() {
     let mut count = 0;
     let mut io_count = 0;
     for method in snapshot.methods() {
-        let lane = execution_lane(
-            "$/kode/rpc",
-            Some(&serde_json::json!({ "method": method })),
-        );
+        let lane = execution_lane("$/kode/rpc", Some(&serde_json::json!({ "method": method })));
         assert!(
             matches!(lane, ExecutionLane::Pool(_)),
             "注册 handler {method} 未归池(登记漏项)"
@@ -57,8 +56,7 @@ fn every_registered_rpc_handler_is_routed_to_pool_with_lane_class() {
         assert!(
             matches!(
                 kind,
-                kode_scheduler::lane::TaskLane::Io
-                    | kode_scheduler::lane::TaskLane::Cpu
+                kode_scheduler::lane::TaskLane::Io | kode_scheduler::lane::TaskLane::Cpu
             ),
             "{method} 类别须 Io/Cpu(交互面走池交互预留位,不单列)"
         );
