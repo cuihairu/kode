@@ -27,7 +27,6 @@ on:
 
 permissions:
   contents: write # 创建/更新 Release 与上传 vsix 需要（默认 token 为只读）
-  id-token: write # codecov OIDC 免 token 上传覆盖率（2026-10-22）
 
 # 同 ref 同事件的 run 合并为一组，新 run 抢占旧 run（缓解 runner 排队）；
 # tag 发布（refs/tags/）不取消，保护 Release 上传不被超越 run 打断。
@@ -67,7 +66,7 @@ jobs:
       run: pnpm install --frozen-lockfile
     # Rust 服务态门(P1-3 审计收口,2026-11-15):perf-gate 此前只跑 TS
     # v02Baseline,真实 kode-server 的服务面从未进合并门。第一方 cache 同
-    # 覆盖率 job 口径(registry/git/target 跨 run 复用);工具链由
+    # Rust 测试 job 口径(registry/git/target 跨 run 复用);工具链由
     # rust-toolchain.toml 钉死,rustup 首次调用自动安装。
     - name: Cache Rust builds (serving gate)
       timeout-minutes: 5
@@ -132,20 +131,11 @@ jobs:
           || true
         /usr/bin/python3 -m pytest --version
 
-    - name: 运行测试（带覆盖率）
+    # 2026-11-26 用户令：覆盖率门禁不再运行（100% 覆盖率照样 bug 一堆，门禁信不过）；测试照跑
+    - name: 运行测试
       timeout-minutes: 12
-      run: pnpm exec vitest run --coverage
+      run: pnpm exec vitest run
 
-    - name: 上传覆盖率到 Codecov（OIDC 免 token）
-      timeout-minutes: 5
-      uses: codecov/codecov-action@v7.1.1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage/lcov.info
-        disable_search: true
-        # VULN-KODE-R02:与 rust 侧对齐命名 flag,供 codecov.yml flag_management 归并
-        flags: ts
-        fail_ci_if_error: false
 
     - name: 运行代码检查
       timeout-minutes: 5
@@ -154,7 +144,7 @@ jobs:
     # mocha 烟测门(编译产物装配 + manifest 激活事件 + 状态栏灯位):pnpm test
     # 的后半段。此前 push CI 只跑 vitest,这段只在 nightly 触达——venv 席漏注册
     # 激活事件、状态栏灯位断言过时两类红都拖到次日才暴露。vitest 半段已在上面
-    # 带覆盖率跑过,这里只补 mocha 半段;必须在打包步之前:vsce 的
+    # vitest 半段已在上面跑过,这里只补 mocha 半段;必须在打包步之前:vsce 的
     # vscode:prepublish 会用 esbuild bundle 覆盖 out/extension.js,而本门验的
     # 正是 tsc 产物的模块图。
     - name: 运行 mocha 烟测门(编译产物)
@@ -165,9 +155,7 @@ jobs:
 
     - name: 打包 VSIX 扩展
       timeout-minutes: 15
-      # 先清 codecov-action 落在工作区的上传器（vscodeignore 已兜底，双保险）
       run: |
-        rm -f codecov codecov.SHA256SUM codecov.SHA256SUM.sig
         pnpm run package
 
     - name: 上传 VSIX 文件
@@ -232,14 +220,7 @@ jobs:
       - name: cargo deny check (advisories + licenses)
         run: cargo-deny --workspace check advisories licenses
 
-  # Rust core 覆盖率独立成 job（与 build 的 TS 覆盖率并存，互不覆盖），同时是
-  # Rust 测试门禁的唯一执行点（本仓此前没有任何 workflow 跑过 cargo test）：
-  # ① rustup 工具链下载 + cargo-llvm-cov 安装 + 全 workspace 插桩编译耗时长，
-  #    放进 build 会挤占其 30 分钟预算并拖慢 TS 侧；
-  # ② 同一 job 内步骤失败会跳过后续步骤，Rust 失败若落在 build 里会连带丢掉
-  #    TS 的 codecov 上传；分 job 后两侧失败互不可见。
-  # codecov 侧两份 lcov 各自上传到同一 commit，总览图与 README 徽章为两者合并值；
-  # 本 job 附 flags: rust，只看 Rust 时在 Codecov 界面按 rust flag 过滤。
+  # Rust 测试独立成 job（与 build TS 侧分开；2026-11-26 覆盖率门禁已关，只跑真测试）：
   rust-coverage:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 40
@@ -265,58 +246,24 @@ jobs:
         restore-keys: rust-coverage-${{ runner.os }}-
 
     # 工具链版本由 rust-toolchain.toml 钉死（1.99.0），rustup 进入该目录后
-    # 首次调用自动安装；llvm-tools-preview 提供 llvm-profdata/llvm-cov，
-    # 是 cargo-llvm-cov 采集 profraw→lcov 的必需组件。
-    - name: 安装 Rust 工具链组件（llvm-tools-preview）
-      timeout-minutes: 10
-      run: |
-        rustup component add llvm-tools-preview
-        rustc --version
-        cargo --version
-
-    - name: 安装 cargo-llvm-cov
-      timeout-minutes: 10
-      # 不引第三方 install action：cargo install 走 crates.io，供应链面最小
-      run: cargo install cargo-llvm-cov --locked
-
+    # rustup 首次调用自动安装工具链组件（rust-toolchain.toml 声明）。
     - name: 运行 Rust 测试并生成覆盖率（全 workspace，唯一执行点）
       timeout-minutes: 25
       # 门禁口径 = cargo test --workspace --all-targets --no-fail-fast（QA 计划批0 的实测口径）：
-      # cargo-llvm-cov 把这些 flag 原样透传给 cargo test，只额外加插桩；--all-targets 覆盖
+      # --all-targets 覆盖
       # lib/bins/tests/examples/benches 的 test 目标（不含 doctest；本仓 6a2e005 实测 77 个
       # 测试二进制 / 453 passed / 0 failed），--no-fail-fast 让失败也跑完全部目标再报。
       # 测试失败 → 本步退出码 101（实测，探针用例验证）→ job 红；不加 --ignore-run-fail
       # （它会把失败吞成 0）、不加 continue-on-error。Rust 测试全仓只在此执行一次，
-      # 不另设测试 job，避免插桩与非插桩两套编译重复跑同一批测试。
-      run: |
-
-        mkdir -p coverage/rust
-
-        cargo llvm-cov --workspace --all-targets --no-fail-fast --lcov --output-path coverage/rust/lcov.info
+      # 不另设测试 job，避免重复编译。
+      run: cargo test --workspace --all-targets --no-fail-fast
       env:
         # 慢机容忍:executor 测试的有界等待拍数放宽(20ms 拍 3000→9000,
         # 60s→180s 上界),CI 慢机时序不再击穿协调面(实红前科)。
         KODE_TEST_TICK_BUDGET: "9000"
 
-    - name: 上传 Rust 覆盖率到 Codecov（OIDC 免 token）
-      timeout-minutes: 5
-      uses: codecov/codecov-action@v7.1.1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage/rust/lcov.info
-        flags: rust
-        disable_search: true
-        fail_ci_if_error: false
 
-    # 覆盖率两档门禁(2026-11-19 coverage-98 批):第一档=核心 crate
-    # kode-server/kode-kbengine/kode-python 行覆盖各 ≥98%(lcov DA 口径,
-    # 一次测试执行内分 crate 聚合,不重跑测试);第二档=全仓合计只报数不设
-    # 门(「全仓底线不动」,维持只上传 codecov 的既有口径)。放在上传之后
-    # 与 clippy 同理:门禁步红不丢已上传的覆盖率。基线(2026-11-20 干净
-    # 全量):server 98.31 / kbengine 99.87 / python 99.47,全仓 98.72。
-    - name: 覆盖率两档门禁（核心 crate ≥98%）
-      timeout-minutes: 3
-      run: python3 scripts/coverage-gate.py coverage/rust/lcov.info
+
 
     # PDC-0606:clippy 门禁此前不在任何 workflow(本地手跑才拦),Rust 测试门禁
     # 只 cover cargo test。clippy 组件由 rust-toolchain.toml 声明(rustup 首次
