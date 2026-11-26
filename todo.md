@@ -3081,6 +3081,13 @@ MCP 面此前只有「二进制在位」三可见态(已构建/未构建/已关�
 - KSEM-CREATE-05 的检查器在 crates/kode-server/src/semantics/create_params.rs(`check_params` :239,707 行含 15+ 单测)——**全库零生产调用点**(仅 mod.rs 声明+自身测试):纯库交付,从未接线进诊断面。这就是用户从未见过提示的根因。
 - [ ] 可点火:CREATE-05 接线批——把 check_params 接进 Python 诊断生产链(createNamespace 调用点的 params 字面量逐键检查:参数名存在性+类型按 ParamFields 目录),含 crateNamespace→createNamespace 名称纠偏记录;接线前不改 check_params 语义(裁定面);独立小批,依赖诊断四层生产接线(RUST-142)既有通道。
 
+## 2026-11-27 createNamespace 时序可视化面(用户两问「__init__ 之前的行为怎么展现」)+ def 属性进 self 补全落地
+
+用户原话语境:createNamespace 是引擎在 `__init__` 之前执行的属性设置过程(2026-11-13 考据:实体创建时序 = ①`initProperty` 每 def 属性 setattr 默认值(entity_macro.h:1574-1623) → ②`createNamespace(params)` 三路键处理(cellData 合并/已有属性 setattr/PyObject_SetAttr 动态造,:391-508) → ③`initializeScript` 才进 `__init__`)。用户要求:让用户明确看到 py 对象在默认初始化钩子之前的行为。
+- [x] 前置面已落地(dd84f80e):`self.` 补全并入本实体 def 声明属性(entityMapping propertyDefinitions 零新索引;detail 带 def 声明行+域位+持久化;ANY 不显类型;重名内建让位;2 新测试钉死)。**pyright/pyi 通道定性**:本机 pyright 1.1.414 复现——workspace 源码(非 library import)无隐式桩合并,stubPath/per-module stub/extraPaths 三通道对 `scripts/base/Hero.py` 的同名类全部无效(`Cannot access attribute "hp"`),「def 属性生成进 pyi」在此引擎+pyright 组合下没有不侵入用户代码的实现路;entity_types.pyi 生成链本身在真机是好的(imac 实拉 1659B 含全部实体属性,Ship/Mob/Bad 都在),真正缺的是消费面,现由 kode 自己的补全面补上。
+- [ ] 可点火:CREATE-06 时序可视化——载体=py `__init__` 定义行 hover(复用 hoverMarkdown/entityBuiltinProperties 形态):面板列 ①②③ 三步时序(引擎源码行号取证)+逐属性表(声明 def:行/类型/域位/默认值/params 命中行为(键=覆盖,缺键=用默认)),params 实参字面量在调用点已可静态取(CREATE-05 的解析面);数据源全静态(entityMapping+defParser),零运行时。同批接 CREATE-05 的 check_params 诊断面。
+- [ ] 可点火小修:pyrightconfig 再生去重(extraPaths 出现 `scripts`/`.kbengine/stubs` 重复条目=每次再生 append 未去重;真机实测);顺带评估 stubPath 指向不存在的 typings/ 是否清掉。
+
 ## 2026-11-24 CI workspace_symbol_dispatch 三例恒空红收口(检索面追赶墙钟界提前收工)
 
 - [x] 修复(dc310a54 推 main,复跑 run 45408465060 全腿绿定谳):run 45397518531 仅 rust-coverage 腿 workspace_symbol_dispatch 三例恒空;绿(481c170d)↔红(f83a229e)两提交 crates/ 字节同(crates-diff=0)=非本批引入,是负载场暴露的既有缺陷。根因=drain_index_for_global_request 用 pump_budgeted_until(16 条,now+4ms),4ms 墙钟界在 llvm-cov 仪表化负载下必然提前收工,didOpen 入库还在队列里就作答=答空集(检索面的错答是空集而非慢答,用户会以为工程里没有该符号)。修=检索面臂改纯条数界(16 条预算不变=隔离保证),墙钟改 30s 防死等护栏(GLOBAL_REQUEST_DRAIN_GUARD_SECS);按文档键臂(drain_index_for_request)不动仍走 4ms 墙钟界(错答语义不同=缺页非空集)。门=clippy -D warnings 0+cargo workspace 全绿+llvm-cov 插桩 8/8;HEAD 旧码 stash 对拍本地也绿(本地 4ms 内追得完)=负载族只有 CI 场能复现,CI 复跑定谳。
