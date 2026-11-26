@@ -105,28 +105,72 @@ export const KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND = 'kbengine.processOwn
 export const KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND = 'kbengine.processOwnership.openBase';
 
 export function registerProcessOwnershipSwitchCommands(context: vscode.ExtensionContext): void {
+  // SWITCH-DEGRADE-001(用户报「第一次正常,切换几次后失效」):旧实现每次
+  // 按键现问 activeTextEditor,而 showTextDocument 是异步的——连按期间读到
+  // 的还是切换前的旧编辑器,方向判定漂移,交替按几次后失效。三件套:
+  // ① 在途互斥 + 连按只认最新一次(在途期间的新按键只记账,链尾续跳);
+  // ② 续跳以「刚打开的文件」为源,不问编辑器(纯状态交替,不受时序影响);
+  // ③ 停泊侧记账(source/target):静止后的下一次按键若编辑器仍停在上一轮
+  //    的来源文件(=陈旧值),以停泊侧为源;编辑器指到第三处(用户手动跳走)
+  //    则如实以编辑器为准,状态机不覆盖真实导航。
+  let switchInFlight = false;
+  let latestQueued: 'cellapp' | 'baseapp' | null = null;
+  let lastSwitchSource: string | null = null;
+  let lastSwitchTarget: string | null = null;
+
+  const runSwitch = async (
+    process: 'cellapp' | 'baseapp',
+    sourceFile?: string
+  ): Promise<void> => {
+    const editorFile = vscode.window.activeTextEditor?.document.fileName;
+    const source =
+      sourceFile ??
+      (editorFile !== undefined && lastSwitchTarget !== null && editorFile === lastSwitchSource
+        ? lastSwitchTarget
+        : editorFile);
+    if (!source) {
+      return;
+    }
+    const spec = buildPythonProcessBreadcrumb(source, candidate => fs.existsSync(candidate));
+    if (!spec) {
+      void vscode.window.showInformationMessage(
+        '当前文件判不出进程归属(需 scripts/<role> 目录),无法切换'
+      );
+      return;
+    }
+    const target = spec.children.find(child => child.process === process);
+    if (!target || !target.siblingPath) {
+      void vscode.window.showInformationMessage(`未找到同名 ${process} 对应文件`);
+      return;
+    }
+    const openedPath = target.siblingPath;
+    await vscode.window.showTextDocument(vscode.Uri.file(openedPath), { preview: false });
+    // 停泊侧记账:source 对显式续跳链=上一跳打开的文件,对首跳=判定出的源
+    // (含陈旧回退后的停泊侧);两键共用同一份账(方向状态跨命令共享)。
+    lastSwitchSource = source;
+    lastSwitchTarget = openedPath;
+    if (latestQueued) {
+      const next = latestQueued;
+      latestQueued = null;
+      await runSwitch(next, openedPath);
+    }
+  };
+
   const openSibling =
     (process: 'cellapp' | 'baseapp') =>
     async (): Promise<void> => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
+      if (switchInFlight) {
+        // 连按/竞态:只认最新一次,当前链收尾后续跳
+        latestQueued = process;
         return;
       }
-      const spec = buildPythonProcessBreadcrumb(editor.document.fileName, (candidate) =>
-        fs.existsSync(candidate)
-      );
-      if (!spec) {
-        void vscode.window.showInformationMessage(
-          '当前文件判不出进程归属(需 scripts/<role> 目录),无法切换'
-        );
-        return;
+      switchInFlight = true;
+      try {
+        await runSwitch(process);
+      } finally {
+        switchInFlight = false;
+        latestQueued = null;
       }
-      const target = spec.children.find(child => child.process === process);
-      if (!target || !target.siblingPath) {
-        void vscode.window.showInformationMessage(`未找到同名 ${process} 对应文件`);
-        return;
-      }
-      await vscode.window.showTextDocument(vscode.Uri.file(target.siblingPath), { preview: false });
     };
   context.subscriptions.push(
     vscode.commands.registerCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND, openSibling('cellapp')),
