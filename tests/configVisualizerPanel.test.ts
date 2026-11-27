@@ -14,7 +14,6 @@ import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { makeContractGate, type ContractGateCall } from './helpers/configCoreContract';
 import {
   envState,
-  memoryFileSystem,
   panelRegistry,
   windowState,
   workspace as stubWorkspace,
@@ -22,6 +21,7 @@ import {
   type FakeWebviewPanel
 } from './helpers/vscodeStub';
 import { configurationOverrides } from './fake-vscode/workspaceState';
+import { setL10nBundle } from './fake-vscode/l10n';
 
 const DEFAULTS_XML = [
   '<root>',
@@ -96,6 +96,7 @@ const clipboardWrites: string[] = [];
 beforeEach(() => {
   panelRegistry.reset();
   windowState.reset(); // language → 'zh-cn'
+  setL10nBundle(null);
   workspaceState.reset();
   configurationOverrides.clear();
   stubWorkspace.workspaceFolders = [];
@@ -230,6 +231,40 @@ describe('刷新与画代守卫(§5.5)', () => {
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(posted(panel, 'resolveState')).toHaveLength(0);
     expect(() => controller.dispose()).not.toThrow();
+  });
+});
+
+describe('定位日志(用户令:找到的两个配置路径可见)', () => {
+  it('resolve 成功后把 defaults/custom 路径打印到 OUTPUT;dispose 收口通道', async () => {
+    installRealDefaults();
+    const controller = new ConfigVisualizerPanel();
+    const panel = await (async () => {
+      await controller.show();
+      return panelRegistry.panels[panelRegistry.panels.length - 1];
+    })();
+    send(panel, { command: 'ready' });
+    await until(() => posted(panel, 'resolveState').length === 1);
+    const channel = windowState.channels.find(entry => entry.name === 'KBEngine Final Config');
+    expect(channel).toBeDefined();
+    const text = channel!.lines.join('');
+    expect(text).toContain(defaultsPath);
+    expect(text).toContain('(not found)'); // custom 无来源,如实记缺失
+    controller.dispose();
+    expect(channel!.disposed).toBe(true);
+  });
+
+  it('zh-cn bundle 注入后通道名/缺失文案走译文', async () => {
+    setL10nBundle({ 'KBEngine Final Config': 'KBEngine 最终配置', '(not found)': '(未找到)' });
+    installRealDefaults();
+    const controller = new ConfigVisualizerPanel();
+    await controller.show();
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    send(panel, { command: 'ready' });
+    await until(() => posted(panel, 'resolveState').length === 1);
+    const channel = windowState.channels.find(entry => entry.name === 'KBEngine 最终配置');
+    expect(channel).toBeDefined();
+    expect(channel!.lines.join('')).toContain('(未找到)');
+    controller.dispose();
   });
 });
 

@@ -11,7 +11,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { Uri } from './fake-vscode/core';
 import {
@@ -378,5 +378,85 @@ describe('KODE-CFG-009 消费通道走 core 解析', () => {
     releaseFirst!();
     await first;
     expect(getConfigResolved()?.dbInterface?.port).toBe(3306 + 2);
+  });
+});
+
+describe('defaults 兄弟仓/engineRoot 发现(2026-11-27 真机报障「最终配置一直失效」)', () => {
+  // 真实布局:工作区打开 <repo>/assets(binPath/engineRoot 均未配),引擎装在
+  // 兄弟仓 <repo 的上层>/kbengine/kbe。旧实现只走 binPath 推导 + 工作区内
+  // 源码根锚点,够不着兄弟仓 → defaults 恒 null → 最终配置恒空。
+  let root: string;
+  let ws: string;
+
+  beforeEach(() => {
+    resetConfigResolveForTests();
+    resetDatabaseInterfaceConfigCache();
+    calls = [];
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-cfg-sib-'));
+    ws = path.join(root, 'repo', 'assets');
+    fs.mkdirSync(path.join(ws, 'res', 'server'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ws, 'res', 'server', 'kbengine.xml'),
+      '<baseapp><entryScriptFile>custom-entry</entryScriptFile></baseapp>'
+    );
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'assets', index: 0 }];
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    configurationOverrides.clear();
+    stubWorkspace.workspaceFolders = [];
+    setKodeCoreShadowGate(null);
+  });
+
+  const installSiblingEngine = (): string => {
+    const engine = path.join(root, 'kbengine', 'kbe', 'res', 'server');
+    fs.mkdirSync(engine, { recursive: true });
+    const defaults = path.join(engine, 'kbengine_defaults.xml');
+    fs.writeFileSync(
+      defaults,
+      '<root><baseapp><entryScriptFile>sibling-defaults-entry</entryScriptFile></baseapp></root>'
+    );
+    return defaults;
+  };
+
+  it('免 binPath:兄弟仓安装位命中 defaults(以文件存在为事实),元件配置仍取工作区', async () => {
+    const defaults = installSiblingEngine();
+    installFakeGate(true);
+    const state = await ensureConfigResolved();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params.defaultsXml).toContain('sibling-defaults-entry');
+    expect(state.defaultsPath).toBe(defaults);
+    expect(state.customPath).toBe(path.join(ws, 'res', 'server', 'kbengine.xml'));
+    expect(state.ok).toBe(true);
+  });
+
+  it('kbengine.engineRoot 显式设置经结构锚验收生效', async () => {
+    const engine = path.join(root, 'engines', 'kbe-alt');
+    const defaults = path.join(engine, 'res', 'server', 'kbengine_defaults.xml');
+    fs.mkdirSync(path.dirname(defaults), { recursive: true });
+    fs.writeFileSync(defaults, '<root><baseapp><entryScriptFile>explicit-root-entry</entryScriptFile></baseapp></root>');
+    configurationOverrides.set('kbengine', { engineRoot: engine });
+    installFakeGate(true);
+    const state = await ensureConfigResolved();
+    expect(state.defaultsPath).toBe(defaults);
+    expect(calls[0].params.defaultsXml).toContain('explicit-root-entry');
+  });
+
+  it('kbengine.engineRoot 指向无结构锚目录 → 不认,继续走兄弟仓链', async () => {
+    const defaults = installSiblingEngine();
+    fs.mkdirSync(path.join(root, 'not-an-engine'), { recursive: true });
+    configurationOverrides.set('kbengine', { engineRoot: path.join(root, 'not-an-engine') });
+    installFakeGate(true);
+    const state = await ensureConfigResolved();
+    expect(state.defaultsPath).toBe(defaults);
+  });
+
+  it('无 binPath/engineRoot/兄弟仓 → defaults 如实 null,不猜;元件配置不受影响', async () => {
+    installFakeGate(true);
+    const state = await ensureConfigResolved();
+    expect(calls[0].params.defaultsXml).toBeNull();
+    expect(state.defaultsPath).toBeNull();
+    expect(state.customPath).toBe(path.join(ws, 'res', 'server', 'kbengine.xml'));
   });
 });

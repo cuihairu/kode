@@ -27,6 +27,7 @@ import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/backend/debugConfigBootstrap';
 import { setKodeCoreShadowGate, getKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { setL10nBundle } from './fake-vscode/l10n';
 import { ENGINE_DEFAULT_TELNET_PORTS, makeContractGate } from './helpers/configCoreContract';
 import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
@@ -156,11 +157,17 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       activate(context);
       expect(patterns.some(pattern => pattern.includes('kbengine*.xml'))).toBe(false);
 
+      // 2026-11-27 报错文案走 l10nText(zh 译文本例注入桩 bundle 验证)
+      setL10nBundle({
+        'Cannot locate engine defaults kbengine_defaults.xml (check that kbengine.binPath points at the engine kbe/bin/server)':
+          '无法定位引擎默认配置 kbengine_defaults.xml(请检查 kbengine.binPath 是否指向引擎的 kbe/bin/server)'
+      });
       await commands.executeCommand('kbengine.config.showFinal');
       expect(messages.error.some(message => message.includes('无法定位引擎默认配置'))).toBe(true);
       expect(windowState.showTextDocumentCalls).toHaveLength(0);
       disposeAll(context);
     } finally {
+      setL10nBundle(null);
       (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = originalCreate;
     }
   });

@@ -11,6 +11,7 @@
 // 前向引用 holder 经 deps 传入(调用位在其声明之后),区域原文零改动。
 
 import * as vscode from 'vscode';
+import { l10nText } from '../nlsRuntime';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DefinitionSymbolIdentity, EntityMethodSection } from '../entityMapping';
@@ -78,7 +79,7 @@ import {
   buildFinalServerConfig,
   resetDatabaseInterfaceConfigCache,
 } from '../serverConfigMerge';
-import { ensureConfigResolved } from '../serverConfigResolve';
+import { ensureConfigResolved, type ConfigResolvedState } from '../serverConfigResolve';
 import type { EntityMappingManager } from '../entityMapping';
 
 export interface EntityExplorerViewsDeps {
@@ -270,7 +271,7 @@ export function activateHttpRequestViews(deps: HttpRequestViewsDeps): HttpReques
   // HTTP 快捷请求(批105):OUTPUT 流水 + 列表 quick pick + 具名运行
   // (实际快捷键经「键盘快捷方式」为本命令配 args.name 绑定)
   const quickActionManagerRef: { current?: QuickActionManager } = {};
-  const httpRequestChannel = vscode.window.createOutputChannel('KBEngine HTTP 快捷请求');
+  const httpRequestChannel = vscode.window.createOutputChannel(l10nText('KBEngine HTTP Quick Requests'));
   const httpRequestService = new HttpRequestService({
     getEntries: () =>
       parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests')),
@@ -473,17 +474,43 @@ export function activateFinalConfigViews(deps: FinalConfigViewsDeps): FinalConfi
   // 可能尚未就绪(核心服务冷启动/单测替身在 activate 后才装),首取不可得
   // 时 auto 路径做一次有界延迟重试——期间接线完成即出视图,仍不可得维持
   // 静默跳过;手动命令不做重试(用户在场,失败即明示)。
+  // 最终配置定位日志(用户令:找到的两个配置文件路径可见):文本视图与 GUI
+  // 面板同通道名,失败臂也记 null 与原因,auto 静默不弹窗但仍可查 OUTPUT。
+  const finalConfigLog = vscode.window.createOutputChannel(l10nText('KBEngine Final Config'));
+  context.subscriptions.push(finalConfigLog);
+  let lastLoggedMark = '';
+  const logResolvedConfig = (state: ConfigResolvedState | null): void => {
+    const defaults = state?.defaultsPath ?? l10nText('(not found)');
+    const custom = state?.customPath ?? l10nText('(not found)');
+    const mark = `${defaults}\n${custom}\n${state?.reason ?? ''}`;
+    if (mark === lastLoggedMark) {
+      return;
+    }
+    lastLoggedMark = mark;
+    finalConfigLog.appendLine(
+      l10nText('Final config resolved: defaults={defaults}, custom={custom}', { defaults, custom })
+    );
+    if (state?.reason) {
+      finalConfigLog.appendLine(l10nText('Resolution reason: {reason}', { reason: state.reason }));
+    } else if (state?.resolver) {
+      finalConfigLog.appendLine(l10nText('Resolver: {resolver}', { resolver: state.resolver }));
+    }
+  };
   const FINAL_CONFIG_AUTO_RETRY_MS = 300;
   const openFinalConfig = async (auto: boolean): Promise<void> => {
-    await ensureConfigResolved().catch(() => {});
+    let state = await ensureConfigResolved().catch(() => null);
+    logResolvedConfig(state);
     if (auto && buildFinalServerConfig().text.length === 0) {
       await new Promise(resolve => setTimeout(resolve, FINAL_CONFIG_AUTO_RETRY_MS));
-      await ensureConfigResolved().catch(() => {});
+      state = await ensureConfigResolved().catch(() => null);
+      logResolvedConfig(state);
     }
     if (buildFinalServerConfig().text.length === 0) {
       if (!auto) {
         vscode.window.showErrorMessage(
-          '无法定位引擎默认配置 kbengine_defaults.xml(请检查 kbengine.binPath 是否指向引擎的 kbe/bin/server)'
+          l10nText(
+            'Cannot locate engine defaults kbengine_defaults.xml (check that kbengine.binPath points at the engine kbe/bin/server)'
+          )
         );
       }
       return;

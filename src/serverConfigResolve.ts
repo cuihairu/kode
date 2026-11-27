@@ -193,13 +193,27 @@ function locateAndRead(
       vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
       workspaceRoot
     );
-  // binPath 未配/推导不出时,用引擎源码根锚点兜底再推 defaults;profile
-  // 覆盖轴不走发现链(profile 的根读不到 defaults = 如实无 defaults)
+  // binPath 未配/推导不出时,依次兜底:kbengine.engineRoot 显式设置(结构锚
+  // 验收)→ 工作区内引擎源码根锚点 → 兄弟仓安装位约定;profile 覆盖轴不走
+  // 发现链(profile 的根读不到 defaults = 如实无 defaults)
   let defaultsPath = deriveEngineDefaultsXmlPath(binPath);
-  if (!defaultsPath && !overridesBinPath && workspaceRoot) {
-    const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
-    if (kbeSourceRoot) {
-      defaultsPath = deriveEngineDefaultsXmlPath(path.join(kbeSourceRoot, 'bin', 'server'));
+  if (!defaultsPath && !overridesBinPath) {
+    const engineRootSetting = expandWorkspacePlaceholders(
+      vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', ''),
+      workspaceRoot
+    ).trim();
+    if (engineRootSetting.length > 0) {
+      const candidate = path.join(engineRootSetting, 'res', 'server', 'kbengine_defaults.xml');
+      defaultsPath = fs.existsSync(candidate) ? candidate : null;
+    }
+    if (!defaultsPath && workspaceRoot) {
+      const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
+      if (kbeSourceRoot) {
+        defaultsPath = deriveEngineDefaultsXmlPath(path.join(kbeSourceRoot, 'bin', 'server'));
+      }
+    }
+    if (!defaultsPath && workspaceRoot) {
+      defaultsPath = locateSiblingEngineDefaultsXml(workspaceRoot);
     }
   }
   let defaultsXml: string | null = null;
@@ -437,6 +451,35 @@ async function refresh(
   const slot: CacheSlot = { ...state, overridesKey, fingerprint: mark };
   storeSlot(overridesKey, slot);
   return slot;
+}
+
+/**
+ * 兄弟仓安装位 defaults 探测(2026-11-27 用户报障「最终配置一直失效」):真实
+ * 布局是 assets 工作区 + 兄弟引擎仓(工作区在 `<repo>/assets`,引擎在
+ * `<repo>/kbengine/kbe`),binPath/engineRoot 均未配时,既有的 binPath 推导
+ * 与源码根锚点都够不着兄弟仓。约定候选与 serverManager.detectBinPath 的
+ * 兄弟仓链同源(相对工作区 1~2 层 + KBENGINE_HOME),但验收只认「文件真实
+ * 存在」——`<candidate>/res/server/kbengine_defaults.xml` 命中即返回,
+ * 命中不了如实 null(不回落别的项目配置,与 profile 根纪律同口径)。
+ */
+function locateSiblingEngineDefaultsXml(workspaceRoot: string): string | null {
+  const relative = ['../kbe', '../../kbe', '../kbengine/kbe', '../../kbengine/kbe'];
+  const candidates: string[] = relative.map(relativePath =>
+    path.join(path.resolve(workspaceRoot), relativePath, 'res', 'server', 'kbengine_defaults.xml')
+  );
+  const kbeHome = process.env.KBENGINE_HOME;
+  if (kbeHome) {
+    candidates.push(
+      path.join(kbeHome, 'kbe', 'res', 'server', 'kbengine_defaults.xml'),
+      path.join(kbeHome, 'res', 'server', 'kbengine_defaults.xml')
+    );
+  }
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 /** 由 kbengine.binPath 推导引擎 defaults 文件路径(自 telnetService 迁入:

@@ -26,6 +26,7 @@ import {
 import { renderConfigVisualizerWebview } from './configVisualizerPanelHtml';
 import { randomNonce } from './webviewSecurity';
 import { resolvePanelLocale, strings } from './webviewStrings';
+import { l10nText } from './nlsRuntime';
 
 /** §6 回包信封;errorKind 缺省 = 解析失败(非空态,进 §8 error) */
 type ConfigVizResult<T> =
@@ -42,6 +43,10 @@ interface ConfigVizWebviewMessage {
 
 export class ConfigVisualizerPanel {
   private panel: vscode.WebviewPanel | null = null;
+  /** 最终配置解析日志:resolve 成功时打印找到的两个配置文件路径(可观测性,用户令) */
+  private readonly logChannel = vscode.window.createOutputChannel(
+    l10nText('KBEngine Final Config')
+  );
   /** 画代(§5.5):每次 resolve 请求自增;await 返回后代不齐即弃写 */
   private refreshSeq = 0;
   /** 最近一次送达的 resolve 态(keyDetail/copy/openSource 的数据源) */
@@ -82,6 +87,7 @@ export class ConfigVisualizerPanel {
   dispose(): void {
     this.panel?.dispose();
     this.panel = null;
+    this.logChannel.dispose();
   }
 
   private async onMessage(message: ConfigVizWebviewMessage): Promise<void> {
@@ -164,6 +170,11 @@ export class ConfigVisualizerPanel {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
     this.lastState = state;
+    // 找到的两个配置文件 + 各自键数打印到 OUTPUT,便于核对最终配置来源
+    this.logChannel.appendLine(l10nText('Final config resolved: defaults={defaults}, custom={custom}', {
+      defaults: state.defaultsPath ?? l10nText('(not found)'),
+      custom: state.customPath ?? l10nText('(not found)')
+    }));
     if (!state.ok) {
       // AUDIT-007 后此分支只剩门未接线瞬态(RPC 失败已由回落臂出 ok=true)
       this.lastSummary = null;
