@@ -20,7 +20,9 @@
 //! 脱节;插件渲染前校验 tvb 帧头 2 字节 == 消息 id 小端,失真帧如实
 //! 不出树(摘要照旧),不猜偏移。
 
-use std::collections::BTreeMap;
+mod frame_cache;
+
+use frame_cache::{FrameCache, DEFAULT_FRAME_CACHE_CAP};
 
 use kode_kbengine_protocol::codec::DecodeLimits;
 use kode_kbengine_protocol::{
@@ -28,8 +30,8 @@ use kode_kbengine_protocol::{
     SpanKind, ValueSpan,
 };
 use kode_kbengine_schema::messages::{build_message_table, MessageTable};
-use libwireshark::prefs::{Declaration, PreferenceError, PreferenceMap, PreferenceValue};
 use libwireshark::prefs::Value as PrefValue;
+use libwireshark::prefs::{Declaration, PreferenceError, PreferenceMap, PreferenceValue};
 use libwireshark::{
     plugin, Base, Binding, DissectResult, Dissector, Encoding, Expert, ExpertGroup, FieldInfo,
     FieldType, Header, PacketFieldError, PacketView, Preferences, Severity,
@@ -40,7 +42,7 @@ use libwireshark::{
 const DEFAULT_LOGINAPP_PORT: u16 = 20013;
 const DEFAULT_BASEAPP_PORT: u16 = 20015;
 
-/// 首选项:端口对 + 静态消息表来源。
+/// 首选项:端口对 + 静态消息表来源 + 帧缓存窗口。
 #[derive(Clone, Debug)]
 struct KbPrefs {
     loginapp_port: u16,
@@ -48,6 +50,8 @@ struct KbPrefs {
     /// `messages_fixed_defaults.xml` 路径;空 = 空表(全部 id 走 unknown 面,
     /// 与 CLI `--defaults` 缺省同口径,不编造默认表)。
     defaults_xml: Option<String>,
+    /// 每流首遍帧缓存窗口(帧数);0 = 不设限(审计前旧语义,用户自担)。
+    frame_cache_cap: usize,
 }
 
 impl Default for KbPrefs {
@@ -56,6 +60,7 @@ impl Default for KbPrefs {
             loginapp_port: DEFAULT_LOGINAPP_PORT,
             baseapp_port: DEFAULT_BASEAPP_PORT,
             defaults_xml: None,
+            frame_cache_cap: DEFAULT_FRAME_CACHE_CAP,
         }
     }
 }
@@ -81,6 +86,12 @@ impl Preferences for KbPrefs {
                 "静态消息表来源(空 = 只认动态导入,未知 id 如实标记)",
                 PrefValue::String(String::new()),
             ),
+            Declaration::new(
+                "frame_cache_cap",
+                "Per-stream frame cache window",
+                "每流首遍摘要/字段树缓存上限(帧数;超窗最旧帧先淘汰,其重放遍如实显示 replay 提示;0 = 不设限)",
+                PrefValue::Uint(DEFAULT_FRAME_CACHE_CAP as u32),
+            ),
         ]
     }
 
@@ -95,10 +106,15 @@ impl Preferences for KbPrefs {
             Some(v) => String::from_value(v)?,
             None => String::new(),
         };
+        let frame_cache_cap = match values.get("frame_cache_cap") {
+            Some(v) => u32::from_value(v)? as usize,
+            None => DEFAULT_FRAME_CACHE_CAP,
+        };
         Ok(KbPrefs {
             loginapp_port: port("loginapp_port", DEFAULT_LOGINAPP_PORT)?,
             baseapp_port: port("baseapp_port", DEFAULT_BASEAPP_PORT)?,
             defaults_xml: (!defaults_xml.is_empty()).then_some(defaults_xml),
+            frame_cache_cap,
         })
     }
 }
@@ -129,8 +145,7 @@ const FIELDS: &[FieldInfo] = &[
         .with_blurb("FLOAT 参数原始 4 字节(libwireshark alpha 未暴露浮点字段类型,不解值)"),
     FieldInfo::new("arg_f64b", "arg_f64b", FieldType::Bytes)
         .with_blurb("DOUBLE 参数原始 8 字节(同上,不解值)"),
-    FieldInfo::new("arg_str", "arg_str", FieldType::String)
-        .with_blurb("STRING/UNICODE 文本体"),
+    FieldInfo::new("arg_str", "arg_str", FieldType::String).with_blurb("STRING/UNICODE 文本体"),
     FieldInfo::new("arg_bytes", "arg_bytes", FieldType::Bytes).with_blurb("BLOB 体"),
     FieldInfo::new("arg_raw", "arg_raw", FieldType::Bytes)
         .with_blurb("未取证/未知类型原始保留(ENTITYCALL/PYTHON/Unresolved)"),
@@ -160,12 +175,12 @@ struct MsgTreeEntry {
 }
 
 /// 每 TCP 流(Wireshark conversation)状态:角色 + 组帧/解码机 + 首遍摘要与
-/// 字段树缓存(重放遍复述)。静态表只在开流时并入 Flow::map,不留驻。
+/// 字段树缓存(重放遍复述;环形窗口上限,超窗淘汰最旧,见 [`FrameCache`])。
+/// 静态表只在开流时并入 Flow::map,不留驻。
 struct StreamState {
     role: ComponentRole,
     flow: Flow,
-    summaries: BTreeMap<u32, String>,
-    trees: BTreeMap<u32, Vec<MsgTreeEntry>>,
+    cache: FrameCache<Vec<MsgTreeEntry>>,
     /// 已喂入字节计数(按方向):帧 tvb 偏移 = stream_offset - 本段前喂入量。
     /// 错误复位后协议 crate 的流内偏移与计数脱节,由渲染前 tvb 真校验兜住。
     fed: [usize; 2],
@@ -178,8 +193,7 @@ impl StreamState {
         StreamState {
             role,
             flow,
-            summaries: BTreeMap::new(),
-            trees: BTreeMap::new(),
+            cache: FrameCache::new(prefs.frame_cache_cap),
             fed: [0, 0],
         }
     }
@@ -292,67 +306,67 @@ impl Dissector for KbEngine {
         let bytes = packet.bytes().to_vec();
         let len = packet.captured_len();
 
-        let (info, entries) =
-            packet.with_conversation(|state: &mut Option<StreamState>| {
-                let stream = state.get_or_insert_with(|| StreamState::open(&prefs, role));
-                if let Some(cached) = stream.summaries.get(&frame) {
-                    let trees = stream.trees.get(&frame).cloned().unwrap_or_default();
-                    return (cached.clone(), trees);
-                }
-                if !first {
-                    // 重放遍且首遍无摘要:不推进状态,只给中性复述。
-                    return (
-                        format!("kbengine {}: replay (no first-pass summary)", dir.as_str()),
-                        Vec::new(),
-                    );
-                }
-                let fed_before = stream.fed[dir_index(dir)];
-                match stream.flow.feed_direction(dir, &bytes, &DecodeLimits::default()) {
-                    Ok(msgs) => {
-                        let mut entries = Vec::new();
-                        for msg in &msgs {
-                            // 帧 tvb 偏移 = 流内偏移 - 本段前喂入量;下溢帧
-                            // (错误复位后脱节)不出树,由渲染前校验兜住。
-                            let Some(base) = msg.frame.stream_offset.checked_sub(fed_before)
-                            else {
-                                continue;
-                            };
-                            let Some(spec) = stream.flow.map.by_id(msg.frame.id) else {
-                                continue;
-                            };
-                            let args = spec.args.clone();
-                            if let Ok(spans) =
-                                decode_spans(&args, &msg.frame.payload, &DecodeLimits::default())
-                            {
-                                entries.push(MsgTreeEntry {
-                                    base,
-                                    id: msg.frame.id,
-                                    length_spec: msg.frame.length_spec,
-                                    payload_len: msg.frame.payload.len(),
-                                    spans,
-                                });
-                            }
+        let (info, entries) = packet.with_conversation(|state: &mut Option<StreamState>| {
+            let stream = state.get_or_insert_with(|| StreamState::open(&prefs, role));
+            if let Some((cached, trees)) = stream.cache.get(frame) {
+                return (cached, trees);
+            }
+            if !first {
+                // 重放遍且首遍无摘要:不推进状态,只给中性复述。
+                return (
+                    format!("kbengine {}: replay (no first-pass summary)", dir.as_str()),
+                    Vec::new(),
+                );
+            }
+            let fed_before = stream.fed[dir_index(dir)];
+            match stream
+                .flow
+                .feed_direction(dir, &bytes, &DecodeLimits::default())
+            {
+                Ok(msgs) => {
+                    let mut entries = Vec::new();
+                    for msg in &msgs {
+                        // 帧 tvb 偏移 = 流内偏移 - 本段前喂入量;下溢帧
+                        // (错误复位后脱节)不出树,由渲染前校验兜住。
+                        let Some(base) = msg.frame.stream_offset.checked_sub(fed_before) else {
+                            continue;
+                        };
+                        let Some(spec) = stream.flow.map.by_id(msg.frame.id) else {
+                            continue;
+                        };
+                        let args = spec.args.clone();
+                        if let Ok(spans) =
+                            decode_spans(&args, &msg.frame.payload, &DecodeLimits::default())
+                        {
+                            entries.push(MsgTreeEntry {
+                                base,
+                                id: msg.frame.id,
+                                length_spec: msg.frame.length_spec,
+                                payload_len: msg.frame.payload.len(),
+                                spans,
+                            });
                         }
-                        stream.fed[dir_index(dir)] = fed_before + bytes.len();
-                        let text = decoded_summary(stream.role, dir, &msgs);
-                        stream.summaries.insert(frame, text.clone());
-                        stream.trees.insert(frame, entries.clone());
-                        (text, entries)
                     }
-                    Err(error) => {
-                        stream.fed[dir_index(dir)] = fed_before + bytes.len();
-                        // 红线面:协议 crate 出错即自身复位;此处如实标注。
-                        let text = format!(
-                            "{} {}: framing reset: {error}",
-                            role_label(stream.role),
-                            dir.as_str()
-                        );
-                        stream.summaries.insert(frame, text.clone());
-                        stream.trees.remove(&frame);
-                        (text, Vec::new())
-                    }
+                    stream.fed[dir_index(dir)] = fed_before + bytes.len();
+                    let text = decoded_summary(stream.role, dir, &msgs);
+                    stream
+                        .cache
+                        .insert(frame, text.clone(), Some(entries.clone()));
+                    (text, entries)
                 }
-            })?;
+                Err(error) => {
+                    stream.fed[dir_index(dir)] = fed_before + bytes.len();
+                    // 红线面:协议 crate 出错即自身复位;此处如实标注。
+                    let text = format!(
+                        "{} {}: framing reset: {error}",
+                        role_label(stream.role),
+                        dir.as_str()
+                    );
+                    stream.cache.insert(frame, text.clone(), None);
+                    (text, Vec::new())
+                }
+            }
+        })?;
         if info.contains("framing reset") {
             let _ = packet.add_expert_text("framing_error", &info);
         }

@@ -418,7 +418,7 @@ hello + 协议导入**（baseapp 与 loginapp 的消息表相互独立）。
 - **构建** —— 检出内的独立 GPL workspace（依赖相邻 path crate，须在仓库内构建）：`plugins/wireshark-kbengine/` 下 `cargo build --release`，产物 `target/release/libwireshark_kbengine.so`（Windows 为 `.dll`）。产物与宿主 Wireshark 主/次版本耦合（`plugin_want_major`/`plugin_want_minor`），4.6 产物不进 4.4 宿主。
 - **安装** —— 放到宿主扫描目录 `<maj.min>/epan/` 下：个人插件根（Linux/macOS `~/.local/lib/wireshark/plugins/`，Windows `%APPDATA%\Wireshark\plugins\`）或系统根，然后重启 tshark/Wireshark。用 `tshark -G plugins | grep kbengine` 验证。
   - 本机实证（Ubuntu 26.04）的加固注意：tshark 的 AppArmor 档案拦个人插件目录（`openat` EACCES）——须以 root 装系统目录或写本地档案；插件目录 group/world-writable 时被宿主拒扫（需 ≤ 755）；同档案也拦 home 目录文件读取，pcap 先拷 `/tmp` 再 `-r`。
-- **使用** —— 首选项 `kbengine.loginapp_port`（默认 20013）与 `kbengine.baseapp_port`（默认 20015，`0` = 不绑）；端口变化即重挂载绑定。pcap 抓在非默认端口时命令行用 `-o kbengine.loginapp_port:<port>` 覆盖。过滤器用 `-Y kbengine`。会话状态只在首遍推进（重放遍复述首遍摘要缓存，绝不重复喂流）；未装表的 id 如实标 `id=0x…(unknown)`，组帧出错标 `framing reset` —— 协议 crate 自身复位并从下一包重新同步。
+- **使用** —— 首选项 `kbengine.loginapp_port`（默认 20013）与 `kbengine.baseapp_port`（默认 20015，`0` = 不绑）；端口变化即重挂载绑定。pcap 抓在非默认端口时命令行用 `-o kbengine.loginapp_port:<port>` 覆盖。过滤器用 `-Y kbengine`。会话状态只在首遍推进（重放遍复述首遍摘要缓存，绝不重复喂流）；未装表的 id 如实标 `id=0x…(unknown)`，组帧出错标 `framing reset` —— 协议 crate 自身复位并从下一包重新同步。每流首遍缓存是 `kbengine.frame_cache_cap` 帧的环形窗口（默认 8192；`0` = 不设限，即审计前旧语义）：超窗先淘汰最旧帧，被淘汰帧的重放遍如实显示 `replay (no first-pass summary)` 中性提示——不为整个抓包生命周期无界持帧爬内存。
 - **样例验收** —— `docs/samples/kbengine-wire-samples/` 有合成 login 流 pcap（端口 1001↔2001，6 帧）；验收命令 `tshark -r <pcap> -Y kbengine -o kbengine.loginapp_port:2001`。
 - **无插件环境** —— `kode-kbengine capture analyze` 直接吃同一份 pcap（PA-004），无 ABI 依赖。
 - **许可证边界** —— GPL-3.0-or-later；依赖方向只允许 GPL 插件 → Apache crate，故产物在检出内构建、只随 nightly 滚动发布，绝不进 Apache VSIX。
