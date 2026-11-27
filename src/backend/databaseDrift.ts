@@ -19,9 +19,12 @@
 import type { DatabaseSchemaSnapshot } from '../databaseSchema';
 import type { TableFieldDescriptor, TableSchemaDescriptor } from './databaseSchemaCore';
 import type { DatabaseInterfaceConfig } from '../serverConfigMerge';
+import { l10nText } from '../nlsRuntime';
 
-/** OUTPUT 通道名(报告整段可复制回传) */
-export const DATABASE_DRIFT_CHANNEL_NAME = 'KBEngine 数据库漂移';
+/** OUTPUT 通道名(报告整段可复制回传)——经 l10n,英文 VS Code 显示英文、中文 VS Code 显示译文 */
+export function databaseDriftChannelName(): string {
+  return l10nText('KBEngine Database Drift');
+}
 
 /** 引擎 MySQL 默认端口(dbmgr 端口 0 时 serverConfigMerge 已落 3306) */
 export const MYSQL_DEFAULT_PORT = 3306;
@@ -505,15 +508,17 @@ const FINDING_TITLES: Record<DriftFindingKind, string> = {
 
 /** 报告文本(整段可复制回传;OUTPUT 通道无着色 API,靠前缀标记) */
 export function renderDriftReport(report: DriftReport): string {
-  const lines: string[] = [`# KBEngine 数据库漂移: ${report.entityName}`, ''];
+  const lines: string[] = [l10nText('# KBEngine Database Drift: {entity}', { entity: report.entityName }), ''];
   if (!report.checked) {
-    lines.push(`未校验:${report.reason ?? '未知原因'}`);
+    lines.push(l10nText('Not checked:{reason}', {
+      reason: report.reason ?? l10nText('unknown reason')
+    }));
     return `${lines.join('\n')}\n`;
   }
 
   lines.push(`Database: ${report.databaseName}`, '');
   if (report.findings.length === 0) {
-    lines.push('问题 0 项:真实表结构与 def 推导的虚拟表结构一致');
+    lines.push(l10nText('0 issues: the real table schema matches the def-derived virtual table schema'));
     return `${lines.join('\n')}\n`;
   }
 
@@ -521,19 +526,25 @@ export function renderDriftReport(report: DriftReport): string {
     lines.push(`[${FINDING_TITLES[finding.kind]}] ${finding.message}`);
   }
   lines.push('');
-  lines.push(`问题 ${report.findings.length} 项`);
+  lines.push(l10nText('{count} issues', { count: report.findings.length }));
   return `${lines.join('\n')}\n`;
 }
 
 /** 提示语:未校验 / 无漂移 / 有漂移 */
 export function describeDriftSummary(report: DriftReport): string {
   if (!report.checked) {
-    return `数据库漂移未校验:${report.entityName}(${report.reason ?? '未知原因'})`;
+    return l10nText('Database drift not checked: {entity} ({reason})', {
+      entity: report.entityName, reason: report.reason ?? l10nText('unknown reason')
+    });
   }
   if (report.findings.length === 0) {
-    return `数据库漂移校验通过:${report.entityName}(真实表结构与 def 一致)`;
+    return l10nText('Database drift check passed: {entity} (real table schema matches def)', {
+      entity: report.entityName
+    });
   }
-  return `数据库漂移发现 ${report.findings.length} 项:${report.entityName},详见「${DATABASE_DRIFT_CHANNEL_NAME}」输出面板`;
+  return l10nText('Database drift found {count} items: {entity}; see the "{channel}" output panel', {
+    count: report.findings.length, entity: report.entityName, channel: databaseDriftChannelName()
+  });
 }
 
 /** OUTPUT 通道子集(装配层只用到这三个动作) */

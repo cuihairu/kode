@@ -9,6 +9,8 @@ import { setActiveProfile } from '../src/activeProfile';
 import { ProjectProfileStore } from '../src/projectProfiles';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';
 import { makeTextDocument, Uri, type ExtensionContext } from './fake-vscode/core';
 import { window as stubWindow } from './helpers/vscodeStub';
@@ -137,6 +139,9 @@ beforeEach(() => {
   commandRegistry.reset();
   windowState.reset();
   workspaceState.reset();
+  // 通道名/报告文案 2026-11-27 起走 l10nText(英文原文 + zh bundle),本文件
+  // 断言沿用中文面板面,注入整包 zh bundle(同 playerCloneI18n 口径)
+  setL10nBundle(zhCnBundle);
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-drift-cmd-'));
   workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
   workspace.textDocuments = [];
@@ -144,6 +149,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setL10nBundle(null);
   configurationOverrides.clear();
   if (originalActiveTextEditor === undefined) {
     delete windowish.activeTextEditor;

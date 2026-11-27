@@ -86,8 +86,8 @@ describe('kbengine.def.analyze 命令', () => {
     await commands.executeCommand('kbengine.def.analyze');
 
     // 文件按 fsPath 排序:Avatar.def(0 建议)在前,Monster.def(1 条)在后
-    const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def 分析');
-    expect(analysis, '应创建 KBEngine Def 分析输出面板').toBeDefined();
+    const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def Analysis');
+    expect(analysis, 'should create KBEngine Def Analysis output channel').toBeDefined();
     const joined = analysis?.lines.join('') ?? '';
     expect(joined).toContain(`${path.join(root, 'Avatar.def')}: nothing to optimize`);
     expect(joined).toContain('heavy-sync-broadcast');
@@ -132,7 +132,7 @@ describe('kbengine.def.analyze 命令', () => {
     await commands.executeCommand('kbengine.def.analyze');
 
     expect(messages.info.at(-1)).toBe('No .def files found; nothing to analyze');
-    const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def 分析');
+    const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def Analysis');
     expect(analysis?.lines ?? []).toEqual([]);
 
     disposeAll(context);
@@ -207,7 +207,7 @@ describe('kbengine.def.analyze 命令', () => {
 
     await commands.executeCommand('kbengine.def.analyze');
 
-    const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def 分析');
+    const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def Analysis');
     const joined = analysis?.lines.join('') ?? '';
     expect(joined).toContain('inherited-name-collision');
     expect(joined).toContain('inherited from Monster.def');

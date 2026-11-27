@@ -6,6 +6,7 @@
 // 无共享句柄消费也无后向消费者。
 
 import * as vscode from 'vscode';
+import { l10nText } from '../nlsRuntime';
 import { resolveExceptionSource } from '../backend/exceptionSourceLocator';
 import { ConsoleHub } from '../kbengineConsoleHub';
 import { ConsoleLogTailController } from '../backend/consoleLogTail';
@@ -32,7 +33,7 @@ export function activateConsole(deps: ConsoleDeps): void {
   consoleHub.start();
   context.subscriptions.push(consoleHub);
 
-  const tailOutput = vscode.window.createOutputChannel('KBEngine Console 日志');
+  const tailOutput = vscode.window.createOutputChannel(l10nText('KBEngine Console Logs'));
   // 优先级 95:低于 server 100/telnet 99/热更 98/解释器 97/热更通道灯 96
   // (HOT_RELOAD_CHANNEL_STATUS_PRIORITY),不与任何既有灯同优先级。
   const tailStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 95);

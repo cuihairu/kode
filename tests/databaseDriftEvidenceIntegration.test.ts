@@ -18,6 +18,8 @@ import { classifyDriftEvidence, type DriftEvidenceRecord } from '../src/backend/
 import type { DriftReport } from '../src/backend/databaseDrift';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { configurationOverrides, workspace } from './fake-vscode/workspaceState';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
@@ -231,12 +233,15 @@ describe('kbengine.database.showDriftEvidence 命令(activate 真装配)', () =>
   beforeEach(() => {
     commandRegistry.reset();
     windowState.reset();
+    // 通道名/证据文案走 l10nText,断言沿用中文面板面:注入整包 zh bundle
+    setL10nBundle(zhCnBundle);
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-drift-evidence-'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     workspace.textDocuments = [];
   });
 
   afterEach(() => {
+    setL10nBundle(null);
     configurationOverrides.clear();
     fs.rmSync(root, { recursive: true, force: true });
   });

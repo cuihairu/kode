@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, window as fakeWindow, windowState } from './fake-vscode/windowState';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { configurationOverrides, workspace } from './fake-vscode/workspaceState';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 
@@ -48,6 +50,7 @@ const listen = (handler: http.RequestListener): Promise<number> =>
   });
 
 afterEach(async () => {
+  setL10nBundle(null);
   await Promise.all(
     servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))
   );
@@ -56,6 +59,8 @@ afterEach(async () => {
 beforeEach(() => {
   commandRegistry.reset();
   windowState.reset();
+  // 通道名/提示走 l10nText,断言沿用中文面板面:注入整包 zh bundle
+  setL10nBundle(zhCnBundle);
   configurationOverrides.clear();
   workspace.workspaceFolders = [];
   // 活动编辑器默认无:模板变量如实落空串

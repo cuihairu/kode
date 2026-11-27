@@ -19,7 +19,7 @@ import {
   checkDatabaseDrift,
   checkDatabaseDriftForSnapshots,
   createMysqlDriftExecutor,
-  DATABASE_DRIFT_CHANNEL_NAME,
+  databaseDriftChannelName,
   publishDriftReport,
   type DriftReport
 } from './backend/databaseDrift';
@@ -203,7 +203,7 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
   // 台账无记录 = 如实「读不到配置」,绝不回退邻居 profile/工作区设置。
   // 切换活动 profile 即释放旧 profile 的结果缓存;查询结果按 profile
   // 缓存(TTL 内同 SQL 不再下发连接)。
-  const databaseDriftChannel = vscode.window.createOutputChannel(DATABASE_DRIFT_CHANNEL_NAME);
+  const databaseDriftChannel = vscode.window.createOutputChannel(databaseDriftChannelName());
   context.subscriptions.push(databaseDriftChannel);
   const databaseConnectionRegistry = new DatabaseConnectionRegistry({
     now: () => Date.now(),
@@ -480,7 +480,7 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
   // 选表(拿不到退手输)→ 白名单限量 SELECT → 专用输出通道渲染;取消选表
   // 不发预览查询,连不上如实报错。IDE-REV-017:建连/查询过生命周期守卫,
   // 进度通知可取消,超时/取消带原因返回并释放连接。
-  const tablePreviewChannel = vscode.window.createOutputChannel('KBEngine 数据库预览');
+  const tablePreviewChannel = vscode.window.createOutputChannel(l10nText('KBEngine Database Preview'));
   context.subscriptions.push(tablePreviewChannel);
   const previewTableCommand = vscode.commands.registerCommand(
     'kbengine.database.previewTable',
@@ -517,7 +517,7 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
   // 对照 def 推导虚拟 schema,输出新增/移除/类型变化清单——纯只读报告,
   // 全程无 DDL/写库通路;实体选择 = 命令参数 / 活动 .def / 注册实体选择
   // 器;建连与查询同过 IDE-REV-017 守卫。
-  const schemaImpactChannel = vscode.window.createOutputChannel('KBEngine 结构影响预览');
+  const schemaImpactChannel = vscode.window.createOutputChannel(l10nText('KBEngine Schema Impact Preview'));
   context.subscriptions.push(schemaImpactChannel);
   const previewSchemaImpactCommand = vscode.commands.registerCommand(
     'kbengine.database.previewSchemaImpact',

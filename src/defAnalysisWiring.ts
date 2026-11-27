@@ -16,7 +16,7 @@ export interface DefAnalysisWiring {
 export function wireDefAnalysis(): DefAnalysisWiring {
   // .def 静态分析建议(性能分析):扫描工作区全部 .def,报告写入输出面板
   // 并以诊断形式落到问题列表
-  const defAnalysisOutputChannel = vscode.window.createOutputChannel('KBEngine Def 分析');
+  const defAnalysisOutputChannel = vscode.window.createOutputChannel(l10nText('KBEngine Def Analysis'));
   const defAnalysisDiagnostics = vscode.languages.createDiagnosticCollection(
     'kbengine-def-analysis'
   );

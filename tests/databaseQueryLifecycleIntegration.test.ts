@@ -16,6 +16,8 @@ import type { DriftConnectionFactory, DriftQueryExecutor, QueryResult } from '..
 import { runTablePreviewCommand } from '../src/databaseTablePreviewCommand';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { window as stubWindow } from './helpers/vscodeStub';
@@ -353,6 +355,8 @@ describe('命令(activate 真装配)· 静默 TCP 端点 = 真实慢数据库', 
     commandRegistry.reset();
     windowState.reset();
     workspaceState.reset();
+    // 漂移降级提示走 l10nText,断言沿用中文面板面:注入整包 zh bundle
+    setL10nBundle(zhCnBundle);
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-query-lifecycle-'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     workspace.textDocuments = [];
@@ -360,6 +364,7 @@ describe('命令(activate 真装配)· 静默 TCP 端点 = 真实慢数据库', 
   });
 
   afterEach(async () => {
+    setL10nBundle(null);
     configurationOverrides.clear();
     const windowish = stubWindow as unknown as Record<string, unknown>;
     if (originalActiveTextEditor === undefined) {

@@ -495,14 +495,14 @@ describe('renderDriftReport', () => {
 
     expect(text).toBe(
       [
-        '# KBEngine 数据库漂移: Hero',
+        '# KBEngine Database Drift: Hero',
         '',
         'Database: game_db',
         '',
         '[缺表] 表中不存在 tbl_Hero_bag(该实体或属性尚未建表)',
         '[残留表] 残留表 tbl_Hero_old(库里存在,def 已无对应属性)',
         '',
-        '问题 2 项',
+        '2 issues',
         ''
       ].join('\n')
     );
@@ -516,7 +516,7 @@ describe('renderDriftReport', () => {
       findings: []
     });
 
-    expect(text).toContain('问题 0 项:真实表结构与 def 推导的虚拟表结构一致');
+    expect(text).toContain('0 issues: the real table schema matches the def-derived virtual table schema');
   });
 
   it('says plainly that nothing was verified when degraded', () => {
@@ -528,8 +528,8 @@ describe('renderDriftReport', () => {
       reason: '连不上数据库(ECONNREFUSED)'
     });
 
-    expect(text).toContain('未校验:连不上数据库(ECONNREFUSED)');
-    expect(text).not.toContain('问题 0 项');
+    expect(text).toContain('Not checked:连不上数据库(ECONNREFUSED)');
+    expect(text).not.toContain('0 issues');
   });
 
   it('falls back to a generic reason when the degradation gave none', () => {
@@ -540,7 +540,7 @@ describe('renderDriftReport', () => {
         checked: false,
         findings: []
       })
-    ).toContain('未校验:未知原因');
+    ).toContain('Not checked:unknown reason');
   });
 });
 
@@ -554,7 +554,7 @@ describe('describeDriftSummary', () => {
         findings: [],
         reason: '读不到密码'
       })
-    ).toBe('数据库漂移未校验:Hero(读不到密码)');
+    ).toBe('Database drift not checked: Hero (读不到密码)');
     expect(
       describeDriftSummary({
         entityName: 'Hero',
@@ -562,7 +562,7 @@ describe('describeDriftSummary', () => {
         checked: true,
         findings: []
       })
-    ).toBe('数据库漂移校验通过:Hero(真实表结构与 def 一致)');
+    ).toBe('Database drift check passed: Hero (real table schema matches def)');
     expect(
       describeDriftSummary({
         entityName: 'Hero',
@@ -570,7 +570,7 @@ describe('describeDriftSummary', () => {
         checked: true,
         findings: [{ kind: 'missing-table', tableName: 'tbl_Hero', message: 'x' }]
       })
-    ).toBe('数据库漂移发现 1 项:Hero,详见「KBEngine 数据库漂移」输出面板');
+    ).toBe('Database drift found 1 items: Hero; see the "KBEngine Database Drift" output panel');
   });
 
   it('falls back to a generic reason when none was given', () => {
@@ -581,7 +581,7 @@ describe('describeDriftSummary', () => {
         checked: false,
         findings: []
       })
-    ).toContain('未知原因');
+    ).toContain('unknown reason');
   });
 });
 
@@ -622,7 +622,7 @@ describe('checkDatabaseDrift', () => {
     expect(report.checked).toBe(false);
     expect(report.findings).toEqual([]);
     expect(report.reason).toBe('连不上数据库(connect ECONNREFUSED 127.0.0.1:13306)');
-    expect(describeDriftSummary(report)).toContain('未校验');
+    expect(describeDriftSummary(report)).toContain('not checked');
   });
 
   it('degrades to not-verified when reading the table list fails', async () => {
@@ -862,8 +862,8 @@ describe('publishDriftReport', () => {
       }
     );
 
-    expect(calls).toEqual(['clear', 'append:# KBEngine 数据库漂移: Hero', 'show']);
-    expect(warnings).toEqual(['数据库漂移发现 1 项:Hero,详见「KBEngine 数据库漂移」输出面板']);
+    expect(calls).toEqual(['clear', 'append:# KBEngine Database Drift: Hero', 'show']);
+    expect(warnings).toEqual(['Database drift found 1 items: Hero; see the "KBEngine Database Drift" output panel']);
     expect(infos).toEqual([]);
   });
 
@@ -890,8 +890,8 @@ describe('publishDriftReport', () => {
     });
 
     expect(infos).toEqual([
-      '数据库漂移校验通过:Hero(真实表结构与 def 一致)',
-      '数据库漂移未校验:Hero(连不上数据库)'
+      'Database drift check passed: Hero (real table schema matches def)',
+      'Database drift not checked: Hero (连不上数据库)'
     ]);
   });
 });

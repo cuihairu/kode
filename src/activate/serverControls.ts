@@ -746,7 +746,7 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
   // 机器人控制(IDE-BOT-001 A 案:本地单机闭环):经 bots 进程 telnet
   // python 层 addBots/计数;引擎无逐个减员 API,减员=停进程(编排层与
   // 命令提示都如实说明)。白名单闸在 telnet 服务层,此处只做编排。
-  const botsChannel = vscode.window.createOutputChannel('KBEngine 机器人');
+  const botsChannel = vscode.window.createOutputChannel(l10nText('KBEngine Bots'));
   const botsControlDeps: BotsControlDeps = {
     getBotsTarget: () => telnetService.getTargets().find(target => target.component === 'bots') ?? null,
     connectTarget: key => telnetService.connectTarget(key),
