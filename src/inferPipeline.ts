@@ -27,6 +27,36 @@ import { kbeStubDir, readManagedDirSetting, readStubDirSetting, resolveManagedDi
 import { processStubRoot, pythonProcessFromPath } from './backend/pythonProcess';
 import { generatedStubPath } from './backend/inferredEnrichment';
 import { spawnProcess } from './backend/processManager';
+import { l10nText } from './nlsRuntime';
+
+// ---------------------------------------------------------------------------
+// 调用记录通道(2026-11-27 用户令「调用 pyrefly 要能看到调用记录」):每次
+// 推断运行的关键决策与批次结果都入账 OUTPUT——开/关、二进制定位、指纹跳过、
+// 每批 stubgen 的文件数/输出目录/退出码/耗时、非零退出时的 stderr 尾随。
+// 此前失败只进 console.warn(宿主控制台,用户不可见),激活/观察器路径全程
+// 静默 → 用户侧零调用记录。懒建单例(真实宿主同名通道合一);测试面经
+// resetInferLogForTests 复位。
+// ---------------------------------------------------------------------------
+
+let inferLogChannel: vscode.OutputChannel | null = null;
+
+function inferLog(): vscode.OutputChannel {
+  inferLogChannel ??= vscode.window.createOutputChannel(l10nText('KBEngine Infer'));
+  return inferLogChannel;
+}
+
+function logInferLine(line: string): void {
+  try {
+    inferLog().appendLine(line);
+  } catch {
+    // 受限宿主无 OUTPUT 面:记录缺失不拖垮推断本身
+  }
+}
+
+/** 测试面:清懒建单例(配合 windowState.reset,避免跨用例拿到旧通道对象) */
+export function resetInferLogForTests(): void {
+  inferLogChannel = null;
+}
 
 // ---------------------------------------------------------------------------
 // 设置键（package.json contributes.configuration 同步）
@@ -444,6 +474,7 @@ export async function runInfer(
 ): Promise<InferRunResult> {
   const enabled = generatedInferencesEnabled();
   if (!enabled) {
+    logInferLine(l10nText('pyrefly infer disabled (kbengine.infer.enabled=false)'));
     if (!options.silent) {
       await vscode.window.showInformationMessage('pyrefly 推断已关闭（kbengine.infer.enabled）');
     }
@@ -454,6 +485,7 @@ export async function runInfer(
     { exists: deps.exists, envPath: process.env.PATH, homeDir: process.env.HOME }
   );
   if (pyreflyPath === null) {
+    logInferLine(l10nText('pyrefly binary not found: run pipx install pyrefly or set kbengine.infer.pyreflyPath'));
     if (!options.silent) {
       await vscode.window.showInformationMessage(
         '未找到 pyrefly 二进制：请 pipx install pyrefly 或设置 kbengine.infer.pyreflyPath'
@@ -461,6 +493,7 @@ export async function runInfer(
     }
     return { status: 'not-found', exitCodes: [], message: 'pyrefly binary not found' };
   }
+  logInferLine(l10nText('pyrefly binary: {path}', { path: pyreflyPath }));
   const managedDir = managedDirName();
   const pythonVersion = vscode.workspace
     .getConfiguration('kbengine')
@@ -502,7 +535,10 @@ export async function runInfer(
             if (!source.endsWith('.py')) { return true; }
             const stub = generatedStubPath(workspaceRoot, managedDir, source);
             return stub && (outputTimes.get(paths.normalize(stub)) ?? -1) >= mtime;
-          })) { continue; }
+          })) {
+            logInferLine(l10nText('skipped (unchanged): {root}', { root: scriptsRoot }));
+            continue;
+          }
         }
       }
       const sharedPaths = [stubDir, paths.join(stubDir, 'shared'), scriptsRoot, paths.join(scriptsRoot, 'common')];
@@ -535,9 +571,21 @@ export async function runInfer(
             args.push('--search-path', searchPath);
           }
         }
+        const startedAt = Date.now();
         const outcome = await deps.spawn(pyreflyPath!, [...args, ...targets], { cwd });
         if (outcome.code !== 0) {
           console.warn('[kbengine] pyrefly stubgen:', outcome.stderr || outcome.stdout);
+        }
+        logInferLine(l10nText('stubgen {count} files -> {output} (exit {code}, {ms}ms)', {
+          count: targets.length,
+          output,
+          code: outcome.code,
+          ms: Date.now() - startedAt
+        }));
+        if (outcome.code !== 0) {
+          logInferLine(l10nText('pyrefly output: {tail}', {
+            tail: (outcome.stderr || outcome.stdout).slice(-800)
+          }));
         }
         exitCodes.push(outcome.code);
       };
@@ -566,6 +614,14 @@ export async function runInfer(
     }
   }
   if (exitCodes.some(code => code === 0)) { generatedStubsDidChange.fire(); }
+  if (exitCodes.length === 0) {
+    logInferLine(l10nText('pyrefly stubgen found no python scripts'));
+  } else {
+    logInferLine(l10nText('pyrefly stubgen done: {batches} batches, exit codes: {codes}', {
+      batches: exitCodes.length,
+      codes: exitCodes.join(', ')
+    }));
+  }
   if (!options.silent) {
     const ok = exitCodes.length > 0 && exitCodes.every((code) => code === 0);
     await vscode.window.showInformationMessage(

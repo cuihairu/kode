@@ -170,9 +170,13 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     // (链内各步已各自降级,这里是传播面保险);warning 存照,UI 照常可用。
     try {
       await syncJsoncAssociation(context, { silent: true });
-      if (await generatePythonStubs()) {
-        await generateProjectStubs();
-      }
+      await generatePythonStubs();
+      // 推断管道有自己的总闸(kbengine.infer.enabled,默认开),不随
+      // python.stubExport 关而停摆——旧链只有桩导出成功才点火 pyrefly,
+      // stubExport=false 的工作区激活/保存两条路都静默死(2026-11-27 用户
+      // 报障「调用 pyrefly 看不到调用记录」)。stubExport 开着时仍先于
+      // pyrefly 完成(搜索路径就绪);关着时 search-path 缺目录本就被跳过。
+      await generateProjectStubs();
     } catch (error) {
       console.error('[kbengine] stub export chain failed:', error);
       void Promise.resolve(

@@ -8,6 +8,7 @@ import {
   createCopySyncScheduler,
   fileSystemInferDeps,
   INFER_ENABLED_DEFAULT,
+  resetInferLogForTests,
   runInfer,
   syncInferredCopy,
   activateInferPipeline,
@@ -20,6 +21,7 @@ import {
   messages,
   Uri,
   window,
+  windowState,
   workspace as stubWorkspace,
   workspaceState
 } from './helpers/vscodeStub';
@@ -819,5 +821,85 @@ describe('infer 激活命令处理器(覆盖补测)', () => {
     activateInferPipeline(context);
     await commands.executeCommand('kbengine.managedDir.syncExclusions');
     expect(messages.error).toHaveLength(0);
+  });
+});
+
+describe('pyrefly 调用记录(OUTPUT 通道,2026-11-27 用户令)', () => {
+  const inferLines = (): string => {
+    const channel = windowState.channels.find(entry => entry.name === 'KBEngine Infer');
+    return (channel?.lines ?? []).join('');
+  };
+
+  beforeEach(() => {
+    resetInferLogForTests();
+    windowState.reset();
+    configurationOverrides.set('kbengine', { 'infer.enabled': true });
+  });
+
+  it('开关关闭:disabled 行入账,不 spawn', async () => {
+    configurationOverrides.set('kbengine', { 'infer.enabled': false });
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    let spawned = 0;
+    const deps = makeDeps({ files, spawn: async () => { spawned += 1; return { code: 0, stdout: '', stderr: '' }; } });
+    await runInfer(makeContext(), deps, { silent: true });
+    expect(inferLines()).toContain('disabled');
+    expect(spawned).toBe(0);
+  });
+
+  it('pyrefly 未找到:not-found 行入账', async () => {
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const deps = makeDeps({ files, exists: () => false });
+    await runInfer(makeContext(), deps, { silent: true });
+    expect(inferLines()).toContain('pipx install pyrefly');
+  });
+
+  it('成功批次:二进制定位 + stubgen 行带 exit 0 与输出目录 + done 汇总', async () => {
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    const deps = makeDeps({ files });
+    await runInfer(makeContext(), deps, { silent: true });
+    const text = inferLines();
+    expect(text).toContain('pyrefly binary: /opt/pyrefly');
+    expect(text).toMatch(/stubgen 1 files -> .*generated.*\(exit 0/);
+    expect(text).toContain('done: 2 batches');
+  });
+
+  it('非零退出:stderr 尾随入账(失败原因用户可见)', async () => {
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    const deps = makeDeps({ files, spawn: async () => ({ code: 1, stdout: '', stderr: 'boom: bad config' }) });
+    await runInfer(makeContext(), deps, { silent: true });
+    const text = inferLines();
+    expect(text).toMatch(/exit 1/);
+    expect(text).toContain('boom: bad config');
+  });
+
+  it('reuse 指纹命中:skipped 行入账(调用记录含「为何没调」)', async () => {
+    const { root, files } = makeTmpWorkspace();
+    const binary = path.join(root, 'pyrefly');
+    fs.writeFileSync(binary, '');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': binary });
+    const deps = {
+      ...makeDeps({
+        files,
+        spawn: async (_cmd, args) => {
+          const output = args[args.indexOf('--output-dir') + 1];
+          fs.mkdirSync(output, { recursive: true });
+          fs.writeFileSync(path.join(output, path.basename(args.at(-1)!) + 'i'), '# Generated');
+          return { code: 0, stdout: '', stderr: '' };
+        }
+      }),
+      listInferenceFiles: fileSystemInferDeps.listInferenceFiles
+    };
+    const context = makeContext();
+    const options = { silent: true, reuse: true };
+    await runInfer(context, deps, options);
+    await runInfer(context, deps, options);
+    expect(inferLines()).toContain('skipped (unchanged)');
   });
 });
