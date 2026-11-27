@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import type { EntityMappingManager } from './entityMapping';
+import { parsePythonMethodBlocks, type EntityMappingManager } from './entityMapping';
 import {
   buildDefCallChain,
   findDefMethodByStart,
@@ -16,6 +16,7 @@ import {
 } from './backend/defCallChainViewLogic';
 import { WEBVIEW_THEME_CSS } from './webviewTheme';
 import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
+import { CALL_CHAIN_VIEW, supportsDiagnosticsSidebar } from './diagnosticsSidebar';
 
 export interface CallChainPickItem extends vscode.QuickPickItem {
   line: number;
@@ -26,6 +27,19 @@ export interface CallChainPickItem extends vscode.QuickPickItem {
 export interface CallChainControllerContext {
   extensionUri?: vscode.Uri;
   workspaceState?: vscode.Memento;
+}
+
+interface CallChainOrigin {
+  uri: vscode.Uri;
+  position: vscode.Position;
+  group?: vscode.TabGroup;
+  viewColumn?: vscode.ViewColumn;
+}
+
+interface CallChainNavigation {
+  version: number;
+  origin: CallChainOrigin;
+  chain: DefCallChain;
 }
 
 function escapeHtml(value: string): string {
@@ -48,12 +62,15 @@ function randomNonce(): string {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export class CallChainController {
+export class CallChainController implements vscode.WebviewViewProvider {
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
   private panel: vscode.WebviewPanel | null = null;
+  private sidebar?: vscode.WebviewView;
   private panelSubscriptions: Array<{ dispose(): void }> = [];
   private commandQueue: Promise<void> = Promise.resolve();
+  private navigation?: CallChainNavigation;
+  private renderVersion = 0;
 
   constructor(
     private readonly entityMappingManager: EntityMappingManager,
@@ -64,6 +81,8 @@ export class CallChainController {
     this.panelSubscriptions.splice(0).forEach(subscription => subscription.dispose());
     this.panel?.dispose();
     this.panel = null;
+    this.sidebar = undefined;
+    this.navigation = undefined;
     this.onDidChangeCodeLensesEmitter.dispose();
   }
 
@@ -127,8 +146,15 @@ export class CallChainController {
     line?: number,
     methodName?: string
   ): Promise<void> {
+    const activeEditor = vscode.window.activeTextEditor;
+    const editor = !uri || activeEditor?.document.uri.toString() === uri.toString()
+      ? activeEditor
+      : vscode.window.visibleTextEditors?.find(visible => visible.document.uri.toString() === uri.toString());
+    const cursor = editor?.selection?.active;
+    const viewColumn = editor?.viewColumn;
+    const group = vscode.window.tabGroups?.all.find(candidate => candidate.viewColumn === viewColumn);
     const operation = this.commandQueue.then(() =>
-      this.showForActiveEditorInternal(uri, line, methodName)
+      this.showForActiveEditorInternal(uri, line, methodName, editor?.document, cursor, viewColumn, group)
     );
     this.commandQueue = operation.catch(() => undefined);
     return operation;
@@ -137,34 +163,41 @@ export class CallChainController {
   private async showForActiveEditorInternal(
     uri?: vscode.Uri,
     line?: number,
-    methodName?: string
+    methodName?: string,
+    document?: vscode.TextDocument,
+    cursor?: vscode.Position,
+    viewColumn?: vscode.ViewColumn,
+    group?: vscode.TabGroup
   ): Promise<void> {
     if (!this.enabled()) {
       vscode.window.showInformationMessage('Def call chain hints are disabled');
       return;
     }
 
-    let selected: CallChainPickItem | undefined;
-    const editor = vscode.window.activeTextEditor;
-    if ((!uri || !methodName || !line) && editor?.document.languageId === 'python') {
-      selected = await this.pickMethod(editor.document);
-      uri = editor.document.uri;
+    let position: vscode.Position | undefined;
+    if ((!uri || !methodName || !line) && document?.languageId === 'python') {
+      const enclosing = cursor && this.methodAtCursor(document, cursor.line);
+      const selected = await this.pickMethod(document, enclosing);
+      uri = document.uri;
       line = selected?.line;
       methodName = selected?.methodName;
+      if (enclosing && enclosing.line === line) {
+        position = cursor;
+      }
     }
     if (!uri || !methodName || !line) {
       vscode.window.showInformationMessage('Open a Python entity script to show a call chain');
       return;
     }
 
-    let index = this.entityMappingManager.getIndexForPythonFile(uri!.fsPath);
+    let index = this.entityMappingManager.getIndexForPythonFile(uri.fsPath);
     if (!index) {
       // 故障 C(2026-11-18 P0):先查已有索引(增量命中即用)——命中不进这里。
       // 未命中才走兜底等待:交互预算(1s)内首扫完成则重查一次,超时即放行
       // 按 miss 收口。旧版在此干等首扫 5s,大树首扫秒级+时命令应答常态卡死。
       const ready = await withInteractiveScanBudget(this.entityMappingManager.waitForInitialScan());
       if (ready) {
-        index = this.entityMappingManager.getIndexForPythonFile(uri!.fsPath);
+        index = this.entityMappingManager.getIndexForPythonFile(uri.fsPath);
       }
     }
     if (!index) {
@@ -189,12 +222,28 @@ export class CallChainController {
       return;
     }
     /* istanbul ignore stop */
-    this.showPreview(chain);
+    await this.showPreview(chain, { uri, position: position ?? new vscode.Position(line - 1, 0), viewColumn, group });
+  }
+
+  private methodAtCursor(document: vscode.TextDocument, line: number) {
+    const line1 = line + 1;
+    return parsePythonMethodBlocks(document.getText(), document.fileName)
+      .reverse()
+      .find(method => method.line <= line1 && method.endLine >= line1);
   }
 
   private async pickMethod(
-    document: vscode.TextDocument
+    document: vscode.TextDocument,
+    method?: Pick<CallChainPickItem, 'line' | 'methodName'>
   ): Promise<CallChainPickItem | undefined> {
+    if (method) {
+      const definition = await this.entityMappingManager.resolveMethodDefinition(
+        document.fileName, method.methodName
+      );
+      if (definition) {
+        return { label: method.methodName, line: method.line, methodName: method.methodName };
+      }
+    }
     const declarations = findPythonMethodDeclarations(document.getText());
     if (declarations.length === 0) {
       return undefined;
@@ -225,28 +274,99 @@ export class CallChainController {
     }) as CallChainPickItem | undefined;
   }
 
-  /** tab 选择持久到工作区状态(webview 消息驱动;无 workspaceState 时不记忆) */
   private handleWebviewMessage(message: unknown): void {
-    const tab = normalizeCallChainTab(
-      (message as { type?: string; tab?: unknown } | null)?.tab
-    );
-    if ((message as { type?: string } | null)?.type === 'callChainTab' && tab) {
+    const request = message as { type?: string; tab?: unknown; version?: unknown; node?: unknown } | null;
+    const tab = normalizeCallChainTab(request?.tab);
+    if (request?.type === 'callChainTab' && tab) {
       void this.context.workspaceState?.update(CALL_CHAIN_TAB_STATE_KEY, tab);
+    }
+    const navigation = this.navigation;
+    if (request?.type !== 'callChainSource' || !navigation || request.version !== navigation.version) {
+      return;
+    }
+    if (request.node === 'origin') {
+      void this.openSource(navigation, navigation.origin.uri, navigation.origin.position);
+    } else if (typeof request.node === 'number' && Number.isInteger(request.node)) {
+      const source = navigation.chain.nodes[request.node]?.source;
+      if (source) {
+        void this.openSource(navigation, vscode.Uri.file(source.filePath), new vscode.Position(source.line - 1, source.character));
+      }
     }
   }
 
-  private showPreview(chain: DefCallChain): void {
+  private async openSource(navigation: CallChainNavigation, uri: vscode.Uri, position: vscode.Position): Promise<void> {
+    const { origin } = navigation;
+    try {
+      const document = await vscode.workspace.openTextDocument(uri);
+      if (navigation !== this.navigation) {
+        return;
+      }
+      const panelColumn = this.panel?.viewColumn;
+      const groups = vscode.window.tabGroups?.all;
+      const sourceGroup = groups?.find(group => group === origin.group && group.viewColumn !== panelColumn);
+      const viewColumn = sourceGroup?.viewColumn ??
+        groups?.find(group => group.viewColumn === origin.viewColumn && group.viewColumn !== panelColumn)?.viewColumn ??
+        groups?.find(group => group.viewColumn !== panelColumn)?.viewColumn ??
+        (groups && panelColumn ? vscode.ViewColumn.Beside : origin.viewColumn);
+      const target = document.validatePosition(position);
+      const selection = new vscode.Range(target, target);
+      const editor = await vscode.window.showTextDocument(document, { viewColumn, selection, preview: false });
+      editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    } catch {
+      if (navigation === this.navigation) {
+        void vscode.window.showWarningMessage(`${strings(resolvePanelLocale()).defCallChain.sourceUnavailable} ${path.basename(uri.fsPath)}`);
+      }
+    }
+  }
+
+  resolveWebviewView(view: vscode.WebviewView): void {
+    this.sidebar = view;
+    view.webview.options = this.panelOptions();
+    const messages = view.webview.onDidReceiveMessage(message => this.handleWebviewMessage(message));
+    const disposal = view.onDidDispose(() => {
+      messages.dispose();
+      disposal.dispose();
+      if (this.sidebar === view) {
+        this.sidebar = undefined;
+      }
+    });
+    if (this.navigation) {
+      this.renderSidebar(view, this.navigation.chain);
+    } else {
+      const t = strings(resolvePanelLocale()).defCallChain;
+      view.webview.html = `<!DOCTYPE html><meta charset="utf-8"><p>${t.selectMethod}</p>`;
+    }
+  }
+
+  private renderSidebar(view: vscode.WebviewView, chain: DefCallChain): void {
+    view.description = `${chain.root.entity}.${chain.root.methodName}`;
+    view.webview.html = this.html(chain, renderDefCallChainMermaid(chain), view.webview);
+  }
+
+  private async showPreview(chain: DefCallChain, origin: CallChainOrigin): Promise<void> {
+    this.navigation = { version: ++this.renderVersion, origin, chain };
+    if (supportsDiagnosticsSidebar()) {
+      if (this.sidebar) {
+        this.renderSidebar(this.sidebar, chain);
+        this.sidebar.show(true);
+      } else {
+        await vscode.commands.executeCommand(`${CALL_CHAIN_VIEW}.focus`, { preserveFocus: true });
+      }
+      return;
+    }
     const mermaid = renderDefCallChainMermaid(chain);
+    const title = `${strings(resolvePanelLocale()).defCallChain.title} · ${chain.root.entity}.${chain.root.methodName}`;
     if (this.panel) {
+      this.panel.title = title;
       this.panel.webview.html = this.html(chain, mermaid);
-      this.panel.reveal();
+      this.panel.reveal(undefined, true);
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       'kbengine.defCallChain',
-      'KBEngine Def Call Chain',
-      vscode.ViewColumn.Beside,
+      title,
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       this.panelOptions()
     );
     this.panel = panel;
@@ -257,9 +377,9 @@ export class CallChainController {
     this.panelSubscriptions.push(panel.onDidDispose(() => {
       if (this.panel === panel) {
         this.panel = null;
+        this.navigation = undefined;
       }
     }));
-    this.panel = panel;
   }
 
   private panelOptions(): vscode.WebviewPanelOptions & vscode.WebviewOptions {
@@ -273,20 +393,23 @@ export class CallChainController {
     return { enableScripts: true };
   }
 
-  /** 文本链(兜底视图/无脚本宿主可见) */
-  private chainText(chain: DefCallChain): string {
+  private chainTextHtml(chain: DefCallChain): string {
+    const nodes = new Map(chain.nodes.map((node, index) => [node.id, { node, index }]));
+    const label = (id: string): string => {
+      const entry = nodes.get(id);
+      const text = escapeHtml(entry?.node.signature ?? id);
+      return entry?.node.source
+        ? `<button type="button" class="call-chain-link" data-source-node="${entry.index}">${text}</button>`
+        : text;
+    };
     return [
-      chain.root.signature,
-      ...chain.edges.map(edge => {
-        const target = chain.nodes.find(node => node.id === edge.to);
-        return `${edge.from} --${edge.receiver}--> ${target?.signature ?? edge.to}`;
-      })
+      label(chain.root.id),
+      ...chain.edges.map(edge => `${label(edge.from)} --${edge.receiver}--&gt; ${label(edge.to)}`)
     ].join('\n');
   }
 
-  private html(chain: DefCallChain, mermaid: string): string {
+  private html(chain: DefCallChain, mermaid: string, webview = this.panel?.webview): string {
     const nonce = randomNonce();
-    const webview = this.panel?.webview;
     const cspSource = webview?.cspSource ?? 'vscode-webview:';
     const scriptUri = webview && typeof webview.asWebviewUri === 'function' && this.context.extensionUri
       ? String(webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'defCallChainViewer.js')))
@@ -294,7 +417,9 @@ export class CallChainController {
     const initialTab = resolveInitialCallChainTab(this.configuredView(), this.storedTab());
     const payload = toEmbeddableJson({
       mermaid,
-      text: this.chainText(chain),
+      version: this.navigation?.version,
+      sourceNodes: chain.nodes.flatMap((node, index) => node.source ? [index] : []),
+      sourceAction: strings(resolvePanelLocale()).defCallChain.openSource,
       configView: this.configuredView(),
       storedTab: initialTab
     });
@@ -315,6 +440,12 @@ export class CallChainController {
 body { padding: 0; }
 header { padding: 10px 16px 0; border-bottom: 1px solid var(--kode-border); background: var(--kode-surface); }
 .call-chain-tabs { display: flex; gap: 4px; }
+.call-chain-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.call-chain-link { max-width: 100%; border: 0; padding: 0; background: transparent; color: var(--vscode-textLink-foreground); font: inherit; text-align: left; text-decoration: underline; cursor: pointer; overflow-wrap: anywhere; }
+.call-chain-origin { padding: 4px 0; font-family: var(--kode-ui); font-size: var(--kode-t-meta); }
+.call-chain-link:focus-visible, .call-chain-source-node:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+.call-chain-source-node { cursor: pointer; }
+.call-chain-source-node:hover .nodeLabel { text-decoration: underline; }
 .call-chain-tabs [role="tab"] {
   padding: 6px 16px; font-size: var(--kode-t-meta); color: var(--kode-fg-3);
   border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0;
@@ -327,7 +458,7 @@ header { padding: 10px 16px 0; border-bottom: 1px solid var(--kode-border); back
 .call-chain-notice { margin: 10px 16px; }
 .call-chain-hint { padding: 0 16px 6px; font-size: var(--kode-t-tag); color: var(--kode-fg-4); }
 .call-chain-legend {
-  display: flex; gap: 16px; align-items: center; padding: 8px 16px;
+  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 8px 12px;
   border-top: 1px solid var(--kode-border); background: var(--kode-surface);
   font-size: var(--kode-t-meta); color: var(--kode-fg-3); position: fixed; bottom: 0; left: 0; right: 0;
 }
@@ -339,15 +470,18 @@ pre { font-family: var(--kode-mono); font-size: 12.5px; color: var(--kode-fg-2);
       '</head>',
       '<body>',
       '<header>',
+      '<div class="call-chain-toolbar">',
       '<div role="tablist" id="call-chain-tabs" class="call-chain-tabs">',
       `<button type="button" role="tab" id="call-chain-tab-graph" data-call-chain-tab="graph" aria-selected="${initialTab === 'graph' ? 'true' : 'false'}">${t.tabGraph}</button>`,
       `<button type="button" role="tab" id="call-chain-tab-text" data-call-chain-tab="text" aria-selected="${initialTab === 'text' ? 'true' : 'false'}">${t.tabText}</button>`,
+      '</div>',
+      `<button type="button" class="call-chain-link call-chain-origin" data-source-node="origin">${t.returnToSource}</button>`,
       '</div>',
       `<div class="call-chain-hint">${t.tabHint}</div>`,
       '<div id="call-chain-notice" role="status" class="call-chain-notice kode-notice warn" hidden></div>',
       '</header>',
       `<main><div data-call-chain-pane="graph" data-mermaid="${encodeURIComponent(mermaid)}"${initialTab === 'graph' ? '' : ' hidden'}></div>`,
-      `<pre data-call-chain-pane="text"${initialTab === 'text' ? '' : ' hidden'}>${escapeHtml(this.chainText(chain))}</pre></main>`,
+      `<pre data-call-chain-pane="text"${initialTab === 'text' ? '' : ' hidden'}>${this.chainTextHtml(chain)}</pre></main>`,
       `<div class="call-chain-legend" id="call-chain-legend">` +
       `<span class="li"><span class="dot" style="background:#1d3a2a;border:1px solid #89d185"></span>${t.legendCell}</span>` +
       `<span class="li"><span class="dot" style="background:#173a5e;border:1px solid #3794ff"></span>${t.legendBase}</span>` +

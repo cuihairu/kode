@@ -27,7 +27,9 @@ import {
   Position,
   Range,
   Uri,
-  window as stubWindow
+  ViewColumn,
+  window as stubWindow,
+  workspace as stubWorkspace
 } from './helpers/vscodeStub';
 
 // ---------------------------------------------------------------------------
@@ -570,9 +572,56 @@ describe('defCallChainProvider 补测', () => {
     expect(indexCalls).toBe(2);
     expect(panelRegistry.panels).toHaveLength(1);
     const html = panelRegistry.panels[0].webview.html;
-    // chainText 的边行(兜底文本视图可见;'>' 经 escapeHtml 成 &gt;)
-    expect(html).toContain('Hero:BaseMethods:start --cell--&gt; CellMethods.move(UINT32)');
-    expect(html).toContain('CellMethods.move');
+    expect(html).toContain('data-source-node="0">BaseMethods.start(UINT32)</button> --cell--&gt;');
+    expect(html).toContain('data-source-node="1">CellMethods.move(UINT32)</button>');
+  });
+
+  it('opens the indexed implementation in the source group and returns to the invocation line', async () => {
+    const temporaryRoot = mkdtempSync(join(tmpdir(), 'cov-chain-navigation-'));
+    roots.push(temporaryRoot);
+    const source = join(temporaryRoot, 'base.py');
+    const implementation = join(temporaryRoot, 'cell.py');
+    writeFileSync(source, HERO_PY_TEXT);
+    const index = mkIndex(
+      [mkDefinition('start', 'BaseMethods', 2), mkDefinition('move', 'CellMethods', 5)],
+      [
+        { ...mkPythonMethod(source, 'start', 'BaseMethods'), line: 2 },
+        { ...mkPythonMethod(implementation, 'move', 'CellMethods'), line: 9, character: 8 }
+      ]
+    );
+    stubWindow.activeTextEditor = {
+      document: makeTextDocument(HERO_PY_TEXT, { fileName: source, languageId: 'python' }),
+      viewColumn: ViewColumn.One
+    } as never;
+    const controller = newController(newManager(() => index));
+    await controller.showForActiveEditor(stubWindow.activeTextEditor!.document.uri, 2, 'start');
+    const panel = panelRegistry.panels[0];
+    const open = vi.spyOn(stubWorkspace, 'openTextDocument').mockImplementation(async uri => ({
+      uri,
+      validatePosition: (position: Position) => position
+    }));
+    const show = vi.spyOn(stubWindow, 'showTextDocument');
+    try {
+      panelRegistry.fireMessage(panel, { type: 'callChainSource', node: 1, version: 0 });
+      expect(open).not.toHaveBeenCalled();
+      panelRegistry.fireMessage(panel, { type: 'callChainSource', node: 1, version: 1 });
+      await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(1));
+      expect(open.mock.calls[0][0]).toEqual(Uri.file(implementation));
+      expect(show.mock.calls[0][1]).toMatchObject({
+        viewColumn: ViewColumn.One,
+        selection: { start: { line: 8, character: 8 } }
+      });
+      panelRegistry.fireMessage(panel, { type: 'callChainSource', node: 'origin', version: 1 });
+      await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(2));
+      expect(open.mock.calls[1][0]).toEqual(Uri.file(source));
+      expect(show.mock.calls[1][1]).toMatchObject({
+        viewColumn: ViewColumn.One,
+        selection: { start: { line: 1, character: 0 } }
+      });
+    } finally {
+      open.mockRestore();
+      show.mockRestore();
+    }
   });
 
   it('宿主无 crypto.getRandomValues:nonce 走 Math.random 回退仍为 32 位十六进制', async () => {

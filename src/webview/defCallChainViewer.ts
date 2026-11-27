@@ -31,7 +31,9 @@ const mermaid = (globalThis as { mermaid?: typeof mermaidType }).mermaid;
 
 interface CallChainPayload {
   mermaid: string;
-  text: string;
+  version: number;
+  sourceNodes?: number[];
+  sourceAction: string;
   configView: string | null;
   storedTab: string | null;
 }
@@ -71,15 +73,17 @@ function showNotice(notice: string): void {
   }
 }
 
-function postTab(tab: CallChainTab): void {
-  // acquireVsCodeApi may only be called once per lifetime; skip silently when the host is absent (tests)
-  if (typeof window.acquireVsCodeApi === 'function') {
-    window.acquireVsCodeApi().postMessage({ type: 'callChainTab', tab });
-  }
-}
-
 async function activate(): Promise<void> {
   const payload = readPayload();
+  const api = window.acquireVsCodeApi?.();
+  const openSource = (node: number | 'origin') => {
+    api?.postMessage({ type: 'callChainSource', version: payload.version, node });
+  };
+  for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-source-node]')) {
+    const node = button.dataset.sourceNode;
+    button.addEventListener('click', () => openSource(node === 'origin' ? node : Number(node)));
+  }
+
   let tab = resolveInitialCallChainTab(payload.configView, payload.storedTab);
 
   const graphPane = document.querySelector<HTMLElement>('[data-call-chain-pane="graph"]');
@@ -95,6 +99,23 @@ async function activate(): Promise<void> {
     const { svg } = await mermaid.render('kbengine-call-chain-graph', payload.mermaid);
     if (graphPane) {
       graphPane.innerHTML = svg;
+      for (const index of payload.sourceNodes ?? []) {
+        const node = graphPane.querySelector<SVGGElement>(`g.node.call-chain-target-${index}`);
+        if (!node) {
+          continue;
+        }
+        node.classList.add('call-chain-source-node');
+        node.setAttribute('role', 'button');
+        node.setAttribute('tabindex', '0');
+        node.setAttribute('aria-label', `${payload.sourceAction} ${node.querySelector('.nodeLabel')?.textContent ?? ''}`);
+        node.addEventListener('click', () => openSource(index));
+        node.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openSource(index);
+          }
+        });
+      }
     }
   } catch (reason) {
     // On render failure fall back to Text and let the pane header explain why
@@ -112,7 +133,7 @@ async function activate(): Promise<void> {
         return;
       }
       selectTab(target);
-      postTab(target);
+      api?.postMessage({ type: 'callChainTab', tab: target });
     });
   }
 

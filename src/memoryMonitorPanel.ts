@@ -400,7 +400,7 @@ export class MemoryMonitorController {
     this.deps.post({
       command: 'init',
       paused: this.paused,
-      targets: this.targets,
+      targets: this.targets.map(({ key, label }) => ({ key, label })),
       selected: this.selectedKey,
       hz: clampHz(this.deps.getSampleHz())
     });
@@ -444,11 +444,9 @@ interface MonitorPanelMessage {
   value?: boolean;
 }
 
-export class MemoryMonitorPanel {
+export class MemoryMonitorPanel implements vscode.WebviewViewProvider {
   private panel: vscode.WebviewPanel | null = null;
   private controller: MemoryMonitorController | null = null;
-
-  constructor(private readonly context: vscode.ExtensionContext) {}
 
   show(): void {
     if (this.panel) {
@@ -461,8 +459,17 @@ export class MemoryMonitorPanel {
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true }
     );
+    this.attach(this.panel);
+  }
+
+  resolveWebviewView(view: vscode.WebviewView): void {
+    view.webview.options = { enableScripts: true };
+    this.attach(view);
+  }
+
+  private attach(view: vscode.WebviewView | vscode.WebviewPanel): void {
     const locale = resolvePanelLocale();
-    this.controller = new MemoryMonitorController({
+    const controller = new MemoryMonitorController({
       resolveTargets: () => buildMonitorTargets(readTelnetTargetsFromSettings()),
       discoverAlive: async () => {
         const components = await discoverLocalComponents({ timeoutMs: 1500 });
@@ -471,7 +478,7 @@ export class MemoryMonitorPanel {
       getSampleHz: () =>
         vscode.workspace.getConfiguration('kbengine').get<number>('memoryMonitor.sampleHz', 1),
       post: message => {
-        void this.panel?.webview.postMessage(message);
+        void view.webview.postMessage(message);
       },
       notifyWarning: message => {
         void vscode.window.showWarningMessage(message);
@@ -483,22 +490,28 @@ export class MemoryMonitorPanel {
           { type, count }
         )
     });
-    this.panel.webview.onDidReceiveMessage(
-      message => this.handleMessage(message as MonitorPanelMessage),
-      undefined,
-      this.context.subscriptions
-    );
-    this.panel.onDidDispose(
-      () => {
-        this.controller?.dispose();
+    this.controller = controller;
+    let started = false;
+    const messages = view.webview.onDidReceiveMessage(message => {
+      if (message?.command === 'ready' && !started) {
+        started = true;
+        controller.start();
+      } else if (started) {
+        this.handleMessage(controller, message as MonitorPanelMessage);
+      }
+    });
+    const disposal = view.onDidDispose(() => {
+      messages.dispose();
+      disposal.dispose();
+      controller.dispose();
+      if (this.controller === controller) {
         this.controller = null;
+      }
+      if (this.panel === view) {
         this.panel = null;
-      },
-      undefined,
-      this.context.subscriptions
-    );
-    this.panel.webview.html = renderPanelHtml(locale);
-    this.controller.start();
+      }
+    });
+    view.webview.html = renderPanelHtml(locale);
   }
 
   dispose(): void {
@@ -508,9 +521,8 @@ export class MemoryMonitorPanel {
     this.panel = null;
   }
 
-  private handleMessage(message: MonitorPanelMessage): void {
-    const controller = this.controller;
-    if (!controller) {
+  private handleMessage(controller: MemoryMonitorController, message: MonitorPanelMessage | null): void {
+    if (!message) {
       return;
     }
     if (message.command === 'select' && message.key) {
@@ -560,13 +572,12 @@ function renderPanelHtml(locale: WebviewLocale): string {
   body { padding: 12px; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
   /* Top: component button bar (prototype .topbar) */
   .topbar {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
     background: var(--kode-surface); border: 1px solid var(--kode-border);
     border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; flex: none;
   }
-  .topbar .icon { font-size: 16px; }
   .topbar .title { font-weight: 600; color: var(--kode-fg); }
-  .topbar .spacer { flex: 1; }
+  #compButtons { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; }
   .comp-btn {
     padding: 3px 10px; border-radius: 4px; border: 1px solid var(--kode-border);
     background: var(--kode-bg); color: var(--kode-fg); cursor: pointer; font-size: 12px;
@@ -584,7 +595,7 @@ function renderPanelHtml(locale: WebviewLocale): string {
     background: #cca700; color: #000; font-size: 11px; font-weight: 600;
   }
   /* Number cards (prototype .cards) */
-  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; flex: none; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr)); gap: 10px; margin-bottom: 12px; flex: none; }
   .card {
     background: var(--kode-surface); border: 1px solid var(--kode-border);
     border-radius: 6px; padding: 12px 14px; position: relative; overflow: hidden;
@@ -602,7 +613,7 @@ function renderPanelHtml(locale: WebviewLocale): string {
     border-radius: 6px; padding: 14px 16px; flex: 1; min-height: 0;
     display: flex; flex-direction: column;
   }
-  .chart-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .chart-header { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 8px; }
   .chart-header .label { color: var(--kode-fg); font-weight: 600; font-size: 13px; }
   .chart-header .legend { display: flex; gap: 14px; margin-left: auto; }
   .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--kode-fg-3); }
@@ -630,16 +641,21 @@ function renderPanelHtml(locale: WebviewLocale): string {
   /* Nonzero leak red border (canvas-adjacent literal shares #f14c4c family) */
   .counter-chip.leaked { border-color: #f14c4c; }
   .counter-chip.leaked .num { color: #f14c4c; }
+  @media (max-width: 480px), (max-height: 480px) {
+    body { height: auto; min-height: 100vh; overflow: auto; padding: 8px; }
+    .chart-area { min-height: 180px; padding: 8px; }
+    .chart-header .legend { flex-wrap: wrap; gap: 6px 10px; margin-left: 0; }
+    .card { padding: 8px; }
+    .card .value { font-size: 18px; }
+  }
 </style>
 </head>
 <body>
 <div class="topbar">
-  <span class="icon">📊</span>
   <span class="title">${t.title}</span>
-  <span class="spacer"></span>
   <span id="compButtons"></span>
   <span class="paused-badge" id="pausedBadge">${t.pausedBadge}</span>
-  <button class="comp-btn" id="pauseBtn" style="margin-left:12px">${t.pause}</button>
+  <button class="comp-btn" id="pauseBtn">${t.pause}</button>
   <button class="comp-btn" id="clearBtn">${t.clear}</button>
   <span class="muted" id="noTargets" style="display:none;color:var(--kode-fg-3);font-size:11px;max-width:420px">${t.noTargets}</span>
 </div>
@@ -900,6 +916,7 @@ function renderPanelHtml(locale: WebviewLocale): string {
     }
   });
   resize();
+  vscode.postMessage({ command: 'ready' });
 </script>
 </body>
 </html>`;

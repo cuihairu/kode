@@ -82,6 +82,7 @@ import { readDerivedTelnetTargets } from '../telnetDeriveTargets';
 import { makeProbeOne, TelnetService, updateTelnetStatusBar } from '../telnetService';
 import { TelnetWebView } from '../telnetWebView';
 import { MemoryMonitorPanel, MEMORY_MONITOR_COMMAND } from '../memoryMonitorPanel';
+import { MEMORY_MONITOR_VIEW, supportsDiagnosticsSidebar } from '../diagnosticsSidebar';
 import { runPythonConsoleEntry } from '../telnetPythonConsole';
 import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '../backend/botsControl';
 import { TelnetTreeProvider } from '../telnetTree';
@@ -745,8 +746,18 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
 
   // Memory monitor panel (right-column webview): per-process RSS / entity
   // count / debugTracing counters sampled over the existing telnet face
-  const memoryMonitorPanel = new MemoryMonitorPanel(context);
-  const showMemoryMonitorCommand = vscode.commands.registerCommand(MEMORY_MONITOR_COMMAND, () => {
+  const memoryMonitorPanel = new MemoryMonitorPanel();
+  const dockMemoryMonitor = supportsDiagnosticsSidebar();
+  if (dockMemoryMonitor) {
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(MEMORY_MONITOR_VIEW, memoryMonitorPanel, {
+      webviewOptions: { retainContextWhenHidden: true }
+    }));
+  }
+  const showMemoryMonitorCommand = vscode.commands.registerCommand(MEMORY_MONITOR_COMMAND, async () => {
+    if (dockMemoryMonitor) {
+      await vscode.commands.executeCommand(`${MEMORY_MONITOR_VIEW}.focus`, { preserveFocus: true });
+      return;
+    }
     memoryMonitorPanel.show();
   });
   context.subscriptions.push(showMemoryMonitorCommand, memoryMonitorPanel);

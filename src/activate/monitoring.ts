@@ -10,6 +10,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { l10nText } from '../nlsRuntime';
+import { DIAGNOSTICS_SIDEBAR_CONTEXT, DIAGNOSTICS_TOOLS_VIEW, supportsDiagnosticsSidebar } from '../diagnosticsSidebar';
 import {
   INDEX_CACHE_DIR_NAME,
   INDEX_CACHE_SCHEMA_VERSION,
@@ -202,6 +203,10 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
       { label: `$(shield) ${l10nText('Check compatibility')}`, description: l10nText('Check the editor and engine environment'), detail: 'Compatibility', command: 'kbengine.compatibility.check' },
       { label: l10nText('Server and runtime'), kind: vscode.QuickPickItemKind.Separator },
       { label: `$(graph) ${l10nText('Monitor servers')}`, description: l10nText('View component status and metrics'), detail: 'Monitoring', command: 'kbengine.monitoring.show' },
+      { label: `$(pulse) ${l10nText('Open Memory Monitor')}`, description: l10nText('View process memory, entity counts, and object counters'), command: 'kbengine.memoryMonitor.show' },
+      { label: `$(list-tree) ${l10nText('Open engine logs')}`, description: l10nText('Search and filter KBEngine log output'), command: 'kbengine.logs.showViewer' },
+      { label: `$(history) ${l10nText('Open hot reload history')}`, description: l10nText('Review reload results by file or target'), command: 'kbengine.hotReload.historyPanel' },
+      { label: `$(terminal) ${l10nText('Open Python console')}`, description: l10nText('Choose a component with Telnet enabled'), command: 'kbengine.telnet.openPythonConsole' },
       { label: `$(pulse) ${l10nText('Profile a running component')}`, description: l10nText('Collect runtime performance information'), detail: 'Runtime Profile', command: 'kbengine.profile.start' },
       { label: `$(search) ${l10nText('Query a running component')}`, description: l10nText('Inspect watcher values'), detail: 'Runtime Queries', command: 'kbengine.runtimeQuery.show' },
       { label: `$(map) ${l10nText('View spaces')}`, description: l10nText('Query running spaces'), detail: 'Spaces', command: 'kbengine.spaces.query' },
@@ -214,6 +219,23 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
     if (selection && 'command' in selection && selection.command) await vscode.commands.executeCommand(selection.command);
   });
   context.subscriptions.push(workbenchCommand);
+  const hasSidebar = supportsDiagnosticsSidebar();
+  if (hasSidebar) {
+    context.subscriptions.push(vscode.window.registerTreeDataProvider(DIAGNOSTICS_TOOLS_VIEW, {
+      getTreeItem: item => item,
+      getChildren: () => []
+    } satisfies vscode.TreeDataProvider<vscode.TreeItem>));
+  }
+  const sidebarReady = hasSidebar
+    ? vscode.commands.executeCommand('setContext', DIAGNOSTICS_SIDEBAR_CONTEXT, true)
+    : undefined;
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.diagnostics.open', async () => {
+    if (sidebarReady) {
+      await sidebarReady;
+      return vscode.commands.executeCommand(`${DIAGNOSTICS_TOOLS_VIEW}.focus`);
+    }
+    return vscode.commands.executeCommand('kbengine.workbench.show');
+  }));
 
   // 初始化实体依赖关系图
   const outputChannel = vscode.window.createOutputChannel('KBEngine Dependency');

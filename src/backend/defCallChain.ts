@@ -20,6 +20,7 @@ export interface DefCallChainNode {
   section: PythonReceiverSection;
   signature: string;
   resolved: boolean;
+  source?: { filePath: string; line: number; character: number };
 }
 
 export interface DefCallChainEdge {
@@ -59,17 +60,22 @@ const CLIENT_SOURCE_NODE_ID = 'client';
 
 export function renderDefCallChainMermaid(chain: DefCallChain): string {
   const lines = ['flowchart TD'];
-  for (const node of chain.nodes) {
+  // Keep semantic IDs in the model. Mermaid uses these short IDs on its SVG nodes.
+  const ids = new Map(chain.nodes.map((node, index) => [node.id, `node${index}`]));
+  for (const [index, node] of chain.nodes.entries()) {
     // The client source uses a stadium shape so it stays visually distinct
     // from resolved boxes (square corners) and unresolved boxes (also stadium,
     // but carrying a "(?)" signature).
     const shape = node.id === CLIENT_SOURCE_NODE_ID
       ? `(["${node.signature}"])`
       : node.resolved ? `["${node.signature}"]` : `(["${node.signature}"])`;
-    lines.push(`    ${node.id}${shape}`);
+    lines.push(`    ${ids.get(node.id)}${shape}`);
+    if (node.source) {
+      lines.push(`    class ${ids.get(node.id)} call-chain-target-${index}`);
+    }
   }
   for (const edge of chain.edges) {
-    lines.push(`    ${edge.from} -->|${edge.receiver}| ${edge.to}`);
+    lines.push(`    ${ids.get(edge.from)} -->|${edge.receiver}| ${ids.get(edge.to)}`);
   }
   return lines.join('\n');
 }
@@ -85,16 +91,24 @@ function methodSignature(method: IndexedMethodDefinition): string {
   return `${method.section}.${method.identity.symbolName}(${args})`;
 }
 
+function methodId(method: IndexedMethodDefinition): string {
+  return `${method.identity.ownerName}:${method.section}:${method.identity.symbolName}`;
+}
+
 function methodNode(
-  method: IndexedMethodDefinition
+  method: IndexedMethodDefinition,
+  implementation: IndexedPythonMethodLocation | undefined
 ): DefCallChainNode {
   return {
-    id: `${method.identity.ownerName}:${method.section}:${method.identity.symbolName}`,
+    id: methodId(method),
     entity: method.identity.ownerName,
     methodName: method.identity.symbolName,
     section: method.section,
     signature: methodSignature(method),
-    resolved: true
+    resolved: true,
+    source: implementation
+      ? { filePath: implementation.filePath, line: implementation.line, character: implementation.character }
+      : { filePath: method.defFile, line: method.line, character: 0 }
   };
 }
 
@@ -211,6 +225,17 @@ export function findDefMethodByStart(
   const candidates = index.methodDefinitions.filter(method =>
     method.identity.symbolName === start.methodName
   );
+  const binding = index.pythonMethods.find(method =>
+    normalizeFilePath(method.filePath) === filePath &&
+    method.line === start.line &&
+    method.methodName === start.methodName
+  )?.binding;
+  if (binding) {
+    const bound = candidates.find(method => sameIdentity(method.identity, binding.identity));
+    if (bound) {
+      return bound;
+    }
+  }
   if (filePath && candidates.length > 1) {
     const sameFile = candidates.filter(method =>
       normalizeFilePath(method.defFile) === filePath
@@ -235,7 +260,7 @@ export function buildDefCallChain(
   }
 
   const depth = Math.max(0, options.depth ?? 3);
-  const rootNode = methodNode(rootDefinition);
+  const rootNode = methodNode(rootDefinition, findBoundMethod(index, rootDefinition));
   const nodes = new Map<string, DefCallChainNode>([[rootNode.id, rootNode]]);
   const edges = new Map<string, DefCallChainEdge>();
   const visited = new Set<string>();
@@ -283,7 +308,7 @@ export function buildDefCallChain(
           candidate.identity.ownerName === index.rootName
         ) ?? targets[0];
         const targetNode = target
-          ? methodNode(target)
+          ? (nodes.get(methodId(target)) ?? methodNode(target, findBoundMethod(index, target)))
           : unresolvedNode(index.rootName, call.methodName, call.receiver);
         if (!nodes.has(targetNode.id)) {
           nodes.set(targetNode.id, targetNode);

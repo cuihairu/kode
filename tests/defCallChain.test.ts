@@ -164,14 +164,17 @@ describe('def call chain', () => {
     const chain = buildChain({ line: 2, methodName: 'start' })!;
     expect(renderDefCallChainMermaid(chain)).toBe([
       'flowchart TD',
-      '    Hero:BaseMethods:start["BaseMethods.start(UINT32)"]',
-      '    Hero:CellMethods:move["CellMethods.move(UINT32)"]',
-      '    Hero:CellMethods:missing:unresolved(["CellMethods.missing(?)"])',
-      '    Hero:BaseMethods:finish["BaseMethods.finish(UINT32)"]',
-      `    Hero:BaseMethods:start -->|cell| Hero:CellMethods:move`,
-      `    Hero:BaseMethods:start -->|cell| Hero:CellMethods:missing:unresolved`,
-      `    Hero:CellMethods:move -->|base| Hero:BaseMethods:finish`,
-      `    Hero:BaseMethods:finish -->|cell| Hero:CellMethods:move`
+      '    node0["BaseMethods.start(UINT32)"]',
+      '    class node0 call-chain-target-0',
+      '    node1["CellMethods.move(UINT32)"]',
+      '    class node1 call-chain-target-1',
+      '    node2(["CellMethods.missing(?)"])',
+      '    node3["BaseMethods.finish(UINT32)"]',
+      '    class node3 call-chain-target-3',
+      '    node0 -->|cell| node1',
+      '    node0 -->|cell| node2',
+      '    node1 -->|base| node3',
+      '    node3 -->|cell| node1'
     ].join('\n'));
   });
 

@@ -155,8 +155,8 @@ describe('def call chain exposed + plain self calls', () => {
       receiver: 'client'
     });
     const mermaid = renderDefCallChainMermaid(chain!);
-    expect(mermaid).toContain('client(["client"])');
-    expect(mermaid).toContain('client -->|client| Avatar:CellMethods:plainExposed');
+    expect(mermaid).toContain('node0(["client"])');
+    expect(mermaid).toContain('node0 -->|client| node1');
   });
 
   it('plain self.X() call resolves to own-section def method when present', () => {

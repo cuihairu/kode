@@ -1,5 +1,13 @@
 {
   "kbengine.viewContainer.explorer": "KBEngine 资源管理器",
+  "kbengine.viewContainer.diagnostics": "Kode 工具",
+  "kbengine.viewContainer.memoryMonitor": "内存监控",
+  "kbengine.viewContainer.callChain": "调用链",
+  "kbengine.view.diagnosticsTools": "运行工具",
+  "kbengine.view.diagnosticsTools.welcome": "[内存监控](command:kbengine.memoryMonitor.show)\n[服务器监控](command:kbengine.monitoring.show)\n[引擎日志](command:kbengine.logs.showViewer)\n[热更历史](command:kbengine.hotReload.historyPanel)\n[Python 控制台](command:kbengine.telnet.openPythonConsole)",
+  "kbengine.view.memoryMonitor": "内存监控",
+  "kbengine.view.callChain": "调用链",
+  "kbengine.command.diagnostics.open.title": "Kode: 打开工具侧栏",
   "kbengine.view.start": "开始",
   "kbengine.view.quickActions": "快速执行",
   "kbengine.view.entityExplorer": "实体",

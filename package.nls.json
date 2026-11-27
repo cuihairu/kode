@@ -1,5 +1,13 @@
 {
   "kbengine.viewContainer.explorer": "KBEngine Explorer",
+  "kbengine.viewContainer.diagnostics": "Kode Tools",
+  "kbengine.viewContainer.memoryMonitor": "Memory Monitor",
+  "kbengine.viewContainer.callChain": "Call Chain",
+  "kbengine.view.diagnosticsTools": "Runtime tools",
+  "kbengine.view.diagnosticsTools.welcome": "[Memory Monitor](command:kbengine.memoryMonitor.show)\n[Server Monitoring](command:kbengine.monitoring.show)\n[Engine Logs](command:kbengine.logs.showViewer)\n[Hot Reload History](command:kbengine.hotReload.historyPanel)\n[Python Console](command:kbengine.telnet.openPythonConsole)",
+  "kbengine.view.memoryMonitor": "Memory Monitor",
+  "kbengine.view.callChain": "Call Chain",
+  "kbengine.command.diagnostics.open.title": "Kode: Open Tools Sidebar",
   "kbengine.view.start": "Get Started",
   "kbengine.view.quickActions": "Quick Actions",
   "kbengine.view.entityExplorer": "Entities",

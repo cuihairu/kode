@@ -966,11 +966,18 @@ The flow graph panel supports:
   - Cancelling the pick does nothing further, honestly
 - Session console modes (TELNET-EZ-001 ①, in-panel): the session area carries a mode toggle — whitelist mode (default: the safe read-only shortcut set plus user `kbengine.telnet.enableCommands`) ↔ free Python mode ("Enter Python REPL", warning-colored badge "runs Python directly on the engine", `>>>` primary prompt with `…` continuation hint). Mode is a per-target session property: it survives disconnects and reconnects. Free mode sends arbitrary Python expressions engine-side; empty commands and `:quit` are refused in both modes. The quick-button set is expanded with read-only `entities` / `globalData` / `KBEngine.debug` expressions (entity type distribution, global data snapshot, engine debug info)
 
+### `kbengine.diagnostics.open`
+
+- Run **Kode: Open Tools Sidebar** from the Command Palette. In VS Code 1.106 and later, Kode Tools opens in the right sidebar. Memory Monitor and Call Chain each use a separate right sidebar tab.
+- Runtime Tools links to server monitoring, engine logs, hot reload history, and the Python console. Select `Call Chain` above a Python entity method to open its call chain in the sidebar. Select a node or text entry to open its source, and use **Back to start** to return to the original location.
+- On older VS Code versions, this command opens the KBEngine Workbench. Runtime tools are available under **Server and runtime**.
+
 ### `kbengine.memoryMonitor.show`
 
+- Open **Memory Monitor** under Kode Tools or run **Show Memory Monitor** from the Command Palette. VS Code 1.105 and earlier use a side-by-side editor panel.
+
 - Title: `Show Memory Monitor`
-- Purpose: open the memory monitor panel (right-column webview) — per-process RSS / entity count / debugTracing object counters sampled over the existing telnet face (no new channel), 60-second canvas chart + number cards + leak counter chips
-- Entries: command palette
+- Purpose: sample per-process RSS, entity counts, and `debugTracing` object counters over Telnet and show a 60-second history.
 - Behavior:
   - Top-bar buttons switch the sampled process; targets expand from the same telnet target derivation chain as the telnet panel (port/password same source; same-named instances #2/#3), each with a status dot (green = sampling, yellow = process alive but reconnecting with exponential backoff 1s→30s, red = the discovery face reports no such process)
   - Switching drops the old telnet session, connects the new target and clears the data window; pause stops sampling and keeps the curves; clear drops the data

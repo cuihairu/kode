@@ -1,5 +1,5 @@
 // UX-REVIEW-006c 验证面:工作台 QuickPick 的分组选择、取消、分隔行不可
-// 执行、命令异常如实上抛、原有一二个动作逐项可达;清单外不夹带无命令的
+// 执行、命令异常如实上抛、动作逐项可达;清单外不夹带无命令的
 // 可选项(不以隐藏高级功能或新增无法执行的按钮充数)。
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
@@ -21,7 +21,7 @@ interface WorkbenchItem {
 }
 
 /**
- * 工作台 12 个原有动作与其分组(与 src/activate/monitoring.ts 清单一致)。
+ * 工作台动作与其分组(与 src/activate/monitoring.ts 清单一致)。
  * 分组标签函数形态调用期取词(010e 教训):模块加载期固化会锁死英文,
  * zh 态用户路径断言(分组行/按中文标签选中)将全部失真。
  */
@@ -40,6 +40,10 @@ function workbenchGroups(): Array<{ label: string; commands: string[] }> {
       label: l10nText('Server and runtime'),
       commands: [
         'kbengine.monitoring.show',
+        'kbengine.memoryMonitor.show',
+        'kbengine.logs.showViewer',
+        'kbengine.hotReload.historyPanel',
+        'kbengine.telnet.openPythonConsole',
         'kbengine.profile.start',
         'kbengine.runtimeQuery.show',
         'kbengine.spaces.query'
@@ -140,7 +144,7 @@ describe('kbengine.workbench.show', () => {
     const run = await openWorkbench({ pick: () => undefined });
     const list = run.lists[0]!;
     const actions = list.filter(item => item.command);
-    // 清单 = 既有 12 个动作,不多不少;每个动作在注册表里真实可达
+    // 每个列出的动作在注册表里真实可达
     expect(actions.map(item => item.command)).toEqual(ALL_ACTIONS);
     for (const command of ALL_ACTIONS) {
       expect(commandRegistry.registrations.has(command), `${command} 未注册`).toBe(true);
@@ -152,7 +156,7 @@ describe('kbengine.workbench.show', () => {
     disposeAll(run.context);
   });
 
-  it('groups the 12 actions under three user-task separators', async () => {
+  it('groups the actions under three user-task separators', async () => {
     const run = await openWorkbench({ pick: () => undefined });
     const groups: Array<{ label: string; commands: string[] }> = [];
     for (const item of run.lists[0]!) {

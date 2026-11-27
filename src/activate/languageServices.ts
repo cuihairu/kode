@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { CallChainController } from '../defCallChainProvider';
+import { CALL_CHAIN_VIEW, supportsDiagnosticsSidebar } from '../diagnosticsSidebar';
 import { DefParamInlayHintsProvider } from '../defParamInlayHints';
 import { DefPropsInlayHintsProvider } from '../defPropsInlayHints';
 import { EngineSpiCodeLensProvider } from '../engineSpiCodeLens';
@@ -551,6 +552,9 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   context.subscriptions.push(rpcCodeLensProvider);
 
   const callChainController = new CallChainController(entityMappingManager, context);
+  if (supportsDiagnosticsSidebar()) {
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(CALL_CHAIN_VIEW, callChainController));
+  }
   const callChainLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
     callChainController

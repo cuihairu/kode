@@ -37,6 +37,7 @@
     "onCommand:kbengine.hotReload.locateFile",
     "onCommand:kbengine.hotReload.filterByState",
     "onCommand:kbengine.memoryMonitor.show",
+    "onCommand:kbengine.diagnostics.open",
     "onStartupFinished",
     "onLanguage:kbengine-def",
     "onLanguage:python",
@@ -358,6 +359,23 @@
       }
     ],
     "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "kbengine-diagnostics",
+          "title": "%kbengine.viewContainer.diagnostics%",
+          "icon": "$(tools)"
+        },
+        {
+          "id": "kbengine-memory",
+          "title": "%kbengine.viewContainer.memoryMonitor%",
+          "icon": "$(graph)"
+        },
+        {
+          "id": "kbengine-call-chain",
+          "title": "%kbengine.viewContainer.callChain%",
+          "icon": "$(type-hierarchy)"
+        }
+      ],
       "activitybar": [
         {
           "id": "kbengine-explorer",
@@ -367,6 +385,32 @@
       ]
     },
     "views": {
+      "kbengine-diagnostics": [
+        {
+          "id": "kbengine.diagnosticsTools",
+          "name": "%kbengine.view.diagnosticsTools%",
+          "icon": "$(tools)",
+          "when": "kode.diagnosticsSidebarSupported"
+        }
+      ],
+      "kbengine-memory": [
+        {
+          "type": "webview",
+          "id": "kbengine.memoryMonitorView",
+          "name": "%kbengine.view.memoryMonitor%",
+          "icon": "$(graph)",
+          "when": "kode.diagnosticsSidebarSupported"
+        }
+      ],
+      "kbengine-call-chain": [
+        {
+          "type": "webview",
+          "id": "kbengine.callChainView",
+          "name": "%kbengine.view.callChain%",
+          "icon": "$(type-hierarchy)",
+          "when": "kode.diagnosticsSidebarSupported"
+        }
+      ],
       "kbengine-explorer": [
         {
           "id": "kbengine.entityExplorer",
@@ -430,7 +474,18 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "kbengine.diagnosticsTools",
+        "contents": "%kbengine.view.diagnosticsTools.welcome%"
+      }
+    ],
     "commands": [
+      {
+        "command": "kbengine.diagnostics.open",
+        "title": "%kbengine.command.diagnostics.open.title%",
+        "icon": "$(tools)"
+      },
       {
         "command": "kbengine.refreshExplorer",
         "title": "%kbengine.command.refreshExplorer.title%",
@@ -1284,6 +1339,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "kbengine.diagnostics.open",
+          "when": "view == kbengine.memoryMonitorView || view == kbengine.callChainView",
+          "group": "navigation@0"
+        },
         {
           "command": "kbengine.refreshExplorer",
           "when": "view == kbengine.entityExplorer",
