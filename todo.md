@@ -29,7 +29,7 @@
 待点火(审计发现按预算呈报,未修):
 - [x] 插件面 HIGH:wireshark 插件 per-frame summaries/trees 表无界增长(长抓包内存爬升)——需 cap+ring 策略小批。(cf98e7d3:FrameCache 环形窗口(cap 默认 8192,0=不设限)+ frame_cache_cap 首选项 + 双语文档对账;crate 补 lib 目标跑通 5 单测;淘汰帧重放走既有 replay 中性臂)
 - [x] CI 面 MED 五条:nightly edit-before-upload 时序窗/verify-platform-set 漏插件 zip/ci.yml if-no-files-found 恒绿缝/engine-integration 空转绿/cleanup 进程替换吞错。(733a01ec:notes 换新挪到资产落位→核验→清旧之后/verify-platform-set 补 plugin-zip 面(绿腿零产物也红,红绿矩阵+远端对拍本地实证)/VSIX 上传缺省 warn→error+两处归因日志 error+nightly 同族三处收编/provisioning set -euo pipefail 堵单根失败静默绿/清旧循环弃进程替换改先取资产清单)
-- [ ] kb_index temp 累积残差(刻意设计的代价面,需清理策略小批)。
+- [x] kb_index temp 累积残差(刻意设计的代价面,需清理策略小批)。(6788b58c:开库顺手扫陈旧 per-pid 目录——pid 已死(Linux /proc 带,pid 0 确定性死)+ mtime 早于 TTL(缺省 168h,KODE_KB_INDEX_TEMP_TTL_HOURS 可调,0=禁扫)才删;仅生产 open 面扫,open_at 测试自管目录不扫;清扫失败不致命;3 单测(cutoff 注入式,免 mtime 跨平台回拨))
 - [ ] ⑧ 同族残余:`kbengine.ai.model` 等五键仍工作区可覆盖(非网络目的地,低危,随下一批顺手收编)。
 
 ## 2026-11-22 热更与 MCP 索引审核
