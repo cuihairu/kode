@@ -420,6 +420,10 @@ describe('buildPlayerQuerySql 纯函数(覆盖收口)', () => {
 describe('readOnlyQueryConfigGate(004d)', () => {
   it('有派生档案 → 闸放行(null);无档案 → 降级文案点明来源边界与两个恢复入口', () => {
     expect(readOnlyQueryConfigGate(mysqlProfile() as never)).toBeNull();
+    // 2026-11-27 用户令:最终配置是主真源——派生档案缺席但合成配置有
+    // dbInterface 时照样放行(此前只看派生档案,最终配置在也误报缺配置)
+    expect(readOnlyQueryConfigGate(null)).toBeNull();
+    mockedResolve.mockReturnValue(null as never);
     const message = readOnlyQueryConfigGate(null);
     expect(message).toBe(readOnlyQueryMissingConfigMessage());
     expect(message).toContain('dbmgr/databaseInterfaces/default');

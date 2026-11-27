@@ -86,6 +86,7 @@ import { runPythonConsoleEntry } from '../telnetPythonConsole';
 import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '../backend/botsControl';
 import { TelnetTreeProvider } from '../telnetTree';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../configDerive';
+import { ensureConfigResolved } from '../serverConfigResolve';
 import {
   PlayerDataTreeProvider,
   playerTaskStatusStore,
@@ -204,6 +205,10 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
     await ensureConfigDerivedScanRoot().catch(() => {
       /* 派生失败走降级文案 */
     });
+    // 冷缓存自暖(2026-11-27 用户令:只读查询/连接测试的连接要素必须优先
+    // 取最终配置)——连接面读 resolve 缓存,未跑过 ensureConfigResolved 时
+    // 恒空;先就地解析一次(幂等带缓存,失败走派生档案回落)。
+    await ensureConfigResolved().catch(() => undefined);
     // UX-REVIEW-008a:状态账本记账(进行中→终态),面板最近一次状态可回看
     const begun = playerTaskStatusStore.begin('connection', l10nText('Checking connection (read-only SELECT 1)'));
     playerDataProvider.refresh();
@@ -217,6 +222,9 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
     await ensureConfigDerivedScanRoot().catch(() => {
       /* 同上 */
     });
+    // 冷缓存自暖:缺配置闸虽按派生档案判定,真正查询取最终配置——冷缓存
+    // 会报「缺配置/密码不可读」而忽略用户本地的合成配置值。
+    await ensureConfigResolved().catch(() => undefined);
     // UX-REVIEW-004d:缺引擎数据库配置时如实降级,提供配置定位与连接
     // 检查两个真实入口;只读查询的连接要素只来自引擎配置派生,绝不把
     // 克隆 Source/Target 台账当成只读查询的配置来源。

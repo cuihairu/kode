@@ -582,3 +582,89 @@ describe('clone.export 源连接冷缓存自暖(最终配置项)', () => {
   });
 });
 
+
+// 2026-11-27 用户令「第一个只读查询也走最终配置」:查询/连接测试入口此前
+// 只暖派生档案缓存,冷缓存下缺配置闸误拦(即使合成配置在位)。修法 = 任务
+// 入口先 ensureConfigResolved,闸判 profile || 最终配置。装配级验证:冷缓存
+// + 契约门替身 → 查询命令不被闸拦,直接进 DBID 输入。
+describe('playerData.queryByDbid 冷缓存自暖(最终配置为主真源)', () => {
+  it('缓存冷 + 最终配置在位 → 查询进 DBID 输入,不弹缺配置警告', async () => {
+    const defaultsDir = path.join(root, 'kbe', 'res', 'server');
+    const customDir = path.join(root, 'res', 'server');
+    fs.mkdirSync(defaultsDir, { recursive: true });
+    fs.mkdirSync(customDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(defaultsDir, 'kbengine_defaults.xml'),
+      [
+        '<root>',
+        '  <dbmgr>',
+        '    <databaseInterfaces>',
+        '      <default>',
+        '        <host> localhost </host>',
+        '        <port> 0 </port>',
+        '        <auth><username> kbe </username><encrypt> false </encrypt></auth>',
+        '        <databaseName> kbe </databaseName>',
+        '      </default>',
+        '    </databaseInterfaces>',
+        '  </dbmgr>',
+        '</root>'
+      ].join('\n'),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(customDir, 'kbengine.xml'),
+      [
+        '<root>',
+        '  <dbmgr>',
+        '    <databaseInterfaces>',
+        '      <default>',
+        '        <port> 13306 </port>',
+        '        <databaseName> game_db </databaseName>',
+        '      </default>',
+        '    </databaseInterfaces>',
+        '  </dbmgr>',
+        '</root>'
+      ].join('\n'),
+      'utf8'
+    );
+    configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+    const { getKodeCoreShadowGate, setKodeCoreShadowGate } = await import('../src/backend/kodeCoreShadowFaces');
+    const { makeContractGate } = await import('./helpers/configCoreContract');
+    const { getConfigResolved, resetConfigResolveForTests } = await import('../src/serverConfigResolve');
+    const previousGate = getKodeCoreShadowGate();
+    const originalInputBox = fakeWindow.showInputBox;
+    const originalWarning = fakeWindow.showWarningMessage;
+    const prompts: string[] = [];
+    const warnings: string[] = [];
+    fakeWindow.showInputBox = (async (options: { prompt?: string }): Promise<undefined> => {
+      prompts.push(options.prompt ?? '');
+      return undefined;
+    }) as typeof fakeWindow.showInputBox;
+    fakeWindow.showWarningMessage = (async (message: string): Promise<undefined> => {
+      warnings.push(message);
+      return undefined;
+    }) as typeof fakeWindow.showWarningMessage;
+    try {
+      setKodeCoreShadowGate(makeContractGate([]));
+      resetConfigResolveForTests();
+      expect(getConfigResolved()).toBeNull();
+
+      await commands.executeCommand('kbengine.playerData.queryByDbid');
+
+      // 命令自己暖了 resolve 缓存;派生档案是否存在不影响闸(主真源=最终配置)
+      expect(getConfigResolved()?.dbInterface?.databaseName).toBe('game_db');
+      expect(prompts.length).toBeGreaterThan(0);
+      expect(prompts[0]).toContain('DBID');
+      expect(warnings.some(message => message.includes('needs the engine database config'))).toBe(false);
+      expect(messages.error).toHaveLength(0);
+    } finally {
+      fakeWindow.showInputBox = originalInputBox;
+      fakeWindow.showWarningMessage = originalWarning;
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(path.join(root, 'kbe'), { recursive: true, force: true });
+      fs.rmSync(path.join(root, 'res'), { recursive: true, force: true });
+    }
+  });
+});

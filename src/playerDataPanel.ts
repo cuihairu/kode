@@ -138,9 +138,15 @@ export const readOnlyQueryCheckConnectionLabel = (): string =>
   l10nText('Re-derive and check connection');
 
 export function readOnlyQueryConfigGate(
-  profile: ReturnType<typeof getDerivedDatabaseProfile>
+  profile?: ReturnType<typeof getDerivedDatabaseProfile>
 ): string | null {
-  return profile ? null : readOnlyQueryMissingConfigMessage();
+  // 2026-11-27 用户令:最终配置是主真源——派生档案缺席但合成配置有
+  // dbInterface 时照样放行(调用方先 await ensureConfigResolved 暖缓存)。
+  // 保留 profile 参数兼容既有测试/调用点,profile 缺席不否决最终配置。
+  if (profile || resolveDatabaseInterfaceConfig()) {
+    return null;
+  }
+  return readOnlyQueryMissingConfigMessage();
 }
 
 /**
