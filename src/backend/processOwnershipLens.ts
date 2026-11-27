@@ -157,6 +157,22 @@ export function buildProcessOwnershipSpec(
   return { current, siblings };
 }
 
+/**
+ * The switch-key side flip (2026-11-27 user order: pressing the key of the side you are already
+ * on must still switch): when the requested side equals the current side, flip to the other of
+ * the base/cell pair; any other current side (client/bots) and any cross-side request keep the
+ * request verbatim. Pure decision, no IO.
+ */
+export function switchTargetProcess(
+  current: ProcessName,
+  requested: 'cellapp' | 'baseapp'
+): 'cellapp' | 'baseapp' {
+  if (current === requested) {
+    return requested === 'cellapp' ? 'baseapp' : 'cellapp';
+  }
+  return requested;
+}
+
 // --- The breadcrumb process switcher (PROC-BREADCRUMB-001, user order 2026-11-18) ---
 // The header process CodeLens was removed (requiring a scroll to the top = impractical; the
 // breadcrumb is permanently visible); the determination chain and this file's pure core are reused

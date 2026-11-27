@@ -153,6 +153,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Behavior:
   - Resolves the active file's process ownership with the same `scripts/<role>` decision chain as the breadcrumb root; a shared dir like `common` reports 判不出进程归属(需 `scripts/<role>` 目录),无法切换 honestly — never guessed
   - Opens `scripts/cell/<same-name>` with `{ preview: false }` when it exists; reports 未找到同名 cellapp 对应文件 when it does not
+  - Same-side flip (2026-11-27 user order): pressing this key while already in the cellapp-side same-name file jumps to the baseapp counterpart (toggle), so the chord always switches; a missing counterpart reports 未找到同名 baseapp 对应文件 with the flipped side's name
   - Silent no-op with no active editor; the reverse direction is `kbengine.processOwnership.openBase`
 
 ### `kbengine.processOwnership.openBase`
@@ -163,6 +164,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Carriers (PROC-BREADCRUMB-002, 2026-11-25): an editor title-bar arrow icon gated by the `kbengine.processOwnership.canOpenBase` context key, plus a line-zero CodeLens button `跳 base →` — both call this same command
 - Behavior:
   - Same decision chain and honest messages as `openCell`, targeting `scripts/base/<same-name>`
+  - Same-side flip (2026-11-27 user order): pressing this key while already in the baseapp-side same-name file jumps to the cellapp counterpart (toggle); a missing counterpart reports 未找到同名 cellapp 对应文件 with the flipped side's name
   - Silent no-op with no active editor
 
 ## Player Data Clone

@@ -4,7 +4,8 @@ import {
   buildProcessOwnershipSpec,
   buildPythonProcessBreadcrumb,
   processFromDefSections,
-  resolveScriptRole
+  resolveScriptRole,
+  switchTargetProcess
 } from '../src/backend/processOwnershipLens';
 import {
   KBENGINE_PROCESS_OWNERSHIP_CONTEXT_CAN_OPEN_BASE,
@@ -118,6 +119,20 @@ describe('buildProcessOwnershipSpec(互链展开)', () => {
       existsAmong(['/ws/scripts/cell/Activity.py'])
     );
     expect(spec?.siblings).toEqual([{ process: 'cellapp', path: '/ws/scripts/cell/Activity.py' }]);
+  });
+});
+
+describe('switchTargetProcess(切换键同侧翻转,2026-11-27 用户令)', () => {
+  it('按键指向的侧=当前所在侧 → 翻到 base/cell 对的另一侧', () => {
+    expect(switchTargetProcess('cellapp', 'cellapp')).toBe('baseapp');
+    expect(switchTargetProcess('baseapp', 'baseapp')).toBe('cellapp');
+  });
+
+  it('跨侧按键与 client/bots 当前侧保持原请求(翻转只发生在同侧)', () => {
+    expect(switchTargetProcess('baseapp', 'cellapp')).toBe('cellapp');
+    expect(switchTargetProcess('cellapp', 'baseapp')).toBe('baseapp');
+    expect(switchTargetProcess('client', 'cellapp')).toBe('cellapp');
+    expect(switchTargetProcess('bots', 'baseapp')).toBe('baseapp');
   });
 });
 

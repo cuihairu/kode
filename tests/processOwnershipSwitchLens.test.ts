@@ -234,16 +234,18 @@ describe('base↔cell 切换连按竞态(SWITCH-DEGRADE-001)', () => {
     const press2 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
     await new Promise(resolve => setTimeout(resolve, 0));
     // 在途期间用户跳到 scripts 外的第三处(账因真实导航作废):续跳仍须以
-    // 刚打开的 base 文件为源,报「未找到同名 baseapp」,不能误读编辑器。
+    // 刚打开的 base 文件为源,不能误读编辑器(否则会从「判不出」的第三处
+    // 报错)。2026-11-27 同侧翻转后,B 从 base 翻回 cell → 第二次真打开
+    // cell(若误读编辑器则两次都停在 base 或报「判不出」)。
     const elsewhere = join(root, 'elsewhere', 'Hero.py');
     stubWindow.activeTextEditor = { document: { fileName: elsewhere } } as never;
     editorHook.fire(elsewhere);
     await slow.releaseAll();
     await Promise.all([press1, press2]);
     expect(slow.calls.map(call => call.fsPath)).toEqual([
-      join(root, 'scripts', 'base', 'Hero.py')
+      join(root, 'scripts', 'base', 'Hero.py'),
+      join(root, 'scripts', 'cell', 'Hero.py')
     ]);
-    expect(messages.info.join('\n')).toContain('未找到同名 baseapp');
     expect(messages.info.join('\n')).not.toContain('判不出进程归属');
   });
 
@@ -262,11 +264,13 @@ describe('base↔cell 切换连按竞态(SWITCH-DEGRADE-001)', () => {
     const press3 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
     await slow.releaseAll();
     await Promise.all([press1, press2, press3]);
-    // 首跳 cell→base;最新请求仍是 B,从 base 再切 base 无对端 → 不新开文件
+    // 首跳 cell→base;最新请求仍是 B,2026-11-27 同侧翻转后从 base 翻回
+    // cell → 第二次真打开 cell(钉「只认最新 B」而不是首个入队的 C:若取
+    // C 则从 base 跨侧打开 base 自己,断言仍对;故另钉末态落在 cell)。
     expect(slow.calls.map(call => call.fsPath)).toEqual([
-      join(root, 'scripts', 'base', 'Hero.py')
+      join(root, 'scripts', 'base', 'Hero.py'),
+      join(root, 'scripts', 'cell', 'Hero.py')
     ]);
-    expect(messages.info.join('\n')).toContain('未找到同名 baseapp');
   });
 
   it('用户手动跳到第三处:以编辑器为准(状态机不覆盖真实导航)', async () => {
@@ -288,7 +292,7 @@ describe('base↔cell 切换连按竞态(SWITCH-DEGRADE-001)', () => {
     expect(windowState.showTextDocumentCalls).toHaveLength(1);
   });
 
-  it('同向连按 B,B:只认最新一次,续跳从停泊侧如实报「已在 base 侧」', async () => {
+  it('同向连按 B,B:续跳以刚打开的 base 为源,同侧翻转落 cell(停泊侧账)', async () => {
     root = makeTree();
     const subscriptions: Array<{ dispose(): void }> = [];
     registerProcessOwnershipSwitchCommands({ subscriptions } as unknown as never);
@@ -300,8 +304,13 @@ describe('base↔cell 切换连按竞态(SWITCH-DEGRADE-001)', () => {
     const press2 = commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
     await slow.releaseAll();
     await Promise.all([press1, press2]);
-    // 第一发打开 base;续跳 B 以 base 为源→base 侧没有 baseapp 对端,如实提示
-    expect(slow.calls).toHaveLength(1);
-    expect(messages.info.join('\n')).toContain('未找到同名 baseapp');
+    // 第一发打开 base;续跳 B 以刚打开的 base 为源(sourceFile 穿透,若误读
+    // 陈旧编辑器 cell 则第二次又开 base)→ 2026-11-27 同侧翻转落 cell。
+    // 注:toggle 语义下「只认最新 B/C」的方向区分已退化(从 base 侧两键都
+    // 落 cell),本例钉「入队续跳恰好执行一次且落翻转目标」,双开/零开都红。
+    expect(slow.calls.map(call => call.fsPath)).toEqual([
+      join(root, 'scripts', 'base', 'Hero.py'),
+      join(root, 'scripts', 'cell', 'Hero.py')
+    ]);
   });
 });

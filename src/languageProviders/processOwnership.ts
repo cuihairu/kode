@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import {
   buildPythonProcessBreadcrumb,
+  switchTargetProcess,
   type ProcessBreadcrumbSpec,
   type ProcessName
 } from '../backend/processOwnershipLens';
@@ -154,9 +155,13 @@ export function registerProcessOwnershipSwitchCommands(context: vscode.Extension
       );
       return;
     }
-    const target = spec.children.find(child => child.process === process);
+    // ⑤ 同侧键翻到另一侧(2026-11-27 用户令「已在该侧再按同侧键应切过去」):
+    // 按键指向的侧=当前所在侧时翻转 base/cell 对(toggle);client/bots 当前侧
+    // 与跨侧按键保持原请求。对端缺位仍按翻转后的侧如实提示。
+    const wanted = switchTargetProcess(spec.processes[0], process);
+    const target = spec.children.find(child => child.process === wanted);
     if (!target || !target.siblingPath) {
-      void vscode.window.showInformationMessage(`未找到同名 ${process} 对应文件`);
+      void vscode.window.showInformationMessage(`未找到同名 ${wanted} 对应文件`);
       return;
     }
     const openedPath = target.siblingPath;

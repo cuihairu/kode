@@ -104,6 +104,41 @@ describe('base↔cell 切换命令(FILE-TIME-001 快捷键半边)', () => {
     expect(opened.fsPath).toBe(join(root, 'scripts', 'base', 'Hero.py'));
   });
 
+  it('同侧键翻转:已在 cell 侧按 openCell → 跳另一侧 base(2026-11-27 用户令)', async () => {
+    root = makeTree();
+    register();
+    stubWindow.activeTextEditor = {
+      document: { fileName: join(root, 'scripts', 'cell', 'Hero.py') }
+    } as never;
+    await commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND);
+    expect(windowState.showTextDocumentCalls).toHaveLength(1);
+    const opened = windowState.showTextDocumentCalls[0].document as { fsPath: string };
+    expect(opened.fsPath).toBe(join(root, 'scripts', 'base', 'Hero.py'));
+  });
+
+  it('同侧键翻转:已在 base 侧按 openBase → 跳另一侧 cell', async () => {
+    root = makeTree();
+    register();
+    stubWindow.activeTextEditor = {
+      document: { fileName: join(root, 'scripts', 'base', 'Hero.py') }
+    } as never;
+    await commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_BASE_COMMAND);
+    const opened = windowState.showTextDocumentCalls[0].document as { fsPath: string };
+    expect(opened.fsPath).toBe(join(root, 'scripts', 'cell', 'Hero.py'));
+  });
+
+  it('同侧键对端缺位:按翻转后的侧如实提示', async () => {
+    root = makeTree();
+    unlinkSync(join(root, 'scripts', 'base', 'Hero.py'));
+    register();
+    stubWindow.activeTextEditor = {
+      document: { fileName: join(root, 'scripts', 'cell', 'Hero.py') }
+    } as never;
+    await commands.executeCommand(KBENGINE_PROCESS_OWNERSHIP_OPEN_CELL_COMMAND);
+    expect(windowState.showTextDocumentCalls).toHaveLength(0);
+    expect(messages.info.join('\n')).toContain('未找到同名 baseapp');
+  });
+
   it('目标缺位:如实提示不静默', async () => {
     root = makeTree();
     unlinkSync(join(root, 'scripts', 'cell', 'Hero.py'));
