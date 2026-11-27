@@ -741,9 +741,14 @@ export function validatePropertyStructure(
   }
 
   if (!getDirectChildElement(propertyNode, 'Flags')) {
+    // 引擎语义(entitydef.cpp:1170-1178):Properties 段属性缺 <Flags> 时
+    // loadDefPropertys 直接 ERROR+return false——服务端起不来,不是「用默认
+    // 值」。提示给出可写值与常见选择,让 admiral 一次改对。(Components 段的
+    // 组件属性才有引擎默认值 BASE|CELL_PUBLIC|CLIENT,那条路不归本检查管。)
     diagnosticsList.push(new vscode.Diagnostic(
       propertyRange,
-      `属性 ${propertyNode.name} 缺少 <Flags> 定义`,
+      `属性 ${propertyNode.name} 缺少 <Flags> 定义 — 引擎会拒绝加载(entitydef.cpp 缺 flagsNode 即 return false,无默认值)。` +
+        `常用: ALL_CLIENTS / BASE_AND_CLIENT / CELL_PUBLIC Own 系。组件属性(Components 段)才可省略(默认 BASE|CELL_PUBLIC|CLIENT)。`,
       vscode.DiagnosticSeverity.Error
     ));
   }

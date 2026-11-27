@@ -865,7 +865,10 @@ impl Rule for MissingFlagsRule {
                     "error",
                     node_span(data),
                     Some(data.name.clone()),
-                    format!("属性 {} 缺少 <Flags> 定义", data.name),
+                    format!(
+                        "属性 {} 缺少 <Flags> 定义 — 引擎会拒绝加载(缺 flagsNode 即 return false,无默认值)。常用: ALL_CLIENTS / BASE_AND_CLIENT / CELL_PUBLIC Own 系。组件属性(Components 段)才可省略(默认 BASE|CELL_PUBLIC|CLIENT)。",
+                        data.name
+                    ),
                     ctx,
                 ));
             }
