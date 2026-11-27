@@ -61,3 +61,4 @@ coverage/
 # kode managed dir (auto-generated)
 .kbengine/
 wt/
+__pycache__/

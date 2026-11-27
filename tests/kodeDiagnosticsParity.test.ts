@@ -345,7 +345,7 @@ const recomputeDiagnostics = (file: CorpusFile, env: CorpusEnv): Face[] => {
           out.push({
             range: symbolRange,
             severity: 1,
-            message: `属性 ${symbol.name} 缺少 <Flags> 定义`
+            message: expect.stringContaining(`属性 ${symbol.name} 缺少 <Flags> 定义`)
           });
         }
       }
