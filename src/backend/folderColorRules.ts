@@ -210,6 +210,6 @@ export function isKodeThemeFamily(themeLabel: string, kodeThemeLabels: readonly 
  * 开=启用,与当前主题无关(旧「双条件门:必须 Kode 主题族」废止;themeLabel/
  * kodeThemeLabels 参数保留维持调用方签名不变,不再参与判定)。
  */
-export function folderColorsActive(enabled: boolean, themeLabel: string, kodeThemeLabels: readonly string[]): boolean {
+export function folderColorsActive(enabled: boolean, _themeLabel: string, _kodeThemeLabels: readonly string[]): boolean {
   return enabled;
 }
