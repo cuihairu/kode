@@ -155,7 +155,9 @@ jobs:
           path: |
             docs/perf/serving-gate-run.txt
             docs/perf/serving-soak-run.txt
-          if-no-files-found: warn
+          # 审计 MED 修正(2026-11-28,与 ci.yml 同缝):归因运行文件缺位须
+          # error,warn 会把「无日志可归因」吞成绿。
+          if-no-files-found: error
           retention-days: 30
 
 
@@ -164,7 +166,7 @@ jobs:
         with:
           name: perf-baseline-run
           path: docs/perf/v02-baseline-run.txt
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
       - name: Upload perf baseline snapshot (machine-readable)
@@ -172,7 +174,7 @@ jobs:
         with:
           name: perf-baseline-snapshot
           path: docs/perf/perf-baseline-snapshot.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
 
   packages:
@@ -402,12 +404,16 @@ jobs:
           EOF
           echo "body_path=release-body.md" >> "$GITHUB_OUTPUT"
 
-      # 滚动发布:release 已存在则原位改标题/换说明/--clobber 替换资产,
-      # 不存在则创建(恒为 nightly 滚动 tag,不带版本号)。用 gh CLI 而非
-      # release action:action 在"既有 release 更新"路径上反复出现 403
-      # 回归(softprops/action-gh-release#572/#836,权限声明齐备仍复发),
+      # 滚动发布:release 已存在则原位 --clobber 替换资产;不存在则连资产带
+      # 说明一次性创建(恒为 nightly 滚动 tag,不带版本号)。**说明换新挪到
+      # 最后一步**(审计 MED 修正 2026-11-28:原 edit-before-upload 时序窗,
+      # notes 先宣称新 commit 而资产还是上一夜——窗口内下载者拿旧包信新
+      # 说明;改为资产落位→核验→清旧→最后才换 notes,release 页永不宣称
+      # 一个它还没有的资产集)。用 gh CLI 而非 release action:action 在
+      # "既有 release 更新"路径上反复出现 403 回归
+      # (softprops/action-gh-release#572/#836,权限声明齐备仍复发),
       # CLI 行为确定且 Verify 步本就依赖 gh。
-      - name: Rolling release to tag 'nightly' (idempotent)
+      - name: Rolling upload to tag 'nightly' (idempotent)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -416,10 +422,6 @@ jobs:
             if [ -e "$plugin_zip" ]; then ASSETS+=("$plugin_zip"); fi
           done
           if gh release view nightly --repo cuihairu/kode >/dev/null 2>&1; then
-            gh release edit nightly --repo cuihairu/kode \
-              --title "Kode Nightly (rolling)" \
-              --notes-file "${{ steps.meta.outputs.body_path }}" \
-              --prerelease
             gh release upload nightly --repo cuihairu/kode "${ASSETS[@]}" --clobber
           else
             gh release create nightly --repo cuihairu/kode \
@@ -429,7 +431,7 @@ jobs:
               --latest=false \
               "${ASSETS[@]}"
           fi
-          echo "✅ 全平台通过后，Release nightly 已滚动更新"
+          echo "✅ 资产已滚动落位(说明在资产集核验后换新)"
 
       - name: Verify release asset exists
         env:
@@ -443,7 +445,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+          # 审计 MED 修正(2026-11-28):资产名清单先取到变量再喂循环——
+          # 原进程替换 < <(gh ...) 失败时循环拿空输入静默绿,过时资产滞留。
+          ASSET_NAMES=$(gh release view nightly --repo cuihairu/kode --json assets --jq '.assets[].name')
           while IFS= read -r asset; do
+            [ -n "$asset" ] || continue
             if [[ "$asset" == kode-*.vsix ]] && [ ! -f "dist/$asset" ]; then
               gh release delete-asset nightly "$asset" --repo cuihairu/kode --yes
             fi
@@ -452,7 +459,21 @@ jobs:
             if [[ "$asset" == wireshark-kbengine-plugin-*.zip ]] && [ ! -f "dist/plugin-zip/$asset" ]; then
               gh release delete-asset nightly "$asset" --repo cuihairu/kode --yes
             fi
-          done < <(gh release view nightly --repo cuihairu/kode --json assets --jq '.assets[].name')
+          done <<< "$ASSET_NAMES"
+
+      # 时序窗收口(审计 MED 2026-11-28):notes 换新必须排在资产落位、
+      # 集合核验、过时资产清理全部成功之后——此刻起 release 页的说明与
+      # 资产集一致。create 路径上 notes 已随创建写入,此处幂等重写无副作用。
+      - name: Publish release notes after the verified asset set is in place
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release edit nightly --repo cuihairu/kode \
+            --title "Kode Nightly (rolling)" \
+            --notes-file "${{ steps.meta.outputs.body_path }}" \
+            --prerelease
+          echo "✅ Release nightly 说明已换新(资产集已核验)"
 
   # 校验作业：确保无版本 tag 泄漏
   verify-no-version-tags:
