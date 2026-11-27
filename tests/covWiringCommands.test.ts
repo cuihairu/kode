@@ -499,3 +499,86 @@ describe('数据库与克隆命令面(覆盖补测)', () => {
     expect(messages.error).toHaveLength(0);
   });
 });
+
+// 2026-11-27 用户报障「导出下拉只有配置源连接一项」:会话内从未跑过
+// ensureConfigResolved 时 resolveDatabaseInterfaceConfig 恒 null,最终配置项
+// 永远出不来。修法 = resolveFinalConfigSourceConnection 先自暖缓存;本例以
+// 真实装配 + 契约门替身验证冷缓存下导出命令自己把最终配置项带出来。
+describe('clone.export 源连接冷缓存自暖(最终配置项)', () => {
+  it('缓存冷 + 工作区引擎树在位 → 导出命令首位即 Final config(值内联)', async () => {
+    const defaultsDir = path.join(root, 'kbe', 'res', 'server');
+    const customDir = path.join(root, 'res', 'server');
+    fs.mkdirSync(defaultsDir, { recursive: true });
+    fs.mkdirSync(customDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(defaultsDir, 'kbengine_defaults.xml'),
+      [
+        '<root>',
+        '  <dbmgr>',
+        '    <databaseInterfaces>',
+        '      <default>',
+        '        <host> localhost </host>',
+        '        <port> 0 </port>',
+        '        <auth><username> kbe </username><encrypt> false </encrypt></auth>',
+        '        <databaseName> kbe </databaseName>',
+        '      </default>',
+        '    </databaseInterfaces>',
+        '  </dbmgr>',
+        '</root>'
+      ].join('\n'),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(customDir, 'kbengine.xml'),
+      [
+        '<root>',
+        '  <dbmgr>',
+        '    <databaseInterfaces>',
+        '      <default>',
+        '        <port> 13306 </port>',
+        '        <databaseName> game_db </databaseName>',
+        '      </default>',
+        '    </databaseInterfaces>',
+        '  </dbmgr>',
+        '</root>'
+      ].join('\n'),
+      'utf8'
+    );
+    configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+    const { getKodeCoreShadowGate, setKodeCoreShadowGate } = await import('../src/backend/kodeCoreShadowFaces');
+    const { makeContractGate } = await import('./helpers/configCoreContract');
+    const { getConfigResolved, resetConfigResolveForTests } = await import('../src/serverConfigResolve');
+    const previousGate = getKodeCoreShadowGate();
+    const originalQuickPick = fakeWindow.showQuickPick;
+    const quickPickCalls: string[][] = [];
+    fakeWindow.showQuickPick = (async (items: readonly string[]): Promise<string | undefined> => {
+      quickPickCalls.push([...items]);
+      return undefined;
+    }) as typeof fakeWindow.showQuickPick;
+    try {
+      setKodeCoreShadowGate(makeContractGate([]));
+      resetConfigResolveForTests();
+      // 前置:缓存确实冷(修法就是命令自己暖它,不是靠别的面先跑过)
+      expect(getConfigResolved()).toBeNull();
+
+      await commands.executeCommand('kbengine.clone.export');
+
+      expect(getConfigResolved()?.dbInterface).toBeTruthy();
+      // 首个 quickpick = 源连接选择:Final config 在首位,值来自合成配置
+      // (custom kbengine.xml 的 13306/game_db 覆盖引擎默认)
+      expect(quickPickCalls.length).toBeGreaterThan(0);
+      expect(quickPickCalls[0][0]).toMatch(/^Final config: localhost:13306/);
+      expect(quickPickCalls[0][0]).toContain('user=kbe');
+      expect(quickPickCalls[0][0]).toContain('db=game_db');
+      expect(messages.error).toHaveLength(0);
+    } finally {
+      fakeWindow.showQuickPick = originalQuickPick;
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(path.join(root, 'kbe'), { recursive: true, force: true });
+      fs.rmSync(path.join(root, 'res'), { recursive: true, force: true });
+    }
+  });
+});
+

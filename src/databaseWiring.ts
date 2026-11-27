@@ -720,6 +720,12 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
     // 派生链(resolveDatabaseInterfaceConfig → getDerivedDatabaseProfile 回落),
     // 值展示在 quickpick 项内;defaults-only(kbengine.xml 缺席)如实标注。
     resolveFinalConfigSourceConnection: async () => {
+      // 冷缓存自暖(2026-11-27 用户报障「导出下拉只有配置源连接一项」):
+      // 下方 resolveDatabaseInterfaceConfig 只读 resolve 缓存——会话内从未跑过
+      // ensureConfigResolved(没开过最终配置视图/telnet 等)时恒 null,最终
+      // 配置项永远出不来。先就地解析一次(幂等带缓存;失败如实回落派生
+      // 档案臂),再读最终面。
+      await ensureConfigResolved().catch(() => null);
       const final = resolveDatabaseInterfaceConfig();
       if (final) {
         // defaults-only 判定按只读查询同口径:final 面本身即最终配置面,不在
