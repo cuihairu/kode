@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
+
 import { PythonTypeInlayHintsProvider } from '../src/typeInlayHints';
 import { EntityMappingManager } from '../src/entityMapping';
 import {
@@ -120,6 +121,29 @@ describe('PythonTypeInlayHintsProvider(批154)', () => {
 
     expect(hints.map(hint => hint.position.line)).toEqual([4, 5]);
     expect(hints.map(hint => hint.label)).toEqual([': int', ': int']);
+  });
+
+  it('TYP-DICTGET 真机接线(2026-11-27): def 属性 dict.get() 赋值按注入面出值型 inlay', async () => {
+    calls.length = 0;
+    // 注入面 stub(与 hover 同源语义):TRACK_DICT(FIXED_DICT)→ 值并 FUNNEL
+    const provider = new PythonTypeInlayHintsProvider(
+      managerOf({ funnel_map: { typeName: 'FUNNEL' } }),
+      undefined,
+      undefined,
+      (containerAnnotation) => (containerAnnotation === 'FUNNEL' ? 'FUNNEL' : null),
+      (raw) => ({ annotation: raw, reason: null })
+    );
+    const document = doc(
+      [
+        'class Hero:',
+        '    def pick(self):',
+        '        item = self.funnel_map.get(1001)',
+        '        return item'
+      ].join('\n')
+    );
+    const hints = await provider.provideInlayHints(document, lineRange(0, 3), { isCancellationRequested: false });
+    const texts = hints.map(h => (h.label as string));
+    expect(texts.some(t => t.includes('FUNNEL'))).toBe(true);
   });
 
   it('skips accesses outside the requested viewport range', async () => {
@@ -274,6 +298,7 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
   };
 
   afterEach(() => {
+  delete (globalThis as { __dictgetRoot?: string | null }).__dictgetRoot;
     managers.splice(0).forEach(manager => manager.dispose());
     roots.splice(0).forEach(root => fs.rmSync(root, { recursive: true, force: true }));
     workspace.workspaceFolders = originalFolders;

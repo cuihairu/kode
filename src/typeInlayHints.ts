@@ -80,7 +80,11 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     // GLOBDATA-002:数据字典键索引(读点类型并同键写点值类型);未注入跳过
     private dataDictIndex?: GlobalDataDictIndex,
     // KODE-DICTTYPE-001:普通 dict 容器键类型面(读点行尾 : <类型>);未注入跳过
-    private dictValueTypes?: DictValueTypeStore
+    private dictValueTypes?: DictValueTypeStore,
+    // TYP-DICTGET:dict.get() 值型注入(测试 stub 口);默认走 definitionWorkspace
+    private dictValueOverride?: (containerAnnotation: string) => string | null,
+    // 注解解析注入(测试 stub 口):真机默认 resolveEntityAnnotationTypeWithReason
+    private annotateOverride?: (raw: string) => { annotation: string; reason: string | null }
   ) {}
 
   async provideInlayHints(
@@ -262,16 +266,31 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     const endLine = Math.min(documentLines.length - 1, range.end.line);
     const locator: DefPropertyLocator = (fullPath, rootSymbol) =>
       this.entityMappingManager.resolvePropertyDefinitionInfo(document.fileName, fullPath, rootSymbol);
-    const annotate = (raw: string) =>
-      workspaceRoot
-        ? resolveEntityAnnotationTypeWithReason(workspaceRoot, raw)
-        : resolveAnnotationTypeWithReason(raw, []);
+    const annotate = this.annotateOverride
+      ? this.annotateOverride
+      : (raw: string) =>
+          workspaceRoot
+            ? resolveEntityAnnotationTypeWithReason(workspaceRoot, raw)
+            : resolveAnnotationTypeWithReason(raw, []);
+    // TYP-DICTGET 真机接线(2026-11-27 用户多次反馈 get() 无标注的根因):
+    // inlay 面此前不传 resolveDictValue → resolveDictGet 恒 null,get() 读点
+    // 永无类型。与 hover 同源:FIXED_DICT TypedDict 名经注入面取值并剥 None;
+    // 非 FIXED_DICT/无 root → null 诚实不猜。
+    const dictValue = this.dictValueOverride
+      ? this.dictValueOverride
+      : (containerAnnotation: string): string | null => {
+          if (!workspaceRoot) { return null; }
+          const withNone = resolveEntityFixedDictMember(workspaceRoot, containerAnnotation, 'get', true);
+          return withNone !== null && withNone.endsWith(' | None')
+            ? withNone.slice(0, -' | None'.length)
+            : null;
+        };
     for (let line = startLine; line <= endLine; line += 1) {
       const lineText = documentLines[line];
       const forMatch = /^(\s*)for\s+([A-Za-z_]\w*)\s+in\s+(.+?)\s*:\s*(?:#.*)?$/.exec(lineText);
       if (forMatch) {
         const resolved = await resolveSelfPropertyAnnotation(
-          documentLines, line, forMatch[2], null, locator, annotate
+          documentLines, line, forMatch[2], null, locator, annotate, dictValue
         );
         if (resolved && resolved.kind === 'element') {
           // 目标列 = 缩进 + `for ` 前缀(变量起点在缩进后 4 列)
@@ -285,7 +304,7 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         // 只认下标或 self 源形态(其余赋值落回,不白解析)
         if (/\]$/.test(rhs) || /^self\./.test(rhs)) {
           const resolved = await resolveSelfPropertyAnnotation(
-            documentLines, line, assign[2], null, locator, annotate
+            documentLines, line, assign[2], null, locator, annotate, dictValue
           );
           if (resolved && resolved.kind === 'element') {
             hints.push(this.buildElementHint(line, assign[1].length, assign[2], resolved.annotation));

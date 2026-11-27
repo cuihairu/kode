@@ -14,7 +14,7 @@ import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import { createScanStageProgressReporter } from './backend/scanStageProgress';
 import { indexLog } from './backend/indexLog';
-import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
+import { collectOpenDocumentTexts, readSharedFileSnapshot, readSharedFileSnapshotIdentity } from './sharedFileSnapshot';
 import {
   resolveIncomingPythonMethodCalls,
   resolveOutgoingPythonMethodCalls
@@ -301,6 +301,13 @@ export class EntityMappingManager {
    * loadResolved 重解析——此前每次整表失效都是全量重解析,真实大树秒级+/次。
    * python 文件变更路径必须 force 重解析(py 内容不在 .def mtime 里)。
    */
+  // 引用面(属性访问/receiver 调用)结果缓存:键 = 文件身份(version/mtime)
+  // + 扫描参数;身份漂移即 miss,结构性正确(同 defParseCache 口径)。
+  private pythonRefCache = new Map<
+    string,
+    Array<{ filePath: string; line: number; character: number }>
+  >();
+  private pythonRefCacheHits = 0;
   private defParseCache = new Map<
     string,
     { mtimeMs: number; size: number; index: EntityMappingIndex }
@@ -2801,6 +2808,22 @@ export class EntityMappingManager {
       return [];
     }
     const accesses: Array<{ filePath: string; line: number; character: number }> = [];
+    // 引用面缓存键:def 归属 + 属性名 + 全部 owner 文件身份拼串——任一文件
+    // 版本漂移即整键 miss(粗粒度但正确;owner 集合本身由索引持有)。
+    const identities: string[] = [];
+    for (const candidate of indexSet) {
+      for (const owner of candidate.pythonOwnerFiles) {
+        const id = readSharedFileSnapshotIdentity(owner.filePath);
+        if (id) { identities.push(normalizeLookupPath(owner.filePath) + '@' + id.source + ':' + id.version); }
+      }
+    }
+    identities.sort();
+    const cacheKey = 'prop\u0000' + normalizeLookupPath(defFile) + '\u0000' + propertyName + '\u0000' + identities.join('|');
+    const cached = this.pythonRefCache.get(cacheKey);
+    if (cached) {
+      this.pythonRefCacheHits++;
+      return cached;
+    }
     const scannedFiles = new Set<string>();
     for (const candidate of indexSet) {
       for (const owner of candidate.pythonOwnerFiles) {
@@ -2828,6 +2851,7 @@ export class EntityMappingManager {
         }
       }
     }
+    this.pythonRefCache.set(cacheKey, accesses);
     return accesses;
   }
 
@@ -2855,6 +2879,20 @@ export class EntityMappingManager {
       indexSet.add(host);
     }
     const calls: Array<{ filePath: string; line: number; character: number }> = [];
+    const identities: string[] = [];
+    for (const candidate of indexSet) {
+      for (const owner of candidate.pythonOwnerFiles) {
+        const id = readSharedFileSnapshotIdentity(owner.filePath);
+        if (id) { identities.push(normalizeLookupPath(owner.filePath) + '@' + id.source + ':' + id.version); }
+      }
+    }
+    identities.sort();
+    const cacheKey = 'recv\u0000' + normalizeLookupPath(defFile) + '\u0000' + methodName + '\u0000' + receiver + '\u0000' + identities.join('|');
+    const cached = this.pythonRefCache.get(cacheKey);
+    if (cached) {
+      this.pythonRefCacheHits++;
+      return cached;
+    }
     const scannedFiles = new Set<string>();
     for (const candidate of indexSet) {
       for (const owner of candidate.pythonOwnerFiles) {
@@ -2881,6 +2919,7 @@ export class EntityMappingManager {
       }
       }
     }
+    this.pythonRefCache.set(cacheKey, calls);
     return calls;
   }
 
