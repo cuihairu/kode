@@ -352,7 +352,9 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/activate/languageServices.ts', 314, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 413, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 156, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 964, "startLanguageServiceOperation('completion'"],
+  // 2026-11-27(index-ready inlay 刷新):装配区 +9 行(typeInlayHintsProviderInstance
+  // 变量与 onIndexReady().finally fire 块)→ completion 打点锚 964→973(真位重探)。
+  ['src/activate/languageServices.ts', 973, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
