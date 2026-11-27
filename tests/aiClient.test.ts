@@ -430,6 +430,16 @@ describe('AI-001:registerAiCommands(惰性注册+key 只进 SecretStorage)', () 
       'kbengine.ai.requestTimeoutMs',
       'kbengine.ai.temperature'
     ]);
+    // Audit residual (2026-11-25, collected 2026-11-28): the whole
+    // kbengine.ai.* group is machine-scoped — a workspace must not be able
+    // to steer model/timeout/retry behavior (same gate as baseUrl).
+    const aiProps = manifest.contributes.configuration
+      .flatMap(group => Object.entries(group.properties))
+      .filter(([key]) => key.startsWith('kbengine.ai.'));
+    expect(aiProps.length).toBe(6);
+    for (const [key, prop] of aiProps) {
+      expect((prop as { scope?: string }).scope).toBe('machine');
+    }
   });
 });
 

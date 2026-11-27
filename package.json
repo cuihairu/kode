@@ -2823,26 +2823,31 @@
           "kbengine.ai.model": {
             "type": "string",
             "default": "",
+            "scope": "machine",
             "markdownDescription": "%kbengine.config.ai.model.description%"
           },
           "kbengine.ai.temperature": {
             "type": "number",
             "default": 0.2,
+            "scope": "machine",
             "markdownDescription": "%kbengine.config.ai.temperature.description%"
           },
           "kbengine.ai.maxTokens": {
             "type": "number",
             "default": 1024,
+            "scope": "machine",
             "markdownDescription": "%kbengine.config.ai.maxTokens.description%"
           },
           "kbengine.ai.requestTimeoutMs": {
             "type": "number",
             "default": 30000,
+            "scope": "machine",
             "markdownDescription": "%kbengine.config.ai.requestTimeoutMs.description%"
           },
           "kbengine.ai.maxRetries": {
             "type": "number",
             "default": 1,
+            "scope": "machine",
             "markdownDescription": "%kbengine.config.ai.maxRetries.description%"
           }
         }
