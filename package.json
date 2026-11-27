@@ -1990,6 +1990,11 @@
             "default": true,
             "markdownDescription": "%kbengine.config.hover.eventStats.description%"
           },
+          "kbengine.hover.createNamespaceTimeline": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.createNamespaceTimeline.description%"
+          },
           "kbengine.hover.implementedBy": {
             "type": "boolean",
             "default": true,

@@ -30,6 +30,8 @@ export function getLanguageFeatureConfig() {
     hoverEntityRegistration: config.get<boolean>('hover.entityRegistration', true),
     hoverDefChain: config.get<boolean>('hover.defChain', true),
     hoverEventStats: config.get<boolean>('hover.eventStats', true),
+    // CREATE-06: createNamespace timeline panel on `__init__` declarations.
+    hoverCreateNamespaceTimeline: config.get<boolean>('hover.createNamespaceTimeline', true),
     // C-21:KBEngine Python API 文档 hover(KBEngine.<api>/生命周期回调/内建
     // 属性文档段),默认开
     hoverApiDocs: config.get<boolean>('hover.apiDocs', true),

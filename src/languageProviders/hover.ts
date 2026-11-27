@@ -41,6 +41,7 @@ import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelf
 import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyEntry } from '../backend/cellDataCompletion';
 import { cellDataProvenStateAtLine } from '../backend/cellDataCallbackCheck';
 import { cellDataHoverMarkdown } from '../backend/cellDataHover';
+import { collectCreationParamsKeys, createNamespaceTimelineMarkdown } from '../backend/createNamespaceTimeline';
 import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition, buildEntityTypeRuntimeHints } from '../kbeModuleIndex';
 import { dataDictProcessDomain, dataDictSiteInDomain, pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
@@ -397,6 +398,36 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         document.lineAt(position.line).text,
         position.character
       );
+      // CREATE-06:`__init__` 声明行挂 createNamespace 时序面板(def 属性
+      // 默认装载 → params 逐键 → 才轮到 `__init__`,引擎源码行号取证)。
+      // 用户令「新功能都要配置开关」:kbengine.hover.createNamespaceTimeline
+      // 总闸,关闭即落回普通 hover 链。须先于 def 方法标注分支(__init__
+      // 不是 def 声明方法,标注链必 miss 再落回,白耗一次异步预算)。
+      if (
+        methodName === '__init__' &&
+        featureConfig.hoverCreateNamespaceTimeline &&
+        !deadline.token.isCancellationRequested
+      ) {
+        return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
+          raceWithBudget(
+            'hover:create-namespace-timeline',
+            this.resolveCreateNamespaceTimeline(manager, document, sharedToken, timer)
+              .then(markdown => {
+                if (markdown) {
+                  return new vscode.Hover(new vscode.MarkdownString(markdown));
+                }
+                const stop = timer?.start('annotation-query');
+                try {
+                  return this.provideKnownHover(document, position, featureConfig, range, word);
+                } finally { stop?.(); }
+              }),
+            deadline.remainingMs(),
+            sharedToken,
+            // R2-F18:预算到期传播取消(见 def-method 分支)
+            () => deadline.cancel()
+          )
+        , deadline.token));
+      }
       if (methodName) {
         // 异步链总预算闸(用户令 2026-10-22):底层索引慢(首扫秒级+)时不再
         // 永转 loading,超预算返回空悬停并记 LogHub(层名+耗时)。
@@ -916,6 +947,46 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       );
     }
     return new vscode.Hover(markdown);
+  }
+
+  /**
+   * CREATE-06: `__init__` declaration-line timeline. Resolves the owning
+   * entity via the def index; entity scripts only (no index -> null, falls
+   * back to the plain hover chain). Params keys come from creation-API dict
+   * literals in the same file; nothing here claims runtime observation.
+   */
+  private async resolveCreateNamespaceTimeline(
+    manager: EntityMappingManager,
+    document: vscode.TextDocument,
+    token?: vscode.CancellationToken,
+    timer?: HoverPhaseTimer
+  ): Promise<string | null> {
+    const stop = timer?.start('annotation-query');
+    try {
+      const index = manager.getIndexForPythonFile(document.fileName);
+      if (!index || !index.rootName) {
+        return null;
+      }
+      const properties = (index.propertyDefinitions ?? []).map(property => ({
+        name: property.identity.symbolName,
+        typeName: property.typeName,
+        defaultValue: property.defaultValue,
+        domains: property.domains,
+        defFile: property.defFile,
+        defLine: property.line
+      }));
+      if (properties.some(property => !property.name)) {
+        return null;
+      }
+      const paramsKeys = collectCreationParamsKeys(document.getText(), index.rootName);
+      return createNamespaceTimelineMarkdown({
+        entity: index.rootName,
+        properties,
+        paramsKeys
+      });
+    } finally {
+      stop?.();
+    }
   }
 
   /**

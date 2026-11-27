@@ -137,6 +137,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置) |
 | `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
 | `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名时的注册/触发统计 |
+| `kbengine.hover.createNamespaceTimeline` | boolean | `true` | python 侧 `__init__` 声明行的 createNamespace 时序面板（def 属性默认值装载、params 逐键处理、之后才进 `__init__`，带引擎源码行号取证）（CREATE-06） |
 | `kbengine.hover.apiDocs` | boolean | `true` | 悬停显示 KBEngine Python API 文档(`KBEngine.<api>` 访问、生命周期回调 def 行、内建属性追加段) |
 | `kbengine.hover.behaviorNotes` | boolean | `true` | 悬停追加实体行为注记段(属性/回调的行为知识提示,文案取自知识页抽取库) |
 | `kbengine.hover.serverConfig` | boolean | `true` | 悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 悬停面整体关断) |

@@ -190,6 +190,7 @@ These switches have no single static screenshot face: the effect is behavioral (
 | `kbengine.hover.showSymbolDocs` | Hovering a custom property/method name shows its summary |
 | `kbengine.hover.typeStorage` | Hovering a custom type in types.xml shows its storage table/column/type info |
 | `kbengine.hover.eventStats` | Hovering an event constant shows registration/listener stats |
+| `kbengine.hover.createNamespaceTimeline` | Hovering a Python `__init__` declaration shows the createNamespace timeline with engine source citations |
 | `kbengine.hover.serverConfig` | Hovering a kbengine.xml entry shows its resolved value and docs |
 | `kbengine.hover.startupScript` | Hovering KBEngine startup args/env vars in .sh/.bat scripts shows their docs |
 | `kbengine.hover.returnTypeInference` | Hovering a local variable infers its type from function annotations |

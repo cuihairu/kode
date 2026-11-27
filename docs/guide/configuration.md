@@ -137,6 +137,7 @@ Diagnostics trigger only when a `.def` file is opened or edited; `kbengine.recei
 | `kbengine.hover.entityRegistration` | boolean | `true` | Registration info (`Utype`/list position) when hovering an `entities.xml` entity name |
 | `kbengine.hover.defChain` | boolean | `true` | Merged def chain when hovering `Parent`/`Interfaces` declaration elements |
 | `kbengine.hover.eventStats` | boolean | `true` | Registration/emit stats when hovering an event name in Python |
+| `kbengine.hover.createNamespaceTimeline` | boolean | `true` | createNamespace timeline on Python `__init__` declarations: def property defaults, params per-key handling, then `__init__`, with engine source citations (CREATE-06) |
 | `kbengine.hover.apiDocs` | boolean | `true` | KBEngine Python API docs on hover (`KBEngine.<api>` access, lifecycle callback `def` lines, builtin-property supplement) |
 | `kbengine.hover.behaviorNotes` | boolean | `true` | Append the entity behavior-notes section on hover (property/callback behavior hints from the knowledge-page extraction library) |
 | `kbengine.hover.serverConfig` | boolean | `true` | Value and docs when hovering a `kbengine.xml` server config field (turns off the batch-112 hover face entirely) |

@@ -59,6 +59,7 @@
 - **悬停：实体注册信息** —— entities.xml 注册信息（Utype 序号、清单位置、总数）——（证据：package.json#configuration `kbengine.hover.entityRegistration`）
 - **悬停：def 声明链合并** —— Parent 链 + interfaces + 组件槽整理为一条继承闭包悬停 ——（证据：package.json#configuration `kbengine.hover.defChain`；src/backend/defChain.ts）
 - **悬停：事件统计** —— 事件常量的注册/监听计数（事件回调反链）——（证据：package.json#configuration `kbengine.hover.eventStats`；src/eventApi.ts）
+- **悬停：createNamespace 时序（CREATE-06）** —— 悬停 Python `__init__` 声明行显示用户代码之前的实体生命周期：① `initProperty` 逐项装载 def 属性默认值（entity_macro.h:1574/1616）→ ② `createNamespace` 合并 cellData、按 params 逐键处理（entity_macro.h:391-501）→ ③ `initializeScript` 才调用 `__init__`（entity_macro.h:288/322-325）；逐属性表列类型/域位/默认值/声明行，同文件有 creation-API 调用点时还列该键的 params 命中/缺键行为 ——（证据：package.json#configuration `kbengine.hover.createNamespaceTimeline`；src/backend/createNamespaceTimeline.ts；src/languageProviders/hover.ts；tests/createNamespaceTimeline.test.ts）
 - **悬停：服务配置取值** —— kbengine.xml 服务配置项的取值与说明，并附来源证据块（覆盖来源层：元件 `kbengine.xml` 覆盖 / 引擎默认 `kbengine_defaults.xml` 生效；生效值；单位取自配置契约；password 等敏感值脱敏为首字符 + `***`，明文永不展示）；配置来源跳转落在 `kbengine_defaults.xml` 声明行与最终配置视图的生效值行；另附修改影响块（KSEM-CFG-10：受影响模块=键所属进程段；删除后的默认回退=`kbengine_defaults.xml` 的引擎默认值 / 仅元件配置键为「无引擎默认」/ 容器节点回落引擎默认结构；读取点=引擎进程内消费，故引擎 XML 配置不声称用户代码读取点）；影响块按文档实文本计算，未保存的修改也会刷新；块只出数据，绝不写用户的配置 ——（证据：package.json#configuration `kbengine.hover.serverConfig`；src/serverConfigHover.ts `configImpactForHover`；src/backend/configSourceFace.ts `configSourceInfo`/`renderSourceEvidenceBlock`；src/backend/configImpact.ts `computeKeyImpact`/`computeTypeImpact`/`renderImpactBlock`；src/configDefinitionProvider.ts；tests/configSourceFace.test.ts、tests/configImpact.test.ts、tests/serverConfigHover.test.ts）
 - **悬停文案语言可配置（IDE-I18N-002）** —— 悬停文案语言随 `kbengine.hover.language`（`auto`/`en`/`zh-cn`）：`auto` 在 VS Code 界面语言或系统 locale 为中文、或时区为 UTC+8 时取中文，否则英文；服务配置悬停面已双语化（en/zh 表、逐键回落），其余悬停面逐步接入 ——（证据：package.json#configuration `kbengine.hover.language`；src/hoverLocale.ts `resolveHoverLanguage`/`getHoverLanguage`；src/serverConfigHover.ts `SERVER_CONFIG_FIELD_DOCS_EN`；tests/hoverLocale.test.ts、tests/serverConfigHover.test.ts）
 - **启动参数与启动脚本（KBEXP-1）** —— .sh/.bat 启动脚本分析：悬停/补全 KBEngine 启动参数（CLI `--cid`/`--gus`/`--hide`/`--KBE_ROOT`/`--KBE_RES_PATH`/`--KBE_BIN_PATH`，环境变量 `KBE_ROOT`/`KBE_RES_PATH`/`KBE_BIN_PATH`/`KBE_TIMING_METHOD`/`KBE_COMPONENTID`/`KBE_BOOTIDX_GLOBAL`/`KBE_BOOTIDX_GROUP`/`UID`/`UUID`）出双语文档并附引擎源码行（kbemain.h `parseMainCommandArgs`）；
@@ -465,6 +466,7 @@
 | `kbengine.hover.entityRegistration` | `true` | 悬停显示 entities.xml 注册信息（Utype/清单位置） |
 | `kbengine.hover.defChain` | `true` | 悬停显示 def 属性/方法声明链（文件与区块来源） |
 | `kbengine.hover.eventStats` | `true` | 悬停显示事件常量注册/监听统计 |
+| `kbengine.hover.createNamespaceTimeline` | `true` | 悬停 Python `__init__` 声明行显示 createNamespace 时序 |
 | `kbengine.hover.apiDocs` | `true` | 悬停显示 KBEngine Python API 文档(`KBEngine.<api>` 访问、生命周期回调 def 行、内建属性追加段) |
 | `kbengine.hover.behaviorNotes` | `true` | 悬停追加实体行为注记段(属性/回调的行为知识提示,文案取自知识页抽取库) |
 | `kbengine.hover.serverConfig` | `true` | 悬停显示 kbengine.xml 服务配置取值与说明 |

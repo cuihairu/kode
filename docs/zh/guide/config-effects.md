@@ -190,6 +190,7 @@ Show Call Chain 面板以 mermaid 关系图（graph）或纯文本（text）打�
 | `kbengine.hover.showSymbolDocs` | 悬停自定义属性名/方法名时显示摘要信息 |
 | `kbengine.hover.typeStorage` | 悬停 types.xml 自定义类型时显示落库表/列/类型存储信息 |
 | `kbengine.hover.eventStats` | 悬停事件常量时显示注册与监听统计（事件回调反链） |
+| `kbengine.hover.createNamespaceTimeline` | 悬停 Python `__init__` 声明行显示 createNamespace 时序（引擎源码行号取证） |
 | `kbengine.hover.serverConfig` | 悬停 kbengine.xml 服务配置项时显示取值与说明 |
 | `kbengine.hover.startupScript` | 悬停 .sh/.bat 启动脚本里的 KBEngine 启动参数与环境变量时显示说明 |
 | `kbengine.hover.returnTypeInference` | 悬停局部变量时按函数返回注解推导类型 |
