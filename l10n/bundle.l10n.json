@@ -883,5 +883,13 @@
   "pyrefly stubgen found no python scripts": "pyrefly stubgen found no python scripts",
   "pyrefly stubgen done: {batches} batches, exit codes: {codes}": "pyrefly stubgen done: {batches} batches, exit codes: {codes}",
   "Cannot locate engine defaults kbengine_defaults.xml (check that kbengine.binPath points at the engine kbe/bin/server)": "Cannot locate engine defaults kbengine_defaults.xml (check that kbengine.binPath points at the engine kbe/bin/server)",
-  "Resolver: {resolver}": "Resolver: {resolver}"
+  "Resolver: {resolver}": "Resolver: {resolver}",
+  "Type impact preview is disabled (kbengine.typeImpact.enabled).": "Type impact preview is disabled (kbengine.typeImpact.enabled).",
+  "No custom type declarations found (types.xml / alias.xml).": "No custom type declarations found (types.xml / alias.xml).",
+  "Select the custom type to inspect": "Select the custom type to inspect",
+  "Impact of {type}": "Impact of {type}",
+  "No .def property references {type}.": "No .def property references {type}.",
+  "Def properties ({count})": "Def properties ({count})",
+  "via {chain}": "via {chain}",
+  ".py access points ({count})": ".py access points ({count})"
 }

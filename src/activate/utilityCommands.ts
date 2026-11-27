@@ -13,6 +13,7 @@ import { l10nText } from '../nlsRuntime';
 // comes from coreServices L1 via deps (the same instance the reference
 // provider uses), so key-family grouping needs no second resolver chain.
 import { registerRwReferencesCommand } from '../rwReferencesCommand';
+import { registerTypeImpactCommand } from '../typeImpactCommand';
 import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../backend/snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../backend/snippetGenerator';
@@ -185,6 +186,10 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // the built-in reference provider, but outputs a QuickPick instead of
   // changing Shift+F12 behavior.
   context.subscriptions.push(registerRwReferencesCommand(context, dataDictIndex));
+  // IDX-REL-001: custom type reverse impact panel (types.xml/alias.xml entry
+  // -> def properties -> .py access points). Uses the same entityMapping
+  // runtime access face RUST-138 leaves on the TS side.
+  context.subscriptions.push(registerTypeImpactCommand(context, entityMappingManager));
   context.subscriptions.push(defAnalysis.outputChannel, defAnalysis.diagnostics);
 
   // 自定义代码片段生成器:把选区文本做片段语法转义(\$ 与 \\)并去公共缩进

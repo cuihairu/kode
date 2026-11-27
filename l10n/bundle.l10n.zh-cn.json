@@ -883,5 +883,13 @@
   "pyrefly stubgen found no python scripts": "未发现可生成类型桩的 Python 脚本",
   "pyrefly stubgen done: {batches} batches, exit codes: {codes}": "pyrefly stubgen 完成:{batches} 批,退出码:{codes}",
   "Cannot locate engine defaults kbengine_defaults.xml (check that kbengine.binPath points at the engine kbe/bin/server)": "无法定位引擎默认配置 kbengine_defaults.xml(请检查 kbengine.binPath 是否指向引擎的 kbe/bin/server)",
-  "Resolver: {resolver}": "解析方:{resolver}"
+  "Resolver: {resolver}": "解析方:{resolver}",
+  "Type impact preview is disabled (kbengine.typeImpact.enabled).": "类型影响面预览已关闭（kbengine.typeImpact.enabled）。",
+  "No custom type declarations found (types.xml / alias.xml).": "未找到自定义类型声明（types.xml / alias.xml）。",
+  "Select the custom type to inspect": "选择要查看影响面的自定义类型",
+  "Impact of {type}": "{type} 的影响面",
+  "No .def property references {type}.": "没有 .def 属性引用 {type}。",
+  "Def properties ({count})": "Def 属性（{count}）",
+  "via {chain}": "经 {chain}",
+  ".py access points ({count})": ".py 访问点（{count}）"
 }

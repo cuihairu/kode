@@ -223,7 +223,8 @@
     "onCommand:kbengine.git.openVersionDiff",
     "onCommand:kbengine.git.openVersionContent",
     "onCommand:kbengine.git.openRangeHistoryDiff",
-    "onCommand:kbengine.findReferencesRW"
+    "onCommand:kbengine.findReferencesRW",
+    "onCommand:kbengine.showTypeImpact"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -952,6 +953,11 @@
       {
         "command": "kbengine.findReferencesRW",
         "title": "%kbengine.command.findReferencesRW.title%",
+        "icon": "$(search)"
+      },
+      {
+        "command": "kbengine.showTypeImpact",
+        "title": "%kbengine.command.showTypeImpact.title%",
         "icon": "$(search)"
       },
       {
@@ -1781,6 +1787,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%kbengine.config.entityReferenceCacheDiagnostics.description%"
+          },
+          "kbengine.typeImpact.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.typeImpact.enabled.description%"
           },
           "kbengine.diagnostics.checkDefMethodMissingInPython": {
             "type": "boolean",

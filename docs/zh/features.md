@@ -448,6 +448,7 @@
 | `kbengine.scalarAssignDiagnostics` | `true` | def 属性标量赋值诊断:整行字面量赋给可解析为引擎标量的目标(`self.<属性> = …`、`self.<属性>["<键>"]… = …`、`self.<属性>[<整数>] = …` 三形态——根属性/别名链/FD 字段/数组元素四面)按同一 CELL-08 datatypes.cpp 注册表裁结构与范围——结构错配(字符串/bytes/向量/None)与整数越界(负入无符号、越带宽,BigInt 精确)报 `kbengine.scalarAssign` Warning 并附声明来源;`bool` 按 `int` 放行;dict 字面量归构造面;名字/调用 RHS、目标不可解析、FD 容器、数组 FD 元素与混合链一律不报 |
 | `kbengine.destroyedEntityReferenceDiagnostics` | `true` | 已销毁实体引用滞留诊断：`self` 存入模块级容器报 `kbengine.destroyedEntityReference` Warning（3600 s 后 garbages 泄漏告警；onDestroy 里解除引用） |
 | `kbengine.entityReferenceCacheDiagnostics` | `true` | 实体引用缓存诊断（KBE-PY-031）：可静态证明为实体对象的引用存入类属性、模块容器或引擎定时器闭包时报 `kbengine.entityReferenceCache` Warning（销毁后 C++ 内存无法释放，garbages 3600s 才告警）；quick fix 改存 `entity.id`（下游读取需手动同步）；仅分析固定钩子形参、`KBEngine.entities` 查询与赋值链种子——`self.addTimer`、`createEntity*`、`.id` 读取、动态调用一律不报 |
+| `kbengine.typeImpact.enabled` | `true` | 类型影响面预览（IDX-REL-001）：`kbengine.showTypeImpact` 命令对一个 types.xml/alias.xml 自定义类型条目（典型场景：FIXED_DICT 字段变更）列出类型链能到达它的全部 .def 属性（直接引用、ARRAY 元素型、别名链），并从实体映射索引列出这些属性的 .py 访问点；def 边索引按文件+内容身份增量更新，改一个 types.xml 不会重解析 def 文件 |
 | `kbengine.timerCleanupDiagnostics` | `true` | 定时器注销提示：`onDestroy` 内 `self.delTimer(...)` 报 `kbengine.timerCleanupOnDestroy` Information——引擎 destroy() 已取消全部定时器 |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | 诊断未知 KBEngine 类型 |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | 诊断未知 Flags 取值 |

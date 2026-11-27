@@ -794,6 +794,18 @@ The flow graph panel supports:
   - More than 50 reference files are queried sequentially with a host yield every 10 files; cancellation stops further queries. When neither face resolves, the command shows an informational message instead of an empty list.
   - The built-in Shift+F12 references provider is unchanged.
 
+### `kbengine.showTypeImpact`
+
+- Title: `Show Type Impact (def properties and .py access points)`
+- Purpose: reverse impact view for a custom type entry in `types.xml`/`alias.xml` — typically run after changing a FIXED_DICT field to see which entity properties and Python access points are affected
+- Entries: command palette (`kbengine.typeImpact.enabled`, default on)
+- Behavior:
+  - The target type resolves from the cursor word when the active document is `types.xml`/`alias.xml` and names a declared custom type; otherwise a picker over all declared custom types is shown.
+  - Affected = every .def property whose type chain reaches the target: direct references, `ARRAY` element types, and alias chains (the row detail shows the intermediate types as `via a -> b`).
+  - Each affected property is followed by its Python access points from the entity mapping index; access queries cover at most 32 properties (the panel reports the truncation honestly).
+  - The def-edge index updates per file with content identity, so editing one `types.xml` file never reparses def files; def files deleted from disk drop out of the index.
+  - Picking a row jumps to `file:line` with `preview: false`.
+
 ### `kbengine.profile.start`
 
 - Title: `Start Runtime Profile`
