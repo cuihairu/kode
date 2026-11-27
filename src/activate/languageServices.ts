@@ -727,11 +727,20 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   // self.<属性> 访问处原位渲染 def 声明的 <Type> 取值,与属性 F12 同索引;
   // 一枚独立开关 kbengine.inlayHints.typeData(默认开),inlay 无变更事件,
   // provider 现读配置下一次渲染即生效,不需要配置监听 fire
+  const typeInlayHintsProviderInstance = new PythonTypeInlayHintsProvider(
+    entityMappingManager, dataDictIndex, dictValueTypes
+  );
   const typeInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
     pythonDocumentSelector,
-    new PythonTypeInlayHintsProvider(entityMappingManager, dataDictIndex, dictValueTypes)
+    typeInlayHintsProviderInstance
   );
   context.subscriptions.push(typeInlayHintsProvider);
+  // 首显慢根治(2026-11-27 用户反馈):冷启动首答按 1s 预算降级,索引后台
+  // 就绪后 fire onDidChangeInlayHints——VS Code 自动重拉可见区标注,不用
+  // 用户再动光标。initialScan 完成即通知(幂等;失败也通知,避免死等)。
+  void entityMappingManager.onIndexReady().finally(() => {
+    typeInlayHintsProviderInstance.notifyIndexReady();
+  });
 
   // KODE-SYN-005:KBEngine 符号可选领域标记(轻量装饰试点)——def 属性/
   // RPC 接收者/生命周期钩子/有身份的数据字典键四个面,编辑器装饰层与

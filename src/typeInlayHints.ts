@@ -87,6 +87,14 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     private annotateOverride?: (raw: string) => { annotation: string; reason: string | null }
   ) {}
 
+  // 索引就绪通知面(2026-11-27 首显慢反馈):冷启动首答降级后,索引完成时
+  // fire 让 VS Code 重拉可见区 inlay——用户不用再动光标才看到标注。
+  private readonly indexReadyEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeInlayHints = this.indexReadyEmitter.event;
+  notifyIndexReady(): void {
+    this.indexReadyEmitter.fire();
+  }
+
   async provideInlayHints(
     document: vscode.TextDocument,
     range: vscode.Range,

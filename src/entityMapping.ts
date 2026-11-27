@@ -354,6 +354,11 @@ export class EntityMappingManager {
     this.ensureStartup();
   }
 
+  /** 首扫就绪句柄(公共只读):inlay 面挂 onDidChangeInlayHints fire 用。 */
+  onIndexReady(): Promise<void> {
+    return this.initialScan;
+  }
+
   /**
    * 幂等启动:watcher 三件套(类型注册表→def→python,既有次序契约)+ 构造期
    * 全量 .def 首扫。直接激活路径构造即调(与门控前逐行为一致);门控激活路径
