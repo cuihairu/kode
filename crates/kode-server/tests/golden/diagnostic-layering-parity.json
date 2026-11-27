@@ -59,7 +59,7 @@
           "line": 3,
           "offset": 23,
           "length": 52,
-          "message": "属性 broken 缺少 <Flags> 定义"
+          "message": "属性 broken 缺少 <Flags> 定义 — 引擎会拒绝加载(缺 flagsNode 即 return false,无默认值)。常用: ALL_CLIENTS / BASE_AND_CLIENT / CELL_PUBLIC Own 系。组件属性(Components 段)才可省略(默认 BASE|CELL_PUBLIC|CLIENT)。"
         },
         {
           "check": "unknown-type-reference",
@@ -81,7 +81,7 @@
           "line": 3,
           "offset": 23,
           "length": 40,
-          "message": "属性 level 缺少 <Flags> 定义"
+          "message": "属性 level 缺少 <Flags> 定义 — 引擎会拒绝加载(缺 flagsNode 即 return false,无默认值)。常用: ALL_CLIENTS / BASE_AND_CLIENT / CELL_PUBLIC Own 系。组件属性(Components 段)才可省略(默认 BASE|CELL_PUBLIC|CLIENT)。"
         }
       ]
     },
@@ -95,7 +95,7 @@
           "line": 3,
           "offset": 23,
           "length": 35,
-          "message": "属性 hp 缺少 <Flags> 定义"
+          "message": "属性 hp 缺少 <Flags> 定义 — 引擎会拒绝加载(缺 flagsNode 即 return false,无默认值)。常用: ALL_CLIENTS / BASE_AND_CLIENT / CELL_PUBLIC Own 系。组件属性(Components 段)才可省略(默认 BASE|CELL_PUBLIC|CLIENT)。"
         }
       ]
     },
@@ -109,7 +109,7 @@
           "line": 3,
           "offset": 23,
           "length": 39,
-          "message": "属性 crew 缺少 <Flags> 定义"
+          "message": "属性 crew 缺少 <Flags> 定义 — 引擎会拒绝加载(缺 flagsNode 即 return false,无默认值)。常用: ALL_CLIENTS / BASE_AND_CLIENT / CELL_PUBLIC Own 系。组件属性(Components 段)才可省略(默认 BASE|CELL_PUBLIC|CLIENT)。"
         }
       ]
     },
