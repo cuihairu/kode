@@ -148,9 +148,12 @@ export async function syncProcessPythonConfiguration(
       ['executionEnvironments', environments]
     ];
     if (userConfigPath === undefined) { edits.push(['stubPath', stubPath]); }
-    const extraPaths = [path.join(stubRoot, 'shared'), ...scriptsRoots, stubRoot, ...userExtraPaths]
+    // User settings entries may repeat managed roots in ${workspaceFolder}
+    // form; dedupe the same way the per-environment lists do so regen never
+    // appends a second copy of scripts/stubs entries.
+    const extraPaths = [...new Set([path.join(stubRoot, 'shared'), ...scriptsRoots, stubRoot, ...userExtraPaths]
         .map(p => p.replace('${workspaceFolder}', workspaceRoot))
-        .map(p => path.isAbsolute(p) ? portable(workspaceRoot, p) : p);
+        .map(p => path.isAbsolute(p) ? portable(workspaceRoot, p) : p))];
     if (config.extraPaths === undefined || same(config.extraPaths, previous?.extraPaths)) {
       edits.push(['extraPaths', extraPaths]);
     }

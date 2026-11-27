@@ -98,6 +98,26 @@ describe('process Python configuration', () => {
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
+  it('dedupes global extraPaths when user settings repeat managed roots', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-process-config-dedup-'));
+    try {
+      fs.mkdirSync(path.join(root, 'scripts/base'), { recursive: true });
+      const config = path.join(root, 'pyrightconfig.json');
+      fs.writeFileSync(config, '{}\n');
+      const context = makeContext();
+      // User settings may repeat managed roots in ${workspaceFolder} form;
+      // the generated global extraPaths must collapse them, not append.
+      const userPaths = ['${workspaceFolder}/scripts', '${workspaceFolder}/.kbengine/stubs'];
+      const sync = () => syncProcessPythonConfiguration(context, root, [path.join(root, 'scripts')],
+        path.join(root, '.kbengine/stubs'), userPaths);
+      await sync();
+      const first = fs.readFileSync(config, 'utf8');
+      expect(parse(first).extraPaths).toEqual(['.kbengine/stubs/shared', 'scripts', '.kbengine/stubs']);
+      await sync();
+      expect(fs.readFileSync(config, 'utf8')).toBe(first);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
   it('preserves user stub paths and refuses a global KBEngine package that would mask every role', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-process-custom-path-'));
     try {

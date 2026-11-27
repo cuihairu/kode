@@ -549,7 +549,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // RUST-140 批 3(signatureHelp 接线):hover.ts 顶部 +1 行 import
   // (serveSignatureHelpFromRust),其后 provideHover 真位重探 315→316,
   // 出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 320, 'provideHover('],
+  // 2026-11-28(CREATE-06 re-probe): the createNamespace timeline branch on
+  // __init__ declarations added +1 net line above the shared entry, so
+  // provideHover re-probed 320->321; provenance follows the baseline lockstep.
+  ['src/languageProviders/hover.ts', 321, 'provideHover('],
   ['src/languageProviders/navigation.ts', 48, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
@@ -563,7 +566,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // (RustDiagnosticsPushParams/applyRustDiagnosticsPush/wireDiagnosticsPush,
   // +64 行),validateEntitiesXmlDocument 真位重探 265→329('entities-analysis'
   // 命名空间缓存 278→342);出处随 baseline 锁步。
-  ['src/languageProviders/validation.ts', 329, 'validateEntitiesXmlDocument'],
+  // 2026-11-28(CREATE-05 re-probe): the create params checks wiring inserted
+  // +3 lines above the function, validateEntitiesXmlDocument re-probed
+  // 329->332; provenance follows the baseline lockstep.
+  ['src/languageProviders/validation.ts', 332, 'validateEntitiesXmlDocument'],
   // 2026-11-06(十六):IDE-DB-001 持久字段容量说明——languageProviders.ts
   // describeTypeStorageShape 各形态分支附容量行,2776 后 +11;其后锚点
   // 随之 +11(真位重探 4741/5162/5268/7112;2005 前不受影响;出处随 baseline
